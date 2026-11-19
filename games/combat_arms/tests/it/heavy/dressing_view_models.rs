@@ -19,7 +19,9 @@ use combat_arms::game::{
 };
 
 fn mount() -> Option<chimera_core::mount::Mount> {
-    let install = chimera_core::mount::config::LocalConfig::load().ok().and_then(|c| c.game_path(GAME));
+    let install = chimera_core::mount::config::LocalConfig::load()
+        .ok()
+        .and_then(|c| c.game_path(GAME));
     let Some(install) = install else {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
@@ -46,16 +48,30 @@ fn a_front_ends_dressing_leaves_the_view_models_to_on_demand() {
     }
     let dressed = |context: LoadContext| {
         let mut map = MapData::default();
-        (world::DRESSING.dress)(&mut map, &MapLoadOptions { context, ..Default::default() }).expect("dressed");
+        (world::DRESSING.dress)(
+            &mut map,
+            &MapLoadOptions {
+                context,
+                ..Default::default()
+            },
+        )
+        .expect("dressed");
         map
     };
     let plain = dressed(LoadContext::default());
     if plain.kit.view_models.is_empty() {
-        eprintln!("skipping: no view model loads ({:?})", plain.warnings.iter().find(|w| w.contains("view model")));
+        eprintln!(
+            "skipping: no view model loads ({:?})",
+            plain.warnings.iter().find(|w| w.contains("view model"))
+        );
         return;
     }
     let bytes: usize = plain.kit.view_models.iter().map(|v| track_bytes(anims(v))).sum();
-    eprintln!("the dressing without on-demand loads: {} view models, {} MB of animations", plain.kit.view_models.len(), bytes >> 20);
+    eprintln!(
+        "the dressing without on-demand loads: {} view models, {} MB of animations",
+        plain.kit.view_models.len(),
+        bytes >> 20
+    );
     let front_end = LoadContext::default();
     front_end.insert(on_demand::ViewModelsOnDemand);
     let map = dressed(front_end);
@@ -64,7 +80,10 @@ fn a_front_ends_dressing_leaves_the_view_models_to_on_demand() {
         "a front end's view models load on demand, not with the dressing: {:?}",
         map.kit.view_models.iter().map(|v| &v.key).collect::<Vec<_>>()
     );
-    assert!(!map.kit.characters.is_empty() || plain.kit.characters.is_empty(), "the rest of the dressing stays");
+    assert!(
+        !map.kit.characters.is_empty() || plain.kit.characters.is_empty(),
+        "the rest of the dressing stays"
+    );
     assert_eq!(map.kit.held.len(), plain.kit.held.len(), "the held models stay");
 }
 
@@ -83,23 +102,39 @@ fn one_view_model_files_animations_are_converted_once() {
         return;
     };
     let loaded = on_demand::load_weapon(&ca, M92FS, &file).expect("the M92FS's view model");
-    assert!(Arc::ptr_eq(anims(dressed), anims(&loaded.model)), "one conversion of the M92FS's animations");
+    assert!(
+        Arc::ptr_eq(anims(dressed), anims(&loaded.model)),
+        "one conversion of the M92FS's animations"
+    );
     eprintln!("the M92FS's animations: {} MB", track_bytes(anims(dressed)) >> 20);
     // Two guns on one file (a gun's other skins) share theirs too.
     let set = ca.weapon_set();
-    let twins = set.weapons.iter().filter_map(|w| Some((w.id.as_str(), w.models.view.as_deref()?))).find_map(|(a, path)| {
-        let b = set.weapons.iter().find(|w| w.id != a && w.models.view.as_deref().is_some_and(|p| p.eq_ignore_ascii_case(path)))?;
-        Some((a.to_string(), b.id.to_string()))
-    });
+    let twins = set
+        .weapons
+        .iter()
+        .filter_map(|w| Some((w.id.as_str(), w.models.view.as_deref()?)))
+        .find_map(|(a, path)| {
+            let b = set
+                .weapons
+                .iter()
+                .find(|w| w.id != a && w.models.view.as_deref().is_some_and(|p| p.eq_ignore_ascii_case(path)))?;
+            Some((a.to_string(), b.id.to_string()))
+        });
     let Some((a, b)) = twins else {
         eprintln!("no two guns on one view-model file in this data");
         return;
     };
-    let (Ok(one), Ok(two)) = (on_demand::load_weapon(&ca, &a, &file), on_demand::load_weapon(&ca, &b, &file)) else {
+    let (Ok(one), Ok(two)) = (
+        on_demand::load_weapon(&ca, &a, &file),
+        on_demand::load_weapon(&ca, &b, &file),
+    ) else {
         eprintln!("skipping the twins: {a} or {b} doesn't load (the V2 key)");
         return;
     };
-    assert!(Arc::ptr_eq(anims(&one.model), anims(&two.model)), "{a} and {b} share one file's animations");
+    assert!(
+        Arc::ptr_eq(anims(&one.model), anims(&two.model)),
+        "{a} and {b} share one file's animations"
+    );
     // Nothing holds them: the next load converts again (`Weak`).
     let held = ca.memo(view_model::ViewAnimations::default).held();
     drop((one, two, loaded, map));

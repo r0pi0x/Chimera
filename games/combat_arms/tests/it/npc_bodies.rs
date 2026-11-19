@@ -58,10 +58,8 @@ fn npc_data() -> CaData {
         [AIModel3] Name="SH_Sandhog" ModelFile="TEST\boss_model.ltb" Skeleton=1
         [AIModel4] Name="Powered_Suit_Npc_Smg" ModelFile="TEST\suit.ltb" Skeleton=5 AIOnly=0 HumanModel=0"#,
     );
-    let attachments = doc(
-        r#"[Goggle0] Name="Glass" Socket="Eyes" Model0="ATTACH_M\Glass.ltb"
-        [Goggle1] Name="Chemical_Gassmask" Socket="Eyes" Model0="ATTACH_M\Gas.ltb""#,
-    );
+    let attachments = doc(r#"[Goggle0] Name="Glass" Socket="Eyes" Model0="ATTACH_M\Glass.ltb"
+        [Goggle1] Name="Chemical_Gassmask" Socket="Eyes" Model0="ATTACH_M\Gas.ltb""#);
     CaData::with_attributes(InstallAttributes {
         models: Some(ModelsFile::read(&models)),
         attachments: Some(AttachmentsFile::read(&attachments)),
@@ -90,7 +88,11 @@ fn t75_77_npc_records() {
     assert!(n.ai_only && n.human);
     assert_eq!(n.client_fx, ["Eye_Glow"]);
     let tanker = d.model(3).unwrap().npc.as_ref().unwrap();
-    assert_eq!((tanker.face, tanker.head, tanker.goggle), (-1, -1, -1), "AttachFace 0: no face");
+    assert_eq!(
+        (tanker.face, tanker.head, tanker.goggle),
+        (-1, -1, -1),
+        "AttachFace 0: no face"
+    );
     assert_eq!(tanker.special_death.as_deref(), Some("VDIE"));
     // A name in both lists: the `Face#` record wins.
     assert_eq!(d.model(4).unwrap().npc.as_ref().unwrap().face, 1);
@@ -98,8 +100,15 @@ fn t75_77_npc_records() {
     assert!(!suit.ai_only && !suit.human);
     // The look a rung gives: the record's own pieces.
     let look = d.default_look(2);
-    assert_eq!((look.model, look.face, look.head, look.goggle, look.backpack), (2, 2, 2, 1, -1));
-    assert_eq!(d.infected_look(3), d.default_look(3), "an NPC body is infected as it is");
+    assert_eq!(
+        (look.model, look.face, look.head, look.goggle, look.backpack),
+        (2, 2, 2, 1, -1)
+    );
+    assert_eq!(
+        d.infected_look(3),
+        d.default_look(3),
+        "an NPC body is infected as it is"
+    );
     // Never a player body; wearable unless its family isn't (the
     // gunship's body).
     assert!(d.rung_bodies().iter().all(|&b| d.model(b).unwrap().npc.is_none()));
@@ -179,12 +188,22 @@ fn ticks(d: &mut Driver, i: &Inputs, n: usize) {
 #[test]
 fn t87_powered_suits() {
     assert_eq!(driver::upper_names(58, Posture::Aim, Direction::R).0, "USMGRAmL");
-    assert_eq!(driver::upper_names(58, Posture::Aim, Direction::R).1.as_deref(), Some("USMGWAmL"));
+    assert_eq!(
+        driver::upper_names(58, Posture::Aim, Direction::R).1.as_deref(),
+        Some("USMGWAmL")
+    );
     assert_eq!(driver::upper_names(59, Posture::Aim, Direction::None).0, "USMGRAmS");
     assert_eq!(driver::upper_names(59, Posture::Fire, Direction::None).0, "UPRFiS");
-    assert_eq!(driver::upper_names(59, Posture::Reload, Direction::F), ("UPRReL".into(), Some("UPWReS".into()), Some("UPRRReS".into())));
+    assert_eq!(
+        driver::upper_names(59, Posture::Reload, Direction::F),
+        ("UPRReL".into(), Some("UPWReS".into()), Some("UPRRReS".into()))
+    );
     assert_eq!(driver::upper_names(61, Posture::AltFire, Direction::L).0, "UMERFiL1");
-    assert_eq!(driver::upper_names(62, Posture::AltFire, Direction::None).0, "UMERAmS", "the medic's alt-fire: the melee suit's aim");
+    assert_eq!(
+        driver::upper_names(62, Posture::AltFire, Direction::None).0,
+        "UMERAmS",
+        "the medic's alt-fire: the melee suit's aim"
+    );
     assert_eq!(driver::upper_names(64, Posture::Aim, Direction::None).0, "USMGRAmS");
     assert_eq!(driver::upper_names(63, Posture::Hit, Direction::None).0, "D_HIT");
 
@@ -193,22 +212,66 @@ fn t87_powered_suits() {
     let pistol = Inputs { class: 59, ..default() };
     ticks(&mut d, &pistol, 2);
     assert_eq!(at(&d), ("USMGRAmS".into(), "LST".into()));
-    ticks(&mut d, &Inputs { fire: true, ..pistol.clone() }, 2);
+    ticks(
+        &mut d,
+        &Inputs {
+            fire: true,
+            ..pistol.clone()
+        },
+        2,
+    );
     assert_eq!(at(&d).0, "UPRFiS");
     let mut d = on("small_suit", &small);
-    ticks(&mut d, &Inputs { class: 58, right: true, ..default() }, 2);
+    ticks(
+        &mut d,
+        &Inputs {
+            class: 58,
+            right: true,
+            ..default()
+        },
+        2,
+    );
     assert_eq!(at(&d).0, "USMGRAmL", "right on the left name");
     // Forward-left: no `LRFL`; the legs keep the strafe's `LRL`.
-    ticks(&mut d, &Inputs { class: 58, left: true, ..default() }, 2);
+    ticks(
+        &mut d,
+        &Inputs {
+            class: 58,
+            left: true,
+            ..default()
+        },
+        2,
+    );
     assert_eq!(at(&d).1, "LRL");
-    ticks(&mut d, &Inputs { class: 58, left: true, forward: true, ..default() }, 2);
+    ticks(
+        &mut d,
+        &Inputs {
+            class: 58,
+            left: true,
+            forward: true,
+            ..default()
+        },
+        2,
+    );
     assert_eq!(at(&d).1, "LRL", "no diagonal on a suit: the legs keep theirs");
 
     let mut d = on("big_suit", &["Base", "LST", "UFGRFiS", "UMGRAmS"]);
-    ticks(&mut d, &Inputs { class: 64, fire: true, ..default() }, 2);
+    ticks(
+        &mut d,
+        &Inputs {
+            class: 64,
+            fire: true,
+            ..default()
+        },
+        2,
+    );
     assert_eq!(at(&d).0, "UFGRFiS");
     ticks(&mut d, &Inputs { class: 64, ..default() }, 3);
-    assert_eq!(at(&d).0, "UFGRFiS", "no `USMGRAmS` on the big suit: no new upper animation");
+    assert_eq!(
+        at(&d).0,
+        "UFGRFiS",
+        "no `USMGRAmS` on the big suit: no new upper animation"
+    );
 }
 
 /// 13.8, Open question 36: a gun of no suit class on a suit plays the SMG
@@ -238,27 +301,69 @@ fn t88_tanker_with_a_rifle() {
     let (class, legs) = tanker.played("Heavy_Infecter_Gas_A", 0, 0);
     assert_eq!((class, legs), (39, 1));
     assert_eq!(driver::upper_names(39, Posture::Aim, Direction::None).0, "VUMRAmS");
-    assert_eq!(driver::upper_names(39, Posture::Fire, Direction::F).0, "VUMRFiS", "a hand's fire is the standing one");
+    assert_eq!(
+        driver::upper_names(39, Posture::Fire, Direction::F).0,
+        "VUMRFiS",
+        "a hand's fire is the standing one"
+    );
     assert_eq!(driver::upper_names(39, Posture::AltFire, Direction::None).0, "VUMRFiS2");
     assert_eq!(driver::upper_names(47, Posture::Aim, Direction::None).0, "VGUMRAmS");
-    assert_eq!(driver::leg_names(1, Movement::Run, Direction::F).0.as_deref(), Some("VLRF"));
+    assert_eq!(
+        driver::leg_names(1, Movement::Run, Direction::F).0.as_deref(),
+        Some("VLRF")
+    );
 
-    let names = ["BaseAnim", "VLST", "VLRF", "VLJS", "VUMRAmS", "VUMRFIS", "VD_hit", "VDIE"];
+    let names = [
+        "BaseAnim", "VLST", "VLRF", "VLJS", "VUMRAmS", "VUMRFIS", "VD_hit", "VDIE",
+    ];
     let mut d = on("tanker", &names);
-    let i = Inputs { class, legs, ..default() };
+    let i = Inputs {
+        class,
+        legs,
+        ..default()
+    };
     ticks(&mut d, &i, 2);
     assert_eq!(at(&d), ("VUMRAmS".into(), "VLST".into()));
-    ticks(&mut d, &Inputs { fire: true, ..i.clone() }, 2);
+    ticks(
+        &mut d,
+        &Inputs {
+            fire: true,
+            ..i.clone()
+        },
+        2,
+    );
     assert_eq!(at(&d).0, "VUMRFIS");
-    ticks(&mut d, &Inputs { forward: true, ..i.clone() }, 2);
+    ticks(
+        &mut d,
+        &Inputs {
+            forward: true,
+            ..i.clone()
+        },
+        2,
+    );
     assert_eq!(at(&d).1, "VLRF");
     let mut d = on("tanker", &names);
     ticks(&mut d, &i, 2);
-    ticks(&mut d, &Inputs { jumped: true, ..i.clone() }, 1);
+    ticks(
+        &mut d,
+        &Inputs {
+            jumped: true,
+            ..i.clone()
+        },
+        1,
+    );
     assert_eq!(at(&d).1, "VLST", "no `VLSJ`: no new leg animation");
     let mut d = on("tanker", &names);
     ticks(&mut d, &i, 2);
-    ticks(&mut d, &Inputs { status: Some(Status::Hit), damaged: true, ..i.clone() }, 1);
+    ticks(
+        &mut d,
+        &Inputs {
+            status: Some(Status::Hit),
+            damaged: true,
+            ..i.clone()
+        },
+        1,
+    );
     assert_eq!(at(&d).0, "VD_hit");
 }
 
@@ -267,38 +372,105 @@ fn t88_tanker_with_a_rifle() {
 /// end, alt-fire the melee, a hit the hit; the death its own.
 #[test]
 fn boss_mapping() {
-    let names = ["ilde", "Walk", "Attack_L_ST", "Attack_L_LP", "Attack_L_ED", "Foot_Attack", "Damage_ST", "Death", "AL"];
+    let names = [
+        "ilde",
+        "Walk",
+        "Attack_L_ST",
+        "Attack_L_LP",
+        "Attack_L_ED",
+        "Foot_Attack",
+        "Damage_ST",
+        "Death",
+        "AL",
+    ];
     let mut d = on("eod_boss", &names);
     let i = Inputs::default();
     ticks(&mut d, &i, 2);
     assert_eq!(at(&d), ("ilde".into(), "ilde".into()));
-    ticks(&mut d, &Inputs { back: true, ..i.clone() }, 2);
+    ticks(
+        &mut d,
+        &Inputs {
+            back: true,
+            ..i.clone()
+        },
+        2,
+    );
     assert_eq!(at(&d), ("Walk".into(), "Walk".into()));
-    ticks(&mut d, &Inputs { fire: true, ..i.clone() }, 1);
+    ticks(
+        &mut d,
+        &Inputs {
+            fire: true,
+            ..i.clone()
+        },
+        1,
+    );
     assert_eq!(at(&d).0, "Attack_L_ST");
     // 600 ms each (the stand-ins').
-    ticks(&mut d, &Inputs { fire: true, ..i.clone() }, 45);
+    ticks(
+        &mut d,
+        &Inputs {
+            fire: true,
+            ..i.clone()
+        },
+        45,
+    );
     assert_eq!(at(&d), ("Attack_L_LP".into(), "Attack_L_LP".into()));
     assert!(d.upper.looping);
-    ticks(&mut d, &Inputs { fire: true, ..i.clone() }, 60);
+    ticks(
+        &mut d,
+        &Inputs {
+            fire: true,
+            ..i.clone()
+        },
+        60,
+    );
     assert_eq!(at(&d).0, "Attack_L_LP", "looping while held");
     ticks(&mut d, &i, 1);
     assert_eq!(at(&d).0, "Attack_L_ED");
     ticks(&mut d, &i, 45);
     assert_eq!(at(&d).0, "ilde");
-    ticks(&mut d, &Inputs { alt_fire: true, ..i.clone() }, 1);
+    ticks(
+        &mut d,
+        &Inputs {
+            alt_fire: true,
+            ..i.clone()
+        },
+        1,
+    );
     assert_eq!(at(&d).0, "Foot_Attack");
     ticks(&mut d, &i, 45);
-    ticks(&mut d, &Inputs { status: Some(Status::Hit), damaged: true, ..i.clone() }, 1);
+    ticks(
+        &mut d,
+        &Inputs {
+            status: Some(Status::Hit),
+            damaged: true,
+            ..i.clone()
+        },
+        1,
+    );
     assert_eq!(at(&d).0, "Damage_ST");
     let eod = families::families().families.get("eod_boss").unwrap();
     assert_eq!(eod.boss.as_ref().unwrap().death.as_deref(), Some("Death"));
 
     // One fire name loops while held; a boss without a walk stays idle.
     let mut d = on("callus", &["Idle", "Breed", "Hit", "Die"]);
-    ticks(&mut d, &Inputs { forward: true, ..i.clone() }, 2);
+    ticks(
+        &mut d,
+        &Inputs {
+            forward: true,
+            ..i.clone()
+        },
+        2,
+    );
     assert_eq!(at(&d).0, "Idle");
-    ticks(&mut d, &Inputs { fire: true, ..i.clone() }, 2);
+    ticks(
+        &mut d,
+        &Inputs {
+            fire: true,
+            ..i.clone()
+        },
+        2,
+    );
     assert_eq!(at(&d).0, "Breed");
     assert!(d.upper.looping);
 }
@@ -315,7 +487,12 @@ fn tiny_model() -> Model {
             name: "Scene Root".into(),
             stored_index: 0,
             flags: 0,
-            bind: [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+            bind: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
             parent: None,
         }],
         weight_sets: vec![WeightSet {
@@ -349,11 +526,21 @@ fn feet_of_big_bodies() {
         list.entries = entries;
         Rig::new(tiny_model(), list)
     };
-    let suit = rig(vec![entry("Base", [80.0, 100.0, 50.0], -100.0), entry("LST", [80.0, 100.0, 50.0], -100.0), entry("LC", [80.0, 70.0, 50.0], -70.0)]);
+    let suit = rig(vec![
+        entry("Base", [80.0, 100.0, 50.0], -100.0),
+        entry("LST", [80.0, 100.0, 50.0], -100.0),
+        entry("LC", [80.0, 70.0, 50.0], -70.0),
+    ]);
     assert_eq!(suit.half_heights, (100.0, 70.0));
-    let eod = rig(vec![entry("ilde", [70.0, 100.0, 55.0], -100.0), entry("Walk", [70.0, 100.0, 55.0], -100.0)]);
+    let eod = rig(vec![
+        entry("ilde", [70.0, 100.0, 55.0], -100.0),
+        entry("Walk", [70.0, 100.0, 55.0], -100.0),
+    ]);
     assert_eq!(eod.half_heights, (100.0, 100.0));
-    let tanker = rig(vec![entry("BaseAnim", [15.0, 50.0, 15.0], -50.0), entry("VLST", [15.0, 50.0, 15.0], -50.0)]);
+    let tanker = rig(vec![
+        entry("BaseAnim", [15.0, 50.0, 15.0], -50.0),
+        entry("VLST", [15.0, 50.0, 15.0], -50.0),
+    ]);
     assert_eq!(tanker.half_heights, (50.0, 40.0));
 }
 
@@ -362,15 +549,20 @@ fn feet_of_big_bodies() {
 /// as written (L0 counts as the torso).
 #[test]
 fn install_hit_tables() {
-    let nodes = SkeletonNode::read_all(doc(
-        r#"[Skeleton0] Node0Name="Head" Node0Radius=5.5 Node0Location=1 Node0DamageFactor=3.0
+    let nodes = SkeletonNode::read_all(
+        doc(
+            r#"[Skeleton0] Node0Name="Head" Node0Radius=5.5 Node0Location=1 Node0DamageFactor=3.0
         Node1Name="_zN_LowerBody" Node1Radius=8.0 Node1Location=0 Node1DamageFactor=1.0
         Node2Name="Left_hand" Node2Radius=0.0 Node2Location=3 Node2DamageFactor=1.0"#,
-    )
-    .records("Skeleton")[0]);
+        )
+        .records("Skeleton")[0],
+    );
     let t = records::install_table(2, &nodes);
     assert_eq!(t.spheres.len(), 3);
-    assert_eq!((t.spheres[0].location, t.spheres[0].factor, t.spheres[0].radius), (1, 3.0, 5.5));
+    assert_eq!(
+        (t.spheres[0].location, t.spheres[0].factor, t.spheres[0].radius),
+        (1, 3.0, 5.5)
+    );
     assert!(t.spheres.iter().all(|s| s.at.is_none() && !s.absent));
     assert!(t.aim.is_empty(), "the aim is the family's");
 }
@@ -385,7 +577,14 @@ fn t62_74_holders() {
     let h = rungs::holders();
     let of = |w: &str| -> BTreeSet<String> { h.of(&format!("combat_arms:{w}"), None).into_iter().collect() };
     let set = |names: &[&str]| -> BTreeSet<String> { names.iter().map(|s| s.to_string()).collect() };
-    let sandhog = ["SH_Rifle", "SH_Recon", "SH_MGunner", "SH_Sniper", "SH_HeavyGunner", "SH_RoyalGuard"];
+    let sandhog = [
+        "SH_Rifle",
+        "SH_Recon",
+        "SH_MGunner",
+        "SH_Sniper",
+        "SH_HeavyGunner",
+        "SH_RoyalGuard",
+    ];
     let mut ak = sandhog.to_vec();
     ak.extend(["Agent_Z", "SubMission_Z_1", "SubMission_Z_2"]);
     // 12.4, L1 (by record name; Squad_n is `AIModel` 13 + n...).
@@ -395,7 +594,10 @@ fn t62_74_holders() {
         ("m24_npc", vec!["SH_Recon", "SH_Sniper", "SH_RoyalGuard"]),
         ("m60_npc", vec!["SH_Recon", "SH_MGunner", "SH_RoyalGuard"]),
         ("law_npc", vec!["SH_HeavyGunner"]),
-        ("dynamite_npc", vec!["SH_Recon", "SH_MGunner", "SH_Sniper", "SH_HeavyGunner", "SH_RoyalGuard"]),
+        (
+            "dynamite_npc",
+            vec!["SH_Recon", "SH_MGunner", "SH_Sniper", "SH_HeavyGunner", "SH_RoyalGuard"],
+        ),
         ("vh_normal_npc", vec!["Normal_Infecter_Common_D"]),
         ("vh_explode_npc", vec!["Normal_Infecter_Explode_C"]),
         ("vh_heavy_npc", vec!["Heavy_Infecter_Gas_A"]),
@@ -407,31 +609,80 @@ fn t62_74_holders() {
         ("m416_npc", vec!["Squad_7", "Squad_8"]),
         ("mg21e_npc", vec!["Squad_9", "Squad_0"]),
         ("hqraidnpc_1_melee", vec!["HQRAIDNPC_1"]),
-        ("hqraidnpc_2_smg", vec!["HQRAIDNPC_2", "Powered_Suit_Npc_Melee", "Powered_Suit_Npc_Smg", "SubMission_Z_1", "SubMission_Z_2"]),
+        (
+            "hqraidnpc_2_smg",
+            vec![
+                "HQRAIDNPC_2",
+                "Powered_Suit_Npc_Melee",
+                "Powered_Suit_Npc_Smg",
+                "SubMission_Z_1",
+                "SubMission_Z_2",
+            ],
+        ),
         ("hqraidnpc_3_special", vec!["HQRAIDNPC_3"]),
-        ("infecteds_captain_hand_boss", vec!["InfectedS_Captain_Boss", "InfectedS_W_Captain_Boss", "InfectedS_Captain"]),
+        (
+            "infecteds_captain_hand_boss",
+            vec![
+                "InfectedS_Captain_Boss",
+                "InfectedS_W_Captain_Boss",
+                "InfectedS_Captain",
+            ],
+        ),
         (
             "abnormal_boss_minigun",
-            vec!["Abnormal_Boss", "Abnormal_Du_Boss", "Abnormal_Du_Boss_A", "Abnormal_Boss_Fortress", "Abnormal_Boss_Beetle", "Abnormal_Boss_GroundThorn"],
+            vec![
+                "Abnormal_Boss",
+                "Abnormal_Du_Boss",
+                "Abnormal_Du_Boss_A",
+                "Abnormal_Boss_Fortress",
+                "Abnormal_Boss_Beetle",
+                "Abnormal_Boss_GroundThorn",
+            ],
         ),
-        ("vh_normal_npc_cfs", vec!["Normal_Infect_CFS", "Normal_Infect_Carnival_CFS"]),
-        ("vh_explode_npc_cfs", vec!["Explode_Infect_CFS", "Explode_Infect_Carnival_CFS"]),
+        (
+            "vh_normal_npc_cfs",
+            vec!["Normal_Infect_CFS", "Normal_Infect_Carnival_CFS"],
+        ),
+        (
+            "vh_explode_npc_cfs",
+            vec!["Explode_Infect_CFS", "Explode_Infect_Carnival_CFS"],
+        ),
         ("vh_heavy_npc_cfs", vec!["Hauser_Infect_CFS"]),
     ];
     for (w, holders) in l1 {
         assert_eq!(of(w), set(holders), "{w}");
     }
     let mut m67: Vec<&str> = sandhog.to_vec();
-    m67.extend(["Agent_Z", "HQRAIDNPC_1", "HQRAIDNPC_2", "HQRAIDNPC_3", "Powered_Suit_Npc_Melee", "Powered_Suit_Npc_Smg"]);
-    m67.extend(["Squad_0", "Squad_1", "Squad_2", "Squad_3", "Squad_4", "Squad_5", "Squad_6", "Squad_7", "Squad_8", "Squad_9", "Squad_11", "Squad_12"]);
+    m67.extend([
+        "Agent_Z",
+        "HQRAIDNPC_1",
+        "HQRAIDNPC_2",
+        "HQRAIDNPC_3",
+        "Powered_Suit_Npc_Melee",
+        "Powered_Suit_Npc_Smg",
+    ]);
+    m67.extend([
+        "Squad_0", "Squad_1", "Squad_2", "Squad_3", "Squad_4", "Squad_5", "Squad_6", "Squad_7", "Squad_8", "Squad_9",
+        "Squad_11", "Squad_12",
+    ]);
     assert_eq!(of("m67_npc"), set(&m67));
     // L2: our stand-in. L3: the suit sets.
-    for w in ["hqraid_boss_minigun", "hqraid_boss_flame", "hqraid_boss_missile", "hqraid_boss_poisonbomb", "powered_suit_boss_mg", "powered_suit_boss_launcher"] {
+    for w in [
+        "hqraid_boss_minigun",
+        "hqraid_boss_flame",
+        "hqraid_boss_missile",
+        "hqraid_boss_poisonbomb",
+        "powered_suit_boss_mg",
+        "powered_suit_boss_launcher",
+    ] {
         assert_eq!(of(w), set(&["62", "583", "588"]), "{w}");
     }
     assert_eq!(of("powered_suit_basic_smg"), set(&["58", "579", "584"]));
     assert_eq!(of("powered_suit_basic_sr"), set(&["59", "580", "585"]));
-    assert_eq!(of("powered_suit_basic_pistol"), set(&["60", "581", "586", "61", "582", "587"]));
+    assert_eq!(
+        of("powered_suit_basic_pistol"),
+        set(&["60", "581", "586", "61", "582", "587"])
+    );
     assert_eq!(of("powered_suit_basic_melee"), set(&["60", "581", "586"]));
     assert_eq!(of("powered_suit_basic_medic"), set(&["61", "582", "587"]));
     // L5: the infected mercenaries.
@@ -441,7 +692,13 @@ fn t62_74_holders() {
     // 12.6: own type and the "also" column.
     assert_eq!(
         of("quarantine_host_hand"),
-        set(&["@infected", "Heavy_Infecter_Gas_A", "Light_Infecter_Speed_B", "Normal_Infecter_Explode_C", "Normal_Infecter_Common_D"])
+        set(&[
+            "@infected",
+            "Heavy_Infecter_Gas_A",
+            "Light_Infecter_Speed_B",
+            "Normal_Infecter_Explode_C",
+            "Normal_Infecter_Common_D"
+        ])
     );
     assert_eq!(
         of("infecteds_captain_hand"),
@@ -457,7 +714,10 @@ fn t62_74_holders() {
         ])
     );
     assert_eq!(of("infecteds_new_woman_hand").len(), 4);
-    assert_eq!(of("infecteds_man02_host_b_hand"), set(&["InfectedS_Man02_Host_B", "InfectedS_New_Man02_B"]));
+    assert_eq!(
+        of("infecteds_man02_host_b_hand"),
+        set(&["InfectedS_Man02_Host_B", "InfectedS_New_Man02_B"])
+    );
     assert!(of("abnormal_normal").contains("Abnormal_Boss_Callus"));
     // The spec's guesses (Open question 26), ours.
     assert_eq!(of("npc_powered_suit_basic_smg"), set(&["Powered_Suit_Npc_Smg"]));
@@ -465,10 +725,19 @@ fn t62_74_holders() {
     assert_eq!(of("abnormal_boss_minigun_left"), of("abnormal_boss_minigun"));
     // No link and no guess: the derived rule (any player body; an
     // infected's hand the infected).
-    for w in ["minigun_npc", "watergun_npc", "souzas_parafal_npc", "abnormal_icegas_boss", "assassin_bowgun_nor"] {
+    for w in [
+        "minigun_npc",
+        "watergun_npc",
+        "souzas_parafal_npc",
+        "abnormal_icegas_boss",
+        "assassin_bowgun_nor",
+    ] {
         assert_eq!(of(w), set(&["@players"]), "{w}");
     }
-    assert_eq!(h.of("combat_arms:mutation_quarantine_virus_hand", Some("infected")), ["@infected"]);
+    assert_eq!(
+        h.of("combat_arms:mutation_quarantine_virus_hand", Some("infected")),
+        ["@infected"]
+    );
 }
 
 /// A rung's NPC look wears the record's pieces; the bodies a name or id
@@ -486,7 +755,10 @@ fn rung_bodies_for_npc_names() {
     )
     .unwrap();
     assert_eq!(rungs::bodies_for(&holders, None, Some(&ca), "combat_arms:a"), [2, 3]);
-    assert_eq!(rungs::bodies_for(&holders, None, Some(&ca), "combat_arms:b"), [2, 3, 4, 6]);
+    assert_eq!(
+        rungs::bodies_for(&holders, None, Some(&ca), "combat_arms:b"),
+        [2, 3, 4, 6]
+    );
 }
 
 /// Every name the robot classes' rows give parses into run and walk

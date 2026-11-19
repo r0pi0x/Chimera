@@ -7,12 +7,9 @@ use std::time::Duration;
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use chimera_core::core::{Damage, DamageKind, Hitgroup, Health, Intent};
+use chimera_core::core::{Damage, DamageKind, Health, Hitgroup, Intent};
 use chimera_net::{harness::NetSim, net::memory::LinkConditions};
-use chimera_sim::weapon::{
-    Inventory, StartingWeapons, Weapon,
-    grenade::Launch,
-};
+use chimera_sim::weapon::{Inventory, StartingWeapons, Weapon, grenade::Launch};
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim, map::loose::ShownItem};
 use combat_arms::{
     game::{
@@ -40,8 +37,14 @@ fn t20_mine_chain() {
     let mine = landed(&mut sim, MINE, Some(owner), 0.0, 0.0);
     let centre = obj(&sim, mine).at();
     let w = weapon_of(&mut sim, M67, Some(thrower));
-    let g = grenades::spawn_grenade(sim.app.world_mut(), w, Some(thrower), centre + Vec3::X * 150.0 * U, Vec3::ZERO)
-        .unwrap();
+    let g = grenades::spawn_grenade(
+        sim.app.world_mut(),
+        w,
+        Some(thrower),
+        centre + Vec3::X * 150.0 * U,
+        Vec3::ZERO,
+    )
+    .unwrap();
     sim.app.world_mut().get_mut::<CaGrenade>(g).unwrap().params.fuse = 0.0;
     let (f0, weapon, ..) = until_boom(&mut sim, 1.0);
     assert_eq!(weapon, M67);
@@ -54,7 +57,12 @@ fn t20_mine_chain() {
 /// A raised platform top at `top` u: x from `x0` to `x1` u, z from `z0` to
 /// `z1` u.
 fn platform(sim: &mut Sim, x0: f32, x1: f32, z0: f32, z1: f32, top: f32) -> Entity {
-    solid(sim, Vec3::new(x0 * U, -1.0, z0 * U), Vec3::new(x1 * U, top * U, z1 * U), None)
+    solid(
+        sim,
+        Vec3::new(x0 * U, -1.0, z0 * U),
+        Vec3::new(x1 * U, top * U, z1 * U),
+        None,
+    )
 }
 
 /// A player with his feet `feet` u above the floor at `x`, `z` (u).
@@ -108,13 +116,24 @@ fn t21_hornet() {
         }
     };
     let trig = trig.expect("set off");
-    assert!(trig >= landed_at + 0.666 - 1e-6 && trig <= landed_at + 0.666 + 0.1, "set off at {trig}");
+    assert!(
+        trig >= landed_at + 0.666 - 1e-6 && trig <= landed_at + 0.666 + 0.1,
+        "set off at {trig}"
+    );
     let blast = f as f64 * 0.05;
-    assert!(blast >= trig + 0.534 - 1e-6 && blast <= trig + 0.534 + 0.05 + 1e-6, "blast at {blast}");
+    assert!(
+        blast >= trig + 0.534 - 1e-6 && blast <= trig + 0.534 + 0.05 + 1e-6,
+        "blast at {blast}"
+    );
     sim.ticks(2);
     let (c, _) = body(&mut sim, victim);
     let d = dist_u(c, at * U);
-    assert_hp(1000.0 - health(&sim, victim), 2.0 * 150.0 * m(150.0, d), 0.01, "150 / 150 twice");
+    assert_hp(
+        1000.0 - health(&sim, victim),
+        2.0 * 150.0 * m(150.0, d),
+        0.01,
+        "150 / 150 twice",
+    );
 
     // 110 u away: no trigger.
     let mut sim = self::sim();
@@ -132,7 +151,10 @@ fn t21_hornet() {
     let e = landed_from(&mut sim, HORNET, Some(owner), 0.0, 72.0, 0.0);
     wait(&mut sim, 3.0);
     assert!(obj(&sim, e).pos.y > 60.0, "on the platform");
-    assert!(obj(&sim, e).s.triggered_at.is_none(), "an enemy below it never sets it off");
+    assert!(
+        obj(&sim, e).s.triggered_at.is_none(),
+        "an enemy below it never sets it off"
+    );
 }
 
 /// Case 22: the claymore's cone: 120 / 500 within 80 degrees of its facing
@@ -209,7 +231,10 @@ fn t23_claymore_detonator() {
     sim.ticks(8);
     let b = booms(&sim);
     assert_eq!(b.len(), 2, "both blow: {b:?}");
-    assert!(b.iter().all(|b| b.1 == CLAYMORE && b.0 <= press + 3), "on the frame after the message");
+    assert!(
+        b.iter().all(|b| b.1 == CLAYMORE && b.0 <= press + 3),
+        "on the frame after the message"
+    );
     // His death.
     let mut sim = self::sim();
     let owner = player(&mut sim, 3000.0, 3000.0, 0.0, 1);
@@ -267,7 +292,12 @@ fn t24_remote_grenade() {
     for v in &victims {
         let (c, _) = body(&mut sim, *v);
         let d = dist_u(c, at);
-        assert_hp(1000.0 - health(&sim, *v), 2.0 * 100.0 * m(450.0, d), 0.01, &format!("at {d}"));
+        assert_hp(
+            1000.0 - health(&sim, *v),
+            2.0 * 100.0 * m(450.0, d),
+            0.01,
+            &format!("at {d}"),
+        );
     }
 }
 
@@ -315,7 +345,9 @@ fn t25_caltrops() {
 fn t26_caltrops_count() {
     let mut sim = sim();
     let owner = far_player(&mut sim, 1);
-    let vs: Vec<Entity> = (0..3).map(|i| player(&mut sim, 1000.0 + 100.0 * i as f32, 0.0, 0.0, 2)).collect();
+    let vs: Vec<Entity> = (0..3)
+        .map(|i| player(&mut sim, 1000.0 + 100.0 * i as f32, 0.0, 0.0, 2))
+        .collect();
     for v in &vs {
         set_health(&mut sim, *v, 1000.0);
     }
@@ -340,13 +372,20 @@ fn t26_caltrops_count() {
     let first = counts.iter().find(|c| c.1 > 0).unwrap().0;
     assert!(counts.iter().any(|c| c.1 == 9), "nine counts before: {counts:?}");
     assert!(!counts.iter().any(|c| c.1 >= 12), "removed at the 12th: {counts:?}");
-    assert!((gone - first - 3.15).abs() < 0.2, "gone at {} after the first count", gone - first);
+    assert!(
+        (gone - first - 3.15).abs() < 0.2,
+        "gone at {} after the first count",
+        gone - first
+    );
     // Each victim is counted again more than 1 s after his last count: no
     // more than three counts in any 0.9 s (the three came in on frames of
     // their own).
     let times: Vec<f64> = counts.iter().map(|c| c.0 - first).collect();
     assert!(times.len() >= 9, "{times:?}");
-    assert!(times.windows(4).all(|w| w[3] - w[0] > 0.9), "recounted too soon: {times:?}");
+    assert!(
+        times.windows(4).all(|w| w[3] - w[0] > 0.9),
+        "recounted too soon: {times:?}"
+    );
 }
 
 /// Case 27: a nerve mine is active from its first touch of any surface (a
@@ -356,10 +395,21 @@ fn t26_caltrops_count() {
 fn t27_nerve_mine() {
     let mut sim = sim();
     let owner = far_player(&mut sim, 1);
-    solid(&mut sim, Vec3::new(-10.0, -1.0, 100.0 * U), Vec3::new(10.0, 10.0, 110.0 * U), None);
+    solid(
+        &mut sim,
+        Vec3::new(-10.0, -1.0, 100.0 * U),
+        Vec3::new(10.0, 10.0, 110.0 * U),
+        None,
+    );
     let victim = player(&mut sim, 0.0, 200.0, 0.0, 2);
     let mate = player(&mut sim, 60.0, 200.0, 0.0, 1);
-    let first = device(&mut sim, NERVE, Some(owner), Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 800.0));
+    let first = device(
+        &mut sim,
+        NERVE,
+        Some(owner),
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 800.0),
+    );
     for _ in 0..40 {
         sim.ticks(1);
         if obj(&sim, first).s.active {
@@ -368,7 +418,12 @@ fn t27_nerve_mine() {
     }
     assert!(obj(&sim, first).s.active, "active from the wall touch");
     sim.ticks(8);
-    let fx = sim.app.world().get::<CaCameraReverse>(victim).copied().expect("the enemy through the wall");
+    let fx = sim
+        .app
+        .world()
+        .get::<CaCameraReverse>(victim)
+        .copied()
+        .expect("the enemy through the wall");
     assert_eq!(fx.amount, 3.0);
     assert!(fx.until > now(&sim) + 2.5, "3 s");
     assert!(sim.app.world().get::<CaCameraReverse>(mate).is_none(), "not a teammate");
@@ -433,7 +488,11 @@ fn t28_turret_target() {
         .map(|h| (h.0, h.3))
         .collect();
     assert_eq!(shots.len(), 100, "100 rays");
-    assert!(shots[0].0 >= landed_at + 2.833, "set up first: {}", shots[0].0 - landed_at);
+    assert!(
+        shots[0].0 >= landed_at + 2.833,
+        "set up first: {}",
+        shots[0].0 - landed_at
+    );
     for (t, d) in &shots {
         assert!(in_a_zone(*d, 12.0), "12 x a zone at {t}: {d}");
     }
@@ -585,7 +644,10 @@ fn t31_lgb() {
             break;
         }
     }
-    assert!(touched.expect("touched") < 0.35, "the marker touches the floor at about 0.2 s");
+    assert!(
+        touched.expect("touched") < 0.35,
+        "the marker touches the floor at about 0.2 s"
+    );
     assert!((spawned.expect("shell") - 8.0).abs() < 0.15, "at 8 s: {spawned:?}");
     assert_near(start, Vec3::new(0.0, 3000.0 + 2.0, 1000.0), 1.5, "3000 u above P");
     let (f, weapon, _, at) = booms(&sim)[0];
@@ -597,7 +659,12 @@ fn t31_lgb() {
     for v in &victims {
         let (c, _) = body(&mut sim, *v);
         let d = dist_u(c, at * U);
-        assert_hp(1000.0 - health(&sim, *v), 2.0 * 110.0 * m(1200.0, d), 0.01, &format!("at {d}"));
+        assert_hp(
+            1000.0 - health(&sim, *v),
+            2.0 * 110.0 * m(1200.0, d),
+            0.01,
+            &format!("at {d}"),
+        );
     }
 }
 
@@ -636,7 +703,11 @@ fn t32_napalm() {
     assert_eq!(seen.len(), 6, "six shells");
     for (i, (f, pos)) in seen.iter().enumerate() {
         assert_eq!(f - seen[0].0, 4 * i as u64, "200 ms apart");
-        assert!((pos.z - (1000.0 + 200.0 * i as f32)).abs() < 1.5, "shell {i} at z {}", pos.z);
+        assert!(
+            (pos.z - (1000.0 + 200.0 * i as f32)).abs() < 1.5,
+            "shell {i} at z {}",
+            pos.z
+        );
         assert!((pos.y - 3002.0).abs() < 1.5, "from 3000 u up: {}", pos.y);
     }
     let w = sim.app.world_mut();
@@ -646,7 +717,10 @@ fn t32_napalm() {
         assert!((z - (1000.0 + 200.0 * i as f32)).abs() < 2.0, "sphere {i} at {z}");
     }
     let s = w.query::<&CaDamageSphere>().iter(w).next().unwrap().clone();
-    assert_eq!((s.params.radius, s.params.rate, s.params.lifetime, s.params.duration), (350.0, 80.0, 5.0, 2.0));
+    assert_eq!(
+        (s.params.radius, s.params.rate, s.params.lifetime, s.params.duration),
+        (350.0, 80.0, 5.0, 2.0)
+    );
     sim.ticks(3);
     let entries = sim
         .app
@@ -691,17 +765,26 @@ fn t33_crossbow_bolt() {
         assert!(s.s.landed, "stuck after 4 steps");
         sim.ticks(2);
         let lost = 10000.0 - health(&sim, victim);
-        assert!(lost >= 94.5 * band - 0.01 && lost <= 115.5 * band + 0.01, "torso x{band}: {lost}");
+        assert!(
+            lost >= 94.5 * band - 0.01 && lost <= 115.5 * band + 0.01,
+            "torso x{band}: {lost}"
+        );
         // Head x6.
         let mut sim = self::sim();
         let owner = far_player(&mut sim, 1);
         let victim = player(&mut sim, x, 1000.0, 0.0, 2);
         set_health(&mut sim, victim, 10000.0);
-        let head = spheres(&mut sim, victim).into_iter().find(|s| s.2 == Location::Head && s.1 > 0.0).unwrap();
+        let head = spheres(&mut sim, victim)
+            .into_iter()
+            .find(|s| s.2 == Location::Head && s.1 > 0.0)
+            .unwrap();
         bolt(&mut sim, BOW, Some(owner), Vec3::new(x, 60.0, 0.0), head.0);
         wait(&mut sim, 0.5);
         let lost = 10000.0 - health(&sim, victim);
-        assert!(lost >= 567.0 * band - 0.01 && lost <= 693.0 * band + 0.01, "head x6 x{band}: {lost}");
+        assert!(
+            lost >= 567.0 * band - 0.01 && lost <= 693.0 * band + 0.01,
+            "head x6 x{band}: {lost}"
+        );
     }
 }
 
@@ -746,7 +829,11 @@ fn stuck_bolt_stays_at_the_hit_point() {
         worst = worst.max(r.distance(r0));
         let o = obj(&sim, b);
         let drawn = sim.app.world().get::<Transform>(b).unwrap().translation;
-        assert!(o.at().distance(drawn) < 1e-3, "tick {tick}: blast point {} vs drawn {drawn}", o.at());
+        assert!(
+            o.at().distance(drawn) < 1e-3,
+            "tick {tick}: blast point {} vs drawn {drawn}",
+            o.at()
+        );
     }
     sim.intent(victim).move_axis = Vec2::ZERO;
     let moved = sim.position(victim).x;
@@ -759,7 +846,10 @@ fn stuck_bolt_stays_at_the_hit_point() {
 fn bolts_of(sim: &mut Sim, owner: Entity) -> Vec<CaObject> {
     let world = sim.app.world_mut();
     let mut q = world.query::<&CaObject>();
-    q.iter(world).filter(|o| o.owner == Some(owner) && matches!(o.kind, Kind::Bolt(_))).cloned().collect()
+    q.iter(world)
+        .filter(|o| o.owner == Some(owner) && matches!(o.kind, Kind::Bolt(_)))
+        .cloned()
+        .collect()
 }
 
 /// Section 7, the crossbow's alternate fire: right mouse fires one bolt at
@@ -816,7 +906,10 @@ fn crossbow_alternate_fire() {
     let shots: Vec<f64> = fired(&sim, w, t0).into_iter().map(|t| t - t0).collect();
     assert_eq!(shots.len(), 2, "{shots:?}");
     assert!(shots[0] < 0.02, "the press fires at once: {shots:?}");
-    assert!((shots[1] - shots[0] - 0.55).abs() <= 0.035, "the next 550 ms later: {shots:?}");
+    assert!(
+        (shots[1] - shots[0] - 0.55).abs() <= 0.035,
+        "the next 550 ms later: {shots:?}"
+    );
 
     // An empty clip: nothing.
     let mut sim = self::sim();
@@ -841,12 +934,23 @@ fn crossbow_alternate_fire() {
 #[test]
 fn t34_explosive_bolt() {
     let setup = |sim: &mut Sim| -> (Entity, Entity, Entity) {
-        solid(sim, Vec3::new(-10.0, -1.0, 300.0 * U), Vec3::new(10.0, 10.0, 310.0 * U), None);
+        solid(
+            sim,
+            Vec3::new(-10.0, -1.0, 300.0 * U),
+            Vec3::new(10.0, 10.0, 310.0 * U),
+            None,
+        );
         let owner = player(sim, 3000.0, 3000.0, 0.0, 1);
         armed(sim, owner, BOW_CTL);
         let victim = player(sim, 45.0, 250.0, 0.0, 2);
         set_health(sim, victim, 1000.0);
-        let b = bolt(sim, BOW_EXPL, Some(owner), Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 60.0 * U, 400.0 * U));
+        let b = bolt(
+            sim,
+            BOW_EXPL,
+            Some(owner),
+            Vec3::new(0.0, 60.0, 0.0),
+            Vec3::new(0.0, 60.0 * U, 400.0 * U),
+        );
         (owner, victim, b)
     };
     let mut sim = sim();
@@ -867,7 +971,12 @@ fn t34_explosive_bolt() {
     sim.ticks(2);
     let (c, _) = body(&mut sim, victim);
     let d = dist_u(c, at);
-    assert_hp(1000.0 - health(&sim, victim), 2.0 * 100.0 * m(250.0, d), 0.01, &format!("at {d}"));
+    assert_hp(
+        1000.0 - health(&sim, victim),
+        2.0 * 100.0 * m(250.0, d),
+        0.01,
+        &format!("at {d}"),
+    );
     // The owner dies first: at once.
     let mut sim = self::sim();
     let (owner, _, b) = setup(&mut sim);
@@ -903,7 +1012,10 @@ fn melee_target(id: &str, surface: f32, yaw: f32) -> (Sim, Entity, Entity) {
     let probe = 2.0;
     let target = sim.spawn_character(sim.position(p) - Vec3::Z * probe, movement::ID);
     sim.intent(target).yaw = yaw;
-    sim.app.world_mut().entity_mut(target).insert(chimera_core::core::Team(2));
+    sim.app
+        .world_mut()
+        .entity_mut(target)
+        .insert(chimera_core::core::Team(2));
     sim.app.world_mut().get_mut::<Health>(target).unwrap().current = 10.0;
     sim.seconds(0.5);
     let e = eye(&sim, p);
@@ -912,7 +1024,8 @@ fn melee_target(id: &str, surface: f32, yaw: f32) -> (Sim, Entity, Entity) {
         .world_mut()
         .run_system_once(move |q: SpatialQuery| {
             let filter = SpatialQueryFilter::from_excluded_entities([p]);
-            q.cast_ray(e, Dir3::NEG_Z, 10.0, true, &filter).map(|h| (h.entity, h.distance))
+            q.cast_ray(e, Dir3::NEG_Z, 10.0, true, &filter)
+                .map(|h| (h.entity, h.distance))
         })
         .unwrap()
         .expect("the ray meets the target");
@@ -928,7 +1041,11 @@ use bevy::ecs::system::RunSystemOnce;
 
 /// Damage `target` took, (time, points).
 fn taken(sim: &Sim, target: Entity) -> Vec<(f64, f32)> {
-    hits(sim).into_iter().filter(|h| h.1 == target).map(|h| (h.0, h.3)).collect()
+    hits(sim)
+        .into_iter()
+        .filter(|h| h.1 == target)
+        .map(|h| (h.0, h.3))
+        .collect()
 }
 
 /// Case 35: the Dom Pedro sword reaches 160 u: a victim whose surface is
@@ -951,14 +1068,19 @@ fn t35_melee_reach() {
         assert_eq!(!t.is_empty(), hits_it, "{id} at {surface}: {t:?}");
         if hits_it {
             let ratio = t[0].1 / 85.0;
-            let zone = [1.0f32, 6.0, 0.9, 0.75, 0.5].iter().any(|z| ratio >= z * 0.9 - 1e-3 && ratio <= z * 1.1 + 1e-3);
+            let zone = [1.0f32, 6.0, 0.9, 0.75, 0.5]
+                .iter()
+                .any(|z| ratio >= z * 0.9 - 1e-3 && ratio <= z * 1.1 + 1e-3);
             assert!(zone, "85 x the roll x a zone: {}", t[0].1);
         }
     }
     // Head: the ray aimed at the head sphere: x6, 459-561.
     let (mut sim, p, target) = melee_target("combat_arms:dompedrosword", 155.0, std::f32::consts::PI);
     let e = eye(&sim, p);
-    let head = spheres(&mut sim, target).into_iter().find(|s| s.2 == Location::Head && s.1 > 0.0).unwrap();
+    let head = spheres(&mut sim, target)
+        .into_iter()
+        .find(|s| s.2 == Location::Head && s.1 > 0.0)
+        .unwrap();
     let d = head.0 - e;
     sim.intent(p).pitch = d.y.atan2(d.xz().length());
     sim.ticks(2);
@@ -971,13 +1093,21 @@ fn t35_melee_reach() {
     // (The ray meets the first sphere on its line, not always the head's:
     // whichever it is, 85 x the roll x that zone.)
     let ratio = t[0].1 / 85.0;
-    assert!([1.0f32, 6.0, 0.9, 0.75, 0.5].iter().any(|z| ratio >= z * 0.9 - 1e-3 && ratio <= z * 1.1 + 1e-3), "{}", t[0].1);
+    assert!(
+        [1.0f32, 6.0, 0.9, 0.75, 0.5]
+            .iter()
+            .any(|z| ratio >= z * 0.9 - 1e-3 && ratio <= z * 1.1 + 1e-3),
+        "{}",
+        t[0].1
+    );
 }
 
 /// Whether `amount` is `base` times one of the hit table's zone factors
 /// (the level ray meets whichever sphere is first on the line).
 fn in_a_zone(amount: f32, base: f32) -> bool {
-    [1.0f32, 0.9, 0.75, 0.5, 6.0].iter().any(|z| (amount - base * z).abs() < 0.01)
+    [1.0f32, 0.9, 0.75, 0.5, 6.0]
+        .iter()
+        .any(|z| (amount - base * z).abs() < 0.01)
 }
 
 /// Case 36: a Machete's right button hits twice, 70 at 667 ms and 70 at
@@ -1033,13 +1163,20 @@ fn t37_chainsaw_secondary() {
     let t = taken(&sim, target);
     assert!(t.len() >= 14, "two swings: {}", t.len());
     for (_, amount) in &t {
-        assert!(in_a_zone(*amount, 15.0) && *amount == t[0].1, "15 each x a zone: {amount}");
+        assert!(
+            in_a_zone(*amount, 15.0) && *amount == t[0].1,
+            "15 each x a zone: {amount}"
+        );
     }
     let first = t[0].0;
     let offsets = [0.0, 0.052, 0.103, 0.155, 0.206, 0.257, 0.309];
     for (k, off) in offsets.iter().enumerate() {
         assert!((t[k].0 - first - off).abs() < 0.04, "hit {k} at {}", t[k].0 - first);
-        assert!((t[7 + k].0 - first - 0.9 - off).abs() < 0.06, "second swing hit {k} at {}", t[7 + k].0 - first);
+        assert!(
+            (t[7 + k].0 - first - 0.9 - off).abs() < 0.06,
+            "second swing hit {k} at {}",
+            t[7 + k].0 - first
+        );
     }
 }
 
@@ -1051,7 +1188,12 @@ fn t37_chainsaw_secondary() {
 #[test]
 fn t38_no_lock_on_no_back_blast() {
     let mut sim = sim();
-    solid(&mut sim, Vec3::new(-10.0, -1.0, 800.0 * U), Vec3::new(10.0, 10.0, 810.0 * U), None);
+    solid(
+        &mut sim,
+        Vec3::new(-10.0, -1.0, 800.0 * U),
+        Vec3::new(10.0, 10.0, 810.0 * U),
+        None,
+    );
     let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
     let behind = player(&mut sim, 0.0, -30.0, 0.0, 2);
     let aside = player(&mut sim, 600.0, 300.0, 0.0, 2);
@@ -1061,7 +1203,10 @@ fn t38_no_lock_on_no_back_blast() {
     sim.intent(shooter).fire = false;
     let (_, weapon, who, at) = until_boom(&mut sim, 2.0);
     assert_eq!((weapon, who), (LAW, Some(shooter)));
-    assert!((at.z - 799.0).abs() < 1.5 && at.x.abs() < 2.0, "along the aim, at the wall: {at}");
+    assert!(
+        (at.z - 799.0).abs() < 1.5 && at.x.abs() < 2.0,
+        "along the aim, at the wall: {at}"
+    );
     sim.ticks(3);
     assert_eq!(health(&sim, behind), 100.0, "nothing behind");
     assert_eq!(health(&sim, aside), 100.0, "nothing homed on");
@@ -1080,9 +1225,20 @@ fn t39_round_end() {
     let claymore = landed(&mut sim, CLAYMORE, Some(owner), 1100.0, 0.0);
     let caltrops = landed(&mut sim, CALTROPS, Some(owner), 1200.0, 0.0);
     explode_at(&mut sim, M32_INCENDIARY, Some(owner), Vec3::new(-100.0, 0.0, 0.0));
-    let spheres_before = sim.app.world_mut().query::<&CaDamageSphere>().iter(sim.app.world()).count();
+    let spheres_before = sim
+        .app
+        .world_mut()
+        .query::<&CaDamageSphere>()
+        .iter(sim.app.world())
+        .count();
     assert_eq!(spheres_before, 1);
-    let rocket = projectile(&mut sim, LAW, Some(owner), Vec3::new(0.0, 40.0, 0.0), Vec3::new(0.0, 0.0, 1300.0));
+    let rocket = projectile(
+        &mut sim,
+        LAW,
+        Some(owner),
+        Vec3::new(0.0, 40.0, 0.0),
+        Vec3::new(0.0, 0.0, 1300.0),
+    );
     assert!(alive(&sim, rocket));
     let until = now(&sim) + 10.0;
     sim.app.world_mut().insert_resource(CaMatch {
@@ -1090,8 +1246,19 @@ fn t39_round_end() {
         ..default()
     });
     sim.ticks(10);
-    assert!(!alive(&sim, mine) && !alive(&sim, claymore) && !alive(&sim, caltrops), "devices removed");
-    assert_eq!(sim.app.world_mut().query::<&CaDamageSphere>().iter(sim.app.world()).count(), 0, "the sphere too");
+    assert!(
+        !alive(&sim, mine) && !alive(&sim, claymore) && !alive(&sim, caltrops),
+        "devices removed"
+    );
+    assert_eq!(
+        sim.app
+            .world_mut()
+            .query::<&CaDamageSphere>()
+            .iter(sim.app.world())
+            .count(),
+        0,
+        "the sphere too"
+    );
     assert!(booms(&sim).iter().all(|b| b.1 != MINE && b.1 != CLAYMORE), "silently");
     let boom = until_boom(&mut sim, 2.0);
     assert_eq!(boom.1, LAW, "the rocket still detonates");
@@ -1129,9 +1296,15 @@ fn net_stuck_bolt_is_drawn_on_the_body() {
     // A bolt from 3 m in front of him at his chest, on the server.
     let (torso, start) = {
         let w = sim.server.app.world_mut();
-        let mut q = w.query::<(&Transform, &Intent, &chimera_core::core::MovementState, Option<&ColliderAabb>)>();
+        let mut q = w.query::<(
+            &Transform,
+            &Intent,
+            &chimera_core::core::MovementState,
+            Option<&ColliderAabb>,
+        )>();
         let (t, i, s, a) = q.get(w, victim).unwrap();
-        let (_, _, spheres) = combat_arms::game::weapons::body_geometry(t, i, s, a, *combat_arms::game::weapons::MALE).unwrap();
+        let (_, _, spheres) =
+            combat_arms::game::weapons::body_geometry(t, i, s, a, *combat_arms::game::weapons::MALE).unwrap();
         let torso = combat_arms::game::weapons::MALE
             .iter()
             .zip(&spheres)
@@ -1154,7 +1327,12 @@ fn net_stuck_bolt_is_drawn_on_the_body() {
     sim.ticks(20);
     let o = sim.server.app.world().get::<CaObject>(b).cloned();
     let at = sim.server.app.world().get::<Transform>(victim).unwrap().translation;
-    let prot = sim.server.app.world().get::<chimera_core::core::SpawnProtected>(victim).is_some();
+    let prot = sim
+        .server
+        .app
+        .world()
+        .get::<chimera_core::core::SpawnProtected>(victim)
+        .is_some();
     assert!(
         o.as_ref().is_some_and(|o| o.s.stuck.is_some()),
         "stuck in him: {:?} at {:?}, him at {at}, torso {torso}, start {start}, protected {prot}",
@@ -1163,22 +1341,41 @@ fn net_stuck_bolt_is_drawn_on_the_body() {
     );
     // He strafes; client 0 draws him and the bolt a frame at a time.
     let theirs = sim.local_player(1).unwrap();
-    sim.clients[1].app.world_mut().get_mut::<Intent>(theirs).unwrap().move_axis = Vec2::X;
+    sim.clients[1]
+        .app
+        .world_mut()
+        .get_mut::<Intent>(theirs)
+        .unwrap()
+        .move_axis = Vec2::X;
     sim.set_frame(1.0 / 144.0);
     let owner = Some(sim.client_id(1));
     let mut rels = Vec::new();
     let from = sim.server.app.world().get::<Transform>(victim).unwrap().translation;
     for _ in 0..200 {
         sim.step();
-        let Some(him) = NetSim::owned_by(&mut sim.clients[0], owner) else { continue };
+        let Some(him) = NetSim::owned_by(&mut sim.clients[0], owner) else {
+            continue;
+        };
         let w = sim.clients[0].app.world_mut();
-        let Some(item) = w.query_filtered::<&Transform, With<chimera_net::net::NetItem>>().iter(w).next().map(|t| t.translation) else {
+        let Some(item) = w
+            .query_filtered::<&Transform, With<chimera_net::net::NetItem>>()
+            .iter(w)
+            .next()
+            .map(|t| t.translation)
+        else {
             continue;
         };
         let body = w.get::<Transform>(him).unwrap().translation;
         rels.push(item - body);
     }
-    let ran = sim.server.app.world().get::<Transform>(victim).unwrap().translation.distance(from);
+    let ran = sim
+        .server
+        .app
+        .world()
+        .get::<Transform>(victim)
+        .unwrap()
+        .translation
+        .distance(from);
     assert!(ran > 2.0, "he ran: {ran} m");
     assert!(rels.len() > 150, "drawn: {}", rels.len());
     let r0 = rels[0];
@@ -1200,7 +1397,12 @@ fn net_rocket_seen_and_damaging() {
         app.add_plugins(GreyboxMapPlugin);
         app.insert_resource(StartingWeapons {
             team: Vec::new(),
-            all: vec![combat_arms::game::weapons::RIFLE, combat_arms::game::inventory::KNIFE, M67, LAW],
+            all: vec![
+                combat_arms::game::weapons::RIFLE,
+                combat_arms::game::inventory::KNIFE,
+                M67,
+                LAW,
+            ],
         });
     });
     sim.set_frame(TICK_INTERVAL);
@@ -1213,7 +1415,11 @@ fn net_rocket_seen_and_damaging() {
     sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().select = None;
     sim.ticks(120);
     let active = sim.clients[0].app.world().get::<Inventory>(me).unwrap().active.unwrap();
-    assert_eq!(sim.clients[0].app.world().get::<Weapon>(active).unwrap().id, LAW, "drawn");
+    assert_eq!(
+        sim.clients[0].app.world().get::<Weapon>(active).unwrap().id,
+        LAW,
+        "drawn"
+    );
     sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = true;
     sim.ticks(1);
     sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = false;
@@ -1224,7 +1430,10 @@ fn net_rocket_seen_and_damaging() {
             let w = c.app.world_mut();
             // Drawn by its projectile's key (the record's model; the
             // placeholder in the built-in data, which names none).
-            if w.query::<&ShownItem>().iter(w).any(|i| i.0.starts_with(combat_arms::game::special::PROJECTILE_KEY)) {
+            if w.query::<&ShownItem>()
+                .iter(w)
+                .any(|i| i.0.starts_with(combat_arms::game::special::PROJECTILE_KEY))
+            {
                 seen[i] = true;
             }
         }
@@ -1232,7 +1441,11 @@ fn net_rocket_seen_and_damaging() {
     });
     assert!(ok, "drawn on both clients: {seen:?}");
     for i in 0..2 {
-        let g = sim.clients[i].app.world().resource::<chimera_net::net::predict::NetGraph>().clone();
+        let g = sim.clients[i]
+            .app
+            .world()
+            .resource::<chimera_net::net::predict::NetGraph>()
+            .clone();
         assert_eq!(g.errors, 0, "client {i} mispredicted the shot ({:?})", g.last_differing);
     }
     // Put it on the other player's feet on the server and let it go off.
@@ -1240,7 +1453,11 @@ fn net_rocket_seen_and_damaging() {
     let at = sim.server.app.world().get::<Transform>(victim).unwrap().translation;
     {
         let w = sim.server.app.world_mut();
-        let r = w.query_filtered::<Entity, With<CaObject>>().iter(w).next().expect("on the server");
+        let r = w
+            .query_filtered::<Entity, With<CaObject>>()
+            .iter(w)
+            .next()
+            .expect("on the server");
         let mut o = w.get_mut::<CaObject>(r).unwrap();
         o.pos = (at + Vec3::new(0.5, 0.0, 0.0)) / U;
         o.velocity = Vec3::ZERO;
@@ -1280,7 +1497,10 @@ fn a_turret_takes_a_round_once_and_breaks_with_a_line() {
     armed(&mut sim, shooter, RIFLE);
     let t = landed(&mut sim, "test:turret_exact", Some(owner), 0.0, 300.0);
     sim.ticks(4);
-    assert!(sim.app.world().get::<avian3d::prelude::Collider>(t).is_some(), "a collider other games' rounds meet");
+    assert!(
+        sim.app.world().get::<avian3d::prelude::Collider>(t).is_some(),
+        "a collider other games' rounds meet"
+    );
     let e = eye(&sim, shooter);
     let d = obj(&sim, t).at() - e;
     {
@@ -1302,12 +1522,19 @@ fn a_turret_takes_a_round_once_and_breaks_with_a_line() {
     let on_it: Vec<_> = hits(&sim).into_iter().filter(|h| h.1 == t).collect();
     let fired = rounds_fired(&sim, shooter);
     assert!(!on_it.is_empty());
-    assert!(on_it.len() <= fired, "one damage a round at most: {} hits of {fired} rounds", on_it.len());
+    assert!(
+        on_it.len() <= fired,
+        "one damage a round at most: {} hits of {fired} rounds",
+        on_it.len()
+    );
     let total: f32 = on_it.iter().map(|h| h.3).sum();
     assert!(total >= 350.0 - 1.0, "350 HP taken: {total}");
     let line = sim.app.world().resource::<Broken>().0.clone();
     assert_eq!(line.len(), 1, "one line: {line:?}");
-    assert_eq!((line[0].what, line[0].owner, line[0].attacker), ("test:turret_exact", Some(owner), Some(shooter)));
+    assert_eq!(
+        (line[0].what, line[0].owner, line[0].attacker),
+        ("test:turret_exact", Some(owner), Some(shooter))
+    );
     assert_eq!(line[0].weapon, Some(RIFLE));
 }
 
@@ -1327,7 +1554,13 @@ fn a_maps_unload_takes_the_objects() {
     let mut sim = sim();
     let owner = far_player(&mut sim, 1);
     landed(&mut sim, "test:turret_exact", Some(owner), 0.0, 300.0);
-    projectile(&mut sim, LAW, Some(owner), Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1300.0));
+    projectile(
+        &mut sim,
+        LAW,
+        Some(owner),
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1300.0),
+    );
     chimera_world::map::unload_map(sim.app.world_mut());
     let w = sim.app.world_mut();
     assert_eq!(w.query::<&CaObject>().iter(w).count(), 0, "none left");
@@ -1341,7 +1574,10 @@ fn a_turret_on_the_network() {
     let link = LinkConditions::default();
     let mut sim = NetSim::new(CaSim, link, 7, 2, |app| {
         app.add_plugins(GreyboxMapPlugin);
-        app.init_resource::<Broken>().add_systems(PreUpdate, log_broken.after(bevy_replicon::prelude::ClientSystems::Receive));
+        app.init_resource::<Broken>().add_systems(
+            PreUpdate,
+            log_broken.after(bevy_replicon::prelude::ClientSystems::Receive),
+        );
         app.insert_resource(StartingWeapons {
             team: Vec::new(),
             all: vec![combat_arms::game::inventory::KNIFE, "combat_arms:auto-turret"],
@@ -1367,25 +1603,41 @@ fn a_turret_on_the_network() {
     let mut turret = None;
     let ok = sim.until(600, |s| {
         let w = s.server.app.world_mut();
-        turret = w.query::<(Entity, &CaObject)>().iter(w).find(|(_, o)| o.s.landed).map(|(e, _)| e);
+        turret = w
+            .query::<(Entity, &CaObject)>()
+            .iter(w)
+            .find(|(_, o)| o.s.landed)
+            .map(|(e, _)| e);
         turret.is_some()
     });
     assert!(ok, "landed on the server");
-    let at = sim.server.app.world().get::<Transform>(turret.unwrap()).unwrap().translation;
+    let at = sim
+        .server
+        .app
+        .world()
+        .get::<Transform>(turret.unwrap())
+        .unwrap()
+        .translation;
     {
         let w = sim.server.app.world_mut();
         w.get_mut::<Transform>(other).unwrap().translation = at + Vec3::new(0.0, 1.0, -4.0);
         w.get_mut::<Position>(other).unwrap().0 = at + Vec3::new(0.0, 1.0, -4.0);
         w.get_mut::<Health>(other).unwrap().current = 1000.0;
         // On the other side.
-        let mine = w.get::<chimera_core::core::Team>(w.get::<CaObject>(turret.unwrap()).unwrap().owner.unwrap()).map_or(1, |t| t.0);
-        w.entity_mut(other).insert(chimera_core::core::Team(if mine == 1 { 2 } else { 1 }));
+        let mine = w
+            .get::<chimera_core::core::Team>(w.get::<CaObject>(turret.unwrap()).unwrap().owner.unwrap())
+            .map_or(1, |t| t.0);
+        w.entity_mut(other)
+            .insert(chimera_core::core::Team(if mine == 1 { 2 } else { 1 }));
     }
     let mut seen = [false; 2];
     let ok = sim.until(600, |s| {
         for (i, c) in s.clients.iter_mut().enumerate() {
             let w = c.app.world_mut();
-            let drawn = w.query::<&ShownItem>().iter(w).any(|i| i.0 == "combat_arms:auto-turret");
+            let drawn = w
+                .query::<&ShownItem>()
+                .iter(w)
+                .any(|i| i.0 == "combat_arms:auto-turret");
             let shots = w.query::<&special::CaTurretShots>().iter(w).any(|s| s.shots > 0);
             seen[i] = drawn && shots;
         }
@@ -1400,7 +1652,14 @@ fn a_turret_on_the_network() {
         o.s.broken_by = Some(other);
     }
     let ok = sim.until(300, |s| {
-        s.clients.iter().all(|c| c.app.world().resource::<Broken>().0.iter().any(|d| d.what == "combat_arms:auto-turret"))
+        s.clients.iter().all(|c| {
+            c.app
+                .world()
+                .resource::<Broken>()
+                .0
+                .iter()
+                .any(|d| d.what == "combat_arms:auto-turret")
+        })
     });
     assert!(ok, "the broken line on both clients");
 }

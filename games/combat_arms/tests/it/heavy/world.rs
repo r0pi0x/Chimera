@@ -64,14 +64,23 @@ fn check_map(mount: &chimera_core::mount::Mount, name: &str) {
             .sum();
         assert!(map.collision_indices.len() + nodes > 1000, "{name}");
     }
-    assert!(lightmap.width <= world::ATLAS_MAX && lightmap.height <= world::ATLAS_MAX, "{name}");
+    assert!(
+        lightmap.width <= world::ATLAS_MAX && lightmap.height <= world::ATLAS_MAX,
+        "{name}"
+    );
     for m in &map.meshes {
         assert_eq!(m.lightmap_uvs.len(), m.positions.len(), "{name}");
-        assert!(m.lightmap_uvs.iter().flatten().all(|c| (0.0..=1.0).contains(c)), "{name}");
+        assert!(
+            m.lightmap_uvs.iter().flatten().all(|c| (0.0..=1.0).contains(c)),
+            "{name}"
+        );
         assert!(m.indices.iter().all(|&i| (i as usize) < m.positions.len()), "{name}");
         assert!(m.positions.iter().flatten().all(|c| c.is_finite()), "{name}");
     }
-    assert!(!map.spawns.is_empty() && map.spawn_yaws.len() == map.spawns.len(), "{name}");
+    assert!(
+        !map.spawns.is_empty() && map.spawn_yaws.len() == map.spawns.len(),
+        "{name}"
+    );
     assert!(map.spawns.iter().all(|(p, _)| p.is_finite()), "{name}");
     let converted = started.elapsed();
     let (feet, _) = map.spawns[0];
@@ -80,13 +89,19 @@ fn check_map(mount: &chimera_core::mount::Mount, name: &str) {
     let p = sim.spawn_character(feet + Vec3::Y * 0.5, movement::ID);
     sim.seconds(1.0);
     let at = sim.position(p);
-    eprintln!("{name}: converted in {converted:.1?}, spawned at {feet}, standing at {at} ({:.1?} in all)", started.elapsed());
+    eprintln!(
+        "{name}: converted in {converted:.1?}, spawned at {feet}, standing at {at} ({:.1?} in all)",
+        started.elapsed()
+    );
     if NO_FLOOR.contains(&name) {
         // Over water with nothing solid below (`hgoilrig_spawns_on_its_own_family`).
         assert!(at.y > feet.y - 20.0, "{name}: at {at}, spawn {feet}");
         return;
     }
-    assert!(at.y > feet.y - 0.5 && at.y < feet.y + 2.0, "{name}: standing at {at}, spawn {feet}");
+    assert!(
+        at.y > feet.y - 0.5 && at.y < feet.y + 2.0,
+        "{name}: standing at {at}, spawn {feet}"
+    );
 }
 
 /// Maps whose spawns have no solid floor under them in the file: the
@@ -169,7 +184,12 @@ fn warehouse_spawns() {
     let Some(map) = warehouse() else { return };
     assert_eq!(map.name, "combat_arms:warehouse");
     assert_eq!(map.spawns.len(), 24);
-    let teams = |t: u8| map.spawns.iter().filter(|(_, team)| team.map(|x| x.0) == Some(t)).count();
+    let teams = |t: u8| {
+        map.spawns
+            .iter()
+            .filter(|(_, team)| team.map(|x| x.0) == Some(t))
+            .count()
+    };
     assert_eq!((teams(1), teams(2)), (12, 12));
     // Object 92, GameStartPoint11 (JSF), at (618, −5546, −2271.0002) u in
     // file axes: Z mirrored, metres; its feet on the floor below.
@@ -203,8 +223,16 @@ fn warehouse_collision_sky_and_fog() {
     };
     // Non-solid faces with a cut-out texture (wire, leaves) meet nothing
     // (`world::FOLIAGE`, ours); the rest stop traces.
-    let foliage = map.collision_sets.iter().find(|c| c.name == world::FOLIAGE).map_or(0, |c| c.indices.len());
-    assert!(tris(false, true) + foliage >= 4_960, "non-solid polygons: {} + {foliage}", tris(false, true));
+    let foliage = map
+        .collision_sets
+        .iter()
+        .find(|c| c.name == world::FOLIAGE)
+        .map_or(0, |c| c.indices.len());
+    assert!(
+        tris(false, true) + foliage >= 4_960,
+        "non-solid polygons: {} + {foliage}",
+        tris(false, true)
+    );
     assert!(tris(true, false) >= 50, "blocker polygons: {}", tris(true, false));
     // Sky: SkyPointerBox00 at (6623, 7009, -1471) u, SkyDims 256,
     // InnerPercent 0.001; extents +-(9952, 10080, 10112).
@@ -212,14 +240,29 @@ fn warehouse_collision_sky_and_fog() {
     let sky_at = |p: Vec3| cam.origin + p / cam.scale;
     let engine = |p: Vec3| Vec3::new(p.x, p.y, -p.z) * s;
     let close = |a: Vec3, b: Vec3| (a - b).abs().max_element() < 0.01 * s;
-    assert!(close(sky_at(Vec3::ZERO), engine(Vec3::new(6623.0, 7009.0, -1471.0))), "{}", sky_at(Vec3::ZERO) / s);
+    assert!(
+        close(sky_at(Vec3::ZERO), engine(Vec3::new(6623.0, 7009.0, -1471.0))),
+        "{}",
+        sky_at(Vec3::ZERO) / s
+    );
     let corner = engine(Vec3::new(9952.0, 10080.0, 10112.0));
     let want = engine(Vec3::new(6623.256, 7009.256, -1470.744));
-    assert!((sky_at(corner) - want).abs().max_element() < 0.02 * s, "{} vs {}", sky_at(corner) / s, want / s);
-    assert!(map.meshes.iter().any(|m| m.skybox), "the sky's own world model is drawn by the sky camera");
+    assert!(
+        (sky_at(corner) - want).abs().max_element() < 0.02 * s,
+        "{} vs {}",
+        sky_at(corner) / s,
+        want / s
+    );
+    assert!(
+        map.meshes.iter().any(|m| m.skybox),
+        "the sky's own world model is drawn by the sky camera"
+    );
     let fog = map.fog.as_ref().expect("fog");
     assert_eq!(fog.color.map(|c| (c * 255.0).round() as u8), [23, 23, 19]);
-    assert!(fog.start.abs() < 1e-6 && (fog.end - 10_000.0 * s).abs() < 1e-3 && fog.linear, "{fog:?}");
+    assert!(
+        fog.start.abs() < 1e-6 && (fog.end - 10_000.0 * s).abs() < 1e-3 && fog.linear,
+        "{fog:?}"
+    );
     assert_eq!(map.file_hash, None);
 }
 
@@ -268,7 +311,10 @@ fn warehouse_walk_and_collide() {
     sim.seconds(1.0);
     let rest = sim.position(p);
     assert!(sim.velocity(p).length() < 0.05, "at rest: {}", sim.velocity(p));
-    assert!(rest.y > feet.y && rest.y < feet.y + 1.5, "standing at {rest}, feet {feet}");
+    assert!(
+        rest.y > feet.y && rest.y < feet.y + 1.5,
+        "standing at {rest}, feet {feet}"
+    );
 
     // Walk forward for a second: moves over the floor, stays on it.
     sim.intent(p).move_axis = Vec2::new(0.0, 1.0);
@@ -327,7 +373,10 @@ fn second_layers_from_the_install() {
     for &i in &meshes {
         let m = &map.meshes[i];
         assert_eq!(m.blend.unwrap().mode, BlendMode::BaseAlpha);
-        assert_eq!((m.uvs2.len(), m.blend_weights.len()), (m.positions.len(), m.positions.len()));
+        assert_eq!(
+            (m.uvs2.len(), m.blend_weights.len()),
+            (m.positions.len(), m.positions.len())
+        );
         assert!(m.blend_weights.iter().all(|w| (0.0..=1.0).contains(w)));
     }
     let map = world::load_from(&mount, "snowvalley").unwrap();
@@ -342,7 +391,11 @@ fn second_layers_from_the_install() {
     let windows: Vec<_> = map.meshes.iter().filter_map(|m| m.flat_envmap).collect();
     assert!(windows.len() >= 10, "{} meshes with an environment map", windows.len());
     assert!(windows.iter().all(|e| e.by_base_alpha && e.signed_add));
-    assert!(windows.iter().any(|e| map.textures[e.texture].name.eq_ignore_ascii_case("TEXFX\\SKY\\SKY20_RT.dtx")));
+    assert!(windows.iter().any(|e| {
+        map.textures[e.texture]
+            .name
+            .eq_ignore_ascii_case("TEXFX\\SKY\\SKY20_RT.dtx")
+    }));
     let river = map
         .meshes
         .iter()
@@ -431,8 +484,11 @@ fn hgoilrig_spawns_on_its_own_family() {
     let Some(mount) = mount() else { return };
     let map = world::load_world(&mount, "hgoilrig").unwrap();
     let s = movement::movement_data().meters_per_unit;
-    let starts: Vec<&chimera_world::map::MapEntity> =
-        map.entities.iter().filter(|e| e.classname() == "GameStartPoint").collect();
+    let starts: Vec<&chimera_world::map::MapEntity> = map
+        .entities
+        .iter()
+        .filter(|e| e.classname() == "GameStartPoint")
+        .collect();
     let family = |name: &str| starts.iter().filter(|e| e.get("GameType") == Some(name)).count();
     assert_eq!((family("HungerGame"), family("Team Death Match")), (32, 1));
     assert_eq!(map.spawns.len(), 16, "{:?}", map.spawns);
@@ -452,8 +508,12 @@ fn hgoilrig_spawns_on_its_own_family() {
     assert!(at.y > feet.y - 2.5, "fell from {feet} to {at}");
     // The rules' list for a TDM player: the HungerGame points too.
     let objects = combat_arms::game::rules::objects::read(&entities, s);
-    let own: Vec<Transform> =
-        objects.starts.iter().filter(|p| p.qualifies("HungerGame", false)).map(|p| p.at).collect();
+    let own: Vec<Transform> = objects
+        .starts
+        .iter()
+        .filter(|p| p.qualifies("HungerGame", false))
+        .map(|p| p.at)
+        .collect();
     assert_eq!(own.len(), 16);
     let world = sim.app.world_mut();
     world.insert_resource(objects);
@@ -484,7 +544,11 @@ fn r10_grayhammer_fans_animate() {
         let f = m.skin_frames.as_ref().expect("the fan plays");
         assert_eq!((f.frames.len(), f.frame_ms), (8, 52), "8 frames, 19 a second");
     }
-    let sprites = map.meshes.iter().filter(|m| m.material.to_lowercase().ends_with(".spr")).count();
+    let sprites = map
+        .meshes
+        .iter()
+        .filter(|m| m.material.to_lowercase().ends_with(".spr"))
+        .count();
     let playing = map.meshes.iter().filter(|m| m.skin_frames.is_some()).count();
     eprintln!("grayhammer: {sprites} sprite sections, {playing} playing");
     assert!(playing >= 1);
@@ -501,14 +565,27 @@ fn r10_grayhammer_fans_animate() {
 fn glass_sets_and_glass_world_models_name_their_surface() {
     let Some(mount) = mount() else { return };
     let tris = |map: &MapData, name: &str| -> usize {
-        map.collision_sets.iter().filter(|c| c.name == name).map(|c| c.indices.len()).sum()
+        map.collision_sets
+            .iter()
+            .filter(|c| c.name == name)
+            .map(|c| c.indices.len())
+            .sum()
     };
     let crystal = world::load_world(&mount, "crystaltower").unwrap();
-    for set in ["glass (Glass)", "non-solid glass (Glass)", "glass (Bullet-Proof Glass)", "non-solid glass (Bullet-Proof Glass)"] {
+    for set in [
+        "glass (Glass)",
+        "non-solid glass (Glass)",
+        "glass (Bullet-Proof Glass)",
+        "non-solid glass (Bullet-Proof Glass)",
+    ] {
         assert!(tris(&crystal, set) > 0, "crystaltower: {set}");
     }
     for set in crystal.collision_sets.iter().filter(|c| c.see_through) {
-        let want = if set.name.contains("Bullet-Proof") { "Bullet-Proof Glass" } else { "Glass" };
+        let want = if set.name.contains("Bullet-Proof") {
+            "Bullet-Proof Glass"
+        } else {
+            "Glass"
+        };
         assert_eq!(set.surface.as_deref(), Some(want), "{}", set.name);
     }
     let nodes = |ty: &str| {
@@ -519,7 +596,10 @@ fn glass_sets_and_glass_world_models_name_their_surface() {
     };
     assert_eq!((nodes("40"), nodes("41")), (16, 8), "crystaltower's glass world models");
     let freezer = world::load_world(&mount, "freezer").unwrap();
-    assert!(tris(&freezer, "glass (Bullet-Proof Glass)") > 1000 && tris(&freezer, "glass (Glass)") == 0, "freezer");
+    assert!(
+        tris(&freezer, "glass (Bullet-Proof Glass)") > 1000 && tris(&freezer, "glass (Glass)") == 0,
+        "freezer"
+    );
 }
 
 /// Snow Valley (the 2026-11-14 playtest): its pine needles (non-solid
@@ -533,17 +613,45 @@ fn snow_valley_foliage_and_light_cones() {
     use chimera_world::map::MapAlpha;
     let Some(mount) = mount() else { return };
     let map = world::load_world(&mount, "snowvalley").unwrap();
-    let set = |name: &str| map.collision_sets.iter().find(|s| s.name == name).unwrap_or_else(|| panic!("no set {name}"));
+    let set = |name: &str| {
+        map.collision_sets
+            .iter()
+            .find(|s| s.name == name)
+            .unwrap_or_else(|| panic!("no set {name}"))
+    };
     let foliage = set(world::FOLIAGE);
     assert!(!foliage.characters && !foliage.traces, "nothing meets the leaves");
     // 8,448 needle polygons (and a few dozen more cut-out faces): at
     // least one triangle each.
-    assert!(foliage.indices.len() >= 8448, "{} foliage triangles", foliage.indices.len());
+    assert!(
+        foliage.indices.len() >= 8448,
+        "{} foliage triangles",
+        foliage.indices.len()
+    );
     let detail = set("non-solid detail");
-    assert!(detail.indices.len() < foliage.indices.len(), "the leaves left the traces' set: {}", detail.indices.len());
-    let cones: Vec<_> = map.meshes.iter().filter(|m| m.material.to_ascii_lowercase().contains("lightcone")).collect();
+    assert!(
+        detail.indices.len() < foliage.indices.len(),
+        "the leaves left the traces' set: {}",
+        detail.indices.len()
+    );
+    let cones: Vec<_> = map
+        .meshes
+        .iter()
+        .filter(|m| m.material.to_ascii_lowercase().contains("lightcone"))
+        .collect();
     assert!(!cones.is_empty(), "light cones drawn");
-    assert!(cones.iter().all(|m| m.alpha == MapAlpha::Add), "{:?}", cones.iter().map(|m| m.alpha).collect::<Vec<_>>());
-    let needles: Vec<_> = map.meshes.iter().filter(|m| m.material.to_ascii_lowercase().contains("snowedpine01")).collect();
-    assert!(!needles.is_empty() && needles.iter().all(|m| matches!(m.alpha, MapAlpha::Mask(_))), "needles cut out");
+    assert!(
+        cones.iter().all(|m| m.alpha == MapAlpha::Add),
+        "{:?}",
+        cones.iter().map(|m| m.alpha).collect::<Vec<_>>()
+    );
+    let needles: Vec<_> = map
+        .meshes
+        .iter()
+        .filter(|m| m.material.to_ascii_lowercase().contains("snowedpine01"))
+        .collect();
+    assert!(
+        !needles.is_empty() && needles.iter().all(|m| matches!(m.alpha, MapAlpha::Mask(_))),
+        "needles cut out"
+    );
 }

@@ -258,7 +258,12 @@ fn combat_arms_data_formats_are_traced() {
     let sim = chimera_world::harness::Sim::new(combat_arms::harness::CaSim, GreyboxMapPlugin);
     let world = sim.app.world();
     let all = formats(world);
-    for name in [combat_arms::game::view_model::VIEW, ATTACHMENTS, MOVEMENT, combat_arms::game::data::served::GEAR] {
+    for name in [
+        combat_arms::game::view_model::VIEW,
+        ATTACHMENTS,
+        MOVEMENT,
+        combat_arms::game::data::served::GEAR,
+    ] {
         assert!(all.contains_key(name), "{name}: {:?}", all.keys().collect::<Vec<_>>());
     }
     assert!(all[combat_arms::game::view_model::VIEW].contains("hidden_pieces"));

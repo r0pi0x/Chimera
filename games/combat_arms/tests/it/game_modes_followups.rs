@@ -52,7 +52,11 @@ fn case_63_intermission_after_every_round() {
     let end = now(&sim);
     assert!((end - t - 3.05).abs() < 0.1, "round end at {:.2}", end - t);
     until(&mut sim, 4.0, |p| matches!(p, Phase::Setup { .. } | Phase::Live));
-    assert!((now(&sim) - t - 6.05).abs() < 0.15, "the next round at {:.2}", now(&sim) - t);
+    assert!(
+        (now(&sim) - t - 6.05).abs() < 0.15,
+        "the next round at {:.2}",
+        now(&sim) - t
+    );
     assert_eq!(m(&sim).round_wins, [1, 0]);
 }
 
@@ -163,7 +167,10 @@ fn case_68_spawn_families() {
     let mut sim = game("SBT", 12);
     let sab = Vec3::new(-6.0, 1.0, 4.0);
     let tdm = Vec3::new(6.0, 1.0, 4.0);
-    objects(&mut sim).starts = vec![start("Team Death Match", Some(JSF), tdm), start("Sabotage", Some(JSF), sab)];
+    objects(&mut sim).starts = vec![
+        start("Team Death Match", Some(JSF), tdm),
+        start("Sabotage", Some(JSF), sab),
+    ];
     let p = join(&mut sim, JSF);
     join(&mut sim, CREED);
     until_live(&mut sim);
@@ -202,7 +209,11 @@ fn case_70_arms_race_table() {
     let l = missions::ladders(sim.app.world());
     assert_eq!(missions::ladder_pick(&l, &[], 14, 0, 50, true), Some(84));
     assert_eq!(l[0].next_kill(14), None, "the last stage");
-    assert_eq!(missions::ladder_weapon(sim.app.world(), 84), Some("combat_arms:m67"), "our stand-in");
+    assert_eq!(
+        missions::ladder_weapon(sim.app.world(), 84),
+        Some("combat_arms:m67"),
+        "our stand-in"
+    );
 }
 
 /// 72. The VIP counts by team size.
@@ -238,7 +249,11 @@ fn case_73_spy_hunt_stage_two() {
     let w = sim.app.world().get::<Inventory>(p[0]).unwrap().active.unwrap();
     sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 0;
     sim.app.world_mut().get_mut::<Health>(p[0]).unwrap().current = 0.3;
-    sim.app.world_mut().get_mut::<chimera_sim::weapon::Armor>(p[0]).unwrap().amount = 0.0 / 100.0;
+    sim.app
+        .world_mut()
+        .get_mut::<chimera_sim::weapon::Armor>(p[0])
+        .unwrap()
+        .amount = 0.0 / 100.0;
     hold_at(&mut sim, p[1], intel, 0.1);
     let t = now(&sim);
     assert_eq!(objectives(&sim).stage, 2);
@@ -249,7 +264,15 @@ fn case_73_spy_hunt_stage_two() {
     assert_eq!(health(&sim, p[0]), 1.0);
     let mag = sim.app.world().get::<Magazine>(w).unwrap();
     assert_eq!((mag.clip, mag.reserve), (mag.size, mag.reserve_max));
-    assert!(sim.app.world().get::<chimera_sim::weapon::Armor>(p[0]).map(combat_arms::game::weapons::points).unwrap() > 0.0, "armour back");
+    assert!(
+        sim.app
+            .world()
+            .get::<chimera_sim::weapon::Armor>(p[0])
+            .map(combat_arms::game::weapons::points)
+            .unwrap()
+            > 0.0,
+        "armour back"
+    );
     assert!(!dead(&sim, p[2]), "the dead respawned");
     sim.seconds(5.1);
     assert!(objectives(&sim).camera_until.is_none());
@@ -264,7 +287,10 @@ fn quarantine_live(n: usize) -> (Sim, Vec<Entity>, Vec<Entity>) {
     let p: Vec<Entity> = (0..n).map(|_| join(&mut sim, JSF)).collect();
     until_live(&mut sim);
     sim.seconds(1.0);
-    assert!(p.iter().all(|e| team(&sim, *e) == JSF), "nobody infected in the warm-up");
+    assert!(
+        p.iter().all(|e| team(&sim, *e) == JSF),
+        "nobody infected in the warm-up"
+    );
     past_warmup(&mut sim);
     unprotect_all(&mut sim);
     sim.seconds(20.2);
@@ -286,7 +312,11 @@ fn case_74_infection_in_place() {
     assert!(!dead(&sim, victim));
     assert_eq!(health(&sim, victim), 1.0);
     assert!(at(&sim, victim).xz().distance(spot.xz()) < 0.05, "where it died");
-    assert!(wait_for(&mut sim, 1.0, |s| weapons(s, victim) == vec![KNIFE]), "{:?}", weapons(&sim, victim));
+    assert!(
+        wait_for(&mut sim, 1.0, |s| weapons(s, victim) == vec![KNIFE]),
+        "{:?}",
+        weapons(&sim, victim)
+    );
     assert_eq!(stats(&sim, hosts[0]).mission_points, 2);
 }
 
@@ -335,7 +365,12 @@ fn case_75_infected_regeneration() {
 #[test]
 fn case_76_mutation_pick() {
     let sim = game("TDM", 2);
-    let w = &sim.app.world().resource::<combat_arms::game::rules::CaRuleSettings>().objectives.mutation_weights;
+    let w = &sim
+        .app
+        .world()
+        .resource::<combat_arms::game::rules::CaRuleSettings>()
+        .objectives
+        .mutation_weights;
     assert_eq!(mutation::condition_tdm(-20, 0, 100), 0, "behind by 20 %");
     assert_eq!(mutation::condition_tdm(20, 0, 100), 2);
     assert_eq!(mutation::condition_tdm(5, 0, 100), 1);
@@ -379,14 +414,25 @@ fn round_at(sim: &mut Sim, shooter: Entity, target: Entity) -> (f32, f32) {
         i.pitch = d.y.atan2(d.xz().length());
     }
     sim.app.world_mut().get_mut::<Health>(target).unwrap().current = 1.0;
-    let armour = sim.app.world().get::<chimera_sim::weapon::Armor>(target).map(combat_arms::game::weapons::points).unwrap();
+    let armour = sim
+        .app
+        .world()
+        .get::<chimera_sim::weapon::Armor>(target)
+        .map(combat_arms::game::weapons::points)
+        .unwrap();
     sim.intent(shooter).fire = true;
     sim.ticks(1);
     sim.intent(shooter).fire = false;
     // The round goes the trigger's latency (3 updates) after the press.
     sim.ticks(4);
     let lost = (1.0 - health(sim, target)) / HP;
-    let used = armour - sim.app.world().get::<chimera_sim::weapon::Armor>(target).map(combat_arms::game::weapons::points).unwrap();
+    let used = armour
+        - sim
+            .app
+            .world()
+            .get::<chimera_sim::weapon::Armor>(target)
+            .map(combat_arms::game::weapons::points)
+            .unwrap();
     sim.seconds(0.3);
     (lost, used)
 }
@@ -456,7 +502,14 @@ fn case_81_spectating() {
     for (key, force) in [("TSV", 2), ("TMM", 2), ("LMS", 0), ("HG", 0)] {
         let mut sim = game(key, 2);
         sim.ticks(2);
-        assert_eq!(sim.app.world().resource::<chimera_core::core::SpectatorRules>().force_camera, force, "{key}");
+        assert_eq!(
+            sim.app
+                .world()
+                .resource::<chimera_core::core::SpectatorRules>()
+                .force_camera,
+            force,
+            "{key}"
+        );
     }
 }
 
@@ -464,11 +517,19 @@ fn case_81_spectating() {
 #[test]
 fn case_84_hunted_start() {
     let mut sim = game("HG", 12);
-    assert_eq!(hunted::start_weapon(&combat_arms::game::data::CaData::builtin()), KNIFE, "without the install");
+    assert_eq!(
+        hunted::start_weapon(&combat_arms::game::data::CaData::builtin()),
+        KNIFE,
+        "without the install"
+    );
     let p = join(&mut sim, JSF);
     join(&mut sim, JSF);
     until_live(&mut sim);
-    assert!(wait_for(&mut sim, 1.0, |s| weapons(s, p) == vec![KNIFE]), "{:?}", weapons(&sim, p));
+    assert!(
+        wait_for(&mut sim, 1.0, |s| weapons(s, p) == vec![KNIFE]),
+        "{:?}",
+        weapons(&sim, p)
+    );
 }
 
 /// 85. The occupied test with a crouched player's box.

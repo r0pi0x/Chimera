@@ -54,9 +54,18 @@ fn level_rocket_leaves_level() {
         assert!(t <= 0.05, "{id}: leaves within three updates of the press: {t}");
         assert!((v.length() - 1300.0).abs() < 1.0, "{id}: 1300 u/s: {v:?}");
         assert!(v.y.abs() / 1300.0 < CONE, "{id}: level, not climbing: {v:?}");
-        assert!(v.x.abs() / 1300.0 < CONE && v.z > 1299.0, "{id}: straight ahead (yaw pi looks down +Z): {v:?}");
+        assert!(
+            v.x.abs() / 1300.0 < CONE && v.z > 1299.0,
+            "{id}: straight ahead (yaw pi looks down +Z): {v:?}"
+        );
         // Straight flight: height unchanged after ten steps.
-        let before = sim.app.world_mut().query::<&CaObject>().iter(sim.app.world()).next().map(|o| o.pos);
+        let before = sim
+            .app
+            .world_mut()
+            .query::<&CaObject>()
+            .iter(sim.app.world())
+            .next()
+            .map(|o| o.pos);
         sim.seconds(0.5);
         let w = sim.app.world_mut();
         if let (Some(b), Some(o)) = (before, w.query::<&CaObject>().iter(w).find(|o| o.weapon == id)) {
@@ -79,9 +88,17 @@ fn rocket_ignores_its_own_kick() {
     sim.intent(p).fire = false;
     sim.ticks(10);
     let w = sim.app.world_mut();
-    let o = w.query::<&CaObject>().iter(w).find(|o| o.weapon == LAW).expect("still flying");
+    let o = w
+        .query::<&CaObject>()
+        .iter(w)
+        .find(|o| o.weapon == LAW)
+        .expect("still flying");
     let now_dir = o.velocity.normalize();
-    assert!((now_dir - v.normalize()).length() < 1e-4, "the kick does not bend the flight: {v:?} then {:?}", o.velocity);
+    assert!(
+        (now_dir - v.normalize()).length() < 1e-4,
+        "the kick does not bend the flight: {v:?} then {:?}",
+        o.velocity
+    );
 }
 
 /// A press during the draw launches when the draw ends: the LAW's 1333 ms,
@@ -97,7 +114,10 @@ fn press_during_draw_waits_for_the_draw() {
     let (t, _) = first_projectile(&mut sim, LAW, 3.0).expect("a rocket");
     sim.intent(p).fire = false;
     assert!(t >= draw - 0.05, "not before the draw ends: {t}");
-    assert!(t <= draw + 0.1, "within a few updates of the draw's end: {t} (draw {draw})");
+    assert!(
+        t <= draw + 0.1,
+        "within a few updates of the draw's end: {t} (draw {draw})"
+    );
 }
 
 /// Shells drop under the object gravity, flames and rockets do not: a
@@ -115,7 +135,13 @@ fn shells_fall_flames_and_rockets_do_not() {
     assert!((v.length() - 1550.0).abs() < 2.0, "1550 u/s: {v:?}");
     assert!(v.y.abs() / 1550.0 < 0.01, "level at the muzzle: {v:?}");
     let w = sim.app.world_mut();
-    let y0 = w.query::<&CaObject>().iter(w).find(|o| o.weapon == M32).unwrap().velocity.y;
+    let y0 = w
+        .query::<&CaObject>()
+        .iter(w)
+        .find(|o| o.weapon == M32)
+        .unwrap()
+        .velocity
+        .y;
     sim.ticks(10);
     let w = sim.app.world_mut();
     if let Some(o) = w.query::<&CaObject>().iter(w).find(|o| o.weapon == M32) {

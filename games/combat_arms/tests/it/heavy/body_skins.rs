@@ -23,7 +23,9 @@
 use std::collections::BTreeMap;
 
 use chimera_core::mount::config::LocalConfig;
-use combat_arms::game::{GAME, INFO, characters::models, data::CaData, effects::library::sprite_texture, model, render_style};
+use combat_arms::game::{
+    GAME, INFO, characters::models, data::CaData, effects::library::sprite_texture, model, render_style,
+};
 use lithtech_formats::dtx::Dtx;
 
 fn mount() -> Option<chimera_core::mount::Mount> {
@@ -66,7 +68,12 @@ fn every_rung_bodys_skins_resolve() {
     }
     let data = ca.characters();
     let show: Vec<String> = std::env::var("CHIMERA_SKINS_SHOW")
-        .map(|v| v.split(',').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect())
+        .map(|v| {
+            v.split(',')
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
     // cause -> pieces (record id, name, file).
     let mut causes: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -95,7 +102,10 @@ fn every_rung_bodys_skins_resolve() {
         };
         let show = show.iter().any(|s| what.to_lowercase().contains(s));
         if show {
-            println!("{what}: upper {:?}; lower {:?}; additional {:?}; styles {:?}", r.upper_skins, r.lower_skins, r.additional_skins, r.render_styles);
+            println!(
+                "{what}: upper {:?}; lower {:?}; additional {:?}; styles {:?}",
+                r.upper_skins, r.lower_skins, r.additional_skins, r.render_styles
+            );
         }
         let (upper, lower) = data.skins(r, 0);
         for lod in model::drawn_lods(&loaded.model) {
@@ -108,9 +118,16 @@ fn every_rung_bodys_skins_resolve() {
                 3 | 4 => data.marks.enemy.clone(),
                 s => data.additional_skin(r, s).unwrap_or_default().to_string(),
             };
-            let style = usize::try_from(lod.render_style).ok().and_then(|i| r.render_styles.get(i)).cloned().unwrap_or_default();
+            let style = usize::try_from(lod.render_style)
+                .ok()
+                .and_then(|i| r.render_styles.get(i))
+                .cloned()
+                .unwrap_or_default();
             if show {
-                println!("  piece: slots {slots:?}, style {} {style} -> {entry:?}", lod.render_style);
+                println!(
+                    "  piece: slots {slots:?}, style {} {style} -> {entry:?}",
+                    lod.render_style
+                );
             }
             match resolve(&entry, &file) {
                 Ok("texture") => {}
@@ -118,7 +135,10 @@ fn every_rung_bodys_skins_resolve() {
                 Err(e) => count(format!("grey: {e}"), format!("{what}: slot {s} -> {entry:?}")),
             }
             if slots.len() > 1 {
-                count("a second texture slot (not drawn)".into(), format!("{what}: slots {slots:?}"));
+                count(
+                    "a second texture slot (not drawn)".into(),
+                    format!("{what}: slots {slots:?}"),
+                );
             }
             if !style.is_empty()
                 && render_style::style(&style) == render_style::Style::Opaque
@@ -137,14 +157,21 @@ fn every_rung_bodys_skins_resolve() {
                 Ok(models::OnDemand { model: c, .. }) => {
                     for (k, look) in c.model.skins[0].iter().enumerate().filter(|(_, l)| l.texture.is_none()) {
                         let part = c.model.meshes[k].body;
-                        count("loaded: a mesh left untextured".into(), format!("{id} {name}: mesh {k} (part {part:?}) {:?}", look.material));
+                        count(
+                            "loaded: a mesh left untextured".into(),
+                            format!("{id} {name}: mesh {k} (part {part:?}) {:?}", look.material),
+                        );
                     }
                 }
                 Err(e) => count("loaded: doesn't load".into(), format!("{id}: {e}")),
             }
         }
     }
-    println!("{} rung bodies, {} animation files read", bodies.len(), children.held().0);
+    println!(
+        "{} rung bodies, {} animation files read",
+        bodies.len(),
+        children.held().0
+    );
     for (cause, list) in &causes {
         println!("\n{cause}: {}", list.len());
         for w in list {
@@ -154,11 +181,28 @@ fn every_rung_bodys_skins_resolve() {
     assert!(bodies.len() > 6, "the install adds bodies to the rungs' pool");
     // The playtest's grey ghillie leaves: slot 5, the record's
     // `AdditionalSkins0`, had no entry.
-    let none = causes.get("grey: no skin entry for the piece's slot").map_or(0, Vec::len);
-    assert_eq!(none, 0, "pieces whose slot names no skin: {:?}", causes.get("grey: no skin entry for the piece's slot"));
-    let ghillie = bodies.iter().filter_map(|&i| data.model(i)).find(|m| m.file.to_lowercase().contains("ghillie"));
+    let none = causes
+        .get("grey: no skin entry for the piece's slot")
+        .map_or(0, Vec::len);
+    assert_eq!(
+        none,
+        0,
+        "pieces whose slot names no skin: {:?}",
+        causes.get("grey: no skin entry for the piece's slot")
+    );
+    let ghillie = bodies
+        .iter()
+        .filter_map(|&i| data.model(i))
+        .find(|m| m.file.to_lowercase().contains("ghillie"));
     if let Some(g) = ghillie {
-        assert!(g.additional_skins.first().is_some_and(|s| s.to_lowercase().contains("ghillie")), "{}: {:?}", g.name, g.additional_skins);
+        assert!(
+            g.additional_skins
+                .first()
+                .is_some_and(|s| s.to_lowercase().contains("ghillie")),
+            "{}: {:?}",
+            g.name,
+            g.additional_skins
+        );
     }
 }
 
@@ -176,7 +220,12 @@ fn r9_piece_skins_from_the_records() {
     let data = ca.characters();
     let face = data.face(160).expect("Face160");
     let reflection = render_style::piece_skin(render_style::Piece::Face, &face.skins, 1, 0).expect("slot 1");
-    assert_eq!(model::normalize(reflection), "textures/128xcharskin.dtx", "{:?}", face.skins);
+    assert_eq!(
+        model::normalize(reflection),
+        "textures/128xcharskin.dtx",
+        "{:?}",
+        face.skins
+    );
     let hair = data.head.iter().find(|h| h.id == 331).expect("Hair331");
     assert_eq!(
         render_style::piece_skin(render_style::Piece::Head, &hair.skins, 0, 1),
@@ -184,5 +233,9 @@ fn r9_piece_skins_from_the_records() {
         "slot 0 = Skin1 at camouflage 1: {:?}",
         hair.skins
     );
-    assert_eq!(render_style::piece_skin(render_style::Piece::Head, &hair.skins, 1, 1), None, "slot 1 is never filled");
+    assert_eq!(
+        render_style::piece_skin(render_style::Piece::Head, &hair.skins, 1, 1),
+        None,
+        "slot 1 is never filled"
+    );
 }

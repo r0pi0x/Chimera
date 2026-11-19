@@ -5,12 +5,12 @@
 //! tests/ui/death_screen.rs, the name tags there too).
 
 use bevy::prelude::*;
+use combat_arms::game::death_cam::math::PITCH_LIMIT;
 use combat_arms::game::death_cam::{
     machine::{Cand, DYING_TIME, Frame, Id, Input, Killer, Machine, NO_KILLER, Phase},
     math::{self, Clip, NoWalls, PullBack},
     screen::{self, Zone},
 };
-use combat_arms::game::death_cam::math::PITCH_LIMIT;
 
 fn close(a: f32, b: f32, tol: f32) {
     assert!((a - b).abs() <= tol, "{a} != {b} (+-{tol})");
@@ -50,7 +50,8 @@ fn case_01_pull_back_motion() {
 
 /// A wall plane at z = 20.
 fn wall(from: Vec3, to: Vec3) -> Option<Vec3> {
-    ((from.z - 20.0) * (to.z - 20.0) <= 0.0 && from.z != to.z).then(|| from + (to - from) * ((20.0 - from.z) / (to.z - from.z)))
+    ((from.z - 20.0) * (to.z - 20.0) <= 0.0 && from.z != to.z)
+        .then(|| from + (to - from) * ((20.0 - from.z) / (to.z - from.z)))
 }
 
 /// 2. As 1 with a wall plane at z = 20: frames 1-4 as above (15.476 at
@@ -429,7 +430,10 @@ fn case_17_zoom() {
     s.input.wheel = 2.0;
     m.frame(&s.frame(0.1));
     close(m.zoom, 80.0, 1e-4);
-    s.input = Input { space: true, ..default() };
+    s.input = Input {
+        space: true,
+        ..default()
+    };
     m.frame(&s.frame(0.2));
     assert_eq!(m.target, Some(5));
     close(m.zoom, 0.0, 1e-6);
@@ -447,20 +451,32 @@ fn case_18_cycling() {
     assert_eq!(m.target, Some(3));
     let mut got = Vec::new();
     for k in 1..=3 {
-        s.input = Input { space: true, ..default() };
+        s.input = Input {
+            space: true,
+            ..default()
+        };
         m.frame(&s.frame(k as f64 * 0.1));
         got.push(m.target.unwrap());
     }
     assert_eq!(got, [5, 7, 3]);
     // Ctrl and Shift cycle too.
-    s.input = Input { ctrl: true, ..default() };
+    s.input = Input {
+        ctrl: true,
+        ..default()
+    };
     m.frame(&s.frame(1.0));
-    s.input = Input { shift: true, ..default() };
+    s.input = Input {
+        shift: true,
+        ..default()
+    };
     m.frame(&s.frame(1.1));
     assert_eq!(m.target, Some(7));
     // During the pull-back nothing happens.
     let mut m = dead_from(killed_by(9));
-    s.input = Input { space: true, ..default() };
+    s.input = Input {
+        space: true,
+        ..default()
+    };
     m.frame(&s.frame(0.0));
     m.frame(&s.frame(0.1));
     assert_eq!(m.phase, Phase::PullBack);
@@ -474,7 +490,10 @@ fn case_19_target_dies() {
     let mut s = Scene::new(vec![cand(3, 1, true), cand(5, 1, true), cand(7, 1, true)]);
     let mut m = dead_from(Killer::Suicide);
     m.frame(&s.frame(0.0));
-    s.input = Input { space: true, ..default() };
+    s.input = Input {
+        space: true,
+        ..default()
+    };
     m.frame(&s.frame(0.1));
     s.input = Input::default();
     assert_eq!(m.target, Some(5));
@@ -520,7 +539,10 @@ fn case_21_last_man_standing() {
     m.frame(&s.frame(0.0));
     let mut got = vec![m.target.unwrap()];
     for k in 1..=2 {
-        s.input = Input { space: true, ..default() };
+        s.input = Input {
+            space: true,
+            ..default()
+        };
         m.frame(&s.frame(k as f64 * 0.1));
         got.push(m.target.unwrap());
     }
@@ -560,7 +582,11 @@ fn the_camera_in_the_engines_frame() {
     let q = math::to_rotation(std::f32::consts::FRAC_PI_2, 0.0);
     near(q * Vec3::NEG_Z, Vec3::X, 1e-5);
     near(math::to_rotation(0.0, 0.0) * Vec3::NEG_Z, Vec3::NEG_Z, 1e-5);
-    near(math::to_rotation(std::f32::consts::PI, 0.0) * Vec3::NEG_Z, Vec3::Z, 1e-5);
+    near(
+        math::to_rotation(std::f32::consts::PI, 0.0) * Vec3::NEG_Z,
+        Vec3::Z,
+        1e-5,
+    );
     assert!((math::to_rotation(0.0, 0.5) * Vec3::NEG_Z).y < -0.4);
     let p = Vec3::new(1.0, 2.0, 3.0);
     near(math::to_world(p, 0.5), Vec3::new(0.5, 1.0, -1.5), 1e-6);
@@ -609,7 +635,13 @@ fn tips_from_the_guide_data() {
     let t = pick_tip(&tips, &tdm, &suicide, 7).unwrap();
     assert_eq!(t.icon, "a.dtx");
     assert!(t.text == "$A0" || t.text == "$A1");
-    let both: std::collections::HashSet<String> = (0..64u64).map(|r| pick_tip(&tips, &tdm, &suicide, r.wrapping_mul(0x9E37_79B9_7F4A_7C15)).unwrap().text).collect();
+    let both: std::collections::HashSet<String> = (0..64u64)
+        .map(|r| {
+            pick_tip(&tips, &tdm, &suicide, r.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+                .unwrap()
+                .text
+        })
+        .collect();
     assert_eq!(both.len(), 2, "uniform over the texts");
     // In Elimination Pro (12 is on the list) too; in S&D (2) it isn't.
     let tsv = RoomFacts {
@@ -677,23 +709,39 @@ fn case_25_hunted_free_camera() {
     m.frame(&s.frame(0.0));
     assert_eq!((m.phase, m.target), (Phase::Watch, Some(3)));
     let before = m.pose.unwrap();
-    s.input = Input { shift: true, dt: 1.0 / 60.0, ..default() };
+    s.input = Input {
+        shift: true,
+        dt: 1.0 / 60.0,
+        ..default()
+    };
     m.frame(&s.frame(0.1));
     assert_eq!(m.phase, Phase::FreeStatic);
     let p = m.pose.unwrap();
     near(p.at, BODY + Vec3::Y * 1000.0, 1e-3);
     close(p.pitch, before.pitch + std::f32::consts::FRAC_PI_2, 1e-4);
     // Fly forward.
-    s.input = Input { axis: Vec2::Y, dt: 1.0 / 60.0, ..default() };
+    s.input = Input {
+        axis: Vec2::Y,
+        dt: 1.0 / 60.0,
+        ..default()
+    };
     m.frame(&s.frame(0.2));
     let flown = m.pose.unwrap();
     assert!(flown.at.distance(p.at) > 1.0, "moved");
     // Space: back to the orbit on the next target.
-    s.input = Input { space: true, dt: 1.0 / 60.0, ..default() };
+    s.input = Input {
+        space: true,
+        dt: 1.0 / 60.0,
+        ..default()
+    };
     m.frame(&s.frame(0.3));
     assert_eq!((m.phase, m.target), (Phase::Watch, Some(6)));
     // The second time the static camera returns to where it was left.
-    s.input = Input { shift: true, dt: 1.0 / 60.0, ..default() };
+    s.input = Input {
+        shift: true,
+        dt: 1.0 / 60.0,
+        ..default()
+    };
     m.frame(&s.frame(0.4));
     assert_eq!(m.phase, Phase::FreeStatic);
     near(m.pose.unwrap().at, flown.at, 1e-3);
@@ -711,7 +759,11 @@ fn case_26_held_joiner() {
     m.wait_frame(&f);
     near(m.pose.unwrap().at, BODY + Vec3::Y * 50.0, 1e-4);
     let mut s = s;
-    s.input = Input { axis: Vec2::Y, dt: 1.0 / 60.0, ..default() };
+    s.input = Input {
+        axis: Vec2::Y,
+        dt: 1.0 / 60.0,
+        ..default()
+    };
     let mut f = s.frame(0.1);
     f.dead = false;
     f.waiting = true;
@@ -807,7 +859,8 @@ mod world {
         let mut r = rig("TSV", 1);
         let w = r.sim.app.world_mut();
         w.get_mut::<Health>(r.b).unwrap().current = 0.42;
-        w.entity_mut(r.b).insert(combat_arms::game::weapons::gear_armour(0.0, &Vec::new()));
+        w.entity_mut(r.b)
+            .insert(combat_arms::game::weapons::gear_armour(0.0, &Vec::new()));
         kill_now(&mut r.sim, r.me, r.b);
         assert!(r.cam().machine.is_dead());
         assert_eq!(r.cam().phase(), Phase::PullBack);
@@ -818,7 +871,10 @@ mod world {
         assert_eq!(r.cam().machine.target, Some(4));
         assert_eq!(r.cam().watched, Some(r.b));
         let k = r.cam().screen.killer.clone().expect("the killer panel");
-        assert_eq!((k.name.as_str(), k.cam_on, k.hp.as_str(), k.ap.as_str()), ("Bravo", true, "042", "000"));
+        assert_eq!(
+            (k.name.as_str(), k.cam_on, k.hp.as_str(), k.ap.as_str()),
+            ("Bravo", true, "042", "000")
+        );
         assert_eq!(r.cam().screen.target.as_ref().unwrap().name, "Bravo");
         assert!(r.until(6.0, |r| r.cam().machine.target != Some(4)));
         let t = r.since();
@@ -904,7 +960,14 @@ mod world {
     #[test]
     fn case_10_suicide() {
         let mut r = rig("TDM", -1);
-        hit(&mut r.sim, r.me, Some(r.me), 50.0, DamageKind::Blast, Some("combat_arms:m67"));
+        hit(
+            &mut r.sim,
+            r.me,
+            Some(r.me),
+            50.0,
+            DamageKind::Blast,
+            Some("combat_arms:m67"),
+        );
         r.sim.ticks(2);
         assert!(dead(&r.sim, r.me));
         assert_eq!(r.cam().phase(), Phase::Watch);
@@ -935,8 +998,16 @@ mod world {
         // 20 HP left and no armour: the blast of 37.8 HP kills.
         let w = r.sim.app.world_mut();
         w.get_mut::<Health>(r.me).unwrap().current = 0.2;
-        w.entity_mut(r.me).insert(combat_arms::game::weapons::gear_armour(0.0, &Vec::new()));
-        hit(&mut r.sim, r.me, Some(r.b), 0.378, DamageKind::Blast, Some("combat_arms:m67"));
+        w.entity_mut(r.me)
+            .insert(combat_arms::game::weapons::gear_armour(0.0, &Vec::new()));
+        hit(
+            &mut r.sim,
+            r.me,
+            Some(r.b),
+            0.378,
+            DamageKind::Blast,
+            Some("combat_arms:m67"),
+        );
         r.sim.ticks(2);
         assert!(dead(&r.sim, r.me));
         let d = r.cam().screen.damage.clone().expect("the damage window");
@@ -966,7 +1037,14 @@ mod world {
         assert_eq!(r.cam().screen.target.as_ref().unwrap().kills_you, None);
         // Not a suicide.
         let mut r = rig("TSV", 1);
-        hit(&mut r.sim, r.me, Some(r.me), 50.0, DamageKind::Blast, Some("combat_arms:m67"));
+        hit(
+            &mut r.sim,
+            r.me,
+            Some(r.me),
+            50.0,
+            DamageKind::Blast,
+            Some("combat_arms:m67"),
+        );
         r.sim.ticks(2);
         assert!(r.sim.app.world().get::<CaKillMe>(r.me).is_none_or(|k| k.0.is_empty()));
     }
@@ -984,7 +1062,10 @@ mod world {
         assert!(r.cam().waiting && !r.cam().screen_up && !r.cam().machine.is_dead());
         let at = r.sim.app.world().get::<Transform>(me).unwrap().translation;
         let pose = r.cam().pose.expect("a free camera").0;
-        assert!((pose.y - (at.y + 50.0 * combat_arms::game::inventory::UNIT)).abs() < 0.01, "{pose} {at}");
+        assert!(
+            (pose.y - (at.y + 50.0 * combat_arms::game::inventory::UNIT)).abs() < 0.01,
+            "{pose} {at}"
+        );
         let w = r.sim.app.world_mut();
         w.entity_mut(me).remove::<(CaHeld, Dead)>();
         w.get_mut::<Health>(me).unwrap().current = 1.0;
@@ -1034,12 +1115,20 @@ fn case_57_multi_kill_survives_death_until_the_mission_ends() {
     use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
     let mut sim = Sim::new(combat_arms::harness::CaSim, GreyboxMapPlugin);
     let world = sim.app.world_mut();
-    let (p, v, other) = (world.spawn_empty().id(), world.spawn_empty().id(), world.spawn_empty().id());
+    let (p, v, other) = (
+        world.spawn_empty().id(),
+        world.spawn_empty().id(),
+        world.spawn_empty().id(),
+    );
     let mut c = world.resource_mut::<KillCounter<Entity>>();
     assert_eq!(c.enemy_kill(p, v, 0.0, 5000, 2).multi, 1);
     // P killed at 1.0 by another, respawned at 3.0.
     c.enemy_kill(other, p, 1.0, 5000, 2);
-    assert_eq!(c.enemy_kill(p, v, 4.5, 5000, 2).multi, 2, "DOUBLE KILL: the death reset nothing");
+    assert_eq!(
+        c.enemy_kill(p, v, 4.5, 5000, 2).multi,
+        2,
+        "DOUBLE KILL: the death reset nothing"
+    );
     world.trigger(chimera_sim::mode::ModeStep(chimera_sim::mode::FlowEvent::ResetStats));
     let mut c = world.resource_mut::<KillCounter<Entity>>();
     assert_eq!(c.enemy_kill(p, v, 6.0, 5000, 2).multi, 1, "the mission's end reset it");

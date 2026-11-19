@@ -35,7 +35,11 @@ pub const UNIT_B: Vec3 = Vec3::new(-15.0, 1.0, 18.0);
 
 fn bank(team: u8, centre: Vec3) -> BankTrigger {
     BankTrigger {
-        name: if team == JSF { "SaveZone_A".into() } else { "SaveZone_B".into() },
+        name: if team == JSF {
+            "SaveZone_A".into()
+        } else {
+            "SaveZone_B".into()
+        },
         team: Some(team),
         area: obj_box(centre, Vec3::new(128.0, 160.0, 128.0)),
     }
@@ -57,7 +61,12 @@ pub fn hg_game(goal: u32) -> Sim {
     o.banks = vec![bank(JSF, BANK_A), bank(CREED, BANK_B)];
     o.points = vec![named("UNITSPAWN_ALPHA", UNIT_A), named("UNITSPAWN_BRAVO", UNIT_B)];
     o.drops = (0..84)
-        .map(|i| drop_point("SquadMatch", Vec3::new(-5.0 + (i % 12) as f32 * 1.5, 0.2, 16.0 + (i / 12) as f32 * 1.2)))
+        .map(|i| {
+            drop_point(
+                "SquadMatch",
+                Vec3::new(-5.0 + (i % 12) as f32 * 1.5, 0.2, 16.0 + (i / 12) as f32 * 1.2),
+            )
+        })
         .collect();
     sim
 }
@@ -108,7 +117,12 @@ fn bar(id: u32, at: Vec3) -> Bullion {
 
 /// Aim `p` (standing at `from`) at `at`.
 fn aim(sim: &mut Sim, p: Entity, from: Vec3, at: Vec3) {
-    let eye = from + sim.app.world().get::<MovementState>(p).map_or(Vec3::ZERO, |s| s.eye_offset);
+    let eye = from
+        + sim
+            .app
+            .world()
+            .get::<MovementState>(p)
+            .map_or(Vec3::ZERO, |s| s.eye_offset);
     let d = at - eye;
     let h = Vec2::new(d.x, d.z).length();
     let i = &mut *sim.intent(p);
@@ -149,7 +163,11 @@ fn case_01_round_start() {
     until_live(&mut sim);
     let o = objectives(&sim);
     assert_eq!((o.placed, o.bullion.len()), (80, 80));
-    let mut spots: Vec<[i32; 3]> = o.bullion.iter().map(|b| (b.at * 100.0).round().as_ivec3().to_array()).collect();
+    let mut spots: Vec<[i32; 3]> = o
+        .bullion
+        .iter()
+        .map(|b| (b.at * 100.0).round().as_ivec3().to_array())
+        .collect();
     spots.sort();
     spots.dedup();
     assert_eq!(spots.len(), 80, "80 distinct points");
@@ -388,11 +406,32 @@ fn case_11_mercenary_damage() {
     let ai = *sim.app.world().resource::<CaAiDamage>();
     assert_eq!(ai.factor, 1.0, "Hired Guns' AIDamageFactor");
     assert_eq!((ai.capped(80.0, false), ai.capped(45.0, true)), (50.0, 45.0));
-    hit(&mut sim, b[0], Some(merc), 0.5, DamageKind::Bullet, Some(combat_arms::game::weapons::RIFLE));
+    hit(
+        &mut sim,
+        b[0],
+        Some(merc),
+        0.5,
+        DamageKind::Bullet,
+        Some(combat_arms::game::weapons::RIFLE),
+    );
     sim.ticks(1);
     assert!((health(&sim, b[0]) - 0.5).abs() < 1e-4, "{}", health(&sim, b[0]));
-    hit(&mut sim, a[1], Some(merc), 0.8, DamageKind::Bullet, Some(combat_arms::game::weapons::RIFLE));
-    hit(&mut sim, merc, Some(a[1]), 0.8, DamageKind::Bullet, Some(combat_arms::game::weapons::RIFLE));
+    hit(
+        &mut sim,
+        a[1],
+        Some(merc),
+        0.8,
+        DamageKind::Bullet,
+        Some(combat_arms::game::weapons::RIFLE),
+    );
+    hit(
+        &mut sim,
+        merc,
+        Some(a[1]),
+        0.8,
+        DamageKind::Bullet,
+        Some(combat_arms::game::weapons::RIFLE),
+    );
     sim.ticks(1);
     assert_eq!(health(&sim, a[1]), 1.0);
     assert_eq!(health(&sim, merc), 1.0);
@@ -411,7 +450,11 @@ fn case_12_follow() {
     let away = start + Vec3::new(u(250.0), 0.0, 0.0);
     put(&mut sim, a[0], away);
     hold_at(&mut sim, a[0], away, 0.15);
-    assert!(sim.position(merc).distance(start) < 0.05, "not yet: {}", sim.position(merc).distance(start));
+    assert!(
+        sim.position(merc).distance(start) < 0.05,
+        "not yet: {}",
+        sim.position(merc).distance(start)
+    );
     hold_at(&mut sim, a[0], away, 2.5);
     let d = sim.position(merc).distance(sim.position(a[0])) / UNIT;
     assert!(sim.position(merc).distance(start) > 0.2, "it moved");
@@ -438,7 +481,10 @@ fn case_13_bank_over_rounds() {
     assert_eq!(m(&sim).winner, Some(JSF));
     assert_eq!(bank_of(&sim, a[0]), 1600);
     assert_eq!(stats(&sim, a[0]).mission_points, 1300);
-    assert!(mercs::all(sim.app.world_mut()).is_empty(), "AI removed at the round over");
+    assert!(
+        mercs::all(sim.app.world_mut()).is_empty(),
+        "AI removed at the round over"
+    );
     until(&mut sim, 10.0, |p| matches!(p, Phase::Setup { .. }));
     sim.ticks(1);
     assert_eq!(bank_of(&sim, a[0]), 3100);
@@ -450,7 +496,11 @@ fn case_13_bank_over_rounds() {
 /// no round win, no bonus.
 #[test]
 fn case_14_time_out() {
-    for (kills, deaths, want) in [([12, 10], [0, 0], Some(JSF)), ([10, 10], [9, 11], Some(JSF)), ([5, 5], [5, 5], None)] {
+    for (kills, deaths, want) in [
+        ([12, 10], [0, 0], Some(JSF)),
+        ([10, 10], [9, 11], Some(JSF)),
+        ([5, 5], [5, 5], None),
+    ] {
         let (mut sim, a, _b) = hg(1, 1);
         {
             let w = sim.app.world_mut();
@@ -466,7 +516,10 @@ fn case_14_time_out() {
         assert_eq!(mm.winner, want);
         let wins: u32 = mm.round_wins.iter().sum();
         assert_eq!(wins, want.is_some() as u32);
-        assert_eq!(stats(&sim, a[0]).mission_points, if want == Some(JSF) { 500 } else { 0 });
+        assert_eq!(
+            stats(&sim, a[0]).mission_points,
+            if want == Some(JSF) { 500 } else { 0 }
+        );
     }
 }
 
@@ -545,7 +598,10 @@ fn case_18_bank_and_death_same_frame() {
     assert_eq!(o.banked, [0, 0], "nothing banked");
     let bag = o.bullion.iter().find(|x| x.bag).expect("a bag");
     assert_eq!(bag.bars, 5);
-    assert!(obj_box(BANK_A, Vec3::new(128.0, 160.0, 128.0)).contains(bag.at, 0.0), "in the bank");
+    assert!(
+        obj_box(BANK_A, Vec3::new(128.0, 160.0, 128.0)).contains(bag.at, 0.0),
+        "in the bank"
+    );
 }
 
 /// 19. The scoreboard: mission points 1300 / 1300 / 900 with kills 3 / 5

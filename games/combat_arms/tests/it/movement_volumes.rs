@@ -305,7 +305,13 @@ fn ladder_dismount_at_the_top() {
     let ledge = block(Vec3::new(0.0, 150.0, -510.0), Vec3::new(500.0, 150.0, 490.0));
     let mut t = T::new(vec![floor(), ledge], on(0.0, 0.0, -4.0));
     // The ladder: in front of the ledge's face, up to 320.
-    volume(&mut t, "Ladder", Vec3::new(-50.0, 0.0, -20.0), Vec3::new(50.0, 320.0, 20.0), |_| {});
+    volume(
+        &mut t,
+        "Ladder",
+        Vec3::new(-50.0, 0.0, -20.0),
+        Vec3::new(50.0, 320.0, 20.0),
+        |_| {},
+    );
     t.keys().pitch = 1.2;
     t.forward(true);
     // Climbing, then off the ladder and on the ledge: keys released.
@@ -350,7 +356,9 @@ fn case_62_box_versus_eye() {
 fn case_63_current_without_viscosity_and_slow_speeds() {
     let mut t = T::standing();
     let (lo, hi) = slab(-10.0, 1000.0);
-    volume(&mut t, "VolumeBrush", lo, hi, |v| v.current = Vec3::new(0.0, 0.0, 100.0));
+    volume(&mut t, "VolumeBrush", lo, hi, |v| {
+        v.current = Vec3::new(0.0, 0.0, 100.0)
+    });
     let before = t.pos();
     t.tick();
     close(t.vel().z, 1.5 * E, TOL, "end speed from rest");
@@ -454,13 +462,22 @@ fn case_67_swim_controls() {
         t.place_in_air(Vec3::new(0.0, 2000.0, 0.0));
         t
     };
-    for (pitch, back, h, y) in [(-DEG30, false, 433.0127, -250.0), (DEG30, false, 500.0, 0.0), (-DEG30, true, 433.0127, 250.0)] {
+    for (pitch, back, h, y) in [
+        (-DEG30, false, 433.0127, -250.0),
+        (DEG30, false, 500.0, 0.0),
+        (-DEG30, true, 433.0127, 250.0),
+    ] {
         let mut t = swimmer();
         t.keys().pitch = pitch;
         t.keys().move_axis.y = if back { -1.0 } else { 1.0 };
         t.tick();
         let a = t.mv().accel;
-        close(a.xz().length(), h, TOL, &format!("pitch {pitch} back {back}: horizontal"));
+        close(
+            a.xz().length(),
+            h,
+            TOL,
+            &format!("pitch {pitch} back {back}: horizontal"),
+        );
         close(a.y, y, TOL, &format!("pitch {pitch} back {back}: vertical"));
     }
     let mut t = swimmer();
@@ -530,7 +547,12 @@ fn corrosive_fluid_burns() {
     assert!(!d.is_empty());
     for d in &d {
         assert_eq!(d.kind, DamageKind::Burn);
-        close(d.amount * movement_data().health_points, 5.0 * 0.05 * DT, 1e-5, "burn per tick");
+        close(
+            d.amount * movement_data().health_points,
+            5.0 * 0.05 * DT,
+            1e-5,
+            "burn per tick",
+        );
     }
 }
 
@@ -653,7 +675,12 @@ fn case_73_friction_combinations() {
     close(k(&[("SafteyNet", 0.0, false)]), 5.0, 1e-5, "safety net");
     close(k(&[("Filter", 0.0, false)]), 5.0, 1e-5, "filter");
     close(k(&[("Ice", 0.0, true)]), 0.0, 1e-5, "hidden ice");
-    close(k(&[("Ice", 0.0, false), ("Water", 1.0, false)]), 0.0, 1e-5, "ice in water");
+    close(
+        k(&[("Ice", 0.0, false), ("Water", 1.0, false)]),
+        0.0,
+        1e-5,
+        "ice in water",
+    );
     close(k(&[("VolumeBrush", 2.0, false)]), 5.0, 1e-5, "clamped to 1");
 }
 
@@ -880,7 +907,11 @@ fn case_78_safety_net_at_the_centre() {
         t.place_in_air(on(0.0, 500.0, 0.0));
         t.ticks(120);
         assert!(t.mv().on_ground);
-        let hp: f32 = t.damage().iter().map(|d| d.amount * movement_data().health_points).sum();
+        let hp: f32 = t
+            .damage()
+            .iter()
+            .map(|d| d.amount * movement_data().health_points)
+            .sum();
         match want {
             Some(w) => close(hp, w, 0.05, &format!("net {depth} u deep")),
             None => assert_eq!(hp, 0.0, "net {depth} u deep"),
@@ -987,7 +1018,12 @@ fn a_solid_map_ladder_brush_is_climbed_from_any_side() {
             grabbed |= t.mv().on_ladder;
         }
         assert!(grabbed, "{name}: never on the ladder, at {}", t.pos());
-        assert!(t.pos().y - start > 100.0, "{name}: climbed {} u, at {}", t.pos().y - start, t.pos());
+        assert!(
+            t.pos().y - start > 100.0,
+            "{name}: climbed {} u, at {}",
+            t.pos().y - start,
+            t.pos()
+        );
     }
 }
 
@@ -996,7 +1032,10 @@ fn a_solid_map_ladder_brush_is_climbed_from_any_side() {
 #[test]
 fn standing_on_a_map_ladder_brushs_top_does_not_grab() {
     use chimera_core::core::{MapBrush, MapBrushes};
-    let mut t = T::new(vec![floor(), block(Vec3::new(0.0, 25.0, 0.0), Vec3::new(50.0, 25.0, 50.0))], on(0.0, 50.0, 0.0));
+    let mut t = T::new(
+        vec![floor(), block(Vec3::new(0.0, 25.0, 0.0), Vec3::new(50.0, 25.0, 50.0))],
+        on(0.0, 50.0, 0.0),
+    );
     let mut b = MapBrush::from_box(Vec3::new(-50.0, 0.0, -50.0) * s(), Vec3::new(50.0, 50.0, 50.0) * s());
     b.ladder = true;
     t.sim.app.world_mut().insert_resource(MapBrushes(vec![b]));
@@ -1013,7 +1052,10 @@ fn brush_water(t: &mut T, y0: f32, y1: f32) {
     use chimera_core::core::{MapBrush, MapWater, MapWaterVolume};
     let (lo, hi) = slab(y0, y1);
     let brush = MapBrush::from_box(lo * s(), hi * s());
-    t.sim.app.world_mut().insert_resource(MapWater(vec![MapWaterVolume { brush, slime: false }]));
+    t.sim
+        .app
+        .world_mut()
+        .insert_resource(MapWater(vec![MapWaterVolume { brush, slime: false }]));
     t.ticks(2);
 }
 

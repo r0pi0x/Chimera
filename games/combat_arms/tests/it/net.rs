@@ -43,7 +43,6 @@ use combat_arms::{
         inventory::{CaSelection, KNIFE, Knife, KnifePhase},
         movement::CaMovement,
         weapons::{CaKick, CaRecoil, CaSpread, CaZoom, RIFLE},
-
     },
     harness::CaSim,
 };
@@ -106,8 +105,15 @@ fn joined(latency_ms: u64, seed: u64) -> NetSim {
         let world = sim.clients[i].app.world();
         let inv = world.get::<Inventory>(me).expect("predicts what it carries");
         let active = inv.active.expect("a weapon drawn");
-        assert_eq!(world.get::<Weapon>(active).unwrap().id, RIFLE, "client {i} draws the rifle");
-        assert!(world.get::<CaMovement>(me).is_some(), "client {i} predicts its movement");
+        assert_eq!(
+            world.get::<Weapon>(active).unwrap().id,
+            RIFLE,
+            "client {i} draws the rifle"
+        );
+        assert!(
+            world.get::<CaMovement>(me).is_some(),
+            "client {i} predicts its movement"
+        );
     }
     sim
 }
@@ -156,7 +162,13 @@ fn assert_agrees(sim: &mut NetSim, i: usize, what: &str) {
         .iter()
         .filter(|p| !p.state.is_empty())
         .filter_map(|p| server.get(&p.tick).map(|s| (p, s)))
-        .inspect(|(p, s)| assert!(**s == p.state, "{what}: the prediction for tick {} isn't the server's", p.tick))
+        .inspect(|(p, s)| {
+            assert!(
+                **s == p.state,
+                "{what}: the prediction for tick {} isn't the server's",
+                p.tick
+            )
+        })
         .count();
     assert!(compared > 0, "{what}: no predicted tick to compare");
 }
@@ -200,13 +212,19 @@ fn copy_of(sim: &mut NetSim, i: usize, j: usize) -> Entity {
 fn active_id(sim: &mut NetSim, i: usize) -> &'static str {
     let me = sim.local_player(i).unwrap();
     let world = sim.clients[i].app.world();
-    world.get::<Weapon>(world.get::<Inventory>(me).unwrap().active.unwrap()).unwrap().id
+    world
+        .get::<Weapon>(world.get::<Inventory>(me).unwrap().active.unwrap())
+        .unwrap()
+        .id
 }
 
 fn server_active_id(sim: &mut NetSim, i: usize) -> &'static str {
     let e = sim.character_of(i).unwrap();
     let world = sim.server.app.world();
-    world.get::<Weapon>(world.get::<Inventory>(e).unwrap().active.unwrap()).unwrap().id
+    world
+        .get::<Weapon>(world.get::<Inventory>(e).unwrap().active.unwrap())
+        .unwrap()
+        .id
 }
 
 /// Client `i` holds class key `class` (1-6) for a tick, then lets go.
@@ -226,16 +244,33 @@ fn players_join_on_their_own_teams_at_the_spawns() {
     assert_ne!(team(a), team(b), "the smaller team each");
     let at = |e| world.get::<Transform>(e).unwrap().translation;
     for (e, spawn) in [(a, greybox::SPAWNS[0]), (b, greybox::SPAWNS[1])] {
-        assert!(at(e).xz().distance(spawn.xz()) < 0.1, "at a spawn point: {} vs {spawn}", at(e));
+        assert!(
+            at(e).xz().distance(spawn.xz()) < 0.1,
+            "at a spawn point: {} vs {spawn}",
+            at(e)
+        );
     }
     for e in [a, b] {
         assert_eq!(world.get::<Health>(e).unwrap().current, 1.0);
-        assert_eq!(world.get::<chimera_sim::weapon::Armor>(e).map(combat_arms::game::weapons::points).unwrap(), 100.0);
+        assert_eq!(
+            world
+                .get::<chimera_sim::weapon::Armor>(e)
+                .map(combat_arms::game::weapons::points)
+                .unwrap(),
+            100.0
+        );
     }
     // Each client has its armour from the server, and the other player.
     for i in 0..2 {
         let me = sim.local_player(i).unwrap();
-        assert_eq!(sim.clients[i].app.world().get::<chimera_sim::weapon::Armor>(me).map(combat_arms::game::weapons::points), Some(100.0));
+        assert_eq!(
+            sim.clients[i]
+                .app
+                .world()
+                .get::<chimera_sim::weapon::Armor>(me)
+                .map(combat_arms::game::weapons::points),
+            Some(100.0)
+        );
         let other = copy_of(&mut sim, i, 1 - i);
         assert!(sim.clients[i].app.world().get::<Health>(other).is_some());
     }
@@ -271,7 +306,11 @@ fn movement_is_predicted_without_errors() {
         }
         sim.ticks(80);
         let end = sim.server.app.world().get::<Transform>(theirs).unwrap().translation;
-        assert!(end.distance(start) > 3.0, "{latency} ms: moved {} m", end.distance(start));
+        assert!(
+            end.distance(start) > 3.0,
+            "{latency} ms: moved {} m",
+            end.distance(start)
+        );
         assert!(top > start.y + 0.2, "{latency} ms: jumped to {top} from {}", start.y);
         assert!(crouched, "{latency} ms: crouched");
         assert_no_errors(&sim, &format!("{latency} ms, moving"));
@@ -279,7 +318,10 @@ fn movement_is_predicted_without_errors() {
         // The other client draws it where the server has it.
         let copy = copy_of(&mut sim, 1, 0);
         let drawn = sim.clients[1].app.world().get::<Transform>(copy).unwrap().translation;
-        assert!(drawn.distance(end) < 0.1, "{latency} ms: client 1 draws it at {drawn}, the server has {end}");
+        assert!(
+            drawn.distance(end) < 0.1,
+            "{latency} ms: client 1 draws it at {drawn}, the server has {end}"
+        );
     }
 }
 
@@ -295,7 +337,10 @@ fn back_push_is_predicted_by_the_shooter() {
     face_off(&mut sim, 6.0);
     let me = sim.local_player(0).unwrap();
     let theirs = sim.character_of(0).unwrap();
-    for (world, who) in [(sim.clients[0].app.world_mut(), me), (sim.server.app.world_mut(), theirs)] {
+    for (world, who) in [
+        (sim.clients[0].app.world_mut(), me),
+        (sim.server.app.world_mut(), theirs),
+    ] {
         let rifle = world.get::<Inventory>(who).unwrap().active.unwrap();
         let mut r = world.get_mut::<CaRecoil>(rifle).unwrap();
         r.params.back_jitter = 0.5;
@@ -323,7 +368,13 @@ fn shots_and_damage_are_seen_by_both() {
     let mut sim = joined(100, 21);
     face_off(&mut sim, 6.0);
     let shooter = sim.local_player(0).unwrap();
-    let rifle = sim.clients[0].app.world().get::<Inventory>(shooter).unwrap().active.unwrap();
+    let rifle = sim.clients[0]
+        .app
+        .world()
+        .get::<Inventory>(shooter)
+        .unwrap()
+        .active
+        .unwrap();
     let clip = sim.clients[0].app.world().get::<Magazine>(rifle).unwrap().clip;
     let before = server_health(&mut sim, 1);
     // Three rounds held on the target's chest.
@@ -332,14 +383,20 @@ fn shots_and_damage_are_seen_by_both() {
     sim.until(200, |s| {
         let me = s.local_player(0).unwrap();
         let w = s.clients[0].app.world();
-        w.get::<Magazine>(w.get::<Inventory>(me).unwrap().active.unwrap()).unwrap().clip <= clip - 3
+        w.get::<Magazine>(w.get::<Inventory>(me).unwrap().active.unwrap())
+            .unwrap()
+            .clip
+            <= clip - 3
     });
     client_intent(&mut sim, 0).fire = false;
     // The shooter's client predicted its spread and kick.
     {
         let me = sim.local_player(0).unwrap();
         let world = sim.clients[0].app.world();
-        assert!(world.get::<CaSpread>(rifle).unwrap().fire > 0.0, "the firing meter grew");
+        assert!(
+            world.get::<CaSpread>(rifle).unwrap().fire > 0.0,
+            "the firing meter grew"
+        );
         assert!(world.get::<CaKick>(me).unwrap().pitch > 0.0, "the view kicked");
     }
     sim.ticks(60);
@@ -349,16 +406,31 @@ fn shots_and_damage_are_seen_by_both() {
     let after = server_health(&mut sim, 1);
     println!("health {before} -> {after}");
     let rewinds = sim.server.app.world().resource::<LagCompStats>().rewinds;
-    assert!(rewinds >= 3, "the server traced the rounds where client 0 saw client 1: {rewinds} rewinds");
+    assert!(
+        rewinds >= 3,
+        "the server traced the rounds where client 0 saw client 1: {rewinds} rewinds"
+    );
     assert!(after < before, "the server hurt client 1");
     let target = sim.character_of(1).unwrap();
-    let target_armour = sim.server.app.world().get::<chimera_sim::weapon::Armor>(target).map(combat_arms::game::weapons::points).unwrap();
+    let target_armour = sim
+        .server
+        .app
+        .world()
+        .get::<chimera_sim::weapon::Armor>(target)
+        .map(combat_arms::game::weapons::points)
+        .unwrap();
     assert!(target_armour < 100.0, "armour took its share: {target_armour}");
     let me1 = sim.local_player(1).unwrap();
     let copy1 = copy_of(&mut sim, 0, 1);
     let w1 = sim.clients[1].app.world();
     assert_eq!(w1.get::<Health>(me1).unwrap().current, after, "client 1's own health");
-    assert_eq!(w1.get::<chimera_sim::weapon::Armor>(me1).map(combat_arms::game::weapons::points).unwrap(), target_armour, "client 1's own armour");
+    assert_eq!(
+        w1.get::<chimera_sim::weapon::Armor>(me1)
+            .map(combat_arms::game::weapons::points)
+            .unwrap(),
+        target_armour,
+        "client 1's own armour"
+    );
     let seen1 = w1.resource::<Seen>();
     assert!(!seen1.taken.is_empty(), "client 1 heard it was hurt");
     assert!(
@@ -367,9 +439,17 @@ fn shots_and_damage_are_seen_by_both() {
         seen1.remote_shots.len()
     );
     let w0 = sim.clients[0].app.world();
-    assert_eq!(w0.get::<Health>(copy1).unwrap().current, after, "client 0 sees the damage");
+    assert_eq!(
+        w0.get::<Health>(copy1).unwrap().current,
+        after,
+        "client 0 sees the damage"
+    );
     let seen0 = w0.resource::<Seen>();
-    assert!(seen0.hits.iter().any(|(t, _)| *t == copy1), "client 0's hits confirmed: {:?}", seen0.hits);
+    assert!(
+        seen0.hits.iter().any(|(t, _)| *t == copy1),
+        "client 0's hits confirmed: {:?}",
+        seen0.hits
+    );
     assert!(seen0.remote_shots.is_empty(), "the shooter predicted its own rounds");
 }
 
@@ -401,8 +481,15 @@ fn switching_weapons_is_predicted() {
     assert_agrees(&mut sim, 0, "switching");
     // The other client sees what it holds.
     let copy = copy_of(&mut sim, 1, 0);
-    let held = sim.clients[1].app.world().get::<chimera_net::net::NetHeld>(copy).cloned();
-    assert!(held.is_some_and(|h| h.weapon.is_some()), "client 1 knows what client 0 holds");
+    let held = sim.clients[1]
+        .app
+        .world()
+        .get::<chimera_net::net::NetHeld>(copy)
+        .cloned();
+    assert!(
+        held.is_some_and(|h| h.weapon.is_some()),
+        "client 1 knows what client 0 holds"
+    );
 }
 
 #[test]
@@ -422,7 +509,11 @@ fn a_scoped_bolt_shot_is_predicted() {
     sim.ticks(30);
     let me = sim.local_player(0).unwrap();
     assert!(
-        sim.clients[0].app.world().get::<chimera_sim::weapon::Zoomed>(me).is_some(),
+        sim.clients[0]
+            .app
+            .world()
+            .get::<chimera_sim::weapon::Zoomed>(me)
+            .is_some(),
         "the client zooms"
     );
     // On client 1's chest: the bolt kills it, and its client takes its
@@ -468,7 +559,10 @@ fn a_knife_hit_is_predicted_and_the_servers() {
     assert!(after < before, "the server's knife hit");
     let me1 = sim.local_player(1).unwrap();
     assert_eq!(sim.clients[1].app.world().get::<Health>(me1).unwrap().current, after);
-    assert!(!sim.clients[1].app.world().resource::<Seen>().taken.is_empty(), "client 1 hurt");
+    assert!(
+        !sim.clients[1].app.world().resource::<Seen>().taken.is_empty(),
+        "client 1 hurt"
+    );
     assert_no_errors(&sim, "knifing");
     assert_agrees(&mut sim, 0, "knifing");
 }
@@ -476,7 +570,10 @@ fn a_knife_hit_is_predicted_and_the_servers() {
 /// Yaw and pitch that look from `eye` at `at`.
 fn look_at(eye: Vec3, at: Vec3) -> (f32, f32) {
     let d = at - eye;
-    ((-d.x).atan2(-d.z).rem_euclid(std::f32::consts::TAU), d.y.atan2(d.xz().length()))
+    (
+        (-d.x).atan2(-d.z).rem_euclid(std::f32::consts::TAU),
+        d.y.atan2(d.xz().length()),
+    )
 }
 
 /// What one knife run saw: each hit event of client 0's swings, in order,
@@ -499,9 +596,17 @@ impl KnifeRun {
 /// `ticks` ticks (`sv_unlag` as `unlag`; client 1 can't die of it).
 fn knife_run(unlag: bool, start: Vec3, axis: Vec2, ticks: u32) -> KnifeRun {
     let mut sim = joined(100, 47);
-    sim.server.app.world_mut().resource_mut::<chimera_sim::weapon::lagcomp::LagCompSettings>().unlag = unlag as u8;
+    sim.server
+        .app
+        .world_mut()
+        .resource_mut::<chimera_sim::weapon::lagcomp::LagCompSettings>()
+        .unlag = unlag as u8;
     let (shooter, target) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
-    sim.server.app.world_mut().entity_mut(target).insert(chimera_core::core::God);
+    sim.server
+        .app
+        .world_mut()
+        .entity_mut(target)
+        .insert(chimera_core::core::God);
     key(&mut sim, 0, 3);
     place(&mut sim, 0, Vec3::new(0.0, 1.0, 12.0), 0.0, 0.0);
     place(&mut sim, 1, start, std::f32::consts::PI, 0.0);
@@ -523,15 +628,30 @@ fn knife_run(unlag: bool, start: Vec3, axis: Vec2, ticks: u32) -> KnifeRun {
     client_intent(&mut sim, 0).fire = false;
     client_intent(&mut sim, 1).move_axis = Vec2::ZERO;
     sim.ticks(90);
-    let mine: Vec<bool> = sim.clients[0].app.world().resource::<Seen>().swings.iter()
+    let mine: Vec<bool> = sim.clients[0]
+        .app
+        .world()
+        .resource::<Seen>()
+        .swings
+        .iter()
         .filter(|(o, _, replay)| *o == me && !replay)
         .map(|(_, hit, _)| *hit == Some(seen))
         .collect();
-    let servers: Vec<bool> = sim.server.app.world().resource::<Seen>().swings.iter()
+    let servers: Vec<bool> = sim
+        .server
+        .app
+        .world()
+        .resource::<Seen>()
+        .swings
+        .iter()
         .filter(|(o, ..)| *o == shooter)
         .map(|(_, hit, _)| *hit == Some(target))
         .collect();
-    assert_eq!(mine.len(), servers.len(), "the server ran each hit event the client predicted");
+    assert_eq!(
+        mine.len(),
+        servers.len(),
+        "the server ran each hit event the client predicted"
+    );
     assert!(!mine.is_empty(), "client 0 swung");
     KnifeRun {
         events: mine.into_iter().zip(servers).collect(),
@@ -564,16 +684,26 @@ fn knife_swings_hit_where_the_swinger_saw_the_target() {
     print("across", true, &on);
     print("across", false, &off);
     assert!(on.count(true, true) >= 2, "swings in reach on the screen hit ({on:?})");
-    assert_eq!(on.count(true, false) + on.count(false, true), 0, "the server agrees with the screen ({on:?})");
+    assert_eq!(
+        on.count(true, false) + on.count(false, true),
+        0,
+        "the server agrees with the screen ({on:?})"
+    );
     assert!(off.count(true, false) >= 2, "without compensation those miss ({off:?})");
     // Towards: from 5 m, running at client 0.
     let towards = |unlag| knife_run(unlag, Vec3::new(0.0, 1.0, 7.0), Vec2::new(0.0, 1.0), 110);
     let (on, off) = (towards(true), towards(false));
     print("towards", true, &on);
     print("towards", false, &off);
-    assert!(on.count(false, false) >= 1, "swings out of reach on the screen ({on:?})");
+    assert!(
+        on.count(false, false) >= 1,
+        "swings out of reach on the screen ({on:?})"
+    );
     assert_eq!(on.count(false, true), 0, "out of reach on the screen: missed ({on:?})");
-    assert!(off.count(false, true) >= 1, "without compensation the server hit what the screen had out of reach ({off:?})");
+    assert!(
+        off.count(false, true) >= 1,
+        "without compensation the server hit what the screen had out of reach ({off:?})"
+    );
 }
 
 /// From the very first state, no prediction error (the counters never

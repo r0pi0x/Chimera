@@ -23,20 +23,24 @@ pub fn point(world: &World, shooter: Entity, p: Entity, name: &str) -> Vec3 {
     let i = MALE.iter().position(|s| s.name == name).unwrap();
     let (_, _, spheres) = geometry(p).unwrap();
     let (centre, radius) = spheres[i];
-    let eye = (|| Some(world.get::<Transform>(shooter)?.translation + world.get::<MovementState>(shooter)?.eye_offset))();
+    let eye =
+        (|| Some(world.get::<Transform>(shooter)?.translation + world.get::<MovementState>(shooter)?.eye_offset))();
     let Some(eye) = eye else { return centre };
     let wins = |at: Vec3| {
         let end = eye + (at - eye) * 2.0;
-        ca::pick_sphere(&spheres, eye, end).is_some_and(|j| {
-            j == i || (MALE[j].location == MALE[i].location && MALE[j].factor == MALE[i].factor)
-        })
+        ca::pick_sphere(&spheres, eye, end)
+            .is_some_and(|j| j == i || (MALE[j].location == MALE[i].location && MALE[j].factor == MALE[i].factor))
     };
     let dir = (centre - eye).normalize();
     let side = dir.cross(Vec3::Y).normalize();
     let up = side.cross(dir);
     // With a margin: the shot's own small differences stay on it.
     let m = radius * 0.1;
-    let wins = |at: Vec3| [Vec3::ZERO, side * m, -side * m, up * m, -up * m].iter().all(|o| wins(at + *o));
+    let wins = |at: Vec3| {
+        [Vec3::ZERO, side * m, -side * m, up * m, -up * m]
+            .iter()
+            .all(|o| wins(at + *o))
+    };
     if wins(centre) {
         return centre;
     }

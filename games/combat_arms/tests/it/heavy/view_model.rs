@@ -11,7 +11,6 @@
 //! and the M4A1 (case 8) are V2-keyed: those parts note and skip. Passes
 //! with a note without `[games.combat_arms] path` in chimera.local.toml.
 
-
 use bevy::prelude::*;
 use chimera_core::{core::Health, mount::config::LocalConfig};
 use chimera_sim::weapon::{self, Magazine};
@@ -89,9 +88,16 @@ fn data_view_models_load_skinned() {
         }
         // Flash and breach sockets (names without case).
         for s in ["flash", "breach"] {
-            assert!(v.attachments.iter().any(|a| a.name.eq_ignore_ascii_case(s)), "{}: {s}", v.key);
+            assert!(
+                v.attachments.iter().any(|a| a.name.eq_ignore_ascii_case(s)),
+                "{}: {s}",
+                v.key
+            );
         }
-        let d = combat_arms::game::data::CaData::builtin().weapon_set().get(&v.key).unwrap();
+        let d = combat_arms::game::data::CaData::builtin()
+            .weapon_set()
+            .get(&v.key)
+            .unwrap();
         let skins = d.models.view_skins.iter().filter(|s| !s.is_empty());
         let readable = skins.into_iter().all(|s| mount.read(s).is_ok());
         let textured = v.model.meshes.iter().all(|m| m.texture.is_some());
@@ -142,10 +148,20 @@ fn keyed_view_models_with_hands() {
         "remington_870",
     ] {
         let id = format!("combat_arms:{id}");
-        let v = map.kit.view_models.iter().find(|v| v.key == id).unwrap_or_else(|| panic!("{id}: no view model"));
+        let v = map
+            .kit
+            .view_models
+            .iter()
+            .find(|v| v.key == id)
+            .unwrap_or_else(|| panic!("{id}: no view model"));
         let d = set.get(&id).unwrap();
-        let untextured: Vec<&str> =
-            v.model.meshes.iter().filter(|m| m.texture.is_none()).map(|m| m.material.as_str()).collect();
+        let untextured: Vec<&str> = v
+            .model
+            .meshes
+            .iter()
+            .filter(|m| m.texture.is_none())
+            .map(|m| m.material.as_str())
+            .collect();
         eprintln!(
             "{id}: {} ({} meshes, {} bones), skins {:?}, untextured {untextured:?}",
             d.models.view.as_deref().unwrap_or("-"),
@@ -189,10 +205,13 @@ fn t01_t02_skeleton_and_pieces() {
     let v = view_model::load(M92FS_PATH, M92FS, &[], POS, &mut map, &file).unwrap();
     assert_eq!(v.model.meshes.len(), 5, "the ANI child's pieces aren't drawn");
     // The hand model: keyed without the V2 key.
-    let choice = hands::choose(&hands::builtin(), &hands::HandProfile {
-        character: true,
-        ..default()
-    })
+    let choice = hands::choose(
+        &hands::builtin(),
+        &hands::HandProfile {
+            character: true,
+            ..default()
+        },
+    )
     .unwrap();
     match view_model::load_hands(&choice, &mut map, &file) {
         Ok((meshes, bones)) => {
@@ -212,7 +231,12 @@ fn socket_exact(m: &model::LoadedModel, anim: &str, t: f32, socket: &str) -> Vec
     let e = &m.list.entries[m.list.find(anim).unwrap()];
     let pose: Vec<_> = (0..m.model.nodes.len()).map(|j| lta::sample(e, j, t)).collect();
     let g = lta::globals(&m.model, &pose);
-    let s = m.model.sockets.iter().find(|s| s.name.eq_ignore_ascii_case(socket)).unwrap();
+    let s = m
+        .model
+        .sockets
+        .iter()
+        .find(|s| s.name.eq_ignore_ascii_case(socket))
+        .unwrap();
     Vec3::from(lta::transform_point(&g[s.node as usize], s.position)) + Vec3::from(POS)
 }
 
@@ -225,7 +249,11 @@ fn socket_drawn(v: &MapViewModel, anim: &str, t: f32, socket: &str) -> Vec3 {
     animator.main = Some(s);
     animator.cycle = (t / 1000.0 / set.duration(s)).clamp(0.0, 1.0);
     let pose = animator.pose(0.0);
-    let i = v.attachments.iter().position(|a| a.name.eq_ignore_ascii_case(socket)).unwrap();
+    let i = v
+        .attachments
+        .iter()
+        .position(|a| a.name.eq_ignore_ascii_case(socket))
+        .unwrap();
     let m = attachment_transform(v, &pose, i, &Transform::IDENTITY).unwrap();
     let p = m.transform_point3(Vec3::ZERO) / VIEW_SCALE;
     Vec3::new(p.x, p.y, -p.z)
@@ -292,9 +320,17 @@ fn t05_t06_t07_muzzle_socket() {
     // Model space at rest (Pos taken off), and the screen points.
     let rest = socket_exact(&m, "idle_0", 0.0, "flash");
     assert!(close(rest - Vec3::from(POS), [0.2688, -0.2043, 1.6648], 1e-3));
-    assert!((screen(rest) - Vec2::new(0.1148, -0.3666)).length() < 1e-3, "{}", screen(rest));
+    assert!(
+        (screen(rest) - Vec2::new(0.1148, -0.3666)).length() < 1e-3,
+        "{}",
+        screen(rest)
+    );
     let up = socket_exact(&m, "fire_0", 103.0, "flash");
-    assert!((screen(up) - Vec2::new(0.1286, 0.0602)).length() < 1e-3, "{}", screen(up));
+    assert!(
+        (screen(up) - Vec2::new(0.1286, 0.0602)).length() < 1e-3,
+        "{}",
+        screen(up)
+    );
     assert!((screen(socket_exact(&m, "select", 0.0, "flash")).y + 1.963).abs() < 1e-3);
 }
 
@@ -373,10 +409,17 @@ fn m92fs_in_play() {
     ];
     let mut at = 0;
     for w in want {
-        at += lower[at..].iter().position(|s| s == w).unwrap_or_else(|| panic!("{w} after {at}: {lower:?}")) + 1;
+        at += lower[at..]
+            .iter()
+            .position(|s| s == w)
+            .unwrap_or_else(|| panic!("{w} after {at}: {lower:?}"))
+            + 1;
     }
     assert_eq!(sim.app.world().get::<Magazine>(w).unwrap().clip, 15);
-    assert_eq!(sim.app.world().get::<ViewAnimator>(p).unwrap().key.as_deref(), Some(M92FS));
+    assert_eq!(
+        sim.app.world().get::<ViewAnimator>(p).unwrap().key.as_deref(),
+        Some(M92FS)
+    );
 }
 
 /// The M67's throw as drawn (the pin pull, the cocked loop, the throw):
@@ -398,14 +441,24 @@ fn m67_throw_poses_follow_the_data() {
     let file = |p: &str| mount.read(p).ok();
     let mut map = MapData::default();
     view_model::add_view_models(&mut map, &ca, &file);
-    let v = map.kit.view_models.iter().find(|v| v.key == "combat_arms:m67").expect("the M67's view model");
+    let v = map
+        .kit
+        .view_models
+        .iter()
+        .find(|v| v.key == "combat_arms:m67")
+        .expect("the M67's view model");
     let models = &ca.weapon_set().get("combat_arms:m67").unwrap().models;
-    let (path, pos) = (models.view.clone().unwrap(), Vec3::from(models.view_offset.unwrap_or_default()));
+    let (path, pos) = (
+        models.view.clone().unwrap(),
+        Vec3::from(models.view_offset.unwrap_or_default()),
+    );
     let m = model::load(&path, &file).unwrap();
     let set = v.animations.as_ref().unwrap();
     for mesh in &v.model.meshes {
         assert!(
-            mesh.joint_weights.iter().all(|w| (w.iter().sum::<f32>() - 1.0).abs() < 1e-3),
+            mesh.joint_weights
+                .iter()
+                .all(|w| (w.iter().sum::<f32>() - 1.0).abs() < 1e-3),
             "{}: weights sum to 1",
             mesh.material
         );
@@ -455,7 +508,11 @@ fn m67_throw_poses_follow_the_data() {
                     })
                     .collect();
                 if let Some(far) = posed.iter().find(|p| p.length() / VIEW_SCALE > 10.0) {
-                    bad.push(format!("{anim} {t} ms {}: a vertex {} u from the eye", mesh.material, far.length() / VIEW_SCALE));
+                    bad.push(format!(
+                        "{anim} {t} ms {}: a vertex {} u from the eye",
+                        mesh.material,
+                        far.length() / VIEW_SCALE
+                    ));
                 }
                 for tri in mesh.indices.chunks(3) {
                     for (a, b) in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {

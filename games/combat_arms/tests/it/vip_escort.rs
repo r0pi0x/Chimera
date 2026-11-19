@@ -16,7 +16,7 @@ use combat_arms::game::{
         escort::{self, CaEscort, VipEntry, choose_vip, rounds_to_swap, swap_period},
         objects::{EscapeZone, NamedPoint},
     },
-    weapons::{RIFLE},
+    weapons::RIFLE,
 };
 
 use crate::mode_kit::*;
@@ -87,13 +87,28 @@ fn case_20_vip_choice() {
     };
     let bravo = entry(false, false, 0, 50, 9);
     // Round 1.
-    let r1 = [entry(true, false, 0, 5, 1), entry(true, false, 0, 9, 2), entry(true, false, 0, 9, 0), bravo];
+    let r1 = [
+        entry(true, false, 0, 5, 1),
+        entry(true, false, 0, 9, 2),
+        entry(true, false, 0, 9, 0),
+        bravo,
+    ];
     assert_eq!(choose_vip(&r1), Some(1));
     // Round 2: P2 the previous VIP.
-    let r2 = [entry(true, false, 0, 5, 2), entry(true, true, 1, 9, 1), entry(true, false, 0, 9, 0), bravo];
+    let r2 = [
+        entry(true, false, 0, 5, 2),
+        entry(true, true, 1, 9, 1),
+        entry(true, false, 0, 9, 0),
+        bravo,
+    ];
     assert_eq!(choose_vip(&r2), Some(2));
     // Round 3: P1 the only one never VIP.
-    let r3 = [entry(true, false, 0, 5, 0), entry(true, false, 1, 9, 2), entry(true, true, 1, 9, 1), bravo];
+    let r3 = [
+        entry(true, false, 0, 5, 0),
+        entry(true, false, 1, 9, 2),
+        entry(true, true, 1, 9, 1),
+        bravo,
+    ];
     assert_eq!(choose_vip(&r3), Some(0));
     // Round 4, Bravo escorting: its best never-VIP player.
     let r4 = [
@@ -152,7 +167,14 @@ fn case_22_vip_loadout() {
     sim.ticks(3);
     assert_eq!(weapons(&sim, v), vec!["combat_arms:beretta_m92fs"]);
     assert_eq!(health(&sim, v), 1.0);
-    assert_eq!(sim.app.world().get::<chimera_sim::weapon::Armor>(v).map(combat_arms::game::weapons::points).unwrap(), 100.0);
+    assert_eq!(
+        sim.app
+            .world()
+            .get::<chimera_sim::weapon::Armor>(v)
+            .map(combat_arms::game::weapons::points)
+            .unwrap(),
+        100.0
+    );
     assert_eq!(sim.app.world().get::<VipMovement>(v).unwrap().penalty, 0.44);
     assert!(sim.app.world().get::<NoPickups>(v).is_some());
     sim.intent(v).move_axis = Vec2::Y;
@@ -177,7 +199,12 @@ fn case_24_exit_opens() {
     run_to(&mut sim, t0, 60.9);
     assert!(!objectives(&sim).exit.unwrap().open);
     hold_at(&mut sim, v, EXIT, 0.04);
-    assert!(m(&sim).winner.is_none(), "shut until 61 s: {:?} at {}", m(&sim), now(&sim) - t0);
+    assert!(
+        m(&sim).winner.is_none(),
+        "shut until 61 s: {:?} at {}",
+        m(&sim),
+        now(&sim) - t0
+    );
     put(&mut sim, v, VIP_AT);
     run_to(&mut sim, t0, 61.05);
     assert!(objectives(&sim).exit.unwrap().open, "open at 61 s");
@@ -185,7 +212,10 @@ fn case_24_exit_opens() {
     hold_at(&mut sim, v, EXIT, TICK_INTERVAL);
     let mm = m(&sim);
     assert_eq!(mm.winner, Some(JSF));
-    assert!(mm.immune && sim.app.world().resource::<FreezeTime>().0, "frozen and immune");
+    assert!(
+        mm.immune && sim.app.world().resource::<FreezeTime>().0,
+        "frozen and immune"
+    );
     hit(&mut sim, b[0], Some(v), 0.5, DamageKind::Bullet, Some(RIFLE));
     sim.ticks(1);
     assert_eq!(health(&sim, b[0]), 1.0, "immune");
@@ -274,7 +304,10 @@ fn case_27_time_out() {
     let other = *a.iter().find(|p| **p != v).unwrap();
     run_to(&mut sim, t0, 180.02);
     assert_eq!(m(&sim).winner, Some(CREED));
-    assert!(!m(&sim).immune && !sim.app.world().resource::<FreezeTime>().0, "not frozen");
+    assert!(
+        !m(&sim).immune && !sim.app.world().resource::<FreezeTime>().0,
+        "not frozen"
+    );
     run_to(&mut sim, t0, 181.0);
     kill_now(&mut sim, b[0], other);
     assert_eq!(stats(&sim, other).kills, 1, "the kill counts");
@@ -296,7 +329,11 @@ fn case_28_last_frame() {
         {
             let w = sim.app.world_mut();
             let mut o = w.resource_mut::<combat_arms::game::rules::objectives::CaObjectives>();
-            o.exit = Some(combat_arms::game::rules::objectives::Exit { opens: t, open: true, ..Default::default() });
+            o.exit = Some(combat_arms::game::rules::objectives::Exit {
+                opens: t,
+                open: true,
+                ..Default::default()
+            });
         }
         // The round ends at the next tick (or the one after).
         let dt = TICK_INTERVAL;
@@ -334,8 +371,15 @@ fn case_30_swap_timing() {
     let v = vip(&mut sim).unwrap();
     let now0 = now(&sim);
     {
-        let mut o = sim.app.world_mut().resource_mut::<combat_arms::game::rules::objectives::CaObjectives>();
-        o.exit = Some(combat_arms::game::rules::objectives::Exit { opens: now0, open: true, ..Default::default() });
+        let mut o = sim
+            .app
+            .world_mut()
+            .resource_mut::<combat_arms::game::rules::objectives::CaObjectives>();
+        o.exit = Some(combat_arms::game::rules::objectives::Exit {
+            opens: now0,
+            open: true,
+            ..Default::default()
+        });
     }
     hold_at(&mut sim, v, EXIT, TICK_INTERVAL);
     let t0 = now(&sim) - TICK_INTERVAL;
@@ -344,11 +388,20 @@ fn case_30_swap_timing() {
     assert!((round_over_at(&sim).unwrap() - (t0 + 3.0)).abs() < 0.1);
     assert_eq!(objectives(&sim).rounds_to_swap, 1);
     until(&mut sim, 4.0, |p| matches!(p, Phase::Intermission { .. }));
-    let Phase::Intermission { until: end } = phase(&sim) else { unreachable!() };
-    assert!((end - (t0 + 15.0)).abs() < 0.1, "intermission and the wait and notice to 15 s");
+    let Phase::Intermission { until: end } = phase(&sim) else {
+        unreachable!()
+    };
+    assert!(
+        (end - (t0 + 15.0)).abs() < 0.1,
+        "intermission and the wait and notice to 15 s"
+    );
     run_to(&mut sim, t0, 12.1);
     assert!(sim.app.world().resource::<CaEscort>().swapped, "swapped at 12 s");
-    assert!(objectives(&sim).swap_notice.is_some_and(|n| (n - (t0 + 15.0)).abs() < 0.1));
+    assert!(
+        objectives(&sim)
+            .swap_notice
+            .is_some_and(|n| (n - (t0 + 15.0)).abs() < 0.1)
+    );
     until(&mut sim, 4.0, |p| p == Phase::Live);
     assert!(m(&sim).warmup, "a warm-up after the swap");
     assert!((now(&sim) - (t0 + 15.0)).abs() < 0.2);
@@ -359,10 +412,16 @@ fn case_30_swap_timing() {
     let v = vip(&mut sim).unwrap();
     assert!(b.contains(&v), "Bravo escorts");
     for p in b.iter().filter(|p| **p != v) {
-        assert!((sim.position(*p).z - point(JSF, 0).z).abs() < 0.5, "Bravo at the JSF points");
+        assert!(
+            (sim.position(*p).z - point(JSF, 0).z).abs() < 0.5,
+            "Bravo at the JSF points"
+        );
     }
     for p in &a {
-        assert!((sim.position(*p).z - point(CREED, 0).z).abs() < 0.5, "Alpha at the Creed points");
+        assert!(
+            (sim.position(*p).z - point(CREED, 0).z).abs() < 0.5,
+            "Alpha at the Creed points"
+        );
     }
     assert_eq!(m(&sim).round_wins, [1, 0], "Alpha keeps its win");
 }

@@ -40,7 +40,10 @@ fn every_player_has_a_team_of_their_own() {
     teams.sort();
     teams.dedup();
     assert_eq!(teams.len(), 4);
-    assert_eq!(chimera_sim::rule_module::pick(sim.app.world()), Some(rules::ONE_MAN_ARMY));
+    assert_eq!(
+        chimera_sim::rule_module::pick(sim.app.world()),
+        Some(rules::ONE_MAN_ARMY)
+    );
 }
 
 /// 10 (One Man Army half). A protected player who fires at 1.0 s and is
@@ -72,14 +75,14 @@ fn case_10_firing_ends_protection_in_one_man_army() {
 #[test]
 fn case_50_win_and_suicide() {
     let (mut sim, p) = ffa("FFA", 3);
-    sim.app.world_mut().entity_mut(p[0]).insert(CaStats {
-        kills: 29,
-        ..default()
-    });
-    sim.app.world_mut().entity_mut(p[1]).insert(CaStats {
-        kills: 29,
-        ..default()
-    });
+    sim.app
+        .world_mut()
+        .entity_mut(p[0])
+        .insert(CaStats { kills: 29, ..default() });
+    sim.app
+        .world_mut()
+        .entity_mut(p[1])
+        .insert(CaStats { kills: 29, ..default() });
     hit(&mut sim, p[1], Some(p[1]), 5.0, DamageKind::Blast, Some(M67));
     sim.ticks(1);
     let s = stats(&sim, p[1]);
@@ -101,13 +104,15 @@ fn a_matchs_end_is_triggered_as_its_flows_steps() {
     #[derive(Resource, Default)]
     struct Steps(Vec<(FlowEvent, Phase, Option<Option<u8>>)>);
     let (mut sim, p) = ffa("FFA", 2);
-    sim.app.init_resource::<Steps>().add_observer(|s: On<ModeStep>, m: Res<CaMatch>, mut steps: ResMut<Steps>| {
-        steps.0.push((s.0, m.phase, m.result));
-    });
-    sim.app.world_mut().entity_mut(p[0]).insert(CaStats {
-        kills: 29,
-        ..default()
-    });
+    sim.app
+        .init_resource::<Steps>()
+        .add_observer(|s: On<ModeStep>, m: Res<CaMatch>, mut steps: ResMut<Steps>| {
+            steps.0.push((s.0, m.phase, m.result));
+        });
+    sim.app
+        .world_mut()
+        .entity_mut(p[0])
+        .insert(CaStats { kills: 29, ..default() });
     kill_now(&mut sim, p[1], p[0]);
     until(&mut sim, 7.0, |p| p == Phase::MatchOver);
     let won = team(&sim, p[0]);
@@ -139,7 +144,8 @@ fn case_51_spawns() {
         let mut o = objects(&mut sim);
         o.starts = pts.iter().map(|p| start("FreeForAll", None, *p)).collect();
         // Other families' points aren't used.
-        o.starts.push(start("Team Death Match", Some(JSF), Vec3::new(0.0, 1.0, 12.0)));
+        o.starts
+            .push(start("Team Death Match", Some(JSF), Vec3::new(0.0, 1.0, 12.0)));
         o.starts.push(StartPoint {
             spawn: 2,
             ..start("FreeForAll", None, Vec3::new(0.0, 1.0, 14.0))
@@ -159,9 +165,17 @@ fn case_51_spawns() {
     until_live(&mut sim);
     for (k, p) in players.iter().enumerate() {
         let want = list[k + 1].translation;
-        assert!(at(&sim, *p).xz().distance(want.xz()) < 0.05, "player {k}: {} want {want}", at(&sim, *p));
+        assert!(
+            at(&sim, *p).xz().distance(want.xz()) < 0.05,
+            "player {k}: {} want {want}",
+            at(&sim, *p)
+        );
     }
-    assert_eq!(sim.app.world().resource::<CaSpawnCursors>().0[0], 4, "one shared cursor");
+    assert_eq!(
+        sim.app.world().resource::<CaSpawnCursors>().0[0],
+        4,
+        "one shared cursor"
+    );
     // The same order for the whole map load.
     let (again, _) = spawns::spawn_list(sim.app.world_mut(), FFA_FIRST + 2);
     assert_eq!(again, list);
@@ -231,9 +245,20 @@ fn st(round_wins: u32, kills: u32, deaths: u32) -> CaStats {
 /// decide.
 #[test]
 fn case_54_winner_quirk() {
-    assert_eq!(winner_of(&[(3, st(2, 0, 0)), (4, st(3, 0, 0)), (5, st(3, 0, 0))]), Some(5));
-    assert_eq!(winner_of(&[(3, st(2, 5, 0)), (4, st(3, 9, 0)), (5, st(2, 1, 0))]), Some(4), "kills decide");
-    assert_eq!(winner_of(&[(3, st(0, 5, 0)), (4, st(4, 2, 0))]), Some(3), "kills decide: A's 5");
+    assert_eq!(
+        winner_of(&[(3, st(2, 0, 0)), (4, st(3, 0, 0)), (5, st(3, 0, 0))]),
+        Some(5)
+    );
+    assert_eq!(
+        winner_of(&[(3, st(2, 5, 0)), (4, st(3, 9, 0)), (5, st(2, 1, 0))]),
+        Some(4),
+        "kills decide"
+    );
+    assert_eq!(
+        winner_of(&[(3, st(0, 5, 0)), (4, st(4, 2, 0))]),
+        Some(3),
+        "kills decide: A's 5"
+    );
     // Kills tied too: more deaths decide; tied again: nobody.
     assert_eq!(winner_of(&[(3, st(1, 1, 1)), (4, st(1, 1, 4))]), Some(4));
     assert_eq!(winner_of(&[(3, st(1, 1, 1)), (4, st(1, 1, 1))]), None);
@@ -299,18 +324,43 @@ fn arms_race(n: usize, percent: i32) -> (Sim, Vec<Entity>) {
 #[test]
 fn arms_race_ladder() {
     let (mut sim, p) = arms_race(5, 101);
-    assert!(!sim.app.world().resource::<combat_arms::game::inventory::CaDeathDrops>().0);
-    assert!(wait_for(&mut sim, 1.0, |s| weapons(s, p[0]).contains(&"combat_arms:m4a1")), "{:?}", weapons(&sim, p[0]));
+    assert!(
+        !sim.app
+            .world()
+            .resource::<combat_arms::game::inventory::CaDeathDrops>()
+            .0
+    );
+    assert!(
+        wait_for(&mut sim, 1.0, |s| weapons(s, p[0]).contains(&"combat_arms:m4a1")),
+        "{:?}",
+        weapons(&sim, p[0])
+    );
     for (i, v) in [1, 2, 3].into_iter().enumerate() {
         kill_now(&mut sim, p[v], p[0]);
         sim.ticks(1);
-        assert!(!weapons(&sim, p[0]).contains(&"combat_arms:mp5a4"), "not after {} kills", i + 1);
+        assert!(
+            !weapons(&sim, p[0]).contains(&"combat_arms:mp5a4"),
+            "not after {} kills",
+            i + 1
+        );
     }
     kill_now(&mut sim, p[4], p[0]);
     sim.ticks(1);
-    assert!(weapons(&sim, p[0]).contains(&"combat_arms:mp5a4"), "{:?}", weapons(&sim, p[0]));
-    assert!(wait_for(&mut sim, 2.0, |s| in_hand(s, p[0]) == Some("combat_arms:mp5a4")), "drawn");
-    let l = sim.app.world().get::<combat_arms::game::rules::arms_race::CaLadder>(p[0]).cloned().unwrap();
+    assert!(
+        weapons(&sim, p[0]).contains(&"combat_arms:mp5a4"),
+        "{:?}",
+        weapons(&sim, p[0])
+    );
+    assert!(
+        wait_for(&mut sim, 2.0, |s| in_hand(s, p[0]) == Some("combat_arms:mp5a4")),
+        "drawn"
+    );
+    let l = sim
+        .app
+        .world()
+        .get::<combat_arms::game::rules::arms_race::CaLadder>(p[0])
+        .cloned()
+        .unwrap();
     assert_eq!((l.next, l.last_stage), (Some(7), false));
 }
 
@@ -322,8 +372,16 @@ fn arms_race_roll_keeps_your_own() {
         kill_now(&mut sim, p[v], p[0]);
     }
     sim.ticks(2);
-    assert!(!weapons(&sim, p[0]).contains(&"combat_arms:mp5a4"), "{:?}", weapons(&sim, p[0]));
-    assert!(weapons(&sim, p[0]).contains(&RIFLE), "own primary kept: {:?}", weapons(&sim, p[0]));
+    assert!(
+        !weapons(&sim, p[0]).contains(&"combat_arms:mp5a4"),
+        "{:?}",
+        weapons(&sim, p[0])
+    );
+    assert!(
+        weapons(&sim, p[0]).contains(&RIFLE),
+        "own primary kept: {:?}",
+        weapons(&sim, p[0])
+    );
 }
 
 /// M15: Hunted plays on the unlocked `HungerGame` points in the warm-up
@@ -352,7 +410,6 @@ fn hunted_spawns() {
     assert!(at(&sim, p).xz().distance(round.xz()) < 0.05, "round: {}", at(&sim, p));
 }
 
-
 /// A mode's per-tick system runs only in its mode (`mode::mode_is`):
 /// Hunted's turns a fist kit's loadout into the fist within a tick; in
 /// Team Death Match the same mark stays and the loadout with it.
@@ -370,7 +427,12 @@ fn a_modes_tick_runs_only_in_its_mode() {
         sim.app.world_mut().entity_mut(p).insert(CaFistKit);
         sim.ticks(2);
         let kept = sim.app.world().get::<CaFistKit>(p).is_some();
-        assert_eq!(!kept, runs, "{mode}: the kit mark {}", if kept { "kept" } else { "taken" });
+        assert_eq!(
+            !kept,
+            runs,
+            "{mode}: the kit mark {}",
+            if kept { "kept" } else { "taken" }
+        );
         if !runs {
             assert_eq!(weapons(&sim, p), before, "{mode}: the loadout left alone");
         }

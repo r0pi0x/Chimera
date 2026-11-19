@@ -9,15 +9,12 @@
 //! key).
 
 use chimera_world::map::MapTexture;
-use combat_arms::game::{
-    GAME, INFO,
-    characters::models,
-    data::CaData,
-    view_model::on_demand,
-};
+use combat_arms::game::{GAME, INFO, characters::models, data::CaData, view_model::on_demand};
 
 fn mount() -> Option<chimera_core::mount::Mount> {
-    let install = chimera_core::mount::config::LocalConfig::load().ok().and_then(|c| c.game_path(GAME));
+    let install = chimera_core::mount::config::LocalConfig::load()
+        .ok()
+        .and_then(|c| c.game_path(GAME));
     let Some(install) = install else {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
@@ -29,7 +26,9 @@ fn mount() -> Option<chimera_core::mount::Mount> {
 /// blocks' bytes, how many are blocks only, how many textures.
 fn bytes(textures: &[MapTexture]) -> (usize, usize, usize, usize) {
     let decoded = |t: &MapTexture| t.rgba8.len() + t.mips.iter().map(Vec::len).sum::<usize>();
-    let fitting = textures.iter().filter(|t| t.bc.as_ref().is_some_and(|b| b.fits(t.width, t.height)));
+    let fitting = textures
+        .iter()
+        .filter(|t| t.bc.as_ref().is_some_and(|b| b.fits(t.width, t.height)));
     let blocks = |t: &MapTexture| t.bc.as_ref().map_or(0, |b| b.levels.iter().map(Vec::len).sum());
     (
         fitting.clone().map(decoded).sum(),
@@ -57,22 +56,45 @@ fn models_kept_for_later_maps_keep_their_blocks_only() {
             return;
         }
     };
-    let view = on_demand::load_weapon(&ca, M4, &file).expect("the M4A1's view model").textures;
-    let held = models::load_held_weapon(&ca, M4, &file).expect("the M4A1's held model").textures;
-    for (what, textures) in [("body", &body[..]), ("view model", &view[..]), ("held model", &held[..])] {
+    let view = on_demand::load_weapon(&ca, M4, &file)
+        .expect("the M4A1's view model")
+        .textures;
+    let held = models::load_held_weapon(&ca, M4, &file)
+        .expect("the M4A1's held model")
+        .textures;
+    for (what, textures) in [
+        ("body", &body[..]),
+        ("view model", &view[..]),
+        ("held model", &held[..]),
+    ] {
         let (decoded, blocks, lean, all) = bytes(textures);
         // What decoding them cost: RGBA8 and a third more for the mips.
-        let texels: usize = textures.iter().filter(|t| t.blocks_only()).map(|t| (t.width * t.height * 4) as usize * 4 / 3).sum();
+        let texels: usize = textures
+            .iter()
+            .filter(|t| t.blocks_only())
+            .map(|t| (t.width * t.height * 4) as usize * 4 / 3)
+            .sum();
         eprintln!(
             "{what}: {all} textures, {lean} blocks only ({blocks} bytes of blocks, {texels} decoded), {decoded} decoded \
              bytes beside blocks"
         );
         // The held model's one texture is BGRA (no blocks) on the dev box's install.
-        assert!(lean > 0 || what == "held model", "{what}: some textures are kept as blocks");
-        assert_eq!(decoded, 0, "{what}: a texture with whole blocks keeps no decoded texels");
+        assert!(
+            lean > 0 || what == "held model",
+            "{what}: some textures are kept as blocks"
+        );
+        assert_eq!(
+            decoded, 0,
+            "{what}: a texture with whole blocks keeps no decoded texels"
+        );
         for t in textures.iter().filter(|t| t.blocks_only()) {
             // The drawing's fallback (no BC on the GPU) decodes level 0.
-            assert_eq!(t.decoded().rgba8.len(), (t.width * t.height * 4) as usize, "{what}: {}", t.name);
+            assert_eq!(
+                t.decoded().rgba8.len(),
+                (t.width * t.height * 4) as usize,
+                "{what}: {}",
+                t.name
+            );
         }
     }
 }

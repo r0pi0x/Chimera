@@ -669,7 +669,11 @@ fn t19_both_buttons() {
     let t = until(&mut sim, t0, 2.0, |s| !swings(s, p).is_empty());
     assert!(close(t, 0.156, 3.0), "hit at {t}");
     let k = carried(&sim, p, KNIFE);
-    assert_eq!(sim.app.world().get::<Knife>(k).unwrap().state.attack, 0, "a primary swing");
+    assert_eq!(
+        sim.app.world().get::<Knife>(k).unwrap().state.attack,
+        0,
+        "a primary swing"
+    );
     let secondary = logged(&sim, p, |k| matches!(k, WeaponEventKind::Swing { secondary: true, .. }));
     assert!(secondary.is_empty(), "not a stab");
 }
@@ -693,7 +697,8 @@ fn knife_target(surface: f32, yaw: f32) -> (Sim, Entity, Entity) {
         .world_mut()
         .run_system_once(move |q: avian3d::prelude::SpatialQuery| {
             let filter = avian3d::prelude::SpatialQueryFilter::from_excluded_entities([p]);
-            q.cast_ray(eye, Dir3::NEG_Z, 10.0, true, &filter).map(|h| (h.entity, h.distance))
+            q.cast_ray(eye, Dir3::NEG_Z, 10.0, true, &filter)
+                .map(|h| (h.entity, h.distance))
         })
         .unwrap()
         .expect("the ray meets the target");
@@ -723,7 +728,11 @@ fn one_hit(sim: &mut Sim, p: Entity, target: Entity, secondary: bool) -> f32 {
     until(sim, t0, 2.0, |s| swings(s, p).len() > n);
     sim.ticks(1);
     let hurt = &sim.app.world().resource::<Hurt>().0;
-    let hits: Vec<f32> = hurt.iter().filter(|(t, e, _)| *t > from && *e == target).map(|h| h.2).collect();
+    let hits: Vec<f32> = hurt
+        .iter()
+        .filter(|(t, e, _)| *t > from && *e == target)
+        .map(|h| h.2)
+        .collect();
     assert!(hits.len() <= 1, "one hit: {hits:?}");
     // Let the attack end before the next.
     sim.seconds(1.5);
@@ -887,7 +896,10 @@ fn t26_death_drop() {
     assert_eq!(name, RIFLE);
     assert_eq!((d.total, d.clip), (72, 12));
     assert_eq!(d.weapon, rifle);
-    assert!((at - foot).xz().length() <= width / 2.0, "at the left foot: {at} vs {foot}");
+    assert!(
+        (at - foot).xz().length() <= width / 2.0,
+        "at the left foot: {at} vs {foot}"
+    );
     wait_until(&mut sim, t0, 19.9);
     sim.ticks(1);
     assert_eq!(items(&mut sim).len(), 1, "still there");
@@ -955,7 +967,10 @@ fn t28_pickup_swap() {
     assert_eq!(d.weapon, a);
     assert_eq!((d.total, d.clip), (35, 5));
     let off = at - foot;
-    assert!(off.x.abs() <= width && off.z.abs() <= width, "near the left foot: {off}");
+    assert!(
+        off.x.abs() <= width && off.z.abs() <= width,
+        "near the left foot: {off}"
+    );
     assert_eq!(inv(&sim, p).weapons[index], b, "B in A's equip index");
     assert_eq!(ammo(&sim, b), (30, 60));
     assert_eq!(active(&sim, p), Some(b), "B drawn");
@@ -1046,7 +1061,10 @@ fn t34_auto_switch_fallback() {
     let t0 = mark(&sim);
     let t = until(&mut sim, t0, 2.0, |s| active(s, p).is_some_and(|a| id(s, a) == PISTOL));
     let when = sim.app.world().resource::<chimera_core::core::SimClock>().now;
-    assert!((when - end).abs() <= 2.0 * dt(&sim), "drawn {t} s on, at the throw's end");
+    assert!(
+        (when - end).abs() <= 2.0 * dt(&sim),
+        "drawn {t} s on, at the throw's end"
+    );
 }
 
 #[test]
@@ -1083,12 +1101,20 @@ fn t36_rate_cap() {
     let mut sim = sim_with(STOCK);
     let doc = |rate: f32| {
         include_str!("../data/test_m16a3.toml")
-            .replace("combat_arms:test_m16a3", &format!("combat_arms:rate_{}", (rate * 10.0) as u32))
+            .replace(
+                "combat_arms:test_m16a3",
+                &format!("combat_arms:rate_{}", (rate * 10.0) as u32),
+            )
             .replace("[ammo.\"combat_arms:test_556\"]\nmax = 90\n", "")
-            .replace("sprint_out = 0.367", &format!("sprint_out = 0.367\nselect_rate = {rate}"))
+            .replace(
+                "sprint_out = 0.367",
+                &format!("sprint_out = 0.367\nselect_rate = {rate}"),
+            )
     };
     let (fast, slow) = (doc(1.1), doc(0.9));
-    sim.app.add_weapon_data(&[("rate_11.toml", &fast), ("rate_9.toml", &slow)]).unwrap();
+    sim.app
+        .add_weapon_data(&[("rate_11.toml", &fast), ("rate_9.toml", &slow)])
+        .unwrap();
     let p = player(&mut sim, greybox::SPAWNS[0]);
     for (weapon, draw) in [("combat_arms:rate_11", 1.2), ("combat_arms:rate_9", 1.2 / 1.9)] {
         let w = chimera_sim::weapon::give(sim.app.world_mut(), p, weapon).unwrap();
@@ -1241,7 +1267,10 @@ fn t42_better_weapon_rule() {
 fn t43_knife_ray_and_zones() {
     let (mut sim, p) = knife_out(STOCK);
     let k = carried(&sim, p, KNIFE);
-    assert!((sim.app.world().get::<Knife>(k).unwrap().perturb - 0.001).abs() < 1e-7, "n = 1");
+    assert!(
+        (sim.app.world().get::<Knife>(k).unwrap().perturb - 0.001).abs() < 1e-7,
+        "n = 1"
+    );
     sim.app.world_mut().get_mut::<Knife>(k).unwrap().spread = 0.0;
     // Facing the attacker, 70 units ahead (centre to centre).
     let target = sim.spawn_character(sim.position(p) - Vec3::Z * 70.0 * UNIT, movement::ID);
@@ -1257,11 +1286,21 @@ fn t43_knife_ray_and_zones() {
         sim.ticks(1);
         one_hit(sim, p, target, false)
     };
-    for (name, want) in [("Face_Eyelid1", 270.0), ("Torso", 45.0), ("Right_legl1", 33.75), ("Right_foot", 22.5)] {
+    for (name, want) in [
+        ("Face_Eyelid1", 270.0),
+        ("Torso", 45.0),
+        ("Right_legl1", 33.75),
+        ("Right_foot", 22.5),
+    ] {
         let got = hit_at(&mut sim, name);
         assert!((got - want).abs() < 1e-3, "{name}: {got}, want {want}");
     }
-    let ap = sim.app.world().get::<chimera_sim::weapon::Armor>(target).map(combat_arms::game::weapons::points).unwrap();
+    let ap = sim
+        .app
+        .world()
+        .get::<chimera_sim::weapon::Armor>(target)
+        .map(combat_arms::game::weapons::points)
+        .unwrap();
     assert_eq!(ap, 100.0, "the default body gear: melee uses no armour");
 }
 
@@ -1284,9 +1323,13 @@ fn t43b_knife_hit_writes_its_full_region() {
     sim.intent(target).yaw = std::f32::consts::PI;
     sim.app.world_mut().get_mut::<Health>(target).unwrap().current = 10.0;
     sim.seconds(0.5);
-    for (name, want, group) in [("Nuts", BodyRegion::Groin, Hitgroup::Stomach), ("Face_Eyelid1", BodyRegion::Head, Hitgroup::Head)] {
+    for (name, want, group) in [
+        ("Nuts", BodyRegion::Groin, Hitgroup::Stomach),
+        ("Face_Eyelid1", BodyRegion::Head, Hitgroup::Head),
+    ] {
         sim.app.world_mut().resource_mut::<Regions>().0.clear();
-        let d = super::aim_points::point(sim.app.world(), p, target, name) - (sim.position(p) + sim.state(p).eye_offset);
+        let d =
+            super::aim_points::point(sim.app.world(), p, target, name) - (sim.position(p) + sim.state(p).eye_offset);
         let mut i = sim.intent(p);
         i.yaw = (-d.x).atan2(-d.z);
         i.pitch = d.y.atan2(d.xz().length());
@@ -1311,7 +1354,10 @@ fn t44_drop_positions() {
     kill(&mut sim, p);
     let dropped = items(&mut sim);
     let at = dropped[0].3;
-    assert!((at - foot).length() < 1e-4, "death drop at the left foot: {at} vs {foot}");
+    assert!(
+        (at - foot).length() < 1e-4,
+        "death drop at the left foot: {at} vs {foot}"
+    );
 
     for _ in 0..3 {
         let (mut sim, p) = setup(STOCK);
@@ -1321,7 +1367,10 @@ fn t44_drop_positions() {
         press_use(&mut sim, p);
         let at = items(&mut sim)[0].3;
         let off = at - foot;
-        assert!(off.x.abs() <= 7.5 * UNIT + 1e-5 && off.z.abs() <= 7.5 * UNIT + 1e-5, "swap drop: {off}");
+        assert!(
+            off.x.abs() <= 7.5 * UNIT + 1e-5 && off.z.abs() <= 7.5 * UNIT + 1e-5,
+            "swap drop: {off}"
+        );
         assert!(off.y.abs() < 1e-4, "same height: {off}");
     }
 }
@@ -1426,7 +1475,11 @@ fn t49_backstab_by_the_body() {
     let w = chimera_sim::weapon::give(sim.app.world_mut(), target, "combat_arms:m4a1").unwrap();
     sim.seconds(1.5);
     {
-        let mut s = sim.app.world_mut().get_mut::<combat_arms::game::weapons::CaSpread>(w).expect("its spread");
+        let mut s = sim
+            .app
+            .world_mut()
+            .get_mut::<combat_arms::game::weapons::CaSpread>(w)
+            .expect("its spread");
         s.body_yaw = Some(view - twist);
         s.prev_view = None;
     }
@@ -1482,7 +1535,10 @@ fn c1c_a_different_set_swaps() {
     press_use(&mut sim, p);
     let dropped = items(&mut sim);
     assert_eq!(dropped.len(), 1);
-    assert_eq!((dropped[0].1.weapon, dropped[0].1.total, dropped[0].1.clip), (a, 60, 10));
+    assert_eq!(
+        (dropped[0].1.weapon, dropped[0].1.total, dropped[0].1.clip),
+        (a, 60, 10)
+    );
     assert_eq!(active(&sim, p), Some(b), "the item's rifle is drawn");
 }
 
@@ -1534,7 +1590,11 @@ fn t51_select_bonus_on_a_knife_and_a_grenade() {
     });
     sim.set_tick_interval(F);
     let p = player(&mut sim, greybox::SPAWNS[0]);
-    for (id, want) in [("combat_arms:m9_knife", 0.36), ("combat_arms:m67", 0.32), ("combat_arms:m4a1", 0.96)] {
+    for (id, want) in [
+        ("combat_arms:m9_knife", 0.36),
+        ("combat_arms:m67", 0.32),
+        ("combat_arms:m4a1", 0.96),
+    ] {
         let w = chimera_sim::weapon::give(sim.app.world_mut(), p, id).unwrap();
         sim.ticks(2);
         let got = sim.app.world().get::<Weapon>(w).unwrap().draw_time;

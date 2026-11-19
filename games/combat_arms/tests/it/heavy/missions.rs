@@ -97,7 +97,10 @@ fn install_missions_for_the_modes() {
     assert_eq!((o.offence, o.defence), (missions::JSF, missions::CREED));
     assert_eq!(missions::round_length("TMM", o.time_limit, 5), Some(120.0));
     let (lt, rb) = o.minimap.as_ref().unwrap().rect().unwrap();
-    assert!((lt[0] + 6828.892).abs() < 1e-3 && (rb[2] + 7866.243).abs() < 1e-3, "case 33 on the install");
+    assert!(
+        (lt[0] + 6828.892).abs() < 1e-3 && (rb[2] + 7866.243).abs() < 1e-3,
+        "case 33 on the install"
+    );
     let q = i.index.find("ghosttown", "QRT").expect("Ghost Town Quarantine");
     let qd = q.quarantine.clone().unwrap();
     assert_eq!(q.object().time_limit, 3);
@@ -110,7 +113,10 @@ fn install_missions_for_the_modes() {
     eprintln!("Quarantine points on Steam: {:?}", qd.points);
     assert_eq!(i.vip.clone().unwrap(), missions::VipData::stock(), "VTDM.GMS");
     let server = i.server.clone().expect("SERVER.CFG");
-    assert_eq!((server.object_start, server.object_end, server.mission_end), (0.0, 3.0, 3.0));
+    assert_eq!(
+        (server.object_start, server.object_end, server.mission_end),
+        (0.0, 3.0, 3.0)
+    );
     if let Some(ar) = i.index.find("ghosttown", "VWRM") {
         let g15 = missions::ladders_for(&ar.ladders, &ar.default_ladders, 15);
         let steps: Vec<(i32, Vec<(i32, i32)>)> = g15
@@ -121,11 +127,17 @@ fn install_missions_for_the_modes() {
         eprintln!("Arms Race G 15 on Steam: {steps:?}");
         if let Some(w) = ca.attributes().and_then(|a| a.weapons.as_ref()) {
             let name = |i: i32| w.weapons.get(i as usize).map(|r| r.name.clone());
-            let names: Vec<_> = steps.iter().map(|(_, c)| (c[0].0, name(c[0].0), ca.weapon_for_index(c[0].0))).collect();
+            let names: Vec<_> = steps
+                .iter()
+                .map(|(_, c)| (c[0].0, name(c[0].0), ca.weapon_for_index(c[0].0)))
+                .collect();
             eprintln!("  as weapon records: {names:?}");
             // The ids are weapon record indices (missions.md Open question
             // 6): every step names a weapon our set has with the install.
-            assert!(names.iter().all(|(_, n, ours)| n.is_some() && ours.is_some()), "{names:?}");
+            assert!(
+                names.iter().all(|(_, n, ours)| n.is_some() && ours.is_some()),
+                "{names:?}"
+            );
             assert_eq!(names[0].1.as_deref(), Some("ACR_Sandfire"));
             let ours = |i| ca.weapon_for_index(i);
             assert_eq!(ours(191), Some("combat_arms:quarantine_virus_hand"), "the infected's");
@@ -137,21 +149,47 @@ fn install_missions_for_the_modes() {
     // Case 6 (Quirk 1) on Steam: Hired Guns 2's Hired Guns room plays
     // Squad Match 2.
     let sq = i.index.find("hiredguns2", "SQM").expect("Hired Guns 2's SQM");
-    assert_eq!((sq.path.as_str(), sq.mission.mode.as_str()), ("gms/hiredguns2_hqm.gms", "SQM2"));
+    assert_eq!(
+        (sq.path.as_str(), sq.mission.mode.as_str()),
+        ("gms/hiredguns2_hqm.gms", "SQM2")
+    );
     // The map messages the rules send (S15): GRAYHAMMER's S&D and CTF
     // start triggers at the setup, their end triggers at round over.
     for (key, level) in [("TMM", "Level02"), ("CTF", "Level05")] {
         let m = i.index.find("grayhammer", key).expect("GRAYHAMMER's mission");
         let o = m.object();
-        let names = |step| m.map_messages(step, &o).into_iter().map(|(n, msg)| format!("{n} {msg}")).collect::<Vec<_>>();
-        eprintln!("grayhammer {key}: mission start {:?}", names(missions::MapStep::MissionStart));
-        assert!(names(missions::MapStep::RoundSetup).contains(&format!("{level}StartTrigger TRIGGER")), "{key}");
-        assert!(names(missions::MapStep::RoundOver).contains(&format!("{level}EndTrigger TRIGGER")), "{key}");
+        let names = |step| {
+            m.map_messages(step, &o)
+                .into_iter()
+                .map(|(n, msg)| format!("{n} {msg}"))
+                .collect::<Vec<_>>()
+        };
+        eprintln!(
+            "grayhammer {key}: mission start {:?}",
+            names(missions::MapStep::MissionStart)
+        );
+        assert!(
+            names(missions::MapStep::RoundSetup).contains(&format!("{level}StartTrigger TRIGGER")),
+            "{key}"
+        );
+        assert!(
+            names(missions::MapStep::RoundOver).contains(&format!("{level}EndTrigger TRIGGER")),
+            "{key}"
+        );
     }
-    for (key, map) in [("HQM", "ghosttown"), ("BNT", "ghosttown"), ("SBT", "ghosttown"), ("CTF", "ghosttown"), ("LMS", "ghosttown")] {
+    for (key, map) in [
+        ("HQM", "ghosttown"),
+        ("BNT", "ghosttown"),
+        ("SBT", "ghosttown"),
+        ("CTF", "ghosttown"),
+        ("LMS", "ghosttown"),
+    ] {
         if let Some(m) = i.index.find(map, key) {
             let o = m.object();
-            eprintln!("{map} {key}: TimeLimit {} TrainingTimeLimit {} weapons {:?}/{:?}", o.time_limit, o.training_time_limit, o.jsf_weapon, o.creed_weapon);
+            eprintln!(
+                "{map} {key}: TimeLimit {} TrainingTimeLimit {} weapons {:?}/{:?}",
+                o.time_limit, o.training_time_limit, o.jsf_weapon, o.creed_weapon
+            );
         }
     }
 }
@@ -181,7 +219,10 @@ fn install_mission_plays() {
     assert!((m(&sim).round_ends.unwrap() - now(&sim) - 10.0).abs() < 0.1);
     until(&mut sim, 20.0, |p| matches!(p, Phase::Setup { .. }));
     until_live(&mut sim);
-    assert!((m(&sim).round_ends.unwrap() - now(&sim) - 120.0).abs() < 0.1, "Steam's 120 s");
+    assert!(
+        (m(&sim).round_ends.unwrap() - now(&sim) - 120.0).abs() < 0.1,
+        "Steam's 120 s"
+    );
     until(&mut sim, 125.0, |p| matches!(p, Phase::RoundOver { .. }));
     assert_eq!(m(&sim).winner, Some(CREED));
 }

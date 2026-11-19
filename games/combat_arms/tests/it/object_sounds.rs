@@ -37,7 +37,13 @@ use crate::{
 fn door(props: &[(&str, String)]) -> T {
     let mut all = vec![("OpeningTime", "1".to_string()), ("ClosingTime", "1".to_string())];
     all.extend(props.iter().cloned());
-    T::new(vec![wm("SlidingDoor", "Door", Vec3::new(10.0, 20.0, 30.0), Vec3::new(30.0, 60.0, 4.0), &all)])
+    T::new(vec![wm(
+        "SlidingDoor",
+        "Door",
+        Vec3::new(10.0, 20.0, 30.0),
+        Vec3::new(30.0, 60.0, 4.0),
+        &all,
+    )])
 }
 
 fn sound(t: &T, name: &str) -> Option<ObjSound> {
@@ -69,17 +75,28 @@ fn a_looping_transition_sound_lasts_its_transition() {
         ("open.wav", true, Some(t.id("Door")), 1000.0, 250.0)
     );
     t.frames(19);
-    assert_eq!(sound(&t, "Door").map(|s| s.serial), Some(s.serial), "the same start while it moves");
+    assert_eq!(
+        sound(&t, "Door").map(|s| s.serial),
+        Some(s.serial),
+        "the same start while it moves"
+    );
     t.frame();
     assert_eq!(t.state("Door"), State::On);
     assert_eq!(sound(&t, "Door"), None, "silent from the frame it reaches On");
     t.send("Door", "TRIGGER");
-    assert_eq!(sound(&t, "Door").map(|s| (s.file, s.looping)), Some(("close.wav".into(), true)));
+    assert_eq!(
+        sound(&t, "Door").map(|s| (s.file, s.looping)),
+        Some(("close.wav".into(), true))
+    );
     t.frames(3);
     t.send("Door", "LOCK");
     t.send("Door", "TRIGGER");
     let s = sound(&t, "Door").expect("the locked sound");
-    assert_eq!((s.file.as_str(), s.looping), ("locked.wav", false), "the locked sound never loops");
+    assert_eq!(
+        (s.file.as_str(), s.looping),
+        ("locked.wav", false),
+        "the locked sound never loops"
+    );
 }
 
 /// 14: without `LoopSounds` each transition's sound is a one-shot; the
@@ -133,7 +150,11 @@ fn remember_restarts_a_loop_init_doesnt() {
     let again = sound(&t, "Door").expect("restarted");
     assert!(again.looping && again.serial > first.serial);
     t.send("Door", "INIT");
-    assert_eq!(sound(&t, "Door").map(|s| s.serial), Some(again.serial), "INIT leaves it");
+    assert_eq!(
+        sound(&t, "Door").map(|s| s.serial),
+        Some(again.serial),
+        "INIT leaves it"
+    );
 }
 
 /// 12, 14: a trigger's `ActivationSound` is a one-shot at the trigger,
@@ -142,7 +163,14 @@ fn remember_restarts_a_loop_init_doesnt() {
 #[test]
 fn trigger_activation_sound() {
     let mut t = T::new(vec![{
-        let (mut kv, c) = obj("Trigger", "Trig", &[("ActivationSound", "beep.wav".into()), ("NumberOfActivations", "0".into())]);
+        let (mut kv, c) = obj(
+            "Trigger",
+            "Trig",
+            &[
+                ("ActivationSound", "beep.wav".into()),
+                ("NumberOfActivations", "0".into()),
+            ],
+        );
         kv.push(("origin".into(), v(5.0, 6.0, 7.0)));
         (kv, c)
     }]);
@@ -206,13 +234,22 @@ fn keyframer_sounds() {
         ("hum.wav", true, Some(t.id("Snd")), 800.0, 200.0)
     );
     t.frames(10);
-    assert_eq!(sound(&t, "KF").map(|x| x.serial), Some(s.serial), "one start while active");
+    assert_eq!(
+        sound(&t, "KF").map(|x| x.serial),
+        Some(s.serial),
+        "one start while active"
+    );
     t.frames(15);
-    let Kind::KeyFramer(k) = &t.w.objects[t.id("KF") as usize].kind else { unreachable!() };
+    let Kind::KeyFramer(k) = &t.w.objects[t.id("KF") as usize].kind else {
+        unreachable!()
+    };
     assert!(!k.active, "the list ended");
     assert_eq!(sound(&t, "KF"), None, "stopped when inactive");
     let key = shot(&t, "KF").expect("key 1's sound");
-    assert_eq!((key.file.as_str(), key.looping, key.at, key.radius), ("key.wav", false, Vec3::new(100.0, 0.0, 0.0), 300.0));
+    assert_eq!(
+        (key.file.as_str(), key.looping, key.at, key.radius),
+        ("key.wav", false, Vec3::new(100.0, 0.0, 0.0), 300.0)
+    );
     // OFF while active stops it too.
     t.send("KF", "ON");
     assert!(sound(&t, "KF").is_some());
@@ -247,12 +284,10 @@ fn sound_door(time: f32) -> World {
 struct Heard(Vec<CaLoopSound>);
 
 fn listen(app: &mut App) {
-    app.init_resource::<Heard>().add_systems(
-        Last,
-        |mut l: MessageReader<CaLoopSound>, mut h: ResMut<Heard>| {
+    app.init_resource::<Heard>()
+        .add_systems(Last, |mut l: MessageReader<CaLoopSound>, mut h: ResMut<Heard>| {
             h.0.extend(l.read().filter(|l| l.key.0 & OBJECT_SOUND_KEYS != 0).cloned());
-        },
-    );
+        });
 }
 
 fn node(app: &App, name: &str) -> Entity {
@@ -285,7 +320,10 @@ fn a_door_loop_plays_on_its_node_and_stops() {
     sim.seconds(1.5);
     let heard = std::mem::take(&mut sim.app.world_mut().resource_mut::<Heard>().0);
     assert_eq!(heard.len(), 1, "{heard:?}");
-    assert!(heard[0].sound.is_none() && heard[0].key == start.key, "stopped under its key");
+    assert!(
+        heard[0].sound.is_none() && heard[0].key == start.key,
+        "stopped under its key"
+    );
 }
 
 /// Over the network: a client hears the server's loop on its own node; a
@@ -337,7 +375,10 @@ fn clients_hear_object_sounds() {
     sim.until_joined(600);
     sim.ticks(30);
     let heard = &sim.clients[1].app.world().resource::<Heard>().0;
-    assert!(heard.iter().any(|l| !l.once && l.sound.is_some()), "a late joiner gets the loop: {heard:?}");
+    assert!(
+        heard.iter().any(|l| !l.once && l.sound.is_some()),
+        "a late joiner gets the loop: {heard:?}"
+    );
     assert!(!heard.iter().any(|l| l.once), "but not the past one-shot: {heard:?}");
     // A new one-shot reaches both.
     send(&mut sim, "Beep");
@@ -376,7 +417,8 @@ fn keyframed_map_sounds_follow_their_object() {
             prop("InnerRadius", Value::Real(250.0)),
         ],
     };
-    w.objects.extend([kf("KF", "Amb;Placed"), fx("Amb", true), fx("Placed", false)]);
+    w.objects
+        .extend([kf("KF", "Amb;Placed"), fx("Amb", true), fx("Placed", false)]);
     // The keys as blind data (chunk 0): (0,0,0) at 0 s, (100,0,0) 1 s on.
     let bytes: Vec<u8> = (0..keys_hex().len() / 2)
         .map(|i| u8::from_str_radix(&keys_hex()[2 * i..2 * i + 2], 16).unwrap())

@@ -110,7 +110,10 @@ fn bots_play_no_objective_on_grayhammer() {
     let mut sim = sim_on(&mount, "grayhammer", "TMM");
     {
         let o = sim.app.world().resource::<CaMapObjects>();
-        assert!(o.bomb_zones.iter().filter(|z| z.family == "Doobic").count() >= 2, "the map's sites");
+        assert!(
+            o.bomb_zones.iter().filter(|z| z.family == "Doobic").count() >= 2,
+            "the map's sites"
+        );
     }
     for team in [1, 2, 1, 2, 1, 2, 1, 2] {
         bots::add_bot(sim.app.world_mut(), Some(team)).unwrap();
@@ -133,7 +136,10 @@ fn bots_play_no_objective_on_grayhammer() {
             .any(|b| combat_arms::game::rules::objectives::has_weapon(w, *b, BOMB).is_some());
     }
     let mm = m(&sim);
-    eprintln!("grayhammer S&D: {deaths} deaths, round wins {:?}, rounds {}", mm.round_wins, mm.round);
+    eprintln!(
+        "grayhammer S&D: {deaths} deaths, round wins {:?}, rounds {}",
+        mm.round_wins, mm.round
+    );
     assert!(deaths >= 2, "bots fought: {deaths} deaths");
     assert!(mm.round_wins.iter().sum::<u32>() >= 1, "a round ended");
     assert!(!planted, "no bot planted");
@@ -153,8 +159,17 @@ fn bots_play_no_objective_on_grayhammer() {
         taken |= o.flags.iter().any(|f| f.at != FlagAt::Home);
     }
     let mm = m(&sim);
-    eprintln!("grayhammer CTF: kills {:?}, deaths {:?}, flags {:?}", mm.kills, mm.deaths, sim.app.world().resource::<CaObjectives>().flags);
-    assert_eq!(sim.app.world().resource::<CaObjectives>().flags.len(), 2, "the map's two flags");
+    eprintln!(
+        "grayhammer CTF: kills {:?}, deaths {:?}, flags {:?}",
+        mm.kills,
+        mm.deaths,
+        sim.app.world().resource::<CaObjectives>().flags
+    );
+    assert_eq!(
+        sim.app.world().resource::<CaObjectives>().flags.len(),
+        2,
+        "the map's two flags"
+    );
     assert!(mm.kills.iter().sum::<u32>() >= 2, "bots fought: {:?}", mm.kills);
     assert!(!taken, "no bot took a flag");
 }
@@ -176,13 +191,24 @@ fn hired_guns_on_bloodmoney() {
     let a = human(&mut sim, 1);
     let _b = human(&mut sim, 2);
     // Past the warm-up to the first real round.
-    assert!(until(&mut sim, 30.0, |s| m(s).phase == Phase::Live && !m(s).warmup), "round 1");
+    assert!(
+        until(&mut sim, 30.0, |s| m(s).phase == Phase::Live && !m(s).warmup),
+        "round 1"
+    );
     unprotect(&mut sim);
     let o = sim.app.world().resource::<CaObjectives>().clone();
     assert_eq!((o.placed, o.bullion.len()), (80, 80));
     assert_eq!(sim.app.world().get::<CaBank>(a).map(|b| b.0), Some(1000));
     // A unit at UNITSPAWN_ALPHA, following its hirer.
-    let spawn = sim.app.world().resource::<CaMapObjects>().named("UNITSPAWN_ALPHA").next().unwrap().at.translation;
+    let spawn = sim
+        .app
+        .world()
+        .resource::<CaMapObjects>()
+        .named("UNITSPAWN_ALPHA")
+        .next()
+        .unwrap()
+        .at
+        .translation;
     let merc = mercs::hire(sim.app.world_mut(), a, 0).unwrap();
     assert!((sim.position(merc) - spawn).length() < 0.05);
     mercs::set_order(sim.app.world_mut(), a, MercOrder::FollowMe);
@@ -217,7 +243,15 @@ fn hired_guns_on_bloodmoney() {
     eprintln!("bloodmoney: the unit from {start:.0} u to {end:.0} u of its hirer");
     assert!(close, "it followed its hirer: {start:.0} → {end:.0} u");
     // A pocket into Alpha's bank.
-    let bank = sim.app.world().resource::<CaMapObjects>().banks.iter().find(|b| b.team == Some(1)).unwrap().area;
+    let bank = sim
+        .app
+        .world()
+        .resource::<CaMapObjects>()
+        .banks
+        .iter()
+        .find(|b| b.team == Some(1))
+        .unwrap()
+        .area;
     sim.app.world_mut().entity_mut(a).insert(CaCarry {
         bars: 4,
         money: 400,
@@ -237,22 +271,43 @@ fn hired_guns_on_bloodmoney() {
 fn vip_escort_on_cityofwings() {
     let Some(mount) = mount() else { return };
     let mut sim = sim_on(&mount, "cityofwings", "ESC");
-    let point = sim.app.world().resource::<CaMapObjects>().named("VipTeleportPoint").next().unwrap().at;
+    let point = sim
+        .app
+        .world()
+        .resource::<CaMapObjects>()
+        .named("VipTeleportPoint")
+        .next()
+        .unwrap()
+        .at;
     let exit = sim.app.world().resource::<CaMapObjects>().escape_zones[0].area;
     let alpha = [human(&mut sim, 1), human(&mut sim, 1)];
     let _bravo = [human(&mut sim, 2), human(&mut sim, 2)];
-    assert!(until(&mut sim, 30.0, |s| m(s).phase == Phase::Live && !m(s).warmup), "round 1");
+    assert!(
+        until(&mut sim, 30.0, |s| m(s).phase == Phase::Live && !m(s).warmup),
+        "round 1"
+    );
     let vip = escort::vip(sim.app.world_mut()).expect("a VIP");
     assert!(alpha.contains(&vip));
     let at = sim.position(vip);
-    eprintln!("cityofwings: VIP at {at}, its point {}, the exit {:?}", point.translation, exit.centre);
-    assert!((at.xz() - point.translation.xz()).length() < 0.1, "at its teleport point");
+    eprintln!(
+        "cityofwings: VIP at {at}, its point {}, the exit {:?}",
+        point.translation, exit.centre
+    );
+    assert!(
+        (at.xz() - point.translation.xz()).length() < 0.1,
+        "at its teleport point"
+    );
     // The exit shut: nothing.
     put(&mut sim, vip, exit.centre);
     sim.ticks(3);
     assert!(m(&sim).winner.is_none(), "the exit is shut");
     let ends = m(&sim).round_ends.unwrap();
-    assert!(until(&mut sim, 66.0, |s| s.app.world().resource::<CaObjectives>().exit.is_some_and(|x| x.open)));
+    assert!(until(&mut sim, 66.0, |s| s
+        .app
+        .world()
+        .resource::<CaObjectives>()
+        .exit
+        .is_some_and(|x| x.open)));
     let left = ends - sim.app.world().resource::<chimera_core::core::SimClock>().now;
     // The exit timer's 60 s + its 1 s run-out (game_modes_2.md Follow-up
     // (2026-10-31b)): 119 s left.

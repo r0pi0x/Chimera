@@ -162,7 +162,13 @@ fn c99_tint_cycle() {
     v.start(&t, TEST);
     let c = Vec3::new(1.0, 128.0 / 255.0, 0.0);
     let mut at = 0.0;
-    for (time, want) in [(0.25, c * 0.5), (1.0, c), (1.75, c * 0.5), (2.5, Vec3::ZERO), (3.25, c * 0.5)] {
+    for (time, want) in [
+        (0.25, c * 0.5),
+        (1.0, c),
+        (1.75, c * 0.5),
+        (2.5, Vec3::ZERO),
+        (3.25, c * 0.5),
+    ] {
         run(&mut v, &t, time - at, 0.05);
         at = time;
         close3(running(&v, TEST).tint, want, 1e-4, &format!("at {time}"));
@@ -176,11 +182,18 @@ fn c100_fade() {
     let t = table();
     let mut v = CaDamageFxView::default();
     v.start(&t, TEST);
-    assert!(v.sounds.contains(&FxSound::Loop { record: TEST, file: "test\\loop.wav".into() }));
+    assert!(v.sounds.contains(&FxSound::Loop {
+        record: TEST,
+        file: "test\\loop.wav".into()
+    }));
     run(&mut v, &t, 1.0, 0.05);
     v.sounds.clear();
     v.stop(&t, TEST);
-    assert_eq!(v.sounds, vec![FxSound::StopLoop { record: TEST }], "the loop ends at the stop");
+    assert_eq!(
+        v.sounds,
+        vec![FxSound::StopLoop { record: TEST }],
+        "the loop ends at the stop"
+    );
     let c = Vec3::new(1.0, 128.0 / 255.0, 0.0);
     run(&mut v, &t, 1.0, 0.05);
     close3(running(&v, TEST).tint, c * 0.5, 1e-4, "1 s into the fade");
@@ -194,9 +207,19 @@ fn c100_fade() {
 fn c101_two_records() {
     let burn = Vec3::new(0.4, 0.2, 0.0);
     let poison = Vec3::new(0.0, 0.3, 0.0);
-    close3(damage_fx::combine_tint(&[burn, poison]), Vec3::new(0.4, 0.3, 0.0), 0.0, "damage slot");
+    close3(
+        damage_fx::combine_tint(&[burn, poison]),
+        Vec3::new(0.4, 0.3, 0.0),
+        0.0,
+        "damage slot",
+    );
     let slot = damage_fx::combine_tint(&[burn, poison]);
-    close3(damage_fx::combine_tint(&[slot, Vec3::ONE]), Vec3::ONE, 0.0, "with a flash");
+    close3(
+        damage_fx::combine_tint(&[slot, Vec3::ONE]),
+        Vec3::ONE,
+        0.0,
+        "with a flash",
+    );
     // Through the view: burning and poisoned together, on phase.
     let t = table();
     let mut v = CaDamageFxView::default();
@@ -217,7 +240,12 @@ fn c102_darkening() {
     run(&mut v, &t, 0.25, 0.05);
     close3(v.screen(&t, 0.0).light_scale, Vec3::splat(0.75), 1e-4, "0.25 s");
     run(&mut v, &t, 0.25, 0.05);
-    close3(v.screen(&t, 0.0).light_scale, Vec3::splat(128.0 / 255.0), 1e-4, "the floor");
+    close3(
+        v.screen(&t, 0.0).light_scale,
+        Vec3::splat(128.0 / 255.0),
+        1e-4,
+        "the floor",
+    );
 }
 
 /// 103. The strength factor.
@@ -300,7 +328,12 @@ fn c109_glue_and_trap() {
     run(&mut v, &t, 1.0, 0.05);
     close3(v.screen(&t, 0.0).light_scale, Vec3::splat(0.8), 1e-4, "0.2/s");
     run(&mut v, &t, 1.0, 0.05);
-    close3(v.screen(&t, 0.0).light_scale, Vec3::splat(196.0 / 255.0), 1e-4, "the floor");
+    close3(
+        v.screen(&t, 0.0).light_scale,
+        Vec3::splat(196.0 / 255.0),
+        1e-4,
+        "the floor",
+    );
 }
 
 /// 110. Freezing: the roll swings to 0.005 U(0.9, 1.0) rad at 0.5 rad/s,
@@ -370,15 +403,19 @@ fn progress(sim: &Sim, p: Entity) -> CaProgress {
 /// An over-time entry of `kind` on `p` for `seconds`, dealing almost
 /// nothing.
 fn entry(sim: &mut Sim, p: Entity, kind: OverTimeKind, seconds: f32) {
-    sim.app.world_mut().resource_mut::<CaGrenadeEffects>().over_time.push(OverTime {
-        victim: p,
-        source: None,
-        kind,
-        rate: 1e-6,
-        remaining: seconds,
-        attacker: None,
-        weapon: "test",
-    });
+    sim.app
+        .world_mut()
+        .resource_mut::<CaGrenadeEffects>()
+        .over_time
+        .push(OverTime {
+            victim: p,
+            source: None,
+            kind,
+            rate: 1e-6,
+            remaining: seconds,
+            attacker: None,
+            weapon: "test",
+        });
 }
 
 /// Tick until the clock reaches `t` (s).
@@ -426,7 +463,10 @@ fn c98_gear_hides_burn() {
         except: 0,
     };
     sim.app.world_mut().entity_mut(p).insert((
-        Armor { amount: 0.0, helmet: false },
+        Armor {
+            amount: 0.0,
+            helmet: false,
+        },
         ArmorPieces {
             pieces: vec![hits::ArmorPiece { entries: vec![cover] }],
             depletion: Default::default(),
@@ -450,12 +490,18 @@ fn c104_death_clears() {
     entry(&mut sim, p, OverTimeKind::Burn, 30.0);
     sim.seconds(1.0);
     assert!(sim.app.world().resource::<CaDamageFxView>().is_running(BURNING));
-    assert!(sim.app.world().resource::<CaScreenFx>().tint != Vec3::ZERO || sim.app.world().resource::<CaScreenFx>().light_scale != Vec3::ONE);
+    assert!(
+        sim.app.world().resource::<CaScreenFx>().tint != Vec3::ZERO
+            || sim.app.world().resource::<CaScreenFx>().light_scale != Vec3::ONE
+    );
     let at = now(&sim);
     sim.app.world_mut().entity_mut(p).insert(Dead { since: at });
     sim.app.world_mut().get_mut::<Health>(p).unwrap().current = 0.0;
     sim.ticks(1);
-    assert!(sim.app.world().resource::<CaDamageFxView>().running.is_empty(), "no fade");
+    assert!(
+        sim.app.world().resource::<CaDamageFxView>().running.is_empty(),
+        "no fade"
+    );
     assert_eq!(*sim.app.world().resource::<CaScreenFx>(), CaScreenFx::default());
 }
 
@@ -475,7 +521,10 @@ fn c108_poison_one_jump() {
     sim.ticks(1);
     let v = sim.app.world().resource::<CaDamageFxView>();
     assert!(!v.is_running(POISONED), "stopped");
-    assert!(v.running.iter().any(|r| r.record == POISONED && r.fading.is_some()), "fading");
+    assert!(
+        v.running.iter().any(|r| r.record == POISONED && r.fading.is_some()),
+        "fading"
+    );
     let left: Vec<OverTimeKind> = sim
         .app
         .world()
@@ -485,7 +534,11 @@ fn c108_poison_one_jump() {
         .filter(|o| o.victim == p)
         .map(|o| o.kind)
         .collect();
-    assert_eq!(left, vec![OverTimeKind::Burn], "the poison entries cleared, the burn kept");
+    assert_eq!(
+        left,
+        vec![OverTimeKind::Burn],
+        "the poison entries cleared, the burn kept"
+    );
     sim.seconds(1.1);
     assert!(!progress(&sim, p).is_active(POISON));
     let v = sim.app.world().resource::<CaDamageFxView>();
@@ -522,5 +575,8 @@ fn item4_poison_forces_the_spread() {
     assert!(!damage_fx::forces_spread(&t, &p(poison, 0)), "not dealing");
     let burn = damage_fx::bit(BURN);
     assert!(!damage_fx::forces_spread(&t, &p(burn, burn)), "burn: no");
-    assert!(!damage_fx::forces_spread(&CaDamageFxTable::default(), &p(poison, poison)), "no record");
+    assert!(
+        !damage_fx::forces_spread(&CaDamageFxTable::default(), &p(poison, poison)),
+        "no record"
+    );
 }

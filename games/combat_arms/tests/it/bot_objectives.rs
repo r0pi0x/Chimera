@@ -10,7 +10,10 @@
 use bevy::prelude::*;
 use chimera_world::harness::Sim;
 use combat_arms::game::{
-    bots::{self, BotSettings, BotState, CaBot, brain::{Kind, Stimuli}},
+    bots::{
+        self, BotSettings, BotState, CaBot,
+        brain::{Kind, Stimuli},
+    },
     rules::{
         escort::CaVip,
         mercs::{self, CaMerc, MercOrder},

@@ -81,7 +81,11 @@ fn case_35_plant_and_detonate() {
     let n = now(&sim);
     let left = m(&sim).round_ends.unwrap() - n;
     assert!((left - 120.0).abs() < 0.6, "round timer {left:.2} s left");
-    assert!(((bomb.detonates - n) - 40.0).abs() < 0.6, "bomb {:.2}", bomb.detonates - n);
+    assert!(
+        ((bomb.detonates - n) - 40.0).abs() < 0.6,
+        "bomb {:.2}",
+        bomb.detonates - n
+    );
     assert!(!weapons(&sim, a[0]).contains(&BOMB), "the planter's bomb is gone");
     assert_eq!(stats(&sim, a[0]).plants, 0, "S&D keeps no plant statistic");
     assert_eq!(phase(&sim), Phase::Live);

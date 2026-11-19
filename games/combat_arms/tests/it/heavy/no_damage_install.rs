@@ -13,10 +13,7 @@ use chimera_sim::{
         auto::{self, Capabilities},
         power::PowerReaders,
     },
-    weapon::{
-        data::WeaponCatalog,
-        harm::can_damage_player,
-    },
+    weapon::{data::WeaponCatalog, harm::can_damage_player},
 };
 use chimera_world::harness::Sim;
 use combat_arms::{
@@ -40,7 +37,12 @@ fn the_installs_guns_without_damage_stay_off_drawn_ladders() {
     let catalog = w.resource::<WeaponCatalog>();
     let readers = &w.resource::<PowerReaders>().harm;
     let harm = |id: &str| can_damage_player(catalog.get(id).unwrap_or_else(|| panic!("{id}")), readers);
-    for id in ["combat_arms:rms12", "combat_arms:m136_at4", "combat_arms:optical_buster_apollo", "combat_arms:m4devgru"] {
+    for id in [
+        "combat_arms:rms12",
+        "combat_arms:m136_at4",
+        "combat_arms:optical_buster_apollo",
+        "combat_arms:m4devgru",
+    ] {
         assert_eq!(harm(id), Some(false), "{id}");
     }
     for id in [
@@ -71,7 +73,11 @@ fn the_installs_guns_without_damage_stay_off_drawn_ladders() {
     assert!(!ids.contains(&"combat_arms:rms12_bounty"), "its burn is 30 HP/s");
     for c in &caps {
         for id in c.guns.iter().map(|g| g.id).chain(c.grenades.iter().copied()) {
-            assert_ne!(can_damage_player(catalog.get(id).unwrap(), readers), Some(false), "{id} left in");
+            assert_ne!(
+                can_damage_player(catalog.get(id).unwrap(), readers),
+                Some(false),
+                "{id} left in"
+            );
         }
     }
 }

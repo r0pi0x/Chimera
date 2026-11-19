@@ -58,7 +58,11 @@ fn stats(sim: &Sim, p: Entity) -> Stats {
     let w = sim.app.world();
     Stats {
         character: format!("{:?}", w.get::<CaCharacter>(p).expect("its gear derived")),
-        armour: format!("{:?} {:?}", w.get::<Armor>(p).unwrap(), w.get::<ArmorPieces>(p).unwrap()),
+        armour: format!(
+            "{:?} {:?}",
+            w.get::<Armor>(p).unwrap(),
+            w.get::<ArmorPieces>(p).unwrap()
+        ),
         max_health: w.get::<Health>(p).unwrap().max,
         max_armour: gear::max_armour(w, p),
     }
@@ -79,8 +83,16 @@ fn a_stock_body_and_a_specialist_on_a_rung_play_as_the_baseline() {
         let (sim, p) = player(look(body), false, |_| {});
         assert_ne!(stats(&sim, p), base, "body {body} wears its own vest off a rung");
         let (sim, p) = player(look(body), true, |_| {});
-        assert_eq!(stats(&sim, p), base, "body {body} on a rung: the baseline's armour and movement");
-        assert_eq!(sim.app.world().get::<Selection>(p).map(|s| s.model), Some(body), "still drawn as itself");
+        assert_eq!(
+            stats(&sim, p),
+            base,
+            "body {body} on a rung: the baseline's armour and movement"
+        );
+        assert_eq!(
+            sim.app.world().get::<Selection>(p).map(|s| s.model),
+            Some(body),
+            "still drawn as itself"
+        );
     }
 }
 
@@ -105,12 +117,24 @@ fn a_body_type_of_its_own_is_kept_on_a_rung() {
     let (sim, p) = player(look(40), true, tweak);
     let s = stats(&sim, p);
     let c = sim.app.world().get::<CaCharacter>(p).unwrap();
-    assert_eq!((c.figure.dash_speed, c.figure.max_stamina), (1.25, 150.0), "its own body type");
+    assert_eq!(
+        (c.figure.dash_speed, c.figure.max_stamina),
+        (1.25, 150.0),
+        "its own body type"
+    );
     assert_eq!(c.stamina_max(), 150.0, "its stamina, no vest bonus");
-    assert_eq!((s.armour.clone(), s.max_health, s.max_armour), (base.armour, base.max_health, base.max_armour), "the baseline's armour");
+    assert_eq!(
+        (s.armour.clone(), s.max_health, s.max_armour),
+        (base.armour, base.max_health, base.max_armour),
+        "the baseline's armour"
+    );
     let b = player(look(0), false, |_| {});
     let bc = b.0.app.world().get::<CaCharacter>(b.1).unwrap();
-    assert_eq!(format!("{:?}", c.gear), format!("{:?}", bc.gear), "the baseline vest's worn terms");
+    assert_eq!(
+        format!("{:?}", c.gear),
+        format!("{:?}", bc.gear),
+        "the baseline vest's worn terms"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -126,7 +150,11 @@ fn t109_infection_point() {
     assert!((at - Vec3::new(1.0, 0.1 * UNIT, 2.0)).length() < 1e-6, "{at}");
     let at = infection_point(Vec3::new(0.0, 70.0 * UNIT, 0.0), Some(70.0 * UNIT));
     assert!((at.y - 0.1 * UNIT).abs() < 1e-6);
-    assert_eq!(infection_point(Vec3::ONE, None), Vec3::ONE, "nothing below: where it stands");
+    assert_eq!(
+        infection_point(Vec3::ONE, None),
+        Vec3::ONE,
+        "nothing below: where it stands"
+    );
 }
 
 /// 110. One infection sound at a time: another while one still plays

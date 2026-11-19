@@ -8,7 +8,7 @@
 //! reach a document without a HUD table (the knives).
 
 use combat_arms::game::{
-    data::{merge_weapon_docs, read_attributes, attributes::WEAPONS_FILE},
+    data::{attributes::WEAPONS_FILE, merge_weapon_docs, read_attributes},
     effects::data::CaWeaponFx,
     view_model::CaViewParams,
 };
@@ -57,7 +57,11 @@ fn hook<'a>(docs: &'a [(String, Table)], id: &str, name: &str) -> &'a Value {
         .iter()
         .find(|(_, t)| t.get("id").and_then(Value::as_str) == Some(id))
         .unwrap_or_else(|| panic!("{id}"));
-    t["hooks"].as_table().unwrap().get(name).unwrap_or_else(|| panic!("{id} has no {name}"))
+    t["hooks"]
+        .as_table()
+        .unwrap()
+        .get(name)
+        .unwrap_or_else(|| panic!("{id} has no {name}"))
 }
 
 fn fx(docs: &[(String, Table)], id: &str) -> CaWeaponFx {
@@ -73,7 +77,13 @@ fn view(docs: &[(String, Table)], id: &str) -> CaViewParams {
 #[test]
 fn a_weapon_carries_its_records_reticle() {
     let docs = merged();
-    let reticle = |id: &str| hook(&docs, id, "combat_arms:hud").get("dot_sight").and_then(Value::as_str).filter(|n| !n.is_empty()).map(str::to_string);
+    let reticle = |id: &str| {
+        hook(&docs, id, "combat_arms:hud")
+            .get("dot_sight")
+            .and_then(Value::as_str)
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+    };
     let copy = "combat_arms:copy_gun";
     assert_eq!(reticle(copy).as_deref(), Some("TEST\\dot\\Reticle.dtx"));
     assert_eq!(reticle("combat_arms:m4a1"), None);
@@ -88,8 +98,15 @@ fn a_weapon_carries_its_records_reticle() {
 fn a_weapon_without_a_hud_table_takes_its_records_crosshair() {
     let docs = merged();
     let machete = hook(&docs, "combat_arms:machete", "combat_arms:hud");
-    assert_eq!(machete.get("disable_crosshair").and_then(Value::as_bool), Some(true), "{machete:?}");
-    assert_eq!(machete.get("dot_sight").and_then(Value::as_str), Some("TEST\\dot\\Knife.dtx"));
+    assert_eq!(
+        machete.get("disable_crosshair").and_then(Value::as_bool),
+        Some(true),
+        "{machete:?}"
+    );
+    assert_eq!(
+        machete.get("dot_sight").and_then(Value::as_str),
+        Some("TEST\\dot\\Knife.dtx")
+    );
     let mp5 = hook(&docs, "combat_arms:mp5a4", "combat_arms:hud");
     assert_eq!(mp5.get("crosshair").and_then(Value::as_integer), Some(2), "{mp5:?}");
     assert_eq!(mp5.get("disable_crosshair").and_then(Value::as_bool), Some(false));
@@ -108,26 +125,38 @@ fn a_weapon_and_its_copy_play_their_own_sounds() {
     assert_eq!(m4.silenced_sounds, ["test/m4/sil1.wav", "", "test/m4/sil3.wav"]);
     assert_eq!(m4.dry_fire_sound, "test/m4/dry.wav");
     assert_eq!(m4.reload_sounds, ["test/m4/r1.wav", "", "test/m4/r3.wav"]);
-    assert_eq!((m4.select_sound.as_str(), m4.deselect_sound.as_str()), ("test/m4/sel.wav", "test/m4/desel.wav"));
+    assert_eq!(
+        (m4.select_sound.as_str(), m4.deselect_sound.as_str()),
+        ("test/m4/sel.wav", "test/m4/desel.wav")
+    );
     assert_eq!(m4.hh_muzzle, "Own_HH");
     assert_eq!(m4.hh_flash_hider, ["HH_Hide1"]);
     let v = view(&docs, "combat_arms:m4a1");
     assert_eq!(v.muzzle_fx, "Own_PV");
     assert_eq!(v.flash_hider_fx, ["", "", "PV_Hide2"], "indexed by level");
     // The ammo's effects: names our tables have.
-    assert_eq!((m4.impact.as_str(), m4.fire.as_str(), m4.tracer.as_str()), ("Melee", "9mm", "SMG02"));
+    assert_eq!(
+        (m4.impact.as_str(), m4.fire.as_str(), m4.tracer.as_str()),
+        ("Melee", "9mm", "SMG02")
+    );
 
     // The copy has the template's tables but none of its values.
     let copy = fx(&docs, "combat_arms:copy_gun");
     assert_eq!(copy.fire_sound, "test/copy/fire.wav");
     assert!(copy.silenced_sounds.is_empty() && copy.dry_fire_sound.is_empty());
     assert_eq!(copy.reload_sounds, ["", "test/copy/r2.wav"]);
-    assert_eq!((copy.select_sound.as_str(), copy.deselect_sound.as_str()), ("test/copy/sel.wav", ""));
+    assert_eq!(
+        (copy.select_sound.as_str(), copy.deselect_sound.as_str()),
+        ("test/copy/sel.wav", "")
+    );
     assert!(copy.hh_muzzle.is_empty() && copy.hh_flash_hider.is_empty());
     assert_eq!(view(&docs, "combat_arms:copy_gun").muzzle_fx, "Copy_PV");
     assert!(view(&docs, "combat_arms:copy_gun").flash_hider_fx.is_empty());
     // Plain ammo names no effects at all (a missing key).
-    assert_eq!((copy.impact.as_str(), copy.fire.as_str(), copy.tracer.as_str()), ("", "", ""));
+    assert_eq!(
+        (copy.impact.as_str(), copy.fire.as_str(), copy.tracer.as_str()),
+        ("", "", "")
+    );
 }
 
 /// A missing field is the spec's default (attribute_data.md): no sound,
@@ -139,9 +168,15 @@ fn missing_fields_fall_back_to_the_spec_default() {
     let docs = merged();
     let bare = fx(&docs, "combat_arms:bare_gun");
     assert!(bare.fire_sound.is_empty() && bare.select_sound.is_empty() && bare.reload_sounds.is_empty());
-    assert_eq!((bare.fire_radius, bare.reload_radius, bare.select_radius), (1000.0, 300.0, 300.0));
+    assert_eq!(
+        (bare.fire_radius, bare.reload_radius, bare.select_radius),
+        (1000.0, 300.0, 300.0)
+    );
     assert_eq!(bare.impact, "BulletFmj");
-    assert_eq!(bare.tracer, "SMG02", "`Standard` isn't in our tables: the template's (the patched M4A1's)");
+    assert_eq!(
+        bare.tracer, "SMG02",
+        "`Standard` isn't in our tables: the template's (the patched M4A1's)"
+    );
     assert!(view(&docs, "combat_arms:bare_gun").muzzle_fx.is_empty());
 }
 
@@ -190,8 +225,14 @@ fn a_weapon_set_lists_its_sounds() {
     want.sort_unstable();
     assert_eq!(m4.sound_paths(), want);
     let copy = fx(&docs, "combat_arms:copy_gun");
-    assert_eq!(copy.sound_paths(), ["test/copy/fire.wav", "test/copy/r2.wav", "test/copy/sel.wav"]);
+    assert_eq!(
+        copy.sound_paths(),
+        ["test/copy/fire.wav", "test/copy/r2.wav", "test/copy/sel.wav"]
+    );
     let frag = fx(&docs, "combat_arms:m67");
-    assert!(frag.sound_paths().contains(&"test/frag/pin.wav".to_string()), "misc sounds too");
+    assert!(
+        frag.sound_paths().contains(&"test/frag/pin.wav".to_string()),
+        "misc sounds too"
+    );
     assert!(fx(&docs, "combat_arms:bare_gun").sound_paths().is_empty());
 }

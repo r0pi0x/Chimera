@@ -5,18 +5,22 @@
 //! infected faces' eye groups and the effect file's eye group keys.
 //! Needs the V1 key; passes with a note without.
 
+use chimera_core::mount::config::LocalConfig;
 use combat_arms::game::{
     GAME, INFO,
     data::CaData,
     effects::library::FX_FILE,
     special::{PROJECTILE, ProjectileParams},
 };
-use chimera_core::mount::config::LocalConfig;
 use lithtech_formats::fxf::FxFile;
 
 fn params(id: &str) -> Option<ProjectileParams> {
     let ca = CaData::install();
-    ca.weapon_set().weapons.iter().find(|w| w.id == id).and_then(|w| w.hook::<ProjectileParams>(PROJECTILE))
+    ca.weapon_set()
+        .weapons
+        .iter()
+        .find(|w| w.id == id)
+        .and_then(|w| w.hook::<ProjectileParams>(PROJECTILE))
 }
 
 /// Case 54's and Follow-up 1-3's data: the flame puff's group with smooth
@@ -30,7 +34,9 @@ fn projectile_looks_from_the_install() {
     }
     let mut seen = std::collections::BTreeSet::new();
     for w in &ca.weapon_set().weapons {
-        let Some(p) = w.hook::<ProjectileParams>(PROJECTILE) else { continue };
+        let Some(p) = w.hook::<ProjectileParams>(PROJECTILE) else {
+            continue;
+        };
         if seen.insert(p.look.key()) {
             eprintln!("{}: {:?}", w.id, p.look);
         }
@@ -56,14 +62,22 @@ fn t114_eye_groups_by_face() {
         return;
     }
     let ch = ca.characters();
-    let face = |id: i32| ch.face.iter().find(|f| f.id == id).map(|f| f.client_fx.clone()).unwrap_or_default();
+    let face = |id: i32| {
+        ch.face
+            .iter()
+            .find(|f| f.id == id)
+            .map(|f| f.client_fx.clone())
+            .unwrap_or_default()
+    };
     let o = ch.infection.iter().find(|r| r.id == 0).expect("override 0");
     assert_eq!(o.face, 20);
     assert_eq!(face(20), vec!["Eye_Red_Tail_L".to_string()]);
     assert_eq!(face(38), vec!["Eye_Assasin_Tail_SH".to_string()]);
     assert_eq!(face(39), vec!["Eye_Tanker_Tail_SH".to_string()]);
     assert_eq!(face(244), vec!["1".to_string()], "a group the effect file lacks");
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
+        return;
+    };
     let mount = (INFO.open)(&install).unwrap();
     let Ok(bytes) = mount.read(FX_FILE) else {
         eprintln!("skipping the effect file: it doesn't read");
@@ -76,19 +90,29 @@ fn t114_eye_groups_by_face() {
         eprintln!("{} {:.2}-{:.2} on {:?}", k.kind, k.start, k.end, k.string("AttachName"));
     }
     let sockets: Vec<&str> = g.keys.iter().filter_map(|k| k.string("AttachName")).collect();
-    assert!(sockets.iter().any(|s| s.eq_ignore_ascii_case("EYE_L")) && sockets.iter().any(|s| s.eq_ignore_ascii_case("EYE_R")), "{sockets:?}");
+    assert!(
+        sockets.iter().any(|s| s.eq_ignore_ascii_case("EYE_L"))
+            && sockets.iter().any(|s| s.eq_ignore_ascii_case("EYE_R")),
+        "{sockets:?}"
+    );
     assert!(fx.group("1").is_none());
     let file = |p: &str| mount.read(p).ok();
     for id in [0, 7] {
         let r = ch.model(id).unwrap();
         match combat_arms::game::model::load(&r.file, &file) {
-            Ok(l) => eprintln!("body {id} sockets: {:?}", l.model.sockets.iter().map(|s| &s.name).collect::<Vec<_>>()),
+            Ok(l) => eprintln!(
+                "body {id} sockets: {:?}",
+                l.model.sockets.iter().map(|s| &s.name).collect::<Vec<_>>()
+            ),
             Err(e) => eprintln!("body {id}: {e}"),
         }
     }
     if let Some(f) = ch.face.iter().find(|f| f.id == 20).and_then(|f| f.file.clone()) {
         match combat_arms::game::model::load(&f, &file) {
-            Ok(l) => eprintln!("face 20 sockets: {:?}", l.model.sockets.iter().map(|s| &s.name).collect::<Vec<_>>()),
+            Ok(l) => eprintln!(
+                "face 20 sockets: {:?}",
+                l.model.sockets.iter().map(|s| &s.name).collect::<Vec<_>>()
+            ),
             Err(e) => eprintln!("face 20: {e}"),
         }
     }
@@ -110,9 +134,14 @@ fn the_flame_draws_its_sprite_frames_and_the_rms12_burns_nothing() {
     assert_eq!(rms.look.fx, "Flame_Yellow");
     assert_eq!(rms.over_time.expect("a sphere").rate, 0.0, "ProgDamage 0");
     assert!(rms.flame(), "still fire: its puffs cut glass");
-    assert_eq!(params("combat_arms:flamethrower").unwrap().over_time.unwrap().rate, 12.0);
+    assert_eq!(
+        params("combat_arms:flamethrower").unwrap().over_time.unwrap().rate,
+        12.0
+    );
 
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
+        return;
+    };
     let mount = (INFO.open)(&install).unwrap();
     let Some(data) = combat_arms::game::world::load_from(&mount, "warehouse").ok() else {
         eprintln!("skipping: warehouse not readable");
@@ -120,16 +149,29 @@ fn the_flame_draws_its_sprite_frames_and_the_rms12_burns_nothing() {
     };
     let lib = combat_arms::game::effects::library::library(&data.memos).expect("the effect library");
     let group = lib.group("Flame_Yellow").expect("the flame's group");
-    let sprite_keys: Vec<_> = group.keys.iter().filter(|k| k.path("Texture").is_none() && k.path("Sprite").is_some()).collect();
+    let sprite_keys: Vec<_> = group
+        .keys
+        .iter()
+        .filter(|k| k.path("Texture").is_none() && k.path("Sprite").is_some())
+        .collect();
     assert!(!sprite_keys.is_empty(), "the flame's sprite keys");
     for k in sprite_keys {
         let (frames, time) = lib
             .sprite_frames
-            .get(&combat_arms::game::effects::library::normalize(k.path("Sprite").unwrap()))
+            .get(&combat_arms::game::effects::library::normalize(
+                k.path("Sprite").unwrap(),
+            ))
             .expect("its frames loaded");
         eprintln!("{:?}: {} frames, {time} s each", k.path("Sprite"), frames.len());
         assert!(!frames.is_empty() && *time > 0.0);
         assert!(lib.texture_of(k).is_some());
-        assert!(frames.iter().all(|f| data.particles.find(&combat_arms::game::effects::library::material_name(f, combat_arms::game::effects::library::additive(k))).is_some()));
+        assert!(frames.iter().all(|f| {
+            data.particles
+                .find(&combat_arms::game::effects::library::material_name(
+                    f,
+                    combat_arms::game::effects::library::additive(k),
+                ))
+                .is_some()
+        }));
     }
 }

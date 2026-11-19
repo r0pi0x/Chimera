@@ -63,15 +63,33 @@ fn attached_effects_census() {
             missing.push(g.clone());
             continue;
         };
-        eprintln!("group {} phase {} ms, {} keys", group.name, group.phase_ms, group.keys.len());
+        eprintln!(
+            "group {} phase {} ms, {} keys",
+            group.name,
+            group.phase_ms,
+            group.keys.len()
+        );
         for k in &group.keys {
             let props: Vec<String> = k
                 .props
                 .iter()
                 .filter(|p| {
                     [
-                        "UpdatePos", "AttachName", "Offset", "Sound", "Loop", "PlayLocal", "InnerRadius", "OuterRadius",
-                        "Volume", "Texture", "Sprite", "EmissionInterval", "Facing", "DisableZ", "Model",
+                        "UpdatePos",
+                        "AttachName",
+                        "Offset",
+                        "Sound",
+                        "Loop",
+                        "PlayLocal",
+                        "InnerRadius",
+                        "OuterRadius",
+                        "Volume",
+                        "Texture",
+                        "Sprite",
+                        "EmissionInterval",
+                        "Facing",
+                        "DisableZ",
+                        "Model",
                     ]
                     .iter()
                     .any(|n| p.name.eq_ignore_ascii_case(n))
@@ -82,12 +100,18 @@ fn attached_effects_census() {
         }
     }
     // The chainsaws' sounds and swing keys.
-    for w in weapons.iter().filter(|w| w.name.to_ascii_lowercase().contains("chainsaw")) {
+    for w in weapons
+        .iter()
+        .filter(|w| w.name.to_ascii_lowercase().contains("chainsaw"))
+    {
         eprintln!(
             "{}: fire {:?} alt {:?} reload {:?} select {:?} misc {:?} fx {:?}",
             w.name, w.fire_snd, w.alt_fire_snd, w.reload_snd, w.select_snd, w.misc_sounds, w.pv_attach_fx
         );
-        for f in std::iter::once(&w.fire_snd).chain(&w.reload_snd).filter(|f| !f.is_empty()) {
+        for f in std::iter::once(&w.fire_snd)
+            .chain(&w.reload_snd)
+            .filter(|f| !f.is_empty())
+        {
             if let Some(c) = combat_arms::game::effects::library::sound_clip(f, &mount) {
                 let secs = c.samples.len() as f32 / c.channels.max(1) as f32 / c.rate.max(1) as f32;
                 eprintln!("    {f}: {secs:.3} s");
@@ -96,8 +120,19 @@ fn attached_effects_census() {
         let file = |p: &str| mount.read(p).ok();
         match model::load(&w.pv_model, &file) {
             Ok(m) => {
-                for e in m.list.entries.iter().filter(|e| e.animation.keys.iter().any(|k| !k.string.is_empty())) {
-                    let keys: Vec<String> = e.animation.keys.iter().filter(|k| !k.string.is_empty()).map(|k| format!("{} {:?}", k.time, k.string)).collect();
+                for e in m
+                    .list
+                    .entries
+                    .iter()
+                    .filter(|e| e.animation.keys.iter().any(|k| !k.string.is_empty()))
+                {
+                    let keys: Vec<String> = e
+                        .animation
+                        .keys
+                        .iter()
+                        .filter(|k| !k.string.is_empty())
+                        .map(|k| format!("{} {:?}", k.time, k.string))
+                        .collect();
                     eprintln!("    {} {} ms: {}", e.name(), e.length(), keys.join(", "));
                 }
             }
@@ -108,13 +143,27 @@ fn attached_effects_census() {
     // they play nothing (effects_sounds.md: a missing group plays nothing).
     eprintln!("groups missing from the effect file: {missing:?}");
     for g in &missing {
-        assert!(g.to_ascii_lowercase().starts_with("timebomb"), "only the time bomb's lights are missing: {g}");
+        assert!(
+            g.to_ascii_lowercase().starts_with("timebomb"),
+            "only the time bomb's lights are missing: {g}"
+        );
     }
-    let xk2 = weapons.iter().find(|w| w.name.eq_ignore_ascii_case("XK-2")).or_else(|| {
-        weapons.iter().find(|w| w.pv_attach_fx.iter().any(|g| g.eq_ignore_ascii_case("TimebombGreen")) && w.pv_attach_fx.len() == 5)
-    });
+    let xk2 = weapons
+        .iter()
+        .find(|w| w.name.eq_ignore_ascii_case("XK-2"))
+        .or_else(|| {
+            weapons.iter().find(|w| {
+                w.pv_attach_fx.iter().any(|g| g.eq_ignore_ascii_case("TimebombGreen")) && w.pv_attach_fx.len() == 5
+            })
+        });
     if let Some(x) = xk2 {
-        let want = ["TimebombGreen", "TimebombRed", "TimebombYellow1", "TimebombYellow2", "TimebombYellow3"];
+        let want = [
+            "TimebombGreen",
+            "TimebombRed",
+            "TimebombYellow1",
+            "TimebombYellow2",
+            "TimebombYellow3",
+        ];
         assert_eq!(x.pv_attach_fx.len(), 5, "{}: five lights", x.name);
         for (got, want) in x.pv_attach_fx.iter().zip(want) {
             assert!(got.eq_ignore_ascii_case(want), "{}: {got} is {want}", x.name);

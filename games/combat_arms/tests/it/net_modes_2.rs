@@ -82,13 +82,20 @@ fn hired_guns_over_the_network() {
         let m = *w.query::<&CaMerc>().iter(w).next().unwrap();
         assert_eq!(m.leader, me, "its hirer, mapped to the client's player");
     }
-    sim.clients[ia]
-        .app
-        .world_mut()
-        .write_message(CaOrderRequest { order: MercOrder::FollowMe });
+    sim.clients[ia].app.world_mut().write_message(CaOrderRequest {
+        order: MercOrder::FollowMe,
+    });
     let ordered = sim.until(120, |s| {
-        s.server.app.world().get::<CaSquadOrder>(a).is_some_and(|o| o.0 == MercOrder::FollowMe)
-            && s.clients[ia].app.world().get::<CaSquadOrder>(me).is_some_and(|o| o.0 == MercOrder::FollowMe)
+        s.server
+            .app
+            .world()
+            .get::<CaSquadOrder>(a)
+            .is_some_and(|o| o.0 == MercOrder::FollowMe)
+            && s.clients[ia]
+                .app
+                .world()
+                .get::<CaSquadOrder>(me)
+                .is_some_and(|o| o.0 == MercOrder::FollowMe)
     });
     assert!(ordered, "the order on the server and back");
     // A pocket, then the bank.
@@ -97,10 +104,18 @@ fn hired_guns_over_the_network() {
         money: 300,
         ..default()
     });
-    let pocket = sim.until(60, |s| s.clients[ia].app.world().get::<CaCarry>(me).is_some_and(|c| c.bars == 3));
+    let pocket = sim.until(60, |s| {
+        s.clients[ia]
+            .app
+            .world()
+            .get::<CaCarry>(me)
+            .is_some_and(|c| c.bars == 3)
+    });
     assert!(pocket, "the pocket on the client");
     hold_server(&mut sim, a, bank_a, 4);
-    let banked = sim.until(60, |s| (0..2).all(|i| client_objectives(s, i).banked == [3, 0]) && bank(s) == 1100);
+    let banked = sim.until(60, |s| {
+        (0..2).all(|i| client_objectives(s, i).banked == [3, 0]) && bank(s) == 1100
+    });
     assert!(banked, "banked everywhere: {:?}", client_objectives(&sim, 0).banked);
 }
 
@@ -124,7 +139,10 @@ fn vip_escort_over_the_network() {
     }
     restart_and_play(&mut sim);
     let [(ia, a), _] = by_team(&mut sim);
-    assert!(sim.server.app.world().get::<CaVip>(a).is_some(), "the Alpha player is the VIP");
+    assert!(
+        sim.server.app.world().get::<CaVip>(a).is_some(),
+        "the Alpha player is the VIP"
+    );
     let me = sim.local_player(ia).unwrap();
     let marked = sim.until(60, |s| {
         (0..2).all(|i| {
@@ -135,7 +153,11 @@ fn vip_escort_over_the_network() {
     assert!(marked, "every client sees the VIP");
     let o = client_objectives(&sim, 1);
     assert_eq!(o.escort, 1);
-    let now = sim.clients[1].app.world().resource::<chimera_core::core::SimClock>().now;
+    let now = sim.clients[1]
+        .app
+        .world()
+        .resource::<chimera_core::core::SimClock>()
+        .now;
     let opens = o.exit.unwrap().opens - now;
     assert!((56.0..62.0).contains(&opens), "the exit opens in {opens:.1} s");
     // Open it now; the VIP walks in.
@@ -144,7 +166,11 @@ fn vip_escort_over_the_network() {
         .app
         .world_mut()
         .resource_mut::<combat_arms::game::rules::objectives::CaObjectives>()
-        .exit = Some(Exit { opens: t, open: true, ..Default::default() });
+        .exit = Some(Exit {
+        opens: t,
+        open: true,
+        ..Default::default()
+    });
     hold_server(&mut sim, a, exit, 3);
     let won = sim.until(300, |s| (0..2).all(|i| view(s, i).round_wins == [1, 0]));
     assert!(won, "Alpha's round everywhere: {:?}", view(&sim, 0).round_wins);
@@ -162,18 +188,35 @@ fn clan_modes_over_the_network() {
     let [(ia, a), (ib, b)] = by_team(&mut sim);
     kill(&mut sim, b, a);
     sim.ticks((4.5 / TICK_INTERVAL) as u64);
-    let back = sim.until(700, |s| s.server.app.world().get::<chimera_core::core::Dead>(b).is_none());
+    let back = sim.until(700, |s| {
+        s.server.app.world().get::<chimera_core::core::Dead>(b).is_none()
+    });
     assert!(back);
     sim.ticks((4.2 / TICK_INTERVAL) as u64);
     kill(&mut sim, b, a);
     let swapped = sim.until(800, |s| {
         let ma = s.local_player(ia).unwrap();
         let mb = s.local_player(ib).unwrap();
-        s.clients[ia].app.world().get::<chimera_core::core::Team>(ma).map(|t| t.0) == Some(2)
-            && s.clients[ib].app.world().get::<chimera_core::core::Team>(mb).map(|t| t.0) == Some(1)
+        s.clients[ia]
+            .app
+            .world()
+            .get::<chimera_core::core::Team>(ma)
+            .map(|t| t.0)
+            == Some(2)
+            && s.clients[ib]
+                .app
+                .world()
+                .get::<chimera_core::core::Team>(mb)
+                .map(|t| t.0)
+                == Some(1)
             && (0..2).all(|i| view(s, i).score == [0, 2] && client_objectives(s, i).half == 2)
     });
-    assert!(swapped, "swapped everywhere: {:?} {}", view(&sim, 0).score, client_objectives(&sim, 0).half);
+    assert!(
+        swapped,
+        "swapped everywhere: {:?} {}",
+        view(&sim, 0).score,
+        client_objectives(&sim, 0).half
+    );
 }
 
 /// The 2026-10-22 corrections over the network (game_modes.md Corrections

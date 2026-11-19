@@ -44,22 +44,38 @@ fn mission(image: &str, p0: ((i32, i32), (f64, f64)), p1: ((i32, i32), (f64, f64
 }
 
 pub fn junk_flea() -> MapImage {
-    let t = mission("Map_JunkFlea.dtx", ((128, 128), (-1408.0, 1408.0)), ((895, 895), (2688.0, -2688.0)));
+    let t = mission(
+        "Map_JunkFlea.dtx",
+        ((128, 128), (-1408.0, 1408.0)),
+        ((895, 895), (2688.0, -2688.0)),
+    );
     MapImage::of_document(&Document::parse(t.as_bytes()).unwrap(), 0)
 }
 
 pub fn showdown() -> MapImage {
-    let t = mission("Map_showdown.dtx", ((128, 128), (-2048.0, 2304.0)), ((895, 895), (1536.0, -1280.0)));
+    let t = mission(
+        "Map_showdown.dtx",
+        ((128, 128), (-2048.0, 2304.0)),
+        ((895, 895), (1536.0, -1280.0)),
+    );
     MapImage::of_document(&Document::parse(t.as_bytes()).unwrap(), 0)
 }
 
 pub fn junk_flea2() -> MapImage {
-    let t = mission("Map_JunkFlea2.dtx", ((128, 128), (-2560.0, 2560.0)), ((895, 895), (2560.0, -2560.0)));
+    let t = mission(
+        "Map_JunkFlea2.dtx",
+        ((128, 128), (-2560.0, 2560.0)),
+        ((895, 895), (2560.0, -2560.0)),
+    );
     MapImage::of_document(&Document::parse(t.as_bytes()).unwrap(), 0)
 }
 
 pub fn warhead() -> MapImage {
-    let t = mission("Map_WarHead.dtx", ((128, 128), (-2048.0, 3072.0)), ((895, 895), (4096.0, -3072.0)));
+    let t = mission(
+        "Map_WarHead.dtx",
+        ((128, 128), (-2048.0, 3072.0)),
+        ((895, 895), (4096.0, -3072.0)),
+    );
     MapImage::of_document(&Document::parse(t.as_bytes()).unwrap(), 0)
 }
 
@@ -88,7 +104,11 @@ fn t04_outside_the_square_is_not_drawn_and_has_no_arrow() {
     assert_eq!(f.pixel((751.0, 0.0)), None);
     // A teammate has no arrow: the radar's marks for it are none (the
     // arrow is a carrier's or an objective's: `look::ally`).
-    let s = Subject { ally: true, alive: true, ..default() };
+    let s = Subject {
+        ally: true,
+        alive: true,
+        ..default()
+    };
     assert!(!look::radar_player(&Viewer { team: 1, intel: false }, &s).unwrap().arrow);
 }
 
@@ -124,7 +144,10 @@ fn me() -> Viewer {
 fn t08_an_enemy_is_hidden_whatever_it_fires() {
     // Firing, silenced or not, isn't an input: an enemy with nothing that
     // reveals it is not drawn (the world-level case: tests/ui/radar.rs).
-    let s = Subject { alive: true, ..default() };
+    let s = Subject {
+        alive: true,
+        ..default()
+    };
     assert_eq!(look::radar_player(&me(), &s), None);
 }
 
@@ -133,7 +156,10 @@ fn t09_an_enemy_flag_carrier_has_the_badge() {
     // The enemy is on Bravo and carries Alpha's flag.
     let s = Subject {
         alive: true,
-        carry: CaCarry { flag: Some(1), ..default() },
+        carry: CaCarry {
+            flag: Some(1),
+            ..default()
+        },
         ..default()
     };
     let l = look::radar_player(&me(), &s).unwrap();
@@ -182,7 +208,10 @@ fn wedge_at_13(z: f64, xr: f64, yr: f64) -> [Vec2; 4] {
 #[test]
 fn t13_the_wedge_of_an_ally_facing_north() {
     let q = wedge_at_13(1.0, 1.0, 1.0);
-    for (got, want) in q.iter().zip([(932.0, 80.0), (932.0, 16.0), (964.0, 16.0), (964.0, 80.0)]) {
+    for (got, want) in q
+        .iter()
+        .zip([(932.0, 80.0), (932.0, 16.0), (964.0, 16.0), (964.0, 80.0)])
+    {
         assert!(near(got.x, want.0, 0.01) && near(got.y, want.1, 0.01), "{q:?}");
     }
 }
@@ -201,15 +230,24 @@ fn t15_the_wedge_grows_with_the_zoom() {
     let q = maths::wedge(c, 0.0, 0.0, 2.0, 1.0, 1.0);
     let (cx, cy) = (c.0 as f32, c.1 as f32);
     // +-32 across and +-64 along, from the zoom-2 position.
-    for (got, want) in q.iter().zip([(-32.0, 64.0), (-32.0, -64.0), (32.0, -64.0), (32.0, 64.0)]) {
-        assert!(near(got.x, cx + want.0, 0.01) && near(got.y, cy + want.1, 0.01), "{q:?}");
+    for (got, want) in q
+        .iter()
+        .zip([(-32.0, 64.0), (-32.0, -64.0), (32.0, -64.0), (32.0, 64.0)])
+    {
+        assert!(
+            near(got.x, cx + want.0, 0.01) && near(got.y, cy + want.1, 0.01),
+            "{q:?}"
+        );
     }
 }
 
 #[test]
 fn t16_the_guide_upright() {
     let q = maths::guide(&fixed(1.0), 1.0, 1.0);
-    for (got, want) in q.iter().zip([(653.0, -161.0), (1165.0, -161.0), (1165.0, 351.0), (653.0, 351.0)]) {
+    for (got, want) in q
+        .iter()
+        .zip([(653.0, -161.0), (1165.0, -161.0), (1165.0, 351.0), (653.0, 351.0)])
+    {
         assert!(near(got.x, want.0, 0.01) && near(got.y, want.1, 0.01), "{q:?}");
     }
 }
@@ -385,7 +423,10 @@ fn t43_spy_hunt_intel_carriers_see_each_other_as_spies() {
     let l = look::radar_player(&holder, &carrier).unwrap();
     assert_eq!(l.icon, look::icon("character_spy_pre.DTX"));
     assert_eq!(l.view, Some(look::icon("character_spy_view.dtx")));
-    assert_eq!(look::map_player(&holder, &carrier).unwrap().icon, look::icon("character_spy_pre.DTX"));
+    assert_eq!(
+        look::map_player(&holder, &carrier).unwrap().icon,
+        look::icon("character_spy_pre.DTX")
+    );
     // Once the viewer drops its intel: hidden.
     assert_eq!(look::radar_player(&me(), &carrier), None);
     assert_eq!(look::map_player(&me(), &carrier), None);
@@ -468,11 +509,7 @@ fn one_man_army_and_arms_race_send_no_markers() {
 #[test]
 fn the_round_data_and_scans_reach_the_clients() {
     use chimera_net::{harness::NetSim, net::memory::LinkConditions};
-    use combat_arms::game::{
-        TICK_INTERVAL,
-        radar::CaSeen,
-        rules::Phase,
-    };
+    use combat_arms::game::{TICK_INTERVAL, radar::CaSeen, rules::Phase};
     let link = LinkConditions {
         latency: std::time::Duration::from_millis(30),
         jitter: std::time::Duration::ZERO,
@@ -484,22 +521,35 @@ fn the_round_data_and_scans_reach_the_clients() {
     });
     sim.set_frame(TICK_INTERVAL);
     sim.until_joined(600);
-    let live = sim.until(400, |s| super::net_modes::server_match(s).phase == Phase::Live && super::net_modes::view(s, 0).phase == Phase::Live);
+    let live = sim.until(400, |s| {
+        super::net_modes::server_match(s).phase == Phase::Live && super::net_modes::view(s, 0).phase == Phase::Live
+    });
     assert!(live, "live on both");
     // The round's image and markers on every client: the server's.
     let server = sim.server.app.world().resource::<CaRadarRound>().clone();
     assert_eq!(server.image, showdown());
     assert!(server.spawns.iter().all(|s| s.is_some()), "{:?}", server.spawns);
-    let ok = sim.until(120, |s| (0..2).all(|i| *s.clients[i].app.world().resource::<CaRadarRound>() == server));
+    let ok = sim.until(120, |s| {
+        (0..2).all(|i| *s.clients[i].app.world().resource::<CaRadarRound>() == server)
+    });
     assert!(ok, "the clients have the server's round data");
     // A scan marks a player for the other team on every machine (S2).
-    sim.server.app.world_mut().resource_mut::<combat_arms::game::radar::CaScans>().system = true;
+    sim.server
+        .app
+        .world_mut()
+        .resource_mut::<combat_arms::game::radar::CaScans>()
+        .system = true;
     let marked = |s: &mut NetSim, i: usize| {
         let w = s.clients[i].app.world_mut();
         w.query::<&CaSeen>().iter(w).filter(|c| c.scan == 0b11).count()
     };
     let ok = sim.until(120, |s| marked(s, 0) == 2 && marked(s, 1) == 2);
-    assert!(ok, "the system scan marks both players on both clients: {} {}", marked(&mut sim, 0), marked(&mut sim, 1));
+    assert!(
+        ok,
+        "the system scan marks both players on both clients: {} {}",
+        marked(&mut sim, 0),
+        marked(&mut sim, 1)
+    );
 }
 
 #[test]
@@ -512,7 +562,10 @@ fn the_radar_options_are_saved_with_the_profile() {
         let c = console.cvar(name).unwrap_or_else(|| panic!("{name}"));
         assert!(!c.archive, "{name} is the profile's, not the config's");
     }
-    assert_eq!(*sim.app.world().resource::<CaRadarProfile>(), CaRadarProfile { scale: 1.0, rotate: 0 });
+    assert_eq!(
+        *sim.app.world().resource::<CaRadarProfile>(),
+        CaRadarProfile { scale: 1.0, rotate: 0 }
+    );
 }
 
 // --- Corrections 2026-10-22
@@ -532,9 +585,15 @@ fn corr1_arms_race_scans_do_not_reach_the_radar() {
     };
     assert_eq!(look::radar_player(&me(), &scanned(false)), None);
     assert!(look::radar_player(&me(), &scanned(true)).is_some());
-    assert!(look::map_player(&me(), &scanned(false)).is_some(), "the full map still shows a shared scan");
+    assert!(
+        look::map_player(&me(), &scanned(false)).is_some(),
+        "the full map still shows a shared scan"
+    );
     // Elimination: unchanged.
-    let elim = Subject { arms_race: false, ..scanned(false) };
+    let elim = Subject {
+        arms_race: false,
+        ..scanned(false)
+    };
     assert!(look::radar_player(&me(), &elim).is_some());
 }
 
@@ -542,17 +601,40 @@ fn corr1_arms_race_scans_do_not_reach_the_radar() {
 /// plain ally the death icon; a dead enemy only while a rule reveals it.
 #[test]
 fn corr4_dead_players_on_the_full_map() {
-    let vip = Subject { ally: true, alive: false, vip: true, ..default() };
+    let vip = Subject {
+        ally: true,
+        alive: false,
+        vip: true,
+        ..default()
+    };
     let l = look::map_player(&me(), &vip).unwrap();
     assert_eq!((l.icon, l.view), (look::icon("character_VIP.dtx"), None));
-    let ally = Subject { ally: true, alive: false, ..default() };
-    assert_eq!(look::map_player(&me(), &ally).unwrap().icon, look::icon("area_death_ally.DTX"));
-    let hidden = Subject { alive: false, ..default() };
+    let ally = Subject {
+        ally: true,
+        alive: false,
+        ..default()
+    };
+    assert_eq!(
+        look::map_player(&me(), &ally).unwrap().icon,
+        look::icon("area_death_ally.DTX")
+    );
+    let hidden = Subject {
+        alive: false,
+        ..default()
+    };
     assert_eq!(look::map_player(&me(), &hidden), None);
-    let scanned = Subject { alive: false, shared_scan: true, ..default() };
+    let scanned = Subject {
+        alive: false,
+        shared_scan: true,
+        ..default()
+    };
     let l = look::map_player(&me(), &scanned).unwrap();
     assert_eq!((l.icon, l.view), (look::icon("character_enemy.dtx"), None));
-    assert_eq!(look::radar_player(&me(), &scanned), None, "the radar hides every dead player");
+    assert_eq!(
+        look::radar_player(&me(), &scanned),
+        None,
+        "the radar hides every dead player"
+    );
 }
 
 /// Correction 5 (the install has no misspelt key): an Alpha carrier, who
@@ -560,13 +642,33 @@ fn corr4_dead_players_on_the_full_map() {
 /// keeps hers; the full map shows both.
 #[test]
 fn corr5_alpha_carriers_have_no_badge_on_the_radar() {
-    let alpha = Subject { alive: true, carry: CaCarry { flag: Some(2), ..default() }, ..default() };
+    let alpha = Subject {
+        alive: true,
+        carry: CaCarry {
+            flag: Some(2),
+            ..default()
+        },
+        ..default()
+    };
     let l = look::radar_player(&me(), &alpha).unwrap();
     assert_eq!(l.badge.as_deref(), Some(""));
     assert!(l.arrow);
-    assert_eq!(look::map_player(&me(), &alpha).unwrap().badge, Some(look::icon("character_flag_B.dtx")));
-    let bravo = Subject { alive: true, carry: CaCarry { flag: Some(1), ..default() }, ..default() };
-    assert_eq!(look::radar_player(&me(), &bravo).unwrap().badge, Some(look::icon("character_flag_A.dtx")));
+    assert_eq!(
+        look::map_player(&me(), &alpha).unwrap().badge,
+        Some(look::icon("character_flag_B.dtx"))
+    );
+    let bravo = Subject {
+        alive: true,
+        carry: CaCarry {
+            flag: Some(1),
+            ..default()
+        },
+        ..default()
+    };
+    assert_eq!(
+        look::radar_player(&me(), &bravo).unwrap().badge,
+        Some(look::icon("character_flag_A.dtx"))
+    );
     let ally = Subject { ally: true, ..alpha };
     assert_eq!(look::radar_player(&me(), &ally).unwrap().badge.as_deref(), Some(""));
 }

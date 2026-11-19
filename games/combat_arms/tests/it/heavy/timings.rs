@@ -155,7 +155,11 @@ fn every_copy_times_on_its_own_view_model() {
         gear_doc.len(),
         gear.to_doc().len()
     );
-    assert_eq!(GearData::parse(&gear_doc).unwrap(), *ca.gear(), "the install's gear records round-trip");
+    assert_eq!(
+        GearData::parse(&gear_doc).unwrap(),
+        *ca.gear(),
+        "the install's gear records round-trip"
+    );
     for w in wrong.iter().take(20) {
         println!("  {w}");
     }
@@ -176,19 +180,27 @@ fn check(
     let item = world.get::<CaItem>(e);
     let rate = fire_animation_rate(item.map_or(0.0, |i| i.fire_rate), 0.0);
     let draw = world.get::<Weapon>(e).map(|w| w.draw_time);
-    if t.select.is_some_and(|s| item.is_none_or(|i| i.select_rate == 0.0) && !draw.is_some_and(|dr| close(dr, s))) {
+    if t.select
+        .is_some_and(|s| item.is_none_or(|i| i.select_rate == 0.0) && !draw.is_some_and(|dr| close(dr, s)))
+    {
         return Some(format!("draw {draw:?} (model {:?})", t.select));
     }
     if let Some(k) = world.get::<Knife>(e) {
         n.knife += 1;
         let a = &k.attacks[0];
         if !close(a.length, fire) || (!t.fire_keys.is_empty() && a.hits != t.fire_keys) {
-            return Some(format!("slash {} {:?} (model {fire} {:?})", a.length, a.hits, t.fire_keys));
+            return Some(format!(
+                "slash {} {:?} (model {fire} {:?})",
+                a.length, a.hits, t.fire_keys
+            ));
         }
         if let (Some(stab), Some(alt)) = (k.attacks.get(1), t.alt_fire)
             && (!close(stab.length, alt) || (!t.alt_fire_keys.is_empty() && stab.hits != t.alt_fire_keys))
         {
-            return Some(format!("stab {} {:?} (model {alt} {:?})", stab.length, stab.hits, t.alt_fire_keys));
+            return Some(format!(
+                "stab {} {:?} (model {alt} {:?})",
+                stab.length, stab.hits, t.alt_fire_keys
+            ));
         }
         return None;
     }
@@ -207,7 +219,11 @@ fn check(
             1000.0 * cycle,
             p.reversible
         );
-        if !close(p.loop_len, fire) || !close(p.prefire, t.prefire.unwrap_or(0.0)) || !close(tr.cycle, cycle) || tr.latency != 1 {
+        if !close(p.loop_len, fire)
+            || !close(p.prefire, t.prefire.unwrap_or(0.0))
+            || !close(tr.cycle, cycle)
+            || tr.latency != 1
+        {
             return Some(format!("spin {p:?}, cycle {}, latency {}", tr.cycle, tr.latency));
         }
         return None;

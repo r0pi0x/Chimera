@@ -7,10 +7,7 @@ use bevy::prelude::*;
 use chimera_core::core::{Connecting, DamageKind};
 use chimera_world::harness::Sim;
 use combat_arms::game::rules::{
-    CaMatch, CaRuleSettings, CaStats, Phase, ScoreOrder, flow,
-    free_for_all::CaKillsMade,
-    objectives::BOMB,
-    scoreboard,
+    CaMatch, CaRuleSettings, CaStats, Phase, ScoreOrder, flow, free_for_all::CaKillsMade, objectives::BOMB, scoreboard,
     spawns,
 };
 
@@ -83,12 +80,24 @@ fn case_92_empty_team_after_the_warm_up() {
         until(&mut sim, 0.2, |p| matches!(p, Phase::RoundOver { .. }));
         assert!(now(&sim) - t < 0.11, "{mode}: the warm-up over at the next frame");
         until(&mut sim, 4.0, |p| matches!(p, Phase::Intermission { .. }));
-        assert!((now(&sim) - t - 3.05).abs() < 0.15, "{mode}: round over until {:.2}", now(&sim) - t);
+        assert!(
+            (now(&sim) - t - 3.05).abs() < 0.15,
+            "{mode}: round over until {:.2}",
+            now(&sim) - t
+        );
         assert_eq!(m(&sim).result, Some(Some(winner)), "{mode}");
         until(&mut sim, 4.0, |p| p == Phase::MatchOver);
-        assert!((now(&sim) - t - 6.05).abs() < 0.15, "{mode}: match over at {:.2}", now(&sim) - t);
+        assert!(
+            (now(&sim) - t - 6.05).abs() < 0.15,
+            "{mode}: match over at {:.2}",
+            now(&sim) - t
+        );
         let s = m(&sim);
-        assert_eq!((s.round, s.results.len(), s.results[0].warmup), (0, 1, true), "{mode}: round 1 never starts");
+        assert_eq!(
+            (s.round, s.results.len(), s.results[0].warmup),
+            (0, 1, true),
+            "{mode}: round 1 never starts"
+        );
     }
 }
 
@@ -251,7 +260,14 @@ fn case_96_assists_across_rounds() {
     let b = join(&mut sim, CREED);
     let _d = join(&mut sim, CREED);
     live(&mut sim);
-    hit(&mut sim, b, Some(a), 0.60, DamageKind::Bullet, Some(combat_arms::game::weapons::RIFLE));
+    hit(
+        &mut sim,
+        b,
+        Some(a),
+        0.60,
+        DamageKind::Bullet,
+        Some(combat_arms::game::weapons::RIFLE),
+    );
     sim.ticks(1);
     until(&mut sim, 6.0, |p| matches!(p, Phase::RoundOver { .. }));
     until(&mut sim, 8.0, |p| matches!(p, Phase::Setup { .. }));
@@ -259,7 +275,11 @@ fn case_96_assists_across_rounds() {
     unprotect_all(&mut sim);
     assert_eq!(m(&sim).round, 1);
     kill_now(&mut sim, b, c);
-    assert_eq!((stats(&sim, c).kills, stats(&sim, a).assists), (1, 0), "the round-1 damage is gone");
+    assert_eq!(
+        (stats(&sim, c).kills, stats(&sim, a).assists),
+        (1, 0),
+        "the round-1 damage is gone"
+    );
 
     let mut sim = game("TDM", 12);
     let a = join(&mut sim, JSF);
@@ -267,7 +287,14 @@ fn case_96_assists_across_rounds() {
     let b = join(&mut sim, CREED);
     until_live(&mut sim);
     unprotect_all(&mut sim);
-    hit(&mut sim, b, Some(a), 0.60, DamageKind::Bullet, Some(combat_arms::game::weapons::RIFLE));
+    hit(
+        &mut sim,
+        b,
+        Some(a),
+        0.60,
+        DamageKind::Bullet,
+        Some(combat_arms::game::weapons::RIFLE),
+    );
     sim.ticks(1);
     hit(&mut sim, b, Some(b), 50.0, DamageKind::Blast, None);
     sim.ticks(1);
@@ -292,7 +319,14 @@ fn a_fall_keeps_the_sums_a_teammates_blow_clears_them() {
         settings(&mut sim).friendly_fire = 1;
         until_live(&mut sim);
         unprotect_all(&mut sim);
-        hit(&mut sim, b, Some(a), 0.60, DamageKind::Bullet, Some(combat_arms::game::weapons::RIFLE));
+        hit(
+            &mut sim,
+            b,
+            Some(a),
+            0.60,
+            DamageKind::Bullet,
+            Some(combat_arms::game::weapons::RIFLE),
+        );
         sim.ticks(1);
         if by_teammate {
             kill_now(&mut sim, b, b2);
@@ -516,10 +550,20 @@ fn case_101_spy_hunt_stage_two() {
     let (mut sim, p) = stage_two(4);
     kill_now(&mut sim, p[1], p[0]);
     kill_now(&mut sim, p[2], p[0]);
-    assert_eq!((stats(&sim, p[0]).kills, stats(&sim, p[1]).deaths, stats(&sim, p[2]).deaths), (0, 0, 0));
+    assert_eq!(
+        (
+            stats(&sim, p[0]).kills,
+            stats(&sim, p[1]).deaths,
+            stats(&sim, p[2]).deaths
+        ),
+        (0, 0, 0)
+    );
     kill_now(&mut sim, p[0], p[3]);
     assert_eq!(m(&sim).winner, Some(JSF));
-    assert_eq!((stats(&sim, p[3]).mission_points, stats(&sim, p[0]).mission_points), (5, 0));
+    assert_eq!(
+        (stats(&sim, p[3]).mission_points, stats(&sim, p[0]).mission_points),
+        (5, 0)
+    );
     assert_eq!((stats(&sim, p[3]).kills, stats(&sim, p[0]).deaths), (0, 0));
 
     let (mut sim, p) = stage_two(2);
@@ -621,10 +665,10 @@ fn case_103_two_kills_at_g_in_a_frame() {
         until_live(&mut sim);
         unprotect_all(&mut sim);
         for e in [p[0], p[1]] {
-            sim.app.world_mut().entity_mut(e).insert(CaStats {
-                kills: 29,
-                ..default()
-            });
+            sim.app
+                .world_mut()
+                .entity_mut(e)
+                .insert(CaStats { kills: 29, ..default() });
         }
         let rifle = Some(combat_arms::game::weapons::RIFLE);
         hit(&mut sim, p[2], Some(p[0]), 50.0, DamageKind::Bullet, rifle);
@@ -773,7 +817,14 @@ fn escort_assists_dont_cross_rounds() {
     join(&mut sim, CREED);
     past_warmup(&mut sim);
     unprotect_all(&mut sim);
-    hit(&mut sim, b, Some(a), 0.60, DamageKind::Bullet, Some(combat_arms::game::weapons::RIFLE));
+    hit(
+        &mut sim,
+        b,
+        Some(a),
+        0.60,
+        DamageKind::Bullet,
+        Some(combat_arms::game::weapons::RIFLE),
+    );
     sim.ticks(1);
     until(&mut sim, 6.0, |p| matches!(p, Phase::RoundOver { .. }));
     until(&mut sim, 8.0, |p| matches!(p, Phase::Setup { .. }));

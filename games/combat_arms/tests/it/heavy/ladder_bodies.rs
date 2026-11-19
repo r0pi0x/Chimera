@@ -15,7 +15,9 @@ use combat_arms::game::{
 };
 
 fn mount() -> Option<chimera_core::mount::Mount> {
-    let install = chimera_core::mount::config::LocalConfig::load().ok().and_then(|c| c.game_path(GAME));
+    let install = chimera_core::mount::config::LocalConfig::load()
+        .ok()
+        .and_then(|c| c.game_path(GAME));
     let Some(install) = install else {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
@@ -27,7 +29,14 @@ fn mount() -> Option<chimera_core::mount::Mount> {
 fn rss_mb() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
-        .and_then(|s| s.lines().find(|l| l.starts_with("VmRSS:"))?.split_whitespace().nth(1)?.parse::<u64>().ok())
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("VmRSS:"))?
+                .split_whitespace()
+                .nth(1)?
+                .parse::<u64>()
+                .ok()
+        })
         .map_or(0, |kb| kb / 1024)
 }
 
@@ -44,7 +53,11 @@ fn a_bodys_rig_and_model_are_one_skeleton() {
     ids.dedup();
     let before = rss_mb();
     let (mut loaded, mut total_ms, mut max_ms, mut bytes) = (0, 0.0f32, 0.0f32, 0usize);
-    for id in ids.iter().copied().step_by(if ids.len() > 40 { ids.len() / 40 } else { 1 }) {
+    for id in ids
+        .iter()
+        .copied()
+        .step_by(if ids.len() > 40 { ids.len() / 40 } else { 1 })
+    {
         let r = data.model(id).unwrap();
         let started = Instant::now();
         let body = models::load_body(&ca, id, &file);
@@ -53,7 +66,11 @@ fn a_bodys_rig_and_model_are_one_skeleton() {
             eprintln!("{id:4} {:24}: didn't load ({} ms)", r.name, ms as u32);
             continue;
         };
-        let size: usize = body.textures.iter().map(|t| t.rgba8.len() + t.mips.iter().map(Vec::len).sum::<usize>()).sum();
+        let size: usize = body
+            .textures
+            .iter()
+            .map(|t| t.rgba8.len() + t.mips.iter().map(Vec::len).sum::<usize>())
+            .sum();
         loaded += 1;
         total_ms += ms;
         max_ms = max_ms.max(ms);
@@ -67,7 +84,12 @@ fn a_bodys_rig_and_model_are_one_skeleton() {
             body.textures.len(),
             size as f32 / 1e6
         );
-        assert_eq!(rig.shape.signature, body.model.skeleton_signature(), "{}: its rig and model", r.name);
+        assert_eq!(
+            rig.shape.signature,
+            body.model.skeleton_signature(),
+            "{}: its rig and model",
+            r.name
+        );
     }
     eprintln!(
         "{loaded} bodies: mean {:.0} ms, max {max_ms:.0} ms, textures {:.1} MB each, RSS +{} MB",
@@ -79,12 +101,18 @@ fn a_bodys_rig_and_model_are_one_skeleton() {
     // be one skeleton with it.
     let rig_of = |id: i32| {
         let r = data.model(id).unwrap();
-        model::load(&r.file, &file).ok().map(|l| (r.skeleton, r.name.clone(), Rig::new(l.model, l.list).shape.signature))
+        model::load(&r.file, &file)
+            .ok()
+            .map(|l| (r.skeleton, r.name.clone(), Rig::new(l.model, l.list).shape.signature))
     };
     let stock: Vec<_> = models::LOADED.iter().filter_map(|id| rig_of(*id)).collect();
     for (skeleton, name, signature) in &stock {
         let first = stock.iter().find(|s| s.0 == *skeleton).unwrap();
-        assert_eq!(*signature, first.2, "{name}: a stock group is one skeleton (with {})", first.1);
+        assert_eq!(
+            *signature, first.2,
+            "{name}: a stock group is one skeleton (with {})",
+            first.1
+        );
     }
 }
 
@@ -99,7 +127,9 @@ fn bodies_share_their_animation_files() {
     let data = ca.characters();
     let mut rigs = Vec::new();
     for id in data.rung_bodies().into_iter().step_by(5).take(8) {
-        let Ok(body) = models::load_body(&ca, id, &file) else { continue };
+        let Ok(body) = models::load_body(&ca, id, &file) else {
+            continue;
+        };
         if let Some(rig) = body.index.rig(&data.model(id).unwrap().file) {
             rigs.push(rig);
         }
@@ -109,15 +139,29 @@ fn bodies_share_their_animation_files() {
         return;
     }
     let (files, bytes) = ca.memo(model::ChildModels::default).held();
-    eprintln!("{} bodies, {files} animation files, {} MB of animations", rigs.len(), bytes >> 20);
+    eprintln!(
+        "{} bodies, {files} animation files, {} MB of animations",
+        rigs.len(),
+        bytes >> 20
+    );
     let mut shared = false;
     for pair in rigs.windows(2) {
         for a in &pair[0].list.entries {
-            shared |= pair[1].list.entries.iter().any(|b| std::sync::Arc::ptr_eq(&a.animation, &b.animation));
+            shared |= pair[1]
+                .list
+                .entries
+                .iter()
+                .any(|b| std::sync::Arc::ptr_eq(&a.animation, &b.animation));
         }
     }
-    assert!(shared, "no two bodies share an animation: their child models are parsed for each");
-    assert!(files < 8 * 8, "{files} animation files for 8 bodies: the cache isn't keyed by file");
+    assert!(
+        shared,
+        "no two bodies share an animation: their child models are parsed for each"
+    );
+    assert!(
+        files < 8 * 8,
+        "{files} animation files for 8 bodies: the cache isn't keyed by file"
+    );
 }
 
 /// A rung's body pool leaves out the records whose model file the install
@@ -140,10 +184,21 @@ fn the_pool_leaves_out_bodies_with_no_file() {
     .unwrap();
     let pool = combat_arms::game::rungs::bodies_for(&holders, None, Some(&ca), "combat_arms:any");
     let all = data.rung_bodies();
-    let gone: Vec<i32> = all.iter().copied().filter(|&b| !mount.contains(&data.model(b).unwrap().file)).collect();
+    let gone: Vec<i32> = all
+        .iter()
+        .copied()
+        .filter(|&b| !mount.contains(&data.model(b).unwrap().file))
+        .collect();
     eprintln!("{} of {} rung bodies have no file: {gone:?}", gone.len(), all.len());
     for b in &all {
         assert_eq!(pool.contains(b), !gone.contains(b), "body {b}");
     }
-    assert_eq!(combat_arms::game::rungs::missing_bodies(&ca).0.iter().filter(|b| all.contains(b)).count(), gone.len());
+    assert_eq!(
+        combat_arms::game::rungs::missing_bodies(&ca)
+            .0
+            .iter()
+            .filter(|b| all.contains(b))
+            .count(),
+        gone.len()
+    );
 }

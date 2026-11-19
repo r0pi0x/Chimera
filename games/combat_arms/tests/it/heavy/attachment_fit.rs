@@ -30,7 +30,10 @@ use combat_arms::game::{
 /// The install's mount (skips with a note without it).
 fn mount() -> Option<chimera_core::mount::Mount> {
     use chimera_core::mount::config::LocalConfig;
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(combat_arms::game::GAME)) else {
+    let Some(install) = LocalConfig::load()
+        .ok()
+        .and_then(|c| c.game_path(combat_arms::game::GAME))
+    else {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
     };
@@ -75,7 +78,9 @@ struct Gun {
 
 impl Gun {
     fn new(points: Vec<Vec3>) -> Option<Self> {
-        let (lo, hi) = points.iter().fold((Vec3::MAX, Vec3::MIN), |(a, b), p| (a.min(*p), b.max(*p)));
+        let (lo, hi) = points
+            .iter()
+            .fold((Vec3::MAX, Vec3::MIN), |(a, b), p| (a.min(*p), b.max(*p)));
         let length = (hi - lo).max_element();
         if points.is_empty() || length <= 0.0 {
             return None;
@@ -85,7 +90,12 @@ impl Gun {
         for p in &points {
             grid.entry(Self::key(*p, cell)).or_default().push(*p);
         }
-        Some(Gun { cell, grid, points, length })
+        Some(Gun {
+            cell,
+            grid,
+            points,
+            length,
+        })
     }
 
     fn key(p: Vec3, cell: f32) -> (i32, i32, i32) {
@@ -115,7 +125,13 @@ impl Gun {
         let step = (self.points.len() / 20_000).max(1);
         let d = part
             .iter()
-            .map(|p| self.points.iter().step_by(step).map(|g| g.distance_squared(*p)).fold(f32::MAX, f32::min))
+            .map(|p| {
+                self.points
+                    .iter()
+                    .step_by(step)
+                    .map(|g| g.distance_squared(*p))
+                    .fold(f32::MAX, f32::min)
+            })
             .fold(f32::MAX, f32::min);
         d.sqrt() / self.length
     }
@@ -126,8 +142,14 @@ impl Gun {
 /// eye's space: what is on screen.
 fn idle_skin(v: &chimera_world::map::MapViewModel) -> Vec<Mat4> {
     let reference = combat_arms::game::view_model::hands::globals(&v.bones);
-    let Some(set) = v.animations.as_ref() else { return vec![Mat4::IDENTITY; v.bones.len()] };
-    let Some(s) = set.sequences.iter().position(|q| q.name.to_lowercase().starts_with("idle")) else {
+    let Some(set) = v.animations.as_ref() else {
+        return vec![Mat4::IDENTITY; v.bones.len()];
+    };
+    let Some(s) = set
+        .sequences
+        .iter()
+        .position(|q| q.name.to_lowercase().starts_with("idle"))
+    else {
         return vec![Mat4::IDENTITY; v.bones.len()];
     };
     let mut pose = set.defaults.clone();
@@ -140,16 +162,29 @@ fn idle_skin(v: &chimera_world::map::MapViewModel) -> Vec<Mat4> {
         posed.push(g);
     }
     let root = v.root.to_matrix();
-    posed.iter().zip(&reference).map(|(p, r)| root * *p * r.inverse() * root.inverse()).collect()
+    posed
+        .iter()
+        .zip(&reference)
+        .map(|(p, r)| root * *p * r.inverse() * root.inverse())
+        .collect()
 }
 
 /// `meshes`' vertices on bones `keep` takes, each moved by its bone's
 /// `skin` matrix.
-fn posed_points<'a>(meshes: impl Iterator<Item = &'a chimera_world::map::MapMesh>, skin: &[Mat4], keep: impl Fn(u16) -> bool) -> Vec<Vec3> {
+fn posed_points<'a>(
+    meshes: impl Iterator<Item = &'a chimera_world::map::MapMesh>,
+    skin: &[Mat4],
+    keep: impl Fn(u16) -> bool,
+) -> Vec<Vec3> {
     meshes
         .flat_map(|m| m.positions.iter().zip(&m.joints))
         .filter(|(_, j)| keep(j[0]))
-        .map(|(p, j)| skin.get(j[0] as usize).copied().unwrap_or(Mat4::IDENTITY).transform_point3(Vec3::from(*p)))
+        .map(|(p, j)| {
+            skin.get(j[0] as usize)
+                .copied()
+                .unwrap_or(Mat4::IDENTITY)
+                .transform_point3(Vec3::from(*p))
+        })
         .collect()
 }
 
@@ -157,7 +192,11 @@ fn points<'a>(meshes: impl Iterator<Item = &'a chimera_world::map::MapMesh>, kee
     meshes
         .flat_map(|m| {
             let joints = m.joints.iter().map(|j| j[0]).chain(std::iter::repeat(0));
-            m.positions.iter().zip(joints).filter(|(_, j)| m.joints.is_empty() || keep(*j)).map(|(p, _)| Vec3::from(*p))
+            m.positions
+                .iter()
+                .zip(joints)
+                .filter(|(_, j)| m.joints.is_empty() || keep(*j))
+                .map(|(p, _)| Vec3::from(*p))
         })
         .collect()
 }
@@ -190,7 +229,9 @@ fn every_guns_parts_sit_on_its_model() {
         if !only.is_empty() && !only.iter().any(|o| w.id.contains(o.as_str())) {
             continue;
         }
-        let Some(params) = w.hook::<AttachParams>(ATTACHMENTS) else { continue };
+        let Some(params) = w.hook::<AttachParams>(ATTACHMENTS) else {
+            continue;
+        };
         // The parts it can be drawn with: those a rung may draw
         // (`rungs::slot_candidates`: listed, in a slot its record leaves
         // open) and its drawn default parts.
@@ -203,8 +244,16 @@ fn every_guns_parts_sit_on_its_model() {
                 names.push(d);
             }
             for name in names {
-                let Some(r) = table.find(name).and_then(|i| table.get(i)) else { continue };
-                let Some(c) = params.variant_of(&r.name).and_then(|c| usize::try_from(c).ok()).filter(|c| *c < 10) else { continue };
+                let Some(r) = table.find(name).and_then(|i| table.get(i)) else {
+                    continue;
+                };
+                let Some(c) = params
+                    .variant_of(&r.name)
+                    .and_then(|c| usize::try_from(c).ok())
+                    .filter(|c| *c < 10)
+                else {
+                    continue;
+                };
                 if r.weapon_part() && r.slot() == Some(slot) {
                     parts.push((r, slot, c));
                 }
@@ -216,20 +265,37 @@ fn every_guns_parts_sit_on_its_model() {
         guns += 1;
         let offs = format!("{:?}", params.part_offsets);
         if std::env::var("SWEEP_SHOW").is_ok() {
-            eprintln!("GUN {} view {:?} world {:?} offsets {offs} parts {:?}", w.id, w.models.view, w.models.world, parts.iter().map(|(r, _, c)| format!("{}@{c}", r.name)).collect::<Vec<_>>());
+            eprintln!(
+                "GUN {} view {:?} world {:?} offsets {offs} parts {:?}",
+                w.id,
+                w.models.view,
+                w.models.world,
+                parts
+                    .iter()
+                    .map(|(r, _, c)| format!("{}@{c}", r.name))
+                    .collect::<Vec<_>>()
+            );
         }
         // First person.
         if let Some(view) = w.models.view.as_deref() {
             let mut bare = None;
             for (r, slot, c) in &parts {
                 let Some((model, _)) = r.view_model(*c) else { continue };
-                if !seen_view.insert((view.to_lowercase(), offs.clone(), r.socket.clone(), model.to_lowercase(), *slot)) {
+                if !seen_view.insert((
+                    view.to_lowercase(),
+                    offs.clone(),
+                    r.socket.clone(),
+                    model.to_lowercase(),
+                    *slot,
+                )) {
                     continue;
                 }
                 let bare = match bare.get_or_insert_with(|| on_demand::load_weapon(&ca, &w.id, &file)) {
                     Ok(b) => b,
                     Err(e) => {
-                        *errors.entry(format!("view model: {}", e.split(':').next_back().unwrap_or(e).trim())).or_default() += 1;
+                        *errors
+                            .entry(format!("view model: {}", e.split(':').next_back().unwrap_or(e).trim()))
+                            .or_default() += 1;
                         break;
                     }
                 };
@@ -248,7 +314,9 @@ fn every_guns_parts_sit_on_its_model() {
                 let bones = &bare.model.bones;
                 let own = |j: u16| bones.get(j as usize).is_none_or(|b| !b.name.starts_with("Bip01"));
                 let skin = idle_skin(&with.model);
-                let Some(gun) = Gun::new(posed_points(bare.model.model.meshes.iter(), &skin, own)) else { continue };
+                let Some(gun) = Gun::new(posed_points(bare.model.model.meshes.iter(), &skin, own)) else {
+                    continue;
+                };
                 let part = posed_points(with.model.model.meshes[n..].iter(), &skin, |_| true);
                 if part.is_empty() {
                     continue;
@@ -256,7 +324,12 @@ fn every_guns_parts_sit_on_its_model() {
                 checked += 1;
                 if !gun.touches(&part) {
                     let g = gun.gap(&part);
-                    off.push(format!("view {} ({view}) + {} [{c}] at `{}`: {g:.2} of the gun's length off", w.id, r.name, r.socket.as_deref().unwrap_or("")));
+                    off.push(format!(
+                        "view {} ({view}) + {} [{c}] at `{}`: {g:.2} of the gun's length off",
+                        w.id,
+                        r.name,
+                        r.socket.as_deref().unwrap_or("")
+                    ));
                 }
             }
         }
@@ -265,13 +338,21 @@ fn every_guns_parts_sit_on_its_model() {
             let mut bare = None;
             for (r, slot, c) in &parts {
                 let Some((model, _)) = r.held_model(*c) else { continue };
-                if !seen_held.insert((world.to_lowercase(), offs.clone(), r.hh_socket.clone(), model.to_lowercase(), *slot)) {
+                if !seen_held.insert((
+                    world.to_lowercase(),
+                    offs.clone(),
+                    r.hh_socket.clone(),
+                    model.to_lowercase(),
+                    *slot,
+                )) {
                     continue;
                 }
                 let bare = match bare.get_or_insert_with(|| load_held_weapon(&ca, &w.id, &file).map(|h| h.model)) {
                     Ok(b) => b,
                     Err(e) => {
-                        *errors.entry(format!("held model: {}", e.split(':').next_back().unwrap_or(e).trim())).or_default() += 1;
+                        *errors
+                            .entry(format!("held model: {}", e.split(':').next_back().unwrap_or(e).trim()))
+                            .or_default() += 1;
                         break;
                     }
                 };
@@ -288,17 +369,27 @@ fn every_guns_parts_sit_on_its_model() {
                     *errors.entry(format!("held part not added: {}", r.name)).or_default() += 1;
                     continue;
                 }
-                let Some(gun) = Gun::new(points(bare.model.meshes.iter(), |_| true)) else { continue };
+                let Some(gun) = Gun::new(points(bare.model.meshes.iter(), |_| true)) else {
+                    continue;
+                };
                 let part = points(with.model.meshes[n..].iter(), |_| true);
                 checked += 1;
                 if !gun.touches(&part) {
                     let g = gun.gap(&part);
-                    off.push(format!("held {} ({world}) + {} [{c}] at `{}`: {g:.2} of the gun's length off", w.id, r.name, r.hh_socket.as_deref().unwrap_or("")));
+                    off.push(format!(
+                        "held {} ({world}) + {} [{c}] at `{}`: {g:.2} of the gun's length off",
+                        w.id,
+                        r.name,
+                        r.hh_socket.as_deref().unwrap_or("")
+                    ));
                 }
             }
         }
     }
-    eprintln!("{guns} guns with drawn parts, {checked} gun-part models checked, {} off", off.len());
+    eprintln!(
+        "{guns} guns with drawn parts, {checked} gun-part models checked, {} off",
+        off.len()
+    );
     for o in &off {
         eprintln!("  OFF {o}");
     }
@@ -311,7 +402,15 @@ fn every_guns_parts_sit_on_its_model() {
     assert!(guns > 1000, "the install's guns are swept ({guns})");
     let unlisted: Vec<&String> = off
         .iter()
-        .filter(|o| !INSTALL_OFF.iter().any(|(kind, id)| o.starts_with(&format!("{kind} {id} "))))
+        .filter(|o| {
+            !INSTALL_OFF
+                .iter()
+                .any(|(kind, id)| o.starts_with(&format!("{kind} {id} ")))
+        })
         .collect();
-    assert!(unlisted.is_empty(), "{} gun-part models sit off their gun: {unlisted:#?}", unlisted.len());
+    assert!(
+        unlisted.is_empty(),
+        "{} gun-part models sit off their gun: {unlisted:#?}",
+        unlisted.len()
+    );
 }

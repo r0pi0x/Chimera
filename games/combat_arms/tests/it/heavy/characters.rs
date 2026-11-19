@@ -60,7 +60,13 @@ fn drawn_pose_matches_the_drawn_skeleton() {
     for (j, (b, (q, p))) in bones.iter().zip(&locals).enumerate() {
         let dp = (b.position - *p).length();
         let dq = b.rotation.dot(*q).abs();
-        assert!(dp < 0.01 && dq > 0.9999, "{} ({j}): bind {:?} {:?}, posed {p:?} {q:?}", b.name, b.position, b.rotation);
+        assert!(
+            dp < 0.01 && dq > 0.9999,
+            "{} ({j}): bind {:?} {:?}, posed {p:?} {q:?}",
+            b.name,
+            b.position,
+            b.rotation
+        );
     }
     let globals = |l: &[(Quat, Vec3)]| -> Vec<Vec3> {
         let mut g: Vec<(Quat, Vec3)> = Vec::new();
@@ -89,7 +95,9 @@ fn drawn_pose_matches_the_drawn_skeleton() {
 fn drawn_body_skins_in_its_frame() {
     use chimera_world::map::MapData;
     use combat_arms::game::characters::models;
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
+        return;
+    };
     if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
@@ -97,7 +105,12 @@ fn drawn_body_skins_in_its_frame() {
     let file = |p: &str| mount.read(p).ok();
     let mut map = MapData::default();
     models::add_character_models(&mut map, &combat_arms::game::data::CaData::install(), &file);
-    let Some(body) = map.kit.characters.iter().find(|c| c.name.as_deref() == Some(models::body_name(0).as_str())) else {
+    let Some(body) = map
+        .kit
+        .characters
+        .iter()
+        .find(|c| c.name.as_deref() == Some(models::body_name(0).as_str()))
+    else {
         eprintln!("skipping: no character bodies (V2 key)");
         return;
     };
@@ -106,7 +119,11 @@ fn drawn_body_skins_in_its_frame() {
         let mut g: Vec<Mat4> = Vec::new();
         for (j, (q, p)) in l.iter().enumerate() {
             let local = Mat4::from_rotation_translation(*q, *p);
-            g.push(body.bones[j].parent.map_or(body.root.to_matrix() * local, |par| g[par] * local));
+            g.push(
+                body.bones[j]
+                    .parent
+                    .map_or(body.root.to_matrix() * local, |par| g[par] * local),
+            );
         }
         g
     };
@@ -132,7 +149,10 @@ fn drawn_body_skins_in_its_frame() {
             let at_bind = (bind[j].w_axis.truncate() - p).length();
             let at_pose = (posed[j].w_axis.truncate() - skinned).length();
             if (at_pose - at_bind).abs() > worst.0 {
-                worst = ((at_pose - at_bind).abs(), format!("piece {k} vertex {v} on {}", body.bones[j].name));
+                worst = (
+                    (at_pose - at_bind).abs(),
+                    format!("piece {k} vertex {v} on {}", body.bones[j].name),
+                );
             }
         }
     }
@@ -160,12 +180,20 @@ fn single(rig: &Rig, name: &str, t: u32) -> Posed {
 
 fn near(got: Option<Vec3>, want: [f32; 3], what: &str) {
     let got = got.unwrap_or_else(|| panic!("{what}: missing"));
-    assert!((got - Vec3::from(want)).abs().max_element() < 0.01, "{what}: {got} vs {want:?}");
+    assert!(
+        (got - Vec3::from(want)).abs().max_element() < 0.01,
+        "{what}: {got} vs {want:?}"
+    );
 }
 
 fn aimed(rig: &Rig, pitch: f32, twist: f32, server: bool) -> Posed {
     let mut p = stand(rig, 0.0);
-    p.aim(&records::builtin().skeleton(0).aim, pitch.to_radians(), twist.to_radians(), server);
+    p.aim(
+        &records::builtin().skeleton(0).aim,
+        pitch.to_radians(),
+        twist.to_radians(),
+        server,
+    );
     p
 }
 
@@ -175,8 +203,21 @@ fn install_states() {
     let Some(rig) = load(false) else { return };
     let mut d = Driver::new(rig.list.clone());
     d.update(15, &Inputs::default());
-    assert_eq!((d.name_of(&d.upper), d.name_of(&d.lower), d.name_of(&d.crouch)), ("URFRAmS", "LST", "LC"));
-    for (name, len) in [("LST", 4000), ("LWF", 1000), ("LRF", 600), ("LCF", 1400), ("LSJ", 666), ("URFRFiS", 100), ("URFRSReS", 1866), ("D_HIT", 467), ("DT", 3033)] {
+    assert_eq!(
+        (d.name_of(&d.upper), d.name_of(&d.lower), d.name_of(&d.crouch)),
+        ("URFRAmS", "LST", "LC")
+    );
+    for (name, len) in [
+        ("LST", 4000),
+        ("LWF", 1000),
+        ("LRF", 600),
+        ("LCF", 1400),
+        ("LSJ", 666),
+        ("URFRFiS", 100),
+        ("URFRSReS", 1866),
+        ("D_HIT", 467),
+        ("DT", 3033),
+    ] {
         let e = rig.list.find(name).unwrap_or_else(|| panic!("{name}"));
         assert_eq!(rig.list.entries[e].length(), len, "{name}");
     }
@@ -190,13 +231,29 @@ fn t21_male_aim() {
     near(p.socket("RightHand").map(|s| s.0), [12.54, 22.90, 19.93], "RightHand");
     let p = aimed(&rig, 30.0, 0.0, false);
     near(p.sphere("Head"), [5.66, 24.68, 16.72], "Head down");
-    near(p.socket("RightHand").map(|s| s.0), [12.54, 13.34, 22.19], "RightHand down");
+    near(
+        p.socket("RightHand").map(|s| s.0),
+        [12.54, 13.34, 22.19],
+        "RightHand down",
+    );
     near(p.sphere("Face_Eyelid1"), [6.62, 28.50, 19.96], "Face_Eyelid1 down");
-    near(aimed(&rig, -30.0, 0.0, false).sphere("Head"), [5.66, 30.98, 6.23], "Head up");
+    near(
+        aimed(&rig, -30.0, 0.0, false).sphere("Head"),
+        [5.66, 30.98, 6.23],
+        "Head up",
+    );
     let p = aimed(&rig, 0.0, 45.0, false);
     near(p.sphere("Head"), [10.30, 29.72, 3.59], "Head twisted");
-    near(p.socket("RightHand").map(|s| s.0), [22.43, 22.90, 6.00], "RightHand twisted");
-    near(aimed(&rig, 30.0, 0.0, true).sphere("Head"), [5.66, 27.45, 13.02], "server Head down");
+    near(
+        p.socket("RightHand").map(|s| s.0),
+        [22.43, 22.90, 6.00],
+        "RightHand twisted",
+    );
+    near(
+        aimed(&rig, 30.0, 0.0, true).sphere("Head"),
+        [5.66, 27.45, 13.02],
+        "server Head down",
+    );
 }
 
 #[test]
@@ -215,14 +272,42 @@ fn t23_to_27_sockets() {
     for s in &records::builtin().skeleton(0).sockets {
         near(bind.socket(&s.name).map(|p| p.0), s.bind, &s.name);
     }
-    near(stand(&rig, 0.0).socket("RightHand").map(|s| s.0), [12.54, 22.90, 19.93], "RightHand stand");
-    near(single(&rig, "LST", 0).socket("NAME_socket").map(|s| s.0), [9.70, 45.02, 13.52], "NAME_socket LST");
-    near(stand(&rig, 0.0).socket("NAME_socket").map(|s| s.0), [8.63, 45.87, 11.51], "NAME_socket stand");
-    near(stand(&rig, 1.0).socket("NAME_socket").map(|s| s.0), [6.13, 37.57, 15.21], "NAME_socket crouch");
-    near(stand(&rig, 0.0).sphere("Left_foot"), [-10.02, -41.49, 13.52], "Left_foot stand");
+    near(
+        stand(&rig, 0.0).socket("RightHand").map(|s| s.0),
+        [12.54, 22.90, 19.93],
+        "RightHand stand",
+    );
+    near(
+        single(&rig, "LST", 0).socket("NAME_socket").map(|s| s.0),
+        [9.70, 45.02, 13.52],
+        "NAME_socket LST",
+    );
+    near(
+        stand(&rig, 0.0).socket("NAME_socket").map(|s| s.0),
+        [8.63, 45.87, 11.51],
+        "NAME_socket stand",
+    );
+    near(
+        stand(&rig, 1.0).socket("NAME_socket").map(|s| s.0),
+        [6.13, 37.57, 15.21],
+        "NAME_socket crouch",
+    );
+    near(
+        stand(&rig, 0.0).sphere("Left_foot"),
+        [-10.02, -41.49, 13.52],
+        "Left_foot stand",
+    );
     let Some(f) = load(true) else { return };
-    near(stand(&f, 0.0).socket("NAME_socket").map(|s| s.0), [9.28, 43.71, 19.18], "female NAME_socket stand");
-    near(stand(&f, 0.0).sphere("Left_foot"), [-7.73, -39.56, 12.91], "female Left_foot stand");
+    near(
+        stand(&f, 0.0).socket("NAME_socket").map(|s| s.0),
+        [9.28, 43.71, 19.18],
+        "female NAME_socket stand",
+    );
+    near(
+        stand(&f, 0.0).sphere("Left_foot"),
+        [-7.73, -39.56, 12.91],
+        "female Left_foot stand",
+    );
 }
 
 #[test]
@@ -277,12 +362,22 @@ fn t34_35_counts() {
     let Some(rig) = load(false) else { return };
     let bind = rig.bind();
     let skel = records::builtin().skeleton(0);
-    let found = skel.spheres.iter().filter(|s| s.radius > 0.0 && bind.sphere(&s.name).is_some()).count();
+    let found = skel
+        .spheres
+        .iter()
+        .filter(|s| s.radius > 0.0 && bind.sphere(&s.name).is_some())
+        .count();
     assert_eq!(found, 33);
     if let Some(f) = load(true) {
         let bind = f.bind();
         let skel = records::builtin().skeleton(1);
-        assert_eq!(skel.spheres.iter().filter(|s| s.radius > 0.0 && bind.sphere(&s.name).is_some()).count(), 35);
+        assert_eq!(
+            skel.spheres
+                .iter()
+                .filter(|s| s.radius > 0.0 && bind.sphere(&s.name).is_some())
+                .count(),
+            35
+        );
     }
 }
 
@@ -294,7 +389,9 @@ fn t34_35_counts() {
 /// 2 u: another body on the same tree).
 #[test]
 fn unkeyed_bodies_on_the_stock_skeletons() {
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
+        return;
+    };
     if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
@@ -317,8 +414,14 @@ fn unkeyed_bodies_on_the_stock_skeletons() {
         let bind = rig.bind();
         let skel = records::builtin().skeleton(skeleton);
         let mut far = 0.0f32;
-        for s in skel.spheres.iter().filter(|s| s.radius > 0.0 && !s.absent && s.socket.is_none()) {
-            let at = bind.sphere(&s.name).unwrap_or_else(|| panic!("{path}: no node {}", s.name));
+        for s in skel
+            .spheres
+            .iter()
+            .filter(|s| s.radius > 0.0 && !s.absent && s.socket.is_none())
+        {
+            let at = bind
+                .sphere(&s.name)
+                .unwrap_or_else(|| panic!("{path}: no node {}", s.name));
             far = far.max((at - Vec3::from(s.bind.unwrap())).length());
         }
         if skeleton == 0 {
@@ -326,7 +429,10 @@ fn unkeyed_bodies_on_the_stock_skeletons() {
             // body's.
             assert!(far < 0.02, "{path}: {far}");
         }
-        eprintln!("{path}: every node sphere's node there; farthest from the default body's bind: {far:.2} u; sockets {:?}", rig.model.sockets.iter().map(|s| &s.name).collect::<Vec<_>>());
+        eprintln!(
+            "{path}: every node sphere's node there; farthest from the default body's bind: {far:.2} u; sockets {:?}",
+            rig.model.sockets.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
     }
 }
 
@@ -347,7 +453,9 @@ fn warehouse_players_wear_their_bodies() {
         },
         harness::CaSim,
     };
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
+        return;
+    };
     if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
@@ -355,7 +463,10 @@ fn warehouse_players_wear_their_bodies() {
     let map = world::load_from(&mount, "warehouse").unwrap();
     let names: Vec<_> = map.kit.characters.iter().filter_map(|c| c.name.clone()).collect();
     if !names.contains(&models::body_name(0)) {
-        eprintln!("skipping: no character bodies ({:?})", map.warnings.iter().find(|w| w.contains("character")));
+        eprintln!(
+            "skipping: no character bodies ({:?})",
+            map.warnings.iter().find(|w| w.contains("character"))
+        );
         return;
     }
     assert_eq!(names, [models::body_name(0), models::body_name(7)]);
@@ -365,7 +476,10 @@ fn warehouse_players_wear_their_bodies() {
     let p = sim.spawn_character(spawn + Vec3::Y, movement::ID);
     sim.seconds(1.0);
     let world = sim.app.world();
-    assert_eq!(world.get::<BodyName>(p).map(|b| b.0.as_str()), Some(models::body_name(0).as_str()));
+    assert_eq!(
+        world.get::<BodyName>(p).map(|b| b.0.as_str()),
+        Some(models::body_name(0).as_str())
+    );
     assert!(world.get::<CaAnim>(p).unwrap().rig.is_some());
     let pose = world.get::<CaPose>(p).unwrap();
     assert!(pose.modelled);
@@ -391,7 +505,9 @@ fn warehouse_players_wear_their_bodies() {
 fn default_bodies_wear_face_and_head() {
     use chimera_world::map::{MapAlpha, MapData};
     use combat_arms::game::characters::models;
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
+        return;
+    };
     if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
@@ -403,14 +519,25 @@ fn default_bodies_wear_face_and_head() {
     let file = |p: &str| mount.read(p).ok();
     let ca = combat_arms::game::data::CaData::install();
     let data = ca.characters();
-    assert!(data.face(0).and_then(|f| f.file.as_ref()).is_some(), "the install's Face0 has a file");
+    assert!(
+        data.face(0).and_then(|f| f.file.as_ref()).is_some(),
+        "the install's Face0 has a file"
+    );
     let mut map = MapData::default();
     models::add_character_models(&mut map, &combat_arms::game::data::CaData::install(), &file);
     eprintln!("warnings: {:?}", map.warnings);
-    let groups = map.memos.get::<models::CaModelIndex>().expect("the load's index").groups().to_vec();
+    let groups = map
+        .memos
+        .get::<models::CaModelIndex>()
+        .expect("the load's index")
+        .groups()
+        .to_vec();
     for (id, face_id) in [(0, 0), (7, 4)] {
         assert_eq!(data.default_face(id), face_id);
-        let group = groups.iter().find(|g| g.records.first() == Some(&id)).expect("the group");
+        let group = groups
+            .iter()
+            .find(|g| g.records.first() == Some(&id))
+            .expect("the group");
         eprintln!("group {id}: {group:?}");
         assert_eq!(group.records.len(), 3, "the three stock bodies");
         assert_eq!(group.faces.first(), Some(&face_id));
@@ -419,7 +546,8 @@ fn default_bodies_wear_face_and_head() {
         assert!(group.faces.len() >= 3, "the sex's faces");
         assert_eq!(group.heads.first(), Some(&-1));
         let body = map
-            .kit.characters
+            .kit
+            .characters
             .iter()
             .find(|c| c.name.as_deref() == Some(models::body_name(id).as_str()))
             .unwrap_or_else(|| panic!("body {id} not loaded: {:?}", map.warnings));
@@ -434,7 +562,11 @@ fn default_bodies_wear_face_and_head() {
             }
         }
         for (k, mesh) in meshes.iter().enumerate() {
-            assert!(mesh.texture.is_some() || mesh.material.is_empty(), "body {id}: mesh {k} ({}) untextured", mesh.material);
+            assert!(
+                mesh.texture.is_some() || mesh.material.is_empty(),
+                "body {id}: mesh {k} ({}) untextured",
+                mesh.material
+            );
             if matches!(mesh.body, Some((1 | 2, _))) {
                 let top = mesh.positions.iter().map(|p| p[1]).fold(f32::MIN, f32::max);
                 assert!(top > 1.3, "body {id}: face or head mesh {k} tops out at {top} m");
@@ -461,9 +593,18 @@ fn default_bodies_wear_face_and_head() {
                 let worn: Vec<_> = meshes.iter().filter(|m| m.body == Some((part, choice))).collect();
                 assert!(!worn.is_empty(), "body {id}: part {part} choice {choice}");
                 let at = centre(part, choice) - face;
-                eprintln!("body {id}: part {part} choice {choice}: {} meshes, centre {at:.2} m from the face's", worn.len());
-                assert!((low..high).contains(&at.y), "body {id}: part {part} choice {choice} at {at} m from the face");
-                assert!(at.x.abs() < 0.1, "body {id}: part {part} choice {choice} off centre: {at}");
+                eprintln!(
+                    "body {id}: part {part} choice {choice}: {} meshes, centre {at:.2} m from the face's",
+                    worn.len()
+                );
+                assert!(
+                    (low..high).contains(&at.y),
+                    "body {id}: part {part} choice {choice} at {at} m from the face"
+                );
+                assert!(
+                    at.x.abs() < 0.1,
+                    "body {id}: part {part} choice {choice} off centre: {at}"
+                );
                 // A backpack behind (the body faces -Z), goggles not.
                 assert_eq!(at.z > 0.15, part == 4, "body {id}: part {part} choice {choice} at {at}");
                 let node = worn[0].joints[0][0];
@@ -482,7 +623,11 @@ fn default_bodies_wear_face_and_head() {
             .collect();
         assert!(!marks.is_empty(), "body {id}: no team-mark piece");
         for &k in &marks {
-            assert!(matches!(enemy[k].alpha, MapAlpha::Mask(_)), "body {id}: mark {k}: {:?}", enemy[k].alpha);
+            assert!(
+                matches!(enemy[k].alpha, MapAlpha::Mask(_)),
+                "body {id}: mark {k}: {:?}",
+                enemy[k].alpha
+            );
             assert!(matches!(mate[k].alpha, MapAlpha::Mask(_)));
             assert!(enemy[k].material.eq_ignore_ascii_case(&data.marks.enemy));
             let opacity = |t: Option<usize>| {
@@ -500,7 +645,8 @@ fn default_bodies_wear_face_and_head() {
     // Other players hold their weapon's own third-person model (`HHModel`
     // with its `HHSkin#`), textured, for every weapon players are given.
     let ours = ca.builtin_weapon_ids();
-    let with_model: Vec<_> = ca.weapon_set()
+    let with_model: Vec<_> = ca
+        .weapon_set()
         .weapons
         .iter()
         .filter(|w| ours.contains(&w.id) && w.models.world.is_some())
@@ -508,9 +654,17 @@ fn default_bodies_wear_face_and_head() {
         .collect();
     assert!(with_model.len() >= 10, "{with_model:?}");
     for id in &with_model {
-        let held = map.kit.held.iter().find(|h| &h.key == id).unwrap_or_else(|| panic!("{id}: no held model: {:?}", map.warnings));
+        let held = map
+            .kit
+            .held
+            .iter()
+            .find(|h| &h.key == id)
+            .unwrap_or_else(|| panic!("{id}: no held model: {:?}", map.warnings));
         assert!(!held.model.meshes.is_empty(), "{id}");
-        assert!(held.model.meshes.iter().any(|m| m.texture.is_some()), "{id}: untextured (the grey box)");
+        assert!(
+            held.model.meshes.iter().any(|m| m.texture.is_some()),
+            "{id}: untextured (the grey box)"
+        );
     }
 }
 
@@ -527,7 +681,9 @@ fn held_weapons_point_forward() {
     use chimera_world::map::MapData;
     use combat_arms::game::characters::models;
     use lithtech_formats::anim as lta;
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
+        return;
+    };
     if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
@@ -546,26 +702,59 @@ fn held_weapons_point_forward() {
     let mut muzzles = Vec::new();
     // (Grenades and launched projectiles in flight, `grenades::thrown_key`
     // and `special::data::PROJECTILE_KEY`, are in no hand.)
-    let in_flight = |key: &str| key.ends_with("#thrown") || key.starts_with(combat_arms::game::special::data::PROJECTILE_KEY);
+    let in_flight =
+        |key: &str| key.ends_with("#thrown") || key.starts_with(combat_arms::game::special::data::PROJECTILE_KEY);
     for held in map.kit.held.iter().filter(|h| !in_flight(&h.key)) {
-        assert!(held.bone.eq_ignore_ascii_case("Right_hand"), "{}: on {}", held.key, held.bone);
+        assert!(
+            held.bone.eq_ignore_ascii_case("Right_hand"),
+            "{}: on {}",
+            held.key,
+            held.bone
+        );
         let w = ca.weapon_set().weapons.iter().find(|w| w.id == held.key).unwrap();
         let path = w.models.world.as_deref().unwrap().to_lowercase();
         // The rifle stance (`URFRAmS`) holds rifles, SMGs, MGs and sniper
         // rifles; launchers, pistols and the rest have their own.
-        if !["hh_ar_", "hh_smg_", "hh_mg_", "hh_sr_"].iter().any(|k| path.contains(k)) {
+        if !["hh_ar_", "hh_smg_", "hh_mg_", "hh_sr_"]
+            .iter()
+            .any(|k| path.contains(k))
+        {
             continue;
         }
         let loaded = model::load(&path, &file).unwrap();
-        let Some(flash) = loaded.model.sockets.iter().find(|s| s.name.eq_ignore_ascii_case("flash")) else { continue };
+        let Some(flash) = loaded
+            .model
+            .sockets
+            .iter()
+            .find(|s| s.name.eq_ignore_ascii_case("flash"))
+        else {
+            continue;
+        };
         let entry = model::rest_entry(&loaded, models::HELD_POSE).expect("an animation");
-        assert!(entry.name().eq_ignore_ascii_case(models::HELD_POSE), "{}: {}", held.key, entry.name());
-        let pose: Vec<_> = (0..loaded.model.nodes.len()).map(|j| lta::sample(entry, j, 0.0)).collect();
+        assert!(
+            entry.name().eq_ignore_ascii_case(models::HELD_POSE),
+            "{}: {}",
+            held.key,
+            entry.name()
+        );
+        let pose: Vec<_> = (0..loaded.model.nodes.len())
+            .map(|j| lta::sample(entry, j, 0.0))
+            .collect();
         let g = lta::globals(&loaded.model, &pose);
         let lh = lta::transform_point(&g[flash.node as usize], flash.position);
         let muzzle = at_socket.transform_point3(Vec3::from(lithtech_formats::ltb::to_rh_vec(lh)));
-        let touch = held.model.meshes.iter().flat_map(|m| &m.positions).map(|p| (Vec3::from(*p) - muzzle).length()).fold(f32::MAX, f32::min);
-        assert!(touch < 4.0, "{}: its muzzle is {touch} u from its drawn meshes", held.key);
+        let touch = held
+            .model
+            .meshes
+            .iter()
+            .flat_map(|m| &m.positions)
+            .map(|p| (Vec3::from(*p) - muzzle).length())
+            .fold(f32::MAX, f32::min);
+        assert!(
+            touch < 4.0,
+            "{}: its muzzle is {touch} u from its drawn meshes",
+            held.key
+        );
         muzzles.push((held.key.clone(), muzzle));
     }
     assert!(muzzles.len() >= 5, "guns with a muzzle: {}", muzzles.len());
@@ -577,7 +766,10 @@ fn held_weapons_point_forward() {
         for (key, m) in &muzzles {
             // Back to LithTech's frame (z mirrored), then posed.
             let d = (at + q * Vec3::new(m.x, m.y, -m.z) - grip).normalize();
-            assert!(d.z > 0.5, "female {female}: {key}'s muzzle is {d:.2} from the grip (the body faces +Z)");
+            assert!(
+                d.z > 0.5,
+                "female {female}: {key}'s muzzle is {d:.2} from the grip (the body faces +Z)"
+            );
         }
     }
 }
@@ -590,7 +782,9 @@ fn held_weapons_point_forward() {
 fn bodies_draw_one_level_per_piece() {
     use chimera_world::map::MapData;
     use combat_arms::game::characters::models;
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
+        return;
+    };
     if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
@@ -599,14 +793,28 @@ fn bodies_draw_one_level_per_piece() {
     let ca = combat_arms::game::data::CaData::install();
     let mut map = MapData::default();
     models::add_character_models(&mut map, &ca, &file);
-    let Some(body) = map.kit.characters.iter().find(|c| c.name.as_deref() == Some(models::body_name(0).as_str())) else {
+    let Some(body) = map
+        .kit
+        .characters
+        .iter()
+        .find(|c| c.name.as_deref() == Some(models::body_name(0).as_str()))
+    else {
         eprintln!("skipping: no character bodies (V2 key)");
         return;
     };
     let record = ca.characters().model(0).unwrap();
     let loaded = model::load_own(&record.file, &file).unwrap();
-    assert!(loaded.model.pieces.iter().any(|p| p.lods.len() == 3), "the body has pieces with three levels");
-    let drawn: Vec<usize> = body.model.meshes.iter().filter(|m| m.body == Some((0, 0))).map(|m| m.positions.len()).collect();
+    assert!(
+        loaded.model.pieces.iter().any(|p| p.lods.len() == 3),
+        "the body has pieces with three levels"
+    );
+    let drawn: Vec<usize> = body
+        .model
+        .meshes
+        .iter()
+        .filter(|m| m.body == Some((0, 0)))
+        .map(|m| m.positions.len())
+        .collect();
     let lod0: Vec<usize> = loaded
         .model
         .pieces
@@ -624,7 +832,9 @@ fn bodies_draw_one_level_per_piece() {
 fn thrown_grenades_draw_their_projectile_model() {
     use chimera_world::map::MapData;
     use combat_arms::game::{characters::models, grenades};
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
+        return;
+    };
     if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
@@ -638,20 +848,32 @@ fn thrown_grenades_draw_their_projectile_model() {
         return;
     }
     let size = |m: &chimera_world::map::MapModel| {
-        let (lo, hi) = m.meshes.iter().flat_map(|m| &m.positions).fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| {
-            (lo.min(Vec3::from(*p)), hi.max(Vec3::from(*p)))
-        });
+        let (lo, hi) = m
+            .meshes
+            .iter()
+            .flat_map(|m| &m.positions)
+            .fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| {
+                (lo.min(Vec3::from(*p)), hi.max(Vec3::from(*p)))
+            });
         (hi - lo).length()
     };
     for id in [grenades::M67, grenades::XM84, grenades::M18] {
         let key = grenades::thrown_key(id);
-        let thrown = map.kit.held.iter().find(|h| h.key == key).unwrap_or_else(|| panic!("{key}: {:?}", map.warnings));
+        let thrown = map
+            .kit
+            .held
+            .iter()
+            .find(|h| h.key == key)
+            .unwrap_or_else(|| panic!("{key}: {:?}", map.warnings));
         assert!(thrown.bone.is_empty(), "{key}: in no hand");
         let untextured = thrown.model.meshes.iter().filter(|m| m.texture.is_none()).count();
         assert_eq!(untextured, 0, "{key}: untextured pieces");
         let held = map.kit.held.iter().find(|h| h.key == id).unwrap();
         let ratio = size(&thrown.model) / size(&held.model);
-        eprintln!("{key}: {:.2} u across, {ratio:.2} x the held model", size(&thrown.model));
+        eprintln!(
+            "{key}: {:.2} u across, {ratio:.2} x the held model",
+            size(&thrown.model)
+        );
         assert!((1.6..2.4).contains(&ratio), "{key}: {ratio} x the held model");
     }
 }
@@ -694,7 +916,11 @@ fn reach_holds_every_node_of_the_install_s_poses() {
                     let mut posed = rig.posed(&pose, r);
                     posed.aim(aim, pitch.to_radians(), twist.to_radians(), server);
                     let reach = rig.reach([main, upper, lower, crouch], dead, r);
-                    let names = records::builtin().skeleton(if female { 1 } else { 0 }).spheres.iter().map(|s| s.name.as_str());
+                    let names = records::builtin()
+                        .skeleton(if female { 1 } else { 0 })
+                        .spheres
+                        .iter()
+                        .map(|s| s.name.as_str());
                     let needed = rig.needed_for(names);
                     let some = rig.reach_of([main, upper, lower, crouch], dead, r, Some(&needed));
                     for (j, n) in needed.iter().enumerate() {
@@ -732,7 +958,12 @@ fn reach_holds_every_node_of_the_install_s_poses() {
             a.zip(b).map(|(a, b)| (b - a) / 100)
         };
         let [m, u, l, c] = &stand;
-        let names: Vec<&str> = records::builtin().skeleton(if female { 1 } else { 0 }).spheres.iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = records::builtin()
+            .skeleton(if female { 1 } else { 0 })
+            .spheres
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
         let needed = rig.needed_for(names.iter().copied());
         let bound = count(&mut || {
             std::hint::black_box(rig.reach_of([m, u, l, c], false, 0.0, Some(&needed)));
@@ -743,11 +974,13 @@ fn reach_holds_every_node_of_the_install_s_poses() {
             std::hint::black_box(p);
         });
         eprintln!("instructions a call: the bound {bound:?}, the pose {pose:?}");
-        let head = rig.shape.node("Head").map(|j| rig.reach([&stand[0], &stand[1], &stand[2], &stand[3]], false, 0.0)[j].1);
+        let head = rig
+            .shape
+            .node("Head")
+            .map(|j| rig.reach([&stand[0], &stand[1], &stand[2], &stand[3]], false, 0.0)[j].1);
         eprintln!(
             "female {female}: {checked} nodes checked, the furthest at {:.0}% of its bound; the largest bound {reach_max:.1} units, the head's {head:?}",
             tightest * 100.0
         );
     }
 }
-

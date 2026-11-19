@@ -70,7 +70,16 @@ fn t27_timer_late_stop() {
     assert_eq!(ran(&t), (0, 1, 0), "over time once");
     assert_eq!(
         notices(&t),
-        vec![Notice::Timer { on: true, seconds: 180.0 }, Notice::Timer { on: false, seconds: 0.0 }]
+        vec![
+            Notice::Timer {
+                on: true,
+                seconds: 180.0
+            },
+            Notice::Timer {
+                on: false,
+                seconds: 0.0
+            }
+        ]
     );
     t.send("X", "STOP");
     assert_eq!(ran(&t), (0, 1, 0), "a stopped timer ignores STOP");
@@ -112,7 +121,10 @@ fn t28_timer_auto_stop() {
     t.send("X", "STOP");
     until(&mut t, 70.0);
     assert_eq!(ran(&t), (0, 0, 0), "nothing ran");
-    assert!(matches!(&t.w.objects[0].kind, Kind::Timer(x) if x.started.is_none()), "clock off");
+    assert!(
+        matches!(&t.w.objects[0].kind, Kind::Timer(x) if x.started.is_none()),
+        "clock off"
+    );
 }
 
 /// 29. A timer that never updates (decided at load): `INTIMECOMMANDTIME 5`
@@ -190,7 +202,10 @@ fn t31_light_activate_use() {
     assert_eq!(wra(&t), (1, 0, 0), "still working at 5 s");
     t.frame();
     assert_eq!(wra(&t), (1, 1, 1), "completed at 5.05 s, released");
-    assert!(notices(&t).contains(&Notice::Use { who: Who::Character(1), answer: UseAnswer::Success }));
+    assert!(notices(&t).contains(&Notice::Use {
+        who: Who::Character(1),
+        answer: UseAnswer::Success
+    }));
     t.w.chars = vec![user(1, false, true)];
     until(&mut t, 6.0);
     t.w.chars = vec![user(2, true, true)];
@@ -268,13 +283,25 @@ fn t33_caption() {
 fn t34_mission_list() {
     let mut t = T::new(vec![obj("MissionTrigger", "MishTRG01", &[])]);
     t.w.mission_points.insert("2".into(), 5);
-    for m in ["ADD 0", "ADD 0", "ADD_POINT_MISSION 2 99", "UPDATE_POINT_MISSION 2 3", "CHECK 0", "FAIL 7"] {
+    for m in [
+        "ADD 0",
+        "ADD 0",
+        "ADD_POINT_MISSION 2 99",
+        "UPDATE_POINT_MISSION 2 3",
+        "CHECK 0",
+        "FAIL 7",
+    ] {
         t.send("MishTRG01", m);
     }
-    let Kind::Mission(list) = &t.w.objects[0].kind else { panic!() };
+    let Kind::Mission(list) = &t.w.objects[0].kind else {
+        panic!()
+    };
     assert_eq!(list.len(), 2);
     assert_eq!((list[0].id.as_str(), list[0].state), ("0", ObjectiveState::Success));
-    assert_eq!((list[1].id.as_str(), list[1].state, list[1].count), ("2", ObjectiveState::InProgress, Some((3, 5))));
+    assert_eq!(
+        (list[1].id.as_str(), list[1].state, list[1].count),
+        ("2", ObjectiveState::InProgress, Some((3, 5)))
+    );
     assert_eq!(notices(&t).len(), 4, "{:?}", notices(&t));
 }
 
@@ -286,7 +313,11 @@ fn t36_marker_game_type() {
     let mut t = T::new(vec![obj(
         "TargetTrigger",
         "Indicator_A00",
-        &[("GameType", "HeadQuaters".into()), ("Team", "JSF".into()), ("CheckTeam", "1".into())],
+        &[
+            ("GameType", "HeadQuaters".into()),
+            ("Team", "JSF".into()),
+            ("CheckTeam", "1".into()),
+        ],
     )]);
     let marker = |t: &T| match &t.w.objects[0].kind {
         Kind::Trigger(tr) => tr.marker.clone().unwrap(),
@@ -302,7 +333,11 @@ fn t36_marker_game_type() {
     t.send("Indicator_A00", "OFF");
     assert!(!marker(&t).on);
     let of = |props: &[(&str, &str)]| {
-        let (kv, _) = obj("TargetTrigger", "M", &props.iter().map(|(k, v)| (*k, v.to_string())).collect::<Vec<_>>());
+        let (kv, _) = obj(
+            "TargetTrigger",
+            "M",
+            &props.iter().map(|(k, v)| (*k, v.to_string())).collect::<Vec<_>>(),
+        );
         Marker::of(&combat_arms::game::objects::runtime::Props(kv)).team
     };
     assert_eq!(of(&[("CheckTeam", "0"), ("Team", "JSF")]), MarkerTeam::All);
@@ -323,7 +358,11 @@ fn camera(one_time: bool, can_skip: bool) -> T {
                 ("origin", v(0.0, 0.0, 0.0)),
             ],
         ),
-        obj("CameraPoint", "A_Exp_Cam01", &[("origin", v(100.0, 50.0, -20.0)), ("Rotation", v(0.0, 1.0, 0.0))]),
+        obj(
+            "CameraPoint",
+            "A_Exp_Cam01",
+            &[("origin", v(100.0, 50.0, -20.0)), ("Rotation", v(0.0, 1.0, 0.0))],
+        ),
         obj("Trigger", "Trig", &[("origin", v(7.0, 7.0, 7.0))]),
     ]);
     t.run("int c 0");
@@ -342,12 +381,17 @@ fn t38_camera_move() {
     t.run("msg Camera0 (moveto Trig)");
     assert_eq!(t.w.objects[0].pose.pos, point.pos, "not to a trigger");
     t.run("msg Camera0 (fov 55 41.25 2)");
-    let Kind::Camera(c) = &t.w.objects[0].kind else { panic!() };
+    let Kind::Camera(c) = &t.w.objects[0].kind else {
+        panic!()
+    };
     let half = c.fov_at(c.fov_since + 1.0);
     close(half.x, 72.5, 1e-4, "x half way");
     close(half.y, 58.125, 1e-4, "y half way");
     assert_eq!(c.fov_at(c.fov_since + 2.5), Vec2::new(55.0, 41.25));
-    assert!(notices(&t).contains(&Notice::Fov { fov: Vec2::new(55.0, 41.25), seconds: 2.0 }));
+    assert!(notices(&t).contains(&Notice::Fov {
+        fov: Vec2::new(55.0, 41.25),
+        seconds: 2.0
+    }));
 }
 
 /// 39. `OFF` on a camera that isn't live still runs its cleanup; it
@@ -361,17 +405,30 @@ fn t39_camera_off() {
     assert!(!t.w.objects[0].removed, "stays");
     t.send("Camera0", "ON");
     t.send("Camera0", "SKIP");
-    assert!(matches!(&t.w.objects[0].kind, Kind::Camera(c) if c.live), "SKIP refused");
+    assert!(
+        matches!(&t.w.objects[0].kind, Kind::Camera(c) if c.live),
+        "SKIP refused"
+    );
     assert_eq!(t.var("c"), Some(1));
 
     let mut t = camera(true, true);
     t.send("Camera0", "OFF");
     assert!(t.w.objects[0].removed, "a one-time camera goes");
 
-    let mut t = T::new(vec![obj("Camera", "Cam", &[("ActiveTime", "2".into()), ("OneTime", "0".into())])]);
+    let mut t = T::new(vec![obj(
+        "Camera",
+        "Cam",
+        &[("ActiveTime", "2".into()), ("OneTime", "0".into())],
+    )]);
     t.send("Cam", "ON");
     until(&mut t, 2.0);
-    assert!(matches!(&t.w.objects[0].kind, Kind::Camera(c) if c.live), "live through 1.95 s");
+    assert!(
+        matches!(&t.w.objects[0].kind, Kind::Camera(c) if c.live),
+        "live through 1.95 s"
+    );
     t.frame();
-    assert!(matches!(&t.w.objects[0].kind, Kind::Camera(c) if !c.live), "off after 2 s");
+    assert!(
+        matches!(&t.w.objects[0].kind, Kind::Camera(c) if !c.live),
+        "off after 2 s"
+    );
 }

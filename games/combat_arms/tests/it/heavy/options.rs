@@ -30,7 +30,10 @@ fn install() -> Option<Mount> {
 fn the_key_names_file_names_the_stock_keys() {
     let Some(m) = install() else { return };
     let Ok(bytes) = m.read(combat_arms::game::options::keys::KEY_NAMES_FILE) else {
-        eprintln!("skipping: {} isn't readable (no V1 key?)", combat_arms::game::options::keys::KEY_NAMES_FILE);
+        eprintln!(
+            "skipping: {} isn't readable (no V1 key?)",
+            combat_arms::game::options::keys::KEY_NAMES_FILE
+        );
         return;
     };
     let names = KeyNames::parse(&Document::parse(&bytes).unwrap());
@@ -45,7 +48,10 @@ fn the_key_names_file_names_the_stock_keys() {
             }
             let known = if mouse { &names.mouse } else { &names.keyboard };
             if !known.iter().any(|(real, text)| real == token && !text.is_empty()) {
-                eprintln!("{}: {token} isn't in the key-name file (shown by our built-in name)", a.name);
+                eprintln!(
+                    "{}: {token} isn't in the key-name file (shown by our built-in name)",
+                    a.name
+                );
             }
         }
     }

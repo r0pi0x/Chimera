@@ -50,9 +50,15 @@ fn install() -> HashMap<String, String> {
         file(w, "TMM", "TimeLimit = 180\nTrainingTimeLimit = 10\nJSFWeapon = \"XK-2\"\nOffenceTeam = \"JSF\"\nDefenceTeam = \"Creed\""),
     );
     files.insert("gms/ghosttown_m_official.gms".into(), file(w, "TMM", "TimeLimit = 180"));
-    files.insert("gms/showdown_tsv.gms".into(), file("Worlds2\\Warehouse.dat", "TSV", "TimeLimit = 180"));
+    files.insert(
+        "gms/showdown_tsv.gms".into(),
+        file("Worlds2\\Warehouse.dat", "TSV", "TimeLimit = 180"),
+    );
     files.insert("gms/showdown_f.gms".into(), file("Worlds2\\Warehouse.dat", "FFA", ""));
-    files.insert("gms/hiredguns2_hqm.gms".into(), file("Worlds4\\HiredGuns2.dat", "SQM2", "TimeLimit = 1800"));
+    files.insert(
+        "gms/hiredguns2_hqm.gms".into(),
+        file("Worlds4\\HiredGuns2.dat", "SQM2", "TimeLimit = 1800"),
+    );
     files
 }
 
@@ -64,7 +70,10 @@ fn index() -> MissionIndex {
 #[test]
 fn case_01_room_to_path() {
     let m = index().find("ghosttown", "TDM").unwrap();
-    assert_eq!((m.path.as_str(), m.mission.mode.as_str()), ("gms/ghosttown_t.gms", "TDM"));
+    assert_eq!(
+        (m.path.as_str(), m.mission.mode.as_str()),
+        ("gms/ghosttown_t.gms", "TDM")
+    );
     assert_eq!(m.map, "Worlds\\GhostTown.dat");
     assert_eq!(m.world_name(), "ghosttown");
 }
@@ -72,7 +81,10 @@ fn case_01_room_to_path() {
 #[test]
 fn case_02_official_room() {
     let m = index().find("ghosttown", "TMM_OFFICIAL").unwrap();
-    assert_eq!((m.path.as_str(), m.mission.mode.as_str()), ("gms/ghosttown_m_official.gms", "TMM"));
+    assert_eq!(
+        (m.path.as_str(), m.mission.mode.as_str()),
+        ("gms/ghosttown_m_official.gms", "TMM")
+    );
 }
 
 #[test]
@@ -80,7 +92,11 @@ fn case_03_04_world_differs_from_the_map() {
     let i = index();
     assert_eq!(i.find("warehouse", "TSV").unwrap().path, "gms/showdown_tsv.gms");
     let f = i.find("warehouse", "FFA").unwrap();
-    assert_eq!(missions::round_length(&f.mission.mode, f.object().time_limit, 30), None, "no time limit");
+    assert_eq!(
+        missions::round_length(&f.mission.mode, f.object().time_limit, 30),
+        None,
+        "no time limit"
+    );
 }
 
 #[test]
@@ -123,12 +139,17 @@ fn case_08_09_search_and_destroy_clock() {
     assert!((ends - now(&sim) - 10.0).abs() < 0.1, "warm-up 10 s");
     assert!(!weapons(&sim, a).contains(&BOMB), "no bomb in the warm-up");
     until(&mut sim, 25.0, |p| matches!(p, Phase::Setup { .. }));
-    let Phase::Setup { until: setup_end } = phase(&sim) else { unreachable!() };
+    let Phase::Setup { until: setup_end } = phase(&sim) else {
+        unreachable!()
+    };
     assert!((setup_end - now(&sim) - 5.0).abs() < 0.1, "5 s setup");
     until(&mut sim, 7.0, |p| p == Phase::Live);
     let ends = m(&sim).round_ends.unwrap();
     assert!((ends - now(&sim) - 180.0).abs() < 0.1, "180 s round");
-    assert!(wait_for(&mut sim, 1.0, |s| weapons(s, a).contains(&BOMB)), "the bomb from round 1");
+    assert!(
+        wait_for(&mut sim, 1.0, |s| weapons(s, a).contains(&BOMB)),
+        "the bomb from round 1"
+    );
     until(&mut sim, 190.0, |p| matches!(p, Phase::RoundOver { .. }));
     assert_eq!(m(&sim).winner, Some(CREED), "the defence on a time-out");
 }
@@ -168,7 +189,10 @@ fn case_15_16_seize_and_secure() {
          [HeadQuatersMode]\nFlagMoveTime = 120.0\nLastOccupyBonus = 50\nAbuse_PlayTime_Plus = 10.0\n",
     );
     let o = m.object();
-    assert_eq!(o.activate, vec![("ActivateTrigger_A".into(), 5.0), ("ActivateTrigger_B".into(), 5.0)]);
+    assert_eq!(
+        o.activate,
+        vec![("ActivateTrigger_A".into(), 5.0), ("ActivateTrigger_B".into(), 5.0)]
+    );
     let s = m.seize.unwrap();
     assert_eq!((s.flag_move_time, s.last_occupy_bonus), (120.0, 50));
     assert_eq!(s.flag_move_time + s.abuse_play_plus, 130.0, "the anti-abuse timer");
@@ -220,7 +244,17 @@ fn case_21_22_hired_guns() {
          MovePenaltyIncPerBullionNumSection2 = [26, 80]\nMovePenaltyIncPerBullionNum2 = 0.0\n",
     );
     let b = m.bullion.unwrap();
-    assert_eq!((b.drop_num, b.amount, b.base_bank, b.round_win_bonus, b.kill_bonus, b.death_bonus), (80, 100, 1000, 500, 100, 0));
+    assert_eq!(
+        (
+            b.drop_num,
+            b.amount,
+            b.base_bank,
+            b.round_win_bonus,
+            b.kill_bonus,
+            b.death_bonus
+        ),
+        (80, 100, 1000, 500, 100, 0)
+    );
     assert_eq!(b.base_bank + b.round_win_bonus, 1500, "the last round's winners");
     for (n, p) in [(10.0, 0.0), (20.0, 0.30), (25.0, 0.45), (40.0, 0.45), (81.0, 0.0)] {
         assert!((b.carry_penalty(n) - p).abs() < 1e-9, "P({n}) = {}", b.carry_penalty(n));
@@ -266,7 +300,10 @@ fn case_26_to_29_arms_race() {
     // Case 26: G 15 from the default file; its steps and the last stage.
     let g15 = missions::ladders_for(&own, &defaults, 15);
     let t = &g15[0];
-    assert_eq!(t.steps.iter().map(|s| s.kill).collect::<Vec<_>>(), vec![0, 4, 7, 10, 12, 13, 14]);
+    assert_eq!(
+        t.steps.iter().map(|s| s.kill).collect::<Vec<_>>(),
+        vec![0, 4, 7, 10, 12, 13, 14]
+    );
     assert_eq!(t.step_at(14).unwrap().candidates, vec![(84, 100)]);
     assert_eq!(t.next_kill(14), None, "the last stage");
     // Case 27: G 30, no item: r 79 the table's M417 (255), r 80 your own.
@@ -291,7 +328,11 @@ fn case_30_coop_difficulty() {
     );
     for (g, (t, f)) in [(0, (1200, 0.15)), (1, (1080, 0.4)), (2, (900, 0.8)), (5, (900, 0.8))] {
         let o = m.coop_object(g);
-        assert_eq!((o.time_limit, o.ai_damage_factor, o.life_count, o.max_life_count), (t, f, 1, 1), "G {g}");
+        assert_eq!(
+            (o.time_limit, o.ai_damage_factor, o.life_count, o.max_life_count),
+            (t, f, 1, 1),
+            "G {g}"
+        );
     }
 }
 
@@ -324,7 +365,9 @@ fn case_33_minimap() {
 /// stands: an S&D time-out goes to JSF.
 #[test]
 fn case_34_built_in_sides() {
-    let file = mission("[MapInfo]\nMap = \"w\"\n[Mission0]\nMissionMode = \"TMM\"\n[Object0]\nTimeLimit = 3\nTrainingTimeLimit = 1\n");
+    let file = mission(
+        "[MapInfo]\nMap = \"w\"\n[Mission0]\nMissionMode = \"TMM\"\n[Object0]\nTimeLimit = 3\nTrainingTimeLimit = 1\n",
+    );
     assert_eq!((file.object().offence, file.object().defence), (CREED, JSF));
     let mut sim = game("TMM", 2);
     sim.app.world_mut().insert_resource(CaMission(Some(Arc::new(file))));
@@ -366,20 +409,32 @@ fn case_37_38_server_file() {
         "[Server]\n[CombatMode]\nObjectStart = 0\nObjectEnd = 3\nMissionEnd = 3\nObjectPlay = 600\nMissionTimeLimit = 30\n",
     ))
     .unwrap();
-    assert_eq!((c.object_start, c.object_end, c.mission_end, c.mission_time_limit), (0.0, 3.0, 3.0, 30));
+    assert_eq!(
+        (c.object_start, c.object_end, c.mission_end, c.mission_time_limit),
+        (0.0, 3.0, 3.0, 30)
+    );
 }
 
 #[test]
 fn case_39_mode_default_file() {
-    assert_eq!(missions::default_file_of("GMS\\SnowValley_M_OFFICIAL.GMS").as_deref(), Some("GMS\\OFFICIAL.GMS"));
+    assert_eq!(
+        missions::default_file_of("GMS\\SnowValley_M_OFFICIAL.GMS").as_deref(),
+        Some("GMS\\OFFICIAL.GMS")
+    );
     let mut files = install();
     files.insert(
         missions::ROOM_FILE.into(),
         "[Map0]\nGMS_TMM_OFFICIAL = \"GMS\\SnowValley_M_OFFICIAL.GMS\"\n".into(),
     );
-    files.insert("gms/snowvalley_m_official.gms".into(), file("Worlds\\SnowValley.dat", "TMM", "TimeLimit = 180"));
+    files.insert(
+        "gms/snowvalley_m_official.gms".into(),
+        file("Worlds\\SnowValley.dat", "TMM", "TimeLimit = 180"),
+    );
     let i = MissionIndex::build(&|p| files.get(p).map(|s| s.as_bytes().to_vec()));
-    assert!(i.find("snowvalley", "TMM_OFFICIAL").is_some(), "a missing default file fails nothing");
+    assert!(
+        i.find("snowvalley", "TMM_OFFICIAL").is_some(),
+        "a missing default file fails nothing"
+    );
 }
 
 #[test]
@@ -438,7 +493,10 @@ fn quarantine_sections() {
     assert_eq!(q.infected.unwrap().weapons, vec![191]);
     assert_eq!(q.host.unwrap().weapons, vec![190]);
     assert_eq!((q.min_hosts, q.selection_rate, q.heal), (2, 0.2, Some((1.0, 0.1, 3.0))));
-    assert_eq!(missions::loadout(&[vec![1, 4], vec![2], vec![3], vec![]]), vec![1, 2, 3, 4]);
+    assert_eq!(
+        missions::loadout(&[vec![1, 4], vec![2], vec![3], vec![]]),
+        vec![1, 2, 3, 4]
+    );
 }
 
 /// The map messages per step (F2, F3; game_modes.md S3, S15): the
@@ -455,9 +513,17 @@ fn map_messages_per_step() {
          EndTrigger = \"Level02EndTrigger\"\n",
     );
     let o = m.object();
-    let pairs = |step| m.map_messages(step, &o).into_iter().map(|(n, msg)| format!("{n} {msg}")).collect::<Vec<_>>();
+    let pairs = |step| {
+        m.map_messages(step, &o)
+            .into_iter()
+            .map(|(n, msg)| format!("{n} {msg}"))
+            .collect::<Vec<_>>()
+    };
     assert_eq!(pairs(MissionStart), ["GameControl_SD ON", "MissionStart TRIGGER"]);
-    assert_eq!(pairs(RoundSetup), ["GameControl_SD ON", "Level02StartTrigger TRIGGER", "Extra TRIGGER"]);
+    assert_eq!(
+        pairs(RoundSetup),
+        ["GameControl_SD ON", "Level02StartTrigger TRIGGER", "Extra TRIGGER"]
+    );
     assert_eq!(pairs(RoundOver), ["Level02EndTrigger TRIGGER"]);
     assert_eq!(pairs(MissionEnd), ["MissionEnd TRIGGER"]);
     // No names: nothing.
@@ -509,7 +575,19 @@ fn map_messages_follow_the_match() {
         "{seen:?}"
     );
     assert!(matches!(seen[1].1, Phase::Setup { .. }), "at the setup: {:?}", seen[1]);
-    assert!(matches!(seen[2].1, Phase::RoundOver { .. }), "at round over: {:?}", seen[2]);
-    assert!(matches!(seen[3].1, Phase::Intermission { .. }), "at round end: {:?}", seen[3]);
-    assert!(matches!(seen[5].1, Phase::Setup { .. }), "the next setup: {:?}", seen[5]);
+    assert!(
+        matches!(seen[2].1, Phase::RoundOver { .. }),
+        "at round over: {:?}",
+        seen[2]
+    );
+    assert!(
+        matches!(seen[3].1, Phase::Intermission { .. }),
+        "at round end: {:?}",
+        seen[3]
+    );
+    assert!(
+        matches!(seen[5].1, Phase::Setup { .. }),
+        "the next setup: {:?}",
+        seen[5]
+    );
 }

@@ -28,7 +28,10 @@ fn install_mounts_its_archives() {
     let own = mount::open_install(&install).unwrap().layers().count();
     assert_eq!(own, 108);
     let all = mount.layers().count();
-    assert!(all == own || all == own + 1, "the install's {own} layers and at most the store: {all}");
+    assert!(
+        all == own || all == own + 1,
+        "the install's {own} layers and at most the store: {all}"
+    );
     assert!(mount.read("worlds2/warehouse.dat").unwrap().len() > 1_000_000);
     let keyed = mount.read("worlds/junk_flea.dat");
     if !mount::keys().unwrap().contains_key("V2") {
@@ -49,5 +52,9 @@ fn install_lists_its_maps_for_the_console() {
     }
     let mount = (INFO.open)(&install).unwrap();
     let names = (INFO.map_names)(&mount);
-    assert!(names.iter().any(|n| n == "warehouse"), "{} maps, no warehouse", names.len());
+    assert!(
+        names.iter().any(|n| n == "warehouse"),
+        "{} maps, no warehouse",
+        names.len()
+    );
 }

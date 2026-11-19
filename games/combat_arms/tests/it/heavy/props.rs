@@ -8,8 +8,7 @@
 use chimera_core::mount::config::LocalConfig;
 use chimera_world::map::MapAlpha;
 use combat_arms::game::{
-    GAME, INFO,
-    model, movement, props,
+    GAME, INFO, model, movement, props,
     render_style::{self, Style},
     world,
 };
@@ -119,13 +118,19 @@ fn pool_attachments_read() {
     let ca = combat_arms::game::data::CaData::install();
     let d = ca.characters();
     let mut failed = Vec::new();
-    for (kind, pool, list) in [("goggle", &d.loadouts.goggles, &d.goggle), ("backpack", &d.loadouts.backpacks, &d.backpack)] {
+    for (kind, pool, list) in [
+        ("goggle", &d.loadouts.goggles, &d.goggle),
+        ("backpack", &d.loadouts.backpacks, &d.backpack),
+    ] {
         for &id in pool.iter().filter(|&&id| id >= 0) {
             let Some(r) = list.iter().find(|r| r.id == id) else {
                 failed.push(format!("{kind} {id}: no record"));
                 continue;
             };
-            eprintln!("{kind} {id}: {} on {} {:?} skins {:?}", r.name, r.socket, r.files, r.skins);
+            eprintln!(
+                "{kind} {id}: {} on {} {:?} skins {:?}",
+                r.name, r.socket, r.files, r.skins
+            );
             assert_eq!(r.socket, if kind == "goggle" { "Eyes" } else { "1W_N" });
             for f in r.files.iter().take(2) {
                 if let Err(e) = model::load_own(f, &file) {

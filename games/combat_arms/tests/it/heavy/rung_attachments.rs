@@ -15,12 +15,12 @@
 //! the lists of the weapons whose names hold those).
 
 use bevy::prelude::*;
+use chimera_sim::minigame::auto::Rng;
 use combat_arms::game::{
     attachments::{ATTACHMENTS, AttachParams, CaModTable, SLOTS},
     data::CaData,
     rungs::{self, RungOdds},
 };
-use chimera_sim::minigame::auto::Rng;
 
 #[test]
 fn every_pool_guns_record_is_its_own_and_every_drawn_part_fits() {
@@ -47,17 +47,30 @@ fn every_pool_guns_record_is_its_own_and_every_drawn_part_fits() {
         if !w.id.starts_with("combat_arms:") || w.class.is_none() {
             continue;
         }
-        let Some(params) = w.hook::<AttachParams>(ATTACHMENTS) else { continue };
-        let Some(record) = ca.install_weapon(&w.id) else { continue };
+        let Some(params) = w.hook::<AttachParams>(ATTACHMENTS) else {
+            continue;
+        };
+        let Some(record) = ca.install_weapon(&w.id) else {
+            continue;
+        };
         pool += 1;
         let index = file.weapons.iter().position(|x| std::ptr::eq(x, record)).unwrap();
         match mods.weapons.get(index) {
             Some(m) if m.name.eq_ignore_ascii_case(&record.name) => by_position += 1,
             Some(m) if m.name.is_empty() => unnamed += 1,
             Some(m) => {
-                if let Some(j) = mods.weapons.iter().position(|x| x.name.eq_ignore_ascii_case(&record.name)) {
+                if let Some(j) = mods
+                    .weapons
+                    .iter()
+                    .position(|x| x.name.eq_ignore_ascii_case(&record.name))
+                {
                     by_name += 1;
-                    eprintln!("  NAME ELSEWHERE {index} \"{}\" record \"{}\"; record {j} has its name; lists equal: {}", record.name, m.name, mods.weapons[j].accepts == m.accepts);
+                    eprintln!(
+                        "  NAME ELSEWHERE {index} \"{}\" record \"{}\"; record {j} has its name; lists equal: {}",
+                        record.name,
+                        m.name,
+                        mods.weapons[j].accepts == m.accepts
+                    );
                 }
                 if std::env::var("AUDIT_ALL").is_ok() || odd.len() < 20 {
                     odd.push(format!("{index}: weapon \"{}\", record \"{}\"", record.name, m.name));
@@ -66,13 +79,30 @@ fn every_pool_guns_record_is_its_own_and_every_drawn_part_fits() {
             None => {}
         }
         if std::env::var("AUDIT_SHOW").is_ok_and(|v| v.split(',').any(|x| record.name.to_lowercase().contains(x))) {
-            eprintln!("SHOW {index} {} ({}) record \"{}\" options {:?} defaults {:?}: {:?}", record.name, w.id, mods.weapons.get(index).map_or("", |m| m.name.as_str()), params.slot_options, params.defaults, params.accepts.iter().map(|a| format!("{}@{}", a.name(), a.variant())).collect::<Vec<_>>());
+            eprintln!(
+                "SHOW {index} {} ({}) record \"{}\" options {:?} defaults {:?}: {:?}",
+                record.name,
+                w.id,
+                mods.weapons.get(index).map_or("", |m| m.name.as_str()),
+                params.slot_options,
+                params.defaults,
+                params
+                    .accepts
+                    .iter()
+                    .map(|a| format!("{}@{}", a.name(), a.variant()))
+                    .collect::<Vec<_>>()
+            );
         }
         if params.accepts.is_empty() {
             empty += 1;
         }
         for slot in 0..SLOTS {
-            let listed = params.accepts.iter().any(|a| table.find(a.name()).and_then(|i| table.get(i)).is_some_and(|r| r.slot() == Some(slot) && r.weapon_part()));
+            let listed = params.accepts.iter().any(|a| {
+                table
+                    .find(a.name())
+                    .and_then(|i| table.get(i))
+                    .is_some_and(|r| r.slot() == Some(slot) && r.weapon_part())
+            });
             let option = params.slot_options.get(slot).copied().unwrap_or(-1);
             let k = match option {
                 0 => 0,
@@ -130,14 +160,19 @@ fn every_pool_guns_record_is_its_own_and_every_drawn_part_fits() {
     // Q13 holds: a record named otherwise is a spelling of the weapon's
     // name or a shared list, with two swapped exceptions (the `loaded`
     // R870 and AT-22), which the game links by position too.
-    assert!(by_name <= 2, "{by_name} weapons have a record of their own name elsewhere");
+    assert!(
+        by_name <= 2,
+        "{by_name} weapons have a record of their own name elsewhere"
+    );
 }
-
 
 /// The install's mount (skips with a note without it).
 fn mount() -> Option<chimera_core::mount::Mount> {
     use chimera_core::mount::config::LocalConfig;
-    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(combat_arms::game::GAME)) else {
+    let Some(install) = LocalConfig::load()
+        .ok()
+        .and_then(|c| c.game_path(combat_arms::game::GAME))
+    else {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
     };
@@ -168,7 +203,12 @@ fn a_fitted_silencer_and_sight_draw_on_the_view_model() {
         return;
     }
     let table = ca.attachments();
-    let params = ca.weapon_set().get(M4).unwrap().hook::<AttachParams>(ATTACHMENTS).unwrap();
+    let params = ca
+        .weapon_set()
+        .get(M4)
+        .unwrap()
+        .hook::<AttachParams>(ATTACHMENTS)
+        .unwrap();
     let slots = CaAttachSlots {
         params: params.clone(),
         stock: Stock::default(),
@@ -200,7 +240,12 @@ fn a_fitted_silencer_and_sight_draw_on_the_view_model() {
     let (b, v) = (&bare.model, &with.model);
     let added = &v.model.meshes[b.model.meshes.len()..];
     assert!(added.len() >= 2, "the parts' meshes are added ({})", added.len());
-    let socket = |name: &str| v.attachments.iter().find(|a| a.name.eq_ignore_ascii_case(name)).unwrap();
+    let socket = |name: &str| {
+        v.attachments
+            .iter()
+            .find(|a| a.name.eq_ignore_ascii_case(name))
+            .unwrap()
+    };
     let globals = combat_arms::game::view_model::hands::globals(&v.bones);
     let at = |name: &str| {
         let s = socket(name);
@@ -208,10 +253,16 @@ fn a_fitted_silencer_and_sight_draw_on_the_view_model() {
     };
     for name in ["Flash", "Breach"] {
         let s = socket(name);
-        let on: Vec<_> = added.iter().filter(|m| m.joints.first().is_some_and(|j| j[0] as usize == s.bone)).collect();
+        let on: Vec<_> = added
+            .iter()
+            .filter(|m| m.joints.first().is_some_and(|j| j[0] as usize == s.bone))
+            .collect();
         assert!(!on.is_empty(), "a part on the {name} socket's node");
         // Its middle lies near the socket (metres).
-        let mid = on.iter().flat_map(|m| m.positions.iter()).fold(Vec3::ZERO, |a, p| a + Vec3::from(*p))
+        let mid = on
+            .iter()
+            .flat_map(|m| m.positions.iter())
+            .fold(Vec3::ZERO, |a, p| a + Vec3::from(*p))
             / on.iter().map(|m| m.positions.len()).sum::<usize>() as f32;
         let d = mid.distance(at(name));
         eprintln!("{name}: {} meshes, middle {d:.3} m from the socket", on.len());
@@ -224,17 +275,34 @@ fn a_fitted_silencer_and_sight_draw_on_the_view_model() {
     // pose, no turn of ours (attachments.md Corrections (2026-10-30) 1, 5).
     let fl = socket("Flash");
     let inv = (v.root.to_matrix() * globals[fl.bone] * fl.local.to_matrix()).inverse();
-    let gun: Vec<Vec3> = b.model.meshes.iter().flat_map(|m| m.positions.iter()).map(|p| inv.transform_point3(Vec3::from(*p))).collect();
+    let gun: Vec<Vec3> = b
+        .model
+        .meshes
+        .iter()
+        .flat_map(|m| m.positions.iter())
+        .map(|p| inv.transform_point3(Vec3::from(*p)))
+        .collect();
     let ahead = -(gun.iter().fold(Vec3::ZERO, |a, p| a + *p) / gun.len() as f32).normalize();
-    let silencer = added.iter().find(|m| m.material.contains("silencer")).expect("the silencer's mesh");
-    let along: Vec<f32> = silencer.positions.iter().map(|p| inv.transform_point3(Vec3::from(*p)).dot(ahead)).collect();
-    let (lo, hi) = along.iter().fold((f32::MAX, f32::MIN), |(a, b), x| (a.min(*x), b.max(*x)));
+    let silencer = added
+        .iter()
+        .find(|m| m.material.contains("silencer"))
+        .expect("the silencer's mesh");
+    let along: Vec<f32> = silencer
+        .positions
+        .iter()
+        .map(|p| inv.transform_point3(Vec3::from(*p)).dot(ahead))
+        .collect();
+    let (lo, hi) = along
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(a, b), x| (a.min(*x), b.max(*x)));
     eprintln!("silencer from {lo:.2} to {hi:.2} units ahead of the muzzle");
-    assert!(lo < 0.3 && hi > 0.5, "the silencer from {lo} to {hi} units ahead of the muzzle");
+    assert!(
+        lo < 0.3 && hi > 0.5,
+        "the silencer from {lo} to {hi} units ahead of the muzzle"
+    );
     assert!(added.iter().any(|m| m.texture.is_some()), "the parts are textured");
     assert!(with.textures.len() > bare.textures.len());
 }
-
 
 /// The same parts on the M4A1's third-person (held) model
 /// (`characters::models::load_held_weapon` with a `+Part` key): its
@@ -258,23 +326,45 @@ fn fitted_parts_draw_on_the_held_model() {
             return;
         }
     };
-    let with = load_held_weapon(&ca, &format!("{M4}+Silencer_A_AR+DotSight_A_AR"), &file).unwrap().model;
+    let with = load_held_weapon(&ca, &format!("{M4}+Silencer_A_AR+DotSight_A_AR"), &file)
+        .unwrap()
+        .model;
     let added = &with.model.meshes[bare.model.meshes.len()..];
     assert!(added.len() >= 2, "the parts' meshes are added ({})", added.len());
-    let gun: Vec<Vec3> = bare.model.meshes.iter().flat_map(|m| m.positions.iter()).map(|p| Vec3::from(*p)).collect();
-    let bounds = |pts: &mut dyn Iterator<Item = Vec3>| pts.fold((Vec3::MAX, Vec3::MIN), |(a, b), p| (a.min(p), b.max(p)));
+    let gun: Vec<Vec3> = bare
+        .model
+        .meshes
+        .iter()
+        .flat_map(|m| m.positions.iter())
+        .map(|p| Vec3::from(*p))
+        .collect();
+    let bounds =
+        |pts: &mut dyn Iterator<Item = Vec3>| pts.fold((Vec3::MAX, Vec3::MIN), |(a, b), p| (a.min(p), b.max(p)));
     let (glo, ghi) = bounds(&mut gun.iter().copied());
     // The gun's long axis.
     let size = ghi - glo;
-    let axis = if size.x >= size.y && size.x >= size.z { 0 } else if size.y >= size.z { 1 } else { 2 };
+    let axis = if size.x >= size.y && size.x >= size.z {
+        0
+    } else if size.y >= size.z {
+        1
+    } else {
+        2
+    };
     for m in added {
         let (lo, hi) = bounds(&mut m.positions.iter().map(|p| Vec3::from(*p)));
-        eprintln!("held part {}: {lo:.1}..{hi:.1} (gun {glo:.1}..{ghi:.1}, long axis {axis})", m.material);
+        eprintln!(
+            "held part {}: {lo:.1}..{hi:.1} (gun {glo:.1}..{ghi:.1}, long axis {axis})",
+            m.material
+        );
     }
-    let silencer = added.iter().find(|m| m.material.to_lowercase().contains("silencer")).expect("the silencer's mesh");
+    let silencer = added
+        .iter()
+        .find(|m| m.material.to_lowercase().contains("silencer"))
+        .expect("the silencer's mesh");
     let (slo, shi) = bounds(&mut silencer.positions.iter().map(|p| Vec3::from(*p)));
     // It sticks out past one end of the gun along its long axis.
-    assert!(shi[axis] > ghi[axis] || slo[axis] < glo[axis], "the silencer reaches past the gun's end");
+    assert!(
+        shi[axis] > ghi[axis] || slo[axis] < glo[axis],
+        "the silencer reaches past the gun's end"
+    );
 }
-
-

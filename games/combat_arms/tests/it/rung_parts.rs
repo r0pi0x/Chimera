@@ -24,7 +24,12 @@ use combat_arms::game::{
 };
 
 fn m4a1() -> AttachParams {
-    CaData::builtin().weapon_set().get("combat_arms:m4a1").unwrap().hook::<AttachParams>(ATTACHMENTS).unwrap()
+    CaData::builtin()
+        .weapon_set()
+        .get("combat_arms:m4a1")
+        .unwrap()
+        .hook::<AttachParams>(ATTACHMENTS)
+        .unwrap()
 }
 
 /// Per slot, how often (of `n` seeds) a part is drawn there; and the most
@@ -60,7 +65,10 @@ fn most_slots_keep_their_stock_part_and_power_parts_are_rare() {
     assert!((0.70..=0.85).contains(&stock), "stock share {stock}");
     assert!(most <= 2, "at most two non-stock parts ({most})");
     // Sights most often, then silencers, power parts least.
-    assert!(share[SIGHT] > share[MUZZLE] && share[MUZZLE] > share[MAGAZINE], "{share:?}");
+    assert!(
+        share[SIGHT] > share[MUZZLE] && share[MUZZLE] > share[MAGAZINE],
+        "{share:?}"
+    );
     for slot in [MAGAZINE, BULLET] {
         assert!(share[slot] < 0.13, "power parts rare: slot {slot} {}", share[slot]);
     }
@@ -70,7 +78,8 @@ fn most_slots_keep_their_stock_part_and_power_parts_are_rare() {
 #[test]
 fn a_definition_tunes_the_odds() {
     let mut options = RungOptions::default();
-    let table: toml::Table = toml::from_str("sight = 1\nmuzzle = 0\nmagazine = 0\nbullet = 0\nmech_sight = 0\nmax_parts = 1").unwrap();
+    let table: toml::Table =
+        toml::from_str("sight = 1\nmuzzle = 0\nmagazine = 0\nbullet = 0\nmech_sight = 0\nmax_parts = 1").unwrap();
     options.tables.insert(rungs::ATTACHMENTS_KEY.into(), table);
     let odds = RungOdds::of(&options);
     assert_eq!((odds.sight, odds.muzzle, odds.max_parts), (1.0, 0.0, 1));
@@ -79,7 +88,10 @@ fn a_definition_tunes_the_odds() {
     assert_eq!(most, 1);
     // A bad value: the built-in odds.
     let mut bad = RungOptions::default();
-    bad.tables.insert(rungs::ATTACHMENTS_KEY.into(), toml::from_str("sight = \"often\"").unwrap());
+    bad.tables.insert(
+        rungs::ATTACHMENTS_KEY.into(),
+        toml::from_str("sight = \"often\"").unwrap(),
+    );
     assert_eq!(RungOdds::of(&bad), RungOdds::default());
 }
 
@@ -114,10 +126,19 @@ fn slots_the_record_closes_take_no_part() {
 fn the_rung_line_names_parts_by_display_name() {
     let names = CaPartNames::new([
         ("Silencer_A_SMG_Gold".to_string(), "S1 Suppressor I (SMG) ".to_string()),
-        ("DotSight_Holosight_SMG_Gold".to_string(), "EOTech Holo Sight II (SMG)".to_string()),
+        (
+            "DotSight_Holosight_SMG_Gold".to_string(),
+            "EOTech Holo Sight II (SMG)".to_string(),
+        ),
     ]);
-    let parts = ["Silencer_A_SMG_Gold".to_string(), "DotSight_Holosight_SMG_Gold".to_string()];
-    assert_eq!(rungs::label(Some(&names), &parts), "S1 Suppressor I, EOTech Holo Sight II");
+    let parts = [
+        "Silencer_A_SMG_Gold".to_string(),
+        "DotSight_Holosight_SMG_Gold".to_string(),
+    ];
+    assert_eq!(
+        rungs::label(Some(&names), &parts),
+        "S1 Suppressor I, EOTech Holo Sight II"
+    );
     // Without the install's strings: the record names made readable.
     assert_eq!(rungs::label(None, &parts), "Silencer A Gold, Holosight Gold");
     assert_eq!(rungs::readable("Bullet_PVP_Stun_I_SMG"), "Stun I bullet");
@@ -148,7 +169,10 @@ fn the_offer_names_each_rung_guns_parts_set() {
     record.socket = Some("Muzzle".into());
     record.attach_models = vec!["guns_m_pv_option/test.ltb".into(); 9];
     let table = &table;
-    assert_ne!(preload::fitted_key(table, &params, "combat_arms:m4a1", &[&part]), "combat_arms:m4a1");
+    assert_ne!(
+        preload::fitted_key(table, &params, "combat_arms:m4a1", &[&part]),
+        "combat_arms:m4a1"
+    );
     // A gun shown bare: no part drawn, no default shown.
     let bare = |id: &str| {
         let p = catalog.get(id).unwrap().hook::<AttachParams>(ATTACHMENTS).unwrap();

@@ -7,13 +7,13 @@
 
 use std::collections::BTreeSet;
 
+use chimera_core::mount::FileSource;
 use chimera_core::mount::config::LocalConfig;
 use chimera_sim::weapon::data::WeaponSet;
 use combat_arms::game::data::{WEAPON_DATA, attributes::*, merge_weapon_docs, open_attributes, read_attributes};
 use combat_arms::game::{GAME, mount};
 use lithtech_formats::attributes::Document;
 use lithtech_formats::rez::RezArchive;
-use chimera_core::mount::FileSource;
 
 fn attributes_rez() -> Option<std::path::PathBuf> {
     let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
@@ -36,26 +36,115 @@ fn attributes_rez() -> Option<std::path::PathBuf> {
 /// case, list keys without their index), for open question 1.
 fn known(key: &str) -> bool {
     const KNOWN: &[&str] = &[
-        "name", "guntype", "clientweapontype", "anitype", "loweranitype", "shotsperclip", "ammoname",
-        "infiniteammo", "reloadperbullet", "vectorsperround", "range", "effectrange", "alt_effectrange",
-        "damagerfacter", "firedelay", "fireanirate", "rapidfirecount", "continuousfire", "hudfiremode",
-        "tripleshotmode", "tripleshotroundnum", "tripleshotdelay", "tripleshotselectdelay", "tripleshotminperturb",
-        "tripleshotmaxperturb", "tripleshotperturbincspeed", "tripleshotperturbdecspeed",
-        "tripleshotmaxcamrecoilpitch", "tripleshotbasecamrecoilpitch", "minperturb", "maxperturb", "duckperturb",
-        "moveduckperturb", "zoomedminperturb", "zoomedmaxperturb", "perturbincspeed", "perturbdecspeed",
-        "zoomedperturbincspeed", "zoomedperturbdecspeed", "dynamicperturbfactor", "dynnamicperturbfactorrun",
-        "dynnamicperturbfactorwalk", "dynnamicperturbfactorjump", "zoomtime", "movepenalty", "zoomedmovepenalty",
-        "maxcamrecoilpitch", "basecamrecoilpitch", "basecamrecoilaccelpitch", "maxcamrecoilyaw", "basecamrecoilyaw",
-        "maxcamrecoilwag", "basecamrecoilwagl", "basecamrecoilwagr", "maxrandompitch", "maxrandomwag",
-        "basecambackjitter", "backjitterrecover", "cameraswayxspeed", "cameraswayyspeed", "cameraswayxfreq",
-        "cameraswayyfreq", "disablecrosshair", "crosshairtype", "noselect", "grenadespeed", "grenadeattach",
-        "widefiremaxnum", "widefireangledegree", "firesndradius", "reloadsndradius", "selectsndradius",
-        "silencedfireradius", "dropbyplayerdead", "damageweapon", "checkreloadanitime", "hidden", "pos", "muzzlepos",
-        "breachoffset", "hhmodelscale", "recoil", "muzzlepvposoff", "muzzlepvrotoff", "muzzlehhposoff",
-        "muzzlehhrotoff", "scopepvposoff", "scopepvrotoff", "scopehhposoff", "scopehhrotoff", "pvskin",
-        "pvrenderstyle", "hhmodel", "hhskin", "hhrenderstyle", "firesnd", "alt_firesnd", "dryfiresnd", "selectsnd",
-        "deselectsnd", "reloadsnd", "silencedfiresnd", "pvmuzzlefxname", "hhmuzzlefxname", "hudactiveimage",
-        "hudnoneactiveimage", "hudweaponnameimage", "weaponkillimage", "dotsightname",
+        "name",
+        "guntype",
+        "clientweapontype",
+        "anitype",
+        "loweranitype",
+        "shotsperclip",
+        "ammoname",
+        "infiniteammo",
+        "reloadperbullet",
+        "vectorsperround",
+        "range",
+        "effectrange",
+        "alt_effectrange",
+        "damagerfacter",
+        "firedelay",
+        "fireanirate",
+        "rapidfirecount",
+        "continuousfire",
+        "hudfiremode",
+        "tripleshotmode",
+        "tripleshotroundnum",
+        "tripleshotdelay",
+        "tripleshotselectdelay",
+        "tripleshotminperturb",
+        "tripleshotmaxperturb",
+        "tripleshotperturbincspeed",
+        "tripleshotperturbdecspeed",
+        "tripleshotmaxcamrecoilpitch",
+        "tripleshotbasecamrecoilpitch",
+        "minperturb",
+        "maxperturb",
+        "duckperturb",
+        "moveduckperturb",
+        "zoomedminperturb",
+        "zoomedmaxperturb",
+        "perturbincspeed",
+        "perturbdecspeed",
+        "zoomedperturbincspeed",
+        "zoomedperturbdecspeed",
+        "dynamicperturbfactor",
+        "dynnamicperturbfactorrun",
+        "dynnamicperturbfactorwalk",
+        "dynnamicperturbfactorjump",
+        "zoomtime",
+        "movepenalty",
+        "zoomedmovepenalty",
+        "maxcamrecoilpitch",
+        "basecamrecoilpitch",
+        "basecamrecoilaccelpitch",
+        "maxcamrecoilyaw",
+        "basecamrecoilyaw",
+        "maxcamrecoilwag",
+        "basecamrecoilwagl",
+        "basecamrecoilwagr",
+        "maxrandompitch",
+        "maxrandomwag",
+        "basecambackjitter",
+        "backjitterrecover",
+        "cameraswayxspeed",
+        "cameraswayyspeed",
+        "cameraswayxfreq",
+        "cameraswayyfreq",
+        "disablecrosshair",
+        "crosshairtype",
+        "noselect",
+        "grenadespeed",
+        "grenadeattach",
+        "widefiremaxnum",
+        "widefireangledegree",
+        "firesndradius",
+        "reloadsndradius",
+        "selectsndradius",
+        "silencedfireradius",
+        "dropbyplayerdead",
+        "damageweapon",
+        "checkreloadanitime",
+        "hidden",
+        "pos",
+        "muzzlepos",
+        "breachoffset",
+        "hhmodelscale",
+        "recoil",
+        "muzzlepvposoff",
+        "muzzlepvrotoff",
+        "muzzlehhposoff",
+        "muzzlehhrotoff",
+        "scopepvposoff",
+        "scopepvrotoff",
+        "scopehhposoff",
+        "scopehhrotoff",
+        "pvskin",
+        "pvrenderstyle",
+        "hhmodel",
+        "hhskin",
+        "hhrenderstyle",
+        "firesnd",
+        "alt_firesnd",
+        "dryfiresnd",
+        "selectsnd",
+        "deselectsnd",
+        "reloadsnd",
+        "silencedfiresnd",
+        "pvmuzzlefxname",
+        "hhmuzzlefxname",
+        "hudactiveimage",
+        "hudnoneactiveimage",
+        "hudweaponnameimage",
+        "weaponkillimage",
+        "dotsightname",
     ];
     let base = key.trim_end_matches(|c: char| c.is_ascii_digit());
     KNOWN.contains(&base) || key.starts_with("pvmodel")
@@ -78,12 +167,18 @@ fn install_attribute_data() {
     assert_eq!(size(WEAPONS_FILE), Some(9_275_149));
     assert_eq!(size(SERVER_FILE), Some(2_176));
     assert!(size(MODELS_FILE).is_some());
-    assert!(entries.iter().all(|e| e.path.starts_with("attributes/")), "a file outside ATTRIBUTES/");
+    assert!(
+        entries.iter().all(|e| e.path.starts_with("attributes/")),
+        "a file outside ATTRIBUTES/"
+    );
     eprintln!("ATTRIBUTES.rez: {} files", entries.len());
 
     if archive.locked() {
         // No V1 key: the loader keeps the built-in data.
-        assert_eq!(archive.read(WEAPONS_FILE).unwrap().unwrap_err().kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(
+            archive.read(WEAPONS_FILE).unwrap().unwrap_err().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
         let e = open_attributes(&path).unwrap_err();
         assert!(e.contains("encrypted"), "{e}");
         eprintln!("no V1 key: only the directory was checked");
@@ -93,7 +188,12 @@ fn install_attribute_data() {
     let (attrs, problems) = read_attributes(|name| archive.read(name).unwrap());
     assert!(problems.is_empty(), "{problems:?}");
     let w = attrs.weapons.as_ref().unwrap();
-    eprintln!("weapons file: {} weapons, {} ammo, {} gear", w.weapons.len(), w.ammo.len(), w.gear.len());
+    eprintln!(
+        "weapons file: {} weapons, {} ammo, {} gear",
+        w.weapons.len(),
+        w.ammo.len(),
+        w.gear.len()
+    );
     let m4 = w.weapon("M4A1").expect("an M4A1 record");
     assert_eq!(m4.gun_type, 4);
     assert!(w.default_ammo(m4).is_some());
@@ -140,8 +240,17 @@ fn install_attribute_data() {
             .map(|(i, r)| (i, r.name.as_str(), w.inventory_class(i)))
             .collect();
         eprintln!("{name}: records (index, name, class) {records:?}");
-        let merged = set.weapons.iter().find(|x| x.id == id).unwrap_or_else(|| panic!("{id} merged"));
-        assert_eq!(merged.slot, slot, "{id}: class {} expected (records {records:?})", slot + 1);
+        let merged = set
+            .weapons
+            .iter()
+            .find(|x| x.id == id)
+            .unwrap_or_else(|| panic!("{id} merged"));
+        assert_eq!(
+            merged.slot,
+            slot,
+            "{id}: class {} expected (records {records:?})",
+            slot + 1
+        );
     }
 }
 
@@ -236,7 +345,11 @@ fn merged_numbers_against_ours() {
     // Every merged weapon: a hit-scan range that is positive.
     for (name, text) in &docs {
         let doc: toml::Table = text.parse().unwrap();
-        if let Some(r) = doc.get("hitscan").and_then(|h| h.get("range")).and_then(|r| r.as_float()) {
+        if let Some(r) = doc
+            .get("hitscan")
+            .and_then(|h| h.get("range"))
+            .and_then(|r| r.as_float())
+        {
             assert!(r > 0.0 && r.is_finite(), "{name}: range {r}");
         }
     }
@@ -264,10 +377,16 @@ fn merged_numbers_against_ours() {
     let built_in = CaModTable::built_in();
     let mut table = built_in.clone();
     merge_mods(&mut table, attrs.mods.as_ref().unwrap());
-    eprintln!("attachments: {} ours, {} merged", built_in.records.len(), table.records.len());
+    eprintln!(
+        "attachments: {} ours, {} merged",
+        built_in.records.len(),
+        table.records.len()
+    );
     let mut mod_differ = Vec::new();
     for r in &built_in.records {
-        let Some(m) = table.records.iter().find(|m| m.name == r.name) else { continue };
+        let Some(m) = table.records.iter().find(|m| m.name == r.name) else {
+            continue;
+        };
         let (x, y) = (toml::Value::try_from(r).unwrap(), toml::Value::try_from(m).unwrap());
         far_apart(&r.name, &x, Some(&y), &mut mod_differ);
     }

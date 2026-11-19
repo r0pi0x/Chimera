@@ -84,7 +84,7 @@ fn sim() -> Sim {
 
 /// A Combat Arms player at `at` looking along `yaw`, settled, with health
 /// `health` (1.0 = 100 HP) and no armour.
-fn player(sim: &mut Sim, at: Vec3, yaw: f32, health: f32) -> Entity {
+pub(super) fn player(sim: &mut Sim, at: Vec3, yaw: f32, health: f32) -> Entity {
     let p = sim.spawn_character(at, movement::ID);
     sim.intent(p).yaw = yaw;
     sim.seconds(0.5);
@@ -100,30 +100,37 @@ fn player(sim: &mut Sim, at: Vec3, yaw: f32, health: f32) -> Entity {
 }
 
 /// Give `p` the weapon `id`, drawn and ready to fire.
-fn arm(sim: &mut Sim, p: Entity, id: &str) -> Entity {
+pub(super) fn arm(sim: &mut Sim, p: Entity, id: &str) -> Entity {
     let w = weapon::give(sim.app.world_mut(), p, id).expect("unknown weapon");
     sim.seconds(1.3);
     assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(w));
     w
 }
 
-fn health(sim: &Sim, p: Entity) -> f32 {
+pub(super) fn health(sim: &Sim, p: Entity) -> f32 {
     sim.app.world().get::<Health>(p).unwrap().current
 }
 
 fn armour(sim: &Sim, p: Entity) -> f32 {
-    sim.app.world().get::<chimera_sim::weapon::Armor>(p).map(combat_arms::game::weapons::points).unwrap()
+    sim.app
+        .world()
+        .get::<chimera_sim::weapon::Armor>(p)
+        .map(combat_arms::game::weapons::points)
+        .unwrap()
 }
 
 fn set_armour(sim: &mut Sim, p: Entity, points: f32, gear: Vec<ca::Gear>) {
-    sim.app.world_mut().entity_mut(p).insert(combat_arms::game::weapons::gear_armour(points, &gear));
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(combat_arms::game::weapons::gear_armour(points, &gear));
 }
 
 fn mag(sim: &Sim, w: Entity) -> Magazine {
     sim.app.world().get::<Magazine>(w).unwrap().clone()
 }
 
-fn set_mag(sim: &mut Sim, w: Entity, clip: u32, reserve: u32) {
+pub(super) fn set_mag(sim: &mut Sim, w: Entity, clip: u32, reserve: u32) {
     let mut m = sim.app.world_mut().get_mut::<Magazine>(w).unwrap();
     m.clip = clip;
     m.reserve = reserve;
@@ -176,7 +183,7 @@ fn shoot(sim: &mut Sim, shooter: Entity, target: Entity) -> f32 {
 }
 
 /// Aim at `name` on `target` and fire one round.
-fn shoot_at(sim: &mut Sim, shooter: Entity, target: Entity, name: &str) -> f32 {
+pub(super) fn shoot_at(sim: &mut Sim, shooter: Entity, target: Entity, name: &str) -> f32 {
     let at = sphere(sim, shooter, target, name);
     aim(sim, shooter, at);
     shoot(sim, shooter, target)
@@ -184,14 +191,17 @@ fn shoot_at(sim: &mut Sim, shooter: Entity, target: Entity, name: &str) -> f32 {
 
 /// Move `target` along -Z until the impact point (where the ray to its
 /// `name` sphere enters its box) is `units` from `shooter`'s eye.
-fn place_at(sim: &mut Sim, shooter: Entity, target: Entity, name: &str, units: f32) {
+pub(super) fn place_at(sim: &mut Sim, shooter: Entity, target: Entity, name: &str, units: f32) {
     for _ in 0..6 {
         let from = eye(sim, shooter);
         let dir = (sphere(sim, shooter, target, name) - from).normalize();
         let (min, max, _) = geometry(sim.app.world(), target);
         // The reported point: the widened box's entry (weapon_firing.md
         // Corrections 8).
-        let (c, half) = ((min + max) / 2.0, (max - min) / 2.0 * Vec3::new(ca::HITBOX_WIDEN, 1.0, ca::HITBOX_WIDEN));
+        let (c, half) = (
+            (min + max) / 2.0,
+            (max - min) / 2.0 * Vec3::new(ca::HITBOX_WIDEN, 1.0, ca::HITBOX_WIDEN),
+        );
         let t = ca::box_entry(c - half, c + half, from, dir, f32::INFINITY).unwrap();
 
         let err = t - units * U;
@@ -213,14 +223,13 @@ fn face(sim: &mut Sim, p: Entity, yaw: f32) {
     }
 }
 
-fn close(a: f32, b: f32, tol: f32, what: &str) {
-
+pub(super) fn close(a: f32, b: f32, tol: f32, what: &str) {
     assert!((a - b).abs() <= tol, "{what}: {a}, expected {b}");
 }
 
 /// A shooter looking down -Z and a target facing it, `units` apart in the
 /// open lane at x = 30, the shooter holding `id`.
-fn range_lane(sim: &mut Sim, id: &str, units: f32) -> (Entity, Entity) {
+pub(super) fn range_lane(sim: &mut Sim, id: &str, units: f32) -> (Entity, Entity) {
     let shooter = player(sim, Vec3::new(30.0, 1.0, 37.0), 0.0, 1.0);
     let target = player(sim, Vec3::new(30.0, 1.0, 37.0 - units * U), std::f32::consts::PI, 100.0);
     arm(sim, shooter, id);
@@ -245,7 +254,12 @@ fn t01_range_bands() {
         (3500.0, 12.25),
     ] {
         place_at(&mut sim, shooter, target, "Torso", d);
-        close(shoot_at(&mut sim, shooter, target, "Torso"), want, 1e-3, &format!("at {d} units"));
+        close(
+            shoot_at(&mut sim, shooter, target, "Torso"),
+            want,
+            1e-3,
+            &format!("at {d} units"),
+        );
     }
 }
 
@@ -255,7 +269,12 @@ fn t02_beyond_the_last_band() {
     let mut sim = sim();
     let (shooter, target) = range_lane(&mut sim, "test:m4a1_range_mod", 3600.0);
     place_at(&mut sim, shooter, target, "Torso", 3600.0);
-    close(shoot_at(&mut sim, shooter, target, "Torso"), 35.0, 1e-3, "at 3600 units");
+    close(
+        shoot_at(&mut sim, shooter, target, "Torso"),
+        35.0,
+        1e-3,
+        "at 3600 units",
+    );
 }
 
 /// 3. The roll's bounds: 33.25 to 36.75 at d = 100.
@@ -277,7 +296,9 @@ fn t03_random_roll_bounds() {
         }
         hits.push(shoot_at(&mut sim, shooter, target, "Torso"));
     }
-    let (lo, hi) = hits.iter().fold((f32::MAX, f32::MIN), |(lo, hi), h| (lo.min(*h), hi.max(*h)));
+    let (lo, hi) = hits
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(lo, hi), h| (lo.min(*h), hi.max(*h)));
     assert!(lo >= 33.25 - 1e-3 && hi <= 36.75 + 1e-3, "{hits:?}");
     assert!(lo < 33.8 && hi > 36.2, "60 rolls all near the middle: {lo}..{hi}");
 }
@@ -325,7 +346,12 @@ fn t05_behind_bonus() {
         let from = (chest - dir * 8.0).with_y(1.0);
         let shooter = player(&mut sim, from, 0.0, 1.0);
         arm(&mut sim, shooter, "test:m4a1_exact");
-        close(shoot_at(&mut sim, shooter, target, "Torso"), want, 1e-3, &format!("sector {sector}"));
+        close(
+            shoot_at(&mut sim, shooter, target, "Torso"),
+            want,
+            1e-3,
+            &format!("sector {sector}"),
+        );
     }
 }
 
@@ -366,7 +392,12 @@ fn t08_body_gear_does_not_cover_the_head() {
     let mut sim = sim();
     let (shooter, target) = range_lane(&mut sim, "test:m4a1_exact", 100.0);
     set_armour(&mut sim, target, 100.0, vec![DEFAULT_BODY_GEAR]);
-    close(shoot_at(&mut sim, shooter, target, "Face_Eyelid1"), 210.0, 1e-3, "damage");
+    close(
+        shoot_at(&mut sim, shooter, target, "Face_Eyelid1"),
+        210.0,
+        1e-3,
+        "damage",
+    );
     close(armour(&sim, target), 100.0, 1e-3, "armour");
 }
 
@@ -432,7 +463,12 @@ fn t13_hits_to_kill() {
         }
         for (i, want) in steps.iter().enumerate() {
             shoot_at(&mut sim, shooter, target, "Torso");
-            close(health(&sim, target) / HP, *want, 1e-3, &format!("armoured {armoured}, hit {}", i + 1));
+            close(
+                health(&sim, target) / HP,
+                *want,
+                1e-3,
+                &format!("armoured {armoured}, hit {}", i + 1),
+            );
         }
     }
 }
@@ -809,7 +845,11 @@ fn back_push_in_play() {
         let now = mag(&sim, w).clip;
         if now < clip {
             clip = now;
-            let want = if shots == 0 { 0.5 } else { (last - since as f32 * dt * 1.0).max(0.0) + 0.5 };
+            let want = if shots == 0 {
+                0.5
+            } else {
+                (last - since as f32 * dt * 1.0).max(0.0) + 0.5
+            };
             close(push(&sim), want, 1e-4, &format!("shot {}", shots + 1));
             (last, since) = (push(&sim), 0);
             shots += 1;
@@ -846,7 +886,11 @@ fn t26_fire_cycle() {
         sim.ticks(1);
         // The press tick is 0, the first round's t = 0.
         let t = (ticks as f64 - LATENCY as f64) * dt;
-        let want = if t < -1e-9 { 0 } else { ((t + 1e-6) / 0.105).floor() as u32 + 1 };
+        let want = if t < -1e-9 {
+            0
+        } else {
+            ((t + 1e-6) / 0.105).floor() as u32 + 1
+        };
         assert_eq!(fired(&sim, w), want.min(30), "at {t} s");
         ticks += 1;
     }
@@ -957,7 +1001,10 @@ fn t28_burst() {
             at.push(tick);
         }
     }
-    let want: Vec<u64> = [0.0, 0.105, 0.210].iter().map(|t| LATENCY + ticks_for(&sim, *t)).collect();
+    let want: Vec<u64> = [0.0, 0.105, 0.210]
+        .iter()
+        .map(|t| LATENCY + ticks_for(&sim, *t))
+        .collect();
     assert_eq!(at, want, "held for 2 s");
     sim.intent(p).fire = false;
 
@@ -1005,7 +1052,10 @@ fn t29_burst_toggle_lockout() {
     let t = (sim.tick() - 1 - toggled) as f64 / sim.tick_hz();
     // The chain starts once the lockout is over (Corrections 10).
     let latency = LATENCY as f64 / sim.tick_hz();
-    assert!(t >= 0.300 + latency - 1e-6 && t < 0.300 + latency + 1.0 / sim.tick_hz(), "first round at {t} s");
+    assert!(
+        t >= 0.300 + latency - 1e-6 && t < 0.300 + latency + 1.0 / sim.tick_hz(),
+        "first round at {t} s"
+    );
 }
 
 /// An install record's fire modes as the merge writes them
@@ -1014,7 +1064,9 @@ fn t29_burst_toggle_lockout() {
 /// (its 105 ms cycle).
 fn install_modes(sim: &mut Sim, id: &str, fields: &str) {
     use combat_arms::game::data::{WEAPON_DATA, attributes::WeaponsFile, merge_weapon_docs};
-    let text = format!(r#"[Ammo0] Name="5.56mm M4A1" [Weapon0] Name="M4A1" Guntype=4 ShotsPerClip=30 AmmoName0="5.56mm M4A1" {fields}"#);
+    let text = format!(
+        r#"[Ammo0] Name="5.56mm M4A1" [Weapon0] Name="M4A1" Guntype=4 ShotsPerClip=30 AmmoName0="5.56mm M4A1" {fields}"#
+    );
     let doc = lithtech_formats::attributes::Document::parse(text.as_bytes()).unwrap();
     let file = WeaponsFile::read(&doc).unwrap();
     let docs = merge_weapon_docs(WEAPON_DATA, &file, 0.018).unwrap();
@@ -1024,7 +1076,10 @@ fn install_modes(sim: &mut Sim, id: &str, fields: &str) {
     alt.insert("alt".into(), merged.get("alt").expect("an [alt] of fire modes").clone());
     // The record's trigger too (`RapidFireCount`: automatic or not).
     alt.insert("trigger".into(), merged.get("trigger").unwrap().clone());
-    let ours = format!("id = \"{id}\"\nbase = \"combat_arms:m4a1\"\n{}", toml::to_string(&alt).unwrap());
+    let ours = format!(
+        "id = \"{id}\"\nbase = \"combat_arms:m4a1\"\n{}",
+        toml::to_string(&alt).unwrap()
+    );
     sim.app.add_weapon_data(&[(id, ours.as_str())]).unwrap();
 }
 
@@ -1060,7 +1115,11 @@ fn t28_t29_install_burst_by_the_fire_mode_key() {
     sim.intent(p).secondary = false;
     assert_eq!(mode(&sim), 0, "attack2 leaves the fire mode alone");
     // Held for half a second: one step.
-    let bit = sim.app.world().resource::<chimera_core::core::ActionRegistry>().bit("firemode");
+    let bit = sim
+        .app
+        .world()
+        .resource::<chimera_core::core::ActionRegistry>()
+        .bit("firemode");
     sim.intent(p).actions = bit;
     sim.seconds(0.5);
     sim.intent(p).actions = 0;
@@ -1077,7 +1136,10 @@ fn t28_t29_install_burst_by_the_fire_mode_key() {
             at.push(tick);
         }
     }
-    let want: Vec<u64> = [0.0, 0.105, 0.210].iter().map(|t| LATENCY + ticks_for(&sim, *t)).collect();
+    let want: Vec<u64> = [0.0, 0.105, 0.210]
+        .iter()
+        .map(|t| LATENCY + ticks_for(&sim, *t))
+        .collect();
     assert_eq!(at, want, "held for 2 s");
     sim.intent(p).fire = false;
     sim.seconds(1.0);
@@ -1118,7 +1180,10 @@ fn t28_t29_install_burst_by_the_fire_mode_key() {
     }
     let t = (sim.tick() - 1 - toggled) as f64 / sim.tick_hz();
     let latency = LATENCY as f64 / sim.tick_hz();
-    assert!(t >= 0.300 + latency - 1e-6 && t < 0.300 + latency + 1.0 / sim.tick_hz(), "first round at {t} s");
+    assert!(
+        t >= 0.300 + latency - 1e-6 && t < 0.300 + latency + 1.0 / sim.tick_hz(),
+        "first round at {t} s"
+    );
     // Auto: held, it keeps firing.
     sim.seconds(0.5);
     assert!(fired(&sim, w) > before + 3, "full auto");
@@ -1177,7 +1242,10 @@ fn t30_empty_and_auto_reload() {
         assert!(sim.tick() - shot < 20, "no reload");
     }
     let started = (sim.tick() - 1 - shot) as f64 / sim.tick_hz();
-    assert!((0.105..0.105 + 1.0 / sim.tick_hz()).contains(&started), "started at {started}");
+    assert!(
+        (0.105..0.105 + 1.0 / sim.tick_hz()).contains(&started),
+        "started at {started}"
+    );
     let begin = sim.tick() - 1;
     while mag(&sim, w).clip == 0 {
         sim.ticks(1);
@@ -1225,7 +1293,10 @@ fn t32_reload_refused() {
         sim.seconds(1.0);
         set_mag(&mut sim, w, clip, total - clip);
         reload(&mut sim, p);
-        assert!(sim.app.world().get::<WeaponState>(w).unwrap().reload_end.is_none(), "{clip}/{total}");
+        assert!(
+            sim.app.world().get::<WeaponState>(w).unwrap().reload_end.is_none(),
+            "{clip}/{total}"
+        );
         sim.seconds(2.4);
         let m = mag(&sim, w);
         assert_eq!((m.clip, m.clip + m.reserve), (clip, total));
@@ -1344,7 +1415,12 @@ fn t36_penetration() {
         let (shooter, target) = range_lane(&mut sim, "test:m4a1_exact", 1000.0);
         place_at(&mut sim, shooter, target, "Torso", 1000.0);
         panel(&mut sim, 32.0, thick, "Wood");
-        close(shoot_at(&mut sim, shooter, target, "Torso"), want, 1e-3, &format!("{thick} units of wood"));
+        close(
+            shoot_at(&mut sim, shooter, target, "Torso"),
+            want,
+            1e-3,
+            &format!("{thick} units of wood"),
+        );
     }
 }
 
@@ -1356,7 +1432,12 @@ fn t37_two_panels() {
     place_at(&mut sim, shooter, target, "Torso", 1000.0);
     panel(&mut sim, 33.0, 6.0, "Glass");
     panel(&mut sim, 31.0, 6.0, "Plywood");
-    close(shoot_at(&mut sim, shooter, target, "Torso"), 18.9, 1e-3, "glass and plywood");
+    close(
+        shoot_at(&mut sim, shooter, target, "Torso"),
+        18.9,
+        1e-3,
+        "glass and plywood",
+    );
 }
 
 /// Glass passes a round at 0.9 of its damage; Bullet-Proof Glass (surface
@@ -1437,7 +1518,11 @@ fn t40_a_fall_is_not_a_jump() {
     let mut sim = sim();
     let (p, w) = m4a1(&mut sim);
     sim.app.world_mut().get_mut::<Transform>(p).unwrap().translation.y += 20.0;
-    sim.app.world_mut().get_mut::<chimera_core::core::Velocity>(p).unwrap().0 = Vec3::NEG_Y * 400.0 * U;
+    sim.app
+        .world_mut()
+        .get_mut::<chimera_core::core::Velocity>(p)
+        .unwrap()
+        .0 = Vec3::NEG_Y * 400.0 * U;
     sim.app.world_mut().get_mut::<movement::CaMovement>(p).unwrap().standing = None;
     {
         let mut s = sim.app.world_mut().get_mut::<CaSpread>(w).unwrap();
@@ -1448,7 +1533,12 @@ fn t40_a_fall_is_not_a_jump() {
     let m = sim.app.world().get::<movement::CaMovement>(p).unwrap().clone();
     assert!(!m.in_jump && m.run, "falling, not in a jump, run flag on");
     // 15 ms: one sub-step of 12.5 ms.
-    close(sim.app.world().get::<CaSpread>(w).unwrap().movement, 0.46625, 1e-5, "it falls");
+    close(
+        sim.app.world().get::<CaSpread>(w).unwrap().movement,
+        0.46625,
+        1e-5,
+        "it falls",
+    );
 }
 
 /// 41. The run flag at rest and crouched: standing still the run target
@@ -1459,13 +1549,19 @@ fn t41_run_flag_at_rest_and_crouched() {
     let mut sim = sim();
     let (p, w) = m4a1(&mut sim);
     sim.seconds(1.0);
-    assert!(sim.app.world().get::<movement::CaMovement>(p).unwrap().run, "run flag on at rest");
+    assert!(
+        sim.app.world().get::<movement::CaMovement>(p).unwrap().run,
+        "run flag on at rest"
+    );
     close(sim.app.world().get::<CaSpread>(w).unwrap().movement, 0.0, 1e-6, "still");
     sim.intent(p).crouch = true;
     sim.intent(p).move_axis = Vec2::Y;
     sim.seconds(1.0);
     let s = sim.app.world().get::<CaSpread>(w).unwrap().clone();
-    assert!(!sim.app.world().get::<movement::CaMovement>(p).unwrap().run, "crouched: run off");
+    assert!(
+        !sim.app.world().get::<movement::CaMovement>(p).unwrap().run,
+        "crouched: run off"
+    );
     close(s.movement, 0.04, 1e-5, "WalkPerturb");
     close(s.cone(FireMode::Normal), 6.0, 0.0, "cone");
 }
@@ -1528,7 +1624,12 @@ fn t44_recoil_kick_is_not_a_turn() {
     let sc = scales(&sim);
     let mut s = spread(&sim, w);
     s.body_turn(0.0, 0.0, false);
-    close(s.body_turn(0.0, 0.0, false), 0.0, 0.0, "a kick of 1.3 degrees up: no change");
+    close(
+        s.body_turn(0.0, 0.0, false),
+        0.0,
+        0.0,
+        "a kick of 1.3 degrees up: no change",
+    );
     let wag = 1.2f32.to_radians();
     let rho = CaSpread::turn(&sc, 0.0, s.body_turn(0.0, wag, false));
     close(rho, 0.03097, 1e-4, "the side wag");
@@ -1582,7 +1683,11 @@ fn one_round(sim: &mut Sim, shooter: Entity, targets: [Entity; 2]) -> [f32; 2] {
 #[test]
 fn t46_second_victim() {
     let pi = std::f32::consts::PI;
-    for (units, yaw, want) in [(2800.0, pi, [24.5, 17.15]), (2000.0, pi, [35.0, 35.0]), (2000.0, 0.0, [45.5, 45.5])] {
+    for (units, yaw, want) in [
+        (2800.0, pi, [24.5, 17.15]),
+        (2000.0, pi, [35.0, 35.0]),
+        (2000.0, 0.0, [45.5, 45.5]),
+    ] {
         let mut sim = sim();
         let (shooter, first, second) = in_line(&mut sim, units, yaw);
         let lost = one_round(&mut sim, shooter, [first, second]);
@@ -1601,7 +1706,11 @@ fn t46_second_victim() {
 /// one doesn't restart it; exactly fireDelay passes.
 #[test]
 fn t47_fire_delay_clock() {
-    for (times, dealt) in [([0, 60, 110], [true, false, true]), ([0, 60, 100], [true, false, true]), ([0, 150, 200], [true, true, false])] {
+    for (times, dealt) in [
+        ([0, 60, 110], [true, false, true]),
+        ([0, 60, 100], [true, false, true]),
+        ([0, 150, 200], [true, true, false]),
+    ] {
         let mut sim = sim();
         sim.set_tick_interval(0.005);
         sim.app
@@ -1640,7 +1749,12 @@ fn t47_fire_delay_clock() {
             sim.ticks(LATENCY);
             assert_eq!(fired(&sim, w), i as u32 + 1, "{times:?}: round {} spent", i + 1);
             let lost = (before - health(&sim, target)) / HP;
-            close(lost, if dealt[i] { 35.0 } else { 0.0 }, 1e-3, &format!("{times:?}: round {}", i + 1));
+            close(
+                lost,
+                if dealt[i] { 35.0 } else { 0.0 },
+                1e-3,
+                &format!("{times:?}: round {}", i + 1),
+            );
         }
     }
 }
@@ -1665,7 +1779,12 @@ fn t48_armour_by_damage_type() {
         ("bullet, torso", hit(ca::BULLET, Location::Torso), 35.0, 29.75, 94.75),
     ] {
         let (mut a, pieces) = ca::default_armour();
-        close(ca::armour_and_zone(d, h, Some(&mut a), Some(&pieces), true), want, 1e-4, what);
+        close(
+            ca::armour_and_zone(d, h, Some(&mut a), Some(&pieces), true),
+            want,
+            1e-4,
+            what,
+        );
         close(ca::points(&a), ap, 1e-4, &format!("{what}: AP"));
     }
     // A round on the groin in play.
@@ -1686,7 +1805,12 @@ fn t49_groin_on_an_infected_victim() {
         infected: true,
     };
     let (mut a, pieces) = ca::default_armour();
-    close(ca::armour_and_zone(35.0, h, Some(&mut a), Some(&pieces), true), 29.75, 1e-4, "damage");
+    close(
+        ca::armour_and_zone(35.0, h, Some(&mut a), Some(&pieces), true),
+        29.75,
+        1e-4,
+        "damage",
+    );
     close(ca::points(&a), 94.75, 1e-4, "AP");
 }
 

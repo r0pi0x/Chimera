@@ -3,11 +3,11 @@
 //! the format's, are lithtech_formats' tests/it/attributes.rs), on
 //! documents written here.
 
+use chimera_sim::weapon::data::WeaponSet;
 use combat_arms::game::data::{
     InstallAttributes, attributes::*, merge_movement, merge_weapon_docs, read_attributes, slug,
 };
 use combat_arms::game::movement::{MOVEMENT_DATA, MovementData};
-use chimera_sim::weapon::data::WeaponSet;
 use lithtech_formats::attributes::Document;
 
 fn doc(text: &str) -> Document {
@@ -57,10 +57,16 @@ fn case_14_weapon_defaults() {
         (w.shots_per_clip, w.perturb.min, w.perturb.max, w.duck_perturb),
         (100, 100, 100, 100)
     );
-    assert_eq!((w.zoomed.min, w.zoomed.max, w.range, w.vectors_per_round), (1, 500, 3000, 1));
+    assert_eq!(
+        (w.zoomed.min, w.zoomed.max, w.range, w.vectors_per_round),
+        (1, 500, 3000, 1)
+    );
     assert_eq!((w.fire_delay, w.rapid_fire_count), (30, 1));
     assert_eq!((w.move_penalty, w.zoomed_move_penalty, w.zoom_time), (0.01, 0.7, 0.5));
-    assert_eq!((w.damage_r_facter, w.max_cam_recoil_pitch, w.base_cam_recoil_pitch), (0.1, 10.0, 1.2));
+    assert_eq!(
+        (w.damage_r_facter, w.max_cam_recoil_pitch, w.base_cam_recoil_pitch),
+        (0.1, 10.0, 1.2)
+    );
     assert_eq!((w.ani_type, w.client_weapon_type, w.gun_type), (5, 1, 0));
     assert!(w.drop_by_player_dead);
     assert!(w.effect_range.is_empty() && w.alt_effect_range.is_empty());
@@ -98,7 +104,13 @@ fn case_17_decimals_in_integer_fields() {
     .unwrap();
     let w = &f.weapons[0];
     assert_eq!(
-        (w.perturb.min, w.duck_perturb, w.zoomed.max, w.fire_delay, w.shots_per_clip),
+        (
+            w.perturb.min,
+            w.duck_perturb,
+            w.zoomed.max,
+            w.fire_delay,
+            w.shots_per_clip
+        ),
         (3, 100, 500, 30, 100)
     );
 }
@@ -107,7 +119,10 @@ fn case_17_decimals_in_integer_fields() {
 #[test]
 fn case_18_integers_in_number_fields() {
     let f = weapons(r#"[Ammo0] Name="a" [Weapon0] Name="W" MovePenalty=0 MaxCamRecoilPitch=5"#).unwrap();
-    assert_eq!((f.weapons[0].move_penalty, f.weapons[0].max_cam_recoil_pitch), (0.0, 5.0));
+    assert_eq!(
+        (f.weapons[0].move_penalty, f.weapons[0].max_cam_recoil_pitch),
+        (0.0, 5.0)
+    );
 }
 
 /// 19. Fire delay clamp.
@@ -192,7 +207,10 @@ fn case_24_weapon_order() {
     assert_eq!(weapons(text).unwrap().order_flat(), [0, 1]);
     assert!(weapons(&text.replace(r#"Melee0="K""#, r#"Melee0="Nope""#)).is_err());
     // Auto-switch: an unknown name is ignored.
-    let f = weapons(&format!(r#"{text} AutoSwitchWeapon0="K" AutoSwitchWeapon1="Nope" AutoSwitchWeapon2="W""#)).unwrap();
+    let f = weapons(&format!(
+        r#"{text} AutoSwitchWeapon0="K" AutoSwitchWeapon1="Nope" AutoSwitchWeapon2="W""#
+    ))
+    .unwrap();
     assert_eq!(f.auto_switch, [1, 0]);
 }
 
@@ -231,7 +249,10 @@ fn case_27_body_type() {
 #[test]
 fn case_28_server_player() {
     let p = ServerPlayer::read(&doc(r#"[Player] WalkSpeed=90 RunSpeed=240.5 JumpSpeed="485""#)).unwrap();
-    assert_eq!((p.walk_speed, p.run_speed, p.jump_speed, p.ladder_speed), (90.0, 240.5, 0.0, 0.0));
+    assert_eq!(
+        (p.walk_speed, p.run_speed, p.jump_speed, p.ladder_speed),
+        (90.0, 240.5, 0.0, 0.0)
+    );
 }
 
 /// Our document for case 29: weapon `w`, clip 25, range 4000 world units.
@@ -320,7 +341,11 @@ fn install_ammo_and_new_records() {
     "#;
     let set = merged_w(install);
     let ids: Vec<_> = set.weapons.iter().map(|w| w.id.as_str()).collect();
-    assert_eq!(ids, ["combat_arms:w", "combat_arms:new_gun"], "the pistol has no class in our data");
+    assert_eq!(
+        ids,
+        ["combat_arms:w", "combat_arms:new_gun"],
+        "the pistol has no class in our data"
+    );
     let w = &set.weapons[0];
     assert!(w.trigger.as_ref().unwrap().automatic);
     assert_eq!(w.hitscan.as_ref().unwrap().range, 3500.0);
@@ -342,7 +367,16 @@ fn movement_takes_figure_type_0() {
     ));
     merge_movement(&mut data, &models);
     let f = &data.character.figure;
-    assert_eq!((f.dash_speed, f.max_stamina, f.dash_gauge, f.gauge_recovery, f.variable_jump), (1.2, 120.0, 20.0, 15.0, 0.1));
+    assert_eq!(
+        (
+            f.dash_speed,
+            f.max_stamina,
+            f.dash_gauge,
+            f.gauge_recovery,
+            f.variable_jump
+        ),
+        (1.2, 120.0, 20.0, 15.0, 0.1)
+    );
     // Gear isn't the models file's: unchanged.
     assert_eq!(data.character.gear.len(), 1);
 }
@@ -356,15 +390,22 @@ fn body_additional_skins() {
           AdditionalSkins0="CHARS_T_BODY\Fur.DTX" AdditionalSkins1="textures\Spec.dtx" ColorSkin1_AdditionalSkins0="x.dtx"
         [Model1] ModelFile="b.ltb""#,
     ));
-    assert_eq!(m.bodies[0].additional_skins, ["CHARS_T_BODY\\Fur.DTX", "textures\\Spec.dtx"]);
+    assert_eq!(
+        m.bodies[0].additional_skins,
+        ["CHARS_T_BODY\\Fur.DTX", "textures\\Spec.dtx"]
+    );
     assert!(m.bodies[1].additional_skins.is_empty());
 }
 
 /// A loader with no readable files gets nothing and says why per file.
 #[test]
 fn unreadable_files_are_reported() {
-    let (attrs, problems) =
-        read_attributes(|name| Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, name.to_string())));
+    let (attrs, problems) = read_attributes(|name| {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            name.to_string(),
+        ))
+    });
     assert_eq!(attrs, InstallAttributes::default());
     // Weapons, server, models, modification, marks, attachments, perk, set
     // item, effect, layout and client files.
@@ -411,10 +452,28 @@ fn reference_m4a1_onto_our_documents() {
     assert_eq!(merged.weapons.len(), builtin.weapons.len());
     for (m, b) in merged.weapons.iter().zip(&builtin.weapons) {
         assert_eq!(m.id, b.id);
-        assert_eq!(m.magazine.as_ref().map(|x| x.clip), b.magazine.as_ref().map(|x| x.clip), "{}", m.id);
-        assert_eq!(m.hitscan.as_ref().map(|x| x.range), b.hitscan.as_ref().map(|x| x.range), "{}", m.id);
-        assert_eq!(m.trigger.as_ref().map(|x| x.automatic), b.trigger.as_ref().map(|x| x.automatic));
-        for name in ["combat_arms:damage", "combat_arms:spread", "combat_arms:recoil", "combat_arms:handling"] {
+        assert_eq!(
+            m.magazine.as_ref().map(|x| x.clip),
+            b.magazine.as_ref().map(|x| x.clip),
+            "{}",
+            m.id
+        );
+        assert_eq!(
+            m.hitscan.as_ref().map(|x| x.range),
+            b.hitscan.as_ref().map(|x| x.range),
+            "{}",
+            m.id
+        );
+        assert_eq!(
+            m.trigger.as_ref().map(|x| x.automatic),
+            b.trigger.as_ref().map(|x| x.automatic)
+        );
+        for name in [
+            "combat_arms:damage",
+            "combat_arms:spread",
+            "combat_arms:recoil",
+            "combat_arms:handling",
+        ] {
             if let (Some(mv), Some(bv)) = (m.hooks.get(name), b.hooks.get(name)) {
                 // Same numbers, up to the f32 the hooks read them as.
                 assert!(floats_close(mv, bv), "{}: {name}\n{mv}\n{bv}", m.id);
@@ -468,7 +527,17 @@ fn case_30_knock_back_fields() {
     close(a.damage_move_penalty_duration, 0.3);
     let k = HitKnockback::hit(None, 40.0, 0.3, 0.0, Vec3::Z, 0.0).unwrap();
     assert_eq!((k.strength * k.strength, k.duration), (1600.0, 0.3));
-    assert!(HitKnockback::hit(None, m9.damage_move_penalty as f32, m9.damage_move_penalty_duration as f32, 0.0, Vec3::Z, 0.0).is_none());
+    assert!(
+        HitKnockback::hit(
+            None,
+            m9.damage_move_penalty as f32,
+            m9.damage_move_penalty_duration as f32,
+            0.0,
+            Vec3::Z,
+            0.0
+        )
+        .is_none()
+    );
     let k = HitKnockback::hit(None, 40.0, 0.3, 0.5, Vec3::Z, 0.0).unwrap();
     assert!((k.duration - 0.45).abs() < 1e-6);
     // Through the merge onto our M4A1.
@@ -516,7 +585,10 @@ fn case_32_fire_mode_fields() {
     )
     .unwrap();
     let w = &f.weapons;
-    assert_eq!((w[0].rapid_fire_count, w[1].rapid_fire_count, w[2].rapid_fire_count), (0, 1, 3));
+    assert_eq!(
+        (w[0].rapid_fire_count, w[1].rapid_fire_count, w[2].rapid_fire_count),
+        (0, 1, 3)
+    );
     assert_eq!(w[1].continuous_fire, 1);
     assert_eq!((w[3].triple_shot_mode, w[3].triple_shot_round_num), (1, 2));
     assert_eq!(w[4].triple_shot_round_num, 3, "missing: 3 rounds");
@@ -563,7 +635,10 @@ fn models_and_names_from_the_install() {
     let p: CaViewParams = knife.hook("combat_arms:view_model").unwrap();
     assert_eq!((p.muzzle_pos, p.breach_offset), ([1.0, 2.0, 3.0], [1.0; 3]));
     let grenade = set.get("combat_arms:m23f").unwrap();
-    assert_eq!(grenade.models.view.as_deref(), Some("guns_m_pv_throwing/pv_throwing_m18smoke_sh.ltb"));
+    assert_eq!(
+        grenade.models.view.as_deref(),
+        Some("guns_m_pv_throwing/pv_throwing_m18smoke_sh.ltb")
+    );
 }
 
 /// An install weapon's sprite skins (`.spr`, an animated texture
@@ -626,7 +701,10 @@ fn grenade_projectile_records_from_the_install() {
     let f = attrs.weapons.unwrap();
     assert_eq!(f.projectiles.len(), 2);
     let g62 = f.projectile(&f.ammo[0]).unwrap();
-    assert_eq!((g62.velocity, g62.lifetime, g62.drop_velocity), (Some(1500.0), Some(2.25), Some(450.0)));
+    assert_eq!(
+        (g62.velocity, g62.lifetime, g62.drop_velocity),
+        (Some(1500.0), Some(2.25), Some(450.0))
+    );
     assert_eq!(g62.model_scale, [2.0; 3]);
     let docs = merge_weapon_docs(
         &[
@@ -640,7 +718,10 @@ fn grenade_projectile_records_from_the_install() {
     let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
     let set = WeaponSet::parse(&refs, &[]).unwrap();
     let m67: GrenadeParams = set.get("combat_arms:m67").unwrap().hook(HOOK).unwrap();
-    assert!((m67.speed - 1500.0).abs() < 1e-3 && (m67.fuse - 2.25).abs() < 1e-6, "{m67:?}");
+    assert!(
+        (m67.speed - 1500.0).abs() < 1e-3 && (m67.fuse - 2.25).abs() < 1e-6,
+        "{m67:?}"
+    );
     assert!((m67.drop_speed - 450.0).abs() < 1e-3 && m67.hits_same_kind);
     assert_eq!(m67.thrown_model.as_deref(), Some("guns_m_hh/hh_throwing_test_sh.ltb"));
     assert_eq!(m67.thrown_skins, ["guns_t_hh/hh_test.dtx"]);
@@ -650,8 +731,12 @@ fn grenade_projectile_records_from_the_install() {
     assert_eq!(xm84.thrown_model, None, "no model in its record: the placeholder");
     // Without the effect file, our documents' numbers stand.
     let bare = weapons(weapons_txt).unwrap();
-    let docs = merge_weapon_docs(&[("m67.toml", include_str!("../../data/weapons/m67.toml"))], &bare, meters_per_unit())
-        .unwrap();
+    let docs = merge_weapon_docs(
+        &[("m67.toml", include_str!("../../data/weapons/m67.toml"))],
+        &bare,
+        meters_per_unit(),
+    )
+    .unwrap();
     let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
     let set = WeaponSet::parse(&refs, &[]).unwrap();
     let m67: GrenadeParams = set.get("combat_arms:m67").unwrap().hook(HOOK).unwrap();
@@ -672,12 +757,18 @@ fn case_33_node_priority_read() {
     let nodes = SkeletonNode::read_all(d.records("Skeleton")[0]);
     assert_eq!(nodes.len(), 5);
     assert_eq!(nodes[4].priority, 2.5);
-    assert_eq!((nodes[4].radius, nodes[4].location, nodes[4].damage_factor), (3.0, 1, 6.0));
+    assert_eq!(
+        (nodes[4].radius, nodes[4].location, nodes[4].damage_factor),
+        (3.0, 1, 6.0)
+    );
     assert_eq!(nodes[3].priority, 0.0);
     let male = *combat_arms::game::weapons::MALE;
     let head = male.iter().find(|s| s.name == "Head").unwrap();
     let chest = male.iter().find(|s| s.name == "Upper_torso").unwrap();
-    assert!(head.priority > chest.priority, "the stock table: the head first (weapon_firing.md Follow-up 2026-11-14)");
+    assert!(
+        head.priority > chest.priority,
+        "the stock table: the head first (weapon_firing.md Follow-up 2026-11-14)"
+    );
 }
 
 /// 34. Burst defaults: a record with `TripleShotMode=1` and no other
@@ -688,9 +779,23 @@ fn case_33_node_priority_read() {
 fn case_34_burst_defaults() {
     let f = weapons(r#"[Ammo0] Name="a" [Weapon0] Name="W" AmmoName0="a" TripleShotMode=1"#).unwrap();
     let w = &f.weapons[0];
-    assert_eq!((w.triple_shot_base_cam_recoil_pitch, w.triple_shot_max_cam_recoil_pitch), (1.0, 50.0));
-    assert_eq!((w.triple_shot.min, w.triple_shot.max, w.triple_shot.inc, w.triple_shot.dec), (7, 100, 1.0, 1.0));
-    assert_eq!((w.triple_shot_delay, w.triple_shot_select_delay, w.triple_shot_round_num), (300, 400, 3));
+    assert_eq!(
+        (w.triple_shot_base_cam_recoil_pitch, w.triple_shot_max_cam_recoil_pitch),
+        (1.0, 50.0)
+    );
+    assert_eq!(
+        (
+            w.triple_shot.min,
+            w.triple_shot.max,
+            w.triple_shot.inc,
+            w.triple_shot.dec
+        ),
+        (7, 100, 1.0, 1.0)
+    );
+    assert_eq!(
+        (w.triple_shot_delay, w.triple_shot_select_delay, w.triple_shot_round_num),
+        (300, 400, 3)
+    );
     use combat_arms::game::weapons::{RecoilParams, SpreadParams};
     let r: RecoilParams = toml::from_str("").unwrap();
     assert_eq!((r.burst_pitch, r.burst_max_pitch), (1.0, 50.0));
@@ -705,7 +810,10 @@ fn case_34_burst_defaults() {
 fn case_35_zoomed_defaults() {
     let f = weapons(r#"[Ammo0] Name="a" [Weapon0] Name="W" AmmoName0="a""#).unwrap();
     let w = &f.weapons[0];
-    assert_eq!((w.zoomed.min, w.zoomed.max, w.zoomed.inc, w.zoomed.dec), (1, 500, 3.0, 3.0));
+    assert_eq!(
+        (w.zoomed.min, w.zoomed.max, w.zoomed.inc, w.zoomed.dec),
+        (1, 500, 3.0, 3.0)
+    );
     let s: combat_arms::game::weapons::SpreadParams =
         toml::from_str("cone = { min = 3, max = 100, inc = 1.3, dec = 0.3 }\nstate = {}").unwrap();
     let z = s.zoomed_cone.unwrap();
@@ -717,10 +825,16 @@ fn case_35_zoomed_defaults() {
 /// rate 1.
 #[test]
 fn case_36_server_settings() {
-    assert_eq!(ServerTimeWeight::read(&doc(r#"[Player] WalkSpeed=70.0"#)).reload_check_time, 0.8);
+    assert_eq!(
+        ServerTimeWeight::read(&doc(r#"[Player] WalkSpeed=70.0"#)).reload_check_time,
+        0.8
+    );
     let t = ServerTimeWeight::read(&doc(r#"[TimeWeight] ReloadCheckTime=1.0"#));
     assert_eq!(t.reload_check_time, 1.0);
-    close(combat_arms::game::weapons::server_reload_mark(2.4, 1.0, t.reload_check_time), 2.4);
+    close(
+        combat_arms::game::weapons::server_reload_mark(2.4, 1.0, t.reload_check_time),
+        2.4,
+    );
     let (attrs, _) = read_attributes(|name| {
         if name == SERVER_FILE {
             Ok(b"[TimeWeight] ReloadCheckTime=0.5".to_vec())
@@ -759,9 +873,17 @@ fn install_copies_keep_a_guns_class_not_a_grenades() {
     let set = WeaponSet::parse(&refs, &[]).unwrap();
     let class = |id: &str| set.get(id).unwrap_or_else(|| panic!("{id}")).class;
     assert_eq!(class("combat_arms:m4a1"), Some(GunClass::Rifle));
-    assert_eq!(class("combat_arms:ak-47"), Some(GunClass::Rifle), "a copy keeps a gun's class");
+    assert_eq!(
+        class("combat_arms:ak-47"),
+        Some(GunClass::Rifle),
+        "a copy keeps a gun's class"
+    );
     assert_eq!(class("combat_arms:m67"), Some(GunClass::Grenade));
-    assert_eq!(class("combat_arms:smoke_x"), None, "a thrown copy isn't a lethal grenade");
+    assert_eq!(
+        class("combat_arms:smoke_x"),
+        None,
+        "a thrown copy isn't a lethal grenade"
+    );
 }
 
 /// `CaData::install_weapon` (an index by id) finds the record the search
@@ -804,10 +926,18 @@ fn the_install_weapon_index_finds_what_the_search_finds() {
     ] {
         let want = install_weapon_in(&file, id);
         let got = ca.install_weapon(id);
-        assert_eq!(got.map(|r| (&r.name, r.gun_type)), want.map(|r| (&r.name, r.gun_type)), "{id}");
+        assert_eq!(
+            got.map(|r| (&r.name, r.gun_type)),
+            want.map(|r| (&r.name, r.gun_type)),
+            "{id}"
+        );
         found += got.is_some() as usize;
         // Twice: the index is made once.
-        assert_eq!(ca.install_weapon(id).map(|r| r.gun_type), want.map(|r| r.gun_type), "{id}");
+        assert_eq!(
+            ca.install_weapon(id).map(|r| r.gun_type),
+            want.map(|r| r.gun_type),
+            "{id}"
+        );
     }
     assert!(found >= 5, "{found} found");
     // The first record of a name.

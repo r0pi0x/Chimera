@@ -38,7 +38,10 @@ fn the_installs_radio_file_reads() {
     let bytes = match mount.read(radio::FILE) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("the radio file isn't at {} ({e}): the guessed name needs checking", radio::FILE);
+            eprintln!(
+                "the radio file isn't at {} ({e}): the guessed name needs checking",
+                radio::FILE
+            );
             return;
         }
     };
@@ -47,12 +50,22 @@ fn the_installs_radio_file_reads() {
     println!(
         "radio: {} voice sets, classes {:?}",
         data.templates.len(),
-        data.classes.iter().map(|c| (c.name.as_str(), c.entries.len())).collect::<Vec<_>>()
+        data.classes
+            .iter()
+            .map(|c| (c.name.as_str(), c.entries.len()))
+            .collect::<Vec<_>>()
     );
     assert!(!data.templates.is_empty(), "voice sets");
     assert!(data.classes.len() >= 3, "report, answer and request");
     for class in &data.classes[..3] {
         assert!(!class.entries.is_empty(), "{} has entries", class.name);
-        assert!(class.entries.iter().all(|e| !e.chat.is_empty() || e.list_text.is_empty()), "{}: chat lines", class.name);
+        assert!(
+            class
+                .entries
+                .iter()
+                .all(|e| !e.chat.is_empty() || e.list_text.is_empty()),
+            "{}: chat lines",
+            class.name
+        );
     }
 }

@@ -156,7 +156,12 @@ pub(super) fn sim() -> Sim {
             ("bow_exact", BOW_EXACT),
         ])
         .unwrap();
-    solid(&mut sim, Vec3::new(-200.0, -1.0, -200.0), Vec3::new(200.0, 0.0, 200.0), None);
+    solid(
+        &mut sim,
+        Vec3::new(-200.0, -1.0, -200.0),
+        Vec3::new(200.0, 0.0, 200.0),
+        None,
+    );
     sim.ticks(1);
     sim
 }
@@ -299,7 +304,15 @@ pub(super) fn explode_at(sim: &mut Sim, id: &str, owner: Option<Entity>, at_m: V
     let name = sim.app.world().get::<Weapon>(w).unwrap().id;
     let mut p: ProjectileParams = (*d.params).clone();
     p.lifetime = 0.0;
-    let o = CaObject::new(name, owner, d.unit, d.hp, at_m / U, Vec3::ZERO, Kind::Impact(Arc::new(p)));
+    let o = CaObject::new(
+        name,
+        owner,
+        d.unit,
+        d.hp,
+        at_m / U,
+        Vec3::ZERO,
+        Kind::Impact(Arc::new(p)),
+    );
     special::spawn_object(sim.app.world_mut(), o);
     until_boom(sim, 1.0);
     // Damage lands on the tick it is dealt.
@@ -376,7 +389,11 @@ pub(super) fn m(r: f32, d: f32) -> f32 {
 pub(super) fn armed(sim: &mut Sim, p: Entity, id: &str) -> Entity {
     let w = weapon::give(sim.app.world_mut(), p, id).expect("unknown weapon");
     sim.seconds(3.0);
-    assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(w), "{id} drawn");
+    assert_eq!(
+        sim.app.world().get::<Inventory>(p).unwrap().active,
+        Some(w),
+        "{id} drawn"
+    );
     w
 }
 
@@ -412,14 +429,31 @@ pub(super) fn hits(sim: &Sim) -> Vec<(f64, Entity, Option<Entity>, f32, Option<&
 #[test]
 fn t01_rocket_flight() {
     let mut sim = sim();
-    let r = projectile(&mut sim, LAW, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1300.0));
+    let r = projectile(
+        &mut sim,
+        LAW,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1300.0),
+    );
     for k in [1u32, 2, 10, 50, 199] {
         let s = to_step(&mut sim, r, k);
         assert_near(s.pos, Vec3::new(0.0, 60.0, 65.0 * k as f32), 0.05, &format!("step {k}"));
     }
     let mut sim = self::sim();
-    solid(&mut sim, Vec3::new(-10.0, -1.0, 500.0 * U), Vec3::new(10.0, 10.0, 510.0 * U), None);
-    let r = projectile(&mut sim, LAW, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1300.0));
+    solid(
+        &mut sim,
+        Vec3::new(-10.0, -1.0, 500.0 * U),
+        Vec3::new(10.0, 10.0, 510.0 * U),
+        None,
+    );
+    let r = projectile(
+        &mut sim,
+        LAW,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1300.0),
+    );
     let created = to_step(&mut sim, r, 1).created.unwrap();
     let (at_frame, weapon, _, at) = until_boom(&mut sim, 1.0);
     assert_eq!(weapon, LAW);
@@ -479,13 +513,21 @@ fn t03_rocket_direct_hit() {
     // On the chest sphere's surface, as the body stood a moment before
     // (it sways): within 10 cm of it.
     let d = (at * U).distance(c);
-    assert!((d - r).abs() < 0.1, "the blast is at the hit point: {d} m from the chest centre, r {r}");
+    assert!(
+        (d - r).abs() < 0.1,
+        "the blast is at the hit point: {d} m from the chest centre, r {r}"
+    );
     assert_hp(health(&sim, victim), 20.0, 0.01, "80 and survives with 20");
     // The same blast in the air beside him, with the slab between: stopped.
     let mut sim = self::sim();
     let shooter = far_player(&mut sim, 1);
     let victim = player(&mut sim, 0.0, 400.0, 0.0, 2);
-    let c = spheres(&mut sim, victim).iter().filter(|s| s.2 == Location::Torso).map(|s| s.0).next().unwrap();
+    let c = spheres(&mut sim, victim)
+        .iter()
+        .filter(|s| s.2 == Location::Torso)
+        .map(|s| s.0)
+        .next()
+        .unwrap();
     solid(
         &mut sim,
         Vec3::new(c.x - 3.0, 0.0, c.z - 3.0 * U - 0.5 * U),
@@ -503,7 +545,12 @@ fn t04_at4_does_nothing() {
     let mut sim = sim();
     let shooter = far_player(&mut sim, 1);
     let victim = player(&mut sim, 0.0, 400.0, 0.0, 2);
-    let c = spheres(&mut sim, victim).iter().filter(|s| s.2 == Location::Torso).map(|s| s.0).next().unwrap();
+    let c = spheres(&mut sim, victim)
+        .iter()
+        .filter(|s| s.2 == Location::Torso)
+        .map(|s| s.0)
+        .next()
+        .unwrap();
     projectile(
         &mut sim,
         AT4,
@@ -525,8 +572,19 @@ fn t04_at4_does_nothing() {
 #[test]
 fn t05_rocket_at_the_sky() {
     let mut sim = sim();
-    solid(&mut sim, Vec3::new(-10.0, -1.0, 300.0 * U), Vec3::new(10.0, 10.0, 310.0 * U), Some("sky"));
-    let r = projectile(&mut sim, LAW, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1300.0));
+    solid(
+        &mut sim,
+        Vec3::new(-10.0, -1.0, 300.0 * U),
+        Vec3::new(10.0, 10.0, 310.0 * U),
+        Some("sky"),
+    );
+    let r = projectile(
+        &mut sim,
+        LAW,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1300.0),
+    );
     let mut steps = 0;
     for _ in 0..200 {
         sim.ticks(1);
@@ -546,7 +604,13 @@ fn t05_rocket_at_the_sky() {
 #[test]
 fn t06_rocket_lifetime() {
     let mut sim = sim();
-    let r = projectile(&mut sim, LAW, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1300.0));
+    let r = projectile(
+        &mut sim,
+        LAW,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1300.0),
+    );
     let created = to_step(&mut sim, r, 1).created.unwrap();
     let (at_frame, _, _, at) = until_boom(&mut sim, 12.0);
     assert_eq!(at_frame - created, 200, "the 200th frame");
@@ -585,7 +649,11 @@ fn t07_shooting_a_rocket() {
     sim.intent(shooter).fire = false;
     assert!(seen >= 2, "two rounds hit it");
     let (_, weapon, thrower, boom) = until_boom(&mut sim, 1.0);
-    assert_eq!((weapon, thrower), (LAW, Some(owner)), "credited to the rocket's shooter");
+    assert_eq!(
+        (weapon, thrower),
+        (LAW, Some(owner)),
+        "credited to the rocket's shooter"
+    );
     assert_near(boom, at, 0.05, "where it was");
 }
 
@@ -598,7 +666,13 @@ fn t07_shooting_a_rocket() {
 #[test]
 fn t08_launcher_shell_level() {
     let mut sim = sim();
-    let shell = projectile(&mut sim, M32, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    let shell = projectile(
+        &mut sim,
+        M32,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     let s = to_step(&mut sim, shell, 1);
     assert_near(s.pos, Vec3::new(0.0, 59.0, 77.5), 0.05, "step 1");
     let s = to_step(&mut sim, shell, 5);
@@ -615,12 +689,23 @@ fn t08_launcher_shell_level() {
     let thrower = far_player(&mut sim, 0);
     let victim = player(&mut sim, 0.0, 600.0, 0.0, 0);
     let (c, _) = body(&mut sim, victim);
-    projectile(&mut sim, M32, Some(thrower), Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    projectile(
+        &mut sim,
+        M32,
+        Some(thrower),
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     let (_, _, _, at) = until_boom(&mut sim, 2.0);
     sim.ticks(2);
     let d = dist_u(c, at * U);
     assert!((d - 163.0).abs() < 4.0, "the case's 163 u from the blast: {d}");
-    assert_hp(100.0 - health(&sim, victim), 2.0 * 40.0 * m(300.0, d), 0.01, "the double blast");
+    assert_hp(
+        100.0 - health(&sim, victim),
+        2.0 * 40.0 * m(300.0, d),
+        0.01,
+        "the double blast",
+    );
 }
 
 /// Case 9: launcher blasts by weapon: M32 and M79 40, MZP_1 42, XM_25 22,
@@ -649,7 +734,12 @@ fn t09_launcher_blast() {
 #[test]
 fn t10_no_arming_distance() {
     let mut sim = sim();
-    solid(&mut sim, Vec3::new(-10.0, -1.0, 30.0 * U), Vec3::new(10.0, 10.0, 40.0 * U), None);
+    solid(
+        &mut sim,
+        Vec3::new(-10.0, -1.0, 30.0 * U),
+        Vec3::new(10.0, 10.0, 40.0 * U),
+        None,
+    );
     let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 0);
     let e = eye(&sim, shooter);
     let at = Vec3::new(e.x / U, e.y / U, e.z / U);
@@ -661,7 +751,12 @@ fn t10_no_arming_distance() {
     let q = Vec3::new(at.x, at.y - 30.0 / 77.5, 30.0 + at.z - at.z);
     assert_near(boom, q - v, 0.1, "1 u back");
     let _ = f;
-    assert_hp(100.0 - health(&sim, shooter), 80.0, 0.01, "the shooter takes the double blast");
+    assert_hp(
+        100.0 - health(&sim, shooter),
+        80.0,
+        0.01,
+        "the shooter takes the double blast",
+    );
 }
 
 /// Case 11: an M32 on hold fires a shell a second; the empty clip reloads
@@ -802,8 +897,15 @@ fn t14_flamethrower_puffs() {
     let shots: Vec<f64> = fired(&sim, w, t0 - 0.01).into_iter().map(|t| t - t0).collect();
     assert_eq!(shots.len(), 300, "300 puffs");
     let tick = TICK_INTERVAL + 1e-6;
-    for (k, want) in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.934, 1.034, 1.134].iter().enumerate() {
-        assert!((shots[k] - want).abs() <= tick, "puff {k} at {}, expected {want}", shots[k]);
+    for (k, want) in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.934, 1.034, 1.134]
+        .iter()
+        .enumerate()
+    {
+        assert!(
+            (shots[k] - want).abs() <= tick,
+            "puff {k} at {}, expected {want}",
+            shots[k]
+        );
     }
     assert_eq!(mag(&sim, w).clip, 0, "the clip is empty");
 }
@@ -811,7 +913,13 @@ fn t14_flamethrower_puffs() {
 /// A flame puff of `FLAME` that flies `dist` u level and goes off at the
 /// end of its life: `end` (u) is where, `owner` its shooter.
 pub(super) fn puff_to(sim: &mut Sim, owner: Option<Entity>, end: Vec3) -> Entity {
-    projectile(sim, FLAME, owner, end - Vec3::new(0.0, 0.0, 475.0), Vec3::new(0.0, 0.0, 500.0))
+    projectile(
+        sim,
+        FLAME,
+        owner,
+        end - Vec3::new(0.0, 0.0, 475.0),
+        Vec3::new(0.0, 0.0, 500.0),
+    )
 }
 
 /// Case 15: a puff fired level into empty space goes off at the start of
@@ -836,7 +944,15 @@ fn t15_flame_puff_in_the_air() {
     wait(&mut sim, 4.0);
     assert_hp(100.0 - health(&sim, near_v), 36.0, 1.5, "12 x (2 + 1) at 50 u");
     assert_eq!(health(&sim, far_v), 100.0, "80 u: outside the 75 u sphere");
-    assert_eq!(sim.app.world_mut().query::<&CaDamageSphere>().iter(sim.app.world()).count(), 0, "the spheres are gone");
+    assert_eq!(
+        sim.app
+            .world_mut()
+            .query::<&CaDamageSphere>()
+            .iter(sim.app.world())
+            .count(),
+        0,
+        "the spheres are gone"
+    );
 }
 
 /// The stream as a player meets it: fire held at a victim standing close
@@ -930,7 +1046,13 @@ fn t18_land_mine() {
     let enemy = player(&mut sim, 0.0, 171.43, 0.0, 2);
     let far = player(&mut sim, 298.0, 171.43, 0.0, 2);
     set_health(&mut sim, far, 1000.0);
-    let mine = device(&mut sim, MINE, Some(owner), Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 600.0));
+    let mine = device(
+        &mut sim,
+        MINE,
+        Some(owner),
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 600.0),
+    );
     let mut trigger = None;
     let mut landed_at = None;
     let (frame_of_boom, _, thrower, at) = loop {
@@ -950,20 +1072,34 @@ fn t18_land_mine() {
     };
     let t = trigger.expect("set off by the enemy on it");
     let blast_time = frame_of_boom as f64 * 0.05;
-    assert!(blast_time >= t + 0.267 - 1e-6 && blast_time <= t + 0.267 + 0.05 + 1e-6, "blast at {blast_time}, set off at {t}");
+    assert!(
+        blast_time >= t + 0.267 - 1e-6 && blast_time <= t + 0.267 + 0.05 + 1e-6,
+        "blast at {blast_time}, set off at {t}"
+    );
     assert_eq!(thrower, Some(owner));
     sim.ticks(2);
     assert_hp(100.0 - health(&sim, enemy), 80.0, 0.01, "on the mine");
     let (c, _) = body(&mut sim, far);
     let d = dist_u(c, at * U);
     assert!((d - 300.0).abs() < 4.0, "about 300 u: {d}");
-    assert_hp(1000.0 - health(&sim, far), 2.0 * 40.0 * m(550.0, d), 0.01, "at the distance measured");
+    assert_hp(
+        1000.0 - health(&sim, far),
+        2.0 * 40.0 * m(550.0, d),
+        0.01,
+        "at the distance measured",
+    );
 
     // The owner or a teammate walking over it does nothing.
     let mut sim = self::sim();
     let owner = player(&mut sim, 0.0, 171.43, 0.0, 1);
     let mate = player(&mut sim, 30.0, 171.43, 0.0, 1);
-    let mine = device(&mut sim, MINE, Some(owner), Vec3::new(15.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 600.0));
+    let mine = device(
+        &mut sim,
+        MINE,
+        Some(owner),
+        Vec3::new(15.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 600.0),
+    );
     wait(&mut sim, 2.0);
     assert!(alive(&sim, mine) && obj(&sim, mine).s.landed, "still there");
     assert!(obj(&sim, mine).s.triggered_at.is_none(), "not set off");
@@ -975,8 +1111,19 @@ fn t18_land_mine() {
 #[test]
 fn t19_mine_against_a_wall() {
     let mut sim = sim();
-    solid(&mut sim, Vec3::new(-10.0, -1.0, 100.0 * U), Vec3::new(10.0, 10.0, 110.0 * U), None);
-    let mine = device(&mut sim, MINE, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 600.0));
+    solid(
+        &mut sim,
+        Vec3::new(-10.0, -1.0, 100.0 * U),
+        Vec3::new(10.0, 10.0, 110.0 * U),
+        None,
+    );
+    let mine = device(
+        &mut sim,
+        MINE,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 600.0),
+    );
     let mut hit_wall = false;
     for _ in 0..400 {
         sim.ticks(1);
@@ -991,8 +1138,17 @@ fn t19_mine_against_a_wall() {
     let o = obj(&sim, mine);
     assert!(hit_wall, "it reached the wall without landing");
     assert!(o.s.landed, "landed on the floor");
-    assert!(o.pos.z > 98.0 && o.pos.z < 100.0 + 1e-3, "at the foot of the wall: {}", o.pos.z);
-    assert_near(Vec3::new(0.0, o.pos.y, 0.0), Vec3::new(0.0, 6.6, 0.0), 0.05, "on the floor");
+    assert!(
+        o.pos.z > 98.0 && o.pos.z < 100.0 + 1e-3,
+        "at the foot of the wall: {}",
+        o.pos.z
+    );
+    assert_near(
+        Vec3::new(0.0, o.pos.y, 0.0),
+        Vec3::new(0.0, 6.6, 0.0),
+        0.05,
+        "on the floor",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1008,7 +1164,14 @@ fn breakable_wall(sim: &mut Sim, z: f32) -> Entity {
 
 /// The Damage kinds `target` took.
 fn hit_kinds(sim: &mut Sim, target: Entity) -> Vec<chimera_core::core::DamageKind> {
-    sim.app.world().resource::<KindLog>().0.iter().filter(|(t, _)| *t == target).map(|(_, k)| *k).collect()
+    sim.app
+        .world()
+        .resource::<KindLog>()
+        .0
+        .iter()
+        .filter(|(t, _)| *t == target)
+        .map(|(_, k)| *k)
+        .collect()
 }
 
 #[derive(Resource, Default)]
@@ -1021,7 +1184,9 @@ fn log_kinds(mut damage: MessageReader<Damage>, mut log: ResMut<KindLog>) {
 }
 
 fn with_kinds(sim: &mut Sim) {
-    sim.app.init_resource::<KindLog>().add_systems(FixedPostUpdate, log_kinds);
+    sim.app
+        .init_resource::<KindLog>()
+        .add_systems(FixedPostUpdate, log_kinds);
 }
 
 /// A melee weapon breaks what a CS:S knife breaks: its swing's damage, as a
@@ -1036,7 +1201,11 @@ fn a_swing_hits_a_breakable() {
     sim.intent(p).fire = true;
     sim.seconds(1.0);
     sim.intent(p).fire = false;
-    assert!(hit_kinds(&mut sim, wall).contains(&chimera_core::core::DamageKind::Melee), "{:?}", hit_kinds(&mut sim, wall));
+    assert!(
+        hit_kinds(&mut sim, wall).contains(&chimera_core::core::DamageKind::Melee),
+        "{:?}",
+        hit_kinds(&mut sim, wall)
+    );
 }
 
 /// A flame puff that touches a breakable is a melee-kind hit there (a pane
@@ -1053,6 +1222,11 @@ fn a_flame_puff_hits_a_breakable() {
     sim.intent(p).fire = false;
     let kinds = hit_kinds(&mut sim, wall);
     assert!(kinds.contains(&chimera_core::core::DamageKind::Melee), "{kinds:?}");
-    let spheres = sim.app.world_mut().query::<&CaDamageSphere>().iter(sim.app.world()).count();
+    let spheres = sim
+        .app
+        .world_mut()
+        .query::<&CaDamageSphere>()
+        .iter(sim.app.world())
+        .count();
     assert!(spheres > 0, "the puffs went off at the wall");
 }

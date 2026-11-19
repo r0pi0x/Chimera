@@ -44,7 +44,11 @@ pub(crate) fn setup(app: &mut App) {
             w.spawn((
                 Name::new(format!("Spawn {}", k * 4 + i)),
                 SpawnPoint { team: Some(Team(team)) },
-                Transform::from_translation(Vec3::new(-6.0 + 3.0 * i as f32, 1.0, if team == 1 { 12.0 } else { -20.0 })),
+                Transform::from_translation(Vec3::new(
+                    -6.0 + 3.0 * i as f32,
+                    1.0,
+                    if team == 1 { 12.0 } else { -20.0 },
+                )),
             ));
         }
     }
@@ -83,12 +87,17 @@ fn two_clients_play_team_death_match() {
     let mut sim = NetSim::new(CaSim, link, 7, 2, setup);
     sim.set_frame(TICK_INTERVAL);
     sim.until_joined(600);
-    let ok = sim.until(400, |s| server_match(s).phase == Phase::Live && view(s, 0).phase == Phase::Live);
+    let ok = sim.until(400, |s| {
+        server_match(s).phase == Phase::Live && view(s, 0).phase == Phase::Live
+    });
     assert!(ok, "live on the server and the client: {:?}", server_match(&sim).phase);
     let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
     let team = |sim: &NetSim, e| sim.server.app.world().get::<Team>(e).unwrap().0;
     let (ta, tb) = (team(&sim, a), team(&sim, b));
-    assert!(ta != tb && [ta, tb].iter().all(|t| *t == 1 || *t == 2), "opposite teams: {ta} {tb}");
+    assert!(
+        ta != tb && [ta, tb].iter().all(|t| *t == 1 || *t == 2),
+        "opposite teams: {ta} {tb}"
+    );
     for i in 0..2 {
         assert_eq!(view(&sim, i).team_counts, [1, 1], "client {i} sees one player a team");
         assert_eq!(view(&sim, i).mode, "TDM");
@@ -101,9 +110,16 @@ fn two_clients_play_team_death_match() {
     let scored = sim.until(60, |s| (0..2).all(|i| view(s, i).score[side(ta)] == 1));
     assert!(scored, "the kill scores on every client: {:?}", view(&sim, 0).score);
     let me = sim.local_player(0).unwrap();
-    assert_eq!(sim.clients[0].app.world().get::<CaStats>(me).map(|s| s.kills), Some(1), "the killer's stats");
+    assert_eq!(
+        sim.clients[0].app.world().get::<CaStats>(me).map(|s| s.kills),
+        Some(1),
+        "the killer's stats"
+    );
     let dead_b = sim.local_player(1).unwrap();
-    assert!(sim.clients[1].app.world().get::<Dead>(dead_b).is_some(), "b's client sees itself dead");
+    assert!(
+        sim.clients[1].app.world().get::<Dead>(dead_b).is_some(),
+        "b's client sees itself dead"
+    );
     // b's client asks after its 7 s; the server respawns it.
     let died = sim.server.app.world().resource::<SimClock>().now;
     let back = sim.until(700, |s| s.server.app.world().get::<Dead>(b).is_none());
@@ -238,15 +254,25 @@ fn search_and_destroy_over_the_network() {
     hold_server(&mut sim, a, site, 120);
     let me = sim.local_player(ia).unwrap();
     let gauge = sim.clients[ia].app.world().get::<CaAction>(me).copied();
-    assert_eq!(gauge.map(|g| g.kind), Some(ActionKind::Plant), "the planter's gauge on its client");
+    assert_eq!(
+        gauge.map(|g| g.kind),
+        Some(ActionKind::Plant),
+        "the planter's gauge on its client"
+    );
     hold_server(&mut sim, a, site, 160);
     client_intent(&mut sim, ia).fire = false;
-    assert!(sim.server.app.world().resource::<CaObjectives>().planted.is_some(), "planted");
+    assert!(
+        sim.server.app.world().resource::<CaObjectives>().planted.is_some(),
+        "planted"
+    );
     let seen = sim.until(60, |s| (0..2).all(|i| client_objectives(s, i).planted.is_some()));
     assert!(seen, "every client sees the bomb");
     let now = sim.clients[0].app.world().resource::<SimClock>().now;
     let fuse = client_objectives(&sim, 0).planted.unwrap().detonates - now;
-    assert!((35.0..41.0).contains(&fuse), "the fuse on the client's clock: {fuse:.2}");
+    assert!(
+        (35.0..41.0).contains(&fuse),
+        "the fuse on the client's clock: {fuse:.2}"
+    );
     client_intent(&mut sim, ib).use_key = true;
     hold_server(&mut sim, b, site, (7.3 / TICK_INTERVAL) as u64);
     let won = sim.until(120, |s| (0..2).all(|i| view(s, i).round_wins == [0, 1]));
@@ -296,7 +322,9 @@ fn capture_the_flag_over_the_network() {
     assert!(carried, "the carrier's client sees it carries the flag");
     hold_server(&mut sim, a, alpha_home, 2);
     let scored = sim.until(60, |s| {
-        (0..2).all(|i| view(s, i).score == [1, 0] && client_objectives(s, i).flag(2).is_some_and(|f| f.at == FlagAt::Home))
+        (0..2).all(|i| {
+            view(s, i).score == [1, 0] && client_objectives(s, i).flag(2).is_some_and(|f| f.at == FlagAt::Home)
+        })
     });
     assert!(scored, "Alpha's capture everywhere: {:?}", view(&sim, 0).score);
 }
@@ -313,7 +341,9 @@ fn one_man_army_over_the_network() {
     let (b, tb) = player(&mut sim, 1);
     assert!(ta >= 3 && tb >= 3 && ta != tb, "teams of their own: {ta} {tb}");
     let me = sim.local_player(1).unwrap();
-    let seen = sim.until(60, |s| s.clients[1].app.world().get::<Team>(me).map(|t| t.0) == Some(tb));
+    let seen = sim.until(60, |s| {
+        s.clients[1].app.world().get::<Team>(me).map(|t| t.0) == Some(tb)
+    });
     assert!(seen, "the client sees its own team");
     sim.ticks((4.2 / TICK_INTERVAL) as u64);
     kill(&mut sim, b, a);
@@ -334,7 +364,9 @@ fn last_man_standing_over_the_network() {
     let won = sim.until(120, |s| (0..2).all(|i| view(s, i).winner == Some(ta)));
     assert!(won, "the round's winner everywhere");
     let me = sim.local_player(0).unwrap();
-    let stat = sim.until(120, |s| s.clients[0].app.world().get::<CaStats>(me).map(|s| s.round_wins) == Some(1));
+    let stat = sim.until(120, |s| {
+        s.clients[0].app.world().get::<CaStats>(me).map(|s| s.round_wins) == Some(1)
+    });
     assert!(stat, "the round win in the client's statistics");
 }
 
@@ -421,9 +453,16 @@ fn spy_hunt_over_the_network() {
             at: *p,
         })
         .collect();
-    sim.server.app.world_mut().resource_mut::<CaRuleSettings>().objectives.intel_count = 2;
+    sim.server
+        .app
+        .world_mut()
+        .resource_mut::<CaRuleSettings>()
+        .objectives
+        .intel_count = 2;
     restart_and_play(&mut sim);
-    let seen = sim.until(60, |s| (0..2).all(|i| client_objectives(s, i).intel.len() == 2 && client_objectives(s, i).stage == 1));
+    let seen = sim.until(60, |s| {
+        (0..2).all(|i| client_objectives(s, i).intel.len() == 2 && client_objectives(s, i).stage == 1)
+    });
     assert!(seen, "the intel everywhere");
     let (a, _) = player(&mut sim, 0);
     hold_server(&mut sim, a, spots[0], 3);
@@ -484,5 +523,9 @@ fn held(sim: &NetSim, e: Entity) -> Option<&'static str> {
 
 pub(crate) fn client_intent(sim: &mut NetSim, i: usize) -> Mut<'_, chimera_core::core::Intent> {
     let me = sim.local_player(i).unwrap();
-    sim.clients[i].app.world_mut().get_mut::<chimera_core::core::Intent>(me).unwrap()
+    sim.clients[i]
+        .app
+        .world_mut()
+        .get_mut::<chimera_core::core::Intent>(me)
+        .unwrap()
 }

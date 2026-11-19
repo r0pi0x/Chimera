@@ -161,7 +161,10 @@ fn mode_systems_run_where_the_dispatchers_ran() {
         let mut last = counts;
         for u in UPDATES {
             let at = find(&rules(u), 0);
-            assert!(last < at && at < step, "{name}: {u} at {at}, not between {last} and the step at {step}");
+            assert!(
+                last < at && at < step,
+                "{name}: {u} at {at}, not between {last} and the step at {step}"
+            );
             last = at;
         }
         assert!(!order.iter().any(|s| s.starts_with("chimera_sim::mode::flow::update")));
@@ -191,7 +194,10 @@ fn the_deaths_world_work_applies_before_its_readers() {
     // The first `what` from `from` on (`publish` runs twice a tick).
     let at = |what: &str, from: usize| {
         let full = format!("combat_arms::game::{what}");
-        let i = order[from..].iter().position(|s| *s == full).unwrap_or_else(|| panic!("{full} not after {from} in {order:#?}"));
+        let i = order[from..]
+            .iter()
+            .position(|s| *s == full)
+            .unwrap_or_else(|| panic!("{full} not after {from} in {order:#?}"));
         i + from
     };
     for (writer, reader) in [
@@ -202,6 +208,9 @@ fn the_deaths_world_work_applies_before_its_readers() {
     ] {
         let w = at(writer, 0);
         let r = at(reader, w);
-        assert!(order[w + 1..r].iter().any(|s| s.ends_with("apply_deferred")), "{writer} at {w}, no sync point before {reader} at {r}");
+        assert!(
+            order[w + 1..r].iter().any(|s| s.ends_with("apply_deferred")),
+            "{writer} at {w}, no sync point before {reader} at {r}"
+        );
     }
 }

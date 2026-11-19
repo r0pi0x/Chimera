@@ -51,8 +51,7 @@ fn record(mut r: MessageReader<Damage>, mut hurt: ResMut<Hurt>) {
 #[test]
 fn junk_flea2_kill_boxes_start_off() {
     let Some(mount) = mount() else { return };
-    let Some(map) = world::find(&mount, "junk_flea2").and_then(|_| world::load_world(&mount, "junk_flea2").ok())
-    else {
+    let Some(map) = world::find(&mount, "junk_flea2").and_then(|_| world::load_world(&mount, "junk_flea2").ok()) else {
         eprintln!("skipping: junk_flea2 not readable");
         return;
     };
@@ -68,7 +67,10 @@ fn junk_flea2_kill_boxes_start_off() {
             .map(|(n, v)| (n.as_str().to_string(), v.hidden))
             .collect();
         assert_eq!(boxes.len(), 2, "{boxes:?}");
-        assert!(boxes.iter().all(|(_, hidden)| *hidden), "switched off at the start: {boxes:?}");
+        assert!(
+            boxes.iter().all(|(_, hidden)| *hidden),
+            "switched off at the start: {boxes:?}"
+        );
     }
     // setpos's feet: CS:S inches, (x, y, z) z up.
     let feet = Vec3::new(290.11, 58.06, -120.87) * 0.0254;
@@ -87,5 +89,9 @@ fn junk_flea2_kill_boxes_start_off() {
     }
     let hurt = &sim.app.world().resource::<Hurt>().0;
     let health = sim.app.world().get::<Health>(p).unwrap().current;
-    assert!(hurt.is_empty() && health == 1.0, "health {health}, damage {:?}", hurt.first());
+    assert!(
+        hurt.is_empty() && health == 1.0,
+        "health {health}, damage {:?}",
+        hurt.first()
+    );
 }

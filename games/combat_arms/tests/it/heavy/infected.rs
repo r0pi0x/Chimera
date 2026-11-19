@@ -15,22 +15,48 @@ fn the_install_marks_its_infected_hands_and_overrides() {
         return;
     }
     let set = ca.weapon_set();
-    let infected: Vec<&str> = set.weapons.iter().filter(|w| w.has_hook(rungs::INFECTED)).map(|w| w.id.as_str()).collect();
+    let infected: Vec<&str> = set
+        .weapons
+        .iter()
+        .filter(|w| w.has_hook(rungs::INFECTED))
+        .map(|w| w.id.as_str())
+        .collect();
     eprintln!("{} infected's weapons: {infected:?}", infected.len());
-    for (index, want) in rungs::STOCK_HANDS.iter().zip(["combat_arms:quarantine_virus_hand", "combat_arms:quarantine_host_hand"]) {
+    for (index, want) in rungs::STOCK_HANDS
+        .iter()
+        .zip(["combat_arms:quarantine_virus_hand", "combat_arms:quarantine_host_hand"])
+    {
         assert_eq!(ca.weapon_for_index(*index), Some(want), "record {index}");
         assert!(infected.contains(&want), "{want} marked infected");
     }
-    assert!(set.weapons.iter().filter(|w| w.has_hook(rungs::INFECTED)).all(|w| w.has_hook(KNIFE_HOOK)), "every hand a knife");
-    assert!(!set.weapons.iter().any(|w| w.id == "combat_arms:m9_knife" && w.has_hook(rungs::INFECTED)));
+    assert!(
+        set.weapons
+            .iter()
+            .filter(|w| w.has_hook(rungs::INFECTED))
+            .all(|w| w.has_hook(KNIFE_HOOK)),
+        "every hand a knife"
+    );
+    assert!(
+        !set.weapons
+            .iter()
+            .any(|w| w.id == "combat_arms:m9_knife" && w.has_hook(rungs::INFECTED))
+    );
     let ch = ca.characters();
     let o = ch.infection_of(0).expect("Normal's override");
-    assert!(ch.face.iter().any(|f| f.id == o.face), "its face {} is in the data", o.face);
+    assert!(
+        ch.face.iter().any(|f| f.id == o.face),
+        "its face {} is in the data",
+        o.face
+    );
     assert_eq!(ch.infected_look(0).face, o.face);
     let bodies = ch.infected_bodies();
     let pool = ch.rung_bodies();
     assert!(!bodies.is_empty() && bodies.iter().all(|b| pool.contains(b)));
-    eprintln!("{} of {} rung bodies have an infection override", bodies.len(), pool.len());
+    eprintln!(
+        "{} of {} rung bodies have an infection override",
+        bodies.len(),
+        pool.len()
+    );
 }
 
 /// Characters follow the gun on the install's data (`rungs::holders`,
@@ -68,7 +94,12 @@ fn the_installs_weapons_map_to_their_holders() {
                 for b in &bodies {
                     let r = ch.model(*b).unwrap();
                     let fam = ch.family(r);
-                    assert!(zombies.contains(b) || r.npc.is_some() || fam.class == Some(39), "{}: {} isn't an infected body", w.id, r.name);
+                    assert!(
+                        zombies.contains(b) || r.npc.is_some() || fam.class == Some(39),
+                        "{}: {} isn't an infected body",
+                        w.id,
+                        r.name
+                    );
                 }
             }
             named += 1;

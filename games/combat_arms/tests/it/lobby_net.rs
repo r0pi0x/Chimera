@@ -78,7 +78,10 @@ fn room(sim: &mut NetSim, mode: &str, arms: [u8; 2]) -> RoomId {
     client(sim, 0).0.send(Request::Create(create_spec(mode, 16, arms)));
     sim.ticks(30);
     let room = client(sim, 0).0.room.as_ref().expect("client 0 is in its room").id;
-    assert!(client(sim, 1).0.list.find(room).is_some(), "the other client's list has the new room");
+    assert!(
+        client(sim, 1).0.list.find(room).is_some(),
+        "the other client's list has the new room"
+    );
     client(sim, 1).0.enter(room, "");
     sim.ticks(30);
     room
@@ -93,7 +96,15 @@ fn start_match(sim: &mut NetSim) {
     client(sim, 1).0.ready(Ok(()));
     sim.ticks(10);
     client(sim, 0).0.start(Ok(()));
-    let started = sim.until(600, |s| s.server.app.world().resource::<CaLobbyHost>().active.as_ref().is_some_and(|a| a.went));
+    let started = sim.until(600, |s| {
+        s.server
+            .app
+            .world()
+            .resource::<CaLobbyHost>()
+            .active
+            .as_ref()
+            .is_some_and(|a| a.went)
+    });
     assert!(started, "the countdown ran and the room went in game");
     sim.ticks(10);
 }
@@ -107,7 +118,10 @@ fn clients_say_hello_and_get_the_room_list() {
     }
     let ids = [client(&mut sim, 0).0.me, client(&mut sim, 1).0.me];
     assert_ne!(ids[0], ids[1]);
-    assert!(ids.iter().all(|i| *i != 0), "remote players are told their transport id");
+    assert!(
+        ids.iter().all(|i| *i != 0),
+        "remote players are told their transport id"
+    );
     assert_eq!(server_host(&mut sim).lobby.players().len(), 2);
 }
 
@@ -140,7 +154,13 @@ fn browse_create_join_ready_start_go_and_back_to_the_room() {
     // A chat line reaches the room.
     client(&mut sim, 1).0.say("hello room");
     sim.ticks(10);
-    assert!(client(&mut sim, 0).0.chat.iter().any(|l| l.text.ends_with("hello room")));
+    assert!(
+        client(&mut sim, 0)
+            .0
+            .chat
+            .iter()
+            .any(|l| l.text.ends_with("hello room"))
+    );
 
     start_match(&mut sim);
     // The room's settings are the match's.
@@ -166,7 +186,14 @@ fn browse_create_join_ready_start_go_and_back_to_the_room() {
     // room, waiting and held out again.
     sim.server.app.world_mut().resource_mut::<CaMatch>().phase = Phase::MatchOver;
     let back = sim.until(600, |s| {
-        s.clients[0].app.world().resource::<CaLobbyClient>().0.room.as_ref().is_some_and(|r| r.state == RoomState::Waiting)
+        s.clients[0]
+            .app
+            .world()
+            .resource::<CaLobbyClient>()
+            .0
+            .room
+            .as_ref()
+            .is_some_and(|r| r.state == RoomState::Waiting)
     });
     assert!(back, "the room is waiting again");
     sim.ticks(10);
@@ -174,7 +201,10 @@ fn browse_create_join_ready_start_go_and_back_to_the_room() {
         let c = client(&mut sim, i);
         let r = c.0.room.as_ref().unwrap();
         assert_eq!(r.id, room, "the same room");
-        assert!(r.seats.iter().all(|s| s.state == PlayerState::Waiting), "ready states are lost");
+        assert!(
+            r.seats.iter().all(|s| s.state == PlayerState::Waiting),
+            "ready states are lost"
+        );
     }
     let [c0, c1] = characters(&mut sim);
     let w = sim.server.app.world();
@@ -194,9 +224,18 @@ fn the_room_arms_option_filters_the_kit_the_player_carries() {
     for c in [c0, c1] {
         let w = sim.server.app.world();
         let inv = w.get::<Inventory>(c).expect("their inventory was given");
-        let mut ids: Vec<String> = inv.weapons.iter().filter_map(|e| w.get::<Weapon>(*e)).map(|wp| wp.id.to_string()).collect();
+        let mut ids: Vec<String> = inv
+            .weapons
+            .iter()
+            .filter_map(|e| w.get::<Weapon>(*e))
+            .map(|wp| wp.id.to_string())
+            .collect();
         ids.sort();
-        assert_eq!(ids, ["combat_arms:beretta_m92fs", "combat_arms:m9_knife"], "the pistol and the knife only");
+        assert_eq!(
+            ids,
+            ["combat_arms:beretta_m92fs", "combat_arms:m9_knife"],
+            "the pistol and the knife only"
+        );
     }
 }
 
@@ -244,12 +283,24 @@ fn a_second_room_waits_while_one_match_runs() {
         )
         .unwrap();
     let r2 = host.lobby.room_of(900).unwrap();
-    host.lobby.request(901, Request::Enter { room: r2, password: String::new() }).unwrap();
+    host.lobby
+        .request(
+            901,
+            Request::Enter {
+                room: r2,
+                password: String::new(),
+            },
+        )
+        .unwrap();
     host.lobby.request(901, Request::Ready(true)).unwrap();
     host.lobby.request(900, Request::Start).unwrap();
     drop(host);
     sim.ticks(40);
-    assert_eq!(server_host(&mut sim).lobby.room(r2).unwrap().state, RoomState::Starting, "still waiting for a game server");
+    assert_eq!(
+        server_host(&mut sim).lobby.room(r2).unwrap().state,
+        RoomState::Starting,
+        "still waiting for a game server"
+    );
     assert_eq!(server_host(&mut sim).active.as_ref().unwrap().room != r2, true);
 }
 
@@ -267,9 +318,15 @@ fn a_game_of_one_serves_its_own_player_as_player_zero() {
     let me = sim.spawn_character(chimera_world::greybox::SPAWNS[0], combat_arms::game::movement::ID);
     sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
     sim.seconds(0.5);
-    assert!(sim.app.world().resource::<CaLobbyClient>().0.active, "it heard its own lobby");
+    assert!(
+        sim.app.world().resource::<CaLobbyClient>().0.active,
+        "it heard its own lobby"
+    );
     assert_eq!(sim.app.world().resource::<CaLobbyClient>().0.me, 0);
-    assert!(sim.app.world().get::<Connecting>(me).is_some(), "held out until its room starts");
+    assert!(
+        sim.app.world().get::<Connecting>(me).is_some(),
+        "held out until its room starts"
+    );
     // Another player (no character) is in the lobby.
     {
         let mut host = sim.app.world_mut().resource_mut::<CaLobbyHost>();
@@ -284,7 +341,15 @@ fn a_game_of_one_serves_its_own_player_as_player_zero() {
     let room = sim.app.world().resource::<CaLobbyClient>().0.room.as_ref().unwrap().id;
     {
         let mut host = sim.app.world_mut().resource_mut::<CaLobbyHost>();
-        host.lobby.request(7, Request::Enter { room, password: String::new() }).unwrap();
+        host.lobby
+            .request(
+                7,
+                Request::Enter {
+                    room,
+                    password: String::new(),
+                },
+            )
+            .unwrap();
         host.lobby.request(7, Request::Ready(true)).unwrap();
     }
     sim.seconds(0.3);

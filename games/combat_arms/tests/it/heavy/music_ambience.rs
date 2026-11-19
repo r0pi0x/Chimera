@@ -75,7 +75,12 @@ fn loose() -> Option<Vec<(String, Loose)>> {
         let mut out: Vec<(String, Loose)> = mount
             .entries()
             .into_iter()
-            .filter_map(|(e, _)| Some((format!("bgm/{}", e.path.strip_prefix(&prefix)?), Loose::Mounted(e.path.clone()))))
+            .filter_map(|(e, _)| {
+                Some((
+                    format!("bgm/{}", e.path.strip_prefix(&prefix)?),
+                    Loose::Mounted(e.path.clone()),
+                ))
+            })
             .collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         return Some(out);
@@ -350,7 +355,13 @@ fn t29_the_partys_interface_sounds_are_in_the_install() {
     let pack = chimera_core::cues::CuePack::parse(parts.cues.unwrap()).unwrap();
     assert_eq!(pack.game, GAME);
     let mut files: Vec<String> = pack.sounds.values().cloned().collect();
-    files.extend(parts.match_won_sound.into_iter().chain(parts.match_lost_sound).map(str::to_string));
+    files.extend(
+        parts
+            .match_won_sound
+            .into_iter()
+            .chain(parts.match_lost_sound)
+            .map(str::to_string),
+    );
     files.extend(MusicData::built_in().party.interface.values().cloned());
     for f in &files {
         let bytes = mount.read(&f.to_lowercase()).unwrap_or_else(|e| panic!("{f}: {e}"));

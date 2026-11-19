@@ -20,11 +20,21 @@ use chimera_world::{harness::Sim, map::loose::ShownItem};
 use combat_arms::{
     game::{
         TICK_INTERVAL,
-        data::{CaData, read_attributes, attributes::{FX_FILE, WEAPONS_FILE}},
-        effects::{self, CaFxRequest, data::{CaWeaponFx, EFFECTS}, sounds::CaSound},
-        grenades::OverTimeKind,
+        data::{
+            CaData,
+            attributes::{FX_FILE, WEAPONS_FILE},
+            read_attributes,
+        },
         effects::FxKind,
-        special::{BOLT, BoltParams, CaObject, FlareLook, PROJECTILE, PROJECTILE_KEY, ProjectileLook, ProjectileParams},
+        effects::{
+            self, CaFxRequest,
+            data::{CaWeaponFx, EFFECTS},
+            sounds::CaSound,
+        },
+        grenades::OverTimeKind,
+        special::{
+            BOLT, BoltParams, CaObject, FlareLook, PROJECTILE, PROJECTILE_KEY, ProjectileLook, ProjectileParams,
+        },
     },
     harness::CaSimWith,
 };
@@ -126,7 +136,12 @@ fn sim() -> Sim {
             );
     });
     sim.set_tick_interval(TICK_INTERVAL);
-    solid(&mut sim, Vec3::new(-200.0, -1.0, -200.0), Vec3::new(200.0, 0.0, 200.0), None);
+    solid(
+        &mut sim,
+        Vec3::new(-200.0, -1.0, -200.0),
+        Vec3::new(200.0, 0.0, 200.0),
+        None,
+    );
     sim.ticks(1);
     sim
 }
@@ -135,7 +150,11 @@ fn sim() -> Sim {
 fn armed(sim: &mut Sim, p: Entity, id: &str) -> Entity {
     let w = weapon::give(sim.app.world_mut(), p, id).expect("unknown weapon");
     sim.seconds(3.0);
-    assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(w), "{id} drawn");
+    assert_eq!(
+        sim.app.world().get::<Inventory>(p).unwrap().active,
+        Some(w),
+        "{id} drawn"
+    );
     w
 }
 
@@ -161,9 +180,15 @@ fn install_launchers_copy_the_weapon_of_their_projectile() {
     let p: ProjectileParams = boss.hook(PROJECTILE).unwrap();
     assert_eq!((p.speed, p.lifetime, p.gravity), (500.0, 1.0, false), "{p:?}");
     let ot = p.over_time.expect("a lasting sphere");
-    assert_eq!((ot.kind, ot.rate, ot.duration, ot.radius, ot.lifetime), (OverTimeKind::Burn, 10.0, 1.0, 75.0, 2.0));
+    assert_eq!(
+        (ot.kind, ot.rate, ot.duration, ot.radius, ot.lifetime),
+        (OverTimeKind::Burn, 10.0, 1.0, 75.0, 2.0)
+    );
     assert!(p.shooter_exempt && p.area_damage == 0.0 && p.model.is_none(), "{p:?}");
-    assert!(boss.hooks.contains_key(combat_arms::game::special::FLAME), "the flamethrower's fire keys");
+    assert!(
+        boss.hooks.contains_key(combat_arms::game::special::FLAME),
+        "the flamethrower's fire keys"
+    );
     assert_eq!(boss.magazine.as_ref().map(|m| m.clip), Some(999));
     let fx: CaWeaponFx = boss.hook(EFFECTS).unwrap();
     // `Surface` for burn ammo: no sound (effects_sounds.md 11).
@@ -172,19 +197,34 @@ fn install_launchers_copy_the_weapon_of_their_projectile() {
 
     let npc = set.get(NPC_LAW).expect("the NPC LAW is merged");
     let p: ProjectileParams = npc.hook(PROJECTILE).unwrap();
-    assert_eq!((p.speed, p.lifetime, p.area_damage, p.area_radius, p.area_type), (1300.0, 10.0, 40.0, 550.0, 7));
+    assert_eq!(
+        (p.speed, p.lifetime, p.area_damage, p.area_radius, p.area_type),
+        (1300.0, 10.0, 40.0, 550.0, 7)
+    );
     assert!(p.over_time.is_none() && !npc.hooks.contains_key(combat_arms::game::special::FLAME));
     assert_eq!(p.model.as_deref(), Some("test_pt/models/rocket.ltb"));
-    assert_eq!((p.model_scale, p.skins.clone()), ([0.35; 3], vec!["test_pt/skins/rocket.dtx".to_string()]));
+    assert_eq!(
+        (p.model_scale, p.skins.clone()),
+        ([0.35; 3], vec!["test_pt/skins/rocket.dtx".to_string()])
+    );
     let fx: CaWeaponFx = npc.hook(EFFECTS).unwrap();
-    assert_eq!((fx.fire_sound.as_str(), fx.fire_radius), ("test_snd/law/fire.wav", 2000.0));
+    assert_eq!(
+        (fx.fire_sound.as_str(), fx.fire_radius),
+        ("test_snd/law/fire.wav", 2000.0)
+    );
     let r = fx.impact_record.expect("the Rocket record");
-    assert_eq!((r.sound.as_str(), r.sound_radius, r.fx.as_str(), r.area), ("test_snd/explosions/boom.wav", 1500.0, "Test_Boom", true));
+    assert_eq!(
+        (r.sound.as_str(), r.sound_radius, r.fx.as_str(), r.area),
+        ("test_snd/explosions/boom.wav", 1500.0, "Test_Boom", true)
+    );
     // Ours takes the same from the install; both are drawn as one model.
     let law: ProjectileParams = set.get(LAW).unwrap().hook(PROJECTILE).unwrap();
     assert_eq!(law.shown_key(), p.shown_key());
     // The frame's own trace stays a unit's: the round is the projectile.
-    assert_eq!(npc.hitscan.as_ref().map(|h| h.range), set.get(LAW).unwrap().hitscan.as_ref().map(|h| h.range));
+    assert_eq!(
+        npc.hitscan.as_ref().map(|h| h.range),
+        set.get(LAW).unwrap().hitscan.as_ref().map(|h| h.range)
+    );
 }
 
 /// The boss flamer's stream burns an enemy in front to death: its puffs
@@ -197,7 +237,11 @@ fn install_flame_launcher_burns_and_kills() {
     let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
     let victim = player(&mut sim, 0.0, 200.0, 0.0, 2);
     let w = armed(&mut sim, shooter, BOSS);
-    assert_eq!(sim.app.world().get::<Magazine>(w).unwrap().clip, 999, "999 rounds, as the data says");
+    assert_eq!(
+        sim.app.world().get::<Magazine>(w).unwrap().clip,
+        999,
+        "999 rounds, as the data says"
+    );
     aim_at_chest(&mut sim, shooter, victim);
     sim.intent(shooter).fire = true;
     sim.seconds(1.5);
@@ -208,7 +252,10 @@ fn install_flame_launcher_burns_and_kills() {
     assert_eq!(health(&sim, victim), 0.0, "burnt to death");
     let hurt = &sim.app.world().resource::<Hurt>().0;
     assert!(
-        hurt.iter().any(|d| d.target == victim && d.kind == DamageKind::Burn && d.attacker == Some(shooter) && d.weapon == Some(BOSS)),
+        hurt.iter().any(|d| d.target == victim
+            && d.kind == DamageKind::Burn
+            && d.attacker == Some(shooter)
+            && d.weapon == Some(BOSS)),
         "burn damage from the shooter's weapon"
     );
     assert_eq!(health(&sim, shooter), 100.0, "his own flames never burn him");
@@ -225,7 +272,10 @@ fn install_rocket_launcher_shows_hurts_and_sounds() {
     let victim = player(&mut sim, 0.0, 400.0, 0.0, 2);
     // The shooter's own client plays the fire sound (the event carries none
     // for the others: case 59).
-    sim.app.world_mut().entity_mut(shooter).insert(chimera_core::core::LocalPlayer);
+    sim.app
+        .world_mut()
+        .entity_mut(shooter)
+        .insert(chimera_core::core::LocalPlayer);
     set_health(&mut sim, victim, 70.0);
     let (c, _) = body(&mut sim, victim);
     let w = armed(&mut sim, shooter, NPC_LAW);
@@ -247,20 +297,38 @@ fn install_rocket_launcher_shows_hurts_and_sounds() {
     assert_eq!(key, law.shown_key(), "drawn as the missile record's model");
     sim.seconds(1.0);
     assert!(
-        sim.app.world().resource::<Booms>().0.iter().any(|b| b.weapon == NPC_LAW && b.kind == GrenadeKind::Blast),
+        sim.app
+            .world()
+            .resource::<Booms>()
+            .0
+            .iter()
+            .any(|b| b.weapon == NPC_LAW && b.kind == GrenadeKind::Blast),
         "the rocket went off"
     );
-    assert_eq!(sim.app.world().get::<Health>(victim).unwrap().current, 0.0, "80 kills him at 70");
+    assert_eq!(
+        sim.app.world().get::<Health>(victim).unwrap().current,
+        0.0,
+        "80 kills him at 70"
+    );
     let hurt = &sim.app.world().resource::<Hurt>().0;
     let total: f32 = hurt.iter().filter(|d| d.target == victim).map(|d| d.amount / HP).sum();
     assert!((total - 80.0).abs() < 0.5 || total >= 70.0, "the blast's 80: {total}");
     let heard = &sim.app.world().resource::<Heard>().0;
-    assert!(heard.iter().any(|s| s.file == "test_snd/law/fire.wav"), "the fire sound: {heard:?}");
-    let boom = heard.iter().find(|s| s.file == "test_snd/explosions/boom.wav").expect("the explosion sound");
+    assert!(
+        heard.iter().any(|s| s.file == "test_snd/law/fire.wav"),
+        "the fire sound: {heard:?}"
+    );
+    let boom = heard
+        .iter()
+        .find(|s| s.file == "test_snd/explosions/boom.wav")
+        .expect("the explosion sound");
     assert_eq!(boom.radii.1, 1500.0);
     assert!(boom.at.is_some_and(|at| at.distance(c) < 1.0), "at the blast");
     let looks = &sim.app.world().resource::<Looks>().0;
-    assert!(looks.iter().any(|l| l.group == "Test_Boom"), "the explosion's group: {looks:?}");
+    assert!(
+        looks.iter().any(|l| l.group == "Test_Boom"),
+        "the explosion's group: {looks:?}"
+    );
     let _ = (w, U);
 }
 
@@ -292,7 +360,11 @@ fn t48_t50_projectile_looks_from_the_records() {
         ..default()
     };
     assert_eq!(law.look, want);
-    assert_eq!(ProjectileLook::parse(&law.shown_key()), want, "the drawn key carries it");
+    assert_eq!(
+        ProjectileLook::parse(&law.shown_key()),
+        want,
+        "the drawn key carries it"
+    );
     let flame: ProjectileParams = set.get(BOSS).unwrap().hook(PROJECTILE).unwrap();
     assert_eq!((flame.look.fx.as_str(), flame.look.fx_smooth), ("Test_Flame", true));
     assert!(flame.look.fly_sound.is_empty(), "FlySound 0: no sound");
@@ -300,12 +372,27 @@ fn t48_t50_projectile_looks_from_the_records() {
     assert_eq!(flame.drawn_model(), None, "ModelScale 0: nothing drawn");
     // Case 57: an empty `Model` at a scale (`Scorpion_Venom`'s 0.35) draws
     // the engine's placeholder at that scale, under its own key.
-    let venom = ProjectileParams { model_scale: [0.35; 3], ..flame.clone() };
-    assert_eq!(venom.drawn_model(), Some(combat_arms::game::special::data::DEFAULT_PROJECTILE));
+    let venom = ProjectileParams {
+        model_scale: [0.35; 3],
+        ..flame.clone()
+    };
+    assert_eq!(
+        venom.drawn_model(),
+        Some(combat_arms::game::special::data::DEFAULT_PROJECTILE)
+    );
     assert!(!ProjectileParams::is_modelless(&venom.shown_key()));
-    assert!(venom.shown_key().starts_with(&format!("{}models/default_projectile.ltb|[0.35, 0.35, 0.35]|", combat_arms::game::special::data::PROJECTILE_KEY)));
+    assert!(venom.shown_key().starts_with(&format!(
+        "{}models/default_projectile.ltb|[0.35, 0.35, 0.35]|",
+        combat_arms::game::special::data::PROJECTILE_KEY
+    )));
     // A look without a fly sound carries no radius.
-    assert_eq!(ProjectileLook::parse(&flame.shown_key()), ProjectileLook { sound_radius: 0.0, ..flame.look.clone() });
+    assert_eq!(
+        ProjectileLook::parse(&flame.shown_key()),
+        ProjectileLook {
+            sound_radius: 0.0,
+            ..flame.look.clone()
+        }
+    );
     // Follow-up 7, 8: the launcher's FireFX record; its round is launched
     // ammo (Type 1), not a grenade's.
     let fx: CaWeaponFx = set.get(NPC_LAW).unwrap().hook(EFFECTS).unwrap();
@@ -366,7 +453,11 @@ fn t58_own_launcher_fire_fx_by_the_cone_rule() {
     };
     let e = eye(&sim);
     let f = forward(&mut sim);
-    let own = |sim: &mut Sim| looks(sim).into_iter().any(|l| l.group == "Test_Rocket_Fire" && l.kind == FxKind::OwnParented(shooter));
+    let own = |sim: &mut Sim| {
+        looks(sim)
+            .into_iter()
+            .any(|l| l.group == "Test_Rocket_Fire" && l.kind == FxKind::OwnParented(shooter))
+    };
     looks(&mut sim);
     // Standing still, the point a hair ahead: seen.
     launch(&mut sim, shooter, w, e + f * 0.012 * U);
@@ -396,7 +487,14 @@ fn t58_own_launcher_fire_fx_by_the_cone_rule() {
     launch(&mut sim, shooter, w, e);
     assert!(own(&mut sim), "40 degrees up: seen");
     let world = sim.app.world_mut();
-    assert_eq!(world.query::<&combat_arms::game::effects::CaShell>().iter(world).count(), 0, "no casing");
+    assert_eq!(
+        world
+            .query::<&combat_arms::game::effects::CaShell>()
+            .iter(world)
+            .count(),
+        0,
+        "no casing"
+    );
 }
 
 /// Case 59: another player's launcher shot makes the third-person muzzle
@@ -408,20 +506,41 @@ fn t59_others_launcher_muzzle() {
     use combat_arms::game::{characters::CaPose, effects::FxKind};
     let mut sim = sim();
     let me = player(&mut sim, 0.0, 0.0, 0.0, 1);
-    sim.app.world_mut().entity_mut(me).insert(chimera_core::core::LocalPlayer);
+    sim.app
+        .world_mut()
+        .entity_mut(me)
+        .insert(chimera_core::core::LocalPlayer);
     let other = player(&mut sim, 0.0, -500.0, std::f32::consts::PI, 2);
     let w = armed(&mut sim, other, NPC_LAW);
     // His launcher's flash socket, a little in front of his hand, in the
     // view (he is 500 u ahead, facing me).
     // ... which his launcher's model has 0.5 m ahead of the hand's node.
-    let hand_node = combat_arms::game::data::CaData::builtin().characters().skeleton(0).socket("RightHand").unwrap().parent.clone();
-    combat_arms::game::characters::models::late_in(sim.app.world_mut()).0.register_held_socket(NPC_LAW, "Flash", &hand_node, Vec3::new(0.0, 0.0, 0.5));
+    let hand_node = combat_arms::game::data::CaData::builtin()
+        .characters()
+        .skeleton(0)
+        .socket("RightHand")
+        .unwrap()
+        .parent
+        .clone();
+    combat_arms::game::characters::models::late_in(sim.app.world_mut())
+        .0
+        .register_held_socket(NPC_LAW, "Flash", &hand_node, Vec3::new(0.0, 0.0, 0.5));
     sim.ticks(1);
     let flash = {
         let world = sim.app.world();
-        let (p, t, s) = (world.get::<CaPose>(other).unwrap(), world.get::<Transform>(other).unwrap(), world.get::<chimera_core::core::MovementState>(other).unwrap());
-        let (hand, socket) = (p.right_hand.expect("the pose has his hand"), p.flash[0].expect("the pose has his launcher's socket"));
-        assert!(p.world(t, s, U, hand).distance(p.world(t, s, U, socket)) > 0.1, "the socket is not the hand");
+        let (p, t, s) = (
+            world.get::<CaPose>(other).unwrap(),
+            world.get::<Transform>(other).unwrap(),
+            world.get::<chimera_core::core::MovementState>(other).unwrap(),
+        );
+        let (hand, socket) = (
+            p.right_hand.expect("the pose has his hand"),
+            p.flash[0].expect("the pose has his launcher's socket"),
+        );
+        assert!(
+            p.world(t, s, U, hand).distance(p.world(t, s, U, socket)) > 0.1,
+            "the socket is not the hand"
+        );
         p.world(t, s, U, socket)
     };
     looks(&mut sim);
@@ -433,12 +552,29 @@ fn t59_others_launcher_muzzle() {
     assert_eq!(hh[0].group, "WEAPON_HH");
     assert!(hh[0].at.distance(flash) < 1e-4, "at the socket {flash}: {}", hh[0].at);
     let toward = (Vec3::ZERO - flash).normalize();
-    assert!(hh[0].normal.distance(toward) < 1e-4, "+Z toward the world origin: {}", hh[0].normal);
-    assert!(!l.iter().any(|l| l.group == "Test_Rocket_Fire"), "never the ammo's group: {l:?}");
+    assert!(
+        hh[0].normal.distance(toward) < 1e-4,
+        "+Z toward the world origin: {}",
+        hh[0].normal
+    );
+    assert!(
+        !l.iter().any(|l| l.group == "Test_Rocket_Fire"),
+        "never the ammo's group: {l:?}"
+    );
     let heard = &sim.app.world().resource::<Heard>().0;
-    assert!(heard.iter().all(|s| s.file != "test_snd/law/fire.wav"), "no fire sound from the event: {heard:?}");
+    assert!(
+        heard.iter().all(|s| s.file != "test_snd/law/fire.wav"),
+        "no fire sound from the event: {heard:?}"
+    );
     let world = sim.app.world_mut();
-    assert_eq!(world.query::<&combat_arms::game::effects::CaShell>().iter(world).count(), 0, "no casing");
+    assert_eq!(
+        world
+            .query::<&combat_arms::game::effects::CaShell>()
+            .iter(world)
+            .count(),
+        0,
+        "no casing"
+    );
 }
 
 /// Case 60: a received fire point is within half a cell of the sent one
@@ -467,7 +603,10 @@ fn t60_compressed_fire_point() {
     // into the box.
     use combat_arms::game::effects::rules::unset_impact;
     assert_eq!(unset_impact(Some(world)), Vec3::ZERO);
-    assert_eq!(unset_impact(Some((Vec3::new(10.0, 1.0, -5.0), Vec3::new(20.0, 3.0, 5.0)))), Vec3::new(10.0, 1.0, 0.0));
+    assert_eq!(
+        unset_impact(Some((Vec3::new(10.0, 1.0, -5.0), Vec3::new(20.0, 3.0, 5.0)))),
+        Vec3::new(10.0, 1.0, 0.0)
+    );
 }
 
 /// Case 49 in play: the missile's group (`Test_Tail`, a follow-mode
@@ -475,11 +614,13 @@ fn t60_compressed_fire_point() {
 /// flight, not at the launcher.
 #[test]
 fn t49_the_rockets_group_rides_it() {
-    use chimera_world::map::particles::{ParticleSet, Particles, step_particles};
     use super::attached_effects::{TAIL_TEX, material, materials, particles, test_library};
+    use chimera_world::map::particles::{ParticleSet, Particles, step_particles};
     let mut sim = sim();
     combat_arms::game::effects::library::set_library_in(sim.app.world_mut(), Some(test_library()));
-    sim.app.init_resource::<Particles>().add_systems(Update, step_particles.in_set(ParticleSet::Step));
+    sim.app
+        .init_resource::<Particles>()
+        .add_systems(Update, step_particles.in_set(ParticleSet::Step));
     materials(&mut sim);
     let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
     armed(&mut sim, shooter, NPC_LAW);
@@ -488,7 +629,11 @@ fn t49_the_rockets_group_rides_it() {
     sim.seconds(0.25);
     sim.intent(shooter).fire = false;
     let tex = material(&sim, TAIL_TEX, false);
-    let d: Vec<f32> = particles(&sim).iter().filter(|(_, p)| p.material == tex).map(|(_, p)| p.position.distance(eye) / U).collect();
+    let d: Vec<f32> = particles(&sim)
+        .iter()
+        .filter(|(_, p)| p.material == tex)
+        .map(|(_, p)| p.position.distance(eye) / U)
+        .collect();
     assert!(!d.is_empty(), "the group emits");
     let far = d.iter().cloned().fold(0.0, f32::max);
     assert!(far > 100.0, "puffs along the flight, up to {far} u from the launcher");
@@ -507,7 +652,10 @@ fn install_crossbow_bolt_is_drawn_as_its_record() {
     assert_eq!(bolt.model.as_deref(), Some("test_pt/models/bolt.ltb"), "{bolt:?}");
     assert_eq!(bolt.skins, vec!["test_pt/skins/bolt.dtx".to_string()]);
     let key = bolt.shown_model().shown_key();
-    assert!(key.starts_with(&format!("{PROJECTILE_KEY}test_pt/models/bolt.ltb|")), "{key}");
+    assert!(
+        key.starts_with(&format!("{PROJECTILE_KEY}test_pt/models/bolt.ltb|")),
+        "{key}"
+    );
 
     let mut sim = sim();
     let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);

@@ -56,7 +56,11 @@ fn m92fs() -> Arc<Vec<AnimInfo>> {
         a("fire_0", 180, &[(0, "FIRE_KEY")]),
         a("postfire", 150, &[]),
         a("dryFire", 300, &[(0, "dryfire_key")]),
-        a("reload", 1500, &[(226, "sound_key 2"), (453, "sound_key 1"), (962, "sound_key 3")]),
+        a(
+            "reload",
+            1500,
+            &[(226, "sound_key 2"), (453, "sound_key 1"), (962, "sound_key 3")],
+        ),
         a("PreRush", 250, &[]),
         a("rush", 1500, &[]),
         a("PostRush", 400, &[]),
@@ -72,7 +76,11 @@ fn m4a1() -> Arc<Vec<AnimInfo>> {
         a("prefire", 0, &[]),
         a("fire_0", 105, &[(0, "FIRE_KEY")]),
         a("postfire", 0, &[]),
-        a("reload", 2300, &[(403, "sound_key 1"), (834, "sound_key 2"), (1725, "sound_key 3")]),
+        a(
+            "reload",
+            2300,
+            &[(403, "sound_key 1"), (834, "sound_key 2"), (1725, "sound_key 3")],
+        ),
         a("PreRush", 233, &[]),
         a("rush", 620, &[]),
         a("PostRush", 367, &[]),
@@ -238,19 +246,13 @@ const FIRE: Inputs = Inputs {
     sprinting: false,
     moving: false,
 };
-const NONE: Inputs = Inputs {
-    fire: false,
-    ..FIRE
-};
+const NONE: Inputs = Inputs { fire: false, ..FIRE };
 const SPRINT: Inputs = Inputs {
     sprinting: true,
     moving: true,
     ..NONE
 };
-const RELOAD: Inputs = Inputs {
-    reload: true,
-    ..NONE
-};
+const RELOAD: Inputs = Inputs { reload: true, ..NONE };
 
 fn pistol() -> Setup {
     setup(Class::Secondary, 1, 15)
@@ -289,7 +291,11 @@ fn t23_pistol_postfire_cancel() {
     r.frame(FIRE);
     r.frames(20, NONE);
     assert_eq!(r.started("fire_0"), vec![1, 15], "{:?}", r.starts);
-    assert_eq!(r.started("postfire"), vec![12, 26], "the rest of the first post-fire skipped");
+    assert_eq!(
+        r.started("postfire"),
+        vec![12, 26],
+        "the rest of the first post-fire skipped"
+    );
     assert_eq!(r.shots.len(), 2);
 }
 
@@ -308,10 +314,7 @@ fn t24_knife_without_prefire() {
     let mut r = Run::draw(m9(), setup(Class::Melee, 0, 0), 1, 1);
     r.infinite = true;
     r.settle();
-    r.frame(Inputs {
-        alt_fire: true,
-        ..NONE
-    });
+    r.frame(Inputs { alt_fire: true, ..NONE });
     r.frames(40, NONE);
     assert_eq!(r.started("alt_fire_0"), vec![1]);
     assert_eq!(r.shots, vec![(24, FireType::Alternate)]);
@@ -354,7 +357,11 @@ fn t26_grenade_held() {
     assert_eq!(r.started("postfire"), vec![124]);
     assert_eq!(r.shots.first().map(|s| s.0), Some(132));
     assert!((132.0 * F * 1000.0 - 2200.0).abs() < 1e-6);
-    assert_eq!(r.keys.iter().filter(|k| k.1 == ViewKey::Throw).count(), 16, "a notice per loop");
+    assert_eq!(
+        r.keys.iter().filter(|k| k.1 == ViewKey::Throw).count(),
+        16,
+        "a notice per loop"
+    );
 }
 
 #[test]
@@ -429,10 +436,7 @@ fn t32_one_frame_pop() {
     assert_eq!(r.m.playing(), Some("reload"));
     assert_eq!(r.m.shown(), Some((idle, 500.0)));
     r.m.advance(F);
-    r.m.update(&Inputs {
-        reload: false,
-        ..i
-    });
+    r.m.update(&Inputs { reload: false, ..i });
     let reload = r.m.find("reload").unwrap();
     let (s, t) = r.m.shown().unwrap();
     assert_eq!(s, reload);
@@ -451,10 +455,7 @@ fn full_idle_after_a_still_wait() {
     // Moving: no full idle.
     let mut r = Run::draw(m92fs(), pistol(), 15, 45);
     r.settle();
-    r.frames(60 * 30, Inputs {
-        moving: true,
-        ..NONE
-    });
+    r.frames(60 * 30, Inputs { moving: true, ..NONE });
     assert!(r.started("idle_1").is_empty());
 }
 
@@ -508,7 +509,11 @@ fn shell_reload_and_fire_stopping_it() {
     r.frame(RELOAD);
     r.frames(400, NONE);
     let order: Vec<&str> = r.starts.iter().map(|(_, n)| n.as_str()).collect();
-    assert_eq!(order[..6], ["PreReload", "reload", "reload", "reload", "PostReload", "idle_0"], "{order:?}");
+    assert_eq!(
+        order[..6],
+        ["PreReload", "reload", "reload", "reload", "PostReload", "idle_0"],
+        "{order:?}"
+    );
     assert_eq!(r.clip, 8);
     // Fire mid-reload stops it at once (no pre-fire for a shotgun).
     let mut r = Run::draw(r870(), shotgun, 5, 20);
@@ -544,10 +549,7 @@ fn automatic_waits_for_postfire_and_reload_after_postfire() {
     r.settle();
     r.frame(FIRE);
     r.frame(FIRE);
-    r.frame(Inputs {
-        reload: true,
-        ..FIRE
-    });
+    r.frame(Inputs { reload: true, ..FIRE });
     r.frames(40, FIRE);
     let order: Vec<&str> = r.starts.iter().map(|(_, n)| n.as_str()).collect();
     assert_eq!(order[..4], ["prefire", "fire_0", "postfire", "reload"], "{order:?}");
@@ -560,10 +562,13 @@ fn grenade_and_sprint() {
     let mut r = Run::draw(m67(), grenade(), 1, 2);
     r.settle();
     r.frames(10, FIRE);
-    r.frames(80, Inputs {
-        sprinting: true,
-        ..FIRE
-    });
+    r.frames(
+        80,
+        Inputs {
+            sprinting: true,
+            ..FIRE
+        },
+    );
     assert_eq!(r.m.playing(), Some("prefire"));
     assert!(r.started("PreRush").is_empty() && r.started("fire_0").is_empty());
     r.frames(3, FIRE);
@@ -612,7 +617,10 @@ fn t13_sway_ramp() {
     ];
     for (f, amp, phase, w, h) in want {
         let x = s[f - 1];
-        assert!((x.amp - amp).abs() < 1e-5 && (x.phase - phase).abs() < 1e-6, "frame {f}: {x:?}");
+        assert!(
+            (x.amp - amp).abs() < 1e-5 && (x.phase - phase).abs() < 1e-6,
+            "frame {f}: {x:?}"
+        );
         assert!((x.w - w).abs() < 1e-6 && (x.h - h).abs() < 1e-6, "frame {f}: {x:?}");
     }
     // The M4A1's origin on frame 7.
@@ -624,8 +632,14 @@ fn t13_sway_ramp() {
 fn t14_sway_steady_state() {
     let s = running(200, F, |_| true);
     let (a, b) = (s[29], s[59]);
-    assert!(near(a.phase, 4.105014) && near(a.w, 0.0008368) && near(a.h, 0.0140592), "{a:?}");
-    assert!(near(b.phase, 2.220059) && near(b.w, 0.0092186) && near(b.h, -0.0144474), "{b:?}");
+    assert!(
+        near(a.phase, 4.105014) && near(a.w, 0.0008368) && near(a.h, 0.0140592),
+        "{a:?}"
+    );
+    assert!(
+        near(b.phase, 2.220059) && near(b.w, 0.0092186) && near(b.h, -0.0144474),
+        "{b:?}"
+    );
     assert!(s.iter().all(|x| x.w.abs() <= 0.010 + 1e-9 && x.h.abs() <= 0.015 + 1e-9));
 }
 
@@ -821,7 +835,11 @@ fn t09_world_flash_point() {
 fn t10_shell_start() {
     let pos = Vec3::new(0.3, -0.6, 1.15);
     let muzzle = Vec3::new(4.4, -3.55, 7.75);
-    let f = place::flash_point(Vec3::ZERO, &facing_z(), place::flash_offset(pos, muzzle, (0.0, 0.0), Vec3::ZERO));
+    let f = place::flash_point(
+        Vec3::ZERO,
+        &facing_z(),
+        place::flash_offset(pos, muzzle, (0.0, 0.0), Vec3::ZERO),
+    );
     let m16 = place::breach_point(f, &facing_z(), Vec3::ONE);
     let m4 = place::breach_point(f, &facing_z(), Vec3::ZERO);
     assert!((m16 - Vec3::new(5.7, -3.15, 9.9)).length() < 1e-4, "{m16}");
@@ -881,12 +899,15 @@ fn t31_muzzle_flash_visibility() {
 fn t03_sleeve_texture() {
     let table = hands::builtin();
     let pick = |face, uniform| {
-        hands::choose(&table, &HandProfile {
-            face,
-            uniform,
-            character: true,
-            ..default()
-        })
+        hands::choose(
+            &table,
+            &HandProfile {
+                face,
+                uniform,
+                character: true,
+                ..default()
+            },
+        )
         .unwrap()
     };
     let c = pick(0, 0);
@@ -914,7 +935,10 @@ fn t03_sleeve_texture() {
         ..table
     };
     let c = hands::choose(&tattoo, &HandProfile::default()).unwrap();
-    assert_eq!(c.skins[1..], [hands::NO_TATTOO.to_string(), hands::NO_TATTOO.to_string()]);
+    assert_eq!(
+        c.skins[1..],
+        [hands::NO_TATTOO.to_string(), hands::NO_TATTOO.to_string()]
+    );
 }
 
 fn bone(name: &str, parent: Option<usize>, position: Vec3) -> MapBone {
@@ -1012,7 +1036,11 @@ pub(super) fn view_model(key: &str, anims: &[AnimInfo]) -> MapViewModel {
                 .keys
                 .iter()
                 .map(|(t, s)| AnimEvent {
-                    cycle: if info.length > 0 { *t as f32 / info.length as f32 } else { 0.0 },
+                    cycle: if info.length > 0 {
+                        *t as f32 / info.length as f32
+                    } else {
+                        0.0
+                    },
                     name: s.clone(),
                     ..default()
                 })
@@ -1115,7 +1143,13 @@ fn a_view_model_loaded_later_plays_from_its_arrival() {
     sim.ticks(1);
     assert_eq!(shown(&sim, p).as_deref(), Some("select"));
     assert!(until(&mut sim, 100, |s| shown(s, p).as_deref() == Some("idle_0")));
-    assert!(sim.app.world().resource::<chimera_world::map::LateViewModelTextures>().0.contains_key(M92FS));
+    assert!(
+        sim.app
+            .world()
+            .resource::<chimera_world::map::LateViewModelTextures>()
+            .0
+            .contains_key(M92FS)
+    );
 }
 
 #[test]
@@ -1151,11 +1185,15 @@ fn key_events_and_flash_and_shells() {
     #[derive(Resource, Default)]
     struct Keys(Vec<ViewKey>);
     sim.app.init_resource::<Keys>();
-    sim.app.add_systems(Update, |mut r: MessageReader<CaViewKey>, mut k: ResMut<Keys>| {
-        k.0.extend(r.read().map(|e| e.key.clone()));
-    });
+    sim.app
+        .add_systems(Update, |mut r: MessageReader<CaViewKey>, mut k: ResMut<Keys>| {
+            k.0.extend(r.read().map(|e| e.key.clone()));
+        });
     drawn(&mut sim, p, M92FS);
-    assert!(sim.app.world().resource::<Keys>().0.contains(&ViewKey::Sound(3)), "the select's sound key");
+    assert!(
+        sim.app.world().resource::<Keys>().0.contains(&ViewKey::Sound(3)),
+        "the select's sound key"
+    );
     sim.intent(p).fire = true;
     sim.ticks(1);
     sim.intent(p).fire = false;
@@ -1177,7 +1215,11 @@ fn key_events_and_flash_and_shells() {
     assert!(shells[0].1.translation.distance(flash_point) < 1.0);
     assert!(sim.app.world().resource::<Keys>().0.contains(&ViewKey::Fire));
     sim.seconds(3.5);
-    assert_eq!(sim.app.world_mut().query::<&CaShell>().iter(sim.app.world()).count(), 0, "gone after 3 s");
+    assert_eq!(
+        sim.app.world_mut().query::<&CaShell>().iter(sim.app.world()).count(),
+        0,
+        "gone after 3 s"
+    );
 }
 
 #[test]
@@ -1284,7 +1326,10 @@ fn grenade_re_ready_after_a_throw() {
     sim.intent(p).fire = false;
     assert!(until(&mut sim, 100, |s| playing(s, p).as_deref() == Some("postfire")));
     assert!(until(&mut sim, 60, |s| vm(s, p).thrown), "the grenade left the hand");
-    assert!(until(&mut sim, 60, |s| playing(s, p).as_deref() == Some("reload")), "the re-ready");
+    assert!(
+        until(&mut sim, 60, |s| playing(s, p).as_deref() == Some("reload")),
+        "the re-ready"
+    );
     assert!(until(&mut sim, 60, |s| playing(s, p).is_some_and(|n| n.starts_with("idle_"))));
     assert!(!vm(&sim, p).thrown, "the clip filled");
     assert_eq!(sim.app.world().get::<Throwable>(w).unwrap().count, 1);
@@ -1305,7 +1350,10 @@ fn a_throw_plays_pin_pull_throw_and_release() {
         Update,
         |mut r: MessageReader<CaViewKey>, mut k: ResMut<Keys>, vms: Query<&CaViewModel>| {
             for m in r.read() {
-                let at = vms.get(m.owner).ok().and_then(|v| v.machine.as_ref()?.playing().map(str::to_string));
+                let at = vms
+                    .get(m.owner)
+                    .ok()
+                    .and_then(|v| v.machine.as_ref()?.playing().map(str::to_string));
                 k.0.push((at.unwrap_or_default(), m.key.clone()));
             }
         },
@@ -1328,11 +1376,32 @@ fn a_throw_plays_pin_pull_throw_and_release() {
         }
         sim.ticks(1);
     }
-    let at = |name: &str| seen.iter().position(|n| n == name).unwrap_or_else(|| panic!("{name} in {seen:?}"));
-    assert!(at("prefire") < at("fire_0") && at("fire_0") < at("postfire"), "{seen:?}");
-    let keys: Vec<ViewKey> = sim.app.world().resource::<Keys>().0.iter().map(|(_, k)| k.clone()).collect();
-    let pos = |k: ViewKey| keys.iter().position(|x| *x == k).unwrap_or_else(|| panic!("{k:?} in {keys:?}"));
-    assert!(pos(ViewKey::Sound(10)) < pos(ViewKey::Throw) && pos(ViewKey::Throw) < pos(ViewKey::Fire), "{keys:?}");
+    let at = |name: &str| {
+        seen.iter()
+            .position(|n| n == name)
+            .unwrap_or_else(|| panic!("{name} in {seen:?}"))
+    };
+    assert!(
+        at("prefire") < at("fire_0") && at("fire_0") < at("postfire"),
+        "{seen:?}"
+    );
+    let keys: Vec<ViewKey> = sim
+        .app
+        .world()
+        .resource::<Keys>()
+        .0
+        .iter()
+        .map(|(_, k)| k.clone())
+        .collect();
+    let pos = |k: ViewKey| {
+        keys.iter()
+            .position(|x| *x == k)
+            .unwrap_or_else(|| panic!("{k:?} in {keys:?}"))
+    };
+    assert!(
+        pos(ViewKey::Sound(10)) < pos(ViewKey::Throw) && pos(ViewKey::Throw) < pos(ViewKey::Fire),
+        "{keys:?}"
+    );
     for k in [ViewKey::Sound(10), ViewKey::Throw, ViewKey::Fire] {
         assert_eq!(keys.iter().filter(|x| **x == k).count(), 1, "{k:?} once: {keys:?}");
     }
@@ -1346,12 +1415,14 @@ fn no_muzzle_flash_under_water() {
     let p = player(&mut sim);
     sim.app.world_mut().entity_mut(p).insert(LocalPlayer);
     drawn(&mut sim, p, M92FS);
-    sim.app.world_mut().spawn(combat_arms::game::volumes::CaVolume::liquid_box(
-        Vec3::splat(-1000.0),
-        Vec3::splat(1000.0),
-        0.0,
-        Vec3::ZERO,
-    ));
+    sim.app
+        .world_mut()
+        .spawn(combat_arms::game::volumes::CaVolume::liquid_box(
+            Vec3::splat(-1000.0),
+            Vec3::splat(1000.0),
+            0.0,
+            Vec3::ZERO,
+        ));
     sim.intent(p).fire = true;
     sim.ticks(1);
     sim.intent(p).fire = false;
@@ -1381,7 +1452,11 @@ fn t33_full_automatic_cadence() {
     let (mut clip, mut total) = (30, 120);
     for n in 0..400u32 {
         let fire = n >= 150;
-        let out = m.update(&Inputs { clip, total, ..if fire { FIRE } else { NONE } });
+        let out = m.update(&Inputs {
+            clip,
+            total,
+            ..if fire { FIRE } else { NONE }
+        });
         if out.shot.is_some() {
             shots.push(n);
             clip -= 1;
@@ -1389,7 +1464,10 @@ fn t33_full_automatic_cadence() {
         }
         m.advance(0.01);
     }
-    assert!(shots.windows(2).all(|w| w[1] - w[0] == 11), "every 11 updates at 100 fps: {shots:?}");
+    assert!(
+        shots.windows(2).all(|w| w[1] - w[0] == 11),
+        "every 11 updates at 100 fps: {shots:?}"
+    );
 }
 
 /// 34. Dry fire is unreachable: clip 0 with rounds left reloads; with
@@ -1422,7 +1500,11 @@ fn t35_holster() {
     assert!(m.holster());
     let mut n = 0;
     while !m.holstered() {
-        m.update(&Inputs { clip: 30, total: 120, ..NONE });
+        m.update(&Inputs {
+            clip: 30,
+            total: 120,
+            ..NONE
+        });
         m.advance(F);
         n += 1;
         assert!(n < 100);
@@ -1447,11 +1529,20 @@ fn t36_reload_one() {
         double_barrel: true,
         ..setup(Class::Shotgun, 1, 2)
     };
-    for (s, clip, want) in [(db(), 1, "reload_1"), (db(), 0, "reload"), (setup(Class::Shotgun, 1, 2), 1, "reload")] {
+    for (s, clip, want) in [
+        (db(), 1, "reload_1"),
+        (db(), 0, "reload"),
+        (setup(Class::Shotgun, 1, 2), 1, "reload"),
+    ] {
         let mut r = Run::draw(anims(), s, clip, 10);
         r.frames(60, NONE);
         r.frames(3, RELOAD);
-        assert_eq!(r.started("reload_1").is_empty(), want != "reload_1", "clip {clip}: {:?}", r.starts);
+        assert_eq!(
+            r.started("reload_1").is_empty(),
+            want != "reload_1",
+            "clip {clip}: {:?}",
+            r.starts
+        );
         assert!(!r.started(want).is_empty(), "clip {clip}: {:?}", r.starts);
     }
 }
@@ -1499,14 +1590,23 @@ fn t38_hand_colour() {
     ghillie.colour_skins.insert(1, coloured);
     table.hands[0] = ghillie;
     let pick = |colour: u32| {
-        hands::choose(&table, &HandProfile {
-            colour: Some(colour),
-            ..HandProfile::default()
-        })
+        hands::choose(
+            &table,
+            &HandProfile {
+                colour: Some(colour),
+                ..HandProfile::default()
+            },
+        )
         .unwrap()
     };
-    assert_eq!(pick(1).skins.get(5).map(String::as_str), Some("CHARS_T_BODY\\CM_Fur_Ghillie_Suit_DE_SD.DTX"));
-    assert_ne!(pick(0).skins.get(5).map(String::as_str), Some("CHARS_T_BODY\\CM_Fur_Ghillie_Suit_DE_SD.DTX"));
+    assert_eq!(
+        pick(1).skins.get(5).map(String::as_str),
+        Some("CHARS_T_BODY\\CM_Fur_Ghillie_Suit_DE_SD.DTX")
+    );
+    assert_ne!(
+        pick(0).skins.get(5).map(String::as_str),
+        Some("CHARS_T_BODY\\CM_Fur_Ghillie_Suit_DE_SD.DTX")
+    );
 }
 
 /// 40. Projection: the world's horizontal FOV from 75° vertical at the
@@ -1624,7 +1724,10 @@ fn empty_then_reload_once(held: bool, lag: f32) {
         sim.ticks(1);
         // The reload stage entered (the animation `reload` can still be the
         // one playing on the update that asks for the second).
-        let now = vm(&sim, p).machine.as_ref().map(|m| matches!(m.stage, Stage::Reloading(_)));
+        let now = vm(&sim, p)
+            .machine
+            .as_ref()
+            .map(|m| matches!(m.stage, Stage::Reloading(_)));
         if now == Some(true) && last != Some(true) {
             plays += 1;
         }
@@ -1638,11 +1741,19 @@ fn empty_then_reload_once(held: bool, lag: f32) {
             sim.intent(p).fire = false;
         }
     }
-    assert_eq!((plays, starts), (1, 1), "held {held}: view reload plays, weapon reload starts");
+    assert_eq!(
+        (plays, starts),
+        (1, 1),
+        "held {held}: view reload plays, weapon reload starts"
+    );
     let m = sim.app.world().get::<Magazine>(w).unwrap();
     assert!(m.clip > 0, "refilled");
     let _ = full;
-    assert!(playing(&sim, p).is_some_and(|n| n.starts_with("idle_")), "back to idle: {:?}", playing(&sim, p));
+    assert!(
+        playing(&sim, p).is_some_and(|n| n.starts_with("idle_")),
+        "back to idle: {:?}",
+        playing(&sim, p)
+    );
 }
 
 #[test]
@@ -1712,10 +1823,18 @@ fn v01_press_during_postfire_refires_on_the_same_update() {
     let again = r.started("prefire");
     assert_eq!(again.len() >= 2, true, "{:?}", r.starts);
     assert_eq!(again[1], post + 10, "{:?}", r.starts);
-    assert!(r.started("idle_0").is_empty() || r.started("idle_0")[0] > post + 10, "{:?}", r.starts);
+    assert!(
+        r.started("idle_0").is_empty() || r.started("idle_0")[0] > post + 10,
+        "{:?}",
+        r.starts
+    );
     // The full-automatic gun still waits while `postfire` plays: no
     // restart before it is done.
-    assert!(!r.starts.iter().any(|(u, n)| n == "prefire" && *u > post && *u < post + 10));
+    assert!(
+        !r.starts
+            .iter()
+            .any(|(u, n)| n == "prefire" && *u > post && *u < post + 10)
+    );
 }
 
 /// 1 and 2. A semi-automatic pistol (no pre-fire) refires with `fire_0`
@@ -1775,7 +1894,10 @@ fn v03_sprint_cuts_a_knife_swing() {
 /// 3. A double barrel caught in `fire_0` is cut too.
 #[test]
 fn v03_sprint_cuts_a_double_barrel() {
-    let s = Setup { double_barrel: true, ..setup(Class::Shotgun, 1, 2) };
+    let s = Setup {
+        double_barrel: true,
+        ..setup(Class::Shotgun, 1, 2)
+    };
     let mut r = Run::draw(rifle_table(0), s, 2, 20);
     r.settle();
     r.frame(FIRE);
@@ -1845,7 +1967,10 @@ fn v06_fire_animation_rate_includes_the_weapons_own() {
     assert_eq!(fire_animation_rate(1.5, 0.75), 1.0, "above 2.0 plays at 1.0");
     let cadence = |rate: f32| {
         let s = Setup {
-            rates: Rates { fire: rate, ..Rates::default() },
+            rates: Rates {
+                fire: rate,
+                ..Rates::default()
+            },
             ..setup(Class::Primary, 0, 30)
         };
         let mut r = Run::draw(rifle_table(0), s, 30, 90);
@@ -1872,7 +1997,10 @@ fn one_reload_at_frame_rate(id: &str, anims: Arc<Vec<AnimInfo>>, frame: f64, hel
     let mut sim = sim();
     let pistol: Vec<AnimInfo> = m92fs().iter().cloned().collect();
     let rifle: Vec<AnimInfo> = anims.iter().cloned().collect();
-    sim.app.insert_resource(ViewModels::of(vec![view_model(M92FS, &pistol), view_model(M4A1, &rifle)]));
+    sim.app.insert_resource(ViewModels::of(vec![
+        view_model(M92FS, &pistol),
+        view_model(M4A1, &rifle),
+    ]));
     let p = player(&mut sim);
     let w = drawn(&mut sim, p, id);
     {
@@ -1880,8 +2008,9 @@ fn one_reload_at_frame_rate(id: &str, anims: Arc<Vec<AnimInfo>>, frame: f64, hel
         m.clip = 1;
         m.reserve = 60;
     }
-    sim.app
-        .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_secs_f64(frame)));
+    sim.app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+        std::time::Duration::from_secs_f64(frame),
+    ));
     sim.intent(p).fire = true;
     let (mut plays, mut starts) = (0, 0);
     let (mut last, mut last_end) = (false, false);
@@ -1894,7 +2023,10 @@ fn one_reload_at_frame_rate(id: &str, anims: Arc<Vec<AnimInfo>>, frame: f64, hel
         }
         sim.app.update();
         t += frame;
-        let now = vm(&sim, p).machine.as_ref().is_some_and(|m| matches!(m.stage, Stage::Reloading(_)));
+        let now = vm(&sim, p)
+            .machine
+            .as_ref()
+            .is_some_and(|m| matches!(m.stage, Stage::Reloading(_)));
         if now && !last {
             plays += 1;
         }
@@ -1921,7 +2053,14 @@ fn one_reload_at_frame_rate(id: &str, anims: Arc<Vec<AnimInfo>>, frame: f64, hel
 /// frames' phase against the ticks), fire held and released.
 #[test]
 fn an_emptied_magazine_reloads_once_at_any_frame_rate() {
-    for frame in [1.0 / 60.0, 1.0 / 75.0, 1.0 / 100.0, 1.0 / 144.0, 1.0 / 240.0, 1.0 / 37.0] {
+    for frame in [
+        1.0 / 60.0,
+        1.0 / 75.0,
+        1.0 / 100.0,
+        1.0 / 144.0,
+        1.0 / 240.0,
+        1.0 / 37.0,
+    ] {
         for held in [false, true] {
             one_reload_at_frame_rate(M4A1, m4a1(), frame, held);
             one_reload_at_frame_rate(M92FS, m92fs(), frame, held);
@@ -1944,10 +2083,20 @@ fn vm48_light_on_the_gun() {
     // dynamic 2 in `PropParams`) is the same function; Source's isn't.
     use chimera_world::map::LightFalloff;
     for d in [0.0, 20.0, 100.0, 199.0, 200.0, 210.0] {
-        assert_eq!(LightFalloff::LithTech.share(d, 200.0), place::model_light_share(d, 200.0), "{d}");
+        assert_eq!(
+            LightFalloff::LithTech.share(d, 200.0),
+            place::model_light_share(d, 200.0),
+            "{d}"
+        );
     }
     assert!((LightFalloff::Source.share(20.0, 200.0) - 0.99).abs() < 1e-6);
-    assert_eq!((LightFalloff::Source.shader_value(), LightFalloff::LithTech.shader_value()), (1.0, 2.0));
+    assert_eq!(
+        (
+            LightFalloff::Source.shader_value(),
+            LightFalloff::LithTech.shader_value()
+        ),
+        (1.0, 2.0)
+    );
 }
 
 /// 49. The camera turned 90° with the light fixed in the world: the light
@@ -1958,7 +2107,10 @@ fn vm49_light_follows_the_camera_frame() {
     let ahead = place::light_in_camera(light, Vec3::ZERO, Quat::IDENTITY);
     let turned = place::light_in_camera(light, Vec3::ZERO, Quat::from_rotation_y(std::f32::consts::FRAC_PI_2));
     assert!(ahead.abs_diff_eq(Vec3::new(0.0, 0.0, -10.0), 1e-4));
-    assert!(turned.abs_diff_eq(Vec3::new(10.0, 0.0, 0.0), 1e-4), "now to the right: {turned}");
+    assert!(
+        turned.abs_diff_eq(Vec3::new(10.0, 0.0, 0.0), 1e-4),
+        "now to the right: {turned}"
+    );
 }
 
 /// 50 and 51. In the muzzle flash group a player-view key (mode 2) sits at
@@ -1969,8 +2121,16 @@ fn vm49_light_follows_the_camera_frame() {
 fn vm50_vm51_player_view_keys_at_the_flash() {
     use combat_arms::game::view_model::attached::{FlashKeyPoint, PLAYER_VIEW, flash_key_point};
     let (o, f) = (Vec3::new(6.0, -5.0, 30.0), Vec3::new(2.74, -2.6, 9.259921));
-    assert_eq!(flash_key_point(Some(PLAYER_VIEW), false, o, f), Some(FlashKeyPoint::World(f)), "the light");
-    assert_eq!(flash_key_point(Some(PLAYER_VIEW), true, o, f), Some(FlashKeyPoint::Camera(o)), "the particle");
+    assert_eq!(
+        flash_key_point(Some(PLAYER_VIEW), false, o, f),
+        Some(FlashKeyPoint::World(f)),
+        "the light"
+    );
+    assert_eq!(
+        flash_key_point(Some(PLAYER_VIEW), true, o, f),
+        Some(FlashKeyPoint::Camera(o)),
+        "the particle"
+    );
     assert_eq!(flash_key_point(Some(4), true, o, f), None, "a socket key: its socket");
     assert_eq!(flash_key_point(None, false, o, f), None);
 }
@@ -1996,10 +2156,16 @@ fn vm52_player_view_key_in_an_attached_group() {
     let b = at(key_place(&model, &[], &swayed, None, off, Some(PLAYER_VIEW), &made));
     assert!(a.abs_diff_eq(b, 1e-6), "it doesn't follow the sway: {a} {b}");
     let origin = made.translation + model.root.translation;
-    assert!(a.abs_diff_eq(origin + Vec3::new(0.0, 0.0, -1.0), 1e-5), "the made place + its unrotated offset: {a}");
+    assert!(
+        a.abs_diff_eq(origin + Vec3::new(0.0, 0.0, -1.0), 1e-5),
+        "the made place + its unrotated offset: {a}"
+    );
     let fixed_made = at(key_place(&model, &[], &made, None, off, Some(0), &made));
     let fixed_swayed = at(key_place(&model, &[], &swayed, None, off, Some(0), &made));
-    assert!(!fixed_made.abs_diff_eq(fixed_swayed, 1e-4), "a fixed key follows the model");
+    assert!(
+        !fixed_made.abs_diff_eq(fixed_swayed, 1e-4),
+        "a fixed key follows the model"
+    );
 }
 
 /// 1, 2: the hands follow the worn character record: a female body's
@@ -2022,11 +2188,21 @@ fn hands_follow_the_character_record() {
     assert_eq!(pick(&default).skins[0], "chars_t_hand/hand_00_00.dtx");
     assert_eq!(pick(&default), hands::default_choice(chars).unwrap());
     let theirs = pick(&female);
-    assert_eq!(theirs.model, "chars_m_hand/normal_m_hand.ltb", "the stock male hand model");
-    assert_eq!(theirs.skins[0], "chars_t_hand/hand_w_00_02.dtx", "her face's sleeve, her uniform");
+    assert_eq!(
+        theirs.model, "chars_m_hand/normal_m_hand.ltb",
+        "the stock male hand model"
+    );
+    assert_eq!(
+        theirs.skins[0], "chars_t_hand/hand_w_00_02.dtx",
+        "her face's sleeve, her uniform"
+    );
     // A male body's face 2 in uniform 3 (case 3); a body without hands of
     // its own in our table wears the default body's.
-    let male = Selection { face: 2, camouflage: 3, ..default };
+    let male = Selection {
+        face: 2,
+        camouflage: 3,
+        ..default
+    };
     assert_eq!(pick(&male).skins[0], "chars_t_hand/hand_02_03.dtx");
     // Keys: none for the default's hands, one naming hers.
     assert_eq!(hands::key_for(chars, &default), None);
@@ -2054,16 +2230,26 @@ fn a_character_set_lists_its_hands() {
     let data = CaData::builtin();
     let chars = data.characters();
     let sets = rungs::body_hands(chars);
-    assert!(sets.get(&0).is_none_or(Vec::is_empty), "the default body's hands are the default's");
+    assert!(
+        sets.get(&0).is_none_or(Vec::is_empty),
+        "the default body's hands are the default's"
+    );
     let hers = sets.get(&7).expect("the female body's set has hands");
     assert_eq!(hers.len(), 1);
     assert_eq!(hers[0].model, "chars_m_hand/normal_m_hand.ltb");
-    assert!(hers[0].skins[0].starts_with("chars_t_hand/hand_w_"), "her sleeves: {:?}", hers[0].skins);
+    assert!(
+        hers[0].skins[0].starts_with("chars_t_hand/hand_w_"),
+        "her sleeves: {:?}",
+        hers[0].skins
+    );
     let look = chars.default_look(7);
     let key = hands::key_for(chars, &look).expect("her own view model");
     let view = hands::with_hands("combat_arms:m4a1", Some(&key));
     assert_eq!(hands::choice_for_key(chars, &view).as_ref(), Some(&hers[0]));
-    assert_eq!(hands::choice_for_key(chars, "combat_arms:m4a1"), hands::default_choice(chars));
+    assert_eq!(
+        hands::choice_for_key(chars, "combat_arms:m4a1"),
+        hands::default_choice(chars)
+    );
     // No set lists the default character's hands.
     let default = hands::default_choice(chars).unwrap();
     assert!(sets.values().flatten().all(|c| *c != default));
@@ -2082,13 +2268,24 @@ fn view_model_hands_change_with_the_body() {
     let mut sim = sim();
     let p = player(&mut sim);
     sim.app.world_mut().entity_mut(p).insert(LocalPlayer);
-    let female = Selection { model: 7, face: 4, ..default() };
+    let female = Selection {
+        model: 7,
+        face: 4,
+        ..default()
+    };
     let key = hands::key_for(CaData::builtin().characters(), &female).expect("her hands are her own");
     let hers = hands::with_hands(M92FS, Some(&key));
-    sim.app.world_mut().entity_mut(p).insert((CaRungLook(Some(female)), female));
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert((CaRungLook(Some(female)), female));
     drawn(&mut sim, p, M92FS);
     let key_of = |s: &Sim| s.app.world().get::<ViewAnimator>(p).unwrap().key.clone();
-    assert_eq!(key_of(&sim).as_deref(), Some(M92FS), "the default hands while hers aren't made");
+    assert_eq!(
+        key_of(&sim).as_deref(),
+        Some(M92FS),
+        "the default hands while hers aren't made"
+    );
     // Hers made (as `on_demand` adds it): shown, the machine playing on.
     let pistol: Vec<AnimInfo> = m92fs().iter().cloned().collect();
     chimera_world::map::add_view_model(sim.app.world_mut(), view_model(&hers, &pistol), Arc::new(Vec::new()));
@@ -2096,11 +2293,17 @@ fn view_model_hands_change_with_the_body() {
     assert_eq!(key_of(&sim).as_deref(), Some(hers.as_str()), "her hands");
     assert_eq!(playing(&sim, p).as_deref(), Some("idle_0"), "not drawn again");
     // The next rung's body: the default character's.
-    sim.app.world_mut().entity_mut(p).insert((CaRungLook(Some(Selection::default())), Selection::default()));
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert((CaRungLook(Some(Selection::default())), Selection::default()));
     sim.ticks(2);
     assert_eq!(key_of(&sim).as_deref(), Some(M92FS), "the default body's hands");
     // And back to hers.
-    sim.app.world_mut().entity_mut(p).insert((CaRungLook(Some(female)), female));
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert((CaRungLook(Some(female)), female));
     sim.ticks(2);
     assert_eq!(key_of(&sim).as_deref(), Some(hers.as_str()));
 }
@@ -2150,13 +2353,19 @@ fn launcher_pieces_follow_fire_and_reload() {
     sim.ticks(1);
     sim.intent(p).fire = false;
     assert!(until(&mut sim, 5, |s| hidden(s) == vec![1]), "{:?}", hidden(&sim));
-    assert!(until(&mut sim, 60, |s| s.app.world().get::<Magazine>(w).unwrap().clip == 0), "the weapon fired");
+    assert!(
+        until(&mut sim, 60, |s| s.app.world().get::<Magazine>(w).unwrap().clip == 0),
+        "the weapon fired"
+    );
     assert_eq!(hidden(&sim), vec![1]);
     // The automatic reload: back when it starts, kept when it ends.
     assert!(until(&mut sim, 120, |s| playing(s, p).as_deref() == Some("reload")));
     assert_eq!(hidden(&sim), Vec::<usize>::new(), "back at the reload's start");
     // (The weapon's own 3 s reload outlasts the stand-in's.)
-    assert!(until(&mut sim, 400, |s| s.app.world().get::<Magazine>(w).unwrap().clip == 1), "reloaded");
+    assert!(
+        until(&mut sim, 400, |s| s.app.world().get::<Magazine>(w).unwrap().clip == 1),
+        "reloaded"
+    );
     sim.ticks(5);
     assert_eq!(hidden(&sim), Vec::<usize>::new());
     // The last rocket: gone with the shot, the sight at the fire

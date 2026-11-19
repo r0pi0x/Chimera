@@ -42,9 +42,7 @@ use combat_arms::{
         },
         inventory::{self, Dropped},
         movement::{self, CaMovement, StunPenalty},
-        weapons::{
-            self as ca, CaKick, CaRecoil, CaSpread, CaZoom, FireMode, MALE, RIFLE, RecoilParams, SpreadScales,
-        },
+        weapons::{self as ca, CaKick, CaRecoil, CaSpread, CaZoom, FireMode, MALE, RIFLE, RecoilParams, SpreadScales},
     },
     harness::CaSim,
 };
@@ -207,7 +205,6 @@ fn sim() -> Sim {
             ("default_on_list", DEFAULT_ON_LIST),
             ("default_hidden", DEFAULT_HIDDEN),
         ])
-
         .unwrap();
     sim
 }
@@ -217,7 +214,10 @@ fn sim() -> Sim {
 /// armour.
 fn player(sim: &mut Sim, at: Vec3, yaw: f32, health: f32, id: &str, parts: &[&str]) -> Entity {
     let p = sim.spawn_character(at, movement::ID);
-    sim.app.world_mut().entity_mut(p).insert(CaLoadout::default().with(id, parts));
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(CaLoadout::default().with(id, parts));
     sim.intent(p).yaw = yaw;
     sim.seconds(0.5);
     sim.app.world_mut().entity_mut(p).insert((
@@ -234,7 +234,11 @@ fn player(sim: &mut Sim, at: Vec3, yaw: f32, health: f32, id: &str, parts: &[&st
 fn arm(sim: &mut Sim, p: Entity, id: &str) -> Entity {
     let w = weapon::give(sim.app.world_mut(), p, id).expect("unknown weapon");
     sim.seconds(1.3);
-    assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(w), "{id} drawn");
+    assert_eq!(
+        sim.app.world().get::<Inventory>(p).unwrap().active,
+        Some(w),
+        "{id} drawn"
+    );
     w
 }
 
@@ -328,7 +332,10 @@ fn place_at(sim: &mut Sim, shooter: Entity, target: Entity, name: &str, units: f
         let (min, max, _) = geometry(sim.app.world(), target);
         // The reported point: the widened box's entry (weapon_firing.md
         // Corrections 8).
-        let (c, half) = ((min + max) / 2.0, (max - min) / 2.0 * Vec3::new(ca::HITBOX_WIDEN, 1.0, ca::HITBOX_WIDEN));
+        let (c, half) = (
+            (min + max) / 2.0,
+            (max - min) / 2.0 * Vec3::new(ca::HITBOX_WIDEN, 1.0, ca::HITBOX_WIDEN),
+        );
         let t = ca::box_entry(c - half, c + half, from, dir, f32::INFINITY).unwrap();
 
         let err = t - units * U;
@@ -345,7 +352,14 @@ fn close(a: f32, b: f32, tol: f32, what: &str) {
 /// (10000 HP) facing it `units` away in the open lane at x = 30.
 fn range_lane(sim: &mut Sim, id: &str, parts: &[&str], units: f32) -> (Entity, Entity) {
     let shooter = player(sim, Vec3::new(30.0, 1.0, 37.0), 0.0, 1.0, id, parts);
-    let target = player(sim, Vec3::new(30.0, 1.0, 37.0 - units * U), std::f32::consts::PI, 100.0, id, &[]);
+    let target = player(
+        sim,
+        Vec3::new(30.0, 1.0, 37.0 - units * U),
+        std::f32::consts::PI,
+        100.0,
+        id,
+        &[],
+    );
     arm(sim, shooter, id);
     (shooter, target)
 }
@@ -460,7 +474,13 @@ fn t02_fitting_not_listed() {
     assert!(sim.app.world().get::<CaFitted>(w).unwrap().given);
     place_at(&mut sim, shooter, target, "Torso", 100.0);
     close(shoot_at(&mut sim, shooter, target, "Torso"), 35.0, 1e-3, "damage");
-    assert_eq!(mods(&sim, w).fire_sound(), FireSound { silenced: None, radius: 2000 });
+    assert_eq!(
+        mods(&sim, w).fire_sound(),
+        FireSound {
+            silenced: None,
+            radius: 2000
+        }
+    );
     close(first_kick(&["Silencer_A_SR"]), 1.300, 1e-3, "first kick");
 }
 
@@ -533,7 +553,10 @@ fn t44_default_outside_the_list() {
     let mut sim = self::sim();
     let (p, w) = holding(&mut sim, "test:default_hidden", &[]);
     assert_eq!(fitted(&sim, w)[at::SIGHT], name("Sniper Scope"));
-    assert!(mods(&sim, w).part(at::SIGHT).is_some_and(|p| p.default) && !mods(&sim, w).default_sight_visible, "its model is hidden");
+    assert!(
+        mods(&sim, w).part(at::SIGHT).is_some_and(|p| p.default) && !mods(&sim, w).default_sight_visible,
+        "its model is hidden"
+    );
     close(zoom_step(&mut sim, p, w), 20.0, 1e-3, "but the zoom works");
 }
 
@@ -561,10 +584,20 @@ fn t06_silencer_damage_by_range() {
     let (shooter, target) = range_lane(&mut sim, "test:m4a1_exact", &["Silencer_A_AR"], 100.0);
     for (d, want) in [(100.0, 31.5), (2800.0, 22.05), (3200.0, 11.025)] {
         place_at(&mut sim, shooter, target, "Torso", d);
-        close(shoot_at(&mut sim, shooter, target, "Torso"), want, 1e-3, &format!("at {d}"));
+        close(
+            shoot_at(&mut sim, shooter, target, "Torso"),
+            want,
+            1e-3,
+            &format!("at {d}"),
+        );
     }
     place_at(&mut sim, shooter, target, "Face_Eyelid1", 100.0);
-    close(shoot_at(&mut sim, shooter, target, "Face_Eyelid1"), 189.0, 1e-3, "head at 100");
+    close(
+        shoot_at(&mut sim, shooter, target, "Face_Eyelid1"),
+        189.0,
+        1e-3,
+        "head at 100",
+    );
 }
 
 /// 7. Hits to kill (unarmoured torso, d <= 2500): Silencer_A_AR 4 (68.5,
@@ -581,7 +614,12 @@ fn t07_hits_to_kill() {
         place_at(&mut sim, shooter, target, "Torso", 1000.0);
         for (i, want) in steps.iter().enumerate() {
             shoot_at(&mut sim, shooter, target, "Torso");
-            close(health(&sim, target) / HP, *want, 1e-3, &format!("{part}, hit {}", i + 1));
+            close(
+                health(&sim, target) / HP,
+                *want,
+                1e-3,
+                &format!("{part}, hit {}", i + 1),
+            );
         }
     }
 }
@@ -591,8 +629,18 @@ fn t07_hits_to_kill() {
 #[test]
 fn t08_target_group_damage() {
     let id = "test:m4a1_exact";
-    close(chest_damage(id, &["Bullet_PVP_Damage_III_AR"], 100.0, as_player), 42.7, 1e-3, "player");
-    close(chest_damage(id, &["Bullet_PVP_Damage_III_AR"], 100.0, as_human_ai), 35.0, 1e-3, "human AI");
+    close(
+        chest_damage(id, &["Bullet_PVP_Damage_III_AR"], 100.0, as_player),
+        42.7,
+        1e-3,
+        "player",
+    );
+    close(
+        chest_damage(id, &["Bullet_PVP_Damage_III_AR"], 100.0, as_human_ai),
+        35.0,
+        1e-3,
+        "human AI",
+    );
 }
 
 /// 9. Silencer_A_AR + Bullet_PVP_Damage_III_AR against a player: 35 x 0.9
@@ -600,23 +648,48 @@ fn t08_target_group_damage() {
 #[test]
 fn t09_stacked_damage() {
     let parts = ["Silencer_A_AR", "Bullet_PVP_Damage_III_AR"];
-    close(chest_damage("test:m4a1_exact", &parts, 100.0, as_player), 38.43, 1e-3, "stacked");
+    close(
+        chest_damage("test:m4a1_exact", &parts, 100.0, as_player),
+        38.43,
+        1e-3,
+        "stacked",
+    );
 }
 
 /// 10. MechSight_Aim_I_AR: 33.95 against a player and an AI.
 #[test]
 fn t10_mechanical_sight_cost() {
     let id = "test:m4a1_exact";
-    close(chest_damage(id, &["MechSight_Aim_I_AR"], 100.0, as_player), 33.95, 1e-3, "player");
-    close(chest_damage(id, &["MechSight_Aim_I_AR"], 100.0, as_human_ai), 33.95, 1e-3, "AI");
+    close(
+        chest_damage(id, &["MechSight_Aim_I_AR"], 100.0, as_player),
+        33.95,
+        1e-3,
+        "player",
+    );
+    close(
+        chest_damage(id, &["MechSight_Aim_I_AR"], 100.0, as_human_ai),
+        33.95,
+        1e-3,
+        "AI",
+    );
 }
 
 /// 11. Bullet_FT_I_AR: 105 against a zombie AI, 35 against a player.
 #[test]
 fn t11_nz_only_bonus() {
     let id = "test:m4a1_exact";
-    close(chest_damage(id, &["Bullet_FT_I_AR"], 100.0, as_zombie_ai), 105.0, 1e-3, "zombie AI");
-    close(chest_damage(id, &["Bullet_FT_I_AR"], 100.0, as_player), 35.0, 1e-3, "player");
+    close(
+        chest_damage(id, &["Bullet_FT_I_AR"], 100.0, as_zombie_ai),
+        105.0,
+        1e-3,
+        "zombie AI",
+    );
+    close(
+        chest_damage(id, &["Bullet_FT_I_AR"], 100.0, as_player),
+        35.0,
+        1e-3,
+        "player",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -659,7 +732,12 @@ fn t13_bullet_range_server_ray() {
         if wood {
             panel(&mut sim, 32.0, 6.0, "Wood");
         }
-        close(shoot_at(&mut sim, shooter, target, "Torso"), want, 1e-3, &format!("wood {wood}"));
+        close(
+            shoot_at(&mut sim, shooter, target, "Torso"),
+            want,
+            1e-3,
+            &format!("wood {wood}"),
+        );
     }
 }
 
@@ -723,7 +801,11 @@ fn t16_short_magazines() {
 /// (column 0): 4.
 #[test]
 fn t17_magazine_column() {
-    for (id, part, size) in [("test:m24", "Magazine_A_SR", 12), ("test:m24", "Magazine_C_SR", 6), (L96A1, "Magazine_C_SR", 4)] {
+    for (id, part, size) in [
+        ("test:m24", "Magazine_A_SR", 12),
+        ("test:m24", "Magazine_C_SR", 6),
+        (L96A1, "Magazine_C_SR", 4),
+    ] {
         let mut sim = sim();
         let (_, w) = holding(&mut sim, id, &[part]);
         assert_eq!(fitted(&sim, w)[at::MAGAZINE], name(part));
@@ -793,7 +875,9 @@ fn t19_stat_only_rates_ignored() {
 #[test]
 fn t20_silencer_recoil() {
     let k = kicks(&["Silencer_A_AR"], 11);
-    let want = [1.170, 1.150, 1.131, 1.111, 1.092, 1.074, 1.056, 1.038, 1.020, 0.158, 0.0];
+    let want = [
+        1.170, 1.150, 1.131, 1.111, 1.092, 1.074, 1.056, 1.038, 1.020, 0.158, 0.0,
+    ];
     let mut last = 0.0;
     for (i, w) in want.iter().enumerate() {
         close(k[i].0 - last, *w, 1e-3, &format!("round {}", i + 1));
@@ -859,7 +943,11 @@ fn t23_recovery_with_a_red_dot() {
     close(step, -0.015, 1e-5, "a sub-step");
     assert_eq!(n, 20, "ITECH");
     assert_eq!(recovery(&[], FireMode::Normal, 3.0).1, 26, "stock");
-    assert_eq!(recovery(&["MechSight_Aim_III_AR"], FireMode::Normal, 3.0).1, 17, "Aim III");
+    assert_eq!(
+        recovery(&["MechSight_Aim_III_AR"], FireMode::Normal, 3.0).1,
+        17,
+        "Aim III"
+    );
 }
 
 /// 24. MechSight_Aim_III_AR, M = 0.25 to standing still: 0.19825, 0.1465,
@@ -988,7 +1076,10 @@ fn t29_zoom_timing() {
         }
         close(cz(&sim, w).fov, target, 1e-3, "arrived");
         let took = ticks as f64 * TICK_INTERVAL;
-        assert!(took >= secs - 1e-6 && took <= secs + TICK_INTERVAL + 1e-6, "{target}: {took} s, expected {secs}");
+        assert!(
+            took >= secs - 1e-6 && took <= secs + TICK_INTERVAL + 1e-6,
+            "{target}: {took} s, expected {secs}"
+        );
         assert_eq!(overlay(&sim), target == 50.0, "the overlay after reaching {target}");
     }
 }
@@ -1005,17 +1096,36 @@ fn t32_silenced_sound() {
         let mut sim = sim();
         let (_, w) = holding(&mut sim, RIFLE, &[part]);
         let m = mods(&sim, w);
-        assert_eq!(m.fire_sound(), FireSound { silenced: Some(1), radius: 1400 }, "{part}");
+        assert_eq!(
+            m.fire_sound(),
+            FireSound {
+                silenced: Some(1),
+                radius: 1400
+            },
+            "{part}"
+        );
         assert_eq!(m.observer_sound(), ObserverSound::Silenced { level: 1 });
         assert!(!m.muzzle_light());
     }
     let mut sim = sim();
     let (_, w) = holding(&mut sim, RIFLE, &[]);
-    assert_eq!(mods(&sim, w).fire_sound(), FireSound { silenced: None, radius: 2000 });
+    assert_eq!(
+        mods(&sim, w).fire_sound(),
+        FireSound {
+            silenced: None,
+            radius: 2000
+        }
+    );
     assert!(mods(&sim, w).muzzle_light());
     let mut sim = self::sim();
     let (_, w) = holding(&mut sim, "test:ak47", &["Silencer_A_AR"]);
-    assert_eq!(mods(&sim, w).fire_sound(), FireSound { silenced: Some(1), radius: 1600 });
+    assert_eq!(
+        mods(&sim, w).fire_sound(),
+        FireSound {
+            silenced: Some(1),
+            radius: 1600
+        }
+    );
 }
 
 /// 33. Part models: M4A1 + DotSight_A_AR: variant 0 at the breach socket;
@@ -1048,7 +1158,14 @@ fn t33_part_model_variant() {
 #[test]
 fn t34_picked_up_weapon() {
     let mut sim = sim();
-    let dropper = player(&mut sim, Vec3::new(30.0, 1.0, 30.0), 0.0, 1.0, "test:m4a1_exact", &["Magazine_A_AR"]);
+    let dropper = player(
+        &mut sim,
+        Vec3::new(30.0, 1.0, 30.0),
+        0.0,
+        1.0,
+        "test:m4a1_exact",
+        &["Magazine_A_AR"],
+    );
     let w = arm(&mut sim, dropper, "test:m4a1_exact");
     set_mag(&mut sim, w, 37, 60);
     let picker = player(&mut sim, Vec3::new(32.0, 1.0, 30.0), 0.0, 1.0, "test:m4a1_exact", &[]);
@@ -1105,7 +1222,12 @@ fn t35_stun_bullet() {
         sim.ticks(3);
         let hit_at = sim.app.world().resource::<SimClock>().now;
         sim.ticks(1);
-        close((hp - health(&sim, target)) / HP, 31.5, 1e-3, &format!("damage, draw {draw}"));
+        close(
+            (hp - health(&sim, target)) / HP,
+            31.5,
+            1e-3,
+            &format!("damage, draw {draw}"),
+        );
         let stun = sim.app.world().get::<StunPenalty>(target).copied();
         if !stunned {
             assert_eq!(stun, None, "no stun at {draw}");
@@ -1127,7 +1249,12 @@ fn t35_stun_bullet() {
             until: now + 10.0,
         });
         sim.ticks(1);
-        close(before - speed_limit(&sim, target), 2.0 * (before - slowed), 1e-3, "linear in P_stun");
+        close(
+            before - speed_limit(&sim, target),
+            2.0 * (before - slowed),
+            1e-3,
+            "linear in P_stun",
+        );
     }
 }
 
@@ -1141,7 +1268,10 @@ fn t36_missing_record() {
     let mut sim = sim();
     let (_, w) = holding(&mut sim, M60, &["Silencer_A_AR", "Magazine_A_AR"]);
     assert_eq!(fitted(&sim, w), [None, None, None, None, None]);
-    assert_eq!(mag(&sim, w).size, sim.app.world().get::<at::CaAttachSlots>(w).unwrap().stock.clip);
+    assert_eq!(
+        mag(&sim, w).size,
+        sim.app.world().get::<at::CaAttachSlots>(w).unwrap().stock.clip
+    );
 }
 
 /// Our M4A1 document renamed to `name` (an install weapon's slug).
@@ -1158,7 +1288,10 @@ fn merged_accepts(ours: &str, weapons: &str, mods: &str) -> Vec<toml::Value> {
     // It still loads.
     chimera_sim::weapon::data::WeaponSet::parse(&refs, &[]).unwrap();
     let t: toml::Table = docs[0].1.parse().unwrap();
-    t["hooks"]["combat_arms:attachments"]["accepts"].as_array().unwrap().clone()
+    t["hooks"]["combat_arms:attachments"]["accepts"]
+        .as_array()
+        .unwrap()
+        .clone()
 }
 
 /// A part's offsets copied from another class of gun's records (the
@@ -1191,7 +1324,9 @@ fn a_skins_part_offsets_copied_from_another_class_are_its_models() {
     let text = records
         .iter()
         .enumerate()
-        .fold(String::from(r#"[Ammo0] Name="a" "#), |t, (i, r)| t + &format!("[Weapon{i}] {r} "));
+        .fold(String::from(r#"[Ammo0] Name="a" "#), |t, (i, r)| {
+            t + &format!("[Weapon{i}] {r} ")
+        });
     let w = WeaponsFile::read(&Document::parse(text.as_bytes()).unwrap()).unwrap();
     let names = ["glock_champion", "glock_d", "l96_desert", "glock_usp"];
     let ours: Vec<String> = names.iter().map(|n| our_doc(n)).collect();
@@ -1204,12 +1339,22 @@ fn a_skins_part_offsets_copied_from_another_class_are_its_models() {
             .find(|t| t["id"].as_str() == Some(&format!("combat_arms:{id}")))
             .unwrap();
         let o = &t["hooks"]["combat_arms:attachments"]["part_offsets"];
-        let pos = |k: &str| o[k]["pos"].as_array().unwrap().iter().map(|v| v.as_float().unwrap() as f32).collect::<Vec<_>>();
+        let pos = |k: &str| {
+            o[k]["pos"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_float().unwrap() as f32)
+                .collect::<Vec<_>>()
+        };
         (pos("muzzle_pv"), pos("muzzle_hh"))
     };
     // The champion's: its model's (the most records' of G23), first and
     // third person.
-    assert_eq!(offsets("glock_champion"), (vec![-0.01, 0.03, -0.7], vec![-0.2, 0.0, -49.8]));
+    assert_eq!(
+        offsets("glock_champion"),
+        (vec![-0.01, 0.03, -0.7], vec![-0.2, 0.0, -49.8])
+    );
     // Glock_D's own third-person offsets are no other model's: kept.
     assert_eq!(offsets("glock_d"), (vec![-0.01, 0.03, -0.7], vec![-0.2, 0.1, -50.0]));
     assert_eq!(offsets("l96_desert"), (vec![0.0, 0.0, 4.0], vec![0.0, 0.0, -50.5]));
@@ -1217,13 +1362,15 @@ fn a_skins_part_offsets_copied_from_another_class_are_its_models() {
     assert_eq!(offsets("glock_usp"), (vec![0.05, 0.02, -0.6], vec![0.1, 0.0, -48.0]));
 }
 
-const INSTALL_WEAPONS: &str = r#"[Ammo0] Name="a" [Weapon0] Name="Other" AmmoName0="a" [Weapon1] Name="M6A2_Event" AmmoName0="a""#;
+const INSTALL_WEAPONS: &str =
+    r#"[Ammo0] Name="a" [Weapon0] Name="Other" AmmoName0="a" [Weapon1] Name="M6A2_Event" AmmoName0="a""#;
 
 /// 36 (the install's file): the modification file one record short: the
 /// last weapon accepts nothing.
 #[test]
 fn t36_missing_record_in_the_install() {
-    let mods = r#"[Mod0] Name="Silencer_A_AR" Kinds=0 Type=0 Integrated=1 [Weapon0] Name="Other" ModName0="Silencer_A_AR""#;
+    let mods =
+        r#"[Mod0] Name="Silencer_A_AR" Kinds=0 Type=0 Integrated=1 [Weapon0] Name="Other" ModName0="Silencer_A_AR""#;
     assert!(merged_accepts(&our_doc("m6a2_event"), INSTALL_WEAPONS, mods).is_empty());
 }
 
@@ -1241,9 +1388,17 @@ fn t37_link_by_position() {
     let accepts = merged_accepts(&our_doc("m6a2_event"), INSTALL_WEAPONS, mods);
     let got: Vec<(String, i64)> = accepts
         .iter()
-        .map(|a| (a["name"].as_str().unwrap().to_string(), a["variant"].as_integer().unwrap()))
+        .map(|a| {
+            (
+                a["name"].as_str().unwrap().to_string(),
+                a["variant"].as_integer().unwrap(),
+            )
+        })
         .collect();
-    assert_eq!(got, [("Silencer_A_AR".to_string(), 0), ("DotSight_A_AR".to_string(), 2)]);
+    assert_eq!(
+        got,
+        [("Silencer_A_AR".to_string(), 0), ("DotSight_A_AR".to_string(), 2)]
+    );
 }
 
 /// 28 (the install's data). A machine gun the install fits a sight (its
@@ -1254,7 +1409,10 @@ fn t37_link_by_position() {
 #[test]
 fn t28_install_sight_on_a_machine_gun_zooms() {
     use combat_arms::{
-        game::{data::{CaData, InstallAttributes}, weapons::zoom::CaZoom},
+        game::{
+            data::{CaData, InstallAttributes},
+            weapons::zoom::CaZoom,
+        },
         harness::CaSimWith,
     };
     let mods = r#"
@@ -1262,7 +1420,10 @@ fn t28_install_sight_on_a_machine_gun_zooms() {
         [Weapon0] Name="M60" ModName0="DotSight_A_AR"
     "#;
     for (record, want) in [
-        (r#"[Weapon0] Name="M60" AmmoName0="a" Guntype=5 DefaultScopeAttach="DotSight_A_AR""#, Some(vec![50.0])),
+        (
+            r#"[Weapon0] Name="M60" AmmoName0="a" Guntype=5 DefaultScopeAttach="DotSight_A_AR""#,
+            Some(vec![50.0]),
+        ),
         (r#"[Weapon0] Name="M60" AmmoName0="a" Guntype=5"#, None),
     ] {
         let text = format!("[Ammo0] Name=\"a\" {record}");
@@ -1289,7 +1450,10 @@ fn t28_install_sight_on_a_machine_gun_zooms() {
 #[test]
 fn special_weapon_zooms_through_its_scope() {
     use combat_arms::{
-        game::{data::{CaData, InstallAttributes}, weapons::zoom::CaZoom},
+        game::{
+            data::{CaData, InstallAttributes},
+            weapons::zoom::CaZoom,
+        },
         harness::CaSimWith,
     };
     const XM25: &str = "combat_arms:xm_25";
@@ -1298,7 +1462,10 @@ fn special_weapon_zooms_through_its_scope() {
         [Weapon0] Name="XM_25" ModName0="XM25 Scope"
     "#;
     for (record, want) in [
-        (r#"[Weapon0] Name="XM_25" AmmoName0="a" DefaultScopeAttach="XM25 Scope""#, Some(30.0)),
+        (
+            r#"[Weapon0] Name="XM_25" AmmoName0="a" DefaultScopeAttach="XM25 Scope""#,
+            Some(30.0),
+        ),
         (r#"[Weapon0] Name="XM_25" AmmoName0="a""#, None),
     ] {
         let text = format!("[Ammo0] Name=\"a\" {record}");
@@ -1320,7 +1487,11 @@ fn special_weapon_zooms_through_its_scope() {
         sim.ticks(1);
         sim.intent(p).secondary = false;
         sim.seconds(0.5);
-        assert_eq!(sim.app.world().get::<Zoomed>(p).map(|z| z.fov), want, "{record}: zoomed");
+        assert_eq!(
+            sim.app.world().get::<Zoomed>(p).map(|z| z.fov),
+            want,
+            "{record}: zoomed"
+        );
     }
 }
 
@@ -1340,9 +1511,9 @@ fn fitted_parts_are_the_servers_and_predicted() {
     let mut sim = NetSim::new(CaSim, link, 7, 1, |app| {
         app.add_plugins(GreyboxMapPlugin);
     });
-    sim.server
-        .app
-        .insert_resource(CaDefaultLoadout(CaLoadout::default().with("m4a1", &["Magazine_A_AR", "DotSight_A_AR"])));
+    sim.server.app.insert_resource(CaDefaultLoadout(
+        CaLoadout::default().with("m4a1", &["Magazine_A_AR", "DotSight_A_AR"]),
+    ));
     sim.set_frame(TICK_INTERVAL);
     sim.until_joined(600);
     sim.ticks(240);
@@ -1352,9 +1523,16 @@ fn fitted_parts_are_the_servers_and_predicted() {
     let (server, client) = (sim.server.app.world(), sim.clients[0].app.world());
     let (sw, cw) = (held(server, theirs), held(client, me));
     assert_eq!(client.get::<Weapon>(cw).unwrap().id, RIFLE);
-    assert_eq!(client.get::<CaFitted>(cw), server.get::<CaFitted>(sw), "the server's parts");
+    assert_eq!(
+        client.get::<CaFitted>(cw),
+        server.get::<CaFitted>(sw),
+        "the server's parts"
+    );
     assert_eq!(client.get::<Magazine>(cw).unwrap().size, 40, "the client's clip size");
-    assert_eq!(client.get::<CaZoom>(cw).unwrap().scope.as_ref().map(|s| s.fov.clone()), Some(vec![50.0]));
+    assert_eq!(
+        client.get::<CaZoom>(cw).unwrap().scope.as_ref().map(|s| s.fov.clone()),
+        Some(vec![50.0])
+    );
     *sim.clients[0].app.world_mut().resource_mut::<NetGraph>() = NetGraph::default();
     // Zoom in, fire a few rounds, zoom out.
     let set = |sim: &mut NetSim, f: &dyn Fn(&mut Intent)| {
@@ -1366,7 +1544,11 @@ fn fitted_parts_are_the_servers_and_predicted() {
     set(&mut sim, &|i| i.secondary = false);
     sim.ticks(20);
     let me = sim.local_player(0).unwrap();
-    assert_eq!(sim.clients[0].app.world().get::<Zoomed>(me).map(|z| z.fov), Some(50.0), "zoomed on the client");
+    assert_eq!(
+        sim.clients[0].app.world().get::<Zoomed>(me).map(|z| z.fov),
+        Some(50.0),
+        "zoomed on the client"
+    );
     set(&mut sim, &|i| i.fire = true);
     sim.ticks(30);
     set(&mut sim, &|i| i.fire = false);
@@ -1375,7 +1557,10 @@ fn fitted_parts_are_the_servers_and_predicted() {
     set(&mut sim, &|i| i.secondary = false);
     sim.ticks(60);
     let g = sim.clients[0].app.world().resource::<NetGraph>().clone();
-    println!("attachments: {} states checked, {} errors ({:?})", g.checked, g.errors, g.last_differing);
+    println!(
+        "attachments: {} states checked, {} errors ({:?})",
+        g.checked, g.errors, g.last_differing
+    );
     assert!(g.checked > 0);
     assert_eq!(g.errors, 0, "mispredicted ({:?})", g.last_differing);
     let clip = |w: &World, e: Entity| w.get::<Magazine>(e).unwrap().clip;
@@ -1417,9 +1602,19 @@ fn t38_pellet_count_mismatch() {
     for (mag, muzzle, want) in [(0.25, 0.0, 0.0), (0.0, 0.25, 0.0), (0.25, 0.25, 90.0), (0.0, 0.0, 72.0)] {
         let mut sim = sim();
         pellet_parts(&mut sim, mag, muzzle);
-        let (shooter, target) = range_lane(&mut sim, "test:r870_pellets", &["Test_Pellet_Mag", "Test_Pellet_Muzzle"], 500.0);
+        let (shooter, target) = range_lane(
+            &mut sim,
+            "test:r870_pellets",
+            &["Test_Pellet_Mag", "Test_Pellet_Muzzle"],
+            500.0,
+        );
         place_at(&mut sim, shooter, target, "Upper_torso", 500.0);
-        close(shoot_at(&mut sim, shooter, target, "Upper_torso"), want, 1e-2, &format!("magazine {mag}, muzzle {muzzle}"));
+        close(
+            shoot_at(&mut sim, shooter, target, "Upper_torso"),
+            want,
+            1e-2,
+            &format!("magazine {mag}, muzzle {muzzle}"),
+        );
     }
 }
 
@@ -1444,7 +1639,10 @@ fn t39_burst_return_with_a_muzzle_part() {
 fn t40_switch_after_a_kick() {
     let mut sim = sim();
     let (p, w) = holding(&mut sim, RIFLE, &["Silencer_A_AR"]);
-    assert!(sim.app.world().get::<CaRecoil>(w).unwrap().mods != default(), "the silencer's terms");
+    assert!(
+        sim.app.world().get::<CaRecoil>(w).unwrap().mods != default(),
+        "the silencer's terms"
+    );
     sim.intent(p).fire = true;
     sim.ticks(4);
     sim.intent(p).fire = false;
@@ -1482,10 +1680,24 @@ fn t40_switch_after_a_kick() {
 fn c1_the_fitted_set_decides_the_swap() {
     for (item_sight, swaps) in [("DotSight_A_AR", false), ("DotSight_B_AR", true)] {
         let mut sim = sim();
-        let dropper = player(&mut sim, Vec3::new(30.0, 1.0, 30.0), 0.0, 1.0, "test:m4a1_exact", &["Silencer_A_AR", item_sight]);
+        let dropper = player(
+            &mut sim,
+            Vec3::new(30.0, 1.0, 30.0),
+            0.0,
+            1.0,
+            "test:m4a1_exact",
+            &["Silencer_A_AR", item_sight],
+        );
         let item_gun = arm(&mut sim, dropper, "test:m4a1_exact");
         set_mag(&mut sim, item_gun, 20, 30);
-        let picker = player(&mut sim, Vec3::new(32.0, 1.0, 30.0), 0.0, 1.0, "test:m4a1_exact", &["Silencer_A_AR", "DotSight_A_AR"]);
+        let picker = player(
+            &mut sim,
+            Vec3::new(32.0, 1.0, 30.0),
+            0.0,
+            1.0,
+            "test:m4a1_exact",
+            &["Silencer_A_AR", "DotSight_A_AR"],
+        );
         let mine = arm(&mut sim, picker, "test:m4a1_exact");
         inventory::drop_item(sim.app.world_mut(), dropper, item_gun, false).unwrap();
         let item = sim
@@ -1502,7 +1714,11 @@ fn c1_the_fitted_set_decides_the_swap() {
         let m = mag(&sim, active);
         if swaps {
             assert_eq!(active, item_gun, "{item_sight}: swapped");
-            assert_eq!(fitted(&sim, active)[at::SIGHT], name("DotSight_B_AR"), "the item's parts arrive");
+            assert_eq!(
+                fitted(&sim, active)[at::SIGHT],
+                name("DotSight_B_AR"),
+                "the item's parts arrive"
+            );
             assert_eq!(m.clip, 20);
             assert!(sim.app.world().get_entity(mine).is_ok(), "the old one lies dropped");
         } else {
@@ -1525,14 +1741,23 @@ fn c1_the_fitted_set_decides_the_swap() {
 #[test]
 fn t41_part_frame() {
     use combat_arms::game::{attachments::PartOffset, view_model::parts};
-    let socket = Mat4::from_rotation_translation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2), Vec3::new(10.0, 2.0, -30.0));
+    let socket = Mat4::from_rotation_translation(
+        Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+        Vec3::new(10.0, 2.0, -30.0),
+    );
     assert!((socket.transform_vector3(Vec3::X) - Vec3::new(0.0, 0.0, -1.0)).length() < 1e-5);
-    let off = PartOffset { pos: [-2.2, 0.0, 0.0], rot: [0.0; 3] };
+    let off = PartOffset {
+        pos: [-2.2, 0.0, 0.0],
+        rot: [0.0; 3],
+    };
     let m = parts::first_person_frame(socket, &off);
     let at = m.transform_point3(Vec3::ZERO);
     assert!((at - Vec3::new(10.0, 2.0, -27.8)).length() < 1e-4, "{at}");
     for axis in [Vec3::X, Vec3::Y, Vec3::Z] {
-        assert!((m.transform_vector3(axis) - socket.transform_vector3(axis)).length() < 1e-5, "no turn");
+        assert!(
+            (m.transform_vector3(axis) - socket.transform_vector3(axis)).length() < 1e-5,
+            "no turn"
+        );
     }
 }
 
@@ -1547,11 +1772,20 @@ fn t42_rotation_offsets() {
     let game = |yaw: f32, pitch: f32, roll: f32| Quat::from_euler(EulerRot::YXZ, -yaw, -pitch, roll);
     let socket = game(0.3, 0.2, 0.0);
     let got = parts::added_angles(socket, [0.1, 0.0, 0.0]);
-    assert!(got.angle_between(game(0.4, 0.2, 0.0)) < 1e-5, "first person: angles added");
-    let off = PartOffset { pos: [0.0; 3], rot: [0.1, 0.0, 0.0] };
+    assert!(
+        got.angle_between(game(0.4, 0.2, 0.0)) < 1e-5,
+        "first person: angles added"
+    );
+    let off = PartOffset {
+        pos: [0.0; 3],
+        rot: [0.1, 0.0, 0.0],
+    };
     let third = Mat4::from_quat(socket) * parts::offset_matrix(&off);
     let want = socket * game(0.1, 0.0, 0.0);
-    assert!(Quat::from_mat4(&third).angle_between(want) < 1e-5, "third person: composed after");
+    assert!(
+        Quat::from_mat4(&third).angle_between(want) < 1e-5,
+        "third person: composed after"
+    );
     // The two differ when the socket is pitched.
     assert!(got.angle_between(want) > 1e-3);
 }
@@ -1567,7 +1801,9 @@ fn t43_lens_cut_out() {
     assert!(!lens.keeps(150) && lens.keeps(170) && !lens.keeps(160) && lens.keeps(161));
     let mut m = MapMesh::default();
     render_style::apply(&mut m, lens);
-    let MapAlpha::Mask(cut) = m.alpha else { panic!("{:?}", m.alpha) };
+    let MapAlpha::Mask(cut) = m.alpha else {
+        panic!("{:?}", m.alpha)
+    };
     assert!(150.0 / 255.0 < cut && cut < 170.0 / 255.0);
     assert!(m.double_sided && !m.unlit, "two-sided, lit");
 }

@@ -31,7 +31,11 @@ fn lift() -> T {
         obj(
             "KeyFramer",
             "KF",
-            &[("ObjectName", "Plat".into()), ("BaseKeyName", "K".into()), (keys::KEYS, hex)],
+            &[
+                ("ObjectName", "Plat".into()),
+                ("BaseKeyName", "K".into()),
+                (keys::KEYS, hex),
+            ],
         ),
         wm("WorldModel", "Plat", Vec3::ZERO, Vec3::new(50.0, 5.0, 50.0), &[]),
     ]);
@@ -67,7 +71,10 @@ fn wo47_goto_carries_riders_on_the_server() {
     t.send("KF", "GOTO K01");
     close(t.pos("Plat").y, 300.0, 1e-3, "jumped");
     let bot = carried(&t, 1);
-    assert!(bot.abs_diff_eq(Vec3::new(0.0, 300.0, 0.0), 1e-3), "the bot carried: {bot}");
+    assert!(
+        bot.abs_diff_eq(Vec3::new(0.0, 300.0, 0.0), 1e-3),
+        "the bot carried: {bot}"
+    );
     assert_eq!(carried(&t, 2), Vec3::ZERO, "a player isn't carried by a teleport");
 }
 
@@ -94,7 +101,11 @@ fn wo46_init_teleports_without_the_player() {
         "Lift",
         Vec3::ZERO,
         Vec3::new(50.0, 5.0, 50.0),
-        &[("MoveDir", v(0.0, 1.0, 0.0)), ("MoveDist", "100".into()), ("PowerOnTime", "1".into())],
+        &[
+            ("MoveDir", v(0.0, 1.0, 0.0)),
+            ("MoveDist", "100".into()),
+            ("PowerOnTime", "1".into()),
+        ],
     )]);
     t.send("Lift", "TRIGGER");
     t.frames(25);

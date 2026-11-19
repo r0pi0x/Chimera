@@ -87,7 +87,11 @@ fn case_49_a_weapon_slot_can_never_be_emptied() {
 #[test]
 fn case_50_what_may_go_in_a_backpack_slot_and_no_duplicates() {
     let mut l = fresh();
-    assert_eq!(equip(&mut l, Slot::Backpack(0), BOWIE), Err(text::WRONG_SLOT), "no knives in the backpack");
+    assert_eq!(
+        equip(&mut l, Slot::Backpack(0), BOWIE),
+        Err(text::WRONG_SLOT),
+        "no knives in the backpack"
+    );
     assert_eq!(equip(&mut l, Slot::Backpack(0), DESERT_EAGLE), Ok(()));
     assert_eq!(
         equip(&mut l, Slot::Secondary, DESERT_EAGLE),
@@ -99,7 +103,11 @@ fn case_50_what_may_go_in_a_backpack_slot_and_no_duplicates() {
     assert_eq!(equip(&mut l, Slot::Secondary, M4A1), Err(text::WRONG_SLOT));
     assert_eq!(equip(&mut l, Slot::Melee, M4A1), Err(text::WRONG_SLOT));
     assert_eq!(equip(&mut l, Slot::Primary, 914), Ok(()), "a primary shotgun");
-    assert_eq!(equip(&mut l, Slot::Secondary, 921), Ok(()), "type 5 goes in the secondary");
+    assert_eq!(
+        equip(&mut l, Slot::Secondary, 921),
+        Ok(()),
+        "type 5 goes in the secondary"
+    );
 }
 
 #[test]
@@ -109,13 +117,17 @@ fn an_items_cant_with_list_refuses_the_pair() {
     let owned = Owned::all();
     let mut l = fresh();
     l.equip(&c, &owned, SetKind::Normal, Slot::Primary, M4A1).unwrap();
-    l.equip(&c, &owned, SetKind::Normal, Slot::Backpack(0), DESERT_EAGLE).unwrap();
+    l.equip(&c, &owned, SetKind::Normal, Slot::Backpack(0), DESERT_EAGLE)
+        .unwrap();
     // The AK-47 cannot go with the M4A1 (it replaces the M16A3 only when
     // the M4A1 is not in the way): the primary slot holds the M4A1, so
     // swapping is fine, but the backpack cannot hold the AK-47 beside it.
     let r = l.equip(&c, &owned, SetKind::Normal, Slot::Backpack(0), AK47);
     assert_eq!(r, Err(text::CANT_TOGETHER));
-    assert_eq!(text::CANT_TOGETHER, "There is an item already equipped that can't be equipped together. Cannot equip this item.");
+    assert_eq!(
+        text::CANT_TOGETHER,
+        "There is an item already equipped that can't be equipped together. Cannot equip this item."
+    );
 }
 
 #[test]
@@ -178,7 +190,11 @@ fn case_53_no_backpack() {
     let mut l = fresh();
     equip(&mut l, Slot::Backpack(0), DESERT_EAGLE).unwrap();
     assert_eq!(ready([5, 0], &l), Ok(()));
-    assert_eq!(kit([5, 0], &l), [M16A3, M92FS, M9, M67], "the backpack pistol is missing");
+    assert_eq!(
+        kit([5, 0], &l),
+        [M16A3, M92FS, M9, M67],
+        "the backpack pistol is missing"
+    );
     assert_eq!(kit([0, 0], &l), [M16A3, M92FS, M9, M67, DESERT_EAGLE]);
 }
 
@@ -189,7 +205,10 @@ fn case_54_no_explosives() {
     assert_eq!(kit([4, 0], &l), [M16A3, M92FS, M9], "the M67 is missing");
     let mut l = l;
     equip(&mut l, Slot::Primary, 930).unwrap();
-    assert!(ready([4, 0], &l).is_err(), "a rocket launcher is not a non-explosive primary");
+    assert!(
+        ready([4, 0], &l).is_err(),
+        "a rocket launcher is not a non-explosive primary"
+    );
     assert_eq!(kit([4, 0], &l), [M92FS, M9]);
 }
 
@@ -214,7 +233,11 @@ fn the_other_arms_options() {
     assert_eq!(kit([8, 0], &l), [M9, M67]);
     let mut other = fresh();
     equip(&mut other, Slot::Secondary, 921).unwrap();
-    assert_eq!(ready([8, 0], &other), Ok(()), "a primary rifle: the secondary shotgun is ignored");
+    assert_eq!(
+        ready([8, 0], &other),
+        Ok(()),
+        "a primary rifle: the secondary shotgun is ignored"
+    );
     assert_eq!(kit([8, 0], &other), [M16A3, M9, M67], "while the server removes it");
     // With a 2nd Arms: "only" options keep what either allows, "except"
     // options need both and drop what either forbids.
@@ -233,8 +256,10 @@ fn a_set_is_what_the_gear_takes() {
     let mut l = fresh();
     l.extender = true;
     equip(&mut l, Slot::Head, 4001).ok();
-    l.equip_ability(combat_arms::game::gear::gear_data(), SetKind::Normal, 16001).unwrap();
-    l.equip_ability(combat_arms::game::gear::gear_data(), SetKind::Normal, 16002).unwrap();
+    l.equip_ability(combat_arms::game::gear::gear_data(), SetKind::Normal, 16001)
+        .unwrap();
+    l.equip_ability(combat_arms::game::gear::gear_data(), SetKind::Normal, 16002)
+        .unwrap();
     let base = combat_arms::game::characters::records::Selection::default();
     let (look, gear) = loadout::to_gear(&c, &l.normal, base, l.extender);
     assert_eq!(look.backpack, 1, "Standard Backpack is backpack record 1");
@@ -266,7 +291,10 @@ fn a_loadout_from_a_client_is_replayed_through_the_rules() {
     assert_eq!(clean.normal.primary, M16A3);
     assert_eq!(clean.normal.melee, M9);
     assert_eq!(clean.normal.secondary, DESERT_EAGLE);
-    assert_eq!(clean.normal.bag, [None; 4], "a knife and a duplicate pistol are refused, one slot only");
+    assert_eq!(
+        clean.normal.bag, [None; 4],
+        "a knife and a duplicate pistol are refused, one slot only"
+    );
 }
 
 // --- P: item lifetimes
@@ -275,9 +303,21 @@ fn a_loadout_from_a_client_is_replayed_through_the_rules() {
 fn case_55_item_periods() {
     assert_eq!(expires_at(0.0, Consume::from_code(0).unwrap(), 7), Some(7.0));
     assert_eq!(expires_at(0.0, Consume::from_code(0).unwrap(), 999), None, "never");
-    assert_eq!(expires_at(0.0, Consume::from_code(5).unwrap(), 3), Some(3.0 / 24.0), "3 hours");
-    assert_eq!(expires_at(2.0, Consume::from_code(7).unwrap(), 90), Some(2.0 + 90.0 / 1440.0), "minutes");
-    assert_eq!(expires_at(0.0, Consume::from_code(3).unwrap(), 10), None, "a use count, not a time");
+    assert_eq!(
+        expires_at(0.0, Consume::from_code(5).unwrap(), 3),
+        Some(3.0 / 24.0),
+        "3 hours"
+    );
+    assert_eq!(
+        expires_at(2.0, Consume::from_code(7).unwrap(), 90),
+        Some(2.0 + 90.0 / 1440.0),
+        "minutes"
+    );
+    assert_eq!(
+        expires_at(0.0, Consume::from_code(3).unwrap(), 10),
+        None,
+        "a use count, not a time"
+    );
     // Boxes, GP and coupons are not equipment durations.
     assert_eq!(Consume::from_code(9), None);
     // The expiry clock removes only what has passed.
@@ -313,7 +353,8 @@ fn case_56_an_expired_primary_falls_back_then_the_best_owned_replaces_it() {
     // The player's own chosen default wins over the base item.
     let mut l = fresh();
     l.defaults[0] = Some(MP5A4);
-    l.equip(&c, &Owned::all(), SetKind::Normal, Slot::Primary, AK47).unwrap();
+    l.equip(&c, &Owned::all(), SetKind::Normal, Slot::Primary, AK47)
+        .unwrap();
     l.expired(&c, &[AK47]);
     assert_eq!(l.normal.primary, MP5A4);
 }
@@ -342,8 +383,16 @@ fn expiry_releases_backpack_weapons_that_no_longer_fit() {
 }
 
 fn equip_pure(l: &mut Loadout) {
-    l.equip(&catalog(), &Owned::all(), SetKind::PureCombat, Slot::BackpackGear, 7003).unwrap();
-    l.equip(&catalog(), &Owned::all(), SetKind::PureCombat, Slot::Backpack(0), DESERT_EAGLE).unwrap();
+    l.equip(&catalog(), &Owned::all(), SetKind::PureCombat, Slot::BackpackGear, 7003)
+        .unwrap();
+    l.equip(
+        &catalog(),
+        &Owned::all(),
+        SetKind::PureCombat,
+        Slot::Backpack(0),
+        DESERT_EAGLE,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -369,7 +418,15 @@ fn case_57_an_item_expiring_during_a_match_changes_nothing_until_it_is_over() {
         )
         .unwrap();
     let room = lobby.room_of(1).unwrap();
-    lobby.request(2, Request::Enter { room, password: String::new() }).unwrap();
+    lobby
+        .request(
+            2,
+            Request::Enter {
+                room,
+                password: String::new(),
+            },
+        )
+        .unwrap();
     let mut l = fresh();
     l.normal.primary = AK47;
     lobby.request(2, Request::Loadout(Box::new(l))).unwrap();
@@ -412,7 +469,12 @@ fn every_item_stands_on_one_of_our_weapons() {
         assert!(ids.contains(w), "{}: {w} is one of our weapon documents", i.name);
     }
     // The four base items are the spec's.
-    for (no, kind) in [(20, Kind::Assault), (24, Kind::Pistol), (0, Kind::Knife), (7, Kind::Throwable)] {
+    for (no, kind) in [
+        (20, Kind::Assault),
+        (24, Kind::Pistol),
+        (0, Kind::Knife),
+        (7, Kind::Throwable),
+    ] {
         let i = c.get(no).unwrap();
         assert!(i.base && i.kind == kind);
     }

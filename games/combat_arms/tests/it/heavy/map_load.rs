@@ -111,8 +111,16 @@ fn loads_within(name: &str, next: &str, budget: Budget, peak_budget: u64) {
         // View models load on demand, not with the map.
         assert!(data.kit.view_models.is_empty(), "{map}");
         match count {
-            Some(n) => assert!(n < budget.load, "{map}: {} (budget {})", giga(Some(n)), giga(Some(budget.load))),
-            None => eprintln!("skipping the budget: no hardware counters ({})", chimera_core::metrics::hw_status()),
+            Some(n) => assert!(
+                n < budget.load,
+                "{map}: {} (budget {})",
+                giga(Some(n)),
+                giga(Some(budget.load))
+            ),
+            None => eprintln!(
+                "skipping the budget: no hardware counters ({})",
+                chimera_core::metrics::hw_status()
+            ),
         }
         if k == 0 {
             spawn_and_navigate(map, data, budget.spawn);
@@ -174,7 +182,15 @@ fn spawn_and_navigate(name: &str, map: MapData, budget: u64) {
 /// spawn 1.7 G, the longest tick 1.0 G.
 #[test]
 fn warehouse_loads_within_budget() {
-    loads_within("warehouse", "junk_flea", Budget { load: 80_000_000_000, spawn: 3_000_000_000 }, 3000);
+    loads_within(
+        "warehouse",
+        "junk_flea",
+        Budget {
+            load: 80_000_000_000,
+            spawn: 3_000_000_000,
+        },
+        3000,
+    );
 }
 
 /// A lean load (`MapLoadOptions::lean`, the dedicated server's): the same
@@ -209,10 +225,21 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
         .filter_map(|m| m.texture)
         .collect();
     assert!(!effects.is_empty(), "the whole load has the effects' textures");
-    assert!(lean.particles.materials.iter().all(|m| !m.name.starts_with("ca_fx:")), "the lean load has effect looks");
-    assert!(combat_arms::game::effects::library::library(&lean.memos).is_none(), "the lean load has an effect library");
-    let full_textures: Vec<&chimera_world::map::MapTexture> =
-        full.textures.iter().enumerate().filter(|(i, _)| !effects.contains(i)).map(|(_, t)| t).collect();
+    assert!(
+        lean.particles.materials.iter().all(|m| !m.name.starts_with("ca_fx:")),
+        "the lean load has effect looks"
+    );
+    assert!(
+        combat_arms::game::effects::library::library(&lean.memos).is_none(),
+        "the lean load has an effect library"
+    );
+    let full_textures: Vec<&chimera_world::map::MapTexture> = full
+        .textures
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !effects.contains(i))
+        .map(|(_, t)| t)
+        .collect();
     assert_eq!(lean.textures.len(), full_textures.len());
     let world_textures = lean.textures.iter().filter(|l| l.rgba8.is_empty()).count();
     assert!(world_textures > 10, "{world_textures} placeholders");
@@ -223,7 +250,12 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
         .map(|t| t.name.as_str())
         .collect();
     // (Texels only: the shared models may arrive as blocks, below.)
-    assert!(decoded.len() <= 1, "the lean load decoded {} textures: {:?}", decoded.len(), &decoded[..decoded.len().min(8)]);
+    assert!(
+        decoded.len() <= 1,
+        "the lean load decoded {} textures: {:?}",
+        decoded.len(),
+        &decoded[..decoded.len().min(8)]
+    );
     for (l, f) in lean.textures.iter().zip(full_textures.iter().copied()) {
         assert_eq!((&l.name, l.width, l.height), (&f.name, f.width, f.height));
         // Blocks the lean load holds are the process's shared character
@@ -231,11 +263,19 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
         // runs the tests in one; nextest, one each): this load decoded
         // none, and the whole load holds those textures as blocks alone.
         if l.bc.is_some() {
-            assert!(f.rgba8.is_empty() && f.mips.is_empty(), "{}: blocks in the lean load, texels in the whole", l.name);
+            assert!(
+                f.rgba8.is_empty() && f.mips.is_empty(),
+                "{}: blocks in the lean load, texels in the whole",
+                l.name
+            );
         }
         if l.rgba8.is_empty() {
             // (The shared character models' keep their blocks only: decoded.)
-            assert!(l.mips.is_empty() && f.decoded().rgba8.len() == (f.width * f.height * 4) as usize, "{}", l.name);
+            assert!(
+                l.mips.is_empty() && f.decoded().rgba8.len() == (f.width * f.height * 4) as usize,
+                "{}",
+                l.name
+            );
         }
     }
     let texture_of = |m: &MapData| {
@@ -244,7 +284,11 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
             .map(|x| (x.texture.map(|i| m.textures[i].name.clone()), x.alpha))
             .collect::<Vec<_>>()
     };
-    assert_eq!(texture_of(&lean), texture_of(&full), "the meshes find the same textures, alpha tests included");
+    assert_eq!(
+        texture_of(&lean),
+        texture_of(&full),
+        "the meshes find the same textures, alpha tests included"
+    );
 }
 
 /// TERRORDOME: the biggest lightmaps (4096 x 19428, laid out at half
@@ -253,7 +297,15 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
 /// the spawn 3.3 G, the longest tick 1.9 G.
 #[test]
 fn terrordome_loads_within_budget() {
-    loads_within("terrordome", "warehouse", Budget { load: 120_000_000_000, spawn: 5_000_000_000 }, 3500);
+    loads_within(
+        "terrordome",
+        "warehouse",
+        Budget {
+            load: 120_000_000_000,
+            spawn: 5_000_000_000,
+        },
+        3500,
+    );
 }
 
 /// A weapon's view model on demand: with its hands and own textures (the
@@ -286,7 +338,12 @@ fn view_model_loads_on_demand_once() {
     assert!(!first.model.model.meshes.is_empty());
     for m in &first.model.model.meshes {
         if let Some(t) = m.texture {
-            assert!(t < first.textures.len(), "{}: texture {t} of {}", m.material, first.textures.len());
+            assert!(
+                t < first.textures.len(),
+                "{}: texture {t} of {}",
+                m.material,
+                first.textures.len()
+            );
         }
     }
     let (again, count) = counted(|| on_demand::load_cached(&ca, weapons::RIFLE, &file).unwrap());

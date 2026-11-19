@@ -21,8 +21,8 @@ use combat_arms::{
     game::{
         TICK_INTERVAL, movement,
         weapons::{
-            self as ca, CaKick, CaRecoil, CaSpread, ConeParams, DEFAULT_BODY_GEAR, FireMode, HitSphere,
-            MALE, RecoilParams, SpreadParams, SpreadScales,
+            self as ca, CaKick, CaRecoil, CaSpread, ConeParams, DEFAULT_BODY_GEAR, FireMode, HitSphere, MALE,
+            RecoilParams, SpreadParams, SpreadScales,
         },
     },
     harness::CaSim,
@@ -187,7 +187,11 @@ fn player(sim: &mut Sim, at: Vec3, yaw: f32, health: f32) -> Entity {
 fn arm(sim: &mut Sim, p: Entity, id: &str) -> Entity {
     let w = weapon::give(sim.app.world_mut(), p, id).expect("unknown weapon");
     sim.seconds(1.5);
-    assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(w), "{id} drawn");
+    assert_eq!(
+        sim.app.world().get::<Inventory>(p).unwrap().active,
+        Some(w),
+        "{id} drawn"
+    );
     w
 }
 
@@ -246,7 +250,11 @@ fn pull(sim: &mut Sim, shooter: Entity, targets: &[Entity]) -> Vec<f32> {
     sim.ticks(1);
     sim.intent(shooter).fire = false;
     sim.ticks(4);
-    let lost = targets.iter().zip(before).map(|(t, b)| (b - health(sim, *t)) / HP).collect();
+    let lost = targets
+        .iter()
+        .zip(before)
+        .map(|(t, b)| (b - health(sim, *t)) / HP)
+        .collect();
     sim.seconds(0.7);
     lost
 }
@@ -440,7 +448,12 @@ fn t53_last_pellet_dropped() {
     }
     sim.intent(shooter).fire = false;
     sim.ticks(1);
-    close((before - health(&sim, target)) / HP, 5.0 * 35.0, 1e-2, "every round lands");
+    close(
+        (before - health(&sim, target)) / HP,
+        5.0 * 35.0,
+        1e-2,
+        "every round lands",
+    );
 }
 
 /// 54. Rays aren't rate-limited between shots: 8 rays, fireDelay 100,
@@ -455,7 +468,10 @@ fn t54_rays_not_rate_limited_between_shots() {
     assert_eq!(second, want, "shot 2");
     // One ray: the old rule (case 47).
     let mut last = None;
-    let rays: Vec<bool> = [0.0, 0.06, 0.11].iter().map(|t| ca::spacing(1, *t, 0.1, &mut last)[0]).collect();
+    let rays: Vec<bool> = [0.0, 0.06, 0.11]
+        .iter()
+        .map(|t| ca::spacing(1, *t, 0.1, &mut last)[0])
+        .collect();
     assert_eq!(rays, [true, false, true]);
 }
 
@@ -513,14 +529,33 @@ fn t57_server_sphere_by_priority() {
     // The line down through both, the head first.
     let down = Vec3::NEG_Y;
     let at = Vec3::new(0.0, 20.0, 0.0);
-    assert_eq!(ca::priority_sphere(&spheres, &[head, chest], at, down), Some(1), "the chest by priority");
+    assert_eq!(
+        ca::priority_sphere(&spheres, &[head, chest], at, down),
+        Some(1),
+        "the chest by priority"
+    );
     let even = HitSphere { priority: 1.0, ..chest };
-    assert_eq!(ca::priority_sphere(&spheres, &[head, even], at, down), Some(1), "a tie: the later");
+    assert_eq!(
+        ca::priority_sphere(&spheres, &[head, even], at, down),
+        Some(1),
+        "a tie: the later"
+    );
     let rev = [spheres[1], spheres[0]];
-    assert_eq!(ca::priority_sphere(&rev, &[even, head], at, down), Some(1), "a tie: the later (the head)");
+    assert_eq!(
+        ca::priority_sphere(&rev, &[even, head], at, down),
+        Some(1),
+        "a tie: the later (the head)"
+    );
     // Anywhere along the infinite line, not just ahead.
-    assert_eq!(ca::priority_sphere(&spheres, &[head, chest], Vec3::new(0.0, -50.0, 0.0), down), Some(1));
-    assert_eq!(ca::priority_sphere(&spheres, &[head, chest], Vec3::new(20.0, 20.0, 0.0), down), None, "none");
+    assert_eq!(
+        ca::priority_sphere(&spheres, &[head, chest], Vec3::new(0.0, -50.0, 0.0), down),
+        Some(1)
+    );
+    assert_eq!(
+        ca::priority_sphere(&spheres, &[head, chest], Vec3::new(20.0, 20.0, 0.0), down),
+        None,
+        "none"
+    );
 
     // In play: through a wood panel, a line into the plain box near its
     // top corner, within no sphere's radius: no hit (the walk goes on 5
@@ -535,8 +570,14 @@ fn t57_server_sphere_by_priority() {
             let p = Vec3::new(max.x - U, max.y - U, max.z);
             let from = eye(&sim, shooter);
             let dir = (p - from).normalize();
-            assert!(ca::priority_sphere(&world, *MALE, p, dir).is_none(), "the corner is within no sphere");
-            assert!(ca::box_entry(min, max, from, dir, f32::INFINITY).is_some(), "but in the box");
+            assert!(
+                ca::priority_sphere(&world, *MALE, p, dir).is_none(),
+                "the corner is within no sphere"
+            );
+            assert!(
+                ca::box_entry(min, max, from, dir, f32::INFINITY).is_some(),
+                "but in the box"
+            );
             p
         } else {
             sphere(&sim, shooter, target, "Upper_torso")
@@ -596,7 +637,10 @@ fn t58_behind_from_the_body() {
 #[test]
 fn t59_ai_damage() {
     let s = ca::CaAiDamage::default();
-    assert_eq!((s.factor, s.capped(1500.0 * s.factor, false), s.capped(216.0, true)), (0.8, 990.0, 216.0));
+    assert_eq!(
+        (s.factor, s.capped(1500.0 * s.factor, false), s.capped(216.0, true)),
+        (0.8, 990.0, 216.0)
+    );
     for (part, armoured, want, ap) in [
         ("Upper_torso", false, 28.0, 0.0),
         ("Head", false, 50.0, 0.0),
@@ -606,13 +650,25 @@ fn t59_ai_damage() {
         let (shooter, target) = range_lane(&mut sim, "test:m4a1_exact", 100.0);
         sim.app.world_mut().entity_mut(shooter).insert(Bot);
         if armoured {
-            sim.app.world_mut().entity_mut(target).insert(combat_arms::game::weapons::gear_armour(100.0, &vec![DEFAULT_BODY_GEAR]));
+            sim.app
+                .world_mut()
+                .entity_mut(target)
+                .insert(combat_arms::game::weapons::gear_armour(100.0, &vec![DEFAULT_BODY_GEAR]));
         }
         let at = sphere(&sim, shooter, target, part);
         aim(&mut sim, shooter, at);
         let lost = pull(&mut sim, shooter, &[target]);
         close(lost[0], want, 1e-3, part);
-        close(sim.app.world().get::<chimera_sim::weapon::Armor>(target).map(combat_arms::game::weapons::points).unwrap(), ap, 1e-3, "AP");
+        close(
+            sim.app
+                .world()
+                .get::<chimera_sim::weapon::Armor>(target)
+                .map(combat_arms::game::weapons::points)
+                .unwrap(),
+            ap,
+            1e-3,
+            "AP",
+        );
     }
     // A bot shooting a bot: the factor, no cap.
     let mut sim = sim();
@@ -660,7 +716,11 @@ fn t61_near_miss_drop() {
             .next()
             .expect("an arm outside the box");
         let dir = (at - from).normalize();
-        assert!(ca::box_entry(min, max, from, dir, f32::INFINITY).is_none(), "misses the plain box ({})", MALE[i].name);
+        assert!(
+            ca::box_entry(min, max, from, dir, f32::INFINITY).is_none(),
+            "misses the plain box ({})",
+            MALE[i].name
+        );
         aim(&mut sim, shooter, at);
         // A wall across the lane near the victim's origin.
         let z = sim.position(target).z + wall_dz;
@@ -696,7 +756,11 @@ fn t63_integer_reperturb() {
     close(d.y, -0.0049999, 1e-6, "y");
     close(d.z, 0.9999750, 1e-6, "z");
     let draws: std::collections::BTreeSet<i32> = (0..1000).map(|i| ca::whole_draw(i as f32 / 1000.0, 5)).collect();
-    assert_eq!(draws.into_iter().collect::<Vec<_>>(), (-5..=5).collect::<Vec<_>>(), "11 offsets");
+    assert_eq!(
+        draws.into_iter().collect::<Vec<_>>(),
+        (-5..=5).collect::<Vec<_>>(),
+        "11 offsets"
+    );
 }
 
 /// 64 (and weapon_classes.md 40, as corrected by its case 43). First-round
@@ -840,7 +904,11 @@ fn t69_partial_burst_fields() {
     let s = CaSpread::new(params.clone(), U);
     let c = s.cone_params(FireMode::Burst);
     assert_eq!((c.min, c.max), (3, 60));
-    assert_eq!((c.inc, c.dec), (params.cone.inc, params.cone.dec), "speeds from the plain ones");
+    assert_eq!(
+        (c.inc, c.dec),
+        (params.cone.inc, params.cone.dec),
+        "speeds from the plain ones"
+    );
     assert_eq!(s.cone(FireMode::Burst), 3.0);
 }
 
@@ -897,7 +965,12 @@ fn wc38_carry_over_with_spacing() {
 fn wc39_server_reload_mark() {
     close(ca::server_reload_mark(2.4, 1.0, 0.8) as f32, 2.0, 1e-9, "rate 1");
     close(ca::server_reload_mark(2.4, 2.4, 0.8) as f32, 1.0, 1e-9, "rate 2.4");
-    close(ca::server_reload_mark(2.4, 1.0, 1.0) as f32, 2.4, 1e-9, "ReloadCheckTime 1");
+    close(
+        ca::server_reload_mark(2.4, 1.0, 1.0) as f32,
+        2.4,
+        1e-9,
+        "ReloadCheckTime 1",
+    );
     // Within a tick of the mark's end (15 ms): 50 ms either side.
     for (after, want) in [(1.95, 0.0), (2.05, 35.0)] {
         let mut sim = sim();
@@ -1032,10 +1105,18 @@ fn es94_unknown_in_the_surface_table() {
     close(u.range, 1.0, 0.0, "range");
     close(u.damage, 0.6, 0.0, "damage");
     assert_eq!(u.id, 0);
-    assert_eq!(t.ids(), vec![0, 1, 2, 3, 9, 23, 30, 32, 40, 50, 53, 65, 69, 76, 81, 100, 204, 206, 207]);
-    for (name, limit, damage) in
-        [("trussing", 10.0, 1.0), ("invisible metal", 0.0, 0.9), ("air", 0.0, 1.0), ("boss3_weak", 55.0, 0.3)]
-    {
+    assert_eq!(
+        t.ids(),
+        vec![
+            0, 1, 2, 3, 9, 23, 30, 32, 40, 50, 53, 65, 69, 76, 81, 100, 204, 206, 207
+        ]
+    );
+    for (name, limit, damage) in [
+        ("trussing", 10.0, 1.0),
+        ("invisible metal", 0.0, 0.9),
+        ("air", 0.0, 1.0),
+        ("boss3_weak", 55.0, 0.3),
+    ] {
         let s = t.get(name).unwrap_or_else(|| panic!("{name} passes"));
         close(s.thickness, limit * U, 1e-6, name);
         close(s.damage, damage, 0.0, name);
@@ -1076,12 +1157,25 @@ fn t71_73_male_priorities() {
     let (name, location, factor) = picked(male, &["Neck", "Upper_torso"]);
     assert_eq!((name, location), ("Neck", ca::Location::Torso));
     close(35.0 * 0.5 * factor, 17.5, 1e-4, "72");
-    assert_eq!(picked(male, &["Neck", "Face_Jaw", "Face_Eyelid1"]).0, "Face_Eyelid1", "73: a tie, the later");
+    assert_eq!(
+        picked(male, &["Neck", "Face_Jaw", "Face_Eyelid1"]).0,
+        "Face_Eyelid1",
+        "73: a tie, the later"
+    );
     let (name, _, factor) = picked(male, &["left_hand", "Left_legu"]);
     assert_eq!(name, "Left_legu", "73: the later of two 0.25 entries");
     close(35.0 * 0.5 * factor, 15.75, 1e-4, "73");
     // The table's values (Follow-up 2).
-    for (n, p) in [("Head", 1.0), ("Neck", 0.75), ("Face_Jaw", 0.75), ("Face_Eyelid1", 0.75), ("Torso", 0.5), ("Upper_torso", 0.5), ("Nuts", 0.25), ("Right_hand", 0.25)] {
+    for (n, p) in [
+        ("Head", 1.0),
+        ("Neck", 0.75),
+        ("Face_Jaw", 0.75),
+        ("Face_Eyelid1", 0.75),
+        ("Torso", 0.5),
+        ("Upper_torso", 0.5),
+        ("Nuts", 0.25),
+        ("Right_hand", 0.25),
+    ] {
         assert_eq!(ca::male(n).priority, p, "{n}");
     }
 }

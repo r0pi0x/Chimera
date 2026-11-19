@@ -18,7 +18,7 @@ use chimera_world::{
 use combat_arms::{
     game::{
         TICK_INTERVAL,
-        attachments::{CaMods, CaModTable, Part},
+        attachments::{CaModTable, CaMods, Part},
         data::CaData,
         effects::{
             self, CaFxRequest, CaFxSettings, CaShell, CaTracers, FxKind,
@@ -88,7 +88,14 @@ fn g(d: f32, big_r: f32) -> f32 {
 #[test]
 fn t01_gain_m4a1_shot() {
     close(rules::inner_radius(2000.0), 140.0, 1e-3, "r");
-    for (d, want) in [(100.0, 1.0), (500.0, 0.9334), (1000.0, 0.7166), (1500.0, 0.3553), (1800.0, 0.0691), (1900.0, 0.0)] {
+    for (d, want) in [
+        (100.0, 1.0),
+        (500.0, 0.9334),
+        (1000.0, 0.7166),
+        (1500.0, 0.3553),
+        (1800.0, 0.0691),
+        (1900.0, 0.0),
+    ] {
         close(g(d, 2000.0), want, 1e-4, &format!("d = {d}"));
     }
     close(rules::zero_point(140.0, 2000.0), 1865.26, 0.01, "zero point");
@@ -116,9 +123,18 @@ fn t02_gain_silenced_m4a1() {
 #[test]
 fn t03_t04_footstep_gain_and_ghillie() {
     let metal = t().surface(20);
-    assert_eq!(metal.right, ["chars_snd/footsteps/metal1a.wav", "chars_snd/footsteps/metal2a.wav"]);
-    assert_eq!(rules::draw_slot(&metal.right, 2, 0.2), Some("chars_snd/footsteps/metal1a.wav"));
-    assert_eq!(rules::draw_slot(&metal.right, 2, 0.7), Some("chars_snd/footsteps/metal2a.wav"));
+    assert_eq!(
+        metal.right,
+        ["chars_snd/footsteps/metal1a.wav", "chars_snd/footsteps/metal2a.wav"]
+    );
+    assert_eq!(
+        rules::draw_slot(&metal.right, 2, 0.2),
+        Some("chars_snd/footsteps/metal1a.wav")
+    );
+    assert_eq!(
+        rules::draw_slot(&metal.right, 2, 0.7),
+        Some("chars_snd/footsteps/metal2a.wav")
+    );
     close(rules::inner_radius(rules::FOOTSTEP_RADIUS), 84.0, 1e-3, "r");
     for (d, want) in [(500.0, 0.8049), (1000.0, 0.2027), (1150.0, 0.0)] {
         close(g(d, 1200.0), want, 1e-4, &format!("d = {d}"));
@@ -145,7 +161,12 @@ fn t06_bullet_impact_on_metal() {
     let files: Vec<&str> = (0..4)
         .map(|i| effects::impact_sound(record, metal, AmmoKind::Bullet, (i as f32 + 0.5) / 4.0).unwrap())
         .collect();
-    assert_eq!(files, (1..=4).map(|i| format!("guns_snd_impacts/metal_bg/impact{i}.wav")).collect::<Vec<_>>());
+    assert_eq!(
+        files,
+        (1..=4)
+            .map(|i| format!("guns_snd_impacts/metal_bg/impact{i}.wav"))
+            .collect::<Vec<_>>()
+    );
     assert_eq!(record.sound_radius, 900.0);
     for (d, want) in [(200.0, 0.9486), (500.0, 0.6488), (800.0, 0.0921)] {
         close(g(d, 900.0), want, 1e-4, &format!("d = {d}"));
@@ -155,7 +176,10 @@ fn t06_bullet_impact_on_metal() {
 #[test]
 fn t07_frag_detonation_gain() {
     let record = t().impact("handgrenade").unwrap();
-    assert_eq!((record.sound.as_str(), record.sound_radius), ("guns_snd_impacts/explosions/gren.wav", 1500.0));
+    assert_eq!(
+        (record.sound.as_str(), record.sound_radius),
+        ("guns_snd_impacts/explosions/gren.wav", 1500.0)
+    );
     for (d, want) in [(500.0, 0.8772), (1000.0, 0.4918), (1400.0, 0.0)] {
         close(g(d, 1500.0), want, 1e-4, &format!("d = {d}"));
     }
@@ -163,7 +187,14 @@ fn t07_frag_detonation_gain() {
 
 #[test]
 fn t08_low_pass() {
-    for (d, want) in [(1000.0, 1.0), (1200.0, 1.0), (1350.0, 0.6173), (1500.0, 0.2929), (1650.0, 0.1), (1800.0, 0.1)] {
+    for (d, want) in [
+        (1000.0, 1.0),
+        (1200.0, 1.0),
+        (1350.0, 0.6173),
+        (1500.0, 0.2929),
+        (1650.0, 0.1),
+        (1800.0, 0.1),
+    ] {
         close(rules::low_pass(d, 140.0, 2000.0), want, 1e-4, &format!("d = {d}"));
     }
     // Only while d < R.
@@ -171,8 +202,18 @@ fn t08_low_pass() {
     // Chimera's playback reads the same from the level.
     let level = rules::sound_level(2000.0, UNIT);
     let metres = 1350.0 * UNIT;
-    close(chimera_world::map::sound::distance_cutoff(level, metres), 0.6173, 1e-3, "playback");
-    close(chimera_world::map::sound::distance_gain(level, metres), g(1350.0, 2000.0), 1e-4, "gain");
+    close(
+        chimera_world::map::sound::distance_cutoff(level, metres),
+        0.6173,
+        1e-3,
+        "playback",
+    );
+    close(
+        chimera_world::map::sound::distance_gain(level, metres),
+        g(1350.0, 2000.0),
+        1e-4,
+        "gain",
+    );
 }
 
 #[test]
@@ -224,7 +265,10 @@ fn t11_tracer_timing() {
     close(tail, 1200.0, 1e-3, "tail at 0.2");
     close(head, 1500.0, 1e-3, "head clamped");
     assert!(p.ends(0.26).is_none());
-    assert!(TracerPath::new(Vec3::ZERO, Vec3::new(0.0, 0.0, -90.0), 6000.0, 600.0).is_none(), "90 u: none");
+    assert!(
+        TracerPath::new(Vec3::ZERO, Vec3::new(0.0, 0.0, -90.0), 6000.0, 600.0).is_none(),
+        "90 u: none"
+    );
 }
 
 #[test]
@@ -233,7 +277,11 @@ fn t12_tracer_with_a_dot_sight() {
     let m = mods(&["DotSight_A_AR"], 2000, 1400);
     let own = effects::own_tracer_frequency(t(), &m4, Some(&m)).unwrap();
     assert_eq!(cadence(own, 9), [3, 6, 9], "the sight's AR01 cadence");
-    assert_eq!(effects::tracer_look(t(), &m4, Some(&m)).unwrap(), t().tracer("AR02").unwrap(), "the ammo's look");
+    assert_eq!(
+        effects::tracer_look(t(), &m4, Some(&m)).unwrap(),
+        t().tracer("AR02").unwrap(),
+        "the ammo's look"
+    );
     // Others: the server's counter with the ammo's F.
     assert_eq!(cadence(t().tracer(&m4.tracer).unwrap().frequency, 8), [4, 8]);
 }
@@ -242,18 +290,28 @@ fn t12_tracer_with_a_dot_sight() {
 fn t13_tracer_with_an_a_silencer() {
     let m4 = wfx("combat_arms:m4a1");
     let m = mods(&["Silencer_A_AR"], 2000, 1400);
-    assert_eq!(cadence(effects::own_tracer_frequency(t(), &m4, Some(&m)).unwrap(), 9), [3, 6, 9]);
+    assert_eq!(
+        cadence(effects::own_tracer_frequency(t(), &m4, Some(&m)).unwrap(), 9),
+        [3, 6, 9]
+    );
     let look = effects::tracer_look(t(), &m4, Some(&m)).unwrap();
     assert_eq!(look, t().tracer("AR01").unwrap());
     assert_eq!((look.width, look.length), (25.0, 300.0));
-    assert_eq!(cadence(t().tracer(&m4.tracer).unwrap().frequency, 8), [4, 8], "others: the ammo's F");
+    assert_eq!(
+        cadence(t().tracer(&m4.tracer).unwrap().frequency, 8),
+        [4, 8],
+        "others: the ammo's F"
+    );
 }
 
 #[test]
 fn t14_pistol_with_silencer() {
     let pistol = wfx("combat_arms:beretta_m92fs");
     let m = mods(&["Silencer_A_Pistol"], 1600, 1200);
-    assert!(effects::tracer_look(t(), &pistol, Some(&m)).is_none(), "pistol ammo has no tracer");
+    assert!(
+        effects::tracer_look(t(), &pistol, Some(&m)).is_none(),
+        "pistol ammo has no tracer"
+    );
     assert_eq!(effects::own_tracer_frequency(t(), &pistol, Some(&m)), Some(0));
 }
 
@@ -374,7 +432,9 @@ fn t20_no_decal_on_characters() {
     // Two blobs splatting 50 % each: 1.0 expected.
     let mut rolls = effects::Rolls::default();
     let n = 20_000;
-    let total: usize = (0..n).map(|_| rules::splats(&[50.0, 50.0], &[rolls.next(), rolls.next()])).sum();
+    let total: usize = (0..n)
+        .map(|_| rules::splats(&[50.0, 50.0], &[rolls.next(), rolls.next()]))
+        .sum();
     close(total as f32 / n as f32, 1.0, 0.03, "expected stains");
     // A head hit's group (case 21; its light and stains: heavy).
     let head = effects::impact(
@@ -414,10 +474,20 @@ fn t23_silencer_flash() {
     let m4 = wfx("combat_arms:m4a1");
     let c = mods(&["Silencer_C_AR"], 2000, 1400);
     let a = mods(&["Silencer_A_AR"], 2000, 1400);
-    assert_eq!(effects::hh_muzzle(t(), &m4, Some(&c)), "Silenced01_HH_Muzz", "a group the file lacks: nothing");
-    assert_eq!(effects::pv_muzzle(t(), "AK47_pv_muzz", &[], Some(&c)), "Silenced01_PV_Muzz");
+    assert_eq!(
+        effects::hh_muzzle(t(), &m4, Some(&c)),
+        "Silenced01_HH_Muzz",
+        "a group the file lacks: nothing"
+    );
+    assert_eq!(
+        effects::pv_muzzle(t(), "AK47_pv_muzz", &[], Some(&c)),
+        "Silenced01_PV_Muzz"
+    );
     assert_eq!(effects::hh_muzzle(t(), &m4, Some(&a)), "WEAPON_HH");
-    assert_eq!(effects::hh_muzzle(t(), &m4, Some(&mods(&["Silencer_A_AR_Red"], 2000, 1400))), "Silenced01_HH_Muzz");
+    assert_eq!(
+        effects::hh_muzzle(t(), &m4, Some(&mods(&["Silencer_A_AR_Red"], 2000, 1400))),
+        "Silenced01_HH_Muzz"
+    );
     for m in [&c, &a] {
         assert_eq!(
             effects::fire_sound(&m4, Some(m), false).unwrap(),
@@ -428,11 +498,18 @@ fn t23_silencer_flash() {
 
 #[test]
 fn t24_own_muzzle() {
-    let params: combat_arms::game::view_model::CaViewParams =
-        weapon_set().get("combat_arms:m4a1").unwrap().hook(combat_arms::game::view_model::VIEW).unwrap();
+    let params: combat_arms::game::view_model::CaViewParams = weapon_set()
+        .get("combat_arms:m4a1")
+        .unwrap()
+        .hook(combat_arms::game::view_model::VIEW)
+        .unwrap();
     assert_eq!(effects::pv_muzzle(t(), &params.muzzle_fx, &[], None), "AK47_pv_muzz");
     assert_eq!(rules::FLASH_TIME, 0.05);
-    assert_eq!(t().fire(&wfx("combat_arms:m4a1").fire).unwrap().fx, "test", "the smoke puff's group");
+    assert_eq!(
+        t().fire(&wfx("combat_arms:m4a1").fire).unwrap().fx,
+        "test",
+        "the smoke puff's group"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -456,7 +533,11 @@ fn t25_casing() {
     assert_eq!(v, Vec3::new(50.0, 30.0, 20.0));
     let v = rules::casing_velocity([1.0, 1.0, 1.0], false);
     assert_eq!(v, Vec3::new(75.0, 75.0, 50.0));
-    assert_eq!(rules::casing_velocity([0.5, 0.5, 0.5], true).x, -62.5, "left hand: to the left");
+    assert_eq!(
+        rules::casing_velocity([0.5, 0.5, 0.5], true).x,
+        -62.5,
+        "left hand: to the left"
+    );
     let fire = t().fire("5.56mm").unwrap();
     assert!(fire.shells && fire.shell_model.ends_with("5.56mm.ltb"));
     let mut c = Casing {
@@ -483,12 +564,19 @@ fn t25_casing() {
             break;
         }
     }
-    assert_eq!(steps.iter().filter(|s| **s == CasingStep::FirstBounce).count(), 1, "one sound");
+    assert_eq!(
+        steps.iter().filter(|s| **s == CasingStep::FirstBounce).count(),
+        1,
+        "one sound"
+    );
     assert_eq!(*steps.last().unwrap(), CasingStep::Removed);
     close(c.age, 3.0, dt, "removed at 3 s");
     // Its sound: the surface's, R 200.
     let metal = t().surface(20);
-    assert_eq!((metal.shell.as_str(), metal.shell_radius), ("guns_snd_shells/metal.wav", 200.0));
+    assert_eq!(
+        (metal.shell.as_str(), metal.shell_radius),
+        ("guns_snd_shells/metal.wav", 200.0)
+    );
     // Seen from 1100 u: no casing.
     let far = rules::gates(Vec3::ZERO, Vec3::NEG_Z, Vec3::new(0.0, 0.0, -1100.0), Vec3::ZERO, true);
     assert!(far.fire_seen && far.fire_far);
@@ -548,7 +636,10 @@ fn t27_flyby() {
     let near = rules::flyby(cam, from, to, 900.0).expect("fly-by");
     close(near.distance(cam), 400.0, 1e-3, "nearest point");
     let to_near = Vec3::new(400.0, 0.0, -450.0);
-    assert!(rules::flyby(cam, from, to_near, 900.0).is_none(), "impact 600 u away: inside 0.75 x 900");
+    assert!(
+        rules::flyby(cam, from, to_near, 900.0).is_none(),
+        "impact 600 u away: inside 0.75 x 900"
+    );
     // Quirk 6: the original's position near the origin.
     let q = rules::flyby_quirk_position(Vec3::new(5000.0, 0.0, 0.0), Vec3::new(5000.0, 0.0, 300.0));
     close(q.length(), 300.0 + 0.0, 1.01, "about 300 u from the origin");
@@ -561,7 +652,10 @@ fn t28_hit_confirm_queue() {
     assert_eq!(queued, 5);
     assert_eq!(q.drain(), 5);
     assert_eq!(q.drain(), 0);
-    assert_eq!(t().sounds.ding, ["guns_snd_impacts/multiding1.wav", "guns_snd_impacts/multiding2.wav"]);
+    assert_eq!(
+        t().sounds.ding,
+        ["guns_snd_impacts/multiding1.wav", "guns_snd_impacts/multiding2.wav"]
+    );
 }
 
 #[test]
@@ -574,9 +668,18 @@ fn t29_hurt_limit() {
     assert!(l.try_start(HurtKind::Head, 0.0, 1.0), "a separate kind");
     assert!(l.try_start(HurtKind::Guns, 1.0, 1.0), "free again once it ended");
     assert!(effects::hurt_files(t(), HurtKind::Guns)[0].contains("hurtpain_a_male"));
-    assert_eq!(effects::hurt_files(t(), HurtKind::Head), ["chars_snd/male/headshot.wav"]);
-    assert_eq!(effects::hurt_kinds(DamageKind::Bullet, Hitgroup::Chest, false), [Some(HurtKind::Guns), None]);
-    assert_eq!(effects::hurt_kinds(DamageKind::Blast, Hitgroup::Stomach, false)[1], Some(HurtKind::Groin));
+    assert_eq!(
+        effects::hurt_files(t(), HurtKind::Head),
+        ["chars_snd/male/headshot.wav"]
+    );
+    assert_eq!(
+        effects::hurt_kinds(DamageKind::Bullet, Hitgroup::Chest, false),
+        [Some(HurtKind::Guns), None]
+    );
+    assert_eq!(
+        effects::hurt_kinds(DamageKind::Blast, Hitgroup::Stomach, false)[1],
+        Some(HurtKind::Groin)
+    );
 }
 
 #[test]
@@ -638,7 +741,16 @@ fn t32_frag_on_stone() {
     assert_eq!(j.amplitude(150.0), 60.0);
     let frag = t().impact("handgrenade").unwrap();
     let on = |id: u16, seen: bool| {
-        effects::impact(frag, t().surface(id), AmmoKind::Thrown, seen, true, false, &settings(), [0.0, 0.0])
+        effects::impact(
+            frag,
+            t().surface(id),
+            AmmoKind::Thrown,
+            seen,
+            true,
+            false,
+            &settings(),
+            [0.0, 0.0],
+        )
     };
     let stone = on(10, true);
     assert_eq!(stone.burst.as_deref(), Some("Grenade_Stone"));
@@ -649,13 +761,22 @@ fn t32_frag_on_stone() {
     // case 58).
     let air = on(1, true);
     assert!(air.burst.is_none() && air.sound.is_some());
-    assert_eq!(on(effects::GRENADE_OWN_SURFACE, true).burst.as_deref(), Some("Grenade_Stone"));
+    assert_eq!(
+        on(effects::GRENADE_OWN_SURFACE, true).burst.as_deref(),
+        Some("Grenade_Stone")
+    );
     assert_eq!(on(0, true).burst.as_deref(), Some("Grenade_Dirt"));
 }
 
 #[test]
 fn t33_frag_behind_you() {
-    let gates = rules::gates(Vec3::ZERO, Vec3::NEG_Z, Vec3::new(0.0, 0.0, 500.0), Vec3::new(0.0, 0.0, 500.0), true);
+    let gates = rules::gates(
+        Vec3::ZERO,
+        Vec3::NEG_Z,
+        Vec3::new(0.0, 0.0, 500.0),
+        Vec3::new(0.0, 0.0, 500.0),
+        true,
+    );
     assert!(!gates.impact_seen);
     let out = effects::impact(
         t().impact("handgrenade").unwrap(),
@@ -686,12 +807,33 @@ fn t34_smoke_cloud_drift() {
     close(1.0 / 50f32.ln(), 0.2556, 1e-4, "factor");
     // Smoke and flash: their own groups always (area ammo).
     let smoke = t().impact("Smoke_Grenade").unwrap();
-    let unseen = effects::impact(smoke, t().surface(1), AmmoKind::Thrown, false, true, false, &settings(), [0.0; 2]);
+    let unseen = effects::impact(
+        smoke,
+        t().surface(1),
+        AmmoKind::Thrown,
+        false,
+        true,
+        false,
+        &settings(),
+        [0.0; 2],
+    );
     assert_eq!(unseen.ammo_fx.as_deref(), Some("Smoke_Grenade_01"));
     let flash = t().impact("flashbang_exp").unwrap();
-    let unseen = effects::impact(flash, t().surface(1), AmmoKind::Thrown, false, true, false, &settings(), [0.0; 2]);
+    let unseen = effects::impact(
+        flash,
+        t().surface(1),
+        AmmoKind::Thrown,
+        false,
+        true,
+        false,
+        &settings(),
+        [0.0; 2],
+    );
     assert_eq!(unseen.ammo_fx.as_deref(), Some("Flashbang_Ini"));
-    assert_eq!(unseen.sound.unwrap(), ("guns_snd_impacts/explosions/flash.wav".into(), 1500.0));
+    assert_eq!(
+        unseen.sound.unwrap(),
+        ("guns_snd_impacts/explosions/flash.wav".into(), 1500.0)
+    );
 }
 
 #[test]
@@ -707,7 +849,11 @@ fn t37_reload_keys() {
     let m4 = wfx("combat_arms:m4a1");
     assert_eq!(m4.key_sound(1), Some(("guns_snd_ar/m4a1/reload1.wav", 300.0)));
     assert_eq!(m4.key_sound(2), Some(("guns_snd_ar/m4a1/reload2.wav", 300.0)));
-    assert_eq!(m4.key_sound(3), Some(("guns_snd_ar/m4a1/reload3.wav", 300.0)), "also the select's key 3");
+    assert_eq!(
+        m4.key_sound(3),
+        Some(("guns_snd_ar/m4a1/reload3.wav", 300.0)),
+        "also the select's key 3"
+    );
     assert_eq!(m4.key_sound(4), Some(("guns_snd_ar/m4a1/select.wav", 300.0)));
     assert_eq!(m4.key_sound(5), Some(("guns_snd_ar/m4a1/deselect.wav", 300.0)));
     close(rules::zero_point(21.0, 300.0), 280.0, 0.5, "heard to about 280 u");
@@ -733,14 +879,19 @@ fn t39_melee_impact() {
     for _ in 0..10_000 {
         match effects::impact_sound(melee, wood, AmmoKind::Melee, rolls.next()) {
             None => silent += 1,
-            Some(f) => assert!(f == "guns_snd_impacts/melee/wood/impact1.wav" || f == "guns_snd_impacts/melee/wood/impact2.wav"),
+            Some(f) => assert!(
+                f == "guns_snd_impacts/melee/wood/impact1.wav" || f == "guns_snd_impacts/melee/wood/impact2.wav"
+            ),
         }
     }
     assert!((4800..5200).contains(&silent), "{silent}");
     let knife = wfx("combat_arms:m9_knife");
     assert_eq!((knife.ammo_kind, knife.impact.as_str()), (AmmoKind::Melee, "Melee"));
     let hit = effects::impact(melee, wood, AmmoKind::Melee, true, true, false, &settings(), [0.9, 0.0]);
-    assert!(hit.mark.is_none() && hit.burst.is_none(), "no decal, no surface effects");
+    assert!(
+        hit.mark.is_none() && hit.burst.is_none(),
+        "no decal, no surface effects"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -779,7 +930,10 @@ fn player(sim: &mut Sim, at: Vec3, yaw: f32) -> Entity {
     let p = sim.spawn_character(at, movement::ID);
     sim.intent(p).yaw = yaw;
     sim.seconds(0.5);
-    sim.app.world_mut().entity_mut(p).insert(Health { current: 1.0, max: 1.0 });
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(Health { current: 1.0, max: 1.0 });
     p
 }
 
@@ -815,7 +969,12 @@ fn name_everything(sim: &mut Sim, name: &str) {
     let y = GREYBOX_FLOOR;
     let data = MapData {
         meshes: vec![MapMesh {
-            positions: vec![[-500.0, y, -500.0], [-500.0, y, 500.0], [500.0, y, 500.0], [500.0, y, -500.0]],
+            positions: vec![
+                [-500.0, y, -500.0],
+                [-500.0, y, 500.0],
+                [500.0, y, 500.0],
+                [500.0, y, -500.0],
+            ],
             indices: vec![0, 1, 2, 0, 2, 3],
             surface: Some(name.to_string()),
             ..Default::default()
@@ -836,7 +995,11 @@ fn shots_sound_local_for_you_and_3d_for_others() {
     heard(&mut sim);
     fire_once(&mut sim, me);
     let mine = heard(&mut sim);
-    assert!(mine.iter().any(|s| s.file == "guns_snd_ar/m4a1/fire.wav" && s.at.is_none()), "{mine:?}");
+    assert!(
+        mine.iter()
+            .any(|s| s.file == "guns_snd_ar/m4a1/fire.wav" && s.at.is_none()),
+        "{mine:?}"
+    );
     fire_once(&mut sim, other);
     let theirs = heard(&mut sim);
     let fire = theirs
@@ -846,7 +1009,10 @@ fn shots_sound_local_for_you_and_3d_for_others() {
     assert!(fire.at.is_some());
     assert_eq!(fire.radii, (140.0, 2000.0));
     // The fire voice is the shooter's weapon's (one per attacker and weapon).
-    assert_eq!((fire.source, fire.channel), (Some(gun), Some(effects::sounds::CHANNEL_FIRE)));
+    assert_eq!(
+        (fire.source, fire.channel),
+        (Some(gun), Some(effects::sounds::CHANNEL_FIRE))
+    );
 }
 
 /// A round whose gun is gone when its effects are drawn (the gun game
@@ -855,7 +1021,10 @@ fn shots_sound_local_for_you_and_3d_for_others() {
 /// network client (a `RemoteShot` naming a gun no longer in their hands).
 #[test]
 fn a_round_whose_gun_was_swapped_still_sounds() {
-    use chimera_sim::{minigame::runtime::take_weapon, weapon::{SpreadShape, remote::RemoteShot}};
+    use chimera_sim::{
+        minigame::runtime::take_weapon,
+        weapon::{SpreadShape, remote::RemoteShot},
+    };
     let mut sim = sim();
     let me = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
     sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
@@ -884,7 +1053,11 @@ fn a_round_whose_gun_was_swapped_still_sounds() {
     weapon::give(w, me, "combat_arms:mp5a4").unwrap();
     sim.ticks(1);
     let s = heard(&mut sim);
-    assert!(s.iter().any(|s| s.file == "guns_snd_ar/m4a1/fire.wav" && s.at.is_none()), "{s:?}");
+    assert!(
+        s.iter()
+            .any(|s| s.file == "guns_snd_ar/m4a1/fire.wav" && s.at.is_none()),
+        "{s:?}"
+    );
     // Others': their gun swapped before their round arrived.
     let theirs = sim.app.world().get::<Inventory>(other).unwrap().active.unwrap();
     let w = sim.app.world_mut();
@@ -905,9 +1078,15 @@ fn a_round_whose_gun_was_swapped_still_sounds() {
     });
     sim.ticks(1);
     let s = heard(&mut sim);
-    let fire = s.iter().find(|s| s.file == "guns_snd_ar/m4a1/fire.wav").unwrap_or_else(|| panic!("{s:?}"));
+    let fire = s
+        .iter()
+        .find(|s| s.file == "guns_snd_ar/m4a1/fire.wav")
+        .unwrap_or_else(|| panic!("{s:?}"));
     assert_eq!(fire.source, Some(other));
-    assert!(!s.iter().any(|s| s.file.contains("mp5") && s.file.contains("fire")), "not the new gun's: {s:?}");
+    assert!(
+        !s.iter().any(|s| s.file.contains("mp5") && s.file.contains("fire")),
+        "not the new gun's: {s:?}"
+    );
 }
 
 #[test]
@@ -925,14 +1104,20 @@ fn impacts_make_decals_bursts_and_sounds() {
     fire_once(&mut sim, me);
     let sounds = heard(&mut sim);
     assert!(
-        sounds.iter().any(|s| s.file.starts_with("guns_snd_impacts/metal_bg/impact") && s.radii.1 == 900.0),
+        sounds
+            .iter()
+            .any(|s| s.file.starts_with("guns_snd_impacts/metal_bg/impact") && s.radii.1 == 900.0),
         "{sounds:?}"
     );
     let marks = sim.app.world().resource::<CaMarks>();
     assert_eq!(marks.marks.len(), 1);
     assert_eq!(marks.marks[0].sprite, "fx/i_mark/im_metal.spr");
     let req = std::mem::take(&mut sim.app.world_mut().resource_mut::<Requested>().0);
-    assert!(req.iter().any(|r| r.group == "Impact_Metal" && r.kind == FxKind::Surface), "{req:?}");
+    assert!(
+        req.iter()
+            .any(|r| r.group == "Impact_Metal" && r.kind == FxKind::Surface),
+        "{req:?}"
+    );
     assert!(req.iter().any(|r| r.group == "test" && r.kind == FxKind::OwnFire));
     // Decals fade and go after 6 s.
     sim.seconds(6.5);
@@ -976,7 +1161,11 @@ fn tracers_every_fourth_m4a1_round_and_casings() {
     assert_eq!(drawn, 2, "shots 4 and 8");
     assert!(casings_seen >= 1);
     sim.seconds(3.5);
-    assert_eq!(sim.app.world_mut().query::<&CaShell>().iter(sim.app.world()).count(), 0, "gone after 3 s");
+    assert_eq!(
+        sim.app.world_mut().query::<&CaShell>().iter(sim.app.world()).count(),
+        0,
+        "gone after 3 s"
+    );
 }
 
 #[test]
@@ -1006,7 +1195,10 @@ fn hits_ding_on_the_next_frame() {
     let now: Vec<CaSound> = heard(&mut sim);
     assert!(now.iter().all(|s| !s.file.contains("multiding")), "not the same frame");
     sim.app.update();
-    let dings = heard(&mut sim).into_iter().filter(|s| s.file.contains("multiding")).count();
+    let dings = heard(&mut sim)
+        .into_iter()
+        .filter(|s| s.file.contains("multiding"))
+        .count();
     assert_eq!(dings, 5, "five slots");
 }
 
@@ -1027,7 +1219,9 @@ fn hurt_sounds_one_per_kind_across_the_server() {
         weapon: None,
         force: Vec3::ZERO,
     };
-    sim.app.world_mut().write_message_batch([hurt(a, Hitgroup::Chest), hurt(b, Hitgroup::Head)]);
+    sim.app
+        .world_mut()
+        .write_message_batch([hurt(a, Hitgroup::Chest), hurt(b, Hitgroup::Head)]);
     sim.app.update();
     let s = heard(&mut sim);
     let pains = s.iter().filter(|s| s.file.contains("hurtpain_a")).count();
@@ -1055,11 +1249,19 @@ fn another_games_guns_hit_plays_our_hurt_sound() {
         weapon,
         force: Vec3::ZERO,
     };
-    sim.app.world_mut().write_message(hurt(DamageKind::Bullet, Some("tf2:tf_weapon_pistol_scout")));
+    sim.app
+        .world_mut()
+        .write_message(hurt(DamageKind::Bullet, Some("tf2:tf_weapon_pistol_scout")));
     sim.app.update();
     let s = heard(&mut sim);
-    assert!(s.iter().any(|s| s.file.contains("hurtpain_a")), "TF2's hit groans: {s:?}");
-    assert!(s.iter().any(|s| s.file.ends_with("headshot.wav")), "and the head's: {s:?}");
+    assert!(
+        s.iter().any(|s| s.file.contains("hurtpain_a")),
+        "TF2's hit groans: {s:?}"
+    );
+    assert!(
+        s.iter().any(|s| s.file.ends_with("headshot.wav")),
+        "and the head's: {s:?}"
+    );
     sim.seconds(3.0);
     heard(&mut sim);
     sim.app.world_mut().write_message(hurt(DamageKind::Fall, None));
@@ -1079,8 +1281,14 @@ fn footsteps_by_surface_and_stance() {
     sim.intent(other).move_axis = Vec2::Y;
     sim.seconds(1.5);
     let s = heard(&mut sim);
-    let mine = s.iter().filter(|s| s.at.is_none() && s.file.contains("footsteps/metal")).count();
-    let theirs = s.iter().filter(|s| s.at.is_some() && s.file.contains("footsteps/metal")).count();
+    let mine = s
+        .iter()
+        .filter(|s| s.at.is_none() && s.file.contains("footsteps/metal"))
+        .count();
+    let theirs = s
+        .iter()
+        .filter(|s| s.at.is_some() && s.file.contains("footsteps/metal"))
+        .count();
     assert!(mine >= 3, "{s:?}");
     assert!(theirs >= 3, "{s:?}");
     assert!(s.iter().filter(|s| s.at.is_some()).all(|s| s.radii.1 == 1200.0));
@@ -1100,13 +1308,19 @@ fn reload_keys_play_the_weapons_sounds() {
     sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
     arm(&mut sim, me, "combat_arms:m4a1");
     heard(&mut sim);
-    sim.app.world_mut().write_message(combat_arms::game::view_model::CaViewKey {
-        owner: me,
-        key: combat_arms::game::view_model::machine::ViewKey::Sound(2),
-    });
+    sim.app
+        .world_mut()
+        .write_message(combat_arms::game::view_model::CaViewKey {
+            owner: me,
+            key: combat_arms::game::view_model::machine::ViewKey::Sound(2),
+        });
     sim.app.update();
     let s = heard(&mut sim);
-    assert!(s.iter().any(|s| s.file == "guns_snd_ar/m4a1/reload2.wav" && s.at.is_none()), "{s:?}");
+    assert!(
+        s.iter()
+            .any(|s| s.file == "guns_snd_ar/m4a1/reload2.wav" && s.at.is_none()),
+        "{s:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1114,12 +1328,14 @@ fn reload_keys_play_the_weapons_sounds() {
 
 /// A liquid volume over the whole greybox.
 fn flood(sim: &mut Sim) {
-    sim.app.world_mut().spawn(combat_arms::game::volumes::CaVolume::liquid_box(
-        Vec3::splat(-1000.0),
-        Vec3::splat(1000.0),
-        0.0,
-        Vec3::ZERO,
-    ));
+    sim.app
+        .world_mut()
+        .spawn(combat_arms::game::volumes::CaVolume::liquid_box(
+            Vec3::splat(-1000.0),
+            Vec3::splat(1000.0),
+            0.0,
+            Vec3::ZERO,
+        ));
 }
 
 #[test]
@@ -1134,7 +1350,10 @@ fn under_water_impacts_are_half_volume_without_bursts_or_tracers() {
     sim.intent(me).pitch = 0.0;
     for _ in 0..8 {
         fire_once(&mut sim, me);
-        assert!(sim.app.world().resource::<CaTracers>().0.is_empty(), "no tracer into liquid");
+        assert!(
+            sim.app.world().resource::<CaTracers>().0.is_empty(),
+            "no tracer into liquid"
+        );
         sim.seconds(0.4);
     }
     // Down at the metal floor: its sound at half volume, no burst (Metal
@@ -1171,13 +1390,34 @@ fn under_water_impacts_are_half_volume_without_bursts_or_tracers() {
 fn submerge_swaps_the_burst_for_the_under_water_group() {
     let record = t().impact("BulletFmj").unwrap();
     let metal = t().surface(20);
-    let mut out = effects::impact(record, metal, AmmoKind::Bullet, true, true, false, &settings(), [0.0, 0.0]);
+    let mut out = effects::impact(
+        record,
+        metal,
+        AmmoKind::Bullet,
+        true,
+        true,
+        false,
+        &settings(),
+        [0.0, 0.0],
+    );
     assert!(out.burst.is_some());
     effects::submerge(&mut out, record, metal, AmmoKind::Bullet, true);
-    assert_eq!((out.burst.clone(), out.under_water, out.sound_volume()), (None, true, 50.0));
+    assert_eq!(
+        (out.burst.clone(), out.under_water, out.sound_volume()),
+        (None, true, 50.0)
+    );
     let mut custom = metal.clone();
     custom.uw_impact_fx = "UW_Test".into();
-    let mut out = effects::impact(record, &custom, AmmoKind::Bullet, true, true, false, &settings(), [0.0, 0.0]);
+    let mut out = effects::impact(
+        record,
+        &custom,
+        AmmoKind::Bullet,
+        true,
+        true,
+        false,
+        &settings(),
+        [0.0, 0.0],
+    );
     effects::submerge(&mut out, record, &custom, AmmoKind::Bullet, true);
     assert_eq!(out.burst.as_deref(), Some("UW_Test"));
 }
@@ -1195,7 +1435,10 @@ fn footsteps_on_an_unknown_surface_in_water_are_waters() {
     let s = heard(&mut sim);
     let steps: Vec<&CaSound> = s.iter().filter(|s| s.file.contains("footsteps")).collect();
     assert!(steps.len() >= 3, "{s:?}");
-    assert!(steps.iter().all(|s| s.file.starts_with("chars_snd/footsteps/water")), "{steps:?}");
+    assert!(
+        steps.iter().all(|s| s.file.starts_with("chars_snd/footsteps/water")),
+        "{steps:?}"
+    );
 }
 
 #[test]
@@ -1232,7 +1475,10 @@ fn t40_placement_modes() {
     let offset = Vec3::new(0.0, 0.0, 2.0);
     let attached = rules::place_key(4, socket, Vec3::ZERO, offset, turn);
     assert!(attached.distance(Vec3::new(10.0, 0.0, 0.0) + turn * offset) < 1e-5);
-    assert!((attached.distance(socket.translation) - 2.0).abs() < 1e-5, "2 u along the socket's axis");
+    assert!(
+        (attached.distance(socket.translation) - 2.0).abs() < 1e-5,
+        "2 u along the socket's axis"
+    );
     let fixed = rules::place_key(0, socket, Vec3::new(1.0, 0.0, 0.0), offset, turn);
     assert!(fixed.distance(Vec3::new(1.0, 0.0, 0.0) + turn * offset) < 1e-5);
 }
@@ -1256,7 +1502,11 @@ fn t42_cone_emitter() {
     let mut high = 0;
     let n = 1000;
     for i in 0..n {
-        let u = [((i * 7919) % 1000) as f32 / 1000.0, ((i * 104729) % 997) as f32 / 997.0, ((i * 31) % 991) as f32 / 991.0];
+        let u = [
+            ((i * 7919) % 1000) as f32 / 1000.0,
+            ((i * 104729) % 997) as f32 / 997.0,
+            ((i * 31) % 991) as f32 / 991.0,
+        ];
         let p = rules::cone_start(10.0, 40.0, u);
         assert!(p.z >= 0.0 && p.z <= 40.0);
         assert!(p.truncate().length() <= 10.0 * p.z / 40.0 + 1e-4, "{p}");
@@ -1286,8 +1536,15 @@ fn t50_callouts() {
     let bravo = (e(2), 2u8, Vec3::new(0.0, 0.0, 100.0));
     let c = (e(3), 2u8, Vec3::new(0.0, 0.0, 900.0));
     let d = (e(4), 2u8, Vec3::new(0.0, 0.0, 1300.0));
-    assert_eq!(rules::callouts(Some(alpha), bravo, &[alpha, c, d]), (Some(e(1)), Some(e(3))));
-    assert_eq!(rules::callouts(Some(alpha), bravo, &[alpha, d]), (Some(e(1)), None), "C dead");
+    assert_eq!(
+        rules::callouts(Some(alpha), bravo, &[alpha, c, d]),
+        (Some(e(1)), Some(e(3)))
+    );
+    assert_eq!(
+        rules::callouts(Some(alpha), bravo, &[alpha, d]),
+        (Some(e(1)), None),
+        "C dead"
+    );
     let mate = (e(5), 1u8, Vec3::ZERO);
     assert_eq!(rules::callouts(Some(alpha), mate, &[alpha]).0, None, "a team kill");
 }
@@ -1415,13 +1672,23 @@ fn c58_mid_air_frag_shows_its_explosion() {
         (fx_requests(sim), heard(sim))
     };
     let look = |req: &[CaFxRequest]| -> Vec<String> {
-        req.iter().filter(|r| r.kind == FxKind::Grenade).map(|r| r.group.clone()).collect()
+        req.iter()
+            .filter(|r| r.kind == FxKind::Grenade)
+            .map(|r| r.group.clone())
+            .collect()
     };
     // Never touched anything: its own metal.
     let (req, sounds) = blast(&mut sim, None, true);
     assert_eq!(look(&req), ["Grenade_Stone"], "{req:?}");
-    assert_eq!(req.iter().find(|r| r.kind == FxKind::Grenade).unwrap().normal, Vec3::Y, "world up");
-    let gren = sounds.iter().find(|s| s.file == "guns_snd_impacts/explosions/gren.wav").expect("its sound");
+    assert_eq!(
+        req.iter().find(|r| r.kind == FxKind::Grenade).unwrap().normal,
+        Vec3::Y,
+        "world up"
+    );
+    let gren = sounds
+        .iter()
+        .find(|s| s.file == "guns_snd_impacts/explosions/gren.wav")
+        .expect("its sound");
     assert_eq!(gren.radii.1, 1500.0);
     close(g(500.0, 1500.0), 0.8772, 1e-4, "gain");
     // Last bounced off a Wood wall, now far from it.
@@ -1456,7 +1723,10 @@ fn c59_flyby_of_a_miss() {
             replay: false,
         });
         sim.app.update();
-        heard(sim).into_iter().filter(|s| s.file == "guns_snd_etc/flyby.wav").count()
+        heard(sim)
+            .into_iter()
+            .filter(|s| s.file == "guns_snd_etc/flyby.wav")
+            .count()
     };
     // The line passes 200 u from the camera; its end is 3000 u away.
     let from = cam + Vec3::new(200.0 * UNIT, 0.0, -1500.0 * UNIT);
@@ -1493,14 +1763,24 @@ fn c60_own_tracer_cadence() {
     let f = effects::own_tracer_frequency(t(), &m4, Some(&m)).unwrap();
     assert_eq!(f, 4, "the ammo's: the later part resets the choice");
     assert_eq!(cadence(f, 8), [4, 8]);
-    assert_eq!(effects::tracer_look(t(), &m4, Some(&m)).unwrap(), t().tracer("AR01").unwrap(), "the muzzle part's look");
+    assert_eq!(
+        effects::tracer_look(t(), &m4, Some(&m)).unwrap(),
+        t().tracer("AR01").unwrap(),
+        "the muzzle part's look"
+    );
     // The silencer alone: its own F 3.
     let a = mods(&["Silencer_A_AR"], 2000, 1400);
-    assert_eq!(cadence(effects::own_tracer_frequency(t(), &m4, Some(&a)).unwrap(), 9), [3, 6, 9]);
+    assert_eq!(
+        cadence(effects::own_tracer_frequency(t(), &m4, Some(&a)).unwrap(), 9),
+        [3, 6, 9]
+    );
     // A sight, then a bullet part that names none: the ammo's.
     let mut s = mods(&["DotSight_A_AR"], 2000, 1400);
     s.parts[combat_arms::game::attachments::BULLET] = m.parts[MAGAZINE].clone();
-    assert_eq!(cadence(effects::own_tracer_frequency(t(), &m4, Some(&s)).unwrap(), 8), [4, 8]);
+    assert_eq!(
+        cadence(effects::own_tracer_frequency(t(), &m4, Some(&s)).unwrap(), 8),
+        [4, 8]
+    );
 }
 
 /// 61. Others hear a weapon's misc key sounds to 2000 u (a reload key's
@@ -1511,7 +1791,11 @@ fn c61_misc_key_radius() {
     m4.misc_sounds = vec!["guns_snd_ar/m4a1/misc1.wav".into()];
     assert_eq!(m4.key_sound(10), Some(("guns_snd_ar/m4a1/misc1.wav", 2000.0)));
     close(g(1000.0, 2000.0), 0.7166, 1e-4, "misc at 1000 u");
-    assert_eq!(g(1000.0, m4.key_sound(1).unwrap().1), 0.0, "a reload key at 1000 u: silent");
+    assert_eq!(
+        g(1000.0, m4.key_sound(1).unwrap().1),
+        0.0,
+        "a reload key at 1000 u: silent"
+    );
     // A dead player sends none.
     let mut sim = sim();
     let me = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
@@ -1592,10 +1876,19 @@ fn c62_own_step_restart() {
 fn c63_ghillie_step() {
     let (volume, radius, extra) = effects::footstep_sound(None, 1.0, -0.5);
     assert_eq!((volume, radius, extra), (50.0, 1200.0, None));
-    close(rules::gain(500.0, 84.0, radius, volume), 0.4025, 1e-4, "at 500 u on Metal");
+    close(
+        rules::gain(500.0, 84.0, radius, volume),
+        0.4025,
+        1e-4,
+        "at 500 u on Metal",
+    );
     // The share comes from the model record (the install's models file).
     let mut data = CharacterData::clone(combat_arms::game::characters::records::builtin());
-    assert_eq!(data.effective(&Selection::default()).0.footprint_volume, 0.0, "stock bodies: none");
+    assert_eq!(
+        data.effective(&Selection::default()).0.footprint_volume,
+        0.0,
+        "stock bodies: none"
+    );
     data.model[0].footprint_volume = -0.5;
     assert_eq!(data.effective(&Selection::default()).0.footprint_volume, -0.5);
     // Others' steps sound at the character's centre, not its feet.
@@ -1608,7 +1901,10 @@ fn c63_ghillie_step() {
     sim.intent(other).move_axis = Vec2::Y;
     sim.seconds(1.0);
     let centre_y = sim.position(other).y;
-    let steps: Vec<CaSound> = heard(&mut sim).into_iter().filter(|s| s.at.is_some() && s.file.contains("footsteps/metal")).collect();
+    let steps: Vec<CaSound> = heard(&mut sim)
+        .into_iter()
+        .filter(|s| s.at.is_some() && s.file.contains("footsteps/metal"))
+        .collect();
     assert!(steps.len() >= 2, "{steps:?}");
     for s in &steps {
         close(s.at.unwrap().y, centre_y, 0.01, "the body's centre");
@@ -1623,7 +1919,11 @@ fn c64_awareness() {
     let (volume, radius, extra) = effects::footstep_sound(Some((1.0, 0.9)), 0.4, 0.0);
     assert_eq!((volume, extra), (100.0, Some(100.0)));
     close(radius, 1080.0, 1e-3, "radius");
-    assert_eq!(effects::footstep_sound(None, 0.4, 0.0), (40.0, 1200.0, None), "without Awareness: Specter");
+    assert_eq!(
+        effects::footstep_sound(None, 0.4, 0.0),
+        (40.0, 1200.0, None),
+        "without Awareness: Specter"
+    );
     assert_eq!(t().sounds.awareness.len(), 4);
     // In play: a running Specter enemy heard by an Awareness user.
     let mut sim = sim();
@@ -1651,12 +1951,27 @@ fn c64_awareness() {
     sim.intent(enemy).move_axis = Vec2::Y;
     sim.seconds(1.0);
     let s = heard(&mut sim);
-    let steps: Vec<&CaSound> = s.iter().filter(|s| s.at.is_some() && s.file.contains("footsteps/metal")).collect();
-    let perk: Vec<&CaSound> = s.iter().filter(|s| s.file.starts_with("ui_snd/perk/awareness/")).collect();
+    let steps: Vec<&CaSound> = s
+        .iter()
+        .filter(|s| s.at.is_some() && s.file.contains("footsteps/metal"))
+        .collect();
+    let perk: Vec<&CaSound> = s
+        .iter()
+        .filter(|s| s.file.starts_with("ui_snd/perk/awareness/"))
+        .collect();
     assert!(steps.len() >= 2, "{s:?}");
     assert_eq!(steps.len(), perk.len(), "one perk sound per step");
-    assert!(steps.iter().all(|s| s.volume == 100.0 && (s.radii.1 - 1080.0).abs() < 1e-3), "{steps:?}");
-    assert!(perk.iter().all(|s| s.volume == 100.0 && (s.radii.1 - 1080.0).abs() < 1e-3), "{perk:?}");
+    assert!(
+        steps
+            .iter()
+            .all(|s| s.volume == 100.0 && (s.radii.1 - 1080.0).abs() < 1e-3),
+        "{steps:?}"
+    );
+    assert!(
+        perk.iter()
+            .all(|s| s.volume == 100.0 && (s.radii.1 - 1080.0).abs() < 1e-3),
+        "{perk:?}"
+    );
 }
 
 /// 65. Your local voices: the kill voice (not on a groin kill, not while
@@ -1671,7 +1986,10 @@ fn c65_local_voices() {
     assert!(!v.kill(Hitgroup::Stomach, 2.0, 1.0), "a groin kill: none");
     assert!(v.kill(Hitgroup::Head, 2.0, 1.0));
     let mut v = Voices::default();
-    let plays: Vec<f64> = (0..180).map(|i| i as f64 / 60.0).filter(|&t| v.dash(true, t, 1.0)).collect();
+    let plays: Vec<f64> = (0..180)
+        .map(|i| i as f64 / 60.0)
+        .filter(|&t| v.dash(true, t, 1.0))
+        .collect();
     assert_eq!(plays.len(), 3, "back to back for 3 s: {plays:?}");
     let mut v = Voices::default();
     let mut first = None;
@@ -1682,9 +2000,17 @@ fn c65_local_voices() {
         }
     }
     close(first.unwrap() as f32, 5.0, 0.03, "idle starts at 5 s");
-    assert_eq!(v.idle(false, true, 0.016, 7.0, 1.0), IdleAction::Stop, "the next key kills it");
+    assert_eq!(
+        v.idle(false, true, 0.016, 7.0, 1.0),
+        IdleAction::Stop,
+        "the next key kills it"
+    );
     assert_eq!(v.idle(false, true, 0.016, 7.1, 1.0), IdleAction::Nothing);
-    assert_eq!(v.idle(true, false, 0.016, 8.0, 1.0), IdleAction::Nothing, "an empty entry: no timer");
+    assert_eq!(
+        v.idle(true, false, 0.016, 8.0, 1.0),
+        IdleAction::Nothing,
+        "an empty entry: no timer"
+    );
     assert!(voice::flags_idle(&Default::default()));
     assert!(!voice::flags_idle(&chimera_core::core::Intent {
         crouch: true,
@@ -1730,7 +2056,13 @@ fn c65_local_voices() {
     // Idle: nothing for 4.5 s, the sound by 5.1 s, a key stops it.
     sim.seconds(1.0);
     heard(&mut sim);
-    let idle = |sim: &mut Sim| heard(sim).iter().filter(|s| s.file.ends_with("idle_male.wav")).cloned().collect::<Vec<_>>();
+    let idle = |sim: &mut Sim| {
+        heard(sim)
+            .iter()
+            .filter(|s| s.file.ends_with("idle_male.wav"))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
     sim.seconds(2.0);
     assert!(idle(&mut sim).is_empty(), "before 5 s");
     sim.seconds(1.0);
@@ -1739,7 +2071,10 @@ fn c65_local_voices() {
     sim.intent(me).move_axis = Vec2::Y;
     sim.ticks(2);
     let stopped = idle(&mut sim);
-    assert!(stopped.iter().any(|s| s.volume == 0.0), "killed by a silent copy: {stopped:?}");
+    assert!(
+        stopped.iter().any(|s| s.volume == 0.0),
+        "killed by a silent copy: {stopped:?}"
+    );
 }
 
 /// Your kill voice is Combat Arms' for kills with Combat Arms' guns only:
@@ -1777,14 +2112,33 @@ fn c65b_kill_voice_only_for_own_games_kills() {
         heard(sim);
         n
     };
-    assert_eq!(kill(&mut sim, me, Some("combat_arms:m4")), 1, "a Combat Arms gun's kill");
-    assert_eq!(kill(&mut sim, me, Some("cs_source:ak47")), 0, "a CS:S gun's kill is silent here");
+    assert_eq!(
+        kill(&mut sim, me, Some("combat_arms:m4")),
+        1,
+        "a Combat Arms gun's kill"
+    );
+    assert_eq!(
+        kill(&mut sim, me, Some("cs_source:ak47")),
+        0,
+        "a CS:S gun's kill is silent here"
+    );
     // Your identity is Combat Arms' by now (the rung's swap), the kill was
     // CS:S's: still silent; with no weapon known, the identity decides.
-    sim.app.world_mut().entity_mut(me).insert(chimera_core::slots::GameIdentity("combat_arms".into()));
-    assert_eq!(kill(&mut sim, me, Some("cs_source:ak47")), 0, "the swap doesn't make it ours");
+    sim.app
+        .world_mut()
+        .entity_mut(me)
+        .insert(chimera_core::slots::GameIdentity("combat_arms".into()));
+    assert_eq!(
+        kill(&mut sim, me, Some("cs_source:ak47")),
+        0,
+        "the swap doesn't make it ours"
+    );
     assert_eq!(kill(&mut sim, me, None), 1, "no weapon known: the identity's game");
-    assert_eq!(kill(&mut sim, other, Some("combat_arms:m4")), 0, "another player's kill");
+    assert_eq!(
+        kill(&mut sim, other, Some("combat_arms:m4")),
+        0,
+        "another player's kill"
+    );
 }
 
 /// 66. A hurt sound plays at the victim's centre (not the hit point), and
@@ -1808,11 +2162,16 @@ fn c66_hurt_sound_place() {
         weapon: None,
         force: Vec3::ZERO,
     };
-    sim.app.world_mut().write_message(hurt(DamageKind::Bullet, Hitgroup::Head));
+    sim.app
+        .world_mut()
+        .write_message(hurt(DamageKind::Bullet, Hitgroup::Head));
     sim.app.update();
     let s = heard(&mut sim);
     let pain = s.iter().find(|s| s.file.contains("hurtpain_a")).expect("the gun pain");
-    let shout = s.iter().find(|s| s.file.ends_with("headshot.wav")).expect("the head sound");
+    let shout = s
+        .iter()
+        .find(|s| s.file.ends_with("headshot.wav"))
+        .expect("the head sound");
     assert_eq!(pain.at, Some(centre));
     assert_eq!(shout.at, Some(centre));
     assert_eq!(effects::hurt_radius(t(), HurtKind::Head), 500.0);
@@ -1820,13 +2179,22 @@ fn c66_hurt_sound_place() {
     // sounds ended).
     sim.seconds(3.0);
     heard(&mut sim);
-    sim.app.world_mut().write_message(hurt(DamageKind::Burn, Hitgroup::Head));
+    sim.app
+        .world_mut()
+        .write_message(hurt(DamageKind::Burn, Hitgroup::Head));
     sim.app.update();
     let s = heard(&mut sim);
     assert!(s.iter().any(|s| s.file.contains("hurtfire")), "{s:?}");
     assert!(s.iter().all(|s| !s.file.ends_with("headshot.wav")), "{s:?}");
-    assert_eq!(effects::hurt_kinds(DamageKind::Burn, Hitgroup::Stomach, false), [Some(HurtKind::Burning), None]);
-    assert_eq!(effects::hurt_kinds(DamageKind::Generic, Hitgroup::Head, true)[1], None, "poison too");
+    assert_eq!(
+        effects::hurt_kinds(DamageKind::Burn, Hitgroup::Stomach, false),
+        [Some(HurtKind::Burning), None]
+    );
+    assert_eq!(
+        effects::hurt_kinds(DamageKind::Generic, Hitgroup::Head, true)[1],
+        None,
+        "poison too"
+    );
 }
 
 /// Corrections 10: every further pellet makes the muzzle group again; the
@@ -1873,7 +2241,10 @@ fn corrections_10_pellets_repeat_the_muzzle_group() {
     let reqs = fx_requests(&mut sim);
     let own = reqs.iter().filter(|r| r.kind == FxKind::OwnFire).count();
     assert_eq!(own, 8, "one group per pellet (the first with the round)");
-    let fire = heard(&mut sim).iter().filter(|s| s.file == "guns_snd_ar/m4a1/fire.wav").count();
+    let fire = heard(&mut sim)
+        .iter()
+        .filter(|s| s.file == "guns_snd_ar/m4a1/fire.wav")
+        .count();
     assert_eq!(fire, 1, "one fire sound");
 }
 
@@ -1923,9 +2294,17 @@ fn corrections_12_third_person_flash_hider() {
         default: false,
     });
     assert_eq!(effects::hh_muzzle(t(), &m4, Some(&c)), "FH_A");
-    c.parts[combat_arms::game::attachments::MUZZLE].as_mut().unwrap().record.flash_hider_level = 2;
+    c.parts[combat_arms::game::attachments::MUZZLE]
+        .as_mut()
+        .unwrap()
+        .record
+        .flash_hider_level = 2;
     assert_eq!(effects::hh_muzzle(t(), &m4, Some(&c)), "FH_B");
-    c.parts[combat_arms::game::attachments::MUZZLE].as_mut().unwrap().record.flash_hider_level = 0;
+    c.parts[combat_arms::game::attachments::MUZZLE]
+        .as_mut()
+        .unwrap()
+        .record
+        .flash_hider_level = 0;
     assert_eq!(effects::hh_muzzle(t(), &m4, Some(&c)), "M4_HH_Muzz");
 }
 
@@ -1942,12 +2321,21 @@ fn shaded_keys_draw_nothing() {
     };
     use lithtech_formats::fxf::{FxFile, FxGroup, FxKey, FxProp, FxValue};
     const TEX: &str = "fx/explosion/ring.dtx";
-    let prop = |name: &str, value: FxValue| FxProp { name: name.into(), value };
+    let prop = |name: &str, value: FxValue| FxProp {
+        name: name.into(),
+        value,
+    };
     let key = |shader: i64| FxKey {
         kind: "ParticleSystem".into(),
         end: 0.5,
         props: vec![
-            prop("Texture", FxValue::Path { ext: "dtx".into(), path: TEX.into() }),
+            prop(
+                "Texture",
+                FxValue::Path {
+                    ext: "dtx".into(),
+                    path: TEX.into(),
+                },
+            ),
             prop("EmissionInterval", FxValue::Float(-1.0)),
             prop("ParticlesPerEmission", FxValue::Int(1)),
             prop("MinParticleLifeSpan", FxValue::Float(0.3)),
@@ -1961,14 +2349,25 @@ fn shaded_keys_draw_nothing() {
     let lib = FxLibrary {
         file: FxFile {
             groups: vec![
-                FxGroup { name: "Plain".into(), phase_ms: 500, keys: vec![key(0)] },
-                FxGroup { name: "Refract".into(), phase_ms: 500, keys: vec![key(100)] },
+                FxGroup {
+                    name: "Plain".into(),
+                    phase_ms: 500,
+                    keys: vec![key(0)],
+                },
+                FxGroup {
+                    name: "Refract".into(),
+                    phase_ms: 500,
+                    keys: vec![key(100)],
+                },
             ],
         },
         ..default()
     };
     let materials = MapParticles {
-        materials: vec![ParticleMaterial { name: material_name(TEX, false), ..default() }],
+        materials: vec![ParticleMaterial {
+            name: material_name(TEX, false),
+            ..default()
+        }],
     };
     let count = |group: &str| {
         let (mut fx, mut particles) = (CaFx::default(), Particles::default());
@@ -2063,11 +2462,17 @@ fn t74_tracer_facing() {
     let n = rules::tracer_side(a, b).unwrap();
     assert!((n - Vec3::new(0.7071, 0.7071, 0.0)).length() < 1e-4, "{n}");
     let [ah, bh, bl, al] = rules::tracer_corners(a, b, &Transform::IDENTITY, 15.0).unwrap();
-    for (c, want) in [(ah, a + 3.75 * n), (bh, b + 3.75 * n), (bl, b - 3.75 * n), (al, a - 3.75 * n)] {
+    for (c, want) in [
+        (ah, a + 3.75 * n),
+        (bh, b + 3.75 * n),
+        (bl, b - 3.75 * n),
+        (al, a - 3.75 * n),
+    ] {
         assert!((c - want).length() < 1e-4, "{c} vs {want}");
     }
     // A turned and moved camera: the same strip in its frame, the same n.
-    let cam = Transform::from_xyz(100.0, 20.0, -5.0).with_rotation(Quat::from_rotation_y(0.7) * Quat::from_rotation_x(-0.2));
+    let cam =
+        Transform::from_xyz(100.0, 20.0, -5.0).with_rotation(Quat::from_rotation_y(0.7) * Quat::from_rotation_x(-0.2));
     let [ah2, bh2, ..] = rules::tracer_corners(cam * a, cam * b, &cam, 15.0).unwrap();
     assert!((ah2 - cam * ah).length() < 1e-3 && (bh2 - cam * bh).length() < 1e-3);
     // Pointing straight at the eye: not seen.
@@ -2141,8 +2546,16 @@ fn t71_own_alt_fire_sound() {
     let w = wfx_("b.wav");
     assert_eq!(effects::fire_sound_of(&w, None, true, false).unwrap().0, "a.wav");
     assert_eq!(effects::fire_sound_of(&w, None, true, true).unwrap().0, "b.wav");
-    assert_eq!(effects::fire_sound_of(&w, None, false, false).unwrap().0, "a.wav", "others: plain");
-    assert_eq!(effects::fire_sound_of(&wfx_(""), None, true, true).unwrap().0, "a.wav", "none named");
+    assert_eq!(
+        effects::fire_sound_of(&w, None, false, false).unwrap().0,
+        "a.wav",
+        "others: plain"
+    );
+    assert_eq!(
+        effects::fire_sound_of(&wfx_(""), None, true, true).unwrap().0,
+        "a.wav",
+        "none named"
+    );
 
     let mut sim = sim();
     let me = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
@@ -2154,14 +2567,26 @@ fn t71_own_alt_fire_sound() {
     let fire = |h: &[CaSound], f: &str| h.iter().filter(|s| s.file == f).count();
     swing(&mut sim, me, false);
     let h = heard(&mut sim);
-    assert_eq!((fire(&h, M9_FIRE), fire(&h, M9_ALT)), (2, 0), "primary: two hit keys, FireSnd: {h:?}");
+    assert_eq!(
+        (fire(&h, M9_FIRE), fire(&h, M9_ALT)),
+        (2, 0),
+        "primary: two hit keys, FireSnd: {h:?}"
+    );
     swing(&mut sim, me, true);
     let h = heard(&mut sim);
-    assert_eq!((fire(&h, M9_FIRE), fire(&h, M9_ALT)), (0, 1), "secondary: Alt_FireSnd: {h:?}");
+    assert_eq!(
+        (fire(&h, M9_FIRE), fire(&h, M9_ALT)),
+        (0, 1),
+        "secondary: Alt_FireSnd: {h:?}"
+    );
     assert!(h.iter().filter(|s| s.file == M9_ALT).all(|s| s.at.is_none()), "local");
     swing(&mut sim, other, true);
     let h = heard(&mut sim);
-    assert_eq!((fire(&h, M9_FIRE), fire(&h, M9_ALT)), (1, 0), "others hear FireSnd (Quirk 10): {h:?}");
+    assert_eq!(
+        (fire(&h, M9_FIRE), fire(&h, M9_ALT)),
+        (1, 0),
+        "others hear FireSnd (Quirk 10): {h:?}"
+    );
     assert!(h.iter().filter(|s| s.file == M9_FIRE).all(|s| s.at.is_some()), "3D");
 }
 
@@ -2177,15 +2602,27 @@ fn t72_shared_fire_voice() {
     swing(&mut sim, me, false);
     swing(&mut sim, me, true);
     let h = heard(&mut sim);
-    let voices: Vec<_> = h.iter().filter(|s| s.file == M9_FIRE || s.file == M9_ALT).map(|s| (s.source, s.channel)).collect();
+    let voices: Vec<_> = h
+        .iter()
+        .filter(|s| s.file == M9_FIRE || s.file == M9_ALT)
+        .map(|s| (s.source, s.channel))
+        .collect();
     assert_eq!(voices.len(), 3);
-    assert!(voices.iter().all(|v| *v == (Some(knife), Some(effects::sounds::CHANNEL_FIRE))), "{voices:?}");
+    assert!(
+        voices
+            .iter()
+            .all(|v| *v == (Some(knife), Some(effects::sounds::CHANNEL_FIRE))),
+        "{voices:?}"
+    );
     let gun = arm(&mut sim, me, "combat_arms:m4a1");
     sim.intent(me).pitch = 0.0;
     heard(&mut sim);
     fire_once(&mut sim, me);
     let h = heard(&mut sim);
-    let shot = h.iter().find(|s| s.file == "guns_snd_ar/m4a1/fire.wav").expect("the shot");
+    let shot = h
+        .iter()
+        .find(|s| s.file == "guns_snd_ar/m4a1/fire.wav")
+        .expect("the shot");
     assert_eq!(shot.source, Some(gun), "another weapon: its own voice");
 }
 
@@ -2231,10 +2668,17 @@ fn a_round_on_bullet_proof_glass_takes_its_impact() {
     sim.app.world_mut().resource_mut::<Requested>().0.clear();
     fire_once(&mut sim, me);
     let req = std::mem::take(&mut sim.app.world_mut().resource_mut::<Requested>().0);
-    assert!(req.iter().any(|r| r.group == "Impact_Glass_BulletProof" && r.kind == FxKind::Surface), "{req:?}");
+    assert!(
+        req.iter()
+            .any(|r| r.group == "Impact_Glass_BulletProof" && r.kind == FxKind::Surface),
+        "{req:?}"
+    );
     assert!(!req.iter().any(|r| r.group == "Impact_Metal"), "{req:?}");
     let marks = sim.app.world().resource::<CaMarks>();
-    assert_eq!(marks.marks.last().map(|m| m.sprite.as_str()), Some("fx/i_mark/im_glass_bp.spr"));
+    assert_eq!(
+        marks.marks.last().map(|m| m.sprite.as_str()),
+        Some("fx/i_mark/im_glass_bp.spr")
+    );
 }
 
 /// What another player's shot was drawn from (`others_shots_come_from_the_held_models_sockets`):
@@ -2258,9 +2702,12 @@ struct ShotFrame {
 }
 
 fn watch_shots(sim: &mut Sim, shooter: Entity) {
-    use combat_arms::game::characters::CaPose;
     use chimera_core::core::MovementState;
-    sim.app.insert_resource(ShotPoints { shooter, frames: Vec::new() });
+    use combat_arms::game::characters::CaPose;
+    sim.app.insert_resource(ShotPoints {
+        shooter,
+        frames: Vec::new(),
+    });
     sim.app.add_systems(
         Update,
         (|mut fx: MessageReader<CaFxRequest>,
@@ -2270,8 +2717,16 @@ fn watch_shots(sim: &mut Sim, shooter: Entity) {
           mut points: ResMut<ShotPoints>| {
             let mut f = ShotFrame {
                 muzzles: fx.read().filter(|r| r.kind == FxKind::Muzzle).map(|r| r.at).collect(),
-                sounds: sounds.read().filter(|s| s.file.ends_with("fire.wav")).filter_map(|s| s.at).collect(),
-                casings: shells.iter().filter(|(s, _)| s.owner == points.shooter).map(|(_, t)| t.translation).collect(),
+                sounds: sounds
+                    .read()
+                    .filter(|s| s.file.ends_with("fire.wav"))
+                    .filter_map(|s| s.at)
+                    .collect(),
+                casings: shells
+                    .iter()
+                    .filter(|(s, _)| s.owner == points.shooter)
+                    .map(|(_, t)| t.translation)
+                    .collect(),
                 ..default()
             };
             if let Ok((p, t, s)) = poses.get(points.shooter) {
@@ -2302,7 +2757,13 @@ fn others_shots_come_from_the_held_models_sockets() {
     let other = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
     // The M4A1's held model's sockets on the hand's node (the stock
     // model's, spec 3: `Flash` 24.44 u along the barrel, `breach` 2.58).
-    let hand_node = CaData::builtin().characters().skeleton(0).socket("RightHand").unwrap().parent.clone();
+    let hand_node = CaData::builtin()
+        .characters()
+        .skeleton(0)
+        .socket("RightHand")
+        .unwrap()
+        .parent
+        .clone();
     let late = &mut combat_arms::game::characters::models::late_in(sim.app.world_mut()).0;
     late.register_held_socket("combat_arms:m4a1", "Flash", &hand_node, Vec3::new(0.0, 2.685, 24.44));
     late.register_held_socket("combat_arms:m4a1", "breach", &hand_node, Vec3::new(0.765, 3.17, 2.58));
@@ -2315,18 +2776,31 @@ fn others_shots_come_from_the_held_models_sockets() {
     let shots: Vec<&ShotFrame> = frames.iter().filter(|f| !f.muzzles.is_empty()).collect();
     assert!(!shots.is_empty(), "his muzzle groups: {frames:?}");
     for f in &shots {
-        let (flash, breach, hand) = (f.flash.expect("his Flash socket"), f.breach.expect("his Breach socket"), f.hand.expect("his hand"));
-        assert!(flash.distance(hand) > 20.0 * UNIT, "the socket is up the barrel: {flash} vs the hand {hand}");
+        let (flash, breach, hand) = (
+            f.flash.expect("his Flash socket"),
+            f.breach.expect("his Breach socket"),
+            f.hand.expect("his hand"),
+        );
+        assert!(
+            flash.distance(hand) > 20.0 * UNIT,
+            "the socket is up the barrel: {flash} vs the hand {hand}"
+        );
         for m in &f.muzzles {
             assert!(m.distance(flash) < 1e-4, "the muzzle at the Flash socket {flash}: {m}");
         }
         for s in &f.sounds {
-            assert!(s.distance(flash) < 1e-4, "the fire sound at the Flash socket {flash}: {s}");
+            assert!(
+                s.distance(flash) < 1e-4,
+                "the fire sound at the Flash socket {flash}: {s}"
+            );
         }
         assert!(!f.sounds.is_empty(), "his fire sound: {f:?}");
         // (Seen after its first step: within a frame's flight.)
         for c in &f.casings {
-            assert!(c.distance(breach) < 0.05 && c.distance(breach) < c.distance(flash) / 4.0, "the casing at the Breach socket {breach}: {c}");
+            assert!(
+                c.distance(breach) < 0.05 && c.distance(breach) < c.distance(flash) / 4.0,
+                "the casing at the Breach socket {breach}: {c}"
+            );
         }
     }
     assert!(shots.iter().any(|f| !f.casings.is_empty()), "a casing: {shots:?}");
@@ -2335,7 +2809,10 @@ fn others_shots_come_from_the_held_models_sockets() {
     assert!(!tracers.is_empty(), "a tracer in 8 rounds");
     for t in tracers {
         let from = t.path.from * UNIT;
-        assert!(shots.iter().any(|f| f.flash.is_some_and(|x| x.distance(from) < 1e-3)), "a tracer from a Flash socket: {from}");
+        assert!(
+            shots.iter().any(|f| f.flash.is_some_and(|x| x.distance(from) < 1e-3)),
+            "a tracer from a Flash socket: {from}"
+        );
     }
 
     // A gun whose held model has no sockets: the hand, as before.
@@ -2348,11 +2825,20 @@ fn others_shots_come_from_the_held_models_sockets() {
     watch_shots(&mut sim, other);
     fire_once(&mut sim, other);
     let frames = std::mem::take(&mut sim.app.world_mut().resource_mut::<ShotPoints>().frames);
-    let f = frames.iter().find(|f| !f.muzzles.is_empty()).unwrap_or_else(|| panic!("his muzzle group: {frames:?}"));
+    let f = frames
+        .iter()
+        .find(|f| !f.muzzles.is_empty())
+        .unwrap_or_else(|| panic!("his muzzle group: {frames:?}"));
     assert!(f.flash.is_none() && f.breach.is_none(), "no sockets: {f:?}");
     let hand = f.hand.expect("his hand");
-    assert!(f.muzzles.iter().chain(&f.sounds).all(|m| m.distance(hand) < 1e-4), "at the hand {hand}: {f:?}");
-    assert!(f.casings.iter().all(|c| c.distance(hand) < 0.05), "the casing at the hand too: {f:?}");
+    assert!(
+        f.muzzles.iter().chain(&f.sounds).all(|m| m.distance(hand) < 1e-4),
+        "at the hand {hand}: {f:?}"
+    );
+    assert!(
+        f.casings.iter().all(|c| c.distance(hand) < 0.05),
+        "the casing at the hand too: {f:?}"
+    );
 }
 
 /// Install guns copied from the M4A1 whose ammo names effect records our
@@ -2378,8 +2864,8 @@ const FX_RECORDS_TXT: &str = r#"
 
 fn install_fx_data() -> CaData {
     use combat_arms::game::data::{
-        read_attributes,
         attributes::{FX_FILE, WEAPONS_FILE},
+        read_attributes,
     };
     let (attrs, problems) = read_attributes(|name| match name {
         WEAPONS_FILE => Ok(FX_WEAPONS_TXT.as_bytes().to_vec()),
@@ -2401,30 +2887,52 @@ fn install_guns_use_their_own_effect_records() {
     let set = install_fx_data().weapon_set();
     let fx = |id: &str| -> CaWeaponFx { set.get(id).unwrap().hook(EFFECTS).unwrap() };
     let template = fx("combat_arms:m4a1");
-    assert_eq!((template.tracer.as_str(), template.fire.as_str()), ("AR02", "5.56mm"), "the template's own");
+    assert_eq!(
+        (template.tracer.as_str(), template.fire.as_str()),
+        ("AR02", "5.56mm"),
+        "the template's own"
+    );
 
     let water = fx("combat_arms:test_water_gun");
-    assert_eq!((water.impact.as_str(), water.fire.as_str(), water.tracer.as_str()), ("Water_Splash", "Water_Fire", "Water_Tail"));
+    assert_eq!(
+        (water.impact.as_str(), water.fire.as_str(), water.tracer.as_str()),
+        ("Water_Splash", "Water_Fire", "Water_Tail")
+    );
     let i = water.impact_of(t()).expect("the install's ImpactFX");
-    assert_eq!((i.sound.as_str(), i.sound_radius, i.fx.as_str()), ("test_snd/splash.wav", 600.0, "Test_Splash"));
+    assert_eq!(
+        (i.sound.as_str(), i.sound_radius, i.fx.as_str()),
+        ("test_snd/splash.wav", 600.0, "Test_Splash")
+    );
     assert!(!i.surface_fx && !i.create_mark);
     let f = water.fire_of(t()).expect("the install's FireFX");
     assert_eq!((f.fx.as_str(), f.shells), ("Test_Water_Muzzle", false));
     let look = effects::tracer_look(t(), &water, None).expect("the install's TracerFX");
     assert_eq!(look.texture, "test_fx/weapons/water_tail.dtx");
-    assert_eq!((look.frequency, look.velocity, look.width, look.length), (1, 3000.0, 12.0, 150.0));
-    assert_eq!((look.color, look.initial_alpha, look.final_alpha), ([120.0, 180.0, 255.0], 0.8, 0.2));
+    assert_eq!(
+        (look.frequency, look.velocity, look.width, look.length),
+        (1, 3000.0, 12.0, 150.0)
+    );
+    assert_eq!(
+        (look.color, look.initial_alpha, look.final_alpha),
+        ([120.0, 180.0, 255.0], 0.8, 0.2)
+    );
     assert_eq!(effects::own_tracer_frequency(t(), &water, None), Some(1));
 
     // Names with no record anywhere: no effect, not the template's.
     let ghost = fx("combat_arms:test_ghost_gun");
-    assert_eq!((ghost.impact.as_str(), ghost.fire.as_str(), ghost.tracer.as_str()), ("", "", ""));
+    assert_eq!(
+        (ghost.impact.as_str(), ghost.fire.as_str(), ghost.tracer.as_str()),
+        ("", "", "")
+    );
     assert!(ghost.impact_record.is_none() && ghost.fire_record.is_none() && ghost.tracer_record.is_none());
     assert!(effects::tracer_look(t(), &ghost, None).is_none());
 
     // Stock names stay the tables' (an empty impact name is `BulletFmj`).
     let stock = fx("combat_arms:test_stock_gun");
-    assert_eq!((stock.impact.as_str(), stock.fire.as_str(), stock.tracer.as_str()), ("BulletFmj", "5.56mm", "AR01"));
+    assert_eq!(
+        (stock.impact.as_str(), stock.fire.as_str(), stock.tracer.as_str()),
+        ("BulletFmj", "5.56mm", "AR01")
+    );
     assert!(stock.tracer_record.is_none());
     assert_eq!(effects::tracer_look(t(), &stock, None), t().tracer("AR01"));
 }
@@ -2444,10 +2952,23 @@ fn install_gun_rounds_play_their_own_impact_record() {
     sim.app.world_mut().resource_mut::<Requested>().0.clear();
     fire_once(&mut sim, me);
     let req = std::mem::take(&mut sim.app.world_mut().resource_mut::<Requested>().0);
-    assert!(req.iter().any(|r| r.group == "Test_Splash"), "the record's group: {req:?}");
-    assert!(!req.iter().any(|r| r.group == "Impact_Metal"), "no surface burst (DoSurfaceFX 0): {req:?}");
-    assert!(req.iter().any(|r| r.group == "Test_Water_Muzzle" && r.kind == FxKind::OwnFire), "{req:?}");
-    assert!(sim.app.world().resource::<CaMarks>().marks.is_empty(), "CreateMark 0: no decal");
+    assert!(
+        req.iter().any(|r| r.group == "Test_Splash"),
+        "the record's group: {req:?}"
+    );
+    assert!(
+        !req.iter().any(|r| r.group == "Impact_Metal"),
+        "no surface burst (DoSurfaceFX 0): {req:?}"
+    );
+    assert!(
+        req.iter()
+            .any(|r| r.group == "Test_Water_Muzzle" && r.kind == FxKind::OwnFire),
+        "{req:?}"
+    );
+    assert!(
+        sim.app.world().resource::<CaMarks>().marks.is_empty(),
+        "CreateMark 0: no decal"
+    );
 }
 
 /// The dedicated server's effects (docs/performance.md, "The dedicated
@@ -2471,27 +2992,50 @@ fn a_map_without_textures_takes_the_impacts_but_not_the_effect_file() {
         None
     };
     // Data of its own: the effect file is parsed once per data (a memo).
-    let data = CaData::builtin_with_weapons(WEAPON_DATA.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect());
+    let data = CaData::builtin_with_weapons(
+        WEAPON_DATA
+            .iter()
+            .map(|(n, t)| (n.to_string(), t.to_string()))
+            .collect(),
+    );
     // Another game's map on the server, as `world::DRESSING` dresses it.
     let mut lean = MapData::default();
     lean.impacts.game = Some("cs_source".into());
     lean.impacts.add("cs_source");
     lean.memos.insert(world::SizesOnly);
     library::add_looks(&mut lean, &data, &file);
-    assert_eq!(*reads.borrow(), Vec::<String>::new(), "a map without textures reads nothing for the effects' looks");
-    assert!(library::library(&lean.memos).is_none(), "no effect library on a map without textures");
+    assert_eq!(
+        *reads.borrow(),
+        Vec::<String>::new(),
+        "a map without textures reads nothing for the effects' looks"
+    );
+    assert!(
+        library::library(&lean.memos).is_none(),
+        "no effect library on a map without textures"
+    );
     assert!(lean.textures.is_empty() && lean.particles.materials.is_empty());
-    assert!(lean.impacts.looks.iter().any(|g| g == GAME), "Combat Arms' impacts stay registered: {:?}", lean.impacts);
+    assert!(
+        lean.impacts.looks.iter().any(|g| g == GAME),
+        "Combat Arms' impacts stay registered: {:?}",
+        lean.impacts
+    );
     let providers = ["cs_source", GAME];
     let impacts = ActiveImpacts(lean.impacts.clone());
     assert_eq!(impact_by(Some(GAME), Some(&impacts), &providers), ImpactBy::Game(GAME));
     // Without Combat Arms' looks registered they would go to the map's game.
     let mut without = lean.impacts.clone();
     without.looks.retain(|g| g != GAME);
-    assert_eq!(impact_by(Some(GAME), Some(&ActiveImpacts(without)), &providers), ImpactBy::Game("cs_source"));
+    assert_eq!(
+        impact_by(Some(GAME), Some(&ActiveImpacts(without)), &providers),
+        ImpactBy::Game("cs_source")
+    );
 
     // A drawn map reads the effect file (here it doesn't read: no looks).
     let mut drawn = MapData::default();
     library::add_looks(&mut drawn, &data, &file);
-    assert!(reads.borrow().iter().any(|p| p == library::FX_FILE), "{:?}", reads.borrow());
+    assert!(
+        reads.borrow().iter().any(|p| p == library::FX_FILE),
+        "{:?}",
+        reads.borrow()
+    );
 }

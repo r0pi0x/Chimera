@@ -57,12 +57,15 @@ fn close(a: Vec3, b: Vec3, tol: f32) -> bool {
 fn t01_body_by_face() {
     let d = builtin();
     let (r, figure) = d.effective(&Selection::default());
-    assert_eq!((r.file.as_str(), r.skeleton, figure), ("CHARS_M_BODY\\CM_VST_NM_DF_Nuts_JS.ltb", 0, 0));
-    let (r, figure) = d.effective(&Selection {
-        face: 5,
-        ..default()
-    });
-    assert_eq!((r.id, r.file.as_str(), r.skeleton, figure), (7, "CHARS_M_BODY\\Nomal_W_vest.ltb", 1, 1));
+    assert_eq!(
+        (r.file.as_str(), r.skeleton, figure),
+        ("CHARS_M_BODY\\CM_VST_NM_DF_Nuts_JS.ltb", 0, 0)
+    );
+    let (r, figure) = d.effective(&Selection { face: 5, ..default() });
+    assert_eq!(
+        (r.id, r.file.as_str(), r.skeleton, figure),
+        (7, "CHARS_M_BODY\\Nomal_W_vest.ltb", 1, 1)
+    );
     let (r, _) = d.effective(&Selection {
         model: 2,
         face: 4,
@@ -89,9 +92,18 @@ fn t03_camouflage_skins() {
     let m = d.model(0).unwrap();
     assert_eq!(
         d.skins(m, 3),
-        (Some("CHARS_T_BODY\\Nomal_vest_body_UR.dtx"), Some("CHARS_T_BODY\\Nomal_vest_leg_UR.dtx"))
+        (
+            Some("CHARS_T_BODY\\Nomal_vest_body_UR.dtx"),
+            Some("CHARS_T_BODY\\Nomal_vest_leg_UR.dtx")
+        )
     );
-    assert_eq!(d.skins(m, 9), (Some("CHARS_T_BODY\\Nomal_vest_body.dtx"), Some("CHARS_T_BODY\\Nomal_vest_leg.dtx")));
+    assert_eq!(
+        d.skins(m, 9),
+        (
+            Some("CHARS_T_BODY\\Nomal_vest_body.dtx"),
+            Some("CHARS_T_BODY\\Nomal_vest_leg.dtx")
+        )
+    );
     // The skin families: camouflage by two, the mark's bit.
     assert_eq!(models::family(3, true), 7);
     assert_eq!(models::family(9, false), 0);
@@ -166,10 +178,17 @@ fn body_group_numbers() {
     };
     let head = if d.head_file(2, 0).is_some() { 2 } else { -1 };
     let ca = combat_arms::game::data::CaData::builtin();
-    assert_eq!(models::drawn(&ca, loaded, &look), Some((models::body_name(0), g.number(1, 2, head))));
+    assert_eq!(
+        models::drawn(&ca, loaded, &look),
+        Some((models::body_name(0), g.number(1, 2, head)))
+    );
     // A female face: the female group, absent here.
     assert_eq!(models::drawn(&ca, loaded, &Selection { face: 5, ..default() }), None);
-    assert_eq!(models::drawn(&ca, models::Models::default(), &look), None, "no group loaded");
+    assert_eq!(
+        models::drawn(&ca, models::Models::default(), &look),
+        None,
+        "no group loaded"
+    );
 }
 
 #[test]
@@ -196,7 +215,11 @@ fn drv() -> Driver {
 }
 
 fn at(d: &Driver) -> (String, String, String) {
-    (d.name_of(&d.upper).into(), d.name_of(&d.lower).into(), d.name_of(&d.crouch).into())
+    (
+        d.name_of(&d.upper).into(),
+        d.name_of(&d.lower).into(),
+        d.name_of(&d.crouch).into(),
+    )
 }
 
 fn length(d: &Driver, t: &lithtech_formats::anim::Tracker) -> u32 {
@@ -204,10 +227,7 @@ fn length(d: &Driver, t: &lithtech_formats::anim::Tracker) -> u32 {
 }
 
 fn rifle() -> Inputs {
-    Inputs {
-        class: 0,
-        ..default()
-    }
+    Inputs { class: 0, ..default() }
 }
 
 fn run(d: &mut Driver, i: &Inputs, n: usize) {
@@ -233,7 +253,15 @@ fn t06_standing_still() {
 #[test]
 fn t07_walking() {
     let mut d = drv();
-    run(&mut d, &Inputs { run: false, forward: true, ..rifle() }, 3);
+    run(
+        &mut d,
+        &Inputs {
+            run: false,
+            forward: true,
+            ..rifle()
+        },
+        3,
+    );
     assert_eq!(at(&d).0, "URFWAmF");
     assert_eq!(at(&d).1, "LWF");
     let mut d = drv();
@@ -250,33 +278,87 @@ fn t08_running_directions() {
     ] {
         let mut d = drv();
         let (forward, back, left, right) = keys;
-        run(&mut d, &Inputs { forward, back, left, right, ..rifle() }, 2);
+        run(
+            &mut d,
+            &Inputs {
+                forward,
+                back,
+                left,
+                right,
+                ..rifle()
+            },
+            2,
+        );
         assert_eq!((at(&d).1.as_str(), at(&d).0.as_str()), (lower, upper));
     }
     let mut d = drv();
-    run(&mut d, &Inputs { forward: true, left: true, ..rifle() }, 1);
+    run(
+        &mut d,
+        &Inputs {
+            forward: true,
+            left: true,
+            ..rifle()
+        },
+        1,
+    );
     assert_eq!(length(&d, &d.lower), 600);
 }
 
 #[test]
 fn t09_sprint() {
     let mut d = drv();
-    run(&mut d, &Inputs { sprint: true, forward: true, ..rifle() }, 2);
+    run(
+        &mut d,
+        &Inputs {
+            sprint: true,
+            forward: true,
+            ..rifle()
+        },
+        2,
+    );
     assert_eq!((at(&d).1.as_str(), at(&d).0.as_str()), ("LRRF", "URFRRAmF"));
     assert_eq!(length(&d, &d.lower), 500);
     let mut d = drv();
-    run(&mut d, &Inputs { sprint: true, forward: true, right: true, ..rifle() }, 2);
+    run(
+        &mut d,
+        &Inputs {
+            sprint: true,
+            forward: true,
+            right: true,
+            ..rifle()
+        },
+        2,
+    );
     assert_eq!(at(&d).1, "LRRR");
 }
 
 #[test]
 fn t10_crouched() {
     let mut d = drv();
-    run(&mut d, &Inputs { crouch: 1.0, crouch_key: true, run: false, ..rifle() }, 2);
+    run(
+        &mut d,
+        &Inputs {
+            crouch: 1.0,
+            crouch_key: true,
+            run: false,
+            ..rifle()
+        },
+        2,
+    );
     assert_eq!(at(&d), ("URFRAmS".into(), "LST".into(), "LC".into()));
     assert_eq!(d.crouch.multiplier, 1.0);
     let mut d = drv();
-    run(&mut d, &Inputs { crouch: 1.0, crouch_key: true, run: false, forward: true, ..rifle() }, 2);
+    run(
+        &mut d,
+        &Inputs {
+            crouch: 1.0,
+            crouch_key: true,
+            run: false,
+            forward: true,
+            ..rifle()
+        },
+        2,
+    );
     assert_eq!(at(&d), ("URFWAmF".into(), "LWF".into(), "LCF".into()));
     assert_eq!(length(&d, &d.crouch), 1400);
 }
@@ -285,7 +367,13 @@ fn t10_crouched() {
 fn t11_jumps() {
     let mut d = drv();
     run(&mut d, &rifle(), 2);
-    d.update(TICK, &Inputs { jumped: true, ..rifle() });
+    d.update(
+        TICK,
+        &Inputs {
+            jumped: true,
+            ..rifle()
+        },
+    );
     assert_eq!(at(&d).1, "LSJ");
     assert!(!d.lower.looping);
     assert_eq!(length(&d, &d.lower), 666);
@@ -298,18 +386,43 @@ fn t11_jumps() {
     assert_eq!(at(&d).1, "LST");
     // From running forward.
     let mut d = drv();
-    let fwd = Inputs { forward: true, ..rifle() };
+    let fwd = Inputs {
+        forward: true,
+        ..rifle()
+    };
     run(&mut d, &fwd, 2);
-    d.update(TICK, &Inputs { jumped: true, ..fwd.clone() });
+    d.update(
+        TICK,
+        &Inputs {
+            jumped: true,
+            ..fwd.clone()
+        },
+    );
     assert_eq!(at(&d).1, "LJJ");
     // Sprinting: the run jump, never LRRJF.
     let mut d = drv();
-    let sprint = Inputs { sprint: true, forward: true, ..rifle() };
+    let sprint = Inputs {
+        sprint: true,
+        forward: true,
+        ..rifle()
+    };
     run(&mut d, &sprint, 2);
-    d.update(TICK, &Inputs { jumped: true, ..sprint.clone() });
+    d.update(
+        TICK,
+        &Inputs {
+            jumped: true,
+            ..sprint.clone()
+        },
+    );
     assert_eq!(at(&d).1, "LJJ");
     // Landing clears the jump.
-    d.update(TICK, &Inputs { landed: true, ..sprint.clone() });
+    d.update(
+        TICK,
+        &Inputs {
+            landed: true,
+            ..sprint.clone()
+        },
+    );
     assert_eq!(d.jump, Jump::None);
 }
 
@@ -332,9 +445,19 @@ fn t12_firing() {
     assert!(d.upper.time >= 100);
     // Running forward: no moving rifle fire in the library, the aim plays.
     let mut d = drv();
-    let fwd = Inputs { forward: true, ..rifle() };
+    let fwd = Inputs {
+        forward: true,
+        ..rifle()
+    };
     run(&mut d, &fwd, 2);
-    run(&mut d, &Inputs { fire: true, ..fwd.clone() }, 10);
+    run(
+        &mut d,
+        &Inputs {
+            fire: true,
+            ..fwd.clone()
+        },
+        10,
+    );
     assert_eq!(at(&d).0, "URFRAmF");
     assert_eq!(d.last.posture, Posture::Fire);
 }
@@ -343,23 +466,59 @@ fn t12_firing() {
 fn t13_reload_and_draw() {
     let mut d = drv();
     run(&mut d, &rifle(), 2);
-    d.update(TICK, &Inputs { reloading: true, ..rifle() });
+    d.update(
+        TICK,
+        &Inputs {
+            reloading: true,
+            ..rifle()
+        },
+    );
     assert_eq!(at(&d).0, "URFRSReS");
     assert_eq!(length(&d, &d.upper), 1866);
     // Started while moving: kept when the player stops.
     let mut d = drv();
-    let fwd = Inputs { forward: true, ..rifle() };
+    let fwd = Inputs {
+        forward: true,
+        ..rifle()
+    };
     run(&mut d, &fwd, 2);
-    d.update(TICK, &Inputs { reloading: true, ..fwd.clone() });
+    d.update(
+        TICK,
+        &Inputs {
+            reloading: true,
+            ..fwd.clone()
+        },
+    );
     assert_eq!(at(&d).0, "URFRReS");
-    run(&mut d, &Inputs { reloading: true, ..rifle() }, 5);
+    run(
+        &mut d,
+        &Inputs {
+            reloading: true,
+            ..rifle()
+        },
+        5,
+    );
     assert_eq!(at(&d).0, "URFRReS");
     // Draws.
-    for (moving, sprint, want, len) in [(false, false, "URFRSSeS", Some(733)), (true, false, "URFRSeS", None), (true, true, "URFRRSeS", None)] {
+    for (moving, sprint, want, len) in [
+        (false, false, "URFRSSeS", Some(733)),
+        (true, false, "URFRSeS", None),
+        (true, true, "URFRRSeS", None),
+    ] {
         let mut d = drv();
-        let base = Inputs { forward: moving, sprint, ..rifle() };
+        let base = Inputs {
+            forward: moving,
+            sprint,
+            ..rifle()
+        };
         run(&mut d, &base, 2);
-        d.update(TICK, &Inputs { status: Some(driver::Status::Select), ..base.clone() });
+        d.update(
+            TICK,
+            &Inputs {
+                status: Some(driver::Status::Select),
+                ..base.clone()
+            },
+        );
         assert_eq!(at(&d).0, want);
         if let Some(l) = len {
             assert_eq!(length(&d, &d.upper), l);
@@ -370,23 +529,57 @@ fn t13_reload_and_draw() {
 #[test]
 fn t14_pistol_and_knife() {
     let mut d = drv();
-    let pistol = Inputs { class: 10, forward: true, ..default() };
+    let pistol = Inputs {
+        class: 10,
+        forward: true,
+        ..default()
+    };
     run(&mut d, &pistol, 2);
-    d.update(TICK, &Inputs { fire: true, ..pistol.clone() });
+    d.update(
+        TICK,
+        &Inputs {
+            fire: true,
+            ..pistol.clone()
+        },
+    );
     assert_eq!(at(&d).0, "UPRFiF");
-    for keys in [(false, false, false, false), (true, false, false, false), (false, true, true, false), (false, false, false, true)] {
+    for keys in [
+        (false, false, false, false),
+        (true, false, false, false),
+        (false, true, true, false),
+        (false, false, false, true),
+    ] {
         let mut d = drv();
         let (forward, back, left, right) = keys;
-        let knife = Inputs { class: 14, forward, back, left, right, ..default() };
+        let knife = Inputs {
+            class: 14,
+            forward,
+            back,
+            left,
+            right,
+            ..default()
+        };
         run(&mut d, &knife, 2);
-        d.update(TICK, &Inputs { fire: true, ..knife.clone() });
+        d.update(
+            TICK,
+            &Inputs {
+                fire: true,
+                ..knife.clone()
+            },
+        );
         assert_eq!(at(&d).0, "UKRFiS", "{keys:?}");
         assert_eq!(length(&d, &d.upper), 500);
     }
     let mut d = drv();
     let knife = Inputs { class: 14, ..default() };
     run(&mut d, &knife, 2);
-    d.update(TICK, &Inputs { alt_fire: true, ..knife.clone() });
+    d.update(
+        TICK,
+        &Inputs {
+            alt_fire: true,
+            ..knife.clone()
+        },
+    );
     assert_eq!(at(&d).0, "UKRFiS2");
     assert_eq!(length(&d, &d.upper), 800);
 }
@@ -394,7 +587,10 @@ fn t14_pistol_and_knife() {
 #[test]
 fn t15_grenade_throw() {
     let grenade = Inputs { class: 11, ..default() };
-    let held = Inputs { fire: true, ..grenade.clone() };
+    let held = Inputs {
+        fire: true,
+        ..grenade.clone()
+    };
     let mut d = drv();
     run(&mut d, &grenade, 2);
     d.update(TICK, &held);
@@ -424,7 +620,13 @@ fn t15_grenade_throw() {
         d2.update(TICK, if at(&d2).0 == "UTRFiS_B" { &grenade } else { &held });
     }
     run(&mut d2, &grenade, 60);
-    d2.update(TICK, &Inputs { status: Some(driver::Status::Select), ..grenade.clone() });
+    d2.update(
+        TICK,
+        &Inputs {
+            status: Some(driver::Status::Select),
+            ..grenade.clone()
+        },
+    );
     assert_eq!(at(&d2).0, "UTRSSeS");
 }
 
@@ -433,14 +635,23 @@ fn t16_hit_reactions() {
     for (coin, name, len) in [(true, "D_HIT", 467), (false, "D_HITT", 400)] {
         let mut d = drv();
         run(&mut d, &rifle(), 2);
-        let hit = Inputs { status: Some(driver::Status::Hit), damaged: true, coin, ..rifle() };
+        let hit = Inputs {
+            status: Some(driver::Status::Hit),
+            damaged: true,
+            coin,
+            ..rifle()
+        };
         d.update(TICK, &hit);
         assert_eq!(at(&d).0, name);
         assert_eq!(length(&d, &d.upper), len);
         assert_eq!(d.list.entries[d.upper.current].animation.interp_ms, 200);
         // Fire held meanwhile: no fire animation until the hit is done
         // (200 ms blend, then its length).
-        let fire = Inputs { fire: true, damaged: true, ..rifle() };
+        let fire = Inputs {
+            fire: true,
+            damaged: true,
+            ..rifle()
+        };
         let mut ms = TICK;
         while at(&d).0 == name {
             d.update(TICK, &fire);
@@ -452,7 +663,15 @@ fn t16_hit_reactions() {
     // Spawn-protected: no reaction, the hit status sticks (Quirk 4).
     let mut d = drv();
     run(&mut d, &rifle(), 2);
-    d.update(TICK, &Inputs { status: Some(driver::Status::Hit), damaged: true, protected: true, ..rifle() });
+    d.update(
+        TICK,
+        &Inputs {
+            status: Some(driver::Status::Hit),
+            damaged: true,
+            protected: true,
+            ..rifle()
+        },
+    );
     run(&mut d, &Inputs { fire: true, ..rifle() }, 5);
     assert_eq!(at(&d).0, "URFRAmS");
 }
@@ -466,7 +685,11 @@ fn t17_rates() {
     run(&mut d, &rifle(), 2);
     let mut frames = vec![0; 10];
     frames[5] = 2300;
-    let reload = Inputs { reloading: true, frames, ..rifle() };
+    let reload = Inputs {
+        reloading: true,
+        frames,
+        ..rifle()
+    };
     d.update(TICK, &reload);
     assert!((d.upper.rate - 0.8113).abs() < 1e-4);
     let mut ms = 0;
@@ -478,7 +701,15 @@ fn t17_rates() {
     assert!((2295..=2320).contains(&ms), "{ms}");
     // The legs at 1.0 whatever the movement.
     let mut d = drv();
-    run(&mut d, &Inputs { forward: true, sprint: true, ..rifle() }, 3);
+    run(
+        &mut d,
+        &Inputs {
+            forward: true,
+            sprint: true,
+            ..rifle()
+        },
+        3,
+    );
     assert_eq!((d.lower.rate, d.crouch.rate), (1.0, 1.0));
 }
 
@@ -515,7 +746,10 @@ fn male_aim() -> Vec<String> {
 }
 
 fn angle_of(p: &Posed, name: &str) -> f32 {
-    p.globals[p.node(name).unwrap()].1.angle_between(Quat::IDENTITY).to_degrees()
+    p.globals[p.node(name).unwrap()]
+        .1
+        .angle_between(Quat::IDENTITY)
+        .to_degrees()
 }
 
 #[test]
@@ -539,7 +773,10 @@ fn t19_pitch_shares() {
         assert!((angle_of(&p, "Face") - head).abs() < 0.01, "head {deg}");
         let mut p = aim_chain();
         p.aim(&male_aim(), deg.to_radians(), 0.0, true);
-        assert!((angle_of(&p, "Right_hand") - server_arm).abs() < 0.01, "server arms {deg}");
+        assert!(
+            (angle_of(&p, "Right_hand") - server_arm).abs() < 0.01,
+            "server arms {deg}"
+        );
         // Down bows forward (+Z in the spec's frame).
         let hand = p.globals[p.node("Right_hand").unwrap()].0;
         assert_eq!(hand.y < 28.0, deg > 0.0);
@@ -589,7 +826,12 @@ struct StandIn {
 }
 
 fn translation(p: [f32; 3]) -> ltb::Mat4 {
-    [[1.0, 0.0, 0.0, p[0]], [0.0, 1.0, 0.0, p[1]], [0.0, 0.0, 1.0, p[2]], [0.0, 0.0, 0.0, 1.0]]
+    [
+        [1.0, 0.0, 0.0, p[0]],
+        [0.0, 1.0, 0.0, p[1]],
+        [0.0, 0.0, 1.0, p[2]],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
 }
 
 impl StandIn {
@@ -633,7 +875,11 @@ impl StandIn {
             animations: anims
                 .iter()
                 .map(|(name, len)| Animation {
-                    dims: if name.starts_with("LC") { [15.0, 40.0, 15.0] } else { [15.0, 50.0, 15.0] },
+                    dims: if name.starts_with("LC") {
+                        [15.0, 40.0, 15.0]
+                    } else {
+                        [15.0, 50.0, 15.0]
+                    },
                     name: name.to_string(),
                     compression: 0,
                     interp_ms: 0,
@@ -684,8 +930,14 @@ fn male_stand_in(with_nuts: bool) -> StandIn {
     let s = builtin().skeleton(0);
     let mut nodes: Vec<(&'static str, Option<usize>, [f32; 3])> = Vec::new();
     for n in &s.nodes {
-        let parent = n.parent.as_ref().and_then(|p| nodes.iter().position(|m| m.0 == p.as_str()));
-        let bind = s.sphere(&n.name).and_then(|sp| sp.bind).unwrap_or(n.at.unwrap_or_default());
+        let parent = n
+            .parent
+            .as_ref()
+            .and_then(|p| nodes.iter().position(|m| m.0 == p.as_str()));
+        let bind = s
+            .sphere(&n.name)
+            .and_then(|sp| sp.bind)
+            .unwrap_or(n.at.unwrap_or_default());
         nodes.push((n.name.clone().leak(), parent, bind));
     }
     let mut sockets = Vec::new();
@@ -695,7 +947,12 @@ fn male_stand_in(with_nuts: bool) -> StandIn {
                 continue;
             }
             let parent = nodes.iter().position(|m| m.0 == place.parent.as_str()).unwrap();
-            sockets.push((sp.name.clone().leak() as &'static str, parent, place.offset, [0.0, 0.0, 0.0, 1.0]));
+            sockets.push((
+                sp.name.clone().leak() as &'static str,
+                parent,
+                place.offset,
+                [0.0, 0.0, 0.0, 1.0],
+            ));
         }
     }
     for so in &s.sockets {
@@ -705,7 +962,14 @@ fn male_stand_in(with_nuts: bool) -> StandIn {
     StandIn { nodes, sockets }
 }
 
-const STAND_IN_ANIMS: &[(&str, u32)] = &[("baseAnim", 4800), ("URFRAmS", 4000), ("LST", 4000), ("LC", 4000), ("LRF", 600), ("DT", 3033)];
+const STAND_IN_ANIMS: &[(&str, u32)] = &[
+    ("baseAnim", 4800),
+    ("URFRAmS", 4000),
+    ("LST", 4000),
+    ("LC", 4000),
+    ("LRF", 600),
+    ("DT", 3033),
+];
 
 // ---------------------------------------------------------------------
 // Sockets
@@ -713,7 +977,10 @@ const STAND_IN_ANIMS: &[(&str, u32)] = &[("baseAnim", 4800), ("URFRAmS", 4000), 
 #[test]
 fn t23_right_hand_socket() {
     let s = builtin().skeleton(0).socket("RightHand").unwrap();
-    assert_eq!((s.parent.as_str(), s.offset, s.rotation), ("Right_hand", [7.085, 1.661, 1.277], [0.0573, -0.7151, -0.0818, 0.6918]));
+    assert_eq!(
+        (s.parent.as_str(), s.offset, s.rotation),
+        ("Right_hand", [7.085, 1.661, 1.277], [0.0573, -0.7151, -0.0818, 0.6918])
+    );
     // On a stand-in, the socket is its node's transform times the offset.
     let rig = male_stand_in(true).rig(STAND_IN_ANIMS);
     let bind = rig.bind();
@@ -734,13 +1001,19 @@ fn t23_right_hand_socket() {
 fn t24_name_socket() {
     let s = builtin().skeleton(0).socket("NAME_socket").unwrap();
     assert_eq!((s.parent.as_str(), s.offset), ("Head", [16.5, 0.0, 0.906]));
-    assert_eq!(builtin().skeleton(1).socket("NAME_socket").unwrap().parent, "Bip01 Head");
+    assert_eq!(
+        builtin().skeleton(1).socket("NAME_socket").unwrap().parent,
+        "Bip01 Head"
+    );
     let mut sim = sim();
     let yaw = 0.7;
     let p = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), yaw);
     let world = sim.app.world();
     let pose = world.get::<CaPose>(p).unwrap();
-    let (t, state) = (world.get::<Transform>(p).unwrap(), world.get::<MovementState>(p).unwrap());
+    let (t, state) = (
+        world.get::<Transform>(p).unwrap(),
+        world.get::<MovementState>(p).unwrap(),
+    );
     let tag = pose.world(t, state, UNIT, pose.name_tag.unwrap());
     let want = t.translation + Quat::from_rotation_y(yaw) * (Vec3::new(8.63, 45.87, -11.51) * UNIT);
     assert!(close(tag, want, 1e-4), "{tag} vs {want}");
@@ -752,33 +1025,57 @@ fn t25_26_sockets() {
     let m = builtin().skeleton(0);
     let f = builtin().skeleton(1);
     let eyes = m.socket("Eyes").unwrap();
-    assert_eq!((eyes.parent.as_str(), eyes.offset, eyes.bind), ("Face_Eyelid", [3.011, 0.0, 1.314], [0.03, 41.38, 5.68]));
+    assert_eq!(
+        (eyes.parent.as_str(), eyes.offset, eyes.bind),
+        ("Face_Eyelid", [3.011, 0.0, 1.314], [0.03, 41.38, 5.68])
+    );
     let eyes = f.socket("Eyes").unwrap();
-    assert_eq!((eyes.parent.as_str(), eyes.offset, eyes.bind), ("Bip01 Head", [-85.255, 0.001, 18.748], [0.08, 2.14, 5.20]));
+    assert_eq!(
+        (eyes.parent.as_str(), eyes.offset, eyes.bind),
+        ("Bip01 Head", [-85.255, 0.001, 18.748], [0.08, 2.14, 5.20])
+    );
     let back = m.socket("1W_N").unwrap();
-    assert_eq!((back.parent.as_str(), back.offset, back.rotation), ("Upper_torso", [-18.328, 0.0, 0.0], [0.0, 0.0, -0.7071, 0.7071]));
+    assert_eq!(
+        (back.parent.as_str(), back.offset, back.rotation),
+        ("Upper_torso", [-18.328, 0.0, 0.0], [0.0, 0.0, -0.7071, 0.7071])
+    );
     let left = m.socket("LeftHand").unwrap();
-    assert_eq!((left.parent.as_str(), left.offset, left.bind), ("left_hand", [0.0, 0.0, 0.0], [-31.19, 4.32, 2.14]));
+    assert_eq!(
+        (left.parent.as_str(), left.offset, left.bind),
+        ("left_hand", [0.0, 0.0, 0.0], [-31.19, 4.32, 2.14])
+    );
     // On the stand-in: the left hand's socket is its node; the backpack's
     // offset turns by the node's turn and its own rotation composes.
     let rig = male_stand_in(true).rig(STAND_IN_ANIMS);
     let bind = rig.bind();
     let (lh, q) = bind.socket("LeftHand").unwrap();
     assert!(close(lh, Vec3::new(-31.19, 4.32, 2.14), 1e-4));
-    assert!(q.angle_between(Quat::IDENTITY) < 1e-4, "(0, 0, 0, 0.7071) normalised is identity");
+    assert!(
+        q.angle_between(Quat::IDENTITY) < 1e-4,
+        "(0, 0, 0, 0.7071) normalised is identity"
+    );
 }
 
 /// Case 27: the death drop at the left foot, as the stand pose has it.
 #[test]
 fn t27_death_drop_at_the_left_foot() {
-    for (face, foot) in [(0, Vec3::new(-10.02, -41.49, 13.52)), (5, Vec3::new(-7.73, -39.56, 12.91))] {
+    for (face, foot) in [
+        (0, Vec3::new(-10.02, -41.49, 13.52)),
+        (5, Vec3::new(-7.73, -39.56, 12.91)),
+    ] {
         let mut sim = sim();
         let p = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), 0.0);
-        sim.app.world_mut().entity_mut(p).insert(Selection { face, ..default() });
+        sim.app
+            .world_mut()
+            .entity_mut(p)
+            .insert(Selection { face, ..default() });
         let w = weapon::give(sim.app.world_mut(), p, RIFLE).unwrap();
         sim.seconds(1.3);
         assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(w));
-        assert_eq!(sim.app.world().get::<CaAnim>(p).unwrap().skeleton, usize::from(face == 5));
+        assert_eq!(
+            sim.app.world().get::<CaAnim>(p).unwrap().skeleton,
+            usize::from(face == 5)
+        );
         let centre = sim.position(p);
         kill(&mut sim, p, Vec3::NEG_Z, Hitgroup::Chest, DamageKind::Bullet);
         sim.ticks(2);
@@ -786,7 +1083,11 @@ fn t27_death_drop_at_the_left_foot() {
         let mut q = world.query::<(&Transform, &inventory::Dropped)>();
         let (t, _) = q.single(world).expect("the rifle dropped");
         let want = centre + Vec3::new(foot.x, foot.y, -foot.z) * UNIT;
-        assert!(close(t.translation, want, 1e-3), "face {face}: {} vs {want}", t.translation);
+        assert!(
+            close(t.translation, want, 1e-3),
+            "face {face}: {} vs {want}",
+            t.translation
+        );
     }
 }
 
@@ -807,7 +1108,11 @@ fn t28_bind_centres_on_a_stand_in() {
     // Socket spheres: their node's position plus the offset (identity
     // nodes here; the install's rotations in heavy::characters).
     let nuts = bind.sphere("Nuts").unwrap();
-    assert!(close(nuts, Vec3::new(0.0, -7.70, 0.75) + Vec3::new(2.0, 0.0, 6.0), 1e-3));
+    assert!(close(
+        nuts,
+        Vec3::new(0.0, -7.70, 0.75) + Vec3::new(2.0, 0.0, 6.0),
+        1e-3
+    ));
     let t = MALE.iter().find(|s| s.name == "Upper_torso").unwrap();
     assert_eq!(t.radius, 10.0);
 }
@@ -855,7 +1160,10 @@ fn t30_spheres_follow_the_animation() {
     let list = AnimList::build(&model, &[]);
     let rig = Rig::new(model, list);
     let mut d = Driver::new(rig.list.clone());
-    let fwd = Inputs { forward: true, ..rifle() };
+    let fwd = Inputs {
+        forward: true,
+        ..rifle()
+    };
     d.update(0, &fwd);
     assert_eq!(d.name_of(&d.lower), "LRF");
     let base_pose = rig.posed(&rig.layered(&d.main, &d.upper, &d.lower, &d.crouch, 0.0), 0.0);
@@ -889,7 +1197,10 @@ fn t31_crouch_lowers_the_spheres() {
 fn t32_female_table() {
     let mut sim = sim();
     let p = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), 0.0);
-    sim.app.world_mut().entity_mut(p).insert(Selection { face: 6, ..default() });
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(Selection { face: 6, ..default() });
     sim.ticks(2);
     let world = sim.app.world();
     let pose = world.get::<CaPose>(p).unwrap();
@@ -914,7 +1225,12 @@ fn t34_sphere_counts() {
     assert_eq!(count(&FEMALE), 35);
     // A stand-in with the default male's nodes and sockets: 33 found.
     let bind = male_stand_in(true).rig(STAND_IN_ANIMS).bind();
-    let found = d.skeleton(0).spheres.iter().filter(|s| s.radius > 0.0 && bind.sphere(&s.name).is_some()).count();
+    let found = d
+        .skeleton(0)
+        .spheres
+        .iter()
+        .filter(|s| s.radius > 0.0 && bind.sphere(&s.name).is_some())
+        .count();
     assert_eq!(found, 33);
 }
 
@@ -986,7 +1302,11 @@ fn t39_other_deaths() {
     assert_eq!(death_of(DeathKind::Melee, d, false, false, true, false), "D_S");
     assert_eq!(death_of(DeathKind::Poison, d, false, false, true, false), "D_P");
     assert_eq!(death_of(DeathKind::EndlessFall, d, false, false, true, false), "D_W");
-    assert_eq!(death_of(DeathKind::Other, d, false, true, true, true), "DC", "female: no NS1");
+    assert_eq!(
+        death_of(DeathKind::Other, d, false, true, true, true),
+        "DC",
+        "female: no NS1"
+    );
     // Location 5 (BR data, ours): the groin deaths; location 2 (US): torso.
     assert_eq!(death_of(DeathKind::Other, d, false, true, true, false), "NS1");
     assert_eq!(death_of(DeathKind::Other, d, false, true, false, false), "NS2");
@@ -1028,7 +1348,10 @@ fn t41_body_lifetime() {
     assert!((death::removal_time(end, Some(2.0), tdm).unwrap() - 8.034).abs() < 1e-9);
     assert!((death::removal_time(end, Some(10.0), tdm).unwrap() - 15.0).abs() < 1e-9);
     assert_eq!(death::removal_time(end, None, tdm), None, "not before the respawn");
-    assert!((death::removal_time(end, Some(10.0), Some(500.0)).unwrap() - 510.0).abs() < 1e-9, "Combat");
+    assert!(
+        (death::removal_time(end, Some(10.0), Some(500.0)).unwrap() - 510.0).abs() < 1e-9,
+        "Combat"
+    );
     assert_eq!(death::removal_time(end, Some(10.0), None), None, "other modes: never");
 }
 
@@ -1047,7 +1370,11 @@ fn t42_body_creation() {
     let world = sim.app.world_mut();
     let mut q = world.query::<&CaBody>();
     let body = q.single(world).expect("a body").clone();
-    assert!(close(body.at, centre + Vec3::Y * 0.1 * UNIT, 1e-4), "{} vs {centre}", body.at);
+    assert!(
+        close(body.at, centre + Vec3::Y * 0.1 * UNIT, 1e-4),
+        "{} vs {centre}",
+        body.at
+    );
     assert!(["DT", "DT_1"].contains(&body.animation.as_str()), "{}", body.animation);
     let anim = world.get::<CaAnim>(p).unwrap();
     assert_eq!(anim.death.as_deref(), Some(body.animation.as_str()));
@@ -1062,7 +1389,10 @@ fn player(sim: &mut Sim, at: Vec3, yaw: f32) -> Entity {
     let p = sim.spawn_character(at, movement::ID);
     sim.intent(p).yaw = yaw;
     sim.seconds(0.5);
-    sim.app.world_mut().entity_mut(p).insert(combat_arms::game::weapons::gear_armour(0.0, &Vec::new()));
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(combat_arms::game::weapons::gear_armour(0.0, &Vec::new()));
     p
 }
 
@@ -1124,7 +1454,12 @@ fn scenario_player_states() {
     sim.intent(p).reload = false;
     assert_eq!(playing(&sim, p).0, "URFRSReS");
     // Looking down lowers the head sphere.
-    let head = builtin().skeleton(0).spheres.iter().position(|s| s.name == "Head").unwrap();
+    let head = builtin()
+        .skeleton(0)
+        .spheres
+        .iter()
+        .position(|s| s.name == "Head")
+        .unwrap();
     let level = sim.app.world().get::<CaPose>(p).unwrap().spheres[head].unwrap();
     sim.intent(p).pitch = -0.5;
     sim.ticks(1);
@@ -1147,7 +1482,10 @@ fn scenario_modelled_body() {
     let mut sim = sim();
     models::register(sim.app.world_mut(), file, Arc::new(stand_in.rig(STAND_IN_ANIMS)));
     let p = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), 0.0);
-    sim.app.world_mut().entity_mut(p).insert(Selection { model: 1, ..default() });
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(Selection { model: 1, ..default() });
     sim.ticks(3);
     let pose = sim.app.world().get::<CaPose>(p).unwrap().clone();
     assert!(pose.modelled);
@@ -1155,7 +1493,11 @@ fn scenario_modelled_body() {
     let skel = builtin().skeleton(0);
     let torso = skel.spheres.iter().position(|s| s.name == "Torso").unwrap();
     // The stand-in's bind Torso (5, 5.14, 0.74) with its feet at -50.
-    assert!(close(pose.spheres[torso].unwrap(), Vec3::new(5.0, 55.14, -0.74), 1e-3), "{:?}", pose.spheres[torso]);
+    assert!(
+        close(pose.spheres[torso].unwrap(), Vec3::new(5.0, 55.14, -0.74), 1e-3),
+        "{:?}",
+        pose.spheres[torso]
+    );
     let groin = skel.spheres.iter().position(|s| s.name == "Nuts").unwrap();
     assert!(pose.spheres[groin].is_some());
     let shoulder = skel.spheres.iter().position(|s| s.name == "Left_Shld").unwrap();
@@ -1171,8 +1513,15 @@ fn scenario_modelled_body() {
 /// change together.
 #[test]
 fn a_character_change_keeps_the_shown_body_on_its_own_skeleton() {
-    use chimera_world::map::{BodyModel, BodyName, CharacterModels, MapBone, MapCharacterModel, anim::{AnimSet, Animator}};
-    use combat_arms::game::{GAME, characters::{CaShownAnim, models::BodyGroup}, view_model::on_demand::LoadOnDemand};
+    use chimera_world::map::{
+        BodyModel, BodyName, CharacterModels, MapBone, MapCharacterModel,
+        anim::{AnimSet, Animator},
+    };
+    use combat_arms::game::{
+        GAME,
+        characters::{CaShownAnim, models::BodyGroup},
+        view_model::on_demand::LoadOnDemand,
+    };
     let model_of = |id: i32, stand_in: &StandIn| MapCharacterModel {
         game: Some(GAME),
         team: None,
@@ -1183,7 +1532,12 @@ fn a_character_change_keeps_the_shown_body_on_its_own_skeleton() {
         bones: stand_in
             .nodes
             .iter()
-            .map(|(name, parent, _)| MapBone { name: name.to_string(), parent: *parent, position: Vec3::ZERO, rotation: Quat::IDENTITY })
+            .map(|(name, parent, _)| MapBone {
+                name: name.to_string(),
+                parent: *parent,
+                position: Vec3::ZERO,
+                rotation: Quat::IDENTITY,
+            })
             .collect(),
         root: Transform::IDENTITY,
         animations: Some(Arc::new(AnimSet::default())),
@@ -1199,20 +1553,38 @@ fn a_character_change_keeps_the_shown_body_on_its_own_skeleton() {
     sim.set_tick_interval(TICK_INTERVAL);
     sim.app.init_resource::<LoadOnDemand>();
     let world = sim.app.world_mut();
-    models::register(world, &builtin().model(from).unwrap().file, Arc::new(a.rig(STAND_IN_ANIMS)));
-    models::late_in(world).0.register_group(BodyGroup { records: vec![from], ..default() });
+    models::register(
+        world,
+        &builtin().model(from).unwrap().file,
+        Arc::new(a.rig(STAND_IN_ANIMS)),
+    );
+    models::late_in(world).0.register_group(BodyGroup {
+        records: vec![from],
+        ..default()
+    });
     world.insert_resource(CharacterModels(Arc::new(vec![model_of(from, &a)])));
     let p = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), 0.0);
-    sim.app.world_mut().entity_mut(p).insert(Selection { model: from, ..default() });
+    sim.app.world_mut().entity_mut(p).insert(Selection {
+        model: from,
+        ..default()
+    });
     sim.ticks(6);
     // The drawing's pose goes with the model the character wears, always.
     let check = |sim: &Sim, what: &str| {
         let w = sim.app.world();
         let animator = w.get::<Animator>(p).unwrap();
         let worn = &w.resource::<CharacterModels>().0[w.get::<BodyModel>(p).unwrap().0];
-        assert_eq!(animator.skeleton, Some(worn.skeleton_signature()), "{what}: the pose is the worn model's skeleton's");
+        assert_eq!(
+            animator.skeleton,
+            Some(worn.skeleton_signature()),
+            "{what}: the pose is the worn model's skeleton's"
+        );
         if let Some(pose) = &animator.fixed {
-            assert_eq!(pose.len(), worn.bones.len(), "{what}: one pose per bone of the worn model");
+            assert_eq!(
+                pose.len(),
+                worn.bones.len(),
+                "{what}: one pose per bone of the worn model"
+            );
         }
         worn.name.clone().unwrap()
     };
@@ -1221,7 +1593,11 @@ fn a_character_change_keeps_the_shown_body_on_its_own_skeleton() {
     assert_eq!(name(&sim).as_deref(), Some(models::body_name(from).as_str()));
     // The change: its rig is known (stood in, or read), its model loading.
     let world = sim.app.world_mut();
-    models::register(world, &builtin().model(to).unwrap().file, Arc::new(b.rig(STAND_IN_ANIMS)));
+    models::register(
+        world,
+        &builtin().model(to).unwrap().file,
+        Arc::new(b.rig(STAND_IN_ANIMS)),
+    );
     world.entity_mut(p).insert(Selection { model: to, ..default() });
     for _ in 0..30 {
         sim.ticks(1);
@@ -1229,16 +1605,27 @@ fn a_character_change_keeps_the_shown_body_on_its_own_skeleton() {
     }
     let world = sim.app.world();
     assert!(world.get::<CaShownAnim>(p).is_some(), "the old body plays on");
-    assert_eq!(world.get::<CaAnim>(p).unwrap().body, to, "the new body is the logic's at once");
+    assert_eq!(
+        world.get::<CaAnim>(p).unwrap().body,
+        to,
+        "the new body is the logic's at once"
+    );
     assert!(world.get::<Animator>(p).unwrap().fixed.is_some());
     // It moves: the old skeleton's driver runs while it shows.
     sim.intent(p).move_axis = Vec2::Y;
     sim.ticks(10);
     let shown = sim.app.world().get::<CaShownAnim>(p).unwrap();
-    assert_eq!(shown.0.driver.name_of(&shown.0.driver.lower), "LRF", "the old body runs");
+    assert_eq!(
+        shown.0.driver.name_of(&shown.0.driver.lower),
+        "LRF",
+        "the old body runs"
+    );
     // The model comes.
     let world = sim.app.world_mut();
-    models::late_in(world).0.register_group(BodyGroup { records: vec![to], ..default() });
+    models::late_in(world).0.register_group(BodyGroup {
+        records: vec![to],
+        ..default()
+    });
     let mut all = (*world.resource::<CharacterModels>().0).clone();
     all.push(model_of(to, &b));
     world.resource_mut::<CharacterModels>().0 = Arc::new(all);
@@ -1252,8 +1639,21 @@ fn a_character_change_keeps_the_shown_body_on_its_own_skeleton() {
     }
     assert!(swapped, "the new body comes");
     sim.ticks(2);
-    assert!(sim.app.world().get::<CaShownAnim>(p).is_none(), "the old body's driver goes with it");
-    assert_eq!(sim.app.world().get::<Animator>(p).unwrap().fixed.as_ref().unwrap().len(), b.nodes.len());
+    assert!(
+        sim.app.world().get::<CaShownAnim>(p).is_none(),
+        "the old body's driver goes with it"
+    );
+    assert_eq!(
+        sim.app
+            .world()
+            .get::<Animator>(p)
+            .unwrap()
+            .fixed
+            .as_ref()
+            .unwrap()
+            .len(),
+        b.nodes.len()
+    );
     // Back to a body whose model is here, from a character whose state was
     // never on it (it arrives from another game's body): that body's own
     // rig poses it from the start.
@@ -1261,7 +1661,9 @@ fn a_character_change_keeps_the_shown_body_on_its_own_skeleton() {
     let mut only_a = (*world.resource::<CharacterModels>().0).clone();
     only_a.pop();
     world.resource_mut::<CharacterModels>().0 = Arc::new(only_a);
-    world.entity_mut(p).insert(chimera_world::map::BodyName(models::body_name(from)));
+    world
+        .entity_mut(p)
+        .insert(chimera_world::map::BodyName(models::body_name(from)));
     sim.ticks(4);
     assert_eq!(check(&sim, "the rig kept for what it wears"), models::body_name(from));
 }
@@ -1295,28 +1697,56 @@ fn net_others_follow_the_server() {
         let mut q = world.query::<(Entity, &CaAnimNet, &CaAnim)>();
         q.iter(world)
             .filter(|(e, ..)| *e != me)
-            .map(|(_, n, a)| (n.lower.name.clone(), a.playing().1.to_string(), a.playing().0.to_string()))
+            .map(|(_, n, a)| {
+                (
+                    n.lower.name.clone(),
+                    a.playing().1.to_string(),
+                    a.playing().0.to_string(),
+                )
+            })
             .next()
             .expect("the other player's state")
     };
     assert_eq!(them(&mut sim), ("LST".into(), "LST".into(), "URFRAmS".into()));
-    sim.clients[1].app.world_mut().get_mut::<chimera_core::core::Intent>(other).unwrap().move_axis = Vec2::Y;
+    sim.clients[1]
+        .app
+        .world_mut()
+        .get_mut::<chimera_core::core::Intent>(other)
+        .unwrap()
+        .move_axis = Vec2::Y;
     sim.ticks(40);
     assert_eq!(them(&mut sim), ("LRF".into(), "LRF".into(), "URFRAmF".into()));
     // The legs' tracker as the server's was on the tick client 0 draws.
     let id1 = sim.client_id(1);
     let seen = NetSim::owned_by(&mut sim.clients[0], Some(id1)).unwrap();
     let server = sim.character_of(1).unwrap();
-    let drawn = sim.clients[0].app.world().resource::<chimera_net::net::interp::InterpClock>().render_tick;
-    let tracker = |w: &World, e: Entity| w.get::<CaAnim>(e).map(|a| (a.driver.lower.transition, a.driver.lower.time)).unwrap();
+    let drawn = sim.clients[0]
+        .app
+        .world()
+        .resource::<chimera_net::net::interp::InterpClock>()
+        .render_tick;
+    let tracker = |w: &World, e: Entity| {
+        w.get::<CaAnim>(e)
+            .map(|a| (a.driver.lower.transition, a.driver.lower.time))
+            .unwrap()
+    };
     let (transition, time) = tracker(sim.clients[0].app.world(), seen);
     assert_eq!(transition, None, "past the transition");
     let (_, now) = tracker(sim.server.app.world(), server);
     let tick = sim.server.app.world().resource::<chimera_core::core::SimClock>().tick;
     let behind = ((tick as f64 - drawn) * TICK_INTERVAL * 1000.0).round() as i64;
-    let length = sim.server.app.world().get::<CaAnim>(server).map(|a| a.driver.list.entries[a.driver.lower.current].length()).unwrap() as i64;
+    let length = sim
+        .server
+        .app
+        .world()
+        .get::<CaAnim>(server)
+        .map(|a| a.driver.list.entries[a.driver.lower.current].length())
+        .unwrap() as i64;
     let off = (now as i64 - behind - time as i64).rem_euclid(length.max(1));
-    assert!(off.min(length - off) <= 20, "the server's {now} ms {behind} ms later, drawn {time} ms");
+    assert!(
+        off.min(length - off) <= 20,
+        "the server's {now} ms {behind} ms later, drawn {time} ms"
+    );
 }
 
 /// Client 1 crouches; client 0 gives its character the server's hull
@@ -1338,7 +1768,12 @@ fn net_others_crouch_on_the_servers_hull() {
     sim.until_joined(600);
     sim.ticks(240);
     let other = sim.local_player(1).unwrap();
-    sim.clients[1].app.world_mut().get_mut::<chimera_core::core::Intent>(other).unwrap().crouch = true;
+    sim.clients[1]
+        .app
+        .world_mut()
+        .get_mut::<chimera_core::core::Intent>(other)
+        .unwrap()
+        .crouch = true;
     sim.ticks(60);
     let id1 = sim.client_id(1);
     let seen = NetSim::owned_by(&mut sim.clients[0], Some(id1)).unwrap();
@@ -1351,8 +1786,14 @@ fn net_others_crouch_on_the_servers_hull() {
     let (h_server, feet_server) = height(sim.server.app.world(), server);
     let (h_seen, feet_seen) = height(sim.clients[0].app.world(), seen);
     assert!(h_server < 1.6, "crouched on the server: {h_server}");
-    assert!((h_seen - h_server).abs() < 0.01, "client's box {h_seen} m tall, the server's {h_server} m");
-    assert!((feet_seen - feet_server).abs() < 0.01, "client's feet {feet_seen} m under the origin, the server's {feet_server} m");
+    assert!(
+        (h_seen - h_server).abs() < 0.01,
+        "client's box {h_seen} m tall, the server's {h_server} m"
+    );
+    assert!(
+        (feet_seen - feet_server).abs() < 0.01,
+        "client's feet {feet_seen} m under the origin, the server's {feet_server} m"
+    );
 }
 
 /// Looks over the network (characters.md 1, "The selection"): each
@@ -1398,7 +1839,14 @@ fn net_looks_reach_every_client() {
     let bot = bots::add_bot(sim.server.app.world_mut(), None).expect("a bot");
     let bot_look = sim.server.app.world().get::<Selection>(bot).copied();
     sim.ticks(60);
-    let bot_look = sim.server.app.world().get::<Selection>(bot).copied().or(bot_look).expect("the bot's look");
+    let bot_look = sim
+        .server
+        .app
+        .world()
+        .get::<Selection>(bot)
+        .copied()
+        .or(bot_look)
+        .expect("the bot's look");
     let ids = [sim.client_id(0), sim.client_id(1)];
     // What client `i` sees of the player owned by `owner` (None: the bot).
     let seen = |sim: &mut NetSim, i: usize, owner: Option<u64>| -> Option<Selection> {
@@ -1456,7 +1904,9 @@ fn looks_in_play() {
     sim.seconds(0.2);
     let look = |sim: &Sim, e: Entity| *sim.app.world().get::<Selection>(e).unwrap();
     let drawn = look(&sim, bot);
-    let seed = "Bot Kilo".bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3));
+    let seed = "Bot Kilo".bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+        (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+    });
     assert_eq!(drawn, builtin().bot_look(seed));
     assert_eq!(look(&sim, me), mine);
     assert_eq!(look(&sim, other), Selection::default());
@@ -1480,7 +1930,10 @@ fn t43_female_neck_and_right_hand() {
     let neck = s.nodes.iter().find(|n| n.name == "Bip01 Neck").unwrap();
     assert_eq!(neck.at, Some([1.74, 27.99, 9.61]));
     let hand = s.socket("RightHand").unwrap();
-    assert_eq!((hand.parent.as_str(), hand.offset), ("Right_hand", [7.08465, 1.66108, 1.27744]));
+    assert_eq!(
+        (hand.parent.as_str(), hand.offset),
+        ("Right_hand", [7.08465, 1.66108, 1.27744])
+    );
     assert_eq!(hand.at, Some([5.69, 23.62, 22.09]));
 }
 
@@ -1489,7 +1942,9 @@ fn t43_female_neck_and_right_hand() {
 #[test]
 fn t44_body_against_the_hull() {
     let rig = male_stand_in(true).rig(STAND_IN_ANIMS);
-    let pose: Vec<(ltb::Vec3, ltb::Quat)> = (0..rig.model.nodes.len()).map(|_| ([0.0; 3], [0.0, 0.0, 0.0, 1.0])).collect();
+    let pose: Vec<(ltb::Vec3, ltb::Quat)> = (0..rig.model.nodes.len())
+        .map(|_| ([0.0; 3], [0.0, 0.0, 0.0, 1.0]))
+        .collect();
     for r in [0.0, 0.5, 1.0] {
         let feet = rig.posed(&pose, r).feet;
         let half = 50.0 - 10.0 * r;
@@ -1508,10 +1963,16 @@ fn t45_defaults() {
     let head = d.worn_head(0, 4, skeleton);
     assert_eq!(head, 23);
     assert_eq!(d.head_file(head, skeleton), Some("CHARS_M_HEAD\\Hair_W_A.ltb"));
-    assert_eq!(d.face(4).and_then(|f| f.file.as_deref()), Some("CHARS_M_FACE\\Face_W_A.ltb"));
+    assert_eq!(
+        d.face(4).and_then(|f| f.file.as_deref()),
+        Some("CHARS_M_FACE\\Face_W_A.ltb")
+    );
     assert_eq!((look.goggle, look.backpack), (-1, -1), "no goggle, no backpack");
     assert_eq!(d.head_file(d.worn_head(0, 0, 0), 0), None, "face 0: no head model");
-    assert_eq!(d.face(0).and_then(|f| f.file.as_deref()), Some("CHARS_M_FACE\\Face_A.ltb"));
+    assert_eq!(
+        d.face(0).and_then(|f| f.file.as_deref()),
+        Some("CHARS_M_FACE\\Face_A.ltb")
+    );
     assert_eq!(d.head_file(d.worn_head(0, 7, 1), 1), None, "face 7: none");
 }
 
@@ -1520,10 +1981,28 @@ fn t45_defaults() {
 fn t46_skins() {
     let d = builtin();
     let f8 = d.model(8).unwrap();
-    assert_eq!(d.skins(f8, 0), (Some("CHARS_T_BODY\\F_Upper_Lev02_OD.dtx"), Some("CHARS_T_BODY\\F_Leg_Lev03_OD.dtx")));
-    assert_eq!(d.skins(f8, 2), (Some("CHARS_T_BODY\\CW_VST_LT_SN_00_HM.DTX"), Some("CHARS_T_BODY\\CW_LG_HV_SN_00_HM.dtx")));
+    assert_eq!(
+        d.skins(f8, 0),
+        (
+            Some("CHARS_T_BODY\\F_Upper_Lev02_OD.dtx"),
+            Some("CHARS_T_BODY\\F_Leg_Lev03_OD.dtx")
+        )
+    );
+    assert_eq!(
+        d.skins(f8, 2),
+        (
+            Some("CHARS_T_BODY\\CW_VST_LT_SN_00_HM.DTX"),
+            Some("CHARS_T_BODY\\CW_LG_HV_SN_00_HM.dtx")
+        )
+    );
     let m1 = d.model(1).unwrap();
-    assert_eq!(d.skins(m1, 6), (Some("CHARS_T_BODY\\CM_VST_LT_TG_00_JS.DTX"), Some("CHARS_T_BODY\\CM_LG_HV_TG_00_JS.dtx")));
+    assert_eq!(
+        d.skins(m1, 6),
+        (
+            Some("CHARS_T_BODY\\CM_VST_LT_TG_00_JS.DTX"),
+            Some("CHARS_T_BODY\\CM_LG_HV_TG_00_JS.dtx")
+        )
+    );
 }
 
 /// 47. The digit classes' names.
@@ -1540,7 +2019,11 @@ fn t47_digit_suffixes() {
     assert_eq!(run(27, P::Fire, D::None), "USGRFiS1");
     assert_eq!(run(27, P::Select, D::None), "USGRSSeS1");
     assert_eq!(walk(27, P::Fire, D::F), "USGWFiF1");
-    assert_eq!(run(27, P::AltFire, D::None), run(27, P::Fire, D::None), "alt fire = fire");
+    assert_eq!(
+        run(27, P::AltFire, D::None),
+        run(27, P::Fire, D::None),
+        "alt fire = fire"
+    );
     assert_eq!(run(29, P::Reload, D::None), "USGRSReS2");
     assert_eq!(run(29, P::Fire, D::F), "USGRFiF2");
 }
@@ -1550,7 +2033,11 @@ fn t47_digit_suffixes() {
 fn t48_50_server_reload_timer() {
     assert_eq!(driver::server_reload_timer(Some(1866), 1.0, 0), Some(1555));
     assert_eq!(driver::server_reload_timer(Some(1866), 2.5, 0), Some(777));
-    assert_eq!(driver::server_reload_timer(Some(1866), 1.0, 2300), None, "49: the animation ends it");
+    assert_eq!(
+        driver::server_reload_timer(Some(1866), 1.0, 2300),
+        None,
+        "49: the animation ends it"
+    );
     assert_eq!(driver::upper_rate(1866, 1.0, 2300), 1866.0 / 2300.0);
     assert_eq!(driver::server_reload_timer(None, 1.0, 0), Some(500), "50");
 }
@@ -1573,14 +2060,23 @@ fn t48_server_reload_pose_ends_on_the_timer() {
     assert_eq!(posture(&sim), Posture::Reload, "before 1555 ms");
     sim.seconds(0.2);
     assert_ne!(posture(&sim), Posture::Reload, "after 1555 ms");
-    assert!(sim.app.world().get::<weapon::WeaponState>(w).unwrap().reloading(), "the weapon still reloads");
+    assert!(
+        sim.app.world().get::<weapon::WeaponState>(w).unwrap().reloading(),
+        "the weapon still reloads"
+    );
 }
 
 /// 51. "Fire held": the server's raw flag, the own client's masked.
 #[test]
 fn t51_fire_held() {
-    assert!(driver::fire_held(true, false, true, true, true, false), "server: raw while reloading");
-    assert!(!driver::fire_held(true, false, false, true, true, false), "own client: masked");
+    assert!(
+        driver::fire_held(true, false, true, true, true, false),
+        "server: raw while reloading"
+    );
+    assert!(
+        !driver::fire_held(true, false, false, true, true, false),
+        "own client: masked"
+    );
     assert!(!driver::fire_held(true, true, true, true, false, false), "use held");
     // The server's driver keeps the reload pose while reloading with fire
     // held; when its timer lets the reload finish, the fire waits for the
@@ -1627,7 +2123,14 @@ fn t53_emote() {
     assert!(d.start_emote("Surrender"));
     run(&mut d, &rifle(), 2);
     assert_eq!((d.name_of(&d.upper), d.name_of(&d.lower)), ("Surrender", "LST"));
-    run(&mut d, &Inputs { forward: true, ..rifle() }, 1);
+    run(
+        &mut d,
+        &Inputs {
+            forward: true,
+            ..rifle()
+        },
+        1,
+    );
     assert_eq!(d.emote, None);
     assert_ne!(d.name_of(&d.upper), "Surrender");
 }
@@ -1672,10 +2175,21 @@ fn t55_corpses_dont_stop_shots() {
 #[test]
 fn t56_death_types() {
     use combat_arms::game::volumes::ENDLESS_FALL;
-    let catalog = chimera_sim::weapon::data::WeaponCatalog::of(vec![combat_arms::game::data::CaData::builtin().weapon_set()]);
-    assert_eq!(death::kind_of(&catalog, DamageKind::Generic, Some(ENDLESS_FALL)), DeathKind::EndlessFall);
-    assert_eq!(death::kind_of(&catalog, DamageKind::Generic, Some("combat_arms:g7a")), DeathKind::Poison, "a gas grenade's lasting damage");
-    assert_eq!(death::kind_of(&catalog, DamageKind::Bullet, Some(RIFLE)), DeathKind::Other);
+    let catalog =
+        chimera_sim::weapon::data::WeaponCatalog::of(vec![combat_arms::game::data::CaData::builtin().weapon_set()]);
+    assert_eq!(
+        death::kind_of(&catalog, DamageKind::Generic, Some(ENDLESS_FALL)),
+        DeathKind::EndlessFall
+    );
+    assert_eq!(
+        death::kind_of(&catalog, DamageKind::Generic, Some("combat_arms:g7a")),
+        DeathKind::Poison,
+        "a gas grenade's lasting damage"
+    );
+    assert_eq!(
+        death::kind_of(&catalog, DamageKind::Bullet, Some(RIFLE)),
+        DeathKind::Other
+    );
     let pick = |kind| {
         death::choose(
             &DeathInputs {
@@ -1705,10 +2219,7 @@ fn t56_death_types() {
 // correction 1).
 
 fn sniper() -> Inputs {
-    Inputs {
-        class: 5,
-        ..default()
-    }
+    Inputs { class: 5, ..default() }
 }
 
 /// 1. A held fire button plays the fire animation once and holds its last
@@ -1738,7 +2249,11 @@ fn c01_held_fire_plays_once() {
     assert!(d.upper.time <= TICK);
     // The knife, held 2 s.
     let mut d = drv();
-    let knife = Inputs { class: 14, fire: true, ..default() };
+    let knife = Inputs {
+        class: 14,
+        fire: true,
+        ..default()
+    };
     run(&mut d, &Inputs { class: 14, ..default() }, 2);
     d.update(TICK, &knife);
     assert_eq!(at(&d).0, "UKRFiS");
@@ -1751,7 +2266,10 @@ fn c01_held_fire_plays_once() {
     assert!(d.upper.done(&d.list));
     // Running forward with fire held: the looping aim.
     let mut d = drv();
-    let run_fwd = Inputs { forward: true, ..rifle() };
+    let run_fwd = Inputs {
+        forward: true,
+        ..rifle()
+    };
     run(&mut d, &run_fwd, 3);
     run(&mut d, &Inputs { fire: true, ..run_fwd }, 20);
     assert_eq!(at(&d).0, "URFRAmF");
@@ -1778,10 +2296,16 @@ fn c02_front_left_body_death_is_dc() {
 #[test]
 fn c03_walking_off_a_drop_driver() {
     let mut d = drv();
-    let fwd = Inputs { forward: true, ..rifle() };
+    let fwd = Inputs {
+        forward: true,
+        ..rifle()
+    };
     run(&mut d, &fwd, 5);
     assert_eq!((at(&d).1.as_str(), at(&d).0.as_str()), ("LRF", "URFRAmF"));
-    let off = Inputs { no_footing: true, ..fwd.clone() };
+    let off = Inputs {
+        no_footing: true,
+        ..fwd.clone()
+    };
     run(&mut d, &off, 3);
     assert_eq!(d.jump, Jump::Falling);
     assert_eq!((at(&d).1.as_str(), at(&d).0.as_str()), ("LST", "URFRAmS"));
@@ -1789,7 +2313,14 @@ fn c03_walking_off_a_drop_driver() {
     run(&mut d, &fwd, 3);
     assert_eq!(at(&d).1, "LST");
     // ... until the landing.
-    run(&mut d, &Inputs { grounded: true, ..fwd.clone() }, 2);
+    run(
+        &mut d,
+        &Inputs {
+            grounded: true,
+            ..fwd.clone()
+        },
+        2,
+    );
     assert_eq!((at(&d).1.as_str(), at(&d).0.as_str()), ("LRF", "URFRAmF"));
 }
 
@@ -1816,11 +2347,17 @@ fn c03_walking_off_a_drop_in_play() {
     };
     let (sim, p) = air(300.0);
     assert!(!sim.state(p).on_ground);
-    assert_eq!((playing(&sim, p).1.as_str(), playing(&sim, p).0.as_str()), ("LST", "URFRAmS"));
+    assert_eq!(
+        (playing(&sim, p).1.as_str(), playing(&sim, p).0.as_str()),
+        ("LST", "URFRAmS")
+    );
     let (mut sim, p) = air(300.0);
     sim.seconds(3.0);
     assert!(sim.state(p).on_ground, "landed");
-    assert_eq!((playing(&sim, p).1.as_str(), playing(&sim, p).0.as_str()), ("LRF", "URFRAmF"));
+    assert_eq!(
+        (playing(&sim, p).1.as_str(), playing(&sim, p).0.as_str()),
+        ("LRF", "URFRAmF")
+    );
     let (sim, p) = air(80.0);
     assert!(!sim.state(p).on_ground);
     assert_eq!(playing(&sim, p).1, "LRF");
@@ -1833,7 +2370,10 @@ fn c04_sniper_fire_pose_follows_shots() {
     let mut d = drv();
     run(&mut d, &sniper(), 2);
     let held = Inputs { fire: true, ..sniper() };
-    let shot = Inputs { shot: true, ..held.clone() };
+    let shot = Inputs {
+        shot: true,
+        ..held.clone()
+    };
     let mut starts = Vec::new();
     for k in 0..200 {
         // 3 s of 15 ms updates, shots at 0 and 1.5 s.
@@ -1858,18 +2398,37 @@ fn c04_sniper_fire_pose_follows_shots() {
 #[test]
 fn c05_no_fire_pose_while_sprinting() {
     let mut d = drv();
-    let sprint = Inputs { sprint: true, forward: true, ..rifle() };
+    let sprint = Inputs {
+        sprint: true,
+        forward: true,
+        ..rifle()
+    };
     run(&mut d, &sprint, 3);
-    let held = Inputs { fire: true, ..sprint.clone() };
+    let held = Inputs {
+        fire: true,
+        ..sprint.clone()
+    };
     run(&mut d, &held, 10);
     assert_eq!(d.last.posture, Posture::Aim);
     assert_eq!(at(&d).0, "URFRRAmF");
     assert!(d.upper.looping);
     // Alt fire too (the knife).
     let mut d = drv();
-    let knife = Inputs { class: 14, sprint: true, forward: true, ..default() };
+    let knife = Inputs {
+        class: 14,
+        sprint: true,
+        forward: true,
+        ..default()
+    };
     run(&mut d, &knife, 3);
-    run(&mut d, &Inputs { alt_fire: true, ..knife }, 5);
+    run(
+        &mut d,
+        &Inputs {
+            alt_fire: true,
+            ..knife
+        },
+        5,
+    );
     assert_eq!(d.last.posture, Posture::Aim);
 }
 
@@ -1881,10 +2440,18 @@ fn c06_ammo_zero_is_the_total() {
     assert!(driver::ammo_exhausted(0, 0));
     let mut d = drv();
     run(&mut d, &rifle(), 2);
-    let fire = Inputs { fire: true, empty: driver::ammo_exhausted(0, 90), ..rifle() };
+    let fire = Inputs {
+        fire: true,
+        empty: driver::ammo_exhausted(0, 90),
+        ..rifle()
+    };
     run(&mut d, &fire, 20);
     assert_eq!(d.last.posture, Posture::Fire, "clip 0, 90 in reserve: still fire");
-    let none = Inputs { fire: true, empty: driver::ammo_exhausted(0, 0), ..rifle() };
+    let none = Inputs {
+        fire: true,
+        empty: driver::ammo_exhausted(0, 0),
+        ..rifle()
+    };
     run(&mut d, &none, 1);
     assert_eq!(d.last.posture, Posture::Aim, "total 0, the animation done: aim");
 }
@@ -1893,13 +2460,26 @@ fn c06_ammo_zero_is_the_total() {
 #[test]
 fn c07_crouch_in_the_air_clears_the_jump() {
     let mut d = drv();
-    let fwd = Inputs { forward: true, ..rifle() };
+    let fwd = Inputs {
+        forward: true,
+        ..rifle()
+    };
     run(&mut d, &fwd, 3);
-    d.update(TICK, &Inputs { jumped: true, ..fwd.clone() });
+    d.update(
+        TICK,
+        &Inputs {
+            jumped: true,
+            ..fwd.clone()
+        },
+    );
     assert_eq!(at(&d).1, "LJJ");
     run(&mut d, &fwd, 12); // 200 ms
     assert_eq!(at(&d).1, "LJJ");
-    let crouch = Inputs { crouch_key: true, crouch: 0.5, ..fwd.clone() };
+    let crouch = Inputs {
+        crouch_key: true,
+        crouch: 0.5,
+        ..fwd.clone()
+    };
     run(&mut d, &crouch, 13); // to 400 ms
     assert_eq!(d.jump, Jump::None);
     assert_eq!(at(&d).1, "LRF");
@@ -1910,9 +2490,23 @@ fn c07_crouch_in_the_air_clears_the_jump() {
     // A drop (item 3) then crouch: locomotion at once.
     let mut d = drv();
     run(&mut d, &fwd, 3);
-    run(&mut d, &Inputs { no_footing: true, ..fwd.clone() }, 2);
+    run(
+        &mut d,
+        &Inputs {
+            no_footing: true,
+            ..fwd.clone()
+        },
+        2,
+    );
     assert_eq!(at(&d).1, "LST");
-    d.update(TICK, &Inputs { no_footing: true, crouch_key: true, ..fwd.clone() });
+    d.update(
+        TICK,
+        &Inputs {
+            no_footing: true,
+            crouch_key: true,
+            ..fwd.clone()
+        },
+    );
     assert_eq!(at(&d).1, "LRF");
 }
 
@@ -1926,13 +2520,39 @@ fn c08_forward_and_back_give_backward() {
     assert_eq!(D::of(true, true, true, false), D::FL);
     assert_eq!(D::of(false, false, true, true), D::L);
     let mut d = drv();
-    run(&mut d, &Inputs { forward: true, back: true, ..rifle() }, 3);
+    run(
+        &mut d,
+        &Inputs {
+            forward: true,
+            back: true,
+            ..rifle()
+        },
+        3,
+    );
     assert_eq!((at(&d).1.as_str(), at(&d).0.as_str()), ("LRB", "URFRAmB"));
     let mut d = drv();
-    run(&mut d, &Inputs { forward: true, back: true, right: true, ..rifle() }, 3);
+    run(
+        &mut d,
+        &Inputs {
+            forward: true,
+            back: true,
+            right: true,
+            ..rifle()
+        },
+        3,
+    );
     assert_eq!(at(&d).1, "LRFR");
     let mut d = drv();
-    run(&mut d, &Inputs { forward: true, back: true, left: true, ..rifle() }, 3);
+    run(
+        &mut d,
+        &Inputs {
+            forward: true,
+            back: true,
+            left: true,
+            ..rifle()
+        },
+        3,
+    );
     assert_eq!(at(&d).1, "LRFL");
 }
 
@@ -1956,7 +2576,13 @@ fn c09_emote_is_upper_body_only() {
     run(&mut d, &rifle(), 50);
     assert_eq!(d.name_of(&d.upper), "Insult_Dance", "held until something changes");
     // Moving starts the aim again.
-    d.update(TICK, &Inputs { forward: true, ..rifle() });
+    d.update(
+        TICK,
+        &Inputs {
+            forward: true,
+            ..rifle()
+        },
+    );
     assert_eq!(d.name_of(&d.upper), "URFRAmF");
     // Firing too.
     let mut d = drv();
@@ -2004,9 +2630,19 @@ fn c11_no_team_mark_in_quarantine() {
     let d = builtin();
     let family = |teammate, quarantine| models::family(3, models::shows_mark(teammate, quarantine));
     assert_eq!(family(true, false), 7);
-    assert_eq!(family(true, true), family(false, false), "a teammate in Quarantine looks like an enemy");
-    assert_eq!(d.team_mark(models::shows_mark(true, true), false), "CHARS_T_BODY\\Alpha.dtx");
-    assert_eq!(d.team_mark(models::shows_mark(true, false), false), "CHARS_T_BODY\\RED_Tie.dtx");
+    assert_eq!(
+        family(true, true),
+        family(false, false),
+        "a teammate in Quarantine looks like an enemy"
+    );
+    assert_eq!(
+        d.team_mark(models::shows_mark(true, true), false),
+        "CHARS_T_BODY\\Alpha.dtx"
+    );
+    assert_eq!(
+        d.team_mark(models::shows_mark(true, false), false),
+        "CHARS_T_BODY\\RED_Tie.dtx"
+    );
 }
 
 /// 12. The body outlives its owner's respawn by 5 s (Team Deathmatch).
@@ -2038,7 +2674,11 @@ fn c12_corpse_outlives_the_respawn() {
     sim.ticks(2);
     let bodies = |sim: &mut Sim| {
         let w = sim.app.world_mut();
-        w.query::<&CaBody>().iter(w).filter(|b| b.owner == a).cloned().collect::<Vec<_>>()
+        w.query::<&CaBody>()
+            .iter(w)
+            .filter(|b| b.owner == a)
+            .cloned()
+            .collect::<Vec<_>>()
     };
     let died_at = bodies(&mut sim)[0].since;
     // Until the owner respawns.
@@ -2072,7 +2712,9 @@ fn in_a_party_the_body_goes_at_the_respawn() {
     let mut sim = Sim::new(CaSim, GreyboxMapPlugin);
     sim.set_tick_interval(TICK_INTERVAL);
     combat_arms::harness::with_mode(sim.app.world_mut(), "TDM");
-    sim.app.world_mut().insert_resource(chimera_world::map::ragdoll::BodiesGoOnRespawn);
+    sim.app
+        .world_mut()
+        .insert_resource(chimera_world::map::ragdoll::BodiesGoOnRespawn);
     let a = sim.spawn_character(Vec3::new(0.0, 1.0, 12.0), movement::ID);
     let b = sim.spawn_character(Vec3::new(0.0, 1.0, -20.0), movement::ID);
     sim.app.world_mut().entity_mut(a).insert(Team(1));
@@ -2095,7 +2737,11 @@ fn in_a_party_the_body_goes_at_the_respawn() {
     sim.ticks(2);
     let bodies = |sim: &mut Sim| {
         let w = sim.app.world_mut();
-        w.query::<&CaBody>().iter(w).filter(|b| b.owner == a).cloned().collect::<Vec<_>>()
+        w.query::<&CaBody>()
+            .iter(w)
+            .filter(|b| b.owner == a)
+            .cloned()
+            .collect::<Vec<_>>()
     };
     let died_at = bodies(&mut sim)[0].since;
     // Until the owner respawns.
@@ -2121,12 +2767,29 @@ fn c13_missing_crouch_name_falls_back_to_the_legs() {
     let mut list = (*driver::spec_library(false)).clone();
     list.entries.retain(|e| e.name() != "LCFR");
     let mut d = Driver::new(Arc::new(list));
-    run(&mut d, &Inputs { forward: true, right: true, crouch: 0.5, ..rifle() }, 3);
+    run(
+        &mut d,
+        &Inputs {
+            forward: true,
+            right: true,
+            crouch: 0.5,
+            ..rifle()
+        },
+        3,
+    );
     assert_eq!(at(&d).1, "LRFR");
     assert_eq!(at(&d).2, "LRFR", "the crouch tracker plays the lower name");
     assert_eq!(d.crouch.multiplier, 0.5);
     let mut d = Driver::new(driver::spec_library(false));
-    run(&mut d, &Inputs { forward: true, right: true, ..rifle() }, 3);
+    run(
+        &mut d,
+        &Inputs {
+            forward: true,
+            right: true,
+            ..rifle()
+        },
+        3,
+    );
     assert_eq!(at(&d).2, "LCFR");
 }
 
@@ -2164,8 +2827,16 @@ fn t59_model_colour() {
     ];
     assert_eq!(data.skins_in(&r, 1, 1), (Some("red1.dtx"), Some("l1.dtx")));
     assert_eq!(data.skins_in(&r, 1, -1), (Some("u1.dtx"), Some("l1.dtx")));
-    assert_eq!(data.skins_in(&r, 1, 0), (Some("u1.dtx"), Some("l1.dtx")), "an empty colour: the base");
-    assert_eq!(data.skins(&r, 1), (Some("u1.dtx"), Some("l1.dtx")), "ours: no model colour");
+    assert_eq!(
+        data.skins_in(&r, 1, 0),
+        (Some("u1.dtx"), Some("l1.dtx")),
+        "an empty colour: the base"
+    );
+    assert_eq!(
+        data.skins(&r, 1),
+        (Some("u1.dtx"), Some("l1.dtx")),
+        "ours: no model colour"
+    );
 }
 
 /// 60. The ghillie leaves (`RS\MARKTRANSPARENT.LTB`): alpha 158/255 isn't
@@ -2188,6 +2859,7 @@ fn t60_leaves_cut_out() {
 /// rate"), and what's forgotten may load again.
 #[test]
 fn a_map_unload_forgets_what_older_ladders_loaded() {
+    use chimera_world::map;
     use combat_arms::game::{
         characters::{
             models::body_name,
@@ -2195,7 +2867,6 @@ fn a_map_unload_forgets_what_older_ladders_loaded() {
         },
         view_model::on_demand::LoadOnDemand,
     };
-    use chimera_world::map;
 
     let mut app = App::new();
     let w = app.world_mut();
@@ -2250,9 +2921,19 @@ fn a_map_unload_forgets_what_older_ladders_loaded() {
 
     forget_old(w);
 
-    let bodies: Vec<_> = w.resource::<map::LateCharacterModels>().0.iter().map(|(m, _)| m.name.clone().unwrap()).collect();
+    let bodies: Vec<_> = w
+        .resource::<map::LateCharacterModels>()
+        .0
+        .iter()
+        .map(|(m, _)| m.name.clone().unwrap())
+        .collect();
     assert_eq!(bodies, [body_name(7)]);
-    let keys: Vec<_> = w.resource::<map::LateHeldModels>().0.iter().map(|(m, _)| m.key.clone()).collect();
+    let keys: Vec<_> = w
+        .resource::<map::LateHeldModels>()
+        .0
+        .iter()
+        .map(|(m, _)| m.key.clone())
+        .collect();
     assert_eq!(keys, ["combat_arms:kept", "combat_arms:in_hand", "another_game:gun"]);
     assert_eq!(
         *w.resource::<Forgotten>(),
@@ -2271,7 +2952,15 @@ fn a_map_unload_forgets_what_older_ladders_loaded() {
 /// client's view and the server's), sockets, legs' yaw, the hitboxes
 /// other games' guns test, the drawn pose (a body with a model) and its
 /// health.
-type PoseTick = Vec<(Vec<Option<Vec3>>, Vec<Option<Vec3>>, [Option<Vec3>; 6], f32, Option<Vec<chimera_core::core::Hitbox>>, Option<Vec<(Quat, Vec3)>>, f32)>;
+type PoseTick = Vec<(
+    Vec<Option<Vec3>>,
+    Vec<Option<Vec3>>,
+    [Option<Vec3>; 6],
+    f32,
+    Option<Vec<chimera_core::core::Hitbox>>,
+    Option<Vec<(Quat, Vec3)>>,
+    f32,
+)>;
 
 /// Two players with a model each (a stand-in), a duel of 300 ticks: they
 /// walk, strafe, crouch, look up and down and fire the rifle at each other
@@ -2280,8 +2969,14 @@ type PoseTick = Vec<(Vec<Option<Vec3>>, Vec<Option<Vec3>>, [Option<Vec3>; 6], f3
 /// poses made in the tick as before. Each tick's health, and every
 /// `sample`-th tick the poses read (the others left to the shots' demand).
 fn duel_poses(every_tick: bool, sample: usize) -> (Vec<PoseTick>, usize) {
-    use chimera_world::map::{CharacterModels, MapBone, MapCharacterModel, anim::{AnimSet, Animator}};
-    use combat_arms::game::{GAME, characters::{CaPoseEveryTick, models::BodyGroup}};
+    use chimera_world::map::{
+        CharacterModels, MapBone, MapCharacterModel,
+        anim::{AnimSet, Animator},
+    };
+    use combat_arms::game::{
+        GAME,
+        characters::{CaPoseEveryTick, models::BodyGroup},
+    };
     let stand_in = male_stand_in(true);
     let id = 1;
     let model = MapCharacterModel {
@@ -2294,7 +2989,12 @@ fn duel_poses(every_tick: bool, sample: usize) -> (Vec<PoseTick>, usize) {
         bones: stand_in
             .nodes
             .iter()
-            .map(|(name, parent, _)| MapBone { name: name.to_string(), parent: *parent, position: Vec3::ZERO, rotation: Quat::IDENTITY })
+            .map(|(name, parent, _)| MapBone {
+                name: name.to_string(),
+                parent: *parent,
+                position: Vec3::ZERO,
+                rotation: Quat::IDENTITY,
+            })
             .collect(),
         root: Transform::IDENTITY,
         animations: Some(Arc::new(AnimSet::default())),
@@ -2306,13 +3006,23 @@ fn duel_poses(every_tick: bool, sample: usize) -> (Vec<PoseTick>, usize) {
         sim.app.insert_resource(CaPoseEveryTick);
     }
     let world = sim.app.world_mut();
-    models::register(world, &builtin().model(id).unwrap().file, Arc::new(stand_in.rig(STAND_IN_ANIMS)));
-    models::late_in(world).0.register_group(BodyGroup { records: vec![id], ..default() });
+    models::register(
+        world,
+        &builtin().model(id).unwrap().file,
+        Arc::new(stand_in.rig(STAND_IN_ANIMS)),
+    );
+    models::late_in(world).0.register_group(BodyGroup {
+        records: vec![id],
+        ..default()
+    });
     world.insert_resource(CharacterModels(Arc::new(vec![model])));
     let a = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), std::f32::consts::PI);
     let b = player(&mut sim, Vec3::new(0.5, 1.0, 4.0), 0.0);
     for p in [a, b] {
-        sim.app.world_mut().entity_mut(p).insert(Selection { model: id, ..default() });
+        sim.app
+            .world_mut()
+            .entity_mut(p)
+            .insert(Selection { model: id, ..default() });
         weapon::give(sim.app.world_mut(), p, RIFLE).unwrap();
     }
     sim.app.world_mut().entity_mut(b).insert(chimera_core::core::Bot);
@@ -2333,7 +3043,10 @@ fn duel_poses(every_tick: bool, sample: usize) -> (Vec<PoseTick>, usize) {
         }
         sim.ticks(1);
         let w = sim.app.world();
-        unposed += [a, b].iter().filter(|p| !w.get::<CaPose>(**p).unwrap().is_posed()).count();
+        unposed += [a, b]
+            .iter()
+            .filter(|p| !w.get::<CaPose>(**p).unwrap().is_posed())
+            .count();
         let tick = [a, b]
             .iter()
             .map(|&p| {
@@ -2342,7 +3055,14 @@ fn duel_poses(every_tick: bool, sample: usize) -> (Vec<PoseTick>, usize) {
                     return (Vec::new(), Vec::new(), [None; 6], 0.0, None, None, health);
                 }
                 let pose = w.get::<CaPose>(p).unwrap();
-                let sockets = [pose.name_tag, pose.left_foot, pose.right_hand, pose.eyes[0], pose.flash[0], pose.flash_point()];
+                let sockets = [
+                    pose.name_tag,
+                    pose.left_foot,
+                    pose.right_hand,
+                    pose.eyes[0],
+                    pose.flash[0],
+                    pose.flash_point(),
+                ];
                 (
                     pose.spheres.clone(),
                     pose.server_spheres().to_vec(),
@@ -2408,7 +3128,12 @@ fn the_hit_bound_holds_every_sphere() {
         bones: stand_in
             .nodes
             .iter()
-            .map(|(name, parent, _)| MapBone { name: name.to_string(), parent: *parent, position: Vec3::ZERO, rotation: Quat::IDENTITY })
+            .map(|(name, parent, _)| MapBone {
+                name: name.to_string(),
+                parent: *parent,
+                position: Vec3::ZERO,
+                rotation: Quat::IDENTITY,
+            })
             .collect(),
         root: Transform::IDENTITY,
         animations: Some(Arc::new(AnimSet::default())),
@@ -2417,12 +3142,22 @@ fn the_hit_bound_holds_every_sphere() {
     };
     let mut sim = sim();
     let world = sim.app.world_mut();
-    models::register(world, &builtin().model(id).unwrap().file, Arc::new(stand_in.rig(STAND_IN_ANIMS)));
-    models::late_in(world).0.register_group(BodyGroup { records: vec![id], ..default() });
+    models::register(
+        world,
+        &builtin().model(id).unwrap().file,
+        Arc::new(stand_in.rig(STAND_IN_ANIMS)),
+    );
+    models::late_in(world).0.register_group(BodyGroup {
+        records: vec![id],
+        ..default()
+    });
     world.insert_resource(CharacterModels(Arc::new(vec![model])));
     let a = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), std::f32::consts::PI);
     let b = player(&mut sim, Vec3::new(0.5, 1.0, 4.0), 0.0);
-    sim.app.world_mut().entity_mut(a).insert(Selection { model: id, ..default() });
+    sim.app
+        .world_mut()
+        .entity_mut(a)
+        .insert(Selection { model: id, ..default() });
     for p in [a, b] {
         weapon::give(sim.app.world_mut(), p, RIFLE).unwrap();
     }
@@ -2444,7 +3179,9 @@ fn the_hit_bound_holds_every_sphere() {
         sim.ticks(1);
         let w = sim.app.world();
         for p in [a, b] {
-            let lazy = w.get::<chimera_core::core::LazyHitboxes>(p).expect("hitboxes on demand");
+            let lazy = w
+                .get::<chimera_core::core::LazyHitboxes>(p)
+                .expect("hitboxes on demand");
             let bound = *lazy.1.as_ref().expect("a bound").get();
             let shapes = lazy.0.get();
             assert!(bound.holds(shapes), "tick {i}: {bound:?} doesn't hold {shapes:?}");
@@ -2461,8 +3198,14 @@ fn the_hit_bound_holds_every_sphere() {
             sizes[k] = sizes[k].max(size);
         }
     }
-    eprintln!("the largest bounds (m): with a model {}, on the spec's skeleton {}", sizes[0], sizes[1]);
-    assert!(modelled == 300 && fallback == 300, "both kinds of body: {modelled} modelled, {fallback} on the spec's skeleton");
+    eprintln!(
+        "the largest bounds (m): with a model {}, on the spec's skeleton {}",
+        sizes[0], sizes[1]
+    );
+    assert!(
+        modelled == 300 && fallback == 300,
+        "both kinds of body: {modelled} modelled, {fallback} on the spec's skeleton"
+    );
 }
 
 /// A character nobody reads is never posed: its pose, its hitboxes and
@@ -2474,10 +3217,18 @@ fn a_pose_nobody_reads_is_not_made() {
     sim.ticks(2);
     let w = sim.app.world();
     let pose = w.get::<CaPose>(p).unwrap().clone();
-    let boxes = w.get::<chimera_core::core::LazyHitboxes>(p).expect("hitboxes on demand").clone();
+    let boxes = w
+        .get::<chimera_core::core::LazyHitboxes>(p)
+        .expect("hitboxes on demand")
+        .clone();
     assert!(!pose.is_posed() && !boxes.0.is_made(), "nothing asked");
     // Read: made once, and the hitboxes are the spheres where shots test them.
-    let head = builtin().skeleton(0).spheres.iter().position(|s| s.name == "Head").unwrap();
+    let head = builtin()
+        .skeleton(0)
+        .spheres
+        .iter()
+        .position(|s| s.name == "Head")
+        .unwrap();
     assert!(pose.spheres[head].is_some());
     assert!(pose.is_posed());
     assert_eq!(boxes.0.get().0.len(), builtin().skeleton(0).spheres.len());
@@ -2507,9 +3258,15 @@ fn a_ladders_bodies_wait_only_for_what_can_arrive() {
     w.insert_resource(chimera_core::tasks::WaitForTasks);
     w.init_resource::<BodiesOnDemand>();
     // A stock body, and a record no install has.
-    w.insert_resource(LadderModels { bodies: vec![0, 99_999], keys: Vec::new() });
+    w.insert_resource(LadderModels {
+        bodies: vec![0, 99_999],
+        keys: Vec::new(),
+    });
     assert_eq!(ladder_bodies_waiting(w), [0, 99_999], "nothing loaded yet");
-    models::late_in(w).0.register_group(models::BodyGroup { records: vec![0, 1, 2], ..Default::default() });
+    models::late_in(w).0.register_group(models::BodyGroup {
+        records: vec![0, 1, 2],
+        ..Default::default()
+    });
     assert_eq!(ladder_bodies_waiting(w), [99_999], "the stock body's group is loaded");
 
     // Its load starts, then fails.
@@ -2549,14 +3306,25 @@ fn a_ladders_guns_wait_only_for_what_can_arrive() {
     w.init_resource::<HeldOnDemand>();
     // A gun no install has, and another game's (never ours to load).
     let gun = "combat_arms:no_such_gun_for_this_test";
-    w.insert_resource(LadderModels { bodies: Vec::new(), keys: vec![gun.into(), "cs_source:weapon_ak47".into()] });
+    w.insert_resource(LadderModels {
+        bodies: Vec::new(),
+        keys: vec![gun.into(), "cs_source:weapon_ak47".into()],
+    });
     w.insert_resource(map::ViewModels::of([]));
-    assert_eq!(ladder_keys_waiting(w), [format!("held {gun}"), format!("view {gun}")], "nothing loaded yet");
+    assert_eq!(
+        ladder_keys_waiting(w),
+        [format!("held {gun}"), format!("view {gun}")],
+        "nothing loaded yet"
+    );
 
     for _ in 0..2 {
         w.run_system_cached(held_on_demand::load_on_demand).unwrap();
         w.run_system_cached(on_demand::load_on_demand).unwrap();
     }
     assert!(w.resource::<HeldOnDemand>().failed().contains_key(gun));
-    assert!(ladder_keys_waiting(w).is_empty(), "failed loads are not waited for: {:?}", ladder_keys_waiting(w));
+    assert!(
+        ladder_keys_waiting(w).is_empty(),
+        "failed loads are not waited for: {:?}",
+        ladder_keys_waiting(w)
+    );
 }

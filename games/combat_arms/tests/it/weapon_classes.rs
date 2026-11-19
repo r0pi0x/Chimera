@@ -29,8 +29,7 @@ use combat_arms::{
         TICK_INTERVAL,
         movement::{self, CaMovement},
         weapons::{
-            self as ca, CaKick, CaRecoil, CaSpin,
- CaSpread, CaZoom, FireMode, MALE, PelletCarryOver, SpinState,
+            self as ca, CaKick, CaRecoil, CaSpin, CaSpread, CaZoom, FireMode, MALE, PelletCarryOver, SpinState,
             SpreadScales, reported_hits, zoom,
         },
     },
@@ -337,7 +336,11 @@ fn player(sim: &mut Sim, at: Vec3, yaw: f32, health: f32) -> Entity {
 fn arm(sim: &mut Sim, p: Entity, id: &str) -> Entity {
     let w = weapon::give(sim.app.world_mut(), p, id).expect("unknown weapon");
     sim.seconds(3.0);
-    assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(w), "{id} drawn");
+    assert_eq!(
+        sim.app.world().get::<Inventory>(p).unwrap().active,
+        Some(w),
+        "{id} drawn"
+    );
     w
 }
 
@@ -548,15 +551,35 @@ fn t07_mouse_scale() {
     assert!(view(&sim, p).is_none(), "1.000 degree at L = 0: no zoom view");
     press_zoom(&mut sim, p);
     assert!(cz(&sim, w).fov > 30.0, "still zooming in");
-    close(view(&sim, p).unwrap().sensitivity.unwrap() as f64, 0.25, 1e-6, "L = 1 mid zoom-in");
+    close(
+        view(&sim, p).unwrap().sensitivity.unwrap() as f64,
+        0.25,
+        1e-6,
+        "L = 1 mid zoom-in",
+    );
     sim.seconds(0.3);
     press_zoom(&mut sim, p);
-    close(view(&sim, p).unwrap().sensitivity.unwrap() as f64, 1.0 / 7.0, 1e-6, "L = 2");
-    close(1.0 * view(&sim, p).unwrap().sensitivity.unwrap() as f64, 0.143, 5e-4, "turned degrees");
+    close(
+        view(&sim, p).unwrap().sensitivity.unwrap() as f64,
+        1.0 / 7.0,
+        1e-6,
+        "L = 2",
+    );
+    close(
+        1.0 * view(&sim, p).unwrap().sensitivity.unwrap() as f64,
+        0.143,
+        5e-4,
+        "turned degrees",
+    );
     sim.seconds(0.3);
     press_zoom(&mut sim, p);
     assert!(cz(&sim, w).transition.is_some(), "zooming out");
-    close(view(&sim, p).unwrap().sensitivity.unwrap() as f64, 1.0, 1e-6, "mid zoom-out");
+    close(
+        view(&sim, p).unwrap().sensitivity.unwrap() as f64,
+        1.0,
+        1e-6,
+        "mid zoom-out",
+    );
 }
 
 /// 8. The no-scope cone is 100 whatever the meters; draws (1, 0) bend
@@ -590,7 +613,11 @@ fn t09_quick_scope() {
     // The round 3 updates after the press (Corrections 3), mid-transition.
     until_round(&mut sim, w);
     assert_eq!(shown_cone(&sim, w), 4, "the round's cone");
-    assert!(cz(&sim, w).fov > 20.0, "FOV still in its transition: {}", cz(&sim, w).fov);
+    assert!(
+        cz(&sim, w).fov > 20.0,
+        "FOV still in its transition: {}",
+        cz(&sim, w).fov
+    );
 }
 
 /// 10. Scoped and walking at full scoped speed (mu = 1): the movement
@@ -686,7 +713,12 @@ fn t13_bolt_cycle_and_zoom_out() {
     until_round(&mut sim, w);
     let t0 = now(&sim);
     ticks_until(&mut sim, 100, |s| cz(s, w).level == 0);
-    close(now(&sim) - t0, 0.31, 1e-6, "zoom-out starts on the first frame after 300 ms");
+    close(
+        now(&sim) - t0,
+        0.31,
+        1e-6,
+        "zoom-out starts on the first frame after 300 ms",
+    );
     ticks_until(&mut sim, 100, |s| cz(s, w).transition.is_none());
     close(now(&sim) - t0, 0.49, 0.0101, "90 degrees about 180 ms later");
     assert!(view(&sim, p).is_none());
@@ -727,7 +759,10 @@ fn t14_bolt_with_a_two_level_scope() {
     sim.intent(p).fire = false;
     let t0 = now(&sim);
     ticks_until(&mut sim, 100, |s| cz(s, w).level == 2);
-    assert!(now(&sim) - t0 > 0.3 && now(&sim) - t0 <= 0.3 + tick + 1e-9, "level 2 after 300 ms");
+    assert!(
+        now(&sim) - t0 > 0.3 && now(&sim) - t0 <= 0.3 + tick + 1e-9,
+        "level 2 after 300 ms"
+    );
     let k = ticks_until(&mut sim, 100, |s| cz(s, w).level == 0);
     close(k as f64 * tick, 0.0375, tick, "30 to 10");
     close(cz(&sim, w).fov as f64, 10.0, 1e-3, "from 10");
@@ -773,7 +808,9 @@ fn t16_reload_while_scoped_semi() {
     sim.intent(p).reload = false;
     let t0 = now(&sim);
     assert!(state(&sim, w).reload_end.is_none(), "not yet: zooming out");
-    ticks_until(&mut sim, 100, |s| s.app.world().get::<WeaponState>(w).unwrap().reload_end.is_some());
+    ticks_until(&mut sim, 100, |s| {
+        s.app.world().get::<WeaponState>(w).unwrap().reload_end.is_some()
+    });
     close(now(&sim) - t0, 0.1, tick, "the reload from 0.1 s");
     assert!(view(&sim, p).is_none(), "zoomed out");
     ticks_until(&mut sim, 400, |s| mag(s, w).clip == 10);
@@ -796,7 +833,9 @@ fn t17_reload_while_scoped_bolt() {
     let t0 = now(&sim);
     ticks_until(&mut sim, 100, |s| cz(s, w).level == 0);
     close(now(&sim) - t0, 0.3, tick, "zoom-out after 300 ms");
-    ticks_until(&mut sim, 100, |s| s.app.world().get::<WeaponState>(w).unwrap().reload_end.is_some());
+    ticks_until(&mut sim, 100, |s| {
+        s.app.world().get::<WeaponState>(w).unwrap().reload_end.is_some()
+    });
     close(now(&sim) - t0, 0.48, tick, "the reload from 480 ms");
     ticks_until(&mut sim, 400, |s| mag(s, w).clip == 5);
     close(now(&sim) - t0, 3.38, tick, "clip 5");
@@ -837,7 +876,11 @@ fn t19_switch_while_zoomed() {
         let pistol = inv.active.unwrap();
         assert_eq!(sim.app.world().get::<weapon::Weapon>(pistol).unwrap().id, M92FS);
         let z = cz(&sim, w);
-        assert_eq!((z.level, z.fov, z.transition), (0, 90.0, None), "reset at once (mid {mid})");
+        assert_eq!(
+            (z.level, z.fov, z.transition),
+            (0, 90.0, None),
+            "reset at once (mid {mid})"
+        );
         assert!(view(&sim, p).is_none(), "no overlay");
         close(inv.next_attack - now(&sim), 0.65, 1e-6, "the pistol's draw");
     }
@@ -849,9 +892,20 @@ fn t19_switch_while_zoomed() {
 #[test]
 fn t20_sway_drift() {
     // The spec's numbers from the formula with the L96A1's sway.
-    let drift = |s: f64, f: f64, a: f64, b: f64| s / 1000.0 * (10.0 / f) * ((a * f / 10.0).cos() - (b * f / 10.0).cos());
-    close(drift(4.5, 10.0, 0.0, std::f64::consts::PI), 0.0090, 1e-4, "yaw over 0..pi");
-    close(drift(1.1, 10.0, 0.0, std::f64::consts::PI), 0.0022, 1e-4, "pitch over 0..pi");
+    let drift =
+        |s: f64, f: f64, a: f64, b: f64| s / 1000.0 * (10.0 / f) * ((a * f / 10.0).cos() - (b * f / 10.0).cos());
+    close(
+        drift(4.5, 10.0, 0.0, std::f64::consts::PI),
+        0.0090,
+        1e-4,
+        "yaw over 0..pi",
+    );
+    close(
+        drift(1.1, 10.0, 0.0, std::f64::consts::PI),
+        0.0022,
+        1e-4,
+        "pitch over 0..pi",
+    );
     close(drift(4.5, 10.0, 0.0, std::f64::consts::TAU), 0.0, 1e-9, "over 2 pi");
     let mut sim = new_sim();
     let (p, w) = holding(&mut sim, L96A1);
@@ -961,7 +1015,10 @@ fn place_at(sim: &mut Sim, shooter: Entity, target: Entity, name: &str, units: f
         let (min, max, _) = geometry(sim.app.world(), target);
         // The reported point: the widened box's entry (weapon_firing.md
         // Corrections 8).
-        let (c, half) = ((min + max) / 2.0, (max - min) / 2.0 * Vec3::new(ca::HITBOX_WIDEN, 1.0, ca::HITBOX_WIDEN));
+        let (c, half) = (
+            (min + max) / 2.0,
+            (max - min) / 2.0 * Vec3::new(ca::HITBOX_WIDEN, 1.0, ca::HITBOX_WIDEN),
+        );
         let t = ca::box_entry(c - half, c + half, from, dir, f32::INFINITY).unwrap();
 
         let err = t - units * U;
@@ -993,9 +1050,20 @@ fn shoot_at(sim: &mut Sim, shooter: Entity, target: Entity, name: &str) -> f64 {
 fn t22_pellet_damage_and_falloff() {
     let mut sim = new_sim();
     let (shooter, target) = range_lane(&mut sim, "test:r870_exact", 500.0);
-    for (d, want) in [(500.0, 63.0), (600.0, 63.0), (700.0, 44.1), (900.0, 22.05), (1100.0, 0.0)] {
+    for (d, want) in [
+        (500.0, 63.0),
+        (600.0, 63.0),
+        (700.0, 44.1),
+        (900.0, 22.05),
+        (1100.0, 0.0),
+    ] {
         place_at(&mut sim, shooter, target, "Torso", d);
-        close(shoot_at(&mut sim, shooter, target, "Torso"), want, 1e-2, &format!("at {d}"));
+        close(
+            shoot_at(&mut sim, shooter, target, "Torso"),
+            want,
+            1e-2,
+            &format!("at {d}"),
+        );
     }
     let mut sim = new_sim();
     let (shooter, target) = range_lane(&mut sim, "test:r870_one_pellet", 500.0);
@@ -1052,9 +1120,13 @@ fn t23_pellet_carry_over() {
     let first = without[..7].iter().position(Option::is_some).expect("a pellet hits");
     let real = without.iter().filter(|h| h.is_some()).count();
     assert!(real < 7, "some pellets miss: {without:?}");
-    assert_eq!(with[..7], reported_hits(&without[..7], true), "carried from pellet {}", first + 1);
+    assert_eq!(
+        with[..7],
+        reported_hits(&without[..7], true),
+        "carried from pellet {}",
+        first + 1
+    );
     assert_eq!(with.iter().filter(|h| h.is_some()).count(), 7 - first);
-
 }
 
 /// The times (relative to `t0`) at which `w`'s clip changed, and what to.
@@ -1125,7 +1197,9 @@ fn t24_shell_reload_timing() {
     set_mag(&mut sim, w, 0, 7);
     sim.ticks(1);
     let t0 = now(&sim);
-    ticks_until(&mut sim, 1000, |s| s.app.world().get::<WeaponState>(w).unwrap().shells == ShellStage::Idle);
+    ticks_until(&mut sim, 1000, |s| {
+        s.app.world().get::<WeaponState>(w).unwrap().shells == ShellStage::Idle
+    });
     close(now(&sim) - t0, 6.133, tick, "idle");
 }
 
@@ -1332,7 +1406,12 @@ fn t30_smg() {
     let (shooter, target) = range_lane(&mut sim, "test:mp5a4_exact", 400.0);
     for (d, want) in [(400.0, 31.9), (1000.0, 20.3), (2200.0, 10.15)] {
         place_at(&mut sim, shooter, target, "Torso", d);
-        close(shoot_at(&mut sim, shooter, target, "Torso"), want, 1e-2, &format!("at {d}"));
+        close(
+            shoot_at(&mut sim, shooter, target, "Torso"),
+            want,
+            1e-2,
+            &format!("at {d}"),
+        );
     }
 }
 
@@ -1452,16 +1531,36 @@ fn t35_sniper_damage() {
     let mut sim = new_sim();
     let (shooter, target) = range_lane(&mut sim, "test:l96a1_exact", 3000.0);
     place_at(&mut sim, shooter, target, "Torso", 3000.0);
-    close(shoot_at(&mut sim, shooter, target, "Torso"), 160.0, 1e-3, "torso at 3000");
-    close(shoot_at(&mut sim, shooter, target, "Face_Eyelid1"), 960.0, 1e-3, "head at 3000");
+    close(
+        shoot_at(&mut sim, shooter, target, "Torso"),
+        160.0,
+        1e-3,
+        "torso at 3000",
+    );
+    close(
+        shoot_at(&mut sim, shooter, target, "Face_Eyelid1"),
+        960.0,
+        1e-3,
+        "head at 3000",
+    );
     // Farther than the greybox's lane: the weapon's own damage part.
     let w = sim.app.world().get::<Inventory>(shooter).unwrap().active.unwrap();
     let dmg = sim.app.world().get::<ca::CaDamage>(w).unwrap().clone();
     for (d, want) in [(4200.0, 112.0), (4800.0, 56.0)] {
-        close((ca::base_damage(&dmg, 0.5, false, d * U) / HP) as f64, want, 1e-3, &format!("at {d}"));
+        close(
+            (ca::base_damage(&dmg, 0.5, false, d * U) / HP) as f64,
+            want,
+            1e-3,
+            &format!("at {d}"),
+        );
     }
     arm(&mut sim, shooter, "test:svd_exact");
-    close(shoot_at(&mut sim, shooter, target, "Torso"), 100.0, 1e-3, "Dragunov at 3000");
+    close(
+        shoot_at(&mut sim, shooter, target, "Torso"),
+        100.0,
+        1e-3,
+        "Dragunov at 3000",
+    );
 }
 
 /// 36. No scope, no zoom: the M4A1's zoom key changes nothing.
@@ -1502,16 +1601,25 @@ fn a_spawn_protected_player_shows_and_takes_no_hit() {
         chimera_core::core::God,
     ));
     let shown = |sim: &Sim| {
-        sim.app.world().resource::<Log>().0.iter().filter(|(_, _, k)| match k {
-            WeaponEventKind::Shot { hit, .. } | WeaponEventKind::ShotContinued { hit, .. } => *hit == Some(target),
-            WeaponEventKind::Hit { target: h, .. } => *h == target,
-            _ => false,
-        }).count()
+        sim.app
+            .world()
+            .resource::<Log>()
+            .0
+            .iter()
+            .filter(|(_, _, k)| match k {
+                WeaponEventKind::Shot { hit, .. } | WeaponEventKind::ShotContinued { hit, .. } => *hit == Some(target),
+                WeaponEventKind::Hit { target: h, .. } => *h == target,
+                _ => false,
+            })
+            .count()
     };
     sim.app.world_mut().resource_mut::<Log>().0.clear();
     let lost = shoot_at(&mut sim, shooter, target, "Torso");
     assert_eq!((lost, shown(&sim)), (0.0, 0), "protected: nothing shows, nothing lands");
-    sim.app.world_mut().entity_mut(target).remove::<(SpawnProtected, chimera_core::core::God)>();
+    sim.app
+        .world_mut()
+        .entity_mut(target)
+        .remove::<(SpawnProtected, chimera_core::core::God)>();
     sim.app.world_mut().resource_mut::<Log>().0.clear();
     let lost = shoot_at(&mut sim, shooter, target, "Torso");
     assert!(lost > 0.0 && shown(&sim) > 0, "after it: {lost}");
@@ -1532,8 +1640,12 @@ fn log_zoom_sounds(mut steps: MessageReader<zoom::CaZoomSound>, mut log: ResMut<
 #[derive(Resource, Default)]
 struct LocalSounds(Vec<String>);
 
-fn log_local_sounds(mut sounds: MessageReader<combat_arms::game::effects::sounds::CaSound>, mut log: ResMut<LocalSounds>) {
-    log.0.extend(sounds.read().filter(|s| s.at.is_none()).map(|s| s.file.clone()));
+fn log_local_sounds(
+    mut sounds: MessageReader<combat_arms::game::effects::sounds::CaSound>,
+    mut log: ResMut<LocalSounds>,
+) {
+    log.0
+        .extend(sounds.read().filter(|s| s.at.is_none()).map(|s| s.file.clone()));
 }
 
 fn sound_sim() -> Sim {
@@ -1620,7 +1732,11 @@ fn f47_reset_sound() {
         sim.ticks(1);
         sim.intent(p).select = None;
         assert_eq!(cz(&sim, w).fov, 90.0);
-        let want = if zoomed { vec![(p, M24_CLICK.to_string())] } else { vec![] };
+        let want = if zoomed {
+            vec![(p, M24_CLICK.to_string())]
+        } else {
+            vec![]
+        };
         assert_eq!(zoom_sounds(&mut sim), want, "zoomed {zoomed}");
     }
 }
@@ -1634,13 +1750,23 @@ fn f48_only_the_zooming_player_hears() {
         let (a, w) = holding(&mut sim, L96A1);
         let b = player(&mut sim, Vec3::new(30.0, 1.0, 30.0 + 100.0 * U), 0.0, 1.0);
         let me = if local { a } else { b };
-        sim.app.world_mut().entity_mut(me).insert(chimera_core::core::LocalPlayer);
+        sim.app
+            .world_mut()
+            .entity_mut(me)
+            .insert(chimera_core::core::LocalPlayer);
         sim.ticks(2);
         sim.app.world_mut().resource_mut::<LocalSounds>().0.clear();
         press_zoom(&mut sim, a);
         sim.ticks(1);
         assert!(cz(&sim, w).level > 0);
-        let clicks = sim.app.world().resource::<LocalSounds>().0.iter().filter(|f| *f == M24_CLICK).count();
+        let clicks = sim
+            .app
+            .world()
+            .resource::<LocalSounds>()
+            .0
+            .iter()
+            .filter(|f| *f == M24_CLICK)
+            .count();
         assert_eq!(clicks, usize::from(local), "A local: {local}");
     }
 }
@@ -1650,12 +1776,18 @@ fn f48_only_the_zooming_player_hears() {
 // is Chimera's: chimera_present's `render::screen_post` tests)
 
 fn blur(sim: &Sim) -> combat_arms::game::weapons::CaFocusBlur {
-    sim.app.world().resource::<combat_arms::game::weapons::CaFocusBlur>().clone()
+    sim.app
+        .world()
+        .resource::<combat_arms::game::weapons::CaFocusBlur>()
+        .clone()
 }
 
 fn local_with_shader(sim: &mut Sim, shader: bool) -> (Entity, Entity) {
     let (p, w) = holding(sim, L96A1);
-    sim.app.world_mut().entity_mut(p).insert(chimera_core::core::LocalPlayer);
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(chimera_core::core::LocalPlayer);
     sim.app
         .world_mut()
         .resource_mut::<combat_arms::game::options::settings::CaSettings>()

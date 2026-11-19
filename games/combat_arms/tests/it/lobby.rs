@@ -53,7 +53,14 @@ fn room_with(l: &mut Lobby, key: &str, players: u32, joiners: u64) -> RoomId {
     l.request(1, Request::Create(s)).unwrap();
     let id = l.room_of(1).unwrap();
     for p in 2..=joiners + 1 {
-        l.request(p, Request::Enter { room: id, password: String::new() }).unwrap();
+        l.request(
+            p,
+            Request::Enter {
+                room: id,
+                password: String::new(),
+            },
+        )
+        .unwrap();
     }
     id
 }
@@ -80,7 +87,15 @@ fn change(l: &mut Lobby, p: PlayerId, what: Setting) -> Result<(), Refusal> {
     l.request(p, Request::Change { mode, what })
 }
 
-fn summary(id: RoomId, name: &str, state: RoomState, users: u32, max: u32, join_mid: bool, locked: bool) -> RoomSummary {
+fn summary(
+    id: RoomId,
+    name: &str,
+    state: RoomState,
+    users: u32,
+    max: u32,
+    join_mid: bool,
+    locked: bool,
+) -> RoomSummary {
     RoomSummary {
         id,
         name: name.into(),
@@ -122,11 +137,26 @@ fn titles(v: &RoomListView) -> Vec<String> {
 fn case_1_rows_show_numbers_status_and_greyed_rooms() {
     let v = case_list();
     let rows = v.rows();
-    assert_eq!(rows.iter().map(|r| r.num.as_str()).collect::<Vec<_>>(), ["1", "2", "3", "4"]);
-    assert_eq!(rows.iter().map(|r| r.players.as_str()).collect::<Vec<_>>(), ["4/16", "16/16", "3/16", "2/8"]);
-    assert_eq!(rows.iter().map(|r| r.status.as_str()).collect::<Vec<_>>(), ["Waiting", "In game", "In game", "Waiting"]);
-    assert_eq!(rows.iter().map(|r| r.disabled).collect::<Vec<_>>(), [false, true, true, false]);
-    assert_eq!(rows.iter().map(|r| r.locked).collect::<Vec<_>>(), [false, false, false, true]);
+    assert_eq!(
+        rows.iter().map(|r| r.num.as_str()).collect::<Vec<_>>(),
+        ["1", "2", "3", "4"]
+    );
+    assert_eq!(
+        rows.iter().map(|r| r.players.as_str()).collect::<Vec<_>>(),
+        ["4/16", "16/16", "3/16", "2/8"]
+    );
+    assert_eq!(
+        rows.iter().map(|r| r.status.as_str()).collect::<Vec<_>>(),
+        ["Waiting", "In game", "In game", "Waiting"]
+    );
+    assert_eq!(
+        rows.iter().map(|r| r.disabled).collect::<Vec<_>>(),
+        [false, true, true, false]
+    );
+    assert_eq!(
+        rows.iter().map(|r| r.locked).collect::<Vec<_>>(),
+        [false, false, false, true]
+    );
 }
 
 #[test]
@@ -231,7 +261,12 @@ fn case_6_a_room_the_client_refuses_sends_nothing() {
     let mut c = ClientLobby::new(LobbyData::built_in(), 1, "me");
     c.list = case_list();
     assert_eq!(c.join(Some(2)), None);
-    assert!(c.message.as_deref().unwrap().starts_with("You cannot enter the room that you have currently selected."));
+    assert!(
+        c.message
+            .as_deref()
+            .unwrap()
+            .starts_with("You cannot enter the room that you have currently selected.")
+    );
     assert!(c.outbox.is_empty());
     // No selection.
     c.message = None;
@@ -254,13 +289,37 @@ fn case_7_the_password_is_compared_exactly() {
     c.list.set_all(l.summaries());
     assert_eq!(c.join(Some(room)), Some(Joining::Password(room)));
     c.enter(room, "ab");
-    assert_eq!(c.take_outbox(), [Request::Enter { room, password: "ab".into() }]);
-    assert_eq!(l.request(2, Request::Enter { room, password: "ab".into() }), Ok(()));
+    assert_eq!(
+        c.take_outbox(),
+        [Request::Enter {
+            room,
+            password: "ab".into()
+        }]
+    );
+    assert_eq!(
+        l.request(
+            2,
+            Request::Enter {
+                room,
+                password: "ab".into()
+            }
+        ),
+        Ok(())
+    );
     assert!(l.room_of(2).is_some());
     // "AB" is wrong: the message, and still in the list.
-    let r = l.request(3, Request::Enter { room, password: "AB".into() });
+    let r = l.request(
+        3,
+        Request::Enter {
+            room,
+            password: "AB".into(),
+        },
+    );
     assert_eq!(r, Err(Refusal::WrongPassword));
-    assert_eq!(Refusal::WrongPassword.text(), "You enter the wrong password,please retry.");
+    assert_eq!(
+        Refusal::WrongPassword.text(),
+        "You enter the wrong password,please retry."
+    );
     assert_eq!(l.room_of(3), None);
 }
 
@@ -300,7 +359,14 @@ fn the_list_stays_live_and_a_change_does_not_resort() {
     let mut v = RoomListView::new(LobbyData::built_in());
     v.created(created.clone());
     let room = created.id;
-    l.request(2, Request::Enter { room, password: String::new() }).unwrap();
+    l.request(
+        2,
+        Request::Enter {
+            room,
+            password: String::new(),
+        },
+    )
+    .unwrap();
     let changed = l.take_notices().into_iter().find_map(|(_, n)| match n {
         Notice::RoomChanged(r) => Some(r),
         _ => None,
@@ -309,7 +375,10 @@ fn the_list_stays_live_and_a_change_does_not_resort() {
     assert_eq!(v.rows()[0].players, "2/16");
     l.request(2, Request::Leave).unwrap();
     l.request(1, Request::Leave).unwrap();
-    let gone = l.take_notices().into_iter().any(|(_, n)| n == Notice::RoomDestroyed(room));
+    let gone = l
+        .take_notices()
+        .into_iter()
+        .any(|(_, n)| n == Notice::RoomDestroyed(room));
     assert!(gone, "the last player leaving destroys the room");
 }
 
@@ -326,8 +395,14 @@ fn case_9_the_popup_opens_with_the_modes_defaults() {
     assert_eq!(f.mode_rec().name, "Elimination");
     assert_eq!(f.map_text(), "OIL RIG");
     let goals = f.goals();
-    assert_eq!(goals.iter().find(|(g, _)| *g == f.goal).unwrap().1, "100 Kills (Default)");
-    assert_eq!(f.player_options().iter().find(|(p, _)| *p == f.players).unwrap().1, "8 vs 8");
+    assert_eq!(
+        goals.iter().find(|(g, _)| *g == f.goal).unwrap().1,
+        "100 Kills (Default)"
+    );
+    assert_eq!(
+        f.player_options().iter().find(|(p, _)| *p == f.players).unwrap().1,
+        "8 vs 8"
+    );
     let arms = f.arms_options();
     assert_eq!(arms.iter().find(|(id, _)| *id == f.arms[0]).unwrap().1, "All Permitted");
     assert!(f.arms_enabled());
@@ -345,7 +420,10 @@ fn case_10_changing_to_one_man_army_keeps_a_valid_player_count() {
     let ffa = LobbyData::built_in().mode_by_key("FFA").unwrap().id;
     f.set_mode(ffa);
     assert_eq!(f.map_text(), "JUNK FLEA");
-    assert_eq!(f.goals().iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(), ["15 Kills", "30 Kills (Default)", "45 Kills"]);
+    assert_eq!(
+        f.goals().iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(),
+        ["15 Kills", "30 Kills (Default)", "45 Kills"]
+    );
     let players = f.player_options();
     assert_eq!(players.first().unwrap(), &(2, "2 Player(s)".to_string()));
     assert_eq!(players.last().unwrap(), &(16, "16 Player(s)".to_string()));
@@ -354,7 +432,10 @@ fn case_10_changing_to_one_man_army_keeps_a_valid_player_count() {
     // Opened fresh with One Man Army picked first.
     let fresh = CreateForm::with_mode(LobbyData::built_in(), false, ffa, 16);
     assert_eq!(fresh.players, 8);
-    assert_eq!(fresh.player_options().iter().find(|(p, _)| *p == 8).unwrap().1, "8 Player(s)");
+    assert_eq!(
+        fresh.player_options().iter().find(|(p, _)| *p == 8).unwrap().1,
+        "8 Player(s)"
+    );
 }
 
 #[test]
@@ -363,7 +444,10 @@ fn case_11_fireteam_has_a_difficulty_instead_of_a_goal() {
     let coop = LobbyData::built_in().mode_by_key("COOP").unwrap().id;
     f.set_mode(coop);
     assert_eq!(f.goal_title(), "Difficulty");
-    assert_eq!(f.goals().iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(), ["NORMAL", "HARD", "EXTREME"]);
+    assert_eq!(
+        f.goals().iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(),
+        ["NORMAL", "HARD", "EXTREME"]
+    );
     assert_eq!(f.goal, 1, "HARD");
     assert_eq!(f.player_options(), [(8, "8 Player(s)".to_string())]);
     assert_eq!(f.players, 8);
@@ -401,7 +485,10 @@ fn case_13_capture_the_flag_with_four_players() {
     let s = settings(&l, room);
     assert_eq!(s.goal, 5);
     assert_eq!(l.data.mode(s.mode).unwrap().goal_text(5), "5 Points (Default)");
-    assert_eq!((s.join_mid, s.friendly_fire, s.kill_cam, s.abilities), (true, false, false, true));
+    assert_eq!(
+        (s.join_mid, s.friendly_fire, s.kill_cam, s.abilities),
+        (true, false, false, true)
+    );
     assert_eq!(s.max_players, 4);
 }
 
@@ -439,7 +526,10 @@ fn case_16_a_mode_the_lobby_has_no_rules_for_is_refused() {
 fn case_17_the_single_tab() {
     let f = form(true);
     assert_eq!(f.mode_rec().name, "Elimination (bot play)");
-    assert_eq!(f.player_options().iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(), ["1 vs 5", "1 vs 6", "1 vs 7", "1 vs 8"]);
+    assert_eq!(
+        f.player_options().iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(),
+        ["1 vs 5", "1 vs 6", "1 vs 7", "1 vs 8"]
+    );
     assert_eq!(f.players, 8);
     assert_eq!(f.difficulty, 1, "HARD");
     assert_eq!(f.goals().iter().map(|(g, _)| *g).collect::<Vec<_>>(), [20, 30, 40, 50]);
@@ -468,7 +558,10 @@ fn create_refusals_and_silent_replacements() {
     s.map = Some(RANDOM_MAP);
     l.request(1, Request::Create(s)).unwrap();
     let room = l.room_of(1).unwrap();
-    assert!(l.data.map_open(settings(&l, room).map, l.data.mode_by_key("FFA").unwrap()));
+    assert!(
+        l.data
+            .map_open(settings(&l, room).map, l.data.mode_by_key("FFA").unwrap())
+    );
     l.request(1, Request::Leave).unwrap();
     // An invalid arms value is All Permitted; a name over 32 characters
     // leaves the room unnamed.
@@ -581,11 +674,17 @@ fn case_22_the_client_refuses_a_switch_that_unbalances_a_match_in_progress() {
         settings: combat_arms::game::lobby::service::defaults(data.mode(0).unwrap(), false),
         host: 100,
         state: RoomState::InGame,
-        seats: (1..=alpha).map(|i| seat(i, Team::Alpha)).chain((10..10 + bravo).map(|i| seat(i, Team::Bravo))).collect(),
+        seats: (1..=alpha)
+            .map(|i| seat(i, Team::Alpha))
+            .chain((10..10 + bravo).map(|i| seat(i, Team::Bravo)))
+            .collect(),
     };
     // Alpha 3 (P1 among them), Bravo 4: 3 - 1 = 2 < 4.
     assert_eq!(check::switch_check(&data, &room(3, 4), 1), Err(Refusal::TeamImbalance));
-    assert_eq!(Refusal::TeamImbalance.text(), "Unable to switch teams due to team imbalance.");
+    assert_eq!(
+        Refusal::TeamImbalance.text(),
+        "Unable to switch teams due to team imbalance."
+    );
     // Alpha 5, Bravo 4: the request is sent.
     assert_eq!(check::switch_check(&data, &room(5, 4), 1), Ok(()));
 }
@@ -600,7 +699,11 @@ fn case_23_friendly_fire_keeps_ready_states() {
     assert!(settings(&l, room).friendly_fire);
     assert_eq!(state(&l, room, 2), PlayerState::Ready);
     let notices = l.take_notices();
-    assert!(notices.iter().any(|(a, n)| *a == Audience::Room(room) && matches!(n, Notice::Settings(s) if s.friendly_fire)));
+    assert!(
+        notices
+            .iter()
+            .any(|(a, n)| *a == Audience::Room(room) && matches!(n, Notice::Settings(s) if s.friendly_fire))
+    );
     // The clients show it.
     let mut c = ClientLobby::new(LobbyData::built_in(), 2, "me");
     c.apply(Notice::Entered(l.room(room).unwrap().detail()), 0.0);
@@ -615,7 +718,10 @@ fn case_24_friendly_fire_is_unavailable_in_one_man_army() {
     let detail = l.room(room).unwrap().detail();
     let enabled = check::option_enabled(&l.data, &detail, 1);
     assert!(!enabled[1], "the control is disabled");
-    assert_eq!(change(&mut l, 1, Setting::FriendlyFire(true)), Err(Refusal::OptionRefused));
+    assert_eq!(
+        change(&mut l, 1, Setting::FriendlyFire(true)),
+        Err(Refusal::OptionRefused)
+    );
     assert!(!settings(&l, room).friendly_fire);
 }
 
@@ -695,7 +801,10 @@ fn case_28_too_many_players_for_the_new_mode() {
         "You have too many players to change the Mode to Fireteam (Max: 8 players)"
     );
     // The lobby refuses it too.
-    assert!(matches!(change(&mut l, 1, Setting::Mode(coop)), Err(Refusal::TooManyPlayers { .. })));
+    assert!(matches!(
+        change(&mut l, 1, Setting::Mode(coop)),
+        Err(Refusal::TooManyPlayers { .. })
+    ));
     assert_eq!(settings(&l, room).mode, 0);
 }
 
@@ -711,7 +820,13 @@ fn case_29_a_non_host_cannot_change_settings() {
 fn case_30_a_stale_request_is_refused() {
     let mut l = lobby();
     let room = room_with(&mut l, "TDM", 16, 1);
-    let r = l.request(1, Request::Change { mode: 1, what: Setting::Goal(60) });
+    let r = l.request(
+        1,
+        Request::Change {
+            mode: 1,
+            what: Setting::Goal(60),
+        },
+    );
     assert_eq!(r, Err(Refusal::Stale));
     assert_eq!(settings(&l, room).goal, 100);
 }
@@ -722,7 +837,11 @@ fn settings_only_while_waiting_and_players_must_fit() {
     let room = room_with(&mut l, "TDM", 16, 5);
     // Alpha 3, Bravo 3: 4 players cannot hold 3 a side... 6 can.
     assert_eq!(change(&mut l, 1, Setting::Players(4)), Err(Refusal::Players));
-    assert_eq!(change(&mut l, 1, Setting::Players(5)), Err(Refusal::Players), "odd in a two-team mode");
+    assert_eq!(
+        change(&mut l, 1, Setting::Players(5)),
+        Err(Refusal::Players),
+        "odd in a two-team mode"
+    );
     change(&mut l, 1, Setting::Players(6)).unwrap();
     assert_eq!(settings(&l, room).max_players, 6);
     // A goal outside the lobby's range is refused here (quirk 12).
@@ -730,7 +849,10 @@ fn settings_only_while_waiting_and_players_must_fit() {
     // The name and the password.
     change(&mut l, 1, Setting::Name("New".into())).unwrap();
     change(&mut l, 1, Setting::Password("secret".into())).unwrap();
-    assert_eq!(change(&mut l, 1, Setting::Password("123456789".into())), Err(Refusal::BadValue));
+    assert_eq!(
+        change(&mut l, 1, Setting::Password("123456789".into())),
+        Err(Refusal::BadValue)
+    );
     assert!(l.summaries()[0].locked);
     change(&mut l, 1, Setting::Password(String::new())).unwrap();
     assert!(!l.summaries()[0].locked);
@@ -762,7 +884,10 @@ fn option_rules_by_mode() {
     // Search & Destroy has no Super Soldiers; Fireteam no arms.
     let mut l = lobby();
     room_with(&mut l, "TMM", 16, 0);
-    assert_eq!(change(&mut l, 1, Setting::SuperSoldiers(true)), Err(Refusal::OptionRefused));
+    assert_eq!(
+        change(&mut l, 1, Setting::SuperSoldiers(true)),
+        Err(Refusal::OptionRefused)
+    );
     let mut l = lobby();
     room_with(&mut l, "COOP", 8, 0);
     assert_eq!(change(&mut l, 1, Setting::Arms(1, 0)), Err(Refusal::OptionRefused));
@@ -796,8 +921,16 @@ fn case_32_search_and_destroy_the_lobby_needs_three_a_side() {
         ready(&mut l, p);
     }
     let detail = l.room(room).unwrap().detail();
-    assert_eq!(check::start_check(&l.data, &detail), Ok(()), "the client accepts: each team >= 1");
-    assert_eq!(l.request(1, Request::Start), Err(Refusal::NotEnoughPlayers), "the lobby needs 3 and 3");
+    assert_eq!(
+        check::start_check(&l.data, &detail),
+        Ok(()),
+        "the client accepts: each team >= 1"
+    );
+    assert_eq!(
+        l.request(1, Request::Start),
+        Err(Refusal::NotEnoughPlayers),
+        "the lobby needs 3 and 3"
+    );
     ready(&mut l, 6);
     assert_eq!(l.request(1, Request::Start), Ok(()));
 }
@@ -845,7 +978,9 @@ fn run_ticks(l: &mut Lobby, room: RoomId, times: &[u64], ready_at: Option<u64>) 
 }
 
 fn countdowns(n: &[Notice]) -> Vec<u32> {
-    n.iter().filter_map(|n| if let Notice::Countdown(c) = n { Some(*c) } else { None }).collect()
+    n.iter()
+        .filter_map(|n| if let Notice::Countdown(c) = n { Some(*c) } else { None })
+        .collect()
 }
 
 #[test]
@@ -855,7 +990,11 @@ fn case_35_the_countdown_runs_five_ticks_then_go() {
     ready(&mut l, 2);
     l.request(1, Request::Start).unwrap();
     // The launcher was asked for a game server.
-    assert!(l.take_events().iter().any(|e| matches!(e, LobbyEvent::Launch { room: r, .. } if *r == room)));
+    assert!(
+        l.take_events()
+            .iter()
+            .any(|e| matches!(e, LobbyEvent::Launch { room: r, .. } if *r == room))
+    );
     let times: Vec<u64> = (0..6).map(|i| 400 + 1000 * i).collect();
     let ticks = run_ticks(&mut l, room, &times, Some(2000));
     for (i, (t, n)) in ticks.iter().take(5).enumerate() {
@@ -867,12 +1006,20 @@ fn case_35_the_countdown_runs_five_ticks_then_go() {
     let (t, last) = &ticks[5];
     assert_eq!(*t, 5400);
     assert!(countdowns(last).is_empty());
-    assert_eq!(last.iter().filter(|n| matches!(n, Notice::Go { .. })).count(), 2, "both players get go");
+    assert_eq!(
+        last.iter().filter(|n| matches!(n, Notice::Go { .. })).count(),
+        2,
+        "both players get go"
+    );
     assert_eq!(l.room(room).unwrap().state, RoomState::InGame);
     assert_eq!(state(&l, room, 1), PlayerState::InGame);
     assert_eq!(state(&l, room, 2), PlayerState::InGame);
     // The game server is told to expect each, with their kit.
-    let expects = l.take_events().into_iter().filter(|e| matches!(e, LobbyEvent::Expect { .. })).count();
+    let expects = l
+        .take_events()
+        .into_iter()
+        .filter(|e| matches!(e, LobbyEvent::Expect { .. }))
+        .count();
     assert_eq!(expects, 2);
     // The counter stopped: nothing more happens.
     l.tick();
@@ -900,7 +1047,10 @@ fn case_36_no_game_server_stops_the_launcher_then_returns_to_waiting() {
                 c.apply(n.clone(), t as f64);
             }
         }
-        if l.take_events().iter().any(|e| matches!(e, LobbyEvent::StopLauncher(r) if *r == room)) {
+        if l.take_events()
+            .iter()
+            .any(|e| matches!(e, LobbyEvent::StopLauncher(r) if *r == room))
+        {
             stop_at = Some(t);
         }
         if l.room(room).unwrap().state == RoomState::Waiting && waiting_at.is_none() {
@@ -916,7 +1066,10 @@ fn case_36_no_game_server_stops_the_launcher_then_returns_to_waiting() {
     c.tick(19_399.0);
     assert!(c.message.is_none());
     c.tick(19_400.0);
-    assert_eq!(c.message.as_deref(), Some("Failed to join the battle. Connection timed out."));
+    assert_eq!(
+        c.message.as_deref(),
+        Some("Failed to join the battle. Connection timed out.")
+    );
     assert_eq!(c.take_outbox(), [Request::ReturnToRoom(ReturnReason::Timeout)]);
     // The lobby ignores that return: they already wait.
     assert_eq!(l.request(2, Request::ReturnToRoom(ReturnReason::Timeout)), Ok(()));
@@ -955,7 +1108,14 @@ fn case_38_f5_is_start_for_the_host_and_ready_for_the_others() {
     assert_eq!(host.take_outbox(), [Request::Start]);
     let mut other = ClientLobby::new(LobbyData::built_in(), 3, "P");
     let mut detail = detail;
-    detail.seats.push(Seat { id: 3, name: "P".into(), team: Team::Alpha, state: PlayerState::Waiting, extra: Extra::None, order: 9 });
+    detail.seats.push(Seat {
+        id: 3,
+        name: "P".into(),
+        team: Team::Alpha,
+        state: PlayerState::Waiting,
+        extra: Extra::None,
+        order: 9,
+    });
     other.apply(Notice::Entered(detail.clone()), 0.0);
     other.f5(Ok(()));
     assert_eq!(other.take_outbox(), [Request::Ready(true)]);
@@ -963,7 +1123,9 @@ fn case_38_f5_is_start_for_the_host_and_ready_for_the_others() {
     other.apply(Notice::Refused(Refusal::FinalRound), 0.0);
     other.message = None;
     // A failed loadout check sends nothing and offers the message.
-    other.f5(Err("You do not have a sniper rifle equipped for 'Sniper Only' mode.".into()));
+    other.f5(Err(
+        "You do not have a sniper rifle equipped for 'Sniper Only' mode.".into()
+    ));
     assert!(other.take_outbox().is_empty());
     assert!(other.message.as_deref().unwrap().contains("Sniper Only"));
     // A ready player's F5 un-readies.
@@ -1019,7 +1181,11 @@ fn case_39_a_waiting_player_joins_the_match_in_progress() {
     // Their normal set: the base loadout.
     assert_eq!(expect, Some(vec![20, 24, 0, 7]));
     let notices = l.take_notices();
-    assert!(notices.iter().any(|(a, n)| *a == Audience::Player(3) && matches!(n, Notice::Go { .. })));
+    assert!(
+        notices
+            .iter()
+            .any(|(a, n)| *a == Audience::Player(3) && matches!(n, Notice::Go { .. }))
+    );
 }
 
 #[test]
@@ -1034,7 +1200,16 @@ fn case_40_without_join_mid_combat_the_start_is_refused() {
     assert_eq!(state(&l, room, 3), PlayerState::Waiting);
     // Nor can a new player enter the in-game room.
     hello(&mut l, 9);
-    assert_eq!(l.request(9, Request::Enter { room, password: String::new() }), Err(Refusal::NoMidCombat));
+    assert_eq!(
+        l.request(
+            9,
+            Request::Enter {
+                room,
+                password: String::new()
+            }
+        ),
+        Err(Refusal::NoMidCombat)
+    );
 }
 
 #[test]
@@ -1044,7 +1219,16 @@ fn case_41_a_closing_room_cannot_be_entered() {
     hello(&mut l, 9);
     let summary = l.room(room).unwrap().summary();
     assert!(!summary.can_enter(), "greyed");
-    assert_eq!(l.request(9, Request::Enter { room, password: String::new() }), Err(Refusal::Closing));
+    assert_eq!(
+        l.request(
+            9,
+            Request::Enter {
+                room,
+                password: String::new()
+            }
+        ),
+        Err(Refusal::Closing)
+    );
     // A waiting player's START is refused too.
     assert_eq!(l.request(3, Request::Start), Err(Refusal::FinalRound));
     // The room list still says "In game".
@@ -1058,7 +1242,14 @@ fn case_42_a_late_joiner_of_a_starting_room_goes_in_with_the_others() {
     ready(&mut l, 2);
     l.request(1, Request::Start).unwrap();
     hello(&mut l, 3);
-    l.request(3, Request::Enter { room, password: String::new() }).unwrap();
+    l.request(
+        3,
+        Request::Enter {
+            room,
+            password: String::new(),
+        },
+    )
+    .unwrap();
     l.request(3, Request::Ready(true)).unwrap();
     assert_eq!(state(&l, room, 3), PlayerState::Starting);
     l.server_ready(room);
@@ -1073,7 +1264,16 @@ fn case_42_a_late_joiner_of_a_starting_room_goes_in_with_the_others() {
     ready(&mut l, 2);
     l.request(1, Request::Start).unwrap();
     hello(&mut l, 3);
-    assert_eq!(l.request(3, Request::Enter { room, password: String::new() }), Err(Refusal::NoMidCombat));
+    assert_eq!(
+        l.request(
+            3,
+            Request::Enter {
+                room,
+                password: String::new()
+            }
+        ),
+        Err(Refusal::NoMidCombat)
+    );
 }
 
 /// A client in `room`'s detail as player `id`.
@@ -1099,7 +1299,11 @@ fn corr1_the_host_rejoins_a_running_match_with_start() {
     assert_eq!(l.request(1, Request::Start), Ok(()));
     assert_eq!(state(&l, room, 1), PlayerState::InGame);
     let notices = l.take_notices();
-    assert!(notices.iter().any(|(a, n)| *a == Audience::Player(1) && matches!(n, Notice::Go { .. })));
+    assert!(
+        notices
+            .iter()
+            .any(|(a, n)| *a == Audience::Player(1) && matches!(n, Notice::Go { .. }))
+    );
 }
 
 /// The same with Join Mid Combat off: the final-round message.
@@ -1172,7 +1376,11 @@ fn case_43_the_host_passes_to_the_first_free_player() {
     l.request(2, Request::Extra(Extra::Outfitting)).unwrap();
     l.request(4, Request::Extra(Extra::Idle)).unwrap();
     l.request(1, Request::Leave).unwrap();
-    assert_eq!(l.room(room).unwrap().host, 3, "P2 of the case: the first with extra state none");
+    assert_eq!(
+        l.room(room).unwrap().host,
+        3,
+        "P2 of the case: the first with extra state none"
+    );
 }
 
 #[test]
@@ -1197,7 +1405,10 @@ fn case_45_else_the_first_player_and_the_last_one_destroys_the_room() {
     l.take_notices();
     l.request(4, Request::Leave).unwrap();
     assert!(l.room(room).is_none());
-    let gone = l.take_notices().into_iter().any(|(a, n)| a == Audience::Channel && n == Notice::RoomDestroyed(room));
+    let gone = l
+        .take_notices()
+        .into_iter()
+        .any(|(a, n)| a == Audience::Channel && n == Notice::RoomDestroyed(room));
     assert!(gone);
 }
 
@@ -1229,8 +1440,20 @@ fn a_moderator_host_kicks_and_the_kicked_cannot_return() {
     l.request(1, Request::Kick { target: 2, reason: 3 }).unwrap();
     assert_eq!(l.room_of(2), None);
     let n = l.take_notices();
-    assert!(n.iter().any(|(a, n)| *a == Audience::Player(2) && *n == Notice::LeftRoom { kicked: true }));
-    assert_eq!(l.request(2, Request::Enter { room, password: String::new() }), Err(Refusal::Kicked));
+    assert!(
+        n.iter()
+            .any(|(a, n)| *a == Audience::Player(2) && *n == Notice::LeftRoom { kicked: true })
+    );
+    assert_eq!(
+        l.request(
+            2,
+            Request::Enter {
+                room,
+                password: String::new()
+            }
+        ),
+        Err(Refusal::Kicked)
+    );
     // The host cannot kick itself or a player in the match.
     assert!(l.request(1, Request::Kick { target: 1, reason: 0 }).is_err());
 }
@@ -1270,7 +1493,11 @@ fn chat_goes_to_the_room_or_the_lobby_and_invites_to_the_waiting() {
     }
     l.take_notices();
     l.request(1, Request::Invite).unwrap();
-    let invites = l.take_notices().into_iter().filter(|(_, n)| matches!(n, Notice::Invite { .. })).count();
+    let invites = l
+        .take_notices()
+        .into_iter()
+        .filter(|(_, n)| matches!(n, Notice::Invite { .. }))
+        .count();
     assert_eq!(invites, 5);
     assert_eq!(l.request(2, Request::Invite), Err(Refusal::NotHost));
 }
@@ -1282,7 +1509,10 @@ fn outfitting_unreadies_first_and_idle_follows_the_clock() {
     ready(&mut l, 2);
     c.apply(Notice::Entered(l.room(room).unwrap().detail()), 0.0);
     c.open_outfitting();
-    assert_eq!(c.take_outbox(), [Request::Ready(false), Request::Extra(Extra::Outfitting)]);
+    assert_eq!(
+        c.take_outbox(),
+        [Request::Ready(false), Request::Extra(Extra::Outfitting)]
+    );
     c.close_outfitting();
     assert_eq!(c.take_outbox(), [Request::Extra(Extra::None)]);
     // 60 s without input: idle; the next input: none.
@@ -1324,7 +1554,11 @@ fn case_60_leaving_the_match_returns_to_the_room() {
     l.request(2, out[0].clone()).unwrap();
     assert_eq!(state(&l, room, 2), PlayerState::Waiting);
     // The match is told the player dropped out of it.
-    assert!(l.take_events().iter().any(|e| matches!(e, LobbyEvent::Dropped { player: 2, .. })));
+    assert!(
+        l.take_events()
+            .iter()
+            .any(|e| matches!(e, LobbyEvent::Dropped { player: 2, .. }))
+    );
     assert!(l.room_of(2).is_some(), "still in the room");
 }
 
@@ -1335,7 +1569,11 @@ fn case_61_start_again_sends_them_back_into_the_same_match() {
     l.take_events();
     l.request(2, Request::Start).unwrap();
     assert_eq!(state(&l, room, 2), PlayerState::InGame);
-    assert!(l.take_events().iter().any(|e| matches!(e, LobbyEvent::Expect { player: 2, .. })));
+    assert!(
+        l.take_events()
+            .iter()
+            .any(|e| matches!(e, LobbyEvent::Expect { player: 2, .. }))
+    );
 }
 
 #[test]

@@ -40,10 +40,16 @@ fn world_file(mount: &Mount, name: &str) -> Option<World> {
 /// Every readable world file (None when fewer than all 105 are).
 fn all_worlds(mount: &Mount) -> Option<Vec<(String, World)>> {
     let names = world::map_names(mount);
-    let worlds: Vec<(String, World)> =
-        names.iter().filter_map(|n| world_file(mount, n).map(|w| (n.to_string(), w))).collect();
+    let worlds: Vec<(String, World)> = names
+        .iter()
+        .filter_map(|n| world_file(mount, n).map(|w| (n.to_string(), w)))
+        .collect();
     if worlds.len() < 105 {
-        eprintln!("skipping: {} of {} maps readable (the V2 key)", worlds.len(), names.len());
+        eprintln!(
+            "skipping: {} of {} maps readable (the V2 key)",
+            worlds.len(),
+            names.len()
+        );
         return None;
     }
     Some(worlds)
@@ -76,11 +82,17 @@ fn event_object_census() {
     ];
     for (map, w) in &worlds {
         for o in &w.objects {
-            let Some(c) = classes.iter().find(|c| **c == o.class) else { continue };
+            let Some(c) = classes.iter().find(|c| **c == o.class) else {
+                continue;
+            };
             let e = counts.entry(c).or_default();
             e.0 += 1;
             e.1.insert(map.clone());
-            *names.entry(c).or_default().entry(o.name().unwrap_or("").to_string()).or_default() += 1;
+            *names
+                .entry(c)
+                .or_default()
+                .entry(o.name().unwrap_or("").to_string())
+                .or_default() += 1;
         }
     }
     let n = |c: &str| counts.get(c).map_or((0, 0), |(k, m)| (*k, m.len()));
@@ -114,17 +126,30 @@ fn trigger_resource_table_and_marker_names() {
     let table = TriggerResources::parse(&Document::parse(&bytes).unwrap());
     assert_eq!(table.0.len(), 308);
     let z = table.find("Indicator_EZone_unable").expect("the exit's marker");
-    assert_eq!(z.guide.replace('/', "\\").to_lowercase(), "ui_hud_common\\guide\\guide_area_exit_notopen.dtx");
-    assert_eq!(z.map.replace('/', "\\").to_lowercase(), "ui_hud_map\\icon\\area_exit_notopen.dtx");
+    assert_eq!(
+        z.guide.replace('/', "\\").to_lowercase(),
+        "ui_hud_common\\guide\\guide_area_exit_notopen.dtx"
+    );
+    assert_eq!(
+        z.map.replace('/', "\\").to_lowercase(),
+        "ui_hud_map\\icon\\area_exit_notopen.dtx"
+    );
     assert!(z.show_dist);
     let Some(worlds) = all_worlds(&mount) else { return };
     let markers: BTreeSet<String> = worlds
         .iter()
-        .flat_map(|(_, w)| w.objects_of("TargetTrigger").filter_map(|(_, o)| o.name().map(str::to_string)).collect::<Vec<_>>())
+        .flat_map(|(_, w)| {
+            w.objects_of("TargetTrigger")
+                .filter_map(|(_, o)| o.name().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
         .collect();
     assert_eq!(markers.len(), 107);
     let missing: Vec<&String> = markers.iter().filter(|n| table.find(n).is_none()).collect();
-    assert_eq!(missing, ["DynamiteTargeticon00", "WeaponSpawnMarker00", "WeaponSpawnMarker01"]);
+    assert_eq!(
+        missing,
+        ["DynamiteTargeticon00", "WeaponSpawnMarker00", "WeaponSpawnMarker01"]
+    );
 }
 
 /// 4 and case 50: the destructibles naming a debris type other than
@@ -159,10 +184,22 @@ fn debris_type_census() {
     }
     let n = |c: &str, d: &str| by.get(&(c.to_string(), d.to_string())).copied().unwrap_or(0);
     assert_eq!(
-        [n("WorldModel", "Window"), n("WorldModel", "Window_Large"), n("WorldModel", "Window_smoll"), n("WorldModel", "Stone")],
+        [
+            n("WorldModel", "Window"),
+            n("WorldModel", "Window_Large"),
+            n("WorldModel", "Window_smoll"),
+            n("WorldModel", "Stone")
+        ],
         [86, 61, 52, 52]
     );
-    assert_eq!([n("Breakable", "56x56WoodBox"), n("Breakable", "Window"), n("Breakable", "Window_Large")], [120, 13, 6]);
+    assert_eq!(
+        [
+            n("Breakable", "56x56WoodBox"),
+            n("Breakable", "Window"),
+            n("Breakable", "Window_Large")
+        ],
+        [120, 13, 6]
+    );
     assert_eq!(by.values().sum::<usize>(), 390, "{by:?}");
     assert_eq!(never, 47);
 }
@@ -214,10 +251,16 @@ fn stock_vip_exit_timers() {
     let mut seen = 0;
     for name in world::map_names(&mount) {
         let Some(w) = world_file(&mount, &name) else { continue };
-        if !w.objects.iter().any(|o| o.class == "TimerTrigger" && o.name() == Some("VipExitTimer")) {
+        if !w
+            .objects
+            .iter()
+            .any(|o| o.class == "TimerTrigger" && o.name() == Some("VipExitTimer"))
+        {
             continue;
         }
-        let Ok(map) = world::load_world(&mount, &name) else { continue };
+        let Ok(map) = world::load_world(&mount, &name) else {
+            continue;
+        };
         let mut ow = objects::object_world(&map.entities);
         let id = ow.named_all("VipExitTimer")[0];
         let (time, auto) = match &ow.objects[id as usize].kind {
@@ -235,7 +278,15 @@ fn stock_vip_exit_timers() {
         let mut stopped = None;
         while t < time as f64 + 5.0 && stopped.is_none() {
             ow.frame(t, 0.05);
-            if ow.fx.iter().any(|f| matches!(f, Fx::Notice { notice: Notice::Timer { on: false, .. }, .. })) {
+            if ow.fx.iter().any(|f| {
+                matches!(
+                    f,
+                    Fx::Notice {
+                        notice: Notice::Timer { on: false, .. },
+                        ..
+                    }
+                )
+            }) {
                 stopped = Some(t);
             }
             ow.fx.clear();
@@ -263,7 +314,12 @@ fn install_debris_table() {
     let path = |s: &String| s.replace('/', "\\").to_lowercase();
     for (a, b) in install.0.iter().zip(&ours.0) {
         assert_eq!(a.name, b.name);
-        assert_eq!((a.surface, a.number, a.bounce, a.rotate != 0), (b.surface, b.number, b.bounce, b.rotate != 0), "{}", a.name);
+        assert_eq!(
+            (a.surface, a.number, a.bounce, a.rotate != 0),
+            (b.surface, b.number, b.bounce, b.rotate != 0),
+            "{}",
+            a.name
+        );
         for (x, y) in [(a.scale, b.scale), (a.life, b.life)] {
             assert!((x[0] - y[0]).abs() < 1e-4 && (x[1] - y[1]).abs() < 1e-4, "{}", a.name);
         }
@@ -275,17 +331,30 @@ fn install_debris_table() {
             (a.offset_min, b.offset_min),
             (a.offset_max, b.offset_max),
         ] {
-            assert!(x.iter().zip(y).all(|(p, q)| (p - q).abs() < 1e-3), "{}: {x:?} vs {y:?}", a.name);
+            assert!(
+                x.iter().zip(y).all(|(p, q)| (p - q).abs() < 1e-3),
+                "{}: {x:?} vs {y:?}",
+                a.name
+            );
         }
         let (x, y) = ([a.fade, a.gravity, a.alpha], [b.fade, b.gravity, b.alpha]);
-        assert!(x.iter().zip(y).all(|(p, q)| (p - q).abs() < 1e-4), "{}: {x:?} vs {y:?}", a.name);
+        assert!(
+            x.iter().zip(y).all(|(p, q)| (p - q).abs() < 1e-4),
+            "{}: {x:?} vs {y:?}",
+            a.name
+        );
         for (x, y) in [
             (&a.models, &b.models),
             (&a.skins, &b.skins),
             (&a.bounce_sounds, &b.bounce_sounds),
             (&a.explode_sounds, &b.explode_sounds),
         ] {
-            assert_eq!(x.iter().map(path).collect::<Vec<_>>(), y.iter().map(path).collect::<Vec<_>>(), "{}", a.name);
+            assert_eq!(
+                x.iter().map(path).collect::<Vec<_>>(),
+                y.iter().map(path).collect::<Vec<_>>(),
+                "{}",
+                a.name
+            );
         }
         assert!(a.world_fx.is_empty() && a.impact_fx.is_empty());
     }
@@ -310,7 +379,9 @@ fn stock_wood_box_debris() {
         else {
             continue;
         };
-        let Ok(map) = world::load_world(&mount, &name) else { continue };
+        let Ok(map) = world::load_world(&mount, &name) else {
+            continue;
+        };
         let mut ow = objects::object_world(&map.entities);
         ow.frame(0.0, 0.05);
         ow.fx.clear();
@@ -322,7 +393,11 @@ fn stock_wood_box_debris() {
             _ => None,
         });
         let (at, debris, dir) = sent.expect("its debris");
-        assert_eq!((debris.as_str(), dir), ("56x56WoodBox", bevy::math::Vec3::X), "{name} {boxed}");
+        assert_eq!(
+            (debris.as_str(), dir),
+            ("56x56WoodBox", bevy::math::Vec3::X),
+            "{name} {boxed}"
+        );
         assert_eq!(at, ow.objects[id as usize].pose.pos);
         let r = table.get(table.id(&debris).unwrap()).unwrap();
         assert_eq!(launch(r, DebrisLevel::High, at, dir, &mut || 0.5).len(), 6);

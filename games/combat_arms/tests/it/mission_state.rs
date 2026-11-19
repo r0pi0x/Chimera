@@ -38,26 +38,104 @@ fn objective(id: &str, team: u8, state: ObjectiveState, count: Option<(i32, i32)
 #[test]
 fn notices_become_state() {
     let mut m = CaMission::default();
-    m.apply(7, "VipExitTimer", &Notice::Timer { on: true, seconds: 60.0 }, 10.0);
-    m.apply(9, "Other", &Notice::Timer { on: true, seconds: 30.0 }, 12.0);
-    assert_eq!(m.timers.iter().map(|t| (t.object, t.ends)).collect::<Vec<_>>(), [(7, 70.0), (9, 42.0)]);
-    m.apply(9, "Other", &Notice::Timer { on: false, seconds: 0.0 }, 20.0);
+    m.apply(
+        7,
+        "VipExitTimer",
+        &Notice::Timer {
+            on: true,
+            seconds: 60.0,
+        },
+        10.0,
+    );
+    m.apply(
+        9,
+        "Other",
+        &Notice::Timer {
+            on: true,
+            seconds: 30.0,
+        },
+        12.0,
+    );
+    assert_eq!(
+        m.timers.iter().map(|t| (t.object, t.ends)).collect::<Vec<_>>(),
+        [(7, 70.0), (9, 42.0)]
+    );
+    m.apply(
+        9,
+        "Other",
+        &Notice::Timer {
+            on: false,
+            seconds: 0.0,
+        },
+        20.0,
+    );
     assert_eq!(m.timers.len(), 1, "off removes only its own");
 
-    m.apply(1, "Cap", &Notice::Caption { id: "Cap1".into(), showtime: 4.0, team: 0 }, 5.0);
-    m.apply(1, "Cap", &Notice::Caption { id: "Cap2".into(), showtime: 4.0, team: 2 }, 6.0);
+    m.apply(
+        1,
+        "Cap",
+        &Notice::Caption {
+            id: "Cap1".into(),
+            showtime: 4.0,
+            team: 0,
+        },
+        5.0,
+    );
+    m.apply(
+        1,
+        "Cap",
+        &Notice::Caption {
+            id: "Cap2".into(),
+            showtime: 4.0,
+            team: 2,
+        },
+        6.0,
+    );
     let c = m.caption.clone().unwrap();
-    assert_eq!((c.text.as_str(), c.until, c.team), ("Cap2", 10.0, 2), "a new caption replaces");
-    m.apply(2, "Msg", &Notice::Message { id: "Msg1".into(), showtime: 3.0, team: 0 }, 6.0);
+    assert_eq!(
+        (c.text.as_str(), c.until, c.team),
+        ("Cap2", 10.0, 2),
+        "a new caption replaces"
+    );
+    m.apply(
+        2,
+        "Msg",
+        &Notice::Message {
+            id: "Msg1".into(),
+            showtime: 3.0,
+            team: 0,
+        },
+        6.0,
+    );
     m.expire(9.5);
     assert!(m.caption.is_some() && m.message.is_none(), "the message ran out first");
     m.apply(1, "Cap", &Notice::HideCaption, 9.6);
     assert!(m.caption.is_none());
 
-    m.apply(3, "Mis", &Notice::Objective(objective("Find", 0, ObjectiveState::Normal, None)), 1.0);
-    m.apply(3, "Mis", &Notice::Objective(objective("Kill", 1, ObjectiveState::InProgress, Some((0, 5)))), 1.0);
-    m.apply(3, "Mis", &Notice::Objective(objective("Kill", 1, ObjectiveState::InProgress, Some((2, 5)))), 2.0);
-    m.apply(3, "Mis", &Notice::Objective(objective("Find", 0, ObjectiveState::Success, None)), 3.0);
+    m.apply(
+        3,
+        "Mis",
+        &Notice::Objective(objective("Find", 0, ObjectiveState::Normal, None)),
+        1.0,
+    );
+    m.apply(
+        3,
+        "Mis",
+        &Notice::Objective(objective("Kill", 1, ObjectiveState::InProgress, Some((0, 5)))),
+        1.0,
+    );
+    m.apply(
+        3,
+        "Mis",
+        &Notice::Objective(objective("Kill", 1, ObjectiveState::InProgress, Some((2, 5)))),
+        2.0,
+    );
+    m.apply(
+        3,
+        "Mis",
+        &Notice::Objective(objective("Find", 0, ObjectiveState::Success, None)),
+        3.0,
+    );
     assert_eq!(m.objectives.len(), 2, "changed in place by id");
     assert_eq!(m.objectives[0].state, ObjectiveState::Success);
     assert_eq!(m.objectives[1].count, Some((2, 5)));
@@ -78,9 +156,15 @@ fn mission_world() -> lithtech_formats::world::World {
     let mut w = crate::world::small_world();
     let prop = crate::world::prop;
     let mut push = |class: &str, name: &str, extra: Vec<(&str, Value)>| {
-        let mut properties = vec![prop("Name", Value::String(name.into())), prop("Pos", Value::Vector([0.0, 50.0, 200.0]))];
+        let mut properties = vec![
+            prop("Name", Value::String(name.into())),
+            prop("Pos", Value::Vector([0.0, 50.0, 200.0])),
+        ];
         properties.extend(extra.into_iter().map(|(n, v)| prop(n, v)));
-        w.objects.push(Object { class: class.into(), properties });
+        w.objects.push(Object {
+            class: class.into(),
+            properties,
+        });
     };
     push("TimerTrigger", "Clock", vec![("TimeAmount", real(300.0))]);
     push("CaptionTrigger", "Cap", vec![("Showtime", real(600.0))]);
@@ -130,8 +214,14 @@ fn a_late_joiner_gets_the_running_timer_and_objectives() {
 
     let same = |theirs: &CaMission, server: &CaMission| {
         assert_eq!(theirs.objectives, server.objectives);
-        assert_eq!(theirs.caption.as_ref().map(|c| &c.text), server.caption.as_ref().map(|c| &c.text));
-        assert_eq!(theirs.message.as_ref().map(|c| &c.text), server.message.as_ref().map(|c| &c.text));
+        assert_eq!(
+            theirs.caption.as_ref().map(|c| &c.text),
+            server.caption.as_ref().map(|c| &c.text)
+        );
+        assert_eq!(
+            theirs.message.as_ref().map(|c| &c.text),
+            server.message.as_ref().map(|c| &c.text)
+        );
         assert_eq!(theirs.timers.len(), 1);
     };
     same(&state(&mut sim.clients[0].app), &server);
@@ -143,7 +233,11 @@ fn a_late_joiner_gets_the_running_timer_and_objectives() {
     let late = state(&mut sim.clients[1].app);
     same(&late, &server);
     assert_eq!(late.objectives[0].state, ObjectiveState::Success);
-    assert_eq!(late.objectives[1].count, Some((3, 0)), "the maximum is the mission data's, none read yet");
+    assert_eq!(
+        late.objectives[1].count,
+        Some((3, 0)),
+        "the maximum is the mission data's, none read yet"
+    );
     // The timer's end on the joiner's clock is the server's, to the interpolation delay and a join's settling (the round timer's mapping, `ServerTime`).
     let left = |m: &CaMission, app: &App| m.timers[0].ends - app.world().resource::<chimera_core::core::SimClock>().now;
     let (a, b) = (left(&server, &sim.server.app), left(&late, &sim.clients[1].app));

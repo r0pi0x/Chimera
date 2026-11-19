@@ -100,7 +100,11 @@ fn team(sim: &mut NetSim, i: usize) -> u8 {
 #[test]
 fn chat_and_radio_over_the_wire() {
     let mut sim = joined();
-    assert_ne!(team(&mut sim, 0), team(&mut sim, 1), "the two clients are on different teams");
+    assert_ne!(
+        team(&mut sim, 0),
+        team(&mut sim, 1),
+        "the two clients are on different teams"
+    );
     // All chat.
     say(&mut sim, 0, Tab::All, "hi");
     let (a, b) = (lines(&sim, 0), lines(&sim, 1));
@@ -122,7 +126,10 @@ fn chat_and_radio_over_the_wire() {
     sim.ticks(30);
     let a = lines(&sim, 0);
     let last = &a.last().unwrap().0;
-    assert!(last.starts_with("[Report] ") && last.ends_with(" : Enemy spotted!"), "{a:?}");
+    assert!(
+        last.starts_with("[Report] ") && last.ends_with(" : Enemy spotted!"),
+        "{a:?}"
+    );
     assert_eq!(a.last().unwrap().1, colours::RADIO);
     assert_eq!(lines(&sim, 1).len(), before1, "the enemy hears no team call");
     // An answer goes to everyone (after the 2000 ms radio cooldown).
@@ -145,5 +152,9 @@ fn chat_and_radio_over_the_wire() {
         sim.ticks(2);
     }
     sim.ticks(30);
-    assert_eq!(lines(&sim, 1).len() - before, 9, "the tenth identical line is dropped by the server");
+    assert_eq!(
+        lines(&sim, 1).len() - before,
+        9,
+        "the tenth identical line is dropped by the server"
+    );
 }

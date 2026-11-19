@@ -49,7 +49,11 @@ fn the_game_registers_itself() {
     let world = sim.app.world();
     assert_eq!(world.resource::<Games>().default_game().map(|g| g.id), Some(game::GAME));
     assert_eq!(world.resource::<Loadout>().movement, movement::ID);
-    assert_eq!(rule_module::pick(world), Some(rules::NO_MODE), "the harness plays no mode");
+    assert_eq!(
+        rule_module::pick(world),
+        Some(rules::NO_MODE),
+        "the harness plays no mode"
+    );
 }
 
 #[test]
@@ -100,7 +104,10 @@ fn the_rifle_fires_and_hurts_a_target() {
     sim.intent(shooter).fire = false;
     sim.ticks(2);
     let fired = full - clip(&sim, shooter);
-    assert!(fired >= 2, "an automatic rifle fires more than once in 0.5 s: {fired} rounds");
+    assert!(
+        fired >= 2,
+        "an automatic rifle fires more than once in 0.5 s: {fired} rounds"
+    );
     assert!(health(&sim, target) < before, "the target took no damage");
 }
 

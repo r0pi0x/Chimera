@@ -43,12 +43,21 @@ impl std::fmt::Write for HashWriter {
 fn summary(map: &MapData) -> (usize, usize, usize, usize, u64) {
     let mut h = HashWriter(DefaultHasher::new());
     write!(h, "{:?}{:?}", map.meshes, map.textures).unwrap();
-    (map.triangle_count(), map.meshes.len(), map.textures.len(), map.kit.characters.len(), h.0.finish())
+    (
+        map.triangle_count(),
+        map.meshes.len(),
+        map.textures.len(),
+        map.kit.characters.len(),
+        h.0.finish(),
+    )
 }
 
 #[test]
 fn warehouse_loads_from_the_store_alone() {
-    let Some(found) = LocalConfig::load().ok().and_then(|c| install::resolve(&c, GAME, None).install) else {
+    let Some(found) = LocalConfig::load()
+        .ok()
+        .and_then(|c| install::resolve(&c, GAME, None).install)
+    else {
         eprintln!("skipping: no Combat Arms install configured");
         return;
     };
@@ -98,7 +107,10 @@ fn warehouse_loads_from_the_store_alone() {
 
 #[test]
 fn warehouse_loads_from_the_asset_service_with_no_install() {
-    let Some(found) = LocalConfig::load().ok().and_then(|c| install::resolve(&c, GAME, None).install) else {
+    let Some(found) = LocalConfig::load()
+        .ok()
+        .and_then(|c| install::resolve(&c, GAME, None).install)
+    else {
         eprintln!("skipping: no Combat Arms install configured");
         return;
     };
@@ -122,7 +134,12 @@ fn warehouse_loads_from_the_asset_service_with_no_install() {
     let mut users = Accounts::default();
     let (_, token) = users.add("heavy_test", None, "").unwrap();
     users.save(&Accounts::path(&server_store.root)).unwrap();
-    let running = server::serve(server::Service::new(server_store).unwrap().with_latency(latency()), "127.0.0.1:0", 4).unwrap();
+    let running = server::serve(
+        server::Service::new(server_store).unwrap().with_latency(latency()),
+        "127.0.0.1:0",
+        4,
+    )
+    .unwrap();
 
     // The client: no install, no keys, an empty store, the service.
     let client = Store::new(dir.join("client"));
@@ -131,7 +148,12 @@ fn warehouse_loads_from_the_asset_service_with_no_install() {
         use_install: false,
         service_first: false,
         builds: Default::default(),
-        remote: Some(RemoteConfig { url: running.url(), token, key: None, fingerprint: None }),
+        remote: Some(RemoteConfig {
+            url: running.url(),
+            token,
+            key: None,
+            fingerprint: None,
+        }),
         lock: None,
     };
     let started = Instant::now();
@@ -147,7 +169,10 @@ fn warehouse_loads_from_the_asset_service_with_no_install() {
     drop(running);
     let log = std::fs::read_to_string(dir.join("server/server/access.log")).unwrap_or_default();
     let (singles, batches) = (log.matches(" /r/").count(), log.matches(" /batch ").count());
-    eprintln!("  requests: {singles} single records, {batches} batches; latency {:?}", latency());
+    eprintln!(
+        "  requests: {singles} single records, {batches} batches; latency {:?}",
+        latency()
+    );
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(fetched, from_install, "the same map from fetched files");
     assert!(records > 100 && records <= report.records, "{records} records fetched");
@@ -157,6 +182,9 @@ fn warehouse_loads_from_the_asset_service_with_no_install() {
 /// long, to measure on-demand fetching as over a slower link (Tailscale, a
 /// VPS); with `CHIMERA_ASSET_BATCH=0` too, one request per record.
 fn latency() -> std::time::Duration {
-    let ms = std::env::var("CHIMERA_ASSET_LATENCY_MS").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+    let ms = std::env::var("CHIMERA_ASSET_LATENCY_MS")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(0);
     std::time::Duration::from_millis(ms)
 }

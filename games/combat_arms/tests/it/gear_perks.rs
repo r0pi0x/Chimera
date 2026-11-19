@@ -13,7 +13,7 @@
 //! gauge over seconds.
 
 use bevy::prelude::*;
-use chimera_core::core::{Dead, Died, Damage, DamageKind, Health, Hitgroup, Team};
+use chimera_core::core::{Damage, DamageKind, Dead, Died, Health, Hitgroup, Team};
 use chimera_sim::weapon::{self, Inventory, Magazine, data::WeaponDataAppExt};
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
 use combat_arms::{
@@ -30,8 +30,8 @@ use combat_arms::{
         perks::{self, CaPerkBox, CaPerkEffects, CaPerkRng, CaPerkState, CaPerks, CaSupplyBox},
         rules::escort::CaVip,
         weapons::{
-            self as ca, ArmourHit, BULLET, BURN, CaSpread, FLASH, FireMode, Location, MELEE, POISON,
-            armour_and_zone, gear_torso,
+            self as ca, ArmourHit, BULLET, BURN, CaSpread, FLASH, FireMode, Location, MELEE, POISON, armour_and_zone,
+            gear_torso,
         },
     },
     harness::{CaSim, CaSimWith},
@@ -75,7 +75,10 @@ struct Worn {
 fn armour_of(sim: &Sim, p: Entity) -> Worn {
     let w = sim.app.world();
     let armor = *w.get::<chimera_sim::weapon::Armor>(p).expect("armour");
-    let pieces = w.get::<chimera_sim::weapon::ArmorPieces>(p).cloned().unwrap_or_default();
+    let pieces = w
+        .get::<chimera_sim::weapon::ArmorPieces>(p)
+        .cloned()
+        .unwrap_or_default();
     Worn {
         armor,
         points: combat_arms::game::weapons::points(&armor),
@@ -100,7 +103,11 @@ fn hit(sim: &Sim, p: Entity, d: f32, ty: i32, loc: Location, zone: f32) -> (f32,
 }
 
 fn set_armour(sim: &mut Sim, p: Entity, points: f32) {
-    sim.app.world_mut().get_mut::<chimera_sim::weapon::Armor>(p).expect("armour").amount = points / 100.0;
+    sim.app
+        .world_mut()
+        .get_mut::<chimera_sim::weapon::Armor>(p)
+        .expect("armour")
+        .amount = points / 100.0;
 }
 
 #[track_caller]
@@ -116,7 +123,11 @@ fn near(got: f32, want: f32, what: &str) {
 fn runner(look: Selection, loadout: CaLoadout, held: f32) -> T {
     let mut t = T::standing();
     // The tests' bare figure out; the gear's in.
-    t.sim.app.world_mut().entity_mut(t.p).remove::<(CaCharacter, gear::CaGearKey)>();
+    t.sim
+        .app
+        .world_mut()
+        .entity_mut(t.p)
+        .remove::<(CaCharacter, gear::CaGearKey)>();
     t.insert((
         look,
         loadout,
@@ -126,7 +137,13 @@ fn runner(look: Selection, loadout: CaLoadout, held: f32) -> T {
         },
     ));
     t.ticks(5);
-    let cap = t.sim.app.world().get::<CaCharacter>(t.p).expect("character").stamina_max();
+    let cap = t
+        .sim
+        .app
+        .world()
+        .get::<CaCharacter>(t.p)
+        .expect("character")
+        .stamina_max();
     t.mv_mut().stamina = cap;
     t
 }
@@ -397,7 +414,11 @@ fn case_22_anti_flash() {
 fn case_23_partial_flash_protection() {
     for (goggle, want) in [(2, 17.5), (44, 7.5)] {
         let (sim, p) = wearer(Selection { goggle, ..look(0) }, default());
-        near(25.0 * (1.0 - flash_protection(&sim, p)), want, &format!("goggle {goggle}"));
+        near(
+            25.0 * (1.0 - flash_protection(&sim, p)),
+            want,
+            &format!("goggle {goggle}"),
+        );
     }
 }
 
@@ -410,10 +431,10 @@ fn case_24_rebuild_repairs() {
     set_armour(&mut sim, p, 60.0);
     sim.ticks(3);
     near(armour_of(&sim, p).points, 60.0, "left alone while nothing changes");
-    sim.app.world_mut().entity_mut(p).insert(Selection {
-        goggle: 39,
-        ..look(1)
-    });
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(Selection { goggle: 39, ..look(1) });
     sim.ticks(5);
     near(armour_of(&sim, p).points, 100.0, "repaired and capped");
 }
@@ -540,7 +561,11 @@ fn case_28_set_magazines() {
 #[test]
 fn case_29_set_speed() {
     let mut t = T::standing();
-    t.sim.app.world_mut().entity_mut(t.p).remove::<(CaCharacter, gear::CaGearKey)>();
+    t.sim
+        .app
+        .world_mut()
+        .entity_mut(t.p)
+        .remove::<(CaCharacter, gear::CaGearKey)>();
     t.sim.app.insert_resource(with_set(&[9003], vec![effect(6, 0.06)], &[]));
     t.insert((
         look(0),
@@ -628,12 +653,20 @@ fn perk_sim(loadout: CaLoadout) -> (Sim, Entity, Entity) {
 
 /// An enemy dummy: an entity with a team and a place, to be killed.
 fn dummy(sim: &mut Sim, team: u8, at: Vec3) -> Entity {
-    sim.app.world_mut().spawn((Team(team), Transform::from_translation(at))).id()
+    sim.app
+        .world_mut()
+        .spawn((Team(team), Transform::from_translation(at)))
+        .id()
 }
 
 /// `killer` kills `victim` with its M4A1.
 fn kill(sim: &mut Sim, killer: Entity, victim: Entity) {
-    let at = sim.app.world().get::<Transform>(victim).map(|t| t.translation).unwrap_or_default();
+    let at = sim
+        .app
+        .world()
+        .get::<Transform>(victim)
+        .map(|t| t.translation)
+        .unwrap_or_default();
     let damage = Damage {
         target: victim,
         attacker: Some(killer),
@@ -726,7 +759,11 @@ fn case_34_resourceful_nothing() {
 /// sprint flag at `at` s with forward and sprint held from `hold` s.
 fn victory_lap(kills: &[f64], hold: f64, at: f64) -> (f32, f32, bool) {
     let mut t = T::standing();
-    t.sim.app.world_mut().entity_mut(t.p).remove::<(CaCharacter, gear::CaGearKey)>();
+    t.sim
+        .app
+        .world_mut()
+        .entity_mut(t.p)
+        .remove::<(CaCharacter, gear::CaGearKey)>();
     t.insert((
         look(0),
         perks_of(&[16004]),
@@ -874,9 +911,13 @@ fn steady_scene(item: i32) -> (Sim, Entity) {
 fn case_39_steady_hand() {
     for (item, want) in [(16005, 80.0), (16021, 84.0)] {
         let (mut sim, p) = steady_scene(item);
-        let zoomed = sim.app.world().get::<Inventory>(p).unwrap().active.and_then(|w| {
-            sim.app.world().get::<ca::zoom::CaZoom>(w).map(|z| z.zoomed())
-        });
+        let zoomed = sim
+            .app
+            .world()
+            .get::<Inventory>(p)
+            .unwrap()
+            .active
+            .and_then(|w| sim.app.world().get::<ca::zoom::CaZoom>(w).map(|z| z.zoomed()));
         assert_eq!(zoomed, Some(true), "zoomed in");
         sim.app.world_mut().get_mut::<CaMovement>(p).unwrap().stamina = 100.0;
         sim.seconds(2.0);
@@ -891,7 +932,11 @@ fn case_39_steady_hand() {
 #[test]
 fn case_40_awareness() {
     let mut t = T::standing();
-    t.sim.app.world_mut().entity_mut(t.p).remove::<(CaCharacter, gear::CaGearKey)>();
+    t.sim
+        .app
+        .world_mut()
+        .entity_mut(t.p)
+        .remove::<(CaCharacter, gear::CaGearKey)>();
     t.insert((look(0), perks_of(&[16002])));
     t.ticks(5);
     t.mv_mut().stamina = 100.0;
@@ -902,7 +947,10 @@ fn case_40_awareness() {
     assert!(t.sim.app.world().get::<CaPerkEffects>(t.p).unwrap().awareness);
     t.forward(true);
     t.ticks(2);
-    assert!(!t.sim.app.world().get::<CaPerkEffects>(t.p).unwrap().awareness, "off at the key");
+    assert!(
+        !t.sim.app.world().get::<CaPerkEffects>(t.p).unwrap().awareness,
+        "off at the key"
+    );
     let at_key = t.mv().stamina;
     close(at_key, 80.0, 1.0, "gauge when the key is pressed");
     t.forward(false);
@@ -943,7 +991,11 @@ fn case_41_war_cry_range() {
 #[test]
 fn case_42_war_cry_stamina() {
     let mut t = T::standing();
-    t.sim.app.world_mut().entity_mut(t.p).remove::<(CaCharacter, gear::CaGearKey)>();
+    t.sim
+        .app
+        .world_mut()
+        .entity_mut(t.p)
+        .remove::<(CaCharacter, gear::CaGearKey)>();
     t.insert((look(0), perks_of(&[16012])));
     t.ticks(5);
     perks::use_perk(t.sim.app.world_mut(), t.p, 1).expect("starts");
@@ -973,7 +1025,11 @@ fn case_43_eagle_eye() {
     let (min, max) = (cut.params.cone.min as f64, cut.params.cone.max as f64);
     let (min, max) = (min - (min * 0.1).floor(), max - (max * 0.1).floor());
     assert_eq!(cut.cone(FireMode::Normal), (max * g).trunc() as f32);
-    assert!(cut.cone(FireMode::Normal) < plain, "narrower: {} against {plain}", cut.cone(FireMode::Normal));
+    assert!(
+        cut.cone(FireMode::Normal) < plain,
+        "narrower: {} against {plain}",
+        cut.cone(FireMode::Normal)
+    );
     assert!(min <= max);
     let (pmin, pmax) = (cut.params.cone.min, cut.params.cone.max);
     assert_eq!((pmin, pmax), (3, 100), "the M4A1's cone");
@@ -985,7 +1041,11 @@ fn case_43_eagle_eye() {
 #[test]
 fn case_44_inner_focus() {
     let mut t = T::standing();
-    t.sim.app.world_mut().entity_mut(t.p).remove::<(CaCharacter, gear::CaGearKey)>();
+    t.sim
+        .app
+        .world_mut()
+        .entity_mut(t.p)
+        .remove::<(CaCharacter, gear::CaGearKey)>();
     t.insert((look(0), perks_of(&[16018])));
     t.ticks(5);
     set_health(&mut t.sim, t.p, 40.0);
@@ -1014,7 +1074,11 @@ fn case_44_inner_focus() {
 #[test]
 fn case_45_inner_focus_full_hp() {
     let mut t = T::standing();
-    t.sim.app.world_mut().entity_mut(t.p).remove::<(CaCharacter, gear::CaGearKey)>();
+    t.sim
+        .app
+        .world_mut()
+        .entity_mut(t.p)
+        .remove::<(CaCharacter, gear::CaGearKey)>();
     t.insert((look(0), perks_of(&[16018])));
     t.ticks(5);
     t.mv_mut().stamina = 70.0;
@@ -1064,7 +1128,14 @@ fn fast_respawn_counts_are_checked() {
     };
     let v = gear::validate(&data, &l);
     assert_eq!((v.fast_left, v.fast_max, v.premium), (3, 3, true));
-    let v = gear::validate(&data, &CaLoadout { fast_max: 1_000_000, fast_left: 7, ..default() });
+    let v = gear::validate(
+        &data,
+        &CaLoadout {
+            fast_max: 1_000_000,
+            fast_left: 7,
+            ..default()
+        },
+    );
     assert_eq!(v.fast_max, gear::FAST_CAP);
 }
 
@@ -1122,7 +1193,11 @@ fn case_51_warlord_cancelled() {
 fn stand_on(sim: &mut Sim, p: Entity, b: Entity) {
     let at = sim.app.world().get::<Transform>(b).unwrap().translation;
     sim.app.world_mut().get_mut::<Transform>(p).unwrap().translation = at + Vec3::Y * 0.91;
-    sim.app.world_mut().get_mut::<chimera_core::core::Velocity>(p).unwrap().0 = Vec3::ZERO;
+    sim.app
+        .world_mut()
+        .get_mut::<chimera_core::core::Velocity>(p)
+        .unwrap()
+        .0 = Vec3::ZERO;
     // Charging needs the use key held (Corrections 2026-10-22, 5).
     sim.intent(p).use_key = true;
 }
@@ -1143,7 +1218,10 @@ fn supply_point(sim: &mut Sim) -> Entity {
     perks::use_perk(sim.app.world_mut(), p, 1).expect("starts");
     sim.seconds(2.7);
     let w = sim.app.world_mut();
-    w.query_filtered::<Entity, With<CaSupplyBox>>().iter(w).next().expect("a supply point")
+    w.query_filtered::<Entity, With<CaSupplyBox>>()
+        .iter(w)
+        .next()
+        .expect("a supply point")
 }
 
 /// 52. Three perk slots: War Cry (2) and Resourceful (1) fit, Relentless
@@ -1180,7 +1258,11 @@ fn case_52_perk_slots() {
 #[test]
 fn case_53_vip() {
     let mut t = T::standing();
-    t.sim.app.world_mut().entity_mut(t.p).remove::<(CaCharacter, gear::CaGearKey)>();
+    t.sim
+        .app
+        .world_mut()
+        .entity_mut(t.p)
+        .remove::<(CaCharacter, gear::CaGearKey)>();
     t.insert((
         Selection {
             head: 2,
@@ -1203,7 +1285,10 @@ fn case_53_vip() {
     t.mv_mut().stamina = 200.0;
     t.ticks(5);
     close(t.mv().stamina, 100.0, 1e-3, "the VIP's capacity");
-    assert!(t.sim.app.world().get::<CaPerks>(t.p).unwrap().list.is_empty(), "perks disabled");
+    assert!(
+        t.sim.app.world().get::<CaPerks>(t.p).unwrap().list.is_empty(),
+        "perks disabled"
+    );
 }
 
 /// 54. A gear item that expires during the match keeps working until the
@@ -1211,10 +1296,23 @@ fn case_53_vip() {
 /// the match takes gear back.
 #[test]
 fn case_54_gear_lasts() {
-    let (mut sim, p) = wearer(Selection { head: 2, goggle: 39, ..look(2) }, perks_of(&[16001]));
-    let before = (armour_of(&sim, p).gear, sim.app.world().get::<CaPerks>(p).unwrap().clone());
+    let (mut sim, p) = wearer(
+        Selection {
+            head: 2,
+            goggle: 39,
+            ..look(2)
+        },
+        perks_of(&[16001]),
+    );
+    let before = (
+        armour_of(&sim, p).gear,
+        sim.app.world().get::<CaPerks>(p).unwrap().clone(),
+    );
     sim.seconds(20.0);
-    let after = (armour_of(&sim, p).gear, sim.app.world().get::<CaPerks>(p).unwrap().clone());
+    let after = (
+        armour_of(&sim, p).gear,
+        sim.app.world().get::<CaPerks>(p).unwrap().clone(),
+    );
     assert_eq!(before, after);
     assert_eq!(after.1.list.len(), 1);
 }
@@ -1225,7 +1323,10 @@ fn case_54_gear_lasts() {
 fn case_55_offline() {
     let (sim, p) = wearer(Selection::default(), default());
     assert!(sim.app.world().get::<CaPerks>(p).unwrap().list.is_empty());
-    assert_eq!(*sim.app.world().get::<CaLoadout>(p).unwrap_or(&CaLoadout::default()), CaLoadout::default());
+    assert_eq!(
+        *sim.app.world().get::<CaLoadout>(p).unwrap_or(&CaLoadout::default()),
+        CaLoadout::default()
+    );
     let (lost, ap) = hit(&sim, p, 35.0, BULLET, Location::Torso, 1.0);
     near(lost, 29.75, "HP lost");
     near(ap, 94.75, "armour");
@@ -1238,8 +1339,18 @@ fn case_55_offline() {
     let reference = &movement_data().character;
     assert_eq!(c.stamina_max(), reference.stamina_max());
     let sum = |c: &CaCharacter, f: fn(&movement::Gear) -> f32| c.gear.iter().map(f).sum::<f32>();
-    close(sum(c, |g| g.move_penalty), sum(reference, |g| g.move_penalty), 1e-6, "penalty");
-    close(sum(c, |g| g.dash_speed), sum(reference, |g| g.dash_speed), 1e-6, "sprint bonus");
+    close(
+        sum(c, |g| g.move_penalty),
+        sum(reference, |g| g.move_penalty),
+        1e-6,
+        "penalty",
+    );
+    close(
+        sum(c, |g| g.dash_speed),
+        sum(reference, |g| g.dash_speed),
+        1e-6,
+        "sprint bonus",
+    );
 }
 
 /// 56. A bot with the template model Heavy (2): its gear penalty is 0.16
@@ -1247,13 +1358,20 @@ fn case_55_offline() {
 #[test]
 fn case_56_bot_gear() {
     let mut t = T::standing();
-    t.sim.app.world_mut().entity_mut(t.p).remove::<(CaCharacter, gear::CaGearKey)>();
+    t.sim
+        .app
+        .world_mut()
+        .entity_mut(t.p)
+        .remove::<(CaCharacter, gear::CaGearKey)>();
     t.insert((chimera_core::core::Bot, look(2), HeldMovePenalty::default()));
     t.ticks(5);
     let c = t.sim.app.world().get::<CaCharacter>(t.p).unwrap();
     close(c.gear.iter().map(|g| g.move_penalty).sum(), 0.16, 1e-6, "p_gear");
     close(limit(&mut t, |_| {}), 285.0 * 0.84, 2e-3, "run");
-    assert!(t.sim.app.world().get::<CaPerks>(t.p).unwrap().list.is_empty(), "bots have no perks");
+    assert!(
+        t.sim.app.world().get::<CaPerks>(t.p).unwrap().list.is_empty(),
+        "bots have no perks"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1326,14 +1444,39 @@ fn net_loadout_reaches_the_server() {
     assert!(q.iter(other).any(|(_, l)| l.perks == [16012, 16001]));
     // The client asks for War Cry (position 1): the server starts it and
     // the effect reaches the client.
-    sim.clients[0].app.world_mut().write_message(perks::CaPerkRequest { slot: 1 });
+    sim.clients[0]
+        .app
+        .world_mut()
+        .write_message(perks::CaPerkRequest { slot: 1 });
     sim.ticks(40);
-    assert!(sim.server.app.world().get::<CaPerkEffects>(a).unwrap().free_stamina, "the server's");
+    assert!(
+        sim.server.app.world().get::<CaPerkEffects>(a).unwrap().free_stamina,
+        "the server's"
+    );
     let me = sim.local_player(0).unwrap();
-    assert!(sim.clients[0].app.world().get::<CaPerkEffects>(me).unwrap().free_stamina, "the client's");
+    assert!(
+        sim.clients[0]
+            .app
+            .world()
+            .get::<CaPerkEffects>(me)
+            .unwrap()
+            .free_stamina,
+        "the client's"
+    );
     // And armour: the Heavy vest's piece reached the client.
-    let seen = sim.clients[0].app.world().get::<chimera_sim::weapon::ArmorPieces>(me).unwrap();
-    assert_eq!(seen, sim.server.app.world().get::<chimera_sim::weapon::ArmorPieces>(a).unwrap());
+    let seen = sim.clients[0]
+        .app
+        .world()
+        .get::<chimera_sim::weapon::ArmorPieces>(me)
+        .unwrap();
+    assert_eq!(
+        seen,
+        sim.server
+            .app
+            .world()
+            .get::<chimera_sim::weapon::ArmorPieces>(a)
+            .unwrap()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1346,7 +1489,12 @@ fn flash_time(goggle: i32) -> Option<f32> {
     let thrower = sim.spawn_character(Vec3::new(0.0, 1.0, 60.0), movement::ID);
     sim.app.world_mut().entity_mut(thrower).insert(Team(1));
     sim.seconds(0.5);
-    let w = weapon::spawn_weapon(sim.app.world_mut(), combat_arms::game::grenades::XM84, Entity::PLACEHOLDER).unwrap();
+    let w = weapon::spawn_weapon(
+        sim.app.world_mut(),
+        combat_arms::game::grenades::XM84,
+        Entity::PLACEHOLDER,
+    )
+    .unwrap();
     let at = Vec3::new(0.0, 1.0, -200.0 * U);
     let g = combat_arms::game::grenades::spawn_grenade(sim.app.world_mut(), w, Some(thrower), at, Vec3::ZERO).unwrap();
     sim.app.world_mut().get_mut::<CaGrenade>(g).unwrap().params.fuse = 0.0;
@@ -1446,15 +1594,23 @@ fn the_installs_records_replace_ours() {
         r#"[Model0] Name="N" GearId=0 MaxArmor=80 MaxHitPoints=120 MovePenalty=0.2 DashSpeed=0.5 MaxStamina=0.1
         [Hair0] Name="H" GearId=-1 MovePenalty=0.01"#,
     );
-    let attachments = doc(r#"[Goggle0] Name="G" GearId=0 MovePenalty=-0.1 Maxstamina=0.2 [Backpack0] Name="B" MovePenalty=0.05"#);
+    let attachments =
+        doc(r#"[Goggle0] Name="G" GearId=0 MovePenalty=-0.1 Maxstamina=0.2 [Backpack0] Name="B" MovePenalty=0.05"#);
     let mods = doc(r#"[Mod0] Name="a" Kinds=0 [Mod1] Name="m" Kinds=7 GearID=0 MovePenalty=-0.01"#);
-    let perks = doc(r#"[PerkSkill_0] Type=10 ItemNo_0=16010 RespawnTime=4 [PerkSkill_1] Type=3 ItemNo_0=16003 ItemNo_1=16020 FootSoundVolume_0=0.5 FootSoundVolume_1=0.25 DashSoundVolume=0.9"#);
-    let sets = doc(
-        r#"[Effect0] EffectType=4 [Effect1] EffectType=6
-        [SetItem0] ItemNo0=5 ItemNo1=6 ItemCount0=1 ItemCount0_Effect0_ID=0 ItemCount0_Effect0_Value=0.2
-        ItemCount1=2 ItemCount1_Effect0_ID=1 ItemCount1_Effect0_Value=0.05"#,
+    let perks = doc(
+        r#"[PerkSkill_0] Type=10 ItemNo_0=16010 RespawnTime=4 [PerkSkill_1] Type=3 ItemNo_0=16003 ItemNo_1=16020 FootSoundVolume_0=0.5 FootSoundVolume_1=0.25 DashSoundVolume=0.9"#,
     );
-    let install = GearInstall::read(Some(&weapons), Some(&models), Some(&attachments), Some(&mods), Some(&perks), Some(&sets));
+    let sets = doc(r#"[Effect0] EffectType=4 [Effect1] EffectType=6
+        [SetItem0] ItemNo0=5 ItemNo1=6 ItemCount0=1 ItemCount0_Effect0_ID=0 ItemCount0_Effect0_Value=0.2
+        ItemCount1=2 ItemCount1_Effect0_ID=1 ItemCount1_Effect0_Value=0.05"#);
+    let install = GearInstall::read(
+        Some(&weapons),
+        Some(&models),
+        Some(&attachments),
+        Some(&mods),
+        Some(&perks),
+        Some(&sets),
+    );
     let data = GearData::built_in().with_install(&install);
     // The piece: fractions clamped, the first entry of a type, consumable.
     let piece = &data.pieces[&0];
@@ -1465,10 +1621,20 @@ fn the_installs_records_replace_ours() {
     assert_eq!(entries[1].head, 1.0, "clamped to 1");
     // The vest, the head piece, the goggle and the backpack.
     let v = &data.vests[&0];
-    assert_eq!((v.max_armor, v.max_hp, v.move_penalty, v.dash_speed, v.max_stamina), (80.0, 120.0, 0.2, 0.5, 0.1));
+    assert_eq!(
+        (v.max_armor, v.max_hp, v.move_penalty, v.dash_speed, v.max_stamina),
+        (80.0, 120.0, 0.2, 0.5, 0.1)
+    );
     assert_eq!(data.heads[&0].move_penalty, 0.01);
     assert_eq!(data.heads[&0].gear, -1, "a missing GearId is no piece");
-    assert_eq!((data.goggles[&0].gear, data.goggles[&0].move_penalty, data.goggles[&0].max_stamina), (0, -0.1, 0.2));
+    assert_eq!(
+        (
+            data.goggles[&0].gear,
+            data.goggles[&0].move_penalty,
+            data.goggles[&0].max_stamina
+        ),
+        (0, -0.1, 0.2)
+    );
     assert_eq!(data.backpacks[&0].move_penalty, 0.05);
     // The gear mod (Kinds 7: the vest's), and the others skipped.
     assert_eq!(data.mods[&1].gear, 0);
@@ -1476,17 +1642,30 @@ fn the_installs_records_replace_ours() {
     // Perks: the unsuffixed value is both levels', the suffixed ones the
     // level's; ours stay where the install has nothing.
     let relentless = data.perks.iter().find(|p| p.ty == 10).unwrap();
-    assert_eq!((relentless.value("RespawnTime", 0), relentless.value("RespawnTime", 1)), (4.0, 4.0));
+    assert_eq!(
+        (relentless.value("RespawnTime", 0), relentless.value("RespawnTime", 1)),
+        (4.0, 4.0)
+    );
     let specter = data.perks.iter().find(|p| p.ty == 3).unwrap();
-    assert_eq!((specter.value("FootSoundVolume", 0), specter.value("FootSoundVolume", 1)), (0.5, 0.25));
-    assert_eq!((specter.value("DashSoundVolume", 0), specter.value("DashSoundVolume", 1)), (0.9, 0.9));
+    assert_eq!(
+        (specter.value("FootSoundVolume", 0), specter.value("FootSoundVolume", 1)),
+        (0.5, 0.25)
+    );
+    assert_eq!(
+        (specter.value("DashSoundVolume", 0), specter.value("DashSoundVolume", 1)),
+        (0.9, 0.9)
+    );
     // Sets: the tiers and their effects.
     assert_eq!(data.sets.len(), 1);
     assert_eq!(data.sets[0].tier.iter().map(|t| t.count).collect::<Vec<_>>(), [1, 2]);
     let bonus = gear::resolve_sets(&data, &[5]);
     assert_eq!(bonus.protection, [(0.2, vec![])]);
     let bonus = gear::resolve_sets(&data, &[5, 6]);
-    assert_eq!((bonus.speed, bonus.protection.len()), (0.05, 0), "the highest tier alone");
+    assert_eq!(
+        (bonus.speed, bonus.protection.len()),
+        (0.05, 0),
+        "the highest tier alone"
+    );
 }
 
 /// Parting Gift (14): the owner's death leaves a live grenade at the
@@ -1536,7 +1715,10 @@ fn a_respawn_refills_the_pool_and_the_pieces() {
     );
     let worn = armour_of(&sim, p).gear;
     assert_eq!(worn.len(), 4, "vest, helmet, goggle, mod");
-    sim.app.world_mut().entity_mut(p).insert(combat_arms::game::weapons::gear_armour(12.0, &Vec::new()));
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(combat_arms::game::weapons::gear_armour(12.0, &Vec::new()));
     combat_arms::game::rules::spawns::respawn(sim.app.world_mut(), p);
     sim.ticks(2);
     let a = armour_of(&sim, p);
@@ -1555,7 +1737,10 @@ fn the_consoles_settings_are_the_local_players_gear() {
     });
     sim.set_tick_interval(TICK_INTERVAL);
     let p = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
-    sim.app.world_mut().entity_mut(p).insert(chimera_core::core::LocalPlayer);
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(chimera_core::core::LocalPlayer);
     sim.seconds(0.5);
     let before = armour_of(&sim, p);
     sim.app
@@ -1659,7 +1844,12 @@ mod respawn {
             ..Default::default()
         };
         let (mut sim, me, b) = rig("TDM", own);
-        let f = sim.app.world().get::<CaFastRespawn>(me).copied().expect("the allowance");
+        let f = sim
+            .app
+            .world()
+            .get::<CaFastRespawn>(me)
+            .copied()
+            .expect("the allowance");
         assert_eq!((f.left, f.max, f.premium), (2, 3, false));
         kill_now(&mut sim, me, b);
         sim.seconds(1.0);
@@ -1732,7 +1922,10 @@ fn opportunist_loots_a_body() {
     };
     let before = drops(&mut sim);
     // Alive bodies aren't looted.
-    assert!(perks::use_perk(sim.app.world_mut(), p, 1).is_err(), "nobody dead in reach");
+    assert!(
+        perks::use_perk(sim.app.world_mut(), p, 1).is_err(),
+        "nobody dead in reach"
+    );
     let now = sim.app.world().resource::<chimera_core::core::SimClock>().now;
     sim.app.world_mut().entity_mut(body).insert(Dead { since: now });
     perks::use_perk(sim.app.world_mut(), p, 1).expect("starts");
@@ -1752,14 +1945,42 @@ fn quirk_one_needs_more_than_255_pieces() {
     let effects = CaGearEffects::default();
     let ours = GearData::built_in();
     assert!(ours.piece_count > 255);
-    let wrapped = gear::resolve(&ours, &movement_data().character.figure, quirks, &look(0), &CaLoadout::default(), &effects, false);
-    let plain = gear::resolve(&ours, &movement_data().character.figure, CaGearQuirks::default(), &look(0), &CaLoadout::default(), &effects, false);
-    assert_eq!(wrapped.ids, [0, 255, 255], "the vest's piece and the missing face and goggle as 255");
+    let wrapped = gear::resolve(
+        &ours,
+        &movement_data().character.figure,
+        quirks,
+        &look(0),
+        &CaLoadout::default(),
+        &effects,
+        false,
+    );
+    let plain = gear::resolve(
+        &ours,
+        &movement_data().character.figure,
+        CaGearQuirks::default(),
+        &look(0),
+        &CaLoadout::default(),
+        &effects,
+        false,
+    );
+    assert_eq!(
+        wrapped.ids,
+        [0, 255, 255],
+        "the vest's piece and the missing face and goggle as 255"
+    );
     assert_eq!(plain.ids, [0]);
     // An install with 200 pieces: no wrap.
     let mut small = ours.clone();
     small.piece_count = 200;
-    let r = gear::resolve(&small, &movement_data().character.figure, quirks, &look(0), &CaLoadout::default(), &effects, false);
+    let r = gear::resolve(
+        &small,
+        &movement_data().character.figure,
+        quirks,
+        &look(0),
+        &CaLoadout::default(),
+        &effects,
+        false,
+    );
     assert_eq!(r.ids, [0]);
 }
 
@@ -1777,12 +1998,19 @@ fn install_with(records: &[(&str, i32)]) -> combat_arms::game::data::CaData {
         // weapons file"): a record without it has none, so the L96A1's
         // carries the "Sniper Scope" as the install's does (the sight's own
         // record is ours).
-        let scope = if name.eq_ignore_ascii_case("L96A1") { " DefaultScopeAttach=\"Sniper Scope\"" } else { "" };
+        let scope = if name.eq_ignore_ascii_case("L96A1") {
+            " DefaultScopeAttach=\"Sniper Scope\""
+        } else {
+            ""
+        };
         text += &format!("[Weapon{i}] Name=\"{name}\" AmmoName0=\"5.56mm\" Guntype={ty}{scope}\n");
     }
     let doc = lithtech_formats::attributes::Document::parse(text.as_bytes()).unwrap();
     let weapons = WeaponsFile::read(&doc).unwrap();
-    CaData::with_attributes(InstallAttributes { weapons: Some(weapons), ..default() })
+    CaData::with_attributes(InstallAttributes {
+        weapons: Some(weapons),
+        ..default()
+    })
 }
 
 /// 57. A weapon's class is the install's `Guntype` when it has a record
@@ -1793,7 +2021,11 @@ fn case_57_gun_type_reads_the_install_record() {
     let install = install_with(&[("M4A1", 6), ("L96A1", 4), ("Test Rifle", 3)]);
     assert_eq!(perks::gun_type(&install, "combat_arms:m4a1"), Some(6));
     assert_eq!(perks::gun_type(&install, "combat_arms:l96a1"), Some(4));
-    assert_eq!(perks::gun_type(&install, "combat_arms:test_rifle"), Some(3), "a weapon only the install has");
+    assert_eq!(
+        perks::gun_type(&install, "combat_arms:test_rifle"),
+        Some(3),
+        "a weapon only the install has"
+    );
     assert_eq!(perks::gun_type(&install, "combat_arms:m67"), Some(7), "no record: ours");
     assert_eq!(perks::gun_type(&install, "combat_arms:nothing"), None);
     let ours = combat_arms::game::data::CaData::builtin();
@@ -1820,7 +2052,13 @@ fn class_sim(data: combat_arms::game::data::CaData, item: i32, weapon: &'static 
 /// Whether Steady Hand is on with `weapon` zoomed in on `data`.
 fn steady_on(data: combat_arms::game::data::CaData, weapon: &'static str) -> bool {
     let (mut sim, p, _) = class_sim(data, 16005, weapon);
-    let w = sim.app.world().get::<Inventory>(p).unwrap().active.expect("a weapon in hand");
+    let w = sim
+        .app
+        .world()
+        .get::<Inventory>(p)
+        .unwrap()
+        .active
+        .expect("a weapon in hand");
     // The scope comes from the record's default sight, not set by hand.
     let scope = sim.app.world().get::<ca::zoom::CaZoom>(w).and_then(|z| z.scope.clone());
     assert_eq!(scope.map(|s| s.fov), Some(vec![20.0]), "the L96A1's Sniper Scope");
@@ -1828,7 +2066,15 @@ fn steady_on(data: combat_arms::game::data::CaData, weapon: &'static str) -> boo
     sim.ticks(1);
     sim.intent(p).secondary = false;
     sim.seconds(1.0);
-    assert_eq!(sim.app.world().get::<ca::zoom::CaZoom>(w).map(|z| z.zoomed()), Some(true), "zoomed in (builtin only: {})", sim.app.world().resource::<combat_arms::game::data::CaData>().builtin_only());
+    assert_eq!(
+        sim.app.world().get::<ca::zoom::CaZoom>(w).map(|z| z.zoomed()),
+        Some(true),
+        "zoomed in (builtin only: {})",
+        sim.app
+            .world()
+            .resource::<combat_arms::game::data::CaData>()
+            .builtin_only()
+    );
     sim.app.world().get::<CaPerkEffects>(p).unwrap().steady
 }
 
@@ -1836,9 +2082,18 @@ fn steady_on(data: combat_arms::game::data::CaData, weapon: &'static str) -> boo
 /// L96A1 a rifle switches it off, and a sniper record keeps it on.
 #[test]
 fn case_58_steady_hand_follows_the_install_class() {
-    assert!(steady_on(combat_arms::game::data::CaData::builtin(), "combat_arms:l96a1"), "ours");
-    assert!(steady_on(install_with(&[("L96A1", perks::SNIPER)]), "combat_arms:l96a1"));
-    assert!(!steady_on(install_with(&[("L96A1", 4)]), "combat_arms:l96a1"), "a rifle in the install's data");
+    assert!(
+        steady_on(combat_arms::game::data::CaData::builtin(), "combat_arms:l96a1"),
+        "ours"
+    );
+    assert!(steady_on(
+        install_with(&[("L96A1", perks::SNIPER)]),
+        "combat_arms:l96a1"
+    ));
+    assert!(
+        !steady_on(install_with(&[("L96A1", 4)]), "combat_arms:l96a1"),
+        "a rifle in the install's data"
+    );
 }
 
 /// Whether a kill with the M4A1 on `data` (the roll forced to pass, the
@@ -1858,7 +2113,10 @@ fn resourceful_drops(data: combat_arms::game::data::CaData) -> bool {
 /// weapon, by the install's record.
 #[test]
 fn case_59_resourceful_follows_the_install_class() {
-    assert!(resourceful_drops(combat_arms::game::data::CaData::builtin()), "ours: a rifle");
+    assert!(
+        resourceful_drops(combat_arms::game::data::CaData::builtin()),
+        "ours: a rifle"
+    );
     assert!(resourceful_drops(install_with(&[("M4A1", 6)])), "a sniper");
     assert!(resourceful_drops(install_with(&[("M4A1", 7)])), "a thrown weapon");
     assert!(!resourceful_drops(install_with(&[("M4A1", 8)])), "a special weapon");
@@ -1876,7 +2134,11 @@ fn perk_player(sim: &mut Sim) -> Entity {
 /// Put `p` at `at`, standing still.
 fn place(sim: &mut Sim, p: Entity, at: Vec3) {
     sim.app.world_mut().get_mut::<Transform>(p).unwrap().translation = at;
-    sim.app.world_mut().get_mut::<chimera_core::core::Velocity>(p).unwrap().0 = Vec3::ZERO;
+    sim.app
+        .world_mut()
+        .get_mut::<chimera_core::core::Velocity>(p)
+        .unwrap()
+        .0 = Vec3::ZERO;
 }
 
 fn total(sim: &Sim, w: Entity) -> u32 {
@@ -1891,7 +2153,11 @@ fn c2_medikit_heals_and_repairs_to_full() {
     let (mut sim, b) = resourceful_kill(30.0, 60);
     assert_eq!(b[0].kind, perks::BoxKind::Medikit);
     let p = perk_player(&mut sim);
-    sim.app.world_mut().get_mut::<chimera_sim::weapon::Armor>(p).unwrap().amount = 20.0 / 100.0;
+    sim.app
+        .world_mut()
+        .get_mut::<chimera_sim::weapon::Armor>(p)
+        .unwrap()
+        .amount = 20.0 / 100.0;
     place(&mut sim, p, Vec3::new(0.0, 1.0, 0.0));
     sim.ticks(3);
     near(sim.app.world().get::<Health>(p).unwrap().current, 1.0, "health");
@@ -1963,7 +2229,11 @@ fn c4_full_ammo_box_refills_grenades_too() {
     let (mut sim, p, rifle) = perk_sim(perks_of(&[16001]));
     let g = weapon::give(sim.app.world_mut(), p, combat_arms::game::grenades::M67).unwrap();
     sim.seconds(1.5);
-    sim.app.world_mut().get_mut::<chimera_sim::weapon::grenade::Throwable>(g).unwrap().count = 0;
+    sim.app
+        .world_mut()
+        .get_mut::<chimera_sim::weapon::grenade::Throwable>(g)
+        .unwrap()
+        .count = 0;
     sim.seconds(0.5);
     set_ammo(&mut sim, rifle, 30);
     set_health(&mut sim, p, 80.0);
@@ -1974,7 +2244,11 @@ fn c4_full_ammo_box_refills_grenades_too() {
     assert_eq!(boxes(&mut sim)[0].kind, perks::BoxKind::FullAmmo);
     place(&mut sim, p, Vec3::new(0.0, 1.0, 0.0));
     sim.ticks(3);
-    let t = sim.app.world().get::<chimera_sim::weapon::grenade::Throwable>(g).unwrap();
+    let t = sim
+        .app
+        .world()
+        .get::<chimera_sim::weapon::grenade::Throwable>(g)
+        .unwrap();
     assert_eq!(t.count, t.max, "the grenade is back");
     assert!(t.count > 0);
     assert_eq!(total(&sim, rifle), 120);
@@ -2005,7 +2279,11 @@ fn c5_warlord_use_team_and_gun_type() {
     stand_on(&mut sim, p, b);
     sim.intent(p).use_key = false;
     sim.seconds(3.5);
-    assert_eq!(sim.app.world().get::<CaSupplyBox>(b).unwrap().charges, 10, "no key, no charge");
+    assert_eq!(
+        sim.app.world().get::<CaSupplyBox>(b).unwrap().charges,
+        10,
+        "no key, no charge"
+    );
     // Holding use.
     sim.intent(p).use_key = true;
     sim.ticks(2);
@@ -2021,7 +2299,11 @@ fn c5_warlord_use_team_and_gun_type() {
     sim.intent(p).use_key = false;
     sim.seconds(1.5);
     assert_eq!(total(&sim, w), 40, "no refill");
-    assert_eq!(sim.app.world().get::<CaSupplyBox>(b).unwrap().charges, 10, "the charge is back");
+    assert_eq!(
+        sim.app.world().get::<CaSupplyBox>(b).unwrap().charges,
+        10,
+        "the charge is back"
+    );
 
     // Another rifle at 2.0 s still gets the refill.
     let (mut sim, p, w) = warlord_scene();
@@ -2045,8 +2327,10 @@ fn c6_warlord_box_goes_with_the_round() {
     let (mut sim, _p, _w) = warlord_scene();
     let b = supply_point(&mut sim);
     assert!(sim.app.world().get_entity(b).is_ok());
-    sim.app.world_mut().resource_mut::<combat_arms::game::rules::CaMatch>().phase =
-        combat_arms::game::rules::Phase::RoundOver { until: f64::MAX };
+    sim.app
+        .world_mut()
+        .resource_mut::<combat_arms::game::rules::CaMatch>()
+        .phase = combat_arms::game::rules::Phase::RoundOver { until: f64::MAX };
     sim.ticks(3);
     assert!(sim.app.world().get_entity(b).is_err(), "gone in the end-of-round phase");
 }
@@ -2077,9 +2361,15 @@ fn c7_opportunist_reserves_and_removes() {
         .collect();
     assert_eq!(found.len(), 1);
     let (item, at, reserved) = found[0];
-    assert!((at.x - torso.x).abs() <= 20.0 * U + 1e-4 && (at.z - torso.z).abs() <= 20.0 * U + 1e-4, "{at} vs {torso}");
+    assert!(
+        (at.x - torso.x).abs() <= 20.0 * U + 1e-4 && (at.z - torso.z).abs() <= 20.0 * U + 1e-4,
+        "{at} vs {torso}"
+    );
     assert_eq!((reserved.owner, reserved.team), (p, Some(1)));
-    assert!(sim.app.world().get::<perks::CaLooted>(body).is_some(), "the body is looted");
+    assert!(
+        sim.app.world().get::<perks::CaLooted>(body).is_some(),
+        "the body is looted"
+    );
     // Another team's player cannot take it, a teammate only after 10 s.
     let enemy = sim.spawn_character(Vec3::new(0.0, 1.0, 5.0), movement::ID);
     sim.app.world_mut().entity_mut(enemy).insert(Team(2));
@@ -2091,11 +2381,17 @@ fn c7_opportunist_reserves_and_removes() {
     sim.seconds(1.5);
     let w = sim.app.world_mut();
     assert!(!combat_arms::game::inventory::pick_up(w, enemy, item), "not an enemy");
-    assert!(!combat_arms::game::inventory::pick_up(w, mate, item), "not a teammate yet");
+    assert!(
+        !combat_arms::game::inventory::pick_up(w, mate, item),
+        "not a teammate yet"
+    );
     sim.seconds(10.0);
     let w = sim.app.world_mut();
     assert!(!combat_arms::game::inventory::pick_up(w, enemy, item), "never an enemy");
-    assert!(combat_arms::game::inventory::pick_up(w, mate, item), "a teammate after 10 s");
+    assert!(
+        combat_arms::game::inventory::pick_up(w, mate, item),
+        "a teammate after 10 s"
+    );
 
     // An empty body fails and stays.
     let (mut sim, p, _w) = perk_sim(perks_of(&[16009]));
@@ -2107,7 +2403,10 @@ fn c7_opportunist_reserves_and_removes() {
     perks::use_perk(sim.app.world_mut(), p, 1).expect("starts");
     sim.seconds(2.0);
     assert!(sim.app.world().get::<perks::CaLooted>(body).is_none(), "the body stays");
-    assert!(sim.app.world().get::<CaPerkState>(p).unwrap().cooldown.is_empty(), "a failed perk cools nothing");
+    assert!(
+        sim.app.world().get::<CaPerkState>(p).unwrap().cooldown.is_empty(),
+        "a failed perk cools nothing"
+    );
 }
 
 /// 8. Parting Gift is always the perk's own frag on a 2.5 s fuse, whatever
@@ -2126,7 +2425,11 @@ fn c8_parting_gift_is_the_perks_own_frag() {
         let world = sim.app.world_mut();
         let grenades: Vec<CaGrenade> = world.query::<&CaGrenade>().iter(world).cloned().collect();
         assert_eq!(grenades.len(), 1, "{carried:?}");
-        assert_eq!(grenades[0].weapon, combat_arms::game::grenades::M67, "the frag, not {carried:?}");
+        assert_eq!(
+            grenades[0].weapon,
+            combat_arms::game::grenades::M67,
+            "the frag, not {carried:?}"
+        );
         assert_eq!(grenades[0].params.fuse, 2.5);
         assert_eq!(grenades[0].params.area_damage, 20.0);
     }
@@ -2172,6 +2475,10 @@ fn c1_m23f_starts_with_one() {
     let (mut sim, p) = wearer(look(0), default());
     let g = weapon::give(sim.app.world_mut(), p, "combat_arms:m23f").unwrap();
     sim.seconds(1.0);
-    let t = sim.app.world().get::<chimera_sim::weapon::grenade::Throwable>(g).unwrap();
+    let t = sim
+        .app
+        .world()
+        .get::<chimera_sim::weapon::grenade::Throwable>(g)
+        .unwrap();
     assert_eq!((t.count, t.max), (1, 2));
 }

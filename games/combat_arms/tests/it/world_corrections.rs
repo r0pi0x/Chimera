@@ -78,7 +78,11 @@ fn c01_rotating_reversal_uses_the_current_angle() {
     let c45 = open.pos("Door");
     // Which way a negative angle about +Y turns the door's centre.
     let about = |c: Vec3, deg: f32, k: f32| hinge + Quat::from_rotation_y(k * deg.to_radians()) * (c - hinge);
-    let k = if about(c45, -4.5, 1.0).distance(c40) < about(c45, -4.5, -1.0).distance(c40) { 1.0 } else { -1.0 };
+    let k = if about(c45, -4.5, 1.0).distance(c40) < about(c45, -4.5, -1.0).distance(c40) {
+        1.0
+    } else {
+        -1.0
+    };
     // A point near the door's free end (62 u from the hinge) at yaw 36
     // degrees: inside the old test pose (45 - 9), outside the new
     // one (45 - 2.25), whose thickness is 8 u.
@@ -86,7 +90,11 @@ fn c01_rotating_reversal_uses_the_current_angle() {
         let rot = t.w.objects[0].pose.rot;
         let c = t.pos("Door");
         let tip = [32.0, -32.0].map(|x| c + rot * Vec3::new(x, 0.0, 0.0));
-        let far = if tip[0].distance(hinge) > tip[1].distance(hinge) { tip[0] } else { tip[1] };
+        let far = if tip[0].distance(hinge) > tip[1].distance(hinge) {
+            tip[0]
+        } else {
+            tip[1]
+        };
         hinge + (far - hinge) * (62.0 / 64.0)
     };
     let p36 = about(end(&open), -9.0, k);
@@ -95,7 +103,11 @@ fn c01_rotating_reversal_uses_the_current_angle() {
         let p = Who::Character(1);
         t.send_from("Door", "ON", p);
         t.frames(10);
-        t.w.chars = vec![player(1, at - Vec3::new(0.5, 30.0, 0.5), at + Vec3::new(0.5, 30.0, 0.5))];
+        t.w.chars = vec![player(
+            1,
+            at - Vec3::new(0.5, 30.0, 0.5),
+            at + Vec3::new(0.5, 30.0, 0.5),
+        )];
         t.send_from("Door", "OFF", p);
         let want = if reverses { State::PowerOff } else { State::PowerOn };
         assert_eq!(t.state("Door"), want, "a point where the old test (9 degrees) stood");
@@ -106,7 +118,11 @@ fn c01_rotating_reversal_uses_the_current_angle() {
     let p = Who::Character(1);
     t.send_from("Door", "ON", p);
     t.frames(10);
-    t.w.chars = vec![player(1, p43 - Vec3::new(0.5, 30.0, 0.5), p43 + Vec3::new(0.5, 30.0, 0.5))];
+    t.w.chars = vec![player(
+        1,
+        p43 - Vec3::new(0.5, 30.0, 0.5),
+        p43 + Vec3::new(0.5, 30.0, 0.5),
+    )];
     t.send_from("Door", "OFF", p);
     assert_eq!(t.state("Door"), State::PowerOn, "inside the new pose it refuses");
 }
@@ -117,7 +133,12 @@ fn link_door(name: &str, x: f32, link: &str) -> (Vec<(String, String)>, Option<V
         name,
         Vec3::new(x, 0.0, 0.0),
         Vec3::new(30.0, 60.0, 4.0),
-        &[("DoorLink", link.into()), ("MoveDist", "100".into()), ("OpeningTime", "1".into()), ("ClosingTime", "1".into())],
+        &[
+            ("DoorLink", link.into()),
+            ("MoveDist", "100".into()),
+            ("OpeningTime", "1".into()),
+            ("ClosingTime", "1".into()),
+        ],
     )
 }
 
@@ -127,7 +148,11 @@ fn link_door(name: &str, x: f32, link: &str) -> (Vec<(String, String)>, Option<V
 fn c02_door_link_on_reversal_and_commands() {
     let mut t = T::new(vec![link_door("L", -40.0, "R"), link_door("R", 40.0, "")]);
     let p = Who::Character(7);
-    t.w.chars = vec![player(7, Vec3::new(-20.0, -50.0, -200.0), Vec3::new(20.0, 50.0, -150.0))];
+    t.w.chars = vec![player(
+        7,
+        Vec3::new(-20.0, -50.0, -200.0),
+        Vec3::new(20.0, 50.0, -150.0),
+    )];
     t.send_from("L", "ACTIVATE", p);
     t.frames(30);
     // Both closing, half way.
@@ -136,13 +161,21 @@ fn c02_door_link_on_reversal_and_commands() {
     t.frames(10);
     assert_eq!((t.state("L"), t.state("R")), (State::PowerOff, State::PowerOff));
     t.send_from("L", "ACTIVATE", p);
-    assert_eq!((t.state("L"), t.state("R")), (State::PowerOn, State::PowerOn), "reversed together");
+    assert_eq!(
+        (t.state("L"), t.state("R")),
+        (State::PowerOn, State::PowerOn),
+        "reversed together"
+    );
     // A map command: both open.
     let mut t = T::new(vec![link_door("L", -40.0, "R"), link_door("R", 40.0, "")]);
     t.run("msg L trigger");
     assert_eq!((t.state("L"), t.state("R")), (State::PowerOn, State::PowerOn));
     // Two objects named R: the first only.
-    let mut t = T::new(vec![link_door("L", -40.0, "R"), link_door("R", 40.0, ""), link_door("R", 120.0, "")]);
+    let mut t = T::new(vec![
+        link_door("L", -40.0, "R"),
+        link_door("R", 40.0, ""),
+        link_door("R", 120.0, ""),
+    ]);
     t.run("msg L trigger");
     assert_eq!(t.w.objects[1].awm().unwrap().state, State::PowerOn);
     assert_eq!(t.w.objects[2].awm().unwrap().state, State::Off);
@@ -190,7 +223,11 @@ fn c03_looping_sounds_stop() {
         "Door",
         Vec3::ZERO,
         Vec3::new(30.0, 60.0, 4.0),
-        &[("LoopSounds", "1".into()), ("OpeningSound", "open.wav".into()), ("OpeningTime", "1".into())],
+        &[
+            ("LoopSounds", "1".into()),
+            ("OpeningSound", "open.wav".into()),
+            ("OpeningTime", "1".into()),
+        ],
     )]);
     t.send("Door", "TRIGGER");
     t.frames(3);
@@ -244,7 +281,11 @@ fn c05_power_on_multiplier_replaces() {
 /// 6: a string runs only when its first statement is valid.
 #[test]
 fn c06_first_statement_must_be_valid() {
-    let mut t = T::new(vec![lamp("A"), lamp("B"), obj("CommandTrigger", "Trig", &[("Command0", "mgs A on; msg B on".into())])]);
+    let mut t = T::new(vec![
+        lamp("A"),
+        lamp("B"),
+        obj("CommandTrigger", "Trig", &[("Command0", "mgs A on; msg B on".into())]),
+    ]);
     t.send("Trig", "TRIGGER");
     assert!(!t.on("A") && !t.on("B"), "typo first: nothing");
     t.run("msg B on; mgs A on");
@@ -298,8 +339,18 @@ fn c08_nested_run_clears_the_sender() {
             &[("Pos", v(170.0, 0.0, 0.0))],
         );
         let mut t = T::new(vec![
-            obj("Trigger", "Trig", &[("Command1", "msg DoorA trigger; msg DoorB on".into())]),
-            wm("SlidingDoor", "DoorA", Vec3::new(-200.0, 0.0, 0.0), Vec3::new(30.0, 60.0, 4.0), &props),
+            obj(
+                "Trigger",
+                "Trig",
+                &[("Command1", "msg DoorA trigger; msg DoorB on".into())],
+            ),
+            wm(
+                "SlidingDoor",
+                "DoorA",
+                Vec3::new(-200.0, 0.0, 0.0),
+                Vec3::new(30.0, 60.0, 4.0),
+                &props,
+            ),
             door_b,
             lamp("X"),
         ]);
@@ -325,12 +376,17 @@ fn c09_command_touch_targets_the_toucher() {
     let mut t = T::new(vec![obj(
         "Trigger",
         "Pad",
-        &[("TriggerTouch", "1".into()), ("CommandTouch", "msg () (visible 0)".into())],
+        &[
+            ("TriggerTouch", "1".into()),
+            ("CommandTouch", "msg () (visible 0)".into()),
+        ],
     )]);
     let p = Who::Character(7);
     t.w.fire(0, p, true);
     assert!(
-        t.w.fx.iter().any(|f| matches!(f, Fx::CharacterMessage { who, message } if *who == p && message == "visible 0")),
+        t.w.fx
+            .iter()
+            .any(|f| matches!(f, Fx::CharacterMessage { who, message } if *who == p && message == "visible 0")),
         "{:?}",
         t.w.fx
     );
@@ -394,7 +450,11 @@ fn c14_counter_steps_run_between() {
     assert!(!t.on("A"));
     // 2.5 is 2 steps.
     let mut t = T::new(vec![
-        obj("EventCounter", "Counter", &[("Event2Value", "2".into()), ("Event2IncToValCmd", "msg A on".into())]),
+        obj(
+            "EventCounter",
+            "Counter",
+            &[("Event2Value", "2".into()), ("Event2IncToValCmd", "msg A on".into())],
+        ),
         lamp("A"),
     ]);
     t.send("Counter", "INC 2.5");
@@ -424,7 +484,11 @@ fn c15_remember_doesnt_move() {
 #[test]
 fn c16_volume_on_nudges_players() {
     let mut t = T::new(vec![
-        obj("TouchTrigger", "TT", &[("NumberOfActivations", "0".into()), ("Command0", "add n 1".into())]),
+        obj(
+            "TouchTrigger",
+            "TT",
+            &[("NumberOfActivations", "0".into()), ("Command0", "add n 1".into())],
+        ),
         obj("PoisonGas", "Gas", &[]),
     ]);
     t.run("int n 0");

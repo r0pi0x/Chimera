@@ -15,7 +15,6 @@
 //! - The secondary held 2 s: one `sound_key 1` (`ReloadSnd1`) per 900 ms
 //!   swing and one fire sound per hit key (7 a swing), not one a tick.
 
-
 use bevy::prelude::*;
 use chimera_core::core::{Health, LocalPlayer};
 use chimera_sim::weapon::{self, Inventory, data::WeaponDataAppExt};
@@ -28,11 +27,7 @@ use combat_arms::{
     game::{
         TICK_INTERVAL,
         data::{attributes::WEAPONS_FILE, merge_weapon_docs, read_attributes},
-        effects::{
-            self,
-            library::set_library_in,
-            sounds::CaSound,
-        },
+        effects::{self, library::set_library_in, sounds::CaSound},
         movement,
         view_model::{
             attached::{CaAttachedFx, CaLoopSound},
@@ -40,8 +35,8 @@ use combat_arms::{
         },
         weapons::{
             CaZoom,
-            zoom::ZoomParams,
             timing::{AnimTimes, ViewTimes},
+            zoom::ZoomParams,
         },
     },
     harness::CaSim,
@@ -93,16 +88,20 @@ fn saw_anims() -> Vec<AnimInfo> {
         a("prefire", 0, &[]),
         a("postfire", 0, &[]),
         a("fire_0", 600, &[(257, "FIRE_KEY")]),
-        a("alt_fire_0", 900, &[
-            (0, "sound_key 1"),
-            (334, "ALT_FIRE_KEY"),
-            (386, "ALT_FIRE_KEY"),
-            (437, "ALT_FIRE_KEY"),
-            (489, "ALT_FIRE_KEY"),
-            (540, "ALT_FIRE_KEY"),
-            (591, "ALT_FIRE_KEY"),
-            (643, "ALT_FIRE_KEY"),
-        ]),
+        a(
+            "alt_fire_0",
+            900,
+            &[
+                (0, "sound_key 1"),
+                (334, "ALT_FIRE_KEY"),
+                (386, "ALT_FIRE_KEY"),
+                (437, "ALT_FIRE_KEY"),
+                (489, "ALT_FIRE_KEY"),
+                (540, "ALT_FIRE_KEY"),
+                (591, "ALT_FIRE_KEY"),
+                (643, "ALT_FIRE_KEY"),
+            ],
+        ),
         a("PreRush", 266, &[]),
         a("rush", 633, &[]),
         a("PostRush", 267, &[]),
@@ -123,22 +122,28 @@ fn bomb_anims() -> Vec<AnimInfo> {
 
 fn times(app: &mut App) {
     let mut t = app.world_mut().get_resource_or_init::<ViewTimes>();
-    t.set("test/saw/pv_saw.ltb", AnimTimes {
-        fire: Some(0.6),
-        alt_fire: Some(0.9),
-        select: Some(1.0),
-        fire_keys: vec![0.257],
-        alt_fire_keys: vec![0.334, 0.386, 0.437, 0.489, 0.540, 0.591, 0.643],
-        ..default()
-    });
-    t.set("test/bomb/pv_bomb.ltb", AnimTimes {
-        fire: Some(0.6),
-        alt_fire: Some(0.6),
-        select: Some(0.3),
-        fire_keys: vec![0.2],
-        alt_fire_keys: vec![0.2],
-        ..default()
-    });
+    t.set(
+        "test/saw/pv_saw.ltb",
+        AnimTimes {
+            fire: Some(0.6),
+            alt_fire: Some(0.9),
+            select: Some(1.0),
+            fire_keys: vec![0.257],
+            alt_fire_keys: vec![0.334, 0.386, 0.437, 0.489, 0.540, 0.591, 0.643],
+            ..default()
+        },
+    );
+    t.set(
+        "test/bomb/pv_bomb.ltb",
+        AnimTimes {
+            fire: Some(0.6),
+            alt_fire: Some(0.6),
+            select: Some(0.3),
+            fire_keys: vec![0.2],
+            alt_fire_keys: vec![0.2],
+            ..default()
+        },
+    );
 }
 
 fn copies() -> Vec<(String, String)> {
@@ -187,7 +192,10 @@ fn sim() -> (Sim, Entity) {
     sim.app.init_resource::<Heard>();
     sim.app.add_systems(
         Last,
-        |mut s: MessageReader<CaSound>, mut l: MessageReader<CaLoopSound>, mut c: MessageReader<SoundControl>, mut h: ResMut<Heard>| {
+        |mut s: MessageReader<CaSound>,
+         mut l: MessageReader<CaLoopSound>,
+         mut c: MessageReader<SoundControl>,
+         mut h: ResMut<Heard>| {
             h.0.extend(s.read().cloned());
             h.1.extend(l.read().cloned());
             h.2.extend(c.read().cloned());
@@ -196,7 +204,10 @@ fn sim() -> (Sim, Entity) {
     let p = sim.spawn_character(Vec3::new(30.0, 1.0, 30.0), movement::ID);
     sim.app.world_mut().entity_mut(p).insert(LocalPlayer);
     sim.seconds(0.5);
-    sim.app.world_mut().entity_mut(p).insert(Health { current: 1.0, max: 1.0 });
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert(Health { current: 1.0, max: 1.0 });
     (sim, p)
 }
 
@@ -259,15 +270,26 @@ fn the_chainsaw_idles_while_drawn() {
     scope(&mut sim, saw, 0);
     sim.ticks(2);
     assert_eq!(shown(&sim, p), vec![true], "shown again");
-    assert_eq!(heard(&mut sim).1.iter().filter(|l| l.sound.is_some()).count(), 1, "started again");
+    assert_eq!(
+        heard(&mut sim).1.iter().filter(|l| l.sound.is_some()).count(),
+        1,
+        "started again"
+    );
     // Holstered: the effects go with the model, the sound stops.
     let bomb = draw(&mut sim, p, BOMB);
     let fx = attached(&sim, p);
     assert_eq!(fx.weapon, Some(bomb));
-    assert!(fx.effects.iter().all(|e| !e.group.eq_ignore_ascii_case("Test_Saw_Idle")));
+    assert!(
+        fx.effects
+            .iter()
+            .all(|e| !e.group.eq_ignore_ascii_case("Test_Saw_Idle"))
+    );
     let h = heard(&mut sim);
     assert!(h.1.iter().any(|l| l.sound.is_none()), "the idle stopped: {:?}", h.1);
-    assert!(h.1.iter().all(|l| l.sound.is_none()), "the bomb's groups have no sound here");
+    assert!(
+        h.1.iter().all(|l| l.sound.is_none()),
+        "the bomb's groups have no sound here"
+    );
 }
 
 /// Case 44 in play: the bomb's five groups show with the model; a
@@ -287,13 +309,21 @@ fn t44_the_bombs_lights_follow_their_keys() {
     sim.ticks(10);
     sim.intent(p).fire = false;
     sim.seconds(1.0);
-    assert_eq!(shown(&sim, p), vec![true, false, true, true, true], "light 1 hidden by its key");
+    assert_eq!(
+        shown(&sim, p),
+        vec![true, false, true, true, true],
+        "light 1 hidden by its key"
+    );
     scope(&mut sim, bomb, 1);
     sim.ticks(2);
     assert_eq!(shown(&sim, p), vec![false; 5], "all hidden with the model");
     scope(&mut sim, bomb, 0);
     sim.ticks(2);
-    assert_eq!(shown(&sim, p), vec![true, false, true, true, true], "still hidden after the scope");
+    assert_eq!(
+        shown(&sim, p),
+        vec![true, false, true, true, true],
+        "still hidden after the scope"
+    );
     sim.intent(p).secondary = true;
     sim.ticks(10);
     sim.intent(p).secondary = false;

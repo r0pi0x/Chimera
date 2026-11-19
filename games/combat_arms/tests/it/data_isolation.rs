@@ -65,13 +65,25 @@ fn two_sims_with_different_weapon_data_dont_see_each_others() {
     other.ticks(5);
     assert_eq!(catalog_damage(&plain), 35.0);
     assert_eq!(catalog_damage(&other), 70.0);
-    let builtin = CaData::builtin().weapon_set().get(M4A1).unwrap().hook::<DamageParams>(DAMAGE).unwrap().damage;
+    let builtin = CaData::builtin()
+        .weapon_set()
+        .get(M4A1)
+        .unwrap()
+        .hook::<DamageParams>(DAMAGE)
+        .unwrap()
+        .damage;
     assert_eq!(builtin, 35.0);
 
     // Each app's data is its own resource, with its own set.
-    let (a, b) = (plain.app.world().resource::<CaData>().weapon_set(), other.app.world().resource::<CaData>().weapon_set());
+    let (a, b) = (
+        plain.app.world().resource::<CaData>().weapon_set(),
+        other.app.world().resource::<CaData>().weapon_set(),
+    );
     assert!(!std::ptr::eq(a, b));
-    assert!(std::ptr::eq(a, CaData::builtin().weapon_set()), "plain Sims share the immutable built-in set");
+    assert!(
+        std::ptr::eq(a, CaData::builtin().weapon_set()),
+        "plain Sims share the immutable built-in set"
+    );
 }
 
 /// What the old switch did: a Sim on the built-in data and another on the
@@ -106,7 +118,10 @@ fn two_apps_keep_their_own_loaded_models_and_effects() {
     // A map whose load registered a held model's socket and an effect
     // library, as Combat Arms' loader does (`MapData::memos`).
     let mut loaded = MapData::default();
-    loaded.memos.entry::<CaModelIndex>().register_held_socket("combat_arms:law", "Flash", "Right_hand", Vec3::X);
+    loaded
+        .memos
+        .entry::<CaModelIndex>()
+        .register_held_socket("combat_arms:law", "Flash", "Right_hand", Vec3::X);
     library::set_library(&mut loaded.memos, Some(Arc::new(FxLibrary::default())));
     let mut a = Sim::with(CaSim, move |app| {
         app.add_plugins(MapSimPlugin::new(loaded));
@@ -123,18 +138,29 @@ fn two_apps_keep_their_own_loaded_models_and_effects() {
 
     // What an app loads later (on demand) is its own too, and stays across
     // map changes.
-    models::late_in(b.app.world_mut()).0.register_held_socket("combat_arms:m4a1", "Flash", "Right_hand", Vec3::Y);
+    models::late_in(b.app.world_mut())
+        .0
+        .register_held_socket("combat_arms:m4a1", "Flash", "Right_hand", Vec3::Y);
     let late = |sim: &Sim| models::models_in(sim.app.world()).held_socket("combat_arms:m4a1", "flash");
     assert!(late(&b).is_some() && late(&a).is_none());
     map::unload_map(a.app.world_mut());
     map::unload_map(b.app.world_mut());
-    assert!(socket(&a).is_none() && library::library_in(a.app.world()).is_none(), "gone with a's map");
+    assert!(
+        socket(&a).is_none() && library::library_in(a.app.world()).is_none(),
+        "gone with a's map"
+    );
     assert!(late(&b).is_some(), "b's late model stays");
 
     // Each app's loads get its own context; the install data in them is
     // the one both share while they hold it.
     let (ca, cb) = (LoadContext::of(a.app.world_mut()), LoadContext::of(b.app.world_mut()));
     assert_ne!(ca, cb, "one context per app");
-    assert!(CaData::install_for(&ca).same(&CaData::install_for(&cb)), "one install data");
-    assert!(CaData::install_for(&ca).same(&CaData::install()), "the process's while an app holds it");
+    assert!(
+        CaData::install_for(&ca).same(&CaData::install_for(&cb)),
+        "one install data"
+    );
+    assert!(
+        CaData::install_for(&ca).same(&CaData::install()),
+        "the process's while an app holds it"
+    );
 }

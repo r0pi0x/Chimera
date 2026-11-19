@@ -7,7 +7,7 @@
 use bevy::prelude::*;
 use combat_arms::game::{
     TICK_INTERVAL,
-    movement::{self, MovementLocked, ModeSpeed, brake, deflect, movement_data, steep_cut},
+    movement::{self, ModeSpeed, MovementLocked, brake, deflect, movement_data, steep_cut},
 };
 
 use crate::{
@@ -45,7 +45,11 @@ fn case_80_opposing_keys_then_release_back() {
         }
         t.keys().opposed = BVec2::FALSE;
         t.keys().move_axis = axis(1.0);
-        for (accel, speed, dist) in [(500.0, 218.3588, 3.34366), (590.0, 211.1073, 3.22032), (680.0, 205.6803, 3.12540)] {
+        for (accel, speed, dist) in [
+            (500.0, 218.3588, 3.34366),
+            (590.0, 211.1073, 3.22032),
+            (680.0, 205.6803, 3.12540),
+        ] {
             let before = t.pos();
             t.tick();
             close(t.mv().accel.length(), accel, TOL, &format!("strafe {strafe}: accel"));
@@ -208,7 +212,12 @@ fn case_85_crouch_taps_inside_the_release_hold() {
         let m = t.mv();
         flags.push(m.crouch);
         if tick <= 3 {
-            close(m.lockout, [0.6, 0.61, 0.62][tick - 1], 1e-5, &format!("lock-out after tick {tick}"));
+            close(
+                m.lockout,
+                [0.6, 0.61, 0.62][tick - 1],
+                1e-5,
+                &format!("lock-out after tick {tick}"),
+            );
             close(m.slowdown, 0.5, 1e-5, &format!("slowdown after tick {tick}"));
         }
     }
@@ -260,9 +269,14 @@ fn case_86_standing_up_halfway_under_a_low_ceiling() {
     // 50 - 10 r (the spec's 40.87698 is off by 0.007).
     close(half[6], 40.86978, 1e-3, "half-height after tick 7");
     assert!(!flag[7], "tick 8: cleared (not fully crouched, no room test)");
-    for (i, (r, h)) in [(0.653407, 43.46593), (0.449814, 45.50186), (0.294467, 47.05533), (0.179589, 48.20411)]
-        .into_iter()
-        .enumerate()
+    for (i, (r, h)) in [
+        (0.653407, 43.46593),
+        (0.449814, 45.50186),
+        (0.294467, 47.05533),
+        (0.179589, 48.20411),
+    ]
+    .into_iter()
+    .enumerate()
     {
         close(rate[7 + i], r, 1e-5, &format!("rate after tick {}", 8 + i));
         close(half[7 + i], h, 1e-3, &format!("half-height after tick {}", 8 + i));
@@ -286,7 +300,11 @@ fn case_87_slide_deflection_and_the_corner() {
     t.ticks(100);
     let at = t.pos();
     t.ticks(20);
-    assert!((t.pos() - at).length() < 1e-3, "stopped in the corner: {at} -> {}", t.pos());
+    assert!(
+        (t.pos() - at).length() < 1e-3,
+        "stopped in the corner: {at} -> {}",
+        t.pos()
+    );
     close(at.x, 100.0 - 15.0, 0.2, "against the x wall");
     close(at.z, -100.0 + 15.0, 0.2, "against the z wall");
 }
@@ -306,7 +324,12 @@ fn case_88_movement_locked_while_running() {
         t.tick();
         assert!(t.mv().locked);
         close(t.hspeed(), speed, TOL, &format!("speed after tick {tick}"));
-        close((t.pos() - before).xz().length(), dist, TOL, &format!("distance on tick {tick}"));
+        close(
+            (t.pos() - before).xz().length(),
+            dist,
+            TOL,
+            &format!("distance on tick {tick}"),
+        );
     }
     t.tick();
     assert_eq!(t.vel(), Vec3::ZERO, "at rest on tick 3");
@@ -333,7 +356,11 @@ fn case_88_movement_locked_while_running() {
 fn planting_locks_movement() {
     use combat_arms::game::rules::objectives::{ActionKind, CaAction};
     let mut t = T::standing();
-    t.insert(CaAction { kind: ActionKind::Plant, held: 0.0, length: 4.0 });
+    t.insert(CaAction {
+        kind: ActionKind::Plant,
+        held: 0.0,
+        length: 4.0,
+    });
     t.forward(true);
     t.ticks(5);
     assert!(t.mv().locked && !t.mv().forward);
@@ -394,7 +421,11 @@ fn case_90_the_on_ground_threshold() {
         }
         t.tick();
         let m = t.mv();
-        assert!(m.standing.is_some_and(|s| (s.normal.y - ny).abs() < 1e-4), "{ny}: {:?}", m.standing);
+        assert!(
+            m.standing.is_some_and(|s| (s.normal.y - ny).abs() < 1e-4),
+            "{ny}: {:?}",
+            m.standing
+        );
         assert_eq!(m.on_ground, ground, "{ny}: on ground");
         close(m.friction_k, 5.0, 1e-6, "k");
         let y = t.pos().y;
@@ -433,7 +464,13 @@ fn case_92_ladder_by_the_box() {
     for (x, ladder) in [(-10.0, true), (-15.5, false)] {
         let mut t = T::new(vec![floor()], on(x, 0.0, 0.0));
         t.tick();
-        crate::movement_volumes::volume(&mut t, "Ladder", Vec3::new(0.0, -100.0, -500.0), Vec3::new(10.0, 1000.0, 500.0), |_| {});
+        crate::movement_volumes::volume(
+            &mut t,
+            "Ladder",
+            Vec3::new(0.0, -100.0, -500.0),
+            Vec3::new(10.0, 1000.0, 500.0),
+            |_| {},
+        );
         t.keys().pitch = std::f32::consts::FRAC_PI_2;
         t.forward(true);
         t.tick();
@@ -453,11 +490,20 @@ fn case_93_standing_on_another_player() {
     let mut t = T::standing();
     let s = s();
     let other = t.sim.spawn_character(on(0.0, 0.0, 0.0) * s, movement::ID);
-    t.sim.app.world_mut().entity_mut(other).insert(movement_data().character.without_gear());
+    t.sim
+        .app
+        .world_mut()
+        .entity_mut(other)
+        .insert(movement_data().character.without_gear());
     t.place_in_air(on(0.0, 100.2, 0.0));
     t.ticks(30);
     let m = t.mv();
-    assert!(m.standing.is_some_and(|g| g.character), "on the other's head: {:?} at {}", m.standing, t.pos());
+    assert!(
+        m.standing.is_some_and(|g| g.character),
+        "on the other's head: {:?} at {}",
+        m.standing,
+        t.pos()
+    );
     assert!(!m.on_ground);
     set_vel(&mut t, Vec3::new(100.0, 0.0, 0.0));
     let before = t.pos();
@@ -486,7 +532,10 @@ fn case_94_up_a_steep_slope() {
 #[test]
 fn mode_speed_factors() {
     let mut t = T::standing();
-    t.insert(ModeSpeed { speed: 0.8, stamina: 1.5 });
+    t.insert(ModeSpeed {
+        speed: 0.8,
+        stamina: 1.5,
+    });
     t.insert(movement_data().character.clone());
     t.steady_forward();
     // The reference character's vest (P = 0.1): 285 x 0.9 x 0.8.
@@ -511,4 +560,3 @@ fn knock_back_reads_the_crouch_flag() {
     assert_eq!(t.mv().accel, Vec3::ZERO, "no push");
     assert_eq!(t.hspeed(), 0.0);
 }
-

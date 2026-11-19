@@ -579,7 +579,11 @@ fn keyframed_world() -> World {
     // command.
     let mut b = Vec::new();
     b.extend(3u32.to_le_bytes());
-    for ([x, y, z], stamp) in [([400.0f32, 5.0, 0.0], 0.0f32), ([400.0, 205.0, 0.0], 2.0), ([600.0, 205.0, 0.0], 2.0)] {
+    for ([x, y, z], stamp) in [
+        ([400.0f32, 5.0, 0.0], 0.0f32),
+        ([400.0, 205.0, 0.0], 2.0),
+        ([600.0, 205.0, 0.0], 2.0),
+    ] {
         b.extend(0u16.to_le_bytes());
         b.extend([0u8, 0u8]);
         for f in [x, y, z, 0.0, 0.0, 0.0, stamp, 300.0] {
@@ -661,11 +665,22 @@ fn a_client_rides_a_keyframed_platform_predicted() {
             let o = sim.server.app.world().resource::<CaObjects>();
             o.world.objects[o.named("Plat").unwrap() as usize].pose.rot
         };
-        assert!(turn.angle_between(Quat::IDENTITY) < 1e-4, "{what}: the platform didn't turn: {turn:?}");
+        assert!(
+            turn.angle_between(Quat::IDENTITY) < 1e-4,
+            "{what}: the platform didn't turn: {turn:?}"
+        );
         assert!(carried > 30, "{what}: carried {carried} ticks");
         for (dir, r) in [("there", &there), ("back", &back)] {
-            assert!(r.gap_after < 1e-4, "{what}: {dir}: {} m off the server after the start", r.gap_after);
-            assert!(r.node_gap_after < 1e-4, "{what}: {dir}: the client's platform {} m off", r.node_gap_after);
+            assert!(
+                r.gap_after < 1e-4,
+                "{what}: {dir}: {} m off the server after the start",
+                r.gap_after
+            );
+            assert!(
+                r.node_gap_after < 1e-4,
+                "{what}: {dir}: the client's platform {} m off",
+                r.node_gap_after
+            );
             assert!(
                 r.errors.iter().all(|k| *k <= window),
                 "{what}: {dir}: errors after the start's round trip ({:?}, window {window})",

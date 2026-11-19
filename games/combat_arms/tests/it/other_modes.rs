@@ -24,7 +24,9 @@ use crate::mode_kit::*;
 /// Quarantine past its warm-up with `n` players (all humans: Alpha).
 fn quarantine(n: usize) -> (Sim, Vec<Entity>) {
     let mut sim = game("QRT", 12);
-    let p: Vec<Entity> = (0..n).map(|_| join(&mut sim, if n % 2 == 0 { CREED } else { JSF })).collect();
+    let p: Vec<Entity> = (0..n)
+        .map(|_| join(&mut sim, if n % 2 == 0 { CREED } else { JSF }))
+        .collect();
     past_warmup(&mut sim);
     unprotect_all(&mut sim);
     (sim, p)
@@ -53,7 +55,11 @@ fn hosts_are_picked_and_spread_it() {
     sim.ticks(3);
     for e in &infected {
         assert!(sim.app.world().get::<CaInfected>(*e).is_some());
-        assert_eq!(weapons(&sim, *e), [combat_arms::game::inventory::KNIFE], "the knife only");
+        assert_eq!(
+            weapons(&sim, *e),
+            [combat_arms::game::inventory::KNIFE],
+            "the knife only"
+        );
     }
     unprotect_all(&mut sim);
     let human = p.iter().copied().find(|e| team(&sim, *e) == JSF).unwrap();
@@ -64,7 +70,13 @@ fn hosts_are_picked_and_spread_it() {
     unprotect_all(&mut sim);
     let other = p.iter().copied().find(|e| team(&sim, *e) == JSF).unwrap();
     kill_now(&mut sim, infected[1], other);
-    assert_eq!((stats(&sim, other).mission_points, stats(&sim, infected[1]).mission_points), (3, -1));
+    assert_eq!(
+        (
+            stats(&sim, other).mission_points,
+            stats(&sim, infected[1]).mission_points
+        ),
+        (3, -1)
+    );
 }
 
 /// 56. Three minutes pass with humans alive: the humans win; the living
@@ -180,7 +192,10 @@ const TRIGGER_B: Vec3 = Vec3::new(6.0, 1.0, -12.0);
 fn seize(goal: u32) -> (Sim, Entity, Entity) {
     let mut sim = game("HQM", 12);
     settings(&mut sim).goal = goal;
-    objects(&mut sim).triggers = vec![trigger("ActivateTrigger_A", TRIGGER_A), trigger("ActivateTrigger_B", TRIGGER_B)];
+    objects(&mut sim).triggers = vec![
+        trigger("ActivateTrigger_A", TRIGGER_A),
+        trigger("ActivateTrigger_B", TRIGGER_B),
+    ];
     let a = join(&mut sim, JSF);
     let b = join(&mut sim, CREED);
     past_warmup(&mut sim);
@@ -305,7 +320,10 @@ fn vip_elimination_weights_deaths() {
     sim.ticks(2);
     unprotect_all(&mut sim);
     let rank = |sim: &Sim, e: Entity| sim.app.world().get::<CaVipRank>(e).map_or(0, |r| r.0);
-    assert_eq!(b.iter().map(|e| rank(&sim, *e)).collect::<Vec<_>>(), vec![2, 1, 0, 0, 0]);
+    assert_eq!(
+        b.iter().map(|e| rank(&sim, *e)).collect::<Vec<_>>(),
+        vec![2, 1, 0, 0, 0]
+    );
     kill_now(&mut sim, b[0], a[3]);
     assert_eq!(m(&sim).score, [5, 0]);
     assert_eq!(stats(&sim, a[3]).mission_points, 5);

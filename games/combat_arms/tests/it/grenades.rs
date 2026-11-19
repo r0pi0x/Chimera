@@ -24,7 +24,7 @@ use std::time::Duration;
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use chimera_core::core::{
-    LocalPlayer, Blinded, Damage, DamageKind, Damageable, FriendlyFire, Health, Hitgroup, Intent, MovementState,
+    Blinded, Damage, DamageKind, Damageable, FriendlyFire, Health, Hitgroup, Intent, LocalPlayer, MovementState,
     PLAYER_CLIP_LAYER, PropSurface, RoundRestarts, SightBlocker, TRACE_ONLY_LAYER, Team,
 };
 use chimera_net::{harness::NetSim, net::memory::LinkConditions, net::predict::NetGraph};
@@ -34,28 +34,28 @@ use chimera_sim::weapon::{
     grenade::{Detonated, GrenadeKind, Throwable},
 };
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim, map::loose::ShownItem};
-use lithtech_formats::attributes::Document;
 use combat_arms::{
     game::{
         TICK_INTERVAL,
-        grenades::{
-            self, CaFlashProtection, CaFlashed, CaGrenade, CaServerFrames, G7A, M18, M23F, M67, XM84, bounce,
-            character_touches, flash_white, throw_perturb,
-        },
         effects::{
             self, CaFxRequest, FxKind,
             data::{CaFxTables, CaWeaponFx, EFFECTS},
             rules,
             sounds::CaSound,
         },
+        grenades::{
+            self, CaFlashProtection, CaFlashed, CaGrenade, CaServerFrames, G7A, M18, M23F, M67, XM84, bounce,
+            character_touches, flash_white, throw_perturb,
+        },
         grenades::{callout, tumble},
-        view_model::CaViewKey,
         movement,
+        view_model::CaViewKey,
         volumes::CaVolume,
         weapons::{DEFAULT_BODY_GEAR, MALE, body_geometry, gear},
     },
     harness::CaSim,
 };
+use lithtech_formats::attributes::Document;
 
 /// Metres per world unit (the data's).
 const U: f32 = combat_arms::game::inventory::UNIT;
@@ -107,7 +107,12 @@ fn sim() -> Sim {
     });
     sim.set_tick_interval(TICK_INTERVAL);
     sim.app.add_weapon_data(&[("m67_exact", M67_EXACT)]).unwrap();
-    solid(&mut sim, Vec3::new(-200.0, -1.0, -200.0), Vec3::new(200.0, 0.0, 200.0), None);
+    solid(
+        &mut sim,
+        Vec3::new(-200.0, -1.0, -200.0),
+        Vec3::new(200.0, 0.0, 200.0),
+        None,
+    );
     sim.ticks(1);
     sim
 }
@@ -260,7 +265,13 @@ fn far_thrower(sim: &mut Sim, team: u8) -> Entity {
 #[test]
 fn t01_level_throw() {
     let mut sim = sim();
-    let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     let s = to_step(&mut sim, g, 1);
     assert_near(s.pos, Vec3::new(0.0, 59.0, 77.5), 0.05, "step 1");
     assert_near(s.velocity, Vec3::new(0.0, -80.0, 1550.0), 0.05, "step 1 v");
@@ -276,7 +287,13 @@ fn t01_level_throw() {
 #[test]
 fn t02_same_throw_later() {
     let mut sim = sim();
-    let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     let s = to_step(&mut sim, g, 49);
     let floors: Vec<(u32, f32)> = s.contacts.iter().map(|c| (c.step, c.at.z)).collect();
     let want = [
@@ -326,8 +343,19 @@ fn t03_dropped_straight_down() {
 #[test]
 fn t04_point_blank_wall() {
     let mut sim = sim();
-    solid(&mut sim, Vec3::new(-10.0, -1.0, 50.0 * U), Vec3::new(10.0, 10.0, 2.0), None);
-    let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    solid(
+        &mut sim,
+        Vec3::new(-10.0, -1.0, 50.0 * U),
+        Vec3::new(10.0, 10.0, 2.0),
+        None,
+    );
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     let s = to_step(&mut sim, g, 1);
     let c = s.contacts[0];
     assert_near(c.at, Vec3::new(0.0, 59.35, 50.0), 0.05, "wall");
@@ -345,7 +373,13 @@ fn t04_point_blank_wall() {
 #[test]
 fn t05_45_degree_throw() {
     let mut sim = sim();
-    let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 1096.02, 1096.02));
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 1096.02, 1096.02),
+    );
     let s = to_step(&mut sim, g, 1);
     assert_near(s.pos, Vec3::new(0.0, 113.8, 54.8), 0.05, "step 1");
     let s = to_step(&mut sim, g, 10);
@@ -371,7 +405,11 @@ fn t06_rest_threshold() {
 #[test]
 fn bounce_sound_loudness() {
     use grenades::bounce_loudness;
-    assert_eq!(bounce_loudness(Vec3::new(76.0, -480.0, 0.0), Vec3::Y, 0.65), 1.0, "loud, though it rests");
+    assert_eq!(
+        bounce_loudness(Vec3::new(76.0, -480.0, 0.0), Vec3::Y, 0.65),
+        1.0,
+        "loud, though it rests"
+    );
     let sand = grenades::CaGrenadeSurfaces::built_in().hardness(Some("desert sand"));
     // |v''| = |(60, 47.99, 0)| = 76.83: × 0.1 / 200.
     let l = bounce_loudness(Vec3::new(600.0, -480.0, 0.0), Vec3::Y, sand);
@@ -396,8 +434,19 @@ fn t08_soft_surface() {
     assert_near(v, Vec3::new(60.0, 47.99, 0.0), 0.05, "sand");
     // And on a sand floor in the world: a tenth of the speed kept.
     let mut sim = sim();
-    solid(&mut sim, Vec3::new(-10.0, -0.5, -10.0), Vec3::new(10.0, 0.001, 10.0), Some("desert sand"));
-    let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(600.0, 0.0, 0.0));
+    solid(
+        &mut sim,
+        Vec3::new(-10.0, -0.5, -10.0),
+        Vec3::new(10.0, 0.001, 10.0),
+        Some("desert sand"),
+    );
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(600.0, 0.0, 0.0),
+    );
     let s = to_step(&mut sim, g, 6);
     let c = s.contacts[0];
     assert!((c.velocity.x - 60.0).abs() <= 0.05, "{c:?}");
@@ -429,7 +478,11 @@ fn t10_frag_mid() {
     let victim = player(&mut sim, 0.0, 0.0, 0.0, 0);
     let at = in_front(&mut sim, victim, 300.0, true);
     explode_at(&mut sim, M67, Some(thrower), at);
-    assert!((100.0 - health(&sim, victim) - 53.33).abs() < 0.01, "{}", health(&sim, victim));
+    assert!(
+        (100.0 - health(&sim, victim) - 53.33).abs() < 0.01,
+        "{}",
+        health(&sim, victim)
+    );
 }
 
 #[test]
@@ -452,7 +505,12 @@ fn t12_frag_cover() {
     let victim = player(&mut sim, 0.0, 0.0, 0.0, 0);
     let at = in_front(&mut sim, victim, 100.0, true);
     let mid = (at + body(&mut sim, victim).0) / 2.0;
-    solid(&mut sim, Vec3::new(-2.0, 0.0, mid.z - 0.05), Vec3::new(2.0, 4.0, mid.z + 0.05), None);
+    solid(
+        &mut sim,
+        Vec3::new(-2.0, 0.0, mid.z - 0.05),
+        Vec3::new(2.0, 4.0, mid.z + 0.05),
+        None,
+    );
     explode_at(&mut sim, M67, Some(thrower), at);
     assert_eq!(health(&sim, victim), 100.0, "covered");
     // Waist high: the centre hidden, the head top seen.
@@ -463,7 +521,12 @@ fn t12_frag_cover() {
     let (centre, top) = body(&mut sim, victim);
     let mid = (at + centre) / 2.0;
     let wall_top = centre.y + 0.25 * (top - centre.y);
-    solid(&mut sim, Vec3::new(-2.0, 0.0, mid.z - 0.05), Vec3::new(2.0, wall_top, mid.z + 0.05), None);
+    solid(
+        &mut sim,
+        Vec3::new(-2.0, 0.0, mid.z - 0.05),
+        Vec3::new(2.0, wall_top, mid.z + 0.05),
+        None,
+    );
     explode_at(&mut sim, M67, Some(thrower), at);
     assert_eq!(health(&sim, victim), 0.0, "120: dead");
 }
@@ -473,11 +536,21 @@ fn t13_frag_vs_armour() {
     let mut sim = sim();
     let thrower = far_thrower(&mut sim, 0);
     let victim = player(&mut sim, 0.0, 0.0, 0.0, 0);
-    sim.app.world_mut().entity_mut(victim).insert(combat_arms::game::weapons::gear_armour(100.0, &vec![DEFAULT_BODY_GEAR]));
+    sim.app
+        .world_mut()
+        .entity_mut(victim)
+        .insert(combat_arms::game::weapons::gear_armour(100.0, &vec![DEFAULT_BODY_GEAR]));
     let at = in_front(&mut sim, victim, 300.0, true);
     explode_at(&mut sim, M67, Some(thrower), at);
     assert!((health(&sim, victim) - 46.67).abs() < 0.01, "{}", health(&sim, victim));
-    assert_eq!(sim.app.world().get::<chimera_sim::weapon::Armor>(victim).map(combat_arms::game::weapons::points).unwrap(), 100.0);
+    assert_eq!(
+        sim.app
+            .world()
+            .get::<chimera_sim::weapon::Armor>(victim)
+            .map(combat_arms::game::weapons::points)
+            .unwrap(),
+        100.0
+    );
 }
 
 #[test]
@@ -518,7 +591,10 @@ fn t15_flash_facing_close() {
     assert!((time - 25.0).abs() < 1e-3, "{time}");
     // On the server frame at or after 0.25 s (ticks of 15 ms on frames of
     // 50 ms: a tick either way).
-    assert!((0.25 - 0.016..0.25 + 0.05 + 0.016).contains(&delay), "sent {delay} s after");
+    assert!(
+        (0.25 - 0.016..0.25 + 0.05 + 0.016).contains(&delay),
+        "sent {delay} s after"
+    );
     // The client's screen.
     for (t, w) in [(0.0, 1.0), (6.25, 0.7071), (8.333, 0.5), (12.5, 0.0)] {
         assert!((flash_white(t, time) - w).abs() < 1e-3, "w({t})");
@@ -548,7 +624,10 @@ fn t17_flash_facing_away() {
     let victim = player(&mut sim, 0.0, 0.0, 0.0, 0);
     let (time, delay) = flashed(&mut sim, victim, thrower, 200.0, false).expect("flashed");
     assert!((time - 6.25).abs() < 1e-3, "{time}");
-    assert!((0.0833 - 0.016..0.0833 + 0.05 + 0.016).contains(&delay), "sent {delay} s after");
+    assert!(
+        (0.0833 - 0.016..0.0833 + 0.05 + 0.016).contains(&delay),
+        "sent {delay} s after"
+    );
     assert!((flash_white(1.5625, time) - 0.7071).abs() < 1e-4);
     assert_eq!(flash_white(3.125, time), 0.0);
     assert_eq!(health(&sim, victim), 100.0, "22: no damage");
@@ -576,7 +655,11 @@ fn t19_flash_range() {
     let (time, _) = flashed(&mut sim, victim, thrower, 990.0, true).expect("flashed");
     assert!((time - 0.3333).abs() < 1e-3, "{time}");
     assert_eq!(flash_white(0.1667, time), 0.0, "ends at 0.167 s");
-    assert_eq!(flashed(&mut sim, victim, thrower, 998.0, true), None, "0.067 s: not sent");
+    assert_eq!(
+        flashed(&mut sim, victim, thrower, 998.0, true),
+        None,
+        "0.067 s: not sent"
+    );
     assert_eq!(flashed(&mut sim, victim, thrower, 1000.0, true), None);
     assert_eq!(health(&sim, victim), 100.0, "22: no damage");
 }
@@ -588,7 +671,12 @@ fn t20_flash_cover() {
     let victim = player(&mut sim, 0.0, 0.0, 0.0, 0);
     let at = in_front(&mut sim, victim, 200.0, true);
     let mid = (at + body(&mut sim, victim).0) / 2.0;
-    solid(&mut sim, Vec3::new(-2.0, 0.0, mid.z - 0.05), Vec3::new(2.0, 4.0, mid.z + 0.05), None);
+    solid(
+        &mut sim,
+        Vec3::new(-2.0, 0.0, mid.z - 0.05),
+        Vec3::new(2.0, 4.0, mid.z + 0.05),
+        None,
+    );
     assert_eq!(flashed(&mut sim, victim, thrower, 200.0, true), None);
     assert_eq!(health(&sim, victim), 100.0, "22: no damage");
 }
@@ -662,8 +750,19 @@ fn t25_smoke() {
     sim.seconds(1.0);
     assert_eq!(health(&sim, near_by), 100.0, "no damage");
     let world = sim.app.world_mut();
-    assert_eq!(world.query::<&SightBlocker>().iter(world).count(), 0, "nothing blocks sight (bots, name tags)");
-    assert_eq!(world.query::<&chimera_sim::weapon::grenade::SmokeCloud>().iter(world).count(), 1, "the clients' cloud");
+    assert_eq!(
+        world.query::<&SightBlocker>().iter(world).count(),
+        0,
+        "nothing blocks sight (bots, name tags)"
+    );
+    assert_eq!(
+        world
+            .query::<&chimera_sim::weapon::grenade::SmokeCloud>()
+            .iter(world)
+            .count(),
+        1,
+        "the clients' cloud"
+    );
     // A bullet through the cloud hits the target behind it.
     let shooter = player(&mut sim, 0.0, 400.0, 0.0, 0);
     let target = player(&mut sim, 0.0, -400.0, 0.0, 0);
@@ -714,7 +813,12 @@ fn t26_no_thrower_velocity() {
     // A tap (held, the grenade stays in hand: case 37).
     let (g, _) = throw_timed(&mut sim, p, TICK_INTERVAL, 3.0).expect("thrown");
     let s = state(&sim, g);
-    assert_near(s.velocity, Vec3::new(0.0, 0.0, 1550.0), 0.05, "the view's direction at 1550, nothing carried");
+    assert_near(
+        s.velocity,
+        Vec3::new(0.0, 0.0, 1550.0),
+        0.05,
+        "the view's direction at 1550, nothing carried",
+    );
     let start = s.pos;
     let s = to_step(&mut sim, g, 1);
     assert_near(s.pos - start, Vec3::new(0.0, -1.0, 77.5), 0.05, "test 1's step");
@@ -732,7 +836,11 @@ fn thrown_frag_flies_the_spec_arc_and_is_drawn_between_frames() {
     let (p, _) = holding(&mut sim, "test:m67_exact");
     let (g, _) = throw_timed(&mut sim, p, TICK_INTERVAL, 3.0).expect("thrown");
     let shown = sim.app.world().get::<ShownItem>(g).unwrap().0.clone();
-    assert_eq!(shown, grenades::thrown_key("test:m67_exact"), "drawn as its thrown model");
+    assert_eq!(
+        shown,
+        grenades::thrown_key("test:m67_exact"),
+        "drawn as its thrown model"
+    );
     let first = state(&sim, g);
     let (start, k0) = (first.pos, first.steps as f32);
     let mut drawn = Vec::new();
@@ -744,13 +852,20 @@ fn thrown_frag_flies_the_spec_arc_and_is_drawn_between_frames() {
         let at = sim.app.world().get::<Transform>(g).unwrap().translation / U;
         // On the segment from the frame before to now.
         let seg = s.pos - s.drawn_from;
-        let t = if seg.length_squared() > 0.0 { (at - s.drawn_from).dot(seg) / seg.length_squared() } else { 0.0 };
+        let t = if seg.length_squared() > 0.0 {
+            (at - s.drawn_from).dot(seg) / seg.length_squared()
+        } else {
+            0.0
+        };
         assert!((-1e-3..=1.0 + 1e-3).contains(&t), "drawn off its segment: t = {t}");
         assert_near(at, s.drawn_from + seg * t, 0.05, "drawn on the segment");
         drawn.push((s.steps, at));
         sim.ticks(1);
     }
-    let inside = drawn.windows(2).filter(|w| w[0].0 == w[1].0 && w[0].1 != w[1].1).count();
+    let inside = drawn
+        .windows(2)
+        .filter(|w| w[0].0 == w[1].0 && w[0].1 != w[1].1)
+        .count();
     assert!(inside >= 3, "it moves between server frames: {drawn:?}");
     let s = to_step(&mut sim, g, 5);
     // Case 1: (0, 59, 77.5) after step 1 and (0, 15, 387.5) after step 5
@@ -807,7 +922,10 @@ fn t36_t38_tap_throw_timing() {
         let mut sim = sim();
         let (p, w) = holding(&mut sim, id);
         let (first, left) = throw_timed(&mut sim, p, tick, 2.0).expect("thrown");
-        assert!((0.900 - 1e-6..=0.900 + 3.0 * tick).contains(&left), "{id}: left at {left}");
+        assert!(
+            (0.900 - 1e-6..=0.900 + 3.0 * tick).contains(&left),
+            "{id}: left at {left}"
+        );
         if id == XM84 {
             // The second: fire held from 1.2 s to 1.6 s starts its pre-fire
             // when the reload ends (1533 ms), released at 1533 + 900.
@@ -830,7 +948,10 @@ fn t36_t38_tap_throw_timing() {
                 }
             }
             let second = second.expect("a second throw");
-            assert!((2.433 - 1e-6..=2.433 + 8.0 * tick).contains(&second), "second at {second}");
+            assert!(
+                (2.433 - 1e-6..=2.433 + 8.0 * tick).contains(&second),
+                "second at {second}"
+            );
         }
     }
 }
@@ -844,7 +965,10 @@ fn t37_hold_throw_timing() {
     let mut sim = sim();
     let (p, _) = holding(&mut sim, M67);
     let (_, left) = throw_timed(&mut sim, p, 3.0, 4.0).expect("thrown");
-    assert!((3.0 + 0.133..=3.0 + 0.075 + 0.133 + 3.0 * TICK_INTERVAL).contains(&left), "left at {left}");
+    assert!(
+        (3.0 + 0.133..=3.0 + 0.075 + 0.133 + 3.0 * TICK_INTERVAL).contains(&left),
+        "left at {left}"
+    );
 }
 
 #[test]
@@ -908,7 +1032,13 @@ fn t29_death_after_the_pin_pull() {
     assert_eq!((weapon, f - created), (M67, 50), "2.5 s fuse");
     // Its flight from the spec's (0, 40, 0).
     let mut sim = self::sim();
-    let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 40.0, 0.0), Vec3::new(0.0, 0.0, 500.0));
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, 40.0, 0.0),
+        Vec3::new(0.0, 0.0, 500.0),
+    );
     let s = to_step(&mut sim, g, 5);
     let c = s.contacts[0];
     assert!(c.step == 5 && (c.at.z - 117.65).abs() <= 0.05, "{c:?}");
@@ -933,10 +1063,21 @@ fn t30_death_during_the_pin_pull() {
 #[test]
 fn t31_sky() {
     let mut sim = sim();
-    solid(&mut sim, Vec3::new(-10.0, 300.0 * U, -10.0), Vec3::new(10.0, 400.0 * U, 10.0), Some("sky"));
+    solid(
+        &mut sim,
+        Vec3::new(-10.0, 300.0 * U, -10.0),
+        Vec3::new(10.0, 400.0 * U, 10.0),
+        Some("sky"),
+    );
     let thrower = far_thrower(&mut sim, 0);
     let victim = player(&mut sim, 50.0, 0.0, 0.0, 0);
-    let g = grenade(&mut sim, M67, Some(thrower), Vec3::new(0.0, 100.0, 0.0), Vec3::new(0.0, 1000.0, 0.0));
+    let g = grenade(
+        &mut sim,
+        M67,
+        Some(thrower),
+        Vec3::new(0.0, 100.0, 0.0),
+        Vec3::new(0.0, 1000.0, 0.0),
+    );
     sim.ticks(30);
     assert!(sim.app.world().get_entity(g).is_err(), "removed");
     sim.seconds(3.0);
@@ -1093,7 +1234,12 @@ fn t43_rest_nudge_xm84() {
     for (surface, up) in [(None, 6.5), (Some("desert sand"), 1.0)] {
         let mut sim = sim();
         if surface.is_some() {
-            solid(&mut sim, Vec3::new(-10.0, -0.5, -10.0), Vec3::new(10.0, 0.001, 10.0), surface);
+            solid(
+                &mut sim,
+                Vec3::new(-10.0, -0.5, -10.0),
+                Vec3::new(10.0, 0.001, 10.0),
+                surface,
+            );
         }
         let g = grenade(&mut sim, XM84, None, Vec3::new(0.0, 60.0, 0.0), Vec3::ZERO);
         let s = to_step(&mut sim, g, 6);
@@ -1110,7 +1256,13 @@ fn t43_rest_nudge_xm84() {
 #[test]
 fn t44_rest_nudge_slanted() {
     let mut sim = sim();
-    let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 10.0, 0.0), Vec3::new(76.0, -400.0, 0.0));
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, 10.0, 0.0),
+        Vec3::new(76.0, -400.0, 0.0),
+    );
     let s = to_step(&mut sim, g, 1);
     let c = s.contacts[0];
     assert!(c.rest, "{c:?}");
@@ -1130,23 +1282,73 @@ fn t45_character_touches() {
     let spheres = [(Vec3::new(0.0, 1.3, 0.0), 0.15), (Vec3::new(0.0, 1.7, 0.0), 0.1)];
     let v = Vec3::new(10.0, 0.0, 0.0);
     // At knee height: through the box, no sphere on the line.
-    assert_eq!(character_touches(Vec3::new(-1.0, 0.4, 0.0), Vec3::new(1.0, 0.4, 0.0), v, min, max, &spheres), 0);
+    assert_eq!(
+        character_touches(
+            Vec3::new(-1.0, 0.4, 0.0),
+            Vec3::new(1.0, 0.4, 0.0),
+            v,
+            min,
+            max,
+            &spheres
+        ),
+        0
+    );
     // Through the chest, stopping inside the box before the spheres' box.
-    assert_eq!(character_touches(Vec3::new(-1.0, 1.3, 0.0), Vec3::new(-0.25, 1.3, 0.0), v, min, max, &spheres), 1);
+    assert_eq!(
+        character_touches(
+            Vec3::new(-1.0, 1.3, 0.0),
+            Vec3::new(-0.25, 1.3, 0.0),
+            v,
+            min,
+            max,
+            &spheres
+        ),
+        1
+    );
     // Right through.
-    assert_eq!(character_touches(Vec3::new(-1.0, 1.3, 0.0), Vec3::new(1.0, 1.3, 0.0), v, min, max, &spheres), 2);
+    assert_eq!(
+        character_touches(
+            Vec3::new(-1.0, 1.3, 0.0),
+            Vec3::new(1.0, 1.3, 0.0),
+            v,
+            min,
+            max,
+            &spheres
+        ),
+        2
+    );
     // The line counts, not the segment: one ending short of the sphere (it
     // passes 0.14 from the chest's centre) but inside both boxes.
-    assert_eq!(character_touches(Vec3::new(-1.0, 1.44, 0.0), Vec3::new(-0.10, 1.44, 0.0), v, min, max, &spheres), 2);
+    assert_eq!(
+        character_touches(
+            Vec3::new(-1.0, 1.44, 0.0),
+            Vec3::new(-0.10, 1.44, 0.0),
+            v,
+            min,
+            max,
+            &spheres
+        ),
+        2
+    );
     // A grenade into a standing player's chest: slowed, not turned (no
     // mirror), and again on later steps while inside.
     let mut sim = sim();
     let victim = player(&mut sim, 0.0, 0.0, 0.0, 0);
     let (centre, _) = body(&mut sim, victim);
     let chest = centre / U + Vec3::new(0.0, 15.0, 0.0);
-    let g = grenade(&mut sim, M67, None, chest - Vec3::new(0.0, 0.0, 100.0), Vec3::new(0.0, 0.0, 1000.0));
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        chest - Vec3::new(0.0, 0.0, 100.0),
+        Vec3::new(0.0, 0.0, 1000.0),
+    );
     let s = to_step(&mut sim, g, 4);
-    assert!(s.velocity.z > 0.0 && s.velocity.z < 1000.0 * 0.65 + 1e-3, "slowed: {}", s.velocity);
+    assert!(
+        s.velocity.z > 0.0 && s.velocity.z < 1000.0 * 0.65 + 1e-3,
+        "slowed: {}",
+        s.velocity
+    );
     assert!(s.velocity.x.abs() < 1e-3 && s.contacts.iter().all(|c| !c.rest), "{s:?}");
 }
 
@@ -1163,16 +1365,37 @@ fn t46_t47_doors_detail_and_blockers() {
             Some(l) => layered(&mut sim, min, max, l),
             None => solid(&mut sim, min, max, None),
         };
-        let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+        let g = grenade(
+            &mut sim,
+            M67,
+            None,
+            Vec3::new(0.0, 60.0, 0.0),
+            Vec3::new(0.0, 0.0, 1550.0),
+        );
         let c = to_step(&mut sim, g, 1).contacts[0];
         assert_near(c.at, Vec3::new(0.0, 59.35, 50.0), 0.05, "wall");
         assert_near(c.velocity, Vec3::new(0.0, -52.0, -1007.44), 0.05, "off the wall");
     }
     let mut sim = sim();
-    layered(&mut sim, Vec3::new(-10.0, -1.0, 50.0 * U), Vec3::new(10.0, 10.0, 2.0), PLAYER_CLIP_LAYER);
-    let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    layered(
+        &mut sim,
+        Vec3::new(-10.0, -1.0, 50.0 * U),
+        Vec3::new(10.0, 10.0, 2.0),
+        PLAYER_CLIP_LAYER,
+    );
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     let s = to_step(&mut sim, g, 2);
-    assert!(s.contacts.is_empty() && s.pos.z > 150.0, "through the blocker: {:?}", s.pos);
+    assert!(
+        s.contacts.is_empty() && s.pos.z > 150.0,
+        "through the blocker: {:?}",
+        s.pos
+    );
 }
 
 /// Case 48: grenades in flight touch through their boxes (each slowed by
@@ -1183,7 +1406,13 @@ fn t48_grenades_and_grenades() {
     // Two throwers' frags: A crosses B's box in A's second step.
     let mut sim = sim();
     let (ta, tb) = (far_thrower(&mut sim, 0), far_thrower(&mut sim, 0));
-    let a = grenade(&mut sim, M67, Some(ta), Vec3::new(0.0, 500.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    let a = grenade(
+        &mut sim,
+        M67,
+        Some(ta),
+        Vec3::new(0.0, 500.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     let b = grenade(&mut sim, M67, Some(tb), Vec3::new(0.0, 500.0, 100.0), Vec3::ZERO);
     let s = to_step(&mut sim, a, 2);
     assert!((s.velocity.z - 1007.5).abs() < 0.05, "A: {}", s.velocity);
@@ -1192,7 +1421,13 @@ fn t48_grenades_and_grenades() {
     // Two XM84s of one thrower: nothing.
     let mut sim = self::sim();
     let t = far_thrower(&mut sim, 0);
-    let a = grenade(&mut sim, XM84, Some(t), Vec3::new(0.0, 500.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    let a = grenade(
+        &mut sim,
+        XM84,
+        Some(t),
+        Vec3::new(0.0, 500.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     grenade(&mut sim, XM84, Some(t), Vec3::new(0.0, 500.0, 100.0), Vec3::ZERO);
     assert!((to_step(&mut sim, a, 2).velocity.z - 1550.0).abs() < 0.05);
     // An M67 through a resting XM84's box: nothing.
@@ -1201,7 +1436,13 @@ fn t48_grenades_and_grenades() {
     sim.seconds(0.6);
     assert!(state(&sim, flash).resting);
     let rest = state(&sim, flash).pos;
-    let a = grenade(&mut sim, M67, None, Vec3::new(0.0, rest.y + 1.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    let a = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, rest.y + 1.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     let s = to_step(&mut sim, a, 2);
     assert!(s.pos.z > 120.0 && (s.velocity.z - 1550.0).abs() < 0.05, "{s:?}");
 }
@@ -1212,7 +1453,11 @@ fn t48_grenades_and_grenades() {
 #[test]
 fn t49_stock_water() {
     for (v, want_v, want_d) in [
-        (Vec3::new(0.0, 0.0, -1000.0), Vec3::new(0.0, 65.0, -975.0), Some(Vec3::new(0.0, 3.625, -48.75))),
+        (
+            Vec3::new(0.0, 0.0, -1000.0),
+            Vec3::new(0.0, 65.0, -975.0),
+            Some(Vec3::new(0.0, 3.625, -48.75)),
+        ),
         (Vec3::new(0.0, 0.0, 0.5), Vec3::new(0.0, -10.0, 0.5), None),
     ] {
         let mut sim = sim();
@@ -1311,11 +1556,17 @@ fn t51_breakables_skip_the_cover_test() {
     sim.app.init_resource::<Hits>().add_systems(
         FixedPostUpdate,
         move |mut d: MessageReader<Damage>, mut hits: ResMut<Hits>| {
-            hits.0.extend(d.read().filter(|d| d.target == target).map(|d| d.amount / HP));
+            hits.0
+                .extend(d.read().filter(|d| d.target == target).map(|d| d.amount / HP));
         },
     );
     let at = Vec3::new(0.0, 1.0, 100.0 * U);
-    solid(&mut sim, Vec3::new(-2.0, 0.0, 50.0 * U), Vec3::new(2.0, 4.0, 52.0 * U), None);
+    solid(
+        &mut sim,
+        Vec3::new(-2.0, 0.0, 50.0 * U),
+        Vec3::new(2.0, 4.0, 52.0 * U),
+        None,
+    );
     explode_at(&mut sim, M67, Some(thrower), at);
     let hits = &sim.app.world().resource::<Hits>().0;
     assert_eq!(hits.len(), 1, "{hits:?}");
@@ -1335,8 +1586,14 @@ fn t52_flash_gear() {
         let mut sim = sim();
         let thrower = far_thrower(&mut sim, 0);
         let victim = player(&mut sim, 0.0, 0.0, 0.0, 0);
-        let worn = names.iter().map(|n| gear(n).unwrap_or_else(|| panic!("{n}"))).collect::<Vec<_>>();
-        sim.app.world_mut().entity_mut(victim).insert(combat_arms::game::weapons::gear_armour(0.0, &worn));
+        let worn = names
+            .iter()
+            .map(|n| gear(n).unwrap_or_else(|| panic!("{n}")))
+            .collect::<Vec<_>>();
+        sim.app
+            .world_mut()
+            .entity_mut(victim)
+            .insert(combat_arms::game::weapons::gear_armour(0.0, &worn));
         let (t, _) = flashed(&mut sim, victim, thrower, 200.0, true).expect("flashed");
         assert!((t - time).abs() < 1e-3, "{names:?}: {t}");
     }
@@ -1359,7 +1616,13 @@ fn t53_t54_flash_facing_is_yaw_only() {
     // either way).
     sim.app.world_mut().entity_mut(victim).remove::<CaFlashed>();
     let (centre, _) = body(&mut sim, victim);
-    let g = grenade(&mut sim, XM84, Some(thrower), (centre + Vec3::new(0.0, 200.0 * U, 0.0)) / U, Vec3::ZERO);
+    let g = grenade(
+        &mut sim,
+        XM84,
+        Some(thrower),
+        (centre + Vec3::new(0.0, 200.0 * U, 0.0)) / U,
+        Vec3::ZERO,
+    );
     sim.app.world_mut().get_mut::<CaGrenade>(g).unwrap().params.fuse = 0.0;
     until_boom(&mut sim, 1.0);
     let blast = sim.app.world().resource::<chimera_core::core::SimClock>().now;
@@ -1407,7 +1670,13 @@ fn t58_shooting_grenades() {
     for (id, rounds, z) in [(XM84, 2, 0.0), (M67, 12, 1550.0)] {
         let mut sim = sim();
         let thrower = far_thrower(&mut sim, 0);
-        let g = grenade(&mut sim, id, Some(thrower), Vec3::new(0.0, 5000.0, 0.0), Vec3::new(0.0, 0.0, z));
+        let g = grenade(
+            &mut sim,
+            id,
+            Some(thrower),
+            Vec3::new(0.0, 5000.0, 0.0),
+            Vec3::new(0.0, 0.0, z),
+        );
         sim.app.world_mut().get_mut::<CaGrenade>(g).unwrap().params.fuse = 100.0;
         sim.ticks(5);
         for i in 1..=rounds {
@@ -1426,7 +1695,9 @@ fn t58_shooting_grenades() {
             let gone = booms(&sim).len() == 1;
             assert_eq!(gone, i == rounds, "{id}: after {i}");
             if !gone {
-                assert!((state(&sim, g).health - (if id == XM84 { 50.0 } else { 300.0 } - 25.0 * i as f32)).abs() < 1e-3);
+                assert!(
+                    (state(&sim, g).health - (if id == XM84 { 50.0 } else { 300.0 } - 25.0 * i as f32)).abs() < 1e-3
+                );
             }
         }
     }
@@ -1467,8 +1738,19 @@ fn spent_grenade_kept_at_total_0() {
     let p = player(&mut sim, 0.0, 0.0, 0.0, 0);
     sim.seconds(1.0);
     let before = sim.app.world().get::<Inventory>(p).unwrap().weapons.clone();
-    let ids: Vec<&str> = before.iter().map(|w| sim.app.world().get::<Weapon>(*w).unwrap().id).collect();
-    assert_eq!(ids, [combat_arms::game::weapons::RIFLE, combat_arms::game::inventory::KNIFE, M67], "the loadout");
+    let ids: Vec<&str> = before
+        .iter()
+        .map(|w| sim.app.world().get::<Weapon>(*w).unwrap().id)
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            combat_arms::game::weapons::RIFLE,
+            combat_arms::game::inventory::KNIFE,
+            M67
+        ],
+        "the loadout"
+    );
     let m67 = before[2];
     sim.intent(p).select = Some(3);
     sim.ticks(1);
@@ -1487,12 +1769,23 @@ fn spent_grenade_kept_at_total_0() {
     sim.ticks(1);
     sim.intent(p).select = None;
     sim.seconds(0.5);
-    assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(before[0]), "key 4: nothing");
+    assert_eq!(
+        sim.app.world().get::<Inventory>(p).unwrap().active,
+        Some(before[0]),
+        "key 4: nothing"
+    );
     combat_arms::game::inventory::respawn_inventory(sim.app.world_mut(), p);
     sim.seconds(1.5);
     let w = sim.app.world().get::<Inventory>(p).unwrap().weapons.clone();
-    let m67 = w.iter().find(|w| sim.app.world().get::<Weapon>(**w).unwrap().id == M67).unwrap();
-    assert_eq!(sim.app.world().get::<Throwable>(*m67).unwrap().count, 1, "back at respawn");
+    let m67 = w
+        .iter()
+        .find(|w| sim.app.world().get::<Weapon>(**w).unwrap().id == M67)
+        .unwrap();
+    assert_eq!(
+        sim.app.world().get::<Throwable>(*m67).unwrap().count,
+        1,
+        "back at respawn"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1521,7 +1814,11 @@ fn net_thrown_grenade_seen_and_damaging() {
     sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().select = None;
     sim.ticks(40);
     let active = sim.clients[0].app.world().get::<Inventory>(me).unwrap().active.unwrap();
-    assert_eq!(sim.clients[0].app.world().get::<Weapon>(active).unwrap().id, M67, "drawn");
+    assert_eq!(
+        sim.clients[0].app.world().get::<Weapon>(active).unwrap().id,
+        M67,
+        "drawn"
+    );
     sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = true;
     sim.ticks(1);
     sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = false;
@@ -1530,7 +1827,10 @@ fn net_thrown_grenade_seen_and_damaging() {
     let ok = sim.until(300, |s| {
         for (i, c) in s.clients.iter_mut().enumerate() {
             let w = c.app.world_mut();
-            if w.query::<&ShownItem>().iter(w).any(|i| i.0 == grenades::thrown_key(M67)) {
+            if w.query::<&ShownItem>()
+                .iter(w)
+                .any(|i| i.0 == grenades::thrown_key(M67))
+            {
                 seen[i] = true;
             }
         }
@@ -1539,14 +1839,22 @@ fn net_thrown_grenade_seen_and_damaging() {
     assert!(ok, "drawn on both clients: {seen:?}");
     for i in 0..2 {
         let g = sim.clients[i].app.world().resource::<NetGraph>().clone();
-        assert_eq!(g.errors, 0, "client {i} mispredicted the throw ({:?})", g.last_differing);
+        assert_eq!(
+            g.errors, 0,
+            "client {i} mispredicted the throw ({:?})",
+            g.last_differing
+        );
     }
     // Put it at the other player's feet on the server; let it go off.
     let victim = sim.character_of(1).unwrap();
     let at = sim.server.app.world().get::<Transform>(victim).unwrap().translation;
     {
         let w = sim.server.app.world_mut();
-        let g = w.query_filtered::<Entity, With<CaGrenade>>().iter(w).next().expect("on the server");
+        let g = w
+            .query_filtered::<Entity, With<CaGrenade>>()
+            .iter(w)
+            .next()
+            .expect("on the server");
         let mut s = w.get_mut::<CaGrenade>(g).unwrap();
         s.pos = (at + Vec3::new(0.5, 0.0, 0.0)) / U;
         s.velocity = Vec3::ZERO;
@@ -1584,7 +1892,12 @@ fn t59_fire_offset() {
     assert_near(at / U, Vec3::new(0.0, 64.0, 20.0), 1e-3, "clear");
     let at = grenades::fire_offset(sim.app.world_mut(), thrower, eye, Vec3::Z, 0.0);
     assert_near(at / U, Vec3::new(0.0, 64.0, 0.0), 1e-6, "no offset");
-    solid(&mut sim, Vec3::new(-50.0, 0.0, 10.0) * U, Vec3::new(50.0, 100.0, 12.0) * U, None);
+    solid(
+        &mut sim,
+        Vec3::new(-50.0, 0.0, 10.0) * U,
+        Vec3::new(50.0, 100.0, 12.0) * U,
+        None,
+    );
     let at = grenades::fire_offset(sim.app.world_mut(), thrower, eye, Vec3::Z, 20.0 * U);
     assert_near(at / U, Vec3::new(0.0, 64.0, 0.0), 1e-6, "a wall 10 u ahead");
     let w = weapon_of(&mut sim, M67, None);
@@ -1618,10 +1931,23 @@ fn t61_flash_curve() {
     let (time, _) = flashed(&mut sim, victim, thrower, 200.0, true).expect("flashed");
     assert!((time - 25.0).abs() < 1e-3);
     let b = *sim.app.world().get::<Blinded>(victim).unwrap();
-    for (t, white, linear) in [(0.0, 1.0, 1.0), (3.125, 0.924, 0.75), (6.25, 0.7071, 0.5), (8.333, 0.5, 0.333), (12.5, 0.0, 0.0)] {
+    for (t, white, linear) in [
+        (0.0, 1.0, 1.0),
+        (3.125, 0.924, 0.75),
+        (6.25, 0.7071, 0.5),
+        (8.333, 0.5, 0.333),
+        (12.5, 0.0, 0.0),
+    ] {
         let now = b.fade_start + t;
-        assert!((grenades::blinded_alpha(&b, now) - white).abs() < 1e-3, "white at {t}: {}", grenades::blinded_alpha(&b, now));
-        assert!((b.alpha_at(now) - linear).abs() < 1e-3, "Chimera's own fade stays linear");
+        assert!(
+            (grenades::blinded_alpha(&b, now) - white).abs() < 1e-3,
+            "white at {t}: {}",
+            grenades::blinded_alpha(&b, now)
+        );
+        assert!(
+            (b.alpha_at(now) - linear).abs() < 1e-3,
+            "Chimera's own fade stays linear"
+        );
     }
     // Before the fade starts it is full white; after the end none.
     assert_eq!(grenades::blinded_alpha(&b, b.fade_start - 1.0), 1.0);
@@ -1642,14 +1968,26 @@ fn t62_smoke_life() {
     let thrower = far_thrower(&mut sim, 0);
     explode_at(&mut sim, M18, Some(thrower), Vec3::new(0.0, 1.0, 0.0));
     let world = sim.app.world_mut();
-    let cloud = world.query::<&SmokeCloud>().iter(world).next().expect("the cloud").clone();
-    assert!((cloud.radius(0.5) - cloud.smoke.max_radius).abs() < 1e-5, "full size by 0.5 s");
+    let cloud = world
+        .query::<&SmokeCloud>()
+        .iter(world)
+        .next()
+        .expect("the cloud")
+        .clone();
+    assert!(
+        (cloud.radius(0.5) - cloud.smoke.max_radius).abs() < 1e-5,
+        "full size by 0.5 s"
+    );
     assert!(cloud.radius(0.25) < cloud.smoke.max_radius);
     assert_eq!(cloud.alpha(10.0), 0.0, "nothing of it at 10 s");
     assert!(cloud.alpha(9.0) > 0.0);
     sim.seconds(9.4);
     let world = sim.app.world_mut();
-    assert_eq!(world.query::<&SmokeCloud>().iter(world).count(), 1, "still there at about 9.5 s");
+    assert_eq!(
+        world.query::<&SmokeCloud>().iter(world).count(),
+        1,
+        "still there at about 9.5 s"
+    );
     sim.seconds(1.5);
     let world = sim.app.world_mut();
     assert_eq!(world.query::<&SmokeCloud>().iter(world).count(), 0, "gone by 11 s");
@@ -1660,7 +1998,11 @@ fn grenade_look(sim: &mut Sim) -> (Vec<String>, Vec<CaSound>) {
     sim.ticks(3);
     let looks = std::mem::take(&mut sim.app.world_mut().resource_mut::<Looks>().0);
     let heard = std::mem::take(&mut sim.app.world_mut().resource_mut::<Heard>().0);
-    let groups = looks.iter().filter(|r| r.kind == FxKind::Grenade).map(|r| r.group.clone()).collect();
+    let groups = looks
+        .iter()
+        .filter(|r| r.kind == FxKind::Grenade)
+        .map(|r| r.group.clone())
+        .collect();
     (groups, heard)
 }
 
@@ -1676,7 +2018,12 @@ fn t63_mid_air_frag_look() {
     explode_at(&mut sim, M67, None, at);
     let (groups, heard) = grenade_look(&mut sim);
     assert_eq!(groups, ["Grenade_Stone"]);
-    assert!(heard.iter().any(|s| s.file == "guns_snd_impacts/explosions/gren.wav" && s.at.is_some()), "{heard:?}");
+    assert!(
+        heard
+            .iter()
+            .any(|s| s.file == "guns_snd_impacts/explosions/gren.wav" && s.at.is_some()),
+        "{heard:?}"
+    );
 }
 
 /// Corrections 1 (effects_sounds.md, case 58): the look is that of the
@@ -1686,10 +2033,21 @@ fn t63_mid_air_frag_look() {
 fn t63_last_bounce_decides_the_look() {
     // Off a Wood wall, then in the air.
     let mut sim = sim();
-    solid(&mut sim, Vec3::new(-10.0, -1.0, 50.0 * U), Vec3::new(10.0, 10.0, 2.0), Some("30"));
+    solid(
+        &mut sim,
+        Vec3::new(-10.0, -1.0, 50.0 * U),
+        Vec3::new(10.0, 10.0, 2.0),
+        Some("30"),
+    );
     let me = player(&mut sim, 0.0, 545.0, 0.0, 0);
     sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
-    let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     let s = to_step(&mut sim, g, 1);
     assert_eq!(s.contacts.len(), 1, "the wall");
     assert_eq!(s.last_surface.as_deref(), Some("30"));
@@ -1705,7 +2063,12 @@ fn t63_last_bounce_decides_the_look() {
 fn t63_resting_on_sand() {
     let mut sim = sim();
     let x = 110.0 / U;
-    solid(&mut sim, Vec3::new(100.0, -1.0, -10.0), Vec3::new(120.0, 0.0, 10.0), Some("60"));
+    solid(
+        &mut sim,
+        Vec3::new(100.0, -1.0, -10.0),
+        Vec3::new(120.0, 0.0, 10.0),
+        Some("60"),
+    );
     let me = player(&mut sim, x, 500.0, 0.0, 0);
     sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
     let g = grenade(&mut sim, M67, None, Vec3::new(x, 60.0, 0.0), Vec3::ZERO);
@@ -1742,7 +2105,8 @@ fn heard_all(sim: &mut Sim) -> Vec<CaSound> {
 
 /// The weapon documents the install's records make of our grenades.
 fn merged(weapons: &str) -> Vec<toml::Table> {
-    let file = combat_arms::game::data::attributes::WeaponsFile::read(&Document::parse(weapons.as_bytes()).unwrap()).unwrap();
+    let file =
+        combat_arms::game::data::attributes::WeaponsFile::read(&Document::parse(weapons.as_bytes()).unwrap()).unwrap();
     let ours = [
         ("m67.toml", include_str!("../../data/weapons/m67.toml")),
         ("xm84.toml", include_str!("../../data/weapons/xm84.toml")),
@@ -1767,21 +2131,31 @@ fn t64_pin_sound_source() {
 [Weapon1] Name="XM84" AmmoName0="a" Guntype=7 MiscSound1="GUNS_SND_Throwing\XM-84\fire.wav"
 [Weapon2] Name="M18" AmmoName0="a" Guntype=7"#,
     );
-    let fx = |d: &toml::Table| -> Option<CaWeaponFx> {
-        d["hooks"].get(EFFECTS).cloned().map(|v| v.try_into().unwrap())
-    };
+    let fx =
+        |d: &toml::Table| -> Option<CaWeaponFx> { d["hooks"].get(EFFECTS).cloned().map(|v| v.try_into().unwrap()) };
     let m67 = fx(&docs[0]).expect("the M67 has misc sounds");
     assert_eq!(m67.key_sound(10).map(|k| k.0), Some("guns_snd_throwing/m67/fire.wav"));
-    assert_eq!(m67.key_sound(11).map(|k| k.0), Some("guns_snd_throwing/m67/firetoss.wav"));
+    assert_eq!(
+        m67.key_sound(11).map(|k| k.0),
+        Some("guns_snd_throwing/m67/firetoss.wav")
+    );
     assert_eq!(m67.key_sound(12), None);
     let xm84 = fx(&docs[1]).unwrap();
-    assert_eq!(xm84.key_sound(10).map(|k| k.0), Some("guns_snd_throwing/xm-84/fire.wav"));
-    assert!(fx(&docs[2]).unwrap().key_sound(10).is_none(), "a record without MiscSound1: silence, no fallback by file name");
+    assert_eq!(
+        xm84.key_sound(10).map(|k| k.0),
+        Some("guns_snd_throwing/xm-84/fire.wav")
+    );
+    assert!(
+        fx(&docs[2]).unwrap().key_sound(10).is_none(),
+        "a record without MiscSound1: silence, no fallback by file name"
+    );
     // The call-out switch: Guntype 7 with PlayAutoThrowSound on.
     for d in &docs {
         assert_eq!(d["hooks"]["combat_arms:grenade"]["call_out"].as_bool(), Some(true));
     }
-    let off = merged(r#"[Ammo0] Name="a" [Weapon0] Name="M67" AmmoName0="a" Guntype=7 PlayAutoThrowSound=FALSE [Weapon1] Name="XM84" AmmoName0="a" Guntype=10"#);
+    let off = merged(
+        r#"[Ammo0] Name="a" [Weapon0] Name="M67" AmmoName0="a" Guntype=7 PlayAutoThrowSound=FALSE [Weapon1] Name="XM84" AmmoName0="a" Guntype=10"#,
+    );
     for d in &off[..2] {
         assert_eq!(d["hooks"]["combat_arms:grenade"]["call_out"].as_bool(), Some(false));
     }
@@ -1823,7 +2197,11 @@ fn t65_pin_sound_for_others() {
     };
     let own = key(&mut sim, me);
     assert_eq!(own.len(), 1, "once");
-    assert_eq!((own[0].at, own[0].volume, own[0].server), (None, 100.0, false), "local, full volume");
+    assert_eq!(
+        (own[0].at, own[0].volume, own[0].server),
+        (None, 100.0, false),
+        "local, full volume"
+    );
     let theirs = key(&mut sim, other);
     assert_eq!(theirs.len(), 1);
     let at = theirs[0].at.expect("3D");
@@ -1831,7 +2209,10 @@ fn t65_pin_sound_for_others() {
     assert_eq!(theirs[0].volume, 100.0);
     assert_eq!(theirs[0].source, None, "fixed where the key fired, not following");
     let eye = sim.app.world().get::<Transform>(other).unwrap().translation;
-    assert!((at - eye).length() < 3.0, "at the thrower's flash point (the eye without a view model)");
+    assert!(
+        (at - eye).length() < 3.0,
+        "at the thrower's flash point (the eye without a view model)"
+    );
     // The gain at 1000 and 1900 u.
     let gain = |d: f32| rules::gain(d, rules::inner_radius(2000.0), 2000.0, 100.0);
     assert!((gain(1000.0) - 0.717).abs() < 1e-3);
@@ -1861,7 +2242,10 @@ fn t66_no_release_sound() {
 
 /// The call-out sounds heard (the male template's two files).
 fn call_outs(heard: Vec<CaSound>) -> Vec<CaSound> {
-    heard.into_iter().filter(|s| s.file.contains("vma_grenade") || s.file.contains("vma_fireinthehole")).collect()
+    heard
+        .into_iter()
+        .filter(|s| s.file.contains("vma_grenade") || s.file.contains("vma_fireinthehole"))
+        .collect()
 }
 
 /// 67. The throw call-out: the thrower's team hears one of two male
@@ -1872,7 +2256,11 @@ fn t67_throw_call_out() {
     for (mine, hears) in [(0, true), (1, false)] {
         let mut sim = sim();
         let (thrower, _) = holding(&mut sim, M67);
-        let listener = if mine == 0 { thrower } else { player(&mut sim, 400.0, 400.0, 0.0, 1) };
+        let listener = if mine == 0 {
+            thrower
+        } else {
+            player(&mut sim, 400.0, 400.0, 0.0, 1)
+        };
         sim.app.world_mut().entity_mut(listener).insert(LocalPlayer);
         heard_all(&mut sim);
         throw_timed(&mut sim, thrower, TICK_INTERVAL, 3.0).expect("thrown");
@@ -1885,12 +2273,20 @@ fn t67_throw_call_out() {
         assert_eq!(got.len(), 1, "{got:?}");
         let c = &got[0];
         assert!(
-            ["chars_snd/male/vma_grenade_ma.wav", "chars_snd/male/vma_fireinthehole_ma.wav"].contains(&c.file.as_str()),
+            [
+                "chars_snd/male/vma_grenade_ma.wav",
+                "chars_snd/male/vma_fireinthehole_ma.wav"
+            ]
+            .contains(&c.file.as_str()),
             "{}",
             c.file
         );
         assert_eq!(c.radii, (35.0, 500.0));
-        assert_eq!((c.volume, c.source, c.server), (100.0, Some(thrower), false), "follows the thrower (its source)");
+        assert_eq!(
+            (c.volume, c.source, c.server),
+            (100.0, Some(thrower), false),
+            "follows the thrower (its source)"
+        );
         assert!(c.at.is_some());
     }
 }
@@ -1905,7 +2301,11 @@ fn t67_a_second_call_out_is_dropped_while_one_plays() {
     assert!(l.try_start(11.5, 1.5), "over");
     let t = CaFxTables::built_in();
     assert_eq!(callout::files(t, false).len(), 2);
-    assert!(callout::files(t, true).iter().all(|f| f.contains("female") && f.ends_with("_fa.wav")));
+    assert!(
+        callout::files(t, true)
+            .iter()
+            .all(|f| f.contains("female") && f.ends_with("_fa.wav"))
+    );
     assert_eq!(t.sounds.grenade_throw_radius, 500.0);
 }
 
@@ -1935,7 +2335,11 @@ fn t67_net_call_out_reaches_the_thrower_s_team() {
     // Clients 0 and 1 on one team, client 2 on the other (the server's).
     let characters: Vec<Entity> = (0..3).map(|i| sim.character_of(i).unwrap()).collect();
     for (i, c) in characters.iter().enumerate() {
-        sim.server.app.world_mut().entity_mut(*c).insert(Team(if i == 2 { 1 } else { 0 }));
+        sim.server
+            .app
+            .world_mut()
+            .entity_mut(*c)
+            .insert(Team(if i == 2 { 1 } else { 0 }));
     }
     sim.ticks(30);
     sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().select = Some(3);
@@ -2029,9 +2433,15 @@ fn net_party_voice_lines_reach_others_who_asked() {
     sim.ticks(1);
     sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = false;
     sim.ticks(120);
-    let heard: Vec<Vec<CaSound>> = (0..3).map(|i| call_outs(heard_all_of(&mut sim.clients[i].app))).collect();
+    let heard: Vec<Vec<CaSound>> = (0..3)
+        .map(|i| call_outs(heard_all_of(&mut sim.clients[i].app)))
+        .collect();
     let counts: Vec<usize> = heard.iter().map(Vec::len).collect();
-    assert_eq!(counts, [1, 0, 1], "the thrower once, the one who asked once, the other none");
+    assert_eq!(
+        counts,
+        [1, 0, 1],
+        "the thrower once, the one who asked once, the other none"
+    );
     let c = &heard[2][0];
     let id = sim.client_id(0);
     let thrower_there = NetSim::owned_by(&mut sim.clients[2], Some(id)).unwrap();
@@ -2096,14 +2506,22 @@ fn t68_tumble() {
     to_step(&mut sim, a, 1);
     for g in [a, b] {
         let s = state(&sim, g);
-        close3(s.tumble.angles, [0.0785, 0.1571, -0.1571], "angles after the creation frame");
+        close3(
+            s.tumble.angles,
+            [0.0785, 0.1571, -0.1571],
+            "angles after the creation frame",
+        );
         let (f, u) = axes(&sim, g);
         close3(f, [0.1560, -0.0785, 0.9846], "forward");
         close3(u, [0.1666, 0.9846, 0.0521], "up");
     }
     to_step(&mut sim, a, 4);
     let (f, u) = axes(&sim, a);
-    close3(state(&sim, a).tumble.angles, [0.3142, 0.6283, -0.6283], "angles after 4");
+    close3(
+        state(&sim, a).tumble.angles,
+        [0.3142, 0.6283, -0.6283],
+        "angles after 4",
+    );
     close3(f, [0.5590, -0.3090, 0.7694], "forward");
     close3(u, [0.6225, 0.7694, -0.1432], "up");
     to_step(&mut sim, a, 20);
@@ -2117,12 +2535,20 @@ fn t68_tumble() {
 #[test]
 fn t69_tumble_across_a_bounce() {
     let mut sim = sim();
-    let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1550.0));
+    let g = grenade(
+        &mut sim,
+        M67,
+        None,
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 0.0, 1550.0),
+    );
     let mut last = None;
     let mut bounced = false;
     for _ in 0..80 {
         sim.ticks(1);
-        let Some(s) = sim.app.world().get::<CaGrenade>(g) else { break };
+        let Some(s) = sim.app.world().get::<CaGrenade>(g) else {
+            break;
+        };
         let s = s.clone();
         if let Some((rates, angles, n)) = last
             && s.contacts.len() > n
@@ -2132,7 +2558,11 @@ fn t69_tumble_across_a_bounce() {
             assert!(moved.abs_diff_eq(rates * 0.05, 1e-4), "{moved:?} vs {rates:?}");
             assert_ne!(s.tumble.rates, rates, "redrawn");
             let r = s.tumble.rates;
-            assert!(r.x.abs() <= std::f32::consts::PI && r.y.abs() <= std::f32::consts::TAU && r.z.abs() <= std::f32::consts::TAU);
+            assert!(
+                r.x.abs() <= std::f32::consts::PI
+                    && r.y.abs() <= std::f32::consts::TAU
+                    && r.z.abs() <= std::f32::consts::TAU
+            );
             bounced = true;
             break;
         }

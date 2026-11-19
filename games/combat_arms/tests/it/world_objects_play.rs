@@ -14,7 +14,7 @@ use chimera_world::{harness::Sim, map::MapSimPlugin};
 use combat_arms::{
     game::{
         TICK_INTERVAL, movement,
-        objects::{CaObjectMessage, CaObjects, CaNode, geometry::from_engine, movers::State},
+        objects::{CaNode, CaObjectMessage, CaObjects, geometry::from_engine, movers::State},
         volumes::CaVolume,
         world,
     },
@@ -39,15 +39,37 @@ pub(crate) fn cuboid(name: &str, min: [f32; 3], max: [f32; 3], physics: bool) ->
     let [x0, y0, z0] = min;
     let [x1, y1, z1] = max;
     let quads: [([f32; 3], [[f32; 3]; 4]); 6] = [
-        ([0.0, 1.0, 0.0], [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]]),
-        ([0.0, -1.0, 0.0], [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]]),
-        ([1.0, 0.0, 0.0], [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]]),
-        ([-1.0, 0.0, 0.0], [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]]),
-        ([0.0, 0.0, 1.0], [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]]),
-        ([0.0, 0.0, -1.0], [[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]]),
+        (
+            [0.0, 1.0, 0.0],
+            [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]],
+        ),
+        (
+            [0.0, -1.0, 0.0],
+            [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]],
+        ),
+        (
+            [1.0, 0.0, 0.0],
+            [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]],
+        ),
+        (
+            [-1.0, 0.0, 0.0],
+            [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]],
+        ),
+        (
+            [0.0, 0.0, 1.0],
+            [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]],
+        ),
+        (
+            [0.0, 0.0, -1.0],
+            [[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]],
+        ),
     ];
     let mut m = WorldModel {
-        flags: if physics { model_flags::MAIN_WORLD | model_flags::PHYSICS } else { 0 },
+        flags: if physics {
+            model_flags::MAIN_WORLD | model_flags::PHYSICS
+        } else {
+            0
+        },
         name: name.into(),
         textures: vec!["Default".into()],
         surfaces: vec![Surface {
@@ -90,7 +112,12 @@ pub(crate) fn cuboid(name: &str, min: [f32; 3], max: [f32; 3], physics: bool) ->
 /// and `objects` with their world models.
 pub(crate) fn world_with(models: Vec<WorldModel>, objects: Vec<Object>) -> World {
     let mut w = World {
-        models: vec![cuboid("PhysicsBSP", [-2000.0, -20.0, -2000.0], [2000.0, 0.0, 2000.0], true)],
+        models: vec![cuboid(
+            "PhysicsBSP",
+            [-2000.0, -20.0, -2000.0],
+            [2000.0, 0.0, 2000.0],
+            true,
+        )],
         ..default()
     };
     w.models.extend(models);
@@ -140,7 +167,11 @@ fn a_door_stops_a_player_and_opens_by_use() {
     let s = movement::movement_data().meters_per_unit;
     let map = world::convert(&door_world(), "door", s, &|_| None);
     assert_eq!(map.entities.iter().filter(|e| e.mover).count(), 1, "the door's node");
-    assert_eq!(map.collision_indices.len(), 12, "the door isn't in the level's collision");
+    assert_eq!(
+        map.collision_indices.len(),
+        12,
+        "the door isn't in the level's collision"
+    );
     let (feet, yaw) = (map.spawns[0].0, map.spawn_yaws[0]);
     let mut sim = Sim::new(CaSim, MapSimPlugin::new(map));
     sim.ticks(3);
@@ -215,7 +246,12 @@ fn bullets_break_a_breakable() {
     assert!(!crate_.visible && !crate_.solid && !crate_.rayhit);
     let node = *o.nodes.get(&o.named("Crate").unwrap()).unwrap();
     assert_eq!(sim.app.world().get::<Visibility>(node), Some(&Visibility::Hidden));
-    let health = sim.app.world().get::<chimera_core::core::Health>(target).unwrap().current;
+    let health = sim
+        .app
+        .world()
+        .get::<chimera_core::core::Health>(target)
+        .unwrap()
+        .current;
     assert!(health < 1.0, "the target behind it was hit once it broke: {health}");
 }
 
@@ -303,7 +339,10 @@ fn clients_see_the_door() {
     sim.add_client(|_| {});
     sim.until_joined(600);
     sim.ticks(30);
-    assert!((door_y(&sim.clients[1].app) - 235.0).abs() < 1e-3, "a late joiner sees it open");
+    assert!(
+        (door_y(&sim.clients[1].app) - 235.0).abs() < 1e-3,
+        "a late joiner sees it open"
+    );
 }
 
 /// world_dat.md "Light groups": after each message the object sends
@@ -331,7 +370,11 @@ fn clients_see_the_light_groups() {
     });
     sim.ticks(30);
     assert_eq!(styles(&sim.server.app), Some(vec![(32, true)]));
-    assert_eq!(styles(&sim.clients[0].app), Some(vec![(32, true)]), "the client relights");
+    assert_eq!(
+        styles(&sim.clients[0].app),
+        Some(vec![(32, true)]),
+        "the client relights"
+    );
     sim.add_client(|_| {});
     sim.until_joined(600);
     sim.ticks(30);

@@ -64,7 +64,15 @@ fn model_file(anims: &[(&str, [[i16; 4]; 2])], children: &[&str], pieces: bool) 
             body.f(&p).f(&[0., 0., -1.]).f(&[0., 0.]);
         }
         body.u16(0).u16(1).u16(2);
-        w.u32(1).u32(0).u32(0).u32(0).u32(0).u32(0).u8(0).u32(4).u32(body.0.len() as u32);
+        w.u32(1)
+            .u32(0)
+            .u32(0)
+            .u32(0)
+            .u32(0)
+            .u32(0)
+            .u8(0)
+            .u32(4)
+            .u32(body.0.len() as u32);
         w.0.extend(&body.0);
         w.u8(1).u8(1);
     } else {
@@ -81,7 +89,15 @@ fn model_file(anims: &[(&str, [[i16; 4]; 2])], children: &[&str], pieces: bool) 
     }
     w.u32(anims.len() as u32);
     for (name, rot) in anims {
-        w.f(&[8., 8., 8.]).s(name).u32(3).u32(0).u32(2).u32(0).s("").u32(100).s("");
+        w.f(&[8., 8., 8.])
+            .s(name)
+            .u32(3)
+            .u32(0)
+            .u32(2)
+            .u32(0)
+            .s("")
+            .u32(100)
+            .s("");
         w.u32(0).u32(0);
         w.u32(1).f(&[10., 0., 0.]).u32(2);
         for q in rot {
@@ -175,15 +191,37 @@ fn placed_prop_render_styles() {
     let file = files();
     let loaded = model::load("props/test/parent.ltb", &file).unwrap();
     let mut data = MapData::default();
-    let lists: [&[String]; 3] = [&[], &["RS\\additive.ltb".into()], &["RS\\glass.ltb".into(), "RS\\GLOW.LTB".into()]];
+    let lists: [&[String]; 3] = [
+        &[],
+        &["RS\\additive.ltb".into()],
+        &["RS\\glass.ltb".into(), "RS\\GLOW.LTB".into()],
+    ];
     let mut drawn = Vec::new();
     for styles in lists {
-        let i = props::place(&mut data, &loaded, &[], styles, "Test", Vec3::ONE, Quat::IDENTITY, None, SCALE, &file);
+        let i = props::place(
+            &mut data,
+            &loaded,
+            &[],
+            styles,
+            "Test",
+            Vec3::ONE,
+            Quat::IDENTITY,
+            None,
+            SCALE,
+            &file,
+        );
         let m = &data.models[data.props[i].model];
         assert_eq!(m.meshes.len(), 1);
         drawn.push((m.meshes[0].alpha, m.meshes[0].unlit));
     }
-    assert_eq!(drawn, [(MapAlpha::Opaque, false), (MapAlpha::Add, true), (MapAlpha::Blend, false)]);
+    assert_eq!(
+        drawn,
+        [
+            (MapAlpha::Opaque, false),
+            (MapAlpha::Add, true),
+            (MapAlpha::Blend, false)
+        ]
+    );
 }
 
 /// A placed prop plays its first sequence through Chimera's
@@ -193,8 +231,22 @@ fn placed_prop_animates() {
     let file = files();
     let loaded = model::load("props/test/parent.ltb", &file).unwrap();
     let mut data = MapData::default();
-    let i = props::place(&mut data, &loaded, &[], &[], "Test", Vec3::ONE, Quat::IDENTITY, None, SCALE, &file);
-    assert_eq!((i, data.props[i].entity, data.entities[0].classname()), (0, Some(0), "Test"));
+    let i = props::place(
+        &mut data,
+        &loaded,
+        &[],
+        &[],
+        "Test",
+        Vec3::ONE,
+        Quat::IDENTITY,
+        None,
+        SCALE,
+        &file,
+    );
+    assert_eq!(
+        (i, data.props[i].entity, data.entities[0].classname()),
+        (0, Some(0), "Test")
+    );
     assert!(data.props[i].lighting.is_some());
 
     let mut app = App::new();
@@ -202,7 +254,9 @@ fn placed_prop_animates() {
     app.add_message::<map::PropAnimationDone>()
         .add_systems(Update, map::animate_props.after(props::start_props));
     let set = data.models[0].rig.as_ref().unwrap().animations.clone();
-    let joints: Vec<Entity> = (0..2).map(|_| app.world_mut().spawn(Transform::default()).id()).collect();
+    let joints: Vec<Entity> = (0..2)
+        .map(|_| app.world_mut().spawn(Transform::default()).id())
+        .collect();
     let prop = app
         .world_mut()
         .spawn(PropRig {
@@ -267,7 +321,18 @@ fn a_sprite_skin_draws_its_first_frame() {
     let loaded = model::load("props/test/parent.ltb", &file).unwrap();
     for (skin, textured) in [("GUNS_T_HH\\HH_TEST.spr", true), ("GUNS_T_HH\\HH_GONE.spr", false)] {
         let mut data = MapData::default();
-        let i = props::place(&mut data, &loaded, &[skin.to_string()], &[], "Test", Vec3::ONE, Quat::IDENTITY, None, SCALE, &file);
+        let i = props::place(
+            &mut data,
+            &loaded,
+            &[skin.to_string()],
+            &[],
+            "Test",
+            Vec3::ONE,
+            Quat::IDENTITY,
+            None,
+            SCALE,
+            &file,
+        );
         let mesh = &data.models[data.props[i].model].meshes[0];
         assert_eq!(mesh.texture.is_some(), textured, "{skin}");
         if textured {
@@ -306,15 +371,45 @@ fn a_sprite_skin_plays_its_frames() {
     };
     let loaded = model::load("props/test/parent.ltb", &file).unwrap();
     let mut data = MapData::default();
-    let i = props::place(&mut data, &loaded, &["T\\TWO.SPR".to_string()], &[], "Test", Vec3::ONE, Quat::IDENTITY, None, SCALE, &file);
+    let i = props::place(
+        &mut data,
+        &loaded,
+        &["T\\TWO.SPR".to_string()],
+        &[],
+        "Test",
+        Vec3::ONE,
+        Quat::IDENTITY,
+        None,
+        SCALE,
+        &file,
+    );
     let mesh = data.models[data.props[i].model].meshes[0].clone();
     let frames = mesh.skin_frames.clone().expect("frames");
     assert_eq!(frames.frame_ms, 250);
-    let colours: Vec<[u8; 4]> = frames.frames.iter().map(|&t| data.textures[t].rgba8[..4].try_into().unwrap()).collect();
-    assert_eq!(colours, [[255, 0, 0, 255], [0, 255, 0, 255]], "red, then green; the missing frame left out");
+    let colours: Vec<[u8; 4]> = frames
+        .frames
+        .iter()
+        .map(|&t| data.textures[t].rgba8[..4].try_into().unwrap())
+        .collect();
+    assert_eq!(
+        colours,
+        [[255, 0, 0, 255], [0, 255, 0, 255]],
+        "red, then green; the missing frame left out"
+    );
     assert_eq!(mesh.texture, Some(frames.frames[0]), "drawn from its first frame");
     assert_eq!(mesh.material, "t/two.spr");
-    let i = props::place(&mut data, &loaded, &["T\\ONE.SPR".to_string()], &[], "Test", Vec3::ONE, Quat::IDENTITY, None, SCALE, &file);
+    let i = props::place(
+        &mut data,
+        &loaded,
+        &["T\\ONE.SPR".to_string()],
+        &[],
+        "Test",
+        Vec3::ONE,
+        Quat::IDENTITY,
+        None,
+        SCALE,
+        &file,
+    );
     let mesh = &data.models[data.props[i].model].meshes[0];
     assert!(mesh.texture.is_some() && mesh.skin_frames.is_none(), "one frame: still");
 }
@@ -349,13 +444,28 @@ fn world_sprite_sections_play_their_frames() {
         ..default()
     };
     let mut data = MapData::default();
-    let mut meshes = vec![mesh("t/fan.spr"), mesh("t/plain.dtx"), mesh("t/fan.spr"), mesh("t/gone.spr")];
+    let mut meshes = vec![
+        mesh("t/fan.spr"),
+        mesh("t/plain.dtx"),
+        mesh("t/fan.spr"),
+        mesh("t/gone.spr"),
+    ];
     world_sprites(&mut meshes, &mut data, &file);
     for k in [0, 2] {
         let f = meshes[k].skin_frames.clone().expect("a sprite section plays");
         assert_eq!(f.frame_ms, 52, "19 a second");
-        let colours: Vec<[u8; 4]> = f.frames.iter().map(|&t| data.textures[t].rgba8[..4].try_into().unwrap()).collect();
-        assert_eq!(colours, [[255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255], [0, 255, 0, 255]]);
+        let colours: Vec<[u8; 4]> = f
+            .frames
+            .iter()
+            .map(|&t| data.textures[t].rgba8[..4].try_into().unwrap())
+            .collect();
+        assert_eq!(
+            colours,
+            [[255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255], [0, 255, 0, 255]]
+        );
     }
-    assert!(meshes[1].skin_frames.is_none() && meshes[3].skin_frames.is_none(), "still textures and unreadable sprites");
+    assert!(
+        meshes[1].skin_frames.is_none() && meshes[3].skin_frames.is_none(),
+        "still textures and unreadable sprites"
+    );
 }

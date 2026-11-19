@@ -64,10 +64,19 @@ fn every_drawable_guns_short_name_fits() {
             long.push(format!("{}: {} -> {}", r.id, r.full, r.short));
         }
     }
-    eprintln!("{} guns: {} overridden, {} split, {} as they are", rows.len(), by[0], by[1], by[2]);
+    eprintln!(
+        "{} guns: {} overridden, {} split, {} as they are",
+        rows.len(),
+        by[0],
+        by[1],
+        by[2]
+    );
     // The split's samples (docs/plans/active/gun-display-names.md).
     let short = |id: &str| rows.iter().find(|r| r.id == id).map(|r| (r.short.as_str(), r.from));
-    assert_eq!(short("combat_arms:double_barreled_ar-15_godra_mythic"), Some(("Ra AR-15 DB", NameSource::Override)));
+    assert_eq!(
+        short("combat_arms:double_barreled_ar-15_godra_mythic"),
+        Some(("Ra AR-15 DB", NameSource::Override))
+    );
     assert!(
         long.is_empty(),
         "short names over {SHORT_MAX} characters: give them a `short` in games/combat_arms/data/display_names.toml\n{}",

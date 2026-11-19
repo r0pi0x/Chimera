@@ -56,13 +56,21 @@ fn sim(records: &str) -> Sim {
 struct Heard(Vec<String>);
 
 fn log_sounds(mut sounds: MessageReader<CaSound>, mut log: ResMut<Heard>) {
-    log.0.extend(sounds.read().filter(|s| s.file.starts_with("test\\")).map(|s| s.file.clone()));
+    log.0.extend(
+        sounds
+            .read()
+            .filter(|s| s.file.starts_with("test\\"))
+            .map(|s| s.file.clone()),
+    );
 }
 
 /// A living player of `team` at `x` u along X.
 fn player(sim: &mut Sim, team: u8, x: f32) -> Entity {
     let p = sim.spawn_character(Vec3::new(x * UNIT, 1.0, 0.0), movement::ID);
-    sim.app.world_mut().entity_mut(p).insert((Team(team), Health { current: 1.0, max: 1.0 }));
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert((Team(team), Health { current: 1.0, max: 1.0 }));
     p
 }
 
@@ -77,7 +85,11 @@ fn died(victim: Entity, attacker: Option<Entity>, at: Vec3) -> Died {
             point: at,
             dir: Vec3::ZERO,
             hitgroup: Hitgroup::Generic,
-            kind: if attacker.is_some() { DamageKind::Bullet } else { DamageKind::Fall },
+            kind: if attacker.is_some() {
+                DamageKind::Bullet
+            } else {
+                DamageKind::Fall
+            },
             weapon: None,
             force: Vec3::ZERO,
         },
@@ -103,8 +115,15 @@ fn c106_who_speaks() {
     sim.ticks(1);
     let out = calls(&mut sim, &died(v, Some(a), Vec3::ZERO));
     assert_eq!(out.len(), 2, "{out:?}");
-    assert_eq!((out[0].0, out[0].1.record, out[0].1.speaker, out[0].1.template), (1, ENEMY_DOWN, Some(a), MALE));
-    assert_eq!((out[1].0, out[1].1.record, out[1].1.speaker), (2, MAN_DOWN, Some(c)), "C, not D");
+    assert_eq!(
+        (out[0].0, out[0].1.record, out[0].1.speaker, out[0].1.template),
+        (1, ENEMY_DOWN, Some(a), MALE)
+    );
+    assert_eq!(
+        (out[1].0, out[1].1.record, out[1].1.speaker),
+        (2, MAN_DOWN, Some(c)),
+        "C, not D"
+    );
     // C at 1000 u too: nobody strictly closer.
     sim.app.world_mut().get_mut::<Transform>(c).unwrap().translation.x = 1000.0 * UNIT;
     let out = calls(&mut sim, &died(v, Some(a), Vec3::ZERO));
@@ -113,7 +132,10 @@ fn c106_who_speaks() {
     // A fall: team 0, the male template, from where the damage was.
     let out = calls(&mut sim, &died(v, None, Vec3::new(1.0, 2.0, 3.0)));
     assert_eq!(out[0].0, 0);
-    assert_eq!((out[0].1.speaker, out[0].1.template, out[0].1.at), (None, MALE, [1.0, 2.0, 3.0]));
+    assert_eq!(
+        (out[0].1.speaker, out[0].1.template, out[0].1.at),
+        (None, MALE, [1.0, 2.0, 3.0])
+    );
     // A team kill, a suicide: no EnemyDown.
     let mate = player(&mut sim, 2, 50.0);
     sim.ticks(1);
@@ -126,7 +148,13 @@ fn c106_who_speaks() {
 /// The files heard by the local player `me` when `victim` dies by
 /// `killer`.
 fn heard(sim: &mut Sim, me: Entity, victim: Entity, killer: Option<Entity>) -> Vec<String> {
-    for e in sim.app.world_mut().query_filtered::<Entity, With<LocalPlayer>>().iter(sim.app.world()).collect::<Vec<_>>() {
+    for e in sim
+        .app
+        .world_mut()
+        .query_filtered::<Entity, With<LocalPlayer>>()
+        .iter(sim.app.world())
+        .collect::<Vec<_>>()
+    {
         sim.app.world_mut().entity_mut(e).remove::<LocalPlayer>();
     }
     sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
@@ -149,19 +177,42 @@ fn c106_who_hears() {
     let v = player(&mut sim, 2, 0.0);
     let c = player(&mut sim, 2, 500.0);
     sim.ticks(1);
-    assert_eq!(heard(&mut sim, a2, v, Some(a)), vec!["test\\enemydown_male.wav"], "A's teammate");
+    assert_eq!(
+        heard(&mut sim, a2, v, Some(a)),
+        vec!["test\\enemydown_male.wav"],
+        "A's teammate"
+    );
     sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
-    assert_eq!(heard(&mut sim, c, v, Some(a)), vec!["test\\mandown_male.wav"], "V's teammate hears C");
+    assert_eq!(
+        heard(&mut sim, c, v, Some(a)),
+        vec!["test\\mandown_male.wav"],
+        "V's teammate hears C"
+    );
     sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
-    assert_eq!(heard(&mut sim, a2, v, None), vec!["test\\mandown_male.wav"; 0], "a fall: no EnemyDown for Alpha");
+    assert_eq!(
+        heard(&mut sim, a2, v, None),
+        vec!["test\\mandown_male.wav"; 0],
+        "a fall: no EnemyDown for Alpha"
+    );
     sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
     let fall = heard(&mut sim, c, v, None);
-    assert!(!fall.iter().any(|f| f.contains("enemydown")), "nobody hears a world kill's EnemyDown: {fall:?}");
+    assert!(
+        !fall.iter().any(|f| f.contains("enemydown")),
+        "nobody hears a world kill's EnemyDown: {fall:?}"
+    );
     // Free-for-all: teams 3, 4, 5.
     let mut sim = sim_ffa();
-    let (a, v, b) = (player(&mut sim, 3, 0.0), player(&mut sim, 4, 100.0), player(&mut sim, 5, 200.0));
+    let (a, v, b) = (
+        player(&mut sim, 3, 0.0),
+        player(&mut sim, 4, 100.0),
+        player(&mut sim, 5, 200.0),
+    );
     sim.ticks(1);
-    assert_eq!(heard(&mut sim, a, v, Some(a)), vec!["test\\enemydown_male.wav"], "the killer");
+    assert_eq!(
+        heard(&mut sim, a, v, Some(a)),
+        vec!["test\\enemydown_male.wav"],
+        "the killer"
+    );
     sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
     assert!(heard(&mut sim, b, v, Some(a)).is_empty(), "another player");
 }
@@ -183,15 +234,26 @@ fn party_voice_lines_carry_enemy_down_to_those_who_asked() {
     // (its userinfo).
     let ask = |sim: &mut Sim, on: bool| {
         let line = format!("party_voice_lines_3d {}", u8::from(on));
-        sim.app.world_mut().resource_mut::<chimera_core::console::Console>().submit(&line);
+        sim.app
+            .world_mut()
+            .resource_mut::<chimera_core::console::Console>()
+            .submit(&line);
     };
     sim.ticks(1);
     ask(&mut sim, true);
-    assert_eq!(heard(&mut sim, near, v, Some(a)), vec!["test\\enemydown_male.wav"], "asked, within 2R");
+    assert_eq!(
+        heard(&mut sim, near, v, Some(a)),
+        vec!["test\\enemydown_male.wav"],
+        "asked, within 2R"
+    );
     sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
     assert!(heard(&mut sim, far, v, Some(a)).is_empty(), "asked, beyond 2R");
     sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
-    assert_eq!(heard(&mut sim, a, v, Some(a)), vec!["test\\enemydown_male.wav"], "the killer once, as before");
+    assert_eq!(
+        heard(&mut sim, a, v, Some(a)),
+        vec!["test\\enemydown_male.wav"],
+        "the killer once, as before"
+    );
     ask(&mut sim, false);
     sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
     assert!(heard(&mut sim, plain, v, Some(a)).is_empty(), "didn't ask");
@@ -205,7 +267,10 @@ fn party_voice_lines_carry_enemy_down_to_those_who_asked() {
     let calls: Vec<u8> = {
         let w = sim.app.world_mut();
         w.get_mut::<Health>(v).unwrap().current = 0.0;
-        kill_callout::of_death(w, &died(v, Some(a), Vec3::ZERO)).iter().map(|(_, c)| c.record).collect()
+        kill_callout::of_death(w, &died(v, Some(a), Vec3::ZERO))
+            .iter()
+            .map(|(_, c)| c.record)
+            .collect()
     };
     assert!(calls.contains(&MAN_DOWN), "{calls:?}");
     let call = CaTeamCallout {
@@ -214,10 +279,21 @@ fn party_voice_lines_carry_enemy_down_to_those_who_asked() {
         template: MALE,
         at: (Vec3::X * 300.0 * UNIT).to_array(),
     };
-    assert!(!kill_callout::party_hears(sim.app.world(), near, &call, 1000.0), "ManDown stays the team's");
-    let enemy_down = CaTeamCallout { record: ENEMY_DOWN, speaker: Some(a), at: [0.0; 3], ..call };
+    assert!(
+        !kill_callout::party_hears(sim.app.world(), near, &call, 1000.0),
+        "ManDown stays the team's"
+    );
+    let enemy_down = CaTeamCallout {
+        record: ENEMY_DOWN,
+        speaker: Some(a),
+        at: [0.0; 3],
+        ..call
+    };
     assert!(kill_callout::party_hears(sim.app.world(), near, &enemy_down, 1000.0));
-    assert!(!kill_callout::party_hears(sim.app.world(), a, &enemy_down, 1000.0), "not the speaker");
+    assert!(
+        !kill_callout::party_hears(sim.app.world(), a, &enemy_down, 1000.0),
+        "not the speaker"
+    );
 }
 
 fn sim_ffa() -> Sim {
@@ -230,9 +306,18 @@ fn sim_ffa() -> Sim {
 #[test]
 fn c111_callout_files() {
     let r = CaTeamCallouts::parse(FIXTURE).unwrap();
-    assert_eq!(r.voice(ENEMY_DOWN, MALE).unwrap().0, ["test\\enemydown_male.wav".to_string()]);
-    assert_eq!(r.voice(ENEMY_DOWN, FEMALE).unwrap().0, ["test\\enemydown_female.wav".to_string()]);
-    assert_eq!(r.voice(ENEMY_DOWN, VIP_M).unwrap().0, ["test\\enemydown_female.wav".to_string()]);
+    assert_eq!(
+        r.voice(ENEMY_DOWN, MALE).unwrap().0,
+        ["test\\enemydown_male.wav".to_string()]
+    );
+    assert_eq!(
+        r.voice(ENEMY_DOWN, FEMALE).unwrap().0,
+        ["test\\enemydown_female.wav".to_string()]
+    );
+    assert_eq!(
+        r.voice(ENEMY_DOWN, VIP_M).unwrap().0,
+        ["test\\enemydown_female.wav".to_string()]
+    );
     assert_eq!(r.voice(ENEMY_DOWN, Q_MALE), None, "infected");
     assert_eq!(r.0[0].radius, 1000.0);
     let stock = CaTeamCallouts::parse(STOCK_MAN_DOWN).unwrap();
@@ -305,7 +390,10 @@ fn kill_voice_survives_the_killers_rung_change() {
     let mut sim = sim(FIXTURE);
     sim.app
         .init_resource::<Outcomes>()
-        .add_systems(Last, |mut r: MessageReader<KillVoiceOutcome>, mut o: ResMut<Outcomes>| o.0.extend(r.read().copied()))
+        .add_systems(
+            Last,
+            |mut r: MessageReader<KillVoiceOutcome>, mut o: ResMut<Outcomes>| o.0.extend(r.read().copied()),
+        )
         // The rung up: right after the tick's deaths, the killer is TF2's.
         .add_systems(
             FixedUpdate,
@@ -320,7 +408,10 @@ fn kill_voice_survives_the_killers_rung_change() {
         );
     let a = player(&mut sim, 1, -500.0);
     let v = player(&mut sim, 2, 0.0);
-    sim.app.world_mut().entity_mut(a).insert((LocalPlayer, GameIdentity("combat_arms".into())));
+    sim.app
+        .world_mut()
+        .entity_mut(a)
+        .insert((LocalPlayer, GameIdentity("combat_arms".into())));
     sim.ticks(2);
     sim.app.world_mut().resource_mut::<Heard>().0.clear();
     sim.app.world_mut().write_message(Damage {
@@ -337,8 +428,23 @@ fn kill_voice_survives_the_killers_rung_change() {
     sim.ticks(3);
     sim.app.update();
     let w = sim.app.world();
-    assert_eq!(w.get::<GameIdentity>(a).map(|i| i.0.as_str()), Some("tf2"), "swapped on the kill");
-    assert_eq!(w.resource::<Heard>().0, vec!["test\\enemydown_male.wav"], "our line, as he was");
+    assert_eq!(
+        w.get::<GameIdentity>(a).map(|i| i.0.as_str()),
+        Some("tf2"),
+        "swapped on the kill"
+    );
+    assert_eq!(
+        w.resource::<Heard>().0,
+        vec!["test\\enemydown_male.wav"],
+        "our line, as he was"
+    );
     let outcomes = &w.resource::<Outcomes>().0;
-    assert_eq!(outcomes, &[KillVoiceOutcome { killer: a, victim: v, voiced: true }]);
+    assert_eq!(
+        outcomes,
+        &[KillVoiceOutcome {
+            killer: a,
+            victim: v,
+            voiced: true
+        }]
+    );
 }

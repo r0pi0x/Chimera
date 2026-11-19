@@ -5,11 +5,7 @@
 use bevy::prelude::*;
 use chimera_core::core::DamageKind;
 use chimera_world::harness::Sim;
-use combat_arms::game::rules::{
-    CaMatch, CaStats, Phase,
-    clan::CaClan,
-    objectives::BOMB,
-};
+use combat_arms::game::rules::{CaMatch, CaStats, Phase, clan::CaClan, objectives::BOMB};
 
 use crate::mode_kit::*;
 

@@ -42,7 +42,10 @@ const SPEC_SCOPED: &[(&str, &str)] = &[
 ];
 
 fn install_data() -> Option<CaData> {
-    let installed = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)).is_some_and(|p| chimera_core::mount::served::usable("combat_arms", p, "Game"));
+    let installed = LocalConfig::load()
+        .ok()
+        .and_then(|c| c.game_path(GAME))
+        .is_some_and(|p| chimera_core::mount::served::usable("combat_arms", p, "Game"));
     if !installed {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
@@ -64,10 +67,14 @@ fn scopes_of(data: &CaData, ids: &[&str]) -> Vec<Option<Scope>> {
     sim.set_tick_interval(TICK_INTERVAL);
     let p = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
     sim.seconds(0.5);
-    let ws: Vec<Entity> =
-        ids.iter().map(|id| weapon::give(sim.app.world_mut(), p, id).unwrap_or_else(|| panic!("no weapon {id}"))).collect();
+    let ws: Vec<Entity> = ids
+        .iter()
+        .map(|id| weapon::give(sim.app.world_mut(), p, id).unwrap_or_else(|| panic!("no weapon {id}")))
+        .collect();
     sim.seconds(1.0);
-    ws.iter().map(|w| sim.app.world().get::<CaZoom>(*w).and_then(|z| z.scope.clone())).collect()
+    ws.iter()
+        .map(|w| sim.app.world().get::<CaZoom>(*w).and_then(|z| z.scope.clone()))
+        .collect()
 }
 
 #[test]
@@ -78,8 +85,13 @@ fn every_install_weapon_with_a_default_scope_has_it() {
     let sights = data.attachments();
     let set = data.weapon_set();
     let (mut ids, mut wants, mut names) = (Vec::new(), Vec::new(), Vec::new());
-    let (mut no_document, mut unknown_sight, mut not_listed, mut specials) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    for (index, w) in weapons.iter().enumerate().filter(|(_, w)| !w.default_scope_attach.is_empty()) {
+    let (mut no_document, mut unknown_sight, mut not_listed, mut specials) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for (index, w) in weapons
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| !w.default_scope_attach.is_empty())
+    {
         // A record naming a sight the modification file lacks fits nothing
         // (the lookup fails): not a scope to expect.
         let Some(record) = sights.find(&w.default_scope_attach).and_then(|i| sights.get(i)) else {
@@ -93,7 +105,11 @@ fn every_install_weapon_with_a_default_scope_has_it() {
         // Fitting takes only what the weapon's accepted list names
         // ("Fitting" step 3), the record linked by position (Q13): some
         // event weapons default to a sight they don't list.
-        let listed = mods.weapons.get(index).is_some_and(|r| r.accepts.iter().any(|(n, _)| n.eq_ignore_ascii_case(&w.default_scope_attach)));
+        let listed = mods.weapons.get(index).is_some_and(|r| {
+            r.accepts
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case(&w.default_scope_attach))
+        });
         if !listed {
             not_listed.push(w.name.clone());
             continue;
@@ -124,7 +140,11 @@ fn every_install_weapon_with_a_default_scope_has_it() {
         .filter(|(_, (got, want))| got.is_none() || got != want)
         .map(|(n, (got, want))| format!("{n}: got {got:?}, want {want:?}"))
         .collect();
-    assert!(failures.is_empty(), "weapons whose default sight gave no scope in the sim:\n{}", failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "weapons whose default sight gave no scope in the sim:\n{}",
+        failures.join("\n")
+    );
 }
 
 #[test]
@@ -136,9 +156,20 @@ fn the_snipers_the_spec_names_are_scoped() {
             eprintln!("{name}: not in this install's data");
             continue;
         };
-        assert!(record.default_scope_attach.eq_ignore_ascii_case(sight), "{name}: DefaultScopeAttach {:?}", record.default_scope_attach);
-        let id = data.weapon_for_name(name).unwrap_or_else(|| panic!("{name}: no weapon document"));
-        let scope = scopes_of(&data, &[id]).remove(0).unwrap_or_else(|| panic!("{name}: no scope"));
-        assert!(scope.name.eq_ignore_ascii_case(sight) && !scope.fov.is_empty(), "{name}: {scope:?}");
+        assert!(
+            record.default_scope_attach.eq_ignore_ascii_case(sight),
+            "{name}: DefaultScopeAttach {:?}",
+            record.default_scope_attach
+        );
+        let id = data
+            .weapon_for_name(name)
+            .unwrap_or_else(|| panic!("{name}: no weapon document"));
+        let scope = scopes_of(&data, &[id])
+            .remove(0)
+            .unwrap_or_else(|| panic!("{name}: no scope"));
+        assert!(
+            scope.name.eq_ignore_ascii_case(sight) && !scope.fov.is_empty(),
+            "{name}: {scope:?}"
+        );
     }
 }

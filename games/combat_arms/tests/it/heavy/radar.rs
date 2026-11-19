@@ -7,7 +7,6 @@
 //! mission files need the V1 key. Nothing read here is written anywhere.
 #![cfg_attr(not(feature = "ui"), allow(unused_imports))]
 
-
 use chimera_core::mount::{Mount, config::LocalConfig};
 use combat_arms::game::{
     GAME, INFO, mount,
@@ -17,7 +16,10 @@ use combat_arms::game::{
         mission::{self, MapImage},
     },
 };
-use lithtech_formats::{attributes::Document, dtx::{Dtx, Format}};
+use lithtech_formats::{
+    attributes::Document,
+    dtx::{Dtx, Format},
+};
 
 fn install() -> Option<Mount> {
     let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
@@ -50,16 +52,31 @@ fn dtx(m: &Mount, path: &str) -> (usize, Dtx) {
 fn t46_the_map_images() {
     let Some(m) = install() else { return };
     let dir = "ui_hud_map/mapimage/";
-    let all: Vec<String> = m.entries().into_iter().map(|(e, _)| e.path).filter(|p| p.starts_with(dir)).collect();
+    let all: Vec<String> = m
+        .entries()
+        .into_iter()
+        .map(|(e, _)| e.path)
+        .filter(|p| p.starts_with(dir))
+        .collect();
     assert_eq!(all.len(), 78, "78 map images");
     for name in ["map_showdown", "map_junkflea2", "map_warhead"] {
         let (bytes, d) = dtx(&m, &format!("{dir}{name}.dtx"));
-        assert_eq!((bytes, d.width, d.height, d.mip_count, d.format), (1_048_740, 1024, 1024, 1, Format::Dxt5), "{name}");
+        assert_eq!(
+            (bytes, d.width, d.height, d.mip_count, d.format),
+            (1_048_740, 1024, 1024, 1, Format::Dxt5),
+            "{name}"
+        );
     }
     let (bytes, d) = dtx(&m, &format!("{dir}map_cargoship.dtx"));
-    assert_eq!((bytes, d.width, d.height, d.format), (4_194_468, 1024, 1024, Format::Bgra32));
+    assert_eq!(
+        (bytes, d.width, d.height, d.format),
+        (4_194_468, 1024, 1024, Format::Bgra32)
+    );
     let (bytes, d) = dtx(&m, &format!("{dir}map_deathdesert.dtx"));
-    assert_eq!((bytes, d.width, d.height, d.format), (524_452, 1024, 1024, Format::Dxt1));
+    assert_eq!(
+        (bytes, d.width, d.height, d.format),
+        (524_452, 1024, 1024, Format::Dxt1)
+    );
 }
 
 /// Test 47: the radar art and the icons, with the sizes the spec lists.
@@ -80,10 +97,17 @@ fn t47_the_radar_art_and_icons() {
     }
     // Every icon the radar and the map name: 64 x 32 32-bit, but the
     // death mark (64 x 64).
-    for path in combat_arms::ui::hud::radar::art_names().into_iter().filter(|p| p.starts_with(look::ICON_DIR)) {
+    for path in combat_arms::ui::hud::radar::art_names()
+        .into_iter()
+        .filter(|p| p.starts_with(look::ICON_DIR))
+    {
         let (_, d) = dtx(&m, &path);
         assert_eq!(d.format, Format::Bgra32, "{path}");
-        let want = if path.ends_with("area_death.dtx") { (64, 64) } else { (64, 32) };
+        let want = if path.ends_with("area_death.dtx") {
+            (64, 64)
+        } else {
+            (64, 32)
+        };
         assert_eq!((d.width, d.height), want, "{path}");
     }
 }
@@ -141,7 +165,9 @@ fn t52_the_large_map_attribute_file() {
     if !v1(true) {
         return;
     }
-    let bytes = m.read(combat_arms::ui::install::LARGE_MAP_ATTRIBUTES).expect("the large-map attribute file");
+    let bytes = m
+        .read(combat_arms::ui::install::LARGE_MAP_ATTRIBUTES)
+        .expect("the large-map attribute file");
     let doc = Document::parse(&bytes).unwrap();
     let size = doc.section("RadarInfo").map(|s| s.number("DefaultWorldSize", 0.0));
     assert_eq!(size, Some(combat_arms::game::radar::maths::WORLD_SIZE));
@@ -161,7 +187,9 @@ fn t53_the_radars_misspelt_flag_badge_key() {
     if !v1(true) {
         return;
     }
-    let layout = m.read(combat_arms::ui::install::LAYOUT_ATTRIBUTES).expect("the layout attribute file");
+    let layout = m
+        .read(combat_arms::ui::install::LAYOUT_ATTRIBUTES)
+        .expect("the layout attribute file");
     let doc = Document::parse(&layout).unwrap();
     let section = doc.section("HUDLargeMap").expect("[HUDLargeMap]");
     let right: Vec<char> = "largemapbravoflagmove".chars().collect();
@@ -170,5 +198,8 @@ fn t53_the_radars_misspelt_flag_badge_key() {
         a.len() == right.len() && a.iter().zip(&right).filter(|(x, y)| x != y).count() == 2
     };
     assert!(section.get("LargeMapBravoFlagMove").is_some(), "the correct key");
-    assert!(!section.iter().any(|(k, _)| swapped(k)), "no misspelt key: the radar's lookup finds nothing");
+    assert!(
+        !section.iter().any(|(k, _)| swapped(k)),
+        "no misspelt key: the radar's lookup finds nothing"
+    );
 }

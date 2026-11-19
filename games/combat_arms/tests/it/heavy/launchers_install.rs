@@ -26,7 +26,14 @@ use combat_arms::{
 struct Shots(Vec<(f64, f32, f32)>);
 
 const LAUNCHERS: [&str; 8] = [
-    "law", "rpg-7", "m136_at4", "m32", "m79", "mzp_1", "xm_25", "flamethrower",
+    "law",
+    "rpg-7",
+    "m136_at4",
+    "m32",
+    "m79",
+    "mzp_1",
+    "xm_25",
+    "flamethrower",
 ];
 
 #[test]
@@ -66,12 +73,22 @@ fn launchers_as_the_install_has_them() {
         );
     }
     // The LAW's record, as the spec has it.
-    let law = ca.weapon_set().weapons.iter().find(|w| w.id == "combat_arms:law").expect("the LAW");
+    let law = ca
+        .weapon_set()
+        .weapons
+        .iter()
+        .find(|w| w.id == "combat_arms:law")
+        .expect("the LAW");
     let p = law.hook::<ProjectileParams>(PROJECTILE).expect("projectile");
     assert_eq!(p.speed, 1300.0);
     assert!(!p.gravity, "the missile record has Gravity 0");
     assert_eq!(p.lifetime, 10.0);
-    let t = law.models.view.as_deref().and_then(timing::read).expect("the LAW's view model reads");
+    let t = law
+        .models
+        .view
+        .as_deref()
+        .and_then(timing::read)
+        .expect("the LAW's view model reads");
     assert_eq!(t.fire_keys, vec![0.0], "the round leaves on the key at 0 ms");
     assert!(t.prefire.is_none_or(|p| p == 0.0), "no pre-fire delay: {:?}", t.prefire);
     assert!((t.fire.unwrap() - 1.0).abs() < 1e-3, "fire animation 1000 ms");
@@ -107,14 +124,25 @@ fn launchers_as_the_install_has_them() {
         if first.is_none() && w.query::<&CaObject>().iter(w).next().is_some() {
             first = Some(now - t0);
             let o = w.query::<&CaObject>().iter(w).next().unwrap();
-            assert!(o.velocity.y.abs() < 1.5 && o.velocity.x.abs() < 1.5, "level: {:?}", o.velocity);
-            eprintln!("rocket exists {:.3} s after the press; velocity {:?}", now - t0, o.velocity);
+            assert!(
+                o.velocity.y.abs() < 1.5 && o.velocity.x.abs() < 1.5,
+                "level: {:?}",
+                o.velocity
+            );
+            eprintln!(
+                "rocket exists {:.3} s after the press; velocity {:?}",
+                now - t0,
+                o.velocity
+            );
         }
     }
     sim.intent(p).fire = false;
     eprintln!("shots (time, yaw, pitch): {:?}", sim.app.world().resource::<Shots>().0);
     let first = first.expect("a rocket left");
-    assert!(first <= 0.05, "the rocket leaves within three updates of the press: {first}");
+    assert!(
+        first <= 0.05,
+        "the rocket leaves within three updates of the press: {first}"
+    );
     let shots = &sim.app.world().resource::<Shots>().0;
     assert!(shots[0].2.abs() < 1e-3, "a level shot leaves level: {:?}", shots[0]);
 }
@@ -147,7 +175,11 @@ fn the_air_strike_shells_are_their_own_records() {
         ("combat_arms:airstrike_napalm", "Exp_Napalm_Shell", "exp_napalm_SH"),
     ] {
         let w = ca.weapon_set().weapons.iter().find(|w| w.id == id).expect(id);
-        let shell = w.hook::<DeviceParams>(DEVICE).and_then(|d| d.strike).expect("a strike").shell;
+        let shell = w
+            .hook::<DeviceParams>(DEVICE)
+            .and_then(|d| d.strike)
+            .expect("a strike")
+            .shell;
         let model = shell.model.as_deref().unwrap_or_default();
         assert!(model.ends_with("as_missile_01.ltb"), "{id}'s shell model: {model:?}");
         assert!(!shell.skins.is_empty(), "{id}'s shell skins");
@@ -166,16 +198,58 @@ fn the_air_strike_shells_are_their_own_records() {
         .expect("the effect file");
     // The napalm's fire is its explosion group's burning particle systems,
     // drawn for (about) its burning sphere's life (5 s).
-    let napalm = ca.weapon_set().weapons.iter().find(|w| w.id == "combat_arms:airstrike_napalm").unwrap();
-    let burn = napalm.hook::<DeviceParams>(DEVICE).and_then(|d| d.strike).unwrap().shell.over_time.expect("a burning sphere");
-    let group = fx.group(&napalm.hook::<CaWeaponFx>(EFFECTS).unwrap().impact_of(tables).unwrap().fx).expect("its group");
-    let fire_ends = group.keys.iter().filter(|k| k.kind == "ParticleSystem").map(|k| k.end).fold(0.0, f32::max);
-    eprintln!("napalm: group {} of {} s, fire to {fire_ends} s, sphere {} s", group.name, group.length(), burn.lifetime);
-    assert!(group.length() >= burn.lifetime - 0.01, "the group lasts the sphere's life");
-    assert!(fire_ends >= burn.lifetime - 1.0, "the fire burns most of it: {fire_ends} s");
+    let napalm = ca
+        .weapon_set()
+        .weapons
+        .iter()
+        .find(|w| w.id == "combat_arms:airstrike_napalm")
+        .unwrap();
+    let burn = napalm
+        .hook::<DeviceParams>(DEVICE)
+        .and_then(|d| d.strike)
+        .unwrap()
+        .shell
+        .over_time
+        .expect("a burning sphere");
+    let group = fx
+        .group(
+            &napalm
+                .hook::<CaWeaponFx>(EFFECTS)
+                .unwrap()
+                .impact_of(tables)
+                .unwrap()
+                .fx,
+        )
+        .expect("its group");
+    let fire_ends = group
+        .keys
+        .iter()
+        .filter(|k| k.kind == "ParticleSystem")
+        .map(|k| k.end)
+        .fold(0.0, f32::max);
+    eprintln!(
+        "napalm: group {} of {} s, fire to {fire_ends} s, sphere {} s",
+        group.name,
+        group.length(),
+        burn.lifetime
+    );
+    assert!(
+        group.length() >= burn.lifetime - 0.01,
+        "the group lasts the sphere's life"
+    );
+    assert!(
+        fire_ends >= burn.lifetime - 1.0,
+        "the fire burns most of it: {fire_ends} s"
+    );
     let files = strike_files(ca.weapon_set(), tables, Some(&fx));
     eprintln!("the air strike's files: {files:?}");
-    for want in ["as_missile_01.ltb", "nvl_explosion.wav", "moab_exp.wav", "incomming.wav", "siren01.wav"] {
+    for want in [
+        "as_missile_01.ltb",
+        "nvl_explosion.wav",
+        "moab_exp.wav",
+        "incomming.wav",
+        "siren01.wav",
+    ] {
         assert!(files.iter().any(|f| f.ends_with(want)), "{want} in {files:?}");
     }
     let missing: Vec<&String> = files.iter().filter(|f| mount.read(f).is_err()).collect();
@@ -214,10 +288,16 @@ fn projectile_models_fly_nose_first() {
         if let Some(entry) = model::rest_entry(&loaded, combat_arms::game::characters::models::THROWN_POSE) {
             model::pose_meshes(&loaded.model, entry, &mut m.meshes, 1.0);
         }
-        let pts: Vec<Vec3> = m.meshes.iter().flat_map(|me| me.positions.iter().map(|p| Vec3::from(*p))).collect();
+        let pts: Vec<Vec3> = m
+            .meshes
+            .iter()
+            .flat_map(|me| me.positions.iter().map(|p| Vec3::from(*p)))
+            .collect();
         let lo = pts.iter().fold(Vec3::splat(f32::MAX), |a, p| a.min(*p));
         let hi = pts.iter().fold(Vec3::splat(f32::MIN), |a, p| a.max(*p));
-        let ax = (0..3).max_by(|a, b| (hi[*a] - lo[*a]).total_cmp(&(hi[*b] - lo[*b]))).unwrap();
+        let ax = (0..3)
+            .max_by(|a, b| (hi[*a] - lo[*a]).total_cmp(&(hi[*b] - lo[*b])))
+            .unwrap();
         let radius = |near: f32| {
             pts.iter()
                 .filter(|p| (p[ax] - near).abs() < (hi[ax] - lo[ax]) * 0.1)
@@ -233,15 +313,30 @@ fn projectile_models_fly_nose_first() {
         n
     };
     let set = ca.weapon_set();
-    let weapon = |id: &str| set.weapons.iter().find(|w| w.id == id).unwrap_or_else(|| panic!("{id}"));
+    let weapon = |id: &str| {
+        set.weapons
+            .iter()
+            .find(|w| w.id == id)
+            .unwrap_or_else(|| panic!("{id}"))
+    };
     // Rockets and launcher shells: no turn.
     for id in ["combat_arms:law", "combat_arms:rpg-7", "combat_arms:m32"] {
         let p = combat_arms::game::special::projectiles_of(weapon(id));
-        let path = p.first().and_then(|p| p.drawn_model()).unwrap_or_else(|| panic!("{id}'s projectile model")).to_string();
+        let path = p
+            .first()
+            .and_then(|p| p.drawn_model())
+            .unwrap_or_else(|| panic!("{id}'s projectile model"))
+            .to_string();
         let n = nose(&path);
-        for dir in [Vec3::new(0.3, 0.0, -1.0).normalize(), Vec3::new(1.0, 30f32.to_radians().tan(), 0.0).normalize()] {
+        for dir in [
+            Vec3::new(0.3, 0.0, -1.0).normalize(),
+            Vec3::new(1.0, 30f32.to_radians().tan(), 0.0).normalize(),
+        ] {
             let drawn = facing(dir) * n;
-            assert!(drawn.angle_between(dir).to_degrees() < 3.0, "{id} ({path}): nose {drawn:?} vs flight {dir:?}");
+            assert!(
+                drawn.angle_between(dir).to_degrees() < 3.0,
+                "{id} ({path}): nose {drawn:?} vs flight {dir:?}"
+            );
         }
     }
     // The crossbows' bolts (the `CrossBow` and `CrossBowFunc` records):
@@ -250,20 +345,39 @@ fn projectile_models_fly_nose_first() {
     for id in ["combat_arms:assassin_bowgun_nor", "combat_arms:assassin_bowgun_expl"] {
         let w = weapon(id);
         let bolt = w.hook::<BoltParams>(BOLT).unwrap_or_else(|| panic!("{id}: a bolt"));
-        let path = bolt.model.clone().unwrap_or_else(|| panic!("{id}: the bolt record's model"));
-        eprintln!("{id}: bolt model {path} scale {:?} skins {:?}", bolt.model_scale, bolt.skins);
-        assert!(w.models.world.as_deref() != Some(path.as_str()), "{id}: the bolt is not the crossbow ({path})");
+        let path = bolt
+            .model
+            .clone()
+            .unwrap_or_else(|| panic!("{id}: the bolt record's model"));
+        eprintln!(
+            "{id}: bolt model {path} scale {:?} skins {:?}",
+            bolt.model_scale, bolt.skins
+        );
+        assert!(
+            w.models.world.as_deref() != Some(path.as_str()),
+            "{id}: the bolt is not the crossbow ({path})"
+        );
         let n = nose(&path);
         let dir = Vec3::new(0.3, 0.0, -1.0).normalize();
         let drawn = facing(dir) * n;
-        assert!(drawn.angle_between(dir).to_degrees() < 3.0, "{id} ({path}): nose {drawn:?} vs flight {dir:?}");
+        assert!(
+            drawn.angle_between(dir).to_degrees() < 3.0,
+            "{id} ({path}): nose {drawn:?} vs flight {dir:?}"
+        );
     }
     // The strike shells: straight down, upright models.
     for id in ["combat_arms:lgb", "combat_arms:airstrike_napalm"] {
-        let shell = weapon(id).hook::<DeviceParams>(DEVICE).and_then(|d| d.strike).expect("a strike").shell;
+        let shell = weapon(id)
+            .hook::<DeviceParams>(DEVICE)
+            .and_then(|d| d.strike)
+            .expect("a strike")
+            .shell;
         let path = shell.drawn_model().expect("the shell's model").to_string();
         let n = nose(&path);
         let drawn = facing(Vec3::NEG_Y) * STRIKE_SHELL_TURN * n;
-        assert!(drawn.angle_between(Vec3::NEG_Y).to_degrees() < 3.0, "{id} ({path}): nose {drawn:?} falling");
+        assert!(
+            drawn.angle_between(Vec3::NEG_Y).to_degrees() < 3.0,
+            "{id} ({path}): nose {drawn:?} falling"
+        );
     }
 }

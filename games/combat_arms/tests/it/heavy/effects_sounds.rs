@@ -70,8 +70,16 @@ fn sound_and_effect_archives_read_without_keys() {
             let u = n.to_uppercase();
             u.ends_with(".REZ")
                 && (u.starts_with("GUNS_SND_")
-                    || ["SND.REZ", "CHARS_SND.REZ", "UI_SND.REZ", "CLIENTFX.REZ", "FX.REZ", "GUNS_SC.REZ", "SPRITES.REZ"]
-                        .contains(&u.as_str()))
+                    || [
+                        "SND.REZ",
+                        "CHARS_SND.REZ",
+                        "UI_SND.REZ",
+                        "CLIENTFX.REZ",
+                        "FX.REZ",
+                        "GUNS_SC.REZ",
+                        "SPRITES.REZ",
+                    ]
+                    .contains(&u.as_str()))
         })
         .collect();
     names.sort();
@@ -85,7 +93,12 @@ fn sound_and_effect_archives_read_without_keys() {
 
 /// The weapons' effect hooks.
 fn weapons() -> Vec<CaWeaponFx> {
-    CaData::install().weapon_set().weapons.iter().filter_map(|w| w.hook(EFFECTS)).collect()
+    CaData::install()
+        .weapon_set()
+        .weapons
+        .iter()
+        .filter_map(|w| w.hook(EFFECTS))
+        .collect()
 }
 
 /// Every sound the tables name reads and decodes; every sound a weapon
@@ -118,10 +131,17 @@ fn every_named_sound_decodes() {
             bad.push(f);
         }
     }
-    eprintln!("{} sound files; {} named by the install's records but not in it", files.len(), absent.len());
+    eprintln!(
+        "{} sound files; {} named by the install's records but not in it",
+        files.len(),
+        absent.len()
+    );
     assert!(bad.is_empty(), "unreadable: {bad:?}");
     assert!(files.len() > 150);
-    assert!(absent.len() < files.len() / 4, "most named sounds are there: {absent:?}");
+    assert!(
+        absent.len() < files.len() / 4,
+        "most named sounds are there: {absent:?}"
+    );
 }
 
 fn fx_file(mount: &chimera_core::mount::Mount) -> FxFile {
@@ -137,7 +157,8 @@ fn effect_file_groups_and_textures() {
     let fx = fx_file(&mount);
     assert_eq!(fx.groups.len(), 530);
     let t = CaFxTables::built_in();
-    let muzzles: Vec<String> = CaData::install().weapon_set()
+    let muzzles: Vec<String> = CaData::install()
+        .weapon_set()
         .weapons
         .iter()
         .filter_map(|w| w.hook::<CaViewParams>(VIEW))
@@ -146,7 +167,12 @@ fn effect_file_groups_and_textures() {
     let wanted = library::wanted_groups(t, &weapons(), &muzzles, &fx);
     assert!(wanted.len() > 25, "{wanted:?}");
     // Every name in the tables resolves but the C and Red silencers'.
-    let mut names: Vec<&str> = t.surface.iter().flat_map(|s| [&s.impact_fx, &s.grenade_fx]).map(String::as_str).collect();
+    let mut names: Vec<&str> = t
+        .surface
+        .iter()
+        .flat_map(|s| [&s.impact_fx, &s.grenade_fx])
+        .map(String::as_str)
+        .collect();
     names.extend(t.impact.values().map(|i| i.fx.as_str()));
     names.extend(["AK47_PV_Muzz", "M4_HH_Muzz", "WEAPON_HH", "test", "Blood_Stain01"]);
     for n in names.into_iter().filter(|n| !n.is_empty()) {
@@ -157,8 +183,11 @@ fn effect_file_groups_and_textures() {
     let mut textures = 0;
     for name in &wanted {
         for k in &fx.group(name).unwrap().keys {
-            let Some(path) = library::key_texture(k, &file) else { continue };
-            let dtx = lithtech_formats::dtx::Dtx::parse(mount.read(&path).unwrap_or_else(|e| panic!("{name}: {path}: {e}")));
+            let Some(path) = library::key_texture(k, &file) else {
+                continue;
+            };
+            let dtx =
+                lithtech_formats::dtx::Dtx::parse(mount.read(&path).unwrap_or_else(|e| panic!("{name}: {path}: {e}")));
             assert!(dtx.is_ok(), "{name}: {path}");
             textures += 1;
         }
@@ -194,7 +223,10 @@ fn key<'a>(fx: &'a FxFile, group: &str, kind: &str, n: usize) -> &'a FxKey {
 /// The largest scale key of a light and the group time it is reached.
 fn light_peak(k: &FxKey) -> (f32, f32) {
     let keys = k.scale_keys();
-    let (t, r) = keys.iter().copied().fold((0.0, 0.0), |a, b| if b.1 > a.1 { b } else { a });
+    let (t, r) = keys
+        .iter()
+        .copied()
+        .fold((0.0, 0.0), |a, b| if b.1 > a.1 { b } else { a });
     (r, k.start + t * (k.end - k.start))
 }
 
@@ -237,17 +269,29 @@ fn t24_own_muzzle_numbers() {
     let fx = fx_file(&mount);
     let p = key(&fx, "AK47_PV_Muzz", "ParticleSystem", 0);
     let s = p.scale_keys();
-    assert!((s[0].1 - 0.327).abs() < 1e-3 && (s.last().unwrap().1 - 0.5).abs() < 1e-3, "{s:?}");
-    assert_eq!((p.float("MinParticleLifeSpan"), p.float("MaxParticleLifeSpan")), (Some(0.04), Some(0.05)));
+    assert!(
+        (s[0].1 - 0.327).abs() < 1e-3 && (s.last().unwrap().1 - 0.5).abs() < 1e-3,
+        "{s:?}"
+    );
+    assert_eq!(
+        (p.float("MinParticleLifeSpan"), p.float("MaxParticleLifeSpan")),
+        (Some(0.04), Some(0.05))
+    );
     let l = key(&fx, "AK47_PV_Muzz", "DynaLight", 0);
     assert_eq!(light_peak(l).0, 170.0);
-    assert!(!l.at_detail(0) && l.at_detail(1) && l.at_detail(2), "medium and high only");
+    assert!(
+        !l.at_detail(0) && l.at_detail(1) && l.at_detail(2),
+        "medium and high only"
+    );
     assert_eq!(fx.group("AK47_PV_Muzz").unwrap().phase_ms, 50);
     // `test`: the smoke puff and the 256 -> 170 light.
     let puff = key(&fx, "test", "ParticleSystem", 0);
     let s = puff.scale_keys();
     assert_eq!((s[0].1, s.last().unwrap().1), (4.0, 16.0));
-    assert_eq!((puff.float("MinParticleLifeSpan"), puff.float("MaxParticleLifeSpan")), (Some(0.5), Some(0.8)));
+    assert_eq!(
+        (puff.float("MinParticleLifeSpan"), puff.float("MaxParticleLifeSpan")),
+        (Some(0.5), Some(0.8))
+    );
     let l = key(&fx, "test", "DynaLight", 0).scale_keys();
     assert_eq!((l[0].1, l.last().unwrap().1), (256.0, 170.0));
 }
@@ -260,7 +304,10 @@ fn t32_frag_light_and_jitter() {
     assert_eq!(r, 256.0);
     assert!((at - 0.199).abs() < 0.001, "{at}");
     let j = key(&fx, "Grenade_Stone", "CamJitter", 0);
-    assert_eq!((j.float("InnerRadius"), j.float("OuterRadius")), (Some(200.0), Some(800.0)));
+    assert_eq!(
+        (j.float("InnerRadius"), j.float("OuterRadius")),
+        (Some(200.0), Some(800.0))
+    );
     assert_eq!(j.scale_keys()[0].1, 60.0);
     assert!(j.at_detail(0), "every detail");
 }
@@ -280,7 +327,10 @@ fn t34_smoke_cloud_numbers() {
     assert!(cloud.float("EmissionInterval").unwrap() <= 0.0, "one burst");
     assert_eq!(cloud.int("ParticlesPerEmission"), Some(10));
     assert_eq!(cloud.float("MinParticleLifeSpan"), Some(8.0));
-    assert_eq!((cloud.float("MinRadius"), cloud.float("MaxRadius")), (Some(0.0), Some(10.0)));
+    assert_eq!(
+        (cloud.float("MinRadius"), cloud.float("MaxRadius")),
+        (Some(0.0), Some(10.0))
+    );
     assert_eq!(cloud.vector("MinParticleVelocity"), Some([-1000.0, -1000.0, -200.0]));
     assert_eq!(cloud.vector("MaxParticleVelocity"), Some([1000.0, 1000.0, 400.0]));
     assert_eq!(cloud.float("GravityAcceleration"), Some(10.0));
@@ -313,8 +363,16 @@ fn t35_flash_look() {
 fn shots_on_a_map() {
     let Some(mount) = mount() else { return };
     let map: MapData = world::load_from(&mount, "warehouse").unwrap();
-    let typed = map.meshes.iter().filter(|m| m.surface.as_deref().is_some_and(|s| s != "0")).count();
-    eprintln!("warehouse: {typed} of {} meshes typed, {} effect materials", map.meshes.len(), map.particles.materials.len());
+    let typed = map
+        .meshes
+        .iter()
+        .filter(|m| m.surface.as_deref().is_some_and(|s| s != "0"))
+        .count();
+    eprintln!(
+        "warehouse: {typed} of {} meshes typed, {} effect materials",
+        map.meshes.len(),
+        map.particles.materials.len()
+    );
     assert!(typed > map.meshes.len() / 2);
     assert!(map.particles.materials.len() > 30);
     // The refraction keys (effect shaders) aren't drawn as colour.
@@ -326,18 +384,27 @@ fn shots_on_a_map() {
         .filter(|n| n.contains("refract") || n.contains("heatsmoke"))
         .collect();
     assert!(refract.is_empty(), "{refract:?}");
-    assert!(library::library(&map.memos).is_some(), "the map carries its effect library");
+    assert!(
+        library::library(&map.memos).is_some(),
+        "the map carries its effect library"
+    );
     let spawn = map.spawns[0].0;
     let mut sim = Sim::with(CaSim, move |app| {
         app.add_plugins(MapSimPlugin::new(map));
     });
     sim.set_tick_interval(combat_arms::game::TICK_INTERVAL);
     let p = sim.spawn_character(spawn + Vec3::Y * 0.1, movement::ID);
-    sim.app.world_mut().entity_mut(p).insert((LocalPlayer, Health { current: 1.0, max: 1.0 }));
+    sim.app
+        .world_mut()
+        .entity_mut(p)
+        .insert((LocalPlayer, Health { current: 1.0, max: 1.0 }));
     sim.seconds(0.5);
     let w = chimera_sim::weapon::give(sim.app.world_mut(), p, "combat_arms:m4a1").unwrap();
     sim.seconds(1.5);
-    assert_eq!(sim.app.world().get::<chimera_sim::weapon::Inventory>(p).unwrap().active, Some(w));
+    assert_eq!(
+        sim.app.world().get::<chimera_sim::weapon::Inventory>(p).unwrap().active,
+        Some(w)
+    );
     sim.intent(p).pitch = -1.0;
     sim.ticks(2);
     sim.intent(p).fire = true;
@@ -345,7 +412,10 @@ fn shots_on_a_map() {
     sim.intent(p).fire = false;
     sim.ticks(3);
     let marks = sim.app.world().resource::<CaMarks>();
-    eprintln!("decals: {:?}", marks.marks.iter().map(|m| &m.sprite).collect::<Vec<_>>());
+    eprintln!(
+        "decals: {:?}",
+        marks.marks.iter().map(|m| &m.sprite).collect::<Vec<_>>()
+    );
     let particles = sim.app.world().resource::<Particles>().count();
     eprintln!("particles: {particles}");
     assert!(particles > 0, "the burst's and the muzzle's particles");
@@ -380,9 +450,19 @@ fn c65_voice_files_are_the_installs() {
     let t = CaFxTables::built_in();
     assert_eq!(autocast(&text, "AutoCastLocalsound0"), t.sounds.dash, "BreathingDash");
     assert_eq!(autocast(&text, "AutoCastLocalsound1"), t.sounds.kill, "EnemyKill");
-    assert_eq!(autocast(&text, "AutoCastLocalsound3"), t.sounds.idle, "Idle (empty for the male template)");
+    assert_eq!(
+        autocast(&text, "AutoCastLocalsound3"),
+        t.sounds.idle,
+        "Idle (empty for the male template)"
+    );
     assert_eq!(autocast(&text, "AutoCastLocalsound8"), t.sounds.heartbeat, "Heartbeat");
-    for section in ["AutoCast3DSound0", "AutoCast3DSound1", "AutoCast3DSound2", "AutoCast3DSound6", "AutoCast3DSound10"] {
+    for section in [
+        "AutoCast3DSound0",
+        "AutoCast3DSound1",
+        "AutoCast3DSound2",
+        "AutoCast3DSound6",
+        "AutoCast3DSound10",
+    ] {
         let radius = text
             .lines()
             .skip_while(|l| l.trim() != format!("[{section}]"))
@@ -399,7 +479,14 @@ fn c65_voice_files_are_the_installs() {
         .map(|f| f.replace('\\', "/").to_lowercase())
         .collect();
     assert_eq!(awareness, t.sounds.awareness);
-    for f in t.sounds.kill.iter().chain(&t.sounds.dash).chain(&t.sounds.heartbeat).chain(&t.sounds.awareness) {
+    for f in t
+        .sounds
+        .kill
+        .iter()
+        .chain(&t.sounds.dash)
+        .chain(&t.sounds.heartbeat)
+        .chain(&t.sounds.awareness)
+    {
         assert!(library::sound_clip(f, &mount).is_some(), "{f} doesn't decode");
     }
 }
@@ -410,9 +497,17 @@ fn c65_voice_files_are_the_installs() {
 fn c63_ghillie_models_have_the_share() {
     let Some(_) = install() else { return };
     let data = CaData::install();
-    let models = data.attributes().and_then(|a| a.models.as_ref()).expect("the models file");
+    let models = data
+        .attributes()
+        .and_then(|a| a.models.as_ref())
+        .expect("the models file");
     let ghillie = models.bodies.iter().filter(|b| b.footprint_volume == -0.5).count();
     eprintln!("{ghillie} of {} bodies with -0.5", models.bodies.len());
     assert!(ghillie > 0, "some bodies are ghillie-type");
-    assert!(models.bodies.iter().all(|b| b.footprint_volume == 0.0 || b.footprint_volume == -0.5));
+    assert!(
+        models
+            .bodies
+            .iter()
+            .all(|b| b.footprint_volume == 0.0 || b.footprint_volume == -0.5)
+    );
 }

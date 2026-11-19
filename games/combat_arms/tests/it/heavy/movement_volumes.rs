@@ -68,7 +68,9 @@ fn volume_census() {
     let mut per_class: std::collections::BTreeMap<String, Vec<String>> = Default::default();
     let mut read = 0;
     for name in world::map_names(&mount) {
-        let Some(path) = world::find(&mount, &name) else { continue };
+        let Some(path) = world::find(&mount, &name) else {
+            continue;
+        };
         let Ok(bytes) = mount.read(&path) else {
             eprintln!("{name}: not readable (keyed: {keyed})");
             continue;
@@ -78,7 +80,11 @@ fn volume_census() {
             continue;
         };
         read += 1;
-        for o in w.objects.iter().filter(|o| MOVEMENT_CLASSES.contains(&o.class.as_str())) {
+        for o in w
+            .objects
+            .iter()
+            .filter(|o| MOVEMENT_CLASSES.contains(&o.class.as_str()))
+        {
             let bounds = o
                 .name()
                 .and_then(|n| w.model(n))
@@ -105,10 +111,11 @@ fn volume_census() {
             .iter()
             .filter_map(|k| o.get(k).map(|v| format!("{k} {}", value(v))))
             .collect();
-            per_class
-                .entry(o.class.clone())
-                .or_default()
-                .push(format!("{name} {:?} {bounds} {}", o.name().unwrap_or("-"), props.join(", ")));
+            per_class.entry(o.class.clone()).or_default().push(format!(
+                "{name} {:?} {bounds} {}",
+                o.name().unwrap_or("-"),
+                props.join(", ")
+            ));
         }
     }
     eprintln!("{read} maps read");
@@ -127,8 +134,12 @@ fn volume_census() {
     if read == 105 {
         let count = |c: &str| per_class.get(c).map_or(0, Vec::len);
         let maps = |c: &str| {
-            let mut m: Vec<&str> =
-                per_class.get(c).into_iter().flatten().map(|l| l.split(' ').next().unwrap()).collect();
+            let mut m: Vec<&str> = per_class
+                .get(c)
+                .into_iter()
+                .flatten()
+                .map(|l| l.split(' ').next().unwrap())
+                .collect();
             m.dedup();
             m.len()
         };
@@ -214,7 +225,10 @@ fn hgoilrig_player_floats() {
         }
         assert!(y > top - 120.0, "sinking: feet at {y}");
         if tick as f64 * combat_arms::game::TICK_INTERVAL > 7.0 {
-            assert!((y - top).abs() < 5.0, "floating at the water's top ({top}): feet at {y}");
+            assert!(
+                (y - top).abs() < 5.0,
+                "floating at the water's top ({top}): feet at {y}"
+            );
             assert!(!mv(&sim, p).eye_free, "the eye above the water");
         }
     }
@@ -241,7 +255,11 @@ fn hgoilrig_swimming() {
     // 300 u under the top (-58).
     place(&mut sim, p, Vec3::new(at.x, -358.0, -at.z));
     sim.ticks(1);
-    assert!(mv(&sim, p).free_movement && mv(&sim, p).in_liquid, "swimming: {:?}", mv(&sim, p));
+    assert!(
+        mv(&sim, p).free_movement && mv(&sim, p).in_liquid,
+        "swimming: {:?}",
+        mv(&sim, p)
+    );
     let start = file_y(&sim, p);
     sim.intent(p).pitch = -0.8;
     sim.intent(p).move_axis = Vec2::Y;
@@ -286,14 +304,21 @@ fn hgoilrig_ladder() {
     sim.intent(p).pitch = 1.2;
     sim.intent(p).move_axis = Vec2::Y;
     sim.ticks(40);
-    assert!(file_y(&sim, p) > foot + 20.0, "climbing from the ground: {foot} -> {}", file_y(&sim, p));
+    assert!(
+        file_y(&sim, p) > foot + 20.0,
+        "climbing from the ground: {foot} -> {}",
+        file_y(&sim, p)
+    );
     let mut top = f32::MIN;
     for _ in 0..400 {
         sim.ticks(1);
         top = top.max(file_y(&sim, p));
     }
     let m = mv(&sim, p);
-    eprintln!("hgoilrig ladder: from y {foot} up to {top}, now at {}", sim.position(p) / s);
+    eprintln!(
+        "hgoilrig ladder: from y {foot} up to {top}, now at {}",
+        sim.position(p) / s
+    );
     assert!(!m.on_ladder && m.on_ground, "off the ladder, on the deck: {m:?}");
     assert!(file_y(&sim, p) > hi.y, "on the deck above: {}", file_y(&sim, p));
 }
@@ -337,7 +362,11 @@ fn gravitya_low_gravity() {
         let floor = file_y(&sim, p);
         place(&mut sim, p, Vec3::new(at.x, floor + 400.0, at.z));
         sim.seconds(8.0);
-        assert!(mv(&sim, p).on_ground && (file_y(&sim, p) - floor).abs() < 1.0, "landed: {}", file_y(&sim, p));
+        assert!(
+            mv(&sim, p).on_ground && (file_y(&sim, p) - floor).abs() < 1.0,
+            "landed: {}",
+            file_y(&sim, p)
+        );
         let health = sim.app.world().get::<Health>(p).unwrap().current;
         let want = if net { 1.0 } else { 0.5 };
         assert!((health - want).abs() < 1e-3, "net {net}: health {health}");
@@ -356,7 +385,11 @@ fn twinhigh_jump_pad() {
         return;
     }
     let s = movement_data().meters_per_unit;
-    let (mut sim, p) = sim_on(&mount, "twinhigh", file_to_engine(Vec3::new(-896.0, 200.0, -1536.0)) * s);
+    let (mut sim, p) = sim_on(
+        &mount,
+        "twinhigh",
+        file_to_engine(Vec3::new(-896.0, 200.0, -1536.0)) * s,
+    );
     let mut launches = Vec::new();
     for tick in 0..300 {
         let was = mv(&sim, p).in_jump;
@@ -391,12 +424,16 @@ fn volume_damage_census() {
     let mut rows: std::collections::BTreeMap<(String, String), Vec<(String, f32)>> = Default::default();
     let mut read = 0;
     for name in world::map_names(&mount) {
-        let Some(path) = world::find(&mount, &name) else { continue };
+        let Some(path) = world::find(&mount, &name) else {
+            continue;
+        };
         let Ok(bytes) = mount.read(&path) else { continue };
         let Ok(w) = World::parse(&bytes) else { continue };
         read += 1;
         for o in &w.objects {
-            let Some(defaults) = CaVolume::class_box(&o.class, Vec3::ZERO, Vec3::ZERO) else { continue };
+            let Some(defaults) = CaVolume::class_box(&o.class, Vec3::ZERO, Vec3::ZERO) else {
+                continue;
+            };
             let damage = match o.get("Damage") {
                 Some(Value::Real(r)) => *r,
                 _ => defaults.damage,
@@ -408,7 +445,9 @@ fn volume_damage_census() {
                 Some(Value::String(s)) => s.to_ascii_uppercase(),
                 _ => defaults.damage_type.clone(),
             };
-            rows.entry((o.class.clone(), kind)).or_default().push((name.clone(), damage));
+            rows.entry((o.class.clone(), kind))
+                .or_default()
+                .push((name.clone(), damage));
         }
     }
     eprintln!("{read} maps read");

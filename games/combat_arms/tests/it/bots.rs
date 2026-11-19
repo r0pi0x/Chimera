@@ -227,8 +227,11 @@ fn case_01_roster_size_and_team() {
     console(&mut sim, "MaxPlayer 6");
     sim.ticks(10);
     let w = sim.app.world_mut();
-    let all: Vec<(u8, usize, Template)> =
-        w.query::<(&Team, &CaBot)>().iter(w).map(|(t, b)| (t.0, b.profile, b.template)).collect();
+    let all: Vec<(u8, usize, Template)> = w
+        .query::<(&Team, &CaBot)>()
+        .iter(w)
+        .map(|(t, b)| (t.0, b.profile, b.template))
+        .collect();
     assert_eq!(all.len(), 6);
     assert!(all.iter().all(|(t, _, _)| *t == BRAVO));
     let mut profiles: Vec<usize> = all.iter().map(|a| a.1).collect();
@@ -311,7 +314,9 @@ fn case_04_list_padding() {
 fn reaction(sim: &mut Sim, bt: Entity) -> f64 {
     until(sim, 3.0, |s| matches!(b(s, bt).state, BotState::Attack { .. })).expect("attacks");
     let bot = b(sim, bt);
-    let BotState::Attack { since } = bot.state else { unreachable!() };
+    let BotState::Attack { since } = bot.state else {
+        unreachable!()
+    };
     bot.fire_at - since
 }
 
@@ -398,7 +403,13 @@ fn aimed_per_cycle(a: f32, seed: u64) -> Vec<u32> {
 #[test]
 fn case_10_hit_cycle_easy_rifle() {
     let sim = world();
-    let a = sim.app.world().resource::<BotData>().gun(RIFLE, Template::new(Level::Easy, 0)).unwrap().a;
+    let a = sim
+        .app
+        .world()
+        .resource::<BotData>()
+        .gun(RIFLE, Template::new(Level::Easy, 0))
+        .unwrap()
+        .a;
     assert_eq!(a, 0.17);
     assert_eq!(math::cycle(a), (1, 5));
     assert!(aimed_per_cycle(a, 7).iter().all(|&n| n == 1));
@@ -425,7 +436,13 @@ fn case_10_hit_cycle_easy_rifle() {
 #[test]
 fn case_11_hit_cycle_veteran_rifle() {
     let sim = world();
-    let a = sim.app.world().resource::<BotData>().gun(RIFLE, Template::new(Level::Veteran, 2)).unwrap().a;
+    let a = sim
+        .app
+        .world()
+        .resource::<BotData>()
+        .gun(RIFLE, Template::new(Level::Veteran, 2))
+        .unwrap()
+        .a;
     assert_eq!(math::cycle(a), (1, 1));
     assert!(aimed_per_cycle(a, 3).iter().all(|&n| n == 1));
 }
@@ -444,7 +461,13 @@ fn case_12_hit_cycle_with_draws() {
 #[test]
 fn case_13_pistol() {
     let sim = world();
-    let a = sim.app.world().resource::<BotData>().gun(PISTOL, Template::new(Level::Easy, 0)).unwrap().a;
+    let a = sim
+        .app
+        .world()
+        .resource::<BotData>()
+        .gun(PISTOL, Template::new(Level::Easy, 0))
+        .unwrap()
+        .a;
     assert_eq!(math::cycle(a), (4, 1));
     assert!(aimed_per_cycle(a, 11).iter().all(|&n| n == 4));
 }
@@ -499,7 +522,13 @@ fn case_16_miss_geometry() {
 #[test]
 fn case_17_full_accuracy_zone() {
     let sim = world();
-    let v = sim.app.world().resource::<BotData>().gun(RIFLE, Template::new(Level::Easy, 0)).unwrap().full_accuracy;
+    let v = sim
+        .app
+        .world()
+        .resource::<BotData>()
+        .gun(RIFLE, Template::new(Level::Easy, 0))
+        .unwrap()
+        .full_accuracy;
     assert!(math::full_accuracy(9.0, v));
     assert!(!math::full_accuracy(11.0, v));
 }
@@ -510,7 +539,12 @@ fn case_17_full_accuracy_zone() {
 #[test]
 fn case_18_movement_inaccuracy() {
     let sim = world();
-    let g = sim.app.world().resource::<BotData>().gun(SNIPER, Template::new(Level::Veteran, 2)).unwrap();
+    let g = sim
+        .app
+        .world()
+        .resource::<BotData>()
+        .gun(SNIPER, Template::new(Level::Veteran, 2))
+        .unwrap();
     assert_eq!((g.c_max, g.decay), (0.48, 0.03));
     let mut t = Tracking::default();
     t.select(g.c_max);
@@ -596,12 +630,19 @@ fn case_22_fov() {
     ] {
         place(&mut sim, p, at(deg, d), 0.0);
         b_mut(&mut sim, bt).state = if alert {
-            BotState::Chase { until: 1e9, breath: 0.0 }
+            BotState::Chase {
+                until: 1e9,
+                breath: 0.0,
+            }
         } else {
             BotState::Patrol
         };
         sim.app.world_mut().get_mut::<Transform>(bt).unwrap().translation = Vec3::Y * 0.9;
-        assert_eq!(brain::sees(sim.app.world_mut(), bt, p).is_some(), seen, "{deg}° at {d} u, alert {alert}");
+        assert_eq!(
+            brain::sees(sim.app.world_mut(), bt, p).is_some(),
+            seen,
+            "{deg}° at {d} u, alert {alert}"
+        );
     }
 }
 
@@ -617,7 +658,10 @@ fn case_23_smoke() {
     chimera_sim::weapon::give(sim.app.world_mut(), thrower, M18);
     sim.ticks(2);
     let w = sim.app.world().get::<Inventory>(thrower).unwrap().weapons.clone();
-    let smoke = w.into_iter().find(|&x| sim.app.world().get::<Weapon>(x).unwrap().id == M18).unwrap();
+    let smoke = w
+        .into_iter()
+        .find(|&x| sim.app.world().get::<Weapon>(x).unwrap().id == M18)
+        .unwrap();
     grenades::spawn_grenade(
         sim.app.world_mut(),
         smoke,
@@ -627,8 +671,10 @@ fn case_23_smoke() {
     );
     sim.seconds(3.5);
     assert!(brain::sees(sim.app.world_mut(), bt, p).is_some());
-    until(&mut sim, 3.0, |s| matches!(b(s, bt).state, BotState::Attack { .. }) && b(s, bt).target == Some(p))
-        .expect("engaged through the smoke");
+    until(&mut sim, 3.0, |s| {
+        matches!(b(s, bt).state, BotState::Attack { .. }) && b(s, bt).target == Some(p)
+    })
+    .expect("engaged through the smoke");
 }
 
 /// Case 24: a teammate standing in the line of fire: no shot; the
@@ -647,7 +693,9 @@ fn case_24_teammate_in_line() {
         place(s, b2, Vec3::new(0.0, 0.0, u(400.0)), 0.0);
         let w = s.app.world_mut();
         let events: Vec<WeaponEvent> = w.resource_mut::<Messages<WeaponEvent>>().drain().collect();
-        fired |= events.iter().any(|e| e.owner == b1 && matches!(e.kind, WeaponEventKind::Fired { .. }));
+        fired |= events
+            .iter()
+            .any(|e| e.owner == b1 && matches!(e.kind, WeaponEventKind::Fired { .. }));
         false
     });
     let _ = (p, start);
@@ -675,7 +723,9 @@ fn case_25_hearing_a_shot() {
     });
     let t = heard.expect("investigates");
     assert!(t >= 0.5 && now(&sim) - start >= 0.5, "after the reaction delay: {t}");
-    let BotState::Investigate { spot, .. } = b(&sim, bt).state else { unreachable!() };
+    let BotState::Investigate { spot, .. } = b(&sim, bt).state else {
+        unreachable!()
+    };
     assert!(spot.xz().distance(Vec2::ZERO) < 1.5, "toward the shot: {spot}");
     // It turns to the shot and goes (or, seeing the player on the way,
     // fights).
@@ -701,9 +751,14 @@ fn case_26_footsteps() {
     // A step, then 0.4 s watching: whether the sense fired.
     let step = |sim: &mut Sim| {
         let t = now(sim);
-        sim.app.world_mut().resource_mut::<Stimuli>().post(Kind::Footstep, Vec3::Y * 0.9, 256.0, p, ALPHA, t);
-        until(sim, 0.4, |s| !b(s, bt).state.relaxed() || matches!(b(s, bt).state, BotState::Investigate { .. }))
-            .is_some()
+        sim.app
+            .world_mut()
+            .resource_mut::<Stimuli>()
+            .post(Kind::Footstep, Vec3::Y * 0.9, 256.0, p, ALPHA, t);
+        until(sim, 0.4, |s| {
+            !b(s, bt).state.relaxed() || matches!(b(s, bt).state, BotState::Investigate { .. })
+        })
+        .is_some()
     };
     // Both heard (the roll at 300 u is 89 %), or one missed: either way no
     // investigation yet.
@@ -758,7 +813,10 @@ fn case_27_chase_knows() {
     let c2 = c + Vec3::new(1.5, 0.0, 1.0);
     place(&mut sim, p, c2, 0.0);
     let first = goal;
-    until(&mut sim, 11.0, |s| b(s, bt).route_goal.is_some_and(|g| g.distance(first) > 0.01)).expect("planned again");
+    until(&mut sim, 11.0, |s| {
+        b(s, bt).route_goal.is_some_and(|g| g.distance(first) > 0.01)
+    })
+    .expect("planned again");
     let goal = b(&sim, bt).route_goal.unwrap();
     assert!((goal.xz().distance(c2.xz()) - u(96.0)).abs() < 0.05, "{goal}");
     assert!(now(&sim) - t0 < 12.0);
@@ -804,7 +862,12 @@ fn case_29_weapon_choice() {
     assert_eq!(math::choose_weapon(ar, sr, None, 850.0), 0);
     assert_eq!(math::choose_weapon(ar, sr, None, 900.0), 1);
     // In play: the bot holds the sniper at 900 u and keeps it.
-    let (mut sim, _p, bt) = duel(Level::Easy, 0, 900.0, [Some(RIFLE), Some(SNIPER), None, Some(KNIFE), None, None]);
+    let (mut sim, _p, bt) = duel(
+        Level::Easy,
+        0,
+        900.0,
+        [Some(RIFLE), Some(SNIPER), None, Some(KNIFE), None, None],
+    );
     until(&mut sim, 3.0, |s| matches!(b(s, bt).state, BotState::Attack { .. })).unwrap();
     sim.seconds(1.0);
     let held = b(&sim, bt).held.unwrap();
@@ -816,13 +879,22 @@ fn case_29_weapon_choice() {
 /// moves aimed at 400 u from the target.
 #[test]
 fn case_30_reach_fixed_at_spawn() {
-    let (mut sim, p, bt) = duel(Level::Easy, 0, 800.0, [Some(RIFLE), None, Some(PISTOL), Some(KNIFE), None, None]);
+    let (mut sim, p, bt) = duel(
+        Level::Easy,
+        0,
+        800.0,
+        [Some(RIFLE), None, Some(PISTOL), Some(KNIFE), None, None],
+    );
     sim.ticks(3);
     assert_eq!(b(&sim, bt).ranged_reach, 1000.0);
     let rifle = {
         let w = sim.app.world();
         let inv = w.get::<Inventory>(bt).unwrap();
-        inv.weapons.iter().copied().find(|&x| w.get::<Weapon>(x).unwrap().id == RIFLE).unwrap()
+        inv.weapons
+            .iter()
+            .copied()
+            .find(|&x| w.get::<Weapon>(x).unwrap().id == RIFLE)
+            .unwrap()
     };
     {
         let mut m = sim.app.world_mut().get_mut::<Magazine>(rifle).unwrap();
@@ -851,7 +923,11 @@ fn case_30_reach_fixed_at_spawn() {
 fn grenade_of(sim: &Sim, bt: Entity) -> Entity {
     let w = sim.app.world();
     let inv = w.get::<Inventory>(bt).unwrap();
-    inv.weapons.iter().copied().find(|&x| w.get::<Weapon>(x).unwrap().id == M67).unwrap()
+    inv.weapons
+        .iter()
+        .copied()
+        .find(|&x| w.get::<Weapon>(x).unwrap().id == M67)
+        .unwrap()
 }
 
 /// Case 31: HN (G = 15), an M67, the player at 1000 u: each shot counts
@@ -859,7 +935,12 @@ fn grenade_of(sim: &Sim, bt: Entity) -> Entity {
 /// next action is a throw.
 #[test]
 fn case_31_grenade_after_misses() {
-    let (mut sim, p, bt) = duel(Level::Normal, 0, 1000.0, [Some(RIFLE), None, None, Some(KNIFE), Some(M67), None]);
+    let (mut sim, p, bt) = duel(
+        Level::Normal,
+        0,
+        1000.0,
+        [Some(RIFLE), None, None, Some(KNIFE), Some(M67), None],
+    );
     // Shots that hit don't hurt (a blocked damage kind): "without damage".
     sim.app.world_mut().entity_mut(p).insert(DamageFilter {
         blocked: vec![DamageKind::Bullet, DamageKind::Blast],
@@ -871,7 +952,13 @@ fn case_31_grenade_after_misses() {
     until(&mut sim, 6.0, |s| {
         let w = s.app.world_mut();
         let events: Vec<WeaponEvent> = w.resource_mut::<Messages<WeaponEvent>>().drain().collect();
-        shots.set(shots.get() + events.iter().filter(|e| e.owner == bt && matches!(e.kind, WeaponEventKind::Fired { .. })).count());
+        shots.set(
+            shots.get()
+                + events
+                    .iter()
+                    .filter(|e| e.owner == bt && matches!(e.kind, WeaponEventKind::Fired { .. }))
+                    .count(),
+        );
         shots.get() >= 3
     })
     .expect("fires");
@@ -903,11 +990,19 @@ fn case_31_grenade_after_misses() {
         w.query::<&CaGrenade>().iter(w).any(|g| g.thrower == Some(bt))
     });
     assert!(thrown.is_some(), "threw");
-    assert_eq!(sim.app.world().get::<Throwable>(grenade_of(&sim, bt)).unwrap().count, left - 1);
+    assert_eq!(
+        sim.app.world().get::<Throwable>(grenade_of(&sim, bt)).unwrap().count,
+        left - 1
+    );
     assert!(b(&sim, bt).grenades >= 13);
     // Its flight: v = 2 (T − F) + (0, 400, 0) u/s (case 33).
     let w = sim.app.world_mut();
-    let g = w.query::<&CaGrenade>().iter(w).find(|g| g.thrower == Some(bt)).unwrap().clone();
+    let g = w
+        .query::<&CaGrenade>()
+        .iter(w)
+        .find(|g| g.thrower == Some(bt))
+        .unwrap()
+        .clone();
     assert!(g.velocity.length() > 1000.0, "{}", g.velocity);
 }
 
@@ -923,7 +1018,12 @@ fn case_32_grenade_reach() {
     assert_eq!((with, without), (1500.0, 1200.0));
     assert!(1400.0 <= with && 1400.0 > without);
     // A bot with the M67 alone: 1200.
-    let (mut sim, _p, bt) = duel(Level::Veteran, 0, 1400.0, [Some(RIFLE), None, None, Some(KNIFE), Some(M67), None]);
+    let (mut sim, _p, bt) = duel(
+        Level::Veteran,
+        0,
+        1400.0,
+        [Some(RIFLE), None, None, Some(KNIFE), Some(M67), None],
+    );
     sim.ticks(3);
     assert_eq!(b(&sim, bt).thrown_reach, 1200.0);
 }
@@ -933,7 +1033,14 @@ fn case_32_grenade_reach() {
 #[test]
 fn case_33_throw_solution() {
     let _sim = world();
-    let v = math::throw_velocity(Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 60.0, 800.0), 0.5, -1600.0, 1.0, 0.0);
+    let v = math::throw_velocity(
+        Vec3::new(0.0, 60.0, 0.0),
+        Vec3::new(0.0, 60.0, 800.0),
+        0.5,
+        -1600.0,
+        1.0,
+        0.0,
+    );
     assert!((v - Vec3::new(0.0, 400.0, 1600.0)).length() < 1e-3);
     assert!((v.length() - 1649.24).abs() < 0.01);
 }
@@ -959,7 +1066,9 @@ fn case_34_grenade_dodge() {
     let start = now(&sim);
     let t = until(&mut sim, 2.0, |s| matches!(b(s, bt).state, BotState::Dodge { .. })).expect("dodges");
     assert!((0.05..=0.85).contains(&t), "{t}");
-    let BotState::Dodge { to, .. } = b(&sim, bt).state else { unreachable!() };
+    let BotState::Dodge { to, .. } = b(&sim, bt).state else {
+        unreachable!()
+    };
     let w = sim.app.world_mut();
     let g = w.query::<&CaGrenade>().iter(w).next().unwrap().clone();
     let gp = g.pos * g.unit;
@@ -976,7 +1085,11 @@ fn case_34_grenade_dodge() {
 fn case_35_grenade_too_far() {
     let (mut sim, p, bt) = duel(Level::Normal, 0, 2500.0, RIFLE_KIT);
     player_grenade(&mut sim, p, bt, 450.0 + 101.0);
-    assert!(until(&mut sim, 2.0, |s| b(s, bt).danger.is_some() || matches!(b(s, bt).state, BotState::Dodge { .. })).is_none());
+    assert!(
+        until(&mut sim, 2.0, |s| b(s, bt).danger.is_some()
+            || matches!(b(s, bt).state, BotState::Dodge { .. }))
+        .is_none()
+    );
 }
 
 /// Case 36: XE (safe 0.5), a mine of blast radius 300: at 140 u not seen,
@@ -984,7 +1097,13 @@ fn case_35_grenade_too_far() {
 #[test]
 fn case_36_mine_as_target() {
     let sim = world();
-    let safe = sim.app.world().resource::<BotData>().template.safe_device.at(Template::new(Level::Veteran, 2));
+    let safe = sim
+        .app
+        .world()
+        .resource::<BotData>()
+        .template
+        .safe_device
+        .at(Template::new(Level::Veteran, 2));
     assert_eq!(safe, 0.5);
     assert!(!math::device_seen(140.0, 300.0, safe));
     assert!(math::device_seen(160.0, 300.0, safe));
@@ -1025,7 +1144,11 @@ fn case_37_burst_rhythm() {
         }
     }
     // The first and last bursts may be cut by the test.
-    let inner: Vec<u32> = bursts[1..bursts.len() - 1].iter().filter(|b| !b.1).map(|b| b.0).collect();
+    let inner: Vec<u32> = bursts[1..bursts.len() - 1]
+        .iter()
+        .filter(|b| !b.1)
+        .map(|b| b.0)
+        .collect();
     assert!(!inner.is_empty(), "{bursts:?}");
     assert!(inner.iter().all(|&n| (3..=7).contains(&n)), "{bursts:?}");
     // The pause plus the rifle's fire cycle (the next shot waits for it).
@@ -1095,7 +1218,12 @@ fn case_40_respawn() {
     let _ = t0;
     // Its kit again, its brain fresh.
     sim.ticks(3);
-    assert!(sim.app.world().get::<Inventory>(bt).is_some_and(|i| !i.weapons.is_empty()));
+    assert!(
+        sim.app
+            .world()
+            .get::<Inventory>(bt)
+            .is_some_and(|i| !i.weapons.is_empty())
+    );
     assert!(b(&sim, bt).armed);
 }
 
@@ -1140,7 +1268,11 @@ fn case_43_path_cost() {
         encounters: Vec::new(),
     };
     let mut m = NavMesh {
-        areas: vec![area(0, 0.0, 200.0 * s), area(1, 200.0 * s, 500.0 * s), area(2, 500.0 * s, 700.0 * s)],
+        areas: vec![
+            area(0, 0.0, 200.0 * s),
+            area(1, 200.0 * s, 500.0 * s),
+            area(2, 500.0 * s, 700.0 * s),
+        ],
         ladders: Vec::new(),
         places: Vec::new(),
         generated: false,
@@ -1217,7 +1349,11 @@ fn bots_join_while_the_match_starts() {
     console(&mut sim, "MaxPlayer 6");
     sim.seconds(3.0);
     let w = sim.app.world_mut();
-    let bots: Vec<(u8, bool)> = w.query::<(&Team, &CaBot)>().iter(w).map(|(t, b)| (t.0, b.armed)).collect();
+    let bots: Vec<(u8, bool)> = w
+        .query::<(&Team, &CaBot)>()
+        .iter(w)
+        .map(|(t, b)| (t.0, b.armed))
+        .collect();
     assert_eq!(bots.len(), 6);
     assert!(bots.iter().all(|&(t, armed)| t == ALPHA && armed), "{bots:?}");
 }
@@ -1235,7 +1371,10 @@ fn bots_fight_on_the_greybox() {
     for _ in 0..(60.0 / 0.015) as usize {
         sim.ticks(1);
         let w = sim.app.world_mut();
-        let dead: Vec<Entity> = w.query_filtered::<Entity, (With<CaBot>, With<Dead>)>().iter(w).collect();
+        let dead: Vec<Entity> = w
+            .query_filtered::<Entity, (With<CaBot>, With<Dead>)>()
+            .iter(w)
+            .collect();
         for d in &dead {
             if was_dead.insert(*d) {
                 deaths += 1;
@@ -1314,13 +1453,22 @@ fn map_volumes_link_by_their_boxes() {
     assert_eq!(links(0), vec![(1, Via::Walk(Side::MaxX)), (3, Via::Walk(Side::MaxZ))]);
     assert_eq!(links(1), vec![(0, Via::Walk(Side::MinX))], "B-C's 40 u edge dropped");
     assert!(links(2).is_empty() && links(4).is_empty());
-    assert_eq!(mesh.areas[0].heights, [0.0; 4], "floors at the boxes' bottoms without a floor found");
+    assert_eq!(
+        mesh.areas[0].heights, [0.0; 4],
+        "floors at the boxes' bottoms without a floor found"
+    );
     let graph = ai.patrol_graph(&mesh).unwrap();
     assert_eq!(graph.links, vec![vec![1, 2], vec![0], vec![0]]);
     assert_eq!(graph.nodes, vec![0, 1, 3]);
-    assert!(graph.points[1].abs_diff_eq(Vec3::new(400.0, 0.0, 0.0) * s, 1e-5), "on the floor: {:?}", graph.points);
+    assert!(
+        graph.points[1].abs_diff_eq(Vec3::new(400.0, 0.0, 0.0) * s, 1e-5),
+        "on the floor: {:?}",
+        graph.points
+    );
     // Over the limit: none.
-    let many: Vec<MapEntity> = (0..1025).map(|i| ai_volume("V", [i as f32 * 500.0, 32.0, 0.0], [100.0; 3])).collect();
+    let many: Vec<MapEntity> = (0..1025)
+        .map(|i| ai_volume("V", [i as f32 * 500.0, 32.0, 0.0], [100.0; 3]))
+        .collect();
     assert!(MapAi::read(&many, s).nav_mesh(s, |_, _| None).is_none());
 }
 
@@ -1350,10 +1498,20 @@ fn bots_use_the_maps_volumes_and_patrol_nodes() {
     // A (the file's +z) is engine -z: B lies across its +z side.
     assert_eq!(nav.mesh.areas[0].links, vec![(1, Via::Walk(Side::MaxZ))]);
     assert_eq!(nav.patrol.points.len(), 3, "the map's patrol nodes");
-    assert!(nav.mesh.areas[0].heights[0].abs() < 0.05, "the floor found inside the box: {:?}", nav.mesh.areas[0].heights);
+    assert!(
+        nav.mesh.areas[0].heights[0].abs() < 0.05,
+        "the floor found inside the box: {:?}",
+        nav.mesh.areas[0].heights
+    );
     // The bot patrols node to node along the volumes.
-    let reached = until(&mut sim, 80.0, |s| s.app.world().resource::<brain::PatrolClock>().reached.len() >= 2);
-    assert!(reached.is_some(), "patrol nodes reached: {:?}", sim.app.world().resource::<brain::PatrolClock>().reached);
+    let reached = until(&mut sim, 80.0, |s| {
+        s.app.world().resource::<brain::PatrolClock>().reached.len() >= 2
+    });
+    assert!(
+        reached.is_some(),
+        "patrol nodes reached: {:?}",
+        sim.app.world().resource::<brain::PatrolClock>().reached
+    );
     let feet = sim.app.world().get::<Transform>(bt).unwrap().translation;
     assert!(feet.x.abs() < 600.0 * UNIT, "stayed over the volumes: {feet}");
 }
@@ -1378,10 +1536,18 @@ fn bots_see_through_glass() {
     sim.ticks(1);
     sim.app.world_mut().remove_resource::<NavMesh>();
     sim.ticks(2);
-    assert_eq!(brain::sees(sim.app.world_mut(), bt, p), Some(false), "seen through the glass");
+    assert_eq!(
+        brain::sees(sim.app.world_mut(), bt, p),
+        Some(false),
+        "seen through the glass"
+    );
     sim.app.world_mut().entity_mut(pane).remove::<SeeThrough>();
     sim.ticks(2);
-    assert_eq!(brain::sees(sim.app.world_mut(), bt, p), None, "the same pane as a wall hides the player");
+    assert_eq!(
+        brain::sees(sim.app.world_mut(), bt, p),
+        None,
+        "the same pane as a wall hides the player"
+    );
 }
 
 /// bots.md 8.4: the bot's knife reaches 130 u (the player's 105): a bot
@@ -1393,7 +1559,9 @@ fn the_bot_knife_reaches_130_units() {
     let cut = |d: f32| {
         let (mut sim, p, bt) = duel(Level::Veteran, 0, d, knife_only);
         assert_eq!(sim.app.world().get::<KnifeReach>(bt), Some(&KnifeReach(130.0 * UNIT)));
-        let hurt = until(&mut sim, 4.0, |s| s.app.world().get::<Health>(p).unwrap().current < 1000.0);
+        let hurt = until(&mut sim, 4.0, |s| {
+            s.app.world().get::<Health>(p).unwrap().current < 1000.0
+        });
         let held = sim.app.world().get::<Inventory>(bt).and_then(|i| i.active);
         let id = held.and_then(|w| sim.app.world().get::<Weapon>(w)).map(|w| w.id);
         (hurt.is_some(), id)
@@ -1419,7 +1587,10 @@ fn hear(sim: &mut Sim, bt: Entity, src: Entity, kind: Kind, at: Vec3) -> Option<
     let gap = if kind == Kind::Gunfire { 160 } else { 32 };
     for _ in 0..12 {
         let t = now(sim);
-        sim.app.world_mut().resource_mut::<Stimuli>().post(kind, at, radius, src, ALPHA, t);
+        sim.app
+            .world_mut()
+            .resource_mut::<Stimuli>()
+            .post(kind, at, radius, src, ALPHA, t);
         for _ in 0..gap {
             sim.ticks(1);
             let st = b(sim, bt).state;
@@ -1454,11 +1625,21 @@ fn case_58_half_distance_investigation() {
         assert!(!look_only, "a gunshot is always run to");
         sim.app.world_mut().resource_mut::<BotSettings>().stop = 0;
         let start = sim.position(bt).distance(at) / UNIT;
-        assert!((radius / UNIT - start / 2.0).abs() < 2.0, "half of {start}: {}", radius / UNIT);
+        assert!(
+            (radius / UNIT - start / 2.0).abs() < 2.0,
+            "half of {start}: {}",
+            radius / UNIT
+        );
         until(&mut sim, 10.0, |s| b(s, bt).state == BotState::Patrol).expect("back on patrol");
         let end = sim.position(bt).distance(at) / UNIT;
-        assert!(end <= half + 1.0 && end >= half - 10.0, "gave up at {end} u from a shot {d} u away");
-        assert!(end >= start / 2.0 - 10.0, "never closer than half the starting distance");
+        assert!(
+            end <= half + 1.0 && end >= half - 10.0,
+            "gave up at {end} u from a shot {d} u away"
+        );
+        assert!(
+            end >= start / 2.0 - 10.0,
+            "never closer than half the starting distance"
+        );
     }
 }
 
@@ -1480,7 +1661,9 @@ fn case_59_look_only() {
         sim.app.world_mut().resource_mut::<BotSettings>().stop = 0;
         sim.seconds(1.0);
         let moved = sim.position(bt).distance(before) / UNIT;
-        let BotState::Investigate { look_only, .. } = st else { unreachable!() };
+        let BotState::Investigate { look_only, .. } = st else {
+            unreachable!()
+        };
         (look_only, moved)
     };
     let (look, moved) = run(40.0, 0.0, 400.0);
@@ -1499,13 +1682,25 @@ fn case_59_look_only() {
 fn case_60_calls_while_investigating() {
     let (mut sim, p, bt) = listener();
     let shot = Vec3::new(u(900.0), 0.9, 0.0);
-    let Some(BotState::Investigate { at, id, .. }) = hear(&mut sim, bt, p, Kind::Gunfire, shot) else { panic!() };
+    let Some(BotState::Investigate { at, id, .. }) = hear(&mut sim, bt, p, Kind::Gunfire, shot) else {
+        panic!()
+    };
     for _ in 0..40 {
         let t = now(&sim);
-        sim.app.world_mut().resource_mut::<Stimuli>().post(Kind::AllyCall, Vec3::new(-u(300.0), 0.9, 0.0), 512.0, p, BRAVO, t);
+        sim.app.world_mut().resource_mut::<Stimuli>().post(
+            Kind::AllyCall,
+            Vec3::new(-u(300.0), 0.9, 0.0),
+            512.0,
+            p,
+            BRAVO,
+            t,
+        );
         sim.ticks(1);
     }
-    let BotState::Investigate { at: now_at, id: now_id, .. } = b(&sim, bt).state else {
+    let BotState::Investigate {
+        at: now_at, id: now_id, ..
+    } = b(&sim, bt).state
+    else {
         panic!("{:?}", b(&sim, bt).state)
     };
     assert_eq!((at, id), (now_at, now_id), "the call was ignored");
@@ -1513,13 +1708,24 @@ fn case_60_calls_while_investigating() {
     let (mut sim, p, bt) = listener();
     let t = now(&sim);
     b_mut(&mut sim, bt).last_relaxed = Some(t - 40.0);
-    let Some(BotState::Investigate { level, .. }) = hear(&mut sim, bt, p, Kind::Footstep, Vec3::new(0.0, 0.9, u(400.0))) else { panic!() };
+    let Some(BotState::Investigate { level, .. }) =
+        hear(&mut sim, bt, p, Kind::Footstep, Vec3::new(0.0, 0.9, u(400.0)))
+    else {
+        panic!()
+    };
     assert!(level < 50.0);
     let mut n = 0;
     until(&mut sim, 10.0, |s| {
         if n % 160 == 0 {
             let t = now(s);
-            s.app.world_mut().resource_mut::<Stimuli>().post(Kind::Gunfire, Vec3::new(u(300.0), 0.9, 0.0), 2000.0, p, ALPHA, t);
+            s.app.world_mut().resource_mut::<Stimuli>().post(
+                Kind::Gunfire,
+                Vec3::new(u(300.0), 0.9, 0.0),
+                2000.0,
+                p,
+                ALPHA,
+                t,
+            );
         }
         n += 1;
         matches!(b(s, bt).state, BotState::Investigate { level, .. } if level > 50.0)
@@ -1537,7 +1743,9 @@ fn case_61_grenade_just_outside_the_radius() {
     sim.app.world_mut().resource_mut::<BotSettings>().stop = 0;
     player_grenade(&mut sim, p, bt, r + 50.0);
     until(&mut sim, 2.0, |s| matches!(b(s, bt).state, BotState::Dodge { .. })).expect("dodges");
-    let BotState::Dodge { to, grenade, .. } = b(&sim, bt).state else { unreachable!() };
+    let BotState::Dodge { to, grenade, .. } = b(&sim, bt).state else {
+        unreachable!()
+    };
     let w = sim.app.world_mut();
     let g = w.get::<CaGrenade>(grenade).unwrap().clone();
     let gp = g.pos * g.unit;
@@ -1548,18 +1756,28 @@ fn case_61_grenade_just_outside_the_radius() {
     let (mut sim, p, bt) = duel(Level::Normal, 0, 2500.0, RIFLE_KIT);
     player_grenade(&mut sim, p, bt, r + 50.0);
     until(&mut sim, 2.0, |s| matches!(b(s, bt).state, BotState::Dodge { .. })).expect("dodges");
-    let BotState::Dodge { grenade, .. } = b(&sim, bt).state else { unreachable!() };
+    let BotState::Dodge { grenade, .. } = b(&sim, bt).state else {
+        unreachable!()
+    };
     sim.seconds(2.0);
-    assert!(matches!(b(&sim, bt).state, BotState::Dodge { .. }), "still dodging while the grenade is there");
+    assert!(
+        matches!(b(&sim, bt).state, BotState::Dodge { .. }),
+        "still dodging while the grenade is there"
+    );
     sim.app.world_mut().despawn(grenade);
     sim.ticks(6);
-    assert!(!matches!(b(&sim, bt).state, BotState::Dodge { .. }), "over with the grenade");
+    assert!(
+        !matches!(b(&sim, bt).state, BotState::Dodge { .. }),
+        "over with the grenade"
+    );
 
     let (mut sim, p, bt) = duel(Level::Normal, 0, 2500.0, RIFLE_KIT);
     sim.app.world_mut().resource_mut::<BotSettings>().stop = 0;
     player_grenade(&mut sim, p, bt, r - 50.0);
     until(&mut sim, 2.0, |s| matches!(b(s, bt).state, BotState::Dodge { .. })).expect("dodges");
-    let BotState::Dodge { to, .. } = b(&sim, bt).state else { unreachable!() };
+    let BotState::Dodge { to, .. } = b(&sim, bt).state else {
+        unreachable!()
+    };
     let w = sim.app.world_mut();
     let g = w.query::<&CaGrenade>().iter(w).next().unwrap().clone();
     let gp = g.pos * g.unit;
@@ -1569,7 +1787,10 @@ fn case_61_grenade_just_outside_the_radius() {
 
 fn drain_chat(sim: &mut Sim) -> Vec<(Entity, String)> {
     let w = sim.app.world_mut();
-    w.resource_mut::<Messages<CaBotChat>>().drain().map(|c| (c.bot, c.key)).collect()
+    w.resource_mut::<Messages<CaBotChat>>()
+        .drain()
+        .map(|c| (c.bot, c.key))
+        .collect()
 }
 
 fn died(sim: &mut Sim, victim: Entity, killer: Entity) {
@@ -1603,14 +1824,22 @@ fn case_62_kill_chat() {
         sim.app.world_mut().get_mut::<CaChat>(bt).unwrap().until = 0.0;
         died(&mut sim, other, bt);
         sim.ticks(1);
-        lines.extend(drain_chat(&mut sim).into_iter().filter(|(who, k)| *who == bt && k.contains("_Kill_")));
+        lines.extend(
+            drain_chat(&mut sim)
+                .into_iter()
+                .filter(|(who, k)| *who == bt && k.contains("_Kill_")),
+        );
     }
     assert!(lines.is_empty(), "no Kill line for a bot: {lines:?}");
     for _ in 0..24 {
         sim.app.world_mut().get_mut::<CaChat>(bt).unwrap().until = 0.0;
         died(&mut sim, p, bt);
         sim.ticks(1);
-        lines.extend(drain_chat(&mut sim).into_iter().filter(|(who, k)| *who == bt && k.contains("_Kill_")));
+        lines.extend(
+            drain_chat(&mut sim)
+                .into_iter()
+                .filter(|(who, k)| *who == bt && k.contains("_Kill_")),
+        );
     }
     assert!(!lines.is_empty(), "a Kill line for a player");
 }
@@ -1627,7 +1856,12 @@ fn case_63_battle_and_search_events() {
     let tick = |sim: &mut Sim, events: &mut Vec<ChatEvent>| {
         sim.ticks(1);
         let w = sim.app.world_mut();
-        events.extend(w.resource_mut::<Messages<CaBotEvent>>().drain().filter(|e| e.bot == bt).map(|e| e.event));
+        events.extend(
+            w.resource_mut::<Messages<CaBotEvent>>()
+                .drain()
+                .filter(|e| e.bot == bt)
+                .map(|e| e.event),
+        );
     };
     place(&mut sim, bt, Vec3::new(0.0, 0.0, u(5000.0)), 0.0);
     tick(&mut sim, &mut events);
@@ -1646,8 +1880,16 @@ fn case_63_battle_and_search_events() {
     for _ in 0..240 {
         tick(&mut sim, &mut events);
     }
-    assert!(matches!(b(&sim, bt).state, BotState::Attack { .. }), "{:?}", b(&sim, bt).state);
-    assert_eq!(count(&events, ChatEvent::Battle), 1, "attack moves say nothing: {events:?}");
+    assert!(
+        matches!(b(&sim, bt).state, BotState::Attack { .. }),
+        "{:?}",
+        b(&sim, bt).state
+    );
+    assert_eq!(
+        count(&events, ChatEvent::Battle),
+        1,
+        "attack moves say nothing: {events:?}"
+    );
     // A dodge inside the attack: a Grenade line, and no second Battle.
     player_grenade(&mut sim, p, bt, 100.0);
     for _ in 0..200 {
@@ -1663,7 +1905,10 @@ fn case_63_battle_and_search_events() {
     place(&mut sim, p, Vec3::new(0.0, 0.0, -u(4000.0)), FACE_PLUS_Z);
     {
         let mut bot = b_mut(&mut sim, bt);
-        bot.state = BotState::Chase { until: 1e9, breath: 0.0 };
+        bot.state = BotState::Chase {
+            until: 1e9,
+            breath: 0.0,
+        };
         bot.target = None;
     }
     for _ in 0..8 {
@@ -1678,11 +1923,16 @@ fn case_63_battle_and_search_events() {
 fn case_64_chat_cooldown() {
     let (mut sim, _p, bt) = duel(Level::Easy, 0, 5000.0, RIFLE_KIT);
     let profile = b(&sim, bt).profile;
-    sim.app.world_mut().resource_mut::<BotData>().chat.profiles.push(bots::data::ProfileChat {
-        level: "easy".into(),
-        profile,
-        cooldown: 25.0,
-    });
+    sim.app
+        .world_mut()
+        .resource_mut::<BotData>()
+        .chat
+        .profiles
+        .push(bots::data::ProfileChat {
+            level: "easy".into(),
+            profile,
+            cooldown: 25.0,
+        });
     let data = sim.app.world().resource::<BotData>().clone();
     assert_eq!(bots::chat::cooldown(&data, &b(&sim, bt)), 25.0);
     let mut other = b(&sim, bt);
@@ -1708,7 +1958,11 @@ fn thrown_count_scaled_once_a_life() {
     let kit = [Some(RIFLE), None, None, Some(KNIFE), Some(M67), None];
     let (mut sim, p, bt) = duel(Level::Normal, 0, 5000.0, kit);
     // The M67 on a row whose multiplier is 10 (Default, Normal N).
-    sim.app.world_mut().resource_mut::<BotData>().gun_types.insert(M67.into(), "Default".into());
+    sim.app
+        .world_mut()
+        .resource_mut::<BotData>()
+        .gun_types
+        .insert(M67.into(), "Default".into());
     set_kit(&mut sim, bt, Level::Normal, 0, kit);
     sim.ticks(3);
     let count = |sim: &Sim| sim.app.world().get::<Throwable>(grenade_of(sim, bt)).unwrap().count;
@@ -1766,12 +2020,17 @@ fn case_65_fresh_brain() {
     assert!(sim.app.world().get::<Dead>(bt).is_some(), "dead");
     let respawned = until(&mut sim, 15.0, |s| {
         let w = s.app.world();
-        w.get::<Dead>(bt).is_none() && w.get::<Health>(bt).unwrap().current > 0.0 && w.get::<CaBot>(bt).unwrap().last_relaxed.is_some()
+        w.get::<Dead>(bt).is_none()
+            && w.get::<Health>(bt).unwrap().current > 0.0
+            && w.get::<CaBot>(bt).unwrap().last_relaxed.is_some()
     });
     assert!(respawned.is_some(), "respawned");
     let bot = b(&sim, bt);
     assert_eq!((bot.cycle, bot.alarm, bot.attack_off), (HitCycle::default(), 0.0, 0.0));
-    assert!(bot.last_relaxed.is_some_and(|r| (now(&sim) - r).abs() < 1.0), "spawn counts as relaxed");
+    assert!(
+        bot.last_relaxed.is_some_and(|r| (now(&sim) - r).abs() < 1.0),
+        "spawn counts as relaxed"
+    );
     // Its first attack rolls a delay.
     place(&mut sim, bt, Vec3::new(0.0, 0.0, u(800.0)), 0.0);
     place(&mut sim, p, Vec3::ZERO, FACE_PLUS_Z);
@@ -1797,15 +2056,25 @@ fn case_66_patrol_stops_and_start_nodes() {
         ai_volume("B", [0.0, 32.0, -3000.0], [600.0, 32.0, 3000.0]),
     ];
     for k in 0..8 {
-        let next = if k < 7 { format!("AI_Node_B_{:02}", k + 2) } else { String::new() };
-        entities.push(patrol_node(&format!("AI_Node_B_{:02}", k + 1), [0.0, 16.0, 5500.0 - 1400.0 * k as f32], &next));
+        let next = if k < 7 {
+            format!("AI_Node_B_{:02}", k + 2)
+        } else {
+            String::new()
+        };
+        entities.push(patrol_node(
+            &format!("AI_Node_B_{:02}", k + 1),
+            [0.0, 16.0, 5500.0 - 1400.0 * k as f32],
+            &next,
+        ));
     }
     sim.app.world_mut().insert_resource(MapEntities {
         entities: std::sync::Arc::new(entities),
         scale: UNIT,
     });
     live(&mut sim);
-    let bots_: Vec<Entity> = (0..9).map(|_| bots::add_bot(sim.app.world_mut(), Some(BRAVO)).unwrap()).collect();
+    let bots_: Vec<Entity> = (0..9)
+        .map(|_| bots::add_bot(sim.app.world_mut(), Some(BRAVO)).unwrap())
+        .collect();
     let mut first: Vec<Option<usize>> = vec![None; 9];
     for _ in 0..400 {
         sim.ticks(1);
@@ -1868,8 +2137,16 @@ fn case_67_throw() {
     assert!(me.hand().distance(me.eye()) > 0.3, "the hand is not the eye");
     assert!(me.hand().y < me.eye().y);
 
-    let (mut sim, _p, bt) = duel(Level::Normal, 0, 800.0, [Some(RIFLE), None, None, Some(KNIFE), Some(M67), None]);
-    until(&mut sim, 3.0, |s| matches!(b(s, bt).state, BotState::Attack { .. }) && b(s, bt).visible).expect("attacks");
+    let (mut sim, _p, bt) = duel(
+        Level::Normal,
+        0,
+        800.0,
+        [Some(RIFLE), None, None, Some(KNIFE), Some(M67), None],
+    );
+    until(&mut sim, 3.0, |s| {
+        matches!(b(s, bt).state, BotState::Attack { .. }) && b(s, bt).visible
+    })
+    .expect("attacks");
     b_mut(&mut sim, bt).grenades = 0;
     let (mut begun, mut released, mut over) = (None, None, None);
     let mut fired: Vec<f64> = Vec::new();
@@ -1879,7 +2156,12 @@ fn case_67_throw() {
         let t = now(&sim);
         let w = sim.app.world_mut();
         let events: Vec<WeaponEvent> = w.resource_mut::<Messages<WeaponEvent>>().drain().collect();
-        fired.extend(events.iter().filter(|e| e.owner == bt && matches!(e.kind, WeaponEventKind::Fired { .. })).map(|_| t));
+        fired.extend(
+            events
+                .iter()
+                .filter(|e| e.owner == bt && matches!(e.kind, WeaponEventKind::Fired { .. }))
+                .map(|_| t),
+        );
         thrown |= w.query::<&CaGrenade>().iter(w).next().is_some();
         if let Some(th) = b(&sim, bt).throw {
             begun.get_or_insert(t);
@@ -1897,7 +2179,10 @@ fn case_67_throw() {
     let (begun, released, over) = (begun.expect("throws"), released.expect("released"), over.expect("over"));
     assert!(thrown, "a grenade flew");
     assert!(released > begun && over >= released, "{begun} {released} {over}");
-    assert!(!fired.iter().any(|&f| f >= begun && f <= over), "no round fired during the throw: {fired:?} in {begun}..{over}");
+    assert!(
+        !fired.iter().any(|&f| f >= begun && f <= over),
+        "no round fired during the throw: {fired:?} in {begun}..{over}"
+    );
     assert!(fired.iter().any(|&f| f > over), "fires again after switching back");
 }
 
@@ -1911,7 +2196,11 @@ fn case_68_blind_chase_fire() {
     // bot to the attack goal.
     let p2 = human(&mut sim, ALPHA);
     tough(&mut sim, p2);
-    wall(&mut sim, Vec3::new(u(140.0), 0.0, u(400.0)), Vec3::new(u(160.0), 3.0, u(700.0)));
+    wall(
+        &mut sim,
+        Vec3::new(u(140.0), 0.0, u(400.0)),
+        Vec3::new(u(160.0), 3.0, u(700.0)),
+    );
     place(&mut sim, p, Vec3::ZERO, FACE_PLUS_Z);
     place(&mut sim, p2, Vec3::new(u(300.0), 0.0, u(500.0)), FACE_PLUS_Z);
     place(&mut sim, bt, Vec3::new(0.0, 0.0, u(600.0)), 0.0);
@@ -1919,7 +2208,10 @@ fn case_68_blind_chase_fire() {
     sim.ticks(2);
     {
         let mut bot = b_mut(&mut sim, bt);
-        bot.state = BotState::Chase { until: 1e9, breath: 0.0 };
+        bot.state = BotState::Chase {
+            until: 1e9,
+            breath: 0.0,
+        };
         bot.target = Some(p);
         bot.visible = true;
         bot.cycle = HitCycle::default();
@@ -1937,7 +2229,11 @@ fn case_68_blind_chase_fire() {
             if let WeaponEventKind::Fired { origin, yaw, pitch, .. } = e.kind {
                 let (ey, ep) = brain::look_at(origin, head);
                 let dy = (yaw - ey + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
-                assert!(dy.abs() < 0.03 && (pitch - ep).abs() < 0.03, "along the torso: {dy} {}", pitch - ep);
+                assert!(
+                    dy.abs() < 0.03 && (pitch - ep).abs() < 0.03,
+                    "along the torso: {dy} {}",
+                    pitch - ep
+                );
                 shots += 1;
             }
         }
@@ -1957,7 +2253,11 @@ fn case_69_base_point() {
     for (top, head_only) in [(52.0f32, false), (60.0, true)] {
         let (mut sim, p, bt) = duel(Level::Easy, 0, 500.0, RIFLE_KIT);
         wall(&mut sim, Vec3::new(-3.0, 0.0, u(19.0)), Vec3::new(3.0, u(top), u(21.0)));
-        assert_eq!(brain::sees(sim.app.world_mut(), bt, p), Some(true), "the eye sees only the head");
+        assert_eq!(
+            brain::sees(sim.app.world_mut(), bt, p),
+            Some(true),
+            "the eye sees only the head"
+        );
         until(&mut sim, 3.0, |s| matches!(b(s, bt).state, BotState::Attack { .. })).expect("attacks");
         sim.seconds(0.3);
         assert_eq!(b(&sim, bt).head_only, head_only, "wall top {top} u");
@@ -2042,7 +2342,12 @@ fn merc_26_aim_under_movement() {
     let (mut sim, _p, bt) = merc_duel(0.25, 800.0);
     let o = merc_offsets(&mut sim, bt, 0.3, 9);
     for i in [0, 4, 8] {
-        assert!((o[i].length() - 100.0).abs() < 0.01, "shot {}: {}", i + 1, o[i].length());
+        assert!(
+            (o[i].length() - 100.0).abs() < 0.01,
+            "shot {}: {}",
+            i + 1,
+            o[i].length()
+        );
     }
 }
 
@@ -2081,7 +2386,11 @@ fn merc_27_base_point() {
     // Behind a wall 76 u high at 20 u in front: the ray to 75 u fails and
     // the height steps down 12.5 u a frame, wrapping from the bottom.
     let (mut sim, _p, bt) = merc_duel(0.25, 500.0);
-    wall(&mut sim, Vec3::new(-3.0, 0.0, u(19.0)), Vec3::new(3.0, u(76.0), u(21.0)));
+    wall(
+        &mut sim,
+        Vec3::new(-3.0, 0.0, u(19.0)),
+        Vec3::new(3.0, u(76.0), u(21.0)),
+    );
     let mut heights = vec![25.0f32];
     for _ in 0..200 {
         sim.ticks(1);
@@ -2102,7 +2411,10 @@ fn merc_28_damage() {
     let mean_arm_hit = |merc: bool| {
         let (mut sim, _p, bt) = merc_duel(1.0, 500.0);
         if !merc {
-            sim.app.world_mut().entity_mut(bt).remove::<combat_arms::game::rules::mercs::CaMerc>();
+            sim.app
+                .world_mut()
+                .entity_mut(bt)
+                .remove::<combat_arms::game::rules::mercs::CaMerc>();
             b_mut(&mut sim, bt).merc = None;
         }
         let mut arm = Vec::new();
@@ -2127,5 +2439,9 @@ fn merc_28_damage() {
     };
     let m = mean_arm_hit(true);
     let bot = mean_arm_hit(false);
-    assert!((m / bot - 1.0 / 0.9).abs() < 0.06, "mercenary {m}, bot {bot}: {}", m / bot);
+    assert!(
+        (m / bot - 1.0 / 0.9).abs() < 0.06,
+        "mercenary {m}, bot {bot}: {}",
+        m / bot
+    );
 }

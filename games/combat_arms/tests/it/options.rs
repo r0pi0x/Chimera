@@ -36,7 +36,12 @@ fn load(sim: &mut Sim, p: Option<Profile>) {
 }
 
 fn value(sim: &Sim, cvar: &str) -> String {
-    sim.app.world().resource::<CaSettings>().get(cvar).unwrap_or("?").to_string()
+    sim.app
+        .world()
+        .resource::<CaSettings>()
+        .get(cvar)
+        .unwrap_or("?")
+        .to_string()
 }
 
 fn number(sim: &Sim, cvar: &str) -> f64 {
@@ -135,7 +140,10 @@ fn t06_no_look_under_a_popup() {
 fn t07_the_sensitivity_keys() {
     let mut s = sim();
     load(&mut s, None);
-    s.app.world_mut().resource_mut::<CaSettings>().set("MouseSensitivity", "5");
+    s.app
+        .world_mut()
+        .resource_mut::<CaSettings>()
+        .set("MouseSensitivity", "5");
     let run = |s: &mut Sim, line: &str| {
         s.app.world_mut().resource_mut::<Console>().submit(line);
         s.app.update();
@@ -148,13 +156,19 @@ fn t07_the_sensitivity_keys() {
     assert_eq!(n.colour, "mouse_sensitivity");
     assert!(n.text.contains('6'), "{}", n.text);
     // At 99 it stays, and the line is still shown.
-    s.app.world_mut().resource_mut::<CaSettings>().set("MouseSensitivity", "99");
+    s.app
+        .world_mut()
+        .resource_mut::<CaSettings>()
+        .set("MouseSensitivity", "99");
     let before = s.app.world().resource::<CaNotices>().lines.len();
     run(&mut s, "sensitivityinc");
     assert_eq!(value(&s, "MouseSensitivity"), "99");
     assert_eq!(s.app.world().resource::<CaNotices>().lines.len(), before + 1);
     // Down at 1 stays.
-    s.app.world_mut().resource_mut::<CaSettings>().set("MouseSensitivity", "1");
+    s.app
+        .world_mut()
+        .resource_mut::<CaSettings>()
+        .set("MouseSensitivity", "1");
     run(&mut s, "sensitivitydec");
     assert_eq!(value(&s, "MouseSensitivity"), "1");
 }
@@ -163,7 +177,11 @@ fn t07_the_sensitivity_keys() {
 fn t08_missing_and_large_sensitivity() {
     let mut s = sim();
     load(&mut s, Some(profile("[Controls]\nInvertMouse = 1\n")));
-    assert_eq!(s.app.world().resource::<CaMouseLook>().sensitivity, 5, "a profile without the key");
+    assert_eq!(
+        s.app.world().resource::<CaMouseLook>().sensitivity,
+        5,
+        "a profile without the key"
+    );
     assert!(s.app.world().resource::<CaMouseLook>().invert);
     load(&mut s, Some(profile("[Controls]\nSensitivity = 150\n")));
     close(s.app.world().resource::<CaMouseLook>().scale(), 0.03376, 1e-9);
@@ -212,7 +230,11 @@ fn opening_a_slider_in_the_screen_creeps_by_the_tracks_width() {
     // A 140 px track shows 10 as 11 (thumb 15 -> 10.7 -> 10? it reads 10).
     let slider = flow::open_slider(s.app.world_mut(), "MouseSensitivity", 100);
     assert_eq!(slider.value(), 11);
-    assert_eq!(opts(&s).pending["mousesensitivity"], "11", "OK would save the read-back");
+    assert_eq!(
+        opts(&s).pending["mousesensitivity"],
+        "11",
+        "OK would save the read-back"
+    );
     flow::cancel(s.app.world_mut());
     assert_eq!(value(&s, "MouseSensitivity"), "10");
 }
@@ -222,7 +244,14 @@ fn opening_a_slider_in_the_screen_creeps_by_the_tracks_width() {
 
 #[test]
 fn t12_slider_to_gamma() {
-    for (s, g) in [(0.0, 0.5), (4.0, 0.75), (16.0, 1.0), (33.0, 2.25), (50.0, 6.0), (100.0, 31.519)] {
+    for (s, g) in [
+        (0.0, 0.5),
+        (4.0, 0.75),
+        (16.0, 1.0),
+        (33.0, 2.25),
+        (50.0, 6.0),
+        (100.0, 31.519),
+    ] {
         close(video::gamma_of_slider(s), g, 1e-3);
     }
 }
@@ -265,7 +294,12 @@ fn m() -> Multipliers {
 
 #[test]
 fn t15_full_volume() {
-    let h = |class, r| (sound::level(r, class, 100, &m()), sound::heard(true, 100, r, class, &m()));
+    let h = |class, r| {
+        (
+            sound::level(r, class, 100, &m()),
+            sound::heard(true, 100, r, class, &m()),
+        )
+    };
     let (l, heard) = h(Class::Weapons, 100.0);
     close(l as f64, 1.27, 1e-6);
     close(heard as f64, 1.27, 1e-6);
@@ -298,7 +332,10 @@ fn t18_volume_one() {
 #[test]
 fn t19_effects_off_and_on() {
     let mut s = sim();
-    load(&mut s, Some(profile("[Sound]\nsoundvolume = 80\nsoundenable = FALSE\n")));
+    load(
+        &mut s,
+        Some(profile("[Sound]\nsoundvolume = 80\nsoundenable = FALSE\n")),
+    );
     assert_eq!(s.app.world().resource::<CaSoundLevels>().master, 0.0);
     open(&mut s);
     edit(&mut s, "enablesound", "1");
@@ -318,10 +355,17 @@ fn t21_music() {
     let mut s = sim();
     load(&mut s, Some(profile("[Sound]\nmusicenable = TRUE\nmusicvolume = 40\n")));
     close(s.app.world().resource::<CaSoundLevels>().music as f64, 0.4, 1e-6);
-    load(&mut s, Some(profile("[Sound]\nmusicenable = FALSE\nmusicvolume = 40\n")));
+    load(
+        &mut s,
+        Some(profile("[Sound]\nmusicenable = FALSE\nmusicvolume = 40\n")),
+    );
     assert_eq!(s.app.world().resource::<CaSoundLevels>().music, 0.0);
     load(&mut s, Some(profile("[Sound]\nmusicenable = TRUE\n")));
-    assert_eq!(s.app.world().resource::<CaSoundLevels>().music, 0.0, "a profile without musicvolume");
+    assert_eq!(
+        s.app.world().resource::<CaSoundLevels>().music,
+        0.0,
+        "a profile without musicvolume"
+    );
     // A first play (no profile: the template's): music 50, effects 70, so
     // a fresh player hears music (the party apps' snd_musicvolume follows
     // it: Ultimate Gun Game's menu loop).
@@ -348,13 +392,26 @@ fn t22_low_to_mid() {
     open(&mut s);
     edit(&mut s, "PerformanceSetting", "1");
     ok(&mut s);
-    for (cvar, v) in [("ShellCasings", 1), ("Tracers", 1), ("ShadowDetail", 1), ("FXDetail", 1), ("EnvironmentalDetail", 1), ("DetailLevel", 2), ("PerformanceSetting", 1)] {
+    for (cvar, v) in [
+        ("ShellCasings", 1),
+        ("Tracers", 1),
+        ("ShadowDetail", 1),
+        ("FXDetail", 1),
+        ("EnvironmentalDetail", 1),
+        ("DetailLevel", 2),
+        ("PerformanceSetting", 1),
+    ] {
         assert_eq!(value_i(&s, cvar), v, "{cvar}");
     }
     let d = opts(&s).derived;
     assert_eq!(
         d.shadows,
-        Some(video::Shadows { blur: 0, texture_size: 128, back_face_cull: 0, per_frame: 0 })
+        Some(video::Shadows {
+            blur: 0,
+            texture_size: 128,
+            back_face_cull: 0,
+            per_frame: 0
+        })
     );
     assert_eq!((d.client_fx_level, d.debris_fx_level), (1, 1));
     assert_eq!(d.snow_density, 1.0);
@@ -381,7 +438,10 @@ fn t23_high_forces_the_effect_levels_to_one_on_a_shader_machine() {
     open(&mut s);
     edit(&mut s, "PerformanceSetting", "2");
     ok(&mut s);
-    assert_eq!((opts(&s).derived.client_fx_level, opts(&s).derived.debris_fx_level), (2, 2));
+    assert_eq!(
+        (opts(&s).derived.client_fx_level, opts(&s).derived.debris_fx_level),
+        (2, 2)
+    );
 }
 
 #[test]
@@ -419,14 +479,20 @@ fn t26_shader_off_takes_bloom_and_high_effects_with_it() {
     assert_eq!(c.effects, 1);
     assert!(!c.effects_enabled(2) && c.effects_enabled(0));
     // No shader support: the switches are disabled, High too.
-    let c = Custom::new(CaMachine { shader: false, ..default() });
+    let c = Custom::new(CaMachine {
+        shader: false,
+        ..default()
+    });
     assert!(!c.shader_enabled() && !c.effects_enabled(2));
 }
 
 #[test]
 fn custom_clicks_reach_the_variables_on_ok() {
     let mut s = sim();
-    load(&mut s, Some(profile("[Settings]\nPerformanceSetting = 3\nTrilinearFiltering = 1\n")));
+    load(
+        &mut s,
+        Some(profile("[Settings]\nPerformanceSetting = 3\nTrilinearFiltering = 1\n")),
+    );
     open(&mut s);
     flow::custom_click(s.app.world_mut(), "anisotropic", 1);
     assert_eq!(opts(&s).pending["trilinear"], "0");
@@ -450,7 +516,13 @@ fn t27_custom_always_stores_no_shadows() {
 }
 
 fn mode(w: u32, h: u32, depth: u32) -> Mode {
-    Mode { width: w, height: h, depth, format: 1, hardware_tnl: true }
+    Mode {
+        width: w,
+        height: h,
+        depth,
+        format: 1,
+        hardware_tnl: true,
+    }
 }
 
 fn modes() -> Vec<Mode> {
@@ -461,7 +533,10 @@ fn modes() -> Vec<Mode> {
         mode(1920, 1080, 16),
         mode(1920, 1080, 32),
         mode(1920, 1080, 32),
-        Mode { format: 2, ..mode(1600, 900, 32) },
+        Mode {
+            format: 2,
+            ..mode(1600, 900, 32)
+        },
     ]
 }
 
@@ -469,12 +544,26 @@ fn modes() -> Vec<Mode> {
 fn t28_an_unlisted_mode_loads_as_the_menus() {
     let mut s = sim();
     s.app.world_mut().resource_mut::<CaOptions>().modes = modes();
-    load(&mut s, Some(profile("[Display]\nScreenWidth = 1600\nScreenHeight = 900\nScreenBitDepth = 32\n")));
+    load(
+        &mut s,
+        Some(profile(
+            "[Display]\nScreenWidth = 1600\nScreenHeight = 900\nScreenBitDepth = 32\n",
+        )),
+    );
     assert_eq!(
-        (value_i(&s, "ScreenWidthSetting"), value_i(&s, "ScreenHeightSetting"), value_i(&s, "ScreenDepthSetting")),
+        (
+            value_i(&s, "ScreenWidthSetting"),
+            value_i(&s, "ScreenHeightSetting"),
+            value_i(&s, "ScreenDepthSetting")
+        ),
         (1024, 768, 32)
     );
-    load(&mut s, Some(profile("[Display]\nScreenWidth = 1280\nScreenHeight = 720\nScreenBitDepth = 32\n")));
+    load(
+        &mut s,
+        Some(profile(
+            "[Display]\nScreenWidth = 1280\nScreenHeight = 720\nScreenBitDepth = 32\n",
+        )),
+    );
     assert_eq!(value_i(&s, "ScreenWidthSetting"), 1280);
 }
 
@@ -482,7 +571,10 @@ fn t28_an_unlisted_mode_loads_as_the_menus() {
 fn t29_the_resolution_list() {
     let list = video::mode_list(&modes(), true);
     let shown: Vec<_> = list.iter().map(|m| (m.width, m.height, m.depth)).collect();
-    assert_eq!(shown, [(1920, 1080, 32), (1920, 1080, 16), (1280, 720, 32), (1024, 768, 32)]);
+    assert_eq!(
+        shown,
+        [(1920, 1080, 32), (1920, 1080, 16), (1280, 720, 32), (1024, 768, 32)]
+    );
     // No 16-bit mode: a stored 16 becomes 32.
     let no16 = video::mode_list(&[mode(1024, 768, 32)], false);
     assert_eq!(video::load_mode(&no16, (1024, 768, 16)), (1024, 768, 32));
@@ -495,7 +587,11 @@ fn t30_blood_off_for_a_minor_in_the_us_build() {
     assert!(video::gore_allowed(false, Region::Us, Some(18)));
     assert!(!video::gore_allowed(true, Region::Europe, None), "a low-violence build");
     let mut s = sim();
-    *s.app.world_mut().resource_mut::<CaAccount>() = CaAccount { age: Some(16), region: Region::Us, ..default() };
+    *s.app.world_mut().resource_mut::<CaAccount>() = CaAccount {
+        age: Some(16),
+        region: Region::Us,
+        ..default()
+    };
     load(&mut s, None);
     open(&mut s);
     edit(&mut s, "Gore", "1");
@@ -512,7 +608,11 @@ fn t30_blood_off_for_a_minor_in_the_us_build() {
 fn the_table_matches_the_default_profile() {
     let default = Profile::parse(combat_arms::game::options::DEFAULT_PROFILE);
     for a in bindings::ACTIONS {
-        assert!(default.string("Bindings", a.name).is_some(), "{} has a stock binding", a.name);
+        assert!(
+            default.string("Bindings", a.name).is_some(),
+            "{} has a stock binding",
+            a.name
+        );
     }
     // The stock keys of K1 that matter to other specs.
     let t = bindings::load(&default, &default, true);
@@ -538,7 +638,11 @@ fn the_table_matches_the_default_profile() {
         if ["tab", "f4", "f8"].contains(k) {
             continue;
         }
-        assert!(binds.get(*k).is_some_and(|l| l.split(';').any(|p| p.trim() == *cmd)), "{k} {cmd}: {:?}", binds.get(*k));
+        assert!(
+            binds.get(*k).is_some_and(|l| l.split(';').any(|p| p.trim() == *cmd)),
+            "{k} {cmd}: {:?}",
+            binds.get(*k)
+        );
     }
 }
 
@@ -574,7 +678,10 @@ fn t32_escape_unbinds_the_action_for_good() {
     open(&mut s);
     capture(&mut s, "Jump", &[key(1)]);
     assert_eq!(binding(&s, "Jump"), " @ @ ");
-    assert_eq!(opts(&s).bindings.entries[action("Jump")].row_text(&keys::KeyNames::default()), "N/A");
+    assert_eq!(
+        opts(&s).bindings.entries[action("Jump")].row_text(&keys::KeyNames::default()),
+        "N/A"
+    );
     ok(&mut s);
     let mut s2 = sim();
     load(&mut s2, chimera_core::profile::read(&path));
@@ -618,11 +725,22 @@ fn key_names_given_as_string_ids_resolve_or_fall_back() {
         )
         .unwrap(),
     );
-    let table = |id: &str| if id == "$Keyboard_Name_4" { "LSH".to_string() } else { id.to_string() };
+    let table = |id: &str| {
+        if id == "$Keyboard_Name_4" {
+            "LSH".to_string()
+        } else {
+            id.to_string()
+        }
+    };
     let r = names.resolved(table);
     assert_eq!(r.keyboard_text("##42"), "LSH");
     assert_eq!(r.keyboard_text("##57"), "SPACE");
-    assert!(!names.resolved(|id| id.to_string()).keyboard_text("##42").starts_with('$'));
+    assert!(
+        !names
+            .resolved(|id| id.to_string())
+            .keyboard_text("##42")
+            .starts_with('$')
+    );
 }
 
 #[test]
@@ -633,11 +751,20 @@ fn t35_a_new_key_leaves_the_old_one() {
     capture(&mut s, "Forward", &[key(200)]);
     assert_eq!(binding(&s, "Forward"), "##200@ @ ");
     let names = keys::KeyNames::parse(
-        &lithtech_formats::attributes::Document::parse(b"[Keyboard0]\nRealName = \"##200\"\nTriggerName = \"Up Arrow \"\n").unwrap(),
+        &lithtech_formats::attributes::Document::parse(
+            b"[Keyboard0]\nRealName = \"##200\"\nTriggerName = \"Up Arrow \"\n",
+        )
+        .unwrap(),
     );
-    assert_eq!(opts(&s).bindings.entries[action("Forward")].row_text(&names), "Up Arrow");
+    assert_eq!(
+        opts(&s).bindings.entries[action("Forward")].row_text(&names),
+        "Up Arrow"
+    );
     ok(&mut s);
-    assert!(!s.app.world().resource::<Console>().binds.contains_key("w"), "W is no longer bound");
+    assert!(
+        !s.app.world().resource::<Console>().binds.contains_key("w"),
+        "W is no longer bound"
+    );
     assert_eq!(s.app.world().resource::<Console>().binds["uparrow"], "+forward");
 }
 
@@ -651,23 +778,46 @@ fn k3_the_first_frame_with_any_event_clears_and_the_first_key_down_decides() {
     assert!(!flow::begin_capture(w, action("Fire")), "not while a capture waits");
     // No events: nothing happens, the old binding stays.
     assert!(!flow::capture_frame(w, &[]));
-    assert_eq!(w.resource::<CaOptions>().bindings.entries[action("Jump")].text(), "##57@ @ ");
+    assert_eq!(
+        w.resource::<CaOptions>().bindings.entries[action("Jump")].text(),
+        "##57@ @ "
+    );
     // A mouse move erases (all three devices) and waits; so does a key-up.
-    assert!(!flow::capture_frame(w, &[RawEvent::MouseMove, RawEvent::JoyAxis, RawEvent::Key { code: 30, down: false }]));
-    assert_eq!(w.resource::<CaOptions>().bindings.entries[action("Jump")].text(), " @ @ ");
+    assert!(!flow::capture_frame(
+        w,
+        &[
+            RawEvent::MouseMove,
+            RawEvent::JoyAxis,
+            RawEvent::Key { code: 30, down: false }
+        ]
+    ));
+    assert_eq!(
+        w.resource::<CaOptions>().bindings.entries[action("Jump")].text(),
+        " @ @ "
+    );
     // Up to 8 events a frame: a ninth isn't looked at.
     let mut events = vec![RawEvent::MouseMove; 8];
     events.push(key(30));
     assert!(!flow::capture_frame(w, &events));
-    assert!(flow::capture_frame(w, &[RawEvent::Key { code: 30, down: false }, key(44), key(45)]));
-    assert_eq!(w.resource::<CaOptions>().bindings.entries[action("Jump")].text(), "##44@ @ ");
+    assert!(flow::capture_frame(
+        w,
+        &[RawEvent::Key { code: 30, down: false }, key(44), key(45)]
+    ));
+    assert_eq!(
+        w.resource::<CaOptions>().bindings.entries[action("Jump")].text(),
+        "##44@ @ "
+    );
 }
 
 #[test]
 fn k3_a_key_the_engine_already_binds_cannot_be_taken() {
     let mut s = sim();
     load(&mut s, None);
-    s.app.world_mut().resource_mut::<Console>().binds.insert("tab".into(), "+showscores".into());
+    s.app
+        .world_mut()
+        .resource_mut::<Console>()
+        .binds
+        .insert("tab".into(), "+showscores".into());
     open(&mut s);
     capture(&mut s, "Jump", &[key(15)]);
     assert_eq!(binding(&s, "Jump"), " @ @ ", "the capture ended with nothing written");
@@ -679,7 +829,11 @@ fn k3_one_key_per_device() {
     load(&mut s, None);
     open(&mut s);
     capture(&mut s, "Fire", &[key(30)]);
-    assert_eq!(binding(&s, "Fire"), "##30@ @ ", "the first capture erased the mouse button");
+    assert_eq!(
+        binding(&s, "Fire"),
+        "##30@ @ ",
+        "the first capture erased the mouse button"
+    );
     let mut b = Binding::parse("##30@##3@pad1");
     assert_eq!(b.row_text(&keys::KeyNames::default()), "A, LEFT MOUSE, pad1");
     b.joy.clear();
@@ -694,7 +848,10 @@ fn t36_a_blank_hud_key_gets_page_up_back_when_it_is_free() {
     load(&mut s, Some(profile("[Bindings]\nHUDOnOff = \" @ @ \"\n")));
     assert_eq!(binding(&s, "HUDOnOff"), "##201@ @ ");
     // Page Up bound to Forward: it stays unbound.
-    load(&mut s, Some(profile("[Bindings]\nForward = \"##201@ @ \"\nHUDOnOff = \" @ @ \"\n")));
+    load(
+        &mut s,
+        Some(profile("[Bindings]\nForward = \"##201@ @ \"\nHUDOnOff = \" @ @ \"\n")),
+    );
     assert_eq!(binding(&s, "HUDOnOff"), " @ @ ");
     assert_eq!(binding(&s, "Forward"), "##201@ @ ");
 }
@@ -702,7 +859,10 @@ fn t36_a_blank_hud_key_gets_page_up_back_when_it_is_free() {
 #[test]
 fn t37_a_missing_entry_on_a_taken_key_restores_the_whole_section() {
     let mut s = sim();
-    load(&mut s, Some(profile("[Bindings]\nForward = \"##201@ @ \"\nJump = \"##30@ @ \"\n")));
+    load(
+        &mut s,
+        Some(profile("[Bindings]\nForward = \"##201@ @ \"\nJump = \"##30@ @ \"\n")),
+    );
     assert_eq!(binding(&s, "Forward"), "##17@ @ ", "the default profile's [Bindings]");
     assert_eq!(binding(&s, "Jump"), "##57@ @ ");
     assert_eq!(binding(&s, "HUDOnOff"), "##201@ @ ");
@@ -711,7 +871,12 @@ fn t37_a_missing_entry_on_a_taken_key_restores_the_whole_section() {
 #[test]
 fn t38_the_sensitivity_keys_have_no_fallback() {
     let mut s = sim();
-    load(&mut s, Some(profile("[Bindings]\nForward = \"##17@ @ \"\nHUDOnOff = \"##201@ @ \"\nVideoCapture = \"##209@ @ \"\nUseMutationItem = \"##56@ @ \"\nCommandNPCShop = \"##34@ @ \"\nCommandNPCOrder = \"##35@ @ \"\nCommandUsePerk = \"##41@ @ \"\nQuestState = \"##36@ @ \"\n")));
+    load(
+        &mut s,
+        Some(profile(
+            "[Bindings]\nForward = \"##17@ @ \"\nHUDOnOff = \"##201@ @ \"\nVideoCapture = \"##209@ @ \"\nUseMutationItem = \"##56@ @ \"\nCommandNPCShop = \"##34@ @ \"\nCommandNPCOrder = \"##35@ @ \"\nCommandUsePerk = \"##41@ @ \"\nQuestState = \"##36@ @ \"\n",
+        )),
+    );
     assert_eq!(binding(&s, "SensitivityInc"), " @ @ ");
     assert_eq!(binding(&s, "SensitivityDec"), " @ @ ");
 }
@@ -727,25 +892,40 @@ fn t39_the_number_keys_also_choose() {
     let binds = s.app.world().resource::<Console>().binds.clone();
     for n in 1..=6 {
         let line = &binds[&n.to_string()];
-        assert!(line.split(';').any(|p| p.trim() == format!("choose_{n}")), "{n}: {line}");
+        assert!(
+            line.split(';').any(|p| p.trim() == format!("choose_{n}")),
+            "{n}: {line}"
+        );
     }
     assert_eq!(binds["2"], "slot2; choose_2");
     assert!(!binds["1"].contains("slot1"), "slot1 moved to A: {}", binds["1"]);
     s.app.world_mut().resource_mut::<Console>().submit("choose_3");
     s.app.update();
-    assert_eq!(s.app.world().resource::<combat_arms::game::options::derive::CaChoose>().0, [3]);
+    assert_eq!(
+        s.app
+            .world()
+            .resource::<combat_arms::game::options::derive::CaChoose>()
+            .0,
+        [3]
+    );
     // Not saved: config.cfg is shared with apps that have no `choose_N`
     // (the HL2:DM playtest's "Unknown command" on every press); the keys'
     // own commands are.
     let saved = chimera_core::console::config_text(s.app.world_mut());
     assert!(!saved.contains("choose_"), "{saved}");
-    assert!(saved.lines().any(|l| l.starts_with("bind") && l.contains("slot2")), "{saved}");
+    assert!(
+        saved.lines().any(|l| l.starts_with("bind") && l.contains("slot2")),
+        "{saved}"
+    );
 }
 
 #[test]
 fn a_key_two_actions_hold_runs_both_and_keeps_the_polled_reads() {
     let mut s = sim();
-    load(&mut s, Some(profile("[Bindings]\nForward = \"##17@ @ \"\nBackward = \"##17@ @ \"\n")));
+    load(
+        &mut s,
+        Some(profile("[Bindings]\nForward = \"##17@ @ \"\nBackward = \"##17@ @ \"\n")),
+    );
     let line = s.app.world().resource::<Console>().binds["w"].clone();
     assert_eq!(line, "+forward; +back");
     assert_eq!(Slot::Keyboard, Slot::Keyboard);
@@ -790,11 +970,15 @@ fn t41_a_new_template_version_deletes_the_profile() {
     assert_eq!(value(&s, "MouseSensitivity"), "12");
     // A profile without [Version] counts as major 0.
     let mut s = sim();
-    s.app.world_mut().resource_mut::<CaOptions>().default_profile = Profile::parse("[Version]\nMajor = 1\n[Controls]\nSensitivity = 12\n");
+    s.app.world_mut().resource_mut::<CaOptions>().default_profile =
+        Profile::parse("[Version]\nMajor = 1\n[Controls]\nSensitivity = 12\n");
     load(&mut s, Some(Profile::parse("[Controls]\nSensitivity = 77\n")));
     assert_eq!(value(&s, "MouseSensitivity"), "12");
     // The same version is kept.
-    load(&mut s, Some(Profile::parse("[Version]\nMajor = 1\n[Controls]\nSensitivity = 77\n")));
+    load(
+        &mut s,
+        Some(Profile::parse("[Version]\nMajor = 1\n[Controls]\nSensitivity = 77\n")),
+    );
     assert_eq!(value(&s, "MouseSensitivity"), "77");
     assert!(!opts(&s).first_play);
 }
@@ -824,7 +1008,10 @@ fn p_settings_that_wait_for_ok_wait() {
     open(&mut s);
     edit(&mut s, "MouseSensitivity", "30");
     assert_eq!(s.app.world().resource::<CaMouseLook>().sensitivity, 5, "OK-time");
-    assert_eq!(flow::control_value(s.app.world_mut(), "MouseSensitivity").as_deref(), Some("30"));
+    assert_eq!(
+        flow::control_value(s.app.world_mut(), "MouseSensitivity").as_deref(),
+        Some("30")
+    );
     ok(&mut s);
     assert_eq!(s.app.world().resource::<CaMouseLook>().sensitivity, 30);
     assert_eq!(opts(&s).profile.int("Controls", "Sensitivity"), Some(30));
@@ -833,7 +1020,10 @@ fn p_settings_that_wait_for_ok_wait() {
 
 #[test]
 fn p_the_screen_does_not_open_in_a_match() {
-    use combat_arms::game::rules::{CaRuleSettings, state::{CaMatch, Phase}};
+    use combat_arms::game::rules::{
+        CaRuleSettings,
+        state::{CaMatch, Phase},
+    };
     let mut s = sim();
     load(&mut s, None);
     assert!(flow::open(s.app.world_mut()).is_ok());
@@ -856,17 +1046,28 @@ fn t43_default_on_the_control_tab_leaves_the_sound_alone() {
     let mut s = sim();
     load(
         &mut s,
-        Some(profile("[Sound]\nsoundvolume = 33\n[Controls]\nSensitivity = 40\n[Bindings]\nJump = \" @ @ \"\nForward = \"##30@ @ \"\n")),
+        Some(profile(
+            "[Sound]\nsoundvolume = 33\n[Controls]\nSensitivity = 40\n[Bindings]\nJump = \" @ @ \"\nForward = \"##30@ @ \"\n",
+        )),
     );
     open(&mut s);
     flow::default_tab(s.app.world_mut(), Tab::Control);
     s.app.update();
     assert_eq!(binding(&s, "Jump"), "##57@ @ ");
-    assert_eq!(s.app.world().resource::<CaMouseLook>().sensitivity, 5, "the mouse values, at once");
+    assert_eq!(
+        s.app.world().resource::<CaMouseLook>().sensitivity,
+        5,
+        "the mouse values, at once"
+    );
     ok(&mut s);
     let default = Profile::parse(combat_arms::game::options::DEFAULT_PROFILE);
     for a in bindings::ACTIONS {
-        assert_eq!(opts(&s).profile.string("Bindings", a.name), default.string("Bindings", a.name), "{}", a.name);
+        assert_eq!(
+            opts(&s).profile.string("Bindings", a.name),
+            default.string("Bindings", a.name),
+            "{}",
+            a.name
+        );
     }
     assert_eq!(opts(&s).profile.int("Sound", "soundvolume"), Some(33));
 }
@@ -885,7 +1086,12 @@ fn p_default_on_the_sound_tab_is_a_preview_that_cancel_undoes() {
 #[test]
 fn p_default_on_the_other_tab_uses_the_profiles_own_defaults() {
     let mut s = sim();
-    load(&mut s, Some(profile("[OtherOption]\nWhisper = TRUE\nBlockInvite = TRUE\nCurseFilter = FALSE\nAllowNote = FALSE\nDailyQuest = FALSE\n")));
+    load(
+        &mut s,
+        Some(profile(
+            "[OtherOption]\nWhisper = TRUE\nBlockInvite = TRUE\nCurseFilter = FALSE\nAllowNote = FALSE\nDailyQuest = FALSE\n",
+        )),
+    );
     s.app.world_mut().resource_mut::<CaAccount>().messenger = true;
     open(&mut s);
     flow::edit_social(s.app.world_mut(), "block_whispers", false);
@@ -896,7 +1102,11 @@ fn p_default_on_the_other_tab_uses_the_profiles_own_defaults() {
     let live = s.app.world().resource::<combat_arms::game::options::CaSocial>();
     assert!(live.block_whispers);
     assert!(live.requests.iter().any(|r| r == "whisper 1"), "{:?}", live.requests);
-    assert!(live.requests.iter().any(|r| r == "dailyquest 1"), "the popup bit is stored inverted: {:?}", live.requests);
+    assert!(
+        live.requests.iter().any(|r| r == "dailyquest 1"),
+        "the popup bit is stored inverted: {:?}",
+        live.requests
+    );
 }
 
 #[test]
@@ -905,9 +1115,21 @@ fn t46_the_radar_rotation_option_reaches_the_console_on_ok() {
     load(&mut s, None);
     open(&mut s);
     edit(&mut s, "rotateradar", "1");
-    assert_eq!(s.app.world().resource::<combat_arms::game::radar::CaRadarProfile>().rotate, 0);
+    assert_eq!(
+        s.app
+            .world()
+            .resource::<combat_arms::game::radar::CaRadarProfile>()
+            .rotate,
+        0
+    );
     ok(&mut s);
-    assert_eq!(s.app.world().resource::<combat_arms::game::radar::CaRadarProfile>().rotate, 1);
+    assert_eq!(
+        s.app
+            .world()
+            .resource::<combat_arms::game::radar::CaRadarProfile>()
+            .rotate,
+        1
+    );
     assert_eq!(opts(&s).profile.int("Controls", "RotateRadar"), Some(1));
 }
 
@@ -915,18 +1137,37 @@ fn t46_the_radar_rotation_option_reaches_the_console_on_ok() {
 fn t44_the_radar_zoom_is_saved_with_the_profile() {
     let mut s = sim();
     load(&mut s, None);
-    s.app.world_mut().resource_mut::<combat_arms::game::radar::CaRadarProfile>().scale = 1.6;
+    s.app
+        .world_mut()
+        .resource_mut::<combat_arms::game::radar::CaRadarProfile>()
+        .scale = 1.6;
     flow::save(s.app.world_mut()).unwrap();
-    close(opts(&s).profile.float("Display", "RadarScale").unwrap() as f64, 1.6, 1e-6);
+    close(
+        opts(&s).profile.float("Display", "RadarScale").unwrap() as f64,
+        1.6,
+        1e-6,
+    );
     let saved = opts(&s).profile.clone();
     load(&mut s, Some(saved));
-    close(s.app.world().resource::<combat_arms::game::radar::CaRadarProfile>().scale as f64, 1.6, 1e-6);
+    close(
+        s.app
+            .world()
+            .resource::<combat_arms::game::radar::CaRadarProfile>()
+            .scale as f64,
+        1.6,
+        1e-6,
+    );
 }
 
 #[test]
 fn f_unmanaged_lines_survive_a_save() {
     let mut s = sim();
-    load(&mut s, Some(profile("// my note\n[Display]\nCrossHairColor = 255\n[Bindings]\nChoose_7 = \"##8@ @ \"\n")));
+    load(
+        &mut s,
+        Some(profile(
+            "// my note\n[Display]\nCrossHairColor = 255\n[Bindings]\nChoose_7 = \"##8@ @ \"\n",
+        )),
+    );
     flow::save(s.app.world_mut()).unwrap();
     let text = opts(&s).profile.to_text();
     assert!(text.contains("// my note"));
@@ -938,7 +1179,10 @@ fn f_unmanaged_lines_survive_a_save() {
 fn f_restore_defaults_reloads_every_section() {
     let mut s = sim();
     load(&mut s, Some(profile("[Controls]\nSensitivity = 77\n")));
-    s.app.world_mut().resource_mut::<CaSettings>().set("RestoreDefaults", "1");
+    s.app
+        .world_mut()
+        .resource_mut::<CaSettings>()
+        .set("RestoreDefaults", "1");
     flow::load(s.app.world_mut(), Some(profile("[Controls]\nSensitivity = 77\n")));
     assert_eq!(value(&s, "MouseSensitivity"), "5");
     assert_eq!(value(&s, "RestoreDefaults"), "0");
@@ -953,7 +1197,10 @@ fn f_the_options_have_console_variables() {
     assert_eq!(value(&s, "soundvolume"), "15");
     close(s.app.world().resource::<CaSoundLevels>().master as f64, 0.15, 1e-6);
     // Tenths and inverted variables.
-    load(&mut s, Some(profile("[Game]\nWeaponSway = 10\nMessageDur = 15\nDirectSound = 0\n")));
+    load(
+        &mut s,
+        Some(profile("[Game]\nWeaponSway = 10\nMessageDur = 15\nDirectSound = 0\n")),
+    );
     assert_eq!(value(&s, "WeaponSway"), "1");
     assert_eq!(value(&s, "MessageDuration"), "1.5");
     assert_eq!(value(&s, "DisableHardwareSound"), "1");
@@ -968,10 +1215,20 @@ fn f_the_options_have_console_variables() {
 fn t45_the_hud_switch_starts_on_and_flips() {
     let mut s = sim();
     load(&mut s, None);
-    assert!(s.app.world().resource::<combat_arms::game::options::CaHudSwitch>().panels());
+    assert!(
+        s.app
+            .world()
+            .resource::<combat_arms::game::options::CaHudSwitch>()
+            .panels()
+    );
     s.app.world_mut().resource_mut::<Console>().submit("hudonoff");
     s.app.update();
-    assert!(!s.app.world().resource::<combat_arms::game::options::CaHudSwitch>().panels());
+    assert!(
+        !s.app
+            .world()
+            .resource::<combat_arms::game::options::CaHudSwitch>()
+            .panels()
+    );
     // Kept across a new match (nothing resets it); a new game starts on.
     combat_arms::harness::with_mode(s.app.world_mut(), "TDM");
     s.ticks(3);
@@ -1007,9 +1264,15 @@ fn o_the_block_list() {
     l.register("mike").unwrap();
     assert_eq!(l.register("ADAM"), Err(Refused::AlreadyThere));
     l.sort();
-    assert_eq!(l.names.iter().map(|n| n.0.as_str()).collect::<Vec<_>>(), ["Adam", "mike", "zed"]);
+    assert_eq!(
+        l.names.iter().map(|n| n.0.as_str()).collect::<Vec<_>>(),
+        ["Adam", "mike", "zed"]
+    );
     l.sort();
-    assert_eq!(l.names.iter().map(|n| n.0.as_str()).collect::<Vec<_>>(), ["zed", "mike", "Adam"]);
+    assert_eq!(
+        l.names.iter().map(|n| n.0.as_str()).collect::<Vec<_>>(),
+        ["zed", "mike", "Adam"]
+    );
     assert!(!l.clear_checked(), "nothing was checked");
     l.check_all(true);
     l.names[1].1 = false;
@@ -1024,7 +1287,12 @@ fn the_machine_limits_music_and_triple_buffering() {
     let mut s = sim();
     s.app.world_mut().resource_mut::<CaMachine>().music = false;
     s.app.world_mut().resource_mut::<CaMachine>().triple_buffer = false;
-    load(&mut s, Some(profile("[Sound]\nmusicvolume = 60\n[Settings]\nPerformanceSetting = 2\n")));
+    load(
+        &mut s,
+        Some(profile(
+            "[Sound]\nmusicvolume = 60\n[Settings]\nPerformanceSetting = 2\n",
+        )),
+    );
     assert_eq!(value(&s, "musicvolume"), "0");
     assert_eq!(value(&s, "triplebuffer"), "0");
     assert_eq!(value(&s, "MusicActive"), "0");
@@ -1053,7 +1321,9 @@ fn saving_at_exit_leaves_the_exit_message_for_the_runner() {
 /// none of them, so its binds are read exactly as before.
 #[test]
 fn the_stock_binds_use_none_of_the_commands_that_moved_to_cs_source() {
-    let all = combat_arms::game::DEFAULT_BINDS.iter().chain(combat_arms::game::OLD_DEFAULT_BINDS);
+    let all = combat_arms::game::DEFAULT_BINDS
+        .iter()
+        .chain(combat_arms::game::OLD_DEFAULT_BINDS);
     for (k, line) in all {
         for part in line.split(';').map(|p| p.trim().to_lowercase()) {
             let moved = ["buymenu", "chooseteam", "radio1", "radio2", "radio3"];

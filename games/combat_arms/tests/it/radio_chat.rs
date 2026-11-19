@@ -163,7 +163,14 @@ impl Room {
             }
             got.push(i);
             let hunted = self.hunted;
-            chat::receive_say(&mut self.players[i].chat, &peers[i], Some(&peers[from]), &msg, hunted, now);
+            chat::receive_say(
+                &mut self.players[i].chat,
+                &peers[i],
+                Some(&peers[from]),
+                &msg,
+                hunted,
+                now,
+            );
         }
         got
     }
@@ -195,7 +202,15 @@ impl Room {
             };
             let hunted = self.hunted;
             let data = self.data.clone();
-            self.heard[i] = chat::receive_radio(&mut self.players[i].chat, &data, &peers[i], Some(&peers[who]), &msg, hunted, now);
+            self.heard[i] = chat::receive_radio(
+                &mut self.players[i].chat,
+                &data,
+                &peers[i],
+                Some(&peers[who]),
+                &msg,
+                hunted,
+                now,
+            );
         }
         got
     }
@@ -258,7 +273,10 @@ fn case_01_report_menu() {
 fn case_02_report_to_the_team() {
     let mut room = Room::new();
     let send = room.radio(A1, radio::REPORT, 1, 1, 0.0).expect("sent");
-    assert_eq!((send.class, send.entry, send.r, send.t, send.to_all), (0, 0, 1, 0, false));
+    assert_eq!(
+        (send.class, send.entry, send.r, send.t, send.to_all),
+        (0, 0, 1, 0, false)
+    );
     let got = room.deliver_radio(A1, send, 0.0);
     assert_eq!(got, [A1, A2]);
     for who in [A1, A2] {
@@ -344,7 +362,9 @@ fn case_07_dead_keys_leave_the_menu() {
     room.players[A1].chat.radio_key(radio::ANSWER, &env, 0.0);
     let data = room.data.clone();
     for n in [0, 2] {
-        let out = room.players[A1].chat.radio_choose(n, &data, Some("Male"), [0.0; 3], |_| 0, 1.0);
+        let out = room.players[A1]
+            .chat
+            .radio_choose(n, &data, Some("Male"), [0.0; 3], |_| 0, 1.0);
         assert_eq!(out, None);
         assert_eq!(room.players[A1].chat.radio_open, Some(radio::ANSWER));
     }
@@ -369,7 +389,10 @@ fn case_08_answer_to_everyone() {
     assert_eq!(got, [A1, A2, B1, S]);
     for who in 0..4 {
         let line = room.players[who].last().unwrap();
-        assert_eq!((line.text.as_str(), line.colour), ("[Answer] A1 : Roger", colours::RADIO));
+        assert_eq!(
+            (line.text.as_str(), line.colour),
+            ("[Answer] A1 : Roger", colours::RADIO)
+        );
         let sound = room.heard[who].clone().unwrap();
         assert_eq!(sound.file, "male_roger.wav");
         assert_eq!(sound.at, None);
@@ -411,10 +434,12 @@ fn the_radio_is_only_a_combat_arms_players() {
     let mut sim = world();
     let w = sim.app.world_mut();
     let me = local(w);
-    w.entity_mut(me).insert(chimera_core::slots::GameIdentity("cs_source".into()));
+    w.entity_mut(me)
+        .insert(chimera_core::slots::GameIdentity("cs_source".into()));
     chat::radio_key(w, radio::REPORT);
     assert_eq!(w.resource::<CaChat>().radio_open, None, "a CS:S player has no radio");
-    w.entity_mut(me).insert(chimera_core::slots::GameIdentity(combat_arms::game::GAME.into()));
+    w.entity_mut(me)
+        .insert(chimera_core::slots::GameIdentity(combat_arms::game::GAME.into()));
     chat::radio_key(w, radio::REPORT);
     assert_eq!(w.resource::<CaChat>().radio_open, Some(radio::REPORT));
 }
@@ -653,7 +678,13 @@ fn case_24_whisper_command_long_alias_first() {
         p.chat.settings.commands = Commands::from_values(&[(Cmd::Whisper, "/whisper/w")]);
     }
     let outs = room.type_outs(A1, "/whisper Bob hi there", 0.0);
-    assert_eq!(outs, [Out::Whisper { to: "Bob".into(), body: "hi there".into() }]);
+    assert_eq!(
+        outs,
+        [Out::Whisper {
+            to: "Bob".into(),
+            body: "hi there".into()
+        }]
+    );
     assert!(room.type_outs(A1, "/wave", 0.0).is_empty());
 }
 
@@ -671,7 +702,14 @@ fn setting_command_with_only_spaces_is_chat() {
     }
     for (i, line) in ["/block   ", "/unblock   ", "/auto   "].into_iter().enumerate() {
         let outs = room.type_outs(A1, line, i as f64 * 20_000.0);
-        assert_eq!(outs, [Out::Say { team: false, text: line.into() }], "{line:?}");
+        assert_eq!(
+            outs,
+            [Out::Say {
+                team: false,
+                text: line.into()
+            }],
+            "{line:?}"
+        );
     }
     assert!(room.players[A1].chat.settings.auto_reply.is_empty());
 }
@@ -753,7 +791,11 @@ fn case_30_block_command() {
     room.deliver_radio(A2, send, 1.0);
     assert_eq!(room.players[A1].lines(), before, "nothing new for A1");
     assert_eq!(room.players[B1].lines(), 1, "the others read it");
-    assert_eq!(room.players[A2].lines(), 2, "A2 sees its own lines and is told nothing else");
+    assert_eq!(
+        room.players[A2].lines(),
+        2,
+        "A2 sees its own lines and is told nothing else"
+    );
 }
 
 /// 31. The block entry `bo?` drops `Bob` and `BOX`, not `Bobby`.
@@ -847,7 +889,10 @@ fn case_39_client_rate_limit() {
         assert!(say_at(p, "late", t).is_empty(), "{t}");
         assert_eq!(p.lines(), before + 1, "a notice at {t}");
         let n = p.last().unwrap();
-        assert_eq!((n.text.as_str(), n.colour, n.life), ("$SpamBlockChat", colours::SYSTEM, 10_000.0));
+        assert_eq!(
+            (n.text.as_str(), n.colour, n.life),
+            ("$SpamBlockChat", colours::SYSTEM, 10_000.0)
+        );
     }
     assert_eq!(say_at(p, "late", 200_000.0).len(), 1);
 }
@@ -1058,7 +1103,10 @@ fn case_52_spy_hunt_bravo_has_no_voice() {
     let line = keys.press(ch, 0.0).expect("a line");
     assert!(line.text.contains("disabled"));
     assert_eq!(line.colour, colours::SYSTEM);
-    assert_eq!(voice::channel(voice::mode_of("BNT"), Voicer { team: 0, alive: true }), Ok(Channel::Alpha));
+    assert_eq!(
+        voice::channel(voice::mode_of("BNT"), Voicer { team: 0, alive: true }),
+        Ok(Channel::Alpha)
+    );
 }
 
 /// 53. Last Man Standing, A1 dies: it leaves the channel and push-to-talk
@@ -1067,7 +1115,10 @@ fn case_52_spy_hunt_bravo_has_no_voice() {
 fn case_53_lms_dead_leave_voice() {
     let mode = voice::mode_of("LMS");
     assert_eq!(mode, VoiceMode::SharedAlive);
-    assert_eq!(voice::channel(mode, Voicer { team: 0, alive: true }), Ok(Channel::Alpha));
+    assert_eq!(
+        voice::channel(mode, Voicer { team: 0, alive: true }),
+        Ok(Channel::Alpha)
+    );
     let ch = voice::channel(mode, Voicer { team: 0, alive: false });
     assert_eq!(ch, Err(NoChannel::DeadInMode));
     let line = VoiceKeys::default().press(ch, 0.0).unwrap();
@@ -1084,7 +1135,8 @@ fn case_54_push_to_talk() {
         ("A2", Voicer { team: 0, alive: true }),
         ("B1", Voicer { team: 1, alive: true }),
     ];
-    let channels: Vec<(&str, Result<Channel, NoChannel>)> = players.iter().map(|(n, v)| (*n, voice::channel(mode, *v))).collect();
+    let channels: Vec<(&str, Result<Channel, NoChannel>)> =
+        players.iter().map(|(n, v)| (*n, voice::channel(mode, *v))).collect();
     let mut keys = VoiceKeys::default();
     assert!(keys.press(channels[0].1, 0.0).is_none());
     assert!(keys.talking);
@@ -1107,10 +1159,22 @@ fn open_conditions() {
     assert!(!p.chat.open_with_enter(&env), "not on the frame a line was sent");
     p.chat.end_frame();
     for blocked in [
-        Env { fading: true, ..env.clone() },
-        Env { hud_hidden: true, ..env.clone() },
-        Env { team_nothing: true, ..env.clone() },
-        Env { playing: false, ..env.clone() },
+        Env {
+            fading: true,
+            ..env.clone()
+        },
+        Env {
+            hud_hidden: true,
+            ..env.clone()
+        },
+        Env {
+            team_nothing: true,
+            ..env.clone()
+        },
+        Env {
+            playing: false,
+            ..env.clone()
+        },
     ] {
         assert!(!p.chat.open_with_enter(&blocked));
     }
@@ -1130,9 +1194,18 @@ fn radio_open_conditions() {
     let mut p = Room::new().players.remove(A1);
     let env = p.env();
     for blocked in [
-        Env { vote_on: true, ..env.clone() },
-        Env { weapon_prompt: true, ..env.clone() },
-        Env { hud_built: false, ..env.clone() },
+        Env {
+            vote_on: true,
+            ..env.clone()
+        },
+        Env {
+            weapon_prompt: true,
+            ..env.clone()
+        },
+        Env {
+            hud_built: false,
+            ..env.clone()
+        },
     ] {
         p.chat.radio_key(radio::REPORT, &blocked, 0.0);
         assert_eq!(p.chat.radio_open, None);
@@ -1182,7 +1255,11 @@ fn quirk_01_team_radio_ignores_the_dead_sender_rule() {
         t: 0,
     };
     room.deliver_radio(A1, send, 0.0);
-    assert_eq!(room.players[A2].lines(), 1, "a living teammate still reads the dead player's team radio");
+    assert_eq!(
+        room.players[A2].lines(),
+        1,
+        "a living teammate still reads the dead player's team radio"
+    );
     // The same call to everyone is the sender's own, so it is hidden.
     let all = radio::RadioSend { to_all: true, ..send };
     let before = room.players[B1].lines();
@@ -1196,7 +1273,10 @@ fn quirk_01_team_radio_ignores_the_dead_sender_rule() {
 fn radio_file_defaults() {
     let d = data();
     assert_eq!(d.templates, ["Male", "Female"]);
-    assert_eq!(d.classes.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Report", "Answer", "Request"]);
+    assert_eq!(
+        d.classes.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+        ["Report", "Answer", "Request"]
+    );
     let report = d.entry(0, 0).unwrap();
     assert!(report.sound_3d && !report.send_to_enemy);
     assert_eq!(report.radius, 1000.0);
@@ -1231,7 +1311,11 @@ fn world() -> Sim {
 }
 
 fn local(world: &mut World) -> Entity {
-    world.query_filtered::<Entity, With<LocalPlayer>>().iter(world).next().expect("the player")
+    world
+        .query_filtered::<Entity, With<LocalPlayer>>()
+        .iter(world)
+        .next()
+        .expect("the player")
 }
 
 /// A game of one runs the same relay for its own player: its All line
@@ -1242,7 +1326,8 @@ fn standalone() {
     let mut sim = world();
     let w = sim.app.world_mut();
     let me = local(w);
-    w.entity_mut(me).insert((Name::new("A1"), CaVoice("Male".into()), Team(0)));
+    w.entity_mut(me)
+        .insert((Name::new("A1"), CaVoice("Male".into()), Team(0)));
     w.resource_mut::<ChatUiState>().playing = true;
     assert!(chat::open_enter(w));
     w.resource_mut::<CaChat>().type_text("hi");

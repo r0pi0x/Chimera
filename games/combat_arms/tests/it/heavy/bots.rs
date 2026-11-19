@@ -53,14 +53,20 @@ fn bots_fight_on_warehouse() {
     for _ in 0..(secs / combat_arms::game::TICK_INTERVAL) as usize {
         sim.ticks(1);
         let w = sim.app.world_mut();
-        let dead: HashSet<Entity> = w.query_filtered::<Entity, (With<CaBot>, With<Dead>)>().iter(w).collect();
+        let dead: HashSet<Entity> = w
+            .query_filtered::<Entity, (With<CaBot>, With<Dead>)>()
+            .iter(w)
+            .collect();
         deaths += dead.difference(&dead_now).count();
         respawned += dead_now.difference(&dead).count();
         dead_now = dead;
     }
     let areas = sim.app.world().get_resource::<NavMesh>().map_or(0, |m| m.areas.len());
     let m = sim.app.world().resource::<CaMatch>().clone();
-    eprintln!("warehouse: {areas} areas, {deaths} deaths, {respawned} respawns, score {:?}", m.score);
+    eprintln!(
+        "warehouse: {areas} areas, {deaths} deaths, {respawned} respawns, score {:?}",
+        m.score
+    );
     assert!(areas > 50, "a navigation mesh: {areas} areas");
     assert!(deaths >= 2, "bots killed each other: {deaths}");
     assert!(m.score.iter().sum::<i32>() >= 2, "kills scored: {:?}", m.score);
@@ -107,7 +113,11 @@ fn bots_use_costarecon_ai_volumes_and_patrol_nodes() {
     assert_eq!(nav.mesh.areas.len(), 86, "the map's volumes, not generated areas");
     assert!(links >= 2 * 80, "volumes linked: {links}");
     assert_eq!(nav.patrol.points.len(), 8, "the map's patrol nodes");
-    assert!(nav.patrol.links.iter().all(|l| !l.is_empty()), "every node linked: {:?}", nav.patrol.links);
+    assert!(
+        nav.patrol.links.iter().all(|l| !l.is_empty()),
+        "every node linked: {:?}",
+        nav.patrol.links
+    );
     // costarecon_cp is a co-op map (no Team Death Match start points:
     // everyone comes in at its first one), so the bots start spread over
     // its patrol nodes.
@@ -149,15 +159,23 @@ fn bots_use_costarecon_ai_volumes_and_patrol_nodes() {
     for k in 0..(40.0 / combat_arms::game::TICK_INTERVAL) as usize {
         sim.ticks(1);
         let w = sim.app.world_mut();
-        let dead: HashSet<Entity> = w.query_filtered::<Entity, (With<CaBot>, With<Dead>)>().iter(w).collect();
+        let dead: HashSet<Entity> = w
+            .query_filtered::<Entity, (With<CaBot>, With<Dead>)>()
+            .iter(w)
+            .collect();
         deaths += dead.difference(&dead_now).count();
         dead_now = dead;
         if k % 20 == 0 {
             sample(&mut sim);
         }
     }
-    eprintln!("costarecon_cp: {reached} patrol nodes reached, {over} of {samples} positions over a volume, {deaths} deaths");
+    eprintln!(
+        "costarecon_cp: {reached} patrol nodes reached, {over} of {samples} positions over a volume, {deaths} deaths"
+    );
     assert!(reached >= 3, "the map's patrol nodes reached: {reached}");
-    assert!(over * 10 >= samples * 8, "bots over the volumes most of the time: {over} of {samples}");
+    assert!(
+        over * 10 >= samples * 8,
+        "bots over the volumes most of the time: {over} of {samples}"
+    );
     assert!(deaths >= 1, "they met and fought");
 }

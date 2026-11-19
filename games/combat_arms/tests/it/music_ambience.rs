@@ -796,8 +796,18 @@ fn t12_a_joiner_gets_the_looping_trigger_at_its_join() {
         sim.app.add_message::<ToClients<CaMusicOn>>();
     }
     let join = |sim: &mut Sim| {
-        sim.app.world_mut().resource_mut::<Messages<ToClients<CaMusicOn>>>().clear();
-        let client = sim.app.world_mut().spawn(Player { name: "joiner".into(), character: Entity::PLACEHOLDER }).id();
+        sim.app
+            .world_mut()
+            .resource_mut::<Messages<ToClients<CaMusicOn>>>()
+            .clear();
+        let client = sim
+            .app
+            .world_mut()
+            .spawn(Player {
+                name: "joiner".into(),
+                character: Entity::PLACEHOLDER,
+            })
+            .id();
         let sent: Vec<CaMusicOn> = sim
             .app
             .world_mut()
@@ -1110,7 +1120,11 @@ fn party(music: Option<&'static str>, phase: MomentPhase, alive: bool) -> MusicF
         alive,
         ..Default::default()
     };
-    let screen = if phase == MomentPhase::Over && moments.result.is_some() { Screen::Result } else { Screen::Match };
+    let screen = if phase == MomentPhase::Over && moments.result.is_some() {
+        Screen::Result
+    } else {
+        Screen::Match
+    };
     MusicFacts {
         screen,
         mode: data().party.mode.clone(),
@@ -1157,7 +1171,10 @@ fn a_party_match_gets_arms_races_cues() {
     let last = with(party(CA, MomentPhase::Live, true), |p| p.last_rung = 1);
     step(&mut m, &mut prev, last.clone(), 10_000.0);
     assert_eq!(playing(&m), [data().cues.last_stage.clone()], "the last stage's music");
-    assert!(!m.heard.contains(&"last_stage_sound".to_string()), "its sound is the cue pack's");
+    assert!(
+        !m.heard.contains(&"last_stage_sound".to_string()),
+        "its sound is the cue pack's"
+    );
     let two = with(party(CA, MomentPhase::Live, true), |p| p.last_rung = 2);
     step(&mut m, &mut prev, two, 30_000.0);
     let started = m.mixed(1.0)[0].started;
@@ -1178,7 +1195,10 @@ fn dead_at_the_start_of_play_no_party_music() {
     assert!(playing(&m).is_empty());
     assert!(!m.heard.contains(&"RoundStartSound".to_string()));
     step(&mut m, &mut prev, party(CA, MomentPhase::Live, true), 3_000.0);
-    assert!(playing(&m).is_empty(), "alive later: still none (one start of play a match)");
+    assert!(
+        playing(&m).is_empty(),
+        "alive later: still none (one start of play a match)"
+    );
 }
 
 /// The respawn countdown (death_killcam.md 9): `RespawnCountSound` at
@@ -1195,16 +1215,27 @@ fn the_party_countdown_ticks_and_the_end_screen_is_silent() {
         let dead = with(party(CA, MomentPhase::Live, false), |p| p.respawn_in = Some(s));
         step(&mut m, &mut prev, dead, 2_000.0 + i as f64 * 500.0);
     }
-    assert_eq!(m.heard.iter().filter(|k| *k == "RespawnCountSound").count(), 2, "one a whole second");
+    assert_eq!(
+        m.heard.iter().filter(|k| *k == "RespawnCountSound").count(),
+        2,
+        "one a whole second"
+    );
     let over = with(party(CA, MomentPhase::Over, true), |p| p.result = Some(Some(false)));
     step(&mut m, &mut prev, over.clone(), 10_000.0);
     assert!(playing(&m).is_empty(), "stopped on the match-end screen");
     step(&mut m, &mut prev, over, 20_000.0);
     assert!(playing(&m).is_empty(), "no playlist there");
-    assert!(!m.heard.iter().any(|k| k.starts_with("Result")), "the screen's sound, not the director's");
+    assert!(
+        !m.heard.iter().any(|k| k.starts_with("Result")),
+        "the screen's sound, not the director's"
+    );
     step(&mut m, &mut prev, party(CA, MomentPhase::Waiting, true), 30_000.0);
     step(&mut m, &mut prev, party(CA, MomentPhase::Live, true), 31_000.0);
-    assert_eq!(playing(&m), [data().mode_track("VWRM", None).unwrap().0.to_string()], "the next match's music");
+    assert_eq!(
+        playing(&m),
+        [data().mode_track("VWRM", None).unwrap().0.to_string()],
+        "the next match's music"
+    );
 }
 
 /// Another game's music (or none): Combat Arms' director stays silent in
@@ -1286,7 +1317,10 @@ fn the_party_plays_the_start_track_once_then_a_shuffled_playlist() {
     // Two passes of the six tracks.
     let mut order = seen;
     order.extend(live_until(&mut m, &mut prev, &live, 9_250.0, 1_000_000.0));
-    assert!(!order[1..].contains(&start), "the start track does not come back: {order:?}");
+    assert!(
+        !order[1..].contains(&start),
+        "the start track does not come back: {order:?}"
+    );
     assert!(order.len() >= 12, "{order:?}");
     for pass in order[..12].chunks(6) {
         let mut sorted = pass.to_vec();
@@ -1313,7 +1347,16 @@ fn streamed_tracks_arrive_before_they_are_due_and_the_playlist_never_waits() {
     const TRACK_BYTES: f64 = 1_500_000.0;
     let fade = data().menu_fade;
     let served = |m: &mut CaMusic| {
-        let files: Vec<String> = data().files.keys().cloned().chain(["bgm/bgm_03.mp3".into(), "bgm/bgm_05.mp3".into(), "bgm/bgm_06.mp3".into()]).collect();
+        let files: Vec<String> = data()
+            .files
+            .keys()
+            .cloned()
+            .chain([
+                "bgm/bgm_03.mp3".into(),
+                "bgm/bgm_05.mp3".into(),
+                "bgm/bgm_06.mp3".into(),
+            ])
+            .collect();
         for f in files {
             m.files.set_pending(&f, true);
         }
@@ -1373,7 +1416,14 @@ fn streamed_tracks_arrive_before_they_are_due_and_the_playlist_never_waits() {
     let stuck = m.party_upcoming().unwrap();
     let others: Vec<String> = ["bgm/bgm_03.mp3", "bgm/bgm_05.mp3", "bgm/bgm_06.mp3"]
         .iter()
-        .chain(data().playlist.iter().map(|e| e.file.as_str()).collect::<Vec<_>>().iter())
+        .chain(
+            data()
+                .playlist
+                .iter()
+                .map(|e| e.file.as_str())
+                .collect::<Vec<_>>()
+                .iter(),
+        )
         .map(|f| f.to_string())
         .filter(|f| *f != stuck)
         .collect();

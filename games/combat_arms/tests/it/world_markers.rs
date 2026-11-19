@@ -36,17 +36,27 @@ fn t35_marker_icons() {
     let r = t.find("Indicator_A00").expect("by its exact name");
     let jsf = MarkerTeam::Team("JSF".into());
     let a = icons(r, &jsf, Some(1));
-    assert_eq!((a.guide.as_deref(), a.map.as_deref(), a.show_dist), (Some("D"), Some("M"), true));
+    assert_eq!(
+        (a.guide.as_deref(), a.map.as_deref(), a.show_dist),
+        (Some("D"), Some("M"), true)
+    );
     let e = icons(r, &jsf, Some(2));
     assert_eq!((e.guide.as_deref(), e.map.as_deref()), (Some("A"), Some("M")));
     for viewer in [Some(1), Some(2), None] {
-        assert_eq!(icons(r, &MarkerTeam::Nobody, viewer).guide.as_deref(), Some("A"), "{viewer:?}");
+        assert_eq!(
+            icons(r, &MarkerTeam::Nobody, viewer).guide.as_deref(),
+            Some("A"),
+            "{viewer:?}"
+        );
     }
     assert_eq!(distance_text(500.0), "12 M");
     assert_eq!((guide_alpha(false), guide_alpha(true)), (255, 125));
     // Without CheckTeam: the plain pictures for everyone.
     let z = t.find("Indicator_EZone_unable").unwrap();
-    assert_eq!(icons(z, &jsf, Some(2)).guide.as_deref(), Some("UI_HUD_Common\\Guide\\Guide_area_Exit_notOpen.DTX"));
+    assert_eq!(
+        icons(z, &jsf, Some(2)).guide.as_deref(),
+        Some("UI_HUD_Common\\Guide\\Guide_area_Exit_notOpen.DTX")
+    );
     // Case counts in the name.
     assert_eq!(t.find("indicator_a00").unwrap().guide, "lower case");
 }
@@ -72,17 +82,32 @@ fn client(t: T, team: u8) -> World {
 #[test]
 fn t37_marker_name_lookup() {
     let mut t = T::new(vec![
-        obj("TargetTrigger", "WeaponSpawnMarker00", &[("HUDTexture", "x.dtx".into()), ("origin", v(0.0, 0.0, 0.0))]),
+        obj(
+            "TargetTrigger",
+            "WeaponSpawnMarker00",
+            &[("HUDTexture", "x.dtx".into()), ("origin", v(0.0, 0.0, 0.0))],
+        ),
         obj(
             "TargetTrigger",
             "Indicator_A00",
-            &[("Team", "JSF".into()), ("HUDTexture", "x.dtx".into()), ("origin", v(100.0, 0.0, 0.0))],
+            &[
+                ("Team", "JSF".into()),
+                ("HUDTexture", "x.dtx".into()),
+                ("origin", v(100.0, 0.0, 0.0)),
+            ],
         ),
     ]);
     t.send("WeaponSpawnMarker00", "ON");
     t.send("Indicator_A00", "ON");
     let w = client(t, 2);
-    let shown = &markers::shown(w.resource::<CaObjects>(), w.resource::<TriggerResources>(), true, None, Some(2)).0;
+    let shown = &markers::shown(
+        w.resource::<CaObjects>(),
+        w.resource::<TriggerResources>(),
+        true,
+        None,
+        Some(2),
+    )
+    .0;
     assert_eq!(shown.len(), 1, "{shown:?}");
     assert_eq!(shown[0].name, "Indicator_A00");
     assert_eq!(shown[0].icons.guide.as_deref(), Some("A"), "the enemy's picture");
@@ -94,7 +119,10 @@ fn marked_world() -> lithtech_formats::world::World {
     use lithtech_formats::world::{Object, Value};
     let mut w = crate::world::small_world();
     let prop = crate::world::prop;
-    for (name, game_type) in [("Indicator_A00", "VIPEscort"), ("Indicator_EZone_unable", "HeadQuaters")] {
+    for (name, game_type) in [
+        ("Indicator_A00", "VIPEscort"),
+        ("Indicator_EZone_unable", "HeadQuaters"),
+    ] {
         w.objects.push(Object {
             class: "TargetTrigger".into(),
             properties: vec![
@@ -127,7 +155,11 @@ fn clients_get_markers_of_the_mode_and_cameras() {
     use chimera_net::{harness::NetSim, net::memory::LinkConditions};
     use chimera_world::map::MapSimPlugin;
     use combat_arms::{
-        game::{TICK_INTERVAL, objects::{CaObjectMessage, runtime::Kind}, world},
+        game::{
+            TICK_INTERVAL,
+            objects::{CaObjectMessage, runtime::Kind},
+            world,
+        },
         harness::{CaSim, with_mode},
     };
     let map = world::convert(&marked_world(), "marked", 0.01, &|_| None);
@@ -144,7 +176,12 @@ fn clients_get_markers_of_the_mode_and_cameras() {
     sim.until_joined(600);
     with_mode(sim.server.app.world_mut(), "ESC");
     sim.ticks(30);
-    for (target, message) in [("Indicator_A00", "on"), ("Indicator_EZone_unable", "on"), ("Camera0", "on"), ("Camera0", "fov 55 41.25 2")] {
+    for (target, message) in [
+        ("Indicator_A00", "on"),
+        ("Indicator_EZone_unable", "on"),
+        ("Camera0", "on"),
+        ("Camera0", "fov 55 41.25 2"),
+    ] {
         sim.server.app.world_mut().write_message(CaObjectMessage {
             target: target.into(),
             message: message.into(),
@@ -156,17 +193,30 @@ fn clients_get_markers_of_the_mode_and_cameras() {
         let names: Vec<String> = w.resource::<CaMarkers>().0.iter().map(|m| m.name.clone()).collect();
         let o = w.resource::<CaObjects>();
         let cam = o.named("Camera0").unwrap();
-        let Kind::Camera(c) = &o.world.objects[cam as usize].kind else { panic!() };
+        let Kind::Camera(c) = &o.world.objects[cam as usize].kind else {
+            panic!()
+        };
         (names, c.live, c.fov)
     };
-    assert_eq!(seen(&mut sim.server.app), (vec!["Indicator_A00".to_string()], true, Vec2::new(55.0, 41.25)));
-    assert_eq!(seen(&mut sim.clients[0].app), (vec!["Indicator_A00".to_string()], true, Vec2::new(55.0, 41.25)), "the client");
+    assert_eq!(
+        seen(&mut sim.server.app),
+        (vec!["Indicator_A00".to_string()], true, Vec2::new(55.0, 41.25))
+    );
+    assert_eq!(
+        seen(&mut sim.clients[0].app),
+        (vec!["Indicator_A00".to_string()], true, Vec2::new(55.0, 41.25)),
+        "the client"
+    );
     sim.add_client(|w| {
         w.insert_resource(table());
     });
     sim.until_joined(600);
     sim.ticks(30);
-    assert_eq!(seen(&mut sim.clients[1].app).0, vec!["Indicator_A00".to_string()], "a late joiner");
+    assert_eq!(
+        seen(&mut sim.clients[1].app).0,
+        vec!["Indicator_A00".to_string()],
+        "a late joiner"
+    );
 }
 
 /// 1.6, the guide's line test: a marker 5 m in front of the local player
@@ -187,8 +237,16 @@ fn guide_dims_when_its_line_is_blocked() {
         v(q.x, q.y, q.z)
     };
     let mut t = T::new(vec![
-        obj("TargetTrigger", "Indicator_A00", &[("Team", "JSF".into()), ("origin", at(0.0, feet.y + 1.5, -5.0))]),
-        obj("TargetTrigger", "Indicator_EZone_unable", &[("origin", at(3.0, 0.0, -5.0))]),
+        obj(
+            "TargetTrigger",
+            "Indicator_A00",
+            &[("Team", "JSF".into()), ("origin", at(0.0, feet.y + 1.5, -5.0))],
+        ),
+        obj(
+            "TargetTrigger",
+            "Indicator_EZone_unable",
+            &[("origin", at(3.0, 0.0, -5.0))],
+        ),
     ]);
     t.send("Indicator_A00", "ON");
     t.send("Indicator_EZone_unable", "ON");
@@ -203,17 +261,26 @@ fn guide_dims_when_its_line_is_blocked() {
     let blocked = |sim: &mut Sim| -> Vec<(String, bool, u8)> {
         sim.ticks(2);
         let m = sim.app.world().resource::<CaMarkers>();
-        m.0.iter().map(|s| (s.name.clone(), s.blocked, guide_alpha(s.blocked))).collect()
+        m.0.iter()
+            .map(|s| (s.name.clone(), s.blocked, guide_alpha(s.blocked)))
+            .collect()
     };
     let open = blocked(&mut sim);
     assert_eq!(
         open,
-        [("Indicator_A00".to_string(), false, 255), ("Indicator_EZone_unable".to_string(), false, 255)],
+        [
+            ("Indicator_A00".to_string(), false, 255),
+            ("Indicator_EZone_unable".to_string(), false, 255)
+        ],
         "nothing in the way; the one on the floor isn't blocked by it"
     );
     let wall = crate::special_weapons::solid(&mut sim, Vec3::new(-1.0, 0.0, -2.6), Vec3::new(1.0, 4.0, -2.4), None);
     let shut = blocked(&mut sim);
-    assert_eq!((shut[0].1, shut[0].2), (true, 125), "the wall blocks the first: {shut:?}");
+    assert_eq!(
+        (shut[0].1, shut[0].2),
+        (true, 125),
+        "the wall blocks the first: {shut:?}"
+    );
     assert!(!shut[1].1, "not the second, beside the wall: {shut:?}");
     sim.app.world_mut().despawn(wall);
     sim.ticks(2);

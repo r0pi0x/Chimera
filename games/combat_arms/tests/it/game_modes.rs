@@ -117,7 +117,14 @@ fn unprotect_all(sim: &mut Sim) {
 }
 
 /// A hit on `target` (health 1.0 = 100 HP) of `kind` by `attacker`.
-fn hit(sim: &mut Sim, target: Entity, attacker: Option<Entity>, amount: f32, kind: DamageKind, weapon: Option<&'static str>) {
+fn hit(
+    sim: &mut Sim,
+    target: Entity,
+    attacker: Option<Entity>,
+    amount: f32,
+    kind: DamageKind,
+    weapon: Option<&'static str>,
+) {
     sim.app.world_mut().write_message(Damage {
         target,
         attacker,
@@ -279,17 +286,33 @@ fn case_06_spawn_family() {
             prop("Locked", Value::Bool(locked)),
         ],
     };
-    assert!(world::qualifies(&start(0.0, "Team Death Match", 1, false), world::SPAWN_GAME_TYPE));
-    assert!(!world::qualifies(&start(0.0, "Team Death Match", 2, false), world::SPAWN_GAME_TYPE));
-    assert!(!world::qualifies(&start(0.0, "Team Death Match", 1, true), world::SPAWN_GAME_TYPE));
-    assert!(!world::qualifies(&start(0.0, "Doobic", 1, false), world::SPAWN_GAME_TYPE));
+    assert!(world::qualifies(
+        &start(0.0, "Team Death Match", 1, false),
+        world::SPAWN_GAME_TYPE
+    ));
+    assert!(!world::qualifies(
+        &start(0.0, "Team Death Match", 2, false),
+        world::SPAWN_GAME_TYPE
+    ));
+    assert!(!world::qualifies(
+        &start(0.0, "Team Death Match", 1, true),
+        world::SPAWN_GAME_TYPE
+    ));
+    assert!(!world::qualifies(
+        &start(0.0, "Doobic", 1, false),
+        world::SPAWN_GAME_TYPE
+    ));
     // A map with only Spawn 2 points: the first start point.
     let mut w = World::default();
     w.objects.push(start(100.0, "Doobic", 2, false));
     w.objects.push(start(200.0, "Team Death Match", 2, false));
     let map = world::convert(&w, "family", 0.01, &|_| None);
     assert_eq!(map.spawns.len(), 1);
-    assert!((map.spawns[0].0.x - 1.0).abs() < 1e-4, "the first point: {}", map.spawns[0].0);
+    assert!(
+        (map.spawns[0].0.x - 1.0).abs() < 1e-4,
+        "the first point: {}",
+        map.spawns[0].0
+    );
     // With a qualifying point, only it.
     w.objects.push(start(300.0, "Team Death Match", 1, false));
     let map = world::convert(&w, "family", 0.01, &|_| None);
@@ -539,8 +562,15 @@ fn case_18_knock_back() {
     let t = (now(&sim) - started) as f32;
     let a = sim.app.world().get::<CaMovement>(p).unwrap().accel;
     let want = 135.0f32 * 135.0 * (1.0 - t);
-    assert!((a.length() - want).abs() < want * 1e-3, "|a| {} want {want} at t {t}", a.length());
-    assert!(a.y.abs() < 1e-3 && (a.x / a.length() - 0.6).abs() < 1e-3 && (a.z / a.length() - 0.8).abs() < 1e-3, "{a}");
+    assert!(
+        (a.length() - want).abs() < want * 1e-3,
+        "|a| {} want {want} at t {t}",
+        a.length()
+    );
+    assert!(
+        a.y.abs() < 1e-3 && (a.x / a.length() - 0.6).abs() < 1e-3 && (a.z / a.length() - 0.8).abs() < 1e-3,
+        "{a}"
+    );
     sim.seconds(0.4);
     assert_eq!(sim.app.world().get::<CaMovement>(p).unwrap().accel, Vec3::ZERO, "over");
     // Crouched and still: no velocity.
@@ -867,7 +897,10 @@ fn case_33_late_join() {
         sim.app.world_mut().resource_mut::<CaRuleSettings>().late_join_wait = wait;
         sim.seconds(30.0);
         let late = join(&mut sim, JSF);
-        sim.app.world_mut().entity_mut(late).insert(chimera_core::core::Connecting);
+        sim.app
+            .world_mut()
+            .entity_mut(late)
+            .insert(chimera_core::core::Connecting);
         flow::enter_game(sim.app.world_mut(), late);
         sim.ticks(1);
         assert_eq!(dead(&sim, late), held, "{} in, wait {wait}", 2 * per_side);
@@ -881,7 +914,10 @@ fn case_33_late_join() {
     let (mut sim, ..) = elimination(3);
     sim.seconds(0.6);
     let late = join(&mut sim, JSF);
-    sim.app.world_mut().entity_mut(late).insert(chimera_core::core::Connecting);
+    sim.app
+        .world_mut()
+        .entity_mut(late)
+        .insert(chimera_core::core::Connecting);
     flow::enter_game(sim.app.world_mut(), late);
     sim.ticks(1);
     assert!(!dead(&sim, late), "0.6 s after going live: at once");

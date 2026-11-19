@@ -70,11 +70,21 @@ pub(crate) fn prop(name: &str, value: Value) -> Property {
 pub(crate) fn small_world() -> World {
     let floor = (
         [0.0, 1.0, 0.0],
-        [[-1000.0, 0.0, -1000.0], [-1000.0, 0.0, 1000.0], [1000.0, 0.0, 1000.0], [1000.0, 0.0, -1000.0]],
+        [
+            [-1000.0, 0.0, -1000.0],
+            [-1000.0, 0.0, 1000.0],
+            [1000.0, 0.0, 1000.0],
+            [1000.0, 0.0, -1000.0],
+        ],
     );
     let wall = (
         [0.0, 0.0, -1.0],
-        [[-1000.0, 0.0, 500.0], [-1000.0, 400.0, 500.0], [1000.0, 400.0, 500.0], [1000.0, 0.0, 500.0]],
+        [
+            [-1000.0, 0.0, 500.0],
+            [-1000.0, 400.0, 500.0],
+            [1000.0, 400.0, 500.0],
+            [1000.0, 0.0, 500.0],
+        ],
     );
     let vertex = |pos: [f32; 3]| RenderVertex {
         pos,
@@ -131,7 +141,11 @@ fn converts_axes_spawns_and_meshes() {
     assert_eq!(m.uvs[1], [0.0, 100.0 / 64.0]);
     assert_eq!(m.lightmap_uvs.len(), 3);
     assert!(map.lightmap.is_some());
-    assert_eq!((m.texture, map.warnings.len()), (None, 1), "no texture file: a flat colour and a warning");
+    assert_eq!(
+        (m.texture, map.warnings.len()),
+        (None, 1),
+        "no texture file: a flat colour and a warning"
+    );
     // Collision: two quads, two triangles each.
     assert_eq!(map.collision_indices.len(), 4);
     // The start point, dropped to the floor, team JSF, its yaw negated.
@@ -158,11 +172,17 @@ fn a_player_walks_to_the_wall_and_stops() {
     sim.intent(p).yaw = yaw;
     sim.seconds(1.0);
     let rest = sim.position(p);
-    assert!(rest.y > 0.0 && rest.y < 1.5 && sim.velocity(p).length() < 0.05, "standing at {rest}");
+    assert!(
+        rest.y > 0.0 && rest.y < 1.5 && sim.velocity(p).length() < 0.05,
+        "standing at {rest}"
+    );
     sim.intent(p).move_axis = Vec2::new(0.0, 1.0);
     sim.seconds(5.0);
     let stopped = sim.position(p);
-    assert!(stopped.z < -400.0 * s && stopped.z > -500.0 * s, "stopped at the wall (z = -500 u): {stopped}");
+    assert!(
+        stopped.z < -400.0 * s && stopped.z > -500.0 * s,
+        "stopped at the wall (z = -500 u): {stopped}"
+    );
     assert!(stopped.x.abs() < 0.01 && (stopped.y - rest.y).abs() < 0.05, "{stopped}");
 }
 
@@ -183,7 +203,13 @@ fn shoot(ahead: f32, wall: bool) -> bool {
     let target = sim.spawn_character(feet + Vec3::new(0.0, 1.0, -ahead * s), movement::ID);
     // Settled, the rifle drawn.
     sim.seconds(1.5);
-    let health = |sim: &Sim| sim.app.world().get::<chimera_core::core::Health>(target).unwrap().current;
+    let health = |sim: &Sim| {
+        sim.app
+            .world()
+            .get::<chimera_core::core::Health>(target)
+            .unwrap()
+            .current
+    };
     let full = health(&sim);
     // At the target's chest (hull centre): its head leans to the rifle,
     // off the line of the eyes (characters.md 11).
@@ -238,7 +264,12 @@ fn t09_t10_what_collides() {
     let s = movement::movement_data().meters_per_unit;
     for (what, w, shots, players) in [
         ("non-solid", walled(0, false), true, false),
-        ("invisible", walled(surface_flags::SOLID | surface_flags::INVISIBLE, false), true, true),
+        (
+            "invisible",
+            walled(surface_flags::SOLID | surface_flags::INVISIBLE, false),
+            true,
+            true,
+        ),
         ("blocker", walled(0, true), false, true),
     ] {
         let map = world::convert(&w, "small", s, &|_| None);
@@ -312,7 +343,13 @@ fn shoot_world(w: World, ahead: f32) -> bool {
     let shooter = sim.spawn_character(feet + Vec3::Y, movement::ID);
     let target = sim.spawn_character(feet + Vec3::new(0.0, 1.0, -ahead * s), movement::ID);
     sim.seconds(1.5);
-    let health = |sim: &Sim| sim.app.world().get::<chimera_core::core::Health>(target).unwrap().current;
+    let health = |sim: &Sim| {
+        sim.app
+            .world()
+            .get::<chimera_core::core::Health>(target)
+            .unwrap()
+            .current
+    };
     let full = health(&sim);
     // At the target's chest (hull centre): its head leans to the rifle,
     // off the line of the eyes (characters.md 11).
@@ -395,14 +432,25 @@ fn lit_block(lm: [[f32; 2]; 3], lightmap: Vec<u8>, w: u32, h: u32) -> RenderBloc
 #[test]
 fn t08_lightmap_clamps_per_pixel() {
     let mut w = small_world();
-    w.render.blocks = vec![lit_block([[0.98, 0.5], [3.02, 0.5], [0.98, 0.6]], vec![128; 4 * 4 * 3], 4, 4)];
+    w.render.blocks = vec![lit_block(
+        [[0.98, 0.5], [3.02, 0.5], [0.98, 0.6]],
+        vec![128; 4 * 4 * 3],
+        4,
+        4,
+    )];
     let map = world::convert(&w, "small", 1.0, &|_| None);
-    let m = map.meshes.iter().find(|m| m.material == "textures\\lit.dtx").expect("the lit mesh");
+    let m = map
+        .meshes
+        .iter()
+        .find(|m| m.material == "textures\\lit.dtx")
+        .expect("the lit mesh");
     // The cut: a vertex where u = 1 on the edge from u 0.98 to 3.02, at
     // x = 0.02 / 2.04 of the way (z mirrored).
     let cut = 100.0 * 0.02 / 2.04;
     assert!(
-        m.positions.iter().any(|p| (p[0] - cut).abs() < 1e-3 && p[2].abs() < 1e-3),
+        m.positions
+            .iter()
+            .any(|p| (p[0] - cut).abs() < 1e-3 && p[2].abs() < 1e-3),
         "{:?}",
         m.positions
     );
@@ -424,7 +472,10 @@ fn t08_lightmap_clamps_per_pixel() {
         .filter(|(p, _)| p[0] >= cut - 1e-3)
         .map(|(_, uv)| uv[0])
         .collect::<Vec<f32>>();
-    assert!(edge.len() >= 3 && edge.iter().all(|u| (u - edge[0]).abs() < 1e-6), "{edge:?}");
+    assert!(
+        edge.len() >= 3 && edge.iter().all(|u| (u - edge[0]).abs() < 1e-6),
+        "{edge:?}"
+    );
 }
 
 /// "Lightmaps", How it is drawn: a texture-pass triangle takes the light of
@@ -437,7 +488,12 @@ fn t08_lightmap_clamps_per_pixel() {
 /// hard-edged wedges of another surface's light.
 #[test]
 fn lightmap_pass_matched_by_place_not_polygon() {
-    let p = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 0.0, 100.0], [100.0, 0.0, 100.0]];
+    let p = [
+        [0.0, 0.0, 0.0],
+        [100.0, 0.0, 0.0],
+        [0.0, 0.0, 100.0],
+        [100.0, 0.0, 100.0],
+    ];
     // Section-own vertices (the packer never shares them between sections).
     let mut vertices = Vec::new();
     let mut tri = |corners: [(usize, [f32; 2]); 3], polygon: u32| {
@@ -490,7 +546,11 @@ fn lightmap_pass_matched_by_place_not_polygon() {
     }];
     let map = world::convert(&w, "small", 1.0, &|_| None);
     let lm = map.lightmap.as_ref().unwrap();
-    let m = map.meshes.iter().find(|m| m.material == "textures\\lit.dtx").expect("the lit mesh");
+    let m = map
+        .meshes
+        .iter()
+        .find(|m| m.material == "textures\\lit.dtx")
+        .expect("the lit mesh");
     // The light a vertex reads (nearest texel) and where it is (file axes).
     let read = |v: u32| {
         let [u, t] = m.lightmap_uvs[v as usize];
@@ -499,7 +559,9 @@ fn lightmap_pass_matched_by_place_not_polygon() {
     };
     let at = |v: u32| {
         let q = m.positions[v as usize];
-        p.iter().position(|c| (c[0] - q[0]).abs() < 1e-3 && (c[2] + q[2]).abs() < 1e-3).unwrap()
+        p.iter()
+            .position(|c| (c[0] - q[0]).abs() < 1e-3 && (c[2] + q[2]).abs() < 1e-3)
+            .unwrap()
     };
     let light = |b: u8| world::light_value(b, 1.0);
     assert_eq!(m.indices.len(), 6);
@@ -512,7 +574,12 @@ fn lightmap_pass_matched_by_place_not_polygon() {
                 (true, _) => light(200),
                 (false, _) => light(50),
             };
-            assert!((read(v) - want).abs() < 1e-4, "triangle {corners:?}, corner {}: {} not {want}", at(v), read(v));
+            assert!(
+                (read(v) - want).abs() < 1e-4,
+                "triangle {corners:?}, corner {}: {} not {want}",
+                at(v),
+                read(v)
+            );
         }
     }
 }
@@ -525,7 +592,12 @@ fn lightmap_pass_matched_by_place_not_polygon() {
 /// fix: horizontal streaks over the wall).
 #[test]
 fn one_polygon_lightmapped_on_two_pages() {
-    let p = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 0.0, 100.0], [100.0, 0.0, 100.0]];
+    let p = [
+        [0.0, 0.0, 0.0],
+        [100.0, 0.0, 0.0],
+        [0.0, 0.0, 100.0],
+        [100.0, 0.0, 100.0],
+    ];
     let vertex = |i: usize, uv0: [f32; 2]| RenderVertex {
         pos: p[i],
         uv0,
@@ -588,7 +660,11 @@ fn one_polygon_lightmapped_on_two_pages() {
     }];
     let map = world::convert(&w, "small", 1.0, &|_| None);
     let lm = map.lightmap.as_ref().unwrap();
-    let m = map.meshes.iter().find(|m| m.material == "textures\\lit.dtx").expect("the lit mesh");
+    let m = map
+        .meshes
+        .iter()
+        .find(|m| m.material == "textures\\lit.dtx")
+        .expect("the lit mesh");
     let read = |v: u32| {
         let [u, t] = m.lightmap_uvs[v as usize];
         let (x, y) = ((u * lm.width as f32) as u32, (t * lm.height as f32) as u32);
@@ -604,7 +680,12 @@ fn one_polygon_lightmapped_on_two_pages() {
     for t in m.indices.chunks(3) {
         let want = world::light_value(if has_p0(t) { 200 } else { 50 }, 1.0);
         for &v in t {
-            assert!((read(v) - want).abs() < 1e-4, "corner {:?}: {} not {want}", m.positions[v as usize], read(v));
+            assert!(
+                (read(v) - want).abs() < 1e-4,
+                "corner {:?}: {} not {want}",
+                m.positions[v as usize],
+                read(v)
+            );
         }
     }
 }
@@ -625,7 +706,11 @@ fn t11_t15_light_group_and_lighting_multiply() {
     };
     assert!((shown(0.8, 128, 1.0) - 0.8).abs() < 0.01, "{}", shown(0.8, 128, 1.0));
     assert!((shown(0.8, 64, 1.0) - 0.4).abs() < 0.015, "{}", shown(0.8, 64, 1.0));
-    assert!((shown(0.8, 128, 128.0 / 255.0) - 0.2016).abs() < 0.015, "{}", shown(0.8, 128, 128.0 / 255.0));
+    assert!(
+        (shown(0.8, 128, 128.0 / 255.0) - 0.2016).abs() < 0.015,
+        "{}",
+        shown(0.8, 128, 128.0 / 255.0)
+    );
 }
 
 /// A volume's world model is drawn only when its object says `Visible`:
@@ -637,11 +722,24 @@ fn t11_t15_light_group_and_lighting_multiply() {
 fn a_volume_with_visible_zero_is_not_drawn() {
     let drawn = |visible: Option<Value>| {
         let mut w = small_world();
-        let mut m = physics(&[([0.0, 1.0, 0.0], [[0.0, 100.0, 0.0], [0.0, 100.0, 100.0], [100.0, 100.0, 100.0], [100.0, 100.0, 0.0]])]);
+        let mut m = physics(&[(
+            [0.0, 1.0, 0.0],
+            [
+                [0.0, 100.0, 0.0],
+                [0.0, 100.0, 100.0],
+                [100.0, 100.0, 100.0],
+                [100.0, 100.0, 0.0],
+            ],
+        )]);
         m.flags = 0;
         m.name = "Room".into();
         w.models.push(m);
-        let vertex = |pos: [f32; 3]| RenderVertex { pos, color: 0xFF80_8080, normal: [0.0, 1.0, 0.0], ..default() };
+        let vertex = |pos: [f32; 3]| RenderVertex {
+            pos,
+            color: 0xFF80_8080,
+            normal: [0.0, 1.0, 0.0],
+            ..default()
+        };
         w.render.models.push((
             "Room".into(),
             lithtech_formats::world::RenderWorld {
@@ -652,8 +750,15 @@ fn a_volume_with_visible_zero_is_not_drawn() {
                         triangle_count: 1,
                         ..default()
                     }],
-                    vertices: vec![vertex([0.0, 100.0, 0.0]), vertex([0.0, 100.0, 100.0]), vertex([100.0, 100.0, 0.0])],
-                    triangles: vec![Triangle { indices: [0, 1, 2], polygon: 0 }],
+                    vertices: vec![
+                        vertex([0.0, 100.0, 0.0]),
+                        vertex([0.0, 100.0, 100.0]),
+                        vertex([100.0, 100.0, 0.0]),
+                    ],
+                    triangles: vec![Triangle {
+                        indices: [0, 1, 2],
+                        polygon: 0,
+                    }],
                     ..default()
                 }],
                 models: Vec::new(),
@@ -661,7 +766,10 @@ fn a_volume_with_visible_zero_is_not_drawn() {
         ));
         let mut properties = vec![prop("Name", Value::String("Room".into()))];
         properties.extend(visible.map(|v| prop("Visible", v)));
-        w.objects.push(Object { class: "Filter".into(), properties });
+        w.objects.push(Object {
+            class: "Filter".into(),
+            properties,
+        });
         let map = world::convert(&w, "small", 0.01, &|_| None);
         map.meshes.iter().filter(|m| m.material.contains("flat")).count()
     };
@@ -688,7 +796,10 @@ fn t12_light_group_start_state() {
     });
     w.objects.push(Object {
         class: "LightGroup".into(),
-        properties: vec![prop("Name", Value::String("On".into())), prop("StartColor", Value::Color([128.0; 3]))],
+        properties: vec![
+            prop("Name", Value::String("On".into())),
+            prop("StartColor", Value::Color([128.0; 3])),
+        ],
     });
     let colours = world::light_group_colours(&w);
     assert_eq!(colours("Off", [1.0; 3]), [0.0; 3]);
@@ -718,7 +829,12 @@ fn t22_world_model_flags() {
         let mut w = small_world();
         let mut door = physics(&[(
             [0.0, 0.0, -1.0],
-            [[-50.0, 0.0, 300.0], [-50.0, 200.0, 300.0], [50.0, 200.0, 300.0], [50.0, 0.0, 300.0]],
+            [
+                [-50.0, 0.0, 300.0],
+                [-50.0, 200.0, 300.0],
+                [50.0, 200.0, 300.0],
+                [50.0, 0.0, 300.0],
+            ],
         )]);
         door.flags = 0;
         door.name = "Door".into();
@@ -755,24 +871,81 @@ fn volumes_from_the_map() {
     let s = movement::movement_data().meters_per_unit;
     let volume = |class: &str, name: &str, props: Vec<Property>| {
         let mut m = physics(&[
-            ([0.0, 1.0, 0.0], [[-100.0, 100.0, -100.0], [-100.0, 100.0, 100.0], [100.0, 100.0, 100.0], [100.0, 100.0, -100.0]]),
-            ([0.0, -1.0, 0.0], [[-100.0, 0.0, -100.0], [100.0, 0.0, -100.0], [100.0, 0.0, 100.0], [-100.0, 0.0, 100.0]]),
-            ([1.0, 0.0, 0.0], [[100.0, 0.0, -100.0], [100.0, 100.0, -100.0], [100.0, 100.0, 100.0], [100.0, 0.0, 100.0]]),
-            ([-1.0, 0.0, 0.0], [[-100.0, 0.0, -100.0], [-100.0, 0.0, 100.0], [-100.0, 100.0, 100.0], [-100.0, 100.0, -100.0]]),
-            ([0.0, 0.0, 1.0], [[-100.0, 0.0, 100.0], [100.0, 0.0, 100.0], [100.0, 100.0, 100.0], [-100.0, 100.0, 100.0]]),
-            ([0.0, 0.0, -1.0], [[-100.0, 0.0, -100.0], [-100.0, 100.0, -100.0], [100.0, 100.0, -100.0], [100.0, 0.0, -100.0]]),
+            (
+                [0.0, 1.0, 0.0],
+                [
+                    [-100.0, 100.0, -100.0],
+                    [-100.0, 100.0, 100.0],
+                    [100.0, 100.0, 100.0],
+                    [100.0, 100.0, -100.0],
+                ],
+            ),
+            (
+                [0.0, -1.0, 0.0],
+                [
+                    [-100.0, 0.0, -100.0],
+                    [100.0, 0.0, -100.0],
+                    [100.0, 0.0, 100.0],
+                    [-100.0, 0.0, 100.0],
+                ],
+            ),
+            (
+                [1.0, 0.0, 0.0],
+                [
+                    [100.0, 0.0, -100.0],
+                    [100.0, 100.0, -100.0],
+                    [100.0, 100.0, 100.0],
+                    [100.0, 0.0, 100.0],
+                ],
+            ),
+            (
+                [-1.0, 0.0, 0.0],
+                [
+                    [-100.0, 0.0, -100.0],
+                    [-100.0, 0.0, 100.0],
+                    [-100.0, 100.0, 100.0],
+                    [-100.0, 100.0, -100.0],
+                ],
+            ),
+            (
+                [0.0, 0.0, 1.0],
+                [
+                    [-100.0, 0.0, 100.0],
+                    [100.0, 0.0, 100.0],
+                    [100.0, 100.0, 100.0],
+                    [-100.0, 100.0, 100.0],
+                ],
+            ),
+            (
+                [0.0, 0.0, -1.0],
+                [
+                    [-100.0, 0.0, -100.0],
+                    [-100.0, 100.0, -100.0],
+                    [100.0, 100.0, -100.0],
+                    [100.0, 0.0, -100.0],
+                ],
+            ),
         ]);
         m.flags = 0;
         m.name = name.into();
         let mut properties = vec![prop("Name", Value::String(name.into()))];
         properties.extend(props);
-        (m, Object { class: class.into(), properties })
+        (
+            m,
+            Object {
+                class: class.into(),
+                properties,
+            },
+        )
     };
     let mut w = small_world();
     let (m, o) = volume(
         "Water",
         "Pond",
-        vec![prop("Viscosity", Value::Real(0.1)), prop("Current", Value::Vector([0.0, 1500.0, 0.0]))],
+        vec![
+            prop("Viscosity", Value::Real(0.1)),
+            prop("Current", Value::Vector([0.0, 1500.0, 0.0])),
+        ],
     );
     w.models.push(m);
     w.objects.push(o);
@@ -784,7 +957,10 @@ fn volumes_from_the_map() {
     let vols: Vec<CaVolume> = world.query::<&CaVolume>().iter(world).cloned().collect();
     assert_eq!(vols.len(), 1);
     let v = &vols[0];
-    assert!(v.liquid && (v.viscosity - 0.1).abs() < 1e-6 && v.current == Vec3::new(0.0, 1500.0, 0.0), "{v:?}");
+    assert!(
+        v.liquid && (v.viscosity - 0.1).abs() < 1e-6 && v.current == Vec3::new(0.0, 1500.0, 0.0),
+        "{v:?}"
+    );
     assert!(v.contains(Vec3::new(0.0, 50.0 * s, 0.0)) && !v.contains(Vec3::new(0.0, 150.0 * s, 0.0)));
     assert!(v.contains(Vec3::new(90.0 * s, 50.0 * s, -90.0 * s)) && !v.contains(Vec3::new(110.0 * s, 50.0 * s, 0.0)));
 
@@ -819,9 +995,17 @@ fn glass_is_see_through() {
     m.polygons[1].surface = 1;
     let map = world::convert(&w, "small", s, &|_| None);
     assert_eq!(map.collision_indices.len(), 2, "the floor");
-    let glass: Vec<_> = map.collision_sets.iter().filter(|c| c.see_through && !c.indices.is_empty()).collect();
+    let glass: Vec<_> = map
+        .collision_sets
+        .iter()
+        .filter(|c| c.see_through && !c.indices.is_empty())
+        .collect();
     assert_eq!(glass.len(), 1);
-    assert!(glass[0].characters && glass[0].traces && glass[0].indices.len() == 2, "{:?}", glass[0]);
+    assert!(
+        glass[0].characters && glass[0].traces && glass[0].indices.len() == 2,
+        "{:?}",
+        glass[0]
+    );
     let mut sim = Sim::new(CaSim, MapSimPlugin::new(map));
     sim.ticks(2);
     let world = sim.app.world_mut();
@@ -831,7 +1015,10 @@ fn glass_is_see_through() {
         .map(|(n, s)| (n.to_string(), s.map(|s| s.0.clone())))
         .collect::<Vec<_>>();
     // Its collider names its surface (what a round reads there).
-    assert_eq!(marked, [("Map collision (glass (Glass))".to_string(), Some("Glass".to_string()))]);
+    assert_eq!(
+        marked,
+        [("Map collision (glass (Glass))".to_string(), Some("Glass".to_string()))]
+    );
     assert!(walk_world(w) > -500.0 * s, "players stop at the glass");
 }
 
@@ -851,7 +1038,10 @@ fn ai_objects_pass_through() {
             prop("PreferredPath", Value::Bool(false)),
         ],
     });
-    for (name, z, next) in [("AINodePatrol_01", 250.0, "AINodePatrol_02"), ("AINodePatrol_02", 350.0, "")] {
+    for (name, z, next) in [
+        ("AINodePatrol_01", 250.0, "AINodePatrol_02"),
+        ("AINodePatrol_02", 350.0, ""),
+    ] {
         w.objects.push(Object {
             class: "AINodePatrol".into(),
             properties: vec![
@@ -867,7 +1057,16 @@ fn ai_objects_pass_through() {
     // The start point goes through too, for the game modes (`rules::objects`),
     // its feet on the floor and its yaw added.
     // The world file's offset goes through last, for the radar (`radar::WORLD_INFO`).
-    assert_eq!(classes, ["GameStartPoint", "AIVolume", "AINodePatrol", "AINodePatrol", "WorldInfo"]);
+    assert_eq!(
+        classes,
+        [
+            "GameStartPoint",
+            "AIVolume",
+            "AINodePatrol",
+            "AINodePatrol",
+            "WorldInfo"
+        ]
+    );
     let start = &map.entities[0];
     assert!(start.get(world::FEET_KEY).is_some() && start.get(world::YAW_KEY).is_some());
     let objects = combat_arms::game::rules::objects::read(&map.entities, map.entity_scale);
@@ -882,8 +1081,16 @@ fn ai_objects_pass_through() {
     let ai = MapAi::read(&map.entities, map.entity_scale);
     assert_eq!(ai.volumes.len(), 1);
     // Z mirrored: the file's z 200..400 is engine z -400..-200 (u).
-    assert!(ai.volumes[0].min.abs_diff_eq(Vec3::new(-200.0, 0.0, -400.0) * s, 1e-5), "{:?}", ai.volumes[0]);
-    assert!(ai.volumes[0].max.abs_diff_eq(Vec3::new(200.0, 64.0, -200.0) * s, 1e-5), "{:?}", ai.volumes[0]);
+    assert!(
+        ai.volumes[0].min.abs_diff_eq(Vec3::new(-200.0, 0.0, -400.0) * s, 1e-5),
+        "{:?}",
+        ai.volumes[0]
+    );
+    assert!(
+        ai.volumes[0].max.abs_diff_eq(Vec3::new(200.0, 64.0, -200.0) * s, 1e-5),
+        "{:?}",
+        ai.volumes[0]
+    );
     assert_eq!(ai.patrol.len(), 2);
     assert_eq!(ai.patrol[0].next, ["AINodePatrol_02"]);
     assert!(ai.patrol[1].pos.abs_diff_eq(Vec3::new(0.0, 16.0, -350.0) * s, 1e-5));
@@ -1004,7 +1211,9 @@ fn t13_second_layers() {
     assert!((d.rotation - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
     assert_eq!(map.textures[d.texture].name, "textures\\Grit.dtx");
     // envmapalpha: a flat environment map weighted by the base alpha.
-    let e = mesh("textures\\shiny.dtx", None).flat_envmap.expect("an environment map");
+    let e = mesh("textures\\shiny.dtx", None)
+        .flat_envmap
+        .expect("an environment map");
     assert!(e.by_base_alpha && e.signed_add && e.scale == 1.0);
     assert_eq!(map.textures[e.texture].name, "textures\\Env.dtx");
     // A link that doesn't resolve: nothing over the base.
@@ -1054,7 +1263,11 @@ fn map_spawn_family() {
     use combat_arms::game::world::map_family;
     let tdm = "Team Death Match";
     // (GameType, unlocked, Spawn is 1, on a team)
-    let team_map = [(tdm, true, true, true), ("FreeForAll", true, true, false), ("FreeForAll", true, true, false)];
+    let team_map = [
+        (tdm, true, true, true),
+        ("FreeForAll", true, true, false),
+        ("FreeForAll", true, true, false),
+    ];
     assert_eq!(map_family(team_map.iter().copied()), Some(tdm));
     let hunted = [
         ("HungerGame", false, true, false),
@@ -1079,7 +1292,10 @@ impl chimera_core::mount::FileSource for Fake {
     fn entries(&self) -> Vec<chimera_core::mount::Entry> {
         self.0
             .iter()
-            .map(|p| chimera_core::mount::Entry { path: p.to_string(), size: 1 })
+            .map(|p| chimera_core::mount::Entry {
+                path: p.to_string(),
+                size: 1,
+            })
             .collect()
     }
     fn read(&self, _: &str) -> Option<std::io::Result<Vec<u8>>> {
@@ -1098,7 +1314,11 @@ fn the_game_lists_its_maps_for_the_console() {
         "worlds2/readme.txt",
     ]));
     assert_eq!((combat_arms::game::INFO.map_names)(&mount), ["junk_flea", "warehouse"]);
-    assert_eq!((combat_arms::game::INFO.map_file)("warehouse"), None, "by id and hash only: no file clients download");
+    assert_eq!(
+        (combat_arms::game::INFO.map_file)("warehouse"),
+        None,
+        "by id and hash only: no file clients download"
+    );
 }
 
 /// `small_world` plus a lightmapped triangle (a texture pass and its
@@ -1140,7 +1360,10 @@ pub(crate) fn light_group_world(start_on: bool) -> World {
                 ..default()
             },
         ],
-        vertices: (0..3).map(|k| vertex(corners[k], uvs[k])).chain((0..3).map(|k| vertex(corners[k], uvs[k]))).collect(),
+        vertices: (0..3)
+            .map(|k| vertex(corners[k], uvs[k]))
+            .chain((0..3).map(|k| vertex(corners[k], uvs[k])))
+            .collect(),
         triangles: vec![
             Triangle {
                 indices: [0, 1, 2],
@@ -1206,12 +1429,18 @@ fn light_group_switches_as_a_style() {
     // (Relighting clamps at 0: a vertex-lit rectangle's fourth texel, the
     // corners' extrapolated blend, can be below.)
     let close = |a: &[[f32; 3]], b: &[[f32; 3]]| {
-        a.iter().zip(b).all(|(x, y)| (0..3).all(|k| (x[k].max(0.0) - y[k].max(0.0)).abs() < 1e-5))
+        a.iter()
+            .zip(b)
+            .all(|(x, y)| (0..3).all(|k| (x[k].max(0.0) - y[k].max(0.0)).abs() < 1e-5))
     };
     assert!(close(&relit_on, &ln.rgb), "off + switched on = converted on");
     assert!(close(&relit_off, &lo.rgb), "on + switched off = converted off");
     assert!(!close(&lo.rgb, &ln.rgb), "and it shows");
-    let group = off.entities.iter().find(|e| e.classname() == "LightGroup").expect("the object");
+    let group = off
+        .entities
+        .iter()
+        .find(|e| e.classname() == "LightGroup")
+        .expect("the object");
     assert_eq!(group.get(keys::LIGHT_STYLE), Some("32"));
 }
 
@@ -1237,7 +1466,11 @@ fn light_group_messages_switch_the_style() {
     };
     send(&mut sim, "on");
     assert_eq!(wanted(&sim), [(32, true)]);
-    assert_eq!(sim.app.world().resource::<LightStyles>().styles, [(32, true)], "the map relights");
+    assert_eq!(
+        sim.app.world().resource::<LightStyles>().styles,
+        [(32, true)],
+        "the map relights"
+    );
     send(&mut sim, "toggle");
     assert_eq!(wanted(&sim), [(32, false)]);
     send(&mut sim, "color 0 0 0");

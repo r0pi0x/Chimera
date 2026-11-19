@@ -27,7 +27,10 @@ const TOL_SUM: f32 = 5e-3;
 const SKIN: f32 = 0.1 + 1e-3;
 
 pub(crate) fn close(got: f32, want: f32, tol: f32, what: &str) {
-    assert!((got - want).abs() <= tol, "{what}: got {got}, want {want} (tolerance {tol})");
+    assert!(
+        (got - want).abs() <= tol,
+        "{what}: got {got}, want {want} (tolerance {tol})"
+    );
 }
 
 /// A static box: centre and half-extents in u, optional rotation about X.
@@ -39,7 +42,11 @@ pub(crate) struct Block {
 }
 
 pub(crate) fn block(centre: Vec3, half: Vec3) -> Block {
-    Block { centre, half, tilt: 0.0 }
+    Block {
+        centre,
+        half,
+        tilt: 0.0,
+    }
 }
 
 /// A box rotated by `tilt` (radians) about X.
@@ -107,7 +114,11 @@ impl T {
         t.tick();
         // No held weapon's penalty (the spec's cases): the rifle drawn at
         // spawn set its own (`weapons::CaHandling`).
-        t.sim.app.world_mut().entity_mut(p).insert(movement::HeldMovePenalty::default());
+        t.sim
+            .app
+            .world_mut()
+            .entity_mut(p)
+            .insert(movement::HeldMovePenalty::default());
         t
     }
 
@@ -185,21 +196,35 @@ impl T {
     /// damage").
     pub(crate) fn teleport(&mut self, at: Vec3) {
         let s = movement_data().meters_per_unit;
-        self.sim.app.world_mut().get_mut::<Transform>(self.p).unwrap().translation = at * s;
+        self.sim
+            .app
+            .world_mut()
+            .get_mut::<Transform>(self.p)
+            .unwrap()
+            .translation = at * s;
     }
 
     /// Put the hull's centre at `at` (u) at rest in the air: no velocity,
     /// standing on nothing.
     pub(crate) fn place_in_air(&mut self, at: Vec3) {
         self.teleport(at);
-        self.sim.app.world_mut().get_mut::<chimera_core::core::Velocity>(self.p).unwrap().0 = Vec3::ZERO;
+        self.sim
+            .app
+            .world_mut()
+            .get_mut::<chimera_core::core::Velocity>(self.p)
+            .unwrap()
+            .0 = Vec3::ZERO;
         self.mv_mut().standing = None;
     }
 
     /// The crouch key released clears the crouch flag at once (no 100 ms
     /// release delay), for cases that set the flag tick by tick.
     fn no_release_delay(&mut self) {
-        self.sim.app.world_mut().resource_mut::<movement::MovementData>().crouch_release_delay = 0.0;
+        self.sim
+            .app
+            .world_mut()
+            .resource_mut::<movement::MovementData>()
+            .crouch_release_delay = 0.0;
     }
 
     pub(crate) fn feet(&self) -> f32 {
@@ -316,7 +341,13 @@ fn steady(t: &mut T, setup: impl Fn(&mut T)) -> (f32, f32) {
 fn case_7_reference_loadout_caps() {
     let mut t = T::standing();
     // The reference character (the data's: default vest) with a rifle.
-    t.insert((movement_data().character.clone(), HeldMovePenalty { penalty: 0.1, mod_factor: 0.0 }));
+    t.insert((
+        movement_data().character.clone(),
+        HeldMovePenalty {
+            penalty: 0.1,
+            mod_factor: 0.0,
+        },
+    ));
     type Case = (&'static str, fn(&mut T), f32, f32);
     let cases: [Case; 4] = [
         ("run", |_| {}, 228.0, 3.62412),
@@ -335,12 +366,27 @@ fn case_7_reference_loadout_caps() {
 
 #[test]
 fn case_8_weapon_caps() {
-    for (penalty, limit) in [(0.0, 285.0), (0.03, 276.45), (0.10, 256.5), (0.13, 247.95), (0.30, 199.5), (1.2, 0.0)] {
+    for (penalty, limit) in [
+        (0.0, 285.0),
+        (0.03, 276.45),
+        (0.10, 256.5),
+        (0.13, 247.95),
+        (0.30, 199.5),
+        (1.2, 0.0),
+    ] {
         let mut t = T::standing();
-        t.insert(HeldMovePenalty { penalty, mod_factor: 0.0 });
+        t.insert(HeldMovePenalty {
+            penalty,
+            mod_factor: 0.0,
+        });
         t.forward(true);
         t.tick();
-        close(t.mv().speed_limit, limit, 0.01, &format!("run limit with penalty {penalty}"));
+        close(
+            t.mv().speed_limit,
+            limit,
+            0.01,
+            &format!("run limit with penalty {penalty}"),
+        );
     }
 }
 
@@ -551,7 +597,12 @@ fn case_18_air_fall() {
 fn case_19_air_control_from_rest() {
     let mut t = in_the_air();
     // A fresh start in the air: zero what the first tick did.
-    t.sim.app.world_mut().get_mut::<chimera_core::core::Velocity>(t.p).unwrap().0 = Vec3::ZERO;
+    t.sim
+        .app
+        .world_mut()
+        .get_mut::<chimera_core::core::Velocity>(t.p)
+        .unwrap()
+        .0 = Vec3::ZERO;
     let start = t.pos();
     t.forward(true);
     t.tick();
@@ -587,7 +638,12 @@ fn case_20_crouched_air_control() {
         let before = t.hspeed();
         t.tick();
         assert!(t.mv().in_jump);
-        close(t.hspeed() - before, 150.0 * j * 0.015, TOL, "in a jump: +150 j dt per tick");
+        close(
+            t.hspeed() - before,
+            150.0 * j * 0.015,
+            TOL,
+            "in a jump: +150 j dt per tick",
+        );
     }
 
     let mut t = in_the_air();
@@ -610,18 +666,27 @@ fn case_20_crouched_air_control() {
 fn case_21_crouch_rate() {
     let mut t = T::standing();
     t.keys().crouch = true;
-    for (n, want) in [0.259615, 0.463208, 0.618555, 0.733433, 0.815619, 0.872890, 0.913022, 0.943794, 0.972982, 1.0]
-        .into_iter()
-        .enumerate()
+    for (n, want) in [
+        0.259615, 0.463208, 0.618555, 0.733433, 0.815619, 0.872890, 0.913022, 0.943794, 0.972982, 1.0,
+    ]
+    .into_iter()
+    .enumerate()
     {
         t.tick();
-        close(t.mv().crouch_rate, want, 2e-6, &format!("rate after tick {} down", n + 1));
+        close(
+            t.mv().crouch_rate,
+            want,
+            2e-6,
+            &format!("rate after tick {} down", n + 1),
+        );
     }
     t.ticks(30);
     t.keys().crouch = false;
-    for (n, want) in [0.740385, 0.536792, 0.381445, 0.266567, 0.184381, 0.127110, 0.086978, 0.056206, 0.027018, 0.0]
-        .into_iter()
-        .enumerate()
+    for (n, want) in [
+        0.740385, 0.536792, 0.381445, 0.266567, 0.184381, 0.127110, 0.086978, 0.056206, 0.027018, 0.0,
+    ]
+    .into_iter()
+    .enumerate()
     {
         t.tick();
         close(t.mv().crouch_rate, want, 2e-6, &format!("rate after tick {} up", n + 1));
@@ -658,7 +723,12 @@ fn case_23_crouch_jump() {
     let (crouched, crouched_h) = jump(true);
     close(crouched_h, 40.0, TOL, "half-height after 10 crouch ticks");
     close(crouched, plain, TOL_SUM, "the centre's path doesn't change");
-    close((crouched - crouched_h) - (plain - plain_h), 10.0, TOL_SUM, "feet 10 u higher");
+    close(
+        (crouched - crouched_h) - (plain - plain_h),
+        10.0,
+        TOL_SUM,
+        "feet 10 u higher",
+    );
 }
 
 #[test]
@@ -703,21 +773,58 @@ fn case_25_crouch_spam() {
         flag.push(m.crouch);
     }
     let after = |v: &[f32], tick: usize| v[tick - 1];
-    for (tick, want) in [(1, 0.6), (14, 0.73), (15, 0.33), (28, 0.46), (29, 0.06), (42, 0.19), (43, 0.0)] {
-        close(after(&lockout, tick), want, 1e-4, &format!("lock-out after tick {tick}"));
+    for (tick, want) in [
+        (1, 0.6),
+        (14, 0.73),
+        (15, 0.33),
+        (28, 0.46),
+        (29, 0.06),
+        (42, 0.19),
+        (43, 0.0),
+    ] {
+        close(
+            after(&lockout, tick),
+            want,
+            1e-4,
+            &format!("lock-out after tick {tick}"),
+        );
     }
     assert!(!locked[41] && locked[42], "lock-out begins on tick 43");
     close(after(&slowdown, 1), 0.5, 1e-5, "slowdown after tick 1");
     close(after(&slowdown, 15), 0.0, 1e-5, "slowdown after tick 15");
-    for (tick, want) in [(1, 0.259615), (7, 0.680425), (14, 0.163968), (15, 0.259615), (28, 0.207692), (43, 0.259615), (44, 0.0)] {
-        close(after(&rate, tick), want, 1e-5, &format!("crouch rate after tick {tick}"));
+    for (tick, want) in [
+        (1, 0.259615),
+        (7, 0.680425),
+        (14, 0.163968),
+        (15, 0.259615),
+        (28, 0.207692),
+        (43, 0.259615),
+        (44, 0.0),
+    ] {
+        close(
+            after(&rate, tick),
+            want,
+            1e-5,
+            &format!("crouch rate after tick {tick}"),
+        );
     }
     assert!(flag[43], "tick 44: still set (rate not 0 at its start)");
-    assert!(flag[44..].iter().take(50).all(|f| !f), "crouch flag cleared from tick 45 while held");
+    assert!(
+        flag[44..].iter().take(50).all(|f| !f),
+        "crouch flag cleared from tick 45 while held"
+    );
     // Lock-out ends after about 1.5 s on the ground (100 ticks of +0.01).
-    let ends = locked.iter().enumerate().skip(43).find(|(_, l)| !**l).map(|(i, _)| i + 1);
+    let ends = locked
+        .iter()
+        .enumerate()
+        .skip(43)
+        .find(|(_, l)| !**l)
+        .map(|(i, _)| i + 1);
     let ends = ends.expect("lock-out ended");
-    assert!((142..=144).contains(&ends), "lock-out ends on tick {ends} (43 + 100, +-1)");
+    assert!(
+        (142..=144).contains(&ends),
+        "lock-out ends on tick {ends} (43 + 100, +-1)"
+    );
 }
 
 #[test]
@@ -728,7 +835,11 @@ fn case_26_crouch_spam_while_still() {
         t.keys().crouch = spam_key(tick);
         t.tick();
         let m = t.mv();
-        assert_eq!((m.slowdown, m.lockout, m.crouch_locked), (1.0, 1.0, false), "tick {tick}");
+        assert_eq!(
+            (m.slowdown, m.lockout, m.crouch_locked),
+            (1.0, 1.0, false),
+            "tick {tick}"
+        );
     }
 }
 
@@ -800,18 +911,32 @@ fn case_29_sprint_blocked() {
     assert!(t.mv().sprint, "sprint once fully up");
     // Zoomed: the flag may be on but the limit is the walk speed.
     // (The rifle with a 40 degree scope, zoomed in: weapon_classes.md 7.9.)
-    let w = t.sim.app.world().get::<chimera_sim::weapon::Inventory>(t.p).unwrap().active.unwrap();
-    t.sim.app.world_mut().get_mut::<combat_arms::game::weapons::CaZoom>(w).unwrap().scope =
-        Some(combat_arms::game::weapons::Scope {
-            name: "test".into(),
-            fov: vec![40.0],
-            sprite: String::new(),
-            sprite_scale: 0.0,
-            ..Default::default()
-        });
+    let w = t
+        .sim
+        .app
+        .world()
+        .get::<chimera_sim::weapon::Inventory>(t.p)
+        .unwrap()
+        .active
+        .unwrap();
+    t.sim
+        .app
+        .world_mut()
+        .get_mut::<combat_arms::game::weapons::CaZoom>(w)
+        .unwrap()
+        .scope = Some(combat_arms::game::weapons::Scope {
+        name: "test".into(),
+        fov: vec![40.0],
+        sprite: String::new(),
+        sprite_scale: 0.0,
+        ..Default::default()
+    });
     t.keys().secondary = true;
     t.tick();
-    assert!(t.sim.app.world().get::<chimera_sim::weapon::Zoomed>(t.p).is_some(), "zoomed");
+    assert!(
+        t.sim.app.world().get::<chimera_sim::weapon::Zoomed>(t.p).is_some(),
+        "zoomed"
+    );
     assert!(t.mv().sprint);
     close(t.mv().speed_limit, 70.0, TOL, "zoomed limit");
 }
@@ -839,7 +964,14 @@ fn case_30_sprint_speed() {
 #[test]
 fn case_31_fall_damage() {
     let data = movement_data();
-    for (drop, want) in [(299.0, None), (300.0, Some(0.0)), (400.0, Some(50.0)), (500.0, Some(100.0)), (700.0, Some(200.0)), (1000.0, Some(350.0))] {
+    for (drop, want) in [
+        (299.0, None),
+        (300.0, Some(0.0)),
+        (400.0, Some(50.0)),
+        (500.0, Some(100.0)),
+        (700.0, Some(200.0)),
+        (1000.0, Some(350.0)),
+    ] {
         assert_eq!(movement::fall_damage(drop, data), want, "drop {drop}");
     }
     // Landing from 400 u (placed there: a spawn would start on the floor):
@@ -850,7 +982,10 @@ fn case_31_fall_damage() {
     let d = t.damage();
     assert_eq!(d.len(), 1, "one landing: {d:?}");
     close(d[0].amount * data.health_points, 50.0, 0.01, "damage from 400 u");
-    assert_eq!((d[0].kind, d[0].dir, d[0].attacker), (DamageKind::Crush, Vec3::Y, Some(t.p)));
+    assert_eq!(
+        (d[0].kind, d[0].dir, d[0].attacker),
+        (DamageKind::Crush, Vec3::Y, Some(t.p))
+    );
     // 299 u: none.
     let mut t = T::standing();
     t.place_in_air(on(0.0, 299.0, 0.0));
@@ -871,7 +1006,12 @@ fn case_32_jump_off_fall() {
     t.ticks(150);
     let d = t.damage();
     assert_eq!(d.len(), 1, "{d:?}");
-    close(d[0].amount * movement_data().health_points, 25.36875, 0.01, "damage from the apex");
+    close(
+        d[0].amount * movement_data().health_points,
+        25.36875,
+        0.01,
+        "damage from the apex",
+    );
 }
 
 #[test]
@@ -880,7 +1020,10 @@ fn case_33_stairs_down() {
     let mut map = vec![floor()];
     for i in 0..20 {
         let top = (20 - i) as f32 * 16.0;
-        map.push(block(Vec3::new(0.0, top / 2.0, -(i as f32) * 32.0), Vec3::new(100.0, top / 2.0, 16.0)));
+        map.push(block(
+            Vec3::new(0.0, top / 2.0, -(i as f32) * 32.0),
+            Vec3::new(100.0, top / 2.0, 16.0),
+        ));
     }
     let mut t = T::new(map, on(0.0, 320.0, 0.0));
     t.forward(true);
@@ -892,7 +1035,10 @@ fn case_33_stairs_down() {
 #[test]
 fn case_34_step_up() {
     for (height, climbs) in [(30.0, true), (31.0, false)] {
-        let wall = block(Vec3::new(0.0, height / 2.0, -200.0), Vec3::new(200.0, height / 2.0, 100.0));
+        let wall = block(
+            Vec3::new(0.0, height / 2.0, -200.0),
+            Vec3::new(200.0, height / 2.0, 100.0),
+        );
         let mut t = T::new(vec![floor(), wall], on(0.0, 0.0, 0.0));
         t.forward(true);
         // 0.6 s: up against the box, or on it (not yet off its far side).
@@ -985,7 +1131,12 @@ fn edge_moving_start_in_the_air_uses_the_start_accel() {
     // The moving flag is off now (no keys); forward starts it in the air.
     t.forward(true);
     t.tick();
-    close(t.mv().accel.length(), 500.0 * 0.336, 0.01, "500 x the jump factor (0.336)");
+    close(
+        t.mv().accel.length(),
+        500.0 * 0.336,
+        0.01,
+        "500 x the jump factor (0.336)",
+    );
 }
 
 #[test]
@@ -1000,7 +1151,10 @@ fn edge_crouch_release_without_headroom() {
     t.forward(false);
     t.keys().crouch = false;
     t.ticks(20);
-    assert!(t.mv().crouch && t.mv().crouch_rate == 1.0, "stays crouched under the ceiling");
+    assert!(
+        t.mv().crouch && t.mv().crouch_rate == 1.0,
+        "stays crouched under the ceiling"
+    );
 }
 
 #[test]
@@ -1014,7 +1168,11 @@ fn edge_speed_limit_change_mid_air() {
     t.keys().sprint = false;
     t.tick();
     close(t.mv().speed_limit, 285.0, TOL, "the run limit at once");
-    assert!(t.hspeed() < 285.0 + 0.015 * 3000.0 * 0.3 + TOL, "clamped to it: {}", t.hspeed());
+    assert!(
+        t.hspeed() < 285.0 + 0.015 * 3000.0 * 0.3 + TOL,
+        "clamped to it: {}",
+        t.hspeed()
+    );
 }
 
 #[test]
@@ -1035,7 +1193,10 @@ fn edge_landing_keeps_horizontal_speed() {
 #[test]
 fn edge_penalty_is_clamped() {
     let mut t = T::standing();
-    t.insert(HeldMovePenalty { penalty: -3.0, mod_factor: 0.0 });
+    t.insert(HeldMovePenalty {
+        penalty: -3.0,
+        mod_factor: 0.0,
+    });
     t.forward(true);
     t.tick();
     close(t.mv().speed_limit, 570.0, TOL, "at most double");
@@ -1072,12 +1233,16 @@ fn the_data_parses() {
     let _: &CaCharacter = &d.character;
     // Body size: the 100 u standing hull is Chimera's character.
     let height = 2.0 * d.stand_half_extents[1] * d.meters_per_unit;
-    assert!((height - chimera_core::character::CAPSULE_HEIGHT).abs() < 1e-5, "{height}");
-    assert_eq!(d.meters_per_unit, combat_arms::game::inventory::UNIT, "inventory's UNIT");
+    assert!(
+        (height - chimera_core::character::CAPSULE_HEIGHT).abs() < 1e-5,
+        "{height}"
+    );
+    assert_eq!(
+        d.meters_per_unit,
+        combat_arms::game::inventory::UNIT,
+        "inventory's UNIT"
+    );
 }
-
-
-
 
 // --- Cases 37-55: the follow-up answers ---
 
@@ -1151,13 +1316,20 @@ fn case_40_crouch_reversal_halfway() {
     let mut t = T::standing();
     t.no_release_delay();
     let feet = t.feet();
-    let halves = [47.40385, 45.36792, 43.81445, 42.66567, 41.84381, 44.43997, 46.47589, 48.02936, 49.17814, 50.0];
+    let halves = [
+        47.40385, 45.36792, 43.81445, 42.66567, 41.84381, 44.43997, 46.47589, 48.02936, 49.17814, 50.0,
+    ];
     let rates = [RATES_DOWN.as_slice(), &[0.556003, 0.352411, 0.197064, 0.082186, 0.0]].concat();
     for n in 1..=10 {
         t.keys().crouch = n <= 5;
         t.tick();
         close(t.mv().crouch_rate, rates[n - 1], 2e-6, &format!("rate after tick {n}"));
-        close(t.mv().half_height, halves[n - 1], TOL, &format!("half-height after tick {n}"));
+        close(
+            t.mv().half_height,
+            halves[n - 1],
+            TOL,
+            &format!("half-height after tick {n}"),
+        );
         close(t.feet(), feet, TOL, &format!("feet after tick {n}"));
     }
 }
@@ -1363,7 +1535,12 @@ fn case_52_eye_height() {
     let d = movement_data();
     let mut t = T::standing();
     close(t.eye_above_feet(), 83.0, TOL, "standing");
-    close(50.0 - 0.5 * 10.0 + movement::eye_above_centre(0.5, d), 71.5, TOL, "r = 0.5");
+    close(
+        50.0 - 0.5 * 10.0 + movement::eye_above_centre(0.5, d),
+        71.5,
+        TOL,
+        "r = 0.5",
+    );
     let want = [77.0288, 72.3462, 68.7732, 66.1310, 64.2408];
     t.keys().crouch = true;
     for (n, want) in want.into_iter().enumerate() {
@@ -1379,7 +1556,9 @@ fn case_53_camera_smoothing_up_a_step() {
     let d = movement_data();
     let mut cam = movement::CameraRise::default();
     cam.step(0.0, 1.0 / 60.0, false, d);
-    let want = [5.0, 9.1667, 12.6389, 15.5324, 17.9437, 20.2770, 22.6103, 24.9437, 27.2770, 30.0];
+    let want = [
+        5.0, 9.1667, 12.6389, 15.5324, 17.9437, 20.2770, 22.6103, 24.9437, 27.2770, 30.0,
+    ];
     for (n, want) in want.into_iter().enumerate() {
         let h = cam.step(30.0, 1.0 / 60.0, false, d);
         close(h, want, 1e-3, &format!("frame {}", n + 1));
@@ -1425,5 +1604,10 @@ fn case_55_knock_back() {
     assert_eq!(t.mv().accel, Vec3::ZERO, "over");
     // The M9 (duration 0): none; StiffDuration 0.5: 0.45 s.
     assert!(HitKnockback::hit(None, 20.0, 0.0, 0.0, Vec3::Z, 0.0).is_none());
-    close(HitKnockback::hit(None, 40.0, 0.3, 0.5, Vec3::Z, 0.0).unwrap().duration, 0.45, 1e-6, "stiff");
+    close(
+        HitKnockback::hit(None, 40.0, 0.3, 0.5, Vec3::Z, 0.0).unwrap().duration,
+        0.45,
+        1e-6,
+        "stiff",
+    );
 }

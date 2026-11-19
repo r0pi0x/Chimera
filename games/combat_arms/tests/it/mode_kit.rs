@@ -148,7 +148,14 @@ pub fn unprotect_all(sim: &mut Sim) {
 }
 
 /// A hit on `target` (health 1.0 = 100 HP) of `kind` by `attacker`.
-pub fn hit(sim: &mut Sim, target: Entity, attacker: Option<Entity>, amount: f32, kind: DamageKind, weapon: Option<&'static str>) {
+pub fn hit(
+    sim: &mut Sim,
+    target: Entity,
+    attacker: Option<Entity>,
+    amount: f32,
+    kind: DamageKind,
+    weapon: Option<&'static str>,
+) {
     sim.app.world_mut().write_message(Damage {
         target,
         attacker,
@@ -224,7 +231,13 @@ pub fn hold_at(sim: &mut Sim, p: Entity, to: Vec3, secs: f64) {
 pub fn weapons(sim: &Sim, p: Entity) -> Vec<&'static str> {
     let w = sim.app.world();
     w.get::<Inventory>(p)
-        .map(|i| i.weapons.iter().filter_map(|e| w.get::<Weapon>(*e)).map(|w| w.id).collect())
+        .map(|i| {
+            i.weapons
+                .iter()
+                .filter_map(|e| w.get::<Weapon>(*e))
+                .map(|w| w.id)
+                .collect()
+        })
         .unwrap_or_default()
 }
 

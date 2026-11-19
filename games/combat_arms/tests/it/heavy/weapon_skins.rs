@@ -46,7 +46,9 @@ fn resolve(entry: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Option
     let path = model::normalize(entry);
     let texture = |path: &str| -> Result<(), String> {
         let bytes = file(path).ok_or("texture missing or locked")?;
-        Dtx::parse(bytes).map(|_| ()).map_err(|e| format!("texture doesn't decode: {e}"))
+        Dtx::parse(bytes)
+            .map(|_| ())
+            .map_err(|e| format!("texture doesn't decode: {e}"))
     };
     if path.ends_with(".spr") {
         let bytes = file(&path).ok_or("sprite missing or locked")?;
@@ -55,7 +57,11 @@ fn resolve(entry: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Option
             texture(&sprite_texture(&bytes).ok_or("sprite unreadable")?)?;
             return Ok(Some((1, 1)));
         };
-        let ok = sprite.frames.iter().filter(|f| texture(&model::normalize(f)).is_ok()).count();
+        let ok = sprite
+            .frames
+            .iter()
+            .filter(|f| texture(&model::normalize(f)).is_ok())
+            .count();
         if ok == 0 {
             return Err("no frame of the sprite resolves".into());
         }
@@ -92,7 +98,12 @@ fn every_weapons_skins_resolve() {
     // `CHIMERA_SKINS_SHOW=a,b`: every piece of the weapons whose name has
     // one of these (any case).
     let show: Vec<String> = std::env::var("CHIMERA_SKINS_SHOW")
-        .map(|v| v.split(',').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect())
+        .map(|v| {
+            v.split(',')
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
     // cause -> weapons (install name, which model).
     let mut causes: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -100,11 +111,18 @@ fn every_weapons_skins_resolve() {
     let mut weapons = 0;
     let mut animated = 0;
     for w in &ca.weapon_set().weapons {
-        let Some(record) = ca.install_weapon(&w.id) else { continue };
+        let Some(record) = ca.install_weapon(&w.id) else {
+            continue;
+        };
         weapons += 1;
         let look = looks.weapon(Some(&w.id));
         let models = [
-            ("view", w.models.view.as_deref(), &w.models.view_skins, &record.pv_render_styles),
+            (
+                "view",
+                w.models.view.as_deref(),
+                &w.models.view_skins,
+                &record.pv_render_styles,
+            ),
             ("held", w.models.world.as_deref(), &look.skins, &look.render_styles),
         ];
         for (which, path, skins, styles) in models {
@@ -119,7 +137,11 @@ fn every_weapons_skins_resolve() {
             let loaded = match model::load(path, &file) {
                 Ok(l) => l,
                 Err(e) => {
-                    let cause = if e.contains("locked") { "model missing or locked" } else { "model doesn't load" };
+                    let cause = if e.contains("locked") {
+                        "model missing or locked"
+                    } else {
+                        "model doesn't load"
+                    };
                     count(cause.into(), format!("{what}: {e}"));
                     continue;
                 }
@@ -143,17 +165,27 @@ fn every_weapons_skins_resolve() {
                     Ok(None) => {}
                     Ok(Some((ok, n))) if ok > 1 => {
                         animated += 1;
-                        count("sprite skin, animated".into(), format!("{what}: {entry} ({ok} of {n} frames)"));
+                        count(
+                            "sprite skin, animated".into(),
+                            format!("{what}: {entry} ({ok} of {n} frames)"),
+                        );
                     }
                     Ok(Some(_)) => count("sprite skin, one frame (still)".into(), format!("{what}: {entry}")),
                     Err(e) => count(format!("grey: {e}"), format!("{what}: slot {:?} -> {entry:?}", slots)),
                 }
                 let style = usize::try_from(lod.render_style).ok().and_then(|i| styles.get(i));
-                let layered = style.is_some_and(|n| matches!(render_style::style(n), render_style::Style::Layered { .. }));
+                let layered =
+                    style.is_some_and(|n| matches!(render_style::style(n), render_style::Style::Layered { .. }));
                 if slots.len() > 1 {
                     let rest: Vec<String> = slots[1..]
                         .iter()
-                        .map(|i| usize::try_from(*i).ok().and_then(|i| skins.get(i)).cloned().unwrap_or_default())
+                        .map(|i| {
+                            usize::try_from(*i)
+                                .ok()
+                                .and_then(|i| skins.get(i))
+                                .cloned()
+                                .unwrap_or_default()
+                        })
                         .collect();
                     let cause = if layered {
                         "a second texture slot, drawn as an environment or rim map"
@@ -193,9 +225,19 @@ fn every_weapons_skins_resolve() {
     assert!(animated > 0, "no weapon piece has an animated sprite skin");
     // The playtest's grey "Prismatic" M416: a sprite skin was dropped.
     for w in &ca.weapon_set().weapons {
-        let Some(record) = ca.install_weapon(&w.id) else { continue };
-        for s in record.pv_skins.iter().filter(|s| s.to_ascii_lowercase().ends_with(".spr")) {
-            assert!(w.models.view_skins.contains(&model::normalize(s)), "{}: {s} kept", record.name);
+        let Some(record) = ca.install_weapon(&w.id) else {
+            continue;
+        };
+        for s in record
+            .pv_skins
+            .iter()
+            .filter(|s| s.to_ascii_lowercase().ends_with(".spr"))
+        {
+            assert!(
+                w.models.view_skins.contains(&model::normalize(s)),
+                "{}: {s} kept",
+                record.name
+            );
         }
     }
 }

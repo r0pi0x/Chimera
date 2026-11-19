@@ -58,10 +58,23 @@ fn es84_debris_table() {
     let t = table();
     assert_eq!(t.0.len(), 6);
     let names: Vec<&str> = t.0.iter().map(|r| r.name.as_str()).collect();
-    assert_eq!(names, ["None", "Window", "Window_smoll", "Window_Large", "56x56WoodBox", "Stone"]);
+    assert_eq!(
+        names,
+        [
+            "None",
+            "Window",
+            "Window_smoll",
+            "Window_Large",
+            "56x56WoodBox",
+            "Stone"
+        ]
+    );
     assert!(record("56x56woodbox").rotate != 0);
     let w = record("Window");
-    assert_eq!((w.models.len(), w.bounce_sounds.len(), w.explode_sounds.len()), (3, 2, 2));
+    assert_eq!(
+        (w.models.len(), w.bounce_sounds.len(), w.explode_sounds.len()),
+        (3, 2, 2)
+    );
     assert_eq!(record("Stone").world_vel_min, [-50.0, 100.0, -50.0]);
     // The install's form, read as attribute records.
     let doc = lithtech_formats::attributes::Document::parse(
@@ -74,9 +87,20 @@ fn es84_debris_table() {
     let parsed = CaDebrisTable::parse(&doc);
     assert_eq!(parsed.0.len(), 2);
     let r = &parsed.0[1];
-    assert_eq!((r.name.as_str(), r.surface, r.number, r.bounce), ("Window", 40, 30, [10, 15]));
+    assert_eq!(
+        (r.name.as_str(), r.surface, r.number, r.bounce),
+        ("Window", 40, 30, [10, 15])
+    );
     assert_eq!(r.vel_min, [-800.0, -500.0, -800.0]);
-    assert_eq!((r.models.len(), r.skins.len(), r.bounce_sounds.len(), r.explode_sounds.len()), (2, 1, 2, 1));
+    assert_eq!(
+        (
+            r.models.len(),
+            r.skins.len(),
+            r.bounce_sounds.len(),
+            r.explode_sounds.len()
+        ),
+        (2, 1, 2, 1)
+    );
 }
 
 /// 85. Counts: `Window` (30) high 20, medium 13, low 6; `56x56WoodBox`
@@ -84,7 +108,14 @@ fn es84_debris_table() {
 #[test]
 fn es85_debris_count() {
     let n = record("Window").number;
-    assert_eq!([count(n, DebrisLevel::High), count(n, DebrisLevel::Medium), count(n, DebrisLevel::Low)], [20, 13, 6]);
+    assert_eq!(
+        [
+            count(n, DebrisLevel::High),
+            count(n, DebrisLevel::Medium),
+            count(n, DebrisLevel::Low)
+        ],
+        [20, 13, 6]
+    );
     assert_eq!(count(record("56x56WoodBox").number, DebrisLevel::Low), 1);
     let none = &record("None");
     let p = launch(none, DebrisLevel::High, Vec3::ZERO, Vec3::Z, &mut draws(1));
@@ -100,9 +131,14 @@ fn es86_debris_velocity_bounds() {
     let r = &record("56x56WoodBox");
     let (f, right, up) = axes(Vec3::Z);
     assert_eq!((f, right, up), (Vec3::Z, Vec3::X, Vec3::Y));
-    assert_eq!(velocity_bounds(r, Vec3::Z), (Vec3::new(-150.0, 300.0, -150.0), Vec3::new(150.0, 500.0, 150.0)));
+    assert_eq!(
+        velocity_bounds(r, Vec3::Z),
+        (Vec3::new(-150.0, 300.0, -150.0), Vec3::new(150.0, 500.0, 150.0))
+    );
     let (lo, hi) = velocity_bounds(r, Vec3::X);
-    assert!(lo.abs_diff_eq(Vec3::new(-150.0, 300.0, 150.0), 1e-4) && hi.abs_diff_eq(Vec3::new(150.0, 500.0, -150.0), 1e-4));
+    assert!(
+        lo.abs_diff_eq(Vec3::new(-150.0, 300.0, 150.0), 1e-4) && hi.abs_diff_eq(Vec3::new(150.0, 500.0, -150.0), 1e-4)
+    );
     for dir in [Vec3::Z, Vec3::X] {
         for p in launch(r, DebrisLevel::High, Vec3::ZERO, dir, &mut draws(7)) {
             assert!(p.v.x.abs() <= 150.0 + 1e-3 && p.v.z.abs() <= 150.0 + 1e-3, "{}", p.v);
@@ -128,7 +164,13 @@ fn es87_debris_offsets() {
 /// 1.44]; alpha 0.7.
 #[test]
 fn es88_debris_models_and_scale() {
-    let p = launch(&record("Window"), DebrisLevel::High, Vec3::ZERO, Vec3::Z, &mut draws(11));
+    let p = launch(
+        &record("Window"),
+        DebrisLevel::High,
+        Vec3::ZERO,
+        Vec3::Z,
+        &mut draws(11),
+    );
     assert_eq!(p.len(), 20);
     for (i, x) in p.iter().enumerate() {
         assert_eq!(x.model, i % 3);
@@ -247,9 +289,27 @@ fn breakable_with_debris() -> T {
             Vec3::splat(10.0),
             &[("HitPoints", "10".into()), ("DebrisType", "Window".into())],
         ),
-        wm("WorldModelDebris", "BDebris0", Vec3::new(0.0, 50.0, 0.0), Vec3::splat(5.0), &[("Rotation", "0 0.5 0.25".into())]),
-        wm("WorldModelDebris", "BDebris1", Vec3::new(5.0, 50.0, 0.0), Vec3::splat(5.0), &[]),
-        wm("WorldModelDebris", "Other", Vec3::new(5.0, 50.0, 0.0), Vec3::splat(5.0), &[]),
+        wm(
+            "WorldModelDebris",
+            "BDebris0",
+            Vec3::new(0.0, 50.0, 0.0),
+            Vec3::splat(5.0),
+            &[("Rotation", "0 0.5 0.25".into())],
+        ),
+        wm(
+            "WorldModelDebris",
+            "BDebris1",
+            Vec3::new(5.0, 50.0, 0.0),
+            Vec3::splat(5.0),
+            &[],
+        ),
+        wm(
+            "WorldModelDebris",
+            "Other",
+            Vec3::new(5.0, 50.0, 0.0),
+            Vec3::splat(5.0),
+            &[],
+        ),
     ])
 }
 
@@ -265,15 +325,14 @@ fn wo48_debris_launch() {
     t.w.hit_dir = Vec3::X;
     let b = t.id("B");
     t.w.damage(b, 20.0, Default::default(), true);
-    let flights: Vec<_> = t
-        .w
-        .objects
-        .iter()
-        .filter_map(|o| match &o.kind {
-            Kind::Flight(f) => Some((o.name.clone(), f.v)),
-            _ => None,
-        })
-        .collect();
+    let flights: Vec<_> =
+        t.w.objects
+            .iter()
+            .filter_map(|o| match &o.kind {
+                Kind::Flight(f) => Some((o.name.clone(), f.v)),
+                _ => None,
+            })
+            .collect();
     assert_eq!(flights.len(), 2, "{flights:?}");
     assert_ne!(flights[0].1, flights[1].1, "own draws");
     assert!(t.w.fx.contains(&Fx::Debris {
@@ -317,10 +376,20 @@ fn wo51_fire() {
         "Gun",
         Vec3::new(0.0, 100.0, 0.0),
         Vec3::splat(10.0),
-        &[("WeaponId", "1225".into()), ("NeverDestroy", "0".into()), ("HitPoints", "10".into())],
+        &[
+            ("WeaponId", "1225".into()),
+            ("NeverDestroy", "0".into()),
+            ("HitPoints", "10".into()),
+        ],
     )]);
     t.send("Gun", "FIRE");
-    let fires = |t: &T| t.w.fx.iter().filter(|f| matches!(f, Fx::Fire { .. })).cloned().collect::<Vec<_>>();
+    let fires = |t: &T| {
+        t.w.fx
+            .iter()
+            .filter(|f| matches!(f, Fx::Fire { .. }))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
     assert_eq!(
         fires(&t),
         vec![Fx::Fire {
@@ -347,12 +416,18 @@ fn wo52_spawn() {
         "B",
         Vec3::new(10.0, 20.0, 30.0),
         Vec3::splat(10.0),
-        &[("HitPoints", "10".into()), ("Spawn", "Explosion (DamageRadius 300) (Name Boom)".into())],
+        &[
+            ("HitPoints", "10".into()),
+            ("Spawn", "Explosion (DamageRadius 300) (Name Boom)".into()),
+        ],
     )]);
     t.w.damage(0, 20.0, Default::default(), false);
     let id = t.id("Boom");
     let o = &t.w.objects[id as usize];
-    assert_eq!((o.class.as_str(), o.pose.pos), ("Explosion", Vec3::new(10.0, 20.0, 30.0)));
+    assert_eq!(
+        (o.class.as_str(), o.pose.pos),
+        ("Explosion", Vec3::new(10.0, 20.0, 30.0))
+    );
     assert!(matches!(o.kind, Kind::Explosion { radius: 300.0, .. }));
     assert!(!t.w.fx.iter().any(|f| matches!(f, Fx::Explode { .. })), "nothing yet");
     t.send("Boom", "ON");
@@ -445,9 +520,25 @@ fn clients_get_the_debris() {
     sim.set_frame(TICK_INTERVAL);
     sim.until_joined(600);
     sim.ticks(30);
-    let crate_ = sim.server.app.world().resource::<combat_arms::game::objects::CaObjects>().named("Crate").unwrap();
-    sim.server.app.world_mut().resource_mut::<combat_arms::game::objects::CaObjects>().world.hit_dir = Vec3::Z;
-    sim.server.app.world_mut().resource_mut::<combat_arms::game::objects::CaObjects>().world.damage(crate_, 50.0, Default::default(), false);
+    let crate_ = sim
+        .server
+        .app
+        .world()
+        .resource::<combat_arms::game::objects::CaObjects>()
+        .named("Crate")
+        .unwrap();
+    sim.server
+        .app
+        .world_mut()
+        .resource_mut::<combat_arms::game::objects::CaObjects>()
+        .world
+        .hit_dir = Vec3::Z;
+    sim.server
+        .app
+        .world_mut()
+        .resource_mut::<combat_arms::game::objects::CaObjects>()
+        .world
+        .damage(crate_, 50.0, Default::default(), false);
     combat_arms::game::objects::apply_effects(sim.server.app.world_mut());
     let mut got = 0;
     for _ in 0..30 {

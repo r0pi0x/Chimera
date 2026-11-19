@@ -25,14 +25,23 @@ pub(crate) fn v(x: f32, y: f32, z: f32) -> String {
 
 /// An object: class, name, properties.
 pub(crate) fn obj(class: &str, name: &str, props: &[(&str, String)]) -> (Vec<(String, String)>, Option<Vec3>) {
-    let mut kv = vec![("classname".to_string(), class.to_string()), ("targetname".to_string(), name.to_string())];
+    let mut kv = vec![
+        ("classname".to_string(), class.to_string()),
+        ("targetname".to_string(), name.to_string()),
+    ];
     kv.extend(props.iter().map(|(k, v)| (k.to_string(), v.clone())));
     (kv, None)
 }
 
 /// A world model at `centre` with box half-extents `half`, solid and
 /// ray-hit.
-pub(crate) fn wm(class: &str, name: &str, centre: Vec3, half: Vec3, props: &[(&str, String)]) -> (Vec<(String, String)>, Option<Vec3>) {
+pub(crate) fn wm(
+    class: &str,
+    name: &str,
+    centre: Vec3,
+    half: Vec3,
+    props: &[(&str, String)],
+) -> (Vec<(String, String)>, Option<Vec3>) {
     let (mut kv, _) = obj(class, name, props);
     kv.push((keys::HALF.into(), v(half.x, half.y, half.z)));
     kv.push((keys::SOLID.into(), "1".into()));
@@ -81,7 +90,15 @@ impl T {
     pub(crate) fn send_from(&mut self, name: &str, message: &str, who: Who) {
         self.w.now = self.t;
         let id = self.id(name);
-        self.w.deliver(id, message, Ctx { sender: who, target: None, ..Ctx::default() });
+        self.w.deliver(
+            id,
+            message,
+            Ctx {
+                sender: who,
+                target: None,
+                ..Ctx::default()
+            },
+        );
     }
 
     pub(crate) fn run(&mut self, text: &str) {
@@ -98,7 +115,12 @@ impl T {
     }
 
     pub(crate) fn yaw(&self, name: &str) -> f32 {
-        self.w.objects[self.id(name) as usize].awm().unwrap().angles.y.to_degrees()
+        self.w.objects[self.id(name) as usize]
+            .awm()
+            .unwrap()
+            .angles
+            .y
+            .to_degrees()
     }
 
     pub(crate) fn var(&self, name: &str) -> Option<i32> {
@@ -173,22 +195,20 @@ fn t05_sliding_waveforms() {
 /// Case 6: a rotating door reversed half-way.
 #[test]
 fn t06_rotating_door_reversed() {
-    let mut t = T::new(vec![
-        wm(
-            "RotatingDoor",
-            "Door",
-            Vec3::ZERO,
-            Vec3::new(32.0, 64.0, 4.0),
-            &[
-                ("Pos", v(-32.0, 0.0, 0.0)),
-                ("RotationAngles", v(0.0, 90.0, 0.0)),
-                ("OpeningTime", "1".into()),
-                ("ClosingTime", "1".into()),
-                ("OpenAway", "0".into()),
-                ("ClosedCommand", "add closed 1".into()),
-            ],
-        ),
-    ]);
+    let mut t = T::new(vec![wm(
+        "RotatingDoor",
+        "Door",
+        Vec3::ZERO,
+        Vec3::new(32.0, 64.0, 4.0),
+        &[
+            ("Pos", v(-32.0, 0.0, 0.0)),
+            ("RotationAngles", v(0.0, 90.0, 0.0)),
+            ("OpeningTime", "1".into()),
+            ("ClosingTime", "1".into()),
+            ("OpenAway", "0".into()),
+            ("ClosedCommand", "add closed 1".into()),
+        ],
+    )]);
     t.run("int closed 0");
     t.send("Door", "TRIGGER");
     t.frames(10);
@@ -218,7 +238,11 @@ fn t07_blocked_door() {
             "Door",
             Vec3::ZERO,
             Vec3::new(50.0, 50.0, 10.0),
-            &[("MoveDir", v(1.0, 0.0, 0.0)), ("MoveDist", "100".into()), ("PowerOnTime", "1".into())],
+            &[
+                ("MoveDir", v(1.0, 0.0, 0.0)),
+                ("MoveDist", "100".into()),
+                ("PowerOnTime", "1".into()),
+            ],
         )]);
         // The door's right face reaches 77 u from its 6th moving frame.
         let mut c = player(1, Vec3::new(77.0, -40.0, -20.0), Vec3::new(110.0, 40.0, 20.0));
@@ -229,7 +253,11 @@ fn t07_blocked_door() {
         close(t.pos("Door").x, 25.0, 1e-3, "stopped at 25 u");
         let tau = t.w.objects[0].awm().unwrap().tau;
         close(tau, 0.25, 1e-4, "the timer waits");
-        assert!(t.w.fx.iter().all(|f| !matches!(f, combat_arms::game::objects::runtime::Fx::Carry { .. })));
+        assert!(
+            t.w.fx
+                .iter()
+                .all(|f| !matches!(f, combat_arms::game::objects::runtime::Fx::Carry { .. }))
+        );
         t.w.chars.clear();
         t.frames(15);
         close(t.pos("Door").x, 100.0, 1e-3, "open once they left");
@@ -251,13 +279,25 @@ fn t23_door_link() {
     };
     let mut t = T::new(vec![door("L", -40.0, "R"), door("R", 40.0, "")]);
     let p = Who::Character(7);
-    t.w.chars = vec![player(7, Vec3::new(-20.0, -50.0, -200.0), Vec3::new(20.0, 50.0, -150.0))];
+    t.w.chars = vec![player(
+        7,
+        Vec3::new(-20.0, -50.0, -200.0),
+        Vec3::new(20.0, 50.0, -150.0),
+    )];
     t.send_from("L", "ACTIVATE", p);
-    assert_eq!((t.state("L"), t.state("R")), (State::PowerOn, State::PowerOn), "both open");
+    assert_eq!(
+        (t.state("L"), t.state("R")),
+        (State::PowerOn, State::PowerOn),
+        "both open"
+    );
     t.frames(30);
     assert_eq!((t.state("L"), t.state("R")), (State::On, State::On));
     t.send_from("R", "ACTIVATE", p);
-    assert_eq!((t.state("L"), t.state("R")), (State::On, State::PowerOff), "closing isn't linked");
+    assert_eq!(
+        (t.state("L"), t.state("R")),
+        (State::On, State::PowerOff),
+        "closing isn't linked"
+    );
     // A bot opens only its own.
     let mut t = T::new(vec![door("L", -40.0, "R"), door("R", 40.0, "")]);
     let mut bot = player(8, Vec3::new(-20.0, -50.0, -200.0), Vec3::new(20.0, 50.0, -150.0));
@@ -326,9 +366,16 @@ fn t25_no_crush() {
     t.send("Shutter", "TRIGGER");
     t.frames(60);
     let bottom = t.pos("Shutter").y - 50.0;
-    assert!(bottom >= 60.0 - 1e-3 && bottom < 70.0, "stopped above the player: {bottom}");
+    assert!(
+        bottom >= 60.0 - 1e-3 && bottom < 70.0,
+        "stopped above the player: {bottom}"
+    );
     assert_eq!(t.state("Shutter"), State::PowerOn);
-    assert!(t.w.fx.iter().all(|f| !matches!(f, combat_arms::game::objects::runtime::Fx::Explode { .. })));
+    assert!(
+        t.w.fx
+            .iter()
+            .all(|f| !matches!(f, combat_arms::game::objects::runtime::Fx::Explode { .. }))
+    );
 }
 
 /// Riders (world_objects.md 10, server): a player standing on a lift
@@ -375,7 +422,11 @@ fn riders_only_on_solid_world_models() {
         up
     };
     close(carried(true), 100.0, 1e-2, "carried up with a solid lift");
-    assert_eq!(carried(false), 0.0, "nothing stands on a world model that doesn't collide");
+    assert_eq!(
+        carried(false),
+        0.0,
+        "nothing stands on a world model that doesn't collide"
+    );
 }
 
 /// A trigger relay with `props`, its first command `msg <out> toggle`.
@@ -431,15 +482,14 @@ fn t17_trigger_delays() {
     for _ in 0..20 {
         let now = t.t;
         t.frame();
-        let to: Vec<_> = t
-            .w
-            .fx
-            .drain(..)
-            .filter_map(|f| match f {
-                combat_arms::game::objects::runtime::Fx::CharacterMessage { who, .. } => Some(who),
-                _ => None,
-            })
-            .collect();
+        let to: Vec<_> =
+            t.w.fx
+                .drain(..)
+                .filter_map(|f| match f {
+                    combat_arms::game::objects::runtime::Fx::CharacterMessage { who, .. } => Some(who),
+                    _ => None,
+                })
+                .collect();
         if !to.is_empty() {
             assert_eq!(to, [b], "the second toucher is the sender");
             fired_at = Some(now);
@@ -450,7 +500,14 @@ fn t17_trigger_delays() {
     assert!((at - 1.0).abs() < 1e-6, "at the first update with t >= 1: {at}");
 
     // TriggerDelay 2: touches at 0, 1, 2.5 fire at 0 and 2.5.
-    let mut t = T::new(vec![trigger("T", &[("TriggerDelay", "2".into()), ("NumberOfActivations", "0".into()), ("Command1", "add n 1".into())])]);
+    let mut t = T::new(vec![trigger(
+        "T",
+        &[
+            ("TriggerDelay", "2".into()),
+            ("NumberOfActivations", "0".into()),
+            ("Command1", "add n 1".into()),
+        ],
+    )]);
     t.run("int n 0");
     let mut fires = Vec::new();
     for k in 0..60 {
@@ -500,7 +557,11 @@ fn t18_weighted_trigger() {
 fn t19_bots_and_triggers() {
     let mut t = T::new(vec![trigger(
         "T",
-        &[("AITriggerable", "1".into()), ("Dims", v(50.0, 50.0, 50.0)), ("Command1", "add n 1".into())],
+        &[
+            ("AITriggerable", "1".into()),
+            ("Dims", v(50.0, 50.0, 50.0)),
+            ("Command1", "add n 1".into()),
+        ],
     )]);
     t.run("int n 0");
     let mut bot = player(1, Vec3::splat(-10.0), Vec3::splat(10.0));
@@ -598,7 +659,11 @@ fn t22_event_counter() {
     assert!(t.on("A"), "on at 3");
     t.send("E", "DEC");
     assert_eq!(value(&t), 2);
-    assert_eq!(t.var("down"), Some(1), "each single step down runs the event at its new count");
+    assert_eq!(
+        t.var("down"),
+        Some(1),
+        "each single step down runs the event at its new count"
+    );
     t.send("E", "DEC 5");
     assert_eq!(value(&t), 0, "never below 0");
 }
@@ -660,7 +725,11 @@ fn breakable_death_and_reset() {
             lamp("FX"),
             (
                 {
-                    let (mut kv, _) = obj("Explosion", "Boom", &[("MaxDamage", "5".into()), ("DamageRadius", "200".into())]);
+                    let (mut kv, _) = obj(
+                        "Explosion",
+                        "Boom",
+                        &[("MaxDamage", "5".into()), ("DamageRadius", "200".into())],
+                    );
                     kv.push(("origin".into(), v(10.0, 0.0, 0.0)));
                     kv
                 },
@@ -703,7 +772,11 @@ fn breakable_death_and_reset() {
 #[test]
 fn startup_command_switches_a_volume() {
     let mut t = T::new(vec![
-        obj("StartupCommand", "Start", &[("Command", "msg Box_Kill01 off; delay 7 (msg Box_Kill01 on)".into())]),
+        obj(
+            "StartupCommand",
+            "Start",
+            &[("Command", "msg Box_Kill01 off; delay 7 (msg Box_Kill01 on)".into())],
+        ),
         obj("EndlessFall", "Box_Kill01", &[]),
     ]);
     let vol = t.id("Box_Kill01");
@@ -737,7 +810,11 @@ fn keyframer_moves_its_object() {
         obj(
             "KeyFramer",
             "KF",
-            &[("ObjectName", "Snd".into()), ("BaseKeyName", "K".into()), (keys::KEYS, hex)],
+            &[
+                ("ObjectName", "Snd".into()),
+                ("BaseKeyName", "K".into()),
+                (keys::KEYS, hex),
+            ],
         ),
         {
             let (mut kv, _) = obj("SoundFX", "Snd", &[]);

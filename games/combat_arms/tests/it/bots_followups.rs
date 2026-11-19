@@ -46,8 +46,16 @@ fn case_47_speeds() {
 }
 
 fn volume(name: &str, class: &str, min: [f32; 3], max: [f32; 3], only_down: bool) -> MapEntity {
-    let c = [(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0, (min[2] + max[2]) / 2.0];
-    let h = [(max[0] - min[0]) / 2.0, (max[1] - min[1]) / 2.0, (max[2] - min[2]) / 2.0];
+    let c = [
+        (min[0] + max[0]) / 2.0,
+        (min[1] + max[1]) / 2.0,
+        (min[2] + max[2]) / 2.0,
+    ];
+    let h = [
+        (max[0] - min[0]) / 2.0,
+        (max[1] - min[1]) / 2.0,
+        (max[2] - min[2]) / 2.0,
+    ];
     // The entity's vectors are the world file's (x z y in the entity).
     MapEntity {
         keyvalues: vec![
@@ -99,7 +107,10 @@ fn case_50_footstep_keys() {
     let mut steps = Vec::new();
     for tick in 1..=80 {
         let next = (t + 15) % 600;
-        if math::footstep_keys("LRF").iter().any(|k| math::passed_key(t, next, 600, *k)) {
+        if math::footstep_keys("LRF")
+            .iter()
+            .any(|k| math::passed_key(t, next, 600, *k))
+        {
             steps.push(tick * 15);
         }
         t = next;
@@ -180,11 +191,19 @@ fn case_55_bot_protection_and_respawn() {
 /// stays silent for the cooldown.
 #[test]
 fn case_56_chat() {
-    let mut c = CaChat { set: 0, until: 0.0, dead: false };
+    let mut c = CaChat {
+        set: 0,
+        until: 0.0,
+        dead: false,
+    };
     let line = c.event(Event::Kill, 30.0, 30_042, 20.0, 3);
     assert_eq!(line.as_deref(), Some("$Message0_Kill_3"));
     assert_eq!(c.until, 50.0);
-    let mut c = CaChat { set: 0, until: 0.0, dead: false };
+    let mut c = CaChat {
+        set: 0,
+        until: 0.0,
+        dead: false,
+    };
     assert_eq!(c.event(Event::Kill, 30.0, 30_075, 20.0, 3), None);
     assert_eq!(c.event(Event::Kill, 40.0, 40_010, 20.0, 3), None, "silent until 50 s");
     assert!(c.event(Event::Kill, 50.0, 50_010, 20.0, 3).is_some());

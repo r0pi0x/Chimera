@@ -32,7 +32,11 @@ const DT: f32 = 0.015;
 
 /// Health lost by `p` so far (HP), from the logged damage.
 fn lost(t: &T, p: Entity) -> f32 {
-    t.damage().iter().filter(|d: &&Damage| d.target == p).map(|d| d.amount * movement_data().health_points).sum()
+    t.damage()
+        .iter()
+        .filter(|d: &&Damage| d.target == p)
+        .map(|d| d.amount * movement_data().health_points)
+        .sum()
 }
 
 fn clock(t: &T) -> f64 {
@@ -112,9 +116,22 @@ fn c3_damage_volume_heals() {
         t.ticks(67);
         health(&t, p) - 0.5
     };
-    close(run(Box::new(|_| {}), 1), 0.0025 * 67.0 * DT, 0.0003, "a heal of 0.25 HP per second");
-    close(run(Box::new(|v| v.target_team = Some(2)), 1), 0.0, 1e-6, "the other team is unaffected");
-    assert!(run(Box::new(|v| v.target_team = Some(1)), 1) > 0.0, "its own team heals");
+    close(
+        run(Box::new(|_| {}), 1),
+        0.0025 * 67.0 * DT,
+        0.0003,
+        "a heal of 0.25 HP per second",
+    );
+    close(
+        run(Box::new(|v| v.target_team = Some(2)), 1),
+        0.0,
+        1e-6,
+        "the other team is unaffected",
+    );
+    assert!(
+        run(Box::new(|v| v.target_team = Some(1)), 1) > 0.0,
+        "its own team heals"
+    );
     close(run(Box::new(|v| v.locked = true), 1), 0.0, 1e-6, "locked");
     let mut t = T::standing();
     let s = movement_data().meters_per_unit;
@@ -151,7 +168,11 @@ fn c5_pending_grid() {
     t.teleport(on(0.0, 0.0, 0.0));
     while clock(&t) - t0 < 1.95 {
         t.tick();
-        assert!(t.damage().iter().all(|d| d.target != t.p), "not damaged by {}", clock(&t) - t0);
+        assert!(
+            t.damage().iter().all(|d| d.target != t.p),
+            "not damaged by {}",
+            clock(&t) - t0
+        );
     }
     while clock(&t) - t0 < 2.1 {
         t.tick();
@@ -171,11 +192,17 @@ fn c6_messages_change_volumes() {
         vec![
             Object {
                 class: "VolumeBrush".into(),
-                properties: vec![prop("Name", Value::String("Gas".into())), prop("Damage", Value::Real(400.0))],
+                properties: vec![
+                    prop("Name", Value::String("Gas".into())),
+                    prop("Damage", Value::Real(400.0)),
+                ],
             },
             Object {
                 class: "JumpVolume".into(),
-                properties: vec![prop("Name", Value::String("Pad".into())), prop("Velocity", Value::Real(1000.0))],
+                properties: vec![
+                    prop("Name", Value::String("Pad".into())),
+                    prop("Velocity", Value::Real(1000.0)),
+                ],
             },
         ],
     );
@@ -189,7 +216,10 @@ fn c6_messages_change_volumes() {
     sim.seconds(1.0);
     close(1.0 - health(&sim), 0.20, 0.03, "20 HP in a second (Damage 400)");
     let msg = |sim: &mut Sim, target: &str, message: &str| {
-        sim.app.world_mut().write_message(CaObjectMessage { target: target.into(), message: message.into() });
+        sim.app.world_mut().write_message(CaObjectMessage {
+            target: target.into(),
+            message: message.into(),
+        });
     };
     msg(&mut sim, "Gas", "DamageVal 0");
     sim.seconds(0.5);
@@ -199,7 +229,12 @@ fn c6_messages_change_volumes() {
     msg(&mut sim, "Pad", "VELOCITY 2000");
     sim.seconds(0.2);
     let w = sim.app.world_mut();
-    let speeds: Vec<f32> = w.query::<&CaVolume>().iter(w).filter_map(|v| v.jump_velocity).map(|j| j.length()).collect();
+    let speeds: Vec<f32> = w
+        .query::<&CaVolume>()
+        .iter(w)
+        .filter_map(|v| v.jump_velocity)
+        .map(|j| j.length())
+        .collect();
     assert_eq!(speeds.len(), 1);
     close(speeds[0], 2000.0, 1.0, "the pad's new speed");
 }
@@ -211,14 +246,21 @@ struct Heard(Vec<CaSound>);
 #[test]
 fn c7_pad_sound() {
     let mut t = T::standing();
-    t.sim.app.init_resource::<Heard>().add_systems(
-        Last,
-        |mut r: MessageReader<CaSound>, mut h: ResMut<Heard>| h.0.extend(r.read().cloned()),
-    );
+    t.sim
+        .app
+        .init_resource::<Heard>()
+        .add_systems(Last, |mut r: MessageReader<CaSound>, mut h: ResMut<Heard>| {
+            h.0.extend(r.read().cloned())
+        });
     let (lo, hi) = slab(-10.0, 2000.0);
     volume(&mut t, "JumpVolume", lo, hi, |v| {
         v.jump_velocity = Some(Vec3::new(0.0, 800.0, 0.0));
-        v.pad_sound = Some(PadSound { file: "pad.wav".into(), inner: 300.0, outer: 300.0, three_d: true });
+        v.pad_sound = Some(PadSound {
+            file: "pad.wav".into(),
+            inner: 300.0,
+            outer: 300.0,
+            three_d: true,
+        });
     });
     t.tick();
     let heard = t.sim.app.world().resource::<Heard>().0.clone();

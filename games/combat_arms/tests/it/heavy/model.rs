@@ -66,7 +66,10 @@ fn hq_flag_converts_and_animates() {
             moved = moved.max((pose[j].0 * Vec3::X - set.defaults[j].0 * Vec3::X).length());
         }
     }
-    eprintln!("hq flag: {} frames at {} fps, largest axis change from bind {moved}", a.frames, a.fps);
+    eprintln!(
+        "hq flag: {} frames at {} fps, largest axis change from bind {moved}",
+        a.frames, a.fps
+    );
     assert!(moved > 0.05);
 }
 
@@ -79,7 +82,10 @@ fn m92fs_view_model_converts() {
     let loaded = model::load("GUNS_M_PV_Pistol\\PV_PST_M92FS_SH.LTB", &file).unwrap();
     let m = model::convert(&loaded, 0.01, &|_| String::new());
     let rig = m.rig.as_ref().unwrap();
-    assert_eq!((rig.bones.len(), m.meshes.len(), rig.animations.sequences.len()), (51, 5, 14));
+    assert_eq!(
+        (rig.bones.len(), m.meshes.len(), rig.animations.sequences.len()),
+        (51, 5, 14)
+    );
     assert_eq!(rig.animations.sequence("select"), Some(1));
     // `select` is 650 ms.
     assert!((rig.animations.duration(1) - 0.65).abs() < 1e-3);
@@ -92,11 +98,7 @@ fn m92fs_view_model_converts() {
 fn ctf_flags_need_the_v2_key() {
     let Some(mount) = mount() else { return };
     let map = world::load_from(&mount, "junk_flea2").unwrap();
-    let flags = map
-        .entities
-        .iter()
-        .filter(|e| e.classname() == "FlagItem")
-        .count();
+    let flags = map.entities.iter().filter(|e| e.classname() == "FlagItem").count();
     let warned = map.warnings.iter().any(|w| w.starts_with("FlagItem model:"));
     eprintln!("junk_flea2: {flags} flags, warned {warned}");
     if mount.read("attach_m/flag01_ground.ltb").is_ok() {
@@ -134,7 +136,11 @@ fn dev_prop_in_front_of_the_spawn() {
         p.translation,
         m.meshes.len(),
         rig.bones.len(),
-        rig.animations.sequences.iter().map(|s| (&s.name, rig.animations.duration(0))).collect::<Vec<_>>()
+        rig.animations
+            .sequences
+            .iter()
+            .map(|s| (&s.name, rig.animations.duration(0)))
+            .collect::<Vec<_>>()
     );
     assert_eq!(map.textures.len(), textures_before + 1);
     assert!(m.meshes.iter().all(|m| m.texture.is_some()));

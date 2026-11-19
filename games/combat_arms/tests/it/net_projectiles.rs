@@ -12,15 +12,15 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
+use chimera_core::core::Intent;
+use chimera_net::net::own_items::{OwnItemSettings, PredictedItem};
 use chimera_net::{
     harness::NetSim,
     net::{NetItem, memory::LinkConditions, server::RateLimits},
 };
-use chimera_core::core::Intent;
-use chimera_net::net::own_items::{OwnItemSettings, PredictedItem};
 use chimera_sim::weapon::{self, Inventory, Magazine, Weapon};
-use chimera_world::map::loose::ShownItem;
 use chimera_world::greybox::GreyboxMapPlugin;
+use chimera_world::map::loose::ShownItem;
 use combat_arms::{
     game::{
         TICK_INTERVAL,
@@ -115,7 +115,11 @@ fn sample(sim: &mut NetSim, server: Entity, frames: usize) -> Vec<(Vec3, f32)> {
         sim.step();
         let Some(speed) = server_speed(sim, server) else { break };
         let w = sim.clients[0].app.world_mut();
-        let drawn = w.query_filtered::<&Transform, With<NetItem>>().iter(w).next().map(|t| t.translation);
+        let drawn = w
+            .query_filtered::<&Transform, With<NetItem>>()
+            .iter(w)
+            .next()
+            .map(|t| t.translation);
         if let Some(d) = drawn {
             out.push((d, speed));
         }
@@ -253,7 +257,10 @@ fn net_own_projectile_drawn_from_the_shot() {
                 .iter(w)
                 .map(|(t, p)| (t.translation, p.velocity.length()))
                 .collect();
-            let model_shown = w.query_filtered::<(), (With<NetItem>, With<ShownItem>)>().iter(w).count();
+            let model_shown = w
+                .query_filtered::<(), (With<NetItem>, With<ShownItem>)>()
+                .iter(w)
+                .count();
             copy_seen |= w.query::<&NetItem>().iter(w).count() > 0;
             if fired_at == Some(frame) {
                 assert_eq!(predicted.len(), 1, "{id}: drawn on the fire frame");
@@ -264,7 +271,11 @@ fn net_own_projectile_drawn_from_the_shot() {
                 speed = speed.max(*v);
             }
             let w = sim.clients[1].app.world_mut();
-            other_saw |= w.query_filtered::<(), (With<NetItem>, With<ShownItem>)>().iter(w).count() > 0;
+            other_saw |= w
+                .query_filtered::<(), (With<NetItem>, With<ShownItem>)>()
+                .iter(w)
+                .count()
+                > 0;
             if fired_at.is_some() && frame > fired_at.unwrap() + 20 && predicted.is_empty() {
                 break;
             }
@@ -285,8 +296,15 @@ fn net_own_projectile_drawn_from_the_shot() {
         };
         let w = sim.clients[0].app.world_mut();
         let left: Vec<String> = w.query::<&PredictedItem>().iter(w).map(|p| format!("{p:?}")).collect();
-        let copies: Vec<String> = w.query::<(&NetItem, &Transform)>().iter(w).map(|p| format!("{p:?}")).collect();
-        assert!(left.is_empty(), "{id}: gone after the blast: {left:?}; copies {copies:?}; server {objs:?}");
+        let copies: Vec<String> = w
+            .query::<(&NetItem, &Transform)>()
+            .iter(w)
+            .map(|p| format!("{p:?}"))
+            .collect();
+        assert!(
+            left.is_empty(),
+            "{id}: gone after the blast: {left:?}; copies {copies:?}; server {objs:?}"
+        );
     }
 }
 
@@ -314,7 +332,10 @@ fn net_own_projectile_from_the_server_by_default() {
         }
         let w = sim.clients[0].app.world_mut();
         assert_eq!(w.query::<&PredictedItem>().iter(w).count(), 0, "no prediction");
-        shown += w.query_filtered::<(), (With<NetItem>, With<ShownItem>)>().iter(w).count();
+        shown += w
+            .query_filtered::<(), (With<NetItem>, With<ShownItem>)>()
+            .iter(w)
+            .count();
     }
     assert!(shown > 10, "the server's copy drawn ({shown} frames)");
 }
@@ -377,11 +398,17 @@ fn net_flight_sounds_play_on_clients() {
         effects::attached::{CaFlightLook, fly_sound_key},
         special::ProjectileLook,
     };
-    let link = LinkConditions { latency: Duration::from_millis(30), jitter: Duration::ZERO, loss: 0.0 };
+    let link = LinkConditions {
+        latency: Duration::from_millis(30),
+        jitter: Duration::ZERO,
+        loss: 0.0,
+    };
     let mut sim = NetSim::new(CaSim, link, 7, 1, |app| {
         app.add_plugins(GreyboxMapPlugin).init_resource::<Loops>().add_systems(
             Last,
-            |mut r: MessageReader<combat_arms::game::view_model::attached::CaLoopSound>, mut l: ResMut<Loops>| l.0.extend(r.read().cloned()),
+            |mut r: MessageReader<combat_arms::game::view_model::attached::CaLoopSound>, mut l: ResMut<Loops>| {
+                l.0.extend(r.read().cloned())
+            },
         );
     });
     sim.set_frame(TICK_INTERVAL);
@@ -395,13 +422,31 @@ fn net_flight_sounds_play_on_clients() {
     };
     // A device, a grenade and a bolt, each given a look with sounds on the
     // server (the stock data has none without the install's records).
-    for (how, id) in [(Make::Device, "combat_arms:caltrops"), (Make::Grenade, M67), (Make::Bolt, "combat_arms:assassin_bowgun_nor")] {
+    for (how, id) in [
+        (Make::Device, "combat_arms:caltrops"),
+        (Make::Grenade, M67),
+        (Make::Bolt, "combat_arms:assassin_bowgun_nor"),
+    ] {
         sim.clients[0].app.world_mut().resource_mut::<Loops>().0.clear();
-        let e = make(&mut sim, how, id, Vec3::new(0.0, 40.0, 0.0), Vec3::new(0.3, 1.0, 0.2).normalize());
-        sim.server.app.world_mut().entity_mut(e).insert(CaFlightLook(look.clone()));
+        let e = make(
+            &mut sim,
+            how,
+            id,
+            Vec3::new(0.0, 40.0, 0.0),
+            Vec3::new(0.3, 1.0, 0.2).normalize(),
+        );
+        sim.server
+            .app
+            .world_mut()
+            .entity_mut(e)
+            .insert(CaFlightLook(look.clone()));
         sim.ticks(40);
         let w = sim.clients[0].app.world_mut();
-        let copy: Vec<_> = w.query::<(Entity, &CaFlightLook)>().iter(w).map(|(e, l)| (e, l.0.clone())).collect();
+        let copy: Vec<_> = w
+            .query::<(Entity, &CaFlightLook)>()
+            .iter(w)
+            .map(|(e, l)| (e, l.0.clone()))
+            .collect();
         assert_eq!(copy.len(), 1, "{id}: the look arrives on the client");
         assert_eq!(copy[0].1, look, "{id}");
         let heard = &w.resource::<Loops>().0;
@@ -409,19 +454,35 @@ fn net_flight_sounds_play_on_clients() {
             .iter()
             .find(|l| l.key == fly_sound_key(copy[0].0))
             .unwrap_or_else(|| panic!("{id}: no fly sound on the client: {heard:?}"));
-        assert_eq!(fly.sound.as_ref().map(|s| s.file.as_str()), Some("test_snd/fly.wav"), "{id}");
-        assert_eq!((fly.follow, fly.once), (Some(copy[0].0), false), "{id}: loops, following it");
+        assert_eq!(
+            fly.sound.as_ref().map(|s| s.file.as_str()),
+            Some("test_snd/fly.wav"),
+            "{id}"
+        );
+        assert_eq!(
+            (fly.follow, fly.once),
+            (Some(copy[0].0), false),
+            "{id}: loops, following it"
+        );
         // Gone: the sound stops.
         if let Ok(s) = sim.server.app.world_mut().get_entity_mut(e) {
             s.despawn();
         }
         sim.ticks(60);
         let heard = &sim.clients[0].app.world().resource::<Loops>().0;
-        assert!(heard.iter().any(|l| l.sound.is_none() && l.key == fly_sound_key(copy[0].0)), "{id}: stopped with it");
+        assert!(
+            heard
+                .iter()
+                .any(|l| l.sound.is_none() && l.key == fly_sound_key(copy[0].0)),
+            "{id}: stopped with it"
+        );
     }
     // The create sounds, by the entry a server sound carries.
     let ca = combat_arms::game::data::CaData::builtin();
     let ready = combat_arms::game::effects::sounds::create_sounds(ca.weapon_set());
-    let caltrops = ready.iter().find(|s| s.file == "guns_snd_throwing/caltrops/fire.wav").expect("the caltrops' create sound");
+    let caltrops = ready
+        .iter()
+        .find(|s| s.file == "guns_snd_throwing/caltrops/fire.wav")
+        .expect("the caltrops' create sound");
     assert_eq!(caltrops.radii.1, 300.0);
 }

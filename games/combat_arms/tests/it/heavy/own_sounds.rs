@@ -9,7 +9,12 @@
 //! note without it. `--nocapture` for the counts.
 
 use chimera_core::mount::config::LocalConfig;
-use combat_arms::game::{GAME, data::CaData, effects::data::{CaWeaponFx, EFFECTS}, model};
+use combat_arms::game::{
+    GAME,
+    data::CaData,
+    effects::data::{CaWeaponFx, EFFECTS},
+    model,
+};
 
 #[test]
 fn every_weapon_plays_its_records_fire_sound() {
@@ -24,7 +29,9 @@ fn every_weapon_plays_its_records_fire_sound() {
     }
     let (mut named, mut own, mut silent, mut other) = (0, 0, 0, Vec::new());
     for w in &ca.weapon_set().weapons {
-        let Some(record) = ca.install_weapon(&w.id) else { continue };
+        let Some(record) = ca.install_weapon(&w.id) else {
+            continue;
+        };
         let Some(fx) = w.hook::<CaWeaponFx>(EFFECTS) else {
             if !record.fire_snd.is_empty() {
                 other.push(format!("{}: no effects table", record.name));
@@ -39,7 +46,10 @@ fn every_weapon_plays_its_records_fire_sound() {
         if fx.fire_sound == model::normalize(&record.fire_snd) {
             own += 1;
         } else {
-            other.push(format!("{}: plays {:?}, record {:?}", record.name, fx.fire_sound, record.fire_snd));
+            other.push(format!(
+                "{}: plays {:?}, record {:?}",
+                record.name, fx.fire_sound, record.fire_snd
+            ));
         }
     }
     println!(
@@ -49,7 +59,11 @@ fn every_weapon_plays_its_records_fire_sound() {
     for o in other.iter().take(20) {
         println!("  {o}");
     }
-    assert!(other.is_empty(), "{} weapons play another file than their record's", other.len());
+    assert!(
+        other.is_empty(),
+        "{} weapons play another file than their record's",
+        other.len()
+    );
 
     // Ours, from the install: the shells the audit found wrong.
     let fire = |id: &str| w_fx(&ca, id).fire;
@@ -58,5 +72,8 @@ fn every_weapon_plays_its_records_fire_sound() {
 }
 
 fn w_fx(ca: &CaData, id: &str) -> CaWeaponFx {
-    ca.weapon_set().get(id).and_then(|w| w.hook(EFFECTS)).unwrap_or_else(|| panic!("{id} has no effects"))
+    ca.weapon_set()
+        .get(id)
+        .and_then(|w| w.hook(EFFECTS))
+        .unwrap_or_else(|| panic!("{id} has no effects"))
 }
