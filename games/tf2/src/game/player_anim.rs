@@ -559,7 +559,7 @@ fn follow_class(
         Option<&mut source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>,
         Option<&Inventory>,
         Option<&super::classes::RungClass>,
-    )>,
+    ), Or<(With<Tf2PlayerAnim>, With<source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>)>>,
     weapons: Query<&crate::weapon::Weapon>,
     table: Option<Res<super::classes::Classes>>,
 ) {
@@ -590,7 +590,10 @@ fn follow_class(
 /// (`SimAnimState`, whose pose clients draw others with: `anim_net`).
 #[allow(clippy::type_complexity)]
 fn follow_spin(
-    mut bodies: Query<(Option<&mut Tf2PlayerAnim>, Option<&mut source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>, Option<&Inventory>)>,
+    mut bodies: Query<
+        (Option<&mut Tf2PlayerAnim>, Option<&mut source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>, Option<&Inventory>),
+        Or<(With<Tf2PlayerAnim>, With<source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>)>,
+    >,
     guns: Query<&super::weapons::minigun::Tf2Minigun>,
 ) {
     use super::weapons::minigun::Spin;
