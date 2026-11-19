@@ -96,6 +96,7 @@ impl Plugin for LocalInputPlugin {
         app.init_resource::<MouseSettings>()
             .init_resource::<super::binds::PolledBinds>()
             .init_resource::<WheelJump>()
+            .init_resource::<PinOnGrab>()
             .init_resource::<FreeLook>()
             .init_resource::<super::binds::CapturedKeys>()
             .register_type::<MouseSettings>()
@@ -189,6 +190,37 @@ pub fn capture_cursor(cursor: &mut CursorOptions) {
 const REGRAB_FRAMES: u32 = 30;
 const REASSERT_EVERY: u32 = 10;
 
+/// Whether a grab first puts the pointer inside the window when the
+/// window doesn't know it to be there (`grab_cursor`). Windows locks the
+/// cursor where it is (winit clips it to that one pixel): focus coming
+/// from a taskbar click leaves the pointer on the taskbar, outside the
+/// window, with no `CursorEntered`, so the locked pointer kept sending
+/// the clicks and the wheel to the taskbar while raw motion still turned
+/// the view. Moved to the window's middle first (bevy_winit applies the
+/// position before the grab, in one frame), the lock holds it there.
+/// On by default on Windows and macOS (which also locks in place); off
+/// on Linux, where X11 confines (and so warps the pointer in) and Wayland
+/// refuses to place an unlocked pointer.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PinOnGrab(pub bool);
+
+impl Default for PinOnGrab {
+    fn default() -> Self {
+        Self(cfg!(any(windows, target_os = "macos")))
+    }
+}
+
+/// Put the pointer at the window's middle unless the window knows it is
+/// over it (`PinOnGrab`).
+fn pin_inside(win: Option<Mut<Window>>) {
+    if let Some(mut w) = win
+        && w.cursor_position().is_none()
+    {
+        let middle = w.size() / 2.0;
+        w.set_cursor_position(Some(middle));
+    }
+}
+
 /// `grab_cursor`'s memory: frames of a focus gain's regrab left, and
 /// frames in which a click is still the focusing one.
 #[derive(Default)]
@@ -200,11 +232,13 @@ pub(super) struct Regrab {
 /// The grab (module doc of `grab_cursor`'s comments): lost with focus;
 /// on every focus gain (alt-tab, a taskbar click, a click into the
 /// window, a restore) grabbed and hidden again while playing with nothing
-/// open; else a click grabs. The click that grabs, or that came with the
-/// focus, doesn't fire (`CapturedKeys::capture_button`, until let go).
+/// open; else a click grabs. Each grab, and each resend of it, first puts
+/// a pointer the window doesn't know to be over it at its middle
+/// (`PinOnGrab`). The click that grabs, or that came with the focus,
+/// doesn't fire (`CapturedKeys::capture_button`, until let go).
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub(super) fn grab_cursor(
-    mut window: Single<(&mut CursorOptions, Option<&Window>)>,
+    mut window: Single<(&mut CursorOptions, Option<&mut Window>)>,
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut focus: MessageReader<bevy::window::WindowFocused>,
@@ -217,9 +251,11 @@ pub(super) fn grab_cursor(
         Option<Res<super::chat::ChatInput>>,
     ),
     mut captured: Option<ResMut<super::binds::CapturedKeys>>,
+    pin: Option<Res<PinOnGrab>>,
     mut regrab: Local<Regrab>,
 ) {
     let (cursor, win) = &mut *window;
+    let pin = pin.map_or_else(|| PinOnGrab::default().0, |p| p.0);
     // The game menu and the game-look buy and team menus own the mouse
     // while open (Esc opens and closes the game menu), and the click that
     // closes one isn't a click to grab. So do the console (clicks there
@@ -257,7 +293,7 @@ pub(super) fn grab_cursor(
     }
     // A window that says it lost focus since (no message read here) ends
     // the regrab.
-    if win.is_some_and(|w| !w.focused) && !gained {
+    if win.as_ref().is_some_and(|w| !w.focused) && !gained {
         regrab.left = 0;
     }
     if keys.just_pressed(KeyCode::Escape) && menu.is_none() {
@@ -272,11 +308,17 @@ pub(super) fn grab_cursor(
             } else if regrab.left % REASSERT_EVERY == 0 {
                 // Send the grab again (bevy_winit sends on a change).
                 cursor.set_changed();
+                if pin {
+                    pin_inside(win.as_mut().map(|w| w.reborrow()));
+                }
             }
         }
     } else if mouse.just_pressed(MouseButton::Left) && !cursor_grabbed(cursor) && !in_menu {
         capture_cursor(cursor);
         grabbed_now = true;
+    }
+    if grabbed_now && pin {
+        pin_inside(win.as_mut().map(|w| w.reborrow()));
     }
     // The click that grabbed, or that focused the window, is not a shot.
     let focusing = regrab.focus_click > 0;
@@ -736,6 +778,119 @@ mod tests {
         app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Left);
         app.update();
         assert!(attack(&app), "the next click fires");
+    }
+
+    /// Focus back from a taskbar click on Windows (owner's report
+    /// 2026-11-18: the view turned but clicks and the wheel did nothing):
+    /// the window loses focus and the pointer leaves it; focus comes back
+    /// with the pointer still on the taskbar, so no `CursorEntered` or
+    /// `CursorMoved`. The grab puts the pointer at the window's middle
+    /// before locking it there (`PinOnGrab`), so the OS sends the clicks
+    /// and the wheel to the window: fire, alt-fire and the wheel's weapon
+    /// switch all reach the game. `os_sends` stands in for the OS, which
+    /// gives a button or wheel event to the window under the pointer.
+    #[test]
+    fn a_taskbar_refocus_pins_the_pointer_inside_so_clicks_and_the_wheel_count() {
+        use bevy::input::{
+            ButtonState,
+            mouse::{MouseButtonInput, MouseScrollUnit, MouseWheel},
+        };
+        use bevy::window::{CursorEntered, CursorLeft, WindowFocused};
+        #[derive(Resource, Default)]
+        struct Switched(i32);
+        let mut app = App::new();
+        app.add_plugins((bevy::input::InputPlugin, crate::console::ConsolePlugin))
+            .init_resource::<Time>()
+            .init_resource::<MouseSettings>()
+            .init_resource::<WheelJump>()
+            .init_resource::<FreeLook>()
+            .init_resource::<super::super::view::FreeCam>()
+            .init_resource::<super::super::binds::CapturedKeys>()
+            .init_resource::<Switched>()
+            .insert_resource(PinOnGrab(true))
+            .insert_resource(super::super::front_end::MenuStatus { in_game: true, ..default() })
+            .add_message::<WindowFocused>()
+            .add_message::<CursorLeft>()
+            .add_message::<CursorEntered>()
+            .add_systems(PreUpdate, super::super::binds::release_captured.after(bevy::input::InputSystems))
+            .add_systems(Update, ((grab_cursor, write_local_intent).chain(), super::super::console::run_binds));
+        use crate::console::ConsoleAppExt;
+        app.console_command("invnext", "test", |w, _| {
+            w.resource_mut::<Switched>().0 += 1;
+            Ok(None)
+        });
+        app.world_mut()
+            .resource_mut::<crate::console::Console>()
+            .submit("bind mouse1 +attack; bind mouse2 +attack2; bind mwheeldown invnext");
+        let me = app.world_mut().spawn((Intent::default(), LocalPlayer)).id();
+        let mut w = Window::default();
+        let middle = w.size() / 2.0;
+        w.set_cursor_position(Some(middle));
+        let window = app
+            .world_mut()
+            .spawn((w, CursorOptions { visible: false, grab_mode: CursorGrabMode::Locked, ..default() }))
+            .id();
+        for _ in 0..3 {
+            app.update();
+        }
+        // The OS: a button or wheel event goes to the window the pointer is
+        // over (Windows routes them by position; a locked pointer stays put).
+        let os_sends = |app: &mut App, button: Option<(MouseButton, ButtonState)>, wheel: f32| {
+            if app.world().get::<Window>(window).unwrap().cursor_position().is_none() {
+                return;
+            }
+            if let Some((button, state)) = button {
+                app.world_mut().write_message(MouseButtonInput { button, state, window });
+            }
+            if wheel != 0.0 {
+                app.world_mut().write_message(MouseWheel { unit: MouseScrollUnit::Line, x: 0.0, y: wheel, window, phase: bevy::input::touch::TouchPhase::Moved });
+            }
+        };
+        let intent = |app: &App| app.world().get::<Intent>(me).unwrap().clone();
+        let grabbed = |app: &App| {
+            let c = app.world().get::<CursorOptions>(window).unwrap();
+            cursor_grabbed(c) && !c.visible
+        };
+        // Away (alt-tab, the Windows key): focus lost, the pointer leaves
+        // (bevy_winit forgets its position on `CursorLeft`).
+        app.world_mut().write_message(WindowFocused { window, focused: false });
+        app.update();
+        app.world_mut().get_mut::<Window>(window).unwrap().set_physical_cursor_position(None);
+        app.world_mut().write_message(CursorLeft { window });
+        app.update();
+        assert!(!grabbed(&app), "away: free");
+        // The taskbar button: focus, the pointer still on the taskbar.
+        app.world_mut().write_message(WindowFocused { window, focused: true });
+        app.update();
+        assert!(grabbed(&app), "grabbed again");
+        assert_eq!(
+            app.world().get::<Window>(window).unwrap().cursor_position(),
+            Some(middle),
+            "the pointer is put inside before the lock"
+        );
+        for _ in 0..3 {
+            app.update();
+        }
+        let mut click = |app: &mut App, b: MouseButton| {
+            os_sends(app, Some((b, ButtonState::Pressed)), 0.0);
+            app.update();
+            let i = intent(app);
+            os_sends(app, Some((b, ButtonState::Released)), 0.0);
+            app.update();
+            i
+        };
+        assert!(click(&mut app, MouseButton::Left).fire, "fire");
+        assert!(click(&mut app, MouseButton::Right).secondary, "alt-fire");
+        os_sends(&mut app, None, -1.0);
+        // The bind's command runs from the console's queue a frame on.
+        app.update();
+        app.update();
+        assert_eq!(app.world().resource::<Switched>().0, 1, "the wheel switches weapon");
+        // Still inside on the grab's resends.
+        for _ in 0..REGRAB_FRAMES {
+            app.update();
+        }
+        assert!(click(&mut app, MouseButton::Left).fire, "fire after the regrab's frames");
     }
 
     #[test]

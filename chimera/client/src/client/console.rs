@@ -1972,7 +1972,7 @@ pub const VOTE_KEYS: [(&str, &str); 2] = [("f1", "vote option1"), ("f2", "vote o
 /// ours (`VOTE_KEYS`); F3 is the pre-match lobby's while it shows
 /// (`prematch_lobby::LOBBY_KEY`: the host starts the match, a player
 /// readies up).
-fn run_binds(
+pub(crate) fn run_binds(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut wheel: MessageReader<MouseWheel>,
