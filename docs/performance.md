@@ -4093,7 +4093,9 @@ next.
 - Floods never run whole on a server (`ServerPlugin` has `nav_gen::SliceFloods`): the
   navigation mesh on a task against a copy of the collision, the spawn spots a slice a
   frame, both started while the new map settles (`map::MapHooks::settle`, as a front
-  end's; the map plays meanwhile). Until they are done the server's map isn't ready
+  end's; the map played meanwhile when measured below; since 2026-11-18 nothing of its
+  match ticks then, as on a front end: `map::MapSettling`, the physics stepped a step a
+  frame). Until they are done the server's map isn't ready
   (`map::LocalMapLoad`): a minigame's next match and its pre-match lobby wait for it, so
   nobody spawns at a map's spawn points or beside standing bots. The start map settles
   the same way from the server's first frames (its match isn't held: bots stand and

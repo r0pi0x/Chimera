@@ -24,12 +24,15 @@
 //!   owed after), a fresh match on it (`gameplay::new_game`) and every
 //!   player moved there. What needs the map's physics then
 //!   (`map::MapHooks::settle`: the bots' navigation mesh on a task, the
-//!   spawn spots a slice a frame) is done while it plays, and the
+//!   spawn spots a slice a frame) is done before the match plays: nothing
+//!   of it ticks meanwhile (`map::MapSettling`, as behind a front end's
+//!   loading screen: no clock, round, respawn or score moves), only its
+//!   physics steps, a step a frame (`map::settle_physics_step`), and the
 //!   server's map isn't ready until then (`map::LocalMapLoad`: a
 //!   minigame's next match and its lobby wait for it). No frame of a
 //!   change is long (docs/performance.md, "A dedicated server's map
-//!   change"), so the server's clock loses no time to it and its clients'
-//!   clocks need no jump. Floods are never whole in a tick
+//!   change"), and the frames the match is held owe no tick, so its
+//!   clients' clocks need no jump. Floods are never whole in a tick
 //!   (`nav_gen::SliceFloods`): the start map settles the same way from
 //!   the server's first frames, its bots standing and its players
 //!   spawning at the map's spawn points until theirs are made.
@@ -529,6 +532,7 @@ impl Plugin for ServerPlugin {
             if !on_greybox {
                 app.insert_resource(LevelSettle {
                     tick: 0,
+                    held: None,
                     started: std::time::Instant::now(),
                 });
             }
@@ -725,15 +729,21 @@ struct LevelSpawn {
     was_paused: bool,
 }
 
-/// The map is in and plays; what needs its physics (`map::MapHooks::
-/// settle`: the bots' navigation mesh on a task, the spawn spots a slice
-/// a frame) is under way, and after a `changelevel` the server's map
-/// isn't ready until it is done (`map::LocalMapLoad`: a minigame's next
-/// match waits for it). The start map's too, from the first frames.
+/// The map is in; what needs its physics (`map::MapHooks::settle`: the
+/// bots' navigation mesh on a task, the spawn spots a slice a frame) is
+/// under way. After a `changelevel` the server's map isn't ready until it
+/// is done (`map::LocalMapLoad`: a minigame's next match waits for it)
+/// and nothing of its match ticks meanwhile, as behind a front end's
+/// loading screen (`map::MapSettling`: the fixed loop held, only the
+/// physics stepped, a step a frame). The start map settles in play, from
+/// the server's first frames.
 #[derive(Resource)]
 struct LevelSettle {
     /// The simulation's tick when the map came in.
     tick: u64,
+    /// A `changelevel`'s settling, the match held (`map::MapSettling`):
+    /// the physics steps taken.
+    held: Option<u32>,
     started: std::time::Instant,
 }
 
@@ -742,8 +752,9 @@ struct LevelSettle {
 /// times a second meanwhile.
 pub const SPAWN_BUDGET: Duration = Duration::from_millis(8);
 
-/// Ticks a spawned map runs before its settling starts: the collision is
-/// in the spatial queries' trees after the first physics steps.
+/// Ticks (or physics steps, held) a spawned map runs before its settling
+/// starts: the collision is in the spatial queries' trees after the first
+/// physics steps.
 const SETTLE_AFTER_TICKS: u64 = 3;
 
 /// The longest the settling holds the server's map back; a flood not
@@ -774,6 +785,7 @@ fn call_off_level(world: &mut World) {
         time.unpause();
     }
     world.remove_resource::<LevelSettle>();
+    world.remove_resource::<map::MapSettling>();
     world.remove_resource::<map::LocalMapLoad>();
 }
 
@@ -910,18 +922,31 @@ fn spawn_level_steps(world: &mut World, budget: Duration) {
     let tick = world.get_resource::<core::SimClock>().map_or(0, |c| c.tick);
     world.insert_resource(LevelSettle {
         tick,
+        held: Some(0),
         started: std::time::Instant::now(),
     });
+    // Nothing of the new match ticks until the map has settled (the
+    // physics steps: `settle_level`), as on a front end.
+    world.insert_resource(map::MapSettling);
 }
 
 /// A frame of `LevelSettle`: every hook's slice (`map::MapHooks::settle`),
 /// and the server's map is ready when they are all done.
 fn settle_level(world: &mut World) {
     let settle = world.resource::<LevelSettle>();
-    let (from, started) = (settle.tick, settle.started);
-    let tick = world.get_resource::<core::SimClock>().map_or(from + SETTLE_AFTER_TICKS, |c| c.tick);
-    if tick < from + SETTLE_AFTER_TICKS {
-        return;
+    let (from, held, started) = (settle.tick, settle.held, settle.started);
+    if let Some(steps) = held {
+        // Held: the physics alone, a step a frame.
+        world.resource_mut::<LevelSettle>().held = Some(steps + 1);
+        map::settle_physics_step(world, steps);
+        if u64::from(steps) + 1 < SETTLE_AFTER_TICKS {
+            return;
+        }
+    } else {
+        let tick = world.get_resource::<core::SimClock>().map_or(from + SETTLE_AFTER_TICKS, |c| c.tick);
+        if tick < from + SETTLE_AFTER_TICKS {
+            return;
+        }
     }
     let hooks: Vec<fn(&mut World) -> bool> =
         world.get_resource::<map::MapHooks>().map(|h| h.settle.clone()).unwrap_or_default();
@@ -934,6 +959,7 @@ fn settle_level(world: &mut World) {
     }
     info!("map settled in {:.2} s", started.elapsed().as_secs_f32());
     world.remove_resource::<LevelSettle>();
+    world.remove_resource::<map::MapSettling>();
     world.remove_resource::<map::LocalMapLoad>();
 }
 

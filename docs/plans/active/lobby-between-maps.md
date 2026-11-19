@@ -165,10 +165,13 @@ to 4 on `NetSim` (`chimera_net` `prematch_lobby`).
   `prematch_lobby` `the_hosts_start_waits_for_its_own_map`;
   `chimera_present` `voice_limits::no_sound_plays_while_a_map_loads_or_the_world_is_covered`;
   `chimera_net` `prematch_lobby::the_bots_the_game_keeps_are_listed_at_once`;
-  `chimera_world` `nav_cache` and `loading` unit tests. Not done: a
-  dedicated server's settling still ticks its match (nothing heard or
-  seen there); the spawn spots' walk (`spawns::settle_spots`) is still a
+  `chimera_world` `nav_cache` and `loading` unit tests. Not done: the
+  spawn spots' walk (`spawns::settle_spots`) is still a
   slice a frame on the main thread, not kept on disk.
+- 2026-11-18: a dedicated server's `changelevel` settling holds its
+  match too (`dedicated`'s `LevelSettle` sets `map::MapSettling` and
+  steps the physics a frame; the start map still settles in play). Test:
+  `chimera_net` `dedicated_change::nothing_of_the_match_ticks_while_a_changelevels_map_settles`.
 - Not yet: loading the next map's data ahead during the match-end
   screen (the change starts its load at once, after it); a listen host's
   row seen by others holds still while its simulation waits on its

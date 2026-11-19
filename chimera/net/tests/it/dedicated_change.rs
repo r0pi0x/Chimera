@@ -6,13 +6,14 @@
 //! while the map loads; then the simulation waits while it spawns (no tick
 //! on a part of a map, the whole map in one frame, its colliders in the
 //! frames after), a new game starts once it is all in, and the server's map
-//! isn't ready until it has settled (`map::LocalMapLoad`). The client is
+//! isn't ready until it has settled (`map::LocalMapLoad`), nothing of its
+//! match ticking meanwhile, only its physics (`map::MapSettling`). The client is
 //! told of the new map once (when it is whole and the new game started),
 //! follows, is let in again, and its command clock makes no jump.
 
 use std::time::Duration;
 
-use avian3d::prelude::Collider;
+use avian3d::prelude::{Collider, Position, RigidBody};
 use bevy::{ecs::message::MessageCursor, prelude::*, time::TimeUpdateStrategy};
 use chimera_core::{
     core::{LocalPlayer, MapLoads, SimClock},
@@ -321,9 +322,10 @@ fn a_changelevel_comes_in_over_frames_and_takes_its_client_along() {
     assert_eq!(w.resource::<LoadedMapName>().0, "test:steps");
     assert_eq!(w.resource::<Time<Fixed>>().timestep(), Duration::from_secs_f64(TICK));
 
-    // It settles in play, then the server's map is ready.
+    // It settles with its match held, then the server's map is ready.
+    let settled_from = tick(&p.server);
     p.until("the map settles", |p| !dedicated::level_coming_in(p.server.app.world()));
-    assert!(tick(&p.server) > stood, "ticks run while it settles");
+    assert_eq!(tick(&p.server), settled_from, "no tick while it settles");
     assert!(!p.server.app.world().contains_resource::<LocalMapLoad>());
 
     // The client follows, told once, and is let in again.
@@ -380,4 +382,75 @@ fn a_changelevel_takes_over_from_a_map_still_settling() {
     p.until("the map comes in again", |p| loads(&p.server) == 2);
     assert!(parts(&mut p.server).0 > 0);
     assert!(!p.server.app.world().resource::<Time<Virtual>>().is_paused());
+}
+
+/// Fixed ticks the match ran (a stand-in for its clock, rounds, respawns
+/// and scores: every one of them is a fixed tick's system).
+#[derive(Resource, Default)]
+struct MatchTicks(u32);
+
+fn count_match_tick(mut ticks: ResMut<MatchTicks>) {
+    ticks.0 += 1;
+}
+
+/// Frames the settle hook says it is not done yet.
+#[derive(Resource)]
+struct SettleLeft(u32);
+
+/// The lowest physics prop's height.
+fn lowest_prop(sim: &mut Sim) -> f32 {
+    let w = sim.app.world_mut();
+    w.query::<(&Position, &RigidBody)>()
+        .iter(w)
+        .filter(|(_, b)| b.is_dynamic())
+        .map(|(p, _)| p.0.y)
+        .fold(f32::MAX, f32::min)
+}
+
+#[test]
+fn nothing_of_the_match_ticks_while_a_changelevels_map_settles() {
+    let mut p = Pair::new();
+    p.server
+        .app
+        .init_resource::<MatchTicks>()
+        .insert_resource(SettleLeft(40))
+        .add_systems(FixedUpdate, count_match_tick);
+    p.server.app.world_mut().resource_mut::<MapHooks>().settle.push(|w| {
+        let mut left = w.resource_mut::<SettleLeft>();
+        left.0 = left.0.saturating_sub(1);
+        left.0 == 0
+    });
+    p.until("the client joins on the greybox", |p| p.joined("greybox"));
+    dedicated::change_level(p.server.app.world_mut(), "test:steps").expect("changelevel");
+    p.until("the map is in, a new match on it", |p| loads(&p.server) == 1);
+
+    // Settling: the fixed loop held, only the physics steps.
+    let w = p.server.app.world();
+    assert!(w.contains_resource::<chimera_world::map::MapSettling>(), "the match is held");
+    assert!(w.contains_resource::<LocalMapLoad>());
+    let (stood, ran, clock) = (tick(&p.server), w.resource::<MatchTicks>().0, w.resource::<Time<Fixed>>().elapsed());
+    let high = lowest_prop(&mut p.server);
+    let mut frames = 0;
+    while dedicated::level_coming_in(p.server.app.world()) {
+        p.step();
+        frames += 1;
+        assert!(frames < 500, "the map never settled");
+        let w = p.server.app.world();
+        assert_eq!(tick(&p.server), stood, "no tick while it settles (frame {frames})");
+        assert_eq!(w.resource::<MatchTicks>().0, ran, "no match system runs (frame {frames})");
+        assert_eq!(w.resource::<Time<Fixed>>().elapsed(), clock, "the match's clock stands");
+    }
+    assert!(frames >= 40, "the settle hook ran a slice a frame ({frames})");
+    let low = lowest_prop(&mut p.server);
+    assert!(low < high - 0.1, "the physics props fell while it settled: {high} -> {low}");
+    assert!(!p.server.app.world().contains_resource::<chimera_world::map::MapSettling>());
+    assert!(!p.server.app.world().contains_resource::<LocalMapLoad>());
+
+    // Settled: the match plays.
+    for _ in 0..10 {
+        p.step();
+    }
+    assert!(tick(&p.server) > stood, "ticks run once it has settled");
+    assert!(p.server.app.world().resource::<MatchTicks>().0 > ran);
+    p.until("the client joins on the new map", |p| p.joined("test:steps"));
 }

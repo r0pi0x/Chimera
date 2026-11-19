@@ -394,7 +394,9 @@ pub struct MapHooks {
 pub struct MapComingIn;
 
 /// A spawned map is still settling behind a front end's loading screen
-/// (`client::console`'s settling, `MapHooks::settle`): nothing of the match
+/// (`client::console`'s settling, `MapHooks::settle`), or after a
+/// dedicated server's `changelevel` (`chimera_net::dedicated`'s
+/// `LevelSettle`, its physics stepped there): nothing of the match
 /// ticks meanwhile (the fixed loop is held: `hold_ticks_while_settling`),
 /// only the physics steps, a step a frame (`settle_physics_step`: the
 /// spatial queries' trees, props coming to rest), so no character moves, no
