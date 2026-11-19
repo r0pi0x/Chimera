@@ -85,5 +85,6 @@ detonate_sound = "tf2:Weapon_StickyBombLauncher.ModeSwitch"
 # under water; which name sits in which script field is unconfirmed, the
 # pcf names are used), the Stickybomb Launcher's for pipes too.
 [hooks."tf2:looks"]
+trail = { shown = "tf2:sticky", system = "stickybombtrail", team = true }
 muzzle = "muzzle_pipelauncher"
 explosion = { wall = "ExplosionCore_Wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }

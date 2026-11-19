@@ -1,0 +1,43 @@
+# Ours for flames.tf2 (the Flame Thrower on 2fort's bridge): 0.5 and 1.0 s
+# into the stream at the bridge's side wall and down the bridge.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/flames.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+rung tf2:tf_weapon_flamethrower
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 10 0 0
+wait 90
+shot flame_wall_idle
+host_timescale 0.05
++attack
+wait_for shot 3000
+gwait 0.47
+shot flame_wall_f014
+gwait 0.51
+shot flame_wall_f030
+-attack
+host_timescale 1
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot flame_air_idle
+host_timescale 0.05
++attack
+wait_for shot 3000
+gwait 0.47
+shot flame_air_f014
+gwait 0.51
+shot flame_air_f030
+-attack
+host_timescale 1
+wait 60

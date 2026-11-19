@@ -86,5 +86,6 @@ bounce_sound = "tf2:Weapon_Grenade_Pipebomb.Bounce"
 # under water; which name sits in which script field is unconfirmed, the
 # pcf names are used): the Stickybomb Launcher's, as TF2 reads for pipes.
 [hooks."tf2:looks"]
+trail = { shown = "tf2:grenade", system = "pipebombtrail", team = true }
 muzzle = "muzzle_grenadelauncher"
 explosion_of = "tf2:tf_weapon_pipebomblauncher"

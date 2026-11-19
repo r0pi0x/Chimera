@@ -134,6 +134,14 @@ struct P {
     trail: f32,
 }
 
+/// "Movement Basic"'s drag is the fraction of the velocity taken off per
+/// simulation step in Source, so its look changes with the frame rate (a
+/// rocket's explosion captured in TF2 at 250 and at 62.5 frames a second
+/// differed: tools/tf2ref, docs/plans/active/tf2-parity.md). Ours takes it
+/// off per this many steps a second, as at 60 frames a second, at any step
+/// size (a slowed or fast frame no longer stops the particles dead).
+pub const DRAG_STEPS: f32 = 60.0;
+
 /// The trail length (field 10) a particle has when nothing sets it, s.
 const DEFAULT_TRAIL_LENGTH: f32 = 0.1;
 
@@ -515,7 +523,8 @@ impl Instance {
             if moves {
                 p.velocity += (gravity + accel) * dt;
                 if drag > 0.0 {
-                    p.velocity *= (1.0 - drag).max(0.0);
+                    // Per 1/60 s, whatever the step (`DRAG_STEPS`).
+                    p.velocity *= (1.0 - drag).max(0.0).powf(dt * DRAG_STEPS);
                 }
                 for o in &d.operators {
                     if let Op::MaxVelocity { max } = *o
@@ -1327,20 +1336,24 @@ pub fn run_started_systems(
     for Running { instance: i, cp, follow, .. } in &mut started.running {
         let Some((f, last)) = follow else { continue };
         let Some(now) = frame(f.entity) else {
+            // What it followed is gone (a flyer's trail): no more of it.
+            i.stop();
             *follow = None;
             continue;
         };
         if now == *last {
             continue;
         }
-        let moved = now.to_matrix() * last.to_matrix().inverse();
-        let turn = now.rotation * last.rotation.inverse();
-        let place = |g: Vec3| to_game(moved.transform_point3(to_engine(g)));
-        let spin = |v: Vec3| {
-            let e = turn * Vec3::new(v.x, v.z, -v.y);
-            Vec3::new(e.x, -e.z, e.y)
-        };
-        i.carry(&place, &spin);
+        if f.carry {
+            let moved = now.to_matrix() * last.to_matrix().inverse();
+            let turn = now.rotation * last.rotation.inverse();
+            let place = |g: Vec3| to_game(moved.transform_point3(to_engine(g)));
+            let spin = |v: Vec3| {
+                let e = turn * Vec3::new(v.x, v.z, -v.y);
+                Vec3::new(e.x, -e.z, e.y)
+            };
+            i.carry(&place, &spin);
+        }
         let p = now.transform_point(f.local);
         let fw = now.rotation * f.forward;
         cp.position = to_game(p);
@@ -1525,6 +1538,34 @@ mod tests {
         // None made in the first step was spawned at the step's end only:
         // creation times spread over the step (1000 a second, 1 ms steps).
         assert!(i.particles.len() >= 39, "{}", i.particles.len());
+    }
+
+    /// Drag takes off the same over a second whatever the step: 0.1 per
+    /// 1/60 s leaves 0.9^60 of the speed after one second.
+    #[test]
+    fn drag_does_not_depend_on_the_step() {
+        let mut d = system();
+        d.emitters = vec![Emitter::Instantaneously { start: 0.0, count: 1 }];
+        d.initializers = vec![Init::Lifetime(Pick::new(5.0, 5.0, 1.0)), Init::VelocityNoise { cp: 0, min: Vec3::X * 100.0, max: Vec3::X * 100.0, local: false }];
+        d.operators = vec![Op::Movement { gravity: Vec3::ZERO, drag: 0.1 }, Op::Decay];
+        let defs = vec![d];
+        let speed_after = |step: f32| {
+            let mut i = Instance::new(&defs, 0);
+            let mut rng = ParticleRng::new(1);
+            let cps = [ControlPoint::default()];
+            i.step(&defs, &cps, step, &mut rng, &none);
+            let mut t = step;
+            while t < 1.0 - 1e-4 {
+                i.step(&defs, &cps, step, &mut rng, &none);
+                t += step;
+            }
+            i.particles[0].velocity.length()
+        };
+        let want = 100.0 * 0.9f32.powi(60);
+        for step in [1.0 / 60.0, 1.0 / 250.0, 0.0005] {
+            let v = speed_after(step);
+            assert!((v - want).abs() < want * 0.05, "step {step}: {v} vs {want}");
+        }
     }
 
     #[test]

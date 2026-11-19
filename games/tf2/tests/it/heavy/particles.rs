@@ -67,7 +67,8 @@ fn the_flash_child_keeps_its_remapped_size() {
 fn dump_a_system_over_time() {
     let Some(map) = super::looks::dressed() else { return };
     let name = std::env::var("PROBE_SYS").unwrap_or("muzzle_smg".into());
-    run(&map, &name, &[0.01, 0.03, 0.06], |t, i| {
+    let times: Vec<f32> = std::env::var("PROBE_T").map(|s| s.split(",").filter_map(|x| x.parse().ok()).collect()).unwrap_or(vec![0.01, 0.03, 0.06]);
+    run(&map, &name, &times, |t, i| {
         eprintln!("--- t={t}");
         show(i, &map.particle_systems.defs, &map, 0);
     });
@@ -80,6 +81,9 @@ fn dump_a_system_as_loaded_and_in_its_file() {
     let name = std::env::var("PROBE_SYS").unwrap_or("muzzle_scattergun_flash".into()).to_lowercase();
     if let Some(i) = systems.find(&name) {
         eprintln!("{:#?}", systems.defs[i]);
+        for (c, delay) in &systems.defs[i].children {
+            eprintln!("child {} after {delay}", systems.defs[*c].name);
+        }
     }
     for w in map.warnings.iter().filter(|w| w.contains("particle")) {
         eprintln!("warning: {w}");

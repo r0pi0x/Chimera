@@ -31,6 +31,11 @@
 //!   muzzle as the flash's (else the bullet's start) to the bullet's end:
 //!   control point 1 (`StartParticleSystem::end`), which the system's
 //!   "move particles between 2 control points" heads for at its speed.
+//! - **Trails** (effects.md 1): a gun's `trail` (`FlyerTrail`) starts on
+//!   each of its flyers as it appears (`ShownItem`: `rockettrail` on
+//!   `tf2:rocket`, `pipebombtrail_<team>`, `stickybombtrail_<team>`,
+//!   `nailtrails_medic_<team>`), following it without carrying what it
+//!   left, stopped when it is gone (`psys::Follow`).
 //! - **The Rocket Launcher's backblast** (effects.md 4): `rocketbackblast`
 //!   at the launcher's `backblast` attachment on each shot, for everyone
 //!   but the shooter (the held model's: never on this machine's own
@@ -59,7 +64,8 @@
 //!   map's sound scripts' (a name the map has, such as CS:S's
 //!   `Concrete.BulletImpact` on de_dust2, plays the map's).
 //!
-//! Known shortcuts: control point 0 of the stream is the muzzle as drawn
+//! Known shortcuts: a trail starts at the flyer's origin, not its model's
+//! `trail` attachment; no crit glows on flyers (crits are off); control point 0 of the stream is the muzzle as drawn
 //! (the view model's re-projected in first person), not the third-person
 //! model's (flames.md Open questions 2); crits are off, so a crit stream
 //! never starts; no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
@@ -165,6 +171,32 @@ pub struct LooksParams {
     /// A stream drawn on flame points (the Flame Thrower's: flames.md 3).
     #[serde(default)]
     pub stream: Option<StreamLooks>,
+    /// The system each of its flyers trails (effects.md 1, 7).
+    #[serde(default)]
+    pub trail: Option<FlyerTrail>,
+}
+
+/// A trail started on each flyer of a gun as it appears (its `ShownItem`
+/// is `shown`), following it without carrying what it left behind, and
+/// stopped when it is gone (`psys::Follow`): the Rocket Launcher's
+/// `rockettrail`. With `team` the name takes the owner's team suffix
+/// (`_red`, `_blue`; RED when it has none: pipes and stickies).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct FlyerTrail {
+    pub shown: String,
+    pub system: String,
+    #[serde(default)]
+    pub team: bool,
+}
+
+impl FlyerTrail {
+    /// Its system's name for a flyer of `team` (`Some(true)`: BLU).
+    pub fn name(&self, blu: Option<bool>) -> String {
+        if !self.team {
+            return self.system.clone();
+        }
+        format!("{}_{}", self.system, if blu == Some(true) { "blue" } else { "red" })
+    }
 }
 
 /// A gun's stream on its flame points (flames.md 3.1): one system per
@@ -271,6 +303,11 @@ impl GunLooks {
         }
     }
 
+    /// The trail of a flyer drawn as `shown` (`ShownItem`), if a gun names one.
+    pub fn trail_of_shown(&self, shown: &str) -> Option<&FlyerTrail> {
+        self.0.iter().filter_map(|(_, l)| l.trail.as_ref()).find(|t| t.shown == shown)
+    }
+
     /// A gun's stream on flame points.
     pub fn stream_of(&self, gun: &str) -> Option<&StreamLooks> {
         self.of(gun)?.stream.as_ref()
@@ -289,6 +326,9 @@ impl GunLooks {
             out.extend(l.while_firing.iter().map(|s| s.system.clone()));
             out.extend(l.backblast.iter().map(|s| s.system.clone()));
             out.extend(l.stream.iter().flat_map(StreamLooks::names));
+            if let Some(t) = &l.trail {
+                out.extend([t.name(Some(false)), t.name(Some(true))]);
+            }
             if let Some(e) = &l.explosion {
                 out.extend([&e.wall, &e.player, &e.water].into_iter().filter(|n| !n.is_empty()).cloned());
             }
@@ -349,6 +389,9 @@ pub const PARTICLE_FILES: &[&str] = &[
     "particles/bullet_tracers.pcf",
     "particles/shellejection.pcf",
     "particles/rocketbackblast.pcf",
+    "particles/rockettrail.pcf",
+    "particles/stickybomb.pcf",
+    "particles/nailtrails.pcf",
 ];
 
 /// An explosion on the wire (the server's `Tf2Explosion`, to clients).
@@ -515,14 +558,33 @@ impl Muzzles<'_, '_> {
     /// what carries it: the eye on a first-person gun, else `owner`.
     pub fn start_on(&self, owner: Entity, m: &MuzzleAt, name: &str, forward: Vec3) -> StartParticleSystem {
         let follow = match m {
-            MuzzleAt::View(v) => Some(Follow { entity: v.anchor, local: v.world_local, forward: v.turn.inverse() * forward }),
+            MuzzleAt::View(v) => Some(Follow { entity: v.anchor, local: v.world_local, forward: v.turn.inverse() * forward, carry: true }),
             MuzzleAt::Held(p) => self.owners.get(owner).ok().and_then(|(.., t, _)| t).map(|t| Follow {
                 entity: owner,
                 local: t.compute_affine().inverse().transform_point3(*p),
                 forward: t.rotation.inverse() * forward,
+                carry: true,
             }),
         };
         StartParticleSystem { follow, ..StartParticleSystem::new(name, m.world(), forward) }
+    }
+}
+
+/// A trail on each flyer as it appears (`FlyerTrail`), following it.
+fn flyer_trails(
+    looks: Res<GunLooks>,
+    flyers: Query<(Entity, &chimera_world::map::loose::ShownItem, &Transform, Option<&chimera_sim::weapon::projectile::Flyer>), Added<chimera_world::map::loose::ShownItem>>,
+    teams: Query<&Team>,
+    mut start: MessageWriter<StartParticleSystem>,
+) {
+    for (e, shown, at, flyer) in &flyers {
+        let Some(trail) = looks.trail_of_shown(&shown.0) else { continue };
+        let blu = flyer.and_then(|f| f.owner).and_then(|o| teams.get(o).ok()).map(|t| super::super::bodies::skin_of(Some(*t)) == 1);
+        let forward = at.rotation * Vec3::X;
+        start.write(StartParticleSystem {
+            follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false }),
+            ..StartParticleSystem::new(trail.name(blu), at.translation, forward)
+        });
     }
 }
 
@@ -771,7 +833,7 @@ pub fn add(app: &mut App) {
         .add_systems(
             Update,
             (
-                (explosions, muzzle_flashes, tracers, firing_looks),
+                (explosions, muzzle_flashes, tracers, firing_looks, flyer_trails),
                 (super::flame::shown_flames.run_if(not(resource_exists::<chimera_net::dedicated::Serving>)), flame_stream)
                     .chain()
                     .before(StartedSystemsRun),

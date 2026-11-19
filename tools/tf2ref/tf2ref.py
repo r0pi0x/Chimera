@@ -15,7 +15,7 @@ shows nothing. TF2 is driven over RCON on 127.0.0.1:27115 (never 27015).
     tools/tf2ref/tf2ref.py shot <name> --out <dir>
     tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/<x>.tf2 --out <dir>
     tools/tf2ref/tf2ref.py pair --ref <dir> --ours <dir> --out <dir>   # ref | ours | diff
-    tools/tf2ref/tf2ref.py onset --dir <dir> --prefix smg_f --offsets 0,2 --names smg_2ms,smg_10ms
+    tools/tf2ref/tf2ref.py onset --dir <dir> --prefix smg_f --base smg_idle --offsets 0,2 --names smg_2ms,smg_10ms
     tools/tf2ref/tf2ref.py down [--all]           # quit TF2 (and the Steam/X stack we started)
 
 Scenes (`*.tf2`): a console line per line, `#` comments, and directives:
@@ -277,9 +277,19 @@ def setup_player(r, team="red", cls="soldier"):
         r.exec(line)
 
 
+def clear(name):
+    """Removes earlier `jpeg <name>` files (TF2 numbers a name that exists:
+    `<name>_0000.jpg`)."""
+    shots = TF2 / "tf/screenshots"
+    name = name.lower()
+    for f in [shots / f"{name}.jpg", *shots.glob(f"{name}_[0-9][0-9][0-9][0-9].jpg")]:
+        f.unlink(missing_ok=True)
+
+
 def collect(name, out, wait=10.0):
-    """TF2's `jpeg <name>` file into `<out>/<name>.png`."""
-    src = TF2 / "tf/screenshots" / f"{name}.jpg"
+    """TF2's `jpeg <name>` file (TF2 writes the name in lower case) into
+    `<out>/<name>.png`."""
+    src = TF2 / "tf/screenshots" / f"{name.lower()}.jpg"
     deadline = time.time() + wait
     while time.time() < deadline:
         if src.exists() and src.stat().st_size > 0:
@@ -297,7 +307,7 @@ def collect(name, out, wait=10.0):
 
 def shot(r, name, out):
     out.mkdir(parents=True, exist_ok=True)
-    (TF2 / "tf/screenshots" / f"{name}.jpg").unlink(missing_ok=True)
+    clear(name)
     r.exec(f"jpeg {name} 100")
     collect(name, out)
 
@@ -348,7 +358,7 @@ def scene(path, out):
         elif words[0] == "snap":
             # A picture inside the batch (frame-exact with `wait` and
             # `host_framerate`), collected after it.
-            (TF2 / "tf/screenshots" / f"{words[1]}.jpg").unlink(missing_ok=True)
+            clear(words[1])
             batch.append(f"jpeg {words[1]} 100")
             snaps.append(words[1])
         elif words[0] == "player":
@@ -379,16 +389,20 @@ def pair(ref, ours, out):
         print(f"  {a.stem}: MAE {mae.strip()} -> {dest}")
 
 
-def onset(folder, prefix, offsets, names):
-    """The first of `<prefix>NN.png` that differs from the first one (the
-    shot's frame: a burst of snaps after `+attack`), then copies of the
-    frames `offsets` after it as `names` (`.png`)."""
+def onset(folder, prefix, offsets, names, base=None):
+    """The first of `<prefix>NN.png` that differs from `base` (a picture
+    from before `+attack`; default the burst's first frame): the shot's
+    frame in a burst of snaps after `+attack`. Then copies of the frames
+    `offsets` after it as `names` (`.png`)."""
     frames = sorted(Path(folder).glob(f"{prefix}[0-9][0-9].png"))
     if not frames:
         sys.exit(f"tf2ref: no {prefix}NN.png in {folder}")
+    reference = Path(folder) / f"{base}.png" if base else frames[0]
     first = None
-    for i, f in enumerate(frames[1:], 1):
-        ae = subprocess.run(["magick", "compare", "-metric", "AE", "-fuzz", "12%", str(frames[0]), str(f), "null:"],
+    for i, f in enumerate(frames):
+        if f == reference:
+            continue
+        ae = subprocess.run(["magick", "compare", "-metric", "AE", "-fuzz", "12%", str(reference), str(f), "null:"],
                             capture_output=True, text=True).stderr.split()[0]
         if float(ae) > 200:
             first = i
@@ -454,7 +468,7 @@ def main():
     elif cmd == "onset":
         folder, prefix = opt("--dir"), opt("--prefix")
         offsets = [int(x) for x in opt("--offsets").split(",")]
-        onset(folder, prefix, offsets, opt("--names").split(","))
+        onset(folder, prefix, offsets, opt("--names").split(","), opt("--base"))
     elif cmd == "down":
         down("--all" in args)
     else:

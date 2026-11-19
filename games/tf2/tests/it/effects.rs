@@ -7,7 +7,8 @@
 //!   it stops; a tracer every 4th bullet;
 //! - tracers (6): a Scattergun blast from a count of 0 draws 5;
 //! - explosions (5): a rocket on the floor sends its surface and is no
-//!   player hit, leaves a `Scorch` and starts the wall effect;
+//!   player hit, leaves a `Scorch` and starts the wall effect; the rocket
+//!   trails `rockettrail` (1);
 //! - the backblast (4): others see it at the launcher's `backblast`, the
 //!   shooter (this machine's player) never.
 //!
@@ -137,6 +138,12 @@ fn a_rocket_on_the_floor_leaves_a_scorch_and_shows_the_wall_effect() {
     assert_eq!(e.len(), 1, "{starts:?}");
     assert_eq!(e[0].name, "ExplosionCore_Wall");
     assert!(e[0].forward.y > 0.9, "along the floor's normal");
+    // Its trail (effects.md 1): `rockettrail` once, following the flyer
+    // without carrying what it left (psys::Follow::carry).
+    let trails: Vec<_> = starts.iter().filter(|s| s.name == "rockettrail").collect();
+    assert_eq!(trails.len(), 1, "{starts:?}");
+    let f = trails[0].follow.expect("follows the rocket");
+    assert!(!f.carry);
 }
 
 #[test]

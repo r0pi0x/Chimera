@@ -29,12 +29,13 @@ Captured imagery stays in scratch, never in the repo.
 |---|---|---|
 | Tool: headless TF2, scenes, pairs | done | – |
 | Camera match (2fort bridge, setpos/setang) | matches | – |
-| Muzzle flashes, first person | in progress | |
+| Muzzle flashes, first person | close (scattergun, shotgun, SMG, revolver) | the flash child was 4x too big (remaps by creation time never ran: fixed); first shot draws a tracer in ours, none in TF2; Minigun's constant flash much dimmer in ours |
 | Muzzle flashes, third person | todo | |
 | Minigun constant flash, brass | todo | |
 | Tracers | todo | |
-| Rocket/pipe/sticky explosions (wall, air, water), scorch | todo | |
-| Rocket trail, backblast | todo | |
+| Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
+| Rocket trail | close | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails |
+| Backblast (third person) | todo | |
 | Flame stream (air, wall); overbright 5 or 1 | todo | |
 | Crits | todo | |
 | View models (position, FOV, bob) | todo | |
@@ -49,3 +50,27 @@ Captured imagery stays in scratch, never in the repo.
   (above); it needs no compositor at all. `cl_drawhud 0` added to ours
   (every HUD, ours, the sandbox's and the crosshair hidden) and the scene
   directive `gwait <game seconds>`.
+- 2026-11-19: TF2 under `host_timescale` misleads: flashes vanished in
+  15 ms of game time; under `host_framerate 0.002` they last about 80 ms
+  as the data says. TF2 scenes step with `host_framerate` and bursts of
+  `snap`s (alias chains: RCON drops long packets, an exec'd cfg ran its
+  waits in one frame). This account's Scout carries the Flying Guillotine:
+  the pistol is photographed on the Engineer.
+- Muzzle flashes: "remap initial scalar" / "remap scalar to vector" were
+  not loaded, so `muzzle_scattergun_flash` (the child of the Scattergun's,
+  Shotgun's, SMG's flashes) drew at its base radius 32, not 8 to 0.5:
+  a screen-filling glow. Loaded and run now (with "Remap Scalar" and
+  "Trail Length Random"), particles made at their own moments in a step.
+  Real and ours now agree in size, place and colour for the Scattergun,
+  Shotgun, SMG and Revolver.
+- Particle drag: Source's "Movement Basic" drag is per frame. The same
+  TF2 rocket blast at 250 and at 62.5 frames a second differed (the
+  slower rate's fire bigger and longer). Ours took it off per step too,
+  so our slowed captures (tiny steps) stopped every particle dead; now
+  per 1/60 s at any step (`DRAG_STEPS`), and TF2 is captured at 60
+  frames a second (`host_framerate 0.016667`) to match.
+- Trails: nothing drew a flyer's trail (the rocket's smoke and fire, the
+  pipes', stickies', needles'). `[hooks."tf2:looks"] trail` now; the
+  particle files rockettrail.pcf, stickybomb.pcf and nailtrails.pcf join
+  the looks' (the asset service's `players` set needs a republish to
+  carry them to players without the game).

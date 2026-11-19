@@ -1,0 +1,112 @@
+# TF2's rocket (real TF2; ours: blasts.scene): one rocket down 2fort's bridge
+# into its floor about 150 units ahead (the surface explosion and its scorch),
+# its trail on the way. Stepped at 60 frames a second (host_framerate 1/60:
+# Source's particle drag is per frame, so the look is the ordinary frame
+# rate's), a snap every 2 frames (33 ms) for 1.3 s, then the scorch.
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/blasts.tf2 --out <dir>
+mp_disable_respawn_times 1
+cl_drawhud 0
+r_drawvgui 0
+fov_desired 90
+viewmodel_fov 54
+fps_max 30
+cl_ragdoll_fade_time 0
+cl_ragdoll_forcefade 1
+joinclass soldier
+kill
+sleep 7
+use tf_weapon_rocketlauncher
+setpos 0 -300 0
+setang 25 90 0
+sleep 3
+shot rocket_floor_idle
+host_framerate 0.016667
++attack
+wait 1
+wait 2
+snap rocket_floor_f000
+wait 2
+snap rocket_floor_f001
+wait 2
+snap rocket_floor_f002
+wait 2
+snap rocket_floor_f003
+-attack
+wait 2
+snap rocket_floor_f004
+wait 2
+snap rocket_floor_f005
+wait 2
+snap rocket_floor_f006
+wait 2
+snap rocket_floor_f007
+wait 2
+snap rocket_floor_f008
+wait 2
+snap rocket_floor_f009
+wait 2
+snap rocket_floor_f010
+wait 2
+snap rocket_floor_f011
+wait 2
+snap rocket_floor_f012
+wait 2
+snap rocket_floor_f013
+wait 2
+snap rocket_floor_f014
+wait 2
+snap rocket_floor_f015
+wait 2
+snap rocket_floor_f016
+wait 2
+snap rocket_floor_f017
+wait 2
+snap rocket_floor_f018
+wait 2
+snap rocket_floor_f019
+wait 2
+snap rocket_floor_f020
+wait 2
+snap rocket_floor_f021
+wait 2
+snap rocket_floor_f022
+wait 2
+snap rocket_floor_f023
+wait 2
+snap rocket_floor_f024
+wait 2
+snap rocket_floor_f025
+wait 2
+snap rocket_floor_f026
+wait 2
+snap rocket_floor_f027
+wait 2
+snap rocket_floor_f028
+wait 2
+snap rocket_floor_f029
+wait 2
+snap rocket_floor_f030
+wait 2
+snap rocket_floor_f031
+wait 2
+snap rocket_floor_f032
+wait 2
+snap rocket_floor_f033
+wait 2
+snap rocket_floor_f034
+wait 2
+snap rocket_floor_f035
+wait 2
+snap rocket_floor_f036
+wait 2
+snap rocket_floor_f037
+wait 2
+snap rocket_floor_f038
+wait 2
+snap rocket_floor_f039
+-attack
+wait 2
+host_framerate 0
+sleep 1
+sleep 1
+shot rocket_floor_scorch

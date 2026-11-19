@@ -87,5 +87,6 @@ sound = "tf2:BaseExplosionEffect.Sound"
 # blasts' effects (explosion.pcf names; which script field holds which is
 # unconfirmed).
 [hooks."tf2:looks"]
+trail = { shown = "tf2:rocket", system = "rockettrail" }
 backblast = { system = "rocketbackblast", at = "backblast" }
 explosion = { wall = "ExplosionCore_Wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }

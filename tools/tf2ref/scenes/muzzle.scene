@@ -34,7 +34,7 @@ shot scattergun_62ms
 host_timescale 1
 wait 30
 # pistol
-rung tf2:tf_weapon_pistol_scout as tf2:scout
+rung tf2:tf_weapon_pistol_scout as tf2:engineer
 wait 2
 wait_for idle 3000
 wait 60

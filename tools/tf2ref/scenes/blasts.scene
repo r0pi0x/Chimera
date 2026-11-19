@@ -1,0 +1,108 @@
+# Ours for blasts.tf2: one rocket down 2fort's bridge into its floor, a
+# picture every 33 ms of game time from the shot (as TF2's snaps), then the
+# scorch a second later.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/blasts.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+rung tf2:tf_weapon_rocketlauncher
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 -300 0
+setang 25 90 0
+wait 90
+shot rocket_floor_idle
+host_timescale 0.02
++attack
+wait_for shot 3000
+gwait 0.033
+shot rocket_floor_f000
+gwait 0.0333
+shot rocket_floor_f001
+gwait 0.0333
+shot rocket_floor_f002
+gwait 0.0333
+shot rocket_floor_f003
+gwait 0.0333
+-attack
+shot rocket_floor_f004
+gwait 0.0333
+shot rocket_floor_f005
+gwait 0.0333
+shot rocket_floor_f006
+gwait 0.0333
+shot rocket_floor_f007
+gwait 0.0333
+shot rocket_floor_f008
+gwait 0.0333
+shot rocket_floor_f009
+gwait 0.0333
+shot rocket_floor_f010
+gwait 0.0333
+shot rocket_floor_f011
+gwait 0.0333
+shot rocket_floor_f012
+gwait 0.0333
+shot rocket_floor_f013
+gwait 0.0333
+shot rocket_floor_f014
+gwait 0.0333
+shot rocket_floor_f015
+gwait 0.0333
+shot rocket_floor_f016
+gwait 0.0333
+shot rocket_floor_f017
+gwait 0.0333
+shot rocket_floor_f018
+gwait 0.0333
+shot rocket_floor_f019
+gwait 0.0333
+shot rocket_floor_f020
+gwait 0.0333
+shot rocket_floor_f021
+gwait 0.0333
+shot rocket_floor_f022
+gwait 0.0333
+shot rocket_floor_f023
+gwait 0.0333
+shot rocket_floor_f024
+gwait 0.0333
+shot rocket_floor_f025
+gwait 0.0333
+shot rocket_floor_f026
+gwait 0.0333
+shot rocket_floor_f027
+gwait 0.0333
+shot rocket_floor_f028
+gwait 0.0333
+shot rocket_floor_f029
+gwait 0.0333
+shot rocket_floor_f030
+gwait 0.0333
+shot rocket_floor_f031
+gwait 0.0333
+shot rocket_floor_f032
+gwait 0.0333
+shot rocket_floor_f033
+gwait 0.0333
+shot rocket_floor_f034
+gwait 0.0333
+shot rocket_floor_f035
+gwait 0.0333
+shot rocket_floor_f036
+gwait 0.0333
+shot rocket_floor_f037
+gwait 0.0333
+shot rocket_floor_f038
+gwait 0.0333
+shot rocket_floor_f039
+gwait 0.0333
+host_timescale 1
+wait 200
+shot rocket_floor_scorch

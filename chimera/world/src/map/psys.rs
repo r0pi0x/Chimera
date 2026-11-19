@@ -270,7 +270,7 @@ impl Field {
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Op {
     /// Gravity (units/s²), and drag: the fraction of velocity removed per
-    /// step.
+    /// step (run as per 1/60 s: `render::psys::DRAG_STEPS`).
     Movement {
         gravity: Vec3,
         drag: f32,
@@ -504,12 +504,17 @@ pub struct StopParticleSystems {
 /// What a started system follows (`StartParticleSystem::follow`): the
 /// entity, and the system's place and forward in its frame (its
 /// `Transform`s', the parent's times its own: what was placed this
-/// frame, not last frame's `GlobalTransform`).
+/// frame, not last frame's `GlobalTransform`). With `carry` its live
+/// particles move with the entity too (a muzzle flash on the eye);
+/// without, only its control point does and they stay where they were
+/// made (a trail behind a flyer). When the entity is gone the system
+/// stops emitting (its particles finish).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Follow {
     pub entity: Entity,
     pub local: Vec3,
     pub forward: Vec3,
+    pub carry: bool,
 }
 
 impl StartParticleSystem {
