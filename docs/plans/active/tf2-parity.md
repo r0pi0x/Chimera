@@ -31,13 +31,15 @@ Captured imagery stays in scratch, never in the repo.
 | Camera match (2fort bridge, setpos/setang) | matches | – |
 | Muzzle flashes, first person | close (scattergun, shotgun, SMG) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). The flash now rides the animated muzzle as TF2's does (`attached::AttachmentMark`); TF2's view model kicks harder (the Scattergun's pump) |
 | Muzzle flashes, third person | close (Scattergun, Shotgun) | the scenes compare now: ours' target fires `ahead` (TF2's `bot_forceattack`) and our camera stays while our body leaves the line of fire (`chimera_freecam 2`). The flashes' size and life agree. TF2 draws another player's flash some 7 frames before its tracers and fire gesture (seen on the Scattergun and the Shotgun); ours draws them together |
-| Minigun constant flash, brass | close (first person); differs (third person) | first person: the core is a compact glow (a trail no wider than long), dimmer and nearer the barrel than the account's own Minigun's (not stock); the brass lives 2 s. Third person: others' (and bots') constant systems now run while their rounds come and turn with their aim (they never started for another player's gun, and pointed along the world's -Z); but TF2's spun Heavy lowers the gun forward (the deployed set) where ours keeps the idle pose, so ours' glow sits at the raised barrel by the face; ours' brass falls through the bridge's floor |
-| Tracers | matches (SMG, Shotgun) | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered) |
+| Minigun constant flash, brass | close (first person); differs (third person) | first person: the core is a compact glow (a trail no wider than long), dimmer and nearer the barrel than the account's own Minigun's (not stock); the brass lives 2 s. Third person: others' (and bots') constant systems now run while their rounds come and turn with their aim (they never started for another player's gun, and pointed along the world's -Z); but TF2's spun Heavy lowers the gun forward (the deployed set) where ours keeps the idle pose, so ours' glow sits at the raised barrel by the face; ours' brass now lands on the floor (pass 4: particle collision); TF2's flies farther out |
+| Tracers | matches (SMG, Shotgun); from the front close | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered). From the front the geometry agrees (a streak passing ~20 units from the camera widens to tens of pixels in TF2 too); which pellets pass near is the spread's chance. Others' tracers now leave with the interpolated body (pass 4) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails |
-| Backblast (third person) | close | the flame at the shoulder in the first 150 ms agrees; at 230 ms TF2's has turned to a dark smoke ring where ours is a bright ball with a detached flame to its left |
+| Backblast (third person) | close | from the side (pass 4) the same: an orange flame at the launcher's rear ~100 ms, then a dark grey puff; TF2's flame streakier. From the front the shoulder hides most of it |
 | Bodies, idle poses (third person) | close | Pyro, Scout, Engineer, Soldier stand as TF2's; TF2's stances are a little wider. The Heavy's idle (gun raised) matches TF2's only with the class model's own 1-frame aim-matrix stubs: taking the include's same-named grids instead (tried) lowered it to TF2's firing pose, and the deployed set (tried, `ACT_MP_DEPLOYED_IDLE` and its PREFIRE/POSTFIRE) then raised the gun straight up while firing. Which of a player model's local stub and its include's sequence TF2 uses, per lookup, is install.md Open question 6: needs a spec session (the deployed attempt is kept in scratch, `player_anim_spun.rs.txt`) |
-| Flame stream (air, wall); overbright 5 or 1 | close | overbright is 5, in linear space (we applied it to the gamma colour: x34, a white blob at a wall; now the violet cloud of TF2, its added colour within 3 of TF2's). Re-taken at a bot's FOV 75 (the first pass ran ours at 90): TF2's cloud at a wall spreads wider (its points slide along the wall; ours stop) and its far fireball is about 2x ours across; ours tints the right wall orange |
+| Flame stream (air, wall); overbright 5 or 1 | close (pass 4: one stream from the nozzle, as TF2's) | overbright is 5, in linear space (we applied it to the gamma colour: x34, a white blob at a wall; now the violet cloud of TF2, its added colour within 3 of TF2's). Re-taken at a bot's FOV 75 (the first pass ran ours at 90): TF2's cloud at a wall spreads wider (its points slide along the wall; ours stop) and its far fireball is about 2x ours across; ours tints the right wall orange |
+| Detail sprites (2fort's hay) | close | drawn; kept whole at a distance (alpha raised by mip level); TF2 fades them blended where ours dithers |
+| Explosion on a player / mid-air | differs | a hard-edged orange disc in ours (Next 2) |
 | Crits | todo | |
 | View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries |
 | HUD, crosshair | todo | |
@@ -45,42 +47,32 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Next (for a successor)
 
-1. The spun Heavy (third person): done 2026-11-19 from the corrected
-   spec (player_animation.md 1a, 2, 5a, 6): the class models' stubs are
-   0x800 forward declarations the include's sequences replace (the old
-   "1-frame, no activity" test), the autolayers' spline and pose ramps,
-   the feet's IK locks, the kind tables with the deployed exception, the
-   PREFIRE/POSTFIRE gestures in one attack slot; the decoded poses match
-   the spec's (raised 34 degrees at rest, level spun, aim and spin
-   timelines within 2-3 degrees; `heavy::player_anim`). Left: the left
-   hand's IK rule onto the Minigun (4a), the 2026-11-15 main-activity
-   rules (airwalk above 300 units/s, the 0.5 s jump start), and a
-   side-by-side with TF2's bots once tools/tf2ref is free.
-2. Tracers seen from the front: TF2's are short streaks; ours, passing
-   close to the camera, become wide glowing cones. Record 30 frames
-   (`thirdperson.tf2` does now) and compare past 150 ms; a far shooter's
-   streaks also come out up where TF2's go down (its bullets level from
-   a higher eye than our camera? check each class's eye height).
-3. Flames (`flames.tf2` against `flames.scene`, FOV 75): TF2's far
-   fireball is about twice ours across; its cloud at a wall spreads
-   wider. The stream's points stop about 286 units out (2450 units/s
-   under drag 8.5/s, life 0.6 s), and ours' sprites there rise more than
-   TF2's (seen from the front: TF2's fireball sits at the Pyro's chest
-   height, ours above his head, rising to the roof). The orange haze to
-   the right of the barrel while firing (first person) is not the muzzle
-   light (`muzzleflash_light 0` leaves it): look at the stream's newest
-   sprites near the camera (the core's size fade 0.3 to 0.5 x l).
-4. The backblast: at 230 ms TF2's is a dark smoke ring, ours a bright
-   ball with a detached flame beside it.
-5. The hay tuft beside the barrel at the bridge's far end is missing in
-   ours (small yellow dots there): a detail sprite or prop.
-6. The Minigun's brass falls through the bridge's floor in ours (TF2's
-   lands): the casings' world collision.
-7. TF2 draws another player's flash some 7 frames before its tracers and
-   fire gesture (Scattergun, Shotgun); ours draws them together.
-8. Water and mid-air explosions, stickies, crits (`addcond`), the HUD and
-   crosshair (UGG's own HUD by design; TF2's crosshair to compare).
-9. The asset service's `players` set needs republishing (by the user)
+1. The spun Heavy and player animation: another agent's (specs/tf2/
+   player_animation.md, install.md Open question 6 answered; commit
+   3bdaaae1d and on). Leave `heavy::bodies`/player animation to it.
+2. The rocket's explosion on a player (`air.tf2`/`air.scene` in the
+   pass's scratch: a Soldier at 0 -300 firing at a Heavy ~300 units
+   ahead): ours draws a large uniform orange disc with a hard round edge
+   over the bridge for ~4 frames (TF2: a soft orange wash, a fiery core
+   with dark debris, then a dark smoke cloud ours lacks). The disc isn't a
+   dynamic light (psys draws none) nor a flat sprite (no TF2 system sets
+   an orientation): find the child of `ExplosionCore_MidAir` that draws it
+   (`psys_running all` lists radii up to ~100; print materials too) and
+   whether its material's `$depthblend` / size fades should hide it.
+3. Flames: TF2's fire at the stream's end is ~1.5x wider and brighter
+   (flames.md Open questions 1, last sentence); the cloud at a wall wider.
+4. The Minigun's brass: TF2's casings fly farther out to the side and few
+   lie by the feet; ours drop and pile (ejection speed, life).
+5. A sandbox target that isn't firing ahead still holds its trigger at
+   times (`spin` saw `intent.fire` true after `target set all noahead`,
+   the Minigun's flash and brass kept going): the bot brain sets fire
+   after `targets::drive` released it. Order the release after the brain.
+6. Water explosions, stickies, crits (`addcond`), TF2's crosshair (UGG's
+   HUD by design).
+7. `heavy::pack::the_class_sets_load_only_the_offered_classes_bodies`
+   failed here with `CHIMERA_TF2_ROOT` at the client install (Scout voice
+   waves not in its set); post-push (its own install config) passed.
+8. The asset service's `players` set needs republishing (by the user)
    to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
 
 ## Log

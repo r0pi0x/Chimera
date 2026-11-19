@@ -801,7 +801,7 @@ fn tracers(
     mut start: MessageWriter<StartParticleSystem>,
 ) {
     let now = time.elapsed_secs_f64();
-    let mut go = |owner: Entity, from: Vec3, to: Vec3, name: String, start: &mut MessageWriter<StartParticleSystem>| {
+    let go = |owner: Entity, from: Vec3, to: Vec3, name: String, start: &mut MessageWriter<StartParticleSystem>| {
         let at = if muzzles.view_model_off(owner) { None } else { muzzles.of(owner) };
         let at = at.unwrap_or(from);
         let forward = (to - at).try_normalize().unwrap_or(Vec3::NEG_Z);
