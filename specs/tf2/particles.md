@@ -373,8 +373,18 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
    `$depthblendscale` by the shader API) and the depth range stored in
    destination alpha.
 3. Whether the `srgb?` condition holds on TF2's default PC renderer
-   (overbright 5 for the flame core) or not (1). A screenshot comparison
-   of the flame stream answers it.
+   (overbright 5 for the flame core) or not (1). **Answered by capture
+   (2026-11-19, tools/tf2ref: the stock Flame Thrower held by a puppet
+   bot, watched in its eyes, 0.5 and 1.0 s into the stream on ctf_2fort's
+   bridge, real time at 60 frames a second, 1024x768):** it holds, 5. In
+   open air the stream's far ball is a bright yellow-white fireball only
+   a factor near 5 reaches; at a wall 60 units off the stream is a soft
+   translucent violet cloud, adding about (6, 4, 15) to (8, 5, 20) to the
+   mean colour (0-255) of a 300 x 200 pixel area around it. The factor
+   multiplies the texel in linear space (§2: the vertex colour is taken
+   to linear first): applied to the gamma colour instead it is about 34
+   in linear and the cloud at the wall burns white (+25 on every
+   channel).
 4. How a sprite trail uses the radius (half-width or width) and the trail
    length attribute's unit.
 5. (Implementation note.) §4 reads the SpriteCard size limits as

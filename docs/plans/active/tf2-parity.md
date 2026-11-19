@@ -36,7 +36,7 @@ Captured imagery stays in scratch, never in the repo.
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails |
 | Backblast (third person) | todo | |
-| Flame stream (air, wall); overbright 5 or 1 | todo | |
+| Flame stream (air, wall); overbright 5 or 1 | close | overbright is 5, in linear space (we applied it to the gamma colour: x34, a white blob at a wall; now the violet cloud of TF2, its added colour within 3 of TF2's). TF2's cloud at a wall spreads wider (its points slide along the wall; ours stop) and its far fireball is about 1.5x ours |
 | Crits | todo | |
 | View models (position, FOV, bob) | todo | |
 | HUD, crosshair | todo | |
@@ -74,3 +74,9 @@ Captured imagery stays in scratch, never in the repo.
   particle files rockettrail.pcf, stickybomb.pcf and nailtrails.pcf join
   the looks' (the asset service's `players` set needs a republish to
   carry them to players without the game).
+- Flames: this account's Pyro carries the Dragon's Fury, so TF2's stream
+  is a puppet bot's (`bot -class pyro`, `bot_teleport`,
+  `bot_forceattack 1`) watched in its eyes (`spec_mode 4`), in real time:
+  under `host_framerate` TF2 drew no stream. Overbright 5 holds
+  (particles.md Open questions 3, answered) but multiplies the linear
+  colour: `psys::overbright`.

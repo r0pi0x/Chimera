@@ -1,197 +1,45 @@
-# TF2's Flame Thrower on 2fort's bridge (real TF2; ours: flames.scene): first
-# person at the bridge's side wall and down the bridge (open air), then the
-# same from a third-person camera. host_framerate 0.008, a snap every 4 frames
-# (32 ms) for 1.3 s; pictures 0.5 and 1.0 s into the stream: f014, f030.
+# TF2's Flame Thrower on 2fort's bridge (real TF2; ours: flames.scene), first
+# person: at the bridge's side wall and down the bridge (open air), 0.5 and
+# 1.0 s into the stream. A puppet bot holds the stock gun (this account's own
+# Pyro carries another) and fires (`bot_forceattack`); we watch it in its
+# eyes (`spec_mode 4`). In real time (fps_max 60): under host_framerate TF2
+# drew no stream.
 #   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/flames.tf2 --out <dir>
 mp_disable_respawn_times 1
 cl_drawhud 0
 r_drawvgui 0
 fov_desired 90
 viewmodel_fov 54
-fps_max 30
-joinclass pyro
-kill
-sleep 7
-use tf_weapon_flamethrower
-setpos 0 0 0
-setang 10 0 0
-sleep 3
-shot flame_wall_idle
-host_framerate 0.008
-+attack
-wait 1
-wait 4
-snap flame_wall_f000
-wait 4
-snap flame_wall_f001
-wait 4
-snap flame_wall_f002
-wait 4
-snap flame_wall_f003
-wait 4
-snap flame_wall_f004
-wait 4
-snap flame_wall_f005
-wait 4
-snap flame_wall_f006
-wait 4
-snap flame_wall_f007
-wait 4
-snap flame_wall_f008
-wait 4
-snap flame_wall_f009
-wait 4
-snap flame_wall_f010
-wait 4
-snap flame_wall_f011
-wait 4
-snap flame_wall_f012
-wait 4
-snap flame_wall_f013
-wait 4
-snap flame_wall_f014
-wait 4
-snap flame_wall_f015
-wait 4
-snap flame_wall_f016
-wait 4
-snap flame_wall_f017
-wait 4
-snap flame_wall_f018
-wait 4
-snap flame_wall_f019
-wait 4
-snap flame_wall_f020
-wait 4
-snap flame_wall_f021
-wait 4
-snap flame_wall_f022
-wait 4
-snap flame_wall_f023
-wait 4
-snap flame_wall_f024
-wait 4
-snap flame_wall_f025
-wait 4
-snap flame_wall_f026
-wait 4
-snap flame_wall_f027
-wait 4
-snap flame_wall_f028
-wait 4
-snap flame_wall_f029
-wait 4
-snap flame_wall_f030
-wait 4
-snap flame_wall_f031
-wait 4
-snap flame_wall_f032
-wait 4
-snap flame_wall_f033
-wait 4
-snap flame_wall_f034
-wait 4
-snap flame_wall_f035
-wait 4
-snap flame_wall_f036
-wait 4
-snap flame_wall_f037
-wait 4
-snap flame_wall_f038
-wait 4
-snap flame_wall_f039
--attack
-wait 2
+fps_max 60
+cl_ragdoll_fade_time 0
+cl_ragdoll_forcefade 1
 host_framerate 0
+kick P1
+sleep 3
+bot -name P1 -class pyro -team red
+sleep 3
+jointeam spectator
 sleep 2
-setpos 0 0 0
-setang 0 90 0
+spec_mode 4
+spec_player P1
+sleep 1
+bot_teleport P1 0 -300 0 10 0 0
+sleep 2
+shot flame_wall_idle
+bot_forceattack 1
+sleep 0.5
+shot flame_wall_f014
+sleep 0.45
+shot flame_wall_f029
+bot_forceattack 0
+sleep 2
+bot_teleport P1 0 -300 0 0 90 0
 sleep 2
 shot flame_air_idle
-host_framerate 0.008
-+attack
-wait 1
-wait 4
-snap flame_air_f000
-wait 4
-snap flame_air_f001
-wait 4
-snap flame_air_f002
-wait 4
-snap flame_air_f003
-wait 4
-snap flame_air_f004
-wait 4
-snap flame_air_f005
-wait 4
-snap flame_air_f006
-wait 4
-snap flame_air_f007
-wait 4
-snap flame_air_f008
-wait 4
-snap flame_air_f009
-wait 4
-snap flame_air_f010
-wait 4
-snap flame_air_f011
-wait 4
-snap flame_air_f012
-wait 4
-snap flame_air_f013
-wait 4
-snap flame_air_f014
-wait 4
-snap flame_air_f015
-wait 4
-snap flame_air_f016
-wait 4
-snap flame_air_f017
-wait 4
-snap flame_air_f018
-wait 4
-snap flame_air_f019
-wait 4
-snap flame_air_f020
-wait 4
-snap flame_air_f021
-wait 4
-snap flame_air_f022
-wait 4
-snap flame_air_f023
-wait 4
-snap flame_air_f024
-wait 4
-snap flame_air_f025
-wait 4
-snap flame_air_f026
-wait 4
-snap flame_air_f027
-wait 4
-snap flame_air_f028
-wait 4
-snap flame_air_f029
-wait 4
-snap flame_air_f030
-wait 4
-snap flame_air_f031
-wait 4
-snap flame_air_f032
-wait 4
-snap flame_air_f033
-wait 4
-snap flame_air_f034
-wait 4
-snap flame_air_f035
-wait 4
-snap flame_air_f036
-wait 4
-snap flame_air_f037
-wait 4
-snap flame_air_f038
-wait 4
-snap flame_air_f039
--attack
-wait 2
-host_framerate 0
+bot_forceattack 1
+sleep 0.5
+shot flame_air_f014
+sleep 0.45
+shot flame_air_f029
+bot_forceattack 0
 sleep 2

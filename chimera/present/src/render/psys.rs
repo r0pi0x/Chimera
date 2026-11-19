@@ -176,6 +176,23 @@ impl P {
     }
 }
 
+/// A particle's colour (0-1, gamma, as the pool takes it) brightened by a
+/// sprite card's `$overbrightfactor` `o`: the factor multiplies the colour
+/// in linear space, after its gamma is undone (specs/tf2/particles.md 2:
+/// the texel times O, the vertex colour taken to linear), so the gamma
+/// colour handed on is the one whose linear value is o times this one's.
+/// Multiplying the gamma colour instead made the flame core's 5 about 34
+/// in linear: its sprites at a wall burnt white where real TF2's are
+/// violet (tools/tf2ref).
+pub fn overbright(color: Vec3, o: f32) -> Vec3 {
+    if (o - 1.0).abs() < 1e-6 {
+        return color;
+    }
+    let lin = Color::srgb(color.x, color.y, color.z).to_linear();
+    let up = Color::LinearRgba(LinearRgba::rgb(lin.red * o, lin.green * o, lin.blue * o)).to_srgba();
+    Vec3::new(up.red, up.green, up.blue)
+}
+
 /// `x` from [`a`, `b`] onto [0, 1], clamped (0 when the range is empty).
 fn unlerp(x: f32, a: f32, b: f32) -> f32 {
     if (b - a).abs() < 1e-9 { 0.0 } else { ((x - a) / (b - a)).clamp(0.0, 1.0) }
@@ -825,7 +842,7 @@ impl Instance {
                         let mut q = Particle::new(at, p.life.max(1e-3), material, radius * scale);
                         q.size = Ramp::constant(radius * scale);
                         q.age = p.age;
-                        q.color = Self::color(d, p) * sheets.overbright(material);
+                        q.color = overbright(Self::color(d, p), sheets.overbright(material));
                         q.alpha = alpha;
                         q.roll = p.roll.to_radians();
                         // Yaw flip: the sprite mirrored (impact_effects.md 14).
@@ -1538,6 +1555,18 @@ mod tests {
         // None made in the first step was spawned at the step's end only:
         // creation times spread over the step (1000 a second, 1 ms steps).
         assert!(i.particles.len() >= 39, "{}", i.particles.len());
+    }
+
+    /// The overbright factor multiplies the linear colour: handed on in
+    /// gamma, it comes back as o times the linear value.
+    #[test]
+    fn overbright_multiplies_the_linear_colour() {
+        let c = Vec3::new(0.2, 0.2, 1.0);
+        let up = overbright(c, 5.0);
+        let back = Color::srgb(up.x, up.y, up.z).to_linear();
+        let lin = Color::srgb(c.x, c.y, c.z).to_linear();
+        assert!((back.red - lin.red * 5.0).abs() < 1e-3 && (back.blue - 5.0).abs() < 1e-2, "{back:?}");
+        assert_eq!(overbright(c, 1.0), c);
     }
 
     /// Drag takes off the same over a second whatever the step: 0.1 per
