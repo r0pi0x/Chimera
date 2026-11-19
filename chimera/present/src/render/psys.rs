@@ -14,7 +14,15 @@
 //! with control point 1 where it was given one (`StartParticleSystem::end`:
 //! a tracer's end, "move particles between 2 control points" heading
 //! there at its maximum speed and living until it arrives), stopped by
-//! tag (`StopParticleSystems`: a gun's systems that run while it fires).
+//! tag (`StopParticleSystems`: a gun's systems that run while it fires),
+//! with control points 1-63 and an active one from the tag's
+//! `ParticleControlPoints` each frame (TF2's flame points: "Assign target
+//! CP" gives each new particle the active one, "Movement Follow CP" pulls
+//! it onto its point by catch-up x step, "Lifetime From Control Point
+//! Life Time" gives it the point's duration; specs/tf2/flames.md 3.3),
+//! "Remap Distance to Control Point to Scalar / Vector" each step (radius,
+//! alpha, tint), and `RunningSystems` (what the started systems show, for
+//! tests and probes).
 //! Colour random's `tint_perc` blends each new particle's colour that
 //! far toward the light at its control point (`ControlPoint::light`: the
 //! map's `LightField` there, sampled when the system starts or its entity
@@ -30,7 +38,10 @@
 //! max length, animation rate without "as FPS" plays the sequence that many
 //! times a second; oscillate scalar, collision via traces and the visibility,
 //! cull and sleep settings aren't run (an unseen system freezes); control
-//! points 1-63 (`cpointN`) all sit on the entity; `$addself` sprite cards are
+//! points 1-63 (`cpointN`) of a placed system all sit on the entity;
+//! "Movement Follow CP"'s catch-up is read as a fraction a second (onto the
+//! point at TF2's 100), and a particle whose point is never set stays where
+//! it was born; `$addself` sprite cards are
 //! blended with the overbright factor, not part-added; `tint_perc` is read
 //! as a blend in gamma space toward the light probe averaged over its six
 //! directions and clamped to 0-1, sampled again when the entity moves a
@@ -57,6 +68,9 @@ pub struct ControlPoint {
     pub position: Vec3,
     pub rotation: Quat,
     pub light: Vec3,
+    /// How long what it stands for lives, s (0: not set):
+    /// `Init::LifetimeFromCp`.
+    pub duration: f32,
 }
 
 impl Default for ControlPoint {
@@ -65,6 +79,7 @@ impl Default for ControlPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             light: Vec3::ONE,
+            duration: 0.0,
         }
     }
 }
@@ -107,6 +122,13 @@ struct P {
     fade_out: f32,
     /// Its birth order (ropes).
     serial: u32,
+    /// Its own control point (`Init::AssignTargetCp`).
+    target: Option<u8>,
+    /// What the distance remaps make of its radius and alpha (factors)
+    /// and its tint (`Op::RemapDistance`).
+    radius_mul: f32,
+    alpha_mul: f32,
+    tint: Option<Vec3>,
 }
 
 /// A running effect: its particles, its children and its clock.
@@ -275,16 +297,60 @@ impl Instance {
         rng: &mut ParticleRng,
         sheets: &impl Sheets,
     ) {
+        self.step_with(defs, cps, None, dt, rng, sheets);
+    }
+
+    /// `step` with an active control point new particles take
+    /// (`Init::AssignTargetCp`).
+    pub fn step_with(
+        &mut self,
+        defs: &[SystemDef],
+        cps: &[ControlPoint],
+        active: Option<usize>,
+        dt: f32,
+        rng: &mut ParticleRng,
+        sheets: &impl Sheets,
+    ) {
         let max = defs[self.def].max_step.max(0.01);
         let mut left = dt;
         while left > 1e-6 {
             let h = left.min(max);
-            self.tick(defs, cps, h, rng, sheets);
+            self.tick(defs, cps, active, h, rng, sheets);
             left -= h;
         }
     }
 
-    fn tick(&mut self, defs: &[SystemDef], cps: &[ControlPoint], dt: f32, rng: &mut ParticleRng, sheets: &impl Sheets) {
+    /// Each live particle's place (game space) and its own control point
+    /// (`Init::AssignTargetCp`), its children's too.
+    pub fn placed(&self) -> Vec<(Vec3, Option<usize>)> {
+        let mut out: Vec<(Vec3, Option<usize>)> = self.particles.iter().map(|p| (p.position, p.target.map(usize::from))).collect();
+        for c in self.children.iter().filter_map(|c| c.1.as_ref()) {
+            out.extend(c.placed());
+        }
+        out
+    }
+
+    /// Each live particle's radius as drawn (game units), its children's
+    /// too.
+    pub fn radii(&self, defs: &[SystemDef]) -> Vec<f32> {
+        let d = &defs[self.def];
+        let mut out: Vec<f32> = self.particles.iter().map(|p| Self::radius(d, p)).collect();
+        for c in self.children.iter().filter_map(|c| c.1.as_ref()) {
+            out.extend(c.radii(defs));
+        }
+        out
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tick(
+        &mut self,
+        defs: &[SystemDef],
+        cps: &[ControlPoint],
+        active: Option<usize>,
+        dt: f32,
+        rng: &mut ParticleRng,
+        sheets: &impl Sheets,
+    ) {
         let d = &defs[self.def];
         let cp = |i: usize| cps.get(i).or(cps.first()).copied().unwrap_or_default();
         let before = self.age;
@@ -328,7 +394,8 @@ impl Instance {
         }
         let room = d.max_particles.saturating_sub(self.particles.len());
         for _ in 0..new.min(room) {
-            let p = self.spawn(d, &cp, rng, sheets);
+            let mut p = self.spawn(d, &cp, active, rng, sheets);
+            Self::remap(d, &cp, &mut p);
             self.particles.push(p);
         }
         // Forces, movement, life.
@@ -405,6 +472,19 @@ impl Instance {
             }
             self.lock_from = Some(now);
         }
+        // Onto their own control points, and the distance remaps.
+        for p in &mut self.particles {
+            for o in &d.operators {
+                if let Op::FollowCp { catch_up } = *o
+                    && let Some(t) = p.target
+                    && catch_up > 0.0
+                {
+                    let to = cp(t as usize).position;
+                    p.position = p.position.lerp(to, (catch_up * dt).min(1.0));
+                }
+            }
+            Self::remap(d, &cp, p);
+        }
         if decays {
             self.particles.retain(|p| p.age < p.life);
         }
@@ -415,7 +495,21 @@ impl Instance {
             }
         }
         for child in self.children.iter_mut().filter_map(|c| c.1.as_mut()) {
-            child.tick(defs, cps, dt, rng, sheets);
+            child.tick(defs, cps, active, dt, rng, sheets);
+        }
+    }
+
+    /// The distance remaps (`Op::RemapDistance`) for where `p` is now.
+    fn remap(d: &SystemDef, cp: &impl Fn(usize) -> ControlPoint, p: &mut P) {
+        for o in &d.operators {
+            let Op::RemapDistance { cp: c, field, near, far, low, high, scale_initial } = *o else { continue };
+            let x = window(p.position.distance(cp(c).position), near, far);
+            let v = low.lerp(high, x);
+            match field {
+                Field::Radius => p.radius_mul = if scale_initial { v.x } else { v.x / p.radius.max(1e-6) },
+                Field::Alpha => p.alpha_mul = if scale_initial { v.x } else { v.x / p.alpha.max(1e-6) },
+                Field::Tint => p.tint = Some(if scale_initial { p.color * v } else { v }),
+            }
         }
     }
 
@@ -423,6 +517,7 @@ impl Instance {
         &mut self,
         d: &SystemDef,
         cp: &impl Fn(usize) -> ControlPoint,
+        active: Option<usize>,
         rng: &mut ParticleRng,
         sheets: &impl Sheets,
     ) -> P {
@@ -442,6 +537,10 @@ impl Instance {
             fade_in: 0.0,
             fade_out: 0.0,
             serial: self.serial,
+            target: None,
+            radius_mul: 1.0,
+            alpha_mul: 1.0,
+            tint: None,
         };
         for i in &d.initializers {
             match *i {
@@ -519,6 +618,15 @@ impl Instance {
                         p.position += dir * along;
                         p.velocity = dir * speed;
                         p.life = (distance - along) / speed;
+                    }
+                }
+                Init::AssignTargetCp => p.target = active.and_then(|a| u8::try_from(a).ok()),
+                Init::LifetimeFromCp => {
+                    if let Some(t) = p.target {
+                        let life = cp(t as usize).duration;
+                        if life > 0.0 {
+                            p.life = life;
+                        }
                     }
                 }
             }
@@ -640,7 +748,7 @@ impl Instance {
 
     fn radius(d: &SystemDef, p: &P) -> f32 {
         let t = if p.life > 0.0 { p.age / p.life } else { 1.0 };
-        let mut r = p.radius;
+        let mut r = p.radius * p.radius_mul;
         for o in &d.operators {
             if let Op::RadiusScale {
                 start_scale,
@@ -663,7 +771,7 @@ impl Instance {
 
     fn alpha(d: &SystemDef, p: &P) -> f32 {
         let t = if p.life > 0.0 { p.age / p.life } else { 1.0 };
-        let mut a = p.alpha;
+        let mut a = p.alpha * p.alpha_mul;
         for o in &d.operators {
             match *o {
                 Op::FadeIn { proportional, .. } => {
@@ -696,7 +804,7 @@ impl Instance {
 
     fn color(d: &SystemDef, p: &P) -> Vec3 {
         let t = if p.life > 0.0 { p.age / p.life } else { 1.0 };
-        let mut c = p.color;
+        let mut c = p.tint.unwrap_or(p.color);
         for o in &d.operators {
             if let Op::ColorFade {
                 color,
@@ -829,6 +937,7 @@ pub fn update_systems(
             position,
             rotation: Quat::from_xyzw(rotation.x, -rotation.z, rotation.y, rotation.w),
             light,
+            duration: 0.0,
         };
         let cps = [cp; MAX_CONTROL_POINTS];
         for i in &mut e.instances {
@@ -868,6 +977,10 @@ struct Running {
     instance: Instance,
     cp: ControlPoint,
     end: Option<ControlPoint>,
+    /// Control points its tag sets (`ParticleControlPoints`: game
+    /// space, kept where last set) and the active one.
+    points: Vec<(usize, ControlPoint)>,
+    active: Option<usize>,
     emit_for: Option<f32>,
     follow: Option<(crate::map::psys::Follow, Transform)>,
     tag: Option<Entity>,
@@ -911,10 +1024,13 @@ impl StartedSystems {
                 position,
                 rotation,
                 light,
+                duration: 0.0,
             },
             emit_for,
             follow: None,
             end: None,
+            points: Vec::new(),
+            active: None,
             tag: None,
         });
         true
@@ -940,11 +1056,30 @@ impl StartedSystems {
         self.running.iter().map(|r| r.instance.count()).sum()
     }
 
+    /// Set the control points of the systems started with `tag` (game
+    /// space; one left out keeps its last place) and their active one.
+    pub fn set_points(&mut self, tag: Entity, points: &[(usize, ControlPoint)], active: Option<usize>) {
+        for r in self.running.iter_mut().filter(|r| r.tag == Some(tag)) {
+            for (n, p) in points {
+                match r.points.iter_mut().find(|(m, _)| m == n) {
+                    Some(slot) => slot.1 = *p,
+                    None => r.points.push((*n, *p)),
+                }
+            }
+            r.active = active;
+        }
+    }
+
+    /// The running systems' instances and tags.
+    pub fn instances(&self) -> impl Iterator<Item = (&Instance, Option<Entity>)> {
+        self.running.iter().map(|r| (&r.instance, r.tag))
+    }
+
     /// Advance every started system by `dt`; finished ones go.
     pub fn step(&mut self, dt: f32, sheets: &impl Sheets) {
         let Some(defs) = self.defs.clone() else { return };
         let rng = self.rng.get_or_insert_with(|| ParticleRng::new(0x5_1A5));
-        for Running { instance: i, cp, end, emit_for, .. } in &mut self.running {
+        for Running { instance: i, cp, end, emit_for, points, active, .. } in &mut self.running {
             if emit_for.is_some_and(|t| i.age >= t) && i.emitting {
                 i.stop();
             }
@@ -952,10 +1087,32 @@ impl StartedSystems {
             if let Some(e) = end {
                 cps[1] = *e;
             }
-            i.step(&defs.defs, &cps, dt, rng, sheets);
+            for (n, p) in points.iter() {
+                if let Some(c) = cps.get_mut(*n) {
+                    *c = *p;
+                }
+            }
+            i.step_with(&defs.defs, &cps, *active, dt, rng, sheets);
         }
         self.running.retain(|r| !r.instance.finished(&defs.defs));
     }
+}
+
+/// What the started systems are showing, kept each frame when the
+/// resource exists (tests and probes insert it): each running system's
+/// name, tag, whether it still emits, its particles' places (engine
+/// space) with their own control points, and their radii (game units).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct RunningSystems(pub Vec<RunningSystem>);
+
+/// One running started system (`RunningSystems`).
+#[derive(Clone, Debug, Default)]
+pub struct RunningSystem {
+    pub name: String,
+    pub tag: Option<Entity>,
+    pub emitting: bool,
+    pub particles: Vec<(Vec3, Option<usize>)>,
+    pub radii: Vec<f32>,
 }
 
 /// Run and show the one-shot systems games start (`StartParticleSystem`,
@@ -981,6 +1138,8 @@ pub fn run_started_systems(
     light_field: Option<Res<crate::map::LightField>>,
     mut pool: ResMut<Particles>,
     frames: Query<(&Transform, Option<&ChildOf>)>,
+    set_points: Query<&ParticleControlPoints>,
+    mut shown: Option<ResMut<RunningSystems>>,
 ) {
     let Some(defs) = defs else {
         starts.clear();
@@ -1026,6 +1185,11 @@ pub fn run_started_systems(
         }
     }
     if started.running.is_empty() {
+        if let Some(shown) = shown.as_mut()
+            && !shown.0.is_empty()
+        {
+            shown.0.clear();
+        }
         return;
     }
     // Followed systems carried with their entity's frame since last step.
@@ -1052,8 +1216,39 @@ pub fn run_started_systems(
         cp.rotation = Quat::from_rotation_arc(Vec3::X, Vec3::new(fw.x, -fw.z, fw.y).try_normalize().unwrap_or(Vec3::X));
         *last = now;
     }
+    // Control points the tags set (TF2's flame points).
+    let tags: Vec<Entity> = started.running.iter().filter_map(|r| r.tag).collect();
+    for tag in tags {
+        let Ok(set) = set_points.get(tag) else { continue };
+        let points: Vec<(usize, ControlPoint)> = set
+            .points
+            .iter()
+            .map(|(n, p)| {
+                let at = ControlPoint {
+                    position: to_game(p.position),
+                    duration: p.duration,
+                    ..ControlPoint::default()
+                };
+                (*n, at)
+            })
+            .collect();
+        started.set_points(tag, &points, set.active);
+    }
     let sheets = MaterialSheets(materials.as_ref().map(|m| &m.0));
     started.step(time.delta_secs().min(0.25), &sheets);
+    if let Some(shown) = shown.as_mut() {
+        shown.0 = started
+            .running
+            .iter()
+            .map(|r| RunningSystem {
+                name: defs.defs[r.instance.def].name.clone(),
+                tag: r.tag,
+                emitting: r.instance.emitting,
+                particles: r.instance.placed().into_iter().map(|(p, t)| (to_engine(p), t)).collect(),
+                radii: r.instance.radii(&defs.defs),
+            })
+            .collect();
+    }
     let Some(eye) = eyes.iter().next().map(|e| e.translation()) else {
         return;
     };
@@ -1200,6 +1395,10 @@ mod tests {
             fade_in: 0.0,
             fade_out: 0.0,
             serial: 0,
+            target: None,
+            radius_mul: 1.0,
+            alpha_mul: 1.0,
+            tint: None,
         };
         assert_eq!(Instance::alpha(&d, &p(0.0)), 0.0);
         assert!((Instance::alpha(&d, &p(0.125)) - 0.5).abs() < 1e-5);
@@ -1400,5 +1599,78 @@ mod tests {
         // Started again: a new instance beside the fading one.
         e.switch(&defs, true);
         assert_eq!(e.instances.len(), 2);
+    }
+
+    /// TF2's flame core (specs/tf2/flames.md 3.3): each sprite takes the
+    /// active control point, lives its duration, sits on it (catch-up
+    /// 100), its radius 23 x (0.5 to 1 over 0..64 units from control
+    /// point 0) x (0.4 to 1 over its life) and its tint (0.2, 0.2, 1) to
+    /// white over 0..200 units.
+    #[test]
+    fn a_sprite_rides_its_control_point_with_the_flame_cores_remaps() {
+        let core = SystemDef {
+            name: "core".into(),
+            material: Some(0),
+            radius: 23.0,
+            emitters: vec![Emitter::Continuously { start: 0.0, rate: 100.0, duration: 0.0 }],
+            initializers: vec![Init::AssignTargetCp, Init::LifetimeFromCp],
+            operators: vec![
+                Op::Decay,
+                Op::FollowCp { catch_up: 100.0 },
+                Op::RemapDistance {
+                    cp: 0,
+                    field: Field::Radius,
+                    near: 0.0,
+                    far: 64.0,
+                    low: Vec3::splat(0.5),
+                    high: Vec3::splat(1.0),
+                    scale_initial: true,
+                },
+                Op::RemapDistance {
+                    cp: 0,
+                    field: Field::Tint,
+                    near: 0.0,
+                    far: 200.0,
+                    low: Vec3::new(0.2, 0.2, 1.0),
+                    high: Vec3::ONE,
+                    scale_initial: false,
+                },
+                Op::RadiusScale { start_scale: 0.4, end_scale: 1.0, start: 0.0, end: 1.0, bias: 0.5, ease: false },
+            ],
+            renderer: Render::Sprites { rate: 1.0, as_fps: false, fit_life: true, orientation: 0 },
+            ..SystemDef::default()
+        };
+        let defs = vec![core];
+        let mut rng = ParticleRng::new(3);
+        let mut i = Instance::new(&defs, 0);
+        let mut cps = [ControlPoint::default(); MAX_CONTROL_POINTS];
+        cps[3] = ControlPoint { position: Vec3::new(120.0, 0.0, 0.0), duration: 0.6, ..ControlPoint::default() };
+        // One sprite (0.01 s at 100/s), on control point 3.
+        i.step_with(&defs, &cps, Some(3), 0.01, &mut rng, &none);
+        assert_eq!(i.placed(), vec![(Vec3::new(120.0, 0.0, 0.0), Some(3))]);
+        let p = &i.particles[0];
+        assert!((p.life - 0.6).abs() < 1e-6);
+        // Half its life on, 120 from the muzzle: 23 x 1 x 0.7; tint 0.68.
+        let mut q = p.clone();
+        q.age = 0.3;
+        assert!((Instance::radius(&defs[0], &q) - 16.1).abs() < 1e-3, "{}", Instance::radius(&defs[0], &q));
+        let c = Instance::color(&defs[0], &q);
+        assert!((c - Vec3::new(0.68, 0.68, 1.0)).length() < 1e-4, "{c}");
+        // At the muzzle at birth: 23 x 0.5 x 0.4, blue.
+        let mut at_muzzle = Instance::new(&defs, 0);
+        cps[3].position = Vec3::ZERO;
+        at_muzzle.step_with(&defs, &cps, Some(3), 0.01, &mut rng, &none);
+        let mut q = at_muzzle.particles[0].clone();
+        q.age = 0.0;
+        assert!((Instance::radius(&defs[0], &q) - 4.6).abs() < 1e-3);
+        assert!((Instance::color(&defs[0], &q) - Vec3::new(0.2, 0.2, 1.0)).length() < 1e-5);
+        // The point moves: the sprite goes with it.
+        cps[3].position = Vec3::new(150.0, 0.0, 10.0);
+        at_muzzle.step_with(&defs, &cps, None, 0.01, &mut rng, &none);
+        assert_eq!(at_muzzle.placed()[0], (Vec3::new(150.0, 0.0, 10.0), Some(3)));
+        // Without an active point a new sprite has none and stays put.
+        let mut lone = Instance::new(&defs, 0);
+        lone.step_with(&defs, &cps, None, 0.01, &mut rng, &none);
+        assert_eq!(lone.placed(), vec![(Vec3::ZERO, None)]);
     }
 }

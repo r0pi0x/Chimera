@@ -39,11 +39,40 @@ fn tf2s_effects_load_onto_another_games_map() {
     // Every system a shot starts is there.
     let gun_looks = looks::GunLooks::default();
     for gun in tf2::game::weapons::GUNS {
-        if let Some((name, _)) = gun_looks.shot_system(gun, false) {
+        if let Some(name) = gun_looks.muzzle_of(gun) {
             assert!(systems.find(name).is_some(), "{gun}: {name}");
         }
     }
     assert!(!map.kit.decals.decals.is_empty(), "TF2's impact decals");
+}
+
+/// The flame stream's core as our loader reads it from the install
+/// (specs/tf2/flames.md 3.3): its sprites take the newest point, live
+/// its duration, ride it, their radius 23 x (0.5 to 1 over 64 units from
+/// the muzzle) and their tint (0.2, 0.2, 1) to white over 200 units.
+#[test]
+fn the_flame_cores_operators_load() {
+    use chimera_world::map::psys::{Field, Init, Op};
+    let Some(map) = dressed() else { return };
+    let systems = &map.particle_systems;
+    let notes: Vec<&String> = map.warnings.iter().filter(|w| w.contains("particle operator")).collect();
+    eprintln!("particle notes: {notes:?}");
+    let core = &systems.defs[systems.find("new_flame_core").expect("new_flame_core")];
+    assert!(core.initializers.contains(&Init::AssignTargetCp), "{:?}", core.initializers);
+    assert!(core.initializers.contains(&Init::LifetimeFromCp), "{:?}", core.initializers);
+    assert!(core.operators.iter().any(|o| matches!(o, Op::FollowCp { catch_up } if (*catch_up - 100.0).abs() < 1e-3)), "{:?}", core.operators);
+    let radius = core.operators.iter().find_map(|o| match *o {
+        Op::RemapDistance { field: Field::Radius, near, far, low, high, scale_initial, .. } => Some((near, far, low.x, high.x, scale_initial)),
+        _ => None,
+    });
+    assert_eq!(radius, Some((0.0, 64.0, 0.5, 1.0, true)), "{:?}", core.operators);
+    let tint = core.operators.iter().find_map(|o| match *o {
+        Op::RemapDistance { field: Field::Tint, near, far, low, high, .. } => Some((near, far, low, high)),
+        _ => None,
+    });
+    let (near, far, low, high) = tint.expect("the tint remap");
+    assert!(near == 0.0 && far == 200.0 && (low - bevy::prelude::Vec3::new(0.2, 0.2, 1.0)).length() < 1e-3 && high == bevy::prelude::Vec3::ONE);
+    assert!((core.radius - 23.0).abs() < 1e-3);
 }
 
 #[test]

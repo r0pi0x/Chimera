@@ -18,7 +18,7 @@ use vbsp::Bsp;
 use super::{METERS_PER_UNIT, material::MaterialLoader, trails::particle_material};
 use crate::map::{
     MapData,
-    psys::{Emitter, Init, MapParticleSystems, Op, Pick, PlacedSystem, Render, SystemDef},
+    psys::{Emitter, Field, Init, MapParticleSystems, Op, Pick, PlacedSystem, Render, SystemDef},
 };
 
 /// Entries of a map manifest past this are ignored.
@@ -46,9 +46,22 @@ fn pick(e: &Element, min: &str, max: &str, exp: &str) -> Pick {
     Pick::new(e.float(min, 0.0), e.float(max, 0.0), e.float(exp, 1.0))
 }
 
+/// The first of `keys` the operator has (attribute names differ between
+/// tool versions and aren't all known: specs/tf2/particles.md 7); none:
+/// the first, and a note naming the ones it has, for the load's warnings.
+fn key<'a>(op: &Element, keys: &[&'a str], notes: &mut Vec<String>) -> &'a str {
+    if let Some(k) = keys.iter().find(|k| op.get(k).is_some()) {
+        return k;
+    }
+    let function = op.str("functionName").unwrap_or(&op.name);
+    let has: Vec<&str> = op.attributes.iter().map(|(k, _)| k.as_str()).filter(|k| *k != "functionName").collect();
+    notes.push(format!("{function}: no {:?} (has {})", keys[0], has.join(", ")));
+    keys[0]
+}
+
 /// One operator element into the definition; false when its function
-/// isn't one we run.
-fn add_operator(def: &mut SystemDef, list: &str, op: &Element) -> bool {
+/// isn't one we run. `notes` gets attributes looked for and not found.
+fn add_operator(def: &mut SystemDef, list: &str, op: &Element, notes: &mut Vec<String>) -> bool {
     let function = op.str("functionName").unwrap_or(&op.name).to_lowercase();
     let cp = |k: &str| op.int(k, 0).clamp(0, crate::map::psys::MAX_CONTROL_POINTS as i32 - 1) as usize;
     match (list, function.as_str()) {
@@ -191,6 +204,39 @@ fn add_operator(def: &mut SystemDef, list: &str, op: &Element) -> bool {
         ("operators", "movement lock to control point") => def.operators.push(Op::LockToControlPoint {
             cp: cp("control_point_number"),
         }),
+        // TF2's flames (specs/tf2/flames.md 3.3; meanings inferred there).
+        ("initializers", "assign target cp") => def.initializers.push(Init::AssignTargetCp),
+        ("initializers", "lifetime from control point life time") => def.initializers.push(Init::LifetimeFromCp),
+        ("operators", "movement follow cp") => def.operators.push(Op::FollowCp {
+            catch_up: op.float(key(op, &["catch up speed", "catchup speed", "catch_up_speed"], notes), 100.0),
+        }),
+        // Read each step (the flame core's size and tint follow the
+        // sprite's distance from the muzzle as it flies).
+        (
+            "initializers" | "operators",
+            "remap distance to control point to scalar" | "remap distance to control point to vector",
+        ) => {
+            let vector = function.ends_with("vector");
+            let field_key = key(op, &["output field"], notes);
+            let Some(field) = Field::of(op.int(field_key, if vector { 6 } else { 3 })) else {
+                return false;
+            };
+            let (lo, hi) = (key(op, &["output minimum", "output min"], notes), key(op, &["output maximum", "output max"], notes));
+            let (low, high) = if vector {
+                (op.vec3(lo, Vec3::ZERO), op.vec3(hi, Vec3::ONE))
+            } else {
+                (Vec3::splat(op.float(lo, 0.0)), Vec3::splat(op.float(hi, 1.0)))
+            };
+            def.operators.push(Op::RemapDistance {
+                cp: cp(key(op, &["control point", "control point number", "control_point_number"], notes)),
+                field,
+                near: op.float(key(op, &["distance minimum", "distance min", "input minimum"], notes), 0.0),
+                far: op.float(key(op, &["distance maximum", "distance max", "input maximum"], notes), 128.0),
+                low,
+                high,
+                scale_initial: op.bool("output is scalar of initial random range"),
+            });
+        }
         // A wobble on one field: not run (its look is small).
         ("operators", "oscillate scalar") => {}
         ("forces", "pull towards control point") => def.operators.push(Op::Pull {
@@ -282,8 +328,12 @@ fn build(
         ] {
             for op in e.elements(list) {
                 let Some(op) = elements.get(op) else { continue };
-                if !add_operator(&mut def, list, op) {
+                let mut notes = Vec::new();
+                if !add_operator(&mut def, list, op, &mut notes) {
                     unknown.insert(format!("{list}: {}", op.str("functionName").unwrap_or(&op.name)));
+                }
+                for n in notes {
+                    data.warnings.push(format!("particle operator attribute not found in {}: {n}", def.name));
                 }
             }
         }
@@ -506,7 +556,7 @@ mod tests {
             ],
         };
         let mut def = SystemDef::default();
-        assert!(add_operator(&mut def, "emitters", &op));
+        assert!(add_operator(&mut def, "emitters", &op, &mut Vec::new()));
         assert_eq!(
             def.emitters,
             vec![Emitter::Continuously {

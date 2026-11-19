@@ -55,6 +55,9 @@ pub struct ParticleDrawMaterial {
     pub texture: Option<Handle<Image>>,
     #[uniform(2)]
     pub fog: fog::FogUniform,
+    /// x: overbright x `$addself` (premultiplied materials' brightening).
+    #[uniform(3)]
+    pub add_self: Vec4,
     pub blend: ParticleBlend,
     /// On the view model's layer with a material that says `$ignorez`:
     /// drawn over the view model (no depth test; after it, in the
@@ -73,6 +76,7 @@ pub struct ParticleDrawMaterial {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParticleDrawKey {
     additive: bool,
+    premultiplied: bool,
     over_model: bool,
     soft: bool,
 }
@@ -81,6 +85,7 @@ impl From<&ParticleDrawMaterial> for ParticleDrawKey {
     fn from(m: &ParticleDrawMaterial) -> Self {
         Self {
             additive: m.blend == ParticleBlend::Additive,
+            premultiplied: m.blend == ParticleBlend::Premultiplied,
             over_model: m.over_model,
             soft: m.soft,
         }
@@ -111,6 +116,7 @@ impl Material for ParticleDrawMaterial {
         match self.blend {
             ParticleBlend::Alpha => AlphaMode::Blend,
             ParticleBlend::Additive => AlphaMode::Add,
+            ParticleBlend::Premultiplied => AlphaMode::Premultiplied,
         }
     }
 
@@ -128,6 +134,11 @@ impl Material for ParticleDrawMaterial {
             && let Some(fragment) = descriptor.fragment.as_mut()
         {
             fragment.shader_defs.push("ADDITIVE".into());
+        }
+        if key.bind_group_data.premultiplied
+            && let Some(fragment) = descriptor.fragment.as_mut()
+        {
+            fragment.shader_defs.push("PREMULTIPLIED".into());
         }
         if key.bind_group_data.soft
             && let Some(fragment) = descriptor.fragment.as_mut()
@@ -308,6 +319,7 @@ pub fn draw_particles(
                         MeshMaterial3d(materials.add(ParticleDrawMaterial {
                             texture,
                             fog: fog.as_ref().map_or_else(Default::default, |f| f.0),
+                            add_self: Vec4::new(def.overbright.max(1.0) * def.add_self, 0.0, 0.0, 0.0),
                             blend: def.blend,
                             over_model: layer == VIEW && def.no_depth,
                             soft: def.depth_blend,

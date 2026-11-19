@@ -1005,20 +1005,33 @@ impl<'a> MaterialLoader<'a> {
             .read(&format!("materials/{}.vtf", normalize(&base).trim_end_matches(".vtf")))
             .and_then(|b| sheet(&b))
             .unwrap_or_default();
+        // A sprite card's blend (specs/tf2/particles.md 1): `$addself`
+        // (or a second added texture, or `$addoverblend`) premultiplied,
+        // else `$additive`, else alpha.
+        let premultiplied = sprite_card && (number("$addself") != 0.0 || number("$addbasetexture2") != 0.0 || flag("$addoverblend"));
+        // `srgb?$overbrightfactor` holds on the PC's sRGB path (TF2's
+        // flame core: particles.md Open questions 3, read as holding).
+        let overbright = match number("$overbrightfactor") {
+            0.0 => number("srgb?$overbrightfactor"),
+            o => o,
+        };
         Some(ParticleMaterial {
             name: name.to_lowercase(),
             texture,
-            blend: if flag("$additive") {
+            blend: if premultiplied {
+                ParticleBlend::Premultiplied
+            } else if flag("$additive") {
                 ParticleBlend::Additive
             } else {
                 ParticleBlend::Alpha
             },
+            add_self: if premultiplied { number("$addself") } else { 0.0 },
             vertex_color: sprite_card || flag("$vertexcolor"),
             vertex_alpha: sprite_card || flag("$vertexalpha"),
             no_depth: flag("$ignorez"),
             depth_blend: flag("$depthblend"),
             sequences,
-            overbright: number("$overbrightfactor"),
+            overbright,
             // Sprite cards' screen-size limits (impact_effects.md 14).
             screen: if sprite_card {
                 use crate::map::particles::ScreenSize;

@@ -59,6 +59,7 @@ pub fn particle_material(
     let key = match blend {
         Some(ParticleBlend::Additive) => format!("{name}#add"),
         Some(ParticleBlend::Alpha) => format!("{name}#blend"),
+        Some(ParticleBlend::Premultiplied) => format!("{name}#premultiplied"),
         None => name.clone(),
     };
     if let Some(i) = data.particles.find(&key) {

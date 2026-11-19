@@ -78,3 +78,9 @@ start_sound = "tf2:Weapon_FlameThrower.FireStart"
 loop_sound = "tf2:Weapon_FlameThrower.FireLoop"
 end_sound = "tf2:Weapon_FlameThrower.FireEnd"
 hit_sound = "tf2:Weapon_FlameThrower.FireHit"
+
+# The stream (specs/tf2/flames.md 3): one `new_flame` per burst at the
+# muzzle, its sprites riding the flame points (control points 1-30); a
+# crit's by team, under water's.
+[hooks."tf2:looks"]
+stream = { system = "new_flame", crit = "new_flame_crit", under_water = "flamethrower_underwater", burst_gap = 0.1 }

@@ -42,11 +42,15 @@
 //!   the surface's normal (zero angles in the air); an unnamed one is
 //!   `ExplosionCore_wall`. The server traces the `Scorch` decal
 //!   (`blast`).
-//! - **Flames**: each round of the Flame Thrower (one every 0.08 s while
-//!   attack is held) starts a piece of TF2's `flamethrower` system
-//!   (`flamethrower_blue` for team 2, BLU's) at the muzzle along the aim,
-//!   emitting for one round's interval (`FLAME_PIECE`), so the stream
-//!   follows the aim and ends when firing does.
+//! - **Flames** (flames.md 3; `flame_stream`): the gun's `stream`
+//!   (`StreamLooks`): one `new_flame` per burst (`new_flame_crit_red`/
+//!   `_blue` on a crit, `flamethrower_underwater` with the eye under
+//!   water), started at the muzzle as the flashes are (control point 0)
+//!   and stopped when no round came for `burst_gap`; its control points 1
+//!   to 30 are the flame points as this machine runs them
+//!   (`flame::FlameShown`: the same rounds, seeds and motion as the
+//!   server's damage points), the newest the active one each new sprite
+//!   rides, so the fire is where the damage is.
 //! - **Impacts**: Source's impact effects, decals and impact sounds with
 //!   TF2's style (`STYLE`): TF2 is an impact provider, so its guns' hits
 //!   are TF2's own on any map that carries its looks (`maps::
@@ -55,9 +59,10 @@
 //!   map's sound scripts' (a name the map has, such as CS:S's
 //!   `Concrete.BulletImpact` on de_dust2, plays the map's).
 //!
-//! Known shortcuts: the flame is pieces of TF2's system per round, not
-//! its own continuous emitter (flames.md is its own task); no airblast
-//! look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
+//! Known shortcuts: control point 0 of the stream is the muzzle as drawn
+//! (the view model's re-projected in first person), not the third-person
+//! model's (flames.md Open questions 2); crits are off, so a crit stream
+//! never starts; no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
 //! used until the weapon scripts are read; only guns with a tracer count
 //! toward the shared tracer counter; the per-shot flash and the tracers
 //! leave along the aim, the `while_firing` systems along the view (the
@@ -85,7 +90,7 @@ use crate::map::{
     ShowLocalBody,
     attached::{AnchorQuery, AttachPoint, first_person_shown},
     particles::ParticleSet,
-    psys::{Follow, StartParticleSystem, StopParticleSystems},
+    psys::{ControlPointState, Follow, ParticleControlPoints, StartParticleSystem, StartedSystemsRun, StopParticleSystems},
     view_model::{HeldAttachment, ViewAnimator, ViewModelCamera, ViewModelOffset, ViewModelSettings, ViewModels},
 };
 
@@ -157,6 +162,49 @@ pub struct LooksParams {
     /// pipes take the Stickybomb Launcher's, effects.md 5).
     #[serde(default)]
     pub explosion_of: Option<String>,
+    /// A stream drawn on flame points (the Flame Thrower's: flames.md 3).
+    #[serde(default)]
+    pub stream: Option<StreamLooks>,
+}
+
+/// A gun's stream on its flame points (flames.md 3.1): one system per
+/// burst, started at the attachment `at` (control point 0), its control
+/// points 1 and up the points (`flame::FlameShown`).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct StreamLooks {
+    pub system: String,
+    /// A critical burst's, before the team suffix (`_red`, `_blue`).
+    pub crit: String,
+    /// With the eye under water.
+    pub under_water: String,
+    #[serde(default = "muzzle_name")]
+    pub at: String,
+    /// Seconds without a round after which a burst has ended.
+    pub burst_gap: f32,
+}
+
+fn muzzle_name() -> String {
+    MUZZLE_ATTACHMENT.into()
+}
+
+impl StreamLooks {
+    /// The system a burst shows (flames.md 3.1): under water's, a crit's
+    /// by team (`blu`), else the stream's.
+    pub fn system_for(&self, crit: bool, blu: bool, under_water: bool) -> String {
+        if under_water {
+            self.under_water.clone()
+        } else if crit {
+            format!("{}_{}", self.crit, if blu { "blue" } else { "red" })
+        } else {
+            self.system.clone()
+        }
+    }
+
+    /// Every name it can show.
+    pub fn names(&self) -> Vec<String> {
+        vec![self.system.clone(), self.system_for(true, false, false), self.system_for(true, true, false), self.under_water.clone()]
+    }
 }
 
 fn tracer_every() -> u32 {
@@ -223,14 +271,9 @@ impl GunLooks {
         }
     }
 
-    /// The system a shot of `gun` starts and for how long it emits (None:
-    /// as its definition runs): its muzzle flash, or for the Flame Thrower
-    /// a piece of its team's flames (`blu`: team 2's).
-    pub fn shot_system(&self, gun: &str, blu: bool) -> Option<(&str, Option<f32>)> {
-        if gun == super::FLAMETHROWER {
-            return Some((FLAMES[blu as usize], Some(FLAME_PIECE)));
-        }
-        self.muzzle_of(gun).map(|n| (n, None))
+    /// A gun's stream on flame points.
+    pub fn stream_of(&self, gun: &str) -> Option<&StreamLooks> {
+        self.of(gun)?.stream.as_ref()
     }
 
     /// Every system the guns name (for the loaders).
@@ -245,6 +288,7 @@ impl GunLooks {
             }
             out.extend(l.while_firing.iter().map(|s| s.system.clone()));
             out.extend(l.backblast.iter().map(|s| s.system.clone()));
+            out.extend(l.stream.iter().flat_map(StreamLooks::names));
             if let Some(e) = &l.explosion {
                 out.extend([&e.wall, &e.player, &e.water].into_iter().filter(|n| !n.is_empty()).cloned());
             }
@@ -264,13 +308,6 @@ pub struct TracerCount(pub u32);
 /// Where a muzzle flash starts from the eye when the gun's `muzzle`
 /// attachment isn't drawn: forward, right, up (units).
 pub const MUZZLE_OFFSET: Vec3 = Vec3::new(28.0, 11.0, -11.0);
-
-/// The Flame Thrower's flames by team: RED's, BLU's (flamethrower.pcf).
-pub const FLAMES: [&str; 2] = ["flamethrower", "flamethrower_blue"];
-
-/// Seconds each round's piece of the flame emits: the round's interval
-/// (0.08 s) and a little, so the pieces join.
-pub const FLAME_PIECE: f32 = 0.09;
 
 /// The gun's attachment the flashes and flames start from.
 pub const MUZZLE_ATTACHMENT: &str = "muzzle";
@@ -293,13 +330,12 @@ pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::I
 
 /// The systems TF2's guns start: loaded with its maps besides their own,
 /// and onto other games' maps (`maps::add_guest_looks`): every name the
-/// guns' data gives (`GunLooks::systems`) and both teams' flames.
+/// guns' data gives (`GunLooks::systems`: the flame stream's too).
 pub fn particle_systems() -> &'static [&'static str] {
     // Leaked: the loaders want 'static names, and a map's load asks once.
     let names: Vec<&'static str> = GunLooks::default()
         .systems()
         .into_iter()
-        .chain(FLAMES.map(str::to_string))
         .map(|n| &*Box::leak(n.into_boxed_str()))
         .collect();
     Box::leak(names.into_boxed_slice())
@@ -490,13 +526,11 @@ impl Muzzles<'_, '_> {
     }
 }
 
-/// Each shot's muzzle flash (and the backblast for others), and each
-/// Flame Thrower round's flames.
+/// Each shot's muzzle flash (and the backblast for others).
 fn muzzle_flashes(
     looks: Res<GunLooks>,
     mut events: MessageReader<WeaponEvent>,
     weapons: Query<&Weapon>,
-    teams: Query<&Team>,
     muzzles: Muzzles,
     mut start: MessageWriter<StartParticleSystem>,
 ) {
@@ -506,7 +540,6 @@ fn muzzle_flashes(
             continue;
         }
         let Ok(weapon) = weapons.get(e.weapon).map(|w| w.id) else { continue };
-        let blu = teams.get(e.owner).is_ok_and(|t| t.0 == 2);
         let aim = aim_of(yaw, pitch);
         let forward = aim * Vec3::NEG_Z;
         // The backblast, seen by everyone but the shooter (effects.md 4).
@@ -516,21 +549,108 @@ fn muzzle_flashes(
         {
             start.write(muzzles.start_on(e.owner, &m, &b.system, -forward));
         }
-        let Some((name, emit_for)) = looks.shot_system(weapon, blu) else { continue };
-        if emit_for.is_none() && muzzles.view_model_off(e.owner) {
+        let Some(name) = looks.muzzle_of(weapon) else { continue };
+        if muzzles.view_model_off(e.owner) {
             continue;
         }
-        let o = MUZZLE_OFFSET * U;
-        let ahead = || origin + forward * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z;
         let s = match muzzles.placed(e.owner) {
             // A flash goes with the gun drawn in the view (the eye's
             // frame), at the muzzle re-projected into the world view.
-            Some(m @ MuzzleAt::View(_)) if emit_for.is_none() => muzzles.start_on(e.owner, &m, name, forward),
-            // The flames stream into the world from where the muzzle
-            // appears there.
-            m => StartParticleSystem { emit_for, ..StartParticleSystem::new(name, m.map_or_else(ahead, |m| m.world()), forward) },
+            Some(m @ MuzzleAt::View(_)) => muzzles.start_on(e.owner, &m, name, forward),
+            m => StartParticleSystem::new(name, m.map_or_else(|| ahead_of(origin, aim), |m| m.world()), forward),
         };
         start.write(s);
+    }
+}
+
+/// Where a system starts from the eye `origin` looking along `aim` when
+/// the gun's attachment isn't drawn (`MUZZLE_OFFSET`).
+fn ahead_of(origin: Vec3, aim: Quat) -> Vec3 {
+    let o = MUZZLE_OFFSET * U;
+    origin + aim * Vec3::NEG_Z * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z
+}
+
+/// The flame stream (flames.md 3): a new `new_flame` (a crit's or under
+/// water's by `StreamLooks::system_for`) when a burst starts, at the
+/// gun's muzzle as the flashes' (control point 0, carried with it),
+/// stopped when it ends (its sprites live out); every frame its control
+/// points 1 to 30 are the drawn copy of the points (`flame::FlameShown`:
+/// slot i at control point i + 1, its life the duration, its box the
+/// radius) and the newest is the active one, which new sprites ride. A
+/// different name mid-burst (crit on or off) stops the old and starts the
+/// new.
+#[allow(clippy::type_complexity)]
+pub fn flame_stream(
+    time: Res<Time>,
+    looks: Res<GunLooks>,
+    mut guns: Query<(Entity, &Weapon, &super::flame::Tf2Flame, &super::flame::FlameShown, Option<&mut ParticleControlPoints>)>,
+    owners: Query<(&Inventory, &Transform, Option<&chimera_core::core::MovementState>, Option<&chimera_core::core::Intent>)>,
+    teams: Query<&Team>,
+    muzzles: Muzzles,
+    mut running: Local<std::collections::BTreeMap<Entity, String>>,
+    mut start: MessageWriter<StartParticleSystem>,
+    mut stop: MessageWriter<StopParticleSystems>,
+    mut commands: Commands,
+) {
+    let now = time.elapsed_secs_f64();
+    let mut seen = BTreeSet::new();
+    for (e, w, flame, shown, cps) in &mut guns {
+        let Some(stream) = looks.stream_of(w.id) else { continue };
+        seen.insert(e);
+        // Its control points: every live point's.
+        let half = flame.params.half();
+        let points = ParticleControlPoints {
+            points: shown
+                .points
+                .points
+                .iter()
+                .map(|p| {
+                    let state = ControlPointState { position: p.at, velocity: p.velocity + p.carried, radius: half, duration: p.life };
+                    (p.slot as usize + 1, state)
+                })
+                .collect(),
+            active: shown.points.newest().map(|p| p.slot as usize + 1),
+        };
+        match cps {
+            Some(mut c) => {
+                if *c != points {
+                    *c = points;
+                }
+            }
+            None => {
+                commands.entity(e).insert(points);
+            }
+        }
+        // The burst.
+        let owner = w.owner.filter(|o| owners.get(*o).is_ok_and(|(i, ..)| i.active == Some(e)));
+        let firing = owner.is_some() && shown.points.last_round.is_some_and(|t| now - t <= stream.burst_gap as f64 + 1e-6);
+        let blu = owner.and_then(|o| teams.get(o).ok()).is_some_and(|t| super::super::bodies::skin_of(Some(*t)) == 1);
+        let name = firing.then(|| stream.system_for(false, blu, shown.points.under_water));
+        if running.get(&e) == name.as_ref() {
+            continue;
+        }
+        if running.remove(&e).is_some() {
+            stop.write(StopParticleSystems { tag: e });
+        }
+        let (Some(name), Some(owner)) = (name, owner) else { continue };
+        let Ok((_, at, state, intent)) = owners.get(owner) else { continue };
+        let aim = intent.map_or(at.rotation, |i| aim_of(i.yaw, i.pitch));
+        let forward = aim * Vec3::NEG_Z;
+        let s = match muzzles.placed_at(owner, &stream.at) {
+            Some(m) => muzzles.start_on(owner, &m, &name, forward),
+            None => {
+                let eye = at.translation + state.map_or(Vec3::ZERO, |s| s.eye_offset);
+                StartParticleSystem::new(name.clone(), ahead_of(eye, aim), forward)
+            }
+        };
+        start.write(StartParticleSystem { tag: Some(e), ..s });
+        running.insert(e, name);
+    }
+    // Guns gone: their systems stop.
+    let gone: Vec<Entity> = running.keys().copied().filter(|e| !seen.contains(e)).collect();
+    for e in gone {
+        running.remove(&e);
+        stop.write(StopParticleSystems { tag: e });
     }
 }
 
@@ -650,7 +770,12 @@ pub fn add(app: &mut App) {
         .register_surface_classes(source_engine::effects::impacts::surfaces(crate::game::GAME))
         .add_systems(
             Update,
-            (explosions, muzzle_flashes, tracers, firing_looks)
+            (
+                (explosions, muzzle_flashes, tracers, firing_looks),
+                (super::flame::shown_flames.run_if(not(resource_exists::<chimera_net::dedicated::Serving>)), flame_stream)
+                    .chain()
+                    .before(StartedSystemsRun),
+            )
                 .after(ParticleSet::Step)
                 .before(ParticleSet::Draw)
                 .after(crate::map::attached::EyePlaced)
@@ -671,7 +796,7 @@ mod tests {
         for gun in [w::SCATTERGUN, w::SHOTGUN, w::PISTOL_SCOUT, w::SMG, w::SNIPER_RIFLE, w::REVOLVER, w::GRENADE_LAUNCHER, w::STICKY_LAUNCHER, w::SYRINGE_GUN] {
             assert!(muzzle_of(gun).is_some_and(|n| n.starts_with("muzzle_")), "{gun}");
         }
-        assert_eq!(looks.shot_system(w::FLAMETHROWER, true), Some(("flamethrower_blue", Some(FLAME_PIECE))));
+        assert_eq!(looks.muzzle_of(w::FLAMETHROWER), None, "its stream is its muzzle effect (effects.md 1)");
         assert!(muzzle_of(w::ROCKET_LAUNCHER).is_none(), "no rocket-launcher muzzle system exists (effects.md 1)");
         assert!(particle_systems().contains(&"muzzle_pipelauncher") && particle_systems().contains(&"ExplosionCore_Wall"));
     }

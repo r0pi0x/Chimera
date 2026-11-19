@@ -36,6 +36,10 @@ pub enum ParticleBlend {
     Alpha,
     /// Added to the scene (colour x alpha).
     Additive,
+    /// Premultiplied: colour x alpha added over the scene dimmed by
+    /// 1 - alpha, the colour brightened by `ParticleMaterial::add_self`
+    /// (SpriteCard's `$addself`: specs/tf2/particles.md 1, 2).
+    Premultiplied,
 }
 
 /// A material particles can use: a texture, its blend, and which vertex
@@ -67,6 +71,10 @@ pub struct ParticleMaterial {
     pub overbright: f32,
     /// Sprite cards' screen-size limits (`ScreenSize`), for sprites.
     pub screen: ScreenSize,
+    /// SpriteCard's `$addself` (premultiplied blending): the colour x
+    /// (1 + overbright x add_self x the particle's alpha).
+    #[serde(default)]
+    pub add_self: f32,
 }
 
 /// A sprite card's size limits (specs/tf2/particles.md 4, from the

@@ -21,6 +21,8 @@ struct FogUniform {
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var base_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(1) var base_sampler: sampler;
 @group(constants::MATERIAL_BIND_GROUP) @binding(2) var<uniform> fog: FogUniform;
+// x: overbright x `$addself` (premultiplied sprite cards).
+@group(constants::MATERIAL_BIND_GROUP) @binding(3) var<uniform> add_self: vec4<f32>;
 
 // `$depthblend`'s distance over which a particle fades out as it nears the
 // world behind it, in meters: 24 game units (ours; the spec gives no
@@ -47,11 +49,23 @@ fn soft_depth(position: vec4<f32>) -> f32 {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var c = textureSample(base_texture, base_sampler, in.uv);
+    var vertex_alpha = 1.0;
     @if(VERTEX_COLORS) {
         c = c * in.color;
+        vertex_alpha = in.color.a;
     }
-    c.a *= soft_depth(in.position);
+    let soft = soft_depth(in.position);
+    c.a *= soft;
+    vertex_alpha *= soft;
     let f = source_fog(fog.color, fog.range, fog.water_color, fog.water_range, in.world_position.xyz);
+    @if(PREMULTIPLIED) {
+        // SpriteCard's `$addself` (specs/tf2/particles.md 2): the colour
+        // over its own coverage, brightened by its alpha, added over the
+        // scene dimmed by that coverage (the overbright is in the
+        // particle's colour).
+        let rgb = c.rgb * c.a * (1.0 + add_self.x * vertex_alpha);
+        return vec4<f32>(rgb * (1.0 - f.a), c.a);
+    }
     @if(ADDITIVE) {
         // Premultiplied blending with alpha 0 adds.
         return vec4<f32>(c.rgb * c.a * (1.0 - f.a), 0.0);

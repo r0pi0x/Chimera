@@ -12,14 +12,17 @@
 //! children with delays), `MapParticleSystems` (the definitions and the
 //! placed info_particle_systems), `Pick` (a biased random pick),
 //! `StartParticleSystem` (a one-shot effect a game starts at a point, e.g.
-//! a splash; the presentation runs it).
+//! a splash; the presentation runs it), `ParticleControlPoints` (control
+//! points 1 and up a game moves on the systems it started: TF2's flame
+//! points, with the active one new particles are assigned to).
 
 use bevy::prelude::*;
 
 use super::ParticleRng;
 
-/// Control points a system can use.
-pub const MAX_CONTROL_POINTS: usize = 8;
+/// Control points a system can use (Source's 64: TF2's flames set one
+/// per flame point, 1-30).
+pub const MAX_CONTROL_POINTS: usize = 64;
 
 /// One particle system definition.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -189,6 +192,39 @@ pub enum Init {
         speed: f32,
         start_offset: f32,
     },
+    /// "Assign target CP": the particle takes the system's active control
+    /// point as its own (`ParticleControlPoints::active`: the newest of
+    /// TF2's flame points), for `FollowCp` and `LifetimeFromCp`; none
+    /// without one.
+    AssignTargetCp,
+    /// "Lifetime From Control Point Life Time": life = its own control
+    /// point's duration (`ControlPointState::duration`), when it has one.
+    LifetimeFromCp,
+}
+
+/// The particle field a remap writes (Source's attribute numbers:
+/// specs/tf2/particles.md 7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Field {
+    /// 3.
+    Radius,
+    /// 6, a vector (the colour's tint).
+    Tint,
+    /// 7.
+    Alpha,
+}
+
+impl Field {
+    /// The field of Source's attribute number, if a remap here can write
+    /// it.
+    pub fn of(number: i32) -> Option<Self> {
+        match number {
+            3 => Some(Self::Radius),
+            6 => Some(Self::Tint),
+            7 => Some(Self::Alpha),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -272,6 +308,28 @@ pub enum Op {
         axis: Vec3,
         local: bool,
     },
+    /// "Movement Follow CP": each step the particle moves `catch_up` x
+    /// the step of the way to its own control point (`Init::
+    /// AssignTargetCp`; at 100 and steps of 0.01 s or more: onto it). 0
+    /// leaves it where it is. (specs/tf2/flames.md Open questions 1: read
+    /// as a pull of that fraction a second, not a speed.)
+    FollowCp {
+        catch_up: f32,
+    },
+    /// "Remap Distance to Control Point to Scalar / Vector", each step:
+    /// the distance to control point `cp` from [`near`, `far`] onto
+    /// [`low`, `high`] (clamped; a scalar field reads `.x`), written to
+    /// `field`, or multiplying its initial value when `scale_initial`
+    /// ("output is scalar of initial random range").
+    RemapDistance {
+        cp: usize,
+        field: Field,
+        near: f32,
+        far: f32,
+        low: Vec3,
+        high: Vec3,
+        scale_initial: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -338,8 +396,8 @@ pub struct StartParticleSystem {
     pub position: Vec3,
     pub forward: Vec3,
     /// Stop its emitters this many seconds after the start (its particles
-    /// live out): a continuous system started in pieces (TF2's flames,
-    /// one piece per round). None: as the definition says.
+    /// live out): a continuous system started in pieces. None: as the
+    /// definition says.
     pub emit_for: Option<f32>,
     /// Carried along by an entity (a first-person view model's anchor,
     /// the eye: a gun's muzzle flash stays on the gun drawn in the view
@@ -351,9 +409,39 @@ pub struct StartParticleSystem {
     /// particles between 2 control points"). None: on control point 0.
     pub end: Option<Vec3>,
     /// What started it, for `StopParticleSystems` (a gun's systems that
-    /// run while it fires: TF2's Minigun).
+    /// run while it fires: TF2's Minigun). Its control points 1 and up
+    /// (and its active one) are the tag's `ParticleControlPoints` while
+    /// it has them (TF2's flame points).
     pub tag: Option<Entity>,
 }
+
+/// One control point a game sets on its started systems (engine space):
+/// where, how fast it moves, its radius and how long it lives (what
+/// `Init::LifetimeFromCp` reads).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ControlPointState {
+    pub position: Vec3,
+    pub velocity: Vec3,
+    pub radius: f32,
+    pub duration: f32,
+}
+
+/// On a `StartParticleSystem::tag` entity: control points (by number, 1
+/// and up; 0 stays the start's place) for every system started with that
+/// tag, read each frame, and the active one new particles take
+/// (`Init::AssignTargetCp`). A point left out keeps its last place
+/// (specs/tf2/flames.md Open questions 3).
+#[derive(Component, Clone, Debug, Default, PartialEq)]
+pub struct ParticleControlPoints {
+    pub points: Vec<(usize, ControlPointState)>,
+    pub active: Option<usize>,
+}
+
+/// The presentation's running of started systems (`render::psys::
+/// run_started_systems`): what sets `ParticleControlPoints` for this
+/// frame goes before it.
+#[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct StartedSystemsRun;
 
 /// Stop the emitters of every started system with this `tag`
 /// (`StartParticleSystem::tag`); their live particles finish.

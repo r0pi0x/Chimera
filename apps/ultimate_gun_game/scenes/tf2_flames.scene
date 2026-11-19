@@ -1,0 +1,49 @@
+# TF2's Flame Thrower at a wall and in open air, first and third person
+# (specs/tf2/flames.md: the stream's sprites ride the flame points, slide
+# up a wall, reach about 340 units). On de_dust2's T side, standing.
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1280x720 +volume 0 +sandbox cs_source:de_dust2 \
+#       --scene apps/ultimate_gun_game/scenes/tf2_flames.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 1500
+god
+sandbox ammo on
+rung tf2:tf_weapon_flamethrower
+wait 2
+wait_for idle 3000
+wait 120
+setpos 240 -547 12
+setang 2 4
+wait 90
+shot_after shot 25 wall_fp
++attack
+wait 40
+-attack
+wait 60
+setpos 240 -547 12
+setang 0 184
+wait 90
+shot_after shot 25 air_fp
++attack
+wait 40
+-attack
+wait 60
+sandbox thirdperson on
+cam_idealdist 200
+cam_idealyaw 70
+setpos 240 -547 12
+setang 2 4
+wait 90
+shot_after shot 25 wall_tp
++attack
+wait 40
+-attack
+wait 60
+setpos 240 -547 12
+setang 0 184
+wait 90
+shot_after shot 25 air_tp
++attack
+wait 40
+-attack
+wait 60

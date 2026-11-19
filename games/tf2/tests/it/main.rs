@@ -11,7 +11,9 @@
 //! (`impacts`), a first-person muzzle flash at the muzzle re-projected
 //! into the world view (`flashes`), the guns' other effects (`effects`:
 //! the Minigun's constant systems, tracers, explosions and scorches, the
-//! backblast), the class sets a match offers (`player_sets`), the ragdolls' lifetime
+//! backblast), the Flame Thrower's points and the stream on them
+//! (`flames`: the same points on the server and every client, damage
+//! only where they are, walls), the class sets a match offers (`player_sets`), the ragdolls' lifetime
 //! (`ragdolls`: ragdolls.md's cases on a made-up skeleton), the class a
 //! rung of several classes draws with the ladder (`rung_classes`), the
 //! players' pain, death and kill lines (`voices`), the kill icons from
@@ -46,6 +48,7 @@ mod weapons;
 mod melee;
 mod weapons_more;
 mod held_guns;
+mod flames;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
