@@ -164,3 +164,45 @@ fn others_see_the_backblast_and_the_shooter_never() {
     assert_eq!(run(false), 1, "a watcher sees it");
     assert_eq!(run(true), 0, "the shooter never does");
 }
+
+/// Another player's Minigun (whose spin this client isn't sent) runs its
+/// constant systems here while its rounds arrive, and stops after.
+#[test]
+fn others_minigun_runs_its_constant_systems_while_its_rounds_arrive() {
+    use chimera_core::core::Intent;
+    use chimera_net::{harness::NetSim, net::memory::LinkConditions};
+    use chimera_sim::weapon::{self, Inventory};
+    use chimera_world::{greybox::GreyboxMapPlugin, map::psys::{StartParticleSystem, StopParticleSystems}};
+    let mut sim = NetSim::new(tf2::harness::Tf2Sim, LinkConditions::default(), 5, 0, |app| {
+        app.add_plugins(GreyboxMapPlugin);
+    });
+    sim.add_client(|_| {});
+    sim.add_client(|_| {});
+    sim.set_frame(tf2::game::TICK_INTERVAL);
+    sim.until_joined(900);
+    sim.until_looks_taken(600);
+    let theirs = sim.character_of(0).unwrap();
+    let sw = weapon::give(sim.server.app.world_mut(), theirs, MINIGUN).unwrap();
+    sim.server.app.world_mut().get_mut::<Inventory>(theirs).unwrap().wanted = Some(sw);
+    sim.ticks(150);
+    let mut starts = sim.clients[1].app.world().resource::<Messages<StartParticleSystem>>().get_cursor_current();
+    let mut stops = sim.clients[1].app.world().resource::<Messages<StopParticleSystems>>().get_cursor_current();
+    let (mut started, mut stopped, mut stopped_while_firing) = (Vec::new(), 0, false);
+    for k in 0..300 {
+        let me = sim.local_player(0).unwrap();
+        sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = k < 150;
+        sim.step();
+        let w = sim.clients[1].app.world();
+        started.extend(starts.read(w.resource::<Messages<StartParticleSystem>>()).map(|s| s.name.clone()));
+        let n = stops.read(w.resource::<Messages<StopParticleSystems>>()).count();
+        if n > 0 && k < 150 && started.iter().any(|s| s == "muzzle_minigun_constant") {
+            stopped_while_firing = true;
+        }
+        stopped += n;
+    }
+    // (Headless, no gun is drawn: the brass has no attachment to start
+    // at, the constant flash starts ahead of the eye.)
+    assert_eq!(started.iter().filter(|s| *s == "muzzle_minigun_constant").count(), 1, "started once on the other client: {started:?}");
+    assert!(!stopped_while_firing, "kept while its rounds came");
+    assert!(stopped >= 1, "stopped after");
+}

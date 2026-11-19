@@ -31,11 +31,12 @@ Captured imagery stays in scratch, never in the repo.
 | Camera match (2fort bridge, setpos/setang) | matches | – |
 | Muzzle flashes, first person | close (scattergun, shotgun, SMG) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). The flash now rides the animated muzzle as TF2's does (`attached::AttachmentMark`); TF2's view model kicks harder (the Scattergun's pump) |
 | Muzzle flashes, third person | close (Scattergun, Shotgun) | the scenes compare now: ours' target fires `ahead` (TF2's `bot_forceattack`) and our camera stays while our body leaves the line of fire (`chimera_freecam 2`). The flashes' size and life agree. TF2 draws another player's flash some 7 frames before its tracers and fire gesture (seen on the Scattergun and the Shotgun); ours draws them together |
-| Minigun constant flash, brass | close | the core is a compact glow now (a trail no wider than long); ours is dimmer and nearer the barrel than the account's own Minigun's (not stock); the brass lived one frame (lifetime from a sheet the casing has none of): now 2 s |
+| Minigun constant flash, brass | close (first person); differs (third person) | first person: the core is a compact glow (a trail no wider than long), dimmer and nearer the barrel than the account's own Minigun's (not stock); the brass lives 2 s. Third person: others' (and bots') constant systems now run while their rounds come and turn with their aim (they never started for another player's gun, and pointed along the world's -Z); but TF2's spun Heavy lowers the gun forward (the deployed set) where ours keeps the idle pose, so ours' glow sits at the raised barrel by the face; ours' brass falls through the bridge's floor |
 | Tracers | matches (SMG, Shotgun) | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails |
-| Backblast (third person) | todo | |
+| Backblast (third person) | close | the flame at the shoulder in the first 150 ms agrees; at 230 ms TF2's has turned to a dark smoke ring where ours is a bright ball with a detached flame to its left |
+| Bodies, idle poses (third person) | close | Pyro, Scout, Engineer, Soldier stand as TF2's; TF2's stances are a little wider. The Heavy's idle (gun raised) matches TF2's only with the class model's own 1-frame aim-matrix stubs: taking the include's same-named grids instead (tried) lowered it to TF2's firing pose, and the deployed set (tried, `ACT_MP_DEPLOYED_IDLE` and its PREFIRE/POSTFIRE) then raised the gun straight up while firing. Which of a player model's local stub and its include's sequence TF2 uses, per lookup, is install.md Open question 6: needs a spec session (the deployed attempt is kept in scratch, `player_anim_spun.rs.txt`) |
 | Flame stream (air, wall); overbright 5 or 1 | close | overbright is 5, in linear space (we applied it to the gamma colour: x34, a white blob at a wall; now the violet cloud of TF2, its added colour within 3 of TF2's). Re-taken at a bot's FOV 75 (the first pass ran ours at 90): TF2's cloud at a wall spreads wider (its points slide along the wall; ours stop) and its far fireball is about 2x ours across; ours tints the right wall orange |
 | Crits | todo | |
 | View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries |
@@ -145,6 +146,16 @@ Captured imagery stays in scratch, never in the repo.
   systems and brass, the flame stream) of this machine's own player now
   follow an `AttachmentMark`, placed each frame where the view model's
   attachment appears in the world view: the flash rides the gun's kick.
+- Third person, pass 3: a server's own animation state of each TF2 body
+  (`SimAnimState`, whose pose clients draw others with) now gets the
+  class too (`follow_class`): a server posed a Soldier's, Pyro's or
+  Heavy's Shotgun as a primary for everyone else. A held gun's systems
+  turn with the owner's aim (`Muzzles::view_turn`: a character's
+  `Transform` never turns). Others' Minigun constant systems and brass
+  start while their rounds arrive (`REMOTE_FIRING_HOLD`; a client is
+  sent only its own player's spin), and a bot's in the same world from
+  its shots; without a drawn gun the constant flash starts ahead of the
+  eye.
 - The "flames go up" seen in ours' third person is the stream's end: the
   points stop about 286 units out (2450 units/s under drag 8.5/s for
   0.6 s, flames.md) and the sprites there rise; not an obstacle (checked

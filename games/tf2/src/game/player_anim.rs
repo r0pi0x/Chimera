@@ -404,18 +404,38 @@ fn hold_weapons(
 
 /// Each TF2 body's class for its stance (`Tf2PlayerAnim::class`): the
 /// one its gun in hand makes it (`classes::Classes::held`, the rung's
-/// drawn class when the gun can be it), on every machine.
+/// drawn class when the gun can be it), on every machine, in the drawn
+/// state and in a server's own (`SimAnimState`; before, a server posed a
+/// Soldier's Shotgun as a primary for everyone else).
+#[allow(clippy::type_complexity)]
 fn follow_class(
-    mut bodies: Query<(&mut Tf2PlayerAnim, Option<&Inventory>, Option<&super::classes::RungClass>)>,
+    mut bodies: Query<(
+        Option<&mut Tf2PlayerAnim>,
+        Option<&mut source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>,
+        Option<&Inventory>,
+        Option<&super::classes::RungClass>,
+    )>,
     weapons: Query<&crate::weapon::Weapon>,
     table: Option<Res<super::classes::Classes>>,
 ) {
     let Some(table) = table else { return };
-    for (mut anim, inv, drawn) in &mut bodies {
+    for (anim, sim, inv, drawn) in &mut bodies {
+        if anim.is_none() && sim.is_none() {
+            continue;
+        }
         let held = inv.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
         let class = held.and_then(|w| table.held(&w.id, drawn.map(|d| d.0.as_str()))).map(|c| c.name.as_str());
-        if anim.class.as_deref() != class {
-            anim.class = class.map(str::to_string);
+        // The drawn state, and a server's own, whose pose clients draw
+        // others with (`anim_net`).
+        if let Some(mut a) = anim
+            && a.class.as_deref() != class
+        {
+            a.class = class.map(str::to_string);
+        }
+        if let Some(mut s) = sim
+            && s.0.class.as_deref() != class
+        {
+            s.0.class = class.map(str::to_string);
         }
     }
 }

@@ -26,7 +26,9 @@
 //!   `while_firing` systems (`muzzle_minigun_constant` at `muzzle`,
 //!   `eject_minigunbrass` at `eject_brass`) start when it enters its firing
 //!   state (`Tf2Minigun::playing` the fire loop) and stop emitting when it
-//!   leaves it (`StopParticleSystems`; live particles finish).
+//!   leaves it (`StopParticleSystems`; live particles finish); another
+//!   player's (whose spin this client isn't sent) while its rounds arrive
+//!   (`RemoteShot`, `REMOTE_FIRING_HOLD`), turned with its aim.
 //! - **Tracers** (effects.md 6): one counter shared by every bullet drawn
 //!   (`TracerCount`, every gun with a tracer, every shooter): a bullet
 //!   whose count before it is a multiple of its gun's `tracer_every` (2;
@@ -439,6 +441,7 @@ pub struct Muzzles<'w, 's> {
             Option<&'static ViewAnimator>,
             Option<&'static ViewModelOffset>,
             Option<&'static chimera_core::core::MapControls>,
+            Option<&'static chimera_core::core::Intent>,
             Option<&'static Transform>,
             Has<LocalPlayer>,
         ),
@@ -551,11 +554,16 @@ impl Muzzles<'_, '_> {
     }
 
     /// The turn of the view `m` is seen along: the eye's on a
-    /// first-person gun, else `owner`'s body's.
+    /// first-person gun, else `owner`'s aim (its `Intent`'s yaw and pitch:
+    /// a character's `Transform` doesn't turn), else its body's.
     pub fn view_turn(&self, owner: Entity, m: &MuzzleAt) -> Quat {
         match m {
             MuzzleAt::View(v) => v.turn,
-            MuzzleAt::Held(..) => self.owners.get(owner).ok().and_then(|(.., t, _)| t).map_or(Quat::IDENTITY, |t| t.rotation),
+            MuzzleAt::Held(..) => match self.owners.get(owner) {
+                Ok((.., Some(i), _, _)) => aim_of(i.yaw, i.pitch),
+                Ok((.., t, _)) => t.map_or(Quat::IDENTITY, |t| t.rotation),
+                Err(_) => Quat::IDENTITY,
+            },
         }
     }
 
@@ -600,6 +608,11 @@ fn mark_attachments(players: Query<Entity, (With<LocalPlayer>, With<ViewAnimator
         }
     }
 }
+
+/// How long after another player's last round their gun still counts as
+/// firing for its `while_firing` systems (s): two of the Minigun's
+/// 0.105 s steps, so a dropped round doesn't stop it.
+pub const REMOTE_FIRING_HOLD: f64 = 0.25;
 
 /// A trail on each flyer as it appears (`FlyerTrail`), following it.
 fn flyer_trails(
@@ -779,19 +792,41 @@ fn tracers(
 
 /// The guns' `while_firing` systems: started when a gun enters its firing
 /// state in its owner's hands, stopped when it leaves it (effects.md 3).
+#[allow(clippy::too_many_arguments)]
 fn firing_looks(
+    time: Res<Time>,
     looks: Res<GunLooks>,
     guns: Query<(Entity, &Weapon, &Tf2Minigun)>,
     owners: Query<&Inventory>,
+    eyes: Query<(&Transform, Option<&chimera_core::core::MovementState>, Option<&chimera_core::core::Intent>)>,
     muzzles: Muzzles,
+    mut remote: MessageReader<chimera_sim::weapon::remote::RemoteShot>,
+    mut shots: MessageReader<WeaponEvent>,
+    mut heard: Local<std::collections::BTreeMap<Entity, f64>>,
     mut running: Local<BTreeSet<Entity>>,
     mut start: MessageWriter<StartParticleSystem>,
     mut stop: MessageWriter<StopParticleSystems>,
 ) {
+    let t = time.elapsed_secs_f64();
+    // Others' guns: their spin isn't sent to this client (only its own
+    // player's predicted state is), and a bot's loop isn't kept where it
+    // is simulated (the loop is its sounds'), so firing is also a round of
+    // theirs within `REMOTE_FIRING_HOLD`.
+    for r in remote.read() {
+        if let Some(w) = owners.get(r.shooter).ok().and_then(|i| i.active) {
+            heard.insert(w, t);
+        }
+    }
+    for e in shots.read() {
+        if matches!(e.kind, WeaponEventKind::Fired { .. }) && e.shown() {
+            heard.insert(e.weapon, t);
+        }
+    }
+    heard.retain(|_, at| t - *at <= REMOTE_FIRING_HOLD);
     let mut now = BTreeSet::new();
     for (e, w, gun) in &guns {
         let held = w.owner.and_then(|o| owners.get(o).ok()).is_some_and(|i| i.active == Some(e));
-        if !held || gun.playing != Loop::Fire {
+        if !held || (gun.playing != Loop::Fire && !heard.contains_key(&e)) {
             continue;
         }
         let Some(systems) = looks.of(w.id).map(|l| &l.while_firing).filter(|s| !s.is_empty()) else { continue };
@@ -804,7 +839,18 @@ fn firing_looks(
             continue;
         }
         for s in systems {
-            let Some(m) = muzzles.placed_at(owner, &s.at) else { continue };
+            let Some(m) = muzzles.placed_at(owner, &s.at) else {
+                // No gun drawn (not loaded yet): the muzzle's a little
+                // ahead of the eye under the gun, as a flash's.
+                if s.at == MUZZLE_ATTACHMENT
+                    && let Ok((at, state, intent)) = eyes.get(owner)
+                {
+                    let aim = intent.map_or(at.rotation, |i| aim_of(i.yaw, i.pitch));
+                    let eye = at.translation + state.map_or(Vec3::ZERO, |s| s.eye_offset);
+                    start.write(StartParticleSystem { tag: Some(e), ..StartParticleSystem::new(s.system.clone(), ahead_of(eye, aim), aim * Vec3::NEG_Z) });
+                }
+                continue;
+            };
             // Out of the barrel along the view, the brass out to the
             // right (module doc, Known shortcuts).
             let turn = muzzles.view_turn(owner, &m);
