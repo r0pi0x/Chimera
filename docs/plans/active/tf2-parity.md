@@ -29,10 +29,10 @@ Captured imagery stays in scratch, never in the repo.
 |---|---|---|
 | Tool: headless TF2, scenes, pairs | done | – |
 | Camera match (2fort bridge, setpos/setang) | matches | – |
-| Muzzle flashes, first person | close (scattergun, shotgun, SMG, revolver) | the flash child was 4x too big (remaps by creation time never ran: fixed); first shot draws a tracer in ours, none in TF2; Minigun's constant flash much dimmer in ours |
+| Muzzle flashes, first person | close (scattergun, shotgun, SMG, revolver) | the flash child was 4x too big (remaps by creation time never ran: fixed). At 60 fps TF2's flash stays bright for about 50 ms, ours fades after about 25 ms (SMG, Scattergun); the Minigun's constant flash is much dimmer in ours |
 | Muzzle flashes, third person | todo | |
 | Minigun constant flash, brass | todo | |
-| Tracers | todo | |
+| Tracers | still differs | ours a thick bright beam from the muzzle (the Shotgun's, Pistol's, Revolver's), TF2's a thin faint line: the trail's width from the radius (2) and its texture's mapping (particles.md Open questions 4) to measure |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails |
 | Backblast (third person) | todo | |
@@ -41,6 +41,31 @@ Captured imagery stays in scratch, never in the repo.
 | View models (position, FOV, bob) | todo | |
 | HUD, crosshair | todo | |
 | Lighting, materials | todo | |
+
+## Next (for a successor)
+
+1. Tracers: measure a single tracer's on-screen width and length in TF2
+   (`muzzle.tf2`'s Minigun shows one) against ours; decide how a sprite
+   trail uses the radius (width or half-width) and the default trail
+   length (ours 0.1 s), then the texture's orientation on the strip.
+2. Flash lifetime: TF2's SMG and Scattergun flashes stay bright ~2x
+   longer at 60 fps; check the flash child's alpha remap (0.6 to 0 by
+   creation time) against "Alpha Fade and Decay" and the lifetime remap.
+3. The Minigun's constant muzzle (`muzzle_minigun_constant`): TF2's is a
+   big bright glow at the barrel's end; ours is faint (its `_core` is a
+   400-radius trail: how a trail uses the radius again).
+4. Flames: TF2's cloud at a wall spreads wider (flame points slide along
+   surfaces, flames.md; ours stop) and its far ball is ~1.5x ours.
+5. Third person and the backblast: `thirdperson.tf2` captures TF2 (a
+   puppet bot 433 units ahead firing at a free spectator); ours needs a
+   matching scene: a sandbox target only shoots back once shot, so it
+   needs a target that fires on its own, or our own player in third
+   person with a matched camera.
+6. Water and mid-air explosions, stickies, crits (`addcond`), view-model
+   positions (the Flame Thrower sits a little high and left in ours; the
+   Minigun's firing pose), the HUD.
+7. The asset service's `players` set needs republishing (by the user)
+   to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
 
 ## Log
 

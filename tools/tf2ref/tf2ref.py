@@ -390,21 +390,27 @@ def pair(ref, ours, out):
 
 
 def onset(folder, prefix, offsets, names, base=None):
-    """The first of `<prefix>NN.png` that differs from `base` (a picture
-    from before `+attack`; default the burst's first frame): the shot's
-    frame in a burst of snaps after `+attack`. Then copies of the frames
-    `offsets` after it as `names` (`.png`)."""
+    """The first of `<prefix>NN.png` with clearly more bright warm pixels
+    than `base` (a picture from before `+attack`; default the burst's
+    first frame): the shot's frame in a burst of snaps after `+attack`.
+    Then copies of the frames `offsets` after it as `names` (`.png`)."""
     frames = sorted(Path(folder).glob(f"{prefix}[0-9][0-9].png"))
     if not frames:
         sys.exit(f"tf2ref: no {prefix}NN.png in {folder}")
     reference = Path(folder) / f"{base}.png" if base else frames[0]
+
+    def flash(f):
+        # Bright warm pixels (a muzzle flash, an explosion): the view
+        # model's pose changes between pictures, so whole-frame
+        # differences can't find the shot.
+        out = subprocess.run(["magick", str(f), "-fx", "r>0.85 && g>0.55 && b<0.6", "-format", "%[fx:mean*w*h]", "info:"],
+                             capture_output=True, text=True).stdout
+        return float(out or 0)
+
+    floor = min(flash(reference), flash(frames[0]))
     first = None
     for i, f in enumerate(frames):
-        if f == reference:
-            continue
-        ae = subprocess.run(["magick", "compare", "-metric", "AE", "-fuzz", "12%", str(reference), str(f), "null:"],
-                            capture_output=True, text=True).stderr.split()[0]
-        if float(ae) > 200:
+        if f != reference and flash(f) > floor + 40:
             first = i
             break
     if first is None:
