@@ -1098,6 +1098,18 @@ loopback does). `accounts.db` is backed up nightly into `<server store>/server/b
   takes it back); revoking its token stops them too. `--on-report
   <command>` (or `on_report` under `[feedback]` in the local config)
   runs a command with the new report's folder, e.g. a ping.
+- **The page over a private network.** The triage page answers only to
+  `localhost`, `127.0.0.1` and `::1`. A proxy on the same machine that keeps
+  the original `Host` (e.g. `tailscale serve`) needs its name listed:
+  `--admin-host <name>` (repeatable; e.g. `--admin-host
+  my-box.example.ts.net`, a placeholder) or `admin_hosts = ["<name>"]` under
+  `[feedback]` in the local config. Exact, case-insensitive match; the
+  connection must still come from loopback and not through the TLS front.
+  Default: none.
+- **Unknown entries.** A bundle from a newer game may hold files this
+  server doesn't know: up to 8, each at most 512 KiB, are dropped (not
+  stored) and named in the report's `history.log`; more or larger, or a
+  known entry over its cap, is a 400.
 - **Crash reports** (kind `crash`, in builds that have them): a tester's
   game that panicked, crashed (Windows: with a `minidump.dmp`), lost its
   GPU, or died without a clean exit (a freeze, a power loss) sends one

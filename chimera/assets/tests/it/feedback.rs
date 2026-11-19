@@ -223,8 +223,8 @@ fn the_receiver_checks_tokens_sizes_entries_and_stores_once() {
     // A header id that isn't the bundle's, or none.
     assert_eq!(post(&remote, &new_report_id(), &bytes).0, 400);
     assert_eq!(remote.post_raw("/feedback", "application/zip", &[], &bytes).unwrap().0, 400);
-    // A `..` entry and an unknown entry are refused, not stored.
-    for bad in ["../evil.txt", "notes.txt", "sub/game.txt"] {
+    // A `..` entry and a nested one are refused, not stored.
+    for bad in ["../evil.txt", "sub/game.txt"] {
         let id = new_report_id();
         let mut w = zip::ZipWriter::new(0);
         let json = format!(r#"{{"schema":1,"id":"{id}","kind":"bug","text":"x","time":0}}"#);
@@ -234,9 +234,29 @@ fn the_receiver_checks_tokens_sizes_entries_and_stores_once() {
         assert_eq!(status, 400, "{bad}: {body}");
         assert!(inbox.find(&id).is_none());
     }
+    // An unknown entry (a newer client's file) is dropped, noted, and the
+    // report accepted; too many are refused.
+    let id = new_report_id();
+    let json = format!(r#"{{"schema":1,"id":"{id}","kind":"bug","text":"x","time":0}}"#);
+    let mut w = zip::ZipWriter::new(0);
+    w.add("report.json", json.as_bytes(), false);
+    w.add("future.txt", b"hello", false);
+    assert_eq!(post(&remote, &id, &w.finish()).0, 201);
+    let dir = inbox.find(&id).unwrap();
+    assert!(!dir.join("future.txt").exists());
+    assert!(inbox.history(&id).contains("dropped unknown entries: future.txt"));
+    let id = new_report_id();
+    let json = format!(r#"{{"schema":1,"id":"{id}","kind":"bug","text":"x","time":0}}"#);
+    let mut w = zip::ZipWriter::new(0);
+    w.add("report.json", json.as_bytes(), false);
+    for i in 0..=bundle::UNKNOWN_ENTRIES {
+        w.add(&format!("extra{i}.txt"), b"hello", false);
+    }
+    assert_eq!(post(&remote, &id, &w.finish()).0, 400);
+    assert!(inbox.find(&id).is_none());
     // Not a zip at all.
     assert_eq!(post(&remote, &new_report_id(), b"hello").0, 400);
-    assert_eq!(inbox.list().len(), 1);
+    assert_eq!(inbox.list().len(), 2);
     assert!(!fs::read_dir(server::feedback_dir(&r.store)).unwrap().flatten().any(|e| e.file_name() == ".."));
 }
 

@@ -207,7 +207,42 @@ pub struct Service {
     peers: Option<crate::tls::Peers>,
     /// Feedback reports (`POST /feedback`, the page).
     feedback: crate::feedback::inbox::Inbox,
+    /// Host names besides the loopback ones the triage page answers to
+    /// (lowercase; from a loopback connection only).
+    admin_hosts: Vec<String>,
     started: Instant,
+}
+
+/// The triage page's rule: from loopback, not relayed, to a loopback `Host`
+/// or one of `extra` (lowercase names).
+fn admin_allowed(loopback: bool, relayed: bool, host: &str, extra: &[String]) -> bool {
+    let host = host.to_ascii_lowercase();
+    let host = match host.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or("").to_string(),
+        None => host.split(':').next().unwrap_or("").to_string(),
+    };
+    loopback && !relayed && (matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1") || extra.iter().any(|h| *h == host))
+}
+
+#[cfg(test)]
+mod admin_tests {
+    use super::admin_allowed;
+
+    #[test]
+    fn extra_admin_hosts_need_loopback_and_no_front() {
+        let extra = vec!["box.example.ts.net".to_string()];
+        assert!(admin_allowed(true, false, "localhost:8731", &[]));
+        assert!(admin_allowed(true, false, "[::1]:8731", &[]));
+        assert!(admin_allowed(true, false, "Box.Example.TS.net", &extra));
+        assert!(admin_allowed(true, false, "box.example.ts.net:443", &extra));
+        // Relayed by the front, or not from loopback: refused.
+        assert!(!admin_allowed(true, true, "box.example.ts.net", &extra));
+        assert!(!admin_allowed(false, false, "box.example.ts.net", &extra));
+        // Not listed (also by suffix or prefix): refused.
+        assert!(!admin_allowed(true, false, "other.example.ts.net", &extra));
+        assert!(!admin_allowed(true, false, "evil.box.example.ts.net", &extra));
+        assert!(!admin_allowed(true, false, "box.example.ts.net", &[]));
+    }
 }
 
 fn now_secs() -> u64 {
@@ -282,6 +317,7 @@ impl Service {
             guard: Mutex::default(),
             peers: None,
             feedback: crate::feedback::inbox::Inbox::open(feedback_dir(&store)),
+            admin_hosts: Vec::new(),
             store,
             started: Instant::now(),
         })
@@ -304,6 +340,14 @@ impl Service {
     pub fn with_feedback(mut self, limits: crate::feedback::inbox::FeedbackLimits, on_report: Option<String>) -> Self {
         let inbox = crate::feedback::inbox::Inbox::open(feedback_dir(&self.store));
         self.feedback = inbox.with_limits(limits).with_on_report(on_report);
+        self
+    }
+
+    /// Host names (besides `localhost` and the loopback addresses) the
+    /// triage page answers to, e.g. a private network's proxy name. Exact,
+    /// case-insensitive; the other conditions of `local_admin` stay.
+    pub fn with_admin_hosts(mut self, hosts: Vec<String>) -> Self {
+        self.admin_hosts = hosts.into_iter().map(|h| h.trim().to_ascii_lowercase()).filter(|h| !h.is_empty()).collect();
         self
     }
 
@@ -355,18 +399,8 @@ impl Service {
     /// relayed by the TLS front, to a local `Host` (no DNS rebinding).
     fn local_admin(&self, request: &Request) -> bool {
         let Some(at) = request.remote_addr() else { return false };
-        let relayed = self.relayed(request);
-        let host = request
-            .headers()
-            .iter()
-            .find(|h| h.field.equiv("Host"))
-            .map(|h| h.value.as_str().to_ascii_lowercase())
-            .unwrap_or_default();
-        let host = match host.strip_prefix('[') {
-            Some(v6) => v6.split(']').next().unwrap_or("").to_string(),
-            None => host.split(':').next().unwrap_or("").to_string(),
-        };
-        at.ip().is_loopback() && !relayed && matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1")
+        let host = request.headers().iter().find(|h| h.field.equiv("Host")).map(|h| h.value.as_str()).unwrap_or("");
+        admin_allowed(at.ip().is_loopback(), self.relayed(request), host, &self.admin_hosts)
     }
 
     /// `/feedback/admin...` (`feedback::page`).

@@ -307,10 +307,10 @@ module list is `docs/modules.md`.
 - 920: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
 - 1018: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
 - 1041: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
-- 1131: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
-- 1154: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
-- 1199: After | Revoke all tokens (`user revoke <tester>` each, or stop the asset service), stop the server, close the ports (UPnP mappings expire, a...
-- 1205: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
+- 1143: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
+- 1166: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
+- 1211: After | Revoke all tokens (`user revoke <tester>` each, or stop the asset service), stop the server, close the ports (UPnP mappings expire, a...
+- 1217: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
 
 ## docs/playtest.md
 

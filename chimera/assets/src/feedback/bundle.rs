@@ -48,6 +48,12 @@ pub const ENTRIES: &[(&str, usize)] = &[
     ("minidump.dmp", 6 * 1024 * 1024),
 ];
 
+/// Entries a bundle may hold that this build doesn't know (a newer client's
+/// new file): at most this many, each at most `UNKNOWN_BYTES`; they are
+/// dropped, not stored (`Opened::dropped`).
+pub const UNKNOWN_ENTRIES: usize = 8;
+pub const UNKNOWN_BYTES: usize = 512 * 1024;
+
 /// An entry's cap (None: not allowed).
 pub fn cap(name: &str) -> Option<usize> {
     ENTRIES.iter().find(|(n, _)| *n == name).map(|(_, c)| *c)
@@ -363,16 +369,19 @@ pub fn build(state: &ReportState) -> Result<Bundle, String> {
 pub struct Opened {
     pub info: ReportInfo,
     pub entries: Vec<zip::Entry>,
+    /// Entries this build doesn't know, dropped (a newer client's).
+    pub dropped: Vec<String>,
 }
 
 /// Read `bytes` as a bundle: a zip of allow-listed entries under their
-/// caps, with a `report.json` that parses, a report id, text at most
+/// caps (a few unknown small ones are dropped, `UNKNOWN_ENTRIES`), with a `report.json` that parses, a report id, text at most
 /// `MAX_TEXT_CHARS`, and a screenshot that is the image it says.
 pub fn open(bytes: &[u8]) -> Result<Opened, String> {
     if bytes.len() > MAX_BUNDLE {
         return Err(format!("{} bytes (at most {MAX_BUNDLE})", bytes.len()));
     }
-    let entries = zip::read(bytes, ENTRIES.len(), cap)?;
+    let zip::Unpacked { entries, dropped } =
+        zip::read_lenient(bytes, ENTRIES.len(), cap, zip::Unknown { max: UNKNOWN_ENTRIES, max_bytes: UNKNOWN_BYTES })?;
     let json = entries.iter().find(|e| e.name == "report.json").ok_or("no report.json")?;
     let info: ReportInfo = serde_json::from_slice(&json.data).map_err(|e| format!("report.json: {e}"))?;
     if !super::is_report_id(&info.id) {
@@ -402,5 +411,5 @@ pub fn open(bytes: &[u8]) -> Result<Opened, String> {
             return Err(format!("{}: not that kind of image", e.name));
         }
     }
-    Ok(Opened { info, entries })
+    Ok(Opened { info, entries, dropped })
 }

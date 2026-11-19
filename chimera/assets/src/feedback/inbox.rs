@@ -456,7 +456,12 @@ impl Inbox {
                 fs::write(tmp.join(&e.name), &e.data)?;
             }
             fs::write(tmp.join("meta.toml"), toml::to_string(meta).map_err(std::io::Error::other)?)?;
-            fs::write(tmp.join("history.log"), format!("{} received from {} ({})\n", meta.received_utc, meta.account, meta.kind))?;
+            let mut history = format!("{} received from {} ({})\n", meta.received_utc, meta.account, meta.kind);
+            if !opened.dropped.is_empty() {
+                let names: Vec<String> = opened.dropped.iter().map(|n| clean(n, 100)).collect();
+                history.push_str(&format!("{} dropped unknown entries: {}\n", meta.received_utc, names.join(", ")));
+            }
+            fs::write(tmp.join("history.log"), history)?;
             let dir = day_dir.join(&meta.id);
             fs::rename(&tmp, &dir)?;
             Ok(dir)

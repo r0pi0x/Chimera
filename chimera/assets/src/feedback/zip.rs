@@ -123,9 +123,39 @@ fn rd32(b: &[u8], at: usize) -> Result<u32, String> {
     b.get(at..at + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]])).ok_or_else(|| "truncated zip".to_string())
 }
 
-/// Read every entry of `zip`. `cap(name)` is the most bytes entry `name`
-/// may hold (None: the name isn't allowed); `max_entries` the most entries.
+/// What to do with entries `cap` doesn't name: at most `max` of them, each
+/// declaring at most `max_bytes`; they are skipped (never inflated or
+/// stored) and their names returned in `Unpacked::dropped`.
+#[derive(Clone, Copy, Debug)]
+pub struct Unknown {
+    pub max: usize,
+    pub max_bytes: usize,
+}
+
+/// A zip read back: the allowed entries, and the names of the unknown ones
+/// that were dropped.
+#[derive(Debug, Default)]
+pub struct Unpacked {
+    pub entries: Vec<Entry>,
+    pub dropped: Vec<String>,
+}
+
+/// Read every entry of `zip`, strictly: an entry `cap` doesn't name is an
+/// error. `cap(name)` is the most bytes entry `name` may hold (None: the
+/// name isn't allowed); `max_entries` the most entries.
 pub fn read(zip: &[u8], max_entries: usize, cap: impl Fn(&str) -> Option<usize>) -> Result<Vec<Entry>, String> {
+    read_lenient(zip, max_entries, cap, Unknown { max: 0, max_bytes: 0 }).map(|r| r.entries)
+}
+
+/// Like `read`, but an entry `cap` doesn't name is dropped (a newer client's
+/// file) within `unknown`'s limits; over them it is an error. `max_entries`
+/// counts the allowed entries only.
+pub fn read_lenient(
+    zip: &[u8],
+    max_entries: usize,
+    cap: impl Fn(&str) -> Option<usize>,
+    unknown: Unknown,
+) -> Result<Unpacked, String> {
     // The end record: its comment is at most 64 KiB.
     let floor = zip.len().saturating_sub(22 + 65_535);
     let end = (floor..=zip.len().saturating_sub(22))
@@ -135,13 +165,14 @@ pub fn read(zip: &[u8], max_entries: usize, cap: impl Fn(&str) -> Option<usize>)
     let count = rd16(zip, end + 10)? as usize;
     let cd_size = rd32(zip, end + 12)? as usize;
     let cd_at = rd32(zip, end + 16)? as usize;
-    if count > max_entries {
-        return Err(format!("{count} entries (at most {max_entries})"));
+    if count > max_entries + unknown.max {
+        return Err(format!("{count} entries (at most {})", max_entries + unknown.max));
     }
     if cd_at.checked_add(cd_size).is_none_or(|e| e > end) {
         return Err("the central directory is out of bounds".into());
     }
     let mut out: Vec<Entry> = Vec::with_capacity(count);
+    let mut dropped: Vec<String> = Vec::new();
     let mut at = cd_at;
     for _ in 0..count {
         if rd32(zip, at)? != CENTRAL {
@@ -166,7 +197,23 @@ pub fn read(zip: &[u8], max_entries: usize, cap: impl Fn(&str) -> Option<usize>)
             return Err(format!("{name}: zip64 isn't accepted"));
         }
         let Some(limit) = cap(&name) else {
-            return Err(format!("{name:?} isn't an allowed entry"));
+            if unknown.max == 0 {
+                return Err(format!("{name:?} isn't an allowed entry"));
+            }
+            if name.is_empty() || name.contains(['/', '\\', '\0']) || name.starts_with('.') || name.contains("..") {
+                return Err(format!("{name:?} isn't a safe entry name"));
+            }
+            if dropped.len() >= unknown.max {
+                return Err(format!("more than {} unknown entries", unknown.max));
+            }
+            if size as usize > unknown.max_bytes {
+                return Err(format!("{name}: {size} bytes (unknown entries at most {})", unknown.max_bytes));
+            }
+            if dropped.contains(&name) {
+                return Err(format!("{name}: twice"));
+            }
+            dropped.push(name);
+            continue;
         };
         if size as usize > limit {
             return Err(format!("{name}: {size} bytes (at most {limit})"));
@@ -201,7 +248,10 @@ pub fn read(zip: &[u8], max_entries: usize, cap: impl Fn(&str) -> Option<usize>)
         }
         out.push(Entry { name, data });
     }
-    Ok(out)
+    if out.len() > max_entries {
+        return Err(format!("{} entries (at most {max_entries})", out.len()));
+    }
+    Ok(Unpacked { entries: out, dropped })
 }
 
 #[cfg(test)]
@@ -226,5 +276,30 @@ mod tests {
         let i = bad.windows(5).position(|w| w == b"\x89PNG ").unwrap();
         bad[i + 1] ^= 1;
         assert!(read(&bad, 8, |_| Some(10_000)).unwrap_err().contains("CRC"));
+    }
+
+    #[test]
+    fn unknown_entries_are_dropped_within_their_limits() {
+        let mut w = ZipWriter::new(1_763_078_400);
+        w.add("a.txt", b"known", false);
+        w.add("new.txt", b"from a newer client", false);
+        w.add("newer.bin", &[7u8; 100], true);
+        let zip = w.finish();
+        let cap = |n: &str| (n == "a.txt").then_some(1000);
+        let r = read_lenient(&zip, 1, cap, Unknown { max: 2, max_bytes: 200 }).unwrap();
+        assert_eq!(r.entries.len(), 1);
+        assert_eq!(r.dropped, ["new.txt", "newer.bin"]);
+        // Strict `read` still refuses them.
+        assert!(read(&zip, 8, cap).unwrap_err().contains("allowed"));
+        // Too many, too large.
+        assert!(read_lenient(&zip, 1, cap, Unknown { max: 1, max_bytes: 200 }).is_err());
+        assert!(read_lenient(&zip, 1, cap, Unknown { max: 2, max_bytes: 50 }).unwrap_err().contains("unknown"));
+        // Known caps still hold.
+        assert!(read_lenient(&zip, 1, |n| (n == "a.txt").then_some(2), Unknown { max: 2, max_bytes: 200 }).is_err());
+        // An unsafe unknown name is refused.
+        let mut w = ZipWriter::new(1_763_078_400);
+        w.add("../evil", b"x", false);
+        let zip = w.finish();
+        assert!(read_lenient(&zip, 1, cap, Unknown { max: 2, max_bytes: 200 }).is_err());
     }
 }

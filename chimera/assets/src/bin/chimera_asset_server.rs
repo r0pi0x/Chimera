@@ -24,7 +24,9 @@
 //! `--reports-keep-mb` (2048) its retention (0: none); `--on-report <command>` (else
 //! `[feedback] on_report` in the local config) runs a command for each new
 //! one (a Discord ping). The triage page is at
-//! `http://127.0.0.1:<port>/feedback/admin/` on this machine only.
+//! `http://127.0.0.1:<port>/feedback/admin/` on this machine only (a proxy on
+//! this machine, e.g. over a private network, may use another `Host`: each
+//! `--admin-host <name>`, or `admin_hosts = [...]` under `[feedback]`).
 //! docs/playtest-hosting.md has the steps. A host tool: not in releases.
 
 use std::process::ExitCode;
@@ -36,12 +38,13 @@ use chimera_assets::{
 
 const USAGE: &str = "usage: chimera_asset_server [--store <dir>] [--listen <ip:port>] [--tls <ip:port>] [--threads <n>]
        [--latency-ms <n>] [--rate <requests/s>] [--burst <n>] [--daily-gb <n>] [--bad-tokens <n per minute>]
-       [--connections <n per address>] [--on-report <command>] [--reports-per-hour <n>]
+       [--connections <n per address>] [--on-report <command>] [--admin-host <name>]... [--reports-per-hour <n>]
        [--reports-per-day <n>] [--reports-per-address <n per hour>] [--reports-keep-days <n>]
        [--reports-keep-mb <n>] [--accounts <url> | --no-tickets]
   --listen     plain HTTP, default 127.0.0.1:8731 (keep it on this machine)
   --tls        HTTPS with the server's own certificate (its fingerprint is printed), e.g. 0.0.0.0:27031
   --on-report  a command run for each new feedback report (default: [feedback] on_report in the local config)
+  --admin-host an extra Host name the triage page answers to, from this machine only (repeatable; a private\n               network's proxy; default: admin_hosts under [feedback] in the local config)
   --reports-keep-days, --reports-keep-mb  delete reports older than that (default 60 days), then the oldest
                past that total (default 2048 MB); 0: keep
   --accounts   the accounts service on this machine, for the revocation feed (default http://127.0.0.1:8741)
@@ -56,6 +59,7 @@ fn run() -> Result<(), String> {
     let mut front_limits = chimera_assets::tls::FrontLimits::default();
     let mut feedback_limits = chimera_assets::feedback::inbox::FeedbackLimits::default();
     let mut on_report = None;
+    let mut admin_hosts: Vec<String> = Vec::new();
     let mut accounts = Some("http://127.0.0.1:8741".to_string());
     let number = |v: String, what: &str| v.parse::<f64>().map_err(|_| format!("{what}: a number"));
     let mut it = args.iter();
@@ -73,6 +77,7 @@ fn run() -> Result<(), String> {
             "--bad-tokens" => limits.bad_tokens = number(value()?, arg)? as u32,
             "--connections" => front_limits.per_address = number(value()?, arg)?.max(1.0) as usize,
             "--on-report" => on_report = Some(value()?),
+            "--admin-host" => admin_hosts.push(value()?),
             "--accounts" => accounts = Some(value()?),
             "--no-tickets" => accounts = None,
             "--reports-per-hour" => feedback_limits.per_account_hour = number(value()?, arg)? as usize,
@@ -84,10 +89,11 @@ fn run() -> Result<(), String> {
         }
     }
     let store = store.or_else(default_store).ok_or("no store: pass --store")?;
-    let on_report = match on_report {
-        Some(c) => Some(c),
-        None => chimera_assets::feedback::LocalFeedback::load()?.on_report,
-    };
+    let local = chimera_assets::feedback::LocalFeedback::load()?;
+    let on_report = on_report.or(local.on_report);
+    if admin_hosts.is_empty() {
+        admin_hosts = local.admin_hosts;
+    }
     let peers = chimera_assets::tls::Peers::default();
     let service = match &accounts {
         Some(url) => Service::with_tickets(store.clone(), url, chimera_assets::accounts::FEED_EVERY),
@@ -98,7 +104,8 @@ fn run() -> Result<(), String> {
         .with_latency(std::time::Duration::from_millis(latency))
         .with_limits(limits)
         .with_peers(peers.clone())
-        .with_feedback(feedback_limits, on_report.clone());
+        .with_feedback(feedback_limits, on_report.clone())
+        .with_admin_hosts(admin_hosts);
     let key = service.public_key();
     let running = serve(service, &listen, threads).map_err(|e| e.to_string())?;
     println!("serving {} at {}", store.root.display(), running.url());

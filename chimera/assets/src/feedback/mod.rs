@@ -22,7 +22,8 @@
 //! `[feedback]` in the local config (`LocalFeedback`): `url`, `token`,
 //! `fingerprint` name a service by hand (developers); `on_report` is the
 //! receiving host's command run for each new report (a Discord ping:
-//! its ids stay in that file, never in the repository).
+//! its ids stay in that file, never in the repository); `admin_hosts` the
+//! extra `Host` names the triage page answers to (`--admin-host`).
 
 pub mod bundle;
 pub mod inbox;
@@ -53,6 +54,10 @@ pub struct LocalFeedback {
     pub fingerprint: Option<String>,
     /// The receiving host's command for each new report (`inbox`).
     pub on_report: Option<String>,
+    /// Extra host names the triage page answers to (a private network's
+    /// proxy that keeps the original `Host`); default none.
+    #[serde(default)]
+    pub admin_hosts: Vec<String>,
 }
 
 impl LocalFeedback {
