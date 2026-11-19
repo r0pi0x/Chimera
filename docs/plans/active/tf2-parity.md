@@ -45,28 +45,46 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Next (for a successor)
 
-1. The Minigun's constant glow is dimmer and sits nearer the barrel
-   than the account's own (non-stock) Minigun's in TF2 (black barrels and
-   a low firing pose were the bot's FOV and the account's other Minigun,
-   not ours; the brass now flies).
-2. Third person: give sandbox targets a "fire straight ahead, don't aim"
-   mode (like TF2's `bot_forceattack` on a puppet) so `thirdperson.scene`
-   compares; TF2's bots then the reference for bodies, poses, the
-   Rocket Launcher's backblast, the Minigun's glow and brass, the flames
-   seen from the front. In TF2 the Scout and Engineer bots sometimes
-   didn't appear (the old P1 not yet gone): give each class its own name.
-3. First-person flashes ride the animated muzzle in TF2 (each frame's
-   attachment); ours follow the eye from where the shot was.
-4. Flames (`flames.tf2` against `flames.scene`, both at FOV 75 now): at
-   1 s TF2's far fireball is about twice ours across and brighter; its
-   cloud at a wall spreads wider (flame points slide along surfaces,
-   flames.md; ours stop). Ours also tints the bridge's right wall orange
-   while firing where TF2 doesn't: find what draws it.
-5. The hay tufts on the bridge's far end draw as orange spikes in ours
-   (soft yellow tufts in TF2): a detail sprite or material.
-6. Water and mid-air explosions, stickies, crits (`addcond`), the HUD and
+1. The spun Heavy (third person): TF2 lowers the Minigun forward while
+   winding up and firing (the deployed set, player_animation.md 6) and
+   holds it raised at idle; ours keeps the idle pose. Two tries this
+   pass, both reverted: playing `ACT_MP_DEPLOYED_IDLE` with the
+   PREFIRE/POSTFIRE gestures raised the gun straight up (the class
+   model's own 1-frame stubs of `stand_deployed_PRIMARY` and
+   `PRIMARY_aimmatrix_deployed` won the merge); taking the include's
+   same-named sequences over every 1-frame stub (also those with an
+   activity) lowered the gun in the idle pose too, to TF2's firing look,
+   and the deployed set then raised it. So which of a player model's
+   local stub and its include's sequence TF2 uses, per lookup (activity,
+   autolayer by name), needs a spec session first (install.md Open
+   question 6; the tried code is in the pass's scratch,
+   `player_anim_spun.rs.txt`; the merge rule is `source_engine::content::
+   anim`'s stub test, and `heavy::bodies` the place to check it).
+2. Tracers seen from the front: TF2's are short streaks; ours, passing
+   close to the camera, become wide glowing cones. Record 30 frames
+   (`thirdperson.tf2` does now) and compare past 150 ms; a far shooter's
+   streaks also come out up where TF2's go down (its bullets level from
+   a higher eye than our camera? check each class's eye height).
+3. Flames (`flames.tf2` against `flames.scene`, FOV 75): TF2's far
+   fireball is about twice ours across; its cloud at a wall spreads
+   wider. The stream's points stop about 286 units out (2450 units/s
+   under drag 8.5/s, life 0.6 s), and ours' sprites there rise more than
+   TF2's (seen from the front: TF2's fireball sits at the Pyro's chest
+   height, ours above his head, rising to the roof). The orange haze to
+   the right of the barrel while firing (first person) is not the muzzle
+   light (`muzzleflash_light 0` leaves it): look at the stream's newest
+   sprites near the camera (the core's size fade 0.3 to 0.5 x l).
+4. The backblast: at 230 ms TF2's is a dark smoke ring, ours a bright
+   ball with a detached flame beside it.
+5. The hay tuft beside the barrel at the bridge's far end is missing in
+   ours (small yellow dots there): a detail sprite or prop.
+6. The Minigun's brass falls through the bridge's floor in ours (TF2's
+   lands): the casings' world collision.
+7. TF2 draws another player's flash some 7 frames before its tracers and
+   fire gesture (Scattergun, Shotgun); ours draws them together.
+8. Water and mid-air explosions, stickies, crits (`addcond`), the HUD and
    crosshair (UGG's own HUD by design; TF2's crosshair to compare).
-7. The asset service's `players` set needs republishing (by the user)
+9. The asset service's `players` set needs republishing (by the user)
    to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
 
 ## Log
