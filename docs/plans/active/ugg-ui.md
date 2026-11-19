@@ -395,27 +395,31 @@ from the theme (`min_text_px = 9`, as the prototype's `max(9px, ...)`)
   down"); chips stack at 3.05 cq slots (`cubic_in_out` .24 s); the
   impact flash `.2 exp(-t/.12)`. Moon gravity is the second chip (ring
   countdown).
-- **Match end** (layout pass 2026-11-18; our layout, not the look book's
-  frame, so parity `matchend` positions are intentionally off): header;
-  the winner (3.6 cq, slab sweeping across in .9 s from .55 s, the name
-  shown at .9 s) with the climb compact beside it (32 cq wide: every
-  player's thin rung-over-time line, the hovered or selected one drawn in
-  .7 s, kill and death ticks fading in over .52 s, the longest stall
-  marked); under them two columns: the standings (rows shrink from 2.62
-  cq to fit, K/D, session wins; hover or click a row to pick the chart's
-  line) and the chat in a fixed box (whole messages only, the newest at
-  the bottom, panel fill and hairline frame, "No messages yet" when
-  empty); the footer: Leave bottom left, the four map cards (pips, the
-  leader's count in accent, yours outlined) between, "Next match" with
-  the one 20 s countdown and tick bar (hot at 17/20; then locked, the
-  others dimmed) bottom right; the logo pass into the next match. All
-  positions are `[layout.matchend]` (`win_*`, `graph_*`, `cols_*`,
-  `std_w`, `chat_*`, `foot_top`, `thumb_h`; `match_end_signal::EndLayout`),
-  and the chat docks with the same numbers. Test:
-  `ultimate_gun_game` `match_end_layout` (countdown, Leave, chat, cards,
-  standings never overlap at 1280x720, 1920x1080, 3440x1440, full chat).
-  Shortcut: over about 11 players the standings clip (rows floor at 1.5
-  cq). `ui_scene matchend [fixture.json] [chat|busy]` stages chat lines.
+- **Match end** (layout pass 2026-11-19; our layout, not the look book's
+  frame, so parity `matchend` positions are intentionally off): Leave
+  (arrow and word) small at the top left, the chat in a fixed box down the
+  left column under it (lines stacked at the bottom, the field below, whole
+  messages only); the standings down the right column (30 cq,
+  top-aligned, above the footer): the winner's taller first row (trophy,
+  accent frame, the name large with the slab sweeping across it in .9 s
+  from .55 s, the sub-line "Winner . 14/14 . Knife"), then position,
+  name, rung/total and kills, rows shrinking from 2.4 cq to fit (hover or
+  click a row to pick the chart's line); in the middle one details line
+  (map, players, rungs, time, each after an icon), the climb (stepped
+  rung line drawn in .7 s, kill and death ticks fading in over .52 s, the
+  longest stall marked) and under it six stat tiles (kills, deaths, K/D,
+  best streak, fastest rung, longest stall: yours, else the winner's);
+  the footer: the four map cards (pips, the leader's count in accent,
+  yours outlined) in the middle, "Next match 0:14 >" with the one 20 s
+  tick bar (hot at 17/20; then locked, the others dimmed) bottom right;
+  the logo pass into the next match. All positions are `[layout.matchend]`
+  (`match_end_signal::EndLayout`), and the chat docks with the same
+  numbers. Test: `ultimate_gun_game` `match_end_layout` (each block where
+  it belongs and none overlapping at 1280x720 and 1920x1080 with 2 and 16
+  players, a spectator, and no, a few and a busy chat). Shortcuts: over
+  about 18 players the standings clip (rows floor at 1.5 cq); no headshot
+  tile (not tracked). `ui_scene matchend [fixture.json] [chat|busy]`
+  stages chat lines.
 - **Main menu**: lockup at (4.6, 5.6) cq, 3.3 cq; four items from 23.4
   cq down, 24 cq wide, 3.5 cq tall (index, label 1.36 cq, triangle);
   the highlight bar (slanted right edge .74 cq, accent bar .32 cq)

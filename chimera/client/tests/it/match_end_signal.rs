@@ -136,7 +136,7 @@ fn match_end_has_one_countdown() {
         let w = sim.app.world_mut();
         w.query_filtered::<&Text, With<VoteCountdown>>().iter(w).map(|t| t.0.clone()).collect::<Vec<_>>()
     };
-    assert_eq!(count(&mut sim), ["00:13"], "one countdown, 13 s left (staged)");
+    assert_eq!(count(&mut sim), ["0:13"], "one countdown, 13 s left (staged)");
     let lit = |sim: &mut Sim| {
         let w = sim.app.world_mut();
         let bar = w.query::<&VoteTicks>().single(w).unwrap().clone();
@@ -159,7 +159,7 @@ fn match_end_has_one_countdown() {
     sim.ticks(3);
     let c = cards(&mut sim);
     assert!(c.iter().all(|c| c.locked) && c[0].won && !c[1].won, "{c:?}");
-    assert_eq!(count(&mut sim), ["00:00"]);
+    assert_eq!(count(&mut sim), ["0:00"]);
     assert_eq!(lit(&mut sim).0, 40);
     let hint = {
         let w = sim.app.world_mut();

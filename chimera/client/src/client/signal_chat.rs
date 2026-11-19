@@ -29,8 +29,9 @@
 //!   Docked in the lobby (under its root, `prematch_lobby::LobbyRoot`) and
 //!   on the match end (`match_end_signal::SignalEndRoot`), where people
 //!   wait: the history always open on its plate (the lobby's `dock_*`; the
-//!   match end's a fixed box in its right column, `[layout.matchend]`
-//!   `chat_x`, `chat_w`, `cols_top`, `cols_h`, newest lines kept inside), the field
+//!   match end's a fixed box down its left column, `[layout.matchend]`
+//!   `pad`, `chat_w`, `chat_top`, `bottom`: lines stacked at the bottom, as in
+//!   play, the newest kept inside), the field
 //!   below it ("Press Enter to chat"); hidden while an app's overlay is
 //!   over the lobby (`LobbyOverlay`).
 //! - **Typing** (`typing`, before anything reads the keys): `messagemode`
@@ -519,7 +520,7 @@ fn draw(
     // The lines this build shows.
     let shown: Vec<&FeedEntry> = log.shown(&mutes, *filter).collect();
     let ids: Vec<u64> = if open || docked {
-        shown.iter().rev().take(if docked && !open { LINES } else { HISTORY }).map(|l| l.id).collect()
+        shown.iter().rev().take(if matches!(dock, Some(Dock::MatchEnd(_))) { 2 * HISTORY } else if docked && !open { LINES } else { HISTORY }).map(|l| l.id).collect()
     } else {
         shown
             .iter()
@@ -572,7 +573,7 @@ fn draw(
                 .id()
         }
         Dock::MatchEnd(parent) => {
-            // A fixed box in the match end's right column (its frame is
+            // A fixed box down the match end's left column (its frame is
             // centred in the window: placed from the middle): the newest
             // lines stay inside it, older ones are cut off at the top.
             let e = super::match_end_signal::EndLayout::of(&look);
@@ -585,10 +586,10 @@ fn draw(
                     Node {
                         position_type: PositionType::Absolute,
                         left: percent(50.0),
-                        margin: UiRect { left: look.val(e.chat_x - 50.0), top: look.val(e.cols_top - super::match_end_signal::EndLayout::FRAME_H / 2.0), ..default() },
+                        margin: UiRect { left: look.val(e.chat_x - 50.0), top: look.val(e.chat_top - super::match_end_signal::EndLayout::FRAME_H / 2.0), ..default() },
                         top: percent(50.0),
                         width: look.val(e.chat_w),
-                        height: look.val(e.cols_h),
+                        height: look.val(e.chat_h),
                         flex_direction: FlexDirection::Column,
                         justify_content: JustifyContent::FlexEnd,
                         row_gap: look.val(0.18),
