@@ -4,7 +4,8 @@
 //! visibility. The vertex shader (detail.wesl) turns facing sprites to the
 //! view, sways tops in the map's wind and fades each sprite by its
 //! distance (dithered out, as faded props are); its fragment is the
-//! sprite sheet x the sprite's baked light, alpha tested, then fogged.
+//! sprite sheet x the sprite's baked light, alpha tested (the alpha raised
+//! by the mip level sampled, `tested_alpha`), then fogged.
 //!
 //! Vertex layout (one mesh holds both kinds): POSITION the sprite's foot;
 //! TANGENT xyz the corner's offset from it (fixed quads) and w its kind
@@ -20,7 +21,7 @@
 //! direction by its mean speed x 0.25 s, 1.5 rad/s, in a phase per sprite;
 //! CS:S's detail sway isn't documented); `cl_detaildist` and `cl_detailfade`
 //! are fixed at their defaults (1200, 400; no cvars); the fade is linear and
-//! dithered, alpha tested at 0.5; detail light styles (the `dplt`/`dplh` lumps)
+//! dithered (TF2 blends it: a far tuft in its fade is a sparse dither here), alpha tested at 0.5; detail light styles (the `dplt`/`dplh` lumps)
 //! and HDR detail light are not read (each sprite's own baked light only). Why
 //! it's OK for now: Grass and weeds show on the maps that have them
 //! (cs_militia, cs_compound, de_port, kz_ancient_ruins, mg_kommando,
@@ -43,6 +44,19 @@ use crate::map::MapDetailProps;
 /// Fade (start, gone) without an env_detail_controller, meters: the
 /// game's `cl_detaildist` 1200 less `cl_detailfade` 400, to 1200 units.
 pub const DEFAULT_FADE: (f32, f32) = (800.0 * 0.0254, 1200.0 * 0.0254);
+/// How much each mip level sampled raises a detail texel's alpha before
+/// the 0.5 test (detail.wesl's `MIP_ALPHA`).
+pub const MIP_ALPHA: f32 = 0.25;
+
+/// The alpha a detail sprite's texel is tested with at 0.5: the sampled
+/// alpha `a` raised by the mip level `mip` (as detail.wesl does). The mips
+/// average thin blades' alpha toward 0, so plainly tested a tuft some 500
+/// units off was a few dots where TF2 draws the whole tuft (2fort's hay
+/// beside the bridge's barrel, tools/tf2ref).
+pub fn tested_alpha(a: f32, mip: f32) -> f32 {
+    a * (1.0 + mip.max(0.0) * MIP_ALPHA)
+}
+
 /// Ground cells merged into one mesh, meters (1024 units).
 const CELL: f32 = 1024.0 * 0.0254;
 /// How far a sway moves a sprite's top at full sway (meters) per m/s of
@@ -323,5 +337,10 @@ mod tests {
             wind: None,
         };
         assert_eq!(fade(&props), DEFAULT_FADE);
+        // A thin blade averaged to 0.3 three mips down still draws; at
+        // full size the same texel doesn't.
+        assert!(tested_alpha(0.3, 3.0) >= 0.5);
+        assert!(tested_alpha(0.3, 0.0) < 0.5);
+        assert_eq!(tested_alpha(0.8, -1.0), 0.8);
     }
 }

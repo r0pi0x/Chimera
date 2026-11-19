@@ -187,3 +187,12 @@ Captured imagery stays in scratch, never in the repo.
   (now they move with them and close the gap at the catch-up value in
   units/s, flames.md Open questions 1, measured). `psys_running all`
   prints every particle with its control point, and the tag's points.
+- Backblast, side view (camera 100 units beside the Soldier): TF2's and
+  ours agree (an orange flame at the launcher's rear for ~100 ms, then a
+  dark grey puff that drifts and fades); TF2's flame is streakier. Close.
+- The hay by the bridge's far barrel: ours drew it (detail sprites) but
+  as thin aliased strands and, farther off, a few dots: the mips average
+  the blades' alpha below the 0.5 test. The alpha is now raised by the
+  mip level (`render::detail::tested_alpha`); TF2 fades it the same way
+  between 800 and 1200 units (cl_detaildist 1200, cl_detailfade 400:
+  gone at ~1180, measured along the bridge) but blended, ours dithered.

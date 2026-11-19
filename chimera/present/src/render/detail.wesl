@@ -80,6 +80,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     return out;
 }
 
+// How much each mip level raises the sampled alpha before the test.
+const MIP_ALPHA: f32 = 0.25;
+
 // 4x4 ordered dither threshold (0..1) for a pixel.
 fn dither(p: vec2<f32>) -> f32 {
     let x = u32(p.x) % 4u;
@@ -91,7 +94,15 @@ fn dither(p: vec2<f32>) -> f32 {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let t = textureSample(sheet, sheet_sampler, in.uv);
-    if t.a < 0.5 || in.color.a < dither(in.position.xy) {
+    // Alpha raised by the mip level sampled: the mips average thin blades'
+    // alpha away, and tested at 0.5 a far tuft was a few dots (2fort's hay
+    // beside the bridge's barrel, against TF2's whole tuft).
+    let dims = vec2<f32>(textureDimensions(sheet, 0));
+    let du = dpdx(in.uv * dims);
+    let dv = dpdy(in.uv * dims);
+    let mip = max(0.0, 0.5 * log2(max(dot(du, du), dot(dv, dv))));
+    let a = t.a * (1.0 + mip * MIP_ALPHA);
+    if a < 0.5 || in.color.a < dither(in.position.xy) {
         discard;
     }
     let rgb = t.rgb * in.color.rgb;
