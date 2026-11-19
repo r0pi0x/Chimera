@@ -1,211 +1,135 @@
 # Third-person looks on 2fort's bridge (real TF2; ours: thirdperson.scene): a
-# puppet bot (stock guns) 433 units ahead (11 m) faces the camera and fires
-# (`bot_forceattack`); we watch as a free spectator from the bridge. The muzzle
-# flashes as others see them, the Rocket Launcher's backblast. 60 frames a
-# second, a snap every 2 frames for 0.5 s.
+# puppet bot (stock guns) 433 units (11 m) ahead faces the camera and fires
+# (`bot_forceattack`); we watch as a free spectator (`spec_mode 6`, then
+# `setpos`: the eye) from 68 units up, an Engineer's eye. The muzzle flashes
+# as others see them, the Rocket Launcher's backblast, the Minigun's brass,
+# the flames; the bodies and their firing poses. Every frame at 60 a second
+# (`movie`) for 0.5 s; the Minigun and the Flame Thrower 1.5 s into the fire.
+# Blue, as ours' targets are; no spectator outlines (`tf_spec_xray 0`).
 #   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/thirdperson.tf2 --out <dir>
 cl_drawhud 0
 r_drawvgui 0
+tf_spec_xray 0
 fov_desired 90
-fps_max 30
-kick P1
+fps_max 60
+host_framerate 0
+bot_kick all
 sleep 2
 jointeam spectator
 sleep 2
-spec_mode 6
 # scattergun
-kick P1
+bot_kick all
 sleep 1
+bot_selectweaponslot 0
 bot -name P1 -class scout -team blue
 sleep 3
 bot_teleport P1 0 133 0 0 270 0
-setpos 0 -300 0
+spec_mode 6
+sleep 1
+setpos 0 -300 68
 setang 0 90 0
 sleep 2
 shot tp_scattergun_idle
 host_framerate 0.016667
+movie tp_scattergun
+wait 2
 bot_forceattack 1
-wait 1
-wait 2
-snap tp_scattergun_f00
-wait 2
-snap tp_scattergun_f01
-wait 2
-snap tp_scattergun_f02
-wait 2
-snap tp_scattergun_f03
-wait 2
-snap tp_scattergun_f04
-wait 2
-snap tp_scattergun_f05
-wait 2
-snap tp_scattergun_f06
-wait 2
-snap tp_scattergun_f07
-wait 2
-snap tp_scattergun_f08
-wait 2
-snap tp_scattergun_f09
-wait 2
-snap tp_scattergun_f10
-wait 2
-snap tp_scattergun_f11
-wait 2
-snap tp_scattergun_f12
-wait 2
-snap tp_scattergun_f13
-wait 2
-snap tp_scattergun_f14
-wait 2
-snap tp_scattergun_f15
+wait 30
+endmovie
 bot_forceattack 0
 wait 2
 host_framerate 0
 sleep 2
 # rocket
-kick P1
+bot_kick all
 sleep 1
+bot_selectweaponslot 0
 bot -name P1 -class soldier -team blue
 sleep 3
 bot_teleport P1 0 133 0 0 270 0
-setpos 0 -300 0
+spec_mode 6
+sleep 1
+setpos 0 -300 68
 setang 0 90 0
 sleep 2
 shot tp_rocket_idle
 host_framerate 0.016667
+movie tp_rocket
+wait 2
 bot_forceattack 1
-wait 1
-wait 2
-snap tp_rocket_f00
-wait 2
-snap tp_rocket_f01
-wait 2
-snap tp_rocket_f02
-wait 2
-snap tp_rocket_f03
-wait 2
-snap tp_rocket_f04
-wait 2
-snap tp_rocket_f05
-wait 2
-snap tp_rocket_f06
-wait 2
-snap tp_rocket_f07
-wait 2
-snap tp_rocket_f08
-wait 2
-snap tp_rocket_f09
-wait 2
-snap tp_rocket_f10
-wait 2
-snap tp_rocket_f11
-wait 2
-snap tp_rocket_f12
-wait 2
-snap tp_rocket_f13
-wait 2
-snap tp_rocket_f14
-wait 2
-snap tp_rocket_f15
+wait 30
+endmovie
 bot_forceattack 0
 wait 2
 host_framerate 0
 sleep 2
 # minigun
-kick P1
+bot_kick all
 sleep 1
-bot -name P1 -class heavyweapons -team blue
+bot_selectweaponslot 0
+bot -name P1 -class heavy -team blue
 sleep 3
 bot_teleport P1 0 133 0 0 270 0
-setpos 0 -300 0
+spec_mode 6
+sleep 1
+setpos 0 -300 68
 setang 0 90 0
 sleep 2
 shot tp_minigun_idle
-host_framerate 0.016667
 bot_forceattack 1
-wait 1
-wait 2
-snap tp_minigun_f00
-wait 2
-snap tp_minigun_f01
-wait 2
-snap tp_minigun_f02
-wait 2
-snap tp_minigun_f03
-wait 2
-snap tp_minigun_f04
-wait 2
-snap tp_minigun_f05
-wait 2
-snap tp_minigun_f06
-wait 2
-snap tp_minigun_f07
-wait 2
-snap tp_minigun_f08
-wait 2
-snap tp_minigun_f09
-wait 2
-snap tp_minigun_f10
-wait 2
-snap tp_minigun_f11
-wait 2
-snap tp_minigun_f12
-wait 2
-snap tp_minigun_f13
-wait 2
-snap tp_minigun_f14
-wait 2
-snap tp_minigun_f15
+sleep 1.5
+host_framerate 0.016667
+movie tp_minigun
+wait 32
+endmovie
 bot_forceattack 0
 wait 2
 host_framerate 0
 sleep 2
 # shotgun
-kick P1
+bot_kick all
 sleep 1
+bot_selectweaponslot 0
 bot -name P1 -class engineer -team blue
 sleep 3
 bot_teleport P1 0 133 0 0 270 0
-setpos 0 -300 0
+spec_mode 6
+sleep 1
+setpos 0 -300 68
 setang 0 90 0
 sleep 2
 shot tp_shotgun_idle
 host_framerate 0.016667
+movie tp_shotgun
+wait 2
 bot_forceattack 1
-wait 1
-wait 2
-snap tp_shotgun_f00
-wait 2
-snap tp_shotgun_f01
-wait 2
-snap tp_shotgun_f02
-wait 2
-snap tp_shotgun_f03
-wait 2
-snap tp_shotgun_f04
-wait 2
-snap tp_shotgun_f05
-wait 2
-snap tp_shotgun_f06
-wait 2
-snap tp_shotgun_f07
-wait 2
-snap tp_shotgun_f08
-wait 2
-snap tp_shotgun_f09
-wait 2
-snap tp_shotgun_f10
-wait 2
-snap tp_shotgun_f11
-wait 2
-snap tp_shotgun_f12
-wait 2
-snap tp_shotgun_f13
-wait 2
-snap tp_shotgun_f14
-wait 2
-snap tp_shotgun_f15
+wait 30
+endmovie
 bot_forceattack 0
 wait 2
 host_framerate 0
 sleep 2
+# flamethrower
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name P1 -class pyro -team blue
+sleep 3
+bot_teleport P1 0 133 0 0 270 0
+spec_mode 6
+sleep 1
+setpos 0 -300 68
+setang 0 90 0
+sleep 2
+shot tp_flamethrower_idle
+bot_forceattack 1
+sleep 1.5
+host_framerate 0.016667
+movie tp_flamethrower
+wait 32
+endmovie
+bot_forceattack 0
+wait 2
+host_framerate 0
+sleep 2
+bot_kick all

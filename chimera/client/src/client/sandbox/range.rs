@@ -25,7 +25,9 @@
 //!
 //! Places come from the player's eye (`FirstPersonCamera`): a point
 //! behind it or off screen hides its piece. A staging without a camera
-//! puts them at fixed places on the screen (`STAGED_AT`).
+//! puts them at fixed places on the screen (`STAGED_AT`). None of them
+//! under `cl_drawhud 0` (`hud::DRAWHUD_COVER`: captures against the real
+//! games).
 //!
 //! The pieces are spawned when what they say changes (`Shape`: the
 //! panel's numbers, a ring's seconds, a blast's words, a piece coming on
@@ -174,10 +176,12 @@ fn draw(
     mut rings: ResMut<Assets<RingMaterial>>,
     mut pool: Local<Vec<Handle<RingMaterial>>>,
     mut built: Local<Option<Built>>,
-    mut builds: ResMut<RangeBuilds>,
+    (mut builds, cover): (ResMut<RangeBuilds>, Option<Res<crate::client::hud::HudCover>>),
     mut c: Commands,
 ) {
-    let on = look.on() && ui_state.on && ui_state.screen != SandboxScreen::ChangeGun;
+    // `cl_drawhud 0` (captures against another game) hides these too.
+    let drawhud_off = cover.is_some_and(|c| c.is(crate::client::hud::DRAWHUD_COVER));
+    let on = look.on() && ui_state.on && ui_state.screen != SandboxScreen::ChangeGun && !drawhud_off;
     let staged = ui_state.staged;
     let any = panel.0.is_some() || !blasts.0.is_empty() || bench.targets.iter().any(|t| t.respawn.is_some());
     if !on || !any {

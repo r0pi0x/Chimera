@@ -30,13 +30,13 @@ Captured imagery stays in scratch, never in the repo.
 | Tool: headless TF2, scenes, pairs | done | – |
 | Camera match (2fort bridge, setpos/setang) | matches | – |
 | Muzzle flashes, first person | close (scattergun, shotgun, SMG) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). Ours' flash stays where it started while the gun kicks; TF2's rides the muzzle ("Movement Lock to Control Point" on the animated attachment), and TF2's view model kicks harder (the Scattergun's pump) |
-| Muzzle flashes, third person | todo | |
+| Muzzle flashes, third person | todo | `thirdperson.tf2` (bot 433 units ahead, free spectator via `spec_mode 6` then `setpos`) and `thirdperson.scene` (a sandbox target, `target add <gun> 11 still protect`) frame the same; but ours' target aims at us and hits us (blood, flames on the camera) where TF2's bot fires straight ahead, and its Minigun points at the camera: the target needs a "fire ahead" mode before the pictures compare. Ours' brass shows (golden casings at its feet) |
 | Minigun constant flash, brass | close | the core is a compact glow now (a trail no wider than long); ours is dimmer and nearer the barrel than the account's own Minigun's (not stock); the brass lived one frame (lifetime from a sheet the casing has none of): now 2 s |
 | Tracers | matches (SMG, Shotgun) | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails |
 | Backblast (third person) | todo | |
-| Flame stream (air, wall); overbright 5 or 1 | close | overbright is 5, in linear space (we applied it to the gamma colour: x34, a white blob at a wall; now the violet cloud of TF2, its added colour within 3 of TF2's). TF2's cloud at a wall spreads wider (its points slide along the wall; ours stop) and its far fireball is about 1.5x ours |
+| Flame stream (air, wall); overbright 5 or 1 | close | overbright is 5, in linear space (we applied it to the gamma colour: x34, a white blob at a wall; now the violet cloud of TF2, its added colour within 3 of TF2's). Re-taken at a bot's FOV 75 (the first pass ran ours at 90): TF2's cloud at a wall spreads wider (its points slide along the wall; ours stop) and its far fireball is about 2x ours across; ours tints the right wall orange |
 | Crits | todo | |
 | View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries |
 | HUD, crosshair | todo | |
@@ -48,19 +48,23 @@ Captured imagery stays in scratch, never in the repo.
    than the account's own (non-stock) Minigun's in TF2 (black barrels and
    a low firing pose were the bot's FOV and the account's other Minigun,
    not ours; the brass now flies).
-2. First-person flashes ride the animated muzzle in TF2 (each frame's
+2. Third person: give sandbox targets a "fire straight ahead, don't aim"
+   mode (like TF2's `bot_forceattack` on a puppet) so `thirdperson.scene`
+   compares; TF2's bots then the reference for bodies, poses, the
+   Rocket Launcher's backblast, the Minigun's glow and brass, the flames
+   seen from the front. In TF2 the Scout and Engineer bots sometimes
+   didn't appear (the old P1 not yet gone): give each class its own name.
+3. First-person flashes ride the animated muzzle in TF2 (each frame's
    attachment); ours follow the eye from where the shot was.
-3. (Done: tracers; flash lifetime was a capture error.)
-4. Flames: TF2's cloud at a wall spreads wider (flame points slide along
-   surfaces, flames.md; ours stop) and its far ball is ~1.5x ours.
-5. Third person and the backblast: `thirdperson.tf2` captures TF2 (a
-   puppet bot 433 units ahead firing at a free spectator); ours needs a
-   matching scene: a sandbox target only shoots back once shot, so it
-   needs a target that fires on its own, or our own player in third
-   person with a matched camera.
-6. Water and mid-air explosions, stickies, crits (`addcond`), view-model
-   positions (the Flame Thrower sits a little high and left in ours; the
-   Minigun's firing pose), the HUD.
+4. Flames (`flames.tf2` against `flames.scene`, both at FOV 75 now): at
+   1 s TF2's far fireball is about twice ours across and brighter; its
+   cloud at a wall spreads wider (flame points slide along surfaces,
+   flames.md; ours stop). Ours also tints the bridge's right wall orange
+   while firing where TF2 doesn't: find what draws it.
+5. The hay tufts on the bridge's far end draw as orange spikes in ours
+   (soft yellow tufts in TF2): a detail sprite or material.
+6. Water and mid-air explosions, stickies, crits (`addcond`), the HUD and
+   crosshair (UGG's own HUD by design; TF2's crosshair to compare).
 7. The asset service's `players` set needs republishing (by the user)
    to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
 
@@ -127,3 +131,5 @@ Captured imagery stays in scratch, never in the repo.
   at 75 now; at 75 TF2's far fireball is still about twice ours across,
   and its cloud at a wall wider (open). `tf_debug_flamethrower 1` draws
   TF2's flame points' boxes (they reach the bridge's far end).
+- `cl_drawhud 0` now hides the sandbox range's look panel too (it showed
+  over the third-person captures).

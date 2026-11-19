@@ -1,0 +1,127 @@
+# Ours for thirdperson.tf2: a sandbox target with the gun 11 m (433 units)
+# ahead, facing us and firing at us (`shoots`, `protect`); we stand at
+# 0 -300 0 as an Engineer (eye 68) with no view model, god mode. In real
+# time (the target's own aim and timing): pictures 1.5 s after it may
+# shoot, then 0.1 and 0.15 s apart (its shots aren't `wait_for shot`'s).
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/thirdperson.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+r_drawviewmodel 0
+rung tf2:tf_weapon_wrench
+wait 2
+wait_for idle 3000
+# scattergun
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:tf_weapon_scattergun 11 still protect
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+shot tp_scattergun_idle
+target set all shoots
+wait 90
+shot tp_scattergun_a
+gwait 0.1
+shot tp_scattergun_b
+gwait 0.15
+shot tp_scattergun_c
+target set all noshoot
+wait 60
+# rocket
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:tf_weapon_rocketlauncher 11 still protect
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+shot tp_rocket_idle
+target set all shoots
+wait 90
+shot tp_rocket_a
+gwait 0.1
+shot tp_rocket_b
+gwait 0.15
+shot tp_rocket_c
+target set all noshoot
+wait 60
+# minigun
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:tf_weapon_minigun 11 still protect
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+shot tp_minigun_idle
+target set all shoots
+wait 90
+shot tp_minigun_a
+gwait 0.1
+shot tp_minigun_b
+gwait 0.15
+shot tp_minigun_c
+gwait 1.2
+shot tp_minigun_d
+target set all noshoot
+wait 60
+# shotgun
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:tf_weapon_shotgun_primary 11 still protect
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+shot tp_shotgun_idle
+target set all shoots
+wait 90
+shot tp_shotgun_a
+gwait 0.1
+shot tp_shotgun_b
+gwait 0.15
+shot tp_shotgun_c
+target set all noshoot
+wait 60
+# flamethrower
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:tf_weapon_flamethrower 11 still protect
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+shot tp_flamethrower_idle
+target set all shoots
+wait 90
+shot tp_flamethrower_a
+gwait 0.1
+shot tp_flamethrower_b
+gwait 0.15
+shot tp_flamethrower_c
+gwait 1.2
+shot tp_flamethrower_d
+target set all noshoot
+wait 60
+target remove all

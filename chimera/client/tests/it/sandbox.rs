@@ -801,6 +801,28 @@ fn the_range_readouts_rebind_in_place_instead_of_spawning_each_frame() {
     }
 }
 
+/// `cl_drawhud 0` (captures against the real games) hides the range's
+/// readouts with every other HUD; back at 1 they return.
+#[test]
+fn cl_drawhud_0_hides_the_range_readouts() {
+    let mut range = sim("range");
+    let drawn = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        w.query::<&UiParityId>().iter(w).any(|p| p.0 == "range.look")
+    };
+    assert!(drawn(&mut range));
+    use chimera_client::client::hud::{DRAWHUD_COVER, HudCover};
+    // What `cl_drawhud 0` puts up (`hud::HudCoverPlugin`).
+    range.app.world_mut().get_resource_or_insert_with(HudCover::default).set(DRAWHUD_COVER, true);
+    frame(&mut range);
+    frame(&mut range);
+    assert!(!drawn(&mut range), "hidden under cl_drawhud 0");
+    range.app.world_mut().resource_mut::<HudCover>().set(DRAWHUD_COVER, false);
+    frame(&mut range);
+    frame(&mut range);
+    assert!(drawn(&mut range), "back");
+}
+
 fn sim_builds(sim: &Sim) -> u64 {
     sim.app.world().resource::<sandbox::range::RangeBuilds>().0
 }
