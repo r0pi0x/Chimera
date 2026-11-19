@@ -58,7 +58,19 @@ Captured imagery stays in scratch, never in the repo.
    `Animator::ik_rules`); the spin layers' bone weights are 0.5-1 as the
    file has them and the spec's spin timelines were recomputed with them
    (6.6 degrees at 0.2 s into the wind-down, not 9: the first reading
-   took every weight as 1). Left: a side-by-side with TF2's bots.
+   took every weight as 1). Side-by-side with TF2's bots
+   (`anim.tf2` / `anim.scene`, 2026-11-19): the Heavy firing matches
+   (Minigun level and low, forward); TF2's spun-only and idle Heavy look as
+   the spec has them, but ours' "idle" target fired anyway (item 5 below),
+   so no idle pair yet. The other classes' upper bodies match; TF2's legs
+   look wider apart, most likely its bots' feet yaw (still standing, the
+   feet keep their own goal up to 45 degrees off the eyes) against ours'
+   feet on the eyes, not the stances (frame 0 matches, test 35). The
+   Demoman's Grenade Launcher points forward in TF2 but across his body in
+   ours although the animation's `weapon_bone` points forward (+Z along
+   the model's +X): the held `c_` model's merge (7), open. TF2's bots
+   jump and crouch (`bot_jump`, `bot_crouch`); ours' targets can't, so
+   those have no pair.
 2. The rocket's explosion on a player (`air.tf2`/`air.scene` in the
    pass's scratch: a Soldier at 0 -300 firing at a Heavy ~300 units
    ahead): ours draws a large uniform orange disc with a hard round edge

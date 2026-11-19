@@ -1,0 +1,203 @@
+# Ours for anim.tf2: each class as a sandbox target holding its primary
+# (the Spy his Revolver) 300 units (7.62 m) ahead, facing us; we stand at
+# 0 -300 0 as an Engineer (eye 68) with no view model, then the camera stays
+# (`chimera_freecam 2`) and our body steps back out of sight. Idle, then
+# walking (`walk`: TF2's bots have no forced run, compare the cycle's
+# shape); the Heavy also firing `ahead` (spun and firing). Targets don't
+# jump or crouch: anim.tf2's jump and crouch pictures have no pair here.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/anim.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+r_drawviewmodel 0
+rung tf2:tf_weapon_wrench
+wait 2
+wait_for idle 3000
+# scout
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:scout 7.62 still protect
+target set all gun tf2:tf_weapon_scattergun
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot an_scout_idle
+target set all walk
+wait 90
+shot an_scout_walk
+target set all still
+wait 30
+# soldier
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:soldier 7.62 still protect
+target set all gun tf2:tf_weapon_rocketlauncher
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot an_soldier_idle
+target set all walk
+wait 90
+shot an_soldier_walk
+target set all still
+wait 30
+# pyro
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:pyro 7.62 still protect
+target set all gun tf2:tf_weapon_flamethrower
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot an_pyro_idle
+# demo
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:demoman 7.62 still protect
+target set all gun tf2:tf_weapon_grenadelauncher
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot an_demo_idle
+# heavy
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:heavy 7.62 still protect
+target set all gun tf2:tf_weapon_minigun
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot an_heavy_idle
+target set all ahead
+gwait 1.5
+shot an_heavy_firing
+target set all noahead
+wait 120
+target set all walk
+wait 90
+shot an_heavy_walk
+target set all still
+wait 30
+# engineer
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:engineer 7.62 still protect
+target set all gun tf2:tf_weapon_shotgun_primary
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot an_engineer_idle
+# medic
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:medic 7.62 still protect
+target set all gun tf2:tf_weapon_syringegun_medic
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot an_medic_idle
+# sniper
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:sniper 7.62 still protect
+target set all gun tf2:tf_weapon_sniperrifle
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot an_sniper_idle
+# spy
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:spy 7.62 still protect
+target set all gun tf2:tf_weapon_revolver
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot an_spy_idle
+chimera_freecam 0
+target remove all
