@@ -326,7 +326,8 @@ means the script's value is the same as the spec's number.
 - **`BrassModel`**, **`DoInstantEjectBrass`**, **`TracerEffect`**,
   **`MuzzleFlashParticleEffect`**, **`ExplosionEffect`**,
   **`ExplosionPlayerEffect`**, **`ExplosionWaterEffect`**: shell casings,
-  tracer and particle-system names. Ignored (no particle systems yet).
+  tracer and particle-system names. Ignored here; what they name and
+  how the game uses them is [effects.md](effects.md).
 - **`ExplosionSound`**: the blast's sound entry (Rocket, Grenade and
   Stickybomb Launchers). Agrees with the TOMLs' hook `sound` for all
   three; this also answers weapons_more.md Open questions 18 by name.

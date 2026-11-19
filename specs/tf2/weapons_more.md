@@ -641,6 +641,9 @@ r_{max} = 146 \times \left(0.85 + 0.15\,\min\!\left(\max\!\left(\frac{a - 0.8}{2
   eye (the wiki's "≈ 350"). A simplest port may instead test a cone of
   that length every flame hit interval.
 
+How every client runs these points and draws the stream on them:
+[flames.md](flames.md).
+
 #### 7.2 Damage
 
 - **Hit test**: each tick, for each enemy player (or enemy building) the
