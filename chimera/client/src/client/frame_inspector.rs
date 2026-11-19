@@ -13,6 +13,12 @@
 //! F10 bundle's `perf.txt` (`report`), and each logged hitch line ends
 //! with its record's summary (systems, events).
 //!
+//! A system is named by its schedule and short name, with its module too
+//! when another module's system has the same name (`Update
+//! server_assets::watch` and `Update rank_toast::watch`:
+//! `work::distinct_label`; a bare `Update watch` in the 2026-11-19 report
+//! named either).
+//!
 //! Systems are timed by `metrics::work`'s wrapper (`count_systems` wraps
 //! both worlds in `cleanup`; `CHIMERA_SYSTEM_TIMES=0` leaves them
 //! unwrapped), switched on by `chimera_frame_inspect`: 0 never, 1 (the
@@ -457,7 +463,9 @@ pub(crate) fn frame_done(world: &World, f: FrameFacts) -> Option<String> {
             // Not the schedule runners' own (the whole frame or tick
             // less what they ran) nor the frame marks'.
             rows.into_iter()
-                .map(|(row, ns, n)| (work::label(row).unwrap_or_else(|| format!("system {row}")), ns as f64 / 1e6, n))
+                // Told apart from a same-named system of another module
+                // (`Update server_assets::watch`, not a bare `Update watch`).
+                .map(|(row, ns, n)| (work::distinct_label(row).unwrap_or_else(|| format!("system {row}")), ns as f64 / 1e6, n))
                 .filter(|(l, _, _)| !l.starts_with("Main ") && !l.starts_with("FixedMain ") && !l.starts_with("FrameMark("))
                 .take(TOP_SYSTEMS)
                 .collect::<Vec<_>>()

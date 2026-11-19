@@ -276,6 +276,14 @@ fn safe_name(name: &str) -> bool {
 }
 
 /// This process's own map load (or a client's join) is under way
+/// (`map::local_load_under_way`), the server's fetch of its own game files
+/// left out: what a match entered at once waits for
+/// (`minigame::MinigameDef::lobby` false).
+pub fn own_load_under_way(world: &World) -> bool {
+    crate::map::local_load_under_way(world)
+}
+
+/// This process's own map load (or a client's join) is under way
 /// (`map::local_load_under_way`), or a server's fetch of its own game
 /// files (`server_assets::fetching`): the local player's map isn't ready.
 pub fn local_load_under_way(world: &World) -> bool {

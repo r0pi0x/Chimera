@@ -105,6 +105,11 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "read-only answers (`&World`): the match's weapons and a game's sets for the asset offer",
     ),
     (
+        "chimera/net/src/net/server_assets.rs",
+        "MatchInputs",
+        "read-only answers (`&World`): a resource's change tick, what the server's look at its match's sets is made of",
+    ),
+    (
         "chimera/net/src/net/units.rs",
         "UnitNeeds",
         "read-only answers (`&World`): the sets a unit fetched on demand needs (TF2: a gun's class bodies)",

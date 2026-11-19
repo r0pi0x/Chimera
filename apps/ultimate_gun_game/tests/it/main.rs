@@ -44,6 +44,7 @@ mod sandbox_platform;
 mod sandbox_range;
 mod session;
 mod sandbox_screens;
+mod sandbox_entry;
 mod targets;
 mod ui_sounds;
 mod variety;

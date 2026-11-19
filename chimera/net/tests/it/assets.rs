@@ -1434,10 +1434,12 @@ fn a_listen_server_fetches_the_match_files_with_the_hosts_credential() {
 /// A listen host whose match's sets are all in its store looks at the
 /// store once for them, not every second: a look reads every served
 /// game's manifest and each record of the sets (up to a second with five
-/// games' manifests), and done on the main thread every `CHECK_EVERY` it
+/// games' manifests), and done on the main thread every second it
 /// froze the host's frames about once a second (docs/performance.md,
 /// "Stutter on Beaver Creek"). The look runs on the job's thread; the
-/// same sets aren't looked at again until they change.
+/// same sets aren't looked at again until they change, nor are the
+/// match's sets named again while nothing they are made of changes
+/// (`server_assets::MatchInputs`; "The sandbox's jitter").
 #[test]
 fn a_server_looks_at_its_store_once_per_change_of_the_matchs_sets() {
     use chimera_net::net::server_assets::{self, ServerFiles};
@@ -1471,11 +1473,12 @@ fn a_server_looks_at_its_store_once_per_change_of_the_matchs_sets() {
     for _ in 0..5 {
         assert!(server_assets::fetch_now(sim.server.app.world_mut()).is_none(), "no job for the same sets");
     }
-    let start = std::time::Instant::now();
-    while start.elapsed() < server_assets::CHECK_EVERY * 2 {
+    let named = server_assets::match_looks(sim.server.app.world());
+    for _ in 0..200 {
         sim.step();
     }
     assert_eq!(server_assets::store_looks(sim.server.app.world()), looks, "the same sets looked at again");
+    assert_eq!(server_assets::match_looks(sim.server.app.world()), named, "the match's sets named again with nothing changed");
     assert!(!server_assets::fetching(sim.server.app.world()));
     // A change of level names other sets: one look, on the job's thread,
     // which fetches the coming map's.

@@ -39,9 +39,20 @@
 //!   there): the match's sets as the offer names them
 //!   (`assets::match_sets`: every game in play's match sets, the map's,
 //!   the ladder's and kit's `weapon/<id>`, a game's rung bodies), of the
-//!   games read from the store, named at most every `CHECK_EVERY` and
-//!   at once when the map changes (the coming map, named before it
-//!   loads); when they changed since the last look, a thread looks at
+//!   games read from the store, named again only when what they are made
+//!   of changed (`MatchInputs`: the map loaded and served, a map change
+//!   for the next match, the minigame and its definitions, the ladder,
+//!   the slots, the games, the weapons, the starting weapons, the
+//!   server's files, and what a part registers with `watch_input`, such
+//!   as Halo's campaign bodies): each frame compares those resources'
+//!   change ticks with the ones of the last look, a few lookups; the
+//!   look builds the match's manifest and every part's asset names
+//!   (63 M instructions in the sandbox, every game's guns, in a dev
+//!   build). It ran every second (`CHECK_EVERY`, now gone) and on the
+//!   listen host of a sandbox froze a frame for about 100 ms each time
+//!   (2026-11-19's report: the frame inspector's spikes, "Update watch";
+//!   docs/performance.md, "The sandbox's jitter"). When the sets changed
+//!   since the last look, a thread looks at
 //!   the store (every served game's manifest read, each record of the
 //!   sets; never on the main thread: done there every second it froze a
 //!   listen host's frames for 0.4-1 s, docs/performance.md, "Stutter on
@@ -51,7 +62,9 @@
 //!   `changelevel` loads its map only once the fetch is done
 //!   (`fetch_now`), the first match's sets come before it listens, and
 //!   the pre-match lobby doesn't count down meanwhile
-//!   (`net::maps::local_load_under_way`, `prematch`). A fetch of the
+//!   (`net::maps::local_load_under_way`, `prematch`); a match without a
+//!   lobby (the sandbox: `MinigameDef::lobby`) starts without waiting for
+//!   it (`minigame_net`). A fetch of the
 //!   same sets isn't tried again until they change (a set the service
 //!   lacks stays missing).
 //!
@@ -71,10 +84,10 @@
 use std::{
     collections::BTreeSet,
     sync::{Arc, Condvar, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
-use bevy::prelude::*;
+use bevy::{ecs::change_detection::Tick, prelude::*};
 use chimera_assets::{
     AssetSettings, RemoteConfig, access,
     progress::{Transfer, mb},
@@ -91,9 +104,6 @@ use super::{
 
 /// What the server's log calls its downloads.
 pub const WHAT: &str = "the server's game files";
-/// How often the server looks at its match's sets (and at once when the
-/// map changes).
-pub const CHECK_EVERY: Duration = Duration::from_secs(1);
 /// How often a blocking download says how far it is.
 pub const PROGRESS_EVERY: Duration = Duration::from_secs(5);
 
@@ -190,10 +200,35 @@ pub struct ServerFetching(pub Arc<Job>);
 #[derive(Resource, Clone, Default)]
 struct Fetched {
     wanted: Vec<Wanted>,
-    checked: Option<Instant>,
+    /// The match's inputs' change ticks at the last look (`MatchInputs`).
+    inputs: Vec<Option<Tick>>,
     map: String,
     /// Looks at the store started (`store_looks`).
     looks: usize,
+    /// Looks at the match's sets (`match_looks`).
+    computed: usize,
+}
+
+/// What the match's sets are made of (`watch`): readers of resources'
+/// change ticks (None: the resource isn't there). A look at the match's
+/// sets comes only when one of them reads otherwise than at the last.
+#[derive(Resource, Clone, Default)]
+pub struct MatchInputs(pub Vec<fn(&World) -> Option<Tick>>);
+
+fn ticks_of<R: Resource>(world: &World) -> Option<Tick> {
+    world.get_resource_change_ticks::<R>().map(|t| t.changed)
+}
+
+/// Resource `R` counts among what the match's sets are made of: a change
+/// to it (or its coming or going) makes the server look at the sets again
+/// (a part's setting its asset names read: Halo's campaign bodies).
+pub fn watch_input<R: Resource>(app: &mut App) {
+    app.world_mut().get_resource_or_init::<MatchInputs>().0.push(ticks_of::<R>);
+}
+
+/// The inputs' change ticks now.
+fn inputs_now(world: &World) -> Vec<Option<Tick>> {
+    world.get_resource::<MatchInputs>().map_or_else(Vec::new, |i| i.0.iter().map(|f| f(world)).collect())
 }
 
 /// Starts fetching `wanted` with `files` on a thread.
@@ -488,7 +523,9 @@ pub fn fetch_now(world: &mut World) -> Option<Arc<Job>> {
     let files = world.get_resource::<ServerFiles>()?.clone();
     let wanted = match_wanted(world, &files.served);
     let mut fetched = world.get_resource::<Fetched>().cloned().unwrap_or_default();
-    fetched.checked = Some(Instant::now());
+    // Read after the look (which may insert what it reads: `ServedMap`).
+    fetched.inputs = inputs_now(world);
+    fetched.computed += 1;
     fetched.map = crate::net::current_map(world);
     let again = fetched.wanted == wanted;
     // A fetch under way for an older look at the match (the map changes
@@ -511,22 +548,30 @@ pub fn store_looks(world: &World) -> usize {
     world.get_resource::<Fetched>().map_or(0, |f| f.looks)
 }
 
+/// How many looks at the match's sets this server made (`fetch_now`; a
+/// test's measure that a match that doesn't change isn't looked at again).
+pub fn match_looks(world: &World) -> usize {
+    world.get_resource::<Fetched>().map_or(0, |f| f.computed)
+}
+
 /// Whether the server's own fetch is under way (the match waits for it).
 pub fn fetching(world: &World) -> bool {
     world.contains_resource::<ServerFetching>()
 }
 
 /// Each frame on a server with `ServerFiles`: a fetch's end said, and,
-/// when the map changed or `CHECK_EVERY` passed, the match's sets looked
-/// at (`fetch_now`, queued: it builds the match's manifest).
+/// when what the match's sets are made of changed (`MatchInputs`: the map
+/// loaded or coming among them), the match's sets looked at (`fetch_now`,
+/// queued: it builds the match's manifest).
 fn watch(
+    world: &World,
     fetching: Option<Res<ServerFetching>>,
     fetched: Option<Res<Fetched>>,
-    map: Option<Res<crate::map::LoadedMapName>>,
     mut commands: Commands,
 ) {
-    if let Some(job) = fetching {
-        let Some(result) = job.0.result() else { return };
+    if let Some(job) = fetching
+        && let Some(result) = job.0.result()
+    {
         commands.remove_resource::<ServerFetching>();
         match result {
             // Empty: the store held the sets already (nothing fetched).
@@ -535,10 +580,8 @@ fn watch(
             Err(e) => warn!("assets: {WHAT} didn't arrive ({e}); what the server reads comes on demand"),
         }
     }
-    let map = crate::net::normalize_map(map.as_ref().map_or("", |m| m.0.as_str()));
-    let map_changed = fetched.as_ref().is_none_or(|f| f.map != map);
-    let due = fetched.as_ref().and_then(|f| f.checked).is_none_or(|t| t.elapsed() >= CHECK_EVERY);
-    if map_changed || due {
+    let same = fetched.is_some_and(|f| f.computed > 0 && f.inputs == inputs_now(world));
+    if !same {
         commands.queue(|w: &mut World| {
             fetch_now(w);
         });
@@ -546,6 +589,20 @@ fn watch(
 }
 
 pub(crate) fn plugin(app: &mut App) {
+    // What the match's sets are made of (`match_sets`, `manifest::current`
+    // and the minigame's and parts' asset names): the map loaded, served
+    // and coming, the minigame, its definitions and ladder, the slots, the
+    // games, the weapons, the server's files.
+    watch_input::<crate::map::LoadedMapName>(app);
+    watch_input::<super::maps::ServedMap>(app);
+    watch_input::<chimera_sim::minigame::ActiveMinigame>(app);
+    watch_input::<chimera_sim::minigame::Minigames>(app);
+    watch_input::<chimera_sim::minigame::ladder::Ladder>(app);
+    watch_input::<chimera_core::gameplay::Gameplay>(app);
+    watch_input::<chimera_core::game_registry::Games>(app);
+    watch_input::<chimera_sim::weapon::data::WeaponCatalog>(app);
+    watch_input::<chimera_sim::weapon::StartingWeapons>(app);
+    watch_input::<ServerFiles>(app);
     app.add_systems(
         Update,
         watch

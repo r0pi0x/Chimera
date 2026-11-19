@@ -25,6 +25,11 @@
 //! music = "combat_arms"       # the game whose music director plays its moments
 //!                             # (`minigame::moments`); "none"; default: the first game whose
 //!                             # parts lend one (`GameParts::music`)
+//! lobby = false               # entered at once: no pre-match lobby before its matches (on a
+//!                             # server with `mp_lobby 1` too), the match before it leaves
+//!                             # without its end screen, and its start doesn't wait for the
+//!                             # server's own game files (`chimera_net`; default true: the
+//!                             # sandbox's is false)
 //!
 //! [slots]                     # the gameplay's slots by game id (`chimera_core::gameplay`)
 //! hud = "combat_arms"         # the HUD drawn
@@ -119,6 +124,10 @@ pub struct MinigameDef {
     /// parts lend one (`chimera_core::game_parts::GameParts::music`).
     #[serde(default)]
     pub music: Option<String>,
+    /// Its matches have the pre-match lobby when the host turns it on
+    /// (the default); false: entered at once (the module doc's `lobby`).
+    #[serde(default = "yes")]
+    pub lobby: bool,
     #[serde(default)]
     pub slots: Slots,
     #[serde(default)]

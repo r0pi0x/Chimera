@@ -287,6 +287,7 @@ module list is `docs/modules.md`.
 - 6566: What to do next, by expected gain | change is known to work)
 - 6605: Exit (2026-11-15) | A tester on Windows: "when I exit the game, it kind of just freezes and then it lags for a while"
 - 6656: Stutter on Beaver Creek (2026-11-18) | Playtest report (Windows, RTX 5080, Ultimate Gun Game as a listen host on halo_ce:beavercreek, 4 bots, games from the asset service)...
+- 6719: The sandbox's jitter (2026-11-19) | Owner's F10 report (Ultimate Gun Game's sandbox on the range, a listen host with its hub account): frames at ~5 ms with a spike of ~100...
 
 ## docs/playtest-hosting.md
 

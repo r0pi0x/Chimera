@@ -6715,3 +6715,49 @@ minutes; the box was too loaded (load 26-61, the game swapped out) to
 time anything, and `chimera_census diff` is the tool for what they are
 (docs/OBSERVABILITY.md). The report's `B0004` warning (a `Body` parented
 to a `Body` without `InheritedVisibility`) is new with the stand-ins.
+
+## The sandbox's jitter (2026-11-19)
+
+Owner's F10 report (Ultimate Gun Game's sandbox on the range, a listen
+host with its hub account): frames at ~5 ms with a spike of ~100 ms about
+once a second (p99 101 ms, 24,168 spikes in the session); the frame
+inspector's slowest system in them was `Update watch` (106-1,419 ms).
+
+**Cause: the listen server's look at its match's sets**
+(`net::server_assets::watch`). Every `CHECK_EVERY` (1 s) it queued
+`fetch_now`, which named the match's sets on the main thread
+(`match_wanted`: the match's manifest and every part's asset names); in
+the sandbox the ladder is every game's guns, so each look went through
+all of them. The two map names compared (`watch`'s
+`normalize_map(LoadedMapName)`, `fetch_now`'s `current_map`) were the
+same, so the look was not every frame: once a second, by the timer. The
+other `watch` (the client's `rank_toast`) costs nothing (a rung compare).
+
+**Fix.** The sets are named again only when something they are made of
+changes (`server_assets::MatchInputs`: the change ticks of the map
+loaded, served and coming, the minigame, its definitions and ladder, the
+slots, the games, the weapons, the starting weapons, the server's files,
+and what a part registers with `watch_input`, Halo's campaign bodies):
+a few lookups a frame, no timer. The look itself stays on the main
+thread (it reads the world), now once per map or match change.
+
+Measured on the dev box (offscreen, `ultimate_gun_game` dev build, a
+listen host with `ServerFiles` from `CHIMERA_ASSET_URL`/`TOKEN`, `sandbox
+range`, 20 s on the range; load ~40, so per-frame work, not time):
+
+| | non-tick instructions a frame, p50 / p90 / max | frame-inspector spikes | spikes naming `watch` |
+|---|---|---|---|
+| before | 37 M / 737 M / 789 M | 237 | 5 of the 8 worst (136-199 ms) |
+| after | 25 M / 46 M / 75 M | 4 | 0 |
+
+The ~700 M a second before was the look. Headless (`ultimate_gun_game`
+`sandbox_entry::a_sandbox_server_names_its_matchs_sets_only_when_they_change`)
+a look at the sandbox's sets on the range is 1.6 M instructions (no asset
+host there), and 600 ticks with nothing changed name them no more
+(`server_assets::match_looks`); a map change names them once.
+
+**The report's gap.** The bundle's `perf.txt` said `Update watch` (two
+systems have that name), so the cause took reading code to pin down: the
+frame inspector now names a system with its module when another
+module's system shares its name (`Update server_assets::watch`:
+`metrics::work::distinct_label`).

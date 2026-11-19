@@ -67,6 +67,10 @@ use super::InstructionCounter;
 /// Rows' labels by index (`Counted::row`).
 static LABELS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// Rows' labels with the system's module (`Update server_assets::watch`),
+/// by index: `distinct_label`'s.
+static QUALIFIED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
 /// (world, schedule, system key) already wrapped.
 static WRAPPED: Mutex<BTreeSet<(String, SystemKey)>> = Mutex::new(BTreeSet::new());
 
@@ -156,6 +160,32 @@ pub fn take_times() -> Vec<(usize, u64, u32)> {
 /// A row's label: its schedule and system (`Update my_system`).
 pub fn label(row: usize) -> Option<String> {
     LABELS.lock().unwrap_or_else(|e| e.into_inner()).get(row).cloned()
+}
+
+/// A row's label told apart from other systems' of the same name: with
+/// its module (`Update server_assets::watch`) when another system of
+/// another module has the same label (two `watch` systems in `Update`),
+/// else `label`'s. The frame inspector's records (`perf.txt` in an F10
+/// bundle), where a bare `Update watch` named either.
+pub fn distinct_label(row: usize) -> Option<String> {
+    let labels = LABELS.lock().unwrap_or_else(|e| e.into_inner());
+    let qualified = QUALIFIED.lock().unwrap_or_else(|e| e.into_inner());
+    let (label, mine) = (labels.get(row)?, qualified.get(row)?);
+    let shared = labels.iter().zip(qualified.iter()).any(|(l, q)| l == label && q != mine);
+    Some(if shared { mine.clone() } else { label.clone() })
+}
+
+/// `module::short_name` of a system's full name
+/// (`chimera_net::net::server_assets::watch` is `server_assets::watch`;
+/// generic arguments as `shortname` writes them).
+fn with_module(full: &str, short: &str) -> String {
+    let path = full.split('<').next().unwrap_or(full);
+    let mut parts = path.rsplit("::");
+    parts.next();
+    match parts.next() {
+        Some(module) if !module.is_empty() => format!("{module}::{short}"),
+        _ => short.to_string(),
+    }
 }
 
 fn time_enter() {
@@ -436,7 +466,12 @@ pub fn count_systems(world: &mut World) -> usize {
             );
             let row = {
                 let mut labels = LABELS.lock().unwrap_or_else(|e| e.into_inner());
-                labels.push(format!("{label} {}", name.shortname()));
+                let short = name.shortname().to_string();
+                QUALIFIED
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(format!("{label} {}", with_module(&name.as_string(), &short)));
+                labels.push(format!("{label} {short}"));
                 labels.len() - 1
             };
             *slot = SystemWithAccess::new(Box::new(Counted { inner, row }));
@@ -574,6 +609,22 @@ mod tests {
         for i in 0..100_000u64 {
             n.0 = n.0.wrapping_mul(31).wrapping_add(std::hint::black_box(i));
         }
+    }
+
+    /// Two systems of one name in two modules (the 2026-11-19 report's
+    /// two `Update watch`): told apart by their modules.
+    #[test]
+    fn a_systems_module_tells_same_named_ones_apart() {
+        assert_eq!(with_module("chimera_net::net::server_assets::watch", "watch"), "server_assets::watch");
+        assert_eq!(
+            with_module("chimera_client::client::rank_toast::watch", "watch"),
+            "rank_toast::watch"
+        );
+        assert_eq!(
+            with_module("game::anim::drive<game::anim::PlayerAnim, bevy_ecs::query::Without<x::Hostage>>", "drive<PlayerAnim, Without<Hostage>>"),
+            "anim::drive<PlayerAnim, Without<Hostage>>"
+        );
+        assert_eq!(with_module("lonely", "lonely"), "lonely");
     }
 
     fn light(mut n: ResMut<N>) {

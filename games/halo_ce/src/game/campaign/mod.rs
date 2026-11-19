@@ -938,6 +938,9 @@ impl Plugin for CampaignPlugin {
         if !hooks.0.contains(&(asset_names as fn(&World) -> _)) {
             hooks.0.push(asset_names);
         }
+        // The names read the campaign bodies' switch: a change of it is a
+        // change of the match's sets (`server_assets::MatchInputs`).
+        chimera_net::net::server_assets::watch_input::<CampaignBodies>(app);
         app.console_command(
             BODY_COMMAND,
             "halo_ce:body <spartan | elite | grunt | jackal | marine | hunter | draw | status | shield <fraction>> [player | all]: the \

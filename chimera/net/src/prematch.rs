@@ -92,7 +92,9 @@
 //!   on F3 while it shows (`chimera_client::client::prematch_lobby`).
 //!
 //! A match change during the lobby (`MatchHold`) drops it; the next start
-//! begins another. A start while the lobby is up (the automatic gun game
+//! begins another. A minigame whose definition says `lobby = false` (the
+//! sandbox) never has one, between maps or at its start (`lobby_on`,
+//! `NoLobby`): it is entered at once. A start while the lobby is up (the automatic gun game
 //! starts its match twice) keeps it: one lobby, one log line. The
 //! `mp_lobby*` cvars and `lobby*` commands are engine names
 //! (`chimera:`, `console_names`), not CS:S's. A map change no longer waits for the clients to load
@@ -532,7 +534,14 @@ pub(crate) fn register(app: &mut App) {
 pub fn lobby_on(world: &World) -> bool {
     world.get_resource::<NetRole>() == Some(&NetRole::Server)
         && world.get_resource::<LobbySettings>().is_some_and(|s| s.enabled != 0)
+        && !world.contains_resource::<NoLobby>()
 }
+
+/// The match coming or playing is entered at once (its definition's
+/// `lobby = false`: the sandbox): no lobby for it (`lobby_on`). Kept by
+/// `minigame_net` from the match's definition.
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct NoLobby;
 
 /// Serving stopped: the lobby goes.
 fn stopped_serving(world: &mut World) {
@@ -682,6 +691,11 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
 /// as its pre-match lobby. A change while a lobby is up takes it over.
 pub fn begin_between(world: &mut World, map: &str, mode: &str) {
     if !lobby_on(world) {
+        // A match entered at once (`MinigameDef::lobby` false): a lobby
+        // up for the match left goes with it.
+        if world.contains_resource::<Lobby>() {
+            end(world, false);
+        }
         return;
     }
     let between = BetweenMaps { map: crate::net::normalize_map(map), mode: mode.to_string() };

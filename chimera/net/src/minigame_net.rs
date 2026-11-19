@@ -241,6 +241,9 @@ impl Plugin for MinigameNetPlugin {
 
 /// The protocol (in this order on every side) and the systems.
 fn register(app: &mut App) {
+    // A map change for the next match is part of what its asset sets are
+    // made of (`server_assets::MatchInputs`).
+    crate::net::server_assets::watch_input::<MapChange>(app);
     // The maps a host took out of the rotation (the party apps' Maps
     // picker): `mp_maps_off`.
     app.init_resource::<MapsOff>();
@@ -696,6 +699,14 @@ fn change_match_on(world: &mut World, id: &str, map: Option<&str>, load: bool) -
             lacking_text(games.as_ref(), &p.lacking)
         ));
     }
+    // Another minigame: the match left is over for good, its end screen
+    // and its countdown to a next match of its own (`NextMatch`, the
+    // rotation's) gone at once, not shown through the change.
+    if world.get_resource::<ActiveMinigame>().is_some_and(|a| a.def.id != def.id) {
+        world.remove_resource::<MatchResults>();
+        world.remove_resource::<NextMatch>();
+        world.remove_resource::<MapVote>();
+    }
     // A map dressed for fewer games than this match deals loads again,
     // dressed for it.
     let load = load || (target == here && !dressed_for(world, def));
@@ -726,7 +737,9 @@ fn change_match_on(world: &mut World, id: &str, map: Option<&str>, load: bool) -
             reload,
         });
         // With the lobby on, the lobby between the maps from now: every
-        // player's row loading the map coming in (`prematch::begin_between`).
+        // player's row loading the map coming in (`prematch::begin_between`);
+        // none for a match entered at once (`lobby_rule`).
+        lobby_rule(world);
         crate::prematch::begin_between(world, &map, &def.name);
         // A server moves its players with it; a standalone game (no
         // server) just loads the map.
@@ -795,13 +808,22 @@ fn follow_map_change(world: &mut World) {
         None => {
             // In here, and a listen host's own load done (spawned and
             // settled behind its loading screen: `map::LocalMapLoad`), so
-            // its player isn't started on while it still loads.
+            // its player isn't started on while it still loads. A match
+            // entered at once (`MinigameDef::lobby` false: the sandbox)
+            // doesn't wait for the server's own game files besides
+            // (`net::server_assets`): they come behind it, its guns on
+            // demand.
             let reloaded = c.reload.is_none_or(|before| {
                 crate::net::maps::map_file_tick(world).is_some_and(|t| t != before)
             });
+            let loading = if c.def.lobby {
+                crate::net::maps::local_load_under_way(world)
+            } else {
+                crate::net::maps::own_load_under_way(world)
+            };
             let arrived = crate::net::maps::loaded_map(world).is_some_and(|(id, _)| id == c.map)
                 && reloaded
-                && !crate::net::maps::local_load_under_way(world);
+                && !loading;
             if arrived {
                 c.arrived = Some(now);
                 if crate::prematch::lobby_on(world) {
@@ -1087,11 +1109,16 @@ fn apply_minigame(world: &mut World, mut refused: Local<Option<String>>) {
     };
     // The definition comes with the match's manifest (`accept_minigame`):
     // wait for the manifest that names it.
-    let offered = world
-        .get_resource::<ServerManifest>()
-        .and_then(|m| m.0.minigame.as_ref())
-        .is_some_and(|o| o.id == n.id);
-    if !offered {
+    let coming = world.get_resource::<ServerManifest>().and_then(|m| m.0.minigame.as_ref()).map(|o| o.id.clone());
+    if coming.as_ref() != Some(&n.id) {
+        // Another minigame coming (the server changes match: its level
+        // change's manifest names it): the match playing is over for
+        // good, its end screen gone, as on the server (`change_match`).
+        if coming.is_some() {
+            world.remove_resource::<MatchResults>();
+            world.remove_resource::<NextMatch>();
+            world.remove_resource::<MapVote>();
+        }
         return;
     }
     // A new minigame, or the same id with a new definition (the server
@@ -1221,10 +1248,26 @@ fn apply_minigame(world: &mut World, mut refused: Local<Option<String>>) {
 /// next map once the match has been over a while (`rotate`), and (a
 /// server) the match into `NetMinigame`.
 fn serve_minigame(world: &mut World) {
+    lobby_rule(world);
     follow_map_change(world);
     rotate(world);
+    lobby_rule(world);
     if world.get_resource::<NetRole>() == Some(&NetRole::Server) {
         write_minigame(world);
+    }
+}
+
+/// The match coming or playing (`match_def`) entered at once
+/// (`MinigameDef::lobby` false: the sandbox): no pre-match lobby for it
+/// (`prematch::NoLobby`, which `prematch::lobby_on` reads).
+fn lobby_rule(world: &mut World) {
+    let none = match_def(world).is_some_and(|d| !d.lobby);
+    if none != world.contains_resource::<crate::prematch::NoLobby>() {
+        if none {
+            world.insert_resource(crate::prematch::NoLobby);
+        } else {
+            world.remove_resource::<crate::prematch::NoLobby>();
+        }
     }
 }
 
