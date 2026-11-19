@@ -74,6 +74,9 @@ pub const HEAVY_KNOCKBACK: f32 = 0.5;
 pub const BULLET_PUSH: f32 = 6.0;
 /// An upward speed above this (units/s) lifts the victim off the ground.
 pub const LIFT: f32 = 250.0;
+/// A blast whose surface normal has every component under this is in the
+/// air (effects.md 5 step 2).
+pub const AIR_NORMAL: f32 = 0.05;
 /// The Heavy's class name (classes.toml).
 pub const HEAVY: &str = "heavy";
 
@@ -135,12 +138,23 @@ pub struct Blast<'a> {
     pub scale: f32,
 }
 
-/// An explosion to draw (its centre): the server's, sent to every client
-/// (`looks`).
+/// An explosion to draw: the server's, sent to every client (`looks`):
+/// its centre, the surface normal it went off on (zero in the air), on a
+/// player or not, and the gun (whose looks name the effects).
 #[derive(Message, Clone, Copy, Debug)]
 pub struct Tf2Explosion {
     pub at: Vec3,
+    pub normal: Vec3,
+    pub on_player: bool,
+    pub weapon: &'static str,
 }
+
+/// The decal a blast leaves where it went off (effects.md 5).
+pub const SCORCH: &str = "Scorch";
+
+/// How far behind the blast's centre, along its surface's normal, the
+/// scorch's trace reaches (units; ours: the spec names no length).
+pub const SCORCH_TRACE: f32 = 16.0;
 
 /// Launched by his own blast, until he lands (weapons.md 5.4).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
@@ -220,6 +234,7 @@ pub struct BlastWorld<'w, 's> {
     inflicted: MessageWriter<'w, Inflicted>,
     sounds: MessageWriter<'w, GameSound>,
     looks: MessageWriter<'w, Tf2Explosion>,
+    decals: MessageWriter<'w, crate::map::PlaceDecal>,
     /// The blast as measured (`BlastDealt`: the sandbox's blast rings).
     dealt_out: MessageWriter<'w, chimera_sim::weapon::grenade::BlastDealt>,
     commands: Commands<'w, 's>,
@@ -268,9 +283,22 @@ impl BlastWorld<'_, '_> {
             .is_none()
     }
 
-    /// Explode `blast` of `weapon` by `owner` at `centre` (m), `touched`
-    /// the player hit directly (full splash).
-    pub fn detonate(&mut self, blast: &Blast, centre: Vec3, owner: Option<Entity>, weapon: &'static str, touched: Option<Entity>) {
+    /// The scorch's place on the surface behind `centre` along `normal`
+    /// (point, normal), if the world is there (effects.md 5 step 6).
+    fn scorch_at(&self, centre: Vec3, normal: Vec3) -> Option<(Vec3, Vec3)> {
+        let n = Dir3::new(normal).ok()?;
+        let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
+        let hit = self.spatial.cast_ray_predicate(centre, -n, SCORCH_TRACE * U, true, &filter, &|e| {
+            let body = self.colliders.get(e).map_or(e, |o| o.body);
+            !self.chars.contains(body)
+        })?;
+        Some((centre - *n * hit.distance, hit.normal))
+    }
+
+    /// Explode `blast` of `weapon` by `owner` at `centre` (m) on a surface
+    /// of `normal` (zero: in the air), `touched` the player hit directly
+    /// (full splash).
+    pub fn detonate(&mut self, blast: &Blast, centre: Vec3, normal: Vec3, owner: Option<Entity>, weapon: &'static str, touched: Option<Entity>) {
         let p = blast.params;
         let owner_at = owner.and_then(|o| self.centre(o));
         let mut dealt: Vec<Dealt> = Vec::new();
@@ -360,7 +388,22 @@ impl BlastWorld<'_, '_> {
         if let Some(s) = &p.sound {
             self.sounds.write(GameSound(PlaySound::at(s.clone(), centre)));
         }
-        self.looks.write(Tf2Explosion { at: centre });
+        let on_player = touched.is_some_and(|t| self.chars.contains(t));
+        // Effects.md 5: a near-zero normal is in the air.
+        let normal = if normal.abs().max_element() < AIR_NORMAL { Vec3::ZERO } else { normal };
+        self.looks.write(Tf2Explosion { at: centre, normal, on_player, weapon });
+        // The scorch, unless it went off on a player.
+        if !on_player && let Some((point, n)) = self.scorch_at(centre, normal) {
+            self.decals.write(crate::map::PlaceDecal {
+                target: None,
+                group: crate::map::DecalGroup::Named(SCORCH.into()),
+                point,
+                normal: n,
+                dir: -n,
+                spin: true,
+                round: false,
+            });
+        }
     }
 
     /// Add `dv` (m/s) to `e`'s velocity; `own`: his own blast (blast

@@ -9,10 +9,12 @@
 //! entity, switched by `EntityPart`, drawn as one-frame pool groups (sprites,
 //! sprite trails, ropes; the material's overbright); `run_started_systems`
 //! runs the one-shot systems games start (`StartParticleSystem`) to their
-//! end, those started on a first-person view model
-//! (`StartParticleSystem::view_model`: a muzzle flash) in a group of
-//! their own the view-model camera draws (`ParticleGroup::view_model`:
-//! its field of view, over the world, depth tested against the model).
+//! end, in the world pass (a first-person muzzle flash too, started at the
+//! muzzle re-projected into the world view: specs/tf2/particles.md 6),
+//! with control point 1 where it was given one (`StartParticleSystem::end`:
+//! a tracer's end, "move particles between 2 control points" heading
+//! there at its maximum speed and living until it arrives), stopped by
+//! tag (`StopParticleSystems`: a gun's systems that run while it fires).
 //! Colour random's `tint_perc` blends each new particle's colour that
 //! far toward the light at its control point (`ControlPoint::light`: the
 //! map's `LightField` there, sampled when the system starts or its entity
@@ -508,6 +510,17 @@ impl Instance {
                 Init::Rotation { initial, offset } => p.roll = initial + offset.draw(rng),
                 Init::YawFlip { fraction } => p.flip = rng.random() < fraction,
                 Init::Sequence { min, max } => p.sequence = rng.int(min as i32, max as i32).max(0) as u32,
+                Init::MoveBetween { end, speed, start_offset } => {
+                    let to = cp(end).position - p.position;
+                    let distance = to.length();
+                    let dir = to.normalize_or_zero();
+                    if speed > 0.0 && distance > 0.0 {
+                        let along = start_offset.clamp(0.0, distance);
+                        p.position += dir * along;
+                        p.velocity = dir * speed;
+                        p.life = (distance - along) / speed;
+                    }
+                }
             }
         }
         for o in &d.operators {
@@ -847,15 +860,17 @@ pub struct StartedSystems {
     rng: Option<ParticleRng>,
 }
 
-/// A started system: its instance, its control point, how long it emits,
-/// what it follows with its frame last step (engine space), and whether
-/// the view-model camera draws it (`StartParticleSystem::view_model`).
+/// A started system: its instance, its control points (0, and 1 when
+/// it was given an end), how long it emits, what it follows with its
+/// frame last step (engine space), and what started it
+/// (`StartParticleSystem::tag`).
 struct Running {
     instance: Instance,
     cp: ControlPoint,
+    end: Option<ControlPoint>,
     emit_for: Option<f32>,
     follow: Option<(crate::map::psys::Follow, Transform)>,
-    view_model: bool,
+    tag: Option<Entity>,
 }
 
 impl StartedSystems {
@@ -899,9 +914,26 @@ impl StartedSystems {
             },
             emit_for,
             follow: None,
-            view_model: false,
+            end: None,
+            tag: None,
         });
         true
+    }
+
+    /// Stop the emitters of the systems started with `tag`.
+    pub fn stop_tagged(&mut self, tag: Entity) {
+        for r in self.running.iter_mut().filter(|r| r.tag == Some(tag)) {
+            r.instance.stop();
+        }
+    }
+
+    /// Set the last started system's control point 1 (game space) and
+    /// tag.
+    pub fn set_last(&mut self, end: Option<Vec3>, tag: Option<Entity>) {
+        if let Some(r) = self.running.last_mut() {
+            r.end = end.map(|position| ControlPoint { position, ..r.cp });
+            r.tag = tag;
+        }
     }
 
     pub fn count(&self) -> usize {
@@ -912,11 +944,15 @@ impl StartedSystems {
     pub fn step(&mut self, dt: f32, sheets: &impl Sheets) {
         let Some(defs) = self.defs.clone() else { return };
         let rng = self.rng.get_or_insert_with(|| ParticleRng::new(0x5_1A5));
-        for Running { instance: i, cp, emit_for, .. } in &mut self.running {
+        for Running { instance: i, cp, end, emit_for, .. } in &mut self.running {
             if emit_for.is_some_and(|t| i.age >= t) && i.emitting {
                 i.stop();
             }
-            i.step(&defs.defs, &[*cp; MAX_CONTROL_POINTS], dt, rng, sheets);
+            let mut cps = [*cp; MAX_CONTROL_POINTS];
+            if let Some(e) = end {
+                cps[1] = *e;
+            }
+            i.step(&defs.defs, &cps, dt, rng, sheets);
         }
         self.running.retain(|r| !r.instance.finished(&defs.defs));
     }
@@ -928,6 +964,7 @@ impl StartedSystems {
 pub fn run_started_systems(
     time: Res<Time>,
     mut starts: MessageReader<StartParticleSystem>,
+    mut stops: MessageReader<StopParticleSystems>,
     defs: Option<Res<ParticleSystemDefs>>,
     materials: Option<Res<crate::map::particles::ParticleMaterials>>,
     eyes: Query<
@@ -947,8 +984,12 @@ pub fn run_started_systems(
 ) {
     let Some(defs) = defs else {
         starts.clear();
+        stops.clear();
         return;
     };
+    for s in stops.read() {
+        started.stop_tagged(s.tag);
+    }
     let defs = &defs.0;
     let scale = defs.scale.max(1e-6);
     let to_game = |v: Vec3| Vec3::new(v.x, -v.z, v.y) / scale;
@@ -970,8 +1011,8 @@ pub fn run_started_systems(
         if !started.start_for(defs, &s.name, to_game(s.position), f, light, s.emit_for) {
             continue;
         }
+        started.set_last(s.end.map(to_game), s.tag);
         let Some(last) = started.running.last_mut() else { continue };
-        last.view_model = s.view_model;
         if let Some(follow) = s.follow
             && let Some(at) = frame(follow.entity)
         {
@@ -1016,22 +1057,21 @@ pub fn run_started_systems(
     let Some(eye) = eyes.iter().next().map(|e| e.translation()) else {
         return;
     };
-    // One group for the world pass, one for the view-model camera's
-    // (the same eye: its camera sits at the world camera's place).
-    for view_model in [false, true] {
-        let mut out = Vec::new();
-        for r in started.running.iter().filter(|r| r.view_model == view_model) {
-            r.instance.draw(&defs.defs, &to_engine, scale, eye, &sheets, &mut out);
-        }
-        if !out.is_empty() {
-            let mut g = ParticleGroup::new(default());
-            g.particles = out;
-            g.capped = false;
-            g.skip_first = true;
-            g.kill_after = Some(0.0);
-            g.view_model = view_model;
-            pool.add(g);
-        }
+    // Drawn in the world pass with the world camera, first-person
+    // effects too (specs/tf2/particles.md 6: placed at the view model's
+    // muzzle re-projected into the world view, never drawn with the
+    // view-model camera).
+    let mut out = Vec::new();
+    for r in &started.running {
+        r.instance.draw(&defs.defs, &to_engine, scale, eye, &sheets, &mut out);
+    }
+    if !out.is_empty() {
+        let mut g = ParticleGroup::new(default());
+        g.particles = out;
+        g.capped = false;
+        g.skip_first = true;
+        g.kill_after = Some(0.0);
+        pool.add(g);
     }
 }
 
@@ -1291,6 +1331,54 @@ mod tests {
         let (full, _) = run(None);
         assert!(!emitting, "stopped past its limit");
         assert!(cut < full, "{cut} < {full}");
+    }
+
+    /// A tracer (specs/tf2/effects.md 6): "move particles between 2
+    /// control points" sends its one particle from control point 0 to the
+    /// end (`set_last`) at the operator's maximum speed; it dies there.
+    #[test]
+    fn a_tracer_travels_to_its_end_at_its_speed_and_dies_there() {
+        let tracer = SystemDef {
+            name: "tracer".into(),
+            material: Some(0),
+            emitters: vec![Emitter::Instantaneously { start: 0.0, count: 1 }],
+            initializers: vec![Init::MoveBetween { end: 1, speed: 6000.0, start_offset: 0.0 }],
+            operators: vec![Op::Movement { gravity: Vec3::ZERO, drag: 0.0 }, Op::Decay],
+            renderer: Render::Trail { min_length: 0.0, max_length: 500.0, length_fade_in: 0.1 },
+            ..default()
+        };
+        let defs = std::sync::Arc::new(MapParticleSystems { defs: vec![tracer], placed: Vec::new(), scale: 0.0254 });
+        let mut s = StartedSystems::default();
+        assert!(s.start(&defs, "tracer", Vec3::ZERO, Vec3::X, Vec3::ONE));
+        s.set_last(Some(Vec3::new(1200.0, 0.0, 0.0)), None);
+        s.step(0.1, &none);
+        let p = &s.running[0].instance.particles[0];
+        assert!((p.velocity - Vec3::new(6000.0, 0.0, 0.0)).length() < 1e-2, "{:?}", p.velocity);
+        assert!((p.life - 0.2).abs() < 1e-5, "1200 units at 6000/s: {}", p.life);
+        assert!((p.position.x - 600.0).abs() < 1.0, "{:?}", p.position);
+        s.step(0.15, &none);
+        assert!(s.running.is_empty(), "arrived and gone");
+    }
+
+    /// A tagged start stops emitting on `stop_tagged` (TF2's Minigun's
+    /// constant muzzle when it stops firing); others run on.
+    #[test]
+    fn tagged_systems_stop_emitting_and_others_go_on() {
+        let mut forever = system();
+        forever.emitters = vec![Emitter::Continuously { start: 0.0, rate: 100.0, duration: 0.0 }];
+        let defs = std::sync::Arc::new(MapParticleSystems { defs: vec![forever], placed: Vec::new(), scale: 0.0254 });
+        let mut s = StartedSystems::default();
+        let gun = Entity::from_raw_u32(7).unwrap();
+        s.start(&defs, "test", Vec3::ZERO, Vec3::X, Vec3::ONE);
+        s.set_last(None, Some(gun));
+        s.start(&defs, "test", Vec3::ZERO, Vec3::X, Vec3::ONE);
+        s.step(0.1, &none);
+        s.stop_tagged(gun);
+        assert!(!s.running[0].instance.emitting && s.running[1].instance.emitting);
+        for _ in 0..10 {
+            s.step(0.1, &none);
+        }
+        assert_eq!(s.running.len(), 1, "the stopped one's particles lived out");
     }
 
     #[test]

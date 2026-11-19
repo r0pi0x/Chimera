@@ -204,6 +204,7 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
         .add_message::<ViewKick>()
         .add_message::<GlassImpact>()
         .add_message::<psys::StartParticleSystem>()
+        .add_message::<psys::StopParticleSystems>()
         .add_message::<breakables::FallingPane>()
         .add_message::<CollisionStart>()
         .init_resource::<particles::Particles>()

@@ -76,7 +76,7 @@ pub fn explode(
         // Just off the surface it touched.
         let centre = hit.point + hit.normal * U;
         let blast = Blast { params: p, radius: p.radius, ramp: p.by_distance.then_some(ramp), scale: 1.0 };
-        world.detonate(&blast, centre, hit.owner, hit.weapon, hit.other);
+        world.detonate(&blast, centre, hit.normal, hit.owner, hit.weapon, hit.other);
         gone.write(FlyerGone {
             flyer: hit.flyer,
             weapon: hit.weapon,

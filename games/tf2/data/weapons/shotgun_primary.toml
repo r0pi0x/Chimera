@@ -57,7 +57,10 @@ arms = "engineer"
 script = "tf_weapon_shotgun_primary"
 reload_start = { soldier = 0.4667, pyro = 0.5, heavy = 0.3333, engineer = 0.3333 }
 
-# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
-# the gun's `muzzle` attachment (looks.rs).
+# The shot's looks (specs/tf2/effects.md 1, 2, 6; looks.rs): its muzzle
+# flash system (muzzle_flash.pcf) at the gun's `muzzle` attachment, and
+# its tracer (bullet_tracers.pcf, `_red`/`_blue` added) every 2nd bullet
+# of the shared count.
 [hooks."tf2:looks"]
 muzzle = "muzzle_shotgun"
+tracer = "bullet_shotgun_tracer01"

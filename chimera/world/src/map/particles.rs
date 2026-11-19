@@ -69,56 +69,56 @@ pub struct ParticleMaterial {
     pub screen: ScreenSize,
 }
 
-/// A sprite card's limits on a sprite's size on screen
-/// (specs/cs_source/impact_effects.md 14: `$maxsize` caps a sprite's
-/// size to that fraction of the screen; `$startfadesize`/`$endfadesize`
-/// fade it out as its screen size grows from the first fraction to the
-/// second). A sprite's screen size is its width (twice its half-width)
-/// over the view's height at its depth (our reading: the spec says "of
-/// the screen"). Zero: no limit.
+/// A sprite card's size limits (specs/tf2/particles.md 4, from the
+/// SpriteCard shader): `$minsize`, `$maxsize`, `$startfadesize` and
+/// `$endfadesize` are fractions of the sprite's distance from the eye l,
+/// so on screen fractions of tan(FOV/2): its radius r is raised to
+/// `min` x l; past `fade_start` x l its colour and alpha fade linearly to
+/// 0 at `fade_end` x l (not drawn past it); then it is capped at `max` x
+/// l. All zero: no limit (not a sprite card; a sprite card's material
+/// fills in the shader's defaults, 0, 20, 10 and 20: `DEFAULT_*`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ScreenSize {
+    #[serde(default)]
+    pub min: f32,
     pub max: f32,
     pub fade_start: f32,
     pub fade_end: f32,
 }
 
 impl ScreenSize {
+    /// The SpriteCard shader's defaults (particles.md, Constants).
+    pub const DEFAULT_MAX: f32 = 20.0;
+    pub const DEFAULT_FADE_START: f32 = 10.0;
+    pub const DEFAULT_FADE_END: f32 = 20.0;
+
     /// No limit at all.
     pub fn is_none(&self) -> bool {
-        self.max <= 0.0 && self.fade_end <= 0.0
+        self.min <= 0.0 && self.max <= 0.0 && self.fade_end <= 0.0
     }
 
-    /// A sprite of half-width `size` at view depth `depth` (both meters)
-    /// under a vertical field of view whose half-angle has tangent
-    /// `tan_half_fov`: its half-width capped by `max` and the alpha
-    /// factor of the fade (1 below `fade_start`, 0 from `fade_end`,
-    /// linear between: ours, the spec names no curve). The fade looks at
-    /// the size before the cap.
-    pub fn apply(&self, size: f32, depth: f32, tan_half_fov: f32) -> (f32, f32) {
+    /// A sprite of radius (half-width) `size` at `distance` from the eye
+    /// (both meters): its radius after the clamps and the fade's factor
+    /// (1 below `fade_start` x l, 0 past `fade_end` x l: not drawn). The
+    /// fade looks at the size after `min` and before `max`.
+    pub fn apply(&self, size: f32, distance: f32) -> (f32, f32) {
         if self.is_none() || size <= 0.0 {
             return (size, 1.0);
         }
-        // The view's height at this depth; at or behind the eye, any
-        // sprite fills the screen.
-        let view = 2.0 * depth.max(1e-4) * tan_half_fov.max(1e-4);
-        let screen = 2.0 * size / view;
-        let alpha = if self.fade_end > 0.0 {
-            if self.fade_end > self.fade_start {
-                1.0 - ((screen - self.fade_start) / (self.fade_end - self.fade_start)).clamp(0.0, 1.0)
-            } else if screen >= self.fade_end {
+        let l = distance.max(1e-4);
+        let size = size.max(self.min * l);
+        let alpha = if self.fade_end > 0.0 && size > self.fade_start * l {
+            if size > self.fade_end * l {
                 0.0
+            } else if self.fade_end > self.fade_start {
+                1.0 - (size - self.fade_start * l) / ((self.fade_end - self.fade_start) * l)
             } else {
                 1.0
             }
         } else {
             1.0
         };
-        let size = if self.max > 0.0 && screen > self.max {
-            size * self.max / screen
-        } else {
-            size
-        };
+        let size = if self.max > 0.0 { size.min(self.max * l) } else { size };
         (size, alpha)
     }
 }
@@ -1088,31 +1088,27 @@ mod tests {
         assert!((w.at(0.625, 1.0) - 0.5).abs() < 1e-6);
     }
 
+    /// specs/tf2/particles.md 4's test cases: fractions of the distance.
     #[test]
-    fn sprite_cards_cap_and_fade_by_screen_size() {
-        // blood_core: $maxsize .25. A 45° half-angle: the view is twice
-        // the depth high.
-        let core = ScreenSize {
-            max: 0.25,
-            ..default()
-        };
-        // 1 m wide at 10 m: 0.05 of the screen, untouched.
-        assert_eq!(core.apply(0.5, 10.0, 1.0), (0.5, 1.0));
-        // 1 m wide at 1 m: half the screen, capped to a quarter.
-        let (size, alpha) = core.apply(0.5, 1.0, 1.0);
-        assert!((size - 0.25).abs() < 1e-6 && alpha == 1.0);
-        // smoke1_nearcull2: fades from .075 to .1 of the screen.
-        let smoke = ScreenSize {
-            fade_start: 0.075,
-            fade_end: 0.1,
-            ..default()
-        };
-        assert_eq!(smoke.apply(0.05, 2.0, 1.0).1, 1.0); // 0.025
-        assert!((smoke.apply(0.175, 2.0, 1.0).1 - 0.5).abs() < 1e-4); // 0.0875
-        assert_eq!(smoke.apply(0.5, 2.0, 1.0), (0.5, 0.0)); // 0.25
-        // At the eye a sprite fills the screen.
-        assert_eq!(smoke.apply(0.01, 0.0, 1.0).1, 0.0);
-        assert_eq!(ScreenSize::default().apply(3.0, 0.1, 1.0), (3.0, 1.0));
+    fn sprite_cards_clamp_and_fade_by_fractions_of_distance() {
+        let flame = ScreenSize { min: 0.0, max: 0.4, fade_start: 0.3, fade_end: 0.5 };
+        // r = 10 at l = 20: past 0.5 x 20 = 10? exactly at it: factor 0.
+        let (_, a) = flame.apply(10.0, 20.0);
+        assert!(a.abs() < 1e-6, "{a}");
+        // r = 7: factor 1 - (7 - 6) / 4 = 0.75, under the 8 cap.
+        let (r, a) = flame.apply(7.0, 20.0);
+        assert!((a - 0.75).abs() < 1e-6 && (r - 7.0).abs() < 1e-6, "{r} {a}");
+        // r = 7.5 with $maxsize 0.35: factor 0.625, r capped to 7.
+        let (r, a) = ScreenSize { max: 0.35, ..flame }.apply(7.5, 20.0);
+        assert!((a - 0.625).abs() < 1e-6 && (r - 7.0).abs() < 1e-6, "{r} {a}");
+        // Past $endfadesize: not drawn.
+        assert_eq!(flame.apply(11.0, 20.0).1, 0.0);
+        // $minsize raises a far sprite.
+        assert!((ScreenSize { min: 0.01, ..default() }.apply(0.001, 10.0).0 - 0.1).abs() < 1e-6);
+        // The shader's defaults clamp nothing a sprite would ever be.
+        let d = ScreenSize { min: 0.0, max: ScreenSize::DEFAULT_MAX, fade_start: ScreenSize::DEFAULT_FADE_START, fade_end: ScreenSize::DEFAULT_FADE_END };
+        assert_eq!(d.apply(3.0, 1.0), (3.0, 1.0));
+        assert_eq!(ScreenSize::default().apply(3.0, 0.1), (3.0, 1.0));
     }
 
     #[test]

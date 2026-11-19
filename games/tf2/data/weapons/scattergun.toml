@@ -54,7 +54,10 @@ ramp = 1.5
 arms = "scout"
 script = "tf_weapon_scattergun"
 
-# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
-# the gun's `muzzle` attachment (looks.rs).
+# The shot's looks (specs/tf2/effects.md 1, 2, 6; looks.rs): its muzzle
+# flash system (muzzle_flash.pcf) at the gun's `muzzle` attachment, and
+# its tracer (bullet_tracers.pcf, `_red`/`_blue` added) every 2nd bullet
+# of the shared count.
 [hooks."tf2:looks"]
 muzzle = "muzzle_scattergun"
+tracer = "bullet_scattergun_tracer01"

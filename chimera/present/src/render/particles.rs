@@ -7,9 +7,10 @@
 //! `ParticleDrawMaterial::over_model`)
 //! (`ParticleDrawMaterial`, particle.wesl: fogged, added ones toward
 //! black), camera-facing sprites, trails and flat quads, back to front.
-//! Sprites of sprite-card materials keep to their screen-size limits
-//! (`ParticleMaterial::screen`: capped and faded by their size on screen,
-//! specs/cs_source/impact_effects.md 14); flipped particles show their
+//! Sprites of sprite-card materials keep to their size limits
+//! (`ParticleMaterial::screen`: raised, faded and capped by fractions of
+//! their distance from the eye, specs/tf2/particles.md 4, the shader's
+//! reading of specs/cs_source/impact_effects.md 14); flipped particles show their
 //! texture mirrored. Materials that say `$depthblend`
 //! (`ParticleMaterial::depth_blend`, HL2's smoke puffs among them) fade out
 //! as they near the world behind them instead of being cut there, on views
@@ -368,7 +369,7 @@ pub fn draw_particles(
             let at = p.position - centre;
             match p.shape {
                 Shape::Sprite => {
-                    let (size, fade) = def.screen.apply(size, depth, tan_half_fov);
+                    let (size, fade) = def.screen.apply(size, p.position.distance(from));
                     if fade < 0.001 {
                         continue;
                     }

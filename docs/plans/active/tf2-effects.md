@@ -18,7 +18,7 @@ effects (the sticky bomb launcher, and likely others)" (docs/backlog.md).
   Fixed: attack2 with any TF2 weapon out (the game: any of the
   Demoman's), test `stickies_detonate_with_another_tf2_weapon_out`.
 
-## What is left (per weapon)
+## What is left (per weapon; as first found, see Progress)
 
 Effect names are a table in `games/tf2/src/game/weapons/looks.rs`, not
 data; the weapon scripts' own names (`TracerEffect`,
@@ -54,6 +54,23 @@ data; the weapon scripts' own names (`TracerEffect`,
   (`[hooks."tf2:looks"]` `muzzle`, read by `looks::LooksParams`;
   `PARTICLE_SYSTEMS` became `looks::particle_systems()`, built from the
   data). Test `every_bullet_gun_and_launcher_names_its_muzzle_in_data`.
+- 2026-11-19: the specs arrived (specs/tf2/effects.md, particles.md;
+  flames.md is its own task). Done from them, all data in
+  `[hooks."tf2:looks"]`: the first-person flash at the view model's
+  muzzle re-projected into the world view and drawn as a world system
+  with the world FOV (it was the view-model camera's, 1.96x too big at
+  90; `StartParticleSystem::view_model` is gone); the Minigun's
+  `while_firing` constant muzzle and brass instead of a per-shot flash;
+  tracers (`tracer`, `tracer_every`, one shared count, `_red`/`_blue`,
+  control point 1 and "move particles between 2 control points" in
+  Chimera's psys); the explosion by water, air or player, or surface
+  (`explosion`, `explosion_of`) oriented to the normal, and the
+  `Scorch` decal; the Rocket Launcher's backblast for others; sprite
+  cards' size limits as fractions of the distance. Tests: tf2 `effects`,
+  `flashes`, `looks` unit tests; chimera_present psys and
+  `particle_depth`; chimera_world `particles`. Left: trails and glows on
+  flyers (step 3), the scripts' own names (effects.md Open questions 1),
+  sheet frame blending, `$addself`, the flames (flames.md).
 
 ## Spec gaps (blocking the rest; no TF2 spec names these)
 

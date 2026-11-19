@@ -168,6 +168,12 @@ impl FirstPerson<'_> {
         attachment_transform(self.model, &self.pose, i, &self.placed).map(|m| m.transform_point3(Vec3::ZERO))
     }
 
+    /// Attachment `at`'s x axis (out of a barrel) in camera space.
+    pub fn camera_axis(&self, at: &AttachPoint) -> Option<Vec3> {
+        let i = at.index_in(&self.model.attachments)?;
+        attachment_transform(self.model, &self.pose, i, &self.placed).and_then(|m| m.transform_vector3(Vec3::X).try_normalize())
+    }
+
     /// Attachment `at` where the view model is drawn (the view-model
     /// layer's world space).
     pub fn point(&self, at: &AttachPoint) -> Option<Vec3> {

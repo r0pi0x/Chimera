@@ -8,8 +8,10 @@
 //! next eight; `melee`: the nine stock melee weapons and the backstab;
 //! `held_guns`: a gun coming into and leaving the hand, its loops and view model),
 //! a gun's impacts taking TF2's own looks on another game's map
-//! (`impacts`), a first-person muzzle flash drawn by the view-model camera
-//! (`flashes`), the class sets a match offers (`player_sets`), the ragdolls' lifetime
+//! (`impacts`), a first-person muzzle flash at the muzzle re-projected
+//! into the world view (`flashes`), the guns' other effects (`effects`:
+//! the Minigun's constant systems, tracers, explosions and scorches, the
+//! backblast), the class sets a match offers (`player_sets`), the ragdolls' lifetime
 //! (`ragdolls`: ragdolls.md's cases on a made-up skeleton), the class a
 //! rung of several classes draws with the ladder (`rung_classes`), the
 //! players' pain, death and kill lines (`voices`), the kill icons from
@@ -38,6 +40,7 @@ mod skeleton;
 mod spawns;
 mod voices;
 mod weapon_scripts;
+mod effects;
 mod flashes;
 mod weapons;
 mod melee;

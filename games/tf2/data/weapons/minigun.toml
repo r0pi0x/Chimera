@@ -69,7 +69,15 @@ fire_sound = "tf2:Weapon_Minigun.Fire"
 empty_sound = "tf2:Weapon_Minigun.ClipEmpty"
 wind_down_sound = "tf2:Weapon_Minigun.WindDown"
 
-# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
-# the gun's `muzzle` attachment (looks.rs).
+# Its looks (specs/tf2/effects.md 3, 6; looks.rs): no per-shot flash;
+# while it fires (`tf2:minigun`'s fire loop) its constant muzzle system at
+# `muzzle` and its brass at `eject_brass`, stopped when it stops firing;
+# a tracer every 4th bullet of the shared count (the generic one: "pcf
+# (inferred)").
 [hooks."tf2:looks"]
-muzzle = "muzzle_minigun"
+tracer = "bullet_tracer01"
+tracer_every = 4
+while_firing = [
+    { system = "muzzle_minigun_constant", at = "muzzle" },
+    { system = "eject_minigunbrass", at = "eject_brass" },
+]

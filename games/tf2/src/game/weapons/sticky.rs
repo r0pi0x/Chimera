@@ -391,7 +391,9 @@ pub fn detonate(
             ramp: (age <= p.flat_after).then_some(ramp),
             scale: 1.0,
         };
-        world.detonate(&blast, at, Some(owner), weapon, None);
+        // No surface sent with a sticky (effects.md Open questions): the
+        // in-air look.
+        world.detonate(&blast, at, Vec3::ZERO, Some(owner), weapon, None);
         commands.entity(e).despawn();
     }
 }

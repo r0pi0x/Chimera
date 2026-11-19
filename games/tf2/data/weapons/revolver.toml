@@ -52,7 +52,10 @@ arms = "spy"
 script = "tf_weapon_revolver"
 first_pellet_pause = 1.25
 
-# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
-# the gun's `muzzle` attachment (looks.rs).
+# The shot's looks (specs/tf2/effects.md 1, 2, 6; looks.rs): its muzzle
+# flash system (muzzle_flash.pcf) at the gun's `muzzle` attachment, and
+# its tracer (bullet_tracers.pcf, `_red`/`_blue` added) every 2nd bullet
+# of the shared count (the pistol's: "pcf (inferred)").
 [hooks."tf2:looks"]
 muzzle = "muzzle_revolver"
+tracer = "bullet_pistol_tracer01"

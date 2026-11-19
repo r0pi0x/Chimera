@@ -5,7 +5,8 @@
 //! a first-person view model (`ParticleGroup::view_model`: the sprites and
 //! beams on its attachments, `map::attached`) are drawn over the model,
 //! without the depth test (specs/hl2dm/effects_sounds.md 11: the gravity
-//! gun's glows over its claws). The pipeline needs a GPU, so this checks
+//! gun's glows over its claws). Started `.pcf` systems are the world's,
+//! first-person ones too (specs/tf2/particles.md 6). The pipeline needs a GPU, so this checks
 //! the depth state the material specializes with and which meshes get it.
 
 use bevy::{
@@ -164,14 +165,15 @@ fn depth_blend_materials_fade_against_a_prepass() {
     assert!(!drawn[0].0, "{drawn:?}");
 }
 
-/// A started particle system (`StartParticleSystem`, a `.pcf` effect)
-/// marked `view_model` is drawn by the view-model camera (its layer, its
-/// field of view: a first-person muzzle flash on the gun drawn in the
-/// view), one not marked by the world's.
+/// A started particle system (`StartParticleSystem`, a `.pcf` effect) is
+/// drawn by the world camera, a first-person one following the eye too
+/// (a muzzle flash at the muzzle re-projected into the world view:
+/// specs/tf2/particles.md 6, never the view-model camera, which drew it
+/// tan(world/2) / tan(54/2) too big), depth tested against the world.
 #[test]
-fn started_systems_on_the_view_model_go_to_its_layer() {
+fn started_systems_draw_in_the_world_pass() {
     use chimera_present::render::psys::{ParticleSystemDefs, run_started_systems};
-    use chimera_world::map::psys::{Emitter, MapParticleSystems, Render, StartParticleSystem, SystemDef};
+    use chimera_world::map::psys::{Emitter, Follow, MapParticleSystems, Render, StartParticleSystem, StopParticleSystems, SystemDef};
     let def = |name: &str| SystemDef {
         name: name.into(),
         material: Some(0),
@@ -180,7 +182,7 @@ fn started_systems_on_the_view_model_go_to_its_layer() {
         renderer: Render::Sprites { rate: 1.0, as_fps: false, fit_life: false, orientation: 0 },
         ..default()
     };
-    let run = |view_model: bool| {
+    let run = |first_person: bool| {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, AssetPlugin::default()))
             .init_asset::<Mesh>()
@@ -196,21 +198,33 @@ fn started_systems_on_the_view_model_go_to_its_layer() {
             })))
             .init_resource::<Particles>()
             .add_message::<StartParticleSystem>()
+            .add_message::<StopParticleSystems>()
             .add_systems(Update, (run_started_systems, draw_particles).chain());
-        app.world_mut().spawn((
-            Camera3d::default(),
-            Projection::Perspective(PerspectiveProjection::default()),
-            GlobalTransform::default(),
-        ));
+        let eye = app
+            .world_mut()
+            .spawn((
+                Camera3d::default(),
+                Projection::Perspective(PerspectiveProjection::default()),
+                Transform::default(),
+                GlobalTransform::default(),
+            ))
+            .id();
+        let at = Vec3::new(0.2, -0.2, -0.5);
         app.world_mut().write_message(StartParticleSystem {
-            view_model,
-            ..StartParticleSystem::new("flash", Vec3::new(0.1, -0.1, -0.5), Vec3::NEG_Z)
+            follow: first_person.then_some(Follow { entity: eye, local: at, forward: Vec3::NEG_Z }),
+            ..StartParticleSystem::new("flash", at, Vec3::NEG_Z)
         });
         app.update();
         app.update();
-        let mut q = app.world_mut().query_filtered::<Option<&RenderLayers>, With<MeshMaterial3d<ParticleDrawMaterial>>>();
-        q.iter(app.world()).map(|l| l.is_some_and(|l| *l == RenderLayers::layer(VIEW_MODEL_LAYER))).collect::<Vec<_>>()
+        let mut q = app.world_mut().query_filtered::<(Option<&RenderLayers>, &MeshMaterial3d<ParticleDrawMaterial>), ()>();
+        let materials = app.world().resource::<Assets<ParticleDrawMaterial>>();
+        q.iter(app.world())
+            .map(|(l, m)| {
+                let tested = materials.get(&m.0).is_some_and(|m| !m.over_model);
+                (l.is_some_and(|l| *l == RenderLayers::layer(VIEW_MODEL_LAYER)), tested)
+            })
+            .collect::<Vec<_>>()
     };
-    assert_eq!(run(true), vec![true], "on the view model's layer");
-    assert_eq!(run(false), vec![false], "in the world");
+    assert_eq!(run(true), vec![(false, true)], "a first-person flash: the world's layer, depth tested");
+    assert_eq!(run(false), vec![(false, true)], "in the world");
 }

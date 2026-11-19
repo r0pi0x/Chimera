@@ -90,7 +90,7 @@ pub fn touch(
         if enemy && !rolled {
             let centre = hit.point - hit.velocity.normalize_or_zero() * U;
             let blast = Blast { params: p, radius: p.radius, ramp: None, scale: 1.0 };
-            world.detonate(&blast, centre, hit.owner, hit.weapon, hit.other);
+            world.detonate(&blast, centre, hit.normal, hit.owner, hit.weapon, hit.other);
             gone.write(FlyerGone { flyer: hit.flyer, weapon: hit.weapon, owner: hit.owner, at: centre, expired: false });
             commands.entity(hit.flyer).despawn();
             continue;
@@ -115,7 +115,9 @@ pub fn fuse(mut ends: MessageReader<FlyerGone>, rules: Res<GrenadeRules>, mut wo
         }
         let Some((p, _)) = rules.0.get(end.weapon) else { continue };
         let blast = Blast { params: p, radius: p.radius, ramp: None, scale: p.fuse_scale.unwrap_or(1.0) };
-        world.detonate(&blast, end.at, end.owner, end.weapon, None);
+        // No surface sent with a fused pipe (effects.md Open questions):
+        // the in-air look.
+        world.detonate(&blast, end.at, Vec3::ZERO, end.owner, end.weapon, None);
     }
 }
 

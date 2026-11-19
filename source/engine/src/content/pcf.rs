@@ -140,6 +140,11 @@ fn add_operator(def: &mut SystemDef, list: &str, op: &Element) -> bool {
             min: op.int("sequence_min", 0).max(0) as u32,
             max: op.int("sequence_max", 0).max(0) as u32,
         }),
+        ("initializers", "move particles between 2 control points") => def.initializers.push(Init::MoveBetween {
+            end: cp("end control point"),
+            speed: op.float("maximum speed", 0.0),
+            start_offset: op.float("start offset", 0.0),
+        }),
         ("operators", "movement basic") => def.operators.push(Op::Movement {
             gravity: op.vec3("gravity", Vec3::ZERO),
             drag: op.float("drag", 0.0),
@@ -343,6 +348,12 @@ pub fn add_guest_particle_systems(materials: &mut MaterialLoader, data: &mut Map
         for c in &mut d.children {
             c.0 += base;
         }
+    }
+    if !unknown.is_empty() {
+        warnings.push(format!(
+            "particle operators not run: {}",
+            unknown.into_iter().collect::<Vec<_>>().join(", ")
+        ));
     }
     let added = defs.len();
     out.defs.extend(defs);

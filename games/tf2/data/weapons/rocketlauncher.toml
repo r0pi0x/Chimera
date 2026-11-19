@@ -80,3 +80,12 @@ push_other = 6.0
 push_self_air = 10.0
 push_self_ground = 5.0
 sound = "tf2:BaseExplosionEffect.Sound"
+
+# Its looks (specs/tf2/effects.md 1, 4, 5; looks.rs): no muzzle flash (no
+# rocket-launcher system exists); `rocketbackblast` at the launcher's
+# `backblast` attachment on each shot, for everyone but the shooter; its
+# blasts' effects (explosion.pcf names; which script field holds which is
+# unconfirmed).
+[hooks."tf2:looks"]
+backblast = { system = "rocketbackblast", at = "backblast" }
+explosion = { wall = "ExplosionCore_Wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }

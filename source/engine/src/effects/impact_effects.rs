@@ -1763,14 +1763,7 @@ fn splash(
 ) {
     let s = size.unwrap_or_else(|| rng.float(bullet.0, bullet.1));
     if slime {
-        systems.write(StartParticleSystem {
-            name: slime_splash_name(s).to_string(),
-            position: at,
-            forward: Vec3::Y,
-            emit_for: None,
-            follow: None,
-            view_model: false,
-        });
+        systems.write(StartParticleSystem::new(slime_splash_name(s), at, Vec3::Y));
     } else if let Some(mats) = mats {
         let light = colors.map_or(Vec3::ONE, |c| light_below(c, world, at + Vec3::Y * s * UNIT));
         for g in water_splash(rng, mats, at, s, light.min(Vec3::ONE)) {

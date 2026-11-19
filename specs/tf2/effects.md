@@ -274,3 +274,13 @@ skipped.
 4. The trail tracer's lifetime and the length of its streak are set by
    the particle library (start-to-end mover and trail renderer;
    particles.md Open questions).
+5. (Implementation note.) Whether bullets of a gun with no tracer (the
+   Sniper Rifle) advance the shared tracer counter (§6 says "every bullet
+   the client draws"). Ours counts only bullets of guns with a tracer.
+6. (Implementation note.) What surface normal a pipe on its fuse and a
+   detonated sticky send (§5 step 2 reads the normal "sent with it").
+   Ours sends none for them (the in-air effect, no scorch) until a spec
+   says; rockets and direct pipe hits send the surface they touched.
+7. (Implementation note.) How far the `Scorch` decal's trace reaches
+   (§5 step 6). Ours traces 16 units from the blast's centre back along
+   the surface normal.

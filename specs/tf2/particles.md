@@ -377,3 +377,7 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
    of the flame stream answers it.
 4. How a sprite trail uses the radius (half-width or width) and the trail
    length attribute's unit.
+5. (Implementation note.) §4 reads the SpriteCard size limits as
+   fractions of the distance from the eye; specs/cs_source/
+   impact_effects.md 14 said "of the screen". The shader reading here is
+   used for every Source game's sprite cards.

@@ -981,8 +981,9 @@ impl<'a> MaterialLoader<'a> {
     /// its base texture, blend (`$additive`), whether vertex colour and
     /// alpha apply (`$vertexcolor`, `$vertexalpha`; SpriteCard always
     /// takes both), `$ignorez`, `$depthblend`, the texture's sprite sheet if it has one,
-    /// and a sprite card's screen-size limits (`$maxsize`,
-    /// `$startfadesize`, `$endfadesize`).
+    /// and a sprite card's size limits (`$minsize`, `$maxsize`,
+    /// `$startfadesize`, `$endfadesize`: fractions of the distance, the
+    /// shader's defaults where unset).
     pub fn particle(&mut self, name: &str) -> Option<crate::map::particles::ParticleMaterial> {
         use crate::map::particles::{ParticleBlend, ParticleMaterial};
         let text = self.read_text(&format!("materials/{}.vmt", normalize(name).trim_end_matches(".vmt")))?;
@@ -1020,10 +1021,13 @@ impl<'a> MaterialLoader<'a> {
             overbright: number("$overbrightfactor"),
             // Sprite cards' screen-size limits (impact_effects.md 14).
             screen: if sprite_card {
-                crate::map::particles::ScreenSize {
-                    max: number("$maxsize"),
-                    fade_start: number("$startfadesize"),
-                    fade_end: number("$endfadesize"),
+                use crate::map::particles::ScreenSize;
+                let or = |k: &str, d: f32| keys.get(k).and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(d);
+                ScreenSize {
+                    min: or("$minsize", 0.0),
+                    max: or("$maxsize", ScreenSize::DEFAULT_MAX),
+                    fade_start: or("$startfadesize", ScreenSize::DEFAULT_FADE_START),
+                    fade_end: or("$endfadesize", ScreenSize::DEFAULT_FADE_END),
                 }
             } else {
                 Default::default()

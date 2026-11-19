@@ -179,6 +179,16 @@ pub enum Init {
         min: u32,
         max: u32,
     },
+    /// "move particles between 2 control points": the particle heads from
+    /// where it is toward control point `end` at `speed` (the operator's
+    /// maximum: specs/tf2/effects.md 6) and lives until it gets there;
+    /// `start_offset` moves it that far along the way first (TF2's
+    /// tracers).
+    MoveBetween {
+        end: usize,
+        speed: f32,
+        start_offset: f32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -337,14 +347,19 @@ pub struct StartParticleSystem {
     /// particles move with the entity's frame; `position` and `forward`
     /// are then the start's in the world, as without it.
     pub follow: Option<Follow>,
-    /// Drawn by the view-model camera (its layer, its field of view, over
-    /// the world and depth tested against the model:
-    /// `ParticleGroup::view_model`): a first-person effect on the view
-    /// model, `position` where the model is drawn
-    /// (`map::attached::FirstPerson::point`, not re-projected), so it sits
-    /// on the gun at any view-model field of view. Others' views of the
-    /// same effect start it in the world (on the held model).
-    pub view_model: bool,
+    /// Its control point 1 (engine space): where a tracer heads ("move
+    /// particles between 2 control points"). None: on control point 0.
+    pub end: Option<Vec3>,
+    /// What started it, for `StopParticleSystems` (a gun's systems that
+    /// run while it fires: TF2's Minigun).
+    pub tag: Option<Entity>,
+}
+
+/// Stop the emitters of every started system with this `tag`
+/// (`StartParticleSystem::tag`); their live particles finish.
+#[derive(Message, Clone, Copy, Debug, PartialEq)]
+pub struct StopParticleSystems {
+    pub tag: Entity,
 }
 
 /// What a started system follows (`StartParticleSystem::follow`): the
@@ -361,6 +376,6 @@ pub struct Follow {
 impl StartParticleSystem {
     /// `name` at `position` facing `forward`, as its definition runs.
     pub fn new(name: impl Into<String>, position: Vec3, forward: Vec3) -> Self {
-        Self { name: name.into(), position, forward, emit_for: None, follow: None, view_model: false }
+        Self { name: name.into(), position, forward, emit_for: None, follow: None, end: None, tag: None }
     }
 }

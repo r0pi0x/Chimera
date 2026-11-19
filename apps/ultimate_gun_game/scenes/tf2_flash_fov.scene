@@ -1,7 +1,8 @@
 # A TF2 gun's first-person muzzle flash at two view-model fields of view
-# (`tf2_viewmodel_fov` 54, TF2's, and 80): the flash should sit on the
-# barrel at both (it is drawn by the view-model camera:
-# `StartParticleSystem::view_model`). On the greybox, looking at a wall.
+# (`tf2_viewmodel_fov` 54, TF2's, and 80): the flash should sit at the
+# barrel's mouth at both and keep its size (a world effect at the muzzle
+# re-projected into the world view, drawn with the world FOV:
+# specs/tf2/particles.md 6). On the greybox, looking at a wall.
 #   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1280x720 +volume 0 +sandbox \
 #       --scene apps/ultimate_gun_game/scenes/tf2_flash_fov.scene --out <dir>
 wait_for map_loaded 6000
