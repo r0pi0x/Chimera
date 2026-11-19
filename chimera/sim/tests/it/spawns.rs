@@ -507,7 +507,7 @@ fn a_loads_spots_come_from_the_disk_the_second_time() {
     let kept = std::fs::read_dir(&dir).map(|d| d.flatten().count()).unwrap_or(0);
     assert_eq!(kept, 1, "the first load kept its spots");
     let (again, again_ticks) = load(7, 1);
-    assert!(again_ticks <= 3, "read back in {again_ticks} ticks (walked in {fresh_ticks})");
+    assert!(again_ticks * 10 < fresh_ticks, "read back in {again_ticks} ticks (walked in {fresh_ticks})");
     assert_eq!(fresh.spots, again.spots, "the same spots, in the same order");
     assert!(again.from_nav && again.ready);
     // Another seed or another map's content: walked again, kept apart.
