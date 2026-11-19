@@ -81,6 +81,7 @@ pub mod nav;
 pub mod nav_cache;
 pub mod nav_gen;
 pub mod play_area;
+pub mod spot_cache;
 pub mod particles;
 pub mod physics_clip;
 pub mod prepare;

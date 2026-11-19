@@ -166,8 +166,10 @@ to 4 on `NetSim` (`chimera_net` `prematch_lobby`).
   `chimera_present` `voice_limits::no_sound_plays_while_a_map_loads_or_the_world_is_covered`;
   `chimera_net` `prematch_lobby::the_bots_the_game_keeps_are_listed_at_once`;
   `chimera_world` `nav_cache` and `loading` unit tests. Not done: the
-  spawn spots' walk (`spawns::settle_spots`) is still a
-  slice a frame on the main thread, not kept on disk.
+  spawn spots' walk (`spawns::settle_spots`) of a map's first load is still a
+  slice a frame on the main thread (it needs the physics queries); later
+  loads read the spots kept on disk (2026-11-18, `map::spot_cache`, 4 MB,
+  test `spawns::a_loads_spots_come_from_the_disk_the_second_time`).
 - 2026-11-18: a dedicated server's `changelevel` settling holds its
   match too (`dedicated`'s `LevelSettle` sets `map::MapSettling` and
   steps the physics a frame; the start map still settles in play). Test:

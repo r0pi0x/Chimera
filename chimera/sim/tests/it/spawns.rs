@@ -455,6 +455,69 @@ fn spots_made_a_slice_a_tick_are_the_same_spots() {
     assert!(sliced.from_nav);
 }
 
+/// The spots kept on disk (`map::spot_cache`): a map's second load reads
+/// them back on a task, the same spots with no walk (ready in a couple of
+/// ticks, not hundreds); another seed or map content is another entry.
+#[test]
+fn a_loads_spots_come_from_the_disk_the_second_time() {
+    use chimera_world::map::{MapFile, nav_gen::SliceFloods, spot_cache::SpotCacheDir};
+    let dir = std::env::temp_dir().join(format!("chimera-spots-scenario-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    // The spots, and the ticks they took.
+    let load = |seed: u32, hash: u8| {
+        let dir = dir.clone();
+        let mut sim = started(DEF, move |app| {
+            app.init_resource::<SliceFloods>();
+            app.insert_resource(SpotCacheDir(Some(dir)));
+            app.insert_resource(MapFile { name: "chimera:greybox".into(), hash: Some([hash; 32]) });
+            app.insert_resource(SpawnSeed(seed));
+        });
+        let mut ticks = 0;
+        while !sim.app.world().get_resource::<SpawnSpots>().is_some_and(|s| s.ready) {
+            sim.ticks(1);
+            ticks += 1;
+            assert!(ticks < 5000, "never ready");
+        }
+        let _ = sim.run_until_idle(600);
+        (sim.app.world().resource::<SpawnSpots>().clone(), ticks)
+    };
+    // The instructions of the first 300 ticks of a load, kept and not
+    // (deterministic: docs/performance.md, "Work counts").
+    let counted = |hash: u8| {
+        let dir = dir.clone();
+        let mut sim = started(DEF, move |app| {
+            app.init_resource::<SliceFloods>();
+            app.insert_resource(SpotCacheDir(Some(dir)));
+            app.insert_resource(MapFile { name: "chimera:greybox".into(), hash: Some([hash; 32]) });
+            app.insert_resource(SpawnSeed(7));
+        });
+        sim.work(300).map(|w| w.systems.0.iter().filter(|(k, _)| k.contains("spots")).map(|(_, v)| v.0).sum::<u64>())
+    };
+    let work_walked = counted(9);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = load(7, 9); // walks, keeps
+    let work_kept = counted(9);
+    if let (Some(walked), Some(kept)) = (work_walked, work_kept) {
+        eprintln!("`prepare_spots` instructions in 300 ticks: walked {walked}, read back {kept}");
+        assert!(kept * 2 < walked, "walked {walked}, read back {kept}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    let (fresh, fresh_ticks) = load(7, 1);
+    assert!(fresh.from_nav && fresh_ticks > 3, "walked: {fresh_ticks} ticks");
+    let kept = std::fs::read_dir(&dir).map(|d| d.flatten().count()).unwrap_or(0);
+    assert_eq!(kept, 1, "the first load kept its spots");
+    let (again, again_ticks) = load(7, 1);
+    assert!(again_ticks <= 3, "read back in {again_ticks} ticks (walked in {fresh_ticks})");
+    assert_eq!(fresh.spots, again.spots, "the same spots, in the same order");
+    assert!(again.from_nav && again.ready);
+    // Another seed or another map's content: walked again, kept apart.
+    let (_, other_seed) = load(8, 1);
+    let (_, other_map) = load(7, 2);
+    assert!(other_seed > 3 && other_map > 3, "{other_seed} {other_map}");
+    assert_eq!(std::fs::read_dir(&dir).unwrap().flatten().count(), 3);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Static boxes on the greybox: (size, centre).
 fn boxes(sim: &mut Sim, list: &[(Vec3, Vec3)]) {
     let w = sim.app.world_mut();

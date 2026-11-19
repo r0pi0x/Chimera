@@ -2014,13 +2014,27 @@ Left of a swap, in order (profiling build):
   shadows redrawn in it and in each collider frame (physics props whose transform isn't
   where the load drew their shadow, before any tick: not looked into), `calculate_bounds`.
 - **Settling's other work**: the spawn spots' flood (`spawns::settle_spots`, a quarter of the
-  settling's samples on cs_office and dm_lockdown), the tick, the HUD's text
+  settling's samples on cs_office and dm_lockdown; kept on disk since 2026-11-18, see
+  "Spawn spots kept on disk"), the tick, the HUD's text
   (`text_warm`): cs_office and de_dust2 keep 0-9 settling frames over 100 M a swap.
 - **A spawn frame is as long as its budget**: 12 ms of steps is 55-110 M here. A budget
   counted in work, as the shadows' now is, would make it the same on every machine.
 - **A redraw's own cost**: `silhouette` tests every texel of each triangle's box (about 20
   instructions a texel; 60-150 thousand texels a prop here), and `write_bytes` rounds each
   texel of the cell again.
+
+## Spawn spots kept on disk (2026-11-18)
+
+A map's spawn spots (`spawns::settle_spots`, `prepare_spots`) are written once to
+`spots/` beside the kept navigation meshes (`map::spot_cache`, capped at 4 MB, an entry
+is under 20 KB; `CHIMERA_SPOT_CACHE=0` or a folder) and read back on a task on the
+map's later loads, keyed by the map's content hash, the seed, spawn points, walker,
+play area, hazards, meshes and `SPOT_CACHE_VERSION`. The first load still walks on the
+main thread (the flood and the tests need the physics queries). Measured by
+instructions (`Sim::work`, `spawns::a_loads_spots_come_from_the_disk_the_second_time`,
+the greybox scenario, `prepare_spots` over 300 ticks): walked 514 M, read back 1.0 M
+(the spots identical, in the same order). A real map's walk is the quarter of its
+swap's first-tick cost measured above; not re-measured on a real map.
 
 ## Combat Arms map loads (2026-10-19)
 

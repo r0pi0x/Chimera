@@ -54,7 +54,12 @@
 //!   points are the spots; so they are, at once, on a map that asks for
 //!   it (`map::code_maps::SpawnOnPoints`: the range's firing line), facing
 //!   its way when it says one (`fixed_yaw`). `candidates` lists every spot without the
-//!   `MAX_SPOTS` cap (the sweep of the stock maps).
+//!   `MAX_SPOTS` cap (the sweep of the stock maps). The spots are kept on
+//!   disk (`map::spot_cache`, 4 MB, for every game) under a key of the
+//!   map's content, the seed, the spawn points, the walker, the play area,
+//!   the hazards, the meshes and `SPOT_CACHE_VERSION` (bump it when
+//!   `spot_ok` or `raw_spots` change what they find), and read back on a
+//!   task on the map's next load: no flood, no tests, the same spots.
 //! - Picking: from a random place in the spots, the first that is at
 //!   least `min_distance` m from every living enemy (a character of
 //!   another team) and out of their sight (rays from each enemy's eye to
@@ -76,7 +81,10 @@
 //!   the match (`reset`); candidates and enemies are walked in a fixed
 //!   order. Nothing global.
 //!
-//! Known shortcuts: sight is three rays per enemy from the eye without a
+//! Known shortcuts: a map's first load still walks on the main thread (the
+//! flood and the tests need the physics world's queries, which a task
+//! can't hold: a slice a frame), only the later loads read the kept
+//! spots; sight is three rays per enemy from the eye without a
 //! field of view or fog (an enemy facing away still "sees"); the spots are
 //! chosen once, so a door that opens later isn't considered; a map whose
 //! collision isn't built yet at the first spawn gets the spawn points for
@@ -529,6 +537,78 @@ pub struct SpotsJob {
     found: Vec<Vec3>,
     /// The match's slice: spots only inside (`map::play_area`).
     plan: Option<PlanPolygon>,
+    /// Where the spots are kept on disk and their key (`map::spot_cache`).
+    cache: Option<(std::path::PathBuf, String)>,
+    /// The kept spots on their way in from the disk, on a task.
+    read: Option<bevy::tasks::Task<Option<Vec<Vec3>>>>,
+    /// The spots came from the disk: nothing to write back.
+    from_disk: bool,
+}
+
+/// The version of the spots' code for their key on disk
+/// (`map::spot_cache`): bumped when `spot_ok`, `raw_spots` or what they
+/// call change what they find. The constants they read are in the key.
+const SPOT_CACHE_VERSION: &str = "1";
+
+/// A digest of a mesh for the key: its areas' ids, flags and boxes.
+fn mesh_digest(mesh: Option<&NavMesh>) -> Vec<u8> {
+    let Some(m) = mesh else { return vec![0] };
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |v: u32| {
+        for b in v.to_le_bytes() {
+            h = (h ^ b as u64).wrapping_mul(0x100_0000_01b3);
+        }
+    };
+    for a in &m.areas {
+        eat(a.id);
+        eat(a.flags as u32);
+        for v in [a.min.x, a.min.y, a.max.x, a.max.y].into_iter().chain(a.heights) {
+            eat(v.to_bits());
+        }
+    }
+    let mut out = vec![1, m.generated as u8];
+    out.extend((m.areas.len() as u64).to_le_bytes());
+    out.extend(h.to_le_bytes());
+    out
+}
+
+/// The spots' key on disk, with where (`map::spot_cache`): everything that
+/// decides them, so another map, seed, walker, play area, hazard or mesh
+/// is another entry.
+#[allow(clippy::too_many_arguments)]
+fn cache_of(
+    world: &World,
+    points: &[Vec3],
+    seed: u32,
+    walker: &(NavGenParams, Option<NavGenParams>),
+    hazards: &[MapBrush],
+    plan: Option<PlanPolygon>,
+) -> Option<(std::path::PathBuf, String)> {
+    let dir = match world.get_resource::<crate::map::spot_cache::SpotCacheDir>() {
+        Some(d) => d.0.clone(),
+        None => crate::map::spot_cache::dir(),
+    }?;
+    let map = world.get_resource::<crate::map::MapFile>()?;
+    let bits: Vec<u8> = points.iter().flat_map(|p| p.to_array().map(|v| v.to_bits().to_le_bytes())).flatten().collect();
+    let hazards = postcard::to_allocvec(hazards).ok()?;
+    let consts = format!("{MAX_SPOTS} {SPOT_GRID} {SPOT_NUDGE} {SPOT_NUDGE_SEED} {SPAWN_LIFT} {BUILD_TRIES}");
+    let vis = world.get_resource::<ActiveVisibility>().map_or(0, |v| v.0.nodes.len());
+    let key = crate::map::spot_cache::key(
+        map,
+        &[
+            ("seed", seed.to_le_bytes().to_vec()),
+            ("points", bits),
+            ("walker", format!("{walker:?}").into_bytes()),
+            ("plan", format!("{plan:?}").into_bytes()),
+            ("hazards", hazards),
+            ("consts", consts.into_bytes()),
+            ("vis", vis.to_le_bytes().to_vec()),
+            ("nav", mesh_digest(world.get_resource::<NavMesh>())),
+            ("floors", mesh_digest(world.get_resource::<MapFloors>().map(|f| &*f.0))),
+        ],
+        SPOT_CACHE_VERSION,
+    )?;
+    Some((dir, key))
 }
 
 /// Ticks between tries when the collision wasn't there yet.
@@ -562,12 +642,24 @@ impl SpotsJob {
         if let Some(water) = world.get_resource::<MapWater>() {
             hazards.extend(water.0.iter().map(|v| v.brush.clone()));
         }
-        let flood = needs_walk(world.get_resource::<NavMesh>()).then(|| {
-            let (p, bound) = walker_for(world);
-            nav_gen::NavGenJob::new(&points, &p, bound)
+        let walker = walker_for(world);
+        let flood = needs_walk(world.get_resource::<NavMesh>()).then(|| nav_gen::NavGenJob::new(&points, &walker.0, walker.1));
+        let plan = play_area::held_plan(world);
+        let seed = seed_of(world);
+        // Kept on disk from an earlier load: read back on a task.
+        let cache = cache_of(world, &points, seed, &walker, &hazards, plan);
+        let read = cache.clone().filter(|(d, k)| crate::map::spot_cache::has(d, k)).map(|(dir, key)| {
+            let pool = bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
+            chimera_core::tasks::spawn(&pool, async move {
+                let spots = crate::map::spot_cache::read(&dir, &key).filter(|s| !s.is_empty());
+                if spots.is_none() {
+                    crate::map::spot_cache::remove(&dir, &key);
+                }
+                spots
+            })
         });
         Some(Self {
-            seed: seed_of(world),
+            seed,
             points,
             hazards,
             flood,
@@ -575,7 +667,10 @@ impl SpotsJob {
             at: 0,
             ready_to_test: false,
             found: Vec::new(),
-            plan: play_area::held_plan(world),
+            plan,
+            cache,
+            read,
+            from_disk: false,
         })
     }
 
@@ -587,7 +682,24 @@ impl SpotsJob {
         nav: Option<&NavMesh>,
         vis: Option<&MapVisibility>,
         cells: usize,
+        wait: bool,
     ) -> bool {
+        if let Some(mut task) = self.read.take() {
+            match chimera_core::tasks::poll(&mut task, wait) {
+                None => {
+                    self.read = Some(task);
+                    return false;
+                }
+                Some(Some(spots)) => {
+                    self.found = spots;
+                    self.flood = None;
+                    self.from_disk = true;
+                    return true;
+                }
+                // Gone or broken: made as if it was never kept.
+                Some(None) => {}
+            }
+        }
         if let Some(mut flood) = self.flood.take() {
             match flood.step(q, &|e| characters.contains(&e), vis, cells) {
                 Some(walk) => {
@@ -632,7 +744,17 @@ impl SpotsJob {
     fn finish(self, tries: u8) -> SpawnSpots {
         let tries = tries + 1;
         let empty = self.found.is_empty();
-        info!("spawn spots: {} made a slice at a time (try {tries})", self.found.len());
+        let how = if self.from_disk { "read back from the disk" } else { "made a slice at a time" };
+        info!("spawn spots: {} {how} (try {tries})", self.found.len());
+        if let (Some((dir, key)), false, false) = (self.cache, self.from_disk, empty) {
+            // Kept for the map's next load, written on a task.
+            let spots = self.found.clone();
+            let pool = bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
+            chimera_core::tasks::spawn(&pool, async move {
+                crate::map::spot_cache::write(&dir, &key, &spots, crate::map::spot_cache::CAP);
+            })
+            .detach();
+        }
         SpawnSpots {
             from_nav: !empty,
             ready: !empty || tries >= BUILD_TRIES,
@@ -677,6 +799,7 @@ pub fn prepare_spots(
     vis: Option<Res<ActiveVisibility>>,
     characters: Query<Entity, With<Intent>>,
     q: SpatialQuery,
+    wait_tasks: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut wait: Local<u8>,
     mut commands: Commands,
 ) {
@@ -697,7 +820,7 @@ pub fn prepare_spots(
     };
     let characters: Vec<Entity> = characters.iter().collect();
     let mesh = map_mesh(nav.as_deref(), floors.as_deref());
-    if job.slice(&q, &characters, mesh, vis.as_ref().map(|v| &*v.0), nav_gen::CELLS_PER_TICK) {
+    if job.slice(&q, &characters, mesh, vis.as_ref().map(|v| &*v.0), nav_gen::CELLS_PER_TICK, wait_tasks.is_some()) {
         let tries = spots.as_ref().map_or(0, |s| s.tries);
         commands.queue(move |w: &mut World| {
             if let Some(job) = w.remove_resource::<SpotsJob>() {
@@ -727,11 +850,12 @@ pub fn settle_spots(world: &mut World) -> bool {
     let Some(mut job) = world.remove_resource::<SpotsJob>().or_else(|| SpotsJob::new(world)) else { return true };
     let characters: Vec<Entity> = world.iter_entities().filter(|r| r.contains::<Intent>()).map(|r| r.id()).collect();
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
+    let wait = chimera_core::tasks::waits(world);
     let done = {
         let mut state = SystemState::<SpatialQuery>::new(world);
         let Ok(q) = state.get(world) else { return true };
         let mesh = map_mesh(world.get_resource::<NavMesh>(), world.get_resource::<MapFloors>());
-        job.slice(&q, &characters, mesh, vis.as_deref(), nav_gen::CELLS_PER_LOAD_FRAME)
+        job.slice(&q, &characters, mesh, vis.as_deref(), nav_gen::CELLS_PER_LOAD_FRAME, wait)
     };
     if !done {
         world.insert_resource(job);
