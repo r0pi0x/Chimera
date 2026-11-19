@@ -236,6 +236,12 @@ Additional ones in TF2's weapon effects (inferred unless noted):
   (proportional) of life chosen in [min, max], shaped by the fade bias
   and ease flag.
 - **Rotation Spin Roll**: roll speed `spin_rate_degrees` °/s.
+- **Lifetime From Sequence** (life = the sheet sequence's frames / fps)
+  only acts on a material with a sheet: `eject_minigunbrass`'s
+  `effects/mini_casing` has none (its texture has no sheet resource), and
+  real TF2's Minigun brass flies and falls for well over a frame
+  (capture, `minigun.tf2`'s chase view), so its 2 s from "Lifetime
+  Random" stands (inferred).
 - **Collision via traces**: particles collide with the world (bounce and
   slide fractions); not used by muzzle flashes.
 - The flame-specific ones (**Assign target CP**, **Movement Follow CP**,

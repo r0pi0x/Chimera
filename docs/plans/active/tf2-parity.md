@@ -31,22 +31,23 @@ Captured imagery stays in scratch, never in the repo.
 | Camera match (2fort bridge, setpos/setang) | matches | – |
 | Muzzle flashes, first person | close (scattergun, shotgun, SMG) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). Ours' flash stays where it started while the gun kicks; TF2's rides the muzzle ("Movement Lock to Control Point" on the animated attachment), and TF2's view model kicks harder (the Scattergun's pump) |
 | Muzzle flashes, third person | todo | |
-| Minigun constant flash, brass | still differs | the core is a compact glow now (a trail no wider than long), but ours sits behind our Minigun's barrels, which draw black (TF2's are bright metal); `eject_minigunbrass` makes no particles in ours |
+| Minigun constant flash, brass | close | the core is a compact glow now (a trail no wider than long); ours is dimmer and nearer the barrel than the account's own Minigun's (not stock); the brass lived one frame (lifetime from a sheet the casing has none of): now 2 s |
 | Tracers | matches (SMG, Shotgun) | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails |
 | Backblast (third person) | todo | |
 | Flame stream (air, wall); overbright 5 or 1 | close | overbright is 5, in linear space (we applied it to the gamma colour: x34, a white blob at a wall; now the violet cloud of TF2, its added colour within 3 of TF2's). TF2's cloud at a wall spreads wider (its points slide along the wall; ours stop) and its far fireball is about 1.5x ours |
 | Crits | todo | |
-| View models (position, FOV, bob) | todo | |
+| View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries |
 | HUD, crosshair | todo | |
 | Lighting, materials | todo | |
 
 ## Next (for a successor)
 
-1. The Minigun: its barrels draw black in ours (TF2's bright metal: the
-   material), its brass (`eject_minigunbrass`) makes no particles, and
-   its firing pose keeps the muzzle lower than TF2's.
+1. The Minigun's constant glow is dimmer and sits nearer the barrel
+   than the account's own (non-stock) Minigun's in TF2 (black barrels and
+   a low firing pose were the bot's FOV and the account's other Minigun,
+   not ours; the brass now flies).
 2. First-person flashes ride the animated muzzle in TF2 (each frame's
    attachment); ours follow the eye from where the shot was.
 3. (Done: tracers; flash lifetime was a capture error.)
@@ -116,3 +117,13 @@ Captured imagery stays in scratch, never in the repo.
   gun; ours were twice as wide and bright at the gun. The strip's v now
   runs tail 0 to head 1 and its width is the radius, at most its length
   (the Minigun core's 400 would otherwise be a wide bar).
+- Puppet bots watched in their eyes (`spec_mode 4`, the only way to see
+  stock guns this account doesn't carry) show the world at FOV 75 (a
+  bot's `fov_desired`; own player at 75 matched it exactly) and their
+  view model about 80 px right of a player's own at the same FOV. The
+  first pass's flame comparisons ran ours at 90 against them: the
+  "TF2's far fireball 1.5x ours" and "the Flame Thrower sits high and
+  left" were partly that. `flames.scene` and `viewmodels.scene` run ours
+  at 75 now; at 75 TF2's far fireball is still about twice ours across,
+  and its cloud at a wall wider (open). `tf_debug_flamethrower 1` draws
+  TF2's flame points' boxes (they reach the bridge's far end).

@@ -2,8 +2,8 @@
 # person: at the bridge's side wall and down the bridge (open air), 0.5 and
 # 1.0 s into the stream. A puppet bot holds the stock gun (this account's own
 # Pyro carries another) and fires (`bot_forceattack`); we watch it in its
-# eyes (`spec_mode 4`). In real time (fps_max 60): under host_framerate TF2
-# drew no stream.
+# eyes (`spec_mode 4`; a bot's FOV is 75, so ours runs at 75 too). In real
+# time (fps_max 60): under host_framerate TF2 drew no stream.
 #   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/flames.tf2 --out <dir>
 mp_disable_respawn_times 1
 cl_drawhud 0
@@ -14,14 +14,18 @@ fps_max 60
 cl_ragdoll_fade_time 0
 cl_ragdoll_forcefade 1
 host_framerate 0
-kick P1
+bot_kick all
 sleep 3
+bot_selectweaponslot 0
 bot -name P1 -class pyro -team red
 sleep 3
 jointeam spectator
 sleep 2
-spec_mode 4
+bot_teleport P1 0 -300 0 10 0 0
+sleep 1
 spec_player P1
+sleep 1
+spec_mode 4
 sleep 1
 bot_teleport P1 0 -300 0 10 0 0
 sleep 2

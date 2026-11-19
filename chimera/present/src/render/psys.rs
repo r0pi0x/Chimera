@@ -224,6 +224,12 @@ pub struct Instance {
 /// sequence" and frame animation).
 pub trait Sheets {
     fn frames(&self, material: usize, sequence: u32) -> usize;
+    /// The frames of the material's sheet sequence; None when the
+    /// material has no sheet (`Init::LifetimeFromSequence` then leaves
+    /// the life alone).
+    fn sheet_frames(&self, material: usize, sequence: u32) -> Option<usize> {
+        Some(self.frames(material, sequence))
+    }
     /// The material's colour multiplier (sprite cards' overbright).
     fn overbright(&self, _material: usize) -> f32 {
         1.0
@@ -239,6 +245,14 @@ impl Sheets for MaterialSheets<'_> {
             .and_then(|ms| ms.materials.get(material))
             .and_then(|m| m.sequences.get(sequence as usize))
             .map_or(1, Vec::len)
+    }
+
+    fn sheet_frames(&self, material: usize, sequence: u32) -> Option<usize> {
+        self.0
+            .and_then(|ms| ms.materials.get(material))
+            .and_then(|m| m.sequences.get(sequence as usize))
+            .map(Vec::len)
+            .filter(|n| *n > 0)
     }
 
     fn overbright(&self, material: usize) -> f32 {
@@ -415,11 +429,11 @@ impl Instance {
         self.particles.iter().map(|p| Self::radius(d, p)).collect()
     }
 
-    /// Its own live particles' (age, life, alpha as drawn), not its
-    /// children's (probes).
-    pub fn own_ages_and_alphas(&self, defs: &[SystemDef]) -> Vec<(f32, f32, f32)> {
+    /// Its own live particles' (position in game units, age, life, alpha
+    /// as drawn), not its children's (probes).
+    pub fn own_details(&self, defs: &[SystemDef]) -> Vec<(Vec3, f32, f32, f32)> {
         let d = &defs[self.def];
-        self.particles.iter().map(|p| (p.age, p.life, Self::alpha(d, p))).collect()
+        self.particles.iter().map(|p| (p.position, p.age, p.life, Self::alpha(d, p))).collect()
     }
 
     /// Each live particle's radius as drawn (game units), its children's
@@ -709,10 +723,15 @@ impl Instance {
                 }
                 Init::Lifetime(pick) => p.life = pick.draw(rng),
                 Init::LifetimeFromSequence { fps } => {
+                    // A material without a sheet keeps the life it has:
+                    // real TF2's Minigun brass (`effects/mini_casing`, no
+                    // sheet; life 2 s, then this at 30 fps) flies for
+                    // seconds, not one frame (specs/tf2/particles.md 7).
                     if let Some(m) = d.material
                         && fps > 0.0
+                        && let Some(frames) = sheets.sheet_frames(m, p.sequence)
                     {
-                        p.life = sheets.frames(m, p.sequence) as f32 / fps;
+                        p.life = frames as f32 / fps;
                     }
                 }
                 Init::Radius(pick) => p.radius = pick.draw(rng),
@@ -1921,6 +1940,39 @@ mod tests {
         let long = corners[0].distance(corners[1]);
         assert!(long > 100.0 && long < 400.0, "{long}");
         assert!((corners[0].distance(corners[3]) - long).abs() < 1e-3, "as wide as long: {corners:?}");
+    }
+
+    /// "Lifetime from sequence" leaves the life alone on a material
+    /// without a sheet (TF2's Minigun brass), and sets frames / fps with
+    /// one.
+    #[test]
+    fn lifetime_from_sequence_needs_a_sheet() {
+        struct NoSheet;
+        impl Sheets for NoSheet {
+            fn frames(&self, _: usize, _: u32) -> usize {
+                1
+            }
+            fn sheet_frames(&self, _: usize, _: u32) -> Option<usize> {
+                None
+            }
+        }
+        let mut brass = system();
+        brass.emitters = vec![Emitter::Instantaneously { start: 0.0, count: 1 }];
+        brass.initializers = vec![Init::Lifetime(Pick::new(2.0, 2.0, 1.0)), Init::LifetimeFromSequence { fps: 30.0 }];
+        let defs = vec![brass];
+        let cps = [ControlPoint::default()];
+        let mut rng = ParticleRng::new(3);
+        let mut i = Instance::new(&defs, 0);
+        i.step(&defs, &cps, 0.01, &mut rng, &NoSheet);
+        assert!((i.particles[0].life - 2.0).abs() < 1e-5, "{}", i.particles[0].life);
+        let sixty = |_: usize, _: u32| 60usize;
+        let mut i = Instance::new(&defs, 0);
+        i.step(&defs, &cps, 0.01, &mut rng, &sixty);
+        assert!((i.particles[0].life - 2.0).abs() < 1e-5, "60 frames at 30 fps: {}", i.particles[0].life);
+        let six = |_: usize, _: u32| 6usize;
+        let mut i = Instance::new(&defs, 0);
+        i.step(&defs, &cps, 0.01, &mut rng, &six);
+        assert!((i.particles[0].life - 0.2).abs() < 1e-5, "{}", i.particles[0].life);
     }
 
     /// A tagged start stops emitting on `stop_tagged` (TF2's Minigun's

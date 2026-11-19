@@ -1,0 +1,229 @@
+# Every class's stock guns in first person at rest on 2fort's bridge (real
+# TF2; ours: viewmodels.scene): a puppet bot (stock loadout) per class,
+# watched in its eyes (`spec_mode 4`), slots 1, 2 and 3 (`<class>_<gun>`).
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/viewmodels.tf2 --out <dir>
+mp_disable_respawn_times 1
+cl_drawhud 0
+r_drawvgui 0
+fov_desired 90
+viewmodel_fov 54
+fps_max 60
+host_framerate 0
+jointeam spectator
+sleep 2
+# scout
+bot_kick all
+sleep 2
+bot_selectweaponslot 0
+bot -name P1 -class scout -team red
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 1
+spec_player P1
+sleep 1
+spec_mode 4
+sleep 1
+bot_teleport P1 0 0 0 0 90 0
+sleep 3
+shot scout_scattergun
+bot_selectweaponslot 1
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot scout_pistol
+bot_selectweaponslot 2
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot scout_bat
+# soldier
+bot_kick all
+sleep 2
+bot_selectweaponslot 0
+bot -name P1 -class soldier -team red
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 1
+spec_player P1
+sleep 1
+spec_mode 4
+sleep 1
+bot_teleport P1 0 0 0 0 90 0
+sleep 3
+shot soldier_rocketlauncher
+bot_selectweaponslot 1
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot soldier_shotgun
+bot_selectweaponslot 2
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot soldier_shovel
+# pyro
+bot_kick all
+sleep 2
+bot_selectweaponslot 0
+bot -name P1 -class pyro -team red
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 1
+spec_player P1
+sleep 1
+spec_mode 4
+sleep 1
+bot_teleport P1 0 0 0 0 90 0
+sleep 3
+shot pyro_flamethrower
+bot_selectweaponslot 1
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot pyro_shotgun
+bot_selectweaponslot 2
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot pyro_fireaxe
+# demoman
+bot_kick all
+sleep 2
+bot_selectweaponslot 0
+bot -name P1 -class demoman -team red
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 1
+spec_player P1
+sleep 1
+spec_mode 4
+sleep 1
+bot_teleport P1 0 0 0 0 90 0
+sleep 3
+shot demoman_grenadelauncher
+bot_selectweaponslot 1
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot demoman_pipebomblauncher
+bot_selectweaponslot 2
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot demoman_bottle
+# heavy
+bot_kick all
+sleep 2
+bot_selectweaponslot 0
+bot -name P1 -class heavy -team red
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 1
+spec_player P1
+sleep 1
+spec_mode 4
+sleep 1
+bot_teleport P1 0 0 0 0 90 0
+sleep 3
+shot heavy_minigun
+bot_selectweaponslot 1
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot heavy_shotgun
+bot_selectweaponslot 2
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot heavy_fists
+# engineer
+bot_kick all
+sleep 2
+bot_selectweaponslot 0
+bot -name P1 -class engineer -team red
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 1
+spec_player P1
+sleep 1
+spec_mode 4
+sleep 1
+bot_teleport P1 0 0 0 0 90 0
+sleep 3
+shot engineer_shotgun
+bot_selectweaponslot 1
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot engineer_pistol
+bot_selectweaponslot 2
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot engineer_wrench
+# medic
+bot_kick all
+sleep 2
+bot_selectweaponslot 0
+bot -name P1 -class medic -team red
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 1
+spec_player P1
+sleep 1
+spec_mode 4
+sleep 1
+bot_teleport P1 0 0 0 0 90 0
+sleep 3
+shot medic_syringegun
+bot_selectweaponslot 2
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot medic_bonesaw
+# sniper
+bot_kick all
+sleep 2
+bot_selectweaponslot 0
+bot -name P1 -class sniper -team red
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 1
+spec_player P1
+sleep 1
+spec_mode 4
+sleep 1
+bot_teleport P1 0 0 0 0 90 0
+sleep 3
+shot sniper_sniperrifle
+bot_selectweaponslot 1
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot sniper_smg
+bot_selectweaponslot 2
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot sniper_club
+# spy
+bot_kick all
+sleep 2
+bot_selectweaponslot 0
+bot -name P1 -class spy -team red
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 1
+spec_player P1
+sleep 1
+spec_mode 4
+sleep 1
+bot_teleport P1 0 0 0 0 90 0
+sleep 3
+shot spy_revolver
+bot_selectweaponslot 2
+sleep 3
+bot_teleport P1 0 0 0 0 90 0
+sleep 0.5
+shot spy_knife
+bot_kick all

@@ -2551,6 +2551,11 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   scene's `gwait` (game seconds) after `wait_for shot`, with `wait 3`
   between `host_timescale` and `+attack` (a shot in the frame the rate
   changes runs its first 13 ms of effects in one step).
+- Stock guns this account doesn't carry are seen through a puppet bot's
+  eyes (`bot`, `bot_selectweaponslot`, `spec_player`, then `spec_mode 4`):
+  its FOV is 75 (ours must run `fov_desired 75`) and its view model sits
+  about 80 px right of a player's own, so compare view-model positions
+  on our own player only.
 - TF2's offscreen display once came up 1024x720: `tf2ref.py` asks for
   1024x768 (`-w`/`-h`, `mat_setvideomode`), and `pair` skips pictures of
   different sizes.

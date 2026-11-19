@@ -7,7 +7,9 @@ wait 120
 god
 sandbox ammo on
 cl_drawhud 0
-fov_desired 90
+# TF2 is watched in a puppet bot's eyes: a bot's FOV is 75 (TF2's
+# default; measured: a spectator in its eyes saw what fov_desired 75 shows)
+fov_desired 75
 tf2_viewmodel_fov 54
 rung tf2:tf_weapon_flamethrower
 wait 2

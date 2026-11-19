@@ -1,0 +1,212 @@
+# Ours for viewmodels.tf2: every class's stock guns at rest, first person.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/viewmodels.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+# TF2 is watched in a puppet bot's eyes: a bot's FOV is 75 (TF2's
+# default; measured: a spectator in its eyes saw what fov_desired 75 shows)
+fov_desired 75
+tf2_viewmodel_fov 54
+rung tf2:tf_weapon_scattergun
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot scout_scattergun
+rung tf2:tf_weapon_pistol_scout
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot scout_pistol
+rung tf2:tf_weapon_bat
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot scout_bat
+rung tf2:tf_weapon_rocketlauncher
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot soldier_rocketlauncher
+rung tf2:tf_weapon_shotgun_primary as tf2:soldier
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot soldier_shotgun
+rung tf2:tf_weapon_shovel
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot soldier_shovel
+rung tf2:tf_weapon_flamethrower
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot pyro_flamethrower
+rung tf2:tf_weapon_shotgun_primary as tf2:pyro
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot pyro_shotgun
+rung tf2:tf_weapon_fireaxe
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot pyro_fireaxe
+rung tf2:tf_weapon_grenadelauncher
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot demoman_grenadelauncher
+rung tf2:tf_weapon_pipebomblauncher
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot demoman_pipebomblauncher
+rung tf2:tf_weapon_bottle
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot demoman_bottle
+rung tf2:tf_weapon_minigun
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot heavy_minigun
+rung tf2:tf_weapon_shotgun_primary as tf2:heavy
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot heavy_shotgun
+rung tf2:tf_weapon_fists
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot heavy_fists
+rung tf2:tf_weapon_shotgun_primary
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot engineer_shotgun
+rung tf2:tf_weapon_pistol_scout as tf2:engineer
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot engineer_pistol
+rung tf2:tf_weapon_wrench
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot engineer_wrench
+rung tf2:tf_weapon_syringegun_medic
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot medic_syringegun
+rung tf2:tf_weapon_bonesaw
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot medic_bonesaw
+rung tf2:tf_weapon_sniperrifle
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot sniper_sniperrifle
+rung tf2:tf_weapon_smg
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot sniper_smg
+rung tf2:tf_weapon_club
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot sniper_club
+rung tf2:tf_weapon_revolver
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot spy_revolver
+rung tf2:tf_weapon_knife
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 180
+shot spy_knife

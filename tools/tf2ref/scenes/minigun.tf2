@@ -1,0 +1,37 @@
+# TF2's stock Minigun firing, first person (real TF2; ours: the minigun part
+# of muzzle.scene): this account's Heavy may carry another Minigun, so a
+# puppet bot (stock guns) fires (`bot_forceattack`) and we watch in its
+# eyes (`spec_mode 4`), 1.5 s into the fire, every frame at 60 a second.
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/minigun.tf2 --out <dir>
+mp_disable_respawn_times 1
+cl_drawhud 0
+r_drawvgui 0
+fov_desired 90
+viewmodel_fov 54
+fps_max 60
+host_framerate 0
+bot_kick all
+sleep 3
+bot -name P1 -class heavy -team red
+sleep 3
+jointeam spectator
+sleep 2
+bot_teleport P1 0 0 0 0 90 0
+sleep 2
+spec_player P1
+sleep 1
+spec_mode 4
+sleep 2
+bot_teleport P1 0 0 0 0 90 0
+sleep 2
+shot minigun_bot_idle
+bot_forceattack 1
+sleep 1.5
+host_framerate 0.016667
+movie minigun_bot
+wait 20
+endmovie
+wait 2
+host_framerate 0
+bot_forceattack 0
+sleep 2
