@@ -2200,7 +2200,7 @@ pub fn animate_heroes(
     reduced: Option<Res<crate::ReducedMotion>>,
     units: Res<UiUnits>,
     mut last: Local<f64>,
-    interactions: Query<&Interaction>,
+    interactions: Query<&Interaction, With<Hover>>,
     mut slabs: Query<(&mut HeroSlab, &ChildOf, &mut Node, Option<&Children>)>,
     mut glows: Query<&mut UiSlant, With<HeroGlow>>,
 ) {
@@ -2208,6 +2208,7 @@ pub fn animate_heroes(
     *last = clock.now;
     let motion = if reduced.is_some_and(|r| r.0) { Motion::new(0.0) } else { motion.map(|m| *m).unwrap_or_default() };
     for (mut slab, parent, mut node, children) in &mut slabs {
+        // A disabled hero has no `Hover`: it never lifts.
         let over = interactions.get(parent.parent()).is_ok_and(|i| *i != Interaction::None);
         let target = if over { 1.0 } else { 0.0 };
         let eased = |t: f32| Pace::Fast.ease().sample(t);

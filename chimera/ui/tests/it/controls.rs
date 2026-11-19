@@ -829,6 +829,29 @@ fn hero_hover_eases_through_the_motion_tokens() {
     }
 }
 
+/// A disabled hero button neither lifts nor leans on hover, however the
+/// pointer sits on it (the shared `animate_heroes`).
+#[test]
+fn a_disabled_hero_ignores_hover() {
+    let mut app = app();
+    app.insert_resource(Motion::new(1.0));
+    let off = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", None, controls::HERO_H, State { disabled: true, ..State::NONE }));
+    let on = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", None, controls::HERO_H, State::NONE));
+    let slab_of = |app: &mut App, b| descendants_entities::<controls::HeroSlab>(app, b)[0];
+    let (soff, son) = (slab_of(&mut app, off), slab_of(&mut app, on));
+    assert!(app.world().get::<controls::Hover>(off).is_none(), "a disabled hero has no hover tint");
+    for b in [off, on] {
+        *app.world_mut().get_mut::<Interaction>(b).unwrap() = Interaction::Hovered;
+    }
+    for _ in 0..3 {
+        app.world_mut().resource_mut::<UiClock>().step(0.1);
+        app.update();
+    }
+    assert_eq!(app.world().get::<controls::HeroSlab>(soff).unwrap().lift, 0.0, "disabled: no lift");
+    assert_eq!(app.world().get::<Node>(soff).unwrap().right, Val::ZERO, "disabled: its edge stays");
+    assert_eq!(app.world().get::<controls::HeroSlab>(son).unwrap().lift, 1.0, "enabled: lifts");
+}
+
 /// The segmented picker is the toggle's look (inset in its track, its
 /// height), hovers as a parallelogram, and its focus strip is a child of
 /// the pick (inside it).

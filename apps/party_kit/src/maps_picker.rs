@@ -29,7 +29,9 @@
 //!   the cursor and the folded games and groups.
 //! - **Keys**: ↑↓ the row, Space on or off, ←→ fold or open (← on a map: its group folds, the cursor on its header), Enter Done (the
 //!   dialog's hero), Esc or a right click Cancel; the pointer: a row's box
-//!   toggles it, its chevron folds it.
+//!   (with a little slop around it) toggles it; on a game's or group's
+//!   header the rest of the row (chevron, name, count) folds it, on a map
+//!   the whole row toggles. Hover lifts just the area a click would act on.
 //!
 //! The tree is `chimera_ui::vlist` (recycling, smooth wheel scroll, the
 //! keys keep the cursor in view; `bind_rows` fills its slots). ← on a map
@@ -399,14 +401,19 @@ impl MapsPicker {
 /// What a click (or a key) in the dialog does.
 #[derive(Component, Message, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PickerAction {
-    /// A row's box: on or off.
+    /// A row's box (and its hit slop): on or off.
     Toggle(usize),
-    /// A row's chevron: fold or open.
+    /// A game's or group's header (the chevron, the name, the rest of the
+    /// row): fold or open.
     Fold(usize),
     Done,
     Cancel,
     AllOff,
 }
+
+/// A header's box with its hit slop (tests find it).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct TriHit;
 
 /// The dialog's root (tests find it).
 #[derive(Component, Clone, Copy, Debug)]
@@ -578,11 +585,14 @@ fn tree_row(
     };
     let pad_l = [0.6, 2.0, 3.4, 4.8][depth];
     let bg = if focus { 0.06 } else if depth == 0 { 0.03 } else { 0.0 };
+    let header = !matches!(row, TreeRow::Map(..));
     let r = c
         .spawn((
             UiStyle { gap: Some(0.7), pad: Some([0.0, 0.6, 0.0, pad_l].into()), grow: Some(1.0), ..UiStyle::row() }.bg_a(Tone::Fg, bg),
             Node::default(),
-            PickerAction::Toggle(i),
+            // A header folds; a map's row toggles.
+            if header { PickerAction::Fold(i) } else { PickerAction::Toggle(i) },
+            chimera_ui::controls::Hover { base: ui.color(Tone::Fg, bg), over: ui.color(Tone::Fg, bg + 0.05) },
             chimera_ui::controls::clickable(),
             ChildOf(slot),
         ))
@@ -594,12 +604,29 @@ fn tree_row(
     if !matches!(row, TreeRow::Map(..)) {
         let open = !picker.is_folded(games, row);
         let chev = ui.boxed(c, r, UiStyle { w: Some(0.8), shrink: Some(0.0), ..UiStyle::row() });
-        c.entity(chev).insert((PickerAction::Fold(i), chimera_ui::controls::clickable()));
         if let Some((images, icons)) = res.as_mut() {
             ui.icon(c, chev, images, icons, if open { "chevron" } else { "chev_right" }, 0.5, Tone::Fg2);
         }
     }
-    tri_box(c, ui, r, picker.state(games, row));
+    if header {
+        // The box with a hit slop; the negative margin keeps the layout.
+        let slop = 0.45;
+        let hit = ui.boxed(
+            c,
+            r,
+            UiStyle { pad: Some([slop, slop, slop, slop].into()), margin: Some([-slop, -slop, -slop, -slop].into()), shrink: Some(0.0), ..UiStyle::row() }
+                .bg_a(Tone::Fg, 0.0),
+        );
+        c.entity(hit).insert((
+            PickerAction::Toggle(i),
+            TriHit,
+            chimera_ui::controls::Hover { base: ui.color(Tone::Fg, 0.0), over: ui.color(Tone::Fg, 0.14) },
+            chimera_ui::controls::clickable(),
+        ));
+        tri_box(c, ui, hit, picker.state(games, row));
+    } else {
+        tri_box(c, ui, r, picker.state(games, row));
+    }
     let (role, size) = match depth {
         0 => (Role::DisplayBold, 0.9),
         1 => (Role::DisplayRegular, 0.8),

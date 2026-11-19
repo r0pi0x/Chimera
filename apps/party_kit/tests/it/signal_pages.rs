@@ -280,6 +280,65 @@ fn the_maps_picker_sets_the_rotation() {
     assert_eq!(sent.trim_matches('"'), off.iter().next().unwrap().as_str(), "mp_maps_off set at the start");
 }
 
+/// In the Maps picker a game's header folds (chevron, name, the rest of
+/// the row) and only its box, with a little slop, toggles; a map's row
+/// toggles. Hover marks the same areas.
+#[test]
+fn the_maps_picker_header_folds_and_only_its_box_toggles() {
+    use party_kit::maps_picker::{MapsPicker, PickerAction as P, TriHit, TreeRow};
+    let mut sim = sim(PAGES_THEME);
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    let data = MenuData::shipped();
+    let maps = data.play.iter().position(|r| r.kind == party_kit::main_menu::PlayKind::Map).unwrap();
+    for _ in 0..maps {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(3);
+    let picker = |s: &Sim| s.app.world().resource::<MapsPicker>().clone();
+    assert!(picker(&sim).open.is_some());
+    let acts = |s: &mut Sim| -> Vec<(Entity, P)> {
+        s.app.world_mut().query::<(Entity, &P)>().iter(s.app.world()).filter(|(_, a)| matches!(a, P::Toggle(0) | P::Fold(0))).map(|(e, a)| (e, *a)).collect()
+    };
+    let found = acts(&mut sim);
+    let row = found.iter().find(|(_, a)| *a == P::Fold(0)).expect("the header row folds").0;
+    let hit = found.iter().find(|(_, a)| *a == P::Toggle(0)).expect("the box toggles").0;
+    assert_eq!(found.len(), 2, "the chevron has no action of its own: {found:?}");
+    assert!(sim.app.world().get::<TriHit>(hit).is_some());
+    assert!(sim.app.world().get::<chimera_ui::controls::Hover>(row).is_some(), "the row hovers");
+    assert!(sim.app.world().get::<chimera_ui::controls::Hover>(hit).is_some(), "the box hovers");
+    let games = {
+        use party_kit::maps_picker::MapCatalogue;
+        let id = sim.app.world().resource::<party_kit::main_menu::MenuMinigame>().0.clone();
+        let pool: Vec<String> = sim
+            .app
+            .world()
+            .get_resource::<chimera_sim::minigame::Minigames>()
+            .and_then(|m| m.get(&id))
+            .map(|d| d.maps.iter().map(|m| chimera_net::net::normalize_map(m)).collect())
+            .unwrap_or_default();
+        party_kit::maps_picker::LocalCatalogue.listing(&pool)
+    };
+    let row0 = TreeRow::Game(0);
+    let click = |sim: &mut Sim, e: Entity| {
+        use bevy::ui::DeprecatedInteraction as I;
+        *sim.app.world_mut().get_mut::<I>(e).unwrap() = I::Pressed;
+        sim.ticks(2);
+    };
+    // The row (name, the rest): folds, the maps stay as they were.
+    let folded = picker(&sim).is_folded(&games, &row0);
+    click(&mut sim, row);
+    assert_ne!(picker(&sim).is_folded(&games, &row0), folded, "a click on the header folds");
+    assert_eq!(picker(&sim).state(&games, &row0), party_kit::maps_picker::Tri::On, "and toggles nothing");
+    // The box toggles; the fold stays.
+    let folded = picker(&sim).is_folded(&games, &row0);
+    let hit = acts(&mut sim).iter().find(|(_, a)| *a == P::Toggle(0)).unwrap().0;
+    click(&mut sim, hit);
+    assert_eq!(picker(&sim).state(&games, &row0), party_kit::maps_picker::Tri::Off, "the box toggles");
+    assert_eq!(picker(&sim).is_folded(&games, &row0), folded, "and does not fold");
+}
+
 #[test]
 fn join_enter_connects_and_refuses_an_empty_address() {
     let mut sim = sim(PAGES_THEME);
