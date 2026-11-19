@@ -444,7 +444,9 @@ the user's go-ahead: no Actions runs unless asked.
       went off only with the launcher out (fixed); what is left per weapon
       (tracers, trails, the rocket's muzzle, explosion variants, the
       scripts' effect names) is in
-      [plans/active/tf2-effects.md](plans/active/tf2-effects.md);
+      [plans/active/tf2-effects.md](plans/active/tf2-effects.md): muzzle
+      flashes are data now (`tf2:looks`); tracers, trails and explosion
+      variants wait on specs naming their effects (the plan's "Spec gaps");
     - first-person view models lit wrongly: check whether it's the map
       (HL2 or Halo maps) or the view-model lighting (Halo maps: their
       light field is now the lightmap under the point, 2026-11-18,

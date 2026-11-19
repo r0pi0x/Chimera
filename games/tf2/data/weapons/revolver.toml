@@ -51,3 +51,8 @@ ramp = 1.0
 arms = "spy"
 script = "tf_weapon_revolver"
 first_pellet_pause = 1.25
+
+# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
+# the gun's `muzzle` attachment (looks.rs).
+[hooks."tf2:looks"]
+muzzle = "muzzle_revolver"

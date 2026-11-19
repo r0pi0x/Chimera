@@ -253,7 +253,7 @@ pub fn add_impact_looks(materials: &mut MaterialLoader, map: &mut MapData) {
 /// Source's grey puff.
 pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
     add_impact_looks(materials, map);
-    let (names, files) = (super::weapons::looks::PARTICLE_SYSTEMS, super::weapons::looks::PARTICLE_FILES);
+    let (names, files) = (super::weapons::looks::particle_systems(), super::weapons::looks::PARTICLE_FILES);
     source_engine::content::pcf::add_guest_particle_systems(materials, map, names, files);
 }
 
@@ -407,7 +407,7 @@ pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'st
 /// TF2's own effects its guns start (`weapons::looks`): the explosion and
 /// the muzzle flashes.
 fn extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static str]) {
-    (super::weapons::looks::PARTICLE_SYSTEMS, super::weapons::looks::PARTICLE_FILES)
+    (super::weapons::looks::particle_systems(), super::weapons::looks::PARTICLE_FILES)
 }
 
 /// TF2's sounds: Source's sound scripts (the map's own entries and its

@@ -47,3 +47,37 @@ data; the weapon scripts' own names (`TracerEffect`,
 3. Trails and glows on flyers (a system following a `ShownItem`:
    `StartParticleSystem::follow`).
 4. Scorch decals on explosions (the map's decal path, TF2's group).
+
+## Progress
+
+- 2026-11-18: step 1 begun. Each gun's muzzle flash is data now
+  (`[hooks."tf2:looks"]` `muzzle`, read by `looks::LooksParams`;
+  `PARTICLE_SYSTEMS` became `looks::particle_systems()`, built from the
+  data). Test `every_bullet_gun_and_launcher_names_its_muzzle_in_data`.
+
+## Spec gaps (blocking the rest; no TF2 spec names these)
+
+Implementation reads specs only, and specs/tf2 has no value for any of
+these (weapon_scripts.md only says the script fields exist and are
+ignored; weapons.md 8.1 gives the rocket's `trail` attachment and says
+its trail is a particle effect, without a name). A spec session with the
+install must write them (per gun, values only) before tracers, trails and
+explosion variants can be data:
+
+1. **Tracers**: each bullet gun's `TracerEffect` name (a particle system
+   or a streak?), whether a tracer is drawn every shot or every Nth,
+   its speed and where it starts (the `muzzle` attachment is known), and
+   the Sniper Rifle's.
+2. **Trails**: the particle system of the rocket (attachment `trail`
+   known), the pipe grenade, the sticky (and its glow), the syringe
+   needle, per team if it differs.
+3. **Explosions**: `ExplosionEffect`, `ExplosionPlayerEffect`,
+   `ExplosionWaterEffect` per explosive, and the rule choosing between
+   them (hit a player, water, midair, ground); the scorch decal.
+4. **Rocket launcher muzzle flash** system name; the airblast effect.
+
+Mechanisms ready to take the data once it exists: `LooksParams` (add
+`tracer`, `trail`, `explosion*` fields), `StartParticleSystem::follow`
+for a trail on a flyer (needs a flyer-following start: a small addition
+in Chimera when the first trail name arrives), Chimera's
+`map::tracer::Tracer` for streak tracers (its look comes from the data).

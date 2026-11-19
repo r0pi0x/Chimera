@@ -75,3 +75,8 @@ rezoom_after = 1.4
 toggle_block = 0.1
 unscoped_block = 1.6667
 headshot_icon = "headshot"
+
+# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
+# the gun's `muzzle` attachment (looks.rs).
+[hooks."tf2:looks"]
+muzzle = "muzzle_sniperrifle"

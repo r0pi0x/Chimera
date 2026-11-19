@@ -63,3 +63,8 @@ life = 10.0
 
 [hooks."tf2:needle"]
 damage = 10.0
+
+# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
+# the gun's `muzzle` attachment (looks.rs).
+[hooks."tf2:looks"]
+muzzle = "muzzle_syringe"

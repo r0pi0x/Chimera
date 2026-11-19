@@ -68,3 +68,8 @@ spin_sound = "tf2:Weapon_Minigun.Spin"
 fire_sound = "tf2:Weapon_Minigun.Fire"
 empty_sound = "tf2:Weapon_Minigun.ClipEmpty"
 wind_down_sound = "tf2:Weapon_Minigun.WindDown"
+
+# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
+# the gun's `muzzle` attachment (looks.rs).
+[hooks."tf2:looks"]
+muzzle = "muzzle_minigun"

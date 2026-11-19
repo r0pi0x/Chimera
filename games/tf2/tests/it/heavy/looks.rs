@@ -30,15 +30,16 @@ fn dressed() -> Option<MapData> {
 fn tf2s_effects_load_onto_another_games_map() {
     let Some(map) = dressed() else { return };
     let systems = &map.particle_systems;
-    for name in looks::PARTICLE_SYSTEMS {
+    for name in looks::particle_systems().iter().copied() {
         let i = systems.find(name).unwrap_or_else(|| panic!("{name}: not loaded ({:?})", map.warnings));
         let d = &systems.defs[i];
         assert!(d.material.is_some() || !d.children.is_empty(), "{name}: nothing to draw");
     }
     assert!(systems.scale > 0.0);
     // Every system a shot starts is there.
+    let gun_looks = looks::GunLooks::default();
     for gun in tf2::game::weapons::GUNS {
-        if let Some((name, _)) = looks::shot_system(gun, false) {
+        if let Some((name, _)) = gun_looks.shot_system(gun, false) {
             assert!(systems.find(name).is_some(), "{gun}: {name}");
         }
     }

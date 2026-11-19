@@ -10,7 +10,7 @@
 //!   game's explosion (de_dust2 drew Source's grey puff instead).
 //! - **Muzzle flashes**: each shot of a bullet gun or launcher (`Fired`)
 //!   starts its TF2 muzzle system (`muzzle_pistol`, `muzzle_minigun`, ...:
-//!   `MUZZLE`) at the gun's `muzzle` attachment (install.md 4: on the `c_`
+//!   `GunLooks`) at the gun's `muzzle` attachment (install.md 4: on the `c_`
 //!   weapon's bones): the first-person view model's, re-projected into
 //!   the world view (`map::attached::FirstPerson::world_point`), else the
 //!   held model's (`HeldAttachment`), else a little ahead of the eye under
@@ -59,19 +59,57 @@ use crate::map::{
 /// TF2's explosion system.
 pub const EXPLOSION: &str = "ExplosionCore_MidAir";
 
-/// Each bullet gun's muzzle system (muzzle_flash.pcf).
-pub const MUZZLE: &[(&str, &str)] = &[
-    (super::SCATTERGUN, "muzzle_scattergun"),
-    (super::SHOTGUN, "muzzle_shotgun"),
-    (super::MINIGUN, "muzzle_minigun"),
-    (super::PISTOL_SCOUT, "muzzle_pistol"),
-    (super::SMG, "muzzle_smg"),
-    (super::SNIPER_RIFLE, "muzzle_sniperrifle"),
-    (super::REVOLVER, "muzzle_revolver"),
-    (super::GRENADE_LAUNCHER, "muzzle_grenadelauncher"),
-    (super::STICKY_LAUNCHER, "muzzle_pipelauncher"),
-    (super::SYRINGE_GUN, "muzzle_syringe"),
-];
+/// The hook that names a gun's looks in its data.
+pub const LOOKS_HOOK: &str = "tf2:looks";
+
+/// A gun's looks as its data gives them (`[hooks."tf2:looks"]`): fields
+/// are added as specs name the facts (the plan's spec gaps: tracers,
+/// trails, explosion variants).
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct LooksParams {
+    /// Its muzzle flash system (muzzle_flash.pcf).
+    #[serde(default)]
+    pub muzzle: Option<String>,
+}
+
+/// Each gun's looks, read from the data: (gun, looks).
+fn looks_table() -> Vec<(String, LooksParams)> {
+    super::tf2_weapons()
+        .weapons
+        .into_iter()
+        .filter_map(|w| {
+            let p: LooksParams = w.hooks.get(LOOKS_HOOK)?.clone().try_into().unwrap_or_else(|e| panic!("{} {LOOKS_HOOK}: {e}", w.id));
+            Some((w.id, p))
+        })
+        .collect()
+}
+
+/// The guns' looks the game's plugin holds (read once from the data).
+#[derive(Resource, Clone, Debug)]
+pub struct GunLooks(Vec<(String, LooksParams)>);
+
+impl Default for GunLooks {
+    fn default() -> Self {
+        Self(looks_table())
+    }
+}
+
+impl GunLooks {
+    /// A gun's muzzle flash system.
+    pub fn muzzle_of(&self, gun: &str) -> Option<&str> {
+        self.0.iter().find(|(g, _)| g == gun)?.1.muzzle.as_deref()
+    }
+
+    /// The system a shot of `gun` starts and for how long it emits (None:
+    /// as its definition runs): its muzzle flash, or for the Flame Thrower
+    /// a piece of its team's flames (`blu`: team 2's).
+    pub fn shot_system(&self, gun: &str, blu: bool) -> Option<(&str, Option<f32>)> {
+        if gun == super::FLAMETHROWER {
+            return Some((FLAMES[blu as usize], Some(FLAME_PIECE)));
+        }
+        self.muzzle_of(gun).map(|n| (n, None))
+    }
+}
 
 /// Where a muzzle flash starts from the eye when the gun's `muzzle`
 /// attachment isn't drawn: forward, right, up (units).
@@ -103,33 +141,19 @@ pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::I
     melee_decal: None,
 };
 
-/// The system a shot of `gun` starts and for how long it emits (None: as
-/// its definition runs): its muzzle flash, or for the Flame Thrower a
-/// piece of its team's flames (`blu`: team 2's).
-pub fn shot_system(gun: &str, blu: bool) -> Option<(&'static str, Option<f32>)> {
-    if gun == super::FLAMETHROWER {
-        return Some((FLAMES[blu as usize], Some(FLAME_PIECE)));
-    }
-    MUZZLE.iter().find(|(g, _)| *g == gun).map(|(_, n)| (*n, None))
-}
-
 /// The systems TF2's guns start: loaded with its maps besides their own,
-/// and onto other games' maps (`maps::add_guest_looks`).
-pub const PARTICLE_SYSTEMS: &[&str] = &[
-    EXPLOSION,
-    FLAMES[0],
-    FLAMES[1],
-    "muzzle_scattergun",
-    "muzzle_shotgun",
-    "muzzle_minigun",
-    "muzzle_pistol",
-    "muzzle_smg",
-    "muzzle_sniperrifle",
-    "muzzle_revolver",
-    "muzzle_grenadelauncher",
-    "muzzle_pipelauncher",
-    "muzzle_syringe",
-];
+/// and onto other games' maps (`maps::add_guest_looks`): the explosion,
+/// the flames and every gun's muzzle flash from its data.
+pub fn particle_systems() -> &'static [&'static str] {
+    // Leaked: the loaders want 'static names, and a map's load asks once.
+    let names: Vec<&'static str> = [EXPLOSION, FLAMES[0], FLAMES[1]]
+        .into_iter()
+        .map(str::to_string)
+        .chain(looks_table().into_iter().filter_map(|(_, p)| p.muzzle))
+        .map(|n| &*Box::leak(n.into_boxed_str()))
+        .collect();
+    Box::leak(names.into_boxed_slice())
+}
 
 /// The files they are in.
 pub const PARTICLE_FILES: &[&str] = &["particles/explosion.pcf", "particles/muzzle_flash.pcf", "particles/flamethrower.pcf"];
@@ -207,6 +231,7 @@ impl Muzzles<'_, '_> {
 
 /// Each shot's muzzle flash, and each Flame Thrower round's flames.
 fn muzzle_flashes(
+    looks: Res<GunLooks>,
     mut events: MessageReader<WeaponEvent>,
     weapons: Query<&Weapon>,
     teams: Query<&Team>,
@@ -220,7 +245,7 @@ fn muzzle_flashes(
         }
         let Ok(weapon) = weapons.get(e.weapon).map(|w| w.id) else { continue };
         let blu = teams.get(e.owner).is_ok_and(|t| t.0 == 2);
-        let Some((name, emit_for)) = shot_system(weapon, blu) else { continue };
+        let Some((name, emit_for)) = looks.shot_system(weapon, blu) else { continue };
         let aim = aim_of(yaw, pitch);
         let forward = aim * Vec3::NEG_Z;
         let (at, eye) = muzzles.placed(e.owner).unwrap_or_else(|| {
@@ -264,7 +289,8 @@ fn register(app: &mut App) {
 pub fn add(app: &mut App) {
     use chimera_net::net::parts::NetAppExt;
     use crate::map::impact::SurfaceClassesAppExt;
-    app.add_message::<StartParticleSystem>()
+    app.init_resource::<GunLooks>()
+        .add_message::<StartParticleSystem>()
         .add_plugins((
             source_engine::effects::impact_effects::ImpactEffectsPlugin(STYLE),
             source_engine::effects::impacts::ImpactSoundsPlugin(STYLE),
@@ -279,4 +305,22 @@ pub fn add(app: &mut App) {
                 .after(crate::map::DriveAnimation),
         )
         .net_part("tf2_looks", register);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_bullet_gun_and_launcher_names_its_muzzle_in_data() {
+        use super::super as w;
+        let looks = GunLooks::default();
+        let muzzle_of = |g| looks.muzzle_of(g);
+        for gun in [w::SCATTERGUN, w::SHOTGUN, w::MINIGUN, w::PISTOL_SCOUT, w::SMG, w::SNIPER_RIFLE, w::REVOLVER, w::GRENADE_LAUNCHER, w::STICKY_LAUNCHER, w::SYRINGE_GUN] {
+            assert!(muzzle_of(gun).is_some_and(|n| n.starts_with("muzzle_")), "{gun}");
+        }
+        assert_eq!(looks.shot_system(w::FLAMETHROWER, true), Some(("flamethrower_blue", Some(FLAME_PIECE))));
+        assert!(muzzle_of(w::ROCKET_LAUNCHER).is_none(), "no spec names the rocket's flash yet");
+        assert!(particle_systems().contains(&"muzzle_pipelauncher") && particle_systems().contains(&EXPLOSION));
+    }
 }

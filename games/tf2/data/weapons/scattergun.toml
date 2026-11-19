@@ -53,3 +53,8 @@ icon = "scattergun"
 ramp = 1.5
 arms = "scout"
 script = "tf_weapon_scattergun"
+
+# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
+# the gun's `muzzle` attachment (looks.rs).
+[hooks."tf2:looks"]
+muzzle = "muzzle_scattergun"

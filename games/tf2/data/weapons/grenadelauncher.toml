@@ -79,3 +79,8 @@ push_self_ground = 9.0
 by_distance = false
 sound = "tf2:Weapon_Grenade_Pipebomb.Explode"
 bounce_sound = "tf2:Weapon_Grenade_Pipebomb.Bounce"
+
+# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
+# the gun's `muzzle` attachment (looks.rs).
+[hooks."tf2:looks"]
+muzzle = "muzzle_grenadelauncher"

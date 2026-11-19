@@ -78,3 +78,8 @@ offset = [16.0, 8.0, -6.0]
 sound = "tf2:Weapon_Grenade_Pipebomb.Explode"
 charge_sound = "tf2:Weapon_StickyBombLauncher.ChargeUp"
 detonate_sound = "tf2:Weapon_StickyBombLauncher.ModeSwitch"
+
+# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
+# the gun's `muzzle` attachment (looks.rs).
+[hooks."tf2:looks"]
+muzzle = "muzzle_pipelauncher"

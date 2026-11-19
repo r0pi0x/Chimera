@@ -56,3 +56,8 @@ ramp = 1.0
 arms = "engineer"
 script = "tf_weapon_shotgun_primary"
 reload_start = { soldier = 0.4667, pyro = 0.5, heavy = 0.3333, engineer = 0.3333 }
+
+# The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
+# the gun's `muzzle` attachment (looks.rs).
+[hooks."tf2:looks"]
+muzzle = "muzzle_shotgun"
