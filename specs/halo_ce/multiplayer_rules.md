@@ -12,7 +12,7 @@ Status: draft
 Sections: Summary; Units and conventions; Constants; 1 The game type
 definition; 2 The stock game types; 3 Teams (3.1 friendly fire and
 balance); 4 Spawning; 5 Pickups; 6 Scoring and the end of a game (6.4.1
-the flag object and its cloth); 7 The radar (7.1 objective markers); 8
+the flag object and its cloth; 6.9 leaving the map: falls); 7 The radar (7.1 objective markers); 8
 Vehicles; 9 The
 announcer; 10 Per-tick order; 11 Measured facts; 12 Checks run; Edge
 cases; Quirks; Test cases; Confidence per section; Open questions.
@@ -1271,6 +1271,106 @@ add 2 per tick. A flag carrier keeps the flag. The arrival check
 `scenario.md` describes ("treated as having arrived at the first
 source within 1 WU") is the re-arm row.
 
+### 6.9 Leaving the map: what kills a player who falls off
+
+Settled from the disc's own data (all 13 multiplayer maps, read with
+the repository's `blam_formats` readers in throwaway programs,
+2026-11-18); the numbers are in 11.5.
+
+**The rule.** Nothing positional kills a player in a stock multiplayer
+game. The only thing that kills a player who jumps off a map is the
+falling-speed rule of `movement.md` section 6: on every tick that a
+living biped's vertical velocity after the move is below −0.3430028
+WU/t (the globals' precomputed "maximum falling velocity", the speed
+of a 16.5 WU fall from rest), it takes the damage effect
+`globals\distance`, 105 points, with no instigator (`health_shields.md`,
+"Falling"). The first such hit leaves a full Spartan (75 shield, 75
+body) with body 0.6 and no shield; the second, on the next tick, kills
+it. So a fall kills in the air, not at the bottom.
+
+- Walking or being pushed off a ledge with no vertical speed: the
+  first hit is on the 97th tick of the fall (after 16.6 to 17.0 WU of
+  drop, `movement.md` table "Impact on tick k"), death on the **98th**
+  (3.27 s at 30 ticks a second, about 17.3 WU below the ledge).
+- Jumping off (leaving at +0.07 WU/t): the threshold is passed about
+  116 ticks after the jump, death on the next tick (about 3.9 s, about
+  16 WU below the take-off height). The exact first tick follows the
+  jump's own tick order in `movement.md`.
+- A player under a full overshield (shield 3.0 = 225 points) takes
+  three hits: 225 → 120 → 15, then the third hit's 90 left over after
+  the shield kills the body: death on the 99th tick of a fall from
+  rest. (Computed from `health_shields.md`'s overflow rule, as its 155
+  point example does.)
+- The rule stops at death (it applies only to a living biped). The
+  body keeps falling and lands on whatever is below, which on Boarding
+  Action is the level's invisible floor (below).
+
+The death is an ordinary death with no player killer: kill bookkeeping,
+credit to a recent attacker if any, the suicide penalty and the
+respawn timer are 6.1 and 4.2 unchanged ("a fall or suicide soon after
+an enemy's damage is credited to that enemy"). The respawn countdown
+starts from that death, not from the body's landing.
+
+**What the data does not have.**
+
+- **No kill volumes.** The scenario has no block for them. Its trigger
+  volumes (0x360) and BSP switch volumes (0x39C) are empty on all 13
+  maps, and so are its scripts, script globals, script references and
+  script sources (`scenario.md`); no scripted "kill below z" exists.
+- **No soft ceilings or floors for players.** The structure BSP's
+  vehicle floor and ceiling (`structure_bsp.md` 0x010, 0x014; used only
+  for air vehicles, `vehicles.md`) are 0 on all 13 maps. There is no
+  other height limit in the scenario, the BSP or the globals.
+- **No "outside the level" in reach.** Every multiplayer level's
+  collision BSP is sealed: every vertical line from open space ends on
+  a surface, random rays from open space never leave the collision
+  bounds, and points far outside are solid (11.5). A falling player
+  always meets a floor; nothing falls forever. Where the outer shell
+  is not render geometry it is made of material-less collision
+  surfaces (`collision.md`, "Materials"): invisible, with no impact
+  effect, solid to bipeds.
+- **Fall damage numbers are the same everywhere.** The falling damage
+  block (`globals.md`) reads 3.0, 6.0 and 16.5 WU and 0.14625688,
+  0.20683846, 0.3430028 WU/t on all 13 maps.
+
+**Boarding Action (`boardingaction`).** One structure BSP; world
+(render) bounds x −57.42 to 77.41, y −97.28 to 97.28, z −71.39 to
+65.67. Two ships lie side by side along y: the left one about x −12.5
+to 5.0, the right one about x 15.0 to 32.5 (at y = 0; the ends widen).
+Each ship's collision is closed underneath: below its decks and rooms
+the hull is solid down to the keel (about z −36.2; the roof is about z
+28.6), so nothing falls through a ship.
+Between the hulls, x about 5.5 to 15.0, is a gap open from the top of
+the level to the bottom; the walkways and decks beside it are near z =
+0 (player starts lie between z −4.78 and 5.22). Beyond the ends of the
+ships (|y| more than about 97) the void is open too. Beside the outer
+hulls (x below about −13.5, above about 33) the space from z −52.9 up
+to 63.2 is solid (outside the level), so the gap and the ends are the
+only ways off.
+
+Below everything is the level's sealed shell: a box of 20
+material-less collision surfaces, x −57.42 to 77.41, y −287.47 to
+269.76, z −296.13 to 105.17. Its bottom face (collision surface 5) is
+one flat, upward-facing plane at **z = −296.13** covering the whole
+box; it has no render geometry (nothing is drawn below z −71.39, the
+lowest hull surface, so the player sees sky). Nothing else lies under
+the gap: no volume, no water (no fog plane), no second floor. A body
+that falls into the gap from the decks (z ≈ 0) drops about 296 WU and,
+falling from rest under the normal gravity, reaches that floor about
+408 ticks (13.6 s) after leaving the deck, long after the player died
+on tick 98. Weapons, grenades, the flag and the ball that fall in land
+on the same floor, out of anyone's reach; what brings them back is
+open (question 21).
+
+**Other drops.** Damnation has a shaft (x about −12.4 to −1.4, y −4.7
+to 7.8) whose floor is render geometry (metal) at z = −50, about 50 WU
+below the floors around it: the same rule kills a player about 17 WU
+down and the body lands at the bottom. On the other 11 maps no floor
+reachable from above lies more than 0.6 WU below the lowest player
+start (11.5): there is no pit to fall into, and a fall ends on a floor
+with the landing damage of `movement.md`, or by the same speed rule
+only where a map is tall enough for a drop of more than 16.6 WU.
+
 ## 7. The radar
 
 (Display is `hud.md`'s; this is the rule of who is shown.) The motion
@@ -1607,6 +1707,42 @@ Gulch's every entry is in `scenario.md`.
 | `powerups\double speed` | 1 | 60 s (no map places it) |
 | `powerups\full-spectrum vision` | 4 | 60 s (none placed) |
 
+### 11.5 What lies below each map (disc, 2026-11-18)
+
+Per map, structure BSP 0 (every multiplayer map has one): the player
+starts' z range; the world (render) bounds' z range; the level
+collision's vertex bounds' z range; the lowest floor met by a 60 by 60
+grid of vertical probes over the collision bounds (each probe starting
+at the first open point below the top); and the count of
+material-less collision surfaces. Trigger volumes, BSP switch volumes
+and scripts are 0, the vehicle floor and ceiling 0, on every map.
+
+| Map | Starts z | World z | Collision z | Lowest probed floor | Material-less surfaces |
+|---|---|---|---|---|---|
+| beavercreek | −1.355 .. 0.837 | −1.356 .. 11.085 | −1.356 .. 21.851 | −1.356 | 52 |
+| bloodgulch | −0.019 .. 1.755 | −0.349 .. 26.233 | −0.349 .. 68.037 | −0.287 | 94 |
+| boardingaction | −4.778 .. 5.219 | −71.388 .. 65.668 | −296.127 .. 105.169 | −296.127 (the shell's floor, on 2484 of 3600 probes) | 20 |
+| carousel | −3.358 .. −0.855 | −4.360 .. 2.344 | −7.073 .. 6.532 | −3.358 | 44 |
+| chillout | 0.001 .. 3.536 | 0.000 .. 6.691 | same as world | 0.000 | 0 |
+| damnation | −0.399 .. 6.701 | −50.000 .. 18.200 | −50.000 .. 26.429 | −50.000 (the shaft) | 36 |
+| hangemhigh | −9.252 .. −1.872 | −9.253 .. 8.183 | same as world | −9.252 | 9 |
+| longest | −0.599 .. 2.057 | −0.600 .. 4.854 | same as world | −0.600 | 24 |
+| prisoner | −0.407 .. 5.593 | −0.528 .. 8.712 | same as world | −0.528 | 10 |
+| putput | 0.001 .. 3.403 | −0.198 .. 4.802 | same as world | 0.000 | 0 |
+| ratrace | −3.614 .. −0.590 | −3.762 .. 4.786 | same as world | −3.762 | 0 |
+| sidewinder | −3.841 .. 0.559 | −4.475 .. 7.220 | −4.475 .. 36.273 | −4.381 | 172 |
+| wizard | −4.499 .. −2.749 | −4.500 .. 4.703 | same as world | −4.500 | 12 |
+
+Boarding Action's 20 material-less surfaces are all axis-aligned
+quads or triangles on the six faces of the box x −57.421 .. 77.410,
+y −287.466 .. 269.759, z −296.127 .. 105.169 (the floor is surface 5,
+normal +z; the lid surface 4, normal −z); its lowest surface with a
+material is a hull plate at z −71.388 near (43.5, −76, −71.4). Its
+collision materials are all metal (thin, thick, hollow). Columns along
+y = 0 (point tests every 0.1 WU from z 104 down): x −57 to −13.5
+solid from −52.9 to 63.2; x −4 and x 24 (the hulls) solid from 28.6 to
+−36.2; x 5.5 to 15.0 open from 105.17 down to −296.13.
+
 ## 12. Checks run
 
 - **Executable.** The 26 stock builders were found through the table
@@ -1636,6 +1772,17 @@ Gulch's every entry is in `scenario.md`.
   were listed: "Teleporter is blocked", "You are on offense.", "You
   are on defense.", "Time expired." are there; no `ustr` tag of
   `bloodgulch.map` (8 lists) or `ui.map` holds a teleporter text.
+- **Leaving the map (2026-11-18, 6.9 and 11.5).** On all 13 maps:
+  scenario trigger volumes, BSP switch volumes and script blocks read
+  (all empty); vehicle floor and ceiling read (all 0); the falling
+  damage block read (identical); level collision read with the
+  repository's reader and probed with its point test and line trace:
+  a 60 by 60 grid of downward traces (every probe hit a surface), 3000
+  random rays of length 3000 from random open points (none missed,
+  none hit outside the collision bounds) and six points 10000 WU out
+  along each axis (all solid). Boarding Action's material-less
+  surfaces listed with their polygons; its columns sampled every 0.5
+  WU across x at y = −100 to 100 in steps of 10.
 - **Not checked on the disc:** the spawn rating, respawn rules, item
   clock, substitution tables, ammunition and scoring rules (read from
   the reference; the executable was not disassembled for them).
@@ -1872,6 +2019,20 @@ spare rounds go to 0 (the weapon is deleted).
 | enemy 10 WU away horizontally and 30 WU above | yes (height ignored) |
 | flag bit 0 clear | no unit except the viewer's |
 
+### Leaving the map (6.9)
+
+| Case | Expected |
+|---|---|
+| full Spartan walks off a ledge (v_z = 0) into Boarding Action's gap at (10, 0) | ticks 1 to 96 of the fall: no damage; tick 97: 105 points, shield 0, body 0.6; tick 98: dead; death with no killer (suicide penalty unless an enemy hit it recently, 6.1) |
+| the same with a full overshield (shield 3.0) | ticks 97, 98: shield 1.6, then 0.2; tick 99: dead |
+| the same, jumping off (leaving at +0.07 WU/t) | first 105 hit about tick 116 after the jump, dead on the next tick |
+| the dead body from z = 0 in the gap | keeps falling; lands on the invisible floor at z = −296.13 about 408 ticks after leaving the deck; no further falling damage after death |
+| downward trace from (10, 0, 100) on Boarding Action | hits collision surface 5 (material none) at z = −296.13 |
+| downward trace from (10, −150, 100) | the same floor |
+| any point 10000 WU out along an axis, any multiplayer map | solid (no open leaf) |
+| a player standing anywhere on any multiplayer map | never killed by position alone: no volume, script or height limit exists |
+| Damnation, walk into the shaft at (−7, 1) from z ≈ 0 | dead on tick 98 of the fall; the body lands on the metal floor at z = −50 |
+
 ## Confidence per section
 
 | Section | Level |
@@ -1901,6 +2062,7 @@ spare rounds go to 0 (the weapon is deleted).
 | 7 radar | the three numbers checked against the disc; rule from the reference |
 | 8 vehicles | placements checked against the disc; no respawn from the reference |
 | 9 announcer | list and lengths checked against the disc; queue, triggers and who hears from the reference |
+| 6.9 leaving the map | the absence of volumes, scripts and height limits, the sealed levels, Boarding Action's and Damnation's floors and the falling numbers checked against the disc (2026-11-18); that nothing else in the engine kills an object by position is inferred from the data's absence (open questions 20, 21); the tick counts follow `movement.md` and `health_shields.md` |
 | 11, 12 | checked against the disc |
 
 ## Open questions
@@ -1981,3 +2143,29 @@ spare rounds go to 0 (the weapon is deleted).
     then use the item messages' timing (`hud.md` section 13: 2 s up,
     2 s fade). Check on a capture: block a teleporter exit and time the
     line.
+20. **Falling off Boarding Action, timed.** The data leaves only the
+    falling-speed rule; confirm the engine adds nothing (no hidden
+    height or bounds check, no early removal of a falling unit). On
+    the Windows PC (the disc's game, sound off): stand on a deck by the
+    gap with full shields, walk off without jumping and count frames
+    from the last frame on the deck to the death (expected 98 ticks,
+    3.27 s; the shield should drop to empty about 1 tick, 33 ms, before
+    death); repeat with a jump (expected about 117 ticks) and with an
+    overshield (expected 99 ticks). Also note what the death camera
+    shows (the body falls out of view toward the floor at z −296, below
+    all drawn geometry) and whether the score shows a suicide.
+21. **Objects on the floor of the void.** Weapons, grenades, the CTF
+    flag and the oddball that fall into Boarding Action's gap land on
+    the invisible floor at z −296.13, out of reach. Nothing in the data
+    returns them early; as far as the data shows, a flag comes home
+    only by the 17 s untouched timer and a ball by the 40 s reset (6.4,
+    6.5), and dropped weapons go by the normal clean-up (5.4). Check:
+    throw the flag (or die carrying it) into the gap and time its
+    return; do the same with the ball. Also whether the engine removes
+    or kills any object whose origin ends up in solid space (outside
+    the level) through a clip: none of the 13 maps lets a fall reach
+    solid space, so only a collision bug could test it.
+22. **Corpse fall.** Whether a dead body falls under the same gravity
+    as a living biped (the 408-tick landing assumes it does) and
+    whether it is removed before it lands; only visible on a capture
+    that follows the body.

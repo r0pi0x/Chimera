@@ -688,6 +688,15 @@ On Blood Gulch the surfaces that have a material span exactly the render
 bounds; the excess is made of material-less surfaces (82 of the 94
 reach outside the box; 12 sit wholly inside it).
 
+Every multiplayer level is sealed (all 13 maps, 2026-11-18): every
+downward trace from open space hits a surface, no ray from open space
+leaves the collision bounds, and points far outside are solid. Where
+the shell is not render geometry it is material-less surfaces; on
+Boarding Action they form a box whose floor is an invisible plane at
+z = −296.13, about 225 WU below the lowest drawn geometry. Per-map
+numbers and what this means for a player who falls off are in
+`multiplayer_rules.md` (6.9 and 11.5).
+
 Verification done with throwaway scripts on the disc's files:
 
 - Every surface polygon of both maps rebuilt with the ring walk: every
