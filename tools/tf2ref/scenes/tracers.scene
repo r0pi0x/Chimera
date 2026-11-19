@@ -1,0 +1,80 @@
+# Ours for tracers.tf2 (first-person bullet tracers on 2fort's bridge):
+# pictures every 16.7 ms (game time) from 8 ms after the shot (TF2's 60 fps
+# frames: the shot's frame and the 7 after it), slowed to host_timescale 0.01.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/tracers.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+# smg
+rung tf2:tf_weapon_smg
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot smg_tidle
+host_timescale 0.01
+# the new rate holds from the next frames: a shot in this one ran
+# at full speed (13 ms of its effects in one step)
+wait 3
++attack
+wait_for shot 3000
+gwait 0.008
+shot smg_f0
+gwait 0.0167
+shot smg_f1
+gwait 0.0167
+shot smg_f2
+gwait 0.0167
+shot smg_f3
+gwait 0.0167
+shot smg_f4
+gwait 0.0167
+shot smg_f5
+gwait 0.0167
+shot smg_f6
+gwait 0.0167
+shot smg_f7
+-attack
+host_timescale 1
+wait 30
+# shotgun
+rung tf2:tf_weapon_shotgun_primary as tf2:engineer
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot shotgun_tidle
+host_timescale 0.01
+# the new rate holds from the next frames: a shot in this one ran
+# at full speed (13 ms of its effects in one step)
+wait 3
++attack
+wait_for shot 3000
+gwait 0.008
+shot shotgun_f0
+gwait 0.0167
+shot shotgun_f1
+gwait 0.0167
+shot shotgun_f2
+gwait 0.0167
+shot shotgun_f3
+gwait 0.0167
+shot shotgun_f4
+gwait 0.0167
+shot shotgun_f5
+gwait 0.0167
+shot shotgun_f6
+gwait 0.0167
+shot shotgun_f7
+-attack
+host_timescale 1
+wait 30

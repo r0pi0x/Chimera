@@ -19,6 +19,9 @@ setang 25 90 0
 wait 90
 shot rocket_floor_idle
 host_timescale 0.02
+# the new rate holds from the next frames: a shot in this one ran
+# at full speed (13 ms of its effects in one step)
+wait 3
 +attack
 wait_for shot 3000
 gwait 0.033

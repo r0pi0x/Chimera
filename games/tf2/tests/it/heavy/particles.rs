@@ -4,7 +4,8 @@
 //! creation time load and run (a muzzle flash once came out four times its
 //! size: tools/tf2ref, docs/plans/active/tf2-parity.md). The `dump_*`
 //! tests print a system for looking into one (`PROBE_SYS=<name>`,
-//! `PROBE_PCF=particles/<file>.pcf`; `--nocapture`).
+//! `PROBE_PCF=particles/<file>.pcf`, `PROBE_ALPHA=1` for each
+//! particle's age, life, alpha and radius; `--nocapture`).
 use chimera_present::render::psys::{ControlPoint, Instance, MaterialSheets};
 use chimera_world::map::{MapData, ParticleRng, psys::SystemDef};
 use source_engine::content::pcf::{Value, read_dmx};
@@ -43,6 +44,11 @@ fn show(i: &Instance, defs: &[SystemDef], map: &MapData, depth: usize) {
         d.renderer,
         indent = depth * 2
     );
+    if std::env::var("PROBE_ALPHA").is_ok() {
+        for ((age, life, alpha), r) in i.own_ages_and_alphas(defs).iter().zip(&r) {
+            eprintln!("{:indent$}  age {age:.3} life {life:.3} alpha {alpha:.2} r {r:.2}", "", indent = depth * 2);
+        }
+    }
     for c in i.child_instances() {
         show(c, defs, map, depth + 1);
     }

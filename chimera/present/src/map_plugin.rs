@@ -70,6 +70,7 @@ impl Plugin for MapPlugin {
         render::arena::plugin(app);
         // Stand-ins where a model isn't in yet, for every game.
         render::stand_in::plugin(app);
+        render::psys::console(app);
         {
             use chimera_core::metrics::census::CensusAppExt;
             use render::{

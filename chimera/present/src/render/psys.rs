@@ -22,7 +22,7 @@
 //! Life Time" gives it the point's duration; specs/tf2/flames.md 3.3),
 //! "Remap Distance to Control Point to Scalar / Vector" each step (radius,
 //! alpha, tint), and `RunningSystems` (what the started systems show, for
-//! tests and probes).
+//! tests and probes; the console's `psys_running` prints it).
 //! Colour random's `tint_perc` blends each new particle's colour that
 //! far toward the light at its control point (`ControlPoint::light`: the
 //! map's `LightField` there, sampled when the system starts or its entity
@@ -413,6 +413,13 @@ impl Instance {
     pub fn own_radii(&self, defs: &[SystemDef]) -> Vec<f32> {
         let d = &defs[self.def];
         self.particles.iter().map(|p| Self::radius(d, p)).collect()
+    }
+
+    /// Its own live particles' (age, life, alpha as drawn), not its
+    /// children's (probes).
+    pub fn own_ages_and_alphas(&self, defs: &[SystemDef]) -> Vec<(f32, f32, f32)> {
+        let d = &defs[self.def];
+        self.particles.iter().map(|p| (p.age, p.life, Self::alpha(d, p))).collect()
     }
 
     /// Each live particle's radius as drawn (game units), its children's
@@ -884,10 +891,22 @@ impl Instance {
                                     length *= (p.age / length_fade_in).min(1.0);
                                 }
                                 let back = to_engine(p.position - p.velocity.normalize_or_zero() * length);
-                                let side = (at - back).cross(at - eye).normalize_or_zero() * radius * scale;
+                                // The radius is the strip's full width: real
+                                // TF2's tracers (radius 2) are half as wide as
+                                // a strip of half-width 2; and never wider than
+                                // the strip is long: the Minigun's constant
+                                // core (radius 400, at most 50 long) is a
+                                // compact glow in real TF2 (particles.md 5).
+                                let width = radius.min(length);
+                                let side = (at - back).cross(at - eye).normalize_or_zero() * width * scale * 0.5;
                                 q.position = (at + back) * 0.5;
+                                // The texture's v runs from the tail (0) to the
+                                // head (1): TF2's `effects/tracer1` is bright at
+                                // v = 1, and real TF2's tracers are bright at
+                                // the bullet, fading back toward the gun
+                                // (specs/tf2/particles.md 5).
                                 q.shape = Shape::Quad {
-                                    corners: [back - side, at - side, at + side, back + side],
+                                    corners: [at - side, back - side, back + side, at + side],
                                     rect: [0.0, 0.0, 1.0, 1.0],
                                 };
                             }
@@ -1261,6 +1280,36 @@ impl StartedSystems {
 /// space) with their own control points, and their radii (game units).
 #[derive(Resource, Clone, Debug, Default)]
 pub struct RunningSystems(pub Vec<RunningSystem>);
+
+/// `psys_running`: the first call starts keeping `RunningSystems`, later
+/// ones print it (each started system: name, emitting, particle count,
+/// the first particles' places in game units and radii). A probe for
+/// effect captures (docs/OBSERVABILITY.md 6, "TF2 as the reference").
+pub fn console(app: &mut App) {
+    use chimera_core::console::ConsoleAppExt;
+    app.console_command(
+        "psys_running",
+        "psys_running: the started particle systems now (name, particles, first places in game units, radii); \
+         the first call starts watching.",
+        |w, _| {
+            let scale = w.get_resource::<ParticleSystemDefs>().map_or(1.0, |d| d.0.scale.max(1e-6));
+            let Some(shown) = w.get_resource::<RunningSystems>() else {
+                w.init_resource::<RunningSystems>();
+                return Ok(Some("psys_running: watching from now; run it again".into()));
+            };
+            let game = |v: Vec3| Vec3::new(v.x, -v.z, v.y) / scale;
+            let mut out = format!("{} systems", shown.0.len());
+            for r in &shown.0 {
+                out.push_str(&format!("\n{}{}: {} particles", r.name, if r.emitting { " (emitting)" } else { "" }, r.particles.len()));
+                for ((p, _), radius) in r.particles.iter().zip(&r.radii).take(4) {
+                    let g = game(*p);
+                    out.push_str(&format!("\n  ({:.1} {:.1} {:.1}) r {radius:.2}", g.x, g.y, g.z));
+                }
+            }
+            Ok(Some(out))
+        },
+    );
+}
 
 /// One running started system (`RunningSystems`).
 #[derive(Clone, Debug, Default)]
@@ -1826,6 +1875,52 @@ mod tests {
         assert!((p.position.x - 600.0).abs() < 1.0, "{:?}", p.position);
         s.step(0.15, &none);
         assert!(s.running.is_empty(), "arrived and gone");
+    }
+
+    /// A sprite trail's strip (specs/tf2/particles.md 5, measured on real
+    /// TF2's tracers): as wide as the radius (2 units for radius 2), the
+    /// texture's v = 1 (`effects/tracer1`'s bright end) at the head and
+    /// v = 0 at the tail.
+    #[test]
+    fn a_trail_strip_is_its_radius_wide_and_its_texture_bright_end_leads() {
+        let tracer = SystemDef {
+            name: "tracer".into(),
+            material: Some(0),
+            radius: 2.0,
+            emitters: vec![Emitter::Instantaneously { start: 0.0, count: 1 }],
+            initializers: vec![Init::MoveBetween { end: 1, speed: 6000.0, start_offset: 0.0 }],
+            operators: vec![Op::Movement { gravity: Vec3::ZERO, drag: 0.0 }, Op::Decay],
+            renderer: Render::Trail { min_length: 0.0, max_length: 500.0, length_fade_in: 0.1 },
+            ..default()
+        };
+        let defs = vec![tracer];
+        let mut i = Instance::new(&defs, 0);
+        let mut rng = ParticleRng::new(3);
+        let cps = [ControlPoint::default(), ControlPoint { position: Vec3::new(3000.0, 0.0, 0.0), ..default() }];
+        i.step(&defs, &cps, 0.05, &mut rng, &none);
+        let mut out = Vec::new();
+        // Game units throughout; the eye far above, looking down.
+        i.draw(&defs, &|v| v, 1.0, Vec3::new(0.0, 0.0, 10_000.0), &none, &mut out);
+        let Shape::Quad { corners, .. } = out[0].shape else { panic!("{:?}", out[0].shape) };
+        let head = i.particles[0].position;
+        // corners: (u0, v1), (u0, v0), (u1, v0), (u1, v1).
+        let v1_end = (corners[0] + corners[3]) * 0.5;
+        let v0_end = (corners[1] + corners[2]) * 0.5;
+        assert!(v1_end.distance(head) < 1e-3, "v = 1 at the head: {v1_end} vs {head}");
+        assert!(v0_end.x < head.x - 100.0, "v = 0 back toward the gun: {v0_end}");
+        assert!((corners[0].distance(corners[3]) - 2.0).abs() < 1e-3, "2 wide: {corners:?}");
+        // Never wider than long (the Minigun's constant core: radius 400):
+        // Early in its 0.1 s length fade-in at 6000/s, under 400 long.
+        let mut wide = defs.clone();
+        wide[0].radius = 400.0;
+        let mut i = Instance::new(&wide, 0);
+        i.step(&wide, &cps, 0.05, &mut rng, &none);
+        out.clear();
+        i.draw(&wide, &|v| v, 1.0, Vec3::new(0.0, 0.0, 10_000.0), &none, &mut out);
+        let Shape::Quad { corners, .. } = out[0].shape else { panic!() };
+        let long = corners[0].distance(corners[1]);
+        assert!(long > 100.0 && long < 400.0, "{long}");
+        assert!((corners[0].distance(corners[3]) - long).abs() < 1e-3, "as wide as long: {corners:?}");
     }
 
     /// A tagged start stops emitting on `stop_tagged` (TF2's Minigun's

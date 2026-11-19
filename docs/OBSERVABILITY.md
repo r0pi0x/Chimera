@@ -2540,12 +2540,20 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   tf_weapon_smg`, `+attack`. `sv_cheats 1` is on.
 - Scenes: `<x>.tf2` beside `<x>.scene` (ours) in `tools/tf2ref/scenes/`;
   the directives are in the script's header. Effects are stepped
-  frame-exactly with `host_framerate 0.002` and a burst of `snap`s run as
-  an exec'd cfg (RCON drops long packets); `tf2ref.py onset` finds the
-  shot's frame in a burst and names the moments after it. **Not
-  `host_timescale`**: under it TF2's flashes vanished in 15 ms instead of
-  about 80. Ours steps at `host_timescale 0.01` with the scene's `gwait`
-  (game seconds) after `wait_for shot`.
+  frame-exactly with `host_framerate 0.016667` (60 frames a second:
+  Source's particle drag is per frame) and recorded with `movie <name>`
+  ... `endmovie` (TF2's `startmovie`: every rendered frame, as
+  `<name>_NN.png`), run as a chain of aliases (RCON drops long packets).
+  On this listen server `wait 2` is one rendered frame; `snap`s a frame
+  apart get dropped. `psys_running` (ours' console) prints our started
+  systems' particles. **Not `host_timescale`** in TF2: under it its
+  flashes vanished in 15 ms. Ours steps at `host_timescale 0.01` with the
+  scene's `gwait` (game seconds) after `wait_for shot`, with `wait 3`
+  between `host_timescale` and `+attack` (a shot in the frame the rate
+  changes runs its first 13 ms of effects in one step).
+- TF2's offscreen display once came up 1024x720: `tf2ref.py` asks for
+  1024x768 (`-w`/`-h`, `mat_setvideomode`), and `pair` skips pictures of
+  different sizes.
 - Ours hides its HUDs with `cl_drawhud 0` (the scenes do); TF2's with
   `cl_drawhud 0; r_drawvgui 0`.
 - Pictures are game imagery: scratch folders only. Quit the game when

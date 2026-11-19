@@ -164,8 +164,11 @@ depth range f is pushed to 1. f multiplies the vertex alpha.
   back along its velocity, length = speed × trail length (field 10, in
   seconds; "Trail Length Random" sets it) clamped to [`min length`,
   `max length`], grown in from 0 over `length fade in time` (seconds of
-  age), width from the radius. Used for sparks, tracers and the Minigun
-  core.
+  age), as wide as the radius (the radius is the strip's full width, not
+  its half-width) but never wider than it is long (inferred: §8.3's
+  Minigun core), the texture's v running from 0 at the tail to 1 at the
+  head (measured: Open questions 4). Used for sparks, tracers and the
+  Minigun core.
 
 ### 6. Effects on the first-person weapon (view-model particles)
 
@@ -285,9 +288,12 @@ first-person muzzle (52.32, 8.06, −6.38): flash NDC half-height at world
 | `_smoke` | `effects/wispy_smoke` UnlitGeneric, alpha | 12/s | 2–3 | 13–17, 0.3 → 0.5 | local (10, ±10, ±10) + 0–5; gravity +54; drag 0.1; roll 21°/s | alpha 32 (/255) with fade in 0 → 0.3, out 0.3 → 1 |
 | `_flare` | starflash01 SpriteCard, additive | 128/s | 0.08 | 32, scale 1 → 0.1 with bias 0.7 | local x 500–900, 0–10 forward, 1 unit sphere; drag 0.1; locked | (255,223,94)..(218,157,77) → (255,131,11); alpha 70 (/255), fade in over 0.1 of life, Alpha Fade and Decay in 0 → 0.5, out 0.5 → 1; roll ±15° |
 
-The `_core`'s 400-unit radius on a trail renderer is wide but short-lived
-and dim (additive soft glow); how a trail uses the radius is unconfirmed
-(§5). Heavy's firing muzzle (eye (66.56, 4.86, −20.54) at `m_spool_idle`
+The `_core`'s 400-unit radius on a trail renderer would be a strip far
+wider than its 50-unit maximum length; real TF2 draws the firing Minigun's
+glow as a compact bright ball a few tens of units across at the barrel
+(capture, 2026-11-19, `muzzle.tf2`), so a trail is taken as never wider
+than it is long (§5; inferred from that picture, not measured per
+particle). Heavy's firing muzzle (eye (66.56, 4.86, −20.54) at `m_spool_idle`
 frame 0) re-projects at world 90 to (66.56, 9.54, −40.31).
 
 #### 8.4 Other muzzle systems (summary)
@@ -386,7 +392,17 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
    in linear and the cloud at the wall burns white (+25 on every
    channel).
 4. How a sprite trail uses the radius (half-width or width) and the trail
-   length attribute's unit.
+   length attribute's unit. **Answered by capture (2026-11-19,
+   tools/tf2ref `tracers.tf2`: the stock Shotgun's and SMG's first shot in
+   first person on ctf_2fort's bridge, 1024x768, fov 90, every frame at 60
+   frames a second, beside ours with the same view):** the radius is the
+   strip's full width (radius 2: about 2 pixels wide at 500 units, half
+   what a half-width of 2 drew); the trail length is in seconds of travel
+   (0.1 s default: the streak grows to about 600 units at 6000 units/s,
+   the same in both). `effects/tracer1` is dark at its top row (v = 0) and
+   bright at the bottom (v = 1), centred across u; real TF2's tracers are
+   brightest at the bullet and fade back toward the gun, so v = 1 is the
+   head.
 5. (Implementation note.) §4 reads the SpriteCard size limits as
    fractions of the distance from the eye; specs/cs_source/
    impact_effects.md 14 said "of the screen". The shader reading here is

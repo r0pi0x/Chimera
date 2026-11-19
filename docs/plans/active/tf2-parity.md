@@ -29,10 +29,10 @@ Captured imagery stays in scratch, never in the repo.
 |---|---|---|
 | Tool: headless TF2, scenes, pairs | done | – |
 | Camera match (2fort bridge, setpos/setang) | matches | – |
-| Muzzle flashes, first person | close (scattergun, shotgun, SMG, revolver) | the flash child was 4x too big (remaps by creation time never ran: fixed). At 60 fps TF2's flash stays bright for about 50 ms, ours fades after about 25 ms (SMG, Scattergun); the Minigun's constant flash is much dimmer in ours |
+| Muzzle flashes, first person | close (scattergun, shotgun, SMG) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). Ours' flash stays where it started while the gun kicks; TF2's rides the muzzle ("Movement Lock to Control Point" on the animated attachment), and TF2's view model kicks harder (the Scattergun's pump) |
 | Muzzle flashes, third person | todo | |
-| Minigun constant flash, brass | todo | |
-| Tracers | still differs | ours a thick bright beam from the muzzle (the Shotgun's, Pistol's, Revolver's), TF2's a thin faint line: the trail's width from the radius (2) and its texture's mapping (particles.md Open questions 4) to measure |
+| Minigun constant flash, brass | still differs | the core is a compact glow now (a trail no wider than long), but ours sits behind our Minigun's barrels, which draw black (TF2's are bright metal); `eject_minigunbrass` makes no particles in ours |
+| Tracers | matches (SMG, Shotgun) | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails |
 | Backblast (third person) | todo | |
@@ -44,16 +44,12 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Next (for a successor)
 
-1. Tracers: measure a single tracer's on-screen width and length in TF2
-   (`muzzle.tf2`'s Minigun shows one) against ours; decide how a sprite
-   trail uses the radius (width or half-width) and the default trail
-   length (ours 0.1 s), then the texture's orientation on the strip.
-2. Flash lifetime: TF2's SMG and Scattergun flashes stay bright ~2x
-   longer at 60 fps; check the flash child's alpha remap (0.6 to 0 by
-   creation time) against "Alpha Fade and Decay" and the lifetime remap.
-3. The Minigun's constant muzzle (`muzzle_minigun_constant`): TF2's is a
-   big bright glow at the barrel's end; ours is faint (its `_core` is a
-   400-radius trail: how a trail uses the radius again).
+1. The Minigun: its barrels draw black in ours (TF2's bright metal: the
+   material), its brass (`eject_minigunbrass`) makes no particles, and
+   its firing pose keeps the muzzle lower than TF2's.
+2. First-person flashes ride the animated muzzle in TF2 (each frame's
+   attachment); ours follow the eye from where the shot was.
+3. (Done: tracers; flash lifetime was a capture error.)
 4. Flames: TF2's cloud at a wall spreads wider (flame points slide along
    surfaces, flames.md; ours stop) and its far ball is ~1.5x ours.
 5. Third person and the backblast: `thirdperson.tf2` captures TF2 (a
@@ -105,3 +101,18 @@ Captured imagery stays in scratch, never in the repo.
   under `host_framerate` TF2 drew no stream. Overbright 5 holds
   (particles.md Open questions 3, answered) but multiplies the linear
   colour: `psys::overbright`.
+- 2026-11-19 (second pass): `tf2ref.py up` worked end to end (nullcomp,
+  our Xwayland, Steam, TF2), but TF2's frame came up 1024x720: a wider
+  FOV than ours; it now asks for 1024x768. Two timing errors in the first
+  pass's captures: on this listen server `wait 2` is one rendered frame
+  (a falling player's `cl_showpos` speed rose 12 units/s per recorded
+  frame: 15 ms, one tick), so the "a" and "b" bursts were the same frames
+  and snaps were dropped; and ours ran `+attack` in the frame
+  `host_timescale` changed, so its effects' first 13 ms ran in one step
+  (`psys_running`, new: the tracer was 79 units out when `wait_for shot`
+  held). TF2 now records with `startmovie` (`movie`), ours waits 3 frames
+  first. With both fixed the muzzle flashes agree in lifetime.
+- Tracers: TF2's are thin, brightest at the bullet, fading back to the
+  gun; ours were twice as wide and bright at the gun. The strip's v now
+  runs tail 0 to head 1 and its width is the radius, at most its length
+  (the Minigun core's 400 would otherwise be a wide bar).

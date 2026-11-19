@@ -1,8 +1,8 @@
 # First-person muzzle flashes of TF2's bullet guns on 2fort's bridge (real TF2;
 # ours: muzzle.scene), at 60 frames a second (host_framerate 1/60: Source's
-# particle drag is per frame). Two bursts per gun, the second a frame later,
-# a snap every 2 frames: `<gun>_a00` at frames 1, 3, 5... after +attack,
-# `<gun>_b00` at 2, 4, 6...; `tf2ref.py onset` names the frames after the shot.
+# particle drag is per frame), every rendered frame recorded (`movie`):
+# `<gun>_00.png` is the frame before +attack, the shot shows one or two
+# frames later (`tf2ref.py onset --prefix <gun>_ --base <gun>_idle`).
 #   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/muzzle.tf2 --out <dir>
 mp_disable_respawn_times 1
 cl_drawhud 0
@@ -24,50 +24,13 @@ use tf_weapon_scattergun
 sleep 3
 shot scattergun_idle
 host_framerate 0.016667
+movie scattergun
+wait 2
 +attack
-wait 1
-snap scattergun_a00
-wait 2
-snap scattergun_a01
-wait 2
-snap scattergun_a02
-wait 2
-snap scattergun_a03
-wait 2
-snap scattergun_a04
-wait 2
-snap scattergun_a05
-wait 2
-snap scattergun_a06
-wait 2
-snap scattergun_a07
-wait 2
+wait 20
 -attack
 -attack2
-wait 2
-host_framerate 0
-sleep 1.5
-host_framerate 0.016667
-+attack
-wait 2
-snap scattergun_b00
-wait 2
-snap scattergun_b01
-wait 2
-snap scattergun_b02
-wait 2
-snap scattergun_b03
-wait 2
-snap scattergun_b04
-wait 2
-snap scattergun_b05
-wait 2
-snap scattergun_b06
-wait 2
-snap scattergun_b07
-wait 2
--attack
--attack2
+endmovie
 wait 2
 host_framerate 0
 sleep 1.5
@@ -81,50 +44,13 @@ use tf_weapon_pistol
 sleep 3
 shot pistol_idle
 host_framerate 0.016667
+movie pistol
+wait 2
 +attack
-wait 1
-snap pistol_a00
-wait 2
-snap pistol_a01
-wait 2
-snap pistol_a02
-wait 2
-snap pistol_a03
-wait 2
-snap pistol_a04
-wait 2
-snap pistol_a05
-wait 2
-snap pistol_a06
-wait 2
-snap pistol_a07
-wait 2
+wait 20
 -attack
 -attack2
-wait 2
-host_framerate 0
-sleep 1.5
-host_framerate 0.016667
-+attack
-wait 2
-snap pistol_b00
-wait 2
-snap pistol_b01
-wait 2
-snap pistol_b02
-wait 2
-snap pistol_b03
-wait 2
-snap pistol_b04
-wait 2
-snap pistol_b05
-wait 2
-snap pistol_b06
-wait 2
-snap pistol_b07
-wait 2
--attack
--attack2
+endmovie
 wait 2
 host_framerate 0
 sleep 1.5
@@ -138,50 +64,13 @@ use tf_weapon_shotgun_primary
 sleep 3
 shot shotgun_idle
 host_framerate 0.016667
+movie shotgun
+wait 2
 +attack
-wait 1
-snap shotgun_a00
-wait 2
-snap shotgun_a01
-wait 2
-snap shotgun_a02
-wait 2
-snap shotgun_a03
-wait 2
-snap shotgun_a04
-wait 2
-snap shotgun_a05
-wait 2
-snap shotgun_a06
-wait 2
-snap shotgun_a07
-wait 2
+wait 20
 -attack
 -attack2
-wait 2
-host_framerate 0
-sleep 1.5
-host_framerate 0.016667
-+attack
-wait 2
-snap shotgun_b00
-wait 2
-snap shotgun_b01
-wait 2
-snap shotgun_b02
-wait 2
-snap shotgun_b03
-wait 2
-snap shotgun_b04
-wait 2
-snap shotgun_b05
-wait 2
-snap shotgun_b06
-wait 2
-snap shotgun_b07
-wait 2
--attack
--attack2
+endmovie
 wait 2
 host_framerate 0
 sleep 1.5
@@ -195,50 +84,13 @@ use tf_weapon_smg
 sleep 3
 shot smg_idle
 host_framerate 0.016667
+movie smg
+wait 2
 +attack
-wait 1
-snap smg_a00
-wait 2
-snap smg_a01
-wait 2
-snap smg_a02
-wait 2
-snap smg_a03
-wait 2
-snap smg_a04
-wait 2
-snap smg_a05
-wait 2
-snap smg_a06
-wait 2
-snap smg_a07
-wait 2
+wait 20
 -attack
 -attack2
-wait 2
-host_framerate 0
-sleep 1.5
-host_framerate 0.016667
-+attack
-wait 2
-snap smg_b00
-wait 2
-snap smg_b01
-wait 2
-snap smg_b02
-wait 2
-snap smg_b03
-wait 2
-snap smg_b04
-wait 2
-snap smg_b05
-wait 2
-snap smg_b06
-wait 2
-snap smg_b07
-wait 2
--attack
--attack2
+endmovie
 wait 2
 host_framerate 0
 sleep 1.5
@@ -252,50 +104,13 @@ use tf_weapon_revolver
 sleep 3
 shot revolver_idle
 host_framerate 0.016667
+movie revolver
+wait 2
 +attack
-wait 1
-snap revolver_a00
-wait 2
-snap revolver_a01
-wait 2
-snap revolver_a02
-wait 2
-snap revolver_a03
-wait 2
-snap revolver_a04
-wait 2
-snap revolver_a05
-wait 2
-snap revolver_a06
-wait 2
-snap revolver_a07
-wait 2
+wait 20
 -attack
 -attack2
-wait 2
-host_framerate 0
-sleep 1.5
-host_framerate 0.016667
-+attack
-wait 2
-snap revolver_b00
-wait 2
-snap revolver_b01
-wait 2
-snap revolver_b02
-wait 2
-snap revolver_b03
-wait 2
-snap revolver_b04
-wait 2
-snap revolver_b05
-wait 2
-snap revolver_b06
-wait 2
-snap revolver_b07
-wait 2
--attack
--attack2
+endmovie
 wait 2
 host_framerate 0
 sleep 1.5
@@ -311,52 +126,13 @@ shot minigun_idle
 +attack2
 sleep 1.7
 host_framerate 0.016667
+movie minigun
+wait 2
 +attack
-wait 1
-snap minigun_a00
-wait 2
-snap minigun_a01
-wait 2
-snap minigun_a02
-wait 2
-snap minigun_a03
-wait 2
-snap minigun_a04
-wait 2
-snap minigun_a05
-wait 2
-snap minigun_a06
-wait 2
-snap minigun_a07
-wait 2
+wait 20
 -attack
 -attack2
-wait 2
-host_framerate 0
-sleep 1.5
-+attack2
-sleep 1.7
-host_framerate 0.016667
-+attack
-wait 2
-snap minigun_b00
-wait 2
-snap minigun_b01
-wait 2
-snap minigun_b02
-wait 2
-snap minigun_b03
-wait 2
-snap minigun_b04
-wait 2
-snap minigun_b05
-wait 2
-snap minigun_b06
-wait 2
-snap minigun_b07
-wait 2
--attack
--attack2
+endmovie
 wait 2
 host_framerate 0
 sleep 1.5

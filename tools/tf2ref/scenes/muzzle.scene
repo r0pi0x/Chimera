@@ -20,6 +20,9 @@ setang 0 90 0
 wait 90
 shot scattergun_idle
 host_timescale 0.01
+# the new rate holds from the next frames: a shot in this one ran
+# at full speed (13 ms of its effects in one step)
+wait 3
 +attack
 wait_for shot 3000
 gwait 0.008
@@ -44,6 +47,9 @@ setang 0 90 0
 wait 90
 shot pistol_idle
 host_timescale 0.01
+# the new rate holds from the next frames: a shot in this one ran
+# at full speed (13 ms of its effects in one step)
+wait 3
 +attack
 wait_for shot 3000
 gwait 0.008
@@ -68,6 +74,9 @@ setang 0 90 0
 wait 90
 shot shotgun_idle
 host_timescale 0.01
+# the new rate holds from the next frames: a shot in this one ran
+# at full speed (13 ms of its effects in one step)
+wait 3
 +attack
 wait_for shot 3000
 gwait 0.008
@@ -92,6 +101,9 @@ setang 0 90 0
 wait 90
 shot smg_idle
 host_timescale 0.01
+# the new rate holds from the next frames: a shot in this one ran
+# at full speed (13 ms of its effects in one step)
+wait 3
 +attack
 wait_for shot 3000
 gwait 0.008
@@ -116,6 +128,9 @@ setang 0 90 0
 wait 90
 shot revolver_idle
 host_timescale 0.01
+# the new rate holds from the next frames: a shot in this one ran
+# at full speed (13 ms of its effects in one step)
+wait 3
 +attack
 wait_for shot 3000
 gwait 0.008
@@ -142,6 +157,9 @@ shot minigun_idle
 +attack2
 gwait 1.7
 host_timescale 0.01
+# the new rate holds from the next frames: a shot in this one ran
+# at full speed (13 ms of its effects in one step)
+wait 3
 +attack
 wait_for shot 3000
 gwait 0.008

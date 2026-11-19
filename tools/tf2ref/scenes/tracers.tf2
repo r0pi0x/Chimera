@@ -1,0 +1,54 @@
+# TF2's bullet tracers in first person on 2fort's bridge (real TF2; ours:
+# tracers.scene): the SMG's and the Shotgun's first shot, every rendered
+# frame at 60 frames a second (host_framerate 1/60) for 12 frames.
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/tracers.tf2 --out <dir>
+mp_disable_respawn_times 1
+cl_drawhud 0
+r_drawvgui 0
+fov_desired 90
+viewmodel_fov 54
+fps_max 30
+cl_ragdoll_fade_time 0
+cl_ragdoll_forcefade 1
+kick P1
+jointeam red
+# smg
+joinclass sniper
+kill
+sleep 7
+setpos 0 0 0
+setang 0 90 0
+use tf_weapon_smg
+sleep 3
+shot smg_idle
+host_framerate 0.016667
+movie smg_t
+wait 2
++attack
+wait 24
+-attack
+-attack2
+endmovie
+wait 2
+host_framerate 0
+sleep 1.5
+# shotgun
+joinclass engineer
+kill
+sleep 7
+setpos 0 0 0
+setang 0 90 0
+use tf_weapon_shotgun_primary
+sleep 3
+shot shotgun_idle
+host_framerate 0.016667
+movie shotgun_t
+wait 2
++attack
+wait 24
+-attack
+-attack2
+endmovie
+wait 2
+host_framerate 0
+sleep 1.5

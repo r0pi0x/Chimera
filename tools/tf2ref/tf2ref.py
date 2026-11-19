@@ -22,9 +22,12 @@ Scenes (`*.tf2`): a console line per line, `#` comments, and directives:
 `sleep <wall s>`, `gsleep <game s>` (wall time = game time / the last
 `host_timescale` the scene set), `shot <name>` (`<out>/<name>.png`),
 `snap <name>` (a picture taken inside the batch, frame-exact),
+`movie <name>` (every rendered frame until the line `endmovie`, as
+`<name>_NN.png`; the reliable way: snaps a frame apart get dropped),
 `player <team> <class>`. Consecutive console lines (and snaps) go in one
-RCON packet, a line each, so `wait` counts frames between them: with
-`host_framerate 0.002` every frame is 2 ms of game time, which is how
+RCON packet, a line each, so `wait` counts frames between them (on this
+listen server `wait 2` is one rendered frame): with `host_framerate
+0.016667` every rendered frame is 1/60 s of game time, which is how
 effects are stepped (`host_timescale` is not: TF2's particles came out
 wrong under it, flashes gone in 15 ms instead of 80). The frame is 1024x768 (SDL's offscreen display), so compare
 with our `--offscreen 1024x768`; horizontal FOV equals `fov_desired` at 4:3.
@@ -243,7 +246,7 @@ def up(map_name, extra):
                    CHIMERA_HEADLESS_VK="1", VK_ADD_IMPLICIT_LAYER_PATH=str(CACHE),
                    VK_IMPLICIT_LAYER_PATH=str(CACHE), XDG_RUNTIME_DIR=RUNTIME)
         args = [str(SNIPER), "--", "./tf.sh", "-game", "tf", "-novid", "-windowed", "-insecure",
-                "-nobreakpad", "-condebug", "-usercon", "-port", str(PORT), "+ip", "127.0.0.1",
+                "-nobreakpad", "-condebug", "-usercon", "-w", "1024", "-h", "768", "-port", str(PORT), "+ip", "127.0.0.1",
                 "+rcon_password", PASSWORD, "+volume", "0", "+maxplayers", "8", "+sv_cheats", "1",
                 "+map", map_name, *extra]
         with open(CACHE / "tf2.log", "w") as out:
@@ -268,6 +271,9 @@ def up(map_name, extra):
 
 
 def setup_player(r, team="red", cls="soldier"):
+    # The offscreen display sometimes came up 1024x720 (2026-11-19, the
+    # second pass): a wider frame and FOV than ours. Insist on 4:3.
+    r.exec("mat_setvideomode 1024 768 1")
     for line in ["hidepanel info", f"jointeam {team}", f"joinclass {cls}"]:
         r.exec(line)
         time.sleep(1)
@@ -305,6 +311,30 @@ def collect(name, out, wait=10.0):
     print(f"  shot {dest}")
 
 
+def clear_movie(name):
+    for f in (TF2 / "tf").glob(f"{name}[0-9][0-9][0-9][0-9].jpg"):
+        f.unlink()
+
+
+def collect_movie(name, out, wait=10.0):
+    """A `movie`'s frames (`tf/<name>NNNN.jpg`) into `<out>/<name>_NN.png`,
+    once no new frame has come for a second."""
+    folder = TF2 / "tf"
+    deadline = time.time() + wait
+    last = -1
+    while time.time() < deadline:
+        frames = sorted(folder.glob(f"{name}[0-9][0-9][0-9][0-9].jpg"))
+        if frames and len(frames) == last:
+            break
+        last = len(frames)
+        time.sleep(1.0)
+    for f in frames:
+        n = int(f.stem[len(name):])
+        subprocess.run(["magick", str(f), str(out / f"{name}_{n:02d}.png")], check=True)
+        f.unlink()
+    print(f"  movie {name}: {len(frames)} frames")
+
+
 def shot(r, name, out):
     out.mkdir(parents=True, exist_ok=True)
     clear(name)
@@ -318,6 +348,7 @@ def scene(path, out):
     timescale = 1.0
     batch = []
     snaps = []
+    movies = []
 
     def flush():
         if batch:
@@ -339,6 +370,9 @@ def scene(path, out):
         for name in snaps:
             collect(name, out, 30.0)
         snaps.clear()
+        for name in movies:
+            collect_movie(name, out)
+        movies.clear()
 
     (out / "scene.log").write_text("")
     for raw in Path(path).read_text().splitlines():
@@ -355,6 +389,15 @@ def scene(path, out):
         elif words[0] == "shot":
             flush()
             shot(r, words[1], out)
+        elif words[0] == "movie":
+            # Every rendered frame from here to `endmovie` (TF2's
+            # `startmovie <name> jpg`: `<name>NNNN.jpg` in tf/), collected
+            # as `<out>/<name>_NN.png`. Under `host_framerate` each is one
+            # step of it apart; `wait 2` is one rendered frame on this
+            # listen server (measured: `wait 20` recorded 9-10 frames).
+            clear_movie(words[1])
+            batch.append(f"startmovie {words[1]} jpg")
+            movies.append(words[1])
         elif words[0] == "snap":
             # A picture inside the batch (frame-exact with `wait` and
             # `host_framerate`), collected after it.
@@ -380,6 +423,11 @@ def pair(ref, ours, out):
             continue
         w, h = subprocess.run(["magick", "identify", "-format", "%w %h", str(a)],
                               capture_output=True, text=True, check=True).stdout.split()
+        wb, hb = subprocess.run(["magick", "identify", "-format", "%w %h", str(b)],
+                                capture_output=True, text=True, check=True).stdout.split()
+        if (w, h) != (wb, hb):
+            print(f"  {a.stem}: sizes differ ({w}x{h} and {wb}x{hb}): not the same view, skipped")
+            continue
         dest = out / f"pair_{a.stem}.png"
         subprocess.run(["magick", str(a), "(", str(b), "-resize", f"{w}x{h}!", ")",
                         "(", "-clone", "0", "-clone", "1", "-compose", "difference", "-composite",
