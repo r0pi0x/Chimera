@@ -360,7 +360,7 @@ fn the_cannon_kills_a_spartan_and_never_a_hunter() {
             println!("{kind:?} at {metres} m: {rods} rods, {hits} hits, {taken} points, dead after {dead:?}, health {health}");
             assert!(rods >= 3, "{kind:?} at {metres} m: the cannon fires ({rods})");
             // A report names each hit that did nothing (`RecentHits`).
-            let noted = world(&sim).resource::<chimera_core::recent_hits::RecentHits>().lines().filter(|l| l.contains("did nothing")).count();
+            let noted = world(&sim).resource::<chimera_core::core::RecentHits>().lines().filter(|l| l.contains("did nothing")).count();
             match kind {
                 BodyKind::Hunter => {
                     assert!(dead.is_none() && health == 1.0, "{kind:?} at {metres} m: immune");

@@ -13,8 +13,7 @@
 //! kept between calls of exclusive code (`query_cache`), values worked out
 //! once and kept by their owner (`memo`), values made on first use
 //! (`later`), a session's diagnostics (`diagnostics`: the rolling log,
-//! health lines, crash capture; `recent_hits`: the last hits for a
-//! report), quitting quickly (`shutdown`: what must
+//! health lines, crash capture), quitting quickly (`shutdown`: what must
 //! persist, then the process ends without dropping the app). Code
 //! everything else uses and that changes rarely, in its own crate so an
 //! edit higher up doesn't recompile it.
@@ -42,7 +41,6 @@ pub mod metrics;
 pub mod mount;
 pub mod profile;
 pub mod query_cache;
-pub mod recent_hits;
 pub mod shutdown;
 pub mod slots;
 pub mod pending_work;

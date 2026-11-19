@@ -73,7 +73,7 @@
 //!   untouched).
 //! - A hit that does nothing to a Halo character (an immune material:
 //!   the fuel rod on a Hunter) is noted for a feedback report
-//!   (`chimera_core::recent_hits`).
+//!   (`core::RecentHits`).
 //! - Either way the engine's team rules decide first (`DamageRules`: a
 //!   teammate's hit with friendly fire off, a protected or noclipping
 //!   target do nothing), as for every game's hits; self damage counts.
@@ -94,7 +94,6 @@
 //!   reference's player-index comparison (Quirks, Open question 6).
 
 use bevy::{ecs::system::ParamSet, prelude::*};
-use chimera_core::recent_hits;
 use chimera_sim::weapon::{Armor, HitArmor};
 
 use crate::core::{BodyRegion, Damage, DamageRules, Health, Hitgroup, Intent, RegionHit, SimClock, Team};
@@ -327,7 +326,7 @@ pub fn deliver_hits(
         MessageWriter<RegionHit>,
         MessageWriter<HaloPing>,
         MessageWriter<HaloHurt>,
-        Option<ResMut<recent_hits::RecentHits>>,
+        Option<ResMut<crate::core::RecentHits>>,
     ),
 ) {
     let team = |e: Entity| teams.get(e).map_or(0, |t| t.0);
@@ -401,8 +400,8 @@ pub fn deliver_hits(
                         clock.tick,
                         format!(
                             "{} -> {} ({}): {} {:?} did nothing (amount {:.1}, scale {:.2})",
-                            recent_hits::who(hit.instigator),
-                            recent_hits::who(Some(hit.target)),
+                            crate::core::RecentHits::who(hit.instigator),
+                            crate::core::RecentHits::who(Some(hit.target)),
                             super::cross_game::body_id(kind),
                             hit.weapon.unwrap_or("-"),
                             hit.effect,

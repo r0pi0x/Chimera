@@ -2497,7 +2497,9 @@ pub fn apply_damage(
     rules: DamageRules,
     mut died: MessageWriter<Died>,
     mut taken: MessageWriter<DamageTaken>,
+    (mut recent, clock): (Option<ResMut<RecentHits>>, Option<Res<SimClock>>),
 ) {
+    let tick = clock.map_or(0, |c| c.tick);
     for d in damage.read() {
         if rules.refuse(d) {
             continue;
@@ -2521,18 +2523,89 @@ pub fn apply_damage(
             damage: d.clone(),
             directed: d.attacker.is_some_and(|a| a != d.target),
         });
+        if !held {
+            h.current -= d.amount;
+        }
+        if let Some(r) = recent.as_deref_mut() {
+            r.note(
+                tick,
+                format!(
+                    "{} -> {}: {} {:?} {:?} amount {:.3}, health after {:.3}",
+                    RecentHits::who(d.attacker),
+                    RecentHits::who(Some(d.target)),
+                    d.weapon.unwrap_or("-"),
+                    d.kind,
+                    d.hitgroup,
+                    d.amount,
+                    h.current.max(0.0)
+                ),
+            );
+        }
         if held {
             continue;
         }
-        h.current -= d.amount;
         if h.current <= 0.0 {
             h.current = 0.0;
+            if let Some(r) = recent.as_deref_mut() {
+                r.note(tick, format!("{} died, killer {}", RecentHits::who(Some(d.target)), RecentHits::who(d.attacker)));
+            }
             died.write(Died {
                 entity: d.target,
                 attacker: d.attacker,
                 damage: d.clone(),
             });
         }
+    }
+}
+
+/// The server's last hits, for a feedback report (docs/plans/active/
+/// feedback-reports.md): at most `RecentHits::CAP` short lines, one per
+/// damage that landed (`apply_damage`: amount and the target's health
+/// after it) and per death, and the lines a game adds for a hit that did
+/// nothing (`note`: Halo's damage seam on an immune body). The client's
+/// report puts them in `game.txt`. Entities by id, never a player's name.
+/// Kept by `apply_damage` itself (no system of its own: the schedule's
+/// order stays as it was).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct RecentHits {
+    lines: std::collections::VecDeque<String>,
+}
+
+impl RecentHits {
+    /// Lines kept.
+    pub const CAP: usize = 48;
+
+    /// Add a line at engine tick `tick` (the oldest goes past `CAP`).
+    pub fn note(&mut self, tick: u64, line: impl AsRef<str>) {
+        if self.lines.len() >= Self::CAP {
+            self.lines.pop_front();
+        }
+        let l: String = line.as_ref().chars().take(200).collect();
+        self.lines.push_back(format!("t{tick} {l}"));
+    }
+
+    /// The lines, oldest first.
+    pub fn lines(&self) -> impl Iterator<Item = &str> {
+        self.lines.iter().map(|l| l.as_str())
+    }
+
+    /// The report's section ("" when empty).
+    pub fn text(&self) -> String {
+        if self.lines.is_empty() {
+            return String::new();
+        }
+        let mut out = String::from("recent hits (server, oldest first):\n");
+        for l in &self.lines {
+            out += "  ";
+            out += l;
+            out += "\n";
+        }
+        out
+    }
+
+    /// An entity as the lines name it.
+    pub fn who(e: Option<Entity>) -> String {
+        e.map_or("world".into(), |e| format!("{e}"))
     }
 }
 
@@ -2781,6 +2854,7 @@ impl Plugin for CorePlugin {
             .add_message::<Radio>()
             .init_resource::<FriendlyFire>()
             .add_systems(FixedUpdate, apply_damage.after(SimSet::Weapons).run_if(authoritative))
+            .init_resource::<RecentHits>()
             .add_systems(
                 FixedUpdate,
                 map_damage_lands
