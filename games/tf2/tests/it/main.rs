@@ -60,6 +60,8 @@ mod heavy {
     mod maps;
     mod mount;
     mod pack;
+    #[cfg(feature = "ui")]
+    mod particles;
     mod scripts;
     mod walk;
 }

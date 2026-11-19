@@ -16,7 +16,7 @@ use tf2::game::{maps, sets, weapons::looks};
 use super::maps::install_mount;
 
 /// A map of another game (CS:S's, as de_dust2 is) with TF2's looks on it.
-fn dressed() -> Option<MapData> {
+pub(crate) fn dressed() -> Option<MapData> {
     let mount = install_mount()?;
     let mut map = MapData::default();
     map.impacts.game = Some("cs_source".into());

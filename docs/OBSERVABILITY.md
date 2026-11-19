@@ -413,6 +413,12 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume
   Tab completion photographed. Anything else is a console line
   (`setpos`/`setang`, `thirdperson`, `cam_idealdist`, `cam_idealyaw`,
   `rung`, `target add`, `target look <n>`, `+attack`, ...).
+- `gwait <seconds>` goes on after that much game time (`host_timescale`
+  slows it): a moment after a fact that holds on any machine's frame
+  rate (`host_timescale 0.01`, `+attack`, `wait_for shot`, `gwait 0.03`,
+  `shot a`: 30 ms after the shot; tools/tf2ref's scenes).
+  `cl_drawhud 0` hides every HUD (the games', ours, the sandbox's, the
+  crosshair) for clean reference pictures.
 - `wait_for cvar <name> <value> [timeout frames]` waits for a console
   variable to hold a value (numbers compare as numbers). After a line that
   starts loading, `wait 2` then `wait_for idle` replaces a guessed
@@ -2500,6 +2506,50 @@ cargo run --features dev,tools --bin refcmp -- capture-ours --only a_sign
   shows the +Z layer.
 - Chimera renders views off-screen at 1280x720 (`--views`), matching CS:S's
   framing (90 degrees horizontal at 4:3 = 74 vertical).
+
+### TF2 as the reference (`tools/tf2ref`)
+
+Real TF2 runs on this box with no display at all and is photographed
+beside ours in matched scenes (docs/plans/active/tf2-parity.md):
+
+```
+tools/tf2ref/tf2ref.py up                         # Steam if needed, TF2 on ctf_2fort, a Soldier on RED
+tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/muzzle.tf2 --out $OUT/ref
+ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort \
+    --scene tools/tf2ref/scenes/muzzle.scene --out $OUT/ours   # CHIMERA_TF2_ROOT in a slot
+tools/tf2ref/tf2ref.py pair --ref $OUT/ref --ours $OUT/ours --out $OUT/pairs   # ref | ours | diff x4
+tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X server too
+```
+
+- How it draws headless: the TF2 client (`~/games/tf2`, or
+  `$CHIMERA_TF2_CLIENT`) starts inside Steam's sniper runtime with SDL's
+  `offscreen` video driver; its renderer (DXVK on Vulkan) gets a surface
+  from our implicit Vulkan layer `tools/tf2ref/headless_vk.c`, which adds
+  `VK_EXT_headless_surface` (NVIDIA lacks it): images instead of a
+  swapchain, presents that only wait. TF2's `jpeg` reads the frame back.
+  The frame is SDL's offscreen display, 1024x768 (4:3, so the horizontal
+  FOV is `fov_desired`): ours runs `--offscreen 1024x768`.
+- TF2 needs the Steam client running (logged in once on the machine).
+  When no X display answers (the desktop locked or its sockets gone, as
+  on 2026-11-19), `up` starts Steam on a rootless Xwayland of ours
+  (`:9`) over `tools/tf2ref/nullcomp.c`, a Wayland compositor that shows
+  nothing. Both are built into `~/.cache/chimera/tf2ref` with gcc.
+- Driven over RCON on 127.0.0.1:27115 (`-port 27115`; never 27015).
+  On the listen server RCON's console lines act as the local player:
+  `setpos`/`setang` (feet; `getpos` prints the eye), `joinclass`, `use
+  tf_weapon_smg`, `+attack`. `sv_cheats 1` is on.
+- Scenes: `<x>.tf2` beside `<x>.scene` (ours) in `tools/tf2ref/scenes/`;
+  the directives are in the script's header. Effects are stepped
+  frame-exactly with `host_framerate 0.002` and a burst of `snap`s run as
+  an exec'd cfg (RCON drops long packets); `tf2ref.py onset` finds the
+  shot's frame in a burst and names the moments after it. **Not
+  `host_timescale`**: under it TF2's flashes vanished in 15 ms instead of
+  about 80. Ours steps at `host_timescale 0.01` with the scene's `gwait`
+  (game seconds) after `wait_for shot`.
+- Ours hides its HUDs with `cl_drawhud 0` (the scenes do); TF2's with
+  `cl_drawhud 0; r_drawvgui 0`.
+- Pictures are game imagery: scratch folders only. Quit the game when
+  done (`down`; or `pkill -x tf_linux64`, never `pkill -f`).
 
 ### Measuring maps for a gun game's pool (map_fitness)
 

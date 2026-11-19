@@ -215,9 +215,12 @@ fn draw(
     layout: Option<Res<chimera_sim::minigame::layout::SandboxLayout>>,
     mut root: Query<(Entity, &mut Visibility), With<SandboxHudRoot>>,
     mut last: Local<HudShown>,
+    cover: Option<Res<crate::client::hud::HudCover>>,
     mut c: Commands,
 ) {
     let Ok((root, mut vis)) = root.single_mut() else { return };
+    // `cl_drawhud 0`: none of it (reference captures).
+    let off = cover.is_some_and(|c| c.is(crate::client::hud::DRAWHUD_COVER));
     let now = clock.map_or(0.0, |c| c.now);
     let mut next = if look.on() { shown(&ui_state, &cat, &progress, &kills, &options, now) } else { HudShown::default() };
     next.size = (look.units.height as u32, (look.units.scale_factor * 100.0) as u32);
@@ -225,12 +228,14 @@ fn draw(
     if ui_state.staged && next.on {
         next.repeat = Some("2 targets, 1 prop".into());
     }
+    let want = if next.on && !off { Visibility::Inherited } else { Visibility::Hidden };
     if *last == next {
+        vis.set_if_neq(want);
         return;
     }
     *last = next.clone();
     c.entity(root).despawn_children();
-    vis.set_if_neq(if next.on { Visibility::Inherited } else { Visibility::Hidden });
+    vis.set_if_neq(want);
     if !next.on {
         return;
     }

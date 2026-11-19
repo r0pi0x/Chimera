@@ -28,6 +28,9 @@
 //! Signal HUD (`SignalHud`: race chip, feed, chips) hides only under the
 //! "settings" and "lobby" covers (Settings over the match, the lobby), the Esc menu keeps it; the
 //! Tab board's cover (`BOARD_COVER`) also hides the shared crosshair.
+//! `cl_drawhud 0` (Source's cheat; `DrawHud`) puts up `DRAWHUD_COVER`,
+//! which hides all of it: game HUDs, our Signal HUD and the crosshair, for
+//! clean reference captures (tools/tf2ref, refcmp).
 //! `Radars` (`hud_radar`) says whether the games' radars draw; an app with
 //! one kill feed for all its HUDs (`kill_feed::SharedKillFeed`) has this
 //! HUD's left out too.
@@ -149,6 +152,26 @@ pub struct SignalHud;
 /// the shared crosshair down, the board sitting at screen centre.
 pub const BOARD_COVER: &str = "board";
 
+/// The `HudCover` name of `cl_drawhud 0`: every HUD, ours and the
+/// crosshair hidden.
+pub const DRAWHUD_COVER: &str = "cl_drawhud";
+
+/// `cl_drawhud` (1: the HUD drawn; 0: none of it, `DRAWHUD_COVER`).
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DrawHud(pub u8);
+
+impl Default for DrawHud {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+fn apply_draw_hud(draw: Res<DrawHud>, mut cover: ResMut<HudCover>) {
+    if draw.is_changed() {
+        HudCover::put(&mut cover, DRAWHUD_COVER, draw.0 == 0);
+    }
+}
+
 /// The `HudCover` name of Settings over the match.
 pub const SETTINGS_COVER: &str = "settings";
 /// The `HudCover` name of the pre-match lobby (`prematch_lobby`): like
@@ -201,10 +224,11 @@ pub struct HudCoverPlugin;
 
 impl Plugin for HudCoverPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<HudCover>().add_systems(
+        app.init_resource::<HudCover>().init_resource::<DrawHud>().add_systems(
             PostUpdate,
-            cover_huds.before(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate),
+            (apply_draw_hud, cover_huds).chain().before(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate),
         );
+        crate::console::resource_cvar::<DrawHud, u8>(app, "cl_drawhud", "0: no HUD at all (game HUDs, ours, the crosshair).", |d| &mut d.0);
     }
 }
 
@@ -227,7 +251,7 @@ fn cover_huds(
     if !cover.covered() && hidden.is_empty() {
         return;
     }
-    let settings = cover.is(SETTINGS_COVER) || cover.is(LOBBY_COVER);
+    let settings = cover.is(SETTINGS_COVER) || cover.is(LOBBY_COVER) || cover.is(DRAWHUD_COVER);
     for (e, mut v, root, signal) in &mut nodes {
         let want = if signal { settings } else { cover.covered() };
         if want {
@@ -1039,7 +1063,7 @@ fn draw_crosshair(
         (None, None) => (None, None, None),
     };
     // A scope draws its own cross hairs.
-    let kind = if own.crosshair || cover.is(BOARD_COVER) {
+    let kind = if own.crosshair || cover.is(BOARD_COVER) || cover.is(DRAWHUD_COVER) {
         CrosshairKind::Hidden
     } else {
         crosshair_kind(inv, dead.is_some(), zoomed.is_some_and(|z| z.scope))

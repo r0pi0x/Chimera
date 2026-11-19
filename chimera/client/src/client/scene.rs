@@ -13,6 +13,10 @@
 //!   named on stderr and in the log).
 //! - `wait_for cvar <name> <value> [timeout frames]`: the same, for a
 //!   console variable holding that value (numbers compare as numbers).
+//! - `gwait <seconds>`: go on once that much game time (`Time<Virtual>`,
+//!   which `host_timescale` slows) has passed: a moment after a shot that
+//!   holds on any machine's frame rate (reference comparisons, e.g.
+//!   tools/tf2ref, step through effects at `host_timescale 0.02`).
 //! - `shot <name>`: save the window as `<out>/<name>.png` now.
 //! - `shot_after <fact> <frames> <name>`: arm a picture the given frames
 //!   after the next frame the fact holds (the script goes on at once; the
@@ -149,6 +153,8 @@ pub enum Step {
     Type(String),
     /// `key <name> [times]`: a key pressed (`KEYS`' names).
     Key(KeyCode, u64),
+    /// `gwait <seconds>`: go on after that much game (virtual) time.
+    GameWait(f64),
 }
 
 /// The keys `key` presses, by name.
@@ -201,6 +207,13 @@ pub fn parse(text: &str) -> Result<Vec<(usize, Step)>, String> {
                 fact(words.get(1))?,
                 words.get(2).map_or(Ok(DEFAULT_TIMEOUT), |_| num(words.get(2), "wait_for's timeout"))?,
             ),
+            "gwait" => Step::GameWait(
+                words
+                    .get(1)
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .filter(|s| *s >= 0.0)
+                    .ok_or_else(|| format!("line {n}: gwait <game seconds>"))?,
+            ),
             "shot" => Step::Shot(words.get(1).ok_or_else(|| format!("line {n}: shot <name>"))?.to_string()),
             "shot_after" => Step::ShotAfter(
                 fact(words.get(1))?,
@@ -235,6 +248,8 @@ struct Scene {
     out: PathBuf,
     frame: u64,
     resume: u64,
+    /// `gwait`: the game time (`Time<Virtual>` elapsed) to go on at.
+    resume_game: Option<f64>,
     waiting: Option<(Fact, u64, usize)>,
     /// `wait_for cvar`: the name, the value, the frame it gives up on, the line.
     waiting_cvar: Option<(String, String, u64, usize)>,
@@ -283,6 +298,7 @@ impl Plugin for ScenePlugin {
             out,
             frame: 0,
             resume: 0,
+            resume_game: None,
             waiting: None,
             waiting_cvar: None,
             armed: Vec::new(),
@@ -560,6 +576,13 @@ fn play(world: &mut World, mut cursors: Local<FactCursors>) {
                 return;
             }
         }
+        let now = world.resource::<Time<Virtual>>().elapsed_secs_f64();
+        if let Some(at) = world.resource::<Scene>().resume_game {
+            if now < at {
+                return;
+            }
+            world.resource_mut::<Scene>().resume_game = None;
+        }
         let scene = world.resource::<Scene>();
         if frame < scene.resume {
             return;
@@ -579,6 +602,10 @@ fn play(world: &mut World, mut cursors: Local<FactCursors>) {
             Step::Wait(n) => {
                 let mut scene = world.resource_mut::<Scene>();
                 scene.resume = frame + n;
+                return;
+            }
+            Step::GameWait(s) => {
+                world.resource_mut::<Scene>().resume_game = Some(now + s);
                 return;
             }
             Step::WaitFor(f, timeout) => {
@@ -689,5 +716,7 @@ mod tests {
         assert_eq!(parse("type map de_").unwrap()[0].1, Step::Type("map de_".into()));
         assert_eq!(parse("key tab 2").unwrap()[0].1, Step::Key(KeyCode::Tab, 2));
         assert!(parse("key nope").unwrap_err().contains("no key"));
+        assert_eq!(parse("gwait 0.05").unwrap()[0].1, Step::GameWait(0.05));
+        assert!(parse("gwait -1").is_err());
     }
 }

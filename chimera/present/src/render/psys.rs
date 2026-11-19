@@ -129,6 +129,54 @@ struct P {
     radius_mul: f32,
     alpha_mul: f32,
     tint: Option<Vec3>,
+    /// The trail renderer's length attribute (field 10): seconds of its
+    /// travel the trail spans.
+    trail: f32,
+}
+
+/// The trail length (field 10) a particle has when nothing sets it, s.
+const DEFAULT_TRAIL_LENGTH: f32 = 0.1;
+
+impl P {
+    /// Attribute `field` (the public numbering, specs/tf2/particles.md 7)
+    /// as a number, for the remaps; `created` is its creation time (8).
+    fn scalar(&self, field: u8, created: f32) -> Option<f32> {
+        Some(match field {
+            1 => self.life,
+            3 => self.radius,
+            4 => self.roll.to_radians(),
+            5 => self.roll_speed.to_radians(),
+            7 => self.alpha,
+            8 => created,
+            9 => self.sequence as f32,
+            10 => self.trail,
+            _ => return None,
+        })
+    }
+
+    fn set_scalar(&mut self, field: u8, v: f32) {
+        match field {
+            1 => self.life = v,
+            3 => self.radius = v,
+            4 => self.roll = v.to_degrees(),
+            5 => self.roll_speed = v.to_degrees(),
+            7 => self.alpha = v,
+            9 => self.sequence = v.max(0.0) as u32,
+            10 => self.trail = v,
+            _ => {}
+        }
+    }
+}
+
+/// `x` from [`a`, `b`] onto [0, 1], clamped (0 when the range is empty).
+fn unlerp(x: f32, a: f32, b: f32) -> f32 {
+    if (b - a).abs() < 1e-9 { 0.0 } else { ((x - a) / (b - a)).clamp(0.0, 1.0) }
+}
+
+/// Whether the system's age `age` is inside a remap's emitter-lifetime
+/// window (a negative bound: none).
+fn in_window(age: f32, start: f32, end: f32) -> bool {
+    (start < 0.0 || age >= start) && (end < 0.0 || age <= end)
 }
 
 /// A running effect: its particles, its children and its clock.
@@ -330,6 +378,18 @@ impl Instance {
         out
     }
 
+    /// Its children started so far.
+    pub fn child_instances(&self) -> impl Iterator<Item = &Instance> {
+        self.children.iter().filter_map(|c| c.1.as_ref())
+    }
+
+    /// Its own live particles' radii as drawn (game units), not its
+    /// children's.
+    pub fn own_radii(&self, defs: &[SystemDef]) -> Vec<f32> {
+        let d = &defs[self.def];
+        self.particles.iter().map(|p| Self::radius(d, p)).collect()
+    }
+
     /// Each live particle's radius as drawn (game units), its children's
     /// too.
     pub fn radii(&self, defs: &[SystemDef]) -> Vec<f32> {
@@ -355,11 +415,13 @@ impl Instance {
         let cp = |i: usize| cps.get(i).or(cps.first()).copied().unwrap_or_default();
         let before = self.age;
         self.age += dt;
-        // Emission.
-        let mut new = 0usize;
+        // Emission: when each new particle is made (its creation time,
+        // field 8): a burst at its start, a continuous emitter's spread
+        // evenly over the part of the step it emits in.
+        let mut made: Vec<f32> = Vec::new();
         if !self.started {
             self.started = true;
-            new += d.initial_particles;
+            made.extend(std::iter::repeat_n(before, d.initial_particles));
         }
         if self.emitting {
             for (i, e) in d.emitters.iter().enumerate() {
@@ -373,10 +435,16 @@ impl Instance {
                         let a = before.max(start);
                         let b = self.age.min(end);
                         if b > a {
+                            let carried = self.carry[i];
                             self.carry[i] += rate * (b - a);
                             let n = self.carry[i].floor();
                             self.carry[i] -= n;
-                            new += n as usize;
+                            // The k-th one is due when the running count
+                            // reaches k + 1.
+                            for k in 0..n as usize {
+                                let due = ((k + 1) as f32 - carried) / rate;
+                                made.push((a + due).clamp(a, b));
+                            }
                         }
                     }
                     Emitter::Instantaneously { start, count } => {
@@ -386,15 +454,17 @@ impl Instance {
                             before < start && self.age >= start
                         };
                         if due {
-                            new += count as usize;
+                            made.extend(std::iter::repeat_n(before.max(start), count as usize));
                         }
                     }
                 }
             }
         }
         let room = d.max_particles.saturating_sub(self.particles.len());
-        for _ in 0..new.min(room) {
-            let mut p = self.spawn(d, &cp, active, rng, sheets);
+        for &created in made.iter().take(room) {
+            let mut p = self.spawn(d, &cp, active, rng, sheets, created);
+            // Aged (and moved, below) only from its creation.
+            p.age = before - created;
             Self::remap(d, &cp, &mut p);
             self.particles.push(p);
         }
@@ -408,7 +478,9 @@ impl Instance {
             _ => None,
         });
         for p in &mut self.particles {
-            p.age += dt;
+            // A particle made during this step lives only its part of it.
+            let dt = dt + p.age.min(0.0);
+            p.age = p.age.max(0.0) + dt;
             let mut accel = Vec3::ZERO;
             let mut gravity = Vec3::ZERO;
             let mut drag = 0.0;
@@ -483,6 +555,13 @@ impl Instance {
                     p.position = p.position.lerp(to, (catch_up * dt).min(1.0));
                 }
             }
+            for o in &d.operators {
+                if let Op::RemapScalar { input, input_min, input_max, output, output_min, output_max } = *o
+                    && let Some(x) = p.scalar(input, 0.0)
+                {
+                    p.set_scalar(output, output_min + (output_max - output_min) * unlerp(x, input_min, input_max));
+                }
+            }
             Self::remap(d, &cp, p);
         }
         if decays {
@@ -520,6 +599,7 @@ impl Instance {
         active: Option<usize>,
         rng: &mut ParticleRng,
         sheets: &impl Sheets,
+        created: f32,
     ) -> P {
         self.serial += 1;
         let mut p = P {
@@ -541,6 +621,7 @@ impl Instance {
             radius_mul: 1.0,
             alpha_mul: 1.0,
             tint: None,
+            trail: DEFAULT_TRAIL_LENGTH,
         };
         for i in &d.initializers {
             match *i {
@@ -621,6 +702,56 @@ impl Instance {
                     }
                 }
                 Init::AssignTargetCp => p.target = active.and_then(|a| u8::try_from(a).ok()),
+                Init::RemapScalar {
+                    input,
+                    input_min,
+                    input_max,
+                    output,
+                    output_min,
+                    output_max,
+                    scale_initial,
+                    in_range_only,
+                    start,
+                    end,
+                } => {
+                    let Some(x) = p.scalar(input, created) else { continue };
+                    let inside = x >= input_min.min(input_max) && x <= input_min.max(input_max);
+                    if !in_window(created, start, end) || (in_range_only && !inside) {
+                        continue;
+                    }
+                    let v = output_min + (output_max - output_min) * unlerp(x, input_min, input_max);
+                    let v = if scale_initial { p.scalar(output, created).unwrap_or(1.0) * v } else { v };
+                    p.set_scalar(output, v);
+                }
+                Init::RemapToVector {
+                    cp: c,
+                    input,
+                    input_min,
+                    input_max,
+                    output,
+                    output_min,
+                    output_max,
+                    local,
+                    scale_initial,
+                    start,
+                    end,
+                } => {
+                    let Some(x) = p.scalar(input, created) else { continue };
+                    if !in_window(created, start, end) {
+                        continue;
+                    }
+                    let v = output_min.lerp(output_max, unlerp(x, input_min, input_max));
+                    match output {
+                        0 => {
+                            let point = cp(c);
+                            let off = if local { point.rotation * v } else { v };
+                            p.position = if scale_initial { p.position * v } else { point.position + off };
+                        }
+                        6 => p.color = if scale_initial { p.color * v } else { v },
+                        _ => {}
+                    }
+                }
+                Init::TrailLength(pick) => p.trail = pick.draw(rng),
                 Init::LifetimeFromCp => {
                     if let Some(t) = p.target {
                         let life = cp(t as usize).duration;
@@ -722,7 +853,7 @@ impl Instance {
                                 length_fade_in,
                             } => {
                                 let speed = p.velocity.length();
-                                let mut length = (speed * 0.1).clamp(min_length, max_length.max(min_length));
+                                let mut length = (speed * p.trail).clamp(min_length, max_length.max(min_length));
                                 if length_fade_in > 0.0 {
                                     length *= (p.age / length_fade_in).min(1.0);
                                 }
@@ -1329,6 +1460,73 @@ mod tests {
         assert!(i.finished(&defs));
     }
 
+    /// "remap initial scalar" by creation time (specs/tf2/particles.md 8.1,
+    /// the scattergun's flash): radius 8 to 5 over the system's first
+    /// 0.015 s, then 3 to 0.5 until 0.05 s; life 0.1 to 0.05; placed 2 to
+    /// 24 units out along the control point's axis; alpha 0.6 to 0.
+    #[test]
+    fn remaps_by_creation_time() {
+        let remap = |output: u8, (input_min, input_max): (f32, f32), (output_min, output_max): (f32, f32), (start, end): (f32, f32)| Init::RemapScalar {
+            input: 8,
+            input_min,
+            input_max,
+            output,
+            output_min,
+            output_max,
+            scale_initial: false,
+            in_range_only: false,
+            start,
+            end,
+        };
+        let mut d = system();
+        d.emitters = vec![Emitter::Continuously { start: 0.0, rate: 1000.0, duration: 0.05 }];
+        d.operators = vec![Op::Decay];
+        d.initializers = vec![
+            Init::Radius(Pick::new(32.0, 32.0, 1.0)),
+            Init::RemapToVector {
+                cp: 0,
+                input: 8,
+                input_min: 0.0,
+                input_max: 0.05,
+                output: 0,
+                output_min: Vec3::new(2.0, 0.0, 0.0),
+                output_max: Vec3::new(24.0, 0.0, 0.0),
+                local: true,
+                scale_initial: false,
+                start: -1.0,
+                end: -1.0,
+            },
+            remap(1, (0.0, 0.05), (0.1, 0.05), (-1.0, -1.0)),
+            remap(3, (0.0, 0.015), (8.0, 5.0), (0.0, 0.015)),
+            remap(3, (0.015, 0.05), (3.0, 0.5), (0.015, 0.06)),
+            remap(7, (0.0, 0.05), (0.6, 0.0), (-1.0, -1.0)),
+        ];
+        let defs = vec![d];
+        let mut i = Instance::new(&defs, 0);
+        let mut rng = ParticleRng::new(1);
+        // The control point turned: its x axis is the world's y.
+        let cps = [ControlPoint { rotation: Quat::from_rotation_z(std::f32::consts::FRAC_PI_2), ..default() }];
+        i.step(&defs, &cps, 0.001, &mut rng, &none);
+        let first = &i.particles[0];
+        assert!((first.radius - 8.0).abs() < 0.3, "{}", first.radius);
+        assert!((first.life - 0.1).abs() < 0.002, "{}", first.life);
+        assert!((first.alpha - 0.6).abs() < 0.02, "{}", first.alpha);
+        assert!((first.position - Vec3::new(0.0, 2.0, 0.0)).length() < 0.5, "{}", first.position);
+        for _ in 0..39 {
+            i.step(&defs, &cps, 0.001, &mut rng, &none);
+        }
+        // Made at 0.04 s: in the second window.
+        let last = i.particles.last().unwrap();
+        let want = 3.0 + (0.5 - 3.0) * (0.04 - 0.015) / 0.035;
+        assert!((last.radius - want).abs() < 0.1, "{} vs {want}", last.radius);
+        assert!((last.life - 0.06).abs() < 0.002, "{}", last.life);
+        assert!(last.alpha < 0.14, "{}", last.alpha);
+        assert!((last.position.y - (2.0 + 22.0 * 0.8)).abs() < 0.6, "{}", last.position);
+        // None made in the first step was spawned at the step's end only:
+        // creation times spread over the step (1000 a second, 1 ms steps).
+        assert!(i.particles.len() >= 39, "{}", i.particles.len());
+    }
+
     #[test]
     fn gravity_moves_and_stop_lets_particles_finish() {
         let mut d = system();
@@ -1399,6 +1597,7 @@ mod tests {
             radius_mul: 1.0,
             alpha_mul: 1.0,
             tint: None,
+            trail: DEFAULT_TRAIL_LENGTH,
         };
         assert_eq!(Instance::alpha(&d, &p(0.0)), 0.0);
         assert!((Instance::alpha(&d, &p(0.125)) - 0.5).abs() < 1e-5);

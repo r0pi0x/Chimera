@@ -200,6 +200,46 @@ pub enum Init {
     /// "Lifetime From Control Point Life Time": life = its own control
     /// point's duration (`ControlPointState::duration`), when it has one.
     LifetimeFromCp,
+    /// "remap initial scalar" (specs/tf2/particles.md 7): at creation,
+    /// attribute `output` (the public attribute numbers: 1 lifetime, 3
+    /// radius, 4 roll, 5 roll speed, 7 alpha, 10 trail length) set from
+    /// `input` (8 creation time: the system's age; or one of those)
+    /// mapped from [`input_min`, `input_max`] onto [`output_min`,
+    /// `output_max`], clamped (times the initial value with
+    /// `scale_initial`). Only for particles made while the system's age
+    /// is in [`start`, `end`] (negative: no bound); with `in_range_only`,
+    /// only where the input is inside its range.
+    RemapScalar {
+        input: u8,
+        input_min: f32,
+        input_max: f32,
+        output: u8,
+        output_min: f32,
+        output_max: f32,
+        scale_initial: bool,
+        in_range_only: bool,
+        start: f32,
+        end: f32,
+    },
+    /// "remap scalar to vector": the same onto a vector attribute (0
+    /// position: an offset from control point `cp`, in its axes with
+    /// `local`; 6 tint).
+    RemapToVector {
+        cp: usize,
+        input: u8,
+        input_min: f32,
+        input_max: f32,
+        output: u8,
+        output_min: Vec3,
+        output_max: Vec3,
+        local: bool,
+        scale_initial: bool,
+        start: f32,
+        end: f32,
+    },
+    /// "Trail Length Random": the trail renderer's length attribute
+    /// (field 10, seconds of travel) drawn from the pick.
+    TrailLength(Pick),
 }
 
 /// The particle field a remap writes (Source's attribute numbers:
@@ -315,6 +355,17 @@ pub enum Op {
     /// as a pull of that fraction a second, not a speed.)
     FollowCp {
         catch_up: f32,
+    },
+    /// "Remap Scalar" (each step): attribute `output` from `input`, as
+    /// `Init::RemapScalar` without the age window (the Minigun's core:
+    /// radius to trail length).
+    RemapScalar {
+        input: u8,
+        input_min: f32,
+        input_max: f32,
+        output: u8,
+        output_min: f32,
+        output_max: f32,
     },
     /// "Remap Distance to Control Point to Scalar / Vector", each step:
     /// the distance to control point `cp` from [`near`, `far`] onto

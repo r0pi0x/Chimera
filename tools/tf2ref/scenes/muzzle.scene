@@ -1,0 +1,157 @@
+# Ours for muzzle.tf2 (first-person muzzle flashes on 2fort's bridge): pictures
+# 2, 10, 30 and 62 ms (game time) after the shot, slowed to host_timescale 0.01.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/muzzle.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+# scattergun
+rung tf2:tf_weapon_scattergun
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot scattergun_idle
+host_timescale 0.01
++attack
+wait_for shot 3000
+gwait 0.002
+shot scattergun_2ms
+gwait 0.008
+shot scattergun_10ms
+gwait 0.02
+shot scattergun_30ms
+gwait 0.032
+shot scattergun_62ms
+-attack
+-attack2
+host_timescale 1
+wait 30
+# pistol
+rung tf2:tf_weapon_pistol_scout as tf2:scout
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot pistol_idle
+host_timescale 0.01
++attack
+wait_for shot 3000
+gwait 0.002
+shot pistol_2ms
+gwait 0.008
+shot pistol_10ms
+gwait 0.02
+shot pistol_30ms
+gwait 0.032
+shot pistol_62ms
+-attack
+-attack2
+host_timescale 1
+wait 30
+# shotgun
+rung tf2:tf_weapon_shotgun_primary as tf2:engineer
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot shotgun_idle
+host_timescale 0.01
++attack
+wait_for shot 3000
+gwait 0.002
+shot shotgun_2ms
+gwait 0.008
+shot shotgun_10ms
+gwait 0.02
+shot shotgun_30ms
+gwait 0.032
+shot shotgun_62ms
+-attack
+-attack2
+host_timescale 1
+wait 30
+# smg
+rung tf2:tf_weapon_smg
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot smg_idle
+host_timescale 0.01
++attack
+wait_for shot 3000
+gwait 0.002
+shot smg_2ms
+gwait 0.008
+shot smg_10ms
+gwait 0.02
+shot smg_30ms
+gwait 0.032
+shot smg_62ms
+-attack
+-attack2
+host_timescale 1
+wait 30
+# revolver
+rung tf2:tf_weapon_revolver
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot revolver_idle
+host_timescale 0.01
++attack
+wait_for shot 3000
+gwait 0.002
+shot revolver_2ms
+gwait 0.008
+shot revolver_10ms
+gwait 0.02
+shot revolver_30ms
+gwait 0.032
+shot revolver_62ms
+-attack
+-attack2
+host_timescale 1
+wait 30
+# minigun
+rung tf2:tf_weapon_minigun
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot minigun_idle
++attack2
+gwait 1.7
+host_timescale 0.01
++attack
+wait_for shot 3000
+gwait 0.002
+shot minigun_2ms
+gwait 0.008
+shot minigun_10ms
+gwait 0.02
+shot minigun_30ms
+gwait 0.032
+shot minigun_62ms
+-attack
+-attack2
+host_timescale 1
+wait 30

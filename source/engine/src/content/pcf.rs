@@ -237,6 +237,49 @@ fn add_operator(def: &mut SystemDef, list: &str, op: &Element, notes: &mut Vec<S
                 scale_initial: op.bool("output is scalar of initial random range"),
             });
         }
+        // Attribute remaps (specs/tf2/particles.md 7): at creation, and
+        // "Remap Scalar" each step.
+        ("initializers", "remap initial scalar") | ("operators", "remap scalar") => {
+            let field = |k: &str, d: i32| op.int(k, d).clamp(0, 255) as u8;
+            let (input, output) = (field("input field", 8), field("output field", 3));
+            let (input_min, input_max) = (op.float("input minimum", 0.0), op.float("input maximum", 1.0));
+            let (output_min, output_max) = (op.float("output minimum", 0.0), op.float("output maximum", 1.0));
+            if list == "operators" {
+                def.operators.push(Op::RemapScalar { input, input_min, input_max, output, output_min, output_max });
+            } else {
+                def.initializers.push(Init::RemapScalar {
+                    input,
+                    input_min,
+                    input_max,
+                    output,
+                    output_min,
+                    output_max,
+                    scale_initial: op.bool("output is scalar of initial random range"),
+                    in_range_only: op.bool("only active within specified input range"),
+                    start: op.float("emitter lifetime start time (seconds)", -1.0),
+                    end: op.float("emitter lifetime end time (seconds)", -1.0),
+                });
+            }
+        }
+        ("initializers", "remap scalar to vector") => def.initializers.push(Init::RemapToVector {
+            cp: cp("control_point_number"),
+            input: op.int("input field", 8).clamp(0, 255) as u8,
+            input_min: op.float("input minimum", 0.0),
+            input_max: op.float("input maximum", 1.0),
+            output: op.int("output field", 0).clamp(0, 255) as u8,
+            output_min: op.vec3("output minimum", Vec3::ZERO),
+            output_max: op.vec3("output maximum", Vec3::ONE),
+            local: op.bool("use local system"),
+            scale_initial: op.bool("output is scalar of initial random range"),
+            start: op.float("emitter lifetime start time (seconds)", -1.0),
+            end: op.float("emitter lifetime end time (seconds)", -1.0),
+        }),
+        ("initializers", "trail length random") => def.initializers.push(Init::TrailLength(pick(
+            op,
+            key(op, &["length_min", "trail_length_min"], notes),
+            key(op, &["length_max", "trail_length_max"], notes),
+            key(op, &["length_random_exponent", "trail_length_random_exponent"], notes),
+        ))),
         // A wobble on one field: not run (its look is small).
         ("operators", "oscillate scalar") => {}
         ("forces", "pull towards control point") => def.operators.push(Op::Pull {
