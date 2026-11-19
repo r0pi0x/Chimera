@@ -20,7 +20,7 @@
 //! the asset store once their files are here (`kill_icons`), and, in `heavy`, the user's install (its mount, ctf_2fort
 //! and cp_badlands converted with their spawns, the converted-map cache's
 //! key, a player walking on ctf_2fort, TF2's bodies that come late (`late_bodies`: a class picked mid-match, a body
-//! built again once its lightwarp arrives), the guns' looks on another game's map
+//! built again once its lightwarp arrives), the class models' animation (`player_anim`: player_animation.md tests 20-36), the guns' looks on another game's map
 //! (`looks`: particle systems, impacts, the `players` set's files), M2's weapon sets packed into a
 //! scratch store and read back, the scripts decrypted with the user's key
 //! when it is set),
@@ -60,6 +60,7 @@ mod heavy {
     mod maps;
     mod mount;
     mod pack;
+    mod player_anim;
     #[cfg(feature = "ui")]
     mod particles;
     mod scripts;

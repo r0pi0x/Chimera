@@ -1040,7 +1040,10 @@ Per player, on each client frame (bone setup cs_source/animation.md
     a Scout spinning the Minigun): TF2 would show the reference pose
     (§2, `ACT_MP_DEPLOYED_IDLE` missing); Chimera may prefer to keep the
     kind's normal set and add only the fire gesture. A design choice,
-    not parity.
+    not parity. **Ours** (2026-11-19, Chimera's choice, not TF2's): the
+    holder keeps his kind's normal set (and a kind his model lacks takes
+    its `PRIMARY` set); the spin and fire gestures play only if his model
+    has them (`games/tf2/src/game/player_anim.rs`).
 9. Whether the server traces bullets against the full aim-matrix pose
    or a simplified one, and the server's bone-setup rate.
 10. Ragdoll start velocity and the force from the killing hit (the

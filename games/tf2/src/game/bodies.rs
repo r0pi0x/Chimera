@@ -3,8 +3,8 @@
 //! .mdl`, the Demoman's `demo.mdl`) as a Source character body of this
 //! game (`props::load_character` with `GAME`), animated by its include
 //! models' sequences (`<class>_animations.mdl`: Source's loader puts the
-//! include's real sequences over the model's same-named 1-frame stubs,
-//! install.md 4.3), with its hitbox set (the head group 1 on `bip_head`)
+//! include's real sequences in the slots of the model's same-named
+//! forward-declared stubs, player_animation.md 1a), with its hitbox set (the head group 1 on `bip_head`)
 //! and its ragdoll. The bodies read are those of the classes whose guns
 //! the kit wants and the classes those need (`Class::needs`;
 //! `wanted_models`), so a map carries a

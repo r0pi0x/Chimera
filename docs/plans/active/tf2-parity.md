@@ -45,21 +45,17 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Next (for a successor)
 
-1. The spun Heavy (third person): TF2 lowers the Minigun forward while
-   winding up and firing (the deployed set, player_animation.md 6) and
-   holds it raised at idle; ours keeps the idle pose. Two tries this
-   pass, both reverted: playing `ACT_MP_DEPLOYED_IDLE` with the
-   PREFIRE/POSTFIRE gestures raised the gun straight up (the class
-   model's own 1-frame stubs of `stand_deployed_PRIMARY` and
-   `PRIMARY_aimmatrix_deployed` won the merge); taking the include's
-   same-named sequences over every 1-frame stub (also those with an
-   activity) lowered the gun in the idle pose too, to TF2's firing look,
-   and the deployed set then raised it. So which of a player model's
-   local stub and its include's sequence TF2 uses, per lookup (activity,
-   autolayer by name), needs a spec session first (install.md Open
-   question 6; the tried code is in the pass's scratch,
-   `player_anim_spun.rs.txt`; the merge rule is `source_engine::content::
-   anim`'s stub test, and `heavy::bodies` the place to check it).
+1. The spun Heavy (third person): done 2026-11-19 from the corrected
+   spec (player_animation.md 1a, 2, 5a, 6): the class models' stubs are
+   0x800 forward declarations the include's sequences replace (the old
+   "1-frame, no activity" test), the autolayers' spline and pose ramps,
+   the feet's IK locks, the kind tables with the deployed exception, the
+   PREFIRE/POSTFIRE gestures in one attack slot; the decoded poses match
+   the spec's (raised 34 degrees at rest, level spun, aim and spin
+   timelines within 2-3 degrees; `heavy::player_anim`). Left: the left
+   hand's IK rule onto the Minigun (4a), the 2026-11-15 main-activity
+   rules (airwalk above 300 units/s, the 0.5 s jump start), and a
+   side-by-side with TF2's bots once tools/tf2ref is free.
 2. Tracers seen from the front: TF2's are short streaks; ours, passing
    close to the camera, become wide glowing cones. Record 30 frames
    (`thirdperson.tf2` does now) and compare past 150 ms; a far shooter's

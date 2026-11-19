@@ -1,9 +1,11 @@
 //! Model animations from `.mdl` files (versions 44–48:
 //! specs/cs_source/mdl_v48.md): bones, animations, sequences, pose
 //! parameters and include models, merged into one `AnimSet` for a target
-//! model (specs/cs_source/animation.md §1–§3, §8; a same-named sequence of
-//! an include over the model's own 1-frame stub, specs/tf2/install.md
-//! 4.3). Animation data may sit
+//! model (specs/cs_source/animation.md §1–§3, §8; an include's same-named
+//! sequence takes a forward-declared (0x800) one's slot, else the first
+//! wins: specs/tf2/player_animation.md 1a), with the autolayers' spline
+//! and pose-parameter ramps and the sequences' IK locks (5a). Animation
+//! data may sit
 //! in sections and in external `.ani` blocks (HL2 content such as the
 //! hostages' `humans/male_*` models, mdl_v48.md §8); data that is missing
 //! falls back to the zero-frame cache (§6). Read from raw bytes.
@@ -29,7 +31,7 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::map::anim::{
-    AnimSet, Animation, AutoLayer, Axis, BonePose, IkChain, IkRule, PoseParam, Sequence, Track, euler,
+    AnimSet, Animation, AutoLayer, Axis, BonePose, IkChain, IkLock, IkRule, PoseParam, Sequence, Track, euler,
 };
 
 /// Reads a file from the game (path relative to the game root).
@@ -103,11 +105,32 @@ struct RawSequence {
     params: [Option<usize>; 2],
     range: [(f32, f32); 2],
     keys: [Vec<f32>; 2],
-    /// (sequence, start, peak, tail, end), indices local.
-    autolayers: Vec<(usize, [f32; 4])>,
+    /// (sequence, pose parameter, flags, start, peak, tail, end),
+    /// indices local.
+    autolayers: Vec<RawLayer>,
+    /// IK locks: (chain, position weight, local-rotation weight), chains
+    /// local.
+    ik_locks: Vec<(usize, f32, f32)>,
     weights: Vec<f32>,
     events: Vec<crate::map::anim::AnimEvent>,
 }
+
+/// An autolayer as stored: sequence, pose parameter (when ramped on
+/// one), flags, and the ramp (start, peak, tail, end).
+struct RawLayer {
+    sequence: usize,
+    param: Option<usize>,
+    flags: i32,
+    ramp: [f32; 4],
+}
+
+/// Autolayer flags: the ramp eased by a spline; ramped on a pose
+/// parameter (specs/tf2/player_animation.md 5a step 4).
+const LAYER_SPLINE: i32 = 0x40;
+const LAYER_POSE: i32 = 0x4000;
+/// Sequence flag: a forward declaration, a slot a later include's
+/// same-named sequence takes (player_animation.md 1a).
+const SEQ_FORWARD: i32 = 0x800;
 
 /// One `.mdl` file's animation data, indices local to it.
 struct Model {
@@ -246,10 +269,24 @@ fn parse(bytes: Vec<u8>) -> Result<Model, String> {
         let autolayers = (0..layers)
             .map(|k| {
                 let l = o + layer_at + 24 * k;
-                Ok((
-                    b.i16(l)?.max(0) as usize,
-                    [b.f32(l + 8)?, b.f32(l + 12)?, b.f32(l + 16)?, b.f32(l + 20)?],
-                ))
+                let flags = b.i32(l + 4)?;
+                let pose = b.i16(l + 2)?;
+                Ok(RawLayer {
+                    sequence: b.i16(l)?.max(0) as usize,
+                    param: (flags & LAYER_POSE != 0 && pose >= 0).then_some(pose as usize),
+                    flags,
+                    ramp: [b.f32(l + 8)?, b.f32(l + 12)?, b.f32(l + 16)?, b.f32(l + 20)?],
+                })
+            })
+            .collect::<Result<_, String>>()?;
+        // IK locks (+164 count, +168 offset; 32 bytes each: chain, position
+        // weight, local-rotation weight, read from TF2's aim matrices: two
+        // locks on the feet's chains, weights 1 and 0).
+        let (locks, lock_at) = count(o + 164)?;
+        let ik_locks = (0..locks.min(16))
+            .map(|k| {
+                let l = o + lock_at + 32 * k;
+                Ok((b.i32(l)?.max(0) as usize, b.f32(l + 4)?, b.f32(l + 8)?))
             })
             .collect::<Result<_, String>>()?;
         // Events (80 bytes each): cycle, number, type, 64 bytes of
@@ -291,6 +328,7 @@ fn parse(bytes: Vec<u8>) -> Result<Model, String> {
             range: [(b.f32(o + 84)?, b.f32(o + 92)?), (b.f32(o + 88)?, b.f32(o + 96)?)],
             keys: [keys(0)?, keys(1)?],
             autolayers,
+            ik_locks,
             weights,
             events,
         });
@@ -830,6 +868,24 @@ pub fn zero_frames(read: Read, path: &str) -> Result<Vec<ZeroFrames>, String> {
     Ok(out)
 }
 
+/// Where a sequence goes in the merged list (1a), given the slot its
+/// name already has (`existing`): a new name at the end; a name whose
+/// slot holds a forward declaration takes that slot; else None (the
+/// first stays). `forward`: per merged slot, whether it holds a forward
+/// declaration, kept up to date.
+fn merge_slot(existing: Option<usize>, forward: &mut Vec<bool>, is_forward: bool) -> Option<usize> {
+    let at = match existing {
+        Some(i) if forward[i] => i,
+        Some(_) => return None,
+        None => {
+            forward.push(is_forward);
+            forward.len() - 1
+        }
+    };
+    forward[at] = is_forward;
+    Some(at)
+}
+
 /// The player skeleton's magazine bone: held world models' magazines
 /// follow it (bone merge).
 const CLIP_BONE: &str = "ValveBiped.weapon_bone_Clip";
@@ -980,32 +1036,23 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
         }
         chain_maps.push(local);
     }
-    // Sequences: first name wins, but over a stub (a sequence with no
-    // activity whose animations are one frame) a later model's real one
-    // of the same name wins, in the stub's place: TF2's arms models carry
-    // 1-frame stubs of the sequences their animation include holds
-    // (specs/tf2/install.md 4.3). Autolayers resolve by name afterwards.
+    // Sequences (specs/tf2/player_animation.md 1a): the model's, then its
+    // includes' depth first; a new name is appended; a name already there
+    // takes the slot only when the sequence in it is a forward
+    // declaration (flag 0x800: TF2's class and arms models declare every
+    // sequence their animation include holds), else the first stays.
+    // Autolayers resolve by name afterwards, onto whatever holds the slot.
     let mut seq_names: HashMap<String, usize> = HashMap::new();
     let mut stubs: Vec<bool> = Vec::new();
     let mut pending: Vec<(usize, usize)> = Vec::new(); // (merged, model)
     for (mi, m) in models.iter().enumerate() {
         for (si, s) in m.sequences.iter().enumerate() {
             let key = s.name.to_lowercase();
-            let stub = s.activity.is_empty()
-                && s.anims.iter().all(|a| anim_maps[mi].get(*a).is_none_or(|i| set.animations[*i].frames <= 1));
-            let at = match seq_names.get(&key) {
-                Some(&i) if stubs[i] && !stub => {
-                    pending.retain(|(merged, _)| *merged != i);
-                    i
-                }
-                Some(_) => continue,
-                None => {
-                    seq_names.insert(key, set.sequences.len());
-                    stubs.push(stub);
-                    set.sequences.len()
-                }
+            let Some(at) = merge_slot(seq_names.get(&key).copied(), &mut stubs, s.flags & SEQ_FORWARD != 0) else {
+                continue;
             };
-            stubs[at] = stub;
+            seq_names.entry(key).or_insert(at);
+            pending.retain(|(merged, _)| *merged != at);
             let mut weights = vec![0.0; set.defaults.len()];
             for (w, t) in s.weights.iter().zip(&bone_maps[mi]) {
                 if let Some(t) = t {
@@ -1054,6 +1101,17 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
                         })
                     })
                     .collect(),
+                ik_locks: s
+                    .ik_locks
+                    .iter()
+                    .filter_map(|&(c, position, rotation)| {
+                        Some(IkLock {
+                            chain: chain_maps[mi].get(c).copied().flatten()?,
+                            position,
+                            rotation,
+                        })
+                    })
+                    .collect(),
             };
             if at == set.sequences.len() {
                 set.sequences.push(sequence);
@@ -1068,14 +1126,17 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
         set.sequences[merged].autolayers = m.sequences[si]
             .autolayers
             .iter()
-            .filter_map(|(seq, [start, peak, tail, end])| {
-                let name = m.sequences.get(*seq)?.name.to_lowercase();
+            .filter_map(|l| {
+                let name = m.sequences.get(l.sequence)?.name.to_lowercase();
+                let [start, peak, tail, end] = l.ramp;
                 Some(AutoLayer {
                     sequence: *seq_names.get(&name)?,
-                    start: *start,
-                    peak: *peak,
-                    tail: *tail,
-                    end: *end,
+                    start,
+                    peak,
+                    tail,
+                    end,
+                    spline: l.flags & LAYER_SPLINE != 0,
+                    param: l.param.and_then(|p| param_maps[mi].get(p).copied()),
                 })
             })
             .collect();
@@ -1089,6 +1150,21 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// specs/tf2/player_animation.md tests 22, 23: an include's `x` takes a
+    /// forward-declared `x`'s slot and a third `x` is dropped; over a real
+    /// (unflagged) `x` the first stays.
+    #[test]
+    fn forward_declarations_give_way() {
+        let mut fwd = Vec::new();
+        assert_eq!(merge_slot(None, &mut fwd, false), Some(0));
+        assert_eq!(merge_slot(None, &mut fwd, true), Some(1));
+        assert_eq!(merge_slot(Some(1), &mut fwd, false), Some(1), "22: B's at A's index");
+        assert_eq!(merge_slot(Some(1), &mut fwd, false), None, "22: C's dropped");
+        let mut fwd = Vec::new();
+        assert_eq!(merge_slot(None, &mut fwd, false), Some(0));
+        assert_eq!(merge_slot(Some(0), &mut fwd, false), None, "23: A's stays");
+    }
 
     #[test]
     fn compressed_values() {
