@@ -60,8 +60,9 @@
 //! look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
 //! used until the weapon scripts are read; only guns with a tracer count
 //! toward the shared tracer counter; the per-shot flash and the tracers
-//! leave along the aim, not the muzzle attachment's own axes (the
-//! `while_firing` and backblast systems take the attachment's); fused
+//! leave along the aim, the `while_firing` systems along the view (the
+//! brass to its right), the backblast back along the aim, not the
+//! attachments' own axes; fused
 //! pipes and stickies send no surface, so they take the in-air look and
 //! leave no scorch (effects.md Open questions); TF2's impact style
 //! (ricochets, pellet grouping) has no spec yet: no ricochet, every
@@ -381,16 +382,14 @@ pub struct ViewMuzzle {
     /// Both in engine space.
     pub at: Vec3,
     pub world: Vec3,
-    /// Its x axis (out of the barrel), engine space.
-    pub axis: Option<Vec3>,
 }
 
 /// Where an attachment is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MuzzleAt {
     View(ViewMuzzle),
-    /// On the held model (engine space): place and x axis.
-    Held(Vec3, Vec3),
+    /// On the held model (engine space).
+    Held(Vec3),
 }
 
 impl MuzzleAt {
@@ -398,15 +397,7 @@ impl MuzzleAt {
     pub fn world(&self) -> Vec3 {
         match self {
             Self::View(v) => v.world,
-            Self::Held(p, _) => *p,
-        }
-    }
-
-    /// Its x axis, if known (engine space).
-    pub fn axis(&self) -> Option<Vec3> {
-        match self {
-            Self::View(v) => v.axis,
-            Self::Held(_, a) => Some(*a),
+            Self::Held(p) => *p,
         }
     }
 }
@@ -451,14 +442,13 @@ impl Muzzles<'_, '_> {
                     world_local,
                     at: f.eye.transform_point(local),
                     world: f.eye.transform_point(world_local),
-                    axis: f.camera_axis(&at).map(|a| f.eye.rotation() * a),
                 }))
             }
             None => self
                 .held
                 .iter()
                 .find(|(h, _)| h.owner == owner && at.is(h.index, &h.name))
-                .map(|(_, g)| MuzzleAt::Held(g.translation(), g.rotation() * Vec3::X)),
+                .map(|(_, g)| MuzzleAt::Held(g.translation())),
         }
     }
 
@@ -471,6 +461,15 @@ impl Muzzles<'_, '_> {
         local && !third && self.settings.as_deref().is_some_and(|s| s.draw == 0)
     }
 
+    /// The turn of the view `m` is seen along: the eye's on a
+    /// first-person gun, else `owner`'s body's.
+    pub fn view_turn(&self, owner: Entity, m: &MuzzleAt) -> Quat {
+        match m {
+            MuzzleAt::View(v) => v.turn,
+            MuzzleAt::Held(..) => self.owners.get(owner).ok().and_then(|(.., t, _)| t).map_or(Quat::IDENTITY, |t| t.rotation),
+        }
+    }
+
     /// Whether `owner` is this machine's own player.
     pub fn is_local(&self, owner: Entity) -> bool {
         self.owners.get(owner).is_ok_and(|(.., local)| local)
@@ -481,7 +480,7 @@ impl Muzzles<'_, '_> {
     pub fn start_on(&self, owner: Entity, m: &MuzzleAt, name: &str, forward: Vec3) -> StartParticleSystem {
         let follow = match m {
             MuzzleAt::View(v) => Some(Follow { entity: v.anchor, local: v.world_local, forward: v.turn.inverse() * forward }),
-            MuzzleAt::Held(p, _) => self.owners.get(owner).ok().and_then(|(.., t, _)| t).map(|t| Follow {
+            MuzzleAt::Held(p) => self.owners.get(owner).ok().and_then(|(.., t, _)| t).map(|t| Follow {
                 entity: owner,
                 local: t.compute_affine().inverse().transform_point3(*p),
                 forward: t.rotation.inverse() * forward,
@@ -515,7 +514,7 @@ fn muzzle_flashes(
             && !muzzles.is_local(e.owner)
             && let Some(m @ MuzzleAt::Held(..)) = muzzles.placed_at(e.owner, &b.at)
         {
-            start.write(muzzles.start_on(e.owner, &m, &b.system, m.axis().unwrap_or(-forward)));
+            start.write(muzzles.start_on(e.owner, &m, &b.system, -forward));
         }
         let Some((name, emit_for)) = looks.shot_system(weapon, blu) else { continue };
         if emit_for.is_none() && muzzles.view_model_off(e.owner) {
@@ -591,10 +590,12 @@ fn firing_looks(
         if muzzles.view_model_off(owner) {
             continue;
         }
-        let aim = muzzles.placed(owner).and_then(|m| m.axis()).unwrap_or(Vec3::NEG_Z);
         for s in systems {
             let Some(m) = muzzles.placed_at(owner, &s.at) else { continue };
-            let forward = if s.at == MUZZLE_ATTACHMENT { aim } else { m.axis().unwrap_or(aim) };
+            // Out of the barrel along the view, the brass out to the
+            // right (module doc, Known shortcuts).
+            let turn = muzzles.view_turn(owner, &m);
+            let forward = if s.at == MUZZLE_ATTACHMENT { turn * Vec3::NEG_Z } else { turn * Vec3::X };
             start.write(StartParticleSystem { tag: Some(e), ..muzzles.start_on(owner, &m, &s.system, forward) });
         }
     }
