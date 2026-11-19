@@ -2548,7 +2548,10 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   `<name>_NN.png`), run as a chain of aliases (RCON drops long packets).
   On this listen server `wait 2` is one rendered frame; `snap`s a frame
   apart get dropped. `psys_running` (ours' console) prints our started
-  systems' particles. **Not `host_timescale`** in TF2: under it its
+  systems' particles, each started child on its own line (`root >
+  child`; with `all` its material, blend and renderer too), and
+  `psys_def <name>` a system's definition (initializers, operators,
+  material). **Not `host_timescale`** in TF2: under it its
   flashes vanished in 15 ms. Ours steps at `host_timescale 0.01` with the
   scene's `gwait` (game seconds) after `wait_for shot`, with `wait 3`
   between `host_timescale` and `+attack` (a shot in the frame the rate

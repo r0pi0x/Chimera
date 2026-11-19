@@ -399,3 +399,38 @@ fn fires_ahead(body: Option<&str>, gun: &str) {
     sim.seconds(1.0);
     assert_eq!(sim.app.world().resource::<Aims>().0.len(), before, "it stopped");
 }
+
+/// What a target's trigger read where the guns' selection stage sees it
+/// (the Minigun's spin reads `Intent::fire` there).
+#[derive(Resource, Default)]
+struct TriggerAtSelect(Vec<Entity>);
+
+fn keep_trigger_at_select(mut seen: ResMut<TriggerAtSelect>, q: Query<(Entity, &chimera_core::core::Intent), With<Target>>) {
+    seen.0.extend(q.iter().filter(|(_, i)| i.fire || i.secondary).map(|(e, _)| e));
+}
+
+/// A target that may not fire has its trigger released before the
+/// guns' selection stage too (`core::Predict::Select`: TF2's Minigun
+/// spins up there), not only before the weapons fire: its brain, facing
+/// the player, wants to fire every tick.
+#[test]
+fn a_target_that_may_not_fire_has_its_trigger_released_before_the_guns_look() {
+    let (mut sim, _me) = play();
+    sim.app
+        .init_resource::<TriggerAtSelect>()
+        .add_systems(chimera_core::core::Predict::Select, keep_trigger_at_select.before(chimera_sim::weapon::SelectWeapons));
+    let e = add(&mut sim, at(8.0));
+    sim.app.world_mut().resource_mut::<TriggerAtSelect>().0.clear();
+    sim.seconds(4.0);
+    let held = sim.app.world().resource::<TriggerAtSelect>().0.iter().filter(|&&x| x == e).count();
+    assert_eq!(held, 0, "its trigger seen held at selection in {held} ticks");
+    // With `ahead` it is held there.
+    sim.app.world_mut().write_message(SetTarget { fires_ahead: Some(true), ..SetTarget::of(e) });
+    sim.seconds(1.0);
+    assert!(sim.app.world().resource::<TriggerAtSelect>().0.contains(&e), "held when firing ahead");
+    sim.app.world_mut().write_message(SetTarget { fires_ahead: Some(false), ..SetTarget::of(e) });
+    sim.seconds(0.5);
+    sim.app.world_mut().resource_mut::<TriggerAtSelect>().0.clear();
+    sim.seconds(2.0);
+    assert!(!sim.app.world().resource::<TriggerAtSelect>().0.contains(&e), "released again after noahead");
+}

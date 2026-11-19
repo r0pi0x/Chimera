@@ -179,7 +179,9 @@
 //!
 //! Known shortcuts:
 //! - The motion overrides the bot's movement keys after its brain
-//!   (between `SimSet::Rules` and `SimSet::Commands`); the brain still
+//!   (between `SimSet::Rules` and `SimSet::Commands`, and before the
+//!   guns' selection stage `weapon::SelectWeapons`, which reads the
+//!   trigger: a Minigun held spun by the brain); the brain still
 //!   plans its own route, which the keys ignore.
 //! - A shot counts as aimed at a victim when its ray passes within
 //!   `AIM_RADIUS` of the victim's centre: a lobbed grenade's or an arcing
@@ -1923,7 +1925,14 @@ pub(super) fn plugin(app: &mut App) {
             FixedUpdate,
             (
                 settle.after(SimSet::Rules).before(SimSet::Commands),
-                drive.after(settle).after(SimSet::Rules).before(SimSet::Commands),
+                // Before the guns' selection stage too, which reads the
+                // trigger (TF2's Minigun spins up there) and is ordered
+                // only after the brains.
+                drive
+                    .after(settle)
+                    .after(SimSet::Rules)
+                    .before(SimSet::Commands)
+                    .before(crate::weapon::SelectWeapons),
             )
                 .run_if(crate::core::authoritative)
                 .run_if(any_with_component::<Target>),

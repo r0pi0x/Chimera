@@ -21,8 +21,9 @@
 //! it with its point and closes the gap at catch-up units a second, "Lifetime From Control Point
 //! Life Time" gives it the point's duration; specs/tf2/flames.md 3.3),
 //! "Remap Distance to Control Point to Scalar / Vector" each step (radius,
-//! alpha, tint), and `RunningSystems` (what the started systems show, for
-//! tests and probes; the console's `psys_running` prints it).
+//! alpha, tint), and `RunningSystems` (what the started systems show, a
+//! row per started system and per started child, for tests and probes;
+//! the console's `psys_running` prints it, `psys_def` a definition).
 //! Colour random's `tint_perc` blends each new particle's colour that
 //! far toward the light at its control point (`ControlPoint::light`: the
 //! map's `LightField` there, sampled when the system starts or its entity
@@ -1404,8 +1405,25 @@ pub fn console(app: &mut App) {
             let game = |v: Vec3| Vec3::new(v.x, -v.z, v.y) / scale;
             let mut out = format!("{} systems", shown.0.len());
             let all = shown_max == usize::MAX;
+            // With `all`, each system's material (name, blend, depth
+            // blend, overbright) and renderer: which child draws what.
+            let looks = |name: &str| -> String {
+                let Some(defs) = w.get_resource::<ParticleSystemDefs>() else { return String::new() };
+                let name = name.rsplit(" > ").next().unwrap_or(name);
+                let Some(d) = defs.0.find(name).map(|i| &defs.0.defs[i]) else { return String::new() };
+                let mat = d.material.and_then(|m| w.get_resource::<crate::map::particles::ParticleMaterials>().and_then(|ms| ms.0.materials.get(m).cloned()));
+                let mat = mat.map_or("no material".to_string(), |m| {
+                    format!("{} {:?}{} ob {}", m.name, m.blend, if m.depth_blend { " depthblend" } else { "" }, m.overbright)
+                });
+                let render = match &d.renderer {
+                    crate::map::psys::Render::Sprites { orientation, .. } => format!("sprites o{orientation}"),
+                    other => format!("{other:?}").split_whitespace().next().unwrap_or("").to_string(),
+                };
+                format!(" [{mat}; {render}]")
+            };
             for r in &shown.0.clone() {
-                out.push_str(&format!("\n{}{}: {} particles", r.name, if r.emitting { " (emitting)" } else { "" }, r.particles.len()));
+                let looks = if all { looks(&r.name) } else { String::new() };
+                out.push_str(&format!("\n{}{}: {} particles{looks}", r.name, if r.emitting { " (emitting)" } else { "" }, r.particles.len()));
                 for ((p, cp), radius) in r.particles.iter().zip(&r.radii).take(shown_max) {
                     let g = game(*p);
                     out.push_str(&format!("\n  ({:.1} {:.1} {:.1}) r {radius:.2}", g.x, g.y, g.z));
@@ -1421,6 +1439,29 @@ pub fn console(app: &mut App) {
                 }
             }
             Ok(Some(out))
+        },
+    );
+}
+
+/// `psys_def <name>`: a loaded system definition as data (emitters,
+/// initializers, operators, renderer, children by name) and its
+/// material: what a capture's odd particle was told to do.
+pub fn def_console(app: &mut App) {
+    use chimera_core::console::ConsoleAppExt;
+    app.console_command(
+        "psys_def",
+        "psys_def <name>: a loaded particle system's definition (its operators, renderer, material and children).",
+        |w, args| {
+            let Some(name) = args.first() else { return Ok(Some("psys_def <name>".into())) };
+            let Some(defs) = w.get_resource::<ParticleSystemDefs>() else { return Ok(Some("no particle systems".into())) };
+            let Some(d) = defs.0.find(name).map(|i| &defs.0.defs[i]) else { return Ok(Some(format!("no system {name}"))) };
+            let material = d
+                .material
+                .and_then(|m| w.get_resource::<crate::map::particles::ParticleMaterials>().and_then(|ms| ms.0.materials.get(m).cloned()));
+            let children: Vec<String> = d.children.iter().map(|&(c, delay)| format!("{} +{delay}s", defs.0.defs[c].name)).collect();
+            let mut shown = d.clone();
+            shown.children.clear();
+            Ok(Some(format!("{shown:#?}\nmaterial: {material:#?}\nchildren: {children:?}")))
         },
     );
 }
@@ -1569,17 +1610,28 @@ pub fn run_started_systems(
     };
     started.step(time.delta_secs().min(0.25), &sheets);
     if let Some(shown) = shown.as_mut() {
-        shown.0 = started
-            .running
-            .iter()
-            .map(|r| RunningSystem {
-                name: defs.defs[r.instance.def].name.clone(),
-                tag: r.tag,
-                emitting: r.instance.emitting,
-                particles: r.instance.placed().into_iter().map(|(p, t)| (to_engine(p), t)).collect(),
-                radii: r.instance.radii(&defs.defs),
-            })
-            .collect();
+        // Each started system, then each of its started children on its
+        // own line (`root > child`, its own particles only): which child
+        // draws what.
+        fn rows(i: &Instance, path: &str, tag: Option<Entity>, defs: &[SystemDef], to_engine: &impl Fn(Vec3) -> Vec3, out: &mut Vec<RunningSystem>) {
+            let d = &defs[i.def];
+            out.push(RunningSystem {
+                name: if path.is_empty() { d.name.clone() } else { format!("{path} > {}", d.name) },
+                tag,
+                emitting: i.emitting,
+                particles: i.particles.iter().map(|p| (to_engine(p.position), p.target.map(usize::from))).collect(),
+                radii: i.particles.iter().map(|p| Instance::radius(d, p)).collect(),
+            });
+            let path = if path.is_empty() { d.name.clone() } else { format!("{path} > {}", d.name) };
+            for c in i.child_instances() {
+                rows(c, &path, tag, defs, to_engine, out);
+            }
+        }
+        let mut out = Vec::new();
+        for r in &started.running {
+            rows(&r.instance, "", r.tag, &defs.defs, &to_engine, &mut out);
+        }
+        shown.0 = out;
     }
     let Some(eye) = eyes.iter().next().map(|e| e.translation()) else {
         return;

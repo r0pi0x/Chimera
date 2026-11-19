@@ -146,13 +146,16 @@ fn the_class_sets_load_only_the_offered_classes_bodies() {
     for c in &classes::classes().classes {
         let files = &manifest.sets[&classes::set_of(&c.name)];
         let voice = voices.classes.get(&c.name).unwrap_or_else(|| panic!("{}: a voice", c.name));
-        let waves: Vec<String> = voice.entries().iter().flat_map(|e| scripts.waves(e)).filter(|w| source.contains(w)).collect();
+        // Paths as the mounts keep them (lower case: a sound script may
+        // name `vo/scout_Award12.mp3`, the client install's do).
+        let waves: Vec<String> =
+            voice.entries().iter().flat_map(|e| scripts.waves(e)).filter(|w| source.contains(w)).map(|w| w.to_lowercase()).collect();
         assert!(!waves.is_empty(), "{}: voice waves", c.name);
         let missing: Vec<&String> = waves.iter().filter(|w| !files.contains(*w) && !shared.contains(*w)).collect();
         assert!(missing.is_empty(), "{}: voice waves not in its set: {missing:?}", c.name);
     }
     for e in tf2::game::voices::SHARED {
-        assert!(scripts.waves(e).iter().filter(|w| source.contains(w)).all(|w| shared.contains(w)), "{e} in players");
+        assert!(scripts.waves(e).iter().filter(|w| source.contains(w)).all(|w| shared.contains(&w.to_lowercase())), "{e} in players");
     }
     assert!(shared.contains("scripts/mod_textures.txt") && shared.contains("materials/hud/d_images.vtf"), "the kill icons");
     manifest.save(&store.manifest_path(GAME, build)).unwrap();
