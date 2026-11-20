@@ -159,7 +159,10 @@ Notes:
   lives.
 - `muzzle_minigun_constant` emits continuously (children: `_core` 120/s,
   `_sparks` 100/s, `_starflash` 256/s, `_smoke` 12/s, `_flare` 128/s;
-  particles.md §8.3).
+  particles.md §8.3). The starflash and flare emit only in the system's
+  first 0.5 s and the smoke only from 2 s (ramping to full at 4 s); the
+  sparks are capped at 5 alive; how the flash builds up over its first
+  frames: particles.md §8.3.1.
 
 ### 4. Rocket Launcher backblast
 

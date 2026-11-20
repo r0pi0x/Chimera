@@ -25,6 +25,9 @@ fade, radius scale, colour fade, basic movement, oscillators, the sphere
 initializer's velocity, the sprite-trail renderer, the render list and
 the skip-ahead, the operators' parameter tables (names, defaults), and
 the SDK client's `info_particle_system` and particle manager.
+Section 8.3's emitter windows and §10.11 (2026-11-20, tf2-spec-misc) read
+the muzzle flash file's caps and fades and the library's operator-fade
+function and continuous emitter (machine code).
 Status: draft
 
 ## Summary
@@ -384,6 +387,80 @@ first-person muzzle (52.32, 8.06, −6.38): flash NDC half-height at world
 | `_starflash` | `effects/softglow` UnlitGeneric, additive, trail | 256/s | 0.1 | 8 | local (−125, ±300, ±300); drag 0.3; locked | (255,159,46)..(244,144,0) → (205,87,0); alpha 128–200; trail length 0.5, max 122; random roll |
 | `_smoke` | `effects/wispy_smoke` UnlitGeneric, alpha | 12/s | 2–3 | 13–17, 0.3 → 0.5 | local (10, ±10, ±10) + 0–5; gravity +54; drag 0.1; roll 21°/s | alpha 32 (/255) with fade in 0 → 0.3, out 0.3 → 1 |
 | `_flare` | starflash01 SpriteCard, additive | 128/s | 0.08 | 32, scale 1 → 0.1 with bias 0.7 | local x 500–900, 0–10 forward, 1 unit sphere; drag 0.1; locked | (255,223,94)..(218,157,77) → (255,131,11); alpha 70 (/255), fade in over 0.1 of life, Alpha Fade and Decay in 0 → 0.5, out 0.5 → 1; roll ±15° |
+
+Not in the table above (read 2026-11-20 from `particles/muzzle_flash.pcf`;
+the `_dx80` file is the DX8 fallback): each child's **`max_particles`**
+(core 24, sparks 5, starflash 32, smoke 25, flare 32; the parent has no
+emitter and 0), every child's `initial_particles` 0, child delays 0, and
+three **emitter fades** (§10.11):
+
+- `_starflash` and `_flare`: the emitter's operator fade-out window is
+  0.5 → 0.5 s, so they emit only while the system's clock is ≤ 0.5 s and
+  **never again in that system**: after the first 0.5 s of firing only
+  the core, the sparks (and later the smoke) remain.
+- `_smoke`: its emitter fades in over 2 → 4 s: no smoke at all for the
+  first 2 s of firing, then 12/s × (T − 2)/2, full rate from 4 s.
+- `_sparks` (100/s, life 0.3–0.6) is held by its cap of 5: the first
+  steps make 1, 2, 2 (at 60 frames a second), then nothing until those
+  die (0.3 s and later), each death letting one more in.
+
+The Minigun makes a **new** system each time it enters the firing state
+and stops its emission when it leaves (effects.md §3), so each burst's
+clock starts at 0 and gets its own 0.5 s of starflash and flare.
+
+#### 8.3.1 The first frames of firing (worked, 60 frames a second)
+
+Frame 0 is the frame the client creates the system (it learns the
+firing state). The parent emits nothing and its children are first
+simulated in the next frame (§9.1), so **frame 0 shows nothing**;
+frame k (k ≥ 1) is the children's k-th step, h = 1/60, T = k/60.
+
+| Frame | Core: new / alive | Starflash: new / alive | Flare: new / alive | Sparks alive |
+|---|---|---|---|---|
+| 1 | 2 / 2 | 4 / 4 | 2 / 2 | 1 |
+| 2 | 2 / 4 | 4 / 8 | 2 / 4 | 3 |
+| 3 | 2 / 6 | 4 / 12 | 2 / 6 | 5 (cap) |
+| 4 | 2 / 8 | 5 / 17 | 2 / 8 | 5 |
+| 5 | 2 / 10 | 4 / 21 | 2 / 10 | 5 |
+| 6 | 2 / 12 | 4 / 25 | 2 / 10 | 5 |
+| 7–9 | 2 / 12–18 | ~4 / 25–26 | 2–3 / 10 | 5 |
+
+(Counts by §9.2: 120/s → 2 a step; 256/s → E 4.27, 8.53, 12.8, 17.07, …;
+128/s → 2 a step, 3 every 8th. Lives: starflash exactly 0.1 s = 6 steps,
+flare 0.08 s, core U(0.1, 0.15) = 6–9 steps.) How big each looks at a
+given age (the particle's own age a, life fraction t):
+
+- **Core** (trail, 2 a frame, all from the muzzle along the barrel,
+  overlapping): length L = speed × τ × min(a / 0.1, 1) capped at 50
+  (speed ≈ 710–910 less drag 0.1; τ by Remap Scalar from the radius:
+  0.1 at radius ≥ 250 rising to 0.2 at 0), width = min(radius, L),
+  radius = 400 × (1 − 0.98 g(t)) with g the bias-0.9 curve (§10.3).
+  At a = 1/60: ≈ 13 × 13; 2/60: ≈ 42 long × 42 wide (radius ~98);
+  3/60: 50 × 50 (radius ~64); 4/60: 50 × 43; 5/60: 50 × 28; then
+  thinner until death. Alpha 64–128 (/255), eased in over the first
+  40 % of life, out after. So the core's largest strip is reached at the
+  third frame and stays (new ones keep replacing it).
+- **Starflash** (trails of width 8, in a disk around the muzzle, slightly
+  backward: local x −125, y and z ±300): L ≈ 1375 × a for the mean speed
+  (≈ 275), capped at 122: ≈ 23, 46, 69, 92, 115 at ages 1–5 frames;
+  alpha 128–200 (/255) eased in over the first 30 % of life (0.03 s) and
+  out over the rest. The star's reach and its count grow together for
+  the first 5–6 frames; it is at full size from frame 5–6 to 0.5 s, then
+  gone 0.1 s later.
+- **Flare** (camera-facing sprites, radius 32 → 3.2 by bias 0.7, flying
+  forward 500–900 units/s from the muzzle, alpha 70 (/255) × the
+  0.1-of-life fade-in × an eased fade 0 → 0.5 → 1 of life): ≈ 26, 18, 12,
+  8 units radius at ages 1–4 frames, brightest at mid-life (a ≈ 0.04 s).
+  Up to 10 alive from frame 5; gone after 0.58 s.
+- **Sparks**: 1–2 unit dots with 4-unit trails; negligible in area.
+
+So by its data the flash **grows for its first 3 frames (core) to 6
+frames (starflash) and then holds**; no child peaks and shrinks within
+frames 1–4. Between 0.5 and 0.6 s it loses the starflash and the flare
+and settles to the core and sparks; smoke joins from 2 s. A
+measurement showing the flash peak at frame 2 and then shrink (the
+parity log of 2026-11-20) is not explained by the system itself
+(Open questions 10).
 
 The `_core`'s 400-unit radius on a trail renderer would be a strip far
 wider than its 50-unit maximum length; real TF2 draws the firing Minigun's
@@ -827,11 +904,25 @@ server's start time: t = that difference):
 
 #### 10.11 An operator's own fade
 
-Every operator has "operator start/end fadein/fadeout" and "fade
-oscillate" (all 0 in every system read here). With them all 0 the
-operator always runs at strength 1; renderers likewise. (Other values
-scale the operator's strength over the system's time; not used by these
-effects.)
+Every operator (emitters, initializers, operators, renderers) has
+"operator start/end fadein/fadeout" (i₀, i₁, o₀, o₁, seconds of the
+**system's** clock T, the current sub-step's end) and "fade oscillate"
+P. Read 2026-11-20 from the particle library's machine code. Each step,
+before running the operator: if P > 0, T is replaced by T/P modulo 1.
+Then the strength
+
+1. is 0 if T < i₀, or if o₁ > 0 and T > o₁ (the original o₁);
+2. otherwise, after raising i₁ to at least i₀, o₀ to at least i₁ and o₁
+   to at least o₀: s = 1, or (T − i₀)/(i₁ − i₀) capped at 1 if i₁ > i₀
+   and T < i₁; then if o₁ > o₀ and T > o₀, s = min(s, (o₁ − T)/(o₁ − o₀)).
+
+An operator with strength 0 does not run that step. A continuous
+emitter's rate is multiplied by its strength (so a fade-in ramps the
+rate). With all five 0 the strength is always 1. A window with o₀ = o₁
+is a hard stop at that time (strength 1 up to it, 0 after). Used by the
+Minigun's flash: `_starflash` and `_flare` emitters stop at 0.5 s,
+`_smoke`'s fades in over 2–4 s (§8.3); every other system read here
+has them all 0.
 
 ## Per-frame order
 
@@ -1012,3 +1103,16 @@ effects.)
    world origin, or control point 0) decides whether bubbles of a rocket
    are clipped at all. Unconfirmed; a capture of the underwater trail's
    bubbles near the surface answers it.
+10. The Minigun's first-person flash measured at 1024x768 over its first
+    four frames: TF2 ~2,000 / 5,700 / 5,200 / 4,500 bright pixels, then
+    4,000–5,200; by its data (§8.3.1) every child grows or holds over
+    those frames. Candidates outside the system: the view model's
+    sequence change at the firing state (`m_fire` starting while the
+    spun pose blends, moving the muzzle attachment and the gun over the
+    flash), the pixel threshold catching the eased alpha of young
+    starflash streaks, or the capture's frame 1 not being the system's
+    first emitting step. A capture with `r_drawviewmodel 0` (the effect
+    then isn't started at all: effects.md §2) can't separate them; a
+    third-person capture of a bot's firing start, or the first-person
+    capture repeated with the arms' model hidden by a material override,
+    would.

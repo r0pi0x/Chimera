@@ -14,7 +14,10 @@ each carries). Measured on 2026-11-20 against real TF2 (client build
 11191711, listen server, `host_framerate 0.015` so one frame = one
 0.015 s tick, `sv_soundemitter_trace 1`, a puppet bot with the stock
 Minigun mimicking our buttons, heard by our client): every sound start
-and stop with its tick. Nothing copied; restated in our words.
+and stop with its tick. The empty auto-switch's timing (2026-11-20):
+the SDK's sequence-finished rule and per-tick order, the Heavy arms'
+`m_spool_down` sequence data, and a per-tick measurement of the local
+player's stock Minigun. Nothing copied; restated in our words.
 This continues [weapons.md](weapons.md) §7 (damage, spread, rev-up
 penalty, speed) and [viewmodel.md](viewmodel.md) §7 (first-person
 sequences); where they disagree, this file is the newer word (the
@@ -36,8 +39,8 @@ of its 0.995 s, the wind-down **when the barrel stops turning**, which is
 a short tap. The sounds are not sent by the server: every client derives
 them from the gun's networked state. An empty Minigun cannot spin at all
 (attack2 is refused), keeps playing the empty loop as long as any button
-is held after running dry, and auto-switches away about 1.33 s after the
-last button is let go.
+is held after running dry, and auto-switches away 1.155 s (77 ticks)
+after the wind-down began (§3.3).
 
 What players notice when it's wrong: the fire loop going silent after
 4 s (its WAV is 4.0 s long and must loop), the empty click playing once
@@ -82,7 +85,8 @@ spin releasing to idle at once (it takes 0.3 s).
 | fire_interval | 0.105 | s | between shots (7 ticks) |
 | fire_idle_delay | 0.2 | s | after the latest shot before a released gun winds down |
 | spin_idle_anim | 0.3 | s | the Heavy's `m_spool_idle` (a 10-frame loop at 30 fps, 0.300 s long); a released spin or dry gun winds down this long after the last time it was re-sent |
-| spool_down_anim | 1.333 | s | the Heavy's `m_spool_down`; the empty auto-switch waits for it |
+| spool_down_anim | 1.333 | s | the Heavy's `m_spool_down` (41 frames at 30 fps, not looping, fade-out time 0.2 s) |
+| spool_down_done | 0.85 | cycle | the sequence counts as finished once its cycle passes 1 − 0.2 s × 0.75/s = 0.85 (1.133 s at rate 1); the empty auto-switch and any switch away wait for it (§3.3) |
 | barrel_max_speed | 20 | rad/s | target speed while winding up, spinning, firing, dry |
 | barrel_step | 0.1 | rad/s per update | change of the barrel's speed per update (stock) |
 | barrel_step_fast | 0.5 | rad/s per update | the same for items with the "can holster while spinning" attribute (none stock) |
@@ -184,7 +188,7 @@ Ammo running out and a = 0 (§3 has the details):
 | dry | A released, B held | **stays dry** (attack2 is refused with no ammo, so nothing else runs and the gun never idles) | – |
 | dry | everything released | idle (wind-down) at max(now, entering dry + 0.3) | – |
 | idle | A or B pressed | **nothing** (no wind-up, no sound, no slow-down) | – |
-| idle | nothing held | auto-switch away once the spool-down animation has ended (§3.3) | about 1.33 s after the wind-down began |
+| idle | nothing held | auto-switch away once the spool-down animation counts as finished (§3.3) | 77 ticks (1.155 s) after the wind-down began |
 | dry | ammo picked up, A held | firing at once (no shot that tick), shots from the next tick; the rev-up penalty starts over | – |
 | dry | ammo picked up, only B held | firing for one tick (mode secondary), then spinning | 1 tick |
 
@@ -229,14 +233,44 @@ its next times have passed, the game tries to switch to the player's
 **previous weapon** if that has ammo, otherwise to the best weapon by the
 scripts' `weight` (the melee always qualifies). The switch is refused
 while the Minigun can't be put away: while it isn't idle, and after the
-wind-down until the first-person spool-down sequence has finished
-(1.333 s at playback rate 1; the rate the wind-up set is kept, so items
-with a shorter wind-up finish sooner). So the switch comes about 1.33 s
-after the wind-down begins, and the new weapon's draw starts then
-(measured with this account's Minigun variant, whose wind-up is 0.6 s:
-1.11 s, which is 1.333 × 0.6 / 0.75 = 1.07 s plus 2 ticks of input
-delay; the bot's stock gun switched too). Holding any button postpones
-the switch. An empty Minigun cannot be switched back to by hand (a
+wind-down while the first-person spool-down sequence is not yet
+**finished** in the engine's sense (below). Holding any button postpones
+the switch.
+
+**When the spool-down counts as finished** (2026-11-20, from the SDK's
+animation code, the arms' sequence data and a per-tick measurement):
+
+- A non-looping sequence is flagged finished as soon as an animation
+  advance takes its cycle **past 1 − fade_out × cycle_rate × playback
+  rate**, not at cycle 1. fade_out is the sequence's own cross-fade-out
+  time (0.2 s for `m_spool_down`, the compiler's default), cycle_rate is
+  1 / its length (1 / 1.333 = 0.75 per second). For `m_spool_down` at
+  rate 1: 1 − 0.2 × 0.75 = **0.85**, reached after 0.85 / 0.75 =
+  **1.133 s** (its length minus 0.2 s). (The flag is also set when the
+  cycle reaches 1.)
+- The playback rate is **1**. Every new view-model sequence resets the
+  playback rate to 1 when it starts; the wind-up's rate (0.75 / wind-up
+  time) is set after the wind-up sequence is sent and so applies to
+  `m_spool_up` only, and the wind-down's `m_spool_down` starts at rate
+  1 for every Minigun variant. (This replaces the earlier reading that
+  the wind-up's rate is kept.)
+- Per tick: the weapon's think (with the switch check) runs **before**
+  the view model's animation advance in the same tick. The wind-down
+  tick sends `m_spool_down` at cycle 0; each later tick advances it by
+  0.015 / 1.333 = 0.01125. After 76 advances the cycle is 0.855 > 0.85
+  and the flag is set; the next tick's check sees it and switches.
+- So the empty auto-switch (and a manual switch away) comes **77 ticks
+  = 1.155 s after the wind-down tick**, and the new weapon's draw starts
+  then. In general: ticks = ceil((L − f) / 0.015) + 1, with L the
+  spool-down's length and f its fade-out time, at rate 1.
+
+Measured (2026-11-20, the local player's stock Minigun, `host_framerate
+0.015`, the view model's sequence and cycle read every tick): the switch
+to the Shotgun came 77 ticks after the wind-down began, at
+`m_spool_down` cycle 0.855, in both runs. The earlier 1.11 s with this
+account's non-stock variant (0.6 s wind-up) is not explained by a scaled
+rate (there is none at the wind-down); by the rule above it too should
+be 77 ticks; it was measured from an observing client, not per tick. An empty Minigun cannot be switched back to by hand (a
 weapon with no ammo of its type is refused) until ammo arrives.
 
 ### 4. Sounds
@@ -487,8 +521,8 @@ Stock gun, 200 ammo unless stated, t = 0 at the first press, tick 0.015 s.
 | 6 | as 5 | release A at 3.0, keep B | spin loop replaces fire at tick 200 (the first tick without A) |
 | 7 | as 2 | press A again while the wind-down plays | that tick: wind-down cut, wind-up starts; fire loop 50 ticks later, first shot 57 ticks later (no shortened wind-up; measured) |
 | 8 | firing | hold A for 30 s | 200 shots (ticks 57 … 1450); at tick 1457 (21.855) fire loop cut, empty loop starts and loops without a gap to 30 s; no new sound starts in between |
-| 9 | as 8 | release A at 30 | empty loop cut and wind-down at once (tick 2000); at about 31.33 (spool-down done) switch to the previous weapon (its draw sound) |
-| 10 | idle | hold A and B, 200 ammo | fires from 0.855; dry at 21.855 with the empty loop; release A at 24: still dry, empty loop; release B at 25.5: wind-down that tick; switch ≈ 1.33 s later |
+| 9 | as 8 | release A at 30 | empty loop cut and wind-down at once (tick 2000); at tick 2077 (30 + 1.155 s; `m_spool_down` cycle 0.855) switch to the previous weapon (its draw sound) |
+| 10 | idle | hold A and B, 200 ammo | fires from 0.855; dry at 21.855 with the empty loop; release A at 24: still dry, empty loop; release B at 25.5: wind-down that tick; switch 77 ticks (1.155 s) later |
 | 11 | idle, ammo 0 (before the switch) | press B or A, hold 1 s | nothing: no wind-up, no sound, speed 230, jump works; no switch while held; switch after release |
 | 12 | dry, A held | ammo pack gives 100 | next tick: firing (fire loop replaces empty); shots from the tick after; damage penalty from τ = 0 (weapons.md §7.2) |
 | 13 | firing | the crit flag turns on at 5.0 for 2 s | FireCrit replaces Fire at 5.0 from its start; Fire replaces FireCrit at 7.0 from its start |
@@ -508,9 +542,10 @@ Stock gun, 200 ammo unless stated, t = 0 at the first press, tick 0.015 s.
    bot's stock one was (2.985 s). Code says it should be cut for the
    owner too. Check with a stock Minigun in the owner's hands (needs a
    loadout with the stock gun); until then use the barrel cut for all.
-3. The auto-switch delay was measured only with a non-stock Minigun
-   (1.11 s, its 0.6 s wind-up scaling the spool-down's playback rate);
-   the stock figure (1.33 s) is from the data and the code.
+3. ~~The auto-switch delay with a stock Minigun.~~ Answered
+   (2026-11-20, §3.3): 77 ticks (1.155 s) after the wind-down, when
+   `m_spool_down`'s cycle passes 0.85 (its length minus its 0.2 s
+   fade-out), at playback rate 1 for every variant.
 4. Crit loop switching was not measured (the reference server has random
    crits off). Per code: Fire ↔ FireCrit follow the networked crit flag.
 5. The crouched/swimming observer quirk (barrel and wind-down) is from

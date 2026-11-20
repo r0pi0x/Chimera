@@ -691,7 +691,8 @@ differ.**
   wind-down**: in idle the Heavy has his normal speed and can jump, and a
   new press winds up again at once (0.75 s). The wind-down sound and the
   spool-down animation (`m_spool_down`, 1.33 s) are cosmetic, except
-  that switching weapons waits until that animation ends.
+  that switching weapons waits until that animation counts as finished
+  (1.133 s, 77 ticks after the wind-down; minigun.md §3.3).
 - While in any state but idle the Heavy **cannot jump** (the jump button
   is dropped from his commands) and **cannot switch weapons**. His speed
   cap of 110 comes from an "aiming" condition added when the wind-up
@@ -962,7 +963,7 @@ pellets unless said, damage rounded at the end.
 | 33 | Minigun idle | press and hold attack | spun at +0.75 s (50 ticks); first shot 0.1 s later, ≈ +0.855 s (57 ticks); then every 0.105 s (7 ticks) |
 | 34 | Minigun, 200 ammo | hold attack 30 s | 200 shots, then the empty loop; spun the whole time |
 | 35 | Minigun spinning (attack2) | press jump | no jump; release attack2 → idle 0.3 s later (20 ticks), then a jump works and speed is back to 230 |
-| 36 | Minigun firing | press weapon switch | refused; after release, refused until the spool-down animation ends (≈ 1.33 s), then allowed |
+| 36 | Minigun firing | press weapon switch | refused; after release, refused until the spool-down animation counts as finished (cycle past 0.85: allowed from the 77th tick after the wind-down; minigun.md §3.3), then allowed |
 | 37 | Heavy, minigun spun, standing | hold forward | speed 110 (crouched: the movement spec's crouch rule, Open questions 16) |
 | 38 | Scattergun, last shot > 0.25 s ago | fire with random spread | pellet 1 exactly on the crosshair; others within ±0.0675 tangent on each axis, denser toward the centre (triangular) |
 | 39 | Scattergun, `tf_use_fixed_weaponspreads` 1 | fire twice | identical pattern: tangents (0,0), (±0.03375, 0), (0, ±0.03375), (±0.0286875, ±0.0286875), (0,0) in pellet order (§6.2) |

@@ -31,7 +31,7 @@ Captured imagery stays in scratch, never in the repo.
 | Camera match (2fort bridge, setpos/setang) | matches | – |
 | Muzzle flashes, first person | close (scattergun, shotgun, SMG); Pistol (Engineer's and Scout's, stock) matches (2026-11-20, stock-recapture) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). The flash now rides the animated muzzle as TF2's does (`attached::AttachmentMark`); TF2's view model kicks harder (the Scattergun's pump) |
 | Muzzle flashes, third person | close (Scattergun, Shotgun) | the scenes compare now: ours' target fires `ahead` (TF2's `bot_forceattack`) and our camera stays while our body leaves the line of fire (`chimera_freecam 2`). The flashes' size and life agree. TF2 draws another player's flash some 7 frames before its tracers and fire gesture (seen on the Scattergun and the Shotgun); ours draws them together |
-| Minigun constant flash, brass | close (first person, rechecked on the stock Minigun 2026-11-20); close (third person) | first person: the core a compact glow; the brass lives 2 s. Stock Minigun (stock-recapture): spun and firing for 0.75 s the flash covers ~5,500 px in both (TF2 5,706); its first four frames TF2 2,000 / 5,700 / 5,200 / 4,500, ours 1,400 / 4,500 / 6,200 / 8,600 (ours swells on the fourth; TF2's flickers 4,000-5,200 after). Third person (pass 5, from 260 units above): TF2's casings lie 40-75 units out to the gun's side (most ~58), ours ~25-55 (most ~43); from the side TF2's leave upward first. Ours' numbers (local x 100-200, drag 0.05, gravity −252) land ~40 out from a level eject: the difference reads as the eject attachment's tilt under TF2's spun pose (particles.md Open questions 6; the animation agent's pose) |
+| Minigun constant flash, brass | close (first person, rechecked on the stock Minigun 2026-11-20); close (third person) | first person: the core a compact glow; the brass lives 2 s. Stock Minigun (stock-recapture): spun and firing for 0.75 s the flash covers ~5,500 px in both (TF2 5,706); its first four frames TF2 2,000 / 5,700 / 5,200 / 4,500, ours 1,400 / 4,500 / 6,200 / 8,600 (ours swells on the fourth; TF2's flickers 4,000-5,200 after). Spec ([particles.md §8.3, §8.3.1, §10.11](../../../specs/tf2/particles.md)): caps (sparks 5), the starflash and flare emit only in the first 0.5 s, smoke from 2 s, per-frame counts and sizes; by its data the flash grows to frame 3-6 and holds, so TF2's frame-2 peak is left as particles.md Open questions 10. Third person (pass 5, from 260 units above): TF2's casings lie 40-75 units out to the gun's side (most ~58), ours ~25-55 (most ~43); from the side TF2's leave upward first. Ours' numbers (local x 100-200, drag 0.05, gravity −252) land ~40 out from a level eject: the difference reads as the eject attachment's tilt under TF2's spun pose (particles.md Open questions 6; the animation agent's pose) |
 | Tracers | matches (SMG, Shotgun); from the front close | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered). From the front the geometry agrees (a streak passing ~20 units from the camera widens to tens of pixels in TF2 too); which pellets pass near is the spread's chance. Others' tracers now leave with the interpolated body (pass 4) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close (2026-11-20, `launch.tf2`/`.scene`) | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails. The "very long trail" was `rockettrail_burst`'s sprite trails streaking by the rocket's own 1100 units/s (a lock now carries a particle's last place too, particles.md 5.1) and the copy drawn late thrown back 110 units behind the eye a frame after the shot; drawn from its seeded copy (11.1); a step's particles now spread along the control point's path, the copy's trail made at the rocket's first place (tf2-psys). TF2's big glow ~50 units ahead of the launcher at frames 2-6 still missing: ours' first step leaves a smoke puff at the launcher and its glows mid-path behind the eye (log) |
@@ -168,7 +168,12 @@ taken in that window, were thrown away and retaken).
   sequence's end, 1.333 s, which the spec gives and ours uses: 85-93
   ticks, `running_dry_and_the_switch_8_9`). The Tomislav's 1.11 s was
   read as 1.333 x 0.6 / 0.75; stock's 1.155 doesn't fit that rule. What
-  ends the hold? Ours unchanged until answered.
+  ends the hold? Ours unchanged until answered. **Answered**
+  ([minigun.md §3.3](../../../specs/tf2/minigun.md)): a non-looping
+  sequence counts as finished once its cycle passes 1 − fade-out
+  (0.2 s) × cycle rate, 0.85 for `m_spool_down`; the playback rate is 1
+  for every variant (a new sequence resets it); the check runs before
+  the tick's view-model advance: 77 ticks.
 - **Pistol, per tick**: a shot every 10 ticks (10/11 alternating at
   0.15 s); `cl_autoreload` starts the reload one interval after the last
   shot; the whole clip in 69 ticks on the Engineer (1.035 s) and 67 on
@@ -179,7 +184,14 @@ taken in that window, were thrown away and retaken).
   Ours plays `ReloadScout` at the start for both classes and no
   `ClipIn` (weapons_more.md 9.4 names `ClipIn` for the Engineer and only
   `ReloadScout` for the Scout, with no times): left, a spec question
-  (when `ClipIn` plays, and the Scout's second sound).
+  (when `ClipIn` plays, and the Scout's second sound). **Answered**
+  ([viewmodel_sounds.md](../../../specs/tf2/viewmodel_sounds.md)):
+  the shooter's reload sounds are the view model's animation sound
+  events, per class (Scout `p_reload`: `ReloadScout` 0.033 s, `ClipIn`
+  0.600 s; Engineer `pstl_reload`: `ClipIn` 0.467 s), played for the
+  shooter only; others hear the script's `Weapon_Pistol.WorldReload`
+  from the server at the start. Every stock reload's events are listed
+  there.
 - **Pictures** (`muzzle.tf2`/`.scene` now with a `pistol_scout` section;
   `barrel.tf2`/`.scene` new: the Minigun 50 and 100 ticks into attack2,
   then firing): the Engineer's and Scout's Pistols at rest and their
