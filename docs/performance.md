@@ -1512,7 +1512,7 @@ What did not move, and its size (`docs/backlog.md`, "Nothing blocks the main thr
 - Dedicated servers flood at once: a server's first bot tick is still 3-7 G (nobody watches its frames). (Since: on a task or sliced, as a front end's, "A dedicated server's map change" below.)
 
 Guards: `chimera_client`'s `each_hud_is_shown_then_the_playing_one_stays` and `text_warm` (`chimera/client/tests/it/text_warm.rs`: after the warm-up the feed's first kill (its gun's icon glyph and headshot mark too), the board, the panel and a game menu's first opening make no atlas, Bevy's `FontAtlasSet` counted; every atlas put in ahead was under Bevy's own key; an undeclared size is noticed; in play no frame lays out more than `GLYPHS_PER_FRAME` glyphs), `combat_arms`' `ui::text_warm` (its drawn HUD, with and without the warm-up: the feed's first line makes an atlas only without), `chimera/present/tests/it/late_build.rs` (three models far over any game's size come
-in with no frame over 8 M instructions; here 3.5 M), `apps/ultimate_gun_game/tests/it/heavy/rung_frames.rs`
+in with no frame over 8 M instructions; here 3.5 M; in a process of its own, as other tests' tasks ran into its frames under load), `apps/ultimate_gun_game/tests/it/heavy/rung_frames.rs`
 (with the installs: de_dust2 headless, a bot walking a seeded ladder, each rung's worst
 main-thread frame under 45 M, ticks included; measured 12.5-27.7 M. It covers the
 simulation and the bodies' and held models' drawing, not the HUD, the render thread or

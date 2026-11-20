@@ -1510,9 +1510,12 @@ load; work counts don't (performance.md, "Work counts"):
   idle or loaded; assert on those, and print
   `after.systems.diff_table(&before.systems, 20)` in the failure (the
   systems that grew). `sim.state_hash()` checks two runs played alike.
-  A test comparing counts closely starts with
+  A test comparing counts closely, or holding a frame's instructions
+  under a limit, starts with
   `if !harness::own_process("<path::to::test>") { return; }` (under
-  `cargo test` other tests share the compute pool). Without hardware
+  `cargo test` other tests share the compute pool, and a thread waiting
+  in a scope, as Bevy's transform propagation does every frame, runs
+  their tasks into its own count). Without hardware
   counters (Windows) `work` returns None: skip with a note.
 - Any app: `metrics::work::count_systems(world)` before its schedules
   first run (`Sim` does it), `work::set_enabled(true)` on the thread that

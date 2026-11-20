@@ -4,6 +4,11 @@
 //! frames, and the worst frame's main-thread instructions stay under a limit.
 //! Instructions, because the dev box's load makes a limit in time flaky; where
 //! the hardware counters aren't open (Windows) only the behaviour is checked.
+//! That test runs in a process of its own (`harness::own_process`): Bevy's
+//! transform propagation waits in a compute pool scope every frame, and a
+//! thread waiting there runs whatever tasks the shared pool holds, so under
+//! `cargo test` on a loaded box other tests' tasks went into this frame's
+//! count (11-19 M in `mark_dirty_trees` or `sync_simple_transforms`).
 //! A late body some character wears is built before those nobody wears, and
 //! a body not built yet is never drawn; a late view model a view shows is
 //! built before the others. A body built again (its late files arrived:
@@ -138,6 +143,11 @@ fn done(sim: &Sim) -> bool {
 
 #[test]
 fn large_models_come_in_without_a_frame_over_the_limit() {
+    // The frame's count is this test's work only with the compute pool to
+    // itself (the module's doc).
+    if !chimera_world::harness::own_process("late_build::large_models_come_in_without_a_frame_over_the_limit") {
+        return;
+    }
     let mut sim = sim();
     assert!(!done(&sim));
     let w = sim.app.world_mut();
