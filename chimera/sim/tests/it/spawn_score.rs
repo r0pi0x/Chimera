@@ -2,7 +2,9 @@
 //! greybox: a match's start places everyone one at a time, so no one
 //! starts in another's view or near one; the same seed places the same;
 //! respawns keep out of the enemies' view; a spawn's cost stays under its
-//! budget of instructions.
+//! budget of instructions (that test runs in a process of its own,
+//! `harness::own_process`: under `cargo test` other tests' compute-pool tasks
+//! would land in its count).
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
@@ -188,6 +190,9 @@ fn respawns_keep_out_of_the_enemies_view() {
 
 #[test]
 fn a_scored_spawn_stays_in_its_budget() {
+    if !chimera_world::harness::own_process("spawn_score::a_scored_spawn_stays_in_its_budget") {
+        return;
+    }
     let (mut sim, all) = started(5, 8);
     restart(&mut sim);
     let n = 40u64;
