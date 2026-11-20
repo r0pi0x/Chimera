@@ -64,6 +64,33 @@ shot pistol_m3
 -attack2
 host_timescale 1
 wait 30
+# pistol_scout (TF2's Scout with the stock Pistol)
+rung tf2:tf_weapon_pistol_scout
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot pistol_scout_idle
+host_timescale 0.01
+# the new rate holds from the next frames: a shot in this one ran
+# at full speed (13 ms of its effects in one step)
+wait 3
++attack
+wait_for shot 3000
+gwait 0.008
+shot pistol_scout_m0
+gwait 0.017
+shot pistol_scout_m1
+gwait 0.017
+shot pistol_scout_m2
+gwait 0.016
+shot pistol_scout_m3
+-attack
+-attack2
+host_timescale 1
+wait 30
 # shotgun
 rung tf2:tf_weapon_shotgun_primary as tf2:engineer
 wait 2

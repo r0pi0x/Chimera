@@ -1,0 +1,33 @@
+# Ours for barrel.tf2: the Minigun's barrel and view model 50 and 100 ticks
+# after attack2 from rest, then 150 with attack too (game time, slowed).
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/barrel.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+rung tf2:tf_weapon_minigun
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 0 0
+setang 0 90 0
+wait 90
+shot barrel_idle
+host_timescale 0.01
+wait 3
++attack2
+gwait 0.75
+shot barrel_t50
+gwait 0.75
+shot barrel_t100
++attack
+gwait 0.75
+shot barrel_t150
+-attack
+-attack2
+host_timescale 1
+wait 30

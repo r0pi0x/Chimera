@@ -29,9 +29,9 @@ Captured imagery stays in scratch, never in the repo.
 |---|---|---|
 | Tool: headless TF2, scenes, pairs | done | – |
 | Camera match (2fort bridge, setpos/setang) | matches | – |
-| Muzzle flashes, first person | close (scattergun, shotgun, SMG) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). The flash now rides the animated muzzle as TF2's does (`attached::AttachmentMark`); TF2's view model kicks harder (the Scattergun's pump) |
+| Muzzle flashes, first person | close (scattergun, shotgun, SMG); Pistol (Engineer's and Scout's, stock) matches (2026-11-20, stock-recapture) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). The flash now rides the animated muzzle as TF2's does (`attached::AttachmentMark`); TF2's view model kicks harder (the Scattergun's pump) |
 | Muzzle flashes, third person | close (Scattergun, Shotgun) | the scenes compare now: ours' target fires `ahead` (TF2's `bot_forceattack`) and our camera stays while our body leaves the line of fire (`chimera_freecam 2`). The flashes' size and life agree. TF2 draws another player's flash some 7 frames before its tracers and fire gesture (seen on the Scattergun and the Shotgun); ours draws them together |
-| Minigun constant flash, brass | close (first person); close (third person) | first person: the core a compact glow; the brass lives 2 s. Third person (pass 5, from 260 units above): TF2's casings lie 40-75 units out to the gun's side (most ~58), ours ~25-55 (most ~43); from the side TF2's leave upward first. Ours' numbers (local x 100-200, drag 0.05, gravity −252) land ~40 out from a level eject: the difference reads as the eject attachment's tilt under TF2's spun pose (particles.md Open questions 6; the animation agent's pose) |
+| Minigun constant flash, brass | close (first person, rechecked on the stock Minigun 2026-11-20); close (third person) | first person: the core a compact glow; the brass lives 2 s. Stock Minigun (stock-recapture): spun and firing for 0.75 s the flash covers ~5,500 px in both (TF2 5,706); its first four frames TF2 2,000 / 5,700 / 5,200 / 4,500, ours 1,400 / 4,500 / 6,200 / 8,600 (ours swells on the fourth; TF2's flickers 4,000-5,200 after). Third person (pass 5, from 260 units above): TF2's casings lie 40-75 units out to the gun's side (most ~58), ours ~25-55 (most ~43); from the side TF2's leave upward first. Ours' numbers (local x 100-200, drag 0.05, gravity −252) land ~40 out from a level eject: the difference reads as the eject attachment's tilt under TF2's spun pose (particles.md Open questions 6; the animation agent's pose) |
 | Tracers | matches (SMG, Shotgun); from the front close | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered). From the front the geometry agrees (a streak passing ~20 units from the camera widens to tens of pixels in TF2 too); which pellets pass near is the spread's chance. Others' tracers now leave with the interpolated body (pass 4) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close (2026-11-20, `launch.tf2`/`.scene`) | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails. The "very long trail" was `rockettrail_burst`'s sprite trails streaking by the rocket's own 1100 units/s (a lock now carries a particle's last place too, particles.md 5.1) and the copy drawn late thrown back 110 units behind the eye a frame after the shot; drawn from its seeded copy (11.1); a step's particles now spread along the control point's path, the copy's trail made at the rocket's first place (tf2-psys). TF2's big glow ~50 units ahead of the launcher at frames 2-6 still missing: ours' first step leaves a smoke puff at the launcher and its glows mid-path behind the eye (log) |
@@ -53,7 +53,7 @@ Captured imagery stays in scratch, never in the repo.
 | Detail sprites (2fort's hay) | close | drawn; kept whole at a distance (alpha raised by mip level); TF2 fades them blended where ours dithers |
 | Explosion on a player / mid-air | close (pass 6: TF2 without bloom is pale in its first frame too; its streaks are longer at 33-50 ms; pass 7: measured, particles.md Open questions 7, still differs: TF2's rays are ~1 unit wide, ours radius-scaled 10-110 units, an orange haze) | the "hard-edged orange disc" was the sandbox's blast spheres (`range::blast_spheres`), which `cl_drawhud 0` didn't hide (now it does). Matched at 300 units, ours fills the far bridge with the same orange glow clipped by the near truss, the same sequence; ours a little paler yellow in the first 50 ms; TF2 shows more embers and a faint dark smudge after |
 | Crits | n/a | random crits are off in our TF2 (the party's choice, docs/plans/active/tf2.md); crit tracers, trails and streams are named in `looks` but never asked for |
-| View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries |
+| View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver, the Engineer's and the Scout's Pistol, the Minigun at rest, spinning up and firing, on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries (the Pistol and Minigun now swapped in by `stock`; the Pyro's still a bot's) |
 | HDR, exposure, bloom (`mat_hdr_level` 2; specs/tf2/hdr_bloom.md) | close (pass 6, `hdr.tf2`/`hdr.scene`: bridge, wall, courtyard, bloom on and off) | the integer model (`map::HdrModel::Integer`): bloom adds 7.2-11.7 to the mean byte where TF2's adds 6.1-12.6; scenes 3-5 % brighter than TF2's in two views, 6 % darker in the courtyard (ours settles k at 0.96-1.04, TF2 reported 0.94); the far fireball's near-white area with bloom ~15,000 px against TF2's ~37,000 (its unbloomed core is smaller: the flame effect's, not the bloom's). TF2 maps now load at `mat_hdr_level` 2 by default (`SourceGame::hdr_default_level`; an explicit `mat_hdr_level` wins, -1 is "Game default") |
 | View-model bob and sway (first person, own player) | close (2026-11-19, fp pass) | had none: TF2's guns registered no motion rules. Now CS:S's bob on a fixed 0.8 s cycle, no sway (`tf2::game::view::MOTION`, `view_motion::Sway::None`); walking pairs agree in amplitude and the hand's rise, within a few frames of phase |
 | View-model draw, fire, reload (Scattergun, Rocket Launcher) | matches (Scattergun); close (Rocket Launcher) | the draw played at 1x: now 1.34 x, holding its last frame to its own length (`ViewAnimRules::draw_rate`); TF2 reloads a clip not full whenever attack is let go (`cl_autoreload` 1), ours only an empty one: now `[magazine] reload_when_idle`, and an attack stops a reload's start too (`shells.start_interruptible`). Rocket Launcher's reload: TF2 plays its whole 0.5 s start and a loop a round, the rocket counted 0.33 s in (measured per tick); ours now too (`shells.round_at`). The switch: ours drew no view model in the frame of a switch (the new body shown a frame late); now the new gun shows that frame (`swap_view_bodies`) |
@@ -134,6 +134,67 @@ Captured imagery stays in scratch, never in the repo.
    `effects/electric1` and `effects/sc_softglow`).
 
 ## Log
+
+### The stock Minigun and Pistol rechecked (stock-recapture, 2026-11-20)
+
+The comparisons that used the local player's Minigun (this account's is
+the Tomislav, 424) or Pistol (the Engineer carries the Wrangler: the
+old `pistol` captures showed his Shotgun) redone with the stock items
+swapped in (`stock tf_weapon_minigun 15`, `stock tf_weapon_pistol 22`,
+`stock tf_weapon_pistol_scout 23`), each run holding the scene lock with
+class and item read every tick (VScript) and `air_density` 2 checked
+(a spec probe had changed it on the same instance; the first captures,
+taken in that window, were thrown away and retaken).
+
+- **Minigun, per tick** (own player, `sv_soundemitter_trace 1`,
+  `host_framerate 0.015`, VScript: `m_iWeaponState`, ammo, the view
+  model's sequence): held 200 ticks: wind-up 0, fire loop 50, first shot
+  57 (`m_fire` from 58), fire loop cut and wind-down 211, wind-down cut
+  411: as minigun.md 4.4 and ours (`minigun::held_then_released_1_2`).
+  attack2 held 150 ticks: spin loop 50, wind-down 20 ticks after the
+  last held tick, cut 170 later (ours 20 and 169). A 10-tick tap: the
+  wind-up completes at 50, the wind-down cut 51 later (ours 50). Dry
+  (20 rounds): dry at the next due shot, released 3 ticks later, the
+  wind-down at entering dry + 20 ticks (ours the same rule). The
+  view model's `m_spool_down` runs 1.333 s (cycle 0.01125 a tick).
+  Spec Open questions 1 and 2 answered by measurement: the spin-idle
+  hold is 0.3 s from the last tick attack2 was held, and the owner's own
+  wind-down is cut when the barrel stops (200 ticks after full speed),
+  as ours does. Nothing changed: nothing of ours was tuned to the
+  Tomislav (its numbers come from the spec).
+- **Spec question (minigun.md 3.3, Open questions 3)**: the stock empty
+  Minigun switched to the Shotgun 77 ticks (1.155 s) after the
+  wind-down began, at `m_spool_down` cycle 0.855, twice (not at the
+  sequence's end, 1.333 s, which the spec gives and ours uses: 85-93
+  ticks, `running_dry_and_the_switch_8_9`). The Tomislav's 1.11 s was
+  read as 1.333 x 0.6 / 0.75; stock's 1.155 doesn't fit that rule. What
+  ends the hold? Ours unchanged until answered.
+- **Pistol, per tick**: a shot every 10 ticks (10/11 alternating at
+  0.15 s); `cl_autoreload` starts the reload one interval after the last
+  shot; the whole clip in 69 ticks on the Engineer (1.035 s) and 67 on
+  the Scout (1.005 s), as ours (`reload = { scout = 1.005, engineer =
+  1.035 }`). Sounds: the Scout's `Weapon_Pistol.ReloadScout` at the
+  start, then `Weapon_Pistol.ClipIn` ~0.6 s in (client, view-model
+  timing); the Engineer's only `ClipIn` (~0.45-0.65 s in, two runs).
+  Ours plays `ReloadScout` at the start for both classes and no
+  `ClipIn` (weapons_more.md 9.4 names `ClipIn` for the Engineer and only
+  `ReloadScout` for the Scout, with no times): left, a spec question
+  (when `ClipIn` plays, and the Scout's second sound).
+- **Pictures** (`muzzle.tf2`/`.scene` now with a `pistol_scout` section;
+  `barrel.tf2`/`.scene` new: the Minigun 50 and 100 ticks into attack2,
+  then firing): the Engineer's and Scout's Pistols at rest and their
+  flashes match in place, size and life. The Minigun at rest sits where
+  TF2's does; spinning up, both view models lower the gun out of sight
+  (only the fist shows, at the same place), so the barrel's turn can't
+  be seen in first person in either (third person: `minigun_sounds`/
+  `thirdperson`, bots, stock). The constant flash: the table's row.
+- **Other tuning on non-stock items** (audit of this log): the
+  Quickiebomb (rechecked: sticky-recheck), the Tomislav and the
+  Engineer's Pistol (above) were the only own-player comparisons on
+  non-stock items. The Pyro's flames, the Medic's needles and every
+  third-person or bot-eye scene used puppet bots (stock); the Wrench
+  (`impacts.tf2`) is stock; no other melee was compared. minigun.md's
+  own Tomislav measurements (Open questions 2, 3) are answered above.
 
 ### Stock items in every scene; the sticky rechecked (sticky-recheck, 2026-11-20)
 

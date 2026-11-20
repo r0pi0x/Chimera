@@ -1,0 +1,40 @@
+# The Minigun's barrel and view model spinning up from rest, first person,
+# on this player's own stock Minigun (item 15: this account's Heavy carries
+# the Tomislav, 424, swapped by `stock`); real TF2, ours: barrel.scene.
+# One tick a frame (host_framerate 0.015; `wait 2` is one frame): attack2
+# pressed, pictures 50 ticks (the wind-up's end, the barrel 1.91 rad) and
+# 100 ticks (7.58 rad) after it, then attack too, 150 ticks after it
+# (spun and firing; specs/tf2/minigun.md 5's table).
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/barrel.tf2 --out <dir>
+mp_disable_respawn_times 1
+tf_weapon_criticals 0
+cl_drawhud 0
+r_drawvgui 0
+fov_desired 90
+viewmodel_fov 54
+mat_colorcorrection 0
+jointeam red
+joinclass heavyweapons
+kill
+sleep 7
+setpos 0 0 0
+setang 0 90 0
+use tf_weapon_minigun
+stock tf_weapon_minigun 15
+sleep 3
+shot barrel_idle
+host_framerate 0.015
+wait 2
++attack2
+wait 100
+snap barrel_t50
+wait 100
+snap barrel_t100
++attack
+wait 100
+snap barrel_t150
+-attack
+-attack2
+wait 2
+host_framerate 0
+sleep 4

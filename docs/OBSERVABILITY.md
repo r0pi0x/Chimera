@@ -2585,7 +2585,7 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   Rocket Launcher, Grenade Launcher, Shotguns, SMG, Sniper Rifle,
   Revolver and Wrench are. Puppet bots always get the stock loadout. The
   scene directive `stock <weapon class> <item index>` (`stock
-  tf_weapon_pipebomblauncher 20`; `muzzle.tf2`'s Pistol 22 and Minigun
+  tf_weapon_pipebomblauncher 20`; `muzzle.tf2`'s Pistol 22, the Scout's `tf_weapon_pistol_scout 23` and Minigun
   15) swaps the local player's weapon of that slot for the item through
   TF2's VScript (a script written into the install's
   `tf/scripts/vscripts/` and deleted once run); it lasts until the
