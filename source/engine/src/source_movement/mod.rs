@@ -254,6 +254,12 @@ pub struct SourceMovementConfig {
     pub fall_punch: f32,
     pub fall_half_safe: f32,
     pub fall_bounce: f32,
+    /// Full landing volume above this instead of `fall_safe` (TF2: the
+    /// shared 580 while its damage starts at 650); None: `fall_safe`.
+    pub fall_loud: Option<f32>,
+    /// Landing sound and view punch only at full volume (TF2's Scout:
+    /// above 580; usually per character, `SourceTraits`).
+    pub loud_landings_only: bool,
     /// Taken off the fall speed of a landing out of water on a floating
     /// body (`map::buoyancy::Floating`; CS:S 200, HL2 173: movement.md
     /// "Falling", specs/hl2dm/movement.md "Falling and landing").
@@ -366,6 +372,7 @@ pub struct SourceTraits {
     pub max_speed: Option<f32>,
     pub eye_stand: Option<f32>,
     pub air_jumps: Option<u8>,
+    pub loud_landings_only: Option<bool>,
 }
 
 impl SourceTraits {
@@ -377,6 +384,9 @@ impl SourceTraits {
         }
         if let Some(n) = self.air_jumps {
             c.air_jumps = n;
+        }
+        if let Some(q) = self.loud_landings_only {
+            c.loud_landings_only = q;
         }
         c
     }
@@ -549,6 +559,8 @@ impl SourceMovementConfig {
             fall_punch: 350.0,
             fall_half_safe: 290.0,
             fall_bounce: 200.0,
+            fall_loud: None,
+            loud_landings_only: false,
             floating_bonus: 200.0,
             fall_fixed: None,
             fall_fraction: false,
@@ -2220,7 +2232,7 @@ impl Mover<'_, '_, '_, '_> {
         }
         let volume = if self.me.water_level > 0 {
             0.5
-        } else if fall > self.cfg.fall_safe {
+        } else if fall > self.cfg.fall_loud.unwrap_or(self.cfg.fall_safe) {
             1.0
         } else if fall > self.cfg.fall_half_safe {
             0.85
@@ -2229,6 +2241,9 @@ impl Mover<'_, '_, '_, '_> {
         } else {
             0.5
         };
+        if self.cfg.loud_landings_only && volume < 1.0 {
+            return;
+        }
         self.impact_step(volume);
     }
 

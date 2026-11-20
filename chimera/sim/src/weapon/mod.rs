@@ -1017,6 +1017,10 @@ pub struct ShellReload {
     /// attack held with a round in the clip ends the reload there instead
     /// of the next round going in.
     pub insert_first: bool,
+    /// An attack with a round in the clip stops the reload during its
+    /// start too, at once (TF2: specs/tf2/weapons.md 4, step 3); otherwise
+    /// attacks wait for the start.
+    pub start_interruptible: bool,
 }
 
 /// Where a one-at-a-time reload is (`ShellReload`).
@@ -1284,6 +1288,12 @@ impl HeldGauge {
         Self(b as f32 / 255.0)
     }
 }
+
+/// A clip that isn't full reloads whenever neither attack is held (TF2's
+/// `cl_autoreload` 1: specs/tf2/weapons.md 4, step 4), as soon as the
+/// weapon may fire again; data: `[magazine] reload_when_idle`.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ReloadWhenIdle;
 
 /// In `AltModes` mode `.0` the trigger is automatic, whatever its own
 /// `automatic` and `per_press` (Combat Arms' continuous fire on a
@@ -2230,6 +2240,7 @@ struct WeaponParts {
     alt_shot: Option<&'static AltShot>,
     rewind_choice: Option<&'static lagcomp::RewindChoice>,
     own_frame: Has<OwnFrame>,
+    reload_when_idle: Has<ReloadWhenIdle>,
 }
 
 impl WeaponPartsItem<'_, '_> {
@@ -2723,9 +2734,13 @@ fn weapon_frame(
             blocked = true;
         }
 
-        // An empty clip reloading by itself (`Magazine::auto_reload`).
+        // An empty clip reloading by itself (`Magazine::auto_reload`), or
+        // one not full with neither attack held (`ReloadWhenIdle`).
+        let idle_reload = w.reload_when_idle && !intent.fire && !intent.secondary;
         if !w.state.reload_held
-            && w.magazine.as_ref().is_some_and(|m| m.auto_reload && m.clip == 0 && m.reserve > 0)
+            && w.magazine.as_ref().is_some_and(|m| {
+                m.reserve > 0 && ((m.auto_reload && m.clip == 0) || (idle_reload && m.clip < m.size))
+            })
             && w.state.next_primary <= due
             && w.state.next_secondary <= due
             && !w.state.reloading()
@@ -2957,12 +2972,15 @@ fn try_reload(w: &mut WeaponPartsItem, inv: &mut Inventory, now: f64, owner: Ent
     w.state.burst_left = 0;
     w.state.fired_on_empty = false;
     if let Some(shells) = w.shells {
-        // One at a time: attacks wait for the start only (spec 3.4).
+        // One at a time: attacks wait for the start only (spec 3.4), or
+        // not at all (`start_interruptible`).
         let end = now + shells.start as f64;
         w.state.shells = ShellStage::Starting;
         w.state.shell_next = end;
-        w.state.next_primary = end;
-        w.state.next_secondary = end;
+        if !shells.start_interruptible {
+            w.state.next_primary = end;
+            w.state.next_secondary = end;
+        }
         events.event(owner, w.entity, WeaponEventKind::ReloadStarted);
         return;
     }

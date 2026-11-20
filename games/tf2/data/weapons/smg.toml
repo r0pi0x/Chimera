@@ -16,6 +16,8 @@ clip = 25
 ammo = "tf2:smg"
 reload = 1.1
 auto_reload = true
+# cl_autoreload 1 (weapons.md 4, step 4): a clip not full reloads with neither attack held.
+reload_when_idle = true
 
 [hitscan]
 range = 56754.0

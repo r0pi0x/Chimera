@@ -565,3 +565,36 @@ fn a_scattergun_hit_pushes_360_47() {
     assert!((330.0..=361.0).contains(&flat), "pushed at {flat}");
     assert!(sim.velocity(t).z < 0.0, "away from the shooter (along -Z)");
 }
+
+/// weapons.md 4, step 4 (`cl_autoreload` 1; real TF2 captured 2026-11-19:
+/// the Scattergun's reload starts about 0.7 s after one shot): a clip not
+/// full reloads once neither attack is held and the gun may fire again;
+/// an attack stops it at once, in its start too (step 3).
+#[test]
+fn a_clip_not_full_reloads_when_attack_is_let_go() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], SCATTERGUN);
+    let clip = |sim: &Sim| sim.app.world().get::<Magazine>(w).unwrap().clip;
+    let events = run(&mut sim, p, 1, |s, _| s.intent(p).fire = true);
+    assert!(events.iter().any(|(_, k)| matches!(k, WeaponEventKind::Fired { .. })), "fired: {events:?}");
+    assert_eq!(clip(&sim), 5);
+    let held = run(&mut sim, p, 60, |s, _| s.intent(p).fire = false);
+    let start = held.iter().find(|(_, k)| matches!(k, WeaponEventKind::ReloadStarted)).map(|(t, _)| *t);
+    let start = start.expect("reloads with attack let go");
+    // The Scattergun's 0.625 s interval: about 42 ticks after the shot.
+    assert!((38..=44).contains(&start), "the reload started {start} ticks after the shot");
+    run(&mut sim, p, 60, |s, _| s.intent(p).fire = false);
+    assert_eq!(clip(&sim), 6, "the round went back in");
+    // Step 3: an attack in the reload's start stops it and fires at once.
+    run(&mut sim, p, 1, |s, _| s.intent(p).fire = true);
+    let mut started = false;
+    for _ in 0..60 {
+        if run(&mut sim, p, 1, |s, _| s.intent(p).fire = false).iter().any(|(_, k)| matches!(k, WeaponEventKind::ReloadStarted)) {
+            started = true;
+            break;
+        }
+    }
+    assert!(started, "the reload started");
+    let shot = run(&mut sim, p, 1, |s, _| s.intent(p).fire = true);
+    assert!(shot.iter().any(|(_, k)| matches!(k, WeaponEventKind::Fired { .. })), "fired in the start: {shot:?}");
+}

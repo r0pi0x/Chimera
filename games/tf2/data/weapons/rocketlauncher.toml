@@ -26,7 +26,9 @@ clip = 4
 ammo = "tf2:rockets"
 reload = 0.8
 auto_reload = true
-shells = { start = 0.12, insert = 0.8, back_to_back = true }
+# cl_autoreload 1 (weapons.md 4, step 4): a clip not full reloads with neither attack held.
+reload_when_idle = true
+shells = { start = 0.12, insert = 0.8, back_to_back = true, start_interruptible = true }
 
 # Without [damage] the frame traces nothing: the round is a rocket.
 [hitscan]

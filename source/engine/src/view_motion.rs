@@ -25,7 +25,8 @@
 //!   view's at 5 per second, faster beyond 1.5 apart, the model moved 5
 //!   units against the difference; the first frame of a new view model
 //!   pops it 5 units back) with its pitch offsets (looking down moves it
-//!   back 0.035, left 0.03 and down 0.02 units per degree).
+//!   back 0.035, left 0.03 and down 0.02 units per degree), or none
+//!   (`Sway::None`, TF2's: specs/tf2/viewmodel.md 3).
 //!
 //! Angles here are Source's: degrees (pitch, yaw, roll), pitch positive
 //! looking down, yaw positive turning left; vectors in Source axes (x
@@ -74,6 +75,9 @@ pub enum Sway {
     /// A lagging forward vector on a spring, then the pitch offsets
     /// (HL2's).
     Spring,
+    /// None: the model never lags the view (TF2's, specs/tf2/viewmodel.md
+    /// 3 step 5: its sway is off).
+    None,
 }
 
 /// A game's view-model motion.
@@ -360,6 +364,7 @@ pub fn placement_with(rules: &MotionRules, eye: Vec3, state: &mut MotionState, n
             let o = PITCH_OFFSETS * p;
             offset += Vec3::new(o.x, -o.y, o.z);
         }
+        Sway::None => {}
     }
     (offset, relative)
 }

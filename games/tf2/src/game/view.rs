@@ -26,9 +26,16 @@
 //! class's arms with the spec's activity, and the posed gun sits in front
 //! of the eye.
 //!
-//! Known shortcuts: no view-model bob or sway of TF2's own yet (Source's
-//! motion rules are its own spec); the minigun's barrel doesn't spin in
-//! first person (its spin is the world model's own sequence). The
+//! The view model bobs as CS:S's does, with `cl_bobcycle` 0.8 and
+//! `cl_bobup` 0.5 fixed (cheats in TF2), the speed's change slew-limited,
+//! one bob for all the player's guns, and never sways (`MOTION` on
+//! `source_engine::view_motion`, specs/tf2/viewmodel.md 3-4). A draw
+//! plays at 1.34 x and holds its last frame until its length at its own
+//! rate before the idle (`DRAW_RATE`, viewmodel.md 6).
+//!
+//! Known shortcuts: the minigun's barrel doesn't spin in
+//! first person (its spin is the world model's own sequence); the view's
+//! shake isn't passed on at 10 %. The
 //! Minigun rests in `m_idle`, upright, barrels up, right of centre, and
 //! draws with `m_draw`, no offset (specs/tf2/viewmodel.md, "Why ours shows
 //! a huge, wrongly angled Minigun", 7; a capture of the real game agrees);
@@ -44,6 +51,8 @@ use chimera_sim::weapon::{
     view_anim::{self, Pick, ViewAnimAppExt, ViewAnimRules, ViewFrame, ViewState, ViewVariant},
 };
 
+use source_engine::view_motion::{MotionAppExt, MotionRules, Sway};
+
 use super::weapons::{
     BAT, BONESAW, BOTTLE, FIREAXE, FISTS, FLAMETHROWER, GRENADE_LAUNCHER, KNIFE, KUKRI, MINIGUN, PISTOL_SCOUT, REVOLVER,
     ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN, SHOVEL, SMG, SNIPER_RIFLE, STICKY_LAUNCHER, SYRINGE_GUN, WRENCH, melee, minigun, sticky,
@@ -56,6 +65,23 @@ pub const VIEWMODEL_FOV: f32 = 54.0;
 /// The Heavy's arms' skin with the Fists (RED's: `v_skin_red` 2; BLU's
 /// 3 isn't told apart, as the other arms' team skins aren't).
 pub const FISTS_SKIN: i32 = 2;
+/// TF2's view-model motion (specs/tf2/viewmodel.md 3-4): CS:S's primary
+/// bob (0.4 forward and 0.2 right per unit of bob, the speed's change
+/// limited to 320 units/s a second) on a fixed 0.8 s cycle rising half of
+/// it, and no sway (`cl_wpn_sway_interp` 0).
+pub const MOTION: MotionRules = MotionRules {
+    cycle: Some((0.8, 0.5)),
+    forward: 0.4,
+    right: 0.2,
+    slew: true,
+    sway: Sway::None,
+};
+
+/// The draw's playback rate: a stock gun's 0.67 s draw time over its
+/// 0.5 s deploy (specs/tf2/viewmodel.md 6); the draw then holds its last
+/// frame until its length at its own rate has passed.
+pub const DRAW_RATE: f32 = 0.67 / 0.5;
+
 /// The player's base field of view the view model zooms against.
 pub const DEFAULT_FOV: f32 = 75.0;
 
@@ -416,6 +442,8 @@ pub fn rules() -> ViewAnimRules {
         idle,
         event,
         effect: source_engine::view_anim::event_effect,
+        // A stock gun's 0.67 s draw over its 0.5 s deploy (specs/tf2/viewmodel.md 6).
+        draw_rate: DRAW_RATE,
     }
 }
 
@@ -425,7 +453,7 @@ pub fn add_rules(app: &mut App) {
     if !app.is_plugin_added::<view_anim::ViewAnimPlugin>() {
         app.add_plugins(view_anim::ViewAnimPlugin);
     }
-    app.view_anim_rules(super::GAME, rules());
+    app.view_anim_rules(super::GAME, rules()).view_motion_rules(super::GAME, MOTION);
     app.init_resource::<super::classes::Classes>()
         .add_systems(Update, view_variants.before(crate::map::DriveAnimation));
 }

@@ -50,6 +50,10 @@ Captured imagery stays in scratch, never in the repo.
 | Crits | n/a | random crits are off in our TF2 (the party's choice, docs/plans/active/tf2.md); crit tracers, trails and streams are named in `looks` but never asked for |
 | View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries |
 | HDR, exposure, bloom (`mat_hdr_level` 2; specs/tf2/hdr_bloom.md) | close (pass 6, `hdr.tf2`/`hdr.scene`: bridge, wall, courtyard, bloom on and off) | the integer model (`map::HdrModel::Integer`): bloom adds 7.2-11.7 to the mean byte where TF2's adds 6.1-12.6; scenes 3-5 % brighter than TF2's in two views, 6 % darker in the courtyard (ours settles k at 0.96-1.04, TF2 reported 0.94); the far fireball's near-white area with bloom ~15,000 px against TF2's ~37,000 (its unbloomed core is smaller: the flame effect's, not the bloom's). TF2 maps now load at `mat_hdr_level` 2 by default (`SourceGame::hdr_default_level`; an explicit `mat_hdr_level` wins, -1 is "Game default") |
+| View-model bob and sway (first person, own player) | close (2026-11-19, fp pass) | had none: TF2's guns registered no motion rules. Now CS:S's bob on a fixed 0.8 s cycle, no sway (`tf2::game::view::MOTION`, `view_motion::Sway::None`); walking pairs agree in amplitude and the hand's rise, within a few frames of phase |
+| View-model draw, fire, reload (Scattergun, Rocket Launcher) | matches (Scattergun); close (Rocket Launcher) | the draw played at 1x: now 1.34 x, holding its last frame to its own length (`ViewAnimRules::draw_rate`); TF2 reloads a clip not full whenever attack is let go (`cl_autoreload` 1), ours only an empty one: now `[magazine] reload_when_idle`, and an attack stops a reload's start too (`shells.start_interruptible`). The Rocket Launcher's reload rises into its pose over ~0.25 s in TF2, ours jumps in (viewmodel.md Open questions 4). Our switch shows the old gun one frame longer |
+| Camera: view punch, landing roll, eye heights, duck | matches | measured every tick through VScript on the live client: the Scattergun's kick (-2..-4, the punch spring), the landing roll 0.013 x F (a Scout's only above 580: now so, `loud_landings_only`), eyes 65/68, the duck's and jump's ticks exactly as movement.md |
+| Movement (accel, jump, duck, fall) | matches | movement.md's cases 1, 5, 15, 16 exact on a real player, but the first tick of a key press: half input (33.75 for the Scout; movement.md Open questions 13, not changed) |
 | HUD, crosshair | todo | |
 | Lighting, materials | todo | |
 
@@ -123,6 +127,39 @@ Captured imagery stays in scratch, never in the repo.
    to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
 
 ## Log
+
+### First person and movement (tf2-fp, 2026-11-19)
+
+Tools (scratch, not in the repo): a per-tick logger of the listen
+server's own player over RCON through VScript (`script` lines, no `;`
+inside: the console splits on it; strings built from `tochar()`; lines
+under 512 characters): origin, velocity, eye height, flags, punch angle,
+eye angles, the active weapon's `m_iClip1`. Movies of the own player
+(`movie`, every 4th frame kept) against ours stepped at `host_timescale
+0.1` with a shot every 4/60 s (`gwait`).
+
+- Bob: TF2's guns had no view-model motion at all; now `MOTION`
+  (viewmodel.md 3-4). Turns show no sway (spec; a frame-to-frame jitter
+  under `setang` steps is the capture's).
+- Draw at 1.34 x and its hold (`DRAW_RATE`); the idle 1.0 s after a
+  1.0 s draw (test).
+- `cl_autoreload` (weapons.md 4, steps 3-4): `ReloadWhenIdle` and
+  `ShellReload::start_interruptible` on every TF2 clip gun. Real TF2's
+  Scattergun reload starts ~0.7 s after one shot, ours now the same tick.
+- Landings: TF2's full volume above 580 (not the 650 of its damage) and
+  the Scout's sound and roll only then (`fall_loud`,
+  `loud_landings_only`, classes.toml).
+- Measured and matching, nothing changed: the jump (stored vz 271, 259,
+  ..., apex 50.04), the duck's 14 ticks both ways, the eyes, the
+  Scattergun's punch and spring, the landing roll 0.013 x F.
+- Left: the Rocket Launcher's reload entry (above); the first tick's half
+  input (movement.md Open questions 13); the Minigun's barrel spin in
+  first person (viewmodel.md 7; needs a procedural bone in the view
+  model); view-model pairs of the bots' guns (Pyro, Heavy primaries,
+  the Scout's Pistol) and of the melee swings; TF2's `smoothstairs` (the
+  eye smoothed over steps: no spec numbers; measurable with the
+  logger); the view's shake at 10 % on the view model; `cl_autoreload`
+  as a player option (always on).
 
 - 2026-11-20 (tf2-pose): specs/tf2/player_animation.md's second-pass
   corrections implemented: the include's knee directions merged onto the

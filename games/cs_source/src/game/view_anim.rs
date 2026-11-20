@@ -266,6 +266,7 @@ pub fn rules() -> ViewAnimRules {
         event,
         // Spec view_models.md 6.
         effect: event_effect,
+        draw_rate: 1.0,
     }
 }
 

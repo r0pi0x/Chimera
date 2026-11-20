@@ -185,6 +185,8 @@ fn the_flame_throwers_view_model_idles_after_the_release() {
     let mut sim = sim();
     sim.app.insert_resource(ViewModels::of(vec![flame_view_model()]));
     let (p, _) = holding(&mut sim, greybox::SPAWNS[0], FLAMETHROWER);
+    // The draw holds its last frame to 1.0 s after it started.
+    sim.seconds(0.2);
     assert_eq!(sequence(&sim, p).as_deref(), Some("ft_idle"), "idle after the draw");
     run(&mut sim, p, 60, |s, _| s.intent(p).fire = true);
     assert_eq!(sequence(&sim, p).as_deref(), Some("ft_fire"), "fire loops while held");
@@ -229,4 +231,34 @@ fn only_the_active_weapon_is_held_57_58() {
         assert_eq!(held(&sim).as_deref(), Some("tf2:tf_weapon_knife"));
     }
     assert!(switched, "the Revolver came out");
+}
+
+/// specs/tf2/viewmodel.md 6 (test 21 on the Flame Thrower's 1.0 s
+/// `ft_draw`): the draw plays at 1.34 x, so it is over at 0.746 s, holds
+/// its last frame and `ft_idle` follows at 1.0 s, its length at its own
+/// rate.
+#[test]
+fn the_draw_plays_at_1_34_and_holds_its_last_frame_until_its_length() {
+    let mut sim = sim();
+    sim.app.insert_resource(ViewModels::of(vec![flame_view_model()]));
+    let p = sim.spawn_character(greybox::SPAWNS[0], tf2::game::movement::ID);
+    sim.seconds(1.0);
+    let w = give(sim.app.world_mut(), p, FLAMETHROWER).unwrap();
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(w);
+    let mut seen = Vec::new();
+    for _ in 0..90 {
+        sim.ticks(1);
+        let v = sim.app.world().get::<ViewAnimator>(p).unwrap();
+        let a = v.animator.as_ref();
+        seen.push((v.sequence().map(str::to_string), a.map_or(0.0, |a| a.cycle), a.map_or(0.0, |a| a.playback)));
+    }
+    let start = seen.iter().position(|s| s.0.as_deref() == Some("ft_draw")).expect("drawn");
+    assert!((seen[start].2 - tf2::game::view::DRAW_RATE).abs() < 1e-6, "at 1.34 x: {:?}", seen[start]);
+    // The cycle 1.34 / s: done after 0.746 s (50 ticks), held to 1.0 s.
+    let done = seen.iter().position(|s| s.0.as_deref() == Some("ft_draw") && s.1 >= 1.0).expect("the draw ends");
+    let ticks = (done - start) as f32 * 0.015;
+    assert!((ticks - 0.746).abs() < 0.03, "over after {ticks} s");
+    let idle = seen.iter().position(|s| s.0.as_deref() == Some("ft_idle")).expect("idles");
+    let held = (idle - start) as f32 * 0.015;
+    assert!((held - 1.0).abs() < 0.03, "ft_idle at {held} s, not before");
 }

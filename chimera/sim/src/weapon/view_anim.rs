@@ -181,6 +181,10 @@ pub struct ViewModelPlay {
     /// last attack (`ViewFrame::sustain` keeps it going), as a Source
     /// weapon's idle time is the attack sequence's duration.
     pub attacked: Option<usize>,
+    /// A draw played faster than its own rate (`ViewAnimRules::draw_rate`)
+    /// holds its last frame until then: its length at its own rate after
+    /// the draw (Source's idle time; an attack ends the hold).
+    pub draw_held_until: f64,
     rng: u32,
 }
 
@@ -194,6 +198,7 @@ impl ViewModelPlay {
             zoomed: false,
             series: 0,
             attacked: None,
+            draw_held_until: f64::MIN,
             rng: owner.to_bits() as u32 ^ 0x9e37_79b9,
         }
     }
@@ -303,6 +308,7 @@ impl ViewFrame<'_, '_> {
     /// Play `pick` as an attack (the idle delay counts from now).
     pub fn attack(&mut self, pick: &Pick) -> bool {
         self.dice.last_attack = self.now;
+        self.dice.draw_held_until = f64::MIN;
         let played = self.play(pick);
         if played {
             self.dice.attacked = self.view.animator.as_ref().and_then(|a| a.main);
@@ -332,6 +338,23 @@ pub struct ViewAnimRules {
     /// What an animation event shows (muzzle flash, brass); for every view
     /// model.
     pub effect: fn(&AnimEvent) -> Option<ViewModelEventKind>,
+    /// The draw's playback rate (1: its own). Faster, it then holds its
+    /// last frame until its length at its own rate has passed before the
+    /// idle (TF2's 1.34: specs/tf2/viewmodel.md 6, a 0.67 s draw over a
+    /// 0.5 s deploy).
+    pub draw_rate: f32,
+}
+
+/// After a draw played: its rate, and the hold of its last frame
+/// (`ViewModelPlay::draw_held_until`).
+fn draw_rate(view: &mut ViewAnimator, dice: &mut ViewModelPlay, rate: f32, now: f64) {
+    let Some(a) = view.animator.as_mut() else { return };
+    if rate == 1.0 || rate <= 0.0 {
+        return;
+    }
+    let Some(main) = a.main else { return };
+    a.playback = rate;
+    dice.draw_held_until = now + a.set.duration(main) as f64;
 }
 
 /// Each game's `ViewAnimRules`, by game id (the prefix of its weapons'
@@ -520,6 +543,10 @@ pub fn drive(
             if let Some(p) = state.as_ref().and_then(draw) {
                 drawn = play_pick(&mut view, &mut dice, &p, now);
             }
+            dice.draw_held_until = f64::MIN;
+            if drawn && !by_data {
+                draw_rate(&mut view, &mut dice, rules.map_or(1.0, |r| r.draw_rate), now);
+            }
             dice.drawn_at = now;
             dice.attacked = None;
             dice.zoomed = zoomed.is_some();
@@ -543,6 +570,9 @@ pub fn drive(
                     if !frame.drawn {
                         if let Some(p) = draw(&frame.state) {
                             frame.drawn = frame.play(&p);
+                            if frame.drawn && !by_data {
+                                draw_rate(frame.view, frame.dice, rules.map_or(1.0, |r| r.draw_rate), now);
+                            }
                         }
                         frame.dice.drawn_at = now;
                         frame.dice.attacked = None;
@@ -607,6 +637,7 @@ pub fn drive(
             && !state.primed
             && !state.reloading
             && now - since >= delay as f64
+            && now >= dice.draw_held_until
             && (!idling || now - dice.idle_started >= interval as f64)
             && play_pick(&mut view, &mut dice, &idle, now)
         {

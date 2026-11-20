@@ -648,3 +648,20 @@ Still open:
 12. Surface jump and speed factors for TF2's materials (which materials
     differ from 1) are data in the game's surface properties, not
     checked.
+
+Measured on the live client (2026-11-19: a listen server on ctf_2fort,
+the server's own player read every tick through the game's scripting
+interface, the keys pressed from the console):
+
+13. Test cases 1, 5, 15 and 16 as measured on a real player: the jump's
+    stored vz 271, 259, ... and apex 50.04, and the duck's and unduck's
+    eye heights tick by tick are exactly as the table has them. Test 1
+    differs on its first tick: a key pressed gives 33.75 units/s on the
+    tick it goes down (half of the 450 input: the key's first command
+    counts half), then +54 a tick (friction's 6, then 60), 400 on tick 9;
+    from tick 2 on the sequence is test 1's started half a tick late.
+    Whether this belongs to every Source game's input (CS:S's too) is
+    open.
+14. Landing: a Soldier landing at F 552 rolled the view 7.176 degrees
+    (0.013 x F), decaying on the punch spring; a Scout landing at F 456
+    rolled nothing (Falling and landing: confirmed).

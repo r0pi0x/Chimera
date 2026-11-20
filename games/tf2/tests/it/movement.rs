@@ -392,6 +392,36 @@ fn fall_damage_is_a_share_of_max_health_18_19_20() {
     assert!((got - soldier(f)).abs() <= 1.0, "Soldier at {f}: {got} (want about {})", soldier(f));
 }
 
+/// 38 and the landing's view punch (movement.md "Falling and landing",
+/// measured in TF2 2026-11-19: a Soldier landing at 552 rolls the view
+/// 7.176, 0.013 x F): a Soldier landing at 500 rolls about 6.5, a Scout
+/// nothing below 580 (only full-volume landings for him), above it his
+/// view rolls too.
+#[test]
+fn the_landing_rolls_the_view_but_a_scout_only_above_580_38() {
+    let land = |gun: &str, f: f32| {
+        let mut me = Player::holding(gun);
+        let at = to_engine(Vec3::new(0.0, 0.0, 36.0 + 2.5));
+        let w = me.sim.app.world_mut();
+        w.get_mut::<Transform>(me.p).unwrap().translation = at;
+        if let Some(mut pos) = w.get_mut::<avian3d::prelude::Position>(me.p) {
+            pos.0 = at;
+        }
+        me.set_vel(Vec3::new(0.0, 0.0, -f));
+        let mut roll: f32 = 0.0;
+        for _ in 0..3 {
+            me.tick();
+            roll = roll.max(me.me().punch_roll);
+        }
+        roll
+    };
+    let soldier = land(ROCKET_LAUNCHER, 500.0);
+    assert!((soldier - 0.013 * 500.0).abs() < 0.2, "Soldier at 500: {soldier}");
+    assert_eq!(land(SCATTERGUN, 500.0), 0.0, "Scout at 500: no punch");
+    let scout = land(SCATTERGUN, 640.0);
+    assert!((scout - 0.013 * 640.0).abs() < 0.3, "Scout at 640: {scout}");
+}
+
 /// 23: the Heavy spinning the Minigun (attack2) moves at 110; released
 /// once spun, 230 again at once (no gameplay wind-down: the corrections
 /// from the SDK).

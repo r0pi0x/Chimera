@@ -20,6 +20,8 @@ clip = 12
 ammo = "tf2:pistol_scout"
 reload = 1.005
 auto_reload = true
+# cl_autoreload 1 (weapons.md 4, step 4): a clip not full reloads with neither attack held.
+reload_when_idle = true
 
 [hitscan]
 range = 56754.0

@@ -55,6 +55,10 @@ pub struct Class {
     pub eye: f32,
     #[serde(default)]
     pub air_jumps: u8,
+    /// Landing sound and view punch only above 580 units/s (the Scout's,
+    /// movement.md "Falling and landing").
+    #[serde(default)]
+    pub loud_landings_only: bool,
     pub model: String,
     /// The first-person arms' class (`c_<arms>_arms.mdl`).
     pub arms: String,

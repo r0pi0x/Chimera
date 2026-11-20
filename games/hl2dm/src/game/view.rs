@@ -95,6 +95,7 @@ pub fn rules() -> ViewAnimRules {
         idle: |_| acts(&[IDLE]),
         event,
         effect: super::flashes::event_effect,
+        draw_rate: 1.0,
     }
 }
 

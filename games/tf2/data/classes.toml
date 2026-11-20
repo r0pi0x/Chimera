@@ -4,7 +4,8 @@
 #
 # health: max health (points); speed: top speed (units/s, `SourceSpeed`);
 # eye: standing eye height (units; ducked 45 for all); air_jumps: jumps in
-# the air (the Scout's one); model: the player model; arms: the first-
+# the air (the Scout's one); loud_landings_only: landing sound and view
+# punch only above 580 units/s (the Scout's); model: the player model; arms: the first-
 # person arms' class (`c_<arms>_arms.mdl`); melee: its stock melee weapon
 # (specs/tf2/weapons_stock.md 1), what a TF2 rung of its class carries as
 # its kit melee (`classes::HOOK`); needs: the classes whose bodies
@@ -19,6 +20,7 @@ health = 125
 speed = 400
 eye = 65
 air_jumps = 1
+loud_landings_only = true
 model = "models/player/scout.mdl"
 arms = "scout"
 melee = "tf2:tf_weapon_bat"

@@ -420,3 +420,19 @@ aspect 16:9.
    or a few frames is a matter of prediction timing; not visible.
 3. The Engineer's Gunslinger hands, inspect offsets and the minimal view
    models are out of scope.
+4. Captured on the live client (2026-11-19, a listen server on
+   ctf_2fort, the own player at `viewmodel_fov` 54, every frame at 60
+   fps), against ours: the bob while walking (the Soldier's Rocket
+   Launcher) shows, with the hand rising into the lower edge twice a
+   cycle as section 4 has it; the Scattergun's and the Rocket Launcher's
+   draws are over by frame 16-20 (the 1.34 x rate); the Scattergun's
+   fire, reload start, loop and end agree frame by frame. The Rocket
+   Launcher's reload rises into its pose over about 0.25 s from its
+   start where ours (the start phase 0.12 s, then `dh_reload_loop`,
+   which snaps) jumps in; its round goes in 1.65 s after the shot
+   (`m_iClip1` read every tick), as the 0.8 s interval, the 0.12 s start
+   and the 0.8 s insert give. The game's own `dh_reload_start` is
+   0.5 s long. On a turn made of `setang` steps the view model moved a
+   few pixels between frames, on and off, also after the turn had ended:
+   read as the console's angles against the client's prediction, not a
+   sway.

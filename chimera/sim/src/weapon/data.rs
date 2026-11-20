@@ -58,7 +58,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, de::DeserializeOwned};
 
 use super::{
-    AltModes, AltShot, AutoMode, Burst, DamageEffect, FireTiming, HitgroupScale, Hitscan, Magazine, Melee, ModeTexts, Penetration,
+    AltModes, AltShot, AutoMode, Burst, DamageEffect, FireTiming, HitgroupScale, Hitscan, Magazine, Melee, ModeTexts, Penetration, ReloadWhenIdle,
     ShellReload, SpreadShape, Swing, SwitchWeight, Trigger, Weapon, WeaponDef, WeaponRegistry, WeaponSounds, Zoom,
     drop::{PickupTeam, Undroppable},
     economy::{AmmoBox, Prices},
@@ -246,6 +246,10 @@ pub struct MagazineData {
     /// An empty clip reloads by itself, held or not (`Magazine::auto_reload`).
     #[serde(default)]
     pub auto_reload: bool,
+    /// A clip not full reloads whenever neither attack is held
+    /// (`ReloadWhenIdle`: TF2's `cl_autoreload`).
+    #[serde(default)]
+    pub reload_when_idle: bool,
     /// Rounds go in one at a time: the start, each round (`ShellReload`).
     #[serde(default)]
     pub shells: Option<ShellsData>,
@@ -265,6 +269,9 @@ pub struct ShellsData {
     /// Each round goes in as its insert starts (`ShellReload::insert_first`).
     #[serde(default)]
     pub insert_first: bool,
+    /// An attack stops the reload's start too (`ShellReload::start_interruptible`).
+    #[serde(default)]
+    pub start_interruptible: bool,
 }
 
 /// An ammo type: what `Penetration` passes (`power`, length units of a
@@ -1192,6 +1199,9 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             reload_while_held: m.reload_while_held,
             auto_reload: m.auto_reload,
         });
+        if m.reload_when_idle {
+            e.insert(ReloadWhenIdle);
+        }
         if let Some(s) = m.shells {
             e.insert(ShellReload {
                 start: s.start,
@@ -1199,6 +1209,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                 finish: s.finish,
                 back_to_back: s.back_to_back,
                 insert_first: s.insert_first,
+                start_interruptible: s.start_interruptible,
             });
         }
     }

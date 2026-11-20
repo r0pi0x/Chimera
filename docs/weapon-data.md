@@ -80,9 +80,11 @@ reload = 2.4324                 # s (a shell's, with `shells`)
 #   (+ finish = 0.9: a closing part, back_to_back = true: no tick
 #   between rounds; Combat Arms' shotguns; insert_first = true: each
 #   round in as its insert starts, attacks waiting for each part, a held
-#   attack ending the reload: HL2:DM's shotgun)
+#   attack ending the reload: HL2:DM's shotgun; start_interruptible = true:
+#   an attack stops the start too, at once: TF2's)
 # reload_while_held = false
 # auto_reload = false           # an empty clip reloads, held or not (CA)
+# reload_when_idle = false      # a clip not full reloads with neither attack held (TF2 cl_autoreload)
 
 [hitscan]
 range = 8192.0

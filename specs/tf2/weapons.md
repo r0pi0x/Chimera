@@ -1016,3 +1016,13 @@ Probe checks (live dedicated server, bots; never port 27015/27030):
 17. **Teammates and bullets.** The bullet trace does not skip teammates
     outside Mann vs. Machine, so a teammate should absorb a pellet
     (§2.7); confirm on the live game.
+18. **Measured on the live client (2026-11-19, a listen server on
+    ctf_2fort, the own player, every frame at 60 fps).** Reloading step 4
+    (`cl_autoreload` 1) holds: one Scattergun shot, attack let go, and the
+    reload's start shows about 0.7 s after the shot (the 0.625 s interval,
+    then the next tick), one round in and the finish; back at the idle
+    pose about 1.73 s after the shot. The view kick (`PunchAngle` P): the
+    Scattergun's punch pitch was -4, -4, -4, -2, -4 degrees over five
+    shots (a whole number from -(P+1) to -(P-1), P 3), held for the shot's
+    tick and the next, then on the punch spring (-3.942 on the third
+    tick).

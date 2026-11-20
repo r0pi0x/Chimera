@@ -60,12 +60,14 @@ fn rules_of(game: &'static str) -> ViewAnimRules {
             idle: |s| ask("kit", s),
             event: no_event,
             effect: |_| None,
+            draw_rate: 1.0,
         },
         _ => ViewAnimRules {
             draw: |s| ask("other", s),
             idle: |s| ask("other", s),
             event: no_event,
             effect: |_| None,
+            draw_rate: 1.0,
         },
     }
 }

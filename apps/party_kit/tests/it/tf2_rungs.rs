@@ -281,3 +281,43 @@ fn the_shotguns_drawn_class_carries_its_own_melee() {
         assert_eq!(sim.app.world().get::<classes::Tf2Class>(a).map(|c| c.0), Some(index), "{class} with the Shotgun in hand");
     }
 }
+
+/// A TF2 gun's view model bobs on TF2's motion (specs/tf2/viewmodel.md
+/// 3-4: CS:S's bob on a fixed 0.8 s cycle) while its player runs, and
+/// never sways: at rest a turn of the view leaves it where it was.
+#[test]
+fn a_tf2_guns_view_model_bobs_while_running_and_never_sways() {
+    use chimera_core::core::Intent;
+    use chimera_world::map::ViewModelOffset;
+    use source_engine::view_motion::{GameMotionRules, Sway};
+    let (mut sim, a) = crate::controls::local_party_with(party());
+    let rules = sim.app.world().resource::<GameMotionRules>().get("tf2").expect("TF2's motion is registered");
+    assert_eq!((rules.cycle, rules.sway), (Some((0.8, 0.5)), Sway::None));
+    let ladder = sim.app.world().resource::<Ladder>().clone();
+    let r = (0..ladder.rungs.len()).find(|r| ladder.rungs[*r].starts_with(tf2::game::weapons::SCATTERGUN)).expect("the Scattergun's rung");
+    set_rung(&mut sim, a, r);
+    assert_eq!(held(&sim, a), Some(tf2::game::weapons::SCATTERGUN));
+    let offset = |sim: &Sim| sim.app.world().get::<ViewModelOffset>(a).copied();
+    sim.app.world_mut().resource_mut::<chimera_core::console::Console>().submit("bind w +forward");
+    sim.seconds(1.0);
+    let still = offset(&sim).expect("TF2's motion made the view model's offset");
+    assert!(still.translation.length() < 1e-5, "at rest the view model sits at the eye: {still:?}");
+    // Turning at rest: no sway, the offset stays put.
+    for i in 0..20 {
+        sim.app.world_mut().get_mut::<Intent>(a).unwrap().yaw += 0.05 * (i as f32).sin().signum();
+        sim.ticks(1);
+        let o = offset(&sim).unwrap();
+        assert!(
+            o.translation.length() < 1e-5 && o.rotation.angle_between(Quat::IDENTITY) < 1e-3,
+            "no sway on turning (tick {i}): {o:?}"
+        );
+    }
+    sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::KeyW);
+    let mut seen = vec![];
+    for _ in 0..40 {
+        sim.ticks(3);
+        seen.push(offset(&sim).unwrap().translation);
+    }
+    let spread = seen.iter().fold(0.0f32, |m, v| m.max(v.distance(seen[0])));
+    assert!(spread > 0.002, "the view model bobbed while running: {:?}", &seen[seen.len() - 3..]);
+}

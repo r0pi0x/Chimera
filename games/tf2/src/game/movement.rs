@@ -26,7 +26,9 @@
 //! its weapon's `max_speed`, the zoomed rifle to 80, the weapon layer's
 //! `MaxSpeed`), whose eyes stand at 65, 68 or 75 and whose
 //! air jumps (the Scout's one: the vertical speed set to 268.33, the
-//! horizontal velocity to the keys' wish) are the class's
+//! horizontal velocity to the keys' wish) and landings (a full-volume
+//! landing above 580 units/s; the Scout's sound and view roll only then)
+//! are the class's
 //! (`SourceTraits`). On the server a class's max health is the player's
 //! (`class_health`: the health's share kept across a change of class; a
 //! player that leaves TF2's movement gets back the max it had). TF2's
@@ -40,8 +42,7 @@
 //! - The teammates' push-away is Source's shared one; the Spy's disguise
 //!   and the Medic's patient speed aren't modelled (no such classes' kits
 //!   yet).
-//! - The landing sound and view punch thresholds are the shared code's
-//!   (10); a player holding another game's gun on TF2's movement (none
+//! - A player holding another game's gun on TF2's movement (none
 //!   in the party: its movement follows the gun) keeps its last class.
 
 use bevy::prelude::*;
@@ -110,6 +111,8 @@ pub fn config() -> SourceMovementConfig {
         fall_safe: 650.0,
         fall_by_max_health: 1.0 / 6000.0,
         fall_spread: 0.2,
+        // Landings sound loud above the shared 580 (damage from 650).
+        fall_loud: Some(580.0),
         // No ladders in TF2: its maps' ladder brushes are walls. Other
         // games' maps' ladders are climbed by the shared code's rule
         // (`SourceMovementConfig::climbs_contents`).
@@ -320,7 +323,12 @@ pub fn select_class(
         let weapon_speed = held.as_ref().and_then(|(w, ..)| w.max_speed).map(|s| s / super::METERS_PER_UNIT);
         let scope_speed = zoomed.and_then(|m| m.0).map(|s| s / super::METERS_PER_UNIT);
         let p = [weapon_speed, scope_speed].into_iter().flatten().fold(c.speed, f32::min);
-        let want = SourceTraits { max_speed: Some(p), eye_stand: Some(c.eye), air_jumps: Some(c.air_jumps) };
+        let want = SourceTraits {
+            max_speed: Some(p),
+            eye_stand: Some(c.eye),
+            air_jumps: Some(c.air_jumps),
+            loud_landings_only: Some(c.loud_landings_only),
+        };
         if *traits != want {
             *traits = want;
         }
