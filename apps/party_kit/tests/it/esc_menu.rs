@@ -437,3 +437,47 @@ fn developer_mode_adds_the_developer_entry() {
     assert!(has(true));
     assert!(esc_menu::option_tabs_for(true).iter().any(|(_, rows)| rows.iter().any(|s| s.cvar == "developer_mode")), "Options has the toggle");
 }
+
+/// A page opened from the Escape menu owns the mouse while it is open, in
+/// the sandbox as anywhere: the Developer page (the UI kit's gallery) and
+/// the frame inspector (the debug UI) free the cursor, and closing them
+/// grabs it again (`input::FreeCursorOwners`).
+#[test]
+fn pages_opened_from_the_escape_menu_free_the_cursor_until_closed() {
+    let (mut sim, _) = local_with_menu();
+    sim.app
+        .init_resource::<chimera_client::client::ui_scene::UiScene>()
+        .init_resource::<chimera_client::client::ui_scene::DeveloperMode>()
+        .insert_resource(chimera_client::client::sandbox::SandboxUi { on: true, ..default() })
+        .init_resource::<chimera_client::client::debug_ui::DebugUi>()
+        .console_command("debugui", "a test's stand-in", |w, a| {
+            w.resource_mut::<chimera_client::client::debug_ui::DebugUi>().open = a.first().is_none_or(|x| x != "close");
+            Ok(None)
+        })
+        .add_systems(PostUpdate, chimera_client::client::input::keep_cursor_free)
+        .console_command("ui_gallery", "a test's stand-in", |w, a| {
+            w.resource_mut::<chimera_client::client::ui_scene::UiScene>().want = a.first().filter(|n| *n != "off").cloned().or(Some("fields".into()));
+            if a.first().is_some_and(|n| n == "off") {
+                w.resource_mut::<chimera_client::client::ui_scene::UiScene>().want = None;
+            }
+            Ok(None)
+        });
+    sim.app.world_mut().resource_mut::<chimera_client::client::ui_scene::DeveloperMode>().on = 1;
+    sim.ticks(2);
+    assert!(grabbed(&mut sim), "playing: grabbed");
+    for (action, close) in [(Action::Developer, "ui_gallery off"), (Action::FrameInspector, "debugui close")] {
+        tap(&mut sim.app, KeyCode::Escape);
+        assert!(menu(&sim.app).open && !grabbed(&mut sim));
+        act(&mut sim.app, action);
+        sim.ticks(3);
+        assert!(!menu(&sim.app).open);
+        assert!(!grabbed(&mut sim), "{action:?}: the page has the mouse free");
+        let visible = |sim: &mut Sim| sim.app.world_mut().query::<&CursorOptions>().iter(sim.app.world()).all(|c| c.visible);
+        assert!(visible(&mut sim), "{action:?}: and shown");
+        sim.ticks(30);
+        assert!(!grabbed(&mut sim), "{action:?}: still free later");
+        sim.app.world_mut().resource_mut::<Console>().submit(close);
+        sim.ticks(3);
+        assert!(grabbed(&mut sim), "{action:?}: closed, the mouse is the game's again");
+    }
+}

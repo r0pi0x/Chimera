@@ -102,6 +102,7 @@ impl Plugin for LocalInputPlugin {
             .register_type::<MouseSettings>()
             .add_systems(PreUpdate, super::binds::release_captured.after(bevy::input::InputSystems))
             .add_systems(Update, ((grab_cursor, write_local_intent, chimera_net::net::predict::hold_view).chain(), drop_key))
+            .add_systems(PostUpdate, keep_cursor_free)
             .add_systems(FixedPreUpdate, apply_wheel_jump);
         super::binds::add_owned_keys(app);
         mouse_cvars(app);
@@ -181,6 +182,74 @@ pub fn capture_cursor(cursor: &mut CursorOptions) {
     cursor.grab_mode = CursorGrabMode::Locked;
 }
 
+/// Everything that owns the mouse while it is open, in one rule: the
+/// game menu, an app's own menu (the party apps' Escape menu, the
+/// sandbox's screens), the game-look panels (buy, team, ...), the console,
+/// the debug UI (F8, the frame inspector) and the UI kit's gallery (the
+/// Escape menu's Developer page). Whatever such a panel is opened from,
+/// the cursor is free while `owns` and grabbed again when it turns false
+/// (`keep_cursor_free`); a new panel joins here, not with a grab of its own.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct FreeCursorOwners<'w> {
+    menu: Option<Res<'w, super::front_end::MenuStatus>>,
+    app_menu: Option<Res<'w, super::front_end::AppMenu>>,
+    vgui: Option<Res<'w, super::vgui::VguiOpen>>,
+    console: Option<Res<'w, super::console::ConsoleUi>>,
+    debug_ui: Option<Res<'w, super::debug_ui::DebugUi>>,
+    scene: Option<Res<'w, super::ui_scene::UiScene>>,
+}
+
+impl FreeCursorOwners<'_> {
+    /// A panel is open (or was opened or closed this frame, so the click
+    /// that closed it is not a click to grab).
+    pub fn owns(&self) -> bool {
+        self.menu.as_ref().is_some_and(|m| m.open || m.is_changed())
+            || self.app_menu.as_ref().is_some_and(|m| m.open || m.is_changed())
+            || self.vgui.as_ref().is_some_and(|v| v.any() || v.is_changed())
+            || self.console.as_ref().is_some_and(|c| c.open)
+            || self.debug_ui.as_ref().is_some_and(|d| d.open || d.is_changed())
+            || self.scene.as_ref().is_some_and(|s| s.gallery_open())
+    }
+
+    /// A panel is open now (no frame of grace).
+    pub fn open(&self) -> bool {
+        self.menu.as_ref().is_some_and(|m| m.open)
+            || self.app_menu.as_ref().is_some_and(|m| m.open)
+            || self.vgui.as_ref().is_some_and(|v| v.any())
+            || self.console.as_ref().is_some_and(|c| c.open)
+            || self.debug_ui.as_ref().is_some_and(|d| d.open)
+            || self.scene.as_ref().is_some_and(|s| s.gallery_open())
+    }
+}
+
+/// The level-triggered half of the rule (`FreeCursorOwners`): while a
+/// panel is open the cursor is free, whoever grabbed it or in which
+/// order the panels' own open/close handlers ran (the Escape menu closing
+/// to open a page grabbed it again in the same frame); when the last one
+/// closes, playing grabs it again. In `PostUpdate`, before the window
+/// changes are sent.
+pub fn keep_cursor_free(
+    owners: FreeCursorOwners,
+    menu: Option<Res<super::front_end::MenuStatus>>,
+    chat: Option<Res<super::chat::ChatInput>>,
+    mut cursor: Query<&mut CursorOptions>,
+    mut was: Local<bool>,
+) {
+    let open = owners.open();
+    let playing = menu.as_ref().is_none_or(|m| m.in_game && !m.loading);
+    let typing = chat.is_some_and(|c| c.open.is_some());
+    for mut c in &mut cursor {
+        if open {
+            if c.grab_mode != CursorGrabMode::None || !c.visible {
+                release_cursor(&mut c);
+            }
+        } else if *was && playing && !typing && (c.grab_mode != CursorGrabMode::Locked || c.visible) {
+            capture_cursor(&mut c);
+        }
+    }
+    *was = open;
+}
+
 /// Frames after a focus gain in which the grab is (re)made: the first
 /// one the player is free to play in grabs; while grabbed the grab is
 /// sent again every `REASSERT_EVERY` frames, since Windows can drop the
@@ -242,14 +311,10 @@ pub(super) fn grab_cursor(
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut focus: MessageReader<bevy::window::WindowFocused>,
-    (menu, app_menu): (Option<Res<super::front_end::MenuStatus>>, Option<Res<super::front_end::AppMenu>>),
-    vgui: Option<Res<super::vgui::VguiOpen>>,
-    (console, debug_ui, egui, chat): (
-        Option<Res<super::console::ConsoleUi>>,
-        Option<Res<super::debug_ui::DebugUi>>,
-        Option<Res<bevy_inspector_egui::bevy_egui::input::EguiWantsInput>>,
-        Option<Res<super::chat::ChatInput>>,
-    ),
+    owners: FreeCursorOwners,
+    menu: Option<Res<super::front_end::MenuStatus>>,
+    egui: Option<Res<bevy_inspector_egui::bevy_egui::input::EguiWantsInput>>,
+    chat: Option<Res<super::chat::ChatInput>>,
     mut captured: Option<ResMut<super::binds::CapturedKeys>>,
     pin: Option<Res<PinOnGrab>>,
     mut regrab: Local<Regrab>,
@@ -262,12 +327,7 @@ pub(super) fn grab_cursor(
     // select and scroll its text), the debug UI, an app's own menu (the
     // party apps' Escape menu, the sandbox's screens) and any egui window
     // under the pointer (the inspector).
-    let in_menu = menu.as_ref().is_some_and(|m| m.open || m.is_changed())
-        || app_menu.as_ref().is_some_and(|m| m.open || m.is_changed())
-        || vgui.as_ref().is_some_and(|v| v.any() || v.is_changed())
-        || console.is_some_and(|c| c.open)
-        || debug_ui.is_some_and(|d| d.open || d.is_changed())
-        || egui.is_some_and(|e| e.wants_any_pointer_input());
+    let in_menu = owners.owns() || egui.is_some_and(|e| e.wants_any_pointer_input());
     // Losing focus (alt-tab) ends the grab: Windows drops the cursor clip
     // then, and a grab we still believed in would keep turning the view
     // while the real cursor wanders off and clicks other windows. Coming

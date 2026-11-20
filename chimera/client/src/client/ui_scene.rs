@@ -169,6 +169,14 @@ pub struct UiScene {
     froze: bool,
 }
 
+impl UiScene {
+    /// The kit's gallery is open (`ui_gallery`): it owns the mouse
+    /// (`input::FreeCursorOwners`); the staged scenes don't.
+    pub fn gallery_open(&self) -> bool {
+        self.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls"))
+    }
+}
+
 /// Where a scene's loop starts on the UI clock: now, or (`t` given) `t`
 /// s ago with the clock frozen there (a screenshot of one moment).
 fn scene_start(world: &mut World, t: Option<f64>) -> f64 {
