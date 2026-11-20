@@ -94,7 +94,13 @@
 //!   (effects.md 12); impact sounds beyond 1024 units are skipped (7).
 //!
 //! Known shortcuts: a trail starts at the flyer's origin, not its model's
-//! `trail` attachment; no crit glows on flyers (crits are off); control point 0 of the stream is the muzzle as drawn
+//! `trail` attachment; a late-drawn rocket's trail starts where its copy
+//! is drawn (behind the eye), and an emitter puts a step's particles at
+//! its control point, not spread along its path (effects.md 11.1's
+//! nuance): TF2's first step lays particles from the first received place
+//! back to the drawn one, so its fire glow shows at the launcher from the
+//! frame after the shot; ours from when the drawn rocket passes the camera
+//! (about 6 frames at 60 later); no crit glows on flyers (crits are off); control point 0 of the stream is the muzzle as drawn
 //! (the view model's re-projected in first person), not the third-person
 //! model's (flames.md Open questions 2); random crits are off, so a crit
 //! stream starts only for a crit-boosted Pyro (`crit_boost`); no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
@@ -451,16 +457,12 @@ pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::I
     melee_own_only: true,
     // The impact's damage-type field carries a needle's team number, and
     // the ricochet asks for "bullet" (2): RED's (ours: odd teams).
-    mark_ricochet: Some(red_team),
+    mark_ricochet: true,
     sound_reach: Some(1024.0),
     melee_ray: true,
     body_decals: source_engine::effects::BodyDecals::NotLowViolence,
 };
 
-/// RED (TF2's team 2; ours the odd teams, `bodies::skin_of`).
-fn red_team(team: u8) -> bool {
-    team != 0 && super::super::bodies::skin_of(Some(Team(team))) == 0
-}
 
 /// The systems TF2's guns start: loaded with its maps besides their own,
 /// and onto other games' maps (`maps::add_guest_looks`): every name the

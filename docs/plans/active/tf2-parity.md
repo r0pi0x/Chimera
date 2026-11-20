@@ -705,3 +705,18 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   `critgun_weaponmodel_*` systems' particle file is unnamed in the specs
   (not loaded until it is; asset pack: that file, and
   `weapons/crit_power.wav` in `players`).
+- Pass 9 capture (`water`, `pairs2`): with the seeded history ours' rocket
+  is drawn from behind the eye and its trail's glow passes the camera from
+  frame ~8 (60 a second), TF2's glows at the launcher from frame 2: TF2's
+  emitters spread a step's particles along the control point's path, so
+  its first step (made at the first received place) lies in view (11.1,
+  inferred). Ours puts a step's particles at the control point; starting
+  the trail at the first place instead left a still smoke puff at the
+  launcher, so it starts where the copy is drawn. Next: spread a step's
+  emission along its control point's path in `render::psys`. The
+  underwater blast is still invisible from 290 units under water (TF2: an
+  orange glow with bubbles at the trail's end, where ours' trail ends
+  too): the centre (1 unit off the bed) and the water effect are right
+  (test `a_rocket_on_a_river_bed_shows_the_water_effect_13`); the cause
+  is in drawing it under water (fog on added particles suspected,
+  unmeasured).

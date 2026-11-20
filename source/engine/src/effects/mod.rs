@@ -61,9 +61,9 @@ pub struct ImpactStyle {
     /// specs/tf2/effects.md 10); false: wherever the swing's hit is known.
     pub melee_own_only: bool,
     /// A projectile's mark (`WeaponEventKind::Marked`) plays the ricochet
-    /// when this says so of its shooter's team (TF2's needle: RED's only,
-    /// effects.md 12); None: never.
-    pub mark_ricochet: Option<fn(u8) -> bool>,
+    /// when its shooter is on an odd team (TF2's needle: RED's only, ours'
+    /// odd teams, effects.md 12); false: never.
+    pub mark_ricochet: bool,
     /// Impact sounds farther than this from this machine's player (units)
     /// are skipped (TF2's 1024, effects.md 7); None: none skipped.
     pub sound_reach: Option<f32>,
@@ -128,7 +128,7 @@ impl ImpactStyle {
     /// Whether a projectile's mark by a shooter of `team` plays the
     /// ricochet (`mark_ricochet`).
     pub fn mark_ricochets(&self, team: u8) -> bool {
-        self.mark_ricochet.is_some_and(|f| f(team))
+        self.mark_ricochet && team % 2 == 1
     }
 
     /// Whether this machine skips `e`'s impact: another player's swing
