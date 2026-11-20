@@ -222,9 +222,12 @@ fn run_worker(session: Arc<Session>, rx: mpsc::Receiver<Msg>, states: mpsc::Send
             Err(Failure { status: Some(429), message }) if message.contains("at most every") => continue,
             Err(e) => ListState::Failed(e.to_string()),
         };
-        if states.send(state).is_err() {
-            return;
-        }
+        // The listing may have stopped while this beat was under way (its
+        // receiver gone with it): a leave is queued behind the beat, so go
+        // on to take it rather than end here and leave the server listed
+        // until it expires (seen under load: the hub had the beat, the
+        // listing stopped, then the beat's answer came).
+        let _ = states.send(state);
     }
 }
 

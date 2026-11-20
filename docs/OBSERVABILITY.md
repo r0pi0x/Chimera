@@ -75,9 +75,11 @@ refuses a new one and lists the justified rest in `TEST_SLEEPS`):
   Work is counted when it starts through `chimera_core::tasks::spawn(&pool,
   fut)` or `tasks::thread(job)` (or holds a `tasks::Busy`): the map load,
   model builds, the late builds, navigation meshes, the asset and map
-  downloads and the hub fetch do; `tasks::pending()` is the count (process
-  wide: under `cargo test` other tests' work counts too, nextest runs one
-  test per process). Work started another way is invisible to it: spawn it
+  downloads and the hub fetch do; `sim.pending()` is the count: the work
+  the test's thread started and that work's own spawns
+  (`tasks::pending_here()`), so under `cargo test` other tests' work
+  doesn't hold a test up (`tasks::pending()` is the process's; a `Sim` on
+  the multi-threaded executor waits on that). Work started another way is invisible to it: spawn it
   through `tasks::spawn` when you add a loader. Bevy's own `AssetServer`
   loads are not counted.
 - Loops that drive an `App` by hand: `harness::let_tasks_run()` between

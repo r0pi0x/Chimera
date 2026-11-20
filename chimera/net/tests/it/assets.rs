@@ -723,7 +723,7 @@ fn a_hub_account_joins_with_its_ticket_and_no_token() {
     fs::create_dir_all(keys_path.parent().unwrap()).unwrap();
     fs::write(&keys_path, ticket::TicketKeys::single(key.verifying_key()).to_text()).unwrap();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let (account, device) = ([1u8; 16], [2u8; 16]);
+    let (account, device) = account_ids();
     let claims = ticket::Claims {
         version: ticket::VERSION,
         key_id: String::new(),
@@ -1264,6 +1264,22 @@ fn the_startup_fetch_gets_what_the_games_read_first_or_says_why_not() {
 /// An account file signed in to `svc`'s hub as `name`, its ticket made
 /// with a test key the service trusts (`ticket.pub`), as the accounts
 /// service would make it.
+/// An account and a device no other test's account has: the process's
+/// signed-in session (`account::set_live`, made by the last account file
+/// a test opened) stands in its newer ticket for any ticket of its device
+/// (`account::fresh_ticket`), so two tests with the same device in one
+/// process (`cargo test`'s threads) sent each other's tickets, signed
+/// with the other service's key, and were refused when they overlapped
+/// (the more often, the more loaded the machine).
+fn account_ids() -> ([u8; 16], [u8; 16]) {
+    static NEXT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(1);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let (mut account, mut device) = ([0xa0; 16], [0xd0; 16]);
+    account[15] = n;
+    device[15] = n;
+    (account, device)
+}
+
 fn hub_account(svc: &Fixture, name: &str) -> PathBuf {
     use chimera_assets::{account::AccountFile, ticket};
     let key = chimera_assets::sign::load_or_create_key(&svc.dir.join("ticket.key")).unwrap();
@@ -1271,7 +1287,7 @@ fn hub_account(svc: &Fixture, name: &str) -> PathBuf {
     fs::create_dir_all(keys_path.parent().unwrap()).unwrap();
     fs::write(&keys_path, ticket::TicketKeys::single(key.verifying_key()).to_text()).unwrap();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let (account, device) = ([4u8; 16], [6u8; 16]);
+    let (account, device) = account_ids();
     let claims = ticket::Claims {
         version: ticket::VERSION,
         key_id: String::new(),

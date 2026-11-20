@@ -59,7 +59,7 @@ struct SettleSteps(u32);
 pub fn let_tasks_run() {
     // Work that isn't counted (a loader that doesn't use
     // `chimera_core::tasks::spawn`) still gets a moment.
-    let pending = chimera_core::tasks::pending() > 0;
+    let pending = chimera_core::tasks::pending_here() > 0;
     std::thread::sleep(Duration::from_micros(if pending { 200 } else { 50 }));
 }
 
@@ -97,7 +97,7 @@ pub struct Timeout {
     pub ticks: u64,
     /// The sim's tick when it gave up.
     pub at_tick: u64,
-    /// Background work still on its way then (`chimera_core::tasks::pending`).
+    /// Background work still on its way then (`Sim::pending`).
     pub pending: usize,
 }
 
@@ -525,10 +525,10 @@ impl Sim {
                     what: what.to_string(),
                     ticks: ran,
                     at_tick: self.tick(),
-                    pending: chimera_core::tasks::pending(),
+                    pending: self.pending(),
                 });
             }
-            if chimera_core::tasks::pending() > 0 {
+            if self.pending() > 0 {
                 let_tasks_run();
             }
             self.ticks(1);
@@ -565,23 +565,35 @@ impl Sim {
         Ok(found.expect("the wait ended on a message"))
     }
 
+    /// Background work this `Sim` waits for: what this thread started
+    /// (`chimera_core::tasks::pending_here`; its systems run here), or on
+    /// Bevy's multi-threaded executor, whose systems start work on the
+    /// pool's threads, the process's (`pending`).
+    pub fn pending(&self) -> usize {
+        if self.app.world().contains_resource::<MultiThreaded>() {
+            chimera_core::tasks::pending()
+        } else {
+            chimera_core::tasks::pending_here()
+        }
+    }
+
     /// Run background work to completion: tick until no task or job
-    /// counted in `chimera_core::tasks::pending` is left and the systems
+    /// counted in `Sim::pending` is left and the systems
     /// that take up results have had `IDLE_SETTLE_TICKS` ticks (a result
     /// may start the next task: a map's load, then its models), at most
     /// `max_ticks`. While work is pending it waits a little between ticks
     /// so the pools run, and gives up after a wall limit of 3 minutes
     /// too. Ok: the ticks it took. Replaces sleeping for loads, model
     /// builds, downloads and navigation meshes. Work not started through
-    /// `chimera_core::tasks::spawn` / `thread` is invisible to it; and
-    /// the count is the process's (under `cargo test`, other tests'
-    /// work counts too; nextest runs one test per process).
+    /// `chimera_core::tasks::spawn` / `thread` is invisible to it. The
+    /// count is this thread's work (`Sim::pending`): other tests in the
+    /// process (`cargo test`'s threads) don't hold it up.
     pub fn run_until_idle(&mut self, max_ticks: u64) -> Result<u64, Timeout> {
         let began = std::time::Instant::now();
         let mut ran = 0;
         let mut quiet = 0;
         loop {
-            let pending = chimera_core::tasks::pending();
+            let pending = self.pending();
             if pending == 0 {
                 quiet += 1;
                 if quiet > IDLE_SETTLE_TICKS {

@@ -9,9 +9,11 @@
 //!
 //! Pending work: `spawn` starts a task on a pool and counts it until it
 //! has run (or is dropped); `Busy` counts a job on a thread of its own
-//! the same way. `pending()` is the count, process-wide (tests in one
-//! process share it; nextest runs one test per process). The headless
-//! harness's `Sim::run_until_idle` ticks until it is zero, so a test
+//! the same way. `pending()` is the count, process-wide; `pending_here()`
+//! counts only the work this thread started (and that work's own spawns),
+//! so tests in one process (`cargo test`'s threads) don't wait on each
+//! other's. The headless harness's `Sim::run_until_idle` ticks until this
+//! thread's is zero, so a test
 //! waits for a map load, a model build or a download instead of
 //! sleeping. A loader that spawns work through `spawn` or holds a `Busy`
 //! shows up there; one that doesn't is invisible to it.
@@ -25,7 +27,7 @@ use bevy::{
     tasks::{Task, block_on, poll_once},
 };
 
-pub use crate::pending_work::{Busy, pending, spawn, thread};
+pub use crate::pending_work::{Busy, pending, pending_here, spawn, thread};
 
 /// Wait for tasks' results on the tick they're first polled, and spawn a
 /// map in one go: runs repeat tick for tick whatever the machine's load.

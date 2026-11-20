@@ -78,10 +78,44 @@ fn run_until_idle_waits_for_a_background_task_and_its_pickup() {
     let pool = bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
     let task = tasks::spawn(&pool, async { (0..20_000_000u64).fold(0, |a, b| a ^ b.wrapping_mul(31)) });
     sim.app.world_mut().resource_mut::<Job>().0 = Some(task);
-    assert!(tasks::pending() >= 1);
+    assert!(tasks::pending_here() >= 1);
     sim.run_until_idle(10_000).expect("the task finishes");
-    assert_eq!(tasks::pending(), 0);
+    assert_eq!(tasks::pending_here(), 0);
     assert!(sim.app.world().resource::<Job>().1.is_some(), "its result was taken up");
+}
+
+/// Work another thread started (another test's, under `cargo test`)
+/// doesn't hold a `Sim` up; a task's own spawns count for the thread that
+/// started the task.
+#[test]
+fn run_until_idle_waits_for_this_threads_work_only() {
+    let mut sim = sim();
+    let (hold, held) = std::sync::mpsc::channel::<()>();
+    let other = std::thread::spawn(move || {
+        let _busy = tasks::Busy::new();
+        let _ = held.recv();
+    });
+    while tasks::pending() == 0 {
+        std::thread::yield_now();
+    }
+    assert_eq!(tasks::pending_here(), 0);
+    sim.run_until_idle(20).expect("another thread's work isn't this test's");
+    let pool = bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
+    let (go, wait) = std::sync::mpsc::channel::<()>();
+    let inner = tasks::spawn(&pool, async move {
+        let pool = bevy::tasks::AsyncComputeTaskPool::get();
+        tasks::spawn(pool, async move {
+            let _ = wait.recv();
+        })
+        .detach();
+    });
+    bevy::tasks::block_on(inner);
+    assert!(tasks::pending_here() >= 1, "the task's own spawn counts here");
+    let _ = go.send(());
+    sim.run_until_idle(10_000).expect("the spawn finishes");
+    assert_eq!(tasks::pending_here(), 0);
+    let _ = hold.send(());
+    other.join().unwrap();
 }
 
 #[test]
