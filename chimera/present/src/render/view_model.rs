@@ -9,7 +9,9 @@
 //! (which sequence plays) and `ViewModelOffset` (bob and sway), and send
 //! `ViewModelEvent`s (muzzle flashes; their types are in `map::view_model`);
 //! this module draws the view model of
-//! the character whose camera carries `ViewModelAnchor`.
+//! the character whose camera carries `ViewModelAnchor`. A new model (a
+//! weapon switch) is spawned before the drawing (`swap_view_bodies`), so
+//! it is posed, lit and shown in the frame the old one goes.
 //!
 //! The model is drawn by its own camera on `VIEW_MODEL_LAYER`, after the
 //! world camera and with a fresh depth buffer, so it never clips into walls,
@@ -94,6 +96,13 @@ pub struct ViewModelBody {
 }
 
 /// Give a view model body's probe table slot back.
+impl ViewModelBody {
+    /// The view model's key it draws.
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+}
+
 fn free_probe_slot(mut world: bevy::ecs::world::DeferredWorld, ctx: bevy::ecs::lifecycle::HookContext) {
     let slot = world.get::<ViewModelBody>(ctx.entity).map_or(0, |b| b.probe_slot);
     if slot != 0
@@ -405,6 +414,88 @@ fn camera_fov_43(projection: &Projection) -> Option<f32> {
     Some(2.0 * ((p.fov / 2.0).tan() / 0.75).atan().to_degrees())
 }
 
+/// The view model a view shows now (its key, built assets and model, and
+/// whether it is mirrored), as `draw_view_models` decides it: none while
+/// hidden (third person, `r_drawviewmodel 0`, a scope, put away), not
+/// built yet, or with the stand-ins forced.
+#[allow(clippy::too_many_arguments)]
+fn shown_view<'a>(
+    state: Option<&'a ViewAnimator>,
+    owner: Entity,
+    settings: &ViewModelSettings,
+    assets: &'a ViewModelAssets,
+    models: Option<&'a ViewModels>,
+    put_away: &Query<&crate::core::MapControls>,
+    third_person: Option<&crate::map::ShowLocalBody>,
+    stand_ins: Option<&super::stand_in::StandInSettings>,
+) -> (Option<&'a str>, Option<(&'a str, &'a ViewModelAsset, &'a MapViewModel, bool)>) {
+    let hidden = third_person.is_some_and(|t| t.0)
+        || settings.draw == 0
+        || state.is_some_and(|s| s.hidden)
+        || put_away.get(owner).is_ok_and(|c| c.weapon_hidden != 0);
+    let want = state.filter(|_| !hidden).and_then(|s| s.key.as_deref());
+    // `chimera_standins 2`: the stand-in instead (`stand_in::view_guns`).
+    let forced = stand_ins.is_some_and(|s| s.mode == 2);
+    let shown = want.filter(|_| !forced).and_then(|k| {
+        let (a, m) = (assets.models.get(k)?, models?.get(k)?);
+        Some((k, a, m, mirrored(m.right_handed, m.allow_flipping, settings.right_hand != 0)))
+    });
+    (want.filter(|_| !forced), shown)
+}
+
+/// A view's model changed (a weapon switch): the old body goes and the new
+/// one is spawned before `draw_view_models` runs, so that system poses,
+/// lights and shows it in this same frame. Spawned there, it showed a
+/// frame later than the draw started (TF2's switch, real TF2 captured
+/// against ours: docs/plans/active/tf2-parity.md).
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn swap_view_bodies(
+    assets: Res<ViewModelAssets>,
+    settings: Option<Res<ViewModelSettings>>,
+    models: Option<Res<ViewModels>>,
+    anchors: Query<(&ChildOf, Option<&Children>, Option<&ViewModelSource>), (With<ViewModelAnchor>, Without<ViewModelCamera>)>,
+    owners: Query<&ViewAnimator>,
+    put_away: Query<&crate::core::MapControls>,
+    third_person: Option<Res<crate::map::ShowLocalBody>>,
+    stand_ins: Option<Res<super::stand_in::StandInSettings>>,
+    cameras: Query<Option<&Children>, With<ViewModelCamera>>,
+    bodies: Query<&ViewModelBody>,
+    (mut materials, dormant): (Option<ResMut<Assets<PropMaterial>>>, Option<Res<super::prop_material::DormantProps>>),
+    mut commands: Commands,
+) {
+    let settings = settings.map(|s| *s).unwrap_or_default();
+    for (parent, children, source) in &anchors {
+        let owner = anchor_owner(parent, source);
+        let (_, shown) = shown_view(
+            owners.get(owner).ok(),
+            owner,
+            &settings,
+            &assets,
+            models.as_deref(),
+            &put_away,
+            third_person.as_deref(),
+            stand_ins.as_deref(),
+        );
+        let Some((camera, cam_children)) =
+            children.into_iter().flatten().find_map(|c| cameras.get(*c).ok().map(|k| (*c, k)))
+        else {
+            continue;
+        };
+        let body = cam_children.into_iter().flatten().find(|c| bodies.contains(**c)).copied();
+        let current = body.and_then(|b| bodies.get(b).ok()).map(|b| (b.key.as_str(), b.mirrored));
+        if current == shown.map(|(k, _, _, m)| (k, m)) {
+            continue;
+        }
+        if let Some(e) = body {
+            commands.entity(e).try_despawn();
+        }
+        if let Some((key, a, _, mirror)) = shown {
+            spawn_body(&mut commands, camera, key, a, mirror, materials.as_deref_mut(), dormant.as_deref());
+        }
+    }
+}
+
+
 /// Keep a view-model camera under each anchor, matching the anchor
 /// camera's target, order and tonemapping, and the shown view model under
 /// it; then place, pose and light it.
@@ -467,21 +558,22 @@ pub fn draw_view_models(
     for (anchor, parent, anchor_camera, anchor_projection, eye, children, tonemapping, anchor_target, source) in
         &anchors
     {
-        let state = owners.get(anchor_owner(parent, source)).ok();
+        let owner = anchor_owner(parent, source);
+        let state = owners.get(owner).ok();
         // In third person the own body holds the weapon; no view model.
-        let hidden = third_person.as_ref().is_some_and(|t| t.0)
-            || settings.draw == 0
-            || state.is_some_and(|(s, _)| s.hidden)
-            || put_away
-                .get(anchor_owner(parent, source))
-                .is_ok_and(|c| c.weapon_hidden != 0);
-        let want = state.filter(|_| !hidden).and_then(|(s, _)| s.key.as_deref());
-        // `chimera_standins 2`: the stand-in instead (`stand_in::view_guns`).
-        let forced = stand_ins.as_ref().is_some_and(|s| s.mode == 2);
-        let shown = want
-            .filter(|_| !forced)
-            .and_then(|k| Some((k, assets.models.get(k)?, models.as_ref()?.get(k)?)));
-        if let Some(k) = want.filter(|_| shown.is_none() && !forced) {
+        let (want, shown) = shown_view(
+            state.map(|(s, _)| s),
+            owner,
+            &settings,
+            &assets,
+            models.as_deref(),
+            &put_away,
+            third_person.as_deref(),
+            stand_ins.as_deref(),
+        );
+        let mirror = shown.is_some_and(|(.., m)| m);
+        let shown = shown.map(|(k, a, m, _)| (k, a, m));
+        if let Some(k) = want.filter(|_| shown.is_none()) {
             missing.insert(k.to_string());
         }
         let camera = children.into_iter().flatten().find(|c| cameras.contains(**c)).copied();
@@ -558,11 +650,11 @@ pub fn draw_view_models(
             .flatten()
             .find(|c| bodies.contains(**c))
             .copied();
-        let mirror =
-            shown.is_some_and(|(_, _, m)| mirrored(m.right_handed, m.allow_flipping, settings.right_hand != 0));
         let current = body
             .and_then(|b| bodies.get(b).ok())
             .map(|(b, ..)| (b.key.clone(), b.mirrored));
+        // Normally swapped by `swap_view_bodies` before this runs; here
+        // when its camera was only just made.
         if current != shown.map(|(k, _, _)| (k.to_string(), mirror)) {
             if let Some(e) = body {
                 commands.entity(e).try_despawn();

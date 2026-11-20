@@ -8,7 +8,8 @@
 //! meshes its `ViewAnimator` hides aren't drawn, and a mesh whose frame
 //! the game picks (`ViewAnimator::mesh_frames`) shows that frame. Without
 //! a map's light field it is lit by the neutral probe
-//! (`probe_lit::probe_at`), not drawn full-bright.
+//! (`probe_lit::probe_at`), not drawn full-bright. A switch to another
+//! model shows the new one, lit, in the same frame the old one goes.
 
 use std::sync::Arc;
 
@@ -243,4 +244,68 @@ fn a_mesh_shows_the_frame_the_game_picks() {
     sim.app.world_mut().get_mut::<ViewAnimator>(owner).unwrap().mesh_frames = vec![(1, 0)];
     sim.ticks(2);
     assert_eq!(bases(&mut sim), before, "frame 0 again");
+}
+
+/// A weapon switch: in the frame the view's key changes, the old model
+/// is gone and the new one is drawn (shown and lit), not a frame later
+/// (real TF2's switch shows the new gun's draw at once:
+/// `render::view_model::swap_view_bodies`).
+#[test]
+fn a_switch_shows_the_new_model_in_the_same_frame() {
+    let mut sim = Sim::with(
+        (chimera_core::core::CorePlugin, chimera_core::console::ConsolePlugin),
+        |app| {
+            app.init_asset::<Image>()
+                .init_asset::<StandardMaterial>()
+                .init_asset::<WorldMaterial>()
+                .init_asset::<PropMaterial>()
+                .init_asset::<SpriteMaterial>()
+                .init_asset::<RopeMaterial>()
+                .init_asset::<ShadowMaterial>()
+                .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
+                .add_plugins(MapPlugin::empty());
+        },
+    );
+    let owner = sim
+        .app
+        .world_mut()
+        .spawn((Transform::default(), Visibility::default(), ViewAnimator::default()))
+        .id();
+    sim.app.world_mut().spawn((
+        Camera3d::default(),
+        ViewModelAnchor,
+        Transform::default(),
+        Visibility::default(),
+        ChildOf(owner),
+    ));
+    sim.ticks(2);
+    const OTHER: &str = "test:other";
+    add_view_model(sim.app.world_mut(), gun(), Arc::new(Vec::new()));
+    add_view_model(sim.app.world_mut(), MapViewModel { key: OTHER.into(), ..gun() }, Arc::new(Vec::new()));
+    sim.app.world_mut().get_mut::<ViewAnimator>(owner).unwrap().key = Some(KEY.into());
+    let mut frames = 0;
+    while sim
+        .app
+        .world()
+        .get_resource::<ViewModelAssets>()
+        .is_none_or(|a| !a.has(KEY) || !a.has(OTHER))
+    {
+        sim.app.update();
+        chimera_world::harness::let_tasks_run();
+        frames += 1;
+        assert!(frames < 5000, "never built");
+    }
+    sim.ticks(2);
+    let drawn = |sim: &mut Sim| {
+        let world = sim.app.world_mut();
+        world
+            .query::<(&ViewModelBody, &Visibility)>()
+            .iter(world)
+            .map(|(b, v)| (b.key().to_string(), *v != Visibility::Hidden))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(drawn(&mut sim), [(KEY.to_string(), true)]);
+    sim.app.world_mut().get_mut::<ViewAnimator>(owner).unwrap().key = Some(OTHER.into());
+    sim.app.update();
+    assert_eq!(drawn(&mut sim), [(OTHER.to_string(), true)], "the new model drawn in the switch's frame");
 }

@@ -429,10 +429,10 @@ aspect 16:9.
    fire, reload start, loop and end agree frame by frame. The Rocket
    Launcher's reload rises into its pose over about 0.25 s from its
    start where ours (the start phase 0.12 s, then `dh_reload_loop`,
-   which snaps) jumps in; its round goes in 1.65 s after the shot
-   (`m_iClip1` read every tick), as the 0.8 s interval, the 0.12 s start
-   and the 0.8 s insert give. The game's own `dh_reload_start` is
-   0.5 s long. On a turn made of `setang` steps the view model moved a
+   which snaps) jumped in: TF2 plays `dh_reload_start` whole (0.5 s,
+   blending in over 0.2 s), then `dh_reload_loop` once per round
+   (weapons.md 4, measured with the view model's sequence read every
+   tick); ours now does the same. On a turn made of `setang` steps the view model moved a
    few pixels between frames, on and off, also after the turn had ended:
    read as the console's angles against the client's prediction, not a
    sway.

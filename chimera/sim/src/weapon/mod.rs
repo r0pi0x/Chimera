@@ -1021,6 +1021,12 @@ pub struct ShellReload {
     /// start too, at once (TF2: specs/tf2/weapons.md 4, step 3); otherwise
     /// attacks wait for the start.
     pub start_interruptible: bool,
+    /// Each round counts this long into its insert, which still plays its
+    /// whole `insert` before the next starts (the next as it ends, no
+    /// tick between) or the reload ends: TF2's Rocket Launcher, whose
+    /// rocket is in a third of the way through its loop (specs/tf2/
+    /// weapons.md 4). None: at the insert's end.
+    pub round_at: Option<f32>,
 }
 
 /// Where a one-at-a-time reload is (`ShellReload`).
@@ -2585,6 +2591,22 @@ fn weapon_frame(
                     }
                 }
             }
+        } else if w.state.shells == ShellStage::Inserting
+            && due >= w.state.shell_next
+            && let Some((round_at, insert)) = w.shells.and_then(|s| s.round_at.map(|r| (r as f64, s.insert as f64)))
+        {
+            // The round counts part way into its insert (`ShellReload::round_at`);
+            // the insert plays on to its end in the start stage, whose end
+            // starts the next one or ends the reload.
+            if let Some(mag) = w.magazine.as_mut()
+                && mag.reserve > 0
+                && mag.clip < mag.size
+            {
+                mag.clip += 1;
+                mag.reserve -= 1;
+            }
+            w.state.shells = ShellStage::Starting;
+            w.state.shell_next += insert - round_at;
         } else if w.state.shells != ShellStage::Idle && due >= w.state.shell_next {
             let (insert, finish, back_to_back) =
                 w.shells.map_or((0.0, 0.0, false), |s| (s.insert as f64, s.finish as f64, s.back_to_back));
@@ -2594,7 +2616,7 @@ fn weapon_frame(
             match w.state.shells {
                 ShellStage::Starting if room => {
                     w.state.shells = ShellStage::Inserting;
-                    w.state.shell_next = from + insert;
+                    w.state.shell_next = from + w.shells.and_then(|s| s.round_at).map_or(insert, |r| r as f64);
                     if let Some(s) = w.sounds {
                         w.state.pending = s.reload.iter().map(|(t, e)| (now + *t as f64, e.clone())).collect();
                     }

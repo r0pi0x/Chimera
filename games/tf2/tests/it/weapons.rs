@@ -327,6 +327,35 @@ fn shells_go_in_one_at_a_time_and_a_shot_stops_them_27_28() {
     assert!(!ev.iter().any(|(_, k)| matches!(k, WeaponEventKind::ShellInserting)), "the reload stopped");
 }
 
+/// 4, measured on real TF2 (2026-11-20, the view model's sequence and the
+/// clip read every tick): the Rocket Launcher's reload plays its whole
+/// 0.5 s start, then a 0.8 s loop a round, the rocket in 0.33 s into it;
+/// the next loop starts as the last ends.
+#[test]
+fn the_rocket_launchers_reload_plays_its_start_then_a_loop_a_round() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], ROCKET_LAUNCHER);
+    {
+        let mut m = sim.app.world_mut().get_mut::<Magazine>(w).unwrap();
+        m.clip = 2;
+        m.reserve = 20;
+    }
+    let mut clips = Vec::new();
+    let ev = run(&mut sim, p, 200, |s, k| {
+        s.intent(p).reload = k == 0;
+        clips.push(s.app.world().get::<Magazine>(w).unwrap().clip);
+    });
+    let at = |want: fn(&WeaponEventKind) -> bool| ev.iter().filter(|(_, k)| want(k)).map(|(t, _)| *t).collect::<Vec<_>>();
+    let start = at(|k| matches!(k, WeaponEventKind::ReloadStarted))[0];
+    let loops: Vec<u64> = at(|k| matches!(k, WeaponEventKind::ShellInserting)).iter().map(|t| t - start).collect();
+    // TF2: the loops 34 and 88 ticks after the start, rounds 56 and 110.
+    assert_eq!(loops, [34, 88], "loops (ticks after the start)");
+    let rounds: Vec<u64> = (3..=4).map(|n| clips.iter().position(|c| *c >= n).unwrap() as u64 - 1 - start).collect();
+    assert_eq!(rounds, [56, 110], "rounds in (ticks after the start)");
+    let done = at(|k| matches!(k, WeaponEventKind::Reloaded));
+    assert_eq!(done.iter().map(|t| t - start).collect::<Vec<_>>(), [142], "the finish (TF2: 143)");
+}
+
 /// The flyers of `owner`.
 pub(crate) fn rockets(sim: &mut Sim, owner: Entity) -> Vec<(Entity, Vec3, Vec3)> {
     let mut q = sim.app.world_mut().query::<(Entity, &Flyer, &Transform)>();

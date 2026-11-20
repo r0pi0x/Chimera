@@ -81,7 +81,9 @@ reload = 2.4324                 # s (a shell's, with `shells`)
 #   between rounds; Combat Arms' shotguns; insert_first = true: each
 #   round in as its insert starts, attacks waiting for each part, a held
 #   attack ending the reload: HL2:DM's shotgun; start_interruptible = true:
-#   an attack stops the start too, at once: TF2's)
+#   an attack stops the start too, at once: TF2's; round_at = 0.33: each
+#   round counts that far into its insert, which plays on to its end and
+#   the next starts as it ends: TF2's Rocket Launcher)
 # reload_while_held = false
 # auto_reload = false           # an empty clip reloads, held or not (CA)
 # reload_when_idle = false      # a clip not full reloads with neither attack held (TF2 cl_autoreload)

@@ -228,7 +228,7 @@ default: follow the cvar defaults above.
 | Spread s | 0.0675 | – | 0.0675 | 0.08 |
 | Clip / reserve | 6 / 32 | 4 / 20 | 6 / 32 | 200 (no clip) |
 | Ammo per shot | 1 | 1 | 1 | 1 (per 4-bullet shot) |
-| Reload | one shell: first 0.7, then 0.5 each | one rocket: first 0.92, then 0.8 each | one shell: first 0.87–1.035 by class, then 0.5 (0.51 measured) each | none |
+| Reload | one shell: first 0.7, then 0.5 each | one rocket: first 0.84, then 0.81 each (measured, §4) | one shell: first 0.87–1.035 by class, then 0.5 (0.51 measured) each | none |
 | Crit rolls | every shot | every shot | every shot | once per second, 2 s bursts |
 | Deploy | 0.5 s | 0.5 s | 0.5 s | 0.5 s |
 
@@ -440,7 +440,7 @@ Times (first = start + first insert, as the wiki measures "first reload"):
 | Weapon | Start | Insert | First round in | Full from empty |
 |---|---|---|---|---|
 | Scattergun | 0.2 | 0.5 | 0.7 | 0.2 + 6 × 0.5 = 3.2 |
-| Rocket Launcher | 0.12 | 0.8 | 0.92 | 0.12 + 4 × 0.8 = 3.32 |
+| Rocket Launcher | 0.5 (measured; see below) | 0.8 (the round counts 0.33 s in) | 0.84 (measured) | 0.5 + 0.33 + 3 × 0.81 ≈ 3.27 (measured) |
 | Shotgun, Soldier | 0.4667 | 0.5 | 0.967 (wiki 1.005) | 3.467 |
 | Shotgun, Pyro | 0.5 | 0.5 | 1.0 (wiki 1.035) | 3.5 |
 | Shotgun, Heavy | 0.3333 | 0.5 | 0.833 (wiki 0.87) | 3.333 |
@@ -453,7 +453,17 @@ sequence (§8); the wiki's first-reload measurements are those plus
 sequence, consistent with step 5. The Rocket Launcher's start of 0.12 is
 only the difference of the wiki's two measurements; its start sequence
 is 0.5 s, which by step 5 would give a first rocket at 1.3 s (Open
-questions 4).
+questions 4). Measured on the live client (2026-11-20, the own view
+model's sequence and cycle and the clip read every tick): the start
+sequence plays whole (34 ticks), then the loop sequence once per round,
+each next loop on the tick the last one's 0.8 s are over (54 ticks
+apart), and the clip counts the round 22 ticks (0.33 s) into each loop,
+not at its end; the finish sequence follows on the tick after the last
+loop is over (55 ticks after it started). So the first rocket is in 0.84 s
+after the reload starts and the next every 0.81 s, both phases timed by
+the sequences as step 5 says, the round counted early. The Scattergun,
+measured the same way: start 14 ticks, a loop every 34 ticks, the round
+counted at each loop's end, the finish on that tick.
 
 The Minigun has no clip and never reloads.
 
@@ -926,7 +936,7 @@ pellets unless said, damage rounded at the end.
 | 27 | Scattergun clip 0, reserve 32 | – | reload starts by itself; clip 1 at +0.7 s, 2 at +1.2, …, 6 at +3.2; reserve 26 |
 | 28 | Scattergun clip 2, reloading, third shell 0.3 s in | press attack | the reload stops at once, a shot fires (clip 1); shell lost |
 | 29 | Scattergun clip 0 reloading, first shell 0.1 s in | press attack | ignored; clip 1 at 0.7 s |
-| 30 | Rocket Launcher clip 0, reserve 20 | – | clip 1 at +0.92, 4 at +3.32; reserve 16 |
+| 30 | Rocket Launcher clip 0, reserve 20 | – | clip 1 at +0.84, 4 at +3.27 (measured, §4); reserve 16 |
 | 31 | Shotgun as Soldier / Pyro / Heavy / Engineer, clip 0 | – | first shell at 0.967 / 1.0 / 0.8333 / 0.8333 s, then every 0.5 s |
 | 32 | Any of the four | switch to it | first shot possible 0.5 s later (34 ticks) |
 | 33 | Minigun idle | press and hold attack | spun at +0.75 s (50 ticks); first shot 0.1 s later, ≈ +0.855 s (57 ticks); then every 0.105 s (7 ticks) |
@@ -975,7 +985,9 @@ Probe checks (live dedicated server, bots; never port 27015/27030):
    the script's times (§4 step 5). Its start sequence is 0.5 s (first
    rocket at 1.3 s) but the wiki measures 0.92 s; either the script value
    is used (the weapon's own model may lack the sequence) or the
-   measurement is off. P4.
+   measurement is off. P4. Answered by measurement (2026-11-20, §4):
+   the sequences time it (0.5 s start, 0.8 s a round), but each rocket
+   counts 0.33 s into its loop, so the first is in at 0.84 s.
 5. **Rocket direction.** Settled: toward the 2000-unit aim trace's hit
    (§5.1).
 6. **Crit bucket.** Settled (§2.6).

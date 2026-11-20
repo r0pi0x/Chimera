@@ -272,6 +272,9 @@ pub struct ShellsData {
     /// An attack stops the reload's start too (`ShellReload::start_interruptible`).
     #[serde(default)]
     pub start_interruptible: bool,
+    /// Each round counts this long into its insert, s (`ShellReload::round_at`).
+    #[serde(default)]
+    pub round_at: Option<f32>,
 }
 
 /// An ammo type: what `Penetration` passes (`power`, length units of a
@@ -1212,6 +1215,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                 back_to_back: s.back_to_back,
                 insert_first: s.insert_first,
                 start_interruptible: s.start_interruptible,
+                round_at: s.round_at,
             });
         }
     }

@@ -1,6 +1,8 @@
 # The Rocket Launcher (specs/tf2/weapons.md 1, 4, 5): the Soldier's
 # primary; a rocket every 0.8 s, 4 in the clip and 20 carried, one at a
-# time (first in at 0.92, then 0.8 each). The rocket (Chimera's flyers,
+# time (the start 0.5, then each round's 0.8 loop, the rocket in 0.33 s
+# into it: first in at 0.84, then every 0.81, measured on real TF2,
+# weapons.md 4). The rocket (Chimera's flyers,
 # `chimera:projectile`) starts 23.5 forward, 12 right and 3 down from
 # the eye (crouched 8 up), flies at 1100 units/s with no gravity through
 # its owner's teammates, and on touch explodes (`tf2:rocket`): 90 x the
@@ -28,7 +30,9 @@ reload = 0.8
 auto_reload = true
 # cl_autoreload 1 (weapons.md 4, step 4): a clip not full reloads with neither attack held.
 reload_when_idle = true
-shells = { start = 0.12, insert = 0.8, back_to_back = true, start_interruptible = true }
+# The start sequence plays whole (`dh_reload_start`, 0.5 s), then a loop a
+# round, each next loop as the last ends (measured, weapons.md 4).
+shells = { start = 0.5, insert = 0.8, round_at = 0.33, start_interruptible = true }
 
 # Without [damage] the frame traces nothing: the round is a rocket.
 [hitscan]
