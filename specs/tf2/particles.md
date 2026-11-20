@@ -160,15 +160,87 @@ depth range f is pushed to 1. f multiplies the vertex alpha.
 - **render_animated_sprites**: one camera-facing quad per particle (§4),
   sheet-animated (§3). `orientation_type` 0 = facing the camera (all TF2
   weapon effects read here use 0).
-- **render_sprite_trail** (inferred): a quad from the particle's position
-  back along its velocity, length = speed × trail length (field 10, in
-  seconds; "Trail Length Random" sets it) clamped to [`min length`,
-  `max length`], grown in from 0 over `length fade in time` (seconds of
-  age), as wide as the radius (the radius is the strip's full width, not
-  its half-width) but never wider than it is long (inferred: §8.3's
-  Minigun core), the texture's v running from 0 at the tail to 1 at the
-  head (measured: Open questions 4). Used for sparks, tracers and the
-  Minigun core.
+- **render_sprite_trail**: a strip from the particle back along its
+  motion (§5.1). Used for sparks, tracers, embers, the Minigun core and
+  the explosions' streaks.
+- A system may list **two renderers** (`Explosion_FlyingEmbers`: a trail
+  and an animated sprite): each particle is drawn by both, the sprite
+  sitting on the trail's head as a round dot of the same radius.
+
+#### 5.1 Sprite trails
+
+Settled by capture (2026-11-20, below) together with the tracer capture
+of Open questions 4. Per particle, each frame, after the step's
+operators:
+
+1. **Head and direction.** The head H is the particle's position; the
+   step's motion is m = H − (position before this step) (field 2). The
+   speed is |m| / Δt of that step, so it is the speed the particle
+   actually moved with after drag, gravity, locks and collisions, not its
+   initial velocity. A particle that did not move in its last step has no
+   direction and draws nothing (measured: `new_flame_pilot`, locked to a
+   still muzzle, shows no streak).
+2. **Length.** With τ = the particle's trail length (field 10, seconds;
+   set by "Trail Length Random", uniform between its two values in either
+   order) and a = the particle's age in seconds:
+
+```math
+L = \mathrm{clamp}\Big(\,|v|\,\tau\cdot f,\ L_{min},\ L_{max}\Big),\qquad f = \begin{cases}\min\!\left(1, \dfrac{a}{t_{fade}}\right) & t_{fade} > 0\\ 1 & t_{fade} = 0\end{cases}
+```
+
+   with `min length`, `max length` and `length fade in time` from the
+   renderer. The fade-in is by **age in seconds**, not by life fraction;
+   the clamp comes after it (inferred order). Consequence: while
+   a < t_fade a particle moving at a constant speed draws a streak of
+   v·τ·a / t_fade, i.e. τ / t_fade of the distance it has travelled
+   since birth, so the streaks of a burst reach back toward its centre
+   and detach from it once a passes t_fade.
+3. **Width.** The strip's **full width is the particle's radius** (field
+   3) as the radius operators leave it this frame. "Radius Scale" and
+   the other radius operators act on the radius exactly as for sprites;
+   the trail renderer applies no scale of its own. (The earlier inferred
+   cap "never wider than it is long" is unconfirmed and not needed by
+   any capture.)
+4. **Geometry.** The strip runs from the tail H − L·m/|m| to H, turned
+   about its own axis to face the eye; the texture's v goes from 0 at the
+   tail to 1 at the head, u across the width. Colour and alpha are the
+   particle's; blending by its material (§1). UnlitGeneric trail
+   materials have no size clamps.
+
+**Worked examples** (stock `particles/explosion.pcf`, all children of
+`ExplosionCore_Wall`, delay 0):
+
+| System | Material (blend) | Count, life | Radius r₀, scale | Trail | Speeds (local, along the surface normal = x) | Look |
+|---|---|---|---|---|---|---|
+| `Explosion_FlyingEmbers` | `effects/circle2` UnlitGeneric, additive; trail **and** sprite | 16 at once; life U(0, 0.35) | U(0.5, 1); × 3 → 0 with ease (bias 0.5) | τ U(0.05, 0.1); t_fade 0.1; L in [0, 2000] | x U(20, 2200), y, z U(−1500, 1500); gravity −500; drag 0.2; collide with brushes, bounce 1 | **the thin yellow rays** (≈ 1–3 units wide), each with a dot at its head |
+| `Explosion_FloatieEmbers` | `effects/brightglow_y_nomodel` UnlitGeneric, additive; trail | 24 at once; life U(1.5, 2.5) | U(0.1, 0.7); × 3 → 0 eased | τ U(0.01, 0.05); t_fade 0; L in [0, 2000] | x U(0, 2330), y, z U(−1200, 1200); gravity +128; drag 0.4; random force ±1800, ±1800, ±800; bounce 2 | short sparks that drift up |
+| `Explosion_CoreFlash` | `effects/softglow` UnlitGeneric, additive; trail | 12 at once; life U(0.05, 0.17) | U(1, 12); 3 → 11 with bias 0.9 | τ U(0.33, 0.4); t_fade 0.2; L in [2, 122] | x U(410, 1120), y, z U(−840, 840); no drag | **broad soft orange streaks** (width 3–132): the orange star round the blast for ~7 frames |
+| `Explosion_Flashup` | `effects/softglow`, additive; trail | 3000/s for 0.01 s (max 45); life U(0, 0.2) | U(1, 5); 3 → 11, bias 0.9 | τ U(0.3, 0.4); t_fade 0.2; L in [32, 512] | x U(110, 920), y, z U(−840, 840); drag 0.1 | **nothing visible** (measured; Open questions 8) |
+| `Explosion_Dustup` | `effects/softglow_translucent`, alpha; trail | 250/s for 0.12 s; life U(0, 0.3) | U(1, 2); 3 → 11, bias 0.9 | τ U(0.1, 0.4); t_fade 0.2; L in [32, 512] | x U(110, 1220), y, z U(−840, 840); drag 0.1 | brown streaks (alpha 128–212) |
+
+Per frame, `Explosion_FlyingEmbers` with the formula: a particle leaving
+at 1500 units/s with τ = 0.08 draws L = 1500 × 0.08 × (a / 0.1): 20 units
+at 1 frame (17 ms), 40 at 33 ms, 60 at 50 ms (less the speed drag has
+taken), then at most 120; its width at life fraction x is
+r₀ × 3 × (1 − (3x² − 2x³)), e.g. 2.15 for r₀ 0.8 at x 0.2. A fast one
+(|v| ≈ 2900) reaches 145 units at 50 ms. `Explosion_CoreFlash`'s widths
+at x = 0.1 are r₀ × 8.6: these are the wide glows, correctly wide.
+
+**Capture (2026-11-20, tools/tf2ref, real TF2, 1024x768, fov 90,
+`host_framerate` 1/60):** each child above started **alone** with an
+`info_particle_system` on 2fort's bridge floor about 160 units ahead,
+zero angles (local x = world +x), 20 frames each:
+
+- `Explosion_FlyingEmbers`: from the first frame thin orange-yellow rays
+  about 3 pixels wide (about 1 unit) fan out from the point, each ending
+  in a round dot about 3 times as wide (the sprite renderer); the rays
+  reach back to about the burst centre for the first ~6 frames, then
+  detach and fly off; most are out of view or gone by frame 10. These are
+  the rays of the full rocket blast (Open questions 7).
+- `Explosion_CoreFlash`: broad, soft orange streaks tens of units wide
+  forming a star round the point, growing for ~4 frames, gone after ~7.
+- `Explosion_Flashup`: no pixel changed by more than 3 % in any frame
+  (at most 2 pixels).
 
 ### 6. Effects on the first-person weapon (view-model particles)
 
@@ -322,10 +394,34 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
   surface normal (local x positive), spreading ±840–940 sideways.
   `ExplosionCore_MidAir` has the same parts with velocities symmetric in
   all directions plus an `airburst_shockwave` ring (radius × 20 → 48);
-  `_underwater` adds 64 bubbles.
+  `_underwater` adds 64 bubbles. Which children draw what: §5.1 (the
+  thin rays are the flying embers; the core flash is the wide orange
+  star; the flash-up draws nothing).
+- `ExplosionCore_MidAir_underwater`: the mid-air children
+  (`Explosions_MA_*`) plus `Explosion_bubbles` (64 at once, speed
+  U(120, 300) in a random direction, radius U(0.5, 2) × 3 → 0 eased, life
+  U(0.3, 1), gravity +100 (rising), drag 0.1, alpha 128, white to
+  (186,218,219) fading to grey, `effects/bubbles/bubble` SpriteCard
+  translucent, animated at 20 frames/s). `ExplosionCore_Wall_underwater`
+  is the wall set plus the same bubbles. The orange glow of a blast under
+  water is `Explosions_MA_Flash_1`: one `effects/sc_brightglow_y_nomodel`
+  sprite (additive SpriteCard), radius 7 growing × 1 → 32 (bias 0.75)
+  over its 0.1 s life, (253,228,169)..(224,185,153) → (252,119,0), alpha
+  212, fading out from 0.6 of life.
 - `rockettrail`: smoke 150/s, life 0.8–1.2, radius 10 × 0.25 → 2,
   gravity +6, alpha 96–128, `effects/rocketrailsmoke`; plus `_burst`
   (sparks) and `_fire` (128/s glow, radius 5 × 3 → 0, life 0.2).
+  The smoke takes (247,194,117)..(251,142,0) and fades to the white-grey
+  (195,190,202) over its first 0.1 of life: the long white trail.
+- `rockettrail_underwater`: identical to `rockettrail` except the smoke's
+  life U(0.5, 1.2) (not 0.8–1.2), plus a third child
+  `rockettrail_waterbubbles` (`effects/bubbles/bubble`, 255/s, radius
+  U(1, 2) × 1 → 3, life U(0.2, 1.4), 5 units forward of the trail point,
+  local speed (0..10, ±11, ±11), gravity +55 (rising), alpha 128–200,
+  fading to (87,138,174), with a "prevent passing through a plane"
+  constraint on control point 1, normal down: meant to keep the bubbles
+  under the surface; the rocket sets no control point 1, Open questions
+  9). Used by effects.md §9.
 - `pipebombtrail_*` / `stickybombtrail_*`: soft glow 255/s for 2 s, life
   0.4, radius 64 × 1 → 0.1, alpha 16 (pipe) / 32 (sticky); the pipe adds a
   `pipebomb_timer_*` ring.
@@ -372,6 +468,15 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
 | a particle of radius 8 at depth 46.3, world FOV 90, 16:9 | NDC half-height 0.230 (not 0.452) |
 | `flamethrowerfire102`, sequence 3, fit lifetime, t = 0.5 | frame position 9.5: frames 9 and 10 of sequence 3 mixed 50/50 |
 | bias(0.05, 0.9) | 0.05^0.152 = 0.634 |
+| trail, |v| = 1500 (this step's motion / Δt), τ = 0.08, t_fade 0.1, age 1/60 s, L in [0, 2000] | L = 1500 × 0.08 × 0.1667 = 20 |
+| same, age 0.2 s | L = 120 (fade complete) |
+| `Explosion_CoreFlash` particle, |v| = 1400, τ = 0.4, age 0.05 | 1400 × 0.4 × 0.25 = 140 → clamped to 122 |
+| same, age 1/60 | 46.7 (above the minimum 2) |
+| trail particle locked to a still control point, no movement operator, start velocity 1000 | nothing drawn (no motion this step) |
+| trail particle r₀ 0.8, × 3 → 0 eased (bias 0.5), life fraction 0.2 | strip full width 0.8 × 3 × (1 − 0.104) = 2.15 |
+| `Explosion_FlyingEmbers` alone on a floor 160 units ahead, fov 90, 1024x768 | thin rays ~1 unit wide, each with a dot ~3× wider at its head, from the first frame; streaks reach back to ~the centre for ~0.1 s, then detach |
+| `Explosion_CoreFlash` alone, same view | broad soft orange streaks (tens of units wide), gone after ~7 frames at 60 a second |
+| `Explosion_Flashup` alone, same view, stepped at 60 a second | no visible change in any frame |
 | addself material, T = (1, 0.5, 0.2, 0.8), v = (1, 1, 1, 0.25), O = 5, S = 0.5, f = 1 | P = (1, 0.5, 0.2) × 5 × 0.8 × 0.25 = (1, 0.5, 0.2); out.rgb = P × (1 + 0.625) = (1.625, 0.8125, 0.325); out.a = 0.2 |
 
 ## Open questions
@@ -450,3 +555,28 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
    to 110 units wide and merge into an orange haze; drawn with the
    unscaled radius and a fade-in by life fraction (tried) they were still
    no rays like these. Both the width and the fade-in rule stay open.
+   **Answered (2026-11-20, each child of the blast started alone, §5.1):**
+   the rays are not `Explosion_CoreFlash` or `Explosion_Flashup` but
+   `Explosion_FlyingEmbers` (radius 0.5–1 × 3 → 0, `effects/circle2`,
+   trail plus a head sprite). The trail rule is §5.1: full width = the
+   radius after the radius operators (so the core flash's 10–110-unit
+   glows are right), length = this step's speed × τ × min(1, age /
+   t_fade), clamped. Ours' haze is the core flash, correctly; what was
+   missing is the flying embers' rays. Things in that system an
+   implementation may trip on: its speed range has min above max on
+   every axis (x 2200 → 20, y and z 1500 → −1500) and its trail length
+   range too (0.1 → 0.05): pick uniformly between the two either way;
+   its Alpha Fade and Decay starts at 0 and ends at 1 (fades in over
+   0–0.7 of life and never fades out); it has two renderers.
+8. Why `Explosion_Flashup` draws nothing (measured alone, §5.1): its
+   emitter runs 3000/s for only 0.01 s, less than one 60 Hz step, and
+   its alpha starts at 0 until 0.1 of life. Whether a continuous emitter
+   whose window ends inside the first step emits nothing (a step-boundary
+   rule), or its particles are emitted and simply never visible, is
+   unconfirmed. Parity target either way: nothing visible from it at
+   60 frames a second.
+9. `rockettrail_waterbubbles`' plane constraint reads control point 1,
+   which the rocket never sets; what an unset control point holds (the
+   world origin, or control point 0) decides whether bubbles of a rocket
+   are clipped at all. Unconfirmed; a capture of the underwater trail's
+   bubbles near the surface answers it.

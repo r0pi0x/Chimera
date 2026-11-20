@@ -369,3 +369,10 @@ Captured imagery stays in scratch, never in the repo.
 - Flames at the wall (`flames.tf2`/`.scene`, 0.5 and 1.0 s): close now.
   The violet cloud spans about the same width in both at 0.5 s; at 1.0 s
   TF2's is ~25 % wider and sits a little higher. No change made.
+- 2026-11-20 (spec pass, tf2-fx-spec2): the streaks are `Explosion_FlyingEmbers`
+  (each blast child started alone in TF2: the core flash is TF2's wide orange
+  star too, the flash-up draws nothing); trail rule settled (particles.md
+  5.1). TF2's late blast is the client's interpolation (blast at frame 15 with
+  lerp 0.1, 11 with lerp 0.03; effects.md 11), which also makes the "launch
+  glow" (the trail's fire passing the camera). Blood (effects.md 8), under
+  water (9) and melee impacts (10) specified.
