@@ -21,6 +21,8 @@ joinclass demoman
 kill
 sleep 7
 use tf_weapon_pipebomblauncher
+# The stock launcher (this account's loadout holds the Quickiebomb Launcher).
+stock tf_weapon_pipebomblauncher 20
 sleep 2
 setpos 0 -300 0
 setang 30 90 0

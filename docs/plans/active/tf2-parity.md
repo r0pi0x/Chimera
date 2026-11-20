@@ -186,17 +186,19 @@ Captured imagery stays in scratch, never in the repo.
   changed. Spec question: the drawn rocket's places in its first 0.1 s
   (the one-second-back history point used or not) and whether its trail
   emits while the drawn place hasn't moved.
-- **The Stickybomb Launcher's first-person pose** (`launch` `sticky_idle`):
-  differs, not fixed. TF2 shows the drum low and near with the dark
-  barrel toward the middle; ours the launcher turned (the flip sight on
-  top, the barrel toward the right edge), though our `sb_idle` merge puts
-  the muzzle at the spec's place (viewmodel.md test 13, `heavy::guns::
-  the_muzzles_...`, within 0.01 unit) and the same pipeline draws the
-  Grenade Launcher as TF2 does. Next: compare each bone of the merged
-  model (`vm_weapon_bone`, `vm_weapon_bone_1`, `weapon_bone_1`) at
-  `sb_idle` frame 0 with the arms' (a picture of TF2's `sb_idle` alone,
-  or the spec giving the gun's pose, not only its muzzle). Also fixed:
-  the two heavy view-model tests indexed the animator's pose by the
+- **The Stickybomb Launcher's first-person pose** (`sticky_pose`):
+  matches (2026-11-20). Not a pose bug: the reference held this
+  account's Quickiebomb Launcher (item 1150, its own model; read with
+  VScript), not the stock one. With item 20 swapped in (tf2ref's new
+  `stock` directive; `launch.tf2` and `stickies.tf2` now use it too, so
+  their earlier sticky captures were of the Quickiebomb) TF2 and ours
+  draw the same picture. Each merged bone at `sb_idle` frame 0 keeps
+  the `c_` model's own place relative to `weapon_bone` (as for the
+  Grenade Launcher), so the gun is drawn whole (`heavy::guns::
+  the_launchers_bones_sit_where_tf2_holds_them`). Also: `viewmodels.tf2`'s
+  `demoman_pipebomblauncher` (the puppet bot's `bot_selectweaponslot 1`)
+  shows the Grenade Launcher, not the sticky. Also fixed earlier: the
+  two heavy view-model tests indexed the animator's pose by the
   merged skeleton's bones (the Minigun's kept `barrel` is one more) and
   panicked.
 - **Input a frame late** (item 7): by the schedule, not only switches:

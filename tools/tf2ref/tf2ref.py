@@ -24,7 +24,12 @@ Scenes (`*.tf2`): a console line per line, `#` comments, and directives:
 `snap <name>` (a picture taken inside the batch, frame-exact),
 `movie <name>` (every rendered frame until the line `endmovie`, as
 `<name>_NN.png`; the reliable way: snaps a frame apart get dropped),
-`player <team> <class>`. Scenes take a lock (`scene.lock` in the cache):
+`player <team> <class>`, `stock <weapon class> <item index>` (the local
+player's weapon of that slot replaced by that item, e.g.
+`stock tf_weapon_pipebomblauncher 20`: the account's loadout holds other
+items, such as the Quickiebomb Launcher, 1150, for the Stickybomb
+Launcher; through TF2's VScript, `script_execute` of a script this writes
+into the install's `tf/scripts/vscripts/`). Scenes take a lock (`scene.lock` in the cache):
 a second one waits for the first. Consecutive console lines (and snaps) go in one
 RCON packet, a line each, so `wait` counts frames between them (on this
 listen server `wait 2` is one rendered frame): with `host_framerate
@@ -343,6 +348,36 @@ def shot(r, name, out):
     collect(name, out)
 
 
+STOCK_SCRIPT = "chimera_tf2ref_stock"
+
+
+def stock(r, weapon_class, index):
+    """Replace the local player's weapon of `weapon_class`'s slot with item
+    `index` (its stock one) and switch to it, through TF2's VScript."""
+    folder = TF2 / "tf/scripts/vscripts"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{STOCK_SCRIPT}.nut").write_text(f"""// Written by Chimera's tools/tf2ref/tf2ref.py (`stock`); safe to delete.
+local p = GetListenServerHost();
+local w = Entities.CreateByClassname("{weapon_class}");
+NetProps.SetPropInt(w, "m_AttributeManager.m_Item.m_iItemDefinitionIndex", {int(index)});
+NetProps.SetPropBool(w, "m_AttributeManager.m_Item.m_bInitialized", true);
+NetProps.SetPropBool(w, "m_bValidatedAttachedEntity", true);
+w.SetTeam(p.GetTeam());
+Entities.DispatchSpawn(w);
+for (local i = 0; i < 8; i++) {{
+    local h = NetProps.GetPropEntityArray(p, "m_hMyWeapons", i);
+    if (h != null && h.GetSlot() == w.GetSlot()) {{
+        h.Destroy();
+        NetProps.SetPropEntityArray(p, "m_hMyWeapons", null, i);
+        break;
+    }}
+}}
+p.Weapon_Equip(w);
+p.Weapon_Switch(w);
+""")
+    r.exec(f"script_execute {STOCK_SCRIPT}")
+
+
 def scene(path, out):
     r = rcon(3)
     out.mkdir(parents=True, exist_ok=True)
@@ -408,6 +443,9 @@ def scene(path, out):
         elif words[0] == "player":
             flush()
             setup_player(r, *words[1:3])
+        elif words[0] == "stock":
+            flush()
+            stock(r, words[1], words[2])
         else:
             if words[0] == "host_timescale" and len(words) > 1:
                 timescale = float(words[1])
@@ -479,6 +517,7 @@ def down(everything):
     pid = game_pid()
     if pid:
         os.kill(pid, 15)
+    (TF2 / f"tf/scripts/vscripts/{STOCK_SCRIPT}.nut").unlink(missing_ok=True)
     if everything:
         if started("steam") and steam_running():
             subprocess.run(["steam", "-shutdown"], capture_output=True)

@@ -222,6 +222,101 @@ fn the_muzzles_sit_where_the_spec_puts_them() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
+/// The Demoman's launchers held at rest as TF2 holds them
+/// (docs/plans/active/tf2-parity.md, "The Stickybomb Launcher's
+/// first-person pose"): at frame 0 of `sb_idle` / `g_idle` the bones the
+/// `c_` model is merged onto sit in the eye's space (forward, right, up,
+/// units) where the arms' animation puts them, the barrel (`weapon_bone`'s
+/// +Z) ahead and its +X (the roll: which way the drum and sight face) to
+/// the left, and each merged bone keeps its place relative to
+/// `weapon_bone` from the `c_` model's own reference pose: the gun is
+/// drawn whole, not bent by the arms. Matches TF2's stock Stickybomb
+/// Launcher side by side (tools/tf2ref/scenes/sticky_pose.tf2); the
+/// difference once reported was the account's Quickiebomb Launcher.
+#[test]
+fn the_launchers_bones_sit_where_tf2_holds_them() {
+    use bevy::prelude::*;
+    use source_engine::content::props;
+    use tf2::game::weapons::{GRENADE_LAUNCHER, STICKY_LAUNCHER};
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0);
+    let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
+    maps::add_guns(&mut materials, &|g| g == STICKY_LAUNCHER || g == GRENADE_LAUNCHER, false, &mut kit, &mut warnings);
+    // (bone, eye-space position) and weapon_bone's +Z and +X.
+    type Case<'a> = (&'a str, &'a str, &'a str, &'a [(&'a str, [f32; 3])], [f32; 3], [f32; 3]);
+    let cases: &[Case] = &[
+        (
+            STICKY_LAUNCHER,
+            "models/weapons/c_models/c_stickybomb_launcher/c_stickybomb_launcher.mdl",
+            "sb_idle",
+            &[
+                ("weapon_bone", [28.24, 12.15, -9.05]),
+                ("weapon_bone_1", [30.74, 10.45, -5.96]),
+                ("vm_weapon_bone", [29.95, 11.84, -9.58]),
+                ("vm_weapon_bone_1", [36.65, 3.72, -8.95]),
+            ],
+            [0.99, -0.15, 0.06],
+            [-0.16, -0.99, 0.07],
+        ),
+        (
+            GRENADE_LAUNCHER,
+            "models/weapons/c_models/c_grenadelauncher/c_grenadelauncher.mdl",
+            "g_idle",
+            &[
+                ("weapon_bone", [24.77, 12.35, -10.39]),
+                ("weapon_bone_1", [30.64, 10.76, -15.46]),
+                ("weapon_bone_2", [33.96, 10.24, -9.65]),
+                ("weapon_bone_3", [51.39, 6.46, -2.81]),
+            ],
+            [0.97, -0.22, 0.08],
+            [-0.23, -0.97, 0.04],
+        ),
+    ];
+    let unit = tf2::game::METERS_PER_UNIT;
+    let mut wrong = Vec::new();
+    for (gun, model, sequence, bones, barrel, roll) in cases {
+        let v = kit.view_models.iter().find(|v| v.key == *gun).unwrap_or_else(|| panic!("{gun}: no view model"));
+        let set = v.animations.clone().unwrap();
+        let mut a = chimera_world::map::anim::Animator::new(set.clone());
+        a.play(set.sequence(sequence).unwrap_or_else(|| panic!("{gun}: no {sequence}")), 0.0);
+        let posed = chimera_world::map::view_model::posed_world(&v.bones, &a.pose(0.0));
+        let root = v.root.to_matrix();
+        let bone = |name: &str| v.bones.iter().position(|b| b.name.eq_ignore_ascii_case(name)).unwrap_or_else(|| panic!("{gun}: no {name}"));
+        // Camera space (right, up, back) to the spec's (forward, right, up).
+        let eye = |p: Vec3| [-p.z, p.x, p.y];
+        let far = |got: [f32; 3], want: [f32; 3]| (0..3).map(|i| (got[i] - want[i]).abs()).fold(0.0, f32::max);
+        for (name, want) in *bones {
+            let got = eye((root * posed[bone(name)]).transform_point3(Vec3::ZERO) / unit);
+            eprintln!("{gun} {sequence}: {name} at {got:?}");
+            if far(got, *want) > 0.05 {
+                wrong.push(format!("{gun} {sequence}: {name} at {got:?}, not {want:?}"));
+            }
+        }
+        let wb = root * posed[bone("weapon_bone")];
+        for (axis, want, what) in [(Vec3::Z, barrel, "+Z (the barrel)"), (Vec3::X, roll, "+X (the roll)")] {
+            let got = eye(wb.transform_vector3(axis).normalize());
+            if far(got, *want) > 0.01 {
+                wrong.push(format!("{gun} {sequence}: weapon_bone's {what} along {got:?}, not {want:?}"));
+            }
+        }
+        // The c_ model's own bones, rigid with weapon_bone as in its file.
+        let weapon = props::load_view_model(&mut materials, model, gun, true).unwrap();
+        let reference = chimera_world::map::reference_world(&weapon.bones);
+        let own = |name: &str| weapon.bones.iter().position(|b| b.name.eq_ignore_ascii_case(name));
+        let wb_own = reference[own("weapon_bone").unwrap()];
+        for (name, _) in bones.iter().skip(1) {
+            let Some(k) = own(name) else { continue };
+            let (_, r_arms, t_arms) = (posed[bone("weapon_bone")].inverse() * posed[bone(name)]).to_scale_rotation_translation();
+            let (_, r_own, t_own) = (wb_own.inverse() * reference[k]).to_scale_rotation_translation();
+            let (dt, da) = ((t_arms - t_own).length(), r_arms.angle_between(r_own).to_degrees());
+            if dt > 0.1 || da > 0.5 {
+                wrong.push(format!("{gun} {sequence}: {name} {dt:.2} units and {da:.1} degrees off the c_ model's own place"));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
 /// Every sound a TF2 gun's data names (`weapons/*.toml`) is in the table a
 /// guest dressing hands another game's map under TF2's prefix, with as many
 /// waves as TF2's own script gives it (not another game's entry of the
@@ -296,3 +391,4 @@ fn every_voice_entry_has_waves() {
         .collect();
     assert!(missing.is_empty(), "no waves: {missing:?}");
 }
+

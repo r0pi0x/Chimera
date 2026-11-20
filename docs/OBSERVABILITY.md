@@ -2575,6 +2575,14 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   `bot -class heavy` (`heavyweapons` gave a random class). Watch the bot
   (`spec_mode 5`): another player's Minigun barrel turns only while the
   client draws it, and without it its wind-down is silent.
+- The account's own loadout is not all stock: its Demoman holds the
+  Quickiebomb Launcher (item 1150, another model) in the sticky slot. The
+  scene directive `stock <weapon class> <item index>` (`stock
+  tf_weapon_pipebomblauncher 20`) swaps the local player's weapon of that
+  slot for the item through TF2's VScript (a script written into the
+  install's `tf/scripts/vscripts/`, removed by `down`); it lasts until
+  the player respawns. To check what is held, VScript's
+  `NetProps.GetPropInt(weapon, "m_AttributeManager.m_Item.m_iItemDefinitionIndex")`.
 - Stock guns this account doesn't carry are seen through a puppet bot's
   eyes (`bot`, `bot_selectweaponslot`, `spec_player`, then `spec_mode 4`):
   its FOV is 75 (ours must run `fov_desired 75`) and its view model sits

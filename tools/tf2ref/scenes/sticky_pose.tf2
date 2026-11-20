@@ -1,0 +1,34 @@
+# The Demoman's launchers at rest in first person (real TF2; ours:
+# sticky_pose.scene): the own player's Grenade Launcher and the stock
+# Stickybomb Launcher on 2fort's bridge looking along it (`own_pipe`,
+# `own_sticky`). This account's loadout holds the Quickiebomb Launcher
+# (item 1150, another model) in the sticky slot: `stock` swaps in item 20.
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/sticky_pose.tf2 --out <dir>
+mp_disable_respawn_times 1
+cl_drawhud 0
+r_drawvgui 0
+r_drawviewmodel 1
+fov_desired 90
+viewmodel_fov 54
+fps_max 60
+mat_colorcorrection 0
+host_framerate 0
+bot_kick all
+sleep 1
+jointeam red
+sleep 1
+joinclass demoman
+kill
+sleep 7
+use tf_weapon_grenadelauncher
+sleep 3
+setpos 0 -300 0
+setang 0 90 0
+sleep 3
+shot own_pipe
+stock tf_weapon_pipebomblauncher 20
+sleep 3
+setpos 0 -300 0
+setang 0 90 0
+sleep 3
+shot own_sticky
