@@ -47,6 +47,17 @@
 //!   later `rung` without `as` takes it off (the game's first registered
 //!   body worn, then the rung set again: its draw's body back).
 //!
+//! - **A pick of the gun in hand**: a pick (`rung`, `PutOnGun`, `put_on`:
+//!   the sandbox's quick bar, its Change gun) of the rung the player is on,
+//!   as the body they wear, whose gun they carry gives nothing again (no
+//!   draw, no deploy sound): the gun is selected as a game's slot key
+//!   selects it, so with it in hand nothing happens (`weapon::
+//!   select_weapons`: "selecting what you hold changes nothing", CS:S's
+//!   weapons spec 3.6; the TF2, Combat Arms and Halo specs name no
+//!   redraw on selecting the weapon in hand), and from the knife it is
+//!   drawn. `select_held`. A kill's or a hold's move (`move_to`) still
+//!   sets the rung afresh.
+//!
 //! - **Waiting for a gun's files** (the sandbox only): a switch by any way
 //!   in (`rung <...>`, `rung next/prev`, `PutOnGun`, `put_on`, `move_to`,
 //!   a target's arming) asks `gun_files::gun_ready` for the gun it would
@@ -323,10 +334,43 @@ fn waiting(now: bool) -> &'static str {
 /// `put_now` when the gun's files are here, else kept pending (module
 /// doc, "Waiting for a gun's files"); whether it was done now.
 fn put(world: &mut World, e: Entity, to: usize, ladder: &Ladder, body: Option<&str>) -> bool {
+    if select_held(world, e, to, ladder, body) {
+        return true;
+    }
     if !ready_or_wait(world, e, to, ladder, body, true) {
         return false;
     }
     put_now(world, e, to, ladder, body);
+    true
+}
+
+/// A pick of what `e` already has (module doc, "A pick of the gun in
+/// hand"): on rung `to` already, as `body` (none: no chosen body), its
+/// gun carried. Then nothing is given again: the gun is selected as a
+/// game's slot key would (`Inventory::wanted`; held already, nothing
+/// happens, the games' "selecting what you hold changes nothing"), and a
+/// pick still waiting for its files is dropped (this one replaced it).
+/// Whether it was such a pick.
+fn select_held(world: &mut World, e: Entity, to: usize, ladder: &Ladder, body: Option<&str>) -> bool {
+    use crate::weapon::{Inventory, Weapon};
+    if world.get::<Rung>(e).is_none_or(|r| r.0 != to) || world.get::<ChosenBody>(e).map(|c| c.0.as_str()) != body {
+        return false;
+    }
+    let gun = gun_of(world, ladder, to);
+    let Some(inv) = world.get::<Inventory>(e) else { return false };
+    let Some(held) = inv.weapons.iter().copied().find(|w| world.get::<Weapon>(*w).is_some_and(|w| w.id == gun)) else {
+        return false;
+    };
+    let active = inv.active;
+    if let Some(old) = world.get::<GunPending>(e).cloned() {
+        world.entity_mut(e).remove::<GunPending>();
+        end(world, e, &old, GunPickOutcome::Replaced);
+    }
+    if active != Some(held)
+        && let Some(mut inv) = world.get_mut::<Inventory>(e)
+    {
+        inv.wanted = Some(held);
+    }
     true
 }
 

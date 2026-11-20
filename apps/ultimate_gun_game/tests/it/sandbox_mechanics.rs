@@ -153,6 +153,48 @@ fn every_rung_of_the_sandbox_takes_its_gun_id_by_the_console_and_the_request() {
     }
 }
 
+/// A pick of the gun already in hand (the quick bar's key pressed again,
+/// `rung <gun>`, the request) gives nothing again: the same weapon stays
+/// in hand, no fresh draw (its next attack time unchanged). With the knife
+/// out, the pick draws the gun carried, as a slot key would; the gun is
+/// never given anew.
+#[test]
+fn a_pick_of_the_gun_in_hand_changes_nothing() {
+    use chimera_sim::weapon::{Inventory, Weapon};
+    let (mut sim, me) = play();
+    run(&mut sim, &format!("rung {GUN}"));
+    sim.seconds(2.0);
+    let gun = testkit::active(sim.app.world(), me).expect("a gun in hand");
+    assert_eq!(testkit::active_id(sim.app.world(), me), Some(GUN));
+    let next = sim.app.world().get::<Inventory>(me).unwrap().next_attack;
+    for _ in 0..3 {
+        sim.app.world_mut().write_message(PutOnGun { gun: GUN.into(), character: None, who: None });
+        sim.ticks(3);
+        run(&mut sim, &format!("rung {GUN}"));
+    }
+    let inv = sim.app.world().get::<Inventory>(me).unwrap().clone();
+    assert_eq!(inv.active, Some(gun), "the same weapon in hand");
+    assert_eq!(inv.next_attack, next, "no fresh draw");
+    assert!(inv.weapons.contains(&gun));
+    // The knife out: the pick draws the gun carried (the same weapon).
+    let knife = inv
+        .weapons
+        .iter()
+        .copied()
+        .find(|w| *w != gun && sim.app.world().get::<Weapon>(*w).is_some())
+        .expect("a second weapon (the knife)");
+    sim.app.world_mut().get_mut::<Inventory>(me).unwrap().wanted = Some(knife);
+    sim.ticks(3);
+    assert_eq!(testkit::active(sim.app.world(), me), Some(knife));
+    sim.app.world_mut().write_message(PutOnGun { gun: GUN.into(), character: None, who: None });
+    sim.ticks(3);
+    assert_eq!(testkit::active(sim.app.world(), me), Some(gun), "drawn again, not given anew");
+    // Another gun is still a switch.
+    run(&mut sim, &format!("rung {SHOTGUN}"));
+    sim.ticks(2);
+    assert_eq!(testkit::active_id(sim.app.world(), me), Some(SHOTGUN));
+}
+
 #[test]
 fn tf2s_shotgun_is_the_class_asked_for() {
     let (mut sim, me) = play();
