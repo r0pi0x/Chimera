@@ -179,6 +179,22 @@ impl SurfaceClasses {
     }
 }
 
+impl SurfaceClasses {
+    /// The surface `game`'s impacts take where the map names none (a
+    /// code-built map, the range and the greybox, has no surfaces; a spot
+    /// a map's surfaces don't reach): its own name for the `Default`
+    /// class, as Source's "default" and Halo's default class, so its
+    /// guns leave their marks there too. None on a map of `game`'s own
+    /// (`map_game`), where its own rule for an unnamed surface holds, or
+    /// for a game that names no default.
+    pub fn unnamed(&self, map_game: Option<&str>, game: &str) -> Option<&'static str> {
+        if map_game.is_some_and(|m| m.eq_ignore_ascii_case(game)) {
+            return None;
+        }
+        (self.of(game)?.name)(SurfaceClass::Default)
+    }
+}
+
 /// Register a game's surface classes (`SurfaceClasses`).
 pub trait SurfaceClassesAppExt {
     fn register_surface_classes(&mut self, surfaces: GameSurfaces) -> &mut Self;

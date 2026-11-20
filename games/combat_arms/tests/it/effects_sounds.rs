@@ -1140,6 +1140,36 @@ fn a_surface_of_another_games_map_without_a_type_still_leaves_one_bullet_hole() 
     assert_eq!(marks.marks[0].sprite, "fx/test/imark_ceramic.spr");
 }
 
+/// A map that names no surfaces (a code-built map: the sandbox's range,
+/// the greybox) takes Combat Arms' default surface: its bullets leave
+/// their own hole there (type 0 left none). On Combat Arms' own map an
+/// unnamed spot keeps its own rule: no mark.
+#[test]
+fn a_map_without_surfaces_still_takes_combat_arms_bullet_holes() {
+    use chimera_world::map::impact::{ActiveImpacts, MapImpacts};
+    let mut sim = sim();
+    let me = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
+    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
+    arm(&mut sim, me, "combat_arms:m4a1");
+    // The range's kit: game `chimera`, Combat Arms' looks on it.
+    let impacts = MapImpacts { game: Some("chimera".into()), looks: vec!["chimera".into(), "combat_arms".into()] };
+    sim.app.world_mut().insert_resource(ActiveImpacts(impacts));
+    sim.app.world_mut().remove_resource::<SurfaceGrid>();
+    sim.intent(me).pitch = -0.6;
+    sim.ticks(2);
+    fire_once(&mut sim, me);
+    let marks = sim.app.world().resource::<CaMarks>();
+    assert_eq!(marks.marks.len(), 1, "a hole on a map without surfaces");
+    assert_eq!(marks.marks[0].sprite, "fx/test/imark_ceramic.spr", "the default (concrete) surface's");
+    // On Combat Arms' own map, an unnamed spot: no mark, as before.
+    sim.app.world_mut().resource_mut::<CaMarks>().marks.clear();
+    let own = MapImpacts { game: Some("combat_arms".into()), looks: vec!["combat_arms".into()] };
+    sim.app.world_mut().insert_resource(ActiveImpacts(own));
+    sim.seconds(0.5);
+    fire_once(&mut sim, me);
+    assert!(sim.app.world().resource::<CaMarks>().marks.is_empty());
+}
+
 #[test]
 fn tracers_every_fourth_m4a1_round_and_casings() {
     let mut sim = sim();

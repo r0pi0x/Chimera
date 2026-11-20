@@ -630,9 +630,27 @@ impl Ground<'_, '_> {
             .unwrap_or(0)
     }
 
-    /// `world_surface`'s: the nearest tagged triangle within 4 u.
+    /// `world_surface`'s: the nearest tagged triangle within 4 u; where
+    /// another game's map names none (a code-built map: the range, the
+    /// greybox), Combat Arms' default surface
+    /// (`SurfaceClasses::unnamed`: concrete, with its bullet hole), not
+    /// type 0, which leaves no mark.
     pub fn at(&self, at: Vec3) -> u16 {
-        self.grid.as_deref().and_then(|g| g.nearest(at, 4.0 * UNIT)).map_or(0, |s| self.ty(s))
+        match self.grid.as_deref().and_then(|g| g.nearest(at, 4.0 * UNIT)) {
+            Some(s) => self.ty(s),
+            None => self.unnamed(),
+        }
+    }
+
+    /// The type where the map names no surface (`at`): 0 on Combat Arms'
+    /// own maps (its rule), else its default surface's.
+    fn unnamed(&self) -> u16 {
+        let map_game = self.impacts.as_deref().and_then(|i| i.0.map_game());
+        self.classes
+            .as_deref()
+            .and_then(|c| c.unnamed(map_game, crate::game::GAME))
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
     }
 
     /// The nearest tagged triangle's type within `reach` (metres).

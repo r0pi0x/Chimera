@@ -582,7 +582,12 @@ Chimera has a generic fallback (`chimera_world::map::impact`,
   `tf2:effects/spark`), and the impact code looks up the drawing game's
   name first, the bare one after. A bullet's hit on a character sounds
   as its gun's game's (`weapon::impact::dealt_by`): another game's hurt
-  sounds stay silent for it.
+  sounds stay silent for it. Where the map names no surface (the
+  code-built maps, the range and the greybox, have none), each game takes
+  its own default class's surface (`SurfaceClasses::unnamed`: Source's
+  "default", Halo's and Combat Arms' Default class), so every game's
+  guns leave their own marks there; only on a map of the game's own does
+  its own rule for an unnamed surface hold.
 - **What a gun draws comes with its game.** A gun's effect materials,
   muzzle flashes and spent shells are its game's on any map: the map's
   game brings its own with its kept guns (`GameKit::stay`), a guest's
