@@ -1,0 +1,45 @@
+# TF2's HDR and bloom on 2fort (real TF2 at mat_hdr_level 2; ours: hdr.scene),
+# specs/tf2/hdr_bloom.md: views from the bridge and the courtyards with the
+# bloom on and off (`mat_disable_bloom`), no view model, settled exposure
+# (each view held 3 s). Colour correction off, as the reference install runs.
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/hdr.tf2 --out <dir>
+mp_disable_respawn_times 1
+cl_drawhud 0
+r_drawvgui 0
+r_drawviewmodel 0
+fov_desired 90
+fps_max 60
+host_framerate 0
+mat_colorcorrection 0
+mat_disable_bloom 0
+kick P1
+jointeam red
+joinclass soldier
+kill
+sleep 7
+setpos 0 -300 0
+setang 10 0 0
+sleep 3
+shot hdr_wall_bloom
+mat_disable_bloom 1
+sleep 1
+shot hdr_wall_nobloom
+mat_disable_bloom 0
+setpos 0 -300 0
+setang 0 90 0
+sleep 3
+shot hdr_bridge_bloom
+mat_disable_bloom 1
+sleep 1
+shot hdr_bridge_nobloom
+mat_disable_bloom 0
+setpos 0 -700 0
+setang -5 90 0
+sleep 3
+shot hdr_court_bloom
+mat_disable_bloom 1
+sleep 1
+shot hdr_court_nobloom
+mat_disable_bloom 0
+# Back as other scenes expect them.
+r_drawviewmodel 1

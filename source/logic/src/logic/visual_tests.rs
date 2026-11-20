@@ -177,6 +177,7 @@ fn tonemap_controller_inputs_fire_after_map_start() {
         exposure: Some((0.6, 2.0)),
         bloom_scale: 0.15,
         rate: 1.0,
+        model: Default::default(),
     };
     assert_eq!(t.apply(&hdr).exposure, Some(crate::map::DEFAULT_AUTO_EXPOSURE));
     // Kept over a round restart.

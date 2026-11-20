@@ -21,8 +21,22 @@ struct FogUniform {
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var base_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(1) var base_sampler: sampler;
 @group(constants::MATERIAL_BIND_GROUP) @binding(2) var<uniform> fog: FogUniform;
-// x: overbright x `$addself` (premultiplied sprite cards).
+// x: overbright x `$addself` (premultiplied sprite cards); y: 1 on an
+// integer-HDR map (`map::HdrModel::Integer`).
 @group(constants::MATERIAL_BIND_GROUP) @binding(3) var<uniform> add_self: vec4<f32>;
+
+// Integer HDR (specs/tf2/hdr_bloom.md section 7): the game writes each
+// fragment times the tone-map scale k to an 8-bit target, clamped to 1
+// before blending. Our frame holds the scene before k (the tone-map pass
+// scales it), so a fragment is clamped to 1 / k; k rides in the view's
+// colour-grading exposure (log2 k, `client::hdr`). Elsewhere the 8-bit or
+// float target is left as it was.
+fn integer_clamp(rgb: vec3<f32>) -> vec3<f32> {
+    if add_self.y > 0.5 {
+        return min(rgb, vec3<f32>(exp2(-vb::view.color_grading.exposure)));
+    }
+    return rgb;
+}
 
 // `$depthblend`'s distance over which a particle fades out as it nears the
 // world behind it, in meters: 24 game units (ours; the spec gives no
@@ -64,12 +78,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         // scene dimmed by that coverage (the overbright is in the
         // particle's colour).
         let rgb = c.rgb * c.a * (1.0 + add_self.x * vertex_alpha);
-        return vec4<f32>(rgb * (1.0 - f.a), c.a);
+        return vec4<f32>(integer_clamp(rgb * (1.0 - f.a)), c.a);
     }
     @if(ADDITIVE) {
         // Premultiplied blending with alpha 0 adds.
-        return vec4<f32>(c.rgb * c.a * (1.0 - f.a), 0.0);
+        return vec4<f32>(integer_clamp(c.rgb * c.a * (1.0 - f.a)), 0.0);
     } @else {
-        return vec4<f32>(mix(c.rgb, f.rgb, f.a), c.a);
+        return vec4<f32>(integer_clamp(mix(c.rgb, f.rgb, f.a)), c.a);
     }
 }

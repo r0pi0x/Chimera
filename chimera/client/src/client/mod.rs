@@ -38,6 +38,7 @@ pub mod front_end;
 pub mod color_correction;
 pub mod gamma;
 pub mod hdr;
+pub mod hdr_integer;
 pub mod hud;
 pub mod hud_minimal;
 pub mod minigame_panel;
@@ -627,6 +628,7 @@ impl PluginGroup for ClientPlugins {
             .add(match_effects::MatchEffectsPlugin)
             .add(hit_marker::HitMarkerPlugin)
             .add(hdr::HdrPlugin)
+            .add(hdr_integer::IntegerHdrPlugin)
             .add(video::VideoPlugin)
             .add(hud_text::HudTextPlugin)
             .add(clip_quad::ClipQuadPlugin)

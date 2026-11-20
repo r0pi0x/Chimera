@@ -1,0 +1,38 @@
+# Ours for hdr.tf2 (2fort's HDR and bloom, bloom on and off): run ours at
+# mat_hdr_level 2 (set before the map loads) with colour correction off.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +mat_hdr_level 2 +mat_colorcorrection 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/hdr.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+cl_drawhud 0
+r_drawviewmodel 0
+fov_desired 90
+mat_disable_bloom 0
+setpos 0 -300 0
+setang 10 0 0
+wait 180
+mat_hdr_tonemapscale
+shot hdr_wall_bloom
+mat_disable_bloom 1
+wait 30
+shot hdr_wall_nobloom
+mat_disable_bloom 0
+setpos 0 -300 0
+setang 0 90 0
+wait 180
+mat_hdr_tonemapscale
+shot hdr_bridge_bloom
+mat_disable_bloom 1
+wait 30
+shot hdr_bridge_nobloom
+mat_disable_bloom 0
+setpos 0 -700 0
+setang -5 90 0
+wait 180
+mat_hdr_tonemapscale
+shot hdr_court_bloom
+mat_disable_bloom 1
+wait 30
+shot hdr_court_nobloom
+mat_disable_bloom 0

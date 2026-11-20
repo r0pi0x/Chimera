@@ -12,14 +12,18 @@
 //! UseDefaultAutoExposure) come through the logic layer as
 //! `map::TonemapInputs` and apply over the map's look.
 //!
-//! Not specified (no spec yet; open questions in docs/backlog.md): the
-//! game's exposure target and adaptation speed, its metering, and its
-//! bloom filter. The values here are stand-ins.
+//! Two algorithms, chosen by the map's game (`MapHdr::model`): TF2's
+//! integer HDR (`HdrModel::Integer`, specs/tf2/hdr_bloom.md: its own
+//! percentile exposure and bloom on an 8-bit frame, hdr_integer.rs), and
+//! the stand-in below for games whose HDR has no spec (CS:S, HL2:DM: the
+//! exposure target, adaptation speed, metering and bloom filter here are
+//! stand-ins; open questions in docs/backlog.md).
 //!
 //! `mat_hdr_level` (archived; read at map load, also before the `--map` load
 //! via `hdr::startup_level`): at 1 or 2 on maps with HDR data (`MapLook::hdr`)
 //! the sky, world and view-model cameras render with `Hdr` into one shared
-//! texture, and the last of them adds `Bloom` and, at 2, Bevy `AutoExposure`
+//! texture; on integer-HDR maps the last of them runs hdr_integer.rs's
+//! passes after the tone map, on the others it adds `Bloom` and, at 2, Bevy `AutoExposure`
 //! (its compensation curve keeps the target within the map's
 //! `env_tonemap_controller` bounds, as set at map start and then by the
 //! controller's inputs as the logic fires them, `map::TonemapInputs`;
@@ -57,7 +61,7 @@ use bevy::{
 use super::FirstPersonCamera;
 use crate::{
     console::{Console, resource_cvar},
-    map::{ActiveMapLook, MapHdr, SkyboxCamera, TonemapInputs, ViewModelCamera},
+    map::{ActiveMapLook, HdrModel, MapHdr, SkyboxCamera, TonemapInputs, ViewModelCamera},
 };
 
 /// Source's `mat_hdr_level`: 0 LDR, 1 bloom, 2 HDR lighting with auto
@@ -91,7 +95,9 @@ impl Plugin for HdrPlugin {
         // After the view-model cameras decide whether they draw this frame.
         app.add_systems(
             PostUpdate,
-            hdr_cameras.after(crate::render::view_model::ViewModelCameraSet),
+            hdr_cameras
+                .after(crate::render::view_model::ViewModelCameraSet)
+                .in_set(HdrCamerasSet),
         );
 
         // The render side only exists with a renderer (not in headless tests).
@@ -117,7 +123,12 @@ impl Plugin for HdrPlugin {
     }
 }
 
-/// The Source tone-map pass (post-processes after it order on this).
+/// Where the cameras take their HDR set-up (`hdr_cameras`).
+#[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct HdrCamerasSet;
+
+/// The Source tone-map pass and the integer model's meter and bloom
+/// (post-processes after them order on this).
 #[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SourceTonemapSet;
 
@@ -157,7 +168,16 @@ pub struct SourceTonemap {
     pub max_scale: f32,
     /// 1: scale by auto exposure; 0: scale 1.
     pub auto_exposure: f32,
-    pub _pad: f32,
+    /// 1: the integer model (`map::HdrModel::Integer`, hdr_integer.rs):
+    /// scale by `scale`, store as 8-bit, meter and bloom.
+    pub integer: f32,
+    /// The integer model's tone-map scale k.
+    pub scale: f32,
+    /// The integer model's bloom amount B (0: no bloom passes).
+    pub bloom: f32,
+    /// The frame's number, for the meter's readback.
+    pub frame: u32,
+    pub _pad: u32,
 }
 
 /// What a camera's HDR post-processing was set up from.
@@ -246,13 +266,27 @@ fn hdr_cameras(
         }
         let bounds = scale_bounds(hdr);
         let (min_scale, max_scale) = bounds.unwrap_or((1.0, 1.0));
+        if hdr.model == HdrModel::Integer {
+            // Its own exposure and bloom (hdr_integer.rs fills them in).
+            e.remove::<(Bloom, AutoExposure)>().insert((
+                HdrPost(hdr.clone()),
+                SourceTonemap {
+                    min_scale,
+                    max_scale,
+                    integer: 1.0,
+                    scale: 1.0,
+                    ..default()
+                },
+            ));
+            continue;
+        }
         e.insert((
             HdrPost(hdr.clone()),
             SourceTonemap {
                 min_scale,
                 max_scale,
                 auto_exposure: if bounds.is_some() { 1.0 } else { 0.0 },
-                _pad: 0.0,
+                ..default()
             },
             Bloom {
                 intensity: BLOOM_INTENSITY * hdr.bloom_scale.max(0.0),
@@ -298,7 +332,7 @@ fn hdr_cameras(
 }
 
 #[derive(Resource)]
-struct TonemapPipeline {
+pub(super) struct TonemapPipeline {
     layout: BindGroupLayoutDescriptor,
     sampler: Sampler,
     pipeline: CachedRenderPipelineId,
@@ -346,7 +380,7 @@ fn init_pipeline(
     });
 }
 
-fn source_tonemap(
+pub(super) fn source_tonemap(
     view: ViewQuery<(&ViewTarget, &DynamicUniformIndex<SourceTonemap>, &ViewUniformOffset)>,
     pipeline: Option<Res<TonemapPipeline>>,
     pipeline_cache: Res<PipelineCache>,

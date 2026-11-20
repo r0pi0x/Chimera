@@ -3036,6 +3036,11 @@ docs/plans/active/sound.md.
   [specs/tf2/hdr_bloom.md](../specs/tf2/hdr_bloom.md): the percentile
   exposure and its goal smoothing, the bloom's shape, kernel and gamma-space
   add, the inputs' effects; still open there: the engine's adaptation law.
+  TF2's is implemented as the integer model (`map::HdrModel::Integer`,
+  `render::source_hdr`, `client::hdr_integer`), chosen per game by
+  `SourceGame::hdr_model`; CS:S and HL2:DM keep the stand-in until a spec
+  says theirs (the spec says HL2:DM shares TF2's algorithm: switching it
+  is one field, after HL2:DM captures at mat_hdr_level 2).
 - **Light styles and baked prop light, open questions** for a spec
   session: animated styles step ten pattern letters a second, unblended,
   'm' = as baked, scaling the style's lightmap share in linear light

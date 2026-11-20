@@ -42,6 +42,7 @@ Captured imagery stays in scratch, never in the repo.
 | Explosion on a player / mid-air | close | the "hard-edged orange disc" was the sandbox's blast spheres (`range::blast_spheres`), which `cl_drawhud 0` didn't hide (now it does). Matched at 300 units, ours fills the far bridge with the same orange glow clipped by the near truss, the same sequence; ours a little paler yellow in the first 50 ms; TF2 shows more embers and a faint dark smudge after |
 | Crits | n/a | random crits are off in our TF2 (the party's choice, docs/plans/active/tf2.md); crit tracers, trails and streams are named in `looks` but never asked for |
 | View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries |
+| HDR, exposure, bloom (`mat_hdr_level` 2; specs/tf2/hdr_bloom.md) | close (pass 6, `hdr.tf2`/`hdr.scene`: bridge, wall, courtyard, bloom on and off) | the integer model (`map::HdrModel::Integer`): bloom adds 7.2-11.7 to the mean byte where TF2's adds 6.1-12.6; scenes 3-5 % brighter than TF2's in two views, 6 % darker in the courtyard (ours settles k at 0.96-1.04, TF2 reported 0.94); the far fireball's near-white area with bloom ~15,000 px against TF2's ~37,000 (its unbloomed core is smaller: the flame effect's, not the bloom's). Ours still defaults to `mat_hdr_level` 0 (TF2's is 2) |
 | HUD, crosshair | todo | |
 | Lighting, materials | todo | |
 
@@ -96,8 +97,12 @@ Captured imagery stays in scratch, never in the repo.
 2. (Done, pass 5: the disc was the sandbox's blast spheres.) The
    mid-air explosion's first 50 ms: ours paler yellow than TF2's orange.
 3. Flames: the far fireball's extra width is TF2's bloom (pass 5): TF2's
-   bloom filter is now specified in specs/tf2/hdr_bloom.md (mat_hdr_level 2 on 2fort; ours' HDR stand-in
-   overexposes). The cloud at a wall spreads wider in TF2 (open).
+   bloom is now ours too at `mat_hdr_level` 2 (pass 6, the integer HDR
+   model; captures run `+mat_hdr_level 2 +mat_colorcorrection 0`). Ours'
+   unbloomed fireball core is smaller than TF2's, so it blooms less. The
+   cloud at a wall spreads wider in TF2 (open). Whether TF2's maps should
+   load at `mat_hdr_level` 2 by default (TF2's own default) is the user's
+   call: the cvar is one for every game.
 4. The Minigun's brass: TF2's land ~15 units farther out and leave
    upward (particles.md Open questions 6): the eject attachment under the
    spun pose, after the animation work.
@@ -109,6 +114,17 @@ Captured imagery stays in scratch, never in the repo.
    to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
 
 ## Log
+
+- Pass 6 (HDR): specs/tf2/hdr_bloom.md implemented as Chimera's integer
+  HDR model, chosen per game by `SourceGame::hdr_model` (TF2: integer;
+  CS:S and HL2:DM keep the stand-in). Matched in `hdr.tf2`/`hdr.scene`
+  (TF2 and ours, bloom on and off) and `flames.tf2` with and without
+  `mat_disable_bloom`; ours' exposure state in the console with
+  `mat_hdr_tonemapscale`. Cost at 1024x768: the meter and bloom passes
+  0.1-0.3 ms GPU (`source_hdr` in `chimera_perf`), the render world
+  +0.26M instructions a frame for the bloom passes and none measurable
+  for the meter (frame logs, last 500 frames: 20.57M without bloom,
+  20.83M with, 20.80M at level 1 without the meter).
 
 - 2026-11-19: this box's Wayland socket was gone (the compositor still
   ran, its socket unlinked), so no window could open and Steam failed

@@ -55,7 +55,9 @@ pub struct ParticleDrawMaterial {
     pub texture: Option<Handle<Image>>,
     #[uniform(2)]
     pub fog: fog::FogUniform,
-    /// x: overbright x `$addself` (premultiplied materials' brightening).
+    /// x: overbright x `$addself` (premultiplied materials' brightening);
+    /// y: 1 on an integer-HDR map (fragments clamped to 1 / the tone-map
+    /// scale, particle.wesl `integer_clamp`).
     #[uniform(3)]
     pub add_self: Vec4,
     pub blend: ParticleBlend,
@@ -245,10 +247,15 @@ pub fn draw_particles(
     fog: Option<Res<fog::SceneFog>>,
     area: Option<Res<PlayableArea>>,
     sky: Option<Res<SkyCameraInfo>>,
+    look: Option<Res<crate::map::ActiveMapLook>>,
     mut transforms: Query<&mut Transform>,
     mut commands: Commands,
 ) {
     let Some(mut assets) = assets else { return };
+    let integer_hdr = look
+        .as_ref()
+        .and_then(|l| l.0.hdr.as_ref())
+        .is_some_and(|h| h.model == crate::map::HdrModel::Integer);
     let Some((eye, projection)) = cameras.iter().next() else {
         return;
     };
@@ -319,7 +326,12 @@ pub fn draw_particles(
                         MeshMaterial3d(materials.add(ParticleDrawMaterial {
                             texture,
                             fog: fog.as_ref().map_or_else(Default::default, |f| f.0),
-                            add_self: Vec4::new(def.overbright.max(1.0) * def.add_self, 0.0, 0.0, 0.0),
+                            add_self: Vec4::new(
+                                def.overbright.max(1.0) * def.add_self,
+                                if integer_hdr { 1.0 } else { 0.0 },
+                                0.0,
+                                0.0,
+                            ),
                             blend: def.blend,
                             over_model: layer == VIEW && def.no_depth,
                             soft: def.depth_blend,

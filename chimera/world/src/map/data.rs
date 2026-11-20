@@ -1903,6 +1903,26 @@ pub struct MapHdr {
     pub bloom_scale: f32,
     /// How fast exposure adapts, 1 = the default (Source's tone-map rate).
     pub rate: f32,
+    /// Which HDR algorithm draws it: the game's, as its map loader says
+    /// (`HdrModel`).
+    pub model: HdrModel,
+}
+
+/// The HDR algorithm a game's maps are drawn with, chosen by the game
+/// (Source games: `SourceGame::hdr_model`) and followed by the client's
+/// cameras (`client::hdr`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum HdrModel {
+    /// A float frame with Bevy's bloom and histogram auto exposure aimed
+    /// at an average luminance: a stand-in with no spec behind it
+    /// (CS:S, HL2:DM; docs/backlog.md "HDR parity").
+    #[default]
+    StandIn,
+    /// Source's integer HDR as TF2 draws it (specs/tf2/hdr_bloom.md): the
+    /// scene times one tone-map scale on an 8-bit frame, that scale
+    /// metered by the percentile histogram, and the soft-threshold bloom
+    /// added in gamma space (`render::source_hdr`).
+    Integer,
 }
 
 /// Auto exposure bounds without a controller: Source's

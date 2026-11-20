@@ -56,6 +56,7 @@ pub mod shadows;
 pub mod shells;
 pub mod shapes;
 pub mod skin_frames;
+pub mod source_hdr;
 pub mod sky;
 pub mod sky_occluder;
 pub mod spray;

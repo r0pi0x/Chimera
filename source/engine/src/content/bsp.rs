@@ -129,6 +129,10 @@ pub struct SourceGame {
     /// touch-opened doors start open for a free-for-all. `no_entity_rule`
     /// for none.
     pub entity_rule: fn(&mut [crate::map::MapEntity]),
+    /// The HDR algorithm its maps are drawn with at `mat_hdr_level` 1 and
+    /// 2 (`map::HdrModel`): TF2's integer HDR (specs/tf2/hdr_bloom.md),
+    /// or the stand-in where a game's HDR has no spec yet.
+    pub hdr_model: crate::map::HdrModel,
 }
 
 /// No changes to a map's entities (`SourceGame::entity_rule`).
@@ -299,7 +303,7 @@ fn convert_level_bytes(
     let hdr_level = if lightmap::has_hdr_lighting(&bytes) { hdr_level.min(2) } else { 0 };
     let (mut data, layout) = convert_level(game, &bsp, &bytes, name, hdr_lighting);
     timer.lap("geometry, lightmaps, collision");
-    data.look = source_look_level(hdr_level, &data.entities);
+    data.look = source_look_level(hdr_level, &data.entities, game.hdr_model);
     data.file_hash = Some(file_hash);
 
     report(0.15, "LoadingProgress_PrecacheWorld");
@@ -1602,12 +1606,18 @@ pub fn source_look() -> crate::map::MapLook {
 }
 
 /// `source_look` at a `mat_hdr_level` (already lowered to 0 for maps
-/// without HDR lighting). Level 2 keeps lightmaps linear (shaders.md
-/// section 1: in HDR they aren't stored gamma-encoded; their scale is
-/// engine-defined and taken as 1 here, an open question) and adds auto
-/// exposure within the map's tone-map controller bounds; levels 1 and 2
-/// add bloom.
-pub fn source_look_level(hdr_level: u8, entities: &[crate::map::MapEntity]) -> crate::map::MapLook {
+/// without HDR lighting: specs/tf2/hdr_bloom.md section 1, no HDR frame
+/// and no bloom there at any level). Level 2 keeps lightmaps linear
+/// (shaders.md section 1: in HDR they aren't stored gamma-encoded; their
+/// scale is engine-defined and taken as 1 here, an open question) and
+/// adds auto exposure within the map's tone-map controller bounds; levels
+/// 1 and 2 add bloom (at 1 an LDR frame, scale 1). `model`: the game's
+/// HDR algorithm (`SourceGame::hdr_model`).
+pub fn source_look_level(
+    hdr_level: u8,
+    entities: &[crate::map::MapEntity],
+    model: crate::map::HdrModel,
+) -> crate::map::MapLook {
     let mut look = source_look();
     if hdr_level == 0 {
         return look;
@@ -1617,6 +1627,7 @@ pub fn source_look_level(hdr_level: u8, entities: &[crate::map::MapEntity]) -> c
         exposure: (hdr_level >= 2).then_some((t.exposure_min, t.exposure_max)),
         bloom_scale: t.bloom_scale,
         rate: 1.0,
+        model,
     });
     if hdr_level >= 2 {
         look.source_ldr_lightmaps = false;
@@ -2529,12 +2540,12 @@ mod tonemap_tests {
             entity(&[("classname", "env_tonemap_controller"), ("targetname", "tonemap")]),
             entity(&[("classname", "logic_auto"), ("OnMapSpawn", "tonemap,SetAutoExposureMax,1,0.1,-1")]),
         ];
-        let ldr = source_look_level(0, &entities);
+        let ldr = source_look_level(0, &entities, Default::default());
         assert!(ldr.hdr.is_none() && ldr.source_ldr_lightmaps);
-        let bloom = source_look_level(1, &entities);
+        let bloom = source_look_level(1, &entities, Default::default());
         assert!(bloom.source_ldr_lightmaps, "level 1 keeps LDR lighting");
         assert_eq!(bloom.hdr.as_ref().map(|h| h.exposure), Some(None));
-        let hdr = source_look_level(2, &entities);
+        let hdr = source_look_level(2, &entities, Default::default());
         assert!(!hdr.source_ldr_lightmaps);
         assert_eq!(
             hdr.hdr,
@@ -2542,7 +2553,14 @@ mod tonemap_tests {
                 exposure: Some((0.5, 1.0)),
                 bloom_scale: 1.0,
                 rate: 1.0,
+                model: crate::map::HdrModel::StandIn,
             })
         );
+        // The game's model rides along (TF2's integer HDR); level 1 has
+        // no exposure (scale 1), bloom only.
+        let integer = crate::map::HdrModel::Integer;
+        assert_eq!(source_look_level(2, &entities, integer).hdr.map(|h| h.model), Some(integer));
+        let one = source_look_level(1, &entities, integer).hdr.unwrap();
+        assert_eq!((one.exposure, one.model), (None, integer));
     }
 }

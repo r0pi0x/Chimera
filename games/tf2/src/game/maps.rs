@@ -93,6 +93,8 @@ pub static TF2: SourceGame = SourceGame {
     sounds,
     fixed_models: props::no_fixed_models,
     entity_rule: free_for_all_doors,
+    // Its integer HDR, auto exposure and bloom (specs/tf2/hdr_bloom.md).
+    hdr_model: crate::map::HdrModel::Integer,
 };
 
 /// Our team for TF2's team number: RED (2) is 1, BLU (3) is 2.

@@ -2569,6 +2569,11 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   different sizes.
 - Ours hides its HUDs with `cl_drawhud 0` (the scenes do); TF2's with
   `cl_drawhud 0; r_drawvgui 0`.
+- HDR (`hdr.tf2`/`hdr.scene`): TF2 runs `mat_hdr_level` 2 with bloom and
+  no colour correction; run ours with `+mat_hdr_level 2
+  +mat_colorcorrection 0` before the map loads. `mat_hdr_tonemapscale`
+  (ours' console) prints the integer HDR's scale, goal, bloom amount and
+  filled histogram bins; `mat_disable_bloom 1` on both turns bloom off.
 - Third person (`thirdperson.tf2`/`.scene`): TF2's puppet bot fires with
   `bot_forceattack` (start it inside the stepped movie: forced before it,
   the bot vanished), spawned at once (`mp_disable_respawn_times 1`, else a
