@@ -634,3 +634,15 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   full heal, cloak, disguise, Über). New open questions 13-15 (stuck
   needles not seen in the capture; a player box's surface letter; the
   model-decal cap).
+- 2026-11-20 (ninth pass, from 735f2576b's specs, tf2-spec-impl):
+  projectiles drawn late per effects.md 11.1: the interpolation delay is
+  whole ticks plus one (`net::interp::interp_amount`: 0.12 s at TF2's
+  tick, for everything a client interpolates, every game), the late
+  copy's history seeded one second back along the launch velocity
+  (`NetLaunch` sends it to clients) and used from the first frame (no
+  hold at the launch point); models hidden 0.2 s (rockets) and 0.1 s
+  (pipes, stickies) from the arrival. Blast centres per 13
+  (`blast::Placement`): 1 unit off what the blast's own trace met, a
+  pipe's 64-unit direct line, fused pipes and detonated stickies snapped
+  onto a floor within 24 units below, stuck stickies' surface normal, the
+  scorch on the same trace (the 16-unit scorch trace gone).

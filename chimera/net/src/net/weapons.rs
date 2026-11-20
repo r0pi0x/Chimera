@@ -257,7 +257,12 @@ fn write_items(
                 have.set_if_neq(now);
             }
             None => {
-                commands.entity(e).insert((Replicated, now));
+                let mut c = commands.entity(e);
+                c.insert((Replicated, now));
+                // Its launch velocity once (`late`'s seeded history).
+                if let Some(f) = flyer {
+                    c.insert(super::NetLaunch { velocity: f.velocity.to_array() });
+                }
             }
         }
     }

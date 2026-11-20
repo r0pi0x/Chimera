@@ -884,6 +884,14 @@ pub struct NetItem {
     pub owner: Option<u64>,
 }
 
+/// A flyer's launch velocity (m/s), sent once with its first `NetItem`:
+/// a client seeds the history of a projectile drawn late with it
+/// (`late`, specs/tf2/effects.md 11.1).
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq)]
+pub struct NetLaunch {
+    pub velocity: [f32; 3],
+}
+
 /// A smoke cloud (`weapon::grenade::SmokeCloud`): where, and the grenade
 /// whose rule it follows (registry index). A client starts its own copy
 /// when it hears of it.
@@ -1409,6 +1417,7 @@ impl Plugin for NetPlugin {
             .replicate::<NetItem>()
             .set_receive_fns::<NetItem>(interp::write_snapshot::<NetItem>, interp::remove_snapshots::<NetItem>)
             .ordered_with::<NetItem>(interp::write_snapshot::<NetItem>, interp::remove_snapshots::<NetItem>)
+            .replicate::<NetLaunch>()
             .replicate::<NetSmoke>()
             .ordered::<NetSmoke>()
             .add_mapped_server_message::<FireBullets>(Channel::Unreliable)

@@ -14,6 +14,12 @@
 //! - at 2.1 s (the flyer's life ends: `FlyerGone::expired`) it explodes
 //!   where it is (`fuse`) at `fuse_scale` (60 %) of its damage to others.
 //!
+//! Where (effects.md 13): a direct hit's centre is 1 unit off what a
+//! 64-unit line through the pipe along its flight meets (the pipe's
+//! centre, in the air, when it meets nothing: `BlastWorld::pipe_hit`); a
+//! fused pipe's snaps onto a floor within 24 units below it
+//! (`BlastWorld::fused`); the scorch on what that line met.
+//!
 //! The explosion is the shared one (`blast`): 100 x the splash (60 on the
 //! fuse), no distance modifier; the Demoman's own the base 100 x the
 //! splash to 146 units x0.75 grounded or airborne, pushed at scale 9
@@ -78,20 +84,21 @@ pub fn bounce(v: Vec3, n: Vec3) -> Vec3 {
 pub fn touch(
     mut hits: MessageReader<FlyerHit>,
     rules: Res<GrenadeRules>,
-    mut flyers: Query<(&mut Flyer, Has<Rolled>)>,
+    mut flyers: Query<(&mut Flyer, &Transform, Has<Rolled>)>,
     mut world: BlastWorld,
     mut gone: MessageWriter<FlyerGone>,
     mut commands: Commands,
 ) {
     for hit in hits.read() {
         let Some((p, _)) = rules.0.get(hit.weapon) else { continue };
-        let Ok((mut f, rolled)) = flyers.get_mut(hit.flyer) else { continue };
+        let Ok((mut f, t, rolled)) = flyers.get_mut(hit.flyer) else { continue };
         let enemy = hit.character && hit.other.is_some_and(|o| hit.owner.is_none_or(|w| !world.mates(w, o)));
         if enemy && !rolled {
-            let centre = hit.point - hit.velocity.normalize_or_zero() * U;
+            // Its 64-unit line through its centre (effects.md 13).
+            let at = world.pipe_hit(t.translation, hit.velocity);
             let blast = Blast { params: p, radius: p.radius, ramp: None, scale: 1.0 };
-            world.detonate(&blast, centre, hit.normal, hit.owner, hit.weapon, hit.other);
-            gone.write(FlyerGone { flyer: hit.flyer, weapon: hit.weapon, owner: hit.owner, at: centre, expired: false });
+            world.detonate(&blast, &at, hit.owner, hit.weapon, hit.other);
+            gone.write(FlyerGone { flyer: hit.flyer, weapon: hit.weapon, owner: hit.owner, at: at.centre, expired: false });
             commands.entity(hit.flyer).despawn();
             continue;
         }
@@ -115,9 +122,9 @@ pub fn fuse(mut ends: MessageReader<FlyerGone>, rules: Res<GrenadeRules>, mut wo
         }
         let Some((p, _)) = rules.0.get(end.weapon) else { continue };
         let blast = Blast { params: p, radius: p.radius, ramp: None, scale: p.fuse_scale.unwrap_or(1.0) };
-        // No surface sent with a fused pipe (effects.md Open questions):
-        // the in-air look.
-        world.detonate(&blast, end.at, Vec3::ZERO, end.owner, end.weapon, None);
+        // Snapped onto a floor within 24 units below (effects.md 13).
+        let at = world.fused(end.at, None);
+        world.detonate(&blast, &at, end.owner, end.weapon, None);
     }
 }
 

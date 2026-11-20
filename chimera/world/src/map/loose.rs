@@ -225,7 +225,8 @@ impl DrawnLate {
 
 /// How far in the past items drawn late are drawn this frame (s): a
 /// network client's interpolation delay, else what its settings would give
-/// (`cl_interp`, `cl_interp_ratio` over the default update rate: 0.1).
+/// (`cl_interp`, `cl_interp_ratio` over the default update rate: 0.1 s, in
+/// whole ticks plus one: 0.12 s at 0.015 s ticks).
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
 pub struct LateDelay(pub f32);
 

@@ -69,7 +69,8 @@
 //!   the surface's normal (zero angles in the air); an unnamed one is
 //!   `ExplosionCore_wall`; its sound (the blast's `sound`, step 5) plays
 //!   with it, so the late-drawn blast and its sound agree. The server
-//!   traces the `Scorch` decal (`blast`).
+//!   places the centre and the `Scorch` decal (`blast::Placement`,
+//!   effects.md 13).
 //! - **Flames** (flames.md 3; `flame_stream`): the gun's `stream`
 //!   (`StreamLooks`): one `new_flame` per burst (`new_flame_crit_red`/
 //!   `_blue` on a crit, `flamethrower_underwater` with the eye under
@@ -99,9 +100,7 @@
 //! the `while_firing` systems along the view (the brass to its right),
 //! the backblast back along the aim, not the attachments' own axes (only
 //! the per-shot flash is turned as its attachment, `start_with_axes`);
-//! fused
-//! pipes and stickies send no surface, so they take the in-air look and
-//! leave no scorch (effects.md Open questions); TF2's impact style
+//! TF2's impact style
 //! (ricochets, pellet grouping) has no spec yet: no ricochet, every
 //! pellet's sound, as HL2:DM's (specs/tf2 names no impact rules).
 

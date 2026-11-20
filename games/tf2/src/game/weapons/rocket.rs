@@ -9,6 +9,9 @@
 //! full splash, the owner's own 90 x the splash to 121 units x0.6
 //! airborne, the push 6 / 10 / 5 per point capped at 1000 units/s).
 //!
+//! Its blast's centre is 1 unit off the touched surface, along its normal,
+//! the scorch on the touch (`BlastWorld::touched`, effects.md 13).
+//!
 //! The rocket heads for what a 2000-unit line from the eye meets beyond
 //! 200 units (else the line's end), from its offset pulled back by the
 //! world (`chimera:projectile` `aim_trace`, `start_trace`; weapons.md 5.1).
@@ -25,7 +28,7 @@ use chimera_sim::weapon::{
 };
 
 pub use super::blast::{BlastParams as RocketParams, LIFT, STANDING, push, splash};
-use super::{blast::{Blast, BlastWorld}, damage::U};
+use super::blast::{Blast, BlastWorld};
 
 /// The weapon part (the rocket's rules are read from `RocketRules`, as
 /// the gun may be gone when its rocket lands).
@@ -73,15 +76,15 @@ pub fn explode(
         if !flyers.contains(hit.flyer) {
             continue;
         }
-        // Just off the surface it touched.
-        let centre = hit.point + hit.normal * U;
+        // 1 unit off the surface it touched (effects.md 13).
+        let at = world.touched(hit.point, hit.normal, hit.other);
         let blast = Blast { params: p, radius: p.radius, ramp: p.by_distance.then_some(ramp), scale: 1.0 };
-        world.detonate(&blast, centre, hit.normal, hit.owner, hit.weapon, hit.other);
+        world.detonate(&blast, &at, hit.owner, hit.weapon, hit.other);
         gone.write(FlyerGone {
             flyer: hit.flyer,
             weapon: hit.weapon,
             owner: hit.owner,
-            at: centre,
+            at: at.centre,
             expired: false,
         });
         commands.entity(hit.flyer).despawn();

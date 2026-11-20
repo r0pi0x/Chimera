@@ -1,7 +1,7 @@
 //! Items drawn in the past on every machine that draws
-//! (specs/tf2/effects.md 11: TF2's client draws its rockets, the shooter's
-//! own too, at the interpolated time now − lerp, 0.1 s with its
-//! defaults). A game asks for it in its weapon data (`chimera:projectile`'s
+//! (specs/tf2/effects.md 11, 11.1: TF2's client draws its rockets, pipes
+//! and stickies, the shooter's own too, at the interpolated time now − L).
+//! A game asks for it in its weapon data (`chimera:projectile`'s
 //! `interp`, `map::loose::DrawnLate`); other games' projectiles stay as
 //! they were (a network client draws every item from snapshots anyway,
 //! `weapons::draw_items`, but from its first snapshot on and gone when
@@ -10,34 +10,38 @@
 //! - **The delay** (`LateDelay`, each frame): a network client's
 //!   interpolation delay (`InterpClock::delay`); elsewhere (a single
 //!   player game, the sandbox, a listen server's own view) what its
-//!   settings would give, `max(cl_interp, cl_interp_ratio /
-//!   cl_updaterate)` at the default update rate (0.1 s).
+//!   settings would give: `max(cl_interp, cl_interp_ratio /
+//!   cl_updaterate)` at the default update rate, in whole ticks plus one
+//!   (`interp::interp_amount`: 0.12 s at TF2's 0.015 s tick).
 //! - **The copy** (`map::loose::LateCopy`): an item shown as a late key
 //!   isn't drawn itself (`render::loose`, the games' trails skip it); a
 //!   copy with its `ShownItem` is, at where the item was `LateDelay` ago:
 //!   its places sampled each frame it moved (the simulated `Transform`
 //!   here, the newest `NetItem` on a client), drawn between the two
-//!   around now − delay; before its first place's time it is held at
-//!   that place (measured on real TF2, effects.md "Measured": a rocket's
-//!   trail glows at the launcher from the frame after the shot, its
-//!   smoke reaching back to it; it doesn't start behind the eye, as a
-//!   history point one second back along the velocity would draw: ours
-//!   did, and its trail streaked from behind the shooter). The model is
-//!   hidden for its key's first seconds (`DrawnLate::hidden_for`: TF2's
-//!   rocket 0.2 s; its trail isn't); the copy goes when the
-//!   item is gone and the drawn time has passed that moment (a blast held
-//!   as long shows as it arrives: TF2's `explosions`).
+//!   around now − delay. Its history is **seeded** as it arrives
+//!   (effects.md 11.1): two places, one second back at its first place
+//!   less its launch velocity (`Flyer::velocity` here, `NetLaunch` on a
+//!   client) and its first place now, so from its first drawn frame it
+//!   is on its launch line behind that place, moving at the launch speed
+//!   (never held at the launch point). The model is hidden for its key's
+//!   first seconds from the arrival (`DrawnLate::hidden_for`: TF2's rocket
+//!   0.2 s, pipes and stickies 0.1 s; their trails emit from the arrival);
+//!   the copy goes when the item is gone and the drawn time has passed
+//!   that moment (a blast held as long shows as it arrives: TF2's
+//!   `explosions`).
 //!
 //! Known shortcuts: a dedicated server makes the copies too (nothing draws
 //! them); a client keys the places by when they arrived, not by
 //! the server tick they are from (jitter shows); a projectile this client
-//! predicts (`cl_predict_projectiles 1`, `own_items`) gets no copy.
+//! predicts (`cl_predict_projectiles 1`, `own_items`) gets no copy; the
+//! newer places are joined by straight lines (Source: a curve through
+//! the three newest).
 
 use std::collections::VecDeque;
 
 use bevy::prelude::*;
 
-use super::{NetItem, interp::InterpSettings, own_items::PredictedItem};
+use super::{NetItem, NetLaunch, interp::InterpSettings, own_items::PredictedItem};
 use crate::{
     core::NetRole,
     map::loose::{DrawnLate, LateCopy, LateDelay, ShownItem},
@@ -57,6 +61,17 @@ impl LatePlaces {
     pub fn add(&mut self, t: f64, at: Vec3, turn: Quat) {
         if self.places.back().is_some_and(|(_, p, r)| *p == at && *r == turn) {
             return;
+        }
+        self.places.push_back((t, at, turn));
+    }
+
+    /// Its history as it arrives at `t` (effects.md 11.1): at `at` now
+    /// and one second earlier at `at` less its launch velocity `v` (per
+    /// second), so the time before it is drawn on its launch line.
+    pub fn seed(&mut self, t: f64, at: Vec3, turn: Quat, v: Vec3) {
+        self.places.clear();
+        if v != Vec3::ZERO {
+            self.places.push_back((t - 1.0, at - v, turn));
         }
         self.places.push_back((t, at, turn));
     }
@@ -91,12 +106,14 @@ fn late_delay(
     role: Option<Res<NetRole>>,
     clock: Res<super::interp::InterpClock>,
     settings: Res<InterpSettings>,
+    fixed: Res<Time<Fixed>>,
     mut delay: ResMut<LateDelay>,
 ) {
     let d = if role.as_deref() == Some(&NetRole::Client) && clock.running {
         clock.delay as f32
     } else {
-        settings.interp.max(settings.interp_ratio / super::server::DEFAULT_UPDATERATE)
+        let lerp = settings.interp.max(settings.interp_ratio / super::server::DEFAULT_UPDATERATE);
+        super::interp::interp_amount(lerp as f64, fixed.timestep().as_secs_f64()) as f32
     };
     if delay.0 != d {
         delay.0 = d;
@@ -109,19 +126,22 @@ fn copy_late(
     time: Res<Time>,
     late: Res<DrawnLate>,
     added: Query<
-        (Entity, &ShownItem, &Transform, Option<&NetItem>, Option<&crate::weapon::projectile::Flyer>),
+        (Entity, &ShownItem, &Transform, Option<&NetItem>, Option<&crate::weapon::projectile::Flyer>, Option<&NetLaunch>),
         (Added<ShownItem>, Without<LateCopy>, Without<PredictedItem>),
     >,
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
-    for (e, shown, t, net, flyer) in &added {
+    for (e, shown, t, net, flyer, launch) in &added {
         if !late.keys.contains(&shown.0) {
             continue;
         }
         let (at, turn) = place(t, net);
+        // Its launch velocity: the server's flyer here, sent with it to a
+        // client (gravity ignored, effects.md 11.1).
+        let v = flyer.map(|f| f.velocity).or(launch.map(|l| Vec3::from_array(l.velocity))).unwrap_or(Vec3::ZERO);
         let mut places = LatePlaces { born: now, ..default() };
-        places.add(now, at, turn);
+        places.seed(now, at, turn, v);
         commands.spawn((
             Name::new(format!("Drawn late ({})", shown.0)),
             ShownItem(shown.0.clone()),
@@ -214,21 +234,24 @@ pub(super) fn plugin(app: &mut App) {
 mod tests {
     use super::*;
 
-    /// A copy is held at its launch point until the drawn time reaches
-    /// it (real TF2: the rocket's trail glows at the launcher from the
-    /// frame after the shot), then follows its places a delay late.
+    /// effects.md 11.1, test cases: a rocket first received at p0 =
+    /// (100, 0, 0) at 10.0 with v0 = (1100, 0, 0) is drawn at (−10, 0, 0)
+    /// at 9.9, (45, 0, 0) at 9.95, p0 at 10.0: never held.
     #[test]
-    fn a_copy_holds_at_its_launch_then_follows_late() {
+    fn a_copy_starts_on_its_launch_line_behind_its_first_place() {
         let mut p = LatePlaces::default();
         let v = Vec3::new(1100.0, 0.0, 0.0);
-        p.add(10.0, Vec3::ZERO, Quat::IDENTITY);
-        p.add(10.0 + 1.0 / 60.0, v / 60.0, Quat::IDENTITY);
-        assert_eq!(p.at(10.0 - 0.1).unwrap().0, Vec3::ZERO, "held at the launch, not behind it");
-        let (at, _) = p.at(10.0 + 1.0 / 120.0).unwrap();
-        assert!((at.x - 1100.0 / 120.0).abs() < 1e-2, "{at}");
+        p.seed(10.0, Vec3::new(100.0, 0.0, 0.0), Quat::IDENTITY, v);
+        let x = |p: &LatePlaces, t: f64| p.at(t).unwrap().0.x;
+        assert!((x(&p, 9.9) + 10.0).abs() < 1e-2, "{}", x(&p, 9.9));
+        assert!((x(&p, 9.95) - 45.0).abs() < 1e-2, "{}", x(&p, 9.95));
+        assert!((x(&p, 10.0) - 100.0).abs() < 1e-3);
+        // Later places take over.
+        p.add(10.05, Vec3::new(155.0, 0.0, 0.0), Quat::IDENTITY);
+        assert!((x(&p, 10.025) - 127.5).abs() < 1e-2);
         // Held still: no new place, and the newest is drawn past it.
-        p.add(10.5, v / 60.0, Quat::IDENTITY);
-        assert_eq!(p.places.len(), 2);
-        assert_eq!(p.at(11.0).unwrap().0, v / 60.0);
+        p.add(10.5, Vec3::new(155.0, 0.0, 0.0), Quat::IDENTITY);
+        assert_eq!(p.places.len(), 3);
+        assert_eq!(x(&p, 11.0), 155.0);
     }
 }

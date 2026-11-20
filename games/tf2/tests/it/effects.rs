@@ -321,3 +321,105 @@ fn every_client_sees_a_needles_mark() {
         assert!(m.iter().all(|(id, n)| *id == SYRINGE_GUN && n.y > 0.9), "client {i}: on the floor, the gun's: {m:?}");
     }
 }
+
+/// effects.md 13's placements on the greybox (floor top at y 0, the north
+/// wall's face at z −40): 1 unit out along the normal of what the blast's
+/// own trace met, the scorch on that hit.
+#[test]
+fn blasts_are_centred_one_unit_off_what_their_trace_met_13() {
+    use bevy::ecs::system::RunSystemOnce;
+    use chimera_world::greybox::NORTH_WALL_Z;
+    use tf2::game::weapons::blast::{BlastWorld, Placement};
+    const U: f32 = 0.0254;
+    let mut sim = sim();
+    sim.ticks(2);
+    let place = |sim: &mut chimera_world::harness::Sim, f: fn(&BlastWorld) -> Placement| {
+        sim.app.world_mut().run_system_once(move |w: BlastWorld| f(&w)).unwrap()
+    };
+    let near = |a: Vec3, b: Vec3| a.distance(b) < 0.05 * U;
+    // A rocket touching the floor at the origin.
+    let p = place(&mut sim, |w| w.touched(Vec3::ZERO, Vec3::Y, None));
+    assert!(near(p.centre, Vec3::Y * U) && p.normal == Vec3::Y, "{p:?}");
+    assert_eq!(p.scorch, Some((Vec3::ZERO, Vec3::Y)));
+    // Fused pipes: 2 and 20 units above the floor snap to 1 above it, the
+    // floor's normal, a scorch on the floor; 30 above stays, in the air.
+    for h in [2.0, 20.0] {
+        let p = sim.app.world_mut().run_system_once(move |w: BlastWorld| w.fused(Vec3::new(1.0, h * U, 2.0), None)).unwrap();
+        assert!(near(p.centre, Vec3::new(1.0, U, 2.0)), "{h}: {p:?}");
+        assert!(p.normal.y > 0.99, "{h}: {p:?}");
+        let (at, n) = p.scorch.expect("a scorch on the floor");
+        assert!(at.y.abs() < 1e-3 && n.y > 0.99, "{p:?}");
+    }
+    let p = place(&mut sim, |w| w.fused(Vec3::new(1.0, 30.0 * U, 2.0), None));
+    assert_eq!((p.centre, p.normal, p.scorch), (Vec3::new(1.0, 30.0 * U, 2.0), Vec3::ZERO, None), "in the air");
+    // A sticky on the wall, the floor 100 units below: its own centre, the
+    // wall's outward normal, no scorch.
+    let wall = Vec3::new(0.0, 100.0 * U, NORTH_WALL_Z + 2.0 * U);
+    let p = sim.app.world_mut().run_system_once(move |w: BlastWorld| w.fused(wall, Some(Vec3::Z))).unwrap();
+    assert_eq!((p.centre, p.normal, p.scorch), (wall, Vec3::Z, None), "on the wall");
+    // A pipe's direct line: into the wall ahead (its centre 2 units off),
+    // 1 unit off the wall with its normal; a line meeting nothing leaves
+    // it in the air.
+    let p = sim.app.world_mut().run_system_once(move |w: BlastWorld| w.pipe_hit(wall, Vec3::NEG_Z)).unwrap();
+    assert!(near(p.centre, Vec3::new(0.0, 100.0 * U, NORTH_WALL_Z + U)) && p.normal.z > 0.99 && p.scorch.is_some(), "{p:?}");
+    let open = Vec3::new(0.0, 100.0 * U, 0.0);
+    let p = sim.app.world_mut().run_system_once(move |w: BlastWorld| w.pipe_hit(open, Vec3::X)).unwrap();
+    assert_eq!((p.centre, p.normal, p.target, p.scorch), (open, Vec3::ZERO, None, None));
+}
+
+/// effects.md 13 end to end: a sticky stuck on the floor and detonated
+/// goes off 1 unit above it with the floor's normal (the wall effect) and
+/// scorches the floor under it, its owner stepped away.
+#[test]
+fn a_detonated_sticky_on_the_floor_uses_the_wall_effect_and_scorches_13() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), STICKY_LAUNCHER);
+    let mut blasts = sim.app.world().resource::<Messages<Tf2Explosion>>().get_cursor_current();
+    let mut decals = sim.app.world().resource::<Messages<PlaceDecal>>().get_cursor_current();
+    let (mut b, mut scorch) = (Vec::<Tf2Explosion>::new(), Vec::<PlaceDecal>::new());
+    let (starts, ..) = collect(&mut sim, 140, |s, t| {
+        let w = s.app.world();
+        b.extend(blasts.read(w.resource::<Messages<Tf2Explosion>>()).copied());
+        scorch.extend(
+            decals
+                .read(w.resource::<Messages<PlaceDecal>>())
+                .filter(|d| matches!(&d.group, DecalGroup::Named(n) if n == "Scorch"))
+                .cloned(),
+        );
+        s.intent(p).fire = t == 0;
+        s.intent(p).pitch = -89f32.to_radians();
+        s.intent(p).secondary = t >= 100;
+        // Stepped away from it first: a line starting inside his box
+        // meets nothing there (13).
+        if t == 90 {
+            s.app.world_mut().get_mut::<Transform>(p).unwrap().translation.x += 3.0;
+        }
+    });
+    assert_eq!(b.len(), 1, "one blast");
+    assert!(b[0].normal.y > 0.99 && !b[0].on_player, "the floor's normal: {:?}", b[0]);
+    assert!((b[0].at.y - 0.0254).abs() < 0.002, "1 unit above the floor: {:?}", b[0]);
+    assert_eq!(scorch.len(), 1, "a scorch");
+    assert!(scorch[0].point.y.abs() < 1e-3, "on the floor: {:?}", scorch[0]);
+    assert!(starts.iter().any(|s| s.name == "ExplosionCore_Wall"), "{:?}", starts.iter().map(|s| &s.name).collect::<Vec<_>>());
+}
+
+/// effects.md 9, 13: a rocket on a river bed under water goes off 1 unit
+/// above the bed, in the water: the water effect, along the bed's normal.
+#[test]
+fn a_rocket_on_a_river_bed_shows_the_water_effect_13() {
+    use chimera_core::core::{MapBrush, MapWater, MapWaterVolume};
+    let mut sim = sim();
+    sim.app.insert_resource(MapWater(vec![MapWaterVolume {
+        brush: MapBrush::from_box(Vec3::new(-10.0, -1.0, -10.0), Vec3::new(10.0, 1.27, 10.0)),
+        slime: false,
+    }]));
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), ROCKET_LAUNCHER);
+    let (starts, ..) = collect(&mut sim, 60, |s, t| {
+        s.intent(p).fire = t == 0;
+        s.intent(p).pitch = -89f32.to_radians();
+    });
+    let e: Vec<_> = starts.iter().filter(|s| s.name.starts_with("ExplosionCore")).collect();
+    assert_eq!(e.len(), 1, "{starts:?}");
+    assert_eq!(e[0].name, "ExplosionCore_MidAir_underwater");
+    assert!(e[0].forward.y > 0.9, "along the bed's normal");
+}

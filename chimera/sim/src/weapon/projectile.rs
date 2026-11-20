@@ -500,9 +500,9 @@ pub struct LauncherParams {
     /// `map::loose::DrawnLate` (`chimera_net`'s `late`).
     #[serde(default)]
     pub interp: bool,
-    /// Drawn late, its model hidden its first this many seconds (its
-    /// trail shows): TF2's rocket 0.2 (effects.md 11); its pipes none
-    /// (measured: they show at the barrel as their drawn place passes it).
+    /// Drawn late, its model hidden its first this many seconds from its
+    /// arrival (its trail shows): TF2's rocket 0.2, its pipes 0.1
+    /// (effects.md 11.1).
     #[serde(default)]
     pub model_hidden: f32,
     /// Its touch on anything but a character leaves a bullet's impact
