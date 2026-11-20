@@ -43,7 +43,7 @@ Captured imagery stays in scratch, never in the repo.
 | Projectiles' models | matches (pass 6) | none drew on any map: a map keeps the kept guns' held models by key prefix and the projectiles' keys (`tf2:rocket`, `tf2:sticky`...) matched none; now `<gun>/<part>` |
 | Stickybombs | close (pass 6) | model, faint trail and the armed pulse (0.8 s, then every 0.1 s: ring, then disc) as TF2's; launch spin and jitter as the spec's (pass 7) |
 | Sniper's laser dot | matches in his own view (pass 7, `dot.tf2`/`.scene`) | drawn (`weapons::dot`): size, softness and the core growing with the charge as TF2's; others see it at 6 units (the charge sent with what a character holds, `HeldGauge`), no TF2 pair (its puppet bots won't scope); TF2's scope overlay not photographed yet (the class menu covers it) |
-| Water explosions | close (pass 6) | from above the surface both hide the burst; TF2's shows through as an orange glow from just above the surface. Under water (pass 7, `wunder`): see the log |
+| Water explosions | close (pass 6); under water differs (tf2-leftovers: see the log) | from above the surface both hide the burst; TF2's shows through as an orange glow from just above the surface. Under water (pass 7, `wunder`): see the log |
 | Bullet impacts (wood) | matches (pass 6) | splinters, hole, puff alike; TF2's hole decal a little lighter |
 | Blood on a player hit | close (pass 8) | TF2's own burst and spray now (`weapons::blood`): a red splat at the hit spraying out the far side in both; TF2's starts ~2 frames later (its snapshot wait) and its goop is larger and brighter; no decal on the body (characters take none) |
 | Melee (Wrench at a wall) | still differs (pass 8) | the swing's path and timing alike; TF2's flecks and faint scratch at the view's centre, ours a puff at the right edge and no decal: at 55 units the 48-unit line misses and our box sweep's contact point is the box's corner, not on the wall ahead (where a box hit's impact point is, weapons_stock.md names none) |
@@ -159,6 +159,57 @@ Captured imagery stays in scratch, never in the repo.
   `weapons::the_scattergun_loads_a_shell_every_34_ticks`.
 - **The crosshair under the scope**: TF2's HUD keeps its crosshair behind
   the Sniper's scope (measured; 3.4 said hidden).
+- **Confirmed** (`needles_wall.tf2`/`.scene`, a crouched Medic into the
+  bridge's plank under the window, pictures 0.5 and 3 s after): both
+  leave marks on the wood and no needle; TF2's one pale splintered hole
+  with a red centre, ours darker bullet holes (a few, spread) and
+  splinters on the floor. The decal is the question above.
+- **Under water, the blast** (`water.tf2`/`.scene`, `wunder`): measured,
+  not fixed. `psys_running` 0.4 s after the shot: the whole
+  `ExplosionCore_MidAir_underwater` runs at about (-150, 0, -280), ~270
+  units from the eye (flash, core flash r 27, smoke r 28, 64 bubbles),
+  yet nothing of it shows; from 110 units at 20 degrees down it shows,
+  cut along a line by the riverbed. 2fort's water fog is -100 to 400
+  units (`materials/water/water_2fort.vmt`), which leaves ~45 % of an
+  additive particle at 270: fog alone doesn't hide it, and the
+  explosion's materials (`effects/softglow`, UnlitGeneric) don't feather.
+  Read as the blast's centre lying at or under the drawn riverbed (its
+  sprites hidden by the bed from above). TF2 shows it on the bed. Spec
+  question: where TF2 puts a projectile's blast centre relative to the
+  surface it touched (moved off it along the normal? how far?).
+- **The rocket's glow at launch** (`launch.tf2`/`.scene`, frame 4):
+  TF2's trail glow has already left the launcher, ~50 units ahead and
+  left of it, by frame 4; ours is still held at the launch point by the
+  right edge (and under water the held trail leaves one big smoke puff
+  there, 150 puffs/s for the 0.1 s hold). Both follow from where the
+  drawn rocket starts (effects.md Open questions 11, unanswered): not
+  changed. Spec question: the drawn rocket's places in its first 0.1 s
+  (the one-second-back history point used or not) and whether its trail
+  emits while the drawn place hasn't moved.
+- **The Stickybomb Launcher's first-person pose** (`launch` `sticky_idle`):
+  differs, not fixed. TF2 shows the drum low and near with the dark
+  barrel toward the middle; ours the launcher turned (the flip sight on
+  top, the barrel toward the right edge), though our `sb_idle` merge puts
+  the muzzle at the spec's place (viewmodel.md test 13, `heavy::guns::
+  the_muzzles_...`, within 0.01 unit) and the same pipeline draws the
+  Grenade Launcher as TF2 does. Next: compare each bone of the merged
+  model (`vm_weapon_bone`, `vm_weapon_bone_1`, `weapon_bone_1`) at
+  `sb_idle` frame 0 with the arms' (a picture of TF2's `sb_idle` alone,
+  or the spec giving the gun's pose, not only its muzzle). Also fixed:
+  the two heavy view-model tests indexed the animator's pose by the
+  merged skeleton's bones (the Minigun's kept `barrel` is one more) and
+  panicked.
+- **Input a frame late** (item 7): by the schedule, not only switches:
+  `write_local_intent` writes the local `Intent` in `Update`, after
+  `RunFixedMainLoop`, so every key (move, fire, slot) reaches the
+  simulation in the next frame's tick. Not changed: moving it before the
+  fixed loop reorders the menus' key capture (`weapon_menu`, popups) and
+  TF2's own press-to-tick latency is unmeasured. Spec question: on the
+  frame a key is pressed, does TF2's client run that command (its
+  prediction showing the switch or shot that frame)?
+- **The scope at 16:9**: still unmeasured (the headless display is 4:3).
+- Skipped (no spec): the melee box sweep's contact point, the crit loop,
+  blood decals on bodies.
 
 ### The Minigun's states, sounds and barrel; sounds loop by their WAV (tf2-minigun, 2026-11-20)
 

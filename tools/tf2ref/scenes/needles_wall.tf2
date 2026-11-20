@@ -1,7 +1,7 @@
 # Needles on a wall (real TF2; ours: needles_wall.scene, fov_desired 75): a
 # puppet Medic (stock Syringe Gun) on 2fort's bridge at 0 -300 0 facing
 # the side wall (yaw 0, level: bot_teleport's pitch doesn't tilt a bot's
-# aim) fires 0.3 s; watched in its eyes (`spec_mode 4`: FOV 75), pictures
+# aim), crouched so its aim meets the plank under the window, fires 0.3 s; watched in its eyes (`spec_mode 4`: FOV 75), pictures
 # 0.5 s and 3 s after: the marks on the wood (specs/tf2/effects.md,
 # "Needles on a wall").
 #   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/needles_wall.tf2 --out <dir>
@@ -29,6 +29,7 @@ spec_player WallMedic
 sleep 1
 spec_mode 4
 sleep 1
+bot_crouch 1
 bot_teleport WallMedic 0 -300 0 0 0 0
 sleep 3
 shot wall_idle
@@ -39,4 +40,5 @@ sleep 0.5
 shot wall_0_5
 sleep 2.5
 shot wall_3
+bot_crouch 0
 bot_kick all

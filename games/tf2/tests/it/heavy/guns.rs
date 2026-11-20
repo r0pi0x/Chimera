@@ -121,7 +121,8 @@ fn the_posed_gun_is_in_front_of_the_eye() {
         let reference = chimera_world::map::reference_world(&v.bones);
         let mut posed: Vec<Mat4> = Vec::new();
         for (i, b) in v.bones.iter().enumerate() {
-            let local = Mat4::from_rotation_translation(pose[i].0, pose[i].1);
+            let (r, t) = pose.get(i).copied().unwrap_or((b.rotation, b.position));
+            let local = Mat4::from_rotation_translation(r, t);
             posed.push(match b.parent {
                 Some(p) => posed[p] * local,
                 None => local,
@@ -200,7 +201,8 @@ fn the_muzzles_sit_where_the_spec_puts_them() {
         let pose = a.pose(0.0);
         let mut posed: Vec<Mat4> = Vec::new();
         for (i, b) in v.bones.iter().enumerate() {
-            let local = Mat4::from_rotation_translation(pose[i].0, pose[i].1);
+            let (r, t) = pose.get(i).copied().unwrap_or((b.rotation, b.position));
+            let local = Mat4::from_rotation_translation(r, t);
             posed.push(match b.parent {
                 Some(p) => posed[p] * local,
                 None => local,
