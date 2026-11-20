@@ -38,8 +38,9 @@
 //! `ui_scene_name <name>` calls every made-up player of the HUD scenes
 //! `name` (`StagedName`: a 20-character name's fit, screenshots).
 //!
-//! `ui_gallery [fields|controls|off]` opens the kit's gallery in the real
-//! apps (Esc closes it); the Escape menu's Developer entry runs it while
+//! `ui_gallery [fields|controls|picker|off]` opens the kit's gallery in the
+//! real apps (Esc closes it; `picker`: the shared picker in both modes and
+//! both frames, made-up maps and guns); the Escape menu's Developer entry runs it while
 //! Options' Developer mode (`DeveloperMode`, `developer_mode`) is on.
 //!
 //! `+ui_scene proof` on the command line stages it at start, e.g.
@@ -59,7 +60,7 @@ pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
 pub const SCENES: &[&str] =
-    &["proof", "controls", "fields", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint"];
+    &["proof", "controls", "fields", "picker", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint"];
 
 /// `ui_scene lobby`'s made-up lobby (despawned at `off`).
 #[derive(Component)]
@@ -385,7 +386,7 @@ impl Plugin for UiScenePlugin {
             )
             .console_command(
                 "ui_gallery",
-                "ui_gallery [fields|controls|off]: open the UI kit's gallery (every control in every state; `fields` by default; \
+                "ui_gallery [fields|controls|picker|off]: open the UI kit's gallery (every control in every state; `fields` by default; \
                  Esc closes it).",
                 |w, a| {
                     let name = a.first().map(String::as_str).unwrap_or("fields");
@@ -394,8 +395,8 @@ impl Plugin for UiScenePlugin {
                         clear_staged(w);
                         return Ok(None);
                     }
-                    if !["fields", "controls"].contains(&name) {
-                        return Err(format!("ui_gallery: no page `{name}` (fields, controls, off)"));
+                    if !["fields", "controls", "picker"].contains(&name) {
+                        return Err(format!("ui_gallery: no page `{name}` (fields, controls, picker, off)"));
                     }
                     clear_staged(w);
                     w.resource_mut::<UiScene>().want = Some(name.to_string());
@@ -437,7 +438,7 @@ impl DeveloperMode {
 
 /// Esc closes the gallery (`ui_gallery`).
 fn close_gallery(keys: Option<Res<ButtonInput<KeyCode>>>, mut scene: ResMut<UiScene>) {
-    if scene.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls")) && keys.is_some_and(|k| k.just_pressed(KeyCode::Escape)) {
+    if scene.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls" | "picker")) && keys.is_some_and(|k| k.just_pressed(KeyCode::Escape)) {
         scene.want = None;
     }
 }
@@ -456,6 +457,7 @@ fn stage(
     mut passes: ResMut<Assets<PassMaterial>>,
     mut lines: ResMut<Assets<LinesMaterial>>,
     mut ambients: ResMut<Assets<chimera_ui::AmbientMaterial>>,
+    mut lists: ResMut<chimera_ui::VirtualLists>,
     mut commands: Commands,
 ) {
     // Again when the window's size or scale changes (and on the frame
@@ -485,6 +487,141 @@ fn stage(
     if scene.want.as_deref() == Some("fields") {
         fields(&theme, kit.as_deref(), *units, &mut ambients, &mut commands);
     }
+    if scene.want.as_deref() == Some("picker") {
+        picker_page(&theme, kit.as_deref(), *units, &mut ambients, &mut lists, &mut commands);
+    }
+}
+
+/// The kit's picker (`chimera_ui::picker`) with made-up maps and guns:
+/// multi-select rows and cards at a dialog's width (a header's box, an
+/// item off, a game some on), and the single pick's cards in a wider
+/// frame with the search and the chips (more columns, larger cards; the
+/// current gun outlined).
+fn picker_page(
+    t: &Theme,
+    kit: Option<&KitFonts>,
+    u: UiUnits,
+    ambients: &mut Assets<chimera_ui::AmbientMaterial>,
+    lists: &mut chimera_ui::VirtualLists,
+    c: &mut Commands,
+) {
+    use chimera_ui::{
+        UiStyle,
+        controls::Ui,
+        picker::{self, PickerFrame, PickerGame, PickerGroup, PickerItem, PickerLook, PickerMode, PickerState},
+    };
+    let ui = Ui::new(t, kit, u);
+    let root = c
+        .spawn((
+            UiSceneRoot,
+            Name::new("ui_scene picker"),
+            GlobalZIndex(UI_SCENE_Z),
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                padding: UiRect::axes(u.val(2.0), u.val(2.4)),
+                flex_direction: FlexDirection::Row,
+                column_gap: u.val(1.6),
+                ..default()
+            },
+            BackgroundColor(t.tone(Tone::Ink)),
+        ))
+        .id();
+    c.spawn((
+        MaterialNode(ambients.add(chimera_ui::AmbientMaterial::new(t).freeze(Some(6.0)))),
+        Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, width: percent(100.0), height: percent(100.0), ..default() },
+        ChildOf(root),
+    ));
+    let gun = |id: &str, name: &str, icon: &str, class: &str| PickerItem {
+        icon: Some(icon.into()),
+        tags: vec![format!("class:{class}")],
+        ..PickerItem::new(id, name)
+    };
+    let guns = vec![
+        PickerGame {
+            id: "cs_source".into(),
+            name: "Counter-Strike: Source".into(),
+            groups: vec![PickerGroup {
+                name: String::new(),
+                items: vec![
+                    gun("cs:ak47", "AK-47", "rifle", "rifle"),
+                    gun("cs:awp", "AWP", "sniper", "sniper"),
+                    gun("cs:mp5", "MP5 Navy", "smg", "smg"),
+                    gun("cs:deagle", "Desert Eagle", "pistol", "pistol"),
+                    gun("cs:m3", "M3 Super 90", "shotgun", "shotgun"),
+                    gun("cs:m249", "M249", "lmg", "lmg"),
+                ],
+            }],
+        },
+        PickerGame {
+            id: "tf2".into(),
+            name: "Team Fortress 2".into(),
+            groups: vec![PickerGroup {
+                name: String::new(),
+                items: vec![
+                    gun("tf2:rocket", "Rocket Launcher", "launcher", "launcher"),
+                    gun("tf2:minigun", "Minigun", "lmg", "lmg"),
+                    gun("tf2:huntsman", "Huntsman", "crossbow", "sniper"),
+                ],
+            }],
+        },
+    ];
+    let map = |id: &str, parent: Option<&str>| PickerItem {
+        parent: parent.map(str::to_string),
+        ..PickerItem::new(id, id.rsplit([':', '@']).next().unwrap_or(id))
+    };
+    let maps = vec![
+        PickerGame {
+            id: "cs_source".into(),
+            name: "Counter-Strike: Source".into(),
+            groups: vec![PickerGroup {
+                name: "Official maps".into(),
+                items: vec![
+                    map("cs_source:de_dust2", None),
+                    map("cs_source:de_dust2@long", Some("cs_source:de_dust2")),
+                    map("cs_source:de_dust2@mid", Some("cs_source:de_dust2")),
+                    map("cs_source:cs_office", None),
+                    map("cs_source:de_nuke", None),
+                ],
+            }],
+        },
+        PickerGame {
+            id: "hl2dm".into(),
+            name: "Half-Life 2: Deathmatch".into(),
+            groups: vec![PickerGroup { name: "Official maps".into(), items: vec![map("hl2dm:dm_lockdown", None), map("hl2dm:dm_overwatch", None)] }],
+        },
+    ];
+    let col = |c: &mut Commands, w: f32, title: &str, note: &str| {
+        let k = ui.boxed(c, root, UiStyle { w: Some(w), h: Some(51.0), shrink: Some(0.0), gap: Some(0.55), ..UiStyle::column() });
+        ui.section(c, k, title, Some(note));
+        k
+    };
+    let list = || UiStyle { grow: Some(1.0), ..UiStyle::row() };
+    // Multi rows (the Maps dialog's): a slice off, a game folded.
+    let a = col(c, 26.0, "Multi, rows", "dialog width; box toggles, header folds");
+    let mut st = PickerState { off: ["cs_source:de_dust2@mid".to_string(), "cs_source:de_nuke".to_string()].into(), cursor: 3, ..default() };
+    st.fold(&maps, &picker::PickerRow::Game(1), false);
+    let frame = PickerFrame { w: 26.0, look: PickerLook::List, mode: PickerMode::Multi, ..default() };
+    picker::spawn(c, &ui, a, "gallery.picker.rows", &maps, &st, frame, lists, list());
+    // Multi cards at a dialog's width: fewer columns, smaller cards.
+    let b = col(c, 26.0, "Multi, cards", "dialog width: fewer, smaller cards");
+    let st = PickerState { off: ["cs:awp".to_string(), "cs:m3".to_string()].into(), ..default() };
+    let frame = PickerFrame { w: 26.0, look: PickerLook::Cards, mode: PickerMode::Multi, ..default() };
+    picker::spawn(c, &ui, b, "gallery.picker.cards", &guns, &st, frame, lists, list());
+    // Single pick, wider: the search, the chips, the current gun.
+    let d = col(c, 40.0, "Single pick, cards", "full screen: more columns; search and chips");
+    let st = PickerState { current: Some("cs:ak47".into()), chips: ["class:rifle".to_string(), "class:lmg".to_string(), "class:launcher".to_string()].into(), cursor: 2, ..default() };
+    let frame = PickerFrame {
+        w: 40.0,
+        look: PickerLook::Cards,
+        mode: PickerMode::Single,
+        search: true,
+        facets: vec!["class".into(), "game".into()],
+        placeholder: "Find a gun or a tag".into(),
+        caret: None,
+    };
+    picker::spawn(c, &ui, d, "gallery.picker.single", &guns, &st, frame, lists, list());
 }
 
 /// The kit's form controls in their states (`chimera_ui::controls`), over

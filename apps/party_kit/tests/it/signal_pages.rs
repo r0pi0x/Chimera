@@ -257,9 +257,9 @@ fn the_maps_picker_sets_the_rotation() {
     // A map alone: its game is "some on" (or off, when it has one map).
     sim.app.world_mut().write_message(P::Toggle(2));
     sim.ticks(2);
-    let n = MapsPicker::maps_of(&games, &TreeRow::Game(0)).len();
+    let n = picker(&sim).ids_of(&games, &TreeRow::Game(0)).len();
     assert_eq!(picker(&sim).state(&games, &TreeRow::Game(0)), if n > 1 { Tri::Mixed } else { Tri::Off }, "{n} maps");
-    assert_eq!(picker(&sim).state(&games, &TreeRow::Map(0, 0, 0)), Tri::Off);
+    assert_eq!(picker(&sim).state(&games, &TreeRow::Item(0, 0, 0)), Tri::Off);
     // Esc cancels: nothing kept.
     press(&mut sim, KeyCode::Escape);
     assert!(picker(&sim).open.is_none() && picker(&sim).off.is_empty(), "cancelled");
@@ -269,7 +269,7 @@ fn the_maps_picker_sets_the_rotation() {
     sim.app.world_mut().write_message(P::Toggle(2));
     sim.ticks(2);
     press(&mut sim, KeyCode::Enter);
-    let off = picker(&sim).off;
+    let off = picker(&sim).off.clone();
     assert_eq!(off.len(), 1, "Done kept one map off");
     act(&mut sim, A::Start);
     sim.ticks(4);
@@ -1057,13 +1057,8 @@ fn ui_scene_stages_the_internet_tab() {
 /// folds; Right opens a folded row.
 #[test]
 fn left_on_a_map_collapses_its_group_and_moves_to_the_header() {
-    use party_kit::maps_picker::{CatalogueGame, CatalogueGroup, MapsPicker, TreeRow};
-    let games = vec![CatalogueGame {
-        id: "g".into(),
-        name: "G".into(),
-        groups: vec![CatalogueGroup { name: "Official maps".into(), maps: vec!["g:a".into(), "g:b".into(), "g:c".into()] }],
-        names: Default::default(),
-    }];
+    use party_kit::maps_picker::{MapCatalogue, MapsPicker, TreeRow};
+    let games = party_kit::maps_picker::LocalCatalogue.listing(&["g:a".into(), "g:b".into(), "g:c".into()]);
     let mut p = MapsPicker::default();
     assert_eq!(p.rows(&games).len(), 5, "game, group, three maps");
     p.cursor = 3;

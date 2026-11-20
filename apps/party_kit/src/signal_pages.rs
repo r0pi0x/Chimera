@@ -312,12 +312,6 @@ impl Plugin for SignalPagesPlugin {
         app.init_resource::<SignalPages>()
             .init_resource::<crate::maps_picker::MapsPicker>()
             .init_resource::<crate::maps_picker::MapsSource>()
-            .init_resource::<crate::maps_picker::PickerRows>()
-            .add_systems(
-                PostUpdate,
-                crate::maps_picker::bind_rows.after(chimera_ui::vlist::place_slots).before(bevy::ui::UiSystems::Prepare),
-            )
-            .add_message::<crate::maps_picker::PickerAction>()
             .init_resource::<LanList>()
             .init_resource::<HubAsks>()
             .init_resource::<BrowserFiles>()
@@ -450,10 +444,11 @@ fn picker_clicks(
                 }
             }
             P::AllOff => {
-                let all: Vec<String> = games.iter().flat_map(|g| g.groups.iter().flat_map(|k| k.maps.iter().cloned())).collect();
-                picker.open = Some(all.into_iter().collect());
+                picker.all_off(&games);
                 cues.write(UiCue::new("ui_select"));
             }
+            // Single picks, chips and the search: not in this dialog.
+            P::Pick(_) | P::Chip(_) | P::FocusSearch => {}
             P::Done => {
                 if let Some(off) = picker.open.take() {
                     picker.off = off;
@@ -592,18 +587,17 @@ pub fn stage(w: &mut World, page: MenuPage, args: &[String]) -> Result<(), Strin
         );
         let games = w.resource::<crate::maps_picker::MapsSource>().0.listing(&pool);
         let mut pk = w.resource_mut::<crate::maps_picker::MapsPicker>();
-        let sliced = |g: &crate::maps_picker::CatalogueGame| g.groups.iter().any(|k| k.maps.iter().any(|m| m.contains('@')));
+        let sliced = |g: &crate::maps_picker::CatalogueGame| g.items().any(|i| i.parent.is_some());
         pk.folded = games.iter().filter(|g| !sliced(g)).map(|g| g.id.clone()).collect();
         let rows = pk.rows(&games);
         let first_slice = rows.iter().position(|r| {
-            matches!(r, crate::maps_picker::TreeRow::Map(..))
-                && crate::maps_picker::MapsPicker::maps_of(&games, r).first().is_some_and(|m| m.contains('@'))
+            chimera_ui::picker::PickerState::item(&games, r).is_some_and(|i| i.parent.is_some())
         });
         if let Some(i) = first_slice {
             pk.cursor = i - 1;
             // The map off, its first slice kept on (the stored form:
             // `game:map,+game:map@id`).
-            if let Some(m) = crate::maps_picker::MapsPicker::maps_of(&games, &rows[i]).first()
+            if let Some(m) = chimera_ui::picker::PickerState::item(&games, &rows[i]).map(|i| i.id.as_str())
                 && let Some(map) = crate::maps_picker::slice_parent(m)
             {
                 pk.open = Some([map.to_string(), format!("{}{m}", crate::maps_picker::ON_MARK)].into_iter().collect());

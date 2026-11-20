@@ -41,6 +41,10 @@
 //!   a list or a tile grid virtualised by row, folded sections, keys,
 //!   select on a press and the primary action on a double press:
 //!   `VListEvent`), its state by key in `VirtualLists`.
+//! - `picker`: the one picker for catalogues (maps, guns): items grouped
+//!   by game in folding sections, a search and filter chips, multi-select
+//!   with on / off / some boxes or a single pick, rows or cards sized by
+//!   the frame's width (`picker::spawn`, `picker::dialog`).
 //! - `chat`: the one chat feed's look (`FeedLine`, `LineKind`: player,
 //!   team, radio lines, notices and the server's word; `line_alpha`, the
 //!   fade after `HOLD` s; `stamp`; `name_color`; `Ui::chat_line`,
@@ -73,6 +77,7 @@ pub mod icons;
 pub mod materials;
 pub mod motion;
 pub mod parity;
+pub mod picker;
 pub mod scroll;
 pub mod shell;
 pub mod pointer_lead;
@@ -124,7 +129,7 @@ impl Plugin for ChimeraUiPlugin {
             .init_resource::<UiMusic>()
             .add_message::<UiCue>()
             .init_resource::<UiClock>()
-            .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, scroll::ScrollPlugin, vlist::VListPlugin, shell::ShellPlugin))
+            .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, scroll::ScrollPlugin, vlist::VListPlugin, picker::PickerPlugin, shell::ShellPlugin))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare));
         pointer_lead::add(app);
         app

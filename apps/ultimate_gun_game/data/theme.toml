@@ -355,3 +355,8 @@ bar_h = 3.4
 join_w = 30.0
 summary_w = 27.0
 wipe = 0.26          # a page or tab change's 12° wipe, s
+
+
+# The kit's picker (chimera_ui::picker) takes its numbers from
+# `[layout.picker]` in chimera/ui/data/shell.toml, the base every theme lays
+# over (so every app and test theme has them); a key set here wins.

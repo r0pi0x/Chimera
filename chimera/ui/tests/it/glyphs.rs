@@ -12,6 +12,7 @@ const FILES: &[&str] = &[
     "chimera/ui/src/shell.rs",
     "chimera/ui/src/controls.rs",
     "chimera/ui/src/avatar.rs",
+    "chimera/ui/src/picker.rs",
     "chimera/client/src/client/lobby_panel.rs",
     "chimera/client/src/client/prematch_lobby.rs",
     "apps/party_kit/src/signal_menu.rs",
