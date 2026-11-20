@@ -1570,6 +1570,8 @@ fn impact_effects(
                 hit: Some(hit),
                 normal: Some(normal),
             } => (*from, *to, *normal, *hit, true),
+            // A projectile's mark: a bullet's debris, no ricochet.
+            WeaponEventKind::Marked { from, to, hit, normal, .. } => (*from, *to, *normal, *hit, false),
             WeaponEventKind::Shot { from, to, .. } | WeaponEventKind::ShotContinued { from, to, .. } => {
                 // Misses can still end in water.
                 if let Some(w) = &water

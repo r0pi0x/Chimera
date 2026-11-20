@@ -67,8 +67,9 @@
 //!   flyer drawn late reaches it, effects.md 11): `water` when the centre is in
 //!   water, `player` in the air or on a player, else `wall`, oriented to
 //!   the surface's normal (zero angles in the air); an unnamed one is
-//!   `ExplosionCore_wall`. The server traces the `Scorch` decal
-//!   (`blast`).
+//!   `ExplosionCore_wall`; its sound (the blast's `sound`, step 5) plays
+//!   with it, so the late-drawn blast and its sound agree. The server
+//!   traces the `Scorch` decal (`blast`).
 //! - **Flames** (flames.md 3; `flame_stream`): the gun's `stream`
 //!   (`StreamLooks`): one `new_flame` per burst (`new_flame_crit_red`/
 //!   `_blue` on a crit, `flamethrower_underwater` with the eye under
@@ -493,7 +494,8 @@ pub fn in_water(water: Option<&MapWater>, p: Vec3) -> bool {
 }
 
 /// Each explosion's looks (every machine that draws): the gun's effect
-/// for where it went off (effects.md 5).
+/// for where it went off and its sound (effects.md 5), both when the
+/// drawn time reaches it (`LateDelay`, 11).
 fn explosions(
     time: Res<Time>,
     looks: Res<GunLooks>,
@@ -502,6 +504,8 @@ fn explosions(
     mut blasts: MessageReader<Tf2Explosion>,
     mut held: Local<Vec<(f64, Tf2Explosion)>>,
     mut start: MessageWriter<StartParticleSystem>,
+    sounds: super::blast::BlastSounds,
+    mut play: MessageWriter<crate::map::PlaySound>,
 ) {
     let now = time.elapsed_secs_f64();
     let wait = delay.map_or(0.0, |d| d.0 as f64);
@@ -513,6 +517,11 @@ fn explosions(
         let wet = in_water(water.as_deref(), b.at);
         let (name, forward) = Explosions::pick(looks.explosion_of(b.weapon), wet, b.normal, b.on_player);
         start.write(StartParticleSystem::new(name, b.at, forward));
+        // Its sound with it (effects.md 5 step 5): the temp entity's,
+        // held as long as the look.
+        if let Some(s) = sounds.of(b.weapon) {
+            play.write(crate::map::PlaySound::at(s.to_string(), b.at));
+        }
         false
     });
 }

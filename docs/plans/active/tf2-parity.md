@@ -37,9 +37,9 @@ Captured imagery stays in scratch, never in the repo.
 | Rocket trail | close (2026-11-20, `launch.tf2`/`.scene`) | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails. The "very long trail" was `rockettrail_burst`'s sprite trails streaking by the rocket's own 1100 units/s (a lock now carries a particle's last place too, particles.md 5.1) and the copy drawn late thrown back 110 units behind the eye a frame after the shot; now held at the launch point until the drawn time reaches it, as TF2's glow at the launcher from frame 2 shows. TF2's glow sits further right; ours leaves a smoke puff at the launch point |
 | Projectiles leaving the gun (pipes, stickies, needles) | close (2026-11-20) | pipes and needles show at the barrel 7 frames after the shot as TF2's (their models were hidden 0.2 s, so they appeared far down range); stickies drawn late too (were not); only the rocket's model hidden 0.2 s (`model_hidden`) |
 | Grenade and Stickybomb Launchers' flashes | matches (2026-11-20) | went straight up: their muzzles' z is the barrel and the flash's core leaves along z; a per-shot flash now takes its attachment's whole orientation (`start_with_axes`, `psys::Follow::up`); none visible in either now |
-| Needles on a wall | still differs | TF2: no needle stays (seen from the side); a small hole mark and splinters, kept like a decal. Ours: the needle vanishes with no mark (a flyer's world touch makes no impact) |
-| Rocket and blast sound | close (2026-11-20) | the script data match (`Weapon_RPG.Single` CHAN_WEAPON 94 dB, `BaseExplosionEffect.Sound` CHAN_WEAPON 95 dB, volume 1, full-scale stereo `)` waves, the blast's 8 s long with its own tail); one of each plays. The distortion was our mix clipping (1.6 s at `volume` 1, a moment at 0.5): now a limiter (`audio::sound::limit_mix`) keeps the one-shot voices under 0.75 of full scale. TF2's loudness itself can't be heard here (`+volume 0`); the blast's sound still plays when the server makes it, 0.1 s before its effect shows |
-| Sniper scope overlay, charge meter, crosshair (`scope.tf2`/`.scene`) | close (2026-11-20) | the overlay was our 512-texel stand-in stretched (blurry on a tall screen); now TF2's own quarter (`hud/scope_sniper_ul_dx80`, the plain fallback of its refracting one) over the whole screen as TF2 stretches it, no warp or tint; the generic stand-in 1024 texels with pixel-wide cross hairs. The charge meter drawn (hud.md "Measured"). The crosshair hidden behind every game's scope (`hud::ScopeUp`); real TF2 draws the rifle's thin cross under it (hud.md Open questions) |
+| Needles on a wall | close (2026-11-20, tf2-leftovers) | TF2: no needle stays (seen from the side); a small hole mark and splinters, kept like a decal. Ours now the same: a flyer with `marks` leaves a bullet's impact (decal, debris, the surface's sound; Chimera's `projectile::FlyerMark`, sent as `NetMark`, shown when the drawn needle reaches it), on every map, the sandbox's too. TF2's mark is red at its centre head-on; ours the surface's bullet hole |
+| Rocket and blast sound | close (2026-11-20) | the script data match (`Weapon_RPG.Single` CHAN_WEAPON 94 dB, `BaseExplosionEffect.Sound` CHAN_WEAPON 95 dB, volume 1, full-scale stereo `)` waves, the blast's 8 s long with its own tail); one of each plays. The distortion was our mix clipping (1.6 s at `volume` 1, a moment at 0.5): now a limiter (`audio::sound::limit_mix`) keeps the one-shot voices under 0.75 of full scale. TF2's loudness itself can't be heard here (`+volume 0`). The blast's sound now plays with its look when the drawn time reaches it (effects.md 5 step 5, 11: the temp entity's), not 0.1 s before (tf2-leftovers) |
+| Sniper scope overlay, charge meter, crosshair (`scope.tf2`/`.scene`) | close (2026-11-20) | the overlay was our 512-texel stand-in stretched (blurry on a tall screen); now TF2's own quarter (`hud/scope_sniper_ul_dx80`, the plain fallback of its refracting one) over the whole screen as TF2 stretches it, no warp or tint; the generic stand-in 1024 texels with pixel-wide cross hairs. The charge meter drawn (hud.md "Measured"). The shell's crosshair hides behind a scope (`hud::ScopeUp`); TF2's HUD now keeps its crosshair there, as real TF2 draws it (hud.md "Measured", Open questions 13; tf2-leftovers). The scope's look on a 16:9 screen is unmeasured (the headless display is 4:3) |
 | Projectiles' models | matches (pass 6) | none drew on any map: a map keeps the kept guns' held models by key prefix and the projectiles' keys (`tf2:rocket`, `tf2:sticky`...) matched none; now `<gun>/<part>` |
 | Stickybombs | close (pass 6) | model, faint trail and the armed pulse (0.8 s, then every 0.1 s: ring, then disc) as TF2's; launch spin and jitter as the spec's (pass 7) |
 | Sniper's laser dot | matches in his own view (pass 7, `dot.tf2`/`.scene`) | drawn (`weapons::dot`): size, softness and the core growing with the charge as TF2's; others see it at 6 units (the charge sent with what a character holds, `HeldGauge`), no TF2 pair (its puppet bots won't scope); TF2's scope overlay not photographed yet (the class menu covers it) |
@@ -132,6 +132,33 @@ Captured imagery stays in scratch, never in the repo.
    to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
 
 ## Log
+
+### Leftovers (tf2-leftovers, 2026-11-20)
+
+- **Needle marks** (effects.md "Needles on a wall"): `chimera:projectile`'s
+  `marks` (Chimera, any game): a touch on anything but a character makes
+  the server's `FlyerMark` (to clients as `NetMark`), held `LateDelay` on
+  each drawing machine, then the surface found again there and shown as
+  `WeaponEventKind::Marked`, which the Source impact path draws as a
+  bullet's hit (decal by the surface, debris, sound; no ricochet). The
+  Syringe Gun sets it. Tests: `impacts::a_needle_marks_the_floor_...`,
+  `effects::every_client_sees_a_needles_mark`. Left (a spec question):
+  which decal TF2 uses for a needle (its mark is red at the centre seen
+  head-on, a bullet hole isn't), and whether a needle plays the
+  surface's impact sound or the ricochet.
+- **The blast's sound with its late look**: the explosion's sound plays
+  where its look starts (`looks::explosions`, the blast's `sound` by
+  weapon from the rules, `blast::BlastSounds`), held as long; the server
+  sends no `GameSound` for it.
+- **The Scattergun's reload ticks** (weapons.md 4, measured: start 14
+  ticks, a loop every 34): ours alternated 33/33/34 because each loop was
+  timed back to back from its due time (0.5 s is 33.3 ticks at 0.015 s).
+  `ShellReload::from_tick` (`shells.from_tick`) times each part from the
+  tick the last ended: 34 every time; on every TF2 one-at-a-time gun but
+  the Rocket Launcher (already from the tick). Test
+  `weapons::the_scattergun_loads_a_shell_every_34_ticks`.
+- **The crosshair under the scope**: TF2's HUD keeps its crosshair behind
+  the Sniper's scope (measured; 3.4 said hidden).
 
 ### The Minigun's states, sounds and barrel; sounds loop by their WAV (tf2-minigun, 2026-11-20)
 

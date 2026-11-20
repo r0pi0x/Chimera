@@ -142,7 +142,14 @@ pub struct ImpactRoute<'w, 's> {
 impl ImpactRoute<'_, '_> {
     /// Who draws `e`'s impacts.
     pub fn by(&self, e: &WeaponEvent) -> ImpactBy {
-        self.by_weapon(e.weapon)
+        match e.kind {
+            // A projectile's mark: its weapon may be gone by then.
+            WeaponEventKind::Marked { id, .. } => {
+                let providers = self.providers.as_deref().map_or(&[][..], |p| &p.0[..]);
+                impact_by(weapon_game(id), self.impacts.as_deref(), providers)
+            }
+            _ => self.by_weapon(e.weapon),
+        }
     }
 
     /// Who draws the impacts of `weapon`'s bullets.

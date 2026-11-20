@@ -66,6 +66,9 @@ shown = "tf2:tf_weapon_syringegun_medic/syringe"
 offset = [16.0, 6.0, -8.0]
 pass_teammates = true
 life = 10.0
+# A touch on the world leaves a bullet's hole mark and debris, no needle
+# (effects.md, "Needles on a wall").
+marks = true
 
 [hooks."tf2:needle"]
 damage = 10.0

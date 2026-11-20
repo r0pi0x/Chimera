@@ -274,7 +274,9 @@ pub struct ShellsData {
     pub start_interruptible: bool,
     /// Each round counts this long into its insert, s (`ShellReload::round_at`).
     #[serde(default)]
-    pub round_at: Option<f32>,
+    pub round_at: Option<f32>,    /// Each part timed from the tick the last one ended (`ShellReload::from_tick`).
+    #[serde(default)]
+    pub from_tick: bool,
 }
 
 /// An ammo type: what `Penetration` passes (`power`, length units of a
@@ -1219,6 +1221,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                 insert_first: s.insert_first,
                 start_interruptible: s.start_interruptible,
                 round_at: s.round_at,
+                from_tick: s.from_tick,
             });
         }
     }

@@ -83,7 +83,9 @@ reload = 2.4324                 # s (a shell's, with `shells`)
 #   attack ending the reload: HL2:DM's shotgun; start_interruptible = true:
 #   an attack stops the start too, at once: TF2's; round_at = 0.33: each
 #   round counts that far into its insert, which plays on to its end and
-#   the next starts as it ends: TF2's Rocket Launcher)
+#   the next starts as it ends: TF2's Rocket Launcher; from_tick = true:
+#   back to back, each part timed from the tick the last ended, not its
+#   due time: TF2's Scattergun's 34-tick loops)
 # reload_while_held = false
 # auto_reload = false           # an empty clip reloads, held or not (CA)
 # reload_when_idle = false      # a clip not full reloads with neither attack held, while the
@@ -281,7 +283,9 @@ hud_icon = "ammo_762"
   the aim's up: TF2's grenades), `offset` and
   `offset_crouched` (where a round starts from the eye, along the aim's
   forward, right and up: TF2's rocket under the gun) and
-  `pass_teammates` (it flies through its owner's teammates).
+  `pass_teammates` (it flies through its owner's teammates) and `marks`
+  (a touch on anything but a character leaves a bullet's impact there:
+  TF2's needle).
 - **Errors.** Unknown keys, an unknown base, ammo type or hook, a loop of
   bases, a duplicate ID and hook parameters the hook can't read are load
   errors naming the document and key. A game's own data failing to load

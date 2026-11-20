@@ -39,6 +39,14 @@
 //!
 //! Units: meters, seconds, damage normalized like `Health`.
 //!
+//! A flyer with `Flyer::marks` (`marks` in the data: TF2's needle) marks
+//! what it touches but characters as a bullet's impact would: the server's
+//! `FlyerMark` (sent to network clients), shown on every machine that
+//! draws when the drawn time reaches the touch (`map::loose::LateDelay`
+//! after it) as a `WeaponEventKind::Marked`, the touched surface found
+//! again in that machine's world (`show_marks`); the games' impact effects
+//! draw it as a bullet's hit (decal, debris, the surface's sound).
+//!
 //! A flyer with `Flyer::sky_end` ends on the sky (a line that far along its
 //! flight meets `map::MapSkyFaces` with nothing before it): gone, no touch
 //! rule, its `FlyerGone::expired` as said.
@@ -204,6 +212,9 @@ pub struct Flyer {
     /// It passes its owner's teammates (characters on the owner's
     /// non-zero `core::Team`, friendly fire off: TF2's rockets).
     pub pass_teammates: bool,
+    /// Its touch on anything but a character marks it as a bullet's
+    /// impact would (`FlyerMark`: TF2's needle).
+    pub marks: bool,
 }
 
 /// How a flyer ends on the sky: the line ahead that finds it (m), and
@@ -246,6 +257,7 @@ impl Flyer {
             turn: Quat::IDENTITY,
             spin: Vec3::ZERO,
             pass_teammates: false,
+            marks: false,
         }
     }
 }
@@ -279,6 +291,75 @@ pub struct FlyerGone {
     pub owner: Option<Entity>,
     pub at: Vec3,
     pub expired: bool,
+}
+
+/// A flyer with `Flyer::marks` touched something not a character (the
+/// server's, sent to network clients): its weapon, owner, the touch point
+/// `at` (m), the surface's `normal` and its flight's direction `dir`.
+/// Every machine that draws shows it (`show_marks`) as a
+/// `WeaponEventKind::Marked` impact when its drawn time reaches the touch
+/// (`map::loose::LateDelay` after it: the needle drawn late reaches the
+/// wall then, specs/tf2/effects.md 11).
+#[derive(Message, Clone, Copy, Debug, PartialEq)]
+pub struct FlyerMark {
+    pub weapon: &'static str,
+    pub owner: Option<Entity>,
+    pub at: Vec3,
+    pub normal: Vec3,
+    pub dir: Vec3,
+}
+
+/// How far back along its flight, and past the touch, a mark's surface
+/// is looked for on the machine showing it (m).
+const MARK_REACH: f32 = 0.1;
+
+/// The marks of `FlyerMark`s whose drawn time has come, as
+/// `WeaponEventKind::Marked` weapon events (every machine; the impact
+/// effects draw them): what this machine's world has at the touch point
+/// (a short line along the flight), not the server's entity.
+#[allow(clippy::too_many_arguments)]
+fn show_marks(
+    time: Res<Time>,
+    delay: Option<Res<crate::map::loose::LateDelay>>,
+    mut marks: MessageReader<FlyerMark>,
+    mut held: Local<Vec<(f64, FlyerMark)>>,
+    spatial: SpatialQuery,
+    colliders: Query<&ColliderOf>,
+    characters: Query<(), With<Intent>>,
+    mut events: MessageWriter<WeaponEvent>,
+) {
+    let now = time.elapsed_secs_f64();
+    let wait = delay.map_or(0.0, |d| d.0 as f64);
+    held.extend(marks.read().map(|m| (now + wait, *m)));
+    if held.is_empty() {
+        return;
+    }
+    let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
+    held.retain(|(due, m)| {
+        if *due > now + 1e-9 {
+            return true;
+        }
+        let Ok(dir) = Dir3::new(m.dir) else { return false };
+        let from = m.at - *dir * MARK_REACH;
+        let hit = spatial.cast_ray_predicate(from, dir, 2.0 * MARK_REACH, true, &filter, &|e| {
+            !characters.contains(colliders.get(e).map_or(e, |o| o.body))
+        });
+        let Some(hit) = hit else { return false };
+        let body = colliders.get(hit.entity).map_or(hit.entity, |o| o.body);
+        events.write(WeaponEvent {
+            owner: m.owner.unwrap_or(Entity::PLACEHOLDER),
+            weapon: Entity::PLACEHOLDER,
+            kind: WeaponEventKind::Marked {
+                id: m.weapon,
+                from,
+                to: from + *dir * hit.distance,
+                hit: body,
+                normal: hit.normal,
+            },
+            replay: false,
+        });
+        false
+    });
 }
 
 /// A game's request for a flyer (an alt-fire's grenade, a rocket): made
@@ -424,6 +505,12 @@ pub struct LauncherParams {
     /// (measured: they show at the barrel as their drawn place passes it).
     #[serde(default)]
     pub model_hidden: f32,
+    /// Its touch on anything but a character leaves a bullet's impact
+    /// there (the surface's decal, debris and sound, `FlyerMark`): TF2's
+    /// needle (specs/tf2/effects.md, "Needles on a wall": a hole mark and
+    /// splinters, no needle left standing).
+    #[serde(default)]
+    pub marks: bool,
 }
 
 /// The `ShownItem` keys of `set`'s projectiles drawn late
@@ -499,6 +586,7 @@ impl LauncherParams {
         });
         f.hitboxes = self.hitboxes;
         f.pass_teammates = self.pass_teammates;
+        f.marks = self.marks;
         // Relative here; made absolute at the launch.
         f.expires = self.life.map(|l| l as f64);
         f.touch = match self.touch.as_str() {
@@ -551,6 +639,8 @@ pub(super) fn plugin(app: &mut App) {
     register_launcher(app)
         .add_message::<FlyerHit>()
         .add_message::<FlyerGone>()
+        .add_message::<FlyerMark>()
+        .add_message::<WeaponEvent>()
         .add_message::<LaunchRequest>()
         .add_message::<Launched>()
         .add_message::<BlastAt>()
@@ -577,6 +667,12 @@ pub(super) fn plugin(app: &mut App) {
                 // other games' systems on purpose (the schedule ratchets).
                 .ambiguous_with_all()
                 .run_if(crate::core::authoritative),
+        )
+        // Every machine (a client's marks come from the server), before
+        // the impact effects read the weapon events.
+        .add_systems(
+            FixedUpdate,
+            show_marks.in_set(FlyerSet::Touch).after(fly).ambiguous_with_all(),
         );
 }
 
@@ -820,6 +916,7 @@ struct FlyWorld<'w, 's> {
     damage: MessageWriter<'w, Damage>,
     inflicted: MessageWriter<'w, Inflicted>,
     hits: MessageWriter<'w, FlyerHit>,
+    marks: MessageWriter<'w, FlyerMark>,
     gone: MessageWriter<'w, FlyerGone>,
     blasts: MessageWriter<'w, BlastAt>,
 }
@@ -1193,6 +1290,15 @@ fn fly(
         }
         if f.velocity.length_squared() > 0.0 {
             t.rotation = flyer_rotation(&f, t.rotation, f.velocity.normalize(), dt);
+        }
+        if f.marks && !character && !through {
+            world.marks.write(FlyerMark {
+                weapon: f.weapon,
+                owner: f.owner,
+                at: point,
+                normal: n,
+                dir: *dir,
+            });
         }
         world.hits.write(FlyerHit {
             flyer: e,

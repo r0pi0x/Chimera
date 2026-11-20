@@ -272,7 +272,7 @@ pub const PROTOCOL_ID: u64 = 0x4C55_434B_4552_5059;
 /// This build's network version. A server refuses clients of another
 /// version. Bump the suffix when the protocol changes in a way the
 /// replicon protocol hash can't see (a field added to a message).
-pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net69");
+pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net70");
 
 /// What a host's `changelevel` is in this app beyond a new map
 /// (`host_changelevel`): set by an app part (`minigame_net`'s, a party
@@ -965,6 +965,18 @@ pub struct Detonation {
     pub flags: u16,
 }
 
+/// Server -> clients: a projectile marked what it touched
+/// (`weapon::projectile::FlyerMark`: TF2's needle): its weapon (registry
+/// index), the touch point, the surface's normal and its flight's
+/// direction.
+#[derive(Message, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct NetMark {
+    pub weapon: u16,
+    pub at: [f32; 3],
+    pub normal: [f32; 3],
+    pub dir: [f32; 3],
+}
+
 /// Server -> clients: map logic's long-lived sounds (`map::SoundControl`
 /// under the logic's keys: ambient_generic, a mover's loop, fire), which
 /// clients, running no map logic, would not hear otherwise (`mapfx`).
@@ -1403,6 +1415,8 @@ impl Plugin for NetPlugin {
             .add_mapped_server_message::<WeaponFx>(Channel::Unreliable)
             .add_server_message::<Detonation>(Channel::Unreliable)
             .make_message_independent::<Detonation>()
+            .add_server_message::<NetMark>(Channel::Unreliable)
+            .make_message_independent::<NetMark>()
             .add_server_message::<Senses>(Channel::Ordered)
             .make_message_independent::<Senses>()
             .add_client_message::<DropRequest>(Channel::Ordered)

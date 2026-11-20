@@ -21,7 +21,8 @@ use chimera_world::{
     },
 };
 use chimera_sim::testkit;
-use tf2::game::weapons::PISTOL_SCOUT;
+use chimera_sim::weapon::{WeaponEvent, WeaponEventKind};
+use tf2::game::weapons::{PISTOL_SCOUT, SYRINGE_GUN};
 
 use super::weapons::{holding, sim, target};
 
@@ -81,24 +82,62 @@ fn cs_map_with_tf2s() -> MapData {
 /// A TF2 pistol's one shot at `at` on `map`'s looks: the sounds played
 /// and the decals asked for.
 fn shoot(map: &MapData, at: impl FnOnce(&mut Sim, Vec3) -> Vec3) -> (Vec<String>, Vec<DecalGroup>) {
+    shoot_with(PISTOL_SCOUT, 10, map, at).0
+}
+
+/// `gun`'s one shot at `at` on `map`'s looks over `ticks`: the sounds
+/// played and decals asked for, and the projectiles' marks shown (the
+/// weapon events' `Marked`).
+fn shoot_with(
+    gun: &str,
+    ticks: u32,
+    map: &MapData,
+    at: impl FnOnce(&mut Sim, Vec3) -> Vec3,
+) -> ((Vec<String>, Vec<DecalGroup>), Vec<WeaponEventKind>) {
     let mut sim = sim();
     let from = greybox::SPAWNS[0];
-    let (p, _) = holding(&mut sim, from, PISTOL_SCOUT);
+    let (p, _) = holding(&mut sim, from, gun);
     let aim = at(&mut sim, from);
     sim.app.insert_resource(SoundBank(map.sounds.clone()));
     sim.app.insert_resource(ActiveImpacts(MapImpacts::clone(&map.impacts)));
     testkit::aim_at(&mut sim, p, aim);
     let mut sounds = sim.app.world().resource::<Messages<PlaySound>>().get_cursor_current();
     let mut decals = sim.app.world().resource::<Messages<PlaceDecal>>().get_cursor_current();
-    let (mut played, mut placed) = (Vec::new(), Vec::new());
-    for k in 0..10 {
+    let mut events = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();
+    let (mut played, mut placed, mut marks) = (Vec::new(), Vec::new(), Vec::new());
+    for k in 0..ticks {
         sim.intent(p).fire = k == 0;
         sim.ticks(1);
         let w = sim.app.world();
         played.extend(sounds.read(w.resource::<Messages<PlaySound>>()).map(|s| s.entry.clone()));
         placed.extend(decals.read(w.resource::<Messages<PlaceDecal>>()).map(|d| d.group.clone()));
+        marks.extend(
+            events
+                .read(w.resource::<Messages<WeaponEvent>>())
+                .filter(|e| matches!(e.kind, WeaponEventKind::Marked { .. }))
+                .map(|e| e.kind.clone()),
+        );
     }
-    (played, placed)
+    ((played, placed), marks)
+}
+
+/// effects.md, "Needles on a wall": a needle leaves no needle but a
+/// bullet's hole mark and debris where it touched (`marks`), as TF2's
+/// impact (its decal group, its surface's sound), once.
+#[test]
+fn a_needle_marks_the_floor_it_touches_as_a_bullet_would() {
+    let map = cs_map_with_tf2s();
+    let ((played, placed), marks) = shoot_with(SYRINGE_GUN, 40, &map, |_, from| from + Vec3::new(0.0, -3.0, -2.0));
+    assert_eq!(marks.len(), 1, "one mark: {marks:?}");
+    let WeaponEventKind::Marked { id, normal, .. } = &marks[0] else { unreachable!() };
+    assert_eq!(*id, SYRINGE_GUN);
+    assert!(normal.y > 0.9, "on the floor: {normal}");
+    assert!(played.iter().any(|s| s == "tf2:default.bulletimpact"), "TF2's impact sound: {played:?}");
+    assert_eq!(
+        placed.iter().filter(|g| matches!(g, DecalGroup::GameMaterial(game, 'C') if game == "tf2")).count(),
+        1,
+        "TF2's hole decal: {placed:?}"
+    );
 }
 
 #[test]

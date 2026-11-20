@@ -24,7 +24,9 @@
 //! - **Crosshair** (3.4): the sprite sheet's "( · )" cell (the public
 //!   `default`), centred, 32 x 32 screen pixels at any resolution (before:
 //!   scaled by the height, 21 pixels at 720 lines, too faint to see on
-//!   de_dust2's sand), in 200 200 200 (the recalled `cl_crosshair_*` defaults).
+//!   de_dust2's sand), in 200 200 200 (the recalled `cl_crosshair_*` defaults);
+//!   behind the Sniper's scope too, as real TF2 draws it (hud.md
+//!   "Measured: the Sniper's scope", against 3.4's rule).
 //! - **Class portrait** (3.10): the 2D image the spec allows (not the 3D
 //!   model panel): the team's background (`character_red_bg` /
 //!   `character_blue_bg`, 9, r60, 100 x 50) under the class's picture
@@ -144,8 +146,8 @@ pub struct Inputs {
     /// Seconds, for the pulses.
     pub time: f64,
     /// Behind a scope (the shell's overlay up, `hud::ScopeUp`): the
-    /// held gun's charge as a fraction 0-1 (`HeldGauge`); no crosshair
-    /// then, the charge meter instead.
+    /// held gun's charge as a fraction 0-1 (`HeldGauge`); the charge
+    /// meter then, the crosshair still drawn (measured).
     pub scope: Option<f32>,
 }
 
@@ -316,9 +318,11 @@ impl Tf2Hud {
         if let (true, Some(charge)) = (i.alive, i.scope) {
             out.extend(charge_meter(charge, screen, scheme));
         }
-        // Crosshair: the sheet's (0, 0, 32, 32) of 128 x 128; none
-        // behind a scope (3.4).
-        if i.alive && i.scope.is_none() && scheme.has("crosshairs") {
+        // Crosshair: the sheet's (0, 0, 32, 32) of 128 x 128; behind a
+        // scope too (measured on real TF2, hud.md "Measured: the Sniper's
+        // scope" and Open questions 13: 3.4 says a scope hides it, the
+        // game draws it).
+        if i.alive && scheme.has("crosshairs") {
             // Screen pixels, not layout units (3.4): 32 at any height.
             let size = 32.0;
             let c = Vec2::new(screen.w / 2.0, screen.h / 2.0);
@@ -501,11 +505,12 @@ mod tests {
         assert!(sprite(&d, "class_soldierred").is_none());
     }
 
-    /// Behind a scope: no crosshair (hud.md 3.4), the charge meter's
+    /// Behind a scope: the crosshair still (measured, hud.md Open
+    /// questions 13), the charge meter's
     /// wedge lit by the charge, the bolt and "100%" only when full, 64
     /// units right of the middle and 64 up at half a unit a texel.
     #[test]
-    fn a_scope_hides_the_crosshair_and_shows_the_charge() {
+    fn a_scope_keeps_the_crosshair_and_shows_the_charge() {
         struct Sheets;
         impl Scheme for Sheets {
             fn colour(&self, _: &str) -> Option<Rgba> {
@@ -525,7 +530,7 @@ mod tests {
         assert!(sprite(&d, "crosshairs").is_some());
         assert!(sprite(&d, "sniperscope_numbers2").is_none());
         let half = hud.frame(&Inputs { scope: Some(0.5), ..open.clone() }, s, &Sheets);
-        assert!(sprite(&half, "crosshairs").is_none(), "no crosshair behind a scope");
+        assert!(sprite(&half, "crosshairs").is_some(), "the crosshair behind a scope too");
         let parts: Vec<_> = half.iter().filter_map(|d| match d {
             Draw::Sprite { sprite: "sniperscope_numbers2", rect, uv, color } => Some((*rect, *uv, *color)),
             _ => None,

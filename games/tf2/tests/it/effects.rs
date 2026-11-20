@@ -148,6 +148,41 @@ fn a_rocket_on_the_floor_leaves_a_scorch_and_shows_the_wall_effect() {
     assert!(!f.carry);
 }
 
+/// effects.md 5 step 5, 11: the blast's sound plays with its look, on the
+/// machine that draws it, when the drawn time reaches the blast (held
+/// `LateDelay` after the server's blast, as the look), not when the
+/// server makes it; one of each.
+#[test]
+fn a_rockets_blast_sounds_with_its_late_drawn_look() {
+    use chimera_world::map::{GameSound, PlaySound, loose::LateDelay};
+    let mut sim = sim();
+    sim.app.insert_resource(LateDelay(0.1));
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), ROCKET_LAUNCHER);
+    let mut blasts = sim.app.world().resource::<Messages<Tf2Explosion>>().get_cursor_current();
+    let mut starts = sim.app.world().resource::<Messages<StartParticleSystem>>().get_cursor_current();
+    let mut sounds = sim.app.world().resource::<Messages<PlaySound>>().get_cursor_current();
+    let mut game = sim.app.world().resource::<Messages<GameSound>>().get_cursor_current();
+    let (mut blast, mut look, mut sound) = (Vec::new(), Vec::new(), Vec::new());
+    let mut game_sounds = Vec::new();
+    for t in 0..60u32 {
+        sim.intent(p).fire = t == 0;
+        sim.intent(p).pitch = -89f32.to_radians();
+        sim.ticks(1);
+        let w = sim.app.world();
+        blast.extend(blasts.read(w.resource::<Messages<Tf2Explosion>>()).map(|_| t));
+        look.extend(starts.read(w.resource::<Messages<StartParticleSystem>>()).filter(|s| s.name.starts_with("ExplosionCore")).map(|_| t));
+        sound.extend(sounds.read(w.resource::<Messages<PlaySound>>()).filter(|s| s.entry.contains("BaseExplosionEffect")).map(|_| t));
+        game_sounds.extend(game.read(w.resource::<Messages<GameSound>>()).map(|s| s.0.entry.clone()));
+    }
+    assert_eq!(blast.len(), 1, "one blast");
+    assert_eq!(look.len(), 1, "one look");
+    assert_eq!(sound, look, "the sound with the look");
+    let dt = sim.app.world().resource::<chimera_core::core::SimClock>().delta.as_secs_f32();
+    let held = (look[0] - blast[0]) as f32 * dt;
+    assert!((0.09..0.13).contains(&held), "held the late delay: {held} s");
+    assert!(!game_sounds.iter().any(|s| s.contains("BaseExplosionEffect")), "not the server's: {game_sounds:?}");
+}
+
 /// effects.md 1: a sticky trails `stickybombtrail_<team>` from its launch
 /// and pulses (`stickybomb_pulse_<team>`) once, when it arms (0.8 s), both
 /// following it.
@@ -236,4 +271,53 @@ fn others_minigun_runs_its_constant_systems_while_its_rounds_arrive() {
     assert_eq!(started.iter().filter(|s| *s == "muzzle_minigun_constant").count(), 1, "started once on the other client: {started:?}");
     assert!(!stopped_while_firing, "kept while its rounds came");
     assert!(stopped >= 1, "stopped after");
+}
+
+/// A needle's mark on the world (`projectile::FlyerMark`, the server's)
+/// reaches every client (`NetMark`) and shows there as a `Marked` impact
+/// on what that client's world has at the touch (effects.md, "Needles on a
+/// wall"): the shooter's and another's.
+#[test]
+fn every_client_sees_a_needles_mark() {
+    use chimera_net::{harness::NetSim, net::memory::LinkConditions};
+    use chimera_sim::weapon::{self, Inventory};
+    use chimera_world::greybox::GreyboxMapPlugin;
+    use tf2::game::weapons::SYRINGE_GUN;
+    let mut sim = NetSim::new(tf2::harness::Tf2Sim, LinkConditions::default(), 5, 0, |app| {
+        app.add_plugins(GreyboxMapPlugin);
+    });
+    sim.add_client(|_| {});
+    sim.add_client(|_| {});
+    sim.set_frame(tf2::game::TICK_INTERVAL);
+    sim.until_joined(900);
+    sim.until_looks_taken(600);
+    let theirs = sim.character_of(0).unwrap();
+    let gun = weapon::give(sim.server.app.world_mut(), theirs, SYRINGE_GUN).unwrap();
+    sim.server.app.world_mut().get_mut::<Inventory>(theirs).unwrap().wanted = Some(gun);
+    sim.ticks(150);
+    let mut cursors: Vec<_> =
+        sim.clients.iter().map(|c| c.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current()).collect();
+    let mut marks = vec![Vec::new(); 2];
+    for k in 0..120 {
+        let me = sim.local_player(0).unwrap();
+        let mut intent = sim.clients[0].app.world_mut().get_mut::<chimera_core::core::Intent>(me).unwrap();
+        intent.fire = k < 2;
+        intent.pitch = -80f32.to_radians();
+        sim.step();
+        for (i, c) in sim.clients.iter().enumerate() {
+            let w = c.app.world();
+            marks[i].extend(
+                cursors[i]
+                    .read(w.resource::<Messages<WeaponEvent>>())
+                    .filter_map(|e| match e.kind {
+                        WeaponEventKind::Marked { id, normal, .. } => Some((id, normal)),
+                        _ => None,
+                    }),
+            );
+        }
+    }
+    for (i, m) in marks.iter().enumerate() {
+        assert!(!m.is_empty(), "client {i} saw the mark");
+        assert!(m.iter().all(|(id, n)| *id == SYRINGE_GUN && n.y > 0.9), "client {i}: on the floor, the gun's: {m:?}");
+    }
 }

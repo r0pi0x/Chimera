@@ -33,8 +33,8 @@
 //! - **Bullets** push too (`bullet_push`, after the frame): one push per
 //!   victim per shot from its summed damage at scale 6, from the shooter's
 //!   centre lowered 10.
-//! - its sound there, heard by every client (`map::GameSound`), an
-//!   explosion's look (`Tf2Explosion`, drawn by the client) and its
+//! - an explosion's look and its sound (`Tf2Explosion`, drawn and played
+//!   by each machine that draws when the drawn time reaches it) and its
 //!   measure (`weapon::grenade::BlastDealt`: the centre, the radius, the
 //!   damage at the centre and each victim's; the sandbox's blast rings).
 //!
@@ -147,6 +147,28 @@ pub struct Tf2Explosion {
     pub normal: Vec3,
     pub on_player: bool,
     pub weapon: &'static str,
+}
+
+/// A blast weapon's explosion sound (its rocket's, grenade's or sticky's
+/// `sound`), on every machine (the rules are each machine's).
+#[derive(SystemParam)]
+pub struct BlastSounds<'w> {
+    rockets: Option<Res<'w, super::rocket::RocketRules>>,
+    grenades: Option<Res<'w, super::grenade::GrenadeRules>>,
+    stickies: Option<Res<'w, super::sticky::StickyRules>>,
+}
+
+impl BlastSounds<'_> {
+    pub fn of(&self, weapon: &str) -> Option<&str> {
+        fn rocket<'a>(r: &'a super::rocket::RocketRules, weapon: &str) -> Option<&'a str> {
+            r.get(weapon).and_then(|(p, _)| p.sound.as_deref())
+        }
+        self.rockets
+            .as_deref()
+            .and_then(|r| rocket(r, weapon))
+            .or_else(|| self.grenades.as_deref().and_then(|g| rocket(&g.0, weapon)))
+            .or_else(|| self.stickies.as_deref().and_then(|s| s.get(weapon)).and_then(|(_, b, _)| b.sound.as_deref()))
+    }
 }
 
 /// The decal a blast leaves where it went off (effects.md 5).
@@ -385,9 +407,8 @@ impl BlastWorld<'_, '_> {
             max_damage: p.damage * HP,
             victims,
         });
-        if let Some(s) = &p.sound {
-            self.sounds.write(GameSound(PlaySound::at(s.clone(), centre)));
-        }
+        // Its sound plays with its look on each machine that draws, when
+        // the drawn time reaches it (effects.md 5 step 5, 11: `looks`).
         let on_player = touched.is_some_and(|t| self.chars.contains(t));
         // Effects.md 5: a near-zero normal is in the air.
         let normal = if normal.abs().max_element() < AIR_NORMAL { Vec3::ZERO } else { normal };

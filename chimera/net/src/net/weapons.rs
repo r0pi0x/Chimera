@@ -25,7 +25,8 @@
 //!   projectiles in flight (`weapon::projectile`'s flyers and `ShownBody`s)
 //!   are the server's and drawn from snapshots like props; smoke
 //!   clouds (`NetSmoke`) start when heard; a detonation comes as
-//!   `Detonation` (the explosion's look and sound), a flash or a blast's
+//!   `Detonation` (the explosion's look and sound), a projectile's mark on
+//!   what it touched as `NetMark` (`projectile::FlyerMark`), a flash or a blast's
 //!   ringing as `Senses` to the player it hit.
 //! - **Dropping** (`drop`, G): a request to the server (`DropRequest`);
 //!   picking up is the server's (walking over, +use).
@@ -52,7 +53,7 @@ use bevy::{app::RunFixedMainLoopSystems, prelude::*};
 use bevy_replicon::prelude::*;
 
 use super::{
-    Detonation, DropRequest, FireBullets, HitConfirm, Hurt, Killed, NetCharacter, ObjectDestroyed, NetHeld, NetItem, NetSmoke,
+    Detonation, DropRequest, NetMark, FireBullets, HitConfirm, Hurt, Killed, NetCharacter, ObjectDestroyed, NetHeld, NetItem, NetSmoke,
     Senses, WeaponFx,
     interp::{Around, InterpClock, Snapshots},
     server::Player,
@@ -72,6 +73,7 @@ use crate::{
         AltModes, HeldGauge, HeldState, Hitscan, Inventory, SpreadShape, Weapon, WeaponEvent, WeaponEventKind, WeaponRegistry,
         drop::DropRequested,
         grenade::{Detonated, GrenadeEffect, GrenadeKind, Projectile, SmokeCloud, Throwable},
+        projectile::FlyerMark,
         remote::{RemoteAction, RemoteShot, shot_flags, show_gauge, show_held, show_state},
     },
 };
@@ -93,6 +95,7 @@ pub(super) fn plugin(app: &mut App) {
             (
                 send_weapon_events,
                 send_detonations,
+                send_marks,
                 send_senses,
                 send_hurts,
                 send_deaths.after(chimera_core::announcer::AnnounceSet),
@@ -108,6 +111,7 @@ pub(super) fn plugin(app: &mut App) {
                 receive_fire,
                 receive_fx,
                 receive_detonations,
+                receive_marks,
                 receive_senses,
                 receive_hurts,
                 start_smokes,
@@ -473,6 +477,37 @@ fn send_detonations(
                 ground: d.ground.map(|(p, n, _)| (p.to_array(), n.to_array())),
                 flags: d.flags.0,
             },
+        });
+    }
+}
+
+/// Projectiles' marks (`FlyerMark`) to every client.
+fn send_marks(mut marks: MessageReader<FlyerMark>, registry: Res<WeaponRegistry>, mut out: MessageWriter<ToClients<NetMark>>) {
+    for m in marks.read() {
+        let Some(weapon) = registry.index(m.weapon) else { continue };
+        out.write(ToClients {
+            targets: SendTargets::CLIENTS_ONLY,
+            message: NetMark {
+                weapon: weapon as u16,
+                at: m.at.to_array(),
+                normal: m.normal.to_array(),
+                dir: m.dir.to_array(),
+            },
+        });
+    }
+}
+
+/// The server's projectile marks as this machine's (`projectile::show_marks`
+/// shows them when their drawn time comes).
+fn receive_marks(mut marks: MessageReader<NetMark>, registry: Res<WeaponRegistry>, mut out: MessageWriter<FlyerMark>) {
+    for m in marks.read() {
+        let Some(d) = registry.0.get(m.weapon as usize) else { continue };
+        out.write(FlyerMark {
+            weapon: d.id,
+            owner: None,
+            at: Vec3::from_array(m.at),
+            normal: Vec3::from_array(m.normal),
+            dir: Vec3::from_array(m.dir),
         });
     }
 }

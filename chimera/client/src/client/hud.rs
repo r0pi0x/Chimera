@@ -7,8 +7,9 @@
 //! `cl_dynamiccrosshair`), sniper scope overlay (a game's own picture, its
 //! ring's quarters: CS:S's arc in a square, TF2's quarter stretched over
 //! the whole screen, or our 1024-texel stand-in, with pixel-wide cross
-//! hairs; while it is up `ScopeUp` says so and every crosshair hides, a
-//! game HUD's own too), smoke grey and flash white
+//! hairs; while it is up `ScopeUp` says so and the shell's crosshair hides
+//! (a game HUD's own as its game's rule says: TF2's stays, measured),
+//! smoke grey and flash white
 //! screen tints, health, ammo, killfeed; the dead and the spectated
 //! character's own body hidden (`show_bodies`); the stand-ins' stripes
 //! (`chimera_present::render::stand_in`, which draws a body for a

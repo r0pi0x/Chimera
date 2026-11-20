@@ -1039,6 +1039,13 @@ pub struct ShellReload {
     /// rocket is in a third of the way through its loop (specs/tf2/
     /// weapons.md 4). None: at the insert's end.
     pub round_at: Option<f32>,
+    /// Back to back, each part is timed from the tick the last one ended
+    /// on, not from when it was due: a part of 0.5 s at a 0.015 s tick
+    /// takes 34 ticks every time, as TF2's Scattergun's loops (measured,
+    /// specs/tf2/weapons.md 4; its weapon times are set from the current
+    /// tick, weapon_scripts.md's `set` timing); from the due time they'd
+    /// take 33, 33, 34 in turn.
+    pub from_tick: bool,
 }
 
 /// Where a one-at-a-time reload is (`ShellReload`).
@@ -2061,6 +2068,20 @@ pub enum WeaponEventKind {
         /// Surface normal where it hit.
         normal: Option<Vec3>,
     },
+    /// A projectile marking what it touched as a bullet's impact marks
+    /// it (`projectile::LauncherParams::marks`: TF2's needle): `id` its
+    /// weapon (whose game draws it, `impact::ImpactRoute`), from where it
+    /// came (`from`) to the touch point `to` on `hit` with the surface
+    /// `normal`. Shown on every machine that draws when its drawn time
+    /// reaches the touch (`projectile::FlyerMark`); no tracer, no damage,
+    /// no ricochet.
+    Marked {
+        id: &'static str,
+        from: Vec3,
+        to: Vec3,
+        hit: Entity,
+        normal: Vec3,
+    },
     /// The same bullet going on after passing something (`Penetration`):
     /// from where it left that to where it stopped next.
     ShotContinued {
@@ -2644,8 +2665,10 @@ fn weapon_frame(
         } else if w.state.shells != ShellStage::Idle && due >= w.state.shell_next {
             let (insert, finish, back_to_back) =
                 w.shells.map_or((0.0, 0.0, false), |s| (s.insert as f64, s.finish as f64, s.back_to_back));
-            // Back to back, each part runs from when the last was due.
-            let from = if back_to_back { w.state.shell_next } else { now };
+            // Back to back, each part runs from when the last was due
+            // (`ShellReload::from_tick`: from this tick).
+            let from_tick = w.shells.is_some_and(|s| s.from_tick);
+            let from = if back_to_back && !from_tick { w.state.shell_next } else { now };
             let room = w.magazine.as_ref().is_some_and(|m| m.clip < m.size && m.reserve > 0);
             match w.state.shells {
                 ShellStage::Starting if room => {

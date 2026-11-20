@@ -242,6 +242,8 @@ fn bullet_impacts(
             {
                 (&line.0, point, &Some(*hit))
             }
+            // A projectile's mark sounds as a bullet's impact there.
+            WeaponEventKind::Marked { from, to, hit, .. } => (from, to, &Some(*hit)),
             _ => continue,
         };
         if hit.is_none() {
@@ -361,6 +363,38 @@ fn impact_decals(
                 hit: Some(hit),
                 normal: Some(normal),
             } if marked(*hit) && !in_water(*from, *to, water.as_deref()) => {
+                let group = match breakable_decal(*hit, &brushes, &parents, map.as_deref()) {
+                    ImpactMark::Nothing => continue,
+                    ImpactMark::Group(name) => DecalGroup::Named(name.into()),
+                    ImpactMark::Surface => {
+                        let name = as_game(
+                            surface_of(Some(*hit), *to, &props, &characters, grid.as_deref()),
+                            classes.as_deref(),
+                            route.map_game(),
+                            style.game,
+                        );
+                        let Some(material) = bank
+                            .as_ref()
+                            .and_then(|b| game_surface(&b.0, style.game, &name))
+                            .map(|s| s.game_material)
+                        else {
+                            continue;
+                        };
+                        DecalGroup::GameMaterial(style.game.into(), material)
+                    }
+                };
+                decals.write(PlaceDecal {
+                    target: Some(*hit),
+                    group,
+                    point: *to,
+                    normal: *normal,
+                    dir: (*to - *from).normalize_or_zero(),
+                    spin: false,
+                    round: false,
+                });
+            }
+            // A projectile's mark: the surface's decal, as a bullet's.
+            WeaponEventKind::Marked { from, to, hit, normal, .. } if marked(*hit) => {
                 let group = match breakable_decal(*hit, &brushes, &parents, map.as_deref()) {
                     ImpactMark::Nothing => continue,
                     ImpactMark::Group(name) => DecalGroup::Named(name.into()),

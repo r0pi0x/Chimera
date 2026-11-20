@@ -20,7 +20,7 @@ reload = 0.5
 auto_reload = true
 # cl_autoreload 1 (weapons.md 4, step 4): a clip not full reloads with neither attack held.
 reload_when_idle = true
-shells = { start = 0.2, insert = 0.5, back_to_back = true, start_interruptible = true }
+shells = { start = 0.2, insert = 0.5, back_to_back = true, from_tick = true, start_interruptible = true }
 
 [hitscan]
 range = 56754.0

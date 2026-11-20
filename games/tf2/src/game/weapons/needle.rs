@@ -8,6 +8,10 @@
 //! on an enemy `damage` (10) x the short-range-reduced modifier M_s
 //! between the Medic's and the enemy's centres at impact (121.8 % at 0),
 //! rounded, of kind bullet naming the gun; any touch ends the needle.
+//! A touch on anything but a player marks it as a bullet's impact
+//! (`marks`, Chimera's `projectile::FlyerMark`: the surface's decal,
+//! debris and sound, shown as the needle drawn late reaches it; effects.md
+//! "Needles on a wall").
 //!
 //! Known shortcuts: the needle is a point, not a 2-unit cube; needles
 //! don't destroy stickies; crits are off.

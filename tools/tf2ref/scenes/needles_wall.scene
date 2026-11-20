@@ -1,0 +1,27 @@
+# Ours for needles_wall.tf2: the Syringe Gun from 2fort's bridge at
+# 0 -300 0 into the side wall (level, yaw 0) for 0.3 s, at fov 75 with no
+# view model (TF2's bot's eyes); pictures 0.5 s and 3 s after.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +mat_hdr_level 2 +mat_colorcorrection 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/needles_wall.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+r_drawviewmodel 0
+fov_desired 75
+rung tf2:tf_weapon_syringegun_medic
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 -300 0
+setang 0 0 0
+wait 90
+shot wall_idle
++attack
+gwait 0.3
+-attack
+gwait 0.5
+shot wall_0_5
+gwait 2.5
+shot wall_3

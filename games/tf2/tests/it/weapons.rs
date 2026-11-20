@@ -289,7 +289,8 @@ fn the_first_pellet_after_a_pause_goes_dead_centre_38() {
 }
 
 /// 4, tests 27 and 28: an empty Scattergun reloads by itself, a shell in
-/// at 0.7 s and every 0.5 s after; a shot with shells in stops it.
+/// at 0.7 s and every 0.5 s after (in whole ticks, as measured); a shot
+/// with shells in stops it.
 #[test]
 fn shells_go_in_one_at_a_time_and_a_shot_stops_them_27_28() {
     let mut sim = sim();
@@ -305,10 +306,10 @@ fn shells_go_in_one_at_a_time_and_a_shot_stops_them_27_28() {
     let start = ev.iter().find(|(_, k)| matches!(k, WeaponEventKind::ReloadStarted)).map(|(t, _)| *t).expect("reloads");
     // The tick on which each shell went in (the clip read after it).
     let ins: Vec<u64> = (1..=6).map(|n| clips.iter().position(|c| *c >= n).unwrap() as u64 - 1 - start).collect();
-    let want: Vec<f64> = (0..6).map(|n| (0.7 + 0.5 * n as f64) / TICK_INTERVAL).collect();
-    for (got, want) in ins.iter().zip(&want) {
-        assert!((*got as f64 - want).abs() <= 1.5, "shells in at {ins:?}, want {want:?}");
-    }
+    // 0.7 s for the first, then 0.5 s each, rounded to ticks as TF2
+    // does: 34 ticks a loop (`the_scattergun_loads_a_shell_every_34_ticks`).
+    let want: Vec<u64> = (0..6).map(|n| 48 + 34 * n).collect();
+    assert_eq!(ins, want, "shells in (ticks after the start)");
     assert_eq!(sim.app.world().get::<Magazine>(w).unwrap().reserve, 26);
     // Test 28: two in, reloading again: attack fires at once.
     {
@@ -374,6 +375,32 @@ fn the_rocket_launchers_reload_plays_its_start_then_a_loop_a_round() {
     assert_eq!(rounds, [56, 110], "rounds in (ticks after the start)");
     let done = at(|k| matches!(k, WeaponEventKind::Reloaded));
     assert_eq!(done.iter().map(|t| t - start).collect::<Vec<_>>(), [142], "the finish (TF2: 143)");
+}
+
+/// 4, measured on real TF2 (2026-11-20, the view model's sequence and the
+/// clip read every tick): the Scattergun's start takes 14 ticks, then a
+/// loop every 34 (0.5 s timed from the tick the last ended, 33.3 ticks
+/// rounded up each time: `ShellReload::from_tick`), each shell in at its
+/// loop's end as the next starts. From the due time they'd alternate 33
+/// and 34.
+#[test]
+fn the_scattergun_loads_a_shell_every_34_ticks() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], SCATTERGUN);
+    {
+        let mut m = sim.app.world_mut().get_mut::<Magazine>(w).unwrap();
+        m.clip = 0;
+        m.reserve = 32;
+    }
+    let mut clips = Vec::new();
+    let ev = run(&mut sim, p, 230, |s, _| clips.push(s.app.world().get::<Magazine>(w).unwrap().clip));
+    clips.push(sim.app.world().get::<Magazine>(w).unwrap().clip);
+    let start = ev.iter().find(|(_, k)| matches!(k, WeaponEventKind::ReloadStarted)).map(|(t, _)| *t).expect("reloads");
+    let loops: Vec<u64> =
+        ev.iter().filter(|(_, k)| matches!(k, WeaponEventKind::ShellInserting)).map(|(t, _)| t - start).collect();
+    assert_eq!(loops, [14, 48, 82, 116, 150, 184], "loops (ticks after the start)");
+    let ins: Vec<u64> = (1..=6).map(|n| clips.iter().position(|c| *c >= n).unwrap() as u64 - 1 - start).collect();
+    assert_eq!(ins, [48, 82, 116, 150, 184, 218], "shells in at each loop's end");
 }
 
 /// The player's `cl_autoreload 1` (userinfo; ours defaults to 0).
