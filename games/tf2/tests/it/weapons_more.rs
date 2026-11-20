@@ -541,6 +541,31 @@ fn one_press_raises_the_scope_and_a_held_key_toggles_it_3_1() {
     assert!(flips >= 2, "a held attack2 toggles the scope: {seen:?}");
 }
 
+/// A map keeps the held models of the guns its match offers by key prefix
+/// (`GameKit::stay`): every projectile's model key starts with its gun's,
+/// so a kept gun keeps its projectile. Before, `tf2:rocket`, `tf2:sticky`
+/// ... were dropped on every map and TF2's projectiles flew unseen (only
+/// their trails showed; tools/tf2ref `stickies.tf2`).
+#[test]
+fn a_kept_gun_keeps_its_projectiles_model() {
+    use chimera_world::map::{GameKit, MapHeldModel};
+    for (gun, key, _) in tf2::game::weapons::PROJECTILES {
+        let held = |k: &str| MapHeldModel {
+            key: k.into(),
+            model: Default::default(),
+            bone: String::new(),
+            muzzle: None,
+            attachments: Vec::new(),
+            merged: Vec::new(),
+            own: None,
+            nose: None,
+        };
+        let kit = GameKit { held: vec![held(gun), held(key)], ..Default::default() };
+        let kept = kit.stay(&[gun], true);
+        assert!(kept.held.iter().any(|h| h.key == *key), "{gun} keeps {key}");
+    }
+}
+
 /// Every TF2 projectile (the rocket, the grenade, the sticky, the needle)
 /// flies nose first: its shown model's own forward (`MapHeldModel::nose`,
 /// here a made-up slant, as a model's bone frame leaves it) stays along

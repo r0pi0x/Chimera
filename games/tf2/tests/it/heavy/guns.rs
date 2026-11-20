@@ -273,7 +273,7 @@ fn each_projectile_models_nose_is_its_long_axis() {
         let long = a.half.max_element();
         let axis = bevy::prelude::Vec3::select(a.half.cmpeq(bevy::prelude::Vec3::splat(long)), bevy::prelude::Vec3::ONE, bevy::prelude::Vec3::ZERO);
         println!("{key}: nose {nose}, half {}", a.half);
-        if *key == weapons::ROCKET_SHOWN || *key == "tf2:syringe" {
+        if *key == weapons::ROCKET_SHOWN || *key == "tf2:tf_weapon_syringegun_medic/syringe" {
             assert!(nose.dot(axis.normalize()).abs() > 0.95, "{key}: nose {nose}, half {}", a.half);
         }
     }

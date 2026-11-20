@@ -57,7 +57,7 @@ script = "tf_weapon_rocketlauncher"
 [hooks."chimera:projectile"]
 speed = 1100.0
 touch = "report"
-shown = "tf2:rocket"
+shown = "tf2:tf_weapon_rocketlauncher/rocket"
 offset = [23.5, 12.0, -3.0]
 offset_crouched = [23.5, 12.0, 8.0]
 pass_teammates = true
@@ -87,6 +87,6 @@ sound = "tf2:BaseExplosionEffect.Sound"
 # blasts' effects (explosion.pcf names; which script field holds which is
 # unconfirmed).
 [hooks."tf2:looks"]
-trail = { shown = "tf2:rocket", system = "rockettrail" }
+trail = { shown = "tf2:tf_weapon_rocketlauncher/rocket", system = "rockettrail" }
 backblast = { system = "rocketbackblast", at = "backblast" }
 explosion = { wall = "ExplosionCore_Wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }

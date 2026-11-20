@@ -43,7 +43,7 @@
 //!   7 frames (at 60) later.
 //! - **Trails** (effects.md 1): a gun's `trail` (`FlyerTrail`) starts on
 //!   each of its flyers as it appears (`ShownItem`: `rockettrail` on
-//!   `tf2:rocket`, `pipebombtrail_<team>`, `stickybombtrail_<team>`,
+//!   the rocket, `pipebombtrail_<team>`, `stickybombtrail_<team>`,
 //!   `nailtrails_medic_<team>`), following it without carrying what it
 //!   left, stopped when it is gone (`psys::Follow`).
 //! - **The armed pulse** (effects.md 1): a gun's `armed` (`ArmedLook`)

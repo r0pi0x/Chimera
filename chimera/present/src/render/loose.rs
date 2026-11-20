@@ -9,6 +9,9 @@
 //! appears outside the playable area on a map with a 3D skybox is in the
 //! skybox (HL2's headcrab canister before it enters the world): drawn on
 //! the sky camera's layer, as particles out there are (`render::particles`).
+//! A shown item whose held model is still being built (added late,
+//! `bodies::build_late_held`) waits undrawn and asks for it first
+//! (`bodies::LateWanted::shown`), as a loose item waits.
 
 use bevy::prelude::*;
 
@@ -82,11 +85,16 @@ pub fn attach_shown(
     mut materials: Option<ResMut<Assets<crate::render::prop_material::PropMaterial>>>,
     dormant: Option<Res<crate::render::prop_material::DormantProps>>,
     sky: (Option<Res<PlayableArea>>, Option<Res<ActiveMapHas3dSky>>),
+    mut wanted: Option<ResMut<super::bodies::LateWanted>>,
+    real: Res<Time<Real>>,
     mut commands: Commands,
 ) {
-    let (Some(assets), Some(held)) = (assets, held) else {
+        let (Some(assets), Some(held)) = (assets, held) else {
         return;
     };
+    // Keys shown now whose held model is still on its way (added late:
+    // `bodies::build_late_held`, which builds these at once).
+    let mut missing = std::collections::BTreeSet::new();
     // Where it appears decides its layer (a shown item outside the
     // playable area stays out there: the skybox's are their own items).
     let in_sky = |t: Option<&Transform>| match (&sky.0, &sky.1, t) {
@@ -95,9 +103,18 @@ pub fn attach_shown(
     };
     for (e, item, sit, at) in &items {
         let layers = in_sky(at).then(|| RenderLayers::layer(SKYBOX_LAYER));
+        // Until its held model is there it waits undrawn, as a loose
+        // item does: a TF2 sticky fired before the late-built
+        // `tf2:sticky` was ready stayed invisible for its whole life.
+        let (Some(a), Some(parts)) = (assets.0.get(&item.0), held.0.get(&item.0)) else {
+            if !held.0.contains_key(&item.0) {
+                missing.insert(item.0.clone());
+            }
+            continue;
+        };
         let mut ent = commands.entity(e);
-        ent.insert((ShownItemDrawn, MapPart, Visibility::default()));
-        if let (Some(a), Some(parts)) = (assets.0.get(&item.0), held.0.get(&item.0)) {
+        ent.try_insert((ShownItemDrawn, MapPart, Visibility::default()));
+        {
             let mut frame = a.frame;
             if let Some(SitOnOrigin(turn)) = sit {
                 let m = Mat3::from_quat(*turn);
@@ -123,6 +140,15 @@ pub fn attach_shown(
                     }
                 }
             });
+        }
+    }
+    if let Some(w) = wanted.as_mut()
+        && (w.shown.len() != missing.len() || !missing.iter().all(|k| w.shown.contains_key(k)))
+    {
+        let now = real.elapsed_secs_f64();
+        w.shown.retain(|k, _| missing.contains(k));
+        for k in missing {
+            w.shown.entry(k).or_insert(now);
         }
     }
 }
@@ -174,5 +200,37 @@ mod tests {
         let w = app.world_mut();
         assert_eq!(w.query::<&LooseItem>().iter(w).count(), 0);
         assert_eq!(w.query::<&Mesh3d>().iter(w).count(), 0, "no orphan parts");
+    }
+
+    /// A shown item (a flyer) whose held model isn't built yet waits
+    /// undrawn and asks for it (`LateWanted::shown`), and gets its meshes
+    /// once it is there; before, it was marked drawn with nothing and
+    /// flew unseen for good.
+    #[test]
+    fn a_shown_item_waits_for_its_late_model() {
+        let mut app = App::new();
+        app.add_plugins(bevy::time::TimePlugin);
+        app.insert_resource(LooseAssets(HashMap::new()));
+        app.insert_resource(HeldAssets(HashMap::new()));
+        app.init_resource::<crate::render::bodies::LateWanted>();
+        app.add_systems(Update, attach_shown);
+        let e = app.world_mut().spawn((ShownItem("game:sticky".into()), Transform::default())).id();
+        app.update();
+        assert!(app.world().get::<ShownItemDrawn>(e).is_none(), "waits");
+        assert!(app.world().resource::<crate::render::bodies::LateWanted>().shown.contains_key("game:sticky"), "asked for");
+        let asset = crate::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.1), surface: None, nose: None };
+        app.world_mut().resource_mut::<LooseAssets>().0.insert("game:sticky".into(), asset);
+        let parts = HeldParts {
+            bone: String::new(),
+            whole: vec![(Handle::default(), Handle::default())],
+            own: Vec::new(),
+            muzzle: None,
+            attachments: Vec::new(),
+            merged: Vec::new(),
+        };
+        app.world_mut().resource_mut::<HeldAssets>().0.insert("game:sticky".into(), parts);
+        app.update();
+        assert!(app.world().get::<ShownItemDrawn>(e).is_some(), "drawn once there");
+        assert!(app.world().resource::<crate::render::bodies::LateWanted>().shown.is_empty());
     }
 }

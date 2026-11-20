@@ -425,3 +425,13 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
    units out; the farther band needs the eject attachment's x axis
    tilted upward (a longer flight), which depends on the spun Heavy's
    pose (player_animation.md). Unconfirmed.
+7. **A sprite trail's length fade-in and a still particle** (measured
+   2026-11-20, tools/tf2ref): the Flame Thrower's `new_flame_pilot`
+   (locked to the muzzle, no movement operator, a start speed of
+   800-1200 forward, trail length 0.1) shows no streak while the gun is
+   still, so a trail seems to follow the particle's motion, not its
+   start velocity. A rocket's blast on the floor at 150 units shows long
+   yellow streaks (Explosion_Flashup / CoreFlash, trail lengths 0.3-0.4,
+   length fade-in 0.2) already 33-50 ms after the blast: longer than a
+   fade-in by age (length x age / 0.2) gives. Whether the fade-in is by
+   age, by life fraction or from the minimum length is unconfirmed.

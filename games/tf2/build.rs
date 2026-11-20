@@ -20,7 +20,7 @@ mod source_hash;
 /// data, a gameplay module a dressing calls); the converted-output test
 /// (party_kit `heavy::converted::converted_output_matches_its_version`)
 /// fails until it is.
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 
 /// What shapes the converted output (module doc).
 const CONVERTING: &[&str] = &[

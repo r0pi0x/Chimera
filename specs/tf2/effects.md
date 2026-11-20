@@ -241,6 +241,36 @@ skipped.
 - A blast on a player uses the in-air effect even if the player stands
   against a wall.
 
+## Measured in the running game (tools/tf2ref, 2026-11-20)
+
+Captured at 1024x768, stepped frames (30 or 60 a second), on 2fort's
+bridge; facts of the picture, not of the code.
+
+- **Stickybomb, first person**: the sticky's model (a team-coloured spiked
+  ball) is seen in flight and where it lands; its trail glow is barely
+  visible (a faint team tint at the sticky, no glowing disc). The armed
+  pulse comes 0.8 s after the launch (frame 26 at 30 a second, the launch
+  at frame 2) and repeats every 0.1 s: per pulse a thin orange ring the
+  sticky's size, then a translucent team-coloured disc about 3 times
+  wider, then nothing for a frame.
+- **Rocket into water** (2fort's river, the surface near z = -140): seen
+  from above the surface the burst under it is hidden, only the trail
+  shows; with the eye just above the surface the burst shows through the
+  water as an orange glow with a few sparks and floating specks. The
+  rocket's ordinary smoke trail goes on after it enters the water.
+- **Bullet on wood** (SMG, bridge side wall, 100 units): a small light
+  bullet-hole decal, a faint pale puff and a few dark splinters falling
+  from the hole for about 0.15 s.
+- **The Flame Thrower's pilot** (`new_flame_pilot`, a sprite trail locked
+  to the muzzle with no movement operator): no streak is seen while the
+  gun is still.
+- **A rocket on the floor at 150 units, first 50 ms**: with
+  `mat_disable_bloom 1` the first frame is still a pale wide glow with a
+  small orange core; from the second frame on it is saturated orange with
+  long yellow streaks. The burst raises the frame's mean brightness (0-1)
+  by about 0.13 with bloom and without; bloom lifts the whole frame by
+  about 0.05 either way.
+
 ## Test cases
 
 | Setup | Expected |

@@ -6,6 +6,7 @@
 mp_disable_respawn_times 1
 cl_drawhud 0
 r_drawvgui 0
+r_drawviewmodel 1
 fov_desired 90
 viewmodel_fov 54
 fps_max 60

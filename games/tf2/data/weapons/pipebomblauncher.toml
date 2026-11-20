@@ -85,8 +85,8 @@ detonate_sound = "tf2:Weapon_StickyBombLauncher.ModeSwitch"
 # under water; which name sits in which script field is unconfirmed, the
 # pcf names are used), the Stickybomb Launcher's for pipes too.
 [hooks."tf2:looks"]
-trail = { shown = "tf2:sticky", system = "stickybombtrail", team = true }
+trail = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybombtrail", team = true }
 # Its pulse once armed (effects.md 1), `arm` (0.8 s) after it appears.
-armed = { shown = "tf2:sticky", system = "stickybomb_pulse", team = true, after = 0.8 }
+armed = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybomb_pulse", team = true, after = 0.8 }
 muzzle = "muzzle_pipelauncher"
 explosion = { wall = "ExplosionCore_Wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }

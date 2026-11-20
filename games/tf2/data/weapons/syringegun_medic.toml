@@ -56,7 +56,7 @@ gravity = 240.0
 aim_trace = 2000.0
 jitter = 1.5
 touch = "report"
-shown = "tf2:syringe"
+shown = "tf2:tf_weapon_syringegun_medic/syringe"
 offset = [16.0, 6.0, -8.0]
 pass_teammates = true
 life = 10.0
@@ -67,5 +67,5 @@ damage = 10.0
 # The shot's look: its muzzle flash system (muzzle_flash.pcf), started at
 # the gun's `muzzle` attachment (looks.rs).
 [hooks."tf2:looks"]
-trail = { shown = "tf2:syringe", system = "nailtrails_medic", team = true }
+trail = { shown = "tf2:tf_weapon_syringegun_medic/syringe", system = "nailtrails_medic", team = true }
 muzzle = "muzzle_syringe"

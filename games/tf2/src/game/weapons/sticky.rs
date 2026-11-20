@@ -55,7 +55,7 @@ use crate::{
 pub const CHARGE: &str = "sticky_charge";
 
 /// The model key the stickies are drawn as.
-pub const SHOWN: &str = "tf2:sticky";
+pub const SHOWN: &str = "tf2:tf_weapon_pipebomblauncher/sticky";
 /// Its model.
 pub const MODEL: &str = "models/weapons/w_models/w_stickybomb.mdl";
 

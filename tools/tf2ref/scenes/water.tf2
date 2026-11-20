@@ -1,0 +1,53 @@
+# A Soldier's rocket into the water under 2fort's bridge (real TF2; ours:
+# water.scene): flying (noclip) with the eye just above the surface, 45
+# degrees down, the blast on the riverbed under water (the underwater
+# explosion), recorded at 60 frames a second; then the same with the
+# eye under water (`wunder`), 30 degrees down.
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/water.tf2 --out <dir>
+mp_disable_respawn_times 1
+cl_drawhud 0
+r_drawvgui 0
+r_drawviewmodel 1
+fov_desired 90
+viewmodel_fov 54
+fps_max 60
+tf_weapon_criticals 0
+host_framerate 0
+bot_kick all
+sleep 1
+jointeam red
+sleep 1
+joinclass soldier
+kill
+sleep 7
+use tf_weapon_rocketlauncher
+noclip
+setpos -400 0 -80
+setang 45 0 0
+sleep 3
+getpos
+shot water_idle
+host_framerate 0.016667
+movie water
+wait 2
++attack
+wait 2
+-attack
+wait 120
+endmovie
+host_framerate 0
+sleep 2
+setpos -400 0 -200
+setang 30 0 0
+sleep 2
+shot wunder_idle
+host_framerate 0.016667
+movie wunder
+wait 2
++attack
+wait 2
+-attack
+wait 120
+endmovie
+host_framerate 0
+noclip

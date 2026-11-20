@@ -1,0 +1,205 @@
+# Ours for impacts.tf2: an SMG round into the bridge's side wall
+# (`wall`), into a Heavy target 150 units down the bridge
+# (`blood`), a Wrench swing at the side wall (`wrench`); a picture every
+# 1/60 s of game time from the shot.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/impacts.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+target remove all
+rung tf2:tf_weapon_smg
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 -300 0
+setang 25 0 0
+wait 90
+shot wall_idle
+host_timescale 0.02
+wait 3
++attack
+wait_for shot 3000
+-attack
+gwait 0.0167
+shot wall_f01
+gwait 0.0167
+shot wall_f02
+gwait 0.0167
+shot wall_f03
+gwait 0.0167
+shot wall_f04
+gwait 0.0167
+shot wall_f05
+gwait 0.0167
+shot wall_f06
+gwait 0.0167
+shot wall_f07
+gwait 0.0167
+shot wall_f08
+gwait 0.0167
+shot wall_f09
+gwait 0.0167
+shot wall_f10
+gwait 0.0167
+shot wall_f11
+gwait 0.0167
+shot wall_f12
+gwait 0.0167
+shot wall_f13
+gwait 0.0167
+shot wall_f14
+gwait 0.0167
+shot wall_f15
+gwait 0.0167
+shot wall_f16
+gwait 0.0167
+shot wall_f17
+gwait 0.0167
+shot wall_f18
+gwait 0.0167
+shot wall_f19
+gwait 0.0167
+shot wall_f20
+host_timescale 1
+wait 30
+rung tf2:tf_weapon_smg
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:heavy 3.8 still
+wait 240
+setpos 0 -300 0
+setang 5 90 0
+wait 90
+shot blood_idle
+host_timescale 0.02
+wait 3
++attack
+wait_for shot 3000
+-attack
+gwait 0.0167
+shot blood_f01
+gwait 0.0167
+shot blood_f02
+gwait 0.0167
+shot blood_f03
+gwait 0.0167
+shot blood_f04
+gwait 0.0167
+shot blood_f05
+gwait 0.0167
+shot blood_f06
+gwait 0.0167
+shot blood_f07
+gwait 0.0167
+shot blood_f08
+gwait 0.0167
+shot blood_f09
+gwait 0.0167
+shot blood_f10
+gwait 0.0167
+shot blood_f11
+gwait 0.0167
+shot blood_f12
+gwait 0.0167
+shot blood_f13
+gwait 0.0167
+shot blood_f14
+gwait 0.0167
+shot blood_f15
+gwait 0.0167
+shot blood_f16
+gwait 0.0167
+shot blood_f17
+gwait 0.0167
+shot blood_f18
+gwait 0.0167
+shot blood_f19
+gwait 0.0167
+shot blood_f20
+host_timescale 1
+wait 30
+target remove all
+rung tf2:tf_weapon_wrench
+wait 2
+wait_for idle 3000
+wait 60
+setpos 50 -300 0
+setang 25 0 0
+wait 90
+shot wrench_idle
+host_timescale 0.02
+wait 3
++attack
+gwait 0.0333
+-attack
+gwait 0.0167
+shot wrench_f01
+gwait 0.0167
+shot wrench_f02
+gwait 0.0167
+shot wrench_f03
+gwait 0.0167
+shot wrench_f04
+gwait 0.0167
+shot wrench_f05
+gwait 0.0167
+shot wrench_f06
+gwait 0.0167
+shot wrench_f07
+gwait 0.0167
+shot wrench_f08
+gwait 0.0167
+shot wrench_f09
+gwait 0.0167
+shot wrench_f10
+gwait 0.0167
+shot wrench_f11
+gwait 0.0167
+shot wrench_f12
+gwait 0.0167
+shot wrench_f13
+gwait 0.0167
+shot wrench_f14
+gwait 0.0167
+shot wrench_f15
+gwait 0.0167
+shot wrench_f16
+gwait 0.0167
+shot wrench_f17
+gwait 0.0167
+shot wrench_f18
+gwait 0.0167
+shot wrench_f19
+gwait 0.0167
+shot wrench_f20
+gwait 0.0167
+shot wrench_f21
+gwait 0.0167
+shot wrench_f22
+gwait 0.0167
+shot wrench_f23
+gwait 0.0167
+shot wrench_f24
+gwait 0.0167
+shot wrench_f25
+gwait 0.0167
+shot wrench_f26
+gwait 0.0167
+shot wrench_f27
+gwait 0.0167
+shot wrench_f28
+gwait 0.0167
+shot wrench_f29
+gwait 0.0167
+shot wrench_f30
+host_timescale 1
+wait 30

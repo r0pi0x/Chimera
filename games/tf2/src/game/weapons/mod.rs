@@ -176,16 +176,18 @@ pub const NEEDLE_HOOK: &str = "tf2:needle";
 pub const MELEE_HOOK: &str = "tf2:melee";
 
 /// The rocket's model key (`ShownItem`) and model.
-pub const ROCKET_SHOWN: &str = "tf2:rocket";
+pub const ROCKET_SHOWN: &str = "tf2:tf_weapon_rocketlauncher/rocket";
 pub const ROCKET_MODEL: &str = "models/weapons/w_models/w_rocket.mdl";
 
 /// Each gun's projectile models: (gun, model key, model)
-/// (weapons_more.md 9.1).
+/// (weapons_more.md 9.1). A key starts with its gun's (`<gun>/<part>`): a
+/// map keeps the held models of the guns its match offers by key prefix
+/// (`GameKit::stay`), and a projectile's goes with its gun.
 pub const PROJECTILES: &[(&str, &str, &str)] = &[
     (ROCKET_LAUNCHER, ROCKET_SHOWN, ROCKET_MODEL),
-    (GRENADE_LAUNCHER, "tf2:grenade", "models/weapons/w_models/w_grenade_grenadelauncher.mdl"),
+    (GRENADE_LAUNCHER, "tf2:tf_weapon_grenadelauncher/grenade", "models/weapons/w_models/w_grenade_grenadelauncher.mdl"),
     (STICKY_LAUNCHER, sticky::SHOWN, sticky::MODEL),
-    (SYRINGE_GUN, "tf2:syringe", "models/weapons/w_models/w_syringe_proj.mdl"),
+    (SYRINGE_GUN, "tf2:tf_weapon_syringegun_medic/syringe", "models/weapons/w_models/w_syringe_proj.mdl"),
 ];
 
 /// TF2's weapons as data, parsed (a fresh copy each call).

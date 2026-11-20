@@ -102,6 +102,9 @@ pub const LATE_AHEAD: usize = 6;
 pub struct LateWanted {
     pub bodies: std::collections::BTreeMap<usize, f64>,
     pub held: std::collections::BTreeMap<String, f64>,
+    /// Held models a shown item (`map::loose::ShownItem`: a flyer) waits
+    /// for, by key (`loose::attach_shown`).
+    pub shown: std::collections::BTreeMap<String, f64>,
     /// View models by key.
     pub view: std::collections::BTreeMap<String, f64>,
 }
@@ -221,7 +224,7 @@ pub fn build_late_held(
         },
     };
     let bc = super::images::bc_wanted(compressed.as_deref());
-    let held_now = |key: &str| wanted.as_ref().is_some_and(|w| w.held.contains_key(key));
+    let held_now = |key: &str| wanted.as_ref().is_some_and(|w| w.held.contains_key(key) || w.shown.contains_key(key));
     // Those held now first, at once; then the rest in order, `LATE_AHEAD`
     // on their way at a time.
     let mut ahead = queue.len();
