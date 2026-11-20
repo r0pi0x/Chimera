@@ -661,7 +661,10 @@ Worked: an enemy rocket hitting a standing Soldier directly at 512 units
 #### 7.1 States
 
 From the SDK (the game has five states; there is no "winding down"
-state):
+state). **[minigun.md](minigun.md) has the full state machine, every
+button/ammo transition, the sounds (channels, loops, lengths, what others
+hear) and the barrel spin; it supersedes this section where they
+differ.**
 
 | State | Enters when | Lasts | Movement | Sounds |
 |---|---|---|---|---|
@@ -669,7 +672,7 @@ state):
 | winding up | attack or attack2 pressed in idle | 0.75 s, then spun or firing by the button held | 110 | `Weapon_Minigun.WindUp` |
 | spun (not firing) | wind-up done with attack2 (not attack) held; or attack2 while firing | while held | 110 | `Weapon_Minigun.Spin` loop |
 | firing | wind-up done with attack held; or attack while spun, with ammo | while held | 110 | `Weapon_Minigun.Fire` loop (`…FireCrit` while the current shot is a crit) |
-| dry | firing or spun-with-attack at ammo 0 | while held | 110 | `Weapon_Minigun.ClipEmpty` loop |
+| dry | firing or spun-with-attack at ammo 0 | while attack or attack2 is held | 110 | `Weapon_Minigun.ClipEmpty` loop |
 
 - **Wind-up**: a press in idle starts it and sets the next attack time
   0.75 s ahead. At that time the gun enters spun or firing and its next
@@ -678,11 +681,13 @@ state):
   0.015 s), then every fire interval (0.105 s). Letting go during the
   wind-up does not cancel it: the wind-up completes, then the gun stops.
 - Switching between attack and attack2 while spun goes straight between
-  spun and firing, no wind-up (spun → firing fires at the next tick the
-  pending next-attack time allows; firing → spun waits 0.1 s).
+  spun and firing, no wind-up (spun → firing fires the same tick;
+  firing → spun the first tick without attack; minigun.md §2.3).
 - **Stopping**: when neither button is held, the gun goes straight to
   idle once its idle time has passed: 0.2 s after the last shot when it
-  was firing, at once when it was only spun. There is **no gameplay
+  was firing, 0.3 s after attack2 was let go when it was only spun (the
+  spin-idle animation, re-sent every tick, sets the idle time; corrected
+  2026-11-20, measured). There is **no gameplay
   wind-down**: in idle the Heavy has his normal speed and can jump, and a
   new press winds up again at once (0.75 s). The wind-down sound and the
   spool-down animation (`m_spool_down`, 1.33 s) are cosmetic, except
@@ -695,7 +700,9 @@ state):
   crouched" isn't in the weapon code: Open questions 16.)
 - Spinning without firing uses no ammo. Firing uses 1 ammo per shot.
 - Dry: with ammo 0 the gun keeps spinning with the empty loop while
-  attack is held, firing nothing; ammo arriving puts it back to firing.
+  attack or attack2 is held, firing nothing; ammo arriving puts it back to
+  firing. With ammo 0 attack2 can't start a spin, and once released the
+  empty gun auto-switches away (minigun.md §3).
 
 #### 7.2 Firing
 
@@ -815,8 +822,10 @@ reserve are the same.
 | spin | – | – | – | `Weapon_Minigun.WindUp` → `minigun_wind_up.wav`; `Weapon_Minigun.Spin` → `minigun_spin.wav`; `Weapon_Minigun.WindDown` → `minigun_wind_down.wav` |
 | explosion | – | `BaseExplosionEffect.Sound` → random of `weapons/explode1.wav`, `explode2.wav`, `explode3.wav` | – | – |
 
-Shots are on the weapon channel at 94 dB; the minigun loops on the static
-channel. The pairing of entries to weapons is by name (the weapon scripts
+Shots are on the weapon channel at 94 dB. The Minigun's fire, crit, spin
+and empty loops are on the static channel and its wind-up and wind-down
+on the weapon channel; spin and empty are 75 dB, the rest 94 dB
+(minigun.md §4.1). The pairing of entries to weapons is by name (the weapon scripts
 that name them are encrypted): Open questions 13. No flight-loop entry
 exists for the stock rocket (it flies silently; its trail is a particle
 effect).
@@ -874,7 +883,7 @@ Rocket Launcher:
   from 1500 units and walks to 300 units before impact deals the 300-unit
   damage.
 - **Minigun out of ammo**: it keeps spinning with the empty loop while
-  attack is held; no shots.
+  attack or attack2 is held; no shots (minigun.md §3).
 - **Crit burst across a weapon switch**: the Minigun can't be switched
   while spinning, so a burst ends unused when the spin ends.
 - **Firing while the clip is empty during a reload**: ignored; the reload
@@ -952,7 +961,7 @@ pellets unless said, damage rounded at the end.
 | 32 | Any of the four | switch to it | first shot possible 0.5 s later (34 ticks) |
 | 33 | Minigun idle | press and hold attack | spun at +0.75 s (50 ticks); first shot 0.1 s later, ≈ +0.855 s (57 ticks); then every 0.105 s (7 ticks) |
 | 34 | Minigun, 200 ammo | hold attack 30 s | 200 shots, then the empty loop; spun the whole time |
-| 35 | Minigun spinning (attack2) | press jump | no jump; release attack2 → idle at once, a jump the next tick works, speed back to 230 |
+| 35 | Minigun spinning (attack2) | press jump | no jump; release attack2 → idle 0.3 s later (20 ticks), then a jump works and speed is back to 230 |
 | 36 | Minigun firing | press weapon switch | refused; after release, refused until the spool-down animation ends (≈ 1.33 s), then allowed |
 | 37 | Heavy, minigun spun, standing | hold forward | speed 110 (crouched: the movement spec's crouch rule, Open questions 16) |
 | 38 | Scattergun, last shot > 0.25 s ago | fire with random spread | pellet 1 exactly on the crosshair; others within ±0.0675 tangent on each axis, denser toward the centre (triangular) |

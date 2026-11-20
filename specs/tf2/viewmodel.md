@@ -358,10 +358,10 @@ sequences are not what spins it.
   muzzle and brass effects are not made either.
 - **A weapon re-drawn after a long time**: the bob's first frame sees a
   large time step (a phase jump at the current speed; invisible).
-- **Wind-up interrupted** (released before 0.75 s): the wind-down follows
-  at once from wherever `m_spool_up` was (`m_spool_down` snaps, so the
-  gun jumps to the spun-down start pose: `m_spool_down` frame 0 is the
-  level pose). Ours may keep this jump.
+- **Wind-up interrupted** (released before 0.75 s): the wind-up still
+  completes (corrected 2026-11-20 from the SDK and a measurement:
+  minigun.md §2.3); at 0.75 s `m_spool_down` snaps in from the end of
+  the wind-up (frame 0 of `m_spool_down` is the level pose).
 
 ## Quirks
 
