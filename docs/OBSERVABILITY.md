@@ -2504,7 +2504,9 @@ cargo run --features dev,tools --bin refcmp -- capture-ours --only a_sign
 - The reference CS:S install runs at mat_hdr_level 0, mat_trilinear 0,
   mat_forceaniso 1, no AA (queried over RCON). HDR (level 2, the game's
   default) is an option (`+mat_hdr_level 2`, client/hdr.rs) but not
-  matched yet: captures stay LDR unless a run sets it.
+  matched yet: CS:S's and HL2:DM's default stays 0
+  (`SourceGame::hdr_default_level`), so captures stay LDR unless a run
+  sets it.
 - `refcmp skyconv` measures how the engine samples sky cubemaps (an encoded
   debug sky, `CHIMERA_SKY_DEBUG=1`) and fits each layer's texture and
   orientation to the reference: Bevy's skybox flips z, so looking toward -Z
@@ -2570,8 +2572,9 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
 - Ours hides its HUDs with `cl_drawhud 0` (the scenes do); TF2's with
   `cl_drawhud 0; r_drawvgui 0`.
 - HDR (`hdr.tf2`/`hdr.scene`): TF2 runs `mat_hdr_level` 2 with bloom and
-  no colour correction; run ours with `+mat_hdr_level 2
-  +mat_colorcorrection 0` before the map loads. `mat_hdr_tonemapscale`
+  no colour correction; ours loads TF2 maps at 2 unless `mat_hdr_level`
+  is set (-1, "Game default" in Options, is unset), so run ours with
+  `+mat_colorcorrection 0` (and `+mat_hdr_level 0` for the LDR side). `mat_hdr_tonemapscale`
   (ours' console) prints the integer HDR's scale, goal, bloom amount and
   filled histogram bins; `mat_disable_bloom 1` on both turns bloom off.
 - Third person (`thirdperson.tf2`/`.scene`): TF2's puppet bot fires with

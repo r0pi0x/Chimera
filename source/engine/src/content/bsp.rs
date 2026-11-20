@@ -133,6 +133,10 @@ pub struct SourceGame {
     /// 2 (`map::HdrModel`): TF2's integer HDR (specs/tf2/hdr_bloom.md),
     /// or the stand-in where a game's HDR has no spec yet.
     pub hdr_model: crate::map::HdrModel,
+    /// The `mat_hdr_level` its maps load at when the player has not set
+    /// one (`MapLoadOptions::hdr_level` None): the game's own default,
+    /// 2 for TF2, 0 (LDR) where its HDR is not matched yet.
+    pub hdr_default_level: u8,
 }
 
 /// No changes to a map's entities (`SourceGame::entity_rule`).
@@ -161,8 +165,8 @@ pub fn load(game: &SourceGame, mount: &Mount, name: &str) -> Result<MapData, Str
     load_level(game, mount, name, 0)
 }
 
-/// Load at a Source `mat_hdr_level`: 0 LDR (the default, what refcmp
-/// matches); 1 LDR lighting with bloom; 2 the map's HDR lighting (lumps
+/// Load at a Source `mat_hdr_level`: 0 LDR (CS:S's default here, what
+/// refcmp matches); 1 LDR lighting with bloom; 2 the map's HDR lighting (lumps
 /// 53, 51/55, 54) with auto exposure and bloom. Maps without HDR lighting
 /// load as LDR at any level, as in the game. Maps compiled with HDR
 /// lighting only (no lump 8: surf_sedona) are fullbright below level 2,
@@ -212,6 +216,11 @@ pub fn load_level_bytes_in(
     cache: Option<&crate::map::cache::MapCache>,
 ) -> Result<(MapData, crate::map::cache::Outcome), String> {
     let start = std::time::Instant::now();
+    // The level asked for, or the game's own: the cache keys the level
+    // that is loaded.
+    let level = options.hdr_level_or(game.hdr_default_level);
+    let resolved = MapLoadOptions { hdr_level: Some(level), ..options.clone() };
+    let options = &resolved;
     options.progress.report(0.02, "LoadingProgress_LoadMap");
     // What the network handshake compares (`MapData::file_hash`).
     let file_hash: [u8; 32] = sha2::Digest::finalize(<sha2::Sha256 as sha2::Digest>::new_with_prefix(&bytes)).into();
@@ -282,7 +291,7 @@ fn convert_level_bytes(
     file_hash: [u8; 32],
     options: &MapLoadOptions,
 ) -> Result<Converted, String> {
-    let hdr_level = options.hdr_level;
+    let hdr_level = options.hdr_level_or(game.hdr_default_level);
     // Stages for a loading screen, worded as the game words them
     // (`map::loading`; the fractions are rough shares of the time).
     let report = |f: f32, stage: &'static str| options.progress.report(f, stage);

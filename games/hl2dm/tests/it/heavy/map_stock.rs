@@ -115,3 +115,18 @@ fn a_lean_load_has_the_same_world() {
     assert_eq!(full.spawns, lean.spawns);
     assert_eq!(full.props.len(), lean.props.len());
 }
+
+/// HL2:DM's maps load at the old default (LDR) unless a level is set; a
+/// level set wins (a map without HDR lighting stays LDR at any level).
+#[test]
+fn maps_load_at_the_old_default_unless_a_level_is_set() {
+    let Some(mount) = install_mount() else { return };
+    let load = |hdr_level| convert(&mount, "dm_lockdown", &MapLoadOptions { hdr_level, ..MapLoadOptions::lean() });
+    let (default, ldr) = (load(None), load(Some(0)));
+    assert!(default.look.hdr.is_none());
+    assert_eq!(format!("{:?}", default.look), format!("{:?}", ldr.look));
+    let set = load(Some(2));
+    if !set.look.source_ldr_lightmaps {
+        assert!(set.look.hdr.is_some(), "a level set wins over the default");
+    }
+}

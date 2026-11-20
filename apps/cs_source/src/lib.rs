@@ -139,7 +139,6 @@ pub static APP: client::app::GameApp = client::app::GameApp {
         app.add_plugins(games::cs_source::ui::CsSourceUiPlugin);
     },
     hooks: client::app::GameAppHooks {
-        hdr_start: true,
         debug_views: true,
         server: Some("cs_source_server"),
         ..client::app::GameAppHooks::NONE

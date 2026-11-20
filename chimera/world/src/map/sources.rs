@@ -75,7 +75,10 @@ use crate::core::Team;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapLoadOptions {
     /// Source's `mat_hdr_level` (0 LDR; games without HDR data ignore it).
-    pub hdr_level: u8,
+    /// None: the level the map's game starts at (`SourceGame::
+    /// hdr_default_level`), what a player who never set `mat_hdr_level`
+    /// gets; the client asks that way, everything else with a level.
+    pub hdr_level: Option<u8>,
     /// Decode the textures. Off: each texture is a placeholder of the
     /// right size (`MapTexture::width`, `height`; no texels, no mip
     /// levels), so materials and decals still find them and the map's
@@ -201,14 +204,20 @@ impl KitLoad {
 
 impl Default for MapLoadOptions {
     fn default() -> Self {
-        Self { hdr_level: 0, textures: true, kit: KitLoad::All, progress: default(), context: default(), dealt: None }
+        Self { hdr_level: Some(0), textures: true, kit: KitLoad::All, progress: default(), context: default(), dealt: None }
     }
 }
 
 impl MapLoadOptions {
     /// Everything, at `mat_hdr_level` `hdr_level`.
     pub fn hdr(hdr_level: u8) -> Self {
-        Self { hdr_level, ..Self::default() }
+        Self { hdr_level: Some(hdr_level), ..Self::default() }
+    }
+
+    /// The level these load at for a game whose own default is
+    /// `game_default`: the one asked for, else the game's.
+    pub fn hdr_level_or(&self, game_default: u8) -> u8 {
+        self.hdr_level.unwrap_or(game_default)
     }
 
     /// No textures (a dedicated server, a test that never draws).
@@ -662,7 +671,7 @@ mod tests {
     #[test]
     fn options_reach_the_loader() {
         fn lean_only(name: &str, o: &MapLoadOptions) -> Result<MapData, String> {
-            assert!(!o.textures && o.hdr_level == 0, "{o:?}");
+            assert!(!o.textures && o.hdr_level == Some(0), "{o:?}");
             Ok(MapData { name: name.into(), ..default() })
         }
         static L: MapLoader = MapLoader { game: "l", load: lean_only };
@@ -670,6 +679,27 @@ mod tests {
             MapSources { loaders: &[&L], gameplay: None, teams: &[], surfaces: &[], kept: &[], players: false, guests: &[] };
         S.load_with("l:x", &MapLoadOptions::lean()).unwrap();
         assert!(MapLoadOptions::default().textures, "everything by default");
+    }
+
+    #[test]
+    fn a_load_without_a_level_leaves_it_to_each_maps_game() {
+        // Mixed sources (Ultimate Gun Game): the level asked for, or none,
+        // reaches each game's loader as it is; the loader applies its own
+        // default (`SourceGame::hdr_default_level`) where there is none.
+        fn level_seen(name: &str, o: &MapLoadOptions) -> Result<MapData, String> {
+            Ok(MapData { name: format!("{name}/{}", o.hdr_level_or(if name == "tf" { 2 } else { 0 })), ..default() })
+        }
+        static T: MapLoader = MapLoader { game: "t", load: level_seen };
+        static C: MapLoader = MapLoader { game: "c", load: level_seen };
+        static S: MapSources =
+            MapSources { loaders: &[&T, &C], gameplay: None, teams: &[], surfaces: &[], kept: &[], players: false, guests: &[] };
+        let none = MapLoadOptions { hdr_level: None, ..default() };
+        assert_eq!(S.load_with("t:tf", &none).unwrap().name, "tf/2");
+        assert_eq!(S.load_with("c:cs", &none).unwrap().name, "cs/0");
+        let set = MapLoadOptions::hdr(1);
+        assert_eq!(S.load_with("t:tf", &set).unwrap().name, "tf/1", "a set level wins over the game's");
+        assert_eq!(S.load_with("c:cs", &set).unwrap().name, "cs/1");
+        assert_eq!(S.load_with("t:tf", &MapLoadOptions::hdr(0)).unwrap().name, "tf/0", "an explicit 0 is a level");
     }
 
     #[test]

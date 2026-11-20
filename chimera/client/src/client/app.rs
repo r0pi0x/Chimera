@@ -22,8 +22,7 @@
 //! anything loads (`requirements`: told on stderr; a lack that stops the
 //! app ends it, on Windows after Enter), a map to start on without
 //! `--map` (`default_map`, else the greybox), a start of its own (`start`:
-//! the party's main menu over a background map), the start map at the
-//! console's `mat_hdr_level` (`hdr_start`), what the app's map loads
+//! the party's main menu over a background map), what the app's map loads
 //! should know of it before it builds (`load_context`: the start map
 //! loads in that context, which is the app's `LoadContext` from then on,
 //! as the dedicated server's), `--debug-view` and
@@ -137,9 +136,6 @@ pub struct GameAppHooks {
     pub default_map: Option<&'static str>,
     /// A start map of the app's own (None from it: the usual one).
     pub start: Option<fn(&'static GameApp, &Args) -> Option<StartMap>>,
-    /// Load the start map at the console's starting `mat_hdr_level`
-    /// (`hdr::startup_level`) rather than 0.
-    pub hdr_start: bool,
     /// `--debug-view` and `--lightmap-only` on the start map.
     pub debug_views: bool,
     /// Its dedicated server's binary, for the usage text.
@@ -166,7 +162,6 @@ impl GameAppHooks {
         requirements: None,
         default_map: None,
         start: None,
-        hdr_start: false,
         debug_views: false,
         server: None,
         launch: None,
@@ -223,10 +218,11 @@ impl StartMap {
         let Some(id) = args.game_map().or(game.hooks.default_map).filter(|_| !code) else {
             return Ok(Self::Greybox);
         };
-        // At the HDR level the console will start with (mat_hdr_level).
-        let level = if game.hooks.hdr_start { super::hdr::startup_level(&args.console) } else { 0 };
+        // At the HDR level the console will start with (mat_hdr_level);
+        // none set: the map's game's own.
+        let level = super::hdr::startup_level(&args.console);
         let context = game.load_context();
-        let options = MapLoadOptions { context: context.clone(), ..MapLoadOptions::hdr(level) };
+        let options = MapLoadOptions { hdr_level: level, context: context.clone(), ..MapLoadOptions::default() };
         match (game.maps.load)(id, &options) {
             Ok(data) => Ok(Self::loaded_in(id, data, context)),
             Err(e) => Err(format!("--map {id}: {e}")),

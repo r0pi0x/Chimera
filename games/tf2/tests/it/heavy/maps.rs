@@ -164,3 +164,23 @@ fn the_server_layout_converts_with_stand_ins() {
     eprintln!("{name}: {missing} missing on the server's layout");
     assert!(missing > 0, "the server has no stock textures");
 }
+
+/// TF2's maps load at its own `mat_hdr_level` (2) when none is asked for,
+/// and at the one asked for otherwise.
+#[test]
+fn maps_load_at_tf2s_hdr_level_unless_one_is_set() {
+    use chimera_world::map::HdrModel;
+    let Some(mount) = install_mount() else { return };
+    let load = |hdr_level: Option<u8>| {
+        convert(&mount, "ctf_2fort", &MapLoadOptions { hdr_level, ..MapLoadOptions::lean() })
+    };
+    let default = load(None);
+    let hdr = default.look.hdr.as_ref().expect("level 2 by default: an HDR look");
+    assert_eq!(hdr.model, HdrModel::Integer);
+    assert!(hdr.exposure.is_some(), "auto exposure is level 2's");
+    assert!(!default.look.source_ldr_lightmaps, "the HDR lighting");
+    assert_eq!(format!("{:?}", default.look), format!("{:?}", load(Some(2)).look), "None is its 2");
+    // A level set wins: 0 is LDR, 1 bloom only.
+    assert!(load(Some(0)).look.hdr.is_none());
+    assert!(load(Some(1)).look.hdr.is_some_and(|h| h.exposure.is_none()));
+}

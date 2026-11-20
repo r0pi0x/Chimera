@@ -67,6 +67,7 @@ pub static HL2DM: SourceGame = SourceGame {
     entity_rule: source_engine::content::bsp::no_entity_rule,
     // No HDR spec yet: the stand-in (docs/backlog.md "HDR parity").
     hdr_model: crate::map::HdrModel::StandIn,
+    hdr_default_level: 0,
 };
 
 /// The models HL2:DM gives its items and ammo crates, whatever the map's

@@ -32,13 +32,17 @@ static GAME: GameInfo = GameInfo {
     console_namespaces: &[],
 };
 
+/// How many spawns a map has when no `mat_hdr_level` was asked for
+/// (the game's own level is meant).
+const GAME_DEFAULT_SPAWNS: usize = 9;
+
 /// Maps `a_game:<name>` load (named `<name>`, `hdr_level` spawns, so a
 /// test sees the level asked for); anything else doesn't.
 fn load(id: &str, options: &MapLoadOptions) -> Result<MapData, String> {
     let name = id.strip_prefix("a_game:").ok_or_else(|| format!("{id}: not a_game's"))?;
     Ok(MapData {
         name: name.into(),
-        spawns: vec![Default::default(); options.hdr_level as usize],
+        spawns: vec![Default::default(); options.hdr_level.map_or(GAME_DEFAULT_SPAWNS, usize::from)],
         ..default()
     })
 }
@@ -182,7 +186,7 @@ fn the_start_map_is_the_command_lines_the_apps_default_or_the_greybox() {
     };
     assert_eq!(start(&BARE, ""), "greybox");
     assert_eq!(start(&BARE, "--map greybox"), "greybox");
-    assert_eq!(start(&BARE, "--map a_game:one"), "a_game:one (one, 0 spawns)");
+    assert_eq!(start(&BARE, "--map a_game:one"), "a_game:one (one, 9 spawns)");
     assert_eq!(start(&BARE, "--map b:two"), "error: --map b:two: b:two: not a_game's");
 
     static DEFAULT_MAP: GameApp = GameApp {
@@ -192,20 +196,15 @@ fn the_start_map_is_the_command_lines_the_apps_default_or_the_greybox() {
         },
         ..BARE
     };
-    assert_eq!(start(&DEFAULT_MAP, ""), "a_game:home (home, 0 spawns)");
-    assert_eq!(start(&DEFAULT_MAP, "--map greybox"), "a_game:home (home, 0 spawns)", "the greybox isn't a map");
-    assert_eq!(start(&DEFAULT_MAP, "--map a_game:other"), "a_game:other (other, 0 spawns)");
+    assert_eq!(start(&DEFAULT_MAP, ""), "a_game:home (home, 9 spawns)");
+    assert_eq!(start(&DEFAULT_MAP, "--map greybox"), "a_game:home (home, 9 spawns)", "the greybox isn't a map");
+    assert_eq!(start(&DEFAULT_MAP, "--map a_game:other"), "a_game:other (other, 9 spawns)");
 
-    // At the console's starting HDR level (`hdr_start`), else at 0.
-    static HDR: GameApp = GameApp {
-        hooks: GameAppHooks {
-            hdr_start: true,
-            ..GameAppHooks::NONE
-        },
-        ..BARE
-    };
-    assert_eq!(start(&HDR, "--map a_game:lit +mat_hdr_level 2"), "a_game:lit (lit, 2 spawns)");
-    assert_eq!(start(&BARE, "--map a_game:lit +mat_hdr_level 2"), "a_game:lit (lit, 0 spawns)");
+    // At the console's starting HDR level; with none set, the map's
+    // game's own (the loader is asked for no level).
+    assert_eq!(start(&BARE, "--map a_game:lit +mat_hdr_level 2"), "a_game:lit (lit, 2 spawns)");
+    assert_eq!(start(&BARE, "--map a_game:lit +mat_hdr_level 0"), "a_game:lit (lit, 0 spawns)");
+    assert_eq!(start(&BARE, "--map a_game:lit"), "a_game:lit (lit, 9 spawns)");
 
     // A start of the app's own (a main menu over a background map) when
     // the command line doesn't play; the usual one when it does.

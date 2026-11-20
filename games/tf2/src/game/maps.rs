@@ -95,6 +95,8 @@ pub static TF2: SourceGame = SourceGame {
     entity_rule: free_for_all_doors,
     // Its integer HDR, auto exposure and bloom (specs/tf2/hdr_bloom.md).
     hdr_model: crate::map::HdrModel::Integer,
+    // TF2's own default (`mat_hdr_level 2`), unless the player set one.
+    hdr_default_level: 2,
 };
 
 /// Our team for TF2's team number: RED (2) is 1, BLU (3) is 2.

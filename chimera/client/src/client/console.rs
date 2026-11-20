@@ -2375,7 +2375,7 @@ pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>)
     // the settling count theirs in).
     w.insert_resource(crate::map::loading::LoadWork::default());
     // At the HDR level set now (mat_hdr_level), as the game does.
-    let hdr_level = w.get_resource::<super::hdr::HdrSettings>().map_or(0, |s| s.level);
+    let hdr_level = w.get_resource::<super::hdr::HdrSettings>().and_then(|s| s.explicit());
     // This load's own progress (the loading screen reads the resource).
     let progress = crate::map::loading::LoadReporter::default();
     w.insert_resource(progress.clone());
@@ -2669,7 +2669,7 @@ pub fn load_code_map(w: &mut World, map: &str) {
         // session") and spawned when it is in, before the code-built map
         // is spawned again (a map's spawn clears what the map before
         // left). The code-built map is in at once, without it meanwhile.
-        let hdr_level = w.get_resource::<super::hdr::HdrSettings>().map_or(0, |s| s.level);
+        let hdr_level = w.get_resource::<super::hdr::HdrSettings>().and_then(|s| s.explicit());
         let options = crate::map::MapLoadOptions {
             hdr_level,
             context: crate::map::LoadContext::of(w),

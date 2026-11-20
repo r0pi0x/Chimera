@@ -68,6 +68,7 @@ pub static CS_SOURCE: SourceGame = SourceGame {
     entity_rule: source_engine::content::bsp::no_entity_rule,
     // No HDR spec yet: the stand-in (docs/backlog.md "HDR parity").
     hdr_model: crate::map::HdrModel::StandIn,
+    hdr_default_level: 0,
 };
 
 pub fn load(mount: &Mount, name: &str) -> Result<MapData, String> {

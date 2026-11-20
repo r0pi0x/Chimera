@@ -197,7 +197,7 @@ pub const CVAR_RANGES: &[(&str, f32, f32)] = &[
     ("chimera_watch", 0.0, 32.0),
     ("cl_showfps", 0.0, 2.0),
     ("developer", 0.0, 2.0),
-    ("mat_hdr_level", 0.0, 2.0),
+    ("mat_hdr_level", -1.0, 2.0),
     ("cl_crosshaircolor", 0.0, 4.0),
     ("cl_crosshairalpha", 0.0, 255.0),
     ("cl_bobcycle", 0.0, 2.0),

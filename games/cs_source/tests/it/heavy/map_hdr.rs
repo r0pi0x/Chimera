@@ -92,3 +92,17 @@ fn maps_without_hdr_lighting_load_ldr_at_any_level() {
     let office = crate::load_map_level_lean("cs_source:cs_office", 2).unwrap();
     assert!(office.look.hdr.is_none() && office.look.source_ldr_lightmaps);
 }
+
+/// CS:S's maps keep loading in LDR unless the player sets a
+/// `mat_hdr_level`; a level set wins.
+#[test]
+fn maps_load_at_the_old_default_unless_a_level_is_set() {
+    assert_eq!(cs_source::bsp::CS_SOURCE.hdr_default_level, 0);
+    let Some(ldr) = load(0) else { return };
+    let options = |hdr_level| chimera_world::map::MapLoadOptions { hdr_level, textures: false, ..Default::default() };
+    let default = crate::common::load_map_with("cs_source:de_dust2", &options(None)).unwrap();
+    assert!(default.look.hdr.is_none() && default.look.source_ldr_lightmaps);
+    assert_eq!(format!("{:?}", default.look), format!("{:?}", ldr.look));
+    let set = crate::common::load_map_with("cs_source:de_dust2", &options(Some(2))).unwrap();
+    assert!(set.look.hdr.is_some(), "a level set wins over the default");
+}

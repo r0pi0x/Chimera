@@ -46,7 +46,7 @@ Captured imagery stays in scratch, never in the repo.
 | Explosion on a player / mid-air | close (pass 6: TF2 without bloom is pale in its first frame too; its streaks are longer at 33-50 ms) | the "hard-edged orange disc" was the sandbox's blast spheres (`range::blast_spheres`), which `cl_drawhud 0` didn't hide (now it does). Matched at 300 units, ours fills the far bridge with the same orange glow clipped by the near truss, the same sequence; ours a little paler yellow in the first 50 ms; TF2 shows more embers and a faint dark smudge after |
 | Crits | n/a | random crits are off in our TF2 (the party's choice, docs/plans/active/tf2.md); crit tracers, trails and streams are named in `looks` but never asked for |
 | View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries |
-| HDR, exposure, bloom (`mat_hdr_level` 2; specs/tf2/hdr_bloom.md) | close (pass 6, `hdr.tf2`/`hdr.scene`: bridge, wall, courtyard, bloom on and off) | the integer model (`map::HdrModel::Integer`): bloom adds 7.2-11.7 to the mean byte where TF2's adds 6.1-12.6; scenes 3-5 % brighter than TF2's in two views, 6 % darker in the courtyard (ours settles k at 0.96-1.04, TF2 reported 0.94); the far fireball's near-white area with bloom ~15,000 px against TF2's ~37,000 (its unbloomed core is smaller: the flame effect's, not the bloom's). Ours still defaults to `mat_hdr_level` 0 (TF2's is 2) |
+| HDR, exposure, bloom (`mat_hdr_level` 2; specs/tf2/hdr_bloom.md) | close (pass 6, `hdr.tf2`/`hdr.scene`: bridge, wall, courtyard, bloom on and off) | the integer model (`map::HdrModel::Integer`): bloom adds 7.2-11.7 to the mean byte where TF2's adds 6.1-12.6; scenes 3-5 % brighter than TF2's in two views, 6 % darker in the courtyard (ours settles k at 0.96-1.04, TF2 reported 0.94); the far fireball's near-white area with bloom ~15,000 px against TF2's ~37,000 (its unbloomed core is smaller: the flame effect's, not the bloom's). TF2 maps now load at `mat_hdr_level` 2 by default (`SourceGame::hdr_default_level`; an explicit `mat_hdr_level` wins, -1 is "Game default") |
 | HUD, crosshair | todo | |
 | Lighting, materials | todo | |
 
@@ -102,11 +102,14 @@ Captured imagery stays in scratch, never in the repo.
    mid-air explosion's first 50 ms: ours paler yellow than TF2's orange.
 3. Flames: the far fireball's extra width is TF2's bloom (pass 5): TF2's
    bloom is now ours too at `mat_hdr_level` 2 (pass 6, the integer HDR
-   model; captures run `+mat_hdr_level 2 +mat_colorcorrection 0`). Ours'
+   model; captures run `+mat_colorcorrection 0`: TF2 maps load at 2 by
+   default). Ours'
    unbloomed fireball core is smaller than TF2's, so it blooms less. The
-   cloud at a wall spreads wider in TF2 (open). Whether TF2's maps should
-   load at `mat_hdr_level` 2 by default (TF2's own default) is the user's
-   call: the cvar is one for every game.
+   cloud at a wall spreads wider in TF2 (open). TF2's maps load at
+   `mat_hdr_level` 2 by default (TF2's own default; pass 7): the cvar
+   defaults to -1, each map's game's own level (CS:S and HL2:DM 0, so
+   their look is unchanged), and a level the player sets wins for every
+   game, in Ultimate Gun Game too.
 4. The Minigun's brass: TF2's land ~15 units farther out and leave
    upward (particles.md Open questions 6): the eject attachment under the
    spun pose, after the animation work.

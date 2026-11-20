@@ -1,6 +1,10 @@
 //! Source's HDR presentation (`mat_hdr_level`, docs/backlog.md "HDR
-//! parity"). Level 0 (the default, what refcmp compares against) leaves
-//! the cameras alone. At levels 1 and 2 the map loads with its HDR look
+//! parity"). Level 0 (CS:S's and HL2:DM's default, what refcmp compares
+//! against) leaves the cameras alone. The cvar's own default, -1 ("Game
+//! default" in Options), is the level of the map's game
+//! (`SourceGame::hdr_default_level`: TF2 2, the others 0), applied by each
+//! game's loader, so a mix of games' maps (Ultimate Gun Game) each load at
+//! their game's; a level the player sets applies to every game. At levels 1 and 2 the map loads with its HDR look
 //! (`MapLook::hdr`, games/cs_source/bsp.rs) and the cameras that draw the
 //! view (sky, world, view model) render in HDR into one shared texture;
 //! the last of them adds bloom and, at level 2, auto exposure kept within
@@ -20,7 +24,7 @@
 //! stand-ins; open questions in docs/backlog.md).
 //!
 //! `mat_hdr_level` (archived; read at map load, also before the `--map` load
-//! via `hdr::startup_level`): at 1 or 2 on maps with HDR data (`MapLook::hdr`)
+//! via `hdr::startup_level`, None: the game's own): at 1 or 2 on maps with HDR data (`MapLook::hdr`)
 //! the sky, world and view-model cameras render with `Hdr` into one shared
 //! texture; on integer-HDR maps the last of them runs hdr_integer.rs's
 //! passes after the tone map, on the others it adds `Bloom` and, at 2, Bevy `AutoExposure`
@@ -65,11 +69,30 @@ use crate::{
 };
 
 /// Source's `mat_hdr_level`: 0 LDR, 1 bloom, 2 HDR lighting with auto
-/// exposure and bloom. Read when a map loads (as in the game, a change
-/// shows from the next map load on).
-#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+/// exposure and bloom; -1 (the default): the level of the map's game
+/// (`SourceGame::hdr_default_level`, TF2's 2; the other games' 0). Read
+/// when a map loads (as in the game, a change shows from the next map
+/// load on).
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct HdrSettings {
-    pub level: u8,
+    pub level: i8,
+}
+
+/// `HdrSettings::level` when the player has set none.
+pub const GAME_DEFAULT: i8 = -1;
+
+impl Default for HdrSettings {
+    fn default() -> Self {
+        Self { level: GAME_DEFAULT }
+    }
+}
+
+impl HdrSettings {
+    /// The level the player set; None: each game's own
+    /// (`MapLoadOptions::hdr_level`).
+    pub fn explicit(&self) -> Option<u8> {
+        (self.level >= 0).then(|| self.level.min(2) as u8)
+    }
 }
 
 /// The average scene luminance auto exposure aims for (before the
@@ -85,10 +108,10 @@ pub struct HdrPlugin;
 impl Plugin for HdrPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<HdrSettings>();
-        resource_cvar::<HdrSettings, u8>(
+        resource_cvar::<HdrSettings, i8>(
             app,
             "mat_hdr_level",
-            "0: LDR (default); 1: bloom; 2: HDR lighting, auto exposure and bloom on maps with HDR data. Applies from the next map load.",
+            "-1: the map's game default (TF2 2, the others 0; the default); 0: LDR; 1: bloom; 2: HDR lighting, auto exposure and bloom on maps with HDR data. Applies from the next map load.",
             |s| &mut s.level,
         );
         app.world_mut().resource_mut::<Console>().archive("mat_hdr_level");
@@ -134,15 +157,16 @@ pub struct SourceTonemapSet;
 
 /// The `mat_hdr_level` a run starts with, for loading the `--map` before
 /// the console runs: the last `mat_hdr_level` in config.cfg, autoexec.cfg
-/// or the command line's `+commands`, in that order.
-pub fn startup_level(console_lines: &[String]) -> u8 {
-    let mut level = 0;
+/// or the command line's `+commands`, in that order; None where none sets
+/// one (or sets -1): the map's game's own.
+pub fn startup_level(console_lines: &[String]) -> Option<u8> {
+    let mut level = GAME_DEFAULT;
     let mut scan = |text: &str| {
         for line in text.lines() {
             for part in line.split(';') {
                 let mut words = part.split_whitespace();
                 if words.next().is_some_and(|w| w.eq_ignore_ascii_case("mat_hdr_level"))
-                    && let Some(v) = words.next().and_then(|v| v.trim_matches('"').parse::<u8>().ok())
+                    && let Some(v) = words.next().and_then(|v| v.trim_matches('"').parse::<i8>().ok())
                 {
                     level = v;
                 }
@@ -157,7 +181,7 @@ pub fn startup_level(console_lines: &[String]) -> u8 {
     for line in console_lines {
         scan(line);
     }
-    level.min(2)
+    HdrSettings { level }.explicit()
 }
 
 /// The tone-map pass's settings, on the camera that runs it.
@@ -451,10 +475,30 @@ mod tests {
     }
 
     #[test]
+    fn a_level_unset_is_the_games_own_and_a_set_one_wins() {
+        assert_eq!(HdrSettings::default().explicit(), None, "unset: each game's own");
+        assert_eq!(HdrSettings { level: 0 }.explicit(), Some(0), "0 is a level, not unset");
+        assert_eq!(HdrSettings { level: 2 }.explicit(), Some(2));
+        assert_eq!(HdrSettings { level: 9 }.explicit(), Some(2), "clamped");
+        assert_eq!(HdrSettings { level: -5 }.explicit(), None);
+        // The cvar reads "-1" until set, then what the resource holds.
+        let mut app = App::new();
+        app.init_resource::<Console>().add_plugins(HdrPlugin);
+        let get = |app: &mut App| {
+            let get = app.world().resource::<Console>().cvar("mat_hdr_level").unwrap().get.clone();
+            get(app.world_mut())
+        };
+        assert_eq!(get(&mut app).as_deref(), Some("-1"));
+        app.world_mut().resource_mut::<HdrSettings>().level = 2;
+        assert_eq!(get(&mut app).as_deref(), Some("2"));
+    }
+
+    #[test]
     fn startup_level_takes_the_last_setting() {
         let lines = ["+map de_dust2".to_string(), "mat_hdr_level 1; mat_hdr_level \"2\"".to_string()];
         // config.cfg may set it too (the user's own); the command line wins.
-        assert_eq!(startup_level(&lines), 2);
-        assert_eq!(startup_level(&["mat_hdr_level 7".to_string()]), 2, "clamped");
+        assert_eq!(startup_level(&lines), Some(2));
+        assert_eq!(startup_level(&["mat_hdr_level 7".to_string()]), Some(2), "clamped");
+        assert_eq!(startup_level(&["mat_hdr_level -1".to_string()]), None, "the game's own");
     }
 }

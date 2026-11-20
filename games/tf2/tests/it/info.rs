@@ -65,3 +65,11 @@ fn the_bundle_lends_its_guns() {
         ]
     );
 }
+
+/// TF2's own `mat_hdr_level` (what its maps load at unless the player sets
+/// one) is 2; the integer HDR model is its own.
+#[test]
+fn its_maps_default_to_hdr_level_two() {
+    assert_eq!(tf2::game::maps::TF2.hdr_default_level, 2);
+    assert_eq!(tf2::game::maps::TF2.hdr_model, chimera_world::map::HdrModel::Integer);
+}

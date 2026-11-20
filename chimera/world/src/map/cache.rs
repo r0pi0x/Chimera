@@ -45,7 +45,7 @@ pub trait MapKey {
 
 impl MapKey for Key {
     fn options(self, options: &MapLoadOptions) -> Self {
-        self.part("hdr", [options.hdr_level])
+        self.part("hdr", [options.hdr_level.unwrap_or(u8::MAX)])
             .part("textures", [options.textures as u8])
             .part("kit", format!("{:?}", options.kit))
     }

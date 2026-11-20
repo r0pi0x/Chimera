@@ -49,3 +49,10 @@ fn lists_maps_and_the_cycle_from_the_mount() {
         "only the cycle's maps the install has"
     );
 }
+
+/// HL2:DM's maps keep loading in LDR unless the player sets a
+/// `mat_hdr_level` (its HDR has no spec yet).
+#[test]
+fn its_maps_keep_the_ldr_default() {
+    assert_eq!(hl2dm::game::maps::HL2DM.hdr_default_level, 0);
+}

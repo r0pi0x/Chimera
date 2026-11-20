@@ -141,6 +141,7 @@ pub struct Setting {
 pub const ON_OFF: &[(&str, &str)] = &[("0", "#GameUI_Disabled|Disabled"), ("1", "#GameUI_Enabled|Enabled")];
 
 const HDR_LEVELS: &[(&str, &str)] = &[
+    ("-1", "Game default"),
     ("0", "#GameUI_hdr_level0|None"),
     ("1", "#GameUI_hdr_level1|Bloom"),
     ("2", "#GameUI_hdr_level2|Full"),
