@@ -40,7 +40,7 @@ Captured imagery stays in scratch, never in the repo.
 | Water explosions | close (pass 6) | from above the surface both hide the burst; TF2's shows through as an orange glow from just above the surface |
 | Bullet impacts (wood) | matches (pass 6) | splinters, hole, puff alike; TF2's hole decal a little lighter |
 | Backblast (third person) | close | from the side (pass 4) the same: an orange flame at the launcher's rear ~100 ms, then a dark grey puff; TF2's flame streakier. From the front the shoulder hides most of it |
-| Bodies, idle poses (third person) | close | Pyro, Scout, Engineer, Soldier stand as TF2's; TF2's stances are a little wider. The Heavy's idle (gun raised) matches TF2's only with the class model's own 1-frame aim-matrix stubs: taking the include's same-named grids instead (tried) lowered it to TF2's firing pose, and the deployed set (tried, `ACT_MP_DEPLOYED_IDLE` and its PREFIRE/POSTFIRE) then raised the gun straight up while firing. Which of a player model's local stub and its include's sequence TF2 uses, per lookup, is install.md Open question 6: needs a spec session (the deployed attempt is kept in scratch, `player_anim_spun.rs.txt`) |
+| Bodies, idle poses (third person) | close (pass 7 of the animation: `pose.tf2` / `pose.scene`) | the "wider stances" were TF2's bots' feet yaw: bot_teleport never snaps a puppet bot's feet, and these spawn 30 degrees off a multiple of 45, so they stand 30 left of their eyes (wide) and, after the scene's teleports, 15 right (narrow); ours drawn with its feet at those offsets (`target set all feet <deg>`) stands as TF2's. The Engineer's Wrench taps flat and raised three times a loop in both (a phase-matched pair agrees). Every pose parameter 0 at a spawn, the hand and arm libraries only where a host layers them, the knees bent toward the include's knee directions under the foot locks, the Medic's real-time idle noise. Only the active weapon is drawn (TF2 and ours, the Spy with his Knife and Revolver from three sides) |
 | Flame stream (air, wall); overbright 5 or 1 | close (pass 4: one stream from the nozzle, as TF2's) | overbright is 5, in linear space. The far fireball's "1.5x wider and whiter" is TF2's bloom (pass 5: with `mat_disable_bloom 1` its near-white area fell from ~8,900 to ~1,700-2,900 px; ours draws ~5,300 with no bloom; flames.md Open questions 1). Ours has bloom only at `mat_hdr_level` 1-2, a stand-in that overexposes 2fort (tried). TF2's cloud at a wall spreads wider (open); the orange tint on the right wall is gone (pass 6: the pilot's trail) |
 | Detail sprites (2fort's hay) | close | drawn; kept whole at a distance (alpha raised by mip level); TF2 fades them blended where ours dithers |
 | Explosion on a player / mid-air | close (pass 6: TF2 without bloom is pale in its first frame too; its streaks are longer at 33-50 ms) | the "hard-edged orange disc" was the sandbox's blast spheres (`range::blast_spheres`), which `cl_drawhud 0` didn't hide (now it does). Matched at 300 units, ours fills the far bridge with the same orange glow clipped by the near truss, the same sequence; ours a little paler yellow in the first 50 ms; TF2 shows more embers and a faint dark smudge after |
@@ -91,11 +91,10 @@ Captured imagery stays in scratch, never in the repo.
    running and in the air. Pairs of all nine classes' slots and of
    crouching and jumping: `anim2.tf2` / `anim2.scene` (targets' `jump`,
    `crouch`, `run <dir>`; TF2's puppet bots can't be made to run over
-   RCON, so the run has no pair). Still different: the Engineer holds the
-   Wrench upright in TF2, flat across his belly in ours (the same
-   `stand_MELEE` hands; the grip pose parameter `r_hand_grip`, unread by
-   any spec, is a suspect: a spec question); TF2's stances stay wider;
-   the TF2 bots' jump starts later after `bot_jump` than ours' after
+   RCON, so the run has no pair). The Wrench "upright in TF2, flat in
+   ours" was the idle's phase and the "wider stances" TF2's bots' feet
+   yaw (2026-11-20, `pose.tf2` / `pose.scene`: both now pair; Log). Still
+   different: the TF2 bots' jump starts later after `bot_jump` than ours' after
    `jump`, so the 0.15 / 0.4 s pictures show different phases (a movie
    capture would align them).
 2. (Done, pass 5: the disc was the sandbox's blast spheres.) The
@@ -121,6 +120,22 @@ Captured imagery stays in scratch, never in the repo.
    to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
 
 ## Log
+
+- 2026-11-20 (tf2-pose): specs/tf2/player_animation.md's second-pass
+  corrections implemented: the include's knee directions merged onto the
+  class models' foot chains and the foot locks' knees bent toward them
+  (4a, the spec's reach clamps); every pose parameter at 0 on a spawn and
+  a new model, an item's `player_poseparam` through the
+  `tf2:player_poseparam` weapon hook (none stock), the Engineer's pistol
+  on `r_handposes_engineer` (4b); the feet's goal snaps only when the
+  state is made and on `setang_exact` / `target set <n> feet [deg]`
+  (`map::anim::SnapFeet`), never on a death, respawn or teleport (4c 5);
+  real-time autolayers (the Medic's noise); the held model swapped in the
+  frame of a switch (7a). Test cases 42-60 as tests (49-52, 56, 60 on the
+  install). TF2 pairs in `pose.tf2` / `pose.scene` answered open
+  questions 12 and 14 and part of 15 (the spec). Also: a Combat Arms
+  sandbox target stayed crouched after `nocrouch` (its headroom check met
+  the floor it rested on); the check starts a skin above the feet now.
 
 - Pass 6 (HDR): specs/tf2/hdr_bloom.md implemented as Chimera's integer
   HDR model, chosen per game by `SourceGame::hdr_model` (TF2: integer;

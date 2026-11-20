@@ -241,7 +241,10 @@ pub fn register_hooks(app: &mut App) {
         .register_weapon_hook::<flame::FlameParams>(FLAME_HOOK, |e, _, p| flame::attach(e, p))
         .register_weapon_hook::<needle::NeedleParams>(NEEDLE_HOOK, |_, _, _| {})
         .register_weapon_hook::<melee::MeleeParams>(MELEE_HOOK, |e, _, p| melee::attach(e, p))
-        .register_weapon_hook::<looks::LooksParams>(looks::LOOKS_HOOK, |_, _, _| {});
+        .register_weapon_hook::<looks::LooksParams>(looks::LOOKS_HOOK, |_, _, _| {})
+        .register_weapon_hook::<std::collections::BTreeMap<String, f32>>(super::player_anim::POSEPARAM_HOOK, |e, _, p| {
+            super::player_anim::attach_pose_params(e, p)
+        });
     // Whether each hurts a player (an automatic ladder draws only those
     // that do): the blasts, the flames, the needles; the guns' damage is
     // their `[damage]`.

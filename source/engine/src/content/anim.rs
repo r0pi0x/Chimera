@@ -3,7 +3,9 @@
 //! parameters and include models, merged into one `AnimSet` for a target
 //! model (specs/cs_source/animation.md §1–§3, §8; an include's same-named
 //! sequence takes a forward-declared (0x800) one's slot, else the first
-//! wins: specs/tf2/player_animation.md 1a), with the autolayers' spline
+//! wins: specs/tf2/player_animation.md 1a; an include with as many IK
+//! chains copies its knee directions onto the target's chains that have
+//! none, 4a), with the real-time flag, the autolayers' spline
 //! and pose-parameter ramps, the sequences' IK locks (5a) and the
 //! animations' IK rules with their stored places (a chain's end relative
 //! to a bone per frame: TF2's Heavy's left hand on the Minigun, 4a,
@@ -155,8 +157,9 @@ struct Model {
     anims: Vec<(String, usize)>,
     /// Each animation's IK rules, chains and bones local.
     anim_ik: Vec<Vec<RawIkRule>>,
-    /// IK chains: name and (root, middle, end) bones, local.
-    ik_chains: Vec<(String, [usize; 3])>,
+    /// IK chains: name, (root, middle, end) bones, local, and the knee
+    /// direction on the first link (in the root bone's frame; zero: none).
+    ik_chains: Vec<(String, [usize; 3], Vec3)>,
     sequences: Vec<RawSequence>,
     params: Vec<PoseParam>,
     includes: Vec<String>,
@@ -266,8 +269,10 @@ fn parse(bytes: Vec<u8>) -> Result<Model, String> {
                 .collect()
         })
         .collect::<Result<Vec<_>, String>>()?;
-    // IK chains (16 bytes: name, kind, link count, links of 28 bytes each
-    // starting with the bone); two-bone limbs have three links.
+    // IK chains (16 bytes: name, kind, link count, links of 28 bytes each:
+    // the bone, then the knee direction in that bone's frame, which only
+    // the first link's carries: specs/tf2/player_animation.md 4a); two-bone
+    // limbs have three links.
     let (n, at) = count(284)?;
     let ik_chains = (0..n.min(16))
         .filter_map(|i| {
@@ -277,7 +282,8 @@ fn parse(bytes: Vec<u8>) -> Result<Model, String> {
                 return None;
             }
             let bone = |k: usize| b.i32(o + links_at as usize + 28 * k).ok().filter(|v| *v >= 0).map(|v| v as usize);
-            Some((b.name(o, o).ok()?, [bone(0)?, bone(1)?, bone(2)?]))
+            let knee = b.vec3(o + links_at as usize + 4).ok().filter(|v| v.is_finite()).unwrap_or(Vec3::ZERO);
+            Some((b.name(o, o).ok()?, [bone(0)?, bone(1)?, bone(2)?], knee))
         })
         .collect();
     let (n, at) = count(300)?;
@@ -1009,7 +1015,7 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
     let mut chain_maps: Vec<Vec<Option<usize>>> = Vec::new();
     for (mi, m) in models.iter().enumerate() {
         let mut local = Vec::new();
-        for (name, bones) in &m.ik_chains {
+        for (name, bones, knee) in &m.ik_chains {
             let found = set.ik_chains.iter().position(|c| c.name.eq_ignore_ascii_case(name));
             let mapped = bones.map(|b| bone_maps[mi].get(b).copied().flatten());
             local.push(match (found, mapped) {
@@ -1018,6 +1024,7 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
                     set.ik_chains.push(IkChain {
                         name: name.to_lowercase(),
                         bones: [a, b, c],
+                        knee: *knee,
                     });
                     Some(set.ik_chains.len() - 1)
                 }
@@ -1025,6 +1032,22 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
             });
         }
         chain_maps.push(local);
+    }
+    // An include with as many chains as the target copies its knee
+    // directions onto the target's chains that have none, chain by chain
+    // (4a: TF2's class models carry none, their `_animations` include
+    // does).
+    for m in models.iter().skip(1) {
+        if m.ik_chains.len() != models[0].ik_chains.len() {
+            continue;
+        }
+        for (k, (_, _, knee)) in m.ik_chains.iter().enumerate() {
+            if let Some(c) = chain_maps[0].get(k).copied().flatten().and_then(|i| set.ik_chains.get_mut(i))
+                && c.knee == Vec3::ZERO
+            {
+                c.knee = *knee;
+            }
+        }
     }
     let mut anim_names: HashMap<String, usize> = HashMap::new();
     let mut anim_maps: Vec<Vec<usize>> = Vec::new();
@@ -1142,6 +1165,7 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
                 delta: s.flags & 0x4 != 0,
                 post: s.flags & 0x10 != 0,
                 autoplay: s.flags & 0x8 != 0,
+                realtime: s.flags & 0x100 != 0,
                 fade_in: s.fade.0,
                 fade_out: s.fade.1,
                 grid: s.grid,

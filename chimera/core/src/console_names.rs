@@ -152,6 +152,7 @@ pub const ENGINE_NAMES: &[&str] = &[
     "god",
     "setpos",
     "setang",
+    "setang_exact",
     "getpos",
     "give",
     "impulse",

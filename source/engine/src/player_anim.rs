@@ -100,6 +100,11 @@ pub trait PlayerAnimRules: Component<Mutability = bevy::ecs::component::Mutable>
     /// The body died: the next update after it lives again starts afresh.
     fn dead(&mut self);
 
+    /// Put the feet (the render yaw) on the eyes plus `offset` degrees at
+    /// the next update (`map::anim::SnapFeet`: `setang_exact`, a scene's
+    /// target); a game without a feet yaw of its own ignores it.
+    fn snap_feet(&mut self, _offset: f32) {}
+
     /// The hand a shot of `w` came from ("" but for dual pistols).
     fn shot_side(_w: &Weapon, _m: Option<&Magazine>) -> &'static str {
         ""
@@ -256,6 +261,7 @@ fn drive<R: PlayerAnimRules, F: QueryFilter + 'static>(
                 Option<&crate::map::interp::RenderedView>,
                 Option<&crate::map::BodyModel>,
                 Option<&crate::source_movement::SourceMovement>,
+                Option<&crate::map::anim::SnapFeet>,
             ),
         ),
         F,
@@ -269,7 +275,7 @@ fn drive<R: PlayerAnimRules, F: QueryFilter + 'static>(
     let all: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
     let happened = Happened::of(&all, &weapons, &loading, R::shot_side);
     let (dt, now) = (time.delta_secs(), time.elapsed_secs_f64());
-    for (e, mut animator, state, intent, velocity, movement, health, inventory, (view, body, source)) in &mut characters {
+    for (e, mut animator, state, intent, velocity, movement, health, inventory, (view, body, source, snap)) in &mut characters {
         // Only the game's bodies (another game's, in a mashup, play its own).
         if !ours::<R>(models.as_deref(), body) {
             if state.is_some() {
@@ -281,6 +287,10 @@ fn drive<R: PlayerAnimRules, F: QueryFilter + 'static>(
             commands.entity(e).insert((R::default(), WasOnGround::default()));
             continue;
         };
+        if let Some(s) = snap {
+            state.snap_feet(s.0);
+            commands.entity(e).remove::<crate::map::anim::SnapFeet>();
+        }
         if health.is_some_and(|h| h.current <= 0.0) {
             state.dead();
             continue;
@@ -336,7 +346,13 @@ fn drive_sim<R: PlayerAnimRules, F: QueryFilter + 'static>(
             &Velocity,
             &MovementState,
             Option<&Health>,
-            (Option<&Inventory>, Option<&crate::map::BodyModel>, Option<&crate::source_movement::SourceMovement>),
+            (
+                Option<&Inventory>,
+                Option<&crate::map::BodyModel>,
+                Option<&crate::source_movement::SourceMovement>,
+                Option<&crate::map::anim::SnapFeet>,
+                Has<R>,
+            ),
         ),
         F,
     >,
@@ -349,7 +365,7 @@ fn drive_sim<R: PlayerAnimRules, F: QueryFilter + 'static>(
     let all: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
     let happened = Happened::of(&all, &weapons, &loading, R::shot_side);
     let (dt, now) = (clock.dt(), clock.now);
-    for (e, drawn, sim, state, intent, velocity, movement, health, (inventory, body, source)) in &mut characters {
+    for (e, drawn, sim, state, intent, velocity, movement, health, (inventory, body, source, snap, drawn_state)) in &mut characters {
         if !ours::<R>(models.as_deref(), body) {
             // Only what this game's state made goes: another Source
             // game's animator on its own body stays (both games' plugins
@@ -371,6 +387,14 @@ fn drive_sim<R: PlayerAnimRules, F: QueryFilter + 'static>(
             // Another model (a team change).
             sim.0 = Animator::new(drawn.set.clone());
             state.0 = R::default();
+        }
+        if let Some(s) = snap {
+            state.0.snap_feet(s.0);
+            // The drawn state's driver takes it off; with none (a dedicated
+            // server) this one does.
+            if !drawn_state {
+                commands.entity(e).remove::<crate::map::anim::SnapFeet>();
+            }
         }
         if health.is_some_and(|h| h.current <= 0.0) {
             state.0.dead();

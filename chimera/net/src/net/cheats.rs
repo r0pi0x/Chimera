@@ -14,7 +14,8 @@
 //! the server kills the client's player.
 //!
 //! Also the player commands both a game and a dedicated server run for a
-//! player: `noclip`, `god`, `kill`, `setpos`, `setang` (the game's client adds
+//! player: `noclip`, `god`, `kill`, `setpos`, `setang`, `setang_exact` (the
+//! look, and the body's feet snapped onto it: `map::anim::SnapFeet`) (the game's client adds
 //! the rest, `client::console`).
 
 use bevy::prelude::*;
@@ -212,6 +213,23 @@ pub fn player_commands(app: &mut App) {
             let mut i = w.get_mut::<crate::core::Intent>(p).ok_or("no intent")?;
             i.pitch = -pitch.to_radians();
             i.yaw = (yaw - 90.0).to_radians();
+            Ok(None)
+        },
+    )
+    .console_command(
+        "setang_exact",
+        "setang_exact <pitch> <yaw>: look there and put your body's feet there too (TF2's snap yaw; setang leaves the feet).",
+        |w, a| {
+            let [pitch, yaw, ..] = a else {
+                return Err("setang_exact <pitch> <yaw>".into());
+            };
+            let n = |s: &String| s.parse::<f32>().map_err(|_| format!("bad number \"{s}\""));
+            let (pitch, yaw) = (n(pitch)?, n(yaw)?);
+            let p = command_player(w)?;
+            let mut i = w.get_mut::<crate::core::Intent>(p).ok_or("no intent")?;
+            i.pitch = -pitch.to_radians();
+            i.yaw = (yaw - 90.0).to_radians();
+            w.entity_mut(p).insert(chimera_world::map::anim::SnapFeet(0.0));
             Ok(None)
         },
     )

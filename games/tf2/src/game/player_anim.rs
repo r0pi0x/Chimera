@@ -33,27 +33,42 @@
 //! `body_yaw` (minus the eyes against the feet, clamped to 45; standing,
 //! the feet's goal steps 45 degrees toward the eyes once they are more
 //! than 45 off it, moving it is the eyes; the feet turn at 720
-//! degrees/s, slower in the last 60), each parameter by name, the main
+//! degrees/s, slower in the last 60; the goal snaps to the eyes only when
+//! the state is made and on a snap, `map::anim::SnapFeet`: `setang_exact`,
+//! a scene's `target set <n> feet`, never on a death, respawn or
+//! teleport, 4c 5), each parameter by name, the main
 //! sequences' own aim-matrix autolayers adding the pose with the feet
-//! kept where the main sequence put them (`Animator::ik_locks`, 4a) and
+//! kept where the main sequence put them and the knees bent toward the
+//! include's knee directions (`Animator::ik_locks`, 4a) and
 //! the left hand held on the Minigun by the aim cells' IK rule
 //! (`Animator::ik_rules`, 4a);
-//! `r_hand_grip` and `r_arm` at 0 (the constants; the engine's default
-//! for a range from 0 is its middle, a special item's pose); fire,
+//! every pose parameter at 0 in its own units on each spawn and a new
+//! model (4b: `r_hand_grip` and `r_arm` the first cells of the hand and
+//! arm libraries, which act only where a host sequence layers them, the
+//! Engineer's pistol's `r_handposes_engineer`; the engine's default for
+//! a range from 0 is its middle, a special item's pose), then the held
+//! item's player pose parameters (`POSEPARAM_HOOK`, the item schema's
+//! `player_poseparam`; no stock weapon has one), the old item's back to 0
+//! on a switch; fire,
 //! reload (start, a loop per round, end), the spin and landing gestures
 //! by the stance, one per slot (attack, jump) in slot order (5). Each
 //! side runs it on its own values (`PlayerAnimPlugin` drawn,
 //! `SimAnimPlugin` for a server's hitboxes) and a client poses others as
 //! the server's tick pose had them (`source_engine::anim_net`).
-//! `hold_weapons` puts the gun's `c_` model in their hands (bone-merged
-//! on `weapon_bone`).
+//! `hold_weapons` puts the active gun's `c_` model in their hands
+//! (bone-merged on `weapon_bone`), in the frame of a switch; nothing else
+//! they carry is drawn (7a: no holstered weapon).
 //!
 //! Known shortcuts: the
 //! scoped Sniper's deployed set and its 2 s hold aren't played; the
 //! class data's `DontDoAirwalk` / `DontDoNewJump` and the Scout's air-dash
 //! crouch aren't read (3); no
 //! flinch on damage (open question 7) and no air-jump sequence (open
-//! question 4: `jump_double_primary` has no activity).
+//! question 4: `jump_double_primary` has no activity); no Spy disguise,
+//! cloak, stun or ghost mode, so 7a's reasons to hide the active weapon
+//! are only the owner's first-person view (the body hidden); other
+//! clients don't keep an item's pose parameters past a switch (4b's
+//! quirk: they write the new weapon's list over a reset).
 
 use bevy::prelude::*;
 use source_engine::player_anim::{Inputs, PlayerAnimRules, normalize};
@@ -227,6 +242,22 @@ pub fn translate(asked: &str, k: Kind) -> String {
 #[derive(Component, Debug, Clone)]
 pub struct Tf2PlayerAnim {
     reset: bool,
+    /// The feet (and their goal) go to the eyes on the next update: only
+    /// when the state is made and on `setang_exact` (`snap_feet`), not on
+    /// a respawn or a teleport (4, 4c 5).
+    snap: bool,
+    /// Where a snap puts the feet against the eyes (degrees; 0 but for a
+    /// scene lining its feet up with a reference's, `map::anim::SnapFeet`).
+    snap_offset: f32,
+    /// The animation set the pose parameters were zeroed for (its
+    /// address): a new model zeroes them again (4b).
+    zeroed_for: usize,
+    /// The held weapon's player pose parameters (the item schema's
+    /// `player_poseparam`, 4b; `PlayerPoseParams` on the weapon), written
+    /// each update; `follow_items` keeps it.
+    pub item_params: Vec<(String, f32)>,
+    /// The names the last weapon's list set, zeroed on a switch (4b).
+    item_names: Vec<String>,
     /// The feet yaw and its goal (degrees, Source's axes).
     pub feet_yaw: f32,
     goal_yaw: f32,
@@ -259,6 +290,11 @@ impl Default for Tf2PlayerAnim {
     fn default() -> Self {
         Self {
             reset: true,
+            snap: true,
+            snap_offset: 0.0,
+            zeroed_for: 0,
+            item_params: Vec::new(),
+            item_names: Vec::new(),
             feet_yaw: 0.0,
             goal_yaw: 0.0,
             render_yaw: 0.0,
@@ -291,10 +327,13 @@ impl Tf2PlayerAnim {
     /// returns `body_yaw` (minus the eyes against the feet, clamped).
     pub fn turn(&mut self, eye: f32, moving: bool, dt: f32) -> f32 {
         self.render_yaw = self.feet_yaw;
-        if self.reset {
-            self.feet_yaw = eye;
-            self.goal_yaw = eye;
-            self.render_yaw = eye;
+        if self.snap {
+            let feet = normalize(eye + self.snap_offset);
+            self.feet_yaw = feet;
+            self.goal_yaw = feet;
+            self.render_yaw = feet;
+            self.snap = false;
+            self.snap_offset = 0.0;
         }
         if moving {
             self.goal_yaw = eye;
@@ -310,6 +349,20 @@ impl Tf2PlayerAnim {
             self.feet_yaw = if diff.abs() <= step { self.goal_yaw } else { normalize(self.feet_yaw + step * diff.signum()) };
         }
         (-normalize(eye - self.feet_yaw)).clamp(-BODY_YAW, BODY_YAW)
+    }
+
+    /// Snap the feet and their goal to the eyes (plus `offset` degrees,
+    /// counter-clockwise) on the next update (4: a "snap yaw", which TF2
+    /// sends only on `setang_exact`; an offset lines a scene's feet up
+    /// with a reference's).
+    pub fn snap_feet(&mut self, offset: f32) {
+        self.snap = true;
+        self.snap_offset = offset;
+    }
+
+    /// The feet's goal yaw (degrees, 4).
+    pub fn goal_yaw(&self) -> f32 {
+        self.goal_yaw
     }
 
     /// The next roll in [0, 1) for a weighted pick (1a).
@@ -440,6 +493,27 @@ impl Tf2PlayerAnim {
         a.ik_locks = true;
         a.ik_rules = true;
         let kind = weapon.map_or(Kind::Primary, |w| Kind::of_class(w, self.class.as_deref()));
+        // Every pose parameter at 0 in its own units when the model is set
+        // and on each spawn (4b): left to the engine's default, one whose
+        // range starts at 0 sat at its middle, a special item's pose (the
+        // Engineer's pistol turned at the belt, playtest 2026-11-18).
+        let set_id = std::sync::Arc::as_ptr(&set) as usize;
+        if self.reset || self.zeroed_for != set_id {
+            for p in 0..set.params.len() {
+                a.set_param(p, 0.0);
+            }
+            self.zeroed_for = set_id;
+            self.item_names.clear();
+        }
+        // Another item's list: the old one's names back to 0 first (4b).
+        if self.item_names.iter().ne(self.item_params.iter().map(|(n, _)| n)) {
+            for name in &self.item_names {
+                if let Some(p) = set.param(name) {
+                    a.set_param(p, 0.0);
+                }
+            }
+            self.item_names = self.item_params.iter().map(|(n, _)| n.clone()).collect();
+        }
         if self.reset || weapon != self.weapon.as_deref() || self.kind != Some(kind) {
             if self.reset {
                 self.gestures.clear();
@@ -525,14 +599,12 @@ impl Tf2PlayerAnim {
                 a.set_param(p, v);
             }
         }
-        // The hand- and arm-pose libraries at their first pose (the
-        // constants: 0 for the guns). Left to the engine's default, a
-        // parameter whose range starts at 0 sits at its middle: the
-        // Engineer's arms took a special item's pose and held his pistol
-        // turned at the belt (playtest 2026-11-18).
-        for name in ["r_hand_grip", "r_arm"] {
+        // The held item's player pose parameters (4b; none for a stock
+        // weapon: `r_hand_grip` and `r_arm` stay at 0, the first cells).
+        // A name the model lacks is skipped.
+        for (name, v) in &self.item_params {
             if let Some(p) = set.param(name) {
-                a.set_param(p, 0.0);
+                a.set_param(p, *v);
             }
         }
         self.pose = values;
@@ -571,9 +643,56 @@ impl PlayerAnimRules for Tf2PlayerAnim {
         self.render_yaw
     }
 
+    /// Death restarts the state but keeps the feet's goal (4c 5).
     fn dead(&mut self) {
         self.reset = true;
         self.gestures.clear();
+    }
+
+    fn snap_feet(&mut self, offset: f32) {
+        Tf2PlayerAnim::snap_feet(self, offset);
+    }
+}
+
+/// The weapon data's hook naming an item's player pose parameters (the
+/// item schema's `visuals` -> `player_poseparam`, 4b):
+/// `[hooks."tf2:player_poseparam"] r_hand_grip = 16`. No stock weapon
+/// has one.
+pub const POSEPARAM_HOOK: &str = "tf2:player_poseparam";
+
+/// On a weapon: the player pose parameters its holder's model takes
+/// while it is active (`POSEPARAM_HOOK`), by name.
+#[derive(Component, Clone, Debug, Default, PartialEq)]
+pub struct PlayerPoseParams(pub Vec<(String, f32)>);
+
+/// `POSEPARAM_HOOK`'s parameters onto the weapon.
+pub fn attach_pose_params(e: &mut EntityWorldMut, p: &std::collections::BTreeMap<String, f32>) {
+    e.insert(PlayerPoseParams(p.iter().map(|(k, v)| (k.clone(), *v)).collect()));
+}
+
+/// Each TF2 body's item pose parameters (`Tf2PlayerAnim::item_params`):
+/// its active weapon's `PlayerPoseParams` (none: an empty list), in the
+/// drawn state and a server's own.
+#[allow(clippy::type_complexity)]
+fn follow_items(
+    mut bodies: Query<
+        (Option<&mut Tf2PlayerAnim>, Option<&mut source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>, Option<&Inventory>),
+        Or<(With<Tf2PlayerAnim>, With<source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>)>,
+    >,
+    items: Query<&PlayerPoseParams>,
+) {
+    for (drawn, sim, inv) in &mut bodies {
+        let list = inv.and_then(|i| i.active).and_then(|w| items.get(w).ok()).map_or(&[][..], |p| p.0.as_slice());
+        if let Some(mut a) = drawn
+            && a.item_params != list
+        {
+            a.item_params = list.to_vec();
+        }
+        if let Some(mut s) = sim
+            && s.0.item_params != list
+        {
+            s.0.item_params = list.to_vec();
+        }
     }
 }
 
@@ -680,7 +799,16 @@ impl Plugin for Tf2AnimPlugin {
         .insert_resource(super::faces::IdleFaces::builtin())
         .add_systems(
             Update,
-            (hold_weapons, follow_class, follow_spin, super::faces::faces.in_set(crate::map::DriveAnimation)),
+            (
+                // In the animation set, so the drawn body takes the new
+                // weapon in the frame of the switch (7a; `attach_held`
+                // runs after it).
+                hold_weapons.in_set(crate::map::DriveAnimation),
+                follow_class,
+                follow_spin,
+                follow_items,
+                super::faces::faces.in_set(crate::map::DriveAnimation),
+            ),
         );
     }
 }
@@ -718,19 +846,55 @@ mod tests {
         assert_eq!(Kind::of_class("tf2:tf_weapon_pistol_scout", Some("engineer")), Kind::Secondary);
     }
 
-    /// The constants: `r_hand_grip` and `r_arm` at 0 for the guns, not
-    /// at their range's middle (the engine's default for a range that
-    /// starts at 0): the Engineer held his pistol turned at the belt.
+    /// 4b, test 42: every pose parameter at 0 in its own units at spawn
+    /// (`r_hand_grip` and `r_arm` the first cells, not the range's middle,
+    /// the engine's default for a range that starts at 0: the Engineer
+    /// held his pistol turned at the belt), and again on a new model.
     #[test]
-    fn the_hand_and_arm_poses_are_the_first() {
+    fn pose_parameters_start_at_zero_42() {
+        use crate::map::anim::PoseParam;
+        let p = |name: &str, start: f32, end: f32| PoseParam { name: name.into(), start, end, looping: 0.0 };
+        let params = vec![p("body_pitch", -45.0, 90.0), p("body_yaw", -45.0, 45.0), p("r_hand_grip", 0.0, 16.0), p("r_arm", 0.0, 3.0), p("move_x", -1.0, 1.0), p("move_y", -1.0, 1.0)];
+        let set = std::sync::Arc::new(AnimSet { params: params.clone(), ..Default::default() });
+        let mut a = Animator::new(set.clone());
+        assert_eq!(a.params[2..4], [0.5, 0.5], "the engine's default");
+        let mut s = Tf2PlayerAnim::default();
+        let still = Inputs { on_ground: true, ..Default::default() };
+        s.step(&mut a, &still, Some("tf2:tf_weapon_pistol_scout"), 0.015, 0.0);
+        let value = |a: &Animator, i: usize| a.params[i] * (params[i].end - params[i].start) + params[i].start;
+        for i in 0..params.len() {
+            assert!(value(&a, i).abs() < 1e-4, "{}: {}", params[i].name, value(&a, i));
+        }
+        // A new model: zeroed again.
+        let other = std::sync::Arc::new(AnimSet { params: params.clone(), ..Default::default() });
+        let mut b = Animator::new(other);
+        s.step(&mut b, &still, Some("tf2:tf_weapon_pistol_scout"), 0.015, 0.1);
+        assert!(value(&b, 2).abs() < 1e-4 && value(&b, 3).abs() < 1e-4);
+    }
+
+    /// 4b, tests 47, 48: an item's player pose parameters from the frame
+    /// it is active; back to 0 when a weapon without them is; a name the
+    /// model lacks is skipped. No stock weapon lists any.
+    #[test]
+    fn item_pose_parameters_47_48() {
         use crate::map::anim::PoseParam;
         let p = |name: &str, end: f32| PoseParam { name: name.into(), start: 0.0, end, looping: 0.0 };
         let set = std::sync::Arc::new(AnimSet { params: vec![p("r_hand_grip", 16.0), p("r_arm", 3.0)], ..Default::default() });
-        let mut a = Animator::new(set.clone());
-        assert_eq!(a.params, vec![0.5, 0.5], "the engine's default");
+        let mut a = Animator::new(set);
         let mut s = Tf2PlayerAnim::default();
-        s.step(&mut a, &Inputs { on_ground: true, ..Default::default() }, Some("tf2:tf_weapon_pistol_scout"), 0.015, 0.0);
-        assert_eq!(a.params, vec![0.0, 0.0]);
+        let still = Inputs { on_ground: true, ..Default::default() };
+        s.item_params = vec![("r_hand_grip".into(), 16.0), ("r_handposes_engineer".into(), 1.0)];
+        s.step(&mut a, &still, Some("tf2:drink"), 0.015, 0.0);
+        assert_eq!(a.params, vec![1.0, 0.0], "47: the drink's grip");
+        s.item_params.clear();
+        s.step(&mut a, &still, Some("tf2:tf_weapon_bat"), 0.015, 0.1);
+        assert_eq!(a.params, vec![0.0, 0.0], "47: the Bat's: 0 again");
+        s.item_params = vec![("r_hand_grip".into(), 15.0), ("r_arm".into(), 3.0)];
+        s.step(&mut a, &still, Some("tf2:hot_hand"), 0.015, 0.2);
+        assert_eq!(a.params, vec![15.0 / 16.0, 1.0]);
+        for w in crate::game::weapons::tf2_weapons().weapons {
+            assert!(!w.has_hook(POSEPARAM_HOOK), "48: {} lists player pose parameters", w.id);
+        }
     }
 
     /// 4, tests 13-14, 16c, 16d: the pitch's sign and clamp; the feet
@@ -740,12 +904,11 @@ mod tests {
     fn aim_and_feet() {
         let mut s = Tf2PlayerAnim::default();
         assert_eq!(s.turn(0.0, false, 0.015), 0.0);
-        s.reset = false;
         let y = s.turn(30.0, false, 0.015);
         assert!((y + 30.0).abs() < 1e-3, "16d: {y}");
         assert_eq!(s.feet_yaw, 0.0);
         // 16c: the eyes at 50: the goal 45, the first step at 540 degrees/s.
-        let mut s = Tf2PlayerAnim { reset: false, ..Default::default() };
+        let mut s = Tf2PlayerAnim { reset: false, snap: false, ..Default::default() };
         s.turn(50.0, false, 0.01);
         assert!((s.feet_yaw - 5.4).abs() < 1e-3, "{}", s.feet_yaw);
         for _ in 0..200 {
@@ -759,6 +922,79 @@ mod tests {
         assert!((s.feet_yaw - 50.0).abs() < 1e-3, "turned to {}", s.feet_yaw);
         assert_eq!(normalize(89.0f32).clamp(PITCH_DOWN, PITCH_UP), 89.0);
         assert_eq!(normalize(-60.0f32).clamp(PITCH_DOWN, PITCH_UP), -45.0);
+    }
+
+    /// Run `turn` standing at eye yaw `eye` for `frames` frames of 15 ms.
+    fn stand(s: &mut Tf2PlayerAnim, eye: f32, frames: usize) -> f32 {
+        let mut y = 0.0;
+        for _ in 0..frames {
+            y = s.turn(eye, false, 0.015);
+        }
+        y
+    }
+
+    /// 4c 5, test 53: a teleport (no motion) keeps the feet's goal; it
+    /// steps 45 degrees a frame toward the eyes while more than 45 off
+    /// (at exactly 180 toward larger yaw), so from 90 to eyes at 270 it
+    /// rests at 225 (steps 135, 180, 225) and body_yaw is -45.
+    #[test]
+    fn the_feet_keep_their_goal_over_a_teleport_53() {
+        let mut s = Tf2PlayerAnim::default();
+        stand(&mut s, 90.0, 1);
+        assert_eq!(s.goal_yaw(), 90.0);
+        let goals: Vec<f32> = (0..3).map(|_| {
+            s.turn(-90.0, false, 0.015);
+            s.goal_yaw()
+        }).collect();
+        assert_eq!(goals, vec![135.0, 180.0, -135.0], "53: steps 135, 180, 225");
+        let y = stand(&mut s, -90.0, 200);
+        assert!((y + 45.0).abs() < 1e-3, "53: body_yaw {y}");
+        // The others of 4c 5: 0 -> 270 rests at 315 (+45), 330 -> 270 at
+        // 285 (+15), 300 -> 270 stays (+30).
+        for (from, goal, body) in [(0.0, -45.0, 45.0), (-30.0, -75.0, 15.0), (-60.0, -60.0, 30.0)] {
+            let mut s = Tf2PlayerAnim::default();
+            stand(&mut s, from, 1);
+            let y = stand(&mut s, -90.0, 300);
+            assert!((s.goal_yaw() - goal).abs() < 1e-3 && (y - body).abs() < 1e-3, "{from}: goal {} body_yaw {y}", s.goal_yaw());
+        }
+    }
+
+    /// 4c 5, test 54: death and the respawn keep the goal: goal 0 at
+    /// death, respawned facing 270 standing, it steps once to 315 and
+    /// body_yaw is +45 (no snap to the eyes).
+    #[test]
+    fn the_feet_keep_their_goal_over_a_respawn_54() {
+        let set = made_up(&["ACT_MP_STAND_PRIMARY"]);
+        let mut a = Animator::new(set);
+        let mut s = Tf2PlayerAnim::default();
+        let still = |yaw: f32| Inputs { on_ground: true, eye_yaw: yaw, ..Default::default() };
+        for k in 0..10 {
+            s.step(&mut a, &still(0.0), Some("tf2:tf_weapon_rocketlauncher"), 0.015, k as f64 * 0.015);
+        }
+        PlayerAnimRules::dead(&mut s);
+        for k in 0..200 {
+            s.step(&mut a, &still(-90.0), Some("tf2:tf_weapon_rocketlauncher"), 0.015, 1.0 + k as f64 * 0.015);
+        }
+        assert!((s.goal_yaw() + 45.0).abs() < 1e-3, "54: goal {}", s.goal_yaw());
+        assert!((s.pose[2] - 45.0).abs() < 1e-3, "54: body_yaw {}", s.pose[2]);
+    }
+
+    /// 4, 4c 5, test 55: the first update of a new state, and a snap
+    /// (`setang_exact`), put the goal and the feet on the eyes; a snap with
+    /// an offset puts them that far off (a scene lining up with TF2).
+    #[test]
+    fn the_feet_snap_to_the_eyes_55() {
+        let mut s = Tf2PlayerAnim::default();
+        assert_eq!(s.turn(123.0, false, 0.015), 0.0);
+        assert_eq!((s.goal_yaw(), s.feet_yaw), (123.0, 123.0));
+        stand(&mut s, -90.0, 100);
+        assert_ne!(s.goal_yaw(), -90.0);
+        s.snap_feet(0.0);
+        assert_eq!(s.turn(-90.0, false, 0.015), 0.0, "55: body_yaw 0");
+        assert_eq!((s.goal_yaw(), s.feet_yaw), (-90.0, -90.0));
+        s.snap_feet(45.0);
+        assert_eq!(s.turn(-90.0, false, 0.015), 45.0);
+        assert_eq!(stand(&mut s, -90.0, 50), 45.0, "kept");
     }
 
     /// 2: the kind tables and the deployed exception.

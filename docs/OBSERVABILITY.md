@@ -2584,6 +2584,14 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   (`tf_weapon_criticals 0`); ours' target fires `ahead`, and our camera
   stays put (`chimera_freecam 2`) while our body steps out of the line
   of fire, as TF2's spectator has no body.
+- Bodies at rest: a puppet bot's feet keep their own yaw (TF2's feet
+  goal steps 45 degrees at a time and snaps to the eyes only on
+  `setang_exact`, the local player's), so a bot `bot_teleport`ed to face
+  the camera stands with its feet up to 45 degrees off its eyes, which
+  changes how wide its stance looks. Line ours up with
+  `target set <n> feet <degrees>` (feet that far left of the eyes;
+  `pose.scene`: TF2's 2fort bots stand 30 left, 15 right after its
+  teleports); `setang_exact` snaps our own player's.
 - Pictures are game imagery: scratch folders only. Quit the game when
   done (`down`; or `pkill -x tf_linux64`, never `pkill -f`).
 

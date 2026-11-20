@@ -178,7 +178,10 @@
 //! <shoots | noshoot | ahead | noahead | jump | nojump | crouch | nocrouch |
 //! run <forward|back|left|right> | norun | protect | noprotect | still | strafe | walk |
 //! platform | line | gun <id> |
-//! character <id> | respawn <s> | distance <m>>`, `target remove <n|all>`,
+//! character <id> | respawn <s> | distance <m> | feet [degrees]>` (feet: not a
+//! setting, the body's feet snapped onto its eyes, plus the degrees given,
+//! at its next animation update, `map::anim::SnapFeet`: TF2's
+//! `setang_exact`, lining a scene up with a reference), `target remove <n|all>`,
 //! `target list`, `target characters`, `target look <n>` (turns the
 //! player to face target n: staging a picture), `target repeat` (the
 //! last layout again: `layout`).
@@ -1336,7 +1339,7 @@ fn pick(world: &mut World, which: &str) -> Result<Vec<Entity>, String> {
 }
 
 const USAGE: &str = "target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [ahead] [protect] [noarmor] [platform] | \
-    target set <n|all> <shoots|noshoot|ahead|noahead|jump|nojump|crouch|nocrouch|run <forward|back|left|right>|norun|protect|noprotect|armor|noarmor|still|strafe|walk|platform|line|gun <id>|character <id>|respawn <s>|distance <m>> | \
+    target set <n|all> <shoots|noshoot|ahead|noahead|jump|nojump|crouch|nocrouch|run <forward|back|left|right>|norun|protect|noprotect|armor|noarmor|still|strafe|walk|platform|line|gun <id>|character <id>|respawn <s>|distance <m>|feet [degrees]> | \
     target remove <n|all> | target list | target characters | target look <n> | target repeat";
 
 /// A gun id, exact or the one gun of the ladder whose id holds the text.
@@ -1428,6 +1431,18 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                     "respawn" => req.respawn_secs = Some(arg.and_then(|s| s.parse().ok()).ok_or("respawn <seconds>")?),
                     "platform" => req.place = Some(TargetPlace::Platform),
                     "line" => req.place = Some(TargetPlace::Line),
+                    "feet" => {
+                        // Not a setting: the body's feet onto its eyes
+                        // (plus the degrees given) at its next animation
+                        // update (`map::anim::SnapFeet`).
+                        let offset = match arg {
+                            Some(d) => d.parse::<f32>().map_err(|_| "feet [degrees]")?,
+                            None => 0.0,
+                        };
+                        world.entity_mut(e).insert(chimera_world::map::anim::SnapFeet(offset));
+                        said.push(format!("feet {offset} degrees off the eyes"));
+                        continue;
+                    }
                     "distance" => req.distance_m = Some(arg.and_then(|s| s.trim_end_matches('m').parse().ok()).ok_or("distance <m>")?),
                     w => req.motion = Some(TargetMotion::parse(w).ok_or_else(|| format!("what is {w:?}? {USAGE}"))?),
                 }

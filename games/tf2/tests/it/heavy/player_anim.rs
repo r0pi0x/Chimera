@@ -9,8 +9,13 @@
 //! the left hand's IK rule onto the Minigun, as read and as held (4a);
 //! every class's rest stance (3); a Scout spinning the Minigun keeps his
 //! normal set (open question 13, ours); every weapon's merged bones on
-//! its class's body where the weapon model has them (7). Passes with a
-//! note without the install.
+//! its class's body where the weapon model has them (7); tests 42-52, 56
+//! and 60: the six pose parameters at 0 after a spawn, the Engineer's
+//! pistol grip, the hand and arm libraries only where a host layers them,
+//! the Wrench's tap and mesh axis, still idle feet, the feet yaw's
+//! apparent spread with the knees bent toward the include's knee
+//! directions, the foot-locked (and the Medic's real-time) noise layers.
+//! Passes with a note without the install.
 
 use std::sync::Arc;
 
@@ -486,8 +491,14 @@ fn held_weapons_parts_follow_body_bones() {
         // The Fists are the Heavy's arms alone: nothing held.
         let Some(held) = kit.held.iter().find(|h| h.key == gun) else { continue };
         let set = anim::load(&|p| materials.read(p), &format!("models/player/{arms}.mdl")).unwrap();
+        let has = |bone: &str| set.bone_names.iter().any(|n| n.eq_ignore_ascii_case(bone));
+        // A body lacking a merged part's bone holds the model whole
+        // (`render::bodies::attach_held`: the Revolver's `weapon_bone_4` on
+        // the Spy): only the held bone and the arms' own `vm_` bones are
+        // wrong.
         for bone in std::iter::once(&held.bone).chain(held.merged.iter().map(|(b, _)| b)) {
-            if !set.bone_names.iter().any(|n| n.eq_ignore_ascii_case(bone)) {
+            let whole = bone != &held.bone && !bone.to_ascii_lowercase().starts_with("vm_");
+            if !has(bone) && !whole {
                 let tris: usize = held.merged.iter().filter(|(b, _)| b == bone).flat_map(|(_, m)| &m.meshes).map(|m| m.indices.len() / 3).sum();
                 bad.push(format!("{gun}: on {bone} ({tris} triangles), which the {arms} body lacks"));
             }
@@ -495,4 +506,267 @@ fn held_weapons_parts_follow_body_bones() {
     }
     assert!(warnings.is_empty() && kit.held.len() > 15, "{warnings:?}");
     assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+/// An animator on `name` as drawn (the foot locks on), every pose
+/// parameter at 0 but those given (in their own units).
+fn posed_at(set: &Arc<AnimSet>, name: &str, cycle: f32, params: &[(&str, f32)], now: f64) -> Vec<BonePose> {
+    let mut a = Animator::new(set.clone());
+    a.ik_locks = true;
+    a.main = Some(seq(set, name));
+    a.cycle = cycle;
+    for p in 0..set.params.len() {
+        a.set_param(p, 0.0);
+    }
+    for (n, v) in params {
+        a.set_param(set.param(n).unwrap_or_else(|| panic!("no {n}")), *v);
+    }
+    model_space(&a.pose(now), &set.parents)
+}
+
+/// Test 42 (4b): the merged model's six pose parameters, and at spawn
+/// `r_hand_grip` and `r_arm` at 0 (the first cells), not the range's
+/// middle.
+#[test]
+fn six_pose_parameters_at_zero_after_spawn_42() {
+    let classes = ["scout", "soldier", "pyro", "demo", "heavy", "engineer", "medic", "sniper", "spy"];
+    let Some(sets) = sets(&classes) else { return };
+    for (class, set) in classes.iter().zip(&sets) {
+        let mut names: Vec<String> = set.params.iter().map(|p| p.name.to_lowercase()).collect();
+        names.sort();
+        assert_eq!(names, ["body_pitch", "body_yaw", "move_x", "move_y", "r_arm", "r_hand_grip"], "42: {class}");
+        let mut a = Animator::new(set.clone());
+        let mut s = Tf2PlayerAnim::default();
+        s.step(&mut a, &still(), Some("tf2:tf_weapon_shotgun_primary"), 0.01, 0.01);
+        for n in ["r_hand_grip", "r_arm"] {
+            let i = set.param(n).unwrap();
+            let p = &set.params[i];
+            let v = a.params[i] * (p.end - p.start) + p.start;
+            assert!(v.abs() < 1e-4, "42: {class} {n} = {v}");
+        }
+    }
+}
+
+/// Tests 43, 44 (4b): the Engineer's pistol grip is `r_handposes_engineer`
+/// on `stand_SECONDARY`: level at `r_hand_grip` 0, its second cell (the
+/// gun turned 41 degrees up) at 1 or more; the hand bone itself stays.
+#[test]
+fn the_engineers_pistol_grip_43_44() {
+    let Some(sets) = sets(&["engineer"]) else { return };
+    let set = &sets[0];
+    let (wb, hand) = (bone(set, "weapon_bone"), bone(set, "bip_hand_r"));
+    let check = |grip: f32, want: Vec3, axis: Vec3| {
+        let pose = posed_at(set, "stand_SECONDARY", 0.0, &[("r_hand_grip", grip)], 0.0);
+        let (q, p) = pose[wb];
+        eprintln!("43/44: grip {grip}: weapon_bone {p:.2} +Z {:.2}, hand {:.2}", q * Vec3::Z, pose[hand].1);
+        assert!(p.distance(want) < 0.1, "grip {grip}: weapon_bone at {p}, not {want}");
+        assert!((q * Vec3::Z).distance(axis) < 0.02, "grip {grip}: +Z {}, not {axis}", q * Vec3::Z);
+        assert!(pose[hand].1.distance(Vec3::new(8.52, -12.57, 46.21)) < 0.1, "the hand stays: {}", pose[hand].1);
+    };
+    check(0.0, Vec3::new(12.96, -11.16, 46.01), Vec3::new(0.99, -0.05, -0.16));
+    for grip in [1.0, 8.0, 16.0] {
+        check(grip, Vec3::new(17.20, -9.91, 48.43), Vec3::new(0.72, -0.22, 0.66));
+    }
+}
+
+/// Tests 45, 46 (4b): no stock stand carries a hand or arm library, so
+/// `r_hand_grip` and `r_arm` change nothing there; the all-class melee
+/// stand carries both: the grip moves the right fingers and
+/// `weapon_bone`, the arm the right collar, arm, hand and weapon bones,
+/// nothing else.
+#[test]
+fn the_libraries_act_only_where_layered_45_46() {
+    let classes = ["scout", "soldier", "pyro", "demo", "heavy", "engineer", "medic", "sniper", "spy"];
+    let Some(sets) = sets(&classes) else { return };
+    let moved = |a: &[BonePose], b: &[BonePose]| -> Vec<usize> {
+        (0..a.len()).filter(|&i| a[i].1.distance(b[i].1) > 0.01 || a[i].0.angle_between(b[i].0) > 0.2f32.to_radians()).collect()
+    };
+    for (class, set) in classes.iter().zip(&sets) {
+        for kind in ["PRIMARY", "SECONDARY", "MELEE"] {
+            let name = format!("stand_{kind}");
+            if (*class == "engineer" && kind == "SECONDARY") || set.sequence(&name).is_none() {
+                continue;
+            }
+            let rest = posed_at(set, &name, 0.3, &[], 0.0);
+            let other = posed_at(set, &name, 0.3, &[("r_hand_grip", 16.0), ("r_arm", 3.0)], 0.0);
+            let m = moved(&rest, &other);
+            assert!(m.is_empty(), "45: {class} {name}: {:?} moved", m.iter().map(|&i| &set.bone_names[i]).collect::<Vec<_>>());
+        }
+    }
+    let set = &sets[0];
+    let name = "stand_MELEE_ALLCLASS";
+    let rest = posed_at(set, name, 0.0, &[], 0.0);
+    let names = |m: Vec<usize>| -> Vec<String> { m.into_iter().map(|i| set.bone_names[i].clone()).collect() };
+    let grip = names(moved(&rest, &posed_at(set, name, 0.0, &[("r_hand_grip", 15.0)], 0.0)));
+    let arm = names(moved(&rest, &posed_at(set, name, 0.0, &[("r_arm", 3.0)], 0.0)));
+    eprintln!("46: grip moves {grip:?}\n46: arm moves {arm:?}");
+    assert!(!grip.is_empty() && !arm.is_empty(), "46: both libraries act");
+    let finger = |b: &str| b.ends_with("_r") && ["bip_thumb", "bip_index", "bip_middle", "bip_ring", "bip_pinky"].iter().any(|f| b.starts_with(f));
+    // Children of moved bones move with them in model space: what moves
+    // is the libraries' bones and what hangs from them.
+    let under = |b: &str, roots: &[&str]| {
+        let mut i = set.bone_names.iter().position(|n| n == b);
+        while let Some(k) = i {
+            if roots.contains(&set.bone_names[k].as_str()) {
+                return true;
+            }
+            i = set.parents[k];
+        }
+        false
+    };
+    for b in &grip {
+        assert!(finger(b) || under(b, &["weapon_bone"]), "46: the grip moved {b}");
+    }
+    for b in &arm {
+        assert!(under(b, &["bip_collar_r", "weapon_bone", "weapon_bone_1", "prp_starter"]), "46: the arm moved {b}");
+    }
+}
+
+/// Tests 49, 50 (4b): the Engineer's `stand_MELEE` taps the Wrench (its
+/// mesh along `weapon_bone` +Y, -4.3 to 24.1): +Y's elevation 17, 50, 5
+/// and 43 degrees at frames 0, 12, 24 and 40, the head (24 along +Y)
+/// where the spec's table has it.
+#[test]
+fn the_wrenchs_tap_49_50() {
+    let Some(sets) = sets(&["engineer"]) else { return };
+    let set = &sets[0];
+    let wb = bone(set, "weapon_bone");
+    let frames = set.animations[set.sequences[seq(set, "stand_MELEE")].anims[0]].frames as f32;
+    for (frame, elevation, head) in [
+        (0.0, 17.0, Vec3::new(23.5, 3.7, 45.1)),
+        (12.0, 50.0, Vec3::new(22.9, -3.9, 59.5)),
+        (24.0, 5.0, Vec3::new(21.6, 6.0, 37.2)),
+        (40.0, 43.0, Vec3::new(22.9, -1.2, 58.1)),
+    ] {
+        let (q, p) = posed_at(set, "stand_MELEE", frame / (frames - 1.0), &[], 0.0)[wb];
+        let y = q * Vec3::Y;
+        let got = y.z.asin().to_degrees();
+        let at = p + y * 24.0;
+        eprintln!("49: frame {frame}: +Y {y:.2}, {got:.0} degrees, head {at:.1}");
+        assert!((got - elevation).abs() < 2.0, "49: frame {frame}: {got}");
+        assert!(at.distance(head) < 0.5, "49: frame {frame}: head {at}");
+    }
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0).lean(true);
+    let mut kit = chimera_world::map::GameKit::default();
+    tf2::game::maps::add_guns(&mut materials, &|_| true, false, &mut kit, &mut Vec::new());
+    let wrench = kit.held.iter().find(|h| h.key == "tf2:tf_weapon_wrench").expect("the Wrench held");
+    assert!(wrench.bone.eq_ignore_ascii_case("weapon_bone"), "{}", wrench.bone);
+    let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+    for m in &wrench.model.meshes {
+        for v in &m.positions {
+            lo = lo.min(Vec3::from(*v));
+            hi = hi.max(Vec3::from(*v));
+        }
+    }
+    eprintln!("50: the Wrench's mesh from {lo:.1} to {hi:.1}");
+    assert!((lo.y + 4.3).abs() < 0.3 && (hi.y - 24.1).abs() < 0.3, "50: along +Y: {lo} .. {hi}");
+    assert!(hi.x - lo.x < 10.0 && hi.z - lo.z < 12.0, "50: thin across: {lo} .. {hi}");
+}
+
+/// Test 51 (4c 1): over every stand loop the feet stay within 0.3 units
+/// of frame 0's.
+#[test]
+fn idle_feet_stay_still_51() {
+    let classes = ["scout", "soldier", "pyro", "demo", "heavy", "engineer", "medic", "sniper", "spy"];
+    let Some(sets) = sets(&classes) else { return };
+    let mut bad = Vec::new();
+    for (class, set) in classes.iter().zip(&sets) {
+        let feet = [bone(set, "bip_foot_r"), bone(set, "bip_foot_l")];
+        for kind in ["PRIMARY", "SECONDARY", "MELEE"] {
+            let name = format!("stand_{kind}");
+            let Some(s) = set.sequence(&name) else { continue };
+            let frames = set.animations[set.sequences[s].anims[0]].frames.max(2);
+            let first = posed_at(set, &name, 0.0, &[], 0.0);
+            let mut worst = 0.0f32;
+            for f in 0..frames {
+                let pose = posed_at(set, &name, f as f32 / (frames - 1) as f32, &[], f as f64 / 30.0);
+                for &b in &feet {
+                    worst = worst.max(pose[b].1.distance(first[b].1));
+                }
+            }
+            if worst > 0.3 {
+                bad.push(format!("{class} {name}: {worst:.2}"));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "51: feet moved: {bad:?}");
+}
+
+/// Test 52 (4c 4): the Engineer at rest with his eyes at 270 and his feet
+/// at 315, 270 and 225 (`body_yaw` +45, 0, -45), the foot locks on: the
+/// feet stay where the stand puts them in the feet's frame, so their
+/// spread across the eyes is 19.0, 13.1 and -0.5.
+#[test]
+fn the_feet_yaw_changes_the_apparent_spread_52() {
+    let Some(sets) = sets(&["engineer"]) else { return };
+    let set = &sets[0];
+    let feet = [bone(set, "bip_foot_r"), bone(set, "bip_foot_l")];
+    let own = posed_at(set, "stand_MELEE", 0.0, &[], 0.0);
+    for (theta, spread) in [(45.0f32, 19.0f32), (0.0, 13.1), (-45.0, -0.5)] {
+        let pose = posed_at(set, "stand_MELEE", 0.0, &[("body_yaw", theta)], 0.0);
+        for &b in &feet {
+            assert!(pose[b].1.distance(own[b].1) < 0.1, "52: {theta}: {} moved {}", set.bone_names[b], pose[b].1.distance(own[b].1));
+        }
+        let d = pose[feet[1]].1 - pose[feet[0]].1;
+        let t = theta.to_radians();
+        let across = d.x * t.sin() + d.y * t.cos();
+        eprintln!("52: body_yaw {theta}: spread across the eyes {across:.2}");
+        assert!((across - spread).abs() < 0.3, "52: {theta}: {across}");
+    }
+}
+
+/// Test 56 (4c 3): the noise layers are foot-locked (the feet within 0.1
+/// of the stand's own at any cycle), and the Medic's is real time (its
+/// cycle from the clock, 1.6 s a loop, whatever the stand's).
+#[test]
+fn noise_layers_are_foot_locked_56() {
+    let Some(sets) = sets(&["scout", "medic"]) else { return };
+    for (set, stand) in [(&sets[0], "stand_PRIMARY"), (&sets[1], "stand_SECONDARY")] {
+        let noise = seq(set, "layer_idleNoise");
+        assert!(set.sequences[seq(set, stand)].autolayers.iter().any(|l| l.sequence == noise), "{stand} layers the noise");
+        let feet = [bone(set, "bip_foot_r"), bone(set, "bip_foot_l")];
+        for k in 0..8 {
+            let (cycle, now) = (k as f32 / 8.0, 0.37 * k as f64);
+            let mut own = set.defaults.clone();
+            set.sequence_pose(seq(set, stand), cycle, &set.params.iter().map(|p| p.encode(0.0)).collect::<Vec<_>>(), &mut own);
+            let own = model_space(&own, &set.parents);
+            let pose = posed_at(set, stand, cycle, &[], now);
+            for &b in &feet {
+                let d = pose[b].1.distance(own[b].1);
+                assert!(d < 0.1, "56: {stand} at {cycle}, {now} s: {} {d}", set.bone_names[b]);
+            }
+        }
+    }
+    let medic = &sets[1];
+    let noise = &medic.sequences[seq(medic, "layer_idleNoise")];
+    assert!(noise.realtime && !sets[0].sequences[seq(&sets[0], "layer_idleNoise")].realtime, "56: the Medic's noise real time, the Scout's not");
+    let period = 1.0 / medic.cycle_rate(seq(medic, "layer_idleNoise"), &medic.default_params());
+    assert!((period - 1.6).abs() < 0.01, "56: {period} s a loop");
+    // Real time: the same stand cycle at two clock times differs only by
+    // the noise; at times a loop apart it is the same pose.
+    let a = posed_at(medic, "stand_SECONDARY", 0.2, &[], 10.0);
+    let b = posed_at(medic, "stand_SECONDARY", 0.2, &[], 10.0 + f64::from(period));
+    let c = posed_at(medic, "stand_SECONDARY", 0.2, &[], 10.5);
+    let pelvis = bone(medic, "bip_pelvis");
+    assert!(a[pelvis].1.distance(b[pelvis].1) < 0.01, "a loop apart: the same");
+    assert!(a[pelvis].0.angle_between(c[pelvis].0) > 0.0 || a[pelvis].1.distance(c[pelvis].1) > 0.0, "the clock moves the noise");
+}
+
+/// Test 60 (4a): merging the include copies its knee directions onto the
+/// class model's foot chains.
+#[test]
+fn the_includes_knee_directions_60() {
+    let Some(sets) = sets(&["engineer", "scout"]) else { return };
+    let knee = |set: &AnimSet, name: &str| set.ik_chains.iter().find(|c| c.name == name).unwrap_or_else(|| panic!("no {name}")).knee;
+    for (set, chain, want) in [
+        (&sets[0], "rfoot", Vec3::new(0.600, -0.002, 0.800)),
+        (&sets[0], "lfoot", Vec3::new(0.595, 0.002, 0.804)),
+        (&sets[1], "rfoot", Vec3::new(0.709, -0.705, 0.002)),
+        (&sets[1], "lfoot", Vec3::new(0.708, -0.002, 0.706)),
+    ] {
+        let got = knee(set, chain);
+        eprintln!("60: {chain} {got:.3}");
+        assert!(got.distance(want) < 0.005, "60: {chain}: {got}, not {want}");
+    }
 }

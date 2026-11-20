@@ -1426,7 +1426,10 @@ fn step(
             let delay = me.crouch_held && now - me.crouch_pressed_at < d.crouch_release_delay - 1e-9;
             let fully = me.half_height <= crouch_h + 1e-4;
             let feet = pos.y - me.half_height;
-            let no_room = me.crouch_held && fully && !space.fits(Vec3::new(pos.x, feet + stand_h, pos.z), stand_h);
+            // Headroom: the standing hull a skin above the feet, so a
+            // crouched hull resting right on the floor (a sandbox target
+            // placed on it) isn't kept down by the floor itself.
+            let no_room = me.crouch_held && fully && !space.fits(Vec3::new(pos.x, feet + stand_h + space.skin, pos.z), stand_h);
             delay || no_room
         };
         let key_press = held_flag && !me.crouch_held;

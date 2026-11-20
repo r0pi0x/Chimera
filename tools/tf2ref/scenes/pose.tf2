@@ -1,0 +1,343 @@
+# Rest stances with the feet snapped, the Engineer's Wrench idle over a
+# loop, the Spy's weapons (real TF2; ours: pose.scene;
+# specs/tf2/player_animation.md 4b, 4c, 7a). Each class's puppet bot faces
+# the camera 300 units away as bot_teleport leaves it (`st_<c>_raw`: its
+# feet keep the goal they had, 4c 5), then after teleports to yaw 0, 225
+# and 270 (`st_<c>_snap`). Nothing over RCON snaps a puppet bot's feet
+# (`setang_exact` is the local player's): the step rule keeps the goal
+# at its spawn value plus multiples of 45, which here left the feet 30
+# degrees left of the eyes (raw) and 15 right (after the teleports);
+# ours lines up with that (pose.scene). The Engineer's Wrench idle every 0.2 s for
+# 3.2 s (`wr_NN`, to pair by phase); the Spy with his Knife and his
+# Revolver from the front and his right side (`spy_*`).
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/pose.tf2 --out <dir>
+cl_drawhud 0
+r_drawvgui 0
+tf_spec_xray 0
+fov_desired 90
+fps_max 60
+host_framerate 0
+mp_disable_respawn_times 1
+tf_weapon_criticals 0
+bot_kick all
+sleep 2
+jointeam spectator
+sleep 2
+# Free roam before the first picture (else the first ones showed the
+# spawn room's overview camera).
+spec_mode 6
+sleep 3
+# scout
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name RefScout -class scout -team blue
+sleep 5
+bot_teleport RefScout 0 0 0 0 270 0
+sleep 2
+bot_teleport RefScout 0 0 0 0 270 0
+sleep 2
+spec_mode 6
+sleep 1
+setpos 0 -300 68
+setang 0 90 0
+sleep 2
+shot st_scout_raw
+bot_teleport RefScout 0 0 0 0 0 0
+sleep 1
+bot_teleport RefScout 0 0 0 0 225 0
+sleep 1
+bot_teleport RefScout 0 0 0 0 270 0
+sleep 1.5
+shot st_scout_snap
+# soldier
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name RefSoldier -class soldier -team blue
+sleep 5
+bot_teleport RefSoldier 0 0 0 0 270 0
+sleep 2
+bot_teleport RefSoldier 0 0 0 0 270 0
+sleep 2
+spec_mode 6
+sleep 1
+setpos 0 -300 68
+setang 0 90 0
+sleep 2
+shot st_soldier_raw
+bot_teleport RefSoldier 0 0 0 0 0 0
+sleep 1
+bot_teleport RefSoldier 0 0 0 0 225 0
+sleep 1
+bot_teleport RefSoldier 0 0 0 0 270 0
+sleep 1.5
+shot st_soldier_snap
+# pyro
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name RefPyro -class pyro -team blue
+sleep 5
+bot_teleport RefPyro 0 0 0 0 270 0
+sleep 2
+bot_teleport RefPyro 0 0 0 0 270 0
+sleep 2
+spec_mode 6
+sleep 1
+setpos 0 -300 68
+setang 0 90 0
+sleep 2
+shot st_pyro_raw
+bot_teleport RefPyro 0 0 0 0 0 0
+sleep 1
+bot_teleport RefPyro 0 0 0 0 225 0
+sleep 1
+bot_teleport RefPyro 0 0 0 0 270 0
+sleep 1.5
+shot st_pyro_snap
+# demoman
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name RefDemo -class demoman -team blue
+sleep 5
+bot_teleport RefDemo 0 0 0 0 270 0
+sleep 2
+bot_teleport RefDemo 0 0 0 0 270 0
+sleep 2
+spec_mode 6
+sleep 1
+setpos 0 -300 68
+setang 0 90 0
+sleep 2
+shot st_demoman_raw
+bot_teleport RefDemo 0 0 0 0 0 0
+sleep 1
+bot_teleport RefDemo 0 0 0 0 225 0
+sleep 1
+bot_teleport RefDemo 0 0 0 0 270 0
+sleep 1.5
+shot st_demoman_snap
+# heavyweapons
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name RefHeavy -class heavyweapons -team blue
+sleep 5
+bot_teleport RefHeavy 0 0 0 0 270 0
+sleep 2
+bot_teleport RefHeavy 0 0 0 0 270 0
+sleep 2
+spec_mode 6
+sleep 1
+setpos 0 -300 68
+setang 0 90 0
+sleep 2
+shot st_heavy_raw
+bot_teleport RefHeavy 0 0 0 0 0 0
+sleep 1
+bot_teleport RefHeavy 0 0 0 0 225 0
+sleep 1
+bot_teleport RefHeavy 0 0 0 0 270 0
+sleep 1.5
+shot st_heavy_snap
+# engineer
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name RefEngineer -class engineer -team blue
+sleep 5
+bot_teleport RefEngineer 0 0 0 0 270 0
+sleep 2
+bot_teleport RefEngineer 0 0 0 0 270 0
+sleep 2
+spec_mode 6
+sleep 1
+setpos 0 -300 68
+setang 0 90 0
+sleep 2
+shot st_engineer_raw
+bot_teleport RefEngineer 0 0 0 0 0 0
+sleep 1
+bot_teleport RefEngineer 0 0 0 0 225 0
+sleep 1
+bot_teleport RefEngineer 0 0 0 0 270 0
+sleep 1.5
+shot st_engineer_snap
+# medic
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name RefMedic -class medic -team blue
+sleep 5
+bot_teleport RefMedic 0 0 0 0 270 0
+sleep 2
+bot_teleport RefMedic 0 0 0 0 270 0
+sleep 2
+spec_mode 6
+sleep 1
+setpos 0 -300 68
+setang 0 90 0
+sleep 2
+shot st_medic_raw
+bot_teleport RefMedic 0 0 0 0 0 0
+sleep 1
+bot_teleport RefMedic 0 0 0 0 225 0
+sleep 1
+bot_teleport RefMedic 0 0 0 0 270 0
+sleep 1.5
+shot st_medic_snap
+# sniper
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name RefSniper -class sniper -team blue
+sleep 5
+bot_teleport RefSniper 0 0 0 0 270 0
+sleep 2
+bot_teleport RefSniper 0 0 0 0 270 0
+sleep 2
+spec_mode 6
+sleep 1
+setpos 0 -300 68
+setang 0 90 0
+sleep 2
+shot st_sniper_raw
+bot_teleport RefSniper 0 0 0 0 0 0
+sleep 1
+bot_teleport RefSniper 0 0 0 0 225 0
+sleep 1
+bot_teleport RefSniper 0 0 0 0 270 0
+sleep 1.5
+shot st_sniper_snap
+# spy
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name RefSpy -class spy -team blue
+sleep 5
+bot_teleport RefSpy 0 0 0 0 270 0
+sleep 2
+bot_teleport RefSpy 0 0 0 0 270 0
+sleep 2
+spec_mode 6
+sleep 1
+setpos 0 -300 68
+setang 0 90 0
+sleep 2
+shot st_spy_raw
+bot_teleport RefSpy 0 0 0 0 0 0
+sleep 1
+bot_teleport RefSpy 0 0 0 0 225 0
+sleep 1
+bot_teleport RefSpy 0 0 0 0 270 0
+sleep 1.5
+shot st_spy_snap
+# the Engineer's Wrench
+bot_kick all
+sleep 1
+bot_selectweaponslot 2
+bot -name RefEngineer -class engineer -team blue
+sleep 5
+bot_teleport RefEngineer 0 0 0 0 270 0
+sleep 2
+bot_teleport RefEngineer 0 0 0 0 0 0
+sleep 1
+bot_teleport RefEngineer 0 0 0 0 225 0
+sleep 1
+bot_teleport RefEngineer 0 0 0 0 270 0
+sleep 1.5
+spec_mode 6
+sleep 1
+setpos 0 -150 68
+setang 0 90 0
+sleep 2
+shot wr_00
+sleep 0.2
+shot wr_01
+sleep 0.2
+shot wr_02
+sleep 0.2
+shot wr_03
+sleep 0.2
+shot wr_04
+sleep 0.2
+shot wr_05
+sleep 0.2
+shot wr_06
+sleep 0.2
+shot wr_07
+sleep 0.2
+shot wr_08
+sleep 0.2
+shot wr_09
+sleep 0.2
+shot wr_10
+sleep 0.2
+shot wr_11
+sleep 0.2
+shot wr_12
+sleep 0.2
+shot wr_13
+sleep 0.2
+shot wr_14
+sleep 0.2
+shot wr_15
+sleep 0.2
+# the Spy, slot 2
+bot_kick all
+sleep 1
+bot_selectweaponslot 2
+bot -name RefSpy -class spy -team blue
+sleep 5
+bot_teleport RefSpy 0 0 0 0 270 0
+sleep 2
+bot_teleport RefSpy 0 0 0 0 0 0
+sleep 1
+bot_teleport RefSpy 0 0 0 0 225 0
+sleep 1
+bot_teleport RefSpy 0 0 0 0 270 0
+sleep 1.5
+spec_mode 6
+sleep 1
+setpos 0 -120 68
+setang 0 90 0
+sleep 2
+shot spy_knife_front
+setpos 90 0 68
+setang 0 180 0
+sleep 2
+shot spy_knife_side
+setpos -90 0 68
+setang 0 0 0
+sleep 2
+shot spy_knife_left
+# the Spy, slot 0
+bot_kick all
+sleep 1
+bot_selectweaponslot 0
+bot -name RefSpy -class spy -team blue
+sleep 5
+bot_teleport RefSpy 0 0 0 0 270 0
+sleep 2
+bot_teleport RefSpy 0 0 0 0 0 0
+sleep 1
+bot_teleport RefSpy 0 0 0 0 225 0
+sleep 1
+bot_teleport RefSpy 0 0 0 0 270 0
+sleep 1.5
+spec_mode 6
+sleep 1
+setpos 0 -120 68
+setang 0 90 0
+sleep 2
+shot spy_rev_front
+setpos 90 0 68
+setang 0 180 0
+sleep 2
+shot spy_rev_side
+setpos -90 0 68
+setang 0 0 0
+sleep 2
+shot spy_rev_left

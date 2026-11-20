@@ -244,8 +244,9 @@ impl MapLayers for Present {
                     render::bodies::turn_bodies.after(DriveAnimation),
                     render::bodies::pose_bodies.after(DriveAnimation),
                     render::bodies::build_late_held.before(render::bodies::attach_held),
-                    // On the new body in the frame it comes.
-                    render::bodies::attach_held.after(render::bodies::attach_bodies),
+                    // On the new body in the frame it comes, and the
+                    // weapon a game named in `DriveAnimation` in that frame.
+                    render::bodies::attach_held.after(render::bodies::attach_bodies).after(DriveAnimation),
                     render::loose::attach_shown,
                     render::loose::draw_loose,
                 )

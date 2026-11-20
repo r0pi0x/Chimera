@@ -11,8 +11,11 @@
 //! parent's cycle or a pose parameter, IK chains, the sequences' IK lock
 //! rules and IK locks), the blend/layer math (a layer's IK-locked chain
 //! ends put back where the pose underneath had them when the animator
-//! asks, `Animator::ik_locks`: TF2's feet under aim matrices,
-//! specs/tf2/player_animation.md 4a, 5a; the animations' IK rules' stored
+//! asks, `Animator::ik_locks`, the middle joint bent toward the chain's
+//! knee direction where it has one: TF2's feet under aim matrices,
+//! specs/tf2/player_animation.md 4a, 5a; real-time autolayers on the
+//! clock, `Sequence::realtime`; a request to snap a body's feet onto its
+//! eyes, `SnapFeet`; the animations' IK rules' stored
 //! places, a chain's end held relative to a bone, blended by the grid's
 //! cell weights and folded through the layers, then solved on the whole
 //! pose when the animator asks, `Animator::ik_rules`: TF2's Heavy's left
@@ -54,6 +57,15 @@ pub struct AnimSet {
     pub ik_chains: Vec<IkChain>,
 }
 
+/// A request on a character: its game's animation state puts the body's
+/// feet (its render yaw) on the eyes' yaw plus this many degrees
+/// (counter-clockwise) at its next update, then takes this off. TF2's
+/// `setang_exact` "snap yaw" (specs/tf2/player_animation.md 4, 4c 5);
+/// scenes line their targets' feet up with a reference's
+/// (`target set <n> feet <deg>`). A game without a feet yaw ignores it.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct SnapFeet(pub f32);
+
 /// A limb inverse kinematics can bend: root (shoulder), middle (elbow)
 /// and end (hand) bones, target skeleton indices.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -61,6 +73,11 @@ pub struct IkChain {
     /// Lower-case name (games pick chains by it).
     pub name: String,
     pub bones: [usize; 3],
+    /// The direction the middle joint (knee) bends toward, in the root
+    /// bone's frame (zero: none; then a lock keeps the plane the chain
+    /// bends in). specs/tf2/player_animation.md 4a.
+    #[serde(default)]
+    pub knee: Vec3,
 }
 
 /// What a sequence's animation says about an IK chain while it plays:
@@ -213,6 +230,13 @@ pub struct Sequence {
     /// specs/tf2/player_animation.md 4a, 5a).
     #[serde(default)]
     pub ik_locks: Vec<IkLock>,
+    /// Its cycle comes from the clock, not its host's (Source's real-time
+    /// flag 0x100): as an autolayer under a timed pose
+    /// (`AnimSet::accumulate_timed`, `Animator::pose`) it plays at
+    /// frac(t x its cycles per second). TF2's Medic's idle noise
+    /// (specs/tf2/player_animation.md 4c 3).
+    #[serde(default)]
+    pub realtime: bool,
 }
 
 /// A sequence's IK lock: chain `chain`'s end kept at its place before the
@@ -650,18 +674,26 @@ impl AnimSet {
     /// Merge sequence `s` at `cycle` and `weight` into `pose`, then its
     /// autolayers (§6, §7).
     pub fn accumulate(&self, pose: &mut [BonePose], s: usize, cycle: f32, weight: f32, params: &[f32]) {
-        self.accumulate_depth(pose, s, cycle, weight, params, false, 0);
+        self.accumulate_depth(pose, s, cycle, weight, params, false, None, 0);
+    }
+
+    /// `accumulate` (with the IK locks when `locks`) at clock time `now`:
+    /// real-time autolayers (`Sequence::realtime`) take their cycle from
+    /// it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn accumulate_timed(&self, pose: &mut [BonePose], s: usize, cycle: f32, weight: f32, params: &[f32], locks: bool, now: f64) {
+        self.accumulate_depth(pose, s, cycle, weight, params, locks, Some(now), 0);
     }
 
     /// `accumulate` keeping each sequence's IK-locked chain ends where the
     /// pose underneath had them (`Sequence::ik_locks`; a game whose
     /// players have Source's IK context, `Animator::ik_locks`).
     pub fn accumulate_locked(&self, pose: &mut [BonePose], s: usize, cycle: f32, weight: f32, params: &[f32]) {
-        self.accumulate_depth(pose, s, cycle, weight, params, true, 0);
+        self.accumulate_depth(pose, s, cycle, weight, params, true, None, 0);
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn accumulate_depth(&self, pose: &mut [BonePose], s: usize, cycle: f32, weight: f32, params: &[f32], locks: bool, depth: u32) {
+    fn accumulate_depth(&self, pose: &mut [BonePose], s: usize, cycle: f32, weight: f32, params: &[f32], locks: bool, now: Option<f64>, depth: u32) {
         let weight = weight.clamp(0.0, 1.0);
         if weight <= 0.0 || depth > 8 || s >= self.sequences.len() {
             return;
@@ -688,8 +720,13 @@ impl AnimSet {
             }
         }
         for l in &seq.autolayers {
-            if let Some((c, r)) = self.layer_ramp(l, cycle, params) {
-                self.accumulate_depth(pose, l.sequence, c, weight * r, params, locks, depth + 1);
+            if let Some((mut c, r)) = self.layer_ramp(l, cycle, params) {
+                if let Some(t) = now
+                    && self.sequences.get(l.sequence).is_some_and(|q| q.realtime)
+                {
+                    c = (t * f64::from(self.cycle_rate(l.sequence, params))).fract() as f32;
+                }
+                self.accumulate_depth(pose, l.sequence, c, weight * r, params, locks, now, depth + 1);
             }
         }
         self.solve_locks(pose, &locked);
@@ -820,8 +857,9 @@ impl AnimSet {
         }
     }
 
-    /// Each lock's chain end in model space now (with the lock).
-    fn lock_targets(&self, pose: &[BonePose], locks: &[IkLock]) -> Vec<(IkLock, BonePose)> {
+    /// Each lock's chain end in model space now (with the lock), and its
+    /// knee direction turned into model space by the root's turn now (4a).
+    fn lock_targets(&self, pose: &[BonePose], locks: &[IkLock]) -> Vec<(IkLock, BonePose, Vec3)> {
         if locks.is_empty() || self.parents.len() != pose.len() {
             return Vec::new();
         }
@@ -829,18 +867,22 @@ impl AnimSet {
         locks
             .iter()
             .filter_map(|l| {
-                let end = self.ik_chains.get(l.chain)?.bones[2];
-                Some((*l, *global.get(end)?))
+                let chain = self.ik_chains.get(l.chain)?;
+                let knee = global.get(chain.bones[0])?.0 * chain.knee;
+                Some((*l, *global.get(chain.bones[2])?, knee))
             })
             .collect()
     }
 
     /// Put each locked chain's end back where it was (4a): the two-bone
-    /// chain bent to reach the old place, the knee kept in the plane it
-    /// bends in, a leg within 1 degree of straight left alone; then the
-    /// end's old model-space turn.
-    fn solve_locks(&self, pose: &mut [BonePose], locked: &[(IkLock, BonePose)]) {
-        for (l, (old_q, old_p)) in locked {
+    /// chain bent to reach the old place, then the end's old model-space
+    /// turn. A chain with a knee direction bends its knee toward it (the
+    /// aim point 100 x the reach out along it from the model origin; the
+    /// reach clamped to 0.9998 of the leg's length and to at least
+    /// max(1.15 |L1 - L2|, 0.15 min(L1, L2))); one without keeps the plane
+    /// it bends in, a leg within 1 degree of straight left alone.
+    fn solve_locks(&self, pose: &mut [BonePose], locked: &[(IkLock, BonePose, Vec3)]) {
+        for (l, (old_q, old_p), knee_dir) in locked {
             let Some(chain) = self.ik_chains.get(l.chain) else { continue };
             let [a, b, c] = chain.bones;
             let global = model_space(pose, &self.parents);
@@ -848,31 +890,55 @@ impl AnimSet {
             let w = l.position.clamp(0.0, 1.0);
             let goal = hc.lerp(*old_p, w);
             let (upper, lower) = (eb - sa, hc - eb);
-            let straight = upper.angle_between(lower) < 1f32.to_radians();
-            if w > 0.0 && !straight && goal.distance(hc) > 1e-4 {
-                let (lu, ll) = (upper.length(), lower.length());
-                let to_goal = goal - sa;
-                let d = to_goal.length().clamp((lu - ll).abs() + 1e-3, lu + ll - 1e-3);
-                if let Some(dir) = to_goal.try_normalize() {
+            let (lu, ll) = (upper.length(), lower.length());
+            let solved = if *knee_dir != Vec3::ZERO {
+                (w > 0.0 && lu > 1e-4 && ll > 1e-4).then(|| {
+                    let mut to_goal = goal - sa;
+                    let reach = lu + ll;
+                    let near = (1.15 * (lu - ll).abs()).max(0.15 * lu.min(ll));
+                    let d = to_goal.length();
+                    if d > 0.9998 * reach {
+                        to_goal *= 0.9998 * reach / d;
+                    } else if d < near {
+                        to_goal = (hc - sa).try_normalize().unwrap_or(Vec3::Z) * near;
+                    }
+                    let k = 100.0 * reach.max(to_goal.length() - lu.min(ll));
+                    let aim = -sa + *knee_dir * k;
+                    (to_goal, aim)
+                })
+            } else {
+                let straight = upper.angle_between(lower) < 1f32.to_radians();
+                (w > 0.0 && !straight && goal.distance(hc) > 1e-4).then(|| {
+                    let to_goal = goal - sa;
+                    let d = to_goal.length().clamp((lu - ll).abs() + 1e-3, lu + ll - 1e-3);
                     // The bend plane's normal: kept from the current chain.
-                    let normal = upper.cross(lower).try_normalize();
-                    let side = (eb - sa).reject_from_normalized(dir);
-                    let bend = normal
+                    let dir = to_goal.normalize_or_zero();
+                    let side = upper.reject_from_normalized(dir);
+                    let bend = upper
+                        .cross(lower)
+                        .try_normalize()
                         .map(|n| n.cross(dir).normalize())
                         .map(|v| if v.dot(side) < 0.0 { -v } else { v })
                         .unwrap_or_else(|| side.normalize_or_zero());
-                    let along = (lu * lu - ll * ll + d * d) / (2.0 * d);
-                    let knee = sa + dir * along + bend * (lu * lu - along * along).max(0.0).sqrt();
-                    let turn_a = Quat::from_rotation_arc(upper.normalize_or_zero(), (knee - sa).normalize_or_zero());
-                    let qa = turn_a * global[a].0;
-                    let lower_now = turn_a * lower;
-                    let turn_b = Quat::from_rotation_arc(lower_now.normalize_or_zero(), (sa + dir * d - knee).normalize_or_zero());
-                    let qb = turn_b * turn_a * global[b].0;
-                    let parent_q = |i: usize| self.parents[i].map_or(Quat::IDENTITY, |p| global[p].0);
-                    pose[a].0 = (parent_q(a).inverse() * qa).normalize();
-                    let parent_b = if self.parents[b] == Some(a) { qa } else { parent_q(b) };
-                    pose[b].0 = (parent_b.inverse() * qb).normalize();
-                }
+                    (dir * d, bend)
+                })
+            };
+            if let Some((to_goal, toward)) = solved
+                && let Some(dir) = to_goal.try_normalize()
+            {
+                let d = to_goal.length().clamp((lu - ll).abs() + 1e-3, lu + ll - 1e-3);
+                let bend = toward.reject_from_normalized(dir).try_normalize().unwrap_or_else(|| upper.reject_from_normalized(dir).normalize_or_zero());
+                let along = (lu * lu - ll * ll + d * d) / (2.0 * d);
+                let knee = sa + dir * along + bend * (lu * lu - along * along).max(0.0).sqrt();
+                let turn_a = Quat::from_rotation_arc(upper.normalize_or_zero(), (knee - sa).normalize_or_zero());
+                let qa = turn_a * global[a].0;
+                let lower_now = turn_a * lower;
+                let turn_b = Quat::from_rotation_arc(lower_now.normalize_or_zero(), (sa + dir * d - knee).normalize_or_zero());
+                let qb = turn_b * turn_a * global[b].0;
+                let parent_q = |i: usize| self.parents[i].map_or(Quat::IDENTITY, |p| global[p].0);
+                pose[a].0 = (parent_q(a).inverse() * qa).normalize();
+                let parent_b = if self.parents[b] == Some(a) { qa } else { parent_q(b) };
+                pose[b].0 = (parent_b.inverse() * qb).normalize();
             }
             // The end's turn: the old one by 1 - rotation weight.
             let global = model_space(pose, &self.parents);
@@ -1212,9 +1278,7 @@ impl Animator {
             return fixed.to_vec();
         }
         let set = &*self.set;
-        let acc = |pose: &mut [BonePose], s: usize, c: f32, w: f32, p: &[f32]| {
-            if self.ik_locks { set.accumulate_locked(pose, s, c, w, p) } else { set.accumulate(pose, s, c, w, p) }
-        };
+        let acc = |pose: &mut [BonePose], s: usize, c: f32, w: f32, p: &[f32]| set.accumulate_timed(pose, s, c, w, p, self.ik_locks, now);
         let mut pose = set.defaults.clone();
         if let Some(s) = self.main {
             acc(&mut pose, s, self.cycle, 1.0, &self.params);
@@ -1332,6 +1396,7 @@ mod tests {
             ik_chains: vec![IkChain {
                 name: "arm".into(),
                 bones: [0, 1, 2],
+                ..default()
             }],
             ..default()
         };
@@ -1384,7 +1449,7 @@ mod tests {
             defaults: defaults.clone(),
             bases: vec![defaults.clone()],
             parents: vec![None, Some(0), Some(1), None],
-            ik_chains: vec![IkChain { name: "arm".into(), bones: [0, 1, 2] }],
+            ik_chains: vec![IkChain { name: "arm".into(), bones: [0, 1, 2], ..default() }],
             animations: vec![anim(Some(place(Vec3::new(1.0, 2.0, 0.0)))), anim(Some(place(Vec3::new(3.0, 2.0, 0.0)))), anim(None)],
             sequences: vec![sequence(vec![0, 1], vec![]), sequence(vec![2], vec![IkRule { chain: 0, lock: false }])],
             params: vec![PoseParam { name: "p".into(), start: 0.0, end: 1.0, looping: 0.0 }],

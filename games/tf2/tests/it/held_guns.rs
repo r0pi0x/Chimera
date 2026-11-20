@@ -198,3 +198,35 @@ fn the_flame_throwers_view_model_idles_after_the_release() {
     assert!(idle_at <= 24, "idle after {idle_at} ticks");
     assert!(seen[idle_at..].iter().all(|s| s.as_deref() == Some("ft_idle")), "stays idle: {seen:?}");
 }
+
+/// specs/tf2/player_animation.md 7a, tests 57, 58: a body holds only its
+/// active weapon (`player_anim::hold_weapons` names it in `map::Held`, the
+/// one model drawn: nothing holstered, no Revolver at the Spy's hip), and
+/// names the new one in the frame the switch takes effect.
+#[test]
+fn only_the_active_weapon_is_held_57_58() {
+    let mut sim = sim();
+    let (p, knife) = holding(&mut sim, greybox::SPAWNS[0], "tf2:tf_weapon_knife");
+    let revolver = give(sim.app.world_mut(), p, "tf2:tf_weapon_revolver").unwrap();
+    sim.app.world_mut().entity_mut(p).insert(tf2::game::player_anim::Tf2PlayerAnim::default());
+    // A gift is drawn: the Knife out again.
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(knife);
+    sim.seconds(1.5);
+    assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(knife));
+    let held = |sim: &chimera_world::harness::Sim| sim.app.world().get::<chimera_world::map::Held>(p).and_then(|h| h.0.clone());
+    assert_eq!(held(&sim).as_deref(), Some("tf2:tf_weapon_knife"), "57: the Knife only");
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(revolver);
+    let mut switched = false;
+    for _ in 0..200 {
+        sim.app.update();
+        let active = sim.app.world().get::<Inventory>(p).unwrap().active;
+        if active == Some(revolver) {
+            assert_eq!(held(&sim).as_deref(), Some("tf2:tf_weapon_revolver"), "58: in the switch's frame");
+            switched = true;
+            break;
+        }
+        assert_eq!(active, Some(knife));
+        assert_eq!(held(&sim).as_deref(), Some("tf2:tf_weapon_knife"));
+    }
+    assert!(switched, "the Revolver came out");
+}

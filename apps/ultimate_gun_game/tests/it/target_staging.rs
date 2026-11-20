@@ -26,13 +26,18 @@ const GUN: &str = "tf2:tf_weapon_grenadelauncher";
 
 /// The sandbox with one still target 10 m ahead of the local player.
 fn staged() -> (Sim, Entity) {
+    staged_as(BODY, Some(GUN))
+}
+
+/// `staged` with another body and gun (None: the body's default).
+fn staged_as(body: &str, gun: Option<&str>) -> (Sim, Entity) {
     let mut sim = ugg();
     ultimate_gun_game::sandbox::generate(sim.app.world_mut(), "combat_arms").expect("the definition");
     minigame::start(sim.app.world_mut(), SANDBOX).expect("the sandbox starts");
     let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
     sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
     sim.seconds(1.5);
-    let e = targets::spawn(sim.app.world_mut(), &SpawnTarget { character: Some(BODY.into()), gun: Some(GUN.into()), distance_m: 10.0, ..default() })
+    let e = targets::spawn(sim.app.world_mut(), &SpawnTarget { character: Some(body.into()), gun: gun.map(Into::into), distance_m: 10.0, ..default() })
         .unwrap_or_else(|e| panic!("the target: {e}"));
     sim.seconds(1.5);
     (sim, e)
@@ -52,7 +57,20 @@ fn target(sim: &Sim, e: Entity) -> Target {
 
 #[test]
 fn a_crouching_target_stays_crouched_until_told() {
-    let (mut sim, e) = staged();
+    let (sim, e) = staged();
+    crouch_and_stand(sim, e);
+}
+
+/// A Combat Arms body stands up again too: placed right on the floor, its
+/// headroom check met the floor under its feet and it stayed crouched after
+/// `nocrouch` (TF2's bodies stood).
+#[test]
+fn a_combat_arms_target_stands_up_after_nocrouch() {
+    let (sim, e) = staged_as("combat_arms:default", None);
+    crouch_and_stand(sim, e);
+}
+
+fn crouch_and_stand(mut sim: Sim, e: Entity) {
     let reply = say(&mut sim, "target set 1 crouch");
     assert!(reply.contains("crouched"), "{reply}");
     sim.seconds(1.0);

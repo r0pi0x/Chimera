@@ -1,7 +1,9 @@
 //! Held models' bone-merged parts (`render::bodies::attach_held`): each
 //! part rides its own joint of the body; a body lacking a joint some part
 //! merges onto holds the model whole on its bone (TF2's Revolver on the
-//! Spy, whose model lacks `weapon_bone_4`), so no part goes undrawn.
+//! Spy, whose model lacks `weapon_bone_4`), so no part goes undrawn; one
+//! held model a body, swapped for another in one frame (specs/tf2/
+//! player_animation.md 7a).
 
 use bevy::{mesh::skinning::SkinnedMeshInverseBindposes, prelude::*};
 use chimera_core::core::Intent;
@@ -104,4 +106,30 @@ fn merged_parts_ride_their_joints_or_the_model_is_held_whole() {
     let mut sim = sim();
     assert_eq!(held(&mut sim, "test:fits"), (1, 2), "its own mesh on the hand, a part on each joint");
     assert_eq!(held(&mut sim, "test:lacks"), (3, 0), "no `thumb` on the body: held whole");
+}
+
+/// specs/tf2/player_animation.md 7a, tests 57, 58: a body draws one held
+/// model, its character's `Held` (the active weapon; nothing holstered),
+/// and a switch takes the old one away and puts the new one in its hand
+/// in the same frame.
+#[test]
+fn a_switch_swaps_the_held_model_in_one_frame_57_58() {
+    let mut sim = sim();
+    let e = sim.app.world_mut().spawn((Intent::default(), Corpse { feet: 0.0 }, Transform::default(), Held(Some("test:fits".into())))).id();
+    sim.ticks(4);
+    let shown = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        let body = w.query::<(&CharacterBody, &ChildOf)>().iter(w).find(|(_, c)| c.parent() == e).map(|(b, _)| b).expect("a body");
+        (body.held.clone(), body.held_parts.len())
+    };
+    let (held, parts) = shown(&mut sim);
+    let (old, key) = held.expect("held");
+    assert_eq!((key.as_str(), parts), ("test:fits", 2), "57: the one held model and its parts");
+    sim.app.world_mut().get_mut::<Held>(e).unwrap().0 = Some("test:lacks".into());
+    sim.app.update();
+    let (held, parts) = shown(&mut sim);
+    let (new, key) = held.expect("the new one at once");
+    assert_eq!((key.as_str(), parts), ("test:lacks", 0), "58: the new model (whole) in the switch's frame");
+    assert!(sim.app.world().get_entity(old).is_err(), "58: the old one gone in the same frame");
+    assert_ne!(old, new);
 }
