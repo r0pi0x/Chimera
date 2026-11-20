@@ -27,9 +27,18 @@ merge, activity-to-sequence pick, layer composition and sequence IK
 locks were read in the same SDK, and the class models' sequence flags,
 bone weights, autolayers, IK locks and IK rules were read from the
 retail models; the poses quoted in §6 and the tests were computed from
-the decoded animations with a throwaway reader (nothing kept).
+the decoded animations with a throwaway reader (nothing kept). For the
+second 2026-11-19 pass (the Wrench, the Spy's Revolver, the stances:
+§4b, §4c, §7a), the SDK was read for how the game sets item pose
+parameters, zeroes pose parameters, draws a player's weapons and
+wearables, sets body groups, keeps the feet yaw across lives and
+evaluates IK-locked layers (knee directions, the real-time and pose
+ramps of autolayers); the hand and arm pose libraries, their host
+sequences, the noise layers and the `c_` weapons' meshes were read from
+the retail models, and `items_game.txt` for every item pose parameter.
 Status: checked against the SDK's game code (2026-11-15; lookup, layers
-and the Minigun's look 2026-11-19)
+and the Minigun's look 2026-11-19; pose libraries, weapon visibility and
+the rest stance 2026-11-19, second pass)
 
 ## Summary
 
@@ -120,6 +129,32 @@ name onto `weapon_bone` and its siblings under the right hand.
   raised (about 34° up); the fire gesture changes either by about 1°
   (§6, "What it looks like").
 
+## Corrections (2026-11-19, second pass)
+
+- `r_hand_grip` / `r_arm` "0 for the four guns (assumed)" -> the game
+  sets **every** pose parameter of a player model to 0 (in the
+  parameter's own units) whenever the model is set and on each spawn,
+  and only an item's schema entry (or the Grappling Hook) changes these
+  two; no stock weapon does (§4b). An engine default of the range's
+  middle (8 / 1.5) is wrong.
+- The suspect for the Engineer's Wrench, `r_hand_grip`, plays no part:
+  `stand_MELEE` and its aim matrix carry no hand-pose layer. The Wrench's
+  look at rest is the 3.2 s idle's own motion: it taps the head three
+  times a loop, from 5° to 50° above horizontal (§4b, "The Engineer's
+  Wrench").
+- Foot locks "the chains carry no knee direction" -> the class model's
+  own chains have none, but when the include merges in, its knee
+  directions are copied onto the class model's chains that lack one,
+  so the locks bend each knee toward a recorded knee direction (§4a).
+- Rest: TF2's feet yaw goal survives death and respawn and a teleport;
+  it snaps to the eyes only when the player's animation state is first
+  created and on `setang_exact`. A body standing since it was turned
+  keeps its feet up to 45° off its eyes, which changes how wide the
+  stance looks from the front by up to ±50 % (§4c).
+- Weapons on the body: only the active weapon is ever drawn on a
+  player; there is no holstered weapon model, for any class or slot
+  (§7a). The Spy's model has no holster mesh either.
+
 ## Units and conventions
 
 - Hammer units, Z up. Model space: the animated character faces +X, its
@@ -129,7 +164,9 @@ name onto `weapon_bone` and its siblings under the right hand.
   cross-fade into it), 0x4 delta (additive), 0x10 post (with delta:
   applied in the bone's local frame after the base), 0x400 hidden
   (only hidden from tool listings; still selectable by activity), 0x800
-  forward declaration (a stub, §1a). Animation (not sequence) flags: 0x4
+  forward declaration (a stub, §1a), 0x100 real time (the sequence's
+  cycle comes from the clock, not from its host: cycle = frac(t × its
+  cycles per second), t the client's time). Animation (not sequence) flags: 0x4
   delta (values relative to identity / zero, not to the bind pose), 0x20
   all zero.
 - Ground speed = the authored displacement of the grid's forward (N)
@@ -150,8 +187,8 @@ name onto `weapon_bone` and its siblings under the right hand.
 | `body_yaw` | −45 … 45 (loop 360) | ° | torso twist; column keys 45, 0, −45 |
 | `move_x` | −1 … 1 | – | forward (+1) / back (−1) on the move grid |
 | `move_y` | −1 … 1 | – | right (+1) / left (−1) on the move grid |
-| `r_hand_grip` | 0 … 16 | – | hand-pose library index (`r_handposes`, 17 one-frame poses for special items); 0 for the four guns (assumed) |
-| `r_arm` | 0 … 3 | – | arm-pose library (`r_armposes`); 0 for the four guns (assumed) |
+| `r_hand_grip` | 0 … 16 (no loop) | – | hand-pose library index (`r_handposes`, 17 one-frame cells; the Engineer's `r_handposes_engineer`, 2 cells); 0 unless the held item's schema sets it (§4b) |
+| `r_arm` | 0 … 3 (no loop) | – | arm-pose library (`r_armposes`, 4 cells); 0 unless the held item sets it (§4b) |
 | main_fade | 0.2 | s | cross-fade between main sequences |
 | ragdoll_total_mass | 100 | kg | every class's `.phy` `totalmass` |
 
@@ -537,8 +574,9 @@ the ground; a Scout crouch-walking at 133 (a third of 400) has |move| =
 - **Feet yaw** (the rendered model's yaw, F) and its goal Fg, each
   frame (SDK):
   - Moving (3D speed > 1 u/s): Fg = eye yaw E.
-  - Standing: on the first update after spawn (or after a "snap yaw"
-    event) Fg = F = E. Otherwise, if |normalise(Fg − E)| > 45°, Fg moves
+  - Standing: on the first update of the player's animation state (or
+    after a "snap yaw" event, which only `setang_exact` sends) Fg = F = E;
+    not on later spawns or teleports (§4c 5). Otherwise, if |normalise(Fg − E)| > 45°, Fg moves
     45° toward E (Fg += 45° × sign(E − Fg)); the feet stay put inside
     ±45°.
   - Then, if F ≠ Fg, F turns toward Fg by 720 °/s × dt × k, k =
@@ -569,14 +607,33 @@ the ground; a Scout crouch-walking at 133 (a third of 400) has |move| =
   applied, each locked foot's model-space position and rotation are
   recorded; after it (and its own autolayers) is applied, each foot is
   put back: the target position is the recorded one (position weight 1),
-  the hip–knee–foot chain is solved two-bone style to reach it, keeping
-  the knee in the plane the chain currently bends in (the chains carry
-  no knee direction), skipped when the leg is within 1° of straight;
-  then the foot's model-space rotation is set to the recorded one
-  (local-rotation weight 0 keeps that). Result: aim and gestures turn
-  the pelvis and spine, the feet stay planted where the main sequence
-  put them and the knees bend to follow. The class models' own IK
-  chains are the ones used (they have no knee directions).
+  the hip–knee–foot chain is solved two-bone style to reach it (the knee
+  rule below); then the foot's model-space rotation is set to the
+  recorded one (local-rotation weight 0 keeps that). Result: aim and
+  gestures turn the pelvis and spine, the feet stay planted where the
+  main sequence put them and the knees bend to follow. The class
+  models' own IK chains are the ones used.
+- **The knee** (corrected 2026-11-19, second pass): the class model's
+  chains have no knee direction of their own, but merging the include
+  copies the include's knee direction (stored on the chain's first link,
+  in the hip bone's frame) onto each class-model chain that has none
+  when both models have the same number of chains, as all nine do. So
+  every foot chain has one (e.g. Engineer `rfoot` (0.600, −0.002, 0.800),
+  `lfoot` (0.595, 0.002, 0.804); Scout `rfoot` (0.709, −0.705, 0.002),
+  `lfoot` (0.708, −0.002, 0.706)). When the lock is recorded, that
+  direction is turned into model space by the hip's model-space turn at
+  that moment. Solving: L1 = |knee − hip|, L2 = |foot − knee| (current
+  pose); the knee aim point is the hip-relative point (−hip) + D × k,
+  where k = 100 × max(L1 + L2, |target − hip| − min(L1, L2)) and D is
+  the recorded direction: the recorded knee position is never filled in
+  (it stays the model origin), but k is so large that the knee simply
+  bends toward D (the origin term shifts it by about 1 %). The reach is
+  clamped: farther than 0.9998 × (L1 + L2) from the hip, the target is
+  pulled in to that distance; nearer than max(1.15 × |L1 − L2|, 0.15 ×
+  min(L1, L2)), the current hip-to-foot direction at that minimum
+  distance is used instead. Then the hip and knee are turned so the
+  knee lies in the plane of hip, target and aim point, on the aim
+  point's side, and the foot reaches the target.
 - The centre cells of the aim matrices are identity, so at
   `body_pitch` = `body_yaw` = 0 the locks change nothing. Off centre
   they matter: without them the aim cells move the feet as a rigid unit
@@ -627,6 +684,202 @@ the ground; a Scout crouch-walking at 133 (a third of 400) has |move| =
   its weight. After all layers the chain is bent two-bone style (the
   elbow kept in the plane it bends in) so its end lands at the bone's
   final place times the goal, and the end takes the goal's turn.
+
+### 4b. The hand and arm pose libraries: `r_hand_grip`, `r_arm`
+
+A TF2 player model has exactly six pose parameters (merged, by name):
+`body_pitch`, `body_yaw` (§4), `move_x`, `move_y` (§3), `r_hand_grip`
+and `r_arm`. The class model itself declares only `body_pitch` and
+`body_yaw` (−45 … 45 there; the include widens `body_pitch` to −45 … 90,
+the merged range being the union of the two). The last two are covered
+here; nothing else (no head, eye or blink parameter: the head-look code
+exists in the client but is switched off).
+
+**What they drive.** Three hidden, non-additive, one-frame-per-cell
+sequences of each `<class>_animations.mdl` (flags 0x400):
+
+| Sequence | Grid | Axis | Bones it sets (weight 1; all others 0) |
+|---|---|---|---|
+| `r_handposes` | 17 × 1 | `r_hand_grip`, keys 0, 1, …, 16 | the right hand's 15 finger bones (`bip_thumb/index/middle/ring/pinky_0..2_R`) and `weapon_bone` |
+| `r_handposes_engineer` (Engineer only) | 2 × 1 | `r_hand_grip`, keys 0, 1 (its own range 0 … 1) | the same 16 bones |
+| `r_armposes` | 4 × 1 | `r_arm`, keys 0, 1, 2, 3 | `bip_collar_R`, `bip_upperArm_R`, `bip_lowerArm_R`, `bip_hand_R`, `effect_hand_R`, `weapon_bone`, `weapon_bone_1`, `prp_starter` |
+
+They act only where a sequence lists one as an autolayer (unramped,
+full weight, flags 0; where the file stores the ramp as four NaNs, as on
+the Engineer's and Demoman's all-class aim matrices, it is still full
+weight: the cells are one frame, so the cycle does not matter). Being
+non-additive, each overrides its bones with the chosen cell's pose, on
+top of whatever came before in the host's layer order. Hosts, from the
+retail models:
+
+- `r_handposes` and `r_armposes`: the **all-class melee** (`…_MELEE_ALLCLASS`)
+  stand, crouch, run, crouch-walk, jump start / float / land, airwalk,
+  swim and swing sequences of every class (on the Demoman and Engineer
+  also inside their `MELEE_ALLCLASS_aimmatrix_*`); the Scout's `ITEM1`
+  set (stand, crouch, run, jump, airwalk: the drinks); the Pyro's gas-can
+  swings; and every class's `throw_fire` (hand library only, ramped in
+  over cycle 0 → 0.28 → 0.4 by a spline: (start, peak, tail, end) =
+  (0, 0, 0.28, 0.4), flags 0x40 — full weight at once, out by 0.4).
+- `r_handposes_engineer`: the Engineer's `SECONDARY` (pistol) `stand`,
+  `run`, `swim`, `a_jumpstart`, `a_jumpfloat` (after their aim matrix).
+- Nothing in any class's `PRIMARY`, `SECONDARY` (except the Engineer's
+  pistol above) or `MELEE` sets: for the stock guns and melee weapons the
+  two parameters change nothing on screen, **except** the Engineer's
+  pistol, whose grip depends on `r_hand_grip` being 0.
+
+**The value.** The player model's parameters are all set to 0 (in each
+parameter's own units, so `r_hand_grip` 0 = the first cell) whenever
+the model is (re)set and on every spawn, on the client and the server.
+After that the only writer is the held weapon's **player pose-parameter
+list**: the item schema's `visuals` → `player_poseparam` block (name →
+value), per team (same for both in the data). In the retail
+`items_game.txt` exactly five entries exist, none stock:
+
+| Item | `r_hand_grip` | `r_arm` | Its anim set |
+|---|---|---|---|
+| The Scout's drink prefab (Bonk! Atomic Punch and the like, anim slot `ITEM1`) | 16 | – | `ITEM1` |
+| The Self-Aware Beauty Mark (1104), Mutated Milk (1120) | 13 | – | thrown jars |
+| The Gas Passer (1180) | 16 | – | the gas can |
+| The Hot Hand (1181) | 15 | 3 | all-class melee |
+| (game code) the Grappling Hook, any class but the Engineer | 14 | 2 | its own |
+| (game code) the Grappling Hook, Engineer | sets a parameter named `r_handposes_engineer`, which no model has: no effect | | |
+
+(The first two jar items also set `r_hand_grip` 13 on the weapon's own
+model through `item_poseparam`.)
+
+**When it changes, and how it blends.**
+- Each client frame the animation state checks the active weapon; when
+  it differs from the last one seen, it rebuilds its list from the new
+  weapon's entries (looked up by name; a name the model lacks is
+  skipped) and then writes those values every frame. No smoothing: the
+  value jumps on the frame the switch is seen. The host sequences
+  themselves cross-fade (0.2 s main fade), so the visible change is the
+  host's fade, not the parameter's.
+- On a weapon switch run by the server (and predicted for one's own
+  player), the old weapon's listed parameters are first reset to 0 and
+  then the new weapon's set. Pose parameters of players are not sent
+  over the network, so on another client a parameter the new weapon
+  does not list keeps the old weapon's last value (Quirks).
+- Between keys the cell is a linear blend of the two neighbours (the
+  normal one-axis grid rule of cs_source/animation.md §5): 13.5 would
+  mix cells 13 and 14 half and half. Every value the game writes is an
+  integer, so in practice one cell shows. Outside the range the value is
+  clamped (16 max); on `r_handposes_engineer`, whose own range is
+  0 … 1, any merged value of 1 or more shows its second cell.
+
+**Effect of a wrong default** (why 0 matters): with `r_hand_grip` at 8
+(the range's middle) the Engineer's pistol takes `r_handposes_engineer`'s
+second cell: at `stand_SECONDARY` frame 0 (aim centred) `weapon_bone` moves
+from (12.96, −11.16, 46.01) to (17.20, −9.91, 48.43) and its barrel axis
+(+Z) from (0.99, −0.05, −0.16) (level, forward) to (0.72, −0.22, 0.66)
+(tilted 41° up): the "pistol turned at the belt" look.
+
+**The Engineer's Wrench** (the 2026-11-19 parity question: upright in
+TF2, flat across the belly in ours). The Wrench is the `MELEE` kind, so
+its stand is `stand_MELEE` (97 frames, 3.2 s, loop) with
+`MELEE_aimmatrix_idle`; neither has a hand or arm library, and no item
+pose parameter applies. The `c_wrench` mesh runs along its `weapon_bone`'s
+**+Y** axis (vertices from y −4.3 at the handle's end to +24.1 at the
+head, jaw toward +Z up to 6.4), unlike the guns, which run along +Z
+(Shotgun z −4.4 … 35.0, Revolver −3.6 … 14.4). In `stand_MELEE` the
+player's `weapon_bone` keeps a constant turn relative to `bip_hand_R`
+(its track holds the bind value), so the Wrench follows the hand, and
+the idle **taps it three times a loop** (about every 32 frames, 1.07 s).
+Model space (x forward, y left, z up), aim centred, the head = the
+weapon bone's origin + 24 × its +Y axis:
+
+| Frame (cycle) | +Y axis | Elevation | Head | Hand `bip_hand_R` |
+|---|---|---|---|---|
+| 0 (0) | (0.58, 0.76, 0.29) | 17° | (23.5, 3.7, 45.1) | (7.2, −14.4, 41.7) |
+| 12 (0.125) | (0.47, 0.43, 0.77) | 50° | (22.9, −3.9, 59.5) | (8.0, −15.2, 43.5) |
+| 24 (0.25) | (0.57, 0.82, 0.09) | 5° | (21.6, 6.0, 37.2) | (6.3, −13.1, 38.9) |
+| 40 (0.417) | (0.47, 0.55, 0.69) | 43° | (22.9, −1.2, 58.1) | (8.3, −15.3, 44.3) |
+| 56 (0.583) | (0.54, 0.83, 0.09) | 5° | (21.5, 6.0, 38.0) | (6.5, −13.4, 39.5) |
+| 76 (0.792) | (0.57, 0.51, 0.65) | 40° | (23.8, −1.1, 55.3) | (7.2, −14.3, 42.8) |
+| 88 (0.917) | (0.56, 0.82, 0.09) | 5° | (21.5, 6.1, 37.3) | (6.4, −13.2, 39.1) |
+
+So the same stand shows the Wrench lying nearly flat, its head across
+the belly to the Engineer's left (5°, three times a loop), or raised
+toward his chest (40–50°, three times a loop), while the hand moves
+only 2–7 units: two stills taken at different phases of the idle differ
+exactly as the parity pictures did. Aim changes it little (frame 0:
+elevation 13° at `body_pitch` −45, 25° at +45, 28° at 89; `body_yaw`
+±45 swings the head's direction by about ±35° but not its elevation).
+A matched comparison must match the idle's phase (or compare the
+whole loop), not only frame 0.
+
+### 4c. Standing still: what moves the legs
+
+At rest (horizontal speed ≤ 0.5 u/s for the main activity; 3D speed
+≤ 1 u/s for the feet yaw):
+
+1. **The stand sequence's feet don't move.** Over every stand loop of
+   all nine classes the feet stay where frame 0 puts them (the lateral
+   spread varies by under 0.3 units over a loop; the table in §3 holds
+   for any frame). The idle's own motion is the upper body and the
+   held weapon.
+2. **`move_x` / `move_y` are 0**, and the stand sequences are not grids,
+   so the move parameters change nothing. Only while a run sequence
+   fades out (0.2 s after stopping) does its grid show, at its centre
+   cell (0, 0), which has no motion.
+3. **Noise layers** (additive, foot-locked, so they never move the
+   feet): the Scout's `layer_idleNoise` (flags 0x415: loop, additive,
+   post, hidden; 46 frames, 1.5 s; on `stand_PRIMARY`, `stand_SECONDARY`,
+   `stand_ITEM2`; it plays on its host's cycle) and the Medic's
+   `layer_idleNoise` (flags 0x515: the same plus **real time**; 49
+   frames, 1.6 s; on `stand_SECONDARY`, `stand_MELEE`, `stand_MELEE_ALLCLASS`
+   and all four crouches; its cycle comes from the clock, so it never
+   restarts with its host). Both weight the pelvis and both legs, but
+   the foot locks put the feet back; without the locks the Scout's noise
+   changes his feet's spread by up to 0.3 units. Other classes have none at rest
+   (in the air: the Scout's, Soldier's and Medic's float noise, the
+   Medic's airwalk coat noise).
+4. **The feet yaw lag** — the large one. Standing, the rendered body
+   (feet) yaw F stays put until the eyes are more than 45° off the goal
+   (§4), so at rest `body_yaw` = F − E is anything in −45 … 45. The aim
+   matrix then twists the pelvis and torso back toward the eyes (Engineer
+   `MELEE_aimmatrix_idle` at `body_yaw` +45: pelvis turned 22.8°, spine
+   18°; at −45: 12.5°) while the foot locks keep the feet where the stand
+   put them **in the feet's frame**, and the knees bend to follow. Seen
+   from in front of the eyes, the feet's lateral spread becomes
+   y′ = Δx sin θ + Δy cos θ, with (Δx, Δy) = left foot − right foot in
+   the stand's frame 0 (the §3 table) and θ = `body_yaw` = F − E:
+
+   | Class (stand) | Δx, Δy | θ = +45 | +20 | 0 | −20 | −45 |
+   |---|---|---|---|---|---|---|
+   | Scout (`PRIMARY`) | 40.1, 15.8 | 39.5 | 28.6 | 15.8 | 1.2 | −17.1 |
+   | Soldier (`PRIMARY`) | 20.2, 19.4 | 28.0 | 25.1 | 19.4 | 11.3 | −0.6 |
+   | Pyro | 9.4, 20.1 | 20.8 | 22.1 | 20.1 | 15.6 | 7.5 |
+   | Demoman (`PRIMARY`) | 22.6, 17.9 | 28.7 | 24.6 | 17.9 | 9.1 | −3.3 |
+   | Heavy (`PRIMARY`) | 13.8, 15.9 | 21.0 | 19.7 | 15.9 | 10.3 | 1.5 |
+   | Engineer (`PRIMARY`, `MELEE`) | 13.8, 13.1 | 19.0 | 17.1 | 13.1 | 7.6 | −0.5 |
+   | Medic (`PRIMARY`) | 20.4, 12.6 | 23.3 | 18.8 | 12.6 | 4.9 | −5.5 |
+   | Sniper | 15.5, 14.1 | 20.9 | 18.5 | 14.1 | 8.0 | −1.0 |
+   | Spy (`SECONDARY`) | 16.5, 15.5 | 22.6 | 20.2 | 15.5 | 8.9 | −0.7 |
+
+   Every class stands left foot forward, so feet turned left of the eyes
+   (θ > 0) look wider, up to 1.5× for the Engineer, and feet turned
+   right look narrow or crossed. A body whose feet follow its eyes
+   (θ = 0) always shows the 0 column.
+5. **When the feet are on the eyes.** The goal snaps to the eyes only
+   (a) on the first update of the player's animation state (when the
+   entity is created on that machine: on the server when the player
+   joins, on a client when the player's entity first arrives) and (b) on
+   `setang_exact`. Death, respawn and teleports (`bot_teleport`,
+   `setpos`/`setang`, trigger teleports) do **not** reset it: the goal
+   keeps its old value and moves only by the 45° step rule (or snaps to
+   the eyes while moving). Example: a bot that stood facing yaw 90 and
+   is teleported to face 270 without moving: the goal steps 90 → 135 →
+   180 → 225 on three successive frames (one 45° step per frame while
+   more than 45° off; at exactly 180° off the step goes toward larger
+   yaw) and stays at 225: θ = 225 − 270 = −45, the narrow column. From
+   0 to 270 (90° off): one step to 315, θ = +45, the widest. From 330 to
+   270 (60° off): one step to 285, θ = +15. From 300 to 270 (30° off):
+   no step, θ = +30. The rendered feet F then turn to the goal at the
+   §4 rate. Once the step rule has run, |θ| ≤ 45.
+6. **The pose parameters at rest**: `body_pitch` = −eye pitch (bots and
+   puppets usually 0), `body_yaw` as above, `move_*` 0, `r_hand_grip` and
+   `r_arm` 0 (stock).
 
 ### 5. Gestures (additive overlays)
 
@@ -896,6 +1149,43 @@ play on the bone-merged Minigun at the same time.
 - Team skin: player skin 0 RED, 1 BLU (install.md 4.5); the stock guns
   look the same in skins 0–7.
 
+### 7a. Which of a player's weapons are drawn
+
+- **Only the active weapon** is ever drawn on a player, for every class
+  and slot: a carried weapon that is not active is not drawn at all (no
+  holstered or slung model, no hip holster). This is the engine's rule
+  for a player-owned weapon (show it only while it is the active one)
+  and TF2's weapon rule adds only reasons to hide the active one too.
+  The class models have no holster meshes either; the Spy's body groups
+  are just `spy` and `spyMask`. So the Spy's Revolver is seen only in
+  his hand while it is out; with the Knife, Sapper, Disguise Kit or
+  watch out, nothing is at his hip.
+- **Switching**: the old weapon disappears and the new one appears on
+  the frame the switch takes effect; there is no third-person holster or
+  draw gesture (the main sequences of the new kind cross-fade in over
+  0.2 s, §3).
+- **The active weapon is hidden too** when: the owner is stunned with
+  loss of control, in Halloween ghost mode, or the viewer is the owner
+  in first person (the view model draws instead). A cloaking Spy's
+  weapon fades with his body (the same invisibility amount). A disguised Spy
+  seen by an **enemy** shows only his disguise weapon (a stand-in of the
+  disguise class's weapon); seen by a **teammate** (or a spectator) he
+  shows his real active weapon and never the disguise weapon; not
+  disguised, the disguise weapon is never drawn.
+- **Body groups from weapons** are not the weapon drawn: an item may
+  list player body groups to switch (`visuals` → `player_bodygroups`,
+  e.g. the Huntsman sets the Sniper's `arrows`, the Ali Baba's Wee
+  Booties the Demoman's `shoes`); these apply while the weapon is
+  **carried**, active or not, unless the item says
+  `hide_bodygroups_deployed_only` (8 items), in which case only while it
+  is active. No stock weapon lists any, so a stock loadout keeps every
+  class's default body groups (the Medic's backpack, the Soldier's and
+  Demoman's grenades, the Sniper's bullets and hat, the Engineer's glove
+  are body meshes, always shown).
+- **Wearable "weapons"** (shields, boots, backpacks such as the banners'
+  `extra_wearable`) are wearables, drawn whatever is active; none is
+  stock.
+
 ### 8. Hitboxes
 
 One set per class, named after the class (Scout set `scout`, 19 boxes;
@@ -954,7 +1244,8 @@ Per player, on each client frame (bone setup cs_source/animation.md
    leaving airwalk).
 3. Advance the gestures' cycles (rate 1 × attributes); free the slots
    whose cycle passed 1 (§5).
-4. Set `move_x` / `move_y` (§3), then `body_pitch`, then the feet yaw
+4. Write the held item's pose parameters (`r_hand_grip`, `r_arm`; §4b),
+   then set `move_x` / `move_y` (§3), then `body_pitch`, then the feet yaw
    and `body_yaw` (§4). Gestures for events (fire, reload stages, land,
    air jump, flinch, Minigun pre / post fire) start when the events
    arrive, between frames.
@@ -1014,6 +1305,16 @@ Per player, on each client frame (bone setup cs_source/animation.md
   (below 0.8 of the maximum speed, above 0.3) and + 100 ducked or on a
   ladder; on a ladder 350, in water to the knees 600 … 400.
 
+- Item pose parameters are not sent to other clients: switching from an
+  item that sets `r_hand_grip` (a drink, 16) to one that lists nothing
+  leaves 16 on other players' screens until an item sets it again (the
+  owner's own game and the server reset it to 0). Only hosts with the
+  hand library (§4b) can show it.
+- The Grappling Hook's Engineer entry names a pose parameter that does
+  not exist (`r_handposes_engineer` is a sequence), so it does nothing.
+- The feet yaw goal outlives death: a player who respawns facing a new
+  way keeps last life's goal until he moves or turns 45° past it (§4c).
+
 ## Test cases
 
 | # | Setup | Input | After | Expected |
@@ -1068,6 +1369,26 @@ Per player, on each client frame (bone setup cs_source/animation.md
 | 40 | jump start cut | a jump, the start sequence 2 s long | 0.1 / 0.49 / 0.51 s; landing at 0.8 s | start (still on the ground at 0.1 s: start), start, float; landing restarts the ground activity at cycle 0 with the land gesture (3 step 2, Quirks) |
 | 41 | entering water | running, then in water; a jump that ends in water | – | swim restarted at cycle 0, not again while swimming; the jump ended into swim with no land gesture (3 steps 2, 4) |
 
+| 42 | pose parameters at spawn | any class, merged model, after spawn, stock loadout | – | six parameters (`body_pitch`, `body_yaw`, `r_hand_grip`, `r_arm`, `move_x`, `move_y`); `r_hand_grip` = `r_arm` = 0 in their units (the first cells), never the range's middle |
+| 43 | Engineer's pistol grip | `stand_SECONDARY` frame 0, aim centred, `r_hand_grip` 0 | – | `weapon_bone` at (12.96, −11.16, 46.01) ± 0.1, its +Z (0.99, −0.05, −0.16) ± 0.02 |
+| 44 | same, `r_hand_grip` 1 (or 8, or 16) | – | – | `weapon_bone` at (17.20, −9.91, 48.43) ± 0.1, +Z (0.72, −0.22, 0.66) ± 0.02 (the hand bone itself unchanged at (8.52, −12.57, 46.21)) |
+| 45 | libraries' reach | each class's `stand_PRIMARY`, `stand_SECONDARY` (not the Engineer), `stand_MELEE` | `r_hand_grip` 0 vs 16, `r_arm` 0 vs 3 | the pose is identical (no host carries a library) |
+| 46 | libraries in the all-class set | Scout `stand_MELEE_ALLCLASS` | `r_hand_grip` 0 vs 15, `r_arm` 0 vs 3 | the right fingers and `weapon_bone` change with `r_hand_grip`; the right collar, arm, hand and `weapon_bone` with `r_arm`; nothing else moves |
+| 47 | item pose parameters | the Scout's drink (prefab `weapon_scout_drink`) made active; then the Bat | – | `r_hand_grip` 16 from the frame the drink is active; on the owner's game and the server 0 again when the Bat is active |
+| 48 | stock items | every stock weapon of the nine classes | – | none lists a player pose parameter; `r_hand_grip` = `r_arm` = 0 throughout |
+| 49 | the Wrench's tap | Engineer `stand_MELEE`, aim centred | frames 0 / 12 / 24 / 40 | `weapon_bone` +Y elevation 17° / 50° / 5° / 43° ± 2°; head (weapon bone + 24 × +Y) per the §4b table ± 0.5 |
+| 50 | the Wrench's mesh axis | `c_wrench.mdl` | – | mesh along `weapon_bone` +Y (−4.3 … 24.1); bone-merged, its head is where test 49 says |
+| 51 | idle feet still | every class, `stand_<KIND>`, every frame of the loop | – | feet within 0.3 of frame 0 (§4c 1) |
+| 52 | apparent spread | Engineer at rest, eyes at yaw 270, feet yaw 315 / 270 / 225 (`body_yaw` +45 / 0 / −45), foot locks on | – | the feet's spread across the eye direction 19.0 / 13.1 / −0.5 ± 0.3 (§4c table); feet at the stand's own place in the feet's frame ± 0.1 |
+| 53 | feet yaw kept over a teleport | a standing body with goal 90 is turned (no motion) to eyes 270 | after 3 frames | goal 225 (steps 135, 180, 225), `body_yaw` −45 |
+| 54 | feet yaw kept over a respawn | goal 0 at death; respawn facing 270, standing | – | goal steps once to 315, `body_yaw` +45 (no snap to the eyes) |
+| 55 | feet snap | the first update of a new player's animation state, or `setang_exact` | – | goal = feet = eyes, `body_yaw` 0 |
+| 56 | noise layers locked | Scout `stand_PRIMARY` + `layer_idleNoise`; Medic `stand_SECONDARY` + its real-time noise | any cycle / time | feet within 0.1 of the stand's own; the Medic's noise cycle = frac(t / 1.6 s) whatever the stand's cycle |
+| 57 | only the active weapon | Spy with Revolver, Knife, Sapper, Disguise Kit, watch; Knife active | – | one weapon model drawn (the Knife), nothing at the hip; Revolver active: the Revolver in hand only |
+| 58 | switch | any class switches primary → melee | the switch frame | primary gone and melee shown on the same frame; no draw or holster gesture |
+| 59 | disguised Spy | disguised as a Soldier, Revolver active | seen by an enemy / a teammate | enemy: the disguise weapon only; teammate: the Revolver only |
+| 60 | knee direction merge | merged Engineer model | – | foot chains carry the include's knee directions (`rfoot` (0.600, −0.002, 0.800), `lfoot` (0.595, 0.002, 0.804)) though the class model's own are zero |
+
 ## Open questions
 
 1. ~~Mash-up kinds~~ Settled: the weapon's own `WeaponType` kind.
@@ -1092,9 +1413,25 @@ Per player, on each client frame (bone setup cs_source/animation.md
     look slightly wider than Chimera's): TF2's rest stance is the
     include's `stand_<KIND>` (table in §3) with nothing on the legs at
     a level view, so it follows from the same lookup rule; aiming up or
-    down keeps the feet only through the foot locks (§4a), which
-    Chimera lacks. Whether ours differs at a level view (and why) is to
-    measure against test 35; not confirmed from here.
+    down keeps the feet only through the foot locks (§4a). Second pass:
+    the stand's feet never move over the loop, the move parameters do
+    nothing at rest and the noise layers are foot-locked, so the
+    remaining cause is the feet yaw lag (§4c 4–5): TF2's puppet bots are
+    teleported to face the camera, which never snaps their feet, so they
+    rest with `body_yaw` up to ±45 and the stance seen from the front is
+    up to 1.5× wider (or narrower). Not confirmed live: which feet yaw
+    the captured bots had (it depends on each bot's spawn yaw and the
+    teleport); `cl_showanimstate` on the TF2 client shows it, or a
+    `setang_exact`-style snap before the picture removes it.
+14. **The Wrench picture**: the second pass finds no pose parameter or
+    layer that turns the Wrench; the stand's own tap (5°–50°, §4b) is
+    the explanation offered. Not confirmed live: the idle phase of the
+    TF2 bot in the capture. If a phase-matched pair still differs, the
+    held model's placement (bone-merge of `c_wrench`'s `weapon_bone`)
+    is the next suspect.
+15. **The watch**: whether the Spy's Invis Watch draws any third-person
+    model of its own (it is never the active weapon in the usual sense)
+    was not checked; the rule above says no.
 13. **Deployed state on a class without deployed sequences** (mash-ups:
     a Scout spinning the Minigun): TF2 would show the reference pose
     (§2, `ACT_MP_DEPLOYED_IDLE` missing); Chimera may prefer to keep the
