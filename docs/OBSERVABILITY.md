@@ -626,7 +626,10 @@ Beside it: `ca_bot_add`, `ca_bot_kick`, `ca_bot_stop 1`, `ca_bot_dont_shoot 1`,
 Practice targets: `target add <rung n | gun id | body id> [distance]
 [still|strafe|walk] [shoots] [ahead] [protect] [platform]` (`ahead`: its
 trigger held level along its line, TF2's `bot_forceattack`, for pictures
-of a gun as others see it), `target set`, `target remove`,
+of a gun as others see it), `target set` (also `jump`, `crouch`,
+`run <forward|back|left|right>` and their `no` forms: TF2's `bot_jump`,
+`bot_crouch` and a bot's forced movement, for pictures of the bodies'
+animation), `target remove`,
 `target list`, `target characters` (`chimera_sim::minigame::targets`;
 on the range a target asked for at `d` m stands on the range's `d` m
 line at your side of the axis, nudged aside from what stands there

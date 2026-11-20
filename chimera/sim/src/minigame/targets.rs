@@ -78,6 +78,16 @@
 //!   `bot_forceattack` on a puppet bot): a staging mode for pictures of a
 //!   gun firing as others see it (tools/tf2ref, `thirdperson.scene`).
 //!   Over `shoots_back`.
+//! - `jumps`, `crouches`, `runs` (off by default; console only, not in
+//!   the layout): staging modes for pictures of a body's animation as
+//!   TF2's `bot_jump`, `bot_crouch` and a bot's forced movement
+//!   (tools/tf2ref, `anim.scene`): jump pressed on each landing (released
+//!   between presses), crouch held, or its keys one way as it faces
+//!   (`RunDir`: forward is toward where it was placed from) over its
+//!   motion, from `RUN_HALF` m behind home (put there when the run is
+//!   set) to `RUN_HALF` past it, then put back at the start with its speed
+//!   kept (after `RUN_LEG` s, or pushed
+//!   `LEASH` m off the track, too). A motion set ends a run.
 //! - `protected` (off by default): `core::HealthHeld` (hits land and are
 //!   measured, health never drops, it never dies), and its health and
 //!   shield are put back to full at the start of each tick.
@@ -165,7 +175,8 @@
 //!
 //! Console: `target add <rung n | gun id | character id> [distance m]
 //! [still|strafe|walk] [shoots] [ahead] [protect] [platform]`, `target set <n|all>
-//! <shoots | noshoot | ahead | noahead | protect | noprotect | still | strafe | walk |
+//! <shoots | noshoot | ahead | noahead | jump | nojump | crouch | nocrouch |
+//! run <forward|back|left|right> | norun | protect | noprotect | still | strafe | walk |
 //! platform | line | gun <id> |
 //! character <id> | respawn <s> | distance <m>>`, `target remove <n|all>`,
 //! `target list`, `target characters`, `target look <n>` (turns the
@@ -265,6 +276,54 @@ impl TargetMotion {
     }
 }
 
+/// Which way a running target's keys push (`Target::runs`), as the
+/// target faces: forward toward where it was placed from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunDir {
+    Forward,
+    Back,
+    Left,
+    Right,
+}
+
+impl RunDir {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "forward" | "fwd" | "f" => Some(Self::Forward),
+            "back" | "backward" | "backwards" | "b" => Some(Self::Back),
+            "left" | "l" => Some(Self::Left),
+            "right" | "r" => Some(Self::Right),
+            _ => None,
+        }
+    }
+
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Forward => "forward",
+            Self::Back => "back",
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+
+    /// Its movement keys (`Intent::move_axis`: x right, y forward).
+    pub fn axis(self) -> Vec2 {
+        match self {
+            Self::Forward => Vec2::Y,
+            Self::Back => Vec2::NEG_Y,
+            Self::Left => Vec2::NEG_X,
+            Self::Right => Vec2::X,
+        }
+    }
+}
+
+/// Half a running target's track (m): it runs from this far behind home
+/// (along its run) to this far past it, then is put back at the start.
+pub const RUN_HALF: f32 = 4.0;
+/// The longest a run's pass lasts before it is put back at the start
+/// (s): a wall in its way doesn't hold it.
+pub const RUN_LEG: f64 = 4.0;
+
 /// Where on the range a target stands (module doc, "The platform").
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TargetPlace {
@@ -354,6 +413,13 @@ pub struct SetTarget {
     pub shoots_back: Option<bool>,
     /// Trigger held, facing along its line (`Target::fires_ahead`).
     pub fires_ahead: Option<bool>,
+    /// Jumping again on each landing (`Target::jumps`).
+    pub jumps: Option<bool>,
+    /// Crouched (`Target::crouches`).
+    pub crouches: Option<bool>,
+    /// Running one way over and over (`Target::runs`; Some(None): no
+    /// more). A motion set (`motion`) ends it.
+    pub runs: Option<Option<RunDir>>,
     pub protected: Option<bool>,
     pub armored: Option<bool>,
     pub respawn_secs: Option<f32>,
@@ -374,6 +440,9 @@ impl SetTarget {
             motion: None,
             shoots_back: None,
             fires_ahead: None,
+            jumps: None,
+            crouches: None,
+            runs: None,
             protected: None,
             armored: None,
             respawn_secs: None,
@@ -404,6 +473,15 @@ pub struct Target {
     /// Its trigger held every tick, facing back along its line, level
     /// (module doc); over `shoots_back`.
     pub fires_ahead: bool,
+    /// Staging modes for pictures of the body's animation (TF2's
+    /// `bot_jump`, `bot_crouch` and a bot's forced movement; module doc):
+    /// jumping again on each landing, crouched, running one way (`runs`:
+    /// its keys that way as it faces, over its motion, from `RUN_HALF`
+    /// behind home, where a new run starts, to `RUN_HALF` past it, then put
+    /// back at the start).
+    pub jumps: bool,
+    pub crouches: bool,
+    pub runs: Option<RunDir>,
     pub protected: bool,
     /// Its second bar on (false: none, `TargetVitals` reads 0).
     pub armored: bool,
@@ -822,6 +900,11 @@ struct TargetDrive {
     waypoint: u32,
     until: f64,
     map_loads: u32,
+    /// Jump pressed last tick (`Target::jumps`: released between presses).
+    jumped: bool,
+    /// The run it was on last tick (`Target::runs`): a new one starts at
+    /// its track's start.
+    run: Option<RunDir>,
 }
 
 /// A target that is still to be put at home (a new one, or back from the
@@ -909,6 +992,9 @@ pub fn spawn_placed_from(
         motion: req.motion,
         shoots_back: req.shoots_back,
         fires_ahead: false,
+        jumps: false,
+        crouches: false,
+        runs: None,
         protected: req.protected,
         armored: req.armored,
         respawn_secs: req.respawn_secs.max(0.0),
@@ -1112,6 +1198,13 @@ fn finish_set(
     t.motion = req.motion.unwrap_or(t.motion);
     t.shoots_back = req.shoots_back.unwrap_or(t.shoots_back);
     t.fires_ahead = req.fires_ahead.unwrap_or(t.fires_ahead);
+    t.jumps = req.jumps.unwrap_or(t.jumps);
+    t.crouches = req.crouches.unwrap_or(t.crouches);
+    // A motion asked ends a run; a run asked is over the motion.
+    if req.motion.is_some() {
+        t.runs = None;
+    }
+    t.runs = req.runs.unwrap_or(t.runs);
     t.protected = req.protected.unwrap_or(t.protected);
     let armour_off = req.armored == Some(false) && t.armored;
     t.armored = req.armored.unwrap_or(t.armored);
@@ -1187,6 +1280,8 @@ fn describe(t: &Target) -> String {
     let flags = [
         (t.shoots_back, "shoots back"),
         (t.fires_ahead, "fires ahead"),
+        (t.jumps, "jumps"),
+        (t.crouches, "crouched"),
         (t.protected, "protected"),
         (!t.armored, "no armour"),
     ]
@@ -1204,7 +1299,7 @@ fn describe(t: &Target) -> String {
         t.rung + 1,
         t.distance_m,
         if t.place == TargetPlace::Platform { " on the platform" } else { "" },
-        t.motion.word(),
+        t.runs.map_or(t.motion.word().to_string(), |r| format!("runs {}", r.word())),
         if flags.is_empty() { "" } else { ", " },
         flags,
         t.respawn_secs
@@ -1241,7 +1336,7 @@ fn pick(world: &mut World, which: &str) -> Result<Vec<Entity>, String> {
 }
 
 const USAGE: &str = "target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [ahead] [protect] [noarmor] [platform] | \
-    target set <n|all> <shoots|noshoot|ahead|noahead|protect|noprotect|armor|noarmor|still|strafe|walk|platform|line|gun <id>|character <id>|respawn <s>|distance <m>> | \
+    target set <n|all> <shoots|noshoot|ahead|noahead|jump|nojump|crouch|nocrouch|run <forward|back|left|right>|norun|protect|noprotect|armor|noarmor|still|strafe|walk|platform|line|gun <id>|character <id>|respawn <s>|distance <m>> | \
     target remove <n|all> | target list | target characters | target look <n> | target repeat";
 
 /// A gun id, exact or the one gun of the ladder whose id holds the text.
@@ -1315,6 +1410,15 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                     "noshoot" => req.shoots_back = Some(false),
                     "ahead" => req.fires_ahead = Some(true),
                     "noahead" => req.fires_ahead = Some(false),
+                    "jump" | "jumps" => req.jumps = Some(true),
+                    "nojump" => req.jumps = Some(false),
+                    "crouch" | "duck" => req.crouches = Some(true),
+                    "nocrouch" | "noduck" => req.crouches = Some(false),
+                    "run" | "runs" => {
+                        let dir = arg.and_then(|d| RunDir::parse(d)).ok_or("run <forward|back|left|right>")?;
+                        req.runs = Some(Some(dir));
+                    }
+                    "norun" => req.runs = Some(None),
                     "protect" => req.protected = Some(true),
                     "noprotect" => req.protected = Some(false),
                     "armor" => req.armored = Some(true),
@@ -1476,11 +1580,21 @@ fn waypoint(home: Vec3, number: u32, k: u32) -> Vec3 {
 fn drive(
     clock: Res<SimClock>,
     conditions: Option<Res<super::conditions::SandboxConditions>>,
-    mut q: Query<(&Target, &mut TargetDrive, &Transform, &mut Intent), (Without<Dead>, Without<TargetPending>)>,
+    mut q: Query<
+        (
+            &Target,
+            &mut TargetDrive,
+            &mut Transform,
+            Option<&mut avian3d::prelude::Position>,
+            Option<&crate::core::MovementState>,
+            &mut Intent,
+        ),
+        (Without<Dead>, Without<TargetPending>),
+    >,
 ) {
     let now = clock.now;
     let frozen = conditions.is_some_and(|c| c.bots_frozen);
-    for (t, mut d, tf, mut intent) in &mut q {
+    for (t, mut d, mut tf, position, movement, mut intent) in &mut q {
         let feet = tf.translation - Vec3::Y * crate::map::SPAWN_LIFT;
         let off = (feet - t.home).xz().length();
         let side = Vec3::new(t.dir.z, 0.0, -t.dir.x);
@@ -1513,13 +1627,40 @@ fn drive(
         let line_yaw = t.dir.x.atan2(t.dir.z);
         let aims = t.shoots_back && !t.fires_ahead;
         let facing = if aims { intent.yaw } else { line_yaw };
-        let axis = goal.map_or(Vec2::ZERO, |g| axis_toward(g - feet, facing));
+        let mut axis = goal.map_or(Vec2::ZERO, |g| axis_toward(g - feet, facing));
+        // Running (a staging mode): its keys one way as it faces, over the
+        // motion; past `RUN_HALF` beyond home (or after `RUN_LEG` s) put
+        // back `RUN_HALF` behind it, its speed kept.
+        if let Some(run) = t.runs.filter(|_| !frozen) {
+            axis = run.axis();
+            let way = Vec3::new(facing.cos(), 0.0, -facing.sin()) * axis.x + Vec3::new(-facing.sin(), 0.0, -facing.cos()) * axis.y;
+            let along = (feet - t.home).dot(way);
+            let across = (feet - t.home - way * along).xz().length();
+            if d.run != Some(run) || along > RUN_HALF || across > LEASH || now > d.until + RUN_LEG {
+                let start = t.home - way * RUN_HALF;
+                let to = Vec3::new(start.x, tf.translation.y.max(t.home.y + crate::map::SPAWN_LIFT), start.z);
+                tf.translation = to;
+                if let Some(mut p) = position {
+                    p.0 = to;
+                }
+                d.until = now;
+                d.run = Some(run);
+            }
+        } else if d.run.is_some() {
+            d.run = None;
+        }
         if intent.move_axis != axis {
             intent.move_axis = axis;
         }
-        if intent.jump || intent.crouch || intent.sprint {
-            intent.jump = false;
-            intent.crouch = false;
+        // Jumping again on each landing (pressed on the ground, released
+        // between presses: a held key jumps once), crouched.
+        let on_ground = movement.is_none_or(|m| m.on_ground);
+        let jump = t.jumps && !frozen && on_ground && !d.jumped;
+        d.jumped = jump;
+        let crouch = t.crouches;
+        if intent.jump != jump || intent.crouch != crouch || intent.sprint {
+            intent.jump = jump;
+            intent.crouch = crouch;
             intent.sprint = false;
         }
         if t.fires_ahead && (!intent.fire || intent.secondary || intent.actions != 0) {

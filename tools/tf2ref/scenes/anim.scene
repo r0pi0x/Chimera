@@ -3,8 +3,8 @@
 # 0 -300 0 as an Engineer (eye 68) with no view model, then the camera stays
 # (`chimera_freecam 2`) and our body steps back out of sight. Idle, then
 # walking (`walk`: TF2's bots have no forced run, compare the cycle's
-# shape); the Heavy also firing `ahead` (spun and firing). Targets don't
-# jump or crouch: anim.tf2's jump and crouch pictures have no pair here.
+# shape); the Heavy also firing `ahead` (spun and firing). The jump and
+# crouch pairs are anim2.scene's (targets' `jump`, `crouch`).
 #   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/anim.scene --out <dir>
 wait_for map_loaded 6000
 wait_for spawned 3000

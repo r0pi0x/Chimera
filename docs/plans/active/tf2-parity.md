@@ -68,9 +68,31 @@ Captured imagery stays in scratch, never in the repo.
    feet on the eyes, not the stances (frame 0 matches, test 35). The
    Demoman's Grenade Launcher points forward in TF2 but across his body in
    ours although the animation's `weapon_bone` points forward (+Z along
-   the model's +X): the held `c_` model's merge (7), open. TF2's bots
-   jump and crouch (`bot_jump`, `bot_crouch`); ours' targets can't, so
-   those have no pair.
+   the model's +X): the held `c_` model's merge (7). Fixed (tf2-held,
+   2026-11-19): the Demoman's player animations pose `weapon_bone_1` per
+   kind, and ours played the Grenade Launcher with his primary set (the
+   Stickybomb Launcher's), turning its barrel (merged onto
+   `weapon_bone_1`) 94 degrees across him; the items' animation slots
+   (weapons_more.md 1: the Grenade Launcher a secondary, the Stickybomb
+   Launcher a primary) now pick the set (`Kind::of`). Also: parts of 11
+   held weapons were merged onto the arms' own `vm_weapon_bone…` bones,
+   which no player model has, and never drawn in third person (the
+   Shovel's blade, the Knife's, the Shotgun's pump, the launchers' and
+   rifles' parts); held models now merge only onto bones bodies have
+   (`maps::is_view_bone`), and a body lacking a part's bone holds the
+   model whole (`render::bodies::attach_held`: the Revolver's
+   `weapon_bone_4` on the Spy). `heavy::player_anim` checks every
+   weapon's merged bones against its class's pose standing, crouched,
+   running and in the air. Pairs of all nine classes' slots and of
+   crouching and jumping: `anim2.tf2` / `anim2.scene` (targets' `jump`,
+   `crouch`, `run <dir>`; TF2's puppet bots can't be made to run over
+   RCON, so the run has no pair). Still different: the Engineer holds the
+   Wrench upright in TF2, flat across his belly in ours (the same
+   `stand_MELEE` hands; the grip pose parameter `r_hand_grip`, unread by
+   any spec, is a suspect: a spec question); TF2's stances stay wider;
+   the TF2 bots' jump starts later after `bot_jump` than ours' after
+   `jump`, so the 0.15 / 0.4 s pictures show different phases (a movie
+   capture would align them).
 2. (Done, pass 5: the disc was the sandbox's blast spheres.) The
    mid-air explosion's first 50 ms: ours paler yellow than TF2's orange.
 3. Flames: the far fireball's extra width is TF2's bloom (pass 5): TF2's
@@ -237,3 +259,10 @@ Captured imagery stays in scratch, never in the repo.
   TF2's casings 40-75 units to the side, ours 25-55; particles.md Open
   questions 6.
 - Scenes added: `air.tf2`/`air.scene` (the mid-air burst at 300 units, matched) and `brass_top.tf2`/`brass_top.scene` (the Minigun brass from above).
+- 2026-11-19 (tf2-held): the Demoman's Grenade Launcher across his body
+  was the kind, not the merge: his primary set poses `weapon_bone_1` for
+  the Stickybomb Launcher. The bodies' own bones are what held models
+  merge onto now (no `vm_` bones; whole on a body lacking one). Sandbox
+  targets jump, crouch and run (`target set <n> jump|crouch|run <dir>`)
+  for animation pairs; `anim2.tf2` / `anim2.scene` pair every class's
+  three slots and its crouch and jump.

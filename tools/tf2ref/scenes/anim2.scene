@@ -1,0 +1,705 @@
+# Ours for anim2.tf2: each class as a sandbox target facing us, idle with
+# each slot's gun 150 units (3.81 m) ahead, then with its primary 300
+# (7.62 m) ahead crouched, jumping (0.15 and 0.4 s after `jump`) and
+# running at us (`run forward`, photographed as it passes home; no TF2 pair);
+# we stand at 0 -300 0 as an Engineer with no view model, then the camera
+# stays (`chimera_freecam 2`) and our body steps out of sight.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/anim2.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+r_drawviewmodel 0
+rung tf2:tf_weapon_wrench
+wait 2
+wait_for idle 3000
+# scout
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:scout 7.62 still protect
+target set all gun tf2:tf_weapon_scattergun
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_scout_0
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all crouch
+gwait 1.5
+shot m_scout_crouch
+target set all nocrouch
+gwait 1
+target set all jump
+gwait 0.15
+shot m_scout_jump1
+gwait 0.25
+shot m_scout_jump2
+target set all nojump
+gwait 2
+target set all run forward
+gwait 0.49
+shot m_scout_run
+target set all still
+gwait 1
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all gun tf2:tf_weapon_pistol_scout
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_scout_1
+target set all gun tf2:tf_weapon_bat
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_scout_2
+# soldier
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:soldier 7.62 still protect
+target set all gun tf2:tf_weapon_rocketlauncher
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_soldier_0
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all crouch
+gwait 1.5
+shot m_soldier_crouch
+target set all nocrouch
+gwait 1
+target set all jump
+gwait 0.15
+shot m_soldier_jump1
+gwait 0.25
+shot m_soldier_jump2
+target set all nojump
+gwait 2
+target set all run forward
+gwait 0.75
+shot m_soldier_run
+target set all still
+gwait 1
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all gun tf2:tf_weapon_shotgun_primary
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_soldier_1
+target set all gun tf2:tf_weapon_shovel
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_soldier_2
+# pyro
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:pyro 7.62 still protect
+target set all gun tf2:tf_weapon_flamethrower
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_pyro_0
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all crouch
+gwait 1.5
+shot m_pyro_crouch
+target set all nocrouch
+gwait 1
+target set all jump
+gwait 0.15
+shot m_pyro_jump1
+gwait 0.25
+shot m_pyro_jump2
+target set all nojump
+gwait 2
+target set all run forward
+gwait 0.62
+shot m_pyro_run
+target set all still
+gwait 1
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all gun tf2:tf_weapon_shotgun_primary
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_pyro_1
+target set all gun tf2:tf_weapon_fireaxe
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_pyro_2
+# demo
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:demoman 7.62 still protect
+target set all gun tf2:tf_weapon_grenadelauncher
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_demo_0
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all crouch
+gwait 1.5
+shot m_demo_crouch
+target set all nocrouch
+gwait 1
+target set all jump
+gwait 0.15
+shot m_demo_jump1
+gwait 0.25
+shot m_demo_jump2
+target set all nojump
+gwait 2
+target set all run forward
+gwait 0.66
+shot m_demo_run
+target set all still
+gwait 1
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all gun tf2:tf_weapon_pipebomblauncher
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_demo_1
+target set all gun tf2:tf_weapon_bottle
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_demo_2
+# heavy
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:heavy 7.62 still protect
+target set all gun tf2:tf_weapon_minigun
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_heavy_0
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all crouch
+gwait 1.5
+shot m_heavy_crouch
+target set all nocrouch
+gwait 1
+target set all jump
+gwait 0.15
+shot m_heavy_jump1
+gwait 0.25
+shot m_heavy_jump2
+target set all nojump
+gwait 2
+target set all run forward
+gwait 0.78
+shot m_heavy_run
+target set all still
+gwait 1
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all gun tf2:tf_weapon_shotgun_primary
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_heavy_1
+target set all gun tf2:tf_weapon_fists
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_heavy_2
+# engineer
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:engineer 7.62 still protect
+target set all gun tf2:tf_weapon_shotgun_primary
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_engineer_0
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all crouch
+gwait 1.5
+shot m_engineer_crouch
+target set all nocrouch
+gwait 1
+target set all jump
+gwait 0.15
+shot m_engineer_jump1
+gwait 0.25
+shot m_engineer_jump2
+target set all nojump
+gwait 2
+target set all run forward
+gwait 0.62
+shot m_engineer_run
+target set all still
+gwait 1
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all gun tf2:tf_weapon_pistol_scout
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_engineer_1
+target set all gun tf2:tf_weapon_wrench
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_engineer_2
+# medic
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:medic 7.62 still protect
+target set all gun tf2:tf_weapon_syringegun_medic
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_medic_0
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all crouch
+gwait 1.5
+shot m_medic_crouch
+target set all nocrouch
+gwait 1
+target set all jump
+gwait 0.15
+shot m_medic_jump1
+gwait 0.25
+shot m_medic_jump2
+target set all nojump
+gwait 2
+target set all run forward
+gwait 0.59
+shot m_medic_run
+target set all still
+gwait 1
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all gun tf2:tf_weapon_bonesaw
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_medic_2
+# sniper
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:sniper 7.62 still protect
+target set all gun tf2:tf_weapon_sniperrifle
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_sniper_0
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all crouch
+gwait 1.5
+shot m_sniper_crouch
+target set all nocrouch
+gwait 1
+target set all jump
+gwait 0.15
+shot m_sniper_jump1
+gwait 0.25
+shot m_sniper_jump2
+target set all nojump
+gwait 2
+target set all run forward
+gwait 0.62
+shot m_sniper_run
+target set all still
+gwait 1
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all gun tf2:tf_weapon_smg
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_sniper_1
+target set all gun tf2:tf_weapon_club
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_sniper_2
+# spy
+chimera_freecam 0
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:spy 7.62 still protect
+target set all gun tf2:tf_weapon_revolver
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_spy_0
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all crouch
+gwait 1.5
+shot m_spy_crouch
+target set all nocrouch
+gwait 1
+target set all jump
+gwait 0.15
+shot m_spy_jump1
+gwait 0.25
+shot m_spy_jump2
+target set all nojump
+gwait 2
+target set all run forward
+gwait 0.59
+shot m_spy_run
+target set all still
+gwait 1
+chimera_freecam 0
+wait 2
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+target set all gun tf2:tf_weapon_knife
+wait 240
+chimera_freecam 0
+wait 2
+setpos 0 -150 0
+setang 0 90 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot h_spy_2
