@@ -15,7 +15,17 @@ minigun's, rocket launcher's, syringe gun's and grenade/sticky projectile's
 client effects, the rocket projectile's client trail code, the explosion
 temp-entity callback, the flame thrower and its flame manager, the shared
 impact path and the view-model attachment re-projection. Nothing copied;
-restated in our words. **The per-weapon `.ctx` scripts were not read in
+restated in our words. Sections 8b, 10.1, 11.1 and 12–14 (2026-11-20,
+second spec pass) also read: the client's local projectile temp entities
+and their collision, the base projectile's and rocket's and grenade's
+client history seeding and draw delays, the entity interpolation
+history, the rocket's, grenade's and pipe's explosion paths, the melee
+swing trace and its hull-intersection fix-up, the model-decal path and
+the TF2 player's decal rules, the crit-boost effect, the flame thrower's
+sound loops; and from the install `scripts/decals_subrect.txt`,
+`scripts/game_sounds_weapons.txt`, `scripts/surfaceproperties.txt`, the
+needle model's bounds and `weapons/crit_power.wav`'s chunks.
+**The per-weapon `.ctx` scripts were not read in
 this session** (no decryption key was available to the dumper; see Open
 questions 1), so every per-gun value that only the scripts hold is marked
 *unconfirmed* with the evidence for it.
@@ -300,6 +310,36 @@ Skipped in low violence, Pyro vision and during a truce. A disguised spy
 gets no impact; an invulnerable player gets a ricochet spark 8 units
 back along the shot instead.
 
+*How the body decal is placed and kept* (answers "does TF2 put blood on
+models": yes, this way, and only this way):
+- The decal name comes from the hit surface's material letter: the
+  impact asks for the generic bullet decal and TF2's decal list
+  (`scripts/decals_subrect.txt`, its translation table) maps letter F to
+  `Impact.Flesh` (one of five `decals/flesh/blood1_subrect`…`5`, chosen
+  at random, equal weights), B to `Impact.BloodyFlesh`. The class models'
+  hitboxes carry the `flesh` surface (letter F).
+- Placement: a ray from the shot's start through the hit point, extended
+  8 units past it and then lengthened by 10 %, is clipped against the
+  model's hitboxes; where it meets them the decal is projected onto the
+  **model's mesh** (a model decal: it follows the animated body, is
+  stored on that model instance and skins with it). If the ray meets no
+  hitbox, no decal and no impact effects. A ray starting inside the
+  victim makes none.
+- Not placed on a player who is cloaked (or mid-cloak), disguised, a
+  giant (MvM), or invulnerable (the ricochet spark instead). Not drawn
+  at all when `r_drawmodeldecals` is 0 (default 1).
+- **Removed** (all of a player's model decals at once) when he: is
+  healed to full health or more (health rose and is ≥ max), becomes
+  invulnerable, starts cloaking, changes or drops disguise (or its
+  class), respawns as a new model. The ragdoll is a separate model: the
+  living body's decals do not carry over (inferred: decals live on the
+  model instance).
+- No decal from blasts, fire, or the blood burst itself; the burst (a)
+  and the world decals (c) are separate.
+- The engine caps decals per model instance (oldest replaced); the cap
+  is the engine's, not in the reference (inferred about 50; Open
+  questions 15).
+
 **c) Blood on the world behind (server, traced hits only).** For a
 bullet, pellet or melee hit (not blasts, not fire): n traces from the
 hit point onward along the shot (the shot direction plus U(−σ, σ) on
@@ -382,6 +422,47 @@ effect's family; its TF2 look is unconfirmed).
   and the world decals of §8c (4 traces for stock melee damage).
 - Teammates: no impact, no blood.
 
+#### 10.1 Where the swing's impact lands (the contact point)
+
+The swing is resolved once, at the smack (weapons_stock.md), on the
+attacker's machine and the server alike:
+
+- Start S = the attacker's eye; direction f = his view; reach R = 48
+  units (72 for swords, 128 while shield-charging); the swing box a cube
+  of half-size 18 (36 wide), both scaled by melee attributes and by a
+  player model scale above 1.
+- **1. Line first.** A line from S to S + R f against solids (world,
+  players of both teams, buildings; not the attacker). If it hits, the
+  contact is that line's hit point on the surface, with the surface's
+  normal. This is the usual case when the crosshair is on the target.
+- **2. Box if the line missed.** The 36-unit cube is swept from S to
+  S + R f. If it touches nothing: a miss (no impact).
+  - It touched a **player, building or other non-brush entity**: the
+    contact is the **cube's centre where the sweep stopped** (C), not a
+    point on the victim: a point on the view line, up to 18 units short of
+    the victim's box along each axis; normal = the face touched. No
+    correction.
+  - It touched the **world or a brush entity**: a correction looks for a
+    real surface point. Let E = S + 2 (C − S) (twice as far as the
+    cube's centre). A line S → E: if it hits, its hit is the contact.
+    Otherwise eight lines from S to E + k, k each corner of the box
+    x, y ∈ {−24, +24}, z ∈ {0, 62} (the crouched player box: the corners
+    never point below E); of those that hit, the one nearest to S is the
+    contact. If none hits, C stays (a point in the air).
+- **Impact effects from the contact** (attacker's client, §10): the
+  impact ray runs from S through the contact point, extended 8 units
+  past it, lengthened 10 %; on the world the decal is centred on the
+  contact point when that ray reaches the surface (so with C left in the
+  air there is usually no decal); flecks, dust or sparks start at the
+  contact point with the ray's surface normal (only when the ray found
+  the surface); the surface sound plays at the ray's hit, else at the
+  contact point. On a player the body decal follows §8b with this ray:
+  a box-sweep hit whose cube centre is off the body leaves no body decal.
+- Quirks: a glancing swing that the line misses leaves its decal
+  where a corner line hit, up to 2R from the eye and biased upward
+  (corner offsets 0 or +62 in z); and the doubled line can reach 96
+  units, farther than the swing's own reach.
+
 ### 11. When a rocket and its blast show on a client
 
 - **No spawn delay, arming time or first-frame offset** in the rocket
@@ -425,6 +506,246 @@ effect's family; its TF2 look is unconfirmed).
   the crosshair's ~146 (weapons.md §5.1): nearer, not farther. The
   "farther" of the earlier comparison is not explained by the rocket
   (Open questions 9).
+
+#### 11.1 The first moments of a rocket, pipe or sticky on a client
+
+(Answers Open questions 11.)
+
+- **Interpolation delay, exactly**: an entity's drawn time is the
+  client's time minus L, L = (round(lerp / tick) + 1) ticks, with lerp =
+  max(`cl_interp`, `cl_interp_ratio` / `cl_updaterate`) and round to
+  nearest. TF2's defaults: lerp 0.1, tick 0.015 → round(6.67) = 7, + 1 =
+  **8 ticks = 0.12 s**.
+- **Seeded history.** When the projectile first arrives (client time
+  t_a), the client throws away the history the arrival made and puts
+  exactly two points in it: (s0 − 1 s, p0 − v0) and (s0, p0), where p0
+  is the first received position, s0 its simulation time (the server
+  time of that state) and v0 the launch velocity the server sends with
+  the projectile (units/s; for pipes and stickies their launch velocity,
+  gravity ignored). The angles get two equal points (no turn).
+- **Used from the first frame.** There is no special first frame and no
+  hold at the launch point: for drawn time r < s0 the projectile is drawn
+  at p0 − v0 (s0 − r), on its launch line behind p0, moving forward at
+  the launch speed from its very first drawn frame. Later snapshots add
+  points and the usual interpolation (a smooth curve through the three
+  newest points) takes over.
+- **p0 is not the launch point**: it is the server's position in the
+  first snapshot that carries the projectile, the launch point plus the
+  flight between the shot's tick and that snapshot (snapshots every 1/20
+  s by default: 0 to about 3 ticks, so up to ~50 units for a rocket).
+  Because the seed extrapolates back with the same velocity, the drawn
+  rocket passes its launch point at drawn time ≈ the shot's tick
+  (exactly, for a straight rocket; a pipe is off by the gravity drop of
+  those few ticks).
+- **First person, defaults**: at arrival (≈ 1–2 frames after the shot on
+  a listen server) r ≈ s0 − 0.1, so the drawn rocket is ≈ 110 units
+  behind its launch point (≈ 86 behind the eye) and passes the camera
+  in the next ~5–6 frames at 60 frames/s (the "launch glow" beside the
+  view, §9). A pipe (≈ 1200 units/s) and a sticky likewise start behind
+  the eye.
+- **Model hidden** for a time counted from the arrival on that client
+  (the client's own clock): rockets **0.2 s**, pipes and stickies
+  **0.1 s**. So the pipe "first shows at the barrel at frame 8" (arrival
+  ~frame 2 + 6 frames; by then the drawn pipe is about at the launch
+  point) and the rocket "first shows at frame 13, ~150 units out" are
+  the hide window ending, not a hold.
+- **The trail** is created at arrival (rocket: at the model's `trail`
+  attachment; pipes and stickies: at their origin), both following the
+  drawn projectile, and **emits from the arrival on**; the point it
+  follows is moving from its first drawn frame, so there is no
+  stationary emission at the launch point. Behind-the-eye particles are
+  simply outside the view. Nuance (inferred: the particle library is
+  outside the reference): the system is created during the network
+  update, before that frame's interpolation, so its first control-point
+  position is p0; its first simulation step sees the point move back to
+  the drawn position, and emitters that spread a step's new particles
+  along the control point's path put that first step's particles
+  between p0 and the drawn point.
+- Needles are not networked entities: §12.
+- So ours' "hold at the launch point until the drawn time reaches the
+  shot" is not TF2's; parity is the seeded back-extrapolation above.
+
+### 12. Syringe Gun needles: what is drawn and what a hit leaves
+
+- **The server's needle is invisible**; every client draws its own
+  needle, a local client-only model (`w_syringe_proj.mdl`, skin 0 RED,
+  1 BLU) with the `nailtrails_medic_<team>` trail (`…_crit` on a crit;
+  §1), created from an effect message the server sends to the players
+  that can hear the shot's start or end point (to all when the start and
+  the aim's end differ in water contents). The shooter's own client
+  makes his when it predicts the shot (inferred: the server's copy is
+  held back from the predicting player as for his other predicted
+  effects). Start: for the local player in first person the shot's own
+  start point (16 forward, 6 right, 8 down from the eye,
+  weapons_more.md §8); for anyone seen from outside, the `muzzle`
+  attachment of his held world weapon. Velocity the server's (1000
+  along the aim plus spread), gravity 0.3 × 800 = 240 units/s² down,
+  life **6 s** from launch.
+- **Its collision**: each step it traces a line from where it was to
+  where it is, against solids (world, props, any player's box; not the
+  shooter). To save work it traces only every 5th frame
+  (`cl_fasttempentcollision` 5), each trace covering the whole path
+  since the last one, so the hit point is still exact. On a hit the
+  needle's trail stops emitting (its particles finish) and the impact
+  below runs once.
+  - **World** (not sky): the needle stops dead at the hit point,
+    keeping its flight orientation, and stays there, drawn, until its
+    6 s from launch run out (no fade). Its model reaches 5.9 units
+    behind and 3.25 ahead of its origin along its axis (the model's
+    bounds), so either about 6 units of it stand out of the wall or it
+    is mostly inside, by which end is the tip (unconfirmed; Open
+    questions 13: the capture saw none).
+  - **Anything else** (a player of either team, a prop): the needle
+    disappears at once.
+- **The impact** (the shared impact path of §7 with the needle's data):
+  hit point = the trace's end, start = the start of that trace's
+  segment, surface = the surface the trace hit. In the field where a
+  bullet impact carries its damage type the needle puts the
+  **shooter's team number** (RED 2, BLU 3).
+  - Nothing happens when the hit entity is on the shooter's team
+    (teammates: the needle just vanishes), or is a Spy disguised as the
+    shooter's team. The world and teamless things always take it.
+  - **Decal**: the generic bullet decal translated by the surface's
+    material letter, exactly as a bullet's: `Impact.Concrete`
+    (`decals/concrete/shot1`–`5`), `Impact.Wood`, `Impact.Metal`, … (the
+    letter table of §10). The capture's "small dark hole, red centre
+    head-on" on 2fort's wood is `Impact.Wood`. One per needle, placed by
+    the ray from the segment's start through the hit point + 8 units,
+    lengthened 10 %.
+  - **Old-style effects** by letter at scale 1 (wood and concrete
+    flecks and dust, sparks on metal, dust on dirt and sand;
+    impact_effects.md), only when that ray found the surface. Particle
+    impacts only with `cl_new_impact_effects` 1 (off by default).
+  - **Sound**: the surface's bullet-impact sound at the hit, skipped
+    beyond 1024 units from the viewer. **Ricochet quirk**: the 3-in-10
+    `Bounce.Shrapnel` is gated on the damage type being "bullet", whose
+    value is 2: RED's team number. So RED needles ricochet-sound on 30 %
+    of their impacts, BLU needles never.
+- **On an enemy player**:
+  - Client side (every client with the needle): the impact above on the
+    player. The touched thing is the player's **box**, which has no
+    surface of its own; the engine reports the default surface (letter
+    C) for it (inferred: the engine's box clip is outside the
+    reference). The decal then is the letter-C one (`Impact.Concrete`)
+    projected onto the body (§8b placement), and concrete flecks at the
+    box's surface — but only if the ray (segment start → box point + 8,
+    + 10 %) reaches a hitbox; the box is wider than the body, so many
+    hits make neither. The sound: the hitbox's surface (`Flesh.BulletImpact`)
+    when the ray met a hitbox, else the default surface's
+    `Default.BulletImpact` (Open questions 14).
+  - Server side: the needle's hit is a traced hit: the blood burst of
+    §8a at the needle's server position at the touch (its origin, not a
+    point on the body), oriented toward the attacker as §8a; the world
+    blood decals of §8c with the needle's per-hit damage 10 → **2 traces,
+    σ 0.2**; the usual victim conditions (§8a).
+- No scorch, no explosion, no particle impact from the server for a
+  needle; the server's needle on the world is simply removed.
+
+### 13. Where a blast is centred (rockets, pipes, stickies)
+
+(Answers Open questions 6 and 7.) No blast traces back along the flight
+except the pipe's direct-hit line below; all move the centre **1 unit
+out along the surface normal** of the trace they use.
+
+- **Rocket** (a zero-size point): it explodes when its movement touches
+  a solid (world, an enemy player's box, a building; teammates are not
+  solid to it). The touch gives the exact surface point where the move
+  stopped and that surface's normal. Centre = that point + 1 unit along
+  the normal. The normal is sent with the blast (on a player: the normal
+  of his box's face that was touched; the client still uses the player
+  effect, oriented by that normal). Sky: removed, no blast. Scorch
+  (§5 step 6): placed from the same touch, i.e. on the surface at the
+  touch point; not when the rocket touched a player.
+- **Pipe hitting an enemy directly** (before its first world contact):
+  a line from 32 units behind the pipe's centre along its velocity to 32
+  units ahead (64 long), against solids, not the pipe itself. If it hits:
+  centre = hit + 1 unit along that surface's normal, normal = that
+  surface's, the "target" = whatever the line hit (a player → player
+  effect; the world, if a wall lies in the line before the player → wall
+  effect and scorch). If it misses (the pipe's 4-unit box grazed the
+  player off the line): centre = the pipe's centre, normal zero, no
+  target → in-air effect, no scorch.
+- **Fuse or command** (a pipe's timer, a detonated sticky, a pipe that
+  touched a moving train or a dynamic prop that blows grenades): a line
+  straight **down** from 8 units above the projectile's centre to 24
+  units below it (32 long), against solids including players, not the
+  projectile itself.
+  - Hit: centre = the hit + 1 unit along its normal (a pipe resting on
+    a floor: about 1 unit above the floor, a little below its own
+    centre); normal = the floor's; target = a player if the line hit one.
+    So a pipe or sticky blowing up in the air **within 24 units above a
+    floor snaps its blast down onto the floor** and uses the wall
+    effect there.
+  - Miss: centre unchanged, normal zero (in-air effect).
+  - A **stuck sticky** (stuck to the world or a dynamic prop) sends
+    instead the normal of the surface it stuck to, pointing out of that
+    surface; the position still comes from the downward line. A sticky
+    on a wall with no floor within 24 units below explodes at its own
+    centre with the wall's normal (wall effect, oriented on the wall). A
+    sticky knocked loose by a blast loses its stored normal.
+  - A sticky on a ceiling: the line starts 8 units above its centre,
+    inside the ceiling; a line that starts inside solid and leaves it
+    reports no hit (inferred), so it explodes at its own centre with
+    the ceiling's normal (pointing down).
+  - **Scorch**: on what the downward line hit, unless a player; none
+    when it missed (no scorch for that wall sticky; a sticky on the
+    floor scorches the floor under it).
+- **Under water**: nothing about the centre changes. Each client tests
+  the point contents **at the centre** for water (slime does not count);
+  in water the script's water explosion field is used, oriented by the
+  normal as above. A rocket on a river bed: centre 1 unit above the bed,
+  in water → water effect along the bed's normal; a pipe or sticky lying
+  on the bed: the downward line finds the bed → the same. A blast whose
+  centre is above the surface (a rocket hitting a wall just above the
+  waterline) uses the normal effects even if the surface is 1 unit
+  below. The water field's content: ours' data
+  `ExplosionCore_MidAir_underwater` (the only underwater core in the
+  particle files; the scripts' value still unread, Open questions 1).
+  The sound is the script's explosion sound either way.
+
+### 14. Crit sounds and glow on the held weapon
+
+- **Crit boost loop** (`Weapon_General.CritPower` → `weapons/crit_power.wav`,
+  8.25 s mono 44.1 kHz, one cue at sample 0: loops whole,
+  specs/source/sound_looping.md; static channel, 74 dB, volume 1, pitch
+  100). It is the **boost's** sound, not the crit shot's: random crits
+  never play it.
+  - Each client decides for each player it sees. The boost "shows" when
+    the player has any crit-boost condition (Kritzkrieg's charge, first
+    blood, the round-win bonus time, on-kill and capture crits, pumpkin
+    and power-up crits, the demo charge's crit) or Crit-a-Cola's
+    mini-crit buff or the Sniper's rage charge, **and** his held weapon
+    can be crit-boosted, **and** he is not cloaked; for any player but
+    the local one, also not disguised.
+  - On the change from not showing to showing it starts, **at once at
+    full volume** (no fade), attached to the **player** (the sound
+    follows him; every client's own copy, heard by that client only).
+    Also the glow particle `critgun_weaponmodel_red`/`_blu` (his team; a
+    disguised enemy shows his disguise team's) starts on the weapon
+    model drawn for him (the view model for the local player, drawn in
+    the view model's pass; the held world weapon for others).
+  - It **stops at once** (cut, no fade) when the boost stops showing:
+    the condition ends, he cloaks, he (as seen by others) disguises, or
+    he switches to a weapon that cannot be crit-boosted. Switching
+    between two boostable weapons keeps the loop running uninterrupted
+    (it is started only if none is playing); the glow moves to the new
+    weapon. A disguise change by the local player restarts the glow and
+    the loop from the start.
+  - An enemy who is cloaked, blinking or disguised shows neither glow
+    nor loop to the other team at all.
+- **Crit fire loops of continuous weapons** (separate from the boost):
+  the Minigun swaps Fire ↔ FireCrit by its networked crit flag
+  (minigun.md). The Flame Thrower: when firing starts, its start sound
+  (`Weapon_FlameThrower.FireStart`, inferred from the script's slots)
+  plays at volume 1 fading to 0 over 3.5 s while its loop fades in from
+  0 to 1 over 3.5 s: `.FireLoop`, or `.FireLoopCrit` when the burst is
+  critical. When the burst's crit flag flips while firing, both stop at
+  once and the other loop starts at full volume with no start sound
+  (no `.FireEnd` either). Releasing the trigger cuts the loop and plays
+  `.FireEnd`. A boosted Pyro's every burst is critical, so he hears
+  FireLoopCrit plus CritPower.
+- One-shot guns play the script's crit shot sound (`…SingleCrit`) for a
+  crit shot instead of `…Single` (weapons_more.md §9.4); no loop.
 
 ## Per-frame order
 
@@ -545,6 +866,31 @@ bridge; facts of the picture, not of the code.
 | Rocket fired, lerp 0.1, first client frame with the rocket | the drawn rocket (and its trail point) 110 units behind its server position on its line; model hidden until 0.2 s |
 | Rocket blast at server time T, lerp 0.1 | the blast effect starts when the client's interpolated time reaches T (≈ T + 0.1 s + snapshot wait) |
 | Rocket into the floor ~160 units ahead (25° down), 60 frames/s, `+attack` at frame 1 | blast at frame ~15 with lerp 0.1, ~11 with lerp 0.03 |
+| Interpolation amount, defaults (`cl_interp` 0.1, `cl_interp_ratio` 2, `cl_updaterate` 20), tick 0.015 | 8 ticks = 0.12 s |
+| Rocket first received at p0 = (100, 0, 0), s0 = 10.0, v0 = (1100, 0, 0); drawn time 9.9 | drawn at (−10, 0, 0); at 9.95: (45, 0, 0); at 10.0: p0; never held at a fixed point |
+| Pipe received at client time 5.0 | model not drawn before 5.1; trail emitting from 5.0 |
+| Rocket received at client time 5.0 | model not drawn before 5.2 |
+| RED needle hits a wooden wall (letter W) | `Impact.Wood` decal at the hit, wood flecks, `Wood.BulletImpact` within 1024; `Bounce.Shrapnel` on 3 in 10; needle stays stuck until 6 s after its launch; trail stops emitting |
+| BLU needle hits the same wall | as above, never `Bounce.Shrapnel` |
+| Needle reaches a teammate | needle vanishes; no decal, no sound, no blood |
+| Needle (10 damage) hits an enemy | needle vanishes; server: one blood burst at the needle's server position, 2 world blood traces σ 0.2 |
+| Rocket touches a floor at (0, 0, 0), normal (0, 0, 1) | blast centre (0, 0, 1), normal (0, 0, 1), wall effect, `Scorch` at (0, 0, 0) |
+| Rocket touches a player's box face at x = 24, normal (1, 0, 0) | centre 1 unit outside that face; player effect oriented to (1, 0, 0); no scorch |
+| Pipe on its fuse, centre 2 units above a floor | blast 1 unit above the floor, floor normal, wall effect, scorch on the floor |
+| Pipe on its fuse 20 units above a floor | blast snapped to 1 unit above the floor (floor within 24 below) |
+| Pipe on its fuse 30 units above a floor | blast at its centre, zero normal, in-air effect, no scorch |
+| Sticky stuck to a wall, floor 100 units below, detonated | blast at the sticky's centre, the wall's outward normal, wall effect, no scorch |
+| Pipe grazes an enemy, its 64-unit line misses | blast at the pipe's centre, in-air effect, no scorch |
+| Rocket hits a river bed under 50 units of water | centre 1 unit above the bed, water effect along the bed's normal |
+| Melee: line from the eye hits a wall 40 units ahead | contact on the wall on the view line; decal and flecks there |
+| Melee: line misses, cube stops at C touching a player | contact C (the cube centre); body decal only if the eye→C ray (+8, +10 %) meets a hitbox |
+| Melee: line misses, cube touches the world, doubled line hits | contact = the doubled line's hit (≤ 96 units out) |
+| Medic gets Kritzkrieg crits holding the Syringe Gun | `Weapon_General.CritPower` loop starts at full volume, `critgun_weaponmodel_<team>` on the gun; stops cut when the boost ends |
+| Boosted Medic switches to the Bonesaw (boostable) | the loop goes on without restarting; the glow moves to the Bonesaw |
+| Boosted enemy Spy cloaks | glow and loop stop for every viewer |
+| Random crit shot, no boost | no CritPower loop; `…SingleCrit` shot sound only |
+| Flame Thrower burst turns critical while firing | FireLoop cut, FireLoopCrit at full volume at once, no FireStart, no FireEnd |
+| Player healed to full health | all his body decals removed |
 
 ## Open questions
 
@@ -572,9 +918,15 @@ bridge; facts of the picture, not of the code.
    detonated sticky send (§5 step 2 reads the normal "sent with it").
    Ours sends none for them (the in-air effect, no scorch) until a spec
    says; rockets and direct pipe hits send the surface they touched.
+   **Answered (§13):** a fused pipe or detonated sticky sends the normal of
+   a floor found within 24 units below it (or zero); a stuck sticky sends
+   the normal of the surface it stuck to.
 7. (Implementation note.) How far the `Scorch` decal's trace reaches
    (§5 step 6). Ours traces 16 units from the blast's centre back along
    the surface normal.
+   **Answered (§13):** no separate trace: the scorch uses the blast's own
+   trace (the rocket's touch, the pipe's 64-unit line, or the fused
+   projectile's line from 8 above to 24 below its centre).
 8. **Blood on a player hit** (measured 2026-11-20, tools/tf2ref
    `impacts.tf2`: an SMG round into a BLU Heavy about 180 units off,
    every frame at 60 frames a second): a dark red puff about 20 pixels
@@ -609,3 +961,21 @@ bridge; facts of the picture, not of the code.
    drawn time reaches the shot. Ours holds a projectile at its launch point
    until then (measured). Unexplained: whether the history point exists
    but is not used for the first interpolation.
+   **Answered (§11.1):** the history point exists and is used from the
+   first drawn frame: the projectile is drawn behind its launch point and
+   moves forward at once; the "launch point" look is the hidden model
+   (rockets 0.2 s, pipes and stickies 0.1 s from arrival) and the trail's
+   glow passing the camera. Needles are client-made from their start (§12).
+12. (Implementation note.) Ours' needle impacts: §12 replaces any
+   needle-specific guess; ours' decal on the world should follow the
+   letter table.
+13. **Stuck needles.** By the reference a needle hitting the world stays
+   drawn until 6 s after its launch; the 2026-11-20 capture (a puppet
+   Medic, then a free spectator beside the marks) saw none. Check from the
+   shooter's own first-person view without changing view mode, and which
+   end of `w_syringe_proj.mdl` (bounds −5.9 to +3.25 along x) is the tip.
+14. The surface material reported for a hit on a player's box (we infer
+   the default surface, letter C): shoot needles into a standing bot and
+   look for concrete flecks and bullet-hole decals on the body, and
+   which impact sound plays.
+15. The engine's per-model decal cap (`r_maxmodeldecal`, believed 50).

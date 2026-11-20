@@ -613,3 +613,24 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   from 290 units under water, where TF2 shows a bright orange glow: read
   as our water fog darkening additive particles (not measured). Blood:
   close. Wrench: the box sweep's contact point (table).
+- 2026-11-20 (spec pass, tf2-spec-answers): the open spec questions
+  answered. (1) Needle impacts: [effects.md §12](../../../specs/tf2/effects.md)
+  (client-made needles, decal by the surface letter as a bullet's, stuck
+  in the world until 6 s, RED-only ricochet sound; on players the box
+  impact and the server's blood). (2) Blast centres: §13 (1 unit out
+  along the touched surface's normal; pipes' 64-unit line; fused pipes
+  and stickies trace down 8 above to 24 below; stuck stickies' stored
+  normal; water tested at the centre; effects.md Open questions 6, 7
+  answered). (3) First moments: §11.1 (history seeded back along the
+  launch velocity and used from the first frame; L = 8 ticks = 0.12 s;
+  model hidden 0.2 s rockets, 0.1 s pipes/stickies; the trail emits from
+  arrival; Open questions 11 answered). (4) Input timing:
+  [specs/source/input_timing.md](../../../specs/source/input_timing.md)
+  (one command per tick; a press acts in its frame if the frame has a
+  tick, else ≤ 1 tick later; taps kept). (5) Melee contact point: §10.1.
+  (6) Crit loops: §14 (`Weapon_General.CritPower` follows the boost, not
+  random crits; the Flame Thrower's crit loop swap). (7) Blood on bodies:
+  §8b (yes: `Impact.Flesh` model decals per bullet/melee hit, cleared on
+  full heal, cloak, disguise, Über). New open questions 13-15 (stuck
+  needles not seen in the capture; a player box's surface letter; the
+  model-decal cap).
