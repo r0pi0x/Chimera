@@ -2861,8 +2861,9 @@ a first bot are in.
 
   Check the spec's open questions in the game. The muzzle flash's light on
   nearby walls is part of the view-model work (1C follow-up).
-- Decals, remaining: on characters (blood; no spec covers model decals,
-  overlays_decals.md's open questions); the knife's mark (`ManhackCut` is
+- Decals, remaining: on characters they are in (`render::body_decals`,
+  docs/plans/active/body-decals.md; check the look and the cap against the
+  game); the knife's mark (`ManhackCut` is
   a guess and no spec names it: impact_effects.md 12 points to
   overlays_decals.md, which has no knife entry; a spec session or a
   capture) and lit decals (wood, glass) against the game; tracers are in (every 4th bullet, spec tracers.md; check N and

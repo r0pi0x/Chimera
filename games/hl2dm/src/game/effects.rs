@@ -79,6 +79,7 @@ pub const STYLE: ImpactStyle = ImpactStyle {
     mark_ricochet: None,
     sound_reach: None,
     melee_ray: false,
+    body_decals: source_engine::effects::BodyDecals::Always,
 };
 
 /// The effect materials HL2:DM's effects add to Source's (the AR2's

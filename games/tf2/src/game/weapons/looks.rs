@@ -454,6 +454,7 @@ pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::I
     mark_ricochet: Some(red_team),
     sound_reach: Some(1024.0),
     melee_ray: true,
+    body_decals: source_engine::effects::BodyDecals::NotLowViolence,
 };
 
 /// RED (TF2's team 2; ours the odd teams, `bodies::skin_of`).

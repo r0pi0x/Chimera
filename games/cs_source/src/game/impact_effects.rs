@@ -35,6 +35,7 @@ pub const STYLE: ImpactStyle = ImpactStyle {
     mark_ricochet: None,
     sound_reach: None,
     melee_ray: false,
+    body_decals: source_engine::effects::BodyDecals::Always,
 };
 
 /// Load the effect materials (runtime, from the install): Source's with

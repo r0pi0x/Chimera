@@ -1,6 +1,20 @@
 //! Local intent source: keyboard and mouse write the local player's `Intent`.
-//! A move key's first tick counts half where the movement says so
-//! (`apply_move_keys`, `core::HalfFirstPress`: Source's key impulse).
+//! When a press becomes a command follows specs/source/input_timing.md for
+//! every game: the input runs before the fixed loop (`LocalInputSystems`),
+//! so a press acts in its own frame when that frame runs a tick, else at
+//! the next one; a button press no command has taken yet stays on for the
+//! next (`KeyLatch`: a tap shorter than a tick fires once); a move key
+//! sends its share of the amount by its state since the last command
+//! (`move_share`: half on the first, a tap a quarter, a re-press three
+//! quarters) where the movement says so (`apply_move_keys`,
+//! `core::HalfFirstPress`: Source's), and a frame without a tick reads the
+//! move keys' shares away (`end_local_frame`).
+//!
+//! Known shortcuts: the binds that run console commands (`console::
+//! run_binds`: `invnext`, `buymenu`, a `slotN` with `hud_fastswitch 0`)
+//! still run in `Update`, after the fixed loop: theirs reach the next
+//! frame's tick. A menu opened in `Update` gates the intent from the next
+//! frame (the keys it takes in `PreUpdate` at once).
 
 use bevy::{
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
@@ -104,15 +118,60 @@ impl Plugin for LocalInputPlugin {
             .register_type::<MouseSettings>()
             .add_systems(PreUpdate, super::binds::release_captured.after(bevy::input::InputSystems))
             .init_resource::<MoveKeys>()
+            .init_resource::<KeyLatch>()
             .add_systems(
-                Update,
-                ((grab_cursor, write_local_intent, track_move_keys, chimera_net::net::predict::hold_view).chain(), drop_key),
+                RunFixedMainLoop,
+                (
+                    (grab_cursor, write_local_intent).chain().in_set(LocalInputSystems::Write),
+                    chimera_net::net::predict::hold_view.in_set(LocalInputSystems::Hold),
+                    track_move_keys.in_set(LocalInputSystems::Track),
+                    end_local_frame.in_set(bevy::app::RunFixedMainLoopSystems::AfterFixedMainLoop),
+                ),
             )
+            .add_systems(Update, drop_key)
             .add_systems(PostUpdate, keep_cursor_free)
-            .add_systems(FixedPreUpdate, (apply_wheel_jump, apply_move_keys));
+            .add_systems(FixedPreUpdate, (start_local_tick, (apply_wheel_jump, apply_move_keys)).chain());
+        configure_local_input(app);
         super::binds::add_owned_keys(app);
         mouse_cvars(app);
     }
+}
+
+/// Where the local input runs (specs/source/input_timing.md): in
+/// `RunFixedMainLoop`, before the fixed loop, so a key reaches the ticks
+/// of the frame it is pressed in (before, `write_local_intent` ran in
+/// `Update`, after the loop, and every key reached the simulation a frame
+/// late). In order: menus that read keys first, the intent written, the
+/// rules' hold over it, a game's own gates (Combat Arms' popups), then
+/// what reads the gated intent. A menu's open state set in `Update` gates
+/// from the next frame (as a key typed into a menu in Source starts with
+/// the next frame's events); keys a menu takes (`binds::CapturedKeys`, in
+/// `PreUpdate`) are gone this frame.
+#[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LocalInputSystems {
+    /// Menus that read keys before the intent (the weapon selection, the
+    /// spectator's keys).
+    Menus,
+    /// The cursor grab, then `write_local_intent`.
+    Write,
+    /// The rules' hold (`predict::hold_view`).
+    Hold,
+    /// A game's own gates over the input (Combat Arms' popups).
+    Gate,
+    /// Readers of the final intent (`track_move_keys`).
+    Track,
+}
+
+/// Order `LocalInputSystems` before the fixed loop (any plugin that puts a
+/// system in it calls this; configuring twice is harmless).
+pub fn configure_local_input(app: &mut App) {
+    use LocalInputSystems::*;
+    app.configure_sets(
+        RunFixedMainLoop,
+        (Menus, Write, Hold, Gate, Track)
+            .chain()
+            .in_set(bevy::app::RunFixedMainLoopSystems::BeforeFixedMainLoop),
+    );
 }
 
 pub fn mouse_cvars(app: &mut App) {
@@ -392,7 +451,13 @@ pub(super) fn grab_cursor(
     if (grabbed_now || focusing)
         && let Some(c) = captured.as_mut()
     {
-        let held: Vec<MouseButton> = if grabbed_now { mouse.get_pressed().copied().collect() } else { mouse.get_just_pressed().copied().collect() };
+        // A click let go within the frame too (a press no command has
+        // taken would still fire: `KeyLatch`).
+        let held: Vec<MouseButton> = if grabbed_now {
+            mouse.get_pressed().chain(mouse.get_just_pressed()).copied().collect()
+        } else {
+            mouse.get_just_pressed().copied().collect()
+        };
         for b in held {
             if !c.holds_button(b) {
                 c.capture_button(b);
@@ -454,45 +519,77 @@ pub fn apply_wheel_jump(mut wheel: ResMut<WheelJump>, mut intent: Single<&mut In
     intent.jump = wheel.key_held || pulse;
 }
 
-/// The move keys held (forward, back, right, left: from the local
-/// intent each frame, console-held ones too) and which went down since
-/// the last tick: the first command after a key goes down sends half its
-/// amount where the player's movement says so (`core::HalfFirstPress`).
+/// Each move key's state (forward, back, right, left; spec
+/// input_timing.md, "Key state"): held now (from the local intent each
+/// frame, console-held ones too), went down and went up since the last
+/// command took them. The command's share of a key's amount follows from
+/// the three (`move_share`) where the player's movement says so
+/// (`core::HalfFirstPress`).
 #[derive(Resource, Default, Debug)]
 pub struct MoveKeys {
     held: [bool; 4],
-    fresh: [bool; 4],
-    /// The axes (x, y) the last tick halved: the next tick's are whole
-    /// again, a frame's intent or not.
+    went_down: [bool; 4],
+    went_up: [bool; 4],
+    /// A key bound to the action went down / up this frame
+    /// (`write_local_intent`): a tap or a re-press inside one frame.
+    pressed: [bool; 4],
+    released: [bool; 4],
+    /// The axes (x, y) the last tick sent a share other than the held
+    /// amount on: the next tick's are whole again, a frame's intent or not.
     halved: [bool; 2],
 }
 
-/// Each frame: the move keys the local intent holds, and those that went
-/// down.
+/// The share of a move key's amount in a command, from its bits since
+/// the last one (spec input_timing.md, "Move amounts"): held 1, first
+/// command after it went down 0.5, a tap between two commands 0.25,
+/// released and pressed again 0.75, released 0.
+pub fn move_share(went_down: bool, went_up: bool, down: bool) -> f32 {
+    match (went_down, went_up, down) {
+        (false, _, true) => 1.0,
+        (true, false, true) => 0.5,
+        (true, true, false) => 0.25,
+        (true, true, true) => 0.75,
+        (_, _, false) => 0.0,
+    }
+}
+
+/// Each frame, after the input's gates: the move keys the local intent
+/// holds, and which went down or up (a tap or a re-press inside the frame
+/// from the keys' own presses).
 pub fn track_move_keys(mut keys: ResMut<MoveKeys>, intent: Option<Single<&Intent, With<LocalPlayer>>>) {
     let Some(i) = intent else { return };
     let (a, o) = (i.move_axis, i.opposed);
     let held = [a.y > 0.0 || o.y, a.y < 0.0 || o.y, a.x > 0.0 || o.x, a.x < 0.0 || o.x];
     for k in 0..4 {
-        keys.fresh[k] |= held[k] && !keys.held[k];
-        keys.fresh[k] &= held[k];
+        let (prev, now, p, r) = (keys.held[k], held[k], keys.pressed[k], keys.released[k]);
+        let (down, up) = match (prev, now) {
+            (false, true) => (true, false),
+            (true, false) => (false, true),
+            (false, false) => (p, p),
+            (true, true) => (p && r, p && r),
+        };
+        keys.went_down[k] |= down;
+        keys.went_up[k] |= up;
     }
     keys.held = held;
+    keys.pressed = [false; 4];
+    keys.released = [false; 4];
 }
 
-/// Before each tick: a move key that went down since the last tick counts
-/// half in this tick's command (Source's key impulse: CS:S's first command
+/// Before each tick: each move key's share of its amount in this tick's
+/// command (`move_share`: Source's key impulse; CS:S's first command
 /// after `+forward` gave 15 units/s, half of 18.75; HL2:DM's 22.5 of 45;
 /// TF2's Scout 33.75 of 60), on the movements that do it
-/// (`core::HalfFirstPress`).
+/// (`core::HalfFirstPress`). Reading the shares clears the bits.
 pub fn apply_move_keys(
     mut keys: ResMut<MoveKeys>,
     half: Option<Res<crate::core::HalfFirstPress>>,
     mut intent: Option<Single<(&mut Intent, Option<&crate::slots::MovementSlot>), With<LocalPlayer>>>,
 ) {
-    let fresh = std::mem::take(&mut keys.fresh);
+    let went_down = std::mem::take(&mut keys.went_down);
+    let went_up = std::mem::take(&mut keys.went_up);
     let redo = std::mem::take(&mut keys.halved);
-    if !fresh.iter().chain(&redo).any(|f| *f) {
+    if !went_down.iter().chain(&went_up).chain(&redo).any(|f| *f) {
         return;
     }
     let Some((intent, slot)) = intent.as_deref_mut() else { return };
@@ -500,14 +597,154 @@ pub fn apply_move_keys(
         return;
     }
     let held = keys.held;
-    let k = |i: usize| if held[i] { if fresh[i] { 0.5 } else { 1.0 } } else { 0.0 };
+    let k = |i: usize| move_share(went_down[i], went_up[i], held[i]);
     // (axis, its positive key, its negative key)
     for (axis, pos, neg) in [(1, 0, 1), (0, 2, 3)] {
-        if fresh[pos] || fresh[neg] || redo[axis] {
+        let changed = [pos, neg].iter().any(|&i| went_down[i] || went_up[i]);
+        if changed || redo[axis] {
             intent.move_axis[axis] = k(pos) - k(neg);
-            keys.halved[axis] = fresh[pos] || fresh[neg];
+            keys.halved[axis] = [pos, neg].iter().any(|&i| k(i) != held[i] as u8 as f32);
         }
     }
+}
+
+/// The buttons a command reads (spec input_timing.md, "Buttons in a
+/// command"): fire, attack2, jump, duck, reload, use, `lastinv`, the
+/// game's named actions and a slot key.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+struct Buttons {
+    bits: u8,
+    actions: u32,
+    select: Option<u8>,
+}
+
+const FIRE: u8 = 1;
+const SECONDARY: u8 = 2;
+const JUMP: u8 = 4;
+const CROUCH: u8 = 8;
+const RELOAD: u8 = 16;
+const USE: u8 = 32;
+const LAST_WEAPON: u8 = 64;
+
+impl Buttons {
+    fn of(i: &Intent) -> Self {
+        let bit = |on: bool, b: u8| if on { b } else { 0 };
+        Self {
+            bits: bit(i.fire, FIRE)
+                | bit(i.secondary, SECONDARY)
+                | bit(i.jump, JUMP)
+                | bit(i.crouch, CROUCH)
+                | bit(i.reload, RELOAD)
+                | bit(i.use_key, USE)
+                | bit(i.last_weapon, LAST_WEAPON),
+            actions: i.actions,
+            select: i.select,
+        }
+    }
+
+    fn fields(i: &mut Intent) -> [(&mut bool, u8); 7] {
+        [
+            (&mut i.fire, FIRE),
+            (&mut i.secondary, SECONDARY),
+            (&mut i.jump, JUMP),
+            (&mut i.crouch, CROUCH),
+            (&mut i.reload, RELOAD),
+            (&mut i.use_key, USE),
+            (&mut i.last_weapon, LAST_WEAPON),
+        ]
+    }
+
+    /// Turn these on in `i` (a slot only where none is picked).
+    fn add_to(self, i: &mut Intent) {
+        for (f, b) in Self::fields(i) {
+            *f |= self.bits & b != 0;
+        }
+        i.actions |= self.actions;
+        if i.select.is_none() {
+            i.select = self.select;
+        }
+    }
+
+    /// Turn these off in `i`.
+    fn remove_from(self, i: &mut Intent) {
+        for (f, b) in Self::fields(i) {
+            *f &= self.bits & b == 0;
+        }
+        i.actions &= !self.actions;
+        if self.select.is_some() && i.select == self.select {
+            i.select = None;
+        }
+    }
+
+    /// What `self` has that `held` doesn't.
+    fn without(self, held: Self) -> Self {
+        Self {
+            bits: self.bits & !held.bits,
+            actions: self.actions & !held.actions,
+            select: self.select.filter(|_| held.select.is_none()),
+        }
+    }
+
+    fn any(self) -> bool {
+        self.bits != 0 || self.actions != 0 || self.select.is_some()
+    }
+}
+
+/// Button presses no command has taken yet (spec input_timing.md, the
+/// "went down" bit): a tap shorter than a tick, or one in a frame without
+/// a tick, is on in exactly one command. `write_local_intent` adds them
+/// to the frame's intent (so the gates over it see them); the frame's
+/// first tick takes them (`start_local_tick`), and its later ticks see
+/// only what is held.
+#[derive(Resource, Default, Debug)]
+pub struct KeyLatch {
+    pending: Buttons,
+    /// The frame's intent as the keys hold it, and as written with the
+    /// presses added.
+    held: Buttons,
+    shown: Buttons,
+    /// `write_local_intent` wrote the intent this frame.
+    written: bool,
+    /// Ticks run this frame.
+    ticks: u32,
+}
+
+/// The start of each tick: the frame's first takes the latched presses;
+/// a later one sees the keys as held (the presses taken off again).
+pub fn start_local_tick(
+    mut latch: ResMut<KeyLatch>,
+    mut wheel: ResMut<WheelJump>,
+    mut intent: Option<Single<&mut Intent, With<LocalPlayer>>>,
+) {
+    latch.pending = Buttons::default();
+    if latch.written
+        && let Some(i) = intent.as_deref_mut()
+    {
+        if latch.ticks == 0 {
+            // The gated jump (`apply_wheel_jump` sets it from here).
+            wheel.key_held = i.jump;
+        } else {
+            let stale = latch.shown.without(latch.held);
+            if stale.any() {
+                stale.remove_from(i);
+                wheel.key_held &= latch.held.bits & JUMP != 0;
+            }
+        }
+    }
+    latch.ticks += 1;
+}
+
+/// After the fixed loop: a frame that ran no tick still reads the move
+/// keys' shares into a command it throws away (spec input_timing.md,
+/// frame loop step 3: the extra mouse sample), which clears their
+/// went-down and went-up bits; buttons keep theirs.
+pub fn end_local_frame(mut latch: ResMut<KeyLatch>, mut keys: ResMut<MoveKeys>) {
+    if latch.ticks == 0 {
+        keys.went_down = [false; 4];
+        keys.went_up = [false; 4];
+    }
+    latch.ticks = 0;
+    latch.written = false;
 }
 
 /// Free look: while Left Alt (or `+freelook`) is held, the mouse turns
@@ -550,13 +787,18 @@ pub fn write_local_intent(
     zoomed: Query<&crate::weapon::Zoomed, With<LocalPlayer>>,
     spectator: Option<Res<super::spectate::Spectator>>,
     weapon_menu: Option<Res<super::weapon_menu::WeaponMenu>>,
-    (actions, identity, captured): (
+    (actions, identity, captured, mut latch, mut move_keys): (
         Option<Res<crate::core::ActionRegistry>>,
         Query<&crate::slots::GameIdentity, With<LocalPlayer>>,
         Option<Res<super::binds::CapturedKeys>>,
+        Option<ResMut<KeyLatch>>,
+        Option<ResMut<MoveKeys>>,
     ),
     mut last_motion: Local<Vec2>,
 ) {
+    if let Some(l) = latch.as_mut() {
+        l.written = true;
+    }
     // The motion mouse look turns by (`m_filter`, `m_customaccel`).
     let motion_counts = mouse_settings.counts(motion.delta, &mut last_motion);
     // Every game key is a bind (`binds`): what the keys bound to an action
@@ -567,12 +809,17 @@ pub fn write_local_intent(
     let binds = console.as_ref().map_or(std::borrow::Cow::Borrowed(&empty), |c| c.effective_binds(identity));
     let binds = &*binds;
     let bound = |command: &str| super::binds::pressed_free(binds, &keys, &mouse, captured.as_deref(), command);
+    let went_down = |command: &str| super::binds::just_pressed_free(binds, &keys, &mouse, captured.as_deref(), command);
+    let went_up = |command: &str| super::binds::just_released_free(binds, &keys, &mouse, captured.as_deref(), command);
     let freelook = bound("+freelook") || held.as_ref().is_some_and(|h| h.freelook);
     if !freelook {
         free.set_if_neq(FreeLook::default());
     }
     if !cursor_grabbed(&cursor) {
         *wheel = WheelJump::default();
+        if let Some(l) = latch.as_mut() {
+            l.pending = Buttons::default();
+        }
         // Not playing (menu, inspector): stop moving, keep looking where we
         // were. Console-held actions (`+attack` from a bind or script)
         // still apply, as in Source.
@@ -587,12 +834,19 @@ pub fn write_local_intent(
         if let Some(h) = held {
             apply_held(&mut intent, &mut wheel, &h, actions.as_deref());
         }
+        if let Some(l) = latch.as_mut() {
+            l.held = Buttons::of(&intent);
+            l.shown = l.held;
+        }
         return;
     }
 
     // Spectating (dead): the keys and mouse drive the spectator camera.
     if spectator.is_some_and(|s| s.active()) {
         *wheel = WheelJump::default();
+        if let Some(l) = latch.as_mut() {
+            **l = KeyLatch { written: true, ticks: l.ticks, ..default() };
+        }
         let (yaw, pitch) = (intent.yaw, intent.pitch);
         **intent = Intent {
             yaw,
@@ -611,6 +865,9 @@ pub fn write_local_intent(
         );
         let speed = if bound("+speed") { 12.0 } else { 4.0 };
         freecam.fly(input, mouse_settings.look_delta(motion_counts), speed, time.delta_secs());
+        if let Some(l) = latch.as_mut() {
+            **l = KeyLatch { written: true, ticks: l.ticks, ..default() };
+        }
         let (yaw, pitch) = (intent.yaw, intent.pitch);
         **intent = Intent {
             yaw,
@@ -624,6 +881,13 @@ pub fn write_local_intent(
         bound("+moveright") && bound("+moveleft"),
         bound("+forward") && bound("+back"),
     );
+    // Taps and re-presses inside the frame (`track_move_keys`).
+    if let Some(m) = move_keys.as_mut() {
+        for (k, c) in ["+forward", "+back", "+moveright", "+moveleft"].into_iter().enumerate() {
+            m.pressed[k] = went_down(c);
+            m.released[k] = went_up(c);
+        }
+    }
 
     let zoom = mouse_settings.zoomed_scale(zoomed.iter().next());
     let turn = mouse_settings.look_delta(motion_counts) * zoom;
@@ -663,7 +927,7 @@ pub fn write_local_intent(
     // with the weapon selection (`hud_fastswitch 0`) they work through it.
     intent.select = if let Some(m) = weapon_menu.as_ref().filter(|m| m.takes_slots || m.select.is_some()) {
         m.selected_slot()
-    } else if panels.is_some_and(|p| p.number_keys_taken()) {
+    } else if panels.as_ref().is_some_and(|p| p.number_keys_taken()) {
         None
     } else {
         (0..5u8).find(|i| bound(&format!("slot{}", i + 1)))
@@ -672,6 +936,46 @@ pub fn write_local_intent(
     // keys.
     if let Some(h) = held {
         apply_held(&mut intent, &mut wheel, &h, actions.as_deref());
+    }
+    // Presses since the last command (`KeyLatch`): on in the next one
+    // even if already let go.
+    if let Some(l) = latch.as_mut() {
+        let mut down = Buttons::default();
+        let swallowed = weapon_menu.as_ref().is_some_and(|m| m.swallow_fire);
+        for (c, b, on) in [
+            ("+attack", FIRE, !swallowed),
+            ("+attack2", SECONDARY, true),
+            ("+jump", JUMP, true),
+            ("+duck", CROUCH, true),
+            ("+reload", RELOAD, true),
+            ("+use", USE, true),
+            ("lastinv", LAST_WEAPON, true),
+        ] {
+            if on && went_down(c) {
+                down.bits |= b;
+            }
+        }
+        if let Some(registry) = actions.as_deref() {
+            for name in registry.names() {
+                if went_down(&format!("+{name}")) {
+                    down.actions |= registry.bit(name);
+                }
+            }
+        }
+        let direct = !weapon_menu.as_ref().is_some_and(|m| m.takes_slots || m.select.is_some())
+            && !panels.as_ref().is_some_and(|p| p.number_keys_taken());
+        if direct {
+            down.select = (0..5u8).find(|i| went_down(&format!("slot{}", i + 1)));
+        }
+        let pending = &mut l.pending;
+        pending.bits |= down.bits;
+        pending.actions |= down.actions;
+        pending.select = down.select.or(pending.select);
+        l.held = Buttons::of(&intent);
+        let pending = l.pending;
+        pending.add_to(&mut intent);
+        wheel.key_held |= intent.jump;
+        l.shown = Buttons::of(&intent);
     }
 }
 
