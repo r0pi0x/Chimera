@@ -625,7 +625,9 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   step emits nothing (the flash-up, Open questions 8). TF2's blood
   (`weapons::blood`, data/blood.toml): one burst per damage event, the
   spray chosen per viewer, `lowV_` with `violence_hblood 0`, stains per
-  pellet by the gun's own damage; no body decal (characters take none).
+  pellet by the gun's own damage; body decals (§8b, `render::body_decals`:
+  `Impact.Flesh` per hit, none in low violence, cleared on full heal and
+  respawn, not on the ragdoll; cloak, disguise and Über to come).
   The rocket's trail chosen once by the water at its first place
   (`rockettrail_underwater`). Projectiles drawn late (`interp` in
   `chimera:projectile`, `chimera_net`'s `late`: a copy drawn 0.1 s in the

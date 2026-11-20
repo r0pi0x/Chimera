@@ -60,6 +60,23 @@ pub struct ImpactStyle {
     /// attacker's own machine only (TF2: made in the predicted swing,
     /// specs/tf2/effects.md 10); false: wherever the swing's hit is known.
     pub melee_own_only: bool,
+    /// Whether its bullets and swings put their decal on a hit character's
+    /// body (`map::PlaceBodyDecal`).
+    pub body_decals: BodyDecals,
+}
+
+/// Whether a game's hits decal the bodies they hit (a model decal that
+/// follows the skin, `render::body_decals`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodyDecals {
+    /// None (Combat Arms: characters take no decal).
+    Never,
+    /// Every hit (CS:S's and HL2:DM's impact on a player: the flesh
+    /// surface's decal, or a melee style's own).
+    Always,
+    /// Every hit but in low violence (`violence_hblood 0`; TF2,
+    /// specs/tf2/effects.md 8b).
+    NotLowViolence,
 }
 
 impl ImpactStyle {

@@ -448,6 +448,7 @@ pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::I
     blood: source_engine::effects::BloodView::Game,
     melee_decal: None,
     melee_own_only: true,
+    body_decals: source_engine::effects::BodyDecals::NotLowViolence,
 };
 
 /// The systems TF2's guns start: loaded with its maps besides their own,

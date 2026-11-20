@@ -82,3 +82,30 @@ fn flames_and_teammates_never_bleed() {
     });
     assert!(b.is_empty() && s.is_empty(), "{b:?}");
 }
+
+/// effects.md 8b's rules for the body decals: a TF2 character healed to
+/// full (health rose, at least the max) has them all removed
+/// (`ClearBodyDecals`, drawn by Chimera's `render::body_decals`); a rise
+/// short of full or a fall does nothing; its ragdoll keeps none
+/// (`BodyDecalsOffRagdoll`).
+#[test]
+fn healed_to_full_clears_body_decals_and_the_ragdoll_keeps_none() {
+    use chimera_core::core::Health;
+    use chimera_world::map::{BodyDecalsOffRagdoll, ClearBodyDecals};
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, SMG);
+    sim.ticks(2);
+    assert!(sim.app.world().get::<BodyDecalsOffRagdoll>(p).is_some(), "a TF2 character's ragdoll keeps none");
+    let mut cleared = sim.app.world().resource::<Messages<ClearBodyDecals>>().get_cursor_current();
+    let mut heal = |sim: &mut Sim, to: f32| {
+        let max = sim.app.world().get::<Health>(p).unwrap().max;
+        sim.app.world_mut().get_mut::<Health>(p).unwrap().current = to * max;
+        sim.ticks(1);
+        cleared.read(sim.app.world().resource::<Messages<ClearBodyDecals>>()).filter(|c| c.0 == p).count()
+    };
+    assert_eq!(heal(&mut sim, 0.4), 0, "hurt");
+    assert_eq!(heal(&mut sim, 0.9), 0, "healed, not to full");
+    assert_eq!(heal(&mut sim, 1.0), 1, "healed to full");
+    assert_eq!(heal(&mut sim, 1.0), 0, "unchanged");
+}

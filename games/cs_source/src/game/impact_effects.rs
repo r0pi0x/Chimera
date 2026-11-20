@@ -32,6 +32,7 @@ pub const STYLE: ImpactStyle = ImpactStyle {
     blood: source_engine::effects::BloodView::Damage,
     melee_decal: Some(source_engine::effects::impacts::SLASH_DECAL),
     melee_own_only: false,
+    body_decals: source_engine::effects::BodyDecals::Always,
 };
 
 /// Load the effect materials (runtime, from the install): Source's with

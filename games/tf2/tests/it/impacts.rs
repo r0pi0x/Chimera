@@ -5,6 +5,8 @@
 //! (`map::kept::append`), a TF2 pistol's hit on the world plays TF2's
 //! impact entry and asks for TF2's decal group, and its hit on a player
 //! plays TF2's flesh impact (TF2 has no hurt sounds of its own).
+//! The same hit asks for TF2's flesh decal on the body (effects.md 8b),
+//! none in low violence.
 
 use std::sync::Arc;
 
@@ -13,7 +15,7 @@ use chimera_world::{
     greybox,
     harness::Sim,
     map::{
-        DecalGroup, MapData, PlaceDecal, PlaySound,
+        DecalGroup, MapData, PlaceBodyDecal, PlaceDecal, PlaySound,
         decal::{DecalBlend, MapDecal},
         impact::{ActiveImpacts, MapImpacts},
         kept,
@@ -170,4 +172,44 @@ fn a_tf2_guns_hit_on_a_player_sounds_tf2s_flesh_impact() {
     });
     assert!(played.iter().any(|s| s == "tf2:flesh.bulletimpact"), "TF2's flesh impact: {played:?}");
     assert!(!played.iter().any(|s| s.eq_ignore_ascii_case("Flesh.BulletImpact")), "not CS:S's: {played:?}");
+}
+
+/// A TF2 pistol's shot at a player standing ahead: the body decals asked
+/// for (target, group), with `violence_hblood` at `hblood`.
+fn body_decals(hblood: i32) -> (Entity, Vec<(Entity, DecalGroup)>) {
+    let map = cs_map_with_tf2s();
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, PISTOL_SCOUT);
+    let t = target(&mut sim, from, 100.0);
+    let aim = sim.position(t);
+    sim.app.insert_resource(SoundBank(map.sounds.clone()));
+    sim.app.insert_resource(ActiveImpacts(MapImpacts::clone(&map.impacts)));
+    sim.app.insert_resource(source_engine::effects::impact_effects::ImpactEffectSettings {
+        violence_hblood: hblood,
+        ..default()
+    });
+    testkit::aim_at(&mut sim, p, aim);
+    let mut asks = sim.app.world().resource::<Messages<PlaceBodyDecal>>().get_cursor_current();
+    let mut placed = Vec::new();
+    for k in 0..10 {
+        sim.intent(p).fire = k == 0;
+        sim.ticks(1);
+        let w = sim.app.world();
+        placed.extend(asks.read(w.resource::<Messages<PlaceBodyDecal>>()).map(|d| (d.target, d.group.clone())));
+    }
+    (t, placed)
+}
+
+/// effects.md 8b: each bullet that hits an enemy puts TF2's flesh decal
+/// (`Impact.Flesh`: the F letter's group) on his body; none in low
+/// violence.
+#[test]
+fn a_tf2_bullet_decals_the_body_but_not_in_low_violence() {
+    let (t, placed) = body_decals(1);
+    assert_eq!(placed.len(), 1, "{placed:?}");
+    assert_eq!(placed[0].0, t);
+    assert!(matches!(&placed[0].1, DecalGroup::GameMaterial(g, 'F') if g == "tf2"), "{placed:?}");
+    let (_, placed) = body_decals(0);
+    assert!(placed.is_empty(), "violence_hblood 0: {placed:?}");
 }
