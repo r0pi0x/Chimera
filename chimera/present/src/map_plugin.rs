@@ -72,6 +72,7 @@ impl Plugin for MapPlugin {
         render::stand_in::plugin(app);
         render::psys::console(app);
         render::psys::def_console(app);
+        render::particles::console(app);
         {
             use chimera_core::metrics::census::CensusAppExt;
             use render::{

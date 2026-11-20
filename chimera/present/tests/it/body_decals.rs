@@ -247,3 +247,20 @@ fn projection_follows_the_pose_into_bind_space() {
             .is_none()
     );
 }
+
+/// effects.md 10.1, 8b: a melee box hit's contact point is the swing
+/// box's centre, which may lie in the air beside the body; its ray then
+/// misses the body and there is no body decal, though the decal's
+/// rectangle round that point would reach the chest's edge.
+#[test]
+fn a_contact_point_in_the_air_beside_the_body_leaves_no_decal() {
+    let mesh = chest();
+    let posed = pose_part(&mesh, &[Mat4::IDENTITY, Mat4::IDENTITY]);
+    let parts = [(&mesh, posed.as_slice())];
+    let beside = |x: f32| project_on_body(&parts, &decal(), Vec3::new(x, 1.1, 2.0), Vec3::new(x, 1.1, 0.12), Vec3::X, Vec3::NEG_Y);
+    // 2 cm past the chest's edge (x 0.2), 2 cm in front of it.
+    assert!(beside(0.22).is_none(), "the ray passes beside the body");
+    // On the line of the chest: the decal, at the mesh's hit.
+    let on = beside(0.18).expect("on the chest");
+    assert!(on.positions.iter().all(|p| (p[2] - 0.1).abs() < 0.01), "on the mesh: {:?}", on.positions);
+}

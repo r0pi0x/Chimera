@@ -28,7 +28,12 @@
 //! Colour random's `tint_perc` blends each new particle's colour that
 //! far toward the light at its control point (`ControlPoint::light`: the
 //! map's `LightField` there, sampled when the system starts or its entity
-//! moves; white without one).
+//! moves; white without one). A step's new particles are made along each
+//! control point's straight path over the step, at their creation times
+//! (`Instance::step_with`: the emission spread), not in a clump where the
+//! point ends; a started system with `StartParticleSystem::from` spreads
+//! its first step from that place (TF2's trail made at a rocket's first
+//! received place, drawn behind it: specs/tf2/effects.md 11.1).
 //!
 //! Known shortcuts (docs/tech-debt.md): Particle systems (`render::psys`,
 //! `map::psys`, `source_engine::content::pcf`): the operator meanings are
@@ -38,7 +43,9 @@
 //! force a uniform draw per step, twist a tangential acceleration, a sprite
 //! trail's length is clamped after its fade-in by age (the order inferred,
 //! particles.md 5.1), a continuous emitter whose window opens and closes
-//! inside one step emits nothing (inferred: Open questions 8), animation rate without "as FPS" plays the sequence that many
+//! inside one step emits nothing (inferred: Open questions 8), the
+//! emission spread along a moving point's path is linear over the step
+//! (inferred from effects.md 11.1's nuance; particles.md names no rule), animation rate without "as FPS" plays the sequence that many
 //! times a second; "collision via traces" is a ray per step (its radius past
 //! the step) against the solid world for started systems only (placed
 //! ones don't collide), bounce and slide read as fractions of the speed
@@ -233,6 +240,12 @@ pub struct Instance {
     started: bool,
     /// Where the locked-to control point was last step.
     lock_from: Option<Vec3>,
+    /// Where its control points were at the end of its last step (game
+    /// space): a step's new particles are made along each point's path
+    /// from there (`step_with`).
+    cp_from: Option<Vec<Vec3>>,
+    /// Where control point 0 was made, for its first step (`came_from`).
+    first_from: Option<Vec3>,
 }
 
 /// The sheet sequences' frame counts of a material (for "lifetime from
@@ -392,6 +405,17 @@ impl Instance {
             serial: 0,
             started: false,
             lock_from: None,
+            cp_from: None,
+            first_from: None,
+        }
+    }
+
+    /// Its control point 0 was made at `at` (game space) before what it
+    /// follows moved it: its first step spreads its emission from there
+    /// (`StartParticleSystem::from`).
+    pub fn came_from(&mut self, at: Vec3) {
+        if self.cp_from.is_none() {
+            self.first_from = Some(at);
         }
     }
 
@@ -427,6 +451,11 @@ impl Instance {
         }
         if let Some(l) = self.lock_from {
             self.lock_from = Some(f(l));
+        }
+        if let Some(from) = &mut self.cp_from {
+            for p in from {
+                *p = f(*p);
+            }
         }
         for c in self.children.iter_mut().filter_map(|c| c.1.as_mut()) {
             c.carry(f, turn);
@@ -470,6 +499,14 @@ impl Instance {
 
     /// `step` with an active control point new particles take
     /// (`Init::AssignTargetCp`).
+    ///
+    /// The emission spread (inferred, specs/tf2/effects.md 11.1's
+    /// nuance; particles.md names no rule): the control points move
+    /// along straight lines from where they were at the end of the last
+    /// step (`cp_from`; the first step from where they are, or from
+    /// `came_from`) to `cps`, and each new particle is made where its
+    /// points were at its creation time, so a moving point's step leaves
+    /// its particles spread along its path, not in a clump at its end.
     pub fn step_with(
         &mut self,
         defs: &[SystemDef],
@@ -479,13 +516,30 @@ impl Instance {
         rng: &mut ParticleRng,
         sheets: &impl Sheets,
     ) {
+        let now: Vec<Vec3> = cps.iter().map(|c| c.position).collect();
+        let mut from = match self.cp_from.take() {
+            Some(f) if f.len() == now.len() => f,
+            _ => now.clone(),
+        };
+        if let (Some(at), Some(f0)) = (self.first_from.take(), from.first_mut()) {
+            *f0 = at;
+        }
+        let at = |t: f32| -> Vec<ControlPoint> {
+            cps.iter().zip(&from).map(|(c, f)| ControlPoint { position: f.lerp(c.position, t), ..*c }).collect()
+        };
         let max = defs[self.def].max_step.max(0.01);
         let mut left = dt;
+        let mut done = 0.0;
+        let mut start = at(0.0);
         while left > 1e-6 {
             let h = left.min(max);
-            self.tick(defs, cps, active, h, rng, sheets);
+            done += h;
+            let end = if left - h > 1e-6 { at((done / dt).min(1.0)) } else { cps.to_vec() };
+            self.tick(defs, &start, &end, active, h, rng, sheets);
+            start = end;
             left -= h;
         }
+        self.cp_from = Some(now);
     }
 
     /// Each live particle's place (game space) and its own control point
@@ -532,6 +586,7 @@ impl Instance {
     fn tick(
         &mut self,
         defs: &[SystemDef],
+        cps_from: &[ControlPoint],
         cps: &[ControlPoint],
         active: Option<usize>,
         dt: f32,
@@ -595,10 +650,17 @@ impl Instance {
             }
         }
         let room = d.max_particles.saturating_sub(self.particles.len());
-        // Those made this step are made where their point is now.
+        // Those made this step are made where their points were when they
+        // were made: along each point's path over the step (`step_with`).
         let old = self.particles.len();
         for &created in made.iter().take(room) {
-            let mut p = self.spawn(d, &cp, active, rng, sheets, created);
+            let t = ((created - before) / dt).clamp(0.0, 1.0);
+            let then = |i: usize| {
+                let now = cp(i);
+                let was = cps_from.get(i).or(cps_from.first()).map_or(now.position, |c| c.position);
+                ControlPoint { position: was.lerp(now.position, t), ..now }
+            };
+            let mut p = self.spawn(d, &then, active, rng, sheets, created);
             // Aged (and moved, below) only from its creation.
             p.age = before - created;
             Self::remap(d, &cp, &mut p);
@@ -758,7 +820,7 @@ impl Instance {
             }
         }
         for child in self.children.iter_mut().filter_map(|c| c.1.as_mut()) {
-            child.tick(defs, cps, active, dt, rng, sheets);
+            child.tick(defs, cps_from, cps, active, dt, rng, sheets);
         }
     }
 
@@ -1602,6 +1664,9 @@ pub fn run_started_systems(
             last.cp.rotation = follow_turn(&follow, &at);
             last.follow = Some((follow, at));
         }
+        if let Some(from) = s.from {
+            last.instance.came_from(to_game(from));
+        }
     }
     if started.running.is_empty() {
         if let Some(shown) = shown.as_mut()
@@ -1766,6 +1831,56 @@ mod tests {
         }
         assert_eq!(i.count(), 0);
         assert!(i.finished(&defs));
+    }
+
+    /// The emission spread (effects.md 11.1, inferred): a point moving
+    /// 100 units in one step leaves that step's particles along its path,
+    /// not at its end; a still point's step makes them where it is; a
+    /// system made at one place and moved before its first step spreads
+    /// that step from where it was made (TF2's trail made at a rocket's
+    /// first received place, drawn behind it).
+    #[test]
+    fn a_moving_points_new_particles_spread_along_its_path() {
+        let mut def = system();
+        def.operators.clear();
+        def.emitters = vec![Emitter::Continuously { start: 0.0, rate: 600.0, duration: 0.0 }];
+        let defs = vec![def];
+        let mut rng = ParticleRng::new(1);
+        let at = |x: f32| [ControlPoint { position: Vec3::new(x, 0.0, 0.0), ..default() }];
+        let xs = |i: &Instance| -> Vec<f32> { i.placed().iter().map(|p| p.0.x).collect() };
+        // Still first step: all where the point is.
+        let mut i = Instance::new(&defs, 0);
+        i.step(&defs, &at(0.0), 0.1, &mut rng, &none);
+        assert!(xs(&i).iter().all(|&x| x == 0.0), "{:?}", xs(&i));
+        // Moved 100 in the next step: spread over (0, 100], evenly.
+        i.step(&defs, &at(100.0), 0.1, &mut rng, &none);
+        let new: Vec<f32> = xs(&i).into_iter().filter(|&x| x > 0.0).collect();
+        assert_eq!(new.len(), 60);
+        let min = new.iter().cloned().fold(f32::MAX, f32::min);
+        let max = new.iter().cloned().fold(f32::MIN, f32::max);
+        assert!(min < 5.0 && max > 95.0 && max <= 100.0, "{min} {max}");
+        let mean = new.iter().sum::<f32>() / new.len() as f32;
+        assert!((mean - 50.0).abs() < 3.0, "{mean}");
+        // Steps cut by the system's largest step move the points along too.
+        let mut short = defs.clone();
+        short[0].max_step = 0.025;
+        let mut j = Instance::new(&short, 0);
+        j.step(&short, &at(0.0), 0.1, &mut rng, &none);
+        j.step(&short, &at(100.0), 0.1, &mut rng, &none);
+        let new: Vec<f32> = xs(&j).into_iter().filter(|&x| x > 0.0).collect();
+        let mean = new.iter().sum::<f32>() / new.len() as f32;
+        assert!((mean - 50.0).abs() < 3.0, "{mean}");
+        // Made at 50 and followed to -110 before its first step.
+        let mut k = Instance::new(&defs, 0);
+        k.came_from(Vec3::new(50.0, 0.0, 0.0));
+        k.step(&defs, &at(-110.0), 1.0 / 60.0, &mut rng, &none);
+        let first = xs(&k);
+        assert_eq!(first.len(), 10);
+        assert!(first.iter().all(|&x| (-110.0..50.0).contains(&x)), "{first:?}");
+        assert!(first.iter().filter(|&&x| x > 0.0).count() >= 2, "{first:?}");
+        // Later steps from the followed place on.
+        k.step(&defs, &at(-90.0), 1.0 / 60.0, &mut rng, &none);
+        assert!(xs(&k)[10..].iter().all(|&x| (-110.0..=-90.0).contains(&x)), "{:?}", xs(&k));
     }
 
     /// "remap initial scalar" by creation time (specs/tf2/particles.md 8.1,

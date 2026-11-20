@@ -23,7 +23,8 @@
 //!   less its launch velocity (`Flyer::velocity` here, `NetLaunch` on a
 //!   client) and its first place now, so from its first drawn frame it
 //!   is on its launch line behind that place, moving at the launch speed
-//!   (never held at the launch point). The model is hidden for its key's
+//!   (never held at the launch point); the copy keeps that first place
+//!   (`LateCopy::first`, where TF2 makes its trail). The model is hidden for its key's
 //!   first seconds from the arrival (`DrawnLate::hidden_for`: TF2's rocket
 //!   0.2 s, pipes and stickies 0.1 s; their trails emit from the arrival);
 //!   the copy goes when the item is gone and the drawn time has passed
@@ -145,7 +146,7 @@ fn copy_late(
         commands.spawn((
             Name::new(format!("Drawn late ({})", shown.0)),
             ShownItem(shown.0.clone()),
-            LateCopy { of: e, owner: flyer.and_then(|f| f.owner) },
+            LateCopy { of: e, owner: flyer.and_then(|f| f.owner), first: at },
             places,
             Transform::from_translation(at).with_rotation(turn),
             Visibility::Hidden,

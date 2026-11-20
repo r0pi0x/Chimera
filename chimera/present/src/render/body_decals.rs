@@ -219,7 +219,8 @@ fn blend_joints(mesh: &MapMesh, corners: [usize; 3], b: Vec3) -> ([u16; 4], [f32
 /// The decal's geometry on the posed body (`parts`: each shown part's bind
 /// mesh and its posed vertices, `pose_part`) for a shot from `from` along
 /// `dir` that hit at `point`; `right` and `down` across the shot. None
-/// when it lands on nothing.
+/// when the ray from `from` through `point` (8 units past it, + 10 %)
+/// meets no part of the body.
 pub fn project_on_body(
     parts: &[(&MapMesh, &[Vec3])],
     decal: &MapDecal,
@@ -232,8 +233,11 @@ pub fn project_on_body(
     if dir == Vec3::ZERO {
         return None;
     }
+    // Only where the shot's ray meets the body (effects.md 8b, 10.1): a
+    // point off it (TF2's melee box centre left in the air) leaves none,
+    // not one on whatever part lies near that point.
     let max_t = from.distance(point) + PAST_HIT;
-    let centre = ray_hit(parts, from, dir, max_t).map_or(point, |t| from + dir * t);
+    let centre = from + dir * ray_hit(parts, from, dir, max_t)?;
     let depth = decal.size.max_element() * 0.5;
     let uv = |p: Vec3| {
         let d = p - centre;

@@ -34,7 +34,7 @@ Captured imagery stays in scratch, never in the repo.
 | Minigun constant flash, brass | close (first person); close (third person) | first person: the core a compact glow; the brass lives 2 s. Third person (pass 5, from 260 units above): TF2's casings lie 40-75 units out to the gun's side (most ~58), ours ~25-55 (most ~43); from the side TF2's leave upward first. Ours' numbers (local x 100-200, drag 0.05, gravity −252) land ~40 out from a level eject: the difference reads as the eject attachment's tilt under TF2's spun pose (particles.md Open questions 6; the animation agent's pose) |
 | Tracers | matches (SMG, Shotgun); from the front close | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered). From the front the geometry agrees (a streak passing ~20 units from the camera widens to tens of pixels in TF2 too); which pellets pass near is the spread's chance. Others' tracers now leave with the interpolated body (pass 4) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
-| Rocket trail | close (2026-11-20, `launch.tf2`/`.scene`) | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails. The "very long trail" was `rockettrail_burst`'s sprite trails streaking by the rocket's own 1100 units/s (a lock now carries a particle's last place too, particles.md 5.1) and the copy drawn late thrown back 110 units behind the eye a frame after the shot; now held at the launch point until the drawn time reaches it, as TF2's glow at the launcher from frame 2 shows. TF2's glow sits further right; ours leaves a smoke puff at the launch point |
+| Rocket trail | close (2026-11-20, `launch.tf2`/`.scene`) | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails. The "very long trail" was `rockettrail_burst`'s sprite trails streaking by the rocket's own 1100 units/s (a lock now carries a particle's last place too, particles.md 5.1) and the copy drawn late thrown back 110 units behind the eye a frame after the shot; drawn from its seeded copy (11.1); a step's particles now spread along the control point's path, the copy's trail made at the rocket's first place (tf2-psys). TF2's big glow ~50 units ahead of the launcher at frames 2-6 still missing: ours' first step leaves a smoke puff at the launcher and its glows mid-path behind the eye (log) |
 | Projectiles leaving the gun (pipes, stickies, needles) | close (2026-11-20) | pipes and needles show at the barrel 7 frames after the shot as TF2's (their models were hidden 0.2 s, so they appeared far down range); stickies drawn late too (were not); only the rocket's model hidden 0.2 s (`model_hidden`) |
 | Grenade and Stickybomb Launchers' flashes | matches (2026-11-20) | went straight up: their muzzles' z is the barrel and the flash's core leaves along z; a per-shot flash now takes its attachment's whole orientation (`start_with_axes`, `psys::Follow::up`); none visible in either now |
 | Needles on a wall | close (2026-11-20, tf2-leftovers) | TF2: no needle stays (seen from the side); a small hole mark and splinters, kept like a decal. Ours now the same: a flyer with `marks` leaves a bullet's impact (decal, debris, the surface's sound; Chimera's `projectile::FlyerMark`, sent as `NetMark`, shown when the drawn needle reaches it), on every map, the sandbox's too. TF2's mark is red at its centre head-on; ours the surface's bullet hole |
@@ -43,7 +43,7 @@ Captured imagery stays in scratch, never in the repo.
 | Projectiles' models | matches (pass 6) | none drew on any map: a map keeps the kept guns' held models by key prefix and the projectiles' keys (`tf2:rocket`, `tf2:sticky`...) matched none; now `<gun>/<part>` |
 | Stickybombs | close (pass 6) | model, faint trail and the armed pulse (0.8 s, then every 0.1 s: ring, then disc) as TF2's; launch spin and jitter as the spec's (pass 7) |
 | Sniper's laser dot | matches in his own view (pass 7, `dot.tf2`/`.scene`) | drawn (`weapons::dot`): size, softness and the core growing with the charge as TF2's; others see it at 6 units (the charge sent with what a character holds, `HeldGauge`), no TF2 pair (its puppet bots won't scope); TF2's scope overlay not photographed yet (the class menu covers it) |
-| Water explosions | close (pass 6); under water differs (tf2-leftovers: see the log) | from above the surface both hide the burst; TF2's shows through as an orange glow from just above the surface. Under water (pass 7, `wunder`): see the log |
+| Water explosions | close (pass 6); on the riverbed seen from just above the surface close (tf2-psys: drawn before the surface, shown by its refraction) | from above the surface both hide the burst; TF2's shows through as an orange glow from just above the surface. Under water (pass 7, `wunder`): see the log |
 | Bullet impacts (wood) | matches (pass 6) | splinters, hole, puff alike; TF2's hole decal a little lighter |
 | Blood on a player hit | close (pass 8) | TF2's own burst and spray now (`weapons::blood`): a red splat at the hit spraying out the far side in both; TF2's starts ~2 frames later (its snapshot wait) and its goop is larger and brighter; no decal on the body (characters take none) |
 | Melee (Wrench at a wall) | still differs (pass 8) | the swing's path and timing alike; TF2's flecks and faint scratch at the view's centre, ours a puff at the right edge and no decal: at 55 units the 48-unit line misses and our box sweep's contact point is the box's corner, not on the wall ahead (where a box hit's impact point is, weapons_stock.md names none) |
@@ -132,6 +132,54 @@ Captured imagery stays in scratch, never in the repo.
    to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
 
 ## Log
+
+### Emission spread, blasts seen through water, body decals (tf2-psys, 2026-11-20)
+
+- **The "under water" captures were from above the surface.** `wunder`
+  puts both eyes at z -132 (`getpos`), just above 2fort's river: TF2
+  shows the riverbed blast through the surface, ours drew nothing there.
+  Measured with a new probe, `particles_drawn` (`render::particles`):
+  every system of `ExplosionCore_MidAir_underwater` drew its quads
+  (flash 1, core 11-12, bubbles 64...) with fog ~0 (the eye is out of
+  the water), and with the eye truly under water (-182) the blast showed
+  plainly (fog 0.3-0.4). So not fog and not loading: the water surface
+  is opaque in the transmissive phase, refracting the main view's copy
+  taken before the transparent pass, so particles under it were neither
+  in the copy nor in front of the surface's depth. Now particles in a
+  water volume with the eye out of the water draw before the surfaces
+  (`ParticleDrawMaterial::before_water`, Bevy's alpha-mask phase, blended
+  as before, no depth written), every game. Pair (`pairs3`,
+  `wunder_f30`): the orange glow and bubbles on the bed through the
+  surface in both; TF2's smoke ends nearer the blast. Test
+  `particle_depth::particles_in_water_seen_from_above_draw_before_the_surface`.
+- **Emission spread** (`render::psys`, every system): a step's new
+  particles are made where their control points were at their creation
+  times, the points moving straight from the last step's places
+  (inferred from effects.md 11.1's nuance; particles.md names no rule:
+  spec question). A started system can name where its point 0 was made
+  (`StartParticleSystem::from`): TF2's trail on a late copy is made at
+  the rocket's first received place (`LateCopy::first`), so its first
+  step spreads from there back to the copy behind the eye; the water
+  trail is chosen by that place. Tests `psys::a_moving_points_new_
+  particles_spread_along_its_path`, `effects::a_late_rockets_trail_is_
+  made_at_its_first_place_ahead_of_its_copy_11_1`. Pair (`wunder_f02`,
+  `_f04`): still differs. TF2: a large glow (~10 units) with burst
+  streaks ~50 units ahead of the launcher from frame 2; ours: a smoke
+  puff at the launcher, no glow. Ours' p0 is the launch point (the
+  sandbox has no snapshot wait; TF2's first snapshot puts p0 up to 50
+  units out) and the first step's two fire glows are due 1/128 and
+  2/128 s into the step, i.e. half-way and near the end of the path
+  (behind the eye); a glow at p0 needs a particle at the window's start
+  or p0 further out. Spec questions: when a continuous emitter's first
+  particle is made (at its start, or one interval in), and where a
+  listen host's own client first receives a projectile.
+- **Body decals need the mesh** (`render::body_decals`, every game): a
+  decal only where the ray from the shot's start through its point (8
+  units past, + 10 %) meets the body; before, a miss fell back to the
+  point itself and put the decal on whatever part lay within its
+  rectangle there (TF2's melee box centre in the air beside a body:
+  effects.md 10.1 "no body decal"). Test `body_decals::a_contact_point_
+  in_the_air_beside_the_body_leaves_no_decal`.
 
 ### Input timing, every Source game (input-timing, 2026-11-20)
 

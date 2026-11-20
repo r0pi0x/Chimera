@@ -235,11 +235,15 @@ pub struct LateDelay(pub f32);
 
 /// The copy an item drawn late (`DrawnLate`) is drawn as: where `of` was
 /// `LateDelay` ago (`chimera_net`'s `late`); `owner` is the item's
-/// (its flyer's), for team looks.
+/// (its flyer's), for team looks; `first` its first received place.
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
 pub struct LateCopy {
     pub of: Entity,
     pub owner: Option<Entity>,
+    /// The item's first received place, where its history was seeded
+    /// (effects.md 11.1's p0): where TF2 makes the trail that follows the
+    /// copy (`StartParticleSystem::from`).
+    pub first: Vec3,
 }
 
 #[cfg(test)]

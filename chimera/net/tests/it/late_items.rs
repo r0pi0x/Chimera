@@ -67,6 +67,15 @@ fn a_late_item_starts_behind_its_launch_moving_then_follows_a_delay_behind() {
     let (_, vis) = copy_of(&mut sim, pipe).unwrap();
     assert_ne!(vis, Visibility::Hidden, "a key with no hidden time shows at once");
     // Moving from its first frame on, never held.
+    // The copy keeps the item's first received place (where TF2 makes
+    // the trail that follows it).
+    {
+        let w = sim.server.app.world_mut();
+        let mut q = w.query::<&LateCopy>();
+        let c = q.iter(w).find(|c| c.of == rocket).unwrap();
+        assert!(c.first.x >= start.x && c.first.x - start.x < 30.0 * 3.0 * tick, "its first place: {}", c.first);
+        assert!(c.first.x > first.x, "ahead of the drawn copy");
+    }
     let mut last = first.x;
     for _ in 0..((0.08 / tick) as u64) {
         sim.ticks(1);
