@@ -162,6 +162,11 @@ shares):
   menus swallow keys, the shares). The schedule ratchets are unchanged
   (the input is not in their compositions; FixedPreUpdate is not
   compared).
+- Post-push: the run before this push (3a9704b92) failed
+  `cs_source net_interp::others_are_drawn_smoothly_on_the_servers_path`:
+  it still expected `cl_interp` 100 ms, where 3a9704b92 made the delay
+  whole ticks plus one (109.375 ms at 64 Hz); the test now asks
+  `interp_amount`.
 
 ### Leftovers (tf2-leftovers, 2026-11-20)
 
