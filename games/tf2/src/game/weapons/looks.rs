@@ -53,11 +53,11 @@
 //!   one instead when its first place is in water, never chosen again
 //!   (effects.md 9: `rockettrail_underwater`). A flyer drawn late (its
 //!   data's `interp`, effects.md 11: `map::loose::DrawnLate`) trails
-//!   from its copy, drawn `LateDelay` in the past, the trail made at the
-//!   item's first received place (`LateCopy::first`, effects.md 11.1:
-//!   its first step spreads from there back to the copy, the glow beside
-//!   the launcher from the frame after the shot); the water choice by
-//!   that place.
+//!   from its copy, drawn `LateDelay` in the past and at the item's first
+//!   received place until the drawn time reaches it (effects.md 11.2:
+//!   the trail made there in the copy's first frame with only its initial
+//!   puff, its fire and sparks from the next, the glow ahead of the
+//!   launcher); the water choice by that place (`LateCopy::first`).
 //! - **The armed pulse** (effects.md 1): a gun's `armed` (`ArmedLook`)
 //!   starts on each of its flyers `after` seconds after it appears (the
 //!   sticky's `stickybomb_pulse_<team>` at its arming, 0.8 s), following
@@ -788,12 +788,10 @@ fn flyer_trails(
         let forward = at.rotation * Vec3::X;
         // Chosen once, by the water at its first place (effects.md 9).
         let wet = in_water(water.as_deref(), copy.map_or(at.translation, |c| c.first));
-        // A copy's trail is made at the item's first received place and
-        // its first step spreads back to the drawn copy (effects.md 11.1:
-        // TF2's glow beside the launcher from the frame after the shot).
+        // A copy's trail is made where the copy is drawn, its first
+        // received place (effects.md 11.2).
         start.write(StartParticleSystem {
             follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false, up: None }),
-            from: copy.map(|c| c.first),
             ..StartParticleSystem::new(trail.name_in(blu, wet), at.translation, forward)
         });
     }

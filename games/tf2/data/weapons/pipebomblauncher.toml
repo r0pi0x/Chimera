@@ -86,6 +86,7 @@ detonate_sound = "tf2:Weapon_StickyBombLauncher.ModeSwitch"
 # other projectiles, starting on its launch line behind the launch point
 # (specs/tf2/effects.md 11, 11.1); its model hidden its first 0.1 s.
 interp = true
+whole_units = true
 model_hidden = 0.1
 
 # The shot's look (specs/tf2/effects.md 1, 2, 5; looks.rs): its muzzle

@@ -121,9 +121,12 @@ fn dump_a_system_as_loaded_and_in_its_file() {
 /// specs/tf2/particles.md 5.1 against the install's `ExplosionCore_Wall`
 /// stepped at 60 a second: the flying embers draw thin rays (a trail and a
 /// head sprite each, the strips a few units wide), the core flash broad
-/// streaks (tens of units), the flash-up nothing.
+/// streaks (tens of units). The flash-up (3000/s for 0.01 s) makes its 30
+/// particles in its first emitting step (particles.md 9.4: no
+/// step-boundary rule); TF2 shows nothing of them, but under our
+/// operators' readings they draw (a spec question: tf2-parity.md).
 #[test]
-fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_no_flashup() {
+fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_flashups_thirty() {
     use chimera_world::map::particles::Shape;
     let Some(map) = super::looks::dressed() else { return };
     let systems = &map.particle_systems;
@@ -160,6 +163,13 @@ fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_no_flashup() {
     assert!(n > 4 && widest <= 3.0 + 1e-3, "{n} rays, widest {widest}");
     let (n, widest, _) = width("Explosion_CoreFlash", 2, &mut rng);
     assert!(n > 4 && widest > 10.0, "{n} streaks, widest {widest}");
-    let (n, _, alive) = width("Explosion_Flashup", 3, &mut rng);
-    assert_eq!((n, alive), (0, 0), "the flash-up shows nothing");
+    let (_, _, made) = width("Explosion_Flashup", 1, &mut rng);
+    assert_eq!(made, 0, "nothing in its creation frame");
+    let mut i = Instance::new(defs, systems.find("Explosion_Flashup").unwrap());
+    i.step(defs, &cps, 1.0 / 60.0, &mut rng, &sheets);
+    i.step(defs, &cps, 1.0 / 60.0, &mut rng, &sheets);
+    // 30 made; those whose life U(0, 0.2) is shorter than their age by
+    // the step's end are gone.
+    let seen = i.count();
+    assert!((20..=30).contains(&seen), "the flash-up's first emitting step: {seen}");
 }

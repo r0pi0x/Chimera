@@ -998,8 +998,9 @@ impl WeaponDataAppExt for App {
         }
         let late = super::projectile::late_keys(set);
         let mut drawn_late = world.get_resource_or_init::<crate::map::loose::DrawnLate>();
-        for (weapon, key, hidden) in late {
+        for (weapon, key, hidden, unit) in late {
             drawn_late.weapons.insert(weapon);
+            drawn_late.set_unit(&key, unit);
             drawn_late.add(key, hidden);
         }
         world.get_resource_or_init::<super::projectile::StayingMarks>().add_set(set);

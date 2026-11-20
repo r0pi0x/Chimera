@@ -28,12 +28,14 @@
 //! Colour random's `tint_perc` blends each new particle's colour that
 //! far toward the light at its control point (`ControlPoint::light`: the
 //! map's `LightField` there, sampled when the system starts or its entity
-//! moves; white without one). A step's new particles are made along each
-//! control point's straight path over the step, at their creation times
-//! (`Instance::step_with`: the emission spread), not in a clump where the
-//! point ends; a started system with `StartParticleSystem::from` spreads
-//! its first step from that place (TF2's trail made at a rocket's first
-//! received place, drawn behind it: specs/tf2/effects.md 11.1).
+//! moves; white without one). Timing and placement follow the particle
+//! library's rules (specs/tf2/particles.md 9, `Instance::step_with`): a
+//! system's creation frame runs with zero time (its initial particles
+//! only, no emission, children not run); a child starts the frame after
+//! with its points standing still; a continuous emitter's n particles of
+//! a step are made at k/n of its window (never at its start), a burst at
+//! its start time; each new particle where its control points were at its
+//! creation time, on their straight path from last frame's places.
 //!
 //! Known shortcuts (docs/tech-debt.md): Particle systems (`render::psys`,
 //! `map::psys`, `source_engine::content::pcf`): the operator meanings are
@@ -42,10 +44,9 @@
 //! system's maximum time step), velocity noise is uniform per particle, random
 //! force a uniform draw per step, twist a tangential acceleration, a sprite
 //! trail's length is clamped after its fade-in by age (the order inferred,
-//! particles.md 5.1), a continuous emitter whose window opens and closes
-//! inside one step emits nothing (inferred: Open questions 8), the
-//! emission spread along a moving point's path is linear over the step
-//! (inferred from effects.md 11.1's nuance; particles.md names no rule), animation rate without "as FPS" plays the sequence that many
+//! particles.md 5.1), the client's particle multiplier is 1 and an
+//! emitter's stop and restart (particles.md 9.2) aren't run (a stopped
+//! system never restarts), animation rate without "as FPS" plays the sequence that many
 //! times a second; "collision via traces" is a ray per step (its radius past
 //! the step) against the solid world for started systems only (placed
 //! ones don't collide), bounce and slide read as fractions of the speed
@@ -244,8 +245,6 @@ pub struct Instance {
     /// space): a step's new particles are made along each point's path
     /// from there (`step_with`).
     cp_from: Option<Vec<Vec3>>,
-    /// Where control point 0 was made, for its first step (`came_from`).
-    first_from: Option<Vec3>,
 }
 
 /// The sheet sequences' frame counts of a material (for "lifetime from
@@ -406,16 +405,6 @@ impl Instance {
             started: false,
             lock_from: None,
             cp_from: None,
-            first_from: None,
-        }
-    }
-
-    /// Its control point 0 was made at `at` (game space) before what it
-    /// follows moved it: its first step spreads its emission from there
-    /// (`StartParticleSystem::from`).
-    pub fn came_from(&mut self, at: Vec3) {
-        if self.cp_from.is_none() {
-            self.first_from = Some(at);
         }
     }
 
@@ -500,13 +489,18 @@ impl Instance {
     /// `step` with an active control point new particles take
     /// (`Init::AssignTargetCp`).
     ///
-    /// The emission spread (inferred, specs/tf2/effects.md 11.1's
-    /// nuance; particles.md names no rule): the control points move
-    /// along straight lines from where they were at the end of the last
-    /// step (`cp_from`; the first step from where they are, or from
-    /// `came_from`) to `cps`, and each new particle is made where its
-    /// points were at its creation time, so a moving point's step leaves
-    /// its particles spread along its path, not in a clump at its end.
+    /// One call is one frame (specs/tf2/particles.md 9.1). The frame a
+    /// system is created in it is simulated with zero time: only its
+    /// `initial_particles` are made, where its points are, no emitter
+    /// emits and its children don't run (`dt` is not counted). Every
+    /// later frame `dt` is stepped in sub-steps of at most the system's
+    /// maximum step, then each child with the whole `dt` (a child's first
+    /// frame sets it up and steps it at once, its points standing still);
+    /// after them each point's previous place becomes its current one.
+    /// A step's new particles are made where their points were at their
+    /// creation times, the points moving straight from their previous
+    /// places (9.3; with several sub-steps the frame's start still, the
+    /// fraction of the sub-step: the spec's quirk).
     pub fn step_with(
         &mut self,
         defs: &[SystemDef],
@@ -516,28 +510,51 @@ impl Instance {
         rng: &mut ParticleRng,
         sheets: &impl Sheets,
     ) {
+        self.frame(defs, cps, active, dt, rng, sheets, false);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn frame(
+        &mut self,
+        defs: &[SystemDef],
+        cps: &[ControlPoint],
+        active: Option<usize>,
+        dt: f32,
+        rng: &mut ParticleRng,
+        sheets: &impl Sheets,
+        child: bool,
+    ) {
         let now: Vec<Vec3> = cps.iter().map(|c| c.position).collect();
-        let mut from = match self.cp_from.take() {
+        if !self.started {
+            // The first-frame setup: zero time, initial particles only.
+            self.started = true;
+            self.tick(defs, cps, cps, active, 0.0, rng, sheets, true);
+            self.cp_from = Some(now.clone());
+            if !child {
+                return;
+            }
+        }
+        let from = match self.cp_from.take() {
             Some(f) if f.len() == now.len() => f,
             _ => now.clone(),
         };
-        if let (Some(at), Some(f0)) = (self.first_from.take(), from.first_mut()) {
-            *f0 = at;
-        }
-        let at = |t: f32| -> Vec<ControlPoint> {
-            cps.iter().zip(&from).map(|(c, f)| ControlPoint { position: f.lerp(c.position, t), ..*c }).collect()
-        };
-        let max = defs[self.def].max_step.max(0.01);
-        let mut left = dt;
-        let mut done = 0.0;
-        let mut start = at(0.0);
+        let start: Vec<ControlPoint> = cps.iter().zip(&from).map(|(c, f)| ControlPoint { position: *f, ..*c }).collect();
+        let max = if defs[self.def].max_step > 0.0 { defs[self.def].max_step } else { 0.1 };
+        let mut left = dt.min(10.0 * max);
         while left > 1e-6 {
             let h = left.min(max);
-            done += h;
-            let end = if left - h > 1e-6 { at((done / dt).min(1.0)) } else { cps.to_vec() };
-            self.tick(defs, &start, &end, active, h, rng, sheets);
-            start = end;
+            self.tick(defs, &start, cps, active, h, rng, sheets, false);
             left -= h;
+        }
+        // Children start after their delay (while the parent emits), and
+        // run after the parent's steps with the whole frame.
+        for (delay, c, def) in &mut self.children {
+            if c.is_none() && self.emitting && self.age >= *delay {
+                *c = Some(Instance::new(defs, *def));
+            }
+        }
+        for c in self.children.iter_mut().filter_map(|c| c.1.as_mut()) {
+            c.frame(defs, cps, active, dt, rng, sheets, true);
         }
         self.cp_from = Some(now);
     }
@@ -582,6 +599,8 @@ impl Instance {
         out
     }
 
+    /// One sub-step of `dt` (0: the first-frame setup, `first`: initial
+    /// particles only), the points moving from `cps_from` to `cps`.
     #[allow(clippy::too_many_arguments)]
     fn tick(
         &mut self,
@@ -592,55 +611,50 @@ impl Instance {
         dt: f32,
         rng: &mut ParticleRng,
         sheets: &impl Sheets,
+        first: bool,
     ) {
         let d = &defs[self.def];
         let cp = |i: usize| cps.get(i).or(cps.first()).copied().unwrap_or_default();
         let before = self.age;
         self.age += dt;
         // Emission: when each new particle is made (its creation time,
-        // field 8): a burst at its start, a continuous emitter's spread
-        // evenly over the part of the step it emits in.
+        // field 8; particles.md 9.2).
         let mut made: Vec<f32> = Vec::new();
-        if !self.started {
-            self.started = true;
+        if first {
             made.extend(std::iter::repeat_n(before, d.initial_particles));
-        }
-        if self.emitting {
+        } else if self.emitting {
+            let t = self.age;
             for (i, e) in d.emitters.iter().enumerate() {
                 match *e {
                     Emitter::Continuously { start, rate, duration } => {
-                        let end = if duration > 0.0 {
-                            start + duration
+                        // The window: an endless one is the whole step
+                        // once it has started (not cut at its start: the
+                        // spec's quirk), a timed one the step's part of
+                        // [start, start + duration].
+                        let window = if duration <= 0.0 {
+                            (start <= t).then_some((before, t))
+                        } else if start > t || before > start + duration {
+                            None
                         } else {
-                            f32::INFINITY
+                            Some((before.max(start), t.min(start + duration)))
                         };
-                        // A window that opens and closes inside one step
-                        // emits nothing (inferred, particles.md Open
-                        // questions 8: `Explosion_Flashup`'s 0.01 s of
-                        // 3000 a second shows nothing at 60 a second).
-                        if duration > 0.0 && start >= before && end < self.age {
-                            continue;
-                        }
-                        let a = before.max(start);
-                        let b = self.age.min(end);
-                        if b > a {
-                            let carried = self.carry[i];
-                            self.carry[i] += rate * (b - a);
-                            let n = self.carry[i].floor();
-                            self.carry[i] -= n;
-                            // The k-th one is due when the running count
-                            // reaches k + 1.
-                            for k in 0..n as usize {
-                                let due = ((k + 1) as f32 - carried) / rate;
-                                made.push((a + due).clamp(a, b));
-                            }
-                        }
+                        let Some((a, b)) = window else { continue };
+                        self.carry[i] += rate.max(0.0) * (b - a);
+                        let n = self.carry[i].floor();
+                        self.carry[i] -= n;
+                        // The k-th of the step's n at a + k (b - a) / n:
+                        // one share after the window's start, the last at
+                        // its end.
+                        let n = n as usize;
+                        made.extend((1..=n).map(|k| (a + k as f32 * (b - a) / n as f32).min(b)));
                     }
                     Emitter::Instantaneously { start, count } => {
+                        // All at its start time: at 0, the first emitting
+                        // step's start (the point's previous place).
                         let due = if start <= 0.0 {
                             before == 0.0
                         } else {
-                            before < start && self.age >= start
+                            before < start && t >= start
                         };
                         if due {
                             made.extend(std::iter::repeat_n(before.max(start), count as usize));
@@ -654,7 +668,9 @@ impl Instance {
         // were made: along each point's path over the step (`step_with`).
         let old = self.particles.len();
         for &created in made.iter().take(room) {
-            let t = ((created - before) / dt).clamp(0.0, 1.0);
+            // P(c) = prev + (now - prev) max(0, (c - (T - h)) / h); now
+            // when the step is zero time (9.3).
+            let t = if dt > 0.0 { ((created - before) / dt).max(0.0) } else { 1.0 };
             let then = |i: usize| {
                 let now = cp(i);
                 let was = cps_from.get(i).or(cps_from.first()).map_or(now.position, |c| c.position);
@@ -812,15 +828,6 @@ impl Instance {
         }
         if killed {
             self.particles.retain(|p| p.life >= 0.0);
-        }
-        // Children start after their delay (while the parent emits).
-        for (delay, child, def) in &mut self.children {
-            if child.is_none() && self.emitting && self.age >= *delay {
-                *child = Some(Instance::new(defs, *def));
-            }
-        }
-        for child in self.children.iter_mut().filter_map(|c| c.1.as_mut()) {
-            child.tick(defs, cps_from, cps, active, dt, rng, sheets);
         }
     }
 
@@ -1664,9 +1671,6 @@ pub fn run_started_systems(
             last.cp.rotation = follow_turn(&follow, &at);
             last.follow = Some((follow, at));
         }
-        if let Some(from) = s.from {
-            last.instance.came_from(to_game(from));
-        }
     }
     if started.running.is_empty() {
         if let Some(shown) = shown.as_mut()
@@ -1782,6 +1786,12 @@ mod tests {
         1
     }
 
+    /// Its creation frame (zero time, particles.md 9.1), so the next step
+    /// emits.
+    fn created(i: &mut Instance, defs: &[SystemDef], cps: &[ControlPoint]) {
+        i.step(defs, cps, 0.0, &mut ParticleRng::new(0), &none);
+    }
+
     fn system() -> SystemDef {
         SystemDef {
             name: "test".into(),
@@ -1815,6 +1825,7 @@ mod tests {
         let mut i = Instance::new(&defs, 0);
         let mut rng = ParticleRng::new(1);
         let cps = [ControlPoint::default()];
+        created(&mut i, &defs, &cps);
         for _ in 0..10 {
             i.step(&defs, &cps, 0.01, &mut rng, &none);
         }
@@ -1833,54 +1844,101 @@ mod tests {
         assert!(i.finished(&defs));
     }
 
-    /// The emission spread (effects.md 11.1, inferred): a point moving
-    /// 100 units in one step leaves that step's particles along its path,
-    /// not at its end; a still point's step makes them where it is; a
-    /// system made at one place and moved before its first step spreads
-    /// that step from where it was made (TF2's trail made at a rocket's
-    /// first received place, drawn behind it).
+    /// particles.md 9, test cases: the creation frame makes only the
+    /// initial particle; the next frame's 128/s step makes two, half-way
+    /// along the point's path and on its end (none on its start); the
+    /// child's first step has its point standing still.
     #[test]
-    fn a_moving_points_new_particles_spread_along_its_path() {
-        let mut def = system();
-        def.operators.clear();
-        def.emitters = vec![Emitter::Continuously { start: 0.0, rate: 600.0, duration: 0.0 }];
-        let defs = vec![def];
+    fn a_new_system_makes_only_its_initial_particles_then_spreads_along_the_path_9() {
+        let mut child = system();
+        child.name = "child".into();
+        child.operators.clear();
+        child.initializers = vec![Init::Lifetime(Pick::new(10.0, 10.0, 1.0))];
+        child.emitters = vec![Emitter::Continuously { start: 0.0, rate: 128.0, duration: 0.0 }];
+        let mut def = child.clone();
+        def.name = "parent".into();
+        def.initial_particles = 1;
+        def.children = vec![(1, 0.0)];
+        let defs = vec![def, child];
         let mut rng = ParticleRng::new(1);
         let at = |x: f32| [ControlPoint { position: Vec3::new(x, 0.0, 0.0), ..default() }];
-        let xs = |i: &Instance| -> Vec<f32> { i.placed().iter().map(|p| p.0.x).collect() };
-        // Still first step: all where the point is.
+        let h = 1.0 / 60.0;
         let mut i = Instance::new(&defs, 0);
-        i.step(&defs, &at(0.0), 0.1, &mut rng, &none);
-        assert!(xs(&i).iter().all(|&x| x == 0.0), "{:?}", xs(&i));
-        // Moved 100 in the next step: spread over (0, 100], evenly.
-        i.step(&defs, &at(100.0), 0.1, &mut rng, &none);
-        let new: Vec<f32> = xs(&i).into_iter().filter(|&x| x > 0.0).collect();
-        assert_eq!(new.len(), 60);
-        let min = new.iter().cloned().fold(f32::MAX, f32::min);
-        let max = new.iter().cloned().fold(f32::MIN, f32::max);
-        assert!(min < 5.0 && max > 95.0 && max <= 100.0, "{min} {max}");
-        let mean = new.iter().sum::<f32>() / new.len() as f32;
-        assert!((mean - 50.0).abs() < 3.0, "{mean}");
-        // Steps cut by the system's largest step move the points along too.
-        let mut short = defs.clone();
-        short[0].max_step = 0.025;
-        let mut j = Instance::new(&short, 0);
-        j.step(&short, &at(0.0), 0.1, &mut rng, &none);
-        j.step(&short, &at(100.0), 0.1, &mut rng, &none);
-        let new: Vec<f32> = xs(&j).into_iter().filter(|&x| x > 0.0).collect();
-        let mean = new.iter().sum::<f32>() / new.len() as f32;
-        assert!((mean - 50.0).abs() < 3.0, "{mean}");
-        // Made at 50 and followed to -110 before its first step.
-        let mut k = Instance::new(&defs, 0);
-        k.came_from(Vec3::new(50.0, 0.0, 0.0));
-        k.step(&defs, &at(-110.0), 1.0 / 60.0, &mut rng, &none);
-        let first = xs(&k);
-        assert_eq!(first.len(), 10);
-        assert!(first.iter().all(|&x| (-110.0..50.0).contains(&x)), "{first:?}");
-        assert!(first.iter().filter(|&&x| x > 0.0).count() >= 2, "{first:?}");
-        // Later steps from the followed place on.
-        k.step(&defs, &at(-90.0), 1.0 / 60.0, &mut rng, &none);
-        assert!(xs(&k)[10..].iter().all(|&x| (-110.0..=-90.0).contains(&x)), "{:?}", xs(&k));
+        i.step(&defs, &at(0.0), h, &mut rng, &none);
+        assert_eq!(i.placed().len(), 1, "the initial particle only");
+        assert_eq!(i.age, 0.0, "zero time");
+        assert_eq!(i.child_instances().count(), 0, "children not run");
+        // Next frame, the point moved 0 -> 60.
+        i.step(&defs, &at(60.0), h, &mut rng, &none);
+        let own = i.own_details(&defs);
+        let new: Vec<(f32, f32)> = own[1..].iter().map(|d| (d.0.x, d.1)).collect();
+        assert_eq!(new.len(), 2, "{new:?}");
+        assert!((new[0].0 - 30.0).abs() < 1e-3 && (new[0].1 - h / 2.0).abs() < 1e-5, "{new:?}");
+        assert!((new[1].0 - 60.0).abs() < 1e-3 && new[1].1.abs() < 1e-5, "{new:?}");
+        let c = i.child_instances().next().expect("the child, a frame later");
+        let xs: Vec<f32> = c.placed().iter().map(|p| p.0.x).collect();
+        assert_eq!(xs, vec![60.0, 60.0], "no spread in its first step");
+    }
+
+    /// particles.md 9.2: 150/s makes 2, 3, 2, 3 a 1/60 s step; an endless
+    /// emitter starting inside the step counts the whole step (120/s,
+    /// start 0.005: at 1/120 and 1/60); `Explosion_Flashup`'s 3000/s for
+    /// 0.01 s makes 30 in its first step, at 0.01 k / 30.
+    #[test]
+    fn continuous_counts_and_creation_times_follow_the_window_rule_9_2() {
+        let h = 1.0 / 60.0;
+        let one = |start: f32, rate: f32, duration: f32| {
+            let mut d = system();
+            d.operators.clear();
+            d.initializers = vec![Init::Lifetime(Pick::new(10.0, 10.0, 1.0))];
+            d.emitters = vec![Emitter::Continuously { start, rate, duration }];
+            vec![d]
+        };
+        let mut rng = ParticleRng::new(1);
+        let cps = [ControlPoint::default()];
+        let defs = one(0.0, 150.0, 0.0);
+        let mut i = Instance::new(&defs, 0);
+        i.step(&defs, &cps, h, &mut rng, &none);
+        let mut counts = Vec::new();
+        for _ in 0..4 {
+            let before = i.count();
+            i.step(&defs, &cps, h, &mut rng, &none);
+            counts.push(i.count() - before);
+        }
+        assert_eq!(counts, vec![2, 3, 2, 3]);
+        let ages = |defs: &[SystemDef]| {
+            let mut i = Instance::new(defs, 0);
+            let mut rng = ParticleRng::new(1);
+            i.step(defs, &cps, h, &mut rng, &none);
+            i.step(defs, &cps, h, &mut rng, &none);
+            i.own_details(defs).iter().map(|d| h - d.1).collect::<Vec<f32>>()
+        };
+        let made = ages(&one(0.005, 120.0, 0.0));
+        assert_eq!(made.len(), 2);
+        assert!((made[0] - h / 2.0).abs() < 1e-5 && (made[1] - h).abs() < 1e-5, "{made:?}");
+        let made = ages(&one(0.0, 3000.0, 0.01));
+        assert_eq!(made.len(), 30);
+        for (k, c) in made.iter().enumerate() {
+            assert!((c - 0.01 * (k + 1) as f32 / 30.0).abs() < 1e-5, "{k}: {c}");
+        }
+    }
+
+    /// particles.md 9.2: a burst at 0 takes the first emitting step's
+    /// start, so it is made where the point was (A), not where it went.
+    #[test]
+    fn a_burst_at_its_start_is_made_on_the_points_previous_place_9_2() {
+        let mut d = system();
+        d.operators.clear();
+        d.emitters = vec![Emitter::Instantaneously { start: 0.0, count: 5 }];
+        let defs = vec![d];
+        let mut rng = ParticleRng::new(1);
+        let at = |x: f32| [ControlPoint { position: Vec3::new(x, 0.0, 0.0), ..default() }];
+        let mut i = Instance::new(&defs, 0);
+        i.step(&defs, &at(0.0), 1.0 / 60.0, &mut rng, &none);
+        assert_eq!(i.count(), 0);
+        i.step(&defs, &at(40.0), 1.0 / 60.0, &mut rng, &none);
+        let xs: Vec<f32> = i.placed().iter().map(|p| p.0.x).collect();
+        assert_eq!(xs, vec![0.0; 5]);
     }
 
     /// "remap initial scalar" by creation time (specs/tf2/particles.md 8.1,
@@ -1929,6 +1987,7 @@ mod tests {
         let mut rng = ParticleRng::new(1);
         // The control point turned: its x axis is the world's y.
         let cps = [ControlPoint { rotation: Quat::from_rotation_z(std::f32::consts::FRAC_PI_2), ..default() }];
+        created(&mut i, &defs, &cps);
         i.step(&defs, &cps, 0.001, &mut rng, &none);
         let first = &i.particles[0];
         assert!((first.radius - 8.0).abs() < 0.3, "{}", first.radius);
@@ -1975,6 +2034,7 @@ mod tests {
             let mut i = Instance::new(&defs, 0);
             let mut rng = ParticleRng::new(1);
             let cps = [ControlPoint::default()];
+            created(&mut i, &defs, &cps);
             i.step(&defs, &cps, step, &mut rng, &none);
             let mut t = step;
             while t < 1.0 - 1e-4 {
@@ -1999,6 +2059,7 @@ mod tests {
         let mut i = Instance::new(&defs, 0);
         let mut rng = ParticleRng::new(2);
         let cps = [ControlPoint::default()];
+        created(&mut i, &defs, &cps);
         i.step(&defs, &cps, 0.1, &mut rng, &none);
         assert_eq!(i.count(), 5);
         i.stop();
@@ -2109,12 +2170,14 @@ mod tests {
         let gamma = 0.25f32.powf(1.0 / 2.2);
         let want = Vec3::new(0.5, 0.5 * gamma, 0.5);
         let mut i = Instance::new(&defs, 0);
+        created(&mut i, &defs, &cps);
         i.step(&defs, &cps, 0.05, &mut rng, &none);
         assert_eq!(i.count(), 4);
         for p in &i.particles {
             assert!(p.color.abs_diff_eq(want, 1e-5), "{}", p.color);
         }
         let mut i = Instance::new(&defs, 1);
+        created(&mut i, &defs, &cps);
         i.step(&defs, &cps, 0.05, &mut rng, &none);
         assert!(i.particles.iter().all(|p| p.color == Vec3::Z));
         // Light past 1 counts as 1.
@@ -2138,6 +2201,7 @@ mod tests {
         let mut i = Instance::new(&defs, 0);
         let mut rng = ParticleRng::new(3);
         let cps = [ControlPoint::default()];
+        created(&mut i, &defs, &cps);
         i.step(&defs, &cps, 0.2, &mut rng, &none);
         assert!(i.children[0].1.is_none());
         i.step(&defs, &cps, 0.15, &mut rng, &none);
@@ -2157,6 +2221,7 @@ mod tests {
         // Pointing up: the frame's forward axis is +Z.
         let cp = &started.running[0].cp;
         assert!((cp.rotation * Vec3::X).abs_diff_eq(Vec3::Z, 1e-5));
+        started.step(0.0, &none);
         started.step(0.1, &none);
         assert!(started.count() > 0);
         for _ in 0..20 {
@@ -2183,6 +2248,7 @@ mod tests {
             let mut s = StartedSystems::default();
             assert!(s.start_for(&defs, "test", Vec3::ZERO, Vec3::Z, Vec3::ONE, emit_for));
             let mut made = 0;
+            s.step(0.0, &none);
             for _ in 0..4 {
                 s.step(0.05, &none);
                 made = made.max(s.count());
@@ -2213,6 +2279,7 @@ mod tests {
         let mut s = StartedSystems::default();
         assert!(s.start(&defs, "tracer", Vec3::ZERO, Vec3::X, Vec3::ONE));
         s.set_last(Some(Vec3::new(1200.0, 0.0, 0.0)), None);
+        s.step(0.0, &none);
         s.step(0.1, &none);
         let p = &s.running[0].instance.particles[0];
         assert!((p.velocity - Vec3::new(6000.0, 0.0, 0.0)).length() < 1e-2, "{:?}", p.velocity);
@@ -2271,6 +2338,7 @@ mod tests {
         let mut rng = ParticleRng::new(3);
         let eye = Vec3::new(0.0, 0.0, 10_000.0);
         let still = [ControlPoint::default()];
+        created(&mut i, &defs, &still);
         i.step(&defs, &still, 0.02, &mut rng, &none);
         i.step(&defs, &still, 0.02, &mut rng, &none);
         let mut out = Vec::new();
@@ -2306,6 +2374,7 @@ mod tests {
         let mut i = Instance::new(&defs, 0);
         let mut rng = ParticleRng::new(3);
         let cps = [ControlPoint::default(), ControlPoint { position: Vec3::new(3000.0, 0.0, 0.0), ..default() }];
+        created(&mut i, &defs, &cps);
         i.step(&defs, &cps, 0.05, &mut rng, &none);
         let mut out = Vec::new();
         // Game units throughout; the eye far above, looking down.
@@ -2323,6 +2392,7 @@ mod tests {
         let mut wide = defs.clone();
         wide[0].radius = 400.0;
         let mut i = Instance::new(&wide, 0);
+        created(&mut i, &wide, &cps);
         i.step(&wide, &cps, 0.05, &mut rng, &none);
         out.clear();
         i.draw(&wide, &|v| v, 1.0, Vec3::new(0.0, 0.0, 10_000.0), &none, &mut out);
@@ -2370,6 +2440,7 @@ mod tests {
         let still = [ControlPoint::default()];
         let defs = vec![def.clone()];
         let mut i = Instance::new(&defs, 0);
+        created(&mut i, &defs, &still);
         i.step(&defs, &still, 1.0 / 60.0, &mut rng, &none);
         i.step(&defs, &still, 1.0 / 60.0, &mut rng, &none);
         let mut out = Vec::new();
@@ -2382,6 +2453,7 @@ mod tests {
         ];
         let defs = vec![def];
         let mut i = Instance::new(&defs, 0);
+        created(&mut i, &defs, &still);
         for _ in 0..12 {
             i.step(&defs, &still, 1.0 / 60.0, &mut rng, &none);
         }
@@ -2408,34 +2480,12 @@ mod tests {
         let defs = vec![def];
         let mut i = Instance::new(&defs, 0);
         let mut rng = ParticleRng::new(5);
+        created(&mut i, &defs, &[ControlPoint::default()]);
         i.step(&defs, &[ControlPoint::default()], 1.0 / 60.0, &mut rng, &none);
         let mut out = Vec::new();
         i.draw(&defs, &|v| v, 1.0, Vec3::new(0.0, 0.0, 10_000.0), &none, &mut out);
         assert_eq!(out.len(), 6);
         assert_eq!(out.iter().filter(|q| matches!(q.shape, Shape::Quad { .. })).count(), 3);
-    }
-
-    /// particles.md Open questions 8 (inferred): a continuous emitter whose
-    /// whole window is inside one 60 Hz step (`Explosion_Flashup`: 3000 a
-    /// second for 0.01 s) makes nothing; a longer one makes its count.
-    #[test]
-    fn an_emitter_window_inside_one_step_emits_nothing() {
-        let def = |duration: f32| SystemDef {
-            name: "flash".into(),
-            material: Some(0),
-            emitters: vec![Emitter::Continuously { start: 0.0, rate: 3000.0, duration }],
-            initializers: vec![Init::Lifetime(Pick::new(1.0, 1.0, 1.0))],
-            ..default()
-        };
-        for (duration, want) in [(0.01, 0), (0.1, 300)] {
-            let defs = vec![def(duration)];
-            let mut i = Instance::new(&defs, 0);
-            let mut rng = ParticleRng::new(5);
-            for _ in 0..10 {
-                i.step(&defs, &[ControlPoint::default()], 1.0 / 60.0, &mut rng, &none);
-            }
-            assert!((i.count() as i32 - want).abs() <= 1, "{duration}: {}", i.count());
-        }
     }
 
     /// "Collision via traces" (`Op::Collide`): TF2's Minigun brass (bounce
@@ -2468,6 +2518,7 @@ mod tests {
             let mut rng = ParticleRng::new(3);
             let mut i = Instance::new(&defs, 0);
             let mut lowest = f32::MAX;
+            created(&mut i, &defs, &cps);
             for _ in 0..60 {
                 i.step(&defs, &cps, 1.0 / 60.0, &mut rng, &Floor);
                 if let Some(p) = i.particles.first() {
@@ -2508,14 +2559,17 @@ mod tests {
         let cps = [ControlPoint::default()];
         let mut rng = ParticleRng::new(3);
         let mut i = Instance::new(&defs, 0);
+        created(&mut i, &defs, &cps);
         i.step(&defs, &cps, 0.01, &mut rng, &NoSheet);
         assert!((i.particles[0].life - 2.0).abs() < 1e-5, "{}", i.particles[0].life);
         let sixty = |_: usize, _: u32| 60usize;
         let mut i = Instance::new(&defs, 0);
+        created(&mut i, &defs, &cps);
         i.step(&defs, &cps, 0.01, &mut rng, &sixty);
         assert!((i.particles[0].life - 2.0).abs() < 1e-5, "60 frames at 30 fps: {}", i.particles[0].life);
         let six = |_: usize, _: u32| 6usize;
         let mut i = Instance::new(&defs, 0);
+        created(&mut i, &defs, &cps);
         i.step(&defs, &cps, 0.01, &mut rng, &six);
         assert!((i.particles[0].life - 0.2).abs() < 1e-5, "{}", i.particles[0].life);
     }
@@ -2532,6 +2586,7 @@ mod tests {
         s.start(&defs, "test", Vec3::ZERO, Vec3::X, Vec3::ONE);
         s.set_last(None, Some(gun));
         s.start(&defs, "test", Vec3::ZERO, Vec3::X, Vec3::ONE);
+        s.step(0.0, &none);
         s.step(0.1, &none);
         s.stop_tagged(gun);
         assert!(!s.running[0].instance.emitting && s.running[1].instance.emitting);
@@ -2607,6 +2662,7 @@ mod tests {
         let mut cps = [ControlPoint::default(); MAX_CONTROL_POINTS];
         cps[3] = ControlPoint { position: Vec3::new(120.0, 0.0, 0.0), duration: 0.6, ..ControlPoint::default() };
         // One sprite (0.01 s at 100/s), on control point 3.
+        created(&mut i, &defs, &cps);
         i.step_with(&defs, &cps, Some(3), 0.01, &mut rng, &none);
         // Born at the muzzle (control point 0), it heads for its point at
         // 100 units a second: at most a unit on in 0.01 s.
@@ -2626,6 +2682,7 @@ mod tests {
         // At the muzzle at birth: 23 x 0.5 x 0.4, blue.
         let mut at_muzzle = Instance::new(&defs, 0);
         cps[3].position = Vec3::ZERO;
+        created(&mut at_muzzle, &defs, &cps);
         at_muzzle.step_with(&defs, &cps, Some(3), 0.01, &mut rng, &none);
         let mut q = at_muzzle.particles[0].clone();
         q.age = 0.0;
@@ -2636,6 +2693,7 @@ mod tests {
         // stream: sprites along the whole way from the muzzle).
         let mut trailing = Instance::new(&defs, 0);
         cps[3] = ControlPoint { position: Vec3::new(40.0, 0.0, 0.0), velocity: Vec3::new(1000.0, 0.0, 0.0), duration: 0.6, ..ControlPoint::default() };
+        created(&mut trailing, &defs, &cps);
         trailing.step_with(&defs, &cps, Some(3), 0.01, &mut rng, &none);
         let start = trailing.particles[0].position.x;
         for _ in 0..20 {
@@ -2653,6 +2711,7 @@ mod tests {
         assert_eq!(trailing.particles[0].position, cps[3].position);
         // Without an active point a new sprite has none and stays put.
         let mut lone = Instance::new(&defs, 0);
+        created(&mut lone, &defs, &cps);
         lone.step_with(&defs, &cps, None, 0.01, &mut rng, &none);
         assert_eq!(lone.placed(), vec![(Vec3::ZERO, None)]);
     }

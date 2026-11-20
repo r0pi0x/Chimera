@@ -540,6 +540,11 @@ pub struct LauncherParams {
     /// (effects.md 11.1).
     #[serde(default)]
     pub model_hidden: f32,
+    /// Drawn late, its first received place rounded to whole units of
+    /// the data (Source sends a projectile's origin in whole inches:
+    /// specs/tf2/effects.md 11.2).
+    #[serde(default)]
+    pub whole_units: bool,
     /// Its touch on anything but a character leaves a bullet's impact
     /// there (the surface's decal, debris and sound, `FlyerMark`): TF2's
     /// needle (specs/tf2/effects.md, "Needles on a wall": a hole mark and
@@ -555,13 +560,14 @@ pub struct LauncherParams {
 
 /// The weapons of `set` whose projectiles are drawn late
 /// (`LauncherParams::interp`): (weapon id, `ShownItem` key, how long its
-/// model stays hidden: `model_hidden`).
-pub fn late_keys(set: &super::data::WeaponSet) -> Vec<(String, String, f32)> {
+/// model stays hidden: `model_hidden`, the unit in metres its first
+/// received place is rounded to, 0 for none: `whole_units`).
+pub fn late_keys(set: &super::data::WeaponSet) -> Vec<(String, String, f32, f32)> {
     set.weapons
         .iter()
         .filter_map(|w| {
             let p: LauncherParams = w.hooks.get(LAUNCHER)?.clone().try_into().ok()?;
-            p.interp.then(|| (w.id.clone(), p.shown.clone().unwrap_or_else(|| w.id.clone()), p.model_hidden))
+            p.interp.then(|| (w.id.clone(), p.shown.clone().unwrap_or_else(|| w.id.clone()), p.model_hidden, if p.whole_units { w.units.length } else { 0.0 }))
         })
         .collect()
 }

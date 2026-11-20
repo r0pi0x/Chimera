@@ -67,6 +67,7 @@ script = "tf_weapon_rocketlauncher"
 # blast held as long, starting on its launch line behind the launch point,
 # its model hidden its first 0.2 s (specs/tf2/effects.md 11, 11.1).
 interp = true
+whole_units = true
 model_hidden = 0.2
 speed = 1100.0
 touch = "report"

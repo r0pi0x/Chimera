@@ -117,6 +117,13 @@ pub struct StickyParams {
     /// arrival (its trail shows): 0.1 (effects.md 11.1).
     #[serde(default)]
     pub model_hidden: f32,
+    /// Drawn late, its first received place in whole units of the data
+    /// (effects.md 11.2: Source sends origins in whole inches).
+    #[serde(default)]
+    pub whole_units: bool,
+    /// The data's length unit (m), from its `units`.
+    #[serde(skip)]
+    pub unit: f32,
 }
 
 fn one() -> f32 {
@@ -202,7 +209,8 @@ impl StickyRules {
         let mut out = Vec::new();
         for w in &set.weapons {
             let Some(p) = w.hooks.get(super::STICKY_HOOK) else { continue };
-            let Ok(p) = p.clone().try_into::<StickyParams>() else { continue };
+            let Ok(mut p) = p.clone().try_into::<StickyParams>() else { continue };
+            p.unit = w.units.length;
             let ramp = super::damage::ramp_of(w.hooks.get(super::GUN_HOOK));
             let blast = Arc::new(p.blast());
             out.push((w.id.clone(), Arc::new(p), blast, ramp));
@@ -215,6 +223,9 @@ impl StickyRules {
     pub fn draw_late(&self, late: &mut chimera_world::map::loose::DrawnLate) {
         if let Some((_, p, ..)) = self.0.iter().find(|(_, p, ..)| p.interp) {
             late.add(SHOWN.to_string(), p.model_hidden);
+            if p.whole_units {
+                late.set_unit(SHOWN, p.unit);
+            }
         }
     }
 

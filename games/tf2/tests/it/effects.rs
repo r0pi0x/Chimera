@@ -183,31 +183,24 @@ fn a_rockets_blast_sounds_with_its_late_drawn_look() {
     assert!(!game_sounds.iter().any(|s| s.contains("BaseExplosionEffect")), "not the server's: {game_sounds:?}");
 }
 
-/// effects.md 11.1: a rocket drawn late trails from its copy
+/// effects.md 11.2: a rocket drawn late trails from its copy
 /// (`chimera_net`'s `late` makes it; one stands in here), the trail made
-/// at the rocket's first received place (`from`, the copy's `first`)
-/// while it follows the copy drawn behind on the launch line, so its
-/// first step spreads from there back to the copy (render::psys; TF2's
-/// glow beside the launcher from the frame after the shot). The water
-/// choice is by that first place.
+/// where the copy is drawn as it arrives (its first received place).
 #[test]
-fn a_late_rockets_trail_is_made_at_its_first_place_ahead_of_its_copy_11_1() {
+fn a_late_rockets_trail_is_made_on_its_copy_at_its_first_place_11_2() {
     use chimera_world::map::loose::{LateCopy, ShownItem};
     let mut sim = sim();
     let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), ROCKET_LAUNCHER);
     let (starts, ..) = collect(&mut sim, 2, |s, t| s.intent(p).fire = t == 0);
     let trail = starts.iter().find(|s| s.name == "rockettrail").expect("a trail").clone();
     let rocket = trail.follow.unwrap().entity;
-    assert_eq!(trail.from, None, "one not drawn late trails from where it is");
     let key = sim.app.world().get::<ShownItem>(rocket).unwrap().0.clone();
     let first = Vec3::new(0.0, 1.5, -1.0);
-    let drawn = Vec3::new(0.0, 1.5, 2.0);
-    let copy = sim.app.world_mut().spawn((ShownItem(key), LateCopy { of: rocket, owner: Some(p), first }, Transform::from_translation(drawn))).id();
+    let copy = sim.app.world_mut().spawn((ShownItem(key), LateCopy { of: rocket, owner: Some(p), first }, Transform::from_translation(first))).id();
     let (starts, ..) = collect(&mut sim, 1, |_, _| {});
     let trail = starts.iter().find(|s| s.name == "rockettrail").expect("the copy's trail");
     assert_eq!(trail.follow.unwrap().entity, copy);
-    assert_eq!(trail.from, Some(first), "made at the first place");
-    assert_eq!(trail.position, drawn, "following the copy");
+    assert_eq!(trail.position, first, "made at the first place");
 }
 
 /// effects.md 1: a sticky trails `stickybombtrail_<team>` from its launch

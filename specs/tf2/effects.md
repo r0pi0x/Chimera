@@ -1136,6 +1136,24 @@ bridge; facts of the picture, not of the code.
    jumps ~550 units back; case A shows nothing ahead of the launcher for
    ~0.5 s. With `cl_updaterate 66` case B's glow at p0 lasts about one
    frame's worth of particles.
+   **Observed (2026-11-20, tf2-psys2, `launch.tf2`'s rocket at 60
+   frames/s; `cl_interp` and `cl_updaterate` only change before the map
+   loads, `notconnected`):** not case A: with `cl_interp 0.5` the glow
+   ahead of the launcher shows from frame 3 as with the defaults. But the
+   rocket stays at p0 longer than one snapshot: with the defaults the
+   fire glows and fresh burst sparks are made at p0 through frame ~9 and
+   the rocket is seen moving on from frame ~10–12 (no jump back seen);
+   with `cl_updaterate 66` (p0 next to the launcher) the same, at p0
+   through frame ~9; with `cl_interp 0.5` the glow builds at p0 through
+   frame ~19, the model (shown from frame 14, after its 0.2 s) standing
+   still there, then gone from p0 at frame 20 (thrown back behind the
+   eye), and an orange glow passes the camera's top right at frames
+   24–26. So the place is held while the drawn time is before about the
+   first snapshot's time at the defaults (when the drawn time reaches
+   p0's), but not as long with lerp 0.5 (released after ~0.3 s, the
+   rocket thrown back). Ours (implementation) draws the copy at p0 while
+   the drawn time is before its arrival, then interpolates: it matches
+   the defaults, not lerp 0.5.
 17. The `Oscillate Scalar` operator's formula (rate, frequency,
    multiplier, start phase, proportional start/end times) used by the
    crit glow on radius and alpha (§14.1): not read; implement as a

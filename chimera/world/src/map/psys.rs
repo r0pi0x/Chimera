@@ -506,13 +506,6 @@ pub struct StartParticleSystem {
     /// (and its active one) are the tag's `ParticleControlPoints` while
     /// it has them (TF2's flame points).
     pub tag: Option<Entity>,
-    /// Where its control point 0 was made (engine space) before what it
-    /// follows moved it there: its first step spreads what it emits from
-    /// here to the followed place (render::psys, the emission spread;
-    /// TF2's trail is made at a projectile's first received place,
-    /// before that frame's interpolation draws it behind: effects.md
-    /// 11.1). None: from where it starts.
-    pub from: Option<Vec3>,
 }
 
 /// One control point a game sets on its started systems (engine space):
@@ -574,6 +567,6 @@ pub struct Follow {
 impl StartParticleSystem {
     /// `name` at `position` facing `forward`, as its definition runs.
     pub fn new(name: impl Into<String>, position: Vec3, forward: Vec3) -> Self {
-        Self { name: name.into(), position, forward, emit_for: None, follow: None, end: None, tag: None, from: None }
+        Self { name: name.into(), position, forward, emit_for: None, follow: None, end: None, tag: None }
     }
 }

@@ -133,6 +133,47 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Log
 
+### Particle timing, the rocket's first places (tf2-psys2, 2026-11-20)
+
+- **Particle timing** (`render::psys`, every game; particles.md §9): a
+  system's creation frame runs with zero time (initial particles only,
+  no emission, children not run); a child starts the frame after with
+  its points standing still; a continuous emitter's n particles of a
+  step at k/n of its window (the window rule: an endless one not cut at
+  its start), a burst at its start time on the point's previous place;
+  each new particle where its points were at its creation time (replaces
+  the 1/128 spacing and `StartParticleSystem::from`). Tests
+  `psys::a_new_system_makes_only_its_initial_particles_then_spreads_
+  along_the_path_9`, `continuous_counts_and_creation_times_follow_the_
+  window_rule_9_2`, `a_burst_at_its_start_is_made_on_the_points_
+  previous_place_9_2`.
+- **`Explosion_Flashup` now draws**: §9.4 makes its 30 particles (no
+  step-boundary rule any more), and under our readings of its operators
+  (Alpha Fade and Decay 0 → 1 over 0.1–0.2 of life, out over 0.7–1.0;
+  life U(0, 0.2); trails 3–55 wide) they are visible, where TF2 shows
+  nothing. Spec question: what hides them in TF2 (the fade's times
+  proportional or not, the plane constraint, the trail renderer?).
+  Test `heavy::particles::the_blast_draws_thin_ember_rays_broad_core_
+  streaks_and_flashups_thirty` checks the 30.
+- **Case A or B** (effects.md Open questions 16, checked with
+  `launch.tf2`'s rocket at `cl_interp 0.5` and `cl_updaterate 66`, both
+  `notconnected`: set before a `map`): not A. TF2 keeps the rocket at p0
+  longer than one snapshot: at the defaults until about when the drawn
+  time reaches its arrival (~frame 9), at lerp 0.5 ~0.3 s then thrown
+  back; observation written into the Open question. Ours (`net::late`):
+  the copy comes as the first snapshot would carry it (here on the
+  server's tick count, 20 a second: 0–4 ticks out), its place in whole
+  units (`whole_units` in the projectile/sticky data), drawn there while
+  the drawn time is before its arrival (no seeded line behind it), then
+  interpolated; the trail made on it in its first frame (one puff), its
+  fire and sparks from the next. Tests `late_items::a_copy_stays_...`,
+  `a_late_flyers_copy_comes_with_the_next_snapshot_in_whole_units`,
+  `effects::a_late_rockets_trail_is_made_on_its_copy_at_its_first_
+  place_11_2`. Pair (`launch`, frames 2 and 4): the glow ahead of the
+  launcher now in both, at the same place; ours a frame earlier in the
+  movie numbering and its first smoke puff shows darker than TF2's under
+  the glow. Matches the defaults, not lerp 0.5.
+
 ### Emission spread, blasts seen through water, body decals (tf2-psys, 2026-11-20)
 
 - **The "under water" captures were from above the surface.** `wunder`

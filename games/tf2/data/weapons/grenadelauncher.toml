@@ -60,6 +60,7 @@ script = "tf_weapon_grenadelauncher"
 # blast held as long, starting on its launch line behind the launch point
 # (specs/tf2/effects.md 11, 11.1); its model hidden its first 0.1 s.
 interp = true
+whole_units = true
 model_hidden = 0.1
 speed = 1200.0
 up_speed = 200.0

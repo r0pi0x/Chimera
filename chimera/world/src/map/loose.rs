@@ -200,6 +200,10 @@ pub struct DrawnLate {
     /// too: `weapon::projectile::FlyerMark`).
     pub weapons: std::collections::BTreeSet<String>,
     pub hidden: std::collections::BTreeMap<String, f32>,
+    /// A key's whole unit (m): its first received place is rounded to
+    /// whole units of it (Source sends a projectile's origin in whole
+    /// inches: specs/tf2/effects.md 11.2); none: not rounded.
+    pub unit: std::collections::BTreeMap<String, f32>,
     pub running: bool,
 }
 
@@ -212,6 +216,22 @@ impl DrawnLate {
             self.hidden.remove(&key);
         }
         self.keys.insert(key);
+    }
+
+    /// `key`'s first received place rounded to whole `unit`s (m).
+    pub fn set_unit(&mut self, key: &str, unit: f32) {
+        if unit > 0.0 {
+            self.unit.insert(key.to_string(), unit);
+        }
+    }
+
+    /// `at` as `key`'s first received place: in whole units when its
+    /// data's units are set (`set_unit`).
+    pub fn received(&self, key: &str, at: bevy::math::Vec3) -> bevy::math::Vec3 {
+        match self.unit.get(key) {
+            Some(&u) => (at / u).round() * u,
+            None => at,
+        }
     }
 
     /// How long a copy shown as `key` keeps its model hidden (s).
@@ -240,9 +260,10 @@ pub struct LateDelay(pub f32);
 pub struct LateCopy {
     pub of: Entity,
     pub owner: Option<Entity>,
-    /// The item's first received place, where its history was seeded
-    /// (effects.md 11.1's p0): where TF2 makes the trail that follows the
-    /// copy (`StartParticleSystem::from`).
+    /// The item's first received place (effects.md 11.2's p0, in whole
+    /// units), where the copy is drawn until the drawn time reaches it
+    /// and TF2 makes the trail that follows the copy; the water choice
+    /// is by it.
     pub first: Vec3,
 }
 
