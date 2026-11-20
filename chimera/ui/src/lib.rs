@@ -84,6 +84,7 @@ pub mod pointer_lead;
 pub mod sound;
 pub mod theme;
 pub mod style;
+pub mod text_edit;
 pub mod text_fit;
 pub mod units;
 pub mod vlist;

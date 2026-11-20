@@ -416,6 +416,96 @@ fn the_guns_picker_sets_the_guns_off() {
     assert_eq!(sent.trim_matches('"'), "b:rocket,b:smg", "mp_guns_off set at the start");
 }
 
+/// Types `text` (one key message a character, as a keyboard sends them).
+fn type_text(sim: &mut Sim, text: &str) {
+    use bevy::input::{
+        ButtonState,
+        keyboard::{Key, KeyboardInput},
+    };
+    for ch in text.chars() {
+        let s = ch.to_string();
+        sim.app.world_mut().write_message(KeyboardInput {
+            key_code: KeyCode::KeyA,
+            logical_key: Key::Character(s.as_str().into()),
+            state: ButtonState::Pressed,
+            text: Some(s.as_str().into()),
+            repeat: false,
+            window: Entity::PLACEHOLDER,
+        });
+        sim.ticks(1);
+    }
+}
+
+/// The Guns dialog's search and grid keys: `/` puts the keyboard in the
+/// search field, typing narrows the cards (Space types, it doesn't
+/// toggle), Esc lets go of the field and keeps the dialog; → walks the
+/// cards in reading order; ← on a game's header folds it.
+#[test]
+fn the_guns_picker_searches_by_typing_and_walks_cards_by_the_grid_keys() {
+    use chimera_ui::picker::{PickerCard, PickerRow};
+    use party_kit::guns_picker::{GunsPicker, GunsSource};
+    let mut sim = sim(PAGES_THEME);
+    sim.app.insert_resource(GunsSource(Box::new(FakeGuns)));
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    let data = MenuData::shipped();
+    let row = data.play.iter().position(|r| r.kind == party_kit::main_menu::PlayKind::Guns).expect("a Guns row");
+    for _ in 0..row {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(3);
+    let picker = |s: &Sim| s.app.world().resource::<GunsPicker>().clone();
+    let games = FakeGuns.listing_for_test();
+    assert!(picker(&sim).open.is_some());
+    // The grid keys: from the first game's header, → steps into its cards
+    // and on in reading order.
+    assert_eq!(picker(&sim).cursor, 0);
+    press(&mut sim, KeyCode::ArrowRight);
+    press(&mut sim, KeyCode::ArrowRight);
+    assert_eq!(picker(&sim).rows_in(&games, chimera_ui::picker::PickerLook::Cards)[picker(&sim).cursor], PickerRow::Item(0, 0, 1), "the second card");
+    press(&mut sim, KeyCode::ArrowUp);
+    press(&mut sim, KeyCode::ArrowLeft);
+    assert!(picker(&sim).folded.contains("a"), "← on the header folds the game");
+    press(&mut sim, KeyCode::ArrowRight);
+    assert!(picker(&sim).folded.is_empty(), "→ opens it");
+    // `/` and typing: the SMGs only.
+    type_text(&mut sim, "/");
+    assert!(picker(&sim).search_focus);
+    type_text(&mut sim, "smg");
+    sim.ticks(2);
+    assert_eq!(picker(&sim).search, "smg");
+    assert_eq!(sim.app.world_mut().query::<&PickerCard>().iter(sim.app.world()).count(), 2, "an SMG a game");
+    press(&mut sim, KeyCode::Space);
+    assert!(picker(&sim).open.as_ref().is_some_and(|o| o.is_empty()), "Space in the field toggles nothing");
+    press(&mut sim, KeyCode::Escape);
+    assert!(!picker(&sim).search_focus && picker(&sim).open.is_some(), "Esc lets go of the field, the dialog stays");
+    press(&mut sim, KeyCode::Escape);
+    assert!(picker(&sim).open.is_none() && picker(&sim).search.is_empty(), "then cancels, the search gone");
+}
+
+/// The Guns dialog lists a ladder's grenades after its guns (class
+/// `grenade`): the host can take them out of drawn ladders too.
+#[test]
+fn the_guns_listing_has_the_grenades() {
+    use chimera_core::game_parts::{GunClass, GunPart};
+    use chimera_sim::minigame::auto::Capabilities;
+    let caps = vec![Capabilities {
+        game: "g",
+        guns: vec![GunPart { id: "g:ak", class: GunClass::Rifle }],
+        grenades: vec!["g:he"],
+        knife: None,
+        movement: None,
+        characters: None,
+        hud: None,
+        maps: Vec::new(),
+        missing: Vec::new(),
+    }];
+    let games = party_kit::guns_picker::games_of(&World::new(), &caps);
+    let items: Vec<(String, Vec<String>)> = games[0].items().map(|i| (i.id.clone(), i.tags.clone())).collect();
+    assert_eq!(items, [("g:ak".to_string(), vec!["class:rifle".to_string()]), ("g:he".to_string(), vec!["class:grenade".to_string()])]);
+}
+
 impl FakeGuns {
     fn listing_for_test(&self) -> Vec<chimera_ui::picker::PickerGame> {
         use party_kit::guns_picker::GunCatalogue;

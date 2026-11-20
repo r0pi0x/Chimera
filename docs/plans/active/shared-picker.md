@@ -65,6 +65,15 @@ Maps picker; M11, the sandbox's screens).
    `auto::drawable_all`: the guns a drawn ladder may deal), and Start
    sends `mp_guns_off` (`chimera_sim::minigame::auto::GunsOff`: drawn
    ladders leave them out unless none would be left).
+2b. [x] The picker grown for the Sandbox (the notes below): typing in
+   its search (`PickerState::search_key`, the kit's `text_edit`, moved
+   from chimera_client's widgets), a card's badge, mark, family count
+   and download bar, slots the screen fills (`PickerSlot`: art, foot, a
+   folded header's preview), the grid keys (`picker::nav`), a side pane
+   (`PickerFrame::side`), `prepare`/`update` for a screen that stays
+   open. The Maps and Guns dialogs got the search and chips (Maps: the
+   games; Guns: the classes and the games) and the grid keys (Guns); the
+   Guns dialog lists the grenades (`guns_picker::games_of`).
 3. [ ] The Sandbox's Change gun (B) on the picker (single, full screen,
    cards), the quick bar kept (picking the gun in hand does nothing:
    acb27eb50, `rung_command::select_held`).
@@ -109,4 +118,10 @@ captures at 1920x1080 and 1280x720, a commit, post-push tests.
   `the_hosts_guns_off_are_left_out_unless_none_would_be_left`. Captures:
   `ui_scene play guns` at 1920x1080 and 1280x720 (2,090 guns listed with
   the installs here; the recycling grid keeps it cheap).
-- Next session: step 3 (the notes above), then step 4.
+- 2026-11-20, step 2b: the picker's growth above. Tests: chimera_ui
+  `typing_edits_the_search_at_the_caret`,
+  `the_grid_keys_walk_cards_and_fold_headers`,
+  `cards_carry_badges_families_bars_and_slots`; party_kit
+  `the_guns_picker_searches_by_typing_and_walks_cards_by_the_grid_keys`,
+  `the_guns_listing_has_the_grenades`. Captures: `ui_scene play maps`,
+  `play guns`, `ui_gallery picker` at 1920x1080 and 1280x720.

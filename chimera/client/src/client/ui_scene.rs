@@ -610,7 +610,7 @@ fn picker_page(
     let frame = PickerFrame { w: 26.0, look: PickerLook::Cards, mode: PickerMode::Multi, ..default() };
     picker::spawn(c, &ui, b, "gallery.picker.cards", &guns, &st, frame, lists, list());
     // Single pick, wider: the search, the chips, the current gun.
-    let d = col(c, 40.0, "Single pick, cards", "full screen: more columns; search and chips");
+    let d = col(c, 40.0, "Single pick, cards", "full screen: more columns; search typed, chips, badges, a family, a pin, a download");
     let st = PickerState { current: Some("cs:ak47".into()), chips: ["class:rifle".to_string(), "class:lmg".to_string(), "class:launcher".to_string()].into(), cursor: 2, ..default() };
     let frame = PickerFrame {
         w: 40.0,
@@ -619,8 +619,20 @@ fn picker_page(
         search: true,
         facets: vec!["class".into(), "game".into()],
         placeholder: "Find a gun or a tag".into(),
-        caret: None,
+        ..default()
     };
+    // The Sandbox's cards: a badge, a family's count, a pinned mark, a
+    // download's bar; the search typed into.
+    let mut guns = guns;
+    for it in guns.iter_mut().flat_map(|g| g.groups.iter_mut()).flat_map(|k| k.items.iter_mut()) {
+        it.badge = Some(if it.id.starts_with("tf2") { "TF2" } else { "CS:S" }.into());
+        match it.id.as_str() {
+            "cs:ak47" => (it.family, it.mark) = (3, Some("1".into())),
+            "tf2:rocket" => it.progress = Some(400),
+            _ => {}
+        }
+    }
+    let st = PickerState { search_focus: true, search: "r".into(), caret: chimera_ui::text_edit::Caret { at: 1, anchor: 1 }, ..st };
     picker::spawn(c, &ui, d, "gallery.picker.single", &guns, &st, frame, lists, list());
 }
 

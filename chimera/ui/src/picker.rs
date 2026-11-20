@@ -29,22 +29,41 @@
 //!   from it and the theme (`card_grid`: a dialog gets fewer columns and
 //!   smaller cards than the full screen).
 //! - **Build**: `spawn` (the search and the chips when the frame asks for
-//!   them, then the kit's recycling list, `vlist`); the slots are filled
-//!   by `bind_slots` (one kit system for every open picker, from the
+//!   them, then the kit's recycling list, `vlist`; `spawn_parts` with a
+//!   side pane, `PickerFrame::side`, for a detail pane the screen fills);
+//!   `prepare` and `update` make the view again without new nodes (a
+//!   screen that stays open: the Sandbox's). The slots are filled by
+//!   `bind_slots` (one kit system for every open picker, from the
 //!   snapshot in `Pickers` by list key). `dialog` is the frame the host's
 //!   pickers sit in (the scrim, the plate, the title and counts, the
 //!   legend, the keys, All off, Cancel and Done).
+//! - **Cards** carry what a catalogue gives: an icon, a badge at the top
+//!   left (a gun's game) with a family's count (`PickerItem::family`: one
+//!   card for a gun's variants), a mark at the top right (a pinned slot),
+//!   a download's bar along the bottom edge (`progress`). What only the
+//!   screen can draw goes into empty slots it fills (`PickerSlot`, on
+//!   `Added`, after `bind_slots`): a card's art when the item has no kit
+//!   icon, its foot (`PickerFrame::foot`: a download's state), a folded
+//!   game's header preview.
+//! - **Search**: the kit's search field; typing is `PickerState::
+//!   search_key` (the kit's `text_edit`: a caret, a selection, copy and
+//!   paste) while `search_focus`, the field marked `PickerSearch` for the
+//!   screen's pointer.
+//! - **Keys**: `nav` (the List look: ↑↓ the row, ←→ fold and open; Cards:
+//!   the grid keys of `VListState::nav`, on a header ← folds and → opens
+//!   by the picker's folds, which the list's follow).
 //! - **Numbers**: the theme's `[layout.picker]` (the kit's base theme,
 //!   chimera/ui/data/shell.toml, every app's; a theme may set a key over
 //!   it), none in code.
 //! - **Actions**: `PickerAction` on the clickable nodes (and as a message
 //!   from keys); the screen that owns the state applies them
-//!   (`PickerState::toggle`, `fold`, `left`, `right`).
+//!   (`PickerState::toggle`, `fold`, `left`, `right`). In single mode a
+//!   card also carries the list's `VHit` (a press selects, a second one is
+//!   `VListEvent::Activate`, the kit's double-click rule).
 //!
 //! The gallery shows it: `ui_gallery picker` (both modes, both frames).
 //!
 //! Known shortcuts: a card's icon is the kit's class icon, not a render;
-//! the search field's typing is the owning screen's (the kit draws it);
 //! in the Cards look a game's groups run together under its header.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -54,7 +73,9 @@ use bevy::prelude::*;
 use crate::{
     IconImages, KitFonts, Role, Theme, Tone, UiSlant, UiStyle, UiUnits, VCursor, VSection, VShape, VSlot, VirtualList,
     VirtualLists,
+    VHit, VListState, VNav,
     controls::{HERO_H, Hover, Kind, State, Ui, clickable},
+    text_edit::{Caret, TextKey},
     text_fit::Ellipsize,
     vlist::VLine,
 };
@@ -75,6 +96,16 @@ pub struct PickerItem {
     /// `facet:value` (`class:rifle`, `size:large`): the chips and the
     /// search match them.
     pub tags: Vec<String>,
+    /// A card's small words at its top left (a gun's game).
+    pub badge: Option<String>,
+    /// A card's mark at its top right (a pinned slot's number).
+    pub mark: Option<String>,
+    /// A family card: how many variants it stands for (more than one: the
+    /// count beside the badge).
+    pub family: usize,
+    /// A download's share done, in thousandths: the bar along the card's
+    /// bottom edge.
+    pub progress: Option<u16>,
 }
 
 impl PickerItem {
@@ -169,7 +200,14 @@ pub struct PickerState {
     pub chips: BTreeSet<String>,
     /// The picker had the keys this frame (the page's own keys leave them).
     pub took_keys: bool,
+    /// The search field has the keyboard (typing goes to it).
+    pub search_focus: bool,
+    /// The search field's caret and selection (chars).
+    pub caret: Caret,
 }
+
+/// The search's longest text (bytes).
+pub const SEARCH_MAX: usize = 48;
 
 /// The facet of a tag (`class` of `class:rifle`).
 pub fn facet(tag: &str) -> &str {
@@ -182,6 +220,40 @@ pub fn tag_words(tag: &str) -> &str {
 }
 
 impl PickerState {
+    /// The search field takes the keyboard, the caret at the end.
+    pub fn focus_search(&mut self) {
+        self.search_focus = true;
+        self.caret = Caret::end_of(&self.search);
+    }
+
+    /// A key in the search field (`text_edit::text_key`): edits the text
+    /// at the caret (at most `SEARCH_MAX` bytes), or copies, cuts or
+    /// pastes. A changed search puts the cursor on the first row. Whether
+    /// the text changed.
+    pub fn search_key(&mut self, key: TextKey, clipboard: &mut crate::clipboard::Clipboard) -> bool {
+        let n = self.search.chars().count();
+        self.caret = Caret { at: self.caret.at.min(n), anchor: self.caret.anchor.min(n) };
+        let mut text = self.search.clone();
+        let changed = self.caret.key(&mut text, key, clipboard, SEARCH_MAX, false);
+        if changed {
+            self.search = text;
+            self.cursor = 0;
+        }
+        changed
+    }
+
+    /// Empties the search (its clear key), keeping the keyboard.
+    pub fn clear_search(&mut self) {
+        self.search.clear();
+        self.caret = Caret::default();
+        self.cursor = 0;
+    }
+
+    /// The search field's caret as drawn (None: not focused).
+    pub fn search_cursor(&self) -> Option<crate::controls::TextCursor> {
+        self.search_focus.then(|| self.caret.cursor(&self.search))
+    }
+
     fn working(&self) -> &BTreeSet<String> {
         self.open.as_ref().unwrap_or(&self.off)
     }
@@ -218,6 +290,17 @@ impl PickerState {
     /// the search and the chips hide items, and a game or group left
     /// with none).
     pub fn rows(&self, games: &[PickerGame]) -> Vec<PickerRow> {
+        self.rows_folding(games, true)
+    }
+
+    /// The rows of a look: the List look's `rows`; the Cards look keeps a
+    /// folded game's items (the list folds them away: its cursor and its
+    /// unfold keep their places).
+    pub fn rows_in(&self, games: &[PickerGame], look: PickerLook) -> Vec<PickerRow> {
+        self.rows_folding(games, look == PickerLook::List)
+    }
+
+    fn rows_folding(&self, games: &[PickerGame], folding: bool) -> Vec<PickerRow> {
         let mut out = Vec::new();
         for (g, game) in games.iter().enumerate() {
             let shown: Vec<Vec<usize>> = game
@@ -229,7 +312,7 @@ impl PickerState {
                 continue;
             }
             out.push(PickerRow::Game(g));
-            if self.folded.contains(&game.id) {
+            if folding && self.folded.contains(&game.id) {
                 continue;
             }
             for (k, group) in game.groups.iter().enumerate() {
@@ -238,7 +321,7 @@ impl PickerState {
                 }
                 if !group.name.is_empty() {
                     out.push(PickerRow::Group(g, k));
-                    if self.folded.contains(&format!("{}/{}", game.id, group.name)) {
+                    if folding && self.folded.contains(&format!("{}/{}", game.id, group.name)) {
                         continue;
                     }
                 }
@@ -473,12 +556,15 @@ pub enum PickerAction {
     /// A game's or group's header (the chevron, the name, the rest of the
     /// row): fold or open.
     Fold(usize),
-    /// An item in single mode: pick it.
+    /// An item in single mode: pick it (a card also carries the list's
+    /// `VHit`: a press selects, a second press is `VListEvent::Activate`).
     Pick(usize),
     /// A filter chip: tick or untick.
     Chip(usize),
     /// A click on the search field.
     FocusSearch,
+    /// The search field's clear key.
+    ClearSearch,
     Done,
     Cancel,
     AllOff,
@@ -496,6 +582,37 @@ pub struct TriBox(pub Tri);
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PickerCard(pub usize);
 
+/// A card's item id (the screen finds its cards by it).
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct PickerId(pub String);
+
+/// A picker's search field (its list key): the screen's pointer system
+/// places the caret in it (`controls::TextPress`).
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct PickerSearch(pub String);
+
+/// The parts of a card or a header the screen that owns the picker draws
+/// (`PickerSlot`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PickerPart {
+    /// A card's picture, when its item has no kit icon (a gun's own icon).
+    Art,
+    /// A card's foot (`PickerFrame::foot`: a download's state, a size).
+    Foot,
+    /// A folded game's header, after its count (a preview of what's in it).
+    Head,
+}
+
+/// An empty node in a card or a header for the owning screen to fill (on
+/// `Added<PickerSlot>`, after `bind_slots`): the list's key, the item's
+/// id (a header's: the game's), the part.
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct PickerSlot {
+    pub list: String,
+    pub id: String,
+    pub part: PickerPart,
+}
+
 /// The container's say: the width it gives (cq), the look, and whether
 /// the search and the chips show (with the facets the chips offer).
 #[derive(Clone, Debug, Default)]
@@ -508,8 +625,17 @@ pub struct PickerFrame {
     pub facets: Vec<String>,
     /// The search field's placeholder.
     pub placeholder: String,
-    /// The search field's caret while typing.
+    /// The search field's caret while typing (None: the state's,
+    /// `PickerState::search_cursor`).
     pub caret: Option<crate::controls::TextCursor>,
+    /// Cards: a foot slot (`PickerPart::Foot`) in place of the tags line.
+    pub foot: bool,
+    /// A side pane this wide (cq) at the list's right (`PickerParts::side`:
+    /// a detail pane the screen fills); the list has the rest of `w`.
+    pub side: Option<f32>,
+    /// The list's cursor is the screen's (it moves it: the grid keys, a
+    /// press); `prepare` leaves it where it is (`state.cursor` unused).
+    pub list_cursor: bool,
 }
 
 /// The cards' grid for a width: columns, a card's width and height (cq).
@@ -532,6 +658,11 @@ pub fn card_grid(theme: &Theme, w: f32) -> (usize, f32, f32) {
     (cols, card_w, card_w * aspect)
 }
 
+/// The list's width in a frame (less the side pane and its gap).
+pub fn list_w(theme: &Theme, frame: &PickerFrame) -> f32 {
+    frame.side.map_or(frame.w, |s| frame.w - s - theme.layout(L, "side_gap")).max(0.0)
+}
+
 /// An open picker as built (`bind_slots` fills its list's slots from it).
 #[derive(Clone, Debug, Default)]
 pub struct PickerView {
@@ -544,11 +675,181 @@ pub struct PickerView {
     pub card: (usize, f32, f32),
     /// The chips shown (`PickerAction::Chip` indexes them).
     pub chips: Vec<String>,
+    /// Its list's key.
+    pub list_key: String,
+}
+
+impl PickerView {
+    /// The row at a list cursor (Cards: a section's header or a card; List:
+    /// the line).
+    pub fn row_at(&self, c: VCursor) -> Option<usize> {
+        match (self.frame.look, c) {
+            (PickerLook::List, VCursor::Item(_, i)) => (i < self.rows.len()).then_some(i),
+            (PickerLook::List, VCursor::Header(_)) => None,
+            (PickerLook::Cards, VCursor::Header(s)) => self.sections.get(s).map(|x| x.0),
+            (PickerLook::Cards, VCursor::Item(s, j)) => self.sections.get(s)?.1.get(j).copied(),
+        }
+    }
+
+    /// The list cursor of a row (`row_at`'s inverse).
+    pub fn cursor_of(&self, row: usize) -> Option<VCursor> {
+        cursor_of(self.frame.look, &self.rows, &self.sections, row)
+    }
+
+    /// The item at a list cursor.
+    pub fn item_at(&self, c: VCursor) -> Option<&PickerItem> {
+        PickerState::item(&self.games, self.rows.get(self.row_at(c)?)?)
+    }
+}
+
+fn cursor_of(look: PickerLook, rows: &[PickerRow], sections: &[(usize, Vec<usize>)], row: usize) -> Option<VCursor> {
+    match look {
+        PickerLook::List => (row < rows.len()).then_some(VCursor::Item(0, row)),
+        PickerLook::Cards => sections.iter().enumerate().find_map(|(s, (h, items))| {
+            if *h == row { Some(VCursor::Header(s)) } else { items.iter().position(|r| *r == row).map(|j| VCursor::Item(s, j)) }
+        }),
+    }
 }
 
 /// Every open picker by its list key.
 #[derive(Resource, Clone, Debug, Default)]
 pub struct Pickers(pub BTreeMap<String, PickerView>);
+
+/// What `spawn_parts` built.
+#[derive(Clone, Copy, Debug)]
+pub struct PickerParts {
+    /// The list's scroll frame.
+    pub list: Entity,
+    /// The side pane (`PickerFrame::side`).
+    pub side: Option<Entity>,
+}
+
+/// The view of a picker and its list's state (`spawn` and `update`): the
+/// rows (`rows_in`), the cards' sections (a folded game's folded in the
+/// list too, so only its header shows and the grid keys stop on it), the
+/// shape and the cursor.
+pub fn prepare(theme: &Theme, key: &str, games: &[PickerGame], state: &PickerState, frame: PickerFrame, lists: &mut VirtualLists) -> PickerView {
+    let l = |k: &str| theme.layout(L, k);
+    let rows = state.rows_in(games, frame.look);
+    let chips = PickerState::chips_of(games, &frame.facets.iter().map(String::as_str).collect::<Vec<_>>());
+    let (sections, shape, vsections, folded) = match frame.look {
+        PickerLook::List => (Vec::new(), VShape::list(l("row_h")), vec![VSection::plain(key, rows.len())], Vec::new()),
+        PickerLook::Cards => {
+            let (cols, _, card_h) = card_grid(theme, list_w(theme, &frame));
+            let mut sections: Vec<(usize, Vec<usize>)> = Vec::new();
+            let mut folded = Vec::new();
+            for (r, row) in rows.iter().enumerate() {
+                match row {
+                    PickerRow::Game(g) => {
+                        let k = format!("{key}/{}", games[*g].id);
+                        if state.folded.contains(&games[*g].id) {
+                            folded.push(k);
+                        }
+                        sections.push((r, Vec::new()));
+                    }
+                    PickerRow::Item(..) => {
+                        if let Some(s) = sections.last_mut() {
+                            s.1.push(r);
+                        }
+                    }
+                    PickerRow::Group(..) => {}
+                }
+            }
+            let vs = sections.iter().zip(rows.iter().filter(|r| matches!(r, PickerRow::Game(_)))).map(|((_, items), r)| {
+                let PickerRow::Game(g) = r else { unreachable!() };
+                VSection::new(format!("{key}/{}", games[*g].id), items.len())
+            });
+            (sections.clone(), VShape::grid(cols, l("head_h"), card_h, l("card_gap")), vs.collect(), folded)
+        }
+    };
+    let at = if rows.is_empty() || frame.list_cursor { None } else { cursor_of(frame.look, &rows, &sections, state.cursor.min(rows.len() - 1)) };
+    let st = lists.state(key);
+    st.set_shape(shape);
+    // The list's folds are the picker's (Cards; set before the sections so
+    // the layout is made once).
+    let mine: BTreeSet<String> = folded.into_iter().collect();
+    if frame.look == PickerLook::Cards && st.folded != mine {
+        st.folded = mine;
+        st.sections.clear();
+    }
+    st.set_sections(vsections);
+    if !frame.list_cursor && st.cursor != at {
+        st.cursor = at;
+        st.reveal = true;
+    }
+    st.bump();
+    PickerView { games: games.to_vec(), rows, state: state.clone(), card: card_grid(theme, list_w(theme, &frame)), frame, sections, chips, list_key: key.to_string() }
+}
+
+/// Makes an open picker show `games` and `state` again without building
+/// it anew (the screen keeps its nodes; the slots are bound again).
+pub fn update(theme: &Theme, pickers: &mut Pickers, key: &str, games: &[PickerGame], state: &PickerState, frame: PickerFrame, lists: &mut VirtualLists) {
+    let view = prepare(theme, key, games, state, frame, lists);
+    pickers.0.insert(key.to_string(), view);
+}
+
+/// The grid keys (`VListState::nav`) on a picker: ↑↓ the line, ←→ in
+/// reading order; on a game's header ← folds and → opens it (the
+/// picker's folds), then → steps in. The List look: ↑↓ the row, ←→
+/// `left` and `right`. The cursor follows (`state.cursor`); true when
+/// something moved or folded.
+pub fn nav(state: &mut PickerState, view: &PickerView, list: &mut VListState, k: VNav) -> bool {
+    let games = &view.games;
+    if view.frame.look == PickerLook::List {
+        let n = view.rows.len();
+        if n == 0 {
+            return false;
+        }
+        let page = (list.view_h / list.shape.map_or(2.0, |s| s.row_h)).floor().max(1.0) as usize;
+        let to = match k {
+            VNav::Up => state.cursor.saturating_sub(1),
+            VNav::Down => (state.cursor + 1).min(n - 1),
+            VNav::PageUp => state.cursor.saturating_sub(page),
+            VNav::PageDown => (state.cursor + page).min(n - 1),
+            VNav::Home => 0,
+            VNav::End => n - 1,
+            VNav::Left => return state.left(games),
+            VNav::Right => return state.right(games),
+        };
+        let moved = to != state.cursor;
+        state.cursor = to;
+        return moved;
+    }
+    let row = state.cursor.min(view.rows.len().saturating_sub(1));
+    if let (Some(PickerRow::Game(_)), VNav::Left | VNav::Right) = (view.rows.get(row), k) {
+        let open = k == VNav::Right;
+        if state.is_folded(games, &view.rows[row]) == open {
+            fold(state, view, list, row, open);
+            return true;
+        }
+    }
+    if list.cursor.is_none() {
+        list.cursor = view.cursor_of(row);
+    }
+    let moved = list.nav(k);
+    if let Some(r) = list.cursor.and_then(|c| view.row_at(c)) {
+        state.cursor = r;
+    }
+    moved
+}
+
+/// Folds or opens a game's header row in the Cards look, in the picker's
+/// state and its list at once (the List look: the state's alone).
+pub fn fold(state: &mut PickerState, view: &PickerView, list: &mut VListState, row: usize, open: bool) {
+    let Some(r) = view.rows.get(row).copied() else { return };
+    state.fold(&view.games, &r, open);
+    if let Some(VCursor::Header(s)) = view.cursor_of(row) {
+        list.fold(s, !open);
+    }
+}
+
+/// A Cards picker's folded games as its list has them (`{key}/{game}`
+/// sections folded): a screen whose list is the truth (the Sandbox's,
+/// staged and tested by the list) reads them into its state.
+pub fn folds_of(list: &VListState, key: &str) -> BTreeSet<String> {
+    let p = format!("{key}/");
+    list.folded.iter().filter_map(|k| k.strip_prefix(&p)).map(str::to_string).collect()
+}
 
 /// Builds a picker under `parent` (module doc): the search and the chips
 /// when `frame` asks for them, then the list or the grid, its state in
@@ -566,18 +867,38 @@ pub fn spawn(
     lists: &mut VirtualLists,
     list_style: UiStyle,
 ) -> Entity {
+    spawn_parts(c, ui, parent, key, games, state, frame, lists, list_style).list
+}
+
+/// `spawn`, with the side pane (`PickerFrame::side`) when asked for.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_parts(
+    c: &mut Commands,
+    ui: &Ui,
+    parent: Entity,
+    key: &str,
+    games: &[PickerGame],
+    state: &PickerState,
+    frame: PickerFrame,
+    lists: &mut VirtualLists,
+    list_style: UiStyle,
+) -> PickerParts {
     let t = ui.theme;
     let l = |k: &str| t.layout(L, k);
-    let rows = state.rows(games);
-    let chips = PickerState::chips_of(games, &frame.facets.iter().map(String::as_str).collect::<Vec<_>>());
-    if frame.search || !chips.is_empty() {
+    let view = prepare(t, key, games, state, frame, lists);
+    let frame = &view.frame;
+    if frame.search || !view.chips.is_empty() {
         let bar = ui.boxed(c, parent, UiStyle { gap: Some(l("bar_gap")), align: Some(AlignItems::Center), ..UiStyle::row() });
         c.entity(bar).insert(Node { flex_wrap: FlexWrap::Wrap, ..default() });
         if frame.search {
-            let f = ui.search_field(c, bar, &state.search, &frame.placeholder, frame.caret, l("search_w").min(frame.w), State::focused(frame.caret.is_some()));
-            c.entity(f.field).insert((PickerAction::FocusSearch, clickable()));
+            let caret = frame.caret.or(state.search_cursor());
+            let f = ui.search_field(c, bar, &state.search, &frame.placeholder, caret, l("search_w").min(frame.w), State::focused(caret.is_some()));
+            c.entity(f.field).insert((PickerAction::FocusSearch, PickerSearch(key.to_string()), clickable()));
+            if let Some(k) = f.clear {
+                c.entity(k).insert(PickerAction::ClearSearch);
+            }
         }
-        for (i, chip) in chips.iter().enumerate() {
+        for (i, chip) in view.chips.iter().enumerate() {
             let on = state.chips.contains(chip);
             let words = if facet(chip) == "game" {
                 games.iter().find(|g| g.id == tag_words(chip)).map_or(tag_words(chip).to_string(), |g| g.name.clone())
@@ -596,55 +917,23 @@ pub fn spawn(
             ui.text(c, ch, Role::Mono, l("chip_size"), if on { Tone::Ink } else { Tone::Fg2 }, &words);
         }
     }
-    let (sections, shape, vsections, at) = match frame.look {
-        PickerLook::List => {
-            let at = if rows.is_empty() { None } else { Some(VCursor::Item(0, state.cursor.min(rows.len() - 1))) };
-            (Vec::new(), VShape::list(l("row_h")), vec![VSection::plain(key, rows.len())], at)
+    let (holder, side) = match frame.side {
+        Some(w) => {
+            let row = ui.boxed(c, parent, UiStyle { gap: Some(l("side_gap")), grow: Some(1.0), align: Some(AlignItems::Stretch), ..UiStyle::row() });
+            c.entity(row).insert(Node { min_height: Val::Px(0.0), ..default() });
+            (row, Some(w))
         }
-        PickerLook::Cards => {
-            let (cols, _, card_h) = card_grid(t, frame.w);
-            let mut sections: Vec<(usize, Vec<usize>)> = Vec::new();
-            for (r, row) in rows.iter().enumerate() {
-                match row {
-                    PickerRow::Game(_) => sections.push((r, Vec::new())),
-                    PickerRow::Item(..) => {
-                        if let Some(s) = sections.last_mut() {
-                            s.1.push(r);
-                        }
-                    }
-                    PickerRow::Group(..) => {}
-                }
-            }
-            let vs = sections.iter().map(|(h, items)| VSection::new(format!("{key}/{h}"), items.len())).collect();
-            // The cursor: the card of the cursor's row, or its section's header.
-            let at = sections.iter().enumerate().find_map(|(s, (h, items))| {
-                if *h == state.cursor {
-                    Some(VCursor::Header(s))
-                } else {
-                    items.iter().position(|r| *r == state.cursor).map(|j| VCursor::Item(s, j))
-                }
-            });
-            (sections, VShape::grid(cols, l("head_h"), card_h, l("card_gap")), vs, at)
-        }
+        None => (parent, None),
     };
-    {
-        let st = lists.state(key);
-        st.set_shape(shape);
-        st.set_sections(vsections);
-        if st.cursor != at {
-            st.cursor = at;
-            st.reveal = true;
-        }
-        st.bump();
-    }
-    let list = ui.virtual_list(c, parent, key, list_style, l("view_h"), shape);
-    c.entity(list.scroll.frame).insert(Node { min_height: Val::Px(0.0), ..default() });
-    let view = PickerView { games: games.to_vec(), rows, state: state.clone(), card: card_grid(t, frame.w), frame, sections, chips };
+    let shape = lists.state(key).shape.unwrap_or(VShape::list(l("row_h")));
+    let list = ui.virtual_list(c, holder, key, list_style, l("view_h"), shape);
+    c.entity(list.scroll.frame).insert(Node { min_height: Val::Px(0.0), min_width: Val::Px(0.0), ..default() });
+    let side = side.map(|w| ui.boxed(c, holder, UiStyle { w: Some(w), shrink: Some(0.0), ..UiStyle::column() }));
     let key = key.to_string();
     c.queue(move |w: &mut World| {
         w.get_resource_or_init::<Pickers>().0.insert(key, view);
     });
-    list.scroll.frame
+    PickerParts { list: list.scroll.frame, side }
 }
 
 /// The dialog a host's picker sits in (design rules 13): the scrim over
@@ -772,7 +1061,8 @@ pub fn bind_slots(
                 let r = ui.boxed(&mut c, slot, UiStyle { gap: Some(theme.layout(L, "card_gap")), grow: Some(1.0), ..UiStyle::row() });
                 for j in first..(first + count).min(items.len()) {
                     let at = st.cursor == Some(VCursor::Item(section, j));
-                    card(&mut c, &ui, r, view, items[j], at, res.as_mut().map(|(a, b)| (&mut **a, &mut **b)));
+                    let hit = VHit { slot, col: Some(j - first) };
+                    card(&mut c, &ui, r, view, items[j], at, hit, res.as_mut().map(|(a, b)| (&mut **a, &mut **b)));
                 }
             }
             _ => {}
@@ -862,12 +1152,30 @@ fn list_row(c: &mut Commands, ui: &Ui, slot: Entity, view: &PickerView, i: usize
     if let Some(n) = count {
         ui.text(c, r, Role::Mono, l("count"), Tone::Fg2, &n);
     }
+    // A folded game's header in the Cards look: the screen's preview.
+    if let (PickerRow::Game(g), PickerLook::Cards) = (row, view.frame.look)
+        && picker.is_folded(games, row)
+    {
+        let list = view_key(view);
+        let p = ui.boxed(c, r, UiStyle { gap: Some(l("head_gap")), align: Some(AlignItems::Center), ..UiStyle::row() });
+        c.entity(p).insert(PickerSlot { list, id: games[*g].id.clone(), part: PickerPart::Head });
+    }
 }
 
-/// One card of the Cards look: the icon, the name, the first tags; in
-/// multi mode its box at the top right, in single mode the current one
-/// in an accent outline; the cursor's in the focus outline.
-fn card(c: &mut Commands, ui: &Ui, parent: Entity, view: &PickerView, i: usize, at: bool, res: Option<(&mut Assets<Image>, &mut IconImages)>) {
+/// A view's list key.
+fn view_key(view: &PickerView) -> String {
+    view.list_key.clone()
+}
+
+/// One card of the Cards look: its badge and mark (and in multi mode its
+/// box) at the top, the icon (or the screen's art, `PickerPart::Art`),
+/// the name, the first tags (or the screen's foot, `PickerFrame::foot`),
+/// a download's bar along the bottom edge; in single mode the cursor's in
+/// the accent outline (the Sandbox's rule: the keyboard cursor is the
+/// card's accent outline) and the current one in the plain one, in multi
+/// mode the cursor's in the plain one.
+#[allow(clippy::too_many_arguments)]
+fn card(c: &mut Commands, ui: &Ui, parent: Entity, view: &PickerView, i: usize, at: bool, hit: VHit, res: Option<(&mut Assets<Image>, &mut IconImages)>) {
     let t = ui.theme;
     let l = |k: &str| t.layout(L, k);
     let (games, picker, row) = (&view.games, &view.state, &view.rows[i]);
@@ -875,44 +1183,109 @@ fn card(c: &mut Commands, ui: &Ui, parent: Entity, view: &PickerView, i: usize, 
     let (_, w, h) = view.card;
     let multi = view.frame.mode == PickerMode::Multi;
     let current = !multi && picker.current.as_deref() == Some(it.id.as_str());
-    let base = l("card_bg");
+    let base = l(if at { "card_bg_at" } else { "card_bg" });
     let pad = l("card_pad");
     let mut style = UiStyle { w: Some(w), h: Some(h), shrink: Some(0.0), gap: Some(l("card_inner_gap")), pad: Some([pad, pad, pad, pad].into()), ..UiStyle::column() }
         .bg_a(Tone::Fg, base);
-    if current {
-        style = style.outline(Tone::Acc, l("card_outline"));
-    } else if at {
-        style = style.outline(Tone::Fg2, l("card_outline"));
-    }
+    style = match (multi, at, current) {
+        (false, true, _) => style.outline(Tone::Acc, l("card_cursor")),
+        (false, false, true) | (true, true, _) => style.outline(Tone::Fg2, l("card_outline")),
+        _ => style.outline(Tone::Fg5, l("card_line")),
+    };
     let k = c
         .spawn((
             style,
             Node { overflow: Overflow::clip(), ..default() },
             if multi { PickerAction::Toggle(i) } else { PickerAction::Pick(i) },
             PickerCard(i),
+            PickerId(it.id.clone()),
             Hover { base: ui.color(Tone::Fg, base), over: ui.color(Tone::Fg, base + l("hover")) },
             clickable(),
             ChildOf(parent),
         ))
         .id();
-    // The box at the top right (the game is the section's header).
-    if multi {
-        let top = ui.boxed(c, k, UiStyle { justify: Some(JustifyContent::FlexEnd), ..UiStyle::row() });
-        tri_box(c, ui, top, picker.state(games, row));
+    if !multi {
+        c.entity(k).insert(hit);
+    }
+    if !multi && at {
+        // The cursor: an accent line inside the outline.
+        let sf = ui.units.scale_factor;
+        let px = (l("card_cursor_px") * sf).round() / sf;
+        c.spawn((
+            Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, border: UiRect::all(Val::Px(px)), ..default() },
+            BorderColor::all(ui.color(Tone::Acc, 1.0)),
+            Pickable::IGNORE,
+            ChildOf(k),
+        ));
+    }
+    // The top: the badge (and a family's count) at the left, the mark and
+    // the box (multi; the game is the section's header) at the right.
+    let family = (it.family > 1).then(|| format!("{} variants", it.family));
+    if multi || it.badge.is_some() || it.mark.is_some() || family.is_some() {
+        let top = ui.boxed(c, k, UiStyle { justify: Some(JustifyContent::SpaceBetween), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::row() });
+        let words: Vec<&str> = it.badge.iter().map(String::as_str).chain(family.as_deref()).collect();
+        let b = ui.text(c, top, Role::Mono, l("badge"), Tone::Fg3, &words.join(" \u{00b7} "));
+        if family.is_some() {
+            c.entity(b).insert(PickerFamily(it.family));
+        }
+        let right = ui.boxed(c, top, UiStyle { gap: Some(l("card_inner_gap")), align: Some(AlignItems::Center), ..UiStyle::row() });
+        if let Some(m) = &it.mark {
+            let mw = l("mark_w");
+            let pm = ui.boxed(c, right, UiStyle { w: Some(mw), h: Some(mw), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), ..UiStyle::row() }.bg_a(Tone::Fg, l("mark_bg")).outline(Tone::Fg3, 1.0));
+            ui.text(c, pm, Role::Mono, l("mark_size"), Tone::Fg, m);
+        }
+        if multi {
+            tri_box(c, ui, right, picker.state(games, row));
+        }
     }
     let art = ui.boxed(c, k, UiStyle { grow: Some(1.0), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), ..UiStyle::row() });
-    if let (Some(icon), Some((images, icons))) = (&it.icon, res) {
-        ui.icon(c, art, images, icons, icon, h * l("card_icon"), if current { Tone::AccText } else { Tone::Fg2 });
+    let list = view_key(view);
+    match (&it.icon, res) {
+        (Some(icon), Some((images, icons))) => {
+            ui.icon(c, art, images, icons, icon, h * l("card_icon"), if current { Tone::AccText } else { Tone::Fg2 });
+        }
+        (Some(_), None) => {}
+        (None, _) => {
+            c.entity(art).insert(PickerSlot { list: list.clone(), id: it.id.clone(), part: PickerPart::Art });
+        }
     }
     let n = ui.text(c, k, Role::DisplayBold, l("card_name"), if current { Tone::AccText } else { Tone::Fg }, &it.name);
     c.entity(n).insert(Ellipsize::in_parent(it.name.clone()));
-    let tags: Vec<String> = it.tags.iter().take(2).map(|t| tag_words(t).replace('_', " ")).collect();
-    if !tags.is_empty() {
-        let words = tags.join(" \u{00b7} ");
-        let tt = ui.text(c, k, Role::Mono, l("card_tag"), Tone::Fg2, &words);
-        c.entity(tt).insert(Ellipsize::in_parent(words));
+    if view.frame.foot {
+        let f = ui.boxed(c, k, UiStyle { h: Some(l("foot_h")), gap: Some(l("card_inner_gap")), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::row() });
+        c.entity(f).insert(PickerSlot { list, id: it.id.clone(), part: PickerPart::Foot });
+    } else {
+        let tags: Vec<String> = it.tags.iter().take(2).map(|t| tag_words(t).replace('_', " ")).collect();
+        if !tags.is_empty() {
+            let words = tags.join(" \u{00b7} ");
+            let tt = ui.text(c, k, Role::Mono, l("card_tag"), Tone::Fg2, &words);
+            c.entity(tt).insert(Ellipsize::in_parent(words));
+        }
+    }
+    // A download's bar along the bottom edge (the cursor is an outline, so
+    // they never stack).
+    if let Some(p) = it.progress.map(|p| f32::from(p) / 1000.0)
+        && !at
+    {
+        let edge = c
+            .spawn((
+                Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, height: ui.units.val(l("edge_h")), ..default() },
+                BackgroundColor(ui.color(Tone::Fg5, 1.0)),
+                PickerEdge(p),
+                ChildOf(k),
+            ))
+            .id();
+        c.spawn((Node { width: Val::Percent(p.clamp(0.0, 1.0) * 100.0), height: Val::Percent(100.0), ..default() }, BackgroundColor(ui.color(Tone::Fg2, 1.0)), ChildOf(edge)));
     }
 }
+
+/// A family card's count (tests find it).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PickerFamily(pub usize);
+
+/// A card's download bar (its share; tests find it).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct PickerEdge(pub f32);
 
 /// A slanted tri-state box (`box_w` x `box_h` cq).
 pub fn tri_box(c: &mut Commands, ui: &Ui, parent: Entity, t: Tri) {

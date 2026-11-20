@@ -205,6 +205,7 @@
   --l-pass-mark-x:81.5cqw;
   --l-pass-travel:287cqw;
   --l-picker-acts-gap:.7cqw;
+  --l-picker-badge:.38cqw;
   --l-picker-bar-gap:.5cqw;
   --l-picker-bg-focus:.06cqw;
   --l-picker-bg-game:.03cqw;
@@ -215,9 +216,13 @@
   --l-picker-cancel-h:2.4cqw;
   --l-picker-card-aspect:.62cqw;
   --l-picker-card-bg:.04cqw;
+  --l-picker-card-bg-at:.1cqw;
+  --l-picker-card-cursor:1cqw;
+  --l-picker-card-cursor-px:2cqw;
   --l-picker-card-gap:.45cqw;
   --l-picker-card-icon:.32cqw;
   --l-picker-card-inner-gap:.2cqw;
+  --l-picker-card-line:1cqw;
   --l-picker-card-max-w:10.5cqw;
   --l-picker-card-min-w:7cqw;
   --l-picker-card-name:.72cqw;
@@ -235,8 +240,11 @@
   --l-picker-dialog-pad-t:1.6cqw;
   --l-picker-dialog-pad-x:1.8cqw;
   --l-picker-dialog-side:26cqw;
+  --l-picker-edge-h:.24cqw;
   --l-picker-focus-bar:.24cqw;
+  --l-picker-foot-h:.9cqw;
   --l-picker-ghost-h:2cqw;
+  --l-picker-head-gap:.7cqw;
   --l-picker-head-h:1.95cqw;
   --l-picker-hover:.05cqw;
   --l-picker-keys-gap:1.4cqw;
@@ -244,6 +252,9 @@
   --l-picker-keys-size:.54cqw;
   --l-picker-legend-after:.8cqw;
   --l-picker-legend-gap:.5cqw;
+  --l-picker-mark-bg:.1cqw;
+  --l-picker-mark-size:.42cqw;
+  --l-picker-mark-w:.95cqw;
   --l-picker-meta:.56cqw;
   --l-picker-name-game:.9cqw;
   --l-picker-name-group:.8cqw;
@@ -260,6 +271,7 @@
   --l-picker-shadow-a:.6cqw;
   --l-picker-shadow-blur:4cqw;
   --l-picker-shadow-y:2cqw;
+  --l-picker-side-gap:1.3cqw;
   --l-picker-slop:.45cqw;
   --l-picker-slop-hover:.14cqw;
   --l-picker-title:1.6cqw;

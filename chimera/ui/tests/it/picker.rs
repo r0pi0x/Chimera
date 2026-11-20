@@ -153,14 +153,18 @@ fn app() -> App {
 
 /// Builds a picker in a frame `w` cq wide and runs a few frames.
 fn build(look: PickerLook, mode: PickerMode, state: PickerState) -> App {
+    let frame = PickerFrame { w: 60.0, look, mode, search: true, facets: vec!["class".into()], placeholder: "Find".into(), ..default() };
+    build_with(games(), frame, state)
+}
+
+/// `build` with its data and frame.
+fn build_with(games: Vec<PickerGame>, frame: PickerFrame, state: PickerState) -> App {
     let mut app = app();
-    let games = games();
     app.world_mut()
         .run_system_once(move |theme: Res<Theme>, units: Res<UiUnits>, mut lists: ResMut<VirtualLists>, mut c: Commands| {
             let ui = Ui::new(&theme, None, *units);
             let root = c.spawn(Node { width: Val::Px(1920.0), height: Val::Px(1080.0), ..default() }).id();
-            let frame = PickerFrame { w: 60.0, look, mode, search: true, facets: vec!["class".into()], placeholder: "Find".into(), caret: None };
-            picker::spawn(&mut c, &ui, root, "test.picker", &games, &state, frame, &mut lists, UiStyle { grow: Some(1.0), ..UiStyle::column() });
+            picker::spawn(&mut c, &ui, root, "test.picker", &games, &state, frame.clone(), &mut lists, UiStyle { grow: Some(1.0), ..UiStyle::column() });
         })
         .unwrap();
     for _ in 0..4 {
@@ -199,4 +203,93 @@ fn single_cards_pick_and_have_no_boxes() {
     assert!(acts.contains(&PickerAction::Fold(0)), "a game's header folds");
     let view = &app.world().resource::<Pickers>().0["test.picker"];
     assert!(view.card.0 >= 2, "a 60 cq frame holds several columns: {:?}", view.card);
+}
+
+/// Typing in the search field: the kit's text field (a caret, a
+/// selection, paste), the rows narrowed, the cursor back on the first.
+#[test]
+fn typing_edits_the_search_at_the_caret() {
+    use chimera_ui::text_edit::{Edit, TextKey};
+    let games = games();
+    let mut st = PickerState { cursor: 4, ..default() };
+    let mut clip = chimera_ui::clipboard::Clipboard::memory(None);
+    st.focus_search();
+    assert!(st.search_focus && st.search_cursor().is_some());
+    for ch in ["s", "m", "a"] {
+        assert!(st.search_key(TextKey::Edit(Edit::Insert(ch.into())), &mut clip));
+    }
+    assert_eq!(st.search, "sma");
+    assert_eq!(st.cursor, 0, "a new search starts at the top");
+    assert!(st.rows(&games).iter().all(|r| PickerState::item(&games, r).is_none_or(|i| i.id.contains("sma"))));
+    st.search_key(TextKey::Edit(Edit::Home(false)), &mut clip);
+    st.search_key(TextKey::Edit(Edit::Insert("g:".into())), &mut clip);
+    assert_eq!(st.search, "g:sma", "typed at the caret");
+    st.search_key(TextKey::Edit(Edit::SelectAll), &mut clip);
+    st.search_key(TextKey::Copy, &mut clip);
+    st.search_key(TextKey::Edit(Edit::Backspace), &mut clip);
+    assert_eq!(st.search, "");
+    st.search_key(TextKey::Paste, &mut clip);
+    assert_eq!(st.search, "g:sma", "pasted back");
+    st.clear_search();
+    assert_eq!((st.search.as_str(), st.caret.at), ("", 0));
+}
+
+/// The grid keys on cards: ←→ in reading order across games, a game's
+/// header folds on ← (the picker's folds, which the list follows, so the
+/// folded header is a stop) and opens on →.
+#[test]
+fn the_grid_keys_walk_cards_and_fold_headers() {
+    let frame = PickerFrame { w: 60.0, look: PickerLook::Cards, mode: PickerMode::Single, ..default() };
+    let mut app = build_with(games(), frame.clone(), PickerState { cursor: 2, ..default() });
+    let w = app.world_mut();
+    let games = games();
+    let mut st = PickerState { cursor: 2, ..default() };
+    let theme = w.resource::<Theme>().clone();
+    let view = w.resource::<Pickers>().0["test.picker"].clone();
+    let mut lists = w.resource_mut::<VirtualLists>();
+    let list = lists.state("test.picker");
+    // Right walks the cards (rows 2..=5 are the first game's items, the
+    // group header has no card).
+    let rows = st.rows(&games);
+    assert!(picker::nav(&mut st, &view, list, chimera_ui::VNav::Right));
+    assert!(matches!(rows[st.cursor], PickerRow::Item(..)) && st.cursor == 3);
+    // Up to the header, then ← folds the game by the picker's state.
+    while !matches!(rows[st.cursor], PickerRow::Game(_)) {
+        picker::nav(&mut st, &view, list, chimera_ui::VNav::Up);
+    }
+    assert_eq!(st.cursor, 0);
+    assert!(picker::nav(&mut st, &view, list, chimera_ui::VNav::Left));
+    assert!(st.folded.contains("g"), "folded by the picker");
+    // Built again: the list folds the section too, its header a ←→ stop.
+    let view = picker::prepare(&theme, "test.picker", &games, &st, frame, &mut lists);
+    let list = lists.state("test.picker");
+    assert!(list.is_folded(0), "the list follows the picker's fold");
+    assert!(list.stops().contains(&chimera_ui::VCursor::Header(0)));
+    assert!(picker::nav(&mut st, &view, list, chimera_ui::VNav::Right));
+    assert!(!st.folded.contains("g"), "→ opens it");
+}
+
+/// A card's parts: the badge with a family's count, the mark, a download's
+/// bar, the slots the screen fills (art without a kit icon, the foot), a
+/// single pick's `VHit`, and the side pane.
+#[test]
+fn cards_carry_badges_families_bars_and_slots() {
+    use chimera_ui::picker::{PickerEdge, PickerFamily, PickerPart, PickerSlot};
+    let mut games = games();
+    let it = &mut games[1].groups[0].items[0];
+    (it.badge, it.mark, it.family, it.progress, it.icon) = (Some("CS:S".into()), Some("2".into()), 4, Some(500), None);
+    let frame = PickerFrame { w: 80.0, look: PickerLook::Cards, mode: PickerMode::Single, foot: true, side: Some(20.0), ..default() };
+    let mut app = build_with(games, frame, PickerState::default());
+    let w = app.world_mut();
+    let fams: Vec<PickerFamily> = w.query::<&PickerFamily>().iter(w).copied().collect();
+    assert_eq!(fams, vec![PickerFamily(4)]);
+    let edges: Vec<PickerEdge> = w.query::<&PickerEdge>().iter(w).copied().collect();
+    assert_eq!(edges, vec![PickerEdge(0.5)]);
+    let slots: Vec<PickerSlot> = w.query::<&PickerSlot>().iter(w).cloned().collect();
+    assert_eq!(slots.iter().filter(|s| s.part == PickerPart::Foot).count(), 7, "every card a foot");
+    assert_eq!(slots.iter().filter(|s| s.part == PickerPart::Art).map(|s| s.id.as_str()).collect::<Vec<_>>(), vec!["ak"]);
+    assert_eq!(w.query::<&chimera_ui::VHit>().iter(w).count(), 7, "single cards select through the list");
+    let view = &w.resource::<Pickers>().0["test.picker"];
+    let (cols, card_w, _) = view.card;
+    assert!(cols as f32 * card_w <= 80.0 - 20.0, "the side pane's width is the list's less");
 }

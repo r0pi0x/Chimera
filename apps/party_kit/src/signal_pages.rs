@@ -340,28 +340,30 @@ impl Plugin for SignalPagesPlugin {
 }
 
 /// The host's pickers' keys while one is open (`maps_picker`,
-/// `guns_picker` module docs): ↑↓ the row, Space on or off, ←→ fold or
-/// open, Enter Done, Esc Cancel (a right click is Esc).
+/// `guns_picker` module docs): ↑↓ the row (the Guns cards: the grid keys,
+/// `picker::nav`), Space on or off, ←→ fold or open, Enter Done, Esc
+/// Cancel (a right click is Esc); `/` (or a click) puts the keyboard in
+/// the search field, where typing edits the search (the kit's text
+/// field: a caret, a selection, copy and paste), ↑↓ still move, and Enter
+/// or Esc lets go of it.
 #[allow(clippy::too_many_arguments)]
 fn picker_keys(
     keys: Res<ButtonInput<KeyCode>>,
-    (mut picker, mut guns, listing): (
-        ResMut<crate::maps_picker::MapsPicker>,
-        ResMut<crate::guns_picker::GunsPicker>,
-        Res<crate::guns_picker::GunsListing>,
-    ),
-    source: Res<crate::maps_picker::MapsSource>,
+    mut typed: MessageReader<bevy::input::keyboard::KeyboardInput>,
+    (mut picker, mut guns): (ResMut<crate::maps_picker::MapsPicker>, ResMut<crate::guns_picker::GunsPicker>),
     pages: Res<SignalPages>,
-    (minigames, game_id, slices): (
-        Option<Res<chimera_sim::minigame::Minigames>>,
-        Res<MenuMinigame>,
-        Option<Res<chimera_sim::minigame::arena::ArenaSlices>>,
+    (built, mut lists, mut own, shared): (
+        Option<Res<chimera_ui::picker::Pickers>>,
+        ResMut<chimera_ui::VirtualLists>,
+        Local<chimera_ui::clipboard::Clipboard>,
+        Option<ResMut<chimera_ui::clipboard::Clipboard>>,
     ),
     mut out: MessageWriter<crate::maps_picker::PickerAction>,
     mut cues: MessageWriter<UiCue>,
 ) {
     picker.took_keys = picker.open.is_some();
     guns.took_keys = guns.open.is_some();
+    let typed: Vec<bevy::input::keyboard::KeyboardInput> = typed.read().cloned().collect();
     if picker.open.is_none() && guns.open.is_none() {
         return;
     }
@@ -375,42 +377,72 @@ fn picker_keys(
         guns.took_keys = false;
         return;
     }
+    let clipboard = match shared {
+        Some(c) => c.into_inner(),
+        None => &mut *own,
+    };
+    let mut cx = HostKeys { keys: &keys, typed: &typed, clipboard, built: built.as_deref(), lists: &mut lists, out: &mut out, cues: &mut cues };
+    // (The built view has the listing: `picker::nav` walks its rows.)
     if guns.open.is_some() {
-        host_picker_keys(&keys, &mut guns.0, &listing.0, &mut out, &mut cues);
+        host_picker_keys(&mut cx, crate::guns_picker::LIST, &mut guns.0);
     } else {
-        let pool = picker_pool(minigames.as_deref(), &game_id.0, slices.as_deref());
-        let games = source.0.listing(&pool);
-        host_picker_keys(&keys, &mut picker.0, &games, &mut out, &mut cues);
+        host_picker_keys(&mut cx, crate::maps_picker::LIST, &mut picker.0);
     }
 }
 
+/// What `host_picker_keys` reads and writes.
+struct HostKeys<'a, 'w, 'v> {
+    keys: &'a ButtonInput<KeyCode>,
+    typed: &'a [bevy::input::keyboard::KeyboardInput],
+    clipboard: &'a mut chimera_ui::clipboard::Clipboard,
+    built: Option<&'a chimera_ui::picker::Pickers>,
+    lists: &'a mut chimera_ui::VirtualLists,
+    out: &'a mut MessageWriter<'w, crate::maps_picker::PickerAction>,
+    cues: &'a mut MessageWriter<'v, UiCue>,
+}
+
 /// One host picker's keys (`picker_keys`).
-fn host_picker_keys(
-    keys: &ButtonInput<KeyCode>,
-    picker: &mut chimera_ui::picker::PickerState,
-    games: &[chimera_ui::picker::PickerGame],
-    out: &mut MessageWriter<crate::maps_picker::PickerAction>,
-    cues: &mut MessageWriter<UiCue>,
-) {
+fn host_picker_keys(cx: &mut HostKeys, list: &str, picker: &mut chimera_ui::picker::PickerState) {
     use crate::maps_picker::PickerAction as P;
-    let rows = picker.rows(games);
-    let k = |c: KeyCode| keys.just_pressed(c);
-    if k(KeyCode::Escape) {
-        out.write(P::Cancel);
-    } else if k(KeyCode::Enter) || k(KeyCode::NumpadEnter) {
-        out.write(P::Done);
-    } else if k(KeyCode::Space) {
-        out.write(P::Toggle(picker.cursor));
-    } else if (k(KeyCode::ArrowUp) || k(KeyCode::ArrowDown)) && !rows.is_empty() {
-        let next = if k(KeyCode::ArrowUp) { picker.cursor.saturating_sub(1) } else { (picker.cursor + 1).min(rows.len() - 1) };
-        if next != picker.cursor {
-            picker.cursor = next;
-            cues.write(UiCue::new("ui_hover"));
+    use bevy::input::{ButtonState, keyboard::Key};
+    use chimera_ui::VNav;
+    let k = |c: KeyCode| cx.keys.just_pressed(c);
+    let ctrl = cx.keys.pressed(KeyCode::ControlLeft) || cx.keys.pressed(KeyCode::ControlRight);
+    let shift = cx.keys.pressed(KeyCode::ShiftLeft) || cx.keys.pressed(KeyCode::ShiftRight);
+    let focus = picker.search_focus;
+    if focus && (k(KeyCode::Escape) || k(KeyCode::Enter) || k(KeyCode::NumpadEnter)) {
+        picker.search_focus = false;
+        return;
+    }
+    if focus {
+        for e in cx.typed.iter().filter(|e| e.state == ButtonState::Pressed) {
+            if let Some(key) = chimera_ui::text_edit::text_key(&e.logical_key, e.key_code, ctrl, shift) {
+                picker.search_key(key, cx.clipboard);
+            }
         }
-    } else if k(KeyCode::ArrowLeft) || k(KeyCode::ArrowRight) {
-        let did = if k(KeyCode::ArrowLeft) { picker.left(games) } else { picker.right(games) };
-        if did {
-            cues.write(UiCue::new("ui_select"));
+    } else if cx.typed.iter().any(|e| e.state == ButtonState::Pressed && matches!(&e.logical_key, Key::Character(c) if c.as_str() == "/")) {
+        picker.focus_search();
+        return;
+    }
+    if !focus && k(KeyCode::Escape) {
+        cx.out.write(P::Cancel);
+    } else if !focus && (k(KeyCode::Enter) || k(KeyCode::NumpadEnter)) {
+        cx.out.write(P::Done);
+    } else if !focus && k(KeyCode::Space) {
+        cx.out.write(P::Toggle(picker.cursor));
+    } else {
+        let navs = [(KeyCode::ArrowUp, VNav::Up), (KeyCode::ArrowDown, VNav::Down), (KeyCode::ArrowLeft, VNav::Left), (KeyCode::ArrowRight, VNav::Right)];
+        for (key, nav) in navs {
+            // Left and Right move the focused field's caret.
+            if !k(key) || (focus && matches!(nav, VNav::Left | VNav::Right)) {
+                continue;
+            }
+            let Some(view) = cx.built.and_then(|b| b.0.get(list)) else { continue };
+            let before = (picker.cursor, picker.folded.len());
+            chimera_ui::picker::nav(picker, view, cx.lists.state(list), nav);
+            if (picker.cursor, picker.folded.len()) != before {
+                cx.cues.write(UiCue::new(if before.1 != picker.folded.len() { "ui_select" } else { "ui_hover" }));
+            }
         }
     }
 }
@@ -458,11 +490,12 @@ fn picker_clicks(
     }
     if guns.open.is_some() {
         let chips = built.as_ref().and_then(|b| b.0.get(crate::guns_picker::LIST)).map(|v| v.chips.clone()).unwrap_or_default();
-        host_picker_act(&mut guns.0, &listing.0, &chips, todo, &mut cues);
+        host_picker_act(&mut guns.0, &listing.0, chimera_ui::picker::PickerLook::Cards, &chips, todo, &mut cues);
     } else {
         let pool = picker_pool(minigames.as_deref(), &game_id.0, slices.as_deref());
         let games = source.0.listing(&pool);
-        host_picker_act(&mut picker.0, &games, &[], todo, &mut cues);
+        let chips = built.as_ref().and_then(|b| b.0.get(crate::maps_picker::LIST)).map(|v| v.chips.clone()).unwrap_or_default();
+        host_picker_act(&mut picker.0, &games, chimera_ui::picker::PickerLook::List, &chips, todo, &mut cues);
     }
 }
 
@@ -470,12 +503,13 @@ fn picker_clicks(
 fn host_picker_act(
     picker: &mut chimera_ui::picker::PickerState,
     games: &[chimera_ui::picker::PickerGame],
+    look: chimera_ui::picker::PickerLook,
     chips: &[String],
     todo: Vec<crate::maps_picker::PickerAction>,
     cues: &mut MessageWriter<UiCue>,
 ) {
     use crate::maps_picker::PickerAction as P;
-    let rows = picker.rows(games);
+    let rows = picker.rows_in(games, look);
     for a in todo {
         match a {
             P::Toggle(i) => {
@@ -512,15 +546,24 @@ fn host_picker_act(
                     picker.off = off;
                 }
                 picker.chips.clear();
+                picker.clear_search();
+                picker.search_focus = false;
                 cues.write(UiCue::new("ui_select"));
             }
             P::Cancel => {
                 picker.open = None;
                 picker.chips.clear();
+                picker.clear_search();
+                picker.search_focus = false;
                 cues.write(UiCue::new("ui_back"));
             }
-            // Single picks and the search: not in these dialogs.
-            P::Pick(_) | P::FocusSearch => {}
+            P::FocusSearch => picker.focus_search(),
+            P::ClearSearch => {
+                picker.clear_search();
+                picker.search_focus = true;
+            }
+            // Single picks: not in these dialogs.
+            P::Pick(_) => {}
         }
     }
 }

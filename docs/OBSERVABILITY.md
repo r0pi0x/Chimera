@@ -2791,7 +2791,8 @@ arguments).
 field, text area, toggle, slider, stepper, buttons and dropdown in rest, hover, focus, typing (caret mid-text), selection,
 masked, error and disabled; `ui_scene controls` the older page of rows and buttons; `ui_scene picker` (`ui_gallery picker`)
 the shared picker (`chimera_ui::picker`): multi-select rows and cards at a dialog's width, single pick in a wider frame
-with the search and the chips. Check a change to
+with the search typed into, the chips, and the Sandbox's card parts (a badge, a family's count, a pinned mark, a
+download's bar). Check a change to
 `chimera_ui::controls` against it (offscreen: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
 <out>.png +ui_scene fields`). In the apps, Options' "Developer mode" (Party tab, cvar `developer_mode`, off
 by default) adds a Developer entry to the Escape menu that opens it.

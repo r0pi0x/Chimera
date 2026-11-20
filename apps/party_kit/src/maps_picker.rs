@@ -37,10 +37,13 @@
 //!   (with a little slop around it) toggles it; on a game's or group's
 //!   header the rest of the row (chevron, name, count) folds it, on a map
 //!   the whole row toggles. Hover lifts just the area a click would act on.
+//! - **Search and chips** over the tree: `/` or a click puts the keyboard
+//!   in the search field (typing matches a map's name, id or game; Enter
+//!   or Esc lets go), a game's chip (more than one game) keeps its maps.
 //!
 //! Known shortcuts: no Custom maps yet (the local listing has none); all
-//! rows are one height; no search or chips in this dialog yet (the
-//! picker has them; the maps' tags, size and the like, are to come).
+//! rows are one height; the maps have no tags yet (size and the like are
+//! to come), so the chips are the games'.
 
 use bevy::prelude::*;
 use chimera_ui::{
@@ -167,8 +170,8 @@ pub const LIST: &str = "maps_picker";
 /// Spawns the dialog over `root` (a full-screen node): the kit's picker
 /// dialog (`picker::dialog`) titled Maps, its keys.
 pub fn spawn(c: &mut Commands, ui: &Ui, root: Entity, picker: &MapsPicker, games: &[CatalogueGame], lists: &mut VirtualLists) -> Entity {
-    let frame = PickerFrame { look: PickerLook::List, mode: PickerMode::Multi, ..default() };
-    let keys = [("Space", "On / off"), ("\u{2190}\u{2192}", "Fold / open"), ("\u{2191}\u{2193}", "Row")];
+    let frame = PickerFrame { look: PickerLook::List, mode: PickerMode::Multi, search: true, facets: vec!["game".into()], placeholder: "Find a map or a game".into(), ..default() };
+    let keys = [("Space", "On / off"), ("\u{2190}\u{2192}", "Fold / open"), ("\u{2191}\u{2193}", "Row"), ("/", "Search")];
     picker::dialog(c, ui, root, "Maps", LIST, games, &picker.0, frame, &keys, lists, MapsDialog)
 }
 
