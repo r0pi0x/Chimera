@@ -413,3 +413,15 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
    fractions of the distance from the eye; specs/cs_source/
    impact_effects.md 14 said "of the screen". The shader reading here is
    used for every Source game's sprite cards.
+6. Where the Minigun's casings (`eject_minigunbrass`) land in third
+   person. **Measured (2026-11-20, tools/tf2ref, a puppet Heavy firing
+   level on 2fort's bridge, watched from 260 units straight above):**
+   after 1.5 s of fire the casings lie in a band about 40 to 75 units out
+   to the gun's left (seen from above, the Heavy facing down the screen),
+   most near 58, few under the gun; seen from the side they leave upward
+   past the ammo box before falling. Read with this file's numbers (local
+   x 100-200 units/s, drag 0.05 a frame, gravity −252, no bounce or
+   slide), a casing leaving level from about 40 units up lands about 40
+   units out; the farther band needs the eject attachment's x axis
+   tilted upward (a longer flight), which depends on the spun Heavy's
+   pose (player_animation.md). Unconfirmed.

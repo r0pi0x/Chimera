@@ -1,0 +1,36 @@
+# Ours for brass_top.tf2: a Minigun target 11 m ahead firing ahead, the camera
+# 260 units above it (noclip), pictures 1, 1.5 and 2 s into the fire.
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+r_drawviewmodel 0
+rung tf2:tf_weapon_wrench
+wait 2
+wait_for idle 3000
+target remove all
+wait 30
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:tf_weapon_minigun 11 still protect
+wait 240
+noclip
+wait 5
+setpos 0 133 192
+setang 89 90 0
+wait 30
+shot mg_idle
+target set all ahead
+gwait 1.0
+shot mg_100
+gwait 0.5
+shot mg_150
+gwait 0.5
+shot mg_200
+target set all noahead
+gwait 1.0
+shot mg_after

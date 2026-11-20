@@ -1,0 +1,131 @@
+# Ours for air.tf2: a protected Heavy target 7.6 m (300 units) ahead, our
+# rocket stepped at host_timescale 0.02, a picture each 1/60 s of game time.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/air.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+rung tf2:tf_weapon_rocketlauncher
+wait 2
+wait_for idle 3000
+wait 60
+target remove all
+setpos 0 -300 0
+setang 0 90 0
+wait 30
+target add tf2:heavy 7.6 still protect
+wait 240
+setpos 0 -300 0
+setang 0 90 0
+wait 60
+shot air_idle
+host_timescale 0.02
+wait 3
++attack
+wait_for shot 3000
+-attack
+gwait 0.0167
+shot air_f01
+gwait 0.0167
+shot air_f02
+gwait 0.0167
+shot air_f03
+gwait 0.0167
+shot air_f04
+gwait 0.0167
+shot air_f05
+gwait 0.0167
+shot air_f06
+gwait 0.0167
+shot air_f07
+gwait 0.0167
+shot air_f08
+gwait 0.0167
+shot air_f09
+gwait 0.0167
+shot air_f10
+gwait 0.0167
+shot air_f11
+gwait 0.0167
+shot air_f12
+gwait 0.0167
+shot air_f13
+gwait 0.0167
+shot air_f14
+gwait 0.0167
+shot air_f15
+gwait 0.0167
+shot air_f16
+gwait 0.0167
+shot air_f17
+gwait 0.0167
+shot air_f18
+gwait 0.0167
+shot air_f19
+gwait 0.0167
+shot air_f20
+gwait 0.0167
+shot air_f21
+gwait 0.0167
+shot air_f22
+gwait 0.0167
+shot air_f23
+gwait 0.0167
+shot air_f24
+gwait 0.0167
+shot air_f25
+gwait 0.0167
+shot air_f26
+gwait 0.0167
+shot air_f27
+gwait 0.0167
+shot air_f28
+gwait 0.0167
+shot air_f29
+gwait 0.0167
+shot air_f30
+gwait 0.0167
+shot air_f31
+gwait 0.0167
+shot air_f32
+gwait 0.0167
+shot air_f33
+gwait 0.0167
+shot air_f34
+gwait 0.0167
+shot air_f35
+gwait 0.0167
+shot air_f36
+gwait 0.0167
+shot air_f37
+gwait 0.0167
+shot air_f38
+gwait 0.0167
+shot air_f39
+gwait 0.0167
+shot air_f40
+gwait 0.0167
+shot air_f41
+gwait 0.0167
+shot air_f42
+gwait 0.0167
+shot air_f43
+gwait 0.0167
+shot air_f44
+gwait 0.0167
+shot air_f45
+gwait 0.0167
+shot air_f46
+gwait 0.0167
+shot air_f47
+gwait 0.0167
+shot air_f48
+gwait 0.0167
+shot air_f49
+gwait 0.0167
+shot air_f50
+host_timescale 1

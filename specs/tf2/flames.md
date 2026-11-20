@@ -272,6 +272,15 @@ and drawn.
    trails its point by tens of units for most of its life. The
    fire's lateral extent at the stream's end (front view) is about 1.5x
    what 23-unit sprites on those points give: open.
+   **Measured (2026-11-20, tools/tf2ref, the same bot firing down the
+   bridge at FOV 75, 0.9-1.0 s into the stream):** most of that extra
+   width and whiteness is the game's bloom, not the sprites. With
+   `mat_disable_bloom 1` the fireball's near-white area (pixels averaging
+   over 220 of 255 with red over 200, 1024x768) fell from about 8,300 to
+   9,300 to about 1,700 to 2,900 pixels, and its outline narrowed from
+   about 150 to 90-145 pixels across; with bloom on its core reads white,
+   off it reads pink-white with the sheet's texture visible. TF2 runs
+   2fort with HDR and bloom by default.
 2. The weapon also starts the same system name attached to its effect
    model's `muzzle` (the view model in first person) when a burst starts,
    with no point CPs. What that second instance draws (its sprites have
