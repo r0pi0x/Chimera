@@ -30,8 +30,11 @@
 //!   the lowest slot) that has; an empty Minigun is `Unselectable`.
 //! - **The holder** while not idle: at most `spun_speed` (110 units/s) by
 //!   the weapon's `max_speed`, no jump; no switch (`HolsterLocked`) until
-//!   the spool-down animation (`spool_down`, 1.333 s) after the wind-down
-//!   ends.
+//!   the spool-down animation (`spool_down`, 1.333 s at rate 1, fade-out
+//!   `spool_down_fade` 0.2 s) after the wind-down counts as finished
+//!   (minigun.md 3.3: its cycle past 0.85, seen by the next tick's check
+//!   since the switch check runs before the view model's advance: 77
+//!   ticks); the empty auto-switch waits for the same.
 //! - **The rev-up penalty** (weapons.md 7.2): tau the larger of the time
 //!   since the wind-up began less `wind_up` and the time since the firing
 //!   run's first shot was due; damage x `damage_floor` (0.5) until
@@ -102,8 +105,12 @@ pub struct MinigunParams {
     /// The spin-idle animation's length: a released spin (or dry gun)
     /// winds down this long after its last step.
     pub spin_idle: f32,
-    /// The spool-down animation a switch waits for.
+    /// The spool-down animation a switch waits for: its length (at
+    /// playback rate 1, which every new sequence starts at) and its
+    /// cross-fade-out time; it counts as finished `fade` before its end
+    /// (`chimera_world::map::anim::ticks_until_finished`).
     pub spool_down: f32,
+    pub spool_down_fade: f32,
     /// The rev-up penalty's end, its flat start, its floors.
     pub penalty_time: f32,
     pub penalty_flat: f32,
@@ -367,7 +374,6 @@ pub fn step(gun: &mut Tf2Minigun, input: Input, next_primary: &mut f64, now: f64
         if gun.state != State::Idle && now + SLACK >= gun.idle_at {
             gun.state = State::Idle;
             gun.idle_at = now + 2.0;
-            gun.spool_until = now + gun.params.spool_down as f64;
             gun.wound = None;
             gun.run = None;
             out.wound_down = true;
@@ -514,6 +520,12 @@ pub fn spin(
                 events.write(WeaponEvent { owner, weapon: we, kind: WeaponEventKind::Action(SPIN_UP), replay: !first.0 });
             }
             if stepped.wound_down {
+                // The switch waits until the spool-down counts as finished
+                // (minigun.md 3.3): its check runs before the tick's
+                // view-model advance, 77 ticks for the stock's.
+                let p = &gun.params;
+                let ticks = chimera_world::map::anim::ticks_until_finished(p.spool_down, p.spool_down_fade, 1.0, clock.dt());
+                gun.spool_until = now + ticks as f64 * clock.dt() as f64 - SLACK;
                 events.write(WeaponEvent { owner, weapon: we, kind: WeaponEventKind::Action(SPIN_DOWN), replay: !first.0 });
             }
             // The empty auto-switch (minigun.md 3.3): idle, empty, its

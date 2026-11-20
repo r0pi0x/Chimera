@@ -19,7 +19,8 @@
 //!   part uses for its own requests).
 //! - **The rules' sounds** as `ServerSound` (`map::GameSound`: CS:S's
 //!   beeps, plant, defuse, blast, hostages), a player's own predicted ones
-//!   (`map::PredictedSound`) to everyone but that player's client; a
+//!   (`map::PredictedSound`) and those only others hear (`map::OthersSound`:
+//!   a world reload sound) to everyone but that player's client; a
 //!   sound stopped (`map::StopSound`: a gun's loop out of its holder's
 //!   hand) as `ServerStopSound`, to everyone but the holder's client.
 //! - **Time**: the server's times go as server ticks (`tick_of`), which a
@@ -41,7 +42,7 @@ use super::{
 };
 use crate::{
     core::{LocalPlayer, NetRole, Npc, Score, ScoreMark, SimClock},
-    map::{GameSound, PlaySound, PredictedSound, StopSound},
+    map::{GameSound, OthersSound, PlaySound, PredictedSound, StopSound},
     weapon::{
         Inventory,
         economy::{BuyRequested, DefuseKit},
@@ -59,6 +60,7 @@ pub(super) fn plugin(app: &mut App) {
                 .after(ServerSystems::Receive)
                 .run_if(in_state(ServerState::Running)),
         )
+        .add_message::<OthersSound>()
         .add_systems(PostUpdate, (send_sounds, send_stops).before(ServerSystems::Send).run_if(server()))
         .add_systems(
             PreUpdate,
@@ -221,13 +223,16 @@ pub fn notify(world: &mut World, client: Entity, text: String) {
 fn send_sounds(
     mut sounds: MessageReader<GameSound>,
     mut predicted: MessageReader<PredictedSound>,
+    mut others: MessageReader<OthersSound>,
     replicated: Query<(), With<Replicated>>,
     players: Query<(Entity, &Player)>,
     mut out: MessageWriter<ToClients<ServerSound>>,
 ) {
     let all = sounds.read().map(|s| (&s.0, None));
     let own = predicted.read().map(|s| (&s.sound, Some(s.by)));
-    for (s, by) in all.chain(own) {
+    // Not to its maker's client either way (`OthersSound`).
+    let not_theirs = others.read().map(|s| (&s.sound, Some(s.by)));
+    for (s, by) in all.chain(own).chain(not_theirs) {
         let client = by.and_then(|by| players.iter().find(|(_, p)| p.character == by).map(|(c, _)| c));
         out.write(ToClients {
             targets: client.map_or(SendTargets::CLIENTS_ONLY, |c| SendTargets::AllExcept(ClientId::Client(c))),

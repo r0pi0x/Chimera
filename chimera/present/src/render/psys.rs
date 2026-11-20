@@ -49,7 +49,13 @@
 //! it moves v h); a sprite trail at least its minimum length and no wider
 //! than long; a particle whose render alpha byte is 0 not drawn;
 //! "Oscillate Scalar / Vector" adding rate × h × the parabolic wave to
-//! the field. An info_particle_system's new effect is skipped ahead
+//! the field; an emitter's own fade (10.11, `OpFade`) on its system's
+//! clock at each sub-step's end: not run at strength 0, a continuous
+//! rate times the strength (TF2's Minigun flash: the starflash and flare
+//! stop at 0.5 s, the smoke ramps in over 2-4 s; its "fade oscillate"
+//! not applied, `OpFade::strength`), and a system's cap
+//! (`max_particles`, each child its own) taking new particles only as
+//! old ones die. An info_particle_system's new effect is skipped ahead
 //! (`Instance::skip_to`, 10.10, specs/source/particles_and_smoke.md 2.5):
 //! no initial particles, a continuous emitter that ended before never
 //! emits (TF2's `Explosion_Flashup` shows nothing that way, while a blast
@@ -62,8 +68,10 @@
 //! integrated as a velocity (the library's previous-position form gives
 //! the same unless a frame is cut into sub-steps), velocity noise is
 //! uniform per particle, random force a uniform draw per step, twist a
-//! tangential acceleration, an operator's own fade (10.11) isn't read
-//! (always 1, as in every system read), an info_particle_system's
+//! tangential acceleration, an operator's own fade (10.11) is run on
+//! emitters only (initializers', operators' and renderers' are read as
+//! always 1, as in every system read: the loader warns of one that
+//! isn't), an info_particle_system's
 //! lateness is one server tick (the server's start time isn't sent, so a
 //! client joining long after a start doesn't cancel its bursts), the client's particle multiplier is 1 and an
 //! emitter's stop and restart (particles.md 9.2) aren't run (a stopped
@@ -600,9 +608,14 @@ impl Instance {
     pub fn finished(&self, defs: &[SystemDef]) -> bool {
         let d = &defs[self.def];
         let emits = self.emitting
-            && d.emitters.iter().any(|e| match *e {
-                Emitter::Continuously { start, duration, .. } => duration <= 0.0 || self.age < start + duration,
-                Emitter::Instantaneously { start, .. } => self.age <= start,
+            && d.emitters.iter().enumerate().any(|(i, e)| {
+                // An emitter whose own fade has ended never runs again.
+                let faded = d.emitter_fades.get(i).and_then(|f| f.ends()).is_some_and(|end| self.age > end);
+                !faded
+                    && match *e {
+                        Emitter::Continuously { start, duration, .. } => duration <= 0.0 || self.age < start + duration,
+                        Emitter::Instantaneously { start, .. } => self.age <= start,
+                    }
             });
         let children_left = self.children.iter().any(|(delay, c, _)| match c {
             Some(c) => !c.finished(defs),
@@ -769,8 +782,15 @@ impl Instance {
         } else if self.emitting {
             let t = self.age;
             for (i, e) in d.emitters.iter().enumerate() {
+                // Its own fade at the sub-step's end (particles.md 10.11):
+                // not run at strength 0, a continuous rate scaled by it.
+                let strength = d.emitter_fades.get(i).map_or(1.0, |f| f.strength(t));
+                if strength <= 0.0 {
+                    continue;
+                }
                 match *e {
                     Emitter::Continuously { start, rate, duration } => {
+                        let rate = rate * strength;
                         // The window: an endless one is the whole step
                         // once it has started (not cut at its start: the
                         // spec's quirk), a timed one the step's part of
@@ -783,7 +803,11 @@ impl Instance {
                             Some((before.max(start), t.min(start + duration)))
                         };
                         let Some((a, b)) = window else { continue };
-                        self.carry[i] += rate.max(0.0) * (b - a);
+                        // The whole step is its length exactly (the clock's
+                        // sum would lose a 120/s emitter's second particle
+                        // to rounding now and then).
+                        let span = if a == before && b == t { dt } else { b - a };
+                        self.carry[i] += rate.max(0.0) * span;
                         let n = self.carry[i].floor();
                         self.carry[i] -= n;
                         // The k-th of the step's n at a + k (b - a) / n:
@@ -1065,7 +1089,9 @@ impl Instance {
             }
         }
         if decays {
-            self.particles.retain(|p| p.age < p.life);
+            // Dead at its life (the summed steps' rounding aside: a 0.1 s
+            // particle lives exactly 6 steps at 60, particles.md 8.3.1).
+            self.particles.retain(|p| p.age < p.life - 1e-6);
         }
         if killed {
             self.particles.retain(|p| p.life >= 0.0);
@@ -2170,6 +2196,101 @@ mod tests {
         let c = i.child_instances().next().expect("the child, a frame later");
         let xs: Vec<f32> = c.placed().iter().map(|p| p.0.x).collect();
         assert_eq!(xs, vec![60.0, 60.0], "no spread in its first step");
+    }
+
+    /// particles.md 10.11: an operator's strength by its system's clock.
+    #[test]
+    fn an_operators_own_fade_by_the_systems_clock_10_11() {
+        let f = |i0, i1, o0, o1, p| OpFade { start_in: i0, end_in: i1, start_out: o0, end_out: o1, oscillate: p };
+        // All 0: always 1.
+        assert_eq!(f(0.0, 0.0, 0.0, 0.0, 0.0).strength(7.0), 1.0);
+        // A hard stop at 0.5 (o0 = o1): 1 up to it, 0 after.
+        let stop = f(0.0, 0.0, 0.5, 0.5, 0.0);
+        assert_eq!((stop.strength(0.5), stop.strength(0.5001)), (1.0, 0.0));
+        assert_eq!(stop.ends(), Some(0.5));
+        // A fade-in over 2-4 s.
+        let ramp = f(2.0, 4.0, 0.0, 0.0, 0.0);
+        assert_eq!((ramp.strength(1.9), ramp.strength(3.0), ramp.strength(5.0)), (0.0, 0.5, 1.0));
+        // In and out, the out's ends raised past the in's: 1 → 0 over 3-5.
+        let both = f(0.0, 1.0, 3.0, 5.0, 0.0);
+        assert!((both.strength(0.5) - 0.5).abs() < 1e-6 && (both.strength(4.0) - 0.5).abs() < 1e-6);
+        assert_eq!(both.strength(5.5), 0.0);
+        // The oscillation isn't applied (`OpFade::strength`): the
+        // Minigun's starflash (0.12) stops at 0.5 s for good (8.3).
+        let osc = f(0.0, 0.0, 0.5, 0.5, 0.12);
+        assert_eq!((osc.strength(0.45), osc.strength(0.55), osc.strength(0.62)), (1.0, 0.0, 0.0));
+    }
+
+    /// particles.md 8.3, 8.3.1: `muzzle_minigun_constant`'s children by
+    /// their data (rates, lives, caps, emitter fades), stepped at 60 a
+    /// second: nothing in the creation frame, then per frame the core 2
+    /// new, the starflash 4, 4, 4, 5, 4, 4 (alive to 25), the flare 2 (10
+    /// alive from frame 5), the sparks 1, 3, 5 alive and held at their cap
+    /// of 5; the starflash and flare make nothing after 0.5 s and are
+    /// gone 0.1 s later; no smoke before 2 s, then some.
+    #[test]
+    fn the_minigun_flash_builds_up_by_its_caps_and_fades_8_3_1() {
+        let child = |name: &str, rate: f32, life: (f32, f32), cap: usize, fade: OpFade| SystemDef {
+            name: name.into(),
+            max_particles: cap,
+            emitters: vec![Emitter::Continuously { start: 0.0, rate, duration: 0.0 }],
+            emitter_fades: vec![fade],
+            initializers: vec![Init::Lifetime(Pick::new(life.0, life.1, 1.0))],
+            operators: vec![Op::Decay],
+            ..system()
+        };
+        let plain = OpFade::default();
+        let stop = OpFade { start_out: 0.5, end_out: 0.5, ..plain };
+        let parent = SystemDef {
+            name: "muzzle_minigun_constant".into(),
+            max_particles: 0,
+            emitters: vec![],
+            children: (1..=5).map(|c| (c, 0.0)).collect(),
+            ..system()
+        };
+        let defs = vec![
+            parent,
+            child("core", 120.0, (0.1, 0.15), 24, plain),
+            child("sparks", 100.0, (0.3, 0.6), 5, plain),
+            child("starflash", 256.0, (0.1, 0.1), 32, stop),
+            child("smoke", 12.0, (2.0, 3.0), 25, OpFade { start_in: 2.0, end_in: 4.0, ..plain }),
+            child("flare", 128.0, (0.08, 0.08), 32, stop),
+        ];
+        let h = 1.0 / 60.0;
+        let cps = [ControlPoint::default()];
+        let mut rng = ParticleRng::new(3);
+        let mut i = Instance::new(&defs, 0);
+        i.step(&defs, &cps, h, &mut rng, &none);
+        assert_eq!(i.count(), 0, "frame 0 shows nothing");
+        // (new, alive) per child, per frame.
+        let mut frames: Vec<Vec<(usize, usize)>> = Vec::new();
+        for _ in 0..240 {
+            i.step(&defs, &cps, h, &mut rng, &none);
+            frames.push(
+                i.child_instances()
+                    .map(|c| {
+                        let d = c.own_details(&defs);
+                        (d.iter().filter(|p| p.1 < h * 0.999).count(), d.len())
+                    })
+                    .collect(),
+            );
+        }
+        let of = |k: usize| frames.iter().map(|f| f[k]).collect::<Vec<_>>();
+        let (core, sparks, star, smoke, flare) = (of(0), of(1), of(2), of(3), of(4));
+        assert_eq!(core[..6].iter().map(|c| c.0).collect::<Vec<_>>(), [2; 6]);
+        assert_eq!(core[..6].iter().map(|c| c.1).collect::<Vec<_>>(), [2, 4, 6, 8, 10, 12]);
+        assert_eq!(star[..6].to_vec(), [(4, 4), (4, 8), (4, 12), (5, 17), (4, 21), (4, 25)]);
+        assert!(star[6..9].iter().all(|s| (25..=26).contains(&s.1)), "{:?}", &star[6..9]);
+        assert_eq!(flare[..6].to_vec(), [(2, 2), (2, 4), (2, 6), (2, 8), (2, 10), (2, 10)]);
+        assert_eq!(sparks[..6].iter().map(|s| s.1).collect::<Vec<_>>(), [1, 3, 5, 5, 5, 5]);
+        assert!(sparks.iter().all(|s| s.1 <= 5), "the sparks' cap");
+        // Frame k ends at k/60 s: emitting to 0.5 s, none from frame 31.
+        assert!(star[28].0 > 0 && flare[28].0 > 0);
+        assert!(star[30..].iter().chain(&flare[30..]).all(|s| s.0 == 0), "nothing after 0.5 s");
+        assert!(star[36..].iter().chain(&flare[36..]).all(|s| s.1 == 0), "gone 0.1 s later");
+        assert!(smoke[..119].iter().all(|s| s.1 == 0), "no smoke before 2 s");
+        assert!(smoke[239].1 > 0, "smoke by 4 s");
+        assert!(!i.finished(&defs), "the core and sparks go on");
     }
 
     /// particles.md 9.2: 150/s makes 2, 3, 2, 3 a 1/60 s step; an endless

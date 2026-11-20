@@ -55,6 +55,10 @@ pub struct SystemDef {
     pub more_renderers: Vec<Render>,
     /// Child systems (index into the definitions) and their delay, s.
     pub children: Vec<(usize, f32)>,
+    /// Each emitter's own fade (`OpFade`, by `emitters` index; missing:
+    /// none).
+    #[serde(default)]
+    pub emitter_fades: Vec<OpFade>,
 }
 
 impl SystemDef {
@@ -95,7 +99,56 @@ impl Default for SystemDef {
             renderer: Render::None,
             more_renderers: Vec::new(),
             children: Vec::new(),
+            emitter_fades: Vec::new(),
         }
+    }
+}
+
+/// An operator's own fade over its system's clock (specs/tf2/
+/// particles.md 10.11: "operator start/end fadein/fadeout", "operator
+/// fade oscillate"; all 0: always full strength).
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct OpFade {
+    pub start_in: f32,
+    pub end_in: f32,
+    pub start_out: f32,
+    pub end_out: f32,
+    pub oscillate: f32,
+}
+
+impl OpFade {
+    /// The operator's strength at its system's clock `t` (the sub-step's
+    /// end): 0 before the fade-in's start or after the original fade-out
+    /// end (when set); else ramped in over the fade-in and out over the
+    /// fade-out, each end raised to at least the one before.
+    ///
+    /// `oscillate` is read but not applied: 10.11 takes `t` modulo it,
+    /// yet TF2's Minigun starflash and flare carry 0.12 there, which would
+    /// pulse them every 0.06 s for good, against §8.3's "only in the
+    /// first 0.5 s, never again" and §8.3.1's frames (a spec question,
+    /// docs/plans/active/tf2-parity.md); followed: §8.3.
+    pub fn strength(&self, t: f32) -> f32 {
+        let i0 = self.start_in;
+        if t < i0 || (self.end_out > 0.0 && t > self.end_out) {
+            return 0.0;
+        }
+        let i1 = self.end_in.max(i0);
+        let o0 = self.start_out.max(i1);
+        let o1 = self.end_out.max(o0);
+        let mut s = 1.0;
+        if i1 > i0 && t < i1 {
+            s = ((t - i0) / (i1 - i0)).min(1.0);
+        }
+        if o1 > o0 && t > o0 {
+            s = f32::min(s, (o1 - t) / (o1 - o0));
+        }
+        s
+    }
+
+    /// The time past which it stops the operator for good (its fade-out
+    /// end, when set).
+    pub fn ends(&self) -> Option<f32> {
+        (self.end_out > 0.0).then_some(self.end_out)
     }
 }
 

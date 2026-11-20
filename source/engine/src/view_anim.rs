@@ -3,7 +3,8 @@
 //! activities by name (`ACT_VM_*`, specs/cs_source/weapons.md 3.3-3.8,
 //! specs/hl2dm/weapons.md 2, 7), the effects of the models' animation
 //! events (`event_effect`: muzzle flashes and brass, specs/cs_source/
-//! view_models.md 6-8), and the reactions every Source game shares
+//! view_models.md 6-8; `sound_event`: the sound events, for the games
+//! that play them, TF2), and the reactions every Source game shares
 //! (`common_event`: a reload, a shell going in, a shell reload's finish,
 //! a grenade's pin and throw, the bomb's key presses). Each game's
 //! `weapon::view_anim::ViewAnimRules` choose the rest (CS:S's knife,
@@ -72,6 +73,25 @@ pub fn event_effect(e: &AnimEvent) -> Option<ViewModelEventKind> {
         });
     }
     None
+}
+
+/// The client's "play this sound entry" event (its option the entry's
+/// name; the newer form is named `AE_CL_PLAYSOUND`): specs/tf2/
+/// viewmodel_sounds.md 1.1, specs/cs_source/sounds.md.
+pub const EVENT_PLAY_SOUND: i32 = 5004;
+const EVENT_PLAY_SOUND_NAME: &str = "AE_CL_PLAYSOUND";
+
+/// A sound event's entry as a view-model sound (`ViewModelEventKind::Sound`),
+/// the name behind `prefix` (a game's own sound table: TF2's `tf2:`), for
+/// a game whose view models play their own sounds (TF2's reload, draw and
+/// bolt sounds). CS:S and HL2:DM don't read them yet: their data times
+/// those sounds (`[sounds] reload`), heard by everyone.
+pub fn sound_event(e: &AnimEvent, prefix: &str) -> Option<ViewModelEventKind> {
+    if e.event != EVENT_PLAY_SOUND && !e.name.eq_ignore_ascii_case(EVENT_PLAY_SOUND_NAME) {
+        return None;
+    }
+    let name = e.options.trim();
+    (!name.is_empty()).then(|| ViewModelEventKind::Sound { entry: format!("{prefix}{name}") })
 }
 
 fn acts(list: &[&str]) -> Pick {

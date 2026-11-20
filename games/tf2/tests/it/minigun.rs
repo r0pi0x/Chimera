@@ -215,7 +215,7 @@ fn pressed_again_while_winding_down_7() {
 
 /// 8, 9: 200 shots (ticks 57 to 1450), dry at 1457 with the empty loop,
 /// no sound started again to tick 2000; released then: the empty loop cut
-/// and the wind-down at once; the previous weapon drawn about 1.33 s on;
+/// and the wind-down at once; the previous weapon drawn 77 ticks on;
 /// the empty Minigun can't be drawn again.
 #[test]
 fn running_dry_and_the_switch_8_9() {
@@ -231,7 +231,7 @@ fn running_dry_and_the_switch_8_9() {
     assert_eq!(r.stops(EMPTY), [2000]);
     assert_eq!(r.starts(WIND_DOWN), [2000]);
     let switched = (2000..2200).find(|t| r.ticks[*t].active == Some(shotgun)).expect("switched to the Shotgun");
-    assert!((2085..=2093).contains(&switched), "switch at tick {switched}");
+    assert_eq!(switched, 2077, "the switch 77 ticks after the wind-down (minigun.md 3.3)");
     assert!(sim.app.world().get::<Unselectable>(w).is_some(), "an empty Minigun can't be drawn");
     sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(w);
     sim.ticks(5);
@@ -240,7 +240,7 @@ fn running_dry_and_the_switch_8_9() {
 
 /// 10: both held: dry at 1457; attack let go at 24 s, still dry with the
 /// empty loop; attack2 let go at 25.5 s, the wind-down that tick, the
-/// switch about 1.33 s later.
+/// switch 77 ticks later.
 #[test]
 fn dry_with_attack2_never_idles_10() {
     let (mut sim, p, w, shotgun) = setup_with_previous();
@@ -251,7 +251,7 @@ fn dry_with_attack2_never_idles_10() {
     assert_eq!(r.stops(EMPTY), [1700]);
     assert_eq!(r.starts(WIND_DOWN), [1700]);
     let switched = (1700..1900).find(|t| r.ticks[*t].active == Some(shotgun)).expect("switched");
-    assert!((1785..=1793).contains(&switched), "switch at tick {switched}");
+    assert_eq!(switched, 1777, "the switch 77 ticks after the wind-down");
 }
 
 /// 11: empty from the start: attack2 or attack held a second does

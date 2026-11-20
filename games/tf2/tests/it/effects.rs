@@ -100,6 +100,21 @@ fn the_minigun_runs_its_constant_systems_while_firing_and_no_shot_flash() {
     assert_eq!(tracers, bullets.div_ceil(4), "a tracer every 4th bullet of {bullets}");
 }
 
+/// particles.md 8.3: each burst of firing makes a new
+/// `muzzle_minigun_constant` (its clock from 0, its own 0.5 s of
+/// starflash and flare), the last one stopped as it left firing.
+#[test]
+fn each_minigun_burst_starts_a_new_constant_system() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), MINIGUN);
+    let (starts, stops, _) = collect(&mut sim, 500, |s, t| {
+        s.intent(p).fire = t < 150 || (250..400).contains(&t);
+    });
+    let constant = starts.iter().filter(|s| s.name == "muzzle_minigun_constant").count();
+    assert_eq!(constant, 2, "one per burst: {starts:?}");
+    assert_eq!(stops, vec![StopParticleSystems { tag: w }; 2], "each stopped as it left firing");
+}
+
 #[test]
 fn a_scattergun_blast_from_zero_draws_five_tracers() {
     let mut sim = sim();

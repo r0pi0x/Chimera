@@ -2,7 +2,8 @@
 # primary; winds up 0.75 s, its first shot 0.1 s later (tick 57), its
 # holder at 110 units/s and unable to jump while it turns; no gameplay
 # wind-down (idle 0.2 s after the last shot when firing, 0.3 s after
-# attack2 when spun), only the switch waits for the 1.333 s spool-down;
+# attack2 when spun), only the switch waits for the spool-down (1.333 s,
+# finished 0.2 s before its end: 77 ticks after the wind-down, minigun.md 3.3);
 # empty, it switches to the previous weapon; 4 bullets of 9 every 0.105 s (7 ticks), spread 0.08,
 # 200 rounds and no reload; the rev-up penalty (the 2017 rule): damage
 # 50 % until 0.2 s spun then linear to 100 % at 1 s, spread 1.5x to 1x.
@@ -37,7 +38,8 @@ impulse = 0.0
 
 # No sound per shot: `tf2:minigun` plays one sound by its state.
 [sounds]
-draw = [[0.0, "tf2:Weapon_Minigun.Draw"]]
+# The draw's sounds are the owner's view model's animation sound events
+# (specs/tf2/viewmodel_sounds.md, weapons_stock.md 8.1; view.rs).
 
 [models]
 world = "models/weapons/c_models/c_minigun/c_minigun.mdl"
@@ -59,6 +61,7 @@ fire_step = 0.1
 idle_after_fire = 0.2
 spin_idle = 0.3
 spool_down = 1.333
+spool_down_fade = 0.2
 penalty_time = 1.0
 penalty_flat = 0.2
 damage_floor = 0.5

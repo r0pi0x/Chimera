@@ -9,7 +9,8 @@ sound_hit_world = "tf2:Weapon_FireAxe.HitWorld"
 
 # `fa_draw`'s sound event (8.1).
 [sounds]
-draw = [[0.0333, "tf2:Weapon_FireAxe.Draw"]]
+# The draw's sounds are the owner's view model's animation sound events
+# (specs/tf2/viewmodel_sounds.md, weapons_stock.md 8.1; view.rs).
 
 [models]
 world = "models/weapons/c_models/c_fireaxe_pyro/c_fireaxe_pyro.mdl"

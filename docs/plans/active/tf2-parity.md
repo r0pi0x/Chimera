@@ -135,6 +135,57 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Log
 
+### The spool-down's finish, view-model sounds, the Minigun flash's fades (tf2-vm-sounds, 2026-11-20)
+
+- **Sequence finished** (`map::anim::finished_cycle`,
+  `ticks_until_finished`, `Animator::sequence_finished`; every game):
+  a non-looping sequence counts as finished past 1 − fade-out × cycle
+  rate × playback rate, the check before the tick's advance. The
+  Minigun's switch away (empty auto-switch and by hand) waits
+  `spool_down` 1.333 s with `spool_down_fade` 0.2 s: **77 ticks** after
+  the wind-down, as measured (`running_dry_and_the_switch_8_9`,
+  `dry_with_attack2_never_idles_10`, weapons test 36: locked at 76,
+  free at 77). A new sequence's playback rate is 1 (`Animator::play`,
+  `restart`, as before). The driver's idle still waits for the end.
+- **View-model sounds** (viewmodel_sounds.md): Source's event 5004 is a
+  `ViewModelEventKind::Sound` (`source_engine::view_anim::sound_event`,
+  TF2's `view::event_effect`), played for this machine's own player
+  only as the animation passes it (`view_anim::play_view_sounds`).
+  Everyone else hears the gun's `[sounds] world_reload` at the reload's
+  start, per shell for a one-at-a-time reload (`weapon::world_reload_sounds`,
+  `map::OthersSound`: played unless by the `LocalPlayer`; the server
+  sends it to every client but the shooter's). TF2's data lost its
+  reload and draw timelines (the arms' events carry them, the draws'
+  included; `heavy::guns` checks every stock reload's events against
+  §4 and that each draw has one; the Pistol's `ClipIn` and `Draw2`, the
+  Pyro's Shotgun draw and the Grenade Launcher's `DrumStart` joined
+  the gun sets). The Scout hears `ReloadScout` at tick 2 and `ClipIn` at
+  tick 40 (`viewmodel_sounds` tests); the Engineer's `pstl_reload` carries
+  `ClipIn` alone (`heavy::guns`). CS:S
+  and HL2:DM keep their timed reload sounds (not touched: their specs
+  name the same owner-only events; a later change). Left: our
+  whole-clip reload isn't cut by attack (weapons_more.md Open questions
+  6), so test case 3 is checked with a switch.
+- **The Minigun flash** (particles.md §8.3, §8.3.1, §10.11): an
+  emitter's own fade runs on its system's clock (`map::psys::OpFade`;
+  strength 0 skips, a continuous rate × strength, a hard stop past the
+  fade-out end), each child at its own cap. With the install's
+  `muzzle_flash.pcf` every per-frame count of §8.3.1 agrees
+  (`heavy::particles::the_minigun_flash_by_its_caps_and_fades_8_3_1`;
+  core 2 a frame, starflash 4, 4, 4, 5, 4, 4 to 25, flare 2 to 10, sparks
+  1, 3, 5 and held, nothing of the starflash or flare after 0.6 s; smoke
+  from 2 s). A new system per burst (`each_minigun_burst_starts_a_new_constant_system`,
+  as before). Two fixes on the way: a full step's emission counts the
+  step's length, not the clock's difference (a 120/s emitter lost a
+  particle to rounding), and a particle dies at its life within 1e-6
+  (a 0.1 s life is exactly 6 steps at 60).
+- **Spec question** (particles.md §10.11 against §8.3): the starflash's
+  and flare's "operator fade oscillate" is 0.12 in the install. By
+  §10.11 the clock would be taken modulo 0.12 and they would pulse every
+  0.06 s for good, which contradicts §8.3 ("never again in that
+  system") and §8.3.1's frames 4-6. Ours follows §8.3 (oscillation read,
+  not applied: `OpFade::strength`). Which is right?
+
 ### The stock Minigun and Pistol rechecked (stock-recapture, 2026-11-20)
 
 The comparisons that used the local player's Minigun (this account's is

@@ -11,7 +11,8 @@ sound_hit_world = "tf2:Weapon_Wrench.HitWorld"
 
 # `pdq_draw`'s sound events (8.1).
 [sounds]
-draw = [[0.1, "tf2:Weapon_Wrench.Draw"], [0.1, "tf2:Weapon_Wrench.Draw2"], [0.6667, "tf2:Weapon_Wrench.HitHand"]]
+# The draw's sounds are the owner's view model's animation sound events
+# (specs/tf2/viewmodel_sounds.md, weapons_stock.md 8.1; view.rs).
 
 [models]
 world = "models/weapons/c_models/c_wrench/c_wrench.mdl"

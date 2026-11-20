@@ -5,7 +5,8 @@
 //! they list (Valve's DMX, binary encoding 2: the public "DMX/Binary
 //! format" description), and the systems the map's info_particle_systems
 //! name (and those the game starts itself: slime splashes) with their
-//! children, into `map::psys`. Files are read at load
+//! children, into `map::psys` (an emitter with its own fade, `OpFade`:
+//! specs/tf2/particles.md 10.11). Files are read at load
 //! time from the user's install and the map; nothing is copied.
 
 use std::collections::HashMap;
@@ -18,7 +19,7 @@ use vbsp::Bsp;
 use super::{METERS_PER_UNIT, material::MaterialLoader, trails::particle_material};
 use crate::map::{
     MapData,
-    psys::{Emitter, Field, Init, MapParticleSystems, Op, Pick, PlacedSystem, Render, SystemDef},
+    psys::{Emitter, Field, Init, MapParticleSystems, Op, OpFade, Pick, PlacedSystem, Render, SystemDef},
 };
 
 /// Entries of a map manifest past this are ignored.
@@ -61,6 +62,17 @@ fn key<'a>(op: &Element, keys: &[&'a str], notes: &mut Vec<String>) -> &'a str {
 
 /// One operator element into the definition; false when its function
 /// isn't one we run. `notes` gets attributes looked for and not found.
+/// An operator's own fade attributes (particles.md 10.11).
+fn op_fade(op: &Element) -> OpFade {
+    OpFade {
+        start_in: op.float("operator start fadein", 0.0),
+        end_in: op.float("operator end fadein", 0.0),
+        start_out: op.float("operator start fadeout", 0.0),
+        end_out: op.float("operator end fadeout", 0.0),
+        oscillate: op.float("operator fade oscillate", 0.0),
+    }
+}
+
 fn add_operator(def: &mut SystemDef, list: &str, op: &Element, notes: &mut Vec<String>) -> bool {
     let function = op.str("functionName").unwrap_or(&op.name).to_lowercase();
     let cp = |k: &str| op.int(k, 0).clamp(0, crate::map::psys::MAX_CONTROL_POINTS as i32 - 1) as usize;
@@ -410,8 +422,18 @@ fn build(
             for op in e.elements(list) {
                 let Some(op) = elements.get(op) else { continue };
                 let mut notes = Vec::new();
+                let emitters = def.emitters.len();
                 if !add_operator(&mut def, list, op, &mut notes) {
                     unknown.insert(format!("{list}: {}", op.str("functionName").unwrap_or(&op.name)));
+                }
+                // Its own fade (specs/tf2/particles.md 10.11): run on
+                // emitters; any other's is warned of (read as always 1).
+                let fade = op_fade(op);
+                if def.emitters.len() > emitters {
+                    def.emitter_fades.resize(emitters, OpFade::default());
+                    def.emitter_fades.push(fade);
+                } else if fade != OpFade::default() {
+                    notes.push(format!("{}'s operator fade (not run off an emitter)", op.str("functionName").unwrap_or(&op.name)));
                 }
                 for n in notes {
                     data.warnings.push(format!("particle operator attribute not found in {}: {n}", def.name));

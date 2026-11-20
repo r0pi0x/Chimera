@@ -419,3 +419,93 @@ fn the_crit_glows_hosts_carry_their_hitboxes_14_1() {
     halves.sort_by(f32::total_cmp);
     assert!((halves[2] - 28.85).abs() < 0.2 && (halves[1] - 11.3).abs() < 0.2 && (halves[0] - 8.3).abs() < 0.2, "{big}");
 }
+
+/// specs/tf2/viewmodel_sounds.md 3-4: every stock reload's sound events
+/// as the arms' sequences carry them (event 5004, its entry, at cycle ×
+/// length seconds into the sequence), and every sound event of the
+/// sequences our rules play names an entry the guns' sound lists load
+/// (`maps::weapon_sounds`), so the owner hears each.
+#[test]
+fn the_view_models_sound_events_are_the_specs_reload_sounds() {
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0);
+    let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
+    maps::add_guns(&mut materials, &|_| true, true, &mut kit, &mut warnings);
+    let loaded: Vec<String> = maps::weapon_sounds().map(|s| maps::own_sound(&s).to_lowercase()).collect();
+    // (sequence, [(seconds, entry)]) of a view model's sequence.
+    let events = |key: &str, seq: &str| -> Vec<(f32, String)> {
+        let v = kit.view_models.iter().find(|v| v.key == key).unwrap_or_else(|| panic!("{key}"));
+        let set = v.animations.as_ref().unwrap();
+        let i = set.sequence(seq).unwrap_or_else(|| panic!("{key}: {seq}"));
+        let len = set.duration(i);
+        set.sequences[i]
+            .events
+            .iter()
+            .filter_map(|e| match view::event_effect(e) {
+                Some(chimera_world::map::ViewModelEventKind::Sound { entry }) => Some((e.cycle * len, entry)),
+                _ => None,
+            })
+            .collect()
+    };
+    let near = |got: &[(f32, String)], want: &[(f32, &str)]| {
+        got.len() == want.len() && got.iter().zip(want).all(|((t, e), (wt, we))| (t - wt).abs() < 0.006 && e.eq_ignore_ascii_case(&format!("tf2:{we}")))
+    };
+    let check = |key: &str, seq: &str, want: &[(f32, &str)]| {
+        let got = events(key, seq);
+        assert!(near(&got, want), "{key} {seq}: {got:?}, the spec {want:?}");
+    };
+    use weapons::*;
+    check(PISTOL_SCOUT, "p_reload", &[(0.033, "Weapon_Pistol.ReloadScout"), (0.600, "Weapon_Pistol.ClipIn")]);
+    check(&format!("{PISTOL_SCOUT}#engineer"), "pstl_reload", &[(0.467, "Weapon_Pistol.ClipIn")]);
+    check(SCATTERGUN, "sg_reload_loop", &[(0.033, "Weapon_Scatter_Gun.Reload")]);
+    check(ROCKET_LAUNCHER, "dh_reload_loop", &[(0.067, "Weapon_RPG.Reload")]);
+    check(GRENADE_LAUNCHER, "g_reload_start", &[(0.167, "Weapon_GrenadeLauncher.DrumOpen")]);
+    check(GRENADE_LAUNCHER, "g_reload_loop", &[(0.200, "Weapon_GrenadeLauncher.DrumLoad")]);
+    check(GRENADE_LAUNCHER, "g_reload_end", &[(0.167, "Weapon_GrenadeLauncher.DrumClose")]);
+    check(STICKY_LAUNCHER, "sb_reload_loop", &[(0.067, "Weapon_StickyBombLauncher.BoltBack"), (0.400, "Weapon_StickyBombLauncher.BoltForward")]);
+    check(SYRINGE_GUN, "sg_reload", &[(0.033, "Weapon_SyringeGun.Draw"), (0.300, "Weapon_SyringeGun.Reload1"), (0.600, "Weapon_SyringeGun.Reload2"), (0.700, "Weapon_SyringeGun.Reload3")]);
+    check(SMG, "smg_reload", &[(0.267, "Weapon_SMG.ClipOut"), (0.767, "Weapon_SMG.ClipIn")]);
+    check(REVOLVER, "reload", &[(0.033, "Weapon_Revolver.Reload1"), (0.400, "Weapon_Revolver.Reload2"), (0.933, "Weapon_Revolver.Reload3")]);
+    for (key, l, lt, e, back, fwd) in [
+        (format!("{SHOTGUN}#soldier"), "reload_loop", 0.133, "reload_end", 0.233, 0.367),
+        (format!("{SHOTGUN}#pyro"), "reload_loop", 0.033, "reload_end", 0.400, 0.533),
+        (format!("{SHOTGUN}#heavy"), "reload_loop", 0.067, "reload_end", 0.286, 0.429),
+        (SHOTGUN.to_string(), "fj_reload_loop", 0.333, "fj_reload_end", 0.343, 0.486),
+    ] {
+        check(&key, l, &[(lt, "Weapon_Shotgun.Reload")]);
+        check(&key, e, &[(back, "Weapon_ShotgunEngineer.Cock_Back"), (fwd, "Weapon_ShotgunEngineer.Cock_Forward")]);
+    }
+    check(SNIPER_RIFLE, "fire", &[(0.767, "Weapon_SniperRifle.BoltBack"), (0.967, "Weapon_SniperRifle.BoltForward")]);
+    // Every sound event of every sequence our rules play is loaded.
+    let mut missing = std::collections::BTreeSet::new();
+    for v in &kit.view_models {
+        let set = v.animations.as_ref().unwrap();
+        let mut names: Vec<&str> = Vec::new();
+        if let Some(q) = view::sequences(&v.key) {
+            let all = [Some(q.draw), Some(q.idle), Some(q.fire), q.reload_start, q.reload_loop, q.reload_end, q.spin_up, q.spin_idle, q.spin_down, q.charge];
+            names.extend(all.into_iter().flatten().map(|(_, n)| n));
+        } else if let Some(q) = view::melee_sequences(&v.key) {
+            names.extend([q.draw, q.idle, q.crit]);
+            names.extend(q.swing.iter().copied());
+        }
+        for n in names {
+            for (_, entry) in events(&v.key, n) {
+                if !loaded.contains(&entry.to_lowercase()) {
+                    missing.insert(format!("{} {n}: {entry}", v.key));
+                }
+            }
+        }
+    }
+    assert!(missing.is_empty(), "not loaded: {missing:#?}");
+    // Each draw sounds by its events alone (the data has no draw sounds).
+    let mut silent = Vec::new();
+    for v in &kit.view_models {
+        let draw = view::sequences(&v.key).map(|q| q.draw.1).or_else(|| view::melee_sequences(&v.key).map(|q| q.draw));
+        if let Some(d) = draw
+            && events(&v.key, d).is_empty()
+        {
+            silent.push(format!("{} {d}", v.key));
+        }
+    }
+    assert!(silent.is_empty(), "draws with no sound event: {silent:?}");
+}

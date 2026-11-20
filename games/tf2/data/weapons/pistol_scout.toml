@@ -37,10 +37,13 @@ hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
 impulse = 0.0
 
 [sounds]
+# The owner's reload and draw sounds are his view model's animation
+# sound events (specs/tf2/viewmodel_sounds.md, view.rs); everyone else
+# hears the world reload at each reload's start (each round's insert for
+# a one-at-a-time reload).
+world_reload = "tf2:Weapon_Pistol.WorldReload"
 fire = "tf2:Weapon_Pistol.Single"
 empty = "tf2:Weapon_Pistol.ClipEmpty"
-reload = [[0.0, "tf2:Weapon_Pistol.ReloadScout"]]
-draw = [[0.0, "tf2:Weapon_Pistol.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_pistol/c_pistol.mdl"

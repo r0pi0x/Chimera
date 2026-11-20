@@ -314,6 +314,10 @@ pub enum ViewModelEventKind {
         shell: String,
         speed: f32,
     },
+    /// A sound entry the animation plays (Source's event 5004), heard by
+    /// the view model's owner alone (`chimera_sim::weapon::view_anim`:
+    /// specs/tf2/viewmodel_sounds.md 1.1).
+    Sound { entry: String },
 }
 
 /// Put on a camera that is a child of a character (the client's

@@ -42,11 +42,12 @@ punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]
+# The owner's reload and draw sounds are his view model's animation
+# sound events (specs/tf2/viewmodel_sounds.md, view.rs); everyone else
+# hears the world reload at each reload's start (each round's insert for
+# a one-at-a-time reload).
+world_reload = "tf2:Weapon_RPG.WorldReload"
 fire = "tf2:Weapon_RPG.Single"
-# Each round's sound 0.045 s into its loop (dh_reload_loop's event; real
-# TF2's emitted sounds against its view model's sequence, weapons.md 4).
-reload = [[0.045, "tf2:Weapon_RPG.Reload"]]
-draw = [[0.0, "tf2:Weapon_RPG.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_rocketlauncher/c_rocketlauncher.mdl"

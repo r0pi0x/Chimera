@@ -54,7 +54,8 @@ pub struct WeaponSet {
     /// The classes whose arms can hold it, its own first (data/classes.toml;
     /// plan, decision 6); its set holds its own class's.
     pub classes: &'static [&'static str],
-    /// Its sound entries (weapons.md 8).
+    /// Its sound entries (weapons.md 8), its view models' sound events'
+    /// too (specs/tf2/viewmodel_sounds.md).
     pub sounds: &'static [&'static str],
     /// Other models it uses (its projectile).
     pub models: &'static [&'static str],
@@ -107,6 +108,7 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
             "Weapon_Shotgun.WorldReload",
             "Weapon_Shotgun.Pump",
             "Weapon_Shotgun.Draw",
+            "Weapon_ShotgunPyro.Draw",
             "Weapon_ShotgunEngineer.Cock_Back",
             "Weapon_ShotgunEngineer.Cock_Forward",
         ],
@@ -138,8 +140,10 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
             "Weapon_Pistol.SingleCrit",
             "Weapon_Pistol.ClipEmpty",
             "Weapon_Pistol.ReloadScout",
+            "Weapon_Pistol.ClipIn",
             "Weapon_Pistol.WorldReload",
             "Weapon_Pistol.Draw",
+            "Weapon_Pistol.Draw2",
         ],
         models: &[],
     },
@@ -200,6 +204,7 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
         sounds: &[
             "Weapon_GrenadeLauncher.Single",
             "Weapon_GrenadeLauncher.SingleCrit",
+            "Weapon_GrenadeLauncher.DrumStart",
             "Weapon_GrenadeLauncher.DrumOpen",
             "Weapon_GrenadeLauncher.DrumLoad",
             "Weapon_GrenadeLauncher.DrumClose",

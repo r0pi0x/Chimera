@@ -204,7 +204,7 @@ fn minigun_spins_up_fires_every_7_ticks_and_ramps_13_14_33() {
 /// 7.1 (corrected by minigun.md), tests 35 and 36: no gameplay
 /// wind-down. Let go of attack2 while spun: idle in play 0.3 s later
 /// (20 ticks: the speed back, a jump works), only the switch waits for
-/// the 1.333 s spool-down.
+/// the spool-down to count as finished (77 ticks, minigun.md 3.3).
 #[test]
 fn minigun_stops_0_3_s_after_attack2_and_only_the_switch_waits_35_36() {
     let mut sim = sim();
@@ -222,8 +222,12 @@ fn minigun_stops_0_3_s_after_attack2_and_only_the_switch_waits_35_36() {
     });
     assert!(rose, "a jump once idle");
     assert!(sim.app.world().get::<HolsterLocked>(w).is_some(), "the switch waits for the spool-down");
-    run(&mut sim, p, 90, |_, _| {});
-    assert!(sim.app.world().get::<HolsterLocked>(w).is_none());
+    // Allowed from the 77th tick after the wind-down (minigun.md 3.3:
+    // `m_spool_down` past cycle 0.85, seen before the tick's advance).
+    run(&mut sim, p, 66, |_, _| {});
+    assert!(sim.app.world().get::<HolsterLocked>(w).is_some(), "still locked 76 ticks after the wind-down");
+    run(&mut sim, p, 1, |_, _| {});
+    assert!(sim.app.world().get::<HolsterLocked>(w).is_none(), "unlocked 77 ticks after the wind-down");
     assert_eq!(sim.app.world().get::<Tf2Minigun>(w).unwrap().state, weapons::minigun::State::Idle);
 }
 

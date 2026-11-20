@@ -138,7 +138,10 @@ fire = "Weapon_AK47.Single"
 empty = "Default.ClipEmpty_Rifle"
 reload = [[0.35, "Weapon_AK47.Clipout"], [1.54, "Weapon_AK47.Clipin"]]
 draw = [[0.3667, "Weapon_AK47.BoltPull"]]
-# fire_alt, deploy, shot, finish ([s, entry]); modes ([mode, s, entry])
+# fire_alt, deploy, shot, finish ([s, entry]); modes ([mode, s, entry]);
+# world_reload = "<entry>": heard by everyone but the holder at a reload's
+#   start, each shell's for a one-at-a-time reload (TF2's, whose holder
+#   hears his view model's animation sound events instead of timelines)
 
 [models]                        # the game's model paths
 world = "models/weapons/w_rif_ak47.mdl"

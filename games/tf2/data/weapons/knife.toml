@@ -17,7 +17,8 @@ sound_hit_world = "tf2:Weapon_Knife.HitWorld"
 
 # `knife_draw`'s sound events (8.1): it flips open.
 [sounds]
-draw = [[0.0333, "tf2:Weapon_Knife.Draw"], [0.3333, "tf2:Weapon_Knife.Open1"], [0.5333, "tf2:Weapon_Knife.Open5"], [0.7333, "tf2:Weapon_Knife.Open8"]]
+# The draw's sounds are the owner's view model's animation sound events
+# (specs/tf2/viewmodel_sounds.md, weapons_stock.md 8.1; view.rs).
 
 [models]
 world = "models/weapons/c_models/c_knife/c_knife.mdl"

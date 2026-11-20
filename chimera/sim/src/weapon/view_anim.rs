@@ -12,7 +12,9 @@
 //! `ViewFrame::sustain`), no grenade is held
 //! primed, no reload runs and the weapon's idle delay has passed (its
 //! data's `[anim]`: `idle_after`, `idle_interval`, `idle_after_draw`). A
-//! view model behind a scope (`Zoomed::scope`) is hidden.
+//! view model behind a scope (`Zoomed::scope`) is hidden. An animation
+//! event the rules read as a sound (`ViewModelEventKind::Sound`: Source's
+//! 5004) is played for this machine's own player only (`play_view_sounds`).
 //!
 //! What plays when is the weapon's:
 //!
@@ -85,9 +87,29 @@ impl Plugin for ViewAnimPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<WeaponEvent>()
             .add_message::<ViewModelEvent>()
+            .add_message::<crate::map::PlaySound>()
             .init_resource::<ViewModelSettings>()
             .init_resource::<EffectSettings>()
-            .add_systems(Update, drive.in_set(DriveAnimation));
+            .add_systems(Update, (drive, play_view_sounds).chain().in_set(DriveAnimation));
+    }
+}
+
+/// The view models' sound events (`ViewModelEventKind::Sound`) played from
+/// their owner for this machine's own player alone (specs/tf2/
+/// viewmodel_sounds.md 1.1: as the animation passes them, nobody else
+/// hears them; others' view models, which nobody here draws, stay silent).
+pub fn play_view_sounds(
+    mut effects: MessageReader<ViewModelEvent>,
+    owners: Query<&Transform, With<crate::core::LocalPlayer>>,
+    mut play: MessageWriter<crate::map::PlaySound>,
+) {
+    for ev in effects.read() {
+        let ViewModelEventKind::Sound { entry } = &ev.kind else { continue };
+        let Ok(at) = owners.get(ev.owner) else { continue };
+        play.write(crate::map::PlaySound {
+            source: Some(ev.owner),
+            ..crate::map::PlaySound::at(entry.clone(), at.translation)
+        });
     }
 }
 

@@ -996,6 +996,36 @@ fn blend(from: &mut [BonePose], to: &[BonePose], t: f32, weights: &[f32]) {
 }
 
 /// Looping cycles wrap into [0, 1); others clamp to [0, 1].
+/// The cycle past which a non-looping sequence of `length` seconds (at
+/// playback rate 1) with cross-fade-out time `fade_out` counts as
+/// finished at playback rate `playback`: 1 − fade_out × playback /
+/// length (Source's rule, specs/tf2/minigun.md 3.3: `m_spool_down`'s 0.85).
+/// 1 for a sequence of no length.
+pub fn finished_cycle(length: f32, fade_out: f32, playback: f32) -> f32 {
+    if length <= 0.0 { 1.0 } else { 1.0 - fade_out * playback / length }
+}
+
+/// Ticks of `tick` seconds from the tick a non-looping sequence starts at
+/// cycle 0 to the first tick whose check sees it finished
+/// (`finished_cycle`), when each tick's check runs before that tick's
+/// animation advance and the starting tick doesn't advance it (specs/tf2/
+/// minigun.md 3.3): the advances needed to pass the finishing cycle, plus
+/// the tick whose check sees the flag. `m_spool_down` (1.333 s, fade-out
+/// 0.2 s, rate 1, 0.015 s ticks): 76 advances, 77 ticks.
+pub fn ticks_until_finished(length: f32, fade_out: f32, playback: f32, tick: f32) -> u32 {
+    let step = if length > 0.0 { tick * playback / length } else { 1.0 };
+    if step <= 0.0 {
+        return u32::MAX;
+    }
+    let done = finished_cycle(length, fade_out, playback).min(1.0);
+    // Passed (strictly) or reached 1.
+    let mut n = (done / step).floor().max(0.0) as u32;
+    while (n as f32 * step) <= done && (n as f32 * step) < 1.0 {
+        n += 1;
+    }
+    n + 1
+}
+
 pub fn wrap_cycle(c: f32, looping: bool) -> f32 {
     if looping { c - c.floor() } else { c.clamp(0.0, 1.0) }
 }
@@ -1251,6 +1281,19 @@ impl Animator {
             .is_some_and(|s| !self.set.sequences[s].looping && self.cycle >= 1.0)
     }
 
+    /// Source's "sequence finished" flag (`finished_cycle`): the main
+    /// sequence is non-looping and its cycle has passed 1 − its fade-out
+    /// time × its cycle rate × the playback rate, or reached 1. What a
+    /// game's rule waits on (TF2's switch away from a Minigun, specs/tf2/
+    /// minigun.md 3.3); the driver's idle still waits for the end
+    /// (`finished`).
+    pub fn sequence_finished(&self) -> bool {
+        self.main.is_some_and(|s| {
+            let q = &self.set.sequences[s];
+            !q.looping && (self.cycle >= 1.0 || self.cycle > finished_cycle(self.set.duration(s), q.fade_out, self.playback))
+        })
+    }
+
     /// Advance the main and fading cycles by `dt`; drop finished fades.
     pub fn advance(&mut self, dt: f32, now: f64) {
         let set = self.set.clone();
@@ -1493,5 +1536,19 @@ mod tests {
         assert!((f.weight(0.05) - 0.84375).abs() < 1e-5);
         assert!((f.weight(0.1) - 0.5).abs() < 1e-5);
         assert_eq!(f.weight(0.2), 0.0);
+    }
+
+    /// specs/tf2/minigun.md 3.3: `m_spool_down` (41 frames at 30 fps,
+    /// fade-out 0.2 s) counts as finished past cycle 0.85 at rate 1; with
+    /// the check before each tick's advance, 77 ticks of 0.015 s.
+    #[test]
+    fn a_sequence_counts_finished_its_fade_out_before_its_end() {
+        let length = 40.0 / 30.0;
+        assert!((finished_cycle(length, 0.2, 1.0) - 0.85).abs() < 1e-5);
+        assert_eq!(ticks_until_finished(length, 0.2, 1.0, 0.015), 77);
+        // No fade-out: past nothing but its end, reached at 89 advances.
+        assert_eq!(ticks_until_finished(length, 0.0, 1.0, 0.015), 90);
+        // At twice the rate, half as many advances to a lower cycle.
+        assert!((finished_cycle(length, 0.2, 2.0) - 0.7).abs() < 1e-5);
     }
 }

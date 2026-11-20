@@ -31,7 +31,8 @@ punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]
-draw = [[0.0, "tf2:Weapon_FlameThrower.Draw"]]
+# The draw's sounds are the owner's view model's animation sound events
+# (specs/tf2/viewmodel_sounds.md, weapons_stock.md 8.1; view.rs).
 
 [models]
 world = "models/weapons/c_models/c_flamethrower/c_flamethrower.mdl"

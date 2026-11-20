@@ -338,14 +338,33 @@ pub struct StopSound {
     pub local: bool,
 }
 
-/// Play the rules' sounds here (and characters' predicted ones).
+/// A sound of a character's action that everyone hears but that
+/// character's own player (Source's world reload sound: specs/tf2/
+/// viewmodel_sounds.md 1.2, the shooter hearing his view model's events
+/// instead): played here unless `by` is this machine's `LocalPlayer`; a
+/// network server sends it to every client but `by`'s (`net`).
+#[derive(Message, Clone, Debug)]
+pub struct OthersSound {
+    pub by: Entity,
+    pub sound: PlaySound,
+}
+
+/// Play the rules' sounds here (and characters' predicted ones, and
+/// others' sounds not ours, `OthersSound`).
 pub fn relay_game_sounds(
     mut sounds: MessageReader<GameSound>,
     mut predicted: MessageReader<PredictedSound>,
+    mut others: MessageReader<OthersSound>,
+    local: Query<(), With<chimera_core::core::LocalPlayer>>,
     mut play: MessageWriter<PlaySound>,
 ) {
     for s in predicted.read() {
         play.write(s.sound.clone());
+    }
+    for s in others.read() {
+        if !local.contains(s.by) {
+            play.write(s.sound.clone());
+        }
     }
     for s in sounds.read() {
         play.write(s.0.clone());

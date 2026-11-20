@@ -30,7 +30,8 @@ sound_hit_world = "tf2:Weapon_Fist.HitWorld"
 
 # `f_draw`'s sound events (8.1).
 [sounds]
-draw = [[0.0333, "tf2:Weapon_Fist.Draw"], [0.1667, "tf2:Weapon_Fist.HitHand"]]
+# The draw's sounds are the owner's view model's animation sound events
+# (specs/tf2/viewmodel_sounds.md, weapons_stock.md 8.1; view.rs).
 
 [hud]
 name = "Fists"

@@ -47,6 +47,11 @@
 //!
 //! A gun's `[models] view_offset` (Source's forward, left, up) moves its
 //! view model in the eye's space (`source_offset`).
+//!
+//! The arms' animation sound events (5004) are the owner's reload, draw
+//! and bolt sounds (`event_effect`, specs/tf2/viewmodel_sounds.md), heard
+//! by the owner alone as the animation passes them; everyone else hears
+//! the gun's world reload sound (`[sounds] world_reload`) from the server.
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{
@@ -55,6 +60,8 @@ use chimera_sim::weapon::{
 };
 
 use source_engine::view_motion::{MotionAppExt, MotionRules, Sway};
+
+use crate::map::{ViewModelEventKind, anim::AnimEvent};
 
 use super::weapons::{
     BAT, BONESAW, BOTTLE, FIREAXE, FISTS, FLAMETHROWER, GRENADE_LAUNCHER, KNIFE, KUKRI, MINIGUN, PISTOL_SCOUT, REVOLVER,
@@ -438,13 +445,21 @@ fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
     }
 }
 
+/// What an animation event of TF2's view models shows: its sound events
+/// (TF2's own entries, `maps::own_sound`) for the owner alone, every
+/// reload, draw and bolt sound the shooter hears (specs/tf2/
+/// viewmodel_sounds.md 1, 4), and Source's flashes and brass.
+pub fn event_effect(e: &AnimEvent) -> Option<ViewModelEventKind> {
+    source_engine::view_anim::sound_event(e, crate::game::maps::SOUND_PREFIX).or_else(|| source_engine::view_anim::event_effect(e))
+}
+
 /// TF2's view-model rules.
 pub fn rules() -> ViewAnimRules {
     ViewAnimRules {
         draw,
         idle,
         event,
-        effect: source_engine::view_anim::event_effect,
+        effect: event_effect,
         // A stock gun's 0.67 s draw over its 0.5 s deploy (specs/tf2/viewmodel.md 6).
         draw_rate: DRAW_RATE,
     }

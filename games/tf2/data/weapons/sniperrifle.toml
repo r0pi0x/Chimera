@@ -44,9 +44,10 @@ overlay = true
 step = 0.3
 
 [sounds]
+# The draw's sounds are the owner's view model's animation sound events
+# (specs/tf2/viewmodel_sounds.md, weapons_stock.md 8.1; view.rs).
 fire = "tf2:Weapon_SniperRifle.Single"
 empty = "tf2:Weapon_SniperRifle.ClipEmpty"
-draw = [[0.0, "tf2:Weapon_SniperRifle.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_sniperrifle/c_sniperrifle.mdl"

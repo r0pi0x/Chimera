@@ -563,6 +563,10 @@ pub struct SoundsData {
     pub deploy: Option<String>,
     #[serde(default)]
     pub reload: Vec<(f32, String)>,
+    /// Heard by everyone but the holder at a reload's start (each round's
+    /// insert for a one-at-a-time reload): `WeaponSounds::world_reload`.
+    #[serde(default)]
+    pub world_reload: Option<String>,
     #[serde(default)]
     pub draw: Vec<(f32, String)>,
     #[serde(default)]
@@ -577,7 +581,7 @@ pub struct SoundsData {
 impl SoundsData {
     /// Every entry named.
     pub fn entries(&self) -> impl Iterator<Item = &str> {
-        [&self.fire, &self.fire_alt, &self.empty, &self.deploy]
+        [&self.fire, &self.fire_alt, &self.empty, &self.deploy, &self.world_reload]
             .into_iter()
             .flatten()
             .map(String::as_str)
@@ -1333,6 +1337,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             empty: s.empty.clone(),
             deploy: s.deploy.clone(),
             reload: s.reload.clone(),
+            world_reload: s.world_reload.clone(),
             draw: s.draw.clone(),
             shot: s.shot.clone(),
             finish: s.finish.clone(),

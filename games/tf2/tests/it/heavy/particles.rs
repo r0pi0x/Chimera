@@ -233,3 +233,57 @@ fn a_started_blast_draws_its_core_flash_and_embers_within_three_frames() {
         assert!(!seen.is_empty(), "{name}: nothing drawn in 3 frames");
     }
 }
+
+/// specs/tf2/particles.md 8.3, 8.3.1, 10.11 against the install's
+/// `muzzle_minigun_constant`: each child's cap (core 24, sparks 5,
+/// starflash 32, smoke 25, flare 32) and emitter fade (the starflash and
+/// flare stop at 0.5 s, the smoke fades in over 2-4 s) as loaded, and
+/// stepped at 60 a second the worked first frames: nothing in frame 0,
+/// the core 2 a frame, the starflash 4, 4, 4, 5, 4, 4 (to 25 alive), the
+/// flare 2 a frame (10 alive from frame 5), the sparks 1, 3, 5 alive and
+/// held there; nothing of the starflash or flare after 0.6 s.
+#[test]
+fn the_minigun_flash_by_its_caps_and_fades_8_3_1() {
+    use chimera_world::map::psys::OpFade;
+    let Some(map) = super::looks::dressed() else { return };
+    let systems = &map.particle_systems;
+    let defs = &systems.defs;
+    let root = systems.find("muzzle_minigun_constant").expect("muzzle_minigun_constant loaded");
+    let kids: Vec<usize> = defs[root].children.iter().map(|c| c.0).collect();
+    let child = |suffix: &str| {
+        kids.iter().position(|k| defs[*k].name.to_lowercase().ends_with(suffix)).unwrap_or_else(|| panic!("{suffix}: {:?}", kids.iter().map(|k| &defs[*k].name).collect::<Vec<_>>()))
+    };
+    let (core, sparks, star, smoke, flare) = (child("_core"), child("_sparks"), child("_starflash"), child("_smoke"), child("_flare"));
+    let cap = |k: usize| defs[kids[k]].max_particles;
+    assert_eq!([cap(core), cap(sparks), cap(star), cap(smoke), cap(flare)], [24, 5, 32, 25, 32]);
+    let fade = |k: usize| defs[kids[k]].emitter_fades.first().copied().unwrap_or_default();
+    assert_eq!(fade(star).ends(), Some(0.5), "{:?}", fade(star));
+    assert_eq!(fade(flare).ends(), Some(0.5), "{:?}", fade(flare));
+    assert_eq!((fade(smoke).strength(1.99), fade(smoke).strength(3.0), fade(smoke).strength(4.5)), (0.0, 0.5, 1.0), "{:?}", fade(smoke));
+    assert_eq!(fade(core), OpFade::default());
+    let sheets = MaterialSheets(Some(&map.particles));
+    let cps = vec![ControlPoint { rotation: bevy::math::Quat::IDENTITY, light: bevy::math::Vec3::ONE, ..Default::default() }];
+    let mut rng = ParticleRng::new(1);
+    let h = 1.0 / 60.0;
+    let mut i = Instance::new(defs, root);
+    i.step(defs, &cps, h, &mut rng, &sheets);
+    assert_eq!(i.count(), 0, "frame 0 shows nothing");
+    let mut frames: Vec<Vec<(usize, usize)>> = Vec::new();
+    for _ in 0..40 {
+        i.step(defs, &cps, h, &mut rng, &sheets);
+        let by_def: Vec<(usize, (usize, usize))> = i
+            .child_instances()
+            .map(|c| {
+                let d = c.own_details(defs);
+                (c.def, (d.iter().filter(|p| p.1 < h * 0.999).count(), d.len()))
+            })
+            .collect();
+        frames.push(kids.iter().map(|k| by_def.iter().find(|(d, _)| d == k).map_or((0, 0), |x| x.1)).collect());
+    }
+    let of = |k: usize| frames.iter().map(|f| f[k]).collect::<Vec<_>>();
+    assert_eq!(of(core)[..6].iter().map(|c| c.0).collect::<Vec<_>>(), [2; 6], "core");
+    assert_eq!(of(star)[..6].to_vec(), [(4, 4), (4, 8), (4, 12), (5, 17), (4, 21), (4, 25)], "starflash");
+    assert_eq!(of(flare)[..6].to_vec(), [(2, 2), (2, 4), (2, 6), (2, 8), (2, 10), (2, 10)], "flare");
+    assert_eq!(of(sparks)[..6].iter().map(|s| s.1).collect::<Vec<_>>(), [1, 3, 5, 5, 5, 5], "sparks");
+    assert!(of(star)[36..].iter().chain(&of(flare)[36..]).all(|s| s.1 == 0), "the starflash and flare gone after 0.6 s");
+}

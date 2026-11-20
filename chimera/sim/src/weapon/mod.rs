@@ -275,6 +275,7 @@ impl Plugin for WeaponPlugin {
             // The rules' sounds (`map::GameSound`), played here.
             .add_message::<crate::map::GameSound>()
             .add_message::<crate::map::PredictedSound>()
+            .add_message::<crate::map::OthersSound>()
             .add_systems(FixedLast, crate::map::sound::relay_game_sounds)
             .insert_resource(crate::core::MapDamageArmor)
             .init_resource::<DamageWeapons>()
@@ -327,11 +328,21 @@ impl Plugin for WeaponPlugin {
                 ),
             )
             // What prediction re-runs (`core::Predict`): selection, and the
-            // weapon frame with its timed sounds and zoom.
+            // weapon frame with its timed sounds, world reload sounds and
+            // zoom.
             .add_systems(Predict::Select, select_weapons.in_set(SelectWeapons))
             .add_systems(
                 Predict::Weapons,
-                (weapon_frame.in_set(WeaponFrame), timed_sounds, apply_zoom).chain(),
+                (
+                    weapon_frame.in_set(WeaponFrame),
+                    timed_sounds,
+                    // It reads the frame's reload events (chained after
+                    // it); others' writers of weapon events (throws, the
+                    // bomb) may go either side of it.
+                    world_reload_sounds.ambiguous_with_all(),
+                    apply_zoom,
+                )
+                    .chain(),
             )
             // What a character carries and its weapons' state go to the
             // client predicting it (`sync`).
@@ -1958,8 +1969,16 @@ pub struct WeaponSounds {
     pub fire_alt: Option<String>,
     pub empty: Option<String>,
     pub deploy: Option<String>,
-    /// Entries at times after a reload starts (view-model animation events).
+    /// Entries at times after a reload starts (each round's insert for a
+    /// one-at-a-time reload), for the holder and everyone: a game whose
+    /// view models play their own sound events (TF2's) leaves it empty
+    /// and gives `world_reload`.
     pub reload: Vec<(f32, String)>,
+    /// Played from the holder for everyone but the holder at a reload's
+    /// start, or at each round's insert for a one-at-a-time reload
+    /// (`map::OthersSound`, `world_reload_sounds`): Source's world reload
+    /// sound (specs/tf2/viewmodel_sounds.md 1).
+    pub world_reload: Option<String>,
     /// Entries at times after the weapon is drawn.
     pub draw: Vec<(f32, String)>,
     /// Entries at times after each shot (a bolt worked by the fire
@@ -3165,6 +3184,36 @@ fn ragdoll_shots(mut events: MessageReader<WeaponEvent>, mut shots: MessageWrite
     for e in events.read().filter(|e| e.shown()) {
         if let WeaponEventKind::Shot { from, to, .. } | WeaponEventKind::ShotContinued { from, to, .. } = e.kind {
             shots.write(crate::map::RagdollShot::bullet(from, to));
+        }
+    }
+}
+
+/// A weapon's world reload sound (`WeaponSounds::world_reload`) as its
+/// reload starts (a whole clip) or each round's insert starts (one at a
+/// time), from the holder to everyone but the holder (specs/tf2/
+/// viewmodel_sounds.md 1.2, test case 4); the first time a command runs,
+/// by the machine that simulates the holder (not a copy drawn from
+/// snapshots: the server sends it to the other clients).
+fn world_reload_sounds(
+    mut events: MessageReader<WeaponEvent>,
+    weapons: Query<(&WeaponSounds, Has<ShellReload>)>,
+    owners: Query<&Transform, Without<NetDrawn>>,
+    mut out: MessageWriter<crate::map::OthersSound>,
+) {
+    for e in events.read().filter(|e| e.shown()) {
+        let Ok((sounds, shells)) = weapons.get(e.weapon) else { continue };
+        let Some(entry) = &sounds.world_reload else { continue };
+        let starts = match e.kind {
+            WeaponEventKind::ReloadStarted => !shells,
+            WeaponEventKind::ShellInserting => shells,
+            _ => false,
+        };
+        let Ok(at) = owners.get(e.owner) else { continue };
+        if starts {
+            out.write(crate::map::OthersSound {
+                by: e.owner,
+                sound: PlaySound { channel: None, ..owner_sound(entry.clone(), e.owner, at.translation, CHAN_ITEM) },
+            });
         }
     }
 }

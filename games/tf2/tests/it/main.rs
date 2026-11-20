@@ -28,7 +28,9 @@
 //! when it is set),
 //! found through Steam, `[games.tf2] path` or `$CHIMERA_TF2_ROOT`, each
 //! test passing with a note without one. Also crit boosts' loop and
-//! glow and the Flame Thrower's crit loop swap (`crit_boost`).
+//! glow and the Flame Thrower's crit loop swap (`crit_boost`), and the
+//! reload sounds the shooter (his view model's events) and the others
+//! (the world reload) hear (`viewmodel_sounds`).
 //! `cargo test -p tf2 --features dev --test it`; where tests go:
 //! docs/OBSERVABILITY.md, section 1.
 
@@ -55,6 +57,7 @@ mod held_guns;
 mod minigun;
 mod flames;
 mod blood;
+mod viewmodel_sounds;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
