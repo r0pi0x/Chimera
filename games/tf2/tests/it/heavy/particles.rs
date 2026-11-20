@@ -189,3 +189,47 @@ fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_flashups_thirty() {
         assert_eq!(skipped.count(), 0, "skipped: none made");
     }
 }
+
+/// Every TF2 blast's look (rockets', pipes', stickies': the same three
+/// systems), started as a game starts it (`StartedSystems`, a frame at a
+/// time from its zero-time creation frame, particles.md 9.1), keeps
+/// running past that frame and draws its core flash and flying embers
+/// within three frames (`ExplosionCore_Wall`'s systems are all children:
+/// it once went as finished in its creation frame and drew nothing).
+#[test]
+fn a_started_blast_draws_its_core_flash_and_embers_within_three_frames() {
+    use chimera_present::render::psys::StartedSystems;
+    let Some(map) = super::looks::dressed() else { return };
+    let sheets = MaterialSheets(Some(&map.particles));
+    let defs = &map.particle_systems.defs;
+    fn drawing(i: &Instance, defs: &[SystemDef], out: &mut Vec<String>) {
+        if !i.own_radii(defs).is_empty() {
+            out.push(defs[i.def].name.clone());
+        }
+        for c in i.child_instances() {
+            drawing(c, defs, out);
+        }
+    }
+    for name in ["ExplosionCore_Wall", "ExplosionCore_MidAir", "ExplosionCore_MidAir_underwater"] {
+        let mut s = StartedSystems::default();
+        let up = bevy::math::Vec3::Z;
+        assert!(s.start(&map.particle_systems, name, bevy::math::Vec3::ZERO, up, bevy::math::Vec3::ONE), "{name}: not loaded");
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            s.step(1.0 / 60.0, &sheets);
+            assert_eq!(s.instances().count(), 1, "{name}: still running");
+            for (i, _) in s.instances() {
+                drawing(i, defs, &mut seen);
+            }
+        }
+        let wanted: &[&str] = match name {
+            "ExplosionCore_Wall" => &["Explosion_CoreFlash", "Explosion_FlyingEmbers"],
+            "ExplosionCore_MidAir" => &["Explosions_MA_coreflash", "Explosions_MA_FlyingEmbers"],
+            _ => &[],
+        };
+        for w in wanted {
+            assert!(seen.iter().any(|n| n == w), "{name}: {w} drew nothing in 3 frames; drew {seen:?}");
+        }
+        assert!(!seen.is_empty(), "{name}: nothing drawn in 3 frames");
+    }
+}

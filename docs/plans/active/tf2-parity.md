@@ -135,6 +135,32 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Log
 
+### The blast that drew nothing (blast-regression, 2026-11-20)
+
+- **Cause** (a4a41fa74, particle timing §9): a system's creation frame
+  runs with zero time and its children start the frame after; but
+  `Instance::finished` counted a not-yet-started child only while
+  `age < delay`, so a child at delay 0 didn't count at age 0. Every
+  system made only of children (`ExplosionCore_Wall`, `_MidAir`,
+  `_MidAir_underwater`: rockets', pipes' and stickies' blasts) was
+  dropped as finished in its creation frame by `StartedSystems::step`
+  (and map `info_particle_system`s by `update_systems`). Measured, not
+  pictured: `psys_running` every 1/60 s in `streaks` showed no
+  `ExplosionCore_*` at all while the `Tf2Explosion` look was due and
+  written (`StartParticleSystem` found, no start failure). The heavy
+  particle tests stepped `Instance`s directly and never asked
+  `finished`, so they didn't see it.
+- **Fix** (`render::psys`, every game): a child not started yet counts
+  while the parent emits and `age <= delay`. Tests
+  `psys::a_started_system_of_children_only_survives_its_creation_frame_9_1`
+  and `heavy::particles::a_started_blast_draws_its_core_flash_and_embers_
+  within_three_frames` (all three blast systems via `StartedSystems`, the
+  install's files): both fail before the fix. CS:S's HE grenade draws no
+  `.pcf` system (unaffected).
+- Capture (`streaks`, ref | ours, from the blast's first frame on, ours
+  f14 against TF2's 15): the core flash, embers' rays and fireball draw
+  again in the same sequence as TF2's.
+
 ### Particle timing, the rocket's first places (tf2-psys2, 2026-11-20)
 
 - **Particle timing** (`render::psys`, every game; particles.md §9): a
@@ -874,4 +900,5 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   where pass 8 showed the core flash and embers: a regression on main
   before this change (same in both builds; `BlastMeasured` comes in
   both), not yet found. Next: find why the sandbox's rocket blast
-  shows no effect in `streaks.scene`.
+  shows no effect in `streaks.scene`. **Found and fixed** (blast-regression,
+  Log).

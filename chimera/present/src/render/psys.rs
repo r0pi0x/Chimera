@@ -606,7 +606,12 @@ impl Instance {
             });
         let children_left = self.children.iter().any(|(delay, c, _)| match c {
             Some(c) => !c.finished(defs),
-            None => self.emitting && self.age < *delay,
+            // Not started yet: due while it emits, a child at its
+            // delay too (one at 0 waits out the parent's zero-time
+            // creation frame, particles.md 9.1: a blast whose systems
+            // are all children, TF2's `ExplosionCore_Wall`, once went
+            // as finished in that frame and drew nothing).
+            None => self.emitting && self.age <= *delay,
         });
         !emits && self.particles.is_empty() && !children_left
     }
@@ -2756,6 +2761,29 @@ mod tests {
             lights: Vec::new(),
         };
         assert!(point_light(&probe).abs_diff_eq(Vec3::splat(0.1), 1e-6));
+    }
+
+    /// A started system with no emitters of its own, only a child at 0
+    /// (TF2's blasts: `ExplosionCore_Wall`'s flash, embers, ...): its
+    /// zero-time creation frame (particles.md 9.1) leaves it with nothing
+    /// yet, and it must stay to start the child the next frame.
+    #[test]
+    fn a_started_system_of_children_only_survives_its_creation_frame_9_1() {
+        let parent = SystemDef {
+            name: "blast".into(),
+            children: vec![(1, 0.0)],
+            ..default()
+        };
+        let mut child = system();
+        child.name = "flash".into();
+        child.emitters = vec![Emitter::Instantaneously { start: 0.0, count: 5 }];
+        let defs = std::sync::Arc::new(MapParticleSystems { defs: vec![parent, child], placed: Vec::new(), scale: 0.0254 });
+        let mut s = StartedSystems::default();
+        assert!(s.start(&defs, "blast", Vec3::ZERO, Vec3::Z, Vec3::ONE));
+        s.step(1.0 / 60.0, &none);
+        assert_eq!(s.running.len(), 1, "kept after its creation frame");
+        s.step(1.0 / 60.0, &none);
+        assert_eq!(s.count(), 5, "the child's burst the frame after");
     }
 
     #[test]
