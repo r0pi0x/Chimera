@@ -173,6 +173,15 @@ Captured imagery stays in scratch, never in the repo.
   or p0 further out. Spec questions: when a continuous emitter's first
   particle is made (at its start, or one interval in), and where a
   listen host's own client first receives a projectile.
+  **Answered** (tf2-spec-psys): [particles.md §9](../../../specs/tf2/particles.md)
+  (the k-th of a step's n particles at the window's start + k/n of it,
+  never at the start; placed at the point interpolated straight between
+  its previous and current place; nothing emitted in a system's creation
+  frame, children a frame later with no spread) and
+  [effects.md §11.2](../../../specs/tf2/effects.md) (p0 0–4 ticks out in
+  whole units; the trail made after the frame's interpolation; the
+  captures fit the rocket drawn at p0 until its second snapshot, the
+  fire and burst emitted there, then the jump back; Open questions 16).
 - **Body decals need the mesh** (`render::body_decals`, every game): a
   decal only where the ray from the shot's start through its point (8
   units past, + 10 %) meets the body; before, a miss fell back to the
@@ -273,6 +282,8 @@ shares):
   changed. Spec question: the drawn rocket's places in its first 0.1 s
   (the one-second-back history point used or not) and whether its trail
   emits while the drawn place hasn't moved.
+  **Answered**: [effects.md §11.2](../../../specs/tf2/effects.md) (see
+  the tf2-psys entry).
 - **The Stickybomb Launcher's first-person pose** (`launch` `sticky_idle`):
   differs, not fixed. TF2 shows the drum low and near with the dark
   barrel toward the middle; ours the launcher turned (the flip sight on
@@ -753,6 +764,9 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   `critgun_weaponmodel_*` systems' particle file is unnamed in the specs
   (not loaded until it is; asset pack: that file, and
   `weapons/crit_power.wav` in `players`).
+  **Answered**: `particles/firstperson_weapon_fx.pcf`, on the local
+  player's arms view model / others' weapon, placed on the host's
+  hitboxes ([effects.md §14.1](../../../specs/tf2/effects.md)).
 - Pass 9 capture (`water`, `pairs2`): with the seeded history ours' rocket
   is drawn from behind the eye and its trail's glow passes the camera from
   frame ~8 (60 a second), TF2's glows at the launcher from frame 2: TF2's

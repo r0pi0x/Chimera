@@ -24,7 +24,17 @@ swing trace and its hull-intersection fix-up, the model-decal path and
 the TF2 player's decal rules, the crit-boost effect, the flame thrower's
 sound loops; and from the install `scripts/decals_subrect.txt`,
 `scripts/game_sounds_weapons.txt`, `scripts/surfaceproperties.txt`, the
-needle model's bounds and `weapons/crit_power.wav`'s chunks.
+needle model's bounds and `weapons/crit_power.wav`'s chunks. Sections
+11.2 and 14.1 (2026-11-20, tf2-spec-psys) also read: the client's
+per-frame order (interpolation, data-changed callbacks, particle
+update), the entity post-update and interpolation-list rules, the
+rocket's network table, the entity particle property and the particle
+system query's model-point picking, the TF2 crit-boost effect's host
+entity and view-model weapon split; from the install
+`particles/firstperson_weapon_fx.pcf`, `particles/particles_manifest.txt`,
+`materials/effects/electric1.vmt`, `sc_softglow.vmt` and the hitbox sets
+of `c_soldier_arms.mdl` and `c_rocketlauncher.mdl`; and the particle
+library's timing rules (particles.md §9).
 **The per-weapon `.ctx` scripts were not read in
 this session** (no decryption key was available to the dumper; see Open
 questions 1), so every per-gun value that only the scripts hold is marked
@@ -526,9 +536,10 @@ attacker's machine and the server alike:
 - **Used from the first frame.** There is no special first frame and no
   hold at the launch point: for drawn time r < s0 the projectile is drawn
   at p0 − v0 (s0 − r), on its launch line behind p0, moving forward at
-  the launch speed from its very first drawn frame. Later snapshots add
-  points and the usual interpolation (a smooth curve through the three
-  newest points) takes over.
+  the launch speed from its very first interpolated frame (whether the
+  arrival frame itself is interpolated: §11.2, Open questions 16). Later
+  snapshots add points and the usual interpolation (a smooth curve
+  through the three newest points) takes over.
 - **p0 is not the launch point**: it is the server's position in the
   first snapshot that carries the projectile, the launch point plus the
   flight between the shot's tick and that snapshot (snapshots every 1/20
@@ -551,19 +562,94 @@ attacker's machine and the server alike:
   the hide window ending, not a hold.
 - **The trail** is created at arrival (rocket: at the model's `trail`
   attachment; pipes and stickies: at their origin), both following the
-  drawn projectile, and **emits from the arrival on**; the point it
-  follows is moving from its first drawn frame, so there is no
-  stationary emission at the launch point. Behind-the-eye particles are
-  simply outside the view. Nuance (inferred: the particle library is
-  outside the reference): the system is created during the network
-  update, before that frame's interpolation, so its first control-point
-  position is p0; its first simulation step sees the point move back to
-  the drawn position, and emitters that spread a step's new particles
-  along the control point's path put that first step's particles
-  between p0 and the drawn point.
+  drawn projectile, and emits from the frame after arrival (§11.2). Behind-the-eye particles are
+  simply outside the view. (The earlier inferred nuance here, "the
+  system is created before that frame's interpolation", is replaced by
+  §11.2: it is created after the interpolation pass, emits nothing in
+  its first frame, and its children start a frame later.)
 - Needles are not networked entities: §12.
 - So ours' "hold at the launch point until the drawn time reaches the
   shot" is not TF2's; parity is the seeded back-extrapolation above.
+
+#### 11.2 A rocket's first drawn places and its trail's first frames
+
+(Answers the tf2-psys and tf2-leftovers spec questions on the launch glow;
+refines §11.1. Timing rules of the particle systems: particles.md §9.)
+
+**What the first snapshot carries.** The rocket's origin is sent in
+**whole units** (each component rounded to an integer), its angles, its
+launch velocity v0 (each component in 12 bits over −3000 to +3000
+units/s: steps of about 1.465 units/s) and its simulation time s0 (the
+server time of its last move, whole ticks). p0 = the launch point + v0 ×
+k × 0.015, k = the ticks the rocket has flown by the snapshot that first
+carries it. Snapshots reach a client every 1/`cl_updaterate` s (20/s: 3
+or 4 server ticks apart at 66.67 ticks/s), so k is 0 to 4: p0 is 0 to
+~66 units past the launch point for a rocket (16.5 units a tick), most
+often within 3 ticks (≤ 49.5). Whether the rocket already moves in the
+tick it is fired depends on the server's entity order, which the
+reference does not settle.
+
+**Order inside the client's arrival frame** (from the client's frame
+code):
+
+1. The packet is read: the rocket is created at p0 and its history
+   seeded (§11.1).
+2. The interpolation pass: every entity **on the interpolation list**
+   is moved to its drawn place.
+3. Bones and attachments are set up from those places.
+4. Data-changed callbacks: here the rocket creates its trail
+   (`rockettrail`, or `rockettrail_underwater` when its place is in
+   water, §9), with control point 0 on its `trail` attachment as the
+   rocket stands **now** (after step 2).
+5. The particle update: every system's control points are read again
+   from their attachments, then systems are simulated. The new trail is
+   in its first frame: zero time, its 1 initial smoke particle at the
+   point, no emission, children not stepped (particles.md §9.1).
+
+**Which place the rocket has at step 2 in the arrival frame.** An entity
+goes onto the interpolation list when its received state is latched,
+and only if it already counts as drawn at that moment (it is registered
+for rendering); the engine's order between that registration and the
+latch of a new entity is outside the reference. So two cases:
+
+- **(A) interpolated from arrival:** drawn at p0 − v0 (s0 − r) with r =
+  client time − L (§11.1), about 110–130 units behind the launch point;
+  the trail starts there.
+- **(B) not yet on the list:** drawn at **p0** (its received place) until
+  the next snapshot is latched (≤ 1/`cl_updaterate` later: up to 0.05 s,
+  3 frames at 60), which puts it on the list; from that frame it is
+  drawn on its seeded line, at that moment r < s0 still, so it **jumps
+  back** behind the launch point and comes forward at the launch speed
+  as in §11.1.
+
+**The capture fits (B), not (A)** (inferred; Open questions 16). TF2
+shows a large glow (~10 units) with short spark streaks ~50 units ahead
+of the launcher from the frame after the shot for a few frames, and then
+the trail's glow passing the camera at the view's right edge (frames
+2–10, §11). Frame by frame at 60 frames/s with the defaults, case (B):
+
+| Frame | Rocket drawn at | Trail |
+|---|---|---|
+| a (arrival) | p0 | system made at p0 (+ the `trail` attachment's offset); 1 smoke puff at p0; nothing else |
+| a+1 … until the next snapshot (1–3 frames) | p0 (not moving) | parent smoke 2–3 a frame, all at p0; the children's first step (no spread): `rockettrail_fire` 2 a frame at p0 (`effects/sc_brightglow_y_nomodel`, radius 5 × 3 = 15 at birth shrinking to 0, alpha 64, life 0.2 s), `rockettrail_burst` 2 a frame 10 units along the point's x axis from p0, flying out at 10–30 forward, ±110 sideways, drawn as short sprite trails |
+| the latch frame | jumps to p0 − v0 (s0 − r), ~110–150 behind p0 | the point jumps back; this frame's particles at fractions k/n of the straight jump from p0 to the new place (none at p0, the last on the rocket); the burst sparks alive are carried back with the point (they are locked to it); fire glows and smoke stay where they were made |
+| later | forward at 1100 units/s, passing the launch point ≈ L after the shot's tick | normal: each frame's particles along the frame's path, the newest on the rocket |
+
+So the "glow ahead of the launcher" is the fire glows and burst sparks
+made at p0 while the rocket stands there unseen (model hidden 0.2 s), a
+few frames' worth, fading over their 0.2 s life; the white smoke trail
+then starts from p0 too (puffs left there) and reaches back to the eye
+when the rocket jumps back. In case (A) nothing of the trail would be
+ahead of the launch point until about L (≈ 7 frames) after the shot.
+
+**Parity, therefore (case B):** a projectile's first received place p0
+is drawn as received (not interpolated) until its second snapshot; its
+trail is made at p0 in the arrival frame with only its initial
+particles; the children start emitting the next frame, with no spread,
+at the point's place then; at the second snapshot the drawn place goes
+over to the seeded interpolation (jump back, then forward), and that
+frame's particles spread along the jump. Under water the same with
+`rockettrail_underwater` (its bubbles child too).
 
 ### 12. Syringe Gun needles: what is drawn and what a hit leaves
 
@@ -721,9 +807,9 @@ out along the surface normal** of the trace they use.
     full volume** (no fade), attached to the **player** (the sound
     follows him; every client's own copy, heard by that client only).
     Also the glow particle `critgun_weaponmodel_red`/`_blu` (his team; a
-    disguised enemy shows his disguise team's) starts on the weapon
-    model drawn for him (the view model for the local player, drawn in
-    the view model's pass; the held world weapon for others).
+    disguised enemy shows his disguise team's) starts on the model drawn
+    for him (for the local player his view model, the arms, drawn in the
+    view model's pass; the held world weapon for others): §14.1.
   - It **stops at once** (cut, no fade) when the boost stops showing:
     the condition ends, he cloaks, he (as seen by others) disguises, or
     he switches to a weapon that cannot be crit-boosted. Switching
@@ -746,6 +832,62 @@ out along the surface normal** of the trace they use.
   FireLoopCrit plus CritPower.
 - One-shot guns play the script's crit shot sound (`…SingleCrit`) for a
   crit shot instead of `…Single` (weapons_more.md §9.4); no loop.
+
+#### 14.1 The crit glow's systems and how they sit on the model
+
+- **File**: `particles/firstperson_weapon_fx.pcf`, preloaded (listed with
+  `!` in `particles/particles_manifest.txt`); a DX8 copy
+  `firstperson_weapon_fx_dx80.pcf` holds the same names. Each of
+  `critgun_weaponmodel_red` / `_blu` has one child, `..._red_glow` /
+  `..._blu_glow` (delay 0). Neither sets "view model effect"; no
+  initial particles.
+- **Host entity and point.** The system is started on an entity with
+  "follow the entity's origin": control point 0 is that entity's origin
+  every frame (no attachment) and carries the entity itself as the
+  point's object, which the model initializer and lock below use. The
+  entity: for the **local player, his first view-model entity**, which
+  for every stock item (all attach to the hands) holds the class's arms
+  model (`c_<class>_arms.mdl`, e.g. `c_soldier_arms.mdl`); the weapon's
+  own `c_` model is a separate entity merged onto it and is **not** the
+  host. For anyone else, his **active weapon** entity (its world model,
+  for stock items the same `c_` model, e.g. `c_rocketlauncher.mdl`). The
+  local player's system is put in the view model's translucent render
+  group: drawn in the view-model pass with the view model's FOV, after
+  the world; its particles are placed on the view model's own bones (in
+  the view model's space), so no re-projection (particles.md §6) applies.
+- **Placement** (`Position on Model Random`, point 0, hitbox scale 1,
+  direction bias (1, 1, 1), not forced inside): for each new particle, 6
+  tries (a non-zero bias raises the tries to at least 5, plus the first);
+  each try picks one hitbox of the host model's current hitbox set
+  uniformly, a point uniform inside its box (each axis between the box's
+  min and max × the model scale) and puts it through that hitbox's bone's
+  current world transform; its score is U(0, 72) + (point − point 0's
+  position) · (1, 1, 1); the best-scoring try is kept. The bias is in
+  **world** axes (quirk: favours the +x +y +z side of the host's origin,
+  so it shifts as the player turns). Hitbox sets read: `c_soldier_arms.mdl`
+  47 boxes (root, upper/lower arms, wrists, hands, `weapon_bone`, a
+  `rocket` box, and 36 finger boxes), so in first person the glow sits
+  mostly on the hands and fingers; `c_rocketlauncher.mdl` 2 boxes (the
+  whole gun on `weapon_bone`, −8.3..8.3, −7.6..15.0, −36.3..21.4, and a
+  small one on `vm_weapon_bone_1`).
+- **Following**: `Movement Lock to Bone` (point 0): each particle keeps
+  its place relative to its hitbox's bone and moves with it (inferred
+  from the name and the hitbox-relative output of the placement).
+- **Values** (both teams alike but colours):
+
+| | `critgun_weaponmodel_<team>` | `..._<team>_glow` |
+|---|---|---|
+| Emission | 60/s, endless; max 80 | 60/s, endless; max 25 |
+| Material | `effects/electric1` (UnlitGeneric, additive), animated sprites, 31 frames/s fitted to life | `effects/sc_softglow` (SpriteCard, additive, no depth blend, `$maxsize` 0.35, fade 0.475–0.65) |
+| Radius, life | U(4, 6); U(0.1, 0.2) s | 8; U(0.6, 1.0) s |
+| Alpha | 255; fade in 0–0.5 of life, out 0.5–1.0 | 12; Alpha Fade and Decay with start alpha 0, fading out over the whole life |
+| Colour RED | (255,148,70)..(255,108,0) → (176,0,0) from 0.2 to 1.0 of life | (255,31,31)..(255,108,0) → (249,53,0) |
+| Colour BLU | (125,125,255)..(116,162,255) → (0,100,249) | (125,125,255)..(116,162,255) → (0,100,249) |
+| Motion | drag 0.15, no speed; random roll 0–360 | same |
+| Oscillate Scalar on radius (field 3) | rate 64, frequency U(0.5, 2), × 16, phase 0.5, over the whole life | rate U(32, 64), frequency U(0.5, 2), × 12 |
+| Oscillate Scalar on alpha (field 7) | rate U(1, 128), frequency U(2, 8), × 64, phase 0.5 | rate U(1, 2), frequency U(2, 8), × 64 |
+
+  The oscillator's exact formula is not read (Open questions 17).
 
 ## Per-frame order
 
@@ -863,7 +1005,11 @@ bridge; facts of the picture, not of the code.
 | Rocket fired with the launch point under water | `rockettrail_underwater` (smoke + fire + burst + bubbles) for its whole flight |
 | Rocket fired from above into water | `rockettrail` for its whole flight; it does not stop at the surface; it explodes on the bed |
 | Blast point inside water (river bed) | the water effect (ours: `ExplosionCore_MidAir_underwater`), oriented to the bed's normal |
-| Rocket fired, lerp 0.1, first client frame with the rocket | the drawn rocket (and its trail point) 110 units behind its server position on its line; model hidden until 0.2 s |
+| Rocket fired, lerp 0.1, first interpolated client frame | the drawn rocket (and its trail point) 110 units behind its server position on its line; model hidden until 0.2 s |
+| Rocket received at p0 = launch + (49.5, 0, 0), case B (§11.2), 60 frames/s | arrival frame: drawn at p0, `rockettrail` made there with 1 smoke puff, no fire or burst; next frame: 2 fire glows and 2 burst sparks at p0 (no spread), smoke at p0; at the second snapshot the drawn place jumps ~110–150 units back and that frame's particles lie along the jump, the newest on the rocket |
+| Rocket's first snapshot, origin (100.4, 0.6, −20.5) on the server | received as whole units per component |
+| Local Soldier crit-boosted, first person | `critgun_weaponmodel_<team>` + `_glow` on the arms view model's hitboxes (mostly hands and fingers), drawn in the view-model pass; 60 + 60 particles/s |
+| Enemy Soldier crit-boosted, seen in third person | the same systems on his rocket launcher's world model hitboxes (2 boxes, nearly all on the gun's box) |
 | Rocket blast at server time T, lerp 0.1 | the blast effect starts when the client's interpolated time reaches T (≈ T + 0.1 s + snapshot wait) |
 | Rocket into the floor ~160 units ahead (25° down), 60 frames/s, `+attack` at frame 1 | blast at frame ~15 with lerp 0.1, ~11 with lerp 0.03 |
 | Interpolation amount, defaults (`cl_interp` 0.1, `cl_interp_ratio` 2, `cl_updaterate` 20), tick 0.015 | 8 ticks = 0.12 s |
@@ -979,3 +1125,18 @@ bridge; facts of the picture, not of the code.
    look for concrete flecks and bullet-hole decals on the body, and
    which impact sound plays.
 15. The engine's per-model decal cap (`r_maxmodeldecal`, believed 50).
+
+16. **Is a new projectile interpolated in its arrival frame?** (§11.2.)
+   The SDK's client puts an entity on the interpolation list when its
+   state is latched only if it is already registered for drawing; the
+   engine's order for a new entity is outside the reference. The launch
+   captures fit "no" (case B: drawn at its received place until the
+   second snapshot). Check: `launch.tf2` with `cl_interp 0.5` — case B
+   keeps the glow at p0 for the same few frames and the rocket then
+   jumps ~550 units back; case A shows nothing ahead of the launcher for
+   ~0.5 s. With `cl_updaterate 66` case B's glow at p0 lasts about one
+   frame's worth of particles.
+17. The `Oscillate Scalar` operator's formula (rate, frequency,
+   multiplier, start phase, proportional start/end times) used by the
+   crit glow on radius and alpha (§14.1): not read; implement as a
+   per-particle sine on the field until a capture or a spec settles it.

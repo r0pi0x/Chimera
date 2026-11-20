@@ -13,7 +13,13 @@ operator meanings below are read from their names and parameters and
 marked *inferred* where the SDK does not show them. Data: TF2's particle
 files and effect materials read in place with our dumper (values only;
 nothing committed), and texture sheet resources decoded from the `.vtf`
-headers. Nothing copied; restated in our words.
+headers. Nothing copied; restated in our words. Section 9 (2026-11-20,
+tf2-spec-psys) also read the particle library the SDK ships only as a
+prebuilt static library: its exported symbols and the machine code of the
+system step, the first-frame setup, the continuous and instantaneous
+emitters and the control point's position at a given time, plus the
+client's particle manager, its per-frame order and the entity particle
+property (all in the SDK's source).
 Status: draft
 
 ## Summary
@@ -432,13 +438,136 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
 - `nailtrails_medic_*`: a trail of `effects/softglow`, 255/s, life 0.01,
   radius 1 (crit 1–6), alpha 128 (crit 255).
 
+### 9. When and where a step's new particles are made
+
+Read from the particle library itself (above); it holds for every Source
+game using these particle files (CS:S's, HL2:DM's too), not only TF2.
+
+#### 9.1 A system's clock and steps
+
+- A system has its own clock T (seconds), 0 when it is created.
+- **The frame it is created in**, it is simulated with **zero time**:
+  every control point's "previous position" is set to its current one,
+  the system's `initial_particles` are made (creation time T = 0, at the
+  control point's current place: §9.3 with a zero step), and nothing else
+  runs: **no emitter emits** and the system's **children are not
+  simulated at all** that frame. (The client's manager does this for any
+  system in its first frame.)
+- **Every later frame**: the frame's time Δ (the client's frame time) is
+  stepped in sub-steps of at most the system's `maximum time step` (0.1
+  s in every TF2 file read; 0.1 also when the file gives 0 or less), at
+  most 10 × that step in all per frame. For each sub-step h: T += h;
+  then the operators flagged to run before emitters; then each emitter
+  in file order, the particles it made being initialised at once by all
+  initializers; then the other operators on every live particle (the
+  new ones too). After the parent's sub-steps, each child system is
+  stepped the same way with the whole Δ (its own first-frame setup
+  included, see below). **After all sub-steps** every control point's
+  "previous position" becomes its current position.
+- **Children's first frame.** A child is first simulated in the frame
+  after its parent's creation frame. Its own first-frame setup runs then,
+  at the start of that step, and sets its previous positions to the
+  control points' places **of that frame**; so a child's first emitting
+  step sees its points standing still (no spread, §9.3), wherever the
+  parent's point was the frame before.
+- **Consequence:** nothing a system emits shows in the frame it is
+  created; a burst (or a continuous emitter's first particles) appears in
+  the next frame, one frame later than the event that started it. Only
+  `initial_particles` exist in the creation frame (e.g. 1 for
+  `rockettrail` and `rockettrail_underwater`: one smoke puff).
+
+#### 9.2 Continuous emitter (`emit_continuously`): how many and when
+
+Fields: rate R (particles/s, × the client's particle multiplier, 1 at
+default settings; a negative rate is 0), start S (`emission_start_time`),
+duration D (`emission_duration`, 0 = forever; negative = 0). Each
+emitter keeps a running total E (start 0) and a count N of particles
+emitted (start 0). In a sub-step that ends at T and is h long:
+
+1. The **window** [a, b]:
+   - D = 0 (forever): nothing while S > T; otherwise [a, b] = [T − h, T].
+     The window is **not** cut at S (quirk: an endless emitter with S
+     inside the step counts the whole step).
+   - D > 0: nothing if S > T or T − h > S + D; otherwise
+     a = max(S, T − h), b = min(S + D, T).
+2. E += R × (b − a); n = floor(E) − N; N += n. If n is 0, nothing.
+3. n is cut to the free room (`max_particles` − particles alive); N is
+   not reduced, so particles lost to the cap are never made up.
+4. The new particles' **creation times** are spread evenly over the
+   window by **this step's count**, not by 1/R:
+
+```math
+c_k = \min\!\Big(a + k\,\frac{b-a}{n},\ b\Big),\qquad k = 1, \dots, n
+```
+
+   The first is one share **after** the window's start, never at it; the
+   last is at its end b (normally the step's end T).
+
+Worked: 128/s at 60 frames/s (h = 1/60): E after each step 2.13, 4.27,
+6.4, 8.53, 10.67, 12.8, 14.93, 17.07 → n = 2, 2, 2, 2, 2, 2, 2, 3; in the
+first step c = 1/120 and 1/60 s (half-way and the end of the step). 150/s:
+n = 2, 3, 2, 3, ... (E = 2.5 a step).
+
+**Stop and restart**: a stopped emitter makes nothing; a restart sets its
+start to the system's current time and its totals afresh (as if the
+system had just started).
+
+**Instantaneous emitter** (for contrast, same library): all its particles
+take the creation time S (its start time), whatever the step: a burst at
+S = 0 is made in the first emitting step with creation time 0 = that
+step's start, so it is placed at the control point's **previous**
+position (§9.3) and has aged a whole step by the step's end.
+
+#### 9.3 Where: the control point at a particle's creation time
+
+The position initializers read control point i at the new particle's
+creation time c (`Position Within Sphere Random`, `Position Within Box
+Random`, `Position Modify Offset Random`, the initial velocity ones, ...;
+`Position on Model Random` reads the model at its current pose):
+
+```math
+P_i(c) = P_i^{prev} + \big(P_i^{now} - P_i^{prev}\big)\cdot \max\!\Big(0,\ \frac{c - (T - h)}{h}\Big)\qquad (h > 0);\qquad P_i(c) = P_i^{now}\quad (h = 0)
+```
+
+- P^prev is where the point was at the end of the previous frame's
+  simulation (§9.1), P^now where it was set this frame before simulating;
+  the motion is taken as a straight line at constant speed over the
+  step. No clamp above 1 (creation times never pass T).
+- With §9.2: a continuous emitter's n particles of a step sit at
+  fractions k/n of the point's path this step: **the last one on the
+  point's current place, none on its previous place**. 128/s at 60
+  frames/s: two particles a step, half-way and at the end of the path.
+- Only the position is interpolated: a control point keeps no previous
+  orientation, so the axes used (local-space offsets and speeds) are the
+  point's **current** axes for every particle of the step.
+- With several sub-steps in one frame (frames longer than 0.1 s) P^prev
+  is still the frame's start but h is one sub-step (quirk; frames that
+  long are outside normal play).
+- In the creation frame (h = 0) and in a child's first step (P^prev =
+  P^now) every new particle is on the point's current place.
+
+#### 9.4 Answers this gives
+
+- `Explosion_Flashup` (Open questions 8): 3000/s with S = 0, D = 0.01, in
+  the first emitting step (h = 1/60) has the window [0, 0.01]: E = 30,
+  so **30 particles are made**, at creation times 0.01 k / 30. It is not
+  a step-boundary rule; whatever hides them is their own alpha and life
+  (alpha 0 at birth, life U(0, 0.2)). Parity target unchanged: nothing
+  visible at 60 frames a second.
+- A system started on a moving point (a projectile's trail): its first
+  frame makes only its initial particles at the point's place in that
+  frame; from the next frame each step's particles fill the point's path
+  over the step, the newest on its current place. Its children start one
+  frame later still with no spread in their first step.
+
 ## Per-frame order
 
 1. Control points updated from attachments (re-projected for first-person
    weapons) and from code (flames).
 2. Systems simulated: emitters, initializers for new particles,
    operators in file order, forces, constraints; then dead particles
-   removed. The maximum step is 0.1 s.
+   removed. The maximum step is 0.1 s. A system in its first frame is
+   simulated with zero time and its children not at all (§9.1).
 3. Translucent world pass: systems drawn sorted back to front (a system's
    particles sorted when "Sort particles" is set), after opaque geometry,
    before the view model.
@@ -481,6 +610,13 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
 | `Explosion_FlyingEmbers` alone on a floor 160 units ahead, fov 90, 1024x768 | thin rays ~1 unit wide, each with a dot ~3× wider at its head, from the first frame; streaks reach back to ~the centre for ~0.1 s, then detach |
 | `Explosion_CoreFlash` alone, same view | broad soft orange streaks (tens of units wide), gone after ~7 frames at 60 a second |
 | `Explosion_Flashup` alone, same view, stepped at 60 a second | no visible change in any frame |
+| System with `initial_particles` 1 and a 128/s continuous emitter created this frame | this frame: 1 particle (at the point's place), emitter makes nothing; children not stepped |
+| Same system's next frame (h = 1/60), point moved from A to B this frame | 2 new particles, creation times 1/120 and 1/60 s, at (A + B)/2 and B; none at A |
+| Its child's first step, same frame | prev = now = B: the child's particles all at B |
+| 150/s, 4 steps of 1/60 | 2, 3, 2, 3 particles; within a step at fractions k/n of the path |
+| Endless emitter, S = 0.005, step [0, 1/60], 120/s | window [0, 1/60] (not cut at S): E = 2, particles at 1/120 and 1/60 |
+| Emitter 3000/s, S 0, D 0.01, first step 1/60 | 30 particles, creation times 0.01 k/30 |
+| Instantaneous burst at S = 0, point moved A → B in the first emitting step | all at A (creation time = window start) |
 | addself material, T = (1, 0.5, 0.2, 0.8), v = (1, 1, 1, 0.25), O = 5, S = 0.5, f = 1 | P = (1, 0.5, 0.2) × 5 × 0.8 × 0.25 = (1, 0.5, 0.2); out.rgb = P × (1 + 0.625) = (1.625, 0.8125, 0.325); out.a = 0.2 |
 
 ## Open questions
@@ -579,6 +715,9 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
    rule), or its particles are emitted and simply never visible, is
    unconfirmed. Parity target either way: nothing visible from it at
    60 frames a second.
+   **Answered (§9.4):** there is no step-boundary rule; the 30 particles
+   are emitted in the first emitting step (one frame after the blast's
+   system is created) and are simply not visible.
 9. `rockettrail_waterbubbles`' plane constraint reads control point 1,
    which the rocket never sets; what an unset control point holds (the
    world origin, or control point 0) decides whether bubbles of a rocket
