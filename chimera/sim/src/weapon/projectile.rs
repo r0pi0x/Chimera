@@ -668,12 +668,11 @@ pub(super) fn plugin(app: &mut App) {
                 .ambiguous_with_all()
                 .run_if(crate::core::authoritative),
         )
-        // Every machine (a client's marks come from the server), before
-        // the impact effects read the weapon events.
-        .add_systems(
-            FixedUpdate,
-            show_marks.in_set(FlyerSet::Touch).after(fly).ambiguous_with_all(),
-        );
+        // Every machine (a client's marks come from the server), each
+        // frame: the impact effects read its weapon events on the next
+        // tick (in `Update`, off the ticks' schedules, which the
+        // server-client ordering ratchet keeps).
+        .add_systems(Update, show_marks);
 }
 
 // ---------------------------------------------------------------------------
