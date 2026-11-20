@@ -46,6 +46,10 @@
 //!   `tf2:rocket`, `pipebombtrail_<team>`, `stickybombtrail_<team>`,
 //!   `nailtrails_medic_<team>`), following it without carrying what it
 //!   left, stopped when it is gone (`psys::Follow`).
+//! - **The armed pulse** (effects.md 1): a gun's `armed` (`ArmedLook`)
+//!   starts on each of its flyers `after` seconds after it appears (the
+//!   sticky's `stickybomb_pulse_<team>` at its arming, 0.8 s), following
+//!   it.
 //! - **The Rocket Launcher's backblast** (effects.md 4): `rocketbackblast`
 //!   at the launcher's `backblast` attachment on each shot, for everyone
 //!   but the shooter (the held model's: never on this machine's own
@@ -184,6 +188,29 @@ pub struct LooksParams {
     /// The system each of its flyers trails (effects.md 1, 7).
     #[serde(default)]
     pub trail: Option<FlyerTrail>,
+    /// A system started on each of its flyers once it is armed (the
+    /// sticky's `stickybomb_pulse_<team>`, effects.md 1).
+    #[serde(default)]
+    pub armed: Option<ArmedLook>,
+}
+
+/// A system started on each flyer drawn as `shown`, `after` seconds after
+/// it appears (when it arms), following it: the sticky's armed pulse.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ArmedLook {
+    pub shown: String,
+    pub system: String,
+    #[serde(default)]
+    pub team: bool,
+    pub after: f32,
+}
+
+impl ArmedLook {
+    /// Its system's name for a flyer of `team` (as `FlyerTrail::name`).
+    pub fn name(&self, blu: Option<bool>) -> String {
+        FlyerTrail { shown: self.shown.clone(), system: self.system.clone(), team: self.team }.name(blu)
+    }
 }
 
 /// A trail started on each flyer of a gun as it appears (its `ShownItem`
@@ -318,6 +345,11 @@ impl GunLooks {
         self.0.iter().filter_map(|(_, l)| l.trail.as_ref()).find(|t| t.shown == shown)
     }
 
+    /// The armed look of a flyer drawn as `shown`, if a gun names one.
+    pub fn armed_of_shown(&self, shown: &str) -> Option<&ArmedLook> {
+        self.0.iter().filter_map(|(_, l)| l.armed.as_ref()).find(|t| t.shown == shown)
+    }
+
     /// A gun's stream on flame points.
     pub fn stream_of(&self, gun: &str) -> Option<&StreamLooks> {
         self.of(gun)?.stream.as_ref()
@@ -338,6 +370,9 @@ impl GunLooks {
             out.extend(l.stream.iter().flat_map(StreamLooks::names));
             if let Some(t) = &l.trail {
                 out.extend([t.name(Some(false)), t.name(Some(true))]);
+            }
+            if let Some(a) = &l.armed {
+                out.extend([a.name(Some(false)), a.name(Some(true))]);
             }
             if let Some(e) = &l.explosion {
                 out.extend([&e.wall, &e.player, &e.water].into_iter().filter(|n| !n.is_empty()).cloned());
@@ -632,6 +667,42 @@ fn flyer_trails(
         start.write(StartParticleSystem {
             follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false }),
             ..StartParticleSystem::new(trail.name(blu), at.translation, forward)
+        });
+    }
+}
+
+/// When a flyer with an armed look appeared (`ArmedLook`), until its
+/// look has started.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ArmsAt(f64);
+
+/// Each flyer's armed look, `after` seconds after it appeared, following
+/// it (`psys::Follow`: stopped when the flyer is gone).
+fn armed_looks(
+    looks: Res<GunLooks>,
+    time: Res<Time>,
+    added: Query<(Entity, &chimera_world::map::loose::ShownItem), Added<chimera_world::map::loose::ShownItem>>,
+    arming: Query<(Entity, &ArmsAt, &chimera_world::map::loose::ShownItem, &Transform, Option<&chimera_sim::weapon::projectile::Flyer>)>,
+    teams: Query<&Team>,
+    mut start: MessageWriter<StartParticleSystem>,
+    mut commands: Commands,
+) {
+    let now = time.elapsed_secs_f64();
+    for (e, shown) in &added {
+        if looks.armed_of_shown(&shown.0).is_some() {
+            commands.entity(e).insert(ArmsAt(now));
+        }
+    }
+    for (e, at, shown, t, flyer) in &arming {
+        let Some(armed) = looks.armed_of_shown(&shown.0) else { continue };
+        if now < at.0 + armed.after as f64 {
+            continue;
+        }
+        commands.entity(e).remove::<ArmsAt>();
+        let blu = flyer.and_then(|f| f.owner).and_then(|o| teams.get(o).ok()).map(|t| super::super::bodies::skin_of(Some(*t)) == 1);
+        start.write(StartParticleSystem {
+            follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false }),
+            ..StartParticleSystem::new(armed.name(blu), t.translation, t.rotation * Vec3::X)
         });
     }
 }
@@ -957,7 +1028,7 @@ pub fn add(app: &mut App) {
         .add_systems(
             Update,
             (
-                (explosions, muzzle_flashes, tracers, firing_looks, flyer_trails),
+                (explosions, muzzle_flashes, tracers, firing_looks, flyer_trails, armed_looks),
                 (super::flame::shown_flames.run_if(not(resource_exists::<chimera_net::dedicated::Serving>)), flame_stream)
                     .chain()
                     .before(StartedSystemsRun),

@@ -10,7 +10,9 @@
 //!   player hit, leaves a `Scorch` and starts the wall effect; the rocket
 //!   trails `rockettrail` (1);
 //! - the backblast (4): others see it at the launcher's `backblast`, the
-//!   shooter (this machine's player) never.
+//!   shooter (this machine's player) never;
+//! - the sticky (1): its trail as it appears, its armed pulse
+//!   (`stickybomb_pulse_red`) once, when it arms 0.8 s later.
 //!
 //! A made-up first-person Minigun with `muzzle` and `eject_brass`
 //! attachments, and a made-up held `backblast` attachment.
@@ -23,7 +25,7 @@ use chimera_world::map::{
     psys::{StartParticleSystem, StopParticleSystems},
     view_model::HeldAttachment,
 };
-use tf2::game::weapons::{MINIGUN, ROCKET_LAUNCHER, SCATTERGUN, blast::Tf2Explosion, looks::TracerCount};
+use tf2::game::weapons::{MINIGUN, ROCKET_LAUNCHER, SCATTERGUN, STICKY_LAUNCHER, blast::Tf2Explosion, looks::TracerCount};
 
 use super::weapons::{holding, sim};
 
@@ -144,6 +146,35 @@ fn a_rocket_on_the_floor_leaves_a_scorch_and_shows_the_wall_effect() {
     assert_eq!(trails.len(), 1, "{starts:?}");
     let f = trails[0].follow.expect("follows the rocket");
     assert!(!f.carry);
+}
+
+/// effects.md 1: a sticky trails `stickybombtrail_<team>` from its launch
+/// and pulses (`stickybomb_pulse_<team>`) once, when it arms (0.8 s), both
+/// following it.
+#[test]
+fn a_sticky_trails_from_its_launch_and_pulses_once_when_armed() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), STICKY_LAUNCHER);
+    let mut first: Vec<(String, u32)> = Vec::new();
+    let mut cursor = sim.app.world().resource::<Messages<StartParticleSystem>>().get_cursor_current();
+    let (starts, ..) = collect(&mut sim, 120, |s, t| {
+        // A tap: pressed one tick, let go (the launch on release).
+        s.intent(p).fire = t == 0;
+        let w = s.app.world();
+        first.extend(cursor.read(w.resource::<Messages<StartParticleSystem>>()).map(|m| (m.name.clone(), t)));
+    });
+    let trail: Vec<_> = starts.iter().filter(|s| s.name.starts_with("stickybombtrail_")).collect();
+    assert_eq!(trail.len(), 1, "{starts:?}");
+    let pulse: Vec<_> = starts.iter().filter(|s| s.name.starts_with("stickybomb_pulse_")).collect();
+    assert_eq!(pulse.len(), 1, "one pulse: {starts:?}");
+    assert_eq!(pulse[0].name, trail[0].name.replace("stickybombtrail", "stickybomb_pulse"), "the trail's team");
+    let follows = |s: &StartParticleSystem| s.follow.expect("follows the sticky").entity;
+    assert_eq!(follows(pulse[0]), follows(trail[0]), "on the same sticky");
+    let tick = |n: &str| first.iter().find(|(m, _)| m.starts_with(n)).map(|(_, t)| *t).expect(n);
+    let (launch, armed) = (tick("stickybombtrail_"), tick("stickybomb_pulse_"));
+    let dt = sim.app.world().resource::<chimera_core::core::SimClock>().delta.as_secs_f32();
+    let after = (armed - launch) as f32 * dt;
+    assert!((after - 0.8).abs() < 0.05, "armed 0.8 s after the launch: {after}");
 }
 
 #[test]

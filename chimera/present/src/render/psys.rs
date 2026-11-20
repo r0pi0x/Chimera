@@ -36,7 +36,8 @@
 //! system's maximum time step), velocity noise is uniform per particle, random
 //! force a uniform draw per step, twist a tangential acceleration, sprite
 //! trails are streaks back along the velocity 0.1 s long between the min and
-//! max length, animation rate without "as FPS" plays the sequence that many
+//! max length (along the last step's motion for a system no movement
+//! operator moves: its velocity is only a start value), animation rate without "as FPS" plays the sequence that many
 //! times a second; "collision via traces" is a ray per step (its radius past
 //! the step) against the solid world for started systems only (placed
 //! ones don't collide), bounce and slide read as fractions of the speed
@@ -142,6 +143,9 @@ struct P {
     /// The trail renderer's length attribute (field 10): seconds of its
     /// travel the trail spans.
     trail: f32,
+    /// Its motion over its last step (units/s): what a sprite trail of a
+    /// system no movement operator moves follows (`Render::Trail`).
+    motion: Vec3,
 }
 
 /// "Movement Basic"'s drag is the fraction of the velocity taken off per
@@ -578,6 +582,7 @@ impl Instance {
             _ => None,
         });
         let mut killed = false;
+        let from: Vec<Vec3> = self.particles.iter().map(|p| p.position).collect();
         for p in &mut self.particles {
             // A particle made during this step lives only its part of it.
             let dt = dt + p.age.min(0.0);
@@ -690,6 +695,11 @@ impl Instance {
             }
             Self::remap(d, &cp, p);
         }
+        if dt > 0.0 {
+            for (p, from) in self.particles.iter_mut().zip(from) {
+                p.motion = (p.position - from) / dt;
+            }
+        }
         if decays {
             self.particles.retain(|p| p.age < p.life);
         }
@@ -751,6 +761,7 @@ impl Instance {
             alpha_mul: 1.0,
             tint: None,
             trail: DEFAULT_TRAIL_LENGTH,
+            motion: Vec3::ZERO,
         };
         for i in &d.initializers {
             match *i {
@@ -940,6 +951,7 @@ impl Instance {
                     }
                 }
                 render => {
+                    let moves = d.operators.iter().any(|o| matches!(o, Op::Movement { .. }));
                     for p in &self.particles {
                         let radius = Self::radius(d, p);
                         let alpha = Self::alpha(d, p);
@@ -986,12 +998,21 @@ impl Instance {
                                 max_length,
                                 length_fade_in,
                             } => {
-                                let speed = p.velocity.length();
+                                // Along its velocity; a particle no movement
+                                // operator moves (its velocity only a start
+                                // value) along its motion: TF2's Flame
+                                // Thrower pilot, locked to the muzzle with a
+                                // forward speed of 800-1200, draws no streak
+                                // while the gun is still (tools/tf2ref: ours
+                                // drew it 100 units back past the eye, an
+                                // orange wash on the right of the view).
+                                let v = if moves { p.velocity } else { p.motion };
+                                let speed = v.length();
                                 let mut length = (speed * p.trail).clamp(min_length, max_length.max(min_length));
                                 if length_fade_in > 0.0 {
                                     length *= (p.age / length_fade_in).min(1.0);
                                 }
-                                let back = to_engine(p.position - p.velocity.normalize_or_zero() * length);
+                                let back = to_engine(p.position - v.normalize_or_zero() * length);
                                 // The radius is the strip's full width: real
                                 // TF2's tracers (radius 2) are half as wide as
                                 // a strip of half-width 2; and never wider than
@@ -1891,6 +1912,7 @@ mod tests {
             alpha_mul: 1.0,
             tint: None,
             trail: DEFAULT_TRAIL_LENGTH,
+            motion: Vec3::ZERO,
         };
         assert_eq!(Instance::alpha(&d, &p(0.0)), 0.0);
         assert!((Instance::alpha(&d, &p(0.125)) - 0.5).abs() < 1e-5);
@@ -2049,6 +2071,56 @@ mod tests {
         assert!((p.position.x - 600.0).abs() < 1.0, "{:?}", p.position);
         s.step(0.15, &none);
         assert!(s.running.is_empty(), "arrived and gone");
+    }
+
+    /// A sprite trail of a system no movement operator moves follows the
+    /// particle's motion, not its start velocity: TF2's Flame Thrower
+    /// pilot (locked to the muzzle, a forward speed of 800-1200, trail
+    /// length 0.1 s) draws nothing while the gun is still (real TF2: no
+    /// streak; ours drew one 100 units back past the eye) and a streak
+    /// back along the muzzle's motion when it moves.
+    #[test]
+    fn a_trail_no_movement_operator_moves_follows_its_motion() {
+        let pilot = SystemDef {
+            name: "pilot".into(),
+            material: Some(0),
+            radius: 7.0,
+            emitters: vec![Emitter::Instantaneously { start: 0.0, count: 1 }],
+            initializers: vec![
+                Init::Sphere {
+                    cp: 0,
+                    distance: Pick::new(0.0, 0.0, 1.0),
+                    bias: Vec3::ONE,
+                    bias_abs: Vec3::ZERO,
+                    speed: Pick::new(0.0, 0.0, 1.0),
+                    local_min: Vec3::new(1000.0, 0.0, 0.0),
+                    local_max: Vec3::new(1000.0, 0.0, 0.0),
+                },
+                Init::Lifetime(Pick::new(10.0, 10.0, 1.0)),
+            ],
+            operators: vec![Op::Decay, Op::LockToControlPoint { cp: 0 }],
+            renderer: Render::Trail { min_length: 0.0, max_length: 2000.0, length_fade_in: 0.0 },
+            ..default()
+        };
+        let defs = vec![pilot];
+        let mut i = Instance::new(&defs, 0);
+        let mut rng = ParticleRng::new(3);
+        let eye = Vec3::new(0.0, 0.0, 10_000.0);
+        let length = |i: &Instance| {
+            let mut out = Vec::new();
+            i.draw(&defs, &|v| v, 1.0, eye, &none, &mut out);
+            let Shape::Quad { corners, .. } = out[0].shape else { panic!("{:?}", out[0].shape) };
+            (corners[0] + corners[3]).distance(corners[1] + corners[2]) * 0.5
+        };
+        let still = [ControlPoint::default()];
+        i.step(&defs, &still, 0.02, &mut rng, &none);
+        i.step(&defs, &still, 0.02, &mut rng, &none);
+        assert!(length(&i) < 1e-3, "no streak while still: {}", length(&i));
+        // The muzzle moves 2 units in 0.02 s (100 units/s): a 10-unit
+        // streak (0.1 s of it) back along the motion.
+        let moved = [ControlPoint { position: Vec3::new(0.0, 2.0, 0.0), ..default() }];
+        i.step(&defs, &moved, 0.02, &mut rng, &none);
+        assert!((length(&i) - 10.0).abs() < 0.1, "{}", length(&i));
     }
 
     /// A sprite trail's strip (specs/tf2/particles.md 5, measured on real
