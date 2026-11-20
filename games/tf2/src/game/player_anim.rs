@@ -10,7 +10,9 @@
 //! (`translate`, 2: the suffix, a reload's before its `_LOOP` / `_END`,
 //! the deployed activities only in the primary table; `Kind::of_class`:
 //! `PRIMARY`, `SECONDARY` or `MELEE`, the Shotgun the Engineer's primary
-//! and the Soldier's, Pyro's and Heavy's secondary; the class
+//! and the Soldier's, Pyro's and Heavy's secondary, the Grenade Launcher
+//! a secondary and the Stickybomb Launcher a primary (their items'
+//! animation slots, weapons_more.md 1); the class
 //! `Tf2PlayerAnim::class`, kept by `follow_class` from the rung's drawn
 //! class); the sequence drawn among those of the activity by |weight|
 //! (a negative weight keeps the current one), changed only when the
@@ -90,15 +92,20 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// The kind of gun `id` for its own class (2: no stock gun has an
-    /// `anim_slot`, so it is the item's slot): the secondaries (the
-    /// Pistol, SMG, Revolver, Stickybomb Launcher, Medi Gun) and melee
-    /// weapons by name, every other gun primary (another game's gun in a
-    /// TF2 body, open question 1: primary).
+    /// The kind of gun `id` for its own class (2: the weapon's own type,
+    /// or the item's animation slot where it has one: the Grenade
+    /// Launcher animates as a secondary and the Stickybomb Launcher as a
+    /// primary, weapons_more.md 1, the reverse of their item slots): the
+    /// secondaries (the Pistol, SMG, Revolver, Grenade Launcher, Medi
+    /// Gun, the class shotguns) and melee weapons by name, every other gun
+    /// primary (another game's gun in a TF2 body, open question 1:
+    /// primary). With the Demoman's primary set the Grenade Launcher's
+    /// `weapon_bone_1` (its barrel) took the Stickybomb Launcher's pose,
+    /// across his body (7: bone-merged by name).
     pub fn of(id: &str) -> Kind {
         let name = id.rsplit(':').next().unwrap_or(id).trim_start_matches("tf_weapon_");
         match name {
-            "pistol" | "pistol_scout" | "smg" | "revolver" | "pipebomblauncher" | "medigun" | "shotgun_soldier" | "shotgun_hwg"
+            "pistol" | "pistol_scout" | "smg" | "revolver" | "grenadelauncher" | "medigun" | "shotgun_soldier" | "shotgun_hwg"
             | "shotgun_pyro" => Kind::Secondary,
             "bat" | "shovel" | "fireaxe" | "bottle" | "fists" | "wrench" | "bonesaw" | "club" | "knife" => Kind::Melee,
             _ => Kind::Primary,
@@ -700,6 +707,9 @@ mod tests {
         assert_eq!(Kind::of("tf2:tf_weapon_shotgun_primary"), Kind::Primary);
         assert_eq!(Kind::of("tf2:tf_weapon_pistol"), Kind::Secondary);
         assert_eq!(Kind::of("tf2:tf_weapon_revolver"), Kind::Secondary);
+        // The items' animation slots: the reverse of their item slots.
+        assert_eq!(Kind::of("tf2:tf_weapon_grenadelauncher"), Kind::Secondary);
+        assert_eq!(Kind::of("tf2:tf_weapon_pipebomblauncher"), Kind::Primary);
         // The Shotgun in a drawn class's hands: the Engineer's primary,
         // the others' secondary.
         assert_eq!(Kind::of_class("tf2:tf_weapon_shotgun_primary", Some("engineer")), Kind::Primary);

@@ -8,8 +8,9 @@
 //! sequence moving nothing (5a); the foot locks under an aim matrix and
 //! the left hand's IK rule onto the Minigun, as read and as held (4a);
 //! every class's rest stance (3); a Scout spinning the Minigun keeps his
-//! normal set (open question 13, ours). Passes with a note without the
-//! install.
+//! normal set (open question 13, ours); every weapon's merged bones on
+//! its class's body where the weapon model has them (7). Passes with a
+//! note without the install.
 
 use std::sync::Arc;
 
@@ -405,4 +406,93 @@ fn the_left_hand_stays_on_the_minigun_38() {
             assert!(held.0.angle_between(goal.place.0).to_degrees() < 1.0, "38: the hand's turn");
         }
     }
+}
+
+/// 7 and 2: every TF2 weapon's bones that bone-merge onto its class's
+/// body (by name, but `weapon_bone`) sit where the weapon model has them
+/// against its `weapon_bone`, standing, crouched, running and in the air
+/// (the body's pose for the weapon's kind keeps the gun whole). The
+/// Grenade Launcher animates as a secondary and the Stickybomb Launcher
+/// as a primary (their items' animation slots, weapons_more.md 1): with
+/// the other's set the Grenade Launcher's `weapon_bone_1`, its barrel,
+/// was turned 94 degrees across the Demoman's body.
+#[test]
+fn held_weapons_merge_whole_on_every_class() {
+    let Some(mount) = install_mount() else { return };
+    let materials = MaterialLoader::guest(&mount, 0, 0).lean(true);
+    let weapons = tf2::game::weapons::tf2_weapons();
+    let mut sets: std::collections::HashMap<String, Arc<AnimSet>> = Default::default();
+    let mut bad = Vec::new();
+    for (gun, arms) in tf2::game::weapons::arms_by_gun() {
+        let Some(path) = weapons.weapons.iter().find(|d| d.id == gun).and_then(|d| d.models.world.clone()) else { continue };
+        let set = sets
+            .entry(arms.clone())
+            .or_insert_with(|| Arc::new(anim::load(&|p| materials.read(p), &format!("models/player/{arms}.mdl")).unwrap()))
+            .clone();
+        let mdl = source_engine::content::props::read_mdl(&materials.read(&path).unwrap()).unwrap();
+        let mut rest: Vec<(Quat, Vec3)> = Vec::new();
+        for b in &mdl.bones {
+            let q = Quat::from_xyzw(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+            let p = Vec3::new(b.pos.x, b.pos.y, b.pos.z);
+            rest.push(match usize::try_from(b.parent).ok().and_then(|p| rest.get(p)) {
+                Some(&(pq, pp)) => (pq * q, pp + pq * p),
+                None => (q, p),
+            });
+        }
+        let cw = mdl.bones.iter().position(|b| b.name.eq_ignore_ascii_case("weapon_bone")).expect("weapon_bone");
+        let pw = bone(&set, "weapon_bone");
+        let moving = Inputs { velocity: Vec2::new(0.0, 200.0), ..still() };
+        let air = Inputs { on_ground: false, ..still() };
+        let ducked = Inputs { ducked: true, ..still() };
+        for (what, i) in [("standing", still()), ("crouched", ducked), ("running", moving), ("in the air", air)] {
+            let mut a = Animator::new(set.clone());
+            let mut s = Tf2PlayerAnim::default();
+            s.class = Some(if arms == "demo" { "demoman".into() } else { arms.clone() });
+            let mut t = 0.0;
+            for _ in 0..100 {
+                t += 0.01;
+                s.step(&mut a, &i, Some(gun), 0.01, t);
+            }
+            let posed = model_space(&a.pose(t), &set.parents);
+            for (k, b) in mdl.bones.iter().enumerate() {
+                let Some(pi) = set.bone_names.iter().position(|n| n.eq_ignore_ascii_case(&b.name)).filter(|_| k != cw) else { continue };
+                let on_gun = (rest[cw].0.inverse() * rest[k].0, rest[cw].0.inverse() * (rest[k].1 - rest[cw].1));
+                let on_body = (posed[pw].0.inverse() * posed[pi].0, posed[pw].0.inverse() * (posed[pi].1 - posed[pw].1));
+                let (dpos, dang) = (on_gun.1.distance(on_body.1), on_gun.0.angle_between(on_body.0).to_degrees());
+                // A hand's grip may slide a little (the Pyro's
+                // `weapon_bone_L` 1.1 units running).
+                if dpos > 1.5 || dang > 3.0 {
+                    bad.push(format!("{gun} ({arms}, {what}): {} off by {dpos:.1} units, {dang:.0} degrees", b.name));
+                }
+            }
+        }
+    }
+    assert!(bad.is_empty(), "merged bones off the gun:\n{}", bad.join("\n"));
+}
+
+/// 7: every held weapon's parts follow bones its class's body has (the
+/// arms' own `vm_` bones are no body's: a part merged onto one was never
+/// drawn, the Shovel's blade, the Shotgun's pump), and the parts on its
+/// first bone are drawn whole.
+#[test]
+fn held_weapons_parts_follow_body_bones() {
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0).lean(true);
+    let mut kit = chimera_world::map::GameKit::default();
+    let mut warnings = Vec::new();
+    tf2::game::maps::add_guns(&mut materials, &|_| true, false, &mut kit, &mut warnings);
+    let mut bad = Vec::new();
+    for (gun, arms) in tf2::game::weapons::arms_by_gun() {
+        // The Fists are the Heavy's arms alone: nothing held.
+        let Some(held) = kit.held.iter().find(|h| h.key == gun) else { continue };
+        let set = anim::load(&|p| materials.read(p), &format!("models/player/{arms}.mdl")).unwrap();
+        for bone in std::iter::once(&held.bone).chain(held.merged.iter().map(|(b, _)| b)) {
+            if !set.bone_names.iter().any(|n| n.eq_ignore_ascii_case(bone)) {
+                let tris: usize = held.merged.iter().filter(|(b, _)| b == bone).flat_map(|(_, m)| &m.meshes).map(|m| m.indices.len() / 3).sum();
+                bad.push(format!("{gun}: on {bone} ({tris} triangles), which the {arms} body lacks"));
+            }
+        }
+    }
+    assert!(warnings.is_empty() && kit.held.len() > 15, "{warnings:?}");
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
 }

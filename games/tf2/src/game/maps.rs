@@ -310,7 +310,9 @@ fn held_kit(kit: &mut Kit) {
 /// TF2's guns that `wants`, into `into`: their view models
 /// (`view::load`; with `every_class` on each class's arms that can hold
 /// them and are here, else on their own class's only), their `c_` models held (bone-merged by the first bone
-/// they share with their class's arms, `weapon_bone`) and their
+/// they share with their class's arms, `weapon_bone`, and their parts by
+/// the other bones bodies have too: not the arms' own `vm_` bones,
+/// `is_view_bone`) and their
 /// projectiles' models (`weapons::PROJECTILES`: the rocket, the grenade,
 /// the sticky, the needle). What a gun's
 /// `weapon/<id>` set holds is what this reads for it (`sets`).
@@ -329,8 +331,15 @@ pub fn add_guns(
             continue;
         }
         let Some(path) = set.weapons.iter().find(|d| d.id == gun).and_then(|d| d.models.world.clone()) else { continue };
+        // The arms' bones as the bodies have them: the `vm_weapon_bone…`
+        // bones are the arms' alone (a player model's weapon bones are
+        // `weapon_bone`, `weapon_bone_1`…, `weapon_bone_L`: install.md
+        // 4.5), so on a body the parts skinned to them stay with their
+        // parent's (player_animation.md 7: unmatched bones keep their bind
+        // pose); merged onto a bone no body has, the Shovel's blade, the
+        // Shotgun's pump and the launchers' parts were never drawn.
         let skeleton = match props::load_view_model(materials, &super::sets::arms_model(&arms), gun, true) {
-            Ok(v) => v.bones,
+            Ok(v) => v.bones.into_iter().filter(|b| !is_view_bone(&b.name)).collect::<Vec<_>>(),
             Err(e) => {
                 warnings.push(e);
                 continue;
@@ -350,6 +359,12 @@ pub fn add_guns(
             }
         }
     }
+}
+
+/// A bone of the class arms that no player model has (`vm_weapon_bone`,
+/// `vm_weapon_bone_1`…: install.md 4.4, 4.5).
+pub fn is_view_bone(name: &str) -> bool {
+    name.get(..3).is_some_and(|p| p.eq_ignore_ascii_case("vm_"))
 }
 
 /// The game's files for its guest dressing (`map::kept::Dressing::

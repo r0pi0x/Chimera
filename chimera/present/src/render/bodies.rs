@@ -8,7 +8,8 @@
 //! and a server without rendering leaves it undrawn.
 //!
 //! Character bodies (by team or `BodyName`; the local one hidden unless
-//! `ShowLocalBody`), held models with their muzzles and bone-merged parts,
+//! `ShowLocalBody`), held models with their muzzles and bone-merged parts (a body
+//! lacking a joint some part merges onto holds the model whole),
 //! posed from the character's `Animator`, culled by their posed bounds
 //! (`DynamicSkinnedMeshBounds`, not the bind pose's), lit where they are
 //! (`probe_lit`); `PlayModels`/`HeldAssets` are built when the map
@@ -813,7 +814,12 @@ pub fn attach_held(
                 })
                 .collect()
         };
-        let own = instance(&parts.own);
+        // A body lacking a bone some part merges onto holds the model
+        // whole on its bone, as it is at rest (no part left undrawn: TF2's
+        // Revolver's `weapon_bone_4`, which the Spy's model lacks).
+        let lacks = parts.merged.iter().any(|(bone, _)| joint_of(bone).is_none());
+        let shown = if lacks { &parts.whole } else { &parts.own };
+        let own = instance(shown);
         let model = commands
             .spawn((
                 Transform::default(),
@@ -822,7 +828,7 @@ pub fn attach_held(
                 probe_lit::ProbeLit::new(own.clone(), Vec3::ZERO),
             ))
             .with_children(|m| {
-                for ((mesh, _), material) in parts.own.iter().zip(own) {
+                for ((mesh, _), material) in shown.iter().zip(own) {
                     m.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material)));
                 }
                 if let Some(t) = parts.muzzle {
@@ -838,7 +844,7 @@ pub fn attach_held(
             .id();
         // Bone-merged parts on their own joints, despawned with the rest.
         let mut merged = Vec::new();
-        for (bone, list) in &parts.merged {
+        for (bone, list) in parts.merged.iter().filter(|_| !lacks) {
             let Some(at) = joint_of(bone) else { continue };
             let lit = instance(list);
             let part = commands

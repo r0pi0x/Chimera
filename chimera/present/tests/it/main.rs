@@ -3,7 +3,8 @@
 //! need nothing above the presentation, and scenario tests of what it
 //! draws on the headless harness (`chimera_world::harness::Sim`, the
 //! engine's `core` and console as the base: prop LODs, prop shadows,
-//! body parts' posed bounds, hitboxes following the drawn body's facing),
+//! body parts' posed bounds, hitboxes following the drawn body's facing,
+//! held models' bone-merged parts),
 //! the view-model camera's switch, a view model drawn without a map,
 //! stand-ins until a body or view model is built,
 //! the under-water overlay's,
@@ -17,6 +18,7 @@ mod body_bounds;
 mod body_swap;
 mod camera_outputs;
 mod idle_lights;
+mod held_merge;
 mod hitboxes_facing;
 mod late_build;
 mod particle_depth;
