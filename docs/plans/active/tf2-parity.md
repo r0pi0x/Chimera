@@ -40,8 +40,8 @@ Captured imagery stays in scratch, never in the repo.
 | Sniper's laser dot | matches in his own view (pass 7, `dot.tf2`/`.scene`) | drawn (`weapons::dot`): size, softness and the core growing with the charge as TF2's; others see it at 6 units (the charge sent with what a character holds, `HeldGauge`), no TF2 pair (its puppet bots won't scope); TF2's scope overlay not photographed yet (the class menu covers it) |
 | Water explosions | close (pass 6) | from above the surface both hide the burst; TF2's shows through as an orange glow from just above the surface. Under water (pass 7, `wunder`): see the log |
 | Bullet impacts (wood) | matches (pass 6) | splinters, hole, puff alike; TF2's hole decal a little lighter |
-| Blood on a player hit | still differs (pass 7) | TF2: a dark red puff ~20 px at 180 units and a red splat on the body; ours a speck (effects.md Open questions 8: no spec of TF2's blood) |
-| Melee (Wrench at a wall) | close (pass 7) | the swing's path and timing alike; TF2 leaves a faint scratch, ours nothing visible |
+| Blood on a player hit | close (pass 8) | TF2's own burst and spray now (`weapons::blood`): a red splat at the hit spraying out the far side in both; TF2's starts ~2 frames later (its snapshot wait) and its goop is larger and brighter; no decal on the body (characters take none) |
+| Melee (Wrench at a wall) | still differs (pass 8) | the swing's path and timing alike; TF2's flecks and faint scratch at the view's centre, ours a puff at the right edge and no decal: at 55 units the 48-unit line misses and our box sweep's contact point is the box's corner, not on the wall ahead (where a box hit's impact point is, weapons_stock.md names none) |
 | Backblast (third person) | close | from the side (pass 4) the same: an orange flame at the launcher's rear ~100 ms, then a dark grey puff; TF2's flame streakier. From the front the shoulder hides most of it |
 | Bodies, idle poses (third person) | close (pass 7 of the animation: `pose.tf2` / `pose.scene`) | the "wider stances" were TF2's bots' feet yaw: bot_teleport never snaps a puppet bot's feet, and these spawn 30 degrees off a multiple of 45, so they stand 30 left of their eyes (wide) and, after the scene's teleports, 15 right (narrow); ours drawn with its feet at those offsets (`target set all feet <deg>`) stands as TF2's. The Engineer's Wrench taps flat and raised three times a loop in both (a phase-matched pair agrees). Every pose parameter 0 at a spawn, the hand and arm libraries only where a host layers them, the knees bent toward the include's knee directions under the foot locks, the Medic's real-time idle noise. Only the active weapon is drawn (TF2 and ours, the Spy with his Knife and Revolver from three sides) |
 | Flame stream (air, wall); overbright 5 or 1 | close (pass 4: one stream from the nozzle, as TF2's) | overbright is 5, in linear space. The far fireball's "1.5x wider and whiter" is TF2's bloom (pass 5: with `mat_disable_bloom 1` its near-white area fell from ~8,900 to ~1,700-2,900 px; ours draws ~5,300 with no bloom; flames.md Open questions 1). Ours has bloom only at `mat_hdr_level` 1-2, a stand-in that overexposes 2fort (tried). TF2's cloud at a wall: close (pass 7: as wide at 0.5 s, ~25 % wider at 1 s); the orange tint on the right wall is gone (pass 6: the pilot's trail) |
@@ -430,3 +430,14 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   past, seeded back along its first velocity, model hidden 0.2 s) and
   their blasts and blood held as long. TF2's melee impacts on the
   attacker's machine only (`ImpactStyle::melee_own_only`).
+- Pass 8 captures (`streaks`, `impacts`, `water` against real TF2, frames
+  stepped at 60): the blast now shows 13 frames after the shot in both
+  (ours was 7) with the flying embers' thin rays and head dots from its
+  second frame, the core flash's wide star as TF2's; TF2's rocket still
+  lands a little farther (Open questions 9). Under water: the launch glow
+  and the long white trail show as TF2's; the underwater explosion runs
+  (`psys_running`: `ExplosionCore_MidAir_underwater` with its flash and 64
+  bubbles at the riverbed straight ahead) but nothing of it is visible
+  from 290 units under water, where TF2 shows a bright orange glow: read
+  as our water fog darkening additive particles (not measured). Blood:
+  close. Wrench: the box sweep's contact point (table).
