@@ -262,3 +262,58 @@ fn the_draw_plays_at_1_34_and_holds_its_last_frame_until_its_length() {
     let held = (idle - start) as f32 * 0.015;
     assert!((held - 1.0).abs() < 0.03, "ft_idle at {held} s, not before");
 }
+
+/// specs/tf2/viewmodel.md 7, test 24: the Minigun's barrel in first
+/// person (`view::spin_barrels`): 0.1 rad/s faster each tick of the
+/// wind-up and the spin up to 20 rad/s (3 s), 0.1 slower each tick after
+/// the release to a stop, turning the `c_minigun`'s own `barrel` bone.
+#[test]
+fn the_minigun_barrel_spins_up_and_down_in_first_person_24() {
+    let mut sim = sim();
+    let bone = |name: &str, parent| chimera_world::map::MapBone { name: name.into(), parent, position: Vec3::ZERO, rotation: Quat::IDENTITY };
+    let gun = MapViewModel {
+        key: MINIGUN.to_string(),
+        model: MapModel::default(),
+        bones: vec![bone("weapon_bone", None), bone("barrel", Some(0))],
+        root: Transform::default(),
+        animations: None,
+        right_handed: true,
+        allow_flipping: false,
+        attachments: Vec::new(),
+        light_origin: Vec3::ZERO,
+    };
+    sim.app.insert_resource(ViewModels::of(vec![gun]));
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], MINIGUN);
+    let angle = |s: &chimera_world::harness::Sim| {
+        let rolls = &s.app.world().get::<ViewAnimator>(p).unwrap().bone_rolls;
+        assert_eq!(rolls.iter().map(|r| r.0).collect::<Vec<_>>(), [1], "the barrel turned");
+        rolls[0].1
+    };
+    // Spin over a tick, rad/s (the angle wraps at a turn).
+    let speed = |s: &mut chimera_world::harness::Sim, fire: bool| {
+        s.intent(p).fire = fire;
+        let a = angle(s);
+        s.ticks(1);
+        (angle(s) - a).rem_euclid(std::f32::consts::TAU) / 0.015
+    };
+    let mut up = Vec::new();
+    for _ in 0..260 {
+        up.push(speed(&mut sim, true));
+    }
+    assert!((up[59] - 6.0).abs() < 0.2, "6 rad/s after 60 ticks: {}", up[59]);
+    assert!((up[259] - 20.0).abs() < 1e-3, "full speed: {}", up[259]);
+    let mut down = Vec::new();
+    for _ in 0..260 {
+        down.push(speed(&mut sim, false));
+    }
+    // The wind-down starts some 0.1 s after the release (weapons.md 7).
+    assert!((10.0..=11.0).contains(&down[99]), "half way down about 100 ticks on: {}", down[99]);
+    assert_eq!(down[259], 0.0, "stopped");
+    // Spun with attack2 alone (no firing): the same ramp.
+    let mut alt = Vec::new();
+    for _ in 0..60 {
+        sim.intent(p).secondary = true;
+        alt.push(speed(&mut sim, false));
+    }
+    assert!((alt[59] - 6.0).abs() < 0.3, "attack2 spins it too: {}", alt[59]);
+}

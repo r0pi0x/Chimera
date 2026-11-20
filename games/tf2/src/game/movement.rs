@@ -36,7 +36,9 @@
 //! before, the view kick's spring and the view model's class) go on and
 //! off with the movement, in one move each way. The
 //! match's movement (`slots::Loadout`); its cvars are `tf2:`'s
-//! (`tf2:sv_gravity` ..., `tf2:tf_fall_damage_disablespread`).
+//! (`tf2:sv_gravity` ..., `tf2:tf_fall_damage_disablespread`). Its eye
+//! follows the feet over steps and ramps at `SMOOTH_STAIRS`
+//! (`core::StairSmoothing`, `smoothstairs` 1).
 //!
 //! Known shortcuts:
 //! - The teammates' push-away is Source's shared one; the Spy's disguise
@@ -137,6 +139,11 @@ impl Plugin for Tf2MovementPlugin {
 /// `tf2:movement` on a composed game's simulation (a party's) without
 /// making it the match's: Source's movement with TF2's config, the class
 /// layer, the cvars.
+/// How fast the first-person eye closes on the feet's height over steps
+/// and ramps, units/s (`smoothstairs` 1; measured on real TF2,
+/// specs/tf2/movement.md "Eye smoothing over steps").
+pub const SMOOTH_STAIRS: f32 = 150.0;
+
 pub fn add_movement(app: &mut App) {
     let registered = app
         .world()
@@ -154,6 +161,11 @@ pub fn add_movement(app: &mut App) {
             FixedUpdate,
             class_health.after(crate::core::SimSet::Movement).run_if(crate::core::authoritative),
         );
+    // `smoothstairs` 1: the eye catches up with the feet over steps.
+    app.world_mut()
+        .get_resource_or_init::<crate::core::StairSmoothing>()
+        .0
+        .push((ID, SMOOTH_STAIRS));
     // The class layer goes on and off with the movement, in one move each
     // (docs/DESIGN.md, "ECS style"); `wear` is left for a slot changed
     // some other way.

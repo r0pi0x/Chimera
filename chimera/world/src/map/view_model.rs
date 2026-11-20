@@ -124,6 +124,18 @@ impl Default for ViewModelSettings {
     }
 }
 
+/// The screen shake the local view model gets on top of the view's, in
+/// the view's own frame (metres; roll in radians): Source places the
+/// view model at the shaken eye and shakes it again at 10 %
+/// (specs/cs_source/view_models.md 1, step 4; specs/tf2/viewmodel.md 3,
+/// step 6). Written by the client's shake, added to the view model's
+/// placement when drawn.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct ViewModelShake {
+    pub offset: Vec3,
+    pub roll: f32,
+}
+
 /// A game's own view-model field of view, for the characters whose game
 /// identity (`slots::GameIdentity`) it is: an app with several games
 /// (Lucker Party) draws each game's guns at that game's `fov` and
@@ -230,6 +242,11 @@ pub struct ViewAnimator {
     /// number or a gauge on the gun (Halo's ammunition counter); the rest
     /// show their own texture. Cleared when another model shows.
     pub mesh_frames: Vec<(usize, usize)>,
+    /// Bones turned by the game on top of the animation, as (bone index
+    /// in the shown model's skeleton, radians about the bone's own z
+    /// axis): TF2's Minigun barrel spinning in first person. Cleared when
+    /// another model shows.
+    pub bone_rolls: Vec<(usize, f32)>,
 }
 
 impl ViewAnimator {
@@ -253,6 +270,7 @@ impl ViewAnimator {
         self.key = key.map(str::to_string);
         self.hidden_meshes.clear();
         self.mesh_frames.clear();
+        self.bone_rolls.clear();
         self.animator = key
             .and_then(|k| models?.get(k)?.animations.clone())
             .map(anim::Animator::new);
@@ -477,9 +495,23 @@ pub fn posed_world(bones: &[MapBone], pose: &[anim::BonePose]) -> Vec<Mat4> {
 /// dropped (the meshes show the skin they were loaded with). Errors when
 /// no bone matches.
 pub fn merge_by_bone_name(
+    arms: MapViewModel,
+    weapon: &MapViewModel,
+    own_pose: Option<&[anim::BonePose]>,
+) -> Result<MapViewModel, String> {
+    merge_keeping(arms, weapon, own_pose, &[])
+}
+
+/// `merge_by_bone_name`, the weapon's bones named in `keep` (that match
+/// no arms bone) kept as joints of their own, appended to the arms'
+/// skeleton under the arms bone they follow, at their own pose, with
+/// their vertices: a game turns them (`ViewAnimator::bone_rolls`: TF2's
+/// Minigun `barrel`). The animation doesn't pose them.
+pub fn merge_keeping(
     mut arms: MapViewModel,
     weapon: &MapViewModel,
     own_pose: Option<&[anim::BonePose]>,
+    keep: &[&str],
 ) -> Result<MapViewModel, String> {
     let index = |name: &str| arms.bones.iter().position(|b| b.name.eq_ignore_ascii_case(name));
     // Per weapon bone: the arms' bone it follows and the weapon's bone
@@ -502,7 +534,7 @@ pub fn merge_by_bone_name(
     };
     let (to_eye, from_eye) = (arms.root.to_matrix(), weapon.root.to_matrix().inverse());
     // Per weapon bone: from the weapon's eye space to the arms'.
-    let moves: Vec<(usize, Mat4)> = follows
+    let mut moves: Vec<(usize, Mat4)> = follows
         .iter()
         .enumerate()
         .map(|(k, f)| {
@@ -510,6 +542,20 @@ pub fn merge_by_bone_name(
             (j, to_eye * arms_ref[j] * relative(a, k) * weapon_ref[k].inverse() * from_eye)
         })
         .collect();
+    // Kept bones: a joint of their own under the arms bone they follow, at
+    // their place relative to it; their vertices on it.
+    let mut kept = Vec::new();
+    for (k, b) in weapon.bones.iter().enumerate() {
+        // Named, and matched by an ancestor, not by its own name.
+        let Some((j, a)) = follows[k].filter(|(_, a)| *a != k) else { continue };
+        if !keep.iter().any(|n| b.name.eq_ignore_ascii_case(n)) {
+            continue;
+        }
+        let (_, rotation, position) = relative(a, k).to_scale_rotation_translation();
+        moves[k].0 = arms.bones.len() + kept.len();
+        kept.push(MapBone { name: b.name.clone(), parent: Some(j), position, rotation });
+    }
+    arms.bones.extend(kept);
     let arms_meshes = arms.model.meshes.len();
     arms.model.mesh_names.resize(arms_meshes, String::new());
     for (i, mesh) in weapon.model.meshes.iter().enumerate() {
@@ -622,5 +668,19 @@ mod tests {
         let p = Vec3::from(merged.model.meshes[1].positions[1]);
         // (5, 1, 0) is 0 along the barrel and 1 up from it: turned, 1 back.
         assert!((p - Vec3::new(12.0, 0.0, 0.0)).length() < 1e-4, "{p}");
+        // Kept (`merge_keeping`): the barrel a joint of its own under the
+        // arms' weapon bone, 3 past it, its vertex on it, the rest as before.
+        let kept = merge_keeping(arms_kept(), &weapon, None, &["barrel"]).unwrap();
+        assert_eq!(kept.bones.len(), 3);
+        let b = &kept.bones[2];
+        assert_eq!((b.name.as_str(), b.parent), ("barrel", Some(1)));
+        assert!((b.position - Vec3::new(3.0, 0.0, 0.0)).length() < 1e-5);
+        let m = &kept.model.meshes[1];
+        assert_eq!(m.positions, vec![[11.0, 0.0, 0.0], [13.0, 1.0, 0.0]]);
+        assert_eq!(m.joints, vec![[1, 1, 1, 1], [2, 1, 1, 1]], "weighted to the barrel only");
+    }
+
+    fn arms_kept() -> MapViewModel {
+        model("arms", vec![bone("root", None, 0.0), bone("weapon_bone", Some(0), 10.0)], vec![MapMesh::default()])
     }
 }

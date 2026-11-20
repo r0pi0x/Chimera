@@ -53,7 +53,7 @@ Captured imagery stays in scratch, never in the repo.
 | View-model bob and sway (first person, own player) | close (2026-11-19, fp pass) | had none: TF2's guns registered no motion rules. Now CS:S's bob on a fixed 0.8 s cycle, no sway (`tf2::game::view::MOTION`, `view_motion::Sway::None`); walking pairs agree in amplitude and the hand's rise, within a few frames of phase |
 | View-model draw, fire, reload (Scattergun, Rocket Launcher) | matches (Scattergun); close (Rocket Launcher) | the draw played at 1x: now 1.34 x, holding its last frame to its own length (`ViewAnimRules::draw_rate`); TF2 reloads a clip not full whenever attack is let go (`cl_autoreload` 1), ours only an empty one: now `[magazine] reload_when_idle`, and an attack stops a reload's start too (`shells.start_interruptible`). Rocket Launcher's reload: TF2 plays its whole 0.5 s start and a loop a round, the rocket counted 0.33 s in (measured per tick); ours now too (`shells.round_at`). The switch: ours drew no view model in the frame of a switch (the new body shown a frame late); now the new gun shows that frame (`swap_view_bodies`) |
 | Camera: view punch, landing roll, eye heights, duck | matches | measured every tick through VScript on the live client: the Scattergun's kick (-2..-4, the punch spring), the landing roll 0.013 x F (a Scout's only above 580: now so, `loud_landings_only`), eyes 65/68, the duck's and jump's ticks exactly as movement.md |
-| Movement (accel, jump, duck, fall) | matches | movement.md's cases 1, 5, 15, 16 exact on a real player, but the first tick of a key press: half input (33.75 for the Scout; movement.md Open questions 13, not changed) |
+| Movement (accel, jump, duck, fall) | matches | movement.md's cases 1, 5, 15, 16 exact on a real player; the first tick of a key press sends half (TF2, CS:S and HL2:DM measured alike: Source's client input), now ours for every Source movement (`core::HalfFirstPress`, `input::apply_move_keys`) |
 | HUD, crosshair | todo | |
 | Lighting, materials | todo | |
 
@@ -174,6 +174,37 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   the new view model's body was spawned by the drawing system and shown
   only after its first pose, a frame later: a frame with no view model
   at every switch; `swap_view_bodies` spawns it first.
+- The first tick's half input is Source's: CS:S's and HL2:DM's live
+  clients, started headless as tf2ref starts TF2 (their own RCON ports,
+  27116 and 27117), read through the prediction system's variable watch
+  (`pwatchent 1; pwatchvar m_vecVelocity`: each command's predicted
+  velocity) gave 15.0 of 18.75 and 22.5 of 28.5 on the first tick. Ours
+  now halves a move key's first tick on every Source movement
+  (`HalfFirstPress`, filled by `source_movement`), the local player's
+  keys only (bots send what they choose; movecmp's CS:S bots got whole
+  commands).
+- `cl_autoreload` is the player's (userinfo, archived; the Party tab's
+  "Auto reload (TF2)"), default 0 by the user's choice (TF2's own built-in
+  default is 1: `cl_autoreload 0` then reads `( def. "1" )` in its
+  console); a character without userinfo (a bot) doesn't auto-reload.
+- The Minigun's barrel spun in nothing at first: the bone merge folded the
+  `c_minigun`'s `barrel` into the arms' `weapon_bone`, so there was no
+  bone to turn. `map::merge_keeping` keeps named weapon bones as joints of
+  their own (TF2 keeps `barrel`). Third person (others' Minigun) is the
+  animation agent's (player animation / held models), not done here.
+- The view model takes the screen shake again at 10 % (`ViewModelShake`,
+  every game: the Source specs' rule).
+- `smoothstairs`: measured on 2fort's stairs by the RED courtyard (8-unit
+  steps at x 560, y 1520-1595) and a ramp (x 680, y 768-928): the client's
+  eye (`getpos` every frame) against the server's feet (VScript every
+  tick). The eye lags each change of the feet's height on the ground and
+  closes at 150 units/s (2.25 a 0.015 s frame, 1.125 a 0.0075 s one;
+  Soldier and Scout alike), up and down, on ramps too (movement.md "Eye
+  smoothing over steps"). Ours: `core::StairSmoothing` (TF2's 150),
+  `client::smooth_stairs`.
+- The Minigun's barrel spins in first person (viewmodel.md 7: 0.1 rad/s
+  a tick to 20 rad/s and back; `view::spin_barrels`,
+  `ViewAnimator::bone_rolls`).
 
 - 2026-11-20 (tf2-pose): specs/tf2/player_animation.md's second-pass
   corrections implemented: the include's knee directions merged onto the

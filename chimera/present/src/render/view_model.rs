@@ -11,7 +11,8 @@
 //! this module draws the view model of
 //! the character whose camera carries `ViewModelAnchor`. A new model (a
 //! weapon switch) is spawned before the drawing (`swap_view_bodies`), so
-//! it is posed, lit and shown in the frame the old one goes.
+//! it is posed, lit and shown in the frame the old one goes. The local
+//! view model takes the screen shake again at 10 % (`ViewModelShake`).
 //!
 //! The model is drawn by its own camera on `VIEW_MODEL_LAYER`, after the
 //! world camera and with a fresh depth buffer, so it never clips into walls,
@@ -540,13 +541,14 @@ pub fn draw_view_models(
     >,
     mut bodies: Query<(&mut ViewModelBody, &mut Transform, &mut Visibility), Without<BodyJoint>>,
     mut joints: Query<&mut Transform, With<BodyJoint>>,
-    (mut materials, dormant, mut probe_table, real, mut wanted, stand_ins): (
+    (mut materials, dormant, mut probe_table, real, mut wanted, stand_ins, vm_shake): (
         Option<ResMut<Assets<PropMaterial>>>,
         Option<Res<super::prop_material::DormantProps>>,
         Option<ResMut<super::probe_lit::ProbeTable>>,
         Res<Time<Real>>,
         Option<ResMut<super::bodies::LateWanted>>,
         Option<Res<super::stand_in::StandInSettings>>,
+        Option<Res<ViewModelShake>>,
     ),
     mut commands: Commands,
 ) {
@@ -674,15 +676,32 @@ pub fn draw_view_models(
             continue;
         };
         let offset = state.and_then(|(_, o)| o.copied()).unwrap_or_default();
-        placed.set_if_neq(placement(&offset, mirror));
+        // The screen shake again at 10 % (`ViewModelShake`), the local view's
+        // only (a spectated player's view model is drawn unshaken).
+        let shaken = match vm_shake.as_deref().filter(|_| source.is_none()) {
+            Some(s) if *s != ViewModelShake::default() => {
+                Transform::from_translation(s.offset).with_rotation(Quat::from_rotation_z(s.roll)) * placement(&offset, mirror)
+            }
+            _ => placement(&offset, mirror),
+        };
+        placed.set_if_neq(shaken);
         // Pose the shown model.
         let animator = state
             .and_then(|(s, _)| s.animator.as_ref())
             .filter(|a| a.main.is_some());
         if let Some(animator) = animator {
-            for (joint, (q, p)) in body.joints.iter().zip(animator.pose(now)) {
+            let rolls = state.map_or(&[][..], |(s, _)| &s.bone_rolls);
+            let pose = animator.pose(now);
+            for (i, joint) in body.joints.iter().enumerate() {
+                // Bones past the animation's (a weapon's own kept ones,
+                // `map::merge_keeping`) at their rest.
+                let Some((q, p)) = pose.get(i).copied().or_else(|| model.bones.get(i).map(|b| (b.rotation, b.position))) else {
+                    continue;
+                };
                 if let Ok(mut t) = joints.get_mut(*joint) {
-                    t.rotation = q;
+                    // A bone the game turns about its own z (`ViewAnimator::bone_rolls`).
+                    let roll = rolls.iter().find(|(b, _)| *b == i).map_or(0.0, |(_, a)| *a);
+                    t.rotation = if roll == 0.0 { q } else { q * Quat::from_rotation_z(roll) };
                     t.translation = p;
                 }
             }

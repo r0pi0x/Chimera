@@ -691,8 +691,60 @@ impl Plugin for ShellSetupPlugin {
 fn eye_systems(app: &mut App) {
     app.add_systems(
         Update,
-        (follow_eye.in_set(crate::map::attached::EyePlaced), zoom_camera).after(spectate::SpectateSet),
-    );
+        (
+            (smooth_stairs, follow_eye).chain().in_set(crate::map::attached::EyePlaced),
+            zoom_camera,
+        )
+            .after(spectate::SpectateSet),
+    )
+    .init_resource::<EyeStairs>();
+}
+
+/// The local eye's lag behind its feet over steps (`core::StairSmoothing`):
+/// metres added to the eye's height, and the feet's height last frame
+/// while on the ground.
+#[derive(Resource, Default, Debug)]
+pub struct EyeStairs {
+    pub lag: f32,
+    last: Option<f32>,
+}
+
+/// A frame's change of the feet's height on the ground beyond which the
+/// eye isn't smoothed but follows at once (a teleport, a respawn): a
+/// Source step (18 units), in metres.
+const STAIR_JUMP: f32 = 18.0 * 0.0254;
+
+/// Source's `smoothstairs` for the local player (specs/tf2/movement.md,
+/// "Eye smoothing over steps"): while on the ground two frames running,
+/// the feet's change of height is held back from the eye (`EyeStairs::lag`),
+/// which then closes the gap at its movement's speed
+/// (`core::StairSmoothing`), in the air too; off the ground the feet's
+/// height isn't followed, a big change resets it.
+fn smooth_stairs(
+    player: Option<Single<(&Transform, &MovementState, Option<&crate::slots::MovementSlot>), With<LocalPlayer>>>,
+    rates: Option<Res<crate::core::StairSmoothing>>,
+    mut stairs: ResMut<EyeStairs>,
+    time: Res<Time>,
+) {
+    let rate = player
+        .as_deref()
+        .and_then(|(_, _, slot)| slot.and_then(|s| rates.as_ref()?.0.iter().find(|(m, _)| *m == s.0)))
+        .map(|(_, r)| r * 0.0254);
+    let (Some(rate), Some((at, state, _))) = (rate, player.as_deref()) else {
+        if stairs.lag != 0.0 || stairs.last.is_some() {
+            *stairs = EyeStairs::default();
+        }
+        return;
+    };
+    let feet = at.translation.y;
+    match stairs.last.filter(|_| state.on_ground) {
+        Some(last) if (feet - last).abs() <= STAIR_JUMP => stairs.lag -= feet - last,
+        Some(_) => stairs.lag = 0.0,
+        None => {}
+    }
+    stairs.last = state.on_ground.then_some(feet);
+    let close = rate * time.delta_secs();
+    stairs.lag = if stairs.lag.abs() <= close { 0.0 } else { stairs.lag - close * stairs.lag.signum() };
 }
 
 /// The local player and its first-person camera (last of the shell's
@@ -961,6 +1013,7 @@ fn follow_eye(
         (Entity, &Name, &Transform, &Intent, &MovementState, Option<&crate::map::interp::RenderedView>, Has<crate::core::Bot>),
         (Without<LocalPlayer>, Without<FirstPersonCamera>),
     >,
+    stairs: Res<EyeStairs>,
 ) {
     // Positions (`Transform`), eyes and other characters' looks are the
     // ones drawn this frame, eased between ticks (`map::interp`); the
@@ -1009,6 +1062,8 @@ fn follow_eye(
         let hull_radius = hull.map_or(f32::INFINITY, view::hull_radius);
         let offset =
             view::camera_offset_for_hull(&mode, at.translation, eye.eye_offset, look, &spatial, &characters, hull_radius);
+        // Over steps the eye lags the feet (first person: `smooth_stairs`).
+        let offset = if mode.third_person { offset } else { offset + Vec3::Y * stairs.lag };
         // A shot's back push (first person): the camera back along its
         // view.
         let offset = match back {
@@ -1051,6 +1106,52 @@ fn follow_eye(
 
 #[cfg(test)]
 mod tests {
+
+    /// `smooth_stairs` (TF2's `smoothstairs`, measured at 150 units/s): a
+    /// step up of 8 units on the ground leaves the eye 8 below, closing
+    /// 2.25 a 0.015 s frame; a step down the same from above; a jump of
+    /// more than a step (a teleport) isn't smoothed; a movement without
+    /// it never lags.
+    #[test]
+    fn the_eye_catches_up_with_a_step_at_its_speed() {
+        use bevy::time::TimeUpdateStrategy;
+        let u = 0.0254;
+        let mut app = App::new();
+        app.add_plugins(bevy::time::TimePlugin)
+            .insert_resource(TimeUpdateStrategy::ManualDuration(std::time::Duration::from_secs_f64(0.015)))
+            .insert_resource(crate::core::StairSmoothing(vec![("test:tf2", 150.0)]))
+            .init_resource::<EyeStairs>()
+            .add_systems(Update, smooth_stairs);
+        let me = app
+            .world_mut()
+            .spawn((
+                Transform::default(),
+                MovementState { on_ground: true, ..default() },
+                crate::slots::MovementSlot("test:tf2"),
+                LocalPlayer,
+            ))
+            .id();
+        app.update();
+        app.update();
+        let mut step = |app: &mut App, dz: f32| {
+            app.world_mut().get_mut::<Transform>(me).unwrap().translation.y += dz * u;
+            app.update();
+            app.world().resource::<EyeStairs>().lag / u
+        };
+        let lags: Vec<f32> = [8.0, 0.0, 0.0, 0.0].iter().map(|dz| step(&mut app, *dz)).collect();
+        for (got, want) in lags.iter().zip([-5.75, -3.5, -1.25, 0.0]) {
+            assert!((got - want).abs() < 1e-3, "up: {lags:?}");
+        }
+        let lags: Vec<f32> = [-8.0, 0.0].iter().map(|dz| step(&mut app, *dz)).collect();
+        assert!((lags[0] - 5.75).abs() < 1e-3 && (lags[1] - 3.5).abs() < 1e-3, "down: {lags:?}");
+        for _ in 0..3 {
+            step(&mut app, 0.0);
+        }
+        assert_eq!(step(&mut app, 100.0), 0.0, "a teleport");
+        app.world_mut().entity_mut(me).insert(crate::slots::MovementSlot("test:other"));
+        assert_eq!(step(&mut app, 8.0), 0.0, "another movement");
+    }
+
     use super::*;
 
     fn args(line: &str) -> Args {

@@ -7,7 +7,8 @@
 //!   load);
 //! - hearing: `core::Deafened` for the local player sets
 //!   `audio::hearing::Hearing` (muffled sounds, ringing);
-//! - the view shake of nearby blasts (`weapon::grenade::Shake`).
+//! - the view shake of nearby blasts (`weapon::grenade::Shake`), and the
+//!   view model's again at 10 % on top (`map::ViewModelShake`).
 //!
 //! What flashes and blasts do to the local player's senses: the flash overlay
 //! (white plus the frame captured at the flash by a screenshot read-back, the
@@ -46,6 +47,7 @@ impl Plugin for SensesPlugin {
             .init_resource::<AfterImage>()
             .init_resource::<FlashFade>()
             .init_resource::<ViewShake>()
+            .init_resource::<crate::map::ViewModelShake>()
             // The map logic's shakes (Source's logic writes them; a game
             // without that logic has none, and `shake` still reads).
             .add_message::<crate::map::logic_view::MapShake>()
@@ -334,6 +336,7 @@ fn shake(
     mut map_shakes: MessageReader<crate::map::logic_view::MapShake>,
     camera: Query<&GlobalTransform, With<FirstPersonCamera>>,
     mut view: ResMut<ViewShake>,
+    mut vm: ResMut<crate::map::ViewModelShake>,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs_f64();
@@ -373,7 +376,19 @@ fn shake(
     }
     view.offset = offset;
     view.roll = roll;
+    // The view model shakes again at 10 % in the view's frame (the
+    // character's frame never turns: its offset is the world's).
+    let turn = camera.iter().next().map_or(Quat::IDENTITY, |c| c.rotation());
+    let again = crate::map::ViewModelShake {
+        offset: turn.inverse() * offset * VIEW_MODEL_SHAKE,
+        roll: roll * VIEW_MODEL_SHAKE,
+    };
+    vm.set_if_neq(again);
 }
+
+/// The view model's shake on top of the view's (Source's 10 %:
+/// specs/cs_source/view_models.md 1, step 4).
+pub const VIEW_MODEL_SHAKE: f32 = 0.1;
 
 #[cfg(test)]
 mod tests {

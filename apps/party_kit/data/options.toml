@@ -51,6 +51,7 @@ setting = [
   { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "Combat Arms' loop"], ["0", "None"]], widget = "dropdown" },
   { label = "Ask before following the party leader", cvar = "party_ask_follow", choices = [["0", "Off"], ["1", "On"]], help = "Off (the default): when your party's leader joins a server you go there at once, from the menu or from another match. On: you are asked first (Join / Stay)." },
   { label = "Developer mode", cvar = "developer_mode", choices = [["0", "Off"], ["1", "On"]], help = "Shows a Developer entry in the Escape menu that opens the UI kit's gallery (every control in every state); `ui_gallery` in the console opens it too." },
+  { label = "Auto reload (TF2)", cvar = "cl_autoreload", choices = [["0", "Off"], ["1", "On"]], help = "On (TF2's own default): TF2's guns reload a clip that isn't full whenever you hold neither attack. Off (the default here): only when you press reload or the clip runs empty." },
   { label = "Chat", cvar = "cl_chat", choices = [["1", "On"], ["2", "Team only"], ["0", "Off"]], help = "Whose chat lines show: everyone's, your team's only, or none. Notices and your own lines always show; hide one player with ignore <name> in the console or a click on their name in the open chat." },
 ]
 

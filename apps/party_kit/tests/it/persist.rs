@@ -205,8 +205,14 @@ fn options_rows_read_right() {
         assert!(tabs.iter().flat_map(|(_, s)| s.iter()).all(|s| s.cvar != gone), "{gone} has no Options row");
     }
     let party: Vec<&str> = tabs.iter().find(|(n, _)| n == "Party").map(|(_, s)| s.iter().map(|s| s.cvar.as_str()).collect()).unwrap_or_default();
-    // The chat's row joined the page with the Signal chat (ugg-ui M10).
-    assert_eq!(party, ["party_swap_effect", "party_music", "party_ask_follow", "developer_mode", "cl_chat"], "the Party page keeps the swap effect, the music and the follow choice");
+    // The chat's row joined the page with the Signal chat (ugg-ui M10);
+    // TF2's auto reload, a player's option (cl_autoreload), before it.
+    assert_eq!(
+        party,
+        ["party_swap_effect", "party_music", "party_ask_follow", "developer_mode", "cl_autoreload", "cl_chat"],
+        "the Party page keeps the swap effect, the music and the follow choice"
+    );
+    assert_eq!(row("cl_autoreload").shown("0"), "Off", "auto reload: Off by default");
     let music = row("party_music");
     assert_eq!(music.shown("2"), "Combat Arms' loop");
     assert_eq!(row("fov_desired").shown("90"), "90", "a plain range stays a number");

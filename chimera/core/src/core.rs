@@ -1536,6 +1536,25 @@ pub struct SpawnPoint {
 #[reflect(Component)]
 pub struct LocalPlayer;
 
+/// The movements (`slots::MovementSlot` ids) whose move keys send half
+/// their amount in the first command after they go down, the full amount
+/// after: Source's key impulse, measured on real CS:S, HL2:DM and TF2
+/// (specs/cs_source/movement.md, "Input"). The client's local input
+/// applies it (`client::input::apply_move_keys`); bots and other intent
+/// sources send what they choose.
+#[derive(Resource, Default, Clone, Debug)]
+pub struct HalfFirstPress(pub Vec<&'static str>);
+
+/// The movements (`slots::MovementSlot` ids) whose first-person eye
+/// follows the feet's height smoothly while on the ground (Source's
+/// `smoothstairs`), each with its catch-up speed (units per second): the
+/// eye lags each change of the feet's height on the ground (a step, a
+/// ramp) and closes the gap at that speed (TF2's 150, measured:
+/// specs/tf2/movement.md, "Eye smoothing over steps"). The client's view
+/// applies it to the local player (`client::smooth_stairs`).
+#[derive(Resource, Default, Clone, Debug)]
+pub struct StairSmoothing(pub Vec<(&'static str, f32)>);
+
 /// A player's own settings the simulation reads (Source's userinfo: the
 /// client cvars marked `console::Console::userinfo`, e.g.
 /// `cl_autowepswitch`). The local player's come from its console; a

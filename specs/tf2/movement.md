@@ -169,7 +169,7 @@ registered values:
 | `tf_movement_lost_footing_friction` | 0.1 | cheat; ground friction while "lost footing" |
 | `tf_movement_lost_footing_restick` | 50 | cheat; the lost-footing state ends early below this ground speed |
 | `tf_grapplinghook_enable` | 0 | grappling hook off (its `tf_grapplinghook_*` tuning is out of scope) |
-| `smoothstairs` | 1 | smooths the eye height over stairs (view only) |
+| `smoothstairs` | 1 | smooths the eye height over stairs (view only; Eye smoothing over steps) |
 
 Absent in TF2 (unknown commands): `sv_enablebunnyhopping`,
 `sv_autobunnyhopping`, `sv_timebetweenducks`. Unknown commands on a
@@ -440,6 +440,35 @@ swim speeds are 0.8 P (table above); `sv_wateraccelerate` 10,
 movement.md's "in water, nothing"). The backward cap and the ground
 clamp do not apply while swimming.
 
+### Eye smoothing over steps (`smoothstairs` 1)
+
+Measured on the live client (2026-11-20, a listen server on ctf_2fort:
+the client's view origin read every frame with the console's position
+dump, the server's feet every tick through the scripting interface,
+one tick a frame and also two frames a tick). View only: the movement,
+the feet and the server's eye are untouched.
+
+- While the player stays on the ground, every change of the feet's
+  height is held back from the view: the view's eye stays where it was
+  and then closes on the true eye at **150 units/s**, whatever the
+  class or its speed (a Soldier and a Scout alike, 2.25 units a 0.015 s
+  frame and 1.125 a 0.0075 s frame: per second of time, not per frame).
+- Steps up and steps down alike: on 2fort's stairs by the RED
+  courtyard (8-unit steps at x 560, y 1520 to 1595), going up the eye
+  sits below the true eye and rises; going down it sits above and sinks.
+  The frame of a step already closes 2.25 of it (an 8-unit step leaves a
+  lag of 5.75, then 3.5, 1.25, 0).
+- Ramps too: a Scout walking up a ramp at 160 units/s of rise fell
+  behind by 0.15 units a tick (150 kept up), and caught up once on the
+  flat.
+- The lag adds up over a run of steps while the feet outpace 150 units/s:
+  a Scout climbing the stairs fell up to about 14 units behind, then
+  caught up on the landing. No cap was seen at that size.
+- Not measured: whether it applies in the air or on landing (ours: the
+  feet's height is followed only between two frames on the ground, the
+  lag closes in the air too) and how a teleport is treated (ours: a
+  change of more than a step, 18 units, isn't smoothed).
+
 ### Falling and landing
 
 - **Fall speed** F = −vz at the start of the landing tick (before its
@@ -660,8 +689,9 @@ interface, the keys pressed from the console):
     tick it goes down (half of the 450 input: the key's first command
     counts half), then +54 a tick (friction's 6, then 60), 400 on tick 9;
     from tick 2 on the sequence is test 1's started half a tick late.
-    Whether this belongs to every Source game's input (CS:S's too) is
-    open.
+    Answered (2026-11-20): CS:S and HL2:DM do the same, measured on their
+    live clients: it is Source's client input
+    (specs/cs_source/movement.md, "Input: a key's first command").
 14. Landing: a Soldier landing at F 552 rolled the view 7.176 degrees
     (0.013 x F), decaying on the punch spring; a Scout landing at F 456
     rolled nothing (Falling and landing: confirmed).

@@ -1,4 +1,6 @@
 //! Local intent source: keyboard and mouse write the local player's `Intent`.
+//! A move key's first tick counts half where the movement says so
+//! (`apply_move_keys`, `core::HalfFirstPress`: Source's key impulse).
 
 use bevy::{
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
@@ -101,9 +103,13 @@ impl Plugin for LocalInputPlugin {
             .init_resource::<super::binds::CapturedKeys>()
             .register_type::<MouseSettings>()
             .add_systems(PreUpdate, super::binds::release_captured.after(bevy::input::InputSystems))
-            .add_systems(Update, ((grab_cursor, write_local_intent, chimera_net::net::predict::hold_view).chain(), drop_key))
+            .init_resource::<MoveKeys>()
+            .add_systems(
+                Update,
+                ((grab_cursor, write_local_intent, track_move_keys, chimera_net::net::predict::hold_view).chain(), drop_key),
+            )
             .add_systems(PostUpdate, keep_cursor_free)
-            .add_systems(FixedPreUpdate, apply_wheel_jump);
+            .add_systems(FixedPreUpdate, (apply_wheel_jump, apply_move_keys));
         super::binds::add_owned_keys(app);
         mouse_cvars(app);
     }
@@ -446,6 +452,62 @@ pub fn apply_wheel_jump(mut wheel: ResMut<WheelJump>, mut intent: Single<&mut In
     }
     wheel.pressed_last_tick = pulse;
     intent.jump = wheel.key_held || pulse;
+}
+
+/// The move keys held (forward, back, right, left: from the local
+/// intent each frame, console-held ones too) and which went down since
+/// the last tick: the first command after a key goes down sends half its
+/// amount where the player's movement says so (`core::HalfFirstPress`).
+#[derive(Resource, Default, Debug)]
+pub struct MoveKeys {
+    held: [bool; 4],
+    fresh: [bool; 4],
+    /// The axes (x, y) the last tick halved: the next tick's are whole
+    /// again, a frame's intent or not.
+    halved: [bool; 2],
+}
+
+/// Each frame: the move keys the local intent holds, and those that went
+/// down.
+pub fn track_move_keys(mut keys: ResMut<MoveKeys>, intent: Option<Single<&Intent, With<LocalPlayer>>>) {
+    let Some(i) = intent else { return };
+    let (a, o) = (i.move_axis, i.opposed);
+    let held = [a.y > 0.0 || o.y, a.y < 0.0 || o.y, a.x > 0.0 || o.x, a.x < 0.0 || o.x];
+    for k in 0..4 {
+        keys.fresh[k] |= held[k] && !keys.held[k];
+        keys.fresh[k] &= held[k];
+    }
+    keys.held = held;
+}
+
+/// Before each tick: a move key that went down since the last tick counts
+/// half in this tick's command (Source's key impulse: CS:S's first command
+/// after `+forward` gave 15 units/s, half of 18.75; HL2:DM's 22.5 of 45;
+/// TF2's Scout 33.75 of 60), on the movements that do it
+/// (`core::HalfFirstPress`).
+pub fn apply_move_keys(
+    mut keys: ResMut<MoveKeys>,
+    half: Option<Res<crate::core::HalfFirstPress>>,
+    mut intent: Option<Single<(&mut Intent, Option<&crate::slots::MovementSlot>), With<LocalPlayer>>>,
+) {
+    let fresh = std::mem::take(&mut keys.fresh);
+    let redo = std::mem::take(&mut keys.halved);
+    if !fresh.iter().chain(&redo).any(|f| *f) {
+        return;
+    }
+    let Some((intent, slot)) = intent.as_deref_mut() else { return };
+    if !slot.is_some_and(|s| half.is_some_and(|h| h.0.contains(&s.0))) {
+        return;
+    }
+    let held = keys.held;
+    let k = |i: usize| if held[i] { if fresh[i] { 0.5 } else { 1.0 } } else { 0.0 };
+    // (axis, its positive key, its negative key)
+    for (axis, pos, neg) in [(1, 0, 1), (0, 2, 3)] {
+        if fresh[pos] || fresh[neg] || redo[axis] {
+            intent.move_axis[axis] = k(pos) - k(neg);
+            keys.halved[axis] = fresh[pos] || fresh[neg];
+        }
+    }
 }
 
 /// Free look: while Left Alt (or `+freelook`) is held, the mouse turns
@@ -1026,6 +1088,61 @@ mod tests {
         app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(KeyCode::KeyG);
         app.update();
         assert_eq!(intent(&mut app).actions, 0);
+    }
+
+    /// Source's key impulse (`apply_move_keys`): on a movement that halves
+    /// (`HalfFirstPress`), the first tick after `+forward` goes down sends
+    /// half, every later one whole, a second tick in the same frame too;
+    /// on another movement the key is whole from its first tick.
+    #[test]
+    fn a_move_key_counts_half_on_its_first_tick() {
+        let mut app = App::new();
+        app.add_plugins(crate::console::ConsolePlugin)
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<AccumulatedMouseMotion>()
+            .init_resource::<AccumulatedMouseScroll>()
+            .init_resource::<Time>()
+            .init_resource::<MouseSettings>()
+            .init_resource::<WheelJump>()
+            .init_resource::<FreeLook>()
+            .init_resource::<MoveKeys>()
+            .init_resource::<super::super::view::FreeCam>()
+            .insert_resource(crate::core::HalfFirstPress(vec!["test:source"]))
+            .add_systems(Update, (write_local_intent, track_move_keys).chain())
+            .add_systems(FixedPreUpdate, apply_move_keys);
+        let me = app.world_mut().spawn((Intent::default(), LocalPlayer, crate::slots::MovementSlot("test:source"))).id();
+        app.world_mut().spawn(CursorOptions {
+            grab_mode: CursorGrabMode::Locked,
+            ..default()
+        });
+        app.world_mut().resource_mut::<crate::console::Console>().submit("bind w +forward; bind d +moveright");
+        app.update();
+        let tick = |app: &mut App| {
+            app.world_mut().run_schedule(FixedPreUpdate);
+            app.world().get::<Intent>(me).unwrap().move_axis
+        };
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::KeyW);
+        app.update();
+        assert_eq!(tick(&mut app), Vec2::new(0.0, 0.5), "the first tick: half");
+        assert_eq!(tick(&mut app), Vec2::new(0.0, 1.0), "a second tick in the frame: whole");
+        app.update();
+        assert_eq!(tick(&mut app), Vec2::new(0.0, 1.0));
+        // Another key going down while one is held: only it is halved.
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::KeyD);
+        app.update();
+        assert_eq!(tick(&mut app), Vec2::new(0.5, 1.0));
+        assert_eq!(tick(&mut app), Vec2::new(1.0, 1.0));
+        // A movement without it: whole at once.
+        for k in [KeyCode::KeyW, KeyCode::KeyD] {
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(k);
+        }
+        app.update();
+        tick(&mut app);
+        app.world_mut().entity_mut(me).insert(crate::slots::MovementSlot("test:other"));
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::KeyW);
+        app.update();
+        assert_eq!(tick(&mut app), Vec2::new(0.0, 1.0));
     }
 
     /// A key a menu has taken (`CapturedKeys`) selects no weapon, in the

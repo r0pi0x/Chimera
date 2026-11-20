@@ -33,9 +33,10 @@
 //! plays at 1.34 x and holds its last frame until its length at its own
 //! rate before the idle (`DRAW_RATE`, viewmodel.md 6).
 //!
-//! Known shortcuts: the minigun's barrel doesn't spin in
-//! first person (its spin is the world model's own sequence); the view's
-//! shake isn't passed on at 10 %. The
+//! The Minigun's barrel spins in first person (`spin_barrels`,
+//! viewmodel.md 7): toward 20 rad/s while it winds up or is spun, to 0
+//! after, 0.1 rad/s a tick either way, turning the `c_minigun`'s own
+//! `barrel` bone about its axis (`ViewAnimator::bone_rolls`). The
 //! Minigun rests in `m_idle`, upright, barrels up, right of centre, and
 //! draws with `m_draw`, no offset (specs/tf2/viewmodel.md, "Why ours shows
 //! a huge, wrongly angled Minigun", 7; a capture of the real game agrees);
@@ -455,7 +456,52 @@ pub fn add_rules(app: &mut App) {
     }
     app.view_anim_rules(super::GAME, rules()).view_motion_rules(super::GAME, MOTION);
     app.init_resource::<super::classes::Classes>()
-        .add_systems(Update, view_variants.before(crate::map::DriveAnimation));
+        .add_systems(Update, view_variants.before(crate::map::DriveAnimation))
+        .add_systems(Update, spin_barrels.after(crate::map::DriveAnimation));
+}
+
+/// The Minigun's barrel's top spin in first person, rad/s
+/// (specs/tf2/viewmodel.md 7, `barrel_max_speed`).
+pub const BARREL_MAX_SPEED: f32 = 20.0;
+/// Its spin's change toward the top or 0: 0.1 rad/s a tick (`barrel_accel_step`).
+pub const BARREL_ACCEL: f32 = 0.1 / super::TICK_INTERVAL as f32;
+
+/// Each Minigun's barrel in its holder's view model (viewmodel.md 7):
+/// the spin heads for `BARREL_MAX_SPEED` while the gun winds up or is
+/// spun and for 0 otherwise, by `BARREL_ACCEL`, and the angle it adds up
+/// turns the model's own `barrel` bone about its axis
+/// (`ViewAnimator::bone_rolls`). Per holder, view only.
+pub fn spin_barrels(
+    mut holders: Query<(Entity, &Inventory, &mut crate::map::ViewAnimator)>,
+    guns: Query<&minigun::Tf2Minigun>,
+    models: Option<Res<crate::map::ViewModels>>,
+    time: Res<Time>,
+    mut spins: Local<bevy::platform::collections::HashMap<Entity, (f32, f32)>>,
+) {
+    let dt = time.delta_secs();
+    spins.retain(|e, _| holders.contains(*e));
+    for (e, inv, mut view) in &mut holders {
+        let Some(gun) = inv.active.and_then(|w| guns.get(w).ok()) else {
+            if spins.remove(&e).is_some() && !view.bone_rolls.is_empty() {
+                view.bone_rolls.clear();
+            }
+            continue;
+        };
+        let (speed, angle) = spins.entry(e).or_default();
+        let target = if gun.spin.turning() { BARREL_MAX_SPEED } else { 0.0 };
+        let step = BARREL_ACCEL * dt;
+        *speed = if (target - *speed).abs() <= step { target } else { *speed + step * (target - *speed).signum() };
+        *angle = (*angle + *speed * dt) % std::f32::consts::TAU;
+        let barrel = view
+            .key
+            .as_deref()
+            .and_then(|k| models.as_ref()?.get(k))
+            .and_then(|m| m.bones.iter().position(|b| b.name.eq_ignore_ascii_case("barrel")));
+        let rolls = barrel.map(|b| vec![(b, *angle)]).unwrap_or_default();
+        if view.bone_rolls != rolls {
+            view.bone_rolls = rolls;
+        }
+    }
 }
 
 /// Each player holding a TF2 gun shows it on its class's arms
@@ -541,7 +587,8 @@ pub fn load(
             if variant && let Some(idle) = idle {
                 unmerge_undriven(&arms, &mut weapon, idle);
             }
-            crate::map::merge_by_bone_name(arms, &weapon, own_idle(&weapon).as_deref())
+            // The Minigun's barrel keeps a joint of its own to spin (`spin_barrels`).
+            crate::map::merge_keeping(arms, &weapon, own_idle(&weapon).as_deref(), &["barrel"])
         });
         match merged {
             Ok(mut v) => {

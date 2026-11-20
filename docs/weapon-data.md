@@ -86,7 +86,8 @@ reload = 2.4324                 # s (a shell's, with `shells`)
 #   the next starts as it ends: TF2's Rocket Launcher)
 # reload_while_held = false
 # auto_reload = false           # an empty clip reloads, held or not (CA)
-# reload_when_idle = false      # a clip not full reloads with neither attack held (TF2 cl_autoreload)
+# reload_when_idle = false      # a clip not full reloads with neither attack held, while the
+#                               # player's cl_autoreload is 1 (TF2's default; ours 0)
 
 [hitscan]
 range = 8192.0

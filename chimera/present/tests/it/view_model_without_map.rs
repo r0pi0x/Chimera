@@ -308,4 +308,18 @@ fn a_switch_shows_the_new_model_in_the_same_frame() {
     sim.app.world_mut().get_mut::<ViewAnimator>(owner).unwrap().key = Some(OTHER.into());
     sim.app.update();
     assert_eq!(drawn(&mut sim), [(OTHER.to_string(), true)], "the new model drawn in the switch's frame");
+    // The screen shake again at 10 % (`ViewModelShake`, the client's):
+    // the body moves by it under its camera, and back when it ends.
+    let placed = |sim: &mut Sim| {
+        let world = sim.app.world_mut();
+        world.query::<(&ViewModelBody, &Transform)>().iter(world).map(|(_, t)| t.translation).next().unwrap()
+    };
+    let rest = placed(&mut sim);
+    let shake = chimera_world::map::ViewModelShake { offset: Vec3::new(0.01, 0.0, 0.0), roll: 0.0 };
+    sim.app.world_mut().insert_resource(shake);
+    sim.app.update();
+    assert!((placed(&mut sim) - rest - shake.offset).length() < 1e-6, "shaken by it");
+    sim.app.world_mut().insert_resource(chimera_world::map::ViewModelShake::default());
+    sim.app.update();
+    assert_eq!(placed(&mut sim), rest);
 }

@@ -109,6 +109,7 @@ pub const ENGINE_NAMES: &[&str] = &[
     "zoom_sensitivity_ratio",
     "name",
     "cl_autowepswitch",
+    "cl_autoreload",
     "say",
     "say_team",
     "messagemode",

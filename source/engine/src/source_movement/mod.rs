@@ -1037,6 +1037,9 @@ impl SourceMovementAppExt for App {
         if !self.is_plugin_added::<SourceMovementPlugin>() {
             self.add_plugins(SourceMovementPlugin);
         }
+        // Its move keys count half on their first command (Source's key
+        // impulse, measured on real CS:S, HL2:DM and TF2).
+        self.world_mut().get_resource_or_init::<crate::core::HalfFirstPress>().0.push(id);
         let own = config.is_some();
         let defaults = match config {
             Some(c) => {

@@ -427,7 +427,14 @@ The Scattergun, Shotgun and Rocket Launcher reload **one round at a time**:
 4. Client option `cl_autoreload` (default **1**, from the SDK's client):
    when on, a clip weapon not full acts as if reload were held whenever
    neither attack button is held. The empty-clip reload of step 1
-   happens either way.
+   happens either way. Confirmed on the live client (2026-11-20): the
+   console reports the variable's built-in default beside its value when
+   the two differ, and set to 0 it reads `"0" ( def. "1" )`, so the
+   game's own default is 1 whatever an account's saved config holds (it
+   is an archived client setting; this account's config had it at 1
+   too). Ours keeps it as the player's setting but starts it at 0 (the
+   project's choice): TF2's guns then reload only on the key or an empty
+   clip unless the player turns it on.
 5. Phase times (SDK): the start phase lasts the length of the
    first-person reload-start sequence, each insert the length of the
    reload-loop sequence, when the view model has those sequences;
@@ -463,7 +470,11 @@ loop is over (55 ticks after it started). So the first rocket is in 0.84 s
 after the reload starts and the next every 0.81 s, both phases timed by
 the sequences as step 5 says, the round counted early. The Scattergun,
 measured the same way: start 14 ticks, a loop every 34 ticks, the round
-counted at each loop's end, the finish on that tick.
+counted at each loop's end, the finish on that tick. Their sounds,
+read with the server's sound-emission trace on the same ticks: the
+Rocket Launcher's reload sound starts 3 ticks (0.045 s) into each loop,
+the Scattergun's on the loop's first tick, each gun's draw sound a tick
+after its draw and its shot's sound on the shot's tick.
 
 The Minigun has no clip and never reloads.
 
@@ -991,7 +1002,7 @@ Probe checks (live dedicated server, bots; never port 27015/27030):
 5. **Rocket direction.** Settled: toward the 2000-unit aim trace's hit
    (§5.1).
 6. **Crit bucket.** Settled (§2.6).
-7. **`cl_autoreload` default.** Settled: 1.
+7. **`cl_autoreload` default.** Settled: 1 (and confirmed from the live console's built-in default, §4 step 4).
 8. **Splash edge factor.** The distance measure is settled (nearer of
    centre and feet; reach by the box). The edge factor is 0.5 only if the
    rocket's damage type carries the "half fall-off" flag, else 90/146 ≈

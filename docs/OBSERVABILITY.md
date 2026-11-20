@@ -2602,6 +2602,26 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   menu over the view after `joinclass` from the console, so its scope
   overlay has no picture yet. A bot name kicked earlier may linger: give
   each new bot its own name (`impacts.tf2`'s Heavy).
+- Per tick, exactly: VScript over RCON (`script ...` lines) on the
+  listen server's own player (`GetListenServerHost()`, a think function
+  with `AddThinkToEnt` printing each tick): origin, velocity, eye height,
+  punch, the active weapon's `m_iClip1`, and its view model
+  (`NetProps.GetPropEntityArray(p, "m_hViewModel", 0)`: `GetSequenceName(
+  GetSequence())`, `GetCycle()`, `m_flPlaybackRate`): which sequence plays
+  when. Sounds against it: `sv_soundemitter_trace 1` prints each
+  EmitSound (`(sv)`/`(cl)`, its script name and wave) in tick order
+  (`snd_showstart` prints nothing with no sound device). The console
+  splits on `;` and its tokenizer stops at 64
+  arguments (parentheses count): no spaces round operators, strings
+  built from `(n).tochar()`.
+- The same on CS:S and HL2:DM: their Linux clients start headless the
+  way `up` starts TF2 (SteamAppId 240 / 320, `cstrike.sh` / `hl2mp.sh`,
+  another RCON port such as 27116, never 27015). Without VScript, the
+  prediction system's watch prints the local player's predicted value
+  after each command: `pwatchent 1; pwatchvar m_vecVelocity` (the
+  `StorePredictionResults` lines); `pwatchent -1` stops it. RCON returns
+  a command's own output; lines printed later (an alias chain's) go to
+  `console.log` (`-condebug`).
 - Pictures are game imagery: scratch folders only. Quit the game when
   done (`down`; or `pkill -x tf_linux64`, never `pkill -f`).
 

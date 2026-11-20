@@ -95,6 +95,30 @@ Inputs: view angles, forward move `f`, side move `s`, up move `u`, the player's 
 
 The view angles used are the command's angles plus the current punch angle. Yaw above 180 is wrapped to (−180, 180].
 
+### Input: a key's first command
+
+Measured on the live client (2026-11-20; a listen server, the local
+player's predicted velocity after each command read with the
+prediction system's variable watch, `+forward` pressed from the
+console, one tick a frame): the **first command after a move key goes
+down carries half the key's amount**, every later command the whole
+amount. CS:S (de_dust2, a T with the Glock, max speed 250, key amount
+400): the first tick's speed was 15.0 (accelerate 5 × 200 × 0.015), then
++14.25 a tick (the full 18.75 less friction's 4.5 at stopspeed 75): a
+whole first command would have given 18.75. Half-Life 2: Deathmatch
+(dm_lockdown, `cl_forwardspeed` set to 300 so that half of it falls
+below the 190 walk speed): 22.5 on the first tick (10 × 150 × 0.015),
+then 45, 67.5: a whole first command would have given 28.5. Team
+Fortress 2's Scout: 33.75 (half of the 450 key amount, under his 400)
+and then +54 a tick (specs/tf2/movement.md, Open questions 13). The
+release has no such step: the first command after the key goes up
+carries nothing of it (CS:S: only friction from that tick on). Each key
+is its own: with one key held, another going down is halved alone on
+its first command. It is the client's input, so it applies to a
+player's own keys only, not to bots' commands. Where half the amount is
+still above the max speed (HL2:DM's 450 at a 190 walk) the rescale hides
+it.
+
 ### Walking (+speed)
 
 What the public SDK says:

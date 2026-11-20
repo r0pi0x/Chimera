@@ -327,6 +327,27 @@ fn shells_go_in_one_at_a_time_and_a_shot_stops_them_27_28() {
     assert!(!ev.iter().any(|(_, k)| matches!(k, WeaponEventKind::ShellInserting)), "the reload stopped");
 }
 
+/// `cl_autoreload 0` (the player's option, sent as userinfo; ours'
+/// default, and a player without the setting): a clip not full stays so
+/// with attack let go; reload still reloads it. 1 reloads by itself.
+#[test]
+fn cl_autoreload_0_leaves_a_clip_not_full_alone() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], SCATTERGUN);
+    let clip = |sim: &Sim| sim.app.world().get::<Magazine>(w).unwrap().clip;
+    run(&mut sim, p, 1, |s, _| s.intent(p).fire = true);
+    assert_eq!(clip(&sim), 5);
+    let ev = run(&mut sim, p, 150, |s, _| s.intent(p).fire = false);
+    assert!(!ev.iter().any(|(_, k)| matches!(k, WeaponEventKind::ReloadStarted)), "no reload by itself");
+    assert_eq!(clip(&sim), 5);
+    run(&mut sim, p, 60, |s, k| s.intent(p).reload = k == 0);
+    assert_eq!(clip(&sim), 6, "reload still reloads");
+    sim.app.world_mut().entity_mut(p).insert(autoreload_on());
+    run(&mut sim, p, 1, |s, _| s.intent(p).fire = true);
+    let ev = run(&mut sim, p, 60, |s, _| s.intent(p).fire = false);
+    assert!(ev.iter().any(|(_, k)| matches!(k, WeaponEventKind::ReloadStarted)), "on again: reloads");
+}
+
 /// 4, measured on real TF2 (2026-11-20, the view model's sequence and the
 /// clip read every tick): the Rocket Launcher's reload plays its whole
 /// 0.5 s start, then a 0.8 s loop a round, the rocket in 0.33 s into it;
@@ -354,6 +375,11 @@ fn the_rocket_launchers_reload_plays_its_start_then_a_loop_a_round() {
     assert_eq!(rounds, [56, 110], "rounds in (ticks after the start)");
     let done = at(|k| matches!(k, WeaponEventKind::Reloaded));
     assert_eq!(done.iter().map(|t| t - start).collect::<Vec<_>>(), [142], "the finish (TF2: 143)");
+}
+
+/// The player's `cl_autoreload 1` (userinfo; ours defaults to 0).
+fn autoreload_on() -> chimera_core::core::UserInfo {
+    chimera_core::core::UserInfo([("cl_autoreload".to_string(), "1".to_string())].into_iter().collect())
 }
 
 /// The flyers of `owner`.
@@ -603,6 +629,7 @@ fn a_scattergun_hit_pushes_360_47() {
 fn a_clip_not_full_reloads_when_attack_is_let_go() {
     let mut sim = sim();
     let (p, w) = holding(&mut sim, greybox::SPAWNS[0], SCATTERGUN);
+    sim.app.world_mut().entity_mut(p).insert(autoreload_on());
     let clip = |sim: &Sim| sim.app.world().get::<Magazine>(w).unwrap().clip;
     let events = run(&mut sim, p, 1, |s, _| s.intent(p).fire = true);
     assert!(events.iter().any(|(_, k)| matches!(k, WeaponEventKind::Fired { .. })), "fired: {events:?}");

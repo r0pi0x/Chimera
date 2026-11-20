@@ -410,6 +410,18 @@ impl Plugin for WeaponPlugin {
             "1: +use on a dropped weapon you look at takes it, dropping the one in its slot (CS:GO's; CS:S has none).",
             |u| &mut u.0,
         );
+        app.init_resource::<AutoReload>();
+        crate::console::resource_cvar::<AutoReload, u8>(
+            app,
+            AUTORELOAD_KEY,
+            "1: a gun that reloads a clip not full by itself (TF2's) does so whenever neither attack is held; 0 (the default): only when you press reload or the clip is empty (sent to the server as userinfo).",
+            |u| &mut u.0,
+        );
+        {
+            let mut console = app.world_mut().resource_mut::<Console>();
+            console.archive(AUTORELOAD_KEY);
+            console.userinfo(AUTORELOAD_KEY);
+        }
         app.init_resource::<drop::AutoWeaponSwitch>();
         crate::console::resource_cvar::<drop::AutoWeaponSwitch, u8>(
             app,
@@ -1300,6 +1312,16 @@ impl HeldGauge {
 /// weapon may fire again; data: `[magazine] reload_when_idle`.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ReloadWhenIdle;
+
+/// `cl_autoreload` (TF2's; its own default is 1, specs/tf2/weapons.md 4,
+/// step 4; ours is 0, the user's choice): the local player's choice
+/// whether `ReloadWhenIdle` guns reload by themselves, sent as its
+/// userinfo (`core::UserInfo`); a character with none (a bot) doesn't.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AutoReload(pub u8);
+
+/// The userinfo key of `AutoReload`.
+pub const AUTORELOAD_KEY: &str = "cl_autoreload";
 
 /// In `AltModes` mode `.0` the trigger is automatic, whatever its own
 /// `automatic` and `per_press` (Combat Arms' continuous fire on a
@@ -2377,6 +2399,7 @@ fn weapon_frame(
         &MovementState,
         Option<&Health>,
         Option<&ViewPunch>,
+        Option<&crate::core::UserInfo>,
     ), Without<NetDrawn>>,
     mut weapons: Query<WeaponParts>,
     mut world: deliver::World,
@@ -2389,7 +2412,9 @@ fn weapon_frame(
     // Compare timers against this; record new ones from `now`.
     let due = now + TIME_SLACK;
     let dt = clock.dt();
-    for (owner, intent, mut inv, transform, state, health, punch) in &mut owners {
+    for (owner, intent, mut inv, transform, state, health, punch, info) in &mut owners {
+        // `cl_autoreload` (the player's, sent as userinfo; off without one).
+        let autoreload = info.and_then(|i| i.flag(AUTORELOAD_KEY)) == Some(true);
         if health.is_some_and(|h| h.current <= 0.0) {
             // A delayed swing dies with its owner (`Swing::delay`).
             if let Some(mut w) = inv.active.and_then(|a| weapons.get_mut(a).ok())
@@ -2758,7 +2783,7 @@ fn weapon_frame(
 
         // An empty clip reloading by itself (`Magazine::auto_reload`), or
         // one not full with neither attack held (`ReloadWhenIdle`).
-        let idle_reload = w.reload_when_idle && !intent.fire && !intent.secondary;
+        let idle_reload = w.reload_when_idle && autoreload && !intent.fire && !intent.secondary;
         if !w.state.reload_held
             && w.magazine.as_ref().is_some_and(|m| {
                 m.reserve > 0 && ((m.auto_reload && m.clip == 0) || (idle_reload && m.clip < m.size))

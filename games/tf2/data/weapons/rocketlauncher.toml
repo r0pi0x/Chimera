@@ -43,7 +43,9 @@ spread = { template = 0.0 }
 
 [sounds]
 fire = "tf2:Weapon_RPG.Single"
-reload = [[0.0, "tf2:Weapon_RPG.Reload"]]
+# Each round's sound 0.045 s into its loop (dh_reload_loop's event; real
+# TF2's emitted sounds against its view model's sequence, weapons.md 4).
+reload = [[0.045, "tf2:Weapon_RPG.Reload"]]
 draw = [[0.0, "tf2:Weapon_RPG.Draw"]]
 
 [models]
