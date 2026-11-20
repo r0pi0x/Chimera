@@ -39,7 +39,7 @@ Captured imagery stays in scratch, never in the repo.
 | Bodies, idle poses (third person) | close | Pyro, Scout, Engineer, Soldier stand as TF2's; TF2's stances are a little wider. The Heavy's idle (gun raised) matches TF2's only with the class model's own 1-frame aim-matrix stubs: taking the include's same-named grids instead (tried) lowered it to TF2's firing pose, and the deployed set (tried, `ACT_MP_DEPLOYED_IDLE` and its PREFIRE/POSTFIRE) then raised the gun straight up while firing. Which of a player model's local stub and its include's sequence TF2 uses, per lookup, is install.md Open question 6: needs a spec session (the deployed attempt is kept in scratch, `player_anim_spun.rs.txt`) |
 | Flame stream (air, wall); overbright 5 or 1 | close (pass 4: one stream from the nozzle, as TF2's) | overbright is 5, in linear space (we applied it to the gamma colour: x34, a white blob at a wall; now the violet cloud of TF2, its added colour within 3 of TF2's). Re-taken at a bot's FOV 75 (the first pass ran ours at 90): TF2's cloud at a wall spreads wider (its points slide along the wall; ours stop) and its far fireball is about 2x ours across; ours tints the right wall orange |
 | Detail sprites (2fort's hay) | close | drawn; kept whole at a distance (alpha raised by mip level); TF2 fades them blended where ours dithers |
-| Explosion on a player / mid-air | differs | a hard-edged orange disc in ours (Next 2) |
+| Explosion on a player / mid-air | close | the "hard-edged orange disc" was the sandbox's blast spheres (`range::blast_spheres`), which `cl_drawhud 0` didn't hide (now it does). Matched at 300 units, ours fills the far bridge with the same orange glow clipped by the near truss, the same sequence; ours a little paler yellow in the first 50 ms; TF2 shows more embers and a faint dark smudge after |
 | Crits | todo | |
 | View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries |
 | HUD, crosshair | todo | |
@@ -61,7 +61,7 @@ Captured imagery stays in scratch, never in the repo.
    took every weight as 1). Side-by-side with TF2's bots
    (`anim.tf2` / `anim.scene`, 2026-11-19): the Heavy firing matches
    (Minigun level and low, forward); TF2's spun-only and idle Heavy look as
-   the spec has them, but ours' "idle" target fired anyway (item 5 below),
+   the spec has them, but ours' "idle" target fired anyway (item 5 below, fixed in pass 5),
    so no idle pair yet. The other classes' upper bodies match; TF2's legs
    look wider apart, most likely its bots' feet yaw (still standing, the
    feet keep their own goal up to 45 degrees off the eyes) against ours'
@@ -71,28 +71,16 @@ Captured imagery stays in scratch, never in the repo.
    the model's +X): the held `c_` model's merge (7), open. TF2's bots
    jump and crouch (`bot_jump`, `bot_crouch`); ours' targets can't, so
    those have no pair.
-2. The rocket's explosion on a player (`air.tf2`/`air.scene` in the
-   pass's scratch: a Soldier at 0 -300 firing at a Heavy ~300 units
-   ahead): ours draws a large uniform orange disc with a hard round edge
-   over the bridge for ~4 frames (TF2: a soft orange wash, a fiery core
-   with dark debris, then a dark smoke cloud ours lacks). The disc isn't a
-   dynamic light (psys draws none) nor a flat sprite (no TF2 system sets
-   an orientation): find the child of `ExplosionCore_MidAir` that draws it
-   (`psys_running all` lists radii up to ~100; print materials too) and
-   whether its material's `$depthblend` / size fades should hide it.
+2. (Done, pass 5: the disc was the sandbox's blast spheres.) The
+   mid-air explosion's first 50 ms: ours paler yellow than TF2's orange.
 3. Flames: TF2's fire at the stream's end is ~1.5x wider and brighter
    (flames.md Open questions 1, last sentence); the cloud at a wall wider.
 4. The Minigun's brass: TF2's casings fly farther out to the side and few
    lie by the feet; ours drop and pile (ejection speed, life).
-5. A sandbox target that isn't firing ahead still holds its trigger at
-   times (`spin` saw `intent.fire` true after `target set all noahead`,
-   the Minigun's flash and brass kept going): the bot brain sets fire
-   after `targets::drive` released it. Order the release after the brain.
+5. (Done, pass 5: `targets::drive` before the selection stage.)
 6. Water explosions, stickies, crits (`addcond`), TF2's crosshair (UGG's
    HUD by design).
-7. `heavy::pack::the_class_sets_load_only_the_offered_classes_bodies`
-   failed here with `CHIMERA_TF2_ROOT` at the client install (Scout voice
-   waves not in its set); post-push (its own install config) passed.
+7. (Done, pass 5: the test compared mixed-case wave names.)
 8. The asset service's `players` set needs republishing (by the user)
    to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
 
@@ -222,3 +210,19 @@ Captured imagery stays in scratch, never in the repo.
   delay (`looks::tracer_hold`, `InterpClock::delay`). The sandbox's
   targets live in the client's own world (not interpolated, delay 0), so
   its pictures still show them together, as its bodies fire.
+- 2026-11-20 (fifth pass): the mid-air explosion's "hard-edged orange
+  disc" was no particle at all: with `Explosions_MA_Flash_1` left out
+  (a scratch switch) it stayed, a uniform translucent dome round the
+  blast: the sandbox's blast spheres (`range::blast_spheres`), which
+  `cl_drawhud 0` didn't hide (the labels it did). Hidden now
+  (`range::spheres_shown`). Found with `psys_running all` (now a row per
+  started child, with its material and renderer) and `psys_def <name>`.
+  At 300 units both games' glows fill the far bridge, clipped by the near
+  truss. `air.tf2` had put TF2's Heavy 200 units off and ours 300.
+- A target set `noahead` kept its Minigun spun: the selection stage (where
+  the spin reads the trigger) was ordered only after the brain, not after
+  `targets::drive`; now it is.
+- `heavy::pack::the_class_sets_load_only_the_offered_classes_bodies` with
+  the client install: the test compared mixed-case wave names
+  (`vo/scout_Award12.mp3`, the client's scripts) with the sets' lower-case
+  paths; the sets were right. It compares lower case now.

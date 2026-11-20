@@ -823,6 +823,20 @@ fn cl_drawhud_0_hides_the_range_readouts() {
     assert!(drawn(&mut range), "back");
 }
 
+/// A blast's spheres (`range::spheres_shown`) stand round it in play and
+/// are gone under `cl_drawhud 0` with the readouts: a capture against
+/// real TF2 showed the outer one as a hard-edged orange disc over a
+/// mid-air explosion.
+#[test]
+fn cl_drawhud_0_hides_the_blast_spheres() {
+    use sandbox::range::spheres_shown;
+    let play = SandboxUi { on: true, staged: false, ..Default::default() };
+    assert!(spheres_shown(&play, false), "in play");
+    assert!(!spheres_shown(&play, true), "none under cl_drawhud 0");
+    assert!(!spheres_shown(&SandboxUi { staged: true, ..play.clone() }, false), "none on a staging");
+    assert!(!spheres_shown(&SandboxUi { screen: SandboxScreen::ChangeGun, ..play.clone() }, false), "none with Change gun open");
+}
+
 fn sim_builds(sim: &Sim) -> u64 {
     sim.app.world().resource::<sandbox::range::RangeBuilds>().0
 }

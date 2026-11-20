@@ -21,7 +21,7 @@
 //!   inside the inner one (none when the falloff starts at the centre),
 //!   the edge's damage at the outer, with labels of their radii in metres
 //!   beside them on the screen, and each body's damage where it stood;
-//!   they fade after `BLAST_SECS`.
+//!   they fade after `BLAST_SECS`; none under `cl_drawhud 0` either.
 //!
 //! Places come from the player's eye (`FirstPersonCamera`): a point
 //! behind it or off screen hides its piece. A staging without a camera
@@ -410,9 +410,16 @@ pub struct BlastSphere {
     pub alpha: f32,
 }
 
+/// Whether blasts show their spheres (`blast_spheres`): in the sandbox's
+/// play (not a staging), Change gun closed, the HUD drawn (`drawhud_off`:
+/// `cl_drawhud 0`).
+pub fn spheres_shown(ui: &SandboxUi, drawhud_off: bool) -> bool {
+    ui.on && !ui.staged && ui.screen != SandboxScreen::ChangeGun && !drawhud_off
+}
+
 /// The blasts' spheres: spawned with each blast, faded with it (their
-/// materials' alpha), gone with it; out of the sandbox, or with Change gun
-/// open, none. Unlit, both faces (seen from inside too), not casting
+/// materials' alpha), gone with it; out of the sandbox, with Change gun
+/// open, or under `cl_drawhud 0`, none. Unlit, both faces (seen from inside too), not casting
 /// shadows.
 #[allow(clippy::type_complexity)]
 fn blast_spheres(
@@ -422,10 +429,15 @@ fn blast_spheres(
     spheres: Query<(Entity, &BlastSphere, &MeshMaterial3d<StandardMaterial>)>,
     mut meshes: Option<ResMut<Assets<Mesh>>>,
     mut materials: Option<ResMut<Assets<StandardMaterial>>>,
+    cover: Option<Res<crate::client::hud::HudCover>>,
     mut c: Commands,
 ) {
     let (Some(meshes), Some(materials)) = (meshes.as_deref_mut(), materials.as_deref_mut()) else { return };
-    let on = ui_state.on && !ui_state.staged && ui_state.screen != SandboxScreen::ChangeGun;
+    // `cl_drawhud 0` (captures against another game) hides them as the
+    // labels: a mid-air TF2 explosion's capture showed the outer one as a
+    // hard-edged orange disc over the bridge.
+    let drawhud_off = cover.is_some_and(|c| c.is(crate::client::hud::DRAWHUD_COVER));
+    let on = spheres_shown(&ui_state, drawhud_off);
     let now = clock.map_or(0.0, |c| c.now);
     for (e, s, m) in &spheres {
         let Some((t0, _)) = blasts.0.iter().find(|(t, _)| *t == s.at).filter(|_| on) else {
