@@ -1423,15 +1423,46 @@ Per player, on each client frame (bone setup cs_source/animation.md
     the captured bots had (it depends on each bot's spawn yaw and the
     teleport); `cl_showanimstate` on the TF2 client shows it, or a
     `setang_exact`-style snap before the picture removes it.
+    **Answered live (2026-11-20, `tools/tf2ref` scenes `pose.tf2` /
+    `pose.scene`):** the feet yaw is the cause. A Scout bot teleported to
+    face the camera stood wide (left foot well out to the side); after
+    three more teleports (yaw 0, then 225, then 270) the same bot stood
+    narrow, feet nearly in line, with nothing else changed. Matched
+    against Chimera's Scout drawn with its feet put at fixed offsets from
+    its eyes (−45, −20, 0, +20, +45), the first picture sits between +20
+    and +45 and the second between −20 and 0, which is what the step rule
+    gives for a goal 30° left of the eyes: no step for the first, then
+    steps to 345, 300 and 255 for the second (θ −15). So these bots spawn
+    with a goal 30° off a multiple of 45, and no sequence of RCON
+    teleports can put their feet on their eyes (the goal only ever moves
+    by 45° steps); `setang_exact` acts on the local player only, and
+    `cl_showanimstate`'s text did not draw on the offscreen client (with
+    the HUD and VGUI on, the class menu covered the view). With the
+    feet lined up (Chimera's at +30 and −15), the stances agree.
 14. **The Wrench picture**: the second pass finds no pose parameter or
     layer that turns the Wrench; the stand's own tap (5°–50°, §4b) is
     the explanation offered. Not confirmed live: the idle phase of the
     TF2 bot in the capture. If a phase-matched pair still differs, the
     held model's placement (bone-merge of `c_wrench`'s `weapon_bone`)
     is the next suspect.
+    **Answered live (2026-11-20, `pose.tf2` / `pose.scene`, pictures
+    every 0.2 s over one 3.2 s loop on both sides):** TF2's Engineer bot
+    with the Wrench alternates between the Wrench lying flat across his
+    belly and the Wrench raised toward his chest about three times a loop,
+    and Chimera's does the same; a TF2 picture of either phase has a
+    Chimera picture of the same phase with the Wrench in the same place.
+    The idle's tap is the whole difference; the held model's placement
+    is not at fault.
 15. **The watch**: whether the Spy's Invis Watch draws any third-person
     model of its own (it is never the active weapon in the usual sense)
     was not checked; the rule above says no.
+    **Partly answered live (2026-11-20):** a Spy bot with his Knife out,
+    and with his Revolver out, seen from the front and both sides, shows
+    the active weapon only: nothing at his hip, nothing on his wrists or
+    belt. The watch itself was not seen out: over RCON a puppet bot can
+    only be made to cloak (`bot_forceattack2`), which fades the whole
+    body, so whether a watch drawn in his hand while it is "out" has a
+    model of its own stays open.
 13. **Deployed state on a class without deployed sequences** (mash-ups:
     a Scout spinning the Minigun): TF2 would show the reference pose
     (§2, `ACT_MP_DEPLOYED_IDLE` missing); Chimera may prefer to keep the
