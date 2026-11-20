@@ -58,14 +58,36 @@ Maps picker; M11, the sandbox's screens).
    dialog moved onto it with no visible change (before/after pixel
    compare at 1920x1080 and 1280x720). Tests: the kit's picker logic
    (`chimera/ui/tests/it/picker.rs`), the Maps dialog's existing tests.
-2. [ ] Host settings' guns. Finding (2026-11-20): Host has no gun
-   selector today (only Maps); this step adds a Guns field and dialog on
-   the picker (multi, cards) and the server cvar it sets.
+2. [x] Host settings' guns. Finding (2026-11-20): Host had no gun
+   selector (only Maps); this step adds one: the Host page's Guns field
+   (main_menu.toml `guns = true`) opens `guns_picker` (multi, cards, the
+   class chips) over `LadderCatalogue` (`auto::report` and
+   `auto::drawable_all`: the guns a drawn ladder may deal), and Start
+   sends `mp_guns_off` (`chimera_sim::minigame::auto::GunsOff`: drawn
+   ladders leave them out unless none would be left).
 3. [ ] The Sandbox's Change gun (B) on the picker (single, full screen,
    cards), the quick bar kept (picking the gun in hand does nothing:
    acb27eb50, `rung_command::select_held`).
 4. [ ] A Sandbox map selector on the picker (single), changing map
-   through the sandbox's entry path (f2132a134).
+   through the sandbox's entry path (f2132a134): the map is changed by
+   submitting `sandbox <map>` (apps/ultimate_gun_game/src/sandbox.rs, the
+   console command the main menu's Sandbox entry runs), so the entry's
+   no-lobby, no-end-screen switch applies.
+
+Notes for step 3: Change gun (chimera/client/src/client/sandbox/
+change_gun.rs, 1,467 lines) has more than the picker does today: a
+games column with per-game download state and facets (TF2's classes), a
+tag popover of eight groups with its own search, the detail pane (model,
+stats, hits to kill, variants list, Play as), the pinned bar with drag
+and drop, tiles with download bars, the grid keys (`\\` folds, I, R,
+Ctrl+1-6). The picker needs, before it can carry it: typing in its search
+field (the kit's text field state, as `GunSearch`), a per-card foot
+slot (download bar, slot number), family tiles (a count beside the
+name), the vlist grid keys (the picker's cursor through `VListState::
+nav`), and a side slot for the detail pane. Plan: add those to
+`chimera_ui::picker` as data/hooks, then move the grid and the search
+onto it, keeping the games column, popover, detail and pin bar as the
+screen's own around it.
 
 Each step: UI tests (as apps/party_kit/tests/it/signal_pages.rs), offscreen
 captures at 1920x1080 and 1280x720, a commit, post-push tests.
@@ -80,3 +102,11 @@ captures at 1920x1080 and 1280x720, a commit, post-push tests.
   and after at 1920x1080 and 1280x720: the dialog pixel-identical (the
   only differing pixels were the bar's avatar, whose colour is drawn per
   run). Tests: chimera/ui/tests/it/picker.rs; party_kit's Maps tests.
+- 2026-11-20, step 2: the Host page's Guns field and dialog on the picker
+  (cards, class chips), `mp_guns_off` on the server (`auto::GunsOff`,
+  applied in `auto::drawable`; `drawable_all` lists before it). Tests:
+  party_kit `the_guns_picker_sets_the_guns_off`, chimera_sim
+  `the_hosts_guns_off_are_left_out_unless_none_would_be_left`. Captures:
+  `ui_scene play guns` at 1920x1080 and 1280x720 (2,090 guns listed with
+  the installs here; the recycling grid keeps it cheap).
+- Next session: step 3 (the notes above), then step 4.

@@ -24,7 +24,9 @@
 # given; `{title}` in it is the app's name). `range` = [min, max, step],
 # `choices` = [[value, label], ...], `text` = the entry's byte limit (`masked`: a password). `map` = true is
 # the map row: "Rotation" (the minigame's pool, its first map) or one map
-# of it. The Game tab is data/host_settings.toml's next-match rows.
+# of it (the Signal look: the Maps picker); `guns` = true the Guns picker's row
+# (the guns drawn ladders leave out, `mp_guns_off`; the Signal look only).
+# The Game tab is data/host_settings.toml's next-match rows.
 #
 # [background]: the live map behind the menu and its slow camera flight,
 # an orbit around the middle of the map's spawn points: `maps` the maps
@@ -133,6 +135,10 @@ text = 5
 [[play]]
 label = "Maps"
 map = true
+
+[[play]]
+label = "Guns"
+guns = true
 
 [[play]]
 label = "Bots"

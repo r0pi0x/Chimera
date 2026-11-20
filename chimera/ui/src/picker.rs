@@ -176,7 +176,7 @@ pub fn facet(tag: &str) -> &str {
     tag.split_once(':').map_or(tag, |(f, _)| f)
 }
 
-/// A tag's shown words (`rifle` of `class:rifle`).
+/// A tag's value (`rifle` of `class:rifle`; shown with `_` as spaces).
 pub fn tag_words(tag: &str) -> &str {
     tag.split_once(':').map_or(tag, |(_, v)| v)
 }
@@ -582,7 +582,7 @@ pub fn spawn(
             let words = if facet(chip) == "game" {
                 games.iter().find(|g| g.id == tag_words(chip)).map_or(tag_words(chip).to_string(), |g| g.name.clone())
             } else {
-                tag_words(chip).to_string()
+                tag_words(chip).replace('_', " ")
             };
             let ch = ui.boxed(
                 c,
@@ -906,7 +906,7 @@ fn card(c: &mut Commands, ui: &Ui, parent: Entity, view: &PickerView, i: usize, 
     }
     let n = ui.text(c, k, Role::DisplayBold, l("card_name"), if current { Tone::AccText } else { Tone::Fg }, &it.name);
     c.entity(n).insert(Ellipsize::in_parent(it.name.clone()));
-    let tags: Vec<&str> = it.tags.iter().take(2).map(|t| tag_words(t)).collect();
+    let tags: Vec<String> = it.tags.iter().take(2).map(|t| tag_words(t).replace('_', " ")).collect();
     if !tags.is_empty() {
         let words = tags.join(" \u{00b7} ");
         let tt = ui.text(c, k, Role::Mono, l("card_tag"), Tone::Fg2, &words);

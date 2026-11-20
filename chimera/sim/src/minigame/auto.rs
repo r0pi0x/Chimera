@@ -267,9 +267,33 @@ pub struct Skipped {
 
 /// What a drawn ladder may deal: `caps`' guns and grenades without those
 /// that can't damage a player (their data says so, `weapon::harm::
-/// harmless`) or a game's data excludes (`DrawExclusions`); the skipped
-/// ones, in report order.
+/// harmless`) or a game's data excludes (`DrawExclusions`), then those
+/// the host took out (`GunsOff`); the skipped ones, in report order.
 pub fn drawable(world: &World, caps: &mut [Capabilities]) -> Vec<Skipped> {
+    let mut skipped = drawable_all(world, caps);
+    // The host's guns off (`mp_guns_off`, the Host page's Guns picker),
+    // unless that would leave no gun.
+    if let Some(off) = world.get_resource::<GunsOff>().filter(|o| !o.0.trim().is_empty())
+        && caps.iter().flat_map(|c| c.guns.iter()).any(|g| !off.has(g.id))
+    {
+        let mut out = |id: &'static str| {
+            let gone = off.has(id);
+            if gone {
+                skipped.push(Skipped { id, why: GunsOff::WHY.to_string() });
+            }
+            !gone
+        };
+        for c in caps.iter_mut() {
+            c.guns.retain(|g| out(g.id));
+            c.grenades.retain(|g| out(g));
+        }
+    }
+    skipped
+}
+
+/// `drawable` before the host's guns off (`GunsOff`): what the Host
+/// page's Guns picker lists.
+pub fn drawable_all(world: &World, caps: &mut [Capabilities]) -> Vec<Skipped> {
     let empty = WeaponCatalog::default();
     let catalog = world.get_resource::<WeaponCatalog>().unwrap_or(&empty);
     let none = PowerReaders::default();
@@ -300,6 +324,34 @@ pub fn drawable(world: &World, caps: &mut [Capabilities]) -> Vec<Skipped> {
         c.grenades.retain(|g| why(g).is_none());
     }
     skipped
+}
+
+/// `mp_guns_off`: the guns and grenades a host took out of drawn ladders
+/// (weapon ids, comma-separated; the Host page's Guns picker sets it).
+/// `drawable` leaves them out, unless that would leave no gun; a
+/// hand-written ladder may still name them.
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct GunsOff(pub String);
+
+impl GunsOff {
+    /// The reason `drawable` gives.
+    pub const WHY: &'static str = "the host left it out";
+
+    /// Whether `id` is off (case aside).
+    pub fn has(&self, id: &str) -> bool {
+        self.0.split(',').map(str::trim).any(|w| !w.is_empty() && w.eq_ignore_ascii_case(id))
+    }
+}
+
+/// Registers `mp_guns_off` (`GunsOff`).
+pub fn guns_off_cvar(app: &mut App) {
+    app.init_resource::<GunsOff>();
+    crate::console::resource_cvar::<GunsOff, String>(
+        app,
+        "mp_guns_off",
+        "Server: the guns drawn ladders leave out, comma-separated weapon ids (the Host page's Guns picker sets it). Taking every gun out takes none. From the next ladder.",
+        |g| &mut g.0,
+    );
 }
 
 /// One gun's names (`drawable_short_names`).
@@ -839,6 +891,37 @@ pub fn definition(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The host's guns off leave drawn ladders, by id whatever the case,
+    /// grenades too; all of them off takes none.
+    #[test]
+    fn the_hosts_guns_off_are_left_out_unless_none_would_be_left() {
+        use chimera_core::game_parts::{GunClass, GunPart};
+        let caps = || {
+            vec![Capabilities {
+                game: "g",
+                guns: vec![GunPart { id: "ak", class: GunClass::Rifle }, GunPart { id: "awp", class: GunClass::Sniper }],
+                grenades: vec!["he"],
+                knife: None,
+                movement: None,
+                characters: None,
+                hud: None,
+                maps: Vec::new(),
+                missing: Vec::new(),
+            }]
+        };
+        let mut world = World::new();
+        world.insert_resource(GunsOff("AWP, he".into()));
+        let mut c = caps();
+        let skipped = drawable(&world, &mut c);
+        assert_eq!(c[0].guns.iter().map(|g| g.id).collect::<Vec<_>>(), ["ak"]);
+        assert!(c[0].grenades.is_empty());
+        assert_eq!(skipped.iter().map(|s| (s.id, s.why.as_str())).collect::<Vec<_>>(), [("awp", GunsOff::WHY), ("he", GunsOff::WHY)]);
+        world.insert_resource(GunsOff("ak,awp".into()));
+        let mut c = caps();
+        assert!(drawable(&world, &mut c).is_empty(), "every gun off: none taken");
+        assert_eq!(c[0].guns.len(), 2);
+    }
     use crate::minigame::power::Power;
 
     /// `n` guns of `game`, their classes in turn from `classes`.

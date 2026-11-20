@@ -736,6 +736,13 @@ Maps and matches:
   that slice, never the whole map; the Maps picker writes it). Nothing new
   goes over the network (the slice goes with the match, `net64`). Never in
   a game's own app.
+- **Guns off.** The Host page's Guns field (the shared picker, as cards
+  by game with class chips) chooses which guns drawn ladders may deal;
+  Start sends the ones off as `mp_guns_off` (weapon ids,
+  comma-separated, as the weapon data names them), set from the console
+  too. Drawn
+  ladders leave them out from the next ladder; taking every gun out takes
+  none; a written ladder may still name them.
 - **The pre-match lobby.** Each new match (the first after the server
   starts, each rotation and map change: a host's `changelevel <map>` is the
   running minigame's next match there, a new ladder as a rotation's)

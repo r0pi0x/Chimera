@@ -14,7 +14,8 @@
 //!
 //! - **Host** (`MenuPage::Play`): sub-tabs Server (data/main_menu.toml's
 //!   `[[play]]` rows: Server name, Password and Port first; the Maps
-//!   field opening the picker, `maps_picker`; ranges steppers, Off/On a
+//!   field opening the picker, `maps_picker`, the Guns field its own,
+//!   `guns_picker`, both the kit's shared picker; ranges steppers, Off/On a
 //!   toggle, up to five choices segmented, one choice its words, text a
 //!   text field; UPnP's outcome a STATUS block, its words on hover) and
 //!   Game (host_settings.toml's next-match rows, `main_menu::
@@ -68,7 +69,8 @@
 //!   news card (`signal_menu::MenuNews`) shows the same, else the hub's
 //!   newest news until dismissed, else its MOTD (`hub_news`).
 //!
-//! `ui_scene play [server|game|maps]` (`maps`: the picker open) and `ui_scene join [internet|lan|favourites|
+//! `ui_scene play [server|game|maps|guns]` (`maps`, `guns`: that picker
+//! open) and `ui_scene join [internet|lan|favourites|
 //! history|password|offline|update|nohub]` stage them for screenshots (`join` with made-up
 //! servers, none of them saved; `offline`: the hub not answering, its
 //! last list shown; `update`: the newer-build banner; `nohub`: no account).
@@ -312,6 +314,9 @@ impl Plugin for SignalPagesPlugin {
         app.init_resource::<SignalPages>()
             .init_resource::<crate::maps_picker::MapsPicker>()
             .init_resource::<crate::maps_picker::MapsSource>()
+            .init_resource::<crate::guns_picker::GunsPicker>()
+            .init_resource::<crate::guns_picker::GunsSource>()
+            .init_resource::<crate::guns_picker::GunsListing>()
             .init_resource::<LanList>()
             .init_resource::<HubAsks>()
             .init_resource::<BrowserFiles>()
@@ -334,13 +339,17 @@ impl Plugin for SignalPagesPlugin {
     }
 }
 
-/// The Maps picker's keys while it is open (`maps_picker` module doc):
-/// ↑↓ the row, Space on or off, ←→ fold or open, Enter Done, Esc Cancel
-/// (a right click is Esc).
+/// The host's pickers' keys while one is open (`maps_picker`,
+/// `guns_picker` module docs): ↑↓ the row, Space on or off, ←→ fold or
+/// open, Enter Done, Esc Cancel (a right click is Esc).
 #[allow(clippy::too_many_arguments)]
 fn picker_keys(
     keys: Res<ButtonInput<KeyCode>>,
-    mut picker: ResMut<crate::maps_picker::MapsPicker>,
+    (mut picker, mut guns, listing): (
+        ResMut<crate::maps_picker::MapsPicker>,
+        ResMut<crate::guns_picker::GunsPicker>,
+        Res<crate::guns_picker::GunsListing>,
+    ),
     source: Res<crate::maps_picker::MapsSource>,
     pages: Res<SignalPages>,
     (minigames, game_id, slices): (
@@ -351,22 +360,40 @@ fn picker_keys(
     mut out: MessageWriter<crate::maps_picker::PickerAction>,
     mut cues: MessageWriter<UiCue>,
 ) {
-    use crate::maps_picker::PickerAction as P;
     picker.took_keys = picker.open.is_some();
-    if picker.open.is_none() {
+    guns.took_keys = guns.open.is_some();
+    if picker.open.is_none() && guns.open.is_none() {
         return;
     }
     if pages.up != Some(MenuPage::Play) {
         // Not on Host (yet: a staged scene opens it first): no keys.
         if pages.up.is_some() {
             picker.open = None;
+            guns.open = None;
         }
         picker.took_keys = false;
+        guns.took_keys = false;
         return;
     }
-    let pool = picker_pool(minigames.as_deref(), &game_id.0, slices.as_deref());
-    let games = source.0.listing(&pool);
-    let rows = picker.rows(&games);
+    if guns.open.is_some() {
+        host_picker_keys(&keys, &mut guns.0, &listing.0, &mut out, &mut cues);
+    } else {
+        let pool = picker_pool(minigames.as_deref(), &game_id.0, slices.as_deref());
+        let games = source.0.listing(&pool);
+        host_picker_keys(&keys, &mut picker.0, &games, &mut out, &mut cues);
+    }
+}
+
+/// One host picker's keys (`picker_keys`).
+fn host_picker_keys(
+    keys: &ButtonInput<KeyCode>,
+    picker: &mut chimera_ui::picker::PickerState,
+    games: &[chimera_ui::picker::PickerGame],
+    out: &mut MessageWriter<crate::maps_picker::PickerAction>,
+    cues: &mut MessageWriter<UiCue>,
+) {
+    use crate::maps_picker::PickerAction as P;
+    let rows = picker.rows(games);
     let k = |c: KeyCode| keys.just_pressed(c);
     if k(KeyCode::Escape) {
         out.write(P::Cancel);
@@ -381,7 +408,7 @@ fn picker_keys(
             cues.write(UiCue::new("ui_hover"));
         }
     } else if k(KeyCode::ArrowLeft) || k(KeyCode::ArrowRight) {
-        let did = if k(KeyCode::ArrowLeft) { picker.left(&games) } else { picker.right(&games) };
+        let did = if k(KeyCode::ArrowLeft) { picker.left(games) } else { picker.right(games) };
         if did {
             cues.write(UiCue::new("ui_select"));
         }
@@ -402,12 +429,17 @@ fn picker_pool(
     slices.map_or(maps.clone(), |s| s.after_maps(&maps))
 }
 
-/// The picker's clicks and what its actions do.
+/// The host's pickers' clicks and what their actions do (the open one's).
 #[allow(clippy::too_many_arguments)]
 fn picker_clicks(
     pressed: Query<(&Interaction, &crate::maps_picker::PickerAction), Changed<Interaction>>,
     mut actions: ResMut<Messages<crate::maps_picker::PickerAction>>,
-    mut picker: ResMut<crate::maps_picker::MapsPicker>,
+    (mut picker, mut guns, listing, built): (
+        ResMut<crate::maps_picker::MapsPicker>,
+        ResMut<crate::guns_picker::GunsPicker>,
+        Res<crate::guns_picker::GunsListing>,
+        Option<Res<chimera_ui::picker::Pickers>>,
+    ),
     source: Res<crate::maps_picker::MapsSource>,
     (minigames, game_id, slices): (
         Option<Res<chimera_sim::minigame::Minigames>>,
@@ -416,49 +448,79 @@ fn picker_clicks(
     ),
     mut cues: MessageWriter<UiCue>,
 ) {
-    use crate::maps_picker::PickerAction as P;
-    let mut todo: Vec<P> = actions.drain().collect();
-    todo.extend(pressed.iter().filter(|(i, _)| **i == Interaction::Pressed).map(|(_, a)| *a));
-    if todo.is_empty() || picker.open.is_none() {
+    if picker.open.is_none() && guns.open.is_none() {
         return;
     }
-    let pool = picker_pool(minigames.as_deref(), &game_id.0, slices.as_deref());
-    let games = source.0.listing(&pool);
-    let rows = picker.rows(&games);
+    let mut todo: Vec<crate::maps_picker::PickerAction> = actions.drain().collect();
+    todo.extend(pressed.iter().filter(|(i, _)| **i == Interaction::Pressed).map(|(_, a)| *a));
+    if todo.is_empty() {
+        return;
+    }
+    if guns.open.is_some() {
+        let chips = built.as_ref().and_then(|b| b.0.get(crate::guns_picker::LIST)).map(|v| v.chips.clone()).unwrap_or_default();
+        host_picker_act(&mut guns.0, &listing.0, &chips, todo, &mut cues);
+    } else {
+        let pool = picker_pool(minigames.as_deref(), &game_id.0, slices.as_deref());
+        let games = source.0.listing(&pool);
+        host_picker_act(&mut picker.0, &games, &[], todo, &mut cues);
+    }
+}
+
+/// One host picker's actions (`picker_clicks`).
+fn host_picker_act(
+    picker: &mut chimera_ui::picker::PickerState,
+    games: &[chimera_ui::picker::PickerGame],
+    chips: &[String],
+    todo: Vec<crate::maps_picker::PickerAction>,
+    cues: &mut MessageWriter<UiCue>,
+) {
+    use crate::maps_picker::PickerAction as P;
+    let rows = picker.rows(games);
     for a in todo {
         match a {
             P::Toggle(i) => {
                 if let Some(row) = rows.get(i) {
                     picker.cursor = i;
-                    picker.toggle(&games, row);
+                    picker.toggle(games, row);
                     cues.write(UiCue::new("ui_select"));
                 }
             }
             P::Fold(i) => {
                 if let Some(row) = rows.get(i) {
                     // A folded one opens, an open one folds.
-                    let open = picker.is_folded(&games, row);
+                    let open = picker.is_folded(games, row);
                     picker.cursor = i;
-                    picker.fold(&games, row, open);
+                    picker.fold(games, row, open);
+                    cues.write(UiCue::new("ui_select"));
+                }
+            }
+            P::Chip(i) => {
+                if let Some(chip) = chips.get(i) {
+                    if !picker.chips.remove(chip) {
+                        picker.chips.insert(chip.clone());
+                    }
+                    picker.cursor = 0;
                     cues.write(UiCue::new("ui_select"));
                 }
             }
             P::AllOff => {
-                picker.all_off(&games);
+                picker.all_off(games);
                 cues.write(UiCue::new("ui_select"));
             }
-            // Single picks, chips and the search: not in this dialog.
-            P::Pick(_) | P::Chip(_) | P::FocusSearch => {}
             P::Done => {
                 if let Some(off) = picker.open.take() {
                     picker.off = off;
                 }
+                picker.chips.clear();
                 cues.write(UiCue::new("ui_select"));
             }
             P::Cancel => {
                 picker.open = None;
+                picker.chips.clear();
                 cues.write(UiCue::new("ui_back"));
             }
+            // Single picks and the search: not in these dialogs.
+            P::Pick(_) | P::FocusSearch => {}
         }
     }
 }
@@ -571,6 +633,15 @@ pub fn stage(w: &mut World, page: MenuPage, args: &[String]) -> Result<(), Strin
     w.resource_mut::<SignalPages>().stage = Some((page, tab));
     // `ui_scene play maps`: the Maps picker open, a game folded and a few
     // maps off.
+    // `ui_scene play guns`: the Guns picker open, the first game's second
+    // and third guns off, the cursor on the first gun.
+    if page == MenuPage::Play && arg.as_deref() == Some("guns") {
+        crate::guns_picker::refresh(w);
+        let games = w.resource::<crate::guns_picker::GunsListing>().0.clone();
+        let mut pk = w.resource_mut::<crate::guns_picker::GunsPicker>();
+        pk.open = Some(games.first().map(|g| g.items().skip(1).take(2).map(|i| i.id.clone()).collect()).unwrap_or_default());
+        pk.cursor = 1;
+    }
     if page == MenuPage::Play && arg.as_deref() == Some("maps") {
         let mut pk = w.resource_mut::<crate::maps_picker::MapsPicker>();
         pk.open = Some(Default::default());
@@ -1232,10 +1303,10 @@ fn keys(
     mut p: ResMut<SignalPages>,
     mut out: MessageWriter<MainMenuAction>,
     mut cues: MessageWriter<UiCue>,
-    (picker, party): (Res<crate::maps_picker::MapsPicker>, Option<Res<crate::party_signal::PartyPanel>>),
+    (picker, party, guns): (Res<crate::maps_picker::MapsPicker>, Option<Res<crate::party_signal::PartyPanel>>, Res<crate::guns_picker::GunsPicker>),
 ) {
     let (Some(page), Some(keys)) = (p.up, keys) else { return };
-    if console.is_some_and(|c| c.open) || picker.took_keys || party.is_some_and(|p| p.open) {
+    if console.is_some_and(|c| c.open) || picker.took_keys || guns.took_keys || party.is_some_and(|p| p.open) {
         return;
     }
     let k = |c: KeyCode| keys.just_pressed(c);
@@ -1268,6 +1339,11 @@ fn keys(
     let on_maps = matches!(line, Some(Line::Play(r)) if data.play.get(r).is_some_and(|row| row.kind == PlayKind::Map));
     if on_maps && (k(KeyCode::Enter) || k(KeyCode::NumpadEnter) || k(KeyCode::Space)) {
         out.write(MainMenuAction::OpenMaps);
+        return;
+    }
+    let on_guns = matches!(line, Some(Line::Play(r)) if data.play.get(r).is_some_and(|row| row.kind == PlayKind::Guns));
+    if on_guns && (k(KeyCode::Enter) || k(KeyCode::NumpadEnter) || k(KeyCode::Space)) {
+        out.write(MainMenuAction::OpenGuns);
         return;
     }
     if page == MenuPage::Play
@@ -1408,6 +1484,7 @@ struct DrawKey {
     party: Option<chimera_ui::shell::Party>,
     upnp: String,
     picker: crate::maps_picker::MapsPicker,
+    guns: (crate::guns_picker::GunsPicker, crate::guns_picker::GunsListing),
 }
 
 /// What the drawing reads besides the state.
@@ -1426,6 +1503,9 @@ struct Ctx<'a> {
     /// The Maps picker and its listing.
     picker: &'a crate::maps_picker::MapsPicker,
     games: Vec<crate::maps_picker::CatalogueGame>,
+    /// The Guns picker and its listing.
+    guns: &'a crate::guns_picker::GunsPicker,
+    gun_games: &'a [chimera_ui::picker::PickerGame],
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -1444,7 +1524,7 @@ fn draw(
         Option<Res<chimera_sim::minigame::arena::ArenaSlices>>,
     ),
     mut drawn: Local<DrawKey>,
-    mut lists: ResMut<chimera_ui::VirtualLists>,
+    (mut lists, guns, gun_games): (ResMut<chimera_ui::VirtualLists>, Res<crate::guns_picker::GunsPicker>, Res<crate::guns_picker::GunsListing>),
     mut commands: Commands,
 ) {
     let (Some(theme), Some(units)) = (theme, units) else { return };
@@ -1462,6 +1542,7 @@ fn draw(
         party: Some(party.clone()),
         upnp: upnp.as_ref().map(|u| format!("{:?}", u.state)).unwrap_or_default(),
         picker: picker.clone(),
+        guns: (guns.clone(), gun_games.clone()),
     };
     if *drawn == key {
         return;
@@ -1487,6 +1568,8 @@ fn draw(
             crate::maps_picker::name_slices(&mut games, slices.as_deref());
             games
         },
+        guns: &guns,
+        gun_games: &gun_games.0,
     };
     let root = spawn(&mut commands, &ui, page, &menu, &p, &cx, images.as_deref_mut(), icons.as_deref_mut(), ambients.as_deref_mut(), &mut lists);
     if let Some(c) = cam {
@@ -1680,6 +1763,9 @@ fn spawn(
     if page == MenuPage::Play && cx.picker.open.is_some() {
         crate::maps_picker::spawn(c, ui, root, cx.picker, &cx.games, lists);
     }
+    if page == MenuPage::Play && cx.guns.open.is_some() {
+        crate::guns_picker::spawn(c, ui, root, cx.guns, cx.gun_games, lists);
+    }
     if let Some(ask) = &p.ask {
         password_modal(c, ui, root, menu, p, ask);
     }
@@ -1782,6 +1868,13 @@ fn play_line(
                     if let Some((images, icons)) = res {
                         let f = ui.dialog_field(c, vl, images, icons, &shown, 14.0, vst);
                         c.entity(f).insert(MainMenuAction::OpenMaps);
+                    }
+                }
+                PlayKind::Guns => {
+                    // The Guns field: opens the picker (a dialog).
+                    if let Some((images, icons)) = res {
+                        let f = ui.dialog_field(c, vl, images, icons, &cx.guns.summary(cx.gun_games), 14.0, vst);
+                        c.entity(f).insert(MainMenuAction::OpenGuns);
                     }
                 }
                 PlayKind::Pick(pick) if row.cvar == "net_upnp" => {

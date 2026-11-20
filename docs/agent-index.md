@@ -304,16 +304,16 @@ module list is `docs/modules.md`.
 - 563: Building or updating the server | Easiest: the server from the release zip (`ultimate_gun_game_server` or
 - 580: The server's own game files (no install, no keys) | A game server reads each game it has no install of from the asset store, as a player does, and fetches what it needs from the asset...
 - 657: Starting it | reach, not localhost)
-- 799: Ports to open | On the router and the host's firewall:
-- 823: Download speed and your upload | What a tester without the games downloads from the asset service:
-- 875: Accounts and tokens | On the asset server's machine, from a checkout built with `--features tools` (`chimera_pack` is a host tool and is not in releases):
-- 922: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
-- 1020: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
-- 1043: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
-- 1148: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
-- 1171: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
-- 1216: After | Revoke all tokens (`user revoke <tester>` each, or stop the asset service), stop the server, close the ports (UPnP mappings expire, a...
-- 1222: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
+- 806: Ports to open | On the router and the host's firewall:
+- 830: Download speed and your upload | What a tester without the games downloads from the asset service:
+- 882: Accounts and tokens | On the asset server's machine, from a checkout built with `--features tools` (`chimera_pack` is a host tool and is not in releases):
+- 929: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
+- 1027: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
+- 1050: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
+- 1155: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
+- 1178: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
+- 1223: After | Revoke all tokens (`user revoke <tester>` each, or stop the asset service), stop the server, close the ports (UPnP mappings expire, a...
+- 1229: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
 
 ## docs/playtest.md
 

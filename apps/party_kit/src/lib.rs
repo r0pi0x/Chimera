@@ -686,6 +686,7 @@ pub mod server_list;
 #[cfg(feature = "present")]
 pub mod signal_pages;
 #[cfg(feature = "present")]
+pub mod guns_picker;
 pub mod maps_picker;
 #[cfg(feature = "present")]
 pub mod loading_signal;

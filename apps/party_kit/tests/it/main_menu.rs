@@ -281,7 +281,10 @@ fn every_entry_and_row_of_the_data_works() {
     let sim = local(true);
     let console = sim.app.world().resource::<Console>();
     for r in &data.play {
-        if r.kind != PlayKind::Map {
+        if r.kind == PlayKind::Guns {
+            // The Guns picker's row sets the server's guns off at Start.
+            assert!(console.cvar("mp_guns_off").is_some(), "Play row {}: no mp_guns_off", r.label);
+        } else if r.kind != PlayKind::Map {
             assert!(
                 console.cvar(&r.cvar).is_some(),
                 "Play row {}: no cvar {}",

@@ -119,6 +119,7 @@ pub fn game_name(id: &str) -> String {
         "combat_arms" => "Combat Arms".into(),
         "hl2dm" => "Half-Life 2: Deathmatch".into(),
         "halo_ce" => "Halo: Combat Evolved".into(),
+        "tf2" => "Team Fortress 2".into(),
         "" => "Other".into(),
         other => other.replace('_', " "),
     }

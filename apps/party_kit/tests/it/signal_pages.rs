@@ -56,6 +56,12 @@ fn sim(theme: &str) -> Sim {
             w.resource_mut::<Asked>().0.push(format!("connect {}", a.join(" ")));
             Ok(None)
         });
+    if sim.app.world().resource::<Console>().cvar("mp_guns_off").is_none() {
+        sim.app.console_command("mp_guns_off", "a test's: asked only", |w, a| {
+            w.resource_mut::<Asked>().0.push(format!("mp_guns_off {}", a.join(" ")));
+            Ok(None)
+        });
+    }
     if sim.app.world().resource::<Console>().cvar("mp_maps_off").is_none() {
         sim.app.console_command("mp_maps_off", "a test's: asked only", |w, a| {
             w.resource_mut::<Asked>().0.push(format!("mp_maps_off {}", a.join(" ")));
@@ -337,6 +343,84 @@ fn the_maps_picker_header_folds_and_only_its_box_toggles() {
     click(&mut sim, hit);
     assert_eq!(picker(&sim).state(&games, &row0), party_kit::maps_picker::Tri::Off, "the box toggles");
     assert_eq!(picker(&sim).is_folded(&games, &row0), folded, "and does not fold");
+}
+
+/// A made-up gun listing: two games, three classes.
+struct FakeGuns;
+
+impl party_kit::guns_picker::GunCatalogue for FakeGuns {
+    fn listing(&self, _: &World) -> Vec<chimera_ui::picker::PickerGame> {
+        use chimera_ui::picker::{PickerGame, PickerGroup, PickerItem};
+        let gun = |id: &str, class: &str| PickerItem { icon: Some("rifle".into()), tags: vec![format!("class:{class}")], ..PickerItem::new(id, id) };
+        let game = |id: &str, items: Vec<PickerItem>| PickerGame { id: id.into(), name: id.into(), groups: vec![PickerGroup { name: String::new(), items }] };
+        vec![game("a", vec![gun("a:ak", "rifle"), gun("a:awp", "sniper"), gun("a:mp5", "smg")]), game("b", vec![gun("b:rocket", "launcher"), gun("b:smg", "smg")])]
+    }
+}
+
+/// Host's Guns field opens the shared picker as cards in its dialog: a
+/// game's box sets its guns, a card toggles one, a class chip filters the
+/// cards, Esc cancels and Done keeps; Start sends the guns off
+/// (`mp_guns_off`).
+#[test]
+fn the_guns_picker_sets_the_guns_off() {
+    use chimera_ui::picker::{PickerAction as P, PickerCard, PickerRow, Tri};
+    use party_kit::guns_picker::{GunsDialog, GunsPicker, GunsSource};
+    let mut sim = sim(PAGES_THEME);
+    sim.app.insert_resource(GunsSource(Box::new(FakeGuns)));
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    let data = MenuData::shipped();
+    let row = data.play.iter().position(|r| r.kind == party_kit::main_menu::PlayKind::Guns).expect("a Guns row");
+    for _ in 0..row {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(3);
+    let picker = |s: &Sim| s.app.world().resource::<GunsPicker>().clone();
+    let games = FakeGuns.listing_for_test();
+    assert!(picker(&sim).open.is_some(), "Enter on Guns opens the picker");
+    assert_eq!(sim.app.world_mut().query_filtered::<(), With<GunsDialog>>().iter(sim.app.world()).count(), 1);
+    assert_eq!(sim.app.world_mut().query::<&PickerCard>().iter(sim.app.world()).count(), 5, "a card a gun");
+    // The first game's box: its guns off; a card: one on again.
+    sim.app.world_mut().write_message(P::Toggle(0));
+    sim.ticks(2);
+    assert_eq!(picker(&sim).state(&games, &PickerRow::Game(0)), Tri::Off);
+    sim.app.world_mut().write_message(P::Toggle(1));
+    sim.ticks(2);
+    assert_eq!(picker(&sim).state(&games, &PickerRow::Game(0)), Tri::Mixed);
+    // A chip: only the SMGs show (one card a game).
+    let chips = sim.app.world().resource::<chimera_ui::picker::Pickers>().0[party_kit::guns_picker::LIST].chips.clone();
+    let smg = chips.iter().position(|c| c == "class:smg").expect("the class chips");
+    sim.app.world_mut().write_message(P::Chip(smg));
+    sim.ticks(3);
+    assert_eq!(picker(&sim).rows(&games).len(), 4, "two games, an SMG each");
+    assert_eq!(sim.app.world_mut().query::<&PickerCard>().iter(sim.app.world()).count(), 2);
+    // Esc cancels: nothing kept, the chips gone.
+    press(&mut sim, KeyCode::Escape);
+    assert!(picker(&sim).open.is_none() && picker(&sim).off.is_empty() && picker(&sim).chips.is_empty());
+    assert_eq!(menu(&sim).page, MenuPage::Play, "Esc only closed the picker");
+    // Again: a game off, Done keeps it, Start sends it.
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    let b = picker(&sim).rows(&games).iter().position(|r| *r == PickerRow::Game(1)).unwrap();
+    sim.app.world_mut().write_message(P::Toggle(b));
+    sim.ticks(2);
+    press(&mut sim, KeyCode::Enter);
+    assert_eq!(picker(&sim).off_line(), "b:rocket,b:smg", "Done kept the second game off");
+    act(&mut sim, A::Start);
+    sim.ticks(4);
+    let sent = match sim.app.world().get_resource::<chimera_sim::minigame::auto::GunsOff>() {
+        Some(g) if !g.0.is_empty() => g.0.clone(),
+        _ => asked(&sim).iter().find_map(|l| l.strip_prefix("mp_guns_off ").map(str::to_string)).unwrap_or_default(),
+    };
+    assert_eq!(sent.trim_matches('"'), "b:rocket,b:smg", "mp_guns_off set at the start");
+}
+
+impl FakeGuns {
+    fn listing_for_test(&self) -> Vec<chimera_ui::picker::PickerGame> {
+        use party_kit::guns_picker::GunCatalogue;
+        self.listing(&World::new())
+    }
 }
 
 #[test]

@@ -254,6 +254,8 @@ pub struct EscEntry {
 pub enum PlayKind {
     /// "Rotation" or one map of the minigame's pool.
     Map,
+    /// The guns drawn ladders deal: the Guns picker (`guns_picker`).
+    Guns,
     Pick(Pick),
     /// Typed: its byte limit, shown as stars.
     Text {
@@ -368,6 +370,8 @@ impl MenuData {
                     kind: PlayKind::Map,
                     default,
                 }
+            } else if t.get("guns").and_then(|v| v.as_bool()) == Some(true) {
+                PlayRow { label, cvar: String::new(), kind: PlayKind::Guns, default }
             } else if let Some(max) = t.get("text").and_then(|v| v.as_integer()) {
                 PlayRow {
                     cvar: s(&t, "cvar").ok_or_else(|| format!("{label}: no cvar"))?,
@@ -872,6 +876,8 @@ pub enum MainMenuAction {
     OpenSettings,
     /// Host's Maps field: the picker (`maps_picker`).
     OpenMaps,
+    /// Host's Guns field: the picker (`guns_picker`).
+    OpenGuns,
 }
 
 // ---------------------------------------------------------------------------
@@ -1057,7 +1063,7 @@ fn init_play(world: &mut World) {
         .map_or_else(String::new, |t| t.0.clone());
     let values: Vec<String> = rows
         .iter()
-        .map(|r| match (&r.default, r.kind == PlayKind::Map) {
+        .map(|r| match (&r.default, matches!(r.kind, PlayKind::Map | PlayKind::Guns)) {
             (_, true) => String::new(),
             (Some(d), _) => d.replace("{title}", &title),
             (None, _) => crate::controls::cvar_value(world, &r.cvar).unwrap_or_default(),
@@ -1317,11 +1323,12 @@ fn typing(
     data: Res<MenuData>,
     mut out: MessageWriter<MainMenuAction>,
     settings: Option<Res<crate::settings::Settings>>,
-    (theme, lobby, picker, loading): (
+    (theme, lobby, picker, loading, guns): (
         Option<Res<chimera_ui::Theme>>,
         Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
         Option<Res<crate::maps_picker::MapsPicker>>,
         Option<Res<crate::loading_signal::LoadingSignal>>,
+        Option<Res<crate::guns_picker::GunsPicker>>,
     ),
     (mut clipboard, party): (Local<chimera_ui::clipboard::Clipboard>, Option<Res<crate::party_signal::PartyPanel>>),
     shared_clipboard: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
@@ -1357,8 +1364,8 @@ fn typing(
                 // Settings spent it (a key capture, an open list, the keep).
                 continue;
             }
-            if picker.as_ref().is_some_and(|p| p.took_keys) {
-                // The Maps picker's Cancel.
+            if picker.as_ref().is_some_and(|p| p.took_keys) || guns.as_ref().is_some_and(|p| p.took_keys) {
+                // The Maps or Guns picker's Cancel.
                 continue;
             }
             if loading.as_ref().is_some_and(|l| l.esc_taken) {
@@ -1540,6 +1547,14 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                 p.cursor = 0;
             }
         }
+        A::OpenGuns => {
+            crate::guns_picker::refresh(world);
+            if let Some(mut p) = world.get_resource_mut::<crate::guns_picker::GunsPicker>() {
+                let off = p.off.clone();
+                p.open = Some(off);
+                p.cursor = 0;
+            }
+        }
         A::OpenSettings => {
             leave_page(world);
             let mut m = world.resource_mut::<PartyMenu>();
@@ -1578,7 +1593,7 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                     choices[(at + dir as i64).rem_euclid(choices.len() as i64) as usize].clone()
                 }
                 PlayKind::Pick(p) => p.next(&now, dir),
-                PlayKind::Text { .. } => return,
+                PlayKind::Text { .. } | PlayKind::Guns => return,
             };
             if let Some(v) = m.play.get_mut(row) {
                 *v = next;
@@ -1717,6 +1732,8 @@ pub fn start_lines(
     for (row, value) in data.play.iter().zip(&menu.play) {
         match &row.kind {
             PlayKind::Map => map = value.clone(),
+            // The Guns picker's choice goes as `mp_guns_off` (`start`).
+            PlayKind::Guns => {}
             PlayKind::Text { .. } if row.cvar == "hostport" && value.trim().is_empty() => {}
             _ => {
                 let v = if value.is_empty() {
@@ -1748,6 +1765,10 @@ fn start(world: &mut World) {
             pool = kept;
         }
         submit(world, format!("mp_maps_off {}", chimera_core::console::quote(line)));
+    }
+    // The Guns picker's choice: the guns drawn ladders leave out.
+    if let Some(line) = world.get_resource::<crate::guns_picker::GunsPicker>().map(|p| p.off_line()) {
+        submit(world, format!("mp_guns_off {}", chimera_core::console::quote(&line)));
     }
     let minigame = world.resource::<MenuMinigame>().0.clone();
     let (lines, after, map) = {
@@ -2693,6 +2714,8 @@ fn play_frame(commands: &mut Commands, root: Entity, menu: &PartyMenu, data: &Me
         for (i, r) in data.play.iter().enumerate() {
             let value = menu.play.get(i).cloned().unwrap_or_default();
             match &r.kind {
+                // The Signal pages' alone (a dialog); not in this look.
+                PlayKind::Guns => continue,
                 PlayKind::Map => {
                     let shown = if value.is_empty() {
                         format!("Rotation ({} maps)", pool.len())
