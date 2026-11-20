@@ -5,7 +5,8 @@
 //! colours and fonts with their files, `scripts/hudlayout.res`'s panels,
 //! `scripts/mod_textures.txt`'s icons: the kill icons' cells of
 //! `hud/d_images` and `hud/dneg_images`), with TF2's pictures on top
-//! (`PICTURES`: the health crosses, the crosshair sheet). Nothing of it is
+//! (`PICTURES`: the health crosses, the crosshair sheet, the Sniper's
+//! scope quarter; `TEXTURES`: its charge meter). Nothing of it is
 //! in the repository; a map without the install has no TF2 look, and the
 //! shell's HUD draws. The guns' kill icons as pictures
 //! (`kill_icon_pictures`: each gun's `hud.icon` cell of `mod_textures.txt`
@@ -34,7 +35,17 @@ pub const PICTURES: &[(&str, &str)] = &[
     ("health_color", "hud/health_color"),
     ("health_dead", "hud/health_dead"),
     ("crosshairs", "sprites/crosshairs"),
+    // The Sniper's scope (measured on real TF2, hud.md "Measured"): the
+    // top-left quarter of its ring (the plain-blended fallback of the
+    // refracting one), drawn by the shell's scope overlay as four mirrored
+    // quarters over the whole screen.
+    ("scope_quarter", "hud/scope_sniper_ul_dx80"),
 ];
+
+/// Bare textures the HUD draws (no material of their own), by our name:
+/// the Sniper's charge meter (the wedge of stripes, the bolt and "100%",
+/// drawn additively; `hud/sniperscope_numbers`'s second texture).
+pub const TEXTURES: &[(&str, &str)] = &[("sniperscope_numbers2", "hud/sniperscope_numbers2")];
 
 /// The class portrait's pictures (hud.md 3.10, the 2D image): each
 /// class's by team (`hud/class_<short><red|blue>`) and the team's
@@ -87,6 +98,12 @@ pub fn load(materials: &mut MaterialLoader) -> Option<GameHud> {
     )?;
     for (name, material) in PICTURES.iter().chain(PORTRAITS) {
         if let Some(texture) = materials.resolve(material).texture {
+            let t = &materials.textures[texture];
+            hud.sprites.insert((*name).to_string(), HudSprite { texture, rect: [0.0, 0.0, t.width as f32, t.height as f32] });
+        }
+    }
+    for (name, file) in TEXTURES {
+        if let Some(texture) = materials.texture(file, true) {
             let t = &materials.textures[texture];
             hud.sprites.insert((*name).to_string(), HudSprite { texture, rect: [0.0, 0.0, t.width as f32, t.height as f32] });
         }

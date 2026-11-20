@@ -17,6 +17,7 @@ mod dedicated_change;
 mod game_hooks;
 mod hub;
 mod install_setting;
+mod late_items;
 mod local_load;
 mod minigame_callouts;
 mod parties;

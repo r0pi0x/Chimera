@@ -1,0 +1,50 @@
+# The Syringe Gun's needles (real TF2; ours: the needle part of
+# launch.scene, run with fov_desired 75). This account's Medic doesn't
+# carry the stock gun, so a puppet Medic bot (stock loadout; its slot chosen
+# again once spawned, or it keeps its Medi Gun) fires (`bot_forceattack`)
+# and we watch: in its eyes (`spec_mode 4`: FOV 75) down 2fort's bridge
+# (`fly_NN`, every frame at 60 a second for 0.67
+# s: where a needle first shows, its trail). What needles do on a wall
+# was seen by hand (a Medic bot facing 2fort's wall at 0 500, needles
+# into it, then a free spectator beside the marks): see
+# specs/tf2/effects.md, "Measured".
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/needles.tf2 --out <dir>
+mp_disable_respawn_times 1
+cl_drawhud 0
+r_drawvgui 0
+r_drawviewmodel 1
+tf_spec_xray 0
+fov_desired 90
+viewmodel_fov 54
+fps_max 60
+mat_colorcorrection 0
+tf_weapon_criticals 0
+host_framerate 0
+bot_kick all
+sleep 1
+jointeam spectator
+sleep 2
+bot_selectweaponslot 0
+bot -name RefMedic -class medic -team red
+sleep 3
+bot_teleport RefMedic 0 -300 0 0 90 0
+bot_selectweaponslot 0
+sleep 2
+spec_player RefMedic
+sleep 1
+spec_mode 4
+sleep 1
+bot_teleport RefMedic 0 -300 0 0 90 0
+sleep 3
+shot fly_idle
+host_framerate 0.016667
+movie fly
+wait 2
+bot_forceattack 1
+wait 40
+bot_forceattack 0
+wait 40
+endmovie
+host_framerate 0
+sleep 1
+bot_kick all

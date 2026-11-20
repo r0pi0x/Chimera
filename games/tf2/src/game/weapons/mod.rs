@@ -322,7 +322,9 @@ pub const SERVER_DOCS: &str = "tf2:weapons";
 fn insert_rules(world: &mut World, set: &WeaponSet) {
     world.insert_resource(rocket::RocketRules::from_set(set));
     world.insert_resource(grenade::GrenadeRules(rocket::RocketRules::of_hook(set, GRENADE_HOOK)));
-    world.insert_resource(sticky::StickyRules::from_set(set));
+    let stickies = sticky::StickyRules::from_set(set);
+    stickies.draw_late(&mut world.get_resource_or_init::<chimera_world::map::loose::DrawnLate>());
+    world.insert_resource(stickies);
     world.insert_resource(needle::NeedleRules::from_set(set));
 }
 
@@ -334,7 +336,12 @@ fn refresh_rules(catalog: Res<chimera_sim::weapon::data::WeaponCatalog>, mut com
     };
     commands.insert_resource(rocket::RocketRules::from_set(set));
     commands.insert_resource(grenade::GrenadeRules(rocket::RocketRules::of_hook(set, GRENADE_HOOK)));
-    commands.insert_resource(sticky::StickyRules::from_set(set));
+    let stickies = sticky::StickyRules::from_set(set);
+    commands.queue({
+        let stickies = stickies.clone();
+        move |world: &mut World| stickies.draw_late(&mut world.get_resource_or_init::<chimera_world::map::loose::DrawnLate>())
+    });
+    commands.insert_resource(stickies);
     commands.insert_resource(needle::NeedleRules::from_set(set));
 }
 

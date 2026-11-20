@@ -8,7 +8,10 @@
 //! - **Muzzle flashes** (effects.md 2): each shot of a bullet gun or
 //!   launcher (`Fired`) starts its muzzle system (`muzzle`) at the gun's
 //!   `muzzle` attachment: on the first-person view model, the attachment
-//!   re-projected into the world view (`map::attached::FirstPerson`,
+//!   re-projected into the world view and turned as the attachment is
+//!   (its own x, y and z, which the systems are authored in: the Grenade
+//!   and Stickybomb Launchers' flashes leave along their muzzles' z)
+//!   (`map::attached::FirstPerson`,
 //!   `view_model::reproject`: right and up x tan(world FOV/2) /
 //!   tan(view-model FOV/2)) and drawn as a world system with the world
 //!   camera (particles.md 6: never the view-model camera, which drew it
@@ -91,10 +94,11 @@
 //! model's (flames.md Open questions 2); crits are off, so a crit stream
 //! never starts; no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
 //! used until the weapon scripts are read; only guns with a tracer count
-//! toward the shared tracer counter; the per-shot flash and the tracers
-//! leave along the aim, the `while_firing` systems along the view (the
-//! brass to its right), the backblast back along the aim, not the
-//! attachments' own axes; fused
+//! toward the shared tracer counter; the tracers leave along the aim,
+//! the `while_firing` systems along the view (the brass to its right),
+//! the backblast back along the aim, not the attachments' own axes (only
+//! the per-shot flash is turned as its attachment, `start_with_axes`);
+//! fused
 //! pipes and stickies send no surface, so they take the in-air look and
 //! leave no scorch (effects.md Open questions); TF2's impact style
 //! (ricochets, pellet grouping) has no spec yet: no ricochet, every
@@ -556,6 +560,9 @@ pub struct ViewMuzzle {
     /// The attachment's `AttachmentMark`, placed this frame: what a
     /// system started here follows, to ride the gun's kick.
     pub mark: Option<Entity>,
+    /// The attachment's own axes in the eye's frame (`FirstPerson::
+    /// camera_turn`).
+    pub axes: Option<Quat>,
 }
 
 /// Where an attachment is.
@@ -611,6 +618,7 @@ impl Muzzles<'_, '_> {
                 let world_local = f.fovs.map_or(local, |(w, v)| crate::map::view_model::reproject(local, w, v));
                 let mark = self.marks.iter().find(|(_, m)| m.owner == owner && m.shown && m.at == at).map(|(e, _)| e);
                 Some(MuzzleAt::View(ViewMuzzle {
+                    axes: f.camera_turn(&at),
                     mark,
                     anchor: f.anchor,
                     turn: f.eye.rotation(),
@@ -662,17 +670,48 @@ impl Muzzles<'_, '_> {
         let follow = match m {
             // On the attachment's mark: riding the animated muzzle.
             MuzzleAt::View(ViewMuzzle { mark: Some(mark), turn, .. }) => {
-                Some(Follow { entity: *mark, local: Vec3::ZERO, forward: turn.inverse() * forward, carry: true })
+                Some(Follow { entity: *mark, local: Vec3::ZERO, forward: turn.inverse() * forward, carry: true, up: None })
             }
-            MuzzleAt::View(v) => Some(Follow { entity: v.anchor, local: v.world_local, forward: v.turn.inverse() * forward, carry: true }),
+            MuzzleAt::View(v) => Some(Follow { entity: v.anchor, local: v.world_local, forward: v.turn.inverse() * forward, carry: true, up: None }),
             MuzzleAt::Held(p) => self.owners.get(owner).ok().and_then(|(.., t, _)| t).map(|t| Follow {
                 entity: owner,
                 local: t.compute_affine().inverse().transform_point3(*p),
                 forward: t.rotation.inverse() * forward,
                 carry: true,
+                up: None,
             }),
         };
         StartParticleSystem { follow, ..StartParticleSystem::new(name, m.world(), forward) }
+    }
+
+    /// `start_on` with the system turned as the attachment `at` is (its
+    /// x, y and z the attachment's own: Source starts a system on an
+    /// attachment with its orientation, and its effects are authored in
+    /// it; TF2's Grenade and Stickybomb Launchers' flashes leave along
+    /// their muzzles' z, the barrel, and went straight up when only x was
+    /// turned to the aim), else as `start_on`.
+    pub fn start_with_axes(&self, owner: Entity, m: &MuzzleAt, at: &str, name: &str, forward: Vec3) -> StartParticleSystem {
+        let axes = match m {
+            MuzzleAt::View(v) => v.axes.map(|a| v.turn * a),
+            MuzzleAt::Held(..) => {
+                let at = AttachPoint::named(at);
+                self.held.iter().find(|(h, _)| h.owner == owner && at.is(h.index, &h.name)).map(|(_, g)| g.rotation())
+            }
+        };
+        let mut s = self.start_on(owner, m, name, forward);
+        let Some(axes) = axes else { return s };
+        let (x, z) = (axes * Vec3::X, axes * Vec3::Z);
+        // The followed frame's turn, as `start_on` chose it.
+        let frame = match m {
+            MuzzleAt::View(v) => Some(v.turn),
+            MuzzleAt::Held(..) => self.owners.get(owner).ok().and_then(|(.., t, _)| t).map(|t| t.rotation),
+        };
+        s.forward = x;
+        if let (Some(f), Some(frame)) = (s.follow.as_mut(), frame) {
+            f.forward = frame.inverse() * x;
+            f.up = Some(frame.inverse() * z);
+        }
+        s
     }
 }
 
@@ -723,7 +762,7 @@ fn flyer_trails(
         // Chosen once, by the water at its first place (effects.md 9).
         let wet = in_water(water.as_deref(), at.translation);
         start.write(StartParticleSystem {
-            follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false }),
+            follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false, up: None }),
             ..StartParticleSystem::new(trail.name_in(blu, wet), at.translation, forward)
         });
     }
@@ -761,7 +800,7 @@ fn armed_looks(
         let owner = copy.map_or(flyer.and_then(|f| f.owner), |c| c.owner);
         let blu = owner.and_then(|o| teams.get(o).ok()).map(|t| super::super::bodies::skin_of(Some(*t)) == 1);
         start.write(StartParticleSystem {
-            follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false }),
+            follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false, up: None }),
             ..StartParticleSystem::new(armed.name(blu), t.translation, t.rotation * Vec3::X)
         });
     }
@@ -797,8 +836,8 @@ fn muzzle_flashes(
         let s = match muzzles.placed(e.owner) {
             // A flash goes with the gun drawn in the view (the eye's
             // frame), at the muzzle re-projected into the world view.
-            Some(m @ MuzzleAt::View(_)) => muzzles.start_on(e.owner, &m, name, forward),
-            m => StartParticleSystem::new(name, m.map_or_else(|| ahead_of(origin, aim), |m| m.world()), forward),
+            Some(m) => muzzles.start_with_axes(e.owner, &m, MUZZLE_ATTACHMENT, name, forward),
+            None => StartParticleSystem::new(name, ahead_of(origin, aim), forward),
         };
         start.write(s);
     }

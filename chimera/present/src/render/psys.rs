@@ -326,6 +326,19 @@ impl<F: Fn(usize, u32) -> usize> Sheets for F {
 }
 
 /// A sprite trail's length (specs/tf2/particles.md 5.1): the speed of
+/// A followed system's control-point turn (game space: x forward, y
+/// left, z up) in its entity's frame `at`: its x along `Follow::forward`,
+/// its z along `up` when given (an attachment's whole orientation), else
+/// the shortest turn from x.
+pub fn follow_turn(f: &crate::map::psys::Follow, at: &Transform) -> Quat {
+    let game = |v: Vec3| Vec3::new(v.x, -v.z, v.y);
+    let fw = game(at.rotation * f.forward).try_normalize().unwrap_or(Vec3::X);
+    match f.up.map(|u| game(at.rotation * u)).and_then(|u| (u - fw * u.dot(fw)).try_normalize()) {
+        Some(up) => Quat::from_mat3(&Mat3::from_cols(fw, up.cross(fw), up)),
+        None => Quat::from_rotation_arc(Vec3::X, fw),
+    }
+}
+
 /// `motion` (its last step's, units/s) x `trail` (s) x min(1, `age` /
 /// `fade_in`) (1 with no fade-in), clamped to [`min`, `max`]; None when it
 /// didn't move.
@@ -582,6 +595,8 @@ impl Instance {
             }
         }
         let room = d.max_particles.saturating_sub(self.particles.len());
+        // Those made this step are made where their point is now.
+        let old = self.particles.len();
         for &created in made.iter().take(room) {
             let mut p = self.spawn(d, &cp, active, rng, sheets, created);
             // Aged (and moved, below) only from its creation.
@@ -603,7 +618,7 @@ impl Instance {
             _ => None,
         });
         let mut killed = false;
-        let from: Vec<Vec3> = self.particles.iter().map(|p| p.position).collect();
+        let mut from: Vec<Vec3> = self.particles.iter().map(|p| p.position).collect();
         let mut lived: Vec<f32> = Vec::with_capacity(from.len());
         for p in &mut self.particles {
             // A particle made during this step lives only its part of it.
@@ -685,9 +700,14 @@ impl Instance {
         if let Some(c) = lock {
             let now = cp(c).position;
             if let Some(prev) = self.lock_from {
+                // Carried with its point, where it was too: a sprite
+                // trail streaks by the particle's own motion, not its
+                // point's (real TF2's rocket: `rockettrail_burst`, locked
+                // to the rocket at 1100 units/s, draws no streaks).
                 let delta = now - prev;
-                for p in &mut self.particles {
+                for (p, from) in self.particles.iter_mut().zip(from.iter_mut()).take(old) {
                     p.position += delta;
+                    *from += delta;
                 }
             }
             self.lock_from = Some(now);
@@ -1578,9 +1598,8 @@ pub fn run_started_systems(
             // Placed by the frame now (the start's world place came from
             // the same eye, maybe a frame older).
             let p = at.transform_point(follow.local);
-            let fw = at.rotation * follow.forward;
             last.cp.position = to_game(p);
-            last.cp.rotation = Quat::from_rotation_arc(Vec3::X, Vec3::new(fw.x, -fw.z, fw.y).try_normalize().unwrap_or(Vec3::X));
+            last.cp.rotation = follow_turn(&follow, &at);
             last.follow = Some((follow, at));
         }
     }
@@ -1615,9 +1634,8 @@ pub fn run_started_systems(
             i.carry(&place, &spin);
         }
         let p = now.transform_point(f.local);
-        let fw = now.rotation * f.forward;
         cp.position = to_game(p);
-        cp.rotation = Quat::from_rotation_arc(Vec3::X, Vec3::new(fw.x, -fw.z, fw.y).try_normalize().unwrap_or(Vec3::X));
+        cp.rotation = follow_turn(f, &now);
         *last = now;
     }
     // Control points the tags set (TF2's flame points).
@@ -2089,12 +2107,27 @@ mod tests {
         assert!(s.running.is_empty(), "arrived and gone");
     }
 
+    /// A followed control point with an `up` takes the whole turn (its x
+    /// the forward, its z the up, in game space); without, the shortest
+    /// turn to the forward.
+    #[test]
+    fn a_followed_point_turns_with_its_up() {
+        let f = crate::map::psys::Follow { entity: Entity::PLACEHOLDER, local: Vec3::ZERO, forward: Vec3::NEG_Z, carry: false, up: Some(Vec3::X) };
+        let q = follow_turn(&f, &Transform::IDENTITY);
+        assert!((q * Vec3::X).abs_diff_eq(Vec3::Y, 1e-5), "{}", q * Vec3::X);
+        assert!((q * Vec3::Z).abs_diff_eq(Vec3::X, 1e-5), "{}", q * Vec3::Z);
+        let q = follow_turn(&crate::map::psys::Follow { up: None, ..f }, &Transform::IDENTITY);
+        assert!((q * Vec3::X).abs_diff_eq(Vec3::Y, 1e-5));
+    }
+
     /// A sprite trail of a system no movement operator moves follows the
-    /// particle's motion, not its start velocity: TF2's Flame Thrower
-    /// pilot (locked to the muzzle, a forward speed of 800-1200, trail
-    /// length 0.1 s) draws nothing while the gun is still (real TF2: no
-    /// streak; ours drew one 100 units back past the eye) and a streak
-    /// back along the muzzle's motion when it moves.
+    /// particle's own motion, not its start velocity nor its locked-to
+    /// point's: TF2's Flame Thrower pilot (locked to the muzzle, a forward
+    /// speed of 800-1200, trail length 0.1 s) draws nothing while the gun
+    /// is still (real TF2: no streak; ours drew one 100 units back past the
+    /// eye), and nothing while the point moves (real TF2's rocket: its
+    /// locked `rockettrail_burst` draws no streaks at 1100 units/s; ours
+    /// drew them back to the eye).
     #[test]
     fn a_trail_no_movement_operator_moves_follows_its_motion() {
         let pilot = SystemDef {
@@ -2122,23 +2155,20 @@ mod tests {
         let mut i = Instance::new(&defs, 0);
         let mut rng = ParticleRng::new(3);
         let eye = Vec3::new(0.0, 0.0, 10_000.0);
-        let length = |i: &Instance| {
-            let mut out = Vec::new();
-            i.draw(&defs, &|v| v, 1.0, eye, &none, &mut out);
-            let Shape::Quad { corners, .. } = out[0].shape else { panic!("{:?}", out[0].shape) };
-            (corners[0] + corners[3]).distance(corners[1] + corners[2]) * 0.5
-        };
         let still = [ControlPoint::default()];
         i.step(&defs, &still, 0.02, &mut rng, &none);
         i.step(&defs, &still, 0.02, &mut rng, &none);
         let mut out = Vec::new();
         i.draw(&defs, &|v| v, 1.0, eye, &none, &mut out);
         assert!(out.is_empty(), "no streak while still: {} drawn", out.len());
-        // The muzzle moves 2 units in 0.02 s (100 units/s): a 10-unit
-        // streak (0.1 s of it) back along the motion.
+        // The muzzle moves 2 units in 0.02 s: the particle goes with it,
+        // and no streak.
         let moved = [ControlPoint { position: Vec3::new(0.0, 2.0, 0.0), ..default() }];
         i.step(&defs, &moved, 0.02, &mut rng, &none);
-        assert!((length(&i) - 10.0).abs() < 0.1, "{}", length(&i));
+        let mut out = Vec::new();
+        i.draw(&defs, &|v| v, 1.0, eye, &none, &mut out);
+        assert!(out.is_empty(), "no streak by the point's motion: {} drawn", out.len());
+        assert!((i.particles[0].position.y - 2.0).abs() < 1e-4, "carried: {:?}", i.particles[0].position);
     }
 
     /// A sprite trail's strip (specs/tf2/particles.md 5, measured on real

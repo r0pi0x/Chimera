@@ -482,6 +482,36 @@ bridge; facts of the picture, not of the code.
   long yellow streaks. The burst raises the frame's mean brightness (0-1)
   by about 0.13 with bloom and without; bloom lifts the whole frame by
   about 0.05 either way.
+- **Projectiles leaving the gun, first person** (2026-11-20,
+  `launch.tf2`: one shot each from the bridge at 0 −300 0, 10° down along
+  it, the view model drawn, every frame at 60 a second, the shot pressed
+  at frame 1):
+  - Rocket: from frame 2 a large yellow glow covers the launcher's front
+    and the right of the view for about 10 frames (centred where the
+    launch point, 23.5 forward, 12 right, 3 down, projects); the rocket's
+    model first shows at frame 13, already about 150 units out; its grey
+    smoke runs from the rocket back to the launcher; no streaks trail it.
+    So the trail starts at the launch point and stays there until the
+    drawn time reaches the shot, then follows the rocket; nothing of it is
+    seen behind the eye.
+  - Grenade Launcher: no muzzle flash is seen; the pipe first shows at the
+    barrel's mouth at frame 8 and flies forward, a little left, arcing
+    down.
+  - Stickybomb Launcher (tapped): no muzzle flash is seen; the sticky first
+    shows about 45 units ahead 8 frames after the release.
+  - Syringe Gun (a puppet Medic watched in its eyes, fov 75): each needle
+    first shows at the barrel about 6 frames after its shot and flies
+    off with a faint thin trail.
+  - Read together: a projectile is drawn at its launch point until the
+    drawn time reaches its first moment, its model shown at once (it is
+    inside the gun until then), the rocket's hidden longer (its first
+    0.2 s).
+- **Needles on a wall** (a puppet Medic firing 0.3 s into a wooden wall
+  about 150 units off, then a free spectator beside the marks): no needle
+  stays in the wall. Each hit leaves a small dark hole mark (its centre
+  red seen head-on) and a few wood splinters; the marks are still there
+  4 s later; seen from about 60° off the wall's normal they are flat dots,
+  no shaft standing out.
 
 ## Test cases
 
@@ -569,3 +599,13 @@ bridge; facts of the picture, not of the code.
 10. Whether the server's blood temp entity reaches the shooter himself
    on a dedicated server (the engine may hold back a shooter's own
    events during his command; the listen-server capture shows him blood).
+
+11. **Where a projectile drawn late starts** (§11 against the captures
+   above). §11 gives the client a history point one second back along the
+   rocket's velocity, so the drawn rocket would start about 110 units
+   behind its launch point. The first-person captures show the rocket's
+   trail glowing at the launch point from the frame after the shot and
+   nothing behind the eye; a pipe and a needle show at the barrel as their
+   drawn time reaches the shot. Ours holds a projectile at its launch point
+   until then (measured). Unexplained: whether the history point exists
+   but is not used for the first interpolation.

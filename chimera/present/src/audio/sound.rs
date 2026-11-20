@@ -16,6 +16,13 @@
 //! at most `MAX_VOICES_PER_ENTRY` copies of one entry; a new one past the
 //! limit fades out the oldest.
 //!
+//! The mix's limit (`limit_mix`): when the one-shot voices' peaks (each
+//! clip's own, times its gains, times the master volume) would sum past
+//! full scale, every clip is turned down to keep them under it, coming
+//! back over a quarter second (`live_sound::MixLimit`). TF2's rocket and
+//! its blast (full-scale stereo waves at gain 1) clipped the output for
+//! 1-2 s at `volume` 1, a moment at 0.5; ours.
+//!
 //! The listener: `SoundListener` (the client has one) and its `Ear`s.
 
 use std::sync::Arc;
@@ -117,6 +124,10 @@ pub struct Playing {
     /// When it started and when its clip ends (`Time` elapsed, s).
     started: f64,
     ends: f64,
+    /// Its clip's peak per `PEAK_BLOCK` of the clip (0-1, `clip_peaks`)
+    /// and its playback speed, for the mix's limit (`limit_mix`).
+    peaks: Arc<[f32]>,
+    speed: f32,
 }
 
 impl Playing {
@@ -143,6 +154,58 @@ impl Playing {
     pub fn sounding(&self, now: f64) -> bool {
         self.ends > now
     }
+
+    /// The loudest it plays from `now` to `ahead` seconds later: its
+    /// clip's peak there times its louder ear's gain.
+    pub fn peak(&self, now: f64, ahead: f64) -> f32 {
+        if !self.sounding(now) {
+            return 0.0;
+        }
+        let block = |t: f64| ((t - self.started).max(0.0) * self.speed as f64 / PEAK_BLOCK) as usize;
+        let (a, b) = (block(now), block(now + ahead) + 1);
+        let clip = self.peaks.get(a..b.min(self.peaks.len())).map_or(0.0, |p| p.iter().copied().fold(0.0, f32::max));
+        let (l, r) = self.gains.get();
+        clip * l.max(r)
+    }
+}
+
+/// The span of a clip one entry of its peaks covers (s).
+pub const PEAK_BLOCK: f64 = 0.01;
+
+/// A clip's peak (0-1, either channel) in each `PEAK_BLOCK`.
+pub fn clip_peaks(clip: &MapSoundClip) -> Arc<[f32]> {
+    let channels = clip.channels.max(1) as usize;
+    let per = ((clip.rate.max(1) as f64 * PEAK_BLOCK) as usize).max(1) * channels;
+    clip.samples.chunks(per).map(|c| c.iter().map(|s| (*s as f32 / 32768.0).abs()).fold(0.0, f32::max)).collect()
+}
+
+/// The highest the summed one-shot voices may reach (of full scale),
+/// leaving room for what isn't counted: the long-lived loops (2fort's
+/// ambience peaks near 0.25 at `volume` 1) and the room's echo. At 0.98
+/// a rocket and its blast still clipped a tenth as long.
+pub const MIX_CEILING: f32 = 0.75;
+
+/// The mix's limit for voices whose peaks (each already times its
+/// gains) sum to `sum`, at the master `volume`: 1 while that stays under
+/// `MIX_CEILING`, else what brings it there (a sum of peaks, so it never
+/// clips however the waves line up).
+pub fn mix_limit_for(sum: f32, volume: f32) -> f32 {
+    let total = sum * volume;
+    if total > MIX_CEILING { MIX_CEILING / total } else { 1.0 }
+}
+
+/// How far ahead of this frame the limit looks (s): a frame or so, so
+/// a sound starting now is limited from its first sample.
+const LIMIT_AHEAD: f64 = 0.05;
+
+/// The mix's limit this frame (`live_sound::MixLimit`), from every voice
+/// playing (one-shot sounds; long-lived loops and the room's echo are
+/// left out).
+fn limit_mix(playing: Query<&Playing>, volume: Option<Res<GlobalVolume>>, time: Res<Time>, limit: Res<super::live_sound::MixLimit>) {
+    let now = time.elapsed_secs_f64();
+    let sum: f32 = playing.iter().map(|p| p.peak(now, LIMIT_AHEAD)).sum();
+    let volume = volume.map_or(1.0, |v| v.volume.to_linear());
+    limit.set(mix_limit_for(sum, volume));
 }
 
 /// Whether a clip loops: its own loop point (from its WAV's `cue ` or
@@ -194,7 +257,7 @@ impl Plugin for SoundPlugin {
             .extend([super::soundscape::reset as fn(&mut World), super::live_sound::reset]);
         app.add_message::<PlaySound>()
             .add_message::<StopSound>()
-            .add_systems(PostUpdate, play_sounds.run_if(resource_exists::<Assets<LiveClip>>))
+            .add_systems(PostUpdate, (play_sounds, limit_mix).chain().run_if(resource_exists::<Assets<LiveClip>>))
             .add_plugins((
                 super::soundscape::SoundscapePlugin,
                 super::live_sound::LiveSoundPlugin,
@@ -220,6 +283,8 @@ fn play_sounds(
     time: Res<Time>,
     hold: (Option<Res<crate::map::LocalMapLoad>>, Option<Res<WorldUnheard>>),
     mut seed: Local<u64>,
+    mut peaks: Local<std::collections::HashMap<usize, Arc<[f32]>>>,
+    mix_limit: Res<super::live_sound::MixLimit>,
 ) {
     let now = time.elapsed_secs_f64();
     let mix = mix.map_or_else(Default::default, |m| *m);
@@ -238,6 +303,10 @@ fn play_sounds(
         messages.clear();
         return;
     };
+    // Wave indices are the bank's: a new bank (a map change) starts anew.
+    if bank.is_changed() {
+        peaks.clear();
+    }
     let listener = Ear::find(listeners.iter());
     let mut unit = || {
         *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -345,7 +414,7 @@ fn play_sounds(
             frames as f64 / clip.rate.max(1) as f64 / (pitch as f64 / 100.0)
         };
         let gains = Arc::new(Gains::new(left, right).with_send(send).with_cutoff(cutoff));
-        let handle = sources.add(LiveClip::new(clip.clone(), gains.clone(), hearing.mix.clone()).with_room(&room));
+        let handle = sources.add(LiveClip::new(clip.clone(), gains.clone(), hearing.mix.clone()).with_room(&room).with_limit(&mix_limit));
         let e = commands
             .spawn((
                 AudioPlayer(handle),
@@ -359,6 +428,8 @@ fn play_sounds(
                     entry: m.entry.clone(),
                     started: now,
                     ends: now + length,
+                    peaks: peaks.entry(wave).or_insert_with(|| clip_peaks(clip)).clone(),
+                    speed: pitch / 100.0,
                 },
             ))
             .id();

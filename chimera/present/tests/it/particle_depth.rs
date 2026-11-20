@@ -211,7 +211,7 @@ fn started_systems_draw_in_the_world_pass() {
             .id();
         let at = Vec3::new(0.2, -0.2, -0.5);
         app.world_mut().write_message(StartParticleSystem {
-            follow: first_person.then_some(Follow { entity: eye, local: at, forward: Vec3::NEG_Z, carry: true }),
+            follow: first_person.then_some(Follow { entity: eye, local: at, forward: Vec3::NEG_Z, carry: true, up: None }),
             ..StartParticleSystem::new("flash", at, Vec3::NEG_Z)
         });
         app.update();

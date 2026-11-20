@@ -176,8 +176,12 @@ operators:
 1. **Head and direction.** The head H is the particle's position; the
    step's motion is m = H − (position before this step) (field 2). The
    speed is |m| / Δt of that step, so it is the speed the particle
-   actually moved with after drag, gravity, locks and collisions, not its
-   initial velocity. A particle that did not move in its last step has no
+   actually moved with after drag, gravity and collisions, not its
+   initial velocity. A lock to a control point carries the particle's
+   place before the step along with it, so the point's own motion is not
+   part of m (measured 2026-11-20: the rocket's `rockettrail_burst`,
+   locked to the rocket flying at 1100 units/s with τ 0.1, draws no
+   110-unit streaks, only its short sparks; Open questions 7). A particle that did not move in its last step has no
    direction and draws nothing (measured: `new_flame_pilot`, locked to a
    still muzzle, shows no streak).
 2. **Length.** With τ = the particle's trail length (field 10, seconds;

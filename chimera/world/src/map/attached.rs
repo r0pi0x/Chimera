@@ -259,6 +259,14 @@ impl FirstPerson<'_> {
         attachment_transform(self.model, &self.pose, i, &self.placed).map(|m| m.transform_point3(Vec3::ZERO))
     }
 
+    /// Attachment `at`'s turn in camera space: what its own axes (x, y,
+    /// z as the model has them: a particle system's local axes) point
+    /// along.
+    pub fn camera_turn(&self, at: &AttachPoint) -> Option<Quat> {
+        let i = at.index_in(&self.model.attachments)?;
+        attachment_transform(self.model, &self.pose, i, &self.placed).map(|m| m.to_scale_rotation_translation().1)
+    }
+
     /// Attachment `at` where the view model is drawn (the view-model
     /// layer's world space).
     pub fn point(&self, at: &AttachPoint) -> Option<Vec3> {

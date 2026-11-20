@@ -2607,9 +2607,7 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   scopes with `target set <n> alt` (attack2 pressed once) and looks down
   with `target set <n> pitch <degrees>`. TF2's puppet bots could not be
   made to scope (`bot_forceattack2`, `bot_mimic`), and `bot_teleport`'s
-  pitch doesn't tilt their aim. With `cl_drawhud 1` TF2 shows the class
-  menu over the view after `joinclass` from the console, so its scope
-  overlay has no picture yet. A bot name kicked earlier may linger: give
+  pitch doesn't tilt their aim. A bot name kicked earlier may linger: give
   each new bot its own name (`impacts.tf2`'s Heavy).
 - Per tick, exactly: VScript over RCON (`script ...` lines) on the
   listen server's own player (`GetListenServerHost()`, a think function
@@ -2631,6 +2629,18 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   `StorePredictionResults` lines); `pwatchent -1` stops it. RCON returns
   a command's own output; lines printed later (an alias chain's) go to
   `console.log` (`-condebug`).
+- The scope with the HUD on (`scope.tf2`/`.scene`): with `cl_drawhud 1`
+  TF2 showed the class menu over the view after `joinclass`; join the team
+  and class with the HUD off, `hidepanel class_red` (`_blue`, `team`,
+  `info`) and `hud_classautokill 0`, then `cl_drawhud 1; r_drawvgui 1`.
+  Ours: `--offscreen 2560x1440` too, for the overlay on a tall screen.
+- Projectiles leaving the gun (`launch.tf2`/`.scene`): this account's
+  Medic doesn't carry the stock Syringe Gun (`use` fails, the melee stays
+  out); a puppet Medic fires it, but only after `bot_selectweaponslot 0`
+  is sent again once it has spawned (before the spawn it kept its Medi
+  Gun).
+- Several agents may share the game: `scene` takes a lock in the cache
+  (`scene.lock`), so a second scene waits for the first.
 - Pictures are game imagery: scratch folders only. Quit the game when
   done (`down`; or `pkill -x tf_linux64`, never `pkill -f`).
 

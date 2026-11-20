@@ -4,7 +4,11 @@
 //!
 //! Covers: crosshair (gap from spread, CS:S's `cl_crosshaircolor` presets,
 //! `cl_crosshairscale`, `cl_crosshairalpha` with `cl_crosshairusealpha`,
-//! `cl_dynamiccrosshair`), sniper scope overlay, smoke grey and flash white
+//! `cl_dynamiccrosshair`), sniper scope overlay (a game's own picture, its
+//! ring's quarters: CS:S's arc in a square, TF2's quarter stretched over
+//! the whole screen, or our 1024-texel stand-in, with pixel-wide cross
+//! hairs; while it is up `ScopeUp` says so and every crosshair hides, a
+//! game HUD's own too), smoke grey and flash white
 //! screen tints, health, ammo, killfeed; the dead and the spectated
 //! character's own body hidden (`show_bodies`); the stand-ins' stripes
 //! (`chimera_present::render::stand_in`, which draws a body for a
@@ -57,6 +61,7 @@ impl Plugin for HudPlugin {
             .init_resource::<CrosshairColor>()
             .init_resource::<ScopeOverlayImage>()
             .init_resource::<ScopeOverlayTexel>()
+            .init_resource::<ScopeUp>()
             .add_systems(Startup, spawn_hud)
             .add_systems(
                 Update,
@@ -667,6 +672,12 @@ struct GenericScope(Handle<Image>);
 /// stand-in.
 #[derive(Resource, Default, Clone, Debug)]
 pub struct ScopeOverlayImage(pub Option<Handle<Image>>);
+/// Whether the scope overlay is up this frame (`draw_scope`): a game HUD
+/// that draws its own crosshair hides it then, as the shell's is
+/// (`crosshair_kind`): a scope draws its own cross hairs, in every game.
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScopeUp(pub bool);
+
 /// How big a game's own scope picture is drawn
 /// (`ScopeOverlayImage`): one texel's side as a fraction of the screen's
 /// height, texels square at every aspect, the picture centred and cropped
@@ -731,23 +742,24 @@ const MIN_GAP: f32 = 3.0;
 const FEED_SECONDS: f32 = 6.0;
 
 /// Our stand-in for CS:S's scope: black outside a circle filling the
-/// screen's height, thin black cross hairs through it, black bars beside it.
+/// screen's height, black bars beside it; its thin cross hairs are drawn
+/// apart (`scope_lines`), a pixel wide at any size. 1024 texels across, so
+/// the edge stays soft, not blocky, on a tall screen (512 drew a 1440-line
+/// screen's edge 3 pixels wide and its cross hairs blurred).
 fn scope_image() -> Image {
     use bevy::{
         asset::RenderAssetUsages,
         render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     };
-    const N: u32 = 512;
+    const N: u32 = 1024;
     let mut data = Vec::with_capacity((N * N * 4) as usize);
     let c = (N as f32 - 1.0) / 2.0;
     for y in 0..N {
         for x in 0..N {
             let (dx, dy) = (x as f32 - c, y as f32 - c);
             let r = (dx * dx + dy * dy).sqrt() / c;
-            // Soft edge over about a pixel; the cross hairs one pixel wide.
-            let outside = ((r - 0.99) * c).clamp(0.0, 1.0);
-            let line = if dx.abs() < 0.75 || dy.abs() < 0.75 { 1.0 } else { 0.0 };
-            let alpha = outside.max(line);
+            // Soft edge over about a texel.
+            let alpha = ((r - 0.99) * c).clamp(0.0, 1.0);
             data.extend_from_slice(&[0, 0, 0, (alpha * 255.0) as u8]);
         }
     }
@@ -802,10 +814,28 @@ fn spawn_scope(commands: &mut Commands, images: &mut Assets<Image>) {
                     ..default()
                 },
                 ImageNode::new(image),
+                children![scope_line(true), scope_line(false)],
             ),
             bar(),
         ],
     ));
+}
+
+/// One of the scope's thin black cross hairs through the square's middle
+/// (`across`: the horizontal one), half a pixel each side of it.
+fn scope_line(across: bool) -> impl Bundle {
+    let (left, top, w, h) = if across { (0.0, 50.0, 100.0, 0.0) } else { (50.0, 0.0, 0.0, 100.0) };
+    (
+        Node {
+            position_type: PositionType::Absolute,
+            left: percent(left),
+            top: percent(top),
+            width: percent(w),
+            height: percent(h),
+            ..default()
+        },
+        Outline::new(px(0.5), px(0.0), Color::BLACK),
+    )
 }
 
 /// Full-screen tints: grey inside smoke (specs/cs_source/grenades.md
@@ -1153,13 +1183,14 @@ fn draw_crosshair(
     }
 }
 
-/// The scope overlay's look follows the HUD look present: CS:S's own
-/// scope textures (`scope_arc`, `scope_lens` HUD sprites) while the map's
-/// HUD look is CS:S's, drawn as the ring from four mirrored quarters, the
-/// lens tint under it and thin black cross hairs; our generic stand-in
-/// when there is none (the look put away while another game's HUD is the
-/// gameplay's, as with a Combat Arms gun: `HudLookOwner`) or it has no
-/// scope textures.
+/// The scope overlay's look follows the HUD look present: a game's scope
+/// quarter (`scope_quarter`, the top-left quarter as stored, drawn in its
+/// own colours: TF2's `hud/scope_sniper_ul`) or CS:S's own scope textures
+/// (`scope_arc`, `scope_lens` HUD sprites: the ring from four mirrored
+/// bottom-right quarters drawn black, the lens tint under it) while the
+/// map's HUD look has them, with thin black cross hairs; our generic
+/// stand-in when there is none (the look put away while another game's HUD
+/// is the gameplay's, as with a Combat Arms gun: `HudLookOwner`).
 fn game_scope(
     hud: Option<Res<crate::map::hud::ActiveHud>>,
     own: Option<Res<ScopeOverlayImage>>,
@@ -1179,11 +1210,21 @@ fn game_scope(
         Some(hud.1.get(&s.texture)?.clone())
     };
     let (square, generic) = *square;
-    let Some(arc) = sprite("scope_arc") else {
+    // The quarter, whether it is stored as the top-left one, and its tint.
+    let quarter = match (sprite("scope_quarter"), sprite("scope_arc")) {
+        (Some(q), _) => Some((q, true, Color::WHITE)),
+        (None, Some(arc)) => Some((arc, false, Color::BLACK)),
+        (None, None) => None,
+    };
+    let Some((quarter, top_left, tint)) = quarter else {
         commands
             .entity(square)
             .despawn_related::<Children>()
-            .insert(ImageNode::new(generic.0.clone()));
+            .insert(ImageNode::new(generic.0.clone()))
+            .with_children(|c| {
+                c.spawn(scope_line(true));
+                c.spawn(scope_line(false));
+            });
         return;
     };
     let mut e = commands.entity(square);
@@ -1200,21 +1241,25 @@ fn game_scope(
         if let Some(lens) = sprite("scope_lens") {
             c.spawn((abs(0.0, 0.0, 100.0, 100.0), ImageNode::new(lens)));
         }
-        // Stored as the bottom-right quarter.
+        // Each quarter's place and whether it is mirrored across and down.
         for (left, top, flip_x, flip_y) in [(50.0, 50.0, false, false), (0.0, 50.0, true, false), (50.0, 0.0, false, true), (0.0, 0.0, true, true)] {
+            let (flip_x, flip_y) = if top_left { (!flip_x, !flip_y) } else { (flip_x, flip_y) };
             c.spawn((
                 abs(left, top, 50.0, 50.0),
                 ImageNode {
-                    image: arc.clone(),
-                    color: Color::BLACK,
+                    image: quarter.clone(),
+                    color: tint,
                     flip_x,
                     flip_y,
+                    // Its quarter of the screen whatever its aspect (the
+                    // default kept the picture's and left see-through bands).
+                    image_mode: bevy::ui::widget::NodeImageMode::Stretch,
                     ..default()
                 },
             ));
         }
-        c.spawn((abs(0.0, 50.0, 100.0, 0.0), Outline::new(px(0.5), px(0.0), Color::BLACK)));
-        c.spawn((abs(50.0, 0.0, 0.0, 100.0), Outline::new(px(0.5), px(0.0), Color::BLACK)));
+        c.spawn(scope_line(true));
+        c.spawn(scope_line(false));
     });
 }
 
@@ -1237,10 +1282,14 @@ fn scope_inputs_changed(
 /// picture's own size (square texels, scaled by the screen's height,
 /// centred, the bars gone: it is cropped by the screen and the world
 /// shows around and through it); with a picture alone, its aspect at the
-/// view's height between black bars; the others' square.
+/// view's height between black bars; a game's scope quarters
+/// (`scope_quarter`) stretched over the whole screen, no bars (TF2's: its
+/// lens as wide as the screen at any aspect, measured at 4:3); the
+/// others' square.
 fn scope_aspect(
     own: Option<Res<ScopeOverlayImage>>,
     texel: Option<Res<ScopeOverlayTexel>>,
+    hud: Option<Res<crate::map::hud::ActiveHud>>,
     images: Res<Assets<Image>>,
     mut square: Single<&mut Node, With<ScopeSquare>>,
     mut bars: Query<&mut Node, (With<ScopeBar>, Without<ScopeSquare>)>,
@@ -1251,9 +1300,18 @@ fn scope_aspect(
         .filter(|s| s.x > 0.0 && s.y > 0.0);
     let ratio = size.map_or(1.0, |s| s.x / s.y);
     let card = size.zip(texel.and_then(|t| t.0));
+    let stretched = size.is_none() && hud.as_ref().is_some_and(|h| h.0.sprites.contains_key("scope_quarter"));
     // The card sits by absolute offsets from the middle: centred whatever
     // its size, even past the screen's edges.
     let layout = match card {
+        None if stretched => (
+            PositionType::Relative,
+            [percent(100.0), percent(100.0)],
+            None,
+            [Val::Auto, Val::Auto],
+            UiRect::ZERO,
+            Display::None,
+        ),
         Some((s, t)) => {
             let (w, h) = (100.0 * s.x * t, 100.0 * s.y * t);
             (
@@ -1300,11 +1358,13 @@ fn draw_scope(
     player: Option<Single<Option<&Zoomed>, With<LocalPlayer>>>,
     (spectating, watched): (Option<Res<super::spectate::SpecView>>, Query<&Zoomed>),
     mut overlay: Query<&mut Visibility, With<ScopeOverlay>>,
+    mut up: ResMut<ScopeUp>,
 ) {
     let scoped = match spectating.and_then(|s| s.in_eye) {
         Some(t) => watched.get(t).is_ok_and(|z| z.scope),
         None => player.is_some_and(|z| z.is_some_and(|z| z.scope)),
     };
+    up.set_if_neq(ScopeUp(scoped));
     let want = if scoped {
         Visibility::Inherited
     } else {
@@ -1444,14 +1504,15 @@ mod tests {
             (kids, on_generic)
         };
         app.update();
-        assert_eq!(state(&mut app), (0, true), "no look: generic");
+        // The generic picture with its two cross hairs.
+        assert_eq!(state(&mut app), (2, true), "no look: generic");
         app.insert_resource(look());
         app.update();
         let (kids, on_generic) = state(&mut app);
         assert!(kids >= 4 && !on_generic, "CS:S's scope with its look");
         app.world_mut().remove_resource::<ActiveHud>();
         app.update();
-        assert_eq!(state(&mut app), (0, true), "look put away: generic, not CS:S's");
+        assert_eq!(state(&mut app), (2, true), "look put away: generic, not CS:S's");
         app.insert_resource(look());
         app.update();
         assert!(state(&mut app).0 >= 4, "CS:S's again");

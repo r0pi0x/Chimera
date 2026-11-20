@@ -106,6 +106,10 @@ pub struct StickyParams {
     pub charge_sound: Option<String>,
     #[serde(default)]
     pub detonate_sound: Option<String>,
+    /// Drawn in the past on every machine that draws, by the
+    /// interpolation delay (`map::loose::DrawnLate`, effects.md 11).
+    #[serde(default)]
+    pub interp: bool,
 }
 
 fn one() -> f32 {
@@ -197,6 +201,14 @@ impl StickyRules {
             out.push((w.id.clone(), Arc::new(p), blast, ramp));
         }
         Self(out)
+    }
+
+    /// The stickies of launchers whose data says `interp` drawn late
+    /// (`map::loose::DrawnLate`; their models show at once).
+    pub fn draw_late(&self, late: &mut chimera_world::map::loose::DrawnLate) {
+        if self.0.iter().any(|(_, p, ..)| p.interp) {
+            late.add(SHOWN.to_string(), 0.0);
+        }
     }
 
     pub fn get(&self, weapon: &str) -> Option<(&StickyParams, &BlastParams, f32)> {

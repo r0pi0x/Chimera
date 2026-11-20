@@ -15,12 +15,12 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use bevy::{asset::RenderAssetUsages, prelude::*};
 use chimera_client::client::{
-    hud::{GameDraws, HudRoot},
+    hud::{GameDraws, HudRoot, ScopeUp},
     hud_text::{GlyphFont, GlyphParams, HudGlyphMaterial, HudText},
     weapon_icons::{WeaponIcon, WeaponIcons},
 };
 use chimera_core::core::{Dead, Health, LocalPlayer, Team};
-use chimera_sim::weapon::{Inventory, Magazine, Weapon};
+use chimera_sim::weapon::{HeldGauge, Inventory, Magazine, Weapon};
 use chimera_world::map::hud::{ActiveHud, GameHud, font_for_height};
 
 use super::hud::{Ammo, Draw, Inputs, Rgba, Scheme, Screen, Tf2Hud};
@@ -85,7 +85,8 @@ pub fn collect(
     active: Option<Res<ActiveHud>>,
     player: Option<Single<(&Health, Option<&Inventory>, Option<&Team>, Has<Dead>, Option<&Tf2Class>), With<LocalPlayer>>>,
     mut classes: Local<Option<Classes>>,
-    weapons: Query<(&Weapon, Option<&Magazine>)>,
+    weapons: Query<(&Weapon, Option<&Magazine>, Option<&HeldGauge>)>,
+    scope: Option<Res<ScopeUp>>,
 ) {
     let (Some(active), Some(w)) = (ours(active.as_deref()), windows.iter().next()) else {
         state.frame.clear();
@@ -96,7 +97,7 @@ pub fn collect(
         return;
     };
     let gun = inv.and_then(|i| i.active).and_then(|e| weapons.get(e).ok());
-    let ammo = gun.and_then(|(_, m)| m).map(|m| Ammo {
+    let ammo = gun.and_then(|(_, m, _)| m).map(|m| Ammo {
         clip: m.clip as i32,
         reserve: (m.reserve_max > 0).then_some(m.reserve as i32),
     });
@@ -111,6 +112,7 @@ pub fn collect(
         ammo,
         portrait,
         time: time.elapsed_secs_f64(),
+        scope: scope.is_some_and(|s| s.0).then(|| gun.and_then(|(.., g)| g).map_or(0.0, |g| g.0)),
     };
     let look = Look { hud: &active.0, screen: Screen::new(w.width(), w.height()) };
     let st = &mut *state;
@@ -129,6 +131,10 @@ pub struct Pooled;
 const KIND_BOX: u8 = 0;
 const KIND_TEXT: u8 = 1;
 const KIND_SPRITE: u8 = 2;
+
+/// The pictures drawn additively (their black adds nothing): the charge
+/// meter's.
+const ADDITIVE: &[&str] = &["sniperscope_numbers2"];
 
 pub fn spawn_root(mut commands: Commands) {
     commands.spawn((
@@ -244,11 +250,11 @@ pub fn sync(
                     let want = HudGlyphMaterial {
                         params: GlyphParams { color: rgba(*color).to_linear(), uv: Vec4::new(u0, v0, du, dv) },
                         coverage: image.clone(),
-                        additive: false,
+                        additive: ADDITIVE.contains(sprite),
                     };
                     match sprites.get_mut(entity) {
                         Ok(m) => {
-                            if materials.get(&m.0).is_none_or(|cur| cur.params != want.params || cur.coverage != want.coverage) {
+                            if materials.get(&m.0).is_none_or(|cur| cur.params != want.params || cur.coverage != want.coverage || cur.additive != want.additive) {
                                 let _ = materials.insert(&m.0, want);
                             }
                         }

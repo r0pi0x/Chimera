@@ -419,16 +419,22 @@ pub struct LauncherParams {
     /// `map::loose::DrawnLate` (`chimera_net`'s `late`).
     #[serde(default)]
     pub interp: bool,
+    /// Drawn late, its model hidden its first this many seconds (its
+    /// trail shows): TF2's rocket 0.2 (effects.md 11); its pipes none
+    /// (measured: they show at the barrel as their drawn place passes it).
+    #[serde(default)]
+    pub model_hidden: f32,
 }
 
 /// The `ShownItem` keys of `set`'s projectiles drawn late
-/// (`LauncherParams::interp`).
-pub fn late_keys(set: &super::data::WeaponSet) -> Vec<String> {
+/// (`LauncherParams::interp`), with how long each one's model stays
+/// hidden (`model_hidden`).
+pub fn late_keys(set: &super::data::WeaponSet) -> Vec<(String, f32)> {
     set.weapons
         .iter()
         .filter_map(|w| {
             let p: LauncherParams = w.hooks.get(LAUNCHER)?.clone().try_into().ok()?;
-            p.interp.then(|| p.shown.clone().unwrap_or_else(|| w.id.clone()))
+            p.interp.then(|| (p.shown.clone().unwrap_or_else(|| w.id.clone()), p.model_hidden))
         })
         .collect()
 }

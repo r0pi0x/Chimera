@@ -17,11 +17,14 @@
 //!   copy with its `ShownItem` is, at where the item was `LateDelay` ago:
 //!   its places sampled each frame it moved (the simulated `Transform`
 //!   here, the newest `NetItem` on a client), drawn between the two
-//!   around now − delay. When the second place comes in, a place one
-//!   second before the first at the first less one second of that
-//!   velocity goes in front (TF2's: the drawn rocket starts on its flight
-//!   line ~110 units behind its launch point). The model is hidden for
-//!   its first `MODEL_HIDDEN` s (its trail isn't); the copy goes when the
+//!   around now − delay; before its first place's time it is held at
+//!   that place (measured on real TF2, effects.md "Measured": a rocket's
+//!   trail glows at the launcher from the frame after the shot, its
+//!   smoke reaching back to it; it doesn't start behind the eye, as a
+//!   history point one second back along the velocity would draw: ours
+//!   did, and its trail streaked from behind the shooter). The model is
+//!   hidden for its key's first seconds (`DrawnLate::hidden_for`: TF2's
+//!   rocket 0.2 s; its trail isn't); the copy goes when the
 //!   item is gone and the drawn time has passed that moment (a blast held
 //!   as long shows as it arrives: TF2's `explosions`).
 //!
@@ -40,10 +43,6 @@ use crate::{
     map::loose::{DrawnLate, LateCopy, LateDelay, ShownItem},
 };
 
-/// How long a copy's model stays hidden (s; its trail shows): TF2's
-/// rocket (effects.md 11).
-pub const MODEL_HIDDEN: f32 = 0.2;
-
 /// A copy's places by this machine's time (s), oldest first, and when it
 /// appeared and its item went.
 #[derive(Component, Debug, Default, Clone)]
@@ -51,23 +50,13 @@ pub struct LatePlaces {
     pub places: VecDeque<(f64, Vec3, Quat)>,
     pub born: f64,
     pub gone: Option<f64>,
-    seeded: bool,
 }
 
 impl LatePlaces {
-    /// A place at `t`; when it is the first that moved, the seed one
-    /// second back along the velocity goes in front.
+    /// A place at `t` (none when it hasn't moved).
     pub fn add(&mut self, t: f64, at: Vec3, turn: Quat) {
         if self.places.back().is_some_and(|(_, p, r)| *p == at && *r == turn) {
             return;
-        }
-        if !self.seeded
-            && let Some(&(t0, p0, r0)) = self.places.front()
-            && t > t0
-        {
-            let v = (at - p0) / (t - t0) as f32;
-            self.places.push_front((t0 - 1.0, p0 - v, r0));
-            self.seeded = true;
         }
         self.places.push_back((t, at, turn));
     }
@@ -188,11 +177,12 @@ fn move_late(
     }
 }
 
-/// A copy's model shows after `MODEL_HIDDEN`.
-fn show_late(time: Res<Time>, mut copies: Query<(&LatePlaces, &mut Visibility), With<LateCopy>>) {
+/// A copy's model shows after its key's hidden time
+/// (`DrawnLate::hidden_for`).
+fn show_late(time: Res<Time>, late: Res<DrawnLate>, mut copies: Query<(&LatePlaces, &ShownItem, &mut Visibility), With<LateCopy>>) {
     let now = time.elapsed_secs_f64();
-    for (places, mut v) in &mut copies {
-        let want = if now - places.born >= MODEL_HIDDEN as f64 { Visibility::Inherited } else { Visibility::Hidden };
+    for (places, shown, mut v) in &mut copies {
+        let want = if now - places.born >= late.hidden_for(&shown.0) as f64 { Visibility::Inherited } else { Visibility::Hidden };
         if *v != want {
             *v = want;
         }
@@ -224,22 +214,21 @@ pub(super) fn plugin(app: &mut App) {
 mod tests {
     use super::*;
 
-    /// effects.md 11: the first drawn place is on the flight line one
-    /// delay behind the launch point (1100 units/s, 0.1 s: 110 units
-    /// back), then it follows its places a delay late.
+    /// A copy is held at its launch point until the drawn time reaches
+    /// it (real TF2: the rocket's trail glows at the launcher from the
+    /// frame after the shot), then follows its places a delay late.
     #[test]
-    fn a_copy_starts_behind_its_launch_on_its_line_and_follows_late() {
+    fn a_copy_holds_at_its_launch_then_follows_late() {
         let mut p = LatePlaces::default();
         let v = Vec3::new(1100.0, 0.0, 0.0);
         p.add(10.0, Vec3::ZERO, Quat::IDENTITY);
         p.add(10.0 + 1.0 / 60.0, v / 60.0, Quat::IDENTITY);
-        let (at, _) = p.at(10.0 - 0.1).unwrap();
-        assert!((at.x + 110.0).abs() < 1e-2, "{at}");
+        assert_eq!(p.at(10.0 - 0.1).unwrap().0, Vec3::ZERO, "held at the launch, not behind it");
         let (at, _) = p.at(10.0 + 1.0 / 120.0).unwrap();
         assert!((at.x - 1100.0 / 120.0).abs() < 1e-2, "{at}");
         // Held still: no new place, and the newest is drawn past it.
         p.add(10.5, v / 60.0, Quat::IDENTITY);
-        assert_eq!(p.places.len(), 3);
+        assert_eq!(p.places.len(), 2);
         assert_eq!(p.at(11.0).unwrap().0, v / 60.0);
     }
 }

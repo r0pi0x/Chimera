@@ -24,7 +24,8 @@ Scenes (`*.tf2`): a console line per line, `#` comments, and directives:
 `snap <name>` (a picture taken inside the batch, frame-exact),
 `movie <name>` (every rendered frame until the line `endmovie`, as
 `<name>_NN.png`; the reliable way: snaps a frame apart get dropped),
-`player <team> <class>`. Consecutive console lines (and snaps) go in one
+`player <team> <class>`. Scenes take a lock (`scene.lock` in the cache):
+a second one waits for the first. Consecutive console lines (and snaps) go in one
 RCON packet, a line each, so `wait` counts frames between them (on this
 listen server `wait 2` is one rendered frame): with `host_framerate
 0.016667` every rendered frame is 1/60 s of game time, which is how
@@ -516,7 +517,17 @@ def main():
         shot(rcon(3), args[0], out)
     elif cmd == "scene":
         out = Path(opt("--out", "."))
-        scene(args[0], out)
+        # One scene at a time on the shared game: several agents may drive
+        # it, and two scenes' setpos and movies would interleave.
+        import fcntl
+        CACHE.mkdir(parents=True, exist_ok=True)
+        with open(CACHE / "scene.lock", "w") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print("tf2ref: another scene is running; waiting for it", flush=True)
+                fcntl.flock(lock, fcntl.LOCK_EX)
+            scene(args[0], out)
     elif cmd == "pair":
         pair(opt("--ref"), opt("--ours"), Path(opt("--out", ".")))
     elif cmd == "onset":

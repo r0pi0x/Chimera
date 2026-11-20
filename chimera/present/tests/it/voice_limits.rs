@@ -31,11 +31,16 @@ use crate::prop_shadows::base;
 
 /// Two entries, "test.shot" and "test.loop": a one-second clip.
 fn sim() -> Sim {
+    sim_of(1000)
+}
+
+/// The same with every sample of the clip at `level`.
+pub(crate) fn sim_of(level: i16) -> Sim {
     let mut sounds = MapSounds::default();
     sounds.clips.push(MapSoundClip {
         rate: 11025,
         channels: 1,
-        samples: vec![1000i16; 11025].into(),
+        samples: vec![level; 11025].into(),
         loop_start: None,
     });
     sounds.entries.insert(
@@ -73,7 +78,7 @@ fn sim() -> Sim {
     sim
 }
 
-fn shot(source: Option<Entity>, channel: Option<u8>) -> PlaySound {
+pub(crate) fn shot(source: Option<Entity>, channel: Option<u8>) -> PlaySound {
     PlaySound {
         entry: "test.shot".into(),
         at: None,

@@ -550,13 +550,18 @@ pub struct StopParticleSystems {
 /// particles move with the entity too (a muzzle flash on the eye);
 /// without, only its control point does and they stay where they were
 /// made (a trail behind a flyer). When the entity is gone the system
-/// stops emitting (its particles finish).
+/// stops emitting (its particles finish). `up`: the control point's z
+/// axis in the same frame (an attachment's whole orientation, which
+/// systems' local velocities and offsets are authored in: TF2's Grenade
+/// Launcher's muzzle flash leaves along its muzzle's z); none: only its
+/// x is `forward`, the rest the shortest turn there.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Follow {
     pub entity: Entity,
     pub local: Vec3,
     pub forward: Vec3,
     pub carry: bool,
+    pub up: Option<Vec3>,
 }
 
 impl StartParticleSystem {

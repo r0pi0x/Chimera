@@ -191,14 +191,31 @@ pub struct SitOnOrigin(pub Quat);
 /// drawn itself: a `LateCopy` of it is, at its place `LateDelay` ago
 /// (`chimera_net`'s `late`), and its trails start on the copy.
 /// `running`: the copies are made in this app (`chimera_net`'s `late`
-/// sets it); without them every item is drawn where it is.
+/// sets it); without them every item is drawn where it is. `hidden`: how
+/// long a key's copy keeps its model hidden (s; its trail shows), none: 0.
 #[derive(Resource, Clone, Debug, Default)]
 pub struct DrawnLate {
     pub keys: std::collections::BTreeSet<String>,
+    pub hidden: std::collections::BTreeMap<String, f32>,
     pub running: bool,
 }
 
 impl DrawnLate {
+    /// `key` drawn late, its model hidden its first `hidden` seconds.
+    pub fn add(&mut self, key: String, hidden: f32) {
+        if hidden > 0.0 {
+            self.hidden.insert(key.clone(), hidden);
+        } else {
+            self.hidden.remove(&key);
+        }
+        self.keys.insert(key);
+    }
+
+    /// How long a copy shown as `key` keeps its model hidden (s).
+    pub fn hidden_for(&self, key: &str) -> f32 {
+        self.hidden.get(key).copied().unwrap_or(0.0)
+    }
+
     /// Whether an item shown as `key` is drawn where it is (`is_copy`: it
     /// is a `LateCopy`): every item but one drawn late, and late ones' copies.
     pub fn drawn_here(late: Option<&Self>, key: &str, is_copy: bool) -> bool {

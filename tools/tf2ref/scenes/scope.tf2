@@ -1,0 +1,54 @@
+# The Sniper Rifle's scope with the HUD on (real TF2; ours: scope.scene): a
+# RED Sniper on 2fort's bridge (0 -300 0) looking down it, attack2 tapped,
+# pictures 0.5 s (the charge empty), 1.8 s (a third) and 4 s (full) after.
+# The class menu covered the view once the HUD was on (`joinclass` from
+# the console shows it): here the team and class are joined, the menus
+# closed (`hidepanel`) and auto-kill off (`hud_classautokill 0`) before the
+# HUD comes on.
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/scope.tf2 --out <dir>
+mp_disable_respawn_times 1
+hud_classautokill 0
+cl_drawhud 0
+r_drawvgui 0
+r_drawviewmodel 1
+fov_desired 90
+viewmodel_fov 54
+fps_max 60
+mat_colorcorrection 0
+tf_weapon_criticals 0
+host_framerate 0
+bot_kick all
+sleep 1
+jointeam red
+sleep 1
+joinclass sniper
+kill
+sleep 7
+use tf_weapon_sniperrifle
+hidepanel class_red
+hidepanel class_blue
+hidepanel team
+hidepanel info
+sleep 2
+setpos 0 -300 0
+setang 0 90 0
+sleep 2
+cl_drawhud 1
+r_drawvgui 1
+sleep 2
+shot hud_unscoped
++attack2
+wait 4
+-attack2
+sleep 0.5
+shot scope_0500
+sleep 1.3
+shot scope_1800
+sleep 2.2
+shot scope_4000
++attack2
+wait 4
+-attack2
+sleep 1
+cl_drawhud 0
+r_drawvgui 0

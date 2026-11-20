@@ -36,6 +36,36 @@ use super::room::{AMBIENT_SEND, RoomBus, RoomDsp, RoomSend};
 use super::sound::{Ear, SoundListener};
 use crate::map::{MapSoundClip, SoundControl, SoundKey, SoundLevel, sound::SoundBank};
 
+/// The mix's limit: a gain 0-1 every one-shot clip's output is multiplied
+/// by, set each frame by `sound::limit_mix` from the voices playing (summed
+/// full-scale sounds, TF2's rocket and its blast, both full-scale stereo
+/// waves at gain 1, clipped the output for 1-2 s, heard as distortion). A
+/// clip follows a lower limit at once and a higher one over
+/// `LIMIT_RELEASE` seconds. One per app (shared with its clips).
+#[derive(Resource, Clone, Debug)]
+pub struct MixLimit(Arc<AtomicU32>);
+
+impl Default for MixLimit {
+    fn default() -> Self {
+        Self(Arc::new(AtomicU32::new(1.0f32.to_bits())))
+    }
+}
+
+impl MixLimit {
+    /// Sets the limit.
+    pub fn set(&self, gain: f32) {
+        self.0.store(gain.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+    }
+
+    /// The limit now.
+    pub fn get(&self) -> f32 {
+        f32::from_bits(self.0.load(Ordering::Relaxed))
+    }
+}
+
+/// How long a clip takes to come back up to a higher limit (s).
+pub const LIMIT_RELEASE: f32 = 0.25;
+
 /// A playing long-lived sound.
 #[derive(Clone, Debug)]
 pub struct LiveSound {
@@ -207,6 +237,7 @@ pub struct LiveClip {
     gains: Arc<Gains>,
     hearing: Arc<HearingMix>,
     room: Option<Arc<RoomBus>>,
+    limit: Option<MixLimit>,
 }
 
 impl LiveClip {
@@ -216,7 +247,14 @@ impl LiveClip {
             gains,
             hearing,
             room: None,
+            limit: None,
         }
+    }
+
+    /// Turned down by the mix's limit (`MixLimit`).
+    pub fn with_limit(mut self, limit: &MixLimit) -> Self {
+        self.limit = Some(limit.clone());
+        self
     }
 
     /// Send `Gains`' share of it to the room.
@@ -246,6 +284,10 @@ pub struct LiveDecoder {
     /// off) and each ear's last output.
     low_alpha: f32,
     low: (f32, f32),
+    /// The mix's limit as this clip applies it, and the limit it follows
+    /// (`MixLimit`; none: 1).
+    limit: f32,
+    mix_limit: Option<MixLimit>,
 }
 
 /// How fast the applied gains follow a change, per frame of audio
@@ -283,9 +325,15 @@ impl Iterator for LiveDecoder {
         self.current.0 += (tl - self.current.0) * GAIN_SMOOTHING;
         self.current.1 += (tr - self.current.1) * GAIN_SMOOTHING;
         let fade = self.fade.max(0.0);
+        let want = self.mix_limit.as_ref().map_or(1.0, MixLimit::get);
+        self.limit = if want < self.limit {
+            want
+        } else {
+            (self.limit + 1.0 / (LIMIT_RELEASE * self.rate.get() as f32).max(1.0)).min(want)
+        };
         let (mut l, mut r) = (
-            l as f32 / 32768.0 * self.current.0 * fade,
-            r as f32 / 32768.0 * self.current.1 * fade,
+            l as f32 / 32768.0 * self.current.0 * fade * self.limit,
+            r as f32 / 32768.0 * self.current.1 * fade * self.limit,
         );
         if self.low_alpha > 0.0 {
             self.low.0 += (l - self.low.0) * self.low_alpha;
@@ -343,6 +391,8 @@ impl Decodable for LiveClip {
             muffle: Muffle::default(),
             room: self.room.clone().map(RoomSend::new),
             fade: 1.0,
+            limit: self.limit.as_ref().map_or(1.0, MixLimit::get),
+            mix_limit: self.limit.clone(),
         }
     }
 }
@@ -355,6 +405,7 @@ impl Plugin for LiveSoundPlugin {
         app.add_message::<SoundControl>()
             .init_resource::<LiveSounds>()
             .init_resource::<SoundMix>()
+            .init_resource::<MixLimit>()
             .add_systems(PostUpdate, (control, drive_audio.run_if(resource_exists::<Assets<LiveClip>>)).chain());
     }
 

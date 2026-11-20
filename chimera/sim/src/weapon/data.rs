@@ -988,7 +988,10 @@ impl WeaponDataAppExt for App {
             add_prices(&mut prices, d);
         }
         let late = super::projectile::late_keys(set);
-        world.get_resource_or_init::<crate::map::loose::DrawnLate>().keys.extend(late);
+        let mut drawn_late = world.get_resource_or_init::<crate::map::loose::DrawnLate>();
+        for (key, hidden) in late {
+            drawn_late.add(key, hidden);
+        }
         let mut catalog = world.get_resource_or_init::<WeaponCatalog>();
         if !catalog.sets.iter().any(|s| std::ptr::eq(*s, set)) {
             catalog.sets.push(set);

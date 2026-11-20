@@ -1,0 +1,314 @@
+# Ours for launch.tf2: one shot each of the Rocket Launcher, the Grenade
+# Launcher, the Stickybomb Launcher (tapped) and the Syringe Gun (a short
+# burst) from 2fort's bridge, 10 degrees down along it, the view model
+# drawn, a picture every 1/60 s of game time from the shot for 0.5 s.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +mat_hdr_level 2 +mat_colorcorrection 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/launch.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+rung tf2:tf_weapon_rocketlauncher
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 -300 0
+setang 10 90 0
+wait 90
+shot rocket_idle
+host_timescale 0.02
+wait 3
++attack
+wait_for shot 3000
+-attack
+gwait 0.0167
+shot rocket_f01
+gwait 0.0167
+shot rocket_f02
+gwait 0.0167
+shot rocket_f03
+gwait 0.0167
+shot rocket_f04
+gwait 0.0167
+shot rocket_f05
+gwait 0.0167
+shot rocket_f06
+gwait 0.0167
+shot rocket_f07
+gwait 0.0167
+shot rocket_f08
+gwait 0.0167
+shot rocket_f09
+gwait 0.0167
+shot rocket_f10
+gwait 0.0167
+shot rocket_f11
+gwait 0.0167
+shot rocket_f12
+gwait 0.0167
+shot rocket_f13
+gwait 0.0167
+shot rocket_f14
+gwait 0.0167
+shot rocket_f15
+gwait 0.0167
+shot rocket_f16
+gwait 0.0167
+shot rocket_f17
+gwait 0.0167
+shot rocket_f18
+gwait 0.0167
+shot rocket_f19
+gwait 0.0167
+shot rocket_f20
+gwait 0.0167
+shot rocket_f21
+gwait 0.0167
+shot rocket_f22
+gwait 0.0167
+shot rocket_f23
+gwait 0.0167
+shot rocket_f24
+gwait 0.0167
+shot rocket_f25
+gwait 0.0167
+shot rocket_f26
+gwait 0.0167
+shot rocket_f27
+gwait 0.0167
+shot rocket_f28
+gwait 0.0167
+shot rocket_f29
+gwait 0.0167
+shot rocket_f30
+host_timescale 1
+wait 60
+rung tf2:tf_weapon_grenadelauncher
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 -300 0
+setang 10 90 0
+wait 90
+shot pipe_idle
+host_timescale 0.02
+wait 3
++attack
+wait_for shot 3000
+-attack
+gwait 0.0167
+shot pipe_f01
+gwait 0.0167
+shot pipe_f02
+gwait 0.0167
+shot pipe_f03
+gwait 0.0167
+shot pipe_f04
+gwait 0.0167
+shot pipe_f05
+gwait 0.0167
+shot pipe_f06
+gwait 0.0167
+shot pipe_f07
+gwait 0.0167
+shot pipe_f08
+gwait 0.0167
+shot pipe_f09
+gwait 0.0167
+shot pipe_f10
+gwait 0.0167
+shot pipe_f11
+gwait 0.0167
+shot pipe_f12
+gwait 0.0167
+shot pipe_f13
+gwait 0.0167
+shot pipe_f14
+gwait 0.0167
+shot pipe_f15
+gwait 0.0167
+shot pipe_f16
+gwait 0.0167
+shot pipe_f17
+gwait 0.0167
+shot pipe_f18
+gwait 0.0167
+shot pipe_f19
+gwait 0.0167
+shot pipe_f20
+gwait 0.0167
+shot pipe_f21
+gwait 0.0167
+shot pipe_f22
+gwait 0.0167
+shot pipe_f23
+gwait 0.0167
+shot pipe_f24
+gwait 0.0167
+shot pipe_f25
+gwait 0.0167
+shot pipe_f26
+gwait 0.0167
+shot pipe_f27
+gwait 0.0167
+shot pipe_f28
+gwait 0.0167
+shot pipe_f29
+gwait 0.0167
+shot pipe_f30
+host_timescale 1
+wait 60
+rung tf2:tf_weapon_pipebomblauncher
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 -300 0
+setang 10 90 0
+wait 90
+shot sticky_idle
+host_timescale 0.02
+wait 3
++attack
+gwait 0.0167
+-attack
+wait_for shot 3000
+gwait 0.0167
+shot sticky_f01
+gwait 0.0167
+shot sticky_f02
+gwait 0.0167
+shot sticky_f03
+gwait 0.0167
+shot sticky_f04
+gwait 0.0167
+shot sticky_f05
+gwait 0.0167
+shot sticky_f06
+gwait 0.0167
+shot sticky_f07
+gwait 0.0167
+shot sticky_f08
+gwait 0.0167
+shot sticky_f09
+gwait 0.0167
+shot sticky_f10
+gwait 0.0167
+shot sticky_f11
+gwait 0.0167
+shot sticky_f12
+gwait 0.0167
+shot sticky_f13
+gwait 0.0167
+shot sticky_f14
+gwait 0.0167
+shot sticky_f15
+gwait 0.0167
+shot sticky_f16
+gwait 0.0167
+shot sticky_f17
+gwait 0.0167
+shot sticky_f18
+gwait 0.0167
+shot sticky_f19
+gwait 0.0167
+shot sticky_f20
+gwait 0.0167
+shot sticky_f21
+gwait 0.0167
+shot sticky_f22
+gwait 0.0167
+shot sticky_f23
+gwait 0.0167
+shot sticky_f24
+gwait 0.0167
+shot sticky_f25
+gwait 0.0167
+shot sticky_f26
+gwait 0.0167
+shot sticky_f27
+gwait 0.0167
+shot sticky_f28
+gwait 0.0167
+shot sticky_f29
+gwait 0.0167
+shot sticky_f30
+host_timescale 1
+wait 60
+rung tf2:tf_weapon_syringegun_medic
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 -300 0
+setang 10 90 0
+wait 90
+shot needle_idle
+host_timescale 0.02
+wait 3
++attack
+wait_for shot 3000
+gwait 0.0167
+shot needle_f01
+gwait 0.0167
+shot needle_f02
+gwait 0.0167
+shot needle_f03
+gwait 0.0167
+shot needle_f04
+gwait 0.0167
+shot needle_f05
+gwait 0.0167
+shot needle_f06
+-attack
+gwait 0.0167
+shot needle_f07
+gwait 0.0167
+shot needle_f08
+gwait 0.0167
+shot needle_f09
+gwait 0.0167
+shot needle_f10
+gwait 0.0167
+shot needle_f11
+gwait 0.0167
+shot needle_f12
+gwait 0.0167
+shot needle_f13
+gwait 0.0167
+shot needle_f14
+gwait 0.0167
+shot needle_f15
+gwait 0.0167
+shot needle_f16
+gwait 0.0167
+shot needle_f17
+gwait 0.0167
+shot needle_f18
+gwait 0.0167
+shot needle_f19
+gwait 0.0167
+shot needle_f20
+gwait 0.0167
+shot needle_f21
+gwait 0.0167
+shot needle_f22
+gwait 0.0167
+shot needle_f23
+gwait 0.0167
+shot needle_f24
+gwait 0.0167
+shot needle_f25
+gwait 0.0167
+shot needle_f26
+gwait 0.0167
+shot needle_f27
+gwait 0.0167
+shot needle_f28
+gwait 0.0167
+shot needle_f29
+gwait 0.0167
+shot needle_f30
+host_timescale 1
+wait 60

@@ -27,6 +27,11 @@ use super::weapons::{holding, sim};
 const MUZZLE: Vec3 = Vec3::new(0.12, -0.1, -0.5);
 
 fn gun(key: &str) -> MapViewModel {
+    gun_turned(key, Quat::IDENTITY)
+}
+
+/// `gun` with its muzzle attachment turned `turn` in the model.
+fn gun_turned(key: &str, turn: Quat) -> MapViewModel {
     MapViewModel {
         key: key.into(),
         model: MapModel::default(),
@@ -35,7 +40,7 @@ fn gun(key: &str) -> MapViewModel {
         animations: None,
         right_handed: true,
         allow_flipping: false,
-        attachments: vec![MapAttachment { name: "muzzle".into(), bone: 0, local: Transform::from_translation(MUZZLE) }],
+        attachments: vec![MapAttachment { name: "muzzle".into(), bone: 0, local: Transform::from_translation(MUZZLE).with_rotation(turn) }],
         light_origin: Vec3::ZERO,
     }
 }
@@ -49,6 +54,11 @@ fn flashes(vm_fov: f32, third_person: bool) -> (Entity, Vec<StartParticleSystem>
 
 /// `flashes`, `local`: the shooter this machine's own player; with the sim.
 fn flashes_of(vm_fov: f32, third_person: bool, local: bool) -> (chimera_world::harness::Sim, Entity, Vec<StartParticleSystem>) {
+    flashes_with(gun(SMG), vm_fov, third_person, local)
+}
+
+/// `flashes_of` with the view model `model` (keyed as the SMG).
+fn flashes_with(model: MapViewModel, vm_fov: f32, third_person: bool, local: bool) -> (chimera_world::harness::Sim, Entity, Vec<StartParticleSystem>) {
     let mut sim = sim();
     let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), SMG);
     if local {
@@ -56,7 +66,7 @@ fn flashes_of(vm_fov: f32, third_person: bool, local: bool) -> (chimera_world::h
         // The map's drawing places the marks (not in a headless sim).
         sim.app.add_systems(Update, chimera_world::map::attached::place_marks.in_set(chimera_world::map::attached::MarksPlaced));
     }
-    sim.app.world_mut().insert_resource(ViewModels::of([gun(SMG)]));
+    sim.app.world_mut().insert_resource(ViewModels::of([model]));
     sim.app.world_mut().insert_resource(ShowLocalBody(third_person));
     let perspective = |deg: f32| Projection::Perspective(PerspectiveProjection { fov: deg.to_radians(), ..default() });
     let anchor = sim
@@ -119,6 +129,26 @@ fn a_first_person_flash_starts_at_the_reprojected_muzzle_in_the_world() {
     let eye = Vec3::new(5.22, -4.28, -44.29);
     let w = reproject(eye, 90.0, 54.0);
     assert!(w.abs_diff_eq(Vec3::new(10.25, -8.40, -44.29), 0.01), "{w}");
+}
+
+/// A flash turns as its attachment does (Source starts a system with the
+/// attachment's orientation; TF2's Grenade Launcher's muzzle has its z
+/// along the barrel and its flash's sparks leave along z: turned only by
+/// its x toward the aim they went straight up): a muzzle turned half
+/// round about the eye's up starts a flash whose x is the eye's left
+/// (bevy -X) and whose z is the eye's forward (bevy -Z), in the eye's frame.
+#[test]
+fn a_flash_turns_as_its_attachment() {
+    let turn = Quat::from_rotation_y(std::f32::consts::PI);
+    let (_, _, starts) = flashes_with(gun_turned(SMG, turn), 54.0, false, false);
+    let flashes: Vec<_> = starts.iter().filter(|s| s.name.starts_with("muzzle_")).collect();
+    assert!(!flashes.is_empty(), "the SMG fired and flashed");
+    for s in flashes {
+        let f = s.follow.expect("follows the eye");
+        assert!(f.forward.abs_diff_eq(Vec3::NEG_X, 1e-4), "x: {}", f.forward);
+        let up = f.up.expect("its whole orientation");
+        assert!(up.abs_diff_eq(Vec3::NEG_Z, 1e-4), "z along the barrel: {up}");
+    }
 }
 
 #[test]

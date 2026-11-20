@@ -143,6 +143,10 @@ pub struct Inputs {
     pub portrait: Option<&'static str>,
     /// Seconds, for the pulses.
     pub time: f64,
+    /// Behind a scope (the shell's overlay up, `hud::ScopeUp`): the
+    /// held gun's charge as a fraction 0-1 (`HeldGauge`); no crosshair
+    /// then, the charge meter instead.
+    pub scope: Option<f32>,
 }
 
 /// The scheme's colours and fonts this HUD uses, by name.
@@ -308,8 +312,13 @@ impl Tf2Hud {
                 None => big(&mut out, screen.child(p, 0.0, 2.0, 84.0, 40.0), ammo.clip.to_string()),
             }
         }
-        // Crosshair: the sheet's (0, 0, 32, 32) of 128 x 128.
-        if i.alive && scheme.has("crosshairs") {
+        // The charge meter beside the scope's middle.
+        if let (true, Some(charge)) = (i.alive, i.scope) {
+            out.extend(charge_meter(charge, screen, scheme));
+        }
+        // Crosshair: the sheet's (0, 0, 32, 32) of 128 x 128; none
+        // behind a scope (3.4).
+        if i.alive && i.scope.is_none() && scheme.has("crosshairs") {
             // Screen pixels, not layout units (3.4): 32 at any height.
             let size = 32.0;
             let c = Vec2::new(screen.w / 2.0, screen.h / 2.0);
@@ -318,6 +327,48 @@ impl Tf2Hud {
         }
         out
     }
+}
+
+/// The Sniper's charge meter (measured on real TF2, hud.md "Measured":
+/// a 1024x768 frame scoped at 0.5, 1.8 and 4 s): `sniperscope_numbers2`
+/// (128 x 256 texels) drawn additively at half a unit a texel, its top left
+/// 64 units right of the screen's middle and 64 up, so its wedge of 13
+/// stripes (texels 6-68 across, from row 128 down) starts at the middle's
+/// height to its right. The wedge lights from its left by the charge
+/// (`charge` 0-1; the rest of it faint, a fifth as bright); the bolt and
+/// "100%" (texels 70-128) only at a full charge.
+pub fn charge_meter(charge: f32, screen: Screen, scheme: &dyn Scheme) -> Vec<Draw> {
+    const SPRITE: &str = "sniperscope_numbers2";
+    const TEXELS: Vec2 = Vec2::new(128.0, 256.0);
+    const WEDGE: (f32, f32) = (6.0, 69.0);
+    const BOLT: f32 = 70.0;
+    if !scheme.has(SPRITE) {
+        return Vec::new();
+    }
+    let u = screen.u();
+    let texel = 0.5 * u;
+    let origin = Vec2::new(screen.w / 2.0 + 64.0 * u, screen.h / 2.0 - 64.0 * u);
+    // Texel columns a..b, the full height, in `alpha` of the picture's
+    // own colours.
+    let part = |a: f32, b: f32, alpha: u8| Draw::Sprite {
+        sprite: SPRITE,
+        rect: Rect::new(origin.x + a * texel, origin.y, origin.x + b * texel, origin.y + TEXELS.y * texel),
+        uv: Rect::new(a / TEXELS.x, 0.0, b / TEXELS.x, 1.0),
+        color: [255, 255, 255, alpha],
+    };
+    let c = charge.clamp(0.0, 1.0);
+    let lit = WEDGE.0 + (WEDGE.1 - WEDGE.0) * c;
+    let mut out = Vec::new();
+    if lit > WEDGE.0 {
+        out.push(part(WEDGE.0, lit, 255));
+    }
+    if lit < WEDGE.1 {
+        out.push(part(lit, WEDGE.1, 51));
+    }
+    if c >= 1.0 {
+        out.push(part(BOLT, TEXELS.x, 255));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -448,5 +499,45 @@ mod tests {
         assert!(order.windows(2).all(|w| w[0] < w[1]), "the portrait over its background, the health panel over both");
         let d = Tf2Hud::default().frame(&Inputs { alive: false, ..i }, s, &Plain);
         assert!(sprite(&d, "class_soldierred").is_none());
+    }
+
+    /// Behind a scope: no crosshair (hud.md 3.4), the charge meter's
+    /// wedge lit by the charge, the bolt and "100%" only when full, 64
+    /// units right of the middle and 64 up at half a unit a texel.
+    #[test]
+    fn a_scope_hides_the_crosshair_and_shows_the_charge() {
+        struct Sheets;
+        impl Scheme for Sheets {
+            fn colour(&self, _: &str) -> Option<Rgba> {
+                None
+            }
+            fn tall(&self, _: &str) -> Option<f32> {
+                None
+            }
+            fn has(&self, _: &str) -> bool {
+                true
+            }
+        }
+        let s = Screen::new(1024.0, 768.0);
+        let mut hud = Tf2Hud::default();
+        let open = Inputs { alive: true, health: 125.0, max: 125.0, ..default() };
+        let d = hud.frame(&open, s, &Sheets);
+        assert!(sprite(&d, "crosshairs").is_some());
+        assert!(sprite(&d, "sniperscope_numbers2").is_none());
+        let half = hud.frame(&Inputs { scope: Some(0.5), ..open.clone() }, s, &Sheets);
+        assert!(sprite(&half, "crosshairs").is_none(), "no crosshair behind a scope");
+        let parts: Vec<_> = half.iter().filter_map(|d| match d {
+            Draw::Sprite { sprite: "sniperscope_numbers2", rect, uv, color } => Some((*rect, *uv, *color)),
+            _ => None,
+        }).collect();
+        assert_eq!(parts.len(), 2, "lit and faint wedge, no bolt: {parts:?}");
+        let u = 768.0 / 480.0;
+        assert!((parts[0].0.min.x - (512.0 + 64.0 * u + 6.0 * 0.5 * u)).abs() < 1e-3);
+        assert!((parts[0].0.min.y - (384.0 - 64.0 * u)).abs() < 1e-3);
+        assert!((parts[0].1.max.x * 128.0 - 37.5).abs() < 1e-3, "lit to half the wedge");
+        assert_eq!(parts[1].2[3], 51);
+        let full = hud.frame(&Inputs { scope: Some(1.0), ..open }, s, &Sheets);
+        let n = full.iter().filter(|d| matches!(d, Draw::Sprite { sprite: "sniperscope_numbers2", .. })).count();
+        assert_eq!(n, 2, "the whole wedge and the bolt");
     }
 }

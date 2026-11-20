@@ -1,0 +1,33 @@
+# Ours for scope.tf2: the Sniper Rifle scoped with the HUD on, from 2fort's
+# bridge (0 -300 0) looking down it, attack2 tapped, pictures 0.5 s (the
+# charge empty), 1.8 s (a third) and 4 s (full) after. Also at 2560x1440
+# (`--offscreen 2560x1440`) for the overlay's sharpness on a tall screen.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +mat_hdr_level 2 +mat_colorcorrection 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/scope.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+fov_desired 90
+tf2_viewmodel_fov 54
+rung tf2:tf_weapon_sniperrifle
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 -300 0
+setang 0 90 0
+wait 90
+shot hud_unscoped
++attack2
+wait 2
+-attack2
+gwait 0.5
+shot scope_0500
+gwait 1.3
+shot scope_1800
+gwait 2.2
+shot scope_4000
++attack2
+wait 2
+-attack2
+wait 30

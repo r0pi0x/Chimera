@@ -620,6 +620,41 @@ step 3 every 0.1 s; animations and drawing run every frame.
 - The overheal and low-health effects share one image control
   (`PlayerStatusHealthBonusImage`), only recoloured.
 
+## Measured in the running game: the Sniper's scope (tools/tf2ref, 2026-11-20)
+
+`scope.tf2`: a RED Sniper on 2fort's bridge looking down it at
+1024x768, the HUD on (the team and class joined and the menus closed
+before `cl_drawhud 1`, `hud_classautokill 0`, so no class menu covers
+it), attack2 tapped, pictures 0.5, 1.8 and 4 s after. Facts of the
+picture and of the install's files, not of the code.
+
+- **The overlay**: a round lens filling the screen's height between
+  black bars; its edge soft over about 20 pixels with an orange and
+  olive fringe, the view inside a little darker and warped near the rim.
+  Its material is a refracting one (`hud/scope_sniper_ul` and its
+  mirrored siblings, one per quarter, the tint texture 512 x 512 per
+  quarter); the plain fallback each quarter names, `hud/scope_sniper_ul_dx80`
+  (512 x 512, black with alpha: opaque outside the ring, about 0.2
+  inside), is that ring without the warp and tint. Thin dark cross hairs
+  run through the middle. Drawn at 768 lines a quarter's 512 texels shrink
+  to 384 pixels: soft, never blocky.
+- **The crosshair**: TF2 still draws the rifle's own thin cross (white,
+  wider than tall, about 30 x 13 pixels) at the middle under the scope,
+  with the laser dot's red glow on it. 3.4 says a scope hides it; the
+  capture shows it (Open questions).
+- **The charge meter**: `hud/sniperscope_numbers2` (128 x 256 texels; a
+  wedge of 13 thin vertical stripes at texels 6-68 across, its top at
+  row 128, growing taller to the right; a lightning bolt at 75-89 and
+  "100%" at 95-123), drawn additively at half a layout unit a texel, its
+  top left corner 64 units right of the screen's middle and 64 up, so the
+  wedge starts just right of the middle at its height. The stripes light
+  from the left as the charge grows (0.5 s: the first fifth or so; 1.8 s:
+  about two thirds; 4 s: all of them); the unlit ones show faintly, about
+  a fifth as bright; the bolt and "100%" show only at a full charge. The
+  material scrolls a mask (`hud/sniperscope_numbers`) by the charge; how
+  exactly is not measured (the lit edge at a given charge is within about
+  10 texels of the charge's share of the wedge).
+
 ## Test cases
 
 | # | Setup | Input | After | Expected |
@@ -683,3 +718,13 @@ step 3 every 0.1 s; animations and drawing run every frame.
 11. ~~Damage direction indicator~~ Settled (3.7); open only what
     `vgui/damageindicator` looks like (a material in the install).
 12. ~~Damage numbers~~ Settled (3.8).
+
+13. **The crosshair behind a scope** (measured above): 3.4 hides it while
+   a scope covers it, but real TF2 draws the Sniper Rifle's thin cross
+   under the scope. Ours hides it behind every game's scope (the
+   project's choice: a scope draws its own cross hairs).
+- **The scope at other aspects**: measured only at 4:3 (1024x768), where
+  the four quarters fill the whole screen (the lens edge sits at about
+  0.29 of each quarter's width, as in the texture). Whether a wider screen
+  stretches them the same way (a wide ellipse) or keeps the lens round is
+  not measured (the headless display stays 4:3); ours stretches them.

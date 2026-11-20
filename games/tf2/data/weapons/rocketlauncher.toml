@@ -64,8 +64,10 @@ script = "tf_weapon_rocketlauncher"
 
 [hooks."chimera:projectile"]
 # Drawn 0.1 s in the past on every client, the shooter's own too, its
-# blast held as long (specs/tf2/effects.md 11).
+# blast held as long, its model hidden its first 0.2 s (specs/tf2/effects.md
+# 11).
 interp = true
+model_hidden = 0.2
 speed = 1100.0
 touch = "report"
 shown = "tf2:tf_weapon_rocketlauncher/rocket"
