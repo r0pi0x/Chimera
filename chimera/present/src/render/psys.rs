@@ -35,7 +35,12 @@
 //! with its points standing still; a continuous emitter's n particles of
 //! a step are made at k/n of its window (never at its start), a burst at
 //! its start time; each new particle where its control points were at its
-//! creation time, on their straight path from last frame's places.
+//! creation time, on their straight path from last frame's places. A
+//! tag's `ParticleModel` puts control point 0 at its origin and gives
+//! "Position on Model Random" its hitboxes (best of 6 tries by the
+//! bias), "Movement Lock to Bone" keeps each particle in its box, and a
+//! view model's are drawn in the view-model pass (TF2's crit glow:
+//! specs/tf2/effects.md 14.1).
 //!
 //! Known shortcuts (docs/tech-debt.md): Particle systems (`render::psys`,
 //! `map::psys`, `source_engine::content::pcf`): the operator meanings are
@@ -51,7 +56,11 @@
 //! the step) against the solid world for started systems only (placed
 //! ones don't collide), bounce and slide read as fractions of the speed
 //! into and along the surface (its trace tolerances and collision group
-//! aren't read); oscillate scalar and the visibility,
+//! aren't read); "Oscillate Scalar" runs a placeholder formula (radius
+//! and alpha only: `Op::Oscillate`, specs/tf2/effects.md Open questions
+//! 17); "Position on Model Random" and "Movement Lock to Bone" need the
+//! game to give the model's boxes (`ParticleModel`, else at the point)
+//! and ignore "force to be inside model"; the visibility,
 //! cull and sleep settings aren't run (an unseen system freezes); control
 //! points 1-63 (`cpointN`) of a placed system all sit on the entity;
 //! "Movement Follow CP" carries a particle by its point's velocity and
@@ -155,6 +164,12 @@ struct P {
     /// Its motion over its last step (units/s): what a sprite trail
     /// follows (`Render::Trail`, particles.md 5.1).
     motion: Vec3,
+    /// The model hitbox it was placed on and its place in the box's unit
+    /// cube (`Init::OnModel`, `Op::LockToBone`).
+    bone: Option<(u16, Vec3)>,
+    /// Its first two oscillators' drawn rate and frequency
+    /// (`Op::Oscillate`).
+    osc: [(f32, f32); 2],
 }
 
 /// "Movement Basic"'s drag is the fraction of the velocity taken off per
@@ -245,6 +260,9 @@ pub struct Instance {
     /// space): a step's new particles are made along each point's path
     /// from there (`step_with`).
     cp_from: Option<Vec<Vec3>>,
+    /// The hitboxes of the model its control point 0 stands for (game
+    /// space, from the unit cube: `set_model`).
+    model: Vec<Mat4>,
 }
 
 /// The sheet sequences' frame counts of a material (for "lifetime from
@@ -405,6 +423,20 @@ impl Instance {
             started: false,
             lock_from: None,
             cp_from: None,
+            model: Vec::new(),
+        }
+    }
+
+    /// The hitboxes (game space, each from the unit cube [−1, 1]³) of the
+    /// model its control point 0 stands for this frame (`Init::OnModel`,
+    /// `Op::LockToBone`), its children's too.
+    pub fn set_model(&mut self, boxes: &[Mat4]) {
+        if self.model != boxes {
+            self.model.clear();
+            self.model.extend_from_slice(boxes);
+        }
+        for c in self.children.iter_mut().filter_map(|c| c.1.as_mut()) {
+            c.set_model(boxes);
         }
     }
 
@@ -550,7 +582,9 @@ impl Instance {
         // run after the parent's steps with the whole frame.
         for (delay, c, def) in &mut self.children {
             if c.is_none() && self.emitting && self.age >= *delay {
-                *c = Some(Instance::new(defs, *def));
+                let mut child = Instance::new(defs, *def);
+                child.model.clone_from(&self.model);
+                *c = Some(child);
             }
         }
         for c in self.children.iter_mut().filter_map(|c| c.1.as_mut()) {
@@ -767,10 +801,26 @@ impl Instance {
                     None => p.position = to,
                 }
             }
+            let mut osc = 0;
             for o in &d.operators {
                 match *o {
                     Op::RotationBasic => p.roll += p.roll_speed * dt,
                     Op::SpinRoll { rate } => p.roll += rate * dt,
+                    Op::Oscillate { field, multiplier, phase, start, end, .. } => {
+                        // A placeholder (effects.md Open questions 17).
+                        let (rate, frequency) = p.osc.get(osc).copied().unwrap_or_default();
+                        osc += 1;
+                        let x = if p.life > 0.0 { p.age / p.life } else { 1.0 };
+                        if x < start || x > end {
+                            continue;
+                        }
+                        let change = rate * (std::f32::consts::TAU * (frequency * multiplier * p.age + phase)).sin() * dt;
+                        match field {
+                            3 => p.radius = (p.radius + change).max(0.0),
+                            7 => p.alpha = (p.alpha + change / 255.0).clamp(0.0, 1.0),
+                            _ => {}
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -789,6 +839,18 @@ impl Instance {
                 }
             }
             self.lock_from = Some(now);
+        }
+        // Kept on their hitboxes as the boxes move (`Op::LockToBone`).
+        if d.operators.iter().any(|o| matches!(o, Op::LockToBone { .. })) && !self.model.is_empty() {
+            for (p, from) in self.particles.iter_mut().zip(from.iter_mut()) {
+                if let Some((i, u)) = p.bone
+                    && let Some(m) = self.model.get(i as usize)
+                {
+                    let now = m.transform_point3(u);
+                    *from += now - p.position;
+                    p.position = now;
+                }
+            }
         }
         // Onto their own control points, and the distance remaps.
         for p in &mut self.particles {
@@ -876,7 +938,14 @@ impl Instance {
             tint: None,
             trail: DEFAULT_TRAIL_LENGTH,
             motion: Vec3::ZERO,
+            bone: None,
+            osc: [(0.0, 0.0); 2],
         };
+        for (k, o) in d.operators.iter().filter(|o| matches!(o, Op::Oscillate { .. })).take(2).enumerate() {
+            if let Op::Oscillate { rate, frequency, .. } = *o {
+                p.osc[k] = (rng.float(rate.0, rate.1), rng.float(frequency.0, frequency.1));
+            }
+        }
         for i in &d.initializers {
             match *i {
                 Init::Sphere {
@@ -900,6 +969,29 @@ impl Instance {
                     p.velocity = dir * speed.draw(rng) + point.rotation * pick3(rng, local_min, local_max);
                 }
                 Init::Box { cp: c, min, max } => p.position = cp(c).position + pick3(rng, min, max),
+                Init::OnModel { cp: c, scale, bias } if !self.model.is_empty() => {
+                    // The best of the tries (effects.md 14.1): a random
+                    // box, a point uniform in it, scored by U(0, 72) plus
+                    // its offset from the point along the bias.
+                    let at = cp(c).position;
+                    let tries = if bias != Vec3::ZERO { 6 } else { 1 };
+                    let mut best: Option<(f32, usize, Vec3, Vec3)> = None;
+                    for _ in 0..tries {
+                        let i = (rng.random() * self.model.len() as f32).min(self.model.len() as f32 - 1.0) as usize;
+                        let u = rng.vec3(-1.0, 1.0) * scale;
+                        let point = self.model[i].transform_point3(u);
+                        let score = rng.float(0.0, 72.0) + (point - at).dot(bias);
+                        if best.is_none_or(|b| score > b.0) {
+                            best = Some((score, i, u, point));
+                        }
+                    }
+                    if let Some((_, i, u, point)) = best {
+                        p.position = point;
+                        p.bone = Some((i as u16, u));
+                    }
+                }
+                // No model given: at the point.
+                Init::OnModel { cp: c, .. } => p.position = cp(c).position,
                 Init::Offset {
                     cp: c,
                     min,
@@ -1384,6 +1476,8 @@ struct Running {
     emit_for: Option<f32>,
     follow: Option<(crate::map::psys::Follow, Transform)>,
     tag: Option<Entity>,
+    /// Drawn in the view-model pass (its tag's `ParticleModel`).
+    view_model: bool,
 }
 
 impl StartedSystems {
@@ -1433,6 +1527,7 @@ impl StartedSystems {
             points: Vec::new(),
             active: None,
             tag: None,
+            view_model: false,
         });
         true
     }
@@ -1625,7 +1720,7 @@ pub fn run_started_systems(
     light_field: Option<Res<crate::map::LightField>>,
     mut pool: ResMut<Particles>,
     frames: Query<(&Transform, Option<&ChildOf>)>,
-    set_points: Query<&ParticleControlPoints>,
+    (set_points, models): (Query<&ParticleControlPoints>, Query<&ParticleModel>),
     mut shown: Option<ResMut<RunningSystems>>,
     spatial: Option<avian3d::prelude::SpatialQuery>,
     characters: Query<Entity, With<crate::core::Intent>>,
@@ -1726,6 +1821,17 @@ pub fn run_started_systems(
             .collect();
         started.set_points(tag, &points, set.active);
     }
+    // The model a tag's systems stand on (TF2's crit glow): control
+    // point 0 at its origin, its hitboxes in game space.
+    let to_game_m = Mat4::from_cols(Vec4::new(1.0, 0.0, 0.0, 0.0), Vec4::new(0.0, 0.0, 1.0, 0.0), Vec4::new(0.0, -1.0, 0.0, 0.0), Vec4::W)
+        * Mat4::from_scale(Vec3::splat(1.0 / scale));
+    for r in started.running.iter_mut() {
+        let Some(m) = r.tag.and_then(|t| models.get(t).ok()) else { continue };
+        r.cp.position = to_game(m.origin);
+        r.view_model = m.view_model;
+        let boxes: Vec<Mat4> = m.boxes.iter().map(|b| to_game_m * *b).collect();
+        r.instance.set_model(&boxes);
+    }
     let sheets = WorldSheets {
         sheets: MaterialSheets(materials.as_ref().map(|m| &m.0)),
         spatial: spatial.as_ref(),
@@ -1764,17 +1870,21 @@ pub fn run_started_systems(
     // effects too (specs/tf2/particles.md 6: placed at the view model's
     // muzzle re-projected into the world view, never drawn with the
     // view-model camera).
-    let mut out = Vec::new();
-    for r in &started.running {
-        r.instance.draw(&defs.defs, &to_engine, scale, eye, &sheets, &mut out);
-    }
-    if !out.is_empty() {
-        let mut g = ParticleGroup::new(default());
-        g.particles = out;
-        g.capped = false;
-        g.skip_first = true;
-        g.kill_after = Some(0.0);
-        pool.add(g);
+    // Those on a view model in the view-model pass (effects.md 14.1).
+    for view_model in [false, true] {
+        let mut out = Vec::new();
+        for r in started.running.iter().filter(|r| r.view_model == view_model) {
+            r.instance.draw(&defs.defs, &to_engine, scale, eye, &sheets, &mut out);
+        }
+        if !out.is_empty() {
+            let mut g = ParticleGroup::new(default());
+            g.particles = out;
+            g.capped = false;
+            g.skip_first = true;
+            g.kill_after = Some(0.0);
+            g.view_model = view_model;
+            pool.add(g);
+        }
     }
 }
 
@@ -1939,6 +2049,45 @@ mod tests {
         i.step(&defs, &at(40.0), 1.0 / 60.0, &mut rng, &none);
         let xs: Vec<f32> = i.placed().iter().map(|p| p.0.x).collect();
         assert_eq!(xs, vec![0.0; 5]);
+    }
+
+    /// effects.md 14.1: "Position on Model Random" with the (1, 1, 1)
+    /// bias puts nearly every particle on the box far along +x +y +z (its
+    /// score beats the other's by more than U(0, 72) can make up), inside
+    /// it; "Movement Lock to Bone" keeps each where it is in its box as
+    /// the box moves.
+    #[test]
+    fn particles_go_on_the_models_boxes_by_the_bias_and_follow_them_14_1() {
+        let mut d = system();
+        d.operators = vec![Op::LockToBone { cp: 0 }];
+        d.initializers = vec![Init::Lifetime(Pick::new(10.0, 10.0, 1.0)), Init::OnModel { cp: 0, scale: 1.0, bias: Vec3::ONE }];
+        d.emitters = vec![Emitter::Continuously { start: 0.0, rate: 600.0, duration: 0.0 }];
+        let defs = vec![d];
+        let near = Mat4::from_scale_rotation_translation(Vec3::splat(2.0), Quat::IDENTITY, Vec3::ZERO);
+        let far = Mat4::from_scale_rotation_translation(Vec3::new(1.0, 2.0, 3.0), Quat::from_rotation_z(0.5), Vec3::splat(100.0));
+        let mut i = Instance::new(&defs, 0);
+        let mut rng = ParticleRng::new(9);
+        let cps = [ControlPoint::default()];
+        i.set_model(&[near, far]);
+        created(&mut i, &defs, &cps);
+        i.step(&defs, &cps, 0.1, &mut rng, &none);
+        let placed = i.placed();
+        assert_eq!(placed.len(), 60);
+        let on_far = placed.iter().filter(|p| far.inverse().transform_point3(p.0).abs().max_element() <= 1.0 + 1e-4).count();
+        assert!(on_far >= 55, "{on_far} of 60 on the far box");
+        let on_near = placed.iter().filter(|p| near.inverse().transform_point3(p.0).abs().max_element() <= 1.0 + 1e-4).count();
+        assert_eq!(on_far + on_near, 60, "all inside a box");
+        // The far box moves 10 along x and turns: they go with it.
+        let before: Vec<Vec3> = i.particles.iter().map(|p| far.inverse().transform_point3(p.position)).collect();
+        let moved = Mat4::from_translation(Vec3::X * 10.0) * far * Mat4::from_rotation_x(0.3);
+        i.set_model(&[near, moved]);
+        i.step(&defs, &cps, 1.0 / 60.0, &mut rng, &none);
+        for (p, b) in i.particles.iter().zip(before) {
+            if b.abs().max_element() <= 1.0 + 1e-4 {
+                let now = moved.inverse().transform_point3(p.position);
+                assert!(now.abs_diff_eq(b, 1e-3), "{now} vs {b}");
+            }
+        }
     }
 
     /// "remap initial scalar" by creation time (specs/tf2/particles.md 8.1,
@@ -2123,6 +2272,8 @@ mod tests {
             tint: None,
             trail: DEFAULT_TRAIL_LENGTH,
             motion: Vec3::ZERO,
+            bone: None,
+            osc: [(0.0, 0.0); 2],
         };
         assert_eq!(Instance::alpha(&d, &p(0.0)), 0.0);
         assert!((Instance::alpha(&d, &p(0.125)) - 0.5).abs() < 1e-5);

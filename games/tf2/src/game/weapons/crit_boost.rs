@@ -8,7 +8,8 @@
 //!   starts at once at full volume on the player (the sound follows him;
 //!   its WAV loops whole) and the glow `critgun_weaponmodel_red`/`_blu`
 //!   (`GLOW`, his team's) on the weapon drawn for him (its muzzle on the
-//!   view model or the held model, else ahead of the eye), tagged with the
+//!   view model or the held model, else ahead of the eye; then on its
+//!   model's hitboxes, below), tagged with the
 //!   weapon. A switch between two boostable weapons keeps the loop going
 //!   and moves the glow; the boost ending, a death or a weapon that can't
 //!   be boosted stop both at once (`StopSound::local`,
@@ -17,10 +18,21 @@
 //! The Flame Thrower's crit loop swap is `flame::sounds`'s (a boosted
 //! Pyro's every burst is critical).
 //!
+//! The glow stands on a model (14.1, `ParticleModel` on the weapon each
+//! frame, `Muzzles::glow_model`): for the local player in first person
+//! the arms view model's hitboxes (`c_<class>_arms.mdl`'s set, drawn in
+//! the view-model pass), for others their held weapon's world model's
+//! (its `$hitbox` attachments); its particles placed on random hitboxes
+//! (best of 6 with the (1, 1, 1) bias) and kept on them.
+//!
 //! Known shortcuts: nothing in ours grants a boost yet (no Kritzkrieg,
 //! first blood or round-win crits: a mode or a test sets `CritBoosted`);
 //! there is no cloak or disguise, so those rules don't apply; the glow
-//! starts at the weapon's muzzle, not over its whole model.
+//! is on the held weapon's boxes at their reference pose relative to the
+//! bone that holds it (its own bones' motion not followed); control
+//! point 0 for others is the player's origin (the weapon entity's in
+//! Source); "Oscillate Scalar" runs a placeholder formula (Open questions
+//! 17, `map::psys::Op::Oscillate`).
 
 use std::collections::BTreeMap;
 
@@ -33,7 +45,7 @@ use chimera_sim::weapon::{Inventory, Weapon, aim_of};
 use super::looks::{Muzzles, ahead_of};
 use crate::map::{
     PlaySound, StopSound,
-    psys::{StartParticleSystem, StopParticleSystems},
+    psys::{ParticleModel, StartParticleSystem, StopParticleSystems},
 };
 
 /// The boost's loop (effects.md 14).
@@ -71,6 +83,7 @@ fn boost_looks(
     mut stops: MessageWriter<StopSound>,
     mut start: MessageWriter<StartParticleSystem>,
     mut stop: MessageWriter<StopParticleSystems>,
+    (mut hosts, mut commands): (Query<&mut ParticleModel>, Commands),
 ) {
     let end = |p: Entity, w: Entity, stops: &mut MessageWriter<StopSound>, stop: &mut MessageWriter<StopParticleSystems>| {
         stops.write(StopSound { by: None, source: p, entry: CRIT_POWER.to_string(), local: true });
@@ -122,14 +135,33 @@ fn boost_looks(
         let aim = intent.map_or(at.rotation, |i| aim_of(i.yaw, i.pitch));
         let forward = aim * Vec3::NEG_Z;
         let name = glow_name(team.copied());
-        let s = match muzzles.placed(p) {
+        let mut s = match muzzles.placed(p) {
             Some(m) => muzzles.start_on(p, &m, &name, forward),
             None => {
                 let eye = at.translation + state.map_or(Vec3::ZERO, |s| s.eye_offset);
                 StartParticleSystem::new(name, ahead_of(eye, aim), forward)
             }
         };
+        // On a model's hitboxes, its point that model's origin (14.1).
+        if muzzles.glow_model(p).is_some() {
+            s.follow = None;
+        }
         start.write(StartParticleSystem { tag: Some(w), ..s });
+    }
+    // Each glow's host model this frame (effects.md 14.1): the arms view
+    // model for the local player, the held weapon for others.
+    for (&p, &w) in shown.iter() {
+        let Some(m) = muzzles.glow_model(p) else { continue };
+        match hosts.get_mut(w) {
+            Ok(mut h) => {
+                if *h != m {
+                    *h = m;
+                }
+            }
+            Err(_) => {
+                commands.entity(w).insert(m);
+            }
+        }
     }
 }
 

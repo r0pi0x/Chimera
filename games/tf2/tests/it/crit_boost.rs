@@ -96,3 +96,24 @@ fn a_burst_turning_critical_swaps_the_flame_loops() {
     let end = run(&mut sim, 30, |s, _| s.intent(p).fire = false);
     assert_eq!(count(&end.played, "FireEnd"), 1, "{end:?}");
 }
+
+/// effects.md 14.1: another player's glow stands on his held weapon's
+/// hitboxes (its `$hitbox` attachments, where they are drawn): the weapon
+/// gets them as its `ParticleModel` each frame, control point 0 at his
+/// origin, drawn in the world pass.
+#[test]
+fn others_glow_stands_on_their_held_weapons_hitboxes_14_1() {
+    use chimera_world::map::{psys::ParticleModel, view_model::HeldAttachment};
+    let mut sim = sim();
+    let (p, gun) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), SYRINGE_GUN);
+    let at = Transform::from_translation(Vec3::new(0.2, 1.3, -0.4)).with_scale(Vec3::new(0.1, 0.2, 0.3));
+    let name = source_engine::content::props::HITBOX_ATTACHMENT.to_string();
+    sim.app.world_mut().spawn((HeldAttachment { owner: p, index: 3, name }, GlobalTransform::from(at)));
+    sim.app.world_mut().entity_mut(p).insert(CritBoosted);
+    run(&mut sim, 3, |_, _| {});
+    let m = sim.app.world().get::<ParticleModel>(gun).expect("the gun carries its glow's model").clone();
+    assert_eq!(m.boxes, vec![at.to_matrix()]);
+    assert!(!m.view_model);
+    let origin = sim.app.world().get::<Transform>(p).unwrap().translation;
+    assert_eq!(m.origin, origin);
+}

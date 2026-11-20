@@ -129,7 +129,9 @@ Captured imagery stays in scratch, never in the repo.
    Crits are off (n/a).
 7. (Done, pass 5: the test compared mixed-case wave names.)
 8. The asset service's `players` set needs republishing (by the user)
-   to carry rockettrail.pcf, stickybomb.pcf and nailtrails.pcf.
+   to carry rockettrail.pcf, stickybomb.pcf, nailtrails.pcf and
+   firstperson_weapon_fx.pcf (the crit glow, with its materials
+   `effects/electric1` and `effects/sc_softglow`).
 
 ## Log
 
@@ -173,6 +175,21 @@ Captured imagery stays in scratch, never in the repo.
   launcher now in both, at the same place; ours a frame earlier in the
   movie numbering and its first smoke puff shows darker than TF2's under
   the glow. Matches the defaults, not lerp 0.5.
+- **The crit glow** (effects.md §14.1): `particles/firstperson_weapon_fx.pcf`
+  joins the looks' files (the `players` set: republish awaits the user,
+  item 8); "Position on Model Random", "Movement Lock to Bone" and
+  "Oscillate Scalar" now run (`render::psys`, every game; the
+  oscillator a placeholder: a sine rate on radius or alpha, Open
+  questions 17). The host model each frame (`ParticleModel` on the
+  weapon, `Muzzles::glow_model`): the local player's arms view model's
+  hitboxes (47 on `c_soldier_arms`, drawn in the view-model pass), else
+  the held weapon's (2 on `c_rocketlauncher`), loaded as `$hitbox`
+  attachments (`props::add_view_hitboxes` / `add_held_hitboxes`).
+  Tests `psys::particles_go_on_the_models_boxes_by_the_bias_and_follow_
+  them_14_1`, `crit_boost::others_glow_stands_on_their_held_weapons_
+  hitboxes_14_1`, `heavy::guns::the_crit_glows_hosts_carry_their_
+  hitboxes_14_1`. Not compared with a capture (nothing in ours grants a
+  boost in the sandbox).
 
 ### Emission spread, blasts seen through water, body decals (tf2-psys, 2026-11-20)
 

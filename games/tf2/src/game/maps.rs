@@ -361,7 +361,14 @@ pub fn add_guns(
         // Its `barrel` (the Minigun's) apart, for others' copies to spin
         // (minigun.md 5: `view::spin_held_barrels`).
         match props::load_held_turning(materials, &path, gun, &skeleton, &["barrel"]) {
-            Ok(h) => into.held.push(h),
+            Ok(mut h) => {
+                // Its hitboxes, for the crit glow on others' guns
+                // (effects.md 14.1).
+                if let Err(e) = props::add_held_hitboxes(materials, &path, &skeleton, &mut h) {
+                    warnings.push(e);
+                }
+                into.held.push(h)
+            }
             Err(e) => warnings.push(e),
         }
         for (_, key, model) in PROJECTILES.iter().filter(|(g, ..)| *g == gun) {

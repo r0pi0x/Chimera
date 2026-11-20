@@ -495,6 +495,8 @@ pub const PARTICLE_FILES: &[&str] = &[
     "particles/stickybomb.pcf",
     "particles/nailtrails.pcf",
     "particles/blood_impact.pcf",
+    // The crit boost's glow (effects.md 14.1).
+    "particles/firstperson_weapon_fx.pcf",
 ];
 
 /// An explosion on the wire (the server's `Tf2Explosion`, to clients).
@@ -661,6 +663,40 @@ impl Muzzles<'_, '_> {
                 .find(|(h, _)| h.owner == owner && at.is(h.index, &h.name))
                 .map(|(_, g)| MuzzleAt::Held(g.translation())),
         }
+    }
+
+    /// The model `owner`'s crit glow stands on (effects.md 14.1): his
+    /// first-person view model's hitboxes (the arms', where the view model
+    /// is drawn; drawn in its pass) when it is shown, else his held
+    /// weapon's (its world model's, `HITBOX_ATTACHMENT`s), control point 0
+    /// at the view model's origin (the eye) or at his origin. None: no
+    /// boxes drawn for him.
+    pub fn glow_model(&self, owner: Entity) -> Option<crate::map::psys::ParticleModel> {
+        use source_engine::content::props::HITBOX_ATTACHMENT;
+        let (view, offset, controls, _, t, _) = self.owners.get(owner).ok()?;
+        let fp = first_person_shown(
+            owner,
+            view,
+            offset,
+            controls,
+            &self.anchors,
+            &self.vm_cameras,
+            self.models.as_deref(),
+            self.settings.as_deref().copied().unwrap_or_default(),
+            self.third_person.as_ref().is_some_and(|t| t.0),
+            self.time.elapsed_secs_f64(),
+        );
+        if let Some(f) = fp {
+            let eye = f.eye.to_matrix();
+            let boxes: Vec<Mat4> = (0..f.model.attachments.len())
+                .filter(|&i| f.model.attachments[i].name == HITBOX_ATTACHMENT)
+                .filter_map(|i| crate::map::view_model::attachment_transform(f.model, &f.pose, i, &f.placed))
+                .map(|m| eye * m)
+                .collect();
+            return (!boxes.is_empty()).then(|| crate::map::psys::ParticleModel { origin: f.eye.translation(), boxes, view_model: true });
+        }
+        let boxes: Vec<Mat4> = self.held.iter().filter(|(h, _)| h.owner == owner && h.name == HITBOX_ATTACHMENT).map(|(_, g)| g.to_matrix()).collect();
+        (!boxes.is_empty()).then(|| crate::map::psys::ParticleModel { origin: t.map_or(Vec3::ZERO, |t| t.translation), boxes, view_model: false })
     }
 
     /// This machine's own player seen in first person with the view

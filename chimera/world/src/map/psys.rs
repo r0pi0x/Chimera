@@ -133,6 +133,16 @@ impl Pick {
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Init {
+    /// "Position on Model Random" (specs/tf2/effects.md 14.1): on a random
+    /// hitbox of the model control point `cp` stands for (its boxes:
+    /// `ParticleModel`), a point uniform in the box (× `scale`), the best
+    /// of the tries (6 with a bias, else 1) by U(0, 72) + (point − the
+    /// point's place) · `bias` (world axes); none: at the point.
+    OnModel {
+        cp: usize,
+        scale: f32,
+        bias: Vec3,
+    },
     /// Position at a random direction × distance from the control point
     /// (scaled per axis by `bias`; an axis with `bias_abs` set takes the
     /// absolute value: a half sphere), velocity outward × speed plus a
@@ -353,6 +363,26 @@ pub enum Op {
     LockToControlPoint {
         cp: usize,
     },
+    /// "Movement Lock to Bone": a particle placed on a model's hitbox
+    /// (`Init::OnModel`) keeps its place in the box as the box moves.
+    LockToBone {
+        cp: usize,
+    },
+    /// "Oscillate Scalar" on `field` (3 radius, 7 alpha): its formula is
+    /// not specified (specs/tf2/effects.md Open questions 17); run as a
+    /// placeholder, each particle drawing a rate in `rate` and a
+    /// frequency in `frequency`: the field changes by rate × sin(2π
+    /// (frequency × `multiplier` × age + `phase`)) a second, between the
+    /// life fractions `start` and `end` (alpha in 0-255 units).
+    Oscillate {
+        field: u8,
+        rate: (f32, f32),
+        frequency: (f32, f32),
+        multiplier: f32,
+        phase: f32,
+        start: f32,
+        end: f32,
+    },
     /// Acceleration toward the control point: force / distance^falloff.
     Pull {
         cp: usize,
@@ -528,6 +558,20 @@ pub struct ControlPointState {
 pub struct ParticleControlPoints {
     pub points: Vec<(usize, ControlPointState)>,
     pub active: Option<usize>,
+}
+
+/// On a `StartParticleSystem::tag` entity: the model its systems' control
+/// point 0 stands for, set each frame by the game (TF2's crit glow on the
+/// arms view model or a held weapon: specs/tf2/effects.md 14.1): its
+/// origin (engine space; control point 0's place) and its hitboxes, each
+/// the map from the unit cube [−1, 1]³ to engine space (the box posed on
+/// its bone now). `view_model`: drawn in the view-model pass (its places
+/// are where the view model is drawn).
+#[derive(Component, Clone, Debug, Default, PartialEq)]
+pub struct ParticleModel {
+    pub origin: Vec3,
+    pub boxes: Vec<Mat4>,
+    pub view_model: bool,
 }
 
 /// The presentation's running of started systems (`render::psys::

@@ -569,6 +569,9 @@ pub fn load(
             match props::load_view_model_skinned(materials, &super::sets::arms_model(&own), gun, true, FISTS_SKIN) {
                 Ok(mut v) => {
                     v.allow_flipping = false;
+                    if let Err(e) = props::add_view_hitboxes(materials, &super::sets::arms_model(&own), &mut v) {
+                        warnings.push(e);
+                    }
                     into.push(v);
                 }
                 Err(e) => warnings.push(e),
@@ -603,6 +606,11 @@ pub fn load(
         match merged {
             Ok(mut v) => {
                 v.key = key;
+                // The arms' hitboxes (the crit glow's host in first
+                // person: effects.md 14.1), after the merged attachments.
+                if let Err(e) = props::add_view_hitboxes(materials, &super::sets::arms_model(&arms), &mut v) {
+                    warnings.push(e);
+                }
                 if let Some(o) = offset {
                     // The meshes are in the eye's space of the bind pose:
                     // they move with the root.

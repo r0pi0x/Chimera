@@ -74,6 +74,14 @@ fn add_operator(def: &mut SystemDef, list: &str, op: &Element, notes: &mut Vec<S
             start: op.float("emission_start_time", 0.0),
             count: op.int("num_to_emit", 100).max(0) as u32,
         }),
+        // On a model's hitboxes, following their bones (specs/tf2/effects.md
+        // 14.1: TF2's crit glow).
+        ("initializers", "position on model random") => def.initializers.push(Init::OnModel {
+            cp: cp("control_point_number"),
+            scale: op.float("hitbox scale", 1.0),
+            bias: op.vec3("direction bias", Vec3::ZERO),
+        }),
+        ("operators", "movement lock to bone") => def.operators.push(Op::LockToBone { cp: cp("control_point_number") }),
         ("initializers", "position within sphere random") => def.initializers.push(Init::Sphere {
             cp: cp("control_point_number"),
             distance: pick(op, "distance_min", "distance_max", "_"),
@@ -280,8 +288,16 @@ fn add_operator(def: &mut SystemDef, list: &str, op: &Element, notes: &mut Vec<S
             key(op, &["length_max", "trail_length_max"], notes),
             key(op, &["length_random_exponent", "trail_length_random_exponent"], notes),
         ))),
-        // A wobble on one field: not run (its look is small).
-        ("operators", "oscillate scalar") => {}
+        // A wobble on one field (a placeholder formula: Op::Oscillate).
+        ("operators", "oscillate scalar") => def.operators.push(Op::Oscillate {
+            field: op.int("oscillation field", 0).clamp(0, 255) as u8,
+            rate: (op.float("oscillation rate min", 0.0), op.float("oscillation rate max", 0.0)),
+            frequency: (op.float("oscillation frequency min", 1.0), op.float("oscillation frequency max", 1.0)),
+            multiplier: op.float("oscillation multiplier", 1.0),
+            phase: op.float("oscillation start phase", 0.0),
+            start: op.float("start time min", 0.0),
+            end: op.float("end time max", 1.0),
+        }),
         ("forces", "pull towards control point") => def.operators.push(Op::Pull {
             cp: cp("control point number"),
             force: op.float("amount of force", 0.0),

@@ -654,6 +654,84 @@ pub fn load_view_model_skinned(
     })
 }
 
+/// The name of the attachments `add_view_hitboxes` and
+/// `add_held_hitboxes` add, one per hitbox of the model's first set:
+/// each one's transform maps the unit cube [−1, 1]³ onto the box on its
+/// bone (its centre, the bone's turn, the half extents as its scale), so
+/// a posed attachment is the posed box (TF2's crit glow,
+/// specs/tf2/effects.md 14.1: `map::psys::ParticleModel`).
+pub const HITBOX_ATTACHMENT: &str = "$hitbox";
+
+/// The model's first hitbox set: each box's bone and its centre and half
+/// extents in the bone's frame (the model's units).
+fn hitbox_set(materials: &mut MaterialLoader, path: &str) -> Result<Vec<(usize, Vec3, Vec3)>, String> {
+    let bytes = materials.read(path).ok_or_else(|| format!("{path}: not found"))?;
+    let mdl = read_mdl(&bytes).map_err(|e| format!("{path}: {e}"))?;
+    Ok(mdl
+        .hit_boxes
+        .first()
+        .map(|set| {
+            set.boxes
+                .iter()
+                .filter(|b| b.bone >= 0 && (b.bone as usize) < mdl.bones.len())
+                .map(|b| {
+                    let (lo, hi) = (Vec3::new(b.min.x, b.min.y, b.min.z), Vec3::new(b.max.x, b.max.y, b.max.z));
+                    (b.bone as usize, (lo + hi) / 2.0, (hi - lo) / 2.0)
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// `view`'s hitboxes as attachments (`HITBOX_ATTACHMENT`, after its
+/// others), from `path`, the model its skeleton is (its bones' order).
+pub fn add_view_hitboxes(materials: &mut MaterialLoader, path: &str, view: &mut crate::map::MapViewModel) -> Result<(), String> {
+    for (bone, centre, half) in hitbox_set(materials, path)? {
+        if bone < view.bones.len() {
+            view.attachments.push(crate::map::MapAttachment {
+                name: HITBOX_ATTACHMENT.to_string(),
+                bone,
+                local: Transform::from_translation(centre).with_scale(half),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// `held`'s hitboxes as attachments (`HITBOX_ATTACHMENT`, after its
+/// others) in its frame (as `load_held` puts its attachments: the boxes
+/// at the reference pose relative to the bone it is held by), from
+/// `path` held on `skeleton`.
+pub fn add_held_hitboxes(
+    materials: &mut MaterialLoader,
+    path: &str,
+    skeleton: &[crate::map::MapBone],
+    held: &mut crate::map::MapHeldModel,
+) -> Result<(), String> {
+    let bytes = materials.read(path).ok_or_else(|| format!("{path}: not found"))?;
+    let mdl = read_mdl(&bytes).map_err(|e| format!("{path}: {e}"))?;
+    let mut global: Vec<(Quat, Vec3)> = Vec::with_capacity(mdl.bones.len());
+    for b in &mdl.bones {
+        let q = Quat::from_xyzw(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+        let p = Vec3::new(b.pos.x, b.pos.y, b.pos.z);
+        global.push(match global.get(b.parent.max(0) as usize).filter(|_| b.parent >= 0) {
+            Some((pq, pp)) => (*pq * q, *pp + *pq * p),
+            None => (q, p),
+        });
+    }
+    let i = mdl.bones.iter().position(|b| b.name.eq_ignore_ascii_case(&held.bone)).unwrap_or(0);
+    let to_bone = match global.get(i).filter(|_| !skeleton.is_empty()) {
+        Some((q, p)) => Mat4::from_rotation_translation(*q, *p).inverse(),
+        None => Mat4::IDENTITY,
+    };
+    for (bone, centre, half) in hitbox_set(materials, path)? {
+        let Some((q, p)) = global.get(bone) else { continue };
+        let m = to_bone * Mat4::from_rotation_translation(*q, *p) * Mat4::from_scale_rotation_translation(half, Quat::IDENTITY, centre);
+        held.attachments.push((HITBOX_ATTACHMENT.to_string(), Transform::from_matrix(m)));
+    }
+    Ok(())
+}
+
 /// A shell model (spec view_models.md 8), in its own space (engine axes,
 /// meters).
 pub fn load_shell(materials: &mut MaterialLoader, path: &str) -> Result<crate::map::MapModel, String> {
