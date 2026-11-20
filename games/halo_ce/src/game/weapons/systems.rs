@@ -1489,6 +1489,7 @@ fn melee(
                 secondary: false,
                 at: best.map(|(d, e)| (eye + aim * d, -aim, e)),
                 line,
+                ray: None,
             });
             if server
                 && first.0

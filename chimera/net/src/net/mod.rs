@@ -976,13 +976,17 @@ pub struct Detonation {
 /// Server -> clients: a projectile marked what it touched
 /// (`weapon::projectile::FlyerMark`: TF2's needle): its weapon (registry
 /// index), the touch point, the surface's normal and its flight's
-/// direction.
+/// direction, its shooter's team, its model's turn and stay.
 #[derive(Message, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct NetMark {
     pub weapon: u16,
     pub at: [f32; 3],
     pub normal: [f32; 3],
     pub dir: [f32; 3],
+    /// The shooter's team, the model's turn and how long it stays (s).
+    pub team: u8,
+    pub turn: [f32; 4],
+    pub stay: f32,
 }
 
 /// Server -> clients: map logic's long-lived sounds (`map::SoundControl`

@@ -87,6 +87,7 @@ impl Plugin for BulletImpactsPlugin {
         use crate::weapon::impact::ImpactAppExt;
         app.register_impact_provider(self.0.game);
         app.world_mut().get_resource_or_init::<ImpactStyles>().add(self.0);
+        super::add_listener(app);
         if app.world().contains_resource::<BulletImpactSystems>() {
             return;
         }
@@ -97,7 +98,8 @@ impl Plugin for BulletImpactsPlugin {
             .add_systems(
                 FixedUpdate,
                 (bullet_impacts, impact_decals).after(crate::core::SimSet::Weapons),
-            );
+            )
+;
     }
 }
 
@@ -214,7 +216,9 @@ fn bullet_impacts(
     water: Option<Res<MapWater>>,
     mut play: MessageWriter<PlaySound>,
     (route, classes, styles, local): (ImpactRoute, Option<Res<SurfaceClasses>>, Res<ImpactStyles>, Query<(), With<crate::core::LocalPlayer>>),
+    listener: Option<Res<super::ImpactListener>>,
 ) {
+    let listener = listener.and_then(|l| l.0);
     let Some(bank) = bank else {
         events.clear();
         return;
@@ -226,6 +230,7 @@ fn bullet_impacts(
         if style.skips(e, local.contains(e.owner)) {
             continue;
         }
+        let mut ray_at: Option<Vec3> = None;
         // Every surface a bullet reaches, also after passing something;
         // a melee hit's generic impact is a bullet's (HL2:DM's crowbar and
         // stunstick, effects_sounds.md 6; CS:S's knife, impact_effects.md
@@ -237,9 +242,11 @@ fn bullet_impacts(
                 }
                 (from, to, hit)
             }
-            WeaponEventKind::Swing { at: Some((point, _, hit)), line, .. }
+            WeaponEventKind::Swing { at: Some((point, _, hit)), line, ray, .. }
                 if super::impact_effects::knife_splash(*line, water.as_deref()).is_none() =>
             {
+                // The impact ray's hit, else the contact (effects.md 10.1).
+                ray_at = (style.melee_ray && !characters.contains(*hit)).then_some(*ray).flatten().map(|(p, _)| p);
                 (&line.0, point, &Some(*hit))
             }
             // A projectile's mark sounds as a bullet's impact there.
@@ -281,8 +288,13 @@ fn bullet_impacts(
         {
             continue;
         }
-        played.push((e.owner, entry.clone(), *to));
-        play.write(PlaySound::at(entry, *to));
+        let at = ray_at.unwrap_or(*to);
+        // Too far from this machine's player: not played.
+        if !style.heard(listener, at) {
+            continue;
+        }
+        played.push((e.owner, entry.clone(), at));
+        play.write(PlaySound::at(entry, at));
     }
 }
 
@@ -429,8 +441,19 @@ fn impact_decals(
             WeaponEventKind::Swing {
                 at: Some((point, normal, hit)),
                 line,
+                ray,
                 ..
             } if marked(*hit) && super::impact_effects::knife_splash(*line, water.as_deref()).is_none() => {
+                // Only where the impact ray reaches the world, with its
+                // normal (effects.md 10.1).
+                let normal = match style.melee_ray {
+                    true => match ray {
+                        Some((_, n)) => *n,
+                        None => continue,
+                    },
+                    false => *normal,
+                };
+                let normal = &normal;
                 let mark = breakable_decal(*hit, &brushes, &parents, map.as_deref());
                 let group = match (mark, style.melee_decal) {
                     (ImpactMark::Nothing, _) => continue,

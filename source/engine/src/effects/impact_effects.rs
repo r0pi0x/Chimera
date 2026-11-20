@@ -1385,6 +1385,7 @@ impl Plugin for ImpactEffectsPlugin {
         use crate::weapon::impact::ImpactAppExt;
         app.register_impact_provider(self.0.game);
         app.world_mut().get_resource_or_init::<ImpactStyles>().add(self.0);
+        super::add_listener(app);
         if app.world().contains_resource::<ImpactEffectSystems>() {
             return;
         }
@@ -1404,6 +1405,7 @@ impl Plugin for ImpactEffectsPlugin {
                 FixedUpdate,
                 (impact_effects, blood_effects).after(crate::core::SimSet::Weapons),
             )
+
             .add_systems(Update, server_blood)
             .add_systems(Update, glass_effects)
             .add_systems(
@@ -1530,14 +1532,16 @@ fn impact_effects(
     world: WorldTracer,
     mut play: MessageWriter<PlaySound>,
     mut systems: MessageWriter<StartParticleSystem>,
-    (ragdolls, route, classes, styles, local): (
+    (ragdolls, route, classes, styles, local, listener): (
         RagdollsOnLine,
         ImpactRoute,
         Option<Res<SurfaceClasses>>,
         Res<ImpactStyles>,
         Query<(), With<crate::core::LocalPlayer>>,
+        Option<Res<super::ImpactListener>>,
     ),
 ) {
+    let listener = listener.and_then(|l| l.0);
     // Without materials (headless) there are no particles; sounds still
     // play.
     // Each drawing game's own (`EffectMaterials::of`), made once.
@@ -1555,6 +1559,9 @@ fn impact_effects(
             by_game.iter().find(|(g, _)| *g == style.game).map(|(_, x)| x.clone()).unwrap_or_default()
         });
         let mats = mats.as_ref();
+        // A projectile's mark ricochets as its style says of its team
+        // (TF2's RED needles, effects.md 12).
+        let mark_ricochet = matches!(&e.kind, WeaponEventKind::Marked { team, .. } if style.mark_ricochets(*team));
         let (from, point, normal, hit, bullet) = match &e.kind {
             // Also where a bullet enters the next surface after passing
             // something (penetration).
@@ -1570,7 +1577,7 @@ fn impact_effects(
                 hit: Some(hit),
                 normal: Some(normal),
             } => (*from, *to, *normal, *hit, true),
-            // A projectile's mark: a bullet's debris, no ricochet.
+            // A projectile's mark: a bullet's debris (its ricochet above).
             WeaponEventKind::Marked { from, to, hit, normal, .. } => (*from, *to, *normal, *hit, false),
             WeaponEventKind::Shot { from, to, .. } | WeaponEventKind::ShotContinued { from, to, .. } => {
                 // Misses can still end in water.
@@ -1594,7 +1601,7 @@ fn impact_effects(
                 }
                 continue;
             }
-            WeaponEventKind::Swing { at, line, .. } => {
+            WeaponEventKind::Swing { at, line, ray, .. } => {
                 // A swing from the dry into water splashes (fixed scale
                 // 8) and does nothing else, hit or miss (spec section 12).
                 if let Some((at, slime)) = knife_splash(*line, water.as_deref()) {
@@ -1616,7 +1623,16 @@ fn impact_effects(
                     continue;
                 }
                 let Some((point, normal, hit)) = at else { continue };
-                (*point + *normal * 0.1, *point, *normal, *hit, false)
+                // Debris only where the impact ray reaches the world, with
+                // its normal (TF2's, specs/tf2/effects.md 10.1).
+                let normal = match style.melee_ray && !characters.contains(*hit) {
+                    true => match ray {
+                        Some((_, n)) => *n,
+                        None => continue,
+                    },
+                    false => *normal,
+                };
+                (*point + normal * 0.1, *point, normal, *hit, false)
             }
             _ => continue,
         };
@@ -1671,7 +1687,11 @@ fn impact_effects(
             None => None,
         };
         // Bullets only: 3 in 10 impacts ricochet (spec section 2 step 6).
-        if bullet && let Some((entry, chance)) = style.ricochet && rng.random() < chance {
+        if (bullet || mark_ricochet)
+            && let Some((entry, chance)) = style.ricochet
+            && rng.random() < chance
+            && style.heard(listener, point)
+        {
             let entry = bank.as_ref().map_or_else(|| entry.to_string(), |b| b.0.game_entry(style.game, entry));
             play.write(PlaySound::at(entry, point));
         }

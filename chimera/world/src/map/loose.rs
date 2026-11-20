@@ -196,6 +196,9 @@ pub struct SitOnOrigin(pub Quat);
 #[derive(Resource, Clone, Debug, Default)]
 pub struct DrawnLate {
     pub keys: std::collections::BTreeSet<String>,
+    /// The weapons whose projectiles these are (their marks wait the delay
+    /// too: `weapon::projectile::FlyerMark`).
+    pub weapons: std::collections::BTreeSet<String>,
     pub hidden: std::collections::BTreeMap<String, f32>,
     pub running: bool,
 }

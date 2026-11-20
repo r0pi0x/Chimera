@@ -60,9 +60,60 @@ pub struct ImpactStyle {
     /// attacker's own machine only (TF2: made in the predicted swing,
     /// specs/tf2/effects.md 10); false: wherever the swing's hit is known.
     pub melee_own_only: bool,
+    /// A projectile's mark (`WeaponEventKind::Marked`) plays the ricochet
+    /// when this says so of its shooter's team (TF2's needle: RED's only,
+    /// effects.md 12); None: never.
+    pub mark_ricochet: Option<fn(u8) -> bool>,
+    /// Impact sounds farther than this from this machine's player (units)
+    /// are skipped (TF2's 1024, effects.md 7); None: none skipped.
+    pub sound_reach: Option<f32>,
+    /// A melee hit's impact follows its impact ray
+    /// (`WeaponEventKind::Swing::ray`): the
+    /// decal at the contact point and the debris there with the ray's
+    /// normal only when the ray reaches the world, the sound at the ray's
+    /// hit, else at the contact (TF2's, specs/tf2/effects.md 10.1). False:
+    /// all at the swing's hit.
+    pub melee_ray: bool,
+}
+
+/// Where this machine's player is (its origin, m; none: no player here),
+/// noted each frame for the impact sounds' reach (`ImpactStyle::heard`)
+/// so the tick's impact systems read no `Transform`.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct ImpactListener(pub Option<Vec3>);
+
+/// `ImpactListener` and its system, once whichever impact plugin comes
+/// first.
+pub fn add_listener(app: &mut App) {
+    if !app.world().contains_resource::<ImpactListener>() {
+        app.init_resource::<ImpactListener>().add_systems(Update, note_listener);
+    }
+}
+
+/// Notes `ImpactListener`.
+fn note_listener(local: Query<&Transform, With<crate::core::LocalPlayer>>, mut listener: ResMut<ImpactListener>) {
+    let at = local.iter().next().map(|t| t.translation);
+    if listener.0 != at {
+        listener.0 = at;
+    }
 }
 
 impl ImpactStyle {
+    /// Whether an impact sound at `at` (m) is heard by a player at
+    /// `listener` (`sound_reach`; no player here: always).
+    pub fn heard(&self, listener: Option<Vec3>, at: Vec3) -> bool {
+        match (self.sound_reach, listener) {
+            (Some(r), Some(l)) => l.distance(at) <= r * 0.0254,
+            _ => true,
+        }
+    }
+
+    /// Whether a projectile's mark by a shooter of `team` plays the
+    /// ricochet (`mark_ricochet`).
+    pub fn mark_ricochets(&self, team: u8) -> bool {
+        self.mark_ricochet.is_some_and(|f| f(team))
+    }
+
     /// Whether this machine skips `e`'s impact: another player's swing
     /// with `melee_own_only` (`local`: the event's owner plays here).
     pub fn skips(&self, e: &WeaponEvent, local: bool) -> bool {

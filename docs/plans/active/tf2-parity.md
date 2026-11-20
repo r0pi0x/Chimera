@@ -646,3 +646,21 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   pipe's 64-unit direct line, fused pipes and detonated stickies snapped
   onto a floor within 24 units below, stuck stickies' surface normal, the
   scorch on the same trace (the 16-unit scorch trace gone).
+- Same pass, 10.1, 12, 14: the melee contact point (`Swing::box_centre`,
+  `refine_box`: a box hit on a player at the box's centre, one on the world
+  refined by the doubled line and the crouched player box's corners) and
+  the impact ray (`ImpactStyle::melee_ray`: decal and flecks only where
+  the ray from the eye through the contact, 8 units on, x1.1, reaches the
+  world; the sound at its hit). Needles: not drawn late (each client's own
+  in TF2), stuck in the world until 6 s from the launch (`marks_stay`,
+  `projectile::StuckMark`, no trail), TF2's impact sounds skipped beyond
+  1024 units (`ImpactStyle::sound_reach`), bullets' 3-in-10
+  `Bounce.Shrapnel` (effects.md 7; it was off) and RED needles' alone
+  (`mark_ricochet`), an enemy hit's 2 blood traces. Crit boosts
+  (`weapons::crit_boost`): `CritBoosted` replicated, `Weapon_General.CritPower`
+  and `critgun_weaponmodel_<team>` while boosted with a boostable weapon,
+  kept across a switch, cut when it ends; the Flame Thrower's crit loop
+  swap (`loop_crit_sound`). Nothing grants a boost in ours yet. The
+  `critgun_weaponmodel_*` systems' particle file is unnamed in the specs
+  (not loaded until it is; asset pack: that file, and
+  `weapons/crit_power.wav` in `players`).

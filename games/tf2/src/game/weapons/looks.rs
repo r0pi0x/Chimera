@@ -47,7 +47,8 @@
 //! - **Trails** (effects.md 1): a gun's `trail` (`FlyerTrail`) starts on
 //!   each of its flyers as it appears (`ShownItem`: `rockettrail` on
 //!   the rocket, `pipebombtrail_<team>`, `stickybombtrail_<team>`,
-//!   `nailtrails_medic_<team>`), following it without carrying what it
+//!   `nailtrails_medic_<team>`; none on a needle left stuck in a wall,
+//!   `projectile::StuckMark`), following it without carrying what it
 //!   left, stopped when it is gone (`psys::Follow`); its `under_water`
 //!   one instead when its first place is in water, never chosen again
 //!   (effects.md 9: `rockettrail_underwater`). A flyer drawn late (its
@@ -88,21 +89,21 @@
 //!   add_impact_looks`), never the map's game's or the app's base game's
 //!   (Combat Arms' in the party apps). Which entry a surface plays is the
 //!   map's sound scripts' (a name the map has, such as CS:S's
-//!   `Concrete.BulletImpact` on de_dust2, plays the map's).
+//!   `Concrete.BulletImpact` on de_dust2, plays the map's). Bullets play
+//!   `Bounce.Shrapnel` on 3 in 10 impacts, a needle's mark only RED's
+//!   (effects.md 12); impact sounds beyond 1024 units are skipped (7).
 //!
 //! Known shortcuts: a trail starts at the flyer's origin, not its model's
 //! `trail` attachment; no crit glows on flyers (crits are off); control point 0 of the stream is the muzzle as drawn
 //! (the view model's re-projected in first person), not the third-person
-//! model's (flames.md Open questions 2); crits are off, so a crit stream
-//! never starts; no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
+//! model's (flames.md Open questions 2); random crits are off, so a crit
+//! stream starts only for a crit-boosted Pyro (`crit_boost`); no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
 //! used until the weapon scripts are read; only guns with a tracer count
 //! toward the shared tracer counter; the tracers leave along the aim,
 //! the `while_firing` systems along the view (the brass to its right),
 //! the backblast back along the aim, not the attachments' own axes (only
 //! the per-shot flash is turned as its attachment, `start_with_axes`);
-//! TF2's impact style
-//! (ricochets, pellet grouping) has no spec yet: no ricochet, every
-//! pellet's sound, as HL2:DM's (specs/tf2 names no impact rules).
+//! pellets' sounds aren't grouped (every pellet's, as HL2:DM's).
 
 use std::collections::BTreeSet;
 
@@ -439,7 +440,7 @@ pub const MUZZLE_ATTACHMENT: &str = "muzzle";
 /// blood its own (`blood`, effects.md 8).
 pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::ImpactStyle {
     game: crate::game::GAME,
-    ricochet: None,
+    ricochet: Some(("Bounce.Shrapnel", 0.3)),
     splash: (4.0, 8.0),
     group_radius: None,
     damage_unit: 1.0,
@@ -448,7 +449,17 @@ pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::I
     blood: source_engine::effects::BloodView::Game,
     melee_decal: None,
     melee_own_only: true,
+    // The impact's damage-type field carries a needle's team number, and
+    // the ricochet asks for "bullet" (2): RED's (ours: odd teams).
+    mark_ricochet: Some(red_team),
+    sound_reach: Some(1024.0),
+    melee_ray: true,
 };
+
+/// RED (TF2's team 2; ours the odd teams, `bodies::skin_of`).
+fn red_team(team: u8) -> bool {
+    team != 0 && super::super::bodies::skin_of(Some(Team(team))) == 0
+}
 
 /// The systems TF2's guns start: loaded with its maps besides their own,
 /// and onto other games' maps (`maps::add_guest_looks`): every name the
@@ -459,6 +470,7 @@ pub fn particle_systems() -> &'static [&'static str] {
         .systems()
         .into_iter()
         .chain(super::blood::BloodLooks::default().systems())
+        .chain([super::crit_boost::glow_name(None), super::crit_boost::glow_name(Some(Team(2)))])
         .map(|n| &*Box::leak(n.into_boxed_str()))
         .collect();
     Box::leak(names.into_boxed_slice())
@@ -751,7 +763,7 @@ fn flyer_trails(
     looks: Res<GunLooks>,
     flyers: Query<
         (Entity, &chimera_world::map::loose::ShownItem, &Transform, Option<&chimera_sim::weapon::projectile::Flyer>, Option<&LateCopy>),
-        Added<chimera_world::map::loose::ShownItem>,
+        (Added<chimera_world::map::loose::ShownItem>, Without<chimera_sim::weapon::projectile::StuckMark>),
     >,
     late: Option<Res<DrawnLate>>,
     water: Option<Res<MapWater>>,
@@ -786,7 +798,10 @@ pub struct ArmsAt(f64);
 fn armed_looks(
     looks: Res<GunLooks>,
     time: Res<Time>,
-    added: Query<(Entity, &chimera_world::map::loose::ShownItem, Has<LateCopy>), Added<chimera_world::map::loose::ShownItem>>,
+    added: Query<
+        (Entity, &chimera_world::map::loose::ShownItem, Has<LateCopy>),
+        (Added<chimera_world::map::loose::ShownItem>, Without<chimera_sim::weapon::projectile::StuckMark>),
+    >,
     arming: Query<(Entity, &ArmsAt, &chimera_world::map::loose::ShownItem, &Transform, Option<&chimera_sim::weapon::projectile::Flyer>, Option<&LateCopy>)>,
     late: Option<Res<DrawnLate>>,
     teams: Query<&Team>,
@@ -853,7 +868,7 @@ fn muzzle_flashes(
 
 /// Where a system starts from the eye `origin` looking along `aim` when
 /// the gun's attachment isn't drawn (`MUZZLE_OFFSET`).
-fn ahead_of(origin: Vec3, aim: Quat) -> Vec3 {
+pub fn ahead_of(origin: Vec3, aim: Quat) -> Vec3 {
     let o = MUZZLE_OFFSET * U;
     origin + aim * Vec3::NEG_Z * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z
 }
@@ -874,6 +889,7 @@ pub fn flame_stream(
     mut guns: Query<(Entity, &Weapon, &super::flame::Tf2Flame, &super::flame::FlameShown, Option<&mut ParticleControlPoints>)>,
     owners: Query<(&Inventory, &Transform, Option<&chimera_core::core::MovementState>, Option<&chimera_core::core::Intent>)>,
     teams: Query<&Team>,
+    boosted: Query<(), With<super::crit_boost::CritBoosted>>,
     muzzles: Muzzles,
     mut running: Local<std::collections::BTreeMap<Entity, String>>,
     mut start: MessageWriter<StartParticleSystem>,
@@ -913,7 +929,9 @@ pub fn flame_stream(
         let owner = w.owner.filter(|o| owners.get(*o).is_ok_and(|(i, ..)| i.active == Some(e)));
         let firing = owner.is_some() && shown.points.last_round.is_some_and(|t| now - t <= stream.burst_gap as f64 + 1e-6);
         let blu = owner.and_then(|o| teams.get(o).ok()).is_some_and(|t| super::super::bodies::skin_of(Some(*t)) == 1);
-        let name = firing.then(|| stream.system_for(false, blu, shown.points.under_water));
+        // A crit-boosted Pyro's every burst is critical (effects.md 14).
+        let crit = owner.is_some_and(|o| boosted.contains(o));
+        let name = firing.then(|| stream.system_for(crit, blu, shown.points.under_water));
         if running.get(&e) == name.as_ref() {
             continue;
         }
@@ -1236,7 +1254,7 @@ mod tests {
         let swing = WeaponEvent {
             owner: Entity::PLACEHOLDER,
             weapon: Entity::PLACEHOLDER,
-            kind: WeaponEventKind::Swing { hit: true, secondary: false, at: None, line: (Vec3::ZERO, Vec3::ZERO) },
+            kind: WeaponEventKind::Swing { hit: true, secondary: false, at: None, line: (Vec3::ZERO, Vec3::ZERO), ray: None },
             replay: false,
         };
         assert!(STYLE.skips(&swing, false) && !STYLE.skips(&swing, true));

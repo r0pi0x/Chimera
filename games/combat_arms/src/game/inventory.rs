@@ -1097,6 +1097,7 @@ fn swing_knives(
                             secondary: st.attack == 1,
                             at: hit.map(|h| (end, h.1, h.3)),
                             line: (eye, end),
+                            ray: None,
                         },
                         replay: !first.0,
                     });

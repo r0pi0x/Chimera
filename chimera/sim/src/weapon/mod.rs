@@ -1434,6 +1434,15 @@ pub struct Swing {
     /// line to twice its distance, else lines to the 8 corners of the box
     /// there, the nearest hit; all missing, the box's own hit.
     pub refine: bool,
+    /// The refine's corners: this box's (min, max offsets from the line's
+    /// end, m); None: the swing's own cube (TF2's: the crouched player box,
+    /// specs/tf2/effects.md 10.1).
+    pub refine_box: Option<(Vec3, Vec3)>,
+    /// A box hit is at the box's centre where the sweep stopped, and only
+    /// one on the world or a brush is refined (falling back to that
+    /// centre): TF2's contact point (effects.md 10.1). False: the touched
+    /// point, every box hit refined.
+    pub box_centre: bool,
     pub damage: f32,
     /// (window, damage): this damage instead when the previous swing of
     /// this kind was less than `window` seconds ago (CS:S slash: 15 within
@@ -2081,6 +2090,9 @@ pub enum WeaponEventKind {
         to: Vec3,
         hit: Entity,
         normal: Vec3,
+        /// Its shooter's team (0: none): TF2's needle's ricochet sound
+        /// follows it (`ImpactStyle::mark_ricochet`, effects.md 12).
+        team: u8,
     },
     /// The same bullet going on after passing something (`Penetration`):
     /// from where it left that to where it stopped next.
@@ -2110,6 +2122,11 @@ pub enum WeaponEventKind {
         /// The swing's line trace: from the eye to where it stopped (the
         /// range's end when it hit nothing).
         line: (Vec3, Vec3),
+        /// Its impact ray's hit on the world (point, normal): from the
+        /// eye through `at`'s point, 8 units past it, lengthened 10 %
+        /// (specs/tf2/effects.md 10.1, `ImpactStyle::melee_ray`); None:
+        /// it reaches nothing, or no hit.
+        ray: Option<(Vec3, Vec3)>,
     },
     DryFire,
     /// The weapon stepped to this `AltModes` mode (attack2, or a sniper

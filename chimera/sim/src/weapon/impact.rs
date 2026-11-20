@@ -197,6 +197,7 @@ pub fn hide_protected(kind: WeaponEventKind, hides: impl Fn(Entity) -> bool) -> 
             secondary,
             at: None,
             line,
+            ray: None,
         },
         K::Hit { target, .. } if hides(target) => return None,
         k => k,

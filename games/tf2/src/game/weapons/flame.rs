@@ -48,7 +48,10 @@
 //! - **Sounds** (`sounds`, predicted): the start and the loop when it
 //!   starts flaming, the end when it stops (the weapon channel); the
 //!   start and the loop stop when the gun leaves the hand
-//!   (`held_sounds::HeldSounds`: a rung's swap, a death).
+//!   (`held_sounds::HeldSounds`: a rung's swap, a death); a critical
+//!   burst (its Pyro crit-boosted, `crit_boost`) loops `loop_crit_sound`,
+//!   and a burst turning critical or not while firing swaps the loops at
+//!   once, no start, no end (effects.md 14).
 //!
 //! The flames' look is `looks::flame_stream`'s (`new_flame` riding the
 //! drawn points).
@@ -62,8 +65,9 @@
 //! missed) and take the Pyro's velocity as this machine has it; this
 //! machine's own player's points are predicted (TF2's appear a network
 //! update late); the line from the eye to the muzzle isn't checked and a
-//! press under 0.2 s emits only while held; no airblast (attack2); crits
-//! are off; Pyros aren't immune to afterburn (no classes on the victims);
+//! press under 0.2 s emits only while held; no airblast (attack2); random
+//! crits are off; the start's 3.5 s fade out and the loop's fade in
+//! aren't played (both at full volume); Pyros aren't immune to afterburn (no classes on the victims);
 //! health kits and Medics don't put a burn out.
 
 use bevy::prelude::*;
@@ -126,6 +130,9 @@ pub struct FlameParams {
     pub start_sound: Option<String>,
     #[serde(default)]
     pub loop_sound: Option<String>,
+    /// The loop of a critical burst (effects.md 14).
+    #[serde(default)]
+    pub loop_crit_sound: Option<String>,
     #[serde(default)]
     pub end_sound: Option<String>,
     #[serde(default)]
@@ -168,24 +175,27 @@ pub struct Tf2Flame {
     pub params: FlameParams,
     pub flaming: bool,
     pub owed: f32,
+    /// The burst playing is critical (its loop the crit one).
+    pub crit: bool,
 }
 
 impl NetPart for Tf2Flame {
-    type Net = (bool, f32);
+    type Net = (bool, f32, bool);
     fn net(&self) -> Self::Net {
-        (self.flaming, self.owed)
+        (self.flaming, self.owed, self.crit)
     }
-    fn set_net(&mut self, (flaming, owed): Self::Net) {
+    fn set_net(&mut self, (flaming, owed, crit): Self::Net) {
         self.flaming = flaming;
         self.owed = owed;
+        self.crit = crit;
     }
 }
 
 /// `tf2:flame` on a weapon.
 pub fn attach(e: &mut EntityWorldMut, p: &FlameParams) {
-    e.insert((Tf2Flame { params: p.clone(), flaming: false, owed: 0.0 }, FlameStream::default(), FlameShown::default()));
-    // The start and the loop end when it leaves the hand (`held_sounds`).
-    let held: Vec<String> = p.start_sound.iter().chain(p.loop_sound.iter()).cloned().collect();
+    e.insert((Tf2Flame { params: p.clone(), flaming: false, owed: 0.0, crit: false }, FlameStream::default(), FlameShown::default()));
+    // The start and the loops end when it leaves the hand (`held_sounds`).
+    let held: Vec<String> = p.start_sound.iter().chain(p.loop_sound.iter()).chain(p.loop_crit_sound.iter()).cloned().collect();
     if !held.is_empty() {
         e.insert(HeldSounds::new(held));
     }
@@ -458,45 +468,63 @@ pub fn ammo(mut events: MessageReader<WeaponEvent>, mut guns: Query<(&mut Tf2Fla
     }
 }
 
-/// The flaming state and its sounds (predicted, after the frame).
+/// The flaming state and its sounds (predicted, after the frame;
+/// effects.md 14): starting, the start sound (its own channel) and the
+/// loop, the crit one when the burst is critical (its owner crit-boosted:
+/// `crit_boost::CritBoosted`); the burst turning critical or not while
+/// firing cuts both and starts the other loop, no start, no end;
+/// stopping, the end (replacing the loop on the weapon's channel).
 #[allow(clippy::type_complexity)]
 pub fn sounds(
-    owners: Query<(Entity, &Inventory, &Transform)>,
+    owners: Query<(Entity, &Inventory, &Transform, Has<super::crit_boost::CritBoosted>)>,
     mut guns: Query<(&mut Tf2Flame, &Tf2Gun, Option<&Trigger>)>,
     clock: Res<SimClock>,
     first: Res<FirstTimePredicted>,
     mut out: MessageWriter<PredictedSound>,
+    mut stops: MessageWriter<crate::map::StopSound>,
 ) {
-    for (owner, inv, at) in &owners {
+    for (owner, inv, at, boosted) in &owners {
         for &w in &inv.weapons {
             let Ok((mut f, gun, trigger)) = guns.get_mut(w) else { continue };
             let now = inv.active == Some(w) && flaming(gun, trigger, clock.now, clock.dt() as f64);
-            if now == f.flaming {
+            let crit = now && boosted;
+            if now == f.flaming && (!now || crit == f.crit) {
                 continue;
             }
+            let swap = now && f.flaming;
+            let was_crit = f.crit;
             f.flaming = now;
+            f.crit = crit;
             if !first.0 {
                 continue;
             }
-            let entries: Vec<String> = if now {
-                f.params.start_sound.iter().chain(f.params.loop_sound.iter()).cloned().collect()
-            } else {
-                f.params.end_sound.iter().cloned().collect()
-            };
-            for (k, e) in entries.into_iter().enumerate() {
+            let loop_of = |crit: bool| if crit { f.params.loop_crit_sound.clone().or(f.params.loop_sound.clone()) } else { f.params.loop_sound.clone() };
+            let play = |out: &mut MessageWriter<PredictedSound>, entry: String, channel: u8| {
                 out.write(PredictedSound {
                     by: owner,
-                    sound: PlaySound {
-                        entry: e,
-                        at: Some(at.translation),
-                        volume: None,
-                        pitch: None,
-                        source: Some(owner),
-                        // The start on its own channel, the loop and the
-                        // end replacing each other on the weapon's.
-                        channel: Some(if now && k == 0 { CHAN_ITEM } else { CHAN_WEAPON }),
-                    },
+                    sound: PlaySound { entry, at: Some(at.translation), volume: None, pitch: None, source: Some(owner), channel: Some(channel) },
                 });
+            };
+            if swap {
+                // Both cut at once, the other loop at full volume.
+                for e in f.params.start_sound.iter().cloned().chain(loop_of(was_crit)) {
+                    stops.write(crate::map::StopSound { by: Some(owner), source: owner, entry: e, local: false });
+                }
+                if let Some(l) = loop_of(crit) {
+                    play(&mut out, l, CHAN_WEAPON);
+                }
+                continue;
+            }
+            if now {
+                // The start on its own channel, the loop on the weapon's.
+                if let Some(s) = f.params.start_sound.clone() {
+                    play(&mut out, s, CHAN_ITEM);
+                }
+                if let Some(l) = loop_of(crit) {
+                    play(&mut out, l, CHAN_WEAPON);
+                }
+            } else if let Some(e) = f.params.end_sound.clone() {
+                play(&mut out, e, CHAN_WEAPON);
             }
         }
     }

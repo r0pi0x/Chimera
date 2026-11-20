@@ -45,7 +45,12 @@
 //! draws when the drawn time reaches the touch (`map::loose::LateDelay`
 //! after it) as a `WeaponEventKind::Marked`, the touched surface found
 //! again in that machine's world (`show_marks`); the games' impact effects
-//! draw it as a bullet's hit (decal, debris, the surface's sound).
+//! draw it as a bullet's hit (decal, debris, the surface's sound). It
+//! waits for the drawn time only where the flyer is drawn late (a network
+//! client's snapshots, `map::loose::DrawnLate`), else it shows at once.
+//! With `Flyer::marks_stay` its model stays there, still, for the rest of
+//! its life (`StuckMark`, made by each machine showing the mark: TF2's
+//! needle stuck in a wall until 6 s from its launch, effects.md 12).
 //!
 //! A flyer with `Flyer::sky_end` ends on the sky (a line that far along its
 //! flight meets `map::MapSkyFaces` with nothing before it): gone, no touch
@@ -215,6 +220,9 @@ pub struct Flyer {
     /// Its touch on anything but a character marks it as a bullet's
     /// impact would (`FlyerMark`: TF2's needle).
     pub marks: bool,
+    /// Its model stays where it marked the world until its life from the
+    /// launch runs out (`FlyerMark::stay`: TF2's needle, effects.md 12).
+    pub marks_stay: bool,
 }
 
 /// How a flyer ends on the sky: the line ahead that finds it (m), and
@@ -258,6 +266,7 @@ impl Flyer {
             spin: Vec3::ZERO,
             pass_teammates: false,
             marks: false,
+            marks_stay: false,
         }
     }
 }
@@ -295,7 +304,9 @@ pub struct FlyerGone {
 
 /// A flyer with `Flyer::marks` touched something not a character (the
 /// server's, sent to network clients): its weapon, owner, the touch point
-/// `at` (m), the surface's `normal` and its flight's direction `dir`.
+/// `at` (m), the surface's `normal` and its flight's direction `dir`; its
+/// owner's team (0: none); its model's turn there and how long it stays
+/// there (s; 0: not, `Flyer::marks_stay`).
 /// Every machine that draws shows it (`show_marks`) as a
 /// `WeaponEventKind::Marked` impact when its drawn time reaches the touch
 /// (`map::loose::LateDelay` after it: the needle drawn late reaches the
@@ -307,6 +318,9 @@ pub struct FlyerMark {
     pub at: Vec3,
     pub normal: Vec3,
     pub dir: Vec3,
+    pub team: u8,
+    pub turn: Quat,
+    pub stay: f32,
 }
 
 /// How far back along its flight, and past the touch, a mark's surface
@@ -321,16 +335,24 @@ const MARK_REACH: f32 = 0.1;
 fn show_marks(
     time: Res<Time>,
     delay: Option<Res<crate::map::loose::LateDelay>>,
+    (late, staying, role): (Option<Res<crate::map::loose::DrawnLate>>, Option<Res<StayingMarks>>, Option<Res<crate::core::NetRole>>),
     mut marks: MessageReader<FlyerMark>,
     mut held: Local<Vec<(f64, FlyerMark)>>,
     spatial: SpatialQuery,
     colliders: Query<&ColliderOf>,
     characters: Query<(), With<Intent>>,
     mut events: MessageWriter<WeaponEvent>,
+    mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
-    let wait = delay.map_or(0.0, |d| d.0 as f64);
-    held.extend(marks.read().map(|m| (now + wait, *m)));
+    // Shown as its flyer is drawn there: a delay late on a network client
+    // (from snapshots) or when drawn late (`DrawnLate`), else at once.
+    let client = role.as_deref() == Some(&crate::core::NetRole::Client);
+    let wait = |m: &FlyerMark| {
+        let late_here = client || late.as_deref().is_some_and(|l| l.running && l.weapons.contains(m.weapon));
+        if late_here { delay.as_deref().map_or(0.0, |d| d.0 as f64) } else { 0.0 }
+    };
+    held.extend(marks.read().map(|m| (now + wait(m), *m)));
     if held.is_empty() {
         return;
     }
@@ -346,6 +368,18 @@ fn show_marks(
         });
         let Some(hit) = hit else { return false };
         let body = colliders.get(hit.entity).map_or(hit.entity, |o| o.body);
+        // Its model stays there, still, for the rest of its life.
+        if m.stay > 0.0
+            && let Some(key) = staying.as_deref().and_then(|s| s.0.get(m.weapon))
+        {
+            commands.spawn((
+                Name::new(format!("Stuck ({key})")),
+                crate::map::loose::ShownItem(key.clone()),
+                StuckMark { until: now + m.stay as f64 },
+                Transform::from_translation(m.at).with_rotation(m.turn),
+                Visibility::default(),
+            ));
+        }
         events.write(WeaponEvent {
             owner: m.owner.unwrap_or(Entity::PLACEHOLDER),
             weapon: Entity::PLACEHOLDER,
@@ -355,6 +389,7 @@ fn show_marks(
                 to: from + *dir * hit.distance,
                 hit: body,
                 normal: hit.normal,
+                team: m.team,
             },
             replay: false,
         });
@@ -511,19 +546,59 @@ pub struct LauncherParams {
     /// splinters, no needle left standing).
     #[serde(default)]
     pub marks: bool,
+    /// Its model stays, still, where it marked the world, until its `life`
+    /// from the launch runs out (`StuckMark`; TF2's needle: 6 s,
+    /// effects.md 12).
+    #[serde(default)]
+    pub marks_stay: bool,
 }
 
-/// The `ShownItem` keys of `set`'s projectiles drawn late
-/// (`LauncherParams::interp`), with how long each one's model stays
-/// hidden (`model_hidden`).
-pub fn late_keys(set: &super::data::WeaponSet) -> Vec<(String, f32)> {
+/// The weapons of `set` whose projectiles are drawn late
+/// (`LauncherParams::interp`): (weapon id, `ShownItem` key, how long its
+/// model stays hidden: `model_hidden`).
+pub fn late_keys(set: &super::data::WeaponSet) -> Vec<(String, String, f32)> {
     set.weapons
         .iter()
         .filter_map(|w| {
             let p: LauncherParams = w.hooks.get(LAUNCHER)?.clone().try_into().ok()?;
-            p.interp.then(|| (p.shown.clone().unwrap_or_else(|| w.id.clone()), p.model_hidden))
+            p.interp.then(|| (w.id.clone(), p.shown.clone().unwrap_or_else(|| w.id.clone()), p.model_hidden))
         })
         .collect()
+}
+
+/// The weapons whose projectiles' models stay where they marked the world
+/// (`LauncherParams::marks_stay`), by weapon id: their `ShownItem` keys.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct StayingMarks(pub std::collections::BTreeMap<String, String>);
+
+impl StayingMarks {
+    /// `set`'s.
+    pub fn add_set(&mut self, set: &super::data::WeaponSet) {
+        for w in &set.weapons {
+            let Some(p) = w.hooks.get(LAUNCHER).and_then(|p| p.clone().try_into::<LauncherParams>().ok()) else { continue };
+            if p.marks && p.marks_stay {
+                self.0.insert(w.id.clone(), p.shown.clone().unwrap_or_else(|| w.id.clone()));
+            }
+        }
+    }
+}
+
+/// A projectile's model left where it marked the world (`StayingMarks`),
+/// on the machine that shows the mark (never sent): gone at `until`
+/// (this machine's time, s).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct StuckMark {
+    pub until: f64,
+}
+
+/// Stuck models whose time ran out go.
+fn end_stuck_marks(time: Res<Time>, q: Query<(Entity, &StuckMark)>, mut commands: Commands) {
+    let now = time.elapsed_secs_f64();
+    for (e, m) in &q {
+        if now >= m.until {
+            commands.entity(e).despawn();
+        }
+    }
 }
 
 fn report() -> String {
@@ -587,6 +662,7 @@ impl LauncherParams {
         f.hitboxes = self.hitboxes;
         f.pass_teammates = self.pass_teammates;
         f.marks = self.marks;
+        f.marks_stay = self.marks_stay;
         // Relative here; made absolute at the launch.
         f.expires = self.life.map(|l| l as f64);
         f.touch = match self.touch.as_str() {
@@ -672,7 +748,8 @@ pub(super) fn plugin(app: &mut App) {
         // frame: the impact effects read its weapon events on the next
         // tick (in `Update`, off the ticks' schedules, which the
         // server-client ordering ratchet keeps).
-        .add_systems(Update, show_marks);
+        .init_resource::<StayingMarks>()
+        .add_systems(Update, (show_marks, end_stuck_marks));
 }
 
 // ---------------------------------------------------------------------------
@@ -1291,12 +1368,19 @@ fn fly(
             t.rotation = flyer_rotation(&f, t.rotation, f.velocity.normalize(), dt);
         }
         if f.marks && !character && !through {
+            let stay = match (f.marks_stay, f.expires) {
+                (true, Some(x)) => (x - clock.now).max(0.0) as f32,
+                _ => 0.0,
+            };
             world.marks.write(FlyerMark {
                 weapon: f.weapon,
                 owner: f.owner,
                 at: point,
                 normal: n,
                 dir: *dir,
+                team: f.owner.and_then(|o| world.teams.get(o).ok()).map_or(0, |(_, t)| t.0),
+                turn: t.rotation,
+                stay,
             });
         }
         world.hits.write(FlyerHit {

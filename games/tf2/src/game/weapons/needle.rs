@@ -11,10 +11,18 @@
 //! A touch on anything but a player marks it as a bullet's impact
 //! (`marks`, Chimera's `projectile::FlyerMark`: the surface's decal,
 //! debris and sound, shown as the needle drawn late reaches it; effects.md
-//! "Needles on a wall").
+//! "Needles on a wall"; effects.md 12: its model stays stuck there until
+//! 6 s from the launch, `marks_stay`; RED's ricochet, `looks::STYLE`). On
+//! an enemy the damage's blood burst at the needle (`blood`) and the
+//! world's blood behind him by its own 10 points (`Tf2Stains`: 2 traces);
+//! teammates are passed, nothing at all.
 //!
 //! Known shortcuts: the needle is a point, not a 2-unit cube; needles
-//! don't destroy stickies; crits are off.
+//! don't destroy stickies; crits are off; the needle is the server's,
+//! drawn from it (TF2's is each client's own, its collision traced every
+//! 5th frame: the same hit point); a hit on a player makes no client-side
+//! impact on his box (effects.md 12: a decal and flecks only where the
+//! ray meets a hitbox; characters take no decals here).
 
 use std::sync::Arc;
 
@@ -71,6 +79,7 @@ pub fn touch(
     rules: Res<NeedleRules>,
     mut world: BlastWorld,
     mut gone: MessageWriter<FlyerGone>,
+    mut stains: MessageWriter<super::blood::Tf2Stains>,
     mut commands: Commands,
 ) {
     for hit in hits.read() {
@@ -97,6 +106,10 @@ pub fn touch(
                 },
                 hit.point - dir,
             );
+            // The world's blood behind him by the needle's own damage (10:
+            // 2 traces, effects.md 8c, 12); the burst is the damage's
+            // (`blood`), at the needle.
+            stains.write(super::blood::Tf2Stains { at: hit.point, dir, points: p.damage });
         }
         gone.write(FlyerGone { flyer: hit.flyer, weapon: hit.weapon, owner: hit.owner, at: hit.point, expired: false });
         commands.entity(hit.flyer).despawn();
