@@ -1016,3 +1016,51 @@ fn change_gun_is_the_shared_picker() {
     let w = sim.app.world_mut();
     assert!(w.query::<&PickerSlot>().iter(w).any(|s| s.list == LIST && s.part == PickerPart::Head), "the folded header's preview");
 }
+
+/// The sandbox's map picker (M; docs/plans/active/shared-picker.md, step
+/// 4): the kit's picker, single pick, rows by game with the sandbox's own
+/// first and the map in play the current one; `/` and typing find a map,
+/// Esc lets go of the field and then clears it; Enter on a map submits
+/// `sandbox <map>` (the main menu's Sandbox entry's path) and closes the
+/// view; M opens it again.
+#[test]
+fn the_map_picker_finds_and_changes_map_by_the_sandbox_command() {
+    use chimera_client::client::sandbox::change_map::{self, MapCards, MapPicker};
+    use chimera_core::console::ConsoleAppExt;
+    #[derive(Resource, Default)]
+    struct Asked(Vec<String>);
+    let mut sim = sim("map");
+    sim.app.init_resource::<Asked>().console_command("test:sandbox", "sandbox <map> (recorded)", |w, a| {
+        w.resource_mut::<Asked>().0.push(a.join(" "));
+        Ok(None)
+    });
+    let w = sim.app.world_mut();
+    assert_eq!(w.query_filtered::<(), With<change_map::ChangeMapView>>().iter(w).count(), 1, "the view is up");
+    let view = w.resource::<chimera_ui::picker::Pickers>().0.get(change_map::LIST).expect("its picker").clone();
+    assert_eq!((view.frame.look, view.frame.mode), (chimera_ui::picker::PickerLook::List, chimera_ui::picker::PickerMode::Single));
+    assert_eq!(view.games[0].id, change_map::OWN, "the sandbox's own maps first");
+    assert_eq!(w.resource::<MapPicker>().0.current.as_deref(), Some("cs_source:de_dust2"));
+    // Typing finds a map.
+    type_text(&mut sim, "/lock");
+    frame(&mut sim);
+    let (p, cards) = (sim.app.world().resource::<MapPicker>().0.clone(), sim.app.world().resource::<MapCards>().0.clone());
+    assert_eq!(p.search, "lock");
+    let items: Vec<String> = p.rows(&cards).iter().filter_map(|r| chimera_ui::picker::PickerState::item(&cards, r)).map(|i| i.id.clone()).collect();
+    assert_eq!(items, ["hl2dm:dm_lockdown"]);
+    press(&mut sim, &[KeyCode::Escape]);
+    assert!(!sim.app.world().resource::<MapPicker>().0.search_focus, "Esc lets go of the field");
+    press(&mut sim, &[KeyCode::Escape]);
+    assert!(sim.app.world().resource::<MapPicker>().0.search.is_empty(), "then clears it");
+    assert_eq!(ui(&sim).screen, SandboxScreen::ChangeMap, "still open");
+    // Enter on a map: `sandbox <map>`, the view closed.
+    press(&mut sim, &[KeyCode::ArrowDown]);
+    press(&mut sim, &[KeyCode::Enter]);
+    frame(&mut sim);
+    frame(&mut sim);
+    assert_eq!(ui(&sim).screen, SandboxScreen::None, "picked: closed");
+    let said: Vec<String> = sim.app.world().resource::<chimera_core::console::Console>().output.iter().map(|l| l.text.clone()).collect();
+    assert_eq!(sim.app.world().resource::<Asked>().0, ["range"], "the first row under the header: the range ({said:?})");
+    // M opens it again.
+    press(&mut sim, &[KeyCode::KeyM]);
+    assert_eq!(ui(&sim).screen, SandboxScreen::ChangeMap, "M opens Change map");
+}

@@ -13,7 +13,7 @@
 #
 # [[escape]]: the Escape menu's entries, in order. `action` is one of
 # resume, options, host, vote, disconnect, feedback (the report dialog),
-# quit, developer (the UI kit's gallery), frame_inspector (the debug UI's Frames tab), sandbox_gun and sandbox_bench (the sandbox's Change gun and bench);
+# quit, developer (the UI kit's gallery), frame_inspector (the debug UI's Frames tab), sandbox_gun, sandbox_map and sandbox_bench (the sandbox's Change gun, Change map and bench);
 # `when` gates it: always, host (not a network client), main_menu (the app
 # has this main menu), sandbox and not_sandbox (a sandbox plays or not), developer (Options' Developer mode is on). The pre-match lobby has no Escape menu
 # under a themed lobby: its own header buttons (Settings, Report a bug,
@@ -71,6 +71,11 @@ action = "resume"
 [[escape]]
 label = "Change gun"
 action = "sandbox_gun"
+when = "sandbox"
+
+[[escape]]
+label = "Change map"
+action = "sandbox_map"
 when = "sandbox"
 
 [[escape]]

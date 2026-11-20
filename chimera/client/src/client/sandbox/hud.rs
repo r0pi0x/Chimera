@@ -281,6 +281,7 @@ fn top_left(c: &mut Commands, ui: &Ui, root: Entity, tab: bool) {
     }
     let keys = ui.boxed(c, col, UiStyle { gap: Some(1.0), ..UiStyle::row() });
     key_hint(c, ui, keys, "B", "Change gun", 0.54, Tone::Fg);
+    key_hint(c, ui, keys, "M", "Change map", 0.54, Tone::Fg);
     key_hint(c, ui, keys, "T", "Bench", 0.54, Tone::Fg);
 }
 
@@ -572,7 +573,7 @@ fn tab_column(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, s: &HudShown
     tag(c, ui, head, "Keys", 0.46, Some((Tone::Fg, Tone::Ink)), Tone::Fg);
     let grid = ui.boxed(c, k, UiStyle { gap: Some(0.45), ..UiStyle::column() });
     let repeat = s.repeat.as_ref().map_or("Repeat: nothing yet".to_string(), |r| format!("Repeat: {r}"));
-    for pair in [[("B", "Change gun".to_string()), ("T", "Bench".to_string())], [("1-6", "Pinned guns".to_string()), ("K", repeat)], [("Esc", "Menu".to_string()), ("", String::new())]] {
+    for pair in [[("B", "Change gun".to_string()), ("M", "Change map".to_string())], [("T", "Bench".to_string()), ("1-6", "Pinned guns".to_string())], [("K", repeat), ("Esc", "Menu".to_string())]] {
         let row = ui.boxed(c, grid, UiStyle::row());
         for (key, words) in pair {
             if key.is_empty() {

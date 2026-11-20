@@ -2781,9 +2781,9 @@ Start, two parties with their edges), `ui_scene lobby join` (a joiner's view: it
 match's settings, Leave), `ui_scene lobby between` (the
 host's lobby after a match, the next map coming in: each row at its own
 load stage, `chimera_net::net::load_stages`).
-`ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range>`
+`ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range|map>`
 stages the sandbox's screens (`chimera_client::client::sandbox`) with
-made-up guns, kills, downloads and targets; over a real sandbox it reads
+made-up guns, kills, downloads, targets and maps (`map`: Change map, M); over a real sandbox it reads
 best: `ultimate_gun_game --offscreen 1920x1080 --frames 900 --screenshot
 <out>.png +sandbox +ui_scene sandbox gun` (the scene's words as separate
 arguments).

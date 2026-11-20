@@ -289,12 +289,14 @@ pub fn shown_entries_with(host: bool, main_menu: bool, voting: bool, sandbox: bo
                 EscDoes::FrameInspector => Some(Action::FrameInspector),
                 EscDoes::Vote => (!voting).then_some(Action::SkipMap),
                 EscDoes::SandboxGun => Some(Action::SandboxGun),
+                EscDoes::SandboxMap => Some(Action::SandboxMap),
                 EscDoes::SandboxBench => Some(Action::SandboxBench),
             };
             ShownEntry {
                 key: match action {
                     Some(Action::Resume) => Some("Esc"),
                     Some(Action::SandboxGun) => Some("B"),
+                    Some(Action::SandboxMap) => Some("M"),
                     Some(Action::SandboxBench) => Some("T"),
                     _ => None,
                 },
@@ -420,8 +422,9 @@ fn navigate(
 #[derive(Component, Message, Clone, Copy, Debug, PartialEq)]
 pub enum Action {
     Resume,
-    /// The sandbox's Change gun and bench (`client::sandbox`).
+    /// The sandbox's Change gun, Change map and bench (`client::sandbox`).
     SandboxGun,
+    SandboxMap,
     SandboxBench,
     Options,
     Host,
@@ -864,11 +867,15 @@ fn act_one(world: &mut World, action: Action) {
         Action::SkipMap => submit(world, "party_skipmap"),
         Action::VoteYes => submit(world, "vote option1"),
         Action::VoteNo => submit(world, "vote option2"),
-        Action::SandboxGun | Action::SandboxBench => {
+        Action::SandboxGun | Action::SandboxMap | Action::SandboxBench => {
             leave(world);
             world.resource_mut::<EscMenu>().set_open(false);
             use chimera_client::client::sandbox::{SandboxAction, SandboxScreen};
-            let s = if action == Action::SandboxGun { SandboxScreen::ChangeGun } else { SandboxScreen::Bench };
+            let s = match action {
+                Action::SandboxGun => SandboxScreen::ChangeGun,
+                Action::SandboxMap => SandboxScreen::ChangeMap,
+                _ => SandboxScreen::Bench,
+            };
             world.write_message(SandboxAction::Toggle(s));
         }
         Action::Feedback => {
@@ -1207,6 +1214,7 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             EscDoes::Developer => Action::Developer,
             EscDoes::FrameInspector => Action::FrameInspector,
             EscDoes::SandboxGun => Action::SandboxGun,
+            EscDoes::SandboxMap => Action::SandboxMap,
             EscDoes::SandboxBench => Action::SandboxBench,
             EscDoes::Vote => {
                 vote_rows(panel, vote, &e.label, WIDE);

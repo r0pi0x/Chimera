@@ -1,6 +1,6 @@
 # Plan: one shared picker for maps and guns
 
-Status: in progress (2026-11-20). Design approved by the user (below).
+Status: steps 1–4 done (2026-11-20); the leftovers at the end of the log. Design approved by the user (below).
 Related: docs/plans/active/ugg-ui.md ("Signal revision 8" stage 4, the
 Maps picker; M11, the sandbox's screens).
 
@@ -84,11 +84,17 @@ Maps picker; M11, the sandbox's screens).
    popover, the pinned bar with its drag and drop, the head's search
    stay the screen's. The list's folds are the truth there
    (`picker::folds_of`), the keys fold both (`picker::fold`).
-4. [ ] A Sandbox map selector on the picker (single), changing map
+4. [x] A Sandbox map selector on the picker (single), changing map
    through the sandbox's entry path (f2132a134): the map is changed by
    submitting `sandbox <map>` (apps/ultimate_gun_game/src/sandbox.rs, the
    console command the main menu's Sandbox entry runs), so the entry's
-   no-lobby, no-end-screen switch applies.
+   no-lobby, no-end-screen switch applies. Done as Change map
+   (`sandbox::change_map`): M in the sandbox (beside B, Change gun; the
+   sandbox owns M while it plays), the Escape menu's Change map (after
+   Change gun) and `sandbox_map`; single pick, full screen, rows by game
+   (the sandbox's range and greybox first, then each playable game's
+   maps from `auto::report`), the search and the games' chips; a click on
+   a map or Enter submits `sandbox <map>`.
 
 Notes for step 3: Change gun (chimera/client/src/client/sandbox/
 change_gun.rs, 1,467 lines) has more than the picker does today: a
@@ -143,3 +149,11 @@ captures at 1920x1080 and 1280x720, a commit, post-push tests.
   `card_aspect`). Tests: chimera_client `change_gun_is_the_shared_picker`
   and the sandbox's existing ones; ultimate_gun_game's
   `a_pick_of_the_gun_in_hand_changes_nothing` (the quick-bar rule) holds.
+- 2026-11-20, step 4: Change map (above). Test: chimera_client
+  `the_map_picker_finds_and_changes_map_by_the_sandbox_command`.
+  Captures: `ui_scene sandbox map` (and `rest`, the M hint) at 1920x1080
+  and 1280x720.
+- Left: the picker's own search bar isn't Change gun's (its head keeps
+  the screen's field and matching); map pictures; the Host dialogs'
+  search field takes no caret placement by the pointer (a click focuses
+  it, the caret at the end).

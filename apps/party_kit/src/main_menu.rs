@@ -215,6 +215,7 @@ pub enum EscDoes {
     Disconnect,
     /// The sandbox's Change gun and bench (`client::sandbox`).
     SandboxGun,
+    SandboxMap,
     SandboxBench,
     /// The report dialog (`client::feedback`).
     Feedback,
@@ -345,6 +346,7 @@ impl MenuData {
                 Some("developer") => EscDoes::Developer,
                 Some("frame_inspector") => EscDoes::FrameInspector,
                 Some("sandbox_gun") => EscDoes::SandboxGun,
+                Some("sandbox_map") => EscDoes::SandboxMap,
                 Some("sandbox_bench") => EscDoes::SandboxBench,
                 other => return Err(format!("{label}: no action {other:?}")),
             };

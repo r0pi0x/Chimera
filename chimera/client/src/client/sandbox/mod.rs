@@ -15,7 +15,9 @@
 //!   its condition tags or Next strip, the pinned bar) and with Tab held
 //!   (one column at the left: the last kill and the four before it, the
 //!   options, the keys).
-//! - `change_gun`: the full-screen tile view (B).
+//! - `change_gun`: the full-screen tile view (B), on the kit's picker.
+//! - `change_map`: the full-screen map list (M), on the kit's picker:
+//!   picking a map submits `sandbox <map>`.
 //! - `bench`: the bench drawer (T): targets, props, options, and the
 //!   character picker.
 //! - `range`: over the world: the look panel on the target under the
@@ -28,13 +30,13 @@
 //! is the guns, made when a sandbox's ladder comes up (`catalogue_of`).
 //!
 //! **Keys** (`keys`, only while a sandbox plays and neither the console
-//! nor chat has the keys): B Change gun, T the bench (each toggles; Esc
-//! closes), 1 to 6 switch to a pinned gun (and show the bar), K repeats
-//! the last set-up. The sandbox owns B, T, K and its pinned slots'
-//! digits while it plays (`owned_keys`, `binds::OwnedKeys`): no game's
+//! nor chat has the keys): B Change gun, M Change map, T the bench (each
+//! toggles; Esc closes), 1 to 6 switch to a pinned gun (and show the
+//! bar), K repeats the last set-up. The sandbox owns B, T, K, M and its
+//! pinned slots' digits while it plays (`owned_keys`, `binds::OwnedKeys`): no game's
 //! bind on them acts, whoever's character the player is. Tab held
 //! (`+showscores`) the Tab column. The same as console commands:
-//! `sandbox_gun [gun]` (with a gun: opened on it), `sandbox_bench`,
+//! `sandbox_gun [gun]` (with a gun: opened on it), `sandbox_map`, `sandbox_bench`,
 //! `sandbox_pin <1-6> [gun]`, `sandbox_key <1-6|k>` (scenes).
 //!
 //! **Switching** (`switch_to`): a gun whose files are here is asked of
@@ -54,15 +56,16 @@
 //! `Replaced` the newer pick takes the strip, `Dropped` (the sandbox's
 //! guns changed) says so on the chip's foot.
 //!
-//! `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range|off>`
+//! `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range|map|off>`
 //! stages the screens with made-up guns, kills and downloads (`stage`).
 //!
-//! Known shortcuts: B, T and 1 to 6 are read as keys, not binds, while a
+//! Known shortcuts: B, M, T and 1 to 6 are read as keys, not binds, while a
 //! sandbox plays (rebinding them is not offered yet); the games' full
 //! names are a table here (`game_name`), the registry has short ones only.
 
 pub mod bench;
 pub mod change_gun;
+pub mod change_map;
 pub mod hud;
 pub mod link;
 pub mod model;
@@ -94,6 +97,8 @@ pub enum SandboxScreen {
     None,
     ChangeGun,
     Bench,
+    /// Change map (M): `change_map`.
+    ChangeMap,
 }
 
 /// A tile dragged toward the pinned bar.
@@ -518,10 +523,10 @@ pub enum SandboxAction {
 /// The owner of the sandbox's keys (`OwnedKeys`).
 pub const OWNER: &str = "sandbox";
 
-/// The keys the sandbox owns while it plays: B, T, K, and the digit of
+/// The keys the sandbox owns while it plays: B, T, K, M, and the digit of
 /// each pinned slot (an empty slot's digit stays the game's).
 pub fn owned_keys(pins: &Pins) -> Vec<KeyCode> {
-    let mut k = vec![KeyCode::KeyB, KeyCode::KeyT, KeyCode::KeyK];
+    let mut k = vec![KeyCode::KeyB, KeyCode::KeyT, KeyCode::KeyK, KeyCode::KeyM];
     let digits = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6];
     k.extend(digits.into_iter().zip(pins.0.iter()).filter(|(_, p)| p.is_some()).map(|(d, _)| d));
     k.sort();
@@ -537,6 +542,7 @@ fn keys(
     chat: Option<Res<crate::client::chat::ChatInput>>,
     clock: Option<Res<chimera_ui::UiClock>>,
     bench: Option<Res<bench::BenchUi>>,
+    maps: Option<Res<change_map::MapPicker>>,
     mut owned: ResMut<crate::client::binds::OwnedKeys>,
     mut ui: ResMut<SandboxUi>,
     mut out: MessageWriter<SandboxAction>,
@@ -569,7 +575,9 @@ fn keys(
     // reach here while it's open. B is read here alone, opening and
     // closing it (it was also read as a typed letter by the view, which
     // took the press that opened it as a close).
-    let typing = (ui.screen == SandboxScreen::ChangeGun && ui.view.search_focus) || picking;
+    let typing = (ui.screen == SandboxScreen::ChangeGun && ui.view.search_focus)
+        || (ui.screen == SandboxScreen::ChangeMap && maps.is_some_and(|m| m.0.search_focus))
+        || picking;
     if k(KeyCode::Escape) && ui.screen == SandboxScreen::Bench {
         ui.took_esc = true;
         out.write(SandboxAction::Close);
@@ -578,7 +586,10 @@ fn keys(
     if !typing && k(KeyCode::KeyB) {
         out.write(SandboxAction::Toggle(SandboxScreen::ChangeGun));
     }
-    if !picking && ui.screen != SandboxScreen::ChangeGun && k(KeyCode::KeyT) {
+    if !typing && k(KeyCode::KeyM) {
+        out.write(SandboxAction::Toggle(SandboxScreen::ChangeMap));
+    }
+    if !picking && !matches!(ui.screen, SandboxScreen::ChangeGun | SandboxScreen::ChangeMap) && k(KeyCode::KeyT) {
         out.write(SandboxAction::Toggle(SandboxScreen::Bench));
     }
     if ui.screen == SandboxScreen::None && k(KeyCode::KeyK) {
@@ -617,6 +628,9 @@ fn act(world: &mut World) {
                 if ui.screen == SandboxScreen::ChangeGun {
                     ui.view.selected = ui.current.clone();
                     ui.view.tags_open = false;
+                }
+                if ui.screen == SandboxScreen::ChangeMap && !ui.staged {
+                    change_map::refresh(world);
                 }
             }
             SandboxAction::Select(id) => {
@@ -693,6 +707,7 @@ impl Plugin for SandboxUiPlugin {
         crate::client::ui_scene::UiSceneHooks::add(app.world_mut(), "sandbox", stage);
         hud::add(app);
         change_gun::add(app);
+        change_map::add(app);
         bench::add(app);
         range::add(app);
         app.console_command(
@@ -730,6 +745,10 @@ impl Plugin for SandboxUiPlugin {
             if let Some(g) = gun {
                 w.write_message(SandboxAction::Switch(g));
             }
+            Ok(None)
+        })
+        .console_command("chimera:sandbox_map", "sandbox_map: open or close the sandbox's Change map (M).", |w, _| {
+            w.write_message(SandboxAction::Toggle(SandboxScreen::ChangeMap));
             Ok(None)
         })
         .console_command("chimera:sandbox_bench", "sandbox_bench: open or close the sandbox's bench (T).", |w, _| {
@@ -964,9 +983,14 @@ pub fn stage(w: &mut World, args: &[String]) -> Result<(), String> {
             ui.tab = false;
         }
         "range" => {}
+        "map" => {
+            ui.screen = SandboxScreen::ChangeMap;
+            w.insert_resource(change_map::MapCards(change_map::staged_maps()));
+            w.insert_resource(change_map::MapPicker(chimera_ui::picker::PickerState { current: Some("cs_source:de_dust2".into()), cursor: 4, ..default() }));
+        }
         other => {
             return Err(format!(
-                "ui_scene sandbox: no staging `{other}` (rest, tab, pins, next, gun, gun-detail, gun-tags, gun-fold, drag, bench, bench-pick, range)"
+                "ui_scene sandbox: no staging `{other}` (rest, tab, pins, next, gun, gun-detail, gun-tags, gun-fold, drag, bench, bench-pick, range, map)"
             ));
         }
     }
