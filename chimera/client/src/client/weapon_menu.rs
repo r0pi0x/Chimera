@@ -40,7 +40,8 @@ impl Plugin for WeaponMenuPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WeaponMenu>()
             .init_resource::<WeaponMenuTimes>()
-            .add_systems(Update, menu_input.before(crate::client::input::write_local_intent));
+            .add_systems(RunFixedMainLoop, menu_input.in_set(crate::client::input::LocalInputSystems::Menus));
+        crate::client::input::configure_local_input(app);
         for slot in 0..SLOTS {
             app.console_command(
                 &format!("slot{}", slot + 1),

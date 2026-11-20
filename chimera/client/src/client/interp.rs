@@ -20,9 +20,9 @@ impl Plugin for ClientInterpPlugin {
             .add_systems(FixedLast, sample_punch.in_set(InterpSystems::Extend))
             .add_systems(
                 Update,
-                local_look
-                    .after(super::input::write_local_intent)
-                    .before(crate::map::DriveAnimation),
+                // The local intent is written before the fixed loop
+                // (`input::LocalInputSystems`).
+                local_look.before(crate::map::DriveAnimation),
             );
         resource_cvar::<Interpolation, u8>(
             app,

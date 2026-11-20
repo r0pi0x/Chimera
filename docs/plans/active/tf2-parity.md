@@ -133,6 +133,36 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Log
 
+### Input timing, every Source game (input-timing, 2026-11-20)
+
+From specs/source/input_timing.md, in Chimera's client input (so CS:S,
+HL2:DM, TF2 and the other games alike; Combat Arms' and Halo's specs say
+nothing otherwise, so they get the same timing, without Source's move
+shares):
+
+- **Same frame.** The local input (`write_local_intent`, the cursor grab,
+  the weapon selection's and the spectator's keys, the rules' hold,
+  Combat Arms' popup gate, `track_move_keys`) runs in `RunFixedMainLoop`
+  before the fixed loop (`input::LocalInputSystems`: Menus, Write, Hold,
+  Gate, Track), so a press reaches the tick of its own frame (spec test
+  1), else the next frame's with a tick (test 2). Menus keep their
+  capture: keys they take in `PreUpdate` (`CapturedKeys`, the chat's
+  reset, owned keys) are gone that frame; a menu opened in `Update`
+  gates from the next frame. Non-polled binds (`run_binds`: `invnext`,
+  `buymenu`) still run in `Update` (Known shortcut in `input`).
+- **Taps.** `input::KeyLatch`: a button press no command has taken is
+  on in the next one even if let go (fire, attack2, jump, duck, reload,
+  use, `lastinv`, named actions, a slot key); later ticks of the frame
+  see only what is held (test 3). The click that grabs the cursor is
+  taken even when let go within the frame.
+- **Move shares** (`input::move_share`, `HalfFirstPress` movements):
+  0.5 / 0.25 / 0.75 / 0 by the spec's table (tests 4-7), and a frame
+  without a tick reads the shares away (frame loop step 3, inferred).
+- Tests: chimera_client `input_timing::` (same frame, sub-tick tap,
+  menus swallow keys, the shares). The schedule ratchets are unchanged
+  (the input is not in their compositions; FixedPreUpdate is not
+  compared).
+
 ### Leftovers (tf2-leftovers, 2026-11-20)
 
 - **Needle marks** (effects.md "Needles on a wall"): `chimera:projectile`'s
@@ -199,7 +229,7 @@ Captured imagery stays in scratch, never in the repo.
   the two heavy view-model tests indexed the animator's pose by the
   merged skeleton's bones (the Minigun's kept `barrel` is one more) and
   panicked.
-- **Input a frame late** (item 7): by the schedule, not only switches:
+- **Input a frame late** (item 7; done since: "Input timing" above): by the schedule, not only switches:
   `write_local_intent` writes the local `Intent` in `Update`, after
   `RunFixedMainLoop`, so every key (move, fire, slot) reaches the
   simulation in the next frame's tick. Not changed: moving it before the

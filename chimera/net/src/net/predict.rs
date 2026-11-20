@@ -57,9 +57,10 @@
 //!   echoes the count in its commands (`NetCmd::look_ack`). The server
 //!   keeps its own look over the commands' until the count matches, so the
 //!   old look still in flight doesn't undo it for the others.
-//! - **Held view.** `hold_view` (client `Update`, after the input writes
-//!   the local `Intent`) applies the freeze's hold to the drawn side too:
-//!   view models and effects read the raw trigger every frame.
+//! - **Held view.** `hold_view` (the client's input, before the fixed
+//!   loop, after it writes the local `Intent`: `input::LocalInputSystems::
+//!   Hold`) applies the freeze's hold to the drawn side too: view models
+//!   and effects read the raw trigger every frame.
 //! - **Readout.** `NetGraph` (the perf overlay and the debug UI's Perf tab):
 //!   ping, loss, lead, server buffer, missed commands, prediction errors.
 //!   `cl_showerror 1` logs each error.
@@ -1175,8 +1176,8 @@ fn hold_local(
     }
 }
 
-/// The held player's drawn side (`Update`, after the input writes the
-/// local `Intent`, before the animation drivers): the view models, muzzle
+/// The held player's drawn side (before the fixed loop, after the input
+/// writes the local `Intent`): the view models, muzzle
 /// flashes and sounds read the raw `Intent` every frame, but the rules
 /// hold it only at the simulation's tick, so a frozen player's trigger
 /// (the freeze time of a round, a match's end screen) still played the

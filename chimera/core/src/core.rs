@@ -1538,8 +1538,9 @@ pub struct LocalPlayer;
 
 /// The movements (`slots::MovementSlot` ids) whose move keys send half
 /// their amount in the first command after they go down, the full amount
-/// after: Source's key impulse, measured on real CS:S, HL2:DM and TF2
-/// (specs/cs_source/movement.md, "Input"). The client's local input
+/// after (a tap a quarter, a re-press three quarters): Source's key
+/// impulse, measured on real CS:S, HL2:DM and TF2
+/// (specs/cs_source/movement.md, "Input"; specs/source/input_timing.md). The client's local input
 /// applies it (`client::input::apply_move_keys`); bots and other intent
 /// sources send what they choose.
 #[derive(Resource, Default, Clone, Debug)]

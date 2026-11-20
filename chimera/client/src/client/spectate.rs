@@ -566,10 +566,10 @@ pub struct SpectatePlugin;
 
 impl Plugin for SpectatePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(SpectateCameraPlugin).add_systems(
-            Update,
-            (keys.before(super::input::grab_cursor).before(track),),
-        );
+        // Before the cursor grab: the click that grabs doesn't cycle.
+        app.add_plugins(SpectateCameraPlugin)
+            .add_systems(RunFixedMainLoop, keys.in_set(super::input::LocalInputSystems::Menus));
+        super::input::configure_local_input(app);
     }
 }
 
