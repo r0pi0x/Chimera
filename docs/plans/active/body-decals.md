@@ -38,7 +38,11 @@ case 20: Combat Arms puts none on characters. Halo: no spec, none.
   them) and `r_maxmodeldecal` (cap per body, default **50**: §8b's
   "believed 50", Open questions 15), oldest replaced.
 - **TF2 (games/tf2)**: heal to full (health rose and ≥ max) writes
-  `ClearBodyDecals`; TF2 characters get `BodyDecalsOffRagdoll`.
+  `ClearBodyDecals`; TF2 characters get `BodyDecalsOffRagdoll` as one of
+  their class parts (`movement::ClassParts`: on and off in one move, so no
+  archetype per combination).
+- Next: compare with captures (CS:S and TF2 shot bots), and TF2's cloak,
+  disguise and Über inserting `NoBodyDecals` when they come.
 
 ## Placement and drawing (performance)
 
@@ -76,7 +80,9 @@ unaffected.
 4. [x] TF2 rules (heal to full, ragdoll).
 5. [x] Tests: impacts write/skip (TF2 low violence, CS:S), the present
    rules (cap, clear, `NoBodyDecals`, respawn, teammates), TF2 heal.
-6. [ ] Screenshot of a decalled body; docs (backlog, parity-gaps,
+6. [x] Screenshot of a decalled body (2026-11-20: CS:S target on de_dust2
+   in the UGG sandbox, MP5 hits on chest, forearm and thigh, blood decals
+   following the idle pose); docs (backlog, parity-gaps,
    tf2-parity, tech-debt via `//!`), docs_index.
 
 ## Known shortcuts (expected)

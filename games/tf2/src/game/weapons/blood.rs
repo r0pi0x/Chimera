@@ -26,8 +26,8 @@
 //! - **The body decals** (8b): each TF2 bullet, pellet or swing into an
 //!   enemy decals the body (`ImpactStyle::body_decals` in `looks::STYLE`,
 //!   drawn by Chimera's `render::body_decals`), none in low violence; here
-//!   their TF2 rules (`body_decal_rules`): healed to full removes them, the
-//!   ragdoll doesn't keep them.
+//!   their TF2 rules: healed to full removes them (`body_decal_rules`), the
+//!   ragdoll doesn't keep them (`movement::ClassParts`).
 //!
 //! Known shortcuts: no Über, cloak or disguise yet (when they come they
 //! insert `map::NoBodyDecals`, and a disguise change writes
@@ -47,7 +47,7 @@ use source_engine::effects::impact_effects::{BloodPainter, ImpactEffectSettings,
 
 use super::{blast::Tf2Explosion, damage::U, looks::in_water};
 use super::super::classes::Tf2Class;
-use crate::map::{BodyDecalsOffRagdoll, ClearBodyDecals, SkyboxCamera, loose::LateDelay, view_model::ViewModelCamera};
+use crate::map::{ClearBodyDecals, SkyboxCamera, loose::LateDelay, view_model::ViewModelCamera};
 
 /// The data.
 pub const DATA: &str = include_str!("../../../data/blood.toml");
@@ -295,26 +295,18 @@ fn forward(
     }
 }
 
-/// The body decals' TF2 rules (effects.md 8b; drawn by Chimera's
-/// `render::body_decals`): a TF2 character's ragdoll doesn't keep them
-/// (`BodyDecalsOffRagdoll`), and healing to full health (health rose and
-/// is at least the max) removes them all (`ClearBodyDecals`).
+/// The body decals' TF2 rule here (effects.md 8b; drawn by Chimera's
+/// `render::body_decals`): healing to full health (health rose and is at
+/// least the max) removes them all (`ClearBodyDecals`). (That the ragdoll
+/// keeps none is a class part, `movement::ClassParts`.)
 fn body_decal_rules(
-    added: Query<Entity, Added<Tf2Class>>,
-    mut gone: RemovedComponents<Tf2Class>,
     health: Query<(Entity, &Health), (Changed<Health>, With<Tf2Class>)>,
+    mut gone: RemovedComponents<Tf2Class>,
     mut seen: Local<HashMap<Entity, f32>>,
     mut clear: MessageWriter<ClearBodyDecals>,
-    mut commands: Commands,
 ) {
-    for e in &added {
-        commands.entity(e).insert(BodyDecalsOffRagdoll);
-    }
     for e in gone.read() {
         seen.remove(&e);
-        if let Ok(mut c) = commands.get_entity(e) {
-            c.remove::<BodyDecalsOffRagdoll>();
-        }
     }
     for (e, h) in &health {
         let before = seen.insert(e, h.current);
