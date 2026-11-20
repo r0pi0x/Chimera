@@ -1,5 +1,5 @@
 # Ours for stickies.tf2: one uncharged sticky down 2fort's bridge onto its
-# floor (the launch, the trail, the landing, the armed pulse at 0.8 s),
+# floor (the launch, the trail, the landing, the armed pulse 0.87 s after it shows),
 # a picture every 1/30 s of game time for 1.6 s, then the detonation
 # (attack2) a picture every 1/60 s.
 #   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/stickies.scene --out <dir>

@@ -2577,13 +2577,19 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   `bot -class heavy` (`heavyweapons` gave a random class). Watch the bot
   (`spec_mode 5`): another player's Minigun barrel turns only while the
   client draws it, and without it its wind-down is silent.
-- The account's own loadout is not all stock: its Demoman holds the
-  Quickiebomb Launcher (item 1150, another model) in the sticky slot. The
+- The account's own loadout is not all stock (audited 2026-11-20):
+  the Demoman's sticky slot holds the Quickiebomb Launcher (1150), the
+  Heavy's Minigun is the Tomislav (424), the Engineer carries the
+  Wrangler (no Pistol), the Pyro the Dragon's Fury (1178), the Medic the
+  Crusader's Crossbow, and most melees aren't stock; the Scattergun,
+  Rocket Launcher, Grenade Launcher, Shotguns, SMG, Sniper Rifle,
+  Revolver and Wrench are. Puppet bots always get the stock loadout. The
   scene directive `stock <weapon class> <item index>` (`stock
-  tf_weapon_pipebomblauncher 20`) swaps the local player's weapon of that
-  slot for the item through TF2's VScript (a script written into the
-  install's `tf/scripts/vscripts/`, removed by `down`); it lasts until
-  the player respawns. To check what is held, VScript's
+  tf_weapon_pipebomblauncher 20`; `muzzle.tf2`'s Pistol 22 and Minigun
+  15) swaps the local player's weapon of that slot for the item through
+  TF2's VScript (a script written into the install's
+  `tf/scripts/vscripts/` and deleted once run); it lasts until the
+  player respawns. To check what is held, VScript's
   `NetProps.GetPropInt(weapon, "m_AttributeManager.m_Item.m_iItemDefinitionIndex")`.
 - Stock guns this account doesn't carry are seen through a puppet bot's
   eyes (`bot`, `bot_selectweaponslot`, `spec_player`, then `spec_mode 4`):

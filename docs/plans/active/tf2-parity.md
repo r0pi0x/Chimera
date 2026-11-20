@@ -41,7 +41,7 @@ Captured imagery stays in scratch, never in the repo.
 | Rocket and blast sound | close (2026-11-20) | the script data match (`Weapon_RPG.Single` CHAN_WEAPON 94 dB, `BaseExplosionEffect.Sound` CHAN_WEAPON 95 dB, volume 1, full-scale stereo `)` waves, the blast's 8 s long with its own tail); one of each plays. The distortion was our mix clipping (1.6 s at `volume` 1, a moment at 0.5): now a limiter (`audio::sound::limit_mix`) keeps the one-shot voices under 0.75 of full scale. TF2's loudness itself can't be heard here (`+volume 0`). The blast's sound now plays with its look when the drawn time reaches it (effects.md 5 step 5, 11: the temp entity's), not 0.1 s before (tf2-leftovers) |
 | Sniper scope overlay, charge meter, crosshair (`scope.tf2`/`.scene`) | close (2026-11-20) | the overlay was our 512-texel stand-in stretched (blurry on a tall screen); now TF2's own quarter (`hud/scope_sniper_ul_dx80`, the plain fallback of its refracting one) over the whole screen as TF2 stretches it, no warp or tint; the generic stand-in 1024 texels with pixel-wide cross hairs. The charge meter drawn (hud.md "Measured"). The shell's crosshair hides behind a scope (`hud::ScopeUp`); TF2's HUD now keeps its crosshair there, as real TF2 draws it (hud.md "Measured", Open questions 13; tf2-leftovers). The scope's look on a 16:9 screen is unmeasured (the headless display is 4:3) |
 | Projectiles' models | matches (pass 6) | none drew on any map: a map keeps the kept guns' held models by key prefix and the projectiles' keys (`tf2:rocket`, `tf2:sticky`...) matched none; now `<gun>/<part>` |
-| Stickybombs | close (pass 6) | model, faint trail and the armed pulse (0.8 s, then every 0.1 s: ring, then disc) as TF2's; launch spin and jitter as the spec's (pass 7) |
+| Stickybombs | close (2026-11-20, stock launcher) | model, faint trail, flight and resting place (within 6 px) as the stock launcher's; the armed pulse (ring, then disc, then a frame of nothing, every 0.1 s) now 0.87 s after the sticky shows, as stock TF2's (was 0.8, measured on the Quickiebomb); TF2's sticky spins twice the spec's rate (log: spec question) |
 | Sniper's laser dot | matches in his own view (pass 7, `dot.tf2`/`.scene`) | drawn (`weapons::dot`): size, softness and the core growing with the charge as TF2's; others see it at 6 units (the charge sent with what a character holds, `HeldGauge`), no TF2 pair (its puppet bots won't scope); TF2's scope overlay not photographed yet (the class menu covers it) |
 | Water explosions | close (pass 6); on the riverbed seen from just above the surface close (tf2-psys: drawn before the surface, shown by its refraction) | from above the surface both hide the burst; TF2's shows through as an orange glow from just above the surface. Under water (pass 7, `wunder`): see the log |
 | Bullet impacts (wood) | matches (pass 6) | splinters, hole, puff alike; TF2's hole decal a little lighter |
@@ -134,6 +134,49 @@ Captured imagery stays in scratch, never in the repo.
    `effects/electric1` and `effects/sc_softglow`).
 
 ## Log
+
+### Stock items in every scene; the sticky rechecked (sticky-recheck, 2026-11-20)
+
+- **Audit** (VScript: each player's `m_hMyWeapons` item indices): the
+  local player's loadout is stock for the Scattergun, Rocket Launcher,
+  Grenade Launcher, Shotguns, SMG, Sniper Rifle, Revolver and Wrench;
+  not stock: the Demoman's sticky slot (Quickiebomb, 1150), the Heavy's
+  Minigun (Tomislav, 424; `muzzle.tf2`'s `minigun` captures were of it),
+  the Engineer's secondary (the Wrangler: `muzzle.tf2`'s `use
+  tf_weapon_pistol` failed, so its `pistol` captures showed the Shotgun),
+  the Pyro's (Dragon's Fury), the Medic's (Crusader's Crossbow) and most
+  melees. Puppet bots (every class) hold the stock items. `muzzle.tf2`
+  now swaps in the stock Pistol (22) and Minigun (15) (not re-captured
+  yet: the muzzle rows for them stand on the wrong guns); `pose.tf2`'s Heavy
+  is `-class heavy` (`heavyweapons` gives bots a random class);
+  `stickies.tf2` records the whole 1.6 s (`wait 96` gave 1.07 s, the
+  pulse missing). tf2ref deletes its `stock` script once run.
+- **Sticky, stock launcher** (`stickies.tf2`, `launch.tf2`; pairs in
+  scratch): the launch flash (a small glow left of the sight, two frames)
+  and the sticky's first showing (5 frames after the shot) match; its
+  flight and resting place agree within 6 px. In `launch.tf2` (10
+  degrees down) ours first shows one frame later than TF2's, then at the
+  same places. Measured per tick with VScript (30 degrees down, held 0.1
+  s): launch velocity 937 along the aim, 200 along the aim's up, ±3 to
+  the right, as weapons_more.md 5.1.
+- **Armed pulse**: stock TF2's first ring comes 26 frames (30 a second)
+  after the sticky first shows, the Quickiebomb's 20 (it arms 0.2 s
+  sooner); ours came at 24, tuned to effects.md's measured 0.8 s, which
+  was the Quickiebomb's. Now `armed.after` 0.87. Spec question:
+  effects.md "Measured" says 0.8 s after the launch; stock is ~1.03 s
+  after the launch flash.
+- **Spin** (spec question, not changed): stock TF2's sticky turns at
+  ~2510 degrees/s just after launch, about its own forward ~1200 and
+  its left ~2200 (`GetPhysAngularVelocity` agrees: 1194, -2207), twice
+  weapons_more.md 4.1's impulse (600, ±1200, 0) degrees/s, which ours
+  uses. Both its linear and angular speed fall ~0.4-0.5 % a tick in the
+  air (the engine's drag, weapons_more.md Open questions 7); ours has
+  none. Is the impulse doubled by the physics engine (an impulse on a
+  body whose inertia differs from 1), or are the units other than
+  degrees/s?
+- `viewmodels.tf2` slot 1 (the puppet Demoman): the stock Stickybomb
+  Launcher (item 20 active), not the Grenade Launcher; ours draws the
+  same gun, ~50 px left of it (the bot's view-model offset).
 
 ### The blast that drew nothing (blast-regression, 2026-11-20)
 
@@ -384,9 +427,9 @@ shares):
   draw the same picture. Each merged bone at `sb_idle` frame 0 keeps
   the `c_` model's own place relative to `weapon_bone` (as for the
   Grenade Launcher), so the gun is drawn whole (`heavy::guns::
-  the_launchers_bones_sit_where_tf2_holds_them`). Also: `viewmodels.tf2`'s
-  `demoman_pipebomblauncher` (the puppet bot's `bot_selectweaponslot 1`)
-  shows the Grenade Launcher, not the sticky. Also fixed earlier: the
+  the_launchers_bones_sit_where_tf2_holds_them`). (`viewmodels.tf2`'s
+  `demoman_pipebomblauncher` shows the stock Stickybomb Launcher: the
+  bot's active item read 20 with VScript; the 2026-11-20 recheck.) Also fixed earlier: the
   two heavy view-model tests indexed the animator's pose by the
   merged skeleton's bones (the Minigun's kept `barrel` is one more) and
   panicked.

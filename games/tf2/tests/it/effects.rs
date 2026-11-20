@@ -12,7 +12,7 @@
 //! - the backblast (4): others see it at the launcher's `backblast`, the
 //!   shooter (this machine's player) never;
 //! - the sticky (1): its trail as it appears, its armed pulse
-//!   (`stickybomb_pulse_red`) once, when it arms 0.8 s later.
+//!   (`stickybomb_pulse_red`) once, 0.87 s later (stock TF2's, measured).
 //!
 //! A made-up first-person Minigun with `muzzle` and `eject_brass`
 //! attachments, and a made-up held `backblast` attachment.
@@ -204,7 +204,8 @@ fn a_late_rockets_trail_is_made_on_its_copy_at_its_first_place_11_2() {
 }
 
 /// effects.md 1: a sticky trails `stickybombtrail_<team>` from its launch
-/// and pulses (`stickybomb_pulse_<team>`) once, when it arms (0.8 s), both
+/// and pulses (`stickybomb_pulse_<team>`) once, 0.87 s later (the stock
+/// launcher's pulse in real TF2, tools/tf2ref `stickies.tf2`), both
 /// following it.
 #[test]
 fn a_sticky_trails_from_its_launch_and_pulses_once_when_armed() {
@@ -229,7 +230,7 @@ fn a_sticky_trails_from_its_launch_and_pulses_once_when_armed() {
     let (launch, armed) = (tick("stickybombtrail_"), tick("stickybomb_pulse_"));
     let dt = sim.app.world().resource::<chimera_core::core::SimClock>().delta.as_secs_f32();
     let after = (armed - launch) as f32 * dt;
-    assert!((after - 0.8).abs() < 0.05, "armed 0.8 s after the launch: {after}");
+    assert!((after - 0.87).abs() < 0.05, "pulsed 0.87 s after the launch: {after}");
 }
 
 #[test]

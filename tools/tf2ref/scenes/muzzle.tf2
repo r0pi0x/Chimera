@@ -42,6 +42,8 @@ sleep 7
 setpos 0 0 0
 setang 0 90 0
 use tf_weapon_pistol
+# Stock (this account's Engineer carries the Wrangler, no pistol).
+stock tf_weapon_pistol 22
 sleep 3
 shot pistol_idle
 host_framerate 0.016667
@@ -122,6 +124,8 @@ sleep 7
 setpos 0 0 0
 setang 0 90 0
 use tf_weapon_minigun
+# Stock (this account's Heavy carries the Tomislav, 424).
+stock tf_weapon_minigun 15
 sleep 3
 shot minigun_idle
 +attack2

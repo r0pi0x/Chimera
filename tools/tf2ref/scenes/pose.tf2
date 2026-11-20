@@ -123,7 +123,7 @@ shot st_demoman_snap
 bot_kick all
 sleep 1
 bot_selectweaponslot 0
-bot -name RefHeavy -class heavyweapons -team blue
+bot -name RefHeavy -class heavy -team blue
 sleep 5
 bot_teleport RefHeavy 0 0 0 0 270 0
 sleep 2

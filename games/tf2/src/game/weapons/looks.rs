@@ -60,8 +60,8 @@
 //!   launcher); the water choice by that place (`LateCopy::first`).
 //! - **The armed pulse** (effects.md 1): a gun's `armed` (`ArmedLook`)
 //!   starts on each of its flyers `after` seconds after it appears (the
-//!   sticky's `stickybomb_pulse_<team>` at its arming, 0.8 s), following
-//!   it.
+//!   sticky's `stickybomb_pulse_<team>` 0.87 s after it shows, as the
+//!   stock launcher's in real TF2), following it.
 //! - **The Rocket Launcher's backblast** (effects.md 4): `rocketbackblast`
 //!   at the launcher's `backblast` attachment on each shot, for everyone
 //!   but the shooter (the held model's: never on this machine's own

@@ -34,7 +34,7 @@ wait 2
 +attack
 wait 6
 -attack
-wait 96
+wait 160
 endmovie
 host_framerate 0
 sleep 2

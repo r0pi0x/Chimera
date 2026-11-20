@@ -29,7 +29,7 @@ player's weapon of that slot replaced by that item, e.g.
 `stock tf_weapon_pipebomblauncher 20`: the account's loadout holds other
 items, such as the Quickiebomb Launcher, 1150, for the Stickybomb
 Launcher; through TF2's VScript, `script_execute` of a script this writes
-into the install's `tf/scripts/vscripts/`). Scenes take a lock (`scene.lock` in the cache):
+into the install's `tf/scripts/vscripts/` and deletes after running it). Scenes take a lock (`scene.lock` in the cache):
 a second one waits for the first. Consecutive console lines (and snaps) go in one
 RCON packet, a line each, so `wait` counts frames between them (on this
 listen server `wait 2` is one rendered frame): with `host_framerate
@@ -375,7 +375,11 @@ for (local i = 0; i < 8; i++) {{
 p.Weapon_Equip(w);
 p.Weapon_Switch(w);
 """)
-    r.exec(f"script_execute {STOCK_SCRIPT}")
+    try:
+        r.exec(f"script_execute {STOCK_SCRIPT}")
+    finally:
+        # Run at once: nothing of ours stays in the install.
+        (folder / f"{STOCK_SCRIPT}.nut").unlink(missing_ok=True)
 
 
 def scene(path, out):

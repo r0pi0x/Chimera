@@ -96,7 +96,10 @@ model_hidden = 0.1
 # pcf names are used), the Stickybomb Launcher's for pipes too.
 [hooks."tf2:looks"]
 trail = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybombtrail", team = true }
-# Its pulse once armed (effects.md 1), `arm` (0.8 s) after it appears.
-armed = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybomb_pulse", team = true, after = 0.8 }
+# Its pulse once armed (effects.md 1): 0.87 s after it appears, as the stock
+# launcher's in real TF2 (tools/tf2ref `stickies.tf2`, 2026-11-20: the
+# first ring 26 frames at 30 a second after the sticky first shows; the
+# 0.8 s measured earlier was the Quickiebomb Launcher's, which arms sooner).
+armed = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybomb_pulse", team = true, after = 0.87 }
 muzzle = "muzzle_pipelauncher"
 explosion = { wall = "ExplosionCore_Wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }
