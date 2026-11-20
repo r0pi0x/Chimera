@@ -63,6 +63,7 @@ pub fn glow_name(team: Option<Team>) -> String {
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn boost_looks(
     players: Query<(Entity, &Inventory, &Transform, Option<&Team>, Option<&Health>, Has<CritBoosted>, Option<&chimera_core::core::MovementState>, Option<&chimera_core::core::Intent>)>,
+    boosted_players: Query<Entity, With<CritBoosted>>,
     weapons: Query<&Weapon>,
     muzzles: Muzzles,
     mut shown: Local<BTreeMap<Entity, Entity>>,
@@ -75,15 +76,17 @@ fn boost_looks(
         stops.write(StopSound { by: None, source: p, entry: CRIT_POWER.to_string(), local: true });
         stop.write(StopParticleSystems { tag: w });
     };
-    // Players gone: silent.
+    // Players gone or no longer boosted: silent.
     shown.retain(|p, w| {
-        let keep = players.contains(*p);
+        let keep = players.get(*p).is_ok_and(|x| x.5);
         if !keep {
             end(*p, *w, &mut stops, &mut stop);
         }
         keep
     });
-    for (p, inv, at, team, health, boosted, state, intent) in &players {
+    // Only the boosted (a query over every player each frame costs per
+    // character archetype: party_kit's archetypes test).
+    for (p, inv, at, team, health, boosted, state, intent) in boosted_players.iter().filter_map(|p| players.get(p).ok()) {
         let alive = health.is_none_or(|h| h.current > 0.0);
         let wanted = inv
             .active
