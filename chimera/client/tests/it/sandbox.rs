@@ -979,3 +979,40 @@ fn the_target_picker_lists_characters_in_a_scrolling_list_inside_the_dialog() {
     let uses = w.query::<(&BenchAction, &bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform)>().iter(w).find(|(a, ..)| **a == BenchAction::PickerUse).map(|(_, n, t)| (t.translation - n.size * 0.5, t.translation + n.size * 0.5)).unwrap();
     assert!(uses.1.y <= plate_hi.y + 1.0 && uses.0.y >= plate_lo.y, "Use is inside the dialog");
 }
+
+/// Change gun's grid is the kit's shared picker (docs/plans/active/
+/// shared-picker.md, step 3): single pick, cards, the detail its side
+/// pane; a card has its gun's icon and foot (the picker's slots, filled
+/// by the screen) and selects through the list; a class header's click
+/// folds it in the picker's state and its list at once, the folded header
+/// showing its preview.
+#[test]
+fn change_gun_is_the_shared_picker() {
+    use chimera_ui::picker::{PickerAction, PickerCard, PickerLook, PickerMode, PickerPart, PickerSlot, Pickers};
+    let mut sim = laid_out(|_| {});
+    let w = sim.app.world_mut();
+    let view = w.resource::<Pickers>().0.get(LIST).expect("the grid's picker").clone();
+    assert_eq!((view.frame.look, view.frame.mode), (PickerLook::Cards, PickerMode::Single));
+    assert!(view.frame.side.is_some() && view.frame.foot, "the detail's side pane, the cards' feet");
+    let cards = w.query::<&PickerCard>().iter(w).count();
+    assert!(cards > 0, "cards drawn");
+    assert_eq!(w.query_filtered::<(), (With<PickerCard>, With<chimera_ui::VHit>)>().iter(w).count(), cards, "a card selects through the list");
+    let parts: Vec<PickerPart> = w.query::<&PickerSlot>().iter(w).filter(|s| s.list == LIST).map(|s| s.part).collect();
+    assert_eq!(parts.iter().filter(|p| **p == PickerPart::Art).count(), cards, "every card's gun icon is the screen's");
+    assert_eq!(parts.iter().filter(|p| **p == PickerPart::Foot).count(), cards);
+    // Every header folds by a click (`PickerAction::Fold`); the keys: ↑
+    // to the gun's class header, ← folds it (state and list).
+    assert!(w.query::<&PickerAction>().iter(w).any(|a| matches!(a, PickerAction::Fold(_))), "headers fold on a click");
+    while !matches!(cursor(&sim), Some(VCursor::Header(_))) {
+        press(&mut sim, &[KeyCode::ArrowUp]);
+    }
+    let Some(VCursor::Header(sec)) = cursor(&sim) else { unreachable!() };
+    press(&mut sim, &[KeyCode::ArrowLeft]);
+    frame(&mut sim);
+    let st = sim.app.world().resource::<VirtualLists>().get(LIST).unwrap().clone();
+    assert!(st.is_folded(sec), "the list folds it");
+    let gp = sim.app.world().resource::<sandbox::change_gun::GunPicker>().clone();
+    assert_eq!(gp.0.folded.len(), 1, "and the picker's state");
+    let w = sim.app.world_mut();
+    assert!(w.query::<&PickerSlot>().iter(w).any(|s| s.list == LIST && s.part == PickerPart::Head), "the folded header's preview");
+}

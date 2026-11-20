@@ -981,9 +981,9 @@ pub fn stage(w: &mut World, args: &[String]) -> Result<(), String> {
         let st = lists.state(change_gun::LIST);
         st.folded.clear();
         if fold {
-            st.folded.insert("Pistols".into());
-            st.folded.insert("SMGs".into());
-            st.folded.insert("Shotguns".into());
+            for class in ["Pistols", "SMGs", "Shotguns"] {
+                st.folded.insert(format!("{}/{class}", change_gun::LIST));
+            }
         }
     }
     Ok(())

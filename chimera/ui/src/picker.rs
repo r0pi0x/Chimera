@@ -655,12 +655,16 @@ pub fn card_grid(theme: &Theme, w: f32) -> (usize, f32, f32) {
         cols -= 1;
     }
     let card_w = each(cols).max(0.0);
-    (cols, card_w, card_w * aspect)
+    // The height on a twentieth of a cq: the grid's lines add up to
+    // what the view measures (a reveal of the last line lands on it).
+    (cols, card_w, (card_w * aspect * 20.0).round() / 20.0)
 }
 
-/// The list's width in a frame (less the side pane and its gap).
+/// The list's content width in a frame: less the side pane and its gap,
+/// and the scroll bar and its gap (`[layout.scroll]`).
 pub fn list_w(theme: &Theme, frame: &PickerFrame) -> f32 {
-    frame.side.map_or(frame.w, |s| frame.w - s - theme.layout(L, "side_gap")).max(0.0)
+    let w = frame.side.map_or(frame.w, |s| frame.w - s - theme.layout(L, "side_gap"));
+    (w - theme.layout("scroll", "bar_w") - theme.layout("scroll", "gap")).max(0.0)
 }
 
 /// An open picker as built (`bind_slots` fills its list's slots from it).
@@ -1048,12 +1052,14 @@ pub fn bind_slots(
         match (view.frame.look, line) {
             (PickerLook::List, VLine::Row { first, .. }) => {
                 if view.rows.get(first).is_some() {
-                    list_row(&mut c, &ui, slot, view, first, res.as_mut().map(|(a, b)| (&mut **a, &mut **b)));
+                    let focus = st.cursor == Some(VCursor::Item(0, first));
+                    list_row(&mut c, &ui, slot, view, first, focus, res.as_mut().map(|(a, b)| (&mut **a, &mut **b)));
                 }
             }
             (PickerLook::Cards, VLine::Header(sec)) => {
                 if let Some((h, _)) = view.sections.get(sec) {
-                    list_row(&mut c, &ui, slot, view, *h, res.as_mut().map(|(a, b)| (&mut **a, &mut **b)));
+                    let focus = st.cursor == Some(VCursor::Header(sec));
+                    list_row(&mut c, &ui, slot, view, *h, focus, res.as_mut().map(|(a, b)| (&mut **a, &mut **b)));
                 }
             }
             (PickerLook::Cards, VLine::Row { section, first, count }) => {
@@ -1071,12 +1077,11 @@ pub fn bind_slots(
 }
 
 /// One row of the List look (or a header of the Cards look) in `slot`.
-fn list_row(c: &mut Commands, ui: &Ui, slot: Entity, view: &PickerView, i: usize, res: Option<(&mut Assets<Image>, &mut IconImages)>) {
+fn list_row(c: &mut Commands, ui: &Ui, slot: Entity, view: &PickerView, i: usize, focus: bool, res: Option<(&mut Assets<Image>, &mut IconImages)>) {
     let t = ui.theme;
     let l = |k: &str| t.layout(L, k);
     let (games, picker, row) = (&view.games, &view.state, &view.rows[i]);
     let multi = view.frame.mode == PickerMode::Multi;
-    let focus = i == picker.cursor;
     let count_of = |row: &PickerRow| {
         let (on, n) = picker.count(games, row);
         Some(if multi { format!("{on} of {n}") } else { format!("{n}") })
@@ -1250,7 +1255,8 @@ fn card(c: &mut Commands, ui: &Ui, parent: Entity, view: &PickerView, i: usize, 
         }
     }
     let n = ui.text(c, k, Role::DisplayBold, l("card_name"), if current { Tone::AccText } else { Tone::Fg }, &it.name);
-    c.entity(n).insert(Ellipsize::in_parent(it.name.clone()));
+    // (The display face is set in capitals: the cut measures them.)
+    c.entity(n).insert(Ellipsize::in_parent(it.name.to_uppercase()));
     if view.frame.foot {
         let f = ui.boxed(c, k, UiStyle { h: Some(l("foot_h")), gap: Some(l("card_inner_gap")), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::row() });
         c.entity(f).insert(PickerSlot { list, id: it.id.clone(), part: PickerPart::Foot });

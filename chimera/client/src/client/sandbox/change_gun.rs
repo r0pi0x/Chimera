@@ -11,20 +11,27 @@
 //!   here, or one download for the whole game); a click ticks a game
 //!   (white), All games clears them. A ticked game with facets of its own
 //!   shows them under it as tick tags (Team Fortress 2: the classes).
-//! - **The grid** (`chimera_ui::vlist`, a recycling grid of 5 tiles a row
-//!   under folding class headers): a tile has its game's short name, its
-//!   pinned slot, the gun's icon and name, and its foot: its delivery and
-//!   fire mode, or its download state (`tile_foot`). The variants of one
-//!   gun are one tile (`model`, "Families": Combat Arms' skins, editions
-//!   and levels), saying how many beside the game's name; the counts (the
-//!   games', the classes', the bar's) are tiles. A press selects, a
+//! - **The grid** is the kit's shared picker (`chimera_ui::picker`,
+//!   docs/plans/active/shared-picker.md, step 3): single pick, the Cards
+//!   look, its columns and card size from the grid's width and the
+//!   theme's `[layout.picker]`; a picker game a class (`GunCards`, from
+//!   `GunView::tiles`), folding under its header (the list's folds, read
+//!   back into the picker's state, `picker::folds_of`). A card has its
+//!   game's short name (the badge), its pinned slot (the mark), the gun's
+//!   icon (`PickerPart::Art`, filled by `fill`) and name, and its foot:
+//!   its delivery and fire mode, or its download state (`PickerPart::
+//!   Foot`, `tile_foot`), a download's bar along its bottom edge (the
+//!   card's `progress`). The variants of one gun are one card (`model`,
+//!   "Families": Combat Arms' skins, editions and levels), saying how many
+//!   beside the game's name (the card's `family`); the counts (the
+//!   games', the classes', the bar's) are cards. A press selects, a
 //!   second press switches (the kit's double-click rule); a header folds.
 //!   Over the grid: TAGS (the global tag popover, eight groups as tick
 //!   tags, and More filters greyed: Later; while it is open typing goes
 //!   to its own "Find a tag", which keeps the tags holding the words,
 //!   Enter ticks the first, Esc clears it, then closes the popover), the ticked tags with their
 //!   crosses, and the count.
-//! - **Detail** (right, 25 cq): the game, the name with the kit's icon,
+//! - **Detail** (the picker's side pane, 25 cq): the game, the name with the kit's icon,
 //!   the 3D model's area (here: a stub picture of the gun, drag to turn;
 //!   not here: Download to see the model; downloading: the progress),
 //!   the stats (damage a hit, fire rate, magazine, range feel), hits to
@@ -70,15 +77,18 @@
 //! shows a ghost of the gun in the slot (`model::drop_hint`); the keys
 //! below.
 //!
-//! A tile's name is cut to the tile with the kit's ellipsis
+//! A card's name is cut to the card with the kit's ellipsis
 //! (`chimera_ui::Ellipsize`), and so is the detail pane's head: the name
 //! has the pane's width less the icon's, which stays in the pane (the
 //! variants list under the model has every variant's name).
 //!
-//! Known shortcuts: a slot's tiles are spawned again when it shows
+//! Known shortcuts: a slot's cards are spawned again when it shows
 //! another row (the slots themselves stay; the kit's binding in place is
 //! for text); the model area shows the kit's icon large, not a render;
-//! the drag shows the slot under the pointer but no ghost tile.
+//! the drag shows the slot under the pointer but no ghost tile; the
+//! search field stays in the head (the picker's own search bar is over
+//! its list) with the screen's matching (`GunView::fits`, wider than the
+//! picker's), typed with the kit's `text_edit` as the picker's is.
 
 use bevy::{
     input::{
@@ -90,8 +100,9 @@ use bevy::{
     window::PrimaryWindow,
 };
 use chimera_ui::{
-    Role, Tone, UiParityId, UiStyle, VCursor, VHit, VListEvent, VNav, VSection, VShape, VSlot, VirtualLists,
+    Role, Theme, Tone, UiParityId, UiStyle, VCursor, VHit, VListEvent, VNav, VSlot, VirtualLists,
     controls::{Ui, clickable},
+    picker::{self, PickerAction, PickerFamily, PickerFrame, PickerGame, PickerGroup, PickerId, PickerItem, PickerLook, PickerMode, PickerPart, PickerSlot, PickerState, Pickers},
     vlist::VLine,
 };
 
@@ -106,11 +117,47 @@ use crate::client::signal::Look;
 /// The grid's list key (`VirtualLists`).
 pub const LIST: &str = "sandbox.guns";
 
-/// Tiles a row, a tile's height, a header's, the gap (cq).
-pub const COLS: usize = 5;
-pub const TILE_H: f32 = 5.6;
-pub const HEAD_H: f32 = 1.6;
-pub const GAP: f32 = 0.45;
+/// The games column's width, the body's gaps and the detail pane's
+/// width (cq): the grid has the rest of the 100-wide frame.
+pub const GAMES_W: f32 = 14.0;
+pub const BODY_GAP: f32 = 1.3;
+pub const DETAIL_W: f32 = 25.0;
+
+/// The grid's picker frame (module doc, "The grid").
+pub fn frame() -> PickerFrame {
+    PickerFrame {
+        w: 100.0 - 2.0 * super::hud::M - GAMES_W - BODY_GAP,
+        look: PickerLook::Cards,
+        mode: PickerMode::Single,
+        foot: true,
+        side: Some(DETAIL_W),
+        list_cursor: true,
+        ..Default::default()
+    }
+}
+
+/// The grid's picker state (single pick; the list's folds read back).
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct GunPicker(pub PickerState);
+
+/// The grid's cards as the picker's data: a picker game a class section,
+/// a card a tile (`model::Tile`).
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct GunCards(pub Vec<PickerGame>);
+
+/// A tile's card: the face gun, its family's count, its pin, its
+/// download (the state as a tag: a change binds the card again).
+fn card_of(g: &SandboxGun, family: usize, pins: &super::model::Pins, unit: &UnitState) -> PickerItem {
+    let progress = matches!(unit, UnitState::Downloading { .. } | UnitState::Queued { .. }).then(|| (unit.share().clamp(0.0, 1.0) * 1000.0) as u16);
+    PickerItem {
+        badge: Some(g.game_short.clone()),
+        mark: pins.slot_of(&g.id).map(|p| (p + 1).to_string()),
+        family,
+        progress,
+        tags: vec![format!("files:{unit:?}")],
+        ..PickerItem::new(g.id.clone(), g.name.clone())
+    }
+}
 
 /// The detail pane's variants list: its scroll view's key, the rows it
 /// shows at most and a row's height (cq).
@@ -192,17 +239,19 @@ impl Grid {
     }
 }
 
-/// Keeps the grid's sections from the filters, and the cursor and the
-/// selected gun in step.
+/// Keeps the grid's sections and the picker's cards from the filters,
+/// the picker's folds from the list's, and the cursor and the selected
+/// gun in step.
 #[allow(clippy::too_many_arguments)]
 pub fn sync_grid(
     ui: Res<SandboxUi>,
     cat: Res<SandboxCatalogue>,
     progress: Res<UnitProgress>,
+    theme: Res<Theme>,
     mut grid: ResMut<Grid>,
     mut lists: ResMut<VirtualLists>,
     mut sel: ResMut<GridSel>,
-    mut pins: Local<super::model::Pins>,
+    (mut pickers, mut gp, mut cards): (ResMut<Pickers>, ResMut<GunPicker>, ResMut<GunCards>),
 ) {
     if ui.screen != SandboxScreen::ChangeGun {
         sel.0 = None;
@@ -210,24 +259,39 @@ pub fn sync_grid(
     }
     let tiles = ui.view.tiles(&cat.guns, &|g| SandboxCatalogue::files(g, &progress));
     let shown: Vec<(&'static str, Vec<usize>)> = tiles.iter().map(|(n, t)| (*n, t.iter().map(|t| t.face).collect())).collect();
+    let games: Vec<PickerGame> = tiles
+        .iter()
+        .map(|(n, t)| PickerGame {
+            id: n.to_string(),
+            name: n.to_string(),
+            groups: vec![PickerGroup {
+                name: String::new(),
+                items: t
+                    .iter()
+                    .filter_map(|t| cat.guns.get(t.face).map(|g| card_of(g, t.variants.len(), &ui.pins, &SandboxCatalogue::unit_state(g, &progress))))
+                    .collect(),
+            }],
+        })
+        .collect();
     let variants: std::collections::BTreeMap<usize, Vec<usize>> = tiles.into_iter().flat_map(|(_, t)| t).map(|t| (t.face, t.variants)).collect();
-    let st = lists.state(LIST);
-    st.set_shape(VShape::grid(COLS, HEAD_H, TILE_H, GAP));
     if grid.1 != variants {
         grid.1 = variants;
-        // (A tile's count is drawn: bound again.)
-        st.bump();
     }
     if grid.0 != shown {
         grid.0 = shown;
-        st.set_sections(grid.0.iter().map(|(n, v)| VSection::new(*n, v.len())).collect());
     }
-    // What the tiles show beyond the sections: the downloads, the pins.
-    if progress.is_changed() || cat.is_changed() || *pins != ui.pins {
-        *pins = ui.pins.clone();
-        st.bump();
+    // The picker's folds are the list's (the keys fold both; a staged or
+    // tested fold is the list's alone).
+    let mut state = gp.0.clone();
+    state.folded = picker::folds_of(lists.state(LIST), LIST);
+    // (The keys fold the state at once: the view's snapshot tells.)
+    if cards.0 != games || pickers.0.get(LIST).is_none_or(|v| v.state != state) {
+        cards.0 = games;
+        gp.0 = state;
+        picker::update(&theme, &mut pickers, LIST, &cards.0, &gp.0, frame(), &mut lists);
     }
     // The selected gun moves the cursor (opening, a search).
+    let st = lists.state(LIST);
     if sel.0 != ui.view.selected {
         sel.0 = ui.view.selected.clone();
         if let Some(c) = ui.view.selected.as_ref().and_then(|id| cat.guns.iter().position(|g| g.id == *id)).and_then(|i| grid.cursor_of(i)) {
@@ -270,6 +334,7 @@ fn keys(
     grid: Res<Grid>,
     mut ui: ResMut<SandboxUi>,
     mut lists: ResMut<VirtualLists>,
+    (pickers, mut gp): (Res<Pickers>, ResMut<GunPicker>),
     mut out: MessageWriter<GunAction>,
     mut requests: MessageWriter<UnitRequest>,
     mut own: Local<chimera_ui::clipboard::Clipboard>,
@@ -335,9 +400,23 @@ fn keys(
         // Left and Right move the focused field's caret.
         let in_field = ui.view.search_focus && matches!(nav, VNav::Left | VNav::Right);
         if k(key) && !in_field {
-            st.nav(nav);
+            // The picker's grid keys (a header's ← and → fold it there and
+            // in the list).
+            match pickers.0.get(LIST) {
+                Some(view) => {
+                    picker::nav(&mut gp.0, view, st, nav);
+                }
+                None => {
+                    st.nav(nav);
+                }
+            }
         }
     }
+    // A header's fold, in the picker's state and its list (`picker::fold`).
+    let mut fold_sec = |st: &mut chimera_ui::VListState, sec: usize, open: bool| match pickers.0.get(LIST).and_then(|v| v.sections.get(sec).map(|s| (v, s.0))) {
+        Some((view, row)) => picker::fold(&mut gp.0, view, st, row, open),
+        None => st.fold(sec, !open),
+    };
     // `\` (by its physical key, so typing never takes it) and Enter on a
     // header: fold the class, or open it again and go back to the tile the
     // fold left.
@@ -354,19 +433,19 @@ fn keys(
     let enter = enter && !focus;
     match st.cursor {
         Some(VCursor::Item(sec, i)) if fold_key => {
-            st.fold(sec, true);
+            fold_sec(st, sec, false);
             ui.view.fold_return = Some((sec, i));
         }
         Some(VCursor::Header(sec)) if fold_key || enter => {
             if st.is_folded(sec) {
-                st.fold(sec, false);
+                fold_sec(st, sec, true);
                 if let Some((rs, ri)) = ui.view.fold_return.take()
                     && rs == sec
                 {
                     st.select(VCursor::Item(rs, ri));
                 }
             } else {
-                st.fold(sec, true);
+                fold_sec(st, sec, false);
             }
         }
         Some(VCursor::Item(..)) if enter => {
@@ -525,13 +604,15 @@ fn search_pointer(
 #[allow(clippy::too_many_arguments)]
 fn pointer(
     pressed: Query<(&Interaction, &GunAction), Changed<Interaction>>,
+    headers: Query<(&Interaction, &PickerAction), Changed<Interaction>>,
+    (pickers, mut gp): (Res<Pickers>, ResMut<GunPicker>),
+    mut vlists: ResMut<VirtualLists>,
     mut list_events: MessageReader<VListEvent>,
     mouse: Option<Res<ButtonInput<MouseButton>>>,
     window: Query<&Window, With<PrimaryWindow>>,
     tiles: Query<(&Interaction, &VHit)>,
     slots: Query<&VSlot>,
     drops: Query<(&PinDrop, &RelativeCursorPosition)>,
-    lists: Res<VirtualLists>,
     grid: Res<Grid>,
     cat: Res<SandboxCatalogue>,
     mut ui: ResMut<SandboxUi>,
@@ -548,6 +629,21 @@ fn pointer(
             out.write(a.clone());
         }
     }
+    // A class's header (the picker's): fold or open it, the cursor on it.
+    // (A card's press is the list's: `VHit`, below.)
+    if let Some(view) = pickers.0.get(LIST) {
+        for (i, a) in &headers {
+            if let (Interaction::Pressed, PickerAction::Fold(row)) = (*i, *a) {
+                let st = vlists.state(LIST);
+                let open = view.rows.get(row).is_some_and(|r| gp.0.is_folded(&view.games, r));
+                picker::fold(&mut gp.0, view, st, row, open);
+                if let Some(c) = view.cursor_of(row) {
+                    st.select(c);
+                }
+            }
+        }
+    }
+    let lists = &*vlists;
     for e in list_events.read() {
         if let VListEvent::Activate { key, .. } = e
             && key == LIST
@@ -649,7 +745,15 @@ fn act(world: &mut World) {
 // Drawing.
 
 /// Opens or closes the view's root; builds its fixed parts at opening.
-fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, mut views: ResMut<chimera_ui::ScrollViews>, mut c: Commands) {
+#[allow(clippy::too_many_arguments)]
+fn open_close(
+    look: Look,
+    ui_state: Res<SandboxUi>,
+    parts: Option<Res<Parts>>,
+    mut views: ResMut<chimera_ui::ScrollViews>,
+    (mut lists, mut pickers, gp, cards): (ResMut<VirtualLists>, ResMut<Pickers>, Res<GunPicker>, Res<GunCards>),
+    mut c: Commands,
+) {
     let want = look.on() && ui_state.screen == SandboxScreen::ChangeGun;
     let size = (look.units.height as u32, (look.units.scale_factor * 100.0) as u32);
     if let Some(p) = parts.as_deref()
@@ -659,6 +763,7 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
         c.remove_resource::<Parts>();
         if !want {
             views.forget(LIST);
+            pickers.0.remove(LIST);
         }
         return;
     }
@@ -698,20 +803,17 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
         ))
         .id();
     // The body: games, the grid, the detail.
-    let body = ui.boxed(&mut c, root, UiStyle { gap: Some(1.3), grow: Some(1.0), align: Some(AlignItems::Stretch), ..UiStyle::row() });
+    // The body: games, then the picker (the tags bar over the grid, the
+    // detail its side pane).
+    let body = ui.boxed(&mut c, root, UiStyle { gap: Some(BODY_GAP), grow: Some(1.0), align: Some(AlignItems::Stretch), ..UiStyle::row() });
     c.entity(body).insert(Node { min_height: Val::Px(0.0), ..default() });
-    let games = c.spawn((UiStyle { w: Some(14.0), gap: Some(0.1), shrink: Some(0.0), ..UiStyle::column() }, Node::default(), UiParityId::new("gun.games"), ChildOf(body))).id();
+    let games = c.spawn((UiStyle { w: Some(GAMES_W), gap: Some(0.1), shrink: Some(0.0), ..UiStyle::column() }, Node::default(), UiParityId::new("gun.games"), ChildOf(body))).id();
     let main = ui.boxed(&mut c, body, UiStyle { grow: Some(1.0), gap: Some(0.4), ..UiStyle::column() });
     c.entity(main).insert(Node { min_width: Val::Px(0.0), min_height: Val::Px(0.0), ..default() });
-    let bar = ui.boxed(&mut c, main, UiStyle { gap: Some(0.35), align: Some(AlignItems::Center), h: Some(1.6), shrink: Some(0.0), ..UiStyle::row() });
-    let list = ui.virtual_list(&mut c, main, LIST, UiStyle { grow: Some(1.0), ..UiStyle::row() }, 45.0, VShape::grid(COLS, HEAD_H, TILE_H, GAP));
-    c.entity(list.scroll.frame).insert(Node { min_height: Val::Px(0.0), ..default() });
-    for &slot in &list.slots {
-        c.entity(slot).insert(Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, display: Display::None, column_gap: look.val(GAP), ..default() });
-    }
-    let detail = c
-        .spawn((UiStyle { w: Some(25.0), gap: Some(0.5), pad: Some([0.0, 0.0, 0.0, 1.2].into()), shrink: Some(0.0), ..UiStyle::column() }, Node::default(), UiParityId::new("gun.detail"), ChildOf(body)))
-        .id();
+    let bar = ui.boxed(&mut c, main, UiStyle { gap: Some(0.35), align: Some(AlignItems::Center), h: Some(1.6), shrink: Some(0.0), w: Some(frame().w - DETAIL_W - look.theme.layout(picker::L, "side_gap")), ..UiStyle::row() });
+    let built = picker::spawn_parts(&mut c, &ui, main, LIST, &cards.0, &gp.0, frame(), &mut lists, UiStyle { grow: Some(1.0), ..UiStyle::row() });
+    let detail = built.side.expect("the frame asks for a side pane");
+    c.entity(detail).insert((UiStyle { w: Some(DETAIL_W), gap: Some(0.5), shrink: Some(0.0), ..UiStyle::column() }, UiParityId::new("gun.detail")));
     // The foot: the keys, the pinned bar at the right.
     // The hints wrap (and give way to the pinned bar, which never leaves
     // the screen): at any aspect ratio the hotbar stays in view.
@@ -734,7 +836,7 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
     }
     let pins = ui.boxed(&mut c, foot, UiStyle { gap: Some(0.9), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::row() });
     let pop = c.spawn((Node { position_type: PositionType::Absolute, ..default() }, GlobalZIndex(Z + 2), ChildOf(root))).id();
-    c.insert_resource(Parts { root, search, games, bar, detail, pins, pop, view: list.scroll.view, size });
+    c.insert_resource(Parts { root, search, games, bar, detail, pins, pop, view: built.list, size });
 }
 
 /// What the rebuilt parts show.
@@ -1061,10 +1163,11 @@ fn tag_popover(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, s: &Sandb
     }
 }
 
-/// A tile's foot (module doc): the delivery and fire mode, or the
-/// download state (along the bottom edge).
-fn tile_foot(c: &mut Commands, ui: &Ui, look: &Look, tile: Entity, g: &SandboxGun, st: &UnitState, on: bool) {
-    let foot = ui.boxed(c, tile, UiStyle { gap: Some(0.4), align: Some(AlignItems::Center), h: Some(0.9), ..UiStyle::row() });
+/// A card's foot (module doc), in the picker's foot slot: the delivery
+/// and fire mode, or the download state (its bar along the card's bottom
+/// edge is the picker's, `PickerItem::progress`).
+fn tile_foot(c: &mut Commands, ui: &Ui, look: &Look, foot: Entity, g: &SandboxGun, st: &UnitState) {
+    c.entity(foot).insert(Node { justify_content: JustifyContent::Center, ..default() });
     match st {
         UnitState::Here => {
             let words: Vec<&str> = g.tags.iter().filter(|t| matches!(t.0, TagGroup::Delivery | TagGroup::FireMode | TagGroup::Optics)).map(|t| t.1).take(2).collect();
@@ -1095,170 +1198,55 @@ fn tile_foot(c: &mut Commands, ui: &Ui, look: &Look, tile: Entity, g: &SandboxGu
             ui.kbd(c, foot, "R", 0.38, Tone::Fg2);
         }
     }
-    // The bottom edge: the download's bar (the cursor is an outline, so
-    // they never stack).
-    if matches!(st, UnitState::Downloading { .. } | UnitState::Queued { .. }) && !on {
-        let edge = c
-            .spawn((
-                Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, height: look.val(0.24), ..default() },
-                BackgroundColor(look.theme.tone(Tone::Fg5)),
-                ChildOf(tile),
-            ))
-            .id();
-        c.spawn((
-            Node { width: Val::Percent(st.share() * 100.0), height: Val::Percent(100.0), ..default() },
-            BackgroundColor(look.theme.tone(Tone::Fg2)),
-            ChildOf(edge),
-        ));
-    }
 }
 
-/// Binds the grid's slots (module doc, "Known shortcuts": a rebound slot
-/// is filled again).
+/// Fills the picker's slots in the grid's cards and headers (module doc,
+/// "The grid"): a card's gun icon and its foot, a folded class's preview
+/// (its first few guns' icons); the parity ids of a card and its family
+/// count.
 #[allow(clippy::too_many_arguments)]
-fn bind(
+fn fill(
     look: Look,
-    lists: Res<VirtualLists>,
     grid: Res<Grid>,
     cat: Res<SandboxCatalogue>,
     progress: Res<UnitProgress>,
-    ui_state: Res<SandboxUi>,
-    slots: Query<(Entity, &VSlot), Changed<VSlot>>,
-    owners: Query<&chimera_ui::vlist::VirtualList>,
-    mut stamp: Local<(Option<(UnitProgress, usize, usize, super::model::Pins, (u32, u32))>, u64)>,
-    mut shown: Local<std::collections::BTreeMap<Entity, (usize, Option<usize>, bool, u64)>>,
+    slots: Query<(Entity, &PickerSlot, &ChildOf), Added<PickerSlot>>,
+    fams: Query<(Entity, &ChildOf), Added<PickerFamily>>,
+    up: Query<&ChildOf>,
+    ids: Query<&PickerId>,
     mut c: Commands,
 ) {
-    let Some(st) = lists.get(LIST) else { return };
-    // A slot is drawn again only when what its line shows changed: its
-    // line, its cursor (a click moves it between two tiles), its fold, or
-    // the data under all of them. The rest stays as it is: no flicker.
-    let data = (progress.clone(), cat.guns.len(), grid.0.iter().map(|s| s.1.len()).sum::<usize>(), ui_state.pins.clone(), (look.units.height as u32, (look.units.scale_factor * 100.0) as u32));
-    if stamp.0.as_ref() != Some(&data) {
-        stamp.0 = Some(data);
-        stamp.1 += 1;
-    }
     let ui = Ui::new(&look.theme, look.fonts.as_deref(), *look.units);
-    for (slot, s) in &slots {
-        // Only this list's slots (every list's slots change on one query).
-        if !owners.get(s.list).is_ok_and(|l| l.key == LIST) {
+    for (e, slot, parent) in &slots {
+        if slot.list != LIST {
             continue;
         }
-        let key = s.line.and_then(|l| st.layout.lines.get(l).map(|ln| (l, *ln))).map(|(l, ln)| match ln {
-            VLine::Header(sec) => (l, None, st.cursor == Some(VCursor::Header(sec)), stamp.1 + if st.is_folded(sec) { 1 << 40 } else { 0 }),
-            VLine::Row { section, first, count } => {
-                let on = (first..first + count).find(|i| st.cursor == Some(VCursor::Item(section, *i))).map(|i| i - first);
-                (l, on, false, stamp.1)
+        match slot.part {
+            PickerPart::Art => {
+                let Some(g) = cat.get(&slot.id) else { continue };
+                let tone = if SandboxCatalogue::unit_state(g, &progress).is_here() { Tone::Fg } else { Tone::Fg2 };
+                gun_icon(&mut c, &look, e, &g.id, g.icon_class, 1.55, tone, 1.0);
+                c.entity(parent.parent()).insert(UiParityId::new(format!("gun.tile.{}", g.id)));
             }
-        });
-        match key {
-            Some(k) if shown.get(&slot) == Some(&k) => continue,
-            Some(k) => {
-                shown.insert(slot, k);
+            PickerPart::Foot => {
+                let Some(g) = cat.get(&slot.id) else { continue };
+                tile_foot(&mut c, &ui, &look, e, g, &SandboxCatalogue::unit_state(g, &progress));
             }
-            None => {
-                shown.remove(&slot);
+            PickerPart::Head => {
+                let Some((_, guns)) = grid.0.iter().find(|(n, _)| *n == slot.id) else { continue };
+                for &i in guns.iter().take(6) {
+                    if let Some(g) = cat.guns.get(i) {
+                        gun_icon(&mut c, &look, e, &g.id, g.icon_class, 0.5, Tone::Fg4, 1.0);
+                    }
+                }
             }
         }
-        c.entity(slot).despawn_children();
-        let Some(line) = s.line.and_then(|l| st.layout.lines.get(l)) else { continue };
-        match *line {
-            VLine::Header(sec) => {
-                let Some((name, guns)) = grid.0.get(sec) else { continue };
-                let folded = st.is_folded(sec);
-                let focus = st.cursor == Some(VCursor::Header(sec));
-                let h = c
-                    .spawn((
-                        UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), pad: Some([0.0, 0.4, 0.0, 0.4].into()), grow: Some(1.0), ..UiStyle::row() }.bg_a(Tone::Fg, if focus { 0.08 } else { 0.0 }),
-                        Node::default(),
-                        VHit { slot, col: None },
-                        clickable(),
-                        ChildOf(slot),
-                    ))
-                    .id();
-                if focus {
-                    ui.focus_bar(&mut c, h, 0.24);
-                }
-                if folded {
-                    ui.hairline(&mut c, h, Tone::Fg5, 1.0);
-                }
-                kit_icon(&mut c, &look, h, if folded { "chev_right" } else { "chevron" }, 0.5, Tone::Fg2, 1.0);
-                ui.text(&mut c, h, Role::Mono, 0.5, if focus { Tone::Fg } else { Tone::Fg2 }, name);
-                ui.text(&mut c, h, Role::Mono, 0.48, Tone::Fg4, &guns.len().to_string());
-                if folded {
-                    // A preview of what's folded: the first few icons.
-                    ui.boxed(&mut c, h, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-                    let prev = ui.boxed(&mut c, h, UiStyle { gap: Some(0.7), ..UiStyle::row() });
-                    for &i in guns.iter().take(6) {
-                        if let Some(g) = cat.guns.get(i) {
-                            gun_icon(&mut c, &look, prev, &g.id, g.icon_class, 0.5, Tone::Fg4, 1.0);
-                        }
-                    }
-                }
-            }
-            VLine::Row { section, first, count } => {
-                for col in 0..COLS {
-                    // Never wider than its share (a long name is cut, not
-                    // pushing its neighbours: `min_width` 0 under flex).
-                    let cell = c.spawn((Node { flex_grow: 1.0, flex_basis: Val::Px(0.0), min_width: Val::Px(0.0), height: Val::Percent(100.0), ..default() }, ChildOf(slot))).id();
-                    if col >= count {
-                        continue;
-                    }
-                    let Some(g) = grid.gun_at(VCursor::Item(section, first + col)).and_then(|i| cat.guns.get(i)) else { continue };
-                    let on = st.cursor == Some(VCursor::Item(section, first + col));
-                    let unit = SandboxCatalogue::unit_state(g, &progress);
-                    let here = unit.is_here();
-                    let tile = c
-                        .spawn((
-                            UiStyle { gap: Some(0.45), align: Some(AlignItems::Center), justify: Some(JustifyContent::Center), grow: Some(1.0), pad: Some([0.0, 0.4, 0.0, 0.4].into()), ..UiStyle::column() }
-                                .bg_a(Tone::Fg, if on { 0.1 } else { 0.035 })
-                                .outline(if on { Tone::Acc } else { Tone::Fg5 }, 1.0),
-                            Node { min_width: Val::Px(0.0), overflow: Overflow::clip_x(), ..default() },
-                            VHit { slot, col: Some(col) },
-                            clickable(),
-                            UiParityId::new(format!("gun.tile.{}", g.id)),
-                            ChildOf(cell),
-                        ))
-                        .id();
-                    if on {
-                        // The cursor: an accent outline two pixels in.
-                        let px = (2.0 * look.units.scale_factor).round() / look.units.scale_factor;
-                        c.spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::ZERO,
-                                right: Val::ZERO,
-                                top: Val::ZERO,
-                                bottom: Val::ZERO,
-                                border: UiRect::all(Val::Px(px)),
-                                ..default()
-                            },
-                            BorderColor::all(look.tone(Tone::Acc)),
-                            Pickable::IGNORE,
-                            ChildOf(tile),
-                        ));
-                    }
-                    let top = ui.boxed(&mut c, tile, UiStyle { justify: Some(JustifyContent::SpaceBetween), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([Some(0.4), Some(0.38), Some(0.4), None]));
-                    let n = grid.gun_at(VCursor::Item(section, first + col)).map_or(1, |f| grid.variants_of(f).len());
-                    let short = if n > 1 { format!("{} \u{00b7} {n} variants", g.game_short) } else { g.game_short.clone() };
-                    let t = ui.text(&mut c, top, Role::Mono, 0.38, Tone::Fg3, &short);
-                    if n > 1 {
-                        c.entity(t).insert(UiParityId::new(format!("gun.tile.variants.{}", g.id)));
-                    }
-                    if let Some(p) = ui_state.pins.slot_of(&g.id) {
-                        let pm = ui.boxed(&mut c, top, UiStyle { w: Some(0.95), h: Some(0.95), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), ..UiStyle::row() }.bg_a(Tone::Fg, 0.1).outline(Tone::Fg3, 1.0));
-                        ui.text(&mut c, pm, Role::Mono, 0.42, Tone::Fg, &(p + 1).to_string());
-                    }
-                    let tone = if here { Tone::Fg } else { Tone::Fg2 };
-                    let ic = ui.boxed(&mut c, tile, UiStyle { margin: Some([0.5, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
-                    gun_icon(&mut c, &look, ic, &g.id, g.icon_class, 1.55, tone, 1.0);
-                    // The name cut to the tile with the kit's ellipsis
-                    // (`chimera_ui::Ellipsize`): long ones never overlap.
-                    let name = ui.text(&mut c, tile, Role::DisplayRegular, 0.66, tone, &g.name);
-                    c.entity(name).insert(chimera_ui::Ellipsize::in_parent(g.name.to_uppercase()));
-                    tile_foot(&mut c, &ui, &look, tile, g, &unit, on);
-                }
-            }
+    }
+    // A family's count: the parity id its tests find (the card's id).
+    for (e, parent) in &fams {
+        let card = up.get(parent.parent()).map(ChildOf::parent).ok();
+        if let Some(id) = card.and_then(|k| ids.get(k).ok()) {
+            c.entity(e).insert(UiParityId::new(format!("gun.tile.variants.{}", id.0)));
         }
     }
 }
@@ -1455,7 +1443,14 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
 
 /// The view's systems.
 pub fn add(app: &mut App) {
-    app.init_resource::<Grid>().init_resource::<GridSel>().add_message::<GunAction>().add_message::<KeyboardInput>().add_systems(
+    app.init_resource::<Grid>()
+        .init_resource::<GridSel>()
+        .init_resource::<GunPicker>()
+        .init_resource::<GunCards>()
+        .init_resource::<Pickers>()
+        .add_message::<GunAction>()
+        .add_message::<KeyboardInput>()
+        .add_systems(
         Update,
         (keys, search_pointer, pointer, act, sync_grid, follow_cursor, open_close, draw)
             .chain()
@@ -1463,5 +1458,5 @@ pub fn add(app: &mut App) {
             .run_if(resource_exists::<chimera_ui::Theme>)
             .run_if(resource_exists::<chimera_ui::UiUnits>),
     );
-    app.add_systems(PostUpdate, bind.after(chimera_ui::vlist::place_slots).before(bevy::ui::UiSystems::Prepare).run_if(resource_exists::<chimera_ui::Theme>));
+    app.add_systems(PostUpdate, fill.after(picker::bind_slots).before(bevy::ui::UiSystems::Prepare).run_if(resource_exists::<chimera_ui::Theme>));
 }

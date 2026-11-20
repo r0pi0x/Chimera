@@ -74,9 +74,16 @@ Maps picker; M11, the sandbox's screens).
    open. The Maps and Guns dialogs got the search and chips (Maps: the
    games; Guns: the classes and the games) and the grid keys (Guns); the
    Guns dialog lists the grenades (`guns_picker::games_of`).
-3. [ ] The Sandbox's Change gun (B) on the picker (single, full screen,
+3. [x] The Sandbox's Change gun (B) on the picker (single, full screen,
    cards), the quick bar kept (picking the gun in hand does nothing:
-   acb27eb50, `rung_command::select_held`).
+   acb27eb50, `rung_command::select_held`). The grid is the picker
+   (`change_gun::GunCards`: a picker game a class, a card a tile;
+   `picker::update` when the cards or the folds change), the detail its
+   side pane, the screen filling the cards' art, foot and a folded
+   class's preview (`change_gun::fill`); the games column, the tag
+   popover, the pinned bar with its drag and drop, the head's search
+   stay the screen's. The list's folds are the truth there
+   (`picker::folds_of`), the keys fold both (`picker::fold`).
 4. [ ] A Sandbox map selector on the picker (single), changing map
    through the sandbox's entry path (f2132a134): the map is changed by
    submitting `sandbox <map>` (apps/ultimate_gun_game/src/sandbox.rs, the
@@ -125,3 +132,14 @@ captures at 1920x1080 and 1280x720, a commit, post-push tests.
   `the_guns_picker_searches_by_typing_and_walks_cards_by_the_grid_keys`,
   `the_guns_listing_has_the_grenades`. Captures: `ui_scene play maps`,
   `play guns`, `ui_gallery picker` at 1920x1080 and 1280x720.
+- 2026-11-20, step 3: Change gun on the picker. Before and after
+  (`ui_scene sandbox gun|gun-detail|gun-tags|gun-fold|drag` over a
+  sandbox, 1920x1080 and 1280x720): the same features (games column with
+  download state and TF2's classes, tag popover, detail with variants,
+  pins with drag and drop and the drop hint, badges, pinned marks,
+  download sizes and bars, Failed with R, the cursor's accent outline);
+  the looks differ a little (the picker's card and header type, the
+  detail pane starting under the tags bar, cards sized by the theme's
+  `card_aspect`). Tests: chimera_client `change_gun_is_the_shared_picker`
+  and the sandbox's existing ones; ultimate_gun_game's
+  `a_pick_of_the_gun_in_hand_changes_nothing` (the quick-bar rule) holds.
