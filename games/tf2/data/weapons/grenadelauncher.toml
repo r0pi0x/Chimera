@@ -56,6 +56,9 @@ arms = "demo"
 script = "tf_weapon_grenadelauncher"
 
 [hooks."chimera:projectile"]
+# Drawn 0.1 s in the past on every client, the shooter's own too, its
+# blast held as long (specs/tf2/effects.md 11).
+interp = true
 speed = 1200.0
 up_speed = 200.0
 gravity = 800.0

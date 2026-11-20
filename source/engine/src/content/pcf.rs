@@ -304,22 +304,18 @@ fn add_operator(def: &mut SystemDef, list: &str, op: &Element, notes: &mut Vec<S
             radius_scale: op.float("radius scale", 1.0),
             kill: op.bool("kill particle on collision"),
         }),
-        ("renderers", "render_animated_sprites") => {
-            def.renderer = Render::Sprites {
-                rate: op.float("animation rate", 1.0),
-                as_fps: op.bool("use animation rate as FPS"),
-                fit_life: op.bool("animation_fit_lifetime"),
-                orientation: op.int("orientation_type", 0),
-            }
-        }
-        ("renderers", "render_sprite_trail") => {
-            def.renderer = Render::Trail {
-                min_length: op.float("min length", 0.0),
-                max_length: op.float("max length", 2000.0),
-                length_fade_in: op.float("length fade in time", 0.0),
-            }
-        }
-        ("renderers", "render_rope") => def.renderer = Render::Rope,
+        ("renderers", "render_animated_sprites") => def.add_renderer(Render::Sprites {
+            rate: op.float("animation rate", 1.0),
+            as_fps: op.bool("use animation rate as FPS"),
+            fit_life: op.bool("animation_fit_lifetime"),
+            orientation: op.int("orientation_type", 0),
+        }),
+        ("renderers", "render_sprite_trail") => def.add_renderer(Render::Trail {
+            min_length: op.float("min length", 0.0),
+            max_length: op.float("max length", 2000.0),
+            length_fade_in: op.float("length fade in time", 0.0),
+        }),
+        ("renderers", "render_rope") => def.add_renderer(Render::Rope),
         _ => return false,
     }
     true

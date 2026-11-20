@@ -7,7 +7,8 @@
 //! `Instance` (simulated in the game's units, one per start; stopping lets
 //! particles finish), `SystemEmitter` per info_particle_system following its
 //! entity, switched by `EntityPart`, drawn as one-frame pool groups (sprites,
-//! sprite trails, ropes; the material's overbright); `run_started_systems`
+//! sprite trails of specs/tf2/particles.md 5.1, ropes; a particle drawn by
+//! every renderer its system lists; the material's overbright); `run_started_systems`
 //! runs the one-shot systems games start (`StartParticleSystem`) to their
 //! end, in the world pass (a first-person muzzle flash too, started at the
 //! muzzle re-projected into the world view: specs/tf2/particles.md 6),
@@ -34,10 +35,10 @@
 //! interpretations (specs/cs_source/impact_effects.md 14, fire.md 7.3; the
 //! library isn't public): drag removes its fraction per step (steps of the
 //! system's maximum time step), velocity noise is uniform per particle, random
-//! force a uniform draw per step, twist a tangential acceleration, sprite
-//! trails are streaks back along the velocity 0.1 s long between the min and
-//! max length (along the last step's motion for a system no movement
-//! operator moves: its velocity is only a start value), animation rate without "as FPS" plays the sequence that many
+//! force a uniform draw per step, twist a tangential acceleration, a sprite
+//! trail's length is clamped after its fade-in by age (the order inferred,
+//! particles.md 5.1), a continuous emitter whose window opens and closes
+//! inside one step emits nothing (inferred: Open questions 8), animation rate without "as FPS" plays the sequence that many
 //! times a second; "collision via traces" is a ray per step (its radius past
 //! the step) against the solid world for started systems only (placed
 //! ones don't collide), bounce and slide read as fractions of the speed
@@ -143,8 +144,8 @@ struct P {
     /// The trail renderer's length attribute (field 10): seconds of its
     /// travel the trail spans.
     trail: f32,
-    /// Its motion over its last step (units/s): what a sprite trail of a
-    /// system no movement operator moves follows (`Render::Trail`).
+    /// Its motion over its last step (units/s): what a sprite trail
+    /// follows (`Render::Trail`, particles.md 5.1).
     motion: Vec3,
 }
 
@@ -322,6 +323,19 @@ impl<F: Fn(usize, u32) -> usize> Sheets for F {
     fn frames(&self, material: usize, sequence: u32) -> usize {
         self(material, sequence)
     }
+}
+
+/// A sprite trail's length (specs/tf2/particles.md 5.1): the speed of
+/// `motion` (its last step's, units/s) x `trail` (s) x min(1, `age` /
+/// `fade_in`) (1 with no fade-in), clamped to [`min`, `max`]; None when it
+/// didn't move.
+pub fn trail_length(motion: Vec3, trail: f32, age: f32, min: f32, max: f32, fade_in: f32) -> Option<f32> {
+    let speed = motion.length();
+    if speed <= 1e-4 {
+        return None;
+    }
+    let f = if fade_in > 0.0 { (age / fade_in).clamp(0.0, 1.0) } else { 1.0 };
+    Some((speed * trail * f).clamp(min, max.max(min)))
 }
 
 fn smooth(x: f32) -> f32 {
@@ -532,6 +546,13 @@ impl Instance {
                         } else {
                             f32::INFINITY
                         };
+                        // A window that opens and closes inside one step
+                        // emits nothing (inferred, particles.md Open
+                        // questions 8: `Explosion_Flashup`'s 0.01 s of
+                        // 3000 a second shows nothing at 60 a second).
+                        if duration > 0.0 && start >= before && end < self.age {
+                            continue;
+                        }
                         let a = before.max(start);
                         let b = self.age.min(end);
                         if b > a {
@@ -583,9 +604,11 @@ impl Instance {
         });
         let mut killed = false;
         let from: Vec<Vec3> = self.particles.iter().map(|p| p.position).collect();
+        let mut lived: Vec<f32> = Vec::with_capacity(from.len());
         for p in &mut self.particles {
             // A particle made during this step lives only its part of it.
             let dt = dt + p.age.min(0.0);
+            lived.push(dt);
             p.age = p.age.max(0.0) + dt;
             let mut accel = Vec3::ZERO;
             let mut gravity = Vec3::ZERO;
@@ -695,9 +718,11 @@ impl Instance {
             }
             Self::remap(d, &cp, p);
         }
-        if dt > 0.0 {
-            for (p, from) in self.particles.iter_mut().zip(from) {
-                p.motion = (p.position - from) / dt;
+        // Its motion over the part of the step it lived (a sprite
+        // trail's direction and speed: particles.md 5.1).
+        for ((p, from), lived) in self.particles.iter_mut().zip(from).zip(lived) {
+            if lived > 1e-6 {
+                p.motion = (p.position - from) / lived;
             }
         }
         if decays {
@@ -930,117 +955,104 @@ impl Instance {
     ) {
         let d = &defs[self.def];
         if let Some(material) = d.material {
-            match &d.renderer {
-                Render::Rope => {
-                    let mut order: Vec<&P> = self.particles.iter().collect();
-                    order.sort_by_key(|p| p.serial);
-                    for pair in order.windows(2) {
-                        let (a, b) = (pair[0], pair[1]);
-                        let (pa, pb) = (to_engine(a.position), to_engine(b.position));
-                        let mid = (pa + pb) * 0.5;
-                        let side = (pb - pa).cross(mid - eye).normalize_or_zero();
-                        let (ra, rb) = (Self::radius(d, a) * scale, Self::radius(d, b) * scale);
-                        let mut q = Particle::new(mid, 1.0, material, 0.0);
-                        q.color = Self::color(d, a);
-                        q.alpha = Self::alpha(d, a);
-                        q.shape = Shape::Quad {
-                            corners: [pa - side * ra, pb - side * rb, pb + side * rb, pa + side * ra],
-                            rect: [0.0, 0.0, 1.0, 1.0],
-                        };
-                        out.push(q);
-                    }
-                }
-                render => {
-                    let moves = d.operators.iter().any(|o| matches!(o, Op::Movement { .. }));
-                    for p in &self.particles {
-                        let radius = Self::radius(d, p);
-                        let alpha = Self::alpha(d, p);
-                        if radius <= 0.0 || alpha <= 0.001 {
-                            continue;
-                        }
-                        let at = to_engine(p.position);
-                        let mut q = Particle::new(at, p.life.max(1e-3), material, radius * scale);
-                        q.size = Ramp::constant(radius * scale);
-                        q.age = p.age;
-                        q.color = overbright(Self::color(d, p), sheets.overbright(material));
-                        q.alpha = alpha;
-                        q.roll = p.roll.to_radians();
-                        // Yaw flip: the sprite mirrored (impact_effects.md 14).
-                        q.flip = p.flip;
-                        q.sequence = p.sequence as u16;
-                        match *render {
-                            Render::Sprites {
-                                rate,
-                                as_fps,
-                                fit_life,
-                                orientation,
-                            } => {
-                                let frames = sheets.frames(material, p.sequence).max(1) as f32;
-                                q.fps = if fit_life {
-                                    frames / p.life.max(1e-3)
-                                } else if as_fps {
-                                    rate
-                                } else {
-                                    rate * frames
-                                };
-                                q.frame_loop = !fit_life;
-                                if orientation != 0 {
-                                    q.shape = Shape::Flat {
-                                        normal: Vec3::Y,
-                                        yaw: p.roll,
-                                        yaw_speed: 0.0,
-                                    };
-                                    q.size = Ramp::constant(radius * scale * 2.0);
-                                }
-                            }
-                            Render::Trail {
-                                min_length,
-                                max_length,
-                                length_fade_in,
-                            } => {
-                                // Along its velocity; a particle no movement
-                                // operator moves (its velocity only a start
-                                // value) along its motion: TF2's Flame
-                                // Thrower pilot, locked to the muzzle with a
-                                // forward speed of 800-1200, draws no streak
-                                // while the gun is still (tools/tf2ref: ours
-                                // drew it 100 units back past the eye, an
-                                // orange wash on the right of the view).
-                                let v = if moves { p.velocity } else { p.motion };
-                                let speed = v.length();
-                                let mut length = (speed * p.trail).clamp(min_length, max_length.max(min_length));
-                                if length_fade_in > 0.0 {
-                                    length *= (p.age / length_fade_in).min(1.0);
-                                }
-                                let back = to_engine(p.position - v.normalize_or_zero() * length);
-                                // The radius is the strip's full width: real
-                                // TF2's tracers (radius 2) are half as wide as
-                                // a strip of half-width 2; and never wider than
-                                // the strip is long: the Minigun's constant
-                                // core (radius 400, at most 50 long) is a
-                                // compact glow in real TF2 (particles.md 5).
-                                let width = radius.min(length);
-                                let side = (at - back).cross(at - eye).normalize_or_zero() * width * scale * 0.5;
-                                q.position = (at + back) * 0.5;
-                                // The texture's v runs from the tail (0) to the
-                                // head (1): TF2's `effects/tracer1` is bright at
-                                // v = 1, and real TF2's tracers are bright at
-                                // the bullet, fading back toward the gun
-                                // (specs/tf2/particles.md 5).
-                                q.shape = Shape::Quad {
-                                    corners: [at - side, back - side, back + side, at + side],
-                                    rect: [0.0, 0.0, 1.0, 1.0],
-                                };
-                            }
-                            _ => {}
-                        }
-                        out.push(q);
-                    }
-                }
+            for render in d.renderers() {
+                self.draw_with(d, render, material, to_engine, scale, eye, sheets, out);
             }
         }
         for child in self.children.iter().filter_map(|c| c.1.as_ref()) {
             child.draw(defs, to_engine, scale, eye, sheets, out);
+        }
+    }
+
+    /// Its own particles drawn by one of its renderers.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_with(
+        &self,
+        d: &SystemDef,
+        render: &Render,
+        material: usize,
+        to_engine: &impl Fn(Vec3) -> Vec3,
+        scale: f32,
+        eye: Vec3,
+        sheets: &impl Sheets,
+        out: &mut Vec<Particle>,
+    ) {
+        if let Render::Rope = render {
+            let mut order: Vec<&P> = self.particles.iter().collect();
+            order.sort_by_key(|p| p.serial);
+            for pair in order.windows(2) {
+                let (a, b) = (pair[0], pair[1]);
+                let (pa, pb) = (to_engine(a.position), to_engine(b.position));
+                let mid = (pa + pb) * 0.5;
+                let side = (pb - pa).cross(mid - eye).normalize_or_zero();
+                let (ra, rb) = (Self::radius(d, a) * scale, Self::radius(d, b) * scale);
+                let mut q = Particle::new(mid, 1.0, material, 0.0);
+                q.color = Self::color(d, a);
+                q.alpha = Self::alpha(d, a);
+                q.shape = Shape::Quad {
+                    corners: [pa - side * ra, pb - side * rb, pb + side * rb, pa + side * ra],
+                    rect: [0.0, 0.0, 1.0, 1.0],
+                };
+                out.push(q);
+            }
+            return;
+        }
+        for p in &self.particles {
+            let radius = Self::radius(d, p);
+            let alpha = Self::alpha(d, p);
+            if radius <= 0.0 || alpha <= 0.001 {
+                continue;
+            }
+            let at = to_engine(p.position);
+            let mut q = Particle::new(at, p.life.max(1e-3), material, radius * scale);
+            q.size = Ramp::constant(radius * scale);
+            q.age = p.age;
+            q.color = overbright(Self::color(d, p), sheets.overbright(material));
+            q.alpha = alpha;
+            q.roll = p.roll.to_radians();
+            // Yaw flip: the sprite mirrored (impact_effects.md 14).
+            q.flip = p.flip;
+            q.sequence = p.sequence as u16;
+            match *render {
+                Render::Sprites { rate, as_fps, fit_life, orientation } => {
+                    let frames = sheets.frames(material, p.sequence).max(1) as f32;
+                    q.fps = if fit_life {
+                        frames / p.life.max(1e-3)
+                    } else if as_fps {
+                        rate
+                    } else {
+                        rate * frames
+                    };
+                    q.frame_loop = !fit_life;
+                    if orientation != 0 {
+                        q.shape = Shape::Flat { normal: Vec3::Y, yaw: p.roll, yaw_speed: 0.0 };
+                        q.size = Ramp::constant(radius * scale * 2.0);
+                    }
+                }
+                Render::Trail { min_length, max_length, length_fade_in } => {
+                    // Back along its motion over its last step, as long
+                    // as that speed x its trail length x the fade-in by
+                    // age, then clamped; nothing when it didn't move
+                    // (particles.md 5.1: a flame pilot locked to a still
+                    // muzzle shows no streak).
+                    let Some(length) = trail_length(p.motion, p.trail, p.age, min_length, max_length, length_fade_in) else {
+                        continue;
+                    };
+                    let back = to_engine(p.position - p.motion.normalize() * length);
+                    // The radius is the strip's full width (5.1 step 3);
+                    // the texture's v runs from the tail (0) to the head
+                    // (1): TF2's `effects/tracer1` is bright at the
+                    // bullet (Open questions 4).
+                    let side = (at - back).cross(at - eye).normalize_or_zero() * radius * scale * 0.5;
+                    q.position = (at + back) * 0.5;
+                    q.shape = Shape::Quad {
+                        corners: [at - side, back - side, back + side, at + side],
+                        rect: [0.0, 0.0, 1.0, 1.0],
+                    };
+                }
+                _ => {}
+            }
+            out.push(q);
         }
     }
 
@@ -1436,10 +1448,14 @@ pub fn console(app: &mut App) {
                 let mat = mat.map_or("no material".to_string(), |m| {
                     format!("{} {:?}{} ob {}", m.name, m.blend, if m.depth_blend { " depthblend" } else { "" }, m.overbright)
                 });
-                let render = match &d.renderer {
-                    crate::map::psys::Render::Sprites { orientation, .. } => format!("sprites o{orientation}"),
-                    other => format!("{other:?}").split_whitespace().next().unwrap_or("").to_string(),
-                };
+                let render = d
+                    .renderers()
+                    .map(|r| match r {
+                        crate::map::psys::Render::Sprites { orientation, .. } => format!("sprites o{orientation}"),
+                        other => format!("{other:?}").split_whitespace().next().unwrap_or("").to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" + ");
                 format!(" [{mat}; {render}]")
             };
             for r in &shown.0.clone() {
@@ -2115,7 +2131,9 @@ mod tests {
         let still = [ControlPoint::default()];
         i.step(&defs, &still, 0.02, &mut rng, &none);
         i.step(&defs, &still, 0.02, &mut rng, &none);
-        assert!(length(&i) < 1e-3, "no streak while still: {}", length(&i));
+        let mut out = Vec::new();
+        i.draw(&defs, &|v| v, 1.0, eye, &none, &mut out);
+        assert!(out.is_empty(), "no streak while still: {} drawn", out.len());
         // The muzzle moves 2 units in 0.02 s (100 units/s): a 10-unit
         // streak (0.1 s of it) back along the motion.
         let moved = [ControlPoint { position: Vec3::new(0.0, 2.0, 0.0), ..default() }];
@@ -2155,8 +2173,8 @@ mod tests {
         assert!(v1_end.distance(head) < 1e-3, "v = 1 at the head: {v1_end} vs {head}");
         assert!(v0_end.x < head.x - 100.0, "v = 0 back toward the gun: {v0_end}");
         assert!((corners[0].distance(corners[3]) - 2.0).abs() < 1e-3, "2 wide: {corners:?}");
-        // Never wider than long (the Minigun's constant core: radius 400):
-        // Early in its 0.1 s length fade-in at 6000/s, under 400 long.
+        // The full width is the radius however short the strip
+        // (particles.md 5.1 step 3: no cap by the length).
         let mut wide = defs.clone();
         wide[0].radius = 400.0;
         let mut i = Instance::new(&wide, 0);
@@ -2166,7 +2184,113 @@ mod tests {
         let Shape::Quad { corners, .. } = out[0].shape else { panic!() };
         let long = corners[0].distance(corners[1]);
         assert!(long > 100.0 && long < 400.0, "{long}");
-        assert!((corners[0].distance(corners[3]) - long).abs() < 1e-3, "as wide as long: {corners:?}");
+        assert!((corners[0].distance(corners[3]) - 400.0).abs() < 1e-2, "400 wide: {corners:?}");
+    }
+
+    /// particles.md 5.1's test cases: length = this step's speed x the
+    /// trail length x min(1, age / fade-in), then clamped.
+    #[test]
+    fn trail_lengths_follow_the_spec_cases() {
+        let v = |s: f32| Vec3::new(s, 0.0, 0.0);
+        let close = |a: Option<f32>, b: f32| a.is_some_and(|a| (a - b).abs() < 0.05);
+        assert!(close(trail_length(v(1500.0), 0.08, 1.0 / 60.0, 0.0, 2000.0, 0.1), 20.0));
+        assert!(close(trail_length(v(1500.0), 0.08, 0.2, 0.0, 2000.0, 0.1), 120.0));
+        // `Explosion_CoreFlash`: clamped to its 122 after the fade-in.
+        assert!(close(trail_length(v(1400.0), 0.4, 0.05, 2.0, 122.0, 0.2), 122.0));
+        assert!(close(trail_length(v(1400.0), 0.4, 1.0 / 60.0, 2.0, 122.0, 0.2), 46.67));
+        assert_eq!(trail_length(Vec3::ZERO, 0.1, 1.0, 2.0, 122.0, 0.0), None, "no motion, nothing");
+    }
+
+    /// particles.md 5.1: a particle locked to a still control point with
+    /// no movement operator and a start speed of 1000 draws nothing; a
+    /// moving one's strip is its radius after the radius operators wide
+    /// (r0 0.8, x 3 -> 0 eased, bias 0.5, at life fraction 0.2: 2.15).
+    #[test]
+    fn a_still_trail_draws_nothing_and_its_width_is_the_scaled_radius() {
+        let mut def = SystemDef {
+            name: "embers".into(),
+            material: Some(0),
+            radius: 0.8,
+            emitters: vec![Emitter::Instantaneously { start: 0.0, count: 1 }],
+            initializers: vec![
+                Init::Velocity { cp: 0, speed: Pick::new(0.0, 0.0, 1.0), local_min: Vec3::X * 1000.0, local_max: Vec3::X * 1000.0 },
+                Init::Lifetime(Pick::new(1.0, 1.0, 1.0)),
+            ],
+            operators: vec![Op::Decay, Op::LockToControlPoint { cp: 0 }],
+            renderer: Render::Trail { min_length: 0.0, max_length: 2000.0, length_fade_in: 0.1 },
+            ..default()
+        };
+        let eye = Vec3::new(0.0, 0.0, 10_000.0);
+        let mut rng = ParticleRng::new(5);
+        let still = [ControlPoint::default()];
+        let defs = vec![def.clone()];
+        let mut i = Instance::new(&defs, 0);
+        i.step(&defs, &still, 1.0 / 60.0, &mut rng, &none);
+        i.step(&defs, &still, 1.0 / 60.0, &mut rng, &none);
+        let mut out = Vec::new();
+        i.draw(&defs, &|v| v, 1.0, eye, &none, &mut out);
+        assert!(out.is_empty(), "{} drawn", out.len());
+        def.operators = vec![
+            Op::Decay,
+            Op::Movement { gravity: Vec3::ZERO, drag: 0.0 },
+            Op::RadiusScale { start_scale: 3.0, end_scale: 0.0, start: 0.0, end: 1.0, bias: 0.5, ease: true },
+        ];
+        let defs = vec![def];
+        let mut i = Instance::new(&defs, 0);
+        for _ in 0..12 {
+            i.step(&defs, &still, 1.0 / 60.0, &mut rng, &none);
+        }
+        out.clear();
+        i.draw(&defs, &|v| v, 1.0, eye, &none, &mut out);
+        let Shape::Quad { corners, .. } = out[0].shape else { panic!() };
+        assert!((corners[0].distance(corners[3]) - 2.15).abs() < 0.02, "{}", corners[0].distance(corners[3]));
+    }
+
+    /// particles.md 5: a system with two renderers draws each particle
+    /// with both (`Explosion_FlyingEmbers`' trail and its head sprite).
+    #[test]
+    fn two_renderers_draw_each_particle_twice() {
+        let def = SystemDef {
+            name: "two".into(),
+            material: Some(0),
+            emitters: vec![Emitter::Instantaneously { start: 0.0, count: 3 }],
+            initializers: vec![Init::Velocity { cp: 0, speed: Pick::new(500.0, 500.0, 1.0), local_min: Vec3::ZERO, local_max: Vec3::ZERO }],
+            operators: vec![Op::Movement { gravity: Vec3::ZERO, drag: 0.0 }],
+            renderer: Render::Trail { min_length: 0.0, max_length: 2000.0, length_fade_in: 0.0 },
+            more_renderers: vec![Render::Sprites { rate: 1.0, as_fps: false, fit_life: false, orientation: 0 }],
+            ..default()
+        };
+        let defs = vec![def];
+        let mut i = Instance::new(&defs, 0);
+        let mut rng = ParticleRng::new(5);
+        i.step(&defs, &[ControlPoint::default()], 1.0 / 60.0, &mut rng, &none);
+        let mut out = Vec::new();
+        i.draw(&defs, &|v| v, 1.0, Vec3::new(0.0, 0.0, 10_000.0), &none, &mut out);
+        assert_eq!(out.len(), 6);
+        assert_eq!(out.iter().filter(|q| matches!(q.shape, Shape::Quad { .. })).count(), 3);
+    }
+
+    /// particles.md Open questions 8 (inferred): a continuous emitter whose
+    /// whole window is inside one 60 Hz step (`Explosion_Flashup`: 3000 a
+    /// second for 0.01 s) makes nothing; a longer one makes its count.
+    #[test]
+    fn an_emitter_window_inside_one_step_emits_nothing() {
+        let def = |duration: f32| SystemDef {
+            name: "flash".into(),
+            material: Some(0),
+            emitters: vec![Emitter::Continuously { start: 0.0, rate: 3000.0, duration }],
+            initializers: vec![Init::Lifetime(Pick::new(1.0, 1.0, 1.0))],
+            ..default()
+        };
+        for (duration, want) in [(0.01, 0), (0.1, 300)] {
+            let defs = vec![def(duration)];
+            let mut i = Instance::new(&defs, 0);
+            let mut rng = ParticleRng::new(5);
+            for _ in 0..10 {
+                i.step(&defs, &[ControlPoint::default()], 1.0 / 60.0, &mut rng, &none);
+            }
+            assert!((i.count() as i32 - want).abs() <= 1, "{duration}: {}", i.count());
+        }
     }
 
     /// "Collision via traces" (`Op::Collide`): TF2's Minigun brass (bounce

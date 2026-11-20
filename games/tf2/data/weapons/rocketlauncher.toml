@@ -57,6 +57,9 @@ arms = "soldier"
 script = "tf_weapon_rocketlauncher"
 
 [hooks."chimera:projectile"]
+# Drawn 0.1 s in the past on every client, the shooter's own too, its
+# blast held as long (specs/tf2/effects.md 11).
+interp = true
 speed = 1100.0
 touch = "report"
 shown = "tf2:tf_weapon_rocketlauncher/rocket"
@@ -89,6 +92,8 @@ sound = "tf2:BaseExplosionEffect.Sound"
 # blasts' effects (explosion.pcf names; which script field holds which is
 # unconfirmed).
 [hooks."tf2:looks"]
-trail = { shown = "tf2:tf_weapon_rocketlauncher/rocket", system = "rockettrail" }
+# The trail: `rockettrail_underwater` instead when the rocket first shows in
+# water, chosen once (effects.md 9).
+trail = { shown = "tf2:tf_weapon_rocketlauncher/rocket", system = "rockettrail", under_water = "rockettrail_underwater" }
 backblast = { system = "rocketbackblast", at = "backblast" }
 explosion = { wall = "ExplosionCore_Wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }

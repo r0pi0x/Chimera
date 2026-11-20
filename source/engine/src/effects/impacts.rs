@@ -213,7 +213,7 @@ fn bullet_impacts(
     players: Query<(), (With<Intent>, Without<HitSoundHere>)>,
     water: Option<Res<MapWater>>,
     mut play: MessageWriter<PlaySound>,
-    (route, classes, styles): (ImpactRoute, Option<Res<SurfaceClasses>>, Res<ImpactStyles>),
+    (route, classes, styles, local): (ImpactRoute, Option<Res<SurfaceClasses>>, Res<ImpactStyles>, Query<(), With<crate::core::LocalPlayer>>),
 ) {
     let Some(bank) = bank else {
         events.clear();
@@ -223,6 +223,9 @@ fn bullet_impacts(
     let mut played: Vec<(Entity, String, Vec3)> = Vec::new();
     for e in events.read().filter(|e| e.shown()) {
         let Some(&style) = styles.drawing(&route, e) else { continue };
+        if style.skips(e, local.contains(e.owner)) {
+            continue;
+        }
         // Every surface a bullet reaches, also after passing something;
         // a melee hit's generic impact is a bullet's (HL2:DM's crowbar and
         // stunstick, effects_sounds.md 6; CS:S's knife, impact_effects.md
@@ -333,12 +336,15 @@ fn impact_decals(
     map: Option<Res<MapEntities>>,
     water: Option<Res<MapWater>>,
     mut decals: MessageWriter<PlaceDecal>,
-    (route, classes, styles): (ImpactRoute, Option<Res<SurfaceClasses>>, Res<ImpactStyles>),
+    (route, classes, styles, local): (ImpactRoute, Option<Res<SurfaceClasses>>, Res<ImpactStyles>, Query<(), With<crate::core::LocalPlayer>>),
 ) {
     // Characters take blood, not these (not done yet).
     let marked = |e: Entity| !characters.contains(e);
     for e in events.read().filter(|e| e.shown()) {
         let Some(&style) = styles.drawing(&route, e) else { continue };
+        if style.skips(e, local.contains(e.owner)) {
+            continue;
+        }
         match &e.kind {
             // Every surface a bullet enters, also after passing something
             // (M13 logs an impact per surface reached; exits are not

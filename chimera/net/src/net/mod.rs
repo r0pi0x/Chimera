@@ -216,6 +216,7 @@ pub mod game;
 pub mod http;
 pub mod hub;
 pub mod interp;
+pub mod late;
 pub mod mapfx;
 pub mod manifest;
 pub mod maps;
@@ -1472,6 +1473,7 @@ impl Plugin for NetPlugin {
         motd::plugin(app);
         predict::plugin(app);
         interp::plugin(app);
+        late::plugin(app);
         props::plugin(app);
         anchors::plugin(app);
         ragdolls::plugin(app);

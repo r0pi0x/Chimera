@@ -48,8 +48,30 @@ pub struct SystemDef {
     pub initializers: Vec<Init>,
     pub operators: Vec<Op>,
     pub renderer: Render,
+    /// Renderers after the first: each particle is drawn by every one
+    /// (specs/tf2/particles.md 5: `Explosion_FlyingEmbers`' trail and
+    /// sprite, the sprite a round dot on the trail's head).
+    #[serde(default)]
+    pub more_renderers: Vec<Render>,
     /// Child systems (index into the definitions) and their delay, s.
     pub children: Vec<(usize, f32)>,
+}
+
+impl SystemDef {
+    /// A renderer the file lists: the first is `renderer`, later ones
+    /// `more_renderers`.
+    pub fn add_renderer(&mut self, r: Render) {
+        if self.renderer == Render::None {
+            self.renderer = r;
+        } else {
+            self.more_renderers.push(r);
+        }
+    }
+
+    /// Every renderer it draws with, the first first.
+    pub fn renderers(&self) -> impl Iterator<Item = &Render> {
+        std::iter::once(&self.renderer).chain(&self.more_renderers).filter(|r| **r != Render::None)
+    }
 }
 
 impl Default for SystemDef {
@@ -71,6 +93,7 @@ impl Default for SystemDef {
             initializers: Vec::new(),
             operators: Vec::new(),
             renderer: Render::None,
+            more_renderers: Vec::new(),
             children: Vec::new(),
         }
     }
@@ -410,7 +433,12 @@ pub enum Render {
         fit_life: bool,
         orientation: i32,
     },
-    /// A streak back along the velocity, between the two lengths (units).
+    /// A strip back along the particle's motion over its last step
+    /// (specs/tf2/particles.md 5.1): its length the step's speed x the
+    /// particle's trail length (field 10, s) x min(1, age /
+    /// `length_fade_in`), then clamped to [`min_length`, `max_length`]
+    /// (units); its full width the radius after the radius operators; none
+    /// for a particle that didn't move.
     Trail {
         min_length: f32,
         max_length: f32,

@@ -185,6 +185,42 @@ pub struct ShownItem(pub String);
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct SitOnOrigin(pub Quat);
 
+/// Shown items drawn in the past on every machine that draws, by their
+/// `ShownItem` keys (a game's projectiles whose weapon data says
+/// `interp`: TF2's rocket, specs/tf2/effects.md 11). Such an item isn't
+/// drawn itself: a `LateCopy` of it is, at its place `LateDelay` ago
+/// (`chimera_net`'s `late`), and its trails start on the copy.
+/// `running`: the copies are made in this app (`chimera_net`'s `late`
+/// sets it); without them every item is drawn where it is.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct DrawnLate {
+    pub keys: std::collections::BTreeSet<String>,
+    pub running: bool,
+}
+
+impl DrawnLate {
+    /// Whether an item shown as `key` is drawn where it is (`is_copy`: it
+    /// is a `LateCopy`): every item but one drawn late, and late ones' copies.
+    pub fn drawn_here(late: Option<&Self>, key: &str, is_copy: bool) -> bool {
+        is_copy || late.is_none_or(|l| !l.running || !l.keys.contains(key))
+    }
+}
+
+/// How far in the past items drawn late are drawn this frame (s): a
+/// network client's interpolation delay, else what its settings would give
+/// (`cl_interp`, `cl_interp_ratio` over the default update rate: 0.1).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct LateDelay(pub f32);
+
+/// The copy an item drawn late (`DrawnLate`) is drawn as: where `of` was
+/// `LateDelay` ago (`chimera_net`'s `late`); `owner` is the item's
+/// (its flyer's), for team looks.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct LateCopy {
+    pub of: Entity,
+    pub owner: Option<Entity>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

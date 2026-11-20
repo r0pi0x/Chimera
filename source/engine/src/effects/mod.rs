@@ -56,6 +56,18 @@ pub struct ImpactStyle {
     pub melee_decal: Option<&'static str>,
     /// Who sees a hit player's blood, and where.
     pub blood: BloodView,
+    /// A melee hit's impact (decal, effect, sound) shows on the
+    /// attacker's own machine only (TF2: made in the predicted swing,
+    /// specs/tf2/effects.md 10); false: wherever the swing's hit is known.
+    pub melee_own_only: bool,
+}
+
+impl ImpactStyle {
+    /// Whether this machine skips `e`'s impact: another player's swing
+    /// with `melee_own_only` (`local`: the event's owner plays here).
+    pub fn skips(&self, e: &WeaponEvent, local: bool) -> bool {
+        self.melee_own_only && !local && matches!(e.kind, chimera_sim::weapon::WeaponEventKind::Swing { .. })
+    }
 }
 
 /// Who sees a hit player's blood (`impact_effects::blood_effects`).
@@ -70,6 +82,10 @@ pub enum BloodView {
     /// the hit 4 in back along the shot from his own bullets' traces, a
     /// melee attacker none.
     PerViewer,
+    /// The game draws its own (TF2's blood temp entity,
+    /// specs/tf2/effects.md 8: `tf2::game::weapons::blood`), with
+    /// `impact_effects::BloodPainter::stains` for the walls.
+    Game,
 }
 
 /// The styles of the games in this app (`impact_effects::ImpactEffectsPlugin`,

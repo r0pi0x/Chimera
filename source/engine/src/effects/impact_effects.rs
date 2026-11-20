@@ -1451,8 +1451,9 @@ impl Plugin for ImpactEffectsPlugin {
     }
 }
 
+/// The effects' random numbers.
 #[derive(Resource)]
-struct EffectRng(ParticleRng);
+pub struct EffectRng(pub ParticleRng);
 
 impl Default for EffectRng {
     fn default() -> Self {
@@ -1529,7 +1530,13 @@ fn impact_effects(
     world: WorldTracer,
     mut play: MessageWriter<PlaySound>,
     mut systems: MessageWriter<StartParticleSystem>,
-    (ragdolls, route, classes, styles): (RagdollsOnLine, ImpactRoute, Option<Res<SurfaceClasses>>, Res<ImpactStyles>),
+    (ragdolls, route, classes, styles, local): (
+        RagdollsOnLine,
+        ImpactRoute,
+        Option<Res<SurfaceClasses>>,
+        Res<ImpactStyles>,
+        Query<(), With<crate::core::LocalPlayer>>,
+    ),
 ) {
     // Without materials (headless) there are no particles; sounds still
     // play.
@@ -1538,6 +1545,9 @@ fn impact_effects(
     let rng = &mut rng.0;
     for e in events.read().filter(|e| e.shown()) {
         let Some(&style) = styles.drawing(&route, e) else { continue };
+        if style.skips(e, local.contains(e.owner)) {
+            continue;
+        }
         let mats = materials.as_ref().map(|m| {
             if !by_game.iter().any(|(g, _)| *g == style.game) {
                 by_game.push((style.game, EffectMaterials::of(&m.0, Some(style.game))));
@@ -1791,9 +1801,10 @@ pub struct ServerBlood {
     pub attacker: Option<Entity>,
 }
 
-/// What draws blood: the burst and the stains on the walls behind.
+/// What draws blood: the burst and the stains on the walls behind (a
+/// game drawing its own burst, `BloodView::Game`, takes `stains` alone).
 #[derive(bevy::ecs::system::SystemParam)]
-struct BloodPainter<'w, 's> {
+pub struct BloodPainter<'w, 's> {
     materials: Option<Res<'w, ParticleMaterials>>,
     bank: Option<Res<'w, SoundBank>>,
     grid: Option<Res<'w, SurfaceGrid>>,
@@ -1816,6 +1827,19 @@ impl BloodPainter<'_, '_> {
                 self.particles.add(g);
             }
         }
+        self.stains(point, dir, (count, noise));
+    }
+
+    /// The effects' random numbers (a game drawing its own blood).
+    pub fn rng(&mut self) -> &mut EffectRng {
+        &mut self.rng
+    }
+
+    /// `count` traces of 172 units from `point` along `dir` (each turned
+    /// by up to `noise` per axis), the world only, not on grates: a
+    /// `Blood` decal where each meets it.
+    pub fn stains(&mut self, point: Vec3, dir: Vec3, (count, noise): (usize, f32)) {
+        let rng = &mut self.rng.0;
         for _ in 0..count {
             let dir = (dir + rng.vec3(-noise, noise)).normalize_or_zero();
             let to = point + dir * BLEED_TRACE * UNIT;
@@ -1912,6 +1936,9 @@ fn blood_effects(
             || settings.violence_hblood == 0
             || crate::core::refused_by_team(hit, &teams, friendly_fire.as_deref())
         {
+            continue;
+        }
+        if style.blood == super::BloodView::Game {
             continue;
         }
         let amount = hit.amount / style.damage_unit;

@@ -61,6 +61,7 @@
 //!   pellet (its own and the server's have it).
 
 pub mod blast;
+pub mod blood;
 pub mod damage;
 pub mod dot;
 pub mod flame;

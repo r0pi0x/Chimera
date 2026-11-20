@@ -11,7 +11,9 @@
 //! the sky camera's layer, as particles out there are (`render::particles`).
 //! A shown item whose held model is still being built (added late,
 //! `bodies::build_late_held`) waits undrawn and asks for it first
-//! (`bodies::LateWanted::shown`), as a loose item waits.
+//! (`bodies::LateWanted::shown`), as a loose item waits. One drawn late
+//! (`map::loose::DrawnLate`: TF2's projectiles) isn't drawn itself; its
+//! `LateCopy` is.
 
 use bevy::prelude::*;
 
@@ -87,6 +89,7 @@ pub fn attach_shown(
     sky: (Option<Res<PlayableArea>>, Option<Res<ActiveMapHas3dSky>>),
     mut wanted: Option<ResMut<super::bodies::LateWanted>>,
     real: Res<Time<Real>>,
+    (late, copies): (Option<Res<crate::map::loose::DrawnLate>>, Query<(), With<crate::map::loose::LateCopy>>),
     mut commands: Commands,
 ) {
         let (Some(assets), Some(held)) = (assets, held) else {
@@ -102,6 +105,10 @@ pub fn attach_shown(
         _ => false,
     };
     for (e, item, sit, at) in &items {
+        // One drawn late is drawn as its copy (`map::loose::DrawnLate`).
+        if !crate::map::loose::DrawnLate::drawn_here(late.as_deref(), &item.0, copies.contains(e)) {
+            continue;
+        }
         let layers = in_sky(at).then(|| RenderLayers::layer(SKYBOX_LAYER));
         // Until its held model is there it waits undrawn, as a loose
         // item does: a TF2 sticky fired before the late-built

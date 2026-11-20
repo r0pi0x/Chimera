@@ -413,3 +413,20 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   lerp 0.1, 11 with lerp 0.03; effects.md 11), which also makes the "launch
   glow" (the trail's fire passing the camera). Blood (effects.md 8), under
   water (9) and melee impacts (10) specified.
+- 2026-11-20 (eighth pass, from be2e54457's specs): sprite trails per
+  particles.md 5.1 in Chimera (`render::psys`): this step's motion x the
+  trail length x min(1, age / fade-in), then clamped; none for a particle
+  that didn't move; the full width the radius after the radius operators
+  (no cap by the length); every renderer a system lists draws each
+  particle (`SystemDef::more_renderers`: the flying embers' trail and head
+  sprite); a continuous emitter whose window opens and closes inside one
+  step emits nothing (the flash-up, Open questions 8). TF2's blood
+  (`weapons::blood`, data/blood.toml): one burst per damage event, the
+  spray chosen per viewer, `lowV_` with `violence_hblood 0`, stains per
+  pellet by the gun's own damage; no body decal (characters take none).
+  The rocket's trail chosen once by the water at its first place
+  (`rockettrail_underwater`). Projectiles drawn late (`interp` in
+  `chimera:projectile`, `chimera_net`'s `late`: a copy drawn 0.1 s in the
+  past, seeded back along its first velocity, model hidden 0.2 s) and
+  their blasts and blood held as long. TF2's melee impacts on the
+  attacker's machine only (`ImpactStyle::melee_own_only`).

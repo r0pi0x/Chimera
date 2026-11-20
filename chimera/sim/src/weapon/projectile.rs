@@ -413,6 +413,24 @@ pub struct LauncherParams {
     /// pitch and in yaw, from the shot's seed (TF2's needle: 1.5).
     #[serde(default)]
     pub jitter: f32,
+    /// Drawn in the past on every machine that draws, by the
+    /// interpolation delay, the shooter's own too (TF2's projectiles,
+    /// specs/tf2/effects.md 11): its `shown` key joins
+    /// `map::loose::DrawnLate` (`chimera_net`'s `late`).
+    #[serde(default)]
+    pub interp: bool,
+}
+
+/// The `ShownItem` keys of `set`'s projectiles drawn late
+/// (`LauncherParams::interp`).
+pub fn late_keys(set: &super::data::WeaponSet) -> Vec<String> {
+    set.weapons
+        .iter()
+        .filter_map(|w| {
+            let p: LauncherParams = w.hooks.get(LAUNCHER)?.clone().try_into().ok()?;
+            p.interp.then(|| p.shown.clone().unwrap_or_else(|| w.id.clone()))
+        })
+        .collect()
 }
 
 fn report() -> String {

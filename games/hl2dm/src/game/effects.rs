@@ -75,6 +75,7 @@ pub const STYLE: ImpactStyle = ImpactStyle {
     player_hits: false,
     blood: source_engine::effects::BloodView::PerViewer,
     melee_decal: None,
+    melee_own_only: false,
 };
 
 /// The effect materials HL2:DM's effects add to Source's (the AR2's

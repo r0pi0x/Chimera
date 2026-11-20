@@ -51,6 +51,9 @@ arms = "medic"
 script = "tf_weapon_syringegun_medic"
 
 [hooks."chimera:projectile"]
+# Drawn 0.1 s in the past on every client, the shooter's own too
+# (specs/tf2/effects.md 11).
+interp = true
 speed = 1000.0
 gravity = 240.0
 # Aimed at what a 2000-unit line from the eye meets, then +-1.5 degrees in

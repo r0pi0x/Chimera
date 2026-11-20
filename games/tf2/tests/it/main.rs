@@ -49,6 +49,7 @@ mod melee;
 mod weapons_more;
 mod held_guns;
 mod flames;
+mod blood;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {

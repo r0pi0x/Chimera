@@ -45,7 +45,11 @@
 //!   each of its flyers as it appears (`ShownItem`: `rockettrail` on
 //!   the rocket, `pipebombtrail_<team>`, `stickybombtrail_<team>`,
 //!   `nailtrails_medic_<team>`), following it without carrying what it
-//!   left, stopped when it is gone (`psys::Follow`).
+//!   left, stopped when it is gone (`psys::Follow`); its `under_water`
+//!   one instead when its first place is in water, never chosen again
+//!   (effects.md 9: `rockettrail_underwater`). A flyer drawn late (its
+//!   data's `interp`, effects.md 11: `map::loose::DrawnLate`) trails
+//!   from its copy, drawn `LateDelay` in the past.
 //! - **The armed pulse** (effects.md 1): a gun's `armed` (`ArmedLook`)
 //!   starts on each of its flyers `after` seconds after it appears (the
 //!   sticky's `stickybomb_pulse_<team>` at its arming, 0.8 s), following
@@ -56,7 +60,8 @@
 //!   player).
 //! - **Explosions** (effects.md 5; `blast::Tf2Explosion`, sent by the
 //!   server to every client): by the gun's `explosion` (the Stickybomb
-//!   Launcher's for pipes and stickies): `water` when the centre is in
+//!   Launcher's for pipes and stickies), held for `LateDelay` (as the
+//!   flyer drawn late reaches it, effects.md 11): `water` when the centre is in
 //!   water, `player` in the air or on a player, else `wall`, oriented to
 //!   the surface's normal (zero angles in the air); an unnamed one is
 //!   `ExplosionCore_wall`. The server traces the `Scorch` decal
@@ -110,6 +115,7 @@ use super::{
 };
 use crate::map::{
     ShowLocalBody,
+    loose::{DrawnLate, LateCopy, LateDelay},
     attached::{AnchorQuery, AttachPoint, AttachmentMark, MarksPlaced, first_person_shown},
     particles::ParticleSet,
     psys::{ControlPointState, Follow, ParticleControlPoints, StartParticleSystem, StartedSystemsRun, StopParticleSystems},
@@ -215,7 +221,7 @@ pub struct ArmedLook {
 impl ArmedLook {
     /// Its system's name for a flyer of `team` (as `FlyerTrail::name`).
     pub fn name(&self, blu: Option<bool>) -> String {
-        FlyerTrail { shown: self.shown.clone(), system: self.system.clone(), team: self.team }.name(blu)
+        FlyerTrail { shown: self.shown.clone(), system: self.system.clone(), team: self.team, under_water: None }.name(blu)
     }
 }
 
@@ -230,6 +236,10 @@ pub struct FlyerTrail {
     pub system: String,
     #[serde(default)]
     pub team: bool,
+    /// Instead, for one whose first place is in water (effects.md 9:
+    /// `rockettrail_underwater`, chosen once).
+    #[serde(default)]
+    pub under_water: Option<String>,
 }
 
 impl FlyerTrail {
@@ -239,6 +249,15 @@ impl FlyerTrail {
             return self.system.clone();
         }
         format!("{}_{}", self.system, if blu == Some(true) { "blue" } else { "red" })
+    }
+
+    /// Its system for a flyer whose first place is in water (`wet`) or
+    /// not.
+    pub fn name_in(&self, blu: Option<bool>, wet: bool) -> String {
+        match (&self.under_water, wet) {
+            (Some(w), true) => w.clone(),
+            _ => self.name(blu),
+        }
     }
 }
 
@@ -381,6 +400,7 @@ impl GunLooks {
             out.extend(l.stream.iter().flat_map(StreamLooks::names));
             if let Some(t) = &l.trail {
                 out.extend([t.name(Some(false)), t.name(Some(true))]);
+                out.extend(t.under_water.clone());
             }
             if let Some(a) = &l.armed {
                 out.extend([a.name(Some(false)), a.name(Some(true))]);
@@ -411,7 +431,8 @@ pub const MUZZLE_ATTACHMENT: &str = "muzzle";
 /// TF2's impacts: Source's shared impact effects and sounds. No spec says
 /// TF2's own rules yet (module doc): no ricochet, splashes of 4 to 8,
 /// every pellet's impact sound, damage in whole points, a hit on a
-/// player sounding its flesh impact (TF2 has no hurt sounds yet).
+/// player sounding its flesh impact (TF2 has no hurt sounds yet); its
+/// blood its own (`blood`, effects.md 8).
 pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::ImpactStyle {
     game: crate::game::GAME,
     ricochet: None,
@@ -420,8 +441,9 @@ pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::I
     damage_unit: 1.0,
     flesh: "flesh",
     player_hits: true,
-    blood: source_engine::effects::BloodView::Damage,
+    blood: source_engine::effects::BloodView::Game,
     melee_decal: None,
+    melee_own_only: true,
 };
 
 /// The systems TF2's guns start: loaded with its maps besides their own,
@@ -432,6 +454,7 @@ pub fn particle_systems() -> &'static [&'static str] {
     let names: Vec<&'static str> = GunLooks::default()
         .systems()
         .into_iter()
+        .chain(super::blood::BloodLooks::default().systems())
         .map(|n| &*Box::leak(n.into_boxed_str()))
         .collect();
     Box::leak(names.into_boxed_slice())
@@ -448,6 +471,7 @@ pub const PARTICLE_FILES: &[&str] = &[
     "particles/rockettrail.pcf",
     "particles/stickybomb.pcf",
     "particles/nailtrails.pcf",
+    "particles/blood_impact.pcf",
 ];
 
 /// An explosion on the wire (the server's `Tf2Explosion`, to clients).
@@ -467,16 +491,26 @@ pub fn in_water(water: Option<&MapWater>, p: Vec3) -> bool {
 /// Each explosion's looks (every machine that draws): the gun's effect
 /// for where it went off (effects.md 5).
 fn explosions(
+    time: Res<Time>,
     looks: Res<GunLooks>,
     water: Option<Res<MapWater>>,
+    delay: Option<Res<LateDelay>>,
     mut blasts: MessageReader<Tf2Explosion>,
+    mut held: Local<Vec<(f64, Tf2Explosion)>>,
     mut start: MessageWriter<StartParticleSystem>,
 ) {
-    for b in blasts.read() {
+    let now = time.elapsed_secs_f64();
+    let wait = delay.map_or(0.0, |d| d.0 as f64);
+    held.extend(blasts.read().map(|b| (now + wait, *b)));
+    held.retain(|(due, b)| {
+        if *due > now + 1e-9 {
+            return true;
+        }
         let wet = in_water(water.as_deref(), b.at);
         let (name, forward) = Explosions::pick(looks.explosion_of(b.weapon), wet, b.normal, b.on_player);
         start.write(StartParticleSystem::new(name, b.at, forward));
-    }
+        false
+    });
 }
 
 /// Where a gun's attachments are drawn for each owner this frame: the
@@ -665,19 +699,32 @@ fn mark_attachments(players: Query<Entity, (With<LocalPlayer>, With<ViewAnimator
 pub const REMOTE_FIRING_HOLD: f64 = 0.25;
 
 /// A trail on each flyer as it appears (`FlyerTrail`), following it.
+#[allow(clippy::type_complexity)]
 fn flyer_trails(
     looks: Res<GunLooks>,
-    flyers: Query<(Entity, &chimera_world::map::loose::ShownItem, &Transform, Option<&chimera_sim::weapon::projectile::Flyer>), Added<chimera_world::map::loose::ShownItem>>,
+    flyers: Query<
+        (Entity, &chimera_world::map::loose::ShownItem, &Transform, Option<&chimera_sim::weapon::projectile::Flyer>, Option<&LateCopy>),
+        Added<chimera_world::map::loose::ShownItem>,
+    >,
+    late: Option<Res<DrawnLate>>,
+    water: Option<Res<MapWater>>,
     teams: Query<&Team>,
     mut start: MessageWriter<StartParticleSystem>,
 ) {
-    for (e, shown, at, flyer) in &flyers {
+    for (e, shown, at, flyer, copy) in &flyers {
+        // One drawn late trails from its copy (effects.md 11).
+        if !DrawnLate::drawn_here(late.as_deref(), &shown.0, copy.is_some()) {
+            continue;
+        }
         let Some(trail) = looks.trail_of_shown(&shown.0) else { continue };
-        let blu = flyer.and_then(|f| f.owner).and_then(|o| teams.get(o).ok()).map(|t| super::super::bodies::skin_of(Some(*t)) == 1);
+        let owner = copy.map_or(flyer.and_then(|f| f.owner), |c| c.owner);
+        let blu = owner.and_then(|o| teams.get(o).ok()).map(|t| super::super::bodies::skin_of(Some(*t)) == 1);
         let forward = at.rotation * Vec3::X;
+        // Chosen once, by the water at its first place (effects.md 9).
+        let wet = in_water(water.as_deref(), at.translation);
         start.write(StartParticleSystem {
             follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false }),
-            ..StartParticleSystem::new(trail.name(blu), at.translation, forward)
+            ..StartParticleSystem::new(trail.name_in(blu, wet), at.translation, forward)
         });
     }
 }
@@ -692,25 +739,27 @@ pub struct ArmsAt(f64);
 fn armed_looks(
     looks: Res<GunLooks>,
     time: Res<Time>,
-    added: Query<(Entity, &chimera_world::map::loose::ShownItem), Added<chimera_world::map::loose::ShownItem>>,
-    arming: Query<(Entity, &ArmsAt, &chimera_world::map::loose::ShownItem, &Transform, Option<&chimera_sim::weapon::projectile::Flyer>)>,
+    added: Query<(Entity, &chimera_world::map::loose::ShownItem, Has<LateCopy>), Added<chimera_world::map::loose::ShownItem>>,
+    arming: Query<(Entity, &ArmsAt, &chimera_world::map::loose::ShownItem, &Transform, Option<&chimera_sim::weapon::projectile::Flyer>, Option<&LateCopy>)>,
+    late: Option<Res<DrawnLate>>,
     teams: Query<&Team>,
     mut start: MessageWriter<StartParticleSystem>,
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
-    for (e, shown) in &added {
-        if looks.armed_of_shown(&shown.0).is_some() {
+    for (e, shown, copy) in &added {
+        if looks.armed_of_shown(&shown.0).is_some() && DrawnLate::drawn_here(late.as_deref(), &shown.0, copy) {
             commands.entity(e).insert(ArmsAt(now));
         }
     }
-    for (e, at, shown, t, flyer) in &arming {
+    for (e, at, shown, t, flyer, copy) in &arming {
         let Some(armed) = looks.armed_of_shown(&shown.0) else { continue };
         if now < at.0 + armed.after as f64 {
             continue;
         }
         commands.entity(e).remove::<ArmsAt>();
-        let blu = flyer.and_then(|f| f.owner).and_then(|o| teams.get(o).ok()).map(|t| super::super::bodies::skin_of(Some(*t)) == 1);
+        let owner = copy.map_or(flyer.and_then(|f| f.owner), |c| c.owner);
+        let blu = owner.and_then(|o| teams.get(o).ok()).map(|t| super::super::bodies::skin_of(Some(*t)) == 1);
         start.write(StartParticleSystem {
             follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false }),
             ..StartParticleSystem::new(armed.name(blu), t.translation, t.rotation * Vec3::X)
@@ -1052,6 +1101,7 @@ pub fn add(app: &mut App) {
         )
         .add_systems(Update, mark_attachments)
         .net_part("tf2_looks", register);
+    super::blood::add(app);
 }
 
 #[cfg(test)]
@@ -1124,6 +1174,26 @@ mod tests {
         for name in ["bullet_scattergun_tracer01_blue", "bullet_tracer01_red_crit", "muzzle_minigun_constant", "eject_minigunbrass", "rocketbackblast"] {
             assert!(particle_systems().contains(&name), "{name} loads");
         }
+    }
+
+    /// effects.md 9: the rocket's trail is chosen once by the water at
+    /// its first place; 10: TF2's melee impacts show on the attacker's
+    /// machine only.
+    #[test]
+    fn the_rocket_trail_under_water_and_melee_impacts_own_only() {
+        use chimera_sim::weapon::{WeaponEvent, WeaponEventKind};
+        let looks = GunLooks::default();
+        let t = looks.trail_of_shown("tf2:tf_weapon_rocketlauncher/rocket").expect("the rocket's trail");
+        assert_eq!(t.name_in(None, false), "rockettrail");
+        assert_eq!(t.name_in(None, true), "rockettrail_underwater");
+        assert!(particle_systems().contains(&"rockettrail_underwater") && particle_systems().contains(&"blood_spray_red_01_far"));
+        let swing = WeaponEvent {
+            owner: Entity::PLACEHOLDER,
+            weapon: Entity::PLACEHOLDER,
+            kind: WeaponEventKind::Swing { hit: true, secondary: false, at: None, line: (Vec3::ZERO, Vec3::ZERO) },
+            replay: false,
+        };
+        assert!(STYLE.skips(&swing, false) && !STYLE.skips(&swing, true));
     }
 
     /// effects.md 5: which effect a blast shows, oriented how.

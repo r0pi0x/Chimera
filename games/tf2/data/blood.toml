@@ -1,0 +1,28 @@
+# TF2's blood on a player hit (specs/tf2/effects.md 8; `game::weapons::blood`).
+# Systems from `particles/blood_impact.pcf`; the `red` in their names is the
+# blood's colour, not a team.
+
+# The burst (one per damage event, at the hit point; melee: the attacker's
+# eye + `melee_reach` along his view; a blast: its centre).
+impact = "blood_impact_red_01"
+impact_low = "lowV_blood_impact_red_01"
+# With the victim's eyes under water: this alone, no spray.
+water = "water_blood_impact_red_01"
+water_low = "lowV_water_blood_impact_red_01"
+# The spray out of the far side, chosen by each viewer: `spray_far` from
+# `far` units away.
+spray = "blood_spray_red_01"
+spray_far = "blood_spray_red_01_far"
+spray_low = "lowV_blood_spray_red_01"
+spray_far_low = "lowV_blood_spray_red_01_far"
+far = 400.0
+# Pushed sideways when within this of the view's axis (|cos| above it), by
+# right x (U(0.5, 1.5) + 0.25 x distance / `push_per`).
+push_above = 0.5
+push_per = 512.0
+melee_reach = 48.0
+# The burst's axis points at the inflictor's centre this far lowered.
+inflictor_lower = 10.0
+# World stains behind a bullet, pellet or melee hit (effects.md 8c) are
+# Source's shared rule: traces of 172 units, 1, 2 or 4 of them (noise 0.1,
+# 0.2, 0.3) by the weapon's own per-hit damage below 10, below 25, else.

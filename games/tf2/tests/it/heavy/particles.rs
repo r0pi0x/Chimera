@@ -117,3 +117,49 @@ fn dump_a_system_as_loaded_and_in_its_file() {
         }
     }
 }
+
+/// specs/tf2/particles.md 5.1 against the install's `ExplosionCore_Wall`
+/// stepped at 60 a second: the flying embers draw thin rays (a trail and a
+/// head sprite each, the strips a few units wide), the core flash broad
+/// streaks (tens of units), the flash-up nothing.
+#[test]
+fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_no_flashup() {
+    use chimera_world::map::particles::Shape;
+    let Some(map) = super::looks::dressed() else { return };
+    let systems = &map.particle_systems;
+    let defs = &systems.defs;
+    let embers = &defs[systems.find("Explosion_FlyingEmbers").expect("loaded")];
+    assert!(
+        matches!(embers.renderer, chimera_world::map::psys::Render::Trail { .. })
+            != matches!(embers.renderer, chimera_world::map::psys::Render::Sprites { .. })
+            && embers.renderers().count() == 2,
+        "a trail and a sprite: {:?} {:?}",
+        embers.renderer,
+        embers.more_renderers
+    );
+    let sheets = MaterialSheets(Some(&map.particles));
+    let cps = vec![ControlPoint { rotation: bevy::math::Quat::IDENTITY, light: bevy::math::Vec3::ONE, ..Default::default() }];
+    let mut rng = ParticleRng::new(7);
+    let width = |name: &str, steps: usize, rng: &mut ParticleRng| -> (usize, f32, usize) {
+        let mut i = Instance::new(defs, systems.find(name).unwrap());
+        for _ in 0..steps {
+            i.step(defs, &cps, 1.0 / 60.0, rng, &sheets);
+        }
+        let mut out = Vec::new();
+        i.draw(defs, &|v| v, 1.0, bevy::math::Vec3::new(0.0, 0.0, 10_000.0), &sheets, &mut out);
+        let strips: Vec<f32> = out
+            .iter()
+            .filter_map(|q| match q.shape {
+                Shape::Quad { corners, .. } => Some(corners[0].distance(corners[3])),
+                _ => None,
+            })
+            .collect();
+        (strips.len(), strips.iter().cloned().fold(0.0, f32::max), i.count())
+    };
+    let (n, widest, _) = width("Explosion_FlyingEmbers", 2, &mut rng);
+    assert!(n > 4 && widest <= 3.0 + 1e-3, "{n} rays, widest {widest}");
+    let (n, widest, _) = width("Explosion_CoreFlash", 2, &mut rng);
+    assert!(n > 4 && widest > 10.0, "{n} streaks, widest {widest}");
+    let (n, _, alive) = width("Explosion_Flashup", 3, &mut rng);
+    assert_eq!((n, alive), (0, 0), "the flash-up shows nothing");
+}
