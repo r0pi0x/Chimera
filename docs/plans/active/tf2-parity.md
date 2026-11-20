@@ -41,7 +41,7 @@ Captured imagery stays in scratch, never in the repo.
 | Rocket and blast sound | close (2026-11-20) | the script data match (`Weapon_RPG.Single` CHAN_WEAPON 94 dB, `BaseExplosionEffect.Sound` CHAN_WEAPON 95 dB, volume 1, full-scale stereo `)` waves, the blast's 8 s long with its own tail); one of each plays. The distortion was our mix clipping (1.6 s at `volume` 1, a moment at 0.5): now a limiter (`audio::sound::limit_mix`) keeps the one-shot voices under 0.75 of full scale. TF2's loudness itself can't be heard here (`+volume 0`). The blast's sound now plays with its look when the drawn time reaches it (effects.md 5 step 5, 11: the temp entity's), not 0.1 s before (tf2-leftovers) |
 | Sniper scope overlay, charge meter, crosshair (`scope.tf2`/`.scene`) | close (2026-11-20) | the overlay was our 512-texel stand-in stretched (blurry on a tall screen); now TF2's own quarter (`hud/scope_sniper_ul_dx80`, the plain fallback of its refracting one) over the whole screen as TF2 stretches it, no warp or tint; the generic stand-in 1024 texels with pixel-wide cross hairs. The charge meter drawn (hud.md "Measured"). The shell's crosshair hides behind a scope (`hud::ScopeUp`); TF2's HUD now keeps its crosshair there, as real TF2 draws it (hud.md "Measured", Open questions 13; tf2-leftovers). The scope's look on a 16:9 screen is unmeasured (the headless display is 4:3) |
 | Projectiles' models | matches (pass 6) | none drew on any map: a map keeps the kept guns' held models by key prefix and the projectiles' keys (`tf2:rocket`, `tf2:sticky`...) matched none; now `<gun>/<part>` |
-| Stickybombs | close (2026-11-20, stock launcher) | model, faint trail, flight and resting place (within 6 px) as the stock launcher's; the armed pulse (ring, then disc, then a frame of nothing, every 0.1 s) now 0.87 s after the sticky shows, as stock TF2's (was 0.8, measured on the Quickiebomb); TF2's sticky spins twice the spec's rate (log: spec question) |
+| Stickybombs | close (2026-11-20, stock launcher) | model, faint trail, flight and resting place (within 6 px) as the stock launcher's; the armed pulse (ring, then disc, then a frame of nothing, every 0.1 s) started the arm time (0.8 s) after each machine received the sticky (effects.md 11.3; replaces the tuned 0.87 s after it shows); launch spin (1200, 2r, 0) and air drag as the spec's (sticky-physics) |
 | Sniper's laser dot | matches in his own view (pass 7, `dot.tf2`/`.scene`) | drawn (`weapons::dot`): size, softness and the core growing with the charge as TF2's; others see it at 6 units (the charge sent with what a character holds, `HeldGauge`), no TF2 pair (its puppet bots won't scope); TF2's scope overlay not photographed yet (the class menu covers it) |
 | Water explosions | close (pass 6); on the riverbed seen from just above the surface close (tf2-psys: drawn before the surface, shown by its refraction) | from above the surface both hide the burst; TF2's shows through as an orange glow from just above the surface. Under water (pass 7, `wunder`): see the log |
 | Bullet impacts (wood) | matches (pass 6) | splinters, hole, puff alike; TF2's hole decal a little lighter |
@@ -231,6 +231,7 @@ taken in that window, were thrown away and retaken).
   *received* the sticky, and the system's first ring is seen ~0.1 s + a
   frame later (its emitter's timing); both captures fit. Ours should
   start it L after the arrival rather than a tuned 0.87 after the shot.
+  **Done** (sticky-physics, 2026-11-20: Log).
 - **Spin** (spec question, not changed): stock TF2's sticky turns at
   ~2510 degrees/s just after launch, about its own forward ~1200 and
   its left ~2200 (`GetPhysAngularVelocity` agrees: 1194, -2207), twice
@@ -248,6 +249,7 @@ taken in that window, were thrown away and retaken).
   Σ|ω_i|). New open: weapons_more.md Open questions 22-23 (the
   grenade's angular drag; the engine's 2000 units/s cap vs a full
   charge's 2400).
+  **Done** (sticky-physics: spin and drag; the cap not modelled).
 - `viewmodels.tf2` slot 1 (the puppet Demoman): the stock Stickybomb
   Launcher (item 20 active), not the Grenade Launcher; ours draws the
   same gun, ~50 px left of it (the bot's view-model offset).
@@ -1021,3 +1023,20 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   both), not yet found. Next: find why the sandbox's rocket blast
   shows no effect in `streaks.scene`. **Found and fixed** (blast-regression,
   Log).
+- 2026-11-20 (sticky-physics, from 6af57cc46's specs): launch spin per
+  weapons_more.md 4.1 for stickies and pipes: (600, r, 0) degrees/s added
+  twice, (1200, 2r, 0), r a whole number in ±1200 from the shot's seed
+  (Chimera's `weapon::flight::LaunchSpin`, the data's `spin`; pipes'
+  through `chimera:projectile`). Air drag per 4.4 on both (Chimera's
+  `flight::AirDrag`, the data's `drag`: after gravity each tick the
+  velocity × (1 − ρ Σ c_i|v_i|), the spin × (1 − ρ Σ a_i|ω_i|), in the
+  body's axes; ρ the game's `<game>:air_density` cvar, TF2's 2.0). The
+  sticky's coefficients as fitted (third angular term 7.3e-7 as the spec
+  assumes); the grenade's linear as fitted, its angular ours (a uniform
+  3.3e-7: ~0.22 % a tick at (1200, 2200, 0), Open questions 22); no
+  2000 units/s cap (Open questions 23). The armed pulse per effects.md
+  11.3: on each machine the first frame the arm time L after it received
+  the sticky, L = the launcher's `arm` + `sticky_arm_time` (new on the
+  launcher's data, 0 stock; detonation uses it too); the looks' tuned
+  `armed.after` is gone (read from the data). Tests 29b-d, the pulse's
+  rows (stock 0.8, Quickiebomb 0.6). No capture made.

@@ -78,7 +78,17 @@ charge_time = 4.0
 gravity = 800.0
 offset = [16.0, 8.0, -6.0]
 jitter = 10.0
-spin = [600.0, 1200.0, 0.0]
+# (600, r, 0) degrees/s about its forward, left, up, r a whole number in
+# ±1200, added twice: (1200, 2r, 0) (weapons_more.md 4.1).
+spin = { base = [600.0, 0.0, 0.0], random = [0.0, 1200.0, 0.0], times = 2 }
+# Air drag per 0.015 s tick x air_density (tf2:air_density, 2), along /
+# about its forward, left, up: per unit/s and per degree/s (weapons_more.md
+# 4.4, fitted; the third angular term assumed as the spec's 7.3e-7).
+drag = { lin = [1.43e-6, 1.41e-6, 1.45e-6], ang = [7.27e-7, 7.36e-7, 7.3e-7], per = 0.015 }
+# Added to `arm` (weapons_more.md 5.3): the launcher's attribute; none on
+# the stock one (the Quickiebomb -0.2, the Scottish Resistance +0.8). The
+# detonation and the armed pulse (effects.md 11.3) both use arm + this.
+sticky_arm_time = 0.0
 sound = "tf2:Weapon_Grenade_Pipebomb.Explode"
 charge_sound = "tf2:Weapon_StickyBombLauncher.ChargeUp"
 detonate_sound = "tf2:Weapon_StickyBombLauncher.ModeSwitch"
@@ -96,10 +106,9 @@ model_hidden = 0.1
 # pcf names are used), the Stickybomb Launcher's for pipes too.
 [hooks."tf2:looks"]
 trail = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybombtrail", team = true }
-# Its pulse once armed (effects.md 1): 0.87 s after it appears, as the stock
-# launcher's in real TF2 (tools/tf2ref `stickies.tf2`, 2026-11-20: the
-# first ring 26 frames at 30 a second after the sticky first shows; the
-# 0.8 s measured earlier was the Quickiebomb Launcher's, which arms sooner).
-armed = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybomb_pulse", team = true, after = 0.87 }
+# Its pulse once armed (effects.md 11.3): each machine starts it the
+# arm time (tf2:sticky's arm + sticky_arm_time, 0.8) after it first
+# received the sticky.
+armed = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybomb_pulse", team = true }
 muzzle = "muzzle_pipelauncher"
 explosion = { wall = "ExplosionCore_Wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }

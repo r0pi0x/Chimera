@@ -176,6 +176,8 @@ pub const MINIGUN_HOOK: &str = "tf2:minigun";
 pub const SNIPER_HOOK: &str = "tf2:sniper";
 pub const GRENADE_HOOK: &str = "tf2:grenade";
 pub const STICKY_HOOK: &str = "tf2:sticky";
+/// TF2's air density (`tf2:air_density`, weapons_more.md 4.4).
+pub const AIR_DENSITY: f32 = 2.0;
 pub const FLAME_HOOK: &str = "tf2:flame";
 pub const NEEDLE_HOOK: &str = "tf2:needle";
 pub const MELEE_HOOK: &str = "tf2:melee";
@@ -250,6 +252,9 @@ pub fn register_hooks(app: &mut App) {
         .register_weapon_hook::<std::collections::BTreeMap<String, f32>>(super::player_anim::POSEPARAM_HOOK, |e, _, p| {
             super::player_anim::attach_pose_params(e, p)
         });
+    // The physics world's air density (weapons_more.md 4.4: 2.0), which
+    // scales its grenades' and stickies' air drag.
+    chimera_sim::weapon::flight::register_air_density(app, super::GAME, AIR_DENSITY);
     // Whether each hurts a player (an automatic ladder draws only those
     // that do): the blasts, the flames, the needles; the guns' damage is
     // their `[damage]`.

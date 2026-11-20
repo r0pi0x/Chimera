@@ -58,10 +58,13 @@
 //!   the trail made there in the copy's first frame with only its initial
 //!   puff, its fire and sparks from the next, the glow ahead of the
 //!   launcher); the water choice by that place (`LateCopy::first`).
-//! - **The armed pulse** (effects.md 1): a gun's `armed` (`ArmedLook`)
-//!   starts on each of its flyers `after` seconds after it appears (the
-//!   sticky's `stickybomb_pulse_<team>` 0.87 s after it shows, as the
-//!   stock launcher's in real TF2), following it.
+//! - **The armed pulse** (effects.md 1, 11.3): a gun's `armed`
+//!   (`ArmedLook`) starts on each of its flyers on the first frame its
+//!   arm time L (the same gun's `tf2:sticky` `arm_time`: 0.8 stock) after
+//!   it appeared on this machine (a client: when it first received it;
+//!   one drawn late: its copy, made then too), following it: the sticky's
+//!   `stickybomb_pulse_<team>`. The system's own timing makes its first
+//!   ring ~0.1 s and a frame later.
 //! - **The Rocket Launcher's backblast** (effects.md 4): `rocketbackblast`
 //!   at the launcher's `backblast` attachment on each shot, for everyone
 //!   but the shooter (the held model's: never on this machine's own
@@ -222,7 +225,8 @@ pub struct LooksParams {
 }
 
 /// A system started on each flyer drawn as `shown`, `after` seconds after
-/// it appears (when it arms), following it: the sticky's armed pulse.
+/// it appears on this machine (its arm time, from the same gun's
+/// `tf2:sticky`: effects.md 11.3), following it: the sticky's armed pulse.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ArmedLook {
@@ -230,6 +234,8 @@ pub struct ArmedLook {
     pub system: String,
     #[serde(default)]
     pub team: bool,
+    /// Not in the data: the gun's `StickyParams::arm_time`.
+    #[serde(skip)]
     pub after: f32,
 }
 
@@ -338,7 +344,17 @@ fn looks_table() -> Vec<(String, LooksParams)> {
         .weapons
         .into_iter()
         .filter_map(|w| {
-            let p: LooksParams = w.hooks.get(LOOKS_HOOK)?.clone().try_into().unwrap_or_else(|e| panic!("{} {LOOKS_HOOK}: {e}", w.id));
+            let mut p: LooksParams = w.hooks.get(LOOKS_HOOK)?.clone().try_into().unwrap_or_else(|e| panic!("{} {LOOKS_HOOK}: {e}", w.id));
+            if let Some(a) = &mut p.armed {
+                let sticky: super::sticky::StickyParams = w
+                    .hooks
+                    .get(super::STICKY_HOOK)
+                    .unwrap_or_else(|| panic!("{}: an armed look needs {}", w.id, super::STICKY_HOOK))
+                    .clone()
+                    .try_into()
+                    .unwrap_or_else(|e| panic!("{} {}: {e}", w.id, super::STICKY_HOOK));
+                a.after = sticky.arm_time();
+            }
             Some((w.id, p))
         })
         .collect()
@@ -388,6 +404,13 @@ impl GunLooks {
     /// The trail of a flyer drawn as `shown` (`ShownItem`), if a gun names one.
     pub fn trail_of_shown(&self, shown: &str) -> Option<&FlyerTrail> {
         self.0.iter().filter_map(|(_, l)| l.trail.as_ref()).find(|t| t.shown == shown)
+    }
+
+    /// Set `gun`'s armed look's arm time (a variant's, in tests).
+    pub fn set_armed_after(&mut self, gun: &str, after: f32) {
+        if let Some(a) = self.0.iter_mut().find(|(g, _)| g == gun).and_then(|(_, l)| l.armed.as_mut()) {
+            a.after = after;
+        }
     }
 
     /// The armed look of a flyer drawn as `shown`, if a gun names one.
@@ -838,8 +861,8 @@ fn flyer_trails(
 #[derive(Component, Clone, Copy, Debug)]
 pub struct ArmsAt(f64);
 
-/// Each flyer's armed look, `after` seconds after it appeared, following
-/// it (`psys::Follow`: stopped when the flyer is gone).
+/// Each flyer's armed look, on the first frame `after` seconds or more
+/// after it appeared here, following it (`psys::Follow`: stopped when the flyer is gone).
 fn armed_looks(
     looks: Res<GunLooks>,
     time: Res<Time>,

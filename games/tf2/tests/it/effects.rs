@@ -11,8 +11,9 @@
 //!   trails `rockettrail` (1);
 //! - the backblast (4): others see it at the launcher's `backblast`, the
 //!   shooter (this machine's player) never;
-//! - the sticky (1): its trail as it appears, its armed pulse
-//!   (`stickybomb_pulse_red`) once, 0.87 s later (stock TF2's, measured).
+//! - the sticky (1, 11.3): its trail as it appears, its armed pulse
+//!   (`stickybomb_pulse_red`) once, its arm time (0.8 s, 0.6 for the
+//!   Quickiebomb) after it appeared on that machine.
 //!
 //! A made-up first-person Minigun with `muzzle` and `eject_brass`
 //! attachments, and a made-up held `backblast` attachment.
@@ -204,9 +205,9 @@ fn a_late_rockets_trail_is_made_on_its_copy_at_its_first_place_11_2() {
 }
 
 /// effects.md 1: a sticky trails `stickybombtrail_<team>` from its launch
-/// and pulses (`stickybomb_pulse_<team>`) once, 0.87 s later (the stock
-/// launcher's pulse in real TF2, tools/tf2ref `stickies.tf2`), both
-/// following it.
+/// and pulses (`stickybomb_pulse_<team>`) once, its arm time (0.8 s)
+/// after it appeared here (effects.md 11.3: the launch, on this machine),
+/// both following it.
 #[test]
 fn a_sticky_trails_from_its_launch_and_pulses_once_when_armed() {
     let mut sim = sim();
@@ -230,7 +231,45 @@ fn a_sticky_trails_from_its_launch_and_pulses_once_when_armed() {
     let (launch, armed) = (tick("stickybombtrail_"), tick("stickybomb_pulse_"));
     let dt = sim.app.world().resource::<chimera_core::core::SimClock>().delta.as_secs_f32();
     let after = (armed - launch) as f32 * dt;
-    assert!((after - 0.87).abs() < 0.05, "pulsed 0.87 s after the launch: {after}");
+    assert!((after - 0.8).abs() < 0.02, "pulsed 0.8 s after the launch: {after}");
+}
+
+/// effects.md 11.3 (its test rows): each machine starts a sticky's pulse
+/// on its first frame the arm time L or more after it first received the
+/// sticky (here: a sticky appearing at a client's 5.0 s, as a snapshot
+/// brings it), not after the launch: L = 0.8 stock, 0.6 with the
+/// Quickiebomb's `sticky_arm_time` −0.2.
+#[test]
+fn a_received_stickys_pulse_starts_its_arm_time_after_it_arrived() {
+    use chimera_world::map::loose::ShownItem;
+    use tf2::game::weapons::{looks::GunLooks, sticky::SHOWN};
+    for (l, quickie) in [(0.8f64, false), (0.6, true)] {
+        let mut sim = sim();
+        if quickie {
+            sim.app.world_mut().resource_mut::<GunLooks>().set_armed_after(STICKY_LAUNCHER, 0.6);
+        }
+        let now = |sim: &chimera_world::harness::Sim| sim.app.world().resource::<Time>().elapsed_secs_f64();
+        while now(&sim) < 5.0 {
+            sim.ticks(1);
+        }
+        // As a snapshot brings it: it is there in the next frame (a
+        // client's receive runs at that frame's start).
+        sim.app.world_mut().spawn((ShownItem(SHOWN.into()), Transform::from_xyz(0.0, 2.0, 0.0)));
+        let mut cursor = sim.app.world().resource::<Messages<StartParticleSystem>>().get_cursor_current();
+        let mut started = Vec::new();
+        sim.ticks(1);
+        let arrived = now(&sim);
+        for _ in 0..80 {
+            sim.ticks(1);
+            let t = now(&sim);
+            let w = sim.app.world();
+            started.extend(cursor.read(w.resource::<Messages<StartParticleSystem>>()).filter(|s| s.name.starts_with("stickybomb_pulse_")).map(|_| t));
+        }
+        assert_eq!(started.len(), 1, "once: {started:?}");
+        let dt = sim.app.world().resource::<Time>().delta_secs_f64();
+        let after = started[0] - arrived;
+        assert!(after >= l - 1e-6 && after < l + dt + 1e-6, "the first frame at or after {l} s: {after}");
+    }
 }
 
 #[test]

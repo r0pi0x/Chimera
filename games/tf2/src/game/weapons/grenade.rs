@@ -28,8 +28,10 @@
 //! Known shortcuts: the restitution and friction are ours (the physics
 //! engine's in the game: open question 7), as is the grenade's 2-unit box
 //! (the game's 4-unit cube); the fuse is the flyer's life, not a check
-//! every 0.2 s; no random launch jitter (+-10 right and up), no drag, no
-//! spin (the model faces its flight); teammates are passed for its whole
+//! every 0.2 s; no random launch jitter (+-10 right and up); its angular
+//! drag is ours (open question 22; its launch spin and drag are
+//! `chimera:projectile`'s `spin` and `drag`, weapons_more.md 4.1, 4.4);
+//! no speed cap (open question 23); teammates are passed for its whole
 //! flight (the game: 0.25 s) and enemies after a bounce aren't bounced
 //! off; a grenade doesn't explode on buildings (there are none).
 

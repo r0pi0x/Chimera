@@ -13,13 +13,17 @@
 //!   forward, 8 right and 6 down of the eye at that speed along the aim
 //!   and `up_speed` (200) up, plus up to `jitter` (10) along the aim's
 //!   right and up at random (`launch_random`, from the shot's seed),
-//!   through teammates, tumbling at `spin` (600, a whole number in ±1200,
-//!   0 degrees/s about its own axes: `launch_spin`) until it sticks.
+//!   through teammates, tumbling at `spin` ((600, a whole number in
+//!   ±1200, 0) degrees/s about its own axes added twice: (1200, 2r, 0),
+//!   `flight::LaunchSpin`) until it sticks, losing speed and spin to the
+//!   air (`drag`, 4.4: Chimera's `flight::AirDrag` at `tf2:air_density`,
+//!   2).
 //! - **Touches** (5.2, `touch`): the world (what doesn't move) stops it
 //!   dead and it stays (`Flyer::stuck_until` far away); anything else
 //!   bounces it off at half speed; it never explodes on contact.
 //! - **Detonation** (5.3, 5.4, `detonate`): attack2 with the launcher, or any
-//!   other TF2 weapon, out detonates every sticky of its owner armed (`arm`, 0.8 s after launch;
+//!   other TF2 weapon, out detonates every sticky of its owner armed (`arm_time`: `arm` +
+//!   the launcher's `sticky_arm_time`, 0.8 s after launch on the stock one;
 //!   the detonate sound); over `max` (8) the oldest goes off; a dead owner's
 //!   vanish. Each explodes with the shared blast (`blast`): 120 x the
 //!   splash x the short-range-reduced modifier M_s (121.8 % at 0, the
@@ -47,6 +51,7 @@ use serde::Deserialize;
 
 use chimera_sim::weapon::{
     CHAN_WEAPON, Inventory, Magazine, NetPart, Weapon, WeaponEvent, WeaponEventKind, WeaponState, aim_of,
+    flight::{DragParams, LaunchSpin},
     projectile::{Flyer, FlyerHit, spawn_flyer},
 };
 
@@ -99,10 +104,17 @@ pub struct StickyParams {
     /// (units/s).
     #[serde(default)]
     pub jitter: f32,
-    /// The launch spin about its own axes (degrees/s): x, then a random
-    /// whole number in ±`spin[1]` about y, then z (weapons_more.md 4.1).
+    /// The launch spin (weapons_more.md 4.1: (600, a whole number in
+    /// ±1200, 0) degrees/s added twice; `flight::LaunchSpin`).
     #[serde(default)]
-    pub spin: [f32; 3],
+    pub spin: Option<LaunchSpin>,
+    /// Its air drag in flight (4.4; `flight::DragParams`).
+    #[serde(default)]
+    pub drag: Option<DragParams>,
+    /// Added to `arm` (the launcher's `sticky_arm_time` attribute, 5.3:
+    /// none on the stock launcher, −0.2 on the Quickiebomb).
+    #[serde(default)]
+    pub sticky_arm_time: f32,
     #[serde(default)]
     pub sound: Option<String>,
     #[serde(default)]
@@ -151,6 +163,11 @@ impl StickyParams {
         }
     }
 
+    /// Its arm time L (s): `arm` + `sticky_arm_time` (5.3).
+    pub fn arm_time(&self) -> f32 {
+        self.arm + self.sticky_arm_time
+    }
+
     /// The launch speed (units/s) after holding `held` seconds.
     pub fn speed(&self, held: f32) -> f32 {
         self.speed_min + (self.speed_max - self.speed_min) * (held / self.charge_time).clamp(0.0, 1.0)
@@ -161,7 +178,7 @@ impl StickyParams {
         if stuck {
             return self.radius;
         }
-        let t = ((age - self.arm) / self.air_radius_time).clamp(0.0, 1.0);
+        let t = ((age - self.arm_time()) / self.air_radius_time).clamp(0.0, 1.0);
         self.radius * (self.air_radius_start + (1.0 - self.air_radius_start) * t)
     }
 }
@@ -330,7 +347,8 @@ pub fn launch(
         let (right, up) = (p.jitter * r[0], p.jitter * r[1]);
         let velocity = (dir * gun.speed + aim * Vec3::X * right + aim * Vec3::Y * (p.up_speed + up)) * U;
         let mut f = Flyer::new(weapon.id, Some(e.owner), velocity, &clock);
-        f.spin = launch_spin(p.spin, r[2]);
+        f.spin = p.spin.map_or(Vec3::ZERO, |s| s.draw(seed));
+        f.drag = p.drag.map(|d| d.drag(U));
         f.gravity = p.gravity * U;
         f.half = Vec3::splat(2.0 * U);
         f.pass_teammates = true;
@@ -341,7 +359,7 @@ pub fn launch(
 }
 
 /// Three numbers in [-1, 1] from a shot's seed (the launch's jitter
-/// right and up, and the spin's random term).
+/// right and up; the third unused: the spin draws its own).
 pub fn launch_random(seed: u32) -> [f32; 3] {
     let mut x = seed.wrapping_mul(0x9E37_79B9) ^ 0x5bd1_e995;
     std::array::from_fn(|_| {
@@ -350,15 +368,6 @@ pub fn launch_random(seed: u32) -> [f32; 3] {
         x ^= x << 5;
         (x % 2001) as f32 / 1000.0 - 1.0
     })
-}
-
-/// The launch spin (rad/s about the model's own axes) from TF2's
-/// (`spin`, degrees/s about its x forward, y left, z up) with the middle
-/// term a whole number in ±`spin[1]` picked by `r` in [-1, 1]: Source's
-/// axes (x, y, z) are the engine's (x, z, -y).
-pub fn launch_spin(spin: [f32; 3], r: f32) -> Vec3 {
-    let y = (r * spin[1]).round();
-    Vec3::new(spin[0], spin[2], -y) * std::f32::consts::PI / 180.0
 }
 
 /// When a stuck sticky is gone: never (it goes by detonation).
@@ -440,7 +449,7 @@ pub fn detonate(
         if out && intent.secondary {
             let mut any = false;
             for &i in of.iter().skip(over) {
-                if now - mine[i].3 + 1e-6 >= p.arm as f64 {
+                if now - mine[i].3 + 1e-6 >= p.arm_time() as f64 {
                     blow.push(i);
                     any = true;
                 }
@@ -490,23 +499,29 @@ mod tests {
         assert_eq!(p.speed(9.0), 2400.0);
     }
 
-    /// weapons_more.md 4.1 (5.1: the same): ±10 jitter right and up, and
-    /// a spin of 600 about its forward and a whole number in ±1200 about
-    /// its left (the engine's −z), none about its up.
+    /// weapons_more.md 4.1 (5.1: the same), test 29b: ±10 jitter right
+    /// and up; (600, r, 0) degrees/s added twice: 1200 about its forward
+    /// and an even whole number in ±2400 about its left (the engine's −z),
+    /// none about its up. 4.4: its drag per body axis.
     #[test]
-    fn the_launch_jitters_and_spins() {
+    fn the_launch_jitters_and_spins_29b() {
         let p = params();
-        assert_eq!((p.jitter, p.spin), (10.0, [600.0, 1200.0, 0.0]));
+        assert_eq!(p.jitter, 10.0);
+        let spin = p.spin.expect("a spin");
+        assert_eq!((spin.base, spin.random, spin.times), ([600.0, 0.0, 0.0], [0.0, 1200.0, 0.0], 2));
         let mut seen = [f32::MAX, f32::MIN];
         for seed in 0..500 {
             let r = launch_random(seed);
             assert!(r.iter().all(|x| (-1.0..=1.0).contains(x)), "{r:?}");
-            let s = launch_spin(p.spin, r[2]).to_array().map(f32::to_degrees);
-            assert!((s[0] - 600.0).abs() < 1e-3 && s[1] == 0.0, "{s:?}");
-            assert!(s[2].abs() <= 1200.0 + 1e-3 && (s[2] - s[2].round()).abs() < 1e-3, "{s:?}");
+            let s = spin.draw(seed).to_array().map(f32::to_degrees);
+            assert!((s[0] - 1200.0).abs() < 1e-2 && s[1] == 0.0, "{s:?}");
+            assert!(s[2].abs() <= 2400.0 + 1e-2 && (s[2].round() as i32) % 2 == 0, "{s:?}");
             seen = [seen[0].min(s[2]), seen[1].max(s[2])];
         }
-        assert!(seen[0] < -1000.0 && seen[1] > 1000.0, "the middle term spreads over ±1200: {seen:?}");
+        assert!(seen[0] < -2000.0 && seen[1] > 2000.0, "the middle term spreads over ±2400: {seen:?}");
+        let d = p.drag.expect("a drag");
+        assert_eq!((d.lin, d.ang, d.per), ([1.43e-6, 1.41e-6, 1.45e-6], [7.27e-7, 7.36e-7, 7.3e-7], 0.015));
+        assert_eq!((p.arm, p.sticky_arm_time, p.arm_time()), (0.8, 0.0, 0.8));
     }
 
     /// 5.4, tests 35, 36: in the air 85 % at arming (0.8 s), all of it at

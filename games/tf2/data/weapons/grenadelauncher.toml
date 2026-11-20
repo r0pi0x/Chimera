@@ -71,6 +71,14 @@ shown = "tf2:tf_weapon_grenadelauncher/grenade"
 offset = [16.0, 8.0, -6.0]
 pass_teammates = true
 life = 2.1
+# (600, r, 0) degrees/s about its forward, left, up, r a whole number in
+# ±1200, added twice: (1200, 2r, 0) (weapons_more.md 4.1).
+spin = { base = [600.0, 0.0, 0.0], random = [0.0, 1200.0, 0.0], times = 2 }
+# Air drag per 0.015 s tick x air_density (tf2:air_density, 2), along /
+# about its forward (its long axis), left, up (weapons_more.md 4.4, fitted).
+# Angular: ours, a uniform 3.3e-7 per degree/s giving the measured ~0.22 %
+# a tick at the typical launch spin (1200, 2200, 0) (Open questions 22).
+drag = { lin = [0.75e-6, 1.91e-6, 1.90e-6], ang = [3.3e-7, 3.3e-7, 3.3e-7], per = 0.015 }
 
 [hooks."tf2:grenade"]
 damage = 100.0

@@ -14,7 +14,9 @@
 //! against `core::SOLID_LAYERS`, never touching its owner (nor loose
 //! items with `Flyer::pass_items`, nor anything before
 //! `Flyer::solid_after`), and physics clips with `Flyer::meets_clips`; a flyer made during a tick first moves on the
-//! next. The server's (`core::authoritative`); clients draw it from the
+//! next; one with `Flyer::drag` loses speed and spin to the air after
+//! gravity each tick, and `LauncherParams::spin` tumbles it from its
+//! launch (`flight`). The server's (`core::authoritative`); clients draw it from the
 //! network's `NetItem` (its `ShownItem` and `Transform`, facing its
 //! flight with its model's `Flyer::turn`, or tumbling by its
 //! `Flyer::spin`: `flyer_rotation`), as thrown grenades. The turn comes
@@ -214,6 +216,9 @@ pub struct Flyer {
     /// by this instead of following its flight. Zero: it faces its
     /// flight.
     pub spin: Vec3,
+    /// Its air drag (`flight::AirDrag`: speed and spin lost each tick
+    /// after gravity, by its game's `flight::AirDensity`); none: none.
+    pub drag: Option<super::flight::AirDrag>,
     /// It passes its owner's teammates (characters on the owner's
     /// non-zero `core::Team`, friendly fire off: TF2's rockets).
     pub pass_teammates: bool,
@@ -264,6 +269,7 @@ impl Flyer {
             last_hit: None,
             turn: Quat::IDENTITY,
             spin: Vec3::ZERO,
+            drag: None,
             pass_teammates: false,
             marks: false,
             marks_stay: false,
@@ -556,6 +562,13 @@ pub struct LauncherParams {
     /// effects.md 12).
     #[serde(default)]
     pub marks_stay: bool,
+    /// Its launch spin (`flight::LaunchSpin`, from the shot's seed;
+    /// TF2's grenade); none: it faces its flight.
+    #[serde(default)]
+    pub spin: Option<super::flight::LaunchSpin>,
+    /// Its air drag (`flight::DragParams`, in the data's lengths).
+    #[serde(default)]
+    pub drag: Option<super::flight::DragParams>,
 }
 
 /// The weapons of `set` whose projectiles are drawn late
@@ -647,6 +660,8 @@ pub struct Launcher {
     pub aim_min: f32,
     pub start_trace: bool,
     pub jitter: f32,
+    /// `LauncherParams::spin`.
+    pub spin: Option<super::flight::LaunchSpin>,
 }
 
 impl LauncherParams {
@@ -669,6 +684,7 @@ impl LauncherParams {
         f.pass_teammates = self.pass_teammates;
         f.marks = self.marks;
         f.marks_stay = self.marks_stay;
+        f.drag = self.drag.map(|d| d.drag(unit));
         // Relative here; made absolute at the launch.
         f.expires = self.life.map(|l| l as f64);
         f.touch = match self.touch.as_str() {
@@ -704,6 +720,7 @@ impl LauncherParams {
             aim_min: self.aim_min * unit,
             start_trace: self.start_trace,
             jitter: self.jitter.to_radians(),
+            spin: self.spin,
         }
     }
 }
@@ -938,6 +955,9 @@ fn launch_from_fired(
         let mut f = l.template.clone();
         f.owner = Some(e.owner);
         f.velocity = dir * speed + aim * Vec3::Y * l.up_speed;
+        if let Some(spin) = &l.spin {
+            f.spin = spin.draw(seed);
+        }
         if let Some(life) = f.expires {
             f.expires = Some(clock.now + life);
         }
@@ -1149,6 +1169,7 @@ fn expire(
 fn fly(
     mut flyers: Query<(Entity, &mut Flyer, &mut Transform)>,
     mut world: FlyWorld,
+    air: Option<Res<super::flight::AirDensity>>,
     clock: Res<SimClock>,
     mut commands: Commands,
 ) {
@@ -1170,7 +1191,12 @@ fn fly(
             continue;
         }
         f.ticks += 1;
-        let (step, v) = gravity_step(f.velocity, f.gravity, dt);
+        let (step, mut v) = gravity_step(f.velocity, f.gravity, dt);
+        // Air drag after gravity (flight.rs).
+        if let Some(d) = f.drag {
+            let rho = air.as_deref().map_or(1.0, |a| a.of(f.weapon));
+            (v, f.spin) = d.step(v, f.spin, t.rotation, rho, dt);
+        }
         f.velocity = v;
         let len = step.length();
         let Ok(dir) = Dir3::new(step) else { continue };

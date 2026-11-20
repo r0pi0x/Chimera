@@ -202,10 +202,11 @@ fn a_jump_drops_the_scope_and_an_unscoped_shot_blocks_it_17b_17c() {
 }
 
 /// Test 21: a grenade fired level leaves at 1200 forward and 200 up and
-/// falls at 800 units/s².
+/// falls at 800 units/s² (no air: its drag, 4.4, off).
 #[test]
 fn a_grenade_leaves_at_1200_and_200_up_21() {
     let mut sim = sim();
+    chimera_core::console::execute(sim.app.world_mut(), &["tf2:air_density".to_string(), "0".to_string()], 0);
     let (p, _) = holding(&mut sim, greybox::SPAWNS[0], GRENADE_LAUNCHER);
     run(&mut sim, p, 2, |s, k| {
         s.intent(p).fire = k == 0;
@@ -295,6 +296,66 @@ fn stickies(sim: &mut Sim, owner: Entity) -> Vec<(Entity, Flyer)> {
     q.iter(sim.app.world()).filter(|(_, f)| f.owner == Some(owner) && f.weapon == STICKY_LAUNCHER).map(|(e, f)| (e, f.clone())).collect()
 }
 
+
+/// One sticky tapped level along −Z; its flyer's velocity and spin over
+/// `ticks` ticks after the launch, with `tf2:air_density` `rho`.
+fn sticky_flight(rho: f32, ticks: usize) -> Vec<(Vec3, Vec3, Quat)> {
+    let mut sim = sim();
+    let words: Vec<String> = ["tf2:air_density".to_string(), rho.to_string()].into();
+    chimera_core::console::execute(sim.app.world_mut(), &words, 0);
+    let air = sim.app.world().resource::<chimera_sim::weapon::flight::AirDensity>().of(STICKY_LAUNCHER);
+    assert_eq!(air, rho, "the cvar sets it");
+    let from = greybox::SPAWNS[0] + Vec3::Y * 3.0;
+    let (p, _) = holding(&mut sim, from, STICKY_LAUNCHER);
+    let mut out = Vec::new();
+    for k in 0..ticks + 3 {
+        run(&mut sim, p, 1, |s, _| {
+            s.intent(p).fire = k == 0;
+            s.intent(p).yaw = 0.0;
+            s.intent(p).pitch = 0.0;
+        });
+        if let Some((e, f)) = stickies(&mut sim, p).into_iter().next()
+            && f.ticks > 0
+        {
+            let rot = sim.app.world().get::<Transform>(e).unwrap().rotation;
+            out.push((f.velocity, f.spin, rot));
+        }
+        if out.len() == ticks {
+            break;
+        }
+    }
+    assert_eq!(out.len(), ticks, "it flew {ticks} ticks");
+    out
+}
+
+/// weapons_more.md 4.4, tests 29c, 29d: in flight a sticky loses, each
+/// tick after gravity, ρ Σ c_i |v_i| of its speed and ρ Σ a_i |ω_i| of
+/// its spin (in its own axes; directions kept); with `air_density` 0
+/// only gravity (800).
+#[test]
+fn a_sticky_drags_in_the_air_29c_29d() {
+    let dt = TICK_INTERVAL as f32;
+    let g = 800.0 * U;
+    let still = sticky_flight(0.0, 10);
+    for w in still.windows(2) {
+        let (a, b) = (w[0].0, w[1].0);
+        assert!((b - (a - Vec3::Y * g * dt)).length() < 1e-4, "only gravity: {a} -> {b}");
+        assert!((w[1].1 - w[0].1).length() < 1e-6, "the spin kept");
+    }
+    let spin = still[0].1.to_array().map(f32::to_degrees);
+    assert!((spin[0] - 1200.0).abs() < 0.1 && spin[1] == 0.0, "(1200, 2r, 0): {spin:?}");
+    let drag = chimera_sim::weapon::flight::DragParams { lin: [1.43e-6, 1.41e-6, 1.45e-6], ang: [7.27e-7, 7.36e-7, 7.3e-7], per: 0.015 }.drag(U);
+    let fly = sticky_flight(2.0, 20);
+    for w in fly.windows(2) {
+        let ((v0, s0, r0), (v1, s1, _)) = (w[0], w[1]);
+        let after_g = v0 - Vec3::Y * g * dt;
+        let f_lin = 2.0 * dt * drag.lin.dot((r0.inverse() * after_g).abs());
+        assert!((v1.length() / after_g.length() - (1.0 - f_lin)).abs() < 1e-5, "{v0} -> {v1}");
+        assert!((0.0025..0.0052).contains(&f_lin), "0.27-0.50 % a tick per 1000 units/s: {f_lin}");
+        let f_ang = 2.0 * dt * drag.ang.dot(s0.abs());
+        assert!((s1.length() / s0.length() - (1.0 - f_ang)).abs() < 1e-6 && (s1.normalize() - s0.normalize()).length() < 1e-5);
+    }
+}
 
 /// Tests 28, 29: tapped, 900 forward; held 2 s, 1650; held on, it fires by
 /// itself at 4 s at 2400.
@@ -568,8 +629,8 @@ fn a_kept_gun_keeps_its_projectiles_model() {
 }
 
 /// Every TF2 projectile (the rocket, the grenade, the sticky, the needle)
-/// but a spinning one (the sticky, weapons_more.md 5.1: it tumbles from
-/// its launch) flies nose first: its shown model's own forward (`MapHeldModel::nose`,
+/// but a spinning one (the sticky and the grenade, weapons_more.md 4.1:
+/// they tumble from their launch) flies nose first: its shown model's own forward (`MapHeldModel::nose`,
 /// here a made-up slant, as a model's bone frame leaves it) stays along
 /// its velocity from its launch until it stops (playtest 2026-11-18: the
 /// needles flew sideways).
@@ -602,7 +663,7 @@ fn every_projectile_flies_nose_first() {
                 seen += 1;
             }
         }
-        let spins = *gun == tf2::game::weapons::STICKY_LAUNCHER;
+        let spins = [tf2::game::weapons::STICKY_LAUNCHER, tf2::game::weapons::GRENADE_LAUNCHER].contains(gun);
         assert!(if spins { spun > 3 && seen == 0 } else { seen > 3 && spun == 0 }, "{gun}: {seen} nose-first and {spun} spinning ticks seen");
     }
 }

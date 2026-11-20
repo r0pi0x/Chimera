@@ -82,6 +82,7 @@ pub mod drop;
 pub mod economy;
 pub mod economy_data;
 pub mod equip;
+pub mod flight;
 pub mod grenade;
 pub mod harm;
 pub mod held_sounds;
