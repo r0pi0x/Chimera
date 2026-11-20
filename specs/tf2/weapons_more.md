@@ -22,6 +22,10 @@ copied; the numbers and rules below are restated in our words. The SDK
 does not contain the per-weapon scripts (damage, interval, clip, spread,
 reload times, blast radius) nor the per-weapon damage-type table, so those
 numbers remain the wiki's (and weapon_scripts.md's run-time values).
+The 2026-11-20 recheck (spin, air drag, arm time) read the same game
+code again and measured the running game (the projectiles' physics
+velocity per tick through VScript); the projectile models' collision
+data was read from the install in place.
 Status: checked against the SDK's game code (2026-11-15)
 
 ## Summary
@@ -79,7 +83,8 @@ small random spread.
 - Grenade and sticky launch: exactly 200 units/s up plus a random ±10
   units/s right and ±10 up (was "≈ 200", jitter open).
 - Grenade and sticky spin: angular impulse (600, random ±1200, 0) degrees
-  per second (was "spinning", unspecified).
+  per second (was "spinning", unspecified), **applied twice** (2026-11-20
+  recheck): the body starts at (1200, 2r, 0) degrees/s, §4.1.
 - Grenade and sticky: rigid physics bodies with a 4-unit cube collision
   box; the stickies' and grenades' gravity is the physics world's (full
   `sv_gravity`) (was open).
@@ -210,7 +215,11 @@ questions 19).
 | grenade_fuse_scale | 0.6 | – | damage of a grenade that explodes on its fuse (SDK) |
 | launch_speed | 1200 forward + 200 up (+ ±10 right, ±10 up random) | units/s | grenade launch velocity (SDK) |
 | launch_offset | 16 forward, 8 right, −6 up | units | from the eye, clipped by an 8-unit box trace from the eye (SDK) |
-| launch_spin | (600, ±1200, 0) | deg/s | angular impulse on launch, middle term random (SDK) |
+| launch_spin | (600, ±1200, 0), added twice: (1200, 2r, 0) | deg/s | angular velocity on launch, r a random integer in [−1200, 1200], body axes (SDK; measured) |
+| air_density | 2.0 | – | physics world's air density, scales all drag (§4.4) |
+| sticky_drag_lin | (1.43, 1.41, 1.45) × 10⁻⁶ | per (unit/s) per tick, × ρ | per body axis (§4.4, fitted) |
+| grenade_drag_lin | (0.75, 1.91, 1.90) × 10⁻⁶ | per (unit/s) per tick, × ρ | per body axis (§4.4, fitted) |
+| sticky_drag_ang | (7.27, 7.36, ~7.3) × 10⁻⁷ | per (deg/s) per tick, × ρ | per body axis (§4.4, fitted) |
 | pipe_box | 4 | units | grenade and sticky collision cube (half-size 2) (SDK) |
 | grenade_fuse | 2.0 (checked every 0.2) | s | from launch (SDK) |
 | teammate_pass | 0.25 | s | grenades and stickies pass teammates only this long (SDK) |
@@ -453,13 +462,25 @@ fire animation, 1.6667 s, is longer: Quirks).
   nothing is fired.
 - **Velocity**: 1200 along the aim's forward, plus 200 along the aim's
   up, plus a random r₁ along the aim's right and r₂ along the aim's up,
-  each uniform in [−10, 10] (|v| ≈ 1216.6, the wiki's speed). **Spin**: an
-  angular impulse of (600, random integer in [−1200, 1200], 0) degrees
-  per second about the grenade's own axes.
-- It is a **rigid physics body** (a 4-unit cube for collision, the
-  grenade model for looks): gravity is the physics world's (sv_gravity,
-  800), with the physics engine's air drag and its bounce and friction on
-  surfaces (the game code sets none of these: Open questions 7).
+  each uniform in [−10, 10] (|v| ≈ 1216.6, the wiki's speed). **Spin**: the
+  game draws one angular velocity (600, r, 0) degrees per second, r a
+  random integer in [−1200, 1200], about the projectile's own axes
+  (x its forward, y its left, z its up; the projectile starts with the
+  eye's angles), and **adds it to the body twice** (once when the body
+  gets its launch velocity, once more right after), so the projectile
+  leaves with **(1200, 2r, 0) degrees/s**: 1200 about its forward, an
+  even number in [−2400, 2400] about its left, |ω| from 1200 to about
+  2683. (Measured 2026-11-20 with air drag off: exactly (1200, 374, 0);
+  with it on, (1195, −1631, 0) one tick after launch.) The
+  `grenade_no_spin` attribute (not on stock items) zeroes it.
+- It is a **rigid physics body**: gravity is the physics world's
+  (sv_gravity, 800), plus the physics engine's **air drag** (§4.4) and
+  its bounce and friction on surfaces. The physics body's shape and mass
+  come from the projectile model's own collision model, not the 4-unit
+  cube (that is the game's box for traces and touches): grenade and
+  sticky both 5 kg, linear and angular damping 0, inertia scale 1; the
+  grenade's surface material `demoman_grenade`, the sticky's `default`
+  (their bounce and friction: Open questions 7).
 - **Players**: grenades are not solid to players. Each physics step a ray
   along the grenade's motion over that step looks for players and
   buildings: an enemy it meets is touched (§4.2); a teammate it meets is
@@ -500,6 +521,64 @@ fire animation, 1.6667 s, is longer: Quirks).
   default 1, none.
 - Self-damage, knockback: §6.
 
+#### 4.4 Air drag in flight (grenades and stickies)
+
+(Measured 2026-11-20 in the running game, per server tick through
+VScript's physics velocity of the body, with `air_density` 0, 2 and 4:
+with 0 there is no loss at all and gravity is exactly 800, so all the
+loss is the physics engine's air drag; it scales linearly with the
+density. The game code sets no drag of its own; the engine computes it
+from the body's collision model, so the coefficients below are fitted,
+not read.)
+
+- Air density ρ: the physics world's, **2.0** by default (`air_density`,
+  a cheat command). Drag coefficient 1 (the default; the models set
+  none).
+- **Order within a physics step** (dt = one tick, 0.015 s): gravity
+  first (v_z −= 800 dt), then the whole velocity vector is scaled by
+  (1 − f_lin) (its direction kept). Likewise the angular velocity is
+  scaled by (1 − f_ang).
+- **Linear**, with v = (v_x, v_y, v_z) the velocity in the body's own
+  axes (forward, left, up), units/s:
+
+```math
+f_{lin} = \rho\,\big(c_x|v_x| + c_y|v_y| + c_z|v_z|\big)
+```
+
+  per tick. A **quadratic** drag (the per-tick fraction grows with
+  speed), weighted per body axis (the projected areas of the collision
+  model; it changes as the body tumbles).
+  - Sticky: c = (1.43, 1.41, 1.45) × 10⁻⁶ per (unit/s) per tick, nearly
+    the same on every axis (fit over 184 ticks, 0.8 % rms error). At ρ =
+    2: 0.29 % per tick per 1000 units/s moving along an axis, up to 0.50
+    % per 1000 units/s moving along a body diagonal; a sticky at 940
+    units/s loses 0.27–0.47 % a tick (measured 0.4–0.5 % typical).
+  - Grenade: c = (0.75, 1.91, 1.90) × 10⁻⁶ (its forward x is its long
+    axis: it drags half as much moving end-first; fit over 86 ticks, 1 %
+    rms).
+  - Per second (for another tick length): divide c by 0.015.
+- **Angular**, with ω = (ω_x, ω_y, ω_z) in degrees/s about the body's
+  own axes:
+
+```math
+f_{ang} = \rho\,\big(a_x|\omega_x| + a_y|\omega_y| + a_z|\omega_z|\big)
+```
+
+  per tick, the whole ω scaled by (1 − f_ang), so its direction in the
+  body is kept and the per-axis ratio stays constant through the flight.
+  - Sticky: a_x = 7.27 × 10⁻⁷, a_y = 7.36 × 10⁻⁷ per (degree/s) per tick
+    (fit over 264 ticks of three launches, 0.02 % rms: the sum of the
+    absolute components, not the vector's length). a_z was not measured
+    (a launch never spins about z); take 7.3 × 10⁻⁷. At ρ = 2 the
+    launch spin (1200, ±1600, 0) loses 0.41 % a tick, (1200, 0, 0) 0.17 %.
+  - Grenade: about 0.2–0.25 % a tick at ~2500 degrees/s; its ω turns in
+    the body during flight (its inertia isn't the same about every
+    axis), so it isn't fitted (Open questions 22).
+- Damping (the engine's other speed loss) is 0 for both models.
+- Worked (sticky, ρ = 2, measured): a sticky launched level at about
+  1030 units/s lost about 0.4 % a tick on top of gravity: its horizontal
+  speed went 1009 → 802 over 59 ticks (0.9 s), 21 % gone.
+
 ### 5. Stickybomb Launcher
 
 #### 5.1 Charging and launching
@@ -538,7 +617,17 @@ v_{fwd}(h) = 900 + 1500\,\min(h / 4,\ 1)
 
 #### 5.3 Arming and detonation
 
-- A sticky is **armed** 0.8 s after its launch (age ≥ 0.8 s).
+- A sticky is **armed** 0.8 s after its launch (age ≥ 0.8 s; the
+  detonation check itself asks for an age strictly over the arm time).
+  The arm time L is 0.8 plus the launcher's additive `sticky_arm_time`
+  attribute: none on the stock launcher; −0.2 on the Quickiebomb Launcher
+  (L = 0.6); +0.8 on the Scottish Resistance (L = 1.6). (Powerup mode
+  only: × 0.5 with the Haste rune, × 0.75 with King.) If L ≤ 0.5, an
+  attack2 while the sticky is unarmed marks it to blow up the moment it
+  arms.
+- The armed **pulse** (a ring effect) is the client's own, timed from
+  when that client first received the sticky: effects.md §11.3 (first
+  ring ≈ 1.0 s after the launch for the stock launcher at defaults).
 - **attack2** with **any** of the Demoman's weapons out (the launcher, the
   Grenade Launcher, his melee), if he can attack (not stunned, taunting,
   etc.), detonates every armed sticky of his at once. If at least one is
@@ -1027,7 +1116,10 @@ f = 1 unless said, 66.7 tick (0.015 s).
 | 27 | Grenade Launcher clip 0, reserve 16 | – | clip 1 at +1.2 s (wiki 1.24), 4 at +3.0 s; reserve 12 |
 | 27b | Grenade passes a teammate at 0.1 s / at 0.5 s of flight | – | passes through / bounces off (× 0.45), no explosion |
 | 28 | Sticky, attack pressed and released at once, jitter off | – | forward speed 900, up 200 |
-| 29 | Sticky, held 2 s / 4 s | – | 1650 / 2400; at 4 s it launches without release; still held, the next charge starts at 4.6 s |
+| 29 | Sticky, held 2 s / 4 s | – | 1650 / 2400 (but see Open questions 23); at 4 s it launches without release; still held, the next charge starts at 4.6 s |
+| 29b | Sticky launched with r = 187 | – | spin (1200, 374, 0) degrees/s about its forward, left, up |
+| 29c | Sticky in flight, ρ = 2, body-frame velocity (1000, 0, 0) / (577, 577, 577), ω (1200, 1600, 0) | one tick | speed × (1 − 0.00286) / × (1 − 0.00495); ω × (1 − 2 × (7.27e-7 × 1200 + 7.36e-7 × 1600)) = × (1 − 0.00410) |
+| 29d | Sticky in flight, `air_density` 0 | – | no speed or spin loss; only gravity (800) |
 | 30 | Sticky, launch, attack2 at +0.5 s, again at +0.9 s | – | deny sound and nothing at 0.5 s; explodes at 0.9 s |
 | 30b | Sticky armed, Demoman holding the Grenade Launcher | attack2 | it explodes |
 | 31 | 8 stickies out | launch a 9th | the oldest explodes within 0.2 s (its next fuse check), armed or not; 8 remain |
@@ -1092,6 +1184,9 @@ Probe checks (live dedicated server, bots; never ports 27015/27030):
    engine; the air drag (linear and angular), the surface bounce and the
    friction come from the engine and the collision material, not the game
    code. Fit them from P1.
+   **Air drag answered (2026-11-20, tf2-spec-sticky, measured):** §4.4.
+   Left: the bounce and friction on surfaces (the `demoman_grenade` and
+   `default` surface materials).
 8. **Projectile sizes and blocked launches**: the collision boxes are
    settled (grenade and sticky 4-unit cube, needle 2-unit cube); whether a
    launch blocked inside a wall still uses up the round is not checked.
@@ -1147,3 +1242,12 @@ Probe checks (live dedicated server, bots; never ports 27015/27030):
     up, about half the disc at 1.5 s, the whole disc at 4 s. Others' view
     unmeasured: a puppet bot could not be made to scope (`bot_forceattack2`
     and `bot_mimic` both tried).
+22. **The grenade's angular drag** (§4.4): its spin vector turns in the
+    body during flight, so the per-axis fit failed (3 % error, a negative
+    term); about 0.2–0.25 % of |ω| a tick at ~2500 degrees/s, ρ = 2. Fit
+    it in the body's principal axes, or log the body's angles with ω.
+23. **The physics engine's speed limits**: its defaults cap a body at
+    2000 units/s and 3600 degrees/s. The spin (at most ~2683) is under
+    the angular cap, but a fully charged sticky (2400 forward + 200 up)
+    is over the linear one: whether it leaves at 2000 is unmeasured
+    (VScript: a 4 s charge, read the physics velocity the first tick).
