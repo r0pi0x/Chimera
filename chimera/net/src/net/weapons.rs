@@ -69,10 +69,10 @@ use crate::{
         vis::ActiveVisibility,
     },
     weapon::{
-        AltModes, Hitscan, Inventory, SpreadShape, Weapon, WeaponEvent, WeaponEventKind, WeaponRegistry,
+        AltModes, HeldGauge, Hitscan, Inventory, SpreadShape, Weapon, WeaponEvent, WeaponEventKind, WeaponRegistry,
         drop::DropRequested,
         grenade::{Detonated, GrenadeEffect, GrenadeKind, Projectile, SmokeCloud, Throwable},
-        remote::{RemoteAction, RemoteShot, shot_flags, show_held},
+        remote::{RemoteAction, RemoteShot, shot_flags, show_gauge, show_held},
     },
 };
 
@@ -171,7 +171,7 @@ fn weapon_id(world: &World, index: u16) -> Option<&'static str> {
 #[allow(clippy::type_complexity)]
 fn write_held(
     mut q: Query<(Entity, Option<&Inventory>, Option<&mut NetHeld>), With<NetCharacter>>,
-    weapons: Query<(&Weapon, Option<&AltModes>, Option<&Throwable>)>,
+    weapons: Query<(&Weapon, Option<&AltModes>, Option<&Throwable>, Option<&HeldGauge>)>,
     registry: Res<WeaponRegistry>,
     mut commands: Commands,
 ) {
@@ -179,8 +179,9 @@ fn write_held(
         let active = inv.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
         let now = NetHeld {
             weapon: active.and_then(|(w, ..)| registry.index(w.id)).map(|i| i as u16),
-            mode: active.and_then(|(_, m, _)| m).map_or(0, |m| m.current),
-            primed: active.and_then(|(.., t)| t).is_some_and(|t| t.primed()),
+            mode: active.and_then(|(_, m, ..)| m).map_or(0, |m| m.current),
+            primed: active.and_then(|(_, _, t, _)| t).is_some_and(|t| t.primed()),
+            gauge: active.and_then(|(.., g)| g).map_or(0, |g| g.byte()),
         };
         match held {
             Some(mut h) => {
@@ -805,6 +806,7 @@ fn apply_held(
         commands.queue(move |w: &mut World| {
             let id = h.weapon.and_then(|i| weapon_id(w, i));
             show_held(w, e, id, h.mode, h.primed);
+            show_gauge(w, e, HeldGauge::from_byte(h.gauge));
         });
     }
 }

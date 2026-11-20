@@ -314,3 +314,11 @@ bridge; facts of the picture, not of the code.
 7. (Implementation note.) How far the `Scorch` decal's trace reaches
    (§5 step 6). Ours traces 16 units from the blast's centre back along
    the surface normal.
+8. **Blood on a player hit** (measured 2026-11-20, tools/tf2ref
+   `impacts.tf2`: an SMG round into a BLU Heavy about 180 units off,
+   every frame at 60 frames a second): a dark red puff about 20 pixels
+   across at the hit (on the Heavy's hand and belt) from the first frame,
+   fading over about 8 frames, and a bright red splat on the body by
+   frame 8. Ours (Source's shared impact table, `blood_impact_red_01`)
+   draws a speck of a few pixels. Which system or table TF2 uses is
+   unspecified.

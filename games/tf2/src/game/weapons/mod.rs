@@ -62,6 +62,7 @@
 
 pub mod blast;
 pub mod damage;
+pub mod dot;
 pub mod flame;
 pub mod grenade;
 pub mod looks;

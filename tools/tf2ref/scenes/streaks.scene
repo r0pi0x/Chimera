@@ -1,0 +1,107 @@
+# Ours for streaks.tf2: one rocket down 2fort's bridge into its floor, a
+# picture every 1/60 s of game time from the shot for 40 frames (no view
+# model); run with +mat_hdr_level 2 +mat_colorcorrection 0 as TF2 draws.
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/streaks.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+rung tf2:tf_weapon_rocketlauncher
+wait 2
+wait_for idle 3000
+wait 60
+setpos 0 -300 0
+setang 25 90 0
+wait 90
+r_drawviewmodel 0
+shot streaks_idle
+host_timescale 0.02
+wait 3
++attack
+wait_for shot 3000
+-attack
+gwait 0.0167
+shot streaks_f01
+gwait 0.0167
+shot streaks_f02
+gwait 0.0167
+shot streaks_f03
+gwait 0.0167
+shot streaks_f04
+gwait 0.0167
+shot streaks_f05
+gwait 0.0167
+shot streaks_f06
+gwait 0.0167
+shot streaks_f07
+gwait 0.0167
+shot streaks_f08
+gwait 0.0167
+shot streaks_f09
+gwait 0.0167
+shot streaks_f10
+gwait 0.0167
+shot streaks_f11
+gwait 0.0167
+shot streaks_f12
+gwait 0.0167
+shot streaks_f13
+gwait 0.0167
+shot streaks_f14
+gwait 0.0167
+shot streaks_f15
+gwait 0.0167
+shot streaks_f16
+gwait 0.0167
+shot streaks_f17
+gwait 0.0167
+shot streaks_f18
+gwait 0.0167
+shot streaks_f19
+gwait 0.0167
+shot streaks_f20
+gwait 0.0167
+shot streaks_f21
+gwait 0.0167
+shot streaks_f22
+gwait 0.0167
+shot streaks_f23
+gwait 0.0167
+shot streaks_f24
+gwait 0.0167
+shot streaks_f25
+gwait 0.0167
+shot streaks_f26
+gwait 0.0167
+shot streaks_f27
+gwait 0.0167
+shot streaks_f28
+gwait 0.0167
+shot streaks_f29
+gwait 0.0167
+shot streaks_f30
+gwait 0.0167
+shot streaks_f31
+gwait 0.0167
+shot streaks_f32
+gwait 0.0167
+shot streaks_f33
+gwait 0.0167
+shot streaks_f34
+gwait 0.0167
+shot streaks_f35
+gwait 0.0167
+shot streaks_f36
+gwait 0.0167
+shot streaks_f37
+gwait 0.0167
+shot streaks_f38
+gwait 0.0167
+shot streaks_f39
+gwait 0.0167
+shot streaks_f40
+host_timescale 1

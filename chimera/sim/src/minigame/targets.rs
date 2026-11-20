@@ -88,6 +88,11 @@
 //!   set) to `RUN_HALF` past it, then put back at the start with its speed
 //!   kept (after `RUN_LEG` s, or pushed
 //!   `LEASH` m off the track, too). A motion set ends a run.
+//! - `alt` (console only, `target set <n> alt`): attack2 pressed for one
+//!   tick, released the next (a scope raised once, for pictures of TF2's
+//!   laser dot as `bot_forceattack2` stages it); `pitch <degrees>`
+//!   (console only, down positive): the pitch it faces at instead of
+//!   level (TF2's `bot_teleport` angles).
 //! - `protected` (off by default): `core::HealthHeld` (hits land and are
 //!   measured, health never drops, it never dies), and its health and
 //!   shield are put back to full at the start of each tick.
@@ -908,6 +913,11 @@ struct TargetDrive {
     /// The run it was on last tick (`Target::runs`): a new one starts at
     /// its track's start.
     run: Option<RunDir>,
+    /// attack2 to press for one tick (`target set <n> alt`).
+    alt_press: bool,
+    /// The pitch it faces at when not aiming, radians (`target set <n>
+    /// pitch <degrees>`, down positive; level by default).
+    pitch: f32,
 }
 
 /// A target that is still to be put at home (a new one, or back from the
@@ -1339,7 +1349,7 @@ fn pick(world: &mut World, which: &str) -> Result<Vec<Entity>, String> {
 }
 
 const USAGE: &str = "target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [ahead] [protect] [noarmor] [platform] | \
-    target set <n|all> <shoots|noshoot|ahead|noahead|jump|nojump|crouch|nocrouch|run <forward|back|left|right>|norun|protect|noprotect|armor|noarmor|still|strafe|walk|platform|line|gun <id>|character <id>|respawn <s>|distance <m>|feet [degrees]> | \
+    target set <n|all> <shoots|noshoot|ahead|noahead|jump|nojump|crouch|nocrouch|run <forward|back|left|right>|norun|alt|pitch <deg>|protect|noprotect|armor|noarmor|still|strafe|walk|platform|line|gun <id>|character <id>|respawn <s>|distance <m>|feet [degrees]> | \
     target remove <n|all> | target list | target characters | target look <n> | target repeat";
 
 /// A gun id, exact or the one gun of the ladder whose id holds the text.
@@ -1407,6 +1417,21 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
             let arg = a.get(3);
             let mut said = Vec::new();
             for e in pick(world, which)? {
+                // attack2 pressed once (a scope raised), not a setting.
+                if what == "alt" || what == "pitch" {
+                    let pitch = match what.as_str() {
+                        "pitch" => Some(arg.and_then(|s| s.parse::<f32>().ok()).ok_or("pitch <degrees, down positive>")?),
+                        _ => None,
+                    };
+                    if let Some(mut d) = world.get_mut::<TargetDrive>(e) {
+                        match pitch {
+                            Some(p) => d.pitch = -p.to_radians(),
+                            None => d.alt_press = true,
+                        }
+                    }
+                    said.push(pitch.map_or("attack2 pressed".to_string(), |p| format!("faces {p} degrees down")));
+                    continue;
+                }
                 let mut req = SetTarget::of(e);
                 match what.as_str() {
                     "shoots" => req.shoots_back = Some(true),
@@ -1687,12 +1712,18 @@ fn drive(
             intent.secondary = false;
             intent.actions = 0;
         }
+        // attack2 pressed for one tick (`alt`: a scope raised for a
+        // picture), released the next.
+        if d.alt_press {
+            d.alt_press = false;
+            intent.secondary = true;
+        }
         // One that may not fire, or fires ahead, faces back along its
         // line, level: toward where it was placed from, whatever the brain
         // looks at.
-        if !aims && (intent.yaw != line_yaw || intent.pitch != 0.0) {
+        if !aims && (intent.yaw != line_yaw || intent.pitch != d.pitch) {
             intent.yaw = line_yaw;
-            intent.pitch = 0.0;
+            intent.pitch = d.pitch;
         }
     }
 }

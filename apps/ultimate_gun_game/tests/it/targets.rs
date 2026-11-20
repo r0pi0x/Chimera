@@ -434,3 +434,30 @@ fn a_target_that_may_not_fire_has_its_trigger_released_before_the_guns_look() {
     sim.seconds(2.0);
     assert!(!sim.app.world().resource::<TriggerAtSelect>().0.contains(&e), "released again after noahead");
 }
+
+/// `target set <n> alt` presses attack2 once (a scope raised for pictures
+/// of TF2's laser dot) and `pitch` tilts its look: a Sniper target scopes
+/// in, stays scoped, faces 25 degrees down, and its rifle's charge others
+/// see (`HeldGauge`) rises as TF2's charge does (50/s after 0.3 s, of 150).
+#[test]
+fn a_sniper_target_scopes_in_on_alt_and_shows_its_charge() {
+    use chimera_sim::weapon::{AltModes, HeldGauge, Inventory};
+    let (mut sim, _me) = play();
+    let e = add(&mut sim, SpawnTarget { character: Some("tf2:sniper".into()), gun: Some("tf2:tf_weapon_sniperrifle".into()), ..at(8.0) });
+    let gun = |sim: &Sim| sim.app.world().get::<Inventory>(e).and_then(|i| i.active).expect("its rifle");
+    let mode = |sim: &Sim| sim.app.world().get::<AltModes>(gun(sim)).map_or(0, |m| m.current);
+    let gauge = |sim: &Sim| sim.app.world().get::<HeldGauge>(gun(sim)).map_or(-1.0, |g| g.0);
+    assert_eq!((mode(&sim), gauge(&sim)), (0, 0.0));
+    for line in ["target set all pitch 25", "target set all alt"] {
+        sim.app.world_mut().resource_mut::<Console>().submit(line);
+    }
+    sim.seconds(1.3);
+    assert_eq!(mode(&sim), 1, "scoped");
+    let g = gauge(&sim);
+    assert!((g - 1.0 / 3.0).abs() < 0.05, "a third charged 1.3 s in: {g}");
+    let pitch = sim.app.world().get::<chimera_core::core::Intent>(e).unwrap().pitch;
+    assert!((pitch + 25f32.to_radians()).abs() < 1e-4, "25 degrees down: {pitch}");
+    sim.seconds(2.5);
+    assert_eq!(mode(&sim), 1, "still scoped: one press");
+    assert_eq!(gauge(&sim), 1.0, "full");
+}

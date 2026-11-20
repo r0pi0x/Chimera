@@ -70,6 +70,8 @@
 //!   (`flame::FlameShown`: the same rounds, seeds and motion as the
 //!   server's damage points), the newest the active one each new sprite
 //!   rides, so the fire is where the damage is.
+//! - **The laser dot** (weapons_more.md 3.1): a gun's `dot` where a
+//!   scoped holder aims (`dot`).
 //! - **Impacts**: Source's impact effects, decals and impact sounds with
 //!   TF2's style (`STYLE`): TF2 is an impact provider, so its guns' hits
 //!   are TF2's own on any map that carries its looks (`maps::
@@ -192,6 +194,10 @@ pub struct LooksParams {
     /// sticky's `stickybomb_pulse_<team>`, effects.md 1).
     #[serde(default)]
     pub armed: Option<ArmedLook>,
+    /// The laser dot drawn where it aims while scoped (the Sniper
+    /// Rifle's, weapons_more.md 3.1; `dot`).
+    #[serde(default)]
+    pub dot: Option<super::dot::DotLook>,
 }
 
 /// A system started on each flyer drawn as `shown`, `after` seconds after
@@ -318,6 +324,11 @@ impl GunLooks {
     /// A gun's looks.
     pub fn of(&self, gun: &str) -> Option<&LooksParams> {
         self.0.iter().find(|(g, _)| g == gun).map(|(_, p)| p)
+    }
+
+    /// Every gun's laser dot.
+    pub fn dots(&self) -> impl Iterator<Item = &super::dot::DotLook> {
+        self.0.iter().filter_map(|(_, l)| l.dot.as_ref())
     }
 
     /// A gun's muzzle flash system.
@@ -1028,7 +1039,7 @@ pub fn add(app: &mut App) {
         .add_systems(
             Update,
             (
-                (explosions, muzzle_flashes, tracers, firing_looks, flyer_trails, armed_looks),
+                (explosions, muzzle_flashes, tracers, firing_looks, flyer_trails, armed_looks, super::dot::laser_dots),
                 (super::flame::shown_flames.run_if(not(resource_exists::<chimera_net::dedicated::Serving>)), flame_stream)
                     .chain()
                     .before(StartedSystemsRun),

@@ -77,7 +77,7 @@ wait 30
 target add tf2:heavy 3.8 still
 wait 240
 setpos 0 -300 0
-setang 5 90 0
+setang 10 90 0
 wait 90
 shot blood_idle
 host_timescale 0.02

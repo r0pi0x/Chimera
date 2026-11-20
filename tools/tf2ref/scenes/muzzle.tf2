@@ -10,6 +10,7 @@ r_drawvgui 0
 fov_desired 90
 viewmodel_fov 54
 fps_max 30
+mat_colorcorrection 0
 cl_ragdoll_fade_time 0
 cl_ragdoll_forcefade 1
 kick P1

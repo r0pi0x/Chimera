@@ -1,6 +1,7 @@
 # Bullet and melee hits (real TF2; ours: impacts.scene), at 60 frames a
 # second: an SMG round into the bridge's side wall 100 units off (`wall`),
-# into a BLU Heavy 150 units down the bridge (`blood`), and a Wrench swing
+# into a BLU Heavy 150 units down the bridge, 10 degrees down at its
+# chest (`blood`), and a Wrench swing
 # at the side wall (`wrench`).
 #   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/impacts.tf2 --out <dir>
 mp_disable_respawn_times 1
@@ -10,6 +11,7 @@ r_drawviewmodel 1
 fov_desired 90
 viewmodel_fov 54
 fps_max 60
+mat_colorcorrection 0
 tf_weapon_criticals 0
 host_framerate 0
 bot_kick all
@@ -33,14 +35,15 @@ wait 2
 wait 40
 endmovie
 host_framerate 0
-bot -name HitHeavy -class heavy -team blue
+bot -name ImpactHeavy -class heavy -team blue
 sleep 5
-bot_teleport HitHeavy 0 -150 0 0 270 0
+bot_teleport ImpactHeavy 0 -150 0 0 270 0
 sleep 2
-bot_teleport HitHeavy 0 -150 0 0 270 0
+bot_teleport ImpactHeavy 0 -150 0 0 270 0
 sleep 2
+bot_teleport ImpactHeavy 0 -150 0 0 270 0
 setpos 0 -300 0
-setang 5 90 0
+setang 10 90 0
 sleep 3
 shot blood_idle
 host_framerate 0.016667

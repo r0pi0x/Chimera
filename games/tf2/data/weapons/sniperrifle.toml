@@ -81,3 +81,17 @@ headshot_icon = "headshot"
 # (no sniper tracer system exists).
 [hooks."tf2:looks"]
 muzzle = "muzzle_sniperrifle"
+
+# The laser dot while scoped (weapons_more.md 3.1; dot.rs): the team's
+# sprite at half alpha and a white core scaled by the charge (at least
+# 0.1), 4 units back from where the aim meets something; 6 units across
+# as others see it, 2 in the Sniper's own view, its trace 384 units there.
+[hooks."tf2:looks".dot]
+sprite = "effects/sniperdot"
+core = "effects/sniperdot"
+size = 6.0
+own_size = 2.0
+own_reach = 384.0
+back = 4.0
+alpha = 0.5
+core_min = 0.1

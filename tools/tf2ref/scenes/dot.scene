@@ -1,0 +1,61 @@
+# Ours for dot.tf2: the Sniper Rifle's laser dot. Own view (`own_*`): on
+# 2fort's bridge at -40 -150, 25 degrees down at the floor, attack2
+# tapped, pictures 0.5, 1.5 and 4 s after. Others' view (`others_*`): a
+# Sniper target at the same place and angles (`pitch 25`, attack2 pressed
+# once: `alt`), seen from behind it to its right with our body moved
+# away (`chimera_freecam 2`); pictures 0.5, 1.5 and 4 s after (TF2's
+# puppet bot couldn't be made to scope: no pair).
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/dot.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+target remove all
+rung tf2:tf_weapon_sniperrifle
+wait 2
+wait_for idle 3000
+wait 60
+setpos -40 -150 0
+setang 25 0 0
+wait 90
+getpos
+shot own_idle
++attack2
+wait 4
+-attack2
+gwait 0.5
+shot own_05
+gwait 1.0
+shot own_15
+gwait 2.5
+shot own_40
+rung tf2:tf_weapon_smg
+wait 2
+wait_for idle 3000
+wait 30
+setpos 60 -150 0
+setang 0 180 0
+wait 30
+target add tf2:tf_weapon_sniperrifle 2.54 still protect
+wait 240
+target set all pitch 25
+setpos -120 -260 0
+setang 25 20 0
+wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
+shot others_idle
+target set all alt
+gwait 0.5
+shot others_05
+gwait 1.0
+shot others_15
+gwait 2.5
+shot others_40
+chimera_freecam 0

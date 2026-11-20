@@ -1,0 +1,71 @@
+# The Sniper Rifle's laser dot (real TF2; ours: dot.scene). Own view
+# (`own_*`): a RED Sniper on 2fort's bridge at -40 -150, 25 degrees down
+# at the floor (about 177 units off), attack2 tapped, pictures 0.5, 1.5
+# and 4 s after (the core small, a third, full). Others' view
+# (`others_*`): a BLU Sniper bot at the same place and angles
+# (`bot_forceattack2`: its attack2 pressed), seen by a free spectator
+# behind it to its right; pictures 0.5, 1.5 and 4 s after.
+#   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/dot.tf2 --out <dir>
+mp_disable_respawn_times 1
+cl_drawhud 0
+r_drawvgui 0
+r_drawviewmodel 1
+tf_spec_xray 0
+fov_desired 90
+viewmodel_fov 54
+fps_max 60
+mat_colorcorrection 0
+tf_weapon_criticals 0
+host_framerate 0
+bot_kick all
+sleep 1
+jointeam red
+sleep 1
+joinclass sniper
+kill
+sleep 7
+use tf_weapon_sniperrifle
+setpos -40 -150 0
+setang 25 0 0
+sleep 3
+getpos
+shot own_idle
++attack2
+wait 4
+-attack2
+sleep 0.5
+shot own_05
+sleep 1
+shot own_15
+sleep 2.5
+shot own_40
++attack2
+wait 4
+-attack2
+sleep 1
+jointeam spectator
+sleep 2
+bot -name DotSniper -class sniper -team blue
+sleep 3
+bot_teleport DotSniper -40 -150 0 25 0 0
+sleep 2
+bot_teleport DotSniper -40 -150 0 25 0 0
+sleep 1
+spec_mode 6
+sleep 1
+setpos -120 -260 80
+setang 20 40 0
+sleep 2
+shot others_idle
+bot_forceattack2 1
+bot_forceattack 1
+wait 6
+bot_forceattack 0
+sleep 0.5
+shot others_05
+sleep 1
+shot others_15
+sleep 2.5
+shot others_40
+bot_forceattack2 0
+bot_kick all

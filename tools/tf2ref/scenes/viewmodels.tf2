@@ -8,6 +8,7 @@ r_drawvgui 0
 fov_desired 90
 viewmodel_fov 54
 fps_max 60
+mat_colorcorrection 0
 host_framerate 0
 jointeam spectator
 sleep 2

@@ -36,14 +36,17 @@ Captured imagery stays in scratch, never in the repo.
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails |
 | Projectiles' models | matches (pass 6) | none drew on any map: a map keeps the kept guns' held models by key prefix and the projectiles' keys (`tf2:rocket`, `tf2:sticky`...) matched none; now `<gun>/<part>` |
-| Stickybombs | close (pass 6) | model, faint trail and the armed pulse (0.8 s, then every 0.1 s: ring, then disc) as TF2's; ours' sticky lies unspun (no launch spin) |
-| Water explosions | close (pass 6) | from above the surface both hide the burst; TF2's shows through as an orange glow from just above the surface |
+| Stickybombs | close (pass 6) | model, faint trail and the armed pulse (0.8 s, then every 0.1 s: ring, then disc) as TF2's; launch spin and jitter as the spec's (pass 7) |
+| Sniper's laser dot | matches in his own view (pass 7, `dot.tf2`/`.scene`) | drawn (`weapons::dot`): size, softness and the core growing with the charge as TF2's; others see it at 6 units (the charge sent with what a character holds, `HeldGauge`), no TF2 pair (its puppet bots won't scope); TF2's scope overlay not photographed yet (the class menu covers it) |
+| Water explosions | close (pass 6) | from above the surface both hide the burst; TF2's shows through as an orange glow from just above the surface. Under water (pass 7, `wunder`): see the log |
 | Bullet impacts (wood) | matches (pass 6) | splinters, hole, puff alike; TF2's hole decal a little lighter |
+| Blood on a player hit | still differs (pass 7) | TF2: a dark red puff ~20 px at 180 units and a red splat on the body; ours a speck (effects.md Open questions 8: no spec of TF2's blood) |
+| Melee (Wrench at a wall) | close (pass 7) | the swing's path and timing alike; TF2 leaves a faint scratch, ours nothing visible |
 | Backblast (third person) | close | from the side (pass 4) the same: an orange flame at the launcher's rear ~100 ms, then a dark grey puff; TF2's flame streakier. From the front the shoulder hides most of it |
 | Bodies, idle poses (third person) | close (pass 7 of the animation: `pose.tf2` / `pose.scene`) | the "wider stances" were TF2's bots' feet yaw: bot_teleport never snaps a puppet bot's feet, and these spawn 30 degrees off a multiple of 45, so they stand 30 left of their eyes (wide) and, after the scene's teleports, 15 right (narrow); ours drawn with its feet at those offsets (`target set all feet <deg>`) stands as TF2's. The Engineer's Wrench taps flat and raised three times a loop in both (a phase-matched pair agrees). Every pose parameter 0 at a spawn, the hand and arm libraries only where a host layers them, the knees bent toward the include's knee directions under the foot locks, the Medic's real-time idle noise. Only the active weapon is drawn (TF2 and ours, the Spy with his Knife and Revolver from three sides) |
-| Flame stream (air, wall); overbright 5 or 1 | close (pass 4: one stream from the nozzle, as TF2's) | overbright is 5, in linear space. The far fireball's "1.5x wider and whiter" is TF2's bloom (pass 5: with `mat_disable_bloom 1` its near-white area fell from ~8,900 to ~1,700-2,900 px; ours draws ~5,300 with no bloom; flames.md Open questions 1). Ours has bloom only at `mat_hdr_level` 1-2, a stand-in that overexposes 2fort (tried). TF2's cloud at a wall spreads wider (open); the orange tint on the right wall is gone (pass 6: the pilot's trail) |
+| Flame stream (air, wall); overbright 5 or 1 | close (pass 4: one stream from the nozzle, as TF2's) | overbright is 5, in linear space. The far fireball's "1.5x wider and whiter" is TF2's bloom (pass 5: with `mat_disable_bloom 1` its near-white area fell from ~8,900 to ~1,700-2,900 px; ours draws ~5,300 with no bloom; flames.md Open questions 1). Ours has bloom only at `mat_hdr_level` 1-2, a stand-in that overexposes 2fort (tried). TF2's cloud at a wall: close (pass 7: as wide at 0.5 s, ~25 % wider at 1 s); the orange tint on the right wall is gone (pass 6: the pilot's trail) |
 | Detail sprites (2fort's hay) | close | drawn; kept whole at a distance (alpha raised by mip level); TF2 fades them blended where ours dithers |
-| Explosion on a player / mid-air | close (pass 6: TF2 without bloom is pale in its first frame too; its streaks are longer at 33-50 ms) | the "hard-edged orange disc" was the sandbox's blast spheres (`range::blast_spheres`), which `cl_drawhud 0` didn't hide (now it does). Matched at 300 units, ours fills the far bridge with the same orange glow clipped by the near truss, the same sequence; ours a little paler yellow in the first 50 ms; TF2 shows more embers and a faint dark smudge after |
+| Explosion on a player / mid-air | close (pass 6: TF2 without bloom is pale in its first frame too; its streaks are longer at 33-50 ms; pass 7: measured, particles.md Open questions 7, still differs: TF2's rays are ~1 unit wide, ours radius-scaled 10-110 units, an orange haze) | the "hard-edged orange disc" was the sandbox's blast spheres (`range::blast_spheres`), which `cl_drawhud 0` didn't hide (now it does). Matched at 300 units, ours fills the far bridge with the same orange glow clipped by the near truss, the same sequence; ours a little paler yellow in the first 50 ms; TF2 shows more embers and a faint dark smudge after |
 | Crits | n/a | random crits are off in our TF2 (the party's choice, docs/plans/active/tf2.md); crit tracers, trails and streams are named in `looks` but never asked for |
 | View models (position, FOV, bob) | matches at rest (Scattergun, Shotgun, SMG, Revolver on our own player at fov 90; SMG at 75) | puppet bots seen in their eyes are no reference for view models: their FOV is 75 and their view model sits about 80 px right of a player's own (`viewmodels.tf2` kept for the world and the guns' look, not positions); this account's own loadout isn't stock for the Scout's secondary, the Pyro's and the Heavy's primaries |
 | HDR, exposure, bloom (`mat_hdr_level` 2; specs/tf2/hdr_bloom.md) | close (pass 6, `hdr.tf2`/`hdr.scene`: bridge, wall, courtyard, bloom on and off) | the integer model (`map::HdrModel::Integer`): bloom adds 7.2-11.7 to the mean byte where TF2's adds 6.1-12.6; scenes 3-5 % brighter than TF2's in two views, 6 % darker in the courtyard (ours settles k at 0.96-1.04, TF2 reported 0.94); the far fireball's near-white area with bloom ~15,000 px against TF2's ~37,000 (its unbloomed core is smaller: the flame effect's, not the bloom's). TF2 maps now load at `mat_hdr_level` 2 by default (`SourceGame::hdr_default_level`; an explicit `mat_hdr_level` wins, -1 is "Game default") |
@@ -330,3 +333,39 @@ Captured imagery stays in scratch, never in the repo.
   Sniper's dot (weapons_more.md 3.1) isn't drawn yet: others' scope state
   isn't sent to other clients; it needs a replicated dot and its sprite
   (`effects/sniperdot_<team>`).
+- 2026-11-20 (seventh pass): the Sniper's laser dot (weapons_more.md
+  3.1): `[hooks."tf2:looks".dot]` on the rifle, drawn each frame
+  (`weapons::dot::laser_dots`) where a scoped holder's aim meets the
+  world or a character, 4 units back; 2 units and at most 384 out in his
+  own view, 6 for others. Others' scope was already sent (`NetHeld::mode`);
+  the charge now goes too (`weapon::HeldGauge`, a byte in `NetHeld`),
+  the dot's core scaled by it. In his own view TF2's and ours match in
+  size, softness and the core's growth (0.5, 1.5, 4 s); the core is
+  red-orange in TF2 too (weapons_more.md Open questions 21). Sandbox
+  targets press attack2 once (`target set <n> alt`) and look down
+  (`pitch <deg>`).
+- Explosion streaks (`streaks.tf2`/`.scene`, every frame): TF2's rays are
+  ~25-50 units at 17 ms, ~100 at 33 ms, 150+ at 50 ms and ~1 unit wide;
+  ours draw no rays but a haze, the trails 10-110 units wide (their
+  radius after the 3-11x radius operators). A fade-in by life fraction
+  and the unscaled radius were tried (no rays either) and dropped; the
+  rule stays open (particles.md Open questions 7). TF2's rocket still
+  meets the floor farther away and later (13 frames, ours 7).
+- Blood (`impacts.tf2` re-aimed 10 degrees down, the bot renamed: a
+  kicked `HitHeavy`'s name lingered and the teleport missed): TF2's puff
+  is ~20 px and leaves a splat; ours a speck (effects.md Open
+  questions 8). Wrench: close.
+- Stickies spin at launch (600, ±1200, 0 degrees/s about their own axes)
+  and jitter ±10 units/s right and up, from the shot's seed.
+- Every `.tf2` scene sets `mat_colorcorrection 0`.
+- Under water (`water.tf2`/`.scene`, `wunder`: the eye under 2fort's
+  river, 30 degrees down): still differs. TF2 shows a large orange glow
+  round the launcher for ~6 frames after the shot, a long white trail
+  from the gun to the rocket, and the blast as an orange glow on the
+  riverbed ~0.4 s later; ours a small glow on the rocket, its trail one
+  cluster of puffs, and the blast only as a faint orange tint near the
+  surface. Next: which systems TF2 starts under water (its rocket's trail
+  and the underwater explosion), and where ours' rocket ends.
+- Flames at the wall (`flames.tf2`/`.scene`, 0.5 and 1.0 s): close now.
+  The violet cloud spans about the same width in both at 0.5 s; at 1.0 s
+  TF2's is ~25 % wider and sits a little higher. No change made.

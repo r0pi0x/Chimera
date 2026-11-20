@@ -854,13 +854,15 @@ pub struct NetHold {
 
 /// What a character holds, for others to draw (`weapons`): the active
 /// weapon's registry index (`weapon::WeaponRegistry::index`), its
-/// `AltModes` mode (a silencer on) and whether a grenade's pin is out.
+/// `AltModes` mode (a silencer on, a scope up), whether a grenade's pin is
+/// out and its `HeldGauge` (0-255: TF2's rifle charge, for its laser dot).
 /// Written by the server after each tick.
 #[derive(Component, Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct NetHeld {
     pub weapon: Option<u16>,
     pub mode: u8,
     pub primed: bool,
+    pub gauge: u8,
 }
 
 /// Something small the server simulates and clients draw from snapshots

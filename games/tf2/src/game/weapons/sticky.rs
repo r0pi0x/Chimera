@@ -11,7 +11,10 @@
 //! - **The launch** (`launch`, the server's, `FlyerSet::Launch`): each
 //!   round fired is a sticky (Chimera's flyer, gravity 800) from 16
 //!   forward, 8 right and 6 down of the eye at that speed along the aim
-//!   and `up_speed` (200) up, through teammates.
+//!   and `up_speed` (200) up, plus up to `jitter` (10) along the aim's
+//!   right and up at random (`launch_random`, from the shot's seed),
+//!   through teammates, tumbling at `spin` (600, a whole number in ±1200,
+//!   0 degrees/s about its own axes: `launch_spin`) until it sticks.
 //! - **Touches** (5.2, `touch`): the world (what doesn't move) stops it
 //!   dead and it stays (`Flyer::stuck_until` far away); anything else
 //!   bounces it off at half speed; it never explodes on contact.
@@ -27,8 +30,10 @@
 //!   units x0.75 grounded or airborne, pushed at scale 9.
 //!
 //! Known shortcuts: a ninth sticky blows the oldest at once (the game: at
-//! its next 0.2 s fuse check); bullets don't destroy stickies; no launch
-//! jitter or spin; the stickies' 2-unit box is ours (the game's 4-unit
+//! its next 0.2 s fuse check); bullets don't destroy stickies; the
+//! launch's jitter and spin come from the shot's seed, not the game's
+//! random stream, and a bounce off a player keeps the spin (the game:
+//! −0.5 times it); the stickies' 2-unit box is ours (the game's 4-unit
 //! cube); attack2 detonates with any TF2 weapon out (the game: any of the
 //! Demoman's; a party's players have no fixed class), and unarmed ones play no deny sound.
 
@@ -87,6 +92,14 @@ pub struct StickyParams {
     pub charge_time: f32,
     pub gravity: f32,
     pub offset: [f32; 3],
+    /// Random launch jitter: up to this along the aim's right and its up
+    /// (units/s).
+    #[serde(default)]
+    pub jitter: f32,
+    /// The launch spin about its own axes (degrees/s): x, then a random
+    /// whole number in ±`spin[1]` about y, then z (weapons_more.md 4.1).
+    #[serde(default)]
+    pub spin: [f32; 3],
     #[serde(default)]
     pub sound: Option<String>,
     #[serde(default)]
@@ -275,7 +288,7 @@ pub fn launch(
     mut commands: Commands,
 ) {
     for e in events.read() {
-        let WeaponEventKind::Fired { origin, yaw, pitch, .. } = e.kind else { continue };
+        let WeaponEventKind::Fired { origin, yaw, pitch, seed, .. } = e.kind else { continue };
         if e.replay {
             continue;
         }
@@ -283,8 +296,11 @@ pub fn launch(
         let p = &gun.params;
         let aim = aim_of(yaw, pitch);
         let dir = aim * Vec3::NEG_Z;
-        let velocity = (dir * gun.speed + aim * Vec3::Y * p.up_speed) * U;
+        let r = launch_random(seed);
+        let (right, up) = (p.jitter * r[0], p.jitter * r[1]);
+        let velocity = (dir * gun.speed + aim * Vec3::X * right + aim * Vec3::Y * (p.up_speed + up)) * U;
         let mut f = Flyer::new(weapon.id, Some(e.owner), velocity, &clock);
+        f.spin = launch_spin(p.spin, r[2]);
         f.gravity = p.gravity * U;
         f.half = Vec3::splat(2.0 * U);
         f.pass_teammates = true;
@@ -292,6 +308,27 @@ pub fn launch(
         let start = origin + dir * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z;
         spawn_flyer(&mut commands, f, start, SHOWN.to_string(), &clock);
     }
+}
+
+/// Three numbers in [-1, 1] from a shot's seed (the launch's jitter
+/// right and up, and the spin's random term).
+pub fn launch_random(seed: u32) -> [f32; 3] {
+    let mut x = seed.wrapping_mul(0x9E37_79B9) ^ 0x5bd1_e995;
+    std::array::from_fn(|_| {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        (x % 2001) as f32 / 1000.0 - 1.0
+    })
+}
+
+/// The launch spin (rad/s about the model's own axes) from TF2's
+/// (`spin`, degrees/s about its x forward, y left, z up) with the middle
+/// term a whole number in ±`spin[1]` picked by `r` in [-1, 1]: Source's
+/// axes (x, y, z) are the engine's (x, z, -y).
+pub fn launch_spin(spin: [f32; 3], r: f32) -> Vec3 {
+    let y = (r * spin[1]).round();
+    Vec3::new(spin[0], spin[2], -y) * std::f32::consts::PI / 180.0
 }
 
 /// When a stuck sticky is gone: never (it goes by detonation).
@@ -414,6 +451,25 @@ mod tests {
         assert_eq!(p.speed(2.0), 1650.0);
         assert_eq!(p.speed(4.0), 2400.0);
         assert_eq!(p.speed(9.0), 2400.0);
+    }
+
+    /// weapons_more.md 4.1 (5.1: the same): ±10 jitter right and up, and
+    /// a spin of 600 about its forward and a whole number in ±1200 about
+    /// its left (the engine's −z), none about its up.
+    #[test]
+    fn the_launch_jitters_and_spins() {
+        let p = params();
+        assert_eq!((p.jitter, p.spin), (10.0, [600.0, 1200.0, 0.0]));
+        let mut seen = [f32::MAX, f32::MIN];
+        for seed in 0..500 {
+            let r = launch_random(seed);
+            assert!(r.iter().all(|x| (-1.0..=1.0).contains(x)), "{r:?}");
+            let s = launch_spin(p.spin, r[2]).to_array().map(f32::to_degrees);
+            assert!((s[0] - 600.0).abs() < 1e-3 && s[1] == 0.0, "{s:?}");
+            assert!(s[2].abs() <= 1200.0 + 1e-3 && (s[2] - s[2].round()).abs() < 1e-3, "{s:?}");
+            seen = [seen[0].min(s[2]), seen[1].max(s[2])];
+        }
+        assert!(seen[0] < -1000.0 && seen[1] > 1000.0, "the middle term spreads over ±1200: {seen:?}");
     }
 
     /// 5.4, tests 35, 36: in the air 85 % at arming (0.8 s), all of it at

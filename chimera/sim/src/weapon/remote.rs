@@ -19,6 +19,8 @@
 //!   character (HL2:DM, specs/hl2dm/effects_sounds.md 1). A round of a
 //!   weapon's `AltShot` (mode 1 on a weapon without `AltModes`) is drawn
 //!   with that shot's pellets (the shotgun's double shot: 12).
+//! - **What they show of it** (`show_gauge`): a weapon's `HeldGauge`
+//!   (TF2's rifle charge) on their copy.
 //! - **What else they do** (`RemoteAction`): reloads, swings and throws,
 //!   for their bodies' animations.
 //!
@@ -31,7 +33,7 @@
 use bevy::prelude::*;
 
 use super::{
-    AltModes, AltShot, DamageEffect, Hitscan, Inventory, Penetration, SpreadShape, Weapon, WeaponEvent, WeaponEventKind,
+    AltModes, AltShot, DamageEffect, HeldGauge, Hitscan, Inventory, Penetration, SpreadShape, Weapon, WeaponEvent, WeaponEventKind,
     WeaponSounds, deliver, grenade::Throwable,
 };
 use crate::core::SimClock;
@@ -145,6 +147,22 @@ pub fn show_held(world: &mut World, character: Entity, id: Option<&str>, mode: u
     }
 }
 
+/// What `character` holds here shows `gauge` (`HeldGauge`: a charge others
+/// see), when it holds anything.
+pub fn show_gauge(world: &mut World, character: Entity, gauge: HeldGauge) {
+    let Some(w) = world.get::<Inventory>(character).and_then(|i| i.active) else { return };
+    let Ok(mut e) = world.get_entity_mut(w) else { return };
+    match e.get_mut::<HeldGauge>() {
+        Some(mut g) => {
+            g.set_if_neq(gauge);
+        }
+        None if gauge.0 > 0.0 => {
+            e.insert(gauge);
+        }
+        None => {}
+    }
+}
+
 /// Others' rounds traced again here: tracers, impacts and decals from the
 /// `Shot` events, and the fire sound.
 fn remote_shots(
@@ -241,5 +259,28 @@ fn remote_actions(
             kind: a.kind.clone(),
             replay: false,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A held gauge goes as a byte and comes back on what the character
+    /// holds here; an empty one adds nothing to a weapon without one.
+    #[test]
+    fn a_held_gauge_reaches_what_others_hold() {
+        assert_eq!(HeldGauge(1.0).byte(), 255);
+        assert_eq!(HeldGauge(2.0).byte(), 255);
+        assert!((HeldGauge::from_byte(HeldGauge(1.0 / 3.0).byte()).0 - 1.0 / 3.0).abs() < 1.0 / 255.0);
+        let mut world = World::new();
+        let w = world.spawn_empty().id();
+        let c = world.spawn(Inventory { weapons: vec![w], active: Some(w), ..default() }).id();
+        show_gauge(&mut world, c, HeldGauge(0.0));
+        assert!(world.get::<HeldGauge>(w).is_none());
+        show_gauge(&mut world, c, HeldGauge::from_byte(128));
+        assert_eq!(world.get::<HeldGauge>(w), Some(&HeldGauge::from_byte(128)));
+        show_gauge(&mut world, c, HeldGauge(0.0));
+        assert_eq!(world.get::<HeldGauge>(w), Some(&HeldGauge(0.0)));
     }
 }

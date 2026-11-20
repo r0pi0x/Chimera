@@ -567,7 +567,8 @@ fn a_kept_gun_keeps_its_projectiles_model() {
 }
 
 /// Every TF2 projectile (the rocket, the grenade, the sticky, the needle)
-/// flies nose first: its shown model's own forward (`MapHeldModel::nose`,
+/// but a spinning one (the sticky, weapons_more.md 5.1: it tumbles from
+/// its launch) flies nose first: its shown model's own forward (`MapHeldModel::nose`,
 /// here a made-up slant, as a model's bone frame leaves it) stays along
 /// its velocity from its launch until it stops (playtest 2026-11-18: the
 /// needles flew sideways).
@@ -580,7 +581,7 @@ fn every_projectile_flies_nose_first() {
         let nose = [Vec3::new(0.3, -0.8, 0.5), Vec3::Y, Vec3::NEG_X, Vec3::new(-0.2, 0.1, 0.9)][i % 4].normalize();
         let asset = LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(nose) };
         sim.app.world_mut().get_resource_or_insert_with(LooseAssets::default).0.insert(key.to_string(), asset);
-        let mut seen = 0;
+        let (mut seen, mut spun) = (0, 0);
         for k in 0..60u64 {
             run(&mut sim, p, 1, |s, _| {
                 s.intent(p).fire = k < 2;
@@ -590,13 +591,18 @@ fn every_projectile_flies_nose_first() {
             let w = sim.app.world_mut();
             let mut q = w.query::<(&Flyer, &Transform)>();
             for (f, t) in q.iter(w).filter(|(f, _)| f.owner == Some(p) && f.stuck_until.is_none()) {
+                if f.spin != Vec3::ZERO {
+                    spun += 1;
+                    continue;
+                }
                 let Some(v) = f.velocity.try_normalize() else { continue };
                 let n = t.rotation * nose;
                 assert!(n.dot(v) > 0.999, "{gun} tick {k}: nose {n} along {v}");
                 seen += 1;
             }
         }
-        assert!(seen > 3, "{gun}: {seen} flying ticks seen");
+        let spins = *gun == tf2::game::weapons::STICKY_LAUNCHER;
+        assert!(if spins { spun > 3 && seen == 0 } else { seen > 3 && spun == 0 }, "{gun}: {seen} nose-first and {spun} spinning ticks seen");
     }
 }
 

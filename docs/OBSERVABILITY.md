@@ -2592,6 +2592,16 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   `target set <n> feet <degrees>` (feet that far left of the eyes;
   `pose.scene`: TF2's 2fort bots stand 30 left, 15 right after its
   teleports); `setang_exact` snaps our own player's.
+- Every `.tf2` scene sets `mat_colorcorrection 0` itself (TF2's own
+  default is on); run ours with `+mat_hdr_level 2 +mat_colorcorrection 0`.
+- The Sniper's laser dot (`dot.tf2`/`.scene`): ours' sandbox target
+  scopes with `target set <n> alt` (attack2 pressed once) and looks down
+  with `target set <n> pitch <degrees>`. TF2's puppet bots could not be
+  made to scope (`bot_forceattack2`, `bot_mimic`), and `bot_teleport`'s
+  pitch doesn't tilt their aim. With `cl_drawhud 1` TF2 shows the class
+  menu over the view after `joinclass` from the console, so its scope
+  overlay has no picture yet. A bot name kicked earlier may linger: give
+  each new bot its own name (`impacts.tf2`'s Heavy).
 - Pictures are game imagery: scratch folders only. Quit the game when
   done (`down`; or `pkill -x tf_linux64`, never `pkill -f`).
 

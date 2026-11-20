@@ -1137,3 +1137,13 @@ Probe checks (live dedicated server, bots; never ports 27015/27030):
     0.2 s from launch; with think times rounded to ticks the explosion
     comes at ≈ 2.1–2.2 s (the wiki's 2.3 s may include other delays).
     P6.
+21. **The dot's look** (measured 2026-11-20, tools/tf2ref `dot.tf2`: a
+    RED Sniper on ctf_2fort's bridge, scoped 25 degrees down at the floor
+    about 177 units off, 1024x768, field of view 20): in the Sniper's own
+    view the team sprite is a soft red disc about 37 pixels across there,
+    which is 2 units wide (the size is the sprite's full width). The core
+    (`effects/sniperdot`) is drawn red-orange, not white, over the disc,
+    and grows in size with the charge: a speck 0.5 s after the scope came
+    up, about half the disc at 1.5 s, the whole disc at 4 s. Others' view
+    unmeasured: a puppet bot could not be made to scope (`bot_forceattack2`
+    and `bot_mimic` both tried).

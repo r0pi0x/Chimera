@@ -236,13 +236,21 @@ fn body_kit(k: &mut Kit) {
 
 /// What TF2's guns' impacts draw (Source's impact effects with TF2's
 /// files: `weapons::looks::STYLE`): its impact decals and effect
-/// materials, each the map lacks, and the map marked as carrying TF2's
-/// impacts (`map::impact`), so its guns' hits are TF2's on any map, never
+/// materials and the laser dot's sprites (`weapons::dot`), each the map
+/// lacks, and the map marked as carrying TF2's impacts (`map::impact`), so its guns' hits are TF2's on any map, never
 /// the map's game's or the app's base game's.
 pub fn add_impact_looks(materials: &mut MaterialLoader, map: &mut MapData) {
     bsp::add_guest_decals(&mut map.kit.decals, source_engine::content::decals::impact_decals(materials));
     for m in source_engine::effects::impact_effects::load_materials(materials, &[]).materials {
         if map.particles.find(&m.name).is_none() {
+            map.particles.materials.push(m);
+        }
+    }
+    // The Sniper Rifle's laser dot's sprites (`weapons::dot`).
+    for name in super::weapons::dot::dot_materials() {
+        if map.particles.find(&name).is_none()
+            && let Some(m) = materials.particle(&name)
+        {
             map.particles.materials.push(m);
         }
     }

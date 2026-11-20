@@ -21,12 +21,15 @@
 //!   `charge_rate` (50) a second to `charge_max` (150); unscoping or a
 //!   shot sets it to 0. A shot deals max(`base`, c) scoped, `base` (50)
 //!   unscoped; no distance modifier (`tf2:gun`'s `flat`).
+//! - **What others see**: the charge as a fraction of `charge_max` in
+//!   the weapon's `HeldGauge` (sent with what the Sniper holds; the
+//!   laser dot's core, `dot`).
 //! - **A head hit** is x`headshot` (3, a crit) only while scoped and
 //!   `headshot_delay` (0.2 s) or more after the last zoom change (the
 //!   re-zoom restarts it); otherwise the head counts as the body.
 //!
 //! Known shortcuts: the headshot kill's icon (`headshot`) isn't told apart
-//! from the rifle's in the kill feed; no laser dot; the charge meter isn't
+//! from the rifle's in the kill feed; the charge meter isn't
 //! drawn; the scope's zoom change is seen a tick after the frame made it
 //! (timed from that frame's tick); the rifle can be put away right after
 //! a scoped shot; a 0.3 s attack2 block after a cancelled re-zoom isn't
@@ -35,7 +38,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use chimera_sim::weapon::{AltModes, DamageEffect, Inventory, Magazine, NetPart, Weapon, WeaponEvent, WeaponEventKind, WeaponState};
+use chimera_sim::weapon::{AltModes, DamageEffect, HeldGauge, Inventory, Magazine, NetPart, Weapon, WeaponEvent, WeaponEventKind, WeaponState};
 
 use super::damage::{HP, Tf2Gun};
 use crate::core::{BodyRegion, FirstTimePredicted, Hitgroup, Intent, MovementState, SimClock};
@@ -129,15 +132,23 @@ impl NetPart for Tf2Sniper {
 
 /// `tf2:sniper` on a weapon.
 pub fn attach(e: &mut EntityWorldMut, p: &SniperParams) {
-    e.insert(Tf2Sniper { params: p.clone(), state: ScopeState { changed: f64::MIN, seen: f64::MIN, blocked: f64::MIN, ..default() } });
+    e.insert((
+        Tf2Sniper { params: p.clone(), state: ScopeState { changed: f64::MIN, seen: f64::MIN, blocked: f64::MIN, ..default() } },
+        HeldGauge::default(),
+    ));
 }
 
 /// Each tick before the movement and the frame: the scope's timing, the
-/// charge, the shot's damage and the head's multiplier (module doc).
+/// charge, the shot's damage and the head's multiplier (module doc). Not
+/// for others drawn from snapshots: their scope and charge are the
+/// server's (`NetHeld`).
 #[allow(clippy::type_complexity)]
 pub fn scope(
-    mut owners: Query<(Entity, &mut Intent, &Inventory, Option<&MovementState>)>,
-    mut guns: Query<(&mut Tf2Sniper, &mut AltModes, &mut DamageEffect, &mut WeaponState, Option<&Tf2Gun>, Option<&Magazine>), With<Weapon>>,
+    mut owners: Query<(Entity, &mut Intent, &Inventory, Option<&MovementState>), Without<crate::map::interp::NetDrawn>>,
+    mut guns: Query<
+        (&mut Tf2Sniper, &mut AltModes, &mut DamageEffect, &mut WeaponState, Option<&Tf2Gun>, Option<&Magazine>, Option<&mut HeldGauge>),
+        With<Weapon>,
+    >,
     clock: Res<SimClock>,
     first: Res<FirstTimePredicted>,
     mut events: MessageWriter<WeaponEvent>,
@@ -145,7 +156,7 @@ pub fn scope(
     let (now, dt) = (clock.now, clock.dt() as f64);
     for (owner, mut intent, inv, state) in &mut owners {
         let Some(w) = inv.active else { continue };
-        let Ok((mut gun, mut modes, mut dmg, mut st, tf2, mag)) = guns.get_mut(w) else { continue };
+        let Ok((mut gun, mut modes, mut dmg, mut st, tf2, mag, gauge)) = guns.get_mut(w) else { continue };
         let p = gun.params.clone();
         let mut s = gun.state;
         let ammo = mag.is_none_or(|m| m.clip > 0);
@@ -248,6 +259,10 @@ pub fn scope(
             if r.hitgroup() == Hitgroup::Head && dmg.regions.get(r) != head {
                 dmg.regions.set(r, head);
             }
+        }
+        // The charge others see (the laser dot's core).
+        if let Some(mut g) = gauge {
+            g.set_if_neq(HeldGauge(s.charge / p.charge_max.max(1e-6)));
         }
         if gun.state != s {
             gun.state = s;

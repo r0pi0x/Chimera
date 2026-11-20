@@ -435,3 +435,18 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
    length fade-in 0.2) already 33-50 ms after the blast: longer than a
    fade-in by age (length x age / 0.2) gives. Whether the fade-in is by
    age, by life fraction or from the minimum length is unconfirmed.
+   **Frame by frame** (2026-11-20, `streaks.tf2`: the same rocket into
+   the bridge's floor about 200 units off, every frame at 60 frames a
+   second, 1024x768, fov 90, `mat_hdr_level` 2, no colour correction):
+   frame 0 of the blast shows the flash only; at 17 ms short rays
+   (about 25-50 units) stand round the core; at 33 ms thin yellow rays
+   of about 100 units; at 50 ms some reach past the top of the view
+   (150 units and more); from 67 ms they thin out among the debris. Every
+   ray is thin: 2-4 pixels across at that distance, about 1 unit, while
+   the two systems' radius operators scale their radius 3 to 11 times
+   (Explosion_CoreFlash: life 0.05-0.17 s, trail length 0.33-0.4,
+   lengths 2-122; Explosion_Flashup: life 0-0.2 s, lengths 32-512). Drawn
+   with the radius-scaled radius as the width (ours), the streaks are 10
+   to 110 units wide and merge into an orange haze; drawn with the
+   unscaled radius and a fade-in by life fraction (tried) they were still
+   no rays like these. Both the width and the fade-in rule stay open.

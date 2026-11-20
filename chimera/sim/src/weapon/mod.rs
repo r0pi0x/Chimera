@@ -1267,6 +1267,24 @@ impl AltModes {
     }
 }
 
+/// A held weapon's state others see, as a fraction 0-1 (TF2's Sniper
+/// Rifle's charge, which its laser dot shows): the game writes it on the
+/// weapon; the network sends it with what a character holds (`NetHeld`,
+/// a byte) and others' copies carry it (`remote::show_gauge`).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct HeldGauge(pub f32);
+
+impl HeldGauge {
+    /// As sent: 0-255.
+    pub fn byte(self) -> u8 {
+        (self.0.clamp(0.0, 1.0) * 255.0).round() as u8
+    }
+
+    pub fn from_byte(b: u8) -> Self {
+        Self(b as f32 / 255.0)
+    }
+}
+
 /// In `AltModes` mode `.0` the trigger is automatic, whatever its own
 /// `automatic` and `per_press` (Combat Arms' continuous fire on a
 /// semi-automatic gun).
