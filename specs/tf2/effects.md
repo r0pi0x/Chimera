@@ -651,6 +651,56 @@ over to the seeded interpolation (jump back, then forward), and that
 frame's particles spread along the jump. Under water the same with
 `rockettrail_underwater` (its bubbles child too).
 
+#### 11.3 A sticky's armed pulse: when it shows
+
+(Answers the sticky-recheck spec question, 2026-11-20: the measured
+~1.03 s from the launch flash to the first ring against weapons_more.md's
+0.8 s arm time. Read from the game code and the `stickybomb.pcf` file;
+checked against both captures.)
+
+- **Who decides.** The pulse is the client's own: no message from the
+  server starts it. Each client keeps, per sticky, the time it first
+  received it (its arrival, t_a, on that client's clock: §11.1). On every
+  frame after that, if the sticky's pulse hasn't played and the client's
+  time − t_a ≥ L (L = the sticky's arm time, weapons_more.md §5.3: 0.8
+  stock, 0.6 Quickiebomb), it starts `stickybomb_pulse_red` (`_blue`)
+  following the sticky's origin, once. (The server arms the sticky L after
+  its own creation; the client's pulse is therefore late by the arrival
+  delay and does not follow the interpolation delay.)
+- **The system** (`stickybomb_pulse_*`): no initial particles; a
+  continuous emitter of 10 a second from its time 0 for 0.7 s (so 7
+  rings, at most 3 alive); each ring lives exactly 0.1 s, locked to the
+  sticky, radius growing from 0 to 15 over its life, alpha fading in over
+  the first 20 % of its life and out over the rest, colour fading to
+  (255, 62, 62) (the red system).
+- **Why the first ring is late** (particles.md §9): the frame the system
+  is made it runs with zero time (nothing); the emitter's running total
+  reaches one particle only once 0.1 s of system time has passed, and
+  that particle is born at the end of that step, age 0, radius 0
+  (invisible); it is first seen the frame after, a ring of radius 15 ×
+  (frame time / 0.1). So the first visible ring comes at
+
+```math
+t_{ring} \approx t_a + L + q + 0.1 + \Delta
+```
+
+  with q the wait for the first frame past t_a + L (0 to one frame) and
+  Δ one frame. Then a ring every 0.1 s for the 0.7 s.
+- **The sticky's model** is hidden until t_a + 0.1 (§11.1), so the ring
+  comes L + q + Δ after the sticky is first seen.
+- **The captures, explained** (30 frames/s, Δ = 1/30, the launch flash
+  in frame 0, arrival ≈ 2 frames later as the 0.1 s model hide shows the
+  sticky at frame 5): stock, L = 0.8: first ring ≈ 2 + 24 (+ q: 0–1) + 3 + 1 =
+  30–31 frames after the flash (1.0–1.03 s; measured ~1.03), 25–26 frames
+  after the sticky first shows (measured 26). Quickiebomb, L = 0.6: 19–20
+  frames after the sticky shows (measured 20), 24 after the launch
+  (0.8 s: the "Measured" note below, which was the Quickiebomb).
+- **For ours**: start the pulse system L after the sticky's arrival on
+  that client (not after the shot, not at L + a tuned delay) and let the
+  particle timing rules make the rest; a fixed "after the launch" of
+  0.87 s matches the stock capture only at this arrival delay and frame
+  rate.
+
 ### 12. Syringe Gun needles: what is drawn and what a hit leaves
 
 - **The server's needle is invisible**; every client draws its own
@@ -928,7 +978,9 @@ bridge; facts of the picture, not of the code.
   ball) is seen in flight and where it lands; its trail glow is barely
   visible (a faint team tint at the sticky, no glowing disc). The armed
   pulse comes 0.8 s after the launch (frame 26 at 30 a second, the launch
-  at frame 2) and repeats every 0.1 s: per pulse a thin orange ring the
+  at frame 2) — that capture held the **Quickiebomb** Launcher (arm time
+  0.6); the stock launcher's first ring is ~1.03 s after the launch
+  flash (2026-11-20 recheck; §11.3) — and repeats every 0.1 s: per pulse a thin orange ring the
   sticky's size, then a translucent team-coloured disc about 3 times
   wider, then nothing for a frame.
 - **Rocket into water** (2fort's river, the surface near z = -140): seen
@@ -1019,6 +1071,8 @@ bridge; facts of the picture, not of the code.
 | Rocket first received at p0 = (100, 0, 0), s0 = 10.0, v0 = (1100, 0, 0); drawn time 9.9 | drawn at (−10, 0, 0); at 9.95: (45, 0, 0); at 10.0: p0; never held at a fixed point |
 | Pipe received at client time 5.0 | model not drawn before 5.1; trail emitting from 5.0 |
 | Rocket received at client time 5.0 | model not drawn before 5.2 |
+| Stock sticky received at client time 5.0, 60 frames/s | pulse system made on the first frame at or after 5.8 (nothing drawn); first ring seen ≈ 5.8 + 0.1 + 1/60; rings every 0.1 s, 7 in all |
+| Quickiebomb sticky received at client time 5.0 | pulse system made at 5.6 |
 | RED needle hits a wooden wall (letter W) | `Impact.Wood` decal at the hit, wood flecks, `Wood.BulletImpact` within 1024; `Bounce.Shrapnel` on 3 in 10; needle stays stuck until 6 s after its launch; trail stops emitting |
 | BLU needle hits the same wall | as above, never `Bounce.Shrapnel` |
 | Needle reaches a teammate | needle vanishes; no decal, no sound, no blood |

@@ -164,7 +164,12 @@ Captured imagery stays in scratch, never in the repo.
   sooner); ours came at 24, tuned to effects.md's measured 0.8 s, which
   was the Quickiebomb's. Now `armed.after` 0.87. Spec question:
   effects.md "Measured" says 0.8 s after the launch; stock is ~1.03 s
-  after the launch flash.
+  after the launch flash. **Answered** (tf2-spec-sticky, 2026-11-20):
+  [effects.md §11.3](../../../specs/tf2/effects.md): the client starts
+  the pulse system L (0.8 stock, 0.6 Quickiebomb) after it first
+  *received* the sticky, and the system's first ring is seen ~0.1 s + a
+  frame later (its emitter's timing); both captures fit. Ours should
+  start it L after the arrival rather than a tuned 0.87 after the shot.
 - **Spin** (spec question, not changed): stock TF2's sticky turns at
   ~2510 degrees/s just after launch, about its own forward ~1200 and
   its left ~2200 (`GetPhysAngularVelocity` agrees: 1194, -2207), twice
@@ -173,7 +178,15 @@ Captured imagery stays in scratch, never in the repo.
   air (the engine's drag, weapons_more.md Open questions 7); ours has
   none. Is the impulse doubled by the physics engine (an impulse on a
   body whose inertia differs from 1), or are the units other than
-  degrees/s?
+  degrees/s? **Answered** (tf2-spec-sticky, 2026-11-20):
+  [weapons_more.md §4.1](../../../specs/tf2/weapons_more.md): the game
+  adds the same (600, r, 0) degrees/s twice, so (1200, 2r, 0) (grenades
+  too); the drag, measured per tick with `air_density` 0/2/4, is §4.4:
+  quadratic, per body axis, ×ρ (2.0), gravity applied first (sticky
+  linear ≈ 1.43e-6 × ρ × Σ|v_i| per tick, angular ≈ 7.3e-7 × ρ ×
+  Σ|ω_i|). New open: weapons_more.md Open questions 22-23 (the
+  grenade's angular drag; the engine's 2000 units/s cap vs a full
+  charge's 2400).
 - `viewmodels.tf2` slot 1 (the puppet Demoman): the stock Stickybomb
   Launcher (item 20 active), not the Grenade Launcher; ours draws the
   same gun, ~50 px left of it (the bot's view-model offset).
