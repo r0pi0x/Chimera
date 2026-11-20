@@ -122,9 +122,10 @@ fn dump_a_system_as_loaded_and_in_its_file() {
 /// stepped at 60 a second: the flying embers draw thin rays (a trail and a
 /// head sprite each, the strips a few units wide), the core flash broad
 /// streaks (tens of units). The flash-up (3000/s for 0.01 s) makes its 30
-/// particles in its first emitting step (particles.md 9.4: no
-/// step-boundary rule); TF2 shows nothing of them, but under our
-/// operators' readings they draw (a spec question: tf2-parity.md).
+/// particles in its first emitting step (particles.md 9.4) and draws them
+/// in a blast (10.1): strips 32 long (its minimum), at most as wide, about
+/// a dozen at full alpha; skipped ahead 0.04 s (an info_particle_system's
+/// late start, 10.10) it makes none.
 #[test]
 fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_flashups_thirty() {
     use chimera_world::map::particles::Shape;
@@ -172,4 +173,19 @@ fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_flashups_thirty() {
     // the step's end are gone.
     let seen = i.count();
     assert!((20..=30).contains(&seen), "the flash-up's first emitting step: {seen}");
+    let mut out = Vec::new();
+    i.draw(defs, &|v| v, 1.0, bevy::math::Vec3::new(0.0, 0.0, 10_000.0), &sheets, &mut out);
+    let full = out.iter().filter(|q| q.alpha == 1.0).count();
+    assert!((4..=24).contains(&full), "{full} of {} at full alpha", out.len());
+    for q in &out {
+        let Shape::Quad { corners, .. } = q.shape else { panic!("{:?}", q.shape) };
+        let (long, wide) = (corners[0].distance(corners[1]), corners[0].distance(corners[3]));
+        assert!((long - 32.0).abs() < 0.1 && wide <= long + 1e-3, "{long} x {wide}");
+    }
+    let mut skipped = Instance::new(defs, systems.find("Explosion_Flashup").unwrap());
+    skipped.skip_to(defs, 0.04);
+    for _ in 0..20 {
+        skipped.step(defs, &cps, 1.0 / 60.0, &mut rng, &sheets);
+        assert_eq!(skipped.count(), 0, "skipped: none made");
+    }
 }

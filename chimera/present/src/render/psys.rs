@@ -40,25 +40,39 @@
 //! "Position on Model Random" its hitboxes (best of 6 tries by the
 //! bias), "Movement Lock to Bone" keeps each particle in its box, and a
 //! view model's are drawn in the view-model pass (TF2's crit glow:
-//! specs/tf2/effects.md 14.1).
+//! specs/tf2/effects.md 14.1). The operators follow the particle
+//! library's formulas (specs/tf2/particles.md 10, every game): "Alpha Fade
+//! and Decay" and "Radius Scale" write from the initial value inside
+//! their windows and leave it outside, the radius by the rational bias;
+//! "Color Fade" from the initial colour, eased; "Movement Basic"'s drag
+//! per 1/30 s and every operator over the whole step (a particle made in
+//! it moves v h); a sprite trail at least its minimum length and no wider
+//! than long; a particle whose render alpha byte is 0 not drawn;
+//! "Oscillate Scalar / Vector" adding rate × h × the parabolic wave to
+//! the field. An info_particle_system's new effect is skipped ahead
+//! (`Instance::skip_to`, 10.10, specs/source/particles_and_smoke.md 2.5):
+//! no initial particles, a continuous emitter that ended before never
+//! emits (TF2's `Explosion_Flashup` shows nothing that way, while a blast
+//! started by a game draws it), a burst fires late.
 //!
 //! Known shortcuts (docs/tech-debt.md): Particle systems (`render::psys`,
 //! `map::psys`, `source_engine::content::pcf`): the operator meanings are
-//! interpretations (specs/cs_source/impact_effects.md 14, fire.md 7.3; the
-//! library isn't public): drag removes its fraction per step (steps of the
-//! system's maximum time step), velocity noise is uniform per particle, random
-//! force a uniform draw per step, twist a tangential acceleration, a sprite
-//! trail's length is clamped after its fade-in by age (the order inferred,
-//! particles.md 5.1), the client's particle multiplier is 1 and an
+//! interpretations where specs/tf2/particles.md 10 doesn't give them
+//! (specs/cs_source/impact_effects.md 14, fire.md 7.3): movement is
+//! integrated as a velocity (the library's previous-position form gives
+//! the same unless a frame is cut into sub-steps), velocity noise is
+//! uniform per particle, random force a uniform draw per step, twist a
+//! tangential acceleration, an operator's own fade (10.11) isn't read
+//! (always 1, as in every system read), an info_particle_system's
+//! lateness is one server tick (the server's start time isn't sent, so a
+//! client joining long after a start doesn't cancel its bursts), the client's particle multiplier is 1 and an
 //! emitter's stop and restart (particles.md 9.2) aren't run (a stopped
 //! system never restarts), animation rate without "as FPS" plays the sequence that many
 //! times a second; "collision via traces" is a ray per step (its radius past
 //! the step) against the solid world for started systems only (placed
 //! ones don't collide), bounce and slide read as fractions of the speed
 //! into and along the surface (its trace tolerances and collision group
-//! aren't read); "Oscillate Scalar" runs a placeholder formula (radius
-//! and alpha only: `Op::Oscillate`, specs/tf2/effects.md Open questions
-//! 17); "Position on Model Random" and "Movement Lock to Bone" need the
+//! aren't read); "Position on Model Random" and "Movement Lock to Bone" need the
 //! game to give the model's boxes (`ParticleModel`, else at the point)
 //! and ignore "force to be inside model"; the visibility,
 //! cull and sleep settings aren't run (an unseen system freezes); control
@@ -167,18 +181,31 @@ struct P {
     /// The model hitbox it was placed on and its place in the box's unit
     /// cube (`Init::OnModel`, `Op::LockToBone`).
     bone: Option<(u16, Vec3)>,
-    /// Its first two oscillators' drawn rate and frequency
-    /// (`Op::Oscillate`).
-    osc: [(f32, f32); 2],
+    /// Its alpha and radius right after its initializers: what "Alpha
+    /// Fade and Decay" and "Radius Scale" scale (particles.md 10.2-10.3).
+    alpha0: f32,
+    radius0: f32,
+    /// Its first two oscillators' fixed random numbers (`Op::Oscillate`,
+    /// particles.md 10.9): start, end, and (scalar) rate and frequency.
+    osc: [[f32; 4]; 2],
 }
 
-/// "Movement Basic"'s drag is the fraction of the velocity taken off per
-/// simulation step in Source, so its look changes with the frame rate (a
-/// rocket's explosion captured in TF2 at 250 and at 62.5 frames a second
-/// differed: tools/tf2ref, docs/plans/active/tf2-parity.md). Ours takes it
-/// off per this many steps a second, as at 60 frames a second, at any step
-/// size (a slowed or fast frame no longer stops the particles dead).
-pub const DRAG_STEPS: f32 = 60.0;
+/// "Movement Basic"'s drag is the fraction of the velocity lost per 1/30 s
+/// whatever the step (specs/tf2/particles.md 10.5: the factor (1 −
+/// drag)^(30 h) per step h).
+pub const DRAG_STEPS: f32 = 30.0;
+
+/// A particle whose render alpha byte, round(255 × alpha), is 0 is not
+/// drawn (particles.md 10.8): alpha below this.
+const ALPHA_DRAWN: f32 = 0.5 / 255.0;
+
+/// The client's skip-ahead threshold (particles.md 10.10): an
+/// info_particle_system's effect seen more than this late is skipped.
+pub const SKIP_AFTER: f32 = 0.01;
+
+/// An instantaneous burst whose start is more than this before a skip's
+/// time is cancelled (particles.md 10.10).
+const BURST_KEPT: f32 = 2.0;
 
 /// The trail length (field 10) a particle has when nothing sets it, s.
 const DEFAULT_TRAIL_LENGTH: f32 = 0.1;
@@ -263,6 +290,12 @@ pub struct Instance {
     /// The hitboxes of the model its control point 0 stands for (game
     /// space, from the unit cube: `set_model`).
     model: Vec<Mat4>,
+    /// Instantaneous emitters whose burst a skip left due (`skip_to`):
+    /// they fire in the next step at their start time.
+    due: Vec<bool>,
+    /// Its particles' fixed random numbers' seed (oscillators; 0 until
+    /// its first oscillating particle).
+    seed: u64,
 }
 
 /// The sheet sequences' frame counts of a material (for "lifetime from
@@ -369,20 +402,57 @@ pub fn follow_turn(f: &crate::map::psys::Follow, at: &Transform) -> Quat {
     }
 }
 
-/// `motion` (its last step's, units/s) x `trail` (s) x min(1, `age` /
-/// `fade_in`) (1 with no fade-in), clamped to [`min`, `max`]; None when it
-/// didn't move.
+/// A sprite trail's length (specs/tf2/particles.md 10.7): `motion` (its
+/// last step's, units/s) x `trail` (s) x min(1, `age` / `fade_in`) (1 with
+/// no fade-in), then at most `max` and at least `min` (the minimum wins
+/// when they cross); None when it didn't move, or the unclamped length is
+/// not positive (age 0 with a fade-in, or no trail length).
 pub fn trail_length(motion: Vec3, trail: f32, age: f32, min: f32, max: f32, fade_in: f32) -> Option<f32> {
     let speed = motion.length();
     if speed <= 1e-4 {
         return None;
     }
-    let f = if fade_in > 0.0 { (age / fade_in).clamp(0.0, 1.0) } else { 1.0 };
-    Some((speed * trail * f).clamp(min, max.max(min)))
+    let f = if fade_in > 0.0 && age < fade_in { age / fade_in } else { 1.0 };
+    let length = (speed * speed + 1e-10).sqrt() * trail * f;
+    if length <= 0.0 {
+        return None;
+    }
+    Some(length.min(max).max(min))
 }
 
+/// The ease of the particle operators: S(s) = 3s² − 2s³.
 fn smooth(x: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
+}
+
+/// "Radius Scale"'s bias (particles.md 10.3): s / ((1/b − 2)(1 − s) + 1),
+/// so g(0.5) = b; b 0.5 is linear.
+pub fn rational_bias(s: f32, b: f32) -> f32 {
+    if (b - 0.5).abs() < 1e-6 || b <= 0.0 {
+        return s;
+    }
+    s / ((1.0 / b - 2.0) * (1.0 - s) + 1.0)
+}
+
+/// The oscillators' wave (particles.md 10.9): a parabolic stand-in for
+/// sin(π x), period 2 in x.
+pub fn wave(x: f32) -> f32 {
+    // |x| less its whole periods (a truncating cast, not libm's fmod).
+    let ax = x.abs();
+    let f = ax - 2.0 * (ax * 0.5) as i64 as f32;
+    let sign = if x < 0.0 { -1.0 } else { 1.0 };
+    if f < 1.0 { sign * 4.0 * f * (1.0 - f) } else { -sign * 4.0 * (f - 1.0) * (2.0 - f) }
+}
+
+/// A particle's fixed random number in [0, 1) for one of its oscillators'
+/// draws (particles.md 10.9: by particle, independent, for its life).
+fn fixed_random(seed: u64, serial: u32, op: usize, k: usize) -> f32 {
+    let mut x = seed ^ (u64::from(serial) << 20) ^ ((op as u64) << 8) ^ k as u64;
+    x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^= x >> 31;
+    (x >> 40) as f32 / (1u64 << 24) as f32
 }
 
 fn window(t: f32, a: f32, b: f32) -> f32 {
@@ -424,6 +494,41 @@ impl Instance {
             lock_from: None,
             cp_from: None,
             model: Vec::new(),
+            due: vec![false; d.emitters.len()],
+            seed: 0,
+        }
+    }
+
+    /// Skip it ahead to its clock `t` without simulating (particles.md
+    /// 10.10: a late info_particle_system's effect): nothing when `t` is
+    /// not past its clock. Its creation step never runs (no initial
+    /// particles); its points stand still into the next step; an
+    /// instantaneous burst whose start is in the skipped time fires in
+    /// the next step at its start time unless `t` is more than 2 s past
+    /// it; a continuous emitter just goes on from `t` (one that ended
+    /// before never emits); children are skipped to `t` minus their
+    /// delay.
+    pub fn skip_to(&mut self, defs: &[SystemDef], t: f32) {
+        if t <= self.age {
+            return;
+        }
+        let d = &defs[self.def];
+        for (due, e) in self.due.iter_mut().zip(&d.emitters) {
+            if let Emitter::Instantaneously { start, .. } = *e {
+                let unfired = if start <= 0.0 { self.age == 0.0 } else { self.age < start };
+                if unfired && start <= t {
+                    *due = t <= start.max(0.0) + BURST_KEPT;
+                }
+            }
+        }
+        self.age = t;
+        self.started = true;
+        self.cp_from = None;
+        for (delay, c, def) in &mut self.children {
+            if t - *delay > 0.0 && self.emitting {
+                let child = c.get_or_insert_with(|| Instance::new(defs, *def));
+                child.skip_to(defs, t - *delay);
+            }
         }
     }
 
@@ -684,14 +789,18 @@ impl Instance {
                     }
                     Emitter::Instantaneously { start, count } => {
                         // All at its start time: at 0, the first emitting
-                        // step's start (the point's previous place).
-                        let due = if start <= 0.0 {
-                            before == 0.0
-                        } else {
-                            before < start && t >= start
-                        };
+                        // step's start (the point's previous place); left
+                        // due by a skip, in the next step (`skip_to`).
+                        let skipped = std::mem::take(&mut self.due[i]);
+                        let due = skipped
+                            || if start <= 0.0 {
+                                before == 0.0
+                            } else {
+                                before < start && t >= start
+                            };
                         if due {
-                            made.extend(std::iter::repeat_n(before.max(start), count as usize));
+                            let created = if skipped { start.max(0.0) } else { before.max(start) };
+                            made.extend(std::iter::repeat_n(created, count as usize));
                         }
                     }
                 }
@@ -731,12 +840,13 @@ impl Instance {
         });
         let mut killed = false;
         let mut from: Vec<Vec3> = self.particles.iter().map(|p| p.position).collect();
-        let mut lived: Vec<f32> = Vec::with_capacity(from.len());
+        let (clock, seed) = (self.age, self.seed);
         for p in &mut self.particles {
-            // A particle made during this step lives only its part of it.
-            let dt = dt + p.age.min(0.0);
-            lived.push(dt);
-            p.age = p.age.max(0.0) + dt;
+            // A particle made during this step is aged only by its part of
+            // it, but the operators run over the whole step (particles.md
+            // 10.5: its first motion is v h whenever in the step it was
+            // made).
+            p.age = p.age.max(0.0) + dt + p.age.min(0.0);
             let mut accel = Vec3::ZERO;
             let mut gravity = Vec3::ZERO;
             let mut drag = 0.0;
@@ -769,11 +879,13 @@ impl Instance {
                 }
             }
             if moves {
-                p.velocity += (gravity + accel) * dt;
+                // x' = x + v h (1 − drag)^(30 h) + a h² (particles.md
+                // 10.5), as a velocity: the drag per 1/30 s whatever the
+                // step (`DRAG_STEPS`), not on this step's acceleration.
                 if drag > 0.0 {
-                    // Per 1/60 s, whatever the step (`DRAG_STEPS`).
                     p.velocity *= (1.0 - drag).max(0.0).powf(dt * DRAG_STEPS);
                 }
+                p.velocity += (gravity + accel) * dt;
                 for o in &d.operators {
                     if let Op::MaxVelocity { max } = *o
                         && max > 0.0
@@ -801,23 +913,85 @@ impl Instance {
                     None => p.position = to,
                 }
             }
+            let t = if p.life > 0.0 { p.age / p.life } else { 1.0 };
             let mut osc = 0;
-            for o in &d.operators {
+            for (k, o) in d.operators.iter().enumerate() {
                 match *o {
                     Op::RotationBasic => p.roll += p.roll_speed * dt,
                     Op::SpinRoll { rate } => p.roll += rate * dt,
-                    Op::Oscillate { field, multiplier, phase, start, end, .. } => {
-                        // A placeholder (effects.md Open questions 17).
-                        let (rate, frequency) = p.osc.get(osc).copied().unwrap_or_default();
+                    Op::FadeAndDecay { start_alpha, end_alpha, fade_in, fade_out } if p.life > 0.0 => {
+                        // Written only inside its windows, from the
+                        // initial alpha; left as it is outside them
+                        // (particles.md 10.2).
+                        if fade_in.0 <= t && t < fade_in.1 {
+                            let s = ((t - fade_in.0) / (fade_in.1 - fade_in.0)).clamp(0.0, 1.0);
+                            p.alpha = p.alpha0 * (start_alpha + (1.0 - start_alpha) * smooth(s));
+                        }
+                        if fade_out.0 <= t && t < fade_out.1 {
+                            let s = ((t - fade_out.0) / (fade_out.1 - fade_out.0)).clamp(0.0, 1.0);
+                            p.alpha = p.alpha0 * (1.0 + (end_alpha - 1.0) * smooth(s));
+                        }
+                    }
+                    Op::RadiusScale { start_scale, end_scale, start, end, bias, ease } if p.life > 0.0 && start < end => {
+                        // From the initial radius inside its window, left
+                        // as it is outside (particles.md 10.3).
+                        if start <= t && t < end {
+                            let s = (t - start) / (end - start);
+                            let g = if ease { smooth(s) } else { rational_bias(s, bias) };
+                            p.radius = p.radius0 * (start_scale + (end_scale - start_scale) * g);
+                        }
+                    }
+                    Op::Oscillate {
+                        field,
+                        vector,
+                        rate,
+                        frequency,
+                        proportional,
+                        start,
+                        end,
+                        start_end_proportional,
+                        multiplier,
+                        phase,
+                    } if p.life > 0.0 => {
+                        // particles.md 10.9: the field's rate of change
+                        // oscillates, sampled at the step's end.
+                        // Its fixed random numbers: drawn at its birth for
+                        // its first two (a vector's other axes, and any
+                        // later, by its serial).
+                        let r = |n: usize| fixed_random(seed, p.serial, k, n);
+                        let drawn = p.osc.get(osc).copied();
                         osc += 1;
-                        let x = if p.life > 0.0 { p.age / p.life } else { 1.0 };
-                        if x < start || x > end {
+                        let [t1, t2, r0, f0] = drawn.unwrap_or_else(|| {
+                            [start.0 + (start.1 - start.0) * r(0), end.0 + (end.1 - end.0) * r(1), rate.0.x + (rate.1.x - rate.0.x) * r(2), frequency.0.x + (frequency.1.x - frequency.0.x) * r(5)]
+                        });
+                        let at = if start_end_proportional { t } else { p.age };
+                        if at < t1 || at >= t2 {
                             continue;
                         }
-                        let change = rate * (std::f32::consts::TAU * (frequency * multiplier * p.age + phase)).sin() * dt;
-                        match field {
-                            3 => p.radius = (p.radius + change).max(0.0),
-                            7 => p.alpha = (p.alpha + change / 255.0).clamp(0.0, 1.0),
+                        let axes = if vector { 3 } else { 1 };
+                        let mut add = Vec3::ZERO;
+                        for a in 0..axes {
+                            let (rate, f) = if a == 0 {
+                                (r0, f0)
+                            } else {
+                                (rate.0[a] + (rate.1[a] - rate.0[a]) * r(2 + a), frequency.0[a] + (frequency.1[a] - frequency.0[a]) * r(5 + a))
+                            };
+                            let x = if proportional {
+                                f * multiplier * p.age / p.life + phase
+                            } else {
+                                f * (multiplier * clock + phase)
+                            };
+                            add[a] = rate * dt * wave(x);
+                        }
+                        match (vector, field) {
+                            (false, 7) => p.alpha = (p.alpha + add.x).clamp(0.0, 1.0),
+                            (false, f) => {
+                                if let Some(v) = p.scalar(f, 0.0) {
+                                    p.set_scalar(f, v + add.x);
+                                }
+                            }
+                            (true, 0) => p.position += add,
+                            (true, 6) => p.color = (p.color + add).clamp(Vec3::ZERO, Vec3::ONE),
                             _ => {}
                         }
                     }
@@ -878,11 +1052,11 @@ impl Instance {
             }
             Self::remap(d, &cp, p);
         }
-        // Its motion over the part of the step it lived (a sprite
-        // trail's direction and speed: particles.md 5.1).
-        for ((p, from), lived) in self.particles.iter_mut().zip(from).zip(lived) {
-            if lived > 1e-6 {
-                p.motion = (p.position - from) / lived;
+        // Its motion over the step, per second (a sprite trail's
+        // direction and speed: particles.md 10.7, k = 1/h).
+        if dt > 1e-6 {
+            for (p, from) in self.particles.iter_mut().zip(from) {
+                p.motion = (p.position - from) / dt;
             }
         }
         if decays {
@@ -939,11 +1113,20 @@ impl Instance {
             trail: DEFAULT_TRAIL_LENGTH,
             motion: Vec3::ZERO,
             bone: None,
-            osc: [(0.0, 0.0); 2],
+            alpha0: d.alpha,
+            radius0: d.radius,
+            osc: [[0.0; 4]; 2],
         };
-        for (k, o) in d.operators.iter().filter(|o| matches!(o, Op::Oscillate { .. })).take(2).enumerate() {
-            if let Op::Oscillate { rate, frequency, .. } = *o {
-                p.osc[k] = (rng.float(rate.0, rate.1), rng.float(frequency.0, frequency.1));
+        let mut k = 0;
+        for o in &d.operators {
+            if let Op::Oscillate { vector, rate, frequency, start, end, .. } = *o {
+                if self.seed == 0 && (vector || k >= 2) {
+                    self.seed = u64::from((rng.random() * 4_294_967_296.0) as u32) | 1 << 32;
+                }
+                if let Some(slot) = p.osc.get_mut(k) {
+                    *slot = [rng.float(start.0, start.1), rng.float(end.0, end.1), rng.float(rate.0.x, rate.1.x), rng.float(frequency.0.x, frequency.1.x)];
+                }
+                k += 1;
             }
         }
         for i in &d.initializers {
@@ -1120,6 +1303,7 @@ impl Instance {
                 _ => {}
             }
         }
+        (p.alpha0, p.radius0) = (p.alpha, p.radius);
         p
     }
 
@@ -1181,9 +1365,11 @@ impl Instance {
         for p in &self.particles {
             let radius = Self::radius(d, p);
             let alpha = Self::alpha(d, p);
-            if radius <= 0.0 || alpha <= 0.001 {
+            // Its render alpha byte (particles.md 10.8): 0 is not drawn.
+            if radius <= 0.0 || alpha < ALPHA_DRAWN {
                 continue;
             }
+            let alpha = (alpha * 255.0).round() / 255.0;
             let at = to_engine(p.position);
             let mut q = Particle::new(at, p.life.max(1e-3), material, radius * scale);
             q.size = Ramp::constant(radius * scale);
@@ -1214,17 +1400,18 @@ impl Instance {
                     // Back along its motion over its last step, as long
                     // as that speed x its trail length x the fade-in by
                     // age, then clamped; nothing when it didn't move
-                    // (particles.md 5.1: a flame pilot locked to a still
+                    // (particles.md 10.7: a flame pilot locked to a still
                     // muzzle shows no streak).
                     let Some(length) = trail_length(p.motion, p.trail, p.age, min_length, max_length, length_fade_in) else {
                         continue;
                     };
                     let back = to_engine(p.position - p.motion.normalize() * length);
-                    // The radius is the strip's full width (5.1 step 3);
-                    // the texture's v runs from the tail (0) to the head
-                    // (1): TF2's `effects/tracer1` is bright at the
-                    // bullet (Open questions 4).
-                    let side = (at - back).cross(at - eye).normalize_or_zero() * radius * scale * 0.5;
+                    // The strip's full width is the radius, at most its
+                    // length (10.7 step 5); the texture's v runs from the
+                    // tail (0) to the head (1): TF2's `effects/tracer1` is
+                    // bright at the bullet (Open questions 4).
+                    let width = radius.min(length);
+                    let side = (at - back).cross(at - eye).normalize_or_zero() * width * scale * 0.5;
                     q.position = (at + back) * 0.5;
                     q.shape = Shape::Quad {
                         corners: [at - side, back - side, back + side, at + side],
@@ -1237,31 +1424,16 @@ impl Instance {
         }
     }
 
-    fn radius(d: &SystemDef, p: &P) -> f32 {
-        let t = if p.life > 0.0 { p.age / p.life } else { 1.0 };
-        let mut r = p.radius * p.radius_mul;
-        for o in &d.operators {
-            if let Op::RadiusScale {
-                start_scale,
-                end_scale,
-                start,
-                end,
-                bias,
-                ease,
-            } = *o
-            {
-                let mut x = window(t, start, end);
-                if ease {
-                    x = smooth(x);
-                }
-                r *= start_scale + (end_scale - start_scale) * crate::map::particles::bias(x, bias);
-            }
-        }
-        r
+    /// Its radius as drawn: what the operators left (`Op::RadiusScale`
+    /// writes it each step) times the distance remap's factor.
+    fn radius(_: &SystemDef, p: &P) -> f32 {
+        p.radius * p.radius_mul
     }
 
+    /// Its alpha as drawn (0-1): what the operators left (`Op::
+    /// FadeAndDecay` writes it each step), the distance remap's factor and
+    /// the random fades'.
     fn alpha(d: &SystemDef, p: &P) -> f32 {
-        let t = if p.life > 0.0 { p.age / p.life } else { 1.0 };
         let mut a = p.alpha * p.alpha_mul;
         for o in &d.operators {
             match *o {
@@ -1277,38 +1449,31 @@ impl Instance {
                         a *= ((p.life - p.age) / time).clamp(0.0, 1.0);
                     }
                 }
-                Op::FadeAndDecay {
-                    start_alpha,
-                    end_alpha,
-                    fade_in,
-                    fade_out,
-                } => {
-                    let fin = start_alpha + (1.0 - start_alpha) * window(t, fade_in.0, fade_in.1);
-                    let fout = 1.0 + (end_alpha - 1.0) * window(t, fade_out.0, fade_out.1);
-                    a *= fin * fout;
-                }
                 _ => {}
             }
         }
         a.clamp(0.0, 1.0)
     }
 
+    /// Its colour: "Color Fade" from its initial colour (or tint) toward
+    /// the target by its life fraction's place in the window, clamped,
+    /// eased (particles.md 10.4); a later fade overrides an earlier one.
     fn color(d: &SystemDef, p: &P) -> Vec3 {
-        let t = if p.life > 0.0 { p.age / p.life } else { 1.0 };
-        let mut c = p.tint.unwrap_or(p.color);
+        let c0 = p.tint.unwrap_or(p.color);
+        if p.life <= 0.0 {
+            return c0;
+        }
+        let t = p.age / p.life;
+        let mut c = c0;
         for o in &d.operators {
-            if let Op::ColorFade {
-                color,
-                start,
-                end,
-                ease,
-            } = *o
+            if let Op::ColorFade { color, start, end, ease } = *o
+                && end != start
             {
-                let mut x = window(t, start, end);
+                let mut x = ((t - start) / (end - start)).clamp(0.0, 1.0);
                 if ease {
                     x = smooth(x);
                 }
-                c = c.lerp(color, x);
+                c = c0 + (color - c0) * x;
             }
         }
         c
@@ -1339,11 +1504,17 @@ impl SystemEmitter {
         }
     }
 
-    /// Turned on: a new instance; turned off: every instance stops
-    /// emitting (2.5).
-    pub fn switch(&mut self, defs: &[SystemDef], on: bool) {
+    /// Turned on: a new instance, skipped ahead to `late` (how long after
+    /// the server's start this client makes it) when that's over 0.01 s
+    /// (specs/source/particles_and_smoke.md 2.5, specs/tf2/particles.md
+    /// 10.10); turned off: every instance stops emitting (2.5).
+    pub fn switch(&mut self, defs: &[SystemDef], on: bool, late: f32) {
         if on && !self.was_on {
-            self.instances.push(Instance::new(defs, self.placed.system));
+            let mut i = Instance::new(defs, self.placed.system);
+            if late > SKIP_AFTER {
+                i.skip_to(defs, late);
+            }
+            self.instances.push(i);
         } else if !on && self.was_on {
             for i in &mut self.instances {
                 i.stop();
@@ -1385,11 +1556,17 @@ pub fn update_systems(
         Option<&Visibility>,
     )>,
     light_field: Option<Res<crate::map::LightField>>,
+    tick: Option<Res<Time<Fixed>>>,
     mut pool: ResMut<Particles>,
 ) {
     let Some(defs) = defs else { return };
     let defs = &defs.0;
     let dt = time.delta_secs().min(0.25);
+    // How late this client makes a turned-on effect: the server's start
+    // time isn't sent, so the least it can be, one tick (its update
+    // arrives at least a tick after the start: particles_and_smoke.md
+    // 2.5, inferred).
+    let late = tick.map_or(1.0 / 66.0, |t| t.timestep().as_secs_f32());
     let eye = eyes.iter().next().map(|e| e.translation());
     let sheets = MaterialSheets(materials.as_ref().map(|m| &m.0));
     let scale = defs.scale.max(1e-6);
@@ -1399,7 +1576,7 @@ pub fn update_systems(
     for (mut e, at, part, visibility) in &mut emitters {
         let exists = part.is_none_or(|p| p.exists);
         let on = exists && part.map_or(e.placed.start_on, |p| p.on);
-        e.switch(&defs.defs, on);
+        e.switch(&defs.defs, on, late);
         if !exists {
             e.instances.clear();
             continue;
@@ -2171,7 +2348,7 @@ mod tests {
     }
 
     /// Drag takes off the same over a second whatever the step: 0.1 per
-    /// 1/60 s leaves 0.9^60 of the speed after one second.
+    /// 1/30 s leaves 0.9^30 of the speed after one second.
     #[test]
     fn drag_does_not_depend_on_the_step() {
         let mut d = system();
@@ -2192,7 +2369,8 @@ mod tests {
             }
             i.particles[0].velocity.length()
         };
-        let want = 100.0 * 0.9f32.powi(60);
+        // 0.1 per 1/30 s (particles.md 10.5).
+        let want = 100.0 * 0.9f32.powi(30);
         for step in [1.0 / 60.0, 1.0 / 250.0, 0.0005] {
             let v = speed_after(step);
             assert!((v - want).abs() < want * 0.05, "step {step}: {v} vs {want}");
@@ -2224,63 +2402,300 @@ mod tests {
         assert_eq!(i.count(), 0);
     }
 
-    #[test]
-    fn fades_and_radius_scale() {
+    /// One particle (alpha 1, radius `radius`, life `life`) made at 0 by
+    /// a burst, run by `operators`; created (the zero-time frame) and
+    /// ready to step.
+    fn one(life: f32, radius: f32, operators: Vec<Op>) -> (Vec<SystemDef>, Instance) {
         let d = SystemDef {
-            operators: vec![
-                Op::FadeAndDecay {
-                    start_alpha: 0.0,
-                    end_alpha: 0.0,
-                    fade_in: (0.0, 0.25),
-                    fade_out: (0.5, 1.0),
-                },
-                Op::RadiusScale {
-                    start_scale: 2.0,
-                    end_scale: 20.0,
-                    start: 0.0,
-                    end: 1.0,
-                    bias: 0.5,
-                    ease: false,
-                },
-                Op::ColorFade {
-                    color: Vec3::ZERO,
-                    start: 0.0,
-                    end: 1.0,
-                    ease: false,
-                },
-            ],
+            emitters: vec![Emitter::Instantaneously { start: 0.0, count: 1 }],
+            initializers: vec![Init::Lifetime(Pick::new(life, life, 1.0)), Init::Radius(Pick::new(radius, radius, 1.0))],
+            operators,
+            max_step: 1.0,
             ..system()
         };
-        let p = |age: f32| P {
-            position: Vec3::ZERO,
-            velocity: Vec3::ZERO,
-            age,
-            life: 1.0,
-            radius: 5.0,
-            color: Vec3::ONE,
-            alpha: 1.0,
-            roll: 0.0,
-            roll_speed: 0.0,
-            sequence: 0,
-            flip: false,
-            fade_in: 0.0,
-            fade_out: 0.0,
-            serial: 0,
-            target: None,
-            radius_mul: 1.0,
-            alpha_mul: 1.0,
-            tint: None,
-            trail: DEFAULT_TRAIL_LENGTH,
-            motion: Vec3::ZERO,
-            bone: None,
-            osc: [(0.0, 0.0); 2],
+        let defs = vec![d];
+        let mut i = Instance::new(&defs, 0);
+        created(&mut i, &defs, &[ControlPoint::default()]);
+        (defs, i)
+    }
+
+    fn step(defs: &[SystemDef], i: &mut Instance, h: f32) {
+        i.step(defs, &[ControlPoint::default()], h, &mut ParticleRng::new(4), &none);
+    }
+
+    /// particles.md 10.2: start alpha 0, fade in 0.1-0.2, out 0.7-1:
+    /// untouched before the fade-in (1), S(0.5) = 0.5 inside it, and left
+    /// at its last in-window value after it (0.5, not 1).
+    #[test]
+    fn alpha_fade_and_decay_is_left_alone_outside_its_windows_10_2() {
+        let fade = Op::FadeAndDecay { start_alpha: 0.0, end_alpha: 0.0, fade_in: (0.1, 0.2), fade_out: (0.7, 1.0) };
+        let (defs, mut i) = one(1.0, 5.0, vec![fade.clone()]);
+        let alpha = |i: &Instance| Instance::alpha(&defs[0], &i.particles[0]);
+        step(&defs, &mut i, 0.05);
+        assert!((alpha(&i) - 1.0).abs() < 1e-5, "t 0.05: {}", alpha(&i));
+        step(&defs, &mut i, 0.1);
+        assert!((alpha(&i) - 0.5).abs() < 1e-4, "t 0.15: {}", alpha(&i));
+        step(&defs, &mut i, 0.1);
+        assert!((alpha(&i) - 0.5).abs() < 1e-4, "t 0.25: {}", alpha(&i));
+        // The fade-out rescales the initial alpha: S(0.5) of the way to 0.
+        step(&defs, &mut i, 0.6);
+        assert!((alpha(&i) - 0.5).abs() < 1e-4, "t 0.85: {}", alpha(&i));
+        // Lifetime 0.01, age 0.0117: removed this step.
+        let (defs, mut i) = one(0.01, 5.0, vec![fade]);
+        step(&defs, &mut i, 0.0117);
+        assert_eq!(i.count(), 0);
+        // The loader's ordering: an end before its start raised to it,
+        // then the starts (and the ends) swapped when the fade-in's is
+        // later.
+        assert_eq!(fade_windows((0.8, 0.9), (0.2, 0.1)), ((0.2, 0.2), (0.8, 0.9)));
+    }
+
+    /// particles.md 10.3: 3 -> 11, bias 0.9 (rational: g(0.05) = 0.321,
+    /// not the power curve's 0.634), r0 2 at t 0.05: 11.1; outside the
+    /// window the radius is left as it is.
+    #[test]
+    fn radius_scale_has_the_rational_bias_10_3() {
+        assert!((rational_bias(0.05, 0.9) - 0.3214).abs() < 1e-3);
+        assert!((rational_bias(0.5, 0.9) - 0.9).abs() < 1e-5 && rational_bias(0.3, 0.5) == 0.3);
+        let scale = Op::RadiusScale { start_scale: 3.0, end_scale: 11.0, start: 0.0, end: 1.0, bias: 0.9, ease: false };
+        let (defs, mut i) = one(1.0, 2.0, vec![scale]);
+        step(&defs, &mut i, 0.05);
+        assert!((i.own_radii(&defs)[0] - 11.14).abs() < 0.02, "{:?}", i.own_radii(&defs));
+        let late = Op::RadiusScale { start_scale: 1.0, end_scale: 2.0, start: 0.0, end: 0.5, bias: 0.5, ease: false };
+        let (defs, mut i) = one(1.0, 2.0, vec![late]);
+        step(&defs, &mut i, 0.4);
+        step(&defs, &mut i, 0.3);
+        assert!((i.own_radii(&defs)[0] - 3.6).abs() < 1e-3, "kept at t 0.4's: {:?}", i.own_radii(&defs));
+    }
+
+    /// particles.md 10.4: from the initial colour, eased, held at the
+    /// target after the end; equal times do nothing.
+    #[test]
+    fn color_fade_goes_from_the_initial_colour_10_4() {
+        let fade = Op::ColorFade { color: Vec3::ZERO, start: 0.0, end: 0.5, ease: true };
+        let (defs, mut i) = one(1.0, 5.0, vec![fade, Op::ColorFade { color: Vec3::X, start: 0.3, end: 0.3, ease: true }]);
+        step(&defs, &mut i, 0.25);
+        let c = Instance::color(&defs[0], &i.particles[0]);
+        assert!((c - Vec3::splat(0.5)).length() < 1e-4, "{c}");
+        step(&defs, &mut i, 0.5);
+        assert_eq!(Instance::color(&defs[0], &i.particles[0]), Vec3::ZERO);
+    }
+
+    /// particles.md 10.5: drag 0.1 per 1/30 s: a step of 1/60 after one
+    /// whose motion was (10, 0, 0) moves (9.49, 0, 0).
+    #[test]
+    fn movement_basics_drag_is_per_thirtieth_of_a_second_10_5() {
+        let (mut defs, _) = one(5.0, 5.0, vec![Op::Movement { gravity: Vec3::ZERO, drag: 0.1 }]);
+        defs[0].initializers.push(Init::VelocityNoise { cp: 0, min: Vec3::X * 600.0, max: Vec3::X * 600.0, local: false });
+        let mut i = Instance::new(&defs, 0);
+        created(&mut i, &defs, &[ControlPoint::default()]);
+        let h = 1.0 / 60.0;
+        step(&defs, &mut i, h);
+        let first = i.particles[0].position.x;
+        // Its first step: v h less this step's drag (10.6).
+        assert!((first - 10.0 * 0.9f32.sqrt()).abs() < 1e-3, "{first}");
+        step(&defs, &mut i, h);
+        let second = i.particles[0].position.x - first;
+        assert!((second / first - 0.9487).abs() < 1e-3, "{second} after {first}");
+        assert!((i.particles[0].motion.x * h - second).abs() < 1e-3);
+    }
+
+    /// particles.md 10.7: L0 13.7 with min 32, max 512 is 32; min 32 over
+    /// max 20 with L0 50 is 32 (the minimum wins); the strip is the
+    /// radius wide but never wider than it is long; age 0 draws nothing.
+    #[test]
+    fn a_trail_is_at_least_its_minimum_and_no_wider_than_long_10_7() {
+        let v = Vec3::new(137.0, 0.0, 0.0);
+        assert!((trail_length(v, 0.1, 1.0, 32.0, 512.0, 0.0).unwrap() - 32.0).abs() < 1e-4);
+        assert!((trail_length(Vec3::X * 500.0, 0.1, 1.0, 32.0, 20.0, 0.0).unwrap() - 32.0).abs() < 1e-4);
+        assert_eq!(trail_length(v, 0.1, 0.0, 32.0, 512.0, 0.2), None, "age 0 with a fade-in");
+        assert_eq!(trail_length(v, 0.0, 1.0, 32.0, 512.0, 0.0), None, "no trail length");
+        let width = |radius: f32| {
+            let (mut defs, _) = one(5.0, radius, vec![Op::Movement { gravity: Vec3::ZERO, drag: 0.0 }]);
+            defs[0].initializers.push(Init::VelocityNoise { cp: 0, min: Vec3::X * 137.0, max: Vec3::X * 137.0, local: false });
+            defs[0].initializers.push(Init::TrailLength(Pick::new(0.1, 0.1, 1.0)));
+            defs[0].renderer = Render::Trail { min_length: 32.0, max_length: 512.0, length_fade_in: 0.0 };
+            let mut i = Instance::new(&defs, 0);
+            created(&mut i, &defs, &[ControlPoint::default()]);
+            step(&defs, &mut i, 1.0 / 60.0);
+            let mut out = Vec::new();
+            i.draw(&defs, &|v| v, 1.0, Vec3::new(0.0, 0.0, 10_000.0), &none, &mut out);
+            let Shape::Quad { corners, .. } = out[0].shape else { panic!() };
+            (corners[0].distance(corners[1]), corners[0].distance(corners[3]))
         };
-        assert_eq!(Instance::alpha(&d, &p(0.0)), 0.0);
-        assert!((Instance::alpha(&d, &p(0.125)) - 0.5).abs() < 1e-5);
-        assert_eq!(Instance::alpha(&d, &p(0.4)), 1.0);
-        assert!((Instance::alpha(&d, &p(0.75)) - 0.5).abs() < 1e-5);
-        assert!((Instance::radius(&d, &p(0.5)) - 55.0).abs() < 1e-3);
-        assert!((Instance::color(&d, &p(0.25)) - Vec3::splat(0.75)).length() < 1e-5);
+        let (long, wide) = width(22.0);
+        assert!((long - 32.0).abs() < 1e-3 && (wide - 22.0).abs() < 1e-3, "{long} x {wide}");
+        let (long, wide) = width(50.0);
+        assert!((long - 32.0).abs() < 1e-3 && (wide - 32.0).abs() < 1e-3, "{long} x {wide}");
+    }
+
+    /// particles.md 10.8: the render alpha byte; 0 is not drawn, 1/255 is.
+    #[test]
+    fn a_particle_whose_alpha_byte_is_zero_is_not_drawn_10_8() {
+        let drawn = |alpha: f32| {
+            let (mut defs, _) = one(5.0, 5.0, vec![]);
+            defs[0].initializers.push(Init::Alpha(Pick::new(alpha, alpha, 1.0)));
+            let mut i = Instance::new(&defs, 0);
+            created(&mut i, &defs, &[ControlPoint::default()]);
+            step(&defs, &mut i, 1.0 / 60.0);
+            let mut out = Vec::new();
+            i.draw(&defs, &|v| v, 1.0, Vec3::new(0.0, 0.0, 10_000.0), &none, &mut out);
+            out.first().map(|q| q.alpha)
+        };
+        assert_eq!(drawn(0.0015), None);
+        assert_eq!(drawn(0.0025), Some(1.0 / 255.0));
+    }
+
+    /// particles.md 10.9: the wave (W(0.5) = 1, W(1.25) = -0.75), and the
+    /// field's rate of change: on alpha with R 1.2 at x 0.5 a 1/60 step
+    /// adds 0.02, clamped to 1 (0.99 -> 1); radius isn't clamped.
+    #[test]
+    fn oscillate_scalar_adds_rate_times_the_wave_10_9() {
+        assert!((wave(0.5) - 1.0).abs() < 1e-6);
+        assert!((wave(1.25) + 0.75).abs() < 1e-6);
+        assert!((wave(-0.5) + 1.0).abs() < 1e-6 && (wave(2.5) - 1.0).abs() < 1e-6 && wave(0.0) == 0.0);
+        let osc = |field: u8, rate: f32| Op::Oscillate {
+            field,
+            vector: false,
+            rate: (Vec3::splat(rate), Vec3::splat(rate)),
+            frequency: (Vec3::ONE, Vec3::ONE),
+            proportional: false,
+            start: (0.0, 0.0),
+            end: (1.0, 1.0),
+            start_end_proportional: true,
+            // x = F (M T + phase) = 0.5 at any time.
+            multiplier: 0.0,
+            phase: 0.5,
+        };
+        let run = |op: Op, alpha: f32| {
+            let (mut defs, _) = one(5.0, 5.0, vec![op]);
+            defs[0].initializers.push(Init::Alpha(Pick::new(alpha, alpha, 1.0)));
+            let mut i = Instance::new(&defs, 0);
+            created(&mut i, &defs, &[ControlPoint::default()]);
+            step(&defs, &mut i, 1.0 / 60.0);
+            (i.particles[0].alpha, i.particles[0].radius)
+        };
+        assert_eq!(run(osc(7, 1.2), 0.99).0, 1.0);
+        assert!((run(osc(7, 1.2), 0.5).0 - 0.52).abs() < 1e-5);
+        assert!((run(osc(3, -600.0), 1.0).1 + 5.0).abs() < 1e-3, "not clamped");
+    }
+
+    /// particles.md 10.10: skipped to 0.04, a burst at 0 is made in the
+    /// next step with creation time 0 (aged 0.04 + h), a 0.01 s
+    /// continuous emitter makes nothing, and no initial particles; a
+    /// burst more than 2 s before the skip is cancelled.
+    #[test]
+    fn a_skipped_system_fires_its_burst_late_and_its_short_emitter_never_10_10() {
+        let d = SystemDef {
+            initial_particles: 1,
+            emitters: vec![
+                Emitter::Instantaneously { start: 0.0, count: 4 },
+                Emitter::Continuously { start: 0.0, rate: 3000.0, duration: 0.01 },
+            ],
+            initializers: vec![Init::Lifetime(Pick::new(1.0, 1.0, 1.0))],
+            ..system()
+        };
+        let defs = vec![d];
+        let mut i = Instance::new(&defs, 0);
+        i.skip_to(&defs, 0.04);
+        let h = 1.0 / 60.0;
+        step(&defs, &mut i, h);
+        assert_eq!(i.count(), 4, "the burst only");
+        assert!(i.particles.iter().all(|p| (p.age - (0.04 + h)).abs() < 1e-5), "{}", i.particles[0].age);
+        for _ in 0..10 {
+            step(&defs, &mut i, h);
+        }
+        assert_eq!(i.count(), 4);
+        let mut late = Instance::new(&defs, 0);
+        late.skip_to(&defs, 2.5);
+        step(&defs, &mut late, h);
+        assert_eq!(late.count(), 0, "a burst 2.5 s back is cancelled");
+        // Not skipped: the initial particle in the creation frame.
+        let mut i = Instance::new(&defs, 0);
+        created(&mut i, &defs, &[ControlPoint::default()]);
+        assert_eq!(i.count(), 1);
+        // A late info_particle_system's switch skips it (over 0.01 s).
+        let placed = PlacedSystem { entity: None, position: Vec3::ZERO, rotation: Quat::IDENTITY, system: 0, start_on: true };
+        let mut e = SystemEmitter::new(placed, 1);
+        e.switch(&defs, true, 0.015);
+        assert!(e.instances[0].age > 0.01 && e.instances[0].started);
+    }
+
+    /// `Explosion_Flashup` as its file has it (particles.md 10.1).
+    fn flashup() -> SystemDef {
+        SystemDef {
+            name: "Explosion_Flashup".into(),
+            material: Some(0),
+            max_particles: 45,
+            emitters: vec![Emitter::Continuously { start: 0.0, rate: 3000.0, duration: 0.01 }],
+            initializers: vec![
+                Init::Rotation { initial: 0.0, offset: Pick::new(0.0, 360.0, 1.0) },
+                Init::Lifetime(Pick::new(0.0, 0.2, 1.0)),
+                Init::Radius(Pick::new(1.0, 5.0, 1.0)),
+                Init::Color { a: Vec3::new(191.0, 54.0, 0.0) / 255.0, b: Vec3::new(255.0, 42.0, 0.0) / 255.0, tint: 0.0, cp: 0 },
+                Init::Sphere {
+                    cp: 0,
+                    distance: Pick::new(0.0, 0.0, 1.0),
+                    bias: Vec3::ONE,
+                    bias_abs: Vec3::ZERO,
+                    speed: Pick::new(0.0, 0.0, 1.0),
+                    local_min: Vec3::new(110.0, -840.0, -840.0),
+                    local_max: Vec3::new(920.0, 840.0, 840.0),
+                },
+                Init::Alpha(Pick::new(1.0, 1.0, 1.0)),
+                Init::TrailLength(Pick::new(0.3, 0.4, 1.0)),
+            ],
+            operators: vec![
+                Op::RadiusScale { start_scale: 3.0, end_scale: 11.0, start: 0.0, end: 1.0, bias: 0.9, ease: false },
+                Op::Movement { gravity: Vec3::ZERO, drag: 0.1 },
+                Op::ColorFade { color: Vec3::new(135.0, 51.0, 0.0) / 255.0, start: 0.0, end: 0.7, ease: true },
+                Op::SpinRoll { rate: 212.0 },
+                Op::FadeAndDecay { start_alpha: 0.0, end_alpha: 0.0, fade_in: (0.1, 0.2), fade_out: (0.7, 1.0) },
+            ],
+            renderer: Render::Trail { min_length: 32.0, max_length: 512.0, length_fade_in: 0.2 },
+            ..default()
+        }
+    }
+
+    /// particles.md 10.1, in a blast (no skip): the first emitting step
+    /// of 1/60 makes 30; those whose life is over 10 x their age are at
+    /// full alpha (the fade-in hasn't started); every strip is 32 long
+    /// (the minimum) and min(32, r0 (3 + 8 g(t))) wide. Started by an
+    /// info_particle_system 0.04 s late it never makes one.
+    #[test]
+    fn the_flashup_draws_in_a_blast_and_nothing_when_skipped_10_1() {
+        let defs = vec![flashup()];
+        let cps = [ControlPoint::default()];
+        let mut rng = ParticleRng::new(11);
+        let mut i = Instance::new(&defs, 0);
+        created(&mut i, &defs, &cps);
+        i.step(&defs, &cps, 1.0 / 60.0, &mut rng, &none);
+        assert_eq!(i.serial, 30, "30 made");
+        let full = i.particles.iter().filter(|p| p.life > 10.0 * p.age).count();
+        assert!((5..=20).contains(&full), "{full} at full alpha");
+        for p in &i.particles {
+            let a = Instance::alpha(&defs[0], p);
+            if p.life > 10.0 * p.age {
+                assert_eq!(a, 1.0, "life {} age {}", p.life, p.age);
+            }
+            let t = p.age / p.life;
+            let r = p.radius0 * (3.0 + 8.0 * rational_bias(t, 0.9));
+            assert!((Instance::radius(&defs[0], p) - r).abs() < 1e-3);
+        }
+        let mut out = Vec::new();
+        i.draw(&defs, &|v| v, 1.0, Vec3::new(0.0, 0.0, 10_000.0), &none, &mut out);
+        assert!(out.len() >= 5, "{} drawn", out.len());
+        for q in &out {
+            let Shape::Quad { corners, .. } = q.shape else { panic!() };
+            let long = corners[0].distance(corners[1]);
+            assert!((long - 32.0).abs() < 0.05 && corners[0].distance(corners[3]) <= 32.0 + 1e-3, "{long}");
+        }
+        let mut skipped = Instance::new(&defs, 0);
+        skipped.skip_to(&defs, 0.04);
+        for _ in 0..30 {
+            skipped.step(&defs, &cps, 1.0 / 60.0, &mut rng, &none);
+            assert_eq!(skipped.count(), 0);
+        }
     }
 
     /// `tint_perc` blends the random colour that far toward the light at
@@ -2538,8 +2953,8 @@ mod tests {
         assert!(v1_end.distance(head) < 1e-3, "v = 1 at the head: {v1_end} vs {head}");
         assert!(v0_end.x < head.x - 100.0, "v = 0 back toward the gun: {v0_end}");
         assert!((corners[0].distance(corners[3]) - 2.0).abs() < 1e-3, "2 wide: {corners:?}");
-        // The full width is the radius however short the strip
-        // (particles.md 5.1 step 3: no cap by the length).
+        // The full width is the radius, but no wider than the strip is
+        // long (particles.md 10.7 step 5).
         let mut wide = defs.clone();
         wide[0].radius = 400.0;
         let mut i = Instance::new(&wide, 0);
@@ -2550,7 +2965,7 @@ mod tests {
         let Shape::Quad { corners, .. } = out[0].shape else { panic!() };
         let long = corners[0].distance(corners[1]);
         assert!(long > 100.0 && long < 400.0, "{long}");
-        assert!((corners[0].distance(corners[3]) - 400.0).abs() < 1e-2, "400 wide: {corners:?}");
+        assert!((corners[0].distance(corners[3]) - long).abs() < 1e-2, "as wide as long: {corners:?}");
     }
 
     /// particles.md 5.1's test cases: length = this step's speed x the
@@ -2758,13 +3173,13 @@ mod tests {
             start_on: false,
         };
         let mut e = SystemEmitter::new(placed, 1);
-        e.switch(&defs, true);
-        e.switch(&defs, true);
+        e.switch(&defs, true, 0.0);
+        e.switch(&defs, true, 0.0);
         assert_eq!(e.instances.len(), 1);
-        e.switch(&defs, false);
+        e.switch(&defs, false, 0.0);
         assert!(!e.instances[0].emitting);
         // Started again: a new instance beside the fading one.
-        e.switch(&defs, true);
+        e.switch(&defs, true, 0.0);
         assert_eq!(e.instances.len(), 2);
     }
 
@@ -2825,6 +3240,8 @@ mod tests {
         // Half its life on, 120 from the muzzle: 23 x 1 x 0.7; tint 0.68.
         let mut q = p.clone();
         q.age = 0.3;
+        // What the radius scale writes at half its life (0.4 + 0.6 x 0.5).
+        q.radius = q.radius0 * 0.7;
         q.position = Vec3::new(120.0, 0.0, 0.0);
         Instance::remap(&defs[0], &|n| cps[n], &mut q);
         assert!((Instance::radius(&defs[0], &q) - 16.1).abs() < 1e-3, "{}", Instance::radius(&defs[0], &q));
@@ -2837,6 +3254,7 @@ mod tests {
         at_muzzle.step_with(&defs, &cps, Some(3), 0.01, &mut rng, &none);
         let mut q = at_muzzle.particles[0].clone();
         q.age = 0.0;
+        q.radius = q.radius0 * 0.4;
         assert!((Instance::radius(&defs[0], &q) - 4.6).abs() < 1e-3);
         assert!((Instance::color(&defs[0], &q) - Vec3::new(0.2, 0.2, 1.0)).length() < 1e-5);
         // The point moves: the sprite moves with it (its velocity) and

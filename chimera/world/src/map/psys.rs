@@ -302,8 +302,9 @@ impl Field {
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Op {
-    /// Gravity (units/s²), and drag: the fraction of velocity removed per
-    /// step (run as per 1/60 s: `render::psys::DRAG_STEPS`).
+    /// "Movement Basic" (specs/tf2/particles.md 10.5): gravity
+    /// (units/s²), and drag: the fraction of velocity lost per 1/30 s
+    /// (`render::psys::DRAG_STEPS`), whatever the step.
     Movement {
         gravity: Vec3,
         drag: f32,
@@ -321,23 +322,31 @@ pub enum Op {
         time: Pick,
         proportional: bool,
     },
-    /// Alpha × start→1 over [fade_in], 1→end over [fade_out] (fractions
-    /// of life); dies at the end of its life.
+    /// "Alpha Fade and Decay" (specs/tf2/particles.md 10.2): inside the
+    /// fade-in window (fractions of life) alpha = initial × (start +
+    /// (1 − start) S(s)), inside the fade-out window initial × (1 +
+    /// (end − 1) S(s)) (S the smoothstep; the fade-out wins where they
+    /// overlap); outside both the alpha is left as it is. Dies at the end
+    /// of its life. The loader orders the windows (`fade_windows`).
     FadeAndDecay {
         start_alpha: f32,
         end_alpha: f32,
         fade_in: (f32, f32),
         fade_out: (f32, f32),
     },
-    /// Colour toward `color` between the two fractions of life.
+    /// "Color Fade" (10.4): colour = initial + (`color` − initial) s, s
+    /// the life fraction's place between the two fractions (clamped,
+    /// smoothstepped with `ease`); none when they're equal.
     ColorFade {
         color: Vec3,
         start: f32,
         end: f32,
         ease: bool,
     },
-    /// Radius × lerp(start_scale, end_scale, bias(x)) between the two
-    /// fractions of life.
+    /// "Radius Scale" (10.3): inside [start, end) of life, radius =
+    /// initial × lerp(start_scale, end_scale, g(s)), g the smoothstep with
+    /// `ease`, else the rational bias s / ((1/b − 2)(1 − s) + 1); outside
+    /// it the radius is left as it is.
     RadiusScale {
         start_scale: f32,
         end_scale: f32,
@@ -368,20 +377,26 @@ pub enum Op {
     LockToBone {
         cp: usize,
     },
-    /// "Oscillate Scalar" on `field` (3 radius, 7 alpha): its formula is
-    /// not specified (specs/tf2/effects.md Open questions 17); run as a
-    /// placeholder, each particle drawing a rate in `rate` and a
-    /// frequency in `frequency`: the field changes by rate × sin(2π
-    /// (frequency × `multiplier` × age + `phase`)) a second, between the
-    /// life fractions `start` and `end` (alpha in 0-255 units).
+    /// "Oscillate Scalar" / "Oscillate Vector" (specs/tf2/particles.md
+    /// 10.9) on `field` (scalar: 3 radius, 7 alpha; vector: 0 position, 6
+    /// tint; a scalar uses the vectors' x). Each particle draws a rate R
+    /// and frequency F per component in `rate` and `frequency`, and a
+    /// start and end in `start` and `end` (life fractions with
+    /// `start_end_proportional`, else seconds of age); while it is in
+    /// [start, end) each step adds R h W(x) to the field, x = F M age /
+    /// life + φ (`proportional`) or F (M T + φ) (T the system's clock), W
+    /// the parabolic sine of period 2. Alpha and tint are clamped to 0-1.
     Oscillate {
         field: u8,
-        rate: (f32, f32),
-        frequency: (f32, f32),
+        vector: bool,
+        rate: (Vec3, Vec3),
+        frequency: (Vec3, Vec3),
+        proportional: bool,
+        start: (f32, f32),
+        end: (f32, f32),
+        start_end_proportional: bool,
         multiplier: f32,
         phase: f32,
-        start: f32,
-        end: f32,
     },
     /// Acceleration toward the control point: force / distance^falloff.
     Pull {
@@ -450,6 +465,21 @@ pub enum Op {
     },
 }
 
+/// "Alpha Fade and Decay"'s windows as the library orders them on load
+/// (specs/tf2/particles.md 10.2): an end before its start raised to it,
+/// then the two starts swapped if the fade-in's is after the fade-out's,
+/// likewise the two ends.
+pub fn fade_windows(fade_in: (f32, f32), fade_out: (f32, f32)) -> ((f32, f32), (f32, f32)) {
+    let (mut i, mut o) = ((fade_in.0, fade_in.1.max(fade_in.0)), (fade_out.0, fade_out.1.max(fade_out.0)));
+    if i.0 > o.0 {
+        std::mem::swap(&mut i.0, &mut o.0);
+    }
+    if i.1 > o.1 {
+        std::mem::swap(&mut i.1, &mut o.1);
+    }
+    (i, o)
+}
+
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Render {
     None,
@@ -464,11 +494,12 @@ pub enum Render {
         orientation: i32,
     },
     /// A strip back along the particle's motion over its last step
-    /// (specs/tf2/particles.md 5.1): its length the step's speed x the
+    /// (specs/tf2/particles.md 10.7): its length the step's speed x the
     /// particle's trail length (field 10, s) x min(1, age /
-    /// `length_fade_in`), then clamped to [`min_length`, `max_length`]
-    /// (units); its full width the radius after the radius operators; none
-    /// for a particle that didn't move.
+    /// `length_fade_in`), then at most `max_length` and at least
+    /// `min_length` (units; the minimum wins); its full width the radius
+    /// after the operators, at most the length; none for a particle that
+    /// didn't move or of age 0.
     Trail {
         min_length: f32,
         max_length: f32,

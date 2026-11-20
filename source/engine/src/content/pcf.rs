@@ -179,24 +179,31 @@ fn add_operator(def: &mut SystemDef, list: &str, op: &Element, notes: &mut Vec<S
             time: pick(op, "fade_out_time_min", "fade_out_time_max", "fade_out_time_exp"),
             proportional: op.bool("proportional 0/1"),
         }),
-        ("operators", "alpha fade and decay") => def.operators.push(Op::FadeAndDecay {
-            start_alpha: op.float("start_alpha", 1.0),
-            end_alpha: op.float("end_alpha", 0.0),
-            fade_in: (op.float("start_fade_in_time", 0.0), op.float("end_fade_in_time", 0.5)),
-            fade_out: (op.float("start_fade_out_time", 0.5), op.float("end_fade_out_time", 1.0)),
-        }),
+        ("operators", "alpha fade and decay") => {
+            let (fade_in, fade_out) = crate::map::psys::fade_windows(
+                (op.float("start_fade_in_time", 0.0), op.float("end_fade_in_time", 0.5)),
+                (op.float("start_fade_out_time", 0.5), op.float("end_fade_out_time", 1.0)),
+            );
+            def.operators.push(Op::FadeAndDecay {
+                start_alpha: op.float("start_alpha", 1.0),
+                end_alpha: op.float("end_alpha", 0.0),
+                fade_in,
+                fade_out,
+            });
+        }
         ("operators", "color fade") => def.operators.push(Op::ColorFade {
             color: op.color("color_fade").map_or(Vec3::ONE, |c| c.0),
             start: op.float("fade_start_time", 0.0),
             end: op.float("fade_end_time", 1.0),
-            ease: op.bool("ease_in_and_out"),
+            ease: op.get("ease_in_and_out").is_none() || op.bool("ease_in_and_out"),
         }),
         ("operators", "radius scale") => def.operators.push(Op::RadiusScale {
             start_scale: op.float("radius_start_scale", 1.0),
             end_scale: op.float("radius_end_scale", 1.0),
             start: op.float("start_time", 0.0),
             end: op.float("end_time", 1.0),
-            bias: op.float("scale_bias", 0.5),
+            // 0 is read as 0.5 (particles.md 10.3).
+            bias: Some(op.float("scale_bias", 0.5)).filter(|b| *b != 0.0).unwrap_or(0.5),
             ease: op.bool("ease_in_and_out"),
         }),
         ("operators", "rotation basic") => def.operators.push(Op::RotationBasic),
@@ -288,16 +295,30 @@ fn add_operator(def: &mut SystemDef, list: &str, op: &Element, notes: &mut Vec<S
             key(op, &["length_max", "trail_length_max"], notes),
             key(op, &["length_random_exponent", "trail_length_random_exponent"], notes),
         ))),
-        // A wobble on one field (a placeholder formula: Op::Oscillate).
-        ("operators", "oscillate scalar") => def.operators.push(Op::Oscillate {
-            field: op.int("oscillation field", 0).clamp(0, 255) as u8,
-            rate: (op.float("oscillation rate min", 0.0), op.float("oscillation rate max", 0.0)),
-            frequency: (op.float("oscillation frequency min", 1.0), op.float("oscillation frequency max", 1.0)),
-            multiplier: op.float("oscillation multiplier", 1.0),
-            phase: op.float("oscillation start phase", 0.0),
-            start: op.float("start time min", 0.0),
-            end: op.float("end time max", 1.0),
-        }),
+        // A field's rate of change oscillating (specs/tf2/particles.md 10.9).
+        ("operators", "oscillate scalar" | "oscillate vector") => {
+            let vector = function.ends_with("vector");
+            let pair = |min: &str, max: &str, a: f32, b: f32| {
+                if vector {
+                    (op.vec3(min, Vec3::splat(a)), op.vec3(max, Vec3::splat(b)))
+                } else {
+                    (Vec3::splat(op.float(min, a)), Vec3::splat(op.float(max, b)))
+                }
+            };
+            let flag = |k: &str| op.get(k).is_none() || op.bool(k);
+            def.operators.push(Op::Oscillate {
+                field: op.int("oscillation field", if vector { 0 } else { 7 }).clamp(0, 255) as u8,
+                vector,
+                rate: pair("oscillation rate min", "oscillation rate max", 0.0, 0.0),
+                frequency: pair("oscillation frequency min", "oscillation frequency max", 1.0, 1.0),
+                proportional: flag("proportional 0/1"),
+                start: (op.float("start time min", 0.0), op.float("start time max", 0.0)),
+                end: (op.float("end time min", 1.0), op.float("end time max", 1.0)),
+                start_end_proportional: flag("start/end proportional"),
+                multiplier: op.float("oscillation multiplier", 2.0),
+                phase: op.float("oscillation start phase", 0.5),
+            });
+        }
         ("forces", "pull towards control point") => def.operators.push(Op::Pull {
             cp: cp("control point number"),
             force: op.float("amount of force", 0.0),

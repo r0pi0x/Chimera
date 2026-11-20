@@ -31,8 +31,7 @@
 //! is on the held weapon's boxes at their reference pose relative to the
 //! bone that holds it (its own bones' motion not followed); control
 //! point 0 for others is the player's origin (the weapon entity's in
-//! Source); "Oscillate Scalar" runs a placeholder formula (Open questions
-//! 17, `map::psys::Op::Oscillate`).
+//! Source).
 
 use std::collections::BTreeMap;
 

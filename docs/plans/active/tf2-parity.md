@@ -847,3 +847,31 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   (test `a_rocket_on_a_river_bed_shows_the_water_effect_13`); the cause
   is in drawing it under water (fog on added particles suspected,
   unmeasured).
+- 2026-11-20 (psys-operators, from 16f03b19e's spec): particles.md §10
+  in `render::psys` for every game. Alpha Fade and Decay and Radius
+  Scale write from the initial value inside their windows and leave it
+  outside (the radius by the rational bias, g(0.5) = b; the loader orders
+  the fade windows: `map::psys::fade_windows`); Color Fade from the
+  initial colour, eased by default; Movement Basic's drag per 1/30 s
+  (`DRAG_STEPS` 30) and every operator over the whole step (a particle
+  made in it moves v h); sprite trails at least their minimum (it wins
+  over the maximum), no wider than long, none at age 0; the render
+  alpha byte (0 not drawn); Oscillate Scalar / Vector per §10.9
+  (replacing the placeholder: R h W(x), the parabolic wave, per-particle
+  fixed draws). An info_particle_system's new effect is skipped ahead
+  (`Instance::skip_to`, §10.10, particles_and_smoke.md 2.5) by one
+  server tick (the start time isn't sent): no initial particles, a
+  continuous emitter ended before never emits, a burst fires late.
+  `Explosion_Flashup` draws in blasts (30 made, ~a dozen at full alpha,
+  strips 32 long) and nothing when skipped. Tests `psys::*_10_1` to
+  `*_10_10` (12 cases of the spec's table) and
+  `heavy::particles::the_blast_draws_...` (the install's Flashup).
+  Instructions to step and draw 90 frames: `ExplosionCore_Wall` 10.35M →
+  10.11M, `critgun_weaponmodel_red` 4.26M → 4.58M (the oscillator now
+  runs per spec). Capture (`streaks`, frames 2-10 after the blast, ref |
+  ours | main before this): **neither ours draws the blast at all** in
+  the 40 frames (only the held rocket glow, then the trail's smoke),
+  where pass 8 showed the core flash and embers: a regression on main
+  before this change (same in both builds; `BlastMeasured` comes in
+  both), not yet found. Next: find why the sandbox's rocket blast
+  shows no effect in `streaks.scene`.
