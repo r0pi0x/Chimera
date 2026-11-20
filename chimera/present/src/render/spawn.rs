@@ -631,6 +631,7 @@ fn build_character_assets(
                     let whole = build(&h.model);
                     let own = h.own.as_ref().map_or_else(|| whole.clone(), &mut build);
                     let merged = h.merged.iter().map(|(b, m)| (b.clone(), build(m))).collect();
+                    let turned = h.turned.iter().map(|t| (t.bone.clone(), t.follows.clone(), t.rest, build(&t.model))).collect();
                     (
                         h.key.clone(),
                         HeldParts {
@@ -640,6 +641,7 @@ fn build_character_assets(
                             muzzle: h.muzzle,
                             attachments: h.attachments.clone(),
                             merged,
+                            turned,
                         },
                     )
                 })

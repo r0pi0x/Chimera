@@ -733,6 +733,7 @@ mod tests {
                 merged: Vec::new(),
                 own: None,
                 nose: None,
+                turned: Vec::new(),
             });
         }
         map.kit.nav = Some(Default::default());

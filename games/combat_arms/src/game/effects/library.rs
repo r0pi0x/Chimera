@@ -569,11 +569,16 @@ pub fn tag_surfaces(map: &mut MapData, world: &World) {
 }
 
 /// A sound file from the install, decoded (None: missing, keyed or not a
-/// sound; warned once per file).
+/// sound; warned once per file). Its WAV's own loop point is dropped:
+/// Combat Arms loops a sound only by its own flag (a live sound's
+/// `looping`), and many of its one-shots carry a `cue ` or `smpl` chunk
+/// (a gun's `fire.wav`, reloads, explosions: `dump combat_arms --loops`),
+/// which Chimera's playback would otherwise loop (Source's rule,
+/// specs/source/sound_looping.md).
 pub fn sound_clip(path: &str, mount: &Mount) -> Option<MapSoundClip> {
     match mount.read(path) {
         Ok(b) => match chimera_formats::wav::decode_any(&b) {
-            Ok(c) => Some(c),
+            Ok(c) => Some(MapSoundClip { loop_start: None, ..c }),
             Err(e) => {
                 warn!("Combat Arms sound {path}: {e}");
                 None

@@ -25,9 +25,9 @@
 //! - **The Minigun** (effects.md 3): no per-shot flash; its
 //!   `while_firing` systems (`muzzle_minigun_constant` at `muzzle`,
 //!   `eject_minigunbrass` at `eject_brass`) start when it enters its firing
-//!   state (`Tf2Minigun::playing` the fire loop) and stop emitting when it
-//!   leaves it (`StopParticleSystems`; live particles finish); another
-//!   player's (whose spin this client isn't sent) while its rounds arrive
+//!   state (`Tf2Minigun::state`, another player's from its `HeldState`)
+//!   and stop emitting when it leaves it (`StopParticleSystems`; live
+//!   particles finish); also while another player's rounds arrive
 //!   (`RemoteShot`, `REMOTE_FIRING_HOLD`), turned with its aim.
 //! - **Tracers** (effects.md 6): one counter shared by every bullet drawn
 //!   (`TracerCount`, every gun with a tracer, every shooter): a bullet
@@ -111,7 +111,7 @@ use chimera_sim::weapon::{Inventory, Weapon, WeaponEvent, WeaponEventKind, aim_o
 use super::{
     blast::Tf2Explosion,
     damage::U,
-    minigun::{Loop, Tf2Minigun},
+    minigun::{State as MinigunState, Tf2Minigun},
 };
 use crate::map::{
     ShowLocalBody,
@@ -986,10 +986,9 @@ fn firing_looks(
     mut stop: MessageWriter<StopParticleSystems>,
 ) {
     let t = time.elapsed_secs_f64();
-    // Others' guns: their spin isn't sent to this client (only its own
-    // player's predicted state is), and a bot's loop isn't kept where it
-    // is simulated (the loop is its sounds'), so firing is also a round of
-    // theirs within `REMOTE_FIRING_HOLD`.
+    // Others' guns: their state arrives with what they hold
+    // (`HeldState`), a little after their rounds may; firing is also a
+    // round of theirs within `REMOTE_FIRING_HOLD`.
     for r in remote.read() {
         if let Some(w) = owners.get(r.shooter).ok().and_then(|i| i.active) {
             heard.insert(w, t);
@@ -1004,7 +1003,7 @@ fn firing_looks(
     let mut now = BTreeSet::new();
     for (e, w, gun) in &guns {
         let held = w.owner.and_then(|o| owners.get(o).ok()).is_some_and(|i| i.active == Some(e));
-        if !held || (gun.playing != Loop::Fire && !heard.contains_key(&e)) {
+        if !held || (gun.state != MinigunState::Firing && !heard.contains_key(&e)) {
             continue;
         }
         let Some(systems) = looks.of(w.id).map(|l| &l.while_firing).filter(|s| !s.is_empty()) else { continue };

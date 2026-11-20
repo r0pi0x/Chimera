@@ -58,6 +58,7 @@ fn map() -> MapData {
         muzzle: None,
         attachments: Vec::new(),
         nose: None,
+        turned: Vec::new(),
     }];
     data.gibs = vec![MapGibSet {
         name: "chunks".into(),

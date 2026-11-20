@@ -386,7 +386,7 @@ pub fn canister_models(
     }
     for k in 0..OPEN_FRAMES {
         let cycle = k as f32 / (OPEN_FRAMES - 1) as f32;
-        match props::load_held_posed(materials, LANDED_MODEL_FILE, &landed_key(k, true), &[], Some(("open", cycle))) {
+        match props::load_held_posed(materials, LANDED_MODEL_FILE, &landed_key(k, true), &[], Some(("open", cycle)), &[]) {
             Ok(h) => {
                 let mut spent = h.clone();
                 spent.key = landed_key(k, false);

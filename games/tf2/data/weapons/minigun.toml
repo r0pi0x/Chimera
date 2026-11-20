@@ -1,9 +1,9 @@
-# The Minigun (specs/tf2/weapons.md 1, 6, 7 and its corrections from the
-# SDK): the Heavy's primary; winds up 0.75 s, its first shot 0.1 s later
-# (about 0.85 s after the press), its holder at 110 units/s and unable to
-# jump while it turns; no gameplay wind-down (idle at once on release,
-# 0.2 s after the last shot when firing), only the switch waits for the
-# 1.33 s spool-down; 4 bullets of 9 every 0.105 s (7 ticks), spread 0.08,
+# The Minigun (specs/tf2/minigun.md; weapons.md 1, 6, 7): the Heavy's
+# primary; winds up 0.75 s, its first shot 0.1 s later (tick 57), its
+# holder at 110 units/s and unable to jump while it turns; no gameplay
+# wind-down (idle 0.2 s after the last shot when firing, 0.3 s after
+# attack2 when spun), only the switch waits for the 1.333 s spool-down;
+# empty, it switches to the previous weapon; 4 bullets of 9 every 0.105 s (7 ticks), spread 0.08,
 # 200 rounds and no reload; the rev-up penalty (the 2017 rule): damage
 # 50 % until 0.2 s spun then linear to 100 % at 1 s, spread 1.5x to 1x.
 # `tf2:minigun` runs the spin.
@@ -35,7 +35,7 @@ falloff_step = 1024.0
 hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
 impulse = 0.0
 
-# Its shots' sound is the spin's loop (`tf2:minigun`).
+# No sound per shot: `tf2:minigun` plays one sound by its state.
 [sounds]
 draw = [[0.0, "tf2:Weapon_Minigun.Draw"]]
 
@@ -57,7 +57,8 @@ script = "tf_weapon_minigun"
 wind_up = 0.75
 fire_step = 0.1
 idle_after_fire = 0.2
-spool_down = 1.33
+spin_idle = 0.3
+spool_down = 1.333
 penalty_time = 1.0
 penalty_flat = 0.2
 damage_floor = 0.5
@@ -66,6 +67,7 @@ spun_speed = 110.0
 wind_up_sound = "tf2:Weapon_Minigun.WindUp"
 spin_sound = "tf2:Weapon_Minigun.Spin"
 fire_sound = "tf2:Weapon_Minigun.Fire"
+fire_crit_sound = "tf2:Weapon_Minigun.FireCrit"
 empty_sound = "tf2:Weapon_Minigun.ClipEmpty"
 wind_down_sound = "tf2:Weapon_Minigun.WindDown"
 

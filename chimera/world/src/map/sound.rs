@@ -332,6 +332,10 @@ pub struct StopSound {
     pub by: Option<Entity>,
     pub source: Entity,
     pub entry: String,
+    /// Stopped on this machine only, never sent: a sound each machine
+    /// derives for itself from replicated state (TF2's Minigun,
+    /// specs/tf2/minigun.md 6).
+    pub local: bool,
 }
 
 /// Play the rules' sounds here (and characters' predicted ones).
@@ -771,7 +775,11 @@ pub struct StartSound {
     pub level: Option<SoundLevel>,
     /// Play this clip of the bank (`entry` then only names it).
     pub clip: Option<usize>,
-    /// Loop even without a loop point (from the start).
+    /// Loop even without a loop point (from the start): for games whose
+    /// own data flags a sound looping (Combat Arms', Halo's, music), and
+    /// Source's loops by design (soundscape loops, scrapes, HL2's held
+    /// and flying loops), whose waves carry their own loop points anyway
+    /// (specs/source/sound_looping.md; `dump <game> --loops`).
     pub looping: bool,
     /// Bypass the room (Source's `#` waves).
     pub dry: bool,

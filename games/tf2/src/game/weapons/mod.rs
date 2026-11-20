@@ -380,6 +380,17 @@ impl Plugin for Tf2GunsPlugin {
                 ),
             )
             .add_systems(Predict::Select, (minigun::spin, sticky::charge, sniper::scope).before(SelectWeapons))
+            // Every Minigun's barrel before the state step and its sound
+            // after the tick, once per tick (not in replays).
+            .add_message::<crate::map::PlaySound>()
+            .add_message::<crate::map::StopSound>()
+            .add_systems(
+                FixedUpdate,
+                (
+                    minigun::barrels.before(SelectWeapons),
+                    minigun::sounds.after(chimera_sim::weapon::WeaponFrame).after(crate::core::SimSet::Weapons),
+                ),
+            )
             .add_systems(
                 FixedUpdate,
                 (

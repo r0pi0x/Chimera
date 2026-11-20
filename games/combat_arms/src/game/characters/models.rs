@@ -678,6 +678,7 @@ fn thrown(
         merged: Vec::new(),
         own: None,
         nose: None,
+        turned: Vec::new(),
     })
 }
 
@@ -1256,6 +1257,7 @@ fn held_with_sockets(
             merged: Vec::new(),
             own: None,
             nose: None,
+            turned: Vec::new(),
         },
         sockets,
     ))

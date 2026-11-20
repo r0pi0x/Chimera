@@ -30,7 +30,8 @@
 //!
 //! Its kit (M2b): its guns' view models (the class's arms with the
 //! `c_` weapon bone-merged: `view::load`), held models (the same `c_`
-//! models, bone-merged by the arms' `weapon_bone`) and their projectiles'
+//! models, bone-merged by the arms' `weapon_bone`, a `barrel` apart for the
+//! game to turn: `MapHeldModel::turned`) and their projectiles'
 //! models (`held_kit`); (M3) the classes' bodies and the HUD's look
 //! (`body_kit`: `bodies::add_bodies`, `hud::load`); no decals yet. Its own
 //! particle systems the guns start (`weapons::looks`: the explosion, the
@@ -357,7 +358,9 @@ pub fn add_guns(
                 continue;
             }
         };
-        match props::load_held(materials, &path, gun, &skeleton) {
+        // Its `barrel` (the Minigun's) apart, for others' copies to spin
+        // (minigun.md 5: `view::spin_held_barrels`).
+        match props::load_held_turning(materials, &path, gun, &skeleton, &["barrel"]) {
             Ok(h) => into.held.push(h),
             Err(e) => warnings.push(e),
         }

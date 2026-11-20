@@ -6,7 +6,9 @@
 //! the script reader on fixtures encrypted with throwaway keys
 //! (`scripts`), the guns (`weapons`: M2b's four; `weapons_more`: the
 //! next eight; `melee`: the nine stock melee weapons and the backstab;
-//! `held_guns`: a gun coming into and leaving the hand, its loops and view model),
+//! `held_guns`: a gun coming into and leaving the hand, its loops and view model;
+//! `minigun`: minigun.md's cases, its states, one sound at a time, running dry,
+//! the barrel and what other clients hear),
 //! a gun's impacts taking TF2's own looks on another game's map
 //! (`impacts`), a first-person muzzle flash at the muzzle re-projected
 //! into the world view (`flashes`), the guns' other effects (`effects`:
@@ -48,6 +50,7 @@ mod weapons;
 mod melee;
 mod weapons_more;
 mod held_guns;
+mod minigun;
 mod flames;
 mod blood;
 
@@ -65,5 +68,6 @@ mod heavy {
     #[cfg(feature = "ui")]
     mod particles;
     mod scripts;
+    mod sound_loops;
     mod walk;
 }

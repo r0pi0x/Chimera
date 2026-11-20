@@ -669,6 +669,7 @@ mod tests {
             merged: Vec::new(),
             own: None,
             nose: None,
+            turned: Vec::new(),
         });
     }
 

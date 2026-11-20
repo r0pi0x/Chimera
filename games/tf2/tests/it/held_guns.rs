@@ -1,7 +1,8 @@
 //! A TF2 gun as it comes into and leaves the hand (owner reports from
 //! Ultimate Gun Game, where a kill swaps the gun at once): the Flame
-//! Thrower's and the Minigun's loops stop when the gun is taken (a rung's
-//! swap: `chimera_sim::weapon::held_sounds`), a Minigun given with attack
+//! Thrower's loops stop when the gun is taken (a rung's swap:
+//! `chimera_sim::weapon::held_sounds`), the Minigun's one sound too (its
+//! own: `weapons::minigun::sounds`), a Minigun given with attack
 //! held starts idle and winds up only once drawn (`Inventory::ready`), and
 //! the Flame Thrower's view model leaves its looping `ft_fire` for
 //! `ft_idle` after the release instead of shaking in it
@@ -24,7 +25,7 @@ use chimera_world::{
 };
 use tf2::game::weapons::{
     FLAMETHROWER, MINIGUN,
-    minigun::{SPIN_UP, Spin, Tf2Minigun},
+    minigun::{SPIN_UP, State, Tf2Minigun},
 };
 
 use super::weapons::{holding, run, sim};
@@ -79,7 +80,7 @@ fn the_minigun_loops_stop_when_a_kill_swaps_the_gun() {
     let mut sim = sim();
     let (p, w) = holding(&mut sim, greybox::SPAWNS[0], MINIGUN);
     run(&mut sim, p, 90, |s, _| s.intent(p).fire = true);
-    assert!(matches!(sim.app.world().get::<Tf2Minigun>(w).unwrap().spin, Spin::Spun { .. }), "firing");
+    assert_eq!(sim.app.world().get::<Tf2Minigun>(w).unwrap().state, State::Firing, "firing");
     let mut stops = Stops::new(&sim);
     swap(&mut sim, p, w, FLAMETHROWER);
     let mut stopped = Vec::new();
@@ -88,9 +89,8 @@ fn the_minigun_loops_stop_when_a_kill_swaps_the_gun() {
         sim.ticks(1);
         stopped.extend(stops.read(&sim, p));
     }
-    for entry in ["tf2:Weapon_Minigun.Fire", "tf2:Weapon_Minigun.Spin", "tf2:Weapon_Minigun.WindUp"] {
-        assert!(stopped.iter().any(|e| e == entry), "{entry} stopped: {stopped:?}");
-    }
+    // Its one sound, the fire loop, stops (once; nothing else was on).
+    assert_eq!(stopped, ["tf2:Weapon_Minigun.Fire"], "stopped: {stopped:?}");
     // Death stops them too.
     let mut sim2 = sim_with_minigun_firing();
     let (p2, _) = sim2.1;
@@ -124,17 +124,17 @@ fn a_minigun_given_with_attack_held_starts_idle_and_winds_up_once_drawn() {
     let events = run(&mut sim, p, 30, |s, _| {
         s.intent(p).fire = true;
         let g = s.app.world().get::<Tf2Minigun>(m).unwrap();
-        during.push((g.spin, s.app.world().get::<ViewPose>(m).copied()));
+        during.push((g.state, s.app.world().get::<ViewPose>(m).copied()));
     });
     for (t, (spin, pose)) in during.iter().enumerate() {
-        assert_eq!(*spin, Spin::Idle, "tick {t}: idle while drawn");
+        assert_eq!(*spin, State::Idle, "tick {t}: idle while drawn");
         assert_eq!(*pose, Some(ViewPose(0)), "tick {t}: upright while drawn");
     }
     assert!(!events.iter().any(|(_, k)| matches!(k, WeaponEventKind::Action(SPIN_UP))), "no wind-up during the draw");
     let events = run(&mut sim, p, 30, |s, _| s.intent(p).fire = true);
     let up: Vec<u64> = events.iter().filter(|(_, k)| matches!(k, WeaponEventKind::Action(SPIN_UP))).map(|(t, _)| *t).collect();
     assert_eq!(up.len(), 1, "it winds up once drawn: {events:?}");
-    assert!(matches!(sim.app.world().get::<Tf2Minigun>(m).unwrap().spin, Spin::Up { .. }));
+    assert_eq!(sim.app.world().get::<Tf2Minigun>(m).unwrap().state, State::WindingUp);
 }
 
 /// (name, frames, fps, looping): `c_pyro_arms`' Flame Thrower sequences
@@ -263,10 +263,11 @@ fn the_draw_plays_at_1_34_and_holds_its_last_frame_until_its_length() {
     assert!((held - 1.0).abs() < 0.03, "ft_idle at {held} s, not before");
 }
 
-/// specs/tf2/viewmodel.md 7, test 24: the Minigun's barrel in first
-/// person (`view::spin_barrels`): 0.1 rad/s faster each tick of the
-/// wind-up and the spin up to 20 rad/s (3 s), 0.1 slower each tick after
-/// the release to a stop, turning the `c_minigun`'s own `barrel` bone.
+/// specs/tf2/viewmodel.md 7, test 24, minigun.md 5: the Minigun's barrel
+/// in first person (`view::spin_barrels`): 0.1 rad/s faster each tick of
+/// the wind-up and the spin up to 20 rad/s (3 s), 0.1 slower each tick
+/// from the wind-down (0.2 s after the last shot) to a stop, turning the
+/// `c_minigun`'s own `barrel` bone.
 #[test]
 fn the_minigun_barrel_spins_up_and_down_in_first_person_24() {
     let mut sim = sim();
@@ -300,14 +301,17 @@ fn the_minigun_barrel_spins_up_and_down_in_first_person_24() {
     for _ in 0..260 {
         up.push(speed(&mut sim, true));
     }
-    assert!((up[59] - 6.0).abs() < 0.2, "6 rad/s after 60 ticks: {}", up[59]);
+    // Drawn a tick behind (between the last two ticks): tick 59 shows
+    // update 58's speed.
+    assert!((up[59] - 5.8).abs() < 0.15, "5.8 rad/s 59 ticks on: {}", up[59]);
     assert!((up[259] - 20.0).abs() < 1e-3, "full speed: {}", up[259]);
     let mut down = Vec::new();
     for _ in 0..260 {
         down.push(speed(&mut sim, false));
     }
-    // The wind-down starts some 0.1 s after the release (weapons.md 7).
-    assert!((10.0..=11.0).contains(&down[99]), "half way down about 100 ticks on: {}", down[99]);
+    // The wind-down 0.2 s after the last shot (minigun.md 2.4): 7 to 14
+    // ticks after the release, by where the last shot fell.
+    assert!((10.5..=11.5).contains(&down[99]), "about 11 rad/s 100 ticks on: {}", down[99]);
     assert_eq!(down[259], 0.0, "stopped");
     // Spun with attack2 alone (no firing): the same ramp.
     let mut alt = Vec::new();

@@ -4,7 +4,11 @@
 //! distance low-pass, `Gains::with_cutoff`) and left/right panning toward
 //! the listener, and plays it, pitch as playback speed. A new sound on the
 //! same (source entity, channel) replaces the one playing there; a
-//! `map::StopSound` fades out a source's sound by its entry.
+//! `map::StopSound` fades out a source's sound by its entry. A clip with
+//! a loop point of its own (its WAV's `cue ` or `smpl` chunk: `loops`)
+//! plays to its end, then from that point again, seamlessly, until
+//! stopped or replaced; any other plays once (specs/source/
+//! sound_looping.md: nothing but the file makes a sound loop).
 //!
 //! Voice limits (ours, for the mix: every voice is summed and the output
 //! clips past full scale): a source sounds at most
@@ -134,10 +138,18 @@ impl Playing {
         self.started
     }
     /// Still sounding at `now` (`Time` elapsed, s): its clip hasn't
-    /// ended. Headless, nothing despawns a finished one.
+    /// ended (a loop never does). Headless, nothing despawns a finished
+    /// one.
     pub fn sounding(&self, now: f64) -> bool {
         self.ends > now
     }
+}
+
+/// Whether a clip loops: its own loop point (from its WAV's `cue ` or
+/// `smpl` chunk: `chimera_formats::wav`) lies inside its data. Nothing
+/// else makes a game sound loop (specs/source/sound_looping.md 1, 4).
+pub fn loops(clip: &MapSoundClip) -> bool {
+    clip.loop_start.is_some_and(|l| l < clip.samples.len() / clip.channels.max(1) as usize)
 }
 
 /// The most voices one source sounds at once (every channel and none):
@@ -323,14 +335,17 @@ fn play_sounds(
             commands.entity(e).despawn();
             over -= 1;
         }
-        let once = MapSoundClip {
-            loop_start: None,
-            ..clip.clone()
-        };
+        // A clip loops only by its own loop point (its WAV's `cue ` or
+        // `smpl` chunk, specs/source/sound_looping.md): then it sounds
+        // until stopped or replaced.
         let frames = clip.samples.len() / clip.channels.max(1) as usize;
-        let length = frames as f64 / clip.rate.max(1) as f64 / (pitch as f64 / 100.0);
+        let length = if loops(clip) {
+            f64::INFINITY
+        } else {
+            frames as f64 / clip.rate.max(1) as f64 / (pitch as f64 / 100.0)
+        };
         let gains = Arc::new(Gains::new(left, right).with_send(send).with_cutoff(cutoff));
-        let handle = sources.add(LiveClip::new(once, gains.clone(), hearing.mix.clone()).with_room(&room));
+        let handle = sources.add(LiveClip::new(clip.clone(), gains.clone(), hearing.mix.clone()).with_room(&room));
         let e = commands
             .spawn((
                 AudioPlayer(handle),

@@ -34,9 +34,11 @@
 //! rate before the idle (`DRAW_RATE`, viewmodel.md 6).
 //!
 //! The Minigun's barrel spins in first person (`spin_barrels`,
-//! viewmodel.md 7): toward 20 rad/s while it winds up or is spun, to 0
-//! after, 0.1 rad/s a tick either way, turning the `c_minigun`'s own
-//! `barrel` bone about its axis (`ViewAnimator::bone_rolls`). The
+//! minigun.md 5): the gun's own per-tick barrel angle
+//! (`minigun::Barrel`: toward 20 rad/s while not idle, to 0 after, 0.1
+//! rad/s a tick either way) turns the `c_minigun`'s own `barrel` bone
+//! about its axis (`ViewAnimator::bone_rolls`), and in others' hands the
+//! held model's `barrel` part (`spin_held_barrels`, `map::HeldTurn`). The
 //! Minigun rests in `m_idle`, upright, barrels up, right of centre, and
 //! draws with `m_draw`, no offset (specs/tf2/viewmodel.md, "Why ours shows
 //! a huge, wrongly angled Minigun", 7; a capture of the real game agrees);
@@ -457,49 +459,57 @@ pub fn add_rules(app: &mut App) {
     app.view_anim_rules(super::GAME, rules()).view_motion_rules(super::GAME, MOTION);
     app.init_resource::<super::classes::Classes>()
         .add_systems(Update, view_variants.before(crate::map::DriveAnimation))
-        .add_systems(Update, spin_barrels.after(crate::map::DriveAnimation));
+        .add_systems(Update, (spin_barrels.after(crate::map::DriveAnimation), spin_held_barrels));
 }
 
-/// The Minigun's barrel's top spin in first person, rad/s
-/// (specs/tf2/viewmodel.md 7, `barrel_max_speed`).
-pub const BARREL_MAX_SPEED: f32 = 20.0;
-/// Its spin's change toward the top or 0: 0.1 rad/s a tick (`barrel_accel_step`).
-pub const BARREL_ACCEL: f32 = 0.1 / super::TICK_INTERVAL as f32;
-
-/// Each Minigun's barrel in its holder's view model (viewmodel.md 7):
-/// the spin heads for `BARREL_MAX_SPEED` while the gun winds up or is
-/// spun and for 0 otherwise, by `BARREL_ACCEL`, and the angle it adds up
-/// turns the model's own `barrel` bone about its axis
-/// (`ViewAnimator::bone_rolls`). Per holder, view only.
+/// Each Minigun's barrel in its holder's view model (minigun.md 5): the
+/// gun's own barrel angle (`minigun::Barrel`, stepped once a tick on every
+/// machine), drawn between the last two ticks, turns the model's own
+/// `barrel` bone about its axis (`ViewAnimator::bone_rolls`).
 pub fn spin_barrels(
-    mut holders: Query<(Entity, &Inventory, &mut crate::map::ViewAnimator)>,
+    mut holders: Query<(&Inventory, &mut crate::map::ViewAnimator)>,
     guns: Query<&minigun::Tf2Minigun>,
     models: Option<Res<crate::map::ViewModels>>,
-    time: Res<Time>,
-    mut spins: Local<bevy::platform::collections::HashMap<Entity, (f32, f32)>>,
+    fixed: Res<Time<Fixed>>,
 ) {
-    let dt = time.delta_secs();
-    spins.retain(|e, _| holders.contains(*e));
-    for (e, inv, mut view) in &mut holders {
+    let frac = fixed.overstep_fraction();
+    for (inv, mut view) in &mut holders {
         let Some(gun) = inv.active.and_then(|w| guns.get(w).ok()) else {
-            if spins.remove(&e).is_some() && !view.bone_rolls.is_empty() {
+            if !view.bone_rolls.is_empty() {
                 view.bone_rolls.clear();
             }
             continue;
         };
-        let (speed, angle) = spins.entry(e).or_default();
-        let target = if gun.spin.turning() { BARREL_MAX_SPEED } else { 0.0 };
-        let step = BARREL_ACCEL * dt;
-        *speed = if (target - *speed).abs() <= step { target } else { *speed + step * (target - *speed).signum() };
-        *angle = (*angle + *speed * dt) % std::f32::consts::TAU;
         let barrel = view
             .key
             .as_deref()
             .and_then(|k| models.as_ref()?.get(k))
             .and_then(|m| m.bones.iter().position(|b| b.name.eq_ignore_ascii_case("barrel")));
-        let rolls = barrel.map(|b| vec![(b, *angle)]).unwrap_or_default();
+        let rolls = barrel.map(|b| vec![(b, gun.barrel.drawn(frac))]).unwrap_or_default();
         if view.bone_rolls != rolls {
             view.bone_rolls = rolls;
+        }
+    }
+}
+
+/// Each Minigun's barrel in its holder's hands as others see it
+/// (minigun.md 5): the held model's `barrel` part (`map::HeldTurn`)
+/// turned about its own z by the gun's barrel angle, drawn between ticks.
+pub fn spin_held_barrels(
+    mut parts: Query<(&crate::map::HeldTurn, &mut Transform)>,
+    holders: Query<&Inventory>,
+    guns: Query<&minigun::Tf2Minigun>,
+    fixed: Res<Time<Fixed>>,
+) {
+    let frac = fixed.overstep_fraction();
+    for (turn, mut t) in &mut parts {
+        if !turn.bone.eq_ignore_ascii_case("barrel") {
+            continue;
+        }
+        let angle = holders.get(turn.owner).ok().and_then(|i| i.active).and_then(|w| guns.get(w).ok()).map_or(0.0, |g| g.barrel.drawn(frac));
+        let rotation = turn.rest.rotation * Quat::from_rotation_z(angle);
+        if t.rotation != rotation {
+            t.rotation = rotation;
         }
     }
 }

@@ -2081,6 +2081,7 @@ cargo run --bin dump -- combat_arms --list --filter worlds2
 cargo run --bin dump -- combat_arms --filter worlds2/warehouse.dat --extract
 cargo run --bin dump -- hl2dm                          # gameinfo.txt's search path, then the summary
 cargo run --bin dump -- hl2dm --sequences models/combine_camera/combine_camera.mdl  # also its pose parameters
+cargo run --bin dump -- tf2 --loops --filter sound/weapons/  # WAVs that loop by their own cue/smpl chunk
 cargo run --bin dump -- tf2                            # tf/gameinfo.txt's search path, then the summary
 ```
 
@@ -2561,6 +2562,14 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   scene's `gwait` (game seconds) after `wait_for shot`, with `wait 3`
   between `host_timescale` and `+attack` (a shot in the frame the rate
   changes runs its first 13 ms of effects in one step).
+- Sound timings (`minigun_sounds.tf2`): `sv_soundemitter_trace 1`
+  prints every sound a machine starts and stops (`(cl) EmitSound: Raw
+  wave emitted ...`, `(cl) StopSound: ...`) to `tf/console.log`; the
+  scene steps one tick a frame (`host_framerate 0.015`) and echoes a
+  marker every 5 ticks to place them. A puppet bot is a Heavy with
+  `bot -class heavy` (`heavyweapons` gave a random class). Watch the bot
+  (`spec_mode 5`): another player's Minigun barrel turns only while the
+  client draws it, and without it its wind-down is silent.
 - Stock guns this account doesn't carry are seen through a puppet bot's
   eyes (`bot`, `bot_selectweaponslot`, `spec_player`, then `spec_mode 4`):
   its FOV is 75 (ours must run `fov_desired 75`) and its view model sits

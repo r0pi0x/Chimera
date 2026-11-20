@@ -69,10 +69,10 @@ use crate::{
         vis::ActiveVisibility,
     },
     weapon::{
-        AltModes, HeldGauge, Hitscan, Inventory, SpreadShape, Weapon, WeaponEvent, WeaponEventKind, WeaponRegistry,
+        AltModes, HeldGauge, HeldState, Hitscan, Inventory, SpreadShape, Weapon, WeaponEvent, WeaponEventKind, WeaponRegistry,
         drop::DropRequested,
         grenade::{Detonated, GrenadeEffect, GrenadeKind, Projectile, SmokeCloud, Throwable},
-        remote::{RemoteAction, RemoteShot, shot_flags, show_gauge, show_held},
+        remote::{RemoteAction, RemoteShot, shot_flags, show_gauge, show_held, show_state},
     },
 };
 
@@ -171,7 +171,7 @@ fn weapon_id(world: &World, index: u16) -> Option<&'static str> {
 #[allow(clippy::type_complexity)]
 fn write_held(
     mut q: Query<(Entity, Option<&Inventory>, Option<&mut NetHeld>), With<NetCharacter>>,
-    weapons: Query<(&Weapon, Option<&AltModes>, Option<&Throwable>, Option<&HeldGauge>)>,
+    weapons: Query<(&Weapon, Option<&AltModes>, Option<&Throwable>, Option<&HeldGauge>, Option<&HeldState>)>,
     registry: Res<WeaponRegistry>,
     mut commands: Commands,
 ) {
@@ -180,8 +180,9 @@ fn write_held(
         let now = NetHeld {
             weapon: active.and_then(|(w, ..)| registry.index(w.id)).map(|i| i as u16),
             mode: active.and_then(|(_, m, ..)| m).map_or(0, |m| m.current),
-            primed: active.and_then(|(_, _, t, _)| t).is_some_and(|t| t.primed()),
-            gauge: active.and_then(|(.., g)| g).map_or(0, |g| g.byte()),
+            primed: active.and_then(|(_, _, t, ..)| t).is_some_and(|t| t.primed()),
+            gauge: active.and_then(|(.., g, _)| g).map_or(0, |g| g.byte()),
+            state: active.and_then(|(.., s)| s).map_or(0, |s| s.0),
         };
         match held {
             Some(mut h) => {
@@ -807,6 +808,7 @@ fn apply_held(
             let id = h.weapon.and_then(|i| weapon_id(w, i));
             show_held(w, e, id, h.mode, h.primed);
             show_gauge(w, e, HeldGauge::from_byte(h.gauge));
+            show_state(w, e, HeldState(h.state));
         });
     }
 }

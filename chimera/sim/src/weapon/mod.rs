@@ -1307,6 +1307,15 @@ impl HeldGauge {
     }
 }
 
+/// A held weapon's own state others hear and see, as a game numbers it
+/// (TF2's Minigun: its five states and the crit flag, from which every
+/// machine derives its sounds and barrel spin, specs/tf2/minigun.md 6):
+/// the game writes it on the weapon; the network sends it with what a
+/// character holds (`NetHeld`) and others' copies carry it
+/// (`remote::show_state`).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HeldState(pub u8);
+
 /// A clip that isn't full reloads whenever neither attack is held (TF2's
 /// `cl_autoreload` 1: specs/tf2/weapons.md 4, step 4), as soon as the
 /// weapon may fire again; data: `[magazine] reload_when_idle`.

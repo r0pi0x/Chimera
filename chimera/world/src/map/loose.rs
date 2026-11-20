@@ -242,6 +242,7 @@ mod tests {
             muzzle: None,
             attachments: Vec::new(),
             nose: None,
+            turned: Vec::new(),
         };
         let a = asset(&held, Transform::from_scale(Vec3::splat(0.0254)));
         assert!((a.half - Vec3::new(0.508, 0.0508, 0.0254)).length() < 1e-5);
@@ -270,7 +271,7 @@ mod tests {
         let held = |key: &str| {
             let mut model = MapModel::default();
             model.meshes.push(MapMesh { positions: vec![[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]], ..default() });
-            MapHeldModel { merged: Vec::new(), own: None, key: key.into(), model, bone: String::new(), muzzle: None, attachments: Vec::new(), nose: None }
+            MapHeldModel { merged: Vec::new(), own: None, key: key.into(), model, bone: String::new(), muzzle: None, attachments: Vec::new(), nose: None, turned: Vec::new() }
         };
         let mut data = crate::map::MapData::default();
         data.kit.characters = vec![body("cs_source", 0.0254), body("halo_ce", 3.0)];

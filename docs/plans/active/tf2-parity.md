@@ -128,6 +128,50 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Log
 
+### The Minigun's states, sounds and barrel; sounds loop by their WAV (tf2-minigun, 2026-11-20)
+
+From specs/tf2/minigun.md (T16) and specs/source/sound_looping.md:
+
+- **Looping, every game** (`audio::sound`): a game sound keeps its
+  clip's own loop point (the WAV's `cue ` or `smpl` chunk, read by
+  `chimera_formats::wav`) and plays on, wrapping seamlessly, until
+  stopped or replaced; before, every `PlaySound` was played once with the
+  loop removed, so the Minigun's 4.0 s fire loop went silent after 4 s
+  and its empty click played once. `dump <game> --loops` lists which
+  WAVs of an install loop by their chunks.
+- **The Minigun** (`weapons::minigun`): the five states stepped as 2.1
+  orders it (attack2 then attack, each with its own next time; the empty
+  step; the wind-down at `idle_at`): first shot at tick 57, a released
+  wind-up completes, a released spin idles 0.3 s on, firing 0.2 s after
+  the last shot; dry while attack or attack2 is held; attack2 refused
+  when empty; the empty auto-switch to the previous weapon after the
+  1.333 s spool-down; an empty Minigun `Unselectable`.
+- **One sound at a time** (`minigun::sounds`), derived on every machine
+  from the gun's state (its own player's predicted, others' from
+  `HeldState`, a byte in `NetHeld`: `net69`); the server sends none. The
+  wind-up is cut by the state change at 0.75 s, the wind-down when the
+  barrel stops (`StopSound::local`: never sent). The Minigun no longer
+  uses `HeldSounds` (its sound system stops what it played when the gun
+  leaves the hand, is removed or its holder dies; a put-away gun's
+  wind-down plays on).
+- **The barrel** (`minigun::Barrel`): per tick on every machine before
+  the state step, 0.1 rad/s toward 20; the view model reads it
+  (`view::spin_barrels`), and others' held models now spin too: the
+  held `c_minigun`'s `barrel` part is kept apart
+  (`props::load_held_turning`, `MapHeldModel::turned`, drawn as a
+  `map::HeldTurn`) and turned by `view::spin_held_barrels`.
+- Checked against real TF2 (`tools/tf2ref/scenes/minigun_sounds.tf2`,
+  `sv_soundemitter_trace 1`, a puppet Heavy holding attack 200 ticks,
+  watched in third person, markers every 5 ticks): the wind-up at 0,
+  cut with the fire loop starting in ticks 50-54, the fire loop (started
+  once) cut and the wind-down started in 210-214, the wind-down cut in
+  410-414; ours (tests/it/minigun.rs cases 1-2): 0, 50, 211, 411. Not
+  watched, the bot's wind-down was silent (its barrel unturned).
+- Left: the crit loop never plays (crits off); the owner's own
+  spin-release (Open question 1) and wind-down cut (Open question 2)
+  unmeasured; the barrel is drawn a tick behind (between the last two
+  ticks).
+
 ### First person and movement (tf2-fp, 2026-11-19)
 
 Tools (scratch, not in the repo): a per-tick logger of the listen

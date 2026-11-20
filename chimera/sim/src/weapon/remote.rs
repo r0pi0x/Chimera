@@ -19,8 +19,9 @@
 //!   character (HL2:DM, specs/hl2dm/effects_sounds.md 1). A round of a
 //!   weapon's `AltShot` (mode 1 on a weapon without `AltModes`) is drawn
 //!   with that shot's pellets (the shotgun's double shot: 12).
-//! - **What they show of it** (`show_gauge`): a weapon's `HeldGauge`
-//!   (TF2's rifle charge) on their copy.
+//! - **What they show of it** (`show_gauge`, `show_state`): a weapon's
+//!   `HeldGauge` (TF2's rifle charge) and `HeldState` (TF2's Minigun's
+//!   state, its sounds and barrel derived from it here) on their copy.
 //! - **What else they do** (`RemoteAction`): reloads, swings and throws,
 //!   for their bodies' animations.
 //!
@@ -33,7 +34,7 @@
 use bevy::prelude::*;
 
 use super::{
-    AltModes, AltShot, DamageEffect, HeldGauge, Hitscan, Inventory, Penetration, SpreadShape, Weapon, WeaponEvent, WeaponEventKind,
+    AltModes, AltShot, DamageEffect, HeldGauge, HeldState, Hitscan, Inventory, Penetration, SpreadShape, Weapon, WeaponEvent, WeaponEventKind,
     WeaponSounds, deliver, grenade::Throwable,
 };
 use crate::core::SimClock;
@@ -160,6 +161,15 @@ pub fn show_gauge(world: &mut World, character: Entity, gauge: HeldGauge) {
             e.insert(gauge);
         }
         None => {}
+    }
+}
+
+/// What `character` holds here shows `state` (`HeldState`: the weapon's
+/// own state others hear and see), when it holds a weapon that has one.
+pub fn show_state(world: &mut World, character: Entity, state: HeldState) {
+    let Some(w) = world.get::<Inventory>(character).and_then(|i| i.active) else { return };
+    if let Some(mut s) = world.get_mut::<HeldState>(w) {
+        s.set_if_neq(state);
     }
 }
 

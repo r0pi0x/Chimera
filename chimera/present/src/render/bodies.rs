@@ -3,7 +3,8 @@
 //! a dead character's body handed over to its ragdoll. What is drawn is
 //! the simulation's own state (`map::bodies`: the character's team,
 //! `BodyName` and class pick the model, `BodySkin` its skin family, `BodyNumber` its body parts,
-//! `Held` the held model; a
+//! `Held` the held model (its parts on bones of their own as `HeldTurn`s a
+//! game turns: TF2's Minigun barrel); a
 //! `map::ragdoll::Ragdoll` takes the body over); these systems fulfil it,
 //! and a server without rendering leaves it undrawn.
 //!
@@ -127,6 +128,9 @@ pub struct HeldParts {
     /// Its attachments on `bone` (`MapHeldModel::attachments`).
     pub attachments: Vec<(String, Transform)>,
     pub merged: Vec<(String, Vec<(Handle<Mesh>, Handle<PropMaterial>)>)>,
+    /// Parts on bones of their own a game turns (`MapHeldModel::turned`):
+    /// the bone, the skeleton bone it follows, its rest there, its meshes.
+    pub turned: Vec<(String, String, Transform, Vec<(Handle<Mesh>, Handle<PropMaterial>)>)>,
 }
 
 /// What held models added after the map spawned (`map::LateHeldModels`)
@@ -254,6 +258,7 @@ pub fn build_late_held(
             let whole = build(&h.model);
             let own_parts = h.own.as_ref().map_or_else(|| whole.clone(), &mut build);
             let merged = h.merged.iter().map(|(b, m)| (b.clone(), build(m))).collect();
+            let turned = h.turned.iter().map(|t| (t.bone.clone(), t.follows.clone(), t.rest, build(&t.model))).collect();
             let parts = HeldParts {
                 bone: h.bone.clone(),
                 whole,
@@ -261,6 +266,7 @@ pub fn build_late_held(
                 muzzle: h.muzzle,
                 attachments: h.attachments.clone(),
                 merged,
+                turned,
             };
             (parts, base.root.map(|root| crate::map::loose::asset(&h, root)))
         });
@@ -856,6 +862,27 @@ pub fn attach_held(
                     Visibility::Inherited,
                     ChildOf(at),
                     probe_lit::ProbeLit::new(lit.clone(), Vec3::ZERO),
+                ))
+                .with_children(|m| {
+                    for ((mesh, _), material) in list.iter().zip(lit) {
+                        m.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material)));
+                    }
+                })
+                .id();
+            merged.push(part);
+        }
+        // Parts on bones of their own a game turns (`map::HeldTurn`),
+        // on the joint they follow at their rest.
+        for (bone, follows, rest, list) in parts.turned.iter().filter(|_| !lacks) {
+            let Some(at) = joint_of(follows) else { continue };
+            let lit = instance(list);
+            let part = commands
+                .spawn((
+                    *rest,
+                    Visibility::Inherited,
+                    ChildOf(at),
+                    probe_lit::ProbeLit::new(lit.clone(), Vec3::ZERO),
+                    HeldTurn { owner: character, bone: bone.clone(), rest: *rest },
                 ))
                 .with_children(|m| {
                     for ((mesh, _), material) in list.iter().zip(lit) {
@@ -1501,6 +1528,7 @@ mod late_held_tests {
             merged: Vec::new(),
             own: None,
             nose: None,
+            turned: Vec::new(),
         };
         let texture = MapTexture {
             name: "gun.dtx".into(),

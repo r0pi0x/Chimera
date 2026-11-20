@@ -50,6 +50,7 @@ fn gun(key: &str, other: &str) -> MapHeldModel {
         merged: vec![("pelvis".into(), model(1)), (other.into(), model(1))],
         own: Some(model(1)),
         nose: None,
+        turned: Vec::new(),
     }
 }
 

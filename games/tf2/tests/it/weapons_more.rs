@@ -559,6 +559,7 @@ fn a_kept_gun_keeps_its_projectiles_model() {
             merged: Vec::new(),
             own: None,
             nose: None,
+            turned: Vec::new(),
         };
         let kit = GameKit { held: vec![held(gun), held(key)], ..Default::default() };
         let kept = kit.stay(&[gun], true);

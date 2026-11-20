@@ -166,6 +166,7 @@ impl TextureRefs for MapHeldModel {
     fn texture_refs(&mut self, f: &mut dyn FnMut(Ref, &mut usize)) {
         self.model.texture_refs(f);
         self.merged.iter_mut().for_each(|(_, m)| m.texture_refs(f));
+        self.turned.iter_mut().for_each(|t| t.model.texture_refs(f));
         if let Some(m) = &mut self.own {
             m.texture_refs(f);
         }

@@ -192,6 +192,7 @@ mod tests {
                 muzzle: None,
                 attachments: Vec::new(),
                 merged: Vec::new(),
+                turned: Vec::new(),
             },
         );
         app.insert_resource(HeldAssets(held));
@@ -234,6 +235,7 @@ mod tests {
             muzzle: None,
             attachments: Vec::new(),
             merged: Vec::new(),
+            turned: Vec::new(),
         };
         app.world_mut().resource_mut::<HeldAssets>().0.insert("game:sticky".into(), parts);
         app.update();

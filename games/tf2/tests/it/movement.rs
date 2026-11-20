@@ -423,8 +423,8 @@ fn the_landing_rolls_the_view_but_a_scout_only_above_580_38() {
 }
 
 /// 23: the Heavy spinning the Minigun (attack2) moves at 110; released
-/// once spun, 230 again at once (no gameplay wind-down: the corrections
-/// from the SDK).
+/// once spun, 230 again 0.3 s later (no gameplay wind-down; the spin
+/// idles 20 ticks after the release: specs/tf2/minigun.md 2.4).
 #[test]
 fn the_spun_heavy_moves_at_110_23() {
     let mut me = Player::holding(MINIGUN);
@@ -436,8 +436,10 @@ fn the_spun_heavy_moves_at_110_23() {
     me.sim.seconds(1.0);
     assert!((me.speed() - 110.0).abs() < TOL, "spun {}", me.speed());
     me.intent().secondary = false;
+    me.sim.ticks(19);
+    assert_eq!(me.max(), 110.0, "still spun 19 ticks on");
     me.sim.ticks(2);
-    assert_eq!(me.max(), 230.0, "the speed back on release");
+    assert_eq!(me.max(), 230.0, "the speed back 0.3 s after the release");
     me.sim.seconds(1.0);
     assert!((me.speed() - 230.0).abs() < TOL, "after release {}", me.speed());
 }

@@ -1019,6 +1019,33 @@ pub struct MapHeldModel {
     /// (`loose::LooseAsset::nose`). None: not known (it then flies with
     /// the shown frame's −Z first).
     pub nose: Option<Vec3>,
+    /// Parts on bones of its own that a game turns while held (TF2's
+    /// Minigun `barrel`, specs/tf2/minigun.md 5), out of `own`; `model`
+    /// keeps them (a loose one, or one held whole).
+    #[serde(default)]
+    pub turned: Vec<HeldTurned>,
+}
+
+/// A held model's part on a bone of its own (`MapHeldModel::turned`): its
+/// meshes in that bone's frame, the bone at `rest` in the frame of the
+/// skeleton's bone `follows` (the one it hangs from). Drawn as a
+/// `HeldTurn` the game turns about the bone's own z.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct HeldTurned {
+    pub bone: String,
+    pub follows: String,
+    pub rest: Transform,
+    pub model: MapModel,
+}
+
+/// A drawn held part on a bone of its own (`HeldTurned`), on the joint it
+/// follows, at `rest` until its game turns it (TF2's Minigun barrel:
+/// `tf2::game::view::spin_held_barrels`); `owner` the character holding it.
+#[derive(bevy::prelude::Component, Clone, Debug)]
+pub struct HeldTurn {
+    pub owner: bevy::prelude::Entity,
+    pub bone: String,
+    pub rest: Transform,
 }
 
 /// One bone of a character skeleton, in its reference pose relative to

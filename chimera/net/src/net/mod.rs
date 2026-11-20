@@ -272,7 +272,7 @@ pub const PROTOCOL_ID: u64 = 0x4C55_434B_4552_5059;
 /// This build's network version. A server refuses clients of another
 /// version. Bump the suffix when the protocol changes in a way the
 /// replicon protocol hash can't see (a field added to a message).
-pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net68");
+pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net69");
 
 /// What a host's `changelevel` is in this app beyond a new map
 /// (`host_changelevel`): set by an app part (`minigame_net`'s, a party
@@ -856,7 +856,8 @@ pub struct NetHold {
 /// What a character holds, for others to draw (`weapons`): the active
 /// weapon's registry index (`weapon::WeaponRegistry::index`), its
 /// `AltModes` mode (a silencer on, a scope up), whether a grenade's pin is
-/// out and its `HeldGauge` (0-255: TF2's rifle charge, for its laser dot).
+/// out, its `HeldGauge` (0-255: TF2's rifle charge, for its laser dot) and
+/// its `HeldState` (TF2's Minigun's state, for its sounds and barrel).
 /// Written by the server after each tick.
 #[derive(Component, Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct NetHeld {
@@ -864,6 +865,8 @@ pub struct NetHeld {
     pub mode: u8,
     pub primed: bool,
     pub gauge: u8,
+    /// The weapon's own state (`weapon::HeldState`).
+    pub state: u8,
 }
 
 /// Something small the server simulates and clients draw from snapshots

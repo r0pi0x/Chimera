@@ -1,6 +1,7 @@
 //! Sounds a weapon makes only while it is in its holder's hands (any
-//! game): a gun's loops (TF2's Minigun spinning and firing, its Flame
-//! Thrower's flame) name their entries in `HeldSounds` on the weapon, and
+//! game): a gun's loops (TF2's Flame Thrower's flame; its Minigun keeps
+//! its own one sound on every machine instead) name their entries in
+//! `HeldSounds` on the weapon, and
 //! when the weapon stops being its living holder's drawn one, for any
 //! reason (switched away, dropped, the holder dead: `stop_out_of_hand`;
 //! taken by a gun game's rung swap, stripped, despawned: `stop_on_remove`),
@@ -36,7 +37,7 @@ impl HeldSounds {
 
     fn stop(&self, holder: Entity, stops: &mut MessageWriter<StopSound>) {
         for entry in &self.entries {
-            stops.write(StopSound { by: Some(holder), source: holder, entry: entry.clone() });
+            stops.write(StopSound { by: Some(holder), source: holder, entry: entry.clone(), local: false });
         }
     }
 }

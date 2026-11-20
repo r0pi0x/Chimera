@@ -762,7 +762,6 @@ fn follow_spin(
     >,
     guns: Query<&super::weapons::minigun::Tf2Minigun>,
 ) {
-    use super::weapons::minigun::Spin;
     for (drawn, sim, inv) in &mut bodies {
         if drawn.is_none() && sim.is_none() {
             continue;
@@ -770,7 +769,7 @@ fn follow_spin(
         let spun = inv
             .and_then(|i| i.active)
             .and_then(|w| guns.get(w).ok())
-            .is_some_and(|g| matches!(g.spin, Spin::Up { .. } | Spin::Spun { .. }));
+            .is_some_and(|g| g.state.turning());
         if let Some(mut a) = drawn
             && a.spun != spun
         {

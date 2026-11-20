@@ -165,7 +165,7 @@ fn a_stop_fades_one_sources_entry_only() {
     sim.app.world_mut().write_message(shot(Some(a), Some(2)));
     sim.app.update();
     assert_eq!((sounding(&mut sim, Some(a)), sounding(&mut sim, Some(b))), (2, 1));
-    sim.app.world_mut().write_message(StopSound { by: None, source: a, entry: "TEST.LOOP".into() });
+    sim.app.world_mut().write_message(StopSound { by: None, source: a, entry: "TEST.LOOP".into(), local: false });
     sim.app.update();
     assert_eq!((sounding(&mut sim, Some(a)), sounding(&mut sim, Some(b))), (1, 1));
     let w = sim.app.world_mut();

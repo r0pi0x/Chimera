@@ -681,7 +681,20 @@ pub fn load_held(
     key: &str,
     skeleton: &[crate::map::MapBone],
 ) -> Result<crate::map::MapHeldModel, String> {
-    load_held_posed(materials, path, key, skeleton, None)
+    load_held_posed(materials, path, key, skeleton, None, &[])
+}
+
+/// `load_held`, the parts on its own bones named in `turned` (none of
+/// the skeleton's) kept apart for the game to turn
+/// (`MapHeldModel::turned`: TF2's Minigun `barrel`).
+pub fn load_held_turning(
+    materials: &mut MaterialLoader,
+    path: &str,
+    key: &str,
+    skeleton: &[crate::map::MapBone],
+    turned: &[&str],
+) -> Result<crate::map::MapHeldModel, String> {
+    load_held_posed(materials, path, key, skeleton, None, turned)
 }
 
 /// `load_held`, its meshes still at a frame of one of its sequences
@@ -694,6 +707,7 @@ pub fn load_held_posed(
     key: &str,
     skeleton: &[crate::map::MapBone],
     pose: Option<(&str, f32)>,
+    turned: &[&str],
 ) -> Result<crate::map::MapHeldModel, String> {
     let (model, _) = load_model(materials, path)?;
     let bytes = materials.read(path).ok_or_else(|| format!("{path}: not found"))?;
@@ -744,9 +758,14 @@ pub fn load_held_posed(
     let mut merge_bone: Vec<Option<usize>> = Vec::with_capacity(mdl.bones.len());
     for (k, b) in mdl.bones.iter().enumerate() {
         let shared = skeleton.iter().any(|s| s.name.eq_ignore_ascii_case(&b.name));
+        // A bone of its own the game turns: its part apart.
+        let turns = !shared && !skeleton.is_empty() && turned.iter().any(|t| t.eq_ignore_ascii_case(&b.name));
         let parent = usize::try_from(b.parent).ok().filter(|p| *p < k);
-        merge_bone.push(if shared { Some(k) } else { parent.and_then(|p| merge_bone[p]) });
+        merge_bone.push(if shared || turns { Some(k) } else { parent.and_then(|p| merge_bone[p]) });
     }
+    let is_turned = |b: usize| mdl.bones.get(b).is_some_and(|x| turned.iter().any(|t| t.eq_ignore_ascii_case(&x.name)))
+        && !skeleton.iter().any(|s| s.name.eq_ignore_ascii_case(&mdl.bones[b].name));
+    let mut turned_parts: Vec<(usize, crate::map::MapModel)> = Vec::new();
     let follows = |joint: u16| merge_bone.get(joint as usize).copied().flatten().unwrap_or(i);
     let mut own = crate::map::MapModel::default();
     let mut merged: Vec<(usize, crate::map::MapModel)> = Vec::new();
@@ -773,6 +792,14 @@ pub fn load_held_posed(
             }
             if b == i {
                 own.meshes.push(part);
+            } else if is_turned(b) {
+                match turned_parts.iter_mut().find(|(g, _)| *g == b) {
+                    Some((_, m)) => m.meshes.push(part),
+                    None => turned_parts.push((b, crate::map::MapModel {
+                        meshes: vec![part],
+                        ..default()
+                    })),
+                }
             } else {
                 match merged.iter_mut().find(|(g, _)| *g == b) {
                     Some((_, m)) => m.meshes.push(part),
@@ -811,15 +838,32 @@ pub fn load_held_posed(
         .find(|(n, _)| n.eq_ignore_ascii_case("muzzle_flash"))
         .or_else(|| attachments.first())
         .map(|(_, t)| *t);
+    // Each turned part at its rest in the frame of the skeleton bone it
+    // hangs from (its nearest shared ancestor, else the held bone).
+    let turned: Vec<crate::map::HeldTurned> = turned_parts
+        .into_iter()
+        .map(|(b, model)| {
+            let parent = usize::try_from(mdl.bones[b].parent).ok().filter(|p| *p < b);
+            let f = parent.and_then(|p| merge_bone[p]).unwrap_or(i);
+            let at = |k: usize| global.get(k).map_or(Mat4::IDENTITY, |(q, p)| Mat4::from_rotation_translation(*q, *p));
+            crate::map::HeldTurned {
+                bone: mdl.bones[b].name.clone(),
+                follows: mdl.bones[f].name.clone(),
+                rest: Transform::from_matrix(at(f).inverse() * at(b)),
+                model,
+            }
+        })
+        .collect();
     Ok(crate::map::MapHeldModel {
         key: key.to_string(),
         model: held,
         bone: bone.name.clone(),
         muzzle,
         attachments,
-        own: (!merged.is_empty()).then_some(own),
+        own: (!merged.is_empty() || !turned.is_empty()).then_some(own),
         merged: merged.into_iter().map(|(b, m)| (mdl.bones[b].name.clone(), m)).collect(),
         nose: Some(nose_in(materials, path, &global, i, to_bone)),
+        turned,
     })
 }
 

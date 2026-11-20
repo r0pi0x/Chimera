@@ -47,6 +47,8 @@ usage: dump <game> [options]
   --ice-probe          tf2: which ICE level (thin, ice) decrypts scripts/tf_weapon_rocketlauncher.ctx
                        with the local key (CHIMERA_TF2_CTX_KEY or [games.tf2.keys.ctx]), and how many
                        of the install's .ctx scripts decrypt at the configured level
+  --loops              every .wav (filtered) whose own cue or smpl chunk makes it loop
+                       (specs/source/sound_looping.md): its loop start and length; then counts
   --filter <text>      only paths containing <text> (case-insensitive)
   --extract            write the (filtered) files to --out
   --out <dir>          extraction folder (default: per-user data dir; never inside the repo)
@@ -55,6 +57,7 @@ usage: dump <game> [options]
 struct Args {
     game: String,
     list: bool,
+    loops: bool,
     archives: bool,
     extract: bool,
     filter: Option<String>,
@@ -77,6 +80,7 @@ fn parse() -> Result<Args, String> {
     let mut a = Args {
         game,
         list: false,
+        loops: false,
         archives: false,
         extract: false,
         filter: None,
@@ -93,6 +97,7 @@ fn parse() -> Result<Args, String> {
         let mut value = || it.next().ok_or(format!("{flag}: missing value"));
         match flag.as_str() {
             "--list" => a.list = true,
+            "--loops" => a.loops = true,
             "--archives" => a.archives = true,
             "--extract" => a.extract = true,
             "--filter" => a.filter = Some(value()?.to_lowercase()),
@@ -593,6 +598,10 @@ fn report(args: &Args, mount: &Mount, locked: &[String]) -> Result<(), String> {
         }
     }
 
+    if args.loops {
+        loops(mount, &entries);
+    }
+
     let mut by_ext: BTreeMap<String, (usize, u64)> = BTreeMap::new();
     for (e, _) in &entries {
         let ext = e.path.rsplit_once('.').map(|(_, x)| x).unwrap_or("(none)").to_string();
@@ -646,6 +655,25 @@ fn report(args: &Args, mount: &Mount, locked: &[String]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Each WAV that loops by its own chunks (`--loops`): loop start, length.
+fn loops(mount: &Mount, entries: &[(chimera_core::mount::Entry, usize)]) {
+    let (mut wavs, mut looping, mut failed) = (0, 0, 0);
+    for (e, _) in entries.iter().filter(|(e, _)| e.path.ends_with(".wav")) {
+        wavs += 1;
+        let Some(clip) = mount.read(&e.path).ok().and_then(|b| chimera_world::map::sound::decode_clip(&b).ok()) else {
+            failed += 1;
+            continue;
+        };
+        let frames = clip.samples.len() / clip.channels.max(1) as usize;
+        if let Some(start) = clip.loop_start.filter(|s| *s < frames) {
+            looping += 1;
+            let rate = clip.rate.max(1) as f64;
+            println!("loop {:>9} of {:>9} frames ({:.3} s of {:.3} s)  {}", start, frames, start as f64 / rate, frames as f64 / rate, e.path);
+        }
+    }
+    println!("{wavs} wav files, {looping} loop by their own chunks, {failed} unreadable");
 }
 
 /// The extraction folder. Refuses anything inside this repository, so game

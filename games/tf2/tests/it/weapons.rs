@@ -201,31 +201,30 @@ fn minigun_spins_up_fires_every_7_ticks_and_ramps_13_14_33() {
     assert!(world.get::<HolsterLocked>(w).is_some());
 }
 
-/// 7.1 and the corrections from the SDK, tests 35 and 36: no gameplay
-/// wind-down. Let go of attack2 while spun: idle in play at once (the
-/// speed back, a jump works the next tick), only the switch waits for the
-/// 1.33 s spool-down.
+/// 7.1 (corrected by minigun.md), tests 35 and 36: no gameplay
+/// wind-down. Let go of attack2 while spun: idle in play 0.3 s later
+/// (20 ticks: the speed back, a jump works), only the switch waits for
+/// the 1.333 s spool-down.
 #[test]
-fn minigun_stops_at_once_and_only_the_switch_waits_35_36() {
+fn minigun_stops_0_3_s_after_attack2_and_only_the_switch_waits_35_36() {
     let mut sim = sim();
     let (p, w) = holding(&mut sim, greybox::SPAWNS[0], MINIGUN);
     run(&mut sim, p, 80, |s, _| s.intent(p).secondary = true);
-    assert!(sim.app.world().get::<Tf2Minigun>(w).unwrap().spin.turning());
+    assert!(sim.app.world().get::<Tf2Minigun>(w).unwrap().state.turning());
+    run(&mut sim, p, 19, |s, _| s.intent(p).secondary = false);
+    assert_eq!(sim.app.world().get::<Weapon>(w).unwrap().max_speed, Some(110.0 * U), "still slowed 19 ticks on");
+    run(&mut sim, p, 1, |_, _| {});
+    assert_eq!(sim.app.world().get::<Weapon>(w).unwrap().max_speed, None, "the speed back 20 ticks on");
     let mut rose = false;
-    run(&mut sim, p, 2, |s, k| {
-        s.intent(p).secondary = false;
-        s.intent(p).jump = k == 1;
-    });
-    assert_eq!(sim.app.world().get::<Weapon>(w).unwrap().max_speed, None, "the speed back at once");
-    run(&mut sim, p, 10, |s, _| {
-        s.intent(p).jump = false;
+    run(&mut sim, p, 10, |s, k| {
+        s.intent(p).jump = k == 0;
         rose |= s.velocity(p).y > 0.5;
     });
-    assert!(rose, "a jump right after the release");
+    assert!(rose, "a jump once idle");
     assert!(sim.app.world().get::<HolsterLocked>(w).is_some(), "the switch waits for the spool-down");
     run(&mut sim, p, 90, |_, _| {});
     assert!(sim.app.world().get::<HolsterLocked>(w).is_none());
-    assert_eq!(sim.app.world().get::<Tf2Minigun>(w).unwrap().spin, weapons::minigun::Spin::Idle);
+    assert_eq!(sim.app.world().get::<Tf2Minigun>(w).unwrap().state, weapons::minigun::State::Idle);
 }
 
 /// 7.2, test 49: spun on attack2 for 2 s from the press, then attack: the
