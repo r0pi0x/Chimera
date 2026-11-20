@@ -4919,8 +4919,10 @@ game's one API; the Source guests', CS:S, HL2:DM and TF2, go through it):
   given another way (the console's `give`) has no models on that map.
 - **The code-built maps' kit on a task.** `load_code_map` (a sandbox's
   start, `map greybox`, leaving for a menu with the greybox) spawns the
-  code-built map at once and loads its kit on the async compute pool
-  (`CodeMapKit`), its spawn's own work (`map::prepare`) there too; the
+  code-built map at once and loads its kit on a thread of its own
+  (`CodeMapKit`; on the async compute pool until 2026-11-20, where its
+  seconds held one of the pool's few threads: "The gun in hand ahead of
+  the sandbox's kit" below), its spawn's own work (`map::prepare`) there too; the
   kit spawns when it is in, the code-built map again after it. Until then
   (a cold first dressing: seconds) players show the stand-in bodies
   (`render::stand_in`; "Stand-ins on screen" above).
@@ -6761,3 +6763,58 @@ systems have that name), so the cause took reading code to pin down: the
 frame inspector now names a system with its module when another
 module's system shares its name (`Update server_assets::watch`:
 `metrics::work::distinct_label`).
+
+## The gun in hand ahead of the sandbox's kit (2026-11-20)
+
+Owner's F10 report (Ultimate Gun Game's sandbox on the range, Windows,
+every game installed, a new build): "took a really long time for glock to
+appear in place of standin gun". Its log: the stand-in view gun showed
+33.06 s, exactly the range's kit (`console::load_code_map`, 33,568 ms),
+which dressed the five games one after another, each converted cold (a
+new converter version: written to disk again): Combat Arms 3.7 s, CS:S
+9.1 s, HL2:DM 5.4 s, Halo 0.7 s, TF2 14.5 s. The Glock's view model was
+CS:S's, in after 12.8 s, but nothing was drawn until the whole kit was.
+
+The cause was the wait on the whole set: one kit for every game's parts,
+spawned only when the last dressing was done. Now (`map::sources`,
+`console::CodeMapKit`):
+
+- **Side by side.** `MapSources::dress` runs every dressing at once, each
+  on a map of its own (`dress_ahead`), so what each keeps for the session
+  converts in parallel; then in order on the map from the kept copies (the
+  same map as before: `each_guests_view_models_come_as_it_is_done_not_after_every_guest`).
+- **Each game's view models as it is done** (`MapLoadOptions::early`,
+  `EarlyViewModels`: with the textures they name, renumbered). The client
+  adds the ones a view wants (`ViewAnimator::key`) with
+  `map::add_view_model` while the kit still loads, so the gun in hand is
+  drawn when its own game's parts are in; the kit, once in, takes over
+  (chimera_client `kit_ahead`).
+- **The kit on a thread of its own**, not the async compute pool: its
+  seconds held one of the pool's threads, and the late view model's build
+  (`render::view_model::build_late`) waited 1.8 s behind it on this box.
+
+Deterministic counts (instructions of the thread that does the work and
+the threads it starts): before, the Glock waited for the kit's whole load,
+every dressing in turn: cold in the playtest build (the table in "Guest
+dressings on disk") 24.8 G (Combat Arms) + 4.0 G (CS:S) + 9.7 G (HL2:DM) +
+16.4 G (TF2) = 54.9 G, Halo's besides, all on one thread; now for CS:S's own
+dressing, 4.0 G on its thread (read back from disk: 1.7 G). Scaled by the
+report's own times, the tester's Glock: from 33 s to about CS:S's 9 s cold
+(less when the conversions share the CPU less), and a fraction of a second
+read back. The kit's load reports its count (`<kit>: the kit's load took
+N M instructions`).
+
+On this box (dev build, CS:S and HL2:DM installed, Combat Arms and HL2:DM
+kept from the menu's map, so CS:S the one cold dressing; the box at load
+30-43 from other builds, so wall times are rough): entering to the Glock
+drawn 2.4-2.7 s both before and after, as the kit here is CS:S's dressing
+(4,039 M of the kit's 5,291 M); the CS:S view models handed over 1.37 s
+after the kit's start and the Glock's added 0.13 s later, 0.3 s before the
+kit. The difference shows where other games' dressings are slower than
+the gun's own, as on the report's machine.
+
+What the next report has (`game.txt`, `world_report::hand_text`): whether
+the view model in hand is still coming (the stand-in showing), the kit
+loading now and for how long, each game's view models handed over ahead
+and when, the gun added ahead of the kit, and the kit's own time
+(`console::KitLoads`).

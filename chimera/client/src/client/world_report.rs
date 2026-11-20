@@ -18,7 +18,11 @@
 //!   what is in the local player's hand (`hand_text`): the weapon, its
 //!   draw, the view model's sequence and pose, and the sounds the player
 //!   makes now (entry, channel, age), so a gun's sound or animation that
-//!   goes on after a swap shows in the report.
+//!   goes on after a swap shows in the report; whether its view model is
+//!   still coming (the stand-in gun showing), and the code-built maps'
+//!   kit's loads (`console::KitLoads`: loading now for how long, each
+//!   game's view models handed over ahead of it, the kit's own time), so
+//!   a gun slow to show names what it waited for.
 //! - Events for the timeline (`frame_events`): a map loaded, a bot joined
 //!   or left, the local rung and the minigame changed.
 //!
@@ -212,8 +216,26 @@ pub fn hand_text(world: &mut World) -> String {
     if let Some(v) = world.get::<crate::map::ViewAnimator>(player) {
         let cycle = v.animator.as_ref().map_or(0.0, |a| a.cycle);
         out += &format!("; view model {} at cycle {cycle:.2}", v.sequence().unwrap_or("-"));
+        // Drawn, or still coming (the stand-in gun shows meanwhile).
+        let waiting = world
+            .query_filtered::<(), With<chimera_present::render::stand_in::ViewModelWaiting>>()
+            .iter(world)
+            .next()
+            .is_some();
+        if waiting {
+            out += ", not built yet (the stand-in shows)";
+        }
     }
     out += "\n";
+    // The code-built maps' kit: loading now, and what its loads did.
+    if let Some(now) = super::console::KitLoads::loading(world) {
+        out += &format!("kit: {now}\n");
+    }
+    if let Some(loads) = world.get_resource::<super::console::KitLoads>() {
+        for line in &loads.0 {
+            out += &format!("kit: {line}\n");
+        }
+    }
     let mut sounds: Vec<(f64, String)> = world
         .query::<&chimera_present::audio::sound::Playing>()
         .iter(world)

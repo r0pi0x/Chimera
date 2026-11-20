@@ -30,3 +30,4 @@ mod respawn_countdown;
 mod sandbox;
 mod ui_sound;
 mod window_icon;
+mod kit_ahead;

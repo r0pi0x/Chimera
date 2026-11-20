@@ -2670,40 +2670,43 @@ pub fn load_code_map(w: &mut World, map: &str) {
         // is spawned again (a map's spawn clears what the map before
         // left). The code-built map is in at once, without it meanwhile.
         let hdr_level = w.get_resource::<super::hdr::HdrSettings>().and_then(|s| s.explicit());
+        // Each game's view models as its parts are in, ahead of the
+        // whole kit (`finish_code_map_kit` adds them).
+        let early = chimera_world::map::sources::EarlyViewModels::default();
         let options = crate::map::MapLoadOptions {
             hdr_level,
             context: crate::map::LoadContext::of(w),
             dealt: dealt(w),
+            early: Some(early.clone()),
             ..default()
         };
         let began = std::time::Instant::now();
         let kit_id = chimera_world::greybox::kit_id(id);
         // Its spawn's own work (images, colliders) on the task too.
         let prepare = crate::map::prepare::preparation(w);
-        let load = async move {
+        let load = move || {
+            // Its instructions (this thread and the dressings' it starts):
+            // a count the machine's load doesn't change.
+            let mut counter = chimera_core::metrics::InstructionCounter::current_with_children();
+            let from = counter.read();
             let kit = (hooks.load_map)(&kit_id, &options)?;
             let prepared = prepare.run(&kit);
+            if let Some((a, b)) = from.zip(counter.read()) {
+                info!("{kit_id}: the kit's load took {} M instructions", b.saturating_sub(a) / 1_000_000);
+            }
             Ok((kit, prepared))
         };
         // A world with no async compute pool (a bare app without Bevy's
-        // `TaskPoolPlugin`, as the menu's tests): in this frame, as
-        // `map::drop_later` without one.
-        match bevy::tasks::AsyncComputeTaskPool::try_get() {
-            None => {
-                let result = bevy::tasks::block_on(load);
-                spawn_code_map_kit(w, id, result, began);
-            }
-            Some(pool) => {
-                let mut task = pool.spawn(load);
-                // Tests that wait for tasks (`WaitForTasks`): in this frame, as before.
-                if chimera_core::tasks::waits(w)
-                    && let Some(result) = chimera_core::tasks::poll(&mut task, true)
-                {
-                    spawn_code_map_kit(w, id, result, began);
-                } else {
-                    w.insert_resource(CodeMapKit { id, task, began });
-                }
-            }
+        // `TaskPoolPlugin`, as the menu's tests) or tests that wait for
+        // tasks (`WaitForTasks`): in this frame, as before. Else on a
+        // thread of its own, not the async compute pool: the kit's seconds
+        // there held one of the pool's few threads, and the late models
+        // (the gun in hand's view model among them) queued behind it.
+        if bevy::tasks::AsyncComputeTaskPool::try_get().is_none() || chimera_core::tasks::waits(w) {
+            spawn_code_map_kit(w, id, load(), began);
+        } else {
+            let task = chimera_core::tasks::thread(load);
+            w.insert_resource(CodeMapKit { id, task, began, early, ahead: Vec::new() });
         }
         (hooks.respawn_greybox)(w);
     }
@@ -2714,22 +2717,33 @@ pub fn load_code_map(w: &mut World, map: &str) {
     crate::gameplay::new_game(w);
 }
 
-/// A code-built map's kit loading on a task (`load_code_map`).
+/// A code-built map's kit loading on a thread (`load_code_map`).
 #[derive(Resource)]
 struct CodeMapKit {
     id: &'static str,
-    task: bevy::tasks::Task<Result<(crate::map::MapData, crate::map::prepare::Prepared), String>>,
+    task: std::thread::JoinHandle<Result<(crate::map::MapData, crate::map::prepare::Prepared), String>>,
     began: std::time::Instant,
+    /// Each game's view models as its dressing is done
+    /// (`MapLoadOptions::early`).
+    early: chimera_world::map::sources::EarlyViewModels,
+    /// Those handed over, until a view wants one.
+    ahead: Vec<chimera_world::map::sources::EarlyGame>,
 }
 
-/// The code-built map's kit spawned once its task is done (a frame of the
-/// console's `finish_map_load`), the code-built map spawned again after
-/// it, the view as `load_code_map` left it.
+/// The code-built map's kit spawned once its thread is done (a frame of
+/// the console's `finish_map_load`), the code-built map spawned again
+/// after it, the view as `load_code_map` left it. Meanwhile a view model a
+/// view wants that a game's dressing has handed over (`ahead_view_models`)
+/// is added to the view models (`map::add_view_model`), so the gun in
+/// hand is drawn when its own game's parts are in.
 fn finish_code_map_kit(w: &mut World) {
-    let wait = chimera_core::tasks::waits(w);
-    let Some(mut load) = w.get_resource_mut::<CodeMapKit>() else { return };
-    let Some(result) = chimera_core::tasks::poll(&mut load.task, wait) else { return };
-    let Some(CodeMapKit { id, began, .. }) = w.remove_resource::<CodeMapKit>() else { return };
+    ahead_view_models(w);
+    let Some(load) = w.get_resource::<CodeMapKit>() else { return };
+    if !load.task.is_finished() {
+        return;
+    }
+    let Some(CodeMapKit { id, began, task, .. }) = w.remove_resource::<CodeMapKit>() else { return };
+    let result = task.join().unwrap_or_else(|_| Err("the kit's load panicked".into()));
     // Another map since (its load removes this): nothing to do.
     if w.get_resource::<crate::map::LoadedMapName>().is_none_or(|n| n.0 != id) {
         return;
@@ -2744,6 +2758,82 @@ fn finish_code_map_kit(w: &mut World) {
     }
 }
 
+/// The view models a view wants (`ViewAnimator::key`) that the loaded map
+/// lacks, from the games' dressings handed over ahead of the kit
+/// (`CodeMapKit::ahead`); only those (the rest would be built for nothing:
+/// the kit brings them all).
+fn ahead_view_models(w: &mut World) {
+    let Some(mut load) = w.get_resource_mut::<CodeMapKit>() else { return };
+    let began = load.began;
+    let mut lines = Vec::new();
+    for game in load.early.take() {
+        lines.push(format!(
+            "{}'s view models ({}) in {:.0} ms, ahead of the kit",
+            game.game,
+            game.view_models.len(),
+            began.elapsed().as_secs_f64() * 1000.0
+        ));
+        load.ahead.push(game);
+    }
+    let any = !load.ahead.is_empty();
+    for line in lines {
+        KitLoads::note(w, line);
+    }
+    if !any {
+        return;
+    }
+    let have = w.get_resource::<crate::map::ViewModels>().cloned().unwrap_or_default();
+    let mut wanted: Vec<String> = w
+        .query::<&crate::map::ViewAnimator>()
+        .iter(w)
+        .filter_map(|v| v.key.clone())
+        .filter(|k| have.get(k).is_none())
+        .collect();
+    wanted.sort();
+    wanted.dedup();
+    let Some(load) = w.get_resource::<CodeMapKit>() else { return };
+    let found: Vec<_> = wanted
+        .iter()
+        .filter_map(|k| {
+            load.ahead
+                .iter()
+                .find_map(|g| g.view_models.iter().find(|v| &v.key == k).map(|v| (v.clone(), g.textures.clone())))
+        })
+        .collect();
+    for (v, textures) in found {
+        let line = format!("{}: its view model added ahead of the kit, {:.0} ms after it began", v.key, began.elapsed().as_secs_f64() * 1000.0);
+        KitLoads::note(w, line);
+        crate::map::add_view_model(w, v, textures);
+    }
+}
+
+/// What the code-built maps' kit loads did, for a report (`game.txt`'s
+/// `kit:` lines, `world_report::setup_text`): each game's view models
+/// handed over ahead of the kit, each one added for a view that wanted it,
+/// the kit's own time; the latest `KitLoads::KEEP`, each also logged.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct KitLoads(pub std::collections::VecDeque<String>);
+
+impl KitLoads {
+    /// The lines kept.
+    pub const KEEP: usize = 12;
+
+    /// `line` logged and kept.
+    pub fn note(w: &mut World, line: String) {
+        info!("{line}");
+        let mut loads = w.get_resource_or_init::<Self>();
+        if loads.0.len() >= Self::KEEP {
+            loads.0.pop_front();
+        }
+        loads.0.push_back(line);
+    }
+
+    /// The kit loading now (its map and seconds so far), if one is.
+    pub fn loading(w: &World) -> Option<String> {
+        w.get_resource::<CodeMapKit>().map(|k| format!("{}'s kit loading for {:.1} s", k.id, k.began.elapsed().as_secs_f64()))
+    }
+}
+
 /// The kit `result` of code-built map `id` spawned (`change_map`);
 /// whether there was one.
 fn spawn_code_map_kit(
@@ -2754,7 +2844,8 @@ fn spawn_code_map_kit(
 ) -> bool {
     match result {
         Ok((kit, prepared)) => {
-            info!("{id}'s kit: {} bodies, loaded in {:.0} ms", kit.kit.characters.len(), began.elapsed().as_secs_f64() * 1000.0);
+            let line = format!("{id}'s kit: {} bodies, loaded in {:.0} ms", kit.kit.characters.len(), began.elapsed().as_secs_f64() * 1000.0);
+            KitLoads::note(w, line);
             crate::map::prepare::change_map_prepared(w, kit, prepared, crate::map::MapDebugView::Normal);
             true
         }

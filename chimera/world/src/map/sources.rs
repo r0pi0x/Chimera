@@ -49,6 +49,14 @@
 //!   holding a CS:S gun there is CS:S's, not the stand-in body. A guest
 //!   is skipped on a map of its own game.
 //!
+//! - Side by side: the gameplay's and the guests' dressings first run at
+//!   once, each on a map of its own (`dress_ahead`), so what they keep for
+//!   the session (`kept`) converts in parallel, then in order on the map
+//!   (copies of what was kept: the same map as dressing in turn). Each
+//!   game's view models are handed over as it is done
+//!   (`MapLoadOptions::early`, `EarlyViewModels`): the client's code-built
+//!   map kit draws the gun in hand from them before the whole kit is in.
+//!
 //! The functions are plain `fn`s and the lists `'static` slices, so an
 //! app's `MapSources` is a `static` and its `client::AppHooks::load_map`
 //! a closure over it. What a loader or dressing needs of the app that
@@ -57,6 +65,16 @@
 //! never reaches for a process-wide memo), and what it works out for the
 //! map's game goes with the map (`MapData::memos`, `memos::MapMemos`;
 //! docs/DESIGN.md, "A game's loader and memos").
+//!
+//! Known shortcuts (docs/tech-debt.md): `dress_ahead` dresses each game
+//! twice, the first on a map of its own that is thrown away (a kept
+//! dressing's copy made once more; a dressing that keeps nothing, Halo's,
+//! does its work twice), and the guests' conversions running at once raise
+//! the load's peak memory. Why it's OK for now: a kept copy is tens of
+//! milliseconds and Halo's dressing under a second, on threads of their
+//! own beside the conversions; the gun in hand no longer waits for the
+//! sum of every game's conversion (docs/performance.md, "The gun in hand
+//! ahead of the sandbox's kit").
 
 use std::{
     collections::{BTreeSet, HashMap},
@@ -102,6 +120,77 @@ pub struct MapLoadOptions {
     /// dressed (`MapSources::dress`). None: any game (no match known, a
     /// sandbox, a client).
     pub dealt: Option<Arc<BTreeSet<String>>>,
+    /// Where each dressing's view models go as soon as that dressing is
+    /// done, before the whole map is (`EarlyViewModels`; the client's
+    /// code-built map kit: the gun in hand drawn while the other games'
+    /// parts still convert). None: nobody takes them.
+    pub early: Option<EarlyViewModels>,
+}
+
+/// The view models of each dressing of a load, handed over as each
+/// dressing is done (`MapSources::dress` dresses the guests at once, each
+/// on its own map first): a game's view models with the textures they
+/// name (their own list, from 0, as `view_model::add_view_model` takes
+/// them). A client whose map is drawn before its kit (the code-built
+/// maps', `load_code_map`) adds them, so a gun given meanwhile shows when
+/// its own game's parts are in, not when every game's are.
+#[derive(Clone, Debug, Default)]
+pub struct EarlyViewModels(Arc<std::sync::Mutex<Vec<EarlyGame>>>);
+
+/// One game's early view models (`EarlyViewModels`).
+#[derive(Clone, Debug)]
+pub struct EarlyGame {
+    pub game: &'static str,
+    pub view_models: Vec<super::MapViewModel>,
+    /// The textures they name.
+    pub textures: Arc<Vec<super::MapTexture>>,
+    /// The time from the load's dressing's start to this game's parts.
+    pub after: std::time::Duration,
+}
+
+impl PartialEq for EarlyViewModels {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for EarlyViewModels {}
+
+impl EarlyViewModels {
+    /// Hand over `map`'s view models (a dressing's map: its textures its
+    /// own), each with the textures it names, once per game.
+    pub fn publish(&self, game: &'static str, map: &MapData, after: std::time::Duration) {
+        use super::texture_refs::{Ref, TextureRefs};
+        if map.kit.view_models.is_empty() {
+            return;
+        }
+        let mut list = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if list.iter().any(|g| g.game == game) {
+            return;
+        }
+        // Only the textures they name, renumbered from 0.
+        let mut renumber: HashMap<usize, usize> = HashMap::new();
+        let mut textures = Vec::new();
+        let mut view_models = map.kit.view_models.clone();
+        for v in &mut view_models {
+            v.texture_refs(&mut |r, i| {
+                if r != Ref::Texture {
+                    return;
+                }
+                let Some(t) = map.textures.get(*i) else { return };
+                *i = *renumber.entry(*i).or_insert_with(|| {
+                    textures.push(t.clone());
+                    textures.len() - 1
+                });
+            });
+        }
+        list.push(EarlyGame { game, view_models, textures: Arc::new(textures), after });
+    }
+
+    /// What was handed over since the last `take`.
+    pub fn take(&self) -> Vec<EarlyGame> {
+        std::mem::take(&mut *self.0.lock().unwrap_or_else(|e| e.into_inner()))
+    }
 }
 
 /// An app's context for its map loads (`MapLoadOptions::context`): one
@@ -204,7 +293,7 @@ impl KitLoad {
 
 impl Default for MapLoadOptions {
     fn default() -> Self {
-        Self { hdr_level: Some(0), textures: true, kit: KitLoad::All, progress: default(), context: default(), dealt: None }
+        Self { hdr_level: Some(0), textures: true, kit: KitLoad::All, progress: default(), context: default(), dealt: None, early: None }
     }
 }
 
@@ -491,6 +580,8 @@ impl MapSources {
         let guests: Vec<&MapDressing> =
             self.guests.iter().copied().filter(|g| !g.game.eq_ignore_ascii_case(game) && options.deals(g.game)).collect();
         let parts = (gameplay.is_some() as usize + guests.len()).max(1) as f32;
+        let all: Vec<&MapDressing> = gameplay.into_iter().chain(guests.iter().copied()).collect();
+        dress_ahead(&all, map, options);
         let mut done = 0.0;
         let step = |done: &mut f32| {
             *done += 1.0;
@@ -541,6 +632,45 @@ impl MapSources {
         }
         map.kit.characters.extend(kept_bodies);
     }
+}
+
+/// Each of `dressings` dressed at once on a map of its own (empty, as
+/// `map` is named and scaled), on threads of its own: what the dressings
+/// keep for the session (`kept`: the Source games', Combat Arms') is
+/// converted side by side, not one after another (a cold sandbox kit was
+/// the sum of five games' conversions, 33 s on a tester's PC, and the gun
+/// in hand waited for all of them), and each game's view models are handed
+/// over as it is done (`MapLoadOptions::early`). The dressing proper then
+/// runs in order on `map` (copies of what was kept, so `map` is the same
+/// as before). A dressing that keeps nothing (Halo's donors are its own)
+/// runs twice; its second run reads what its first left in the app's
+/// context. One dressing alone: nothing ahead.
+fn dress_ahead(dressings: &[&MapDressing], map: &MapData, options: &MapLoadOptions) {
+    if dressings.len() < 2 {
+        return;
+    }
+    let began = std::time::Instant::now();
+    let parts = dressings.len() as f32;
+    let done = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|s| {
+        for d in dressings {
+            let done = &done;
+            s.spawn(move || {
+                let mut own = MapData { name: map.name.clone(), entity_scale: map.entity_scale, ..Default::default() };
+                let started = std::time::Instant::now();
+                if (d.dress)(&mut own, options).is_ok() {
+                    if let Some(early) = &options.early {
+                        early.publish(d.game, &own, began.elapsed());
+                    }
+                }
+                dressed(d.game, &map.name, started);
+                // The progress as each is done (the dressing proper after
+                // takes little more).
+                let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                options.progress.report(n as f32 / parts, "Adding every game's players and guns");
+            });
+        }
+    });
 }
 
 /// A dressing's time in the log (debug; info when it took a while).
@@ -781,6 +911,104 @@ mod tests {
 
     /// A guest dresses the maps of the other games only, after the
     /// gameplay's own dressing, and a failing one is a warning.
+    /// A view model of game `game` named `key`, its one mesh on texture
+    /// `texture` of the dressing's list.
+    fn view_model(key: &str, texture: usize) -> crate::map::MapViewModel {
+        crate::map::MapViewModel {
+            key: key.into(),
+            model: crate::map::MapModel {
+                meshes: vec![crate::map::MapMesh { texture: Some(texture), ..default() }],
+                ..default()
+            },
+            bones: Vec::new(),
+            root: default(),
+            animations: None,
+            right_handed: true,
+            allow_flipping: false,
+            attachments: Vec::new(),
+            light_origin: default(),
+        }
+    }
+
+    fn texture(name: &str) -> crate::map::MapTexture {
+        crate::map::MapTexture { name: name.into(), srgb: true, mips: Vec::new(), width: 1, height: 1, rgba8: vec![0; 4], bc: None }
+    }
+
+    /// The slow guest's dressing waits for this (the test lets it go).
+    static SLOW_GOES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// The guests are dressed side by side, and each one's view models are
+    /// handed over as soon as it is done (`MapLoadOptions::early`): a fast
+    /// guest's gun is out while a slow one still converts, each view model
+    /// with the textures it names (renumbered from 0); the map comes out
+    /// as a dressing in turn makes it.
+    #[test]
+    fn each_guests_view_models_come_as_it_is_done_not_after_every_guest() {
+        fn guns(map: &mut MapData, game: &str) {
+            let base = map.textures.len();
+            map.textures.extend([texture(&format!("{game}/unused")), texture(&format!("{game}/gun"))]);
+            map.kit.view_models.push(view_model(&format!("{game}:gun"), base + 1));
+        }
+        fn fast(map: &mut MapData, _: &MapLoadOptions) -> Result<(), String> {
+            guns(map, "fast");
+            Ok(())
+        }
+        fn slow(map: &mut MapData, _: &MapLoadOptions) -> Result<(), String> {
+            while !SLOW_GOES.load(std::sync::atomic::Ordering::Acquire) {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            guns(map, "slow");
+            Ok(())
+        }
+        static SLOW: MapDressing = MapDressing { game: "slow", dress: slow };
+        static FAST: MapDressing = MapDressing { game: "fast", dress: fast };
+        static S: MapSources = MapSources {
+            loaders: &[&A, &B],
+            gameplay: Some(&B_PARTS),
+            teams: &[],
+            surfaces: &[],
+            kept: &[],
+            players: false,
+            // The slow one first: dressed in turn, the fast one waited for it.
+            guests: &[&SLOW, &FAST],
+        };
+        let early = EarlyViewModels::default();
+        let options = MapLoadOptions { early: Some(early.clone()), ..default() };
+        let load = std::thread::spawn(move || S.load_with("a:x", &options));
+        // The fast guest's gun comes while the slow one is still held.
+        let began = std::time::Instant::now();
+        let fast_one = loop {
+            if let Some(g) = early.take().into_iter().find(|g| g.game == "fast") {
+                break g;
+            }
+            assert!(began.elapsed().as_secs() < 30, "the fast guest's view models never came");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        };
+        assert!(!load.is_finished(), "the load still waits for the slow guest");
+        assert_eq!(fast_one.view_models.len(), 1);
+        let v = &fast_one.view_models[0];
+        assert_eq!(v.key, "fast:gun");
+        let t = v.model.meshes[0].texture.expect("a texture");
+        assert_eq!(fast_one.textures.len(), 1, "only the textures its view models name");
+        assert_eq!(fast_one.textures[t].name, "fast/gun", "its index names its own texture");
+        SLOW_GOES.store(true, std::sync::atomic::Ordering::Release);
+        let map = load.join().unwrap().unwrap();
+        let slow_one = early.take().into_iter().find(|g| g.game == "slow").expect("the slow guest's too");
+        assert_eq!(slow_one.textures[slow_one.view_models[0].model.meshes[0].texture.unwrap()].name, "slow/gun");
+        // The map: the guests in their order, as dressing each in turn does.
+        let keys: Vec<&str> = map.kit.view_models.iter().map(|v| v.key.as_str()).collect();
+        assert_eq!(keys, ["slow:gun", "fast:gun"]);
+        for v in &map.kit.view_models {
+            let game = v.key.split(':').next().unwrap();
+            let t = v.model.meshes[0].texture.unwrap();
+            assert_eq!(map.textures[t].name, format!("{game}/gun"), "{}", v.key);
+        }
+        // Without a taker, nothing is handed over (and the load is the same).
+        let plain = S.load_with("a:x", &MapLoadOptions::default()).unwrap();
+        assert_eq!(plain.kit.view_models.len(), 2);
+        assert!(early.take().is_empty());
+    }
+
     #[test]
     fn a_guest_dresses_the_maps_of_other_games() {
         fn a_guest(map: &mut MapData, _: &MapLoadOptions) -> Result<(), String> {
