@@ -74,7 +74,7 @@ Captured imagery stays in scratch, never in the repo.
 2. (Done, pass 5: the disc was the sandbox's blast spheres.) The
    mid-air explosion's first 50 ms: ours paler yellow than TF2's orange.
 3. Flames: the far fireball's extra width is TF2's bloom (pass 5): TF2's
-   bloom filter needs a spec (mat_hdr_level 2 on 2fort; ours' HDR stand-in
+   bloom filter is now specified in specs/tf2/hdr_bloom.md (mat_hdr_level 2 on 2fort; ours' HDR stand-in
    overexposes). The cloud at a wall spreads wider in TF2 (open).
 4. The Minigun's brass: TF2's land ~15 units farther out and leave
    upward (particles.md Open questions 6): the eject attachment under the

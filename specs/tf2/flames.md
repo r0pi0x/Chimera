@@ -281,6 +281,9 @@ and drawn.
    about 150 to 90-145 pixels across; with bloom on its core reads white,
    off it reads pink-white with the sheet's texture visible. TF2 runs
    2fort with HDR and bloom by default.
+   The bloom itself (and why it whitens the core) is specified in
+   [hdr_bloom.md](hdr_bloom.md) §5; its worked case: the core's
+   (255, 230, 180) becomes (255, 255, 234) at 2fort's bloom scale 0.5.
 2. The weapon also starts the same system name attached to its effect
    model's `muzzle` (the view model in first person) when a burst starts,
    with no point CPs. What that second instance draws (its sprites have

@@ -3032,6 +3032,10 @@ docs/plans/active/sound.md.
   `SetBloomScaleRange`, `SetTonemapScale`, `BlendTonemapScale` (accepted,
   ignored; no cached map uses them). Then refcmp captures at
   mat_hdr_level 2.
+  Now specified for TF2 (and HL2:DM, same algorithm) in
+  [specs/tf2/hdr_bloom.md](../specs/tf2/hdr_bloom.md): the percentile
+  exposure and its goal smoothing, the bloom's shape, kernel and gamma-space
+  add, the inputs' effects; still open there: the engine's adaptation law.
 - **Light styles and baked prop light, open questions** for a spec
   session: animated styles step ten pattern letters a second, unblended,
   'm' = as baked, scaling the style's lightmap share in linear light
