@@ -166,7 +166,11 @@ shares):
   `cs_source net_interp::others_are_drawn_smoothly_on_the_servers_path`:
   it still expected `cl_interp` 100 ms, where 3a9704b92 made the delay
   whole ticks plus one (109.375 ms at 64 Hz); the test now asks
-  `interp_amount`.
+  `interp_amount` (3b0a5f751: PASS). The full run on the tree with this
+  change (8cd934e6f..b66beea6b): 6388 of 6390 passed; the other failure,
+  `ultimate_gun_game session::a_session_with_every_game_stops_making_
+  archetypes` (1015 archetypes, bound 1000), is from the body decals
+  commit b66beea6b (`BodyDecalsOffRagdoll` comes and goes), left to it.
 
 ### Leftovers (tf2-leftovers, 2026-11-20)
 
