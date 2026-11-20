@@ -3,16 +3,19 @@
 //! `sb2-gun-filters`, `sb2-gun-tf2`).
 //!
 //! - **Head**: the breadcrumb (Sandbox, B, Esc) and CHANGE GUN at the
-//!   left; the search field at the top centre (no current-gun chip in
-//!   this view): `/` or a click focuses it and typing goes there, matching a gun's name, id, game,
-//!   class and tags (`model::GunView::fits`).
+//!   left (no current-gun chip in this view). The search is the picker's
+//!   own bar over the grid (`PickerFrame::search`): `/` or a click focuses
+//!   it and typing goes there, matching a gun's name, id, game (long and
+//!   short), class and tags (`model::search_text`, which the cards carry
+//!   as `PickerItem::search_text`, so the picker's matching is the
+//!   screen's wider one).
 //! - **Games** (left, 14 cq): All games and each game with its count (of
 //!   the guns the other filters leave) and a line under it (how many are
 //!   here, or one download for the whole game); a click ticks a game
 //!   (white), All games clears them. A ticked game with facets of its own
 //!   shows them under it as tick tags (Team Fortress 2: the classes).
 //! - **The grid** is the kit's shared picker (`chimera_ui::picker`,
-//!   docs/plans/active/shared-picker.md, step 3): single pick, the Cards
+//!   docs/plans/completed/shared-picker.md, step 3): single pick, the Cards
 //!   look, its columns and card size from the grid's width and the
 //!   theme's `[layout.picker]`; a picker game a class (`GunCards`, from
 //!   `GunView::tiles`), folding under its header (the list's folds, read
@@ -58,8 +61,8 @@
 //!   back on the same tile. The detail pane follows the cursor. Letters
 //!   do not go to the search until the field has the keyboard (`/`, a
 //!   click on it, or Enter with nothing under the cursor); the field is
-//!   the kit's text field (`GunSearch`: a caret, a selection, copy and
-//!   paste, as the target picker's), so letters and digits type at the
+//!   the picker's search (`GunPicker`'s `PickerState`: a caret placed by a
+//!   click, a selection by a drag, copy and paste), so letters and digits type at the
 //!   caret, the arrows, Home and End move it (Left and Right don't move
 //!   the grid's cursor then), Backspace and Delete edit, Ctrl+A/C/X/V
 //!   work, and Enter or Esc lets go of the field (Enter: the cursor is
@@ -86,9 +89,8 @@
 //! another row (the slots themselves stay; the kit's binding in place is
 //! for text); the model area shows the kit's icon large, not a render;
 //! the drag shows the slot under the pointer but no ghost tile; the
-//! search field stays in the head (the picker's own search bar is over
-//! its list) with the screen's matching (`GunView::fits`, wider than the
-//! picker's), typed with the kit's `text_edit` as the picker's is.
+//! picker's search text is copied to `GunView::search` (by `sync_grid`),
+//! because the tiles' families and the games' counts filter by it too.
 
 use bevy::{
     input::{
@@ -132,6 +134,8 @@ pub fn frame() -> PickerFrame {
         foot: true,
         side: Some(DETAIL_W),
         list_cursor: true,
+        search: true,
+        placeholder: "Find a gun, a game or a tag".into(),
         ..Default::default()
     }
 }
@@ -155,6 +159,7 @@ fn card_of(g: &SandboxGun, family: usize, pins: &super::model::Pins, unit: &Unit
         family,
         progress,
         tags: vec![format!("files:{unit:?}")],
+        search_text: Some(super::model::search_text(g)),
         ..PickerItem::new(g.id.clone(), g.name.clone())
     }
 }
@@ -182,10 +187,6 @@ pub enum GunAction {
     /// Pick a variant of the selected tile's gun (the detail pane's list).
     Variant(String),
     Switch,
-    /// A click on the search field.
-    FocusSearch,
-    /// The search field's clear key: empties it and keeps the keys.
-    ClearSearch,
     /// The tag popover's search clear key.
     ClearTagSearch,
     Close,
@@ -199,7 +200,8 @@ pub struct PinDrop(pub usize);
 #[derive(Resource, Clone, Debug)]
 pub struct Parts {
     pub root: Entity,
-    pub search: Entity,
+    /// The picker's bar (its search field).
+    pub picker_bar: Option<Entity>,
     pub games: Entity,
     pub bar: Entity,
     pub detail: Entity,
@@ -244,7 +246,7 @@ impl Grid {
 /// gun in step.
 #[allow(clippy::too_many_arguments)]
 pub fn sync_grid(
-    ui: Res<SandboxUi>,
+    mut ui: ResMut<SandboxUi>,
     cat: Res<SandboxCatalogue>,
     progress: Res<UnitProgress>,
     theme: Res<Theme>,
@@ -256,6 +258,11 @@ pub fn sync_grid(
     if ui.screen != SandboxScreen::ChangeGun {
         sel.0 = None;
         return;
+    }
+    // The search words the picker holds are the tiles' filter too (a
+    // family stays one card, the counts follow).
+    if ui.view.search != gp.0.search {
+        ui.view.search = gp.0.search.clone();
     }
     let tiles = ui.view.tiles(&cat.guns, &|g| SandboxCatalogue::files(g, &progress));
     let shown: Vec<(&'static str, Vec<usize>)> = tiles.iter().map(|(n, t)| (*n, t.iter().map(|t| t.face).collect())).collect();
@@ -354,10 +361,10 @@ fn keys(
             ui.view.tag_search.clear();
         } else if ui.view.tags_open {
             ui.view.tags_open = false;
-        } else if ui.view.search_focus {
-            ui.view.search_focus = false;
-        } else if !ui.view.search.is_empty() {
-            ui.view.clear_search();
+        } else if gp.0.search_focus {
+            gp.0.search_focus = false;
+        } else if !gp.0.search.is_empty() {
+            gp.0.clear_search();
         } else {
             out.write(GunAction::Close);
         }
@@ -398,7 +405,7 @@ fn keys(
         (KeyCode::PageDown, VNav::PageDown),
     ] {
         // Left and Right move the focused field's caret.
-        let in_field = ui.view.search_focus && matches!(nav, VNav::Left | VNav::Right);
+        let in_field = gp.0.search_focus && matches!(nav, VNav::Left | VNav::Right);
         if k(key) && !in_field {
             // The picker's grid keys (a header's ← and → fold it there and
             // in the list).
@@ -413,8 +420,8 @@ fn keys(
         }
     }
     // A header's fold, in the picker's state and its list (`picker::fold`).
-    let mut fold_sec = |st: &mut chimera_ui::VListState, sec: usize, open: bool| match pickers.0.get(LIST).and_then(|v| v.sections.get(sec).map(|s| (v, s.0))) {
-        Some((view, row)) => picker::fold(&mut gp.0, view, st, row, open),
+    let fold_sec = |gp: &mut PickerState, st: &mut chimera_ui::VListState, sec: usize, open: bool| match pickers.0.get(LIST).and_then(|v| v.sections.get(sec).map(|s| (v, s.0))) {
+        Some((view, row)) => picker::fold(gp, view, st, row, open),
         None => st.fold(sec, !open),
     };
     // `\` (by its physical key, so typing never takes it) and Enter on a
@@ -422,30 +429,30 @@ fn keys(
     // fold left.
     let fold_key = k(KeyCode::Backslash) || k(KeyCode::IntlBackslash);
     let enter = k(KeyCode::Enter) || k(KeyCode::NumpadEnter);
-    let focus = ui.view.search_focus;
+    let focus = gp.0.search_focus;
     if focus && enter {
         // Confirms the first match: the field lets go; the cursor is on it
         // (the selection follows the search), Enter again switches.
-        ui.view.search_focus = false;
+        gp.0.search_focus = false;
     } else if enter && !focus && st.cursor.is_none() {
-        ui.view.focus_search();
+        gp.0.focus_search();
     }
     let enter = enter && !focus;
     match st.cursor {
         Some(VCursor::Item(sec, i)) if fold_key => {
-            fold_sec(st, sec, false);
+            fold_sec(&mut gp.0, st, sec, false);
             ui.view.fold_return = Some((sec, i));
         }
         Some(VCursor::Header(sec)) if fold_key || enter => {
             if st.is_folded(sec) {
-                fold_sec(st, sec, true);
+                fold_sec(&mut gp.0, st, sec, true);
                 if let Some((rs, ri)) = ui.view.fold_return.take()
                     && rs == sec
                 {
                     st.select(VCursor::Item(rs, ri));
                 }
             } else {
-                fold_sec(st, sec, false);
+                fold_sec(&mut gp.0, st, sec, false);
             }
         }
         Some(VCursor::Item(..)) if enter => {
@@ -516,20 +523,10 @@ fn keys(
         if e.state != ButtonState::Pressed || alt || matches!(e.key_code, KeyCode::Backslash | KeyCode::IntlBackslash) {
             continue;
         }
-        if ui.view.search_focus {
+        if gp.0.search_focus {
             // The kit's text field: a caret, a selection, copy and paste.
-            let Some(key) = crate::client::widgets::text_key(&e.logical_key, e.key_code, ctrl, shift) else { continue };
-            let n = ui.view.search.chars().count();
-            let mut caret = crate::client::widgets::Caret { at: ui.view.search_caret.min(n), anchor: ui.view.search_anchor.min(n) };
-            let mut text = ui.view.search.clone();
-            if caret.key(&mut text, key, clipboard, 48, false) {
-                ui.view.search = text;
-            }
-            let n = ui.view.search.chars().count();
-            let (at, anchor) = (caret.at.min(n), caret.anchor.min(n));
-            if (ui.view.search_caret, ui.view.search_anchor) != (at, anchor) {
-                ui.view.search_caret = at;
-                ui.view.search_anchor = anchor;
+            if let Some(key) = crate::client::widgets::text_key(&e.logical_key, e.key_code, ctrl, shift) {
+                gp.0.search_key(key, clipboard);
             }
             continue;
         }
@@ -537,7 +534,7 @@ fn keys(
             continue;
         }
         match &e.logical_key {
-            Key::Character(c) if c.as_str() == "/" => ui.view.focus_search(),
+            Key::Character(c) if c.as_str() == "/" => gp.0.focus_search(),
             Key::Character(c) if c.eq_ignore_ascii_case("i") => ui.view.detail = !ui.view.detail,
             Key::Character(c) if c.eq_ignore_ascii_case("r") => {
                 if let Some((game, unit)) = failed.clone() {
@@ -549,52 +546,12 @@ fn keys(
     }
 }
 
-/// The search field (the kit's text field: `controls::Ui::text_field`).
-#[derive(Component, Clone, Copy, Debug)]
-pub struct GunSearch;
-
-/// The pointer in the search field (`controls::TextPress`): a press
-/// focuses it and places the caret, a drag selects, a double press selects
-/// all.
-fn search_pointer(
-    mouse: Option<Res<ButtonInput<MouseButton>>>,
-    fields: Query<(Entity, &Interaction), With<GunSearch>>,
-    hits: chimera_ui::controls::TextHits,
-    clock: Option<Res<chimera_ui::UiClock>>,
-    mut press: Local<chimera_ui::controls::TextPress>,
-    mut ui: ResMut<SandboxUi>,
-) {
-    let Some(mouse) = mouse else { return };
-    if ui.screen != SandboxScreen::ChangeGun {
-        press.release();
-        return;
-    }
-    let now = clock.map_or(0.0, |c| c.now);
-    let set = |ui: &mut SandboxUi, c: usize, a: usize| {
-        let n = ui.view.search.chars().count();
-        let (c, a) = (c.min(n), a.min(n));
-        if (ui.view.search_caret, ui.view.search_anchor) != (c, a) {
-            ui.view.search_caret = c;
-            ui.view.search_anchor = a;
-        }
-    };
-    if mouse.just_pressed(MouseButton::Left) {
-        let Some(e) = fields.iter().find_map(|(e, i)| (*i == Interaction::Pressed).then_some(e)) else {
-            press.release();
-            return;
-        };
-        if !ui.view.search_focus {
-            ui.view.search_focus = true;
-        }
-        let (Some(at), Some(len)) = (hits.char_at(e), hits.len(e)) else { return };
-        let (c, a) = press.press(now, at, len);
-        set(&mut ui, c, a);
-    } else if mouse.pressed(MouseButton::Left) {
-        let Some((e, _)) = fields.iter().next() else { return };
-        let Some(at) = hits.char_at(e) else { return };
-        if let Some((c, a)) = press.drag(at) {
-            set(&mut ui, c, a);
-        }
+/// The pointer in the picker's search field (`picker::SearchPointer`): a
+/// press focuses it and places the caret, a drag selects, a double press
+/// selects all.
+fn search_pointer(pointer: picker::SearchPointer, ui: Res<SandboxUi>, mut gp: ResMut<GunPicker>, mut press: Local<chimera_ui::controls::TextPress>) {
+    if ui.screen == SandboxScreen::ChangeGun {
+        pointer.run(LIST, &mut gp.0, &mut press);
     } else {
         press.release();
     }
@@ -633,6 +590,16 @@ fn pointer(
     // (A card's press is the list's: `VHit`, below.)
     if let Some(view) = pickers.0.get(LIST) {
         for (i, a) in &headers {
+            if *i == Interaction::Pressed {
+                match a {
+                    PickerAction::FocusSearch => gp.0.focus_search(),
+                    PickerAction::ClearSearch => {
+                        gp.0.clear_search();
+                        gp.0.search_focus = true;
+                    }
+                    _ => {}
+                }
+            }
             if let (Interaction::Pressed, PickerAction::Fold(row)) = (*i, *a) {
                 let st = vlists.state(LIST);
                 let open = view.rows.get(row).is_some_and(|r| gp.0.is_folded(&view.games, r));
@@ -726,15 +693,9 @@ fn act(world: &mut World) {
                 world.write_message(SandboxAction::Switch(id));
                 world.resource_mut::<SandboxUi>().screen = SandboxScreen::None;
             }
-            GunAction::FocusSearch => world.resource_mut::<SandboxUi>().view.search_focus = true,
             GunAction::ClearTagSearch => world.resource_mut::<SandboxUi>().view.tag_search.clear(),
-            GunAction::ClearSearch => {
-                let mut ui = world.resource_mut::<SandboxUi>();
-                ui.view.clear_search();
-                ui.view.search_focus = true;
-            }
             GunAction::Close => {
-                world.resource_mut::<SandboxUi>().view.search_focus = false;
+                world.resource_mut::<GunPicker>().0.search_focus = false;
                 world.write_message(SandboxAction::Close);
             }
         }
@@ -783,7 +744,7 @@ fn open_close(
             Name::new("Change gun"),
         ))
         .id();
-    // The head: the breadcrumb and title, the search at the centre.
+    // The head: the breadcrumb and title (the search is the picker's bar).
     let head = ui.boxed(&mut c, root, UiStyle { align: Some(AlignItems::FlexStart), h: Some(3.4), shrink: Some(0.0), ..UiStyle::row() });
     let crumbs = ui.boxed(&mut c, head, UiStyle { gap: Some(0.35), ..UiStyle::column() });
     let back = ui.boxed(&mut c, crumbs, UiStyle { gap: Some(0.45), align: Some(AlignItems::Center), ..UiStyle::row() });
@@ -792,16 +753,6 @@ fn open_close(
     ui.kbd(&mut c, back, "Esc", 0.5, Tone::Fg3);
     let t = ui.text(&mut c, crumbs, Role::DisplayBold, 1.9, Tone::Fg, "Change gun");
     c.entity(t).insert(UiParityId::new("gun.title"));
-    let search = c
-        .spawn((
-            UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), w: Some(26.0), h: Some(2.1), pad: Some([0.0, 0.8, 0.0, 0.8].into()), ..UiStyle::row() }
-                .abs([Some(57.0), Some(0.4), None, None]),
-            Node::default(),
-            UiTransform { translation: Val2::percent(-50.0, 0.0), ..default() },
-            UiParityId::new("gun.search"),
-            ChildOf(head),
-        ))
-        .id();
     // The body: games, the grid, the detail.
     // The body: games, then the picker (the tags bar over the grid, the
     // detail its side pane).
@@ -836,13 +787,15 @@ fn open_close(
     }
     let pins = ui.boxed(&mut c, foot, UiStyle { gap: Some(0.9), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::row() });
     let pop = c.spawn((Node { position_type: PositionType::Absolute, ..default() }, GlobalZIndex(Z + 2), ChildOf(root))).id();
-    c.insert_resource(Parts { root, search, games, bar, detail, pins, pop, view: built.list, size });
+    c.insert_resource(Parts { root, picker_bar: built.bar, games, bar, detail, pins, pop, view: built.list, size });
 }
 
 /// What the rebuilt parts show.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Shown {
     view: super::model::GunView,
+    /// The picker's search as drawn: text, caret, focus.
+    search: (String, chimera_ui::text_edit::Caret, bool),
     pins: Vec<Option<GunFace>>,
     current: Option<String>,
     drop: Option<usize>,
@@ -858,6 +811,7 @@ struct Shown {
 fn draw(
     look: Look,
     ui_state: Res<SandboxUi>,
+    (gp, cards): (Res<GunPicker>, Res<GunCards>),
     cat: Res<SandboxCatalogue>,
     progress: Res<UnitProgress>,
     grid: Res<Grid>,
@@ -872,6 +826,7 @@ fn draw(
     let face = |id: &str| cat.get(id).map(GunFace::of).unwrap_or_else(|| GunFace::bare(id));
     let next = Shown {
         view: ui_state.view.clone(),
+        search: (gp.0.search.clone(), gp.0.caret, gp.0.search_focus),
         pins: ui_state.pins.0.iter().map(|p| p.as_deref().map(face)).collect(),
         current: ui_state.current.clone(),
         drop: ui_state.drag.as_ref().and_then(|d| d.over),
@@ -905,7 +860,7 @@ fn draw(
         v
     };
     let (new_all, prev_s) = (prev.is_none(), prev.as_ref());
-    let search_changed = new_all || prev_s.is_some_and(|o| o.view.search != next.view.search || (o.view.search_caret, o.view.search_anchor) != (next.view.search_caret, next.view.search_anchor) || o.view.search_focus != next.view.search_focus);
+    let search_changed = new_all || prev_s.is_some_and(|o| o.search != next.search);
     let side_changed = new_all
         || prev_s.is_some_and(|o| {
             strip(&o.view) != strip(&next.view) || o.progress != next.progress || o.catalogue != next.catalogue || o.grid_count != next.grid_count
@@ -921,8 +876,9 @@ fn draw(
         });
     let pins_changed = new_all || prev_s.is_some_and(|o| o.pins != next.pins || o.current != next.current || o.drop != next.drop || o.dragging != next.dragging);
     if search_changed {
-        c.entity(p.search).despawn_children();
-        search_field(&mut c, &ui, &look, p.search, &next.view.search, next.view.search_focus, (next.view.search_caret, next.view.search_anchor));
+        if let Some(bar) = p.picker_bar {
+            picker::refill_bar(&mut c, &ui, bar, LIST, &cards.0, &gp.0, &frame());
+        }
     }
     if side_changed {
         for e in [p.games, p.bar, p.pop] {
@@ -962,20 +918,6 @@ fn draw(
         }
     }
     *last = Some((p.root, next));
-}
-
-fn search_field(c: &mut Commands, ui: &Ui, _look: &Look, parent: Entity, text: &str, focus: bool, caret: (usize, usize)) {
-    // The kit's search field (a caret, a selection, copy and paste, a
-    // clear key); a press focuses it (`GunAction::FocusSearch`,
-    // `search_pointer`).
-    let byte = |i: usize| text.char_indices().nth(i).map_or(text.len(), |(b, _)| b);
-    let cur = focus.then(|| chimera_ui::controls::TextCursor { at: byte(caret.0), anchor: byte(caret.1) });
-    let found = ui.search_field(c, parent, text, "Find a gun, a game or a tag", cur, 20.0, chimera_ui::controls::State::focused(focus));
-    c.entity(found.field).insert((GunSearch, GunAction::FocusSearch, UiParityId::new("gun.search.field")));
-    if let Some(k) = found.clear {
-        c.entity(k).insert(GunAction::ClearSearch);
-    }
-    ui.kbd(c, parent, if focus { "Enter" } else { "/" }, 0.44, Tone::Fg3);
 }
 
 fn games_column(c: &mut Commands, ui: &Ui, parent: Entity, guns: &[SandboxGun], s: &SandboxUi, progress: &UnitProgress) {

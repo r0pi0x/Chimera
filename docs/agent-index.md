@@ -123,16 +123,16 @@ module list is `docs/modules.md`.
 - 2497: 1. Playtest essentials | A (settings, health bars, third person), B (penetration and collaterals, docs/plans/active/weapons.md slice 5) and C (view models) are done
 - 2520: 2. Custom maps and minigames | Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md)
 - 2578: 2b. HUD and debug views | the value, `+`) reads as three loose parts
-- 2688: 2c. Multiplayer | Plan: [plans/active/multiplayer.md](plans/active/multiplayer.md) (bevy_replicon + renet; Source-style prediction, interpolation and lag...
-- 2771: 2d. CS:S demos as a parity check (user idea, 2026-10-14) | Built: `demodump` reads CS:S `.dem` files (`source_formats::dem`; SourceTV and, untested, client demos; OBSERVABILITY.md "CS:S demos")
-- 2801: 3. Weapons, remaining | In progress: [plans/active/weapons.md](plans/active/weapons.md)
-- 2892: 4. Bots | Parked (user, 2026-10-13): bots are fine for now; focus on what players see
-- 2920: 5. Console, remaining | The console and overlays are in (chimera/core/src/console.rs, chimera/client/src/client/console.rs)
-- 2933: 6. Sound, remaining | docs/plans/active/sound.md
-- 2968: 7. Physics props, remaining | follow-ups (docs/tech-debt.md "Physics shadow"): the push speed limit (spec Q7), the shadow's weight on a prop stood on, the...
-- 2998: 8. Visual fidelity | planar reflection, the cheap cubemap pass, under-water fog (world, props, ropes, decals, particles; also in water of other shaders...
-- 3072: 9. Performance | sounds, dressings) in our own versioned format, and serve them from the asset service too, so even a session's first load skips conversion
-- 3453: 10. Long tail | decided).** Hub accounts marked developer or admin could get admin rights on every server they join, with all commands available from...
+- 2690: 2c. Multiplayer | Plan: [plans/active/multiplayer.md](plans/active/multiplayer.md) (bevy_replicon + renet; Source-style prediction, interpolation and lag...
+- 2773: 2d. CS:S demos as a parity check (user idea, 2026-10-14) | Built: `demodump` reads CS:S `.dem` files (`source_formats::dem`; SourceTV and, untested, client demos; OBSERVABILITY.md "CS:S demos")
+- 2803: 3. Weapons, remaining | In progress: [plans/active/weapons.md](plans/active/weapons.md)
+- 2894: 4. Bots | Parked (user, 2026-10-13): bots are fine for now; focus on what players see
+- 2922: 5. Console, remaining | The console and overlays are in (chimera/core/src/console.rs, chimera/client/src/client/console.rs)
+- 2935: 6. Sound, remaining | docs/plans/active/sound.md
+- 2970: 7. Physics props, remaining | follow-ups (docs/tech-debt.md "Physics shadow"): the push speed limit (spec Q7), the shadow's weight on a prop stood on, the...
+- 3000: 8. Visual fidelity | planar reflection, the cheap cubemap pass, under-water fog (world, props, ropes, decals, particles; also in water of other shaders...
+- 3074: 9. Performance | sounds, dressings) in our own versioned format, and serve them from the asset service too, so even a session's first load skips conversion
+- 3455: 10. Long tail | decided).** Hub accounts marked developer or admin could get admin rights on every server they join, with all commands available from...
 
 ## docs/economy-data.md
 

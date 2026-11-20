@@ -605,6 +605,55 @@ fn a_click_places_the_caret_between_characters() {
     assert_eq!(char_at(&mut app, v), Some(1));
 }
 
+/// A click in a picker's search field puts the caret where it landed
+/// (not at the end), a drag selects from there, a second quick press
+/// selects all (`picker::SearchPointer`, the kit's `TextPress`).
+#[test]
+fn a_click_in_a_pickers_search_places_the_caret_and_a_drag_selects() {
+    use bevy::ecs::system::RunSystemOnce;
+    use chimera_ui::picker::{PickerSearch, PickerState, SearchPointer};
+    #[derive(Resource, Default)]
+    struct Hold(PickerState, controls::TextPress);
+    let mut app = laid_out();
+    let f = build_laid(&mut app, |ui, c, root| {
+        let f = ui.search_field(c, root, "hello", "Find", None, 20.0, State::NONE).field;
+        c.entity(f).insert(PickerSearch("k".into()));
+        f
+    });
+    app.insert_resource(Hold(PickerState { search: "hello".into(), ..default() }, controls::TextPress::default()));
+    let xs = char_xs(&app, f);
+    assert_eq!(xs.len(), 5);
+    let (centre, size) = (centre_of(&app, f), size_of(&app, f));
+    // The pointer at physical x `x` over the field, the button as given.
+    let step = |app: &mut App, x: f32, just: bool| {
+        let w = app.world_mut();
+        w.entity_mut(f).insert((Interaction::Pressed, bevy::ui::RelativeCursorPosition { normalized: Some(Vec2::new((x - centre.x) / size.x, 0.0)), cursor_over: true }));
+        let mut m = w.resource_mut::<ButtonInput<MouseButton>>();
+        if just {
+            m.release(MouseButton::Left);
+        }
+        m.clear();
+        if just {
+            m.press(MouseButton::Left);
+        }
+        w.run_system_once(|p: SearchPointer, mut h: ResMut<Hold>| {
+            let Hold(st, press) = &mut *h;
+            p.run("k", st, press);
+        })
+        .unwrap();
+        let h = app.world().resource::<Hold>();
+        (h.0.search_focus, h.0.caret.at, h.0.caret.anchor)
+    };
+    assert_eq!(step(&mut app, (xs[1] + xs[2]) / 2.0, true), (true, 2, 2), "a press focuses and places the caret after the 2nd char, not at the end");
+    assert_eq!(step(&mut app, (xs[3] + xs[4]) / 2.0, false), (true, 4, 2), "dragged right: 2..4 selected");
+    assert_eq!(step(&mut app, xs[0] - 6.0, false), (true, 0, 2), "dragged left of the start");
+    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().clear();
+    app.world_mut().resource_mut::<Hold>().1.release();
+    // A press elsewhere in the field, later, places again.
+    app.world_mut().resource_mut::<UiClock>().now = 5.0;
+    assert_eq!(step(&mut app, (xs[0] + xs[1]) / 2.0, true), (true, 1, 1));
+}
+
 /// The caret is thin (one physical pixel at 1080 lines) and sits just
 /// after the character before it, not over it.
 #[test]

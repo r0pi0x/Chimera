@@ -8,7 +8,7 @@
 //! off). Toggling a game or a group sets everything under it. The dialog,
 //! the tree, its boxes, toggles and folds are the kit's shared picker
 //! (`chimera_ui::picker`, multi-select in its List look, in
-//! `picker::dialog`; docs/plans/active/shared-picker.md): this module is
+//! `picker::dialog`; docs/plans/completed/shared-picker.md): this module is
 //! the maps' data and the dialog's words.
 //!
 //! Arena slices (docs/plans/active/arena-slices.md, A2): the listing's

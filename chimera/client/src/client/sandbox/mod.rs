@@ -543,6 +543,7 @@ fn keys(
     clock: Option<Res<chimera_ui::UiClock>>,
     bench: Option<Res<bench::BenchUi>>,
     maps: Option<Res<change_map::MapPicker>>,
+    guns: Option<Res<change_gun::GunPicker>>,
     mut owned: ResMut<crate::client::binds::OwnedKeys>,
     mut ui: ResMut<SandboxUi>,
     mut out: MessageWriter<SandboxAction>,
@@ -575,7 +576,7 @@ fn keys(
     // reach here while it's open. B is read here alone, opening and
     // closing it (it was also read as a typed letter by the view, which
     // took the press that opened it as a close).
-    let typing = (ui.screen == SandboxScreen::ChangeGun && ui.view.search_focus)
+    let typing = (ui.screen == SandboxScreen::ChangeGun && guns.is_some_and(|g| g.0.search_focus))
         || (ui.screen == SandboxScreen::ChangeMap && maps.is_some_and(|m| m.0.search_focus))
         || picking;
     if k(KeyCode::Escape) && ui.screen == SandboxScreen::Bench {

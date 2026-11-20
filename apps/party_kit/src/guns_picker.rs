@@ -1,4 +1,4 @@
-//! The Host page's Guns picker (docs/plans/active/shared-picker.md, step
+//! The Host page's Guns picker (docs/plans/completed/shared-picker.md, step
 //! 2): the Guns field opens the kit's shared picker (`chimera_ui::picker`)
 //! in a dialog, multi-select, as cards (fewer, smaller ones at the
 //! dialog's width): every gun a drawn ladder may deal, by game, each with

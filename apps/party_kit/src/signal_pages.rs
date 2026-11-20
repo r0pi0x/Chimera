@@ -325,7 +325,7 @@ impl Plugin for SignalPagesPlugin {
             .add_systems(Startup, load_saved)
             .add_systems(
                 Update,
-                (follow, wheel, picker_keys, picker_clicks, keys, line_clicks)
+                (follow, wheel, picker_keys, picker_pointer, picker_clicks, keys, line_clicks)
                     .chain()
                     .before(crate::main_menu::MainMenuSystems)
                     .before(crate::esc_menu::EscMenuSystems),
@@ -387,6 +387,23 @@ fn picker_keys(
         host_picker_keys(&mut cx, crate::guns_picker::LIST, &mut guns.0);
     } else {
         host_picker_keys(&mut cx, crate::maps_picker::LIST, &mut picker.0);
+    }
+}
+
+/// The pointer in the open host picker's search field
+/// (`chimera_ui::picker::SearchPointer`): a click places the caret, a drag
+/// selects.
+fn picker_pointer(
+    pointer: chimera_ui::picker::SearchPointer,
+    (mut picker, mut guns): (ResMut<crate::maps_picker::MapsPicker>, ResMut<crate::guns_picker::GunsPicker>),
+    mut press: Local<chimera_ui::controls::TextPress>,
+) {
+    if guns.open.is_some() {
+        pointer.run(crate::guns_picker::LIST, &mut guns.0, &mut press);
+    } else if picker.open.is_some() {
+        pointer.run(crate::maps_picker::LIST, &mut picker.0, &mut press);
+    } else {
+        press.release();
     }
 }
 

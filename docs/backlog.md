@@ -2577,6 +2577,8 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
 
 ## 2b. HUD and debug views
 
+- **Map pictures in the shared picker** (from the shared-picker plan, docs/plans/completed/shared-picker.md): the Maps pickers (Host's dialog, the Sandbox's Change map) list maps by name; a picture per map (the minigame's preview or the loader's overview) on a card would help choosing. Needs a picture source per map first.
+
 - **A compact stepper (user, 2026-11-17).** The kit's `stepper` (`-`,
   the value, `+`) reads as three loose parts. Make it one control: one
   border around minus, value and plus, the buttons close to the number,

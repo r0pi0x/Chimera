@@ -1,4 +1,4 @@
-//! The kit's picker (docs/plans/active/shared-picker.md): one component
+//! The kit's picker (docs/plans/completed/shared-picker.md): one component
 //! for every "choose from a catalogue" screen, the host's Maps and guns
 //! and the Sandbox's Change gun and map, fed by data.
 //!
@@ -6,7 +6,8 @@
 //!   by game, a game's items in groups (Official maps, Custom maps; a
 //!   group with an empty name has no header row), an item an id, its
 //!   shown name, a kit icon, its tags (`facet:value`, what the search
-//!   and the chips match) and optionally a parent (an item listed under
+//!   and the chips match), optionally the text the search matches
+//!   instead (`search_text`, supplied by the owner) and optionally a parent (an item listed under
 //!   another, one step in: an arena slice under its map). A new picker
 //!   (characters) is new data, not new UI.
 //! - **State** (`PickerState`): the ids off (`off`, the kept set) and,
@@ -45,7 +46,9 @@
 //!   `Added`, after `bind_slots`): a card's art when the item has no kit
 //!   icon, its foot (`PickerFrame::foot`: a download's state), a folded
 //!   game's header preview.
-//! - **Search**: the kit's search field; typing is `PickerState::
+//! - **Search**: the kit's search field (a click places the caret, a drag
+//!   selects: `SearchPointer`; `refill_bar` draws the bar again for a
+//!   picker that stays up); typing is `PickerState::
 //!   search_key` (the kit's `text_edit`: a caret, a selection, copy and
 //!   paste) while `search_focus`, the field marked `PickerSearch` for the
 //!   screen's pointer.
@@ -96,6 +99,10 @@ pub struct PickerItem {
     /// `facet:value` (`class:rifle`, `size:large`): the chips and the
     /// search match them.
     pub tags: Vec<String>,
+    /// What the search matches instead of the name, id, game and tags (its
+    /// words, any case), for an owner whose catalogue matches wider or
+    /// differently; None: the default haystack.
+    pub search_text: Option<String>,
     /// A card's small words at its top left (a gun's game).
     pub badge: Option<String>,
     /// A card's mark at its top right (a pinned slot's number).
@@ -220,10 +227,13 @@ pub fn tag_words(tag: &str) -> &str {
 }
 
 impl PickerState {
-    /// The search field takes the keyboard, the caret at the end.
+    /// The search field takes the keyboard, the caret at the end (when
+    /// it already has it, the caret stays where a click put it).
     pub fn focus_search(&mut self) {
-        self.search_focus = true;
-        self.caret = Caret::end_of(&self.search);
+        if !self.search_focus {
+            self.search_focus = true;
+            self.caret = Caret::end_of(&self.search);
+        }
     }
 
     /// A key in the search field (`text_edit::text_key`): edits the text
@@ -262,6 +272,9 @@ impl PickerState {
     pub fn shows(&self, game: &PickerGame, item: &PickerItem) -> bool {
         let words: Vec<String> = self.search.split_whitespace().map(str::to_lowercase).collect();
         let hay = || {
+            if let Some(t) = &item.search_text {
+                return t.to_lowercase();
+            }
             let mut s = format!("{} {} {} {}", item.name, item.id, game.name, game.id);
             for t in &item.tags {
                 s.push(' ');
@@ -591,6 +604,54 @@ pub struct PickerId(pub String);
 #[derive(Component, Clone, Debug, PartialEq, Eq)]
 pub struct PickerSearch(pub String);
 
+/// The pointer in a picker's search field, for every screen that owns a
+/// picker: a press focuses the field and puts the caret between the
+/// characters it is nearest, a drag from it selects, a double press
+/// selects all (`controls::TextPress`, `TextHits`). A system takes this
+/// and a `Local<TextPress>` and calls `run` for each open picker.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct SearchPointer<'w, 's> {
+    mouse: Option<Res<'w, ButtonInput<MouseButton>>>,
+    fields: Query<'w, 's, (Entity, &'static bevy::ui::DeprecatedInteraction, &'static PickerSearch)>,
+    hits: crate::controls::TextHits<'w, 's>,
+    clock: Option<Res<'w, crate::UiClock>>,
+}
+
+impl SearchPointer<'_, '_> {
+    /// One frame of the pointer in picker `list`'s search field. Call it
+    /// after the screen's own handling of `PickerAction::FocusSearch`
+    /// or before it: both keep a placed caret.
+    pub fn run(&self, list: &str, state: &mut PickerState, press: &mut crate::controls::TextPress) {
+        let Some(mouse) = &self.mouse else { return };
+        let field = |pressed: bool| self.fields.iter().find(|(_, i, k)| k.0 == list && (!pressed || **i == bevy::ui::DeprecatedInteraction::Pressed)).map(|(e, _, _)| e);
+        let set = |state: &mut PickerState, c: usize, a: usize| {
+            let n = state.search.chars().count();
+            let next = Caret { at: c.min(n), anchor: a.min(n) };
+            if state.caret != next {
+                state.caret = next;
+            }
+        };
+        if mouse.just_pressed(MouseButton::Left) {
+            let Some(e) = field(true) else {
+                press.release();
+                return;
+            };
+            state.focus_search();
+            let (Some(at), Some(len)) = (self.hits.char_at(e), self.hits.len(e)) else { return };
+            let (c, a) = press.press(self.clock.as_ref().map_or(0.0, |c| c.now), at, len);
+            set(state, c, a);
+        } else if mouse.pressed(MouseButton::Left) {
+            let Some(e) = field(false) else { return };
+            let Some(at) = self.hits.char_at(e) else { return };
+            if let Some((c, a)) = press.drag(at) {
+                set(state, c, a);
+            }
+        } else {
+            press.release();
+        }
+    }
+}
+
 /// The parts of a card or a header the screen that owns the picker draws
 /// (`PickerSlot`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -726,6 +787,9 @@ pub struct PickerParts {
     pub list: Entity,
     /// The side pane (`PickerFrame::side`).
     pub side: Option<Entity>,
+    /// The bar of the search field and the chips (None: the frame asks
+    /// for neither); `refill_bar` draws it again when the state changed.
+    pub bar: Option<Entity>,
 }
 
 /// The view of a picker and its list's state (`spawn` and `update`): the
@@ -874,6 +938,49 @@ pub fn spawn(
     spawn_parts(c, ui, parent, key, games, state, frame, lists, list_style).list
 }
 
+/// The search field and the chips in `bar` (`spawn_parts` and
+/// `refill_bar`).
+#[allow(clippy::too_many_arguments)]
+fn fill_bar(c: &mut Commands, ui: &Ui, bar: Entity, key: &str, games: &[PickerGame], state: &PickerState, chips: &[String], frame: &PickerFrame) {
+    let l = |k: &str| ui.theme.layout(L, k);
+    if frame.search {
+        let caret = frame.caret.or(state.search_cursor());
+        let f = ui.search_field(c, bar, &state.search, &frame.placeholder, caret, l("search_w").min(frame.w), State::focused(caret.is_some()));
+        c.entity(f.field).insert((PickerAction::FocusSearch, PickerSearch(key.to_string()), clickable()));
+        if let Some(k) = f.clear {
+            c.entity(k).insert(PickerAction::ClearSearch);
+        }
+    }
+    for (i, chip) in chips.iter().enumerate() {
+        let on = state.chips.contains(chip);
+        let words = if facet(chip) == "game" {
+            games.iter().find(|g| g.id == tag_words(chip)).map_or(tag_words(chip).to_string(), |g| g.name.clone())
+        } else {
+            tag_words(chip).replace('_', " ")
+        };
+        let ch = ui.boxed(
+            c,
+            bar,
+            UiStyle { h: Some(l("chip_h")), pad: Some([0.0, l("chip_pad"), 0.0, l("chip_pad")].into()), align: Some(AlignItems::Center), ..UiStyle::row() }
+                .bg_a(Tone::Fg, if on { 1.0 } else { 0.0 })
+                .outline(if on { Tone::Fg } else { Tone::Fg4 }, 1.0),
+        );
+        let bg = if on { ui.color(Tone::Fg, 1.0) } else { ui.color(Tone::Fg, 0.0) };
+        c.entity(ch).insert((PickerAction::Chip(i), Hover { base: bg, over: if on { bg } else { ui.color(Tone::Fg, l("hover")) } }, clickable()));
+        ui.text(c, ch, Role::Mono, l("chip_size"), if on { Tone::Ink } else { Tone::Fg2 }, &words);
+    }
+}
+
+/// Draws a picker's bar again (`PickerParts::bar`) after its search text,
+/// caret, focus or ticked chips changed: for a screen whose picker stays
+/// up between frames.
+#[allow(clippy::too_many_arguments)]
+pub fn refill_bar(c: &mut Commands, ui: &Ui, bar: Entity, key: &str, games: &[PickerGame], state: &PickerState, frame: &PickerFrame) {
+    c.entity(bar).despawn_children();
+    let chips = PickerState::chips_of(games, &frame.facets.iter().map(String::as_str).collect::<Vec<_>>());
+    fill_bar(c, ui, bar, key, games, state, &chips, frame);
+}
+
 /// `spawn`, with the side pane (`PickerFrame::side`) when asked for.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_parts(
@@ -891,36 +998,12 @@ pub fn spawn_parts(
     let l = |k: &str| t.layout(L, k);
     let view = prepare(t, key, games, state, frame, lists);
     let frame = &view.frame;
-    if frame.search || !view.chips.is_empty() {
+    let bar = (frame.search || !view.chips.is_empty()).then(|| {
         let bar = ui.boxed(c, parent, UiStyle { gap: Some(l("bar_gap")), align: Some(AlignItems::Center), ..UiStyle::row() });
         c.entity(bar).insert(Node { flex_wrap: FlexWrap::Wrap, ..default() });
-        if frame.search {
-            let caret = frame.caret.or(state.search_cursor());
-            let f = ui.search_field(c, bar, &state.search, &frame.placeholder, caret, l("search_w").min(frame.w), State::focused(caret.is_some()));
-            c.entity(f.field).insert((PickerAction::FocusSearch, PickerSearch(key.to_string()), clickable()));
-            if let Some(k) = f.clear {
-                c.entity(k).insert(PickerAction::ClearSearch);
-            }
-        }
-        for (i, chip) in view.chips.iter().enumerate() {
-            let on = state.chips.contains(chip);
-            let words = if facet(chip) == "game" {
-                games.iter().find(|g| g.id == tag_words(chip)).map_or(tag_words(chip).to_string(), |g| g.name.clone())
-            } else {
-                tag_words(chip).replace('_', " ")
-            };
-            let ch = ui.boxed(
-                c,
-                bar,
-                UiStyle { h: Some(l("chip_h")), pad: Some([0.0, l("chip_pad"), 0.0, l("chip_pad")].into()), align: Some(AlignItems::Center), ..UiStyle::row() }
-                    .bg_a(Tone::Fg, if on { 1.0 } else { 0.0 })
-                    .outline(if on { Tone::Fg } else { Tone::Fg4 }, 1.0),
-            );
-            let bg = if on { ui.color(Tone::Fg, 1.0) } else { ui.color(Tone::Fg, 0.0) };
-            c.entity(ch).insert((PickerAction::Chip(i), Hover { base: bg, over: if on { bg } else { ui.color(Tone::Fg, l("hover")) } }, clickable()));
-            ui.text(c, ch, Role::Mono, l("chip_size"), if on { Tone::Ink } else { Tone::Fg2 }, &words);
-        }
-    }
+        fill_bar(c, ui, bar, key, games, state, &view.chips, frame);
+        bar
+    });
     let (holder, side) = match frame.side {
         Some(w) => {
             let row = ui.boxed(c, parent, UiStyle { gap: Some(l("side_gap")), grow: Some(1.0), align: Some(AlignItems::Stretch), ..UiStyle::row() });
@@ -937,7 +1020,7 @@ pub fn spawn_parts(
     c.queue(move |w: &mut World| {
         w.get_resource_or_init::<Pickers>().0.insert(key, view);
     });
-    PickerParts { list: list.scroll.frame, side }
+    PickerParts { list: list.scroll.frame, side, bar }
 }
 
 /// The dialog a host's picker sits in (design rules 13): the scrim over

@@ -306,6 +306,11 @@ fn ui(sim: &Sim) -> SandboxUi {
     sim.app.world().resource::<SandboxUi>().clone()
 }
 
+/// The Change gun grid's picker state (it owns the search field).
+fn gp(sim: &Sim) -> chimera_ui::picker::PickerState {
+    sim.app.world().resource::<sandbox::change_gun::GunPicker>().0.clone()
+}
+
 fn cursor(sim: &Sim) -> Option<VCursor> {
     sim.app.world().resource::<VirtualLists>().get(LIST).and_then(|s| s.cursor)
 }
@@ -337,7 +342,7 @@ fn the_grid_opens_on_the_gun_in_hand_and_the_arrows_move_the_selection() {
 fn typing_finds_and_enter_switches() {
     let mut sim = sim("gun");
     type_text(&mut sim, "/awp");
-    assert_eq!(ui(&sim).view.search, "awp");
+    assert_eq!(gp(&sim).search, "awp");
     frame(&mut sim);
     let grid = sim.app.world().resource::<Grid>().clone();
     assert_eq!(grid.0.iter().map(|s| s.1.len()).sum::<usize>(), 1);
@@ -347,7 +352,7 @@ fn typing_finds_and_enter_switches() {
     frame(&mut sim);
     let _ = cat;
     press(&mut sim, &[KeyCode::Enter]);
-    assert!(!ui(&sim).view.search_focus, "the first Enter lets go of the field");
+    assert!(!gp(&sim).search_focus, "the first Enter lets go of the field");
     press(&mut sim, &[KeyCode::Enter]);
     frame(&mut sim);
     let u = ui(&sim);
@@ -416,20 +421,20 @@ fn letters_type_only_in_the_focused_search_and_b_toggles() {
     // Not focused: letters don't type; I is the model view.
     type_text(&mut sim, "ir");
     let u = ui(&sim);
-    assert!(u.view.search.is_empty(), "no letters into an unfocused search");
+    assert!(gp(&sim).search.is_empty(), "no letters into an unfocused search");
     assert!(u.view.detail, "I is the model view");
     // `/` focuses the field: then every letter types, B and I and R too.
     type_text(&mut sim, "/bir");
     let u = ui(&sim);
-    assert!(u.view.search_focus);
+    assert!(gp(&sim).search_focus);
     assert_eq!(u.screen, SandboxScreen::ChangeGun, "B doesn't close the view while typing");
-    assert_eq!(u.view.search, "bir");
+    assert_eq!(gp(&sim).search, "bir");
     assert!(u.view.detail, "I typed, the model view unchanged");
     // Esc leaves the field (the text stays), then clears it, then closes.
     press(&mut sim, &[KeyCode::Escape]);
-    assert!(!ui(&sim).view.search_focus && ui(&sim).view.search == "bir");
+    assert!(!gp(&sim).search_focus && gp(&sim).search == "bir");
     press(&mut sim, &[KeyCode::Escape]);
-    assert!(ui(&sim).view.search.is_empty() && ui(&sim).screen == SandboxScreen::ChangeGun);
+    assert!(gp(&sim).search.is_empty() && ui(&sim).screen == SandboxScreen::ChangeGun);
     // B closes it; the screen toggles back open with B from the range.
     real_key(&mut sim, KeyCode::KeyB, "b");
     frame(&mut sim);
@@ -441,13 +446,13 @@ fn letters_type_only_in_the_focused_search_and_b_toggles() {
     frame(&mut sim);
     assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun, "B opens it and it stays open");
     // A click on the field focuses it too; Enter lets go of it.
-    sim.app.world_mut().write_message(chimera_client::client::sandbox::change_gun::GunAction::FocusSearch);
+    sim.app.world_mut().resource_mut::<sandbox::change_gun::GunPicker>().0.focus_search();
     frame(&mut sim);
-    assert!(ui(&sim).view.search_focus);
+    assert!(gp(&sim).search_focus);
     type_text(&mut sim, "awp");
     press(&mut sim, &[KeyCode::Enter]);
-    assert!(!ui(&sim).view.search_focus);
-    assert_eq!(ui(&sim).view.search, "awp");
+    assert!(!gp(&sim).search_focus);
+    assert_eq!(gp(&sim).search, "awp");
     assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun, "Enter in the field switched nothing");
 }
 
@@ -479,51 +484,51 @@ fn key_event(sim: &mut Sim, code: KeyCode, key: Key) {
 }
 
 /// The Change gun search is the kit's text field (a caret, a selection):
-/// `GunSearch` on a text field, the arrows move its caret and not the
+/// `PickerSearch` on a text field, the arrows move its caret and not the
 /// grid's cursor, Backspace and Delete edit at the caret, Ctrl+A selects
 /// all (typing then replaces), `/` and a click focus it, Enter and Esc
 /// let go, and B toggles the menu only while it isn't focused.
 #[test]
 fn the_search_is_the_standard_text_field_with_a_caret_and_a_selection() {
-    use chimera_client::client::sandbox::change_gun::GunSearch;
+    use chimera_ui::picker::PickerSearch;
     let mut sim = sim("gun");
     let w = sim.app.world_mut();
-    assert_eq!(w.query::<&GunSearch>().iter(w).count(), 1, "the kit's text field");
+    assert_eq!(w.query::<&PickerSearch>().iter(w).count(), 1, "the picker's search field");
     type_text(&mut sim, "/awp");
-    assert!(ui(&sim).view.search_focus);
+    assert!(gp(&sim).search_focus);
     let at = cursor(&sim);
     key_event(&mut sim, KeyCode::ArrowLeft, Key::ArrowLeft);
     key_event(&mut sim, KeyCode::ArrowLeft, Key::ArrowLeft);
-    assert_eq!(ui(&sim).view.search_caret, 1, "the caret moved");
+    assert_eq!(gp(&sim).caret.at, 1, "the caret moved");
     assert_eq!(cursor(&sim), at, "Left doesn't move the grid's cursor in the field");
     type_text(&mut sim, "r");
-    assert_eq!(ui(&sim).view.search, "arwp", "typed at the caret");
+    assert_eq!(gp(&sim).search, "arwp", "typed at the caret");
     key_event(&mut sim, KeyCode::Delete, Key::Delete);
-    assert_eq!(ui(&sim).view.search, "arp");
+    assert_eq!(gp(&sim).search, "arp");
     key_event(&mut sim, KeyCode::Home, Key::Home);
     key_event(&mut sim, KeyCode::End, Key::End);
-    assert_eq!(ui(&sim).view.search_caret, 3);
+    assert_eq!(gp(&sim).caret.at, 3);
     key_event(&mut sim, KeyCode::Backspace, Key::Backspace);
-    assert_eq!(ui(&sim).view.search, "ar");
+    assert_eq!(gp(&sim).search, "ar");
     // Ctrl+A selects all; typing replaces it.
     sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::ControlLeft);
     key_event(&mut sim, KeyCode::KeyA, Key::Character("a".into()));
     sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(KeyCode::ControlLeft);
     let u = ui(&sim);
-    assert_eq!((u.view.search_caret, u.view.search_anchor), (2, 0), "all selected");
+    assert_eq!((gp(&sim).caret.at, gp(&sim).caret.anchor), (2, 0), "all selected");
     type_text(&mut sim, "m4");
-    assert_eq!(ui(&sim).view.search, "m4");
+    assert_eq!(gp(&sim).search, "m4");
     // B is a letter while the field has the keys.
     real_key(&mut sim, KeyCode::KeyB, "b");
-    assert_eq!(ui(&sim).view.search, "m4b");
+    assert_eq!(gp(&sim).search, "m4b");
     assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun);
     // Enter lets go; B then closes; Esc after `/` lets go too.
     press(&mut sim, &[KeyCode::Enter]);
-    assert!(!ui(&sim).view.search_focus);
+    assert!(!gp(&sim).search_focus);
     type_text(&mut sim, "/");
-    assert_eq!(ui(&sim).view.search_caret, 3, "focused again with the caret at the end");
+    assert_eq!(gp(&sim).caret.at, 3, "focused again with the caret at the end");
     press(&mut sim, &[KeyCode::Escape]);
-    assert!(!ui(&sim).view.search_focus && ui(&sim).view.search == "m4b");
+    assert!(!gp(&sim).search_focus && gp(&sim).search == "m4b");
     real_key(&mut sim, KeyCode::KeyB, "b");
     frame(&mut sim);
     assert_eq!(ui(&sim).screen, SandboxScreen::None, "B closes it again once the field let go");
@@ -617,7 +622,7 @@ fn the_tag_popovers_own_search_types_finds_and_enter_ticks() {
     type_text(&mut sim, "spl");
     let u = ui(&sim);
     assert_eq!(u.view.tag_search, "spl", "typing goes to Find a tag");
-    assert!(u.view.search.is_empty(), "not to the grid's search");
+    assert!(gp(&sim).search.is_empty(), "not to the grid's search");
     assert_eq!(u.view.tags_found(), vec![(TagGroup::Behaviour, vec!["splash"])], "the tags holding it");
     // A group's label finds its tags too.
     let v = GunView { tag_search: "optics".into(), ..default() };
@@ -1017,7 +1022,37 @@ fn change_gun_is_the_shared_picker() {
     assert!(w.query::<&PickerSlot>().iter(w).any(|s| s.list == LIST && s.part == PickerPart::Head), "the folded header's preview");
 }
 
-/// The sandbox's map picker (M; docs/plans/active/shared-picker.md, step
+/// Change gun's search is the picker's own bar (no field in the head), and
+/// it still matches as the screen always did: a gun's game (long and
+/// short), section, tags and its game's tags, not only name and id. The
+/// cards carry that text (`PickerItem::search_text`), so the picker's
+/// matching and the tiles' agree.
+#[test]
+fn change_gun_search_is_the_pickers_bar_with_the_screens_wider_matching() {
+    use chimera_ui::picker::{PickerSearch, Pickers};
+    let mut sim = laid_out(|_| {});
+    let w = sim.app.world_mut();
+    assert_eq!(w.query::<&PickerSearch>().iter(w).filter(|s| s.0 == LIST).count(), 1, "the picker's search field, the only one");
+    assert!(w.resource::<Pickers>().0[LIST].frame.search, "the frame asks for the bar");
+    let cat = w.resource::<SandboxCatalogue>().clone();
+    let cards = w.resource::<sandbox::change_gun::GunCards>().0.clone();
+    assert!(cards.iter().flat_map(|g| &g.groups).flat_map(|g| &g.items).all(|i| i.search_text.is_some()), "every card carries what the search matches");
+    // A word only the wide text has (the gun's game, long and short): the
+    // picker alone, without the screen's tiles, lets its cards through.
+    let g = cat.guns.iter().find(|g| !g.game_short.is_empty()).expect("a gun with a game");
+    for word in [g.game_short.to_lowercase(), g.game_name.to_lowercase()] {
+        let st = chimera_ui::picker::PickerState { search: word.clone(), ..default() };
+        let shown = |games: &[chimera_ui::picker::PickerGame]| st.rows(games).iter().filter(|r| chimera_ui::picker::PickerState::item(games, r).is_some_and(|i| i.id == g.id)).count();
+        assert_eq!(shown(&cards), 1, "`{word}` finds {}", g.id);
+    }
+    // Typing goes through the picker's state, and the tiles follow.
+    type_text(&mut sim, "/awp");
+    assert_eq!(gp(&sim).search, "awp");
+    frame(&mut sim);
+    assert_eq!(ui(&sim).view.search, "awp", "the tiles' filter follows the picker's search");
+}
+
+/// The sandbox's map picker (M; docs/plans/completed/shared-picker.md, step
 /// 4): the kit's picker, single pick, rows by game with the sandbox's own
 /// first and the map in play the current one; `/` and typing find a map,
 /// Esc lets go of the field and then clears it; Enter on a map submits

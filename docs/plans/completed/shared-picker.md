@@ -1,6 +1,6 @@
 # Plan: one shared picker for maps and guns
 
-Status: steps 1–4 done (2026-11-20); the leftovers at the end of the log. Design approved by the user (below).
+Status: done (2026-11-20); map pictures moved to docs/backlog.md (2b). Design approved by the user (below).
 Related: docs/plans/active/ugg-ui.md ("Signal revision 8" stage 4, the
 Maps picker; M11, the sandbox's screens).
 
@@ -153,7 +153,20 @@ captures at 1920x1080 and 1280x720, a commit, post-push tests.
   `the_map_picker_finds_and_changes_map_by_the_sandbox_command`.
   Captures: `ui_scene sandbox map` (and `rest`, the M hint) at 1920x1080
   and 1280x720.
-- Left: the picker's own search bar isn't Change gun's (its head keeps
-  the screen's field and matching); map pictures; the Host dialogs'
-  search field takes no caret placement by the pointer (a click focuses
-  it, the caret at the end).
+- 2026-11-20, search follow-ups. (1) A click in a picker's search box now
+  places the caret where it landed and a drag selects, a quick second
+  press selects all, in every screen with a picker: `picker::SearchPointer`
+  (the kit's `TextPress` and `TextHits`; the host's Maps and Guns dialogs
+  and the sandbox's map picker call it, as does Change gun). Test:
+  chimera_ui `a_click_in_a_pickers_search_places_the_caret_and_a_drag_selects`.
+  (2) Change gun's head search is gone: the grid's own search bar is the
+  picker's (`PickerFrame::search`), the screen's wider matching (name, id,
+  game long and short, section, tags, the game's tags) comes with each
+  card as `PickerItem::search_text` (`model::search_text`), and the
+  state (text, caret, focus) lives in `GunPicker`; `GunView::search` only
+  mirrors the text for the tiles' families and the counts. The bar is
+  drawn again on a change by `picker::refill_bar`. Tests: chimera_client
+  `change_gun_search_is_the_pickers_bar_with_the_screens_wider_matching`
+  and the sandbox's search tests moved onto `GunPicker`. Captures:
+  `ui_scene sandbox gun` and `ui_gallery picker`, before and after.
+- Left: map pictures (moved to docs/backlog.md, 2b).

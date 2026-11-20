@@ -482,14 +482,10 @@ pub struct GunView {
     pub facets: BTreeMap<String, BTreeSet<String>>,
     /// Global tags ticked (AND).
     pub tags: BTreeSet<Tag>,
+    /// The search words applied (the picker's search text, which owns the
+    /// field, its caret and its focus: `change_gun::GunPicker`; `sync_grid`
+    /// copies it here so the tiles and the counts follow it).
     pub search: String,
-    /// The search field's caret and the other end of its selection (char
-    /// indices; the standard text field: `widgets::Caret`).
-    pub search_caret: usize,
-    pub search_anchor: usize,
-    /// The search field has the keyboard (`/`, a click, or Enter with
-    /// nothing under the cursor); letters type only then.
-    pub search_focus: bool,
     /// The cursor's gun (an id).
     pub selected: Option<String>,
     /// The tag popover is open.
@@ -507,23 +503,24 @@ pub struct GunView {
     pub fold_return: Option<(usize, usize)>,
 }
 
+/// What the search matches of a gun: its name, id, game (long and short),
+/// section, tags and its game's tags. The picker's cards carry it
+/// (`PickerItem::search_text`), so the picker's search matches as the
+/// screen's always did.
+pub fn search_text(g: &SandboxGun) -> String {
+    format!(
+        "{} {} {} {} {} {} {}",
+        g.name,
+        g.id,
+        g.game_name,
+        g.game_short,
+        section_of(g),
+        g.tags.iter().map(|t| t.1).collect::<Vec<_>>().join(" "),
+        g.game_tags.join(" ")
+    )
+}
+
 impl GunView {
-    /// The search field takes the keyboard (`/`, Enter), its caret at the
-    /// end of what is typed.
-    pub fn focus_search(&mut self) {
-        let n = self.search.chars().count();
-        self.search_focus = true;
-        self.search_caret = n;
-        self.search_anchor = n;
-    }
-
-    /// Empties the search (Esc).
-    pub fn clear_search(&mut self) {
-        self.search.clear();
-        self.search_caret = 0;
-        self.search_anchor = 0;
-    }
-
     fn words(&self) -> Vec<String> {
         self.search.split_whitespace().map(str::to_lowercase).collect()
     }
@@ -546,17 +543,7 @@ impl GunView {
         if words.is_empty() {
             return true;
         }
-        let hay = format!(
-            "{} {} {} {} {} {} {}",
-            g.name,
-            g.id,
-            g.game_name,
-            g.game_short,
-            section_of(g),
-            g.tags.iter().map(|t| t.1).collect::<Vec<_>>().join(" "),
-            g.game_tags.join(" ")
-        )
-        .to_lowercase();
+        let hay = search_text(g).to_lowercase();
         words.iter().all(|w| hay.contains(w.as_str()))
     }
 

@@ -1,4 +1,4 @@
-//! Change map (M in the sandbox; docs/plans/active/shared-picker.md, step
+//! Change map (M in the sandbox; docs/plans/completed/shared-picker.md, step
 //! 4): the kit's shared picker (`chimera_ui::picker`, single pick, the
 //! List look) over the whole screen, every map the sandbox can go to by
 //! game, the one it plays on in the accent.
@@ -289,11 +289,20 @@ fn draw(
     }
 }
 
+/// The pointer in the search field (`picker::SearchPointer`).
+fn search_pointer(pointer: chimera_ui::picker::SearchPointer, ui: Res<SandboxUi>, mut p: ResMut<MapPicker>, mut press: Local<chimera_ui::controls::TextPress>) {
+    if ui.screen == SandboxScreen::ChangeMap {
+        pointer.run(LIST, &mut p.0, &mut press);
+    } else {
+        press.release();
+    }
+}
+
 /// The view's systems.
 pub fn add(app: &mut App) {
     app.init_resource::<MapPicker>().init_resource::<MapCards>().init_resource::<Pickers>().add_message::<PickerAction>().add_systems(
         Update,
-        (keys, act, draw)
+        (keys, search_pointer, act, draw)
             .chain()
             .after(super::SandboxSystems)
             .run_if(resource_exists::<chimera_ui::Theme>)
