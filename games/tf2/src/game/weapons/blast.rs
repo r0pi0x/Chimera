@@ -33,6 +33,13 @@
 //! - **Bullets** push too (`bullet_push`, after the frame): one push per
 //!   victim per shot from its summed damage at scale 6, from the shooter's
 //!   centre lowered 10.
+//! - **Where** (effects.md 13, `Placement`): 1 unit out along the
+//!   normal of what its trace met (a rocket's touch: `touched`; a pipe's
+//!   direct hit: a 64-unit line through it along its flight, `pipe_hit`;
+//!   a fused pipe or detonated sticky: a line from 8 units above its
+//!   centre to 24 below, `fused`, which snaps it onto a floor there and
+//!   else leaves it in the air), the `Scorch` decal on the same trace's
+//!   hit unless a player; a stuck sticky sends its surface's normal.
 //! - an explosion's look and its sound (`Tf2Explosion`, drawn and played
 //!   by each machine that draws when the drawn time reaches it) and its
 //!   measure (`weapon::grenade::BlastDealt`: the centre, the radius, the
@@ -174,9 +181,28 @@ impl BlastSounds<'_> {
 /// The decal a blast leaves where it went off (effects.md 5).
 pub const SCORCH: &str = "Scorch";
 
-/// How far behind the blast's centre, along its surface's normal, the
-/// scorch's trace reaches (units; ours: the spec names no length).
-pub const SCORCH_TRACE: f32 = 16.0;
+/// A blast's centre is this far out along the touched surface's normal
+/// (units, effects.md 13).
+pub const OUT: f32 = 1.0;
+/// A pipe's direct hit: its line from this far behind its centre along
+/// its flight to as far ahead (units, effects.md 13).
+pub const PIPE_LINE: f32 = 32.0;
+/// A fused pipe's or detonated sticky's line down: from this far above
+/// its centre to `DOWN_BELOW` below (units, effects.md 13).
+pub const DOWN_ABOVE: f32 = 8.0;
+pub const DOWN_BELOW: f32 = 24.0;
+
+/// Where a blast goes off (effects.md 13): its centre, the surface normal
+/// sent with it (zero: in the air), what its trace hit (a player: the
+/// player effect, no scorch) and the scorch's place on the same trace
+/// (point, normal), if any.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Placement {
+    pub centre: Vec3,
+    pub normal: Vec3,
+    pub target: Option<Entity>,
+    pub scorch: Option<(Vec3, Vec3)>,
+}
 
 /// Launched by his own blast, until he lands (weapons.md 5.4).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
@@ -305,22 +331,74 @@ impl BlastWorld<'_, '_> {
             .is_none()
     }
 
-    /// The scorch's place on the surface behind `centre` along `normal`
-    /// (point, normal), if the world is there (effects.md 5 step 6).
-    fn scorch_at(&self, centre: Vec3, normal: Vec3) -> Option<(Vec3, Vec3)> {
-        let n = Dir3::new(normal).ok()?;
+    /// What a line from `from` along `dir` for `length` (m) meets first
+    /// among solids (characters too): the point, the surface's normal and
+    /// the body. A line starting inside a solid meets nothing there
+    /// (effects.md 13: a sticky on a ceiling).
+    fn line(&self, from: Vec3, dir: Vec3, length: f32) -> Option<(Vec3, Vec3, Entity)> {
+        let dir = Dir3::new(dir).ok()?;
         let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
-        let hit = self.spatial.cast_ray_predicate(centre, -n, SCORCH_TRACE * U, true, &filter, &|e| {
-            let body = self.colliders.get(e).map_or(e, |o| o.body);
-            !self.chars.contains(body)
-        })?;
-        Some((centre - *n * hit.distance, hit.normal))
+        let hit = self.spatial.cast_ray(from, dir, length, true, &filter)?;
+        if hit.distance <= 0.0 {
+            return None;
+        }
+        let body = self.colliders.get(hit.entity).map_or(hit.entity, |o| o.body);
+        Some((from + *dir * hit.distance, hit.normal, body))
     }
 
-    /// Explode `blast` of `weapon` by `owner` at `centre` (m) on a surface
-    /// of `normal` (zero: in the air), `touched` the player hit directly
-    /// (full splash).
-    pub fn detonate(&mut self, blast: &Blast, centre: Vec3, normal: Vec3, owner: Option<Entity>, weapon: &'static str, touched: Option<Entity>) {
+    /// A placement from what a trace met: `OUT` along its normal, the
+    /// scorch there unless on a player.
+    fn met(&self, (point, normal, body): (Vec3, Vec3, Entity), sent: Option<Vec3>) -> Placement {
+        let player = self.chars.contains(body);
+        Placement {
+            centre: point + normal * OUT * U,
+            normal: sent.unwrap_or(normal),
+            target: Some(body),
+            scorch: (!player).then_some((point, normal)),
+        }
+    }
+
+    /// A rocket's touch at `point` on a surface of `normal`, `other` the
+    /// body touched (None: the world): `OUT` off it, the scorch there
+    /// unless on a player (effects.md 13).
+    pub fn touched(&self, point: Vec3, normal: Vec3, other: Option<Entity>) -> Placement {
+        let player = other.is_some_and(|o| self.chars.contains(o));
+        Placement {
+            centre: point + normal * OUT * U,
+            normal,
+            target: other,
+            scorch: (!player).then_some((point, normal)),
+        }
+    }
+
+    /// A pipe's direct hit (effects.md 13): its 64-unit line through its
+    /// centre along its flight; the line missing, its centre in the air.
+    pub fn pipe_hit(&self, centre: Vec3, velocity: Vec3) -> Placement {
+        let dir = velocity.normalize_or_zero();
+        let from = centre - dir * PIPE_LINE * U;
+        match self.line(from, dir, 2.0 * PIPE_LINE * U) {
+            Some(m) => self.met(m, None),
+            None => Placement { centre, ..default() },
+        }
+    }
+
+    /// A fused pipe or detonated sticky (effects.md 13): a line down from
+    /// `DOWN_ABOVE` above its centre to `DOWN_BELOW` below snaps it onto
+    /// a floor it finds; `stuck` the normal of the surface a sticky stuck
+    /// to (sent instead of the floor's, or of none).
+    pub fn fused(&self, centre: Vec3, stuck: Option<Vec3>) -> Placement {
+        let from = centre + Vec3::Y * DOWN_ABOVE * U;
+        match self.line(from, Vec3::NEG_Y, (DOWN_ABOVE + DOWN_BELOW) * U) {
+            Some(m) => self.met(m, stuck),
+            None => Placement { centre, normal: stuck.unwrap_or(Vec3::ZERO), ..default() },
+        }
+    }
+
+    /// Explode `blast` of `weapon` by `owner` where `at` places it (m;
+    /// its look and scorch too), `touched` the player hit directly (full
+    /// splash).
+    pub fn detonate(&mut self, blast: &Blast, at: &Placement, owner: Option<Entity>, weapon: &'static str, touched: Option<Entity>) {
+        let (centre, normal) = (at.centre, at.normal);
         let p = blast.params;
         let owner_at = owner.and_then(|o| self.centre(o));
         let mut dealt: Vec<Dealt> = Vec::new();
@@ -409,12 +487,13 @@ impl BlastWorld<'_, '_> {
         });
         // Its sound plays with its look on each machine that draws, when
         // the drawn time reaches it (effects.md 5 step 5, 11: `looks`).
-        let on_player = touched.is_some_and(|t| self.chars.contains(t));
+        let on_player = at.target.is_some_and(|t| self.chars.contains(t));
         // Effects.md 5: a near-zero normal is in the air.
         let normal = if normal.abs().max_element() < AIR_NORMAL { Vec3::ZERO } else { normal };
         self.looks.write(Tf2Explosion { at: centre, normal, on_player, weapon });
-        // The scorch, unless it went off on a player.
-        if !on_player && let Some((point, n)) = self.scorch_at(centre, normal) {
+        // The scorch on what its own trace met (effects.md 13), unless a
+        // player.
+        if let Some((point, n)) = at.scorch {
             self.decals.write(crate::map::PlaceDecal {
                 target: None,
                 group: crate::map::DecalGroup::Named(SCORCH.into()),

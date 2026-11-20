@@ -12,10 +12,16 @@
 //! own where the map holds them under its name (`game_surface`,
 //! `MapSounds::game_entry`, `DecalGroup::GameMaterial`; `map::impact`):
 //! a TF2 gun on de_dust2 sounds and marks as TF2's, not CS:S's.
+//!
+//! A bullet, pellet or swing that hits a character writes
+//! `map::PlaceBodyDecal` (drawn on the body by `render::body_decals`) when
+//! the drawing game's style decals bodies (`ImpactStyle::body_decals`:
+//! CS:S and HL2:DM always, TF2 but in low violence), with the decal a
+//! bullet on its flesh surface takes (`body_group`) or its melee decal.
 
 use std::collections::HashMap;
 
-use super::{ImpactStyle, ImpactStyles};
+use super::{BodyDecals, ImpactStyle, ImpactStyles};
 use crate::content::breakables::ImpactMark;
 
 use avian3d::prelude::*;
@@ -24,7 +30,7 @@ use bevy::prelude::*;
 use crate::{
     core::{Intent, MapWater},
     map::{
-        DecalGroup, MapBrushEntity, MapEntities, PhysicsProp, PlaceDecal, PlaySound, PropSurface,
+        DecalGroup, MapBrushEntity, MapEntities, PhysicsProp, PlaceBodyDecal, PlaceDecal, PlaySound, PropSurface,
         breakables::PieceBody,
         impact::{GameSurfaces, SurfaceClass, SurfaceClasses},
         sound::{MapSounds, MapSurface, SoundBank, SurfaceGrid},
@@ -87,6 +93,7 @@ impl Plugin for BulletImpactsPlugin {
         use crate::weapon::impact::ImpactAppExt;
         app.register_impact_provider(self.0.game);
         app.world_mut().get_resource_or_init::<ImpactStyles>().add(self.0);
+        super::add_listener(app);
         if app.world().contains_resource::<BulletImpactSystems>() {
             return;
         }
@@ -94,10 +101,12 @@ impl Plugin for BulletImpactsPlugin {
             .add_message::<PlaySound>()
             .add_message::<WeaponEvent>()
             .add_message::<PlaceDecal>()
+            .add_message::<PlaceBodyDecal>()
             .add_systems(
                 FixedUpdate,
                 (bullet_impacts, impact_decals).after(crate::core::SimSet::Weapons),
-            );
+            )
+;
     }
 }
 
@@ -214,7 +223,9 @@ fn bullet_impacts(
     water: Option<Res<MapWater>>,
     mut play: MessageWriter<PlaySound>,
     (route, classes, styles, local): (ImpactRoute, Option<Res<SurfaceClasses>>, Res<ImpactStyles>, Query<(), With<crate::core::LocalPlayer>>),
+    listener: Option<Res<super::ImpactListener>>,
 ) {
+    let listener = listener.and_then(|l| l.0);
     let Some(bank) = bank else {
         events.clear();
         return;
@@ -226,6 +237,7 @@ fn bullet_impacts(
         if style.skips(e, local.contains(e.owner)) {
             continue;
         }
+        let mut ray_at: Option<Vec3> = None;
         // Every surface a bullet reaches, also after passing something;
         // a melee hit's generic impact is a bullet's (HL2:DM's crowbar and
         // stunstick, effects_sounds.md 6; CS:S's knife, impact_effects.md
@@ -237,9 +249,11 @@ fn bullet_impacts(
                 }
                 (from, to, hit)
             }
-            WeaponEventKind::Swing { at: Some((point, _, hit)), line, .. }
+            WeaponEventKind::Swing { at: Some((point, _, hit)), line, ray, .. }
                 if super::impact_effects::knife_splash(*line, water.as_deref()).is_none() =>
             {
+                // The impact ray's hit, else the contact (effects.md 10.1).
+                ray_at = (style.melee_ray && !characters.contains(*hit)).then_some(*ray).flatten().map(|(p, _)| p);
                 (&line.0, point, &Some(*hit))
             }
             // A projectile's mark sounds as a bullet's impact there.
@@ -281,8 +295,13 @@ fn bullet_impacts(
         {
             continue;
         }
-        played.push((e.owner, entry.clone(), *to));
-        play.write(PlaySound::at(entry, *to));
+        let at = ray_at.unwrap_or(*to);
+        // Too far from this machine's player: not played.
+        if !style.heard(listener, at) {
+            continue;
+        }
+        played.push((e.owner, entry.clone(), at));
+        play.write(PlaySound::at(entry, at));
     }
 }
 
@@ -325,7 +344,8 @@ fn breakable_decal(
 /// impact decal ("TranslationData" by its game material), or a breakable
 /// brush's own (`breakable_decal`), the game's melee mark
 /// (`ImpactStyle::melee_decal`) or the surface's, on the world, the
-/// prop or the brush entity that was hit. Characters take none yet.
+/// prop or the brush entity that was hit; on a character's body
+/// (`PlaceBodyDecal`) where the drawing game's style decals bodies.
 #[allow(clippy::too_many_arguments)]
 fn impact_decals(
     mut events: MessageReader<WeaponEvent>,
@@ -339,12 +359,43 @@ fn impact_decals(
     water: Option<Res<MapWater>>,
     mut decals: MessageWriter<PlaceDecal>,
     (route, classes, styles, local): (ImpactRoute, Option<Res<SurfaceClasses>>, Res<ImpactStyles>, Query<(), With<crate::core::LocalPlayer>>),
+    (mut body_decals, effects): (MessageWriter<PlaceBodyDecal>, Option<Res<super::impact_effects::ImpactEffectSettings>>),
 ) {
-    // Characters take blood, not these (not done yet).
+    // Characters take theirs on the body (`PlaceBodyDecal`), not these.
     let marked = |e: Entity| !characters.contains(e);
+    let low_violence = effects.is_some_and(|s| s.violence_hblood == 0);
     for e in events.read().filter(|e| e.shown()) {
         let Some(&style) = styles.drawing(&route, e) else { continue };
         if style.skips(e, local.contains(e.owner)) {
+            continue;
+        }
+        // A bullet or swing into a character: the decal on its body.
+        if let Some((from, point, hit, swing)) = body_hit(&e.kind)
+            && characters.contains(hit)
+        {
+            let wet = match &e.kind {
+                WeaponEventKind::Swing { line, .. } => super::impact_effects::knife_splash(*line, water.as_deref()).is_some(),
+                _ => in_water(from, point, water.as_deref()),
+            };
+            let decals_bodies = match style.body_decals {
+                BodyDecals::Never => false,
+                BodyDecals::Always => true,
+                BodyDecals::NotLowViolence => !low_violence,
+            };
+            if decals_bodies
+                && !wet
+                && hit != e.owner
+                && let Some(group) = body_group(&style, swing, bank.as_deref())
+            {
+                body_decals.write(PlaceBodyDecal {
+                    target: hit,
+                    owner: e.owner,
+                    group,
+                    from,
+                    point,
+                    dir: (point - from).normalize_or_zero(),
+                });
+            }
             continue;
         }
         match &e.kind {
@@ -429,8 +480,19 @@ fn impact_decals(
             WeaponEventKind::Swing {
                 at: Some((point, normal, hit)),
                 line,
+                ray,
                 ..
             } if marked(*hit) && super::impact_effects::knife_splash(*line, water.as_deref()).is_none() => {
+                // Only where the impact ray reaches the world, with its
+                // normal (effects.md 10.1).
+                let normal = match style.melee_ray {
+                    true => match ray {
+                        Some((_, n)) => *n,
+                        None => continue,
+                    },
+                    false => *normal,
+                };
+                let normal = &normal;
                 let mark = breakable_decal(*hit, &brushes, &parents, map.as_deref());
                 let group = match (mark, style.melee_decal) {
                     (ImpactMark::Nothing, _) => continue,
@@ -466,6 +528,27 @@ fn impact_decals(
             _ => {}
         }
     }
+}
+
+/// A shot's or swing's (ray start, hit point, what it hit, a swing).
+fn body_hit(kind: &WeaponEventKind) -> Option<(Vec3, Vec3, Entity, bool)> {
+    match kind {
+        WeaponEventKind::Shot { from, to, hit: Some(hit), .. }
+        | WeaponEventKind::ShotContinued { from, to, hit: Some(hit), .. } => Some((*from, *to, *hit, false)),
+        WeaponEventKind::Swing { at: Some((point, _, hit)), line, .. } => Some((line.0, *point, *hit, true)),
+        _ => None,
+    }
+}
+
+/// The decal a hit on a body takes: a melee style's own (CS:S's slash),
+/// else what a bullet on the game's flesh surface takes (its game
+/// material letter's group: TF2's F is `Impact.Flesh`, effects.md 8b).
+pub fn body_group(style: &super::ImpactStyle, swing: bool, bank: Option<&SoundBank>) -> Option<DecalGroup> {
+    if swing && let Some(name) = style.melee_decal {
+        return Some(DecalGroup::Named(name.into()));
+    }
+    let letter = game_surface(&bank?.0, style.game, style.flesh)?.game_material;
+    Some(DecalGroup::GameMaterial(style.game.into(), letter))
 }
 
 /// On a character whose bullet hit sounds here (its surface's bullet

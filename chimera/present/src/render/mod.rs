@@ -21,6 +21,7 @@ pub mod beams;
 pub mod blend_order;
 pub mod cameras;
 pub mod bodies;
+pub mod body_decals;
 pub mod breakables;
 pub mod color_correction;
 pub mod decal;

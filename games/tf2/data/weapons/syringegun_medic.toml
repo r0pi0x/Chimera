@@ -51,10 +51,8 @@ arms = "medic"
 script = "tf_weapon_syringegun_medic"
 
 [hooks."chimera:projectile"]
-# Drawn 0.1 s in the past on every client, the shooter's own too
-# (specs/tf2/effects.md 11); its model shows at once (measured: needles
-# appear at the barrel as their drawn place passes it).
-interp = true
+# Not drawn late: TF2's needles are each client's own, made at the shot
+# (specs/tf2/effects.md 11.1, 12).
 speed = 1000.0
 gravity = 240.0
 # Aimed at what a 2000-unit line from the eye meets, then +-1.5 degrees in
@@ -65,10 +63,12 @@ touch = "report"
 shown = "tf2:tf_weapon_syringegun_medic/syringe"
 offset = [16.0, 6.0, -8.0]
 pass_teammates = true
-life = 10.0
-# A touch on the world leaves a bullet's hole mark and debris, no needle
-# (effects.md, "Needles on a wall").
+life = 6.0
+# A touch on the world leaves a bullet's mark there (the surface's decal,
+# flecks and sound) and the needle stuck in it, still, until 6 s from its
+# launch (effects.md 12).
 marks = true
+marks_stay = true
 
 [hooks."tf2:needle"]
 damage = 10.0

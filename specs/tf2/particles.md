@@ -13,7 +13,18 @@ operator meanings below are read from their names and parameters and
 marked *inferred* where the SDK does not show them. Data: TF2's particle
 files and effect materials read in place with our dumper (values only;
 nothing committed), and texture sheet resources decoded from the `.vtf`
-headers. Nothing copied; restated in our words.
+headers. Nothing copied; restated in our words. Section 9 (2026-11-20,
+tf2-spec-psys) also read the particle library the SDK ships only as a
+prebuilt static library: its exported symbols and the machine code of the
+system step, the first-frame setup, the continuous and instantaneous
+emitters and the control point's position at a given time, plus the
+client's particle manager, its per-frame order and the entity particle
+property (all in the SDK's source). Section 10 (2026-11-20,
+tf2-spec-flashup) read the same library's machine code for the alpha
+fade, radius scale, colour fade, basic movement, oscillators, the sphere
+initializer's velocity, the sprite-trail renderer, the render list and
+the skip-ahead, the operators' parameter tables (names, defaults), and
+the SDK client's `info_particle_system` and particle manager.
 Status: draft
 
 ## Summary
@@ -202,9 +213,9 @@ L = \mathrm{clamp}\Big(\,|v|\,\tau\cdot f,\ L_{min},\ L_{max}\Big),\qquad f = \b
 3. **Width.** The strip's **full width is the particle's radius** (field
    3) as the radius operators leave it this frame. "Radius Scale" and
    the other radius operators act on the radius exactly as for sprites;
-   the trail renderer applies no scale of its own. (The earlier inferred
-   cap "never wider than it is long" is unconfirmed and not needed by
-   any capture.)
+   the trail renderer applies no scale of its own, but the width is
+   capped at the length: **w = min(radius, L)** (read from the library,
+   §10.7, which also gives the exact length rule and the clamp order).
 4. **Geometry.** The strip runs from the tail H − L·m/|m| to H, turned
    about its own axis to face the eye; the texture's v goes from 0 at the
    tail to 1 at the head, u across the width. Colour and alpha are the
@@ -219,7 +230,7 @@ L = \mathrm{clamp}\Big(\,|v|\,\tau\cdot f,\ L_{min},\ L_{max}\Big),\qquad f = \b
 | `Explosion_FlyingEmbers` | `effects/circle2` UnlitGeneric, additive; trail **and** sprite | 16 at once; life U(0, 0.35) | U(0.5, 1); × 3 → 0 with ease (bias 0.5) | τ U(0.05, 0.1); t_fade 0.1; L in [0, 2000] | x U(20, 2200), y, z U(−1500, 1500); gravity −500; drag 0.2; collide with brushes, bounce 1 | **the thin yellow rays** (≈ 1–3 units wide), each with a dot at its head |
 | `Explosion_FloatieEmbers` | `effects/brightglow_y_nomodel` UnlitGeneric, additive; trail | 24 at once; life U(1.5, 2.5) | U(0.1, 0.7); × 3 → 0 eased | τ U(0.01, 0.05); t_fade 0; L in [0, 2000] | x U(0, 2330), y, z U(−1200, 1200); gravity +128; drag 0.4; random force ±1800, ±1800, ±800; bounce 2 | short sparks that drift up |
 | `Explosion_CoreFlash` | `effects/softglow` UnlitGeneric, additive; trail | 12 at once; life U(0.05, 0.17) | U(1, 12); 3 → 11 with bias 0.9 | τ U(0.33, 0.4); t_fade 0.2; L in [2, 122] | x U(410, 1120), y, z U(−840, 840); no drag | **broad soft orange streaks** (width 3–132): the orange star round the blast for ~7 frames |
-| `Explosion_Flashup` | `effects/softglow`, additive; trail | 3000/s for 0.01 s (max 45); life U(0, 0.2) | U(1, 5); 3 → 11, bias 0.9 | τ U(0.3, 0.4); t_fade 0.2; L in [32, 512] | x U(110, 920), y, z U(−840, 840); drag 0.1 | **nothing visible** (measured; Open questions 8) |
+| `Explosion_Flashup` | `effects/softglow`, additive; trail | 3000/s for 0.01 s (max 45); life U(0, 0.2) | U(1, 5); 3 → 11, bias 0.9 | τ U(0.3, 0.4); t_fade 0.2; L in [32, 512] | x U(110, 920), y, z U(−840, 840); drag 0.1 | nothing when started alone by an `info_particle_system` (its skip ahead, §10.1); in a blast about a dozen soft orange strips 32+ long in the frame after it |
 | `Explosion_Dustup` | `effects/softglow_translucent`, alpha; trail | 250/s for 0.12 s; life U(0, 0.3) | U(1, 2); 3 → 11, bias 0.9 | τ U(0.1, 0.4); t_fade 0.2; L in [32, 512] | x U(110, 1220), y, z U(−840, 840); drag 0.1 | brown streaks (alpha 128–212) |
 
 Per frame, `Explosion_FlyingEmbers` with the formula: a particle leaving
@@ -244,7 +255,8 @@ zero angles (local x = world +x), 20 frames each:
 - `Explosion_CoreFlash`: broad, soft orange streaks tens of units wide
   forming a star round the point, growing for ~4 frames, gone after ~7.
 - `Explosion_Flashup`: no pixel changed by more than 3 % in any frame
-  (at most 2 pixels).
+  (at most 2 pixels). Not its look in a blast: the entity's client skipped
+  the late effect ahead past its emitter's 0.01 s (§10.1, §10.10).
 
 ### 6. Effects on the first-person weapon (view-model particles)
 
@@ -278,8 +290,11 @@ zero angles (local x = world +x), 20 frames each:
 The basic meanings (emitters, position within sphere, lifetime, radius,
 alpha, colour and rotation random, movement basic, alpha fade and decay,
 lifespan decay, radius scale with the bias curve) are as
-specs/cs_source/impact_effects.md §14. The **bias curve** is
-bias(x, b) = x^(−log₂ b) (b = 0.5 linear; b > 0.5 rises early). The
+specs/cs_source/impact_effects.md §14, with the exact formulas of §10
+(alpha fade and decay, radius scale, colour fade, movement basic). The
+math library's **bias curve** is bias(x, b) = x^(−log₂ b) (b = 0.5
+linear; b > 0.5 rises early), but the **Radius Scale operator uses the
+rational form** s / ((1/b − 2)(1 − s) + 1) (§10.3). The
 **ease in and out** flag passes the life fraction through 3x² − 2x³.
 Additional ones in TF2's weapon effects (inferred unless noted):
 
@@ -400,7 +415,8 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
   all directions plus an `airburst_shockwave` ring (radius × 20 → 48);
   `_underwater` adds 64 bubbles. Which children draw what: §5.1 (the
   thin rays are the flying embers; the core flash is the wide orange
-  star; the flash-up draws nothing).
+  star; the flash-up adds soft orange strips in the frame after the
+  blast, §10.1).
 - `ExplosionCore_MidAir_underwater`: the mid-air children
   (`Explosions_MA_*`) plus `Explosion_bubbles` (64 at once, speed
   U(120, 300) in a random direction, radius U(0.5, 2) × 3 → 0 eased, life
@@ -432,13 +448,399 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
 - `nailtrails_medic_*`: a trail of `effects/softglow`, 255/s, life 0.01,
   radius 1 (crit 1–6), alpha 128 (crit 255).
 
+### 9. When and where a step's new particles are made
+
+Read from the particle library itself (above); it holds for every Source
+game using these particle files (CS:S's, HL2:DM's too), not only TF2.
+
+#### 9.1 A system's clock and steps
+
+- A system has its own clock T (seconds), 0 when it is created.
+- **The frame it is created in**, it is simulated with **zero time**:
+  every control point's "previous position" is set to its current one,
+  the system's `initial_particles` are made (creation time T = 0, at the
+  control point's current place: §9.3 with a zero step), and nothing else
+  runs: **no emitter emits** and the system's **children are not
+  simulated at all** that frame. (The client's manager does this for any
+  system in its first frame.)
+- **Every later frame**: the frame's time Δ (the client's frame time) is
+  stepped in sub-steps of at most the system's `maximum time step` (0.1
+  s in every TF2 file read; 0.1 also when the file gives 0 or less), at
+  most 10 × that step in all per frame. For each sub-step h: T += h;
+  then the operators flagged to run before emitters; then each emitter
+  in file order, the particles it made being initialised at once by all
+  initializers; then the other operators on every live particle (the
+  new ones too). After the parent's sub-steps, each child system is
+  stepped the same way with the whole Δ (its own first-frame setup
+  included, see below). **After all sub-steps** every control point's
+  "previous position" becomes its current position.
+- **Children's first frame.** A child is first simulated in the frame
+  after its parent's creation frame. Its own first-frame setup runs then,
+  at the start of that step, and sets its previous positions to the
+  control points' places **of that frame**; so a child's first emitting
+  step sees its points standing still (no spread, §9.3), wherever the
+  parent's point was the frame before.
+- **Consequence:** nothing a system emits shows in the frame it is
+  created; a burst (or a continuous emitter's first particles) appears in
+  the next frame, one frame later than the event that started it. Only
+  `initial_particles` exist in the creation frame (e.g. 1 for
+  `rockettrail` and `rockettrail_underwater`: one smoke puff).
+
+#### 9.2 Continuous emitter (`emit_continuously`): how many and when
+
+Fields: rate R (particles/s, × the client's particle multiplier, 1 at
+default settings; a negative rate is 0), start S (`emission_start_time`),
+duration D (`emission_duration`, 0 = forever; negative = 0). Each
+emitter keeps a running total E (start 0) and a count N of particles
+emitted (start 0). In a sub-step that ends at T and is h long:
+
+1. The **window** [a, b]:
+   - D = 0 (forever): nothing while S > T; otherwise [a, b] = [T − h, T].
+     The window is **not** cut at S (quirk: an endless emitter with S
+     inside the step counts the whole step).
+   - D > 0: nothing if S > T or T − h > S + D; otherwise
+     a = max(S, T − h), b = min(S + D, T).
+2. E += R × (b − a); n = floor(E) − N; N += n. If n is 0, nothing.
+3. n is cut to the free room (`max_particles` − particles alive); N is
+   not reduced, so particles lost to the cap are never made up.
+4. The new particles' **creation times** are spread evenly over the
+   window by **this step's count**, not by 1/R:
+
+```math
+c_k = \min\!\Big(a + k\,\frac{b-a}{n},\ b\Big),\qquad k = 1, \dots, n
+```
+
+   The first is one share **after** the window's start, never at it; the
+   last is at its end b (normally the step's end T).
+
+Worked: 128/s at 60 frames/s (h = 1/60): E after each step 2.13, 4.27,
+6.4, 8.53, 10.67, 12.8, 14.93, 17.07 → n = 2, 2, 2, 2, 2, 2, 2, 3; in the
+first step c = 1/120 and 1/60 s (half-way and the end of the step). 150/s:
+n = 2, 3, 2, 3, ... (E = 2.5 a step).
+
+**Stop and restart**: a stopped emitter makes nothing; a restart sets its
+start to the system's current time and its totals afresh (as if the
+system had just started).
+
+**Instantaneous emitter** (for contrast, same library): all its particles
+take the creation time S (its start time), whatever the step: a burst at
+S = 0 is made in the first emitting step with creation time 0 = that
+step's start, so it is placed at the control point's **previous**
+position (§9.3) and has aged a whole step by the step's end.
+
+#### 9.3 Where: the control point at a particle's creation time
+
+The position initializers read control point i at the new particle's
+creation time c (`Position Within Sphere Random`, `Position Within Box
+Random`, `Position Modify Offset Random`, the initial velocity ones, ...;
+`Position on Model Random` reads the model at its current pose):
+
+```math
+P_i(c) = P_i^{prev} + \big(P_i^{now} - P_i^{prev}\big)\cdot \max\!\Big(0,\ \frac{c - (T - h)}{h}\Big)\qquad (h > 0);\qquad P_i(c) = P_i^{now}\quad (h = 0)
+```
+
+- P^prev is where the point was at the end of the previous frame's
+  simulation (§9.1), P^now where it was set this frame before simulating;
+  the motion is taken as a straight line at constant speed over the
+  step. No clamp above 1 (creation times never pass T).
+- With §9.2: a continuous emitter's n particles of a step sit at
+  fractions k/n of the point's path this step: **the last one on the
+  point's current place, none on its previous place**. 128/s at 60
+  frames/s: two particles a step, half-way and at the end of the path.
+- Only the position is interpolated: a control point keeps no previous
+  orientation, so the axes used (local-space offsets and speeds) are the
+  point's **current** axes for every particle of the step.
+- With several sub-steps in one frame (frames longer than 0.1 s) P^prev
+  is still the frame's start but h is one sub-step (quirk; frames that
+  long are outside normal play).
+- In the creation frame (h = 0) and in a child's first step (P^prev =
+  P^now) every new particle is on the point's current place.
+
+#### 9.4 Answers this gives
+
+- `Explosion_Flashup` (Open questions 8): 3000/s with S = 0, D = 0.01, in
+  the first emitting step (h = 1/60) has the window [0, 0.01]: E = 30,
+  so **30 particles are made**, at creation times 0.01 k / 30. It is not
+  a step-boundary rule. **Corrected by §10.1:** their alpha is not 0 at
+  birth, and in a rocket's blast they are drawn; the "nothing visible"
+  capture started the system through an `info_particle_system`, whose
+  client skips a late effect ahead past the emitter's 0.01 s window
+  (§10.10), so there it makes no particles at all.
+- A system started on a moving point (a projectile's trail): its first
+  frame makes only its initial particles at the point's place in that
+  frame; from the next frame each step's particles fill the point's path
+  over the step, the newest on its current place. Its children start one
+  frame later still with no spread in their first step.
+
+### 10. Operator formulas read from the particle library
+
+Read from the prebuilt particle library's machine code and its parameter
+tables (above); every Source game using `.pcf` files shares them. Where
+this section and §5.1, §7 or specs/cs_source/impact_effects.md §14
+disagree, this section holds. Notation: t = age / lifetime (life
+fraction), age = T − creation time (T the system clock at the end of the
+current sub-step, §9.1), h = the current sub-step, S(s) = 3s² − 2s³ (the
+"ease"/smoothstep), clamp01 = clamp to [0, 1]. "Initial" values are the
+particle's attribute right after its initializers ran.
+
+#### 10.1 Why `Explosion_Flashup` showed nothing, and what it does in a blast
+
+The file (`particles/explosion.pcf`; no other file redefines it;
+`drg_cowmangler.pcf` only lists it as a child) holds: emitter
+`emit_continuously` rate 3000, start 0, duration 0.01, `max_particles`
+45, no initial particles; initializers Rotation Random (0–360), Lifetime
+Random U(0, 0.2), Radius Random U(1, 5), Color Random between
+(191,54,0) and (255,42,0) (`tint_perc` 0), Sequence Random 0–5 (the
+material has no sheet: no effect), Position Within Sphere Random
+(distance 0, local speed x U(110, 920), y and z U(−840, 840)), Alpha
+Random 255–255, Trail Length Random U(0.3, 0.4); operators in order
+Radius Scale (3 → 11, bias 0.9, no ease, times 0–1), Movement Basic
+(drag 0.1, no gravity), Color Fade (to (135,51,0) over 0–0.7, eased),
+Rotation Spin Roll (212 °/s), Alpha Fade and Decay (start alpha 0, end
+alpha 0, fade in 0.1–0.2, fade out 0.7–1.0); renderer
+`render_sprite_trail` (min length 32, max 512, length fade-in 0.2 s,
+visibility proxy off: control point −1, alpha and radius scales 1);
+material `effects/softglow` (additive); every operator's own fade
+("operator start/end fadein/fadeout", "fade oscillate") 0, which means
+always fully on (§10.11).
+
+**Nothing in it hides it.** By the formulas below, in a rocket's blast
+(started by the client's particle dispatch, §9 timing, no skip): the
+frame after the blast it makes 30 particles (§9.4) and draws them:
+
+- Ages at the first draw a = 1/60 − k/3000 (k = 1…30): 0.0067–0.0163 s.
+  Particles whose life ≤ a are removed in that same step (§10.2): about 2
+  of 30.
+- Alpha (§10.2): **1 while t < 0.1** (the fade-in has not started, the
+  alpha is left at its initial 1), so every particle with life > 10 a is
+  drawn at full alpha in its first frame: about 40 % of them (12 of 30).
+  The others are inside the fade-in window: alpha = S((t − 0.1)/0.1),
+  e.g. life 0.1, a 0.0117: t 0.117, alpha 0.077.
+- Motion (§10.5, §10.6): this step's displacement is 0.949 v h (drag over
+  half a 1/30 s period).
+- Length (§10.7): τ × (a / 0.2) × 0.949 |v|, e.g. |v| 707, τ 0.35, a
+  0.0117: 13.7 → **32** (the minimum).
+- Width (§10.7): min(L, radius); radius = r₀ × (3 + 8 Bias(t)) with the
+  rational bias of §10.3: r₀ 3, t 0.117 → 3 × 7.35 = 22.0 → width 22.
+- Colour: the random orange, barely faded (S of 0.06/0.7 ≈ 0.02).
+
+So in a blast it adds roughly a dozen soft orange strips 32 units long
+and 3–40 wide (additive, full alpha) round the core in the frame after
+the blast, longer the next frames (the length fade-in grows with age),
+blending into `Explosion_CoreFlash`'s broad star. Ours drawing orange
+streaks there is right in kind; check it against these numbers.
+
+**The capture that showed nothing** (§5.1, "each child started alone")
+started it with an `info_particle_system`. That entity's client creates
+the effect on its first think and, when the client's time is more than
+0.01 s past the server's start time (δ; the entity's first update always
+arrives at least a tick after the server started it, *inferred*), skips
+the new effect ahead to age δ (§10.10). The skip moves the system clock
+to δ without simulating; a continuous emitter has no catch-up, so the
+first real step's window starts at T − h ≥ δ > 0.01 = start + duration:
+**no particle is ever made**. The same skip explains the other two
+children in that capture: instantaneous bursts survive a skip under 2 s
+and fire in the first step with creation time 0, already aged δ + h
+(`Explosion_CoreFlash`, life ≤ 0.17 s, gone after about 7 frames instead
+of 10, fits δ ≈ 0.04 s).
+
+**Parity:** draw `Explosion_Flashup` in blasts (above). Make an
+`info_particle_system` effect invisible only through the skip of §10.10
+(every game: specs/source/particles_and_smoke.md 2.5), not through its
+alpha or emitter.
+
+#### 10.2 Alpha Fade and Decay
+
+Parameters (defaults): start alpha (1), end alpha (0), start/end fade-in
+time (0 / 0.5), start/end fade-out time (0.5 / 1), life fractions. On
+load: an end before its start is raised to the start (both windows);
+then if the fade-in's start is after the fade-out's start the two starts
+swap, and likewise the two ends.
+
+Each step, for each particle, with a₀ = its initial alpha:
+
+1. If lifetime ≤ age: the particle is **removed** at the end of the step
+   (this operator is what kills particles at the end of their life).
+2. If start_in ≤ t < end_in: alpha = a₀ × (A_s + (1 − A_s) S(s)),
+   s = clamp01((t − start_in)/(end_in − start_in)), A_s = start alpha.
+3. If start_out ≤ t < end_out: alpha = a₀ × (1 + (A_e − 1) S(s)),
+   s = clamp01((t − start_out)/(end_out − start_out)), A_e = end alpha.
+   (Where the windows overlap this one is written last and wins.)
+4. Otherwise the alpha is **left as it is**: the initial alpha before the
+   fade-in, the last written value between the windows and after them.
+
+Consequences: a fade-in that starts after 0 shows the particle at its
+initial alpha first, drops it to A_s at start_in and ramps back up
+(`Explosion_Flashup`: full alpha, then a pop to 0 at 0.1 of life). If a
+step jumps past the end of the fade-in window the alpha stays at the last
+in-window value (S of the last sampled s, not 1) until the fade-out
+window, where it is recomputed from a₀. A window whose start equals its
+end does nothing. Both ramps are eased (S), never linear. The fade-out
+rescales a₀, not the current alpha.
+
+#### 10.3 Radius Scale
+
+Parameters (defaults): start time (0), end time (1) (life fractions),
+start scale (1), end scale (1), ease in and out (0), bias (0.5; 0 read
+as 0.5). If start time ≥ end time the operator does nothing. For
+particles with lifetime > 0 and start ≤ t < end, with
+s = (t − start)/(end − start):
+
+```math
+r = r_0 \cdot \big(k_s + (k_e - k_s)\,g(s)\big),\qquad g(s) = \begin{cases} S(s) & \text{ease on}\\ s & b = 0.5\\ \dfrac{s}{(1/b - 2)(1 - s) + 1} & \text{otherwise}\end{cases}
+```
+
+r₀ = the initial radius. Outside the window the radius is left as it is.
+The bias here is the **rational** form (g(0.5) = b), not the math
+library's power curve x^(−log₂ b) of §7: b 0.9 at s 0.05 gives 0.321, not
+0.634; at s 0.1, 0.5. Ease, when on, replaces the bias.
+
+#### 10.4 Color Fade
+
+Parameters (defaults): target colour (255,255,255), fade start time (0),
+fade end time (1) (life fractions), ease (1). If start = end it does
+nothing. Each step, every particle with lifetime > 0:
+s = clamp01((t − start)/(end − start)), eased by S when ease is on;
+colour = c₀ + (target − c₀) s per channel, c₀ the initial colour; colours
+are 0–1 gamma values (byte / 255), mixed in that space. Before the start
+the particle keeps c₀; after the end it holds the target.
+
+#### 10.5 Movement Basic
+
+Parameters: gravity (vector), drag, max constraint passes. Positions are
+integrated from the current and previous position (field 2); there is no
+stored velocity. Each step, with P_prev = the previous dt (the whole
+frame time of the system's last simulated frame; 0.05 for a new system
+before its first real frame; the skip length after a skip, §10.10):
+
+```math
+x' = x + (x - x_{prev})\,\frac{h}{P_{prev}}\,(1 - \max(\text{drag}, 0))^{30h} + a\,h^2
+```
+
+a = gravity + the system's forces. Then the old position becomes the
+previous position, and constraints run. **Drag is the fraction of
+velocity lost per 1/30 s**, not per step (0.1 → 5.1 % per 1/60 s step).
+
+#### 10.6 Position Within Sphere Random: the initial velocity
+
+The initial velocity v (random direction × U(speed min, max) plus the
+per-axis U(local min, local max) in the control point's axes) is stored
+by setting the previous position to x − v × P_prev (§10.5). With §10.5's
+h / P_prev factor the first step moves the particle v h (less drag)
+whatever P_prev is.
+
+#### 10.7 Sprite trail renderer (replaces §5.1 steps 2–3 where they differ)
+
+Parameters (defaults): min length (0), max length (2000), length fade-in
+time (0), animation rate, the visibility-proxy set. Per particle, after
+the step:
+
+1. m = previous position − position (this step's motion, pointing to the
+   tail); k = 1/h for the last sub-step's h (k = 1 when h is 0).
+2. f = age / t_fade if age < t_fade, else 1 (t_fade 0: f = 1).
+3. L₀ = k × τ × f × √(|m|² + 10⁻¹⁰). If L₀ ≤ 0 (f = 0: a particle of age
+   exactly 0; or τ ≤ 0) the particle is **not drawn**.
+4. L = max(min(L₀, max length), min length): the minimum wins when the
+   two cross.
+5. Full width w = **min(radius, L)** (radius after the operators; this
+   cap is confirmed).
+6. The strip runs from the head (the position) toward m/|m| for L, its
+   half-widths ±w/2 across, facing the eye. A particle that did not move
+   has m ≈ 0: its direction is 0, so the strip has no length whatever L
+   is; nothing visible (still true with a min length).
+7. Vertex colour = the particle's colour × 255; vertex alpha = its render
+   alpha byte (§10.8); a particle with byte 0 is skipped.
+
+#### 10.8 The render alpha
+
+The renderers draw from a list built each frame: per particle the
+squared distance to the eye (the sort key), the radius and an alpha byte
+= round(255 × alpha × alpha 2) (field 16; 1 unless an operator writes
+it). The sprite trail skips particles whose byte is 0 (alpha below
+1/510); for sprites the same list is used (*inferred*: same skip).
+
+#### 10.9 Oscillate Scalar (and Oscillate Vector)
+
+Parameters (defaults): field (7, alpha), rate min/max (0/0), frequency
+min/max (1/1), "proportional 0/1" (1), start time min/max (0/0), end time
+min/max (1/1), "start/end proportional" (1), multiplier (2), start phase
+(0.5). Each particle has four fixed random numbers for its life (from the
+system's random table by particle id; independent): rate
+R = U(rate min, max), frequency F = U(frequency min, max), start
+t₁ = U(start min, max), end t₂ = U(end min, max).
+
+Each step, for particles with lifetime > 0 and t₁ ≤ τ_p < t₂ (τ_p = the
+life fraction when "start/end proportional" is 1, else the age in
+seconds):
+
+```math
+x = \begin{cases} F \cdot M \cdot \dfrac{\text{age}}{\text{lifetime}} + \varphi & \text{proportional}\\[4pt] F \cdot (M\,T + \varphi) & \text{not proportional}\end{cases}\qquad v \mathrel{+}= R \cdot h \cdot \text{str} \cdot W(x)
+```
+
+M = multiplier, φ = start phase, T = the **system** clock (so with
+proportional 0 all particles of a system share the phase, differing only
+by F), str = the operator's strength (1 unless its own fade, §10.11). W is
+a parabolic stand-in for sin(πx), period 2 in x: with f = the fractional
+part of |x| measured from the last even integer, W = sign(x) × 4f(1 − f)
+for f in [0, 1) and −sign(x) × 4(f − 1)(2 − f) for f in [1, 2). The
+operator **adds** to the field each step (it oscillates the field's rate
+of change, not the field itself), sampled once per step at the step's
+end: at frame rates below 2 × M × F the result aliases. When the field is
+alpha (7) the result is clamped to [0, 1]; other fields are not clamped.
+
+**Oscillate Vector**: the same per component of a vector field (default
+field 0, position), with per-component rate and frequency (vector
+min/max, defaults 0 and 1) and per-component random numbers; tint (field
+6) is clamped to [0, 1] per component.
+
+Worked (the crit glow, effects.md §14.1; all four have proportional 0,
+start/end proportional 1 over 0–1): `critgun_weaponmodel_*` radius: R 64,
+F U(0.5, 2), M 16, φ 0.5 → x = F (16 T + 0.5); one half-period of x (W ≥
+0) lasts 1/(16 F) s and adds 64 × (2/3) / (16 F) = 2.67/F units, then the
+next half takes it back: the radius swings by about 2.7 units at F 1, at
+8 F Hz. Alpha: R U(1, 128), F U(2, 8), M 64: x advances 64 F per second
+(128–512 per second, 2–8.5 per 1/60 s step), so at 60 frames a second W
+is sampled at effectively unrelated points each step: the alpha jitters
+by up to R/60 per step (≈ 2 at R 128, clamped to 0–1), a flicker that
+depends on the frame rate. `_glow` variants: radius R U(32, 64), M 12;
+alpha R U(1, 2), M 64 (a slow drift of at most 0.03 a step).
+
+#### 10.10 Skip ahead (a late `info_particle_system`)
+
+Skipping a system to time t (the client does it for an
+`info_particle_system` effect when its time is more than 0.01 s past the
+server's start time: t = that difference):
+
+- If t ≤ T nothing happens. Otherwise: P_prev (§10.5) = t − T; every
+  control point's previous position = its current one; T = t; the
+  first-frame state is cleared, so the zero-time creation step of §9.1
+  never runs: **`initial_particles` are not made**.
+- Nothing is simulated over the skipped time. Each operator gets a skip
+  hook: an **instantaneous emitter** cancels its burst if t > its start
+  time + 2 s, otherwise the burst fires in the next step with creation
+  time = its start time (already aged t + h when first drawn); a
+  **continuous emitter** has no hook: from the next step its window rule
+  (§9.2) applies to [T − h, T] with T − h ≥ t, so an emitter that ends
+  before t never emits and an endless one starts from t without
+  back-filling.
+- Children are skipped to t minus their delay, the same way.
+
+#### 10.11 An operator's own fade
+
+Every operator has "operator start/end fadein/fadeout" and "fade
+oscillate" (all 0 in every system read here). With them all 0 the
+operator always runs at strength 1; renderers likewise. (Other values
+scale the operator's strength over the system's time; not used by these
+effects.)
+
 ## Per-frame order
 
 1. Control points updated from attachments (re-projected for first-person
    weapons) and from code (flames).
 2. Systems simulated: emitters, initializers for new particles,
    operators in file order, forces, constraints; then dead particles
-   removed. The maximum step is 0.1 s.
+   removed. The maximum step is 0.1 s. A system in its first frame is
+   simulated with zero time and its children not at all (§9.1).
 3. Translucent world pass: systems drawn sorted back to front (a system's
    particles sorted when "Sort particles" is set), after opaque geometry,
    before the view model.
@@ -480,7 +882,24 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
 | trail particle r₀ 0.8, × 3 → 0 eased (bias 0.5), life fraction 0.2 | strip full width 0.8 × 3 × (1 − 0.104) = 2.15 |
 | `Explosion_FlyingEmbers` alone on a floor 160 units ahead, fov 90, 1024x768 | thin rays ~1 unit wide, each with a dot ~3× wider at its head, from the first frame; streaks reach back to ~the centre for ~0.1 s, then detach |
 | `Explosion_CoreFlash` alone, same view | broad soft orange streaks (tens of units wide), gone after ~7 frames at 60 a second |
-| `Explosion_Flashup` alone, same view, stepped at 60 a second | no visible change in any frame |
+| `Explosion_Flashup` alone by an `info_particle_system`, same view, stepped at 60 a second, client 0.04 s behind the start | skipped to 0.04: no particle ever made, no visible change in any frame |
+| `Explosion_Flashup` in a blast (no skip), first emitting step 1/60 | 30 made; those with life > 10 × age (≈ 12) at alpha 1; lengths 32 (min); widths min(32, r₀ (3 + 8 g(t))) |
+| Alpha Fade and Decay, start alpha 0, fade in 0.1–0.2, out 0.7–1, a₀ 1; t = 0.05, 0.15, 0.25 (steps sampled at those t) | 1 (untouched), S(0.5) = 0.5, 0.5 (left from the last in-window step) |
+| Alpha Fade and Decay, lifetime 0.01, age 0.0117 | removed this step |
+| Radius Scale 3 → 11, bias 0.9, no ease, r₀ 2, t 0.05 | g = 0.05/0.1556 = 0.321; r = 2 × (3 + 8 × 0.321) = 11.1 |
+| Movement Basic, drag 0.1, h 1/60, previous dt 1/60, last step's motion (10, 0, 0) | this step's motion (9.49, 0, 0) |
+| Sprite trail, L₀ 13.7, min 32, max 512, radius 22 | L 32, width 22 |
+| Sprite trail, min 32 > max 20, L₀ 50 | L 32 (the minimum wins) |
+| Oscillate Scalar on alpha, R 1.2, h 1/60, x 0.5 (W = 1), alpha 0.99 | 0.99 + 0.02 = 1.01 → clamped to 1 |
+| Oscillate Scalar, x = 1.25 | W = −4 × 0.25 × 0.75 = −0.75 |
+| Skip to 0.04 of a system with an instantaneous burst at 0 and a 0.01 s continuous emitter | next step: the burst made with creation time 0 (aged 0.04 + h); the continuous emitter nothing; no initial particles |
+| System with `initial_particles` 1 and a 128/s continuous emitter created this frame | this frame: 1 particle (at the point's place), emitter makes nothing; children not stepped |
+| Same system's next frame (h = 1/60), point moved from A to B this frame | 2 new particles, creation times 1/120 and 1/60 s, at (A + B)/2 and B; none at A |
+| Its child's first step, same frame | prev = now = B: the child's particles all at B |
+| 150/s, 4 steps of 1/60 | 2, 3, 2, 3 particles; within a step at fractions k/n of the path |
+| Endless emitter, S = 0.005, step [0, 1/60], 120/s | window [0, 1/60] (not cut at S): E = 2, particles at 1/120 and 1/60 |
+| Emitter 3000/s, S 0, D 0.01, first step 1/60 | 30 particles, creation times 0.01 k/30 |
+| Instantaneous burst at S = 0, point moved A → B in the first emitting step | all at A (creation time = window start) |
 | addself material, T = (1, 0.5, 0.2, 0.8), v = (1, 1, 1, 0.25), O = 5, S = 0.5, f = 1 | P = (1, 0.5, 0.2) × 5 × 0.8 × 0.25 = (1, 0.5, 0.2); out.rgb = P × (1 + 0.625) = (1.625, 0.8125, 0.325); out.a = 0.2 |
 
 ## Open questions
@@ -579,6 +998,15 @@ the syringe gun's core has alpha 1–21 only. `muzzle_grenadelauncher` and
    rule), or its particles are emitted and simply never visible, is
    unconfirmed. Parity target either way: nothing visible from it at
    60 frames a second.
+   **Answered (§9.4):** there is no step-boundary rule; the 30 particles
+   are emitted in the first emitting step (one frame after the blast's
+   system is created) and are simply not visible.
+   **Corrected (2026-11-20, tf2-spec-flashup, §10.1):** they are visible
+   in a blast (alpha 1 before 0.1 of life, lengths at least 32). The
+   alone capture showed nothing because its `info_particle_system`
+   client skipped the late effect ahead (§10.10) past the emitter's
+   0.01 s window, so no particle was made. Parity target: draw it in
+   blasts; implement the skip for `info_particle_system`.
 9. `rockettrail_waterbubbles`' plane constraint reads control point 1,
    which the rocket never sets; what an unset control point holds (the
    world origin, or control point 0) decides whether bubbles of a rocket

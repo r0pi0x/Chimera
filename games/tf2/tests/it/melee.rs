@@ -426,3 +426,52 @@ fn all_nine_give() {
         assert!(sim.app.world().get::<Tf2Melee>(w).is_some(), "{id}");
     }
 }
+
+/// The swing's contact point (`WeaponEventKind::Swing::at`) and line of
+/// one press of attack along -Z (level).
+fn contact(sim: &mut Sim, p: Entity) -> Option<((Vec3, Vec3, Entity), (Vec3, Vec3))> {
+    let ev = run(sim, p, 30, |s, k| {
+        s.intent(p).fire = k == 0;
+        s.intent(p).yaw = 0.0;
+        s.intent(p).pitch = 0.0;
+    });
+    ev.iter().find_map(|(_, k)| match k {
+        WeaponEventKind::Swing { at, line, .. } => Some((at.unwrap_or_else(|| panic!("a hit: line {line:?}")), *line)),
+        _ => None,
+    })
+}
+
+/// effects.md 10.1: a line that misses with the box touching a player:
+/// the contact is the box's centre where the sweep stopped, on the view
+/// line, not a point on him.
+#[test]
+fn a_box_hit_on_a_player_is_at_the_box_centre_10_1() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, SHOVEL);
+    // Off the view line by 28 units (the line passes him, the 18-unit box
+    // reaches him), 60 units ahead.
+    let t = sim.spawn_character(from + Vec3::new(28.0 * U, 0.0, -60.0 * U), tf2::game::movement::ID);
+    sim.seconds(1.0);
+    sim.app.world_mut().get_mut::<Health>(t).unwrap().current = 10.0;
+    let ((at, _, hit), (eye, _)) = contact(&mut sim, p).expect("a swing");
+    assert_eq!(hit, t);
+    assert!((at.x - eye.x).abs() < 1e-3 && (at.y - eye.y).abs() < 1e-3, "on the view line: {at} from {eye}");
+    assert!(at.z < eye.z && at.z > eye.z - 48.0 * U, "{at}");
+}
+
+/// effects.md 10.1: a line that misses with the box touching the world:
+/// a corner line of the crouched player box finds the surface (the line
+/// to twice the distance missing), the contact on it, off the view line.
+#[test]
+fn a_box_hit_on_the_world_is_refined_onto_its_surface_10_1() {
+    let mut sim = sim();
+    // The 6 x 3 x 1 m crate at (0, 1.5, -20): its south face at z −19.5,
+    // its east edge at x 3. Stand 12 units east of that edge, 24 units
+    // from the face.
+    let from = Vec3::new(3.0 + 12.0 * U, 1.0, -19.5 + 24.0 * U + 0.3);
+    let (p, _) = holding(&mut sim, from, SHOVEL);
+    let ((at, _, _), (eye, _)) = contact(&mut sim, p).expect("a swing");
+    assert!((at.z + 19.5).abs() < 0.01, "on the crate's face: {at} (eye {eye})");
+    assert!(at.x < 3.0, "on the crate, off the view line: {at}");
+}

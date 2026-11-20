@@ -72,6 +72,7 @@ impl Plugin for MapPlugin {
         render::stand_in::plugin(app);
         render::psys::console(app);
         render::psys::def_console(app);
+        render::particles::console(app);
         {
             use chimera_core::metrics::census::CensusAppExt;
             use render::{
@@ -249,6 +250,10 @@ impl MapLayers for Present {
                     render::bodies::attach_held.after(render::bodies::attach_bodies).after(DriveAnimation),
                     render::loose::attach_shown,
                     render::loose::draw_loose,
+                    (render::body_decals::clear_body_decals, render::body_decals::place_body_decals)
+                        .chain()
+                        .after(render::bodies::attach_bodies)
+                        .after(render::bodies::adopt_bodies),
                 )
                     .run_if(resource_exists::<render::bodies::PlayModels>),
                 // Code-built shapes (the sandbox's props), on any map.

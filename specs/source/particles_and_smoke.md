@@ -27,8 +27,8 @@ info_particle_system is a point entity that names one effect from the
 that effect with control point 0 at the entity (following it, with its
 orientation) and control points 1–63 following named entities. Turning it
 off stops emission; particles already alive finish their lives. A client
-that starts the effect late fast-forwards it to the time the server
-started it. env_smokestack is an older hard-coded client effect: a column
+that starts the effect late skips its clock ahead to the time the server
+started it (without simulating the skipped time). env_smokestack is an older hard-coded client effect: a column
 of camera-facing smoke puffs that rise from a ring, spread sideways, drift
 with a constant "wind" acceleration, can spiral ("twist") about the
 column and fade in then out over a lifetime of JetLength ÷ Speed seconds.
@@ -175,10 +175,16 @@ state change, and when it first receives the entity):
     control point p (how operators use a control point's parent is defined
     by the particle library, *inferred*: offsets given relative to that
     control point; Open questions);
-  - fast-forward: δ = now − start time; if δ > 0.01 s the effect is
-    simulated ahead by δ before it is first drawn (a viewer joining 30 s
-    after a one-shot effect started sees nothing left of it; a looping
-    effect is in steady state).
+  - skip ahead: δ = now (the client's time) − start time; if δ > 0.01 s
+    the new effect's clock is **set** to δ without simulating the skipped
+    time (read from the particle library: specs/tf2/particles.md §10.10).
+    No initial particles; a continuous emitter whose window ended before
+    δ never emits (so a short one-shot burst made by a continuous
+    emitter, e.g. TF2's `Explosion_Flashup`, shows nothing even to a
+    viewer who was there: δ is usually above 0.01); an endless one
+    starts at δ with no back-fill (it builds up from empty, not in steady
+    state); an instantaneous burst still fires in the next step, already
+    aged δ, unless δ is over its start time + 2 s.
 - **Turned off**: stop emission of **every** effect this entity is
   running: no new particles; live particles finish their lifetimes and
   then the instance is freed.
@@ -421,9 +427,9 @@ library not fully read); 5. drawing, sorted.
   see no restart in CS:S. Mashup, being single-process, must compare the
   on flag at end of tick, not react per input.
 - **Stop does not kill particles**; only emission stops. Keep.
-- **Late joiners fast-forward** the effect. Keep (cheap: simulate δ
-  seconds in a few large steps or skip one-shot effects whose lifetime has
-  passed).
+- **Late effects skip ahead** without simulating (2.5 above): keep; it
+  is cheap and it is why some one-shot `info_particle_system` effects
+  never show.
 - **env_smokestack Rate input does not change the emission rate** on a
   client that already has the entity (the clock interval is set once at
   creation; later Rate values only matter for clients that create the

@@ -190,7 +190,9 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
         .init_resource::<entities::GameEntityClasses>();
     app.init_resource::<ShowLocalBody>();
     layers.vis_resources(app);
-    app.add_message::<PlaceDecal>();
+    app.add_message::<PlaceDecal>()
+        .add_message::<PlaceBodyDecal>()
+        .add_message::<ClearBodyDecals>();
     layers.decal_resources(app);
     app.add_message::<ViewModelEvent>()
         .add_message::<SpawnGibs>()

@@ -58,6 +58,7 @@ use super::{
 };
 use crate::{
     core::{Health, MaxSpeed},
+    map::BodyDecalsOffRagdoll,
     slots::{Loadout, MovementRegistry, MovementSlot},
     weapon::{Inventory, Magazine, ShellReload, Weapon, view_anim::ViewVariant},
 };
@@ -218,7 +219,13 @@ fn wear(
 ) {
     for (e, slot, worn, before, health) in &mut on {
         if slot.0 == ID {
-            commands.entity(e).insert_if_new((Tf2Class::default(), SourceTraits::default(), Tf2Punch::default(), ViewVariant::default()));
+            commands.entity(e).insert_if_new((
+                Tf2Class::default(),
+                SourceTraits::default(),
+                Tf2Punch::default(),
+                ViewVariant::default(),
+                BodyDecalsOffRagdoll,
+            ));
         } else if worn {
             commands.entity(e).remove::<ClassParts>();
             if let (Some(before), Some(mut h)) = (before, health) {
@@ -232,12 +239,13 @@ fn wear(
 /// layer (`Tf2Class`, `SourceTraits`), the max health it had before
 /// (`HealthBefore`), the view kick's spring (`weapons::recoil::Tf2Punch`)
 /// and the view model's class (`ViewVariant`: none, empty, until
-/// `super::view::view_variants` sets it). They go on and off together, in
+/// `super::view::view_variants` sets it), and that its ragdoll keeps no body
+/// decals (`map::BodyDecalsOffRagdoll`, specs/tf2/effects.md 8b). They go on and off together, in
 /// one move each way (`put_on`, `leave`, `take_off`; docs/DESIGN.md, "ECS
 /// style"): one at a time, each was an archetype for every combination of
 /// the character's other parts. What sets them later only changes their
 /// values.
-pub type ClassParts = (Tf2Class, SourceTraits, HealthBefore, Tf2Punch, ViewVariant);
+pub type ClassParts = (Tf2Class, SourceTraits, HealthBefore, Tf2Punch, ViewVariant, BodyDecalsOffRagdoll);
 
 /// The class parts (`ClassParts`) a character becoming TF2's takes on:
 /// all but `HealthBefore` without a `Health`.
@@ -261,8 +269,10 @@ fn put_on(e: &mut EntityWorldMut, slot: MovementSlot) {
         return;
     }
     match class_parts(e) {
-        (class, traits, punch, variant, Some(before)) => e.insert((marker, class, traits, punch, variant, before)),
-        (class, traits, punch, variant, None) => e.insert((marker, class, traits, punch, variant)),
+        (class, traits, punch, variant, Some(before)) => {
+            e.insert((marker, class, traits, punch, variant, before, BodyDecalsOffRagdoll))
+        }
+        (class, traits, punch, variant, None) => e.insert((marker, class, traits, punch, variant, BodyDecalsOffRagdoll)),
     };
 }
 

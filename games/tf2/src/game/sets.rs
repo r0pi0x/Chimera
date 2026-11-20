@@ -21,7 +21,7 @@
 //! sheets) and the guns' looks on any map (`maps::add_guest_looks`: the
 //! particle files and their materials, the impact decals and effect
 //! materials) with the surfaces' bullet-impact sounds and the voice lines
-//! any class plays (`voices::SHARED`). The match's offer names the class sets
+//! any class plays (`voices::SHARED`) and any gun's (`GENERAL_SOUNDS`). The match's offer names the class sets
 //! its TF2 guns can make (`bodies::asset_names`, with the classes they
 //! need: data/classes.toml's `needs`).
 //!
@@ -37,6 +37,10 @@ use source_engine::content::{material::MaterialLoader, props, sound::SoundScript
 
 use super::scripts;
 use crate::mount::{Access, Mount};
+
+/// Sound entries any TF2 gun can play, in `players`: the crit boost's
+/// loop (effects.md 14) and the bullets' and RED needles' ricochet (7, 12).
+pub const GENERAL_SOUNDS: &[&str] = &["Weapon_General.CritPower", "Bounce.Shrapnel"];
 
 /// One weapon (a gun or a melee weapon) and what its set holds.
 #[derive(Clone, Copy, Debug)]
@@ -428,6 +432,10 @@ pub fn player_pieces(mount: &Mount) -> Vec<(String, Vec<String>)> {
         }
         // The voice lines any class plays (`voices::SHARED`).
         for wave in super::voices::SHARED.iter().flat_map(|e| scripts.waves(e)) {
+            let _ = mount.read(&wave);
+        }
+        // Sounds of any gun: the crit boost's loop, the ricochet.
+        for wave in GENERAL_SOUNDS.iter().flat_map(|e| scripts.waves(e)) {
             let _ = mount.read(&wave);
         }
     });

@@ -823,6 +823,20 @@ pub fn just_pressed_free(
     bound_down(binds, keys.get_just_pressed().copied().filter(free), mouse.get_just_pressed().copied().filter(free_b), command)
 }
 
+/// Whether a key bound to `command` went up this frame, not counting the
+/// keys a menu has taken.
+pub fn just_released_free(
+    binds: &BTreeMap<String, String>,
+    keys: &ButtonInput<KeyCode>,
+    mouse: &ButtonInput<MouseButton>,
+    captured: Option<&CapturedKeys>,
+    command: &str,
+) -> bool {
+    let free = |k: &KeyCode| !captured.is_some_and(|c| c.holds(*k));
+    let free_b = |b: &MouseButton| !captured.is_some_and(|c| c.holds_button(*b));
+    bound_down(binds, keys.get_just_released().copied().filter(free), mouse.get_just_released().copied().filter(free_b), command)
+}
+
 /// Wheel notches this frame on wheel directions bound to `command`.
 pub fn wheel_notches(binds: &BTreeMap<String, String>, scroll: &AccumulatedMouseScroll, command: &str) -> u32 {
     /// Pixel-unit scrolling (touchpads, smooth wheels): pixels per notch.

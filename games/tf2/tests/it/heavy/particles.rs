@@ -121,9 +121,13 @@ fn dump_a_system_as_loaded_and_in_its_file() {
 /// specs/tf2/particles.md 5.1 against the install's `ExplosionCore_Wall`
 /// stepped at 60 a second: the flying embers draw thin rays (a trail and a
 /// head sprite each, the strips a few units wide), the core flash broad
-/// streaks (tens of units), the flash-up nothing.
+/// streaks (tens of units). The flash-up (3000/s for 0.01 s) makes its 30
+/// particles in its first emitting step (particles.md 9.4) and draws them
+/// in a blast (10.1): strips 32 long (its minimum), at most as wide, about
+/// a dozen at full alpha; skipped ahead 0.04 s (an info_particle_system's
+/// late start, 10.10) it makes none.
 #[test]
-fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_no_flashup() {
+fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_flashups_thirty() {
     use chimera_world::map::particles::Shape;
     let Some(map) = super::looks::dressed() else { return };
     let systems = &map.particle_systems;
@@ -160,6 +164,72 @@ fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_no_flashup() {
     assert!(n > 4 && widest <= 3.0 + 1e-3, "{n} rays, widest {widest}");
     let (n, widest, _) = width("Explosion_CoreFlash", 2, &mut rng);
     assert!(n > 4 && widest > 10.0, "{n} streaks, widest {widest}");
-    let (n, _, alive) = width("Explosion_Flashup", 3, &mut rng);
-    assert_eq!((n, alive), (0, 0), "the flash-up shows nothing");
+    let (_, _, made) = width("Explosion_Flashup", 1, &mut rng);
+    assert_eq!(made, 0, "nothing in its creation frame");
+    let mut i = Instance::new(defs, systems.find("Explosion_Flashup").unwrap());
+    i.step(defs, &cps, 1.0 / 60.0, &mut rng, &sheets);
+    i.step(defs, &cps, 1.0 / 60.0, &mut rng, &sheets);
+    // 30 made; those whose life U(0, 0.2) is shorter than their age by
+    // the step's end are gone.
+    let seen = i.count();
+    assert!((20..=30).contains(&seen), "the flash-up's first emitting step: {seen}");
+    let mut out = Vec::new();
+    i.draw(defs, &|v| v, 1.0, bevy::math::Vec3::new(0.0, 0.0, 10_000.0), &sheets, &mut out);
+    let full = out.iter().filter(|q| q.alpha == 1.0).count();
+    assert!((4..=24).contains(&full), "{full} of {} at full alpha", out.len());
+    for q in &out {
+        let Shape::Quad { corners, .. } = q.shape else { panic!("{:?}", q.shape) };
+        let (long, wide) = (corners[0].distance(corners[1]), corners[0].distance(corners[3]));
+        assert!((long - 32.0).abs() < 0.1 && wide <= long + 1e-3, "{long} x {wide}");
+    }
+    let mut skipped = Instance::new(defs, systems.find("Explosion_Flashup").unwrap());
+    skipped.skip_to(defs, 0.04);
+    for _ in 0..20 {
+        skipped.step(defs, &cps, 1.0 / 60.0, &mut rng, &sheets);
+        assert_eq!(skipped.count(), 0, "skipped: none made");
+    }
+}
+
+/// Every TF2 blast's look (rockets', pipes', stickies': the same three
+/// systems), started as a game starts it (`StartedSystems`, a frame at a
+/// time from its zero-time creation frame, particles.md 9.1), keeps
+/// running past that frame and draws its core flash and flying embers
+/// within three frames (`ExplosionCore_Wall`'s systems are all children:
+/// it once went as finished in its creation frame and drew nothing).
+#[test]
+fn a_started_blast_draws_its_core_flash_and_embers_within_three_frames() {
+    use chimera_present::render::psys::StartedSystems;
+    let Some(map) = super::looks::dressed() else { return };
+    let sheets = MaterialSheets(Some(&map.particles));
+    let defs = &map.particle_systems.defs;
+    fn drawing(i: &Instance, defs: &[SystemDef], out: &mut Vec<String>) {
+        if !i.own_radii(defs).is_empty() {
+            out.push(defs[i.def].name.clone());
+        }
+        for c in i.child_instances() {
+            drawing(c, defs, out);
+        }
+    }
+    for name in ["ExplosionCore_Wall", "ExplosionCore_MidAir", "ExplosionCore_MidAir_underwater"] {
+        let mut s = StartedSystems::default();
+        let up = bevy::math::Vec3::Z;
+        assert!(s.start(&map.particle_systems, name, bevy::math::Vec3::ZERO, up, bevy::math::Vec3::ONE), "{name}: not loaded");
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            s.step(1.0 / 60.0, &sheets);
+            assert_eq!(s.instances().count(), 1, "{name}: still running");
+            for (i, _) in s.instances() {
+                drawing(i, defs, &mut seen);
+            }
+        }
+        let wanted: &[&str] = match name {
+            "ExplosionCore_Wall" => &["Explosion_CoreFlash", "Explosion_FlyingEmbers"],
+            "ExplosionCore_MidAir" => &["Explosions_MA_coreflash", "Explosions_MA_FlyingEmbers"],
+            _ => &[],
+        };
+        for w in wanted {
+            assert!(seen.iter().any(|n| n == w), "{name}: {w} drew nothing in 3 frames; drew {seen:?}");
+        }
+        assert!(!seen.is_empty(), "{name}: nothing drawn in 3 frames");
+    }
 }

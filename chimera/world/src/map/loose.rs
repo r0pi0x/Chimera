@@ -196,7 +196,14 @@ pub struct SitOnOrigin(pub Quat);
 #[derive(Resource, Clone, Debug, Default)]
 pub struct DrawnLate {
     pub keys: std::collections::BTreeSet<String>,
+    /// The weapons whose projectiles these are (their marks wait the delay
+    /// too: `weapon::projectile::FlyerMark`).
+    pub weapons: std::collections::BTreeSet<String>,
     pub hidden: std::collections::BTreeMap<String, f32>,
+    /// A key's whole unit (m): its first received place is rounded to
+    /// whole units of it (Source sends a projectile's origin in whole
+    /// inches: specs/tf2/effects.md 11.2); none: not rounded.
+    pub unit: std::collections::BTreeMap<String, f32>,
     pub running: bool,
 }
 
@@ -209,6 +216,22 @@ impl DrawnLate {
             self.hidden.remove(&key);
         }
         self.keys.insert(key);
+    }
+
+    /// `key`'s first received place rounded to whole `unit`s (m).
+    pub fn set_unit(&mut self, key: &str, unit: f32) {
+        if unit > 0.0 {
+            self.unit.insert(key.to_string(), unit);
+        }
+    }
+
+    /// `at` as `key`'s first received place: in whole units when its
+    /// data's units are set (`set_unit`).
+    pub fn received(&self, key: &str, at: bevy::math::Vec3) -> bevy::math::Vec3 {
+        match self.unit.get(key) {
+            Some(&u) => (at / u).round() * u,
+            None => at,
+        }
     }
 
     /// How long a copy shown as `key` keeps its model hidden (s).
@@ -225,17 +248,23 @@ impl DrawnLate {
 
 /// How far in the past items drawn late are drawn this frame (s): a
 /// network client's interpolation delay, else what its settings would give
-/// (`cl_interp`, `cl_interp_ratio` over the default update rate: 0.1).
+/// (`cl_interp`, `cl_interp_ratio` over the default update rate: 0.1 s, in
+/// whole ticks plus one: 0.12 s at 0.015 s ticks).
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
 pub struct LateDelay(pub f32);
 
 /// The copy an item drawn late (`DrawnLate`) is drawn as: where `of` was
 /// `LateDelay` ago (`chimera_net`'s `late`); `owner` is the item's
-/// (its flyer's), for team looks.
+/// (its flyer's), for team looks; `first` its first received place.
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
 pub struct LateCopy {
     pub of: Entity,
     pub owner: Option<Entity>,
+    /// The item's first received place (effects.md 11.2's p0, in whole
+    /// units), where the copy is drawn until the drawn time reaches it
+    /// and TF2 makes the trail that follows the copy; the water choice
+    /// is by it.
+    pub first: Vec3,
 }
 
 #[cfg(test)]

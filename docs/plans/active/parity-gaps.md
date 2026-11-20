@@ -262,7 +262,7 @@ common console commands, against mashup's.
 | 3D skybox fog distances (nuke's far mountains fogged out) | differs | M | S | refcmp above: nuke prefers the fog undivided by the sky_camera's scale, office divided; capture C10 |
 | Fog colour by view direction (`env_fog_controller` `fogblend`) | missing | L | S | cs_compound and de_port blend a second fog colour (`fogcolor2`) by how far the view looks along a direction; ours fogs in `fogcolor` alone. No spec gives the blend's curve, colour space or direction keys (shaders.md Q21, open-questions.md); windows-captures sitting 4 item 3 shows compound's two directions. Fog starts at 3000 and 2048 units there, so only the far skyline would change |
 | Static props lit in the 3D skybox (nuke's cooling towers teal, CS:S light grey) | have (fixed) | M | M | the sun ray ended at the map's underside far above the skybox, not at the skybox's sky: now it ends at the first sky brush (other-maps.md 16) |
-| Blood decals on characters | missing | M | M | backlog 3 "Decals, remaining"; no spec covers model decals (engine-side): a spec session, then a capture of a shot bot's body |
+| Blood decals on characters | have (fixed) | M | M | 2026-11-20: model decals skinned with the body (`render::body_decals`, plans/active/body-decals.md); compare with a capture of a shot bot's body |
 | Colour correction option | have (fixed) | L | S | round 2: Video > Advanced's ColorCorrection box sets `mat_colorcorrection` (the post-process was in, the control greyed) |
 | Motion blur option | missing | L | M | video-settings.md (greyed): Source's camera blur needs a spec |
 

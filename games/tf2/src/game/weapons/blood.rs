@@ -23,21 +23,31 @@
 //!   onward, `Blood` decals (`impact_effects::BloodPainter::stains`),
 //!   none with `violence_hblood 0`.
 //!
-//! Known shortcuts: no decal on the body (8b: characters take no decals,
-//! `render::decal`); no Über, disguise, birthday or Pyro vision; low
+//! - **The body decals** (8b): each TF2 bullet, pellet or swing into an
+//!   enemy decals the body (`ImpactStyle::body_decals` in `looks::STYLE`,
+//!   drawn by Chimera's `render::body_decals`), none in low violence; here
+//!   their TF2 rules: healed to full removes them (`body_decal_rules`), the
+//!   ragdoll doesn't keep them (`movement::ClassParts`).
+//!
+//! Known shortcuts: no Über, cloak or disguise yet (when they come they
+//! insert `map::NoBodyDecals`, and a disguise change writes
+//! `ClearBodyDecals`); needles' body decal (12) not made; no birthday or Pyro vision; low
 //! violence is `violence_hblood` alone (8: four cvars); the stains aren't
 //! held for the delay; the victim's and attacker's centres are their
 //! origins.
 
+use bevy::platform::collections::HashMap;
+
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use chimera_core::core::{Damage, DamageKind, FriendlyFire, Intent, MapWater, MovementState, Team, refused_by_team};
+use chimera_core::core::{Damage, DamageKind, FriendlyFire, Health, Intent, MapWater, MovementState, Team, refused_by_team};
 use chimera_sim::weapon::{DamageEffect, Inventory, Weapon, WeaponEvent, WeaponEventKind, aim_of};
 use source_engine::effects::impact_effects::{BloodPainter, ImpactEffectSettings, bleed_traces};
 
 use super::{blast::Tf2Explosion, damage::U, looks::in_water};
-use crate::map::{SkyboxCamera, loose::LateDelay, view_model::ViewModelCamera};
+use super::super::classes::Tf2Class;
+use crate::map::{ClearBodyDecals, SkyboxCamera, loose::LateDelay, view_model::ViewModelCamera};
 
 /// The data.
 pub const DATA: &str = include_str!("../../../data/blood.toml");
@@ -285,6 +295,27 @@ fn forward(
     }
 }
 
+/// The body decals' TF2 rule here (effects.md 8b; drawn by Chimera's
+/// `render::body_decals`): healing to full health (health rose and is at
+/// least the max) removes them all (`ClearBodyDecals`). (That the ragdoll
+/// keeps none is a class part, `movement::ClassParts`.)
+fn body_decal_rules(
+    health: Query<(Entity, &Health), (Changed<Health>, With<Tf2Class>)>,
+    mut gone: RemovedComponents<Tf2Class>,
+    mut seen: Local<HashMap<Entity, f32>>,
+    mut clear: MessageWriter<ClearBodyDecals>,
+) {
+    for e in gone.read() {
+        seen.remove(&e);
+    }
+    for (e, h) in &health {
+        let before = seen.insert(e, h.current);
+        if before.is_some_and(|b| h.current > b) && h.current >= h.max {
+            clear.write(ClearBodyDecals(e));
+        }
+    }
+}
+
 fn register(app: &mut App) {
     use crate::core::NetRole;
     use bevy_replicon::prelude::*;
@@ -304,10 +335,14 @@ pub fn add(app: &mut App) {
             FixedUpdate,
             bleed.after(chimera_core::core::SimSet::Weapons).run_if(chimera_core::core::authoritative),
         )
+        .add_message::<ClearBodyDecals>()
         .add_systems(
             Update,
-            draw.run_if(not(resource_exists::<chimera_net::dedicated::Serving>))
-                .before(crate::map::psys::StartedSystemsRun),
+            (
+                draw.run_if(not(resource_exists::<chimera_net::dedicated::Serving>))
+                    .before(crate::map::psys::StartedSystemsRun),
+                body_decal_rules.run_if(not(resource_exists::<chimera_net::dedicated::Serving>)),
+            ),
         )
         .net_part("tf2_blood", register);
 }

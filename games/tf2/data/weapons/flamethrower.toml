@@ -76,6 +76,7 @@ burn_max = 10.0
 pyro_burn = 0.25
 start_sound = "tf2:Weapon_FlameThrower.FireStart"
 loop_sound = "tf2:Weapon_FlameThrower.FireLoop"
+loop_crit_sound = "tf2:Weapon_FlameThrower.FireLoopCrit"
 end_sound = "tf2:Weapon_FlameThrower.FireEnd"
 hit_sound = "tf2:Weapon_FlameThrower.FireHit"
 

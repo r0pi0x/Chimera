@@ -5,7 +5,10 @@
 //! the Knife's 0.1 s, traced along the view then) and its rule for a hit
 //! from behind (`Backstab::Behind`: the Knife's three angle conditions, 6
 //! times the victim's current health, the kill credited to `BACKSTAB`, its
-//! kill icon). The hook `tf2:melee` (`MeleeParams`, the part `Tf2Melee`)
+//! kill icon), its contact point (data's `box_centre`, `refine_box`:
+//! a box hit on a player at the box's centre, one on the world refined
+//! onto its surface; effects.md 10.1) and its impact ray
+//! (`looks::STYLE`'s `melee_ray`). The hook `tf2:melee` (`MeleeParams`, the part `Tf2Melee`)
 //! adds what data can't say:
 //!
 //! - **Crits** (3): one roll per swing, before it starts (`prepare`,

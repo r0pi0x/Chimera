@@ -47,12 +47,17 @@
 //! - **Trails** (effects.md 1): a gun's `trail` (`FlyerTrail`) starts on
 //!   each of its flyers as it appears (`ShownItem`: `rockettrail` on
 //!   the rocket, `pipebombtrail_<team>`, `stickybombtrail_<team>`,
-//!   `nailtrails_medic_<team>`), following it without carrying what it
+//!   `nailtrails_medic_<team>`; none on a needle left stuck in a wall,
+//!   `projectile::StuckMark`), following it without carrying what it
 //!   left, stopped when it is gone (`psys::Follow`); its `under_water`
 //!   one instead when its first place is in water, never chosen again
 //!   (effects.md 9: `rockettrail_underwater`). A flyer drawn late (its
 //!   data's `interp`, effects.md 11: `map::loose::DrawnLate`) trails
-//!   from its copy, drawn `LateDelay` in the past.
+//!   from its copy, drawn `LateDelay` in the past and at the item's first
+//!   received place until the drawn time reaches it (effects.md 11.2:
+//!   the trail made there in the copy's first frame with only its initial
+//!   puff, its fire and sparks from the next, the glow ahead of the
+//!   launcher); the water choice by that place (`LateCopy::first`).
 //! - **The armed pulse** (effects.md 1): a gun's `armed` (`ArmedLook`)
 //!   starts on each of its flyers `after` seconds after it appears (the
 //!   sticky's `stickybomb_pulse_<team>` at its arming, 0.8 s), following
@@ -69,7 +74,8 @@
 //!   the surface's normal (zero angles in the air); an unnamed one is
 //!   `ExplosionCore_wall`; its sound (the blast's `sound`, step 5) plays
 //!   with it, so the late-drawn blast and its sound agree. The server
-//!   traces the `Scorch` decal (`blast`).
+//!   places the centre and the `Scorch` decal (`blast::Placement`,
+//!   effects.md 13).
 //! - **Flames** (flames.md 3; `flame_stream`): the gun's `stream`
 //!   (`StreamLooks`): one `new_flame` per burst (`new_flame_crit_red`/
 //!   `_blue` on a crit, `flamethrower_underwater` with the eye under
@@ -87,23 +93,27 @@
 //!   add_impact_looks`), never the map's game's or the app's base game's
 //!   (Combat Arms' in the party apps). Which entry a surface plays is the
 //!   map's sound scripts' (a name the map has, such as CS:S's
-//!   `Concrete.BulletImpact` on de_dust2, plays the map's).
+//!   `Concrete.BulletImpact` on de_dust2, plays the map's). Bullets play
+//!   `Bounce.Shrapnel` on 3 in 10 impacts, a needle's mark only RED's
+//!   (effects.md 12); impact sounds beyond 1024 units are skipped (7).
 //!
 //! Known shortcuts: a trail starts at the flyer's origin, not its model's
-//! `trail` attachment; no crit glows on flyers (crits are off); control point 0 of the stream is the muzzle as drawn
+//! `trail` attachment; a late-drawn rocket's trail starts where its copy
+//! is drawn (behind the eye), and an emitter puts a step's particles at
+//! its control point, not spread along its path (effects.md 11.1's
+//! nuance): TF2's first step lays particles from the first received place
+//! back to the drawn one, so its fire glow shows at the launcher from the
+//! frame after the shot; ours from when the drawn rocket passes the camera
+//! (about 6 frames at 60 later); no crit glows on flyers (crits are off); control point 0 of the stream is the muzzle as drawn
 //! (the view model's re-projected in first person), not the third-person
-//! model's (flames.md Open questions 2); crits are off, so a crit stream
-//! never starts; no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
+//! model's (flames.md Open questions 2); random crits are off, so a crit
+//! stream starts only for a crit-boosted Pyro (`crit_boost`); no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
 //! used until the weapon scripts are read; only guns with a tracer count
 //! toward the shared tracer counter; the tracers leave along the aim,
 //! the `while_firing` systems along the view (the brass to its right),
 //! the backblast back along the aim, not the attachments' own axes (only
 //! the per-shot flash is turned as its attachment, `start_with_axes`);
-//! fused
-//! pipes and stickies send no surface, so they take the in-air look and
-//! leave no scorch (effects.md Open questions); TF2's impact style
-//! (ricochets, pellet grouping) has no spec yet: no ricochet, every
-//! pellet's sound, as HL2:DM's (specs/tf2 names no impact rules).
+//! pellets' sounds aren't grouped (every pellet's, as HL2:DM's).
 
 use std::collections::BTreeSet;
 
@@ -440,7 +450,7 @@ pub const MUZZLE_ATTACHMENT: &str = "muzzle";
 /// blood its own (`blood`, effects.md 8).
 pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::ImpactStyle {
     game: crate::game::GAME,
-    ricochet: None,
+    ricochet: Some(("Bounce.Shrapnel", 0.3)),
     splash: (4.0, 8.0),
     group_radius: None,
     damage_unit: 1.0,
@@ -449,7 +459,14 @@ pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::I
     blood: source_engine::effects::BloodView::Game,
     melee_decal: None,
     melee_own_only: true,
+    // The impact's damage-type field carries a needle's team number, and
+    // the ricochet asks for "bullet" (2): RED's (ours: odd teams).
+    mark_ricochet: true,
+    sound_reach: Some(1024.0),
+    melee_ray: true,
+    body_decals: source_engine::effects::BodyDecals::NotLowViolence,
 };
+
 
 /// The systems TF2's guns start: loaded with its maps besides their own,
 /// and onto other games' maps (`maps::add_guest_looks`): every name the
@@ -460,6 +477,7 @@ pub fn particle_systems() -> &'static [&'static str] {
         .systems()
         .into_iter()
         .chain(super::blood::BloodLooks::default().systems())
+        .chain([super::crit_boost::glow_name(None), super::crit_boost::glow_name(Some(Team(2)))])
         .map(|n| &*Box::leak(n.into_boxed_str()))
         .collect();
     Box::leak(names.into_boxed_slice())
@@ -477,6 +495,8 @@ pub const PARTICLE_FILES: &[&str] = &[
     "particles/stickybomb.pcf",
     "particles/nailtrails.pcf",
     "particles/blood_impact.pcf",
+    // The crit boost's glow (effects.md 14.1).
+    "particles/firstperson_weapon_fx.pcf",
 ];
 
 /// An explosion on the wire (the server's `Tf2Explosion`, to clients).
@@ -645,6 +665,40 @@ impl Muzzles<'_, '_> {
         }
     }
 
+    /// The model `owner`'s crit glow stands on (effects.md 14.1): his
+    /// first-person view model's hitboxes (the arms', where the view model
+    /// is drawn; drawn in its pass) when it is shown, else his held
+    /// weapon's (its world model's, `HITBOX_ATTACHMENT`s), control point 0
+    /// at the view model's origin (the eye) or at his origin. None: no
+    /// boxes drawn for him.
+    pub fn glow_model(&self, owner: Entity) -> Option<crate::map::psys::ParticleModel> {
+        use source_engine::content::props::HITBOX_ATTACHMENT;
+        let (view, offset, controls, _, t, _) = self.owners.get(owner).ok()?;
+        let fp = first_person_shown(
+            owner,
+            view,
+            offset,
+            controls,
+            &self.anchors,
+            &self.vm_cameras,
+            self.models.as_deref(),
+            self.settings.as_deref().copied().unwrap_or_default(),
+            self.third_person.as_ref().is_some_and(|t| t.0),
+            self.time.elapsed_secs_f64(),
+        );
+        if let Some(f) = fp {
+            let eye = f.eye.to_matrix();
+            let boxes: Vec<Mat4> = (0..f.model.attachments.len())
+                .filter(|&i| f.model.attachments[i].name == HITBOX_ATTACHMENT)
+                .filter_map(|i| crate::map::view_model::attachment_transform(f.model, &f.pose, i, &f.placed))
+                .map(|m| eye * m)
+                .collect();
+            return (!boxes.is_empty()).then(|| crate::map::psys::ParticleModel { origin: f.eye.translation(), boxes, view_model: true });
+        }
+        let boxes: Vec<Mat4> = self.held.iter().filter(|(h, _)| h.owner == owner && h.name == HITBOX_ATTACHMENT).map(|(_, g)| g.to_matrix()).collect();
+        (!boxes.is_empty()).then(|| crate::map::psys::ParticleModel { origin: t.map_or(Vec3::ZERO, |t| t.translation), boxes, view_model: false })
+    }
+
     /// This machine's own player seen in first person with the view
     /// model switched off (`r_drawviewmodel 0`): no first-person effects
     /// (effects.md 2).
@@ -752,7 +806,7 @@ fn flyer_trails(
     looks: Res<GunLooks>,
     flyers: Query<
         (Entity, &chimera_world::map::loose::ShownItem, &Transform, Option<&chimera_sim::weapon::projectile::Flyer>, Option<&LateCopy>),
-        Added<chimera_world::map::loose::ShownItem>,
+        (Added<chimera_world::map::loose::ShownItem>, Without<chimera_sim::weapon::projectile::StuckMark>),
     >,
     late: Option<Res<DrawnLate>>,
     water: Option<Res<MapWater>>,
@@ -769,7 +823,9 @@ fn flyer_trails(
         let blu = owner.and_then(|o| teams.get(o).ok()).map(|t| super::super::bodies::skin_of(Some(*t)) == 1);
         let forward = at.rotation * Vec3::X;
         // Chosen once, by the water at its first place (effects.md 9).
-        let wet = in_water(water.as_deref(), at.translation);
+        let wet = in_water(water.as_deref(), copy.map_or(at.translation, |c| c.first));
+        // A copy's trail is made where the copy is drawn, its first
+        // received place (effects.md 11.2).
         start.write(StartParticleSystem {
             follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false, up: None }),
             ..StartParticleSystem::new(trail.name_in(blu, wet), at.translation, forward)
@@ -787,7 +843,10 @@ pub struct ArmsAt(f64);
 fn armed_looks(
     looks: Res<GunLooks>,
     time: Res<Time>,
-    added: Query<(Entity, &chimera_world::map::loose::ShownItem, Has<LateCopy>), Added<chimera_world::map::loose::ShownItem>>,
+    added: Query<
+        (Entity, &chimera_world::map::loose::ShownItem, Has<LateCopy>),
+        (Added<chimera_world::map::loose::ShownItem>, Without<chimera_sim::weapon::projectile::StuckMark>),
+    >,
     arming: Query<(Entity, &ArmsAt, &chimera_world::map::loose::ShownItem, &Transform, Option<&chimera_sim::weapon::projectile::Flyer>, Option<&LateCopy>)>,
     late: Option<Res<DrawnLate>>,
     teams: Query<&Team>,
@@ -854,7 +913,7 @@ fn muzzle_flashes(
 
 /// Where a system starts from the eye `origin` looking along `aim` when
 /// the gun's attachment isn't drawn (`MUZZLE_OFFSET`).
-fn ahead_of(origin: Vec3, aim: Quat) -> Vec3 {
+pub fn ahead_of(origin: Vec3, aim: Quat) -> Vec3 {
     let o = MUZZLE_OFFSET * U;
     origin + aim * Vec3::NEG_Z * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z
 }
@@ -875,6 +934,7 @@ pub fn flame_stream(
     mut guns: Query<(Entity, &Weapon, &super::flame::Tf2Flame, &super::flame::FlameShown, Option<&mut ParticleControlPoints>)>,
     owners: Query<(&Inventory, &Transform, Option<&chimera_core::core::MovementState>, Option<&chimera_core::core::Intent>)>,
     teams: Query<&Team>,
+    boosted: Query<(), With<super::crit_boost::CritBoosted>>,
     muzzles: Muzzles,
     mut running: Local<std::collections::BTreeMap<Entity, String>>,
     mut start: MessageWriter<StartParticleSystem>,
@@ -914,7 +974,9 @@ pub fn flame_stream(
         let owner = w.owner.filter(|o| owners.get(*o).is_ok_and(|(i, ..)| i.active == Some(e)));
         let firing = owner.is_some() && shown.points.last_round.is_some_and(|t| now - t <= stream.burst_gap as f64 + 1e-6);
         let blu = owner.and_then(|o| teams.get(o).ok()).is_some_and(|t| super::super::bodies::skin_of(Some(*t)) == 1);
-        let name = firing.then(|| stream.system_for(false, blu, shown.points.under_water));
+        // A crit-boosted Pyro's every burst is critical (effects.md 14).
+        let crit = owner.is_some_and(|o| boosted.contains(o));
+        let name = firing.then(|| stream.system_for(crit, blu, shown.points.under_water));
         if running.get(&e) == name.as_ref() {
             continue;
         }
@@ -1237,7 +1299,7 @@ mod tests {
         let swing = WeaponEvent {
             owner: Entity::PLACEHOLDER,
             weapon: Entity::PLACEHOLDER,
-            kind: WeaponEventKind::Swing { hit: true, secondary: false, at: None, line: (Vec3::ZERO, Vec3::ZERO) },
+            kind: WeaponEventKind::Swing { hit: true, secondary: false, at: None, line: (Vec3::ZERO, Vec3::ZERO), ray: None },
             replay: false,
         };
         assert!(STYLE.skips(&swing, false) && !STYLE.skips(&swing, true));

@@ -834,18 +834,24 @@ impl Shot<'_, '_, '_> {
             if let Some((entity, collider, point, distance, normal, origin)) = found {
                 let to = (origin - self.eye).normalize_or_zero();
                 if to.dot(forward) >= swing.facing_cos {
+                    // TF2's (`Swing::box_centre`): the box's centre where
+                    // the sweep stopped; refined only on the world or a
+                    // brush (not a character, not a physics object).
+                    let worldlike = !self.w.targets.get(entity).is_ok_and(|t| t.intent.is_some())
+                        && !self.w.kinds.get(entity).is_ok_and(|rb| rb.is_dynamic());
                     let boxed = Hit {
                         entity,
                         collider,
-                        point,
+                        point: if swing.box_centre { self.eye + *dir * distance } else { point },
                         dir: forward,
                         distance,
                         normal,
                         group: None,
                         box_exit: None,
                     };
-                    hit = Some(match swing.refine {
-                        true => self.refine(dir, distance, half).unwrap_or(boxed),
+                    let corners = swing.refine_box.unwrap_or((Vec3::splat(-half), Vec3::splat(half)));
+                    hit = Some(match swing.refine && (worldlike || !swing.box_centre) {
+                        true => self.refine(dir, distance, corners).unwrap_or(boxed),
                         false => boxed,
                     });
                 }
@@ -856,11 +862,13 @@ impl Shot<'_, '_, '_> {
         // behind); in its damage window alone it takes the swing as a miss:
         // nothing shows, nothing lands (`core::SpawnProtected`).
         let hit = hit.filter(|h| !self.hides(h.entity));
+        let ray = hit.as_ref().and_then(|h| self.impact_ray(h.point));
         self.w.event(self.owner, self.weapon, WeaponEventKind::Swing {
                 hit: hit.is_some(),
                 secondary,
                 at: hit.as_ref().map(|h| (h.point, h.normal, h.entity)),
                 line,
+                ray,
             });
         let Some(hit) = hit else {
             if let Some(s) = &swing.sound_miss {
@@ -936,10 +944,27 @@ impl Shot<'_, '_, '_> {
         true
     }
 
+    /// The impact ray of a swing whose contact is `contact`
+    /// (`WeaponEventKind::Swing::ray`): from the eye through it, 8 units
+    /// past, lengthened 10 %, against solids but characters.
+    fn impact_ray(&self, contact: Vec3) -> Option<(Vec3, Vec3)> {
+        let d = contact - self.eye;
+        let len = d.length();
+        let dir = Dir3::new(d).ok()?;
+        let reach = (len + 8.0 * 0.0254) * 1.1;
+        let filter = self.filter();
+        let hit = self.w.spatial.cast_ray_predicate(self.eye, dir, reach, true, &filter, &|e| {
+            let body = self.body(e);
+            !self.w.targets.get(body).is_ok_and(|t| t.intent.is_some())
+        })?;
+        Some((self.eye + *dir * hit.distance, hit.normal))
+    }
+
     /// A melee box hit `distance` along `dir` refined (`Swing::refine`):
-    /// a line to twice the distance, else lines to the 8 corners of a box
-    /// of half size `half` at that end, the nearest hit; None: all missed.
-    fn refine(&self, dir: Dir3, distance: f32, half: f32) -> Option<Hit> {
+    /// a line to twice the distance, else lines to the 8 corners of the
+    /// box `(min, max)` (offsets from that end) there, the nearest hit;
+    /// None: all missed.
+    fn refine(&self, dir: Dir3, distance: f32, (min, max): (Vec3, Vec3)) -> Option<Hit> {
         let reach = distance * 2.0;
         if let Some(h) = self.trace(dir, 0.0, reach, &[], 0.0) {
             return Some(Hit { dir: *dir, ..h });
@@ -947,8 +972,8 @@ impl Shot<'_, '_, '_> {
         let end = self.eye + *dir * reach;
         let mut best: Option<Hit> = None;
         for corner in 0..8 {
-            let sign = |bit: u32| if corner & bit == 0 { -1.0 } else { 1.0 };
-            let to = end + Vec3::new(sign(1), sign(2), sign(4)) * half - self.eye;
+            let pick = |bit: u32, i: usize| if corner & bit == 0 { min[i] } else { max[i] };
+            let to = end + Vec3::new(pick(1, 0), pick(2, 1), pick(4, 2)) - self.eye;
             let Ok(d) = Dir3::new(to) else { continue };
             if let Some(h) = self.trace(d, 0.0, to.length(), &[], 0.0)
                 && best.as_ref().is_none_or(|b| h.distance < b.distance)

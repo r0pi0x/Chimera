@@ -276,13 +276,17 @@ impl Plugin for CaMenuStatePlugin {
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ButtonInput<MouseButton>>()
             .add_systems(Update, (keys, pointer, act, record_key).chain().in_set(MenuSystems))
-            .add_systems(Update, popup_input.in_set(PopupInput).after(MenuSystems))
+            // Before the fixed loop, over the written intent (the menu's
+            // state from its keys in the last frame's `Update`).
+            .configure_sets(RunFixedMainLoop, PopupInput.in_set(crate::client::input::LocalInputSystems::Gate))
+            .add_systems(RunFixedMainLoop, popup_input.in_set(PopupInput))
             .console_command("combat_arms:ingamemenu", "Open or close Combat Arms' in-game menu (Esc).", |w, _| {
                 let mut m = w.resource_mut::<InGameMenu>();
                 let open = !m.open;
                 m.set_open(open);
                 Ok(None)
             });
+        crate::client::input::configure_local_input(app);
         // The shell's view of it (`client::front_end`): no main menu, so
         // always in the game.
         app.insert_resource(MenuStatus {
@@ -421,7 +425,6 @@ impl Plugin for CaMenuPlugin {
             // Before the console's toggle: the Esc that closes the console
             // doesn't open the menu.
             .configure_sets(Update, MenuSystems.before(crate::client::console::toggle))
-            .configure_sets(Update, PopupInput.after(crate::client::input::write_local_intent))
             .add_systems(Update, window_pointer.before(MenuSystems))
             .add_systems(Update, (cursor, draw_menu).after(MenuSystems));
     }

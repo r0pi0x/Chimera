@@ -27,7 +27,10 @@
 //!   (5 s) old, else flat; one not stuck reaches `air_radius_start` (85 %)
 //!   of the radius at arming, all of it `air_radius_time` (2 s) later
 //!   (0.8 s to 2.8 s); the Demoman's own the base 120 x the splash to 146
-//!   units x0.75 grounded or airborne, pushed at scale 9.
+//!   units x0.75 grounded or airborne, pushed at scale 9. Where
+//!   (effects.md 13, `BlastWorld::fused`): snapped onto a floor within 24
+//!   units below it (the scorch there), sending the normal of the surface
+//!   it stuck to (`StuckNormal`), else the floor's, else none.
 //!
 //! Known shortcuts: a ninth sticky blows the oldest at once (the game: at
 //! its next 0.2 s fuse check); bullets don't destroy stickies; the
@@ -110,6 +113,17 @@ pub struct StickyParams {
     /// interpolation delay (`map::loose::DrawnLate`, effects.md 11).
     #[serde(default)]
     pub interp: bool,
+    /// Drawn late, its model hidden its first this many seconds from its
+    /// arrival (its trail shows): 0.1 (effects.md 11.1).
+    #[serde(default)]
+    pub model_hidden: f32,
+    /// Drawn late, its first received place in whole units of the data
+    /// (effects.md 11.2: Source sends origins in whole inches).
+    #[serde(default)]
+    pub whole_units: bool,
+    /// The data's length unit (m), from its `units`.
+    #[serde(skip)]
+    pub unit: f32,
 }
 
 fn one() -> f32 {
@@ -195,7 +209,8 @@ impl StickyRules {
         let mut out = Vec::new();
         for w in &set.weapons {
             let Some(p) = w.hooks.get(super::STICKY_HOOK) else { continue };
-            let Ok(p) = p.clone().try_into::<StickyParams>() else { continue };
+            let Ok(mut p) = p.clone().try_into::<StickyParams>() else { continue };
+            p.unit = w.units.length;
             let ramp = super::damage::ramp_of(w.hooks.get(super::GUN_HOOK));
             let blast = Arc::new(p.blast());
             out.push((w.id.clone(), Arc::new(p), blast, ramp));
@@ -204,10 +219,13 @@ impl StickyRules {
     }
 
     /// The stickies of launchers whose data says `interp` drawn late
-    /// (`map::loose::DrawnLate`; their models show at once).
+    /// (`map::loose::DrawnLate`; their models hidden `model_hidden`).
     pub fn draw_late(&self, late: &mut chimera_world::map::loose::DrawnLate) {
-        if self.0.iter().any(|(_, p, ..)| p.interp) {
-            late.add(SHOWN.to_string(), 0.0);
+        if let Some((_, p, ..)) = self.0.iter().find(|(_, p, ..)| p.interp) {
+            late.add(SHOWN.to_string(), p.model_hidden);
+            if p.whole_units {
+                late.set_unit(SHOWN, p.unit);
+            }
         }
     }
 
@@ -346,8 +364,13 @@ pub fn launch_spin(spin: [f32; 3], r: f32) -> Vec3 {
 /// When a stuck sticky is gone: never (it goes by detonation).
 const FOREVER: f64 = 1.0e12;
 
+/// On a stuck sticky: the normal of the surface it stuck to, out of it,
+/// sent with its blast (effects.md 13).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct StuckNormal(pub Vec3);
+
 /// Stickies' touches: stuck on the world, bounced off the rest.
-pub fn touch(mut hits: MessageReader<FlyerHit>, rules: Res<StickyRules>, mut flyers: Query<&mut Flyer>) {
+pub fn touch(mut hits: MessageReader<FlyerHit>, rules: Res<StickyRules>, mut flyers: Query<&mut Flyer>, mut commands: Commands) {
     for hit in hits.read() {
         if rules.get(hit.weapon).is_none() {
             continue;
@@ -356,6 +379,7 @@ pub fn touch(mut hits: MessageReader<FlyerHit>, rules: Res<StickyRules>, mut fly
         if hit.world {
             f.velocity = Vec3::ZERO;
             f.stuck_until = Some(FOREVER);
+            commands.entity(hit.flyer).insert(StuckNormal(hit.normal));
         } else {
             f.velocity = chimera_sim::weapon::projectile::reflect(hit.velocity, hit.normal) * 0.5;
         }
@@ -368,7 +392,7 @@ pub fn detonate(
     owners: Query<(Entity, &Intent, &Inventory, Option<&Health>)>,
     launchers: Query<&Tf2Sticky>,
     weapons: Query<&Weapon>,
-    stickies: Query<(Entity, &Flyer, &Transform)>,
+    stickies: Query<(Entity, &Flyer, &Transform, Option<&StuckNormal>)>,
     rules: Res<StickyRules>,
     clock: Res<SimClock>,
     mut world: BlastWorld,
@@ -378,10 +402,10 @@ pub fn detonate(
         return;
     }
     let now = clock.now;
-    let mut mine: Vec<(Entity, Entity, &'static str, f64, bool, Vec3)> = stickies
+    let mut mine: Vec<(Entity, Entity, &'static str, f64, Option<Vec3>, Vec3, bool)> = stickies
         .iter()
-        .filter(|(_, f, _)| rules.get(f.weapon).is_some())
-        .filter_map(|(e, f, t)| Some((f.owner?, e, f.weapon, f.born, f.stuck_until.is_some(), t.translation)))
+        .filter(|(_, f, ..)| rules.get(f.weapon).is_some())
+        .filter_map(|(e, f, t, n)| Some((f.owner?, e, f.weapon, f.born, n.map(|n| n.0), t.translation, f.stuck_until.is_some())))
         .collect();
     if mine.is_empty() {
         return;
@@ -431,7 +455,7 @@ pub fn detonate(
         commands.entity(e).despawn();
     }
     for i in blow {
-        let (owner, e, weapon, born, stuck, at) = mine[i];
+        let (owner, e, weapon, born, normal, at, stuck) = mine[i];
         let Some((p, b, ramp)) = rules.get(weapon) else { continue };
         let age = (now - born) as f32;
         let blast = Blast {
@@ -440,9 +464,10 @@ pub fn detonate(
             ramp: (age <= p.flat_after).then_some(ramp),
             scale: 1.0,
         };
-        // No surface sent with a sticky (effects.md Open questions): the
-        // in-air look.
-        world.detonate(&blast, at, Vec3::ZERO, Some(owner), weapon, None);
+        // Snapped onto a floor within 24 units below, with the normal of
+        // the surface it stuck to (effects.md 13).
+        let at = world.fused(at, normal);
+        world.detonate(&blast, &at, Some(owner), weapon, None);
         commands.entity(e).despawn();
     }
 }

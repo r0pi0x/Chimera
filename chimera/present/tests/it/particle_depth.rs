@@ -228,3 +228,58 @@ fn started_systems_draw_in_the_world_pass() {
     assert_eq!(run(true), vec![(false, true)], "a first-person flash: the world's layer, depth tested");
     assert_eq!(run(false), vec![(false, true)], "in the world");
 }
+
+/// Particles in water seen from above it are drawn before the water
+/// surfaces (`ParticleDrawMaterial::before_water`), so the surface's
+/// refraction shows them (specs/tf2/effects.md 9: TF2's blast on a river
+/// bed seen from just above the surface, an orange glow through it); in
+/// the transparent pass the surface's depth hid them. With the eye in the
+/// water every particle draws as usual.
+#[test]
+fn particles_in_water_seen_from_above_draw_before_the_surface() {
+    fn run(eye_under: bool) -> Vec<(f32, bool)> {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<Mesh>()
+            .init_asset::<ParticleDrawMaterial>()
+            .insert_resource(ParticleAssets::new(
+                MapParticles {
+                    materials: vec![ParticleMaterial { name: "glow".into(), blend: ParticleBlend::Additive, vertex_alpha: true, ..default() }],
+                },
+                Vec::new(),
+            ))
+            .insert_resource(chimera_core::core::MapWater(vec![chimera_core::core::MapWaterVolume {
+                brush: chimera_core::core::MapBrush::from_box(Vec3::new(-10.0, -5.0, -10.0), Vec3::new(10.0, 0.0, 10.0)),
+                slime: false,
+            }]))
+            .insert_resource(chimera_world::map::water::WaterView { under: eye_under.then_some(0), ..default() })
+            .init_resource::<Particles>()
+            .add_systems(Update, draw_particles);
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Projection::Perspective(PerspectiveProjection::default()),
+            GlobalTransform::from_translation(Vec3::Y),
+        ));
+        for y in [-1.0, 0.5] {
+            let mut g = ParticleGroup::new(Motion::default());
+            g.skip_first = false;
+            g.particles.push(Particle::new(Vec3::new(0.0, y, -3.0), 1.0, 0, 0.1));
+            app.world_mut().resource_mut::<Particles>().add(g);
+        }
+        app.update();
+        let mut q = app.world_mut().query::<(&MeshMaterial3d<ParticleDrawMaterial>, &Transform)>();
+        let mut drawn: Vec<(f32, bool)> = q
+            .iter(app.world())
+            .map(|(m, t)| (t.translation.y, app.world().resource::<Assets<ParticleDrawMaterial>>().get(&m.0).unwrap().before_water))
+            .collect();
+        drawn.sort_by(|a, b| a.0.total_cmp(&b.0));
+        drawn
+    }
+    // The mesh's centre is its particles'; the mesh is placed in the
+    // frame after it is spawned, so compare by material only.
+    let above = run(false);
+    assert_eq!(above.len(), 2, "{above:?}");
+    assert_eq!(above.iter().filter(|d| d.1).count(), 1, "the one in the water before the surface: {above:?}");
+    let under = run(true);
+    assert!(under.iter().all(|d| !d.1), "eye in the water: as usual: {under:?}");
+}

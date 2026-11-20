@@ -257,7 +257,12 @@ fn write_items(
                 have.set_if_neq(now);
             }
             None => {
-                commands.entity(e).insert((Replicated, now));
+                let mut c = commands.entity(e);
+                c.insert((Replicated, now));
+                // Its launch velocity once (`late`'s seeded history).
+                if let Some(f) = flyer {
+                    c.insert(super::NetLaunch { velocity: f.velocity.to_array() });
+                }
             }
         }
     }
@@ -492,6 +497,9 @@ fn send_marks(mut marks: MessageReader<FlyerMark>, registry: Res<WeaponRegistry>
                 at: m.at.to_array(),
                 normal: m.normal.to_array(),
                 dir: m.dir.to_array(),
+                team: m.team,
+                turn: m.turn.to_array(),
+                stay: m.stay,
             },
         });
     }
@@ -508,6 +516,9 @@ fn receive_marks(mut marks: MessageReader<NetMark>, registry: Res<WeaponRegistry
             at: Vec3::from_array(m.at),
             normal: Vec3::from_array(m.normal),
             dir: Vec3::from_array(m.dir),
+            team: m.team,
+            turn: Quat::from_array(m.turn).normalize(),
+            stay: m.stay,
         });
     }
 }
@@ -894,6 +905,7 @@ fn receive_fx(mut fx: MessageReader<WeaponFx>, mut out: MessageWriter<RemoteActi
                 secondary: f.kind == weapon_fx::SWING2,
                 at: None,
                 line: (Vec3::ZERO, Vec3::ZERO),
+                ray: None,
             },
             weapon_fx::PIN => WeaponEventKind::PinPulled,
             weapon_fx::THROWN => WeaponEventKind::Thrown,

@@ -177,6 +177,20 @@ pub fn decal_cvars(app: &mut App) {
         "Most bullet hole, slash and blood decals drawn at once; the oldest goes first.",
         |s| &mut s.limit,
     );
+    use crate::render::body_decals::BodyDecalSettings;
+    app.init_resource::<BodyDecalSettings>();
+    resource_cvar::<BodyDecalSettings, u8>(
+        app,
+        "r_drawmodeldecals",
+        "0: hide the decals on characters' bodies (blood where they were hit).",
+        |s| &mut s.draw,
+    );
+    resource_cvar::<BodyDecalSettings, usize>(
+        app,
+        "r_maxmodeldecal",
+        "Most decals on one character's body; the oldest goes first.",
+        |s| &mut s.cap,
+    );
     let mut console = app.world_mut().resource_mut::<crate::console::Console>();
     console.archive("chimera_round_cleardecals");
     console.archive("mp_decals");

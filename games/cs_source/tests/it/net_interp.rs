@@ -199,7 +199,10 @@ fn others_are_drawn_smoothly_on_the_servers_path() {
         let end = pos(sim.server.app.world(), theirs);
         let there = pos(sim.clients[1].app.world(), seen);
         assert!(there.distance(end) < 1e-3, "{what}: drawn at {there}, the server has {end}");
-        assert!((g.interp_ms - 100.0).abs() < 1e-3, "{what}: cl_interp {}", g.interp_ms);
+        // cl_interp 0.1 s in whole ticks plus one (`interp_amount`: 7
+        // ticks of 1/64 s).
+        let want = chimera_net::net::interp::interp_amount(0.1, 1.0 / 64.0) * 1000.0;
+        assert!((g.interp_ms - want).abs() < 1e-3, "{what}: cl_interp {} (want {want})", g.interp_ms);
     }
 }
 

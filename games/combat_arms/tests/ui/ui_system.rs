@@ -723,7 +723,10 @@ fn t26_input_under_the_esc_menu() {
         let mut sim = Sim::with(combat_arms::harness::CaSim, |app| {
             app.add_plugins((GreyboxMapPlugin, CaMenuStatePlugin))
                 .init_resource::<Keys>()
-                .add_systems(Update, write_keys.before(menu::PopupInput));
+                .add_systems(
+                    RunFixedMainLoop,
+                    write_keys.in_set(chimera_client::client::input::LocalInputSystems::Write),
+                );
         });
         let me = sim.spawn_character(chimera_world::greybox::SPAWNS[0], combat_arms::game::movement::ID);
         sim.app.world_mut().entity_mut(me).insert(LocalPlayer);

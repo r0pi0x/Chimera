@@ -884,6 +884,14 @@ pub struct NetItem {
     pub owner: Option<u64>,
 }
 
+/// A flyer's launch velocity (m/s), sent once with its first `NetItem`:
+/// a client seeds the history of a projectile drawn late with it
+/// (`late`, specs/tf2/effects.md 11.1).
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq)]
+pub struct NetLaunch {
+    pub velocity: [f32; 3],
+}
+
 /// A smoke cloud (`weapon::grenade::SmokeCloud`): where, and the grenade
 /// whose rule it follows (registry index). A client starts its own copy
 /// when it hears of it.
@@ -968,13 +976,17 @@ pub struct Detonation {
 /// Server -> clients: a projectile marked what it touched
 /// (`weapon::projectile::FlyerMark`: TF2's needle): its weapon (registry
 /// index), the touch point, the surface's normal and its flight's
-/// direction.
+/// direction, its shooter's team, its model's turn and stay.
 #[derive(Message, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct NetMark {
     pub weapon: u16,
     pub at: [f32; 3],
     pub normal: [f32; 3],
     pub dir: [f32; 3],
+    /// The shooter's team, the model's turn and how long it stays (s).
+    pub team: u8,
+    pub turn: [f32; 4],
+    pub stay: f32,
 }
 
 /// Server -> clients: map logic's long-lived sounds (`map::SoundControl`
@@ -1409,6 +1421,7 @@ impl Plugin for NetPlugin {
             .replicate::<NetItem>()
             .set_receive_fns::<NetItem>(interp::write_snapshot::<NetItem>, interp::remove_snapshots::<NetItem>)
             .ordered_with::<NetItem>(interp::write_snapshot::<NetItem>, interp::remove_snapshots::<NetItem>)
+            .replicate::<NetLaunch>()
             .replicate::<NetSmoke>()
             .ordered::<NetSmoke>()
             .add_mapped_server_message::<FireBullets>(Channel::Unreliable)

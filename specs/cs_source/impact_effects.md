@@ -574,6 +574,11 @@ is the interpretation used above, to be checked (Q7):
   count of the chosen sheet sequence / fps.
 - **Color random**: a random blend between `color1` and `color2`;
   `tint_perc` blends that much towards the lighting at the control point.
+- (The exact formulas of movement basic, alpha fade and decay, radius
+  scale and colour fade, read later from the particle library, are in
+  specs/tf2/particles.md §10; they replace the readings below where they
+  differ: drag is per 1/30 s, the alpha is untouched outside the fade
+  windows, the radius bias is a rational curve.)
 - **Movement basic**: add `gravity·dt` to velocity, apply `drag`
   (fraction of velocity removed per step), move.
 - **Alpha fade and decay**: alpha multiplier ramps from `start_alpha` to 1

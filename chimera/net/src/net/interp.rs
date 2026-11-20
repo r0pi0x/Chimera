@@ -17,7 +17,9 @@
 //!   the server's clock as seen here (`InterpClock`: an average of tick
 //!   time less arrival time, eased in at most 5 % of real time so it never
 //!   steps). Others are drawn at that time less the interpolation delay:
-//!   `max(cl_interp, cl_interp_ratio × update interval)` (0.1 s, 2). The
+//!   `max(cl_interp, cl_interp_ratio × update interval)` (0.1 s, 2) in
+//!   whole ticks, rounded, plus one (`interp_amount`; specs/tf2/effects.md
+//!   11.1: 0.12 s at 0.015 s ticks). The
 //!   client's own player runs ahead (predicted, `predict`); others lag
 //!   behind by the delay plus the latency, as in Source.
 //! - **Drawing.** Each frame, between the two snapshots around the render
@@ -283,7 +285,7 @@ impl InterpClock {
         self.last = Some(now);
         let room = SLEW * dt;
         self.offset += (target - self.offset).clamp(-room, room);
-        self.delay = (settings.interp as f64).max(settings.interp_ratio as f64 * self.interval);
+        self.delay = interp_amount((settings.interp as f64).max(settings.interp_ratio as f64 * self.interval), step);
         self.render_tick = (now + self.offset - self.delay) / step;
         self.running = true;
     }
@@ -339,6 +341,16 @@ pub(super) fn reset(world: &mut World) {
 }
 
 /// The length of a server tick, s.
+/// The interpolation delay of `lerp` seconds with ticks `step` s long:
+/// whole ticks, rounded to nearest, plus one (specs/tf2/effects.md 11.1:
+/// 0.1 s at 0.015 s ticks is 8 ticks, 0.12 s).
+pub fn interp_amount(lerp: f64, step: f64) -> f64 {
+    if step <= 0.0 {
+        return lerp;
+    }
+    ((lerp / step).round() + 1.0) * step
+}
+
 pub fn tick_step(world_clock: &super::predict::CommandClock, fixed: &Time<Fixed>) -> f64 {
     world_clock
         .step()
@@ -633,7 +645,16 @@ mod tests {
         }
         // Settled: drawn the delay plus the latency behind the newest.
         let behind = (c.newest as f64 - c.render_tick) * step;
-        assert!((behind - 0.15).abs() < 0.03, "{behind}");
-        assert!((c.delay - 0.1).abs() < 1e-6);
+        assert!((behind - 0.16).abs() < 0.03, "{behind}");
+        // 0.1 s in whole ticks plus one: 7 of 1/64 s.
+        assert!((c.delay - 7.0 * step).abs() < 1e-9, "{}", c.delay);
+    }
+
+    /// effects.md 11.1: TF2's defaults, lerp 0.1 at 0.015 s ticks, give
+    /// 8 ticks (0.12 s).
+    #[test]
+    fn the_interpolation_amount_is_whole_ticks_plus_one() {
+        assert!((interp_amount(0.1, 0.015) - 0.12).abs() < 1e-9);
+        assert!((interp_amount(0.03, 0.015) - 0.045).abs() < 1e-9);
     }
 }

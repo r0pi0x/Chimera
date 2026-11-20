@@ -2562,7 +2562,9 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   systems' particles, each started child on its own line (`root >
   child`; with `all` its material, blend and renderer too), and
   `psys_def <name>` a system's definition (initializers, operators,
-  material). **Not `host_timescale`** in TF2: under it its
+  material); `particles_drawn` what each particle material drew last
+  frame (quads, layer: 3 is in water drawn before the surfaces, centre,
+  the fog amount its material applies there). **Not `host_timescale`** in TF2: under it its
   flashes vanished in 15 ms. Ours steps at `host_timescale 0.01` with the
   scene's `gwait` (game seconds) after `wait_for shot`, with `wait 3`
   between `host_timescale` and `+attack` (a shot in the frame the rate

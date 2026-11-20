@@ -27,10 +27,12 @@
 //! scratch store and read back, the scripts decrypted with the user's key
 //! when it is set),
 //! found through Steam, `[games.tf2] path` or `$CHIMERA_TF2_ROOT`, each
-//! test passing with a note without one.
+//! test passing with a note without one. Also crit boosts' loop and
+//! glow and the Flame Thrower's crit loop swap (`crit_boost`).
 //! `cargo test -p tf2 --features dev --test it`; where tests go:
 //! docs/OBSERVABILITY.md, section 1.
 
+mod crit_boost;
 mod ice;
 mod impacts;
 mod info;

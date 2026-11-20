@@ -10,7 +10,8 @@
 //! brush entities). A brush entity's translucent faces take them too
 //! (breakable glass), without the depth copy, and on a broken window only
 //! over its unbroken panes (`breakables::clip_panes` keeps them to the
-//! panes left). Characters take no decals yet. They stay until the
+//! panes left). Characters take theirs on the body
+//! (`render::body_decals`). They stay until the
 //! map changes, as in the game; `ClearDecals` (the `r_cleardecals`
 //! command) removes them all, and `DecalSettings::round_clear`
 //! (`chimera_round_cleardecals 1`) at every round start; a decal placed
@@ -32,7 +33,7 @@
 //!
 //! Known shortcuts (docs/tech-debt.md): Runtime decals: world and props
 //! (projected onto the prop's own model triangles, as a child so they move with
-//! it), none on characters (blood); lit decals (wood, glass: lightmapped and
+//! it; characters' in `render::body_decals`); lit decals (wood, glass: lightmapped and
 //! alpha-blended in the game) drawn as a modulate-style stain, except on a
 //! brush entity's glass, where they are alpha-blended and lit by the light
 //! probe at the hit (not the lightmap) and drawn with the see-through
@@ -267,7 +268,7 @@ pub fn basis(normal: Vec3) -> (Vec3, Vec3) {
 }
 
 /// Clip a polygon (position, uv) to 0 <= u, v <= 1.
-fn clip(mut poly: Vec<(Vec3, Vec2)>) -> Vec<(Vec3, Vec2)> {
+pub(crate) fn clip(mut poly: Vec<(Vec3, Vec2)>) -> Vec<(Vec3, Vec2)> {
     for (axis, keep_above) in [(0, true), (0, false), (1, true), (1, false)] {
         let inside = |p: &(Vec3, Vec2)| if keep_above { p.1[axis] >= 0.0 } else { p.1[axis] <= 1.0 };
         let edge = if keep_above { 0.0 } else { 1.0 };
@@ -384,7 +385,7 @@ impl DecalAssets {
         }
     }
 
-    fn random(&mut self) -> f32 {
+    pub(crate) fn random(&mut self) -> f32 {
         self.rng ^= self.rng << 13;
         self.rng ^= self.rng >> 7;
         self.rng ^= self.rng << 17;
@@ -392,7 +393,7 @@ impl DecalAssets {
     }
 
     /// A variant of `group`, by weight.
-    fn pick(&mut self, group: &DecalGroup) -> Option<usize> {
+    pub(crate) fn pick(&mut self, group: &DecalGroup) -> Option<usize> {
         let name = match group {
             DecalGroup::Named(n) => n.to_lowercase(),
             DecalGroup::Material(c) => self.data.by_material.get(&c.to_ascii_uppercase())?.clone(),
@@ -408,6 +409,32 @@ impl DecalAssets {
             }
         }
         list.last().map(|(_, d)| *d)
+    }
+}
+
+impl DecalAssets {
+    /// Decal `index`'s shared material (unlit by a probe, colour drawn),
+    /// made on first use; None without its texture.
+    pub(crate) fn shared_material(
+        &mut self,
+        index: usize,
+        materials: &mut Assets<DecalMaterial>,
+        fog: Option<&fog::SceneFog>,
+    ) -> Option<Handle<DecalMaterial>> {
+        if let Some(m) = self.materials.get(&(index, false)) {
+            return Some(m.clone());
+        }
+        let decal = self.data.decals.get(index)?;
+        let texture = self.textures.get(decal.texture)?.clone();
+        let m = materials.add(DecalMaterial {
+            params: Vec4::new(if decal.blend == DecalBlend::Modulate2x { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0),
+            texture,
+            fog: fog.map_or_else(Default::default, |f| f.0),
+            light: Vec4::ZERO,
+            depth_only: false,
+        });
+        self.materials.insert((index, false), m.clone());
+        Some(m)
     }
 }
 

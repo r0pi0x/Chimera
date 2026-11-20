@@ -19,7 +19,14 @@
 //! own `particle/particle_noisesphere` too, whose files don't ask. A game
 //! may cap the sprites covering more than half the view drawn per frame
 //! (`Particles::view_filling_cap`, `keep_sprite`, `view_fraction`; off by
-//! default: Halo's app sets 11).
+//! default: Halo's app sets 11). Particles in a water volume (`MapWater`) seen
+//! with the eye out of the water draw before the water surfaces
+//! (`ParticleDrawMaterial::before_water`: Bevy's alpha-mask phase, still
+//! blended, no depth written), so a surface's refraction shows them under
+//! its fog as the original's refraction view does (TF2's blast on a river
+//! bed through the surface, specs/tf2/effects.md 9). `particles_drawn`
+//! (a probe) prints what each material drew last frame and the fog its
+//! material applies there.
 //!
 //! Known shortcuts (docs/tech-debt.md): Particles blend in linear space (Source
 //! blends in gamma), and each material is one mesh sorted against other
@@ -27,7 +34,10 @@
 //! range fog (blended toward the fog colour, added toward black); `$depthblend`
 //! fades over 24 units and linearly, and is honoured on any shader (ours: the
 //! spec names no distance or curve and says it of sprite cards, while HL2's
-//! `particle_noisesphere` is UnlitGeneric). Why it's OK for now: Small, fast
+//! `particle_noisesphere` is UnlitGeneric); particles in water drawn before
+//! its surfaces aren't sorted between materials (the alpha-mask phase is
+//! binned), and with the eye under water those above the surface draw as
+//! usual. Why it's OK for now: Small, fast
 //! effects; looks right in screenshots.
 
 use std::collections::HashMap;
@@ -72,6 +82,15 @@ pub struct ParticleDrawMaterial {
     /// fades out as it nears what the depth prepass holds behind it, on
     /// the views that have one (the world's: `soft_particle_prepass`).
     pub soft: bool,
+    /// Particles in water seen from above it (`UNDER`): drawn before the
+    /// water surfaces (Bevy's alpha-mask phase, blended all the same, no
+    /// depth written), so a surface's refraction (the main view's copy
+    /// at the transmissive phase) shows them under its fog, as the
+    /// original's refraction view draws what lies below, particles too
+    /// (specs/tf2/effects.md 9: a blast on a river bed seen from just
+    /// above the surface). In the transparent pass the opaque surface's
+    /// depth hid them.
+    pub before_water: bool,
 }
 
 #[repr(C)]
@@ -81,6 +100,7 @@ pub struct ParticleDrawKey {
     premultiplied: bool,
     over_model: bool,
     soft: bool,
+    before_water: bool,
 }
 
 impl From<&ParticleDrawMaterial> for ParticleDrawKey {
@@ -90,6 +110,7 @@ impl From<&ParticleDrawMaterial> for ParticleDrawKey {
             premultiplied: m.blend == ParticleBlend::Premultiplied,
             over_model: m.over_model,
             soft: m.soft,
+            before_water: m.before_water,
         }
     }
 }
@@ -115,6 +136,11 @@ impl Material for ParticleDrawMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
+        if self.before_water {
+            // Only for the phase (before the transmissive one); the blend
+            // is set back in `specialize`.
+            return AlphaMode::Mask(0.0);
+        }
         match self.blend {
             ParticleBlend::Alpha => AlphaMode::Blend,
             ParticleBlend::Additive => AlphaMode::Add,
@@ -136,6 +162,20 @@ impl Material for ParticleDrawMaterial {
             && let Some(fragment) = descriptor.fragment.as_mut()
         {
             fragment.shader_defs.push("ADDITIVE".into());
+        }
+        if key.bind_group_data.before_water
+            && let Some(fragment) = descriptor.fragment.as_mut()
+        {
+            // Blended as in the transparent pass (Bevy's blend for each
+            // alpha mode: added and premultiplied ones premultiplied).
+            let blend = if key.bind_group_data.additive || key.bind_group_data.premultiplied {
+                bevy::render::render_resource::BlendState::PREMULTIPLIED_ALPHA_BLENDING
+            } else {
+                bevy::render::render_resource::BlendState::ALPHA_BLENDING
+            };
+            for t in fragment.targets.iter_mut().flatten() {
+                t.blend = Some(blend);
+            }
         }
         if key.bind_group_data.premultiplied
             && let Some(fragment) = descriptor.fragment.as_mut()
@@ -228,6 +268,13 @@ impl ParticleAssets {
 const WORLD: u8 = 0;
 const SKY: u8 = 1;
 const VIEW: u8 = 2;
+/// In water seen from above it (`ParticleDrawMaterial::before_water`).
+const UNDER: u8 = 3;
+
+/// Whether `p` (engine space) lies in one of the map's water volumes.
+pub fn in_water(water: &chimera_core::core::MapWater, p: Vec3) -> bool {
+    water.0.iter().any(|v| v.brush.planes.iter().all(|(n, d)| n.dot(p) - d <= 0.0))
+}
 
 pub fn draw_particles(
     particles: Res<Particles>,
@@ -250,8 +297,14 @@ pub fn draw_particles(
     look: Option<Res<crate::map::ActiveMapLook>>,
     mut transforms: Query<&mut Transform>,
     mut commands: Commands,
+    mut drawn: Option<ResMut<DrawnParticles>>,
+    drawn_with: Query<&MeshMaterial3d<ParticleDrawMaterial>>,
+    (water_volumes, water_view): (Option<Res<chimera_core::core::MapWater>>, Option<Res<water::WaterView>>),
 ) {
     let Some(mut assets) = assets else { return };
+    if let Some(d) = drawn.as_mut() {
+        d.0.clear();
+    }
     let integer_hdr = look
         .as_ref()
         .and_then(|l| l.0.hdr.as_ref())
@@ -281,6 +334,9 @@ pub fn draw_particles(
             .is_some_and(|a| p.cmplt(a.0.0).any() || p.cmpgt(a.0.1).any())
     };
     let sky_eye = sky.as_ref().map(|s| s.0.origin + from / s.0.scale);
+    // With the eye out of the water, particles in it are seen through its
+    // surface (`UNDER`).
+    let water_above = water_volumes.as_deref().filter(|w| !w.0.is_empty() && water_view.as_ref().is_none_or(|v| v.under.is_none()));
     // Per material and layer: (depth, particle, near fade).
     let mut buckets: HashMap<(usize, u8), Vec<(f32, &Particle, f32)>> = HashMap::new();
     for g in &particles.groups {
@@ -290,6 +346,8 @@ pub fn draw_particles(
                 VIEW
             } else if skybox {
                 SKY
+            } else if water_above.is_some_and(|w| in_water(w, p.position)) {
+                UNDER
             } else {
                 WORLD
             };
@@ -335,6 +393,7 @@ pub fn draw_particles(
                             blend: def.blend,
                             over_model: layer == VIEW && def.no_depth,
                             soft: def.depth_blend,
+                            before_water: layer == UNDER,
                         })),
                         // The mesh moves with its particles.
                         bevy::camera::visibility::NoFrustumCulling,
@@ -484,6 +543,23 @@ pub fn draw_particles(
             }
         }
         let empty = b.positions.is_empty();
+        if let Some(d) = drawn.as_mut()
+            && !empty
+        {
+            // The probe: what this material drew, and the fog its
+            // material applies at its centre.
+            let mat_fog = drawn_with.get(entity).ok().and_then(|m| materials.get(&m.0)).map(|m| m.fog);
+            let depth = (centre - from).dot(forward);
+            d.0.push(DrawnBucket {
+                material: def.name.clone(),
+                blend: format!("{:?}", def.blend),
+                layer: key.1,
+                quads: b.positions.len() / 4,
+                centre,
+                fog: mat_fog.map(|f| fog::fog_at(&f, from, centre, depth).1),
+                scene_fog: fog.as_ref().map(|f| fog::fog_at(&f.0, from, centre, depth).1),
+            });
+        }
         if empty && was_empty {
             continue;
         }
@@ -497,6 +573,51 @@ pub fn draw_particles(
             b.write(&mut mesh, -forward);
         }
     }
+}
+
+/// What the particle materials drew last frame, kept when the resource
+/// exists (`particles_drawn`, a probe): per material and layer (0 world,
+/// 1 sky, 2 view model).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct DrawnParticles(pub Vec<DrawnBucket>);
+
+/// One material's draw (`DrawnParticles`): quads, their centre (engine
+/// space), the fog amount its material applies there and the one the
+/// scene's fog would.
+#[derive(Clone, Debug, Default)]
+pub struct DrawnBucket {
+    pub material: String,
+    pub blend: String,
+    pub layer: u8,
+    pub quads: usize,
+    pub centre: Vec3,
+    pub fog: Option<f32>,
+    pub scene_fog: Option<f32>,
+}
+
+/// `particles_drawn`: the first call starts keeping `DrawnParticles`,
+/// later ones print it.
+pub fn console(app: &mut App) {
+    use chimera_core::console::ConsoleAppExt;
+    app.console_command(
+        "particles_drawn",
+        "particles_drawn: the particle quads drawn last frame per material (blend, layer, centre, the fog its material \
+         applies there and the scene's); the first call starts watching.",
+        |w, _| {
+            let Some(d) = w.get_resource::<DrawnParticles>() else {
+                w.init_resource::<DrawnParticles>();
+                return Ok(Some("particles_drawn: watching from now; run it again".into()));
+            };
+            let mut out = format!("{} materials", d.0.len());
+            for b in &d.0 {
+                out.push_str(&format!(
+                    "\n{} {} layer {}: {} quads at ({:.2} {:.2} {:.2}) fog {:?} scene fog {:?}",
+                    b.material, b.blend, b.layer, b.quads, b.centre.x, b.centre.y, b.centre.z, b.fog, b.scene_fog
+                ));
+            }
+            Ok(Some(out))
+        },
+    );
 }
 
 /// The fraction of a view a camera-facing sprite of half-width `half` at

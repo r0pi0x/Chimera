@@ -351,6 +351,40 @@ pub struct PlaceDecal {
     pub round: bool,
 }
 
+/// Put a decal from `group` on `target`'s drawn body (a model decal,
+/// following its skin; `render::body_decals`): where the shot from `from`
+/// along `dir` met it at `point` (on its hitbox). `owner` made it (none on
+/// himself, nor on a teammate without friendly fire). Each game's impacts
+/// write it for the hits whose game decals bodies (specs/tf2/effects.md
+/// 8b; CS:S's and HL2:DM's impact on a player).
+#[derive(Message, Clone, Debug)]
+pub struct PlaceBodyDecal {
+    pub target: Entity,
+    pub owner: Entity,
+    pub group: DecalGroup,
+    pub from: Vec3,
+    pub point: Vec3,
+    pub dir: Vec3,
+}
+
+/// Remove every decal on this character's body (TF2: healed to full, a
+/// disguise changed; specs/tf2/effects.md 8b).
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClearBodyDecals(pub Entity);
+
+/// On a character: its body takes no decals while it is there, and its
+/// arrival removes those it has (TF2's cloak, disguise and Über,
+/// specs/tf2/effects.md 8b).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct NoBodyDecals;
+
+/// On a character: its ragdoll doesn't keep the living body's decals
+/// (TF2's ragdoll is a model of its own, specs/tf2/effects.md 8b). Without
+/// it the body, decals and all, becomes the ragdoll (CS:S, HL2:DM:
+/// specs/cs_source/ragdolls.md 2.4).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct BodyDecalsOffRagdoll;
+
 /// Which decals to choose from.
 #[derive(Clone, Debug)]
 pub enum DecalGroup {

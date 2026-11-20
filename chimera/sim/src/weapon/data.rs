@@ -405,6 +405,13 @@ pub struct SwingData {
     /// `Swing::refine`.
     #[serde(default)]
     pub refine: bool,
+    /// `Swing::refine_box`: [min, max] (data lengths, x forward-free
+    /// world axes with z up, as the original's boxes).
+    #[serde(default)]
+    pub refine_box: Option<[[f32; 3]; 2]>,
+    /// `Swing::box_centre`.
+    #[serde(default)]
+    pub box_centre: bool,
     pub damage: f32,
     /// (window s, damage).
     #[serde(default)]
@@ -991,9 +998,12 @@ impl WeaponDataAppExt for App {
         }
         let late = super::projectile::late_keys(set);
         let mut drawn_late = world.get_resource_or_init::<crate::map::loose::DrawnLate>();
-        for (key, hidden) in late {
+        for (weapon, key, hidden, unit) in late {
+            drawn_late.weapons.insert(weapon);
+            drawn_late.set_unit(&key, unit);
             drawn_late.add(key, hidden);
         }
+        world.get_resource_or_init::<super::projectile::StayingMarks>().add_set(set);
         let mut catalog = world.get_resource_or_init::<WeaponCatalog>();
         if !catalog.sets.iter().any(|s| std::ptr::eq(*s, set)) {
             catalog.sets.push(set);
@@ -1280,6 +1290,11 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             hull_reach: s.hull_reach.unwrap_or(s.range) * len,
             facing_cos: s.facing_cos,
             refine: s.refine,
+            refine_box: s.refine_box.map(|[a, b]| {
+                let (a, b) = (Vec3::new(a[0], a[2], -a[1]) * len, Vec3::new(b[0], b[2], -b[1]) * len);
+                (a.min(b), a.max(b))
+            }),
+            box_centre: s.box_centre,
             damage: s.damage * dmg,
             follow_up: s.follow_up.map(|(t, x)| (t, x * dmg)),
             backstab: s.backstab.as_ref().map(|b| match b {

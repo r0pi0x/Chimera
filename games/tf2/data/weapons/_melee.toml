@@ -22,6 +22,12 @@ undroppable = true
 range = 48.0
 hull = 18.0
 facing_cos = -1.0
+# The contact point (specs/tf2/effects.md 10.1): a box hit on a player is
+# the box's centre; one on the world is refined by a line to twice its
+# distance, else lines to the corners of the crouched player box there.
+box_centre = true
+refine = true
+refine_box = [[-24.0, -24.0, 0.0], [24.0, 24.0, 62.0]]
 damage = 65.0
 hit_refire = 0.8
 miss_refire = 0.8

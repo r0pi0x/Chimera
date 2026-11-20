@@ -37,6 +37,8 @@
 //! - `tf2:flame` (`flame`): the flame points, their heat and the
 //!   afterburn;
 //! - `tf2:needle` (`needle`): a needle's hit by distance;
+//! - crit boosts' loop and glow on the held weapon (`crit_boost`,
+//!   effects.md 14);
 //! - `tf2:melee` (`melee`): the nine stock melee weapons
 //!   (specs/tf2/weapons_stock.md; base `tf2:melee`, Chimera's delayed
 //!   swing and backstab rule): their crits, the swing's view-model
@@ -62,6 +64,7 @@
 
 pub mod blast;
 pub mod blood;
+pub mod crit_boost;
 pub mod damage;
 pub mod dot;
 pub mod flame;
@@ -428,6 +431,7 @@ impl Plugin for Tf2GunsPlugin {
             .init_resource::<melee::MeleeCrits>()
             .add_systems(Update, melee::backstab_ready);
         looks::add(app);
+        crit_boost::add(app);
     }
 }
 

@@ -183,6 +183,26 @@ fn a_rockets_blast_sounds_with_its_late_drawn_look() {
     assert!(!game_sounds.iter().any(|s| s.contains("BaseExplosionEffect")), "not the server's: {game_sounds:?}");
 }
 
+/// effects.md 11.2: a rocket drawn late trails from its copy
+/// (`chimera_net`'s `late` makes it; one stands in here), the trail made
+/// where the copy is drawn as it arrives (its first received place).
+#[test]
+fn a_late_rockets_trail_is_made_on_its_copy_at_its_first_place_11_2() {
+    use chimera_world::map::loose::{LateCopy, ShownItem};
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), ROCKET_LAUNCHER);
+    let (starts, ..) = collect(&mut sim, 2, |s, t| s.intent(p).fire = t == 0);
+    let trail = starts.iter().find(|s| s.name == "rockettrail").expect("a trail").clone();
+    let rocket = trail.follow.unwrap().entity;
+    let key = sim.app.world().get::<ShownItem>(rocket).unwrap().0.clone();
+    let first = Vec3::new(0.0, 1.5, -1.0);
+    let copy = sim.app.world_mut().spawn((ShownItem(key), LateCopy { of: rocket, owner: Some(p), first }, Transform::from_translation(first))).id();
+    let (starts, ..) = collect(&mut sim, 1, |_, _| {});
+    let trail = starts.iter().find(|s| s.name == "rockettrail").expect("the copy's trail");
+    assert_eq!(trail.follow.unwrap().entity, copy);
+    assert_eq!(trail.position, first, "made at the first place");
+}
+
 /// effects.md 1: a sticky trails `stickybombtrail_<team>` from its launch
 /// and pulses (`stickybomb_pulse_<team>`) once, when it arms (0.8 s), both
 /// following it.
@@ -320,4 +340,173 @@ fn every_client_sees_a_needles_mark() {
         assert!(!m.is_empty(), "client {i} saw the mark");
         assert!(m.iter().all(|(id, n)| *id == SYRINGE_GUN && n.y > 0.9), "client {i}: on the floor, the gun's: {m:?}");
     }
+}
+
+/// effects.md 13's placements on the greybox (floor top at y 0, the north
+/// wall's face at z −40): 1 unit out along the normal of what the blast's
+/// own trace met, the scorch on that hit.
+#[test]
+fn blasts_are_centred_one_unit_off_what_their_trace_met_13() {
+    use bevy::ecs::system::RunSystemOnce;
+    use chimera_world::greybox::NORTH_WALL_Z;
+    use tf2::game::weapons::blast::{BlastWorld, Placement};
+    const U: f32 = 0.0254;
+    let mut sim = sim();
+    sim.ticks(2);
+    let place = |sim: &mut chimera_world::harness::Sim, f: fn(&BlastWorld) -> Placement| {
+        sim.app.world_mut().run_system_once(move |w: BlastWorld| f(&w)).unwrap()
+    };
+    let near = |a: Vec3, b: Vec3| a.distance(b) < 0.05 * U;
+    // A rocket touching the floor at the origin.
+    let p = place(&mut sim, |w| w.touched(Vec3::ZERO, Vec3::Y, None));
+    assert!(near(p.centre, Vec3::Y * U) && p.normal == Vec3::Y, "{p:?}");
+    assert_eq!(p.scorch, Some((Vec3::ZERO, Vec3::Y)));
+    // Fused pipes: 2 and 20 units above the floor snap to 1 above it, the
+    // floor's normal, a scorch on the floor; 30 above stays, in the air.
+    for h in [2.0, 20.0] {
+        let p = sim.app.world_mut().run_system_once(move |w: BlastWorld| w.fused(Vec3::new(1.0, h * U, 2.0), None)).unwrap();
+        assert!(near(p.centre, Vec3::new(1.0, U, 2.0)), "{h}: {p:?}");
+        assert!(p.normal.y > 0.99, "{h}: {p:?}");
+        let (at, n) = p.scorch.expect("a scorch on the floor");
+        assert!(at.y.abs() < 1e-3 && n.y > 0.99, "{p:?}");
+    }
+    let p = place(&mut sim, |w| w.fused(Vec3::new(1.0, 30.0 * U, 2.0), None));
+    assert_eq!((p.centre, p.normal, p.scorch), (Vec3::new(1.0, 30.0 * U, 2.0), Vec3::ZERO, None), "in the air");
+    // A sticky on the wall, the floor 100 units below: its own centre, the
+    // wall's outward normal, no scorch.
+    let wall = Vec3::new(0.0, 100.0 * U, NORTH_WALL_Z + 2.0 * U);
+    let p = sim.app.world_mut().run_system_once(move |w: BlastWorld| w.fused(wall, Some(Vec3::Z))).unwrap();
+    assert_eq!((p.centre, p.normal, p.scorch), (wall, Vec3::Z, None), "on the wall");
+    // A pipe's direct line: into the wall ahead (its centre 2 units off),
+    // 1 unit off the wall with its normal; a line meeting nothing leaves
+    // it in the air.
+    let p = sim.app.world_mut().run_system_once(move |w: BlastWorld| w.pipe_hit(wall, Vec3::NEG_Z)).unwrap();
+    assert!(near(p.centre, Vec3::new(0.0, 100.0 * U, NORTH_WALL_Z + U)) && p.normal.z > 0.99 && p.scorch.is_some(), "{p:?}");
+    let open = Vec3::new(0.0, 100.0 * U, 0.0);
+    let p = sim.app.world_mut().run_system_once(move |w: BlastWorld| w.pipe_hit(open, Vec3::X)).unwrap();
+    assert_eq!((p.centre, p.normal, p.target, p.scorch), (open, Vec3::ZERO, None, None));
+}
+
+/// effects.md 13 end to end: a sticky stuck on the floor and detonated
+/// goes off 1 unit above it with the floor's normal (the wall effect) and
+/// scorches the floor under it, its owner stepped away.
+#[test]
+fn a_detonated_sticky_on_the_floor_uses_the_wall_effect_and_scorches_13() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), STICKY_LAUNCHER);
+    let mut blasts = sim.app.world().resource::<Messages<Tf2Explosion>>().get_cursor_current();
+    let mut decals = sim.app.world().resource::<Messages<PlaceDecal>>().get_cursor_current();
+    let (mut b, mut scorch) = (Vec::<Tf2Explosion>::new(), Vec::<PlaceDecal>::new());
+    let (starts, ..) = collect(&mut sim, 140, |s, t| {
+        let w = s.app.world();
+        b.extend(blasts.read(w.resource::<Messages<Tf2Explosion>>()).copied());
+        scorch.extend(
+            decals
+                .read(w.resource::<Messages<PlaceDecal>>())
+                .filter(|d| matches!(&d.group, DecalGroup::Named(n) if n == "Scorch"))
+                .cloned(),
+        );
+        s.intent(p).fire = t == 0;
+        s.intent(p).pitch = -89f32.to_radians();
+        s.intent(p).secondary = t >= 100;
+        // Stepped away from it first: a line starting inside his box
+        // meets nothing there (13).
+        if t == 90 {
+            s.app.world_mut().get_mut::<Transform>(p).unwrap().translation.x += 3.0;
+        }
+    });
+    assert_eq!(b.len(), 1, "one blast");
+    assert!(b[0].normal.y > 0.99 && !b[0].on_player, "the floor's normal: {:?}", b[0]);
+    assert!((b[0].at.y - 0.0254).abs() < 0.002, "1 unit above the floor: {:?}", b[0]);
+    assert_eq!(scorch.len(), 1, "a scorch");
+    assert!(scorch[0].point.y.abs() < 1e-3, "on the floor: {:?}", scorch[0]);
+    assert!(starts.iter().any(|s| s.name == "ExplosionCore_Wall"), "{:?}", starts.iter().map(|s| &s.name).collect::<Vec<_>>());
+}
+
+/// effects.md 9, 13: a rocket on a river bed under water goes off 1 unit
+/// above the bed, in the water: the water effect, along the bed's normal.
+#[test]
+fn a_rocket_on_a_river_bed_shows_the_water_effect_13() {
+    use chimera_core::core::{MapBrush, MapWater, MapWaterVolume};
+    let mut sim = sim();
+    sim.app.insert_resource(MapWater(vec![MapWaterVolume {
+        brush: MapBrush::from_box(Vec3::new(-10.0, -1.0, -10.0), Vec3::new(10.0, 1.27, 10.0)),
+        slime: false,
+    }]));
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), ROCKET_LAUNCHER);
+    let (starts, ..) = collect(&mut sim, 60, |s, t| {
+        s.intent(p).fire = t == 0;
+        s.intent(p).pitch = -89f32.to_radians();
+    });
+    let e: Vec<_> = starts.iter().filter(|s| s.name.starts_with("ExplosionCore")).collect();
+    assert_eq!(e.len(), 1, "{starts:?}");
+    assert_eq!(e[0].name, "ExplosionCore_MidAir_underwater");
+    assert!(e[0].forward.y > 0.9, "along the bed's normal");
+}
+
+/// effects.md 12: a needle into the floor marks it at once here (not
+/// drawn late) and its model stays stuck there, still, with no trail,
+/// until 6 s from its launch; RED's marks may ricochet, BLU's never.
+#[test]
+fn a_needle_stays_stuck_until_six_seconds_from_its_launch_12() {
+    use chimera_sim::weapon::projectile::StuckMark;
+    use chimera_world::map::loose::ShownItem;
+    use tf2::game::weapons::{SYRINGE_GUN, looks::STYLE};
+    assert!(STYLE.mark_ricochets(1) && !STYLE.mark_ricochets(2) && !STYLE.mark_ricochets(0), "RED's only");
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), SYRINGE_GUN);
+    let mut events = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();
+    let (mut marked, mut stuck_from, mut stuck_to) = (None, None, None);
+    let mut trails_on_stuck = 0;
+    let mut starts = sim.app.world().resource::<Messages<StartParticleSystem>>().get_cursor_current();
+    for t in 0..500u32 {
+        sim.intent(p).fire = t == 0;
+        sim.intent(p).pitch = -80f32.to_radians();
+        sim.ticks(1);
+        let w = sim.app.world_mut();
+        if marked.is_none() && events.read(w.resource::<Messages<WeaponEvent>>()).any(|e| matches!(e.kind, WeaponEventKind::Marked { .. })) {
+            marked = Some(t);
+        }
+        let stuck: Vec<Entity> = w.query_filtered::<Entity, (With<StuckMark>, With<ShownItem>)>().iter(w).collect();
+        for s in starts.read(w.resource::<Messages<StartParticleSystem>>()) {
+            if s.follow.is_some_and(|f| stuck.contains(&f.entity)) {
+                trails_on_stuck += 1;
+            }
+        }
+        if !stuck.is_empty() {
+            stuck_from.get_or_insert(t);
+        } else if stuck_from.is_some() && stuck_to.is_none() {
+            stuck_to = Some(t);
+        }
+    }
+    let dt = tf2::game::TICK_INTERVAL as f32;
+    let (marked, from, to) = (marked.expect("marked"), stuck_from.expect("stuck"), stuck_to.expect("gone"));
+    assert!(from <= marked + 1, "stuck as it marks: {from} {marked}");
+    assert!(((to as f32) * dt - 6.0).abs() < 0.05, "gone 6 s after the launch: {} s", to as f32 * dt);
+    assert_eq!(trails_on_stuck, 0, "no trail on the stuck needle");
+}
+
+/// effects.md 12, 8c: a needle into an enemy leaves 2 blood traces behind
+/// him (its 10 points) and no mark.
+#[test]
+fn a_needle_into_an_enemy_bleeds_two_traces_12() {
+    use chimera_sim::testkit;
+    use tf2::game::weapons::{SYRINGE_GUN, blood::Tf2Stains};
+    let mut sim = sim();
+    let from = chimera_world::greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, SYRINGE_GUN);
+    let t = super::weapons::target(&mut sim, from, 150.0);
+    sim.app.world_mut().entity_mut(t).insert(chimera_core::core::Team(2));
+    sim.app.world_mut().entity_mut(p).insert(chimera_core::core::Team(1));
+    let aim = sim.position(t) - Vec3::X * 6.0 * 0.0254;
+    testkit::aim_at(&mut sim, p, aim);
+    let mut stains = sim.app.world().resource::<Messages<Tf2Stains>>().get_cursor_current();
+    let mut got = Vec::new();
+    for k in 0..40u32 {
+        sim.intent(p).fire = k == 0;
+        sim.ticks(1);
+        got.extend(stains.read(sim.app.world().resource::<Messages<Tf2Stains>>()).copied());
+    }
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!(source_engine::effects::impact_effects::bleed_traces(got[0].points).0, 2, "{got:?}");
 }

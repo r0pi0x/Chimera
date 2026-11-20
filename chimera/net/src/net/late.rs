@@ -1,7 +1,7 @@
 //! Items drawn in the past on every machine that draws
-//! (specs/tf2/effects.md 11: TF2's client draws its rockets, the shooter's
-//! own too, at the interpolated time now − lerp, 0.1 s with its
-//! defaults). A game asks for it in its weapon data (`chimera:projectile`'s
+//! (specs/tf2/effects.md 11, 11.1: TF2's client draws its rockets, pipes
+//! and stickies, the shooter's own too, at the interpolated time now − L).
+//! A game asks for it in its weapon data (`chimera:projectile`'s
 //! `interp`, `map::loose::DrawnLate`); other games' projectiles stay as
 //! they were (a network client draws every item from snapshots anyway,
 //! `weapons::draw_items`, but from its first snapshot on and gone when
@@ -10,28 +10,39 @@
 //! - **The delay** (`LateDelay`, each frame): a network client's
 //!   interpolation delay (`InterpClock::delay`); elsewhere (a single
 //!   player game, the sandbox, a listen server's own view) what its
-//!   settings would give, `max(cl_interp, cl_interp_ratio /
-//!   cl_updaterate)` at the default update rate (0.1 s).
+//!   settings would give: `max(cl_interp, cl_interp_ratio /
+//!   cl_updaterate)` at the default update rate, in whole ticks plus one
+//!   (`interp::interp_amount`: 0.12 s at TF2's 0.015 s tick).
 //! - **The copy** (`map::loose::LateCopy`): an item shown as a late key
 //!   isn't drawn itself (`render::loose`, the games' trails skip it); a
 //!   copy with its `ShownItem` is, at where the item was `LateDelay` ago:
 //!   its places sampled each frame it moved (the simulated `Transform`
 //!   here, the newest `NetItem` on a client), drawn between the two
-//!   around now − delay; before its first place's time it is held at
-//!   that place (measured on real TF2, effects.md "Measured": a rocket's
-//!   trail glows at the launcher from the frame after the shot, its
-//!   smoke reaching back to it; it doesn't start behind the eye, as a
-//!   history point one second back along the velocity would draw: ours
-//!   did, and its trail streaked from behind the shooter). The model is
-//!   hidden for its key's first seconds (`DrawnLate::hidden_for`: TF2's
-//!   rocket 0.2 s; its trail isn't); the copy goes when the
-//!   item is gone and the drawn time has passed that moment (a blast held
-//!   as long shows as it arrives: TF2's `explosions`).
+//!   around now − delay. It arrives as the item's first snapshot
+//!   carries it (effects.md 11.2: on a client when it comes; here at
+//!   the first snapshot time, 20 a second, after the item's birth, so
+//!   0 to 4 ticks of flight out), its first place in whole units when
+//!   its data asks (`whole_units`); it is **drawn at that first place
+//!   while the drawn time is before its arrival** (no place behind it:
+//!   the captures, Open questions 16), then between its places. The
+//!   copy keeps that first place (`LateCopy::first`, where TF2 makes its
+//!   trail). The model is hidden for its key's
+//!   first seconds from the arrival (`DrawnLate::hidden_for`: TF2's rocket
+//!   0.2 s, pipes and stickies 0.1 s; their trails emit from the arrival);
+//!   the copy goes when the item is gone and the drawn time has passed
+//!   that moment (a blast held as long shows as it arrives: TF2's
+//!   `explosions`).
 //!
 //! Known shortcuts: a dedicated server makes the copies too (nothing draws
 //! them); a client keys the places by when they arrived, not by
 //! the server tick they are from (jitter shows); a projectile this client
-//! predicts (`cl_predict_projectiles 1`, `own_items`) gets no copy.
+//! predicts (`cl_predict_projectiles 1`, `own_items`) gets no copy; the
+//! newer places are joined by straight lines (Source: a curve through
+//! the three newest); the hold at the first place is fitted to captures
+//! at the default interpolation and at 66 updates a second (with
+//! `cl_interp 0.5` TF2 held it ~0.3 s, then drew it far behind:
+//! effects.md Open questions 16), and the sandbox's snapshot times are
+//! on the server's tick count at the default update rate.
 
 use std::collections::VecDeque;
 
@@ -91,46 +102,73 @@ fn late_delay(
     role: Option<Res<NetRole>>,
     clock: Res<super::interp::InterpClock>,
     settings: Res<InterpSettings>,
+    fixed: Res<Time<Fixed>>,
     mut delay: ResMut<LateDelay>,
 ) {
     let d = if role.as_deref() == Some(&NetRole::Client) && clock.running {
         clock.delay as f32
     } else {
-        settings.interp.max(settings.interp_ratio / super::server::DEFAULT_UPDATERATE)
+        let lerp = settings.interp.max(settings.interp_ratio / super::server::DEFAULT_UPDATERATE);
+        super::interp::interp_amount(lerp as f64, fixed.timestep().as_secs_f64()) as f32
     };
     if delay.0 != d {
         delay.0 = d;
     }
 }
 
-/// A copy for each new item drawn late.
+/// A copy for each new item drawn late, as its first snapshot carries
+/// it (effects.md 11.2): on a network client at once; elsewhere (a
+/// single player game, the sandbox, a listen server's own view) once the
+/// server's tick count reaches the next snapshot after the item's birth
+/// (`DEFAULT_UPDATERATE` a second: 0 to 4 ticks of flight at TF2's 66.67
+/// ticks a second). Its first place is rounded to whole units when its key
+/// asks (`DrawnLate::received`).
 #[allow(clippy::type_complexity)]
 fn copy_late(
     time: Res<Time>,
     late: Res<DrawnLate>,
-    added: Query<
-        (Entity, &ShownItem, &Transform, Option<&NetItem>, Option<&crate::weapon::projectile::Flyer>),
-        (Added<ShownItem>, Without<LateCopy>, Without<PredictedItem>),
-    >,
+    added: Query<Entity, (Added<ShownItem>, Without<LateCopy>, Without<PredictedItem>)>,
+    items: Query<(&ShownItem, &Transform, Option<&NetItem>, Option<&crate::weapon::projectile::Flyer>)>,
+    (tick, fixed, role): (Option<Res<crate::core::SimTick>>, Res<Time<Fixed>>, Option<Res<NetRole>>),
+    mut waiting: Local<Vec<Entity>>,
     mut commands: Commands,
 ) {
+    for e in &added {
+        if items.get(e).is_ok_and(|(shown, ..)| late.keys.contains(&shown.0)) {
+            waiting.push(e);
+        }
+    }
+    if waiting.is_empty() {
+        return;
+    }
     let now = time.elapsed_secs_f64();
-    for (e, shown, t, net, flyer) in &added {
-        if !late.keys.contains(&shown.0) {
-            continue;
+    let tick = tick.map_or(0, |t| t.0);
+    let dt = fixed.timestep().as_secs_f64();
+    let client = role.as_deref() == Some(&NetRole::Client);
+    let snapshot = |t: u64| (t as f64 * dt * super::server::DEFAULT_UPDATERATE as f64 + 1e-6).floor() as u64;
+    waiting.retain(|&e| {
+        let Ok((shown, t, net, flyer)) = items.get(e) else { return false };
+        // Sent in a snapshot yet (a client's item came in one).
+        if !client
+            && let Some(f) = flyer
+            && snapshot(tick) <= snapshot(f.born_tick)
+        {
+            return true;
         }
         let (at, turn) = place(t, net);
+        let at = late.received(&shown.0, at);
         let mut places = LatePlaces { born: now, ..default() };
         places.add(now, at, turn);
         commands.spawn((
             Name::new(format!("Drawn late ({})", shown.0)),
             ShownItem(shown.0.clone()),
-            LateCopy { of: e, owner: flyer.and_then(|f| f.owner) },
+            LateCopy { of: e, owner: flyer.and_then(|f| f.owner), first: at },
             places,
             Transform::from_translation(at).with_rotation(turn),
             Visibility::Hidden,
         ));
-    }
+        false
+    });
 }
 
 /// Where an item is now: the simulated place, or on a client the newest
@@ -214,21 +252,21 @@ pub(super) fn plugin(app: &mut App) {
 mod tests {
     use super::*;
 
-    /// A copy is held at its launch point until the drawn time reaches
-    /// it (real TF2: the rocket's trail glows at the launcher from the
-    /// frame after the shot), then follows its places a delay late.
+    /// effects.md 11.2: a rocket first received at p0 = (100, 0, 0) at
+    /// 10.0 is drawn there while the drawn time is before 10.0 (no place
+    /// behind it), then between its places.
     #[test]
-    fn a_copy_holds_at_its_launch_then_follows_late() {
+    fn a_copy_stays_at_its_first_place_until_the_drawn_time_reaches_it() {
         let mut p = LatePlaces::default();
-        let v = Vec3::new(1100.0, 0.0, 0.0);
-        p.add(10.0, Vec3::ZERO, Quat::IDENTITY);
-        p.add(10.0 + 1.0 / 60.0, v / 60.0, Quat::IDENTITY);
-        assert_eq!(p.at(10.0 - 0.1).unwrap().0, Vec3::ZERO, "held at the launch, not behind it");
-        let (at, _) = p.at(10.0 + 1.0 / 120.0).unwrap();
-        assert!((at.x - 1100.0 / 120.0).abs() < 1e-2, "{at}");
+        p.add(10.0, Vec3::new(100.0, 0.0, 0.0), Quat::IDENTITY);
+        let x = |p: &LatePlaces, t: f64| p.at(t).unwrap().0.x;
+        assert_eq!(x(&p, 9.9), 100.0);
+        p.add(10.05, Vec3::new(155.0, 0.0, 0.0), Quat::IDENTITY);
+        assert_eq!(x(&p, 9.95), 100.0);
+        assert!((x(&p, 10.025) - 127.5).abs() < 1e-2);
         // Held still: no new place, and the newest is drawn past it.
-        p.add(10.5, v / 60.0, Quat::IDENTITY);
+        p.add(10.5, Vec3::new(155.0, 0.0, 0.0), Quat::IDENTITY);
         assert_eq!(p.places.len(), 2);
-        assert_eq!(p.at(11.0).unwrap().0, v / 60.0);
+        assert_eq!(x(&p, 11.0), 155.0);
     }
 }

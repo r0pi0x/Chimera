@@ -392,3 +392,30 @@ fn every_voice_entry_has_waves() {
     assert!(missing.is_empty(), "no waves: {missing:?}");
 }
 
+/// effects.md 14.1: the crit glow's hosts carry their hitboxes as
+/// `$hitbox` attachments: the Rocket Launcher's view model the Soldier
+/// arms' 47 boxes (after its own attachments), its held model the
+/// `c_rocketlauncher`'s 2; and the glow systems load with their model
+/// placement and bone lock.
+#[test]
+fn the_crit_glows_hosts_carry_their_hitboxes_14_1() {
+    use source_engine::content::props::HITBOX_ATTACHMENT;
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0);
+    let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
+    maps::add_guns(&mut materials, &|g| g == weapons::ROCKET_LAUNCHER, false, &mut kit, &mut warnings);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let v = kit.view_models.iter().find(|v| v.key == weapons::ROCKET_LAUNCHER).expect("its view model");
+    let boxes = v.attachments.iter().filter(|a| a.name == HITBOX_ATTACHMENT).count();
+    assert_eq!(boxes, 47, "c_soldier_arms' hitbox set");
+    let first = v.attachments.iter().position(|a| a.name == HITBOX_ATTACHMENT).unwrap();
+    assert!(v.attachments[first..].iter().all(|a| a.name == HITBOX_ATTACHMENT), "after its own attachments");
+    let h = kit.held.iter().find(|h| h.key == weapons::ROCKET_LAUNCHER).expect("its held model");
+    let held: Vec<_> = h.attachments.iter().filter(|(n, _)| n == HITBOX_ATTACHMENT).collect();
+    assert_eq!(held.len(), 2, "c_rocketlauncher's hitbox set");
+    // The gun's box: -8.3..8.3, -7.6..15.0, -36.3..21.4 (half extents).
+    let big = held.iter().map(|(_, t)| t.scale).fold(bevy::math::Vec3::ZERO, |a, s| if s.length() > a.length() { s } else { a });
+    let mut halves = big.to_array();
+    halves.sort_by(f32::total_cmp);
+    assert!((halves[2] - 28.85).abs() < 0.2 && (halves[1] - 11.3).abs() < 0.2 && (halves[0] - 8.3).abs() < 0.2, "{big}");
+}
