@@ -887,7 +887,10 @@ out along the surface normal** of the trace they use.
 | Oscillate Scalar on radius (field 3) | rate 64, frequency U(0.5, 2), × 16, phase 0.5, over the whole life | rate U(32, 64), frequency U(0.5, 2), × 12 |
 | Oscillate Scalar on alpha (field 7) | rate U(1, 128), frequency U(2, 8), × 64, phase 0.5 | rate U(1, 2), frequency U(2, 8), × 64 |
 
-  The oscillator's exact formula is not read (Open questions 17).
+  The oscillator adds rate × h × W(x) to the field each step, with
+  x = frequency × (multiplier × the system's time + phase) here
+  ("proportional" 0), W a parabolic sin(πx), alpha clamped to 0–1:
+  particles.md §10.9 (formula and worked numbers for these four).
 
 ## Per-frame order
 
@@ -1158,3 +1161,5 @@ bridge; facts of the picture, not of the code.
    multiplier, start phase, proportional start/end times) used by the
    crit glow on radius and alpha (§14.1): not read; implement as a
    per-particle sine on the field until a capture or a spec settles it.
+   **Answered (2026-11-20, tf2-spec-flashup, read from the particle
+   library):** particles.md §10.9 (Oscillate Vector too).

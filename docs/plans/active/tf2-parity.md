@@ -155,6 +155,13 @@ Captured imagery stays in scratch, never in the repo.
   life U(0, 0.2); trails 3–55 wide) they are visible, where TF2 shows
   nothing. Spec question: what hides them in TF2 (the fade's times
   proportional or not, the plane constraint, the trail renderer?).
+  **Answered (tf2-spec-flashup, particles.md §10.1):** nothing hides them
+  in a blast (TF2 draws them too: alpha 1 before 0.1 of life, lengths ≥
+  32, widths min(L, r)); the alone capture made none because the
+  `info_particle_system` client skips a late effect ahead (§10.10) past
+  the 0.01 s emitter. Our readings of Alpha Fade and Decay, Radius Scale
+  (rational bias), Movement Basic (drag per 1/30 s) and the trail width
+  are corrected in §10.2–10.7.
   Test `heavy::particles::the_blast_draws_thin_ember_rays_broad_core_
   streaks_and_flashups_thirty` checks the 30.
 - **Case A or B** (effects.md Open questions 16, checked with
@@ -180,7 +187,7 @@ Captured imagery stays in scratch, never in the repo.
   item 8); "Position on Model Random", "Movement Lock to Bone" and
   "Oscillate Scalar" now run (`render::psys`, every game; the
   oscillator a placeholder: a sine rate on radius or alpha, Open
-  questions 17). The host model each frame (`ParticleModel` on the
+  questions 17; **answered**: particles.md §10.9). The host model each frame (`ParticleModel` on the
   weapon, `Muzzles::glow_model`): the local player's arms view model's
   hitboxes (47 on `c_soldier_arms`, drawn in the view-model pass), else
   the held weapon's (2 on `c_rocketlauncher`), loaded as `$hitbox`
