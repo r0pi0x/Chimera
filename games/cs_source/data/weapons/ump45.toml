@@ -35,7 +35,7 @@ objects = 1
 [sounds]
 fire = "Weapon_UMP45.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.6971, "Weapon_UMP45.Clipout"], [1.7877, "Weapon_UMP45.Clipin"], [2.6061, "Weapon_UMP45.Boltslap"]]
+view = ["Weapon_UMP45.Clipout", "Weapon_UMP45.Clipin", "Weapon_UMP45.Boltslap"]
 
 [models]
 world = "models/weapons/w_smg_ump45.mdl"

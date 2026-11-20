@@ -44,7 +44,7 @@ texts = ["#Cstrike_TitlesTXT_Switch_To_FullAuto", "#Cstrike_TitlesTXT_Switch_To_
 [sounds]
 fire = "Weapon_FAMAS.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.5187, "Weapon_FAMAS.Clipout"], [1.4813, "Weapon_FAMAS.Clipin"], [2.3333, "Weapon_FAMAS.Forearm"]]
+view = ["Weapon_FAMAS.Clipout", "Weapon_FAMAS.Clipin", "Weapon_FAMAS.Forearm"]
 
 [models]
 world = "models/weapons/w_rif_famas.mdl"

@@ -35,8 +35,7 @@ objects = 1
 [sounds]
 fire = "Weapon_FiveSeven.Single"
 empty = "Default.ClipEmpty_Pistol"
-reload = [[0.0, "Weapon_FiveSeven.Slideback"], [0.4998, "Weapon_FiveSeven.Clipout"], [1.3667, "Weapon_FiveSeven.Clipin"], [2.4998, "Weapon_FiveSeven.Sliderelease"]]
-draw = [[0.4333, "Weapon_FiveSeven.Slidepull"]]
+view = ["Weapon_FiveSeven.Slideback", "Weapon_FiveSeven.Clipout", "Weapon_FiveSeven.Clipin", "Weapon_FiveSeven.Sliderelease", "Weapon_FiveSeven.Slidepull"]
 
 [models]
 world = "models/weapons/w_pist_fiveseven.mdl"

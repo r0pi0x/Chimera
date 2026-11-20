@@ -35,8 +35,7 @@ objects = 1
 [sounds]
 fire = "Weapon_Elite.Single"
 empty = "Default.ClipEmpty_Pistol"
-reload = [[0.0, "Weapon_ELITE.Reloadstart"], [0.4802, "Weapon_ELITE.Clipout"], [1.4401, "Weapon_ELITE.Rclipin"], [2.3602, "Weapon_ELITE.Lclipin"], [3.24, "Weapon_ELITE.Sliderelease"]]
-draw = [[0.0333, "Weapon_ELITE.Deploy"]]
+view = ["Weapon_ELITE.Reloadstart", "Weapon_ELITE.Clipout", "Weapon_ELITE.Rclipin", "Weapon_ELITE.Lclipin", "Weapon_ELITE.Sliderelease", "Weapon_ELITE.Deploy"]
 
 [models]
 world = "models/weapons/w_pist_elite.mdl"

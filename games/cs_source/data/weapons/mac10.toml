@@ -36,7 +36,7 @@ objects = 1
 [sounds]
 fire = "Weapon_MAC10.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.6286, "Weapon_MAC10.Clipout"], [1.5715, "Weapon_MAC10.Clipin"], [2.4857, "Weapon_MAC10.Boltpull"]]
+view = ["Weapon_MAC10.Clipout", "Weapon_MAC10.Clipin", "Weapon_MAC10.Boltpull"]
 
 [models]
 world = "models/weapons/w_smg_mac10.mdl"

@@ -25,7 +25,7 @@ use bevy::prelude::*;
 
 use crate::{
     console::{Console, resource_cvar},
-    map::{DriveAnimation, EffectSettings, MapFlashLight, MapMuzzleFlash, ViewModelSettings},
+    map::{DriveAnimation, EffectSettings, MapFlashLight, MapMuzzleFlash, ViewModelEventKind, ViewModelSettings, anim::AnimEvent},
     weapon::{
         WeaponEventKind,
         view_anim::{self, Pick, ViewAnimAppExt, ViewAnimRules, ViewFrame, ViewState},
@@ -35,7 +35,7 @@ use crate::{
 use source_engine::view_motion::{self, MotionAppExt, MotionRules, ViewMotion};
 pub use source_engine::view_anim::{
     ATTACH_SILENCER, DETACH_SILENCER, DRAW, DRYFIRE, DRYFIRE_LEFT, HIT_CENTER, IDLE, MISS_CENTER, PRIMARY, PULL_BACK,
-    PULL_PIN, RELOAD, SECONDARY, SHOTGUN_RELOAD_FINISH, SHOTGUN_RELOAD_START, THROW, event_effect,
+    PULL_PIN, RELOAD, SECONDARY, SHOTGUN_RELOAD_FINISH, SHOTGUN_RELOAD_START, THROW,
 };
 
 /// `viewmodel_fov` default: horizontal degrees at 4:3, CS:S's 54 (spec
@@ -268,6 +268,18 @@ pub fn rules() -> ViewAnimRules {
         effect: event_effect,
         draw_rate: 1.0,
     }
+}
+
+/// What an animation event of CS:S's view models shows: its sound events
+/// (event 5004: the draw, reload, bolt, silencer and pin sounds, played for
+/// the owner alone, `weapon::view_anim::play_view_sounds`), Source's flashes
+/// and brass. The C4's `c4.click` events are left to the bomb's arming,
+/// whose clicks run with its code screen (`objectives::bomb`).
+pub fn event_effect(e: &AnimEvent) -> Option<ViewModelEventKind> {
+    if e.options.trim().eq_ignore_ascii_case("c4.click") {
+        return source_engine::view_anim::event_effect(e);
+    }
+    source_engine::view_anim::event_effect_with_sounds(e)
 }
 
 fn acts(list: &[&str]) -> Pick {

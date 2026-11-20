@@ -83,9 +83,8 @@ const EVENT_PLAY_SOUND_NAME: &str = "AE_CL_PLAYSOUND";
 
 /// A sound event's entry as a view-model sound (`ViewModelEventKind::Sound`),
 /// the name behind `prefix` (a game's own sound table: TF2's `tf2:`), for
-/// a game whose view models play their own sounds (TF2's reload, draw and
-/// bolt sounds). CS:S and HL2:DM don't read them yet: their data times
-/// those sounds (`[sounds] reload`), heard by everyone.
+/// a game whose view models play their own sounds (the reload, draw and
+/// bolt sounds of TF2, CS:S and HL2:DM): heard by the owner alone.
 pub fn sound_event(e: &AnimEvent, prefix: &str) -> Option<ViewModelEventKind> {
     if e.event != EVENT_PLAY_SOUND && !e.name.eq_ignore_ascii_case(EVENT_PLAY_SOUND_NAME) {
         return None;
@@ -133,4 +132,11 @@ pub fn common_event_with(f: &mut ViewFrame, kind: &WeaponEventKind, reload: Pick
 /// `common_event_with` the plain reload.
 pub fn common_event(f: &mut ViewFrame, kind: &WeaponEventKind) {
     common_event_with(f, kind, acts(&[RELOAD]));
+}
+
+/// A view model's sound events, then its flashes and brass
+/// (`event_effect`): the rules of a game whose entries need no prefix
+/// (CS:S's, HL2:DM's).
+pub fn event_effect_with_sounds(e: &AnimEvent) -> Option<ViewModelEventKind> {
+    sound_event(e, "").or_else(|| event_effect(e))
 }

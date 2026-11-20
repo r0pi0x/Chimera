@@ -567,6 +567,17 @@ pub struct SoundsData {
     /// insert for a one-at-a-time reload): `WeaponSounds::world_reload`.
     #[serde(default)]
     pub world_reload: Option<String>,
+    /// Played for the holder's own player alone at a reload's start (each
+    /// round's insert for a one-at-a-time reload): Source's client-side
+    /// `reload` sound (`WeaponSounds::own_reload`).
+    #[serde(default)]
+    pub own_reload: Option<String>,
+    /// Entries the weapon's view model plays itself (animation sound
+    /// events, `ViewModelEventKind::Sound`), named so a map loads them;
+    /// nothing plays them from here (`heavy` tests check the list against
+    /// the install's models).
+    #[serde(default)]
+    pub view: Vec<String>,
     #[serde(default)]
     pub draw: Vec<(f32, String)>,
     #[serde(default)]
@@ -581,10 +592,11 @@ pub struct SoundsData {
 impl SoundsData {
     /// Every entry named.
     pub fn entries(&self) -> impl Iterator<Item = &str> {
-        [&self.fire, &self.fire_alt, &self.empty, &self.deploy, &self.world_reload]
+        [&self.fire, &self.fire_alt, &self.empty, &self.deploy, &self.world_reload, &self.own_reload]
             .into_iter()
             .flatten()
             .map(String::as_str)
+            .chain(self.view.iter().map(String::as_str))
             .chain(
                 [&self.reload, &self.draw, &self.shot, &self.finish]
                     .into_iter()
@@ -1338,6 +1350,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             deploy: s.deploy.clone(),
             reload: s.reload.clone(),
             world_reload: s.world_reload.clone(),
+            own_reload: s.own_reload.clone(),
             draw: s.draw.clone(),
             shot: s.shot.clone(),
             finish: s.finish.clone(),

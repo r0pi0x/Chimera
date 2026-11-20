@@ -33,7 +33,7 @@ objects = 2
 [sounds]
 fire = "Weapon_M249.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.4668, "Weapon_M249.Boxout"], [1.5002, "Weapon_M249.Coverup"], [2.6665, "Weapon_M249.Boxin"], [3.2997, "Weapon_M249.Chain"], [4.5002, "Weapon_M249.Coverdown"]]
+view = ["Weapon_M249.Boxout", "Weapon_M249.Coverup", "Weapon_M249.Boxin", "Weapon_M249.Chain", "Weapon_M249.Coverdown"]
 
 [models]
 world = "models/weapons/w_mach_m249para.mdl"

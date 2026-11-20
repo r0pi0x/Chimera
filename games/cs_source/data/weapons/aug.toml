@@ -44,8 +44,7 @@ sound = "Default.Zoom"
 [sounds]
 fire = "Weapon_AUG.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.2859, "Weapon_AUG.Boltpull"], [1.4286, "Weapon_AUG.Clipout"], [2.5143, "Weapon_AUG.Clipin"], [3.2, "Weapon_AUG.Boltslap"]]
-draw = [[0.3, "Weapon_AUG.Forearm"]]
+view = ["Weapon_AUG.Forearm", "Weapon_AUG.Boltpull", "Weapon_AUG.Clipout", "Weapon_AUG.Clipin", "Weapon_AUG.Boltslap"]
 
 [models]
 world = "models/weapons/w_rif_aug.mdl"

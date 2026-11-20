@@ -137,5 +137,6 @@ mod heavy {
     mod net_capacity;
     mod net_soak;
     mod served;
+    mod view_sounds;
     mod weapon_names;
 }

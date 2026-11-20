@@ -41,9 +41,7 @@ objects = 1
 [sounds]
 fire = "Weapon_M3.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.0, "Weapon_M3.Insertshell"]]
-draw = [[0.3667, "Weapon_M3.Pump"]]
-finish = [[0.3, "Weapon_M3.Pump"]]
+view = ["Weapon_M3.Insertshell", "Weapon_M3.Pump"]
 
 [models]
 world = "models/weapons/w_shot_m3super90.mdl"

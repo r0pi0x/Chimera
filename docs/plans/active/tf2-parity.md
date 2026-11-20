@@ -135,6 +135,29 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Log
 
+### CS:S and HL2:DM on the view models' sound events (css-vm-sounds, 2026-11-20)
+
+- **CS:S**: every gun's reload, draw, bolt, shell and silencer sound is
+  its view model's event 5004 (`view_anim::event_effect`), the local
+  player's alone; the 24 guns' `[sounds]` lost their `reload`, `draw`,
+  `shot`, `finish` and `modes` timelines and name the entries in `view`
+  (what a map loads; `heavy::view_sounds` checks every sequence's events
+  and times against the install, the AK-47's and AWP's against
+  view_models.md 6 and mdl_v48.md). The grenades' pin pull is the
+  `pullpin` events' (`pin_sounds` emptied); the C4's `c4.click` events
+  stay the bomb's own timer. The AWP's three `Weapon_AWP.Bolt` events on
+  `awm_fire` are heard now (the data never had them).
+- **HL2:DM** (effects_sounds.md 15.3): the .357's four loader sounds and
+  the AR2's rotate and push sounds are view-model events; the AR2's and
+  the crossbow's generic reload sound is `[sounds] own_reload`, the
+  holder's alone (`weapon::world_reload_sounds`); the pistol's, SMG1's
+  and shotgun's stay timed (the spec's "shared": everyone hears them).
+- **Spec gaps**: neither spec says what others hear of a CS:S gun's
+  reload (sounds.md Open question 9 knows only the server sends none;
+  the world models and the player models carry no 5004), so they hear
+  nothing, with no `world_reload`. The S.L.A.M.'s `TripMineMode` event
+  (effects_sounds.md 15.3) is on a sequence our rules never play.
+
 ### The spool-down's finish, view-model sounds, the Minigun flash's fades (tf2-vm-sounds, 2026-11-20)
 
 - **Sequence finished** (`map::anim::finished_cycle`,
@@ -162,8 +185,7 @@ Captured imagery stays in scratch, never in the repo.
   the gun sets). The Scout hears `ReloadScout` at tick 2 and `ClipIn` at
   tick 40 (`viewmodel_sounds` tests); the Engineer's `pstl_reload` carries
   `ClipIn` alone (`heavy::guns`). CS:S
-  and HL2:DM keep their timed reload sounds (not touched: their specs
-  name the same owner-only events; a later change). Left: our
+  and HL2:DM follow (css-vm-sounds, below). Left: our
   whole-clip reload isn't cut by attack (weapons_more.md Open questions
   6), so test case 3 is checked with a switch.
 - **The Minigun flash** (particles.md §8.3, §8.3.1, §10.11): an

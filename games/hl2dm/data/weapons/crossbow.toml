@@ -40,6 +40,8 @@ spread = { cone = 0.0 }
 
 [sounds]
 fire = "Weapon_Crossbow.Single"
+# The generic reload sound: the holder's alone (15.3).
+own_reload = "Weapon_Crossbow.Reload"
 # 7.1: the bolt's flight sound with each shot.
 shot = [[0.0, "Weapon_Crossbow.BoltFly"]]
 

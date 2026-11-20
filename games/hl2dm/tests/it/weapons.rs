@@ -637,3 +637,42 @@ fn the_ar2_vents_follow_the_shots_61() {
         assert!((pose - want).abs() < 1e-6, "tick {t}: {pose}, want {want} ({shots:?}, {poses:?})");
     }
 }
+
+/// The sounds `sim` plays (entry) over `ticks` after `p` presses reload.
+fn reload_heard(sim: &mut Sim, p: Entity, ticks: usize) -> Vec<String> {
+    use chimera_world::map::PlaySound;
+    let mut play = sim.app.world().resource::<Messages<PlaySound>>().get_cursor_current();
+    let mut heard = Vec::new();
+    for t in 0..ticks {
+        sim.intent(p).reload = t == 0;
+        sim.ticks(1);
+        heard.extend(play.read(sim.app.world().resource::<Messages<PlaySound>>()).map(|s| s.entry.clone()));
+    }
+    heard
+}
+
+/// effects_sounds.md 15.3, 15.5, case 57: the AR2's and the crossbow's
+/// generic reload sounds are their holder's alone (the AR2's rotate and
+/// push sounds are its view model's events, heavy `view_sounds.rs`);
+/// the pistol's, SMG1's and shotgun's are the script's (shared, case 58).
+#[test]
+fn reload_sounds_are_the_holders_or_everyones_15_3() {
+    use chimera_core::core::LocalPlayer;
+    for (gun, entry, own) in [
+        (weapons::AR2, "Weapon_AR2.Reload", true),
+        (weapons::CROSSBOW, "Weapon_Crossbow.Reload", true),
+        (weapons::PISTOL, "Weapon_Pistol.Reload", false),
+    ] {
+        for local in [true, false] {
+            let mut sim = sim();
+            let (p, w) = holding(&mut sim, gun);
+            if local {
+                sim.app.world_mut().entity_mut(p).insert(LocalPlayer);
+            }
+            set_mag(&mut sim, w, 0, 60);
+            let heard = reload_heard(&mut sim, p, 20);
+            let n = heard.iter().filter(|e| *e == entry).count();
+            assert_eq!(n, usize::from(local || !own), "{gun}, local {local}: {heard:?}");
+        }
+    }
+}

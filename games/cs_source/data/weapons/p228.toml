@@ -34,8 +34,7 @@ objects = 1
 [sounds]
 fire = "Weapon_P228.Single"
 empty = "Default.ClipEmpty_Pistol"
-reload = [[0.0, "Weapon_P228.Slideback"], [0.6856, "Weapon_P228.Clipout"], [1.4, "Weapon_P228.Clipin"], [2.3142, "Weapon_P228.Sliderelease"]]
-draw = [[0.5, "Weapon_P228.Slidepull"]]
+view = ["Weapon_P228.Slideback", "Weapon_P228.Clipout", "Weapon_P228.Clipin", "Weapon_P228.Sliderelease", "Weapon_P228.Slidepull"]
 
 [models]
 world = "models/weapons/w_pist_p228.mdl"

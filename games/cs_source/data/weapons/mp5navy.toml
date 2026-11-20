@@ -35,8 +35,7 @@ objects = 1
 [sounds]
 fire = "Weapon_MP5Navy.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.3156, "Weapon_MP5Navy.Clipout"], [1.1578, "Weapon_MP5Navy.Clipin"], [2.2632, "Weapon_MP5Navy.Slideback"]]
-draw = [[0.3714, "Weapon_MP5Navy.Slideback"]]
+view = ["Weapon_MP5Navy.Clipout", "Weapon_MP5Navy.Clipin", "Weapon_MP5Navy.Slideback"]
 
 [models]
 world = "models/weapons/w_smg_mp5.mdl"

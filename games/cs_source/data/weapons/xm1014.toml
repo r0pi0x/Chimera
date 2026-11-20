@@ -39,8 +39,7 @@ objects = 1
 [sounds]
 fire = "Weapon_XM1014.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.0222, "Weapon_XM1014.InsertShell"]]
-draw = [[0.0333, "Weapon_DEagle.Deploy"]]
+view = ["Weapon_XM1014.InsertShell", "Weapon_DEagle.Deploy"]
 
 [models]
 world = "models/weapons/w_shot_xm1014.mdl"

@@ -46,8 +46,7 @@ texts = ["#Cstrike_TitlesTXT_Switch_To_SemiAuto", "#Cstrike_TitlesTXT_Switch_To_
 [sounds]
 fire = "Weapon_Glock.Single"
 empty = "Default.ClipEmpty_Pistol"
-reload = [[0.0, "Weapon_Glock.Slideback"], [0.4001, "Weapon_Glock.Clipout"], [1.0858, "Weapon_Glock.Clipin"], [1.8285, "Weapon_Glock.Sliderelease"]]
-draw = [[0.3778, "Weapon_Glock.Sliderelease"]]
+view = ["Weapon_Glock.Sliderelease", "Weapon_Glock.Slideback", "Weapon_Glock.Clipout", "Weapon_Glock.Clipin"]
 
 [models]
 world = "models/weapons/w_pist_glock18.mdl"

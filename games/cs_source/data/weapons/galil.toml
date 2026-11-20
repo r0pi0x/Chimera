@@ -34,7 +34,7 @@ objects = 2
 [sounds]
 fire = "Weapon_Galil.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.3809, "Weapon_Galil.Clipout"], [1.3094, "Weapon_Galil.Clipin"], [2.1668, "Weapon_Galil.Boltpull"]]
+view = ["Weapon_Galil.Clipout", "Weapon_Galil.Clipin", "Weapon_Galil.Boltpull"]
 
 [models]
 world = "models/weapons/w_rif_galil.mdl"

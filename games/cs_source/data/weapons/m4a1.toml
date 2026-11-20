@@ -41,9 +41,7 @@ time = 2.0
 fire = "Weapon_M4A1.Single"
 fire_alt = "Weapon_M4A1.Silenced"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.6756, "Weapon_M4A1.Clipout"], [1.4324, "Weapon_M4A1.Clipin"], [2.3785, "Weapon_M4A1.Boltpull"]]
-draw = [[0.025, "Weapon_M4A1.Deploy"], [0.425, "Weapon_M4A1.Boltpull"]]
-modes = [[1, 0.9333, "Weapon_M4A1.Silencer_On"], [0, 0.7, "Weapon_M4A1.Silencer_Off"]]
+view = ["Weapon_M4A1.Clipout", "Weapon_M4A1.Clipin", "Weapon_M4A1.Boltpull", "Weapon_M4A1.Deploy", "Weapon_M4A1.Silencer_On", "Weapon_M4A1.Silencer_Off"]
 
 [models]
 world = "models/weapons/w_rif_m4a1.mdl"

@@ -38,7 +38,7 @@ objects = 1
 [sounds]
 fire = "Weapon_TMP.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.48, "Weapon_TMP.Clipout"], [1.28, "Weapon_TMP.Clipin"]]
+view = ["Weapon_TMP.Clipout", "Weapon_TMP.Clipin", "Weapon_TMP.Deploy"]
 
 [models]
 world = "models/weapons/w_smg_tmp.mdl"

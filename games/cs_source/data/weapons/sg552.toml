@@ -46,8 +46,7 @@ sound = "Default.Zoom"
 [sounds]
 fire = "Weapon_SG552.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.4325, "Weapon_SG552.Clipout"], [1.6486, "Weapon_SG552.Clipin"], [2.4326, "Weapon_SG552.Boltpull"]]
-draw = [[0.3243, "Weapon_SG552.Boltpull"]]
+view = ["Weapon_SG552.Clipout", "Weapon_SG552.Clipin", "Weapon_SG552.Boltpull"]
 
 [models]
 world = "models/weapons/w_rif_sg552.mdl"

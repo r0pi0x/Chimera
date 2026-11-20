@@ -48,6 +48,7 @@ sound = "Default.Zoom"
 [sounds]
 fire = "Weapon_AWP.Single"
 empty = "Default.ClipEmpty_Rifle"
+view = ["Weapon_AWP.Bolt", "Weapon_AWP.Clipout", "Weapon_AWP.Clipin"]
 
 [models]
 world = "models/weapons/w_snip_awp.mdl"

@@ -30,6 +30,8 @@ impulse = 10882.81
 [sounds]
 fire = "Weapon_357.Single"
 empty = "Weapon_Pistol.Empty"
+# The loader's sounds are its view model's events, the holder's alone (15.3).
+view = ["Weapon_357.OpenLoader", "Weapon_357.RemoveLoader", "Weapon_357.ReplaceLoader", "Weapon_357.Spin"]
 
 [models]
 world = "models/weapons/w_357.mdl"

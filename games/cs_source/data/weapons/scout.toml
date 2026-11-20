@@ -44,8 +44,7 @@ sound = "Default.Zoom"
 [sounds]
 fire = "Weapon_Scout.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.4333, "Weapon_Scout.Clipout"], [1.2334, "Weapon_Scout.Clipin"], [1.7333, "Weapon_Scout.Bolt"]]
-shot = [[0.3714, "Weapon_Scout.Bolt"]]
+view = ["Weapon_Scout.Bolt", "Weapon_Scout.Clipout", "Weapon_Scout.Clipin"]
 
 [models]
 world = "models/weapons/w_snip_scout.mdl"

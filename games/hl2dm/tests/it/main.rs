@@ -54,4 +54,5 @@ mod heavy {
     mod scripts;
     mod served;
     mod view_models;
+    mod view_sounds;
 }

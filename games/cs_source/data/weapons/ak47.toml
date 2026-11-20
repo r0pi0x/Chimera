@@ -34,8 +34,7 @@ objects = 2
 [sounds]
 fire = "Weapon_AK47.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.35, "Weapon_AK47.Clipout"], [1.54, "Weapon_AK47.Clipin"]]
-draw = [[0.3667, "Weapon_AK47.BoltPull"]]
+view = ["Weapon_AK47.BoltPull", "Weapon_AK47.Clipout", "Weapon_AK47.Clipin"]
 
 [models]
 world = "models/weapons/w_rif_ak47.mdl"

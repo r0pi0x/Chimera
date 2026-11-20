@@ -41,9 +41,7 @@ time = 3.0
 fire = "Weapon_USP.Single"
 fire_alt = "Weapon_USP.SilencedShot"
 empty = "Default.ClipEmpty_Pistol"
-reload = [[0.0, "Weapon_USP.Slideback2"], [0.4594, "Weapon_USP.Clipout"], [1.081, "Weapon_USP.Clipin"], [2.2163, "Weapon_USP.Sliderelease"]]
-draw = [[0.5417, "Weapon_USP.Slideback"]]
-modes = [[1, 1.027, "Weapon_USP.AttachSilencer"], [0, 0.7838, "Weapon_USP.DetachSilencer"]]
+view = ["Weapon_USP.Slideback2", "Weapon_USP.Clipout", "Weapon_USP.Clipin", "Weapon_USP.Sliderelease", "Weapon_USP.Slideback", "Weapon_USP.AttachSilencer", "Weapon_USP.DetachSilencer"]
 
 [models]
 world = "models/weapons/w_pist_usp.mdl"

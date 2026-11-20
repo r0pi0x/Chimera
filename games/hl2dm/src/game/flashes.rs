@@ -119,7 +119,9 @@ pub fn event_effect(e: &AnimEvent) -> Option<ViewModelEventKind> {
             kind: r.name.to_string(),
         });
     }
-    super::shells::event_effect(e).or_else(|| source_engine::view_anim::event_effect(e))
+    source_engine::view_anim::sound_event(e, "")
+        .or_else(|| super::shells::event_effect(e))
+        .or_else(|| source_engine::view_anim::event_effect(e))
 }
 
 /// The smoke puff's material.

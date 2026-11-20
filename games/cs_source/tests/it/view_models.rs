@@ -65,6 +65,13 @@ fn set(seqs: &[Seq]) -> AnimSet {
                         options: "EjectBrass_762Nato 2 150".into(),
                     },
                 ]
+            } else if *name == "ak47_reload" {
+                // The install's (heavy/view_sounds.rs): 5004 at 0.1444 and
+                // 0.6333 of its 2.4324 s.
+                [(0.1444, "Weapon_AK47.Clipout"), (0.6333, "Weapon_AK47.Clipin")]
+                    .into_iter()
+                    .map(|(cycle, entry)| AnimEvent { cycle, event: 5004, name: String::new(), options: entry.into() })
+                    .collect()
             } else {
                 Vec::new()
             },
@@ -687,4 +694,50 @@ fn a_view_model_that_comes_in_after_the_weapon_is_drawn_then() {
     let v = sim.app.world().get::<ViewAnimator>(p).unwrap();
     assert!(v.animator.is_some(), "the model came in but has no animation (drawn hidden)");
     assert_eq!(activity(&sim, p), "ACT_VM_DRAW");
+}
+
+/// The AK-47's reload from a full second after the draw: the sounds this
+/// machine played (seconds from the press, entry) and the others-only
+/// reload sounds written.
+fn reload_sounds(local: bool) -> (Vec<(f32, String)>, usize) {
+    use crate::stack::{core::LocalPlayer, map::{OthersSound, PlaySound}};
+    let mut sim = sim();
+    let p = sim.spawn_character(greybox::SPAWNS[0], placeholder::ID);
+    if local {
+        sim.app.world_mut().entity_mut(p).insert(LocalPlayer);
+    }
+    sim.seconds(1.5);
+    let w = active(&sim, p);
+    sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 10;
+    let world = sim.app.world();
+    let mut play = world.resource::<Messages<PlaySound>>().get_cursor_current();
+    let mut others = world.resource::<Messages<OthersSound>>().get_cursor_current();
+    let (mut heard, mut world_ones) = (Vec::new(), 0);
+    sim.intent(p).reload = true;
+    for t in 0..180 {
+        sim.ticks(1);
+        sim.intent(p).reload = false;
+        let world = sim.app.world();
+        let at = (t + 1) as f32 * TICK_INTERVAL as f32;
+        heard.extend(play.read(world.resource::<Messages<PlaySound>>()).map(|s| (at, s.entry.clone())));
+        world_ones += others.read(world.resource::<Messages<OthersSound>>()).count();
+    }
+    (heard, world_ones)
+}
+
+/// specs/cs_source/sounds.md ("Model animation sound events"),
+/// view_models.md 6: the reload's clip-out and clip-in are the view
+/// model's sound events, heard by the local player as the animation passes
+/// them (0.3514 and 1.5405 s), by no one else; the data times none.
+#[test]
+fn the_owner_hears_the_view_models_reload_events_nobody_else() {
+    let (heard, world_ones) = reload_sounds(true);
+    let at = |entry: &str| heard.iter().filter(|(_, e)| e == entry).map(|(t, _)| *t).collect::<Vec<_>>();
+    let (out, inn) = (at("Weapon_AK47.Clipout"), at("Weapon_AK47.Clipin"));
+    assert!(out.len() == 1 && (out[0] - 0.3514).abs() < 0.05, "{heard:?}");
+    assert!(inn.len() == 1 && (inn[0] - 1.5405).abs() < 0.05, "{heard:?}");
+    assert_eq!(world_ones, 0, "CS:S's guns have no world reload sound (the specs name none)");
+
+    let (heard, world_ones) = reload_sounds(false);
+    assert!(heard.is_empty() && world_ones == 0, "another player's view model plays nothing here: {heard:?}");
 }

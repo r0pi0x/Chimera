@@ -136,12 +136,18 @@ kind = "scope"                  # fov = [..], max_speed, unzoom_after_shot,
 [sounds]                        # entries of the game's sound scripts
 fire = "Weapon_AK47.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.35, "Weapon_AK47.Clipout"], [1.54, "Weapon_AK47.Clipin"]]
-draw = [[0.3667, "Weapon_AK47.BoltPull"]]
-# fire_alt, deploy, shot, finish ([s, entry]); modes ([mode, s, entry]);
+reload = [[0.0, "Weapon_Pistol.Reload"]]       # [s, entry] after a reload starts, heard by everyone
+# fire_alt, deploy, draw, shot, finish ([s, entry]); modes ([mode, s, entry])
+# - timelines for guns whose sounds the game's code times (HL2:DM's shared
+#   reload sounds); a gun whose view model plays its own sounds (Source's
+#   animation event 5004: a reload's clip out and in, a draw's bolt: CS:S's,
+#   TF2's, HL2:DM's .357 and AR2) has none, and names them in
+#   view = ["<entry>", ...]: loaded with the map, played by the animation
+#   for the holder's own player alone
 # world_reload = "<entry>": heard by everyone but the holder at a reload's
-#   start, each shell's for a one-at-a-time reload (TF2's, whose holder
-#   hears his view model's animation sound events instead of timelines)
+#   start, each shell's for a one-at-a-time reload (TF2's)
+# own_reload = "<entry>": heard by the holder's own player alone at a
+#   reload's start (Source's client-side reload sound: HL2:DM's AR2, crossbow)
 
 [models]                        # the game's model paths
 world = "models/weapons/w_rif_ak47.mdl"

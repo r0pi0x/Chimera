@@ -32,8 +32,7 @@ objects = 2
 [sounds]
 fire = "Weapon_DEagle.Single"
 empty = "Default.ClipEmpty_Pistol"
-reload = [[0.0, "Weapon_DEagle.Slideback"], [0.4667, "Weapon_DEagle.Clipout"], [1.1334, "Weapon_DEagle.Clipin"]]
-draw = [[0.0333, "Weapon_DEagle.Deploy"]]
+view = ["Weapon_DEagle.Slideback", "Weapon_DEagle.Clipout", "Weapon_DEagle.Clipin", "Weapon_DEagle.Deploy"]
 
 [models]
 world = "models/weapons/w_pist_deagle.mdl"

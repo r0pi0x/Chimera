@@ -45,7 +45,7 @@ sound = "Default.Zoom"
 [sounds]
 fire = "Weapon_G3SG1.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.5334, "Weapon_G3SG1.Slide"], [1.8, "Weapon_G3SG1.Clipout"], [2.8332, "Weapon_G3SG1.Clipin"], [3.8668, "Weapon_G3SG1.Slide"]]
+view = ["Weapon_G3SG1.Slide", "Weapon_G3SG1.Clipout", "Weapon_G3SG1.Clipin"]
 
 [models]
 world = "models/weapons/w_snip_g3sg1.mdl"

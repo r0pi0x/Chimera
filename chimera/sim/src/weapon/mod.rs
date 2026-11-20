@@ -1979,6 +1979,10 @@ pub struct WeaponSounds {
     /// (`map::OthersSound`, `world_reload_sounds`): Source's world reload
     /// sound (specs/tf2/viewmodel_sounds.md 1).
     pub world_reload: Option<String>,
+    /// Played for the holder's own player alone, at a reload's start (each
+    /// round's insert for a one-at-a-time reload): Source's client-side
+    /// `reload` sound (specs/hl2dm/effects_sounds.md 15.3, "owner").
+    pub own_reload: Option<String>,
     /// Entries at times after the weapon is drawn.
     pub draw: Vec<(f32, String)>,
     /// Entries at times after each shot (a bolt worked by the fire
@@ -3193,27 +3197,39 @@ fn ragdoll_shots(mut events: MessageReader<WeaponEvent>, mut shots: MessageWrite
 /// time), from the holder to everyone but the holder (specs/tf2/
 /// viewmodel_sounds.md 1.2, test case 4); the first time a command runs,
 /// by the machine that simulates the holder (not a copy drawn from
-/// snapshots: the server sends it to the other clients).
+/// snapshots: the server sends it to the other clients). A weapon's
+/// `own_reload` (Source's client-side reload sound) plays at the same
+/// moments for this machine's own player alone.
 fn world_reload_sounds(
     mut events: MessageReader<WeaponEvent>,
     weapons: Query<(&WeaponSounds, Has<ShellReload>)>,
-    owners: Query<&Transform, Without<NetDrawn>>,
+    owners: Query<(&Transform, Has<crate::core::LocalPlayer>), Without<NetDrawn>>,
     mut out: MessageWriter<crate::map::OthersSound>,
+    mut play: MessageWriter<PlaySound>,
 ) {
     for e in events.read().filter(|e| e.shown()) {
         let Ok((sounds, shells)) = weapons.get(e.weapon) else { continue };
-        let Some(entry) = &sounds.world_reload else { continue };
+        if sounds.world_reload.is_none() && sounds.own_reload.is_none() {
+            continue;
+        }
         let starts = match e.kind {
             WeaponEventKind::ReloadStarted => !shells,
             WeaponEventKind::ShellInserting => shells,
             _ => false,
         };
-        let Ok(at) = owners.get(e.owner) else { continue };
-        if starts {
+        let Ok((at, local)) = owners.get(e.owner) else { continue };
+        if !starts {
+            continue;
+        }
+        if let Some(entry) = &sounds.world_reload {
             out.write(crate::map::OthersSound {
                 by: e.owner,
                 sound: PlaySound { channel: None, ..owner_sound(entry.clone(), e.owner, at.translation, CHAN_ITEM) },
             });
+        }
+        // The client-side `reload` sound: this machine's own player's.
+        if let (Some(entry), true) = (&sounds.own_reload, local) {
+            play.write(owner_sound(entry.clone(), e.owner, at.translation, CHAN_ITEM));
         }
     }
 }

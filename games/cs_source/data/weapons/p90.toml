@@ -35,8 +35,7 @@ objects = 1
 [sounds]
 fire = "Weapon_P90.Single"
 empty = "Default.ClipEmpty_Rifle"
-reload = [[0.4249, "Weapon_P90.Cliprelease"], [0.8751, "Weapon_P90.Clipout"], [1.8752, "Weapon_P90.Clipin"], [2.7, "Weapon_P90.Boltpull"]]
-draw = [[0.3, "Weapon_P90.Boltpull"]]
+view = ["Weapon_P90.Cliprelease", "Weapon_P90.Clipout", "Weapon_P90.Clipin", "Weapon_P90.Boltpull"]
 
 [models]
 world = "models/weapons/w_smg_p90.mdl"

@@ -61,8 +61,6 @@ pub use source_engine::effects::explosions::MATERIALS;
 pub const PIN_TIME: f32 = 39.0 / 41.0;
 pub const THROW_TIME: f32 = 23.0 / 30.0;
 pub const DRAW_TIME: f32 = 0.6667;
-/// The pin sound: the `pullpin` event at cycle 0.6923.
-pub const PIN_SOUND_AT: f32 = 0.6923 * PIN_TIME;
 
 pub struct GrenadesPlugin;
 
@@ -366,7 +364,9 @@ pub fn throwable(e: &mut EntityWorldMut, d: &'static WeaponData, p: &GrenadePara
         throw: throw_rule(),
         flight: flight(),
         effect,
-        pin_sounds: vec![(PIN_SOUND_AT, "Default.PullPin_Grenade".into())],
+        // The pin sound is the `pullpin` view model's event at cycle 0.6923
+        // (`view_anim::event_effect`), the thrower's alone.
+        pin_sounds: Vec::new(),
         bounce_sound: Some(p.bounce_sound.clone()),
         water_sounds: Some(("BaseEntity.EnterWater".into(), "BaseEntity.ExitWater".into())),
         pin: false,
