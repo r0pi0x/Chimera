@@ -2,7 +2,6 @@
 # onboarding.md). `{hub}`, `{host}`, `{name}` and `{user}` are filled in.
 # The layout and colours are the theme's; only the words live here.
 
-brand = "Lucker Party"
 steps = ["01 Invite", "02 Hub", "03 Name", "04 Key"]
 
 [welcome]
@@ -23,6 +22,7 @@ pane_title = "What an invite carries"
 parts = ["Hub address", "Certificate fingerprint", "One-time code"]
 parts_idle = ["where to connect", "proves the hub is the one the owner meant", "works once, then it's yours"]
 pane_note = "Nothing is sent until you press Enter or Continue."
+diagram = ["hub.example.net", "3f9a..c21e", "ABC-DEF-GHJ"]
 not_invite = "Not an invite · expected a link, a web address or a code"
 needs_hub = "A bare code needs its hub: paste the whole link"
 from_hub = "Read from the hub"
@@ -32,6 +32,7 @@ missing = "No code in it"
 title = "Reaching the hub..."
 rows = ["Address", "Certificate", "Code"]
 connecting = "Connecting"
+states = ["Comparing with the invite", "Waiting"]
 cancel = "Cancel"
 
 [errors]
@@ -61,6 +62,8 @@ back = "Back"
 copy_details = "Copy details for the owner"
 invite_says = "Invite says"
 hub_showed = "Hub showed"
+details = "The hub at {host} showed another certificate than my invite names.\nInvite says: {name}\nHub showed: {user}\n"
+details_copied = "Copied · send it to the hub's owner"
 
 [hub]
 eyebrow = "Step 2 of 4 · Hub"
@@ -93,6 +96,8 @@ continue = "Continue"
 back = "Back"
 preview = "How others see you"
 lobby = "Lobby"
+feed = "Kill feed"
+feed_victim = "Bot_Kilo"
 profile = "Profile"
 you = "You"
 
@@ -118,7 +123,12 @@ tag = "Sign in"
 title = "I already have an account"
 tabs = ["Link a device", "Recover with key"]
 link_lead = "On a PC where you're signed in, open Settings → Account → Link a device. Type the code it shows, with the hub's link if this PC has never been signed in."
+link_label = "Link code"
 link_status = "6 characters · the code works for 10 minutes"
+other_where = "On your other PC · Settings · Account"
+other_title = "Link a device"
+other_example = "H4K-92Q"
+other_note = "Shown there for 10 minutes"
 link_button = "Link this PC"
 recover_lead = "Paste the recovery key you saved when you made the account, with the hub's link if this PC has never been signed in."
 recover_label = "Recovery key"
@@ -131,3 +141,11 @@ back = "Back"
 [done]
 toast = "Welcome, {name}"
 toast_note = "You're in {hub}. This PC stays signed in."
+
+# The main menu's account chip and the offline banner (a returning player).
+[chip]
+online = "@{user} · {hub}"
+offline = "Offline · {hub}"
+banner_title = "Can't reach {hub}"
+banner_body = "Playing offline: LAN and direct connect still work. Parties, the server list and downloads come back when it does."
+retry_now = "Retry now"

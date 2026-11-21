@@ -2,7 +2,11 @@
 //! `present`; docs/plans/active/onboarding.md, the approved mockups and
 //! the user's decisions of 2026-11-21). Drawn in the Signal look over the
 //! main menu (`ONBOARDING_Z`), its words from `data/onboarding.toml`
-//! (`Words`), its colours and sizes the theme's.
+//! (`Words`), its colours and sizes the theme's (places:
+//! `[layout.onboarding]`). The bar carries the game's own lockup (the
+//! main menu's: `Ui::lockup_drawn`, `OnboardingLockup`), the screen's
+//! place after it; the explaining panes are blueprint plates with corner
+//! brackets; every field is the kit's hero field.
 //!
 //! - **When** (`maybe_start`, the app's start only: never a tool run or a
 //!   test): the run starts at the main menu and this PC has no account,
@@ -17,7 +21,10 @@
 //! - **Checking**: `POST /accounts/check` on a thread (`OnboardingHub`);
 //!   a wrong, used or withdrawn code, an unreachable hub and another
 //!   certificate each say what happened, why and what to do (`Problem`),
-//!   the input kept. A device link code goes straight to redeeming.
+//!   the input kept; the error's one helpful action is the hero (Try
+//!   another clears the field, Retry, Back with "Copy details for the
+//!   owner" for a certificate: no field, no way on). A device link code
+//!   goes straight to redeeming.
 //! - **Hub**: "You're joining <name>", the hub's address, the certificate
 //!   check, its players and its MOTD; "Not this one" goes back.
 //! - **Name**: the username (the rules lit as typed,
@@ -28,7 +35,8 @@
 //!   Continue redeems: the device key is made here.
 //! - **Key**: the recovery key in groups, Copy (Ctrl+C), Save as file
 //!   (`OnboardingFiles::key_dir`), "I saved it" (Space) unlocks Continue.
-//! - **Have**: Link a device (a link code) or Recover with key (Q and E);
+//! - **Have**: Link a device (a link code in six cells, where it comes
+//!   from drawn small at the right) or Recover with key (Q and E);
 //!   the hub's link asked when this PC knows none. A recovery shows the
 //!   new key (the old one stops working).
 //! - **Done** (`finish`): the account file written and made live, the
@@ -537,6 +545,11 @@ pub enum ObAction {
 #[derive(Component)]
 pub struct OnboardingRoot;
 
+/// The bar's lockup (the game's own logo, `chimera_ui::controls::Ui::
+/// lockup_drawn`).
+#[derive(Component)]
+pub struct OnboardingLockup;
+
 #[derive(Component)]
 pub struct ToastRoot;
 
@@ -895,7 +908,32 @@ fn act(
                 o.caret = Caret::default();
                 o.parsed = None;
                 o.problem = None;
+                o.said = None;
                 o.source = Source::Typed;
+            }
+            (ObAction::CopyDetails, Step::Welcome) => {
+                if let Some(Problem::Certificate { offered }) = o.problem.clone() {
+                    let expected = o.link.as_ref().and_then(|l| l.fingerprint.clone()).unwrap_or_default();
+                    let fill = [("host", o.host()), ("name", short_fp(&expected)), ("user", offered.as_deref().map(short_fp).unwrap_or_else(|| "?".into()))];
+                    let fill: Vec<(&str, &str)> = fill.iter().map(|(k, v)| (*k, v.as_str())).collect();
+                    clipboard.set(&words.f("errors.details", &fill));
+                    o.said = Some(words.t("errors.details_copied"));
+                }
+            }
+            // Enter on an error does its hero: a wrong, used or withdrawn
+            // code clears the field for another; a certificate that isn't
+            // the invite's has no way on (Esc goes back).
+            (ObAction::Continue, Step::Welcome)
+                if matches!(o.problem, Some(Problem::Used | Problem::Unknown | Problem::Withdrawn | Problem::Busy | Problem::Certificate { .. })) =>
+            {
+                if !matches!(o.problem, Some(Problem::Certificate { .. })) {
+                    o.input.clear();
+                    o.caret = Caret::default();
+                    o.parsed = None;
+                    o.problem = None;
+                    o.said = None;
+                    o.source = Source::Typed;
+                }
             }
             (ObAction::Skip, _) => {
                 if let Some(p) = &files.skip_mark {
@@ -1157,13 +1195,18 @@ fn show_toast(
             .spawn((
                 ToastRoot,
                 GlobalZIndex(ONBOARDING_Z),
-                UiStyle { gap: Some(1.4), pad: Some([0.0, 2.4, 0.0, 1.6].into()), h: Some(3.6), ..UiStyle::row() }
-                    .abs([Some(36.0), Some(9.4), None, None])
-                    .bg(Tone::Hero),
+                UiStyle { gap: Some(1.4), pad: Some([0.0, 2.6, 0.0, 2.0].into()), h: Some(3.6), ..UiStyle::row() }.abs([Some(36.0), Some(9.4), None, None]),
                 Node::default(),
                 Pickable::IGNORE,
             ))
             .id();
+        // The hero slab, both its ends on the slant.
+        commands.spawn((
+            Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, ..default() },
+            chimera_ui::style::UiSlant::new(Tone::Hero, 1.0),
+            Pickable::IGNORE,
+            ChildOf(r),
+        ));
         ui.text(&mut commands, r, Role::DisplayBlack, 1.05, Tone::OnHero, &title);
         ui.sentence(&mut commands, r, 0.86, Tone::OnHero, &note);
         if let Some(cam) = camera.iter().next() {
@@ -1200,7 +1243,7 @@ fn show_chip(
     camera: Query<Entity, With<MenuUiCamera>>,
     root: Query<Entity, With<ChipRoot>>,
     (theme, kit, units): (Option<Res<chimera_ui::Theme>>, Option<Res<chimera_ui::KitFonts>>, Option<Res<chimera_ui::UiUnits>>),
-    (mut images, mut icons): (Option<ResMut<Assets<Image>>>, Option<ResMut<chimera_ui::icons::IconImages>>),
+    (mut images, mut icons, words): (Option<ResMut<Assets<Image>>>, Option<ResMut<chimera_ui::icons::IconImages>>, Res<Words>),
     mut shown: Local<Option<(Shown, bool, String, i32, (u32, u32), Option<Entity>)>>,
     mut commands: Commands,
 ) {
@@ -1240,16 +1283,21 @@ fn show_chip(
         ui.text_plain(c, names, Role::DisplayBold, 1.02, Tone::Fg, &a.display);
         let sub = ui.boxed(c, names, UiStyle { gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() });
         ui.mark(c, sub, if offline { Tone::Warn } else { Tone::Good }, 0.7, 0.7);
-        let line = if offline { format!("Offline · {hub_name}") } else { format!("@{} · {hub_name}", a.username) };
+        let fill = [("hub", hub_name.as_str()), ("user", a.username.as_str())];
+        let line = words.f(if offline { "chip.offline" } else { "chip.online" }, &fill);
         ui.text_plain(c, sub, Role::Mono, 0.56, if offline { Tone::Warn } else { Tone::Fg3 }, &line.to_uppercase());
         if offline {
-            let b = ui.boxed(c, r, UiStyle { gap: Some(1.6), pad: Some([1.0, 1.6].into()), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([Some(36.0), Some(13.4), Some(4.6), None]).bg_a(Tone::Ink2, 0.94).outline(Tone::Warn, 0.22));
+            // The banner: a warning's tint, its bar at the left, a faint
+            // outline (the mockups' 09b), on ink so the backdrop stays behind.
+            let b = ui.boxed(c, r, UiStyle { gap: Some(1.6), pad: Some([1.0, 1.6, 1.0, 2.0].into()), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([Some(36.0), Some(13.4), Some(4.6), None]).bg_a(Tone::Ink2, 0.94).outline(Tone::Warn, 0.22));
             c.entity(b).insert(bevy::ui::FocusPolicy::Block);
+            ui.boxed(c, b, UiStyle { w_pct: Some(100.0), h_pct: Some(100.0), ..UiStyle::row() }.abs([Some(0.0), Some(0.0), None, None]).bg_a(Tone::Warn, 0.08));
+            ui.boxed(c, b, UiStyle { w: Some(0.34), ..UiStyle::row() }.abs([Some(0.0), Some(0.0), None, Some(0.0)]).bg(Tone::Warn));
             ui.mark(c, b, Tone::Warn, 0.7, 0.7);
-            ui.text(c, b, Role::DisplayBold, 0.92, Tone::Warn, &format!("Can't reach {hub_name}"));
+            ui.text(c, b, Role::DisplayBold, 0.92, Tone::Warn, &words.f("chip.banner_title", &fill));
             let s = ui.boxed(c, b, UiStyle { grow: Some(1.0), ..UiStyle::column() });
-            ui.paragraph(c, s, Role::Text, 0.86, Tone::Fg2, "Playing offline: LAN and direct connect still work. Parties, the server list and downloads come back when it does.");
-            let retry = ui.button(c, b, Kind::Secondary, "Retry now", None, 2.4, State::NONE);
+            ui.paragraph(c, s, Role::Text, 0.86, Tone::Fg2, &words.t("chip.banner_body"));
+            let retry = ui.button(c, b, Kind::Secondary, &words.t("chip.retry_now"), None, 2.4, State::NONE);
             c.entity(retry).insert(RetryHub);
         }
         if let Some(cam) = cam {
@@ -1283,6 +1331,29 @@ impl Draw<'_, '_> {
         e
     }
 
+    /// A layout number (`[layout.onboarding]`, the theme's), else `d`.
+    fn lay(&self, key: &str, d: f32) -> f32 {
+        self.ui.theme.layout_opt("onboarding", key).unwrap_or(d)
+    }
+
+    /// The left column at its place (`col_x`, `col_y` plus `dy`), `w` wide.
+    fn col(&self, c: &mut Commands, root: Entity, dy: f32, w: f32) -> Entity {
+        self.abs(c, root, self.lay("col_x", 8.4), self.lay("col_y", 11.6) + dy, w)
+    }
+
+    /// The right pane at its place (`pane_x` plus `dx`, `col_y` plus `dy`).
+    fn pane(&self, c: &mut Commands, root: Entity, dx: f32, dy: f32, w: f32) -> Entity {
+        self.abs(c, root, self.lay("pane_x", 58.0) + dx, self.lay("col_y", 11.6) + dy, w)
+    }
+
+    /// The blueprint plate (the panes that explain): a navy wash, a faint
+    /// accent outline and the corner brackets.
+    fn blueprint(&self, c: &mut Commands, parent: Entity, gap: f32) -> Entity {
+        let bp = self.ui.boxed(c, parent, UiStyle { gap: Some(gap), pad: Some([2.0, 2.2].into()), ..UiStyle::column() }.bg_a(Tone::Ink2, 0.75).outline(Tone::AccText, 0.22));
+        self.ui.corners(c, bp, Tone::AccText, self.lay("corner", 1.1));
+        bp
+    }
+
     fn abs(&self, c: &mut Commands, parent: Entity, left: f32, top: f32, w: f32) -> Entity {
         self.ui.boxed(c, parent, UiStyle { w: Some(w), gap: Some(0.9), ..UiStyle::column() }.abs([Some(left), Some(top), None, None]))
     }
@@ -1299,8 +1370,22 @@ impl Draw<'_, '_> {
                 Interaction::None,
             ))
             .id();
-        // The ground: a navy wash and the registration marks.
-        ui.boxed(c, root, UiStyle { w_pct: Some(100.0), h_pct: Some(100.0), ..UiStyle::column() }.abs([Some(0.0), Some(0.0), None, None]).bg_a(Tone::Hero, 0.08));
+        // The ground (the mockups' ambience): a navy wash falling from the
+        // top left, then the registration marks. (The mockups' radial glows
+        // band in 8-bit UI gradients at these alphas: left out.)
+        let wash = ui.boxed(c, root, UiStyle { w_pct: Some(100.0), h_pct: Some(100.0), ..UiStyle::column() }.abs([Some(0.0), Some(0.0), None, None]));
+        let t = ui.theme;
+        c.entity(wash).insert(BackgroundGradient(vec![
+            LinearGradient::new(
+                162f32.to_radians(),
+                vec![
+                    ColorStop::percent(t.tone_a(Tone::Hero, 0.16), 0.0),
+                    ColorStop::percent(t.tone_a(Tone::Hero, 0.05), 42.0),
+                    ColorStop::percent(t.tone_a(Tone::Hero, 0.0), 100.0),
+                ],
+            )
+            .into(),
+        ]));
         for (l, t, r, b) in [(Some(1.8), Some(1.8), None, None), (None, Some(1.8), Some(1.8), None), (Some(1.8), None, None, Some(1.8)), (None, None, Some(1.8), Some(1.8))] {
             let m = ui.boxed(c, root, UiStyle { w: Some(1.3), h: Some(1.3), ..UiStyle::column() }.abs([l, t, r, b]));
             ui.boxed(c, m, UiStyle { w: Some(1.3), h: Some(0.06), ..UiStyle::row() }.abs([Some(0.0), Some(0.62), None, None]).bg(Tone::Fg3));
@@ -1327,15 +1412,15 @@ impl Draw<'_, '_> {
 
     fn bar(&mut self, c: &mut Commands, root: Entity, tag: &str, step: Option<usize>) {
         let ui = self.ui;
-        let bar = ui.boxed(c, root, UiStyle { align: Some(AlignItems::Center), justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() }.abs([Some(4.6), Some(2.9), Some(4.6), None]));
-        let brand = ui.boxed(c, bar, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
-        let mark = ui.boxed(c, brand, UiStyle { gap: Some(0.18), ..UiStyle::row() });
-        ui.mark(c, mark, Tone::Hero, 0.5, 1.9);
-        ui.mark(c, mark, Tone::Fg, 0.5, 1.9);
-        ui.mark(c, mark, Tone::Fg3, 0.5, 1.9);
-        let wm = ui.boxed(c, brand, UiStyle { gap: Some(0.35), ..UiStyle::column() });
-        ui.text(c, wm, Role::DisplayBlack, 1.25, Tone::Fg, &self.w.t("brand"));
-        ui.text(c, wm, Role::Mono, 0.55, Tone::Fg3, tag);
+        let m = self.lay("margin", 4.6);
+        let bar = ui.boxed(c, root, UiStyle { align: Some(AlignItems::Center), justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() }.abs([Some(m), Some(self.lay("bar_y", 2.6)), Some(m), None]));
+        // The lockup: the game's own (the main menu's, the Esc menu's),
+        // at the lobby header's size; the screen's place after a hairline.
+        let brand = ui.boxed(c, bar, UiStyle { gap: Some(1.4), align: Some(AlignItems::Center), ..UiStyle::row() });
+        let lockup = ui.lockup_drawn(c, brand, self.lay("lockup", 1.05));
+        c.entity(lockup).insert(OnboardingLockup);
+        ui.boxed(c, brand, UiStyle { w: Some(0.06), h: Some(2.0), ..UiStyle::row() }.bg(Tone::Fg4));
+        ui.text(c, brand, Role::Mono, 0.6, Tone::Fg3, tag);
         if let Some(now) = step {
             let steps = ui.boxed(c, bar, UiStyle { gap: Some(0.4), ..UiStyle::row() });
             for (i, name) in self.w.list("steps").iter().enumerate() {
@@ -1347,10 +1432,11 @@ impl Draw<'_, '_> {
         } else {
             let back = ui.boxed(c, bar, UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), ..UiStyle::row() });
             c.entity(back).insert((clickable(), ObAction::Back));
-            ui.text(c, back, Role::Mono, 0.62, Tone::Fg2, &format!("‹ {}", self.w.t("have.back")));
+            ui.kit_icon(c, back, "back", 0.62, 8.0 / 12.0, Tone::Fg2);
+            ui.text(c, back, Role::Mono, 0.62, Tone::Fg2, &self.w.t("have.back"));
             ui.kbd(c, back, "Esc", 0.62, Tone::Fg3);
         }
-        let rule = ui.boxed(c, root, UiStyle { h: Some(0.06), ..UiStyle::row() }.abs([Some(4.6), Some(7.2), Some(4.6), None]).bg(Tone::Fg5));
+        let rule = ui.boxed(c, root, UiStyle { h: Some(0.06), ..UiStyle::row() }.abs([Some(m), Some(self.lay("rule_y", 7.2)), Some(m), None]).bg(Tone::Fg5));
         ui.mark(c, rule, Tone::Acc, 6.0, 0.18);
     }
 
@@ -1411,9 +1497,9 @@ impl Draw<'_, '_> {
         let mut fw = w;
         if let Some(p) = prefix {
             ui.text_plain(c, line, Role::Text, 1.1, Tone::Fg3, p);
-            fw -= 1.6;
+            fw -= 1.7;
         }
-        let tf = ui.text_field(c, line, value, placeholder, caret.map(|k| k.cursor(value)), false, fw, st);
+        let tf = ui.text_field_hero(c, line, value, placeholder, caret.map(|k| k.cursor(value)), fw, st);
         if let Some((tone, s)) = status {
             let row = ui.boxed(c, f, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
             ui.mark(c, row, tone, 0.6, 0.6);
@@ -1484,12 +1570,12 @@ impl Draw<'_, '_> {
         );
         if let Some(Problem::Certificate { offered }) = &self.o.problem {
             let expected = self.o.link.as_ref().and_then(|l| l.fingerprint.clone()).unwrap_or_default();
-            let rows = self.ui.kv(
+            let rows = self.ui.kv_lit(
                 c,
                 col,
                 &[
-                    (&w.t("errors.invite_says"), short_fp(&expected)),
-                    (&w.t("errors.hub_showed"), offered.clone().unwrap_or_else(|| "?".into())),
+                    (&w.t("errors.invite_says"), short_fp(&expected), Some(Tone::Acc)),
+                    (&w.t("errors.hub_showed"), offered.as_deref().map(short_fp).unwrap_or_else(|| "?".into()), Some(Tone::Threat)),
                 ],
                 11.0,
             );
@@ -1500,7 +1586,7 @@ impl Draw<'_, '_> {
 
     fn welcome(&mut self, c: &mut Commands, root: Entity) {
         let (ui, w, o) = (self.ui, self.w, self.o);
-        let col = self.abs(c, root, 8.4, 11.6, 42.0);
+        let col = self.col(c, root, 0.0, self.lay("col_w", 42.0));
         self.eyebrow(c, col, &w.t("welcome.eyebrow"));
         self.h1(c, col, &w.t("welcome.title"), 3.3);
         if matches!(o.problem, None | Some(Problem::NotInvite | Problem::NeedsHub)) {
@@ -1529,27 +1615,50 @@ impl Draw<'_, '_> {
         };
         status_text = status.1;
         let st = State { focus: true, error: bad, ..State::NONE };
-        let (value, caret) = field_view(&o.input, o.caret, o.parsed.as_ref());
-        let tf = self.field(c, col, &label, label_tone, Some("Ctrl+V"), &value, &w.t("welcome.placeholder"), caret, 42.0, st, Some((status.0, &status_text)), None);
-        c.entity(tf).insert(clickable());
+        // A certificate that isn't the invite's leaves nothing to edit: the
+        // field gives way to the two fingerprints (the mockups' 03d).
+        if !matches!(o.problem, Some(Problem::Certificate { .. })) {
+            let (value, caret) = field_view(&o.input, o.caret, o.parsed.as_ref());
+            let tf = self.field(c, col, &label, label_tone, Some("Ctrl+V"), &value, &w.t("welcome.placeholder"), caret, self.lay("col_w", 42.0), st, Some((status.0, &status_text)), None);
+            c.entity(tf).insert(clickable());
+        }
         self.problem(c, col);
         let row = self.btns(c, col, 2.2);
-        self.button(c, row, Kind::Primary, &w.t("welcome.continue"), Some("Enter"), ObAction::Continue, State::focused(true));
-        self.button(c, row, Kind::Secondary, &w.t("welcome.have_account"), None, ObAction::Have, State::NONE);
+        // Each error's one helpful action is the hero (the mockups' 03b-d).
+        let (hero, hero_key, hero_act, second) = match o.problem {
+            Some(Problem::Used | Problem::Unknown | Problem::Withdrawn | Problem::Busy) => {
+                ("errors.try_another", "Enter", ObAction::Clear, (Kind::Secondary, "welcome.have_account", ObAction::Have))
+            }
+            Some(Problem::Unreachable) => ("errors.retry", "Enter", ObAction::Retry, (Kind::Ghost, "welcome.skip", ObAction::Skip)),
+            Some(Problem::Certificate { .. }) => ("errors.back", "Esc", ObAction::Clear, (Kind::Ghost, "errors.copy_details", ObAction::CopyDetails)),
+            _ => ("welcome.continue", "Enter", ObAction::Continue, (Kind::Secondary, "welcome.have_account", ObAction::Have)),
+        };
+        self.button(c, row, Kind::Primary, &w.t(hero), Some(hero_key), hero_act, State::focused(true));
+        self.button(c, row, second.0, &w.t(second.1), None, second.2, State::NONE);
+        if let Some(said) = &o.said {
+            let r = ui.boxed(c, row, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
+            ui.mark(c, r, Tone::Acc, 0.6, 0.6);
+            ui.text_plain(c, r, Role::Mono, 0.6, Tone::AccText, &said.to_uppercase());
+        }
         // Play without an account: tertiary, but plainly a choice (decision 9).
-        let skip = ui.boxed(c, root, UiStyle { gap: Some(1.2), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([Some(8.4), None, None, Some(4.4)]));
+        let skip = ui.boxed(c, root, UiStyle { gap: Some(1.2), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([Some(self.lay("col_x", 8.4) - 0.6), None, None, Some(4.4)]));
         self.button(c, skip, Kind::Ghost, &w.t("welcome.skip"), None, ObAction::Skip, State::NONE);
         ui.text(c, skip, Role::Mono, 0.58, Tone::Fg3, &w.t("welcome.skip_note"));
         self.anim(c, skip);
         self.carries(c, root);
-        self.keys(c, root, &[("Enter", "Check".into()), ("Esc", "Clear".into())]);
+        if matches!(o.problem, Some(Problem::Certificate { .. })) {
+            self.keys(c, root, &[("Esc", w.t(hero))]);
+        } else {
+            let enter = if o.problem.is_some() && !bad { w.t(hero) } else { "Check".into() };
+            self.keys(c, root, &[("Enter", enter), ("Esc", "Clear".into())]);
+        }
     }
 
     /// The pane: what an invite carries, each part lit as it is found.
     fn carries(&mut self, c: &mut Commands, root: Entity) {
         let (ui, w, o) = (self.ui, self.w, self.o);
-        let pane = self.abs(c, root, 58.0, 11.6, 33.6);
-        let bp = ui.boxed(c, pane, UiStyle { gap: Some(0.0), pad: Some([2.0, 2.2].into()), ..UiStyle::column() }.bg_a(Tone::Ink2, 0.75).outline(Tone::AccText, 0.22));
+        let pane = self.pane(c, root, 0.0, 0.0, self.lay("pane_w", 33.6));
+        let bp = self.blueprint(c, pane, 0.0);
         let head = ui.boxed(c, bp, UiStyle { justify: Some(JustifyContent::SpaceBetween), margin: Some([0.0, 0.0, 1.4, 0.0].into()), ..UiStyle::row() });
         ui.text(c, head, Role::Mono, 0.62, Tone::AccText, &w.t("welcome.pane_title"));
         let p = o.parsed.as_ref();
@@ -1592,6 +1701,33 @@ impl Draw<'_, '_> {
             let v = ui.boxed(c, part, UiStyle { margin: Some([0.0, 0.0, 0.0, 3.2].into()), ..UiStyle::row() });
             ui.text_plain(c, v, Role::Mono, 0.68, if state.is_some() { Tone::Fg2 } else { Tone::Fg3 }, &value);
         }
+        // The link's shape, each part numbered under it: the player sees
+        // where in the link each one lives.
+        let ex = w.list("welcome.diagram");
+        let ex = |i: usize| ex.get(i).cloned().unwrap_or_default();
+        let parts = match p {
+            Some(p) => [
+                p.host.clone().unwrap_or_else(|| ex(0)),
+                p.fingerprint.as_deref().map(short_link_fp).unwrap_or_else(|| ex(1)),
+                p.code.clone().map(|c| c.to_uppercase()).unwrap_or_else(|| ex(2)),
+            ],
+            None => [ex(0), ex(1), ex(2)],
+        };
+        let d = ui.boxed(c, bp, UiStyle { align: Some(AlignItems::FlexStart), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
+        let seg = |c: &mut Commands, text: &str, n: Option<usize>| {
+            let col = ui.boxed(c, d, UiStyle { gap: Some(0.25), ..UiStyle::column() });
+            ui.text_plain(c, col, Role::Mono, 0.56, if n.is_some() { Tone::Fg2 } else { Tone::Fg3 }, text);
+            if let Some(n) = n {
+                ui.boxed(c, col, UiStyle { h: Some(0.06), ..UiStyle::row() }.bg(Tone::AccText));
+                ui.text(c, col, Role::Mono, 0.5, Tone::AccText, &format!("0{n}"));
+            }
+        };
+        seg(c, "chimera-hub://", None);
+        seg(c, &parts[0], Some(1));
+        seg(c, "/", None);
+        seg(c, &parts[1], Some(2));
+        seg(c, "?code=", None);
+        seg(c, &parts[2], Some(3));
         let note = ui.boxed(c, pane, UiStyle { margin: Some([1.4, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t("welcome.pane_note"));
         self.anim(c, pane);
@@ -1599,19 +1735,24 @@ impl Draw<'_, '_> {
 
     fn checking(&mut self, c: &mut Commands, root: Entity) {
         let (ui, w, o) = (self.ui, self.w, self.o);
-        let col = self.abs(c, root, 8.4, 11.6, 42.0);
+        let col = self.col(c, root, 0.0, self.lay("col_w", 42.0));
         self.eyebrow(c, col, &w.t("welcome.eyebrow"));
         self.h1(c, col, &w.t("checking.title"), 3.3);
         ui.boxed(c, col, UiStyle { h: Some(1.6), ..UiStyle::column() });
         let (value, _) = field_view(&o.input, o.caret, InviteInput::parse(&o.input).as_ref());
-        self.field(c, col, &w.t("welcome.label"), Tone::Fg3, None, &value, "", None, 42.0, State { disabled: true, ..State::NONE }, None, None);
+        self.field(c, col, &w.t("welcome.label"), Tone::Fg3, None, &value, "", None, self.lay("col_w", 42.0), State { disabled: true, ..State::NONE }, None, None);
         let bar = ui.boxed(c, col, UiStyle { margin: Some([2.2, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
         ui.progress(c, bar, chimera_ui::controls::Progress::Connecting, &w.t("checking.connecting"), 30.0, 1.7, 0.62, true);
         self.anim(c, bar);
         let host = o.host();
-        let rows = [(w.at("checking.rows", 0), host), (w.at("checking.rows", 1), "Comparing with the invite".to_string()), (w.at("checking.rows", 2), "Waiting".to_string())];
-        let pairs: Vec<(&str, String)> = rows.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
-        let kv = ui.kv(c, col, &pairs, 11.0);
+        // Each check with its light: under way (accent) or waiting (unlit).
+        let rows = [
+            (w.at("checking.rows", 0), host, Some(Tone::Acc)),
+            (w.at("checking.rows", 1), w.at("checking.states", 0), Some(Tone::Acc)),
+            (w.at("checking.rows", 2), w.at("checking.states", 1), None),
+        ];
+        let rows: Vec<(&str, String, Option<Tone>)> = rows.iter().map(|(k, v, l)| (k.as_str(), v.clone(), *l)).collect();
+        let kv = ui.kv_lit(c, col, &rows, 11.0);
         c.entity(kv).insert(Node { width: ui.units.val(30.0), margin: UiRect::top(ui.units.val(1.8)), ..default() });
         self.anim(c, kv);
         let row = self.btns(c, col, 2.4);
@@ -1621,7 +1762,7 @@ impl Draw<'_, '_> {
     fn hub(&mut self, c: &mut Commands, root: Entity) {
         let (ui, w, o) = (self.ui, self.w, self.o);
         let a = o.answer.clone().unwrap_or_default();
-        let col = self.abs(c, root, 8.4, 13.4, 44.0);
+        let col = self.col(c, root, 1.8, 44.0);
         self.eyebrow(c, col, &w.t("hub.eyebrow"));
         let t = ui.text(c, col, Role::Mono, 0.8, Tone::Fg2, &w.t("hub.joining"));
         c.entity(t).insert(Node { margin: UiRect::top(ui.units.val(2.4)), ..default() });
@@ -1634,14 +1775,15 @@ impl Draw<'_, '_> {
             (w.at("hub.rows", 2), a.hub.players.to_string()),
         ];
         let pairs: Vec<(&str, String)> = pairs.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
-        let kv = ui.kv(c, col, &pairs, 11.0);
+        let pairs: Vec<(&str, String, Option<Tone>)> = pairs.iter().enumerate().map(|(i, (k, v))| (*k, v.clone(), Some(if i == 1 && pinned { Tone::Acc } else { Tone::Fg2 }))).collect();
+        let kv = ui.kv_lit(c, col, &pairs, 11.0);
         c.entity(kv).insert(Node { width: ui.units.val(40.0), margin: UiRect::top(ui.units.val(2.2)), ..default() });
         self.anim(c, kv);
         let row = self.btns(c, col, 2.4);
         self.button(c, row, Kind::Primary, &w.f("hub.join", &[("hub", &a.hub.name)]), Some("Enter"), ObAction::Continue, State::focused(true));
         self.button(c, row, Kind::Secondary, &w.t("hub.not_this"), None, ObAction::Back, State::NONE);
         // The MOTD plate.
-        let pane = self.abs(c, root, 60.0, 17.4, 31.6);
+        let pane = self.pane(c, root, 2.0, 5.8, 31.6);
         let plate = ui.boxed(c, pane, UiStyle { gap: Some(1.2), pad: Some([2.2, 2.4].into()), ..UiStyle::column() }.bg(Tone::Plate).outline(Tone::Fg5, 1.0));
         ui.boxed(c, plate, UiStyle { h: Some(0.3), ..UiStyle::row() }.abs([Some(0.0), Some(0.0), Some(0.0), None]).bg(Tone::Fg));
         let h = ui.boxed(c, plate, UiStyle { gap: Some(0.9), align: Some(AlignItems::Center), ..UiStyle::row() });
@@ -1649,7 +1791,17 @@ impl Draw<'_, '_> {
         ui.text(c, h, Role::Mono, 0.62, Tone::Fg, &w.t("hub.motd"));
         let motd = if a.hub.motd.trim().is_empty() { w.t("hub.no_motd") } else { a.hub.motd.clone() };
         ui.paragraph(c, plate, Role::Text, 1.12, Tone::Fg, &motd);
-        let note = ui.boxed(c, pane, UiStyle { margin: Some([2.0, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
+        // The hub's emblem (its initials on the hero slant) and the note.
+        let foot = ui.boxed(c, pane, UiStyle { gap: Some(1.6), align: Some(AlignItems::Center), margin: Some([2.0, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
+        let em = ui.boxed(c, foot, UiStyle { w: Some(5.6), h: Some(5.6), align: Some(AlignItems::Center), justify: Some(JustifyContent::Center), shrink: Some(0.0), ..UiStyle::row() });
+        c.spawn((
+            Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, ..default() },
+            chimera_ui::style::UiSlant::new(Tone::Hero, 1.0),
+            Pickable::IGNORE,
+            ChildOf(em),
+        ));
+        ui.text(c, em, Role::DisplayBlack, 1.4, Tone::OnHero, &initials(&a.hub.name));
+        let note = ui.boxed(c, foot, UiStyle { max_w: Some(20.0), ..UiStyle::column() });
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t("hub.note"));
         self.anim(c, pane);
         self.keys(c, root, &[("Enter", "Join".into()), ("Esc", "Back".into())]);
@@ -1670,7 +1822,7 @@ impl Draw<'_, '_> {
     fn name(&mut self, c: &mut Commands, root: Entity) {
         let (ui, w, o) = (self.ui, self.w, self.o);
         let hub = o.hub_name();
-        let col = self.abs(c, root, 8.4, 10.6, 42.0);
+        let col = self.col(c, root, -1.0, self.lay("col_w", 42.0));
         self.eyebrow(c, col, &w.t("name.eyebrow"));
         self.h1(c, col, &w.t("name.title"), 3.3);
         let folded = o.username.trim().to_ascii_lowercase();
@@ -1690,7 +1842,7 @@ impl Draw<'_, '_> {
         };
         let count = format!("{} / {}", folded.chars().count(), codes::NAME_MAX);
         let st = State { focus: o.field == NameField::Username, error: !folded.is_empty() && (!rules.all() || taken), ..State::NONE };
-        let uf = self.field(c, col, &w.t("name.username"), Tone::Fg3, Some(&count), &o.username, "", (o.field == NameField::Username).then_some(o.ucaret), 42.0, st, Some((tone, &status)), Some("@"));
+        let uf = self.field(c, col, &w.t("name.username"), Tone::Fg3, Some(&count), &o.username, "", (o.field == NameField::Username).then_some(o.ucaret), self.lay("col_w", 42.0), st, Some((tone, &status)), Some("@"));
         c.entity(uf).insert((clickable(), ObAction::Focus(NameField::Username)));
         // The rules, lit as typed.
         let grid = ui.boxed(c, col, UiStyle { gap: Some(0.6), margin: Some([1.0, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
@@ -1714,10 +1866,10 @@ impl Draw<'_, '_> {
         if taken {
             let free = ui.boxed(c, col, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), margin: Some([1.0, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
             ui.text(c, free, Role::Mono, 0.56, Tone::Fg3, &w.t("name.free"));
+            // The free names: the kit's small secondary buttons.
             for s in o.name.as_ref().map(|n| n.suggestions.clone()).unwrap_or_default() {
-                let b = ui.boxed(c, free, UiStyle { h: Some(2.2), pad: Some([0.0, 1.0].into()), align: Some(AlignItems::Center), ..UiStyle::row() }.outline(Tone::Fg3, 1.0));
-                c.entity(b).insert((clickable(), ObAction::Suggest(s.clone())));
-                ui.text_plain(c, b, Role::Mono, 0.72, Tone::Fg, &s);
+                let b = ui.button(c, free, Kind::Secondary, &s, None, 1.9, State::NONE);
+                c.entity(b).insert(ObAction::Suggest(s.clone()));
             }
             self.anim(c, free);
         }
@@ -1730,7 +1882,7 @@ impl Draw<'_, '_> {
             &o.display,
             if folded.is_empty() { "" } else { &folded },
             (o.field == NameField::Display).then_some(o.dcaret),
-            42.0,
+            self.lay("col_w", 42.0),
             State::focused(o.field == NameField::Display),
             None,
             None,
@@ -1746,8 +1898,8 @@ impl Draw<'_, '_> {
         self.button(c, row, Kind::Ghost, &w.t("name.back"), None, ObAction::Back, State::NONE);
         // The preview: how others see you.
         let shown = if o.display.trim().is_empty() { if folded.is_empty() { "...".to_string() } else { folded.clone() } } else { o.display.trim().to_string() };
-        let pane = self.abs(c, root, 58.0, 14.4, 33.6);
-        let bp = ui.boxed(c, pane, UiStyle { gap: Some(0.8), pad: Some([2.0, 2.2].into()), ..UiStyle::column() }.bg_a(Tone::Ink2, 0.75).outline(Tone::AccText, 0.22));
+        let pane = self.pane(c, root, 0.0, 1.8, self.lay("pane_w", 33.6));
+        let bp = self.blueprint(c, pane, 0.8);
         let head = ui.boxed(c, bp, UiStyle { justify: Some(JustifyContent::SpaceBetween), margin: Some([0.0, 0.0, 0.6, 0.0].into()), ..UiStyle::row() });
         ui.text(c, head, Role::Mono, 0.62, Tone::AccText, &w.t("name.preview"));
         ui.text(c, head, Role::Mono, 0.52, Tone::Fg3, "Preview");
@@ -1759,6 +1911,13 @@ impl Draw<'_, '_> {
         ui.boxed(c, lobby, UiStyle::row().grow(1.0));
         let you = ui.boxed(c, lobby, UiStyle { pad: Some([0.2, 0.4].into()), ..UiStyle::row() }.bg(Tone::Fg));
         ui.text(c, you, Role::Mono, 0.52, Tone::Ink, &w.t("name.you"));
+        // The kill feed: your kill, outlined and barred in accent.
+        ui.text(c, bp, Role::Mono, 0.56, Tone::Fg3, &w.t("name.feed"));
+        let feed = ui.boxed(c, bp, UiStyle { gap: Some(1.0), align: Some(AlignItems::Center), h: Some(2.2), pad: Some([0.0, 1.0, 0.0, 1.3].into()), ..UiStyle::row() }.bg_a(Tone::Ink, 0.8).outline(Tone::Acc, 1.0));
+        ui.boxed(c, feed, UiStyle { w: Some(0.3), ..UiStyle::row() }.abs([Some(0.0), Some(0.0), None, Some(0.0)]).bg(Tone::Acc));
+        ui.text_plain(c, feed, Role::DisplayBold, 0.86, Tone::AccText, &shown);
+        ui.kit_icon(c, feed, "kill", 0.9, 1.0, Tone::Fg);
+        ui.text_plain(c, feed, Role::Text, 0.86, Tone::Fg2, &w.t("name.feed_victim"));
         ui.text(c, bp, Role::Mono, 0.56, Tone::Fg3, &w.t("name.profile"));
         let kv = ui.kv(c, bp, &[("Username", format!("@{}", if folded.is_empty() { "..." } else { &folded })), ("Hub", hub.clone())], 9.0);
         let _ = kv;
@@ -1784,13 +1943,15 @@ impl Draw<'_, '_> {
         let (ui, w, o) = (self.ui, self.w, self.o);
         let user = o.signed_in.as_ref().map(|f| f.username.clone()).unwrap_or_default();
         let hub = o.hub_name();
-        let col = self.abs(c, root, 8.4, 11.6, 46.0);
+        let col = self.col(c, root, 0.0, 46.0);
         self.eyebrow(c, col, &w.t("key.eyebrow"));
         self.h1(c, col, &w.t("key.title"), 2.7);
         self.lead(c, col, &w.t("key.lead"));
         let label = w.f("key.label", &[("user", &user), ("hub", &hub)]);
-        let kb = ui.boxed(c, col, UiStyle { gap: Some(0.8), pad: Some([1.5, 1.6].into()), margin: Some([2.0, 0.0, 0.0, 0.0].into()), ..UiStyle::column() }.bg_a(Tone::Fg, 0.04).outline(Tone::Fg4, 1.0));
-        ui.text(c, kb, Role::Mono, 0.56, Tone::Fg3, &label);
+        let kb = ui.boxed(c, col, UiStyle { gap: Some(0.8), pad: Some([1.6, 1.6, 1.5, 1.6].into()), margin: Some([2.4, 0.0, 0.0, 0.0].into()), ..UiStyle::column() }.bg_a(Tone::Fg, 0.04).outline(Tone::Fg4, 1.0));
+        // Its label sits on the box's top edge (a legend), on the ground.
+        let legend = ui.boxed(c, kb, UiStyle { pad: Some([0.0, 0.6].into()), ..UiStyle::row() }.abs([Some(1.2), Some(-0.4), None, None]).bg(Tone::Ink));
+        ui.text(c, legend, Role::Mono, 0.56, Tone::Fg3, &label);
         let groups = ui.boxed(c, kb, UiStyle { gap: Some(1.0), ..UiStyle::row() });
         let key = o.recovery.clone().unwrap_or_default();
         for (i, g) in key.split('-').enumerate() {
@@ -1809,21 +1970,13 @@ impl Draw<'_, '_> {
             ui.text_plain(c, r, Role::Mono, 0.6, Tone::AccText, &s.to_uppercase());
         }
         let row = self.btns(c, col, 2.6);
-        let check = ui.boxed(c, row, UiStyle { gap: Some(1.0), align: Some(AlignItems::Center), pad: Some([0.4, 0.6, 0.4, 0.0].into()), ..UiStyle::row() });
-        c.entity(check).insert((clickable(), ObAction::Saved));
-        let bx = ui.boxed(c, check, UiStyle { w: Some(1.5), h: Some(1.5), align: Some(AlignItems::Center), justify: Some(JustifyContent::Center), ..UiStyle::row() }.outline(Tone::Fg2, 1.0));
-        if o.saved {
-            c.entity(bx).insert(Pickable::IGNORE);
-            ui.boxed(c, bx, UiStyle { w: Some(1.5), h: Some(1.5), ..UiStyle::row() }.bg(Tone::Fg));
-            let tick = ui.text(c, bx, Role::DisplayBlack, 1.0, Tone::Ink, "✓");
-            c.entity(tick).insert(Node { position_type: PositionType::Absolute, ..default() });
-        }
-        ui.text(c, check, Role::DisplayBold, 1.0, Tone::Fg, &w.t("key.saved_it"));
+        let check = ui.check(c, row, o.saved, &w.t("key.saved_it"), 1.5);
+        c.entity(check).insert(ObAction::Saved);
         ui.boxed(c, row, UiStyle { w: Some(2.0), ..UiStyle::row() });
         self.button(c, row, Kind::Primary, &w.t("key.continue"), Some("Enter"), ObAction::Continue, State { focus: o.saved, disabled: !o.saved, ..State::NONE });
         // Getting back in.
-        let pane = self.abs(c, root, 60.0, 14.6, 31.6);
-        let bp = ui.boxed(c, pane, UiStyle { pad: Some([2.0, 2.2].into()), ..UiStyle::column() }.bg_a(Tone::Ink2, 0.75).outline(Tone::AccText, 0.22));
+        let pane = self.pane(c, root, 2.0, 3.0, 31.6);
+        let bp = self.blueprint(c, pane, 0.0);
         let head = ui.boxed(c, bp, UiStyle { justify: Some(JustifyContent::SpaceBetween), margin: Some([0.0, 0.0, 1.2, 0.0].into()), ..UiStyle::row() });
         ui.text(c, head, Role::Mono, 0.62, Tone::AccText, &w.t("key.pane_title"));
         ui.text(c, head, Role::Mono, 0.52, Tone::Fg3, "3 ways");
@@ -1844,7 +1997,7 @@ impl Draw<'_, '_> {
 
     fn have(&mut self, c: &mut Commands, root: Entity) {
         let (ui, w, o) = (self.ui, self.w, self.o);
-        let col = self.abs(c, root, 8.4, 9.6, 46.0);
+        let col = self.col(c, root, -2.0, 46.0);
         self.h1(c, col, &w.t("have.title"), 3.3);
         let tabs_row = ui.boxed(c, col, UiStyle { margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
         let names = w.list("have.tabs");
@@ -1859,19 +2012,26 @@ impl Draw<'_, '_> {
         ui.boxed(c, col, UiStyle { h: Some(1.4), ..UiStyle::column() });
         if o.last_hub.is_none() {
             let st = State::focused(o.have_on_hub);
-            let hf = self.field(c, col, &w.t("have.hub_label"), Tone::Fg3, None, &o.have_hub, "chimera-hub://...", o.have_on_hub.then(|| Caret::end_of(&o.have_hub)), 42.0, st, None, None);
+            let hf = self.field(c, col, &w.t("have.hub_label"), Tone::Fg3, None, &o.have_hub, "chimera-hub://...", o.have_on_hub.then(|| Caret::end_of(&o.have_hub)), self.lay("col_w", 42.0), st, None, None);
             c.entity(hf).insert((clickable(), ObAction::HaveField(true)));
             ui.boxed(c, col, UiStyle { h: Some(1.0), ..UiStyle::column() });
         }
-        let (label, ph, status) = if link {
-            ("Link code".to_string(), "H4K-92Q", Some((Tone::Fg4, w.t("have.link_status"))))
-        } else {
-            (w.t("have.recover_label"), "XXXX-XXXX-XXXX-XXXX", None)
-        };
         let st = State { focus: !o.have_on_hub, error: o.problem.is_some(), ..State::NONE };
-        let status_ref = status.as_ref().map(|(t, s)| (*t, s.as_str()));
-        let cf = self.field(c, col, &label, Tone::Fg3, None, &o.have_code, ph, (!o.have_on_hub).then(|| Caret::end_of(&o.have_code)), 42.0, st, status_ref, None);
-        c.entity(cf).insert((clickable(), ObAction::HaveField(false)));
+        let cells: Vec<char> = o.have_code.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_uppercase()).collect();
+        if link && cells.len() <= LINK_CELLS {
+            // A link code: one cell a character (the mockups' 08a), like
+            // pairing a TV app; the caret in the next empty one.
+            self.code_cells(c, col, &cells, st);
+        } else {
+            let (label, ph, status) = if link {
+                (w.t("have.link_label"), "H4K-92Q", Some((Tone::Fg4, w.t("have.link_status"))))
+            } else {
+                (w.t("have.recover_label"), "XXXX-XXXX-XXXX-XXXX", None)
+            };
+            let status_ref = status.as_ref().map(|(t, s)| (*t, s.as_str()));
+            let cf = self.field(c, col, &label, Tone::Fg3, None, &o.have_code, ph, (!o.have_on_hub).then(|| Caret::end_of(&o.have_code)), self.lay("col_w", 42.0), st, status_ref, None);
+            c.entity(cf).insert((clickable(), ObAction::HaveField(false)));
+        }
         if let Some(Problem::NeedsHub) = o.problem {
             let r = ui.boxed(c, col, UiStyle { gap: Some(0.8), margin: Some([0.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
             ui.mark(c, r, Tone::Warn, 0.6, 0.6);
@@ -1886,12 +2046,91 @@ impl Draw<'_, '_> {
         let note = ui.boxed(c, col, UiStyle { margin: Some([2.2, 0.0, 0.0, 0.0].into()), max_w: Some(40.0), ..UiStyle::column() });
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t(if link { "have.lost" } else { "have.recover_note" }));
         self.anim(c, note);
+        if link {
+            self.other_pc(c, root);
+        }
         self.keys(c, root, &[("Q / E", "Tab".into()), ("Enter", "Sign in".into()), ("Esc", "Back".into())]);
         let _ = SENTENCE;
     }
+
+    /// The link code's cells: its label, six cells with a dash after the
+    /// third, the status line.
+    fn code_cells(&mut self, c: &mut Commands, col: Entity, chars: &[char], st: State) {
+        let (ui, w) = (self.ui, self.w);
+        let f = ui.boxed(c, col, UiStyle { gap: Some(0.8), ..UiStyle::column() });
+        ui.text(c, f, Role::Mono, 0.56, Tone::Fg3, &w.t("have.link_label"));
+        let row = ui.boxed(c, f, UiStyle { gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() });
+        c.entity(row).insert((clickable(), ObAction::HaveField(false)));
+        for i in 0..LINK_CELLS {
+            if i == LINK_CELLS / 2 {
+                ui.boxed(c, row, UiStyle { w: Some(1.2), h: Some(0.2), ..UiStyle::row() }.bg(Tone::Fg3));
+            }
+            let cur = st.focus && i == chars.len();
+            let cell = ui.boxed(
+                c,
+                row,
+                UiStyle { w: Some(3.4), h: Some(4.3), align: Some(AlignItems::Center), justify: Some(JustifyContent::Center), ..UiStyle::row() }.bg_a(Tone::Fg, if cur { 0.07 } else { 0.04 }),
+            );
+            c.entity(cell).insert(Pickable::IGNORE);
+            match chars.get(i) {
+                Some(ch) => {
+                    ui.text_plain(c, cell, Role::Mono, 2.0, Tone::Fg, &ch.to_string());
+                }
+                None if cur => {
+                    ui.boxed(c, cell, UiStyle { w: Some(0.08), h: Some(1.9), ..UiStyle::row() }.bg(Tone::Fg));
+                }
+                None => {}
+            }
+            let line = if st.error { Tone::Threat } else if cur { Tone::Acc } else if i < chars.len() { Tone::Fg2 } else { Tone::Fg4 };
+            ui.boxed(c, cell, UiStyle { h: Some(0.2), ..UiStyle::row() }.abs([Some(0.0), None, Some(0.0), Some(0.0)]).bg(line));
+        }
+        let sr = ui.boxed(c, f, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), margin: Some([0.4, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
+        ui.mark(c, sr, Tone::Fg4, 0.6, 0.6);
+        ui.text_plain(c, sr, Role::Mono, 0.62, Tone::Fg3, &w.t("have.link_status").to_uppercase());
+        self.anim(c, f);
+    }
+
+    /// Where the code comes from: the other PC's Settings, drawn small at
+    /// the bottom right (the mockups' inset).
+    fn other_pc(&mut self, c: &mut Commands, root: Entity) {
+        let (ui, w) = (self.ui, self.w);
+        let m = self.lay("margin", 4.6);
+        let plate = ui.boxed(c, root, UiStyle { w: Some(30.0), ..UiStyle::column() }.abs([None, None, Some(m), Some(m + 2.4)]).bg(Tone::Plate).outline(Tone::Fg5, 1.0));
+        ui.boxed(c, plate, UiStyle { h: Some(0.3), ..UiStyle::row() }.bg(Tone::Fg3));
+        let body = ui.boxed(c, plate, UiStyle { gap: Some(0.7), pad: Some([1.4, 1.8, 1.6, 1.8].into()), ..UiStyle::column() });
+        ui.text(c, body, Role::Mono, 0.56, Tone::Fg3, &w.t("have.other_where"));
+        ui.text(c, body, Role::DisplayBold, 0.9, Tone::Fg, &w.t("have.other_title"));
+        ui.text_plain(c, body, Role::Mono, 2.4, Tone::Fg, &w.t("have.other_example"));
+        let ticks = ui.boxed(c, body, UiStyle { gap: Some(0.18), ..UiStyle::row() });
+        for i in 0..16 {
+            ui.mark(c, ticks, if i < 12 { Tone::Fg } else { Tone::Fg4 }, 1.4, 0.6);
+        }
+        ui.text(c, body, Role::Mono, 0.56, Tone::Fg3, &w.t("have.other_note"));
+        self.anim(c, plate);
+    }
 }
 
-/// Characters the invite field shows (42 cq at the typed size).
+/// A link code's cells.
+const LINK_CELLS: usize = 6;
+
+/// A hub's initials for its emblem: the first letters of its first two
+/// words ("Friday Night Hub": FN).
+pub fn initials(name: &str) -> String {
+    name.split_whitespace().filter_map(|w| w.chars().find(|c| c.is_alphanumeric())).take(2).flat_map(char::to_uppercase).collect()
+}
+
+/// A fingerprint as the invite field shows it inside a link: its first
+/// and last four, lower case (`3f9a..6e6f`).
+fn short_link_fp(f: &str) -> String {
+    let f: String = f.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+    if f.len() <= 8 {
+        return f;
+    }
+    format!("{}..{}", &f[..4], &f[f.len() - 4..])
+}
+
+/// Characters the invite field shows (42 cq at the hero field's typed
+/// size, `[layout.field] hero_text`).
 const FIELD_CHARS: usize = 64;
 
 /// What the invite field shows: a link read at Enter with its fingerprint
@@ -1901,7 +2140,7 @@ fn field_view(text: &str, caret: Caret, parsed: Option<&InviteInput>) -> (String
     if let Some(p) = parsed.filter(|p| p.kind == InputKind::Link && text.chars().count() > FIELD_CHARS) {
         let mut out = format!("chimera-hub://{}/", p.host.clone().unwrap_or_default());
         if let Some(f) = &p.fingerprint {
-            out.push_str(&format!("{}..{}", &f[..8.min(f.len())], &f[f.len().saturating_sub(8)..]));
+            out.push_str(&short_link_fp(f));
         }
         if let Some(code) = &p.code {
             out.push_str(&format!("?code={code}"));
@@ -1922,7 +2161,7 @@ fn field_view(text: &str, caret: Caret, parsed: Option<&InviteInput>) -> (String
 pub fn short_fp(f: &str) -> String {
     let f: String = f.to_uppercase().chars().filter(|c| c.is_ascii_hexdigit()).collect();
     if f.len() <= 16 {
-        return f;
+        return f.as_bytes().chunks(4).map(|g| String::from_utf8_lossy(g).into_owned()).collect::<Vec<_>>().join(" ");
     }
     format!("{} {} .. {} {}", &f[..4], &f[4..8], &f[f.len() - 8..f.len() - 4], &f[f.len() - 4..])
 }

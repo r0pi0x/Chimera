@@ -435,9 +435,15 @@ impl<'a> Ui<'a> {
 
     /// The lockup at `lk` cq (the wordmark's size): the mark, ULTIMATE
     /// spread over the wordmark's width, GUN GAME in the wordmark role.
-    pub fn lockup(&self, c: &mut Commands, parent: Entity, images: &mut Assets<Image>, icons: &mut IconImages, lk: f32) -> Entity {
+    pub fn lockup(&self, c: &mut Commands, parent: Entity, _images: &mut Assets<Image>, _icons: &mut IconImages, lk: f32) -> Entity {
+        self.lockup_drawn(c, parent, lk)
+    }
+
+    /// `lockup` with its mark drawn by `draw_kit_icons` (no image assets
+    /// at hand: the first run's bar). The same lockup as the main menu's.
+    pub fn lockup_drawn(&self, c: &mut Commands, parent: Entity, lk: f32) -> Entity {
         let l = self.boxed(c, parent, UiStyle { gap: Some(0.55 * lk), shrink: Some(0.0), ..UiStyle::row() });
-        self.icon(c, l, images, icons, "mark", 2.05 * lk, Tone::Fg);
+        self.kit_icon(c, l, "mark", 2.05 * lk, MARK_ASPECT, Tone::Fg);
         let words = self.boxed(c, l, UiStyle { gap: Some(0.3 * lk), ..UiStyle::column() });
         let ult = self.boxed(c, words, UiStyle::row().justify(JustifyContent::SpaceBetween));
         for ch in "ULTIMATE".chars() {
@@ -1396,7 +1402,16 @@ impl<'a> Ui<'a> {
         w: f32,
         st: State,
     ) -> Entity {
-        self.field(c, parent, value, placeholder, caret, masked, w, st, false).field
+        self.field(c, parent, value, placeholder, caret, masked, w, st, false, (1.9, TYPED)).field
+    }
+
+    /// `text_field` at a screen's hero size: `h` cq tall, the typed text
+    /// `text` cq (`[layout.field]`'s `hero_h` and `hero_text`: a first-run
+    /// screen's one field; the same look, caret and selection).
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_field_hero(&self, c: &mut Commands, parent: Entity, value: &str, placeholder: &str, caret: Option<TextCursor>, w: f32, st: State) -> Entity {
+        let size = (self.theme.layout_opt("field", "hero_h").unwrap_or(3.2), self.theme.layout_opt("field", "hero_text").unwrap_or(0.9));
+        self.field(c, parent, value, placeholder, caret, false, w, st, false, size).field
     }
 
     /// A search field: `text_field` with the search glass before the text
@@ -1415,7 +1430,7 @@ impl<'a> Ui<'a> {
         w: f32,
         st: State,
     ) -> SearchParts {
-        self.field(c, parent, value, placeholder, caret, false, w, st, true)
+        self.field(c, parent, value, placeholder, caret, false, w, st, true, (1.9, TYPED))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1430,6 +1445,7 @@ impl<'a> Ui<'a> {
         w: f32,
         st: State,
         search: bool,
+        (h, typed): (f32, f32),
     ) -> SearchParts {
         let typing = caret.is_some() && !st.disabled;
         let (base, over) = if st.disabled {
@@ -1441,7 +1457,7 @@ impl<'a> Ui<'a> {
         };
         let f = c
             .spawn((
-                UiStyle { min_w: Some(w), h: Some(1.9), pad: Some([0.0, 0.8].into()), shrink: Some(0.0), gap: search.then_some(0.6), ..UiStyle::row() },
+                UiStyle { min_w: Some(w), h: Some(h), pad: Some([0.0, 0.8].into()), shrink: Some(0.0), gap: search.then_some(0.6), ..UiStyle::row() },
                 Node::default(),
                 BackgroundColor(base),
                 Hover { base, over },
@@ -1470,10 +1486,10 @@ impl<'a> Ui<'a> {
         let shown: String = if masked { "*".repeat(value.chars().count()) } else { value.to_string() };
         // Typed text in the sentence face (`TYPED`), its own case; stars
         // in Mono.
-        let (role, size) = if masked { (Role::Mono, 0.66) } else { (Role::Text, TYPED) };
+        let (role, size) = if masked { (Role::Mono, 0.66) } else { (Role::Text, typed) };
         let tone = if st.disabled { Tone::Fg3 } else { Tone::Fg };
         if value.is_empty() && !typing {
-            self.text(c, f, Role::Mono, 0.62, Tone::Fg3, placeholder);
+            self.text(c, f, Role::Mono, 0.62 * typed / TYPED, Tone::Fg3, placeholder);
             c.entity(f).insert(EditText { chars: Vec::new() });
         } else {
             let face = Face { role, size, tone, plain: !masked };
@@ -1741,6 +1757,59 @@ impl<'a> Ui<'a> {
         list
     }
 
+    /// `kv` with a status light before each value (`Some(tone)`: the
+    /// light lit in it, `None`: unlit, the value `fg_3`): a check list's
+    /// rows (reaching a hub: the address, the certificate, the code).
+    pub fn kv_lit(&self, c: &mut Commands, parent: Entity, rows: &[(&str, String, Option<Tone>)], kw: f32) -> Entity {
+        let list = self.boxed(c, parent, UiStyle::column());
+        for (k, v, light) in rows {
+            let line = self.boxed(c, list, UiStyle { gap: Some(1.0), pad: Some([0.6, 0.0].into()), align: Some(AlignItems::Center), ..UiStyle::row() });
+            self.hairline(c, line, Tone::Fg, 0.07);
+            let kc = self.boxed(c, line, UiStyle { w: Some(kw), shrink: Some(0.0), ..UiStyle::row() });
+            self.text(c, kc, Role::Mono, 0.6, Tone::Fg3, k);
+            self.mark(c, line, light.unwrap_or(Tone::Fg4), 0.6, 0.6);
+            self.text_plain(c, line, Role::Mono, 0.6, if light.is_some() { Tone::Fg } else { Tone::Fg3 }, v);
+        }
+        list
+    }
+
+    /// The blueprint plate's corner brackets on `plate` (absolute, over
+    /// its edges): an L at the top left and one at the bottom right,
+    /// `len` cq long, 2 px, in `tone` (`acc_text`: a pane that explains).
+    pub fn corners(&self, c: &mut Commands, plate: Entity, tone: Tone, len: f32) {
+        let px = 2.0 / self.units.scale_factor;
+        let t = self.units.val(len);
+        let bar = |c: &mut Commands, node: Node| {
+            c.spawn((node, BackgroundColor(self.color(tone, 0.8)), Pickable::IGNORE, ChildOf(plate)));
+        };
+        let (m, z) = (Val::Px(-1.0), Val::Px(px));
+        bar(c, Node { position_type: PositionType::Absolute, left: m, top: m, width: t, height: z, ..default() });
+        bar(c, Node { position_type: PositionType::Absolute, left: m, top: m, width: z, height: t, ..default() });
+        bar(c, Node { position_type: PositionType::Absolute, right: m, bottom: m, width: t, height: z, ..default() });
+        bar(c, Node { position_type: PositionType::Absolute, right: m, bottom: m, width: z, height: t, ..default() });
+    }
+
+    /// A check box on the slant (`h` cq): an outline in `fg_2`, filled
+    /// white with an ink tick when `on`; the label after it (Display
+    /// Bold). Returns the row (give it its action).
+    pub fn check(&self, c: &mut Commands, parent: Entity, on: bool, label: &str, h: f32) -> Entity {
+        let row = self.boxed(c, parent, UiStyle { gap: Some(0.7 * h), align: Some(AlignItems::Center), pad: Some([0.3, 0.6, 0.3, 0.0].into()), ..UiStyle::row() });
+        c.entity(row).insert(clickable());
+        let bx = self.boxed(c, row, UiStyle { w: Some(h), h: Some(h), align: Some(AlignItems::Center), justify: Some(JustifyContent::Center), shrink: Some(0.0), ..UiStyle::row() });
+        let slant = if on { UiSlant::new(Tone::Fg, 1.0) } else { UiSlant::new(Tone::Fg2, 1.0).outline(1.0) };
+        c.spawn((
+            Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, ..default() },
+            slant,
+            Pickable::IGNORE,
+            ChildOf(bx),
+        ));
+        if on {
+            self.kit_icon(c, bx, "tick", 0.7 * h, 1.0, Tone::Ink);
+        }
+        self.text(c, row, Role::DisplayBold, 0.67 * h, Tone::Fg, label);
+        row
+    }
+
     /// A modal's plate `w` cq wide (`Ink2`, an outline, a .22 cq top bar:
     /// white for a question, threat for one that ends something), centred
     /// in `parent`, which becomes the modal layer (`modal::Modal`: the UI
@@ -1803,6 +1872,9 @@ pub fn draw_kit_icons(
         }
     }
 }
+
+/// The `mark` icon's width over its height (icons.toml: 1248 x 896).
+pub const MARK_ASPECT: f32 = 1248.0 / 896.0;
 
 /// A toggle's size, cq.
 pub const TOGGLE_W: f32 = 4.4;
