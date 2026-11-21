@@ -107,6 +107,7 @@ pub mod conditions;
 pub mod def;
 pub mod effects;
 pub mod gun_files;
+pub mod gun_rules;
 pub mod holders;
 pub mod map_fit;
 pub mod hud;
@@ -572,6 +573,8 @@ impl Plugin for MinigamePlugin {
         app.on_every_character::<runtime::KitMelee>();
         // The host's guns off drawn ladders (`mp_guns_off`).
         auto::guns_off_cvar(app);
+        // The host's Guns rules (`gun_rules`).
+        gun_rules::cvars(app);
         app.init_resource::<Minigames>()
             .init_resource::<Match>()
             .add_message::<MinigameEvent>()

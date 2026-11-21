@@ -83,3 +83,11 @@ recency = 2.0
 # The share of its heat a gun keeps after each ladder made (0: forgotten at
 # once, 1: never).
 recovery = 0.6
+
+# A drawn ladder's rungs in all, the knife finale's too: the default and the
+# bounds a host may set (`ugg_rungs`, the Guns dialog's Rungs stepper; a value
+# outside snaps to the nearest bound).
+[rungs]
+default = 13
+min = 5
+max = 40

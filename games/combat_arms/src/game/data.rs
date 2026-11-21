@@ -205,6 +205,7 @@
 //!   `.dtx` or `.spr`) are empty slots (`skin_paths`).
 
 pub mod attributes;
+pub mod families;
 pub mod served;
 mod store;
 
@@ -1452,6 +1453,7 @@ pub fn merge_weapon_docs_with_mods(
     let turret_guns: std::collections::BTreeSet<usize> = install.turrets.iter().filter_map(|t| t.top_weapon).collect();
     // New records: copies of our matched document of the same class.
     let mut new = Vec::new();
+    let mut new_stems = Vec::new();
     let mut skipped = 0usize;
     for (i, w) in install.weapons.iter().enumerate() {
         if w.name.is_empty() || matched.contains(&Some(i)) {
@@ -1493,11 +1495,17 @@ pub fn merge_weapon_docs_with_mods(
         timing_table(&mut t);
         infected_table(&mut t, w);
         new.push((format!("install:{}", w.name), t));
+        new_stems.push(families::model_stem(&w.pv_model));
     }
     if skipped > 0 {
         info!("Combat Arms: {skipped} install weapons skipped (no weapon of their class in our data, or no ammo)");
     }
     docs.extend(new);
+    // Each install weapon's gun family, by its first-person model
+    // (`families`).
+    let stems = matched.iter().map(|m| m.and_then(|i| families::model_stem(&install.weapons[i].pv_model))).chain(new_stems);
+    let mut with: Vec<(&mut Table, Option<String>)> = docs.iter_mut().map(|(_, t)| t).zip(stems).collect();
+    families::assign(&mut with);
     docs.into_iter()
         .map(|(n, t)| toml::to_string(&t).map(|s| (n.clone(), s)).map_err(|e| format!("{n}: {e}")))
         .collect()

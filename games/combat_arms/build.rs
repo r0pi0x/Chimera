@@ -49,6 +49,7 @@ const CONVERTING: &[&str] = &[
     "src/game/data.rs",
     "src/game/data/attributes.rs",
     "src/game/data/store.rs",
+    "src/game/data/families.rs",
     "data/effects.toml",
     "data/render_styles.toml",
     "data/hands.toml",

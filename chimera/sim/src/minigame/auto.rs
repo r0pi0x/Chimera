@@ -41,6 +41,10 @@
 //!   reason: Combat Arms' skins drawn wrong); `skipped_lines` says which
 //!   (logged when a ladder is drawn; the `ladder_skipped` command).
 //!   Hand-written ladders may name them.
+//! - `draw_pool`: `drawable_all`, the games some player lacks, then the
+//!   host's Guns rules (`gun_rules`: bans, allowed, games, classes by
+//!   `effective_class`, families by `family_of`); `ladder_rules` draws
+//!   with them (`DrawRules`: a family one candidate, `WhenShort`).
 //! - `map_pool`: every map of every game whose install the players have,
 //!   the games in turn; none: the greybox. `map_pool_for` takes the
 //!   player count too: only the maps `map_fit` lets in at that count. The
@@ -61,6 +65,7 @@ use chimera_core::{
 
 use bevy::prelude::*;
 
+use super::gun_rules::WhenShort;
 use super::power::{self, Band, DrawParams, GameWeighting, PowerCurve, PowerReaders, Powers};
 use crate::weapon::data::WeaponCatalog;
 
@@ -363,6 +368,58 @@ pub fn drawable_all(world: &World, caps: &mut [Capabilities]) -> Vec<Skipped> {
     skipped
 }
 
+/// A gun's class for the host's rules: its data's, a pistol that hits
+/// like a heavy pistol one (`power::band_of`).
+pub fn effective_class(id: &str, class: GunClass, catalog: &WeaponCatalog, readers: &PowerReaders, curve: &PowerCurve) -> GunClass {
+    if class == GunClass::Pistol && power::band_of(class, catalog.get(id), readers, curve) == curve.class_band(GunClass::HeavyPistol) {
+        return GunClass::HeavyPistol;
+    }
+    class
+}
+
+/// A gun's family (`WeaponData::family`; its own id without one).
+pub fn family_of(catalog: &WeaponCatalog, id: &str) -> String {
+    catalog.get(id).and_then(|d| d.family.clone()).unwrap_or_else(|| id.to_string())
+}
+
+/// What a draw under the host's rules may deal (`gun_rules`): `caps`
+/// without what is Unavailable (`drawable_all`: no damage, a game's data
+/// exclusions; a game `installed` says some player lacks), then the
+/// host's `GunRules` and `GunsOff` (`gun_rules::apply`), the families of
+/// `mp_guns_skins one` for `DrawRules`.
+pub fn draw_pool(world: &World, mut caps: Vec<Capabilities>, installed: &dyn Fn(&str) -> bool) -> (super::gun_rules::Pool, std::collections::BTreeMap<&'static str, String>) {
+    use super::gun_rules::{self, GunRules, Skins};
+    let mut skipped = drawable_all(world, &mut caps);
+    for c in caps.iter_mut().filter(|c| !installed(c.game)) {
+        for id in c.guns.drain(..).map(|g| g.id).chain(c.grenades.drain(..)) {
+            skipped.push(Skipped { id, why: "a player lacks its game".to_string() });
+        }
+    }
+    let empty = WeaponCatalog::default();
+    let catalog = world.get_resource::<WeaponCatalog>().unwrap_or(&empty);
+    let none = PowerReaders::default();
+    let readers = world.get_resource::<PowerReaders>().unwrap_or(&none);
+    let curve = PowerCurve::shipped();
+    let rules = world.get_resource::<GunRules>().cloned().unwrap_or_default();
+    let family = |id: &str| family_of(catalog, id);
+    let class = |id: &str, c: GunClass| effective_class(id, c, catalog, readers, &curve);
+    let legacy = world.get_resource::<GunsOff>().filter(|o| !o.0.trim().is_empty());
+    let mut pool = gun_rules::apply(&rules, legacy, caps, &family, &class);
+    skipped.append(&mut pool.skipped);
+    pool.skipped = skipped;
+    let mut families = std::collections::BTreeMap::new();
+    if rules.skins == Skins::One {
+        for c in pool.caps.iter().chain(&pool.reserve) {
+            for id in c.guns.iter().map(|g| g.id).chain(c.grenades.iter().copied()) {
+                if let Some(f) = catalog.get(id).and_then(|d| d.family.clone()) {
+                    families.insert(id, f);
+                }
+            }
+        }
+    }
+    (pool, families)
+}
+
 /// `mp_guns_off`: the guns and grenades a host took out of drawn ladders
 /// (weapon ids, comma-separated; the Host page's Guns picker sets it).
 /// `drawable` leaves them out, unless that would leave no gun; a
@@ -588,6 +645,40 @@ pub fn ladder_with(
     seed: u64,
     recent: &Recency,
 ) -> Drawn {
+    ladder_rules(games, powers, curve, rungs, seed, recent, &DrawRules::default())
+}
+
+/// The host's rules a draw follows beyond its pool (`gun_rules`): what a
+/// ladder does when short, the families dealt as one, the guns to borrow.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DrawRules<'a> {
+    pub short: WhenShort,
+    /// Each gun's family (`mp_guns_skins one`): a family is one candidate,
+    /// in the band of its first gun, its gun drawn at the deal among its
+    /// guns there. None: every gun its own.
+    pub families: Option<&'a std::collections::BTreeMap<&'static str, String>>,
+    /// The guns `WhenShort::Borrow` takes (`gun_rules::Pool::reserve`).
+    pub reserve: &'a [Capabilities],
+}
+
+/// `ladder_with` under the host's `rules` (`DrawRules`): with families,
+/// a family is one candidate whose gun is drawn when dealt; once the
+/// bands' hand-off has nothing left to give, `WhenShort` says whether the
+/// lost rungs are dropped (shorter), dealt again from the bands' guns
+/// (repeat: to the band with the most guns per rung, nearest first; the
+/// ladder then laid out in rounds, so a gun comes back only after the
+/// others: `spread`), or
+/// taken from `rules.reserve`, the nearest band first (borrow).
+pub fn ladder_rules(
+    games: &[&Capabilities],
+    powers: &Powers,
+    curve: &PowerCurve,
+    rungs: usize,
+    seed: u64,
+    recent: &Recency,
+    rules: &DrawRules,
+) -> Drawn {
+    use std::collections::BTreeMap;
     let games: Vec<&Capabilities> = games.iter().copied().filter(|c| c.playable()).collect();
     if games.is_empty() || rungs == 0 {
         return Drawn::default();
@@ -597,31 +688,87 @@ pub fn ladder_with(
     let mut counts = power::band_counts(rungs, curve, &mut rng);
     let melee = counts[Band::Melee.index()];
     const DRAWN: usize = 6;
-    let mut pools: [Vec<Candidate>; DRAWN] = Default::default();
-    // Each weapon once, in the first pool that takes it.
+    let band_of = |id: &str, class: GunClass| powers.get(id).map_or_else(|| curve.class_band(class), |p| p.band);
+    // Each weapon once, in the first pool that takes it; a family once,
+    // its other guns its members.
     let mut seen: bevy::platform::collections::HashSet<&'static str> = Default::default();
+    let mut reps: BTreeMap<String, &'static str> = BTreeMap::new();
+    let mut members: BTreeMap<&'static str, Vec<&'static str>> = BTreeMap::new();
+    let mut add = |pools: &mut [Vec<Candidate>; DRAWN], id: &'static str, band: Band, game: usize| {
+        if band == Band::Melee || !seen.insert(id) {
+            return;
+        }
+        if let Some(fam) = rules.families.and_then(|f| f.get(id)) {
+            if let Some(rep) = reps.get(fam) {
+                members.entry(*rep).or_default().push(id);
+                return;
+            }
+            reps.insert(fam.clone(), id);
+            members.insert(id, vec![id]);
+        }
+        pools[band.index()].push((id, game));
+    };
+    let mut pools: [Vec<Candidate>; DRAWN] = Default::default();
     for (i, c) in games.iter().enumerate() {
         for gun in &c.guns {
-            let band = powers.get(gun.id).map_or_else(|| curve.class_band(gun.class), |p| p.band);
-            if band != Band::Melee && seen.insert(gun.id) {
-                pools[band.index()].push((gun.id, i));
-            }
+            add(&mut pools, gun.id, band_of(gun.id, gun.class), i);
         }
         for g in &c.grenades {
-            if seen.insert(g) {
-                pools[Band::Grenade.index()].push((g, i));
+            add(&mut pools, g, Band::Grenade, i);
+        }
+    }
+    // Borrow's pool: the reserve's guns by band, each dealt as the game of
+    // its own (or the first game when its game isn't in the draw).
+    let mut reserve: [Vec<Candidate>; DRAWN] = Default::default();
+    if rules.short == WhenShort::Borrow {
+        for c in rules.reserve {
+            let game = games.iter().position(|g| g.game == c.game).unwrap_or(0);
+            for gun in &c.guns {
+                add(&mut reserve, gun.id, band_of(gun.id, gun.class), game);
+            }
+            for g in &c.grenades {
+                add(&mut reserve, g, Band::Grenade, game);
             }
         }
     }
-    // Short bands give their rungs to the nearest band with guns to spare.
+    let sizes: [usize; DRAWN] = std::array::from_fn(|b| pools[b].len());
+    // Short bands give their rungs to the nearest band with guns to spare;
+    // the rungs none can take are lost (each one's band).
+    let mut lost: Vec<usize> = Vec::new();
     for b in 0..DRAWN {
         while counts[b] > pools[b].len() {
             let to = (0..DRAWN)
                 .filter(|&t| t != b && counts[t] < pools[t].len())
                 .min_by_key(|&t| (t.abs_diff(b), t));
             counts[b] -= 1;
-            if let Some(t) = to {
-                counts[t] += 1;
+            match to {
+                Some(t) => counts[t] += 1,
+                None => lost.push(b),
+            }
+        }
+    }
+    match rules.short {
+        WhenShort::Shorter => {}
+        WhenShort::Repeat => {
+            for b in lost {
+                // The band with the most guns per rung (a band of one gun
+                // last), the nearest on a tie.
+                let to = (0..DRAWN)
+                    .filter(|&t| sizes[t] > 0)
+                    .min_by_key(|&t| (sizes[t] < 2, (counts[t] + 1).div_ceil(sizes[t]), t.abs_diff(b), t));
+                if let Some(t) = to {
+                    counts[t] += 1;
+                }
+            }
+        }
+        WhenShort::Borrow => {
+            for b in lost {
+                let from = (0..DRAWN).filter(|&t| !reserve[t].is_empty()).min_by_key(|&t| (t.abs_diff(b), t));
+                if let Some(t) = from {
+                    let k = rng.below(reserve[t].len());
+                    pools[b].push(reserve[t].remove(k));
+                    counts[b] += 1;
+                }
             }
         }
     }
@@ -631,7 +778,18 @@ pub fn ladder_with(
     shuffle(&mut slots, &mut rng);
     let mut deck: Vec<usize> = Vec::new();
     let mut picked: [Vec<Candidate>; DRAWN] = Default::default();
+    let heat = |id: &'static str| members.get(id).map_or_else(|| recent.heat(id), |m| m.iter().map(|g| recent.heat(g)).fold(0.0, f64::max));
     for b in slots {
+        // Repeat: a band dealt out deals its guns again.
+        if pools[b].is_empty() && rules.short == WhenShort::Repeat {
+            let mut again: Vec<Candidate> = Vec::new();
+            for c in &picked[b] {
+                if !again.contains(c) {
+                    again.push(*c);
+                }
+            }
+            pools[b] = again;
+        }
         let has = |pool: &[Candidate], g: usize| pool.iter().any(|c| c.1 == g);
         let game = match draw.games {
             GameWeighting::Equal => {
@@ -671,7 +829,7 @@ pub fn ladder_with(
         let Some(game) = game else { continue };
         // A gun of the game, the recently dealt less likely.
         let mine: Vec<usize> = (0..pools[b].len()).filter(|&k| pools[b][k].1 == game).collect();
-        let weights: Vec<f64> = mine.iter().map(|&k| 1.0 / (1.0 + draw.recency.max(0.0) * recent.heat(pools[b][k].0))).collect();
+        let weights: Vec<f64> = mine.iter().map(|&k| 1.0 / (1.0 + draw.recency.max(0.0) * heat(pools[b][k].0))).collect();
         let total: f64 = weights.iter().sum();
         let mut at = rng.unit() * total;
         let mut chosen = mine.len() - 1;
@@ -682,17 +840,55 @@ pub fn ladder_with(
             }
             at -= w;
         }
-        picked[b].push(pools[b].remove(mine[chosen]));
+        let (mut id, g) = pools[b].remove(mine[chosen]);
+        // A family's gun drawn now (its skin).
+        if let Some(m) = members.get(id).filter(|m| m.len() > 1) {
+            id = m[rng.below(m.len())];
+        }
+        picked[b].push((id, g));
     }
     let score = |id: &str| powers.get(id).map_or(0.0, |p| p.score);
     let mut out = Drawn {
         melee,
         ..Default::default()
     };
+    let mut laid: Vec<(&'static str, Band)> = Vec::new();
     for (b, band) in picked.iter_mut().enumerate() {
         band.sort_by(|x, y| score(x.0).total_cmp(&score(y.0)).then(x.0.cmp(y.0)));
-        out.rungs.extend(band.iter().map(|c| c.0));
-        out.bands.extend(std::iter::repeat_n(Band::ALL[b], band.len()));
+        laid.extend(band.iter().map(|c| (c.0, Band::ALL[b])));
+    }
+    for (id, band) in spread(&laid) {
+        out.rungs.push(id);
+        out.bands.push(band);
+    }
+    out
+}
+
+/// The ladder's rungs (weakest band first) laid out in rounds when a gun
+/// repeats (`WhenShort::Repeat`): each gun once a round in ladder order,
+/// so a gun comes back only after the others; a round that would start
+/// with the gun that ended the last starts one later. Without repeats: as
+/// given.
+fn spread(rungs: &[(&'static str, Band)]) -> Vec<(&'static str, Band)> {
+    let mut distinct: Vec<((&'static str, Band), usize)> = Vec::new();
+    for c in rungs {
+        match distinct.iter_mut().find(|(d, _)| d.0 == c.0) {
+            Some((_, n)) => *n += 1,
+            None => distinct.push((*c, 1)),
+        }
+    }
+    if distinct.len() == rungs.len() {
+        return rungs.to_vec();
+    }
+    let mut out: Vec<(&'static str, Band)> = Vec::new();
+    let mut round = 0;
+    while out.len() < rungs.len() {
+        let mut this: Vec<(&'static str, Band)> = distinct.iter().filter(|(_, n)| *n > round).map(|(c, _)| *c).collect();
+        if this.len() > 1 && out.last().is_some_and(|l| l.0 == this[0].0) {
+            this.rotate_left(1);
+        }
+        out.extend(this);
+        round += 1;
     }
     out
 }
@@ -852,8 +1048,25 @@ pub fn definition(
     recent: &Recency,
     installed: &dyn Fn(&str) -> bool,
 ) -> Result<String, String> {
-    let games: Vec<&Capabilities> = caps.iter().filter(|c| c.playable() && installed(c.game)).collect();
-    let drawn = ladder_with(&games, powers, &opts.curve, opts.rungs, opts.seed, recent);
+    definition_with(caps, powers, opts, recent, installed, &DrawRules::default())
+}
+
+/// `definition` with the host's rules (`DrawRules`, `draw_pool`); the
+/// shared group of Allowed guns (`gun_rules::ALLOWED_GROUP`) counts as
+/// installed (its guns' games were checked before).
+pub fn definition_with(
+    caps: &[Capabilities],
+    powers: &Powers,
+    opts: &AutoOptions,
+    recent: &Recency,
+    installed: &dyn Fn(&str) -> bool,
+    rules: &DrawRules,
+) -> Result<String, String> {
+    let games: Vec<&Capabilities> = caps
+        .iter()
+        .filter(|c| c.playable() && (c.game == super::gun_rules::ALLOWED_GROUP || installed(c.game)))
+        .collect();
+    let drawn = ladder_rules(&games, powers, &opts.curve, opts.rungs, opts.seed, recent, rules);
     let ladder = drawn.rungs;
     if ladder.is_empty() {
         return Err(format!(
@@ -1045,6 +1258,83 @@ mod tests {
 
     fn class_of(caps: &[&Capabilities], id: &str) -> Option<GunClass> {
         caps.iter().flat_map(|c| &c.guns).find(|g| g.id == id).map(|g| g.class)
+    }
+
+    fn draw_with(caps: &[&Capabilities], rungs: usize, seed: u64, rules: &DrawRules) -> Drawn {
+        let mut all: Vec<&Capabilities> = caps.to_vec();
+        all.extend(rules.reserve.iter());
+        ladder_rules(caps, &powers_of(&all), &PowerCurve::shipped(), rungs, seed, &Recency::default(), rules)
+    }
+
+    /// With families, a family is dealt at most once a ladder, as one of
+    /// its guns; every gun of it comes up over seeds.
+    #[test]
+    fn a_family_is_one_candidate_its_skin_drawn_at_the_deal() {
+        let a = guns_of("a", 12, &[GunClass::Rifle]);
+        let fam: std::collections::BTreeMap<&'static str, String> = a.guns.iter().take(10).map(|g| (g.id, "a:ak".to_string())).collect();
+        let rules = DrawRules { families: Some(&fam), ..default() };
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..200 {
+            let d = draw_with(&[&a], 13, seed, &rules);
+            let in_family = d.rungs.iter().filter(|id| fam.contains_key(**id)).count();
+            assert!(in_family <= 1, "seed {seed}: {:?}", d.rungs);
+            // Three candidates (the family, gun10, gun11) for the rungs.
+            assert_eq!(d.rungs.len(), 3, "seed {seed}");
+            seen.extend(d.rungs.iter().filter(|id| fam.contains_key(**id)).copied());
+        }
+        assert_eq!(seen.len(), 10, "every skin comes up");
+    }
+
+    /// Shorter drops the rungs no band can fill; repeat deals them again,
+    /// never the same gun twice in a row while there is another.
+    #[test]
+    fn when_short_shorter_or_repeat_spread_out() {
+        let a = with_grenade(guns_of("a", 3, &[GunClass::Pistol, GunClass::Smg, GunClass::Rifle]));
+        let short = draw_with(&[&a], 13, 1, &DrawRules::default());
+        assert_eq!(short.len(), 4 + short.melee - 0);
+        assert_eq!(short.rungs.len(), 4);
+        for seed in 0..50 {
+            let rules = DrawRules { short: WhenShort::Repeat, ..default() };
+            let d = draw_with(&[&a], 13, seed, &rules);
+            assert_eq!(d.len(), 13, "seed {seed}: {:?}", d.rungs);
+            assert!(d.rungs.windows(2).all(|w| w[0] != w[1]), "seed {seed}: {:?}", d.rungs);
+        }
+    }
+
+    /// Borrow fills the lost rungs from the reserve, the nearest band
+    /// first, and only from it.
+    #[test]
+    fn when_short_borrow_takes_the_reserve_nearest_first() {
+        let a = guns_of("a", 2, &[GunClass::Pistol]);
+        let reserve = vec![guns_of("a2", 2, &[GunClass::Sniper]), guns_of("a3", 1, &[GunClass::Smg])];
+        // The reserve's games are the draw's own game (`a`): rename.
+        let mut r: Vec<Capabilities> = reserve;
+        for c in &mut r {
+            c.game = "a";
+        }
+        let rules = DrawRules { short: WhenShort::Borrow, reserve: &r, ..default() };
+        let d = draw_with(&[&a], 6, 3, &rules);
+        assert_eq!(d.rungs.len(), 5, "{:?}", d.rungs);
+        assert!(d.rungs.contains(&"a3:gun0"), "the SMG (nearest) is borrowed: {:?}", d.rungs);
+        let few = DrawRules { short: WhenShort::Borrow, reserve: &r[1..], ..default() };
+        assert_eq!(draw_with(&[&a], 13, 3, &few).rungs.len(), 3, "the reserve runs out: shorter");
+    }
+
+    /// Allowed guns of games that are off are one game in the deck: one
+    /// allowed gun doesn't take a whole game's share.
+    #[test]
+    fn allowed_guns_of_games_off_share_one_deck_turn() {
+        let a = guns("a", 60);
+        let mut group = super::super::gun_rules::allowed_group();
+        group.guns = guns("b", 22).guns;
+        let caps = [&a, &group];
+        let mut theirs = 0;
+        for seed in 0..100 {
+            let d = draw_with(&caps, 13, seed, &DrawRules::default());
+            theirs += d.rungs.iter().filter(|id| id.starts_with("b:")).count();
+        }
+        let share = theirs as f64 / 1200.0;
+        assert!((0.35..0.65).contains(&share), "{share}");
     }
 
     #[test]

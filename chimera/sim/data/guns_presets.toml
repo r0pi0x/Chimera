@@ -1,0 +1,18 @@
+# The built-in Guns presets (chimera_sim::minigame::gun_rules::Preset; the
+# Host page's Guns field and dialog, `guns_preset <name>` on a server). A
+# preset holds the host's rules only, never a list of guns: games and classes
+# off, skins, when short, rungs, and bans and allowed by stable family or
+# weapon ids. A host's own presets are files of the same shape in the config
+# folder (guns/<name>.toml).
+
+[[preset]]
+name = "All guns"
+
+[[preset]]
+name = "No explosives"
+classes_off = ["launcher", "flamethrower", "grenade"]
+
+[[preset]]
+name = "Pistols only"
+classes_off = ["smg", "shotgun", "carbine", "rifle", "heavy", "marksman", "sniper", "launcher", "flamethrower", "grenade"]
+short = "repeat"

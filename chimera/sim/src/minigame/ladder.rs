@@ -900,18 +900,29 @@ fn drawn_ladder(world: &World, def: &MinigameDef, p: &Params, seed: u64, say: bo
         c.grenades.retain(|g| def.allows_weapon(g));
     }
     // Never a gun that can't hurt anyone, nor one a game's data leaves
-    // out (`auto::drawable`); a written ladder may name them.
-    let skipped = auto::drawable(world, &mut caps);
-    if say && !skipped.is_empty() {
-        info!("{}: {}", def.id, auto::skipped_lines(&skipped));
+    // out; then the host's Guns rules (`auto::draw_pool`); a written
+    // ladder may name them.
+    let (pool, families) = auto::draw_pool(world, caps, &|_| true);
+    if say && !pool.skipped.is_empty() {
+        info!("{}: {}", def.id, auto::skipped_lines(&pool.skipped));
+    }
+    if let Some(note) = pool.fallback.as_ref().filter(|_| say) {
+        warn!("{}: {note}", def.id);
     }
     let empty = WeaponCatalog::default();
     let catalog = world.get_resource::<WeaponCatalog>().unwrap_or(&empty);
     let readers = world.get_resource::<power::PowerReaders>().cloned().unwrap_or_default();
-    let powers = auto::powers(&caps, catalog, &readers, &curve);
-    let refs: Vec<&auto::Capabilities> = caps.iter().collect();
+    let all: Vec<auto::Capabilities> = pool.caps.iter().chain(&pool.reserve).cloned().collect();
+    let powers = auto::powers(&all, catalog, &readers, &curve);
+    let refs: Vec<&auto::Capabilities> = pool.caps.iter().collect();
     let recent = world.get_resource::<auto::Recency>().cloned().unwrap_or_default();
-    let drawn = auto::ladder_with(&refs, &powers, &curve, p.rungs, seed, &recent);
+    let short = world.get_resource::<super::gun_rules::GunRules>().map(|r| r.short).unwrap_or_default();
+    let rules = auto::DrawRules {
+        short,
+        families: Some(&families),
+        reserve: &pool.reserve,
+    };
+    let drawn = auto::ladder_rules(&refs, &powers, &curve, p.rungs, seed, &recent, &rules);
     if drawn.rungs.is_empty() && say {
         warn!("{}: [rules] ladder = \"auto\": no game lends guns the definition allows", def.id);
     }

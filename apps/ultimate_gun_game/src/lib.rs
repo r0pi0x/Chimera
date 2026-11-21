@@ -21,11 +21,13 @@
 //! (`random_seed`), said on the console and in the log with each ladder;
 //! `ugg_new <seed>` replays one; `CHIMERA_RUNG_SEED=<n>` fixes the seed
 //! of the rungs' extras (bodies, attachments, melee: `party_kit::launch_rung_seed`); the default plugin (tests) keeps `SEED`.
-//! Its ladder has `RUNGS` rungs in all, drawn from every gun of the games
+//! Its ladder has `ugg_rungs` rungs in all (`UggRungs`; `RUNGS` at launch,
+//! the curve's `[rungs]` bounds), drawn from every gun of the games
 //! every connected player has (`minigame_net::installed_by_all`, L3's
 //! mount reports; their install's weapons too; never one that can't hurt
-//! a player nor one a game's data excludes: `auto::drawable`, logged with
-//! the ladder) on the power curve
+//! a player nor one a game's data excludes), under the host's Guns rules
+//! (`auto::draw_pool`, `gun_rules`; logged with the ladder, a fallback in
+//! `GunRulesNote`) on the power curve
 //! (`auto::ladder`, `minigame::power`: warm-up pistols to melee, each
 //! band's guns by power score); its pool every game's maps, their installs' too
 //! but those a game's data/map_pool.toml denies (`auto::find_installed_maps`,
@@ -168,24 +170,38 @@ fn generate_as(world: &mut World, seed: u64, rungs: usize, again: bool) -> Resul
     if again {
         world.get_resource_or_init::<auto::Recency>().rewind();
     }
-    let mut caps = auto::report(world);
-    // Only guns that can hurt someone and no game's data leaves out
-    // (`auto::drawable`).
-    let skipped = auto::drawable(world, &mut caps);
-    if !skipped.is_empty() {
-        info!("Ultimate Gun Game: {}", auto::skipped_lines(&skipped));
-    }
+    let caps = auto::report(world);
     let games: Vec<&'static str> = caps.iter().map(|c| c.game).collect();
     let installed = chimera_net::minigame_net::installed_by_all(world, &games);
+    // Only guns that can hurt someone, no game's data leaves out and every
+    // player has, then the host's Guns rules (`auto::draw_pool`,
+    // `gun_rules`).
+    let (pool, families) = auto::draw_pool(world, caps.clone(), &|g| installed.contains(&g));
+    if !pool.skipped.is_empty() {
+        info!("Ultimate Gun Game: {}", auto::skipped_lines(&pool.skipped));
+    }
+    if let Some(note) = &pool.fallback {
+        warn!("Ultimate Gun Game: {note}");
+    }
+    world.insert_resource(chimera_sim::minigame::gun_rules::GunRulesNote(pool.fallback.clone()));
+    let short = world.get_resource::<chimera_sim::minigame::gun_rules::GunRules>().map(|r| r.short).unwrap_or_default();
+    let rules = auto::DrawRules {
+        short,
+        families: Some(&families),
+        reserve: &pool.reserve,
+    };
+    // Every game stays in `pool.caps` (its maps too), its guns or none.
+    let caps = &pool.caps;
     let opts = options(seed, rungs);
     let powers = {
         let empty = WeaponCatalog::default();
         let catalog = world.get_resource::<WeaponCatalog>().unwrap_or(&empty);
         let readers = world.get_resource::<PowerReaders>().cloned().unwrap_or_default();
-        auto::powers(&caps, catalog, &readers, &opts.curve)
+        let all: Vec<Capabilities> = caps.iter().chain(&pool.reserve).cloned().collect();
+        auto::powers(&all, catalog, &readers, &opts.curve)
     };
     let recent = world.get_resource::<auto::Recency>().cloned().unwrap_or_default();
-    let text = auto::definition(&caps, &powers, &opts, &recent, &|g| installed.contains(&g))?;
+    let text = auto::definition_with(caps, &powers, &opts, &recent, &|g| installed.contains(&g), &rules)?;
     let def = minigame::add(world, MINIGAME, &text)?;
     // What was dealt is remembered for the next ladders.
     let dealt: Vec<&str> = def
@@ -206,8 +222,23 @@ pub struct AutoLadder {
     pub rungs: usize,
 }
 
-/// The ladder of `l` made and said on the console and in the log.
-fn make(world: &mut World, l: AutoLadder, why: &str) -> Result<&'static MinigameDef, String> {
+/// `ugg_rungs` (`gun_rules::LadderRungs`): the host's ladder length,
+/// rungs in all with the knife finale's (the Guns dialog's Rungs stepper;
+/// within `[rungs]` of chimera/sim/data/power_curve.toml, default 13).
+/// From the next ladder.
+pub use chimera_sim::minigame::gun_rules::LadderRungs as UggRungs;
+
+/// The ladder of `l` made and said on the console and in the log; its
+/// rungs within the curve's bounds (`RungBounds`), a note when moved.
+fn make(world: &mut World, mut l: AutoLadder, why: &str) -> Result<&'static MinigameDef, String> {
+    let bounds = chimera_sim::minigame::power::PowerCurve::shipped().rungs;
+    let rungs = bounds.clamp(l.rungs);
+    if rungs != l.rungs {
+        let note = format!("Ultimate Gun Game: {} rungs is outside {} to {}: {rungs}", l.rungs, bounds.min, bounds.max);
+        info!("{note}");
+        world.resource_mut::<Console>().print(Level::Warn, note);
+        l.rungs = rungs;
+    }
     world.insert_resource(l);
     let made = generate(world, l.seed, l.rungs);
     let text = match &made {
@@ -234,7 +265,7 @@ fn next_ladder(world: &mut World, id: &str, map: &str) {
     let last = *world.resource::<AutoLadder>();
     let l = AutoLadder {
         seed: next_seed(last.seed),
-        rungs: last.rungs,
+        rungs: world.get_resource::<UggRungs>().map_or(last.rungs, |r| r.0),
     };
     let _ = make(world, l, &format!("a new ladder for {map}"));
 }
@@ -289,6 +320,7 @@ impl Plugin for UltimateGunGamePlugin {
         })
         // The rotation's random picks follow the launch's seed too, as
         // the rungs' extras do (`ladder::RungSeed`).
+        .insert_resource(UggRungs(self.rungs))
         .insert_resource(MapHistory::seeded(self.seed))
         // The app's game on a hub: what its servers' heartbeats say and
         // the Internet tab lists (docs/plans/active/hub.md 4.3).
@@ -306,7 +338,7 @@ impl Plugin for UltimateGunGamePlugin {
                 let rungs = a.get(1).map(|s| s.parse().map_err(|_| format!("not a count: {s}"))).transpose()?;
                 let ladder = AutoLadder {
                     seed: seed.unwrap_or_else(|| next_seed(last.seed)),
-                    rungs: rungs.unwrap_or(last.rungs),
+                    rungs: rungs.unwrap_or_else(|| w.get_resource::<UggRungs>().map_or(last.rungs, |r| r.0)),
                 };
                 make(w, ladder, "ugg_new")?;
                 chimera_net::minigame_net::change_match(w, MINIGAME, a.get(2).map(String::as_str)).map(Some)
@@ -322,6 +354,12 @@ impl Plugin for UltimateGunGamePlugin {
             Ok(Some(auto::report(w).iter().map(Capabilities::line).collect::<Vec<_>>().join("\n")))
         })
         .add_systems(PostStartup, with_installs);
+        chimera_core::console::resource_cvar::<UggRungs, usize>(
+            app,
+            "ugg_rungs",
+            "Server: rungs in an Ultimate Gun Game ladder, the knife finale's too (5 to 40; the Guns dialog's Rungs). From the next ladder.",
+            |r| &mut r.0,
+        );
         app.world_mut().get_resource_or_init::<NextMatchHooks>().0.push(next_ladder);
     }
 
@@ -525,6 +563,11 @@ mod tests {
         moved.layers.get_mut(halo).unwrap().insert("h".into(), "+grenade".into());
         moved.restore_missing_layer_binds();
         assert_eq!(keys_for(&moved.effective_binds(Some(halo)), "+grenade"), ["h"]);
+    }
+
+    #[test]
+    fn the_launch_rungs_are_the_curves_default() {
+        assert_eq!(super::RUNGS, chimera_sim::minigame::power::PowerCurve::shipped().rungs.default);
     }
 
     #[test]

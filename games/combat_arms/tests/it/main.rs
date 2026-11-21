@@ -115,6 +115,7 @@ mod heavy {
     mod mount;
     mod movement_volumes;
     mod music_ambience;
+    mod families_install;
     mod no_damage_install;
     mod npc_bodies;
     mod options;

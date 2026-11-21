@@ -6,6 +6,7 @@
 
 mod chat;
 mod fallbacks;
+mod gun_rules;
 mod hl2_alt_ammo;
 mod hl2_set_pieces;
 mod heavy {

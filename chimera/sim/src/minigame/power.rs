@@ -188,6 +188,25 @@ pub struct PowerCurve {
     pub score: ScoreParams,
     /// How a ladder's rungs are dealt (`[draw]`).
     pub draw: DrawParams,
+    /// A drawn ladder's length, the host's bounds (`[rungs]`).
+    pub rungs: RungBounds,
+}
+
+/// A drawn ladder's rungs in all, melee too (`[rungs]`): the default and
+/// the host's bounds (`ugg_rungs`, the Guns dialog's Rungs stepper).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RungBounds {
+    pub default: usize,
+    pub min: usize,
+    pub max: usize,
+}
+
+impl RungBounds {
+    /// `n` within the bounds.
+    pub fn clamp(&self, n: usize) -> usize {
+        n.clamp(self.min, self.max.max(self.min))
+    }
 }
 
 /// How the games' shares of a ladder are weighted (`DrawParams::games`).

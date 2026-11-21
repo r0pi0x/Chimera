@@ -755,13 +755,20 @@ Maps and matches:
   that slice, never the whole map; the Maps picker writes it). Nothing new
   goes over the network (the slice goes with the match, `net64`). Never in
   a game's own app.
-- **Guns off.** The Host page's Guns field (the shared picker, as cards
-  by game with class chips) chooses which guns drawn ladders may deal;
-  Start sends the ones off as `mp_guns_off` (weapon ids,
-  comma-separated, as the weapon data names them), set from the console
-  too. Drawn
-  ladders leave them out from the next ladder; taking every gun out takes
-  none; a written ladder may still name them.
+- **Guns rules.** Drawn ladders follow the host's Guns rules, server
+  cvars applied at each draw to whatever the players have then
+  (`chimera_sim::minigame::gun_rules`; docs/plans/active/guns-picker-v2.md):
+  `mp_guns_games_off` and `mp_guns_classes_off` (what is off; empty: all
+  on), `mp_guns_skins` (`one`: a gun's skins and editions are one
+  candidate, the skin drawn at the deal; `all`), `mp_guns_short`
+  (`shorter`, `repeat`, `borrow`: what a ladder does when its guns can't
+  fill it), `mp_guns_ban` and `mp_guns_allow` (gun families or weapon
+  ids), `ugg_rungs` (5 to 40, default 13). Precedence: a game some player
+  lacks and the data's exclusions first, then bans, then allowed, then the
+  rules. `mp_guns_off` (weapon ids, comma-separated; today's Host page
+  Guns field sends it at Start) counts as bans. Rules that leave no gun
+  play every gun and say so in the log. A written ladder may still name
+  any gun.
 - **The pre-match lobby.** Each new match (the first after the server
   starts, each rotation and map change: a host's `changelevel <map>` is the
   running minigame's next match there, a new ladder as a rotation's)

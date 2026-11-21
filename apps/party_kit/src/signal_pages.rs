@@ -20,7 +20,8 @@
 //!   text field; UPnP's outcome a STATUS block, its words on hover) and
 //!   Game (host_settings.toml's next-match rows, `main_menu::
 //!   game_settings`), Q and E at the tab strip's ends; a pane at the right
-//!   sums the match up. Enter starts (on the Maps row: opens the picker).
+//!   sums the match up (its Guns line: `gun_rules::summary`, the preset or
+//!   what differs, the rungs, a fallback note). Enter starts (on the Maps row: opens the picker).
 //!   Its rows scroll in the kit's container (`chimera_ui::scroll`: the
 //!   bar, the eased wheel); ↑↓ keep the focused row in view
 //!   (`SignalPages::reveal`).
@@ -1559,6 +1560,7 @@ struct DrawKey {
     upnp: String,
     picker: crate::maps_picker::MapsPicker,
     guns: (crate::guns_picker::GunsPicker, crate::guns_picker::GunsListing),
+    guns_line: String,
 }
 
 /// What the drawing reads besides the state.
@@ -1580,6 +1582,9 @@ struct Ctx<'a> {
     /// The Guns picker and its listing.
     guns: &'a crate::guns_picker::GunsPicker,
     gun_games: &'a [chimera_ui::picker::PickerGame],
+    /// The Guns rules' line (`gun_rules::summary`): the preset or what
+    /// differs, the rungs, a fallback note; empty without the rules.
+    guns_line: String,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -1599,6 +1604,11 @@ fn draw(
     ),
     mut drawn: Local<DrawKey>,
     (mut lists, guns, gun_games): (ResMut<chimera_ui::VirtualLists>, Res<crate::guns_picker::GunsPicker>, Res<crate::guns_picker::GunsListing>),
+    (rules, note, rungs): (
+        Option<Res<chimera_sim::minigame::gun_rules::GunRules>>,
+        Option<Res<chimera_sim::minigame::gun_rules::GunRulesNote>>,
+        Option<Res<chimera_sim::minigame::gun_rules::LadderRungs>>,
+    ),
     mut commands: Commands,
 ) {
     let (Some(theme), Some(units)) = (theme, units) else { return };
@@ -1617,6 +1627,13 @@ fn draw(
         upnp: upnp.as_ref().map(|u| format!("{:?}", u.state)).unwrap_or_default(),
         picker: picker.clone(),
         guns: (guns.clone(), gun_games.clone()),
+        guns_line: match (rules.as_deref(), rungs.as_deref()) {
+            (Some(r), Some(n)) => {
+                use chimera_sim::minigame::gun_rules;
+                gun_rules::summary(&gun_rules::Preset::builtin(), r, n.0, note.as_ref().and_then(|n| n.0.as_deref()))
+            }
+            _ => String::new(),
+        },
     };
     if *drawn == key {
         return;
@@ -1644,6 +1661,7 @@ fn draw(
         },
         guns: &guns,
         gun_games: &gun_games.0,
+        guns_line: drawn.guns_line.clone(),
     };
     let root = spawn(&mut commands, &ui, page, &menu, &p, &cx, images.as_deref_mut(), icons.as_deref_mut(), ambients.as_deref_mut(), &mut lists);
     if let Some(c) = cam {
@@ -2048,7 +2066,7 @@ fn summary(c: &mut Commands, ui: &Ui, cols: Entity, menu: &PartyMenu, cx: &Ctx) 
     let password = if value_of(cx.data, menu, "sv_password").is_empty() { "None".to_string() } else { "Set".to_string() };
     let port = value_of(cx.data, menu, "hostport");
     // Values in capitals, the server's name as its host typed it.
-    let kv: Vec<(&str, String)> = vec![
+    let mut kv: Vec<(&str, String)> = vec![
         ("Map", map.to_uppercase()),
         ("Bots", value_of(cx.data, menu, "MaxPlayer").to_uppercase()),
         ("Players", value_of(cx.data, menu, "maxplayers").to_uppercase()),
@@ -2057,6 +2075,10 @@ fn summary(c: &mut Commands, ui: &Ui, cols: Entity, menu: &PartyMenu, cx: &Ctx) 
         ("Password", password.to_uppercase()),
         ("Port", if port.trim().is_empty() { "27015".into() } else { port }),
     ];
+    // The Guns rules (`gun_rules::summary`), in an app that has them.
+    if !cx.guns_line.is_empty() {
+        kv.insert(1, ("Guns", cx.guns_line.to_uppercase()));
+    }
     ui.kv(c, pane, &kv, 6.0);
 }
 

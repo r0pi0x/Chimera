@@ -121,6 +121,13 @@ pub struct WeaponData {
     /// lends it to a ladder); None: not in one.
     #[serde(default)]
     pub class: Option<chimera_core::game_parts::GunClass>,
+    /// The gun family it belongs to: the weapons that are one gun in hand
+    /// (a game's skins, editions and levels of it), a stable id the host's
+    /// Guns rules ban or allow (`minigame::auto::GunRules`); None: its own
+    /// (`family_of`). Combat Arms' install copies get it from their
+    /// first-person model.
+    #[serde(default)]
+    pub family: Option<String>,
     /// A hint a ladder shows the player on this weapon's rung (opt-in;
     /// none by default): the named action whose bound key it names and
     /// what that does ("Press G to throw": `minigame::hud::RungHint`).
