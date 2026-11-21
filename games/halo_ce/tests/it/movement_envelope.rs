@@ -102,7 +102,9 @@ fn a_step_of_0_45_m_is_climbed_with_the_envelope_step() {
 fn a_low_ceiling_is_walked_under_standing_the_eye_under_it() {
     let ceiling = 1.7 * M;
     let level = || vec![floor(), aabb(Vec3::new(1.0, -60.0, ceiling), Vec3::new(4.0, 60.0, ceiling + 1.0))];
-    let env = MovementEnvelope { height: 1.58, crouch_height: 1.14, ..spartan() };
+    // A map whose own character's eyes are low (1.4 m, 1.0 m): the
+    // Spartan's eye goes EYE_MARGIN under its lowered top.
+    let env = MovementEnvelope { height: 1.58, crouch_height: 1.14, eye: 1.4, crouch_eye: 1.0, ..spartan() };
     let mut t = on_map(level(), Some(env));
     let mut lowest = f32::MAX;
     t.throttle(1.0, 0.0);
@@ -167,7 +169,7 @@ fn a_smaller_body_is_predicted_without_errors_through_a_doorway() {
     use chimera_world::greybox::GreyboxMapPlugin;
     use halo_ce::{game::TICK_INTERVAL, harness::HaloSim};
 
-    let source = MovementEnvelope { radius: 0.405, height: 1.575, crouch_height: 1.143, step: 0.457 };
+    let source = MovementEnvelope { radius: 0.405, height: 1.575, crouch_height: 1.143, step: 0.457, eye: 1.626, crouch_eye: 1.194 };
     let link = LinkConditions { latency: Duration::from_millis(50), jitter: Duration::ZERO, loss: 0.0 };
     let mut sim = NetSim::new(HaloSim, link, 31, 1, |app| {
         app.add_plugins(GreyboxMapPlugin);

@@ -48,8 +48,9 @@
 //! On another game's map the hull is fitted to the map's own character
 //! where that is smaller (`body`, the engine's movement envelope rule,
 //! `chimera_core::envelope`; Combat Arms states its own with `envelope`):
-//! narrower per axis, lower standing and crouched, the eye kept
-//! `EYE_MARGIN` under a lowered top, the stair step raised to the map's.
+//! narrower per axis, lower standing and crouched, a lowered body's eye
+//! `EYE_MARGIN` under its top or at the map's character's eye (whichever
+//! is higher, never above its own), the stair step raised to the map's.
 //! The model and hit boxes stay Combat Arms'. On Combat Arms' maps and
 //! without a map envelope the numbers are the table's, to the bit.
 //!
@@ -556,27 +557,30 @@ impl CameraRise {
 }
 
 /// Combat Arms' own movement envelope (`chimera_core::envelope`; metres):
-/// the hull's radius (the cylinder's, `max(halfX, halfZ)`), heights and
-/// stair step.
+/// the hull's radius (the cylinder's, `max(halfX, halfZ)`), heights,
+/// stair step and eyes (standing and fully crouched, `eye_above_centre`).
 pub fn envelope(d: &MovementData) -> chimera_core::envelope::MovementEnvelope {
     let u = d.meters_per_unit;
     let [x, y, z] = d.stand_half_extents;
+    let cy = d.crouch_half_extents[1];
     chimera_core::envelope::MovementEnvelope {
         radius: x.max(z) * u,
         height: 2.0 * y * u,
-        crouch_height: 2.0 * d.crouch_half_extents[1] * u,
+        crouch_height: 2.0 * cy * u,
         step: d.stair_step * u,
+        eye: (y + eye_above_centre(0.0, d)) * u,
+        crouch_eye: (cy + eye_above_centre(1.0, d)) * u,
     }
 }
 
 /// The movement's numbers for a Combat Arms body on a map whose envelope
 /// is `map` (the rule, `MovementEnvelope::within`, shrink only): the hull
-/// narrower per axis and lower standing and crouched, the eye kept
-/// `EYE_MARGIN` under a lowered top (standing and fully crouched), the
+/// narrower per axis and lower standing and crouched, a lowered body's eye
+/// `EYE_MARGIN` under its top or at the map's character's eye, whichever
+/// is higher, never above its own (standing and fully crouched), the
 /// stair step raised to the map's character's. The table itself where
 /// nothing changes (Combat Arms' maps, no map envelope).
 pub fn body<'a>(d: &'a MovementData, map: Option<&chimera_core::envelope::MovementEnvelope>) -> std::borrow::Cow<'a, MovementData> {
-    use chimera_core::envelope::MovementEnvelope;
     let own = envelope(d);
     let b = own.within(map);
     if b == own {
@@ -595,13 +599,13 @@ pub fn body<'a>(d: &'a MovementData, map: Option<&chimera_core::envelope::Moveme
     // `cy + eye_offset * sy + eye_crouch_offset` (`eye_above_centre`).
     let (own_sy, own_cy) = (d.stand_half_extents[1], d.crouch_half_extents[1]);
     if sy < own_sy {
-        let stand_eye = MovementEnvelope::eye_within(own_sy * (1.0 + d.eye_offset), 2.0 * own_sy, 2.0 * sy, u);
-        out.eye_offset = d.eye_offset.min(stand_eye / sy - 1.0);
+        let stand_eye = (own_sy * (1.0 + d.eye_offset)).min(b.eye / u);
+        out.eye_offset = stand_eye / sy - 1.0;
     }
     if cy < own_cy || sy < own_sy {
         let crouch_eye = own_cy + d.eye_offset * own_sy + d.eye_crouch_offset;
-        let crouch_eye = MovementEnvelope::eye_within(crouch_eye, 2.0 * own_cy, 2.0 * cy, u);
-        out.eye_crouch_offset = d.eye_crouch_offset.min(crouch_eye - cy - out.eye_offset * sy);
+        let crouch_eye = if cy < own_cy { crouch_eye.min(b.crouch_eye / u) } else { crouch_eye };
+        out.eye_crouch_offset = crouch_eye - cy - out.eye_offset * sy;
     }
     std::borrow::Cow::Owned(out)
 }

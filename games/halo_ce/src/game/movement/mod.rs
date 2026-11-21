@@ -44,8 +44,9 @@
 //! On another game's map (the party apps) the pill is the map's own
 //! character's size where that is smaller (`body`, the engine's movement
 //! envelope rule, `chimera_core::envelope`; Halo states its own with
-//! `envelope`): narrower, lower standing and crouched, the eye kept
-//! `EYE_MARGIN` under its top, and a step-up (`mover::step_up`) to the
+//! `envelope`): narrower, lower standing and crouched, a lowered end's eye
+//! `EYE_MARGIN` under its top or at the map's character's eye (whichever
+//! is higher, never above Halo's own), and a step-up (`mover::step_up`) to the
 //! map's character's step where that is higher than the 0.375 m Halo rides
 //! up. The model, hit boxes, jump and gravity stay Halo's. On Halo's maps
 //! and without a map envelope the numbers are the table's, to the bit.
@@ -226,8 +227,8 @@ pub fn push(me: Option<&mut HaloMovement>, velocity: &mut Velocity, dv: Vec3) {
 pub const EYE_MARGIN: f32 = chimera_core::envelope::EYE_MARGIN;
 
 /// Halo's own movement envelope (`chimera_core::envelope`; metres): the
-/// pill's radius and heights, and the edge it rides up at a run as its
-/// step (`MovementData::ride_step`).
+/// pill's radius and heights, the edge it rides up at a run as its step
+/// (`MovementData::ride_step`), and its cameras as the eyes.
 pub fn envelope(d: &MovementData) -> MovementEnvelope {
     let s = crate::game::METERS_PER_UNIT;
     MovementEnvelope {
@@ -235,13 +236,16 @@ pub fn envelope(d: &MovementData) -> MovementEnvelope {
         height: d.height_stand * s,
         crouch_height: d.height_crouch * s,
         step: d.ride_step * s,
+        eye: d.camera_stand * s,
+        crouch_eye: d.camera_crouch * s,
     }
 }
 
 /// The movement's numbers for a Halo body on a map whose envelope is `map`
 /// (the envelope's rule, `MovementEnvelope::within`): a narrower pill, a
-/// lower one standing and crouched (the eye kept `EYE_MARGIN` under its top,
-/// both ends of the crouch blend, so it moves smoothly), and the step-up
+/// lower one standing and crouched (a lowered end's eye `EYE_MARGIN` under
+/// its top or at the map's character's eye, whichever is higher, never
+/// above its own; both ends of the crouch blend, so it moves smoothly), and the step-up
 /// (`MovementData::step_up`) when the map's character steps higher. The
 /// table itself, untouched, where the rule changes nothing (Halo's maps,
 /// no map envelope): the same numbers to the bit.
@@ -266,9 +270,12 @@ pub fn body<'a>(d: &'a MovementData, map: Option<&MovementEnvelope>) -> Cow<'a, 
     if b.step > own.step {
         out.step_up = b.step / s;
     }
-    let margin = EYE_MARGIN / s;
-    out.camera_stand = out.camera_stand.min(out.height_stand - margin);
-    out.camera_crouch = out.camera_crouch.min(out.height_crouch - margin);
+    if out.height_stand < d.height_stand {
+        out.camera_stand = d.camera_stand.min(b.eye / s);
+    }
+    if out.height_crouch < d.height_crouch {
+        out.camera_crouch = d.camera_crouch.min(b.crouch_eye / s);
+    }
     Cow::Owned(out)
 }
 

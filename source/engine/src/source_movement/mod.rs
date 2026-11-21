@@ -514,8 +514,8 @@ impl SourceMovementConfig {
     }
 
     /// This config's character as a movement envelope
-    /// (`chimera_core::envelope`, metres): the box's half width, heights
-    /// and step.
+    /// (`chimera_core::envelope`, metres): the box's half width, heights,
+    /// step and eyes (CS:S's eye, 64 u, is over its 62 u box).
     pub fn envelope(&self) -> chimera_core::envelope::MovementEnvelope {
         let u = METERS_PER_UNIT;
         chimera_core::envelope::MovementEnvelope {
@@ -523,18 +523,20 @@ impl SourceMovementConfig {
             height: self.stand_height * u,
             crouch_height: self.duck_height * u,
             step: self.stepsize * u,
+            eye: self.eye_stand * u,
+            crouch_eye: self.eye_duck * u,
         }
     }
 
     /// This character's movement body on a map whose envelope is `map`
     /// (the envelope rule, `MovementEnvelope::within`, shrink only): the
-    /// box narrower and lower (standing and ducked), the eyes kept
-    /// `EYE_MARGIN` under a lowered top, the step raised to the map's
+    /// box narrower and lower (standing and ducked), a lowered body's eyes
+    /// `EYE_MARGIN` under its top or at the map's character's eyes,
+    /// whichever is higher (never above its own), the step raised to the map's
     /// character's. The model and hit boxes are not here and stay the
     /// character's own. Itself, borrowed, where nothing changes (its own
     /// game's maps, no map envelope).
     pub fn fitted(&self, map: Option<&chimera_core::envelope::MovementEnvelope>) -> std::borrow::Cow<'_, Self> {
-        use chimera_core::envelope::MovementEnvelope;
         let own = self.envelope();
         let b = own.within(map);
         if b == own {
@@ -546,8 +548,11 @@ impl SourceMovementConfig {
         c.stand_height = self.stand_height.min(b.height / u);
         c.duck_height = self.duck_height.min(b.crouch_height / u).min(c.stand_height);
         c.stepsize = self.stepsize.max(b.step / u);
-        c.eye_stand = MovementEnvelope::eye_within(self.eye_stand, self.stand_height, c.stand_height, u);
-        c.eye_duck = MovementEnvelope::eye_within(self.eye_duck, self.duck_height, c.duck_height, u).min(c.eye_stand);
+        if c.stand_height < self.stand_height {
+            c.eye_stand = self.eye_stand.min(b.eye / u);
+        }
+        let eye_duck = if c.duck_height < self.duck_height { self.eye_duck.min(b.crouch_eye / u) } else { self.eye_duck };
+        c.eye_duck = eye_duck.min(c.eye_stand);
         std::borrow::Cow::Owned(c)
     }
 }

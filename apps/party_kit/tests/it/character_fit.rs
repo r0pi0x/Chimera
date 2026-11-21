@@ -8,9 +8,10 @@
 //! and no taller than Combat Arms' hull and its eye 0.1 m under the top;
 //! without Combat Arms' envelope the same doorway stops it. A Combat Arms
 //! player's body and eye are the same on a TF2 map as on none (it is the
-//! smaller one every way); on a CS:S map it keeps its width and takes
-//! CS:S's lower box heights (62 u standing, 45 ducked), the eye under
-//! the top.
+//! smaller one every way); on a CS:S map it keeps its width and its eyes
+//! and takes CS:S's lower box heights (62 u standing, 45 ducked: CS:S's
+//! own movement box, its eye 64 u over it). TF2 and HL2:DM players on a
+//! CS:S map take its 62 u box and see from CS:S's own 64 u eye, not lower.
 
 use bevy::prelude::*;
 use chimera_core::{
@@ -137,13 +138,43 @@ fn a_combat_arms_player_keeps_its_body_on_a_tf2_map_and_its_width_on_cs_sources(
     assert_eq!(body(&on_tf2), body(&stand), "standing on a TF2 map");
     assert_eq!(body(&crouch_tf2), body(&crouch), "crouched on a TF2 map");
     // CS:S's box is wider but lower (62 u standing, 45 ducked: 1.57 m and
-    // 1.14 m, specs/cs_source/movement.md): the width stays Combat Arms',
-    // the heights are CS:S's, the eye under each top.
+    // 1.14 m, specs/cs_source/movement.md "Hulls, eyes and ducking", the
+    // box CS:S moves with): the width stays Combat Arms', the heights are
+    // CS:S's, and the eyes stay Combat Arms' own (1.54 m and 1.11 m, under
+    // CS:S's own 64 u and 47 u eyes, so the rule leaves them).
     let cs = |u: f32| u * 0.0254;
+    let eye = |s: &MovementState| s.eye_offset.y - s.hull_min.y;
     for (s, own, tall, what) in [(&on_cs, &stand, cs(62.0), "standing"), (&crouch_cs, &crouch, cs(45.0), "crouched")] {
         assert_eq!(s.hull_max.x, own.hull_max.x, "{what}: as narrow as its own");
         let h = s.hull_max.y - s.hull_min.y;
         assert!((h - tall).abs() < 1e-3, "{what}: CS:S's height {tall}, got {h}");
-        assert!(s.hull_max.y - s.eye_offset.y >= EYE_MARGIN - 1e-4, "{what}: the eye under the top");
+        assert!((eye(s) - eye(own)).abs() < 1e-4, "{what}: its own eye {}, got {}", eye(own), eye(s));
+    }
+    assert!(eye(&stand) < cs(64.0) && eye(&crouch) < cs(47.0));
+}
+
+/// A Source player's eye above its feet, and its box's height, on a map of
+/// `game`.
+fn source_body(movement: &'static str, game: Option<&str>) -> (f32, f32) {
+    let mut sim = on_map(game);
+    let level = doorway_level(ca_unit(&sim), 1000.0, 1000.0);
+    sim.app.world_mut().insert_resource(level);
+    let p = player(&mut sim, movement);
+    let s = sim.state(p);
+    (s.eye_offset.y - s.hull_min.y, s.hull_max.y - s.hull_min.y)
+}
+
+/// TF2's and HL2:DM's players on a CS:S map: CS:S's 62 u box, and the eye
+/// at CS:S's own 64 u (above that box, as CS:S's is), not 0.1 m under it.
+#[test]
+fn bigger_source_players_on_a_cs_source_map_see_from_its_own_eye() {
+    let u = 0.0254;
+    for movement in [tf2::game::movement::ID, hl2dm::game::movement::ID] {
+        let (own_eye, _) = source_body(movement, None);
+        let (eye, tall) = source_body(movement, Some(cs_source::game::GAME));
+        assert!((tall - 62.0 * u).abs() < 1e-3, "{movement}: CS:S's box, got {tall}");
+        let want = own_eye.min(64.0 * u);
+        assert!((eye - want).abs() < 1e-3, "{movement}: the eye {want} (CS:S's own 64 u or its own), got {eye}");
+        assert!(eye > tall, "{movement}: the eye over the box, as CS:S's");
     }
 }

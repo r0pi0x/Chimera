@@ -11,8 +11,8 @@ are narrower than a TF2 box (specs/combat_arms/movement.md, "World scale
 ## The rule (done)
 
 1. Each game declares its player envelope: standing width, standing
-   height, crouched height and the step it walks up, the size its maps
-   were built for (`chimera_core::envelope::MovementEnvelope`, metres).
+   height, crouched height, the step it walks up and its eye heights
+   (standing, crouched), the size its maps were built for (`chimera_core::envelope::MovementEnvelope`, metres).
    It comes from the game's own movement data, the same numbers its
    movement collides with: Source's config (`SourceMovementConfig::
    envelope`; CS:S, HL2:DM, TF2), Combat Arms' `data/movement.toml`
@@ -25,8 +25,11 @@ are narrower than a TF2 box (specs/combat_arms/movement.md, "World scale
    own way: a box per axis (`MovementEnvelope::fit_half_widths`: Source's
    box, Combat Arms' hull), a round body by its radius (Halo's pill). A
    sphere or capsule body (none yet) would take `radius` the same way.
-3. The eye is kept `EYE_MARGIN` (0.1 m) under a top the rule lowered
-   (`MovementEnvelope::eye_within`), standing and crouched; first person
+3. Under a top the rule lowered, the eye goes `EYE_MARGIN` (0.1 m) under
+   that top or to the map's own character's eye, whichever is higher,
+   and never above the character's own (`MovementEnvelope::fitted_eye`),
+   standing and crouched: a character sees no lower than the map's own
+   players do unless its own eye is lower. First person
    and the third-person pivot follow `MovementState::eye_offset`, so no
    camera goes into a ceiling the body fits under.
 4. The model, hit boxes and look stay full size: only what the character
@@ -44,14 +47,32 @@ graveyard's 104 x 60 u doorways on a Combat Arms map, blocked without
 the envelope, the eye under the top; a Combat Arms player's body the
 same on a TF2 map, its width on a CS:S map), `halo_ce` `movement_envelope`.
 
-Note: CS:S's measured box is lower than its model (62 u standing, 45
-ducked: 1.57 m and 1.14 m; its eye, 64 u, is above the box's top), so a
-Combat Arms player (1.8 m, crouched 1.44 m) on a CS:S map keeps its
-width but takes CS:S's heights, its eye 0.1 m under the top (1.47 m
-against its own 1.49 m). That is the rule as stated; if it reads wrong
-in play, the heights could fit to the map game's eye instead of its box
-(the user's call). On a TF2 map nothing changes (TF2's box is bigger
-every way).
+Heights are the map game's movement boxes, eyes its own (fixed
+2026-11-21): CS:S's 62 u standing and 45 u ducked
+(specs/cs_source/movement.md, "Hulls, eyes and ducking") are the
+collision box CS:S moves with, read every tick by the probe; the 8.5 u
+air-duck lift is half their difference, and our movement collides with
+them tick-exact. CS:S's eye (64 u, 47 ducked) is 2 u over that box, so
+its maps' clearance is the box and its players see from above it. The
+first version kept a lowered eye 0.1 m under the top, which put a TF2
+player's eye on CS:S's maps at 58 u, under CS:S's own 64; now the eye
+floor is the map game's own eye. Each game, fitted to another's map
+(own box standing / crouched, own eye; metres):
+
+| Game | Height | Crouched | Eye | Crouched eye | On CS:S maps |
+|---|---|---|---|---|---|
+| CS:S (62/45 u, eye 64/47) | 1.575 | 1.143 | 1.626 | 1.194 | own |
+| HL2:DM (72/36 u, eye 64/28) | 1.829 | 0.914 | 1.626 | 0.711 | box 1.575, eye 1.626 (was 1.475) |
+| TF2 (82/62 u, eye 68/45; classes' eyes over that) | 2.083 | 1.575 | 1.727 | 1.143 | box 1.575/1.143, eye 1.626 (was 1.475), crouched its own 1.143 (was 1.043) |
+| Combat Arms (100/80 u at 0.0185) | 1.850 | 1.480 | 1.536 | 1.110 | box 1.575/1.143, eyes its own (were 1.475/1.043) |
+| Halo (0.7/0.5 WU) | 2.134 | 1.524 | 1.890 | 1.067 | box 1.575/1.143, eye 1.626 (was 1.475), crouched its own |
+
+The envelopes' sizes did not change; only a lowered body's eye. Each
+game's own maps stay the identity, and a smaller game's character keeps
+its own body. Tests: `character_fit`
+(`a_combat_arms_player_keeps_its_body_on_a_tf2_map_and_its_width_on_cs_sources`:
+its own eyes on CS:S's maps; `bigger_source_players_on_a_cs_source_map_see_from_its_own_eye`:
+TF2 and HL2:DM at CS:S's 64 u), `chimera_core` `envelope` unit tests.
 
 ## Later (not built)
 
