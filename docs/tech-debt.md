@@ -30,6 +30,7 @@ fails when this file is stale; never edit the generated lines).
 - deps: `vbsp` pulls `binrw` 0.14, which rustc flags as future-incompatible. OK for now: Upstream; watch on Rust upgrades.
 - deps: `bevy_replicon_renet`, `bevy_renet` and `renetcode` come from their authors' repositories (pinned in Cargo.lock): no crates.io release supports Bevy 0.20 yet. OK for now: Back to crates.io once released.
 - build: Windows build not yet verified. OK for now: Needs the Windows PC set up (see plans).
+- workspace-hack: `cargo hakari verify` always lists crates as uncovered; `generate` finds nothing to change. OK for now: .config/hakari.toml leaves crates out of the hack on purpose (`final-excludes`), which verify counts as drift; `generate` is the check.
 
 ## From the code (generated)
 

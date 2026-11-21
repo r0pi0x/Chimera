@@ -333,7 +333,7 @@ module list is `docs/modules.md`.
 
 - 1: Known technical debt | Small, current, honest
 - 14: Without a file
-- 34: From the code (generated)
+- 35: From the code (generated)
 
 ## docs/weapon-data.md
 
