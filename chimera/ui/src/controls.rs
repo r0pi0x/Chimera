@@ -48,7 +48,10 @@
 //!   a double press select all (the screens keep one).
 //! - **States** (`State`; the kit's design rules, 2026-11-14): hover is a
 //!   faint tint (`Hover`, shown live by `show_hover` from the pointer, no
-//!   rebuild), the element's own fill lifting: no tick anywhere (the
+//!   rebuild; a screen drawn again keeps it: `carry_hover` starts a node
+//!   spawned where a hovered one went as hovered, its tint and hero lift
+//!   too, so a rebuild under a resting pointer draws no different
+//!   frame), the element's own fill lifting: no tick anywhere (the
 //!   user's call); a row hovered or focused lifts and shows the accent
 //!   bar at the left, its control no focus of its own (one marker a row,
 //!   2026-11-21); a control alone shows focus as its own accent detail; selected is a white fill;
@@ -2315,6 +2318,109 @@ pub fn show_hover(
     }
 }
 
+/// The pointer's states of the last frame (`carry_hover`): each hovered
+/// or pressed node's place in its tree (`tree_place`), the node, its hero
+/// slab's lift.
+#[derive(Resource, Default)]
+pub struct HoverCarry {
+    last: Vec<(Vec<(Entity, u32)>, Entity, Option<f32>)>,
+}
+
+/// A node's place in its tree: each node from the root down to it, with
+/// its index under its parent (the root's 0).
+fn tree_place(e: Entity, parents: &Query<&ChildOf>, children: &Query<&Children>) -> Vec<(Entity, u32)> {
+    let mut place = Vec::new();
+    let mut at = e;
+    loop {
+        let Ok(p) = parents.get(at) else {
+            place.push((at, 0));
+            break;
+        };
+        let i = children.get(p.parent()).ok().and_then(|c| c.iter().position(|ch| ch == at)).unwrap_or(0);
+        place.push((at, i as u32));
+        at = p.parent();
+    }
+    place.reverse();
+    place
+}
+
+/// Whether `new` (a node spawned this frame) stands where `old` stood:
+/// under the same node that stayed (its deepest ancestor not spawned this
+/// frame), at the same indices below the part drawn again (whose own
+/// index there may differ: the old part went from the list), or, a whole
+/// tree drawn again, at the same indices from its root.
+fn same_place(new: &[(Entity, u32)], old: &[(Entity, u32)], born: &impl Fn(Entity) -> bool) -> bool {
+    if new.len() != old.len() {
+        return false;
+    }
+    let from = match new[..new.len() - 1].iter().rposition(|(e, _)| !born(*e)) {
+        Some(k) if old[k].0 != new[k].0 => return false,
+        Some(k) => k + 2,
+        None => 1,
+    };
+    (from..new.len()).all(|j| new[j].1 == old[j].1)
+}
+
+/// A screen drawn again keeps the pointer's look (module doc, "States"):
+/// a clickable node spawned where last frame's node, despawned since, was
+/// hovered or pressed (`same_place`) starts hovered, its `Hover` tint on
+/// and its hero slab as far lifted, before the styles and the layout, so
+/// the redrawn frame draws as the one before (Bevy's focus would see it
+/// only next frame, and the lift would ease in again: a hovered button
+/// flashed on every redraw). The next frame's focus corrects it if the
+/// pointer isn't on it. Then remembers this frame's.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn carry_hover(
+    mut carry: ResMut<HoverCarry>,
+    mut nodes: Query<(Entity, &mut Interaction, Option<&Hover>, Option<&mut BackgroundColor>, Option<&Children>)>,
+    new: Query<(), Added<ComputedNode>>,
+    mut slabs: Query<(&mut HeroSlab, &mut Node, Option<&Children>)>,
+    mut glows: Query<&mut UiSlant, With<HeroGlow>>,
+    parents: Query<&ChildOf>,
+    children: Query<&Children>,
+    entities: &bevy::ecs::entity::Entities,
+    units: Res<UiUnits>,
+) {
+    if !carry.last.is_empty() {
+        let born_now: Vec<Entity> = nodes.iter_mut().filter(|(_, i, ..)| i.is_added() && **i == Interaction::None).map(|(e, ..)| e).collect();
+        let born = |e: Entity| new.contains(e);
+        for e in born_now {
+            let place = tree_place(e, &parents, &children);
+            // Only in place of a node that went (a screen drawn again).
+            let Some(&(_, _, lift)) =
+                carry.last.iter().find(|(old_place, old, _)| *old != e && !entities.contains_spawned(*old) && same_place(&place, old_place, &born))
+            else {
+                continue;
+            };
+            let Ok((_, mut i, hover, bg, kids)) = nodes.get_mut(e) else { continue };
+            *i = Interaction::Hovered;
+            if let (Some(h), Some(mut bg)) = (hover, bg) {
+                bg.0 = h.over;
+            }
+            let Some(lift) = lift else { continue };
+            for ch in kids.into_iter().flat_map(|k| k.iter()) {
+                let Ok((mut slab, mut node, glow)) = slabs.get_mut(ch) else { continue };
+                slab.lift = lift;
+                let k = Pace::Fast.ease().sample(lift);
+                node.right = if k > 0.0 { units.val(-0.4 * k) } else { Val::ZERO };
+                for g in glow.into_iter().flat_map(|g| g.iter()) {
+                    if let Ok(mut g) = glows.get_mut(g) {
+                        g.alpha = k;
+                    }
+                }
+            }
+        }
+    }
+    carry.last.clear();
+    for (e, i, _, _, kids) in &nodes {
+        if *i == Interaction::None {
+            continue;
+        }
+        let lift = kids.into_iter().flat_map(|k| k.iter()).find_map(|ch| slabs.get(ch).ok().map(|(s, ..)| s.lift));
+        carry.last.push((tree_place(e, &parents, &children), e, lift));
+    }
+}
+
 /// The heroes' hover: each slab's lift eases toward its button's hover
 /// over `Pace::Fast` (a snap at motion scale 0); the accent fades in and
 /// the right edge leans out .4 cq with it.
@@ -2462,7 +2568,9 @@ impl Plugin for ControlsPlugin {
     fn build(&self, app: &mut App) {
         crate::motion::init(app);
         app.init_resource::<PickMemory>()
+            .init_resource::<HoverCarry>()
             .add_systems(Update, (show_hover, animate_heroes, crate::form::blink))
+            .add_systems(PostUpdate, carry_hover.before(crate::style::resolve_styles).in_set(crate::UiKitSystems))
             .add_systems(PostUpdate, draw_kit_icons.in_set(crate::UiKitSystems))
             .add_systems(
                 PostUpdate,

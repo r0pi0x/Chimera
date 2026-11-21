@@ -23,8 +23,10 @@
 //!   stock hand has the weapon's arm nodes) or a vertex has one bone.
 //! - No colour variants are in our table yet (the code reads them; every
 //!   player's model colour is none), no overridable models or clan marks
-//!   (skins 7, 8); the uniform item index is the look's camouflage index;
-//!   the faces' `RedirectForHandsSkin` aren't read from the install.
+//!   (skins 7, 8); the uniform item index is the look's camouflage index.
+//! - An infected look (the override's face) wears the override's hand
+//!   record with the sleeve of the body's default face (which face the
+//!   game takes is the combat-arms plan's open question).
 //! - Only the local player's own look picks its hands (a spectated
 //!   player's gun shows the default character's unless the local player's
 //!   look made the same model), and a look change shows at once, not at
@@ -193,7 +195,36 @@ pub fn choose_in(data: &CharacterData, profile: &HandProfile) -> Option<HandChoi
         .model(profile.model)
         .and_then(|m| m.hands.as_ref())
         .or(data.default_model().hands.as_ref())?;
-    choose_with(&data.hand_records, model, &BTreeMap::new(), profile)
+    // The faces' sleeve redirects (`RedirectForHandsSkin`, the install's).
+    let faces: BTreeMap<u32, Face> = data
+        .face
+        .iter()
+        .filter_map(|f| {
+            let redirect = u32::try_from(f.hands_skin_redirect?).ok()?;
+            Some((u32::try_from(f.id).ok()?, Face { redirect_for_hands_skin: Some(redirect) }))
+        })
+        .collect();
+    // An infected look (the body's infection override's face): the
+    // override's hand record, none for -1 (game_modes.md Corrections
+    // (2026-10-30) 5), its sleeve by the body's own face (the infected
+    // faces are past every body's `HandsSkin` list, whose fallback is the
+    // hand record's placeholder `Hands`, no texture: grey arms, feedback
+    // 42750262; which face the game takes is the plan's open question).
+    if let Some(o) = data
+        .infection_of(profile.model)
+        .filter(|o| u32::try_from(o.face).ok() == Some(profile.face))
+    {
+        let infected = CharacterHands {
+            hand_index: o.hand,
+            ..model.clone()
+        };
+        let own = HandProfile {
+            face: u32::try_from(data.default_face(profile.model)).unwrap_or(0),
+            ..*profile
+        };
+        return choose_with(&data.hand_records, &infected, &faces, &own);
+    }
+    choose_with(&data.hand_records, model, &faces, profile)
 }
 
 /// The default character's hands in `data` (the default look's): those

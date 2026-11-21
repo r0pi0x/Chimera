@@ -1283,3 +1283,55 @@ fn the_consoles_suggestions_show_and_tab_completes_at_the_menu() {
     sim.ticks(2);
     assert_eq!(drawn_by(sim.app.world(), suggest), None);
 }
+
+/// The report dialog at the menu, drawn again on every key (the text is
+/// in it), is on the menu's camera from each drawing's first frame: given
+/// it a frame later by `cameras`, each new dialog drew its first frame on
+/// the shell's camera, off at the menu, and the whole dialog blinked out
+/// on every key press (the report, 2026-11-21).
+#[test]
+fn the_report_dialog_redrawn_per_key_is_on_the_menus_camera_from_its_first_frame() {
+    use bevy::input::{ButtonState, keyboard::{Key, KeyboardInput}};
+    use chimera_client::client::feedback::{Feedback, Phase};
+    use party_kit::feedback_signal::{DialogRoot, FeedbackSignalPlugin};
+    const SIGNAL: &str = include_str!("../../../ultimate_gun_game/data/theme.toml");
+    let mut sim = local_plus(true, None, false, |app| {
+        app.add_message::<KeyboardInput>()
+            .insert_resource(chimera_ui::Theme::from_toml(SIGNAL).unwrap())
+            .insert_resource(chimera_ui::UiUnits::new(1080.0, 1.0))
+            .add_plugins(FeedbackSignalPlugin);
+    });
+    sim.app.world_mut().spawn((Camera::default(), IsDefaultUiCamera));
+    sim.ticks(2);
+    {
+        let mut f = sim.app.world_mut().resource_mut::<Feedback>();
+        f.phase = Phase::Open;
+        f.text = "the start game button".into();
+    }
+    sim.ticks(2);
+    let w = sim.app.world_mut();
+    let menu_cam = w.query_filtered::<Entity, With<main_menu::MenuUiCamera>>().single(w).expect("the menu's camera");
+    let dialog = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        let d = w.query_filtered::<Entity, With<DialogRoot>>().single(w).expect("one dialog");
+        (d, w.get::<UiTargetCamera>(d).map(|t| t.entity()))
+    };
+    let (mut last, cam) = dialog(&mut sim);
+    assert_eq!(cam, Some(menu_cam), "on the menu's camera");
+    for c in "keeps".chars() {
+        sim.app.world_mut().write_message(KeyboardInput {
+            key_code: KeyCode::KeyK,
+            logical_key: Key::Character(c.to_string().into()),
+            state: ButtonState::Pressed,
+            text: None,
+            repeat: false,
+            window: Entity::PLACEHOLDER,
+        });
+        sim.ticks(1);
+        let (d, cam) = dialog(&mut sim);
+        assert_ne!(d, last, "{c}: the dialog was drawn again");
+        assert_eq!(cam, Some(menu_cam), "{c}: on the menu's camera in its first frame");
+        last = d;
+    }
+    assert!(sim.app.world().resource::<Feedback>().text.ends_with("keeps"));
+}

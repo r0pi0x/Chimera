@@ -139,7 +139,7 @@ pub struct NpcRecord {
 
 /// An infection override (`Overidable_Model#`, characters.md 2): the
 /// face an infected body wears (`FaceIndex`), its render styles and
-/// first-person hands (read, not drawn).
+/// first-person hands (`view_model::hands::choose_in`).
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct InfectionRecord {
@@ -189,6 +189,10 @@ pub struct FaceRecord {
     /// infected faces' eyes).
     #[serde(default)]
     pub client_fx: Vec<String>,
+    /// `RedirectForHandsSkin` (view_models.md 2): the face whose sleeve
+    /// (`HandsSkin` entry) the first-person hands wear (the install's).
+    #[serde(default)]
+    pub hands_skin_redirect: Option<i32>,
 }
 
 /// A socket attachment a player wears (characters.md 2): goggles or a
@@ -622,6 +626,7 @@ fn merge_install_pieces(data: &mut CharacterData, ca: &CaDataInner) {
             hair: r.hair,
             render_styles: r.render_styles.clone(),
             client_fx: r.client_fx.clone(),
+            hands_skin_redirect: r.hands_skin_redirect,
         };
         match data.face.iter_mut().find(|f| f.id == id) {
             Some(f) => *f = face,
@@ -669,6 +674,7 @@ fn merge_npcs(data: &mut CharacterData, models: &crate::game::data::attributes::
             hair: r.hair,
             render_styles: r.render_styles.clone(),
             client_fx: r.client_fx.clone(),
+            hands_skin_redirect: None,
         });
     }
     let by_name = |list: &[(i32, String)], name: &str| list.iter().find(|(_, n)| !n.is_empty() && n.eq_ignore_ascii_case(name)).map_or(-1, |(i, _)| *i);
@@ -937,7 +943,8 @@ impl CharacterData {
 
     /// The look body `body` has infected: its override's face (game_modes.md
     /// M8, characters.md 2), else its default face. The override's render
-    /// styles and hands aren't drawn (docs/plans/active/combat-arms.md).
+    /// styles aren't drawn (docs/plans/active/combat-arms.md); its hands
+    /// are (`view_model::hands::choose_in`).
     pub fn infected_look(&self, body: i32) -> Selection {
         // An NPC body is infected as it is (no override: 13.2).
         if self.model(body).is_some_and(|m| m.npc.is_some()) {

@@ -7,7 +7,8 @@
 //! sockets through the animations, root translation included (5-7), both
 //! by the game's own sampling and as drawn (the converted model), and its
 //! state machine in play on the greybox; the M67's throw as drawn (every
-//! node as the game samples it, the skinned arms intact). The hand model (`CHARS_M_HAND`)
+//! node as the game samples it, the skinned arms intact); every rung look's
+//! hands, infected too, whole and textured. The hand model (`CHARS_M_HAND`)
 //! and the M4A1 (case 8) are V2-keyed: those parts note and skip. Passes
 //! with a note without `[games.combat_arms] path` in chimera.local.toml.
 
@@ -530,4 +531,53 @@ fn m67_throw_poses_follow_the_data() {
     }
     bad.truncate(20);
     assert!(bad.is_empty(), "{bad:#?}");
+}
+
+/// Every rung body's first-person hands (`hands::choose_in`), as itself
+/// and infected (`CharacterData::infected_look`: the override's hand
+/// record), load from the install with every piece textured: the
+/// infected's sleeve fell back to the placeholder `Hands` and drew grey
+/// (feedback 42750262: the Quarantine hand's arms).
+#[test]
+fn every_rung_looks_hands_load_textured() {
+    let Some(mount) = mount() else { return };
+    if !(combat_arms::game::mount::can_read("V1") && combat_arms::game::mount::can_read("V2")) {
+        eprintln!("skipping: needs the V1 and V2 keys");
+        return;
+    }
+    let ca = combat_arms::game::data::CaData::install();
+    if ca.attributes().is_none() {
+        eprintln!("skipping: the install's attribute data doesn't read");
+        return;
+    }
+    let file = |p: &str| mount.read(p).ok();
+    let ch = ca.characters();
+    let mut bad = Vec::new();
+    let mut checked = 0;
+    for body in ch.rung_bodies() {
+        // A body the install lacks is left out of the rungs (`rungs`).
+        if ch.model(body).is_none_or(|m| mount.read(&m.file).is_err()) {
+            continue;
+        }
+        for (what, look) in [("own", ch.default_look(body)), ("infected", ch.infected_look(body))] {
+            let profile = hands::profile_of(ch, &look);
+            let Some(choice) = hands::choose_in(ch, &profile) else { continue };
+            checked += 1;
+            let mut map = MapData::default();
+            match view_model::load_hands(&choice, &mut map, &file) {
+                Ok((meshes, _)) => {
+                    let untextured: Vec<&str> = meshes.iter().filter(|m| m.texture.is_none()).map(|m| m.material.as_str()).collect();
+                    if !untextured.is_empty() || meshes.is_empty() {
+                        bad.push(format!("body {body} {what} (face {}): {choice:?}: untextured {untextured:?}", look.face));
+                    }
+                }
+                Err(e) => bad.push(format!("body {body} {what} (face {}): {choice:?}: {e}", look.face)),
+            }
+        }
+    }
+    eprintln!("{checked} looks' hands checked");
+    for b in &bad {
+        eprintln!("{b}");
+    }
+    assert!(bad.is_empty(), "{} looks' hands don't load whole", bad.len());
 }
