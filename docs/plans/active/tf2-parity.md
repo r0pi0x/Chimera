@@ -1125,3 +1125,14 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   launcher's data, 0 stock; detonation uses it too); the looks' tuned
   `armed.after` is gone (read from the data). Tests 29b-d, the pulse's
   rows (stock 0.8, Quickiebomb 0.6). No capture made.
+- 2026-11-20 (spec pass, css-spec-reload; CS:S sounds.md 5.1, Open
+  question 9 closed): measured on the real CS:S client. Others **do** hear
+  a CS:S gun's reload parts: the view model's reload events, same names,
+  order and gaps, played client-side from the reloading player (CHAN_ITEM,
+  70 dB), the first part when the reload's start arrives and the later
+  ones about 0.075 s behind it. Others hear no draw sound (the knife's
+  server-sent draw aside), no bolt after an AWP/Scout shot and no other
+  firing event. So e177175a6's "others hear nothing" is right for draws
+  and shot bolts but wrong for reloads. HL2:DM unchanged: its "owner"
+  sounds (.357, AR2, crossbow reloads) reach nobody else (effects_sounds.md
+  15.3).

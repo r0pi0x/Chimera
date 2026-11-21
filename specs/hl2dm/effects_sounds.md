@@ -774,6 +774,18 @@ the server to all in range including the owner.
 The `_npc`/`NPC_*` keys and `Burst`, `Special1/2` of the pistol and SMG1
 are never played by players.
 
+"Owner" rows are heard by nobody else (checked 2026-11-20 against the
+install's models): another player's gun is drawn with its world model,
+and HL2:DM's world gun models carry only NPC events (muzzle flash, shell,
+NPC fire), while the reload events in the human and Combine animations
+(reload, reload sound, fill clip) are handled for NPCs only, never for
+players. So for others: the pistol's and SMG1's
+reload sound once at the reload's start, the shotgun's per shell and its
+pump (all "shared", sent by the server); nothing for the .357's, AR2's or
+crossbow's reload. This differs from CS:S, where others hear a gun's
+reload parts (CS:S sounds.md 5.1). Not measured live: HL2:DM's bots on
+dm_lockdown did not fight in a 100 s capture.
+
 #### 15.4 Pickups, items, suit, chargers
 
 | Event | Entry | Channel, volume, pitch, level, waves | Who |
