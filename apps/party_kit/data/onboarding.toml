@@ -1,0 +1,133 @@
+# The first-run screens' words (party_kit::onboarding; docs/plans/active/
+# onboarding.md). `{hub}`, `{host}`, `{name}` and `{user}` are filled in.
+# The layout and colours are the theme's; only the words live here.
+
+brand = "Lucker Party"
+steps = ["01 Invite", "02 Hub", "03 Name", "04 Key"]
+
+[welcome]
+tag = "Welcome"
+eyebrow = "Step 1 of 4 · Invite"
+title = "Paste your invite"
+lead = "Your hub's owner sent you an invite. It knows where the hub is, how to tell it's really them, and holds a one-time code. Paste the link, a web address, or just the code."
+label = "Invite · link, web address or code"
+label_clipboard = "Filled in from your clipboard"
+label_opened = "Opened from a link"
+placeholder = "chimera-hub://...  or  ABC-DEF-GHJ"
+idle = "Press Enter to check it"
+continue = "Continue"
+have_account = "I already have an account"
+skip = "Play without an account"
+skip_note = "LAN · direct connect · your own installs"
+pane_title = "What an invite carries"
+parts = ["Hub address", "Certificate fingerprint", "One-time code"]
+parts_idle = ["where to connect", "proves the hub is the one the owner meant", "works once, then it's yours"]
+pane_note = "Nothing is sent until you press Enter or Continue."
+not_invite = "Not an invite · expected a link, a web address or a code"
+needs_hub = "A bare code needs its hub: paste the whole link"
+from_hub = "Read from the hub"
+missing = "No code in it"
+
+[checking]
+title = "Reaching the hub..."
+rows = ["Address", "Certificate", "Code"]
+connecting = "Connecting"
+cancel = "Cancel"
+
+[errors]
+used_what = "This invite was already used"
+used_why = "Each invite works once, and this one has made an account already. If that was you, you're in: use \"I already have an account\"."
+used_do = "Otherwise, ask the hub's owner for a new invite."
+unknown_what = "This code doesn't match any invite"
+unknown_why = "Check it against the message: 9 letters and digits, in three groups."
+unknown_do = "If it still fails, ask the hub's owner for a new invite."
+revoked_what = "This invite was withdrawn"
+revoked_why = "The owner withdrew this invite, or it expired."
+revoked_do = "Ask the hub's owner for a new one."
+busy_what = "Too many tries"
+busy_why = "This PC tried too many codes in the last hour."
+busy_do = "Wait an hour, then try again."
+unreachable_what = "Can't reach the hub"
+unreachable_why = "{host} didn't answer. It may be offline right now, or your network may be blocking it. Your invite is still good: nothing was used."
+unreachable_do = "Try again in a minute. If it keeps failing, ask the owner whether the hub is up."
+certificate_what = "This isn't the hub your invite names"
+certificate_why = "Something answered at {host}, but its certificate isn't the one in your invite. Someone may be in between you and the hub, or the hub changed its certificate. Nothing was sent to it."
+certificate_do = "Don't go on. Tell the hub's owner, and ask for a fresh invite."
+other_what = "Something went wrong"
+other_do = "Try again; if it keeps failing, report it with F10."
+try_another = "Try another"
+retry = "Retry"
+back = "Back"
+copy_details = "Copy details for the owner"
+invite_says = "Invite says"
+hub_showed = "Hub showed"
+
+[hub]
+eyebrow = "Step 2 of 4 · Hub"
+joining = "You're joining"
+rows = ["Address", "Certificate", "Players"]
+matches = "Matches your invite"
+pinned_none = "Checked by the hub's web certificate"
+join = "Join {hub}"
+not_this = "Not this one"
+motd = "Message of the day"
+no_motd = "The owner hasn't written a message yet."
+note = "The hub's name and message come from the hub; the certificate check is ours."
+
+[name]
+eyebrow = "Step 3 of 4 · Name"
+title = "Choose a name"
+username = "Username · how people find you"
+display = "Display name · shown in lobbies and the feed"
+optional = "Optional"
+avatar = "Avatar · pick a look"
+rules = ["3 TO 20 CHARACTERS", "a–z, 0–9 AND _ ONLY", "STARTS WITH A LETTER", "NOT TAKEN"]
+available = "Available on {hub}"
+checking = "Checking {hub}..."
+taken = "Someone on {hub} has @{name}"
+free = "Free:"
+fix = "Fix the marked rules"
+empty = "Pick a username"
+note = "You can change both later in Settings. Your hub keeps your last 10 usernames visible, so nobody can pass as you."
+continue = "Continue"
+back = "Back"
+preview = "How others see you"
+lobby = "Lobby"
+profile = "Profile"
+you = "You"
+
+[key]
+eyebrow = "Step 4 of 4 · Recovery key"
+title = "Save your recovery key"
+lead = "This key gets your account back if you lose this PC, reinstall, or play on a new one. There's no password, so keep it somewhere safe: a password manager, or a file on a USB stick. Anyone who has it can sign in as you."
+label = "Recovery key · @{user} · {hub}"
+copy = "Copy"
+save = "Save as file"
+copied = "Copied · paste it somewhere safe"
+saved = "Saved · {name}"
+saved_it = "I saved it"
+continue = "Continue"
+pane_title = "Getting back in"
+ways = ["Another signed-in PC", "This recovery key", "The hub's owner"]
+ways_how = ["Settings shows a short code; type it on the new PC.", "When no other PC is signed in.", "The last resort: they can tie a fresh invite to your account."]
+pane_note = "You never type the key to sign in; this PC stays signed in on its own."
+file = "Lucker Party recovery key\nAccount: @{user}\nHub: {hub} ({host})\nKey: {name}\n\nThis key gets your account back on a new PC. Anyone with it can sign in as you.\n"
+
+[have]
+tag = "Sign in"
+title = "I already have an account"
+tabs = ["Link a device", "Recover with key"]
+link_lead = "On a PC where you're signed in, open Settings → Account → Link a device. Type the code it shows, with the hub's link if this PC has never been signed in."
+link_status = "6 characters · the code works for 10 minutes"
+link_button = "Link this PC"
+recover_lead = "Paste the recovery key you saved when you made the account, with the hub's link if this PC has never been signed in."
+recover_label = "Recovery key"
+recover_button = "Recover my account"
+recover_note = "Recovering signs this PC in and makes a new key; the old one stops working. Other PCs are signed out."
+hub_label = "Hub link"
+lost = "Lost every device and the key? Ask your hub's owner for a fresh invite tied to your account."
+back = "Back"
+
+[done]
+toast = "Welcome, {name}"
+toast_note = "You're in {hub}. This PC stays signed in."

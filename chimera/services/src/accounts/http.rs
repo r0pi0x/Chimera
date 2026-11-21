@@ -8,9 +8,12 @@
 //! - `POST /accounts/redeem` (an invite or link code, a username, the
 //!   device's public key), `POST /accounts/recover`, `POST
 //!   /accounts/ticket` (a device's signed request, or `Authorization:
-//!   Bearer chimera1_...`): no ticket needed, rate limited.
-//! - `POST /accounts/link`, `POST /accounts/display-name`, `GET
-//!   /accounts/me`: with `Authorization: Bearer <ticket>`.
+//!   Bearer chimera1_...`), `POST /accounts/check` (a code's kind and
+//!   the hub's name and MOTD, a username's availability with
+//!   suggestions; nothing used up): no ticket needed, rate limited.
+//! - `POST /accounts/link`, `POST /accounts/display-name`, `POST
+//!   /accounts/username` (a rename, one a minute), `POST /accounts/avatar`,
+//!   `GET /accounts/me`: with `Authorization: Bearer <ticket>`.
 //!
 //! This machine only (a loopback connection relayed by no front: neither
 //! the in-process TLS one nor the hub's, whose `X-Chimera-Peer` marks a
@@ -258,6 +261,21 @@ impl Http {
             (Method::Post, ["accounts", "redeem"]) => {
                 answer(201, body::<RedeemRequest>(request).and_then(|r| a.redeem(&r, ip)))
             }
+            (Method::Post, ["accounts", "check"]) => {
+                answer(200, body::<chimera_assets::account::CheckRequest>(request).and_then(|r| a.check(&r, ip)))
+            }
+            (Method::Post, ["accounts", "username"]) => answer(
+                200,
+                self.with_ticket(request)
+                    .and_then(|t| Ok((t, body::<chimera_assets::account::RenameRequest>(request)?)))
+                    .and_then(|(t, r)| a.rename(&t, &r.username)),
+            ),
+            (Method::Post, ["accounts", "avatar"]) => answer(
+                200,
+                self.with_ticket(request)
+                    .and_then(|t| Ok((t, body::<chimera_assets::account::AvatarRequest>(request)?)))
+                    .and_then(|(t, r)| a.set_avatar(&t, r.avatar)),
+            ),
             (Method::Post, ["accounts", "recover"]) => {
                 answer(201, body::<RecoverRequest>(request).and_then(|r| a.recover(&r, ip)))
             }

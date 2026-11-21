@@ -148,3 +148,28 @@ fn drawn_ladders_never_deal_a_gun_without_damage() {
     let l = sim.app.world().resource::<Ladder>();
     assert_eq!(&l.rungs[..4], &[AT4, RMS12, STUN, "combat_arms:law"], "as written");
 }
+
+/// An NPC's gun (the install's copy: a rifle that hurts) is on no drawn
+/// ladder and not in the Host's Guns picker, however often the draw runs:
+/// data/ladder_exclusions.toml's `not_player` entries, and the weapons
+/// no shop item sells (`combat_arms::game::data::set_unshopped`; the
+/// install's own: combat_arms' `heavy::no_damage_install`).
+#[test]
+fn an_npc_gun_is_never_dealt_nor_listed() {
+    const NPC: &str = "combat_arms:mp5a4_npc";
+    let mut sim = ugg();
+    sim.app
+        .add_weapon_data(&[("npc", &format!("id = \"{NPC}\"\nbase = \"combat_arms:m4a1\"\nclass = \"rifle\"\n"))])
+        .expect("the copy reads");
+    let all = auto::report(sim.app.world());
+    assert!(all.iter().flat_map(|c| c.guns.iter()).any(|g| g.id == NPC), "the NPC gun is a gun of the game's parts");
+    let mut caps = all.clone();
+    let skipped = auto::drawable_all(sim.app.world(), &mut caps);
+    assert!(skipped.iter().any(|s| s.id == NPC && s.why.contains("NPC")), "{}", auto::skipped_lines(&skipped));
+    assert!(caps.iter().flat_map(|c| c.guns.iter()).all(|g| g.id != NPC), "not in the picker");
+    for seed in 0..60 {
+        generate(sim.app.world_mut(), seed, RUNGS).expect("made");
+        let l = rungs(sim.app.world());
+        assert!(!l.iter().any(|id| id == NPC), "seed {seed}: {l:?}");
+    }
+}

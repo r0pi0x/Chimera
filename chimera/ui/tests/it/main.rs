@@ -6,6 +6,7 @@ mod controls;
 mod fonts;
 mod glyphs;
 mod icons;
+mod modal;
 mod motion;
 mod picker;
 mod scroll;

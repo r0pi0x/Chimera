@@ -2807,6 +2807,13 @@ Start, two parties with their edges), `ui_scene lobby join` (a joiner's view: it
 match's settings, Leave), `ui_scene lobby between` (the
 host's lobby after a match, the next map coming in: each row at its own
 load stage, `chimera_net::net::load_stages`).
+`ui_scene onboarding <welcome|clipboard|checking|used|unknown|unreachable|certificate|hub|name|name-bad|name-taken|key|have|recover|done|off>`
+stages the first run's screens (`party_kit::onboarding`, docs/plans/active/onboarding.md) with a made-up hub
+("Friday Night Hub"; nothing is sent or written): the invite field empty or filled from the clipboard, checking, each
+error, the hub, the name screen free, breaking a rule or taken (with suggestions), the recovery key, "I already have
+an account" on each tab, and the main menu's welcome toast (`done`). Offscreen: `ultimate_gun_game --offscreen
+1920x1080 --frames 60 --screenshot <out>.png +mainmenu +ui_scene onboarding name-taken`; `onboarding 1` shows the
+real flow in a running game.
 `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range|map>`
 stages the sandbox's screens (`chimera_client::client::sandbox`) with
 made-up guns, kills, downloads, targets and maps (`map`: Change map, M); over a real sandbox it reads

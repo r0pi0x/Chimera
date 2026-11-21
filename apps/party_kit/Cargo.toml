@@ -38,6 +38,9 @@ originals.workspace = true
 avian3d.workspace = true
 bevy.workspace = true
 toml.workspace = true
+# The first run's account calls and the recovery key's folder (`onboarding`).
+chimera_assets.workspace = true
+dirs.workspace = true
 workspace-hack.workspace = true
 
 # The tests aim with the test kit's readers (`chimera_sim::testkit`).
@@ -102,6 +105,7 @@ dev = [
     "chimera_world/dev",
     "chimera_sim/dev",
     "chimera_net/dev",
+    "chimera_assets/dev",
     "chimera_present?/dev",
     "chimera_client?/dev",
     "chimera_ui?/dev",

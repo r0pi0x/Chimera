@@ -45,12 +45,38 @@ fn migrations_run_from_nothing_and_from_the_previous_version() {
     drop(conn);
     assert_eq!(rows(&path), [("alice".to_string(), "Alice".to_string())]);
     let copies: Vec<_> = fs::read_dir(&backups).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
-    assert!(copies.len() == 1 && copies[0].starts_with("accounts-premigrate-v1-"), "{copies:?}");
+    let prefix = format!("accounts-premigrate-v{}-", db::ACCOUNTS_MIGRATIONS.len());
+    assert!(copies.len() == 1 && copies[0].starts_with(&prefix), "{copies:?}");
     // That database, back at the older binary: refused, untouched.
     let before = fs::read(&path).unwrap();
     let e = db::open(&path, db::ACCOUNTS_MIGRATIONS, &backups).unwrap_err();
     assert!(e.contains("newer than this binary"), "{e}");
     assert_eq!(fs::read(&path).unwrap(), before);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// A version 1 database (before onboarding) takes version 2's columns
+/// and keeps its rows: invites without an intent, accounts without an
+/// avatar.
+#[test]
+fn version_one_moves_to_onboardings_columns() {
+    let dir = scratch("migrate-v2");
+    let (path, backups) = (dir.join("accounts.db"), dir.join("backups"));
+    let conn = db::open(&path, &db::ACCOUNTS_MIGRATIONS[..1], &backups).unwrap();
+    conn.execute(
+        "INSERT INTO accounts (id, username, display_name, created) VALUES (x'00112233445566778899aabbccddeeff', 'alice', 'Alice', 1)",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let conn = db::open(&path, db::ACCOUNTS_MIGRATIONS, &backups).unwrap();
+    let (avatar, intent): (Option<i64>, Option<String>) =
+        conn.query_row("SELECT avatar, invite_intent FROM accounts", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!((avatar, intent), (None, None));
+    let n: i64 = conn.query_row("SELECT COUNT(*) FROM username_history", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0);
+    drop(conn);
+    assert_eq!(rows(&path), [("alice".to_string(), "Alice".to_string())]);
     let _ = fs::remove_dir_all(&dir);
 }
 

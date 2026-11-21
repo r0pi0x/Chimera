@@ -498,7 +498,10 @@ pub fn page_settings(world: &World, page: Page) -> Vec<Setting> {
     }
 }
 
+/// The Escape menu's root: a modal layer (`chimera_ui::modal`), so the
+/// lobby or HUD under it takes no pointer.
 #[derive(Component)]
+#[require(chimera_ui::Modal)]
 pub(crate) struct MenuRoot;
 
 #[derive(Component)]

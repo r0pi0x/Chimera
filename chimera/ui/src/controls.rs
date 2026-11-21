@@ -1743,8 +1743,10 @@ impl<'a> Ui<'a> {
 
     /// A modal's plate `w` cq wide (`Ink2`, an outline, a .22 cq top bar:
     /// white for a question, threat for one that ends something), centred
-    /// in `parent`. Returns the plate.
+    /// in `parent`, which becomes the modal layer (`modal::Modal`: the UI
+    /// behind it takes no input). Returns the plate.
     pub fn modal(&self, c: &mut Commands, parent: Entity, w: f32, danger: bool) -> Entity {
+        c.entity(parent).insert(crate::modal::Modal);
         let m = c
             .spawn((
                 UiStyle { w: Some(w), pad: Some([1.8, 2.0, 1.7, 2.0].into()), ..UiStyle::column() }.bg(Tone::Ink2).outline(Tone::Fg4, 1.0),

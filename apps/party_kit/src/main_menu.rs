@@ -941,6 +941,10 @@ impl Plugin for MainMenuPlugin {
         if self.keep_recent {
             // Its parties too (a token kept in party.toml is taken up).
             app.add_systems(Startup, (chimera_net::net::hub::use_user_hub, chimera_net::net::party::use_user_party).chain());
+            // The first run when this PC has no account (`onboarding`).
+            if self.at_start {
+                app.add_systems(Startup, crate::onboarding::maybe_start);
+            }
         }
         app.insert_resource(data)
             .insert_resource(last)
@@ -1332,7 +1336,11 @@ fn typing(
         Option<Res<crate::loading_signal::LoadingSignal>>,
         Option<Res<crate::guns_picker::GunsPicker>>,
     ),
-    (mut clipboard, party): (Local<chimera_ui::clipboard::Clipboard>, Option<Res<crate::party_signal::PartyPanel>>),
+    (mut clipboard, party, onboarding): (
+        Local<chimera_ui::clipboard::Clipboard>,
+        Option<Res<crate::party_signal::PartyPanel>>,
+        Option<Res<crate::onboarding::Onboarding>>,
+    ),
     shared_clipboard: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
     // The app's clipboard (a test's), else this system's own handle on
@@ -1344,7 +1352,11 @@ fn typing(
     // The Signal pages (`signal_pages`) take Enter and Tab on Play and Join.
     let signal_page = crate::signal_pages::themed(theme.as_deref()) && matches!(menu.page, MenuPage::Play | MenuPage::Join);
     // The party panel (open over the menu) takes the keys.
-    let live = menu.shown() && !console.is_some_and(|c| c.open) && !controls.is_some_and(|c| c.open) && !party.is_some_and(|p| p.open);
+    let live = menu.shown()
+        && !console.is_some_and(|c| c.open)
+        && !controls.is_some_and(|c| c.open)
+        && !party.is_some_and(|p| p.open)
+        && !crate::onboarding::takes_keys(onboarding.as_deref());
     if !live {
         events.clear();
         return;
