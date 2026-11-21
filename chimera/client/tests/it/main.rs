@@ -32,3 +32,4 @@ mod ui_sound;
 mod window_icon;
 mod kit_ahead;
 mod input_timing;
+mod world_report;

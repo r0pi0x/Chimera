@@ -16,7 +16,8 @@
 //!   host, client), players and bots, the tick rate, the minigame, the
 //!   local player's rung of the ladder and the games its rungs deal; and
 //!   what is in the local player's hand (`hand_text`): the weapon, its
-//!   draw, the view model's sequence and pose, and the sounds the player
+//!   draw, the view model's sequence and pose, the shown view model's
+//!   key, pieces and untextured pieces, and the sounds the player
 //!   makes now (entry, channel, age), so a gun's sound or animation that
 //!   goes on after a swap shows in the report; whether its view model is
 //!   still coming (the stand-in gun showing), and the code-built maps'
@@ -309,6 +310,26 @@ pub fn setup_text(world: &mut World) -> String {
     out
 }
 
+/// The shown view model's line (`hand_text`): its key (a game's own: the
+/// hands and parts it wears), its pieces and bones, and each piece
+/// without a texture by its material (drawn grey or flat: a skin the
+/// install lacks), so a report of untextured or missing arms names them.
+fn view_model_text(world: &World, key: Option<&str>) -> String {
+    let Some(key) = key else { return "view model: none shown\n".into() };
+    let Some(v) = world.get_resource::<crate::map::ViewModels>().and_then(|m| m.get(key)) else {
+        return format!("view model: {key}, not loaded\n");
+    };
+    let meshes = &v.model.meshes;
+    let mut untextured: Vec<&str> = meshes.iter().filter(|m| m.texture.is_none()).map(|m| m.material.as_str()).collect();
+    untextured.dedup();
+    format!(
+        "view model: {key}, {} pieces, {} bones; untextured: {}\n",
+        meshes.len(),
+        v.bones.len(),
+        if untextured.is_empty() { "none".to_string() } else { untextured.join(", ") }
+    )
+}
+
 /// `game.txt`'s hand lines (module doc): the local player's weapon in
 /// hand, its draw, its view model's sequence and pose, the sounds the
 /// player makes.
@@ -340,6 +361,7 @@ pub fn hand_text(world: &mut World) -> String {
     if let Some(v) = world.get::<crate::map::ViewAnimator>(player) {
         let cycle = v.animator.as_ref().map_or(0.0, |a| a.cycle);
         out += &format!("; view model {} at cycle {cycle:.2}", v.sequence().unwrap_or("-"));
+        let key = v.key.clone();
         // Drawn, or still coming (the stand-in gun shows meanwhile).
         let waiting = world
             .query_filtered::<(), With<chimera_present::render::stand_in::ViewModelWaiting>>()
@@ -349,8 +371,11 @@ pub fn hand_text(world: &mut World) -> String {
         if waiting {
             out += ", not built yet (the stand-in shows)";
         }
+        out += "\n";
+        out += &view_model_text(world, key.as_deref());
+    } else {
+        out += "\n";
     }
-    out += "\n";
     // The code-built maps' kit: loading now, and what its loads did.
     if let Some(now) = super::console::KitLoads::loading(world) {
         out += &format!("kit: {now}\n");
