@@ -2,8 +2,7 @@
 //! accounts service and the asset service on free loopback ports over one
 //! scratch store, `front::serve` on another with a fixed certificate, as
 //! on the host. Through the front: invite, redeem, ticket and download
-//! with the certificate pinned; an old client's root paths with a legacy
-//! token; feedback; accounts stopped (downloads go on, a redeem fails
+//! with the certificate pinned; feedback; accounts stopped (downloads go on, a redeem fails
 //! cleanly, a second start reuses its ticket); the asset service stopped
 //! (accounts unaffected); a forged `X-Chimera-Peer` dropped (limits see
 //! the real peer); admin paths refused; another service's path on a
@@ -20,7 +19,6 @@ use std::{
 use chimera_assets::{
     FileRecord, Manifest, Remote, RemoteConfig, Store,
     account::{self, AccountFile, HubLink, Session},
-    accounts::Accounts as LegacyAccounts,
     feedback::{ReportState, bundle},
     server,
     tls::{FrontLimits, Identity},
@@ -199,9 +197,7 @@ fn get(path: &str, extra: &str) -> String {
 
 /// The whole path through the one public port: the owner invites, the
 /// player redeems over the pinned link, its ticket downloads the record;
-/// the asset service logs the player's real address; an old client's
-/// root paths with a legacy token still reach the asset service with the
-/// same fingerprint.
+/// the asset service logs the player's real address; `/key` stays public.
 #[test]
 fn invite_redeem_ticket_and_download_through_the_front() {
     let hub = Hub::new("flow", server::Limits::default());
@@ -217,14 +213,6 @@ fn invite_redeem_ticket_and_download_through_the_front() {
     let log = hub.access_log_when(|log| log.lines().any(fetched));
     assert!(log.lines().any(fetched), "{log}");
 
-    // An old client: a legacy token on root paths, the same certificate.
-    let path = LegacyAccounts::path(&hub.store.root);
-    let mut legacy = LegacyAccounts::load(&path).unwrap();
-    let (_, token) = legacy.add("bob", None, "old pc").unwrap();
-    legacy.save(&path).unwrap();
-    let old = hub.remote(&token);
-    assert!(old.whoami().unwrap().starts_with("internal bob"));
-    assert!(old.record(&hub.record).is_ok());
     assert!(hub.raw(&[get("/key", "")])[0].0 == 200, "/key stays public");
 }
 

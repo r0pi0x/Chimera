@@ -9,8 +9,8 @@
 //!
 //! A username a player **chooses** (sign-up, a rename;
 //! docs/plans/active/onboarding.md) also starts with a letter
-//! (`choose_username`, `UsernameRules` for the live checklist); names
-//! made before (legacy imports) are still read by `username`. A taken one
+//! (`choose_username`, `UsernameRules` for the live checklist); the
+//! looser `username` reads names an owner set. A taken one
 //! answers with free suggestions (`suggestions`: the name with a digit,
 //! with `_` and a short word, then cut and numbered), the same on the
 //! hub and in the client.
@@ -180,7 +180,7 @@ pub fn display_name(text: &str) -> Result<String, String> {
     Ok(t.to_string())
 }
 
-/// A free-form name (a legacy account's) made into a username candidate:
+/// A free-form name made into a username candidate:
 /// folded, other characters as `_`, cut to `NAME_MAX`, padded to the
 /// minimum.
 pub fn username_from(text: &str) -> String {

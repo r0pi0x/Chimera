@@ -9,8 +9,9 @@
 //! brackets; every field is the kit's hero field.
 //!
 //! - **When** (`maybe_start`, the app's start only: never a tool run or a
-//!   test): the run starts at the main menu and this PC has no account,
-//!   no legacy asset token and no skip mark (`OnboardingFiles`).
+//!   test): the run starts at the main menu and this PC has no account
+//!   and no skip mark (`OnboardingFiles`, `first_run_due`): an account is
+//!   the only way onto a hub, so nothing else counts.
 //! - **Welcome** (`Step::Welcome`): the one field takes the whole hub
 //!   link, a web address with the code, or the bare code
 //!   (`chimera_assets::account::InviteInput`), read on Enter; the pane
@@ -613,16 +614,22 @@ impl Plugin for OnboardingPlugin {
     }
 }
 
-/// The app's start: the first run when this PC has no account, no legacy
-/// token and no skip mark (module doc).
+/// Whether the first run is due with `files`: no account file and no
+/// skip mark (a token for an asset service with no hub doesn't count).
+pub fn first_run_due(files: &OnboardingFiles) -> bool {
+    let signed_in = files.account.as_ref().is_some_and(|p| matches!(AccountFile::load_from(p), Ok(Some(_))));
+    let skipped = files.skip_mark.as_ref().is_some_and(|p| p.exists());
+    !signed_in && !skipped
+}
+
+/// The app's start: the first run when this PC has no account and no skip
+/// mark (module doc).
 pub fn maybe_start(mut o: ResMut<Onboarding>, mut files: ResMut<OnboardingFiles>, mut shown: ResMut<AccountShown>, clock: Option<Res<UiClock>>) {
     *files = OnboardingFiles::user();
     if let Some(file) = files.account.as_ref().and_then(|p| AccountFile::load_from(p).ok().flatten()) {
         shown.0 = Some(Shown::of(&file, "the hub"));
     }
-    let skipped = files.skip_mark.as_ref().is_some_and(|p| p.exists());
-    let token = chimera_assets::access::Access::load().token.is_some();
-    if account::has_account() || token || skipped {
+    if !first_run_due(&files) {
         return;
     }
     o.active = true;

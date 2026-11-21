@@ -63,9 +63,9 @@ fn version_one_moves_to_onboardings_columns() {
     let dir = scratch("migrate-v2");
     let (path, backups) = (dir.join("accounts.db"), dir.join("backups"));
     let conn = db::open(&path, &db::ACCOUNTS_MIGRATIONS[..1], &backups).unwrap();
-    conn.execute(
-        "INSERT INTO accounts (id, username, display_name, created) VALUES (x'00112233445566778899aabbccddeeff', 'alice', 'Alice', 1)",
-        [],
+    conn.execute_batch(
+        "INSERT INTO accounts (id, username, display_name, created) VALUES (x'00112233445566778899aabbccddeeff', 'alice', 'Alice', 1);
+         INSERT INTO devices (id, account_id, kind, public_key, created) VALUES (x'a1', x'00112233445566778899aabbccddeeff', 'key', x'aa', 1);",
     )
     .unwrap();
     drop(conn);
@@ -77,6 +77,33 @@ fn version_one_moves_to_onboardings_columns() {
     assert_eq!(n, 0);
     drop(conn);
     assert_eq!(rows(&path), [("alice".to_string(), "Alice".to_string())]);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// Version 3 keeps key devices only: any other device goes, and an account
+/// left with none goes too; both enter the revocation feed first.
+#[test]
+fn version_three_keeps_key_devices_only() {
+    let dir = scratch("migrate-keys");
+    let (path, backups) = (dir.join("accounts.db"), dir.join("backups"));
+    let conn = db::open(&path, &db::ACCOUNTS_MIGRATIONS[..2], &backups).unwrap();
+    conn.execute_batch(
+        "INSERT INTO accounts (id, username, display_name, created) VALUES (x'01', 'alice', 'Alice', 1), (x'02', 'bob', 'Bob', 1);
+         INSERT INTO devices (id, account_id, kind, public_key, created) VALUES (x'a1', x'01', 'key', x'aa', 1);
+         INSERT INTO devices (id, account_id, kind, token_hash, created) VALUES (x'a2', x'01', 'other', 'h1', 1), (x'b1', x'02', 'other', 'h2', 1);",
+    )
+    .unwrap();
+    drop(conn);
+    let conn = db::open(&path, db::ACCOUNTS_MIGRATIONS, &backups).unwrap();
+    assert_eq!(rows(&path), [("alice".to_string(), "Alice".to_string())]);
+    let devices: i64 = conn.query_row("SELECT COUNT(*) FROM devices WHERE kind = 'key' AND token_hash IS NULL", [], |r| r.get(0)).unwrap();
+    let all: i64 = conn.query_row("SELECT COUNT(*) FROM devices", [], |r| r.get(0)).unwrap();
+    assert_eq!((devices, all), (1, 1));
+    let mut stmt = conn.prepare("SELECT kind, hex(target) FROM revocations ORDER BY kind, target").unwrap();
+    let feed: Vec<(String, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
+    assert_eq!(feed, [("account".into(), "02".into()), ("device".into(), "A2".into()), ("device".into(), "B1".into())]);
+    drop(stmt);
+    drop(conn);
     let _ = fs::remove_dir_all(&dir);
 }
 

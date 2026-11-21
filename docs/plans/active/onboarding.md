@@ -83,6 +83,15 @@ the returning player) and said to start building, with these changes:
     customisation later. Future note: an option to download bulk asset
     sets.
 
+## Decision (user, 2026-11-21: start fresh)
+
+13. **Accounts are the only way in.** Everyone starts fresh with an
+    invite and this first run, testers included: there are no other
+    credentials for the hub and nothing carried over (hub.md, section 6).
+    The first run shows whenever this PC has no account and no skip mark.
+    A plain token stays only for a game server's own asset service with
+    no hub (`chimera_pack token add`, `+chimera:asset_token`).
+
 ## The flow (client)
 
 1. **First launch:** a short title moment with motion (the kit's
@@ -302,8 +311,8 @@ admin page lists invites by intent, with status and Revoke.
 - Milestone (b), the client's screens, done: `party_kit::onboarding`
   (its words in `apps/party_kit/data/onboarding.toml`, the look the
   kit's: text fields, buttons, tabs, progress, kv rows, avatars) over the
-  main menu at the app's start when this PC has no account, no legacy
-  token and no skip mark: Welcome (the one field, the clipboard's link
+  main menu at the app's start when this PC has no account and no skip
+  mark (`first_run_due`): Welcome (the one field, the clipboard's link
   filled in, the live "what an invite carries" pane, "Play without an
   account" as a visible ghost button with its note), checking, the four
   errors (used, unknown or withdrawn, unreachable, another certificate
@@ -329,3 +338,11 @@ admin page lists invites by intent, with status and Revoke.
   returning|offline`.
 - Milestone (d), the first-launch intro: not built in this run; its
   plan is "Now" 1 above.
+- Decision 13, done: the hub takes accounts alone (`chimera_services`'
+  accounts give tickets for a device's signed request only, accounts
+  migration 3 `0003_key_devices_only.sql` keeps key devices only, the
+  hub's asset service runs `TicketAuth` alone); the first run is due
+  with no account and no skip mark (`onboarding::first_run_due`). Tests:
+  `onboarding::a_pc_with_no_account_sees_the_first_run`,
+  `accounts::tickets_are_the_hubs_only_way_in`,
+  `db::version_three_keeps_key_devices_only`.

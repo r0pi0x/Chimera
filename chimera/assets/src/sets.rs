@@ -338,8 +338,9 @@ pub fn kept_manifest(settings: &AssetSettings, game: &str) -> Option<(crate::Sto
 /// act on.
 pub fn explain(url: &str, e: &str) -> String {
     if e.contains("HTTP 401") {
-        "the asset service refused your token (revoked or mistyped): ask the server's admin for a new one and \
-         enter it with +chimera:asset_token <token>"
+        "the asset service refused you (this device or account was revoked, or a token mistyped): ask the hub's \
+         owner for a new invite; for a server with its own asset service, ask its admin for a token and enter it \
+         with +chimera:asset_token <token>"
             .to_string()
     } else if e.contains("HTTP 403") {
         format!("your account on the asset service may not fetch this game ({e})")
@@ -373,7 +374,7 @@ mod tests {
     #[test]
     fn errors_read_as_what_to_do() {
         let e = super::explain("https://h:1", "/whoami: HTTP 401: the token was refused");
-        assert!(e.contains("refused your token") && e.contains("+chimera:asset_token"), "{e}");
+        assert!(e.contains("refused you") && e.contains("new invite"), "{e}");
         assert!(super::explain("https://h:1", "connection refused").contains("can't reach the asset service"));
         assert!(super::explain("https://h:1", "invalid peer certificate").contains("another certificate"));
         let e = super::explain("https://h:1", "https://h:1/whoami: io: Connection refused (os error 111)");

@@ -26,7 +26,7 @@ CREATE TABLE accounts (
 CREATE TABLE devices (
     id BLOB PRIMARY KEY,
     account_id BLOB NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    kind TEXT NOT NULL,                     -- key | legacy
+    kind TEXT NOT NULL,                     -- key
     public_key BLOB UNIQUE,
     token_hash TEXT UNIQUE,
     label TEXT NOT NULL DEFAULT '',

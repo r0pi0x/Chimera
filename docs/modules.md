@@ -198,9 +198,9 @@ Change a file's `//!` doc with the code, then run
 
 ## chimera/assets
 
-- `chimera/assets/src/access.rs`: A player's access to an asset service (docs/plans/active/asset-service.md, "Playtest delivery"): the token the service's admin gave them, and the...
+- `chimera/assets/src/access.rs`: A player's access to an asset service with no hub (a game server's own, docs/plans/active/asset-service.md, "Playtest delivery"; a hub's asset...
 - `chimera/assets/src/account.rs`: A player's platform account on this machine (docs/plans/active/hub.md, 5.1-5.3): the client side of the accounts service (`chimera_services`)
-- `chimera/assets/src/accounts.rs`: Who may fetch from the asset service (docs/plans/active/asset-service.md, "Decisions": internal phase without Steam)
+- `chimera/assets/src/accounts.rs`: Who may fetch from the asset service (docs/plans/active/asset-service.md, "Decisions")
 - `chimera/assets/src/bin/chimera_asset_server.rs`: `chimera_asset_server`: the asset service's dev server (docs/plans/active/asset-service.md, section 5; deployment steps in its M2 results)
 - `chimera/assets/src/bin/chimera_assets.rs`: `chimera_assets`: the local record store's command line and the asset service's client (docs/plans/active/asset-service.md)
 - `chimera/assets/src/cached.rs`: `CachedFiles`: a manifest and its store as a read-only mount layer

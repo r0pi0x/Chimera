@@ -22,8 +22,9 @@
 //!   so it fetches with the host's ticket or token (`for_host`, at
 //!   `net::server::listen`). A **dedicated server** has its own: a hub
 //!   account of role `host` redeemed once with `+chimera:hub <invite>`
-//!   (its device key and tickets in the server user's `account.toml`), or
-//!   a legacy token in its environment or `[assets]`.
+//!   (its device key and tickets in the server user's `account.toml`), or,
+//!   for an asset service with no hub, that service's token in its
+//!   environment or `[assets]`.
 //! - **At start** (`startup`, a dedicated server's `run`, before the app
 //!   is built: what its parts read at build time, TF2's scripts among
 //!   them): each game it reads from the store alone (no install, or

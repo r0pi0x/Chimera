@@ -1,5 +1,7 @@
-//! A player's access to an asset service (docs/plans/active/asset-service.md,
-//! "Playtest delivery"): the token the service's admin gave them, and the
+//! A player's access to an asset service with no hub (a game server's
+//! own, docs/plans/active/asset-service.md, "Playtest delivery"; a hub's
+//! asset service takes its accounts' tickets instead: `account`): the
+//! token the service's admin gave them (`chimera_pack token add`), and the
 //! service a game server named for it, kept per user outside any checkout
 //! (`<data_local>/chimera/asset-access.toml`: `~/.local/share/...`,
 //! `%LOCALAPPDATA%\chimera\asset-access.toml`; mode 0600 on Unix;
@@ -149,7 +151,7 @@ impl Access {
     pub fn set_token(&mut self, token: &str) -> Result<(), String> {
         let token = token.trim();
         if !is_token(token) {
-            return Err("that isn't a token (one word, as `chimera_pack user add` printed it)".into());
+            return Err("that isn't a token (one word, as `chimera_pack token add` printed it)".into());
         }
         *self = Self {
             token: Some(token.to_string()),

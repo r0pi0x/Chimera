@@ -1,22 +1,12 @@
 //! Who may fetch from the asset service (docs/plans/active/asset-service.md,
-//! "Decisions": internal phase without Steam). A request's bearer token is
-//! asked of each `Authenticator` in turn, one per account kind; the first
-//! that knows it says who it is (`Principal`: kind, name, the games it may
-//! fetch) or that it was revoked. Internal accounts (`Internal`, kind
-//! `internal`) come first: the server admin runs `chimera_pack user add
-//! <name>`, which prints a new token for the tester's `chimera.local.toml`;
-//! each device gets its own (`user add` again), and `user revoke` takes one
-//! or all back. Neither Steam sign-in nor the ownership check runs for them:
-//! the server stays private (Tailscale) and ownership rests on the testers'
-//! word. Steam sign-in and the ownership check become another
-//! `Authenticator` (its principal's games = the games the account owns),
-//! which must be on before the server is opened up.
+//! "Decisions"). A request's bearer token is asked of each `Authenticator`
+//! in turn, one per account kind; the first that knows it says who it is
+//! (`Principal`: kind, name, the games it may fetch) or that it was
+//! revoked. Steam sign-in and the ownership check would be another
+//! `Authenticator` (its principal's games = the games the account owns).
 //!
-//! The accounts file (`<store>/server/accounts.toml`) keeps only each
-//! token's SHA-256, never the token; it is read again when it changes, so
-//! a revoke takes effect at the next request without a restart.
-//!
-//! Platform accounts (docs/plans/active/hub.md, 2.4): `TicketAuth` (kind
+//! A hub's asset service takes the hub's accounts alone (docs/plans/active/hub.md,
+//! 2.4): `TicketAuth` (kind
 //! `account`) takes the accounts service's tickets (`ticket`, the
 //! `chimera2t.` prefix), checked with the ticket public keys alone
 //! (`<store>/server/accounts/ticket.pub`, read again when it changes) and
@@ -24,6 +14,18 @@
 //! loopback (`with_feed`: every 30 s, with the services' shared secret;
 //! the last list is kept while accounts doesn't answer). Its principal is
 //! the account's username; its games are the ticket's `content`.
+//!
+//! An asset service with no hub (`server::Service::new`: a game server's
+//! own, run with `chimera_asset_server --no-tickets`) has its own tokens
+//! instead (`Internal`, kind `internal`): its admin runs `chimera_pack
+//! token add <name>`, which prints a new token (one per device; `token
+//! revoke` takes one or all back), and the player enters it once with
+//! `+chimera:asset_token` (`access`). The tokens file
+//! (`<store>/server/accounts.toml`) keeps only each token's SHA-256, never
+//! the token; it is read again when it changes, so a revoke takes effect
+//! at the next request without a restart. Neither Steam sign-in nor the
+//! ownership check runs for them: such a service stays private and
+//! ownership rests on its players' word.
 
 use std::{
     collections::BTreeSet,
@@ -190,7 +192,7 @@ impl Accounts {
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         let text = format!(
-            "# The asset server's internal accounts (chimera_pack user add | revoke | list).\n\
+            "# The asset service's own tokens, for a service with no hub (chimera_pack token add | revoke | list).\n\
              # Token hashes only; the tokens themselves were printed once.\n\n{}",
             toml::to_string(self).map_err(std::io::Error::other)?
         );

@@ -3,10 +3,14 @@
 //! each game build's manifest, its files, sets and sizes; `verify` reads
 //! every record a manifest refers to and checks its hash (exit 1 on a
 //! missing or corrupt one); `gc` deletes records no manifest refers to
-//! (`--dry-run` lists them). With the service (`[assets] url` and `token`
-//! in chimera.local.toml, or `CHIMERA_ASSET_URL` / `CHIMERA_ASSET_TOKEN`):
-//! `login [<url> <token>]` checks a token and prints the `[assets]` lines
-//! with the server's key to pin; `fetch <game> [<set>...]` fetches a
+//! (`--dry-run` lists them). `hub <invite link> [<username>]` signs this
+//! user in to a hub (`account::join_hub`: the account file, the recovery
+//! key beside it), whose asset service is then the service. With the
+//! service (the hub account's, or `[assets] url` and `token` in
+//! chimera.local.toml, or `CHIMERA_ASSET_URL` / `CHIMERA_ASSET_TOKEN`, for
+//! an asset service with no hub): `login [<url> <token>]` checks the
+//! credential and prints the `[assets]` lines with the server's key to pin
+//! (a hub account needs none); `fetch <game> [<set>...]` fetches a
 //! build's manifest (as the games choose it: `[assets] builds`,
 //! `assets.lock`, else the newest; the service's copy when it changed and
 //! the lock doesn't pin the kept one) and the records of those sets (all its
@@ -33,7 +37,8 @@ usage: chimera_assets [--store <dir>] <command>
   status                    the store's manifests, sets and sizes
   verify                    check every record's hash
   gc [--dry-run]            delete records no manifest refers to
-  login [<url> <token>]     check a token with the asset service; print the [assets] lines
+  hub <invite link> [<username>]  sign in to a hub with an invite (its asset service is then yours)
+  login [<url> <token>]     check the credential with the asset service; print the key to pin
   fetch <game> [<set>...]   fetch a build's manifest and its sets' records (every file without a set)
   lock [<game>...]          pin the service's newest builds in assets.lock
   sign <game> [--build <id>] sign a game's newest (or the named) manifest in a server's store
@@ -160,6 +165,10 @@ fn login(settings: &AssetSettings, args: &[&str]) -> Result<(), String> {
     let mut lines = who.lines();
     println!("signed in to {} as {}", remote.url(), lines.next().unwrap_or("?"));
     println!("{}", lines.next().unwrap_or(""));
+    if args.is_empty() && chimera_assets::account::live().is_some() {
+        println!("with your hub account (its certificate pinned by the invite): nothing to configure");
+        return Ok(());
+    }
     println!("\nin chimera.local.toml (never committed):\n\n[assets]\nurl = \"{}\"", remote.url());
     if args.is_empty() {
         println!("token = \"...\"            # as configured");
@@ -448,6 +457,12 @@ fn main() -> ExitCode {
         ["gc"] => gc(&store, false),
         ["gc", "--dry-run"] => gc(&store, true),
         ["login", ref rest @ ..] => done(login(&settings, rest)),
+        ["hub", link, ref rest @ ..] if rest.len() <= 1 => done(
+            chimera_assets::account::AccountFile::path()
+                .ok_or_else(|| "no per-user data folder".to_string())
+                .and_then(|path| chimera_assets::account::join_hub(link, rest.first().copied(), &path))
+                .map(|said| println!("{said}")),
+        ),
         ["fetch", ref rest @ ..] => done(fetch(&settings, rest)),
         ["lock", ref rest @ ..] => done(lock(&settings, rest)),
         _ => {

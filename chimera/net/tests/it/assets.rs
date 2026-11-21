@@ -96,8 +96,8 @@ impl Fixture {
         Self::make(name, files, latency, false)
     }
 
-    /// With the hub's account tickets taken too (`TicketAuth`, its keys in
-    /// the store's `server/accounts/ticket.pub`; no revocation feed).
+    /// A hub's: account tickets only (`TicketAuth`, its keys in the
+    /// store's `server/accounts/ticket.pub`; no revocation feed).
     fn with_tickets(name: &str, files: usize) -> Self {
         Self::make(name, files, Duration::ZERO, true)
     }
@@ -159,7 +159,6 @@ impl Fixture {
                 Box::new(chimera_assets::accounts::TicketAuth::new(
                     chimera_assets::accounts::ticket_keys_path(&store.root),
                 )),
-                Box::new(chimera_assets::accounts::Internal::new(Accounts::path(&store.root))),
             ];
             Service::with_authenticators(store.clone(), auth).unwrap()
         } else {
@@ -434,7 +433,7 @@ fn a_revoked_or_wrong_token_fails_the_join_with_the_reason() {
             "{kind:?}"
         );
         assert!(
-            reason.contains("refused your token") && reason.contains("chimera:asset_token"),
+            reason.contains("refused you") && reason.contains("chimera:asset_token"),
             "{reason}"
         );
         assert!(!joined(&mut sim, 0));
@@ -821,7 +820,7 @@ fn a_join_that_cant_bind_says_why_in_the_game() {
     sim.add_client(client_with(session, false));
     let (kind, reason) = failure(&mut sim);
     assert!(matches!(&kind, JoinFailure::Download { file, .. } if file == FILES), "{kind:?}");
-    assert!(reason.contains("refused your token") && reason.contains("chimera:asset_token"), "{reason}");
+    assert!(reason.contains("refused you") && reason.contains("chimera:asset_token"), "{reason}");
 
     // No token: the server refuses it (it can't fetch), saying how to
     // enter one.
@@ -860,7 +859,7 @@ fn a_join_that_cant_bind_says_why_in_the_game() {
     session.access = Some(bound);
     sim.add_client(client_with(session, false));
     let (_, reason) = failure(&mut sim);
-    assert!(reason.contains("refused your token"), "{reason}");
+    assert!(reason.contains("refused you"), "{reason}");
 }
 
 /// The stand-in game as a registered game whose maps have files
@@ -1251,7 +1250,7 @@ fn the_startup_fetch_gets_what_the_games_read_first_or_says_why_not() {
         }
     };
     let why = fresh("mistyped", "chimera1_mistyped", svc.front.url(), &svc.fingerprint);
-    assert!(why.contains("refused your token") && why.contains("chimera:asset_token"), "{why}");
+    assert!(why.contains("refused you") && why.contains("chimera:asset_token"), "{why}");
     let why = fresh("other_cert", &token, svc.front.url(), &"ab".repeat(32));
     assert!(why.contains("another certificate"), "{why}");
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();

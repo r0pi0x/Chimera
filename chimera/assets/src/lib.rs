@@ -34,7 +34,7 @@
 //! service with the public key alone; `account` is a player's side (the
 //! hub link, the device key, `account.toml`, tickets refreshed at
 //! half-life), and `accounts::TicketAuth` lets the asset service take
-//! tickets beside legacy tokens. `hub_doc` is the hub's discovery
+//! tickets. `hub_doc` is the hub's discovery
 //! document, heartbeats and server list, both sides, and the client's
 //! cache of them; `party_doc` the hub's parties, both sides.
 //!

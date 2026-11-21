@@ -90,16 +90,16 @@ module list is `docs/modules.md`.
 ## docs/assets-for-developers.md
 
 - 1: Game files from the asset service (developers without installs) | You don't need Counter-Strike: Source or Combat Arms installed (or Combat Arms' keys) to play, playtest or run the tests, heavy tier...
-- 11: Setup (once) | machine; revocable)
-- 98: Installs and the service | Players play the published build's files and data, installed games or not: the same files for everyone (TF2's decrypted scripts and the...
-- 129: Day to day | Work as with an install: `cargo run --features dev`, `cargo test ...`,
-- 156: The sandbox's guns: units on demand | In the sandbox (Ultimate Gun Game's `sandbox`), a gun's files come when it's picked, not with the join: the Change gun view shows each...
-- 172: The cache | one per user, shared by every checkout, worktree and agent slot
-- 183: Converted maps | Beside it, `~/.cache/chimera/maps` (`%LOCALAPPDATA%\chimera\maps`) keeps maps as converted (CS:S maps whole; Combat Arms' worlds only with
-- 211: How updates arrive | The repository's `assets.lock` (when there is one) pins each game's build and manifest id
-- 224: What still needs an install | Everything that reads the game through its mount runs from the service, the community maps the heavy tests load included (they are in...
-- 237: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
-- 281: When something goes wrong | mistyped or revoked; ask the admin for a new one
+- 11: Setup (once) | (or paste it on a game app's first-run screen, or start one with
+- 112: Installs and the service | Players play the published build's files and data, installed games or not: the same files for everyone (TF2's decrypted scripts and the...
+- 143: Day to day | Work as with an install: `cargo run --features dev`, `cargo test ...`,
+- 170: The sandbox's guns: units on demand | In the sandbox (Ultimate Gun Game's `sandbox`), a gun's files come when it's picked, not with the join: the Change gun view shows each...
+- 186: The cache | one per user, shared by every checkout, worktree and agent slot
+- 197: Converted maps | Beside it, `~/.cache/chimera/maps` (`%LOCALAPPDATA%\chimera\maps`) keeps maps as converted (CS:S maps whole; Combat Arms' worlds only with
+- 225: How updates arrive | The repository's `assets.lock` (when there is one) pins each game's build and manifest id
+- 238: What still needs an install | Everything that reads the game through its mount runs from the service, the community maps the heavy tests load included (they are in...
+- 251: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
+- 295: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
 
 ## docs/backlog.md
 
@@ -296,25 +296,25 @@ module list is `docs/modules.md`.
 
 - 1: Ultimate Gun Game playtest: the host's checklist | For the host of the internal playtest (the tester guide is
 - 21: The day before | builds on a `v*` tag or a manual run)
-- 99: Halo's maps (optional) | Halo: Combat Evolved's multiplayer maps join the Ultimate Gun Game's pool where the Xbox disc image is (`CHIMERA_HALO_CE_ROOT`, or...
-- 150: Publishing the game files (once, and after a game update) | On the machine with the installs and Combat Arms' keys, from a checkout (`chimera_pack` is a host tool, not in releases), into the...
-- 221: TF2 (2026-11-15) | TF2's guns' numbers come from its weapon scripts (specs/tf2/weapon_scripts.md), which are encrypted in the install: the host packs them...
-- 288: A lean `base`, `common`, music tracks and level 19 (2026-11-15) | every run reads (docs/performance.md, "First join download"): after a
-- 515: Converted guest dressings (step 7 of docs/plans/active/converted-cache.md) | Each game's players and guns on other games' maps are converted from its files at a client's first load (0.5-2.6 s and 3-21 G...
-- 555: The asset service (each session) | It serves this machine's server store (`--store <dir>` serves another; then see "Starting it" for the fingerprint)
-- 582: Building or updating the server | Easiest: the server from the release zip (`ultimate_gun_game_server` or
-- 599: The server's own game files (no install, no keys) | A game server reads each game it has no install of from the asset store, as a player does, and fetches what it needs from the asset...
-- 676: Starting it | reach, not localhost)
-- 832: Ports to open | On the router and the host's firewall:
-- 856: Download speed and your upload | What a tester without the games downloads from the asset service:
-- 908: Accounts and tokens | On the asset server's machine, from a checkout built with `--features tools` (`chimera_pack` is a host tool and is not in releases):
-- 955: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
-- 1053: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
-- 1076: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
-- 1181: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
-- 1204: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
-- 1249: After | Revoke all tokens (`user revoke <tester>` each, or stop the asset service), stop the server, close the ports (UPnP mappings expire, a...
-- 1255: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
+- 97: Halo's maps (optional) | Halo: Combat Evolved's multiplayer maps join the Ultimate Gun Game's pool where the Xbox disc image is (`CHIMERA_HALO_CE_ROOT`, or...
+- 148: Publishing the game files (once, and after a game update) | On the machine with the installs and Combat Arms' keys, from a checkout (`chimera_pack` is a host tool, not in releases), into the...
+- 219: TF2 (2026-11-15) | TF2's guns' numbers come from its weapon scripts (specs/tf2/weapon_scripts.md), which are encrypted in the install: the host packs them...
+- 286: A lean `base`, `common`, music tracks and level 19 (2026-11-15) | every run reads (docs/performance.md, "First join download"): after a
+- 513: Converted guest dressings (step 7 of docs/plans/active/converted-cache.md) | Each game's players and guns on other games' maps are converted from its files at a client's first load (0.5-2.6 s and 3-21 G...
+- 553: The asset service (each session) | It serves this machine's server store (`--store <dir>` serves another; then see "Starting it" for the fingerprint)
+- 580: Building or updating the server | Easiest: the server from the release zip (`ultimate_gun_game_server` or
+- 597: The server's own game files (no install, no keys) | A game server reads each game it has no install of from the asset store, as a player does, and fetches what it needs from the asset...
+- 673: Starting it | reach, not localhost)
+- 829: Ports to open | On the router and the host's firewall:
+- 853: Download speed and your upload | What a tester without the games downloads from the asset service:
+- 905: Accounts and invites | Everyone gets in with an account on the hub (the services in the next section): a tester, a developer, a dedicated server
+- 950: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
+- 1047: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
+- 1069: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
+- 1174: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
+- 1197: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
+- 1242: After | Revoke the session's test accounts (`chimera_accounts account revoke
+- 1249: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
 
 ## docs/playtest.md
 
@@ -322,12 +322,12 @@ module list is `docs/modules.md`.
 - 6: What it is | Ultimate Gun Game is a free-for-all shooter
 - 22: What you need | and quitting and rejoining after an hour or so resets it)
 - 36: Download and start | (`LuckerParty-<version>-windows.zip` or `UltimateGunGame-<version>-windows.zip`; the host will say which)
-- 52: First run: your token | Enter your token once, with the server's address, in a command prompt or PowerShell in the game's folder:
-- 73: Joining the server | The main menu starts over its own animated backdrop
-- 133: Controls | The defaults (Esc > Options > Binds, or `F6`, changes any of them):
-- 178: Settings worth knowing | Esc > Options:
-- 195: Reporting a bug | Please send the host (a message in the group chat is fine):
-- 247: Known issues | Things you may hit, so you do not need to report them (unless they look worse than described):
+- 52: First run: your invite | The first time the game starts it asks for your **invite**: paste the link the host sent you (it starts with `chimera-hub://`; the bare...
+- 79: Joining the server | The main menu starts over its own animated backdrop
+- 137: Controls | The defaults (Esc > Options > Binds, or `F6`, changes any of them):
+- 182: Settings worth knowing | Esc > Options:
+- 199: Reporting a bug | Please send the host (a message in the group chat is fine):
+- 251: Known issues | Things you may hit, so you do not need to report them (unless they look worse than described):
 
 ## docs/tech-debt.md
 

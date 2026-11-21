@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::store::{hex, sha256_hex, unhex};
 
-/// Tickets start with this (`chimera1_` is a legacy token).
+/// Tickets start with this (`chimera1_` is an asset service's own token).
 pub const PREFIX: &str = "chimera2t.";
 /// The claims' format version.
 pub const VERSION: u8 = 1;

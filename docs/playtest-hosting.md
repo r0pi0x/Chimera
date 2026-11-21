@@ -2,9 +2,9 @@
 
 For the host of the internal playtest (the tester guide is
 [playtest.md](playtest.md)). Placeholders only: `<host address>`, `<port>`,
-`<asset url>`, `<token>` and `<tester>` are never written into the repository,
-the release notes or chat channels the testers do not share. Give each
-tester their address and token privately.
+`<asset url>`, `<invite link>` and `<tester>` are never written into the
+repository, the release notes or chat channels the testers do not share.
+Give each tester their address and invite link privately.
 
 How testers without the games get them: the game server names the asset
 service when a player joins (its URL and its certificate's fingerprint);
@@ -77,7 +77,8 @@ service"). Design and limits: [plans/active/asset-service.md](plans/active/asset
    runs: they survive map changes and a player's reconnect (same name),
    bots count by theirs, and a server restart clears them.
 2. **Send each tester privately:** the release link, `<host address>:<port>`,
-   their token, and `docs/playtest.md` if they are not unzipping it.
+   their invite link (`chimera_accounts invite`, "Accounts and invites"
+   below), and `docs/playtest.md` if they are not unzipping it.
 3. **Check the asset service has everything the match needs** ("Publishing
    the game files", below) and that it answers over HTTPS from outside your
    network (`curl -k https://<host address>:<asset port>/key` prints a hex
@@ -86,15 +87,12 @@ service"). Design and limits: [plans/active/asset-service.md](plans/active/asset
    about 0.3 GB from your asset service (what the games read at startup,
    then the first match's files; 0.5 GB before the 2026-11-15 republish); ten testers doing that at 1pm on Saturday
    share your upload. With the asset service and the game server up the
-   day before, ask each tester to run their first start then
-   (`Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`),
+   day before, ask each tester to run their first start then: sign in
+   with the invite on the first-run screen, join `<host address>:<port>`,
    wait for the download on the loading panel and the first match to load,
    and quit.
-   On Saturday they start from what they already have; only new maps and
-   guns come. Tell them to start on Saturday **without** the token
-   (`Play-UGG.bat`, then Join, or `Play-UGG.bat +connect <host address>:<port>`):
-   entering it again forgets which service it is for (the next join binds
-   it anew, in the same window).
+   On Saturday they start from what they already have, signed in by
+   themselves; only new maps and guns come.
 
 ## Halo's maps (optional)
 
@@ -565,7 +563,7 @@ machine, e.g. a developer's), add `--listen 127.0.0.1:<other port>`.
 It prints `HTTPS at ...` and the **certificate fingerprint**. The
 certificate is its own (self-signed, made on first start in
 `<server store>/server/tls/`; keep that folder: a new certificate means each
-tester's token has to be entered again). Clients trust exactly that
+tester needs a new invite link, which carries the fingerprint). Clients trust exactly that
 certificate, by the fingerprint the game server hands out at join; the
 address may change. Limits (defaults): 100 requests a second per account
 (bursts of 1000), 20 GB a day per account, 30 bad tokens a minute per
@@ -616,8 +614,7 @@ install); `+chimera:asset_use_install 1` (or `[assets] use_install = true`)
 makes it read its installs first, the store only adding what they lack.
 
 **A listen server** (a player hosting from the game) needs nothing: it
-fetches with the host's own credential (the hub account's ticket, or the
-token entered with `+chimera:asset_token`).
+fetches with the host's own credential (the hub account's ticket).
 
 **A dedicated server** needs a credential once. Either:
 
@@ -642,10 +639,11 @@ token entered with `+chimera:asset_token`).
   uses it: tickets are asked with the device key and refreshed in the
   background. Revoke it like a player's (`chimera_accounts account revoke
   game-server`).
-- **A token** (works with or without the hub's services). On the asset
-  service's machine:
+- **A token**, only for an asset service run with no hub
+  (`chimera_asset_server --no-tickets`; a hub's asset service takes its
+  accounts' tickets alone). On that service's machine:
   ```
-  cargo run --release --features tools --bin chimera_pack -- user add game-server --note <server machine>
+  cargo run --release --features tools --bin chimera_pack -- token add game-server --note <server machine>
   ```
   Give it to the server in its environment, never on its command line:
   `CHIMERA_ASSET_TOKEN=<token>` (or `token` in `[assets]` of the server's
@@ -655,8 +653,7 @@ token entered with `+chimera:asset_token`).
   On the asset service's own machine, prefer the loopback listener, which
   needs no certificate and no router hairpin:
   `CHIMERA_ASSET_URL=http://127.0.0.1:8731 CHIMERA_ASSET_TOKEN=<token>`
-  (`[assets] url` and `token` work the same). A token that was already in
-  `[assets]` with its `url` worked before and still does.
+  (`[assets] url` and `token` work the same).
 
 **Check it** with the start's log. With a credential:
 ```
@@ -857,13 +854,13 @@ speed and your upload", below).
 
 What a tester without the games downloads from the asset service:
 
-- **First join** (or a start with the token bound): what the games read at
+- **First join** (or the first start signed in): what the games read at
   startup (about 160 MB: each game's lean `base` set; 376 MB before the
   2026-11-15 republish), in the game's own window:
   at the first join with the match's files, on the loading panel ("Downloading
   game files: X of Y MB", the speed and time left); on a later start that
   lacks some, in the background from the start, a join waiting for it.
-  Errors (a refused token, the service unreachable, another certificate)
+  Errors (a revoked account or device, the service unreachable, another certificate)
   show on the loading panel with what to do. No second window, no restart.
   Testers with the games installed download the same (since 2026-11-15:
   everyone plays the published files), unless they turned on "Use my
@@ -905,52 +902,50 @@ pool maps, so there is nothing for them to prefetch). Measure your upload
 who fetched on Friday ("The day before", 4) take nearly nothing from it on
 the day.
 
-## Accounts and tokens
+## Accounts and invites
 
-On the asset server's machine, from a checkout built with `--features tools`
-(`chimera_pack` is a host tool and is not in releases):
-
-```
-cargo run --release --features tools --bin chimera_pack -- user add <tester> --note <device>
-```
-
-It prints the token **once**: copy it into a private message to that tester.
-One token per machine (run it again for a second device); account names are
-letters, digits, `_`, `-`, `.`. `--games a,b` limits what a token may fetch;
-the default is every game. `user list` shows the accounts. The accounts
-file keeps only hashes, in `<server store>/server/accounts.toml`.
-
-Revoke (takes effect on the next request, no restart):
+Everyone gets in with an account on the hub (the services in the next
+section): a tester, a developer, a dedicated server. On the hub's
+machine:
 
 ```
-chimera_pack user revoke <tester>               # all of a tester's tokens
-chimera_pack user revoke <tester> --token <n>   # one
+target/release/chimera_accounts invite --intent "<why>" [--recipient "<who>"] --hub <public address>:<hub port>
 ```
 
-With the accounts service running and the file imported, run
-`chimera_accounts import-legacy` again after a `user revoke`: the
-accounts service gives tickets to imported tokens from its own database,
-and a re-import carries the file's revocations over (it only ever
-revokes). The other way round is automatic: `chimera_accounts account
-revoke | delete` and `device revoke` mark the account's tokens revoked in
-`accounts.toml` too.
+It prints the invite link **once** (and the bare code): send it to that
+tester privately. It is single use and valid 14 days (`--expires
+<days>`); the tester pastes it on the game's first-run screen, picks a
+username and saves a recovery key. `--content a,b` limits the games
+whose files the account may fetch (default: every game), `--role host`
+makes a game server's account. `chimera_accounts invites` lists them,
+`invite revoke <code or name>` withdraws one unused.
 
-Testers who play from their own install get a token too: the game sends
-their F10 reports with it to the service the server offers (until it is
-bound to one, the first server that offers its files; see below).
+Revoke (within one revocation poll, 30 s; no restart):
 
-Revoking stops downloads and reports; a player already in a match keeps playing it. To
-remove one from the server use its console, or end the match.
+```
+chimera_accounts account revoke <username>   # the account
+chimera_accounts device revoke <device id>   # one PC (account show lists them)
+```
 
-Nothing else is needed per tester: the token is all they enter, once
-(`chimera_pack user add` prints the line for them). The game
-server checks nothing of it; the asset service checks it on every request.
-The first server that offers its files binds the token to that service's
-certificate on the tester's machine (`%LOCALAPPDATA%\chimera\asset-access.toml`);
-from then on the token is only ever sent to that certificate, whatever
-address the server names. To change the certificate (a lost `tls` folder),
-every tester enters their token again (`+chimera:asset_token <token>`),
-which clears the binding.
+Revoking stops downloads and reports; a player already in a match keeps
+playing it. To remove one from the server use its console, or end the
+match. A tester who lost their PC recovers with their key, links a new
+PC from a signed-in one (Settings > Account > Link a device), or gets
+`chimera_accounts invite --for <username>` (into the same account, its
+other devices revoked unless `--keep`).
+
+The game server checks nothing of the account; the hub's asset service
+checks the ticket on every request. Testers who play from their own
+install sign in too: their F10 reports go to the hub with their account.
+
+**An asset service with no hub** (a game server's own,
+`chimera_asset_server --no-tickets`) has its own tokens instead:
+`chimera_pack token add <name> --note <device>` prints one once (`token
+list`, `token revoke <name> [--token <n>]`; hashes only, in `<server
+store>/server/accounts.toml`); the player enters it once with
+`+chimera:asset_token <token>`, and the first server offering that
+service binds it to the service's certificate
+(`%LOCALAPPDATA%\chimera\asset-access.toml`).
 
 ### Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2)
 
@@ -961,20 +956,19 @@ own binary, restarted on its own:
 |---|---|---|---|
 | front | `chimera_front` | the public `<hub port>` (TLS, the asset service's certificate) | routes each connection by path: `/accounts/` to accounts, `/hub` to the hub (S2), `/feedback` and everything else to assets; adds `X-Chimera-Peer`; never relays `/admin`, `/internal`, `/feedback/admin` |
 | accounts | `chimera_accounts serve` | 127.0.0.1:8741 | invites, devices, tickets, revocations (`accounts.db`), the admin page |
-| assets | `chimera_asset_server` | 127.0.0.1:8731 | game files and feedback reports, legacy tokens and tickets |
+| assets | `chimera_asset_server` | 127.0.0.1:8731 | game files and feedback reports, for account tickets |
 | hub | `chimera_hub serve` | 127.0.0.1:8742 | the signed discovery document (`GET /hub`), the server list (`/hub/servers`), game servers' heartbeats and the reachability probe (`hub/hub.db`, `hub/hub.toml`) |
 
 Ports live in `<server store>/server/services.toml` (`[front] listen`,
 `[ports] assets/accounts/hub`); defaults as above. With the front, the
 asset service runs **without** `--tls` (loopback only) and the front takes
 the public port, with the same certificate (`<server store>/server/tls/`),
-so testers' pinned fingerprint and tokens keep working. One router
+so the fingerprint in the invite links is the one players reach. One router
 forward and one firewall rule (TCP `<hub port>`).
 
 ```
 cargo build --release -p chimera_services -p chimera_assets --bin chimera_front --bin chimera_accounts --bin chimera_hub --bin chimera_asset_server
-target/release/chimera_accounts import-legacy   # an account per accounts.toml account; tokens keep working; again after a `user revoke` (carries revocations over)
-target/release/chimera_accounts invite <name> --hub <public address>:<hub port>   # the link, printed once
+target/release/chimera_accounts invite --intent "<why>" --hub <public address>:<hub port>   # the link, printed once
 target/release/chimera_accounts invites | account list | account show <username>
 target/release/chimera_accounts account set <username> --content cs_source,combat_arms --role host ...
 target/release/chimera_accounts account refresh <username>   # new rights at once (tickets asked again)
@@ -1017,12 +1011,12 @@ while it doesn't answer; the server's `status` says which (`hub : listed
 at ..., but the hub can't reach UDP <port> ...`). A server that stops
 sending is dropped after 90 s; quitting delists at once.
 
-A tester signs in once with the link: `+chimera:hub <link> [username]`
-on the game's command line (the first-run page comes with S3); the
-account file and recovery key land in `<data_local>/chimera/`. From then
-on the game asks tickets with its device key and uses them for the hub's
-asset service (any server that offers that service at join), refreshing
-them in the background; a tester with a token keeps working as before.
+A tester signs in once with the link on the first-run screen (or
+`+chimera:hub <link> [username]` on the game's command line); the
+account file lands in `<data_local>/chimera/`. From then on the game asks
+tickets with its device key and uses them for the hub's asset service
+(any server that offers that service at join), refreshing them in the
+background.
 
 **Under systemd** (user units, this box): `chimera_accounts install-units
 --front 0.0.0.0:<hub port>` writes `chimera-front`, `chimera-accounts`,
@@ -1056,17 +1050,16 @@ loopback does). `accounts.db` is backed up nightly into `<server store>/server/b
    map loaded without `error:`. `status` shows 0 players and the bots.
 2. From **another machine outside your network** (a phone hotspot is
    enough), on a fresh Windows user profile or a PC with none of the games:
-   download the release zip, unzip, `Play-UGG.bat`, enter a test token,
-   join `<host address>:<port>`, watch the first download finish, spawn,
-   shoot, climb a rung, open Esc > Options, press F9 and find the report
-   folder, quit. Token entry and the download: run
-   `Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`
-   once; the game binds the token at the join and, in the same window,
-   shows "Downloading game files: X of Y MB" on the loading panel while it
-   fetches what the games read at startup and the match's files, then
-   spawns (no second window, no restart). Later joins download only what is new.
-3. `chimera_pack user revoke` that test token, join again, confirm the
-   download is refused with a clear message.
+   download the release zip, unzip, `Play-UGG.bat`, sign in with a test
+   invite on the first-run screen, join `<host address>:<port>`, watch the
+   first download finish, spawn, shoot, climb a rung, open Esc > Options,
+   press F9 and find the report folder, quit. The download: at the join
+   the game shows, in the same window, "Downloading game files: X of Y
+   MB" on the loading panel while it fetches what the games read at
+   startup and the match's files, then spawns (no second window, no
+   restart). Later joins download only what is new.
+3. `chimera_accounts account revoke` that test account, wait 30 s, join
+   again, confirm the download is refused with a clear message.
 4. Join with two clients and check a match starts with bots off
    (`+MaxPlayer 0`), then with bots on.
 5. Check the release zips for the traces of a developer's machine (the
@@ -1086,7 +1079,7 @@ loopback does). `accounts.db` is backed up nightly into `<server store>/server/b
   p99: under 15 ms, a tick's length, is fine; the rehearsal measured
   2.9 ms p50 and 4-7 ms p99 with 3 players and 7 bots) and the memory.
 - The asset service logs each request to `<server store>/server/access.log`:
-  watch for 401 (bad or revoked token), 403 and hash-refusal lines.
+  watch for 401 (a bad ticket, or a revoked device or account), 403 and hash-refusal lines.
   A tester's join is a burst of `POST /batch` lines (the match's sets),
   then `/batch` lines for the pool's other maps in the background.
 - **Files fetched mid-match.** A match's files should all come with the
@@ -1130,7 +1123,7 @@ loopback does). `accounts.db` is backed up nightly into `<server store>/server/b
   account, 30 an hour per address (`--reports-per-hour`,
   `--reports-per-day`, `--reports-per-address`); past them 429.
   `feedback mute <account>` drops an account's reports quietly (`unmute`
-  takes it back); revoking its token stops them too. `--on-report
+  takes it back); revoking the account stops them too. `--on-report
   <command>` (or `on_report` under `[feedback]` in the local config)
   runs a command with the new report's folder, e.g. a ping.
 - **The page over a private network.** The triage page answers only to a
@@ -1164,7 +1157,7 @@ loopback does). `accounts.db` is backed up nightly into `<server store>/server/b
   `<data_local>/chimera/logs/server-<time>.log` with everything else it
   logged (the last five servers' runs; a run that died is named on stderr
   at the next start).
-  A tester whose report can't go (no token) has it in
+  A tester whose report can't go (not signed in) has it in
   `%LOCALAPPDATA%\chimera\feedback\outbox\` and can zip that folder.
 - Older builds' bug reports arrive as zipped `bugreports` folders and
   `ugg-last.log` files; note the time and map of each so you can find the
@@ -1248,7 +1241,8 @@ its last map and fails on any fetch during the match).
 
 ## After
 
-Revoke all tokens (`user revoke <tester>` each, or stop the asset service),
+Revoke the session's test accounts (`chimera_accounts account revoke
+<username>` each) if they shouldn't outlive it,
 stop the server, close the ports (UPnP mappings expire, a manual forward does
 not), and collect the reports.
 

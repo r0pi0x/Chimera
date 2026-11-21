@@ -7,8 +7,7 @@
 //! Public (through the front), `/accounts/...`:
 //! - `POST /accounts/redeem` (an invite or link code, a username, the
 //!   device's public key), `POST /accounts/recover`, `POST
-//!   /accounts/ticket` (a device's signed request, or `Authorization:
-//!   Bearer chimera1_...`), `POST /accounts/check` (a code's kind and
+//!   /accounts/ticket` (a device's signed request), `POST /accounts/check` (a code's kind and
 //!   the hub's name and MOTD, a username's availability with
 //!   suggestions; nothing used up): no ticket needed, rate limited.
 //! - `POST /accounts/link`, `POST /accounts/display-name`, `POST
@@ -23,8 +22,7 @@
 //!   `POST invite`, `GET invites`, `POST invite/revoke`, `GET accounts`,
 //!   `GET account?username=` (show), `POST account/set`, `POST
 //!   account/refresh`, `POST account/delete`, `POST account/revoke`,
-//!   `POST device/revoke`, `POST ban`, `POST import-legacy`, `POST
-//!   backup`.
+//!   `POST device/revoke`, `POST ban`, `POST backup`.
 //! - `GET /admin/`: the owner's page (`page`; no secret needed to load it,
 //!   only to use it; a local `Host` too).
 //! - `GET /health`: `ok <version> uptime=<s> db=<schema> accounts=<n>`
@@ -156,10 +154,6 @@ struct Ban {
     reason: String,
 }
 #[derive(Deserialize)]
-struct Legacy {
-    toml: String,
-}
-#[derive(Deserialize)]
 struct DisplayName {
     display_name: String,
 }
@@ -280,13 +274,7 @@ impl Http {
                 answer(201, body::<RecoverRequest>(request).and_then(|r| a.recover(&r, ip)))
             }
             (Method::Post, ["accounts", "ticket"]) => {
-                let token = bearer(request);
-                let signed = if token.is_some() { None } else { Some(body::<TicketRequest>(request)) };
-                let r = match signed {
-                    Some(Err(e)) => Err(e),
-                    Some(Ok(req)) => a.ticket(Some(&req), None, ip),
-                    None => a.ticket(None, token.as_deref(), ip),
-                };
+                let r = body::<TicketRequest>(request).and_then(|req| a.ticket(&req, ip));
                 answer(200, r.map(|ticket| chimera_assets::account::TicketAnswer { ticket }))
             }
             (Method::Post, ["accounts", "link"]) => answer(201, self.with_ticket(request).and_then(|t| a.link(&t))),
@@ -327,9 +315,6 @@ impl Http {
             }
             (Method::Post, ["admin", "ban"]) => {
                 answer(200, body::<Ban>(request).and_then(|b| a.ban(&b.target, b.days, &b.reason)))
-            }
-            (Method::Post, ["admin", "import-legacy"]) => {
-                answer(200, body::<Legacy>(request).and_then(|l| a.import_legacy(&l.toml)))
             }
             (Method::Post, ["admin", "backup"]) => {
                 answer(200, a.backup().map(|p| serde_json::json!({ "path": p.display().to_string() })))

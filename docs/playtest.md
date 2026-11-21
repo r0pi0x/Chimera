@@ -30,8 +30,8 @@ it off unless the host asks.
   `%LOCALAPPDATA%\chimera\assets`, delete it to start over).
 - A wired or good Wi-Fi connection; the game needs roughly 0.15 Mbit/s per
   player once it is running (the first download is the big one).
-- From the host: the **release link**, your **token** and the **server
-  address**. Do not share them.
+- From the host: the **release link**, your **invite link** and the
+  **server address**. Do not share the invite: it is yours alone.
 
 ## Download and start
 
@@ -49,26 +49,32 @@ it off unless the host asks.
 5. A console window opens beside the game window. Leave it open: it shows
    what the game is doing and is what to copy when something goes wrong.
 
-## First run: your token
+## First run: your invite
 
-Enter your token once, with the server's address, in a command prompt or
-PowerShell in the game's folder:
+The first time the game starts it asks for your **invite**: paste the
+link the host sent you (it starts with `chimera-hub://`; the bare code
+works too once the game knows the hub) and press Enter. The game shows
+the hub's name; check it is the host's, then:
 
-```
-Play-UGG.bat +chimera:asset_token <your token> +connect <host address>:<port>
-```
+1. Choose a **username** (3 to 20 letters, digits or `_`, starting with a
+   letter; the game says at once if it is taken and offers free ones), a
+   display name if you want another, and an avatar.
+2. Save your **recovery key**: Copy or Save as file, then tick "I saved
+   it". It gets your account back if you lose this PC; keep it private.
+3. You land on the main menu, signed in (your name in the corner).
 
-The game keeps the token for your Windows user
-(`%LOCALAPPDATA%\chimera\asset-access.toml`; the log says `asset token
-saved`). You don't need the server's asset address: joining tells the game
-where it is: the first join binds the token to the server's asset service
-and downloads the files in the same window, on the loading panel. The token looks like `chimera1_...`; paste it
-exactly, and keep it private: it is yours alone and the host can revoke it.
-To enter a new one, run the same line with the new token.
+From then on the game signs you in by itself; there is nothing to type
+and nothing else to keep. The invite is single use: if it says "used" or
+"withdrawn", ask the host for a new one. To start from a command prompt
+instead, `Play-UGG.bat +chimera:hub <your invite link>` does the same.
 
-After that first time, start the game **without** the token: `Play-UGG.bat`
-(then Join), or `Play-UGG.bat +connect <host address>:<port>`. Entering the
-token again works too: the next join binds it again, in the same window.
+A second PC: on the signed-in one, Settings > Account > **Link a device**
+shows a short code; on the new one choose "I already have an account" and
+type it. A lost PC: "I already have an account" > Recover with your
+recovery key, or ask the host for a new invite into your account.
+
+"Play without an account" plays on the LAN and by address with the games
+installed on your PC only: no downloads, no server list.
 
 ## Joining the server
 
@@ -96,15 +102,13 @@ while one plays. If the download fails, the loading panel says
 why; join again once the host has fixed it. If it stalls, wait a minute, then see
 "Reporting a bug". Messages you may see instead:
 
-- "the asset service refused your token (revoked or mistyped)": ask the
-  host for a new token and run the line above with it.
+- "the asset service refused you": this device or your account was
+  revoked; ask the host for a new invite.
 - "can't reach the asset service at ...": the host's asset service is down
   or its port isn't open; tell the host.
-- "isn't the one your token is for" or "has another certificate than the
-  one your token is for": the host's service changed; enter your token again
-  (the line above) if the host says so.
-- "This match needs ... start the game once with +chimera:asset_token": you
-  joined without a token.
+- "This match needs ... sign in with your invite link": you joined without
+  an account (you chose "Play without an account"); start the game with
+  `Play-UGG.bat +chimera:hub <your invite link>`.
 
 **The lobby before each match.** Each match (the first, and each new map)
 waits until everyone has the map. Over the map (or over your loading panel
@@ -207,10 +211,10 @@ The easiest way, in a build that has it: press **F10** (or Esc > **Report a
 bug**) when it happens. The game takes a screenshot of that moment, then
 opens a small report window: pick **Bug** or **Feedback** (Tab), type what
 happened and what you expected, keep or untick **Include screenshot**, and
-press **Send** (Ctrl+Enter). It goes to the host with your asset token (the
-one you entered once); "What's sent" lists what goes with it, and no
-passwords, tokens or game files are in it. Without a token, or while the
-host's service doesn't answer, the report waits on your PC under
+press **Send** (Ctrl+Enter). It goes to the host's hub, signed in as you;
+"What's sent" lists what goes with it, and no passwords, keys or game
+files are in it. Without an account, or while the host's service doesn't
+answer, the report waits on your PC under
 `%LOCALAPPDATA%\chimera\feedback\outbox\` and goes later by itself (the
 console's `feedback_status` says why it waits); if it never goes, zip that
 folder and send it. F10 can be moved in Options > Controls ("Report a

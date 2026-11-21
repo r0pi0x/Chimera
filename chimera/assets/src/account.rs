@@ -32,11 +32,11 @@
 //!   while it is valid, asked again at most once a minute.
 //!   `Remote` sends the live session's current ticket (`fresh_ticket`), and
 //!   `AssetsConfig::resolve` uses a signed-in account's asset service
-//!   before a bound legacy token (`user_remote`). A game client keeps the
-//!   ticket fresh in the background (`keep_fresh`), and a join uses the
-//!   account's ticket for an asset service a game server offers when that
-//!   service has the hub's certificate (`Session::remote_for`; any other
-//!   gets the legacy token, never a ticket: `chimera_net::net::assets`).
+//!   (`user_remote`). A game client keeps the ticket fresh in the
+//!   background (`keep_fresh`), and a join uses the account's ticket for
+//!   an asset service a game server offers when that service has the
+//!   hub's certificate (`Session::remote_for`; a service with no hub gets
+//!   its own token, never a ticket: `chimera_net::net::assets`).
 //!
 //! Known shortcuts: the private key sits in the file in the clear (0600 on
 //! Unix; DPAPI on Windows later); no UI yet (S3): `+chimera:hub <link>
@@ -615,12 +615,6 @@ pub fn request_ticket(file: &AccountFile) -> Result<String, String> {
         signature: hex(&signature.to_bytes()),
     };
     let answer: TicketAnswer = post(&file.url, file.fingerprint.as_deref(), "/accounts/ticket", None, &request)?;
-    Ok(answer.ticket)
-}
-
-/// A ticket for a legacy token's device (`Authorization: Bearer chimera1_...`).
-pub fn legacy_ticket(url: &str, fingerprint: Option<&str>, token: &str) -> Result<String, String> {
-    let answer: TicketAnswer = post(url, fingerprint, "/accounts/ticket", Some(token), &serde_json::json!({}))?;
     Ok(answer.ticket)
 }
 

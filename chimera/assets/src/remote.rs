@@ -19,8 +19,9 @@
 //! `pace::Pace`'s rate on one connection (the game's background
 //! streams), unclaimed.
 //!
-//! A token is a legacy `chimera1_` token or a platform account's ticket
-//! (`account`: the session refreshes it at half-life, `fresh_ticket`).
+//! A token is a platform account's ticket (`account`: the session
+//! refreshes it at half-life, `fresh_ticket`) or, for an asset service
+//! with no hub, that service's own token (`accounts::Internal`).
 //!
 //! Tokens and files go over HTTPS only: a URL must be `https://`, except
 //! on this machine (`localhost`, `127.0.0.1`, `[::1]`: tests, a server on

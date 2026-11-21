@@ -583,8 +583,8 @@ pub fn client_requirements() -> (String, bool) {
 /// A missing install never stops the game: a server that offers its game
 /// files (`net::assets`) provides what isn't installed when the player
 /// joins, so the menu and Join work with no install and no config. The
-/// lines stay as warnings, saying how. `service`: an asset token is set
-/// or an asset service is configured: then the lines say the files come
+/// lines stay as warnings, saying how. `service`: signed in to a hub, a
+/// token entered or an asset service configured: then the lines say the files come
 /// from the service, without the install hints (the config file).
 pub fn served_by_servers(mut out: Vec<Missing>, service: bool) -> Vec<Missing> {
     for m in out.iter_mut().filter(|m| m.install) {
@@ -595,8 +595,8 @@ pub fn served_by_servers(mut out: Vec<Missing>, service: bool) -> Vec<Missing> {
         } else if m.fatal {
             m.fatal = false;
             m.text.push_str(
-                " A server that offers its game files can provide them: start the game once with \
-                 +chimera:asset_token <token> (from the server's admin), then join it.",
+                " A server that offers its game files can provide them: sign in with your hub invite (the first \
+                 run, or +chimera:hub <invite link>), then join it.",
             );
         }
     }
@@ -771,7 +771,7 @@ mod tests {
     /// A tester with no install and no config reaches the menu and can
     /// join: no missing install stops the game (a server offering its game
     /// files provides them, `net::assets`); each still says what is missing
-    /// and how to get it, with or without an asset token.
+    /// and how to get it, signed in or not.
     #[test]
     fn no_install_never_stops_the_game() {
         for service in [false, true] {
@@ -785,7 +785,7 @@ mod tests {
                     assert!(m.text.contains("asset service") && !m.text.contains("chimera.local.toml"), "{}", m.text);
                 }
             } else {
-                assert!(out[0].text.contains("+chimera:asset_token <token>"), "{}", out[0].text);
+                assert!(out[0].text.contains("+chimera:hub <invite link>"), "{}", out[0].text);
                 assert!(out[0].text.contains("chimera.local.toml"), "the plain warning stays");
             }
             let (text, fatal) = super::report(&out);

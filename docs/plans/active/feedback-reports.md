@@ -222,10 +222,11 @@ uses `chimera_assets`; `party_kit` is an app crate.
 
 ### 3.3 Auth, limits, spam
 
-- Auth: the tester's asset token (`accounts`), so each report names an
-  account. A tester who plays from their own install still gets a token
-  (`chimera_pack user add`) for reports. Revoking a token also stops its
-  reports.
+- Auth: the tester's hub account (its ticket; `accounts::TicketAuth`),
+  so each report names an account; a tester who plays from their own
+  install signs in too. Revoking the account also stops its reports. (An
+  asset service with no hub takes its own tokens, `chimera_pack token
+  add`.)
 - Limits (new `Limits` fields, CLI flags): body 8 MB; per account 10 an
   hour and 40 a day; per address 30 an hour; the existing bad-token ban.
   Past a limit: 429, logged.
@@ -552,9 +553,9 @@ with the next release (all on one `NET_VERSION`; the user's go).
 5. Check from this machine: `curl -s -o /dev/null -w '%{http_code}'
    http://127.0.0.1:<plain port>/feedback/admin/` answers 200, and
    `chimera_assets --store <server store> feedback list` says `0 reports`.
-6. Tokens: testers who play from their own install get one (`chimera_pack
-   user add <tester> --note <device>`, docs/playtest-hosting.md "Accounts
-   and tokens"), entered once with `+chimera:asset_token <token>`.
+6. Accounts: every tester signs in with an invite, those who play from
+   their own install too (docs/playtest-hosting.md "Accounts and
+   invites").
 7. With the release: build the testers' and the server's builds from
    main as usual (docs/playtest-hosting.md); a tester's F10 then sends
    to the offered service. Pre-flight: press F10 on a client, Send, and

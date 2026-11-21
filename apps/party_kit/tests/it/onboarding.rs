@@ -11,7 +11,9 @@
 //! new key; Skip writes its mark; every staged screen draws its words;
 //! each error offers its one action as the hero (Enter clears a used
 //! code, a certificate that isn't the invite's has no way on and copies
-//! its details for the owner); the bar carries the game's own lockup.
+//! its details for the owner); the bar carries the game's own lockup; a
+//! PC with no account sees the first run (a no-hub asset token aside)
+//! until it signs in or skips.
 
 use bevy::{
     input::{
@@ -25,7 +27,7 @@ use chimera_ui::{Timeline, UiClock};
 use chimera_world::harness::Sim;
 use party_kit::onboarding::{
     ChipRoot, HaveTab, NameField, ObAction, Onboarding, OnboardingBackend, OnboardingFiles, OnboardingLockup, OnboardingPlugin,
-    OnboardingRoot, Problem, STAGED_KEY, Step, ToastRoot,
+    OnboardingRoot, Problem, STAGED_KEY, Step, ToastRoot, first_run_due,
 };
 
 use super::signal_menu::step;
@@ -320,6 +322,39 @@ fn recovering_shows_the_new_key_and_skip_writes_its_mark() {
     sim.app.insert_resource(OnboardingFiles { skip_mark: Some(mark.clone()), ..Default::default() });
     act(&mut sim, ObAction::Skip);
     assert!(!o(&sim).active && mark.exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A PC with no account and no skip mark gets the first run, whatever
+/// else it holds (a token for an asset service with no hub beside the
+/// account file is no way onto a hub); an account file or the skip mark
+/// ends it.
+#[test]
+fn a_pc_with_no_account_sees_the_first_run() {
+    let dir = std::env::temp_dir().join(format!("onboarding-due-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = OnboardingFiles {
+        account: Some(dir.join("account.toml")),
+        skip_mark: Some(dir.join("onboarding-skipped")),
+        key_dir: None,
+    };
+    let mut access = chimera_assets::access::Access::default();
+    access.set_token(&format!("chimera1_{}", "0".repeat(64))).unwrap();
+    access.save_to(&dir.join("asset-access.toml")).unwrap();
+    assert!(first_run_due(&files), "no account: the first run");
+    let file = chimera_assets::account::AccountFile {
+        url: "https://hub.example.net:27080".into(),
+        account: "00".repeat(16),
+        device: "11".repeat(16),
+        username: "sam".into(),
+        device_key: "03".repeat(32),
+        ..Default::default()
+    };
+    file.save_to(files.account.as_ref().unwrap()).unwrap();
+    assert!(!first_run_due(&files), "signed in");
+    std::fs::remove_file(files.account.as_ref().unwrap()).unwrap();
+    std::fs::write(files.skip_mark.as_ref().unwrap(), "").unwrap();
+    assert!(!first_run_due(&files), "skipped");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

@@ -10,25 +10,24 @@ from an install.
 
 ## Setup (once)
 
-1. Ask the server's admin for an account. They run `chimera_pack user add
-   <you> --note <device>` and send you a URL and a token (one token per
-   machine; revocable).
-2. Put both into `chimera.local.toml` at the checkout's root (git-ignored,
-   never committed; `chimera.local.example.toml` shows the section), or
-   point `CHIMERA_CONFIG` at a file elsewhere:
+1. Ask the hub's owner for an invite (`chimera_accounts invite`; a link
+   `chimera-hub://...`, sent privately, single use).
+2. Sign in with it once, as your user on this machine:
    ```
-   [assets]
-   url = "https://<the server's name>"
-   token = "chimera1_..."
+   cargo run -p chimera_assets --bin chimera_assets -- hub "<invite link>" <username>
    ```
-   Nothing else is needed: no `[games.*]` paths, no keys. The environment
-   wins over the file (`CHIMERA_ASSET_URL`, `CHIMERA_ASSET_TOKEN`).
-3. Check them and pin the server's key:
+   (or paste it on a game app's first-run screen, or start one with
+   `+chimera:hub <invite link>`). The account lands in
+   `<data_local>/chimera/account.toml`, the recovery key beside it (save
+   it elsewhere). Every checkout, slot, test and tool of this user then
+   reads from the hub's asset service with the account's tickets: no
+   `[games.*]` paths, no keys, nothing in `chimera.local.toml`.
+   (`CHIMERA_ACCOUNT` names another account file.)
+3. Check it:
    ```
    cargo run -p chimera_assets --bin chimera_assets -- login
    ```
-   It prints who you are and a `key = "..."` line; add it to `[assets]`
-   (with it, a manifest signed by any other key is refused).
+   It prints who you are on which service.
 4. Optional: fetch ahead (otherwise files arrive on demand, see below):
    ```
    cargo run -p chimera_assets --bin chimera_assets -- fetch cs_source base map/de_dust2 players
@@ -86,14 +85,29 @@ chimera_assets`); `chimera_pack sign halo_ce --store <server store>` is the
 alternative.
 
 Players rather than developers (a playtest over the internet, no
-checkout): the game server names the service at join and the client
-downloads what the match needs; they enter only a token
-([playtest-hosting.md](playtest-hosting.md)). The service then runs with
-HTTPS of its own (`chimera_asset_server --tls`, a self-signed certificate
-clients pin by fingerprint). A developer can use it the same way: join
-such a server once with a token, and later runs read from it (the bound
-access in `%LOCALAPPDATA%\chimera\asset-access.toml`, used when
-`[assets]` names no service).
+checkout): they sign in with their invite on the first-run screen, the
+game server names the service at join and the client downloads what the
+match needs ([playtest-hosting.md](playtest-hosting.md)). The service is
+reached over HTTPS through the hub's front, its self-signed certificate
+pinned by the fingerprint in the invite link.
+
+**An asset service with no hub** (`chimera_asset_server --no-tickets`,
+e.g. a game server's own) has its own tokens: its admin runs
+`chimera_pack token add <you> --note <device>` and sends a URL and a
+token, which go into `chimera.local.toml` (git-ignored;
+`chimera.local.example.toml` shows the section; the environment wins:
+`CHIMERA_ASSET_URL`, `CHIMERA_ASSET_TOKEN`):
+```
+[assets]
+url = "https://<the server's name>"
+token = "<the token>"
+```
+`chimera_assets login` then prints a `key = "..."` line to add (a
+manifest signed by any other key is refused). A player of such a server
+enters the token once with `+chimera:asset_token <token>`; the first
+join binds it to that service's certificate
+(`%LOCALAPPDATA%\chimera\asset-access.toml`, used when `[assets]` names
+no service).
 
 ## Installs and the service
 
@@ -101,8 +115,8 @@ Players play the published build's files and data, installed games or
 not: the same files for everyone (TF2's decrypted scripts and the
 declared sets included), and no keys needed. So the game apps and their
 servers read a game the asset service serves from the store alone
-whenever a service is set (`[assets] url`/`token` or their variables, a
-hub account, a token bound by a join), the install unused
+whenever a service is set (a hub account, `[assets] url`/`token` or their
+variables, a token bound by a join), the install unused
 (`chimera_assets::config::InstallDefault`, set at an app's start).
 Tests and tools keep the install first, so the suite reads the installs
 as before and stays offline-safe.
@@ -113,7 +127,7 @@ as before and stays offline-safe.
 | **service**, a test or tool | the store, filled from the service | the install first, the store under it (adds only what the install lacks) |
 | **service**, a game app or server (the default) | the store, filled from the service | **the store**, filled from the service; a game the service doesn't serve (TF2 today) reads its install |
 | **service**, the install chosen (Settings ▸ Network ▸ "Use my installed games", `[assets] use_install = true`, `CHIMERA_ASSET_USE_INSTALL=1`, a server's `+chimera:asset_use_install 1`) | the store, filled from the service | the install first, the store under it |
-| a client whose token or hub account waits for its first join (entered with `+chimera:asset_token`, not bound yet) | nothing until the join binds it | hidden until the join binds the service, then as with a service (a game the service doesn't serve: its install) |
+| a client whose hub account, or token for a service with no hub (entered with `+chimera:asset_token`, not bound yet), waits for its first join | nothing until the join binds it | hidden until the join binds the service, then as with a service (a game the service doesn't serve: its install) |
 | `use_install = false` / `CHIMERA_ASSET_USE_INSTALL=0`, anywhere | the store alone | the store alone (a game it doesn't serve: none) |
 
 The setting is `chimera:asset_use_install` (archived in config.cfg, read
@@ -280,14 +294,16 @@ install's `.ctx` scripts decrypt (Thin-ICE, all of them, on 2026-11-15).
 
 ## When something goes wrong
 
-- `asset service <url> (<game>): ... HTTP 401`: the token is missing,
-  mistyped or revoked; ask the admin for a new one. `403`: your account
-  isn't allowed that game. The service is asked once per game and process;
+- `asset service <url> (<game>): ... HTTP 401`: your device or account
+  was revoked (or, with a service of no hub, the token is mistyped or
+  revoked); ask the owner for a new invite. `403`: your account isn't
+  allowed that game (its `content`). The service is asked once per game and process;
   after a failure the game counts as not installed (tests skip, apps
   report no install).
-- Can't connect / timeouts: the server is private (Tailscale): check you
-  are on the tailnet and the URL is `https://`. Plain `http://` is
-  refused except to this machine.
+- Can't connect / timeouts: the hub's front (or a service with no hub)
+  isn't answering: check with its owner that it is up and its port open,
+  and that the URL is `https://`. Plain `http://` is refused except to
+  this machine.
 - `the server's key isn't the one pinned`: the server was re-keyed or the
   URL points elsewhere; check with the admin before changing `key`.
 - `asset refused <game>: <path>: record ...: hash mismatch`: a record

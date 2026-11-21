@@ -25,11 +25,13 @@
 //! serves), copies the sets recorded for that build in the user's store
 //! (`--sets-from <store>`; only sets whose files were all published) and
 //! signs the manifest with the server's key, so on the same box a publish
-//! goes straight into what the server serves (no restart). `chimera_pack
-//! user add <name> [--games <a,b>] [--note <text>]` makes an internal
-//! account (or a new token for one: one per device) and prints the token
-//! once; `user revoke <name> [--token <n>]` takes one or all of its tokens
-//! back (at the server's next request); `user list` shows the accounts.
+//! goes straight into what the server serves (no restart). Players of a
+//! hub get in with an invite (`chimera_accounts invite`); an asset
+//! service with no hub (`chimera_asset_server --no-tickets`) has its own
+//! tokens: `chimera_pack token add <name> [--games <a,b>] [--note <text>]`
+//! makes one (one per device) and prints it once; `token revoke <name>
+//! [--token <n>]` takes one or all of a name's back (at the service's next
+//! request); `token list` shows them.
 //!
 //! `chimera_pack sets <game> [--store <dir>] [--sign] [--pack]` records the
 //! sets a game's pieces read, by loading each through the game's own
@@ -173,9 +175,10 @@ usage: chimera_pack pack <game> [options]       into a store (default the user's
        chimera_pack repack --store <dir> [--threads <n>] [--only <game>:<set prefix>,...] [--sign] [--restat]
                                                 records again at the current zstd level
                                                 (--restat: only the manifests' stored sizes)
-       chimera_pack user add <name> [--games <a,b>] [--note <text>]
-       chimera_pack user revoke <name> [--token <n>]
-       chimera_pack user list                   (user: --store <server store>)
+       chimera_pack token add <name> [--games <a,b>] [--note <text>]
+       chimera_pack token revoke <name> [--token <n>]
+       chimera_pack token list                  (an asset service with no hub: --store <server store>;
+                                                a hub's players get invites: chimera_accounts invite)
        chimera_pack sign <game> --store <server store> [--build <id>]
                                                 sign a manifest packed elsewhere (no install)
        chimera_pack convert <game|all> [--store <server store>] [--sign] [--check]
@@ -315,7 +318,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let publish = match it.next().map(String::as_str) {
         Some("pack") => false,
         Some("publish") => true,
-        Some("user") => return user(&args[1..]),
+        Some("token") => return token(&args[1..]),
         Some("sets") => return sets(&args[1..]),
         Some("lean") => return lean(&args[1..]),
         Some("repack") => return repack(&args[1..]),
@@ -459,8 +462,9 @@ fn run(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `user add | revoke | list` on the server store's accounts file.
-fn user(args: &[String]) -> Result<(), String> {
+/// `token add | revoke | list` on the server store's tokens file (an asset
+/// service with no hub).
+fn token(args: &[String]) -> Result<(), String> {
     let mut it = args.iter();
     let command = it.next().ok_or(USAGE)?.clone();
     let mut name = None;
@@ -485,10 +489,10 @@ fn user(args: &[String]) -> Result<(), String> {
         ("add", Some(name)) if is_account_name(&name) => {
             let (id, token) = accounts.add(&name, games, &note)?;
             accounts.save(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            println!("account {name}, token {id} (shown once; revoke: chimera_pack user revoke {name} --token {id}):");
+            println!("{name}, token {id} (shown once; revoke: chimera_pack token revoke {name} --token {id}):");
             println!("{token}");
             println!(
-                "\na playtester enters it once (docs/playtest.md):\n  Play-UGG.bat +chimera:asset_token {token} +connect <host address>:<port>"
+                "\na player enters it once, then joins a server offering this service:\n  +chimera:asset_token {token} +connect <host address>:<port>"
             );
             println!(
                 "\na developer puts it in chimera.local.toml:\n[assets]\nurl = \"https://<the server's name>\"\ntoken = \"{token}\""

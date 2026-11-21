@@ -310,8 +310,8 @@ and a packer run). For HL2:DM:
   maps' sets from `CHIMERA_VFS_LOG` logs of the heavy tests. The
   records of `hl2/` that CS:S already published are shared by id, so
   HL2:DM adds mostly `hl2mp/`.
-- Accounts: `chimera_pack user add <name> --games hl2dm,...` for
-  testers (internal phase); ownership by app 320 when Steam sign-in
+- Accounts: `chimera_accounts invite --intent <why> --content hl2dm,...`
+  for testers; ownership by app 320 when Steam sign-in
   lands (asset-service.md 4.4 already lists it).
 - `docs/assets-for-developers.md` gets HL2:DM's sets and sizes;
   `assets.lock` its pinned build once published.

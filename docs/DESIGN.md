@@ -1228,7 +1228,7 @@ server browser are CS:S's). Entries and the Play page's rows are data
   asset cache from earlier joins), that map loads behind it (the pool's
   maps first, then `[background]`'s, rotating between starts; downloads
   held) and the backdrop crossfades to it, with a slow camera orbit.
-  Nothing at hand (a fresh install, no token, offline): the backdrop
+  Nothing at hand (a fresh install, not signed in, offline): the backdrop
   stays. The HUD is hidden by drawing the menu's UI on a camera of its own
   while the shell's UI camera (the HUD's) is off.
 - **Loading**: CS:S's loading dialog's parts (stage, bar, Cancel), for

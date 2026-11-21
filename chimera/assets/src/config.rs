@@ -72,7 +72,9 @@ pub struct AssetsConfig {
     /// The asset service (`https://...`); with `token`, files the store
     /// lacks are fetched from it.
     pub url: Option<String>,
-    /// This user's token for `url` (`chimera_pack user add` printed it).
+    /// This user's token for `url`, an asset service with no hub
+    /// (`chimera_pack token add` printed it; a hub's takes the account's
+    /// tickets: `account`).
     pub token: Option<String>,
     /// The service's public key (hex; `chimera_assets login` prints it):
     /// pinned, else the key the service names is trusted.

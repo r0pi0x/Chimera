@@ -7,10 +7,11 @@
 //! - `GET /key`: the server's public key (hex), unauthenticated: what
 //!   manifests are signed with.
 //! - Everything else wants `Authorization: Bearer <token>`: none, an
-//!   unknown or a revoked token is 401 (`accounts`). A token is a legacy
-//!   `chimera1_` token or, with `Service::with_tickets`, an account ticket
+//!   unknown or a revoked token is 401 (`accounts`). With
+//!   `Service::with_tickets` (a hub's) a token is an account ticket alone
 //!   (`ticket`, docs/plans/active/hub.md 2.4), refused within one
-//!   revocation poll of its device's or account's revocation.
+//!   revocation poll of its device's or account's revocation; a service
+//!   with no hub (`Service::new`) takes its own tokens (`accounts::Internal`).
 //! - `GET /whoami`: `<kind> <name> <token>` and the games it may fetch.
 //! - `GET /games`: `<game> <build> <manifest id>` per line, oldest build
 //!   first, for the games the account may fetch.
@@ -312,7 +313,8 @@ impl Outcome {
 }
 
 impl Service {
-    /// The service of `store` with internal accounts only.
+    /// The service of `store` with no hub: its own tokens
+    /// (`<store>/server/accounts.toml`, `chimera_pack token add`) only.
     pub fn new(store: Store) -> io::Result<Self> {
         let accounts = Accounts::path(&store.root);
         Self::with_authenticators(store, vec![Box::new(Internal::new(accounts))])
@@ -320,16 +322,15 @@ impl Service {
 
     /// The service of `store` taking the accounts service's tickets
     /// (`TicketAuth`, keys from `<store>/server/accounts/ticket.pub`, the
-    /// revocation feed from `accounts_url` every `every`) before the
-    /// internal accounts' tokens.
+    /// revocation feed from `accounts_url` every `every`): a hub's, which
+    /// takes its accounts' tickets and nothing else.
     pub fn with_tickets(store: Store, accounts_url: &str, every: Duration) -> io::Result<Self> {
         let tickets = crate::accounts::TicketAuth::new(crate::accounts::ticket_keys_path(&store.root)).with_feed(
             accounts_url.to_string(),
             crate::accounts::service_secret_path(&store.root),
             every,
         );
-        let accounts = Accounts::path(&store.root);
-        Self::with_authenticators(store, vec![Box::new(tickets), Box::new(Internal::new(accounts))])
+        Self::with_authenticators(store, vec![Box::new(tickets)])
     }
 
     /// With these account kinds, asked in order (Steam's goes here later).

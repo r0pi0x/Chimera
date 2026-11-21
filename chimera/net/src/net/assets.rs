@@ -23,7 +23,7 @@
 //!   prefetched at 2 MB/s for the whole session) stays empty: the next
 //!   map comes when the vote locks it in (below).
 //!   A joining client that says it can fetch (`ASSETS_KEY` in its userinfo:
-//!   it has a token) counts as having the offered games (`count_offered`),
+//!   it is signed in to a hub, or has a token for a service with no hub) counts as having the offered games (`count_offered`),
 //!   so a client with no install isn't refused before it hears the offer.
 //! - **The client** (`begin`, before it accepts a `Welcome` or
 //!   `ChangeLevel`): with the service first (the apps' default with a
@@ -67,7 +67,9 @@
 //!   (`stream_rate`; at least `STREAM_MIN_RATE`, at most the link's
 //!   estimate, `StreamLink`), held while a foreground download runs (a
 //!   join, a level change, the next map ahead).
-//!   A game neither installed nor served: with a token
+//!   A game neither installed nor served: signed in to the hub, its
+//!   ticket is used (below); else, for a game server's own asset service
+//!   with no hub, with a token
 //!   (`chimera_assets::access`, `chimera:asset_token`), the token is bound
 //!   to the offered service, in the access file and in this process
 //!   (`access::bind_live`: mounts opened before read from it too), and the
@@ -75,19 +77,20 @@
 //!   and the offer's sets are fetched with the same progress, then what
 //!   was read at startup without them is read again (`remount`: the game
 //!   counted as served, the mount report, the parts' `AssetsArrived`
-//!   observers: a game's data, the asset sources' failed loads); without a
-//!   token the join fails saying how to enter it. A game read from the
+//!   observers: a game's data, the asset sources' failed loads); with
+//!   neither an account nor a token the join fails saying how to sign in. A game read from the
 //!   store with no service and a token bound to none (entered again on
 //!   this start, which forgets the binding) is bound the same way, else
 //!   nothing new would come. A refused token, an unreachable service or
 //!   another certificate than the bound one fails the join with the reason
 //!   on screen (`JoinFailure::Download`).
 //! - **A hub account** (`chimera_assets::account`, `+chimera:hub <invite
-//!   link>`; docs/plans/active/hub.md) goes before a legacy token: when the
-//!   offered service has the account's hub certificate
-//!   (`AssetSession::account_remote`), the join uses it with the account's
-//!   current ticket, binding nothing in the access file; a service of
-//!   another certificate gets the legacy token, never the ticket. A
+//!   link>` or the first-run page; docs/plans/active/hub.md) is how a
+//!   player gets the hub's files: when the offered service has the
+//!   account's hub certificate (`AssetSession::account_remote`), the join
+//!   uses it with the account's current ticket, binding nothing in the
+//!   access file; a service of another certificate (one with no hub) gets
+//!   its own token, never the ticket. A
 //!   signed-in client says it can fetch (`ASSETS_KEY`, `has_token`), and
 //!   keeps the ticket fresh in the background (`keep_account_fresh`).
 //!
@@ -375,8 +378,7 @@ impl AssetSession {
     }
 
     /// The offered service with the account's current ticket, when it is
-    /// the account's hub (the same certificate): preferred over a legacy
-    /// token. None for another service (a ticket never goes there), with
+    /// the account's hub (the same certificate). None for another service (a ticket never goes there), with
     /// no account, or with no valid ticket.
     pub fn account_remote(&self, offer: &AssetOffer) -> Option<chimera_assets::RemoteConfig> {
         self.account_session()?.remote_for(&offer.url, &offer.fingerprint)
@@ -720,7 +722,7 @@ pub(super) fn plugin(app: &mut App) {
     install_setting(app);
     app.console_command(
         TOKEN_COMMAND,
-        "Enter your asset token (from the asset service's admin), kept for this user; the next server offering its service binds it.",
+        "For a server with its own asset service and no hub: enter the token its admin gave you, kept for this user; the next server offering that service binds it.",
         |world, args| {
             let token = args.get(1).ok_or("usage: chimera:asset_token <token>")?;
             let path = world.get_resource::<AssetSession>().and_then(|s| s.access.clone()).or_else(Access::path);
@@ -758,8 +760,9 @@ pub fn access_path() -> Option<PathBuf> {
     Access::path()
 }
 
-/// Whether this user can fetch from an offered asset service: an asset
-/// token entered, or signed in to a hub (`chimera_assets::account`).
+/// Whether this user can fetch from an offered asset service: signed in
+/// to a hub (`chimera_assets::account`), or a token entered for a service
+/// with no hub.
 pub fn has_token() -> bool {
     access_path().is_some_and(|p| Access::load_from(&p).token.is_some()) || account::has_account()
 }
@@ -1167,9 +1170,9 @@ fn bind_here(world: &mut World, offer: &AssetOffer, session: &AssetSession, game
     let account = session.account_remote(offer);
     if account.is_none() && Access::load_from(&path).token.is_none() {
         let why = format!(
-            "{}{names}, which isn't installed here. The server offers its game files: start the game once with \
-             +{HUB_COMMAND} <your invite link> or +{TOKEN_COMMAND} <your token> (the server's admin gives you \
-             one), then join again.",
+            "{}{names}, which isn't installed here. The server offers its game files: sign in with your invite \
+             link (the first-run page, or start the game once with +{HUB_COMMAND} <your invite link>), then join \
+             again. A server with its own asset service and no hub: +{TOKEN_COMMAND} <your token> from its admin.",
             super::manifest::MISSING
         );
         client::fail(world, JoinFailure::Mounts, &why);
@@ -1188,8 +1191,8 @@ fn bind_here(world: &mut World, offer: &AssetOffer, session: &AssetSession, game
         );
         Next::Left
     };
-    // The service it would bind: the account's hub with a ticket, else the
-    // legacy token's.
+    // The service it would bind: the account's hub with a ticket, else a
+    // service with no hub with its own token.
     let target = match account {
         Some(remote) => Some(remote),
         None => {
@@ -1248,7 +1251,8 @@ fn bind_here(world: &mut World, offer: &AssetOffer, session: &AssetSession, game
 
 /// Use the offered service from now on: with the hub account's ticket
 /// when it is the account's hub (`AssetSession::account_remote`), else
-/// with the legacy token, bound to it in the access file. Either way in
+/// (a service with no hub) with its own token, bound to it in the access
+/// file. Either way in
 /// this process too (`access::bind_live`), the session reading from it
 /// from now on. The session's settings with the service; Err: why not.
 fn bind(world: &mut World, offer: &AssetOffer, session: &AssetSession) -> Result<AssetSettings, String> {

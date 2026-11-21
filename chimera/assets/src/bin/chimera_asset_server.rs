@@ -2,7 +2,9 @@
 //! (docs/plans/active/asset-service.md, section 5; deployment steps in its
 //! M2 results). Serves a store (`--store`, default the machine's server
 //! store, `<data_local>/chimera/asset-server`, where `chimera_pack publish`
-//! writes) to the accounts `chimera_pack user add` made, on plain HTTP at
+//! writes) to the hub's accounts (their tickets, checked with the
+//! accounts service on this machine: `--accounts`) or, with `--no-tickets`
+//! (a service with no hub), to the tokens `chimera_pack token add` made, on plain HTTP at
 //! `--listen` (default `127.0.0.1:8731`: this machine only; `tailscale
 //! serve` or a reverse proxy puts HTTPS in front). Prints its public key
 //! (what clients pin with `[assets] key`) and logs each request to
@@ -19,7 +21,7 @@
 //! (`tls::FrontLimits`).
 //!
 //! Feedback reports (`feedback::inbox`): `POST /feedback` takes them with
-//! the testers' tokens; `--reports-per-hour`, `--reports-per-day` and
+//! the players' tickets (or tokens); `--reports-per-hour`, `--reports-per-day` and
 //! `--reports-per-address` set its limits, `--reports-keep-days` (60) and
 //! `--reports-keep-mb` (2048) its retention (0: none); `--on-report <command>` (else
 //! `[feedback] on_report` in the local config) runs a command for each new
@@ -49,7 +51,7 @@ const USAGE: &str = "usage: chimera_asset_server [--store <dir>] [--listen <ip:p
   --reports-keep-days, --reports-keep-mb  delete reports older than that (default 60 days), then the oldest
                past that total (default 2048 MB); 0: keep
   --accounts   the accounts service on this machine, for the revocation feed (default http://127.0.0.1:8741)
-  --no-tickets legacy tokens only (no account tickets)";
+  --no-tickets no hub: this service's own tokens (chimera_pack token add), no account tickets";
 
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -113,7 +115,7 @@ fn run() -> Result<(), String> {
     println!("public key: {key}");
     match &accounts {
         Some(url) => println!("account tickets: checked with {}, revocations from {url}", chimera_assets::accounts::ticket_keys_path(&store.root).display()),
-        None => println!("account tickets: off (legacy tokens only)"),
+        None => println!("account tickets: off (no hub: tokens from chimera_pack token add)"),
     }
     let _front = match tls {
         Some(at) => {

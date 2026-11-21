@@ -8,7 +8,12 @@ deployment steps), not yet deployed; made ready for an outside developer
 2026-10-31 (section 9, "M2 for developers": whole-game publishes, the
 sets, batched on-demand fetches, progress, tests from the service; the
 guide is docs/assets-for-developers.md); Steam sign-in waits for the
-milestone that opens the server. Decided: the hybrid model
+milestone that opens the server. Who gets in (user, 2026-11-21): a
+hub's asset service takes its accounts' tickets alone (hub.md, section
+6: an invite, then the client's tickets); an asset service with no hub
+(`chimera_asset_server --no-tickets`, a game server's own) has its own
+tokens (`chimera_pack token add`, entered with `+chimera:asset_token`).
+Decided: the hybrid model
 (docs/DESIGN.md, "Assets, code and legal"; backlog roadmap, "Smaller
 installs: a hybrid", 2026-10-29). Directions from the user, 2026-10-30:
 
@@ -539,9 +544,9 @@ the same commit.
   - **Accounts** (`accounts`): an `Authenticator` per account kind, asked
     in order; `Internal` reads `<server store>/server/accounts.toml`
     (token hashes only, re-read when it changes, so a revoke takes effect
-    at the next request). `chimera_pack user add <name> [--games a,b]
+    at the next request). `chimera_pack token add <name> [--games a,b]
     [--note <device>]` prints a new token once (`chimera1_<64 hex>`; one
-    per device: run it again), `user revoke <name> [--token <n>]`, `user
+    per device: run it again), `token revoke <name> [--token <n>]`, `token
     list`. Accounts may be limited to games (`--games`; default all):
     another game's manifest or a record only its manifests refer to is
     403. Steam (OpenID sign-in, the ownership check, the allowlist) is
@@ -600,7 +605,7 @@ the same commit.
     de_dust2 2,469 records on demand, load 2.4 s (61 s before
     TCP_NODELAY: each response's last segment waited for the client's
     delayed ACK); WAREHOUSE 342 records, 12.5 s (the process's first
-    load). A CLI run on localhost (publish 2 files, `user add`, the
+    load). A CLI run on localhost (publish 2 files, `token add`, the
     server, `login`, `fetch`, `verify`, `lock`, a bad token) worked.
     `chimera_assets` cross-builds for `x86_64-pc-windows-gnu` (ring
     included).
@@ -617,7 +622,7 @@ the same commit.
     cargo run --release --features tools --bin chimera_pack -- sets combat_arms --store <server store> --sign
     # base, map/<id>, heavy-tests from CHIMERA_VFS_LOG logs (AGENTS.md, "Game files from the asset store"):
     cargo run --release --features tools --bin chimera_pack -- publish cs_source --from <log> --set base
-    cargo run --release --features tools --bin chimera_pack -- user add <tester> --note <device>
+    cargo run --release --features tools --bin chimera_pack -- token add <tester> --note <device>
     cargo run --release -p chimera_assets --bin chimera_asset_server    # 127.0.0.1:8731; prints the key
     tailscale serve --bg --https=443 http://127.0.0.1:8731
     ```
@@ -631,7 +636,7 @@ the same commit.
     "<printed>"`, then `chimera_assets login` (prints `key` to pin) and
     `chimera_assets fetch cs_source <set>` or nothing (on demand). Then
     `chimera_assets lock` on a branch and commit `assets.lock`. Back up
-    `<server store>/server/` (key and accounts); revoke with `user revoke`.
+    `<server store>/server/` (key and accounts); revoke with `token revoke`.
   - **Left (after "M2 for developers" below):** Steam sign-in, the
     ownership check and the allowlist (an `Authenticator`, before the
     server opens up); publishing over HTTPS from another machine
@@ -762,8 +767,8 @@ the same commit.
 For the internal Ultimate Gun Game playtest (2026-11-14; the user's
 choices of 2026-11-10): testers on clean Windows PCs with no games
 installed join a dedicated server over the user's public address and get
-the match's files automatically. Internal accounts (one `chimera_pack user
-add` token per tester), no Steam. Operator steps:
+the match's files automatically. An account per tester (an invite on the
+hub, hub.md), no Steam. Operator steps:
 [docs/playtest-hosting.md](../../playtest-hosting.md).
 
 Design (the smallest step to 4.5's goal; the game connection carries only
@@ -792,8 +797,11 @@ where the files are, the existing HTTP service carries the files):
   certificate of the asset service on the same machine). A joining client
   that can fetch (`_assets` in its userinfo) counts as having the offered
   games, so it isn't refused before it hears the offer; one that can't is
-  told how to enter a token.
-- **The token, entered once** (`chimera_assets::access`): `+chimera:asset_token
+  told how to sign in.
+- **The account, signed in once** (`chimera_assets::account`, hub.md):
+  the first run (or `+chimera:hub <invite link>`) makes the device key;
+  the join uses the account's ticket for the hub's service. **For a
+  service with no hub, a token entered once** (`chimera_assets::access`): `+chimera:asset_token
   <token>` on the command line (kept before the app starts) or the console;
   kept per user (`%LOCALAPPDATA%\chimera\asset-access.toml`). The first server
   that offers its service binds the token to it (URL and fingerprint, trust on
@@ -1058,8 +1066,8 @@ wall, 1,224 s to 972 s summed.
   may come later.
 - **Internal phase without Steam (user, 2026-10-30).** Until the server is
   opened up, testers use internal accounts: the server admin runs
-  `chimera_pack user add <name>`, which prints a revocable token for the
-  tester's `chimera.local.toml` (`user revoke` takes it back). Neither
+  `chimera_pack token add <name>`, which prints a revocable token for the
+  tester's `chimera.local.toml` (`token revoke` takes it back). Neither
   Steam sign-in nor the ownership check runs for these accounts; the
   server stays private on Tailscale and ownership rests on the testers'
   word. Steam sign-in and the ownership check plug in at the same seam

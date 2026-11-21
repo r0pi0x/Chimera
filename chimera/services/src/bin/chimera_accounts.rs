@@ -20,8 +20,8 @@
 //! <username>`, `account set <username> ...`, `account refresh
 //! <username>` (its tickets asked again, so new rights apply at once),
 //! `account revoke <username>`, `account delete <username>`, `device
-//! revoke <id>`, `ban <username|address>`, `import-legacy
-//! [<accounts.toml>]`, `backup`; `page` prints the admin page's address
+//! revoke <id>`, `ban <username|address>`, `backup`;
+//! `page` prints the admin page's address
 //! with its key (`accounts::page`). `restore <backup>` puts a backup in
 //! place while the service is stopped. `status` asks every service on
 //! this machine (`services.toml`'s ports: accounts, assets, the hub, the
@@ -33,7 +33,7 @@ use std::{path::PathBuf, process::ExitCode, sync::Arc, time::Duration};
 
 use chimera_services::{
     accounts::{
-        AccountChange, AccountDetail, AccountView, Accounts, Clock, DEFAULT_PORT, Imported, InviteSpec, InviteView,
+        AccountChange, AccountDetail, AccountView, Accounts, Clock, DEFAULT_PORT, InviteSpec, InviteView,
         Invited, Options, Paths,
         http::{Http, serve},
     },
@@ -55,7 +55,6 @@ const USAGE: &str = "usage: chimera_accounts <command> [--store <dir>] [--accoun
   account revoke <username>   account delete <username>
   device revoke <device id>
   ban <username|address> [--for <days>] --reason <text>
-  import-legacy [<accounts.toml>]   (default: the store's server/accounts.toml)
   backup                      restore <backup file>   (the service stopped)
   page                        (the admin page's address, with its key: open it on this machine)
   status                      (every service on this machine: front, accounts, assets, hub)
@@ -342,20 +341,6 @@ fn run() -> Result<(), String> {
             let days = args.number("--for")?;
             args.admin()?.post::<()>("/admin/ban", &serde_json::json!({ "target": target, "days": days, "reason": reason }))?;
             println!("{target}: banned {}", days.map_or("for good".into(), |d| format!("for {d} days")));
-            Ok(())
-        }
-        ["import-legacy", rest @ ..] => {
-            let path = match rest {
-                [p] => PathBuf::from(p),
-                [] => chimera_assets::accounts::Accounts::path(&args.paths()?.store),
-                _ => return Err(USAGE.into()),
-            };
-            let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            let done: Imported = args.admin()?.post("/admin/import-legacy", &serde_json::json!({ "toml": text }))?;
-            println!(
-                "imported {} accounts ({} legacy devices); {} skipped (imported before); {} devices and {} accounts revoked from the file",
-                done.accounts, done.devices, done.skipped, done.revoked, done.revoked_accounts
-            );
             Ok(())
         }
         ["backup"] => {

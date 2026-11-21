@@ -21,7 +21,11 @@ use rusqlite::{Connection, OpenFlags};
 
 /// The accounts database's migrations, in order.
 pub const ACCOUNTS_MIGRATIONS: &[&str] =
-    &[include_str!("../migrations/0001_init.sql"), include_str!("../migrations/0002_onboarding.sql")];
+    &[
+        include_str!("../migrations/0001_init.sql"),
+        include_str!("../migrations/0002_onboarding.sql"),
+        include_str!("../migrations/0003_key_devices_only.sql"),
+    ];
 /// The hub's (`hub.db`).
 pub const HUB_MIGRATIONS: &[&str] = &[
     include_str!("../migrations/hub/0001_init.sql"),

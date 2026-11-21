@@ -2,7 +2,8 @@
 //! loopback ports over one scratch server store (as on the host): the
 //! owner's invites through the admin API, a player's redeem, link codes,
 //! recovery and tickets through the client side (`chimera_assets::account`),
-//! downloads with tickets, revocation through the feed, legacy tokens.
+//! downloads with tickets, revocation through the feed; tickets as the
+//! hub's only way in.
 
 use std::{
     fs,
@@ -194,7 +195,7 @@ fn a_hub_link_signs_in_through_pinned_tls() {
     let closed = HubLink { host: "127.0.0.1:9".into(), fingerprint: Some(identity.fingerprint()), code: None };
     let e = account::check(&closed, "AAA-AAA-AAA", None).unwrap_err();
     assert!(matches!(account::Failure::of(&e), account::Failure::Unreachable(_)), "{e}");
-    // A legacy-shaped config with the live session's ticket: `Remote` sends a current one.
+    // A plain config with the live session's ticket: `Remote` sends a current one.
     let live = account::live().expect("join_hub made the session live");
     let remote = hub.remote(&live.ticket().unwrap());
     assert!(remote.whoami().unwrap().starts_with("account bobby"));
@@ -370,7 +371,7 @@ fn ticket_requests_are_fresh_and_once() {
     let ask = |time: u64, nonce: [u8; 16]| {
         let signature = key.sign(&ticket::request_message(&device, time, &nonce));
         let r = TicketRequest { device: signed.device.clone(), time, nonce: hex(&nonce), signature: hex(&signature.to_bytes()) };
-        hub.running.http.accounts.ticket(Some(&r), None, None)
+        hub.running.http.accounts.ticket(&r, None)
     };
     let now = hub.clock.now();
     assert!(ask(now, [1; 16]).is_ok());
@@ -383,94 +384,35 @@ fn ticket_requests_are_fresh_and_once() {
     let nonce = [7; 16];
     let bad = other.sign(&ticket::request_message(&device, now, &nonce));
     let r = TicketRequest { device: signed.device.clone(), time: now, nonce: hex(&nonce), signature: hex(&bad.to_bytes()) };
-    assert_eq!(hub.running.http.accounts.ticket(Some(&r), None, None).unwrap_err().status, 401);
+    assert_eq!(hub.running.http.accounts.ticket(&r, None).unwrap_err().status, 401);
 }
 
-/// A legacy `chimera1_` token keeps downloading; after import-legacy it
-/// also gets tickets (its legacy device), and importing again skips it.
+/// A hub's asset service takes account tickets only: a token in the
+/// store's `accounts.toml` (what an asset service with no hub reads,
+/// `Service::new`) gets nothing there, and the accounts service gives
+/// tickets for a device's signed request alone, never for a bearer token.
 #[test]
-fn a_legacy_token_still_works() {
-    let hub = Hub::new("legacy");
+fn tickets_are_the_hubs_only_way_in() {
+    let hub = Hub::new("tickets-only");
     let path = chimera_assets::accounts::Accounts::path(&hub.paths.store);
-    let mut legacy = chimera_assets::accounts::Accounts::default();
-    let (_, token) = legacy.add("Old.Tester", Some(vec!["fixture".into()]), "laptop").unwrap();
-    legacy.save(&path).unwrap();
-    assert!(hub.remote(&token).whoami().unwrap().starts_with("internal Old.Tester 1"));
-    assert_eq!(status(&account::legacy_ticket(&hub.running.url(), None, &token).unwrap_err()), 401, "not imported yet");
-    let text = fs::read_to_string(&path).unwrap();
-    let done: chimera_services::accounts::Imported =
-        hub.admin.post("/admin/import-legacy", &serde_json::json!({ "toml": text })).unwrap();
-    assert_eq!((done.accounts, done.devices, done.skipped), (1, 1, 0));
-    let ticket = account::legacy_ticket(&hub.running.url(), None, &token).unwrap();
-    let remote = hub.remote(&ticket);
-    assert!(remote.whoami().unwrap().starts_with("account old_tester 0\ngames fixture"));
-    assert!(remote.record(&hub.records.0).is_ok());
-    assert!(hub.remote(&token).whoami().is_ok(), "the token itself still works");
-    let again: chimera_services::accounts::Imported =
-        hub.admin.post("/admin/import-legacy", &serde_json::json!({ "toml": text })).unwrap();
-    assert_eq!((again.accounts, again.skipped), (0, 1));
-    let view = hub.accounts().into_iter().find(|a| a.username == "old_tester").unwrap();
-    assert_eq!((view.display_name.as_str(), view.devices[0].kind.as_str()), ("Old.Tester", "legacy"));
-}
-
-/// An import carries `accounts.toml`'s revocations over, also to accounts
-/// imported before, and never re-enables what the database revoked; a
-/// revocation made here reaches the file, so the asset service refuses the
-/// token itself too.
-#[test]
-fn an_import_carries_revocations_and_never_reenables() {
-    use chimera_assets::accounts::Accounts as Legacy;
-    let hub = Hub::new("legacy-revoked");
-    let path = Legacy::path(&hub.paths.store);
-    let mut legacy = Legacy::default();
-    let (_, gone) = legacy.add("gone", None, "pc").unwrap();
-    let (_, late) = legacy.add("late", None, "pc").unwrap();
-    let (_, kept) = legacy.add("kept", None, "pc").unwrap();
-    legacy.revoke("gone", None).unwrap();
-    legacy.save(&path).unwrap();
-    let import = |text: &str| -> serde_json::Value {
-        hub.admin.post("/admin/import-legacy", &serde_json::json!({ "toml": text })).unwrap()
-    };
-    let count = |v: &serde_json::Value, k: &str| v[k].as_u64().unwrap_or(0);
-    let file = || fs::read_to_string(&path).unwrap();
-    let state = |name: &str| hub.accounts().into_iter().find(|a| a.username == name).unwrap().state;
-    let ticket_status = |token: &str| account::legacy_ticket(&hub.running.url(), None, token).err().map(|e| status(&e));
-
-    // A token revoked before the import: its account comes in revoked.
-    let done = import(&file());
-    assert_eq!(count(&done, "accounts"), 3);
-    assert_eq!(state("gone"), "revoked");
-    assert_eq!(ticket_status(&gone), Some(401));
-    assert!(hub.remote(&gone).whoami().is_err());
-    assert_eq!(ticket_status(&late), None, "a live token gets tickets");
-
-    // Revoked in the file after the import: a re-import carries it over.
-    let mut legacy = Legacy::load(&path).unwrap();
-    legacy.revoke("late", None).unwrap();
-    legacy.save(&path).unwrap();
-    let again = import(&file());
-    assert_eq!((count(&again, "accounts"), count(&again, "skipped"), count(&again, "revoked")), (0, 3, 1));
-    assert_eq!(ticket_status(&late), Some(401), "no more tickets for a token the file revoked");
-    assert_eq!(state("late"), "revoked");
-
-    // Revoked here: the file follows, and importing the old file (the
-    // token still live in it) doesn't bring the account back.
-    let before = file();
-    assert!(hub.remote(&kept).whoami().is_ok());
-    hub.admin.post::<()>("/admin/account/revoke", &serde_json::json!({ "username": "kept" })).unwrap();
-    assert!(hub.remote(&kept).whoami().is_err(), "the asset service refuses the token itself");
-    let old = import(&before);
-    assert_eq!((count(&old, "accounts"), count(&old, "revoked")), (0, 0));
-    assert_eq!(state("kept"), "revoked");
-    assert_eq!(ticket_status(&kept), Some(401));
-
-    // A deleted account's token is revoked in the file, so an import
-    // brings it back revoked, never live.
-    hub.admin.post::<()>("/admin/account/delete", &serde_json::json!({ "username": "kept" })).unwrap();
-    let after = import(&file());
-    assert_eq!(count(&after, "accounts"), 1);
-    assert_eq!(state("kept"), "revoked");
-    assert_eq!(ticket_status(&kept), Some(401));
+    let mut tokens = chimera_assets::accounts::Accounts::default();
+    let (_, token) = tokens.add("someone", Some(vec!["fixture".into()]), "pc").unwrap();
+    tokens.save(&path).unwrap();
+    assert!(hub.remote(&token).whoami().is_err(), "the hub's asset service has no tokens");
+    assert!(hub.remote(&token).record(&hub.records.0).is_err());
+    // The same store served with no hub takes the token.
+    let plain = server::serve(server::Service::new(Store::new(hub.paths.store.clone())).unwrap(), "127.0.0.1:0", 1).unwrap();
+    let remote = Remote::new(RemoteConfig { url: plain.url(), token: token.clone(), key: None, fingerprint: None }).unwrap();
+    assert!(remote.whoami().unwrap().starts_with("internal someone 1"));
+    // A bearer token at `/accounts/ticket` is no request.
+    let answer = ureq::post(&format!("{}/accounts/ticket", hub.running.url()))
+        .header("Authorization", &format!("Bearer {token}"))
+        .config()
+        .http_status_as_error(false)
+        .build()
+        .send_empty()
+        .unwrap();
+    assert_eq!(answer.status().as_u16(), 400);
 }
 
 /// The admin API answers only this machine with the secret; other paths
