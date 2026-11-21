@@ -815,6 +815,7 @@ pub fn place_camera(
                     let look = Quat::from_euler(EulerRot::YXZ, chase.orbit.x, chase.orbit.y, 0.0);
                     let third = CameraMode {
                         third_person: true,
+                        held_off: false,
                         ideal_dist: CHASE_DISTANCE,
                         ideal_yaw: 0.0,
                         pivot_up: 0.0,

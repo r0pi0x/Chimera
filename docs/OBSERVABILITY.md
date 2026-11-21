@@ -1001,16 +1001,22 @@ client only with the server's `sv_cheats 1` (and only on itself).
   network protocol (`NET_VERSION`). Each app's build.rs stamps it
   (chimera/core/build_stamp.rs; `core::VERSION`); the main menu shows it bottom right and
   `cs_source_server` prints it at startup.
-- `thirdperson` (back with `firstperson`; distance `cam_idealdist`, CS:S
-  units) puts the camera behind the local player and draws its own
-  animated body: `+thirdperson` in a `--screenshot` run shows the local
-  player's model and animation. `cam_idealyaw` orbits the camera
-  (degrees; `+cam_idealyaw 140` looks at the player's front, e.g. to see
-  how the hands hold the weapon). Holding Left Alt (`+freelook`) turns
-  only the camera; the aim stays put. `chimera_hand_ik 0` draws bodies
-  without the hands locked onto the weapon (the animation's own arms),
-  to compare: `+setpos 185 300 40 +setang -30 0 0 +thirdperson
-  +cam_idealyaw 130 +cam_idealdist 60` on de_dust2 with a pistol.
+- `thirdperson` (back with `firstperson`; `chimera:toggle_thirdperson`
+  switches) puts the camera over the local player's shoulder and draws
+  its own animated body (`client::third_person`: `chimera:cam_dist`,
+  `chimera:cam_side`, `chimera:cam_up` in metres, `chimera:shoulder` or
+  middle mouse swaps the shoulder; a network game needs the server's
+  `chimera:allow_thirdperson 1`). Shots go through the crosshair; a dot
+  marks where a blocked shot would land. `+thirdperson` in a
+  `--screenshot` run shows the local player's model and animation.
+  `cam_idealyaw` orbits the camera as a debug view (degrees; `+cam_idealyaw
+  140` looks at the player's front, e.g. to see how the hands hold the
+  weapon; the mouse then aims as in first person). Holding Left Alt
+  (`+freelook`) turns only the camera; the aim stays put. `chimera_hand_ik
+  0` draws bodies without the hands locked onto the weapon (the
+  animation's own arms), to compare: `+setpos 185 300 40 +setang -30 0 0
+  +thirdperson +cam_idealyaw 130 +chimera:cam_dist 1.5` on de_dust2 with
+  a pistol.
 - `chimera_freecam 1` detaches the camera and flies it (WASD, mouse,
   space/ctrl up and down, shift faster) while your body stands still and
   is drawn; `chimera_freecam 2` leaves the camera where it is and gives

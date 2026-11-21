@@ -1327,6 +1327,34 @@ impl Hitboxes {
     }
 }
 
+/// The server's third-person rules (ours, sent to clients;
+/// docs/plans/active/third-person-camera.md): `chimera:allow_thirdperson`
+/// (`sv_allow_thirdperson`), 0 by default: a client connected to a server
+/// (or a listen server's host) plays in first person unless the host
+/// turns it on; single player always may. `chimera:thirdperson_maxoffset`
+/// (`sv_thirdperson_maxoffset`): the furthest the camera may sit from the
+/// eye, metres. Not a cheat setting: a fair default for everyone, enforced
+/// by the clients (the server traces shots from its own eye whatever the
+/// camera does).
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct ThirdPersonRules {
+    pub allow: u8,
+    pub max_offset: f32,
+}
+
+impl Default for ThirdPersonRules {
+    fn default() -> Self {
+        Self { allow: 0, max_offset: 3.0 }
+    }
+}
+
+impl ThirdPersonRules {
+    /// Whether a player may use the third-person camera in this role.
+    pub fn allows(&self, role: NetRole) -> bool {
+        role == NetRole::Standalone || self.allow != 0
+    }
+}
+
 /// `chimera_noblock` (ours, a server setting sent to clients, off by
 /// default as CS:S has nothing like it): 0 players block each other (CS:S),
 /// 1 teammates pass through each other, 2 nobody blocks anybody.

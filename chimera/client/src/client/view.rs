@@ -1,15 +1,16 @@
-//! Player-facing view settings and debug views: the third-person camera
-//! (`thirdperson` / `firstperson`, `cam_idealdist`) and health bars over
+//! Player-facing view settings and debug views: first or third person
+//! (`thirdperson` / `firstperson`; the camera itself is
+//! `client::third_person`'s, over the shoulder) and health bars over
 //! characters (`chimera_healthbars`). (The master `volume` is
 //! `client::audio`'s.)
 //!
-//! Third-person camera (`thirdperson`/`firstperson`, `cam_idealdist`,
-//! `cam_idealyaw` orbit, `chimera_freecam` detached camera, `chimera_watch` chase
-//! camera on a bot, turning about the eye as CS:S's camera does and swept back
-//! from it against the world; spectating while dead (`spectate`) comes before
-//! these), `chimera_healthbars`.
+//! Chase cameras (`cam_idealdist`, `cam_idealyaw` orbit; the spectator's,
+//! `chimera_watch` on a bot), turning about the eye as CS:S's camera does
+//! and swept back from it against the world; `chimera_freecam` detached
+//! camera; spectating while dead (`spectate`) comes before these;
+//! `chimera_healthbars`.
 //!
-//! Known shortcuts (docs/tech-debt.md): The third-person camera turns about the
+//! Known shortcuts (docs/tech-debt.md): The chase camera turns about the
 //! eye, `cam_idealdist` straight back along the view (CS:S's `getpos` at
 //! `setang 0` with `cam_idealdist 150`: the eye's height, 150 back;
 //! `client::view::THIRD_PERSON_PIVOT_UP` = 0). CS:S's camera angles ease toward
@@ -41,7 +42,13 @@ const CAMERA_RADIUS: f32 = 0.2;
 /// camera sits.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct CameraMode {
+    /// Third person wanted (`thirdperson`, `chimera:toggle_thirdperson`);
+    /// drawn unless `held_off` (`third`).
     pub third_person: bool,
+    /// Third person held off for now: the server doesn't allow it
+    /// (`core::ThirdPersonRules`) or a tapped right click shows the gun's
+    /// zoom in first person (`third_person::AimButton`).
+    pub held_off: bool,
     /// The gameplay's world units (cam_idealdist; CS:S's inches, Combat
     /// Arms' units: `meters_per_unit`).
     pub ideal_dist: f32,
@@ -66,10 +73,18 @@ pub struct CameraMode {
 /// view (its angles lag the view's unless `cam_snapto 1`; we don't lag).
 pub const THIRD_PERSON_PIVOT_UP: f32 = 0.0;
 
+impl CameraMode {
+    /// The own camera is in third person this frame.
+    pub fn third(&self) -> bool {
+        self.third_person && !self.held_off
+    }
+}
+
 impl Default for CameraMode {
     fn default() -> Self {
         Self {
             third_person: false,
+            held_off: false,
             ideal_dist: 150.0,
             ideal_yaw: 0.0,
             pivot_up: THIRD_PERSON_PIVOT_UP,
@@ -127,7 +142,8 @@ impl Plugin for ViewPlugin {
             .init_resource::<Watch>()
             .init_resource::<HealthBars>()
             .init_resource::<ShowLocalBody>()
-            .add_systems(Update, (game_unit, show_local_body, draw_health_bars.after(super::follow_eye)));
+            .add_systems(Update, (game_unit, show_local_body, draw_health_bars.after(super::follow_eye)))
+            .add_plugins(super::third_person::ThirdPersonPlugin);
         view_console(app);
     }
 }
@@ -135,7 +151,7 @@ impl Plugin for ViewPlugin {
 fn view_console(app: &mut App) {
     app.console_command(
         "thirdperson",
-        "Camera behind the player (cam_idealdist), showing your own body.",
+        "The over-the-shoulder camera, showing your own body (chimera:cam_dist, chimera:shoulder).",
         |w, _| {
             w.resource_mut::<CameraMode>().third_person = true;
             Ok(None)
@@ -148,7 +164,7 @@ fn view_console(app: &mut App) {
     resource_cvar::<CameraMode, f32>(
         app,
         "cam_idealdist",
-        "Third-person camera distance behind the eye, in CS:S units.",
+        "Chase cameras' distance behind the eye (spectating, chimera:watchbot), in the game's units.",
         |m| &mut m.ideal_dist,
     );
     resource_cvar::<Watch, u32>(
@@ -166,7 +182,7 @@ fn view_console(app: &mut App) {
     resource_cvar::<CameraMode, f32>(
         app,
         "cam_idealyaw",
-        "Third-person camera orbit around the player, in degrees (180: from the front).",
+        "Chase cameras' orbit around the player, in degrees (180: from the front); on your own third-person camera, a debug orbit (the mouse aims as in first person).",
         |m| &mut m.ideal_yaw,
     );
     resource_cvar::<HealthBars, u8>(
@@ -187,7 +203,7 @@ pub fn third_person_offset(look: Quat, ideal: f32, hit: Option<f32>) -> Vec3 {
 /// The camera's view direction: the look, turned by `cam_idealyaw` in
 /// third person.
 pub fn camera_look(mode: &CameraMode, look: Quat) -> Quat {
-    if mode.third_person {
+    if mode.third() {
         Quat::from_rotation_y(mode.ideal_yaw.to_radians()) * look
     } else {
         look
@@ -349,7 +365,7 @@ fn show_local_body(
     // Viewing through a map camera (point_viewcontrol), the body stands
     // where it was and no view model is drawn.
     show.set_if_neq(ShowLocalBody(
-        (mode.third_person || free.mode != 0 || watch.0 != 0 || camera) && !dead,
+        (mode.third() || free.mode != 0 || watch.0 != 0 || camera) && !dead,
     ));
 }
 

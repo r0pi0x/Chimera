@@ -2968,7 +2968,7 @@ pub fn client_commands(app: &mut App) {
             let t = *w.get::<Transform>(p).ok_or("no transform")?;
             // The view's origin, as CS:S prints it: in third person the
             // camera's (a CS:S capture's getpos was its camera).
-            let third = w.get_resource::<super::view::CameraMode>().is_some_and(|m| m.third_person);
+            let third = w.get_resource::<super::view::CameraMode>().is_some_and(|m| m.third());
             let camera = third
                 .then(|| {
                     let mut q = w.query_filtered::<&GlobalTransform, With<FirstPersonCamera>>();

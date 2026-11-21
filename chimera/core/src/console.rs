@@ -124,6 +124,8 @@ pub const SERVER_PREFIXES: &[&str] = &["sv_", "mp_", "phys_", "bot_", "ammo_"];
 pub const SERVER_NAMES: &[&str] = &[
     "chimera:rounds",
     "chimera:noblock",
+    "chimera:allow_thirdperson",
+    "chimera:thirdperson_maxoffset",
     "chimera:announcer",
     "chimera:party_even_footsteps",
     "chimera:decalfrequency",
@@ -430,6 +432,8 @@ pub const OLD_NAMES: &[(&str, &str)] = &[
     ("hud_radar", "chimera:radar"),
     ("net_upnp", "chimera:upnp"),
     ("sv_hub", "chimera:hub"),
+    ("sv_allow_thirdperson", "chimera:allow_thirdperson"),
+    ("sv_thirdperson_maxoffset", "chimera:thirdperson_maxoffset"),
     ("net_lan_ports", "chimera:lan_ports"),
     ("net_lan_broadcast", "chimera:lan_broadcast"),
     ("chimera_watch", "chimera:watchbot"),
@@ -1515,9 +1519,23 @@ impl Plugin for ConsolePlugin {
             "Players passing through each other (ours; the server's, sent to clients): 0 nobody (CS:S), 1 teammates, 2 everyone.",
             |n| &mut n.0,
         );
-        app.world_mut()
-            .resource_mut::<Console>()
-            .set_range("chimera:noblock", 0.0, 2.0);
+        app.init_resource::<crate::core::ThirdPersonRules>();
+        resource_cvar::<crate::core::ThirdPersonRules, u8>(
+            app,
+            "chimera:allow_thirdperson",
+            "1: players may use the third-person camera (ours; the server's, sent to clients; single player always may). \
+             Old name: sv_allow_thirdperson.",
+            |r| &mut r.allow,
+        );
+        resource_cvar::<crate::core::ThirdPersonRules, f32>(
+            app,
+            "chimera:thirdperson_maxoffset",
+            "The furthest the third-person camera may sit from the eye, metres (ours; the server's, sent to clients).",
+            |r| &mut r.max_offset,
+        );
+        let mut console = app.world_mut().resource_mut::<Console>();
+        console.set_range("chimera:noblock", 0.0, 2.0);
+        console.set_range("chimera:allow_thirdperson", 0.0, 1.0);
     }
 }
 

@@ -86,6 +86,7 @@ pub mod text_warm;
 pub mod ui_parity;
 pub mod vgui;
 pub mod video;
+pub mod third_person;
 pub mod view;
 pub mod voice;
 pub mod weapon_icons;
@@ -997,6 +998,7 @@ pub fn zoom_camera(
     mut cameras: Query<&mut Projection, With<FirstPersonCamera>>,
     player_fov: Option<Res<video::PlayerFov>>,
     effects: Option<Res<screen_post::ViewEffects>>,
+    shoulder: (Option<Res<third_person::Shoulder>>, Option<Res<third_person::ShoulderSettings>>),
 ) {
     // Spectating in first person: the target's zoom; otherwise none.
     let zoom = match spectate::target_zoom(&spectating, &zoomed) {
@@ -1005,6 +1007,11 @@ pub fn zoom_camera(
         None => player.and_then(|z| z.map(|z| z.fov)),
     };
     let fov_43 = zoom.unwrap_or_else(|| player_fov.map_or(90.0, |f| f.0));
+    // The shoulder camera's aim zoom narrows it.
+    let fov_43 = match shoulder {
+        (Some(s), Some(t)) if s.on && spectating.pose.is_none() => fov_43 * (1.0 + (t.aim_fov - 1.0) * s.zoom),
+        _ => fov_43,
+    };
     let fov = (crate::map::view_model::vertical_fov(fov_43) + effects.map_or(0.0, |e| e.fov)).to_radians();
     for mut projection in &mut cameras {
         if let Projection::Perspective(p) = projection.as_ref()
@@ -1049,6 +1056,7 @@ fn follow_eye(
         (Without<LocalPlayer>, Without<FirstPersonCamera>),
     >,
     stairs: Res<EyeStairs>,
+    mut shoulder: third_person::ShoulderView,
 ) {
     // Positions (`Transform`), eyes and other characters' looks are the
     // ones drawn this frame, eased between ticks (`map::interp`); the
@@ -1067,6 +1075,7 @@ fn follow_eye(
         .map(|(_, _, t, i, s, v, _)| {
             let chase = view::CameraMode {
                 third_person: true,
+                held_off: false,
                 ..*mode
             };
             let eye = crate::map::interp::eye_view(v, i, s);
@@ -1093,16 +1102,28 @@ fn follow_eye(
             -(eye.view_roll + p.z),
         );
         let look = view::camera_look(&mode, look);
-        // The ceiling probe is no wider than the player's own hull.
-        let hull_radius = hull.map_or(f32::INFINITY, view::hull_radius);
-        let offset =
-            view::camera_offset_for_hull(&mode, at.translation, eye.eye_offset, look, &spatial, &characters, hull_radius);
+        // Third person: the shoulder camera (`third_person`), against what
+        // bodies collide with (not characters).
+        let filter = avian3d::prelude::SpatialQueryFilter::from_excluded_entities(&characters)
+            .with_mask(crate::core::CHARACTER_FILTER);
+        let placed = shoulder.place(at.translation, eye.eye_offset, look, Vec2::new(free.yaw, free.pitch), &spatial, &filter);
+        let third = placed.is_some();
+        let (offset, look) = placed.unwrap_or_else(|| {
+            // The ceiling probe is no wider than the player's own hull.
+            let hull_radius = hull.map_or(f32::INFINITY, view::hull_radius);
+            let first = view::CameraMode {
+                third_person: false,
+                ..*mode
+            };
+            let offset = view::camera_offset_for_hull(&first, at.translation, eye.eye_offset, look, &spatial, &characters, hull_radius);
+            (offset, look)
+        });
         // Over steps the eye lags the feet (first person: `smooth_stairs`).
-        let offset = if mode.third_person { offset } else { offset + Vec3::Y * stairs.lag };
+        let offset = if third { offset } else { offset + Vec3::Y * stairs.lag };
         // A shot's back push (first person): the camera back along its
         // view.
         let offset = match back {
-            Some(b) if !mode.third_person && b.0 != 0.0 => offset + look * Vec3::Z * b.0,
+            Some(b) if !third && b.0 != 0.0 => offset + look * Vec3::Z * b.0,
             _ => offset,
         };
         // Detached: starts where the camera is; placed in the world (the

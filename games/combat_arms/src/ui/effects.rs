@@ -827,7 +827,7 @@ pub fn camera_motion(
     let Some(mut cam) = cams.fetch_next() else { return };
     let at = body.transform_point(cam.translation);
     let mut offset = Vec3::ZERO;
-    let eye = !mode.is_some_and(|m| m.third_person)
+    let eye = !mode.is_some_and(|m| m.third())
         && freecam.is_none_or(|f| f.mode == 0)
         && spec.is_none_or(|s| s.pose.is_none())
         && watch.is_none_or(|w| w.0 == 0)

@@ -64,7 +64,8 @@ fn getpos_prints_the_eye_and_setpos_takes_the_feet() {
     assert!(at.distance(Vec3::new(-295.0, 1078.0, 564.0)) < 0.02, "noclip: {at}");
 }
 
-/// `thirdperson` with `cam_idealdist 150`, as CS:S's `getpos` shows: the
+/// The chase camera (the spectator's, `chimera:watchbot`; CS:S's
+/// `thirdperson`) with `cam_idealdist 150`, as CS:S's `getpos` shows: the
 /// camera sits 150 units straight back along the view from the eye.
 #[test]
 fn third_person_camera_sits_as_css_does() {

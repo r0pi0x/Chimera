@@ -188,11 +188,13 @@ pub const WHEEL_UP: &str = "mwheelup";
 pub const WHEEL_DOWN: &str = "mwheeldown";
 
 /// Chimera's own binds, each on a key the game's defaults leave free (and
-/// only while it is free): Alt looks around, V flies, F9 files a bug report
+/// only while it is free): Alt looks around, middle mouse swaps the
+/// third-person camera's shoulder, V flies, F9 files a bug report
 /// (as F4 does), and the debug keys: F3 collision shapes, F8 the debug UI,
 /// F11 the entity inspector.
 pub const CHIMERA_BINDS: &[(&str, &str)] = &[
     ("alt", "+freelook"),
+    ("mouse3", "chimera_shoulder"),
     ("v", "noclip"),
     ("f3", "toggle chimera_drawcollision"),
     ("f8", "debugui"),

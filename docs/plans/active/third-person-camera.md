@@ -94,46 +94,60 @@ camera's ray through the crosshair first hits.
   is the weapon's range along the ray (8192 game units without one).
   Others are traced where they are drawn (interpolated): that is where
   the server's rewind puts them.
-- **The classic camera stays.** `thirdperson` / `cam_idealdist` remain
-  CS:S's straight-back camera, kept for parity checks. The new mode is a
-  separate style (`chimera:cam_style 1`).
+- **No classic camera.** The behind-the-eye camera is gone for your
+  own view (user decision 2026-11-21): `thirdperson` turns on the
+  shoulder camera. `cam_idealdist` / `cam_idealyaw` stay for the chase
+  cameras (spectating, `chimera:watchbot`); `cam_idealyaw` on your own
+  camera orbits it as a debug view (the mouse aims as in first person).
+- **How the server checks the aim.** It doesn't need to: the command
+  carries only angles, as it always has. The server places the eye
+  itself (its own position and `eye_offset`), traces along those angles
+  with lag compensation, and the walls between that eye and the target
+  stop the shot. A forged aim point gives a cheater nothing a forged
+  angle didn't already. What the camera may see (peeking) is the clients'
+  to enforce (`chimera:allow_thirdperson`, `chimera:thirdperson_maxoffset`).
 
 ## 3. Milestones
 
 ### M1. Aim through the crosshair, the blocked-shot marker
 
-- [ ] Shoulder camera. A pivot above the eye, then a side offset (right
+- [x] Shoulder camera. A pivot above the eye, then a side offset (right
       shoulder by default) and a distance back. Values in metres, scaled
       by nothing: one feel for every game's character. The heights are
       fractions of the character's eye height, so a Halo Spartan and a
       CS:S player frame the same.
-- [ ] Shoulder swap. A bind (`+chimera_shoulder` or a toggle
-      `chimera_shoulder_swap`, default key: an open question). The swap
-      slides over about 0.15 s.
-- [ ] Camera look separate from `Intent` angles. The mouse turns the
+- [x] Shoulder swap. `chimera:shoulder` on middle mouse (section 5).
+      The swap slides over about 0.15 s.
+- [x] Camera look separate from `Intent` angles. The mouse turns the
       camera. The command's angles are the eye-to-aim-point angles,
       computed when the command is built. Movement is turned as in
       section 2.
-- [ ] One `third_person::aim_point(camera, eye, ...)` in Chimera's
-      client, shared by the command builder, the marker and the HUD's
-      `aim::view_ray` (target IDs follow the crosshair).
-- [ ] Blocked-shot marker. Each frame, trace from the eye to the aim
+- [x] One `third_person::aim_point(camera, eye, ...)` in Chimera's
+      client, shared by the command builder and the marker.
+- [ ] The HUD's `aim::view_ray` from it too (target IDs follow the
+      crosshair).
+- [x] Blocked-shot marker. Each frame, trace from the eye to the aim
       point, using the shot trace's filter. If something is hit short of
       the aim point (by more than a small tolerance), draw a second
-      marker at that point on screen and dim the crosshair. Hide the
+      marker at that point on screen (dimming the crosshair: M4, each
+      game draws its own). Hide the
       marker when the line is clear. Melee and thrown weapons show none.
-- [ ] The marker's trace is the server's: the same eye
+- [x] The marker's trace is the server's: the same eye
       (`eye_offset`), the same angles, the same layers. Spread is not
       part of it: it marks the centre of the cone.
-- [ ] Host settings: `sv_allow_thirdperson` (default: open question)
-      and `sv_thirdperson_maxoffset`, replicated to clients.
+- [x] Host settings: `chimera:allow_thirdperson` (0) and
+      `chimera:thirdperson_maxoffset` (3 m), replicated to clients (old
+      names `sv_allow_thirdperson`, `sv_thirdperson_maxoffset` work).
+- [x] Right mouse: tap to the gun's own zoom in first person, hold for
+      the over-the-shoulder aim zoom (section 5, 2).
+- [x] The first/third switch, `chimera:toggle_thirdperson` (unbound).
 
 ### M2. Camera collision (spring arm)
 
-- [ ] Sweep from the pivot to the wanted camera spot (the existing sphere
+- [x] Sweep from the pivot to the wanted camera spot (the existing sphere
       sweep, from the pivot instead of the eye). On a hit, pull in at
       once. When the way clears, ease back out over about 0.3 s.
-- [ ] The pivot itself is swept from the eye (side, then up), so a wall
+- [x] The pivot itself is swept from the eye (side, then up), so a wall
       at the shoulder pushes the camera toward the centre, not through
       the wall.
 - [ ] Never inside the character's own hull. Never closer than the near
@@ -221,23 +235,56 @@ Visual checks (offscreen, docs/OBSERVABILITY.md section 2):
 - One run per game's character (CS:S, Combat Arms, HL2:DM, TF2, Halo) to
   check the framing scales with eye height.
 
-## 5. Open questions for the user
+## 5. Decisions (user, 2026-11-21)
 
-1. Default shoulder-swap key, and the aim-zoom key: right mouse is the
-   secondary attack in our games (stab, zoom, burst). Hold another key,
-   or right mouse on guns with no secondary?
-2. Should host servers allow the mode by default
-   (`sv_allow_thirdperson 1`)? Competitive rules may want it off.
-3. Keep the classic CS:S camera (`thirdperson`) next to the new one, or
-   have `thirdperson` turn on the new one by default?
-4. A key to toggle first and third person in play (none today), and
-   which?
+1. **Shoulder swap: middle mouse** (`mouse3`, `chimera:shoulder`), a
+   Chimera bind placed only where the game leaves the key free. Not Q
+   (previous weapon in CS:S, HL2:DM, TF2, Combat Arms; Halo's grenade
+   switch). Not Left Alt: it is our `+freelook` (and PUBG's free look),
+   HL2:DM's `+walk` and TF2's `+strafe`. Precedent: Ghost Recon
+   Breakpoint and Wildlands swap on middle mouse; PUBG uses Q/E (its lean
+   keys in first person), Gears of War: E-Day Left Shift, The Last of Us
+   Tab, ARC Raiders X; Apex has no third person. Middle mouse is free in
+   CS:S, Combat Arms, HL2:DM and Halo; TF2 binds it to `+attack3`, so
+   there the swap is unbound until the player picks a key.
+2. **Right mouse** (`+attack2`) on a gun whose right click aims or zooms
+   (`weapon::Zoom`, or a game's `OwnZoom`: Combat Arms' sights, HL2:DM's
+   crossbow, Halo's guns): a tap goes to first person and gives the gun
+   its click (its own ADS or scope; first person while that zoom lasts,
+   back to third when it ends); a hold zooms over the shoulder in third
+   person (closer, narrower FOV, slower mouse) and the gun gets nothing.
+   Guns whose right click is something else (TF2's Minigun spin and other
+   secondary fire, a knife's stab, CS:S's burst and silencer) keep their
+   own right click.
+3. **Off on servers by default**: `chimera:allow_thirdperson 0` (alias
+   `sv_allow_thirdperson`), the host's to turn on; not a cheat setting.
+   Single player always may.
+4. **The classic behind-the-character camera is removed** (no style
+   switch).
+5. **The first/third switch** (`chimera:toggle_thirdperson`) is bindable
+   and unbound by default.
+6. **Later (plan only): free look around your own or any player's
+   model.** A mode that stops controlling the character and orbits a
+   chosen player's model (your own, a teammate, anyone), with the mouse
+   orbiting and the wheel zooming, for looking at models and outfits.
+   It would build on `chimera:freecam` and the spectator's chase camera,
+   and replace `cam_idealyaw` as the way to look at your own front.
 
 ## Progress
 
-2026-11-21: plan written. Nothing built.
+2026-11-21: plan written.
+
+2026-11-21: open questions answered (section 5). M1 built, with M2's
+sweeps and M3's aim zoom: `chimera/client/src/client/third_person.rs`,
+scenario tests `chimera/client/tests/it/third_person.rs`. Left: the
+target-ID ray, M2's "never inside the own hull" and near-plane margin,
+M3's follow lag, body fade, recoil and transitions, M4's settings page.
 
 ## Decision log
+
+2026-11-21: the user's answers (section 5): middle mouse swaps, right
+mouse taps to the gun's zoom and holds for the camera's, off on servers
+by default, no classic camera, the switch unbound, free look later.
 
 2026-11-21: aim by angles. The client sends the eye-to-aim-point angles
 in the existing command. The server traces from its own eye, so it

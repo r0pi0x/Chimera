@@ -791,11 +791,12 @@ const PITCH_LIMIT: f32 = 89f32.to_radians();
 pub fn write_local_intent(
     mut intent: Single<&mut Intent, With<LocalPlayer>>,
     cursor: Single<&CursorOptions>,
-    (keys, mouse, motion, scroll): (
+    (keys, mouse, motion, scroll, mut shoulder): (
         Res<ButtonInput<KeyCode>>,
         Res<ButtonInput<MouseButton>>,
         Res<AccumulatedMouseMotion>,
         Res<AccumulatedMouseScroll>,
+        super::third_person::ShoulderInput,
     ),
     console: Option<Res<crate::console::Console>>,
     mut wheel: ResMut<WheelJump>,
@@ -910,10 +911,14 @@ pub fn write_local_intent(
         }
     }
 
-    let zoom = mouse_settings.zoomed_scale(zoomed.iter().next());
+    let zoom = mouse_settings.zoomed_scale(zoomed.iter().next()) * shoulder.zoom_scale(&mouse_settings);
     let turn = mouse_settings.look_delta(motion_counts) * zoom;
     if freelook {
         free.turn(turn, intent.pitch);
+    } else if let Some(look) = shoulder.turning() {
+        // The shoulder camera: the mouse turns the camera; the aim follows
+        // the crosshair (`third_person::aim_through_crosshair`).
+        super::third_person::ShoulderInput::turn(look, turn);
     } else {
         intent.yaw = (intent.yaw + turn.x).rem_euclid(std::f32::consts::TAU);
         intent.pitch = (intent.pitch + turn.y).clamp(-PITCH_LIMIT, PITCH_LIMIT);
@@ -931,7 +936,10 @@ pub fn write_local_intent(
     intent.walk = bound("+speed") || bound("+walk");
     // Attack that just picked from the weapon selection doesn't fire.
     intent.fire = bound("+attack") && !weapon_menu.as_ref().is_some_and(|m| m.swallow_fire);
-    intent.secondary = bound("+attack2");
+    // Right mouse in third person on a gun that aims with it: a tap is
+    // the gun's, a hold the camera's zoom (`third_person::AimButton`).
+    let (secondary, secondary_down) = shoulder.secondary(time.elapsed_secs_f64(), bound("+attack2"), went_down("+attack2"));
+    intent.secondary = secondary;
     intent.reload = bound("+reload");
     intent.last_weapon = bound("lastinv");
     intent.use_key = bound("+use");
@@ -965,7 +973,7 @@ pub fn write_local_intent(
         let swallowed = weapon_menu.as_ref().is_some_and(|m| m.swallow_fire);
         for (c, b, on) in [
             ("+attack", FIRE, !swallowed),
-            ("+attack2", SECONDARY, true),
+            ("+attack2", SECONDARY, false),
             ("+jump", JUMP, true),
             ("+duck", CROUCH, true),
             ("+reload", RELOAD, true),
@@ -975,6 +983,9 @@ pub fn write_local_intent(
             if on && went_down(c) {
                 down.bits |= b;
             }
+        }
+        if secondary_down {
+            down.bits |= SECONDARY;
         }
         if let Some(registry) = actions.as_deref() {
             for name in registry.names() {

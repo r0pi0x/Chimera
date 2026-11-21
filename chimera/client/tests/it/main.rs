@@ -15,6 +15,7 @@ mod lobby_panel;
 mod logo_pass;
 mod map_load_steps;
 mod swap_effect;
+mod third_person;
 mod text_warm;
 mod metrics;
 mod frame_inspector;
