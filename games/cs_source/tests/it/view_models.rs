@@ -725,19 +725,43 @@ fn reload_sounds(local: bool) -> (Vec<(f32, String)>, usize) {
     (heard, world_ones)
 }
 
-/// specs/cs_source/sounds.md ("Model animation sound events"),
-/// view_models.md 6: the reload's clip-out and clip-in are the view
-/// model's sound events, heard by the local player as the animation passes
-/// them (0.3514 and 1.5405 s), by no one else; the data times none.
+/// specs/cs_source/sounds.md 5.1, view_models.md 6: the reload's clip-out
+/// and clip-in are the view model's sound events, heard by the local
+/// player as the animation passes them (0.3514 and 1.5405 s), and by
+/// others from the reloader's place at the same times, the later parts
+/// 0.075 s behind (the first part, at cycle 0, would not be); nothing is
+/// timed by the data and no world reload sound is written.
 #[test]
-fn the_owner_hears_the_view_models_reload_events_nobody_else() {
+fn everyone_hears_the_view_models_reload_events_the_others_a_little_late() {
     let (heard, world_ones) = reload_sounds(true);
-    let at = |entry: &str| heard.iter().filter(|(_, e)| e == entry).map(|(t, _)| *t).collect::<Vec<_>>();
-    let (out, inn) = (at("Weapon_AK47.Clipout"), at("Weapon_AK47.Clipin"));
+    let at = |heard: &[(f32, String)], entry: &str| heard.iter().filter(|(_, e)| e == entry).map(|(t, _)| *t).collect::<Vec<_>>();
+    let (out, inn) = (at(&heard, "Weapon_AK47.Clipout"), at(&heard, "Weapon_AK47.Clipin"));
     assert!(out.len() == 1 && (out[0] - 0.3514).abs() < 0.05, "{heard:?}");
     assert!(inn.len() == 1 && (inn[0] - 1.5405).abs() < 0.05, "{heard:?}");
     assert_eq!(world_ones, 0, "CS:S's guns have no world reload sound (the specs name none)");
 
-    let (heard, world_ones) = reload_sounds(false);
-    assert!(heard.is_empty() && world_ones == 0, "another player's view model plays nothing here: {heard:?}");
+    let (others, world_ones) = reload_sounds(false);
+    let (out2, inn2) = (at(&others, "Weapon_AK47.Clipout"), at(&others, "Weapon_AK47.Clipin"));
+    assert!(out2.len() == 1 && (out2[0] - out[0] - 0.075).abs() < 0.04, "{others:?} vs {heard:?}");
+    assert!(inn2.len() == 1 && (inn2[0] - inn[0] - 0.075).abs() < 0.04, "{others:?} vs {heard:?}");
+    assert_eq!(others.len(), 2, "the reload's parts only: {others:?}");
+    assert_eq!(world_ones, 0);
+}
+
+/// specs/cs_source/sounds.md 5.1 (test cases): another player's draw (the
+/// bolt pull of a drawn AK-47) is not heard, and no other view-model
+/// event than a reload's.
+#[test]
+fn others_hear_no_draw() {
+    use crate::stack::map::PlaySound;
+    let mut sim = sim();
+    let p = sim.spawn_character(greybox::SPAWNS[0], placeholder::ID);
+    let mut play = sim.app.world().resource::<Messages<PlaySound>>().get_cursor_current();
+    let mut n = 0;
+    for _ in 0..(1.5 / TICK_INTERVAL) as usize {
+        sim.ticks(1);
+        n += play.read(sim.app.world().resource::<Messages<PlaySound>>()).filter(|s| s.entry.contains("Weapon_AK47")).count();
+    }
+    assert_eq!(n, 0, "the draw's bolt pull is the owner's alone");
+    let _ = p;
 }

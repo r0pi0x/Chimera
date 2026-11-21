@@ -49,6 +49,11 @@ pub const DEFAULT_FOV: f32 = 90.0;
 
 const UNIT: f32 = 0.0254;
 
+/// How far behind a reload's start (as received) the later part sounds of
+/// another player's reload play: the 0.1 s interpolation less about a tick
+/// (specs/cs_source/sounds.md 5.1, measured 0.09 s on a listen server).
+pub const OTHERS_RELOAD_LAG: f32 = 0.075;
+
 /// The view-model settings CS:S starts with (`cl_righthand 1`,
 /// `r_drawviewmodel 1`).
 pub fn settings() -> ViewModelSettings {
@@ -267,12 +272,16 @@ pub fn rules() -> ViewAnimRules {
         // Spec view_models.md 6.
         effect: event_effect,
         draw_rate: 1.0,
+        // Others hear a reload's sound events, the later ones 0.075 s
+        // behind its start as received (specs/cs_source/sounds.md 5.1).
+        others_reload: Some(OTHERS_RELOAD_LAG),
     }
 }
 
 /// What an animation event of CS:S's view models shows: its sound events
 /// (event 5004: the draw, reload, bolt, silencer and pin sounds, played for
-/// the owner alone, `weapon::view_anim::play_view_sounds`), Source's flashes
+/// the owner alone but a reload's, which others hear too: `others_reload`;
+/// `weapon::view_anim::play_view_sounds`), Source's flashes
 /// and brass. The C4's `c4.click` events are left to the bomb's arming,
 /// whose clicks run with its code screen (`objectives::bomb`).
 pub fn event_effect(e: &AnimEvent) -> Option<ViewModelEventKind> {

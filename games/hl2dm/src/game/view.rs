@@ -96,6 +96,7 @@ pub fn rules() -> ViewAnimRules {
         event,
         effect: super::flashes::event_effect,
         draw_rate: 1.0,
+        others_reload: None,
     }
 }
 

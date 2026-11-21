@@ -152,10 +152,18 @@ Captured imagery stays in scratch, never in the repo.
   the crossbow's generic reload sound is `[sounds] own_reload`, the
   holder's alone (`weapon::world_reload_sounds`); the pistol's, SMG1's
   and shotgun's stay timed (the spec's "shared": everyone hears them).
-- **Spec gaps**: neither spec says what others hear of a CS:S gun's
-  reload (sounds.md Open question 9 knows only the server sends none;
-  the world models and the player models carry no 5004), so they hear
-  nothing, with no `world_reload`. The S.L.A.M.'s `TripMineMode` event
+- **Others hear CS:S reloads** (css-others-reload, sounds.md 5.1,
+  measured): the reload sequence's sound events play on every client
+  for other players too, from the reloader, the first part (cycle 0) as
+  the reload's start arrives, the later ones `OTHERS_RELOAD_LAG`
+  (0.075 s) behind. Data-driven: `ViewAnimRules::others_reload`
+  (None: owner only) marks a reload sequence's events
+  (`ViewModelEvent::others`, `ViewModelPlay::reload_seq`); no new
+  network traffic (the reload-start replication drives it). Draws and
+  fire sequences' bolts stay owner-only; the knife's deploy is the
+  server's sound (`[sounds] deploy`). Replaces "others hear nothing" below.
+- **Spec gaps** (older, see above): neither spec said what others hear of a CS:S gun's
+  reload then. The S.L.A.M.'s `TripMineMode` event
   (effects_sounds.md 15.3) is on a sequence our rules never play.
 
 ### The spool-down's finish, view-model sounds, the Minigun flash's fades (tf2-vm-sounds, 2026-11-20)

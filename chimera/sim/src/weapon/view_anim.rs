@@ -14,7 +14,9 @@
 //! data's `[anim]`: `idle_after`, `idle_interval`, `idle_after_draw`). A
 //! view model behind a scope (`Zoomed::scope`) is hidden. An animation
 //! event the rules read as a sound (`ViewModelEventKind::Sound`: Source's
-//! 5004) is played for this machine's own player only (`play_view_sounds`).
+//! 5004) is played for this machine's own player only, and a reload's for
+//! the others too when the game's rules say so (`ViewAnimRules::others_reload`;
+//! `play_view_sounds`).
 //!
 //! What plays when is the weapon's:
 //!
@@ -97,19 +99,45 @@ impl Plugin for ViewAnimPlugin {
 /// The view models' sound events (`ViewModelEventKind::Sound`) played from
 /// their owner for this machine's own player alone (specs/tf2/
 /// viewmodel_sounds.md 1.1: as the animation passes them, nobody else
-/// hears them; others' view models, which nobody here draws, stay silent).
+/// hears them: others' view models, which nobody here draws, play theirs
+/// silently), and a reload's, when the game's rules say others hear them
+/// (`ViewAnimRules::others_reload`, `ViewModelEvent::others`), from the
+/// reloading character's place (specs/cs_source/sounds.md 5.1), the later
+/// ones after their lag.
 pub fn play_view_sounds(
+    time: Res<Time>,
     mut effects: MessageReader<ViewModelEvent>,
-    owners: Query<&Transform, With<crate::core::LocalPlayer>>,
+    owners: Query<(&Transform, Has<crate::core::LocalPlayer>)>,
     mut play: MessageWriter<crate::map::PlaySound>,
+    mut later: Local<Vec<(f64, Entity, String)>>,
 ) {
+    let now = time.elapsed_secs_f64();
+    let mut say = |owner: Entity, entry: String, play: &mut MessageWriter<crate::map::PlaySound>| {
+        if let Ok((at, _)) = owners.get(owner) {
+            play.write(crate::map::PlaySound {
+                source: Some(owner),
+                ..crate::map::PlaySound::at(entry, at.translation)
+            });
+        }
+    };
+    let mut i = 0;
+    while i < later.len() {
+        if later[i].0 <= now {
+            let (_, owner, entry) = later.remove(i);
+            say(owner, entry, &mut play);
+        } else {
+            i += 1;
+        }
+    }
     for ev in effects.read() {
         let ViewModelEventKind::Sound { entry } = &ev.kind else { continue };
-        let Ok(at) = owners.get(ev.owner) else { continue };
-        play.write(crate::map::PlaySound {
-            source: Some(ev.owner),
-            ..crate::map::PlaySound::at(entry.clone(), at.translation)
-        });
+        let Ok((_, local)) = owners.get(ev.owner) else { continue };
+        match ev.others {
+            _ if local => say(ev.owner, entry.clone(), &mut play),
+            Some(lag) if lag > 0.0 => later.push((now + lag as f64, ev.owner, entry.clone())),
+            Some(_) => say(ev.owner, entry.clone(), &mut play),
+            None => {}
+        }
     }
 }
 
@@ -203,6 +231,9 @@ pub struct ViewModelPlay {
     /// last attack (`ViewFrame::sustain` keeps it going), as a Source
     /// weapon's idle time is the attack sequence's duration.
     pub attacked: Option<usize>,
+    /// The sequence a reload event (start, a shell, the finish) last
+    /// started: its sound events are the reload's (`ViewModelEvent::others`).
+    pub reload_seq: Option<usize>,
     /// A draw played faster than its own rate (`ViewAnimRules::draw_rate`)
     /// holds its last frame until then: its length at its own rate after
     /// the draw (Source's idle time; an attack ends the hold).
@@ -220,6 +251,7 @@ impl ViewModelPlay {
             zoomed: false,
             series: 0,
             attacked: None,
+            reload_seq: None,
             draw_held_until: f64::MIN,
             rng: owner.to_bits() as u32 ^ 0x9e37_79b9,
         }
@@ -365,6 +397,12 @@ pub struct ViewAnimRules {
     /// idle (TF2's 1.34: specs/tf2/viewmodel.md 6, a 0.67 s draw over a
     /// 0.5 s deploy).
     pub draw_rate: f32,
+    /// Others hear the sound events of a reload's sequence
+    /// (`ViewModelEvent::others`): the later ones this many seconds behind
+    /// the sequence as this machine plays it (CS:S's 0.075, specs/cs_source/
+    /// sounds.md 5.1: the first, at cycle 0, as the reload's start arrives).
+    /// None: the holder alone hears them.
+    pub others_reload: Option<f32>,
 }
 
 /// After a draw played: its rate, and the hold of its last frame
@@ -587,6 +625,8 @@ pub fn drive(
             restarted: drawn,
         };
         for ev in events.iter().filter(|ev| ev.owner == e) {
+            let restarted_before = frame.restarted;
+            let seq_before = frame.view.animator.as_ref().and_then(|a| a.main);
             match &ev.kind {
                 WeaponEventKind::Deployed => {
                     if !frame.drawn {
@@ -607,6 +647,15 @@ pub fn drive(
                     }
                 }
             }
+            // What this event started: a reload's sequence, or not.
+            let main = frame.view.animator.as_ref().and_then(|a| a.main);
+            if frame.restarted && (!restarted_before || main != seq_before) {
+                let reload = matches!(
+                    ev.kind,
+                    WeaponEventKind::ReloadStarted | WeaponEventKind::ShellInserting | WeaponEventKind::Reloaded
+                );
+                frame.dice.reload_seq = main.filter(|_| reload);
+            }
         }
         // Zooming in and out (data actions).
         let is_zoomed = frame.state.zoomed.is_some();
@@ -626,9 +675,14 @@ pub fn drive(
         // cycle 0 fire on its first frame.
         if let Some(s) = animator.main {
             let from = before.filter(|(m, _)| *m == s && !restarted).map(|(_, c)| c);
+            let reload = dice.reload_seq == Some(s);
             for ev in animator.set.sequences[s].events_between(from, animator.cycle) {
                 if let Some(kind) = effect(ev) {
-                    effects.write(ViewModelEvent { owner: e, kind });
+                    let others = rules
+                        .and_then(|r| r.others_reload)
+                        .filter(|_| reload)
+                        .map(|lag| if ev.cycle <= 0.0 { 0.0 } else { lag });
+                    effects.write(ViewModelEvent { owner: e, kind, others });
                 }
             }
         }

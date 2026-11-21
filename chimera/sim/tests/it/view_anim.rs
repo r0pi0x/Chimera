@@ -61,6 +61,7 @@ fn rules_of(game: &'static str) -> ViewAnimRules {
             event: no_event,
             effect: |_| None,
             draw_rate: 1.0,
+            others_reload: None,
         },
         _ => ViewAnimRules {
             draw: |s| ask("other", s),
@@ -68,6 +69,7 @@ fn rules_of(game: &'static str) -> ViewAnimRules {
             event: no_event,
             effect: |_| None,
             draw_rate: 1.0,
+            others_reload: None,
         },
     }
 }

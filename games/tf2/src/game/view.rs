@@ -462,6 +462,7 @@ pub fn rules() -> ViewAnimRules {
         effect: event_effect,
         // A stock gun's 0.67 s draw over its 0.5 s deploy (specs/tf2/viewmodel.md 6).
         draw_rate: DRAW_RATE,
+        others_reload: None,
     }
 }
 

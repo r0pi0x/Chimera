@@ -298,6 +298,10 @@ impl ViewAnimator {
 pub struct ViewModelEvent {
     pub owner: Entity,
     pub kind: ViewModelEventKind,
+    /// A sound event of a reload's sequence that other players hear too
+    /// (`ViewAnimRules::others_reload`): after this many seconds. None:
+    /// the owner alone does.
+    pub others: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -278,6 +278,7 @@ fn pistol_and_magnum_flashes_smoke() {
         sim.app.world_mut().write_message(ViewModelEvent {
             owner: p,
             kind: ViewModelEventKind::MuzzleFlashOf { attachment: 0, kind: kind.into() },
+            others: None,
         });
     };
     let puffs = |sim: &Sim| drawn(sim, flashes::SMOKE);
