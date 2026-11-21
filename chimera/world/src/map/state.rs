@@ -61,12 +61,54 @@ pub struct PropSequence {
 }
 
 /// Switchable light styles that are off (Source styles 32+). The logic
-/// layer writes it; the map relights the lightmaps when it changes.
+/// layers write it, each its own list (`with`): in an app running every
+/// game's logic (the gun game) Source's logic and a Combat Arms map's
+/// light groups both write it, and when each replaced the whole list they
+/// undid each other several times a second, every write a whole lightmap
+/// rebuild (feedback b37d546e, roadkill). The map relights the lightmaps
+/// when it changes.
 #[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
 pub struct LightStyles {
-    /// Style numbers and whether each is lit; unlisted styles keep their
-    /// state at map start.
+    /// Style numbers and whether each is lit, every writer's together (a
+    /// later writer's entry for a style an earlier one lists wins);
+    /// unlisted styles keep their state at map start.
     pub styles: Vec<(u8, bool)>,
+    /// Each writer's own list, by name, in the order they first wrote.
+    writers: Vec<(&'static str, Vec<(u8, bool)>)>,
+}
+
+impl LightStyles {
+    /// One writer's styles alone.
+    pub fn of(writer: &'static str, styles: Vec<(u8, bool)>) -> Self {
+        Self::default().with(writer, styles).unwrap_or_default()
+    }
+
+    /// These styles with `writer`'s list now `styles` (an empty list
+    /// drops the writer); None when that changes nothing, so a writer
+    /// inserts the resource only when its own list changed.
+    pub fn with(&self, writer: &'static str, styles: Vec<(u8, bool)>) -> Option<Self> {
+        let at = self.writers.iter().position(|(w, _)| *w == writer);
+        let mut next = self.clone();
+        match (at, styles.is_empty()) {
+            (Some(i), _) if next.writers[i].1 == styles => return None,
+            (None, true) => return None,
+            (Some(i), true) => {
+                next.writers.remove(i);
+            }
+            (Some(i), false) => next.writers[i].1 = styles,
+            (None, false) => next.writers.push((writer, styles)),
+        }
+        next.styles.clear();
+        for (_, list) in &next.writers {
+            for &(n, on) in list {
+                match next.styles.iter_mut().find(|s| s.0 == n) {
+                    Some(s) => s.1 = on,
+                    None => next.styles.push((n, on)),
+                }
+            }
+        }
+        Some(next)
+    }
 }
 
 /// Which soundscape volumes (by entity index, `SoundscapeZone::entity`)
@@ -451,3 +493,26 @@ pub struct LogicOneShot(pub super::PlaySound);
 /// (`client::chat`). The logic writes it (`logic::hud`).
 #[derive(Message, Clone, Debug, PartialEq)]
 pub struct MapSay(pub String);
+
+#[cfg(test)]
+mod tests {
+    use super::LightStyles;
+
+    /// Two writers keep their own lists: one writing again what it wrote
+    /// changes nothing, whatever the other wrote since (the gun game's
+    /// Source logic and Combat Arms' light groups undid each other).
+    #[test]
+    fn light_style_writers_keep_their_own_lists() {
+        let a = LightStyles::default().with("source", vec![]);
+        assert!(a.is_none(), "an empty list on nothing changes nothing");
+        let b = LightStyles::default().with("ca", vec![(32, false)]).unwrap();
+        assert_eq!(b.styles, [(32, false)]);
+        assert!(b.with("source", vec![]).is_none(), "Source's empty list leaves Combat Arms' alone");
+        assert!(b.with("ca", vec![(32, false)]).is_none());
+        let c = b.with("source", vec![(33, true), (32, true)]).unwrap();
+        assert_eq!(c.styles, [(32, true), (33, true)], "the later writer wins a shared style");
+        let d = c.with("source", vec![]).unwrap();
+        assert_eq!(d.styles, [(32, false)], "a writer's emptied list drops its styles");
+        assert_eq!(d.with("ca", vec![]).unwrap().styles, []);
+    }
+}

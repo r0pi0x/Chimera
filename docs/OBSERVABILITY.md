@@ -1610,7 +1610,9 @@ load; work counts don't (performance.md, "Work counts"):
   INFO and above, asset stores' additions and frees by type,
   pipelines queued and compiled, a game's own `frame_events::note`), ticks run,
   RSS and the GPU allocator's bytes. The 8 worst records go into the
-  F10 bundle's `perf.txt` (and its `world.txt` has the census, growth
+  F10 bundle's `perf.txt`, headed by the systems the latest 32 timed
+  spikes share (own ms summed, in how many: a stutter that keeps coming
+  back, which map loads would crowd out of the worst) (and its `world.txt` has the census, growth
   by kind since the session's first map and this map, memory by kind
   and the event timeline: `client::world_report`); each logged `hitch:` line ends with its
   record's `; systems: ...; events (N): ...`. `frame_spikes` prints the

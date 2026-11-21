@@ -36,6 +36,9 @@ pub fn wanted(world: &ObjectWorld) -> Vec<(u8, bool)> {
         .collect()
 }
 
+/// Combat Arms' writer name in `LightStyles`.
+const STYLES: &str = "combat_arms";
+
 /// Write the groups' state where the map relights from.
 pub fn show(objects: Res<CaObjects>, styles: Option<Res<LightStyles>>, mut commands: Commands) {
     if !objects.is_changed() {
@@ -45,7 +48,9 @@ pub fn show(objects: Res<CaObjects>, styles: Option<Res<LightStyles>>, mut comma
     if want.is_empty() {
         return;
     }
-    if styles.is_none_or(|s| s.styles != want) {
-        commands.insert_resource(LightStyles { styles: want });
+    // Its own list in the resource: Source's logic, running in a party
+    // app on the same map, keeps another (feedback b37d546e).
+    if let Some(next) = styles.as_deref().cloned().unwrap_or_default().with(STYLES, want) {
+        commands.insert_resource(next);
     }
 }
