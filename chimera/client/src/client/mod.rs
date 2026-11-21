@@ -54,6 +54,7 @@ pub mod hud_text;
 pub mod input;
 pub mod ink_icon;
 pub mod kill_feed;
+pub mod link_handler;
 pub mod interp;
 pub mod map_screen;
 pub mod match_effects;
@@ -110,6 +111,10 @@ use crate::{
 /// Command-line options. Run with `--help` for the list.
 #[derive(Clone, Default, Debug)]
 pub struct Args {
+    /// The invite link a `chimera-hub://` link started the game with
+    /// (`link_handler::link_launch`; nothing else is taken from such a
+    /// command line).
+    pub opened_link: Option<String>,
     /// Save a screenshot here after `frames` frames, then exit.
     pub screenshot: Option<PathBuf>,
     /// Play this scene script (`scene`), its pictures and log into
@@ -360,7 +365,11 @@ impl Args {
     /// The process's command line: `--help` prints `usage` and ends the
     /// process (0), a bad option says so with `usage` (2).
     pub fn parse_for(usage: &str) -> Self {
-        match Self::parse_from(std::env::args().skip(1)) {
+        let argv: Vec<String> = std::env::args().skip(1).collect();
+        if let Some(link) = link_handler::link_launch(&argv) {
+            return Self::opened(link);
+        }
+        match Self::parse_from(argv) {
             Ok(mut args) => {
                 args.take_asset_token();
                 args.take_hub_link();
@@ -377,6 +386,32 @@ impl Args {
                 std::process::exit(2);
             }
         }
+    }
+
+    /// A start by an invite link (`link_handler`): handed to the game
+    /// already running (this process then ends), else a plain start at the
+    /// program's folder with the link to show; a malformed link is
+    /// dropped.
+    fn opened(link: Option<String>) -> Self {
+        let Some(link) = link else {
+            eprintln!("{}: not an invite link; starting without it", link_handler::OPEN_COMMAND);
+            return Self::default();
+        };
+        if let Some(inbox) = link_handler::LinkInbox::user().filter(|i| i.running()) {
+            match inbox.hand(&link) {
+                Ok(_) => {
+                    println!("the invite went to the game already running");
+                    std::process::exit(0);
+                }
+                Err(e) => eprintln!("{}: {e}; starting another game", inbox.dir.display()),
+            }
+        }
+        // Opened by the system from anywhere: the program's own folder.
+        if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(std::path::Path::to_path_buf)) {
+            let _ = std::env::set_current_dir(dir);
+        }
+        chimera_net::net::assets::keep_account_fresh();
+        Self { opened_link: Some(link), ..Self::default() }
     }
 
     /// The command line (without the program's name); `--help` is

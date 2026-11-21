@@ -45,6 +45,8 @@ mousiki.workspace = true
 # The console's copy and paste.
 arboard.workspace = true
 dirs.workspace = true
+# Invite links' parts (`link_handler`).
+chimera_assets.workspace = true
 image.workspace = true
 serde.workspace = true
 # `--views` files and bench results (`capture`).
@@ -70,6 +72,7 @@ dev = [
     "chimera_present/dev",
     "chimera_net/dev",
     "chimera_ui/dev",
+    "chimera_assets/dev",
 ]
 # Every system as a span in a Chrome trace (the game's `profile`).
 profile = ["chimera_core/profile", "trace"]

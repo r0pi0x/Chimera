@@ -106,7 +106,7 @@ pub use materials::{
     TickBarMaterial,
 };
 pub use modal::{Modal, Modals};
-pub use motion::{Ease, Prop, Timeline, Track, UiClock};
+pub use motion::{Ease, Prop, Timeline, Track, UiClock, Warmth};
 pub use parity::UiParityId;
 pub use pointer_lead::PointerLead;
 pub use scroll::{ReducedMotion, ScrollIntoView, ScrollParts, ScrollViews, scroll_into_view};
@@ -137,6 +137,7 @@ impl Plugin for ChimeraUiPlugin {
             .init_resource::<UiMusic>()
             .add_message::<UiCue>()
             .init_resource::<UiClock>()
+            .init_resource::<motion::Warmth>()
             .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, modal::ModalPlugin, scroll::ScrollPlugin, vlist::VListPlugin, picker::PickerPlugin, shell::ShellPlugin))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare));
         pointer_lead::add(app);
@@ -151,6 +152,7 @@ impl Plugin for ChimeraUiPlugin {
                     // On the styles' fonts and the last layout's widths.
                     text_fit::fit_texts,
                     motion::advance_clock,
+                    motion::track_warmth,
                     motion::step_timelines,
                     motion::apply_timelines,
                 )

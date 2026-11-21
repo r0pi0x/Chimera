@@ -143,3 +143,63 @@ fn interrupted_tracks_continue_from_where_they_are() {
     tl.restart(now);
     assert_eq!(tl.sample(Prop::ClipRight, tl.local(now)), Some(1.0));
 }
+
+/// A real frame counts at most `MAX_STEP` on the UI clock: one hitch slows
+/// the motion for that frame, never skips its beats.
+#[test]
+fn a_long_frame_is_clamped() {
+    let mut clock = UiClock::default();
+    clock.advance_real(1.0 / 60.0);
+    clock.advance_real(3.0);
+    assert!(close(clock.dt, chimera_ui::motion::MAX_STEP), "the hitch counts {}", clock.dt);
+    assert!((clock.now - (1.0 / 60.0 + chimera_ui::motion::MAX_STEP as f64)).abs() < 1e-6);
+    clock.advance_real(-1.0);
+    assert_eq!(clock.dt, 0.0, "time never runs back");
+}
+
+/// Warm after `WARM_FRAMES` steady frames in a row; a slow frame starts the
+/// count again; `WARM_MAX` seconds of frames make it warm anyway.
+#[test]
+fn the_app_is_warm_after_steady_frames() {
+    use chimera_ui::motion::{WARM_FRAMES, WARM_MAX, Warmth};
+    let mut w = Warmth::default();
+    let mut now = 0.0;
+    // The start's slow frames, then a few steady ones and a hitch.
+    for dt in [0.9, 0.4, 0.2, 0.016, 0.016, 0.3] {
+        now += dt as f64;
+        assert!(!w.observe(dt, now) && !w.is_warm());
+    }
+    assert_eq!(w.steady, 0, "the hitch started the count again");
+    for i in 1..=WARM_FRAMES {
+        now += 1.0 / 60.0;
+        let became = w.observe(1.0 / 60.0, now);
+        assert_eq!(became, i == WARM_FRAMES, "frame {i}");
+    }
+    assert_eq!(w.warm_at, Some(now));
+    assert!(!w.observe(1.0 / 60.0, now + 1.0) && w.warm_at == Some(now), "it stays warm from then");
+
+    // A PC whose frames are never steady: warm after WARM_MAX seconds.
+    let mut slow = Warmth::default();
+    let mut frames = 0;
+    while !slow.observe(0.08, frames as f64 * 0.08) {
+        frames += 1;
+        assert!(frames < 1000);
+    }
+    assert!((slow.seen - WARM_MAX).abs() < 0.1, "warm at {} s", slow.seen);
+}
+
+/// In an app on a manual clock, `Warmth` counts the clock's steps.
+#[test]
+fn warmth_counts_the_manual_clocks_steps() {
+    let mut app = app();
+    for _ in 0..3 {
+        app.world_mut().resource_mut::<UiClock>().step(0.5);
+        app.update();
+    }
+    assert!(!app.world().resource::<chimera_ui::Warmth>().is_warm());
+    for _ in 0..chimera_ui::motion::WARM_FRAMES {
+        app.world_mut().resource_mut::<UiClock>().step(1.0 / 60.0);
+        app.update();
+    }
+    assert!(app.world().resource::<chimera_ui::Warmth>().is_warm());
+}

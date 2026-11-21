@@ -323,11 +323,11 @@ module list is `docs/modules.md`.
 - 22: What you need | and quitting and rejoining after an hour or so resets it)
 - 36: Download and start | (`LuckerParty-<version>-windows.zip` or `UltimateGunGame-<version>-windows.zip`; the host will say which)
 - 52: First run: your invite | The first time the game starts it asks for your **invite**: paste the link the host sent you (it starts with `chimera-hub://`; the bare...
-- 79: Joining the server | The main menu starts over its own animated backdrop
-- 137: Controls | The defaults (Esc > Options > Binds, or `F6`, changes any of them):
-- 182: Settings worth knowing | Esc > Options:
-- 199: Reporting a bug | Please send the host (a message in the group chat is fine):
-- 251: Known issues | Things you may hit, so you do not need to report them (unless they look worse than described):
+- 83: Joining the server | The main menu starts over its own animated backdrop
+- 141: Controls | The defaults (Esc > Options > Binds, or `F6`, changes any of them):
+- 186: Settings worth knowing | Esc > Options:
+- 203: Reporting a bug | Please send the host (a message in the group chat is fine):
+- 255: Known issues | Things you may hit, so you do not need to report them (unless they look worse than described):
 
 ## docs/tech-debt.md
 

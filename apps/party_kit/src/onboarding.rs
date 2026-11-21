@@ -15,7 +15,12 @@
 //! - **Intro** (decision 7; `start_first_run`, `intro_due`): on the
 //!   first run's first start only (no `onboarding-intro-seen` mark beside
 //!   `account.toml`, written when it ends or is skipped), a 2.6 s
-//!   broadcast-style title over Welcome (`IntroRoot`, `draw_intro`):
+//!   broadcast-style title over Welcome (`IntroRoot`, `draw_intro`). Its
+//!   clock starts once the app is warm (`Intro::warming`,
+//!   `chimera_ui::Warmth`: 10 frames in a row under 50 ms, or 6 s of
+//!   frames), its first frame standing still until then, so the start's
+//!   slow frames never eat its first second; a hitch while it plays moves
+//!   it 0.1 s at most (`chimera_ui::motion::MAX_STEP`).
 //!   0-0.4 s the blueprint hairlines flicker on from the middle, the bar
 //!   (channel and app, ON AIR, a running timecode) and its rule draw out;
 //!   0.05-0.9 s the logo pass (accent hairline, the hero slab carrying the
@@ -39,6 +44,12 @@
 //!   (`chimera_assets::account::InviteInput`), read on Enter; the pane
 //!   "What an invite carries" lights each part found. A link already on
 //!   the clipboard is filled in at the start (nothing is sent).
+//!   A clicked invite link (`chimera_client::client::link_handler`: the
+//!   game started by it, or the running game it was handed to;
+//!   `open_links`) brings Welcome up with the field filled
+//!   (`Source::Opened`) and checks it at once, the window asked to the
+//!   front; over the recovery key it waits. `link_setup` (a real start)
+//!   registers the links for this program and holds the inbox.
 //!   "I already have an account" (`Step::Have`) and "Play without an
 //!   account" (writes the skip mark) under it.
 //! - **Checking**: `POST /accounts/check` on a thread (`OnboardingHub`);
@@ -86,8 +97,7 @@
 //!   (`StagedHub`), for screenshots.
 //!
 //! Known shortcuts: the intro's timings are numbers in the code (its
-//! words are data); clicking an invite link doesn't open the game
-//! yet (no link handler registered); the screens rebuild whole on any
+//! words are data); the screens rebuild whole on any
 //! change; no keyboard focus between the buttons (Enter is the hero,
 //! Esc goes back); the chip opens nothing yet (no Profile screen: rename,
 //! link a device and sign out are the hub's calls, `account::rename`, not
@@ -316,6 +326,21 @@ pub struct Intro {
     /// Held still this many seconds in (`ui_scene onboarding intro <t>`):
     /// it never ends by itself.
     pub held: Option<f32>,
+    /// Waiting for the app to be warm (`chimera_ui::motion::Warmth`): its
+    /// first frame stands still until then, and its clock starts there.
+    pub warming: bool,
+}
+
+impl Intro {
+    /// Live from `now`.
+    pub fn live(now: f64) -> Self {
+        Intro { start: now, held: None, warming: false }
+    }
+
+    /// Where it stands still, if it does: held, or at 0 while warming.
+    pub fn still_at(&self) -> Option<f32> {
+        self.held.or(self.warming.then_some(0.0))
+    }
 }
 
 impl Onboarding {
@@ -648,9 +673,52 @@ impl Plugin for OnboardingPlugin {
                 Ok(None)
             },
         );
-        app.add_systems(Update, (from_clipboard, clicks, keys, intro_tick, poll, name_pause, act, show, show_intro, show_toast).chain())
+        app.add_systems(Update, (from_clipboard, open_links, clicks, keys, intro_tick, poll, name_pause, act, show, show_intro, show_toast).chain())
             .add_systems(Update, (retry_hub, show_chip).chain())
             .add_systems(Update, (hold_intro, intro_clock).after(show_intro));
+    }
+}
+
+/// The app's start (a real one: `main_menu`'s `keep_recent`): invite
+/// links registered for this program under the app's name, and the
+/// running game's inbox held (`chimera_client::client::link_handler`).
+pub fn link_setup(mut commands: Commands, title: Option<Res<crate::esc_menu::EscMenuTitle>>) {
+    let name = title.map_or_else(|| crate::esc_menu::EscMenuTitle::default().0, |t| t.0.clone());
+    commands.insert_resource(chimera_client::client::link_handler::LinkSetup::user(&name));
+}
+
+/// An invite link that opened the game, or was handed to it running
+/// (`link_handler::OpenedLinks`, each already a well-formed invite): the
+/// first run comes up on Welcome with the field filled and checks it at
+/// once (as Enter), the window asked to the front. Not over the recovery
+/// key (it shows once): the link waits until that screen is left.
+pub fn open_links(
+    links: Option<ResMut<chimera_client::client::link_handler::OpenedLinks>>,
+    mut o: ResMut<Onboarding>,
+    clock: Res<UiClock>,
+    mut out: MessageWriter<ObAction>,
+    mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>,
+) {
+    let Some(mut links) = links else { return };
+    if links.0.is_empty() || (o.active && o.step == Step::Key) {
+        return;
+    }
+    // The latest wins.
+    let Some(link) = links.0.drain(..).next_back() else { return };
+    let Some(parsed) = InviteInput::parse(&link) else { return };
+    let now = clock.now;
+    o.active = true;
+    o.pending = None;
+    o.go(Step::Welcome, now);
+    o.input = link;
+    o.caret = Caret::end_of(&o.input);
+    o.source = Source::Opened;
+    o.parsed = Some(parsed);
+    out.write(ObAction::Continue);
+    for mut w in &mut windows {
+        if !w.focused {
+            w.focused = true;
+        }
     }
 }
 
@@ -688,7 +756,8 @@ pub fn start_first_run(o: &mut Onboarding, files: &OnboardingFiles, now: f64, sc
     o.go(Step::Welcome, now);
     o.avatar = rand_avatar();
     if intro_due(files) {
-        o.intro = Some(Intro { start: now, held: None });
+        // Its clock starts once the app is warm (`intro_tick`).
+        o.intro = Some(Intro { warming: true, ..Intro::live(now) });
         o.since = now + welcome_at(scale);
     }
     true
@@ -2311,10 +2380,10 @@ fn intro_tick(
     motion: Option<Res<Motion>>,
     mouse: Option<Res<ButtonInput<MouseButton>>>,
     pressed: Query<&Interaction, (With<IntroRoot>, Changed<Interaction>)>,
-    cues: Option<ResMut<Messages<chimera_ui::UiCue>>>,
+    (cues, warmth): (Option<ResMut<Messages<chimera_ui::UiCue>>>, Option<Res<chimera_ui::Warmth>>),
     mut sent: Local<(f64, u8)>,
 ) {
-    let Some(intro) = o.intro else { return };
+    let Some(mut intro) = o.intro else { return };
     let now = clock.now;
     if !o.active {
         o.intro = None;
@@ -2326,6 +2395,16 @@ fn intro_tick(
         return;
     }
     let scale = motion.map_or(1.0, |m| m.scale);
+    // Warming: its first frame stands until the app's frames are steady,
+    // then its clock starts (no app clock at all: at once).
+    if intro.warming {
+        if !warmth.is_none_or(|w| w.is_warm()) {
+            return;
+        }
+        intro = Intro::live(now);
+        o.intro = Some(intro);
+        o.since = now + welcome_at(scale);
+    }
     let t = intro.held.map_or((now - intro.start) as f32, |h| h);
     if intro.held.is_none() && t >= intro_len(scale) {
         end_intro(&mut o, &files, now, false);
@@ -2349,7 +2428,7 @@ fn intro_tick(
 
 /// A held intro's timelines stay at its time (screenshots).
 fn hold_intro(o: Res<Onboarding>, clock: Res<UiClock>, mut parts: Query<&mut Timeline, With<IntroPart>>) {
-    let Some(Intro { held: Some(t), .. }) = o.intro else { return };
+    let Some(t) = o.intro.and_then(|i| i.still_at()) else { return };
     let start = clock.now - t as f64;
     for mut tl in &mut parts {
         if tl.start != Some(start) {
@@ -2361,7 +2440,7 @@ fn hold_intro(o: Res<Onboarding>, clock: Res<UiClock>, mut parts: Query<&mut Tim
 /// The timecode in the intro's corner, HH:MM:SS:FF at 30 frames.
 fn intro_clock(o: Res<Onboarding>, clock: Res<UiClock>, mut texts: Query<&mut Text, With<IntroClock>>) {
     let Some(intro) = o.intro else { return };
-    let t = intro.held.unwrap_or((clock.now - intro.start) as f32).max(0.0);
+    let t = intro.still_at().unwrap_or((clock.now - intro.start) as f32).max(0.0);
     let tc = timecode(t);
     for mut text in &mut texts {
         if text.0 != tc {
@@ -2422,7 +2501,7 @@ fn show_intro(
         let app = title.map_or_else(|| crate::esc_menu::EscMenuTitle::default().0, |t| t.0.clone());
         // Held: every timeline starts `held` seconds ago (`hold_intro`
         // keeps it there).
-        let start = intro.held.map_or(intro.start, |h| clock.now - h as f64);
+        let start = intro.still_at().map_or(intro.start, |h| clock.now - h as f64);
         let r = draw_intro(&mut commands, &ui, &words, &app, &readout, start, scale);
         if let Some(cam) = cam {
             commands.entity(r).insert(UiTargetCamera(cam));
@@ -2658,7 +2737,7 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
                 None => None,
             };
             let scale = w.get_resource::<Motion>().map_or(1.0, |m| m.scale);
-            o.intro = Some(Intro { start: now, held });
+            o.intro = Some(Intro { held, ..Intro::live(now) });
             o.since = now + welcome_at(scale);
         }
         "clipboard" => {

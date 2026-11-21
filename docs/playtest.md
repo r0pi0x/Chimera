@@ -53,7 +53,11 @@ it off unless the host asks.
 
 The first time the game starts it asks for your **invite**: paste the
 link the host sent you (it starts with `chimera-hub://`; the bare code
-works too once the game knows the hub) and press Enter. The game shows
+works too once the game knows the hub) and press Enter. Or **click your invite**: once the game has started once on this PC, a
+`chimera-hub://` link opens it (or the game already open) with the
+invite filled in and checked; the browser asks first whether to open the
+game, say yes. Chat apps may not make such a link clickable: paste it
+into the browser's address bar instead. The game shows
 the hub's name; check it is the host's, then:
 
 1. Choose a **username** (3 to 20 letters, digits or `_`, starting with a

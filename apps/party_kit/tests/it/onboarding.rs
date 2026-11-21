@@ -564,3 +564,77 @@ fn motion_zero_shows_the_intros_last_frame() {
     sim.ticks(1);
     assert!(o(&sim).intro.is_none() && words(&mut sim).contains("PASTE YOUR INVITE"), "then Welcome");
 }
+
+/// On a real first launch the intro waits for the app to be warm
+/// (`chimera_ui::Warmth`: the start's slow frames go by on its first
+/// frame, standing still), then plays whole from there.
+#[test]
+fn the_intro_starts_once_the_frames_are_steady() {
+    let dir = std::env::temp_dir().join(format!("onboarding-warm-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let files = OnboardingFiles {
+        account: Some(dir.join("account.toml")),
+        skip_mark: Some(dir.join("skip")),
+        key_dir: Some(dir.clone()),
+        intro_mark: Some(dir.join("onboarding-intro-seen")),
+    };
+    let mut sim = sim();
+    sim.app.insert_resource(chimera_ui::motion::Motion::new(1.0)).insert_resource(chimera_ui::Warmth::default()).insert_resource(files.clone());
+    let now = sim.app.world().resource::<UiClock>().now;
+    {
+        let mut ob = Onboarding::default();
+        assert!(start_first_run(&mut ob, &files, now, 1.0));
+        *sim.app.world_mut().resource_mut::<Onboarding>() = ob;
+    }
+    assert!(o(&sim).intro.is_some_and(|i| i.warming));
+    // The start's slow frames: 2 s of them, the intro at its first frame.
+    for _ in 0..4 {
+        step(&mut sim, 0.5);
+    }
+    let intro = o(&sim).intro.expect("still there");
+    assert!(intro.warming, "not warm yet");
+    assert!(intro_words(&mut sim).contains("00:00:00:00"), "standing at its first frame");
+    // Steady frames: warm, and its clock starts there.
+    for _ in 0..chimera_ui::motion::WARM_FRAMES {
+        step(&mut sim, 1.0 / 60.0);
+    }
+    // Warm at the frame's end; the intro's clock starts on the next.
+    sim.ticks(1);
+    let started = sim.app.world().resource::<UiClock>().now;
+    let intro = o(&sim).intro.expect("playing");
+    assert!(!intro.warming && (intro.start - started).abs() < 0.02, "started at {} (warm at {started})", intro.start);
+    assert!(o(&sim).since > started + 2.0, "Welcome's entry under its end");
+    for _ in 0..15 {
+        step(&mut sim, 0.1);
+    }
+    assert!(o(&sim).intro.is_some(), "1.5 s in: still playing, no beat skipped");
+    for _ in 0..12 {
+        step(&mut sim, 0.1);
+    }
+    assert!(o(&sim).intro.is_none() && o(&sim).step == Step::Welcome, "ended into Welcome");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A clicked invite link (the command line's, or handed to the running
+/// game: `link_handler::OpenedLinks`) brings Welcome up with the field
+/// filled and checks it at once; over the recovery key it waits.
+#[test]
+fn an_opened_link_fills_the_field_and_checks_it() {
+    use chimera_client::client::link_handler::OpenedLinks;
+    let mut sim = sim();
+    act(&mut sim, ObAction::Skip);
+    assert!(!o(&sim).active);
+    sim.app.insert_resource(OpenedLinks(vec![LINK.to_string()]));
+    sim.ticks(2);
+    let ob = o(&sim).clone();
+    assert!(ob.active, "the first run is up again");
+    assert_eq!((ob.input.as_str(), ob.source), (LINK, party_kit::onboarding::Source::Opened));
+    assert_eq!(ob.step, Step::Hub, "checked at once: {:?}", ob.problem);
+    assert!(sim.app.world().resource::<OpenedLinks>().0.is_empty(), "taken");
+    // On the recovery key's screen it waits until that is left.
+    sim.app.world_mut().resource_mut::<Onboarding>().step = Step::Key;
+    sim.app.world_mut().resource_mut::<OpenedLinks>().0.push(LINK.to_string());
+    sim.ticks(2);
+    assert_eq!(o(&sim).step, Step::Key);
+    assert_eq!(sim.app.world().resource::<OpenedLinks>().0.len(), 1, "kept");
+}

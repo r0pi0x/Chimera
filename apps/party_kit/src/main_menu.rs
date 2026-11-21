@@ -945,6 +945,9 @@ impl Plugin for MainMenuPlugin {
             if self.at_start {
                 app.add_systems(Startup, crate::onboarding::maybe_start);
             }
+            // Invite links open this game: registered for this user, and
+            // handed here while it runs (`link_handler`).
+            app.add_systems(Startup, crate::onboarding::link_setup);
         }
         app.insert_resource(data)
             .insert_resource(last)

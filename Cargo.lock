@@ -2724,6 +2724,7 @@ dependencies = [
  "bevy-inspector-egui",
  "bevy_egui",
  "bevy_winit",
+ "chimera_assets",
  "chimera_core",
  "chimera_net",
  "chimera_present",

@@ -109,7 +109,13 @@ pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 5] = [
 /// menu, mouse and HUD settings, the minigame scoreboard, the swap
 /// effect, the mount doctor and the guests' guns' names, each guest's
 /// front end, then Combat Arms' other looks.
-pub fn front_end(app: &mut App, _: &Args) {
+pub fn front_end(app: &mut App, args: &Args) {
+    // Invite links (`chimera-hub://`) that open the game: the one this
+    // start was opened with first; the first run shows it (`onboarding`).
+    app.add_plugins(chimera_client::client::link_handler::LinkHandlerPlugin);
+    if let Some(link) = &args.opened_link {
+        app.world_mut().resource_mut::<chimera_client::client::link_handler::OpenedLinks>().0.push(link.clone());
+    }
     // The key binds page (F6, `controls`): shared binds and each
     // game's own.
     app.add_plugins(crate::controls::ControlsPlugin)

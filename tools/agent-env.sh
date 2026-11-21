@@ -62,6 +62,9 @@ _agent_env_init() {
   ) 5>"$dir/lock" || return 1
   export MAKEFLAGS="--jobserver-auth=fifo:$fifo -j$jobs"
   export AGENT_ENV=1
+  # Agents' game runs never register invite links on the desktop
+  # (chimera_client::client::link_handler).
+  export CHIMERA_NO_LINK_HANDLER=1
 }
 
 # Cache compiles in one sccache server shared by every worktree. sccache keys

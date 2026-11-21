@@ -9,8 +9,19 @@
 //!   `Motion` (resource; `scale`, the `ui_motion_scale` cvar: 0 snaps, 1
 //!   normal, more slower; 0 in a test run, `motion::init`). Controls take their lengths from `Motion::secs`.
 //! - `UiClock`: UI time in seconds. Real time in play
-//!   (`UiClock::advance_real`); `manual` in tests, stepped with `step`,
-//!   so frames are reproducible.
+//!   (`UiClock::advance_real`), a frame counted at most `MAX_STEP` (a
+//!   hitch slows the UI's motion for that frame instead of skipping
+//!   beats); `manual` in tests, stepped with `step`, so frames are
+//!   reproducible.
+//! - `Warmth` ("start when the app is warm"): whether the app's frames
+//!   are steady yet. The first frames of a start are slow (shaders,
+//!   pipelines, glyph atlases); motion that must be seen whole (a
+//!   first-launch intro) waits for `Warmth::warm`: `WARM_FRAMES` frames
+//!   in a row each under `WARM_DT` of real time, or `WARM_MAX` seconds
+//!   of frames at most, whichever comes first (`Warmth::observe`, a pure
+//!   rule; `track_warmth` feeds it the real frame time, or a manual
+//!   clock's step in tests). `warm_at` is the `UiClock` time it became
+//!   warm.
 //! - `Track`: one property from `from` to `to`, starting `at` seconds
 //!   into its timeline, lasting `dur`, eased.
 //! - `Timeline` (component): tracks over a few properties (`Prop`),
@@ -315,13 +326,77 @@ impl UiClock {
         self.dt = dt;
         self.now += dt as f64;
     }
+
+    /// A real frame of `dt` seconds, counted at most `MAX_STEP`.
+    pub fn advance_real(&mut self, dt: f32) {
+        self.step(dt.clamp(0.0, MAX_STEP));
+    }
 }
+
+/// The longest frame the UI clock counts, seconds: a longer one (a hitch,
+/// a window drag) moves UI time by this much only.
+pub const MAX_STEP: f32 = 0.1;
 
 /// Moves the clock by the frame's real time unless it is manual.
 pub fn advance_clock(time: Res<Time<Real>>, mut clock: ResMut<UiClock>) {
     if !clock.manual {
-        clock.step(time.delta_secs());
+        clock.advance_real(time.delta_secs());
     }
+}
+
+/// Frames in a row under `WARM_DT` that make the app warm.
+pub const WARM_FRAMES: u32 = 10;
+/// A steady frame's longest real time, seconds (20 a second).
+pub const WARM_DT: f32 = 0.05;
+/// Seconds of frames after which the app counts as warm anyway (a slow
+/// PC that never reaches `WARM_DT` still sees its intro).
+pub const WARM_MAX: f32 = 6.0;
+
+/// Whether the app's frames are steady yet (module doc, "Warmth").
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct Warmth {
+    /// Steady frames in a row so far.
+    pub steady: u32,
+    /// Real seconds of frames seen.
+    pub seen: f32,
+    /// The `UiClock` time it became warm.
+    pub warm_at: Option<f64>,
+}
+
+impl Warmth {
+    /// Warm from the start (tools, tests that don't count frames).
+    pub fn warm() -> Self {
+        Warmth { warm_at: Some(0.0), ..default() }
+    }
+
+    pub fn is_warm(&self) -> bool {
+        self.warm_at.is_some()
+    }
+
+    /// One frame of `dt` real seconds ending at UI time `now`; true on
+    /// the frame it becomes warm.
+    pub fn observe(&mut self, dt: f32, now: f64) -> bool {
+        // A frame of no time (the first update) is no frame.
+        if self.is_warm() || dt <= 0.0 {
+            return false;
+        }
+        self.seen += dt;
+        self.steady = if dt < WARM_DT { self.steady + 1 } else { 0 };
+        if self.steady >= WARM_FRAMES || self.seen >= WARM_MAX {
+            self.warm_at = Some(now);
+            return true;
+        }
+        false
+    }
+}
+
+/// Feeds `Warmth` the frame's real time (a manual clock's step in tests).
+pub fn track_warmth(time: Res<Time<Real>>, clock: Res<UiClock>, mut warmth: ResMut<Warmth>) {
+    if warmth.is_warm() {
+        return;
+    }
+    let dt = if clock.manual { clock.dt } else { time.delta_secs() };
+    warmth.observe(dt, clock.now);
 }
 
 /// A property a timeline animates.

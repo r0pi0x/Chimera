@@ -232,15 +232,11 @@ admin page lists invites by intent, with status and Revoke.
 
 **Now (after milestones a-c):**
 
-1. The link handler (decision 4): register `chimera-hub://` on Windows
-   (HKCU\Software\Classes) and Linux (a .desktop file with
-   `x-scheme-handler`), the game opened with `+chimera:onboard <link>`
-   filling the field (`Source::Opened`).
-2. Settings > Account: rename (one a minute, `account::rename`), the
+1. Settings > Account: rename (one a minute, `account::rename`), the
    avatar (`set_avatar`), link a device (shows the code), devices and
    Revoke, a new recovery key, sign out; the chip opens it.
-3. The admin page's invite form: intent and recipient.
-4. Downloads up front (decision 12): the base sets every game needs
+2. The admin page's invite form: intent and recipient.
+3. Downloads up front (decision 12): the base sets every game needs
    start after the first run; a hub's own sets later; bulk sets an
    option (future).
 
@@ -346,3 +342,37 @@ admin page lists invites by intent, with status and Revoke.
   `onboarding::a_pc_with_no_account_sees_the_first_run`,
   `accounts::tickets_are_the_hubs_only_way_in`,
   `db::version_three_keeps_key_devices_only`.
+- The intro on a real first launch (2026-11-21): its clock starts once
+  the app is warm, not at app start (the first frames are slow, and the
+  player missed its first second): `chimera_ui::Warmth` ("start when the
+  app is warm", a kit rule any screen can use): warm after 10 frames in a
+  row each under 50 ms of real time, or after 6 s of frames on a PC that
+  never gets there; the intro stands on its first frame until then
+  (`Intro::warming`). The UI clock counts a real frame at most 0.1 s
+  (`motion::MAX_STEP`), so one hitch never skips its beats. Tests:
+  `chimera_ui` `motion::a_long_frame_is_clamped`,
+  `the_app_is_warm_after_steady_frames`,
+  `warmth_counts_the_manual_clocks_steps`; `onboarding::
+  the_intro_starts_once_the_frames_are_steady`.
+- Decision 4, the link handler, done (2026-11-21):
+  `chimera_client::client::link_handler`. `chimera-hub://` is
+  registered per user with no admin rights, a few frames into each real
+  start when it opens something else (first launch, the program moved):
+  Windows `HKCU\Software\Classes\chimera-hub` through `reg.exe`
+  (`"<exe>" +chimera:onboard "%1"`), Linux `chimera-hub.desktop` in
+  `$XDG_DATA_HOME/applications` (`x-scheme-handler/chimera-hub`) made the
+  default in `$XDG_CONFIG_HOME/mimeapps.list` (written directly: what
+  `xdg-mime default` does). `cl_link_handler 0` opts out; never in a
+  `dev` build (unless `CHIMERA_LINK_HANDLER=1`), never with
+  `CHIMERA_NO_LINK_HANDLER` (tools/agent-env.sh sets it), a tool run or
+  a test. A start by a link takes the link only (`link_launch`, checked
+  by `accept`: host, port, optional fingerprint, the code, nothing else),
+  and hands it to a running game when one holds the inbox
+  (`<data_local>/chimera/links`, a locked `running-<pid>.lock` per game;
+  the link a file the running game takes every 0.5 s), else starts with
+  it; the first run comes up with the field filled and checked
+  (`onboarding::open_links`, `Source::Opened`). The registration is
+  behind `SchemeRegistry` (tests: a fake `reg.exe`, temporary XDG
+  folders). Tests: `chimera_client` `link_handler::*` (6),
+  `party_kit` `onboarding::an_opened_link_fills_the_field_and_checks_it`.
+  Not done: macOS; unregistering (by hand).
