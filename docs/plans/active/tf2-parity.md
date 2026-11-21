@@ -128,18 +128,15 @@ Captured imagery stays in scratch, never in the repo.
 6. Water explosions, stickies; TF2's crosshair (UGG's HUD by design).
    Crits are off (n/a).
 7. (Done, pass 5: the test compared mixed-case wave names.)
-8. The asset service's `players` set needs republishing (by the user)
-   to carry rockettrail.pcf, stickybomb.pcf, nailtrails.pcf and
-   firstperson_weapon_fx.pcf (the crit glow, with its materials
-   `effects/electric1` and `effects/sc_softglow`).
-9. The asset service's TF2 `weapon/` sets need republishing (by the
-   user) for the view-model sounds that joined them (tf2-vm-sounds):
-   `weapon/tf_weapon_pistol_scout` (`weapons/pistol_clipin.wav`,
-   `weapons/draw_pistol_engineer.wav`), `weapon/tf_weapon_shotgun_primary`
-   (`weapons/draw_shotgun_pyro.wav`), `weapon/tf_weapon_grenadelauncher`
-   (`weapons/grenade_launcher_drum_start.wav`); CS:S's `weapon/awp`
-   (the AWP's new clip and bolt events) and `weapon/tmp` (its deploy),
-   likewise (css-vm-sounds).
+8. (Done, 2026-11-21: the asset service's `players` and `weapon/` sets
+   republished with the particle files, the crit glow's materials, the
+   sniper dots, `crit_power.wav`, the ricochets and the Pistol's
+   view-model sounds; docs/playtest-hosting.md, "Publishing the game
+   files".)
+9. (Done, 2026-11-21, the same republish: the view-model sounds in TF2's
+   `weapon/tf_weapon_pistol_scout`, `tf_weapon_shotgun_primary` and
+   `tf_weapon_grenadelauncher` and CS:S's `weapon/awp`; the TMP's
+   `Weapon_TMP.Deploy` has no wave, so `weapon/tmp` is unchanged.)
 
 ## Log
 
