@@ -78,7 +78,10 @@ games/<id>/data/             its numbers as data (weapons, movement), our own fi
 - `BUNDLE` (`chimera_world::game_bundle::GameBundle`): what a party app
   takes of the game: its info, parts, map loader, its players and guns
   on other games' maps, its binds, what it adds to a composed
-  simulation.
+  simulation, and `player_options`: its `data/player_options.toml`, the
+  game's own keys and options on the party apps' Options screen (Games
+  tab: its actions, its cvars, its own values of shared settings;
+  party_kit `game_options`).
 - With `ui`: `ui::party::CLIENT` (`GameClient`: its HUD and the rest of
   its front end for a party app) and `with_hud` for its own app.
 

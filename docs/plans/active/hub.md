@@ -419,7 +419,9 @@ only if services ever run on several machines writing the same data.
 
 ```
 -- The platform account (Chimera's)
-accounts   id BLOB(16) PK (random), username TEXT UNIQUE (case-folded; permanent),
+accounts   id BLOB(16) PK (random), username TEXT UNIQUE (case-folded; chosen and
+           renamable since onboarding.md: renamed_at, username_history's last 10),
+           avatar INT NULL (cl_avatar's look), invite_intent (the redeemed invite's),
            display_name (at most 20 characters), created, role ('tester'|'host'|'owner'), note (owner's),
            content ('*' or a list: asset service games), games ('*' or a list: hub games),
            list_slots INT, report INT (may send match results),
@@ -431,8 +433,8 @@ devices    id BLOB(16) PK, account_id FK, kind ('key'|'legacy'),
            public_key BLOB(32) UNIQUE NULL, token_hash TEXT UNIQUE NULL (legacy),
            label, created, last_seen, last_address (owner's eyes, trimmed after 30 days),
            revoked_at
-invites    code_hash TEXT PK (SHA-256), name (the owner's label and the suggested
-           username), role, content, games, list_slots,
+invites    code_hash TEXT PK (SHA-256), name (the owner's label; before intents
+           also the suggested username), intent, recipient, role, content, games, list_slots,
            for_account FK NULL (a re-invite into that account), created, expires,
            redeemed_at, redeemed_device FK NULL, revoked_at
 link_codes code_hash TEXT PK, account_id FK, made_by_device FK, created,
@@ -703,7 +705,8 @@ Talks to the accounts service's admin API on loopback (with the services
 secret), so the database has one writer:
 
 ```
-chimera_accounts invite <name> [--role tester|host] [--content a,b|*] [--games a,b|*]
+chimera_accounts invite --intent "<why>" [--recipient "<who>"]   # or the older invite <name>
+                         [--role tester|host] [--content a,b|*] [--games a,b|*]
                                      [--list <n>] [--expires <days>]
                                      [--for <username> [--keep]]   # prints the invite link
 chimera_accounts invites [--state unused|redeemed|expired|revoked]

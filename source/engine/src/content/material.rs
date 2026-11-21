@@ -21,9 +21,12 @@
 //! the public Valve Developer Wiki and water.md's frame rule (no spec covers
 //! them on other shaders): a `$frame` past the last frame draws frame 0;
 //! `$surfaceprop2` goes to a triangle whose corners' mean blend weight is
-//! over one half (not in the specs). Why it's OK for now: cs_militia's
-//! grass and dirt, de_nuke's pool and cs_office's slide behave as in the
-//! game by eye; a spec session can settle both.
+//! over one half (not in the specs); a BurnLevel proxy writing
+//! `$detailblendfactor` (TF2's players) leaves it 0, never burning (the
+//! wiki: the entity's burn level; burning isn't drawn per entity). Why
+//! it's OK for now: cs_militia's grass and dirt, de_nuke's pool and
+//! cs_office's slide behave as in the game by eye; a spec session can
+//! settle both; TF2's burning bodies have their own flames.
 //!
 //! DXT1/3/5 textures with a full mip chain also keep their blocks as stored
 //! (`MapTexture::bc`, `bc_levels`), which the GPU takes as BC1/2/3
@@ -545,11 +548,22 @@ impl<'a> MaterialLoader<'a> {
             material,
             vmt_parser::material::Material::VertexLitGeneric(_) | vmt_parser::material::Material::UnlitGeneric(_)
         );
-        let detail = if stand_in == Some(StandIn::ShatteredGlass) {
+        let mut detail = if stand_in == Some(StandIn::ShatteredGlass) {
             None
         } else {
             self.detail(&keys, stand_in == Some(StandIn::TwoTextureBlend), model_shader)
         };
+        // A BurnLevel proxy writing `$detailblendfactor` (TF2's players and
+        // weapons: their fire detail, mode 6) gives the entity's burn level
+        // (Valve Developer Wiki, "BurnLevel"): 0 while not burning, so the
+        // material's own small factor (.01) never shows. Unburnt always
+        // (not modelled per entity): drawn with the material's .01 the
+        // fire tiles showed in dark spots (feedback 65b93f3b).
+        if let Some(d) = detail.as_mut()
+            && self.proxy_writes(&text, "burnlevel", "$detailblendfactor")
+        {
+            d.factor = 0.0;
+        }
         let base_transform = self.base_transform(&text, &keys);
         // $selfillum (shaders.md 2 and 4): kept only when the base texture
         // has an alpha channel (or a model names its own mask). With it the
@@ -841,6 +855,16 @@ impl<'a> MaterialLoader<'a> {
         let frames = self.texture_frames(name, srgb);
         self.frames_by_path.insert(key, frames.clone());
         frames
+    }
+
+    /// Whether material `text` (its includes resolved) has a proxy named
+    /// `proxy` (lower case) whose `resultvar` is `var`.
+    fn proxy_writes(&self, text: &str, proxy: &str, var: &str) -> bool {
+        super::water::resolve(text, &|p| self.read_text(p), 0)
+            .map(|(_, body)| super::water::keys_and_proxies(&body).1)
+            .unwrap_or_default()
+            .iter()
+            .any(|(name, p)| name == proxy && p.get("resultvar").is_some_and(|v| v.trim().eq_ignore_ascii_case(var)))
     }
 
     /// `$basetexturetransform`, unless a TextureScroll proxy writes it
@@ -2628,6 +2652,34 @@ mod tests {
             // Complete now: kept from then on.
             dress(&store, &mut MapData::default()).unwrap();
             assert_eq!(kept::conversions(&options.context, "late_test", "", false), 2);
+        }
+
+        /// A BurnLevel proxy writing `$detailblendfactor` (TF2's players):
+        /// the factor is the unburnt 0, not the material's own .01, whose
+        /// fire detail (mode 6, added after lighting) showed in dark spots
+        /// (feedback 65b93f3b); without the proxy the material's own.
+        #[test]
+        fn a_burn_level_proxy_leaves_the_fire_detail_off() {
+            let vmt = |proxy: &str| {
+                format!(
+                    "\"VertexLitGeneric\"\n{{\n\t\"$basetexture\" \"m/base\"\n\t\"$detail\" \"m/fire.vtf\"\n\t\"$detailscale\" \"5\"\n\t\"$detailblendfactor\" .01\n\t\"$detailblendmode\" 6\n\t\"Proxies\"\n\t{{\n\t\t{proxy}\n\t}}\n}}\n"
+                )
+            };
+            let files = [
+                ("materials/m/burning.vmt", vmt("\"BurnLevel\" { \"resultVar\" \"$detailblendfactor\" }").into_bytes()),
+                ("materials/m/plain.vmt", vmt("\"YellowLevel\" { \"resultVar\" \"$yellow\" }").into_bytes()),
+                ("materials/m/base.vtf", vtf()),
+                ("materials/m/fire.vtf", vtf()),
+            ];
+            let store = LateStore { listed: Arc::new(files.iter().map(|(p, _)| p.to_string()).collect()), ..default() };
+            for (p, b) in files {
+                store.arrive(p, b);
+            }
+            let mount = store.mount();
+            let mut materials = MaterialLoader::guest(&mount, 0, 0);
+            let factor = |m: &mut MaterialLoader, name: &str| m.resolve(name).detail.map(|d| d.factor);
+            assert_eq!(factor(&mut materials, "m/burning"), Some(0.0));
+            assert_eq!(factor(&mut materials, "m/plain"), Some(0.01));
         }
 
         /// A file the game doesn't have at all is not late (nothing would

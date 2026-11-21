@@ -81,3 +81,52 @@ fn the_installs_guns_without_damage_stay_off_drawn_ladders() {
         }
     }
 }
+
+/// The install's weapon records no shop item sells (NPC, boss, turret and
+/// test records) are never dealt by a drawn ladder, nor listed by the
+/// Host's Guns picker (`auto::drawable_all`). `--nocapture` prints them.
+#[test]
+fn the_installs_guns_without_a_shop_item_stay_off_drawn_ladders() {
+    if LocalConfig::load().ok().and_then(|c| c.game_path(GAME)).is_none() {
+        eprintln!("skipping: no Combat Arms install configured");
+        return;
+    }
+    let ca = CaData::install();
+    let Some(attributes) = ca.attributes().filter(|a| a.weapons.is_some() && a.shop_weapons.is_some()) else {
+        eprintln!("skipping: the install's weapon and item files aren't readable (the V1 key)");
+        return;
+    };
+    let unshopped = attributes.unshopped_weapons();
+    eprintln!("{} weapon records have no shop item:\n{}", unshopped.len(), unshopped.join("\n"));
+    assert!(!unshopped.is_empty(), "the install has NPC and test records");
+    let sim = Sim::with(CaSimWith(ca.clone()), |_| {});
+    let w = sim.app.world();
+    let catalog = w.resource::<WeaponCatalog>();
+    // Hands, emotes and the like are records, not guns of the catalogue.
+    let unshopped: Vec<String> = unshopped.into_iter().filter(|id| catalog.get(id).is_some()).collect();
+    for mut caps in [vec![Capabilities::of(&PARTS, catalog, None)]] {
+        let listed: Vec<&str> = caps[0].guns.iter().map(|g| g.id).chain(caps[0].grenades.iter().copied()).collect();
+        let skipped = auto::drawable_all(w, &mut caps);
+        // Each one the ladder could have dealt is skipped, with the reason.
+        let mut hit = 0;
+        for id in unshopped.iter().filter(|u| listed.iter().any(|l| l == *u)) {
+            assert!(skipped.iter().any(|s| s.id == id), "{id} skipped");
+            hit += 1;
+        }
+        assert!(hit > 20, "the shop rule skipped only {hit}");
+        eprintln!("{hit} unshopped records were drawable");
+        // The explicit non-player entries (data/ladder_exclusions.toml) too.
+        for id in ["combat_arms:test_gun_mg42", "combat_arms:m4a1-nsm", "combat_arms:mp5a4_npc", "combat_arms:hg2_auto_turret"] {
+            assert!(skipped.iter().any(|s| s.id == id), "{id} skipped by an entry");
+        }
+        // The sandbox's list loses them as well, but keeps a bad skin.
+        let mut sandbox = vec![Capabilities::of(&PARTS, catalog, None)];
+        auto::drop_not_players(w, &mut sandbox);
+        let has = |id: &str| sandbox[0].guns.iter().any(|g| g.id == id);
+        assert!(!has("combat_arms:test_gun_mg42") && !has("combat_arms:mp5a4_npc") && !has("combat_arms:abnormal_boss_minigun"));
+        assert!(has("combat_arms:asw338lmspunk") && has("combat_arms:m4a1"), "the sandbox keeps real guns");
+        let left: Vec<&str> = caps[0].guns.iter().map(|g| g.id).chain(caps[0].grenades.iter().copied()).collect();
+        assert!(left.iter().all(|id| !unshopped.iter().any(|u| u == id)), "an unshopped gun is left in");
+        eprintln!("{} of {} drawable after the shop rule", left.len(), listed.len());
+    }
+}

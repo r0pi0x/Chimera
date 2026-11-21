@@ -654,6 +654,7 @@ pub fn ids() -> Vec<String> {
 
 pub mod arena;
 pub mod balance;
+pub mod game_options;
 pub mod host;
 pub mod spot_checks;
 pub mod surprise;
@@ -671,6 +672,8 @@ pub mod feedback_signal;
 pub mod party_signal;
 #[cfg(feature = "present")]
 pub mod crash_signal;
+#[cfg(feature = "present")]
+pub mod onboarding;
 #[cfg(feature = "present")]
 pub mod settings;
 #[cfg(feature = "present")]

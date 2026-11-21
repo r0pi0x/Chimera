@@ -36,7 +36,8 @@
 //!   filtered before `ladder`, by `ladder = "auto"` and the Ultimate Gun
 //!   Game alike): not a weapon that can't damage a player (its data's
 //!   damage paths all 0: `weapon::harm`; Combat Arms' RMS12, M136_AT4),
-//!   nor one a game's data excludes (`DrawExclusions`, each with its
+//!   nor one a game's data excludes (`DrawExclusions`, the no-player ones
+//!   also out of the sandbox, `drop_not_players`; each with its
 //!   reason: Combat Arms' skins drawn wrong); `skipped_lines` says which
 //!   (logged when a ladder is drawn; the `ladder_skipped` command).
 //!   Hand-written ladders may name them.
@@ -206,10 +207,22 @@ pub fn report(world: &World) -> Vec<Capabilities> {
 /// each game's data, e.g. Combat Arms' data/ladder_exclusions.toml). A
 /// hand-written ladder may still name them. Kept in
 /// `power::PowerReaders::exclusions`, not a resource of its own.
+///
+/// The second list holds the ids (lower case) that are no player's at
+/// all (an NPC's, a boss's, a turret, a test record: `[[exclude]]
+/// not_player = true`, or what a game's loader finds by its data, e.g.
+/// Combat Arms' weapons without a shop item): they are left out of the
+/// sandbox's Change gun list too (`drop_not_players`), where the other
+/// exclusions' guns (a skin drawn wrong, a stun launcher) stay.
 #[derive(Clone, Debug, Default)]
-pub struct DrawExclusions(pub Vec<(String, String)>);
+pub struct DrawExclusions(pub Vec<(String, String)>, pub std::collections::BTreeSet<String>);
 
 impl DrawExclusions {
+    /// Whether `id` is no player's (`not_player`).
+    pub fn not_player(&self, id: &str) -> bool {
+        self.1.contains(&id.to_ascii_lowercase())
+    }
+
     /// Why `id` is left out (None: it isn't).
     pub fn reason(&self, id: &str) -> Option<&str> {
         self.0.iter().find(|(w, _)| w.eq_ignore_ascii_case(id)).map(|(_, r)| r.as_str())
@@ -230,6 +243,9 @@ struct ExclusionsDoc {
 struct ExclusionDoc {
     weapons: Vec<String>,
     reason: String,
+    /// The records are no player's (`DrawExclusions`' second list).
+    #[serde(default)]
+    not_player: bool,
 }
 
 /// `text` (a game's draw exclusions, `[[exclude]] weapons = [..] reason
@@ -243,6 +259,12 @@ pub fn parse_exclusions(text: &str) -> Result<Vec<(String, String)>, String> {
         .collect())
 }
 
+/// The ids of `text`'s exclusions that are `not_player`.
+pub fn parse_not_players(text: &str) -> Result<Vec<String>, String> {
+    let doc: ExclusionsDoc = toml::from_str(text).map_err(|e| e.to_string())?;
+    Ok(doc.exclude.into_iter().filter(|e| e.not_player).flat_map(|e| e.weapons).collect())
+}
+
 pub trait DrawExclusionsAppExt {
     /// The exclusions of `text` (`parse_exclusions`; `name` for the error,
     /// which panics: shipped data).
@@ -252,7 +274,10 @@ pub trait DrawExclusionsAppExt {
 impl DrawExclusionsAppExt for App {
     fn add_draw_exclusions(&mut self, name: &str, text: &str) -> &mut Self {
         let list = parse_exclusions(text).unwrap_or_else(|e| panic!("{name}: {e}"));
-        self.world_mut().get_resource_or_init::<PowerReaders>().exclusions.0.extend(list);
+        let nobody = parse_not_players(text).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let mut readers = self.world_mut().get_resource_or_init::<PowerReaders>();
+        readers.exclusions.0.extend(list);
+        readers.exclusions.1.extend(nobody.into_iter().map(|id| id.to_ascii_lowercase()));
         self
     }
 }
@@ -289,6 +314,18 @@ pub fn drawable(world: &World, caps: &mut [Capabilities]) -> Vec<Skipped> {
         }
     }
     skipped
+}
+
+/// `caps` without the guns and grenades that are no player's
+/// (`DrawExclusions::not_player`: NPC, boss, turret and test records);
+/// the sandbox's Change gun list keeps every other gun.
+pub fn drop_not_players(world: &World, caps: &mut [Capabilities]) {
+    let Some(readers) = world.get_resource::<PowerReaders>().filter(|r| !r.exclusions.1.is_empty()) else { return };
+    let nobody = &readers.exclusions;
+    for c in caps.iter_mut() {
+        c.guns.retain(|g| !nobody.not_player(g.id));
+        c.grenades.retain(|g| !nobody.not_player(g));
+    }
 }
 
 /// `drawable` before the host's guns off (`GunsOff`): what the Host
@@ -922,6 +959,38 @@ mod tests {
         assert!(drawable(&world, &mut c).is_empty(), "every gun off: none taken");
         assert_eq!(c[0].guns.len(), 2);
     }
+    #[test]
+    fn a_not_player_record_is_never_drawn_nor_listed_but_a_bad_skin_stays_in_the_sandbox() {
+        use chimera_core::game_parts::{GunClass, GunPart};
+        let text = "[[exclude]]\nreason = \"an NPC's gun\"\nnot_player = true\nweapons = [\"g:Npc\"]\n\
+                    [[exclude]]\nreason = \"bad skin\"\nweapons = [\"g:skin\"]\n";
+        let mut app = App::new();
+        app.add_draw_exclusions("test", text);
+        let world = app.world();
+        let caps = || {
+            vec![Capabilities {
+                game: "g",
+                guns: ["g:ak", "g:npc", "g:skin"].map(|id| GunPart { id, class: GunClass::Rifle }).to_vec(),
+                grenades: vec![],
+                knife: None,
+                movement: None,
+                characters: None,
+                hud: None,
+                maps: Vec::new(),
+                missing: Vec::new(),
+            }]
+        };
+        // The draw and the Guns picker (`drawable_all`): neither is left.
+        let mut c = caps();
+        let skipped = drawable_all(world, &mut c);
+        assert_eq!(c[0].guns.iter().map(|g| g.id).collect::<Vec<_>>(), ["g:ak"]);
+        assert_eq!(skipped.iter().map(|s| (s.id, s.why.as_str())).collect::<Vec<_>>(), [("g:npc", "an NPC's gun"), ("g:skin", "bad skin")]);
+        // The sandbox's list: only the not-player one goes.
+        let mut c = caps();
+        drop_not_players(world, &mut c);
+        assert_eq!(c[0].guns.iter().map(|g| g.id).collect::<Vec<_>>(), ["g:ak", "g:skin"]);
+    }
+
     use crate::minigame::power::Power;
 
     /// `n` guns of `game`, their classes in turn from `classes`.

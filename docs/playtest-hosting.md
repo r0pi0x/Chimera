@@ -223,10 +223,12 @@ demand while the map loads, slower (a request per group of files).
 TF2's guns' numbers come from its weapon scripts (specs/tf2/weapon_scripts.md),
 which are encrypted in the install: the host packs them decrypted into
 each gun's `weapon/<id>` set, so testers need neither the install nor the
-key. The key reaches the packer only through the host's helper
-(`chimera-tf2-keyed`, run from the checkout's root with `chimera_pack`
-built in `target/debug` or `target/release`); it is never on a command
-line. Rather than a whole publish (31 GB at level 19), TF2 is packed
+key. The key reaches the packer only through the host's local config
+(`[games.tf2.keys.ctx]`, the packer's `CHIMERA_CONFIG` or the checkout's
+`chimera.local.toml`) or the host's helper (`chimera-tf2-keyed`, run from
+the checkout's root with `chimera_pack` built in `target/debug` or
+`target/release`); it is never on a command line. Without one the packer
+says so loudly and leaves the scripts out. Rather than a whole publish (31 GB at level 19), TF2 is packed
 from two client runs' reads (another game's map: every TF2 gun is
 dressed on it; and `tf2:ctf_2fort`), then its sets recorded from what
 was packed:
@@ -327,6 +329,23 @@ chimera_pack lean hl2dm       --store <server store> --from <dust2 log> --from <
 ```
 
 The service reads a manifest again within a second; no restart.
+
+`sets` finds a game's install as the game does (`[games.<id>]` in the
+config, Steam, `CHIMERA_<GAME>_ROOT`); it takes no `--install`, so for
+an install outside Steam that the config doesn't name (a SteamCMD
+folder), set `CHIMERA_TF2_ROOT=<install>` (`CHIMERA_HL2DM_ROOT`, ...) for
+the run, else it stops with `no <game> install found`.
+
+The republish of 2026-11-21 (TF2's effect, crit, ricochet and view-model
+reload files; the Source games' view-model sound events; the converted
+guest dressings), from a checkout of main, after the snapshot:
+
+```
+chimera_pack sets tf2 --store $S --only weapon/ --pack --sign
+chimera_pack sets tf2 --store $S --only players --pack --sign
+chimera_pack sets cs_source --store $S --only weapon/ --pack --sign   # and --only base; hl2dm the same
+chimera_pack convert all --store $S --sign
+```
 
 `base` and `players` beyond what `sets` records were made from what
 no-install clients fetched outside their sets: run a client like a

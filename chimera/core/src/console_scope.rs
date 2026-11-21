@@ -43,10 +43,12 @@ pub fn follow_scope(
         }
         *known = games.all().count();
     }
-    let game = me
-        .iter()
-        .next()
-        .map(|i| i.0.clone())
+    let mine = me.iter().next().map(|i| i.0.clone());
+    let played = mine.as_ref().map(|g| console.canonical_namespace(g));
+    if console.played != played {
+        console.played = played;
+    }
+    let game = mine
         .or_else(|| games.and_then(|g| g.default_game()).map(|g| g.id.to_string()));
     let auto = game.map(|g| console.canonical_namespace(&g));
     if console.auto_scope != auto {
@@ -72,6 +74,7 @@ mod tests {
         let me = app.world_mut().spawn((LocalPlayer, GameIdentity("combat_arms".into()))).id();
         app.update();
         assert_eq!(x(&app), found("combat_arms:x"));
+        assert_eq!(app.world().resource::<Console>().played.as_deref(), Some("combat_arms"), "the game played (game cvar layers)");
         app.world_mut().entity_mut(me).insert(GameIdentity("cs_source".into()));
         app.update();
         assert_eq!(x(&app), found("cs_source:x"));

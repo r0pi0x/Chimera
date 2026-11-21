@@ -57,7 +57,9 @@
 //!   Enter the page's button, Esc back or closes the modal
 //!   (`main_menu::typing`, which also types into the focused text field,
 //!   its case kept). The pointer: a click focuses a row; the kit's hover
-//!   ticks.
+//!   ticks. Under a dialog (the Maps or Guns picker, the password modal,
+//!   the party panel: `chimera_ui::modal`) the page takes no pointer
+//!   (wheel, clicks, hover) and no keys but the password modal's.
 //! - **Motion and sound**: a page or tab change wipes the rows in on the
 //!   12° slant (`Ui::wipe_cover`); the menu's cues (`ui_cues`: hover,
 //!   select, back, denied, the steppers' slider).
@@ -306,6 +308,11 @@ pub struct PageLine(pub usize);
 /// The pages' root.
 #[derive(Component)]
 pub struct SignalPagesRoot;
+
+/// The password modal's shade (a `chimera_ui::Modal` whose keys are the
+/// page's own).
+#[derive(Component)]
+pub struct PasswordShade;
 
 pub struct SignalPagesPlugin;
 
@@ -1334,7 +1341,7 @@ fn reveal(lan: &mut LanList, line: Option<Line>) {
 }
 
 /// The wheel moves the list's window.
-fn wheel(mut wheel: MessageReader<MouseWheel>, p: Res<SignalPages>, mut lan: ResMut<LanList>) {
+fn wheel(mut wheel: MessageReader<MouseWheel>, p: Res<SignalPages>, modals: Option<Res<chimera_ui::Modals>>, mut lan: ResMut<LanList>) {
     let mut d = 0.0;
     for e in wheel.read() {
         d += match e.unit {
@@ -1342,7 +1349,8 @@ fn wheel(mut wheel: MessageReader<MouseWheel>, p: Res<SignalPages>, mut lan: Res
             MouseScrollUnit::Pixel => e.y / 40.0,
         };
     }
-    if d == 0.0 || p.up != Some(MenuPage::Join) || p.ask.is_some() {
+    // Not under a modal (the password's, a dialog's: `chimera_ui::modal`).
+    if d == 0.0 || p.up != Some(MenuPage::Join) || p.ask.is_some() || modals.is_some_and(|m| m.is_open()) {
         return;
     }
     let notches = if d.abs() < 1.0 { d.signum() } else { d.round() };
@@ -1364,9 +1372,15 @@ fn keys(
     mut out: MessageWriter<MainMenuAction>,
     mut cues: MessageWriter<UiCue>,
     (picker, party, guns): (Res<crate::maps_picker::MapsPicker>, Option<Res<crate::party_signal::PartyPanel>>, Res<crate::guns_picker::GunsPicker>),
+    (modals, own, onboarding): (Option<Res<chimera_ui::Modals>>, Query<(), With<PasswordShade>>, Option<Res<crate::onboarding::Onboarding>>),
 ) {
     let (Some(page), Some(keys)) = (p.up, keys) else { return };
-    if console.is_some_and(|c| c.open) || picker.took_keys || guns.took_keys || party.is_some_and(|p| p.open) {
+    // The keys are the page's while no modal is up but its own password
+    // modal (`chimera_ui::modal`); the pickers' flags cover the frame a
+    // dialog opens in, before the stack has it.
+    let behind = modals.is_some_and(|m| m.top().is_some_and(|t| !own.contains(t)));
+    let behind = behind || crate::onboarding::takes_keys(onboarding.as_deref());
+    if console.is_some_and(|c| c.open) || picker.took_keys || guns.took_keys || party.is_some_and(|p| p.open) || behind {
         return;
     }
     let k = |c: KeyCode| keys.just_pressed(c);
@@ -1753,9 +1767,6 @@ fn spawn(
             // The kit's scroll container: its bar, the wheel, a
             // the thumb; ↑↓ keep the focused row in view.
             let sc = ui.scroll(c, cols, PLAY_SCROLL, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() }, UiStyle::column());
-            if p.ask.is_some() {
-                c.entity(sc.view).insert(chimera_ui::scroll::ScrollLocked);
-            }
             for (i, l) in ls.iter().enumerate() {
                 let res = match (images.as_deref_mut(), icons.as_deref_mut()) {
                     (Some(a), Some(b)) => Some((a, b)),
@@ -1848,6 +1859,7 @@ fn password_modal(c: &mut Commands, ui: &Ui, root: Entity, menu: &PartyMenu, p: 
             BackgroundColor(ui.color(Tone::Ink, 0.72)),
             bevy::ui::FocusPolicy::Block,
             ZIndex(30),
+            PasswordShade,
             ChildOf(root),
         ))
         .id();

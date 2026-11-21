@@ -12,8 +12,25 @@
 # apps keep them at their party defaults (on, on, off; party_kit::client).
 # A range's value box takes any typed number; `hard_min` / `hard_max`
 # (inclusive) refuse what is unsafe (a negative volume, no sensitivity).
-# The "Binds" tab is the Controls page (`controls`); in the Signal look's
-# Settings the Mouse tab is "Controls", with the binds under it.
+# `section`: a header over the rows from it on (the Signal look). Tabs:
+# General (the party's and this computer's), Video, Audio, Controls (the
+# mouse; the Signal look's Settings adds the shared binds under it); then
+# a "Games" tab of each game's own (party_kit::game_options, from each
+# game's data/player_options.toml; the Signal look draws it as the game
+# rail with each game's Keys, Gameplay and Look and sound pages). The
+# "Binds" page of the older look is the Controls page (`controls`).
+
+
+[[tab]]
+name = "General"
+setting = [
+  { section = "Party", label = "Swap effect", cvar = "party_swap_effect", choices = [["0", "Off"], ["1", "On"]] },
+  { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "Combat Arms' loop"], ["0", "None"]], widget = "dropdown" },
+  { label = "Ask before following the party leader", cvar = "party_ask_follow", choices = [["0", "Off"], ["1", "On"]], help = "Off (the default): when your party's leader joins a server you go there at once, from the menu or from another match. On: you are asked first (Join / Stay)." },
+  { label = "Chat", cvar = "cl_chat", choices = [["1", "On"], ["2", "Team only"], ["0", "Off"]], help = "Whose chat lines show: everyone's, your team's only, or none. Notices and your own lines always show; hide one player with ignore <name> in the console or a click on their name in the open chat." },
+  { section = "This computer", label = "Use my installed games", cvar = "asset_use_install", choices = [["0", "Off"], ["1", "On"]], help = "Off (the default): every game's files come from the asset service, so everyone plays the same files. On: the games installed on this computer are read from their installs. Applies at the next start." },
+  { label = "Developer mode", cvar = "developer_mode", choices = [["0", "Off"], ["1", "On"]], help = "Shows a Developer entry in the Escape menu that opens the UI kit's gallery (every control in every state); `ui_gallery` in the console opens it too." },
+]
 
 [[tab]]
 name = "Video"
@@ -22,7 +39,6 @@ setting = [
   { label = "Display", cvar = "chimera_fullscreen", choices = [["0", "Windowed"], ["1", "Full screen"], ["2", "Borderless"]] },
   { label = "Vertical sync", cvar = "mat_vsync", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Frame limit", cvar = "fps_max", choices = [["0", "None"], ["60", "60"], ["144", "144"], ["240", "240"], ["300", "300"]] },
-  { label = "Halo HUD scaling", cvar = "halo_ce:hud_filter", choices = [["0", "Original"], ["1", "Sharp"], ["2", "Smooth+sharpen"]], help = "How Halo's HUD pictures (drawn for 640 by 480) are scaled up: Original (smooth, as always), Sharp (crisp texel edges at any size) or Smooth+sharpen (smooth with a light sharpening). Halo guns' HUD only." },
   { label = "Gamma", cvar = "mat_monitorgamma", range = [1.6, 2.6, 0.1], help = "The screen's gamma: lower is brighter (1.6 to 2.6; 2.2 by default)." },
 ]
 
@@ -36,28 +52,10 @@ setting = [
 ]
 
 [[tab]]
-name = "Mouse"
+name = "Controls"
 setting = [
   { label = "Sensitivity", cvar = "sensitivity", range = [0.1, 20, 0.1], hard_min = 0.001 },
   { label = "Zoomed sensitivity (not CA scopes)", cvar = "zoom_sensitivity_ratio", range = [0.1, 3, 0.1], hard_min = 0.001, help = "The mouse while zoomed (CS:S's scopes, HL2:DM's zooms), times the sensitivity and the zoom. Combat Arms' scopes keep their own." },
   { label = "Mouse filter", cvar = "m_filter", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Acceleration", cvar = "m_customaccel", choices = [["0", "Off"], ["3", "On"]] },
-]
-
-[[tab]]
-name = "Party"
-setting = [
-  { label = "Swap effect", cvar = "party_swap_effect", choices = [["0", "Off"], ["1", "On"]] },
-  { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "Combat Arms' loop"], ["0", "None"]], widget = "dropdown" },
-  { label = "Ask before following the party leader", cvar = "party_ask_follow", choices = [["0", "Off"], ["1", "On"]], help = "Off (the default): when your party's leader joins a server you go there at once, from the menu or from another match. On: you are asked first (Join / Stay)." },
-  { label = "Developer mode", cvar = "developer_mode", choices = [["0", "Off"], ["1", "On"]], help = "Shows a Developer entry in the Escape menu that opens the UI kit's gallery (every control in every state); `ui_gallery` in the console opens it too." },
-  { label = "Auto reload (TF2)", cvar = "cl_autoreload", choices = [["0", "Off"], ["1", "On"]], help = "On (TF2's own default): TF2's guns reload a clip that isn't full whenever you hold neither attack. Off (the default here): only when you press reload or the clip runs empty." },
-  { label = "Auto switch when empty (TF2)", cvar = "cl_autoswitch_empty", choices = [["0", "Off"], ["1", "On"]], help = "On (TF2's own behavior): an empty Minigun you have let go of switches to another weapon by itself. Off (the default here): it stays in hand; switch by hand." },
-  { label = "Chat", cvar = "cl_chat", choices = [["1", "On"], ["2", "Team only"], ["0", "Off"]], help = "Whose chat lines show: everyone's, your team's only, or none. Notices and your own lines always show; hide one player with ignore <name> in the console or a click on their name in the open chat." },
-]
-
-[[tab]]
-name = "Network"
-setting = [
-  { label = "Use my installed games", cvar = "asset_use_install", choices = [["0", "Off"], ["1", "On"]], help = "Off (the default): every game's files come from the asset service, so everyone plays the same files. On: the games installed on this computer are read from their installs. Applies at the next start." },
 ]

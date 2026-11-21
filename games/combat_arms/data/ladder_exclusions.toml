@@ -4,7 +4,11 @@
 # (the RMS12, the M136_AT4, ...) need no entry: the draw leaves them out by
 # their data (games/combat_arms/src/game/weapons/harm.rs). Each entry: the
 # weapon ids and why. The `ladder_skipped` console command lists what a draw
-# skips.
+# skips. `not_player = true` marks a record that is no player's at all (an
+# NPC's, a boss's, a turret, a test record): the sandbox's Change gun list
+# leaves it out as well, where the other entries' guns stay. The weapon
+# records no shop item sells (attributes/items.txt) are excluded too, by
+# rule, not listed here (game::data::set_unshopped).
 
 # The user's decision, 2026-11-12: the "weird skin" guns stay out. Their view
 # skin is painted for a UV layout no ASW338LM model of the install has, so it
@@ -45,8 +49,52 @@ weapons = [
 # rung on one is a dead rung.
 [[exclude]]
 reason = "kills nobody (the infected ship turrets' guns do no damage here)"
+not_player = true
 weapons = [
     "combat_arms:auto-turret_infecteds_01",
     "combat_arms:auto-turret_infecteds_02",
     "combat_arms:auto-turret_infecteds_03",
+]
+
+# Records of the weapon file with a shop item that are still no player's
+# (2026-11-20; the ones without a shop item are excluded by rule,
+# `game::data::UNSHOPPED_WHY`): the enemies' guns of the missions and
+# modes, and test records.
+[[exclude]]
+reason = "an NPC's gun (never a player's)"
+not_player = true
+weapons = [
+    "combat_arms:mp5a4_npc",
+    "combat_arms:m4a1_npc",
+    "combat_arms:p90_npc",
+    "combat_arms:m416_npc",
+    "combat_arms:mg21e_npc",
+]
+
+[[exclude]]
+reason = "a boss's or an enemy suit's gun (powered suit missions, infected bosses)"
+not_player = true
+weapons = [
+    "combat_arms:powered_suit_basic_sr",
+    "combat_arms:powered_suit_basic_smg",
+    "combat_arms:powered_suit_basic_pistol",
+    "combat_arms:powered_suit_boss_mg",         # Zeus
+    "combat_arms:powered_suit_boss_launcher",   # Hephaestus
+    "combat_arms:minimi_para_camo_infecteds_super",   # Shylock's Machinegun
+    "combat_arms:r870mcs_infecteds_super",            # Shylock's Shotgun
+]
+
+[[exclude]]
+reason = "an enemy turret (a placed gun of a mission, not a player's; the player's Auto-Turret is a device and stays)"
+not_player = true
+weapons = [
+    "combat_arms:hg2_auto_turret",
+]
+
+[[exclude]]
+reason = "a test record"
+not_player = true
+weapons = [
+    "combat_arms:test_gun_mg42",
+    "combat_arms:m4a1-nsm",   # N.S.M Testers M4A1
 ]

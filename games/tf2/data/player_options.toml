@@ -1,0 +1,113 @@
+# This game's own keys and options on the party apps' Options screen
+# (Games tab: party_kit::game_options; docs/plans/active/settings-games.md).
+# [[action]]: a key row on the Keys page: `label`, the console `command`
+# its keys run (bound in this game's own layer over the shared binds,
+# `bindgame`), `group` (a section), `note` (what it holds for), `help`,
+# `planned = true` (bindable, not in the game yet). [[option]]: a row on
+# the `page` "gameplay" or "look": a cvar of the game's own (`cvar`), or
+# `overrides` = a shared setting this game may change for itself (the
+# console's game cvar layer, `setgame`; reset goes back to the shared
+# value); `range` = [min, max, step] or `choices` = [[value, label], ...],
+# `help`, `origin` = "game" (the original game has it; the default) or
+# "chimera" (ours: the Chimera mark, the help says so).
+
+[game]
+name = "Team Fortress 2"
+short = "TF2"
+
+[[action]]
+group = "Weapon"
+label = "Zoom"
+note = "Sniper Rifle"
+command = "+attack2"
+help = "Scopes the Sniper Rifle; it charges once zoomed. TF2's guns share one alt-fire key for now: Zoom, Spin up, Detonate stickies and Airblast change together."
+
+[[action]]
+group = "Weapon"
+label = "Spin up"
+note = "Minigun"
+command = "+attack2"
+help = "Keeps the Minigun's barrel spinning without firing. Shares TF2's alt-fire key."
+
+[[action]]
+group = "Weapon"
+label = "Detonate stickies"
+note = "Stickybomb Launcher"
+command = "+attack2"
+help = "Sets off every stickybomb you have out. Shares TF2's alt-fire key."
+
+[[action]]
+group = "Weapon"
+label = "Airblast"
+note = "Flame Thrower"
+command = "+attack2"
+help = "Pushes enemies back and reflects rockets and grenades. Shares TF2's alt-fire key."
+
+[[action]]
+group = "Weapon"
+label = "Special attack"
+note = "Some unlocks"
+command = "+attack3"
+planned = true
+help = "The third action some of TF2's weapons have."
+
+[[action]]
+group = "Class"
+label = "Call for Medic"
+command = "voicemenu 0 0"
+planned = true
+help = "Calls for a Medic."
+
+[[action]]
+group = "Class"
+label = "Taunt"
+command = "taunt"
+planned = true
+help = "Plays your class's taunt for the gun in hand."
+
+[[action]]
+group = "Class"
+label = "Inspect weapon"
+command = "+inspect"
+planned = true
+help = "Turns the gun in hand over for a look."
+
+[[option]]
+page = "gameplay"
+label = "Auto reload"
+cvar = "cl_autoreload"
+choices = [["0", "Off"], ["1", "On"]]
+help = "On (TF2's own default): TF2's guns reload a clip that isn't full whenever you hold neither attack. Off (the default here): only when you press reload or the clip runs empty."
+
+[[option]]
+page = "gameplay"
+label = "Auto switch when empty"
+cvar = "cl_autoswitch_empty"
+choices = [["0", "Off"], ["1", "On"]]
+origin = "chimera"
+help = "On (TF2's own behavior): an empty Minigun you have let go of switches to another weapon by itself. Off (the default here): it stays in hand; switch by hand."
+
+[[option]]
+page = "look"
+label = "Gun view FOV"
+cvar = "tf2_viewmodel_fov"
+range = [54, 110, 1]
+help = "How wide TF2's gun in your hands is drawn, in degrees."
+
+[[option]]
+page = "gameplay"
+label = "Mouse sensitivity"
+overrides = "sensitivity"
+range = [0.1, 20, 0.1]
+hard_min = 0.001
+help = "The mouse's speed while you play TF2. Until changed it is the one under Controls."
+
+[[option]]
+page = "look"
+label = "Field of view"
+overrides = "fov_desired"
+range = [75, 90, 1]
+hard_min = 1
+hard_max = 179
+help = "How wide you see while you play TF2, in degrees. Until changed it is the one under Video."
+

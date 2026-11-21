@@ -17,14 +17,27 @@
 //!   `Context`, from those menus' state, so their Esc, Back and actions
 //!   keep working. Without the Signal theme those menus draw their own
 //!   pages as before.
-//! - **Pages** (sub-tabs, Q/E): data/options.toml's tabs, its Mouse tab
-//!   becoming **Controls** with the Controls page's key binds under it (a
-//!   segmented switch Shared / each game, `controls::GAMES`, each game's
-//!   gun view FOV too); Host settings has one page, `host::settings()`,
-//!   each row noting "now" or "next match", for the host or an RCON
-//!   admin (the server's values, set through `rcon`: `host::value`,
-//!   `host::set`). Only settings that exist.
-//! - **Rows** by the setting's pick: a range is a slider (a press on the
+//! - **Pages** (sub-tabs, Q/E): data/options.toml's tabs (General,
+//!   Video, Audio, Controls: the mouse and the shared key binds under it,
+//!   `controls::SHARED`) and **Games** (docs/plans/active/settings-games.md):
+//!   the game rail at the left (each game of `game_options::games`, its
+//!   changes as a badge; PgUp/PgDn), the game's sub-tabs Keys, Gameplay,
+//!   Look and sound (each with its changes; Tab, Shift+Tab), the game's
+//!   own actions (its key layer, `bindgame`) and options (its cvars, or
+//!   its own value of a shared one: `override_key`, the console's
+//!   `setgame`) from its `data/player_options.toml`. The Games tab's own
+//!   badge sums every game's (`game_changes`). Host settings has one
+//!   page, `host::settings()`, each row noting "now" or "next match", for
+//!   the host or an RCON admin (the server's values, set through `rcon`:
+//!   `host::value`, `host::set`). Only settings that exist.
+//! - **Rows** (`chimera_ui::form::setting_row`): one control column for
+//!   every control, the reset key after it when the value was changed
+//!   from where it comes from (`row_changed`: a setting from its default,
+//!   a game's own value of a shared one, a game's keys from what it ships,
+//!   a shared key from the app's default; `SettingsAction::Reset`), the
+//!   Chimera mark on our own settings (`origin = "chimera"`); one marker a
+//!   row (the control in it no focus of its own). By the setting's pick:
+//!   a range is a slider (a press on the
 //!   track jumps there and drags, the page drawn again under it with the
 //!   drag kept in `Settings::slide`; the value shows and a preview's cvar
 //!   follows while dragging, and it is set once, at the release,
@@ -32,14 +45,17 @@
 //!   types a number, `Settings::edit`: Enter or a click away keeps it,
 //!   Esc puts it back; any finite number is kept, past the range too (the
 //!   thumb stops at the end), unless outside the setting's `hard_min` /
-//!   `hard_max` (options.toml), which shows why beside the box), two choices Off/On a toggle, `widget =
-//!   "dropdown"` a dropdown, up to five choices segmented, more a stepper;
-//!   a bind a key field (Enter or click, then a key, a mouse button or
-//!   the wheel; Esc cancels; Delete clears). ↑↓ move the focus (the
+//!   `hard_max` (options.toml), which shows why beside the box), two
+//!   choices Off/On the big toggle, a choice set that fits the column
+//!   segmented, else a dropdown (`widget`, `chimera_ui::form::
+//!   fits_segmented`; `widget = "dropdown"` always one);
+//!   a bind the key field (Enter or click, then a key, a mouse button or
+//!   the wheel: the capture chip blinks; Esc cancels; Delete clears). ↑↓ move the focus (the
 //!   pointer moves it too, until a key takes the lead and again once it
 //!   moves: `chimera_ui::PointerLead`), the focused row's help in the pane at the
-//!   right: what it does (the TOML `help`, else the cvar's own), its
-//!   console name, its default and its range.
+//!   right: what it does (the TOML `help`, else the cvar's own; a line
+//!   saying when it is ours), its console name, where its value comes
+//!   from ("Same as Controls", "TF2's default") or its default, and its range.
 //! - **Instant apply** (design rules 9): a change sets its cvar at once
 //!   and the config is written `SAVE_AFTER` (0.5 s) after the last change
 //!   (`Settings::save_at`, `save_soon`), or on closing; key binds the
@@ -66,12 +82,15 @@
 //! - **Sounds** (`ui_cues`): hover, select, back, a refused press and the
 //!   slider's step.
 //!
-//! `ui_scene settings [tab]` and `ui_scene esc` stage them for
-//! screenshots (`chimera_client::client::ui_scene`'s app hooks).
+//! `ui_scene settings [tab]` (`ui_scene settings games tf2 keys listen`:
+//! the Games tab at a game's page, a key waiting) and `ui_scene esc` stage
+//! them for screenshots (`chimera_client::client::ui_scene`'s app hooks).
 //!
 //! Known shortcuts: the dropdown's list has no scroll (the
 //! options' lists are short); the help pane has no previews (FOV fan,
-//! crosshair); a key already bound elsewhere isn't flagged.
+//! crosshair); a key already bound elsewhere isn't flagged; a key is
+//! cleared with Delete only (no Clear button: the mockup's); the game
+//! rail doesn't fold away when narrow (it fits the 16:9 frame).
 
 use std::collections::BTreeMap;
 
@@ -97,8 +116,30 @@ use crate::host::{self, Pick, Setting};
 /// The layout table.
 const L: &str = "settings";
 
-/// The options tab that becomes Controls (with the binds).
-pub const BINDS_TAB: &str = "Mouse";
+/// The options tab that holds the shared binds under its settings.
+pub const BINDS_TAB: &str = "Controls";
+
+/// The options tab drawn as the game rail and each game's pages.
+pub use crate::esc_menu::GAMES_TAB;
+
+/// The Games tab's view: the game on the rail (`game_options::games`)
+/// and its page (`game_options::Page::ALL`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct View {
+    pub game: usize,
+    pub page: usize,
+}
+
+/// A game's own value of a shared setting, as a row's key (`@tf2/sensitivity`):
+/// its value is the game's (`setgame`) or else the shared one.
+pub fn override_key(game: &str, cvar: &str) -> String {
+    format!("@{game}/{cvar}")
+}
+
+/// (game, cvar) of an `override_key`.
+pub fn parse_override(key: &str) -> Option<(&str, &str)> {
+    key.strip_prefix('@')?.split_once('/')
+}
 
 /// The Signal look draws Settings (a theme with `[layout.settings]`).
 pub fn signal(theme: Option<&Theme>) -> bool {
@@ -143,8 +184,9 @@ pub struct Settings {
     pub focus: usize,
     /// The bind row waiting for a key.
     pub capture: Option<usize>,
-    /// The binds shown: 0 shared, n `controls::GAMES[n - 1]`.
-    pub bind_game: usize,
+    /// The Games tab's game (`game_options::games`) and page.
+    pub game: usize,
+    pub game_page: usize,
     /// An open dropdown: its row and the option the keys are on.
     pub open_list: Option<(usize, usize)>,
     /// Each pending setting's new value, set on Apply (module doc).
@@ -217,9 +259,8 @@ pub enum Row {
     Section(String),
     /// A cvar; `note` the host's "now" or "next match".
     Setting { s: Setting, note: Option<&'static str> },
-    /// The binds' game switch.
-    Games,
-    Bind { ctab: usize, label: &'static str, command: &'static str },
+    /// A key row: shared (`game` None, Controls) or a game's own action.
+    Bind { game: Option<&'static str>, label: &'static str, command: &'static str, action: Option<&'static crate::game_options::GameAction> },
 }
 
 impl Row {
@@ -238,20 +279,22 @@ pub enum Widget {
     Stepper,
 }
 
-/// A setting's widget (module doc).
+/// A setting's widget (module doc): Off/On a toggle; a choice set that
+/// fits the control column segmented, else a dropdown
+/// (`chimera_ui::form::fits_segmented`, the user's review 2026-11-21).
 pub fn widget(s: &Setting) -> Widget {
     match &s.pick {
         Pick::Range { min, max, step } => Widget::Slider { min: *min, max: *max, step: *step },
         Pick::Choices(c) => {
             let labels: Vec<String> = c.iter().map(|(_, l)| l.to_ascii_lowercase()).collect();
-            if s.widget.as_deref() == Some("dropdown") {
-                Widget::Dropdown
-            } else if labels == ["off", "on"] {
+            let words: Vec<&str> = c.iter().map(|(_, l)| l.as_str()).collect();
+            let sizes = chimera_ui::form::FormSizes::of(&Theme::shell_default());
+            if labels == ["off", "on"] && s.widget.is_none() {
                 Widget::Toggle
-            } else if c.len() <= 5 {
+            } else if s.widget.as_deref() != Some("dropdown") && chimera_ui::form::fits_segmented(&sizes, &words, sizes.control_w) {
                 Widget::Segmented
             } else {
-                Widget::Stepper
+                Widget::Dropdown
             }
         }
     }
@@ -266,7 +309,7 @@ pub fn pages(ctx: Context, tabs: &[(String, Vec<Setting>)]) -> Vec<String> {
 }
 
 /// A page's rows.
-pub fn rows(ctx: Context, tabs: &[(String, Vec<Setting>)], tab: usize, bind_game: usize) -> Vec<Row> {
+pub fn rows(ctx: Context, tabs: &[(String, Vec<Setting>)], tab: usize, view: View) -> Vec<Row> {
     if ctx == Context::Host {
         return host::settings()
             .into_iter()
@@ -277,35 +320,53 @@ pub fn rows(ctx: Context, tabs: &[(String, Vec<Setting>)], tab: usize, bind_game
             .collect();
     }
     let Some((name, settings)) = tabs.get(tab) else { return Vec::new() };
+    if name == GAMES_TAB {
+        return game_rows(view);
+    }
     let mut out: Vec<Row> = Vec::new();
     let binds = name == BINDS_TAB;
     if binds {
         out.push(Row::Section("Mouse".into()));
     }
-    out.extend(settings.iter().cloned().map(|s| Row::Setting { s, note: None }));
-    if binds {
-        out.push(Row::Section("Keys".into()));
-        out.push(Row::Games);
-        for r in crate::controls::tab_rows(bind_game) {
-            out.push(Row::Bind { ctab: bind_game, label: r.label, command: r.command });
+    for s in settings {
+        if let Some(sec) = &s.section {
+            out.push(Row::Section(sec.clone()));
         }
-        // A game's numbers (the shared one, sensitivity, is a Mouse row).
-        if bind_game > 0 {
-            for n in crate::controls::tab_settings(bind_game) {
-                let s = Setting {
-                    label: n.label.to_string(),
-                    cvar: n.cvar.to_string(),
-                    pick: Pick::Range { min: n.min, max: n.max, step: n.step },
-                    key: None,
-                    help: String::new(),
-                    live: true,
-                    when: None,
-                    widget: None,
-                    hard_min: None,
-                    hard_max: None,
-                    percent: false,
-                    lobby: false,
-                };
+        out.push(Row::Setting { s: s.clone(), note: None });
+    }
+    if binds {
+        out.push(Row::Section("Keys, every game".into()));
+        for r in crate::controls::SHARED {
+            out.push(Row::Bind { game: None, label: r.label, command: r.command, action: None });
+        }
+    }
+    out
+}
+
+/// The Games tab's rows: the game's actions in their groups (Keys), or
+/// its options on the page (an override's cvar is its `override_key`).
+pub fn game_rows(view: View) -> Vec<Row> {
+    use crate::game_options::{Page, games};
+    let Some(g) = games().get(view.game) else { return Vec::new() };
+    let mut out = Vec::new();
+    match Page::ALL.get(view.page).copied().unwrap_or(Page::Keys) {
+        Page::Keys => {
+            let mut group: Option<&str> = None;
+            for a in &g.actions {
+                if group != Some(a.group.as_str()) {
+                    out.push(Row::Section(a.group.clone()));
+                    group = Some(a.group.as_str());
+                }
+                out.push(Row::Bind { game: Some(g.id), label: &a.label, command: &a.command, action: Some(a) });
+            }
+        }
+        page => {
+            for o in g.options_on(page) {
+                let mut s = o.setting.clone();
+                if o.overrides {
+                    s.cvar = override_key(g.id, &s.cvar);
+                }
+                s.ours = o.ours;
                 out.push(Row::Setting { s, note: None });
             }
         }
@@ -340,6 +401,12 @@ pub enum SettingsAction {
     OpenList(usize),
     Bind(usize),
     Clear(usize),
+    /// A row's reset key: back to where its value comes from.
+    Reset(usize),
+    /// The Games tab's rail: a game.
+    Game(usize),
+    /// The Games tab's sub-tabs: a page.
+    GamePage(usize),
     Defaults,
     Apply,
     Revert,
@@ -375,6 +442,11 @@ pub fn bind_changes(base: Option<&BindTables>, console: &Console) -> usize {
 }
 
 impl Settings {
+    /// The Games tab's view.
+    pub fn view(&self) -> View {
+        View { game: self.game, page: self.game_page }
+    }
+
     /// Changes not applied: pending settings and differing keys.
     pub fn changes(&self, console: &Console) -> usize {
         self.pending.len() + bind_changes(self.bind_base.as_ref(), console)
@@ -467,10 +539,18 @@ impl Plugin for SettingsPlugin {
             let (Some(cvar), Some(value)) = (a.first(), a.get(1)) else { return Err("settings_set <cvar> <value>".into()) };
             let ctx = w.resource::<Settings>().ctx.ok_or("Settings isn't open")?;
             let shown = tabs_of(w);
+            let games: Vec<Setting> = (0..crate::game_options::games().len())
+                .flat_map(|game| (1..3).flat_map(move |page| game_rows(View { game, page })))
+                .filter_map(|r| match r {
+                    Row::Setting { s, .. } => Some(s),
+                    _ => None,
+                })
+                .collect();
             let set = shown
                 .iter()
                 .flat_map(|(_, ss)| ss.iter())
                 .chain(crate::host::settings().iter())
+                .chain(games.iter())
                 .find(|s| &s.cvar == cvar)
                 .cloned()
                 .ok_or_else(|| format!("no setting `{cvar}`"))?;
@@ -480,7 +560,7 @@ impl Plugin for SettingsPlugin {
             if widget(&set) == Widget::Toggle && !host::same_value(&before, value) {
                 let at = tabs_of(w);
                 let s = w.resource::<Settings>();
-                let row = rows(ctx, &at, s.tab, s.bind_game).iter().position(|r| matches!(r, Row::Setting { s, .. } if s.cvar == set.cvar));
+                let row = rows(ctx, &at, s.tab, s.view()).iter().position(|r| matches!(r, Row::Setting { s, .. } if s.cvar == set.cvar));
                 if let Some(row) = row {
                     let since = now(w);
                     w.resource_mut::<Settings>().flip = Some((row, since));
@@ -501,7 +581,9 @@ fn scene_settings(w: &mut World, args: &[String]) -> Result<(), String> {
     // Opened by `follow` once the menus are up (a run's start resets the
     // menu's page after the command line).
     let mut s = w.resource_mut::<Settings>();
-    s.stage = Some(args.first().cloned().unwrap_or_default());
+    // `games tf2 gameplay [listen]`: the Games tab at a game's page (a
+    // key row waiting with `listen`), as one word for `follow`.
+    s.stage = Some(args.join(":"));
     s.ctx = None;
     Ok(())
 }
@@ -510,8 +592,13 @@ fn scene_settings(w: &mut World, args: &[String]) -> Result<(), String> {
 fn open_staged(world: &mut World) {
     let Some(tab) = world.resource::<Settings>().stage.clone() else { return };
     if context(world).is_some() {
-        if world.resource::<Settings>().ctx.is_some() {
-            world.resource_mut::<Settings>().stage = None;
+        let mut s = world.resource_mut::<Settings>();
+        if s.ctx.is_some() {
+            s.stage = None;
+        } else {
+            // Staged again while open: `follow` opens it anew on this page.
+            s.want_tab = Some(tab);
+            s.stage = None;
         }
         return;
     }
@@ -596,13 +683,34 @@ fn follow(world: &mut World) {
         let want = s.want_tab.take();
         let stage = s.stage.take();
         *s = Settings { ctx, page_since: t, stage, ..default() };
+        let mut listen = false;
         if let (Some(c), Some(w)) = (ctx, want) {
             let names = pages(c, &tabs);
-            s.tab = names.iter().position(|n| n.eq_ignore_ascii_case(&w)).or_else(|| w.parse().ok()).unwrap_or(0).min(names.len().saturating_sub(1));
+            let mut parts = w.split(':');
+            let w = parts.next().unwrap_or_default();
+            s.tab = names.iter().position(|n| n.eq_ignore_ascii_case(w)).or_else(|| w.parse().ok()).unwrap_or(0).min(names.len().saturating_sub(1));
+            if let Some(g) = parts.next() {
+                s.game = crate::game_options::games().iter().position(|x| x.id.eq_ignore_ascii_case(g) || x.short.eq_ignore_ascii_case(g)).unwrap_or(0);
+            }
+            if let Some(p) = parts.next() {
+                s.game_page = crate::game_options::Page::ALL.iter().position(|x| x.label().to_lowercase().starts_with(&p.to_lowercase())).unwrap_or(0);
+            }
+            listen = parts.next() == Some("listen");
         }
         if let Some(c) = ctx {
-            let rows = rows(c, &tabs, s.tab, 0);
+            let rows = rows(c, &tabs, s.tab, s.view());
             s.focus = rows.iter().position(Row::focusable).unwrap_or(0);
+            if listen {
+                // The first planned key, else the first key, waiting.
+                let at = rows
+                    .iter()
+                    .position(|r| matches!(r, Row::Bind { action: Some(a), .. } if a.planned))
+                    .or_else(|| rows.iter().position(|r| matches!(r, Row::Bind { .. })));
+                if let Some(at) = at {
+                    s.focus = at;
+                    s.capture = Some(at);
+                }
+            }
         }
         return;
     }
@@ -637,8 +745,8 @@ fn capture(
     let mouse = if on_page { ButtonInput::<MouseButton>::default() } else { mouse.clone() };
     let Some(key) = binds::first_pressed(&keys, &mouse, Some(&scroll)) else { return };
     let tabs = tabs.map(|t| t.tabs.clone()).unwrap_or_default();
-    if let Some(Row::Bind { ctab, command, .. }) = rows(ctx, &tabs, s.tab, s.bind_game).get(row) {
-        let line = crate::controls::rebind_line(&console, *ctab, command, key);
+    if let Some(Row::Bind { game, command, .. }) = rows(ctx, &tabs, s.tab, s.view()).get(row) {
+        let line = crate::controls::rebind_line_game(&console, *game, command, key);
         console.submit(line);
         // Applied at once (instant apply); the config written soon.
         s.save_at = Some(clock.map_or(0.0, |c| c.now) + SAVE_AFTER);
@@ -721,7 +829,7 @@ fn keys(
         return;
     }
     let tabs = tabs.map(|t| t.tabs.clone()).unwrap_or_default();
-    let rows = rows(ctx, &tabs, s.tab, s.bind_game);
+    let rows = rows(ctx, &tabs, s.tab, s.view());
     if let Some((row, act)) = s.open_list {
         let n = match rows.get(row) {
             Some(Row::Setting { s: set, .. }) => match &set.pick {
@@ -783,14 +891,23 @@ fn keys(
                 }
                 Widget::Slider { .. } => {}
             },
-            Some(Row::Games) => {
-                out.write(SettingsAction::Step { row: focus, dir: 1 });
-            }
             _ => {}
         }
     }
     if (p(KeyCode::Delete) || p(KeyCode::Backspace)) && matches!(rows.get(focus), Some(Row::Bind { .. })) {
         out.write(SettingsAction::Clear(focus));
+    }
+    // The Games tab: PgUp / PgDn the game, Tab (Shift: back) the page.
+    if tabs.get(s.tab).is_some_and(|(n, _)| n == GAMES_TAB) && ctx != Context::Host {
+        let n = crate::game_options::games().len().max(1) as i64;
+        if p(KeyCode::PageUp) || p(KeyCode::PageDown) {
+            let d = if p(KeyCode::PageUp) { -1 } else { 1 };
+            out.write(SettingsAction::Game((s.game as i64 + d).rem_euclid(n) as usize));
+        }
+        if p(KeyCode::Tab) {
+            let back = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+            out.write(SettingsAction::GamePage((s.game_page as i64 + if back { -1 } else { 1 }).rem_euclid(3) as usize));
+        }
     }
     let n = pages(ctx, &tabs).len();
     if n > 1 && (p(KeyCode::KeyQ) || p(KeyCode::KeyE)) {
@@ -983,10 +1100,18 @@ fn shown_value(world: &mut World, ctx: Context, cvar: &str) -> String {
     if ctx == Context::Host {
         return host::value(world, cvar).unwrap_or_default();
     }
-    match world.resource::<Settings>().pending.get(cvar) {
-        Some(v) => v.clone(),
-        None => crate::controls::cvar_value(world, cvar).unwrap_or_default(),
+    if let Some(v) = world.resource::<Settings>().pending.get(cvar) {
+        return v.clone();
     }
+    // A game's own value, else the shared one (the player's own while a
+    // game's stands in: `cvar_base`).
+    if let Some((game, name)) = parse_override(cvar) {
+        if let Some(v) = world.resource::<Console>().game_cvar(game, name) {
+            return v.clone();
+        }
+        return chimera_core::console::cvar_base(world, name).unwrap_or_default();
+    }
+    chimera_core::console::cvar_base(world, cvar).unwrap_or_default()
 }
 
 /// Changes `set` to `value` (module doc): at once, the config written
@@ -1001,8 +1126,18 @@ fn set_value(world: &mut World, ctx: Context, set: &Setting, value: &str) {
         return;
     }
     if !DEFERRED.contains(&cvar) {
-        // Instant apply: the cvar now, the config soon.
-        submit(world, set_line(cvar, value));
+        // Instant apply: the cvar now, the config soon. A game's own value
+        // goes in its layer (`setgame`); a shared one a game's stands in
+        // for now is set aside (`cvar_base`).
+        let line = match parse_override(cvar) {
+            Some((game, name)) => format!("setgame {game} {name} {}", chimera_core::console::quote(value)),
+            None => {
+                let c = world.resource::<Console>();
+                let aside = c.full_name(cvar).is_some_and(|f| c.cvar_bases.contains_key(&f));
+                if aside { format!("cvar_base {}", set_line(cvar, value)) } else { set_line(cvar, value) }
+            }
+        };
+        submit(world, line);
         let t = now(world);
         let mut s = world.resource_mut::<Settings>();
         s.pending.remove(cvar);
@@ -1141,11 +1276,11 @@ fn act_one(world: &mut World, a: SettingsAction) {
     use SettingsAction as A;
     let Some(ctx) = world.resource::<Settings>().ctx else { return };
     let tabs = tabs_of(world);
-    let (tab, bind_game) = {
+    let (tab, view) = {
         let s = world.resource::<Settings>();
-        (s.tab, s.bind_game)
+        (s.tab, s.view())
     };
-    let rows = rows(ctx, &tabs, tab, bind_game);
+    let rows = rows(ctx, &tabs, tab, view);
     let setting = |row: usize| match rows.get(row) {
         Some(Row::Setting { s, .. }) => Some(s.clone()),
         _ => None,
@@ -1155,10 +1290,9 @@ fn act_one(world: &mut World, a: SettingsAction) {
             let n = pages(ctx, &tabs).len();
             if t < n && t != tab {
                 let since = now(world);
-                let rows = self::rows(ctx, &tabs, t, 0);
+                let rows = self::rows(ctx, &tabs, t, view);
                 let mut s = world.resource_mut::<Settings>();
                 s.tab = t;
-                s.bind_game = 0;
                 s.focus = rows.iter().position(Row::focusable).unwrap_or(0);
                 s.capture = None;
                 s.open_list = None;
@@ -1174,13 +1308,6 @@ fn act_one(world: &mut World, a: SettingsAction) {
         A::Step { row, dir } => {
             world.resource_mut::<Settings>().focus = row;
             match rows.get(row) {
-                Some(Row::Games) => {
-                    let n = crate::controls::tab_count() as i64;
-                    let mut s = world.resource_mut::<Settings>();
-                    s.bind_game = (s.bind_game as i64 + dir as i64).rem_euclid(n) as usize;
-                    s.capture = None;
-                    cue(world, UiCue::new("ui_select"));
-                }
                 Some(Row::Setting { s, .. }) => {
                     let now = shown_value(world, ctx, &s.cvar);
                     let next = s.pick.next(&now, dir);
@@ -1202,11 +1329,6 @@ fn act_one(world: &mut World, a: SettingsAction) {
                 world.resource_mut::<Settings>().open_list = None;
                 cue(world, UiCue::new("ui_select"));
                 set_value(world, ctx, &s, v);
-            } else if let Some(Row::Games) = rows.get(row) {
-                let mut st = world.resource_mut::<Settings>();
-                st.bind_game = option.min(crate::controls::tab_count() - 1);
-                st.focus = row;
-                cue(world, UiCue::new("ui_select"));
             }
         }
         A::Slide(_) => {}
@@ -1329,8 +1451,8 @@ fn act_one(world: &mut World, a: SettingsAction) {
             cue(world, UiCue::new("ui_select"));
         }
         A::Clear(row) => {
-            if let Some(Row::Bind { ctab, command, .. }) = rows.get(row) {
-                let line = crate::controls::clear_line(world.resource::<Console>(), *ctab, command);
+            if let Some(Row::Bind { game, command, .. }) = rows.get(row) {
+                let line = crate::controls::clear_line_game(world.resource::<Console>(), *game, command);
                 if let Some(line) = line {
                     snapshot_binds(world);
                     submit(world, line);
@@ -1340,8 +1462,74 @@ fn act_one(world: &mut World, a: SettingsAction) {
         }
         A::Defaults => {
             snapshot_binds(world);
-            submit(world, crate::controls::defaults_line(bind_game));
+            let line = match rows.iter().find_map(|r| match r {
+                Row::Bind { game: Some(g), .. } => Some(*g),
+                _ => None,
+            }) {
+                Some(g) => format!("bindgamedefaults {g}"),
+                None => "binddefaults".into(),
+            };
+            submit(world, line);
             cue(world, UiCue::new("ui_select"));
+        }
+        A::Reset(row) => {
+            let line = match rows.get(row) {
+                Some(Row::Setting { s: set, .. }) => match parse_override(&set.cvar) {
+                    Some((game, name)) => Some(format!("resetgame {game} {name}")),
+                    None => {
+                        let def = world.resource::<Console>().cvar(&set.cvar).map(|c| c.default.clone());
+                        if let Some(def) = def {
+                            set_value(world, ctx, set, &def);
+                        }
+                        None
+                    }
+                },
+                Some(Row::Bind { game: Some(g), command, .. }) => crate::controls::reset_bind_line(world.resource::<Console>(), g, command),
+                Some(Row::Bind { game: None, command, .. }) => {
+                    let defaults = world.get_resource::<binds::BindDefaults>().cloned().unwrap_or_default();
+                    crate::controls::reset_shared_line(world.resource::<Console>(), &defaults, command)
+                }
+                _ => None,
+            };
+            if let Some(line) = line {
+                snapshot_binds(world);
+                submit(world, line);
+            }
+            world.resource_mut::<Settings>().focus = row;
+            cue(world, UiCue::new("ui_back"));
+        }
+        A::Game(g) => {
+            let n = crate::game_options::games().len();
+            if g < n && g != view.game {
+                let since = now(world);
+                let rows = self::rows(ctx, &tabs, tab, View { game: g, page: view.page });
+                let mut s = world.resource_mut::<Settings>();
+                s.game = g;
+                s.focus = rows.iter().position(Row::focusable).unwrap_or(0);
+                s.capture = None;
+                s.open_list = None;
+                s.page_since = since;
+                if let Some(mut v) = world.get_resource_mut::<ScrollViews>() {
+                    v.reset(SCROLL_KEY);
+                }
+                cue(world, UiCue::new("ui_select"));
+            }
+        }
+        A::GamePage(p) => {
+            if p < 3 && p != view.page {
+                let since = now(world);
+                let rows = self::rows(ctx, &tabs, tab, View { game: view.game, page: p });
+                let mut s = world.resource_mut::<Settings>();
+                s.game_page = p;
+                s.focus = rows.iter().position(Row::focusable).unwrap_or(0);
+                s.capture = None;
+                s.open_list = None;
+                s.page_since = since;
+                if let Some(mut v) = world.get_resource_mut::<ScrollViews>() {
+                    v.reset(SCROLL_KEY);
+                }
+                cue(world, UiCue::new("ui_select"));
+            }
         }
         A::Apply => {
             if ctx == Context::Host || !apply(world) {
@@ -1438,6 +1626,10 @@ fn act_one(world: &mut World, a: SettingsAction) {
                 })
                 .collect();
             for set in page {
+                if let Some((game, name)) = parse_override(&set.cvar) {
+                    submit(world, format!("resetgame {game} {name}"));
+                    continue;
+                }
                 let def = world.resource::<Console>().cvar(&set.cvar).map(|c| c.default.clone());
                 if let Some(def) = def {
                     set_value(world, ctx, &set, &def);
@@ -1472,7 +1664,7 @@ fn refresh_values(world: &mut World) {
     let tabs = tabs_of(world);
     let (tab, game, sliding) = {
         let s = world.resource::<Settings>();
-        (s.tab, s.bind_game, s.slide.as_ref().map(|sl| sl.row))
+        (s.tab, s.view(), s.slide.as_ref().map(|sl| sl.row))
     };
     for (i, r) in rows(ctx, &tabs, tab, game).into_iter().enumerate() {
         // A slider being dragged shows the drag, not the cvar.
@@ -1532,7 +1724,7 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         keep_left: s.keep.as_ref().map_or(0, |k| (k.until - t).max(0.0).ceil() as u64),
         binds: {
             let c = world.resource::<Console>();
-            format!("{:?}{:?}", c.binds, c.layers)
+            format!("{:?}{:?}{:?}{:?}", c.binds, c.layers, c.game_cvars, c.cvar_bases)
         },
         units: ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32),
         theme: theme.name.clone(),
@@ -1552,23 +1744,27 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
     let help = help_of(world, ctx, &tabs, &s);
     let (keys_of, bind_changed, changes): (Vec<Vec<String>>, Vec<bool>, usize) = {
         let c = world.resource::<Console>();
-        let rows = rows(ctx, &tabs, s.tab, s.bind_game);
+        let rows = rows(ctx, &tabs, s.tab, s.view());
         let keys = rows
             .iter()
             .map(|r| match r {
-                Row::Bind { ctab, command, .. } => crate::controls::keys_on(c, *ctab, command).iter().map(|k| binds::display(k)).collect(),
+                // A game's row shows the keys that work while it is
+                // played: its own, else the shared ones it doesn't hide.
+                Row::Bind { game, command, .. } => binds::keys_for(&c.effective_binds(*game), command).iter().map(|k| binds::display(k)).collect(),
                 _ => Vec::new(),
             })
             .collect();
         let changed = rows
             .iter()
             .map(|r| match (r, &s.bind_base) {
-                (Row::Bind { ctab, command, .. }, Some((b, l))) => crate::controls::keys_in(b, l, *ctab, command) != crate::controls::keys_on(c, *ctab, command),
+                (Row::Bind { game, command, .. }, Some((b, l))) => crate::controls::keys_in_game(b, l, *game, command) != crate::controls::keys_in_game(&c.binds, &c.layers, *game, command),
                 _ => false,
             })
             .collect();
         (keys, changed, s.changes(c))
     };
+    let resettable: Vec<bool> = rows(ctx, &tabs, s.tab, s.view()).iter().map(|r| row_changed(world, r)).collect();
+    let game_badges = game_changes(world);
     let differs = differing(world, &tabs);
     let mut images = world.remove_resource::<Assets<Image>>();
     let mut icons = world.remove_resource::<IconImages>();
@@ -1580,7 +1776,24 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         let reduced = world.get_resource::<chimera_ui::ReducedMotion>().is_some_and(|r| r.0);
         let party = drawn.as_ref().map(|k| k.party.clone()).unwrap_or_default();
         let differ = differs.len();
-        let d = Draw { ctx, lobby, s: &s, tabs: &tabs, help: &help, keys: &keys_of, bind_changed: &bind_changed, changes, now: t, reduced, motion: world.get_resource::<chimera_ui::motion::Motion>().copied().unwrap_or_default(), party: &party, differs: &differs, differ };
+        let d = Draw {
+            ctx,
+            lobby,
+            s: &s,
+            tabs: &tabs,
+            help: &help,
+            keys: &keys_of,
+            bind_changed: &bind_changed,
+            resettable: &resettable,
+            game_badges: &game_badges,
+            changes,
+            now: t,
+            reduced,
+            motion: world.get_resource::<chimera_ui::motion::Motion>().copied().unwrap_or_default(),
+            party: &party,
+            differs: &differs,
+            differ,
+        };
         let root = spawn(&mut c, &ui, &d, images.as_mut(), icons.as_mut(), ambients.as_mut());
         if let Some(cam) = camera {
             c.entity(root).insert(UiTargetCamera(cam));
@@ -1596,6 +1809,53 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
     if let Some(a) = ambients {
         world.insert_resource(a);
     }
+}
+
+/// Whether a row's value was changed from where it comes from (its reset
+/// key): a setting from its default (a game's override: the game has its
+/// own value), a game's keys from what it ships, a shared key from the
+/// app's default.
+fn row_changed(world: &mut World, r: &Row) -> bool {
+    match r {
+        Row::Setting { s, .. } => match parse_override(&s.cvar) {
+            Some((game, name)) => world.resource::<Console>().game_cvar(game, name).is_some(),
+            None => {
+                let def = world.resource::<Console>().cvar(&s.cvar).map(|c| c.default.clone());
+                let now = chimera_core::console::cvar_base(world, &s.cvar);
+                matches!((def, now), (Some(d), Some(v)) if !host::same_value(&d, &v))
+            }
+        },
+        Row::Bind { game: Some(g), command, .. } => crate::controls::game_bind_changed(world.resource::<Console>(), g, command),
+        Row::Bind { game: None, command, .. } => world
+            .get_resource::<binds::BindDefaults>()
+            .is_some_and(|d| crate::controls::shared_bind_changed(world.resource::<Console>(), d, command)),
+        Row::Section(_) => false,
+    }
+}
+
+/// Each game's changes on each of its pages (keys counted once a
+/// command: TF2's alt-fire actions share one).
+pub fn game_changes(world: &mut World) -> Vec<[usize; 3]> {
+    (0..crate::game_options::games().len())
+        .map(|game| {
+            let mut out = [0; 3];
+            for (page, n) in out.iter_mut().enumerate() {
+                let mut seen = std::collections::BTreeSet::new();
+                for r in game_rows(View { game, page }) {
+                    let key = match &r {
+                        Row::Bind { command, .. } => format!("bind:{command}"),
+                        Row::Setting { s, .. } => s.cvar.clone(),
+                        Row::Section(_) => continue,
+                    };
+                    if !seen.contains(&key) && row_changed(world, &r) {
+                        seen.insert(key);
+                        *n += 1;
+                    }
+                }
+            }
+            out
+        })
+        .collect()
 }
 
 /// The settings (of every page) whose cvar differs from its default.
@@ -1637,14 +1897,30 @@ pub fn range_text(set: &Setting) -> String {
 }
 
 fn help_of(world: &World, ctx: Context, tabs: &[(String, Vec<Setting>)], s: &Settings) -> Help {
-    let rows = rows(ctx, tabs, s.tab, s.bind_game);
+    let rows = rows(ctx, tabs, s.tab, s.view());
     let console = world.resource::<Console>();
+    let game = tabs.get(s.tab).filter(|(n, _)| n == GAMES_TAB).and_then(|_| crate::game_options::games().get(s.game));
+    // Where a shared setting lives (an override's "Same as ...").
+    let home = |cvar: &str| tabs.iter().find(|(n, ss)| n != GAMES_TAB && ss.iter().any(|x| x.cvar == cvar)).map(|(n, _)| n.clone()).unwrap_or_else(|| "General".into());
+    let ours = |text: &mut String| {
+        let name = game.map_or("the original game", |g| g.name.as_str());
+        text.push_str(&format!(" Ours: Chimera adds this; {name} itself doesn't have it."));
+    };
     match rows.get(s.focus) {
         Some(Row::Setting { s: set, note }) => {
-            let cvar = console.cvar(&set.cvar);
-            let text = if !set.help.is_empty() { set.help.clone() } else { cvar.map(|c| c.help.clone()).unwrap_or_default() };
-            let mut kv = vec![("Console", set.cvar.clone())];
-            if let Some(c) = cvar {
+            let over = parse_override(&set.cvar);
+            let name = over.map_or(set.cvar.as_str(), |(_, n)| n);
+            let cvar = console.cvar(name);
+            let mut text = if !set.help.is_empty() { set.help.clone() } else { cvar.map(|c| c.help.clone()).unwrap_or_default() };
+            if set.ours {
+                ours(&mut text);
+            }
+            let mut kv = vec![("Console", name.to_string())];
+            if let Some((g, n)) = over {
+                let from = format!("Same as {}", home(n));
+                let short = game.map_or(g, |x| x.short.as_str());
+                kv.push(("Comes from", if console.game_cvar(g, n).is_some() { format!("{short}'s own (reset: {})", from.to_lowercase()) } else { from }));
+            } else if let Some(c) = cvar {
                 kv.push(("Default", set.shown(&c.default)));
             }
             kv.push(("Range", range_text(set)));
@@ -1653,23 +1929,39 @@ fn help_of(world: &World, ctx: Context, tabs: &[(String, Vec<Setting>)], s: &Set
             }
             Help { title: set.label.clone(), text, kv }
         }
-        Some(Row::Bind { ctab, label, command }) => {
-            let scope = if *ctab == 0 {
-                "Every game.".to_string()
-            } else {
-                format!("{} only: replaces the shared key while you play it.", crate::controls::tab_label(*ctab))
+        Some(Row::Bind { game: g, label, command, action }) => {
+            let how = "Enter or click, then press a key, a mouse button or move the wheel; Esc cancels; Delete clears.";
+            let mut text = match (g, action) {
+                (None, _) => format!("Every game. {how}"),
+                (Some(g), a) => {
+                    let name = game.map_or(*g, |x| x.name.as_str());
+                    let what = a.map(|a| a.help.clone()).filter(|h| !h.is_empty()).map(|h| format!("{h} ")).unwrap_or_default();
+                    format!("{what}{name} only: replaces the shared key while you play it. {how}")
+                }
+            };
+            if action.is_some_and(|a| a.planned) {
+                text.push_str(" Not in the game yet: the key is kept for when it is.");
+            }
+            let from = match g {
+                None => "The app's default keys".to_string(),
+                Some(g) => {
+                    let own = console.layers.get(*g).is_some_and(|l| !binds::keys_for(l, command).is_empty());
+                    let short = game.map_or(*g, |x| x.short.as_str());
+                    if crate::controls::game_bind_changed(console, g, command) {
+                        format!("Changed (reset: {short}'s default)")
+                    } else if own {
+                        format!("{short}'s default")
+                    } else {
+                        "Same as Controls".to_string()
+                    }
+                }
             };
             Help {
                 title: (*label).to_string(),
-                text: format!("{scope} Enter or click, then press a key, a mouse button or move the wheel; Esc cancels; Delete clears."),
-                kv: vec![("Console", (*command).to_string()), ("Range", "key, button or wheel".into())],
+                text,
+                kv: vec![("Console", (*command).to_string()), ("Comes from", from), ("Range", "key, button or wheel".into())],
             }
         }
-        Some(Row::Games) => Help {
-            title: "Binds for".into(),
-            text: "The shared keys work in every game; a game's own keys replace them while you play that game.".into(),
-            kv: vec![("Console", "bind / bindgame".into())],
-        },
         _ => Help::default(),
     }
 }
@@ -1684,6 +1976,10 @@ struct Draw<'a> {
     keys: &'a [Vec<String>],
     /// Each bind row's keys differ from before the pending changes.
     bind_changed: &'a [bool],
+    /// Each row's value differs from where it comes from (its reset key).
+    resettable: &'a [bool],
+    /// Each game's changes a page (`game_changes`).
+    game_badges: &'a [[usize; 3]],
     /// Changes not applied (`Settings::changes`).
     changes: usize,
     now: f64,
@@ -1765,19 +2061,24 @@ fn spawn(
     let names = pages(d.ctx, d.tabs);
     let tabbar = ui.boxed(c, win, UiStyle::column().abs([Some(sh.rows_in), Some(1.6), Some(sh.side_w + 2.0 * sh.rows_in), None]));
     let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    for (i, e) in ui.tabs_ex(c, tabbar, &name_refs, s.tab, false, (name_refs.len() > 1).then_some(("Q", "E"))).into_iter().enumerate() {
+    // The Games tab's badge: every game's changes.
+    let total: usize = d.game_badges.iter().map(|b| b.iter().sum::<usize>()).sum();
+    let badges: Vec<Option<String>> = names.iter().map(|n| (n == GAMES_TAB && total > 0).then(|| total.to_string())).collect();
+    for (i, e) in ui.tabs_badged(c, tabbar, &name_refs, &badges, s.tab, false, (name_refs.len() > 1).then_some(("Q", "E"))).into_iter().enumerate() {
         c.entity(e).insert(SettingsAction::Tab(i));
     }
     let cols = ui.boxed(c, win, UiStyle { gap: Some(2.0 * sh.rows_in), align: Some(AlignItems::Stretch), ..UiStyle::row() }.abs([Some(sh.rows_in), Some(4.6), Some(sh.rows_in), Some(sh.act_h + 1.4)]));
+    let games_tab = d.ctx != Context::Host && d.tabs.get(s.tab).is_some_and(|(n, _)| n == GAMES_TAB);
+    let list_parent = if games_tab { game_rail(c, ui, cols, d) } else { cols };
     // The rows scroll in the kit's container (its bar, the wheel, a
     // the thumb); the keys keep the focused row in view.
-    let sc = ui.scroll(c, cols, SCROLL_KEY, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() }, UiStyle::column());
+    let sc = ui.scroll(c, list_parent, SCROLL_KEY, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() }, UiStyle::column());
     c.entity(sc.view).insert(SettingsList);
     if s.capture.is_some() || s.open_list.is_some() || s.leave.is_some() || s.keep.is_some() {
         // A bind listening takes the right button; a list or a modal is over it.
         c.entity(sc.view).insert(ScrollLocked);
     }
-    let rows = rows(d.ctx, d.tabs, s.tab, s.bind_game);
+    let rows = rows(d.ctx, d.tabs, s.tab, s.view());
     for (i, r) in rows.iter().enumerate() {
         let row = draw_row(c, ui, sc.content, i, r, d);
         if s.reveal && i == s.focus
@@ -1822,7 +2123,7 @@ fn spawn(
         };
         ui.sentence(c, st, SENTENCE, Tone::Fg2, &line);
     }
-    let on_binds = names.get(s.tab).is_some_and(|n| n == "Controls");
+    let on_binds = names.get(s.tab).is_some_and(|n| n == BINDS_TAB) || (games_tab && s.game_page == 0);
     if on_binds {
         let b = ui.button(c, bar, Kind::Ghost, "Default keys", None, 2.0, State::NONE);
         c.entity(b).insert(SettingsAction::Defaults);
@@ -1840,7 +2141,11 @@ fn spawn(
 
     // The keys at the foot (Back is the breadcrumb; Q and E sit at the
     // tab strip's ends).
-    chimera_ui::shell::keys(ui, c, frame, &[("↑↓", "Row"), ("←→", "Change"), ("Enter", "Pick")]);
+    if games_tab {
+        chimera_ui::shell::keys(ui, c, frame, &[("↑↓", "Row"), ("←→", "Change"), ("Enter", "Pick"), ("PgUp PgDn", "Game"), ("Tab", "Page")]);
+    } else {
+        chimera_ui::shell::keys(ui, c, frame, &[("↑↓", "Row"), ("←→", "Change"), ("Enter", "Pick")]);
+    }
     if let Some(k) = &s.keep {
         keep_modal(c, ui, root, (k.until - d.now).max(0.0).ceil() as u64);
     } else if let Some(at) = s.leave {
@@ -1850,6 +2155,53 @@ fn spawn(
         reset_modal(c, ui, root, at, &page);
     }
     root
+}
+
+/// The Games tab's left part: the game rail (each game, its changes as a
+/// badge, the selected one white with the accent bar), and the column
+/// the rows go in under the game's sub-tabs (Keys, Gameplay, Look and
+/// sound, each with its changes). Returns that column.
+fn game_rail(c: &mut Commands, ui: &Ui, cols: Entity, d: &Draw) -> Entity {
+    use chimera_ui::form::BadgeKind;
+    use crate::game_options::{Page, games};
+    let s = d.s;
+    let rail = ui.boxed(c, cols, UiStyle { w: Some(ui.theme.layout_opt(L, "rail_w").unwrap_or(13.0)), gap: Some(0.2), shrink: Some(0.0), ..UiStyle::column() });
+    let hd = ui.boxed(c, rail, UiStyle { pad: Some([0.0, 0.0, 0.8, 1.1].into()), ..UiStyle::row() });
+    ui.text(c, hd, Role::Mono, 0.52, Tone::Fg3, "Games");
+    for (i, g) in games().iter().enumerate() {
+        let sel = i == s.game;
+        let (base, over) = if sel { (ui.color(Tone::Fg, 1.0), ui.color(Tone::Fg, 1.0)) } else { (Color::NONE, ui.color(Tone::Fg, 0.05)) };
+        let item = c
+            .spawn((
+                UiStyle { h: Some(2.6), gap: Some(0.6), pad: Some([0.0, 0.8, 0.0, 1.1].into()), justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() },
+                Node::default(),
+                BackgroundColor(base),
+                controls::Hover { base, over },
+                controls::clickable(),
+                SettingsAction::Game(i),
+                crate::ui_cues::CueItem(format!("settings:game:{i}")),
+                ChildOf(rail),
+            ))
+            .id();
+        let t = ui.text(c, item, Role::DisplayRegular, 0.74, if sel { Tone::Ink } else { Tone::Fg2 }, &g.name);
+        if !sel {
+            c.entity(t).insert(controls::HoverText { base: Tone::Fg2, over: Tone::Fg });
+        } else {
+            ui.focus_bar(c, item, 0.24);
+        }
+        let n: usize = d.game_badges.get(i).map_or(0, |b| b.iter().sum());
+        if n > 0 {
+            ui.badge(c, item, &n.to_string(), if sel { BadgeKind::Ink } else { BadgeKind::Hero });
+        }
+    }
+    let main = ui.boxed(c, cols, UiStyle { grow: Some(1.0), shrink: Some(1.0), gap: Some(0.8), align: Some(AlignItems::Stretch), ..UiStyle::column() });
+    let names: Vec<&str> = Page::ALL.iter().map(|p| p.label()).collect();
+    let page_badges: Vec<Option<String>> =
+        (0..3).map(|p| d.game_badges.get(s.game).map_or(0, |b| b[p])).map(|n| (n > 0).then(|| n.to_string())).collect();
+    for (i, e) in ui.tabs_badged(c, main, &names, &page_badges, s.game_page, false, None).into_iter().enumerate() {
+        c.entity(e).insert(SettingsAction::GamePage(i));
+    }
+    main
 }
 
 /// The Reset tab confirm: Stay first; Reset (the hero) sets the page's
@@ -1882,48 +2234,58 @@ fn reset_modal(c: &mut Commands, ui: &Ui, root: Entity, at: usize, page: &str) {
     c.entity(go).insert(SettingsAction::ResetConfirm);
 }
 
-/// Draws row `i`; its row node (none for a section).
+/// Draws row `i`; its row node (none for a section). Every row is the
+/// kit's setting row (`chimera_ui::form`): one control column, the reset
+/// key when changed, the Chimera mark on ours; one marker a row (the
+/// control in it gets no focus of its own).
 fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw) -> Option<Entity> {
+    use chimera_ui::form::RowLook;
     let t = ui.theme;
     let s = d.s;
     let focus = s.focus == i && s.open_list.is_none_or(|(o, _)| o == i);
+    let resettable = d.resettable.get(i).copied().unwrap_or(false) && d.ctx != Context::Host;
+    let fw = ui.form().control_w;
+    // One marker a row: the control has no focus of its own.
+    let vst = State::NONE;
     match r {
         Row::Section(title) => {
             ui.section(c, list, title, None);
             None
         }
-        Row::Games => {
-            let (row, vl) = ui.row(c, list, "Binds for", None, t.layout(L, "row_h"), State::focused(focus));
-            c.entity(row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
-            let names: Vec<&str> = (0..crate::controls::tab_count()).map(crate::controls::tab_label).collect();
-            for (k, e) in ui.segmented(c, vl, &names, Some(s.bind_game), State::focused(focus)).into_iter().enumerate() {
-                c.entity(e).insert(SettingsAction::Pick { row: i, option: k });
-            }
-            Some(row)
-        }
-        Row::Bind { label, .. } => {
+        Row::Bind { label, action, .. } => {
             let listening = s.capture == Some(i);
             let changed = d.bind_changed.get(i).copied().unwrap_or(false);
-            let (row, vl) = ui.row(c, list, label, None, t.layout(L, "bind_h"), State { focus, changed, ..State::NONE });
-            c.entity(row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
+            let planned = action.is_some_and(|a| a.planned);
+            let note = match (action.and_then(|a| a.note.as_deref()), planned) {
+                (Some(n), true) => Some(format!("{n} · not in yet")),
+                (Some(n), false) => Some(n.to_string()),
+                (None, true) => Some("not in yet".to_string()),
+                (None, false) => None,
+            };
+            let look = RowLook { note: note.as_deref(), ours: false, changed: resettable, min_h: t.layout(L, "bind_h") };
+            let sr = ui.setting_row(c, list, label, look, State { focus, changed: changed || resettable, disabled: false, error: false });
+            c.entity(sr.row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
             let keys = d.keys.get(i).cloned().unwrap_or_default();
-            let f = ui.key_field(c, vl, &keys, listening, 8.5, State::focused(focus));
+            let f = ui.key_field(c, sr.control, &keys, listening, fw, vst);
             c.entity(f).insert(SettingsAction::Bind(i));
-            if !listening {
-                let clr = ui.button(c, vl, Kind::Ghost, "Clear", None, 1.6, State::NONE);
-                c.entity(clr).insert(SettingsAction::Clear(i));
+            if let Some(rk) = sr.reset {
+                c.entity(rk).insert(SettingsAction::Reset(i));
             }
-            Some(row)
+            Some(sr.row)
         }
         Row::Setting { s: set, note } => {
             let v = s.values.get(&set.cvar).cloned().unwrap_or_default();
-            // The accent square: differs from the default (instant apply),
-            // or a display change waiting.
-            let changed = s.pending.contains_key(&set.cvar) || d.differs.contains(&set.cvar);
+            // The accent square: changed from where it comes from, or a
+            // display change waiting.
+            let changed = s.pending.contains_key(&set.cvar) || d.differs.contains(&set.cvar) || resettable;
             let st = State { focus, changed, ..State::NONE };
-            let (row, vl) = ui.row(c, list, &set.label, *note, t.layout(L, "row_h"), st);
+            let look = RowLook { note: *note, ours: set.ours, changed: resettable, min_h: t.layout(L, "row_h") };
+            let sr = ui.setting_row(c, list, &set.label, look, st);
+            let (row, vl) = (sr.row, sr.control);
             c.entity(row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
-            let vst = State::focused(focus);
+            if let Some(rk) = sr.reset {
+                c.entity(rk).insert(SettingsAction::Reset(i));
+            }
             match (widget(set), &set.pick) {
                 (Widget::Slider { min, max, .. }, _) => {
                     // A typed value past the range keeps its number; the
@@ -1937,12 +2299,12 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                         error: e.error.is_some(),
                         suffix: set.percent.then_some("%"),
                     });
-                    let p = ui.slider_ex(c, vl, f, None, &set.shown(&v), 15.0, vst, typing);
+                    let p = ui.slider_ex(c, vl, f, None, &set.shown(&v), fw, vst, typing);
                     c.entity(p.track).insert(SettingsAction::Slide(i));
                     c.entity(p.value).insert(SettingsAction::EditValue(i));
                     if let Some(why) = edit.and_then(|e| e.error.as_deref()) {
                         // Refused: why, beside the box (threat as a mark).
-                        let n = ui.boxed(c, vl, UiStyle { gap: Some(0.4), margin: Some([0.0, 0.0, 0.0, 0.6].into()), ..UiStyle::row() });
+                        let n = ui.boxed(c, row, UiStyle { gap: Some(0.4), margin: Some([0.0, 0.0, 0.0, 0.6].into()), ..UiStyle::row() });
                         ui.mark(c, n, Tone::Threat, 0.36, 0.36);
                         ui.sentence(c, n, NOTE, Tone::Fg2, why);
                     }
@@ -1950,24 +2312,28 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                 (Widget::Toggle, Pick::Choices(ch)) => {
                     let on = ch.get(1).is_some_and(|(cv, _)| host::same_value(cv, &v));
                     let slide = s.flip.filter(|(r, _)| *r == i).map(|(_, since)| controls::ToggleSlide { since, now: d.now, motion: if d.reduced { chimera_ui::motion::Motion::new(0.0) } else { d.motion } });
-                    let tg = ui.toggle_ex(c, vl, on, vst, slide);
+                    let words = (ch[0].1.as_str(), ch[1].1.as_str());
+                    let tg = ui.big_toggle(c, vl, on, vst, slide, words);
                     c.entity(tg).insert(SettingsAction::Step { row: i, dir: 1 });
                 }
-                (Widget::Segmented, Pick::Choices(ch)) => {
+                (_, Pick::Choices(ch)) => {
                     let labels: Vec<&str> = ch.iter().map(|(_, l)| l.as_str()).collect();
                     let sel = ch.iter().position(|(cv, _)| host::same_value(cv, &v));
-                    for (k, e) in ui.segmented(c, vl, &labels, sel, vst).into_iter().enumerate() {
-                        c.entity(e).insert(SettingsAction::Pick { row: i, option: k });
-                    }
-                }
-                (Widget::Dropdown, Pick::Choices(ch)) => {
-                    let labels: Vec<&str> = ch.iter().map(|(_, l)| l.as_str()).collect();
-                    let sel = ch.iter().position(|(cv, _)| host::same_value(cv, &v)).unwrap_or(0);
                     let open = s.open_list.filter(|(r, _)| *r == i).map(|(_, a)| a);
-                    let (f, opts) = ui.dropdown(c, vl, &labels, sel, open, 12.0, vst);
-                    c.entity(f).insert(SettingsAction::OpenList(i));
-                    for (k, e) in opts.into_iter().enumerate() {
-                        c.entity(e).insert((SettingsAction::Pick { row: i, option: k }, crate::ui_cues::CueItem(format!("settings:list:{i}:{k}"))));
+                    match widget(set) {
+                        Widget::Segmented => {
+                            let f = ui.form();
+                            for (k, e) in ui.segmented_sized(c, vl, &labels, sel, &[], vst, Some((f.control_w, f.control_h))).into_iter().enumerate() {
+                                c.entity(e).insert(SettingsAction::Pick { row: i, option: k });
+                            }
+                        }
+                        _ => {
+                            let (f, opts) = ui.dropdown(c, vl, &labels, sel.unwrap_or(0), open, fw, vst);
+                            c.entity(f).insert(SettingsAction::OpenList(i));
+                            for (k, e) in opts.into_iter().enumerate() {
+                                c.entity(e).insert((SettingsAction::Pick { row: i, option: k }, crate::ui_cues::CueItem(format!("settings:list:{i}:{k}"))));
+                            }
+                        }
                     }
                 }
                 _ => {
