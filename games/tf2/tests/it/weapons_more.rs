@@ -572,6 +572,33 @@ fn needles_fall_and_hurt_by_distance_48_50() {
     assert!((took - 10.0).abs() < 0.01, "took {took}");
 }
 
+/// Weapons_more.md 8, effects.md 12 ("Measured", the shooter's own
+/// view): a needle starts 16 forward, 6 right and 8 down of the eye, not
+/// at the view model's `muzzle` (55.73 forward, 8.11 right, 6.5 down at
+/// the view model's FOV, re-projected for the flash: particles.md 6). So
+/// on screen it first shows at the left edge of the gun's drum, below
+/// and left of the muzzle flash, in TF2 as here (`needles_fp.tf2`).
+#[test]
+fn a_needle_starts_at_its_eye_offset_not_at_the_muzzle_8() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], SYRINGE_GUN);
+    let eye = sim.position(p) + sim.state(p).eye_offset;
+    let ev = run(&mut sim, p, 2, |s, k| {
+        s.intent(p).fire = k == 0;
+        s.intent(p).yaw = 0.0;
+        s.intent(p).pitch = 0.0;
+    });
+    assert_eq!(fired(&ev), [0]);
+    let n = flyers(&mut sim, p);
+    assert_eq!(n.len(), 1);
+    let (_, at, v) = n[0];
+    // One move made on the tick after its launch: back to where it began
+    // (its 240 units/s² over a tick moves it under 0.03 units).
+    let start = at - v * TICK_INTERVAL as f32;
+    let want = eye + Vec3::NEG_Z * 16.0 * U + Vec3::X * 6.0 * U - Vec3::Y * 8.0 * U;
+    assert!((start - want).length() < 0.1 * U, "started at {start}, want {want}");
+}
+
 /// Zoom (3.1), the scope a screen shows: one press of attack2 puts the
 /// holder behind the Sniper Rifle's scope (`Zoomed`: a scope, field of
 /// view 20) and it stays up while nothing else happens; attack2 *held*

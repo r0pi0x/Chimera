@@ -1027,6 +1027,18 @@ bridge; facts of the picture, not of the code.
     drawn time reaches its first moment, its model shown at once (it is
     inside the gun until then), the rocket's hidden longer (its first
     0.2 s).
+- **Needles in the shooter's own view** (2026-11-21, `needles_fp.tf2`:
+  the local Medic with the stock Syringe Gun swapped in, 2fort's bridge,
+  10 degrees down, fov 90, view-model FOV 54, 60 frames a second, one
+  tap, then the same while strafing right): the needle first shows one
+  frame after the shot at the **left edge of the gun's drum**, below and
+  left of where the muzzle attachment projects (the drum's front, where
+  the flash would be), already about 30 units out, and flies up and left
+  toward the crosshair; it never passes through the flash's place. Its
+  places frame by frame fit the start of §12 (16 forward, 6 right, 8
+  down of the eye) moved one frame along its flight, not the muzzle.
+  The `muzzle_syringe` flash itself is barely visible (its core's alpha
+  is tiny, particles.md 8). Strafing changes none of this.
 - **Needles on a wall** (a puppet Medic firing 0.3 s into a wooden wall
   about 150 units off, then a free spectator beside the marks): no needle
   stays in the wall. Each hit leaves a small dark hole mark (its centre

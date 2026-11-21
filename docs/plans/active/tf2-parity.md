@@ -1174,3 +1174,22 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   and shot bolts but wrong for reloads. HL2:DM unchanged: its "owner"
   sounds (.357, AR2, crossbow reloads) reach nobody else (effects_sounds.md
   15.3).
+- 2026-11-21 (needle-muzzle, playtest report "the syringes don't come
+  out where the muzzle flash is"): measured, no fault. TF2 itself draws
+  the shooter's needle from its shot start (16 forward, 6 right, 8 down
+  of the eye), not from the view model's muzzle: in
+  `tools/tf2ref/scenes/needles_fp.tf2` (the account's Medic with the
+  stock gun swapped in by `stock tf_weapon_syringegun_medic 17`) and
+  ours' `needles_fp.scene` the needle first shows at the drum's left
+  edge, left of and below the flash, and the two games' needles sit
+  within a few pixels of each other frame by frame (4:3 still, 4:3
+  strafing right; ours at 16:9 the same layout). The flash is at the
+  re-projected muzzle (`psys_running`: 62 forward, 15 right, 13 down of
+  the eye in world terms, particles.md 6). Written into effects.md
+  "Measured"; `weapons_more::a_needle_starts_at_its_eye_offset_not_at_the_muzzle_8`
+  pins the start so the needle isn't "fixed" onto the muzzle. Seen in
+  passing, not changed: flyers (`projectile::Flyer`) have no
+  `Interpolated`, so a projectile not drawn late is drawn at its newest
+  tick while the camera is eased one tick behind (up to one tick of
+  flight ahead, 15 units for a needle; a moving shooter's start off by
+  his tick's move).
