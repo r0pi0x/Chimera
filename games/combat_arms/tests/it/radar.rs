@@ -459,8 +459,8 @@ fn t39_the_round_start_sends_the_image_and_the_team_means() {
     let mut sim = game("TDM", 2);
     sim.app.world_mut().insert_resource(RadarImageSource(showdown_source));
     // The map's start points of the mode's family: the means are of each
-    // team's own (file units 0.018 m).
-    let m = |x: f32, z: f32| Vec3::new(x * 0.018, 1.0, -z * 0.018);
+    // team's own (file units 0.0185 m).
+    let m = |x: f32, z: f32| Vec3::new(x * 0.0185, 1.0, -z * 0.0185);
     {
         let mut o = super::mode_kit::objects(&mut sim);
         o.starts = vec![

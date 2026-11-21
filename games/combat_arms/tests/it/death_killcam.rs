@@ -590,7 +590,7 @@ fn the_camera_in_the_engines_frame() {
     assert!((math::to_rotation(0.0, 0.5) * Vec3::NEG_Z).y < -0.4);
     let p = Vec3::new(1.0, 2.0, 3.0);
     near(math::to_world(p, 0.5), Vec3::new(0.5, 1.0, -1.5), 1e-6);
-    near(math::from_world(math::to_world(p, 0.018), 0.018), p, 1e-4);
+    near(math::from_world(math::to_world(p, 0.0185), 0.0185), p, 1e-4);
     // The orbit's pose: looking along +X from the -X side, level with
     // the anchor's side.
     let pose = orbit(0.0, 0.0, 0.0);

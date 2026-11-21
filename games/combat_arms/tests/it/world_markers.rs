@@ -68,7 +68,7 @@ fn client(t: T, team: u8) -> World {
     let mut w = World::new();
     let mut o = CaObjects::default();
     o.world = t.w;
-    o.scale = 0.018;
+    o.scale = 0.0185;
     w.insert_resource(o);
     w.insert_resource(table());
     w.insert_resource(NetRole::Client);
@@ -111,7 +111,7 @@ fn t37_marker_name_lookup() {
     assert_eq!(shown.len(), 1, "{shown:?}");
     assert_eq!(shown[0].name, "Indicator_A00");
     assert_eq!(shown[0].icons.guide.as_deref(), Some("A"), "the enemy's picture");
-    assert!((shown[0].at.x - 1.8).abs() < 1e-4, "at its place: {}", shown[0].at);
+    assert!((shown[0].at.x - 1.85).abs() < 1e-4, "at its place: {}", shown[0].at);
 }
 
 /// The small world with a VIP Escort marker, a TDM one and a camera.

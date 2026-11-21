@@ -28,7 +28,7 @@ use combat_arms::{
     harness::CaSim,
 };
 
-const U: f32 = 0.018;
+const U: f32 = 0.0185;
 const HP: f32 = 0.01;
 
 /// The M4A1 with no roll, spread or kick, a longer reach.

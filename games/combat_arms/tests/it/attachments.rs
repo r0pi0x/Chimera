@@ -48,7 +48,7 @@ use combat_arms::{
 };
 use lithtech_formats::attributes::Document;
 
-const U: f32 = 0.018;
+const U: f32 = 0.0185;
 const HP: f32 = 0.01;
 const L96A1: &str = "combat_arms:l96a1";
 const M60: &str = "combat_arms:m60";
@@ -1283,7 +1283,7 @@ fn our_doc(name: &str) -> String {
 fn merged_accepts(ours: &str, weapons: &str, mods: &str) -> Vec<toml::Value> {
     let w = WeaponsFile::read(&Document::parse(weapons.as_bytes()).unwrap()).unwrap();
     let m = ModFile::read(&Document::parse(mods.as_bytes()).unwrap());
-    let docs = merge_weapon_docs_with_mods(&[("ours.toml", ours)], &w, Some(&m), 0.018).unwrap();
+    let docs = merge_weapon_docs_with_mods(&[("ours.toml", ours)], &w, Some(&m), 0.0185).unwrap();
     let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
     // It still loads.
     chimera_sim::weapon::data::WeaponSet::parse(&refs, &[]).unwrap();
@@ -1331,7 +1331,7 @@ fn a_skins_part_offsets_copied_from_another_class_are_its_models() {
     let names = ["glock_champion", "glock_d", "l96_desert", "glock_usp"];
     let ours: Vec<String> = names.iter().map(|n| our_doc(n)).collect();
     let refs: Vec<(&str, &str)> = ours.iter().map(|t| ("ours.toml", t.as_str())).collect();
-    let docs = merge_weapon_docs_with_mods(&refs, &w, None, 0.018).unwrap();
+    let docs = merge_weapon_docs_with_mods(&refs, &w, None, 0.0185).unwrap();
     let offsets = |id: &str| {
         let t: toml::Table = docs
             .iter()

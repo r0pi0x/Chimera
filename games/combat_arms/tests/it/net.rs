@@ -355,8 +355,8 @@ fn back_push_is_predicted_by_the_shooter() {
         most = most.max(push);
     }
     client_intent(&mut sim, 0).fire = false;
-    // 0.5 a shot is 5 u, 0.09 m; it returns within a few ticks.
-    assert!(most > 0.05 && most <= 0.0901, "the camera went back {most} m");
+    // 0.5 a shot is 5 u, 0.0925 m; it returns within a few ticks.
+    assert!(most > 0.05 && most <= 0.0927, "the camera went back {most} m");
     sim.ticks(60);
     let push = sim.clients[0].app.world().get::<ViewBackPush>(me).map_or(0.0, |b| b.0);
     assert_eq!(push, 0.0, "and came back");

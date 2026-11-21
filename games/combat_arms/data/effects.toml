@@ -9,7 +9,7 @@
 # path is our pick from the archive's folder of that surface or weapon
 # (marked PLACEHOLDER).
 #
-# Units: world units (1.8 cm each, data/movement.toml) and seconds; volume
+# Units: world units (1.85 cm each, data/movement.toml) and seconds; volume
 # 0..100. Per-weapon data (fire, reload and draw sounds, the third-person
 # muzzle, the ammo's records) is each weapon's `combat_arms:effects` hook
 # (data/weapons/*.toml); grenades' records are below (`[grenade]`).

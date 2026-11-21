@@ -19,7 +19,7 @@ use combat_arms::{
     ui::hud::{CaHud, CaHudStatePlugin, model::RANGE_IN},
 };
 
-const U: f32 = 0.018;
+const U: f32 = 0.0185;
 
 /// The local player at x = 30 looking down -Z, holding the M4A1 with
 /// `parts`, settled and drawn.

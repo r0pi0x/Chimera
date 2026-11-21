@@ -493,7 +493,8 @@ fn t11_frag_edge() {
         let victim = player(&mut sim, 0.0, 0.0, 0.0, 0);
         let at = in_front(&mut sim, victim, d, true);
         explode_at(&mut sim, M67, Some(thrower), at);
-        assert_eq!(health(&sim, victim), 100.0, "{d} u");
+        // At the edge itself the metres round trip may leave f32 dust.
+        assert!((health(&sim, victim) - 100.0).abs() < 1e-3, "{d} u");
     }
 }
 
@@ -2112,7 +2113,7 @@ fn merged(weapons: &str) -> Vec<toml::Table> {
         ("xm84.toml", include_str!("../../data/weapons/xm84.toml")),
         ("m18.toml", include_str!("../../data/weapons/m18.toml")),
     ];
-    combat_arms::game::data::merge_weapon_docs(&ours, &file, 0.018)
+    combat_arms::game::data::merge_weapon_docs(&ours, &file, 0.0185)
         .unwrap()
         .iter()
         .map(|(_, t)| t.parse().unwrap())

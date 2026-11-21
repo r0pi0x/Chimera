@@ -98,7 +98,7 @@
 //! weapon changes) releases a full-fuse grenade at 500 u/s along the body's
 //! facing when its holder dies (14), ammo unchecked (Quirk 5).
 //!
-//! Units: the data's world units (1.8 cm each, by body size:
+//! Units: the data's world units (1.85 cm each, by body size:
 //! `inventory::UNIT`) and hit points inside; the world in metres and
 //! health (1.0 = 100 HP).
 //!

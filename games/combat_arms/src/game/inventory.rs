@@ -167,7 +167,7 @@ pub const STARTING_WEAPONS: &[&str] = &[RIFLE, KNIFE, super::grenades::M67];
 
 /// Metres per LithTech unit: movement's `meters_per_unit` (by body size;
 /// see Known shortcuts).
-pub const UNIT: f32 = 0.018;
+pub const UNIT: f32 = 0.0185;
 /// Health per damage point (100 points = 1.0).
 pub const HP: f32 = 0.01;
 

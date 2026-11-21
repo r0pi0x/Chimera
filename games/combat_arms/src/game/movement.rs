@@ -121,7 +121,7 @@
 //! side (a level normal). Scale: the spec stays in world units and the
 //! game calls 40 u a metre for its HUD readouts (`hud_metres`), but its
 //! bodies aren't built to that (a 100 u hull would be 2.5 m), so
-//! `meters_per_unit` scales by body size instead (open question 3; to be
+//! `meters_per_unit` scales by body size instead (open question 3, answered: 1 u = 0.0185 m ± 0.001, "World scale"; to be
 //! checked live). Why it's OK for now: every spec test case is a scenario
 //! test on the real collision (games/combat_arms/tests/it/movement.rs,
 //! the volumes' in movement_volumes.rs, the corrections' in

@@ -1231,12 +1231,11 @@ fn the_data_parses() {
     assert_eq!(d.run_forward, 285.0);
     assert_eq!(d.character.stamina_max(), 100.0);
     let _: &CaCharacter = &d.character;
-    // Body size: the 100 u standing hull is Chimera's character.
+    // Body size (movement.md, World scale): 1 u = 0.0185 m, so the 100 u
+    // standing hull is 1.85 m.
+    assert_eq!(d.meters_per_unit, 0.0185);
     let height = 2.0 * d.stand_half_extents[1] * d.meters_per_unit;
-    assert!(
-        (height - chimera_core::character::CAPSULE_HEIGHT).abs() < 1e-5,
-        "{height}"
-    );
+    assert!((height - 1.85).abs() < 1e-5, "{height}");
     assert_eq!(
         d.meters_per_unit,
         combat_arms::game::inventory::UNIT,

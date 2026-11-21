@@ -12,9 +12,9 @@
 # Ours, not the spec's: engine meters per world unit. The spec keeps world
 # units (its open question 3, answered): the game's HUD calls 40 u a
 # metre, but its bodies aren't built to that (a 100 u hull would be 2.5 m),
-# so for mixing with other games we scale by body size: the 100 u standing
-# hull is Chimera's 1.8 m character.
-meters_per_unit = 0.018
+# so for mixing with other games we scale by body size (movement.md "World
+# scale": 1 u = 0.0185 m +-0.001): the 100 u standing hull is 1.85 m.
+meters_per_unit = 0.0185
 # Ours: the gap the collision mover keeps from surfaces (u).
 skin = 0.1
 # Eye (camera) height: the eye sits eye_offset x the standing half-height

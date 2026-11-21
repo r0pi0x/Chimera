@@ -11,7 +11,7 @@
 # passes, world units (0: always passes); `perturb`: the exit direction's
 # random offset, thousandths per axis; `range` and `damage`: what is left
 # of each after passing, as factors.
-units = { length = 0.018 }
+units = { length = 0.0185 }
 
 [[surface]]
 names = ["wood"]

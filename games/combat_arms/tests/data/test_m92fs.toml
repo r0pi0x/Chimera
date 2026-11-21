@@ -3,7 +3,7 @@
 # per-weapon data: 15 / 45, draw 650 ms, reload 1500 ms, sprint-out
 # 400 ms). Not the game's data: its fire rate and damage are ours.
 id = "combat_arms:test_m92fs"
-units = { length = 0.018, damage = 0.01 }
+units = { length = 0.0185, damage = 0.01 }
 slot = 1
 draw = 0.65
 

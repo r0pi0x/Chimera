@@ -145,7 +145,9 @@ fn t01_an_ally_on_the_radar() {
     let r = radar(&sim);
     assert!(r.visible);
     let m = mark_of(&r, ally).expect("the ally is on the radar");
-    assert_eq!(m.centre, (948, 48));
+    // (An exact half pixel on y: rounds up; f32 dust at 0.018 m a unit
+    // had it down.)
+    assert_eq!(m.centre, (948, 49));
     assert_eq!(m.look.icon, look::icon("character_ally.dtx"));
     assert!(m.wedge.is_some(), "an ally has a facing wedge");
 }

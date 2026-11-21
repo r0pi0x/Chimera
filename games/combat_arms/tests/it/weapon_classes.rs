@@ -36,7 +36,7 @@ use combat_arms::{
     harness::CaSim,
 };
 
-const U: f32 = 0.018;
+const U: f32 = 0.0185;
 const HP: f32 = 0.01;
 const L96A1: &str = "combat_arms:l96a1";
 const SVD: &str = "combat_arms:dragunov_svd";

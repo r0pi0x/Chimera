@@ -31,7 +31,7 @@ use combat_arms::{
 };
 
 /// Metres per world unit (the data's).
-const U: f32 = 0.018;
+const U: f32 = 0.0185;
 /// Health per hit point.
 const HP: f32 = 0.01;
 
@@ -230,8 +230,8 @@ pub(super) fn close(a: f32, b: f32, tol: f32, what: &str) {
 /// A shooter looking down -Z and a target facing it, `units` apart in the
 /// open lane at x = 30, the shooter holding `id`.
 pub(super) fn range_lane(sim: &mut Sim, id: &str, units: f32) -> (Entity, Entity) {
-    let shooter = player(sim, Vec3::new(30.0, 1.0, 37.0), 0.0, 1.0);
-    let target = player(sim, Vec3::new(30.0, 1.0, 37.0 - units * U), std::f32::consts::PI, 100.0);
+    let shooter = player(sim, Vec3::new(30.0, 1.0, 39.5), 0.0, 1.0);
+    let target = player(sim, Vec3::new(30.0, 1.0, 39.5 - units * U), std::f32::consts::PI, 100.0);
     arm(sim, shooter, id);
     (shooter, target)
 }
@@ -776,7 +776,7 @@ fn t25_recoil_return() {
 /// The back push ("Recoil (view kick)", Back push; view_models.md 4: the
 /// camera 10 x the offset units back along its view). The spec gives no
 /// case; these are its rule's numbers. The record defaults (0.5, 3.0):
-/// a shot puts the offset at 0.5 (the camera 5 u, 0.09 m, back); it
+/// a shot puts the offset at 0.5 (the camera 5 u, 0.0925 m, back); it
 /// returns 5 x 3.0 = 15 a second, so a 16 ms frame leaves 0.26 (2.6 u)
 /// and 40 ms none (never below 0). Two shots 20 ms apart: 0.5 - 0.3 +
 /// 0.5 = 0.7. The M4A1 (0, 1.0): no push.
@@ -786,7 +786,7 @@ fn back_push_numbers() {
     let mut back = 0.0;
     r.back_kick(&mut back);
     close(back, 0.5, 1e-6, "one shot");
-    close(back * BACK_PUSH_SCALE * U, 0.09, 1e-6, "the camera 0.09 m back");
+    close(back * BACK_PUSH_SCALE * U, 0.0925, 1e-6, "the camera 0.0925 m back");
     let mut frame = back;
     r.back_recover(&mut frame, 0.016);
     close(frame, 0.26, 1e-6, "after 16 ms");
@@ -1069,7 +1069,7 @@ fn install_modes(sim: &mut Sim, id: &str, fields: &str) {
     );
     let doc = lithtech_formats::attributes::Document::parse(text.as_bytes()).unwrap();
     let file = WeaponsFile::read(&doc).unwrap();
-    let docs = merge_weapon_docs(WEAPON_DATA, &file, 0.018).unwrap();
+    let docs = merge_weapon_docs(WEAPON_DATA, &file, 0.0185).unwrap();
     let m4 = docs.iter().find(|(n, _)| n == "m4a1.toml").expect("our M4A1");
     let merged: toml::Table = toml::from_str(&m4.1).unwrap();
     let mut alt = toml::Table::new();

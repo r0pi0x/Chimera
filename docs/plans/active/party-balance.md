@@ -21,7 +21,7 @@ Unit conversions:
 
 - Halo: 1 WU = 3.048 m, 1 tick = 1/30 s.
 - Source (CS:S, HL2:DM, TF2): 1 u = 0.0254 m (`source/engine/src/source_movement/mod.rs:140`).
-- Combat Arms: 1 u = 0.018 m (`games/combat_arms/data/movement.toml:17`).
+- Combat Arms: 1 u = 0.0185 m (`games/combat_arms/data/movement.toml:17`).
 
 Victim names used throughout:
 
