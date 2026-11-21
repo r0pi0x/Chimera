@@ -10,8 +10,10 @@
 //! asset stores' additions and frees, pipelines queued and compiled, the
 //! game's own notes), the ticks run, RSS and the GPU allocator's bytes.
 //! The latest 32 records and the 8 worst are kept; the worst go into the
-//! F10 bundle's `perf.txt` (`report`), and each logged hitch line ends
-//! with its record's summary (systems, events).
+//! F10 bundle's `perf.txt` (`report`), headed by the systems the latest
+//! spikes share (`Inspector::recurring`: a stutter that comes back, which
+//! one-off loads would crowd out of the worst), and each logged hitch line
+//! ends with its record's summary (systems, events).
 //!
 //! A system is named by its schedule and short name, with its module too
 //! when another module's system has the same name (`Update
@@ -69,6 +71,8 @@ const LATEST: usize = 32;
 const WORST: usize = 8;
 /// Systems named per world in a record.
 const TOP_SYSTEMS: usize = 12;
+/// Systems named in the report's line of what the latest spikes share.
+const RECURRING: usize = 6;
 /// How long systems stay timed after a spike (`chimera_frame_inspect 1`).
 const ARMED: Duration = Duration::from_secs(30);
 
@@ -325,11 +329,47 @@ impl Inspector {
         if self.worst.is_empty() {
             return format!("frame inspector: no spikes ({} frames seen)\n", self.frames.len());
         }
-        let mut out = format!("frame inspector: {} spikes; the {} worst:\n", self.spikes, self.worst.len());
+        let mut out = format!("frame inspector: {} spikes", self.spikes);
+        let recurring = self.recurring(RECURRING);
+        if !recurring.is_empty() {
+            let timed = self.latest.iter().filter(|r| r.systems.is_some()).count();
+            let rows: Vec<String> = recurring
+                .iter()
+                .map(|(n, ms, k)| format!("{n} {ms:.2} ms in {k}"))
+                .collect();
+            out += &format!(
+                "; the latest {timed} timed spikes' systems, by own ms over them (in how many spikes): {}",
+                rows.join(", ")
+            );
+        }
+        out += &format!("; the {} worst:\n", self.worst.len());
         for r in &self.worst {
             out += &r.text();
         }
         out
+    }
+
+    /// The systems the latest spikes have in common: each system's own ms
+    /// summed over the latest timed records and how many it is in, the
+    /// most first. A stutter that keeps coming back (a light rebuilt every
+    /// other frame, feedback b37d546e) shows here even when one-off map
+    /// loads fill the worst.
+    pub fn recurring(&self, n: usize) -> Vec<(String, f64, u32)> {
+        let mut by: Vec<(String, f64, u32)> = Vec::new();
+        for r in &self.latest {
+            for (name, ms, _) in r.systems.iter().flatten() {
+                match by.iter_mut().find(|b| b.0 == *name) {
+                    Some(b) => {
+                        b.1 += ms;
+                        b.2 += 1;
+                    }
+                    None => by.push((name.clone(), *ms, 1)),
+                }
+            }
+        }
+        by.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        by.truncate(n);
+        by
     }
 
     /// Whether systems should be timed now.
@@ -775,5 +815,33 @@ fn details(ui: &mut egui::Ui, r: &SpikeRecord) {
         }
     } else {
         ui.label("No engine events noted in this frame.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The report's head names what the latest spikes share, though the
+    /// worst are a load.
+    #[test]
+    fn the_report_names_what_the_latest_spikes_share() {
+        let mut i = Inspector::default();
+        let spike = |ms: f64, systems: &[(&str, f64)]| SpikeRecord {
+            ms,
+            median_ms: 10.0,
+            systems: Some(systems.iter().map(|(n, m)| (n.to_string(), *m, 1)).collect()),
+            ..default()
+        };
+        i.keep(spike(400.0, &[("Update finish_map_load", 380.0)]));
+        for _ in 0..20 {
+            i.keep(spike(28.0, &[("Update relight", 20.0), ("Update hud", 1.0)]));
+        }
+        let rows = i.recurring(2);
+        assert_eq!(rows[0].0, "Update relight");
+        assert_eq!(rows[0].2, 20);
+        let report = i.report();
+        let head = report.lines().next().unwrap();
+        assert!(head.contains("Update relight 400.00 ms in 20"), "{report}");
     }
 }

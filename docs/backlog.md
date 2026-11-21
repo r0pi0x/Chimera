@@ -1750,6 +1750,17 @@ the original's own behaviour isn't a bug (say so instead).
     styles our table doesn't know, drawn opaque: `RS\ENV_ALPHA_MASK.ltb`
     (12: power suits, swords), `RS\ItemEdge.ltb` (6), `RS\envmap.ltb`
     (2) (open questions 2, 3).
+  First person alone (2026-11-21, `heavy::view_model::
+  every_install_view_model_is_textured`, every install view model loaded
+  on demand with its hands): 15 weapons draw a piece untextured, all as
+  the data says: 8 put a piece on texture slot 0, whose skin is the
+  `Hands` placeholder (TAR-21 Mark2 and camo Mark2's MARK piece, the
+  Optical Buster's magazine (and Apollo, Photon), AA-12 Holy Fire's whole
+  gun, the Quarantine subtype S and The Shining hands): what the game draws
+  for such a piece is not pinned beyond the empty slot (models_ltb.md Open
+  question 10: opaque white; ours grey); the other 7 name a file the
+  install lacks (listed in the test, with the minigun target's view model
+  in GUNS_M_LAUNCHER).
   The Neon Outlaw ASW338LM and AUG A3 Champions Lightning skins: see "Neon
   Outlaw ASW338LM" above (the data, not our reading).
   Tests: `attribute_data::sprite_skins_and_an_added_weapons_held_look`,

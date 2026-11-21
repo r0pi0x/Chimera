@@ -6818,3 +6818,40 @@ the view model in hand is still coming (the stand-in showing), the kit
 loading now and for how long, each game's view models handed over ahead
 and when, the gun added ahead of the kit, and the kit's own time
 (`console::KitLoads`).
+
+## Roadkill's lights (2026-11-21)
+
+F10 report b37d546e (Windows, RTX 5080, Ultimate Gun Game as a listen
+host on combat_arms:roadkill, 4 bots): "very laggy map". `perf.txt`: 54
+fps, frames p50 12.3 ms, p90 29.9 ms, the GPU 1.5 ms; the main world the
+whole difference. The worst spikes kept were map loads; the hitch lines
+in `log.txt` named the stutter: every other frame 25-30 ms, `Update
+relight` 18-20 ms of it, each with `lightmaps relit: [(32, false)]` or
+`lightmaps relit: []`, from when the match's objects were set up for
+Team Deathmatch (roadkill's light group switched off) to the report.
+
+**Cause: two writers of `map::LightStyles` undoing each other.** In a
+party app every game's logic runs: on a Combat Arms map Source's logic
+(`source_logic` bridge, no styles of its own) wrote `[]` every tick, and
+Combat Arms' light groups (`objects::lights::show`) wrote `[(32, false)]`
+whenever its objects changed (most ticks). Each write was a change, and
+each change from the group's start state rebuilt the whole lightmap
+atlas on the CPU and re-prepared every world material
+(`render::light_styles::relight`, the path meant for rare switches). A
+map without switchable groups, or with them as they start, paid nothing,
+so warehouse and the others were fine.
+
+**Fix.** `LightStyles` keeps each writer's list (`LightStyles::with`:
+the merged `styles` and None when a writer's own list is unchanged), so
+a writer inserts only when its own list changes and neither undoes the
+other. The check, headless with the drawing's map, frames at twice the
+tick rate as a client draws them, the groups switched off as the mission
+does: `ultimate_gun_game` `heavy::map_lights` (work counts over 660
+ticks): relighting 16,237 M before (the median tick of two frames
+32.7 M), 9.2 M after (8.2 M), held under 200 M; warehouse, no switchable
+groups, the same way: 8.8 M (8.4 M; `CHIMERA_MAP_LIGHTS=combat_arms:warehouse`).
+
+**What the next report shows.** `perf.txt`'s frame inspector line now
+heads its worst spikes with the systems the latest 32 timed spikes share
+(`Inspector::recurring`, own ms summed and in how many spikes): a stutter
+that comes back is named there even when one-off map loads fill the worst.

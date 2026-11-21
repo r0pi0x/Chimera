@@ -330,6 +330,21 @@ bar_accent = 0.3
 foot_y = 3.0
 wipe = 0.2           # the selection's slab wiping to its new row, s
 
+# The first run (party_kit onboarding; the "Onboarding Mockups" frames,
+# 100 x 56.25): the bar with the lockup (the lobby header's size), the
+# left column and the right pane.
+[layout.onboarding]
+margin = 4.6         # the bar and the rule from the frame's edges
+bar_y = 2.6
+rule_y = 7.2
+lockup = 1.05        # the lockup's size (its wordmark's, as the lobby header's)
+col_x = 8.4
+col_y = 11.6
+col_w = 42.0
+pane_x = 58.0
+pane_w = 33.6
+corner = 1.1         # the blueprint pane's corner brackets
+
 # Settings (party_kit settings; the components page's frame 02): one page
 # for the menu's Options, the Escape menu's and the Controls page.
 [layout.settings]

@@ -12,6 +12,7 @@ mod heavy {
     mod death_frames;
     mod ladder_build;
     mod hl2_map_items;
+    mod map_lights;
     mod map_swap_frames;
     mod map_swap_render;
     mod map_ticks;
