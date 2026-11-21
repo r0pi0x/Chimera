@@ -628,13 +628,16 @@ fn follow_lobby(
 
 /// The lobby hides its key hints while something is open over it: this
 /// menu (Settings, Leave's confirm), the report dialog, the Controls page.
+/// The report counts once its dialog shows (`Feedback::shown`), not while
+/// its frame is taken (`active`): hidden from the key press, the lobby was
+/// gone from the very frame the report is about (a black screenshot).
 fn lobby_overlay(
     menu: Res<EscMenu>,
     report: Option<Res<chimera_client::client::feedback::Feedback>>,
     controls: Option<Res<crate::controls::ControlsPage>>,
     mut overlay: ResMut<chimera_client::client::prematch_lobby::LobbyOverlay>,
 ) {
-    let on = menu.open || report.is_some_and(|r| r.active()) || controls.is_some_and(|c| c.open);
+    let on = menu.open || report.is_some_and(|r| r.shown()) || controls.is_some_and(|c| c.open);
     if overlay.0 != on {
         overlay.0 = on;
     }

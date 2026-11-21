@@ -639,8 +639,11 @@ fn the_lobby_buttons_work_while_a_client_still_loads() {
     sim.clients[1].app.world_mut().write_message(LobbyAction::Report);
     sim.ticks(2);
     assert!(sim.clients[1].app.world().resource::<Feedback>().active(), "the report asked for");
-    assert!(overlay(&sim, 1), "the key hints hide under the report");
     assert!(sim.until(60, |s| s.clients[1].app.world().resource::<Feedback>().shown()), "the report's dialog");
+    // Once the dialog shows, not while its frame is taken (the lobby
+    // stays in the report's screenshot).
+    sim.ticks(1);
+    assert!(overlay(&sim, 1), "the key hints hide under the report");
     // The dialog reads typed keys (`KeyboardInput`), the menus held ones.
     sim.clients[1].app.world_mut().write_message(bevy::input::keyboard::KeyboardInput {
         key_code: KeyCode::Escape,

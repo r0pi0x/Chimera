@@ -989,7 +989,11 @@ client only with the server's `sv_cheats 1` (and only on itself).
   "During the session"). Headless: `FeedbackCapture::fake`, a test's own
   `Outbox`, or `AssetsOutbox::at(<dir>, targets)` against a service on
   port 0 (apps/party_kit/tests/it/feedback.rs); staged:
-  `ui_scene report [details|sent|queued|off]`.
+  `ui_scene report [details|sent|queued|off]`. What a report's frame
+  shows: `feedback` then `feedback_shot <file.jpg>` (the JPEG it would
+  send) in an offscreen run, next to a `screenshot` taken at the key
+  (apps/ultimate_gun_game/tests/it/heavy/report_frame.rs: menu, lobby,
+  match).
 - `version` (console, client and server) prints the build: tag or `git
   describe`, short commit hash and the commit's UTC date, e.g.
   `v0.1.0-playtest3 (feac156, 2026-10-11)` (no tag: `feac156,

@@ -18,6 +18,7 @@ mod heavy {
     mod nav_in_play;
     mod no_fetch_in_match;
     mod pool_maps;
+    mod report_frame;
     mod rung_frames;
     mod session_maps;
     mod spawn_views;
