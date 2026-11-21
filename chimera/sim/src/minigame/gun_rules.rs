@@ -151,6 +151,90 @@ impl GunRules {
     pub fn allowed(&self, id: &str, family: &str) -> bool {
         listed(&self.allow, id) || listed(&self.allow, family)
     }
+
+    /// Game `game` on or off (`games_off`).
+    pub fn set_game_on(&mut self, game: &str, on: bool) {
+        self.games_off = set_listed(&self.games_off, game, !on);
+    }
+
+    /// Class `class` on or off (`classes_off`).
+    pub fn set_class_on(&mut self, class: GunClass, on: bool) {
+        self.classes_off = set_listed(&self.classes_off, class.name(), !on);
+    }
+
+    /// Solo: `game` alone of `games` on; solo already, every game on
+    /// again.
+    pub fn solo(&mut self, game: &str, games: &[&str]) {
+        let alone = self.game_on(game) && games.iter().filter(|g| !g.eq_ignore_ascii_case(game)).all(|g| !self.game_on(g));
+        self.games_off = if alone { String::new() } else { games.iter().filter(|g| !g.eq_ignore_ascii_case(game)).copied().collect::<Vec<_>>().join(",") };
+    }
+
+    /// How the draw decides a gun family whose rules (games, classes) let
+    /// it in or not (`by_rules`): Ban, then Allowed, then the rules.
+    pub fn decided(&self, family: &str, by_rules: bool) -> Decided {
+        if listed(&self.ban, family) {
+            Decided::Banned
+        } else if listed(&self.allow, family) {
+            Decided::Allowed
+        } else if by_rules {
+            Decided::In
+        } else {
+            Decided::Out
+        }
+    }
+
+    /// A family's one-click exception (the Guns dialog's card): banned
+    /// back to the rules; one the rules let in banned; one they leave out
+    /// allowed, or an allowed one back to the rules. The new decision.
+    pub fn cycle_family(&mut self, family: &str, by_rules: bool) -> Decided {
+        match self.decided(family, by_rules) {
+            Decided::Banned => self.ban = set_listed(&self.ban, family, false),
+            Decided::Allowed => self.allow = set_listed(&self.allow, family, false),
+            Decided::In => self.ban = set_listed(&self.ban, family, true),
+            Decided::Out => self.allow = set_listed(&self.allow, family, true),
+        }
+        self.decided(family, by_rules)
+    }
+}
+
+/// How the draw decides a gun family (`GunRules::decided`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Decided {
+    Banned,
+    Allowed,
+    In,
+    Out,
+}
+
+impl Decided {
+    /// In a ladder's pool.
+    pub fn dealt(self) -> bool {
+        matches!(self, Decided::Allowed | Decided::In)
+    }
+
+    /// An exception to the rules (banned or allowed).
+    pub fn exception(self) -> bool {
+        matches!(self, Decided::Banned | Decided::Allowed)
+    }
+}
+
+/// `list` (comma- or space-separated) with `id` in it (`on`) or out of
+/// it (case aside), comma-separated, its order kept.
+pub fn set_listed(list: &str, id: &str, on: bool) -> String {
+    let mut out: Vec<&str> = entries(list).into_iter().filter(|w| !w.eq_ignore_ascii_case(id)).collect();
+    if on {
+        out.push(id);
+    }
+    out.join(",")
+}
+
+/// Each stage's rungs of a ladder of `rungs` (`power::band_counts` with
+/// no jitter: what the Guns dialog shows; a match's draw moves the
+/// boundaries a little).
+pub fn stage_rungs(rungs: usize, curve: &super::power::PowerCurve) -> [usize; 7] {
+    let mut c = curve.clone();
+    c.jitter = 0.0;
+    super::power::band_counts(rungs, &c, &mut super::auto::Rng::new(0))
 }
 
 /// The host's drawn-ladder length, rungs in all with the knife finale's
@@ -649,6 +733,29 @@ mod tests {
         assert_eq!(summary(&built, &r, 9, None), "No explosives \u{00b7} 9 rungs");
         let r = GunRules { games_off: "tf2".into(), ban: "a b".into(), ..default() };
         assert_eq!(summary(&built, &r, 13, Some("x")), "Custom \u{00b7} 1 game off \u{00b7} 2 bans \u{00b7} 13 rungs \u{00b7} x");
+    }
+
+    #[test]
+    fn rule_edits_keep_the_lists_and_a_card_cycles_ban_and_allow() {
+        let mut r = GunRules::default();
+        r.set_game_on("tf2", false);
+        r.set_game_on("hl2dm", false);
+        r.set_game_on("TF2", true);
+        assert_eq!(r.games_off, "hl2dm");
+        r.set_class_on(GunClass::Sniper, false);
+        assert_eq!(r.classes_off, "sniper");
+        r.solo("a", &["a", "b", "c"]);
+        assert_eq!(r.games_off, "b,c");
+        r.solo("a", &["a", "b", "c"]);
+        assert_eq!(r.games_off, "", "solo again: all on");
+        assert_eq!(r.cycle_family("x:ak", true), Decided::Banned);
+        assert_eq!(r.cycle_family("x:ak", true), Decided::In);
+        assert_eq!(r.cycle_family("x:rpg", false), Decided::Allowed);
+        assert_eq!(r.allow, "x:rpg");
+        assert_eq!(r.cycle_family("x:rpg", false), Decided::Out);
+        let s = stage_rungs(13, &crate::minigame::power::PowerCurve::shipped());
+        assert_eq!(s.iter().sum::<usize>(), 13);
+        assert_eq!(s[6], 1, "the knife last");
     }
 
     #[test]

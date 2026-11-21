@@ -341,6 +341,7 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("apps/party_kit/src/settings.rs", "a menu: its clicks as console lines and cvars, its drawing from the console's binds"),
     ("apps/party_kit/src/loading_signal.rs", "a menu (the loading screen and its Leave?): drawn from the join's progress, the menu's and the shell's state; its keys cue sounds and hand Leave to the menu's Cancel"),
     ("apps/party_kit/src/main_menu.rs", "a menu: its clicks as console lines and cvars, the map loads it follows"),
+    ("apps/party_kit/src/guns_picker.rs", "a menu: the Guns dialog's actions set the server's rule resources, read the catalogue, write presets and the clipboard (only on an action)"),
     ("chimera/client/src/client/console.rs", "the console and map loading"),
     ("chimera/core/src/diagnostics.rs", "a tool: the health line and the context read the whole world (as the console's commands do), at most every second, into the session's log"),
     ("chimera/client/src/client/debug_ui.rs", "a tool"),

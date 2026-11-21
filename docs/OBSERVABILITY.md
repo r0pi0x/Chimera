@@ -2810,7 +2810,11 @@ made-up hub's list, `internet all` with other apps' servers; `offline`:
 the hub not answering, its last list; `update`: the newer-build banner;
 `nohub`: no account). Revision 8's screens add
 `ui_scene play maps [slices]` (Host's Maps picker open; `slices`: the games
-without arena slices folded, a map off with its first slice on), `ui_scene load [ask|slice]` (the
+without arena slices folded, a map off with its first slice on), `ui_scene play guns
+[default|collapsed|classoff|bans|short|menu]` (Host's Guns dialog: the
+Games section and a game's cards folded, three classes off, bans and an
+allowed gun shown as Exceptions, one small game alone on 21 rungs, the
+preset menu open), `ui_scene load [ask|slice]` (the
 Signal loading screen, the Leave? dialog with `ask`, a slice loading with `slice`; `+mainmenu` too) and
 `ui_scene party [in|lead|prompt|off]` (the party panel, provisional: no party with a code half typed, a
 made-up party as a member or its leader, the follow prompt; docs/plans/active/parties.md; `+mainmenu` too, and

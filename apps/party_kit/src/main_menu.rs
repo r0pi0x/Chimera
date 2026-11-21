@@ -1572,14 +1572,7 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                 p.cursor = 0;
             }
         }
-        A::OpenGuns => {
-            crate::guns_picker::refresh(world);
-            if let Some(mut p) = world.get_resource_mut::<crate::guns_picker::GunsPicker>() {
-                let off = p.off.clone();
-                p.open = Some(off);
-                p.cursor = 0;
-            }
-        }
+        A::OpenGuns => crate::guns_picker::open(world),
         A::OpenSettings => {
             leave_page(world);
             let mut m = world.resource_mut::<PartyMenu>();
@@ -1791,10 +1784,7 @@ fn start(world: &mut World) {
         }
         submit(world, format!("mp_maps_off {}", chimera_core::console::quote(line)));
     }
-    // The Guns picker's choice: the guns drawn ladders leave out.
-    if let Some(line) = world.get_resource::<crate::guns_picker::GunsPicker>().map(|p| p.off_line()) {
-        submit(world, format!("mp_guns_off {}", chimera_core::console::quote(&line)));
-    }
+    // (The Guns dialog's Done set the rules, the server's cvars, already.)
     let minigame = world.resource::<MenuMinigame>().0.clone();
     let (lines, after, map) = {
         let data = world.resource::<MenuData>();

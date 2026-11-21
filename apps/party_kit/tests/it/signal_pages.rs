@@ -345,75 +345,286 @@ fn the_maps_picker_header_folds_and_only_its_box_toggles() {
     assert_eq!(picker(&sim).is_folded(&games, &row0), folded, "and does not fold");
 }
 
-/// A made-up gun listing: two games, three classes.
+/// A made-up listing: two games; game a's AK a family of two skins.
 struct FakeGuns;
 
 impl party_kit::guns_picker::GunCatalogue for FakeGuns {
-    fn listing(&self, _: &World) -> Vec<chimera_ui::picker::PickerGame> {
-        use chimera_ui::picker::{PickerGame, PickerGroup, PickerItem};
-        let gun = |id: &str, class: &str| PickerItem { icon: Some("rifle".into()), tags: vec![format!("class:{class}")], ..PickerItem::new(id, id) };
-        let game = |id: &str, items: Vec<PickerItem>| PickerGame { id: id.into(), name: id.into(), groups: vec![PickerGroup { name: String::new(), items }] };
-        vec![game("a", vec![gun("a:ak", "rifle"), gun("a:awp", "sniper"), gun("a:mp5", "smg")]), game("b", vec![gun("b:rocket", "launcher"), gun("b:smg", "smg")])]
+    fn listing(&self, _: &World) -> party_kit::guns_picker::GunsListing {
+        use chimera_core::game_parts::GunClass;
+        use chimera_sim::minigame::power::Band;
+        use party_kit::guns_picker::{GunFamily, GunsListing};
+        let fam = |id: &str, game: &str, class: GunClass, band: Band, score: f32, members: &[&str]| GunFamily {
+            id: id.into(),
+            game: game.into(),
+            name: id.rsplit(':').next().unwrap().to_uppercase(),
+            class,
+            band,
+            score,
+            members: members.iter().map(|m| m.to_string()).collect(),
+        };
+        GunsListing {
+            games: vec![("a".into(), "Game A".into()), ("b".into(), "Game B".into())],
+            families: vec![
+                fam("a:glock", "a", GunClass::Pistol, Band::WarmUp, 1.0, &["a:glock"]),
+                fam("a:ak", "a", GunClass::Rifle, Band::Peak, 3.0, &["a:ak", "a:ak_gold"]),
+                fam("a:awp", "a", GunClass::Sniper, Band::Heavy, 4.0, &["a:awp"]),
+                fam("b:mp5", "b", GunClass::Smg, Band::Rising, 2.0, &["b:mp5"]),
+                fam("b:rocket", "b", GunClass::Launcher, Band::Specials, 5.0, &["b:rocket"]),
+            ],
+            generation: 0,
+        }
     }
 }
 
-/// Host's Guns field opens the shared picker as cards in its dialog: a
-/// game's box sets its guns, a card toggles one, a class chip filters the
-/// cards, Esc cancels and Done keeps; Start sends the guns off
-/// (`mp_guns_off`).
-#[test]
-fn the_guns_picker_sets_the_guns_off() {
-    use chimera_ui::picker::{PickerAction as P, PickerCard, PickerRow, Tri};
-    use party_kit::guns_picker::{GunsDialog, GunsPicker, GunsSource};
+/// The Host page with the fake guns, a rungs setting and a presets
+/// folder of the test's own; the dialog open (Enter on the Guns row).
+fn guns_sim(dir: &std::path::Path) -> Sim {
+    use party_kit::guns_picker::{GunsPresetDir, GunsSource};
     let mut sim = sim(PAGES_THEME);
     sim.app.insert_resource(GunsSource(Box::new(FakeGuns)));
+    sim.app.insert_resource(GunsPresetDir(Some(dir.to_path_buf())));
+    sim.app.insert_resource(chimera_sim::minigame::gun_rules::LadderRungs(13));
+    sim.app.init_resource::<chimera_sim::minigame::gun_rules::GunRules>();
+    sim.app.insert_resource(chimera_ui::clipboard::Clipboard::memory(None));
     press(&mut sim, KeyCode::Enter);
     sim.ticks(2);
-    let data = MenuData::shipped();
-    let row = data.play.iter().position(|r| r.kind == party_kit::main_menu::PlayKind::Guns).expect("a Guns row");
+    let row = MenuData::shipped().play.iter().position(|r| r.kind == party_kit::main_menu::PlayKind::Guns).expect("a Guns row");
     for _ in 0..row {
         press(&mut sim, KeyCode::ArrowDown);
     }
     press(&mut sim, KeyCode::Enter);
     sim.ticks(3);
-    let picker = |s: &Sim| s.app.world().resource::<GunsPicker>().clone();
-    let games = FakeGuns.listing_for_test();
-    assert!(picker(&sim).open.is_some(), "Enter on Guns opens the picker");
+    assert!(working(&sim).is_some(), "Enter on Guns opens the dialog");
+    sim
+}
+
+fn working(sim: &Sim) -> Option<party_kit::guns_picker::Working> {
+    sim.app.world().resource::<party_kit::guns_picker::GunsPicker>().open.clone()
+}
+
+fn guns_act(sim: &mut Sim, a: party_kit::guns_picker::GunsAct) {
+    sim.app.world_mut().write_message(a);
+    sim.ticks(2);
+}
+
+fn world_rules(sim: &Sim) -> chimera_sim::minigame::gun_rules::GunRules {
+    sim.app.world().resource::<chimera_sim::minigame::gun_rules::GunRules>().clone()
+}
+
+/// A scratch folder of a test's own (removed at the end).
+fn scratch(name: &str) -> std::path::PathBuf {
+    let d = std::env::temp_dir().join(format!("chimera-guns-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    d
+}
+
+/// The dialog is a modal over the page with its cards; toggling a game
+/// and a class writes the off-lists at Done (the server's cvars); a Solo
+/// keeps one game; Esc cancels what the copy changed.
+#[test]
+fn guns_dialog_games_and_classes_write_the_off_lists() {
+    use chimera_core::game_parts::GunClass;
+    use party_kit::guns_picker::{GunCard, GunsAct as G, GunsDialog};
+    let dir = scratch("toggles");
+    let mut sim = guns_sim(&dir);
     assert_eq!(sim.app.world_mut().query_filtered::<(), With<GunsDialog>>().iter(sim.app.world()).count(), 1);
-    assert_eq!(sim.app.world_mut().query::<&PickerCard>().iter(sim.app.world()).count(), 5, "a card a gun");
-    // The first game's box: its guns off; a card: one on again.
-    sim.app.world_mut().write_message(P::Toggle(0));
-    sim.ticks(2);
-    assert_eq!(picker(&sim).state(&games, &PickerRow::Game(0)), Tri::Off);
-    sim.app.world_mut().write_message(P::Toggle(1));
-    sim.ticks(2);
-    assert_eq!(picker(&sim).state(&games, &PickerRow::Game(0)), Tri::Mixed);
-    // A chip: only the SMGs show (one card a game).
-    let chips = sim.app.world().resource::<chimera_ui::picker::Pickers>().0[party_kit::guns_picker::LIST].chips.clone();
-    let smg = chips.iter().position(|c| c == "class:smg").expect("the class chips");
-    sim.app.world_mut().write_message(P::Chip(smg));
+    assert!(sim.app.world().resource::<chimera_ui::Modals>().is_open(), "a modal layer");
     sim.ticks(3);
-    assert_eq!(picker(&sim).rows(&games).len(), 4, "two games, an SMG each");
-    assert_eq!(sim.app.world_mut().query::<&PickerCard>().iter(sim.app.world()).count(), 2);
-    // Esc cancels: nothing kept, the chips gone.
+    assert_eq!(sim.app.world_mut().query::<&GunCard>().iter(sim.app.world()).count(), 5, "a card a family");
+    guns_act(&mut sim, G::Game(1));
+    guns_act(&mut sim, G::Class(GunClass::Sniper));
+    let w = working(&sim).unwrap();
+    assert_eq!(w.rules.games_off, "b");
+    assert_eq!(w.rules.classes_off, "sniper");
+    assert_eq!(world_rules(&sim).games_off, "", "nothing set before Done");
+    // Esc cancels.
     press(&mut sim, KeyCode::Escape);
-    assert!(picker(&sim).open.is_none() && picker(&sim).off.is_empty() && picker(&sim).chips.is_empty());
-    assert_eq!(menu(&sim).page, MenuPage::Play, "Esc only closed the picker");
-    // Again: a game off, Done keeps it, Start sends it.
+    assert!(working(&sim).is_none());
+    assert_eq!(world_rules(&sim), Default::default());
+    assert_eq!(menu(&sim).page, MenuPage::Play, "Esc only closed the dialog");
+    // Again, and Done keeps it.
+    guns_act(&mut sim, G::Open);
+    guns_act(&mut sim, G::Game(1));
+    guns_act(&mut sim, G::Class(GunClass::Sniper));
+    guns_act(&mut sim, G::Class(GunClass::Sniper));
+    guns_act(&mut sim, G::Class(GunClass::Rifle));
     press(&mut sim, KeyCode::Enter);
+    assert!(working(&sim).is_none(), "Enter is Done");
+    let r = world_rules(&sim);
+    assert_eq!((r.games_off.as_str(), r.classes_off.as_str()), ("b", "rifle"));
+    // Solo: game a alone; Solo again: every game on.
+    guns_act(&mut sim, G::Open);
+    guns_act(&mut sim, G::Solo(1));
+    assert_eq!(working(&sim).unwrap().rules.games_off, "a");
+    guns_act(&mut sim, G::Solo(1));
+    assert_eq!(working(&sim).unwrap().rules.games_off, "");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Rungs −/+ stay within the curve's bounds (5 to 40); Done sets the
+/// world's `LadderRungs`.
+#[test]
+fn guns_dialog_rungs_step_within_5_to_40() {
+    use party_kit::guns_picker::GunsAct as G;
+    let dir = scratch("rungs");
+    let mut sim = guns_sim(&dir);
+    assert_eq!(working(&sim).unwrap().rungs, 13);
+    for _ in 0..12 {
+        guns_act(&mut sim, G::Rungs(-1));
+    }
+    assert_eq!(working(&sim).unwrap().rungs, 5, "never below 5");
+    for _ in 0..40 {
+        sim.app.world_mut().write_message(G::Rungs(1));
+    }
     sim.ticks(2);
-    let b = picker(&sim).rows(&games).iter().position(|r| *r == PickerRow::Game(1)).unwrap();
-    sim.app.world_mut().write_message(P::Toggle(b));
-    sim.ticks(2);
-    press(&mut sim, KeyCode::Enter);
-    assert_eq!(picker(&sim).off_line(), "b:rocket,b:smg", "Done kept the second game off");
-    act(&mut sim, A::Start);
-    sim.ticks(4);
-    let sent = match sim.app.world().get_resource::<chimera_sim::minigame::auto::GunsOff>() {
-        Some(g) if !g.0.is_empty() => g.0.clone(),
-        _ => asked(&sim).iter().find_map(|l| l.strip_prefix("mp_guns_off ").map(str::to_string)).unwrap_or_default(),
+    assert_eq!(working(&sim).unwrap().rungs, 40, "never above 40");
+    guns_act(&mut sim, G::Rungs(-1));
+    guns_act(&mut sim, G::Done);
+    assert_eq!(sim.app.world().resource::<chimera_sim::minigame::gun_rules::LadderRungs>().0, 39);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Presets: a built-in loads (and undoes), Save as writes the host's own
+/// file, it lists and loads back the same rules; Copy as text and Paste
+/// round-trip through the clipboard.
+#[test]
+fn guns_dialog_presets_load_save_and_paste_round_trip() {
+    use party_kit::guns_picker::{GunsAct as G, GunsPicker, MenuItem, menu_items};
+    let dir = scratch("presets");
+    let mut sim = guns_sim(&dir);
+    let items = |sim: &Sim| {
+        let p = sim.app.world().resource::<GunsPicker>();
+        menu_items(p, p.open.as_ref().unwrap())
     };
-    assert_eq!(sent.trim_matches('"'), "b:rocket,b:smg", "mp_guns_off set at the start");
+    // No explosives (the second built-in), then undo.
+    guns_act(&mut sim, G::Menu);
+    assert!(working(&sim).unwrap().menu.is_some(), "the menu opens");
+    guns_act(&mut sim, G::MenuPick(1));
+    assert_eq!(working(&sim).unwrap().rules.classes_off, "launcher,flamethrower,grenade");
+    assert_eq!(working(&sim).unwrap().base, "No explosives");
+    guns_act(&mut sim, G::Undo);
+    assert_eq!(working(&sim).unwrap().rules.classes_off, "");
+    // Edited rules saved as "Friday night".
+    guns_act(&mut sim, G::Game(1));
+    guns_act(&mut sim, G::Rungs(4));
+    guns_act(&mut sim, G::Card(1));
+    let saved_as = items(&sim).iter().position(|i| *i == MenuItem::SaveAs).unwrap();
+    guns_act(&mut sim, G::MenuPick(saved_as));
+    assert!(working(&sim).unwrap().naming.is_some(), "Save as asks for a name");
+    type_text(&mut sim, "Friday night");
+    press(&mut sim, KeyCode::Enter);
+    assert!(dir.join("friday_night.toml").exists(), "written to the presets folder");
+    let want = working(&sim).unwrap();
+    assert_eq!(want.base, "Friday night");
+    let p = sim.app.world().resource::<GunsPicker>().saved.clone();
+    assert_eq!(p.len(), 1);
+    assert_eq!(p[0].rules(), want.rules);
+    assert_eq!(p[0].rungs, Some(17));
+    // Load All guns, then Friday night back from the menu.
+    guns_act(&mut sim, G::MenuPick(0));
+    assert_eq!(working(&sim).unwrap().rules, Default::default());
+    let friday = items(&sim).iter().position(|i| matches!(i, MenuItem::Load(k) if sim.app.world().resource::<GunsPicker>().presets()[*k].name == "Friday night")).unwrap();
+    guns_act(&mut sim, G::MenuPick(friday));
+    assert_eq!(working(&sim).unwrap().rules, want.rules);
+    assert_eq!(working(&sim).unwrap().rungs, 17);
+    // Copy as text, change, Paste: back.
+    let copy = items(&sim).iter().position(|i| *i == MenuItem::Copy).unwrap();
+    guns_act(&mut sim, G::MenuPick(copy));
+    guns_act(&mut sim, G::Game(1));
+    assert_ne!(working(&sim).unwrap().rules, want.rules);
+    let paste = items(&sim).iter().position(|i| *i == MenuItem::Paste).unwrap();
+    guns_act(&mut sim, G::MenuPick(paste));
+    assert_eq!(working(&sim).unwrap().rules, want.rules, "pasted");
+    // A fresh dialog lists it again (read from the folder).
+    press(&mut sim, KeyCode::Escape);
+    sim.app.world_mut().resource_mut::<GunsPicker>().saved.clear();
+    guns_act(&mut sim, G::Open);
+    assert!(sim.app.world().resource::<GunsPicker>().saved.iter().any(|p| p.name == "Friday night"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A card bans its family (all its skins) when the rules let it in, a
+/// second click puts it back; one the rules leave out is allowed. Done
+/// writes `mp_guns_ban` / `mp_guns_allow` by family id; the old guns off
+/// are read as bans and cleared.
+#[test]
+fn guns_dialog_bans_and_allows_by_family() {
+    use chimera_core::game_parts::GunClass;
+    use party_kit::guns_picker::{GunsAct as G, GunsListing, PoolView, Show, pool};
+    let dir = scratch("bans");
+    let mut sim = guns_sim(&dir);
+    // The AK family (two skins): banned, then back.
+    guns_act(&mut sim, G::Card(1));
+    assert_eq!(working(&sim).unwrap().rules.ban, "a:ak");
+    guns_act(&mut sim, G::Card(1));
+    assert_eq!(working(&sim).unwrap().rules.ban, "");
+    guns_act(&mut sim, G::Card(1));
+    // Launchers off: the rocket out, a click allows it.
+    guns_act(&mut sim, G::Class(GunClass::Launcher));
+    guns_act(&mut sim, G::Card(4));
+    let w = working(&sim).unwrap();
+    assert_eq!((w.rules.ban.as_str(), w.rules.allow.as_str()), ("a:ak", "b:rocket"));
+    let listing = sim.app.world().resource::<GunsListing>().clone();
+    let pv: PoolView = pool(&listing, &w.rules, w.rungs);
+    assert_eq!((pv.families, pv.exceptions), (4, 2), "the AK out, the rocket in");
+    // Show Exceptions: the two cards.
+    guns_act(&mut sim, G::Show(Show::Exceptions));
+    sim.ticks(3);
+    assert_eq!(sim.app.world_mut().query::<&party_kit::guns_picker::GunCard>().iter(sim.app.world()).count(), 2);
+    guns_act(&mut sim, G::Done);
+    let r = world_rules(&sim);
+    assert_eq!((r.ban.as_str(), r.allow.as_str()), ("a:ak", "b:rocket"));
+    // The old guns off come in as bans.
+    sim.app.insert_resource(chimera_sim::minigame::auto::GunsOff("b:mp5".into()));
+    guns_act(&mut sim, G::Open);
+    assert_eq!(working(&sim).unwrap().rules.ban, "a:ak,b:mp5");
+    guns_act(&mut sim, G::Done);
+    assert_eq!(sim.app.world().resource::<chimera_sim::minigame::auto::GunsOff>().0, "");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The pool tile: short ("plays N of M") and empty (Done refused); the
+/// Host page's Guns line and preset field (`gun_rules::summary`).
+#[test]
+fn guns_dialog_short_pool_and_the_summary_line() {
+    use party_kit::guns_picker::{GunsAct as G, GunsListing, GunsPicker, pool};
+    let dir = scratch("summary");
+    let mut sim = guns_sim(&dir);
+    let listing = sim.app.world().resource::<GunsListing>().clone();
+    let w = working(&sim).unwrap();
+    let pv = pool(&listing, &w.rules, w.rungs);
+    assert!(pv.short(), "five guns can't fill 13 rungs: {pv:?}");
+    assert_eq!(pv.plays, 5 + pv.stages[6]);
+    // Repeat fills it.
+    guns_act(&mut sim, G::Short(chimera_sim::minigame::gun_rules::WhenShort::Repeat));
+    let w = working(&sim).unwrap();
+    assert!(!pool(&listing, &w.rules, w.rungs).short());
+    // Every game off: empty, Done refused.
+    guns_act(&mut sim, G::Game(0));
+    guns_act(&mut sim, G::Game(1));
+    let w = working(&sim).unwrap();
+    assert!(pool(&listing, &w.rules, w.rungs).empty());
+    guns_act(&mut sim, G::Done);
+    assert!(working(&sim).is_some(), "Done refused with no gun");
+    guns_act(&mut sim, G::Game(0));
+    guns_act(&mut sim, G::Done);
+    // The Host page's line and field.
+    let picker = sim.app.world().resource::<GunsPicker>().clone();
+    let line = picker.summary(&world_rules(&sim), 13, None);
+    assert_eq!(line, "Custom \u{00b7} 1 game off \u{00b7} 13 rungs");
+    sim.ticks(2);
+    let texts: Vec<String> = sim.app.world_mut().query::<&Text>().iter(sim.app.world()).map(|t| t.0.clone()).collect();
+    assert!(texts.iter().any(|t| t.eq_ignore_ascii_case(&line)), "the Guns row shows the line: {texts:?}");
+    // The page's preset menu: No explosives.
+    guns_act(&mut sim, G::PageMenu);
+    guns_act(&mut sim, G::PagePick(1));
+    assert_eq!(picker.summary(&world_rules(&sim), 13, None), "No explosives \u{00b7} 13 rungs");
+    // Its last entry opens the dialog.
+    let n = picker.presets().len();
+    guns_act(&mut sim, G::PageMenu);
+    guns_act(&mut sim, G::PagePick(n));
+    assert!(working(&sim).is_some());
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Types `text` (one key message a character, as a keyboard sends them).
@@ -424,92 +635,16 @@ fn type_text(sim: &mut Sim, text: &str) {
     };
     for ch in text.chars() {
         let s = ch.to_string();
+        let (code, key) = if ch == ' ' { (KeyCode::Space, Key::Space) } else { (KeyCode::KeyA, Key::Character(s.as_str().into())) };
         sim.app.world_mut().write_message(KeyboardInput {
-            key_code: KeyCode::KeyA,
-            logical_key: Key::Character(s.as_str().into()),
+            key_code: code,
+            logical_key: key,
             state: ButtonState::Pressed,
             text: Some(s.as_str().into()),
             repeat: false,
             window: Entity::PLACEHOLDER,
         });
         sim.ticks(1);
-    }
-}
-
-/// The Guns dialog's search and grid keys: `/` puts the keyboard in the
-/// search field, typing narrows the cards (Space types, it doesn't
-/// toggle), Esc lets go of the field and keeps the dialog; → walks the
-/// cards in reading order; ← on a game's header folds it.
-#[test]
-fn the_guns_picker_searches_by_typing_and_walks_cards_by_the_grid_keys() {
-    use chimera_ui::picker::{PickerCard, PickerRow};
-    use party_kit::guns_picker::{GunsPicker, GunsSource};
-    let mut sim = sim(PAGES_THEME);
-    sim.app.insert_resource(GunsSource(Box::new(FakeGuns)));
-    press(&mut sim, KeyCode::Enter);
-    sim.ticks(2);
-    let data = MenuData::shipped();
-    let row = data.play.iter().position(|r| r.kind == party_kit::main_menu::PlayKind::Guns).expect("a Guns row");
-    for _ in 0..row {
-        press(&mut sim, KeyCode::ArrowDown);
-    }
-    press(&mut sim, KeyCode::Enter);
-    sim.ticks(3);
-    let picker = |s: &Sim| s.app.world().resource::<GunsPicker>().clone();
-    let games = FakeGuns.listing_for_test();
-    assert!(picker(&sim).open.is_some());
-    // The grid keys: from the first game's header, → steps into its cards
-    // and on in reading order.
-    assert_eq!(picker(&sim).cursor, 0);
-    press(&mut sim, KeyCode::ArrowRight);
-    press(&mut sim, KeyCode::ArrowRight);
-    assert_eq!(picker(&sim).rows_in(&games, chimera_ui::picker::PickerLook::Cards)[picker(&sim).cursor], PickerRow::Item(0, 0, 1), "the second card");
-    press(&mut sim, KeyCode::ArrowUp);
-    press(&mut sim, KeyCode::ArrowLeft);
-    assert!(picker(&sim).folded.contains("a"), "← on the header folds the game");
-    press(&mut sim, KeyCode::ArrowRight);
-    assert!(picker(&sim).folded.is_empty(), "→ opens it");
-    // `/` and typing: the SMGs only.
-    type_text(&mut sim, "/");
-    assert!(picker(&sim).search_focus);
-    type_text(&mut sim, "smg");
-    sim.ticks(2);
-    assert_eq!(picker(&sim).search, "smg");
-    assert_eq!(sim.app.world_mut().query::<&PickerCard>().iter(sim.app.world()).count(), 2, "an SMG a game");
-    press(&mut sim, KeyCode::Space);
-    assert!(picker(&sim).open.as_ref().is_some_and(|o| o.is_empty()), "Space in the field toggles nothing");
-    press(&mut sim, KeyCode::Escape);
-    assert!(!picker(&sim).search_focus && picker(&sim).open.is_some(), "Esc lets go of the field, the dialog stays");
-    press(&mut sim, KeyCode::Escape);
-    assert!(picker(&sim).open.is_none() && picker(&sim).search.is_empty(), "then cancels, the search gone");
-}
-
-/// The Guns dialog lists a ladder's grenades after its guns (class
-/// `grenade`): the host can take them out of drawn ladders too.
-#[test]
-fn the_guns_listing_has_the_grenades() {
-    use chimera_core::game_parts::{GunClass, GunPart};
-    use chimera_sim::minigame::auto::Capabilities;
-    let caps = vec![Capabilities {
-        game: "g",
-        guns: vec![GunPart { id: "g:ak", class: GunClass::Rifle }],
-        grenades: vec!["g:he"],
-        knife: None,
-        movement: None,
-        characters: None,
-        hud: None,
-        maps: Vec::new(),
-        missing: Vec::new(),
-    }];
-    let games = party_kit::guns_picker::games_of(&World::new(), &caps);
-    let items: Vec<(String, Vec<String>)> = games[0].items().map(|i| (i.id.clone(), i.tags.clone())).collect();
-    assert_eq!(items, [("g:ak".to_string(), vec!["class:rifle".to_string()]), ("g:he".to_string(), vec!["class:grenade".to_string()])]);
-}
-
-impl FakeGuns {
-    fn listing_for_test(&self) -> Vec<chimera_ui::picker::PickerGame> {
-        use party_kit::guns_picker::GunCatalogue;
-        self.listing(&World::new())
     }
 }
 

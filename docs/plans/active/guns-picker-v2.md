@@ -100,10 +100,27 @@ dropdown) and the user's kit preferences.
 - Step 4, first part: the Host page's summary pane shows the Guns line
   (`gun_rules::summary`: the preset or what differs, the rungs, the
   fallback note).
-- Next: step 3, the dialog (the old card picker still opens from the Guns
-  field and sends `mp_guns_off`, read as bans, so nothing regressed), then
-  the Guns field as the preset dropdown (step 4). The dialog's pieces
-  already in data and code: the presets (`Preset::builtin`, `saved_in`,
-  `to_text`/`from_text` for Copy as text and Paste), the families
-  (`family_of`), effective classes, stage counts (`power::band_counts`),
-  the pool per stage (`draw_pool` then `powers`).
+- Steps 3 and 4 done: `apps/party_kit/src/guns_picker.rs` is the dialog
+  (the old card picker and its `mp_guns_off` at Start are gone; the old
+  guns off are read as bans when it opens and cleared at Done). A modal
+  over the Host page: the preset dropdown (built-ins, the host's saved
+  ones, Save, Save as with a typed name, Copy as text, Paste; a load,
+  reset or paste undoable, Ctrl+Z or the toast's Undo), the ladder strip
+  (a cell a rung by stage, unfilled rungs hatched, the pool tile OK /
+  Short / Empty with Done disabled), Rules folding as a hierarchy (Games
+  with Solo, counts, big toggles; Classes by stage, each stage folding;
+  Ladder: Rungs as a number field with − and +, Skins and When short
+  segmented; a reset key on each row that differs from the preset), the
+  browser (search, Group by, Show with the Exceptions count, a
+  virtualised grid of family cards, weakest first; a click bans or
+  allows a family), the help tile (gone below 1600 px: two columns). Done sets `GunRules` and `LadderRungs` (the
+  server's cvars). The Host page's Guns field is a preset dropdown (its
+  last entry opens the dialog), the row's note the summary line.
+  `ui_scene play guns [default|collapsed|classoff|bans|short|menu]`.
+  Pure rule edits in `gun_rules` (`set_game_on`, `set_class_on`, `solo`,
+  `decided`, `cycle_family`, `set_listed`, `stage_rungs`). Tests:
+  apps/party_kit/tests/it/signal_pages.rs `guns_dialog_*`.
+- Left: per-skin bans from a card (the console takes weapon ids), the
+  example ladder with Reroll, the "a joiner lacks a game" state,
+  controller bumpers, the help tile following the pointer, the rules
+  starting folded below 1600 px.
