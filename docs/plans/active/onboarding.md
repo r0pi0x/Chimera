@@ -132,6 +132,43 @@ admin page lists invites by intent, with status and Revoke.
 
 ## Next steps
 
+**Now (after milestones a-c):**
+
+1. **The first-launch intro** (decision 7), in `party_kit::onboarding`
+   before `Step::Welcome`, first launch only (no account and no
+   `onboarding-intro-seen` mark beside `account.toml`; a mark written
+   when it ends or is skipped): the mockup's title moment as the base,
+   made richer. About 2 s at motion scale 1: the logo pass (the
+   client's `logo_pass` bands: accent, ink with the mark, accent, white)
+   sweeps the black window; behind it the lockup's three bars pop up
+   (`Ease::Back`), "Lucker" tracks in (`Prop::Spacing` from 1.4 em to
+   .62 em) and "PARTY" flickers on letter by letter (`Ease::Steps(4)`
+   on opacity, 70 ms apart), the rule wipes along the slant
+   (`Prop::ClipRight`), then a creative welcome line ("Welcome to Lucker
+   Party" with a short tagline from `data/onboarding.toml [intro]`) and
+   the boot readout (display, audio, games found from the mounts,
+   "Account: none yet") fade up; the tick bar runs out into Welcome.
+   Rules: never blocking (decision 8): any key or click jumps to
+   Welcome at once, and Welcome's field works the moment it shows;
+   `ui_motion_scale` stretches it, 0 shows the final frame for 0.6 s.
+   Tests: the intro shows on a first launch only, any key skips it, the
+   mark is written, motion 0 ends at once; `ui_scene onboarding intro
+   [t]` stages it at time t for screenshots (1920x1080 frames at 0.3,
+   0.8, 1.4 and 2.0 s).
+2. The link handler (decision 4): register `chimera-hub://` on Windows
+   (HKCU\Software\Classes) and Linux (a .desktop file with
+   `x-scheme-handler`), the game opened with `+chimera:onboard <link>`
+   filling the field (`Source::Opened`).
+3. Settings > Account: rename (one a minute, `account::rename`), the
+   avatar (`set_avatar`), link a device (shows the code), devices and
+   Revoke, a new recovery key, sign out; the chip opens it.
+4. The admin page's invite form: intent and recipient.
+5. Downloads up front (decision 12): the base sets every game needs
+   start after the first run; a hub's own sets later; bulk sets an
+   option (future).
+
+**Done earlier:**
+
 1. Mockup screens in the party's visual direction (futuristic
    broadcast-tech, the kit's controls), for the user's review: the first
    screen, redeem with each error, confirm the hub, choose a name, the
@@ -173,3 +210,33 @@ admin page lists invites by intent, with status and Revoke.
   `a_hub_link_signs_in_through_pinned_tls`; `db::version_one_moves_to_onboardings_columns`.
   Not done: the admin page's invite form still takes a name only (the
   intent through the command line).
+- Milestone (b), the client's screens, done: `party_kit::onboarding`
+  (its words in `apps/party_kit/data/onboarding.toml`, the look the
+  kit's: text fields, buttons, tabs, progress, kv rows, avatars) over the
+  main menu at the app's start when this PC has no account, no legacy
+  token and no skip mark: Welcome (the one field, the clipboard's link
+  filled in, the live "what an invite carries" pane, "Play without an
+  account" as a visible ghost button with its note), checking, the four
+  errors (used, unknown or withdrawn, unreachable, another certificate
+  with both fingerprints), the hub with its MOTD, the name (rules lit,
+  availability 0.45 s after the last key with suggestions, the display
+  name, the 32 avatars, the preview), the recovery key (Copy, Save as
+  file into Documents, "I saved it"), "I already have an account" (link
+  code or recovery key, the hub's link asked when none is known; a
+  recovery shows the new key, unlike the mockup, since the old one stops
+  working), and the main menu's "Welcome, <name>" toast. Entries slide
+  in but never block (a key or click ends them; Enter works on the first
+  frame). The display name is sent with the redeem (`RedeemRequest::
+  display_name`). Tests: `party_kit` `onboarding::` (the whole path, the
+  errors, the entry, a link code, recovery and Skip, every staged
+  screen's words); `ui_scene onboarding <screen>` (OBSERVABILITY 2).
+- Milestone (c), the returning player, done: no screen; the tickets
+  come silently as before (`keep_fresh`, `use_user_hub`); the main
+  menu's account chip under the rack (avatar, display name, `@username ·
+  hub`, a green or amber light) and, while the hub's last call failed,
+  the offline banner ("Can't reach <hub>", offline play goes on, Retry
+  now, retried every 30 s). Test: `onboarding::a_returning_player_sees_
+  the_chip_and_the_offline_banner`; `ui_scene onboarding
+  returning|offline`.
+- Milestone (d), the first-launch intro: not built in this run; its
+  plan is "Now" 1 above.

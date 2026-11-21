@@ -363,6 +363,7 @@ fn ticket_requests_are_fresh_and_once() {
         device_public_key: hex(key.verifying_key().as_bytes()),
         device_label: "t".into(),
         avatar: None,
+        display_name: None,
     };
     let signed = hub.running.http.accounts.redeem(&request, None).unwrap();
     let device = ticket::parse_id(&signed.device).unwrap();
@@ -648,8 +649,16 @@ fn an_invite_with_an_intent_wants_a_chosen_name() {
     // Redeeming: a name must be chosen, and start with a letter.
     assert_eq!(status(&hub.redeem(&invited.code, None).unwrap_err()), 400);
     assert_eq!(status(&hub.redeem(&invited.code, Some("9lives")).unwrap_err()), 400);
-    let (file, key) = account::redeem_with(&hub.link(), &invited.code, Some("Sam_Rocket"), Some(13), "pc").unwrap();
+    let request = RedeemRequest {
+        code: invited.code.clone(),
+        username: Some("Sam_Rocket".into()),
+        avatar: Some(13),
+        display_name: Some(" Sam Rocket ".into()),
+        ..Default::default()
+    };
+    let (file, key) = account::redeem_request(&hub.link(), request).unwrap();
     assert!(key.is_some());
+    assert_eq!(file.display_name, "Sam Rocket");
     let me = account::me(&file, file.ticket.as_deref().unwrap()).unwrap();
     assert_eq!((me["username"].as_str(), me["avatar"].as_u64()), (Some("sam_rocket"), Some(13)));
     let sam = hub.accounts().into_iter().find(|a| a.username == "sam_rocket").unwrap();

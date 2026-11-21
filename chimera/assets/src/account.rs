@@ -256,6 +256,9 @@ pub struct RedeemRequest {
     /// The avatar chosen at sign-up (`cl_avatar`'s look byte, 0-31).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar: Option<u8>,
+    /// The display name chosen at sign-up (none: the username).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }
 
 /// `POST /accounts/check`: is this code good, and (optionally) is this
@@ -553,7 +556,16 @@ pub fn redeem_with(
         device_public_key: hex(key.verifying_key().as_bytes()),
         device_label: label.to_string(),
         avatar,
+        display_name: None,
     };
+    let answer: SignedIn = post(&link.url(), link.fingerprint.as_deref(), "/accounts/redeem", None, &request)?;
+    Ok(signed_in(link, &key, answer))
+}
+
+/// Redeem with everything the onboarding's name screen chose.
+pub fn redeem_request(link: &HubLink, mut request: RedeemRequest) -> Result<(AccountFile, Option<String>), String> {
+    let key = new_key();
+    request.device_public_key = hex(key.verifying_key().as_bytes());
     let answer: SignedIn = post(&link.url(), link.fingerprint.as_deref(), "/accounts/redeem", None, &request)?;
     Ok(signed_in(link, &key, answer))
 }

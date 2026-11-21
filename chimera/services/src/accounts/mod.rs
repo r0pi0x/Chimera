@@ -848,6 +848,10 @@ impl Accounts {
                     Some(r) => format!("{i} (for {r})"),
                     None => i.clone(),
                 });
+                let shown = match request.display_name.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+                    Some(d) => codes::display_name(d).map_err(|e| refuse(400, e))?,
+                    None => username.clone(),
+                };
                 tx.execute(
                     "INSERT INTO accounts (id, username, display_name, created, role, content, games, list_slots, report,
                                            invite_intent, avatar)
@@ -855,7 +859,7 @@ impl Accounts {
                     params![
                         blob(&account),
                         username,
-                        username,
+                        shown,
                         now as i64,
                         role,
                         content,

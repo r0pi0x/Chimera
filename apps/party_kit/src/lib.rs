@@ -672,6 +672,8 @@ pub mod party_signal;
 #[cfg(feature = "present")]
 pub mod crash_signal;
 #[cfg(feature = "present")]
+pub mod onboarding;
+#[cfg(feature = "present")]
 pub mod settings;
 #[cfg(feature = "present")]
 pub mod main_menu;
