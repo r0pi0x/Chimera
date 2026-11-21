@@ -179,8 +179,13 @@ fn init_pipeline(
     });
 }
 
+/// Only on a view that still carries `MonitorGamma`: removing it from the
+/// camera removes it from the render world, but not the
+/// `DynamicUniformIndex` the uniform plugin left there, and that index then
+/// points into a buffer no longer written (the pass ran on with stale or
+/// zeroed settings: a zero exponent turned the whole frame white).
 fn gamma_pass(
-    view: ViewQuery<(&ViewTarget, &DynamicUniformIndex<MonitorGamma>)>,
+    view: ViewQuery<(&ViewTarget, &DynamicUniformIndex<MonitorGamma>), With<MonitorGamma>>,
     pipeline: Option<Res<GammaPipeline>>,
     pipeline_cache: Res<PipelineCache>,
     settings: Res<ComponentUniforms<MonitorGamma>>,

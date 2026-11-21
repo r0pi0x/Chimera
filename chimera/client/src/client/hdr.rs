@@ -404,8 +404,10 @@ fn init_pipeline(
     });
 }
 
+/// Only on a view that still carries `SourceTonemap` (its removal leaves
+/// the uniform index behind in the render world; gamma.rs's `gamma_pass`).
 pub(super) fn source_tonemap(
-    view: ViewQuery<(&ViewTarget, &DynamicUniformIndex<SourceTonemap>, &ViewUniformOffset)>,
+    view: ViewQuery<(&ViewTarget, &DynamicUniformIndex<SourceTonemap>, &ViewUniformOffset), With<SourceTonemap>>,
     pipeline: Option<Res<TonemapPipeline>>,
     pipeline_cache: Res<PipelineCache>,
     settings: Res<ComponentUniforms<SourceTonemap>>,

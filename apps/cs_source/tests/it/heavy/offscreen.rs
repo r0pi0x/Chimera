@@ -6,7 +6,9 @@
 //! times and exits by itself. Passes with a note where wgpu finds no
 //! adapter. Also: runs that end a few frames in, while pipelines still
 //! compile on the async compute threads, exit cleanly
-//! (`chimera_client::client::exit_drain`).
+//! (`chimera_client::client::exit_drain`). And a post pass whose settings
+//! component leaves the camera stops (`mat_monitorgamma` back at its
+//! default must not leave the frame white).
 
 use std::process::Command;
 
@@ -88,5 +90,38 @@ fn runs_ended_while_pipelines_compile_exit_cleanly() {
         }
     }
     assert!(waited > 0, "no run's exit waited for compiling pipelines (`exit: waited` in the log)");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `mat_monitorgamma` off its default and back: the UI camera's
+/// `MonitorGamma` is removed, and its uniform index stayed in the render
+/// world, so the gamma pass ran on with zeroed settings and turned every
+/// frame white (seen 2026-11-21 in runs with `+wait`, where a config's
+/// repaired brightness came back to 2.2 a few dozen frames in;
+/// `chimera_client::client::gamma::gamma_pass`).
+#[test]
+fn brightness_back_at_its_default_leaves_the_frame_as_it_was() {
+    let dir = std::env::temp_dir().join(format!("chimera_offscreen_gamma_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let shot = dir.join("shot.png");
+    let out = Command::new(env!("CARGO_BIN_EXE_cs_source"))
+        .args(["--offscreen", "320x200", "--map", "greybox", "--frames", "150"])
+        .arg("--screenshot")
+        .arg(&shot)
+        .args(["+volume", "0", "+mat_monitorgamma", "1.6", "+wait", "40", "+mat_monitorgamma", "2.2"])
+        .env("CHIMERA_CFG_DIR", &dir)
+        .output()
+        .expect("the game binary runs");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if !out.status.success() && (stderr.contains("adapter") || stderr.contains("Adapter")) {
+        eprintln!("skipping: no GPU adapter\n{stderr}");
+        return;
+    }
+    assert!(out.status.success(), "exit {:?}\n{stderr}", out.status);
+    let image = image::open(&shot).unwrap_or_else(|e| panic!("{}: {e}\n{stderr}", shot.display())).to_rgb8();
+    let white = image.pixels().filter(|p| p.0.iter().all(|&c| c >= 250)).count();
+    let all = image.pixels().count();
+    assert!(white * 2 < all, "{white} of {all} pixels white: the gamma pass ran on after its removal");
     let _ = std::fs::remove_dir_all(&dir);
 }
