@@ -122,6 +122,18 @@ bar_w = 0.5            # the bar's width (the thumb's), cq
 thumb_min = 2.4        # the thumb's least length, cq
 gap = 0.6              # between the content and the bar, cq
 
+# A settings column (chimera_ui::form), every app's, cq: every control
+# in a row is `control_w` wide (the user's review, 2026-11-21), toggles
+# and segmented choices `control_h` tall; the reset key's column after it.
+[layout.form]
+control_w = 14.0
+control_h = 2.2
+state_w = 2.6        # the reset key's column
+badge_h = 1.15       # a badge's height
+seg_char = 0.36      # a segmented option's width a character (fits or a dropdown)
+seg_pad = 0.8        # and its padding
+blink = 1.0          # the capture chip's light: one blink, s
+
 # The kit's picker (chimera_ui::picker: the host's Maps and guns, the
 # sandbox's Change gun and map), every app's, cq unless said. Rows (the List look):
 [layout.picker]

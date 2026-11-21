@@ -2829,12 +2829,17 @@ best: `ultimate_gun_game --offscreen 1920x1080 --frames 900 --screenshot
 arguments).
 `ui_scene fields` (or `ui_gallery`, which works in the real apps: Esc closes it) is the kit's gallery: the text field, search
 field, text area, toggle, slider, stepper, buttons and dropdown in rest, hover, focus, typing (caret mid-text), selection,
-masked, error and disabled; `ui_scene controls` the older page of rows and buttons; `ui_scene picker` (`ui_gallery picker`)
+masked, error and disabled; `ui_scene controls` the older page of rows and buttons; `ui_scene form` (`ui_gallery form`)
+a settings form's pieces (`chimera_ui::form`: badges, the big toggle, the key-capture chip, setting rows with the reset
+key and the Chimera mark, the segmented-or-dropdown rule, the tabs' grey to white); `ui_scene picker` (`ui_gallery picker`)
 the shared picker (`chimera_ui::picker`): multi-select rows and cards at a dialog's width, single pick in a wider frame
 with the search typed into, the chips, and the Sandbox's card parts (a badge, a family's count, a pinned mark, a
 download's bar). Check a change to
 `chimera_ui::controls` against it (offscreen: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
-<out>.png +ui_scene fields`). In the apps, Options' "Developer mode" (Party tab, cvar `developer_mode`, off
+<out>.png +ui_scene fields`). Options (party_kit `settings`): `ui_scene settings <general|video|audio|controls|games>`,
+and a game's page `ui_scene settings games <game> <keys|gameplay|look> [listen]` (`listen`: a key row waiting, the
+capture chip), e.g. `ultimate_gun_game --offscreen 1280x720 --frames 90 --screenshot <out>.png +volume 0 +mainmenu
++ui_scene settings games tf2 keys listen` (docs/plans/active/settings-games.md). In the apps, Options' "Developer mode" (General tab, cvar `developer_mode`, off
 by default) adds a Developer entry to the Escape menu that opens it.
 `ui_scene lobby` stages the lobby with made-up players (for
 screenshots; no parity ids or fixture yet), so `lobby`'s report lists

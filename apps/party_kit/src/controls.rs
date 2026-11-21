@@ -161,7 +161,12 @@ pub fn keys_on(console: &Console, tab: usize, command: &str) -> Vec<String> {
 /// `keys_on` over a bind table and its game layers (a snapshot of the
 /// console's, as Settings keeps from before its pending binds).
 pub fn keys_in(shared: &BTreeMap<String, String>, layers: &BTreeMap<String, BTreeMap<String, String>>, tab: usize, command: &str) -> Vec<String> {
-    match tab_game(tab) {
+    keys_in_game(shared, layers, tab_game(tab), command)
+}
+
+/// `keys_in` for a game by its id (None: the shared binds).
+pub fn keys_in_game(shared: &BTreeMap<String, String>, layers: &BTreeMap<String, BTreeMap<String, String>>, game: Option<&str>, command: &str) -> Vec<String> {
+    match game {
         None => binds::keys_for(shared, command).into_iter().map(String::from).collect(),
         Some(game) => layers.get(game).map(|l| binds::keys_for(l, command).into_iter().map(String::from).collect()).unwrap_or_default(),
     }
@@ -181,7 +186,12 @@ fn shared_keys_to_hide(console: &Console, game: &str, command: &str, keep: Optio
 
 /// The console line that makes `key` the only key of `command` on `tab`.
 pub fn rebind_line(console: &Console, tab: usize, command: &str, key: &str) -> String {
-    let Some(game) = tab_game(tab) else {
+    rebind_line_game(console, tab_game(tab), command, key)
+}
+
+/// `rebind_line` for a game by its id (None: the shared binds).
+pub fn rebind_line_game(console: &Console, game: Option<&str>, command: &str, key: &str) -> String {
+    let Some(game) = game else {
         return binds::rebind_line(&console.binds, command, key);
     };
     let mut lines: Vec<String> = console
@@ -204,7 +214,12 @@ pub fn rebind_line(console: &Console, tab: usize, command: &str, key: &str) -> S
 
 /// The console line that clears `command`'s keys on `tab` (None: none).
 pub fn clear_line(console: &Console, tab: usize, command: &str) -> Option<String> {
-    let Some(game) = tab_game(tab) else {
+    clear_line_game(console, tab_game(tab), command)
+}
+
+/// `clear_line` for a game by its id (None: the shared binds).
+pub fn clear_line_game(console: &Console, game: Option<&str>, command: &str) -> Option<String> {
+    let Some(game) = game else {
         return binds::clear_line(&console.binds, command);
     };
     let mut lines: Vec<String> = console
@@ -221,6 +236,86 @@ pub fn clear_line(console: &Console, tab: usize, command: &str) -> Option<String
             .map(|k| format!("bindgame {game} {} \"\"", quote(&k))),
     );
     (!lines.is_empty()).then(|| lines.join("; "))
+}
+
+/// A game layer's entries about `command`: its keys bound to it, and the
+/// keys it hides whose shared bind is `command` (an empty line).
+/// Lines compared without their namespace (a config saves
+/// `combat_arms:+sprint` for the shipped `+sprint`).
+fn layer_entries(layer: Option<&BTreeMap<String, String>>, shared: &BTreeMap<String, String>, command: &str) -> BTreeMap<String, String> {
+    fn bare(c: &str) -> String {
+        let c = c.trim();
+        c.rsplit_once(':').map_or(c, |(_, n)| n).to_ascii_lowercase()
+    }
+    let Some(layer) = layer else { return BTreeMap::new() };
+    let cmd = bare(command);
+    layer
+        .iter()
+        .filter(|(k, v)| bare(v) == cmd || (v.is_empty() && shared.get(*k).is_some_and(|s| bare(s) == cmd)))
+        .map(|(k, v)| (k.to_ascii_lowercase(), bare(v)))
+        .collect()
+}
+
+/// `game`'s keys for `command` differ from what the game ships
+/// (`Console::layer_defaults`).
+/// Compared by what works: the keys that run it while the game is played
+/// now, and with the game's layer as shipped (a config with the shared
+/// key already on the shipped one, and no layer of its own, is no
+/// change).
+pub fn game_bind_changed(console: &Console, game: &str, command: &str) -> bool {
+    fn bare(c: &str) -> String {
+        let c = c.trim();
+        c.rsplit_once(':').map_or(c, |(_, n)| n).to_ascii_lowercase()
+    }
+    let keys = |m: &BTreeMap<String, String>| -> Vec<String> {
+        let cmd = bare(command);
+        m.iter().filter(|(_, v)| bare(v) == cmd).map(|(k, _)| k.to_ascii_lowercase()).collect()
+    };
+    let now = keys(&console.effective_binds(Some(game)));
+    let mut shipped = console.binds.clone();
+    if let Some(l) = console.layer_defaults.get(game) {
+        shipped.extend(l.iter().map(|(k, v)| (k.clone(), v.clone())));
+    }
+    now != keys(&shipped)
+}
+
+/// The console line that puts `game`'s keys for `command` back as the
+/// game ships them (None: nothing to do).
+pub fn reset_bind_line(console: &Console, game: &str, command: &str) -> Option<String> {
+    let now = layer_entries(console.layers.get(game), &console.binds, command);
+    let shipped = layer_entries(console.layer_defaults.get(game), &console.binds, command);
+    if now == shipped {
+        return None;
+    }
+    let mut lines: Vec<String> = now.keys().map(|k| format!("unbindgame {game} {}", quote(k))).collect();
+    lines.extend(shipped.iter().map(|(k, v)| format!("bindgame {game} {} {}", quote(k), if v.is_empty() { "\"\"".to_string() } else { quote(v) })));
+    Some(lines.join("; "))
+}
+
+/// The shared keys of `command` as the app ships them (`binds::
+/// BindDefaults`), sorted.
+pub fn default_keys(defaults: &binds::BindDefaults, command: &str) -> Vec<String> {
+    let mut k: Vec<String> = defaults.default_binds().into_iter().filter(|(_, c)| binds::same_command(c, command)).map(|(k, _)| k).collect();
+    k.sort();
+    k
+}
+
+/// The shared keys of `command` differ from the shipped ones.
+pub fn shared_bind_changed(console: &Console, defaults: &binds::BindDefaults, command: &str) -> bool {
+    let mut now: Vec<String> = binds::keys_for(&console.binds, command).into_iter().map(String::from).collect();
+    now.sort();
+    now != default_keys(defaults, command)
+}
+
+/// The console line that puts the shared keys of `command` back as
+/// shipped (None: nothing to do).
+pub fn reset_shared_line(console: &Console, defaults: &binds::BindDefaults, command: &str) -> Option<String> {
+    if !shared_bind_changed(console, defaults, command) {
+        return None;
+    }
+    let mut lines: Vec<String> = binds::keys_for(&console.binds, command).into_iter().map(|k| format!("unbind {}", quote(k))).collect();
+    lines.extend(default_keys(defaults, command).into_iter().map(|k| format!("bind {} {}", quote(&k), quote(command))));
+    Some(lines.join("; "))
 }
 
 /// The console line for "Defaults" on `tab`.

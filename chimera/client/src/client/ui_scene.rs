@@ -21,7 +21,10 @@
 //! form controls in their states: `chimera_ui::controls`), `fields` (the
 //! text inputs and the value controls in every state: rest, hover, focus,
 //! typing with the caret mid-text, a selection, masked, error, disabled:
-//! the gallery to check a change to the kit against). An app adds
+//! the gallery to check a change to the kit against), `form` (a settings
+//! form's pieces: `chimera_ui::form`'s badges, big toggle, key-capture
+//! chip, setting rows with the reset key and the Chimera mark, the
+//! segmented-or-dropdown rule, the tabs' grey to white). An app adds
 //! its own screens' scenes (`UiSceneHooks`: the party's `menu`, `esc`,
 //! `settings <tab>`, `play [game]` and `join`), staged by the app's code and cleared at `off`. The screens' milestones add theirs
 //! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
@@ -38,7 +41,7 @@
 //! `ui_scene_name <name>` calls every made-up player of the HUD scenes
 //! `name` (`StagedName`: a 20-character name's fit, screenshots).
 //!
-//! `ui_gallery [fields|controls|picker|off]` opens the kit's gallery in the
+//! `ui_gallery [fields|controls|picker|form|off]` opens the kit's gallery in the
 //! real apps (Esc closes it; `picker`: the shared picker in both modes and
 //! both frames, made-up maps and guns); the Escape menu's Developer entry runs it while
 //! Options' Developer mode (`DeveloperMode`, `developer_mode`) is on.
@@ -60,7 +63,7 @@ pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
 pub const SCENES: &[&str] =
-    &["proof", "controls", "fields", "picker", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint"];
+    &["proof", "controls", "fields", "picker", "form", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint"];
 
 /// `ui_scene lobby`'s made-up lobby (despawned at `off`).
 #[derive(Component)]
@@ -174,7 +177,7 @@ impl UiScene {
     /// The kit's gallery is open (`ui_gallery`): it owns the mouse
     /// (`input::FreeCursorOwners`); the staged scenes don't.
     pub fn gallery_open(&self) -> bool {
-        self.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls"))
+        self.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls" | "form"))
     }
 }
 
@@ -291,7 +294,7 @@ impl Plugin for UiScenePlugin {
             )
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|controls|fields|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|lobby|runghint|off> [fixture.json | t]: stage a screen of the UI \
+                "ui_scene <proof|controls|fields|form|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|lobby|runghint|off> [fixture.json | t]: stage a screen of the UI \
                  kit with made-up data (screenshots), or a fixture's (the UI parity check); an animated scene (rankup, airstrike) \
                  with `t` frozen `t` s into its loop.",
                 |w, a| {
@@ -386,7 +389,7 @@ impl Plugin for UiScenePlugin {
             )
             .console_command(
                 "ui_gallery",
-                "ui_gallery [fields|controls|picker|off]: open the UI kit's gallery (every control in every state; `fields` by default; \
+                "ui_gallery [fields|controls|picker|form|off]: open the UI kit's gallery (every control in every state; `fields` by default; \
                  Esc closes it).",
                 |w, a| {
                     let name = a.first().map(String::as_str).unwrap_or("fields");
@@ -395,7 +398,7 @@ impl Plugin for UiScenePlugin {
                         clear_staged(w);
                         return Ok(None);
                     }
-                    if !["fields", "controls", "picker"].contains(&name) {
+                    if !["fields", "controls", "picker", "form"].contains(&name) {
                         return Err(format!("ui_gallery: no page `{name}` (fields, controls, picker, off)"));
                     }
                     clear_staged(w);
@@ -438,7 +441,7 @@ impl DeveloperMode {
 
 /// Esc closes the gallery (`ui_gallery`).
 fn close_gallery(keys: Option<Res<ButtonInput<KeyCode>>>, mut scene: ResMut<UiScene>) {
-    if scene.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls" | "picker")) && keys.is_some_and(|k| k.just_pressed(KeyCode::Escape)) {
+    if scene.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls" | "picker" | "form")) && keys.is_some_and(|k| k.just_pressed(KeyCode::Escape)) {
         scene.want = None;
     }
 }
@@ -486,6 +489,9 @@ fn stage(
     }
     if scene.want.as_deref() == Some("fields") {
         fields(&theme, kit.as_deref(), *units, &mut ambients, &mut commands);
+    }
+    if scene.want.as_deref() == Some("form") {
+        form(&theme, kit.as_deref(), *units, &mut ambients, &mut commands);
     }
     if scene.want.as_deref() == Some("picker") {
         picker_page(&theme, kit.as_deref(), *units, &mut ambients, &mut lists, &mut commands);
@@ -874,6 +880,121 @@ fn fields(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<c
     let r = cell(c, e, "Open");
     ui.dropdown(c, r, &["Party playlist", "The game's loop", "None"], 0, Some(1), 12.0, State::focused(true));
     let _ = Hover { base: Color::NONE, over: Color::NONE };
+}
+
+/// A settings form's pieces (`chimera_ui::form`) in their states: badges,
+/// the big toggle, the key-capture chip, setting rows (ours, changed with
+/// the reset key, hovered, focused: one marker a row), the
+/// segmented-or-dropdown rule, the tabs' grey to white, over the frozen
+/// ambient.
+fn form(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<chimera_ui::AmbientMaterial>, c: &mut Commands) {
+    use chimera_ui::{
+        UiStyle,
+        controls::{State, TOGGLE_ON_OFF, Ui},
+        form::{BadgeKind, Choice, RowLook},
+    };
+    let ui = Ui::new(t, kit, u);
+    let root = c
+        .spawn((
+            UiSceneRoot,
+            Name::new("ui_scene form"),
+            GlobalZIndex(UI_SCENE_Z),
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                padding: UiRect::axes(u.val(3.0), u.val(2.4)),
+                flex_direction: FlexDirection::Row,
+                column_gap: u.val(3.0),
+                ..default()
+            },
+            BackgroundColor(t.tone(Tone::Ink)),
+        ))
+        .id();
+    c.spawn((
+        MaterialNode(ambients.add(chimera_ui::AmbientMaterial::new(t).freeze(Some(6.0)))),
+        Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, width: percent(100.0), height: percent(100.0), ..default() },
+        ChildOf(root),
+    ));
+    let col = |c: &mut Commands, w: f32| ui.boxed(c, root, UiStyle { w: Some(w), gap: Some(0.6), ..UiStyle::column() });
+    let a = col(c, 40.0);
+    ui.section(c, a, "Tabs", Some("grey, white hovered or selected; badges"));
+    let tabs = ui.tabs_badged(c, a, &["General", "Video", "Audio", "Controls", "Games"], &[None, None, Some("1".into()), None, Some("3".into())], 4, false, Some(("Q", "E")));
+    // The second tab as hovered.
+    c.queue(move |w: &mut World| {
+        let kids: Vec<Entity> = w.get::<Children>(tabs[1]).map(|c| c.iter().collect()).unwrap_or_default();
+        for e in kids {
+            if let Some(h) = w.get::<chimera_ui::controls::HoverText>(e).copied() {
+                if let Some(mut t) = w.get_mut::<chimera_ui::UiText>(e) {
+                    t.tone = h.over;
+                }
+            }
+        }
+    });
+    ui.section(c, a, "Badges", Some("hero, quiet, ink"));
+    let r = ui.boxed(c, a, UiStyle { gap: Some(0.8), ..UiStyle::row() });
+    ui.badge(c, r, "3", BadgeKind::Hero);
+    ui.badge(c, r, "12", BadgeKind::Quiet);
+    let ink = ui.boxed(c, r, UiStyle { pad: Some([0.3, 0.6].into()), ..UiStyle::row() }.bg(Tone::Fg));
+    ui.badge(c, ink, "2", BadgeKind::Ink);
+    ui.section(c, a, "Key capture", Some("rest, listening (the light blinks)"));
+    let r = ui.boxed(c, a, UiStyle { gap: Some(0.8), ..UiStyle::column() });
+    let f = ui.form();
+    ui.key_field(c, r, &["MOUSE2".into()], false, f.control_w, State::NONE);
+    ui.key_field(c, r, &[], true, f.control_w, State::NONE);
+    ui.section(c, a, "Big toggle", Some("off, on, disabled"));
+    let r = ui.boxed(c, a, UiStyle { gap: Some(0.8), ..UiStyle::column() });
+    ui.big_toggle(c, r, false, State::NONE, None, TOGGLE_ON_OFF);
+    ui.big_toggle(c, r, true, State::NONE, None, TOGGLE_ON_OFF);
+    ui.big_toggle(c, r, true, State { disabled: true, ..State::NONE }, None, TOGGLE_ON_OFF);
+
+    let b = col(c, 52.0);
+    ui.section(c, b, "Setting rows", Some("one column; one marker a row"));
+    let rows: [(&str, RowLook, State); 6] = [
+        ("Rest", RowLook::default(), State::NONE),
+        ("Focused", RowLook::default(), State::focused(true)),
+        ("Changed: the reset key", RowLook { changed: true, ..RowLook::default() }, State { changed: true, ..State::NONE }),
+        ("Ours: the Chimera mark", RowLook { ours: true, note: Some("cl_autoswitch_empty"), ..RowLook::default() }, State::NONE),
+        ("Fits: segmented", RowLook::default(), State::NONE),
+        ("Doesn't fit: a dropdown", RowLook::default(), State::NONE),
+    ];
+    for (i, (label, look, st)) in rows.into_iter().enumerate() {
+        let sr = ui.setting_row(c, b, label, look, st);
+        match i {
+            0 | 1 => {
+                ui.big_toggle(c, sr.control, i == 1, State::NONE, None, TOGGLE_ON_OFF);
+            }
+            2 => {
+                let fw = ui.form().control_w;
+                ui.key_field(c, sr.control, &["MOUSE4".into()], false, fw, State::NONE);
+            }
+            3 => {
+                ui.big_toggle(c, sr.control, false, State::NONE, None, TOGGLE_ON_OFF);
+            }
+            4 => {
+                let _ = ui.choice(c, sr.control, &["On", "Team only", "Off"], Some(1), None, State::NONE);
+            }
+            _ => {
+                let made = ui.choice(c, sr.control, &["Party playlist", "Combat Arms' loop", "None"], Some(0), None, State::NONE);
+                debug_assert!(matches!(made, Choice::Dropdown { .. }));
+            }
+        }
+        if i == 0 {
+            // The first row as hovered: its lift and its bar.
+            let row = sr.row;
+            c.queue(move |w: &mut World| {
+                if let Some(h) = w.get::<chimera_ui::controls::Hover>(row).copied() {
+                    w.entity_mut(row).insert(BackgroundColor(h.over));
+                }
+                let kids: Vec<Entity> = w.get::<Children>(row).map(|c| c.iter().collect()).unwrap_or_default();
+                for e in kids {
+                    if w.get::<chimera_ui::controls::Tick>(e).is_some() {
+                        w.entity_mut(e).insert((chimera_ui::controls::Tick { always: true }, Visibility::Inherited));
+                    }
+                }
+            });
+        }
+    }
 }
 
 struct Makers<'a> {

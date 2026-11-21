@@ -76,6 +76,7 @@ pub mod chat;
 pub mod clipboard;
 pub mod controls;
 pub mod fonts;
+pub mod form;
 pub mod icon_ink;
 pub mod icons;
 pub mod materials;

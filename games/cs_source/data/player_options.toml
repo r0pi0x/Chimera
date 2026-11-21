@@ -1,0 +1,52 @@
+# This game's own keys and options on the party apps' Options screen
+# (Games tab: party_kit::game_options; docs/plans/active/settings-games.md).
+# [[action]]: a key row on the Keys page: `label`, the console `command`
+# its keys run (bound in this game's own layer over the shared binds,
+# `bindgame`), `group` (a section), `note` (what it holds for), `help`,
+# `planned = true` (bindable, not in the game yet). [[option]]: a row on
+# the `page` "gameplay" or "look": a cvar of the game's own (`cvar`), or
+# `overrides` = a shared setting this game may change for itself (the
+# console's game cvar layer, `setgame`; reset goes back to the shared
+# value); `range` = [min, max, step] or `choices` = [[value, label], ...],
+# `help`, `origin` = "game" (the original game has it; the default) or
+# "chimera" (ours: the Chimera mark, the help says so).
+
+[game]
+name = "Counter-Strike: Source"
+short = "CS:S"
+
+[[action]]
+group = "Movement"
+label = "Walk"
+command = "+speed"
+help = "Walks quietly while held (CS:S: Shift)."
+
+[[action]]
+group = "Movement"
+label = "Duck"
+command = "+duck"
+
+[[option]]
+page = "look"
+label = "Gun view FOV"
+cvar = "viewmodel_fov"
+range = [54, 110, 1]
+help = "How wide CS:S's gun in your hands is drawn, in degrees."
+
+[[option]]
+page = "gameplay"
+label = "Mouse sensitivity"
+overrides = "sensitivity"
+range = [0.1, 20, 0.1]
+hard_min = 0.001
+help = "The mouse's speed while you play CS:S. Until changed it is the one under Controls."
+
+[[option]]
+page = "look"
+label = "Field of view"
+overrides = "fov_desired"
+range = [75, 90, 1]
+hard_min = 1
+hard_max = 179
+help = "How wide you see while you play CS:S, in degrees. Until changed it is the one under Video."
+

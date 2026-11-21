@@ -654,6 +654,7 @@ pub fn ids() -> Vec<String> {
 
 pub mod arena;
 pub mod balance;
+pub mod game_options;
 pub mod host;
 pub mod spot_checks;
 pub mod surprise;

@@ -128,11 +128,15 @@ fn buttons_carry_their_kind_and_focus() {
 fn hover_lifts_the_fill_and_shows_no_tick() {
     let mut app = app();
     let (row, _) = build(&mut app, |ui, c, root| ui.row(c, root, "Field of view", None, 2.9, State::NONE));
-    assert!(descendants_with::<Tick>(&mut app, row).is_empty(), "no tick");
+    // One marker a row: its accent bar shows while hovered (its `Tick`).
+    let bars = descendants_with_entity::<Tick>(&mut app, row);
+    assert_eq!(bars.len(), 1, "the hover bar");
+    assert_eq!(app.world().get::<Visibility>(bars[0]), Some(&Visibility::Hidden));
     let hover = *app.world().get::<Hover>(row).unwrap();
     *app.world_mut().get_mut::<Interaction>(row).unwrap() = Interaction::Hovered;
     app.update();
     assert_eq!(app.world().get::<BackgroundColor>(row).unwrap().0, hover.over);
+    assert_eq!(app.world().get::<Visibility>(bars[0]), Some(&Visibility::Inherited), "hovered: the bar");
     *app.world_mut().get_mut::<Interaction>(row).unwrap() = Interaction::None;
     app.update();
     assert_eq!(app.world().get::<BackgroundColor>(row).unwrap().0, hover.base);
@@ -805,8 +809,8 @@ fn progress_fills_by_its_share() {
     assert!(descendants_with::<UiSlant>(&mut app, w).len() > 5, "stripes");
 }
 
-/// Tabs carry their Q and E caps at the strip's ends; the active one's
-/// strip is cobalt.
+/// Tabs carry their Q and E caps at the strip's ends; no strip under
+/// the selected one (white), the others grey, white while hovered.
 #[test]
 fn tabs_have_their_keys_at_the_ends() {
     let mut app = app();
@@ -817,7 +821,15 @@ fn tabs_have_their_keys_at_the_ends() {
     let all = texts_under(&mut app, parent);
     assert_eq!(all, ["Q", "SERVER", "GAME", "E"]);
     assert_eq!(descendants_with_entity::<controls::TabKey>(&mut app, parent).len(), 2);
-    assert!(descendants_with::<UiSlant>(&mut app, parent).iter().any(|s| s.fill == Tone::Acc), "the cobalt strip");
+    assert!(!descendants_with::<UiSlant>(&mut app, parent).iter().any(|s| s.fill == Tone::Acc), "no strip");
+    let tabs = build(&mut app, |ui, c, root| ui.tabs_badged(c, root, &["Server", "Game"], &[None, Some("2".into())], 0, false, None));
+    let tone = |app: &mut App, t: Entity| descendants_with::<UiText>(app, t).iter().find(|u| u.role == Role::DisplayRegular).map(|u| u.tone);
+    assert_eq!(tone(&mut app, tabs[0]), Some(Tone::Fg), "selected: white");
+    assert_eq!(tone(&mut app, tabs[1]), Some(Tone::Fg3), "the other: grey");
+    *app.world_mut().get_mut::<Interaction>(tabs[1]).unwrap() = Interaction::Hovered;
+    app.update();
+    assert_eq!(tone(&mut app, tabs[1]), Some(Tone::Fg), "hovered: white");
+    assert_eq!(descendants_with::<chimera_ui::form::Badge>(&mut app, tabs[1]), [chimera_ui::form::Badge("2".into())], "its badge");
 }
 
 /// Motion tokens: the scale multiplies every pace; 0 snaps (approach lands
@@ -1133,4 +1145,80 @@ fn a_redrawn_screen_keeps_the_pointers_look() {
     // A second screen beside it (nothing went): at rest.
     let (_, _, other) = redraw(&mut app, root, None);
     assert_eq!(look(&mut app, other).0, Interaction::None, "a new button where none went stays at rest");
+}
+
+/// The settings form (`chimera_ui::form`): a choice that fits the column
+/// is segmented, else a dropdown; a setting row has one control column
+/// `control_w` wide, the reset key only when changed, the Chimera mark
+/// only when ours; the big toggle fills the column; a badge shows its
+/// count.
+#[test]
+fn a_form_row_has_one_column_its_reset_key_and_its_mark() {
+    use chimera_ui::form::{self, Choice, FormSizes, OriginMark, ResetKey, RowLook};
+    let mut app = app();
+    let f = FormSizes::of(app.world().resource::<Theme>());
+    assert!(form::fits_segmented(&f, &["On", "Team only", "Off"], f.control_w));
+    assert!(form::fits_segmented(&f, &["None", "60", "144", "240", "300"], f.control_w));
+    assert!(!form::fits_segmented(&f, &["Party playlist", "Combat Arms' loop", "None"], f.control_w), "a long word");
+    assert!(!form::fits_segmented(&f, &["1", "2", "3", "4", "5", "6"], f.control_w), "six");
+    let seg = build(&mut app, |ui, c, root| ui.choice(c, root, &["On", "Off"], Some(0), None, State::NONE));
+    assert!(matches!(seg, Choice::Segmented(ref o) if o.len() == 2));
+    let dd = build(&mut app, |ui, c, root| ui.choice(c, root, &["Party playlist", "Combat Arms' loop"], Some(0), None, State::NONE));
+    assert!(matches!(dd, Choice::Dropdown { .. }));
+
+    let plain = build(&mut app, |ui, c, root| ui.setting_row(c, root, "Auto reload", RowLook::default(), State::NONE));
+    assert!(plain.reset.is_none());
+    assert!(descendants_with_entity::<OriginMark>(&mut app, plain.row).is_empty());
+    assert_eq!(app.world().get::<chimera_ui::UiStyle>(plain.control).unwrap().w, Some(f.control_w), "one column width");
+    let ours = build(&mut app, |ui, c, root| ui.setting_row(c, root, "Auto switch", RowLook { ours: true, changed: true, ..default() }, State::NONE));
+    assert!(ours.reset.is_some_and(|r| app.world().get::<ResetKey>(r).is_some()));
+    assert_eq!(descendants_with_entity::<OriginMark>(&mut app, ours.row).len(), 1);
+
+    let t = build(&mut app, |ui, c, root| ui.big_toggle(c, root, true, State::NONE, None, controls::TOGGLE_ON_OFF));
+    let st = app.world().get::<chimera_ui::UiStyle>(t).unwrap();
+    assert_eq!((st.w, st.h), (Some(f.control_w), Some(f.control_h)));
+    let b = build(&mut app, |ui, c, root| ui.badge(c, root, "3", form::BadgeKind::Hero));
+    assert_eq!(texts_under(&mut app, b), ["3"]);
+}
+
+/// The big toggle's slab slides over as the small one's does (the kit's
+/// animation kept), from the off place to rest at the on one.
+#[test]
+fn the_big_toggle_slides() {
+    let mut app = app();
+    let now = app.world().resource::<UiClock>().now;
+    let slide = controls::ToggleSlide { since: now, now, motion: Motion::default() };
+    let t = build(&mut app, |ui, c, root| ui.big_toggle(c, root, true, State::NONE, Some(slide), controls::TOGGLE_ON_OFF));
+    let slab = descendants_entities::<controls::ToggleSlab>(&mut app, t)[0];
+    let x = |app: &App| match app.world().get::<UiTransform>(slab).unwrap().translation.x {
+        Val::Px(v) => v,
+        _ => 0.0,
+    };
+    assert!(x(&app) < -10.0, "starts at the off place: {}", x(&app));
+    app.world_mut().resource_mut::<UiClock>().step(0.3);
+    app.update();
+    assert_eq!(x(&app), 0.0, "at rest on the on side");
+}
+
+/// The capture chip's light blinks on the UI clock (no redraw), and holds
+/// still under reduced motion; the chip says what to do.
+#[test]
+fn the_capture_chip_blinks_and_says_esc_cancels() {
+    let mut app = app();
+    let k = build(&mut app, |ui, c, root| ui.key_field(c, root, &[], true, 14.0, State::NONE));
+    assert_eq!(texts_under(&mut app, k), ["PRESS A KEY", "ESC", "CANCEL"]);
+    let light = descendants_with_entity::<chimera_ui::form::Blink>(&mut app, k)[0];
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..8 {
+        app.world_mut().resource_mut::<UiClock>().step(0.25);
+        app.update();
+        seen.insert(format!("{:?}", app.world().get::<Visibility>(light).unwrap()));
+    }
+    assert_eq!(seen.len(), 2, "shown and hidden: {seen:?}");
+    app.insert_resource(chimera_ui::ReducedMotion(true));
+    for _ in 0..4 {
+        app.world_mut().resource_mut::<UiClock>().step(0.25);
+        app.update();
+        assert_eq!(app.world().get::<Visibility>(light), Some(&Visibility::Inherited), "steady");
+    }
 }

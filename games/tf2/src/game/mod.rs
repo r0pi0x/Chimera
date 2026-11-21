@@ -173,6 +173,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     view_model_fov: Some(view::fov),
     sim: party_sim,
     display_names: Some(weapons::display_names),
+    player_options: Some(include_str!("../../data/player_options.toml")),
 };
 
 /// TF2's guns on the maps of other games.

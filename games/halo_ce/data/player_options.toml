@@ -1,0 +1,57 @@
+# This game's own keys and options on the party apps' Options screen
+# (Games tab: party_kit::game_options; docs/plans/active/settings-games.md).
+# [[action]]: a key row on the Keys page: `label`, the console `command`
+# its keys run (bound in this game's own layer over the shared binds,
+# `bindgame`), `group` (a section), `note` (what it holds for), `help`,
+# `planned = true` (bindable, not in the game yet). [[option]]: a row on
+# the `page` "gameplay" or "look": a cvar of the game's own (`cvar`), or
+# `overrides` = a shared setting this game may change for itself (the
+# console's game cvar layer, `setgame`; reset goes back to the shared
+# value); `range` = [min, max, step] or `choices` = [[value, label], ...],
+# `help`, `origin` = "game" (the original game has it; the default) or
+# "chimera" (ours: the Chimera mark, the help says so).
+
+[game]
+name = "Halo: Combat Evolved"
+short = "Halo"
+
+[[action]]
+group = "Weapon"
+label = "Melee"
+command = "+melee"
+
+[[action]]
+group = "Weapon"
+label = "Throw grenade"
+command = "+grenade"
+
+[[action]]
+group = "Weapon"
+label = "Switch grenade"
+command = "+grenade_switch"
+
+[[option]]
+page = "look"
+label = "HUD scaling"
+cvar = "halo_ce:hud_filter"
+choices = [["0", "Original"], ["1", "Sharp"], ["2", "Smooth+sharpen"]]
+origin = "chimera"
+help = "How Halo's HUD pictures (drawn for 640 by 480) are scaled up: Original (smooth, as always), Sharp (crisp texel edges at any size) or Smooth+sharpen (smooth with a light sharpening)."
+
+[[option]]
+page = "gameplay"
+label = "Mouse sensitivity"
+overrides = "sensitivity"
+range = [0.1, 20, 0.1]
+hard_min = 0.001
+help = "The mouse's speed while you play Halo. Until changed it is the one under Controls."
+
+[[option]]
+page = "look"
+label = "Field of view"
+overrides = "fov_desired"
+range = [75, 90, 1]
+hard_min = 1
+hard_max = 179
+help = "How wide you see while you play Halo, in degrees. Until changed it is the one under Video."
+
