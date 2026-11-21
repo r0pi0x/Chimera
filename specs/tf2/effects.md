@@ -875,13 +875,14 @@ out along the surface normal** of the trace they use.
 - **Crit fire loops of continuous weapons** (separate from the boost):
   the Minigun swaps Fire ↔ FireCrit by its networked crit flag
   (minigun.md). The Flame Thrower: when firing starts, its start sound
-  (`Weapon_FlameThrower.FireStart`, inferred from the script's slots)
   plays at volume 1 fading to 0 over 3.5 s while its loop fades in from
   0 to 1 over 3.5 s: `.FireLoop`, or `.FireLoopCrit` when the burst is
   critical. When the burst's crit flag flips while firing, both stop at
   once and the other loop starts at full volume with no start sound
-  (no `.FireEnd` either). Releasing the trigger cuts the loop and plays
-  `.FireEnd`. A boosted Pyro's every burst is critical, so he hears
+  (no end sound either). Releasing the trigger cuts the start sound and
+  the loop and plays the end sound (`.WindDown`). The whole burst, the
+  pilot light, the waves' lengths and what others hear: §14.2
+  (measured). A boosted Pyro's every burst is critical, so he hears
   FireLoopCrit plus CritPower.
 - One-shot guns play the script's crit shot sound (`…SingleCrit`) for a
   crit shot instead of `…Single` (weapons_more.md §9.4); no loop.
@@ -944,6 +945,80 @@ out along the surface normal** of the trace they use.
   x = frequency × (multiplier × the system's time + phase) here
   ("proportional" 0), W a parabolic sin(πx), alpha clamped to 0–1:
   particles.md §10.9 (formula and worked numbers for these four).
+
+#### 14.2 The Flame Thrower's sounds: a burst and the pilot light (measured)
+
+Measured 2026-11-21 on the stock Flame Thrower (item 21) at 66.7 ticks a
+second: tools/tf2ref `flame_sounds.tf2` (the Pyro's own view) and
+`flame_sounds_bot.tf2` (a puppet Pyro, heard by a spectator), every
+sound start and stop from the sound emitter's trace, and every playing
+channel's volume, time left and loop flag from the engine's channel
+list, photographed tick by tick. Bursts held 15 ticks (0.225 s), 67
+ticks (1 s) and 400 ticks (6 s); a second burst 10 ticks after a
+release; one burst until the ammo ran out.
+
+**The five sounds** (all from the weapon's own entity, so they follow
+the gun; waves 44.1 kHz 16-bit, lengths read from the files):
+
+| Use | Script entry | Wave | Length | Loops | Channel, level, volume |
+|---|---|---|---|---|---|
+| start | `Weapon_FlameThrower.FireStart` (`.Fire` is a copy) | `weapons/flame_thrower_start.wav`, stereo | 3.630 s (160,064 frames) | no | static, 94 dB, 1 |
+| loop | `.FireLoop` | `weapons/flame_thrower_loop.wav`, stereo | 3.630 s (160,064) | yes: the whole wave (a loop point at its start) | weapon, 94 dB, 1 |
+| crit loop | `.FireLoopCrit` | `weapons/flame_thrower_loop_crit.wav`, stereo | 3.630 s (160,067) | yes, the whole wave | weapon, 94 dB, 1 |
+| end | `.WindDown` (what the stock gun plays; `.FireEnd` is the same wave with the same settings) | `weapons/flame_thrower_end.wav`, stereo | 0.819 s (36,096) | no | static, 94 dB, 1 |
+| pilot light | `.PilotLoop` | `weapons/flame_thrower_pilot.wav`, mono | 12.771 s (563,200) | **no**, despite the name | weapon, 74 dB, 0.25 |
+
+**Rules.**
+
+1. **Deploy.** In the tick the Flame Thrower is drawn (with its draw
+   sound), the pilot light starts from its beginning at volume 0.25. It
+   plays once: 12.77 s later it ends and the gun is silent until
+   something below starts it again. Nothing restarts it while the gun
+   sits idle.
+2. **Holster.** Switching away stops the pilot light at once.
+3. **A burst starts** (the tick the attack starts making flame): the
+   pilot light stops at once, and the start sound (volume 1) and the
+   loop (volume 0) both start in that tick from their beginnings.
+4. **While firing**, every tick: start volume = 1 − t / 3.5 and loop
+   volume = t / 3.5, t the game time since the burst started, each
+   clamped to 0–1: two straight lines in game time. Measured (the
+   channel list's 0–255 scale; tick 0 is the burst's first): tick 1:
+   255 / 0; tick 3: 252 / 2; tick 12: 242 / 12; tick 60: 190 / 64;
+   tick 86: 162 / 92; tick 218: 17 / 237; from tick 233 (3.5 s) the
+   loop holds 255. The start sound is silent from 3.5 s and its wave
+   runs out at 3.63 s on its own (gone from the list at tick 251); the
+   loop goes on for as long as the trigger is held. (The trace shows
+   both re-sent every tick while firing: those are the volume changes,
+   not new starts.)
+5. **Release** (the trigger let go): in that tick the start sound and
+   the loop are both **cut at once**, no fade, however long the burst
+   was; the end sound (`.WindDown`) plays once at volume 1 for its
+   0.82 s; and the pilot light starts again from its beginning at 0.25
+   (and ends 12.77 s later, rule 1). So 0.82 s after a release only the
+   quiet pilot light is left of the gun's sounds.
+6. **A new burst within the end sound** (10 ticks after a release) does
+   not cut it: the end runs out under the new start sound and loop
+   (rule 3 stops only the pilot light).
+7. **Running out of ammo** mid-burst ends it as a release (start and
+   loop cut, the end sound played) **except that the pilot light does
+   not restart**: an empty gun is silent after the end sound. (Then the
+   game switches weapons on its own, here 1.95 s later.)
+8. **Others hear the same**: the same five sounds with the same
+   volumes before distance, from that Pyro's weapon, started and cut by
+   the firing state they receive: 0–2 ticks after the Pyro's own (one
+   tick at a press, up to two at a release, measured). They hear his
+   pilot light too (deploy, release, holster as above), at 74 dB, so
+   only close by.
+9. The crit loop: §14 (the flip swaps the loops with no start or end
+   sound); not measured here.
+
+Burst by burst (own view; others 0–2 ticks later):
+
+| Burst | While held | At release | After |
+|---|---|---|---|
+| tap, 0.225 s | start 1 → 0.94, loop 0 → 0.06 | both cut; end 0.82 s; pilot from its start | pilot alone until release + 12.77 s |
+| 1 s | start 1 → 0.71, loop 0 → 0.29 | the same | the same |
+| 6 s | from 3.5 s the loop alone at 1 (the start's wave over at 3.63 s) | the same | the same |
 
 ## Per-frame order
 
@@ -1039,6 +1114,11 @@ bridge; facts of the picture, not of the code.
   down of the eye) moved one frame along its flight, not the muzzle.
   The `muzzle_syringe` flash itself is barely visible (its core's alpha
   is tiny, particles.md 8). Strafing changes none of this.
+- **The Flame Thrower's sounds** (2026-11-21, `flame_sounds.tf2`,
+  `flame_sounds_bot.tf2`): §14.2. The pilot light is a 12.77 s wave
+  played once (not a loop) at each deploy and each release; a release
+  cuts the start sound and the loop in its tick, whatever the burst's
+  length, and leaves only the 0.82 s end sound.
 - **Needles on a wall** (a puppet Medic firing 0.3 s into a wooden wall
   about 150 units off, then a free spectator beside the marks): no needle
   stays in the wall. Each hit leaves a small dark hole mark (its centre
@@ -1108,6 +1188,14 @@ bridge; facts of the picture, not of the code.
 | Boosted enemy Spy cloaks | glow and loop stop for every viewer |
 | Random crit shot, no boost | no CritPower loop; `…SingleCrit` shot sound only |
 | Flame Thrower burst turns critical while firing | FireLoop cut, FireLoopCrit at full volume at once, no FireStart, no FireEnd |
+| Pyro draws the Flame Thrower, does nothing for 15 s | pilot light (0.25) from the draw's tick; silent from 12.77 s on |
+| Pyro holds fire 0.225 s (15 ticks), releases | ticks 0–14: start 1 → 0.94, loop 0 → 0.06; tick 15: both stopped, end sound once (0.82 s), pilot light from its start; at release + 0.82 s only the pilot light plays |
+| Pyro holds fire 1 s, releases | at release start 0.71, loop 0.29, both cut in that tick; end sound; pilot light restarts |
+| Pyro holds fire 6 s, releases | the start sound silent from 3.5 s and gone at 3.63 s; the loop at 1 from 3.5 s to the release; cut there; end sound; pilot light restarts |
+| Pyro releases, fires again 10 ticks later | the end sound plays on to its 0.82 s; the pilot light stops; start and loop start again from their beginnings (start 1, loop 0) |
+| Pyro fires until the ammo runs out | start and loop cut, end sound once, **no** pilot light |
+| Pyro switches to the Shotgun | pilot light stopped at once |
+| Another player watches a Pyro tap fire | the same sounds and volumes from the Pyro's weapon, 0–2 ticks after the Pyro's own |
 | Player healed to full health | all his body decals removed |
 
 ## Open questions

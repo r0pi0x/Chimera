@@ -140,6 +140,35 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Log
 
+### The Flame Thrower's sounds, the Grenade Launcher's drum (spec-tf2-flame-drum, 2026-11-21)
+
+Spec pass from two user reports (ours' flame keeps sounding long after
+the release; how the drum turns). Measured on real TF2, written as
+effects.md §14.2 and weapons_more.md §9.6 (test cases there):
+
+- **Flame Thrower** (`flame_sounds.tf2` own view, `flame_sounds_bot.tf2`
+  a puppet Pyro heard by a spectator; the sound emitter's trace plus
+  `snd_show` photographed per tick: each channel's volume 0-255, time
+  left, loop flag). A burst starts the start sound at 1 and the loop at
+  0, straight-line fades over 3.5 s of game time; the start's wave
+  (3.63 s, no loop) runs out on its own. The release cuts **both** in
+  its tick, whatever the burst's length, and plays `.WindDown`
+  (`flame_thrower_end.wav`, 0.82 s, not `.FireEnd`); the pilot light is
+  a 12.77 s wave played **once** (not looped, 0.25) at each draw and
+  each release, stopped by a burst and a holster, not restarted when
+  the ammo runs out. A new burst doesn't cut the end sound. Others hear
+  the same 0-2 ticks later. `snd_show 1` works headless (the channel
+  list drawn over the frame; tesseract reads it from the pictures).
+- **Grenade Launcher's drum** (`gl_drum.tf2` / `.scene` own view at 60
+  fps, `gl_drum_bot.tf2` a puppet from 35 units; the model's files; the
+  server's view model every tick through VScript): six chambers round
+  `procedural_chamber`'s z axis; no sequence turns it (`weapon_bone_2`
+  stays on `weapon_bone_1`), no bone controller or procedural rule: the
+  client's code. Own view: one chamber (60 degrees) per shot, clockwise
+  seen from behind, smooth over ~8 frames from the frame after the
+  shot; none while reloading; others see no turn at all. The curve's
+  exact shape is weapons_more.md Open questions 24.
+
 ### The Pistol's reload unheard when served (tf2-pistol-sound, 2026-11-21)
 
 - **Cause** (measured in Ultimate Gun Game's sandbox, offscreen, the

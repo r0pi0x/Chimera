@@ -828,7 +828,7 @@ All are `c_` weapons bone-merged onto the class arms (install.md §4.2).
 `unusual_0`…`5`. The Revolver and Grenade Launcher have a 30-frame
 looping `idle` of their own (cylinder/drum); the others a 1-frame `idle`.
 The Grenade Launcher's drum turns through `procedural_chamber`, which has
-no arms counterpart.)
+no arms counterpart: how it turns, §9.6.)
 
 Projectiles (one bone each; collision boxes from the SDK: grenade and
 sticky a 4-unit cube, needle a 2-unit cube):
@@ -895,13 +895,13 @@ All shots on the weapon channel at 94 dB.
 
 | Use | Grenade Launcher | Stickybomb Launcher | Flame Thrower | Syringe Gun |
 |---|---|---|---|---|
-| shot | `Weapon_GrenadeLauncher.Single` → `grenade_launcher_shoot.wav` | `Weapon_StickyBombLauncher.Single` → `stickybomblauncher_shoot.wav` | start `Weapon_FlameThrower.FireStart` → `flame_thrower_start.wav` (static channel); loop `.FireLoop` → `flame_thrower_loop.wav` (weapon channel); end `.FireEnd` → `flame_thrower_end.wav` | `Weapon_SyringeGun.Single` → `syringegun_shoot.wav` |
+| shot | `Weapon_GrenadeLauncher.Single` → `grenade_launcher_shoot.wav` | `Weapon_StickyBombLauncher.Single` → `stickybomblauncher_shoot.wav` | start `Weapon_FlameThrower.FireStart` → `flame_thrower_start.wav` (static channel); loop `.FireLoop` → `flame_thrower_loop.wav` (weapon channel); end `.FireEnd` → `flame_thrower_end.wav` (the stock gun plays `.WindDown`, the same wave and settings; the burst's timing: [effects.md](effects.md) §14.2) | `Weapon_SyringeGun.Single` → `syringegun_shoot.wav` |
 | crit | `…SingleCrit` → `grenade_launcher_shoot_crit.wav` | `…SingleCrit` → `stickybomblauncher_shoot_crit.wav` | `.FireLoopCrit` → `flame_thrower_loop_crit.wav` | `…SingleCrit` → `syringegun_shoot_crit.wav` |
 | empty | – | – | – | `Weapon_SyringeGun.ClipEmpty` → `pistol/pistol_empty.wav` |
 | reload | `Weapon_GrenadeLauncher.DrumOpen` / `.DrumLoad` / `.DrumClose` (→ `grenade_launcher_drum_*.wav`), `.DrumStart` / `.DrumStop` (volume 0.4) | `Weapon_StickyBombLauncher.BoltBack` / `.BoltForward` | – | `Weapon_SyringeGun.Reload1` / `2` / `3` → `syringegun_reload_air1.wav`, `_glass2.wav`, `_air2.wav` |
 | world reload | `…WorldReload` → `grenade_launcher_worldreload.wav` | `…WorldReload` → `stickybomblauncher_worldreload.wav` | – | `…WorldReload` → `syringegun_worldreload.wav` |
 | draw | `Weapon_GrenadeLauncher.Draw` → `draw_secondary.wav` | (none of its own; Open questions 18) | `Weapon_FlameThrower.Draw` → `draw_primary.wav` | `Weapon_SyringeGun.Draw` → `draw_primary.wav` |
-| special | – | charge `Weapon_StickyBombLauncher.ChargeUp` → `stickybomblauncher_charge_up.wav`; detonate `Weapon_StickyBombLauncher.ModeSwitch` → `stickybomblauncher_det.wav` | idle `Weapon_FlameThrower.PilotLoop` → `flame_thrower_pilot.wav` (74 dB, volume 0.25); flame hits `.FireHit` → `flame_thrower_fire_hit.wav`; airblast `.AirBurstAttack` → `flame_thrower_airblast.wav` | – |
+| special | – | charge `Weapon_StickyBombLauncher.ChargeUp` → `stickybomblauncher_charge_up.wav`; detonate `Weapon_StickyBombLauncher.ModeSwitch` → `stickybomblauncher_det.wav` | pilot light `Weapon_FlameThrower.PilotLoop` → `flame_thrower_pilot.wav` (74 dB, volume 0.25; a 12.77 s wave played once at each draw and release, not looped: effects.md §14.2); flame hits `.FireHit` → `flame_thrower_fire_hit.wav`; airblast `.AirBurstAttack` → `flame_thrower_airblast.wav` | – |
 | projectile | bounce `Weapon_Grenade_Pipebomb.Bounce` → `grenade_impact.wav` (74 dB, pitch 96–100); explosion: Open questions 18 | explosion: Open questions 18 | – | – |
 
 Explosion candidates: `Weapon_Grenade_Pipebomb.Explode` → random of
@@ -929,6 +929,48 @@ encrypted), as weapons.md Open questions 13.
 
 Drawn as hud.md §3.6 (crit kills with the `crit` cell behind; a headshot
 kill is a crit kill).
+
+#### 9.6 The Grenade Launcher's drum (`procedural_chamber`, measured)
+
+Measured 2026-11-21: tools/tf2ref `gl_drum.tf2` (the Demoman's own view,
+60 frames a second, two shots then a reload of both) and
+`gl_drum_bot.tf2` (a puppet Demoman seen from 35 units, four shots and
+the reload), the model files, and the server's view model read every
+tick through VScript.
+
+- **The drum** is the 1,998 vertices of
+  `c_grenadelauncher.mdl` bound wholly to `procedural_chamber`: a
+  cylinder of radius about 5.3 round the bone's own z axis (z 6.4 to
+  14.0 in the model's space, the barrel's direction, +z toward the
+  muzzle) with **six chambers, 60° apart** (its outline repeats every
+  60°). `procedural_chamber` is the child of `weapon_bone_2` with no
+  offset and no turn; `weapon_bone_2` (no vertices of its own) sits at
+  (0, 0.05, 9.43) in the model's space, on the drum's axis.
+- **Code, not animation.** The model has no bone controller and no
+  procedural rule for the bone, and the arms' sequences (`g_draw`,
+  `g_idle`, `g_fire`, `g_reload_start`, `_loop`, `_end`) keep
+  `weapon_bone_2` exactly on `weapon_bone_1` every tick: no sequence
+  turns the drum. The turn is the game's own, on top of the animated
+  pose, and only on the owner's view model.
+- **Per shot, first person:** the drum turns **one chamber, 60°,
+  smoothly**, in the direction that makes the chambers on the side
+  facing the Demoman rise: **clockwise seen from behind the gun**
+  (looking toward the muzzle). It starts in the frame after the shot
+  and settles about 8 frames later (0.13–0.15 s after the shot): slow
+  at first, fastest about halfway, slow into the end (read from the
+  pictures, both shots alike; the exact curve is Open questions 24).
+  Because the drum repeats every 60°, it looks the same before and
+  after each shot, so the turn may be kept as a 0–60° angle that starts
+  again at 0 for the next shot.
+- **Reload, first person:** no turn. Through each grenade's insertion
+  and between grenades the chamber mouths seen past the back plate
+  stay where they are (any whole-chamber jump would look the same, so
+  none is needed).
+- **Draw and idle:** no turn.
+- **Third person (what others see):** the drum never turns. In the
+  0.2 s after each of a puppet's shots and through its whole reload the
+  chambers stay put against the frame; only the owner's view model
+  turns its drum.
 
 ### 10. Worked damage
 
@@ -1145,6 +1187,10 @@ f = 1 unless said, 66.7 tick (0.015 s).
 | 49 | Syringe Gun, hold attack, clip 40 | – | 40 needles in 4.095 s, then reload 1.305 s |
 | 50 | Syringe fired level, spread off | – | flies at 1000; drops 120 t² units below its line after t seconds (240 / 2) |
 | 51 | Any of the eight | switch to it | first attack possible 0.5 s later |
+| 52 | Grenade Launcher, own view, drum at rest | one shot | the drum turns 60° clockwise (seen from behind) about `procedural_chamber`'s z axis, starting the frame after the shot, smooth, done 0.13–0.15 s after it; looks as before the shot afterwards |
+| 53 | Grenade Launcher, own view | two shots 0.8 s apart | two separate 60° turns, one after each shot |
+| 54 | Grenade Launcher, own view, clip 2 of 4 | reload both | no drum turn at any time in the reload |
+| 55 | Grenade Launcher, another player watching | shots and a reload | the drum never turns on the world model |
 
 Probe checks (live dedicated server, bots; never ports 27015/27030):
 
@@ -1251,3 +1297,9 @@ Probe checks (live dedicated server, bots; never ports 27015/27030):
     the angular cap, but a fully charged sticky (2400 forward + 200 up)
     is over the linear one: whether it leaves at 2000 is unmeasured
     (VScript: a 4 s charge, read the physics velocity the first tick).
+24. **The drum's turn curve** (§9.6): read from 60 fps pictures of a
+    kicking view model, so only "smooth over about 8 frames, slow at
+    both ends" is known, not its exact function of time nor whether a
+    second shot inside a running turn adds to it (shots are 0.6 s
+    apart, so it can't happen with the stock gun). A matched pair
+    (`gl_drum.tf2` against ours) settles the curve.

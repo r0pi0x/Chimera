@@ -1,0 +1,67 @@
+# Ours for gl_drum.tf2: the Grenade Launcher's drum in the Demoman's own
+# view (specs/tf2/weapons_more.md 9.6), one shot and a picture every 1/60 s
+# of game time from it for 20 frames (TF2's turn settles by its 9th).
+# Compare the drum against the frame's top strap; TF2's frames are
+# `gld_NNN` from its shot (frame 9 there is the shot).
+#   ultimate_gun_game --offscreen 1024x768 +volume 0 +mat_hdr_level 2 +mat_colorcorrection 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/gl_drum.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+cl_drawhud 0
+fov_desired 90
+tf2_viewmodel_fov 54
+rung tf2:tf_weapon_grenadelauncher
+wait 2
+wait_for idle 3000
+wait 60
+setang 0 90 0
+wait 90
+shot gld_idle
+host_timescale 0.02
+wait 3
++attack
+wait_for shot 3000
+-attack
+gwait 0.0167
+shot gld_f01
+gwait 0.0167
+shot gld_f02
+gwait 0.0167
+shot gld_f03
+gwait 0.0167
+shot gld_f04
+gwait 0.0167
+shot gld_f05
+gwait 0.0167
+shot gld_f06
+gwait 0.0167
+shot gld_f07
+gwait 0.0167
+shot gld_f08
+gwait 0.0167
+shot gld_f09
+gwait 0.0167
+shot gld_f10
+gwait 0.0167
+shot gld_f11
+gwait 0.0167
+shot gld_f12
+gwait 0.0167
+shot gld_f13
+gwait 0.0167
+shot gld_f14
+gwait 0.0167
+shot gld_f15
+gwait 0.0167
+shot gld_f16
+gwait 0.0167
+shot gld_f17
+gwait 0.0167
+shot gld_f18
+gwait 0.0167
+shot gld_f19
+gwait 0.0167
+shot gld_f20
+host_timescale 1
