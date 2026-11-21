@@ -615,7 +615,7 @@ pub fn load(mount: &Mount, extra_art: &[String]) -> Option<InstallUi> {
 }
 
 /// The shop item file (display data, attribute_data.md).
-pub const ITEMS_FILE: &str = "attributes/items.txt";
+pub use crate::game::data::attributes::ITEMS_FILE;
 
 /// The display names of the weapons the item file names, by our weapon
 /// id: each `WeaponItem` record's `ItemID` is the weapon record's index

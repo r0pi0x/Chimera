@@ -159,9 +159,12 @@ pub fn definition(caps: &[Capabilities], base: &str, installed: &dyn Fn(&str) ->
 }
 
 /// The sandbox added as `SANDBOX` from the games' parts in `world` (every
-/// gun, not the ladder's draw).
+/// gun, not the ladder's draw; but no record that is no player's,
+/// `auto::drop_not_players`).
 pub fn generate(world: &mut World, base: &str) -> Result<&'static MinigameDef, String> {
-    let caps = minigame::auto::report(world);
+    let mut caps = minigame::auto::report(world);
+    // No NPC, boss, turret or test record (the Change gun list).
+    minigame::auto::drop_not_players(world, &mut caps);
     let games: Vec<&'static str> = caps.iter().map(|c| c.game).collect();
     let installed = chimera_net::minigame_net::installed_by_all(world, &games);
     let melee = melee_weapons(world);

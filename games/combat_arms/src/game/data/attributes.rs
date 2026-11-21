@@ -54,6 +54,8 @@ use crate::game::attachments::ModRecord;
 /// The four files a loader for this spec needs, in-archive paths
 /// ("Where the data sits"), as the mount names them.
 pub const WEAPONS_FILE: &str = "attributes/weapons.txt";
+/// The shop item file (display data, attribute_data.md).
+pub const ITEMS_FILE: &str = "attributes/items.txt";
 pub const SERVER_FILE: &str = "attributes/serverbutes.txt";
 pub const MODELS_FILE: &str = "attributes/modelbutes.txt";
 pub const MOD_FILE: &str = "attributes/mod.txt";
