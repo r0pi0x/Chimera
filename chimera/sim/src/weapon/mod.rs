@@ -434,6 +434,18 @@ impl Plugin for WeaponPlugin {
             console.archive(AUTORELOAD_KEY);
             console.userinfo(AUTORELOAD_KEY);
         }
+        app.init_resource::<AutoSwitchEmpty>();
+        crate::console::resource_cvar::<AutoSwitchEmpty, u8>(
+            app,
+            AUTOSWITCH_EMPTY_KEY,
+            "1: TF2's Minigun, out of ammo and let go, switches to another weapon by itself; 0 (the default): it stays in hand (sent to the server as userinfo).",
+            |u| &mut u.0,
+        );
+        {
+            let mut console = app.world_mut().resource_mut::<Console>();
+            console.archive(AUTOSWITCH_EMPTY_KEY);
+            console.userinfo(AUTOSWITCH_EMPTY_KEY);
+        }
         app.init_resource::<drop::AutoWeaponSwitch>();
         crate::console::resource_cvar::<drop::AutoWeaponSwitch, u8>(
             app,
@@ -1350,6 +1362,16 @@ pub struct AutoReload(pub u8);
 
 /// The userinfo key of `AutoReload`.
 pub const AUTORELOAD_KEY: &str = "cl_autoreload";
+
+/// `cl_autoswitch_empty` (TF2's Minigun, specs/tf2/minigun.md 3.3; ours is
+/// 0, the user's choice): the local player's choice whether an empty gun
+/// in hand switches to another weapon by itself, sent as its userinfo
+/// (`core::UserInfo`); a character with none (a bot) stays on it.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AutoSwitchEmpty(pub u8);
+
+/// The userinfo key of `AutoSwitchEmpty`.
+pub const AUTOSWITCH_EMPTY_KEY: &str = "cl_autoswitch_empty";
 
 /// In `AltModes` mode `.0` the trigger is automatic, whatever its own
 /// `automatic` and `per_press` (Combat Arms' continuous fire on a

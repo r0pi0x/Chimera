@@ -279,6 +279,7 @@ fn pistol_and_magnum_flashes_smoke() {
             owner: p,
             kind: ViewModelEventKind::MuzzleFlashOf { attachment: 0, kind: kind.into() },
             others: None,
+            reload: false,
         });
     };
     let puffs = |sim: &Sim| drawn(sim, flashes::SMOKE);

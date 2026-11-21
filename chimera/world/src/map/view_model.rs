@@ -302,6 +302,9 @@ pub struct ViewModelEvent {
     /// (`ViewAnimRules::others_reload`): after this many seconds. None:
     /// the owner alone does.
     pub others: Option<f32>,
+    /// An event of a reload's sequence (one a reload started: whole clip,
+    /// or a one-at-a-time reload's start, loop or end).
+    pub reload: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -112,7 +112,9 @@ fn setup() -> (Sim, Entity, Entity) {
     (sim, p, w)
 }
 
-/// A Heavy with a Shotgun drawn before the Minigun (its previous weapon).
+/// A Heavy with a Shotgun drawn before the Minigun (its previous weapon),
+/// the player's `cl_autoswitch_empty` on (TF2's own behavior, which these
+/// cases measure; ours defaults to 0).
 fn setup_with_previous() -> (Sim, Entity, Entity, Entity) {
     let mut sim = sim();
     let (p, s) = holding(&mut sim, greybox::SPAWNS[0], SHOTGUN);
@@ -120,6 +122,8 @@ fn setup_with_previous() -> (Sim, Entity, Entity, Entity) {
     sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(w);
     sim.seconds(1.0);
     assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(w));
+    let info = chimera_core::core::UserInfo([("cl_autoswitch_empty".to_string(), "1".to_string())].into_iter().collect());
+    sim.app.world_mut().entity_mut(p).insert(info);
     (sim, p, w, s)
 }
 

@@ -24,7 +24,8 @@
 //!   held a moment past `now` otherwise), as the original shoots inside
 //!   that step.
 //! - **Out of ammo** (minigun.md 3): attack2 does nothing (no spin), attack
-//!   from idle nothing; with nothing held, an empty gun whose times have
+//!   from idle nothing; with the player's `cl_autoswitch_empty` 1 (ours
+//!   defaults to 0: it stays in hand) and nothing held, an empty gun whose times have
 //!   passed, idle and past its spool-down switches to the previous weapon
 //!   if that has ammo, else to the one with the most `SwitchWeight` (then
 //!   the lowest slot) that has; an empty Minigun is `Unselectable`.
@@ -73,13 +74,13 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
 
 use chimera_sim::weapon::{
-    CHAN_WEAPON, DamageEffect, HeldState, Hitscan, HolsterLocked, Inventory, Magazine, NetPart, SpreadShape, SwitchWeight,
+    AUTOSWITCH_EMPTY_KEY, CHAN_WEAPON, DamageEffect, HeldState, Hitscan, HolsterLocked, Inventory, Magazine, NetPart, SpreadShape, SwitchWeight,
     Unselectable, Weapon, WeaponEvent, WeaponEventKind, WeaponState, view_anim::ViewPose,
 };
 
 use super::damage::U;
 use crate::{
-    core::{FirstTimePredicted, Health, Intent, SimClock},
+    core::{FirstTimePredicted, Health, Intent, SimClock, UserInfo},
     map::{PlaySound, StopSound, interp::NetDrawn},
 };
 
@@ -461,7 +462,7 @@ fn has_ammo(mag: Option<&Magazine>) -> bool {
 /// Each minigun's tick (module doc).
 #[allow(clippy::type_complexity)]
 pub fn spin(
-    mut owners: Query<(Entity, &mut Intent, &mut Inventory, Option<&Health>), Without<NetDrawn>>,
+    mut owners: Query<(Entity, &mut Intent, &mut Inventory, Option<&Health>, Option<&UserInfo>), Without<NetDrawn>>,
     mut guns: Query<(
         Entity,
         &mut Tf2Minigun,
@@ -482,7 +483,9 @@ pub fn spin(
     mut commands: Commands,
 ) {
     let now = clock.now;
-    for (owner, mut intent, mut inv, health) in &mut owners {
+    for (owner, mut intent, mut inv, health, info) in &mut owners {
+        // `cl_autoswitch_empty` (the player's, sent as userinfo; off without one).
+        let auto_switch = info.and_then(|i| i.flag(AUTOSWITCH_EMPTY_KEY)) == Some(true);
         let alive = health.is_none_or(|h| h.current > 0.0);
         for w in inv.weapons.clone() {
             let Ok((we, mut gun, mut weapon, mut st, mut dmg, scan, locked, unselectable, pose, held)) = guns.get_mut(w) else { continue };
@@ -530,7 +533,8 @@ pub fn spin(
             }
             // The empty auto-switch (minigun.md 3.3): idle, empty, its
             // times and spool-down passed, nothing held.
-            if stepped.released
+            if auto_switch
+                && stepped.released
                 && !has_ammo(mag)
                 && gun.state == State::Idle
                 && now + SLACK >= st.next_primary.max(gun.next_alt).max(gun.spool_until)

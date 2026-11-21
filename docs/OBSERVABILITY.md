@@ -505,7 +505,12 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 \
   sounds (`RoundStartSound`). A start cue before the load's end is a bug
   (`map::LocalMapLoad`; tests `chimera_net` `local_load`, `chimera_sim`
   `minigame::the_moments_wait_for_the_local_load`).
-  Not recorded: voice chat (its own output). Test: `cargo test -p
+  Not recorded: voice chat (its own output). Every game sound asked
+  for: `RUST_LOG=chimera_present::audio=debug` (`game sound <entry>`);
+  one that can't be heard is a warning, once per entry and map (`sound
+  <entry>: not in this map's sound table` or `no wave of it could be
+  read`: a file missing from the install or the asset store; a
+  view-model event's: `view-model sound <entry>: ...`). Test: `cargo test -p
   chimera_present --features dev --test it audio_record`.
 - At the end an offscreen run prints its frame times over the whole
   run: frame (wall, `First` to `First`), main world and render world ms

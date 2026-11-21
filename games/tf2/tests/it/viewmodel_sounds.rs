@@ -17,8 +17,9 @@ use chimera_world::{
     greybox,
     harness::Sim,
     map::{
-        MapBone, MapModel, MapViewModel, OthersSound, PlaySound, ViewModels,
+        MapBone, MapModel, MapViewModel, OthersSound, PlaySound, SoundLevel, ViewModels,
         anim::{AnimEvent, AnimSet, Animation, Sequence},
+        sound::{Interval, MapSoundEntry, MapSounds, SoundBank},
     },
 };
 use tf2::game::weapons::{BAT, PISTOL_SCOUT, SHOTGUN};
@@ -77,15 +78,15 @@ fn scout_pistol() -> MapViewModel {
 
 /// Per tick from the reload's start: the sounds this machine played
 /// (entry) and the world reload sounds written (`OthersSound`: by, entry).
-struct Heard {
-    played: Vec<(usize, String)>,
-    others: Vec<(usize, Entity, String)>,
+pub(crate) struct Heard {
+    pub(crate) played: Vec<(usize, String)>,
+    pub(crate) others: Vec<(usize, Entity, String)>,
 }
 
 /// `p` reloads its gun `w` from `clip` rounds (reload pressed on tick
 /// 0) for `ticks`; `fire(sim, t)` holds attack on tick t (and may do
 /// more).
-fn reload(sim: &mut Sim, p: Entity, w: Entity, clip: u32, ticks: usize, mut fire: impl FnMut(&mut Sim, usize) -> bool) -> Heard {
+pub(crate) fn reload(sim: &mut Sim, p: Entity, w: Entity, clip: u32, ticks: usize, mut fire: impl FnMut(&mut Sim, usize) -> bool) -> Heard {
     let world = sim.app.world();
     let mut play = world.resource::<Messages<PlaySound>>().get_cursor_current();
     let mut others = world.resource::<Messages<OthersSound>>().get_cursor_current();
@@ -103,7 +104,7 @@ fn reload(sim: &mut Sim, p: Entity, w: Entity, clip: u32, ticks: usize, mut fire
     heard
 }
 
-fn ticks_of(list: &[(usize, String)], entry: &str) -> Vec<usize> {
+pub(crate) fn ticks_of(list: &[(usize, String)], entry: &str) -> Vec<usize> {
     list.iter().filter(|(_, e)| e == entry).map(|(t, _)| *t).collect()
 }
 
@@ -182,3 +183,34 @@ fn a_shell_reloads_world_reload_per_shell_4() {
     assert_eq!(sim.app.world().get::<Magazine>(w).unwrap().clip, 6);
 }
 
+
+/// The owner's reload event whose entry has no wave here (its file
+/// missing from the asset store: the Pistol's set published before
+/// `ClipIn` joined it, so a served Engineer heard no reload, 2026-11-21)
+/// plays the gun's world reload in its place, a reload event that plays
+/// stays as it is, and the world reload still goes to the others at the
+/// start.
+#[test]
+fn a_reload_event_without_waves_plays_the_world_reload_instead() {
+    let (mut sim, p, w) = scout(true);
+    let entry = |waves: Vec<usize>| MapSoundEntry {
+        waves,
+        volume: Interval::fixed(1.0),
+        pitch: Interval::fixed(100.0),
+        level: SoundLevel::Db(75.0),
+        channel: 0,
+        dry: false,
+    };
+    let mut sounds = MapSounds::default();
+    sounds.entries.insert(RELOAD_SCOUT.to_lowercase(), entry(vec![0]));
+    sounds.entries.insert(CLIP_IN.to_lowercase(), entry(Vec::new()));
+    sounds.entries.insert(WORLD_RELOAD.to_lowercase(), entry(vec![1]));
+    sim.app.insert_resource(SoundBank(Arc::new(sounds)));
+    let h = reload(&mut sim, p, w, 3, 80, |_, _| false);
+    let scout = ticks_of(&h.played, RELOAD_SCOUT);
+    assert!(scout.len() == 1 && (2..=3).contains(&scout[0]), "ReloadScout at {scout:?}");
+    assert!(ticks_of(&h.played, CLIP_IN).is_empty(), "no wave, not asked for: {:?}", h.played);
+    let instead = ticks_of(&h.played, WORLD_RELOAD);
+    assert!(instead.len() == 1 && (39..=40).contains(&instead[0]), "the world reload at ClipIn's time: {instead:?}");
+    assert_eq!(h.others, vec![(0, p, WORLD_RELOAD.to_string())]);
+}

@@ -3461,6 +3461,19 @@ dithered fade bands. Left:
   moment they load in. For now a local "Developer mode" switch in
   Options covers the developer UI (the component gallery).
 
+- **Agent-driven setup (user idea, 2026-11-21; backlog only, no plan
+  yet).** Let a player's own AI model set the game up from plain words,
+  e.g. "gun game with only weapons from MW2, Half-Life 2 and Halo, only
+  on Halo maps, no grenades": the agent builds the match configuration
+  (games, guns rules, maps, rungs) and injects it into the running game.
+  Possible shape: a local, opt-in, token-protected control interface (an
+  MCP server over the console's data-driven commands and settings), and
+  a "Copy prompt for your AI" button that describes the actions. Never
+  gameplay input in online matches (no aim, move or fire); AI players
+  only offline or where the host allows, marked in the lobby. Builds on
+  the data-driven settings (each option declares itself) and the host
+  guns-picker rules.
+
 Counts are from de_dust2's entity lump and static prop lump.
 
 - **Combat Arms world objects, what item 23 left** (docs/plans/active/

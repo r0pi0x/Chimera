@@ -128,12 +128,38 @@ Captured imagery stays in scratch, never in the repo.
 6. Water explosions, stickies; TF2's crosshair (UGG's HUD by design).
    Crits are off (n/a).
 7. (Done, pass 5: the test compared mixed-case wave names.)
-8. The asset service's `players` set needs republishing (by the user)
-   to carry rockettrail.pcf, stickybomb.pcf, nailtrails.pcf and
-   firstperson_weapon_fx.pcf (the crit glow, with its materials
-   `effects/electric1` and `effects/sc_softglow`).
+8. (Done, 2026-11-21: the asset service's `players` and `weapon/` sets
+   republished with the particle files, the crit glow's materials, the
+   sniper dots, `crit_power.wav`, the ricochets and the Pistol's
+   view-model sounds; docs/playtest-hosting.md, "Publishing the game
+   files".)
+9. (Done, 2026-11-21, the same republish: the view-model sounds in TF2's
+   `weapon/tf_weapon_pistol_scout`, `tf_weapon_shotgun_primary` and
+   `tf_weapon_grenadelauncher` and CS:S's `weapon/awp`; the TMP's
+   `Weapon_TMP.Deploy` has no wave, so `weapon/tmp` is unchanged.)
 
 ## Log
+
+### The Pistol's reload unheard when served (tf2-pistol-sound, 2026-11-21)
+
+- **Cause** (measured in Ultimate Gun Game's sandbox, offscreen, the
+  install): the event path works: the Scout's arms play `ReloadScout`
+  and `ClipIn` at their times, the Engineer's (`pstl_reload`) `ClipIn`
+  alone, a draw its `Draw`/`Draw2`. But the Engineer's whole reload is
+  `Weapon_Pistol.ClipIn`, which joined the Pistol's set with the event
+  change; a store published before it holds the entry (the sound
+  scripts) without its wave, so a served Engineer heard nothing and a
+  served Scout half of it. Silently: playback skipped an entry with no
+  wave or none at all.
+- **Fix**: playback says once per entry and map why a sound asked for
+  isn't heard (`audio::sound::unheard_warning`: not in the table, or no
+  wave read); an owner's view-model sound event without a wave says so
+  (`view_anim::unplayable_view_sound`) and, in a reload's sequence
+  (`ViewModelEvent::reload`), plays the gun's world reload in its place.
+  Tests: `viewmodel_sounds::a_reload_event_without_waves_plays_the_world_reload_instead`,
+  `heavy::view_sounds` (the install's own view models and sound table,
+  Scout and Engineer, and the Engineer without `ClipIn`'s wave). Open
+  question 9 is the republish.
 
 ### CS:S and HL2:DM on the view models' sound events (css-vm-sounds, 2026-11-20)
 
@@ -717,6 +743,10 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   "Auto reload (TF2)"), default 0 by the user's choice (TF2's own built-in
   default is 1: `cl_autoreload 0` then reads `( def. "1" )` in its
   console); a character without userinfo (a bot) doesn't auto-reload.
+- `cl_autoswitch_empty` likewise (the Party tab's "Auto switch when empty
+  (TF2)"), default 0 by the user's choice: an empty Minigun let go of
+  switches away (minigun.md 3.3, 77 ticks after the wind-down) only with
+  it 1; off, it stays in hand. Manual switching is unaffected.
 - The Minigun's barrel spun in nothing at first: the bone merge folded the
   `c_minigun`'s `barrel` into the arms' `weapon_bone`, so there was no
   bone to turn. `map::merge_keeping` keeps named weapon bones as joints of
