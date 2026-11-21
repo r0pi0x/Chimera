@@ -33,6 +33,8 @@
 # SCCACHE_BIN (the sccache to use), AGENT_INCREMENTAL=1|0 (incremental builds
 # on or off; default on in a slot only), AGENT_NO_MOLD=1 (in a slot, link
 # with rustc's default linker instead of mold).
+# It also sets TZ=UTC, so commits and rebases made in the shell are dated in
+# UTC as the pre-push hook requires.
 
 _agent_env_init() {
   # Non-login shells (agent tool sandboxes) often lack these; the user bus needs them.
@@ -62,6 +64,9 @@ _agent_env_init() {
   ) 5>"$dir/lock" || return 1
   export MAKEFLAGS="--jobserver-auth=fifo:$fifo -j$jobs"
   export AGENT_ENV=1
+  # Commits and rebases in agents' shells get UTC dates (CLAUDE.md, "Commit
+  # identity"; a rebase without it was refused by the pre-push hook).
+  export TZ=UTC
   # Agents' game runs never register invite links on the desktop
   # (chimera_client::client::link_handler).
   export CHIMERA_NO_LINK_HANDLER=1

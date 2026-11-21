@@ -106,11 +106,21 @@ cargo run --features dev -- --help               # screenshot, spawn, look optio
   `cargo nextest run` prints failing tests only (`.config/nextest.toml`).
   For a doc, read [docs/agent-index.md](docs/agent-index.md) for the line each
   section starts at and open that section, not the file.
-- **After pushing**, `tools/post-push-tests.sh` runs everything the push can
-  affect, heavy tests too, those needing the installs with the main
-  checkout's local config (`CHIMERA_CONFIG`; run by hand in another
-  checkout, set it yourself or they skip with a note). Available; not
-  required of contributors.
+- **Before committing**, `.githooks/pre-commit --worktree` runs what the
+  commit hook will (the affected tests' check and the changed crates' fast
+  tier) on your working tree and stamps the pass; a commit of that exact
+  tree then skips them and says so. Prefer it to hand-picked broad runs.
+- **After pushing**, `tools/post-push-tests.sh --bg --note "<branch or
+  task>"` runs everything the push can affect, heavy tests too, those
+  needing the installs with the main checkout's local config
+  (`CHIMERA_CONFIG`; run by hand in another checkout, set it yourself or
+  they skip with a note), detached. Don't wait for it: a FAIL is written to
+  `.claude/post-push/fails/` and `.claude/post-push/inbox`, which the
+  orchestrating session watches. Available; not required of contributors.
+- **Waiting** for a file, a process or a condition: `tools/wait-for <what>
+  --file F --match RE` (or `--pid N`, `-- <command>`), never a hand-written
+  `until ...; sleep` loop: it has a timeout, ends with your shell, and its
+  waits are logged for `tools/agent-timing`.
 
 ## Definition of done
 
@@ -118,7 +128,8 @@ cargo run --features dev -- --help               # screenshot, spawn, look optio
 runner (a test machine may come later), so this is on you: run the
 affected tests for what you changed (Linux: `cargo run -q -p repo_checks
 --bin affected -- --base main` lists them and the pre-commit hook runs
-their fast tier; Windows: `.\scripts\affected-tests.ps1 -Base origin/main`),
+their fast tier; `.githooks/pre-commit --worktree` runs what the hook
+will and lets the commit reuse the pass; Windows: `.\scripts\affected-tests.ps1 -Base origin/main`),
 and add a scenario test for new behaviour. A guideline, not enforced
 beyond the hooks: say in the PR what you ran.
 

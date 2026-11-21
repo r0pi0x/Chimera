@@ -62,6 +62,7 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
 done
 if [ "$bad" = 1 ]; then
     echo "pre-push: fix the commits above (TZ=UTC and the repo-local identity; remove personal traces), then amend/rebase them; not pushing." >&2
+    echo "pre-push: dates only (a rebase run without TZ=UTC): \`TZ=UTC git rebase --force-rebase origin/main\` rewrites the committer dates in UTC (add --reset-author-date when the author dates are off too). Source tools/agent-env.sh first: it sets TZ=UTC for agents' shells." >&2
     exit 1
 fi
 if [ "$pushing" = 1 ]; then
@@ -78,7 +79,7 @@ if [ "$pushing" = 1 ]; then
         echo "pre-push: the repository checks fail (log: target/pre-push.log); not pushing." >&2
         exit 1
     fi
-    echo "pre-push: pushed untested beyond that: run tools/post-push-tests.sh now (it tests the pushed main in .claude/slots/post-push)." >&2
+    echo "pre-push: pushed untested beyond that: start \`tools/post-push-tests.sh --bg --note \"<branch or task>\"\` now and don't wait for it (it tests the pushed main in .claude/slots/post-push; a FAIL goes to .claude/post-push/inbox)." >&2
 fi
 
 # Keep this clone's build folder from growing without bound: cargo never

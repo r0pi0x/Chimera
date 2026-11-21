@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Wait for one thing, named, with a timeout, and log how long it took.
+# Agents use this instead of hand-written `until ...; sleep` loops, which
+# had no timeout and outlived their agents for days (18 were killed on
+# 2026-11-21), and whose waits tools/agent-timing couldn't attribute.
+#
+#   tools/wait-for <label> [--timeout 20m] [--every 5] --file F [--match RE]
+#   tools/wait-for <label> [--timeout 20m] [--every 5] --pid N
+#   tools/wait-for <label> [--timeout 20m] [--every 5] -- <command...>
+#
+# --file: until F exists (and, with --match, has a line matching the
+# extended regex RE); --pid: until process N is gone; -- <command>: until
+# the command succeeds (run once per poll). <label> says what for, in a few
+# words ("build of cs_source", "server up", "capture frames"); it is what
+# the timing report shows. The timeout (default 20m; s/m/h suffixes; at
+# most 2h) ends it with exit 124. It also ends, exit 125, as soon as the
+# shell that started it is gone (an agent's tool call that ended), so it
+# never outlives its agent. Exit 0 when the thing happened.
+#
+# Each wait is logged to <git common dir>/agent-timing/waits.log (UTC
+# start, seconds, outcome, label, checkout), the newest 2000 lines kept
+# (CHIMERA_WAIT_LOG: another file).
+# Don't use it for post-push tests: nobody waits for those
+# (tools/post-push-tests.sh --bg).
+set -u
+label=${1:-}
+[ -n "$label" ] && [ "${label#-}" = "$label" ] || { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+shift
+timeout=20m every=5 file= match= pid=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --timeout) timeout=$2; shift 2 ;;
+        --every) every=$2; shift 2 ;;
+        --file) file=$2; shift 2 ;;
+        --match) match=$2; shift 2 ;;
+        --pid) pid=$2; shift 2 ;;
+        --) shift; break ;;
+        *) echo "wait-for: unknown option $1" >&2; exit 2 ;;
+    esac
+done
+secs() { case "$1" in *h) echo $(( ${1%h} * 3600 )) ;; *m) echo $(( ${1%m} * 60 )) ;; *s) echo "${1%s}" ;; *) echo "$1" ;; esac; }
+limit=$(secs "$timeout") || exit 2
+[ "$limit" -gt 7200 ] && limit=7200
+if [ -z "$file" ] && [ -z "$pid" ] && [ $# = 0 ]; then
+    echo "wait-for: say what to wait for: --file, --pid or -- <command>" >&2
+    exit 2
+fi
+check() {
+    if [ -n "$file" ]; then
+        [ -e "$file" ] || return 1
+        [ -z "$match" ] || grep -qE -- "$match" "$file" 2>/dev/null || return 1
+    fi
+    if [ -n "$pid" ]; then kill -0 "$pid" 2>/dev/null && return 1; fi
+    if [ $# -gt 0 ]; then "$@" >/dev/null 2>&1 || return 1; fi
+    return 0
+}
+parent=$PPID
+# The parent is gone when we were re-parented (Linux: /proc) or it no
+# longer answers kill -0 (elsewhere).
+orphaned() {
+    if [ -r "/proc/$$/stat" ]; then
+        local s; s=$(cat "/proc/$$/stat" 2>/dev/null) || return 1
+        s=${s##*) }; set -- $s
+        [ "$2" != "$parent" ]
+    else
+        ! kill -0 "$parent" 2>/dev/null
+    fi
+}
+start=$(date +%s)
+start_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+outcome=done
+code=0
+until check "$@"; do
+    if [ $(( $(date +%s) - start )) -ge "$limit" ]; then outcome=timeout; code=124; break; fi
+    if orphaned; then outcome=orphaned; code=125; break; fi
+    sleep "$every"
+done
+took=$(( $(date +%s) - start ))
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+log=${CHIMERA_WAIT_LOG:-}
+if [ -z "$log" ] && common=$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+    log=$common/agent-timing/waits.log
+fi
+if [ -n "$log" ] && mkdir -p "$(dirname "$log")" 2>/dev/null; then
+    printf '%s\t%s\t%s\t%s\t%s\n' "$start_utc" "$took" "$outcome" "$label" "$(basename "$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || echo -)")" >>"$log"
+    if [ "$(wc -l <"$log")" -gt 2500 ]; then
+        tail -n 2000 "$log" >"$log.$$" && mv -f "$log.$$" "$log"
+    fi
+fi
+case $outcome in
+    done) echo "wait-for: $label: after ${took}s" >&2 ;;
+    timeout) echo "wait-for: $label: gave up after ${took}s (--timeout $timeout)" >&2 ;;
+    orphaned) echo "wait-for: $label: the shell that started it is gone; stopped after ${took}s" >&2 ;;
+esac
+exit $code

@@ -16,15 +16,49 @@
 # CHIMERA_COMMIT_TESTS=affected runs every affected package's fast tier
 # (the old behaviour); =all the whole fast tier; =0 skips it (the old
 # name, MASHUP_COMMIT_TESTS, still works).
+#
+# Run it yourself before committing, on the working tree:
+#
+#   .githooks/pre-commit --worktree
+#
+# selects from every change against HEAD (staged, unstaged and untracked
+# files), runs the same checks and tests, and on a pass records a stamp.
+# The hook itself stamps its passes too. A commit whose working tree is
+# exactly the one a stamp passed on (the tracked files' tree, the
+# untracked files' names, sizes and times), with the same toolchain,
+# mode, features and CHIMERA_* settings, and whose selection the stamp's
+# covers, is not tested again: the hook says so and which stamp. Any
+# difference runs the tests as before (the hook has always tested the
+# working tree, not the index alone: the stamp checks the same thing).
+# Stamps: <git common dir>/test-stamps, the newest 100 kept.
+# CHIMERA_COMMIT_STAMPS=0 ignores them.
+#
 # In an agent checkout (.claude/worktrees, .claude/slots) cargo runs with
 # tools/agent-env.sh's settings, as the agents' own builds do, so the
 # hook reuses their build instead of making a second one.
 # Enable once per clone: git config core.hooksPath .githooks
 # Skip in an emergency with: git commit --no-verify
 mode=${CHIMERA_COMMIT_TESTS:-${MASHUP_COMMIT_TESTS:-changed}}
-[ "$mode" = 0 ] && exit 0
-if [ -z "$(git diff --cached --name-only)" ]; then
-    exit 0
+worktree=0
+[ "${1:-}" = --worktree ] && worktree=1
+[ "$mode" = 0 ] && [ "$worktree" = 0 ] && exit 0
+cd "$(git rev-parse --show-toplevel)" || exit 1
+if [ "$worktree" = 1 ]; then
+    # Every change against HEAD: tracked (staged or not), deleted and
+    # untracked files.
+    mapfile -t changed < <({ git diff HEAD --name-only; git ls-files --others --exclude-standard; } | sort -u)
+    if [ "${#changed[@]}" = 0 ]; then
+        echo "pre-commit --worktree: no changes against HEAD; nothing to test." >&2
+        exit 0
+    fi
+    changes=(--files "${changed[@]}")
+    who="pre-commit --worktree"
+else
+    if [ -z "$(git diff --cached --name-only)" ]; then
+        exit 0
+    fi
+    changes=(--staged)
+    who="pre-commit"
 fi
 case "$PWD" in
     */.claude/worktrees/*|*/.claude/slots/*)
@@ -33,30 +67,98 @@ case "$PWD" in
 esac
 run() { if command -v agent_run >/dev/null 2>&1; then agent_run "$@"; else "$@"; fi; }
 mkdir -p target
+# Each run's time and outcome, for tools/agent-timing (<git common
+# dir>/agent-timing/commit-hook.log, the newest 2000 lines kept).
+started=$(date +%s)
+timing() { # <outcome>
+    local d
+    d=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/agent-timing || return 0
+    mkdir -p "$d" 2>/dev/null || return 0
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(( $(date +%s) - started ))" "$1" "$who" "$(pkgs "${tests:-}" | wc -l)" >>"$d/commit-hook.log"
+    if [ "$(wc -l <"$d/commit-hook.log")" -gt 2500 ]; then
+        tail -n 2000 "$d/commit-hook.log" >"$d/commit-hook.log.$$" && mv -f "$d/commit-hook.log.$$" "$d/commit-hook.log"
+    fi
+}
 log=target/pre-commit.log
-# The staged changes' selection, one argument per line (`affected` prints
-# them so; extra options in "$@"); fails when it can't select (then the
-# whole workspace).
+# The selection, one argument per line (`affected` prints them so; extra
+# options in "$@"); fails when it can't select (then the whole workspace).
 pick() {
-    run cargo run --quiet -p repo_checks --bin affected -- --staged --format cargo "$@" 2>target/pre-commit-affected.txt
+    run cargo run --quiet -p repo_checks --bin affected -- "${changes[@]}" --format cargo "$@" 2>target/pre-commit-affected.txt
 }
 if [ "$mode" = all ]; then
     build=--workspace
     tests=--workspace
-    echo "pre-commit: CHIMERA_COMMIT_TESTS=all: the whole fast tier" >&2
+    echo "$who: CHIMERA_COMMIT_TESTS=all: the whole fast tier" >&2
 elif ! build=$(pick); then
     cat target/pre-commit-affected.txt >&2
-    echo "pre-commit: couldn't select the affected tests; running the whole fast tier." >&2
+    echo "$who: couldn't select the affected tests; running the whole fast tier." >&2
     build=--workspace
     tests=--workspace
 else
-    sed 's/^/pre-commit: /' target/pre-commit-affected.txt >&2
+    sed "s/^/$who: /" target/pre-commit-affected.txt >&2
     if [ "$mode" = affected ]; then
         tests=$build
     elif ! tests=$(pick --direct --quiet); then
         tests=$build
     fi
 fi
+
+# --- Pass stamps -----------------------------------------------------------
+dependents=${CHIMERA_COMMIT_DEPENDENTS:-check}
+stamps=$(git rev-parse --path-format=absolute --git-common-dir)/test-stamps
+# The working tree as tested: the tracked files' tree (from a scratch copy
+# of the index, so neither the index nor the object store of untracked
+# files is touched) and the untracked files' names, sizes and times.
+tree_key() {
+    local idx tree
+    idx=$(mktemp) || return 1
+    cp "${GIT_INDEX_FILE:-$(git rev-parse --git-path index)}" "$idx" 2>/dev/null || { rm -f "$idx"; return 1; }
+    tree=$(GIT_INDEX_FILE=$idx git add -u . 2>/dev/null && GIT_INDEX_FILE=$idx git write-tree) || { rm -f "$idx"; return 1; }
+    rm -f "$idx"
+    {
+        echo "tree $tree"
+        git ls-files --others --exclude-standard -z | xargs -0 -r stat -c '%n %s %Y' 2>/dev/null | sort
+        echo "features dev; fast tier (--skip heavy::); dependents $dependents"
+        rustc -vV 2>/dev/null
+        cargo -V 2>/dev/null
+        env | grep -E '^(CHIMERA|MASHUP)_' | grep -vE '^(CHIMERA|MASHUP)_(COMMIT_TESTS|COMMIT_STAMPS)=' | sort
+    } | git hash-object --stdin
+}
+# The packages a selection names (`--workspace`: everything).
+pkgs() { printf '%s\n' "$1" | awk '/^--workspace$/ { print "*"; next } p { print; p = 0; next } /^-p$/ { p = 1 }' | sort -u; }
+# Is every package of $1 (a pkgs list) in $2? "*" covers all.
+covered() { grep -qx '\*' <<<"$2" && return 0; [ -z "$(comm -23 <(printf '%s\n' "$1") <(printf '%s\n' "$2"))" ]; }
+key=
+if [ "${CHIMERA_COMMIT_STAMPS:-1}" != 0 ]; then
+    key=$(tree_key) || key=
+fi
+if [ -n "$key" ] && [ -f "$stamps/$key" ]; then
+    want_t=$(pkgs "$tests")
+    want_b=$(pkgs "$build")
+    had_t=$(sed -n 's/^tested //p' "$stamps/$key" | tr ' ' '\n' | sed '/^$/d' | sort -u)
+    had_b=$( { printf '%s\n' "$had_t"; sed -n 's/^checked //p' "$stamps/$key" | tr ' ' '\n'; } | sed '/^$/d' | sort -u)
+    if covered "$want_t" "$had_t" && covered "$want_b" "$had_b"; then
+        echo "$who: this exact working tree already passed these checks and fast tests ($(sed -n 's/^when //p' "$stamps/$key"), stamp $stamps/$key); not running them again (CHIMERA_COMMIT_STAMPS=0 does)." >&2
+        touch "$stamps/$key"
+        timing stamp
+        exit 0
+    fi
+    echo "$who: a stamp for this working tree covers fewer packages; testing." >&2
+fi
+stamp() { # a pass: record it, keep the newest 100
+    [ -n "$key" ] || return 0
+    # Only when nothing changed while the tests ran.
+    [ "$(tree_key)" = "$key" ] || { echo "$who: the working tree changed while testing; no stamp." >&2; return 0; }
+    mkdir -p "$stamps" || return 0
+    {
+        echo "when $(date -u +%Y-%m-%dT%H:%M:%SZ) by $who in $(basename "$PWD")"
+        echo "tested $(pkgs "$tests" | tr '\n' ' ')"
+        [ "$build" != "$tests" ] && echo "checked $(pkgs "$build" | tr '\n' ' ')"
+    } >"$stamps/$key.tmp" && mv -f "$stamps/$key.tmp" "$stamps/$key"
+    # shellcheck disable=SC2012
+    ls -t "$stamps" 2>/dev/null | tail -n +101 | while read -r f; do rm -f "$stamps/$f"; done
+}
+
 set -f
 if [ "$build" != "$tests" ]; then
     IFS='
@@ -64,30 +166,39 @@ if [ "$build" != "$tests" ]; then
     # shellcheck disable=SC2086
     set -- $build
     unset IFS
-    if [ "${CHIMERA_COMMIT_DEPENDENTS:-check}" = build ]; then
-        echo "pre-commit: building the affected tests: $*" >&2
+    if [ "$dependents" = build ]; then
+        echo "$who: building the affected tests: $*" >&2
         if ! run cargo test "$@" --features dev --quiet --no-run >"$log" 2>&1; then
             grep -E "^error" -A6 "$log" | head -30
-            echo "pre-commit: the affected tests don't build (full log: $log); not committing." >&2
+            echo "$who: the affected tests don't build (full log: $log); not committing." >&2
+            timing fail
             exit 1
         fi
     else
-        echo "pre-commit: checking the affected tests: $*" >&2
+        echo "$who: checking the affected tests: $*" >&2
         if ! run cargo check "$@" --features dev --quiet --all-targets >"$log" 2>&1; then
             grep -E "^error" -A6 "$log" | head -30
-            echo "pre-commit: the affected tests don't check (full log: $log; CHIMERA_COMMIT_DEPENDENTS=build builds them); not committing." >&2
+            echo "$who: the affected tests don't check (full log: $log; CHIMERA_COMMIT_DEPENDENTS=build builds them); not committing." >&2
+            timing fail
             exit 1
         fi
     fi
+else
+    : >"$log"
 fi
 IFS='
 '
 # shellcheck disable=SC2086
 set -- $tests
 unset IFS
-echo "pre-commit: running the fast tier of: $*" >&2
+echo "$who: running the fast tier of: $*" >&2
 if ! run cargo test "$@" --features dev --quiet --no-fail-fast -- --skip heavy:: >>"$log" 2>&1; then
     grep -E "panicked|FAILED|^error" "$log" | head -20
-    echo "pre-commit: fast tests failed (full log: $log); not committing." >&2
+    echo "$who: fast tests failed (full log: $log); not committing." >&2
+    timing fail
     exit 1
 fi
+stamp
+timing pass
+[ "$worktree" = 1 ] && echo "$who: passed; stamped (a commit of this exact working tree skips these)." >&2
+exit 0

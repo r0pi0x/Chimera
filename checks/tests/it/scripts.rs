@@ -2,7 +2,7 @@
 //! guards"): `agent-slot.sh trim-incremental` (oldest first, past a limit,
 //! never under a running cargo; a slot's trim takes them before built
 //! crates), `jobserver-heal.sh` (lost tokens put back) and `disk-free.sh`
-//! (the floor). Unix only
+//! (the floor), and `wait-for` (named waits with a timeout, logged). Unix only
 //! (the tools are bash); they run on temporary folders, never the repo's.
 
 #![cfg(unix)]
@@ -219,4 +219,33 @@ fn the_free_space_floor_is_the_smaller_of_the_setting_and_5_percent() {
     // The setting moves it; 0 turns it off.
     assert_eq!(disk_check(40 * gb, 1000 * gb, Some("50")), (false, "50".into()));
     assert!(disk_check(gb, 1000 * gb, Some("0")).0);
+}
+
+/// `tools/wait-for <label> <args...>` with its log in `log`: (exit code, log).
+fn wait_for(label: &str, args: &[&str], log: &Path) -> (i32, String) {
+    let out = Command::new("bash")
+        .arg(repo().join("tools/wait-for"))
+        .arg(label)
+        .args(args)
+        .env("CHIMERA_WAIT_LOG", log)
+        .output()
+        .expect("run wait-for");
+    (out.status.code().unwrap_or(-1), fs::read_to_string(log).unwrap_or_default())
+}
+
+#[test]
+fn wait_for_ends_when_the_thing_happens_or_at_its_timeout_and_logs_both() {
+    let root = temp("wait_for");
+    let log = root.join("waits.log");
+    let file = root.join("ready.txt");
+    fs::write(&file, "starting\nready on port 1234\n").unwrap();
+    let (code, text) = wait_for("server up", &["--every", "1", "--timeout", "10s", "--file", file.to_str().unwrap(), "--match", "ready on port"], &log);
+    assert_eq!(code, 0);
+    assert!(text.contains("\tdone\tserver up\t"), "{text}");
+    let (code, text) = wait_for("never", &["--every", "1", "--timeout", "1s", "--", "false"], &log);
+    assert_eq!(code, 124);
+    assert!(text.contains("\ttimeout\tnever\t"), "{text}");
+    // Nothing to wait for is refused, not an endless wait.
+    assert_eq!(wait_for("nothing", &[], &log).0, 2);
+    fs::remove_dir_all(&root).ok();
 }

@@ -30,7 +30,26 @@
 #    need the games' installs use the main checkout's local config
 #    (CHIMERA_CONFIG set to its chimera.local.toml or mashup.local.toml
 #    when there is one and the caller set none; the file isn't read here).
-# Writes .claude/post-push/<commit>.<UTC time>.<pid>.log (also last.log) and
+# Don't wait for it. Agents start it in the background and finish:
+#
+#   tools/post-push-tests.sh --bg --note "<branch or task, one line>"
+#
+# --bg detaches the run (setsid; it outlives the shell that started it,
+# its output in .claude/post-push/bg.out) and returns at once. --note
+# (or CHIMERA_PUSH_NOTE) records who pushed what in pushes.txt, so a
+# failure names the pushes it may come from. A FAIL is routed to the
+# orchestrator, not to the pusher: the run writes a record,
+# .claude/post-push/fails/<UTC time>-<commit>.md (the failing steps and
+# tests, the commits since the last pass with the pushes' notes, the log,
+# and a brief a fix agent can start from), and appends one line to
+# .claude/post-push/inbox: `FAIL <commit> <time> <record>`; a later PASS
+# after a FAIL appends `FIXED <commit> <time>`. Watch it with
+# `tail -n0 -F .claude/post-push/inbox` (one Monitor for the whole
+# session). CHIMERA_POST_PUSH_ON_FAIL=<command> also runs that command
+# with the record's path (e.g. a desktop notification); nothing by default.
+# CHIMERA_POST_PUSH_OUT moves .claude/post-push (the scripts' tests).
+# Writes .claude/post-push/<commit>.<UTC time>.<pid>.log (also last.log; the
+# newest CHIMERA_POST_PUSH_KEEP_LOGS, default 40, are kept) and
 # a one-line summary to .claude/post-push/last.txt (appended to
 # history.txt), and exits non-zero on a failure. One run at a time: a second
 # waits, and only the newest waiter keeps waiting (older ones exit 0, the
@@ -42,10 +61,40 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 common=$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)
 repo=$(dirname "$common")
 dir=${CHIMERA_POST_PUSH_DIR:-$repo/.claude/slots/post-push}
-out=$repo/.claude/post-push
+out=${CHIMERA_POST_PUSH_OUT:-$repo/.claude/post-push}
 remote=${CHIMERA_POST_PUSH_REMOTE:-origin}
 ref=${CHIMERA_POST_PUSH_REF:-$remote/main}
 mkdir -p "$out"
+bg=0
+note=${CHIMERA_PUSH_NOTE:-}
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --bg) bg=1; shift ;;
+        --note) note=${2:-}; shift 2 ;;
+        --note=*) note=${1#--note=}; shift ;;
+        *) break ;;
+    esac
+done
+# Who pushed what (the note), before anything can make this run step
+# aside for a newer one: a failure lists the pushes in its range.
+if [ -z "${CHIMERA_POST_PUSH_CHILD:-}" ]; then
+    pushed=$(git -C "$here" rev-parse --verify --quiet HEAD) || pushed=
+    branch=$(git -C "$here" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    printf '%s %s %s %s %s\n' "${pushed:-?}" "$(date -u +%Y-%m-%dT%H:%MZ)" "${branch:-?}" "$(basename "$(git -C "$here" rev-parse --show-toplevel 2>/dev/null)")" "${note:--}" >>"$out/pushes.txt"
+    if [ "$(wc -l <"$out/pushes.txt")" -gt 400 ]; then
+        tail -n 200 "$out/pushes.txt" >"$out/pushes.txt.$$" && mv -f "$out/pushes.txt.$$" "$out/pushes.txt"
+    fi
+fi
+if [ "$bg" = 1 ]; then
+    # Detached: its own session, so the starting shell (an agent's tool
+    # call) can end; output appended to bg.out (cut to its last 2000 lines).
+    if [ -f "$out/bg.out" ] && [ "$(wc -l <"$out/bg.out")" -gt 4000 ]; then
+        tail -n 2000 "$out/bg.out" >"$out/bg.out.$$" && mv -f "$out/bg.out.$$" "$out/bg.out"
+    fi
+    CHIMERA_POST_PUSH_CHILD=1 setsid "$here/post-push-tests.sh" "$@" </dev/null >>"$out/bg.out" 2>&1 &
+    echo "post-push: started in the background (pid $!); don't wait for it. The result: $out/last.txt; a FAIL also goes to $out/inbox (the orchestrator watches it)." >&2
+    exit 0
+fi
 mode=${CHIMERA_PUSH_TESTS:-${MASHUP_PUSH_TESTS:-$(tr -d '[:space:]' <"$out/mode" 2>/dev/null)}}
 mode=${mode:-affected}
 # shellcheck source=/dev/null
@@ -175,14 +224,75 @@ if command -v cargo-sweep >/dev/null 2>&1 || [ -x "$HOME/.cargo/bin/cargo-sweep"
 fi
 
 mins=$(( ($(date +%s) - started + 59) / 60 ))
+now=$(date -u +%Y-%m-%dT%H:%MZ)
+prev_result=$(awk '$1 == "PASS" || $1 == "FAIL" { l = $1 } END { print l }' "$out/history.txt" 2>/dev/null)
 if [ -z "$failed" ]; then
-    line="PASS $short $(date -u +%Y-%m-%dT%H:%MZ) ${mins}m tests: ${tests:0:200}"
+    line="PASS $short $now ${mins}m tests: ${tests:0:200}"
     echo "$sha" >"$out/last-pass"
+    [ "$prev_result" = FAIL ] && echo "FIXED $short $now (the last run failed; this one passed)" >>"$out/inbox"
 else
-    line="FAIL $short $(date -u +%Y-%m-%dT%H:%MZ) ${mins}m: $failed (log: $log)"
+    line="FAIL $short $now ${mins}m: $failed (log: $log)"
     grep -E "panicked|FAILED|FAIL \[|^error" "$log" | head -20 >&2
+    # The record a fix agent starts from.
+    mkdir -p "$out/fails"
+    record=$out/fails/$(date -u +%Y%m%dT%H%M%SZ)-$short.md
+    {
+        echo "# post-push FAIL at $short ($now)"
+        echo
+        echo "Failed: $failed"
+        echo "Tested: $(git -C "$repo" rev-parse --short "$base" 2>/dev/null || echo none)..$short ($mins min, CHIMERA_PUSH_TESTS=$mode)"
+        echo "Log: $log"
+        echo
+        echo "## Failing tests and errors"
+        echo
+        echo '```'
+        grep -E '^ *FAIL \[|^test .* FAILED$|^error(\[|:)|panicked at' "$log" | sed 's/^ *//' | awk '!seen[$0]++' | head -40
+        echo '```'
+        echo
+        echo "## Commits in the tested range (newest first)"
+        echo
+        if [ -n "$base" ]; then
+            TZ=UTC git -C "$repo" log --format='- %h %ad %s' --date=format-local:%m-%dT%H:%MZ "$base..$sha" 2>/dev/null | head -40
+            in_range=$(git -C "$repo" rev-list "$base..$sha" 2>/dev/null)
+        else
+            echo "(no base: the full suite ran)"
+            in_range=
+        fi
+        echo
+        echo "## Pushes in that range (pushes.txt: commit, time, branch, checkout, note)"
+        echo
+        if [ -n "$in_range" ]; then
+            tail -n 200 "$out/pushes.txt" 2>/dev/null | while read -r c rest; do
+                case "$in_range" in *"$c"*) echo "- ${c:0:9} $rest" ;; esac
+            done
+        fi
+        echo
+        echo "## Fix brief"
+        echo
+        echo "post-push tests failed on $remote/main at $short: $failed. Take a slot"
+        echo "(\`tools/agent-slot.sh acquire fix-postpush-$short origin/main\`), reproduce the"
+        echo "failing tests above with \`cargo nextest run --features dev -p <crate> -E 'test(<name>)'\`"
+        echo "(or cargo test), find which commit of the range broke them (the pushes' notes"
+        echo "say whose work it was), fix forward, push, and start"
+        echo "\`tools/post-push-tests.sh --bg --note \"fix post-push $short\"\`. Don't wait for it."
+    } >"$record" 2>/dev/null
+    echo "FAIL $short $now $record" >>"$out/inbox"
+    if [ -n "${CHIMERA_POST_PUSH_ON_FAIL:-}" ]; then
+        sh -c "$CHIMERA_POST_PUSH_ON_FAIL \"\$1\"" _ "$record" >/dev/null 2>&1 || true
+    fi
+    # The newest 50 records.
+    # shellcheck disable=SC2012
+    ls -t "$out/fails" 2>/dev/null | tail -n +51 | while read -r f; do rm -f "$out/fails/$f"; done
 fi
 echo "$line" >"$out/last.txt"
 echo "$line" >>"$out/history.txt"
 echo "post-push: $line" >&2
+# Keep the newest logs only (disk is tight); history.txt keeps every result.
+# shellcheck disable=SC2012
+ls -t "$out"/*.log 2>/dev/null | grep -v '/last\.log$' | tail -n +$(( ${CHIMERA_POST_PUSH_KEEP_LOGS:-40} + 1 )) | while read -r f; do rm -f "$f"; done
+# A long inbox is rotated by rename (`tail -F` follows the new file and
+# doesn't replay the old lines).
+if [ "$(wc -l <"$out/inbox" 2>/dev/null || echo 0)" -gt 1000 ]; then
+    mv -f "$out/inbox" "$out/inbox.old"
+fi
 [ -z "$failed" ]

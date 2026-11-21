@@ -271,6 +271,12 @@ first:
 
 ## Progress
 
+2026-11-21: the agents' side (waiting for post-push, the hook re-running
+a pass the agent just ran, wait loops) moved to
+[iteration-speed.md](iteration-speed.md), with its baseline from the
+transcripts (`tools/agent-timing`); the hook now reuses a stamped pass of
+the same working tree (`.githooks/pre-commit --worktree`).
+
 2026-10-30: plan written. Baseline from `fast-tier2.log` (Windows fast
 tier: 129 s wall, 119.6 s tests, 46 binaries, CA 61.9 s) and
 `docs/performance.md` ("Test cycle": commit gate 226 s, full suite

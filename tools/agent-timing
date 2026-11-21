@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""Where agents' time goes, from Claude Code's transcripts (docs/OBSERVABILITY.md
+3e, "Where agents' time goes"; baselines in docs/plans/active/iteration-speed.md).
+
+    tools/agent-timing [--since 7d|2026-11-14] [--dir DIR] [--sessions] [--json]
+
+Reads the subagents' transcripts (`<projects>/<project>/*/subagents/agent-*.jsonl`;
+--sessions adds the top-level sessions) and times each tool call, the model's
+gaps between a tool's result and its next call (thinking and writing), and
+waits: `until`/`while`/`sleep` loops, Monitor calls, tools/wait-for, and idling
+with the turn over until a background command's notification, each
+attributed to what it waits for (wait-for's label; a background command's
+output file it polls; words in the loop). Prints hours per bucket and the
+named waits, and tools/wait-for's own log (<git common dir>/agent-timing/waits.log).
+
+DIR defaults to $CHIMERA_AGENT_TRANSCRIPTS, else Claude Code's folder for the
+main checkout: ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<the checkout's path with
+every character but letters and digits as '-'>. Nothing is written.
+"""
+import argparse
+import collections
+import datetime
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+
+
+def default_dir():
+    env = os.environ.get("CHIMERA_AGENT_TRANSCRIPTS")
+    if env:
+        return env
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        common = subprocess.run(["git", "-C", here, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                capture_output=True, text=True, check=True).stdout.strip()
+        repo = os.path.dirname(common)
+    except (OSError, subprocess.CalledProcessError):
+        repo = os.path.dirname(here)
+    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    return os.path.join(base, "projects", re.sub(r"[^A-Za-z0-9]", "-", repo))
+
+
+def parse_since(s):
+    m = re.fullmatch(r"(\d+)([dh])", s)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if m:
+        n = int(m.group(1))
+        return now - (datetime.timedelta(days=n) if m.group(2) == "d" else datetime.timedelta(hours=n))
+    t = datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+    return t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)
+
+
+def ts(s):
+    return datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+def step(c):
+    """What a (non-waiting) shell command is."""
+    if "post-push-tests" in c:
+        return "post-push tests (--bg: start only)" if "--bg" in c else "post-push tests"
+    if re.search(r"pre-commit --worktree", c):
+        return "tests"
+    if re.search(r"git (commit|merge --continue)", c):
+        return "commit hook"
+    if re.search(r"cargo (test|nextest)|affected-tests", c):
+        return "tests"
+    if re.search(r"offscreen|tf2ref|refcmp|ui_scene|ffmpeg|--dump|openclaw|screenshot|\+map|--bin [a-z_]+ --|_server", c):
+        return "game runs & captures"
+    if re.search(r"cargo (build|check|clippy|run)|docs_index|hakari", c):
+        return "build"
+    if re.search(r"git (push|pull|fetch|rebase|merge)|agent-slot", c):
+        return "git sync & slots"
+    return None
+
+
+def is_wait(c):
+    return bool(re.search(r"tools/wait-for\s+[^\s;&|]|\buntil\b|\bwhile\b|for i in.*sleep|^\s*sleep", c))
+
+
+def label_bucket(label):
+    """A wait-for label's bucket, by its words."""
+    low = label.lower()
+    for words, b in ((("post-push",), "post-push tests"), (("commit", "hook"), "commit hook"),
+                     (("test", "nextest"), "tests"), (("build", "compile", "link"), "build"),
+                     (("capture", "frame", "screenshot", "server", "game", "client", "map"), "game runs & captures")):
+        if any(w in low for w in words):
+            return b
+    return None
+
+
+def wait_of(c, bg):
+    """(bucket, label) of a waiting command."""
+    m = re.search(r"tools/wait-for\s+(\"[^\"]*\"|'[^']*'|[^\s;&|]+)", c)
+    if m:
+        label = m.group(1).strip("\"'")
+        return label_bucket(label) or "waiting (named, other)", label
+    for tid in re.findall(r"tasks/(b\w+)\.output", c):
+        if tid in bg:
+            return bg[tid], None
+    if re.search(r"post-push|PASS|FAIL|last\.txt|history\.txt", c):
+        return "post-push tests", None
+    if re.search(r"pre-commit|git commit|not committing", c):
+        return "commit hook", None
+    if re.search(r"test result|nextest|Summary", c):
+        return "tests", None
+    if re.search(r"Finished|could not compile", c):
+        return "build", None
+    if re.search(r"png|offscreen|frame|scratchpad", c):
+        return "game runs & captures", None
+    return "waiting (unidentified)", None
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--since", default="7d", help="7d, 12h, or an ISO date/time (UTC)")
+    ap.add_argument("--dir", default=None, help="the project's transcripts folder")
+    ap.add_argument("--sessions", action="store_true", help="also the top-level sessions")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    d = a.dir or default_dir()
+    since = parse_since(a.since)
+    files = glob.glob(os.path.join(d, "*", "subagents", "agent-*.jsonl")) + glob.glob(os.path.join(d, "subagents", "agent-*.jsonl"))
+    if a.sessions:
+        files += glob.glob(os.path.join(d, "*.jsonl"))
+    if not files:
+        sys.exit(f"agent-timing: no transcripts under {d} (--dir or CHIMERA_AGENT_TRANSCRIPTS)")
+    tot = collections.Counter()      # bucket -> seconds
+    waited = collections.Counter()   # bucket -> seconds of it waiting
+    labels = collections.Counter()   # wait-for label -> seconds
+    calls = collections.Counter()
+    idle = collections.Counter()     # bucket -> seconds idle until its notification
+    n = 0
+    wall = 0.0
+    for f in files:
+        if os.path.getmtime(f) < since.timestamp():
+            continue
+        pend, bg, bg_tool, last, first, lastt, prev_t = {}, {}, {}, None, None, None, None
+        try:
+            fh = open(f, encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                t = rec.get("timestamp")
+                if not t:
+                    continue
+                t = ts(t)
+                if t < since:
+                    continue
+                att = rec.get("attachment") or {}
+                if att.get("commandMode") == "task-notification" and not pend and prev_t is not None:
+                    # Idle (turn over, nothing running in the foreground)
+                    # until a background command's notification.
+                    m = re.search(r"<tool-use-id>(\S+?)</tool-use-id>", att.get("prompt") or "")
+                    bucket = bg_tool.get(m.group(1)) if m else None
+                    g = (t - prev_t).total_seconds()
+                    if bucket and 0 <= g < 4 * 3600:
+                        tot[bucket] += g
+                        waited[bucket] += g
+                        idle[bucket] += g
+                        last = None
+                prev_t = t
+                content = (rec.get("message") or {}).get("content")
+                if not isinstance(content, list):
+                    continue
+                first = first or t
+                lastt = t
+                for b in content:
+                    if not isinstance(b, dict):
+                        continue
+                    if b.get("type") == "tool_use":
+                        if last is not None:
+                            g = (t - last).total_seconds()
+                            if 0 <= g < 1800:
+                                tot["model thinking & writing"] += g
+                            last = None
+                        name = b.get("name")
+                        inp = b.get("input") or {}
+                        cmd = inp.get("command", "") if name in ("Bash", "Monitor") else ""
+                        if name == "Monitor":
+                            cmd = "until " + cmd
+                        if name == "Agent":
+                            k = None
+                        elif name in ("Bash", "Monitor"):
+                            if is_wait(cmd):
+                                bucket, label = wait_of(cmd, bg)
+                                k = ("wait", bucket, label)
+                            else:
+                                k = step(cmd) or "scripts, edits, reads"
+                        elif name in ("Read", "Grep", "Glob", "Edit", "Write"):
+                            k = "scripts, edits, reads"
+                        elif name in ("WebSearch", "WebFetch"):
+                            k = "web research"
+                        else:
+                            k = "other tools"
+                        pend[b.get("id")] = (t, k, cmd, inp.get("run_in_background"))
+                    elif b.get("type") == "tool_result" and b.get("tool_use_id") in pend:
+                        t0, k, cmd, isbg = pend.pop(b["tool_use_id"])
+                        if isbg:
+                            bg_tool[b["tool_use_id"]] = (step(cmd) or "waiting (unidentified)") if cmd else "subagents"
+                            m = re.search(r"ID: (b\w+)", json.dumps(b.get("content")))
+                            if m:
+                                bg[m.group(1)] = step(cmd) or "waiting (unidentified)"
+                        if k is None:
+                            continue
+                        dt = (t - t0).total_seconds()
+                        if not 0 <= dt < 4 * 3600:
+                            continue
+                        if isinstance(k, tuple):
+                            _, bucket, label = k
+                            tot[bucket] += dt
+                            waited[bucket] += dt
+                            if label:
+                                labels[label] += dt
+                            calls["waits"] += 1
+                        else:
+                            tot[k] += dt
+                            calls[k] += 1
+                        last = t
+        if first:
+            n += 1
+            wall += (lastt - first).total_seconds()
+    total = sum(tot.values()) or 1
+    if a.json:
+        print(json.dumps({"since": since.isoformat(), "agents": n, "agent_wall_h": wall / 3600,
+                          "buckets_h": {k: v / 3600 for k, v in tot.items()},
+                          "waiting_h": {k: v / 3600 for k, v in waited.items()},
+                          "idle_until_notified_h": {k: v / 3600 for k, v in idle.items()},
+                          "named_waits_h": {k: v / 3600 for k, v in labels.items()}}, indent=1))
+        return
+    print(f"agents {n} since {since:%Y-%m-%d %H:%MZ}, summed agent wall {wall / 3600:.1f} h, accounted {total / 3600:.1f} h")
+    for k, v in tot.most_common():
+        print(f"  {k:38s} {v / 3600:7.1f} h {100 * v / total:5.1f}%   (waiting: {waited.get(k, 0) / 3600:.1f} h, of it idle until notified {idle.get(k, 0) / 3600:.1f} h)")
+    if labels:
+        print("named waits (tools/wait-for):")
+        for k, v in labels.most_common(15):
+            print(f"  {k:38s} {v / 3600:7.2f} h")
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        common = subprocess.run(["git", "-C", here, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                capture_output=True, text=True, check=True).stdout.strip()
+        log = os.path.join(common, "agent-timing", "waits.log")
+        rows = collections.defaultdict(lambda: [0, 0, 0])
+        with open(log, encoding="utf-8") as fh:
+            for line in fh:
+                p = line.rstrip("\n").split("\t")
+                if len(p) < 4 or ts(p[0]) < since:
+                    continue
+                r = rows[p[3]]
+                r[0] += 1
+                r[1] += int(p[1])
+                r[2] += p[2] != "done"
+        if rows:
+            print("wait-for log (count, hours, timed out or orphaned):")
+            for k, (c, s, bad) in sorted(rows.items(), key=lambda kv: -kv[1][1])[:15]:
+                print(f"  {k:38s} {c:4d} {s / 3600:7.2f} h {bad:3d}")
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        pass
+    try:
+        log = os.path.join(common, "agent-timing", "commit-hook.log")
+        rows = collections.defaultdict(lambda: [0, 0])
+        with open(log, encoding="utf-8") as fh:
+            for line in fh:
+                p = line.rstrip("\n").split("\t")
+                if len(p) < 4 or ts(p[0]) < since:
+                    continue
+                r = rows[f"{p[3]}: {p[2]}"]
+                r[0] += 1
+                r[1] += int(p[1])
+        if rows:
+            print("commit hook log (runs, hours, mean s; stamp = a fresh pass reused):")
+            for k, (c, s) in sorted(rows.items()):
+                print(f"  {k:38s} {c:4d} {s / 3600:7.2f} h {s / c:6.0f} s")
+    except (OSError, NameError, ValueError):
+        pass
+
+
+if __name__ == "__main__":
+    main()

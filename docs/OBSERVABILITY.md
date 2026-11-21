@@ -2065,6 +2065,75 @@ in a worktree: 25-47 s); a second agent taking the slot for a new branch
 from main (31 files ahead of the first's) and changing one line, 28.5 s,
 then 6.3 s per change.
 
+### Commit, push, wait: the agents' loop
+
+- **Before committing**: `.githooks/pre-commit --worktree` runs exactly
+  what the commit hook runs (`affected` on every change against HEAD,
+  staged or not, untracked files too: the check of the affected tests and
+  the changed crates' fast tier) and on a pass writes a stamp to
+  `<git common dir>/test-stamps` (the newest 100). The key is the working
+  tree as tested: the tracked files' tree (`git add -u` into a scratch
+  copy of the index, so neither the index nor the object store gets the
+  untracked files), the untracked files' names, sizes and times, `rustc
+  -vV`, `cargo -V`, the hook's mode and `CHIMERA_*` settings. The hook
+  computes the same key; when a stamp matches and its packages cover the
+  commit's selection it prints "this exact working tree already passed"
+  with the stamp's path and doesn't run them. Any edit, a new untracked
+  file, another toolchain or a wider selection runs them as before; the
+  hook stamps its own passes too, so a retried commit is free.
+  `CHIMERA_COMMIT_STAMPS=0` ignores stamps. Windows runs the same hook in
+  Git's bash; without a stamp it tests as always.
+- **After pushing**: `tools/post-push-tests.sh --bg --note "<branch or
+  task>"` records the push (`.claude/post-push/pushes.txt`), detaches the
+  run (`setsid`; output appended to `.claude/post-push/bg.out`) and
+  returns. Runs still queue and coalesce (one at a time; the newest waiter
+  tests the latest main). Nobody waits for it. A FAIL writes
+  `.claude/post-push/fails/<UTC time>-<commit>.md` (the failing steps and
+  tests, the commits since the last pass, the pushes in that range with
+  their notes, the log's path, a fix brief) and appends `FAIL <commit>
+  <time> <record>` to `.claude/post-push/inbox`; the next pass after a
+  fail appends `FIXED <commit> <time>`. The orchestrating session watches
+  the inbox for the whole session with one Monitor (or a background
+  command):
+
+  ```
+  tail -n0 -F .claude/post-push/inbox
+  ```
+
+  and on a FAIL line sends a fix agent with the record as its brief.
+  `CHIMERA_POST_PUSH_ON_FAIL=<command>` also runs a command with the
+  record's path (a desktop notification, say); nothing by default. The
+  newest 40 logs (`CHIMERA_POST_PUSH_KEEP_LOGS`) and 50 records are kept;
+  `history.txt` keeps every result line.
+- **Waiting**: `tools/wait-for <label> [--timeout 20m] [--every 5]` with
+  `--file F [--match RE]`, `--pid N` or `-- <command>` instead of a
+  hand-written `until ...; sleep` loop. It exits 0 when the thing happened,
+  124 at the timeout (at most 2 h), 125 as soon as the shell that started
+  it is gone (so it never outlives its agent), and logs the wait (UTC
+  start, seconds, outcome, label, checkout) to `<git common
+  dir>/agent-timing/waits.log` (newest 2000 lines).
+- **UTC**: `tools/agent-env.sh` exports `TZ=UTC`, so commits and rebases
+  made in a shell that sourced it carry UTC dates.
+
+### Where agents' time goes
+
+```
+tools/agent-timing --since 7d          # or --since 2026-11-14, 12h; --json
+```
+
+reads Claude Code's transcripts of the subagents (default: the folder
+Claude Code keeps for the main checkout, `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<the
+checkout's path, every character but letters and digits as '-'>`;
+`--dir` or `CHIMERA_AGENT_TRANSCRIPTS` for another; `--sessions` adds the
+top-level sessions) and prints hours per bucket: the model's turns, tests,
+the commit hook, post-push, builds, game runs and captures, git, reads
+and edits, and how much of each was waiting (wait loops, Monitor calls,
+tools/wait-for, idling until a background command's notification).
+Named waits come from tools/wait-for's labels; the hook's own log
+(`commit-hook.log`: seconds and outcome of each run, `stamp` for a
+reused pass) and wait-for's log are summed below. The baseline and what
+to try next: [plans/active/iteration-speed.md](plans/active/iteration-speed.md).
+
 ## 4. Logs
 
 `RUST_LOG=mashup=debug cargo run --features dev`. Log state changes that matter

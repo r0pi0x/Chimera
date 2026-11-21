@@ -105,8 +105,14 @@ tools/agent-slot.sh acquire <branch>   # an agent's warm checkout: cd to the
                                    # `tools/agent-slot.sh release` (OBSERVABILITY 3e)
 source tools/agent-env.sh && agent_run cargo ...   # several agents on one box:
                                    # shared jobserver + agents.slice (OBSERVABILITY 3e)
-tools/post-push-tests.sh   # right after each push: the affected tests (heavy too)
-                                   # and build checks of what was pushed
+.githooks/pre-commit --worktree   # before committing: what the hook runs, on the
+                                   # working tree; stamps a pass the commit reuses
+tools/post-push-tests.sh --bg --note "<task>"   # right after each push: the affected
+                                   # tests (heavy too) and build checks, detached;
+                                   # don't wait (a FAIL goes to .claude/post-push/inbox)
+tools/wait-for <label> --file F --match RE   # instead of an until/sleep loop
+                                   # (or --pid N, -- <cmd>; timeout, dies with you)
+tools/agent-timing --since 7d   # where agents' time goes (docs/plans/active/iteration-speed.md)
 cargo hakari generate   # after changing a dependency (chimera/workspace-hack)
 cargo run -q -p repo_checks --bin docs_index   # regenerate docs/modules.md, the
                                    # debt list and docs/agent-index.md
@@ -131,10 +137,16 @@ still work.
 - Commit at working milestones: `.githooks/pre-commit` checks the
   affected crates' tests and runs the changed crates' fast tier;
   `pre-push` checks identity and `repo_checks` only (enable per clone:
-  `git config core.hooksPath .githooks`). Push first, test after: run
-  `tools/post-push-tests.sh` right after each push (affected tests, heavy
-  too; one-line result in `.claude/post-push/last.txt`) and fix a FAIL
-  at once.
+  `git config core.hooksPath .githooks`). Run `.githooks/pre-commit
+  --worktree` as your final check: the commit then reuses its pass.
+- Push first, test after, and don't wait: right after each push start
+  `tools/post-push-tests.sh --bg --note "<branch or task>"`, report and
+  finish. A FAIL is written to `.claude/post-push/fails/` and announced in
+  `.claude/post-push/inbox`; the orchestrating session watches that
+  (`tail -n0 -F .claude/post-push/inbox`) and sends a fix agent.
+- Never hand-write `until`/`sleep` wait loops: use `tools/wait-for`
+  (named, with a timeout, ends with your shell) or a background command's
+  notification.
 - Propose a plan before writing a new mount adapter or loader. Multi-session
   work gets a plan in `docs/plans/active/`, kept updated.
 - When something was hard because a tool, doc or check was missing, add it.
