@@ -284,7 +284,7 @@ fn the_report_key_is_a_shared_controls_row_that_rebinds() {
     sim.app.update();
     sim.app.update();
     let s = sim.app.world().resource::<Settings>().clone();
-    let rows = settings::rows(ctx, &tabs, s.tab, s.bind_game);
+    let rows = settings::rows(ctx, &tabs, s.tab, s.view());
     let row = rows.iter().position(|r| matches!(r, Row::Bind { command: "feedback", .. })).expect("a Report a bug row");
     assert_eq!(party_kit::controls::keys_on(sim.app.world().resource::<Console>(), 0, "feedback"), ["f10"]);
     sim.app.world_mut().write_message(SettingsAction::Bind(row));

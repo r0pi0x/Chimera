@@ -267,7 +267,12 @@ GUN) (SMG) and `weapon_ar2` (above).
    `heavy::display_names` in combat_arms, cs_source and hl2dm (every
    drawable gun's short name at 16 or fewer, via
    `minigame::auto::drawable_short_names`).
-6. Decided (user, 2026-11-14): guns with no shop item (the 38 above)
-   stay on the ladder, named by their record names through the split;
-   any that draw wrong go in `ladder_exclusions.toml` one by one, like
-   the other broken skins.
+6. Superseded (2026-11-20, a bug report: Test Gun MG42, Shylock's, the NPC
+   guns dealt as rungs): NPC, boss, turret and test records are no rungs.
+   Combat Arms' loader excludes by rule every weapon record no shop item
+   sells (`game::data::InstallAttributes::unshopped_weapons`, 106 records
+   of the install, 33 of them drawable guns), and
+   data/ladder_exclusions.toml names, with `not_player = true`, the
+   ones that have a shop item and are still no player's (NPC copies,
+   powered-suit and Shylock guns, turrets, test records). They are also
+   absent from the Host's Guns picker and the sandbox's Change gun list.

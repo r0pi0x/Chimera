@@ -9,8 +9,10 @@
 //!   under it) and the bar (`ScrollTrack`, with its `ScrollThumb`).
 //!   Screens that rebuild their nodes on every change keep their place:
 //!   a view's state lives in `ScrollViews` under its `key`, not on the
-//!   node. `ScrollLocked` on the view stops its input (a modal over it, a
-//!   key bind listening for the right button).
+//!   node. `ScrollLocked` on the view stops its input (a key bind
+//!   listening for the right button); a modal over it needs nothing: the
+//!   kit's modal gate (`modal`) hides the pointer from the views behind
+//!   the top modal, so the wheel scrolls only what is in front.
 //! - **The bar**: a hairline track, a thumb as long as the visible share
 //!   (at least `thumb_min` cq) with its ends cut on the 12° slant (a
 //!   `UiSlant` turned upright), `Fg3` at rest, `Fg` while the pointer is
@@ -434,7 +436,8 @@ pub struct ScrollView {
     pub key: String,
 }
 
-/// The view takes no input (a modal over it, a key bind listening).
+/// The view takes no input (a key bind listening; a modal over it is
+/// `modal`'s).
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct ScrollLocked;
 
@@ -795,7 +798,7 @@ impl Plugin for ScrollPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ScrollViews>()
             .init_resource::<ReducedMotion>()
-            .configure_sets(PreUpdate, ScrollInput.after(UiSystems::Focus))
+            .configure_sets(PreUpdate, ScrollInput.after(UiSystems::Focus).after(crate::modal::ModalSystems))
             .add_systems(PreUpdate, scroll_input.in_set(ScrollInput))
             .add_systems(
                 PostUpdate,

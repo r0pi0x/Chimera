@@ -2,7 +2,8 @@
 //! (`chimera_sim::weapon::harm`, `HarmAppExt::add_harm_reader`): each of
 //! its hooks' damage paths, from the numbers the hook's data gives
 //! (specs/combat_arms/special_weapons.md 1-4, 6), and its data's draw
-//! exclusions (data/ladder_exclusions.toml, `auto::DrawExclusions`).
+//! exclusions (data/ladder_exclusions.toml, `auto::DrawExclusions`; the
+//! weapons no shop item sells are added by rule, `game::data::set_unshopped`).
 //!
 //! - `combat_arms:damage`: the ray's `InstDamage` above 0 of a type other
 //!   than 0 (a type 0 deals nothing, 1.3).
@@ -111,5 +112,13 @@ mod tests {
         let list = chimera_sim::minigame::auto::parse_exclusions(LADDER_EXCLUSIONS).expect("reads");
         assert!(list.iter().any(|(id, _)| id == "combat_arms:asw338lmspunk"));
         assert!(list.iter().all(|(id, r)| id.starts_with("combat_arms:") && !r.is_empty()));
+        // The NPC, boss, turret and test records are marked no player's
+        // (the sandbox's list leaves them out); the bad skins aren't.
+        let nobody = chimera_sim::minigame::auto::parse_not_players(LADDER_EXCLUSIONS).expect("reads");
+        for id in ["combat_arms:test_gun_mg42", "combat_arms:mp5a4_npc", "combat_arms:powered_suit_boss_mg"] {
+            assert!(nobody.iter().any(|n| n == id), "{id}");
+        }
+        assert!(!nobody.iter().any(|n| n == "combat_arms:asw338lmspunk"));
+        assert!(nobody.iter().all(|n| list.iter().any(|(id, _)| id == n)));
     }
 }

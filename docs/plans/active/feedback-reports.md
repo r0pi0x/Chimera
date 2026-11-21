@@ -107,7 +107,7 @@ entries, never from files on disk:
 | `net.txt` | ping, loss, choke, in and out rates over the last seconds (`net_graph`'s readout kept in a ring), reconnects this session |
 | `cvars.txt` | cvars whose value differs from the default, after the secret filter (2.5); changed binds |
 | `console.txt` | the last 300 console lines, redacted (2.5) |
-| `world.txt` | a census (entities by kind, archetypes, systems, asset stores), growth by kind since the session's first map and since this map, the archetypes made since the map and by what, what varies on the characters, memory by kind (`chimera_mem`), the last 5 minutes' event timeline (frame events, alike ones folded with counts) (`client::world_report`) |
+| `world.txt` | a census (entities by kind, archetypes, systems, asset stores), growth by kind since the session's first map and since this map, the archetypes made since the map and by what, what varies on the characters, memory by kind (`chimera_mem`), the last 5 minutes' event timeline (frame events, alike ones folded with counts); the UI: cameras (on/off), every UI root (its components, nodes, z, its camera and whether it is on) and the UI spawned a second over the last 10 s, roots by name (`client::world_report`) |
 | `log.txt` | the last 500 `tracing` lines at INFO and above, from a ring-buffer layer (Bevy's `LogPlugin::custom_layer`), redacted, lines alike but for digits folded into the last with `(xN since <time>)` (`bundle::fold_repeats`) |
 
 Typical size under 1 MB; the client refuses to queue more than 8 MB.

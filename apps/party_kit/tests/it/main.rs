@@ -54,6 +54,7 @@ mod map_pool_by_count;
 mod map_vote;
 mod menu_backdrops;
 mod net_gun_game;
+mod onboarding;
 mod party_music;
 mod persist;
 mod protection_look;

@@ -349,11 +349,36 @@ pub struct InstallAttributes {
     /// the weapons' `HUDEffectOverride` sections of the layout and client
     /// files; empty without the weapons file).
     pub announcer_skins: Vec<chimera_core::announcer::Skin>,
+    /// The weapon records (by index) the shop item file sells: each
+    /// `WeaponItem` record's `ItemID`. None without the item file. A gun
+    /// outside it is no player's (an NPC's, a boss's, a turret, a test
+    /// record): `unshopped_weapons`.
+    pub shop_weapons: Option<std::collections::BTreeSet<usize>>,
     /// A hash of every attribute file's bytes as read (`read_attributes`;
     /// None: built by hand, or no weapons file): what the merged weapon documents kept on
     /// disk are keyed by (`CaData::weapon_docs_merged`).
     pub digest: Option<String>,
 }
+
+impl InstallAttributes {
+    /// The ids of the install's weapon records no shop item sells
+    /// (`shop_weapons`), the draw's non-player guns (`UNSHOPPED_WHY`);
+    /// none when the item file wasn't read.
+    pub fn unshopped_weapons(&self) -> Vec<String> {
+        let (Some(weapons), Some(shop)) = (&self.weapons, &self.shop_weapons) else { return Vec::new() };
+        // By address (an ordered map: no std hasher).
+        let index: std::collections::BTreeMap<usize, usize> =
+            weapons.weapons.iter().enumerate().map(|(i, w)| (std::ptr::from_ref(w) as usize, i)).collect();
+        install_weapons_by_id(weapons)
+            .into_iter()
+            .filter(|(_, w)| index.get(&(std::ptr::from_ref(*w) as usize)).is_some_and(|i| !shop.contains(i)))
+            .map(|(id, _)| id)
+            .collect()
+    }
+}
+
+/// Why a drawn ladder leaves out a weapon no shop item sells.
+pub const UNSHOPPED_WHY: &str = "no shop item (an NPC, boss, turret or test record, never a player's)";
 
 /// Parse one attribute document, errors naming it and the line.
 pub fn parse_document(name: &str, bytes: &[u8]) -> Result<Document, String> {
@@ -376,6 +401,10 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
             None
         }
     };
+    // Read apart: its bytes aren't in the digest (display data only).
+    let shop_weapons = read(attributes::ITEMS_FILE).ok().and_then(|b| parse_document(attributes::ITEMS_FILE, &b).ok()).map(|d| {
+        d.records("WeaponItem").iter().filter_map(|s| usize::try_from(s.int("ItemID", -1)).ok()).collect()
+    });
     let weapons = doc(WEAPONS_FILE);
     let server = doc(SERVER_FILE);
     let models = doc(MODELS_FILE);
@@ -432,6 +461,7 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
         attachments: attachments.map(|d| AttachmentsFile::read(&d)),
         gear,
         announcer_skins,
+        shop_weapons,
         digest,
     };
     (attrs, problems)
@@ -1916,7 +1946,27 @@ impl Plugin for CaDataPlugin {
         if let Some(a) = data.attributes() {
             chimera_core::announcer::AnnouncerAppExt::announcer_skins(app, super::GAME, a.announcer_skins.clone());
         }
+        set_unshopped(app.world_mut(), data.attributes());
     }
+}
+
+/// The draw exclusions of the weapons no shop item sells
+/// (`InstallAttributes::unshopped_weapons`, reason `UNSHOPPED_WHY`) in
+/// `world`'s `PowerReaders`, in place of those of an earlier read.
+pub fn set_unshopped(world: &mut World, attributes: Option<&InstallAttributes>) {
+    let ids = attributes.map(InstallAttributes::unshopped_weapons).unwrap_or_default();
+    if ids.is_empty() && world.get_resource::<chimera_sim::minigame::power::PowerReaders>().is_none() {
+        return;
+    }
+    let mut readers = world.get_resource_or_init::<chimera_sim::minigame::power::PowerReaders>();
+    let ex = &mut readers.exclusions;
+    let before: Vec<String> = ex.0.iter().filter(|(_, why)| why == UNSHOPPED_WHY).map(|(id, _)| id.to_ascii_lowercase()).collect();
+    ex.0.retain(|(_, why)| why != UNSHOPPED_WHY);
+    for id in before {
+        ex.1.remove(&id);
+    }
+    ex.1.extend(ids.iter().map(|id| id.to_ascii_lowercase()));
+    ex.0.extend(ids.into_iter().map(|id| (id, UNSHOPPED_WHY.to_string())));
 }
 
 /// After a join bound the asset service and Combat Arms' files arrived:
@@ -1958,6 +2008,7 @@ pub fn renew(world: &mut World, old: &CaData, fresh: CaData) {
         context.insert(fresh.clone());
     }
     world.insert_resource(fresh.clone());
+    set_unshopped(world, fresh.attributes());
     let registered = |world: &World, name: &str| world.get_resource::<ServerDocs>().is_some_and(|d| d.get(name).is_some());
     let (was, now) = (old.weapon_set(), fresh.weapon_set());
     if !std::ptr::eq(was, now) {

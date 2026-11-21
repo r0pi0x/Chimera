@@ -273,4 +273,5 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         }
     },
     display_names: None,
+    player_options: Some(include_str!("../../data/player_options.toml")),
 };

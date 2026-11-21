@@ -64,7 +64,7 @@ use std::{
 };
 
 use chimera_assets::{
-    account::{LinkAnswer, RecoverRequest, RedeemRequest, SignedIn, TicketRequest},
+    account::{CheckAnswer, CheckRequest, HubPreview, LinkAnswer, NameCheck, RecoverRequest, RedeemRequest, SignedIn, TicketRequest},
     store::{hex, sha256_hex, unhex},
     ticket::{self, Claims, Id, id_hex, parse_id},
 };
@@ -188,7 +188,19 @@ pub fn load_or_create_secret(path: &Path) -> Result<String, String> {
 /// What an invite grants.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct InviteSpec {
+    /// The owner's label (what `invite revoke` names). Before intents
+    /// (an invite named for its player) it was also the suggested
+    /// username; empty: the recipient's or the intent's words.
+    #[serde(default)]
     pub name: String,
+    /// Why it was made ("for Sam, sent on Discord"): kept with the account
+    /// that redeems it, so an unwanted redemption can be traced. An
+    /// invite with an intent carries no username: the player chooses one.
+    #[serde(default)]
+    pub intent: Option<String>,
+    /// Who it was meant for, in the owner's words.
+    #[serde(default)]
+    pub recipient: Option<String>,
     #[serde(default)]
     pub role: Option<String>,
     /// `*` or `a,b`: the asset service's content.
@@ -224,6 +236,10 @@ pub struct Invited {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InviteView {
     pub name: String,
+    #[serde(default)]
+    pub intent: Option<String>,
+    #[serde(default)]
+    pub recipient: Option<String>,
     pub role: String,
     pub state: String,
     pub created: u64,
@@ -265,7 +281,24 @@ pub struct AccountView {
     /// Its feedback is dropped.
     #[serde(default)]
     pub muted: bool,
+    /// The avatar chosen (`cl_avatar`'s look byte).
+    #[serde(default)]
+    pub avatar: Option<u8>,
+    /// Its last usernames, newest first (at most `HISTORY`): shown so
+    /// nobody passes as someone who renamed.
+    #[serde(default)]
+    pub previous_usernames: Vec<String>,
+    /// The intent (and recipient) of the invite that made it.
+    #[serde(default)]
+    pub invite_intent: Option<String>,
 }
+
+/// Usernames kept per account after renames.
+pub const HISTORY: usize = 10;
+/// Seconds between a player's renames.
+pub const RENAME_SECS: u64 = 60;
+/// Free names offered for a taken one.
+pub const SUGGESTIONS: usize = 3;
 
 /// What `set_account` changes (None: unchanged).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -366,6 +399,22 @@ fn role_defaults(role: &str) -> R<(&'static str, u32, bool)> {
         "owner" => Ok(("*", 4, true)),
         _ => Err(refuse(400, format!("{role:?}: a role is tester, host or owner"))),
     }
+}
+
+/// The avatars (`cl_avatar`'s looks: 4 glyphs x 8 colours).
+pub const AVATARS: u8 = 32;
+
+/// An invite's row, once it is known to be usable.
+struct InviteRow {
+    name: String,
+    role: String,
+    content: String,
+    games: String,
+    list: i64,
+    for_account: Option<Vec<u8>>,
+    keep: i64,
+    intent: Option<String>,
+    recipient: Option<String>,
 }
 
 fn blob(id: &Id) -> Vec<u8> {
@@ -762,41 +811,8 @@ impl Accounts {
         public: &[u8; 32],
         now: u64,
     ) -> R<(Id, Id, Option<String>)> {
-        type Row = (String, String, String, String, i64, Option<Vec<u8>>, i64, i64, Option<i64>, Option<i64>);
-        let row: Option<Row> = tx
-            .query_row(
-                "SELECT name, role, content, games, list_slots, for_account, keep_devices, expires, redeemed_at, revoked_at
-                 FROM invites WHERE code_hash = ?1",
-                params![hash],
-                |r| {
-                    Ok((
-                        r.get(0)?,
-                        r.get(1)?,
-                        r.get(2)?,
-                        r.get(3)?,
-                        r.get(4)?,
-                        r.get(5)?,
-                        r.get(6)?,
-                        r.get(7)?,
-                        r.get(8)?,
-                        r.get(9)?,
-                    ))
-                },
-            )
-            .optional()
-            .map_err(internal)?;
-        let Some((name, role, content, games, list, for_account, keep, expires, redeemed, revoked)) = row else {
-            return Err(refuse(404, "unknown code"));
-        };
-        if revoked.is_some() {
-            return Err(refuse(410, "this invite was revoked"));
-        }
-        if redeemed.is_some() {
-            return Err(refuse(410, "this invite was used already"));
-        }
-        if now as i64 >= expires {
-            return Err(refuse(410, "this invite expired: ask the hub's owner for a new one"));
-        }
+        let InviteRow { name, role, content, games, list, for_account, keep, intent, recipient } = Self::usable_invite(tx, hash, now)?;
+        let avatar = request.avatar.filter(|a| *a < AVATARS);
         let (account, recovery) = match for_account {
             Some(account) => {
                 let account = id_of(account);
@@ -816,20 +832,43 @@ impl Accounts {
                 return Ok((account, device, Some(recovery)));
             }
             None => {
-                let wanted = request.username.clone().filter(|u| !u.trim().is_empty()).unwrap_or(name);
-                let username = codes::username(&wanted).map_err(|e| refuse(400, e))?;
-                let taken: i64 = tx
-                    .query_row("SELECT COUNT(*) FROM accounts WHERE username = ?1", params![username], |r| r.get(0))
-                    .map_err(internal)?;
-                if taken > 0 {
+                let given = request.username.clone().filter(|u| !u.trim().is_empty());
+                let username = match (given, &intent) {
+                    (Some(u), _) => codes::choose_username(&u).map_err(|e| refuse(400, e))?,
+                    // An invite named for its player (before intents): its name.
+                    (None, None) => codes::username(&name).map_err(|e| refuse(400, e))?,
+                    (None, Some(_)) => return Err(refuse(400, "choose a username")),
+                };
+                if Self::username_taken(tx, &username, None)? {
                     return Err(refuse(409, format!("the username {username:?} is taken: pick another")));
                 }
                 let account = ticket::new_id();
                 let (_, _, report) = role_defaults(&role)?;
+                let traced = intent.as_ref().map(|i| match &recipient {
+                    Some(r) => format!("{i} (for {r})"),
+                    None => i.clone(),
+                });
+                let shown = match request.display_name.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+                    Some(d) => codes::display_name(d).map_err(|e| refuse(400, e))?,
+                    None => username.clone(),
+                };
                 tx.execute(
-                    "INSERT INTO accounts (id, username, display_name, created, role, content, games, list_slots, report)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                    params![blob(&account), username, username, now as i64, role, content, games, list, i64::from(report)],
+                    "INSERT INTO accounts (id, username, display_name, created, role, content, games, list_slots, report,
+                                           invite_intent, avatar)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    params![
+                        blob(&account),
+                        username,
+                        shown,
+                        now as i64,
+                        role,
+                        content,
+                        games,
+                        list,
+                        i64::from(report),
+                        traced,
+                        avatar.map(i64::from)
+                    ],
                 )
                 .map_err(internal)?;
                 let recovery = Self::new_recovery(tx, &account)?;
@@ -844,6 +883,201 @@ impl Accounts {
         .map_err(internal)?;
         Self::audit(tx, now, &id_hex(&device), "invite.redeem", &id_hex(&account), "")?;
         Ok((account, device, Some(recovery)))
+    }
+
+    /// The invite stored as `hash`, if it can still be redeemed: 404
+    /// unknown, 410 revoked, used or expired.
+    fn usable_invite(tx: &Connection, hash: &str, now: u64) -> R<InviteRow> {
+        type Row = (String, String, String, String, i64, Option<Vec<u8>>, i64, i64, Option<i64>, Option<i64>, Option<String>, Option<String>);
+        let row: Option<Row> = tx
+            .query_row(
+                "SELECT name, role, content, games, list_slots, for_account, keep_devices, expires, redeemed_at, revoked_at,
+                        intent, recipient
+                 FROM invites WHERE code_hash = ?1",
+                params![hash],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                        r.get(8)?,
+                        r.get(9)?,
+                        r.get(10)?,
+                        r.get(11)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(internal)?;
+        let Some((name, role, content, games, list, for_account, keep, expires, redeemed, revoked, intent, recipient)) = row else {
+            return Err(refuse(404, "unknown code"));
+        };
+        if revoked.is_some() {
+            return Err(refuse(410, "this invite was revoked"));
+        }
+        if redeemed.is_some() {
+            return Err(refuse(410, "this invite was used already"));
+        }
+        if now as i64 >= expires {
+            return Err(refuse(410, "this invite expired: ask the hub's owner for a new one"));
+        }
+        Ok(InviteRow { name, role, content, games, list, for_account, keep, intent, recipient })
+    }
+
+    /// Whether `username` (folded) is some account's other than `except`.
+    fn username_taken(conn: &Connection, username: &str, except: Option<&Id>) -> R<bool> {
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM accounts WHERE username = ?1 AND id != ?2",
+                params![username, except.map(blob).unwrap_or_default()],
+                |r| r.get(0),
+            )
+            .map_err(internal)?;
+        Ok(n > 0)
+    }
+
+    /// `wanted` checked as a chosen username: free, or why not with free
+    /// suggestions.
+    fn name_check(conn: &Connection, wanted: &str, except: Option<&Id>) -> R<NameCheck> {
+        let folded = wanted.trim().to_ascii_lowercase();
+        let taken = |n: &str| Self::username_taken(conn, n, except).unwrap_or(true);
+        let suggest = || codes::suggestions(&folded, SUGGESTIONS, taken);
+        Ok(match codes::choose_username(&folded) {
+            Err(problem) => NameCheck { username: folded.clone(), available: false, problem: Some(problem), suggestions: Vec::new() },
+            Ok(u) if Self::username_taken(conn, &u, except)? => {
+                NameCheck { username: u, available: false, problem: Some("taken".into()), suggestions: suggest() }
+            }
+            Ok(u) => NameCheck { username: u, available: true, problem: None, suggestions: Vec::new() },
+        })
+    }
+
+    /// The hub as a good code shows it: hub.toml's name and MOTD (the
+    /// hub service's file in the same store), the active accounts.
+    fn preview(&self, conn: &Connection) -> HubPreview {
+        let config = std::fs::read_to_string(crate::hub::Paths::new(&self.paths.store).config())
+            .ok()
+            .and_then(|t| crate::hub::HubConfig::parse(&t).ok())
+            .unwrap_or_default();
+        let players: i64 = conn.query_row("SELECT COUNT(*) FROM accounts WHERE state = 'active'", [], |r| r.get(0)).unwrap_or(0);
+        HubPreview {
+            name: if config.name.trim().is_empty() { "this hub".into() } else { config.name.clone() },
+            motd: config.motd.clone(),
+            players: players.max(0) as u32,
+        }
+    }
+
+    /// `POST /accounts/check`: the code's kind and the hub, and whether a
+    /// username is free; nothing used up. A wrong code counts toward the
+    /// address's limit as a redeem's does.
+    pub fn check(&self, request: &CheckRequest, ip: Option<IpAddr>) -> R<CheckAnswer> {
+        let ip_key = format!("ip:{}", ip.map_or("-".into(), |i| i.to_string()));
+        self.check_limits(std::slice::from_ref(&ip_key))?;
+        let code = codes::normalize(&request.code).unwrap_or_default();
+        let hash = codes::hash(&code).unwrap_or_default();
+        let now = self.now();
+        let conn = self.db();
+        self.banned_address(&conn, ip)?;
+        let found = match code.len() {
+            codes::INVITE_LEN => Self::usable_invite(&conn, &hash, now).and_then(|i| match i.for_account {
+                Some(a) => Self::account_names(&conn, &id_of(a)).map(|(u, _)| ("reinvite", Some(u))),
+                None => Ok(("invite", None)),
+            }),
+            codes::LINK_LEN => {
+                let row: Option<(Vec<u8>, i64, Option<i64>)> = conn
+                    .query_row("SELECT account_id, expires, used_at FROM link_codes WHERE code_hash = ?1", params![hash], |r| {
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    })
+                    .optional()
+                    .map_err(internal)?;
+                match row {
+                    None => Err(refuse(404, "unknown code")),
+                    Some((_, _, Some(_))) => Err(refuse(410, "this link code was used already")),
+                    Some((_, expires, None)) if now as i64 >= expires => Err(refuse(410, "this link code expired: make a new one")),
+                    Some((account, _, None)) => Self::account_names(&conn, &id_of(account)).map(|(u, _)| ("link", Some(u))),
+                }
+            }
+            _ => Err(refuse(404, "unknown code")),
+        };
+        let (kind, account) = match found {
+            Ok(f) => f,
+            Err(e) => {
+                drop(conn);
+                if matches!(e.status, 404 | 410) {
+                    self.fail(&[ip_key]);
+                }
+                return Err(e);
+            }
+        };
+        let username = match (&request.username, kind) {
+            (Some(u), "invite") => Some(Self::name_check(&conn, u, None)?),
+            _ => None,
+        };
+        Ok(CheckAnswer { kind: kind.into(), hub: self.preview(&conn), account, username })
+    }
+
+    /// Change `account`'s username to `new` (folded, checked), keeping the
+    /// old one in its history (the last `HISTORY`).
+    fn rename_in(tx: &Connection, account: &Id, new: &str, now: u64) -> R<()> {
+        let old: String =
+            tx.query_row("SELECT username FROM accounts WHERE id = ?1", params![blob(account)], |r| r.get(0)).map_err(internal)?;
+        if old == new {
+            return Ok(());
+        }
+        if Self::username_taken(tx, new, Some(account))? {
+            return Err(refuse(409, format!("the username {new:?} is taken")));
+        }
+        tx.execute("UPDATE accounts SET username = ?1, renamed_at = ?2 WHERE id = ?3", params![new, now as i64, blob(account)])
+            .map_err(internal)?;
+        tx.execute("INSERT INTO username_history (account_id, username, until) VALUES (?1, ?2, ?3)", params![blob(account), old, now as i64])
+            .map_err(internal)?;
+        tx.execute(
+            "DELETE FROM username_history WHERE account_id = ?1 AND rowid NOT IN
+               (SELECT rowid FROM username_history WHERE account_id = ?1 ORDER BY until DESC, rowid DESC LIMIT ?2)",
+            params![blob(account), HISTORY as i64],
+        )
+        .map_err(internal)?;
+        Ok(())
+    }
+
+    /// `POST /accounts/username`: the player renames, at most once a
+    /// minute; the old name joins the history. Takes effect in tickets
+    /// from the next one.
+    pub fn rename(&self, ticket_text: &str, wanted: &str) -> R<AccountView> {
+        let claims = self.check_ticket(ticket_text)?;
+        let new = codes::choose_username(wanted).map_err(|e| refuse(400, e))?;
+        let now = self.now();
+        let mut conn = self.db();
+        let last: Option<i64> = conn
+            .query_row("SELECT renamed_at FROM accounts WHERE id = ?1", params![blob(&claims.account)], |r| r.get(0))
+            .map_err(internal)?;
+        if last.is_some_and(|t| now < t as u64 + RENAME_SECS) {
+            return Err(refuse(429, "one rename a minute: try again shortly"));
+        }
+        let tx = conn.transaction().map_err(internal)?;
+        Self::rename_in(&tx, &claims.account, &new, now)?;
+        Self::audit(&tx, now, &id_hex(&claims.device), "rename", &id_hex(&claims.account), &new)?;
+        tx.commit().map_err(internal)?;
+        drop(conn);
+        self.me(ticket_text)
+    }
+
+    /// `POST /accounts/avatar`: one of the 32 looks.
+    pub fn set_avatar(&self, ticket_text: &str, avatar: u8) -> R<AccountView> {
+        let claims = self.check_ticket(ticket_text)?;
+        if avatar >= AVATARS {
+            return Err(refuse(400, format!("an avatar is 0 to {}", AVATARS - 1)));
+        }
+        let conn = self.db();
+        conn.execute("UPDATE accounts SET avatar = ?1 WHERE id = ?2", params![i64::from(avatar), blob(&claims.account)])
+            .map_err(internal)?;
+        Self::audit(&conn, self.now(), &id_hex(&claims.device), "avatar", &id_hex(&claims.account), &avatar.to_string())?;
+        drop(conn);
+        self.me(ticket_text)
     }
 
     fn redeem_link(
@@ -895,20 +1129,32 @@ impl Accounts {
 
     /// `POST /accounts/recover`.
     pub fn recover(&self, request: &RecoverRequest, ip: Option<IpAddr>) -> R<SignedIn> {
-        let username = codes::username(&request.username).map_err(|e| refuse(400, e))?;
-        let keys = [format!("ip:{}", ip.map_or("-".into(), |i| i.to_string())), format!("user:{username}")];
+        let by_key = request.username.trim().is_empty();
+        let mut keys = vec![format!("ip:{}", ip.map_or("-".into(), |i| i.to_string()))];
+        if !by_key {
+            keys.push(format!("user:{}", codes::username(&request.username).map_err(|e| refuse(400, e))?));
+        }
         self.check_limits(&keys)?;
         let public = Self::public_key(&request.device_public_key)?;
         let now = self.now();
         let mut conn = self.db();
         self.banned_address(&conn, ip)?;
-        let found: Option<(Vec<u8>, Option<String>, String)> = conn
-            .query_row("SELECT id, recovery_hash, state FROM accounts WHERE username = ?1", params![username], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })
-            .optional()
-            .map_err(internal)?;
         let given = codes::hash(&request.recovery_key);
+        let found: Option<(Vec<u8>, Option<String>, String)> = if by_key {
+            conn.query_row(
+                "SELECT id, recovery_hash, state FROM accounts WHERE recovery_hash = ?1",
+                params![given.clone().unwrap_or_default()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+        } else {
+            conn.query_row(
+                "SELECT id, recovery_hash, state FROM accounts WHERE username = ?1",
+                params![request.username.trim().to_ascii_lowercase()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+        }
+        .optional()
+        .map_err(internal)?;
         let matched = match &found {
             Some((_, Some(h), state)) => given.as_deref() == Some(h.as_str()) && state == "active",
             _ => false,
@@ -916,7 +1162,7 @@ impl Accounts {
         if !matched {
             drop(conn);
             self.fail(&keys);
-            return Err(refuse(403, "that username and recovery key don't match"));
+            return Err(refuse(403, if by_key { "that recovery key doesn't match an account" } else { "that username and recovery key don't match" }));
         }
         let account = id_of(found.expect("matched").0);
         self.banned_account(&conn, &account)?;
@@ -976,10 +1222,27 @@ impl Accounts {
 
     /// Mint an invite (the code is returned once, stored hashed).
     pub fn invite(&self, spec: &InviteSpec) -> R<Invited> {
-        let name = spec.name.trim();
+        let words = |w: &Option<String>, what: &str| -> R<Option<String>> {
+            match w.as_deref().map(str::trim).filter(|w| !w.is_empty()) {
+                None => Ok(None),
+                Some(w) if w.chars().count() > 200 || w.chars().any(char::is_control) => {
+                    Err(refuse(400, format!("an invite's {what} is at most 200 characters")))
+                }
+                Some(w) => Ok(Some(w.to_string())),
+            }
+        };
+        let intent = words(&spec.intent, "intent")?;
+        let recipient = words(&spec.recipient, "recipient")?;
+        let label: String = match spec.name.trim() {
+            "" => recipient.clone().or_else(|| intent.clone()).unwrap_or_default().chars().take(64).collect(),
+            n => n.to_string(),
+        };
+        let name = label.as_str();
         if name.is_empty() || name.chars().count() > 64 || name.chars().any(char::is_control) {
-            return Err(refuse(400, "an invite's name is 1 to 64 characters"));
+            return Err(refuse(400, "an invite needs an intent (or a name of 1 to 64 characters)"));
         }
+        // An invite with a recipient but no intent still carries no username.
+        let intent = intent.or_else(|| recipient.as_ref().map(|r| format!("for {r}")));
         let role = spec.role.clone().unwrap_or_else(|| "tester".into());
         let (content, list, _) = role_defaults(&role)?;
         let content = clean_list(spec.content.as_deref().unwrap_or(content))?;
@@ -1001,9 +1264,23 @@ impl Accounts {
         };
         let code = codes::generate(codes::INVITE_LEN);
         conn.execute(
-            "INSERT INTO invites (code_hash, name, role, content, games, list_slots, for_account, keep_devices, created, expires)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![codes::hash(&code), name, role, content, games, list, for_account, i64::from(spec.keep), now as i64, expires as i64],
+            "INSERT INTO invites (code_hash, name, role, content, games, list_slots, for_account, keep_devices, created, expires,
+                                  intent, recipient)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                codes::hash(&code),
+                name,
+                role,
+                content,
+                games,
+                list,
+                for_account,
+                i64::from(spec.keep),
+                now as i64,
+                expires as i64,
+                intent,
+                recipient
+            ],
         )
         .map_err(internal)?;
         let detail = format!("role={role} content={content} games={games}{}", if spec.for_username.is_some() { " re-invite" } else { "" });
@@ -1021,7 +1298,7 @@ impl Accounts {
         let conn = self.db();
         let mut stmt = conn
             .prepare(
-                "SELECT i.name, i.role, i.created, i.expires, i.redeemed_at, i.revoked_at, a.username
+                "SELECT i.name, i.role, i.created, i.expires, i.redeemed_at, i.revoked_at, a.username, i.intent, i.recipient
                  FROM invites i LEFT JOIN accounts a ON a.id = i.for_account ORDER BY i.created",
             )
             .map_err(internal)?;
@@ -1044,6 +1321,8 @@ impl Accounts {
                     created: r.get::<_, i64>(2)? as u64,
                     expires: expires as u64,
                     for_username: r.get(6)?,
+                    intent: r.get(7)?,
+                    recipient: r.get(8)?,
                 })
             })
             .map_err(internal)?;
@@ -1091,10 +1370,20 @@ impl Accounts {
                 devices.entry(account).or_default().push(device);
             }
         }
+        let mut history: HashMap<Vec<u8>, Vec<String>> = HashMap::new();
+        {
+            let mut stmt =
+                conn.prepare("SELECT account_id, username FROM username_history ORDER BY until DESC, rowid DESC").map_err(internal)?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, String>(1)?))).map_err(internal)?;
+            for row in rows {
+                let (account, name) = row.map_err(internal)?;
+                history.entry(account).or_default().push(name);
+            }
+        }
         let mut stmt = conn
             .prepare(
                 "SELECT id, username, display_name, role, state, content, games, note, created, last_seen,
-                        list_slots, report, muted
+                        list_slots, report, muted, avatar, invite_intent
                  FROM accounts ORDER BY username",
             )
             .map_err(internal)?;
@@ -1116,6 +1405,9 @@ impl Accounts {
                     list_slots: r.get::<_, i64>(10)?.max(0) as u32,
                     report: r.get::<_, i64>(11)? != 0,
                     muted: r.get::<_, i64>(12)? != 0,
+                    avatar: r.get::<_, Option<i64>>(13)?.and_then(|a| u8::try_from(a).ok()),
+                    previous_usernames: history.remove(&id).unwrap_or_default(),
+                    invite_intent: r.get(14)?,
                 })
             })
             .map_err(internal)?;
@@ -1159,13 +1451,7 @@ impl Accounts {
         let mut done = Vec::new();
         if let Some(u) = &change.new_username {
             let u = codes::username(u).map_err(|e| refuse(400, e))?;
-            let taken: i64 = tx
-                .query_row("SELECT COUNT(*) FROM accounts WHERE username = ?1 AND id != ?2", params![u, blob(&account)], |r| r.get(0))
-                .map_err(internal)?;
-            if taken > 0 {
-                return Err(refuse(409, format!("the username {u:?} is taken")));
-            }
-            tx.execute("UPDATE accounts SET username = ?1 WHERE id = ?2", params![u, blob(&account)]).map_err(internal)?;
+            Self::rename_in(&tx, &account, &u, now)?;
             done.push(format!("username={u}"));
         }
         if let Some(d) = &change.display_name {

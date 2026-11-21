@@ -673,8 +673,19 @@ t109, t110, ui hud t111. **(4) done (2026-10-31):** the faces'
 `ClientFX#` groups looping on the face model's `EYE_L`/`EYE_R` sockets,
 third person only, on the rung and for Quarantine's infected (who now
 wear the override's face) (`effects::attached`, tests attached_effects
-t114, heavy flight_looks). Left: (5) the override's styles and hands,
-Quarantine's own change effect and sounds, a host's own override.
+t114, heavy flight_looks). **(5)'s hands done (2026-11-21):** an
+infected look's first-person hands are the override's `HandIndex`
+record, none for -1 (`view_model::hands::choose_in`; heavy
+`view_model::every_rung_looks_hands_load_textured`). Their sleeve: the
+infected faces (20-25, ...) are past every body's `HandsSkin` list, so
+view_models.md 2's fallback gives the hand record's skin 0, the
+placeholder `Hands`, which names no texture (grey arms, feedback
+42750262); ours takes the sleeve by the body's own default face.
+**Open question (spec session):** which face does the sleeve rule use
+for an infected player: the selected face piece or the override's
+`FaceIndex`? And with `Hands` as skin 0, what does the game draw for a
+skin name with no file? Left: (5) the override's styles, Quarantine's
+own change effect and sounds, a host's own override.
 
 ## Attachment models: open questions for a spec session (2026-10-29)
 

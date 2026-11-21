@@ -736,7 +736,14 @@ client only with the server's `sv_cheats 1` (and only on itself).
   open` (after `+menu`, `+wait 10` before inputs that need the page drawn).
   `ui_click <x> <y>` and `ui_drag <x0> <y0> <x1> <y1> [<frames>]` drive the
   real pointer path (Bevy's input, `Interaction`) in window pixels over the
-  remote console: a scroll bar's thumb dragged, a drop-down's box clicked. `vgui_windows` lists the frames
+  remote console: a scroll bar's thumb dragged, a drop-down's box clicked;
+  `ui_hover <x> <y>` moves the pointer there and leaves it (no button). A
+  screen's steadiness under a resting pointer or typing (a rebuild must
+  draw no different frame): an offscreen scene (`ui_scene lobby host`,
+  `ui_hover` on Start, `cl_avatar 5` / `cl_avatar 6` to redraw the lobby;
+  `ui_scene report` and `type` lines for the report dialog) with `--dump
+  <dir> --dump-every 1`, then count the frames whose crop differs from
+  the one before and the last. `vgui_windows` lists the frames
   (place, size, stacking); `vgui_windows <frame> <x> <y> [<wide> <tall>]`
   moves one as a title-bar drag would (and sizes a sizeable one), e.g.
   `+openserverbrowser lan +wait 30 +vgui_windows servers 40 30 760 520`.
@@ -2807,6 +2814,13 @@ Start, two parties with their edges), `ui_scene lobby join` (a joiner's view: it
 match's settings, Leave), `ui_scene lobby between` (the
 host's lobby after a match, the next map coming in: each row at its own
 load stage, `chimera_net::net::load_stages`).
+`ui_scene onboarding <welcome|clipboard|checking|used|unknown|unreachable|certificate|hub|name|name-bad|name-taken|key|have|recover|done|off>`
+stages the first run's screens (`party_kit::onboarding`, docs/plans/active/onboarding.md) with a made-up hub
+("Friday Night Hub"; nothing is sent or written): the invite field empty or filled from the clipboard, checking, each
+error, the hub, the name screen free, breaking a rule or taken (with suggestions), the recovery key, "I already have
+an account" on each tab, and the main menu's welcome toast (`done`). Offscreen: `ultimate_gun_game --offscreen
+1920x1080 --frames 60 --screenshot <out>.png +mainmenu +ui_scene onboarding name-taken`; `onboarding 1` shows the
+real flow in a running game.
 `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range|map>`
 stages the sandbox's screens (`chimera_client::client::sandbox`) with
 made-up guns, kills, downloads, targets and maps (`map`: Change map, M); over a real sandbox it reads
@@ -2815,12 +2829,17 @@ best: `ultimate_gun_game --offscreen 1920x1080 --frames 900 --screenshot
 arguments).
 `ui_scene fields` (or `ui_gallery`, which works in the real apps: Esc closes it) is the kit's gallery: the text field, search
 field, text area, toggle, slider, stepper, buttons and dropdown in rest, hover, focus, typing (caret mid-text), selection,
-masked, error and disabled; `ui_scene controls` the older page of rows and buttons; `ui_scene picker` (`ui_gallery picker`)
+masked, error and disabled; `ui_scene controls` the older page of rows and buttons; `ui_scene form` (`ui_gallery form`)
+a settings form's pieces (`chimera_ui::form`: badges, the big toggle, the key-capture chip, setting rows with the reset
+key and the Chimera mark, the segmented-or-dropdown rule, the tabs' grey to white); `ui_scene picker` (`ui_gallery picker`)
 the shared picker (`chimera_ui::picker`): multi-select rows and cards at a dialog's width, single pick in a wider frame
 with the search typed into, the chips, and the Sandbox's card parts (a badge, a family's count, a pinned mark, a
 download's bar). Check a change to
 `chimera_ui::controls` against it (offscreen: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
-<out>.png +ui_scene fields`). In the apps, Options' "Developer mode" (Party tab, cvar `developer_mode`, off
+<out>.png +ui_scene fields`). Options (party_kit `settings`): `ui_scene settings <general|video|audio|controls|games>`,
+and a game's page `ui_scene settings games <game> <keys|gameplay|look> [listen]` (`listen`: a key row waiting, the
+capture chip), e.g. `ultimate_gun_game --offscreen 1280x720 --frames 90 --screenshot <out>.png +volume 0 +mainmenu
++ui_scene settings games tf2 keys listen` (docs/plans/active/settings-games.md). In the apps, Options' "Developer mode" (General tab, cvar `developer_mode`, off
 by default) adds a Developer entry to the Escape menu that opens it.
 `ui_scene lobby` stages the lobby with made-up players (for
 screenshots; no parity ids or fixture yet), so `lobby`'s report lists

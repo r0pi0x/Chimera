@@ -13,7 +13,9 @@
 //! links it prints.
 //!
 //! Every other command asks the running service (its admin API, with the
-//! secret from the store): `invite <name>` (prints the link or code once),
+//! secret from the store): `invite --intent "<why>" [--recipient "<who>"]`
+//! (prints the link and the bare code once; the player chooses a
+//! username; the older `invite <name>` names it for its player),
 //! `invite revoke <name>`, `invites`, `account list`, `account show
 //! <username>`, `account set <username> ...`, `account refresh
 //! <username>` (its tickets asked again, so new rights apply at once),
@@ -42,8 +44,9 @@ use chimera_services::{
 
 const USAGE: &str = "usage: chimera_accounts <command> [--store <dir>] [--accounts <url>]
   serve [--listen <ip:port>] [--tls <ip:port>] [--public <host:port>] [--threads <n>]
-  invite <name> [--role tester|host|owner] [--content a,b|*] [--games a,b|*] [--list <n>]
-                [--expires <days>] [--for <username> [--keep]] [--hub <host:port>]
+  invite --intent \"<why>\" [--recipient \"<who>\"] [--role tester|host|owner] [--content a,b|*]
+                [--games a,b|*] [--list <n>] [--expires <days>] [--for <username> [--keep]] [--hub <host:port>]
+  invite <name> ...           (older: an invite named for its player, the name its username)
   invite revoke <name>        invites
   account list [--json]       account show <username> [--json]
   account set <username> [--username <new>] [--display-name <name>] [--role tester|host|owner]
@@ -167,9 +170,12 @@ fn run() -> Result<(), String> {
             println!("{n} unused invite(s) named {name:?} revoked");
             Ok(())
         }
-        ["invite", name] => {
+        ["invite"] | ["invite", _] => {
+            let name = args.words.get(1).cloned().unwrap_or_default();
             let spec = InviteSpec {
-                name: name.to_string(),
+                name,
+                intent: args.flag("--intent"),
+                recipient: args.flag("--recipient"),
                 role: args.flag("--role"),
                 content: args.flag("--content"),
                 games: args.flag("--games"),
@@ -185,7 +191,10 @@ fn run() -> Result<(), String> {
                 Some(chimera_assets::account::HubLink { host, fingerprint, code: Some(invited.code.clone()) }.to_text(true))
             });
             match link {
-                Some(link) => println!("{link}"),
+                Some(link) => {
+                    println!("{link}");
+                    println!("code {}", invited.code);
+                }
                 None => println!(
                     "code {} (the link: chimera-hub://<hub host>:<hub port>/<fingerprint>?code={}; --hub names the host)",
                     invited.code, invited.code
@@ -198,7 +207,8 @@ fn run() -> Result<(), String> {
             let list: Vec<InviteView> = args.admin()?.get("/admin/invites")?;
             for i in list {
                 let target = i.for_username.map(|u| format!(" (re-invite into {u})")).unwrap_or_default();
-                println!("{:<9} {:<24} {:<7} until {}{target}", i.state, i.name, i.role, when(i.expires));
+                let why = i.intent.map(|w| format!(" - {w}")).unwrap_or_default();
+                println!("{:<9} {:<24} {:<7} until {}{target}{why}", i.state, i.name, i.role, when(i.expires));
             }
             Ok(())
         }

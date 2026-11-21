@@ -106,7 +106,8 @@
 //! body's default face and head piece; a player keeps the last rung look
 //! (and an infected its marker) if the ladder stops for a minigame of
 //! other rules; the infected's override render styles (the virus blend,
-//! the glow) and first-person hands aren't drawn (their eyes are: the
+//! the glow) aren't drawn (their first-person hands, `view_model::hands::
+//! choose_in`, and eyes are: the
 //! override face's `ClientFX#` groups, `effects::attached`); the infection sound's files
 //! and radius are ours (the spec's auto-cast record isn't read), played
 //! on each machine (the spec's is a server sound), one at a time on it.

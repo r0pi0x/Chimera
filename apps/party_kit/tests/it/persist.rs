@@ -204,14 +204,19 @@ fn options_rows_read_right() {
     for gone in ["cl_hitmarker", "party_voice_lines_3d", "hud_radar"] {
         assert!(tabs.iter().flat_map(|(_, s)| s.iter()).all(|s| s.cvar != gone), "{gone} has no Options row");
     }
-    let party: Vec<&str> = tabs.iter().find(|(n, _)| n == "Party").map(|(_, s)| s.iter().map(|s| s.cvar.as_str()).collect()).unwrap_or_default();
-    // The chat's row joined the page with the Signal chat (ugg-ui M10);
-    // TF2's auto reload, a player's option (cl_autoreload), before it.
+    let page = |name: &str| -> Vec<&str> { tabs.iter().find(|(n, _)| n == name).map(|(_, s)| s.iter().map(|s| s.cvar.as_str()).collect()).unwrap_or_default() };
+    // General holds the party's rows (the chat's joined with the Signal
+    // chat, ugg-ui M10) and this computer's; TF2's own options moved to
+    // its page on the Games tab (settings-games.md), their cvars kept.
     assert_eq!(
-        party,
-        ["party_swap_effect", "party_music", "party_ask_follow", "developer_mode", "cl_autoreload", "cl_autoswitch_empty", "cl_chat"],
-        "the Party page keeps the swap effect, the music and the follow choice"
+        page("General"),
+        ["party_swap_effect", "party_music", "party_ask_follow", "cl_chat", "asset_use_install", "developer_mode"],
+        "General keeps the swap effect, the music and the follow choice"
     );
+    let games = page("Games");
+    for cvar in ["cl_autoreload", "cl_autoswitch_empty", "tf2_viewmodel_fov", "halo_ce:hud_filter"] {
+        assert!(games.contains(&cvar), "{cvar} on the Games tab: {games:?}");
+    }
     assert_eq!(row("cl_autoreload").shown("0"), "Off", "auto reload: Off by default");
     assert_eq!(row("cl_autoswitch_empty").shown("0"), "Off", "auto switch when empty: Off by default");
     let music = row("party_music");

@@ -1248,3 +1248,113 @@ fn left_on_a_map_collapses_its_group_and_moves_to_the_header() {
     assert_eq!(p.rows(&games).len(), 2, "the game opens (its group still folded)");
     assert!(!p.right(&games) || p.rows(&games).len() == 5);
 }
+
+/// The Host page under its Maps and Guns dialogs (`chimera_ui::modal`):
+/// the wheel with the pointer over the page's rows scrolls nothing behind
+/// the dialog, the page's rows take no click, the keys are the dialog's,
+/// and Esc closes the dialog only (Host stays up). With no dialog the
+/// same wheel scrolls the page.
+#[test]
+fn host_dialogs_take_the_pointer_and_keys_from_the_page() {
+    use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
+    use bevy::ui::{ComputedNode, DeprecatedInteraction as Interaction, RelativeCursorPosition};
+    use chimera_ui::{Modals, ScrollViews, scroll::{ScrollContent, ScrollView}};
+    use party_kit::{guns_picker::{GunsPicker, GunsSource}, maps_picker::MapsPicker};
+    let mut sim = sim(PAGES_THEME);
+    sim.app.insert_resource(GunsSource(Box::new(FakeGuns)));
+    sim.app.init_resource::<AccumulatedMouseScroll>();
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    assert_eq!(pages(&sim).up, Some(MenuPage::Play));
+    // The page's view laid out by hand (20 cq over 60), the pointer on it.
+    let wheel_over_page = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        let view = w.query::<(Entity, &ScrollView)>().iter(w).find(|(_, v)| v.key == signal_pages::PLAY_SCROLL).map(|(e, _)| e).expect("the page's view");
+        let content = w.query::<(Entity, &ScrollContent)>().iter(w).find(|(_, c)| c.view == view).map(|(e, _)| e).unwrap();
+        let px = |h: f32| ComputedNode { size: Vec2::new(600.0, h * 19.2), inverse_scale_factor: 1.0, ..default() };
+        w.entity_mut(view).insert((px(20.0), RelativeCursorPosition { cursor_over: true, normalized: Some(Vec2::ZERO) }));
+        w.entity_mut(content).insert(px(60.0));
+        w.resource_mut::<ScrollViews>().reset(signal_pages::PLAY_SCROLL);
+        sim.ticks(1);
+        let w = sim.app.world_mut();
+        w.entity_mut(view).insert(RelativeCursorPosition { cursor_over: true, normalized: Some(Vec2::ZERO) });
+        w.insert_resource(AccumulatedMouseScroll { unit: MouseScrollUnit::Line, delta: Vec2::new(0.0, -1.0) });
+        sim.ticks(1);
+        sim.app.world_mut().insert_resource(AccumulatedMouseScroll::default());
+        sim.app.world().resource::<ScrollViews>().get(signal_pages::PLAY_SCROLL).is_some_and(|s| s.offset > 0.0 || s.target.is_some_and(|t| t > 0.0))
+    };
+    assert!(wheel_over_page(&mut sim), "no dialog: the wheel scrolls the page");
+    let data = MenuData::shipped();
+    for (kind, open) in [
+        (party_kit::main_menu::PlayKind::Map, (|s: &Sim| s.app.world().resource::<MapsPicker>().open.is_some()) as fn(&Sim) -> bool),
+        (party_kit::main_menu::PlayKind::Guns, |s: &Sim| s.app.world().resource::<GunsPicker>().open.is_some()),
+    ] {
+        let row = data.play.iter().position(|r| r.kind == kind).unwrap();
+        while pages(&sim).focus > row {
+            press(&mut sim, KeyCode::ArrowUp);
+        }
+        while pages(&sim).focus < row {
+            press(&mut sim, KeyCode::ArrowDown);
+        }
+        press(&mut sim, KeyCode::Enter);
+        sim.ticks(3);
+        assert!(open(&sim), "{kind:?}: the dialog is open");
+        assert!(sim.app.world().resource::<Modals>().is_open(), "{kind:?}: a modal layer");
+        assert!(!wheel_over_page(&mut sim), "{kind:?}: the wheel over the page behind the dialog scrolls nothing");
+        // A click on a page row behind the dialog: no press reaches it.
+        let focus = pages(&sim).focus;
+        let w = sim.app.world_mut();
+        let rows: Vec<Entity> = w.query_filtered::<Entity, With<signal_pages::PageLine>>().iter(w).collect();
+        for &e in &rows {
+            if let Some(mut i) = w.get_mut::<Interaction>(e) {
+                *i = Interaction::Pressed;
+            }
+        }
+        sim.ticks(2);
+        assert!(rows.iter().all(|e| sim.app.world().get::<Interaction>(*e).is_none_or(|i| *i == Interaction::None)), "{kind:?}: nothing pressed behind");
+        assert_eq!(pages(&sim).focus, focus, "{kind:?}: the click behind moved no focus");
+        // Tab and the arrows are the dialog's; Esc closes it, Host stays.
+        press(&mut sim, KeyCode::Tab);
+        assert_eq!(pages(&sim).focus, focus, "{kind:?}: Tab doesn't drive the page behind");
+        press(&mut sim, KeyCode::Escape);
+        sim.ticks(2);
+        assert!(!open(&sim), "{kind:?}: Esc closed the dialog");
+        assert_eq!(pages(&sim).up, Some(MenuPage::Play), "{kind:?}: and only the dialog");
+        assert!(!sim.app.world().resource::<Modals>().is_open(), "{kind:?}: no modal left");
+    }
+}
+
+/// Host's Start, hovered, stays hovered through the page drawn again (a
+/// letter typed into the server name redraws it, as any change of the
+/// page does): the new button is hovered and lifted from its first frame
+/// (the report "the start game button keeps flashing while hovering":
+/// each redraw showed it at rest and eased the hover in again;
+/// `chimera_ui::controls::carry_hover`).
+#[test]
+fn a_hovered_start_stays_hovered_through_a_redraw() {
+    use bevy::ui::DeprecatedInteraction as Interaction;
+    use chimera_ui::controls::HeroSlab;
+    let mut sim = sim(PAGES_THEME);
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    assert_eq!(menu(&sim).page, MenuPage::Play);
+    press(&mut sim, KeyCode::Enter);
+    assert!(menu(&sim).focus.is_some(), "the server name has the keys");
+    let start = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        let b = w.query::<(Entity, &A)>().iter(w).find(|(_, a)| **a == A::Start).map(|(e, _)| e).expect("Start");
+        let slab = w.get::<Children>(b).unwrap().iter().find(|c| w.get::<HeroSlab>(*c).is_some()).unwrap();
+        (b, *w.get::<Interaction>(b).unwrap(), w.get::<HeroSlab>(slab).unwrap().lift)
+    };
+    let (s0, _, _) = start(&mut sim);
+    *sim.app.world_mut().get_mut::<Interaction>(s0).unwrap() = Interaction::Hovered;
+    for _ in 0..3 {
+        sim.app.world_mut().resource_mut::<chimera_ui::UiClock>().step(0.1);
+        sim.ticks(1);
+    }
+    assert_eq!(start(&mut sim), (s0, Interaction::Hovered, 1.0), "hovered and lifted");
+    type_text(&mut sim, "x");
+    let (s1, i, lift) = start(&mut sim);
+    assert_ne!(s1, s0, "the page was drawn again");
+    assert_eq!((i, lift), (Interaction::Hovered, 1.0), "the new Start as the old one was");
+}

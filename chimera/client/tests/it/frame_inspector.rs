@@ -155,3 +155,30 @@ fn what_the_inspector_costs() {
     // the frame's dot) a fixed part.
     assert!(off < bare + 300 * 200 + 100_000, "always-on part: {bare} -> {off}");
 }
+
+/// world.txt's UI part: the cameras on or off, each UI root with the
+/// camera it draws on (a root on an off camera isn't drawn: the report
+/// dialog that blinked out at the menu, 2026-11-21) and the UI spawned a
+/// second (a screen drawn again every frame shows).
+#[test]
+fn world_txt_names_the_ui_roots_their_cameras_and_the_redraws() {
+    use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
+    #[derive(Component)]
+    struct ReportDialogStandIn;
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins).add_plugins(WorldReportPlugin);
+    let off = app.world_mut().spawn((Camera { is_active: false, ..default() }, IsDefaultUiCamera)).id();
+    let on = app.world_mut().spawn((Camera { order: 101, ..default() }, Name::new("menu camera"))).id();
+    app.world_mut().spawn((Node::default(), ReportDialogStandIn));
+    for _ in 0..3 {
+        app.world_mut().spawn((Node::default(), UiTargetCamera(on)));
+        app.update();
+    }
+    let text = chimera_client::client::world_report::ui_text(app.world_mut());
+    assert!(text.contains(&format!("{off} order 0 OFF, the default UI camera")), "{text}");
+    assert!(text.contains(&format!("{on} menu camera order 101 on")), "{text}");
+    assert!(text.contains("ui roots (4)"), "{text}");
+    assert!(text.contains("ReportDialogStandIn") && text.contains(&format!("{off} (OFF: not drawn)")), "{text}");
+    assert!(text.contains(&format!("{on} (on)")), "{text}");
+    assert!(text.contains("3 frames, 4 nodes"), "the redraws a second: {text}");
+}

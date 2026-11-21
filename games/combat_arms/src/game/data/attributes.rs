@@ -54,6 +54,8 @@ use crate::game::attachments::ModRecord;
 /// The four files a loader for this spec needs, in-archive paths
 /// ("Where the data sits"), as the mount names them.
 pub const WEAPONS_FILE: &str = "attributes/weapons.txt";
+/// The shop item file (display data, attribute_data.md).
+pub const ITEMS_FILE: &str = "attributes/items.txt";
 pub const SERVER_FILE: &str = "attributes/serverbutes.txt";
 pub const MODELS_FILE: &str = "attributes/modelbutes.txt";
 pub const MOD_FILE: &str = "attributes/mod.txt";
@@ -1256,6 +1258,9 @@ pub struct PieceRecord {
     /// character (game_modes.md Corrections (2026-10-30) 4, 7: faces'
     /// eyes).
     pub client_fx: Vec<String>,
+    /// A face's `RedirectForHandsSkin` (view_models.md 2): the face whose
+    /// `HandsSkin` entry the first-person sleeve takes.
+    pub hands_skin_redirect: Option<i32>,
 }
 
 impl PieceRecord {
@@ -1278,6 +1283,7 @@ impl PieceRecord {
             hair: s.get("HairIndex").map(|_| s.int("HairIndex", -1)).filter(|&h| h >= 0),
             render_styles: list("RenderStyle"),
             client_fx: list("ClientFX"),
+            hands_skin_redirect: s.get("RedirectForHandsSkin").map(|_| s.int("RedirectForHandsSkin", -1)).filter(|&f| f >= 0),
         }
     }
 }
