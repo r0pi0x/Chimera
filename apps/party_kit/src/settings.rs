@@ -1939,6 +1939,9 @@ fn help_of(world: &World, ctx: Context, tabs: &[(String, Vec<Setting>)], s: &Set
                     format!("{what}{name} only: replaces the shared key while you play it. {how}")
                 }
             };
+            if g.is_none() && crate::controls::OURS.contains(command) {
+                ours(&mut text);
+            }
             if action.is_some_and(|a| a.planned) {
                 text.push_str(" Not in the game yet: the key is kept for when it is.");
             }
@@ -2252,7 +2255,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
             ui.section(c, list, title, None);
             None
         }
-        Row::Bind { label, action, .. } => {
+        Row::Bind { game, label, command, action } => {
             let listening = s.capture == Some(i);
             let changed = d.bind_changed.get(i).copied().unwrap_or(false);
             let planned = action.is_some_and(|a| a.planned);
@@ -2262,7 +2265,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                 (None, true) => Some("not in yet".to_string()),
                 (None, false) => None,
             };
-            let look = RowLook { note: note.as_deref(), ours: false, changed: resettable, min_h: t.layout(L, "bind_h") };
+            let look = RowLook { note: note.as_deref(), ours: game.is_none() && crate::controls::OURS.contains(command), changed: resettable, min_h: t.layout(L, "bind_h") };
             let sr = ui.setting_row(c, list, label, look, State { focus, changed: changed || resettable, disabled: false, error: false });
             c.entity(sr.row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
             let keys = d.keys.get(i).cloned().unwrap_or_default();

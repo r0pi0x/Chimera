@@ -4,19 +4,42 @@
 //! lands, so a shot lands where the crosshair points, near and far; round
 //! a wall's edge the camera sees past, the shot stops on the wall and the
 //! blocked-shot marker sits there; the camera never ends inside a wall.
+//! M2: the plugin on the kit: the glide to and from the eye, the dimmed
+//! crosshair and the target-ID ray while the marker shows, the recoil in
+//! the camera's look, the distances scaled with the eye height, the host's
+//! switch.
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::RunSystemOnce, prelude::*};
-use chimera_client::client::third_person::{ShoulderSettings, aim_point, angles_of, blocked_point, camera_from_eye, fit, wanted_offsets};
-use chimera_core::core::{CHARACTER_FILTER, Health};
+use chimera_client::client::{
+    FirstPersonCamera,
+    aim::{AimRay, character_under, crosshair_ray},
+    input::FreeLook,
+    third_person::{
+        Shoulder, ShoulderSettings, ShoulderView, ThirdPersonPlugin, aim_point, angles_of, blocked_point, camera_from_eye, fit,
+        wanted_offsets,
+    },
+    view::CameraMode,
+};
+use chimera_core::core::{CHARACTER_FILTER, Health, LocalPlayer, NetRole, ThirdPersonRules};
 use chimera_sim::testkit::{self, RIFLE};
-use chimera_world::{greybox, harness::Sim};
+use chimera_sim::SimBasePlugins;
+use chimera_world::{greybox::{self, GreyboxMapPlugin}, harness::Sim};
 
 /// The shooter at the greybox's first spawn looking along -Z (yaw 0), and
 /// a target straight ahead of the right-shoulder camera, `ahead` metres
 /// from the eye.
 fn scene(ahead: f32) -> (Sim, Entity, Entity) {
-    let mut sim = testkit::kit_sim();
+    scene_with(ahead, |_| {})
+}
+
+/// `scene` with `prep` on the kit's app before it starts (plugins).
+fn scene_with(ahead: f32, prep: impl FnOnce(&mut App)) -> (Sim, Entity, Entity) {
+    let mut sim = Sim::with(SimBasePlugins, |app| {
+        app.add_plugins(GreyboxMapPlugin);
+        testkit::add_weapons(app);
+        prep(app);
+    });
     let shooter = testkit::with_player(&mut sim, None, RIFLE);
     let s = ShoulderSettings::default();
     let target = sim.spawn_character(greybox::SPAWNS[0] + Vec3::new(s.side, 0.0, -ahead), chimera_sim::movement::placeholder::ID);
@@ -129,4 +152,158 @@ fn backed_into_a_corner_the_camera_stays_out_of_the_walls() {
         .unwrap();
     assert!(inside.is_empty(), "camera at {cam} touches {inside:?}");
     assert!(cam.x < eye.x + 0.5 && cam.z < eye.z + 0.6, "between the walls: {cam}");
+}
+
+/// The kit with the shoulder camera's plugin and a local player (the
+/// scene's shooter) on it, the camera as a child at the right shoulder.
+fn client_scene(ahead: f32) -> (Sim, Entity, Entity) {
+    let (mut sim, shooter, target) = scene_with(ahead, |app| {
+        app
+            .add_plugins(ThirdPersonPlugin)
+            .init_resource::<CameraMode>()
+            .init_resource::<FreeLook>();
+    });
+    let (eye, cam) = camera(&sim, shooter);
+    let at = sim.position(shooter);
+    sim.app.world_mut().entity_mut(shooter).insert(LocalPlayer).with_child((
+        FirstPersonCamera,
+        Camera::default(),
+        Transform::from_translation(cam - at),
+    ));
+    let _ = eye;
+    (sim, shooter, target)
+}
+
+fn third_person(sim: &mut Sim, on: bool) {
+    sim.app.world_mut().resource_mut::<CameraMode>().third_person = on;
+}
+
+#[test]
+fn the_camera_glides_to_the_shoulder_and_back_to_the_eye() {
+    let (mut sim, ..) = client_scene(10.0);
+    assert!(!sim.app.world().resource::<Shoulder>().drawn(), "first person at the eye");
+    third_person(&mut sim, true);
+    sim.seconds(0.1);
+    let s = sim.app.world().resource::<Shoulder>().clone();
+    assert!(s.on && s.blend > 0.0 && s.blend < 1.0, "gliding out: {}", s.blend);
+    sim.seconds(0.4);
+    assert_eq!(sim.app.world().resource::<Shoulder>().blend, 1.0, "at its spot");
+    third_person(&mut sim, false);
+    sim.seconds(0.1);
+    let s = sim.app.world().resource::<Shoulder>().clone();
+    assert!(!s.on && s.drawn() && s.blend < 1.0 && s.blend > 0.0, "gliding back, input already the eye's: {}", s.blend);
+    assert!(s.exit_look.is_some());
+    sim.seconds(0.4);
+    let s = sim.app.world().resource::<Shoulder>();
+    assert!(!s.drawn() && s.look.is_none() && s.exit_look.is_none(), "at the eye again");
+}
+
+#[test]
+fn a_glide_stands_between_the_eye_and_the_spot_and_the_recoil_shakes_the_camera() {
+    let (mut sim, shooter, _) = client_scene(10.0);
+    third_person(&mut sim, true);
+    sim.seconds(0.6);
+    let eye = sim.position(shooter) + sim.state(shooter).eye_offset;
+    let origin = sim.position(shooter);
+    let place = |sim: &mut Sim, kick: Vec3| {
+        let eye_off = sim.state(shooter).eye_offset;
+        sim.app
+            .world_mut()
+            .run_system_once(move |mut view: ShoulderView, spatial: SpatialQuery| {
+                let filter = SpatialQueryFilter::from_excluded_entities([shooter]).with_mask(CHARACTER_FILTER);
+                view.place(origin, eye_off, Quat::IDENTITY, Quat::IDENTITY, kick, Vec2::ZERO, &spatial, &filter)
+            })
+            .unwrap()
+            .expect("drawn")
+    };
+    let (far, look) = place(&mut sim, Vec3::ZERO);
+    assert!(far.distance(eye - origin) > 0.5, "off the eye, at its spot: {far}");
+    // The recoil: pitched up 0.1 rad, the camera's look is.
+    let (_, kicked) = place(&mut sim, Vec3::new(0.1, 0.0, 0.0));
+    assert!((kicked.angle_between(look) - 0.1).abs() < 1e-3, "{}", kicked.angle_between(look));
+    // Half way: between the eye and the spot.
+    sim.app.world_mut().resource_mut::<Shoulder>().blend = 0.5;
+    let (mid, _) = place(&mut sim, Vec3::ZERO);
+    let (from, to) = (eye - origin, far);
+    // Smoothstep(0.5) is a half.
+    assert!((mid.distance(from) - 0.5 * to.distance(from)).abs() < 1e-3, "{mid} between {from} and {to}");
+    sim.app.world_mut().resource_mut::<Shoulder>().blend = 0.0;
+    sim.app.world_mut().resource_mut::<Shoulder>().on = false;
+    sim.app.world_mut().resource_mut::<Shoulder>().exit_look = None;
+    sim.app.world_mut().resource_mut::<Shoulder>().look = None;
+    let none = sim
+        .app
+        .world_mut()
+        .run_system_once(move |mut view: ShoulderView, spatial: SpatialQuery| {
+            let filter = SpatialQueryFilter::from_excluded_entities([shooter]).with_mask(CHARACTER_FILTER);
+            view.place(origin, Vec3::Y, Quat::IDENTITY, Quat::IDENTITY, Vec3::ZERO, Vec2::ZERO, &spatial, &filter)
+        })
+        .unwrap();
+    assert!(none.is_none(), "first person: the camera is the eye's");
+}
+
+#[test]
+fn the_distances_scale_with_the_eye_height() {
+    let s = ShoulderSettings::default();
+    let tall = s.scaled(1.25);
+    assert!((tall.dist - s.dist * 1.25).abs() < 1e-6 && (tall.side - s.side * 1.25).abs() < 1e-6 && (tall.up - s.up * 1.25).abs() < 1e-6);
+    assert_eq!(tall.swap_secs, s.swap_secs, "only the distances");
+    let (mut sim, shooter, _) = client_scene(10.0);
+    third_person(&mut sim, true);
+    sim.seconds(0.3);
+    let state = sim.app.world().resource::<Shoulder>().clone();
+    let stand = sim.state(shooter).eye_offset.y;
+    assert!((state.stand_eye - stand).abs() < 1e-5);
+    assert!((state.scale() - stand / chimera_client::client::third_person::REF_EYE).abs() < 1e-5);
+}
+
+#[test]
+fn the_marker_dims_the_crosshair_and_the_target_id_follows_the_crosshair() {
+    let (mut sim, shooter, target) = client_scene(10.0);
+    third_person(&mut sim, true);
+    sim.seconds(0.6);
+    let (eye, _) = camera(&sim, shooter);
+    // The eye's own ray misses the target (it stands at the shoulder's
+    // line); the crosshair's ray finds it.
+    let eye_ray = AimRay { eye, dir: Dir3::NEG_Z };
+    let find = |sim: &mut Sim, ray: AimRay| {
+        sim.app
+            .world_mut()
+            .run_system_once(move |spatial: SpatialQuery, parents: Query<&ChildOf>, who: Query<(), With<Health>>| {
+                character_under(&spatial, ray, 100.0, shooter, |e| who.contains(e), &parents).map(|h| h.0)
+            })
+            .unwrap()
+    };
+    assert_eq!(find(&mut sim, eye_ray), None, "the eye's ray passes beside it");
+    let state = sim.app.world().resource::<Shoulder>().clone();
+    assert_eq!(state.dim, 0.0, "a clear line: the crosshair as it is");
+    let ray = crosshair_ray(Some(&state), eye_ray);
+    assert_eq!(find(&mut sim, ray), Some(target), "the crosshair's ray");
+    // The off camera leaves the eye's ray alone.
+    let off = Shoulder::default();
+    assert_eq!(crosshair_ray(Some(&off), eye_ray), eye_ray);
+    // A wall's edge: the marker shows, the crosshair dims, and the name
+    // goes (the crosshair's ray still sees the target past the edge).
+    sim.app.world_mut().spawn((
+        RigidBody::Static,
+        Collider::cuboid(1.0, 4.0, 0.2),
+        Transform::from_translation(eye + Vec3::new(-0.15, 0.0, -3.0)),
+    ));
+    sim.seconds(0.6);
+    let s = sim.app.world().resource::<Shoulder>().clone();
+    assert!(s.blocked.is_some(), "the marker shows");
+    assert!(s.dim > 0.99, "the crosshair is dimmed: {}", s.dim);
+}
+
+#[test]
+fn a_server_that_forbids_third_person_keeps_the_client_in_first() {
+    let (mut sim, ..) = client_scene(10.0);
+    sim.app.insert_resource(NetRole::Client);
+    third_person(&mut sim, true);
+    sim.seconds(0.4);
+    assert!(!sim.app.world().resource::<Shoulder>().drawn(), "allow_thirdperson 0: first person");
+    assert!(sim.app.world().resource::<CameraMode>().held_off);
+    sim.app.world_mut().resource_mut::<ThirdPersonRules>().allow = 1;
+    sim.seconds(0.6);
+    assert_eq!(sim.app.world().resource::<Shoulder>().blend, 1.0, "allowed: the shoulder camera");
 }

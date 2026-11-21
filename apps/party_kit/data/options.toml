@@ -58,4 +58,6 @@ setting = [
   { label = "Zoomed sensitivity (not CA scopes)", cvar = "zoom_sensitivity_ratio", range = [0.1, 3, 0.1], hard_min = 0.001, help = "The mouse while zoomed (CS:S's scopes, HL2:DM's zooms), times the sensitivity and the zoom. Combat Arms' scopes keep their own." },
   { label = "Mouse filter", cvar = "m_filter", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Acceleration", cvar = "m_customaccel", choices = [["0", "Off"], ["3", "On"]] },
+  { section = "Third-person camera", label = "Shoulder", cvar = "chimera:cam_shoulder", choices = [["1", "Right"], ["-1", "Left"]], origin = "chimera", help = "The side the over-the-shoulder camera sits on (swap it in play with the Swap shoulder key). Servers decide whether third person is allowed." },
+  { label = "Camera distance", cvar = "chimera:cam_dist", range = [1.0, 4.0, 0.1], hard_min = 0.5, hard_max = 6, origin = "chimera", help = "How far behind your shoulder the camera sits, in metres for an average-sized character (taller or shorter bodies scale it). The keys for third person and the shoulder swap are under Keys, every game." },
 ]

@@ -1078,10 +1078,14 @@ fn draw_crosshair(
         bevy::ecs::system::Local<Option<(Handle<Image>, Handle<Image>, Rect)>>,
     ),
     (own, cover): (Res<GameDraws>, Res<HudCover>),
+    shoulder: Option<Res<super::third_person::Shoulder>>,
 ) {
     let Some((cam, proj)) = camera.iter().next() else {
         return;
     };
+    // The over-the-shoulder camera's blocked-shot marker dims the crosshair.
+    let dim = shoulder.map_or(0.0, |s| s.dim);
+    let tint = |c: Color| c.with_alpha(c.alpha() * (1.0 - super::third_person::DIM_AMOUNT * dim));
     let Some(size) = crosshair_space(lines.iter().find_map(|l| l.4), cam) else {
         return;
     };
@@ -1125,8 +1129,8 @@ fn draw_crosshair(
                 image.image = handle.clone();
                 image.rect = Some(*rect);
             }
-            if image.color != color.color() {
-                image.color = color.color();
+            if image.color != tint(color.color()) {
+                image.color = tint(color.color());
             }
             let (w, h) = (rect.width(), rect.height());
             edit(&mut node, |node| {
@@ -1152,7 +1156,7 @@ fn draw_crosshair(
     let shapes = color.lines(spread_gap, size.y);
     let centre = size / 2.0;
     for (line, mut node, mut vis, mut bg, _) in &mut lines {
-        bg.set_if_neq(BackgroundColor(color.color()));
+        bg.set_if_neq(BackgroundColor(tint(color.color())));
         vis.set_if_neq(if visible {
             Visibility::Inherited
         } else {

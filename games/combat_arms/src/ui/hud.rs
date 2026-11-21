@@ -867,6 +867,7 @@ struct HudInputs<'w, 's> {
         >,
     >,
     spec: Option<Res<'w, SpecView>>,
+    shoulder: Option<Res<'w, crate::client::third_person::Shoulder>>,
     viewed: Query<'w, 's, Viewed<'static>>,
     weapons: Query<'w, 's, HeldWeapon<'static>>,
     characters: Query<'w, 's, Character<'static>, With<Intent>>,
@@ -1129,7 +1130,7 @@ fn update(
 
     // Name tags and the aim target (A11).
     if let Some((me, at, intent, state, view, my_team, selection, served)) = local {
-        let ray = aim::view_ray(at, intent, state, view);
+        let ray = aim::crosshair_ray(world.shoulder.as_deref(), aim::view_ray(at, intent, state, view));
         let local_alive = world.viewed.get(me).is_ok_and(|p| !p.7 && p.0.current > 0.0);
         let target = if local_alive {
             aim::character_under(

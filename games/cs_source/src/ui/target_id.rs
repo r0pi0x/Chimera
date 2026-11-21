@@ -177,6 +177,7 @@ fn find(
     hud: Option<Res<ActiveHud>>,
     mode: Res<PlayerIdMode>,
     center: Res<CenterId>,
+    shoulder: Option<Res<crate::client::third_person::Shoulder>>,
     mut out: ResMut<TargetId>,
 ) {
     let mut next = TargetId {
@@ -187,7 +188,7 @@ fn find(
         let (me, at, intent, state, view, team, dead) = *local;
         let alive = !dead && who.get(me).ok().and_then(|w| w.1).is_none_or(|h| h.current > 0.0);
         if alive {
-            let ray = crate::client::aim::view_ray(at, intent, state, view);
+            let ray = crate::client::aim::crosshair_ray(shoulder.as_deref(), crate::client::aim::view_ray(at, intent, state, view));
             let eye = ray.eye;
             let target = crate::client::aim::character_under(
                 &spatial,

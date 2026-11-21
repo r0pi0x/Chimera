@@ -1007,7 +1007,9 @@ client only with the server's `sv_cheats 1` (and only on itself).
   `chimera:cam_side`, `chimera:cam_up` in metres, `chimera:shoulder` or
   middle mouse swaps the shoulder; a network game needs the server's
   `chimera:allow_thirdperson 1`). Shots go through the crosshair; a dot
-  marks where a blocked shot would land. `+thirdperson` in a
+  marks where a blocked shot would land (and dims the crosshair). The
+  camera glides from the eye over 0.25 s, so give a `--screenshot` run a
+  `+wait` after `+thirdperson`. `+thirdperson` in a
   `--screenshot` run shows the local player's model and animation.
   `cam_idealyaw` orbits the camera as a debug view (degrees; `+cam_idealyaw
   140` looks at the player's front, e.g. to see how the hands hold the

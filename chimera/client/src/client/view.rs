@@ -359,13 +359,17 @@ fn show_local_body(
     free: Res<FreeCam>,
     watch: Res<Watch>,
     local: Option<Single<(Has<Dead>, Has<crate::core::MapView>), With<LocalPlayer>>>,
+    shoulder: Option<Res<super::third_person::Shoulder>>,
     mut show: ResMut<ShowLocalBody>,
 ) {
+    // The shoulder camera gliding back to the eye still shows the body (it
+    // fades as the camera nears it).
+    let gliding = shoulder.is_some_and(|s| s.drawn());
     let (dead, camera) = local.map_or((false, false), |l| *l);
     // Viewing through a map camera (point_viewcontrol), the body stands
     // where it was and no view model is drawn.
     show.set_if_neq(ShowLocalBody(
-        (mode.third() || free.mode != 0 || watch.0 != 0 || camera) && !dead,
+        (mode.third() || gliding || free.mode != 0 || watch.0 != 0 || camera) && !dead,
     ));
 }
 

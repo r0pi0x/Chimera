@@ -32,16 +32,35 @@
 //!   narrower FOV, slower mouse) and the gun gets no click. Any other
 //!   right click (TF2's Minigun spin, a knife's stab) is the gun's.
 //!
-//! Known shortcuts (docs/tech-debt.md): The distances are metres for every
-//! character, not fractions of its eye height (a Spartan and a CS:S
-//! player frame slightly differently). The camera doesn't follow the view
-//! punch, and the crosshair isn't dimmed while the marker shows (each game
-//! draws its own). A game with half-weight first key presses
-//! (`HalfFirstPress`) turns that tick's move share unturned. Why it's OK
-//! for now: M1 of the plan; M3 and M4 take these.
+//! - **Scaled to the body.** The metre settings are for a character of
+//!   `REF_EYE` (CS:S's); the distances scale with the standing eye height
+//!   seen (`Shoulder::scale`), so a Spartan and a CS:S player frame alike.
+//! - **Glide.** The camera moves between the eye and its spot over
+//!   `transition_secs` (`Shoulder::blend`), the look slerping with it; input
+//!   and the command's aim follow the target mode at once, never blocked.
+//!   Death, spectating, map cameras and the free cams take over at once.
+//! - **Recoil and body fade.** The view punch shakes the camera (the aim
+//!   stays put). The body's parts fade out with the camera's distance
+//!   (`BodyFade`, a dither band, `ShoulderSettings::fade_hidden`/`fade_whole`),
+//!   so a wall at your back or the glide shows no body in the lens; the gun
+//!   fades with it.
+//! - **HUD.** The blocked-shot marker dims the shared crosshair
+//!   (`Shoulder::dim`); target IDs look along the crosshair's ray
+//!   (`aim::crosshair_ray`, from `Shoulder::ray`).
+//!
+//! Known shortcuts (docs/tech-debt.md): A game that draws its own
+//! crosshair (Combat Arms, TF2, HL2:DM, Halo) isn't dimmed by the marker
+//! (`Shoulder::dim` is there for it). Entering third person hides the view
+//! model at once (the body fades in with the glide); leaving shows it when
+//! the glide ends. The own-hull and near-plane margins rely on the sphere
+//! sweep's radius. A game with half-weight first key presses
+//! (`HalfFirstPress`) turns that tick's move share unturned. The sight's
+//! range readout and the defuse prompt still use the eye's ray. The
+//! camera's recoil shake isn't in the marker's aim. Why it's OK for now:
+//! M2 of the plan; M3 (follow lag) and M4 take the rest.
 
 use avian3d::prelude::*;
-use bevy::{ecs::system::SystemParam, prelude::*};
+use bevy::{camera::visibility::VisibilityRange, ecs::system::SystemParam, prelude::*};
 
 use super::{FirstPersonCamera, view::CameraMode};
 use crate::{
@@ -51,6 +70,8 @@ use crate::{
 
 /// Radius of the sphere swept to place the camera.
 const CAMERA_RADIUS: f32 = 0.2;
+/// How much of its opacity the crosshair loses while the marker shows.
+pub const DIM_AMOUNT: f32 = 0.65;
 /// The marker shows when the shot would stop more than this short of the
 /// aim point, metres.
 const BLOCKED_TOLERANCE: f32 = 0.15;
@@ -80,8 +101,32 @@ pub struct ShoulderSettings {
     pub swap_secs: f32,
     pub zoom_secs: f32,
     pub ease_out_secs: f32,
+    /// First to third person and back: the camera's glide, seconds.
+    pub transition_secs: f32,
+    /// The body fades as the camera nears it: hidden at this distance from
+    /// the body's parts' centres and whole again at `fade_whole`, metres
+    /// for a character of `REF_EYE` (scaled with the eye height).
+    pub fade_hidden: f32,
+    pub fade_whole: f32,
     /// Right mouse let go sooner than this is a tap.
     pub tap_secs: f32,
+}
+
+/// The eye height the metre settings are for (CS:S's standing eye, 64
+/// units); a character's distances scale with its own.
+pub const REF_EYE: f32 = 1.626;
+
+impl ShoulderSettings {
+    /// The distances scaled for a character `scale` times the reference's
+    /// eye height: each game's body frames alike.
+    pub fn scaled(&self, scale: f32) -> Self {
+        Self {
+            dist: self.dist * scale,
+            side: self.side * scale,
+            up: self.up * scale,
+            ..*self
+        }
+    }
 }
 
 impl Default for ShoulderSettings {
@@ -97,6 +142,9 @@ impl Default for ShoulderSettings {
             swap_secs: 0.15,
             zoom_secs: 0.15,
             ease_out_secs: 0.3,
+            transition_secs: 0.25,
+            fade_hidden: 1.1,
+            fade_whole: 1.45,
             tap_secs: 0.2,
         }
     }
@@ -178,6 +226,19 @@ pub struct Shoulder {
     /// Pivot offset from the eye as placed last.
     pub pivot: Vec3,
     pub aim: AimButton,
+    /// How far the camera has glided from the eye to its spot, 0 (first
+    /// person) .. 1; moves over `transition_secs` while `on` changes.
+    pub blend: f32,
+    /// The look the camera had when it left (gliding back to the eye).
+    pub exit_look: Option<Vec2>,
+    /// The standing eye height seen (metres) and the scale it gives the
+    /// distances.
+    pub stand_eye: f32,
+    /// The crosshair dims while the blocked-shot marker shows: 0 .. 1.
+    pub dim: f32,
+    /// The crosshair's ray as drawn (from the point on it nearest the
+    /// eye): what the HUD's target IDs look along.
+    pub ray: Option<(Vec3, Dir3)>,
     /// Where the crosshair's ray lands, and where the shot would stop
     /// short of it (the marker), world space; this frame's.
     pub aim_point: Option<Vec3>,
@@ -185,6 +246,16 @@ pub struct Shoulder {
 }
 
 impl Shoulder {
+    /// The distances' scale for the character's eye height.
+    pub fn scale(&self) -> f32 {
+        if self.stand_eye > 0.0 { self.stand_eye / REF_EYE } else { 1.0 }
+    }
+
+    /// The camera is drawn off the eye this frame (on, or gliding back).
+    pub fn drawn(&self) -> bool {
+        self.on || self.blend > 0.0
+    }
+
     /// The look as a rotation.
     pub fn rotation(&self) -> Option<Quat> {
         self.look.map(|l| Quat::from_euler(EulerRot::YXZ, l.x, l.y, 0.0))
@@ -332,7 +403,10 @@ pub struct ThirdPersonPlugin;
 impl Plugin for ThirdPersonPlugin {
     fn build(&self, app: &mut App) {
         use super::input::LocalInputSystems;
+        super::input::configure_local_input(app);
         app.init_resource::<Shoulder>()
+            .init_resource::<CameraMode>()
+            .init_resource::<super::input::FreeLook>()
             .init_resource::<ShoulderSettings>()
             .init_resource::<ThirdPersonRules>()
             .add_systems(
@@ -346,7 +420,7 @@ impl Plugin for ThirdPersonPlugin {
                         .after(super::input::write_local_intent),
                 ),
             )
-            .add_systems(Update, draw_marker.after(super::follow_eye));
+            .add_systems(Update, (draw_marker, fade_body).after(super::follow_eye));
         console(app);
     }
 }
@@ -397,9 +471,9 @@ fn console(app: &mut App) {
     }
 }
 
-/// Whether the shoulder camera is drawn this frame; its look starts from
-/// the aim; the shoulder swap and the aim zoom slide.
-#[allow(clippy::too_many_arguments)]
+/// Whether the shoulder camera is on; its look starts from the aim; the
+/// shoulder swap, the aim zoom and the glide to and from the eye slide.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_shoulder(
     mut mode: ResMut<CameraMode>,
     mut state: ResMut<Shoulder>,
@@ -407,7 +481,9 @@ fn update_shoulder(
     rules: Res<ThirdPersonRules>,
     role: Option<Res<NetRole>>,
     time: Res<Time>,
-    player: Option<Single<(&Intent, Has<Dead>, Has<crate::core::MapView>, Has<crate::weapon::Zoomed>), With<LocalPlayer>>>,
+    player: Option<
+        Single<(&Intent, &MovementState, Has<Dead>, Has<crate::core::MapView>, Has<crate::weapon::Zoomed>), With<LocalPlayer>>,
+    >,
     others: (
         Option<Res<super::view::FreeCam>>,
         Option<Res<super::view::Watch>>,
@@ -415,7 +491,7 @@ fn update_shoulder(
     ),
 ) {
     let now = time.elapsed_secs_f64();
-    let zoomed = player.as_ref().is_some_and(|p| p.3);
+    let zoomed = player.as_ref().is_some_and(|p| p.4);
     state.aim.settle(now, zoomed);
     let allowed = rules.allows(role.map_or(NetRole::Standalone, |r| *r));
     let held_off = !allowed || state.aim.tap_zoom.is_some();
@@ -426,40 +502,65 @@ fn update_shoulder(
     let elsewhere = free.is_some_and(|f| f.mode != 0)
         || watch.is_some_and(|w| w.0 != 0)
         || spec.is_some_and(|s| s.pose.is_some());
-    let on = mode.third() && !elsewhere && player.as_ref().is_some_and(|p| !p.1 && !p.2);
+    // Death, spectating and map cameras take over at once.
+    let usable = !elsewhere && player.as_ref().is_some_and(|p| !p.2 && !p.3);
+    let on = mode.third() && usable;
     let orbit = mode.ideal_yaw != 0.0;
     let s = &mut *state;
     s.orbit = orbit;
-    if !on {
-        if s.on || s.look.is_some() {
+    let dt = time.delta_secs();
+    let step = |at: f32, to: f32, secs: f32, span: f32| {
+        let rate = if secs > 0.0 { span / secs * dt } else { f32::INFINITY };
+        at + (to - at).clamp(-rate, rate)
+    };
+    if !usable || (!on && s.blend <= 0.0) {
+        if s.on || s.look.is_some() || s.blend > 0.0 || s.exit_look.is_some() {
             s.on = false;
             s.look = None;
+            s.exit_look = None;
+            s.blend = 0.0;
             s.reach = None;
             s.zoom = 0.0;
             s.aim.down_at = None;
             s.aim.hold_zoom = false;
             s.blocked = None;
             s.aim_point = None;
+            s.ray = None;
+            s.dim = 0.0;
         }
         return;
     }
+    // The standing eye: the highest seen since the camera came on.
+    let was_drawn = s.drawn();
+    if let Some(p) = player.as_ref() {
+        let h = p.1.eye_offset.y;
+        s.stand_eye = if was_drawn { s.stand_eye.max(h) } else { h };
+    }
+    s.blend = step(s.blend, if on { 1.0 } else { 0.0 }, settings.transition_secs, 1.0);
+    let to_zoom = if on && s.aim.hold_zoom { 1.0 } else { 0.0 };
+    s.zoom = step(s.zoom, to_zoom, settings.zoom_secs, 1.0);
+    if !on {
+        // Gliding back to the eye: the look it left with, until it's there.
+        if s.on {
+            s.on = false;
+            s.exit_look = s.look;
+            s.aim.down_at = None;
+            s.aim.hold_zoom = false;
+            s.blocked = None;
+        }
+        return;
+    }
+    s.exit_look = None;
     let intent = player.as_ref().map(|p| p.0);
     if s.look.is_none() || orbit {
         s.look = intent.map(|i| Vec2::new(i.yaw, i.pitch));
-        if !s.on {
+        if !was_drawn {
             s.side = settings.shoulder.signum() as f32;
         }
     }
     s.on = true;
-    let dt = time.delta_secs();
-    let step = |at: f32, to: f32, secs: f32, span: f32| {
-        let rate = if secs > 0.0 { span / secs * dt } else { f32::INFINITY };
-        at + (to - at).clamp(-rate, rate)
-    };
     let to_side = if settings.shoulder < 0 { -1.0 } else { 1.0 };
     s.side = step(s.side, to_side, settings.swap_secs, 2.0);
-    let to_zoom = if s.aim.hold_zoom { 1.0 } else { 0.0 };
-    s.zoom = step(s.zoom, to_zoom, settings.zoom_secs, 1.0);
 }
 
 /// The command's angles from the eye to where the crosshair points, and
@@ -480,7 +581,7 @@ fn aim_through_crosshair(
         return;
     }
     let eye = at.translation + crate::map::interp::EyeView::of(intent, ms).eye_offset;
-    let (pivot, dist) = wanted_offsets(&settings, state.side, state.zoom, rot);
+    let (pivot, dist) = wanted_offsets(&settings.scaled(state.scale()), state.side, state.zoom, rot);
     let pivot = if state.reach.is_some() { state.pivot } else { pivot };
     let camera = eye + camera_from_eye(pivot, state.reach.unwrap_or(dist).min(dist), rot, rules.max_offset);
     let Ok(dir) = Dir3::new(rot * Vec3::NEG_Z) else { return };
@@ -505,12 +606,17 @@ pub struct ShoulderView<'w> {
 impl ShoulderView<'_> {
     /// The camera's offset from the character's origin and its look, when
     /// the shoulder camera is drawn (`look` from the intent when it orbits:
-    /// `orbit_look`). Walls pull it in at once; it eases back out.
+    /// `orbit_look`; `kick` is the view punch: pitch, yaw, roll as
+    /// `follow_eye` has it, and `fp_look` the first-person look the camera
+    /// glides to and from). Walls pull it in at once; it eases back out.
+    #[allow(clippy::too_many_arguments)]
     pub fn place(
         &mut self,
         origin: Vec3,
         eye: Vec3,
         orbit_look: Quat,
+        fp_look: Quat,
+        kick: Vec3,
         free: Vec2,
         spatial: &SpatialQuery,
         filter: &SpatialQueryFilter,
@@ -519,15 +625,23 @@ impl ShoulderView<'_> {
         let settings = self.settings.as_deref().copied().unwrap_or_default();
         let max = self.rules.as_deref().map_or(0.0, |r| r.max_offset);
         let s = self.state.as_mut()?;
-        if !s.on {
+        if !s.drawn() {
             return None;
         }
         let look = if s.orbit {
             orbit_look
         } else {
-            let l = s.look?;
-            Quat::from_euler(EulerRot::YXZ, l.x + free.x, (l.y + free.y).clamp(-PITCH_LIMIT, PITCH_LIMIT), 0.0)
+            let l = if s.on { s.look } else { s.exit_look.or(s.look) }?;
+            // The recoil shakes the camera as it does the first-person
+            // view (the aim, and so the crosshair, stays put).
+            Quat::from_euler(
+                EulerRot::YXZ,
+                l.x + free.x + kick.y,
+                (l.y + free.y + kick.x).clamp(-PITCH_LIMIT, PITCH_LIMIT),
+                -kick.z,
+            )
         };
+        let settings = settings.scaled(s.scale());
         let (pivot, dist) = wanted_offsets(&settings, s.side, s.zoom, look);
         let (pivot, fits) = fit(spatial, filter, origin + eye, pivot, dist, look);
         let reach = match s.reach {
@@ -539,7 +653,55 @@ impl ShoulderView<'_> {
         };
         s.reach = Some(reach);
         s.pivot = pivot;
-        Some((eye + camera_from_eye(pivot, reach, look, max), look))
+        let spot = eye + camera_from_eye(pivot, reach, look, max);
+        // Gliding between the eye and the spot.
+        let t = s.blend.clamp(0.0, 1.0);
+        let t = t * t * (3.0 - 2.0 * t);
+        Some((eye.lerp(spot, t), fp_look.slerp(look, t)))
+    }
+}
+
+/// Marks a mesh of the local body that fades with the camera's distance.
+#[derive(Component)]
+struct BodyFade;
+
+/// The body fades as the camera nears it (a wall pulled it in, or it glides
+/// to and from the eye): a dither band on the distance from the camera to
+/// each part's centre (`VisibilityRange`, as the props'), hidden at
+/// `fade_hidden`, whole at `fade_whole`, scaled with the eye height. The
+/// gun and every held part fade with the body.
+#[allow(clippy::type_complexity)]
+fn fade_body(
+    state: Res<Shoulder>,
+    settings: Res<ShoulderSettings>,
+    local: Option<Single<&Children, With<LocalPlayer>>>,
+    bodies: Query<(), With<crate::render::bodies::CharacterBody>>,
+    children: Query<&Children>,
+    meshes: Query<(Option<&VisibilityRange>, Has<BodyFade>), With<Mesh3d>>,
+    mut commands: Commands,
+) {
+    let Some(kids) = local else { return };
+    let band = state.drawn().then(|| {
+        let s = state.scale();
+        VisibilityRange {
+            start_margin: settings.fade_hidden * s..settings.fade_whole * s,
+            end_margin: f32::MAX..f32::MAX,
+            use_aabb: true,
+        }
+    });
+    for body in kids.iter().filter(|c| bodies.contains(*c)) {
+        for d in children.iter_descendants(body).chain(std::iter::once(body)) {
+            let Ok((range, ours)) = meshes.get(d) else { continue };
+            match (&band, ours) {
+                (Some(b), _) if range != Some(b) => {
+                    commands.entity(d).insert((b.clone(), BodyFade));
+                }
+                (None, true) => {
+                    commands.entity(d).remove::<(VisibilityRange, BodyFade)>();
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -554,6 +716,7 @@ const MARKER_SIZE: f32 = 10.0;
 fn draw_marker(
     mut state: ResMut<Shoulder>,
     mode: Res<CameraMode>,
+    time: Res<Time>,
     player: Option<Single<(Entity, &Transform, &Intent, &MovementState, Option<&crate::weapon::Inventory>), With<LocalPlayer>>>,
     camera: Query<(&Camera, &Transform), With<FirstPersonCamera>>,
     no_marker: Query<(), Or<(With<crate::weapon::Melee>, With<crate::weapon::grenade::Throwable>)>>,
@@ -563,6 +726,7 @@ fn draw_marker(
 ) {
     let mut shown = None;
     let mut aim = None;
+    let mut ray = None;
     if state.on
         && let Some((me, at, intent, ms, inv)) = player.as_deref().copied()
         && let Some((cam, t)) = camera.iter().next()
@@ -571,6 +735,9 @@ fn draw_marker(
         let eye = at.translation + crate::map::interp::EyeView::of(intent, ms).eye_offset;
         let point = aim_point(&spatial, view.translation(), view.forward(), eye, &[me], RANGE_UNITS * mode.meters_per_unit);
         aim = Some(point);
+        let dir = view.forward();
+        let start = (eye - view.translation()).dot(*dir).max(0.0);
+        ray = Some((view.translation() + *dir * start, dir));
         let marks = !inv.and_then(|i| i.active).is_some_and(|w| no_marker.contains(w));
         if marks && let Some(hit) = blocked_point(&spatial, eye, point, &[me]) {
             shown = Some(hit);
@@ -583,9 +750,17 @@ fn draw_marker(
             }
         }
     }
-    if state.blocked != shown || state.aim_point != aim {
+    if state.blocked != shown || state.aim_point != aim || state.ray != ray {
         state.blocked = shown;
         state.aim_point = aim;
+        state.ray = ray;
+    }
+    // The crosshair dims while the marker shows.
+    let dim = shown.is_some() as u8 as f32;
+    let rate = time.delta_secs() * 8.0;
+    let eased = state.dim + (dim - state.dim).clamp(-rate, rate);
+    if eased != state.dim {
+        state.dim = eased;
     }
     match marker.single_mut() {
         Ok((_, mut vis)) if shown.is_none() => {

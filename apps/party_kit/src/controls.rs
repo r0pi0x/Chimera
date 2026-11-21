@@ -66,7 +66,16 @@ pub const SHARED: &[Row] = &[
     row("Last weapon", "lastinv"),
     // The report dialog (`client::feedback`; F10 in Ultimate Gun Game).
     row("Report a bug", "feedback"),
+    // Chimera's third-person camera (`client::third_person`): the switch
+    // is unbound until picked; middle mouse swaps the shoulder where the
+    // game leaves the key free (TF2's `+attack3` has it: unbound there).
+    row("Third person (switch)", "chimera_toggle_thirdperson"),
+    row("Swap shoulder", "chimera_shoulder"),
 ];
+
+/// Binds that are Chimera's additions (the original games have nothing
+/// like them): the Chimera mark and a line in the help pane.
+pub const OURS: &[&str] = &["chimera_toggle_thirdperson", "chimera_shoulder"];
 
 /// A number the page sets (a saved cvar): `-` and `+` buttons move it by
 /// `step` within `min..=max`.

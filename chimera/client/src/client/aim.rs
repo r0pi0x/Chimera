@@ -40,6 +40,16 @@ pub fn view_ray(at: &Transform, intent: &Intent, state: &MovementState, view: Op
     }
 }
 
+/// The ray the crosshair marks: in the over-the-shoulder camera
+/// (`third_person::Shoulder::ray`) the camera's centre ray, else `ray`
+/// (`view_ray`). Target IDs and name tags look along it.
+pub fn crosshair_ray(shoulder: Option<&super::third_person::Shoulder>, ray: AimRay) -> AimRay {
+    match shoulder.and_then(|s| s.on.then_some(s.ray).flatten()) {
+        Some((eye, dir)) => AimRay { eye, dir },
+        None => ray,
+    }
+}
+
 /// The character `e` belongs to: itself or a parent up to four levels
 /// up for which `is_character` holds.
 pub fn character_of(e: Entity, is_character: impl Fn(Entity) -> bool, parents: &Query<&ChildOf>) -> Option<Entity> {

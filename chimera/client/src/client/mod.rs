@@ -1009,7 +1009,7 @@ pub fn zoom_camera(
     let fov_43 = zoom.unwrap_or_else(|| player_fov.map_or(90.0, |f| f.0));
     // The shoulder camera's aim zoom narrows it.
     let fov_43 = match shoulder {
-        (Some(s), Some(t)) if s.on && spectating.pose.is_none() => fov_43 * (1.0 + (t.aim_fov - 1.0) * s.zoom),
+        (Some(s), Some(t)) if s.drawn() && spectating.pose.is_none() => fov_43 * (1.0 + (t.aim_fov - 1.0) * s.zoom),
         _ => fov_43,
     };
     let fov = (crate::map::view_model::vertical_fov(fov_43) + effects.map_or(0.0, |e| e.fov)).to_radians();
@@ -1106,7 +1106,8 @@ fn follow_eye(
         // bodies collide with (not characters).
         let filter = avian3d::prelude::SpatialQueryFilter::from_excluded_entities(&characters)
             .with_mask(crate::core::CHARACTER_FILTER);
-        let placed = shoulder.place(at.translation, eye.eye_offset, look, Vec2::new(free.yaw, free.pitch), &spatial, &filter);
+        let kick = Vec3::new(p.x, p.y, eye.view_roll + p.z);
+        let placed = shoulder.place(at.translation, eye.eye_offset, look, look, kick, Vec2::new(free.yaw, free.pitch), &spatial, &filter);
         let third = placed.is_some();
         let (offset, look) = placed.unwrap_or_else(|| {
             // The ceiling probe is no wider than the player's own hull.

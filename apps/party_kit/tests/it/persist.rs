@@ -164,6 +164,8 @@ fn every_option_is_archived() {
             .add_plugins(chimera_client::client::chat::GameMessagesPlugin)
             .init_resource::<MouseSettings>();
         mouse_cvars(app);
+        // The third-person camera's shoulder and distance.
+        app.add_plugins(chimera_client::client::third_person::ThirdPersonPlugin);
         perf::frame_limit_cvar(app);
         hud::default_radars(app, false);
         halo_ce::ui::hud::filter_cvar(app);

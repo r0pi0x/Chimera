@@ -124,8 +124,8 @@ camera's ray through the crosshair first hits.
       section 2.
 - [x] One `third_person::aim_point(camera, eye, ...)` in Chimera's
       client, shared by the command builder and the marker.
-- [ ] The HUD's `aim::view_ray` from it too (target IDs follow the
-      crosshair).
+- [x] The HUD's target IDs follow the crosshair (`aim::crosshair_ray`
+      from `Shoulder::ray`; CS:S's and Combat Arms' name tags).
 - [x] Blocked-shot marker. Each frame, trace from the eye to the aim
       point, using the shot trace's filter. If something is hit short of
       the aim point (by more than a small tolerance), draw a second
@@ -150,8 +150,9 @@ camera's ray through the crosshair first hits.
 - [x] The pivot itself is swept from the eye (side, then up), so a wall
       at the shoulder pushes the camera toward the centre, not through
       the wall.
-- [ ] Never inside the character's own hull. Never closer than the near
-      plane to a wall.
+- [x] Never inside the character's own hull (the pivot and the camera
+      are swept as spheres, 0.2 m, from the eye: tested in a corner). The
+      body fades before the lens could reach it.
 
 ### M3. Smoothing, aim zoom, body fade, recoil, transitions
 
@@ -165,16 +166,29 @@ camera's ray through the crosshair first hits.
       (`zoom_sensitivity_ratio`). A weapon with a scope switches to first
       person while scoped and comes back after: scope overlays are
       first-person.
-- [ ] Body fade. When the camera is closer to the body than a threshold
+- [x] Body fade (M2). When the camera is closer to the body than a threshold
       (pulled in by a wall), the local body fades with a dither (the
       props' dither prepass), down to hidden. The gun fades with it.
-- [ ] Recoil. The view punch shakes the camera (pitch and yaw) as it does
+- [x] Recoil (M2). The view punch shakes the camera (pitch and yaw) as it does
       the first-person view. The crosshair stays on the aim. The shots
       keep the weapon's `punch_scale` share, as now.
-- [ ] Transitions. First to third person: the camera moves from the eye
+- [x] Transitions (M2). First to third person: the camera moves from the eye
       to its spot over about 0.25 s, the body fades in and the view model
       out. Back again in reverse. Death, spectating and map cameras take
       over at once, as now.
+
+### M2b. Polish, built with M2 (2026-11-21)
+
+- [x] The crosshair dims while the marker shows (the shared one;
+      `Shoulder::dim`). Combat Arms', TF2's, HL2:DM's and Halo's own
+      crosshairs aren't dimmed yet.
+- [x] Camera distances scale with the standing eye height
+      (`Shoulder::scale`, `REF_EYE`), so every game's body frames alike.
+- [x] Options: Controls tab, "Third-person camera" (shoulder side,
+      distance; Chimera mark), and "Keys, every game": the switch
+      (unbound) and the shoulder swap (middle mouse; unbound where the
+      game binds the key: TF2).
+- [x] Network test: `chimera/client/tests/it/third_person_net.rs`.
 
 ### M4. Settings
 
@@ -279,6 +293,17 @@ sweeps and M3's aim zoom: `chimera/client/src/client/third_person.rs`,
 scenario tests `chimera/client/tests/it/third_person.rs`. Left: the
 target-ID ray, M2's "never inside the own hull" and near-plane margin,
 M3's follow lag, body fade, recoil and transitions, M4's settings page.
+
+2026-11-21 (M2 and polish): the target ID follows the crosshair, the
+crosshair dims at the marker, the camera follows the recoil, the
+distances scale with eye height, the body fades by a dither band on the
+camera's distance (`VisibilityRange`, the props' mechanism), the camera
+glides between eye and shoulder over 0.25 s (input and aim follow the
+target mode at once; the view model hides at once on entering, shows when
+the glide ends on leaving), Options rows, network tests. Left: M3's
+follow lag and aim-zoom scope switch, M4's data file and cvars
+(`cam_fov`, `cam_smooth`, the `thirdperson` cvar), the own crosshairs'
+dim in Combat Arms, TF2, HL2:DM and Halo.
 
 ## Decision log
 
