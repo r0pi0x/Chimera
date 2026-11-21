@@ -267,6 +267,19 @@ impl Plugin for SoundPlugin {
     }
 }
 
+/// What a sound asked for but not heard says (once per entry and map):
+/// its entry isn't in the map's sound table (nothing loaded it: a gun's
+/// or view model's sound missing from its game's sound lists), or it is
+/// but none of its waves read (their files missing from the install or
+/// the asset store: a pack published before the entry was added).
+pub fn unheard_warning(entry: &str, known: bool) -> String {
+    if known {
+        format!("sound {entry}: no wave of it could be read (its files are missing from the install or the asset store); not heard")
+    } else {
+        format!("sound {entry}: not in this map's sound table (nothing loaded it); not heard")
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn play_sounds(
     mut commands: Commands,
@@ -282,7 +295,7 @@ fn play_sounds(
     muted: Option<Res<super::live_sound::MutedSounds>>,
     time: Res<Time>,
     hold: (Option<Res<crate::map::LocalMapLoad>>, Option<Res<WorldUnheard>>),
-    mut seed: Local<u64>,
+    (mut seed, mut unheard): (Local<u64>, Local<std::collections::HashSet<String>>),
     mut peaks: Local<std::collections::HashMap<usize, Arc<[f32]>>>,
     mix_limit: Res<super::live_sound::MixLimit>,
 ) {
@@ -306,6 +319,7 @@ fn play_sounds(
     // Wave indices are the bank's: a new bank (a map change) starts anew.
     if bank.is_changed() {
         peaks.clear();
+        unheard.clear();
     }
     let listener = Ear::find(listeners.iter());
     let mut unit = || {
@@ -327,12 +341,16 @@ fn play_sounds(
         if muted.as_ref().is_some_and(|x| x.0.iter().any(|e| *e == m.entry)) {
             continue;
         }
-        let Some(entry) = bank.0.entry(&m.entry) else {
-            continue;
-        };
-        if entry.waves.is_empty() {
+        // An entry the map's table lacks, or whose files didn't read,
+        // plays nothing: said once per entry and map (`unheard_warning`).
+        let entry = bank.0.entry(&m.entry);
+        if entry.is_none_or(|e| e.waves.is_empty()) {
+            if unheard.insert(m.entry.to_lowercase()) {
+                warn!("{}", unheard_warning(&m.entry, entry.is_some()));
+            }
             continue;
         }
+        let Some(entry) = entry else { continue };
         let wave = entry.waves[((unit() * entry.waves.len() as f32) as usize).min(entry.waves.len() - 1)];
         let clip = &bank.0.clips[wave];
         let volume = m.volume.unwrap_or_else(|| entry.volume.draw(unit())).clamp(0.0, 1.0) * mix.gain(&m.entry);

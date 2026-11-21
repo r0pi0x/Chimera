@@ -74,5 +74,6 @@ mod heavy {
     mod particles;
     mod scripts;
     mod sound_loops;
+    mod view_sounds;
     mod walk;
 }

@@ -132,8 +132,37 @@ Captured imagery stays in scratch, never in the repo.
    to carry rockettrail.pcf, stickybomb.pcf, nailtrails.pcf and
    firstperson_weapon_fx.pcf (the crit glow, with its materials
    `effects/electric1` and `effects/sc_softglow`).
+9. The asset service's TF2 `weapon/` sets need republishing (by the
+   user) for the view-model sounds that joined them (tf2-vm-sounds):
+   `weapon/tf_weapon_pistol_scout` (`weapons/pistol_clipin.wav`,
+   `weapons/draw_pistol_engineer.wav`), `weapon/tf_weapon_shotgun_primary`
+   (`weapons/draw_shotgun_pyro.wav`), `weapon/tf_weapon_grenadelauncher`
+   (`weapons/grenade_launcher_drum_start.wav`); CS:S's `weapon/awp`
+   (the AWP's new clip and bolt events) and `weapon/tmp` (its deploy),
+   likewise (css-vm-sounds).
 
 ## Log
+
+### The Pistol's reload unheard when served (tf2-pistol-sound, 2026-11-21)
+
+- **Cause** (measured in Ultimate Gun Game's sandbox, offscreen, the
+  install): the event path works: the Scout's arms play `ReloadScout`
+  and `ClipIn` at their times, the Engineer's (`pstl_reload`) `ClipIn`
+  alone, a draw its `Draw`/`Draw2`. But the Engineer's whole reload is
+  `Weapon_Pistol.ClipIn`, which joined the Pistol's set with the event
+  change; a store published before it holds the entry (the sound
+  scripts) without its wave, so a served Engineer heard nothing and a
+  served Scout half of it. Silently: playback skipped an entry with no
+  wave or none at all.
+- **Fix**: playback says once per entry and map why a sound asked for
+  isn't heard (`audio::sound::unheard_warning`: not in the table, or no
+  wave read); an owner's view-model sound event without a wave says so
+  (`view_anim::unplayable_view_sound`) and, in a reload's sequence
+  (`ViewModelEvent::reload`), plays the gun's world reload in its place.
+  Tests: `viewmodel_sounds::a_reload_event_without_waves_plays_the_world_reload_instead`,
+  `heavy::view_sounds` (the install's own view models and sound table,
+  Scout and Engineer, and the Engineer without `ClipIn`'s wave). Open
+  question 9 is the republish.
 
 ### CS:S and HL2:DM on the view models' sound events (css-vm-sounds, 2026-11-20)
 

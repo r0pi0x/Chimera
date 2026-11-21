@@ -16,7 +16,10 @@
 //! event the rules read as a sound (`ViewModelEventKind::Sound`: Source's
 //! 5004) is played for this machine's own player only, and a reload's for
 //! the others too when the game's rules say so (`ViewAnimRules::others_reload`;
-//! `play_view_sounds`).
+//! `play_view_sounds`). An owner's sound event whose entry has no wave
+//! here (its file missing from the install or the asset store) is said
+//! once per entry and map and, in a reload, stands in as the gun's world
+//! reload.
 //!
 //! What plays when is the weapon's:
 //!
@@ -104,16 +107,29 @@ impl Plugin for ViewAnimPlugin {
 /// (`ViewAnimRules::others_reload`, `ViewModelEvent::others`), from the
 /// reloading character's place (specs/cs_source/sounds.md 5.1), the later
 /// ones after their lag.
+///
+/// An owner's event whose entry the map's table holds without a wave (its
+/// files missing from the install or the asset store: a gun's set
+/// published before the entry joined it) is said once per entry and map
+/// (`unplayable_view_sound`) and, for a reload's sequence, stands in as the
+/// gun's world reload (`WeaponSounds::world_reload`) when that plays: a
+/// reload heard, if not the game's own, rather than none.
+#[allow(clippy::type_complexity)]
 pub fn play_view_sounds(
     time: Res<Time>,
     mut effects: MessageReader<ViewModelEvent>,
-    owners: Query<(&Transform, Has<crate::core::LocalPlayer>)>,
+    owners: Query<(&Transform, Has<crate::core::LocalPlayer>, Option<&Inventory>)>,
+    guns: Query<&super::WeaponSounds>,
+    bank: Option<Res<crate::map::sound::SoundBank>>,
     mut play: MessageWriter<crate::map::PlaySound>,
-    mut later: Local<Vec<(f64, Entity, String)>>,
+    (mut later, mut said): (Local<Vec<(f64, Entity, String)>>, Local<bevy::platform::collections::HashSet<String>>),
 ) {
     let now = time.elapsed_secs_f64();
+    if bank.as_ref().is_some_and(|b| b.is_changed()) {
+        said.clear();
+    }
     let mut say = |owner: Entity, entry: String, play: &mut MessageWriter<crate::map::PlaySound>| {
-        if let Ok((at, _)) = owners.get(owner) {
+        if let Ok((at, ..)) = owners.get(owner) {
             play.write(crate::map::PlaySound {
                 source: Some(owner),
                 ..crate::map::PlaySound::at(entry, at.translation)
@@ -129,9 +145,27 @@ pub fn play_view_sounds(
             i += 1;
         }
     }
+    // Whether the map's table holds `entry` with no wave to play.
+    let waveless = |entry: &str| bank.as_ref().and_then(|b| b.0.entry(entry)).is_some_and(|e| e.waves.is_empty());
+    let playable = |entry: &str| bank.as_ref().and_then(|b| b.0.entry(entry)).is_some_and(|e| !e.waves.is_empty());
     for ev in effects.read() {
         let ViewModelEventKind::Sound { entry } = &ev.kind else { continue };
-        let Ok((_, local)) = owners.get(ev.owner) else { continue };
+        let Ok((_, local, inventory)) = owners.get(ev.owner) else { continue };
+        if local && waveless(entry) {
+            let stand_in = ev
+                .reload
+                .then(|| inventory.and_then(|i| i.active).and_then(|w| guns.get(w).ok()))
+                .flatten()
+                .and_then(|s| s.world_reload.clone())
+                .filter(|w| playable(w));
+            if said.insert(entry.to_lowercase()) {
+                warn!("{}", unplayable_view_sound(entry, stand_in.as_deref()));
+            }
+            if let Some(w) = stand_in {
+                say(ev.owner, w, &mut play);
+            }
+            continue;
+        }
         match ev.others {
             _ if local => say(ev.owner, entry.clone(), &mut play),
             Some(lag) if lag > 0.0 => later.push((now + lag as f64, ev.owner, entry.clone())),
@@ -139,6 +173,16 @@ pub fn play_view_sounds(
             None => {}
         }
     }
+}
+
+/// What a view model's sound event that can't play says (`play_view_sounds`):
+/// its entry's waves are missing, and what is heard instead.
+pub fn unplayable_view_sound(entry: &str, stand_in: Option<&str>) -> String {
+    let instead = stand_in.map_or_else(|| "not heard".to_string(), |w| format!("the gun's world reload {w} plays instead"));
+    format!(
+        "view-model sound {entry}: none of its waves could be read (missing from the install or the asset store: \
+         a gun's set published before the entry joined it needs publishing again); {instead}"
+    )
 }
 
 /// A console variable for a game's view-model field of view (horizontal
@@ -682,7 +726,7 @@ pub fn drive(
                         .and_then(|r| r.others_reload)
                         .filter(|_| reload)
                         .map(|lag| if ev.cycle <= 0.0 { 0.0 } else { lag });
-                    effects.write(ViewModelEvent { owner: e, kind, others });
+                    effects.write(ViewModelEvent { owner: e, kind, others, reload });
                 }
             }
         }
