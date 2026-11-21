@@ -14,6 +14,7 @@ mod arena_wall;
 mod archetypes;
 mod balance_table;
 mod bodies_drawn;
+mod character_fit;
 mod clips_across_games;
 mod console_scope;
 mod controls;

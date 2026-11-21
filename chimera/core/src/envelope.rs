@@ -22,6 +22,10 @@ use bevy::prelude::*;
 
 use crate::core::MapGame;
 
+/// How far (m) the eye stays under the top of a body the rule made lower
+/// than the character's own (`eye_within`).
+pub const EYE_MARGIN: f32 = 0.1;
+
 /// The body a game's character moves with (metres; module doc).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MovementEnvelope {
@@ -47,6 +51,19 @@ impl MovementEnvelope {
             crouch_height: self.crouch_height.min(m.crouch_height),
             step: self.step.max(m.step),
         }
+    }
+
+    /// A box's half widths (any unit, `scale` metres each) on this fitted
+    /// body: each axis no wider than `radius` (the box fits per axis).
+    pub fn fit_half_widths(&self, half: [f32; 2], scale: f32) -> [f32; 2] {
+        half.map(|h| h.min(self.radius / scale))
+    }
+
+    /// An eye `eye` above the feet of a body `own_height` tall, on a body
+    /// `height` tall (same unit, `scale` metres each): unchanged when the
+    /// height is the own one, else kept `EYE_MARGIN` under the top.
+    pub fn eye_within(eye: f32, own_height: f32, height: f32, scale: f32) -> f32 {
+        if height >= own_height { eye } else { eye.min(height - EYE_MARGIN / scale) }
     }
 }
 
@@ -112,6 +129,15 @@ mod tests {
         // No map envelope, or the character's own: unchanged.
         assert_eq!(SPARTAN.within(None), SPARTAN);
         assert_eq!(SPARTAN.within(Some(&SPARTAN)), SPARTAN);
+    }
+
+    #[test]
+    fn a_box_fits_per_axis_and_the_eye_stays_under_a_lowered_top() {
+        let b = SPARTAN.within(Some(&SOURCE));
+        assert_eq!(b.fit_half_widths([1.0, 0.2], 1.0), [0.41, 0.2]);
+        assert_eq!(MovementEnvelope::eye_within(1.9, 2.13, 2.13, 1.0), 1.9);
+        assert!((MovementEnvelope::eye_within(1.9, 2.13, 1.57, 1.0) - 1.47).abs() < 1e-6);
+        assert_eq!(MovementEnvelope::eye_within(1.2, 2.13, 1.57, 1.0), 1.2);
     }
 
     #[test]

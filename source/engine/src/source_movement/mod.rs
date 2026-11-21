@@ -512,6 +512,44 @@ impl SourceMovementConfig {
     fn air_duck_lift(&self) -> f32 {
         (self.stand_height - self.duck_height) * self.air_duck_shift
     }
+
+    /// This config's character as a movement envelope
+    /// (`chimera_core::envelope`, metres): the box's half width, heights
+    /// and step.
+    pub fn envelope(&self) -> chimera_core::envelope::MovementEnvelope {
+        let u = METERS_PER_UNIT;
+        chimera_core::envelope::MovementEnvelope {
+            radius: self.half_width * u,
+            height: self.stand_height * u,
+            crouch_height: self.duck_height * u,
+            step: self.stepsize * u,
+        }
+    }
+
+    /// This character's movement body on a map whose envelope is `map`
+    /// (the envelope rule, `MovementEnvelope::within`, shrink only): the
+    /// box narrower and lower (standing and ducked), the eyes kept
+    /// `EYE_MARGIN` under a lowered top, the step raised to the map's
+    /// character's. The model and hit boxes are not here and stay the
+    /// character's own. Itself, borrowed, where nothing changes (its own
+    /// game's maps, no map envelope).
+    pub fn fitted(&self, map: Option<&chimera_core::envelope::MovementEnvelope>) -> std::borrow::Cow<'_, Self> {
+        use chimera_core::envelope::MovementEnvelope;
+        let own = self.envelope();
+        let b = own.within(map);
+        if b == own {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let u = METERS_PER_UNIT;
+        let mut c = self.clone();
+        c.half_width = b.fit_half_widths([self.half_width; 2], u)[0];
+        c.stand_height = self.stand_height.min(b.height / u);
+        c.duck_height = self.duck_height.min(b.crouch_height / u).min(c.stand_height);
+        c.stepsize = self.stepsize.max(b.step / u);
+        c.eye_stand = MovementEnvelope::eye_within(self.eye_stand, self.stand_height, c.stand_height, u);
+        c.eye_duck = MovementEnvelope::eye_within(self.eye_duck, self.duck_height, c.duck_height, u).min(c.eye_stand);
+        std::borrow::Cow::Owned(c)
+    }
 }
 
 impl SourceMovementConfig {
@@ -613,26 +651,42 @@ impl SourceMovementConfigs {
 /// Each Source character's config: its movement's own
 /// (`SourceMovementConfigs`, by its `MovementSlot`), else the
 /// `SourceMovementConfig` resource.
+/// Fitted to the loaded map's movement envelope (`SourceMovementConfig::fitted`).
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MovementConfigs<'w> {
     fallback: Res<'w, SourceMovementConfig>,
     own: Option<Res<'w, SourceMovementConfigs>>,
+    envelopes: Option<Res<'w, chimera_core::envelope::MovementEnvelopes>>,
+    map_game: Option<Res<'w, crate::core::MapGame>>,
 }
 
 impl MovementConfigs<'_> {
-    /// The config of a character on movement `slot`.
-    pub fn of(&self, slot: Option<&MovementSlot>) -> &SourceMovementConfig {
+    /// The config of a character on movement `slot`, its body fitted to
+    /// the loaded map (`map`).
+    pub fn of(&self, slot: Option<&MovementSlot>) -> std::borrow::Cow<'_, SourceMovementConfig> {
+        self.own(slot).fitted(self.map().as_ref())
+    }
+
+    /// The config of movement `slot` as its game states it (not fitted).
+    pub fn own(&self, slot: Option<&MovementSlot>) -> &SourceMovementConfig {
         slot.and_then(|s| self.own.as_ref().and_then(|o| o.get(s.0)))
             .unwrap_or(&self.fallback)
     }
+
+    /// The loaded map's movement envelope (None: no fitting).
+    pub fn map(&self) -> Option<chimera_core::envelope::MovementEnvelope> {
+        self.envelopes.as_deref()?.for_map(self.map_game.as_deref())
+    }
 }
 
-/// `MovementConfigs::of` from the world.
+/// `MovementConfigs::of` from the world (fitted to the loaded map).
 pub fn config_of(world: &World, e: Entity) -> SourceMovementConfig {
     let slot = world.get::<MovementSlot>(e);
-    slot.and_then(|s| world.get_resource::<SourceMovementConfigs>().and_then(|o| o.get(s.0)).cloned())
+    let own = slot
+        .and_then(|s| world.get_resource::<SourceMovementConfigs>().and_then(|o| o.get(s.0)).cloned())
         .or_else(|| world.get_resource::<SourceMovementConfig>().cloned())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    own.fitted(chimera_core::envelope::map_envelope(world).as_ref()).into_owned()
 }
 
 /// This tick's max speed for a Source character, set by its game before
@@ -1083,14 +1137,8 @@ impl SourceMovementAppExt for App {
         // The game's character's body, the envelope its maps carry
         // (`chimera_core::envelope`): the box's half width, heights, step.
         if let Some(game) = chimera_core::core::movement_game(id) {
-            use chimera_core::envelope::{MovementEnvelope, MovementEnvelopeAppExt};
-            let u = METERS_PER_UNIT;
-            self.add_movement_envelope(game, MovementEnvelope {
-                radius: defaults.half_width * u,
-                height: defaults.stand_height * u,
-                crouch_height: defaults.duck_height * u,
-                step: defaults.stepsize * u,
-            });
+            use chimera_core::envelope::MovementEnvelopeAppExt;
+            self.add_movement_envelope(game, defaults.envelope());
         }
         self.register_movement::<SourceMovement>(id).seat_movement(id, footing, seat)
     }
@@ -3168,7 +3216,7 @@ fn step(
         .filter(|(e, ..)| alive(*e))
         .map(|(e, _, me, t, .., (slot, _, _, _, _))| {
             let feet = me.forced.map_or(to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET, |f| f.goal);
-            (e, hull_box(configs.of(slot), feet, me.ducked))
+            (e, hull_box(&configs.of(slot), feet, me.ducked))
         })
         .collect();
     boxes.extend(
@@ -3245,6 +3293,8 @@ fn step(
         useable_ladders::fix_ends(&tracer, &mut l.0);
     }
     let ladders: &[UseableLadder] = ladders.as_ref().map_or(&[], |l| &l.0);
+    // The loaded map's envelope, each character's body fitted to it.
+    let map_envelope = configs.map();
     for (
         entity,
         intent,
@@ -3262,15 +3312,11 @@ fn step(
     ) in &mut q
     {
         // The character's own traits over its movement's config (TF2's
-        // classes).
-        let patched;
-        let cfg = match traits {
-            Some(t) => {
-                patched = t.apply(configs.of(slot));
-                &patched
-            }
-            None => configs.of(slot),
-        };
+        // classes), the body then fitted to the map (`fitted`).
+        let own = configs.own(slot);
+        let patched = traits.map(|t| t.apply(own));
+        let fitted = patched.as_ref().unwrap_or(own).fitted(map_envelope.as_ref());
+        let cfg: &SourceMovementConfig = &fitted;
         // A character without a movement slot is the app's own game's.
         let foreign = slot.is_some_and(|s| crate::core::foreign_map(map_game.as_deref(), crate::core::movement_game(s.0)));
         // player_speedmod: the movement runs as if this many ticks passed

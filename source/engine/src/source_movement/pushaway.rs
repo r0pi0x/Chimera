@@ -123,7 +123,7 @@ fn push_props(
             continue;
         }
         let mut pushed = false;
-        let mut player = player_box(pt, me, cfg.of(slot));
+        let mut player = player_box(pt, me, &cfg.of(slot));
         let centre = (player.0 + player.1) / 2.0;
         player.0 -= Vec3::splat(QUERY_EXPAND);
         player.1 += Vec3::splat(QUERY_EXPAND);

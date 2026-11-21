@@ -45,6 +45,14 @@
 //! volume's top, when one is on the way down: ours) and measures falls
 //! from there; a teleport resets nothing.
 //!
+//! On another game's map the hull is fitted to the map's own character
+//! where that is smaller (`body`, the engine's movement envelope rule,
+//! `chimera_core::envelope`; Combat Arms states its own with `envelope`):
+//! narrower per axis, lower standing and crouched, the eye kept
+//! `EYE_MARGIN` under a lowered top, the stair step raised to the map's.
+//! The model and hit boxes stay Combat Arms'. On Combat Arms' maps and
+//! without a map envelope the numbers are the table's, to the bit.
+//!
 //! Volumes (spec "Volumes (containers)"; the map's `volumes::CaVolume`s):
 //! a volume acts when the hull's box touches it; the eye point (the
 //! camera, from last tick's centre) gives the eye volume. On a ladder
@@ -547,6 +555,57 @@ impl CameraRise {
     }
 }
 
+/// Combat Arms' own movement envelope (`chimera_core::envelope`; metres):
+/// the hull's radius (the cylinder's, `max(halfX, halfZ)`), heights and
+/// stair step.
+pub fn envelope(d: &MovementData) -> chimera_core::envelope::MovementEnvelope {
+    let u = d.meters_per_unit;
+    let [x, y, z] = d.stand_half_extents;
+    chimera_core::envelope::MovementEnvelope {
+        radius: x.max(z) * u,
+        height: 2.0 * y * u,
+        crouch_height: 2.0 * d.crouch_half_extents[1] * u,
+        step: d.stair_step * u,
+    }
+}
+
+/// The movement's numbers for a Combat Arms body on a map whose envelope
+/// is `map` (the rule, `MovementEnvelope::within`, shrink only): the hull
+/// narrower per axis and lower standing and crouched, the eye kept
+/// `EYE_MARGIN` under a lowered top (standing and fully crouched), the
+/// stair step raised to the map's character's. The table itself where
+/// nothing changes (Combat Arms' maps, no map envelope).
+pub fn body<'a>(d: &'a MovementData, map: Option<&chimera_core::envelope::MovementEnvelope>) -> std::borrow::Cow<'a, MovementData> {
+    use chimera_core::envelope::MovementEnvelope;
+    let own = envelope(d);
+    let b = own.within(map);
+    if b == own {
+        return std::borrow::Cow::Borrowed(d);
+    }
+    let u = d.meters_per_unit;
+    let mut out = d.clone();
+    let [sx, sz] = b.fit_half_widths([d.stand_half_extents[0], d.stand_half_extents[2]], u);
+    let [cx, cz] = b.fit_half_widths([d.crouch_half_extents[0], d.crouch_half_extents[2]], u);
+    let sy = d.stand_half_extents[1].min(b.height / u / 2.0);
+    let cy = d.crouch_half_extents[1].min(b.crouch_height / u / 2.0).min(sy);
+    out.stand_half_extents = [sx, sy, sz];
+    out.crouch_half_extents = [cx, cy, cz];
+    out.stair_step = d.stair_step.max(b.step / u);
+    // The eye above the feet: standing `sy + eye_offset * sy`, crouched
+    // `cy + eye_offset * sy + eye_crouch_offset` (`eye_above_centre`).
+    let (own_sy, own_cy) = (d.stand_half_extents[1], d.crouch_half_extents[1]);
+    if sy < own_sy {
+        let stand_eye = MovementEnvelope::eye_within(own_sy * (1.0 + d.eye_offset), 2.0 * own_sy, 2.0 * sy, u);
+        out.eye_offset = d.eye_offset.min(stand_eye / sy - 1.0);
+    }
+    if cy < own_cy || sy < own_sy {
+        let crouch_eye = own_cy + d.eye_offset * own_sy + d.eye_crouch_offset;
+        let crouch_eye = MovementEnvelope::eye_within(crouch_eye, 2.0 * own_cy, 2.0 * cy, u);
+        out.eye_crouch_offset = d.eye_crouch_offset.min(crouch_eye - cy - out.eye_offset * sy);
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 /// The eye's height above the hull's centre (u) at crouch rate `r` (spec
 /// "Eye (camera) height"): fixed from the standing box, plus the crouch
 /// offset.
@@ -620,15 +679,8 @@ impl Plugin for CaMovementPlugin {
         // The character's body, the envelope Combat Arms' maps carry
         // (`chimera_core::envelope`): the hull's radius, heights and stair step.
         {
-            use chimera_core::envelope::{MovementEnvelope, MovementEnvelopeAppExt};
-            let u = movement.meters_per_unit;
-            let [x, y, z] = movement.stand_half_extents;
-            app.add_movement_envelope(super::GAME, MovementEnvelope {
-                radius: x.max(z) * u,
-                height: 2.0 * y * u,
-                crouch_height: 2.0 * movement.crouch_half_extents[1] * u,
-                step: movement.stair_step * u,
-            });
+            use chimera_core::envelope::MovementEnvelopeAppExt;
+            app.add_movement_envelope(super::GAME, envelope(&movement));
         }
         app.insert_resource(movement)
             .insert_resource(Loadout { movement: ID })
@@ -774,6 +826,7 @@ fn footing(world: &World, e: Entity) -> Option<Footing> {
     let me = world.get::<CaMovement>(e)?;
     let t = world.get::<Transform>(e)?;
     let d = world.get_resource::<MovementData>()?;
+    let d = body(d, chimera_core::envelope::map_envelope(world).as_ref());
     let h = if me.half_height > 0.0 { me.half_height } else { d.stand_half_extents[1] };
     Some(Footing {
         feet: t.translation - Vec3::Y * h * d.meters_per_unit,
@@ -788,6 +841,7 @@ fn footing(world: &World, e: Entity) -> Option<Footing> {
 /// step frees and grounds it (`reseat`).
 fn seat(world: &mut World, e: Entity, f: Footing) {
     let Some(d) = world.get_resource::<MovementData>() else { return };
+    let d = body(d, chimera_core::envelope::map_envelope(world).as_ref());
     let s = d.meters_per_unit;
     let h = if f.crouched { d.crouch_half_extents[1] } else { d.stand_half_extents[1] };
     let at = f.feet + Vec3::Y * h * s;
@@ -1252,10 +1306,13 @@ fn step(
     pushers: Query<(Entity, &CaPusher)>,
     mut commands: Commands,
     ai: Query<(), Or<(With<crate::core::Bot>, With<crate::core::Npc>)>>,
-    map_game: Option<Res<crate::core::MapGame>>,
+    (map_game, envelopes): (Option<Res<crate::core::MapGame>>, Option<Res<chimera_core::envelope::MovementEnvelopes>>),
 ) {
     let dt = clock.dt();
-    let d = &*data;
+    // The hull fitted to the loaded map (`body`).
+    let map_envelope = envelopes.as_deref().and_then(|e| e.for_map(map_game.as_deref()));
+    let fitted = body(&data, map_envelope.as_ref());
+    let d = &*fitted;
     let s = d.meters_per_unit;
     let ai_passes_clips = !crate::core::foreign_map(map_game.as_deref(), Some(super::GAME));
     let now = clock.now;
@@ -2125,7 +2182,9 @@ fn sync_collider(
     mut removed: RemovedComponents<CaMovement>,
     mut others: Query<&mut Collider, Without<CaMovement>>,
     data: Res<MovementData>,
+    (envelopes, map_game): (Option<Res<chimera_core::envelope::MovementEnvelopes>>, Option<Res<crate::core::MapGame>>),
 ) {
+    let data = body(&data, envelopes.as_deref().and_then(|e| e.for_map(map_game.as_deref())).as_ref());
     let s = data.meters_per_unit;
     let radius = data.stand_half_extents[0].max(data.stand_half_extents[2]) * s;
     for e in removed.read() {

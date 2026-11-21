@@ -420,6 +420,10 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   (`chimera_core::envelope`): on another game's map its pill is no
   wider or taller than that game's character and steps as high
   (`movement::body`, `mover::step_up`); its own maps are unchanged.
+  Every Source game's movement (`SourceMovementConfig::fitted`, after
+  TF2's class traits) and Combat Arms' (`movement::body`) fit their box
+  the same way, per axis, with the eye kept 0.1 m under a lowered top;
+  the model and hit boxes stay full size (docs/plans/active/character-fit.md).
   Halo's on-gun displays (the assault rifle's counter and compass, the
   plasma gauges) drive view-model texture frames
   (`ViewAnimator::mesh_frames`) from the held weapon's tag functions

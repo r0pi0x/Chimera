@@ -439,7 +439,7 @@ fn drive(
         // reconciliation would hand to the player (the step up onto a bench
         // threw him up at 18 units a tick, 1200 units/s).
         let stepped = if moved_here && me.on_ground { touch.feet.z - touch.prev_feet.z } else { 0.0 };
-        let height = hull_height(cfg.of(slot), me.ducked);
+        let height = hull_height(&cfg.of(slot), me.ducked);
         let centre = to_engine(target_feet + Vec3::Z * height / 2.0);
         let resized = size.0 != height;
         if resized {
@@ -505,7 +505,7 @@ fn reconcile(
         if !s.active || !(touch.touched || touch.standing_on.is_some()) {
             continue;
         }
-        let height = hull_height(cfg.of(slot), me.ducked);
+        let height = hull_height(&cfg.of(slot), me.ducked);
         if size.0 != height {
             continue;
         }

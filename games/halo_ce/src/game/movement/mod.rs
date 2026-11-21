@@ -223,7 +223,7 @@ pub fn push(me: Option<&mut HaloMovement>, velocity: &mut Velocity, dv: Vec3) {
 /// made lower than Halo's own (`body`): under a lower ceiling the eye
 /// stays inside it. Halo's own eye is 0.24 m under its top (0.15 WU
 /// crouched), so on its own maps this changes nothing.
-pub const EYE_MARGIN: f32 = 0.1;
+pub const EYE_MARGIN: f32 = chimera_core::envelope::EYE_MARGIN;
 
 /// Halo's own movement envelope (`chimera_core::envelope`; metres): the
 /// pill's radius and heights, and the edge it rides up at a run as its
