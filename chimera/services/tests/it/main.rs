@@ -9,6 +9,7 @@ mod accounts;
 mod db;
 mod front;
 mod hub;
+mod identity;
 
 use std::{fs, path::PathBuf};
 

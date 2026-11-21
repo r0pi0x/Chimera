@@ -981,9 +981,10 @@ target/release/chimera_hub delist <instance> [--for <minutes>]   # off the list;
 ```
 
 **The hub service** (S2) answers account holders only (a ticket; `GET
-/hub/key` alone is public). Its settings are
-`<server store>/server/hub/hub.toml`, read again when edited (no
-restart):
+/hub/key` alone is public). Its settings are the active identity's
+`hub.toml` (identity `main`: `<server store>/server/hub/hub.toml`), read
+again when edited (no restart); with no name set the hub is "Chimera
+Hub":
 
 ```
 name = "<hub name>"
@@ -998,6 +999,25 @@ date = "2026-11-14"
 title = "..."
 text = "..."
 ```
+
+**Hub identities** (plans/active/hub.md, 2.8): the hub's name, MOTD,
+news, server list and its own accounts and invites form an identity; one
+store keeps several and runs one. Another identity is another community:
+its players sign up with its own invites and the active identity's
+tickets are the only ones accepted.
+
+```
+target/release/chimera_accounts identity list                 # * marks the active one
+target/release/chimera_accounts identity name "<hub name>"     # the active one's name (no restart)
+target/release/chimera_accounts identity new <id> [--name "<hub name>"]   # default name: Chimera Hub
+target/release/chimera_accounts identity use <id>              # then:
+systemctl --user restart chimera-services.target
+target/release/chimera_accounts invite --intent "<why>" --role owner   # a new identity's first owner
+```
+
+`main` is the store's own folders (an older hub needs no move); others
+live in `<server store>/server/identities/<id>/` with their own
+`backups/`.
 
 It signs the document with the asset service's manifest key
 (`<server store>/server/signing.key`) and checks tickets with the
@@ -1042,8 +1062,8 @@ meanwhile uses the ticket in its account file), redeeming fails with
 sign-ups work; hub down, the Internet list is the last one fetched and
 game servers retry their heartbeats quietly (`hub.db` keeps the listings
 across its restart); front down, nothing public works (this box's
-loopback does). `accounts.db` is backed up nightly into `<server store>/server/backups/`
-(local only for now).
+loopback does). `accounts.db` is backed up nightly into the identity's
+backups (`main`: `<server store>/server/backups/`; local only for now).
 
 ## Pre-flight smoke test (the evening before, and an hour before)
 

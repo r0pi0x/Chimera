@@ -125,17 +125,26 @@ fn internal(e: impl std::fmt::Display) -> Refusal {
 pub struct Paths {
     /// The store (`--store`, as the asset service's).
     pub store: PathBuf,
+    /// The active hub identity's folder (`crate::identity::root`).
+    pub root: PathBuf,
 }
 
 impl Paths {
+    /// The store with identity `main` (the store's own folders).
     pub fn new(store: impl Into<PathBuf>) -> Self {
-        Self { store: store.into() }
+        let store = store.into();
+        Self { root: crate::identity::root(&store, crate::identity::MAIN), store }
+    }
+    /// The store with its active identity (`services.toml`'s `[hub]`).
+    pub fn active(store: impl Into<PathBuf>) -> Result<Self, String> {
+        let store = store.into();
+        Ok(Self { root: crate::identity::active_root(&store)?, store })
     }
     pub fn server(&self) -> PathBuf {
         self.store.join("server")
     }
     pub fn dir(&self) -> PathBuf {
-        self.server().join("accounts")
+        self.root.join("accounts")
     }
     pub fn db(&self) -> PathBuf {
         self.dir().join("accounts.db")
@@ -149,8 +158,9 @@ impl Paths {
     pub fn secret(&self) -> PathBuf {
         chimera_assets::accounts::service_secret_path(&self.store)
     }
+    /// The identity's backups (`main`'s: `<store>/server/backups`).
     pub fn backups(&self) -> PathBuf {
-        self.server().join("backups")
+        self.root.join("backups")
     }
     pub fn tls(&self) -> PathBuf {
         self.server().join("tls")
@@ -915,15 +925,15 @@ impl Accounts {
     }
 
     /// The hub as a good code shows it: hub.toml's name and MOTD (the
-    /// hub service's file in the same store), the active accounts.
+    /// hub service's file in the same identity), the active accounts.
     fn preview(&self, conn: &Connection) -> HubPreview {
-        let config = std::fs::read_to_string(crate::hub::Paths::new(&self.paths.store).config())
+        let config = std::fs::read_to_string(crate::identity::config_path(&self.paths.root))
             .ok()
             .and_then(|t| crate::hub::HubConfig::parse(&t).ok())
             .unwrap_or_default();
         let players: i64 = conn.query_row("SELECT COUNT(*) FROM accounts WHERE state = 'active'", [], |r| r.get(0)).unwrap_or(0);
         HubPreview {
-            name: if config.name.trim().is_empty() { "this hub".into() } else { config.name.clone() },
+            name: crate::identity::shown_name(&config.name),
             motd: config.motd.clone(),
             players: players.max(0) as u32,
         }

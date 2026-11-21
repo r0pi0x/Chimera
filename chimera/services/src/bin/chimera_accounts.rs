@@ -2,12 +2,14 @@
 //! line for it (docs/plans/active/hub.md, 2.4, 3, 5, 7.1).
 //!
 //! `chimera_accounts serve` runs the service on loopback (`--listen`,
-//! default 127.0.0.1:8741) over `<store>/server/accounts/accounts.db`
+//! default 127.0.0.1:8741) over the active hub identity's
+//! `accounts/accounts.db` (`chimera_services::identity`; identity `main`:
+//! `<store>/server/accounts/accounts.db`)
 //! (`--store`, default the machine's server store, the asset service's),
 //! writes the ticket public key for the services on this box
 //! (`accounts/ticket.pub`), makes the services' shared secret if missing
 //! (`services/secret`), and backs the database up nightly
-//! (`<store>/server/backups/`). `--tls <ip:port>` also serves HTTPS there
+//! (the identity's `backups/`). `--tls <ip:port>` also serves HTTPS there
 //! with the asset service's certificate (until the front, S1b);
 //! `--public <host:port>` is the hub's public address, for the invite
 //! links it prints.
@@ -26,7 +28,10 @@
 //! place while the service is stopped. `status` asks every service on
 //! this machine (`services.toml`'s ports: accounts, assets, the hub, the
 //! front over TLS) for its `/health` line; `install-units` writes the
-//! systemd user units (`units`) and prints the steps after. A host tool:
+//! systemd user units (`units`) and prints the steps after. `identity
+//! list|new <id> [--name <name>]|use <id>|name [<id>] <name>` manages the
+//! hub's identities (`chimera_services::identity`): files only, `use`
+//! taking effect at the services' next start. A host tool:
 //! not in releases.
 
 use std::{path::PathBuf, process::ExitCode, sync::Arc, time::Duration};
@@ -56,6 +61,10 @@ const USAGE: &str = "usage: chimera_accounts <command> [--store <dir>] [--accoun
   device revoke <device id>
   ban <username|address> [--for <days>] --reason <text>
   backup                      restore <backup file>   (the service stopped)
+  identity list               (the hub's identities, the active one marked)
+  identity new <id> [--name \"<name>\"]   (its own name, settings, accounts; default name Chimera Hub)
+  identity use <id>           (active at the services' next start: restart them)
+  identity name [<id>] \"<name>\"   (the shown name; default the active identity; no restart)
   page                        (the admin page's address, with its key: open it on this machine)
   status                      (every service on this machine: front, accounts, assets, hub)
   install-units [--bin <dir>] [--front <ip:port>] [--to <dir>] [--assets-args \"<args>\"]
@@ -102,8 +111,8 @@ impl Args {
 
     fn paths(&self) -> Result<Paths, String> {
         match self.flag("--store") {
-            Some(s) => Ok(Paths::new(PathBuf::from(s))),
-            None => chimera_assets::server::default_store().map(|s| Paths::new(s.root)).ok_or("no store: pass --store".into()),
+            Some(s) => Paths::active(PathBuf::from(s)),
+            None => chimera_assets::server::default_store().ok_or("no store: pass --store".to_string()).and_then(|s| Paths::active(s.root)),
         }
     }
 
@@ -357,6 +366,7 @@ fn run() -> Result<(), String> {
             println!("{} restored from {backup}; start the service", paths.db().display());
             Ok(())
         }
+        ["identity", rest @ ..] => identity(&args, rest),
         ["status"] => {
             let config = args.services().unwrap_or_default();
             let line = |name: &str, url: String| match Admin::new(&url, "").health() {
@@ -384,6 +394,46 @@ fn run() -> Result<(), String> {
                 }
                 None => println!("{:<9} (no [front] listen in services.toml)", "front"),
             }
+            Ok(())
+        }
+        _ => Err(USAGE.into()),
+    }
+}
+
+/// `identity ...`: files in the store, no running service asked.
+fn identity(args: &Args, words: &[&str]) -> Result<(), String> {
+    use chimera_services::identity as id;
+    let store = args.paths()?.store;
+    match words {
+        ["list"] | [] => {
+            for i in id::list(&store)? {
+                let accounts = if i.has_accounts { "" } else { "  (no accounts yet)" };
+                println!("{} {:<16} {:?}{accounts}", if i.active { "*" } else { " " }, i.id, i.name);
+            }
+            Ok(())
+        }
+        ["new", name] => {
+            let root = id::create(&store, name, &args.flag("--name").unwrap_or_default())?;
+            println!("identity {name} at {} ({:?}); `chimera_accounts identity use {name}` makes it active", root.display(), id::name_at(&root));
+            Ok(())
+        }
+        ["use", name] => {
+            let before = id::active(&store)?;
+            id::activate(&store, name)?;
+            println!("identity {name} ({:?}) is active from the services' next start (was {before})", id::name_at(&id::root(&store, name)));
+            eprintln!("restart them: systemctl --user restart chimera-services.target");
+            eprintln!("each identity has its own accounts: players of {before} sign in again only when it is back");
+            Ok(())
+        }
+        ["name", shown] => {
+            let active = id::active(&store)?;
+            id::set_name(&store, &active, shown)?;
+            println!("identity {active} shows {shown:?} (the hub reads it again by itself)");
+            Ok(())
+        }
+        ["name", name, shown] => {
+            id::set_name(&store, name, shown)?;
+            println!("identity {name} shows {shown:?}");
             Ok(())
         }
         _ => Err(USAGE.into()),

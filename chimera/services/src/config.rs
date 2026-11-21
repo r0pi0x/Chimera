@@ -13,6 +13,8 @@
 //! assets = 8731
 //! accounts = 8741
 //! hub = 8742
+//! [hub]
+//! identity = "<id>"   # the active hub identity (crate::identity); none: main
 //! ```
 
 use std::{
@@ -70,6 +72,14 @@ impl Default for Ports {
     }
 }
 
+/// `[hub]`: which identity the hub presents (`crate::identity`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HubSection {
+    /// The active identity's id; none: `main` (the store's own folders).
+    #[serde(default)]
+    pub identity: Option<String>,
+}
+
 /// `services.toml`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServicesConfig {
@@ -77,6 +87,8 @@ pub struct ServicesConfig {
     pub front: FrontConfig,
     #[serde(default)]
     pub ports: Ports,
+    #[serde(default)]
+    pub hub: HubSection,
 }
 
 impl ServicesConfig {
@@ -89,10 +101,14 @@ impl ServicesConfig {
     pub fn load(store: &Path) -> Result<Self, String> {
         let path = Self::path(store);
         match std::fs::read_to_string(&path) {
-            Ok(text) => toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display())),
+            Ok(text) => Self::parse(&text).map_err(|e| format!("{}: {e}", path.display())),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(e) => Err(format!("{}: {e}", path.display())),
         }
+    }
+
+    pub fn parse(text: &str) -> Result<Self, String> {
+        toml::from_str(text).map_err(|e| e.to_string())
     }
 
     /// The front's routes: the loopback listeners.

@@ -7,7 +7,8 @@
 //! path to the services on loopback); where they listen (`config`,
 //! `services.toml`); their systemd user units (`units`); the hub (`hub`,
 //! binary `chimera_hub`: the signed discovery document, the server list,
-//! heartbeats and the reachability probe, on `hub.db`). The asset service
+//! heartbeats and the reachability probe, on `hub.db`); hub identities
+//! (`identity`: named profiles, each its own name, settings and accounts). The asset service
 //! stays `chimera_asset_server` (in `chimera_assets`), which takes this
 //! service's tickets (`chimera_assets::accounts::TicketAuth`). Later:
 //! feedback.
@@ -23,6 +24,7 @@ pub mod config;
 pub mod db;
 pub mod front;
 pub mod hub;
+pub mod identity;
 pub mod units;
 
 /// Unix seconds.

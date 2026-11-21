@@ -9,7 +9,8 @@
 //!   feed, polled every 30 s (`chimera_assets::accounts::TicketAuth`): no
 //!   anonymous access, the list included (decision 10).
 //! - **The document** (`document`, `GET /hub`): `hub_doc::Discovery`
-//!   from the host's `<store>/server/hub/hub.toml` (`HubConfig`: name,
+//!   from the active identity's `hub/hub.toml` (`crate::identity`;
+//!   `main`'s is `<store>/server/hub/hub.toml`; `HubConfig`: name,
 //!   MOTD, news, the oldest network version and a download link, the
 //!   public address, endpoints moved elsewhere, `next_fingerprint`; read
 //!   again when it changes, so an edit needs no restart) and the process
@@ -105,17 +106,26 @@ fn internal(e: impl std::fmt::Display) -> Refusal {
 #[derive(Clone, Debug)]
 pub struct Paths {
     pub store: PathBuf,
+    /// The active hub identity's folder (`crate::identity::root`).
+    pub root: PathBuf,
 }
 
 impl Paths {
+    /// The store with identity `main` (the store's own folders).
     pub fn new(store: impl Into<PathBuf>) -> Self {
-        Self { store: store.into() }
+        let store = store.into();
+        Self { root: crate::identity::root(&store, crate::identity::MAIN), store }
+    }
+    /// The store with its active identity (`services.toml`'s `[hub]`).
+    pub fn active(store: impl Into<PathBuf>) -> Result<Self, String> {
+        let store = store.into();
+        Ok(Self { root: crate::identity::active_root(&store)?, store })
     }
     pub fn server(&self) -> PathBuf {
         self.store.join("server")
     }
     pub fn dir(&self) -> PathBuf {
-        self.server().join("hub")
+        self.root.join("hub")
     }
     pub fn db(&self) -> PathBuf {
         self.dir().join("hub.db")
@@ -137,15 +147,18 @@ impl Paths {
     pub fn tls(&self) -> PathBuf {
         self.server().join("tls")
     }
+    /// The identity's backups (`main`'s: `<store>/server/backups`).
     pub fn backups(&self) -> PathBuf {
-        self.server().join("backups")
+        self.root.join("backups")
     }
     pub fn access_log(&self) -> PathBuf {
         self.dir().join("access.log")
     }
 }
 
-/// `<store>/server/hub/hub.toml`, written by the host; every key optional.
+/// The active identity's `hub/hub.toml` (`main`'s:
+/// `<store>/server/hub/hub.toml`), written by the host; every key
+/// optional. A blank name shows `crate::identity::DEFAULT_NAME`.
 ///
 /// ```toml
 /// name = "<hub name>"
@@ -616,7 +629,7 @@ impl Hub {
         let ours = chimera_assets::tls::fingerprint_in(&self.paths.tls());
         let doc = Discovery {
             schema: SCHEMA,
-            name: if c.name.is_empty() { "Chimera hub".into() } else { c.name.clone() },
+            name: crate::identity::shown_name(&c.name),
             issued: now,
             expires: now + DOCUMENT_SECS,
             accounts: AccountsEndpoint { url: "/accounts".into(), ticket_keys },

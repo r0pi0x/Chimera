@@ -3,9 +3,10 @@
 //! registry with its heartbeats and reachability probe, and the list, on
 //! loopback (`--listen`, default 127.0.0.1:8742 or `services.toml`'s
 //! port) behind the front at `/hub`. Its listings are kept in
-//! `<store>/server/hub/hub.db`, its settings read from
-//! `<store>/server/hub/hub.toml` (name, MOTD, news, `public_address`,
-//! `min_net`, ...; read again when edited). Tickets are checked with the
+//! the active identity's `hub/hub.db`, its settings read from its
+//! `hub/hub.toml` (name, MOTD, news, `public_address`, `min_net`, ...;
+//! read again when edited; `chimera_services::identity`, identity `main`:
+//! `<store>/server/hub/`). Tickets are checked with the
 //! accounts service's public key in the store and its revocation feed
 //! (`--accounts`, default http://127.0.0.1:8741 or `services.toml`'s
 //! port). `chimera_hub servers` lists what the running hub lists (every
@@ -55,13 +56,14 @@ fn run() -> Result<(), String> {
     let config = ServicesConfig::load(&store)?;
     let listen = listen.unwrap_or_else(|| format!("127.0.0.1:{}", config.ports.hub));
     let accounts = accounts.unwrap_or_else(|| format!("http://127.0.0.1:{}", config.ports.accounts));
-    let paths = Paths::new(store);
+    let paths = Paths::active(store)?;
     if command != "serve" {
         return owner(&command, &paths, &listen, instance, minutes);
     }
     let hub = Hub::open(paths.clone(), Options::default(), Clock::default(), Some(accounts.clone()))?;
     let running = http::serve(http::Http::new(hub.clone()), &listen, threads).map_err(|e| e.to_string())?;
     println!("hub service: {} at {} (database version {})", paths.db().display(), running.url(), hub.db_version());
+    println!("identity: {} ({})", chimera_services::identity::active(&paths.store)?, chimera_services::identity::name_at(&paths.root));
     println!("settings: {}", describe_config(&paths.config()));
     println!("tickets: {} with revocations from {accounts}", paths.ticket_pub().display());
     println!("document key: {} (the asset service's manifest key)", hub.public_key());

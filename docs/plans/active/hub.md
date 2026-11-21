@@ -316,6 +316,42 @@ Today's per-account limits, bans and access log stay as they are.
 - **Windows** (a host without systemd): each binary in its own
   console, as `chimera_asset_server` runs today.
 
+### 2.8 Hub identities
+
+What a hub presents as itself is an **identity**: its name (a fresh hub
+is "Chimera Hub"), MOTD, news and the rest of `hub.toml`, its server list
+(`hub.db`), and its **own accounts and invites** (`accounts.db` and the
+ticket key). One server store holds any number of identities and runs
+one at a time; `services.toml`'s `[hub] identity` names the active one.
+The store's own folders (`server/hub/`, `server/accounts/`,
+`server/backups/`) are the identity `main`, so a hub from before
+identities is `main` with nothing moved; any other lives in
+`server/identities/<id>/` (`hub/`, `accounts/`, `backups/`). The
+machine stays shared: assets, the certificate and its fingerprint, the
+manifest key, the services' secret, ports, feedback.
+
+Decided (2026-11-21): **an identity is a separate community**. Its
+accounts, invites, devices and bans are its own; the accounts service
+publishes only the active identity's ticket key (`accounts/ticket.pub`
+at the store's usual place, which the asset service and the hub check),
+so a ticket of another identity is refused everywhere. Testing with
+other people under another identity never touches the owner's account,
+and switching back finds it as it was (an unused invite still works).
+The cost: a player of one identity signs in again under the other with
+its own invite; the hub's address and fingerprint stay the same, so a
+client keeps one saved hub per address and an identity switch looks to
+it like the hub having forgotten its account.
+
+The operator (`chimera_accounts identity`, files only):
+`identity list` (the active one starred), `identity new <id> [--name
+"<name>"]` (a folder and its `hub.toml`; accounts made at its first
+start, its first owner invite after the switch), `identity use <id>`
+(written to `services.toml`; then `systemctl --user restart
+chimera-services.target`), `identity name [<id>] "<name>"` (the shown
+name; `hub.toml` is read again when edited, no restart). Clients show
+the served name: the discovery document's `name` and the confirm-hub
+preview's (`/accounts/check`).
+
 ### 2.7 Code layout (layering)
 
 Each crate's folder is its layer (checks/tests/it/architecture.rs):
