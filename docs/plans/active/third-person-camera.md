@@ -1,0 +1,246 @@
+# Third-person camera: over the shoulder
+
+Goal: an opt-in third-person camera for every game in the engine, as
+polished as a modern third-person shooter's. The camera sits over a
+shoulder, so the centre of the screen is free. Shots go where the
+crosshair points. A second marker shows where a blocked shot would land.
+The camera never clips through walls, moves smoothly and zooms in to aim.
+It is a Chimera addition, not the original games' behaviour: its settings
+carry the Chimera mark. Done when the milestones below are in and each
+one's tests pass. A playtest is the final check.
+
+User request: 2026-11-21. The references (Fortnite, The Division) stand
+for the genre's general conventions only. Nothing of theirs is copied.
+
+## 1. What exists today
+
+- **Camera.** `chimera/client/src/client/view.rs`. `CameraMode` holds
+  `third_person`, `ideal_dist` (`cam_idealdist`, 150 game units),
+  `ideal_yaw` (`cam_idealyaw`), `pivot_up` (0) and `meters_per_unit`.
+  The camera turns about the eye and sits straight back along the view
+  (`third_person_offset`). A 0.2 m sphere is swept back from the eye, and
+  the camera stops where it hits (`camera_offset_for_hull`). It moves at
+  once: no easing, no smoothing. This is CS:S's camera, measured for
+  parity.
+- **Toggle.** The console commands `thirdperson` / `firstperson`. They
+  are not archived, and no Options row exists. The sandbox has a
+  `Condition::ThirdPerson` and a camera distance
+  (`chimera/sim/src/minigame/conditions.rs`, `client/sandbox/mod.rs`).
+  `chimera:watchbot` and `chimera:freecam` reuse the same offset, and so
+  does the spectator's chase camera (`client/spectate.rs`).
+- **Placing the camera.** `follow_eye` in `client/mod.rs` builds the
+  look from `Intent` yaw/pitch plus the view punch and roll. It turns
+  the look by `cam_idealyaw`, then calls `camera_offset_for_hull`. In
+  third person, the stair smoothing and the shot's back push are skipped.
+- **Own body and gun.** `show_local_body` sets `map::ShowLocalBody` in
+  third person (and in the free cam, watch cam and map cameras). The view
+  model hides (`present/render/view_model.rs`), and so does first-person
+  brass (`render/shells.rs`). The world body and its gun are drawn.
+- **Shots.** Shots trace from the eye
+  (`transform.translation + eye_offset`) along
+  `aim_of(intent.yaw + kick.y, intent.pitch + kick.x)`
+  (`chimera/sim/src/weapon/mod.rs`, `deliver::Shot`). The kick is the
+  weapon's share of the punch. Spread comes from the command's seed, so
+  a client's predicted shot is the server's. Other clients redraw others'
+  shots from the same angles (`weapon/remote.rs`). Projectiles
+  (`weapon/projectile.rs`), grenades and the games' own deliveries
+  (Combat Arms' rounds and knife, Halo's weapons, HL2:DM's physcannon)
+  also read `intent.yaw/pitch`.
+- **Server checks.** Lag compensation (`weapon/lagcomp.rs`) rewinds the
+  others to the shooter's view tick, then traces from the server's own
+  eye. The server never takes a position from the client. It only takes
+  the look angles in the command.
+- **HUD aim.** `client/aim.rs` `view_ray` is the eye along the drawn
+  view. Target IDs and name tags use it.
+- **Vehicles.** Halo's vehicles have their own seat cameras
+  (`games/halo_ce/src/game/vehicles/camera.rs`). This plan leaves them
+  alone.
+
+So today, in third person, the crosshair marks the eye's ray. The
+character stands in front of it, and nothing on screen marks where the
+shot goes.
+
+## 2. The key decision: aim angles, not a camera position
+
+The camera has its own look (the mouse's). Each command's
+`Intent.yaw/pitch` is set from the camera on the client: the angles
+from the eye to the crosshair's aim point. The aim point is where the
+camera's ray through the crosshair first hits.
+
+- **No change on the server, and no new trust.** The server already
+  traces from its own eye along the command's angles. Lag compensation,
+  spread seeds, prediction, others' redrawn shots, projectiles, grenades
+  and every game's own deliveries keep working unchanged, and so do
+  demos. The client could always send any angles, so this gives it
+  nothing new.
+- **No shooting around corners.** The shot starts at the eye the server
+  places. If cover stands between the eye and the target, the shot hits
+  the cover, even when the camera sees past it. The blocked-shot marker
+  (M1) shows this before the player fires.
+- **Movement follows the camera.** `move_axis` is relative to
+  `Intent.yaw`. The client turns it by (camera yaw - aim yaw), so W
+  still walks where the camera faces. Bodies face the aim, which is what
+  the genre does.
+- **Peeking** (the camera seeing round a corner the eye can't) is the
+  genre's accepted trade. Servers limit it with two settings: a host
+  switch that allows or forbids the mode (`sv_allow_thirdperson`), and a
+  cap on the camera's offset from the eye (`sv_thirdperson_maxoffset`),
+  sent to clients and enforced there. A cheating client can show itself
+  any view in any mode, so the cap is for fair defaults, not security.
+- **The aim ray.** The camera ray starts at the point on it nearest the
+  eye, not at the camera. Anything between the camera and the character
+  (a pole behind you, your own body) is skipped. Your own character and
+  what `CHARACTER_FILTER` skips are excluded. With no hit, the aim point
+  is the weapon's range along the ray (8192 game units without one).
+  Others are traced where they are drawn (interpolated): that is where
+  the server's rewind puts them.
+- **The classic camera stays.** `thirdperson` / `cam_idealdist` remain
+  CS:S's straight-back camera, kept for parity checks. The new mode is a
+  separate style (`chimera:cam_style 1`).
+
+## 3. Milestones
+
+### M1. Aim through the crosshair, the blocked-shot marker
+
+- [ ] Shoulder camera. A pivot above the eye, then a side offset (right
+      shoulder by default) and a distance back. Values in metres, scaled
+      by nothing: one feel for every game's character. The heights are
+      fractions of the character's eye height, so a Halo Spartan and a
+      CS:S player frame the same.
+- [ ] Shoulder swap. A bind (`+chimera_shoulder` or a toggle
+      `chimera_shoulder_swap`, default key: an open question). The swap
+      slides over about 0.15 s.
+- [ ] Camera look separate from `Intent` angles. The mouse turns the
+      camera. The command's angles are the eye-to-aim-point angles,
+      computed when the command is built. Movement is turned as in
+      section 2.
+- [ ] One `third_person::aim_point(camera, eye, ...)` in Chimera's
+      client, shared by the command builder, the marker and the HUD's
+      `aim::view_ray` (target IDs follow the crosshair).
+- [ ] Blocked-shot marker. Each frame, trace from the eye to the aim
+      point, using the shot trace's filter. If something is hit short of
+      the aim point (by more than a small tolerance), draw a second
+      marker at that point on screen and dim the crosshair. Hide the
+      marker when the line is clear. Melee and thrown weapons show none.
+- [ ] The marker's trace is the server's: the same eye
+      (`eye_offset`), the same angles, the same layers. Spread is not
+      part of it: it marks the centre of the cone.
+- [ ] Host settings: `sv_allow_thirdperson` (default: open question)
+      and `sv_thirdperson_maxoffset`, replicated to clients.
+
+### M2. Camera collision (spring arm)
+
+- [ ] Sweep from the pivot to the wanted camera spot (the existing sphere
+      sweep, from the pivot instead of the eye). On a hit, pull in at
+      once. When the way clears, ease back out over about 0.3 s.
+- [ ] The pivot itself is swept from the eye (side, then up), so a wall
+      at the shoulder pushes the camera toward the centre, not through
+      the wall.
+- [ ] Never inside the character's own hull. Never closer than the near
+      plane to a wall.
+
+### M3. Smoothing, aim zoom, body fade, recoil, transitions
+
+- [ ] Follow lag. The pivot trails the character's movement a little
+      (critically damped spring, `chimera:cam_smooth`, 0 off). Rotation is
+      never smoothed: aim stays one-to-one with the mouse. Crouch and land
+      height changes ease.
+- [ ] Aim zoom. While aiming (a hold), the camera moves closer and higher
+      on the shoulder and the FOV narrows. Both ease over about 0.15 s.
+      Mouse sensitivity scales with the FOV, as the zoom does today
+      (`zoom_sensitivity_ratio`). A weapon with a scope switches to first
+      person while scoped and comes back after: scope overlays are
+      first-person.
+- [ ] Body fade. When the camera is closer to the body than a threshold
+      (pulled in by a wall), the local body fades with a dither (the
+      props' dither prepass), down to hidden. The gun fades with it.
+- [ ] Recoil. The view punch shakes the camera (pitch and yaw) as it does
+      the first-person view. The crosshair stays on the aim. The shots
+      keep the weapon's `punch_scale` share, as now.
+- [ ] Transitions. First to third person: the camera moves from the eye
+      to its spot over about 0.25 s, the body fades in and the view model
+      out. Back again in reverse. Death, spectating and map cameras take
+      over at once, as now.
+
+### M4. Settings
+
+- [ ] A data file of defaults and tuning (Chimera's client data:
+      offsets, distances, aim-zoom offsets and FOV, spring-arm speeds,
+      fade distances, marker look). The theme holds the marker's colours
+      and shape.
+- [ ] Archived cvars: `chimera:thirdperson` (the mode on or off),
+      `chimera:cam_shoulder` (right or left), `chimera:cam_dist`,
+      `chimera:cam_fov` (the third-person FOV), `chimera:cam_smooth`.
+- [ ] A "Camera" group in `apps/party_kit/data/options.toml`. Each row is
+      marked as a Chimera option (the UI kit's origin field: the Chimera
+      icon, plus a line in the help tile saying the original game has no
+      such setting).
+- [ ] The sandbox's `ThirdPerson` condition turns on the new style.
+
+## 4. Tests and checks
+
+Unit tests (pure functions, in `client/view.rs` or a new
+`client/third_person.rs`):
+
+- M1: the shoulder offset for a look; the aim ray skips what is between
+  the camera and the eye; the aim angles hit the aim point from the eye;
+  the movement turn keeps the walk along the camera's facing.
+- M2: the spring arm pulls in on the frame of the hit and eases out at
+  the set rate.
+- M3: the follow spring settles without overshoot; the aim zoom's offset
+  and FOV at 0, half and full.
+
+Scenario tests (`harness::Sim`, `chimera/client/tests/it/third_person.rs`):
+
+- M1: a wall's edge between the eye and a target the camera sees. The
+  marker shows on the wall and the crosshair dims; a shot hits the wall,
+  not the target. Step out: the marker hides and the shot hits.
+- M1: in the open, a third-person shot lands where the crosshair points,
+  near and far.
+- M2: back into a corner: the camera never ends inside a wall or the
+  body.
+- M3: switching modes leaves the camera at the eye in first person and
+  at its spot in third, after the transition time.
+
+Network tests (`NetSim`, `chimera/net/tests/it/third_person_shots.rs`):
+
+- M1: a client in third person fires. The server's hit equals the
+  client's predicted hit and the marker's point.
+- M1: the corner case over the network: the client's camera sees the
+  target, the server's shot hits the cover.
+- M1: `sv_allow_thirdperson 0` turns a client's mode off;
+  `sv_thirdperson_maxoffset` caps its camera.
+
+Visual checks (offscreen, docs/OBSERVABILITY.md section 2):
+
+- `--offscreen 1920x1080 --frames N --dump <dir>` with the mode on, at a
+  fixed `setpos`/`setang` on de_dust2 and the greybox: right shoulder,
+  left shoulder, aim zoom, against a wall (pulled in, body faded), the
+  marker on a wall edge. Before and after shots with the
+  screenshot-and-compare skill.
+- One run per game's character (CS:S, Combat Arms, HL2:DM, TF2, Halo) to
+  check the framing scales with eye height.
+
+## 5. Open questions for the user
+
+1. Default shoulder-swap key, and the aim-zoom key: right mouse is the
+   secondary attack in our games (stab, zoom, burst). Hold another key,
+   or right mouse on guns with no secondary?
+2. Should host servers allow the mode by default
+   (`sv_allow_thirdperson 1`)? Competitive rules may want it off.
+3. Keep the classic CS:S camera (`thirdperson`) next to the new one, or
+   have `thirdperson` turn on the new one by default?
+4. A key to toggle first and third person in play (none today), and
+   which?
+
+## Progress
+
+2026-11-21: plan written. Nothing built.
+
+## Decision log
+
+2026-11-21: aim by angles. The client sends the eye-to-aim-point angles
+in the existing command. The server traces from its own eye, so it
+needs no new data or checks, and cover still blocks shots. Chosen over
+sending the camera's position, which the server would have to bound and
+trust.
