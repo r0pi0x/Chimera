@@ -263,6 +263,62 @@ main menu's account chip. Decisions made building it:
 Not yet here: display name, the device list with Revoke, a new recovery
 key (hub.md 8).
 
+## Form components (proposal 2026-11-21, for the user's review)
+
+The user: the Account page's invite link should be an obvious button in a
+form, not a settings row; make form components for the account and
+onboarding pages. Mockup: "Form Kit Mockups" (claude.ai artifact, a
+component sheet and five screens). Not built yet; `chimera_ui::form`
+keeps the settings rows, these would sit beside them.
+
+- **Form field** (`form_field`): a title (Display bold, 1.1×, uppercase,
+  larger than the value at 1×), an optional Required/Optional tag, one
+  help line always shown, the input box, and a status slot under it that
+  is reserved so nothing moves. States: rest, focused (accent underline),
+  checking (busy light, "Checking…"; asked 0.45 s after the last key),
+  success (accent underline, a tick, e.g. "Available"), error (red
+  underline and tint; says what is wrong and offers the fix as a click,
+  e.g. free names), disabled (dimmed, a lock, why and until when).
+- **Masked field** (`secret_field`): the value as dots with an eye key
+  (pressed while shown) and a Copy key (a tick and "Copied" for 2 s).
+  Copy works while hidden. For hub IPs, the recovery key, invite codes.
+- **Buttons in a form**: one primary per form (the cobalt slab, cut
+  corner; busy keeps its width and pulses its light, the form stays
+  usable; disabled is ink), secondary (outline), tertiary (text, grey to
+  white, no underline), destructive (red outline, filled only in its
+  confirm step).
+- **Result card** (`result_card`): what the hub hands out once (an invite
+  link, a device code). Accent bar and tint, "Shown once", the whole
+  value wrapped in mono, a primary Copy on the card (Ctrl+C; reads
+  "Copied" on white after), a tertiary "Make another", and the facts
+  (why, role, expiry). Invites: the form becomes this card after Make
+  invite; it stays until the page is left.
+- **Choice in a form**: the kit rule (segmented when every option fits
+  an equal share, else a dropdown), as wide as the text fields.
+- **Avatar field** (`avatar_grid`): all 32 looks at once, 8 × 4, no
+  paging; the pick framed white with the accent bar under it; arrows
+  move, Enter picks. On the left with the other editable fields.
+- **Section header** (`form_section`): the slanted accent block, the
+  title, a count, a hairline; one sentence under it.
+- **Read-only row** (`value_row`): mono key, value, a lock (or the eye
+  and Copy for secrets). Only these go in the right-hand tile: what the
+  player can't change (hub, address masked, role, member since).
+- **Path row** (`path_row`): a saved file's whole path, wrapped, never
+  cut with an ellipsis, with "Show in folder".
+- **Action bar** (`form_footer`): the last line of a form page; what the
+  last call did on the left (changes pending, saving, saved at), actions
+  on the right, primary last. Proposed: Profile's changes (username,
+  display name, avatar) go out together with Save changes.
+- **Badge** and **check**: the kit's one badge (outline, accent,
+  warning) for roles and counts; the slanted check box.
+
+Rules: one row marker (lighter background and the blue left bar) for
+list rows such as open invites; nothing blocks input or slides in;
+states change in place. Onboarding's paste field checks by itself after
+a paste or the last key (no "press Enter to check"); Continue lights
+when the invite is recognised. The recovery key's Continue waits for "I've
+saved my key" or a save, never a timer.
+
 ## The owner's side
 
 Invites stay a command for the hub owner, with the intent and an
