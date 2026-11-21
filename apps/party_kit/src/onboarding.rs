@@ -88,7 +88,8 @@
 //!   <hub>` and a light, green while the hub answers, amber when its last
 //!   call failed), and while the hub can't be reached a slim **offline
 //!   banner** ("Can't reach <hub>", playing offline goes on, Retry now;
-//!   it retries by itself every `RETRY_SECS`). `AccountShown` is the
+//!   it retries by itself every `RETRY_SECS`). A click on the chip opens
+//!   Settings > Account (`account_page`). `AccountShown` is the
 //!   account's names (the app's start, or the first run's end).
 //! - `ui_scene onboarding intro [t]` plays the intro (held still at `t`
 //!   seconds when given, for screenshots); `ui_scene onboarding <welcome|clipboard|checking|used|unknown|
@@ -99,9 +100,7 @@
 //! Known shortcuts: the intro's timings are numbers in the code (its
 //! words are data); the screens rebuild whole on any
 //! change; no keyboard focus between the buttons (Enter is the hero,
-//! Esc goes back); the chip opens nothing yet (no Profile screen: rename,
-//! link a device and sign out are the hub's calls, `account::rename`, not
-//! drawn yet).
+//! Esc goes back).
 
 use std::{
     path::PathBuf,
@@ -1254,6 +1253,13 @@ fn finish(o: &mut Onboarding, files: &OnboardingFiles, words: &Words, now: f64, 
             let _ = w.run_system_cached(chimera_net::net::party::use_user_party);
         });
     }
+    // The base files every game reads, up front, in the background
+    // (decision 12; `base_download`).
+    commands.queue(|w: &mut World| {
+        if w.contains_resource::<crate::base_download::BaseDownload>() {
+            crate::base_download::start_after_sign_in(w);
+        }
+    });
     let avatar = o.avatar;
     if o.recovery.is_some() || o.answer.as_ref().is_some_and(|a| a.kind == "invite") {
         commands.queue(move |w: &mut World| {
@@ -1385,7 +1391,7 @@ fn retry_hub(
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn show_chip(
     shown_account: Res<AccountShown>,
-    o: Res<Onboarding>,
+    (o, page): (Res<Onboarding>, Option<Res<crate::account_page::AccountPage>>),
     hub: Option<Res<chimera_net::net::hub::Hub>>,
     avatar: Option<Res<chimera_client::client::profile::AvatarSetting>>,
     menu: Option<Res<crate::main_menu::PartyMenu>>,
@@ -1399,7 +1405,8 @@ fn show_chip(
     let (Some(theme), Some(units)) = (theme.as_deref(), units.as_deref()) else { return };
     let on_menu = menu.as_deref().is_some_and(|m| m.screen == crate::main_menu::Screen::MainMenu && m.page == crate::main_menu::MenuPage::Main);
     let cam = camera.iter().next();
-    let key = shown_account.0.clone().filter(|_| on_menu && !o.active && crate::esc_menu::signal(Some(theme))).map(|a| {
+    let page_open = crate::account_page::takes_keys(page.as_deref());
+    let key = shown_account.0.clone().filter(|_| on_menu && !o.active && !page_open && crate::esc_menu::signal(Some(theme))).map(|a| {
         let offline = hub.as_deref().is_some_and(|h| h.offline());
         let hub_name = hub.as_deref().filter(|h| h.doc.is_some()).map(|h| h.name()).unwrap_or_else(|| a.hub.clone());
         (a, offline, hub_name, avatar.as_deref().map_or(-1, |s| s.0), ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32), cam)
@@ -1418,6 +1425,8 @@ fn show_chip(
             .id();
         // The chip, under the rack at the right.
         let chip = ui.boxed(c, r, UiStyle { gap: Some(1.2), h: Some(4.2), pad: Some([0.0, 1.2, 0.0, 0.4].into()), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([None, Some(8.2), Some(4.6), None]).bg_a(Tone::Ink2, 0.8).outline(if offline { Tone::Fg4 } else { Tone::AccText }, 1.0));
+        // A click opens Settings > Account (`account_page`).
+        c.entity(chip).insert((clickable(), crate::account_page::OpenAccount, chimera_ui::controls::Hover { base: theme.tone_a(Tone::Ink2, 0.8), over: theme.tone_a(Tone::Fg, 0.1) }));
         let byte = u8::try_from(look).ok().and_then(AvatarLook::from_byte).unwrap_or_else(|| AvatarLook::for_name(&a.username));
         match (images.as_deref_mut(), icons.as_deref_mut()) {
             (Some(images), Some(icons)) => {

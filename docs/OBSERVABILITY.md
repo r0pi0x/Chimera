@@ -2838,6 +2838,11 @@ an account" on each tab, and the main menu's welcome toast (`done`). `ui_scene o
 intro (held still `t` seconds in when given: a contact strip is one run per time). Offscreen: `ultimate_gun_game --offscreen
 1920x1080 --frames 60 --screenshot <out>.png +mainmenu +ui_scene onboarding name-taken`; `onboarding 1` shows the
 real flow in a running game.
+`ui_scene account <profile|rename|rename-taken|avatar|link|sign-out|invites|invite-made|player|off>` stages Settings >
+Account (`party_kit::account_page`) with a made-up owner account (`player`: a tester's, no Invites tab; nothing is sent,
+written or signed out), and `ui_scene downloads <planning|running|done|failed|off>` the main menu's base-files strip
+(`party_kit::base_download`): `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot <out>.png +mainmenu
++ui_scene account invite-made`; `account_page 1` opens the real page in a running game.
 `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range|map>`
 stages the sandbox's screens (`chimera_client::client::sandbox`) with
 made-up guns, kills, downloads, targets and maps (`map`: Change map, M); over a real sandbox it reads

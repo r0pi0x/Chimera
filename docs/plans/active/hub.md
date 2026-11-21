@@ -755,8 +755,8 @@ JavaScript served by the service, as the triage page is.
   keeps hub.toml and account.toml, and starts the startup download for
   the content the account may fetch. Errors in words: wrong link, hub
   unreachable, code unknown, used or expired, username taken, another
-  certificate. A first run that adds content not installed restarts once
-  (the existing `AssetRelaunch` path).
+  certificate. The first run's end fetches the base files in the
+  background, no restart (onboarding.md, "The account page").
 - **Main menu**: an **account chip** (display name, and this game's
   matches and wins or level once S4 is in; "Guest" without an account; a
   click opens Settings > Account), the MOTD line, the newest news.

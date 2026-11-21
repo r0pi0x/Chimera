@@ -136,6 +136,8 @@ pub fn front_end(app: &mut App, args: &Args) {
         // The first run: from an invite to the main menu, signed in
         // (docs/plans/active/onboarding.md).
         .add_plugins(crate::onboarding::OnboardingPlugin)
+        // Settings > Account, from the chip; the base files up front.
+        .add_plugins((crate::account_page::AccountPagePlugin, crate::base_download::BaseDownloadPlugin))
         .add_plugins(PartyMousePlugin)
         .add_plugins(PartyHudPlugin)
         .add_plugins(chimera_client::client::minigame_scoreboard::MinigameScoreboardPlugin)

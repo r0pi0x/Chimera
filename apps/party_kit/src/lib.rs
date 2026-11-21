@@ -675,6 +675,10 @@ pub mod crash_signal;
 #[cfg(feature = "present")]
 pub mod onboarding;
 #[cfg(feature = "present")]
+pub mod account_page;
+#[cfg(feature = "present")]
+pub mod base_download;
+#[cfg(feature = "present")]
 pub mod settings;
 #[cfg(feature = "present")]
 pub mod main_menu;

@@ -1350,10 +1350,11 @@ fn typing(
         Option<Res<crate::loading_signal::LoadingSignal>>,
         Option<Res<crate::guns_picker::GunsPicker>>,
     ),
-    (mut clipboard, party, onboarding): (
+    (mut clipboard, party, onboarding, account): (
         Local<chimera_ui::clipboard::Clipboard>,
         Option<Res<crate::party_signal::PartyPanel>>,
         Option<Res<crate::onboarding::Onboarding>>,
+        Option<Res<crate::account_page::AccountPage>>,
     ),
     shared_clipboard: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
@@ -1370,7 +1371,8 @@ fn typing(
         && !console.is_some_and(|c| c.open)
         && !controls.is_some_and(|c| c.open)
         && !party.is_some_and(|p| p.open)
-        && !crate::onboarding::takes_keys(onboarding.as_deref());
+        && !crate::onboarding::takes_keys(onboarding.as_deref())
+        && !crate::account_page::takes_keys(account.as_deref());
     if !live {
         events.clear();
         return;

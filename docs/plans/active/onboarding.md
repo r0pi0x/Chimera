@@ -212,6 +212,57 @@ with the reason):
 Tests: `party_kit` `onboarding::each_error_offers_its_one_action`,
 `the_bar_carries_the_games_lockup`.
 
+## The account page (2026-11-21)
+
+Settings > Account (`party_kit::account_page`), opened by a click on the
+main menu's account chip. Decisions made building it:
+
+- **A shell screen of its own, "Main menu ‹ Account"** (it opens from the
+  chip and goes back to the menu; the bar's Profile tile white), not a tab inside
+  Settings' window: Settings' rows are cvars and binds with reset keys
+  and pending changes, the account's are calls to the hub. It keeps
+  Settings' look and the kit rules of 2026-11-21: tabs grey to white
+  with badges (Invites counts the open ones), one row marker, every
+  control in the one control column, the focused row's help in the tile
+  at the right, the action bar saying what the last call did.
+- **Profile**: username (Enter edits; availability asked of the hub
+  0.45 s after the last key through a new ticket call, `POST
+  /accounts/username/check`, which answers the sign-up's free names when
+  taken; Enter renames, one a minute; the chip and `account.toml`
+  follow), avatar (arrows or the 32 looks in the help tile: `cl_avatar`
+  at once, the hub told 0.6 s after the last change), the hub (name,
+  address, online light), Link another device (the 10-minute code in
+  cells, `POST /accounts/link` as designed in hub.md 5.2), Sign out.
+- **Sign out asks in its own row** (Stay with Esc, Sign out), no modal
+  and nothing animated. It revokes this device at the hub (new `POST
+  /accounts/sign-out`, hub.md 5.2's "Sign out of this device"), and
+  deletes `account.toml` even when the hub can't be reached (the device
+  then stays listed for the owner to revoke; the first run says so).
+  The first run's Welcome follows at once, without the intro.
+- **Invites for an owner in the game**: the Invites tab shows for an
+  account whose role is `owner` (`/accounts/me`); the role is read again
+  at each call, so a demotion counts at once. Intent (required),
+  recipient (optional), role Tester or Host (segmented): an owner invite
+  stays a command-line act. Make invite shows the link once on a plate
+  with Copy (Ctrl+C); the link is the hub's own when it knows its public
+  address, else made from the account's hub. The open invites (unused
+  and live, newest first) each have Revoke, by the invite's row id (`POST
+  /accounts/invites/revoke`; the CLI's revoke by name stays). New ticket
+  calls: `POST /accounts/invites`, `GET /accounts/invites`. The admin web
+  page's invite form takes the intent and recipient too.
+- **Base files up front** (decision 12, `party_kit::base_download`): the
+  first run's end starts the startup fetch (the startup sets of the
+  app's games, `chimera_assets::sets::STARTUP_SETS`) that a start already
+  signed in makes, its plan on a thread; a strip at the main menu's
+  bottom left shows the loading screen's lines and bar and takes no
+  clicks or keys. No restart (hub.md 8's "restarts once" is dropped): the
+  games whose files arrived are read from the store at the next join
+  (its bind remounts them) or start; a join meanwhile takes the fetch
+  over on its loading screen.
+
+Not yet here: display name, the device list with Revoke, a new recovery
+key (hub.md 8).
+
 ## The owner's side
 
 Invites stay a command for the hub owner, with the intent and an
@@ -230,15 +281,11 @@ admin page lists invites by intent, with status and Revoke.
 
 ## Next steps
 
-**Now (after milestones a-c):**
+**Now:**
 
-1. Settings > Account: rename (one a minute, `account::rename`), the
-   avatar (`set_avatar`), link a device (shows the code), devices and
-   Revoke, a new recovery key, sign out; the chip opens it.
-2. The admin page's invite form: intent and recipient.
-3. Downloads up front (decision 12): the base sets every game needs
-   start after the first run; a hub's own sets later; bulk sets an
-   option (future).
+1. Settings > Account's rest: the display name, the device list with
+   Revoke, a new recovery key.
+2. A hub's own sets after the base files; bulk sets an option (future).
 
 **Done earlier:**
 
@@ -376,3 +423,13 @@ admin page lists invites by intent, with status and Revoke.
   folders). Tests: `chimera_client` `link_handler::*` (6),
   `party_kit` `onboarding::an_opened_link_fills_the_field_and_checks_it`.
   Not done: macOS; unregistering (by hand).
+- Milestone (e), the account page, owner invites and base files up
+  front, done 2026-11-21 ("The account page" above). Tests:
+  `chimera_services` `accounts::the_account_page_checks_renames_and_signs_out`,
+  `an_owner_makes_lists_and_revokes_invites_in_the_game`; `party_kit`
+  `account_page::` (the rename with free names, avatar, link code and
+  sign out, an owner's invites, every staged screen, the base files
+  started at the first run's end with a strip that takes no clicks);
+  `ui_scene account <profile|rename|rename-taken|avatar|link|sign-out|
+  invites|invite-made|player>`, `ui_scene downloads <planning|running|
+  done|failed>`. The accounts service needs deploying for the new calls.

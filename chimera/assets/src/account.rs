@@ -382,6 +382,32 @@ pub struct LinkAnswer {
 /// as free.
 pub type NameCheckRequest = RenameRequest;
 
+/// The account as `/accounts/me` (and a rename, an avatar) shows it to
+/// its player: the parts the account page draws (`view`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeView {
+    pub username: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub avatar: Option<u8>,
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub previous_usernames: Vec<String>,
+}
+
+impl MeView {
+    pub fn owner(&self) -> bool {
+        self.role == "owner"
+    }
+}
+
+/// `me`'s (`rename`'s, `set_avatar`'s) answer as a `MeView`.
+pub fn view(answer: serde_json::Value) -> Result<MeView, String> {
+    serde_json::from_value(answer).map_err(|e| format!("the hub's answer: {e}"))
+}
+
 /// `POST /accounts/invites` (an owner's ticket): an invite made in the
 /// game (docs/plans/active/onboarding.md, "The owner's side"). A tester's
 /// or a host's; an owner's is made on the hub's command line.

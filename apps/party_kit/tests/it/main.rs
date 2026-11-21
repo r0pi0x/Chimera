@@ -4,6 +4,7 @@
 //! user's installs. `cargo test -p party_kit --features dev --test it`;
 //! where tests go: docs/OBSERVABILITY.md, section 1.
 
+mod account_page;
 mod announcer;
 #[cfg(feature = "present")]
 mod window_icons;

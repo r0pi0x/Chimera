@@ -1003,14 +1003,16 @@ fn select(
     tabs: Query<(&SignalTab, &Interaction), Changed<Interaction>>,
     lead: Option<Res<PointerLead>>,
     clock: Res<UiClock>,
-    (mut out, party, onboarding): (
+    (mut out, party, onboarding, account): (
         MessageWriter<MainMenuAction>,
         Option<Res<crate::party_signal::PartyPanel>>,
         Option<Res<crate::onboarding::Onboarding>>,
+        Option<Res<crate::account_page::AccountPage>>,
     ),
 ) {
     let live = !party.is_some_and(|p| p.open)
         && !crate::onboarding::takes_keys(onboarding.as_deref())
+        && !crate::account_page::takes_keys(account.as_deref())
         && shown.screen == Screen::MainMenu
         && menu.page == MenuPage::Main
         && menu.failure.is_none()

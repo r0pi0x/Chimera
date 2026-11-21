@@ -1360,14 +1360,19 @@ fn keys(
     mut out: MessageWriter<MainMenuAction>,
     mut cues: MessageWriter<UiCue>,
     (picker, party, guns): (Res<crate::maps_picker::MapsPicker>, Option<Res<crate::party_signal::PartyPanel>>, Res<crate::guns_picker::GunsPicker>),
-    (modals, own, onboarding): (Option<Res<chimera_ui::Modals>>, Query<(), With<PasswordShade>>, Option<Res<crate::onboarding::Onboarding>>),
+    (modals, own, onboarding, account): (
+        Option<Res<chimera_ui::Modals>>,
+        Query<(), With<PasswordShade>>,
+        Option<Res<crate::onboarding::Onboarding>>,
+        Option<Res<crate::account_page::AccountPage>>,
+    ),
 ) {
     let (Some(page), Some(keys)) = (p.up, keys) else { return };
     // The keys are the page's while no modal is up but its own password
     // modal (`chimera_ui::modal`); the pickers' flags cover the frame a
     // dialog opens in, before the stack has it.
     let behind = modals.is_some_and(|m| m.top().is_some_and(|t| !own.contains(t)));
-    let behind = behind || crate::onboarding::takes_keys(onboarding.as_deref());
+    let behind = behind || crate::onboarding::takes_keys(onboarding.as_deref()) || crate::account_page::takes_keys(account.as_deref());
     if console.is_some_and(|c| c.open) || picker.took_keys || guns.took_keys || party.is_some_and(|p| p.open) || behind {
         return;
     }
