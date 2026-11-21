@@ -304,17 +304,17 @@ module list is `docs/modules.md`.
 - 553: The asset service (each session) | It serves this machine's server store (`--store <dir>` serves another; then see "Starting it" for the fingerprint)
 - 580: Building or updating the server | Easiest: the server from the release zip (`ultimate_gun_game_server` or
 - 597: The server's own game files (no install, no keys) | A game server reads each game it has no install of from the asset store, as a player does, and fetches what it needs from the asset...
-- 673: Starting it | reach, not localhost)
-- 829: Ports to open | On the router and the host's firewall:
-- 853: Download speed and your upload | What a tester without the games downloads from the asset service:
-- 905: Accounts and invites | Everyone gets in with an account on the hub (the services in the next section): a tester, a developer, a dedicated server
-- 950: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
-- 1047: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
-- 1069: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
-- 1174: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
-- 1197: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
-- 1242: After | Revoke the session's test accounts (`chimera_accounts account revoke
-- 1249: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
+- 671: Starting it | reach, not localhost)
+- 827: Ports to open | On the router and the host's firewall:
+- 851: Download speed and your upload | What a tester without the games downloads from the asset service:
+- 903: Accounts and invites | Everyone gets in with an account on the hub (the services in the next section): a tester, a developer; a dedicated server uses the...
+- 951: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
+- 1048: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
+- 1070: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
+- 1175: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
+- 1198: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
+- 1243: After | Revoke the session's test accounts (`chimera_accounts account revoke
+- 1250: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
 
 ## docs/playtest.md
 

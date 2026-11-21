@@ -4,7 +4,8 @@
 //! its certificate, as on a host): a headless dedicated server with
 //! `chimera:hub 1` and a host account is listed at the address the hub
 //! sees, reached by the hub's probe, updated when a bot joins and gone
-//! when it quits; a server whose account may not list says why; a
+//! when it quits; a player's signed-in account hosts as well (no host
+//! invite), and with none the start says how to sign in; a server whose account may not list says why; a
 //! client's `Hub` reads the signed document and the list, keeps them in
 //! its cache and shows them, marked offline, when the hub is gone.
 
@@ -178,6 +179,25 @@ fn a_dedicated_server_is_listed_updated_when_a_bot_joins_and_gone_on_quit() {
     // Quitting delists (the quick exit's flush), not 90 s later.
     chimera_core::shutdown::run_steps(sim.app.world_mut());
     assert!(s.hub().admin_list().is_empty(), "gone on quit");
+}
+
+#[test]
+fn a_dedicated_server_hosts_with_a_players_signed_in_account() {
+    // hub.md 6: no host invite. The account a player signed in with on
+    // this machine (role tester, its default `list` right) hosts: the
+    // start names it, and the hub lists the server under it.
+    let s = Services::new("player_hosts");
+    let player = s.account("player", "tester", None);
+    let line = chimera_net::net::hub::host_account_line(Some(&player));
+    assert!(line.starts_with("hub: hosting as player on https://127.0.0.1:"), "{line}");
+    let mut sim = listed_server(&player);
+    pump("listed", &mut [&mut sim], |_| s.hub().admin_list().len() == 1);
+    assert!(matches!(state(&sim), ListState::Listed(_)), "{:?}", state(&sim));
+    assert_eq!(s.hub().admin_list()[0].listing.addr, format!("127.0.0.1:{}", port_of(&sim)));
+    chimera_core::shutdown::run_steps(sim.app.world_mut());
+    // No account on the machine: the start says plainly how to sign in.
+    let none = chimera_net::net::hub::host_account_line(Some(&s.dir.join("nobody.toml")));
+    assert!(none.contains("no account signed in on this machine") && none.contains("chimera_assets hub <invite link>"), "{none}");
 }
 
 #[test]

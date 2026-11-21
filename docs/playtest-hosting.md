@@ -618,27 +618,25 @@ fetches with the host's own credential (the hub account's ticket).
 
 **A dedicated server** needs a credential once. Either:
 
-- **A hub account** (with the hub's services running: "Platform accounts
-  and the front", below). On the hub's machine, an invite of role `host`
-  with the content it may fetch (a host has none unless given):
+- **The hub account signed in on its machine** (with the hub's
+  services running: "Platform accounts and the front", below). A player
+  who signed in with the game's first run on that machine, as the same
+  OS user, is done: the server hosts with that account, no host invite.
+  On a machine nobody plays on, sign in once with an ordinary invite:
   ```
-  target/release/chimera_accounts invite game-server --role host --content '*' --hub <hub address>:<hub port>
+  chimera_assets hub "<the invite link>"      # or, once: ultimate_gun_game_server +chimera:hub "<the link>" +map greybox
   ```
-  For a server on the hub's own machine, `--hub 127.0.0.1:<hub port>`
-  (the front listens on every interface; the link keeps the certificate's
-  fingerprint). Then once, on the server's machine, as the user that runs
-  it:
-  ```
-  ultimate_gun_game_server +chimera:hub "<the link>" game-server +map greybox
-  ```
-  It redeems the invite (the device key is made on that machine and never
-  leaves it) and keeps the account in that user's `account.toml`
+  (`--hub 127.0.0.1:<hub port>` on the invite for a server on the hub's
+  own machine: the front listens on every interface; the link keeps the
+  certificate's fingerprint.) The device key is made on that machine and
+  never leaves it; the account lands in that user's `account.toml`
   (`~/.local/share/chimera/`, `%LOCALAPPDATA%\chimera\`;
-  `CHIMERA_ACCOUNT=<file>` names another, e.g. one per server), its
-  recovery key beside it (`recovery-key.txt`). From then on every start
-  uses it: tickets are asked with the device key and refreshed in the
-  background. Revoke it like a player's (`chimera_accounts account revoke
-  game-server`).
+  `CHIMERA_ACCOUNT=<file>` names another, e.g. one per server). Every
+  start says which it uses: `hub: hosting as <username> on <hub> (...)`,
+  or, with none, how to sign in. A player's account lists one server at
+  a time (`+chimera:hub 1`); `--role host --content '*'` on the invite
+  (or `account set <username> --list <n>`) gives more. Revoke it like a
+  player's (`chimera_accounts account revoke <username>`).
 - **A token**, only for an asset service run with no hub
   (`chimera_asset_server --no-tickets`; a hub's asset service takes its
   accounts' tickets alone). On that service's machine:
@@ -666,7 +664,7 @@ and before each later match `assets: fetching the server's game files for
 the match on <map>: ...`. Without one: `assets: no install of ... and no
 credential for the asset service`, and TF2's guns log `spec fallback
 (...)`. The service's `access.log` shows the server's account
-(`game-server`, or `account:game-server` for the hub account). A refused
+(`game-server` for a token, `account:<username>` for the hub account). A refused
 credential says `HTTP 401` (revoked or mistyped) or `HTTP 403` (the
 account may not fetch that game: `--content`).
 
@@ -905,7 +903,8 @@ the day.
 ## Accounts and invites
 
 Everyone gets in with an account on the hub (the services in the next
-section): a tester, a developer, a dedicated server. On the hub's
+section): a tester, a developer; a dedicated server uses the account
+signed in on its machine ("The server's own game files"). On the hub's
 machine:
 
 ```
@@ -917,7 +916,9 @@ tester privately. It is single use and valid 14 days (`--expires
 <days>`); the tester pastes it on the game's first-run screen, picks a
 username and saves a recovery key. `--content a,b` limits the games
 whose files the account may fetch (default: every game), `--role host`
-makes a game server's account. `chimera_accounts invites` lists them,
+makes an account for a game server on a machine nobody plays on (more
+listings; any signed-in account hosts one), `--role owner` the hub
+owner's. `chimera_accounts invites` lists them,
 `invite revoke <code or name>` withdraws one unused.
 
 Revoke (within one revocation poll, 30 s; no restart):

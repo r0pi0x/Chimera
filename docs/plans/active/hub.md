@@ -262,12 +262,11 @@ others (the frequent case) never touch it.
 - **Services among themselves** talk only on loopback, with a shared
   secret (`<server store>/server/services/secret`, 0600, made at first
   start) in `X-Chimera-Service`. Game servers are players of the hub:
-  they hold an account (role `host`) and tickets like anyone. Built
+  they hold an account and tickets like anyone. Built
   2026-11-15 for their own game files (`chimera_net::net::server_assets`,
   playtest-hosting.md "The server's own game files"): a dedicated server
-  redeems a `host` invite once with `+chimera:hub <link>` (its
-  `account.toml`, `CHIMERA_ACCOUNT`) and fetches what it lacks with its
-  tickets; a listen server uses the host's.
+  uses the account signed in on its machine (section 6) and fetches what
+  it lacks with its tickets; a listen server uses the host's.
 - **Tickets are the only credential** a hub's services take (section 6).
 
 The asset service gains a `TicketAuth` (an `Authenticator` of kind
@@ -676,6 +675,21 @@ hub's document and list want a ticket. Every player, developer and game
 server gets in with an invite (`chimera_accounts invite`, 5.1); the
 client's first run shows whenever this PC has no account and no skip
 mark ([onboarding.md](onboarding.md)).
+
+**A game server hosts with the machine's account** (user,
+2026-11-21): a dedicated server (`*_server`) uses the account signed in
+on its machine, the same file the game's first run, `chimera_assets hub
+<invite link>` and `+chimera:hub <invite link>` write
+(`<data_local>/chimera/account.toml`; `[hub] account` or
+`CHIMERA_ACCOUNT` name another), for its game files and, with
+`+chimera:hub 1`, its listing; no host invite is needed. Its start
+prints which (`hub: hosting as <username> on <hub>`, from
+`chimera_net::net::hub::host_account_line`), or, with no account, how to
+sign in. A player's account (`tester`) lists one server at a time (its
+`list` right); a `host` invite stays for a machine nobody plays on, or
+for more listings. A machine holds one hub sign-in today (signing in
+again replaces it), so there is nothing to choose between; picking among
+several signed-in hubs comes later.
 
 **An asset service with no hub** (a game server's own, run with
 `chimera_asset_server --no-tickets`) keeps a plain access of its own,

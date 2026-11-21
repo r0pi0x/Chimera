@@ -9,7 +9,10 @@
 //!   listen server) sends a heartbeat to its account's hub every
 //!   `hub_doc::HEARTBEAT_SECS` and soon after its info changes (at most
 //!   every `CHANGE_GAP`), from a thread, with that account's ticket (the
-//!   user's `account.toml`, or `[hub] account`: a host account's file).
+//!   user's `account.toml`, or `[hub] account`: another account's file).
+//!   A dedicated server's start names that account (`host_account_line`:
+//!   a player's signed-in account hosts, no host invite), or says how to
+//!   sign in.
 //!   The heartbeat is `query::LocalServerInfo` with the app's game
 //!   (`HubGame`), the game port and this machine's private address. The
 //!   hub's answer (where it lists the server, whether it reached its UDP
@@ -236,7 +239,42 @@ pub(super) fn session_for(path: Option<&std::path::Path>) -> Result<Arc<Session>
         Some(p) => account::session_at(p),
         None => account::user_session(),
     };
-    s.ok_or_else(|| "no account on this machine (sign in to a hub first: +chimera:hub <invite link>)".into())
+    s.ok_or_else(|| {
+        "no account on this machine (sign in to a hub first: the game's first run, `chimera_assets hub <invite link>` or +chimera:hub <invite link>)".into()
+    })
+}
+
+/// The account a dedicated server hosts with (hub.md 6, "A game server
+/// hosts with the machine's account"): `[hub] account` when set, else
+/// the one this machine's user signed in with (the game's first run,
+/// `chimera_assets hub <invite link>` or `+chimera:hub <invite link>`
+/// write the same file). Any account will do: a player's lists one server
+/// (its `list` right) and fetches the game files it may play. Its file's
+/// path and contents, or how to sign in.
+pub fn host_account(path: Option<&std::path::Path>) -> Result<(PathBuf, account::AccountFile), String> {
+    let path = path.map(PathBuf::from).or_else(account::AccountFile::path).ok_or("no per-user data folder")?;
+    match account::AccountFile::load_from(&path)? {
+        Some(file) => Ok((path, file)),
+        None => Err(format!(
+            "no account signed in on this machine ({}): sign in once with the game's first run (paste the invite link), \
+             or `chimera_assets hub <invite link>`, or start this server once with +chimera:hub <invite link>; \
+             until then it lists on no hub and fetches no game files from a hub",
+            path.display()
+        )),
+    }
+}
+
+/// The line a dedicated server's start prints about `host_account`.
+pub fn host_account_line(path: Option<&std::path::Path>) -> String {
+    match host_account(path) {
+        Ok((path, f)) => format!(
+            "hub: hosting as {} on {} (the account signed in on this machine: {}); +chimera:hub 1 lists this server there",
+            f.username,
+            f.url,
+            path.display()
+        ),
+        Err(e) => format!("hub: {e}"),
+    }
 }
 
 /// Keep the listing while serving over UDP with `chimera:hub 1`.

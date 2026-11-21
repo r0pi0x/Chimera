@@ -80,9 +80,11 @@
 //!   game's alone).
 //! - Game files without an install (`net::server_assets`): `run` fetches,
 //!   before the server is built, each game's startup sets and the start
-//!   map's from the asset service with the server's own credential (a hub
-//!   account redeemed once with `+chimera:hub <invite link> [username]`,
-//!   taken off the console lines, or a token); the first match's sets
+//!   map's from the asset service with the server's own credential (the
+//!   hub account signed in on this machine, printed at start
+//!   (`net::hub::host_account_line`), or one redeemed with `+chimera:hub
+//!   <invite link> [username]`, taken off the console lines, or a token);
+//!   the first match's sets
 //!   come before it listens, a `changelevel`'s before its map loads.
 //!
 //! Known shortcuts: a server without `map_files` offers no map file (a
@@ -1048,6 +1050,9 @@ pub fn run(server: &'static GameServer) {
     }
     // `[hub] list`: listed on the account's hub (`+sv_hub 0` overrides).
     net::hub::apply_config(&mut app);
+    // The account it hosts with: `[hub] account`, else the one signed in
+    // on this machine (no host invite needed), or how to sign in.
+    eprintln!("{}", net::hub::host_account_line(app.world().resource::<net::hub::HubListing>().account.as_deref()));
     if let Some((session, previous)) = session {
         eprintln!("session log: {}", session.log_path().display());
         for p in previous {
@@ -1090,12 +1095,19 @@ pub fn run(server: &'static GameServer) {
 /// `+chimera:hub <link> [username]` taken off `options`' console lines
 /// and redeemed (`net::assets::join_hub`): the server's hub account, its
 /// file the server user's `account.toml` (`CHIMERA_ACCOUNT` names
-/// another), whose tickets fetch its game files from then on.
+/// another), whose tickets fetch its game files from then on. Only for a
+/// machine with no signed-in account: a server hosts with the one there.
+/// `+chimera:hub 1` (a number: the listing's cvar) stays a console line.
 fn take_hub_link(mut options: Options) -> Options {
     let command = net::assets::HUB_COMMAND;
     options.console.retain(|line| {
         let words = console::parse(line).into_iter().next().unwrap_or_default();
         if !words.first().is_some_and(|w| w.eq_ignore_ascii_case(command)) {
+            return true;
+        }
+        // `chimera:hub 1` (or 0) is the listing's cvar, not a link: kept
+        // for the console.
+        if words.get(1).is_some_and(|w| w.parse::<u8>().is_ok()) {
             return true;
         }
         match words.get(1) {
@@ -1177,6 +1189,14 @@ mod tests {
             Parsed::Run(o) => o,
             Parsed::Help => panic!("help"),
         }
+    }
+
+    #[test]
+    fn chimera_hub_with_a_number_stays_the_listing_cvar() {
+        // `+chimera:hub 1` lists the server with this machine's account; it
+        // is no invite link to redeem (that would drop it).
+        let o = take_hub_link(run(&["+chimera:hub", "1", "+maxplayers", "4"]));
+        assert_eq!(o.console, ["chimera:hub 1", "maxplayers 4"]);
     }
 
     #[test]
