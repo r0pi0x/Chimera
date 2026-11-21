@@ -188,7 +188,12 @@ fn a_hub_link_signs_in_through_pinned_tls() {
     let session = Session::new(file.clone(), Some(file_path.clone()));
     assert!(session.refresh().is_ok());
     let wrong = AccountFile { fingerprint: Some("00".repeat(32)), ..file };
-    assert!(account::request_ticket(&wrong).is_err());
+    let e = account::request_ticket(&wrong).unwrap_err();
+    assert!(matches!(account::Failure::of(&e), account::Failure::Certificate { offered: Some(_) }), "the onboarding's mismatch: {e}");
+    // A link to a closed port: unreachable.
+    let closed = HubLink { host: "127.0.0.1:9".into(), fingerprint: Some(identity.fingerprint()), code: None };
+    let e = account::check(&closed, "AAA-AAA-AAA", None).unwrap_err();
+    assert!(matches!(account::Failure::of(&e), account::Failure::Unreachable(_)), "{e}");
     // A legacy-shaped config with the live session's ticket: `Remote` sends a current one.
     let live = account::live().expect("join_hub made the session live");
     let remote = hub.remote(&live.ticket().unwrap());
@@ -357,6 +362,7 @@ fn ticket_requests_are_fresh_and_once() {
         username: None,
         device_public_key: hex(key.verifying_key().as_bytes()),
         device_label: "t".into(),
+        avatar: None,
     };
     let signed = hub.running.http.accounts.redeem(&request, None).unwrap();
     let device = ticket::parse_id(&signed.device).unwrap();
@@ -606,4 +612,101 @@ fn the_admin_page_is_for_this_machine() {
     assert!(!page.contains(secret.trim()), "the page holds no secret");
     let rebound = agent.get(&format!("{}/admin/", hub.running.url())).header("Host", "evil.example").call().unwrap();
     assert_eq!(rebound.status().as_u16(), 404, "another Host (DNS rebinding)");
+}
+
+/// Onboarding (docs/plans/active/onboarding.md): an invite with an intent
+/// carries no username; `check` shows the code's kind, the hub's name and
+/// MOTD and a name's availability with suggestions, using nothing up; the
+/// player's chosen name and avatar make the account, which keeps the
+/// invite's intent.
+#[test]
+fn an_invite_with_an_intent_wants_a_chosen_name() {
+    let hub = Hub::with("intent", Options { failures_per_hour: 5, ..Options::default() });
+    let hub_dir = hub.paths.store.join("server").join("hub");
+    fs::create_dir_all(&hub_dir).unwrap();
+    fs::write(hub_dir.join("hub.toml"), "name = \"Friday Night Hub\"\nmotd = \"Gun game every Friday.\"\n").unwrap();
+    let rocket = hub.invite_named("rocket");
+    hub.redeem(&rocket, None).unwrap();
+    let invited = hub.invite(InviteSpec { intent: Some("sent on Discord".into()), recipient: Some("Sam".into()), ..Default::default() });
+    assert_eq!(invited.name, "Sam", "the recipient labels it");
+    let views: Vec<chimera_services::accounts::InviteView> = hub.admin.get("/admin/invites").unwrap();
+    let v = views.iter().find(|v| v.name == "Sam").unwrap();
+    assert_eq!((v.intent.as_deref(), v.recipient.as_deref()), (Some("sent on Discord"), Some("Sam")));
+    let e = hub.admin.post::<Invited>("/admin/invite", &InviteSpec::default()).err().unwrap();
+    assert!(e.starts_with("/admin/invite: 400"), "no intent, no name: {e}");
+
+    let answer = account::check(&hub.link(), &invited.code.to_lowercase(), Some("Rocket")).unwrap();
+    assert_eq!(answer.kind, "invite");
+    assert_eq!((answer.hub.name.as_str(), answer.hub.motd.as_str(), answer.hub.players), ("Friday Night Hub", "Gun game every Friday.", 1));
+    let name = answer.username.unwrap();
+    assert_eq!((name.username.as_str(), name.available, name.problem.as_deref()), ("rocket", false, Some("taken")));
+    assert_eq!(name.suggestions, ["rocket2", "rocket_gg", "rocket_10"]);
+    let bad = account::check(&hub.link(), &invited.code, Some("9 lives")).unwrap().username.unwrap();
+    assert!(!bad.available && bad.problem.is_some() && bad.suggestions.is_empty());
+    assert!(account::check(&hub.link(), &invited.code, Some("sam_rocket")).unwrap().username.unwrap().available);
+
+    // Redeeming: a name must be chosen, and start with a letter.
+    assert_eq!(status(&hub.redeem(&invited.code, None).unwrap_err()), 400);
+    assert_eq!(status(&hub.redeem(&invited.code, Some("9lives")).unwrap_err()), 400);
+    let (file, key) = account::redeem_with(&hub.link(), &invited.code, Some("Sam_Rocket"), Some(13), "pc").unwrap();
+    assert!(key.is_some());
+    let me = account::me(&file, file.ticket.as_deref().unwrap()).unwrap();
+    assert_eq!((me["username"].as_str(), me["avatar"].as_u64()), (Some("sam_rocket"), Some(13)));
+    let sam = hub.accounts().into_iter().find(|a| a.username == "sam_rocket").unwrap();
+    assert_eq!(sam.invite_intent.as_deref(), Some("sent on Discord (for Sam)"));
+
+    // Used, unknown and link codes as check sees them; wrong codes count.
+    let e = account::check(&hub.link(), &invited.code, None).unwrap_err();
+    assert_eq!(account::Failure::of(&e), account::Failure::Refused { status: 410, message: "this invite was used already".into() });
+    let link = account::link_code(&file, file.ticket.as_deref().unwrap()).unwrap();
+    let l = account::check(&hub.link(), &link.code, None).unwrap();
+    assert_eq!((l.kind.as_str(), l.account.as_deref(), l.username), ("link", Some("sam_rocket"), None));
+    for _ in 0..4 {
+        assert_eq!(status(&account::check(&hub.link(), "AAA-AAA-AAA", None).unwrap_err()), 404);
+    }
+    assert_eq!(status(&account::check(&hub.link(), &link.code, None).unwrap_err()), 429, "the address's tries are used up");
+}
+
+/// Renames: a chosen name, at most one a minute, the last 10 kept as the
+/// visible history; a taken name refused; the next ticket carries the
+/// new name. An avatar is one of the 32 looks.
+#[test]
+fn renames_keep_a_visible_history() {
+    let hub = Hub::new("rename");
+    hub.redeem(&hub.invite_named("taken_name"), None).unwrap();
+    let (file, _) = hub.redeem(&hub.invite_named("first"), None).unwrap();
+    let t = file.ticket.clone().unwrap();
+    assert_eq!(status(&account::rename(&file, &t, "taken_name").unwrap_err()), 409);
+    assert_eq!(status(&account::rename(&file, &t, "1st").unwrap_err()), 400);
+    let me = account::rename(&file, &t, "Second").unwrap();
+    assert_eq!((me["username"].as_str(), me["previous_usernames"][0].as_str()), (Some("second"), Some("first")));
+    assert_eq!(status(&account::rename(&file, &t, "third").unwrap_err()), 429, "one a minute");
+    for i in 0..11 {
+        hub.clock.advance(61);
+        account::rename(&file, &t, &format!("name_{i}")).unwrap();
+    }
+    let view = hub.accounts().into_iter().find(|a| a.username == "name_10").unwrap();
+    assert_eq!(view.previous_usernames.len(), 10);
+    assert_eq!(view.previous_usernames[0], "name_9");
+    assert!(!view.previous_usernames.contains(&"first".to_string()), "the oldest dropped");
+    // Back to the real time: a device's request carries the PC's clock.
+    hub.clock.advance(-(11 * 61));
+    let fresh = account::request_ticket(&file).unwrap();
+    let claims = hub.running.http.accounts.ticket_keys().check(&fresh, ticket::SERVICES, hub.clock.now()).unwrap();
+    assert_eq!(claims.username, "name_10");
+    assert_eq!(status(&account::set_avatar(&file, &t, 32).unwrap_err()), 400);
+    assert_eq!(account::set_avatar(&file, &t, 31).unwrap()["avatar"].as_u64(), Some(31));
+}
+
+/// "Recover with key" on the onboarding's sign-in screen takes the key
+/// alone: the account is the key's.
+#[test]
+fn a_recovery_key_alone_finds_its_account() {
+    let hub = Hub::new("recover-key");
+    let (old, key) = hub.redeem(&hub.invite_named("lena"), None).unwrap();
+    let e = account::recover(&hub.link(), "", "0000-0000-0000-0000", "new pc").unwrap_err();
+    assert_eq!(status(&e), 403, "{e}");
+    let (new, again) = account::recover(&hub.link(), "", &key.unwrap(), "new pc").unwrap();
+    assert_eq!((new.account.as_str(), new.username.as_str()), (old.account.as_str(), "lena"));
+    assert!(again.is_some());
 }
