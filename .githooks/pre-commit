@@ -74,7 +74,10 @@ timing() { # <outcome>
     local d
     d=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/agent-timing || return 0
     mkdir -p "$d" 2>/dev/null || return 0
-    printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(( $(date +%s) - started ))" "$1" "$who" "$(pkgs "${tests:-}" | wc -l)" >>"$d/commit-hook.log"
+    # Columns: UTC time, seconds, outcome, who, packages tested, then the
+    # phases' seconds: the type-check of the affected tests, the fast tier
+    # (build and run; the two overlap when the check ran beside the tests).
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(( $(date +%s) - started ))" "$1" "$who" "$(pkgs "${tests:-}" | wc -l)" "${check_s:--}" "${test_s:--}" >>"$d/commit-hook.log"
     if [ "$(wc -l <"$d/commit-hook.log")" -gt 2500 ]; then
         tail -n 2000 "$d/commit-hook.log" >"$d/commit-hook.log.$$" && mv -f "$d/commit-hook.log.$$" "$d/commit-hook.log"
     fi
@@ -122,62 +125,175 @@ if [ -n "$key" ] && [ -f "$stamps/$key" ]; then
 fi
 
 set -f
+IFS='
+'
+# shellcheck disable=SC2086
+set -- $tests
+unset IFS
+tests_args=("$@")
+# The type-check of the affected tests ($build), less the packages the
+# fast tier builds anyway (`cargo test` builds their libs, bins, tests and
+# examples: checking them too was the same work twice). A package a
+# feature argument names stays (the feature needs it selected).
+check_args=()
 if [ "$build" != "$tests" ]; then
     IFS='
 '
     # shellcheck disable=SC2086
     set -- $build
     unset IFS
-    if [ "$dependents" = build ]; then
-        echo "$who: building the affected tests: $*" >&2
-        if ! run cargo test "$@" --features dev --quiet --no-run >"$log" 2>&1; then
-            grep -E "^error" -A6 "$log" | head -30
-            echo "$who: the affected tests don't build (full log: $log); not committing." >&2
-            timing fail
-            exit 1
-        fi
+    if [ "${CHIMERA_COMMIT_FAST:-1}" = 0 ] || [ "$dependents" = build ]; then
+        check_args=("$@")
     else
-        echo "$who: checking the affected tests: $*" >&2
-        if ! run cargo check "$@" --features dev --quiet --all-targets >"$log" 2>&1; then
-            grep -E "^error" -A6 "$log" | head -30
-            echo "$who: the affected tests don't check (full log: $log; CHIMERA_COMMIT_DEPENDENTS=build builds them); not committing." >&2
-            timing fail
-            exit 1
-        fi
+        tested=$(pkgs "$tests")
+        while [ $# -gt 0 ]; do
+            if [ "$1" = -p ] && grep -qx -- "$2" <<<"$tested" && ! grep -qE -- "(^|[ ,])$2/" <<<"$build"; then
+                shift 2; continue
+            fi
+            check_args+=("$1"); shift
+        done
+        # Nothing left but options: no package to check.
+        printf '%s\n' "${check_args[@]}" | grep -qx -- '-p\|--workspace' || check_args=()
     fi
-else
-    : >"$log"
 fi
-IFS='
-'
-# shellcheck disable=SC2086
-set -- $tests
-unset IFS
+check_cmd=
+if [ "${#check_args[@]}" -gt 0 ]; then
+    if [ "$dependents" = build ]; then
+        check_cmd="cargo test ${check_args[*]} --features dev --quiet --no-run"
+    else
+        check_cmd="cargo check ${check_args[*]} --features dev --quiet --all-targets"
+    fi
+fi
+check_fail() {
+    grep -E "^error" -A6 "$log.check" | head -30
+    echo "$who: the affected tests don't $([ "$dependents" = build ] && echo build || echo check) (full log: $log.check; CHIMERA_COMMIT_DEPENDENTS=build builds them); not committing." >&2
+    timing fail
+    exit 1
+}
 # The runner: CHIMERA_COMMIT_RUNNER=nextest runs the fast tier under
 # `cargo nextest run` (binaries side by side) plus `cargo test --doc` for
 # the doctests nextest skips; =cargo (the default, and wherever nextest
 # isn't installed) runs `cargo test`. Both run the same tests.
 runner=${CHIMERA_COMMIT_RUNNER:-cargo}
 [ "$runner" = nextest ] && ! cargo nextest --version >/dev/null 2>&1 && runner=cargo
-if [ "$runner" = nextest ]; then
-    cmds=("cargo nextest run $* --features dev --no-fail-fast --no-tests=pass --color never -E '!test(/heavy::/)'"
-          "cargo test --doc $* --features dev --quiet --no-fail-fast")
-else
-    cmds=("cargo test $* --features dev --quiet --no-fail-fast -- --skip heavy::")
+# The check beside the tests (Linux with python3; CHIMERA_COMMIT_FAST=0
+# turns it off): cargo holds its locks while `cargo test` runs the
+# tests, so a second cargo waits for them. Instead the tests are built
+# (`cargo test --no-run`), the check starts, and the test binaries run
+# directly while it checks, each as `cargo test` runs it (in its
+# package's folder, with its CARGO_MANIFEST_DIR and the library path);
+# the doctests (`cargo test --doc`) run after the check.
+overlap=0
+if [ -n "$check_cmd" ] && [ "$runner" = cargo ] && [ "${CHIMERA_COMMIT_FAST:-1}" != 0 ] \
+    && [ "$(uname -s)" = Linux ] && command -v python3 >/dev/null 2>&1; then
+    overlap=1
 fi
-echo "$who: running the fast tier of: $*" >&2
-for c in "${cmds[@]}"; do echo "$who:   $c" >&2; done
-tested_ok=1
+t_args="${tests_args[*]}"
 if [ "$runner" = nextest ]; then
-    run cargo nextest run "$@" --features dev --no-fail-fast --no-tests=pass --color never -E '!test(/heavy::/)' >>"$log" 2>&1 || tested_ok=0
-    # A package without a library has no doctests (cargo refuses --doc
-    # for a selection with none at all: that's a pass).
-    if ! run cargo test --doc "$@" --features dev --quiet --no-fail-fast >>"$log" 2>&1; then
-        tail -n 3 "$log" | grep -q "no library targets found" || tested_ok=0
+    cmds=("cargo nextest run $t_args --features dev --no-fail-fast --no-tests=pass --color never -E '!test(/heavy::/)'"
+          "cargo test --doc $t_args --features dev --quiet --no-fail-fast")
+elif [ "$overlap" = 1 ]; then
+    cmds=("cargo test $t_args --features dev --no-run, then each test binary with --skip heavy:: --quiet"
+          "cargo test --doc $t_args --features dev --quiet --no-fail-fast")
+else
+    cmds=("cargo test $t_args --features dev --quiet --no-fail-fast -- --skip heavy::")
+fi
+: >"$log"
+: >"$log.check"
+check_s=- test_s=-
+if [ -n "$check_cmd" ]; then
+    if [ "$overlap" = 1 ]; then
+        echo "$who: checking the affected tests beside the fast tier:" >&2
+    else
+        echo "$who: checking the affected tests:" >&2
     fi
-else
-    run cargo test "$@" --features dev --quiet --no-fail-fast -- --skip heavy:: >>"$log" 2>&1 || tested_ok=0
+    echo "$who:   $check_cmd" >&2
 fi
+echo "$who: running the fast tier of: $t_args" >&2
+for c in "${cmds[@]}"; do echo "$who:   $c" >&2; done
+doc_tests() { # doctests; a selection without a library has none
+    run cargo test --doc "${tests_args[@]}" --features dev --quiet --no-fail-fast >>"$log" 2>&1 && return 0
+    tail -n 3 "$log" | grep -q "no library targets found"
+}
+tested_ok=1
+if [ -n "$check_cmd" ] && [ "$overlap" = 0 ]; then
+    t0=$(date +%s)
+    # shellcheck disable=SC2086
+    run $check_cmd >"$log.check" 2>&1 || check_fail
+    check_s=$(( $(date +%s) - t0 ))
+fi
+t0=$(date +%s)
+if [ "$runner" = nextest ]; then
+    run cargo nextest run "${tests_args[@]}" --features dev --no-fail-fast --no-tests=pass --color never -E '!test(/heavy::/)' >>"$log" 2>&1 || tested_ok=0
+    doc_tests || tested_ok=0
+elif [ "$overlap" = 1 ]; then
+    json=target/pre-commit-tests.json
+    if ! run cargo test "${tests_args[@]}" --features dev --no-run --message-format=json-render-diagnostics >"$json" 2>>"$log"; then
+        grep -E "^error" -A6 "$log" | head -30
+        echo "$who: the fast tier doesn't build (full log: $log); not committing." >&2
+        timing fail
+        exit 1
+    fi
+    c0=$(date +%s)
+    # shellcheck disable=SC2086
+    ( run $check_cmd >"$log.check" 2>&1; echo $? >"$log.check.rc"; echo $(( $(date +%s) - c0 )) >"$log.check.s" ) &
+    check_pid=$!
+    # The test binaries (lib, bins, tests, examples' tests), their
+    # packages' folders and the build scripts' library folders.
+    libpath=$(python3 -I - "$json" <<'PY'
+import json, sys
+paths = []
+for line in open(sys.argv[1]):
+    try: m = json.loads(line)
+    except ValueError: continue
+    if m.get("reason") == "build-script-executed":
+        for p in m.get("linked_paths", []):
+            p = p.split("=", 1)[-1]
+            if p not in paths: paths.append(p)
+print(":".join(paths))
+PY
+)
+    out=$(dirname "$(python3 -I - "$json" <<'PY'
+import json, sys
+for line in open(sys.argv[1]):
+    try: m = json.loads(line)
+    except ValueError: continue
+    if m.get("reason") == "compiler-artifact" and m.get("executable"):
+        print(m["executable"]); break
+PY
+)")
+    sysroot=$(rustc --print sysroot)
+    while IFS=$'\t' read -r exe manifest pkg; do
+        [ -n "$exe" ] || continue
+        echo "     Running $exe" >>"$log"
+        ( cd "$(dirname "$manifest")" && CARGO=$(command -v cargo) CARGO_MANIFEST_DIR=$(dirname "$manifest") \
+            CARGO_MANIFEST_PATH=$manifest CARGO_PKG_NAME=$pkg \
+            LD_LIBRARY_PATH="$out:$(dirname "$out")${libpath:+:$libpath}:$sysroot/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            "$exe" --skip heavy:: --quiet ) >>"$log" 2>&1 || tested_ok=0
+    done < <(python3 -I - "$json" <<'PY'
+import json, sys, tomllib
+names = {}
+for line in open(sys.argv[1]):
+    try: m = json.loads(line)
+    except ValueError: continue
+    if m.get("reason") == "compiler-artifact" and m.get("executable") and m.get("profile", {}).get("test"):
+        mp = m["manifest_path"]
+        if mp not in names:
+            with open(mp, "rb") as f: names[mp] = tomllib.load(f)["package"]["name"]
+        print(f"{m['executable']}\t{mp}\t{names[mp]}")
+PY
+)
+    test_s=$(( $(date +%s) - t0 ))
+    wait "$check_pid"
+    check_s=$(cat "$log.check.s" 2>/dev/null || echo -)
+    [ "$(cat "$log.check.rc" 2>/dev/null)" = 0 ] || check_fail
+    t1=$(date +%s)
+    doc_tests || tested_ok=0
+    test_s=$(( test_s + $(date +%s) - t1 ))
+else
+    run cargo test "${tests_args[@]}" --features dev --quiet --no-fail-fast -- --skip heavy:: >>"$log" 2>&1 || tested_ok=0
+fi
+[ "$test_s" = - ] && test_s=$(( $(date +%s) - t0 ))
 if [ "$tested_ok" = 0 ]; then
     grep -E "panicked|FAILED|FAIL \[|^error" "$log" | head -20
     echo "$who: fast tests failed (full log: $log); not committing." >&2
@@ -189,7 +305,7 @@ timing pass
 if [ "$worktree" = 1 ]; then
     names() { pkgs "$1" | sed 's/^\*$/the workspace/' | paste -sd' ' -; }
     checked=
-    [ "$build" != "$tests" ] && checked="type-checked the tests of $(names "$build") and "
-    echo "$who: passed in $(( $(date +%s) - started )) s: ${checked}ran the fast tier of $(names "$tests") (heavy tests run after the push). Stamped: a commit of this exact working tree skips these." >&2
+    [ "$build" != "$tests" ] && checked="type-checked the tests of $(names "$build") ($check_s s) and "
+    echo "$who: passed in $(( $(date +%s) - started )) s: ${checked}ran the fast tier of $(names "$tests") ($test_s s; heavy tests run after the push). Stamped: a commit of this exact working tree skips these." >&2
 fi
 exit 0

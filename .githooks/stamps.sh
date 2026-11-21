@@ -59,8 +59,9 @@ stamp_record() {
     {
         echo "when $(date -u +%Y-%m-%dT%H:%M:%SZ) by $who in $(basename "$PWD")"
         echo "tested $(printf '%s\n' "$tested" | tr '\n' ' ')"
-        [ -n "$checked" ] && echo "checked $(printf '%s\n' "$checked" | tr '\n' ' ')"
+        if [ -n "$checked" ]; then echo "checked $(printf '%s\n' "$checked" | tr '\n' ' ')"; fi
     } >"$stamps/$key.tmp" && mv -f "$stamps/$key.tmp" "$stamps/$key"
+    rm -f "$stamps/$key.tmp"
     # shellcheck disable=SC2012
     ls -t "$stamps" 2>/dev/null | tail -n +101 | while read -r f; do rm -f "$stamps/$f"; done
 }

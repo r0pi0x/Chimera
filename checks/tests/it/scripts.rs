@@ -307,5 +307,16 @@ fn stamps_key_the_working_tree_and_merge_the_packages_that_passed() {
         pkgs "$(printf -- '-p\na\n-p\nb\n')" | tr '\n' ,"#,
     );
     assert_eq!(out, "tested-covered\nchecked-covered\nhl2dm-not\nstar-covers\na,b,", "{out}");
+    // A first pass with nothing type-checked beyond what it tested (the
+    // push hook's alone) is recorded too, and leaves no scratch file.
+    fs::write(root.join("other.rs"), "y").unwrap();
+    let out = with_stamps(
+        &root,
+        r#"k=$(tree_key)
+        stamp_record "$k" pre-push repo_checks ""
+        covered repo_checks "$(stamp_tested "$k")" && echo pushed-covered
+        ls "$stamps" | grep -c tmp || true"#,
+    );
+    assert_eq!(out, "pushed-covered\n0\n", "{out}");
     fs::remove_dir_all(&root).ok();
 }
