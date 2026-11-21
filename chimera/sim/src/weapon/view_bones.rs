@@ -21,7 +21,9 @@ use crate::map::{ViewAnimator, ViewModels};
 
 /// A character's procedural turns: the weapon they belong to, its rounds
 /// fired since it was drawn and when the last one was (`Time` elapsed, s).
-#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+/// Kept by the system, not on the character (a part coming and going on
+/// characters makes archetypes: docs/DESIGN.md, "ECS style").
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ProceduralTurns {
     pub weapon: Option<Entity>,
     pub rounds: u32,
@@ -51,37 +53,36 @@ pub fn turn(
     time: Res<Time>,
     models: Option<Res<ViewModels>>,
     catalog: Option<Res<WeaponCatalog>>,
-    mut holders: Query<(Entity, &Inventory, &mut ViewAnimator, Option<&mut ProceduralTurns>)>,
+    mut holders: Query<(&Inventory, &mut ViewAnimator)>,
     weapons: Query<&Weapon>,
     mut events: MessageReader<WeaponEvent>,
-    mut commands: Commands,
+    mut kept: Local<bevy::platform::collections::HashMap<Entity, ProceduralTurns>>,
 ) {
     let now = time.elapsed_secs_f64();
-    let fired: Vec<(Entity, Entity)> =
-        events.read().filter(|e| e.shown() && matches!(e.kind, WeaponEventKind::Fired { .. })).map(|e| (e.owner, e.weapon)).collect();
-    for (e, inv, mut view, turns) in &mut holders {
-        let rules = inv
-            .active
-            .and_then(|w| Some((w, catalog.as_ref()?.get(weapons.get(w).ok()?.id)?)))
-            .filter(|(_, d)| !d.anim.procedural.is_empty());
-        let Some((w, data)) = rules else { continue };
-        let mut t = turns.as_deref().copied().unwrap_or_default();
-        if t.weapon != Some(w) {
-            t = ProceduralTurns { weapon: Some(w), rounds: 0, last: now };
+    let rules_of = |w: Entity| {
+        let data = catalog.as_ref()?.get(weapons.get(w).ok()?.id)?;
+        (!data.anim.procedural.is_empty()).then_some(data)
+    };
+    // Rounds of weapons with rules: their holders join (a holder is
+    // visited only from its first such round, never every character).
+    for ev in events.read().filter(|e| e.shown() && matches!(e.kind, WeaponEventKind::Fired { .. })) {
+        if rules_of(ev.weapon).is_none() {
+            continue;
         }
-        for _ in fired.iter().filter(|(o, g)| *o == e && *g == w) {
-            t.rounds += 1;
-            t.last = now;
+        let t = kept.entry(ev.owner).or_default();
+        if t.weapon != Some(ev.weapon) {
+            *t = ProceduralTurns { weapon: Some(ev.weapon), rounds: 0, last: now };
         }
-        match turns {
-            Some(mut old) => {
-                old.set_if_neq(t);
-            }
-            None => {
-                commands.entity(e).insert(t);
-            }
-        }
-        let Some(model) = view.key.as_deref().and_then(|k| models.as_ref()?.get(k)) else { continue };
+        t.rounds += 1;
+        t.last = now;
+    }
+    // Each one's bones; one no longer holding that weapon drops out (the
+    // next draw starts at 0: its model's rolls went with the switch).
+    kept.retain(|&e, t| {
+        let Ok((inv, mut view)) = holders.get_mut(e) else { return false };
+        let Some(w) = t.weapon.filter(|w| inv.active == Some(*w)) else { return false };
+        let Some(data) = rules_of(w) else { return false };
+        let Some(model) = view.key.as_deref().and_then(|k| models.as_ref()?.get(k)) else { return true };
         let mut rolls = view.bone_rolls.clone();
         for rule in &data.anim.procedural {
             let Some(bone) = model.bones.iter().position(|b| b.name.eq_ignore_ascii_case(&rule.bone)) else { continue };
@@ -94,7 +95,8 @@ pub fn turn(
         if view.bone_rolls != rolls {
             view.bone_rolls = rolls;
         }
-    }
+        true
+    });
 }
 
 #[cfg(test)]
