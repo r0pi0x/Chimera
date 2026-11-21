@@ -21,7 +21,9 @@
 //!
 //! A token is a platform account's ticket (`account`: the session
 //! refreshes it at half-life, `fresh_ticket`) or, for an asset service
-//! with no hub, that service's own token (`accounts::Internal`).
+//! with no hub, that service's own token (`accounts::Internal`). A plain
+//! token aimed at the signed-in account's own hub (one left from before
+//! accounts) goes as the account's ticket instead (`account::ticket_for`).
 //!
 //! Tokens and files go over HTTPS only: a URL must be `https://`, except
 //! on this machine (`localhost`, `127.0.0.1`, `[::1]`: tests, a server on
@@ -212,11 +214,12 @@ impl Remote {
         &self.base
     }
 
-    /// The `Authorization` value: the token, or for an account ticket the
-    /// signed-in session's current one (`account::fresh_ticket`: refreshed
-    /// at half-life).
+    /// The `Authorization` value: the token, or the signed-in session's
+    /// current ticket for an account ticket (refreshed at half-life) and
+    /// for any token to that account's own hub (`account::ticket_for`: a
+    /// hub takes tickets only).
     fn bearer(&self) -> String {
-        let token = crate::account::fresh_ticket(&self.config.token).unwrap_or_else(|| self.config.token.clone());
+        let token = crate::account::ticket_for(&self.config).unwrap_or_else(|| self.config.token.clone());
         format!("Bearer {token}")
     }
 

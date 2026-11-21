@@ -433,7 +433,7 @@ fn without_a_destination_reports_wait_and_go_when_one_appears() {
     let feedback = Feedback::start(folder, Targets::default(), fast()).unwrap();
     let submitted = feedback.submit(&planted_state()).unwrap();
     assert!(submitted.destination.is_none());
-    wait_for(&feedback, |e| matches!(e, OutboxEvent::Queued { reason, .. } if reason.contains("no report service")));
+    wait_for(&feedback, |e| matches!(e, OutboxEvent::Queued { reason, .. } if reason == outbox::SIGN_IN));
     assert_eq!(feedback.status().pending(), 1);
     // A developer's asset service appears (end to end, the real receiver).
     feedback.set_targets(|t| {

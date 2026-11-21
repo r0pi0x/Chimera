@@ -122,13 +122,26 @@ impl Hub {
 /// The log at `path` once `want` holds for it (waits up to 2 s; see
 /// `Hub::access_log_when`).
 fn log_when(path: &std::path::Path, want: impl Fn(&str) -> bool) -> String {
-    let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut log = String::new();
+    poll_until(Duration::from_secs(2), || {
+        log = fs::read_to_string(path).unwrap_or_default();
+        want(&log)
+    });
+    log
+}
+
+/// Poll `done` every 20 ms until it holds or `limit` passes (the
+/// services answer on threads of their own); whether it held.
+fn poll_until(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
+    let until = std::time::Instant::now() + limit;
     loop {
-        let log = fs::read_to_string(path).unwrap_or_default();
-        if want(&log) || std::time::Instant::now() > until {
-            return log;
+        if done() {
+            return true;
         }
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        if std::time::Instant::now() > until {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 
@@ -232,6 +245,60 @@ fn feedback_goes_through_the_front() {
     // After the record download on the same pooled connection: the same
     // service behind both, no 421.
     assert!(remote.record(&hub.record).is_ok());
+}
+
+/// The game's outbox (docs/plans/active/hub.md, 6): a report sent with a
+/// token left from before accounts, bound to the hub's certificate, is
+/// refused as unknown and kept, saying to sign in (not refused for good);
+/// signing in sends it with the account's ticket. A report an older build
+/// marked refused for good with that 401 goes at the next start.
+#[test]
+fn reports_wait_for_sign_in_and_go_with_the_ticket() {
+    use chimera_assets::{access::Access, feedback::{Feedback, OutboxConfig, OutboxEvent, Targets, outbox}};
+    let hub = Hub::new("feedback_ticket", server::Limits::default());
+    let wait_for = |feedback: &Feedback, want: &dyn Fn(&OutboxEvent) -> bool| {
+        let mut seen = Vec::new();
+        let held = poll_until(Duration::from_secs(20), || {
+            seen.extend(feedback.events());
+            seen.iter().any(want)
+        });
+        assert!(held, "not seen; events: {seen:?}");
+    };
+    // One try per sign-in (a long wait after a 401: no strikes piling up).
+    let config = OutboxConfig { first_retry: Duration::from_millis(50), max_retry: Duration::from_secs(600), keep_sent: 20 };
+    let leftover = Access {
+        token: Some(format!("chimera1_{}", "0f".repeat(16))),
+        url: Some(hub.front.url()),
+        fingerprint: Some(hub.fingerprint.clone()),
+    };
+    let folder = hub.dir.join("client-feedback");
+    let feedback =
+        Feedback::start(folder.clone(), Targets { access: Some(leftover.clone()), ..Targets::default() }, config).unwrap();
+    let report = ReportState { text: "sent before signing in".into(), ..ReportState::default() };
+    let submitted = feedback.submit(&report).unwrap();
+    wait_for(&feedback, &|e| matches!(e, OutboxEvent::Queued { reason, .. } if reason == outbox::SIGN_IN));
+    let status = feedback.status();
+    assert_eq!(status.pending(), 1, "kept, not refused for good: {:?}", status.waiting);
+    // Signing in sends it, with the ticket (the leftover token never again).
+    let (file, _) = account::redeem(&hub.link(), &hub.invite("Dana"), None, "test pc").unwrap();
+    let session = Arc::new(Session::new(file.clone(), None));
+    feedback.set_targets(|t| t.account = Some(session.clone()));
+    wait_for(&feedback, &|e| matches!(e, OutboxEvent::Sent { id } if *id == submitted.id));
+    assert!(folder.join("sent").join(format!("{}.zip", submitted.id)).is_file());
+    let destination = feedback.destination().unwrap();
+    assert!(destination.account && destination.source == outbox::Source::Account, "{destination:?}");
+    drop(feedback);
+
+    // An older build's refusal: kept with a `.failed` 401 mark; the next
+    // start (signed in) sends it.
+    let old = bundle::build(&ReportState { text: "kept by an older build".into(), ..ReportState::default() }).unwrap();
+    let outbox_dir = folder.join("outbox");
+    fs::write(outbox_dir.join(format!("{}.zip", old.id)), &old.bytes).unwrap();
+    fs::write(outbox_dir.join(format!("{}.failed", old.id)), "refused (HTTP 401): unknown token").unwrap();
+    let targets = Targets { access: Some(leftover), account: Some(session), ..Targets::default() };
+    let feedback = Feedback::start(folder.clone(), targets, config).unwrap();
+    wait_for(&feedback, &|e| matches!(e, OutboxEvent::Sent { id } if *id == old.id));
+    assert!(!outbox_dir.join(format!("{}.failed", old.id)).exists());
 }
 
 /// Accounts stopped mid-test: downloads with a ticket go on; a new redeem

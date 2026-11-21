@@ -12,19 +12,33 @@
 //! zip stays in `outbox/` with `<id>.failed` holding the reason, and is
 //! not tried again. 429 waits for its `Retry-After`.
 //!
-//! Where a report goes (`Targets`, `resolve`, first that applies):
+//! Where a report goes (`Targets`, `resolve`, first that applies). A hub
+//! takes its accounts' tickets only (docs/plans/active/hub.md, 6), so a
+//! signed-in player's reports go with the account's current ticket
+//! (`Targets::account`, asked by the sender just before each upload) and
+//! a token is never sent to the account's hub:
 //! 1. the `chimera:feedback_url` cvars (`Targets::cvar`);
-//! 2. `[feedback] url`/`token`/`fingerprint` in the local config
-//!    (`Targets::local`);
-//! 3. the current game server's asset service (its offer: URL and
-//!    certificate fingerprint) with the tester's asset token, only when
-//!    the token is bound to that same certificate or to none yet (a
-//!    tester with their own install: trusted on first use, as fetching
-//!    binds it) (`access`); else the
-//!    service the token is bound to; else a developer's `[assets]`
-//!    service (`Targets::assets`);
-//! 4. none: the report waits in `outbox/` (the dialog says it is saved
-//!    on this PC) and goes when a destination appears.
+//! 2. the current game server's asset service (its offer: URL and
+//!    certificate fingerprint) when it is the account's hub, with the
+//!    ticket;
+//! 3. that offered service with the tester's asset token when it is not
+//!    the account's hub (a service with no hub), only when the token is
+//!    bound to that same certificate or to none yet (a tester with their
+//!    own install: trusted on first use, as fetching binds it)
+//!    (`access`);
+//! 4. the account's own hub (`Source::Account`), with the ticket;
+//! 5. without an account: `[feedback] url`/`token`/`fingerprint` in the
+//!    local config (`Targets::local`), the service the token is bound
+//!    to, a developer's `[assets]` service (`Targets::assets`);
+//! 6. none: the report waits in `outbox/` and the dialog says to sign in
+//!    (`SIGN_IN`); it goes once a destination appears (signing in).
+//!
+//! A 401 (a token the service doesn't know, as a hub answers any token)
+//! is not final: the report stays, says `SIGN_IN` (or, refused with the
+//! account's ticket, `SIGN_IN_AGAIN`), and goes when the destination
+//! changes (signing in) or at the next start. Reports an older build
+//! marked failed with a 401 are tried again at start
+//! (`clear_auth_failures`).
 //!
 //! The game polls `status()` (what waits, the destination) and drains
 //! `events()` (sent, queued, failed) for its toasts; `set_targets` tells
@@ -47,7 +61,7 @@ use std::{
 };
 
 use super::{ReportState, bundle};
-use crate::{access::Access, remote::Remote, remote::RemoteConfig, store::write_atomic};
+use crate::{access::Access, account::Session, remote::Remote, remote::RemoteConfig, store::write_atomic};
 
 /// A report service named by hand (cvars or the local config).
 #[derive(Clone, PartialEq, Eq)]
@@ -81,7 +95,18 @@ pub struct Targets {
     pub access: Option<Access>,
     /// A developer's `[assets]` service (`AssetSettings::remote`).
     pub assets: Option<RemoteConfig>,
+    /// The signed-in account (`account::user_session`): its hub takes the
+    /// reports, with its current ticket.
+    pub account: Option<Arc<Session>>,
 }
+
+/// Why a report waits when sending needs an account (none, or a service
+/// that refused the token as unknown).
+pub const SIGN_IN: &str = "sign in to send reports; kept on this PC, sent once you're signed in";
+
+/// Why a report waits when the hub refused the account's ticket.
+pub const SIGN_IN_AGAIN: &str =
+    "the hub refused this account's sign-in: sign in again; kept on this PC, sent once you're signed in";
 
 /// Which rule chose the destination.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +117,8 @@ pub enum Source {
     Server,
     /// The service the asset token is bound to.
     BoundService,
+    /// The signed-in account's hub.
+    Account,
     /// A developer's `[assets]` service.
     AssetService,
 }
@@ -99,8 +126,12 @@ pub enum Source {
 /// Where reports go now.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Destination {
+    /// The service; for `account` its token is the ticket cached when
+    /// resolved (the sender asks the session's current one).
     pub remote: RemoteConfig,
     pub source: Source,
+    /// Sent with the account's ticket.
+    pub account: bool,
     /// For people: the server's name, else the service's URL.
     pub label: String,
 }
@@ -115,48 +146,64 @@ fn remote_of(t: &Target) -> RemoteConfig {
     RemoteConfig { url: t.url.clone(), token: t.token.clone(), key: None, fingerprint: t.fingerprint.clone() }
 }
 
-/// The destination `targets` give (section 2.6's order), if any.
+/// The destination `targets` give (the module doc's order), if any.
 pub fn resolve(targets: &Targets) -> Option<Destination> {
-    let named = |t: &Target, source| Destination { remote: remote_of(t), source, label: t.url.clone() };
+    let named = |t: &Target, source| Destination { remote: remote_of(t), source, account: false, label: t.url.clone() };
     if let Some(t) = &targets.cvar {
         return Some(named(t, Source::Cvar));
+    }
+    let file = targets.account.as_ref().map(|s| s.file());
+    let ticket = || file.as_ref().and_then(|f| f.ticket.clone()).unwrap_or_default();
+    let server_label = || targets.server_name.clone().unwrap_or_else(|| "this server".into());
+    let offer = targets
+        .offer
+        .as_ref()
+        .and_then(|(url, fingerprint)| Some((url.trim_end_matches('/').to_string(), crate::tls::normalize_fingerprint(fingerprint)?)));
+    if let Some((url, fingerprint)) = &offer {
+        if file.as_ref().is_some_and(|f| f.serves(url, Some(fingerprint))) {
+            return Some(Destination {
+                remote: RemoteConfig { url: url.clone(), token: ticket(), key: None, fingerprint: Some(fingerprint.clone()) },
+                source: Source::Server,
+                account: true,
+                label: server_label(),
+            });
+        }
+        // The offered service with the token when the token is bound to
+        // its certificate, or bound to none yet (a tester who plays from
+        // their own install and never fetched: trusted on first use, as
+        // fetching binds it).
+        if let Some(access) = &targets.access
+            && let Some(token) = &access.token
+            && access.fingerprint.as_ref().is_none_or(|bound| bound == fingerprint)
+        {
+            return Some(Destination {
+                remote: RemoteConfig { url: url.clone(), token: token.clone(), key: None, fingerprint: Some(fingerprint.clone()) },
+                source: Source::Server,
+                account: false,
+                label: server_label(),
+            });
+        }
+    }
+    if let Some(file) = &file {
+        let mut remote = file.remote().unwrap_or_else(|| RemoteConfig {
+            url: file.assets_url.clone().unwrap_or_else(|| file.url.clone()),
+            token: String::new(),
+            key: None,
+            fingerprint: file.fingerprint.clone(),
+        });
+        remote.url = remote.url.trim_end_matches('/').to_string();
+        return Some(Destination { label: remote.url.clone(), remote, source: Source::Account, account: true });
     }
     if let Some(t) = &targets.local {
         return Some(named(t, Source::LocalConfig));
     }
-    if let Some(access) = &targets.access
-        && let Some(token) = &access.token
-    {
-        // The offered service when the token is bound to its certificate,
-        // or bound to none yet (a tester who plays from their own install
-        // and never fetched: trusted on first use, as fetching binds it).
-        let offered = targets.offer.as_ref().and_then(|(url, fingerprint)| {
-            let offered = crate::tls::normalize_fingerprint(fingerprint)?;
-            match &access.fingerprint {
-                Some(bound) => (*bound == offered).then_some((url, offered)),
-                None => Some((url, offered)),
-            }
-        });
-        if let Some((url, bound)) = offered {
-            return Some(Destination {
-                remote: RemoteConfig {
-                    url: url.trim_end_matches('/').to_string(),
-                    token: token.clone(),
-                    key: None,
-                    fingerprint: Some(bound),
-                },
-                source: Source::Server,
-                label: targets.server_name.clone().unwrap_or_else(|| "this server".into()),
-            });
-        }
-        if let Some(remote) = access.remote() {
-            return Some(Destination { label: remote.url.clone(), remote, source: Source::BoundService });
-        }
+    if let Some(remote) = targets.access.as_ref().and_then(Access::remote) {
+        return Some(Destination { label: remote.url.clone(), remote, source: Source::BoundService, account: false });
     }
     targets
         .assets
         .clone()
-        .map(|remote| Destination { label: remote.url.clone(), remote, source: Source::AssetService })
+        .map(|remote| Destination { label: remote.url.clone(), remote, source: Source::AssetService, account: false })
 }
 
 /// The sender's timing.
@@ -302,6 +349,7 @@ impl Feedback {
     pub fn start(folder: PathBuf, targets: Targets, config: OutboxConfig) -> std::io::Result<Self> {
         fs::create_dir_all(outbox_dir(&folder))?;
         fs::create_dir_all(sent_dir(&folder))?;
+        clear_auth_failures(&folder);
         let shared = Arc::new(Shared {
             folder,
             config,
@@ -421,11 +469,34 @@ impl Feedback {
 enum Outcome {
     Sent,
     Later(String, Option<Duration>),
+    /// Needs a (new) sign-in: kept, tried when the destination changes
+    /// (signing in) or after the longest wait.
+    Auth(String),
     Final(String),
 }
 
-fn upload(destination: &Destination, id: &str, bytes: &[u8]) -> Outcome {
-    let remote = match Remote::new(destination.remote.clone()) {
+/// Reports an older build marked refused for good with a 401 (a token
+/// the service didn't know, as a hub answers any token since it takes
+/// tickets only) are tried again: their `.failed` marks go.
+fn clear_auth_failures(folder: &Path) {
+    for (id, _, failed, _) in queued(folder) {
+        let mark = outbox_dir(folder).join(format!("{id}.failed"));
+        if failed && fs::read_to_string(&mark).is_ok_and(|r| r.starts_with("refused (HTTP 401)")) {
+            let _ = fs::remove_file(mark);
+        }
+    }
+}
+
+fn upload(destination: &Destination, session: Option<&Session>, id: &str, bytes: &[u8]) -> Outcome {
+    let mut config = destination.remote.clone();
+    if destination.account {
+        match session.map(Session::ticket) {
+            Some(Ok(ticket)) => config.token = ticket,
+            Some(Err(e)) => return Outcome::Later(format!("no ticket from your hub's accounts service yet ({e})"), None),
+            None => return Outcome::Auth(SIGN_IN.into()),
+        }
+    }
+    let remote = match Remote::new(config) {
         Ok(r) => r,
         Err(e) => return Outcome::Final(e),
     };
@@ -435,6 +506,7 @@ fn upload(destination: &Destination, id: &str, bytes: &[u8]) -> Outcome {
             format!("the service is limiting reports: {}", body.trim()),
             retry.and_then(|r| r.trim().parse::<u64>().ok()).map(Duration::from_secs),
         ),
+        Ok((401, ..)) => Outcome::Auth(if destination.account { SIGN_IN_AGAIN } else { SIGN_IN }.into()),
         Ok((status @ 400..=499, _, body)) => Outcome::Final(format!("refused (HTTP {status}): {}", body.trim())),
         Ok((status, _, body)) => Outcome::Later(format!("HTTP {status}: {}", body.trim()), None),
         Err(e) => Outcome::Later(e.to_string(), None),
@@ -444,7 +516,7 @@ fn upload(destination: &Destination, id: &str, bytes: &[u8]) -> Outcome {
 fn sender(shared: &Shared) {
     loop {
         // What is due, and where it goes.
-        let (due, destination, next_wake) = {
+        let (due, destination, session, next_wake) = {
             let mut s = shared.state.lock().unwrap_or_else(|e| e.into_inner());
             if s.stop {
                 return;
@@ -464,13 +536,13 @@ fn sender(shared: &Shared) {
                     _ => due.push(id.clone()),
                 }
             }
-            (due, resolve(&s.targets), next)
+            (due, resolve(&s.targets), s.targets.account.clone(), next)
         };
         if let Some(destination) = destination.filter(|_| !due.is_empty()) {
             for id in due {
                 let path = outbox_dir(&shared.folder).join(format!("{id}.zip"));
                 let Ok(bytes) = fs::read(&path) else { continue };
-                let outcome = upload(&destination, &id, &bytes);
+                let outcome = upload(&destination, session.as_deref(), &id, &bytes);
                 let mut s = shared.state.lock().unwrap_or_else(|e| e.into_inner());
                 match outcome {
                     Outcome::Sent => {
@@ -488,7 +560,12 @@ fn sender(shared: &Shared) {
                         s.attempts.remove(&id);
                         s.events.push(OutboxEvent::Failed { id, reason });
                     }
-                    Outcome::Later(reason, after) => {
+                    Outcome::Later(..) | Outcome::Auth(_) => {
+                        let (reason, after) = match outcome {
+                            Outcome::Later(reason, after) => (reason, after),
+                            Outcome::Auth(reason) => (reason, Some(shared.config.max_retry)),
+                            _ => unreachable!(),
+                        };
                         let a = s.attempts.entry(id.clone()).or_default();
                         a.count += 1;
                         let backoff = shared
@@ -514,12 +591,8 @@ fn sender(shared: &Shared) {
             for id in due {
                 let a = s.attempts.entry(id.clone()).or_default();
                 if a.last_error.is_none() {
-                    a.last_error = Some("no report service: saved on this PC".into());
-                    s.events.push(OutboxEvent::Queued {
-                        id,
-                        waiting,
-                        reason: "no report service: saved on this PC".into(),
-                    });
+                    a.last_error = Some(SIGN_IN.into());
+                    s.events.push(OutboxEvent::Queued { id, waiting, reason: SIGN_IN.into() });
                 }
             }
         }

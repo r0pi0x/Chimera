@@ -531,6 +531,20 @@ impl AccountFile {
         unhex::<32>(&self.device_key).map(|b| SigningKey::from_bytes(&b)).ok_or("the account file's device key is malformed".into())
     }
 
+    /// Whether a service at `url` (with its certificate's `fingerprint`,
+    /// when known) is this account's hub: the same certificate, else (no
+    /// fingerprint on either side) the hub's or its asset service's URL.
+    /// A hub takes this account's tickets and nothing else.
+    pub fn serves(&self, url: &str, fingerprint: Option<&str>) -> bool {
+        let fp = |f: Option<&str>| f.and_then(crate::tls::normalize_fingerprint);
+        if let (Some(theirs), Some(ours)) = (fp(fingerprint), fp(self.fingerprint.as_deref())) {
+            return theirs == ours;
+        }
+        let clean = |u: &str| u.trim().trim_end_matches('/').to_ascii_lowercase();
+        let url = clean(url);
+        !url.is_empty() && (url == clean(&self.url) || self.assets_url.as_deref().is_some_and(|a| clean(a) == url))
+    }
+
     /// The asset service with the current ticket.
     pub fn remote(&self) -> Option<RemoteConfig> {
         Some(RemoteConfig {
@@ -878,6 +892,42 @@ pub fn fresh_ticket(token: &str) -> Option<String> {
     let session = live()?;
     let device = ticket::peek(token).ok()?.device;
     (ticket::parse_id(&session.file().device) == Some(device)).then(|| session.ticket().ok()).flatten()
+}
+
+/// What `Remote` sends for `config`'s token: for a ticket of the live
+/// session's device, its current one (`fresh_ticket`); for any other
+/// token to the live account's own hub (`AccountFile::serves`), the
+/// account's current ticket: a hub takes tickets only, so a token left
+/// from before accounts (a config's, an access file's) never goes there.
+/// None: send the token as it is.
+pub fn ticket_for(config: &RemoteConfig) -> Option<String> {
+    if config.token.starts_with(ticket::PREFIX) {
+        return fresh_ticket(&config.token);
+    }
+    let session = live()?;
+    session.file().serves(&config.url, config.fingerprint.as_deref()).then(|| session.ticket().ok()).flatten()
+}
+
+/// `remote` as the signed-in user's account would reach it: when it is
+/// the account's hub (`AccountFile::serves`) and holds a plain token, the
+/// account's ticket instead (the session made live). Else `remote`
+/// unchanged (a service with no hub keeps its own token).
+pub fn for_service(remote: RemoteConfig) -> RemoteConfig {
+    if remote.token.starts_with(ticket::PREFIX) {
+        return remote;
+    }
+    let Some(session) = user_session() else { return remote };
+    if !session.file().serves(&remote.url, remote.fingerprint.as_deref()) {
+        return remote;
+    }
+    match session.ticket() {
+        Ok(ticket) => RemoteConfig {
+            token: ticket,
+            fingerprint: remote.fingerprint.clone().or(session.file().fingerprint),
+            ..remote
+        },
+        Err(_) => remote,
+    }
 }
 
 /// The session of the account file at `path`: the live one when it is

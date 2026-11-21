@@ -183,7 +183,10 @@ impl AssetsConfig {
         // Else this user's platform account's asset service (`account`),
         // else the service a game server bound this user's token to
         // (`access`: a player's, not a developer's).
+        // A configured service that is the account's hub gets the
+        // account's ticket, never a token left from before accounts.
         s.remote = remote_config(url, token, key)
+            .map(crate::account::for_service)
             .or_else(crate::account::user_remote)
             .or_else(|| crate::access::Access::load().remote())
             // A service this process bound while running (a dedicated

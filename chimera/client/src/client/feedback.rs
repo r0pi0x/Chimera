@@ -40,13 +40,19 @@
 //!   thread (`chimera_assets::feedback`: its secret filter is the only
 //!   door), `<data_local>/chimera/feedback/outbox/<id>.zip`, sent by the
 //!   outbox's thread to the first destination that applies (the
-//!   `chimera:feedback_url`/`_token`/`_fingerprint` cvars, `[feedback]` or
-//!   `[assets]` in the local config, the joined server's asset service,
-//!   `net::assets::JoinedService`, with the tester's asset token), else
-//!   kept and sent when one answers (and at the next start). The notice
-//!   (`Feedback::notice`): "Sending report...", then the delivery's
-//!   "Report sent" or why it waits; "Saved on this PC" without a
-//!   destination; a console line for each.
+//!   `chimera:feedback_url`/`_token`/`_fingerprint` cvars, the signed-in
+//!   account's hub with its ticket, the joined server's asset service
+//!   when it is that hub, `net::assets::JoinedService`; without an
+//!   account a service with no hub and its own token, `[feedback]` or
+//!   `[assets]` in the local config: `chimera_assets::feedback::outbox`),
+//!   else kept and sent when one answers (and at the next start). The
+//!   account comes from the live session (`account::live`, polled:
+//!   `signed_in`), so signing in (onboarding, Settings > Account) sends
+//!   what was kept. The notice (`Feedback::notice`): "Sending
+//!   report...", then the delivery's "Report sent" or why it waits;
+//!   without an account (none, or a service refusing the token as
+//!   unknown) "Sign in to send reports; kept on this PC" (`SIGN_IN`); a
+//!   kept report sent later says so; a console line for each.
 //!
 //! Console: `feedback` (the key's command; `feedback menu` waits for a
 //! menu to go), `feedback_send <text>`, `feedback_status` (where reports
@@ -83,6 +89,7 @@ use bevy::{
 
 use chimera_core::mount::assets::feedback::{
     CvarValue, Feedback as OutboxThread, ImageFormat, Kind, OutboxConfig, ReportState, Screenshot as ShotBytes, Target, Targets,
+    outbox::{SIGN_IN, SIGN_IN_AGAIN},
 };
 
 use super::widgets::{Edit, TextKey};
@@ -302,6 +309,8 @@ pub trait Outbox: Send + Sync + 'static {
     /// A service named by hand (`chimera:feedback_url`, `_token`,
     /// `_fingerprint`; None: not all set).
     fn named(&self, _target: Option<Target>) {}
+    /// The signed-in account changed (signed in, out, or another).
+    fn account(&self, _session: Option<Arc<chimera_core::mount::assets::account::Session>>) {}
     /// `feedback_status`'s lines.
     fn status(&self) -> String {
         String::new()
@@ -416,6 +425,7 @@ impl AssetsOutbox {
                     targets.assets = chimera_core::mount::config::LocalConfig::load()
                         .ok()
                         .and_then(|c| c.assets.resolve().remote);
+                    targets.account = chimera_core::mount::assets::account::user_session();
                 }
                 OutboxThread::start(folder, targets, OutboxConfig::default())
                     .map(Arc::new)
@@ -440,8 +450,9 @@ fn destination_text(d: Option<&chimera_core::mount::assets::feedback::Destinatio
     use chimera_core::mount::assets::feedback::outbox::Source;
     match d {
         Some(d) if d.source == Source::Server => format!("To {}'s report service", d.label),
+        Some(d) if d.source == Source::Account => "To your hub's report service".into(),
         Some(_) => "To the report service".into(),
-        None => "No report service: saved on this PC".into(),
+        None => "Not signed in: reports kept on this PC".into(),
     }
 }
 
@@ -552,6 +563,15 @@ impl Outbox for AssetsOutbox {
         }
         if let Some(Ok(o)) = self.started.get() {
             o.set_targets(|t| t.cvar = target);
+        }
+    }
+
+    fn account(&self, session: Option<Arc<chimera_core::mount::assets::account::Session>>) {
+        if let Ok(mut t) = self.targets.lock() {
+            t.account = session.clone();
+        }
+        if let Some(Ok(o)) = self.started.get() {
+            o.set_targets(|t| t.account = session);
         }
     }
 
@@ -839,7 +859,7 @@ impl Plugin for FeedbackPlugin {
         app.add_systems(PreUpdate, typing.after(InputSystems))
             .add_systems(Startup, start_if_waiting)
             .init_resource::<FeedbackService>()
-            .add_systems(Update, (key, advance, act, deliveries, joined, named).chain().in_set(FeedbackSystems))
+            .add_systems(Update, (key, advance, act, deliveries, joined, named, signed_in).chain().in_set(FeedbackSystems))
             .console_command(
                 "chimera:feedback",
                 "feedback [menu]: report a bug or feedback: take a screenshot of this frame, then open the report \
@@ -1138,7 +1158,7 @@ fn send(world: &mut World) {
         }
         Ok(Submitted::Queued { id, waiting, folder }) => (
             Notice {
-                text: format!("Saved on this PC, sends when a report service answers ({waiting} waiting)"),
+                text: format!("Sign in to send reports; kept on this PC, sent once you're signed in ({waiting} waiting)"),
                 until: now + NOTICE_SECS,
                 sent: false,
             },
@@ -1181,7 +1201,11 @@ fn deliveries(outbox: Res<FeedbackOutbox>, time: Res<Time<Real>>, mut feedback: 
             Delivery::Sent { id } => (id.clone(), "Report sent".to_string(), true, format!("report {id} sent"), Level::Info),
             Delivery::Queued { id, waiting, reason } => (
                 id.clone(),
-                format!("Saved, sends when the service answers ({waiting} waiting)"),
+                if reason == SIGN_IN || reason == SIGN_IN_AGAIN {
+                    format!("{}{} ({waiting} waiting)", reason[..1].to_uppercase(), &reason[1..])
+                } else {
+                    format!("Saved, sends when the service answers ({waiting} waiting)")
+                },
                 false,
                 format!("report {id} waits ({waiting} waiting): {reason}"),
                 Level::Warn,
@@ -1198,6 +1222,9 @@ fn deliveries(outbox: Res<FeedbackOutbox>, time: Res<Time<Real>>, mut feedback: 
         if feedback.awaiting.as_deref() == Some(id.as_str()) {
             feedback.awaiting = None;
             feedback.notice = Some(Notice { text, until, sent });
+        } else if sent && feedback.awaiting.is_none() {
+            // A report kept earlier (this run or an earlier one) went.
+            feedback.notice = Some(Notice { text: "A kept report was sent".into(), until, sent });
         }
     }
 }
@@ -1216,6 +1243,20 @@ fn joined(
     if last.as_ref() != Some(&now) || outbox.is_changed() {
         if last.is_some() || now != (None, None) {
             outbox.0.joined(now.0.clone(), now.1.clone());
+        }
+        *last = Some(now);
+    }
+}
+
+/// The signed-in account changed (`account::live`: onboarding, Settings >
+/// Account, a join's sign-in): reports go with its ticket, and kept ones
+/// go now.
+fn signed_in(outbox: Res<FeedbackOutbox>, mut last: Local<Option<Option<usize>>>) {
+    let live = chimera_core::mount::assets::account::live();
+    let now = live.as_ref().map(|s| Arc::as_ptr(s) as usize);
+    if *last != Some(now) {
+        if last.is_some() || live.is_some() {
+            outbox.0.account(live);
         }
         *last = Some(now);
     }

@@ -738,6 +738,18 @@ the service's certificate (`AssetOffer`), and a joining client with it
 says it can fetch (`ASSETS_KEY`). A token is never sent to a hub's
 service and a ticket never to a service of another certificate.
 
+**Every client call to a hub goes with the account's ticket** (user,
+2026-11-21, after an F10 report was refused with a 401): `Remote` sends
+the signed-in account's current ticket in place of any plain token
+aimed at that account's hub (`account::ticket_for`: the same
+certificate, else the same URL), and `[assets]` naming the hub resolves
+to the account's ticket (`account::for_service`). Feedback reports go
+to the account's hub with its ticket (`feedback::outbox`); without an
+account, or when a service refuses a token as unknown (401), a report is
+kept, the dialog says "Sign in to send reports; kept on this PC", and it
+goes on signing in or at the next start (reports an older build marked
+refused with a 401 are tried again).
+
 ## 7. Owner-only account creation
 
 ### 7.1 The command line
