@@ -604,12 +604,16 @@ impl Compiler<'_> {
             Decal::ADD => return None,
             _ => DecalBlend::Alpha,
         };
+        // Halo's fade stage moves the decal toward its blend's neutral value
+        // (½ for double multiply, white for multiply) by the fog amount
+        // itself (specs/halo_ce/shaders.md "Fade and fog stage").
+        let fog_fade = crate::map::decal::LINEAR_FOG_FADE;
         let (texture, seqs) = self.bitmap(&d.map)?;
         let size = (d.radius.lower + d.radius.upper) * super::super::METERS_PER_UNIT;
         let variants: Vec<MapDecal> = seqs
             .iter()
             .filter_map(|s| s.first())
-            .map(|uv| MapDecal { texture, uv_min: Vec2::new(uv[0], uv[1]), uv_max: Vec2::new(uv[2], uv[3]), size: Vec2::splat(size), blend })
+            .map(|uv| MapDecal { texture, uv_min: Vec2::new(uv[0], uv[1]), uv_max: Vec2::new(uv[2], uv[3]), size: Vec2::splat(size), blend, fog_fade })
             .collect();
         self.set.decals.push((name.clone(), variants));
         Some(name)

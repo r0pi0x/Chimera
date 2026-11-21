@@ -1088,6 +1088,7 @@ impl<'a> MaterialLoader<'a> {
             uv_max: Vec2::ONE,
             size: Vec2::splat(size),
             blend: crate::map::decal::DecalBlend::Alpha,
+            fog_fade: crate::map::decal::SOURCE_FOG_FADE,
         })
     }
 
@@ -1137,6 +1138,7 @@ impl<'a> MaterialLoader<'a> {
             } else {
                 DecalBlend::Alpha
             },
+            fog_fade: crate::map::decal::SOURCE_FOG_FADE,
         })
     }
 

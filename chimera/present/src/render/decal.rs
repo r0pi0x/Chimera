@@ -44,7 +44,8 @@
 //! one blend); a 5% edge fade hides atlas bleeding; orientation follows the map
 //! decal rule (walls upright, floors along world X; the engine's rule isn't
 //! public); limit 512 (the game's is a client setting); fog fades them to
-//! neutral by the fog amount^0.4 (shaders.md section 5). Why it's OK for now:
+//! neutral by the fog amount^0.4 (shaders.md section 5) for Source's, by
+//! the amount itself for Halo's (`MapDecal::fog_fade`, `fog_fade`). Why it's OK for now:
 //! Bullet holes on world surfaces look right; the rest needs observation in the
 //! game.
 //!
@@ -427,7 +428,7 @@ impl DecalAssets {
         let decal = self.data.decals.get(index)?;
         let texture = self.textures.get(decal.texture)?.clone();
         let m = materials.add(DecalMaterial {
-            params: Vec4::new(if decal.blend == DecalBlend::Modulate2x { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0),
+            params: params(decal),
             texture,
             fog: fog.map_or_else(Default::default, |f| f.0),
             light: Vec4::ZERO,
@@ -549,16 +550,7 @@ pub fn place_decals(
             Some(m) => m.clone(),
             None => {
                 let m = materials.add(DecalMaterial {
-                    params: Vec4::new(
-                        if decal.blend == DecalBlend::Modulate2x {
-                            1.0
-                        } else {
-                            0.0
-                        },
-                        0.0,
-                        0.0,
-                        0.0,
-                    ),
+                    params: params(&decal),
                     texture: texture.clone(),
                     fog: fog.as_ref().map_or_else(Default::default, |f| f.0),
                     light: light.unwrap_or(Vec4::ZERO),
@@ -681,12 +673,27 @@ pub fn clear_decals(
     }
 }
 
+/// A decal's shader parameters (`DecalMaterial::params`).
+fn params(decal: &MapDecal) -> Vec4 {
+    Vec4::new(if decal.blend == DecalBlend::Modulate2x { 1.0 } else { 0.0 }, decal.fog_fade, 0.0, 0.0)
+}
+
+/// A decal's factor on the surface (1: no change) after fog `amount`
+/// (`fog.wesl`'s `source_fog` alpha) with its game's rule `fade`
+/// (`MapDecal::fog_fade`; 0 or less: Source's): toward neutral by
+/// amount^fade. The CPU side of decal.wesl's fog step, which mirrors it.
+pub fn fog_fade(factor: Vec3, amount: f32, fade: f32) -> Vec3 {
+    let fade = if fade > 0.0 { fade } else { crate::map::decal::SOURCE_FOG_FADE };
+    factor.lerp(Vec3::ONE, amount.clamp(0.0, 1.0).powf(fade))
+}
+
 /// Each decal is drawn twice (see `DecalMaterial::specialize`): its
 /// colour, and a depth-only copy just below it.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 #[bind_group_data(DecalMaterialKey)]
 pub struct DecalMaterial {
-    /// x: 1 for modulate 2x, 0 for a stain.
+    /// x: 1 for modulate 2x, 0 for a stain; y: the fog fade's power
+    /// (`MapDecal::fog_fade`, `fog_fade`; 0: Source's 0.4).
     #[uniform(0)]
     pub params: Vec4,
     #[texture(1)]
@@ -816,6 +823,36 @@ impl Plugin for DecalMaterialPlugin {
 mod tests {
     use super::*;
 
+    /// Source's decals fade toward neutral by the fog amount^0.4
+    /// (specs/cs_source/shaders.md 5); Halo's double multiply decals
+    /// linearly toward 1/2, a factor of 1 (specs/halo_ce/shaders.md "Fade
+    /// and fog stage": out k + 1/2 (1 - k), k = 1 - fog).
+    #[test]
+    fn fog_fades_each_games_decals_by_its_rule() {
+        use crate::map::decal::{LINEAR_FOG_FADE, SOURCE_FOG_FADE};
+        let dark = Vec3::splat(0.2);
+        // Source: at amount 0.5, 0.5^0.4 = 0.758 of the way to neutral.
+        let s = fog_fade(dark, 0.5, SOURCE_FOG_FADE);
+        assert!((s.x - (0.2 + 0.8 * 0.5f32.powf(0.4))).abs() < 1e-6, "{s}");
+        assert!((s.x - 0.806).abs() < 1e-3, "{s}");
+        // Halo: half way. As Halo's own output (factor / 2, gamma): a
+        // texel 0.1 at k = 0.5 is 0.1 x 0.5 + 0.5 x 0.5 = 0.3.
+        let h = fog_fade(dark, 0.5, LINEAR_FOG_FADE);
+        assert!((h.x - 0.6).abs() < 1e-6, "{h}");
+        assert!((h.x / 2.0 - (0.1 * 0.5 + 0.5 * 0.5)).abs() < 1e-6);
+        // Both: no fog leaves it, full fog makes it neutral.
+        for fade in [SOURCE_FOG_FADE, LINEAR_FOG_FADE] {
+            assert_eq!(fog_fade(dark, 0.0, fade), dark);
+            assert_eq!(fog_fade(dark, 1.0, fade), Vec3::ONE);
+        }
+        // Unset (0): Source's.
+        assert_eq!(fog_fade(dark, 0.5, 0.0), s);
+        // A material's parameters carry the rule.
+        let mut d = decal(0.1);
+        d.fog_fade = LINEAR_FOG_FADE;
+        assert_eq!(params(&d), Vec4::new(1.0, 1.0, 0.0, 0.0));
+    }
+
     #[test]
     fn impacts_stay_out_of_the_depth_prepass() {
         // Water maps' prepass would otherwise hide the wall under a decal.
@@ -839,6 +876,7 @@ mod tests {
             uv_max: Vec2::new(0.75, 0.5),
             size: Vec2::splat(size),
             blend: DecalBlend::Modulate2x,
+            fog_fade: crate::map::decal::SOURCE_FOG_FADE,
         }
     }
 

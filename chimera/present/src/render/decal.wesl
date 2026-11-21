@@ -20,7 +20,9 @@ import chimera_present::render::fog::{source_fog, fog_mix};
 struct DecalParams {
     // 1: modulate 2x; 0: stain.
     modulate: f32,
-    _pad0: f32,
+    // The fog fade's power (map::decal::MapDecal::fog_fade; 0: Source's
+    // 0.4).
+    fog_fade: f32,
     _pad1: f32,
     _pad2: f32,
 }
@@ -79,12 +81,17 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         let edge = min(min(t.x, 1.0 - t.x), min(t.y, 1.0 - t.y));
         factor = mix(vec3(1.0), factor, smoothstep(0.0, EDGE_FADE, edge));
     }
-    // Fog (specs/cs_source/shaders.md section 5, DecalModulate): toward
-    // 0.5 grey, i.e. a neutral factor, by the fog factor raised to 0.4
-    // before section 7's use of it: (f^0.4)^2 for range fog, f^0.4 for the
-    // water's height fog; both are the surface's amount^0.4.
+    // Fog: toward a neutral factor by the amount raised to the game's
+    // power (mirror `render::decal::fog_fade`). Source's (specs/cs_source/
+    // shaders.md section 5, DecalModulate): toward 0.5 grey by the fog
+    // factor raised to 0.4 before section 7's use of it: (f^0.4)^2 for
+    // range fog, f^0.4 for the water's height fog; both are the surface's
+    // amount^0.4. Halo's (specs/halo_ce/shaders.md "Fade and fog stage"):
+    // double multiply toward 1/2, multiply toward white, by the amount
+    // itself (linear fog: `source_fog`'s f), power 1.
     let f = source_fog(fog.color, fog.range, fog.water_color, fog.water_range, in.world_position.xyz);
-    factor = mix(factor, vec3(1.0), pow(f.a, 0.4));
+    let fade = select(0.4, params.fog_fade, params.fog_fade > 0.0);
+    factor = mix(factor, vec3(1.0), pow(clamp(f.a, 0.0, 1.0), fade));
     // Nothing to show: no depth either (each impact's depth-only copy
     // writes depth where it shows, so overlays can't cover it; see
     // DecalMaterial).

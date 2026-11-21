@@ -928,6 +928,7 @@ mod tests {
             uv_max: Vec2::ONE,
             size: Vec2::splat(tag as f32),
             blend: DecalBlend::Modulate2x,
+            fog_fade: crate::map::decal::SOURCE_FOG_FADE,
         });
         map.kit.decals.groups.insert("impact.concrete".into(), vec![(1.0, 0)]);
         map.kit.decals.by_material.insert('C', "impact.concrete".into());

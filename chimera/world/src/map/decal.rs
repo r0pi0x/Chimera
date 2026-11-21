@@ -24,7 +24,20 @@ pub struct MapDecal {
     /// Width and height, meters.
     pub size: Vec2,
     pub blend: DecalBlend,
+    /// How fog fades it toward neutral (no change to the surface): by the
+    /// fog amount raised to this power. Its game's rule: Source's 0.4
+    /// (`SOURCE_FOG_FADE`, specs/cs_source/shaders.md 5, DecalModulate),
+    /// Halo's 1, linearly (`LINEAR_FOG_FADE`, specs/halo_ce/shaders.md
+    /// "Fade and fog stage").
+    pub fog_fade: f32,
 }
+
+/// Source's decals fade toward neutral in fog by the fog amount^0.4
+/// (`MapDecal::fog_fade`).
+pub const SOURCE_FOG_FADE: f32 = 0.4;
+/// Halo's fade stage moves a decal toward its blend's neutral value by the
+/// fog amount itself (`MapDecal::fog_fade`).
+pub const LINEAR_FOG_FADE: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DecalBlend {
