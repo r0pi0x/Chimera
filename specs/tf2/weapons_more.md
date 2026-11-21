@@ -955,15 +955,29 @@ tick through VScript.
 - **Per shot, first person:** the drum turns **one chamber, 60°,
   smoothly**, in the direction that makes the chambers on the side
   facing the Demoman rise: **clockwise seen from behind the gun**
-  (looking toward the muzzle). It starts in the frame after the shot
-  and settles about 8 frames later (0.13–0.15 s after the shot): slow
-  at first, fastest about halfway, slow into the end (read from the
-  pictures, both shots alike; the exact curve is Open questions 24).
-  Because the drum repeats every 60°, it looks the same before and
+  (looking toward the muzzle), and so clockwise as the player sees it
+  (the camera is behind and to the left of the gun). It starts in the
+  frame after the shot and settles about 8 frames later (0.13–0.15 s
+  after the shot): slow at first, fastest about halfway, slow into the
+  end. Because the drum repeats every 60°, it looks the same before and
   after each shot, so the turn may be kept as a 0–60° angle that starts
   again at 0 for the next shot.
-- **Reload, first person:** no turn. Through each grenade's insertion
-  and between grenades the chamber mouths seen past the back plate
+  *Re-measured 2026-11-21* with the stock gun forced (tf2ref
+  `stock tf_weapon_grenadelauncher 19`, so not an unlock from the
+  account's loadout), `gl_drum.tf2` otherwise unchanged: at 60 fps the
+  shot is frame 9 (muzzle flash) and the drum is still by frame 17–18;
+  a second run at `host_framerate 0.004` (250 pictures a second of game
+  time) put the shot at frame 16, almost no turn through frame 25
+  (36 ms), the chambers visibly sliding up and toward the top strap
+  between frames 32 and 46 (the lower chamber rising into the place of
+  the middle one, the upper one passing under the strap), and still
+  again by frames 48–54 (0.13–0.15 s). The direction is read against
+  the back plate's ring, which the kick moves together with the drum.
+- **Reload, first person:** no turn (re-checked 2026-11-21, the same
+  60 fps run: `+reload` at frame 109, grenades seated about frames 150
+  and 188; the chamber mouths seen past the back plate keep their
+  places against the frame's rear post from frame 136 to 212).
+  Through each grenade's insertion and between grenades the chamber mouths seen past the back plate
   stay where they are (any whole-chamber jump would look the same, so
   none is needed).
 - **Draw and idle:** no turn.
@@ -1297,9 +1311,10 @@ Probe checks (live dedicated server, bots; never ports 27015/27030):
     the angular cap, but a fully charged sticky (2400 forward + 200 up)
     is over the linear one: whether it leaves at 2000 is unmeasured
     (VScript: a 4 s charge, read the physics velocity the first tick).
-24. **The drum's turn curve** (§9.6): read from 60 fps pictures of a
-    kicking view model, so only "smooth over about 8 frames, slow at
-    both ends" is known, not its exact function of time nor whether a
-    second shot inside a running turn adds to it (shots are 0.6 s
-    apart, so it can't happen with the stock gun). A matched pair
-    (`gl_drum.tf2` against ours) settles the curve.
+24. **The drum's turn** (§9.6): *answered 2026-11-21* by re-measuring
+    with the stock gun forced: clockwise seen from behind the gun (and
+    by the player), 60° a shot, smooth over about 0.13–0.15 s with slow
+    ends, no turn on reload. Left open only the exact easing function
+    (read from pictures of a kicking view model) and whether a shot
+    inside a running turn adds to it (impossible with the stock gun's
+    0.6 s refire).
