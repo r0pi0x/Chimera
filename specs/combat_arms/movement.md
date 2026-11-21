@@ -14,7 +14,7 @@ stopping, jumping, gravity and air movement, crouching, crouch-spam penalty,
 sprint and stamina, slopes and steps, falling and fall damage, volumes
 (ladders, liquids, friction, speed factors, gravity volumes, jump pads,
 safety nets, damage volumes), other modifiers including pushers and hit
-knock-back, eye height); Per-tick order; Edge cases;
+knock-back, eye height, world scale and door sizes); Per-tick order; Edge cases;
 Quirks; Corrections (2026-10-19); Test cases; Open questions.
 
 ---
@@ -41,7 +41,8 @@ no friction), and a short-lived jump factor weakens back-to-back jumps.
   distances) show world units divided by 40 as "metres", so the game's
   stated scale is 40 u = 1 m (1 u = 2.5 cm). Bodies are not built to that
   scale: the fallback standing hull is 100 u tall (2.5 m) and the eye sits
-  83 u above the feet (Open question 3).
+  83 u above the feet. Measured from the bodies and guns, 1 u is about
+  0.0185 m (World scale, Open question 3).
 - Axes: +Y is up. Horizontal plane is X/Z. Gravity points along -Y.
 - Player hull: an axis-aligned box given by its **half**-extents
   (half-width X, half-height Y, half-depth Z) around the object's position,
@@ -1137,6 +1138,98 @@ one (80), not 0.9.
 - Head bob, camera shake from damage, and the recoil back-push
   (weapon_firing.md) are added on top; they are not part of this spec.
 
+### World scale (metres per unit)
+
+(Open question 3, measured 2026-11-21.) Nothing in the game's movement,
+physics or sound code converts units to metres; the only stated factor
+is the HUD's 40 u per metre, which no body in the game is built to. For
+putting Combat Arms characters, guns and maps beside other games', the
+physical scale has to be measured from the content. Measured on the
+Steam install (the plain world archives' 33 maps, the plain prop and
+hand-held gun models), with our own world and model readers:
+
+| Line of evidence | Combat Arms (u) | Real or other-game size | m/u |
+|---|---|---|---|
+| Upright adult male body, sole to crown (the infected-ship dead-man prop, which has the stock male player skeleton: same bone names and bind positions as the player body in characters.md) | 98.5 | adult male 1.75–1.85 m | 0.0178–0.0188 (0.0183 at 1.80 m) |
+| Same body, eye (the eyelid bone) above the soles | 93.7 | eye of a 1.80 m man ≈ 1.68 m | 0.0179 |
+| Same skeleton in the standing idle (`LST` t = 0, feet at the hull bottom): crown above the feet (knees bent, feet apart) | ≈ 91 | — | (what one sees standing; 1.64 m at 0.018) |
+| Standing hull (fallback; the player's stand box is the same, characters.md) vs CS:S's 72 u hull (1.83 m) | 100 | 1.83 m | 0.0183 |
+| Camera height vs CS:S's 64 u eye (1.63 m) | 83 | 1.63 m | 0.0196 |
+| AK-47 hand-held model, muzzle to butt | 47.6 | 0.880 m | 0.0185 |
+| M16A3 | 53.1 | 1.006 m | 0.0190 |
+| M4A1 | 40.1 | 0.757 m (stock in) – 0.838 m (out) | 0.0189–0.0209 |
+| MP5A4 | 36.6 | 0.680 m | 0.0186 |
+| Desert Eagle, M1911 (pistols; drawn smaller than life) | 17.5, 13.0 | 0.273 m, 0.216 m | 0.0156, 0.0166 |
+| HUD distance readouts | 40 per metre | — | 0.025 (a label, not a size) |
+| Stair risers: 16 u on 2,852 of the risers found in staircases (24 of the 33 maps; 8 u next with 307) | 16 | 0.17–0.18 m | ≈ 0.011 |
+| Doorway openings (below): median 138 u tall | 138 | door 2.03 m | ≈ 0.0147 |
+
+**Value: 1 u = 0.0185 m, ±0.001 m** (0.0175–0.0195). The bodies and the
+long guns agree within that band; the camera height sits at its top, as
+camera heights are a design choice. At 0.0185 an upright male body is
+1.82 m (CS:S's player is 1.83 m), the standing idle 1.69 m, the hull
+1.85 m tall and 0.555 m wide (30 u), the camera 1.54 m, a 16 u stair
+riser 0.30 m and the 30 u step-up limit 0.56 m. Our data's current 0.018
+is inside the band (upright body 1.77 m, standing idle 1.64 m); 0.020 is
+outside it (upright body 1.97 m), although it is the scale at which the
+standing idle, the height a player sees, reads 1.83 m.
+
+The architecture is not built to the bodies' scale: stairs are 16 u
+risers (0.30 m at 0.0185, nearly twice a real step) and doorways are
+at the bodies' scale about 0.8 m wider and 0.5 m taller than real doors
+(median 1.70 × 2.55 m against about 0.86 × 2.03 m).
+Scale maps by the bodies (the value above), not by the doors or the
+steps, so that a Combat Arms map keeps the clearance its own players
+have.
+
+#### Door sizes
+
+Doorways were found in the static physics BSP of every map in the two
+plain world archives (33 maps): an opening under a downward-facing
+lintel whose walls on both sides reach above it, with walkable floor
+continuing through within 20 u, open space on both sides and a wall
+thickness of at most 128 u; height is floor to lintel, width the clear
+span at mid-height. Movable world models (doors, breakables, props) are
+not in the static BSP, so a real passage can be narrower. Sizes are
+rounded to whole units (±1 u).
+
+Over all 407 openings 100–170 u tall and at least 50 u wide (31 maps):
+height quartiles 132 / 138 / 150 u, width quartiles 74 / 92 / 120 u. The
+most common sizes are 136 × 80 u (29 openings), 132 × 93 and 138 × 76.
+72 of the 407 are narrower than 66 u and 37 narrower than 61 u.
+
+| Map | Floor centre (x, y, z) | Height u | Width u | Height m | Width m |
+|---|---|---|---|---|---|
+| training | (−3156, −356, −2120) | 136 | 56 | 2.52 | 1.04 |
+| waverider | (−3369, −2896, 892) | 116 | 56 | 2.15 | 1.04 |
+| training | (−2328, −352, −1318) | 132 | 60 | 2.44 | 1.11 |
+| graveyard | (1100, 428, −555) | 104 | 60 | 1.92 | 1.11 |
+| dam | (1933, 920, 498) | 120 | 60 | 2.22 | 1.11 |
+| snowvalley | (−1056, 80, 2371) | 116 | 60 | 2.15 | 1.11 |
+| infectedship_cp | (1159, 836, −286) | 112 | 60 | 2.07 | 1.11 |
+| cityofwings | (−1584, 320, 270) | 138 | 60 | 2.55 | 1.11 |
+| warhead | (−562, 2631, −1968) | 140 | 62 | 2.59 | 1.15 |
+| junk_flea2 | (20, 4, −1664) | 116 | 64 | 2.15 | 1.18 |
+| twotowers | (−1839, −775, 1642) | 115 | 64 | 2.13 | 1.18 |
+| heavymetal | (−1128, 61, −23) | 125 | 64 | 2.31 | 1.18 |
+| infectedship_cp | (−2664, 1364, 888) | 131 | 64 | 2.42 | 1.18 |
+| (most common) | | 136 | 80 | 2.52 | 1.48 |
+
+What fits, by hull size converted to Combat Arms units (other games at
+0.0254 m/u):
+
+| Hull | Width × height (standing / crouched), m | At 0.0185 m/u, u | Fits a 60 u doorway |
+|---|---|---|---|
+| Combat Arms player | 0.555 × 1.85 / 1.48 | 30 × 100 / 80 | yes |
+| CS:S player (32 u wide, 72 tall standing) | 0.81 × 1.83 | 44 × 99 | yes |
+| TF2 player (48 u wide, 82 / 62 tall) | 1.22 × 2.08 / 1.57 | 66 × 113 / 85 | no: needs 66 u (68 at 0.018, 61 at 0.020) |
+
+So a TF2-sized hull is blocked by the 56–64 u doorways at any scale in
+the band, and even at 0.020 by everything under 61 u; the cause is
+TF2's hull being 2.2 times wider than Combat Arms' (1.22 m against
+0.555 m), not the unit scale. Openings under 113 u (for example 104 u on
+graveyard) also need a TF2 player to crouch.
+
 ## Per-tick order
 
 1. (Networked play) other characters and moving world models are rewound
@@ -2023,9 +2116,11 @@ Corrections (2026-10-19) each one checks.
    code uses metres. The bodies are not to that scale (a 100 u standing
    hull would be 2.5 m), so for mixing with other games' maps scale by body
    size, not by the HUD factor. See Units and conventions; test case 54.
-   To settle a physical scale, measure in game: stand next to a standard
-   door or crate of known real size and compare its height in world units
-   with the player's eye height (83 u).
+   **Physical scale answered (2026-11-21):** 1 u = 0.0185 m ± 0.001,
+   measured from an upright stock-male body (98.5 u), its eye height and
+   four long guns, cross-checked against CS:S's hull and eye; doors and
+   stairs are oversized against the bodies and are not used for it. See
+   "World scale (metres per unit)", with its door-size table.
 4. **Movement basis yaw.** The movement facing is the body rotation plus the
    upper-body twist, which should equal the view yaw; confirm there is no
    case where they differ (e.g. while the twist is clamped).
