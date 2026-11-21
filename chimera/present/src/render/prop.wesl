@@ -14,7 +14,7 @@ import bevy_pbr::{
     render::mesh_view_types::POINT_LIGHT_FLAGS_SPOT_LIGHT_Y_NEGATIVE,
     render::view_transformations::position_world_to_view,
 };
-import chimera_present::render::fog::source_fog;
+import chimera_present::render::fog::{source_fog, fog_mix};
 import chimera_present::render::dither::dithered_out;
 
 struct PropParams {
@@ -672,7 +672,7 @@ fn prop_output(lit: vec3<f32>, alpha: f32, p: vec3<f32>) -> vec4<f32> {
     // Under (or, at the surface, just below) water, what is below the
     // surface takes the water's fog.
     let fog = source_fog(params.fog_color, params.fog_range, params.water_fog_color, params.water_fog_range, p);
-    let rgb = mix(lit, fog.rgb, fog.a);
+    let rgb = fog_mix(lit, fog, params.fog_range);
     // Additive (translucent 2): alpha 0 under premultiplied blending adds,
     // fogged toward black (`fog::fog_surface`).
     if params.translucent > 1.5 {

@@ -7,14 +7,19 @@
 //! `SceneFog` holds the current values: the map's world part, inserted
 //! where the map's resources go as it spawns (`map::DrawnResource::Fog`),
 //! `crate::render::water::underwater_fog` the water part as the eye moves.
-//! Materials take it when created (`apply_scene_fog` would update them
-//! when it changes; not scheduled).
+//! Materials take it when created; `apply_scene_fog` (scheduled by
+//! `FogShaderPlugin`, so in every app that draws maps) puts it on the
+//! existing ones when it changes: a new map's fog on materials made
+//! before it, the water's as the eye goes under and back.
 //!
 //! Source's fog shared by map shaders (`chimera_present::render::fog::source_fog`): world range
 //! fog (in the 3D skybox the sky_camera's own, `render::material_fog`), the
 //! water's range fog under water and height fog at the surface; `SceneFog` (set
 //! by the map and `crate::render::water::underwater_fog`) taken by rope, decal and particle
-//! materials; `apply_scene_fog` pushes it to them.
+//! materials; `apply_scene_fog` pushes it to them. Surfaces take it with
+//! fog.wesl's `fog_mix` (mirror: `fog_surface`): Source's fog blends in
+//! linear light, linear fog (`MapFog::linear`: LithTech's, Halo's) the
+//! gamma values, as those engines' framebuffers hold them.
 
 use bevy::prelude::*;
 
@@ -78,18 +83,26 @@ pub fn fog_at(f: &FogUniform, eye: Vec3, point: Vec3, depth: f32) -> (Vec3, f32)
     (f.color.truncate(), range_amount(f.range))
 }
 
-/// A surface's colour after fog `(colour, amount)` (`fog_at`), as the
-/// world and prop shaders apply it: toward the fog colour, but an additive
-/// surface toward black, as particles are (it adds nothing where fogged
-/// out; toward the fog colour it would add that colour over its whole
-/// shape: the 2026-11-14 playtest's pale light cones in Combat Arms'
-/// fogged maps).
-pub fn fog_surface(color: Vec3, fog: (Vec3, f32), additive: bool) -> Vec3 {
+/// A surface's colour after fog `(colour, amount)` (`fog_at`) of the
+/// scene's fog `f`, as the world and prop shaders apply it (fog.wesl
+/// `fog_mix`): toward the fog colour, but an additive surface toward
+/// black, as particles are (it adds nothing where fogged out; toward the
+/// fog colour it would add that colour over its whole shape: the
+/// 2026-11-14 playtest's pale light cones in Combat Arms' fogged maps).
+/// Linear fog (`MapFog::linear`: LithTech's and Halo's fixed-function
+/// table fog) blends the gamma values, as those engines' framebuffers
+/// hold them (specs/combat_arms/world_dat.md test case 14); Source's
+/// blends in linear light. Colours linear.
+pub fn fog_surface(color: Vec3, fog: (Vec3, f32), additive: bool, f: &FogUniform) -> Vec3 {
     if additive {
-        color * (1.0 - fog.1)
-    } else {
-        color.lerp(fog.0, fog.1)
+        return color * (1.0 - fog.1);
     }
+    if f.range.w > 0.5 && fog.1 > 0.0 {
+        let to_gamma = |c: Vec3| Vec3::from_array(c.to_array().map(|x| Color::linear_rgb(x, 0.0, 0.0).to_srgba().red));
+        let to_linear = |c: Vec3| Vec3::from_array(c.to_array().map(|x| Color::srgb(x, 0.0, 0.0).to_linear().red));
+        return to_linear(to_gamma(color).lerp(to_gamma(fog.0), fog.1));
+    }
+    color.lerp(fog.0, fog.1)
 }
 
 #[derive(Resource)]
@@ -191,7 +204,10 @@ impl Plugin for FogShaderPlugin {
         }
         app.insert_resource(FogShaderLoaded)
             .init_resource::<FogSetting>()
-            .add_systems(Update, apply_fog_setting);
+            .add_systems(Update, apply_fog_setting)
+            // After the water sets this frame's (a no-op order where
+            // there is no water plugin).
+            .add_systems(PostUpdate, apply_scene_fog.after(super::water::underwater_fog));
         bevy::shader::load_shader_library!(app, "fog.wesl");
     }
 
@@ -200,8 +216,31 @@ impl Plugin for FogShaderPlugin {
     }
 }
 
-/// Put the current fog on rope, decal and particle materials when it
-/// changes.
+/// `to` as a material should take it: its fog switch kept off where the
+/// setting turned it off (`FogSetting`, -1), so a change of fog doesn't
+/// turn it back on.
+fn scene_fog_for(current: &FogUniform, to: FogUniform) -> FogUniform {
+    let mut to = to;
+    if current.color.w == -1.0 && to.color.w > 0.5 {
+        to.color.w = -1.0;
+    }
+    to
+}
+
+fn set_fog<A: Asset>(assets: &mut Assets<A>, f: FogUniform, read: fn(&A) -> &FogUniform, write: fn(&mut A) -> &mut FogUniform) {
+    let ids: Vec<_> = assets.ids().collect();
+    for id in ids {
+        let Some(to) = assets.get(id).map(read).map(|now| (*now, scene_fog_for(now, f))).and_then(|(now, to)| (now != to).then_some(to)) else {
+            continue;
+        };
+        if let Some(mut m) = assets.get_mut(id) {
+            *write(&mut m) = to;
+        }
+    }
+}
+
+/// Put the current fog (`SceneFog`) on rope, decal and particle materials
+/// when it changes (or arrives with a map), keeping `FogSetting`'s switch.
 pub fn apply_scene_fog(
     fog: Option<Res<SceneFog>>,
     ropes: Option<ResMut<Assets<super::rope_material::RopeMaterial>>>,
@@ -212,35 +251,14 @@ pub fn apply_scene_fog(
         return;
     };
     let f = fog.0;
-    if let Some(mut ropes) = ropes {
-        let ids: Vec<_> = ropes.ids().collect();
-        for id in ids {
-            if ropes.get(id).is_some_and(|m| m.params.fog != f)
-                && let Some(mut m) = ropes.get_mut(id)
-            {
-                m.params.fog = f;
-            }
-        }
+    if let Some(mut a) = ropes {
+        set_fog(&mut a, f, |m| &m.params.fog, |m| &mut m.params.fog);
     }
-    if let Some(mut decals) = decals {
-        let ids: Vec<_> = decals.ids().collect();
-        for id in ids {
-            if decals.get(id).is_some_and(|m| m.fog != f)
-                && let Some(mut m) = decals.get_mut(id)
-            {
-                m.fog = f;
-            }
-        }
+    if let Some(mut a) = decals {
+        set_fog(&mut a, f, |m| &m.fog, |m| &mut m.fog);
     }
-    if let Some(mut particles) = particles {
-        let ids: Vec<_> = particles.ids().collect();
-        for id in ids {
-            if particles.get(id).is_some_and(|m| m.fog != f)
-                && let Some(mut m) = particles.get_mut(id)
-            {
-                m.fog = f;
-            }
-        }
+    if let Some(mut a) = particles {
+        set_fog(&mut a, f, |m| &m.fog, |m| &mut m.fog);
     }
 }
 
@@ -270,12 +288,38 @@ mod tests {
         let (c, a) = fog_at(&fog, Vec3::ZERO, Vec3::new(0.0, 0.0, -80.0), 80.0);
         assert!(a > 0.7, "far in the fog: {a}");
         // A black texel of a light cone adds nothing, near or far.
-        assert_eq!(fog_surface(cone, (c, a), true), Vec3::ZERO);
+        assert_eq!(fog_surface(cone, (c, a), true, &fog), Vec3::ZERO);
         // A bright one fades out with the fog.
-        let bright = fog_surface(Vec3::ONE, (c, a), true);
+        let bright = fog_surface(Vec3::ONE, (c, a), true, &fog);
         assert!(bright.max_element() <= 1.0 - a + 1e-6, "{bright}");
         // An opaque surface goes toward the fog colour.
-        assert!(fog_surface(cone, (c, a), false).distance(c * a) < 1e-5);
+        let source = FogUniform {
+            range: fog.range.with_w(0.0),
+            ..fog
+        };
+        assert!(fog_surface(cone, (c, a), false, &source).distance(c * a) < 1e-5);
+    }
+
+    /// specs/combat_arms/world_dat.md test case 14: WAREHOUSE's fog
+    /// (23, 23, 19), 0 to 10000 u; a surface of 0.6 at depth 5000 u (f =
+    /// 0.5) is drawn 0.3451 (red, green), the gamma values blended (in
+    /// linear light it would be 0.445).
+    #[test]
+    fn linear_fog_blends_gamma_values() {
+        let fog = world_fog(Some(&crate::map::MapFog {
+            color: [23.0 / 255.0, 23.0 / 255.0, 19.0 / 255.0],
+            start: 0.0,
+            end: 10000.0 * 0.0254,
+            max_density: 1.0,
+            linear: true,
+        }));
+        let depth = 5000.0 * 0.0254;
+        let (c, a) = fog_at(&fog, Vec3::ZERO, Vec3::new(0.0, 0.0, -depth), depth);
+        assert!((a - 0.5).abs() < 1e-5, "{a}");
+        let surface = Color::srgb(0.6, 0.6, 0.6).to_linear();
+        let out = fog_surface(Vec3::new(surface.red, surface.green, surface.blue), (c, a), false, &fog);
+        let drawn = Color::linear_rgb(out.x, out.y, out.z).to_srgba();
+        assert!((drawn.red - 0.3451).abs() < 1e-3 && (drawn.green - 0.3451).abs() < 1e-3, "{drawn:?}");
     }
 
     #[test]

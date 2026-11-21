@@ -13,7 +13,7 @@ import bevy_pbr::{
     render::mesh_view_types::POINT_LIGHT_FLAGS_SPOT_LIGHT_Y_NEGATIVE,
     render::view_transformations::position_world_to_view,
 };
-import chimera_present::render::fog::source_fog;
+import chimera_present::render::fog::{source_fog, fog_mix};
 
 // A spot light's cone at `to`, the line from the point to the light (as
 // Bevy's own: its direction packed in x, z and a flag for y's sign). Same as
@@ -192,7 +192,7 @@ fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     if params.translucent > 1.5 && params.translucent < 2.5 {
         return color * (1.0 - f.a);
     }
-    return mix(color, f.rgb, f.a);
+    return fog_mix(color, f, params.fog_range);
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> params: WorldParams;

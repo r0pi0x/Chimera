@@ -15,7 +15,7 @@
 // wouldn't show) they are alpha-blended, lit by the light probe there.
 
 import bevy_pbr::render::forward_io::VertexOutput;
-import chimera_present::render::fog::source_fog;
+import chimera_present::render::fog::{source_fog, fog_mix};
 
 struct DecalParams {
     // 1: modulate 2x; 0: stain.
@@ -60,7 +60,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             discard;
         }
         let lf = source_fog(fog.color, fog.range, fog.water_color, fog.water_range, in.world_position.xyz);
-        let lit = mix(texel.rgb * light.rgb, lf.rgb, lf.a);
+        let lit = fog_mix(texel.rgb * light.rgb, lf, fog.range);
         return vec4(lit, alpha);
     }
     // The texture is sRGB: back to the game's gamma-space value.

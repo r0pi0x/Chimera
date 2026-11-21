@@ -9,7 +9,7 @@ import bevy_pbr::{
     render::mesh_view_bindings as vb,
     render::view_transformations::depth_ndc_to_view_z,
 };
-import chimera_present::render::fog::source_fog;
+import chimera_present::render::fog::{source_fog, fog_mix};
 
 struct FogUniform {
     color: vec4<f32>,
@@ -84,6 +84,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         // Premultiplied blending with alpha 0 adds.
         return vec4<f32>(integer_clamp(c.rgb * c.a * (1.0 - f.a)), 0.0);
     } @else {
-        return vec4<f32>(integer_clamp(mix(c.rgb, f.rgb, f.a)), c.a);
+        return vec4<f32>(integer_clamp(fog_mix(c.rgb, f, fog.range)), c.a);
     }
 }

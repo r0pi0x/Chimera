@@ -13,7 +13,7 @@ import bevy_pbr::{
     render::mesh_view_bindings::view,
     render::view_transformations::{position_world_to_clip, position_world_to_view},
 };
-import chimera_present::render::fog::source_fog;
+import chimera_present::render::fog::{source_fog, fog_mix};
 
 struct FogUniform {
     color: vec4<f32>,
@@ -86,6 +86,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // any other surface).
     let f = params.fog;
     let fog = source_fog(f.color, f.range, f.water_color, f.water_range, in.world_position.xyz);
-    rgb = mix(rgb, fog.rgb, fog.a);
+    rgb = fog_mix(rgb, fog, f.range);
     return vec4<f32>(rgb, base.a * in.color.a);
 }

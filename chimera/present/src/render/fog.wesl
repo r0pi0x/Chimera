@@ -83,3 +83,26 @@ fn source_fog(
     }
     return vec4<f32>(color.rgb, range_amount(range, depth));
 }
+
+fn to_gamma(c: vec3<f32>) -> vec3<f32> {
+    let x = max(c, vec3<f32>(0.0));
+    return select(1.055 * pow(x, vec3<f32>(1.0 / 2.4)) - 0.055, x * 12.92, x <= vec3<f32>(0.0031308));
+}
+
+fn to_linear(c: vec3<f32>) -> vec3<f32> {
+    let x = max(c, vec3<f32>(0.0));
+    return select(pow((x + 0.055) / 1.055, vec3<f32>(2.4)), x / 12.92, x <= vec3<f32>(0.04045));
+}
+
+// A surface's colour (linear) after `source_fog`'s `f`, toward the fog
+// colour. With the world's fog linear (`range.w` 1: LithTech's and
+// Halo's fixed-function table fog) the blend is of the stored, gamma
+// values, as those engines' framebuffers hold them
+// (specs/combat_arms/world_dat.md test case 14: 0.6 at f = 0.5 toward
+// 23/255 is 0.3451); Source's blends in linear light (shaders.md 1).
+fn fog_mix(c: vec3<f32>, f: vec4<f32>, range: vec4<f32>) -> vec3<f32> {
+    if range.w > 0.5 && f.a > 0.0 {
+        return to_linear(mix(to_gamma(c), to_gamma(f.rgb), f.a));
+    }
+    return mix(c, f.rgb, f.a);
+}
