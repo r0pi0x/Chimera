@@ -8,8 +8,13 @@
 //! by the game's own sampling and as drawn (the converted model), and its
 //! state machine in play on the greybox; the M67's throw as drawn (every
 //! node as the game samples it, the skinned arms intact). The hand model (`CHARS_M_HAND`)
-//! and the M4A1 (case 8) are V2-keyed: those parts note and skip. Passes
-//! with a note without `[games.combat_arms] path` in chimera.local.toml.
+//! and the M4A1 (case 8) are V2-keyed: those parts note and skip. With
+//! both keys every install weapon's view model loads on demand textured,
+//! but for the pieces the install's data itself leaves without a skin
+//! (`UNTEXTURED_IN_THE_DATA`: a piece on the `Hands` slot 0, a skin or
+//! sprite frame that isn't in the install) and the one view model file
+//! that isn't there. Passes with a note without `[games.combat_arms]
+//! path` in chimera.local.toml.
 
 use bevy::prelude::*;
 use chimera_core::{core::Health, mount::config::LocalConfig};
@@ -529,5 +534,129 @@ fn m67_throw_poses_follow_the_data() {
         }
     }
     bad.truncate(20);
+    assert!(bad.is_empty(), "{bad:#?}");
+}
+
+/// What the install's data leaves untextured in first person, by view
+/// model file and piece skin (the mesh's material: "" for a piece on
+/// texture slot 0, whose skin is `PVSkin0`, the placeholder `Hands`: a
+/// name without `.dtx` never resolves, textures_dtx.md "How other files
+/// name a texture", so the game leaves the slot empty too, view_models.md
+/// 2). Observed on the dev box's install (Steam build 26236938,
+/// 2026-11-21); the game leaves an unresolved skin's slot empty
+/// (textures_dtx.md), so these stay untextured by parity.
+const UNTEXTURED_IN_THE_DATA: &[(&str, &str, &str)] = &[
+    ("guns_m_pv_ar/pv_ar_tar21_camo_mark2_sh.ltb", "", "TAR-21 camo Mark2: piece MARK is on slot 0 (`Hands`)"),
+    ("guns_m_pv_ar/pv_ar_tar21_mark2_sh.ltb", "", "TAR-21 Mark2: piece MARK is on slot 0 (`Hands`)"),
+    ("guns_m_pv_melee/pv_melee_qrt_subtype_s_sh.ltb", "", "Quarantine subtype S hand: both pieces on slot 0 (`Hands`)"),
+    ("guns_m_hh/cw_zhnd_theshining.ltb", "", "The Shining hand: its one piece is on slot 0 (`Hands`)"),
+    ("guns_m_pv_sg/pv_aa-12_aa-12 holyfire.ltb", "", "AA-12 Holy Fire: its one piece is on slot 0 (`Hands`)"),
+    ("guns_m_pv_sr/pv_optical buster.ltb", "", "Optical Buster (and Apollo, Photon): piece Magazine is on slot 0 (`Hands`)"),
+    (
+        "guns_m_pv_ar/pv_ar_mk18_mod1_ki.ltb",
+        "guns_t_pv_ar/pv_ar_mk18_mod1_camo.dtx",
+        "MK18 MOD1 camo: no such texture (only the shop icon ui_scr_itemimage/weapon/mk18_mod1_camo.dtx)",
+    ),
+    (
+        "guns_m_pv_sr/pv_sr_sig50_ke.ltb",
+        "guns_t_pv_ar/pv_opt_dt_scope_sambaqueen.dtx",
+        "SIG50 Samba Queen's scope: the file is in GUNS_T_PV_SR, the data names GUNS_T_PV_AR",
+    ),
+    (
+        "guns_m_pv_smg/pv_smg_p90tr_sh.ltb",
+        "guns_t_pv_smg/pv_smg__p90tr2_tan.dtx",
+        "Retro Summer P90TR: no such texture (nothing named p90tr2 anywhere)",
+    ),
+    (
+        "guns_m_pv_smg/pv_smg_magpul_fmg9_sh.ltb",
+        "guns_t_pv_smg/pv_smg_lightning fmg-9.spr",
+        "Lightning star FMG-9: no such sprite (the frames' .dtx are there; the held one is hh_smg_lightningfmg-9.spr)",
+    ),
+    (
+        "guns_m_pv_ar/pv_sr_m4a1_sniper rifle.ltb",
+        "guns_t_pv_ar/pv_sr_m4a1_sniperrifle0.dtx",
+        "Advanced star M4A1: no such texture (GUNS_T_PV_AR has `PV_SR_M4A1_Sniper Rifle.dtx`)",
+    ),
+    (
+        "guns_m_pv_ar/pv_sr_m4a1_sniper rifle.ltb",
+        "guns_t_pv_ar/pv_sr_m4a1_sniperrifle.spr",
+        "Advanced starshing M4A1: no frame of the sprite (`Sniper Rifle0..2.dtx`) is in GUNS_T_PV_AR (only GUNS_T_HH's)",
+    ),
+    (
+        "guns_m_pv_ar/pv_aug_a3_champions_league.ltb",
+        "guns_t_pv_ar/pv_aug_a3_champions_lighting.dtx",
+        "AUG A3 Champions Lightning: no such texture (only the held one; models_ltb.md Open question 8)",
+    ),
+];
+
+/// View model files the install's data names that aren't there.
+const MISSING_VIEW_MODELS: &[(&str, &str)] = &[(
+    "guns_m_launcher/pv_lch_m134_minigun_sh.ltb",
+    "Abnormal Fortress fire target: the file is in GUNS_M_PV_LAUNCHER",
+)];
+
+/// With both keys: every install weapon's view model (each model file and
+/// skin list once) loads on demand with its hands, every piece textured,
+/// but for what the data itself leaves untextured (`UNTEXTURED_IN_THE_DATA`,
+/// `MISSING_VIEW_MODELS`). Skips without the install (the asset store
+/// alone holds only what was packed).
+#[test]
+fn every_install_view_model_is_textured() {
+    let Some(mount) = mount() else { return };
+    let install = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)).unwrap();
+    if chimera_core::mount::served::alone("combat_arms", &install) {
+        eprintln!("skipping: the asset store stands in for the install");
+        return;
+    }
+    if !(combat_arms::game::mount::can_read("V1") && combat_arms::game::mount::can_read("V2")) {
+        eprintln!("skipping: needs the V1 and V2 keys");
+        return;
+    }
+    let ca = combat_arms::game::data::CaData::install();
+    if ca.attributes().and_then(|a| a.weapons.as_ref()).is_none() {
+        eprintln!("skipping: the install's weapons file doesn't read");
+        return;
+    }
+    let file = |p: &str| mount.read(p).ok();
+    let mut seen = std::collections::HashSet::new();
+    let mut used = std::collections::HashSet::new();
+    let mut bad = Vec::new();
+    for w in &ca.weapon_set().weapons {
+        let Some(path) = w.models.view.as_deref() else { continue };
+        if !seen.insert((path.to_string(), w.models.view_skins.clone())) {
+            continue;
+        }
+        let loaded = match view_model::on_demand::load_weapon(&ca, &w.id, &file) {
+            Ok(l) => l,
+            Err(e) => {
+                if !MISSING_VIEW_MODELS.iter().any(|(p, _)| *p == path) {
+                    bad.push(e);
+                }
+                continue;
+            }
+        };
+        bad.extend(loaded.warnings.iter().map(|e| format!("{}: {e}", w.id)));
+        let names = &loaded.model.model.mesh_names;
+        for (i, m) in loaded.model.model.meshes.iter().enumerate().filter(|(_, m)| m.texture.is_none()) {
+            if UNTEXTURED_IN_THE_DATA.iter().any(|(p, s, _)| *p == path && *s == m.material) {
+                used.insert((path.to_string(), m.material.clone()));
+                continue;
+            }
+            bad.push(format!(
+                "{} ({path}): piece {:?} untextured, skin {:?}",
+                w.id,
+                names.get(i),
+                m.material
+            ));
+        }
+    }
+    eprintln!("{} view models", seen.len());
+    // An install of another build may have fixed some: said, not failed.
+    for (p, s, note) in UNTEXTURED_IN_THE_DATA {
+        if !used.contains(&(p.to_string(), s.to_string())) {
+            eprintln!("note: textured now: {note}");
+        }
+    }
+    bad.truncate(30);
     assert!(bad.is_empty(), "{bad:#?}");
 }
