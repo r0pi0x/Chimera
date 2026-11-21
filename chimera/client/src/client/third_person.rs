@@ -40,7 +40,7 @@
 //!   and the command's aim follow the target mode at once, never blocked.
 //!   Death, spectating, map cameras and the free cams take over at once.
 //! - **Recoil and body fade.** The view punch shakes the camera (the aim
-//!   stays put). The body's parts fade out with the camera's distance
+//!   stays put). The body's parts fade out as the camera nears the eye
 //!   (`BodyFade`, a dither band, `ShoulderSettings::fade_hidden`/`fade_whole`),
 //!   so a wall at your back or the glide shows no body in the lens; the gun
 //!   fades with it.
@@ -103,9 +103,9 @@ pub struct ShoulderSettings {
     pub ease_out_secs: f32,
     /// First to third person and back: the camera's glide, seconds.
     pub transition_secs: f32,
-    /// The body fades as the camera nears it: hidden at this distance from
-    /// the body's parts' centres and whole again at `fade_whole`, metres
-    /// for a character of `REF_EYE` (scaled with the eye height).
+    /// The body fades as the camera nears the eye: hidden at this distance
+    /// from it and whole again at `fade_whole`, metres for a character of
+    /// `REF_EYE` (scaled with the eye height).
     pub fade_hidden: f32,
     pub fade_whole: f32,
     /// Right mouse let go sooner than this is a tap.
@@ -143,8 +143,8 @@ impl Default for ShoulderSettings {
             zoom_secs: 0.15,
             ease_out_secs: 0.3,
             transition_secs: 0.25,
-            fade_hidden: 1.1,
-            fade_whole: 1.45,
+            fade_hidden: 0.45,
+            fade_whole: 1.0,
             tap_secs: 0.2,
         }
     }
@@ -260,6 +260,14 @@ impl Shoulder {
     pub fn rotation(&self) -> Option<Quat> {
         self.look.map(|l| Quat::from_euler(EulerRot::YXZ, l.x, l.y, 0.0))
     }
+}
+
+/// The eye's height above the character's feet: its offset from the
+/// origin less the hull's bottom (the capsule's, when the movement has no
+/// hull).
+pub fn eye_height(state: &MovementState) -> f32 {
+    let feet = if state.hull_min.y != 0.0 { state.hull_min.y } else { -crate::character::CAPSULE_HEIGHT / 2.0 };
+    state.eye_offset.y - feet
 }
 
 /// The pivot's offset from the eye (up, then out to the shoulder `side`,
@@ -533,7 +541,7 @@ fn update_shoulder(
     // The standing eye: the highest seen since the camera came on.
     let was_drawn = s.drawn();
     if let Some(p) = player.as_ref() {
-        let h = p.1.eye_offset.y;
+        let h = eye_height(p.1);
         s.stand_eye = if was_drawn { s.stand_eye.max(h) } else { h };
     }
     s.blend = step(s.blend, if on { 1.0 } else { 0.0 }, settings.transition_secs, 1.0);
@@ -665,41 +673,47 @@ impl ShoulderView<'_> {
 #[derive(Component)]
 struct BodyFade;
 
-/// The body fades as the camera nears it (a wall pulled it in, or it glides
-/// to and from the eye): a dither band on the distance from the camera to
-/// each part's centre (`VisibilityRange`, as the props'), hidden at
-/// `fade_hidden`, whole at `fade_whole`, scaled with the eye height. The
-/// gun and every held part fade with the body.
+/// The body fades as the camera nears the eye (a wall pulled it in, or it
+/// glides to and from the eye): a dither band (`VisibilityRange`, as the
+/// props') hidden at `fade_hidden` from the eye and whole at `fade_whole`,
+/// scaled with the eye height. A part's own distance is the camera's to its
+/// origin (what the shader measures), so each part's band is shifted by how much farther it is than
+/// the eye: every part fades together, the gun with the body.
 #[allow(clippy::type_complexity)]
 fn fade_body(
     state: Res<Shoulder>,
     settings: Res<ShoulderSettings>,
-    local: Option<Single<&Children, With<LocalPlayer>>>,
+    local: Option<Single<(&Children, &Transform, &MovementState), With<LocalPlayer>>>,
+    camera: Query<&GlobalTransform, With<FirstPersonCamera>>,
     bodies: Query<(), With<crate::render::bodies::CharacterBody>>,
     children: Query<&Children>,
-    meshes: Query<(Option<&VisibilityRange>, Has<BodyFade>), With<Mesh3d>>,
+    meshes: Query<(Option<&VisibilityRange>, Has<BodyFade>, &GlobalTransform), With<Mesh3d>>,
     mut commands: Commands,
 ) {
-    let Some(kids) = local else { return };
-    let band = state.drawn().then(|| {
-        let s = state.scale();
-        VisibilityRange {
-            start_margin: settings.fade_hidden * s..settings.fade_whole * s,
-            end_margin: f32::MAX..f32::MAX,
-            use_aabb: true,
-        }
-    });
+    let Some((kids, at, ms)) = local.map(|l| *l) else { return };
+    let Some(cam) = camera.iter().next().map(|c| c.translation()) else { return };
+    let eye = at.translation + ms.eye_offset;
+    let from_eye = cam.distance(eye);
+    let s = state.scale();
+    let (hidden, whole) = (settings.fade_hidden * s, settings.fade_whole * s);
     for body in kids.iter().filter(|c| bodies.contains(*c)) {
         for d in children.iter_descendants(body).chain(std::iter::once(body)) {
-            let Ok((range, ours)) = meshes.get(d) else { continue };
-            match (&band, ours) {
-                (Some(b), _) if range != Some(b) => {
-                    commands.entity(d).insert((b.clone(), BodyFade));
-                }
-                (None, true) => {
+            let Ok((range, ours, gt)) = meshes.get(d) else { continue };
+            if !state.drawn() {
+                if ours {
                     commands.entity(d).remove::<(VisibilityRange, BodyFade)>();
                 }
-                _ => {}
+                continue;
+            }
+            // The shader measures from the mesh's origin.
+            let shift = cam.distance(gt.translation()) - from_eye;
+            let band = VisibilityRange {
+                start_margin: hidden + shift..whole + shift,
+                end_margin: f32::MAX..f32::MAX,
+                use_aabb: false,
+            };
+            if range != Some(&band) {
+                commands.entity(d).insert((band, BodyFade));
             }
         }
     }

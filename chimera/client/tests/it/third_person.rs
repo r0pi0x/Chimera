@@ -252,7 +252,8 @@ fn the_distances_scale_with_the_eye_height() {
     third_person(&mut sim, true);
     sim.seconds(0.3);
     let state = sim.app.world().resource::<Shoulder>().clone();
-    let stand = sim.state(shooter).eye_offset.y;
+    let stand = chimera_client::client::third_person::eye_height(&sim.state(shooter));
+    assert!(stand > 1.4 && stand < 1.9, "eye height above the feet: {stand}");
     assert!((state.stand_eye - stand).abs() < 1e-5);
     assert!((state.scale() - stand / chimera_client::client::third_person::REF_EYE).abs() < 1e-5);
 }
