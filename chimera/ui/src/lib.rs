@@ -32,6 +32,10 @@
 //!   caps, key/value lines, modal plates), their one state vocabulary
 //!   (hover tick and tint, accent focus, white selected) and the 12°
 //!   wipe for moves inside a screen.
+//! - `modal`: modal layers (`Modal` on a dialog's or overlay's root,
+//!   `Modals` the stack): only the top layer and what is drawn above it
+//!   take the pointer (wheel, clicks, hover, drag); key systems ask
+//!   `Modals` whose the keys are.
 //! - `scroll`: the scroll container (`Ui::scroll`: a view, its content
 //!   and a Signal scroll bar), eased wheel steps, the right-button pan
 //!   with a fling, `ScrollIntoView`; state by key in `ScrollViews`,
@@ -75,6 +79,7 @@ pub mod fonts;
 pub mod icon_ink;
 pub mod icons;
 pub mod materials;
+pub mod modal;
 pub mod motion;
 pub mod parity;
 pub mod picker;
@@ -99,6 +104,7 @@ pub use materials::{
     AmbientMaterial, EdgeMaterial, KitMaterialsPlugin, LinesMaterial, PassMaterial, RingMaterial, ShadeMaterial, SlantMaterial,
     TickBarMaterial,
 };
+pub use modal::{Modal, Modals};
 pub use motion::{Ease, Prop, Timeline, Track, UiClock};
 pub use parity::UiParityId;
 pub use pointer_lead::PointerLead;
@@ -130,7 +136,7 @@ impl Plugin for ChimeraUiPlugin {
             .init_resource::<UiMusic>()
             .add_message::<UiCue>()
             .init_resource::<UiClock>()
-            .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, scroll::ScrollPlugin, vlist::VListPlugin, picker::PickerPlugin, shell::ShellPlugin))
+            .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, modal::ModalPlugin, scroll::ScrollPlugin, vlist::VListPlugin, picker::PickerPlugin, shell::ShellPlugin))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare));
         pointer_lead::add(app);
         app

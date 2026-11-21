@@ -298,22 +298,22 @@ module list is `docs/modules.md`.
 - 99: Halo's maps (optional) | Halo: Combat Evolved's multiplayer maps join the Ultimate Gun Game's pool where the Xbox disc image is (`CHIMERA_HALO_CE_ROOT`, or...
 - 150: Publishing the game files (once, and after a game update) | On the machine with the installs and Combat Arms' keys, from a checkout (`chimera_pack` is a host tool, not in releases), into the...
 - 221: TF2 (2026-11-15) | TF2's guns' numbers come from its weapon scripts (specs/tf2/weapon_scripts.md), which are encrypted in the install: the host packs them...
-- 286: A lean `base`, `common`, music tracks and level 19 (2026-11-15) | every run reads (docs/performance.md, "First join download"): after a
-- 496: Converted guest dressings (step 7 of docs/plans/active/converted-cache.md) | Each game's players and guns on other games' maps are converted from its files at a client's first load (0.5-2.6 s and 3-21 G...
-- 536: The asset service (each session) | It serves this machine's server store (`--store <dir>` serves another; then see "Starting it" for the fingerprint)
-- 563: Building or updating the server | Easiest: the server from the release zip (`ultimate_gun_game_server` or
-- 580: The server's own game files (no install, no keys) | A game server reads each game it has no install of from the asset store, as a player does, and fetches what it needs from the asset...
-- 657: Starting it | reach, not localhost)
-- 806: Ports to open | On the router and the host's firewall:
-- 830: Download speed and your upload | What a tester without the games downloads from the asset service:
-- 882: Accounts and tokens | On the asset server's machine, from a checkout built with `--features tools` (`chimera_pack` is a host tool and is not in releases):
-- 929: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
-- 1027: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
-- 1050: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
-- 1155: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
-- 1178: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
-- 1223: After | Revoke all tokens (`user revoke <tester>` each, or stop the asset service), stop the server, close the ports (UPnP mappings expire, a...
-- 1229: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
+- 288: A lean `base`, `common`, music tracks and level 19 (2026-11-15) | every run reads (docs/performance.md, "First join download"): after a
+- 515: Converted guest dressings (step 7 of docs/plans/active/converted-cache.md) | Each game's players and guns on other games' maps are converted from its files at a client's first load (0.5-2.6 s and 3-21 G...
+- 555: The asset service (each session) | It serves this machine's server store (`--store <dir>` serves another; then see "Starting it" for the fingerprint)
+- 582: Building or updating the server | Easiest: the server from the release zip (`ultimate_gun_game_server` or
+- 599: The server's own game files (no install, no keys) | A game server reads each game it has no install of from the asset store, as a player does, and fetches what it needs from the asset...
+- 676: Starting it | reach, not localhost)
+- 825: Ports to open | On the router and the host's firewall:
+- 849: Download speed and your upload | What a tester without the games downloads from the asset service:
+- 901: Accounts and tokens | On the asset server's machine, from a checkout built with `--features tools` (`chimera_pack` is a host tool and is not in releases):
+- 948: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
+- 1046: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
+- 1069: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
+- 1174: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
+- 1197: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
+- 1242: After | Revoke all tokens (`user revoke <tester>` each, or stop the asset service), stop the server, close the ports (UPnP mappings expire, a...
+- 1248: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
 
 ## docs/playtest.md
 

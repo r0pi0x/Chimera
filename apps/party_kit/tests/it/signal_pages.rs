@@ -1248,3 +1248,78 @@ fn left_on_a_map_collapses_its_group_and_moves_to_the_header() {
     assert_eq!(p.rows(&games).len(), 2, "the game opens (its group still folded)");
     assert!(!p.right(&games) || p.rows(&games).len() == 5);
 }
+
+/// The Host page under its Maps and Guns dialogs (`chimera_ui::modal`):
+/// the wheel with the pointer over the page's rows scrolls nothing behind
+/// the dialog, the page's rows take no click, the keys are the dialog's,
+/// and Esc closes the dialog only (Host stays up). With no dialog the
+/// same wheel scrolls the page.
+#[test]
+fn host_dialogs_take_the_pointer_and_keys_from_the_page() {
+    use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
+    use bevy::ui::{ComputedNode, DeprecatedInteraction as Interaction, RelativeCursorPosition};
+    use chimera_ui::{Modals, ScrollViews, scroll::{ScrollContent, ScrollView}};
+    use party_kit::{guns_picker::{GunsPicker, GunsSource}, maps_picker::MapsPicker};
+    let mut sim = sim(PAGES_THEME);
+    sim.app.insert_resource(GunsSource(Box::new(FakeGuns)));
+    sim.app.init_resource::<AccumulatedMouseScroll>();
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    assert_eq!(pages(&sim).up, Some(MenuPage::Play));
+    // The page's view laid out by hand (20 cq over 60), the pointer on it.
+    let wheel_over_page = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        let view = w.query::<(Entity, &ScrollView)>().iter(w).find(|(_, v)| v.key == signal_pages::PLAY_SCROLL).map(|(e, _)| e).expect("the page's view");
+        let content = w.query::<(Entity, &ScrollContent)>().iter(w).find(|(_, c)| c.view == view).map(|(e, _)| e).unwrap();
+        let px = |h: f32| ComputedNode { size: Vec2::new(600.0, h * 19.2), inverse_scale_factor: 1.0, ..default() };
+        w.entity_mut(view).insert((px(20.0), RelativeCursorPosition { cursor_over: true, normalized: Some(Vec2::ZERO) }));
+        w.entity_mut(content).insert(px(60.0));
+        w.resource_mut::<ScrollViews>().reset(signal_pages::PLAY_SCROLL);
+        sim.ticks(1);
+        let w = sim.app.world_mut();
+        w.entity_mut(view).insert(RelativeCursorPosition { cursor_over: true, normalized: Some(Vec2::ZERO) });
+        w.insert_resource(AccumulatedMouseScroll { unit: MouseScrollUnit::Line, delta: Vec2::new(0.0, -1.0) });
+        sim.ticks(1);
+        sim.app.world_mut().insert_resource(AccumulatedMouseScroll::default());
+        sim.app.world().resource::<ScrollViews>().get(signal_pages::PLAY_SCROLL).is_some_and(|s| s.offset > 0.0 || s.target.is_some_and(|t| t > 0.0))
+    };
+    assert!(wheel_over_page(&mut sim), "no dialog: the wheel scrolls the page");
+    let data = MenuData::shipped();
+    for (kind, open) in [
+        (party_kit::main_menu::PlayKind::Map, (|s: &Sim| s.app.world().resource::<MapsPicker>().open.is_some()) as fn(&Sim) -> bool),
+        (party_kit::main_menu::PlayKind::Guns, |s: &Sim| s.app.world().resource::<GunsPicker>().open.is_some()),
+    ] {
+        let row = data.play.iter().position(|r| r.kind == kind).unwrap();
+        while pages(&sim).focus > row {
+            press(&mut sim, KeyCode::ArrowUp);
+        }
+        while pages(&sim).focus < row {
+            press(&mut sim, KeyCode::ArrowDown);
+        }
+        press(&mut sim, KeyCode::Enter);
+        sim.ticks(3);
+        assert!(open(&sim), "{kind:?}: the dialog is open");
+        assert!(sim.app.world().resource::<Modals>().is_open(), "{kind:?}: a modal layer");
+        assert!(!wheel_over_page(&mut sim), "{kind:?}: the wheel over the page behind the dialog scrolls nothing");
+        // A click on a page row behind the dialog: no press reaches it.
+        let focus = pages(&sim).focus;
+        let w = sim.app.world_mut();
+        let rows: Vec<Entity> = w.query_filtered::<Entity, With<signal_pages::PageLine>>().iter(w).collect();
+        for &e in &rows {
+            if let Some(mut i) = w.get_mut::<Interaction>(e) {
+                *i = Interaction::Pressed;
+            }
+        }
+        sim.ticks(2);
+        assert!(rows.iter().all(|e| sim.app.world().get::<Interaction>(*e).is_none_or(|i| *i == Interaction::None)), "{kind:?}: nothing pressed behind");
+        assert_eq!(pages(&sim).focus, focus, "{kind:?}: the click behind moved no focus");
+        // Tab and the arrows are the dialog's; Esc closes it, Host stays.
+        press(&mut sim, KeyCode::Tab);
+        assert_eq!(pages(&sim).focus, focus, "{kind:?}: Tab doesn't drive the page behind");
+        press(&mut sim, KeyCode::Escape);
+        sim.ticks(2);
+        assert!(!open(&sim), "{kind:?}: Esc closed the dialog");
+        assert_eq!(pages(&sim).up, Some(MenuPage::Play), "{kind:?}: and only the dialog");
+        assert!(!sim.app.world().resource::<Modals>().is_open(), "{kind:?}: no modal left");
+    }
+}

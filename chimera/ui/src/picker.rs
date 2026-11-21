@@ -1026,7 +1026,8 @@ pub fn spawn_parts(
 /// The dialog a host's picker sits in (design rules 13): the scrim over
 /// `root`, the plate (`dialog_side` in from each side, the window's top
 /// and foot), the title and counts, the legend, the picker, the keys and
-/// the actions with Done the hero. `marker` goes on the scrim.
+/// the actions with Done the hero. `marker` goes on the scrim, a modal
+/// layer (`modal::Modal`).
 #[allow(clippy::too_many_arguments)]
 pub fn dialog(
     c: &mut Commands,
@@ -1050,6 +1051,7 @@ pub fn dialog(
             BackgroundColor(ui.color(Tone::Ink, l("scrim"))),
             bevy::ui::FocusPolicy::Block,
             ZIndex(40),
+            crate::modal::Modal,
             marker,
             ChildOf(root),
         ))
