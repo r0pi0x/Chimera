@@ -2082,7 +2082,23 @@ then 6.3 s per change.
   file, another toolchain or a wider selection runs them as before; the
   hook stamps its own passes too, so a retried commit is free.
   `CHIMERA_COMMIT_STAMPS=0` ignores stamps. Windows runs the same hook in
-  Git's bash; without a stamp it tests as always.
+  Git's bash; without a stamp it tests as always. The stamp code is
+  `.githooks/stamps.sh`, shared with the push hook: `pre-push` skips its
+  `cargo test -p repo_checks` when a stamp of the same working tree tested
+  `repo_checks` (every commit hook run does), and stamps its own pass.
+  The hook prints the exact commands it runs and, with `--worktree`, what
+  passed (the packages type-checked and tested, the seconds).
+  `CHIMERA_COMMIT_RUNNER=nextest` runs the fast tier under `cargo nextest
+  run` plus `cargo test --doc` (nextest skips doctests); the default is
+  `cargo test` (docs/plans/active/iteration-speed.md, "Done (2026-11-21,
+  second pass)", has the measurement).
+- **Game runs and captures**: `tools/run-built [--features F] [--profile
+  P] <bin> -- <args>` runs a workspace binary as `cargo run` would (the
+  package's `CARGO_MANIFEST_DIR`, the library path for `dev`'s dynamic
+  Bevy) and builds it only when the working tree's key (the stamps' key
+  plus bin, features and profile) differs from its last build's, recorded
+  in `target/run-built/`. Repeated captures of one build then start the
+  binary directly. Outside Linux it runs `cargo run`.
 - **After pushing**: `tools/post-push-tests.sh --bg --note "<branch or
   task>"` records the push (`.claude/post-push/pushes.txt`), detaches the
   run (`setsid`; output appended to `.claude/post-push/bg.out`) and

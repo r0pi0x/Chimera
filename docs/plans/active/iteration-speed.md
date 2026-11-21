@@ -71,18 +71,82 @@ push had already superseded.
    commits and rebases in a shell that sourced it are dated as the
    pre-push hook wants; the hook's refusal names the rebase that fixes it.
 
+## Done (2026-11-21, second pass)
+
+Measured on the dev box with other agents building (load 38-65 on 12
+threads), so wall times are rough; each comparison alternated its runs.
+
+1. **Agents' test run is the hook's.** AGENTS.md, the task template
+   (`.github/ISSUE_TEMPLATE/agent-task.md`) and OBSERVABILITY 3e say:
+   `.githooks/pre-commit --worktree` is the test run before committing,
+   not whole-crate `cargo test -p` runs or the whole fast tier; while
+   iterating, one test module. The hook now prints the exact commands it
+   runs and, with `--worktree`, what passed (packages type-checked and
+   tested, seconds). Orchestrators' briefs should say the same in one
+   line: "Test with `.githooks/pre-commit --worktree` (the commit reuses
+   its pass); don't run whole crates' tests by hand." Saving: measure the
+   `tests` bucket with `tools/agent-timing` next week.
+2. **The push hook reuses the commit's pass.** The stamp code moved to
+   `.githooks/stamps.sh`, sourced by both hooks; `pre-push` skips `cargo
+   test -p repo_checks` when a stamp of the same working tree tested
+   `repo_checks` (every commit hook run does) and stamps its own pass. A
+   push right after a commit costs ~0.2 s instead of 15-77 s (that run's
+   time here, warm). It now runs `repo_checks` with `--features dev --
+   --skip heavy::` (the crate has no heavy tests and an empty `dev`), the
+   same build as the commit hook's.
+3. **A stale-key bug fixed.** The key's scratch index copy got a new
+   mtime, so git's "racily clean" check missed a same-size edit made in
+   the same second as the index was written, and the key could be the old
+   tree's: a commit could have reused a stamp of other content. Found by
+   the new stamps test (`checks/tests/it/scripts.rs`): 2 of 10 and 2 of
+   20 stress runs failed; with `cp -p` (the copy keeps the index's time)
+   30 of 30 pass.
+4. **nextest for the hook: measured, kept opt-in.** Fast tier, warm,
+   `cargo test` against `cargo nextest run` plus `cargo test --doc`:
+
+   | Packages | `cargo test` | nextest + doctests |
+   |---|---:|---:|
+   | chimera_world | 5.4, 4.4 s | 23.4, 26.6 s |
+   | repo_checks | 77.4, 65.3 s | 86.6, 56.5 s |
+   | cs_source | 277.8, 325.8 s | 258.4, 195.5 s |
+
+   A process per test costs small crates several times their run (each
+   test binary loads the dynamic Bevy), and only the biggest crate gains.
+   Default stays `cargo test`; `CHIMERA_COMMIT_RUNNER=nextest` switches
+   (both run the same tests, so stamps are shared). Windows measured no
+   gain earlier (docs/performance.md, "nextest on the Windows fast tier").
+5. **Game runs without cargo.** `tools/run-built [--features F] <bin> --
+   <args>` builds only when the working tree's key (the stamps' key plus
+   bin, features and profile) differs from the binary's last build
+   (`target/run-built/`), and runs it with `cargo run`'s environment
+   (`CARGO_MANIFEST_DIR`, the library path for the dynamic Bevy). Start
+   overhead with nothing changed: 0.35-0.45 s against `cargo run`'s
+   1.3-3.9 s (cs_source, `--help`, three rounds); an offscreen run of
+   cs_source through it rendered as with `cargo run`. Non-Linux: runs
+   `cargo run`. In the playtest skill.
+6. **A shared warm capture target: not done.** Slots are separate
+   checkouts: a shared `CARGO_TARGET_DIR` makes cargo's build lock
+   serialize every slot's builds, the workspace crates' fingerprints
+   differ by path (each switch rebuilds them), and sccache doesn't cache
+   with it set (tools/agent-env.sh unsets it). Each slot's own target
+   already stays warm between tasks; a slot's whole-workspace build is
+   ~30 GB, and a separate capture target would be another 20-30 GB on a
+   disk at 75%.
+
+Seen while measuring: `cs_source`'s
+`view_models::everyone_hears_the_view_models_reload_events_the_others_a_little_late`
+failed in all four runs on 55277a2d1, with both runners.
+
 ## Next, by estimated saving
 
 | Idea | Estimate | Notes |
 |---|---|---|
-| Agents run `.githooks/pre-commit --worktree` as their final check instead of hand-picked broad runs (`cargo test -p X` of whole crates, the whole fast tier) | 10-20 h/week of the 60 h of tests | Guidance done (AGENTS.md); measure the `tests` bucket next week |
-| The hook's fast tier on nextest where installed, plus `cargo test --doc` for the doctests nextest skips | 30-50% of the hook's test time on multi-binary crates | Changes the pass key (format) and needs the doctest step; post-push already runs the suite under nextest, so tests are nextest-clean |
-| Game runs: build the binary once (`cargo build --bin X`) and run `target/debug/X` for each capture instead of `cargo run` (each run re-checks fingerprints, and a feature difference rebuilds) | part of the 22 h of capture waiting | Needs a measurement of how much of a capture run is cargo |
-| A warm "capture slot" whose `target/` keeps the app binaries built with `--features dev` | cold app builds (minutes) per capture task | Like the post-push slot |
-| Pre-push reuses a stamp for `repo_checks` (it runs that crate's tests on every push) | 30-60 s per push | Same key as the hook's stamp, on HEAD's tree |
+| Measure the second pass: `tools/agent-timing --since 2026-11-22` against the baseline (tests, commit hook, captures buckets; `stamp` rows in commit-hook.log) | - | A week of data |
+| nextest only for big selections (cs_source and the apps above it), `cargo test` for the rest | part of cs_source's fast tier (-7% to -40% above) | Measure on a quiet box first; the split needs two runs and a merged log |
 | Cheaper models for mechanical briefs, narrower briefs, `docs/agent-index.md` before reading whole docs | part of the 145 h of model time | Orchestrator's choice; measure per agent type |
 | Post-push affected runs coalesced across pushes (already) and split by crate onto idle slots | FAIL latency, not agent time | Only matters once nobody waits |
 
 ## Progress
 
 2026-11-21: plan written, baseline taken, items 1-4 done.
+2026-11-21: second pass: the hook as the agents' test run, pre-push reuses stamps, the racy key fixed, nextest measured (opt-in), tools/run-built; a shared capture target ruled out.

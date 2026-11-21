@@ -110,6 +110,8 @@ source tools/agent-env.sh && agent_run cargo ...   # several agents on one box:
 tools/post-push-tests.sh --bg --note "<task>"   # right after each push: the affected
                                    # tests (heavy too) and build checks, detached;
                                    # don't wait (a FAIL goes to .claude/post-push/inbox)
+tools/run-built --features dev <bin> -- <args>   # a game run without cargo when
+                                   # nothing changed since its build (Linux)
 tools/wait-for <label> --file F --match RE   # instead of an until/sleep loop
                                    # (or --pid N, -- <cmd>; timeout, dies with you)
 tools/agent-timing --since 7d   # where agents' time goes (docs/plans/active/iteration-speed.md)

@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Run one of the workspace's binaries the way `cargo run` does, building it
+# only when this exact working tree hasn't built it yet. For agents' game
+# runs and captures, which ran `cargo run` once per capture: each paid
+# cargo's fingerprint check of the whole graph (and a rebuild whenever the
+# features differed from the last run).
+#
+#   tools/run-built [--features F] [--profile P] [--rebuild] <bin> [-- args...]
+#
+#   tools/run-built --features dev cs_source -- --map cs_source:de_dust2 --screenshot out.png
+#
+# The first run (or any run after an edit) builds with
+# `cargo build --bin <bin> --features F --profile P` and records the
+# binary against the working tree's key (.githooks/stamps.sh's `tree_key`:
+# the tracked files' tree, the untracked files' names, sizes and times,
+# the toolchain) plus the bin, features and profile, in
+# target/run-built/. A later run with the same key runs the recorded
+# binary directly; any edit, a new toolchain or other features build
+# again. --rebuild always goes through cargo. The binary runs with what
+# `cargo run` sets that the apps read: CARGO_MANIFEST_DIR (Bevy's asset
+# folder), CARGO_MANIFEST_PATH, CARGO_PKG_NAME, and the library path
+# (target/<profile>/deps and the toolchain's lib: `dev`'s dynamic Bevy).
+# Its exit status is the binary's.
+#
+# Linux only; elsewhere (Windows' Git Bash, macOS) it runs `cargo run`
+# with the same arguments, so it is always safe to use.
+set -u
+features= profile=dev rebuild=0
+while [ $# -gt 0 ]; do
+    case $1 in
+        --features) features=$2; shift 2 ;;
+        --features=*) features=${1#*=}; shift ;;
+        --profile) profile=$2; shift 2 ;;
+        --profile=*) profile=${1#*=}; shift ;;
+        --release) profile=release; shift ;;
+        --rebuild) rebuild=1; shift ;;
+        -h|--help) sed -n '2,/^set -u/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
+        -*) echo "run-built: unknown option $1 (see --help)" >&2; exit 2 ;;
+        *) break ;;
+    esac
+done
+[ $# -ge 1 ] || { echo "run-built: which binary? (see --help)" >&2; exit 2; }
+bin=$1; shift
+[ "${1:-}" = -- ] && shift
+cd "$(git rev-parse --show-toplevel)" || exit 1
+fargs=()
+[ -n "$features" ] && fargs=(--features "$features")
+run() { if command -v agent_run >/dev/null 2>&1; then agent_run "$@"; else "$@"; fi; }
+
+if [ "$(uname -s)" != Linux ] || ! command -v python3 >/dev/null 2>&1; then
+    exec cargo run --bin "$bin" "${fargs[@]}" --profile "$profile" -- "$@"
+fi
+
+dir=target/run-built
+rec=$dir/$profile-$bin
+# shellcheck source=.githooks/stamps.sh
+. .githooks/stamps.sh
+key=$( { tree_key; echo "bin $bin; features $features; profile $profile"; } | git hash-object --stdin) || key=
+exe= manifest= pkg=
+if [ "$rebuild" = 0 ] && [ -n "$key" ] && [ -f "$rec" ] && [ "$(sed -n 1p "$rec")" = "$key" ]; then
+    { read -r _; read -r exe; read -r mtime; read -r manifest; read -r pkg; } <"$rec"
+    if [ -x "$exe" ] && [ "$(stat -c %Y "$exe")" = "$mtime" ]; then
+        echo "run-built: $bin is already built from this working tree; running $exe" >&2
+    else
+        exe=
+    fi
+fi
+if [ -z "$exe" ]; then
+    mkdir -p "$dir"
+    echo "run-built: cargo build --bin $bin ${fargs[*]} --profile $profile" >&2
+    run cargo build --bin "$bin" "${fargs[@]}" --profile "$profile" --message-format=json-render-diagnostics >"$rec.json" || { rm -f "$rec.json"; exit 1; }
+    # The binary's artifact: its path and its package's manifest.
+    read -r exe manifest pkg < <(python3 -I -c '
+import json, sys
+for line in open(sys.argv[1]):
+    try: m = json.loads(line)
+    except ValueError: continue
+    if m.get("reason") == "compiler-artifact" and m.get("executable") and m["target"]["name"] == sys.argv[2] and "bin" in m["target"]["kind"]:
+        import tomllib
+        with open(m["manifest_path"], "rb") as f:
+            name = tomllib.load(f)["package"]["name"]
+        print(m["executable"], m["manifest_path"], name)
+' "$rec.json" "$bin")
+    rm -f "$rec.json"
+    [ -n "$exe" ] || { echo "run-built: cargo built no binary named $bin" >&2; exit 1; }
+    # Recorded only when nothing changed while building.
+    if [ -n "$key" ] && [ "$( { tree_key; echo "bin $bin; features $features; profile $profile"; } | git hash-object --stdin)" = "$key" ]; then
+        printf '%s\n' "$key" "$exe" "$(stat -c %Y "$exe")" "$manifest" "$pkg" >"$rec"
+    fi
+fi
+outdir=$(dirname "$exe")
+export CARGO_MANIFEST_DIR
+CARGO_MANIFEST_DIR=$(dirname "$manifest")
+export CARGO_MANIFEST_PATH=$manifest CARGO_PKG_NAME=$pkg
+export LD_LIBRARY_PATH="$outdir/deps:$outdir:$(rustc --print sysroot)/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$exe" "$@"

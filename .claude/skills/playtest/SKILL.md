@@ -18,6 +18,10 @@ Without installs, use a scenario test instead (new-scenario-test skill).
    cargo run --features dev -- --map cs_source:de_dust2 --spawn 0,75,0 --look 0,-89 \
        --movement chimera:noclip --screenshot $OUT/dust2.png
    ```
+   Several runs of one build (Linux): `tools/run-built --features dev
+   <bin> -- <args>` instead of `cargo run`, which rebuilds only when the
+   working tree changed (0.4 s to start instead of cargo's 1.3-3.9 s
+   check; elsewhere it runs `cargo run`).
    `cargo run --features dev -- --help` lists `--window WxH`, `--views`,
    `--join`, `--scale`. On Linux the run needs a display
    (`WAYLAND_DISPLAY`/`DISPLAY` set), unless it runs offscreen: add

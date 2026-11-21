@@ -109,7 +109,15 @@ cargo run --features dev -- --help               # screenshot, spawn, look optio
 - **Before committing**, `.githooks/pre-commit --worktree` runs what the
   commit hook will (the affected tests' check and the changed crates' fast
   tier) on your working tree and stamps the pass; a commit of that exact
-  tree then skips them and says so. Prefer it to hand-picked broad runs.
+  tree then skips them and says so, and the push hook skips its
+  `repo_checks` run too. It prints the exact commands it ran and the
+  packages it covered. Make it your test run before committing, instead
+  of whole-crate `cargo test -p <crate>` runs or the whole fast tier;
+  while iterating, run just the test you're working on (`cargo test -p
+  <crate> --features dev --test it <module>::`).
+- **Game runs and captures:** `tools/run-built --features dev <bin> --
+  <args>` runs a binary as `cargo run` would, but builds it only when the
+  working tree changed since its last build (no cargo per capture).
 - **After pushing**, `tools/post-push-tests.sh --bg --note "<branch or
   task>"` runs everything the push can affect, heavy tests too, those
   needing the installs with the main checkout's local config

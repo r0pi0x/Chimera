@@ -485,6 +485,8 @@ fn is_docs(path: &str) -> bool {
             "tools/disk-free.sh",
             "tools/post-push-tests.sh",
             "tools/wait-for",
+            // Runs a built binary without cargo when the tree is unchanged.
+            "tools/run-built",
             // Where agents' time goes, from Claude Code's transcripts.
             "tools/agent-timing",
             // A profiling script (runs built binaries; no crate reads it).

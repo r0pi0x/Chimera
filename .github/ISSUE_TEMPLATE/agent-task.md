@@ -22,6 +22,8 @@ backlog item, plan section or spec it comes from. -->
 - [ ] <!-- the behaviour, stated so a test can check it -->
 - [ ] A scenario test in `<crate>/tests/it/<file>.rs` (or unit tests) covering it
 - [ ] The affected crates' fast tier and `cargo test -p repo_checks` pass
+      (Linux: `.githooks/pre-commit --worktree` runs exactly that and the
+      commit reuses its pass; Windows: `.\scripts\affected-tests.ps1 -Base origin/main`)
 - [ ] Docs kept true (`//!` docs; `cargo run -q -p repo_checks --bin docs_index` if one changed)
 - [ ] <!-- screenshots before/after, if anything visible changes -->
 

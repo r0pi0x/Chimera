@@ -5,7 +5,8 @@
 # then amend or rebase the listed commits. Refuse personal traces (machine
 # paths, .githooks/private-patterns) in what's pushed, and a push while the
 # repository checks (`cargo test -p repo_checks`: layering, the asset and
-# spec rules, the docs) fail.
+# spec rules, the docs) fail; a pass stamped on the same working tree
+# (.githooks/stamps.sh, e.g. the commit hook's) is reused.
 # Push first, test after: the tests of every package the push can affect
 # (heavy ones too), the build without --features dev, the dedicated
 # servers' builds and the workspace-hack run after the push, in their own
@@ -73,11 +74,25 @@ if [ "$pushing" = 1 ]; then
     esac
     run() { if command -v agent_run >/dev/null 2>&1; then agent_run "$@"; else "$@"; fi; }
     mkdir -p target
-    echo "pre-push: the repository checks (cargo test -p repo_checks)..." >&2
-    if ! run cargo test -p repo_checks --quiet >target/pre-push.log 2>&1; then
-        grep -E "panicked|FAILED|^error" target/pre-push.log | head -20
-        echo "pre-push: the repository checks fail (log: target/pre-push.log); not pushing." >&2
-        exit 1
+    # A pass of the repository checks on this exact working tree (a
+    # pre-commit stamp that tested repo_checks, which every commit hook
+    # run does, or this hook's own) is reused (.githooks/stamps.sh; the
+    # same key; CHIMERA_COMMIT_STAMPS=0 ignores them).
+    # shellcheck source=.githooks/stamps.sh
+    . "$(dirname "${BASH_SOURCE[0]}")/stamps.sh"
+    key=
+    [ "${CHIMERA_COMMIT_STAMPS:-1}" != 0 ] && { key=$(tree_key) || key=; }
+    if [ -n "$key" ] && [ -f "$stamps/$key" ] && covered repo_checks "$(stamp_tested "$key")"; then
+        echo "pre-push: the repository checks already passed on this exact working tree ($(sed -n 's/^when //p' "$stamps/$key")); not running them again." >&2
+        touch "$stamps/$key"
+    else
+        echo "pre-push: the repository checks (cargo test -p repo_checks --features dev -- --skip heavy::)..." >&2
+        if ! run cargo test -p repo_checks --features dev --quiet -- --skip heavy:: >target/pre-push.log 2>&1; then
+            grep -E "panicked|FAILED|^error" target/pre-push.log | head -20
+            echo "pre-push: the repository checks fail (log: target/pre-push.log); not pushing." >&2
+            exit 1
+        fi
+        stamp_record "$key" pre-push repo_checks ""
     fi
     echo "pre-push: pushed untested beyond that: start \`tools/post-push-tests.sh --bg --note \"<branch or task>\"\` now and don't wait for it (it tests the pushed main in .claude/slots/post-push; a FAIL goes to .claude/post-push/inbox)." >&2
 fi

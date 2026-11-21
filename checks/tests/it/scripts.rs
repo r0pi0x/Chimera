@@ -2,7 +2,8 @@
 //! guards"): `agent-slot.sh trim-incremental` (oldest first, past a limit,
 //! never under a running cargo; a slot's trim takes them before built
 //! crates), `jobserver-heal.sh` (lost tokens put back) and `disk-free.sh`
-//! (the floor), and `wait-for` (named waits with a timeout, logged). Unix only
+//! (the floor), `wait-for` (named waits with a timeout, logged) and the
+//! hooks' pass stamps (`.githooks/stamps.sh`: the key, merged passes). Unix only
 //! (the tools are bash); they run on temporary folders, never the repo's.
 
 #![cfg(unix)]
@@ -247,5 +248,64 @@ fn wait_for_ends_when_the_thing_happens_or_at_its_timeout_and_logs_both() {
     assert!(text.contains("\ttimeout\tnever\t"), "{text}");
     // Nothing to wait for is refused, not an endless wait.
     assert_eq!(wait_for("nothing", &[], &log).0, 2);
+    fs::remove_dir_all(&root).ok();
+}
+
+/// Runs `script` in bash in the git repository `dir` with the hooks'
+/// `stamps.sh` sourced; its stdout.
+fn with_stamps(dir: &Path, script: &str) -> String {
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(format!(". '{}'\n{script}", repo().join(".githooks/stamps.sh").display()))
+        .current_dir(dir)
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .output()
+        .expect("run bash");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    if !err.is_empty() {
+        eprintln!("{err}");
+    }
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+#[test]
+fn stamps_key_the_working_tree_and_merge_the_packages_that_passed() {
+    let root = temp("stamps");
+    let git = |args: &[&str]| {
+        let ok = Command::new("git").args(args).current_dir(&root).env_remove("GIT_DIR").env_remove("GIT_INDEX_FILE").output().unwrap();
+        assert!(ok.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&ok.stderr));
+    };
+    git(&["init", "-q"]);
+    fs::write(root.join("a.rs"), "one").unwrap();
+    git(&["add", "a.rs"]);
+    git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a"]);
+    let key = with_stamps(&root, "tree_key").trim().to_string();
+    assert_eq!(key.len(), 40, "{key}");
+    // The same tree, the same key; an unstaged edit (the same size, in the
+    // same second as the commit: git's "racily clean" case) or an untracked
+    // file changes it.
+    assert_eq!(with_stamps(&root, "tree_key").trim(), key);
+    fs::write(root.join("a.rs"), "two").unwrap();
+    let edited = with_stamps(&root, "tree_key").trim().to_string();
+    assert_ne!(edited, key);
+    fs::write(root.join("new.rs"), "x").unwrap();
+    assert_ne!(with_stamps(&root, "tree_key").trim(), edited);
+    // A commit hook's pass, then the push hook's: the packages merge, and
+    // the commit hook's selection is still covered.
+    let out = with_stamps(
+        &root,
+        r#"k=$(tree_key)
+        stamp_record "$k" pre-commit "$(printf 'cs_source\nrepo_checks\n')" "chimera_core"
+        stamp_record "$k" pre-push repo_checks ""
+        covered "$(printf 'cs_source\nrepo_checks\n')" "$(stamp_tested "$k")" && echo tested-covered
+        covered chimera_core "$(stamp_checked "$k")" && echo checked-covered
+        covered hl2dm "$(stamp_tested "$k")" || echo hl2dm-not
+        covered hl2dm '*' && echo star-covers
+        pkgs "$(printf -- '-p\na\n-p\nb\n')" | tr '\n' ,"#,
+    );
+    assert_eq!(out, "tested-covered\nchecked-covered\nhl2dm-not\nstar-covers\na,b,", "{out}");
     fs::remove_dir_all(&root).ok();
 }

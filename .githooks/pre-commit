@@ -103,41 +103,16 @@ else
     fi
 fi
 
-# --- Pass stamps -----------------------------------------------------------
+# --- Pass stamps (.githooks/stamps.sh) -------------------------------------
 dependents=${CHIMERA_COMMIT_DEPENDENTS:-check}
-stamps=$(git rev-parse --path-format=absolute --git-common-dir)/test-stamps
-# The working tree as tested: the tracked files' tree (from a scratch copy
-# of the index, so neither the index nor the object store of untracked
-# files is touched) and the untracked files' names, sizes and times.
-tree_key() {
-    local idx tree
-    idx=$(mktemp) || return 1
-    cp "${GIT_INDEX_FILE:-$(git rev-parse --git-path index)}" "$idx" 2>/dev/null || { rm -f "$idx"; return 1; }
-    tree=$(GIT_INDEX_FILE=$idx git add -u . 2>/dev/null && GIT_INDEX_FILE=$idx git write-tree) || { rm -f "$idx"; return 1; }
-    rm -f "$idx"
-    {
-        echo "tree $tree"
-        git ls-files --others --exclude-standard -z | xargs -0 -r stat -c '%n %s %Y' 2>/dev/null | sort
-        echo "features dev; fast tier (--skip heavy::); dependents $dependents"
-        rustc -vV 2>/dev/null
-        cargo -V 2>/dev/null
-        env | grep -E '^(CHIMERA|MASHUP)_' | grep -vE '^(CHIMERA|MASHUP)_(COMMIT_TESTS|COMMIT_STAMPS)=' | sort
-    } | git hash-object --stdin
-}
-# The packages a selection names (`--workspace`: everything).
-pkgs() { printf '%s\n' "$1" | awk '/^--workspace$/ { print "*"; next } p { print; p = 0; next } /^-p$/ { p = 1 }' | sort -u; }
-# Is every package of $1 (a pkgs list) in $2? "*" covers all.
-covered() { grep -qx '\*' <<<"$2" && return 0; [ -z "$(comm -23 <(printf '%s\n' "$1") <(printf '%s\n' "$2"))" ]; }
+# shellcheck source=.githooks/stamps.sh
+. "$(dirname "${BASH_SOURCE[0]}")/stamps.sh"
 key=
 if [ "${CHIMERA_COMMIT_STAMPS:-1}" != 0 ]; then
     key=$(tree_key) || key=
 fi
 if [ -n "$key" ] && [ -f "$stamps/$key" ]; then
-    want_t=$(pkgs "$tests")
-    want_b=$(pkgs "$build")
-    had_t=$(sed -n 's/^tested //p' "$stamps/$key" | tr ' ' '\n' | sed '/^$/d' | sort -u)
-    had_b=$( { printf '%s\n' "$had_t"; sed -n 's/^checked //p' "$stamps/$key" | tr ' ' '\n'; } | sed '/^$/d' | sort -u)
-    if covered "$want_t" "$had_t" && covered "$want_b" "$had_b"; then
+    if covered "$(pkgs "$tests")" "$(stamp_tested "$key")" && covered "$(pkgs "$build")" "$(stamp_checked "$key")"; then
         echo "$who: this exact working tree already passed these checks and fast tests ($(sed -n 's/^when //p' "$stamps/$key"), stamp $stamps/$key); not running them again (CHIMERA_COMMIT_STAMPS=0 does)." >&2
         touch "$stamps/$key"
         timing stamp
@@ -145,19 +120,6 @@ if [ -n "$key" ] && [ -f "$stamps/$key" ]; then
     fi
     echo "$who: a stamp for this working tree covers fewer packages; testing." >&2
 fi
-stamp() { # a pass: record it, keep the newest 100
-    [ -n "$key" ] || return 0
-    # Only when nothing changed while the tests ran.
-    [ "$(tree_key)" = "$key" ] || { echo "$who: the working tree changed while testing; no stamp." >&2; return 0; }
-    mkdir -p "$stamps" || return 0
-    {
-        echo "when $(date -u +%Y-%m-%dT%H:%M:%SZ) by $who in $(basename "$PWD")"
-        echo "tested $(pkgs "$tests" | tr '\n' ' ')"
-        [ "$build" != "$tests" ] && echo "checked $(pkgs "$build" | tr '\n' ' ')"
-    } >"$stamps/$key.tmp" && mv -f "$stamps/$key.tmp" "$stamps/$key"
-    # shellcheck disable=SC2012
-    ls -t "$stamps" 2>/dev/null | tail -n +101 | while read -r f; do rm -f "$stamps/$f"; done
-}
 
 set -f
 if [ "$build" != "$tests" ]; then
@@ -191,14 +153,43 @@ IFS='
 # shellcheck disable=SC2086
 set -- $tests
 unset IFS
+# The runner: CHIMERA_COMMIT_RUNNER=nextest runs the fast tier under
+# `cargo nextest run` (binaries side by side) plus `cargo test --doc` for
+# the doctests nextest skips; =cargo (the default, and wherever nextest
+# isn't installed) runs `cargo test`. Both run the same tests.
+runner=${CHIMERA_COMMIT_RUNNER:-cargo}
+[ "$runner" = nextest ] && ! cargo nextest --version >/dev/null 2>&1 && runner=cargo
+if [ "$runner" = nextest ]; then
+    cmds=("cargo nextest run $* --features dev --no-fail-fast --no-tests=pass --color never -E '!test(/heavy::/)'"
+          "cargo test --doc $* --features dev --quiet --no-fail-fast")
+else
+    cmds=("cargo test $* --features dev --quiet --no-fail-fast -- --skip heavy::")
+fi
 echo "$who: running the fast tier of: $*" >&2
-if ! run cargo test "$@" --features dev --quiet --no-fail-fast -- --skip heavy:: >>"$log" 2>&1; then
-    grep -E "panicked|FAILED|^error" "$log" | head -20
+for c in "${cmds[@]}"; do echo "$who:   $c" >&2; done
+tested_ok=1
+if [ "$runner" = nextest ]; then
+    run cargo nextest run "$@" --features dev --no-fail-fast --no-tests=pass --color never -E '!test(/heavy::/)' >>"$log" 2>&1 || tested_ok=0
+    # A package without a library has no doctests (cargo refuses --doc
+    # for a selection with none at all: that's a pass).
+    if ! run cargo test --doc "$@" --features dev --quiet --no-fail-fast >>"$log" 2>&1; then
+        tail -n 3 "$log" | grep -q "no library targets found" || tested_ok=0
+    fi
+else
+    run cargo test "$@" --features dev --quiet --no-fail-fast -- --skip heavy:: >>"$log" 2>&1 || tested_ok=0
+fi
+if [ "$tested_ok" = 0 ]; then
+    grep -E "panicked|FAILED|FAIL \[|^error" "$log" | head -20
     echo "$who: fast tests failed (full log: $log); not committing." >&2
     timing fail
     exit 1
 fi
-stamp
+stamp_record "$key" "$who" "$(pkgs "$tests")" "$(pkgs "$build")"
 timing pass
-[ "$worktree" = 1 ] && echo "$who: passed; stamped (a commit of this exact working tree skips these)." >&2
+if [ "$worktree" = 1 ]; then
+    names() { pkgs "$1" | sed 's/^\*$/the workspace/' | paste -sd' ' -; }
+    checked=
+    [ "$build" != "$tests" ] && checked="type-checked the tests of $(names "$build") and "
+    echo "$who: passed in $(( $(date +%s) - started )) s: ${checked}ran the fast tier of $(names "$tests") (heavy tests run after the push). Stamped: a commit of this exact working tree skips these." >&2
+fi
 exit 0
