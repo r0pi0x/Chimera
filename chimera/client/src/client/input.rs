@@ -8,7 +8,11 @@
 //! (`move_share`: half on the first, a tap a quarter, a re-press three
 //! quarters) where the movement says so (`apply_move_keys`,
 //! `core::HalfFirstPress`: Source's), and a frame without a tick reads the
-//! move keys' shares away (`end_local_frame`).
+//! move keys' shares away (`end_local_frame`). A click meant for the UI
+//! never reaches the game: a mouse button pressed while the cursor is
+//! free or a panel owns the mouse is taken (`binds::CapturedKeys`) until
+//! let go, so a menu, dialog or picker that closes on a press (the sandbox
+//! gun picker's double-click, Resume) fires nothing (`grab_cursor`).
 //!
 //! Known shortcuts: the binds that run console commands (`console::
 //! run_binds`: `invnext`, `buymenu`, a `slotN` with `hud_fastswitch 0`)
@@ -393,6 +397,23 @@ pub(super) fn grab_cursor(
     // party apps' Escape menu, the sandbox's screens) and any egui window
     // under the pointer (the inspector).
     let in_menu = owners.owns() || egui.is_some_and(|e| e.wants_any_pointer_input());
+    // A click meant for the UI never reaches the game: a mouse button
+    // that goes down while the cursor is free or a panel owns the mouse
+    // (any menu, dialog, picker or screen) is taken until let go
+    // (`CapturedKeys`). A panel that closes on a press (the sandbox gun
+    // picker's double-click, a menu's Resume) grabs the cursor while the
+    // button is still down, and the held button would fire the gun in
+    // hand; a tap is caught too (`KeyLatch` would keep its press).
+    if (in_menu || !cursor_grabbed(cursor))
+        && let Some(c) = captured.as_mut()
+    {
+        let down: Vec<MouseButton> = mouse.get_just_pressed().chain(mouse.get_pressed()).copied().collect();
+        for b in down {
+            if !c.holds_button(b) {
+                c.capture_button(b);
+            }
+        }
+    }
     // Losing focus (alt-tab) ends the grab: Windows drops the cursor clip
     // then, and a grab we still believed in would keep turning the view
     // while the real cursor wanders off and clicks other windows. Coming

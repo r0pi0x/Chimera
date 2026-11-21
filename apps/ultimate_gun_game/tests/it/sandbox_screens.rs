@@ -27,9 +27,14 @@ fn play() -> (Sim, Entity) {
 /// `play` on a code-built map (`range`), the player just behind its
 /// firing line.
 fn play_on(map: Option<&str>) -> (Sim, Entity) {
+    play_with(map, ())
+}
+
+/// `play_on` with more plugins (added before the app is built).
+fn play_with<M>(map: Option<&str>, extra: impl bevy::app::Plugins<M>) -> (Sim, Entity) {
     let mut sim = Sim::new(
         combat_arms::harness::CaSim,
-        (chimera_world::greybox::GreyboxMapPlugin, party_kit::PartyPartsPlugin, ultimate_gun_game::UltimateGunGamePlugin::default(), SandboxUiPlugin),
+        (chimera_world::greybox::GreyboxMapPlugin, party_kit::PartyPartsPlugin, ultimate_gun_game::UltimateGunGamePlugin::default(), SandboxUiPlugin, extra),
     );
     let mut at = Vec3::new(0.0, 1.0, 0.0);
     if let Some(map) = map {
@@ -523,4 +528,113 @@ fn b_toggles_change_gun_once_per_press_with_every_games_character_and_no_bind_ac
         sim.app.update();
         assert_eq!(screen(&sim), SandboxScreen::Bench, "{movement}: T opens the bench");
     }
+}
+
+/// Each command's `fire` as the simulation read it.
+#[derive(Resource, Default)]
+struct Fired(Vec<bool>);
+
+fn record_fire(me: Single<&chimera_core::core::Intent, With<LocalPlayer>>, mut f: ResMut<Fired>) {
+    f.0.push(me.fire);
+}
+
+/// The sandbox's screens own the mouse as the Escape menu's sync makes
+/// them (`front_end::AppMenu` open while a screen is up).
+fn app_menu_follows_the_sandbox(ui: Res<SandboxUi>, mut m: ResMut<chimera_client::client::front_end::AppMenu>) {
+    let open = ui.screen_open();
+    if m.open != open {
+        m.open = open;
+    }
+}
+
+/// A double-click on a gun in Change gun (press, release, press: the
+/// list's `Activate` on the second press) switches to it and closes the
+/// view, the button still down: no command fires, neither with the gun
+/// in hand before nor after, and the picked gun is in hand. (Bug: the
+/// cursor was grabbed with the button held and the old gun fired once.)
+#[test]
+fn a_double_click_in_change_gun_switches_without_a_shot() {
+    use bevy::{
+        input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
+        window::{CursorGrabMode, CursorOptions},
+    };
+    use chimera_client::client::{
+        front_end::AppMenu,
+        input::LocalInputPlugin,
+        sandbox::{SandboxAction, SandboxScreen, change_gun::LIST},
+        view::FreeCam,
+    };
+    use chimera_core::console::Console;
+    use chimera_sim::minigame::ladder::{Ladder, Rung};
+    use chimera_ui::vlist::{VCursor, VListEvent};
+    /// The client's own mouse input over the sandbox.
+    struct ClickInput;
+    impl Plugin for ClickInput {
+        fn build(&self, app: &mut App) {
+            app.init_resource::<ButtonInput<MouseButton>>()
+                .init_resource::<AccumulatedMouseMotion>()
+                .init_resource::<AccumulatedMouseScroll>()
+                .init_resource::<FreeCam>()
+                .init_resource::<AppMenu>()
+                .init_resource::<Fired>()
+                .add_message::<bevy::window::WindowFocused>()
+                .add_plugins(LocalInputPlugin)
+                .add_systems(Update, app_menu_follows_the_sandbox)
+                .add_systems(FixedUpdate, record_fire);
+        }
+    }
+    let (mut sim, me) = play_with(None, ClickInput);
+    sim.app.world_mut().spawn(CursorOptions { grab_mode: CursorGrabMode::Locked, visible: false, ..default() });
+    sim.app.world_mut().resource_mut::<Console>().submit("bind mouse1 +attack");
+    let ladder = sim.app.world().resource::<Ladder>().clone();
+    let second: &'static str = ladder.rungs.iter().copied().find(|r| *r != GUN && r.starts_with("combat_arms:") && !r.contains("grenade")).expect("a second gun");
+    sim.app.world_mut().write_message(SandboxAction::Switch(GUN.into()));
+    sim.seconds(0.5);
+    let rung_gun = |sim: &Sim| sim.app.world().get::<Rung>(me).and_then(|r| ladder.rungs.get(r.0).copied());
+    assert_eq!(rung_gun(&sim), Some(GUN));
+    // One frame; the presses' just-pressed go as Bevy's input clears them.
+    let frame = |sim: &mut Sim| {
+        sim.app.update();
+        sim.app.world_mut().resource_mut::<ButtonInput<MouseButton>>().clear();
+    };
+    let grabbed = |sim: &mut Sim| sim.app.world_mut().query::<&CursorOptions>().single(sim.app.world()).unwrap().grab_mode != CursorGrabMode::None;
+    // Change gun open: the cursor free.
+    sim.app.world_mut().resource_mut::<SandboxUi>().screen = SandboxScreen::ChangeGun;
+    for _ in 0..3 {
+        frame(&mut sim);
+    }
+    assert!(!grabbed(&mut sim), "Change gun freed the cursor");
+    sim.app.world_mut().resource_mut::<Fired>().0.clear();
+    // Press (selects the gun), release, press (switches: `Activate`).
+    sim.app.world_mut().resource_mut::<SandboxUi>().view.selected = Some(second.into());
+    mouse_of(&mut sim).press(MouseButton::Left);
+    frame(&mut sim);
+    mouse_of(&mut sim).release(MouseButton::Left);
+    frame(&mut sim);
+    mouse_of(&mut sim).press(MouseButton::Left);
+    sim.app.world_mut().write_message(VListEvent::Activate { key: LIST.into(), at: VCursor::Item(0, 0) });
+    frame(&mut sim);
+    assert_eq!(sim.app.world().resource::<SandboxUi>().screen, SandboxScreen::None, "the double-click closed the view");
+    // The button held on into the game for half a second.
+    let tick = sim.tick();
+    while sim.tick() < tick + (0.5 * sim.tick_hz()) as u64 {
+        frame(&mut sim);
+    }
+    assert!(grabbed(&mut sim), "back in the game");
+    assert_eq!(rung_gun(&sim), Some(second), "the picked gun in hand");
+    let fired = sim.app.world().resource::<Fired>().0.iter().filter(|f| **f).count();
+    assert_eq!(fired, 0, "commands fired by the clicks meant for the picker");
+    // Let go, a new press fires (the picked gun).
+    mouse_of(&mut sim).release(MouseButton::Left);
+    frame(&mut sim);
+    mouse_of(&mut sim).press(MouseButton::Left);
+    let tick = sim.tick();
+    while sim.tick() < tick + 2 {
+        frame(&mut sim);
+    }
+    assert!(sim.app.world().resource::<Fired>().0.iter().any(|f| *f), "a press in the game fires");
+}
+
+fn mouse_of(sim: &mut Sim) -> Mut<'_, ButtonInput<MouseButton>> {
+    sim.app.world_mut().resource_mut::<ButtonInput<MouseButton>>()
 }

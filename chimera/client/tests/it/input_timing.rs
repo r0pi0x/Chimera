@@ -294,3 +294,88 @@ fn move_keys_send_their_share() {
     assert!(take(&mut sim).is_empty());
     assert_eq!(forward(&to_tick(&mut sim)), 1.0, "the half step was read in the frame without a tick");
 }
+
+/// A menu (it frees the cursor) that closes on a press: the second press
+/// of a double-click (`double`), else the first. The cursor is grabbed
+/// again at once while the button is still down.
+#[derive(Resource)]
+struct ClosesOnPress {
+    double: bool,
+    presses: u32,
+}
+
+fn close_on_press(mouse: Res<ButtonInput<MouseButton>>, mut c: ResMut<ClosesOnPress>, mut menu: ResMut<MenuStatus>) {
+    if menu.open && mouse.just_pressed(MouseButton::Left) {
+        c.presses += 1;
+        if c.presses >= if c.double { 2 } else { 1 } {
+            menu.open = false;
+        }
+    }
+}
+
+fn menu_closing_on_press(double: bool) -> Sim {
+    let mut sim = local(1);
+    sim.app
+        .insert_resource(ClosesOnPress { double, presses: 0 })
+        .insert_resource(MenuStatus { open: true, in_game: true, ..default() })
+        .add_systems(Update, close_on_press);
+    frame(&mut sim);
+    frame(&mut sim);
+    take(&mut sim);
+    sim
+}
+
+/// The cursor is grabbed (the menu closed and the game took it back).
+fn grabbed(sim: &mut Sim) -> bool {
+    sim.app.world_mut().query::<&CursorOptions>().single(sim.app.world()).unwrap().grab_mode != CursorGrabMode::None
+}
+
+/// A double-click on a menu item that closes the menu (the sandbox gun
+/// picker's switch): neither press fires, nor the button held after the
+/// menu has gone and the cursor is grabbed; once let go, a new press fires.
+#[test]
+fn a_double_click_that_closes_a_menu_fires_nothing() {
+    let mut sim = menu_closing_on_press(true);
+    assert!(!grabbed(&mut sim), "the menu freed the cursor");
+    // Press, release, press: the second press closes the menu.
+    mouse(&mut sim).press(MouseButton::Left);
+    frame(&mut sim);
+    mouse(&mut sim).release(MouseButton::Left);
+    frame(&mut sim);
+    mouse(&mut sim).press(MouseButton::Left);
+    frame(&mut sim);
+    assert!(!sim.app.world().resource::<MenuStatus>().open, "the double-click closed the menu");
+    // Held on into the game.
+    for _ in 0..5 {
+        frame(&mut sim);
+    }
+    assert!(grabbed(&mut sim), "back in the game");
+    let fired: Vec<u64> = take(&mut sim).iter().filter(|c| c.1.fire).map(|c| c.0).collect();
+    assert!(fired.is_empty(), "the clicks meant for the menu fired in frames {fired:?}");
+    mouse(&mut sim).release(MouseButton::Left);
+    frame(&mut sim);
+    take(&mut sim);
+    mouse(&mut sim).press(MouseButton::Left);
+    frame(&mut sim);
+    assert!(take(&mut sim)[0].1.fire, "a new press fires");
+}
+
+/// A single click that closes a menu (Resume, a buy, a dialog's button):
+/// no shot, held or tapped.
+#[test]
+fn a_click_that_closes_a_menu_fires_nothing() {
+    for held in [true, false] {
+        let mut sim = menu_closing_on_press(false);
+        mouse(&mut sim).press(MouseButton::Left);
+        if !held {
+            mouse(&mut sim).release(MouseButton::Left);
+        }
+        frame(&mut sim);
+        assert!(!sim.app.world().resource::<MenuStatus>().open, "the click closed the menu");
+        for _ in 0..5 {
+            frame(&mut sim);
+        }
+        assert!(grabbed(&mut sim), "back in the game");
+        assert!(take(&mut sim).iter().all(|c| !c.1.fire), "held {held}: the menu's click fired");
+    }
+}
