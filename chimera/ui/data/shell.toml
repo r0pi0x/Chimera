@@ -134,6 +134,13 @@ seg_char = 0.36      # a segmented option's width a character (fits or a dropdow
 seg_pad = 0.8        # and its padding
 blink = 1.0          # the capture chip's light: one blink, s
 
+# The text field (chimera_ui::controls), every app's, cq: a screen's one
+# hero field (`Ui::text_field_hero`: the first run's invite field) is
+# taller with bigger typed text than a settings row's.
+[layout.field]
+hero_h = 3.2
+hero_text = 0.9
+
 # The kit's picker (chimera_ui::picker: the host's Maps and guns, the
 # sandbox's Change gun and map), every app's, cq unless said. Rows (the List look):
 [layout.picker]

@@ -114,6 +114,95 @@ reached, a banner says so and offline play goes on.
   PC, typed on the new one, like pairing a TV app.
 - **Recover:** paste the recovery key.
 
+## Conformance pass 2026-11-21
+
+The user asked for a pass over the built screens against the approved
+"Onboarding Mockups", the UGG style references (Logo Set v0.4, Look
+Book V, Display Proofs, `shell.toml` and the UGG theme) and the newer
+kit rules (ui-kit review of 2026-11-21), and pointed out that the
+screens carried a simplified stand-in, not the game's logo. Screenshots
+of all 17 staged screens, before and after, at 1920x1080 (offscreen).
+
+**The logo.** The bar drew three slanted bars and "LUCKER PARTY" in
+Display Black, the mockups' placeholder. The game's logo is the UGG
+lockup: the `mark` (three helmeted profiles, `chimera/ui/data/
+icons.toml`) beside ULTIMATE spread over GUN GAME in the wordmark role
+(UGG Display Black, ss02), the same one the main menu
+(`signal_menu`) and the Esc menu (`Ui::lockup`) draw. The bar now draws
+that lockup (`Ui::lockup_drawn`: its mark from the kit's icon set, no
+image assets needed) at the lobby header's size (1.05 cq), the screen's
+place after a hairline in Mono. `Ui::lockup` now draws the same way.
+
+**Differences found, screen by screen** (F: fixed in this pass; L: left,
+with the reason):
+
+- All screens:
+  - F: the logo (above).
+  - F: the ground was flat ink with an 8 % cobalt wash; the mockups'
+    ambience is a navy fall from the top left (a gradient of the
+    theme's hero tone). L: its two radial glows band visibly in Bevy's
+    8-bit UI gradients at such low alphas, so they are left out.
+  - F: the places were numbers in the code; now `[layout.onboarding]`
+    in the theme (margin, bar, rule, lockup, column, pane, corners).
+  - F: fields were the settings row's (1.9 cq, typed text .74); the
+    mockups' field is the screen's hero (taller, bigger type): the
+    kit's `Ui::text_field_hero` (`[layout.field] hero_h` 3.2, `hero_text`
+    .9), used by every first-run field.
+  - F: the explaining panes lacked the blueprint corner brackets
+    (`Ui::corners`).
+  - L: the mockups' faint blueprint grid on the right half: not drawn
+    (dozens of lines a screen for little); the gradients carry the
+    depth.
+  - Kept as built (the newer kit rules win over the mockups): tabs grey
+    to white with no underline (the merged kit's `tabs_badged`).
+- Welcome, clipboard: F: the pane's link diagram (the link's shape with
+  its three parts underlined and numbered, the parsed values once read)
+  was missing. F: a long link now shows its fingerprint as its first and
+  last four, so it fits the hero field.
+- Checking: F: the three checks had no lights (now `Ui::kv_lit`: under
+  way in accent, waiting unlit; their words in the data).
+- Used, unknown: F: the buttons were Continue and "I already have an
+  account" on every error; the mockups' hero is the one action that
+  helps: "Try another" (Enter clears the field) with "I already have an
+  account".
+- Unreachable: F: hero Retry with "Play without an account" as the
+  ghost.
+- Certificate: F: the field stayed (editable) and Continue led on; now
+  no field, hero Back (Esc) and the ghost "Copy details for the owner"
+  (the host and both fingerprints to the clipboard), Enter does nothing;
+  the fingerprints lit (the invite's accent, the hub's threat), both in
+  groups of four.
+- Hub: F: the hub's emblem (its initials on the hero slant) and the note
+  beside it; the rows' lights (the certificate's in accent when pinned).
+  L: the mockups' "Servers" row: the check answer carries no server
+  count yet.
+- Name, name-bad, name-taken: F: the free names were outlined Mono
+  boxes; now the kit's small secondary buttons. F: the preview lacked
+  the kill-feed line (your kill outlined and barred in accent, the kill
+  icon, the victim). The avatar picker (decision 10) stays in the
+  preview pane; one marker a cell (the selected one outlined).
+- Key: F: the key box's label sits on its top edge (a legend), as drawn.
+  F: "I saved it" was a square box with a text tick; now the kit's check
+  box on the slant (`Ui::check`, the tick an icon: `tick`).
+- Have, recover: F: the link code was a plain field; now six code cells
+  with a dash after the third, the caret in the next empty one (the
+  plain field returns for anything longer). F: the inset "On your other
+  PC" plate at the bottom right (where the code comes from). F: the bar's
+  "‹ Back" showed a missing glyph (the Mono face has no ‹): now the
+  kit's `back` icon.
+- Done: F: the toast was a rectangle; now the hero slab slanted at both
+  ends, as drawn.
+- Returning, offline: F: the banner lacked the warning tint and bar at
+  its left; its words were in the code, now `[chip]` in
+  `data/onboarding.toml` with the chip's lines. L: the chip sits under
+  the shell's rack, not inside it (the rack is the shell's); the
+  banner's "Retry in 0:24" countdown isn't drawn (it would rebuild the
+  chip every second).
+- Motion: entries slide in, never blocking (decision 8), unchanged.
+
+Tests: `party_kit` `onboarding::each_error_offers_its_one_action`,
+`the_bar_carries_the_games_lockup`.
+
 ## The owner's side
 
 Invites stay a command for the hub owner, with the intent and an
