@@ -49,6 +49,15 @@ world = "models/weapons/c_models/c_grenadelauncher/c_grenadelauncher.mdl"
 view = "models/weapons/c_models/c_grenadelauncher/c_grenadelauncher.mdl"
 view_right_handed = true
 
+# The drum (`procedural_chamber`, six chambers) turns one chamber a shot
+# in the Demoman's own view, smoothly, from the frame after the shot to
+# about 0.14 s after it, clockwise seen from behind; never in a reload,
+# never in the world model (specs/tf2/weapons_more.md 9.6).
+[[anim.procedural]]
+bone = "procedural_chamber"
+per_shot = 60.0
+time = 0.14
+
 [hud]
 name = "Grenade Launcher"
 icon = "tf_projectile_pipe"

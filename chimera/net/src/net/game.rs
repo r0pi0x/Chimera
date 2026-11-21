@@ -22,7 +22,8 @@
 //!   (`map::PredictedSound`) and those only others hear (`map::OthersSound`:
 //!   a world reload sound) to everyone but that player's client; a
 //!   sound stopped (`map::StopSound`: a gun's loop out of its holder's
-//!   hand) as `ServerStopSound`, to everyone but the holder's client.
+//!   hand) as `ServerStopSound` and a sound's volume ramp (`map::FadeSound`)
+//!   as `ServerFadeSound`, to everyone but the holder's client.
 //! - **Time**: the server's times go as server ticks (`tick_of`), which a
 //!   client puts on its own clock (`ServerTime`).
 //!
@@ -36,13 +37,13 @@ use bevy::{ecs::message::MessageCursor, prelude::*};
 use bevy_replicon::prelude::*;
 
 use super::{
-    BuyRequest, NetCharacter, NetScore, Notice, OwnState, ServerSound, ServerStopSound, interp::InterpClock, parts::OwnParts,
+    BuyRequest, NetCharacter, NetScore, Notice, OwnState, ServerFadeSound, ServerSound, ServerStopSound, interp::InterpClock, parts::OwnParts,
     predict::CommandClock,
     score_flags, server::Player,
 };
 use crate::{
     core::{LocalPlayer, NetRole, Npc, Score, ScoreMark, SimClock},
-    map::{GameSound, OthersSound, PlaySound, PredictedSound, StopSound},
+    map::{FadeSound, GameSound, OthersSound, PlaySound, PredictedSound, StopSound},
     weapon::{
         Inventory,
         economy::{BuyRequested, DefuseKit},
@@ -61,10 +62,10 @@ pub(super) fn plugin(app: &mut App) {
                 .run_if(in_state(ServerState::Running)),
         )
         .add_message::<OthersSound>()
-        .add_systems(PostUpdate, (send_sounds, send_stops).before(ServerSystems::Send).run_if(server()))
+        .add_systems(PostUpdate, (send_sounds, send_stops, send_fades).before(ServerSystems::Send).run_if(server()))
         .add_systems(
             PreUpdate,
-            (apply_scores, apply_own, receive_sounds, receive_stops)
+            (apply_scores, apply_own, receive_sounds, receive_stops, receive_fades)
                 .chain()
                 .after(ClientSystems::Receive)
                 .after(super::predict::rebuild_own_states)
@@ -269,6 +270,26 @@ fn send_stops(
     }
 }
 
+/// Volume ramps (`FadeSound`: the Flame Thrower's burst), to every client
+/// but its maker's, which ramps its own; not one ramped here only.
+fn send_fades(
+    mut fades: MessageReader<FadeSound>,
+    replicated: Query<(), With<Replicated>>,
+    players: Query<(Entity, &Player)>,
+    mut out: MessageWriter<ToClients<ServerFadeSound>>,
+) {
+    for f in fades.read() {
+        if f.local || !replicated.contains(f.source) {
+            continue;
+        }
+        let client = f.by.and_then(|by| players.iter().find(|(_, p)| p.character == by).map(|(c, _)| c));
+        out.write(ToClients {
+            targets: client.map_or(SendTargets::CLIENTS_ONLY, |c| SendTargets::AllExcept(ClientId::Client(c))),
+            message: ServerFadeSound { source: f.source, entry: f.entry.clone(), to: f.to, over: f.over },
+        });
+    }
+}
+
 // --- Client
 
 /// Scores and kits into `Score` and `DefuseKit` (the scoreboard and HUD
@@ -327,6 +348,15 @@ fn receive_stops(mut stops: MessageReader<ServerStopSound>, mut out: MessageWrit
     for s in stops.read() {
         if s.source != Entity::PLACEHOLDER {
             out.write(StopSound { by: None, source: s.source, entry: s.entry.clone(), local: false });
+        }
+    }
+}
+
+/// The volume ramps the server asked for.
+fn receive_fades(mut fades: MessageReader<ServerFadeSound>, mut out: MessageWriter<FadeSound>) {
+    for f in fades.read() {
+        if f.source != Entity::PLACEHOLDER {
+            out.write(FadeSound { by: None, source: f.source, entry: f.entry.clone(), to: f.to, over: f.over, local: false });
         }
     }
 }

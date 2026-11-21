@@ -78,7 +78,7 @@ fn the_boost_loops_crit_power_and_glows_on_the_held_weapon() {
 }
 
 /// Test case: a Flame Thrower burst turning critical while firing: FireLoop
-/// cut, FireLoopCrit at once, no FireStart, no FireEnd.
+/// cut, FireLoopCrit at once, no FireStart, no end sound.
 #[test]
 fn a_burst_turning_critical_swaps_the_flame_loops() {
     let mut sim = sim();
@@ -90,11 +90,11 @@ fn a_burst_turning_critical_swaps_the_flame_loops() {
     let swap = run(&mut sim, 30, |s, _| s.intent(p).fire = true);
     assert_eq!(count(&swap.played, "FlameThrower.FireLoopCrit"), 1, "{swap:?}");
     assert_eq!(count(&swap.played, "FireStart"), 0, "no start: {swap:?}");
-    assert_eq!(count(&swap.played, "FireEnd"), 0, "no end: {swap:?}");
+    assert_eq!(count(&swap.played, "WindDown"), 0, "no end: {swap:?}");
     assert!(swap.stopped.iter().any(|s| s.ends_with("FlameThrower.FireLoop")), "the loop cut: {swap:?}");
     assert!(swap.stopped.iter().any(|s| s.ends_with("FireStart")), "the start cut: {swap:?}");
     let end = run(&mut sim, 30, |s, _| s.intent(p).fire = false);
-    assert_eq!(count(&end.played, "FireEnd"), 1, "{end:?}");
+    assert_eq!(count(&end.played, "WindDown"), 1, "{end:?}");
 }
 
 /// effects.md 14.1: another player's glow stands on his held weapon's

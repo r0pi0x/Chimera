@@ -100,6 +100,7 @@ pub mod respawn;
 pub mod spray;
 pub mod sync;
 pub mod view_anim;
+pub mod view_bones;
 
 use std::sync::Arc;
 
@@ -270,6 +271,7 @@ impl Plugin for WeaponPlugin {
             .add_message::<PlaySound>()
             // A weapon's loops stop when it leaves the hand (`held_sounds`).
             .add_message::<crate::map::StopSound>()
+            .add_message::<crate::map::FadeSound>()
             .add_systems(Update, held_sounds::stop_out_of_hand)
             .add_observer(held_sounds::stop_on_remove)
             // The rules' sounds (`map::GameSound`), played here.

@@ -4,7 +4,10 @@
 //! distance low-pass, `Gains::with_cutoff`) and left/right panning toward
 //! the listener, and plays it, pitch as playback speed. A new sound on the
 //! same (source entity, channel) replaces the one playing there; a
-//! `map::StopSound` fades out a source's sound by its entry. A clip with
+//! `map::StopSound` fades out a source's sound by its entry, and a
+//! `map::FadeSound` ramps its volume in a straight line (`VolumeRamp`,
+//! stepped each frame by `ramp_volumes`; one asked for a sound not yet
+//! playing waits up to `FADE_WAIT` for it to start). A clip with
 //! a loop point of its own (its WAV's `cue ` or `smpl` chunk: `loops`)
 //! plays to its end, then from that point again, seamlessly, until
 //! stopped or replaced; any other plays once (specs/source/
@@ -38,8 +41,8 @@ use super::{
     room::{RoomDsp, distance_send},
 };
 use crate::map::{
-    MapHooks, MapSoundClip, PlaySound, SoundLevel, StopSound,
-    sound::{SoundBank, distance_cutoff, distance_gain},
+    FadeSound, MapHooks, MapSoundClip, PlaySound, SoundLevel, StopSound,
+    sound::{SoundBank, distance_cutoff, distance_gain, ramp_volume},
 };
 
 /// A screen stands in for the match (the client's `staging::WorldCover`:
@@ -120,6 +123,11 @@ pub struct Playing {
     source: Option<Entity>,
     channel: Option<u8>,
     gains: Arc<Gains>,
+    /// Its per-ear gains at volume 1 (distance, panning, the mix's gain)
+    /// and the volume it started at: `gains` is their product, or the
+    /// ramp's (`VolumeRamp`).
+    base: (f32, f32),
+    volume: f32,
     entry: String,
     /// When it started and when its clip ends (`Time` elapsed, s).
     started: f64,
@@ -137,7 +145,8 @@ impl Playing {
     pub fn channel(&self) -> Option<u8> {
         self.channel
     }
-    /// Its per-ear gains as set when it started.
+    /// Its per-ear gains now (as set when it started, or ramped:
+    /// `VolumeRamp`).
     pub fn gains(&self) -> (f32, f32) {
         self.gains.get()
     }
@@ -171,6 +180,36 @@ impl Playing {
 
 /// The span of a clip one entry of its peaks covers (s).
 pub const PEAK_BLOCK: f64 = 0.01;
+
+/// A playing sound's volume ramp (`map::FadeSound`): from `from` at
+/// `start` (`Time` elapsed, s) to `to` over `over` seconds.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct VolumeRamp {
+    pub from: f32,
+    pub to: f32,
+    pub start: f64,
+    pub over: f32,
+}
+
+impl VolumeRamp {
+    /// Its volume at `now`.
+    pub fn at(&self, now: f64) -> f32 {
+        ramp_volume(self.from, self.to, self.over, (now - self.start) as f32)
+    }
+}
+
+/// How long a `FadeSound` waits for its sound to start (s): a network
+/// client gets a sound and its fade on different channels.
+pub const FADE_WAIT: f64 = 0.5;
+
+/// Each ramping sound's gains from its ramp (`VolumeRamp`).
+fn ramp_volumes(playing: Query<(&Playing, &VolumeRamp)>, time: Res<Time>) {
+    let now = time.elapsed_secs_f64();
+    for (p, r) in &playing {
+        let v = r.at(now);
+        p.gains.set(p.base.0 * v, p.base.1 * v);
+    }
+}
 
 /// A clip's peak (0-1, either channel) in each `PEAK_BLOCK`.
 pub fn clip_peaks(clip: &MapSoundClip) -> Arc<[f32]> {
@@ -257,7 +296,8 @@ impl Plugin for SoundPlugin {
             .extend([super::soundscape::reset as fn(&mut World), super::live_sound::reset]);
         app.add_message::<PlaySound>()
             .add_message::<StopSound>()
-            .add_systems(PostUpdate, (play_sounds, limit_mix).chain().run_if(resource_exists::<Assets<LiveClip>>))
+            .add_message::<FadeSound>()
+            .add_systems(PostUpdate, (play_sounds, ramp_volumes, limit_mix).chain().run_if(resource_exists::<Assets<LiveClip>>))
             .add_plugins((
                 super::soundscape::SoundscapePlugin,
                 super::live_sound::LiveSoundPlugin,
@@ -287,7 +327,7 @@ fn play_sounds(
     mut stops: MessageReader<StopSound>,
     bank: Option<Res<SoundBank>>,
     listeners: Query<(&GlobalTransform, Option<&ChildOf>), With<SoundListener>>,
-    playing: Query<(Entity, &Playing)>,
+    playing: Query<(Entity, &Playing, Option<&VolumeRamp>)>,
     mut sources: ResMut<Assets<LiveClip>>,
     hearing: Res<Hearing>,
     room: Res<RoomDsp>,
@@ -296,7 +336,11 @@ fn play_sounds(
     time: Res<Time>,
     hold: (Option<Res<crate::map::LocalMapLoad>>, Option<Res<WorldUnheard>>),
     (mut seed, mut unheard): (Local<u64>, Local<std::collections::HashSet<String>>),
-    mut peaks: Local<std::collections::HashMap<usize, Arc<[f32]>>>,
+    (mut peaks, mut fades, mut pending): (
+        Local<std::collections::HashMap<usize, Arc<[f32]>>>,
+        MessageReader<FadeSound>,
+        Local<Vec<(f64, FadeSound)>>,
+    ),
     mix_limit: Res<super::live_sound::MixLimit>,
 ) {
     let now = time.elapsed_secs_f64();
@@ -306,12 +350,15 @@ fn play_sounds(
     // hand) fade out first, before this run's new ones start
     // (held or not).
     for s in stops.read() {
-        for (e, p) in &playing {
+        for (e, p, _) in &playing {
             if p.source == Some(s.source) && p.entry.eq_ignore_ascii_case(&s.entry) && !stopped.contains(&e) {
                 fade(&mut commands, &mut stopped, e, p);
             }
         }
     }
+    // Ramps asked for (`FadeSound`), waiting for their sounds a moment.
+    pending.extend(fades.read().map(|f| (now, f.clone())));
+    pending.retain(|(at, _)| now - *at <= FADE_WAIT);
     let Some(bank) = bank.filter(|_| !held(hold.0.as_deref(), hold.1.as_deref())) else {
         messages.clear();
         return;
@@ -353,7 +400,7 @@ fn play_sounds(
         let Some(entry) = entry else { continue };
         let wave = entry.waves[((unit() * entry.waves.len() as f32) as usize).min(entry.waves.len() - 1)];
         let clip = &bank.0.clips[wave];
-        let volume = m.volume.unwrap_or_else(|| entry.volume.draw(unit())).clamp(0.0, 1.0) * mix.gain(&m.entry);
+        let volume = m.volume.unwrap_or_else(|| entry.volume.draw(unit())).clamp(0.0, 1.0);
         let drawn = entry.pitch.draw(unit());
         let pitch = m.pitch.unwrap_or(drawn).round().clamp(1.0, 255.0);
         let level = match entry.level {
@@ -361,13 +408,20 @@ fn play_sounds(
             a => a,
         };
         // Unspatialized sounds (interface, announcer) stay out of the room.
+        let base = mix.gain(&m.entry);
         let (left, right, send) = match (m.at, listener) {
             (Some(at), Some(ear)) => {
                 let (l, r, send) = ear.gains(at, m.source, level);
-                (l * volume, r * volume, send)
+                (l * base, r * base, send)
             }
-            _ => (volume, volume, 0.0),
+            _ => (base, base, 0.0),
         };
+        // A ramp waiting for this sound starts with it (`FadeSound`).
+        let ramp = m.source.and_then(|source| {
+            let i = pending.iter().position(|(_, f)| f.source == source && f.entry.eq_ignore_ascii_case(&m.entry))?;
+            let f = pending.remove(i).1;
+            Some(VolumeRamp { from: volume, to: f.to.clamp(0.0, 1.0), start: now, over: f.over })
+        });
         // A level's distance low-pass (none for the listener's own sounds).
         let cutoff = match (m.at, listener) {
             (Some(at), Some(ear)) if m.source.is_none() || m.source != ear.owner => {
@@ -376,7 +430,9 @@ fn play_sounds(
             _ => 1.0,
         };
         let send = if entry.dry { 0.0 } else { send };
-        if left.max(right) < 1e-3 {
+        // Silent (out of hearing, or at volume 0 with no ramp up): not
+        // played.
+        if left.max(right) < 1e-3 || volume.max(ramp.map_or(0.0, |r| r.to)) < 1e-3 {
             continue;
         }
         // Replace whatever this source plays on this channel: it fades out
@@ -384,7 +440,7 @@ fn play_sounds(
         // full-auto gun's shots each cut the last one off), then the
         // backend despawns it; it no longer counts as on the channel.
         if let (Some(source), Some(channel)) = (m.source, m.channel) {
-            for (e, p) in &playing {
+            for (e, p, _) in &playing {
                 if p.source == Some(source) && p.channel == Some(channel) && !stopped.contains(&e) {
                     fade(&mut commands, &mut stopped, e, p);
                 }
@@ -404,7 +460,8 @@ fn play_sounds(
         let limit = if m.source.is_some() { MAX_VOICES_PER_SOURCE } else { MAX_VOICES_PER_ENTRY };
         let mut old: Vec<(Entity, &Playing)> = playing
             .iter()
-            .filter(|(e, p)| !stopped.contains(e) && p.sounding(now) && same(p.source, &p.entry))
+            .filter(|(e, p, _)| !stopped.contains(e) && p.sounding(now) && same(p.source, &p.entry))
+            .map(|(e, p, _)| (e, p))
             .collect();
         old.sort_by(|a, b| a.1.started.total_cmp(&b.1.started));
         let mut over = (old.len() + fresh.iter().filter(|f| same(f.1, &f.2)).count() + 1).saturating_sub(limit);
@@ -431,7 +488,7 @@ fn play_sounds(
         } else {
             frames as f64 / clip.rate.max(1) as f64 / (pitch as f64 / 100.0)
         };
-        let gains = Arc::new(Gains::new(left, right).with_send(send).with_cutoff(cutoff));
+        let gains = Arc::new(Gains::new(left * volume, right * volume).with_send(send).with_cutoff(cutoff));
         let handle = sources.add(LiveClip::new(clip.clone(), gains.clone(), hearing.mix.clone()).with_room(&room).with_limit(&mix_limit));
         let e = commands
             .spawn((
@@ -443,6 +500,8 @@ fn play_sounds(
                     source: m.source,
                     channel: m.channel,
                     gains,
+                    base: (left, right),
+                    volume,
                     entry: m.entry.clone(),
                     started: now,
                     ends: now + length,
@@ -451,11 +510,26 @@ fn play_sounds(
                 },
             ))
             .id();
+        if let Some(r) = ramp {
+            commands.entity(e).insert(r);
+        }
         fresh.push((e, m.source, m.entry.clone()));
         if let (Some(source), Some(channel)) = (m.source, m.channel) {
             started.push(((source, channel), e));
         }
     }
+    // The ramps for sounds already playing start now, from where they are.
+    pending.retain(|(_, f)| {
+        let mut found = false;
+        for (e, p, r) in &playing {
+            if p.source == Some(f.source) && p.entry.eq_ignore_ascii_case(&f.entry) && !stopped.contains(&e) {
+                let from = r.map_or(p.volume, |r| r.at(now));
+                commands.entity(e).try_insert(VolumeRamp { from, to: f.to.clamp(0.0, 1.0), start: now, over: f.over });
+                found = true;
+            }
+        }
+        !found
+    });
 }
 
 /// A clip as a 16-bit stereo PCM WAV, each channel scaled (for panning and

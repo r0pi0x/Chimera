@@ -665,6 +665,22 @@ pub struct AnimData {
     /// the game's `view_anim::ViewAnimRules` choose.
     #[serde(default)]
     pub sequences: BTreeMap<String, Vec<String>>,
+    /// Bones of the view model turned per round on top of the animation
+    /// (`[[anim.procedural]]`, `view_bones`).
+    #[serde(default)]
+    pub procedural: Vec<ProceduralBoneData>,
+}
+
+/// A view-model bone each round turns (`view_bones`): `per_shot`
+/// degrees about the bone's own z (the sign its direction) over `time`
+/// seconds, eased in and out; first person only (TF2's Grenade
+/// Launcher's drum).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProceduralBoneData {
+    pub bone: String,
+    pub per_shot: f32,
+    pub time: f32,
 }
 
 impl WeaponData {

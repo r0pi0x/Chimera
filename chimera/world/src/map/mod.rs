@@ -99,7 +99,7 @@ pub mod sound;
 pub mod steam;
 pub mod teleport;
 pub use sound::{
-    GameSound, MapSoundClip, MapSoundEntry, MapSounds, MapSurface, OthersSound, PlaySound, PredictedSound, SoundControl, SoundKey,
+    FadeSound, GameSound, MapSoundClip, MapSoundEntry, MapSounds, MapSurface, OthersSound, PlaySound, PredictedSound, SoundControl, SoundKey,
     SoundLevel, StartSound, StepRemap, StopSound,
 };
 pub mod shells;

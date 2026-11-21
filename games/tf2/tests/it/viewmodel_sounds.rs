@@ -32,7 +32,7 @@ const WORLD_RELOAD: &str = "tf2:Weapon_Pistol.WorldReload";
 
 /// A one-bone view model of `key` whose sequences are `(name, activity,
 /// frames at 30 fps, sound events (cycle, entry))`.
-fn view_model(key: &str, sequences: &[(&str, &str, usize, &[(f32, &str)])]) -> MapViewModel {
+pub(crate) fn view_model(key: &str, sequences: &[(&str, &str, usize, &[(f32, &str)])]) -> MapViewModel {
     let mut set = AnimSet { defaults: vec![(Quat::IDENTITY, Vec3::ZERO)], parents: vec![None], ..default() };
     for (name, activity, frames, events) in sequences {
         set.animations.push(Animation { name: name.to_string(), fps: 30.0, frames: *frames, ..default() });

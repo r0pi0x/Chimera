@@ -795,3 +795,107 @@ fn stickies_detonate_with_another_tf2_weapon_out() {
     assert!(stickies(&mut sim, p).is_empty(), "detonated");
     assert_eq!(explosions, 1, "its explosion drawn");
 }
+
+// --- The Grenade Launcher's drum (weapons_more.md 9.6, test cases 52-55)
+
+/// A Demoman with the Grenade Launcher drawn on a made-up view model
+/// that has the drum's bone (index 1).
+fn drum() -> (Sim, Entity, Entity) {
+    use chimera_world::map::{MapBone, ViewModels};
+    let mut vm = super::viewmodel_sounds::view_model(
+        GRENADE_LAUNCHER,
+        &[
+            ("g_draw", "ACT_PRIMARY_VM_DRAW", 16, &[]),
+            ("g_idle", "ACT_PRIMARY_VM_IDLE", 30, &[]),
+            ("g_fire", "ACT_PRIMARY_VM_PRIMARYATTACK", 10, &[]),
+            ("g_reload_start", "ACT_PRIMARY_RELOAD_START", 10, &[]),
+            ("g_reload_loop", "ACT_PRIMARY_RELOAD_LOOP", 10, &[]),
+            ("g_reload_end", "ACT_PRIMARY_RELOAD_FINISH", 10, &[]),
+        ],
+    );
+    vm.bones.push(MapBone { name: "procedural_chamber".into(), parent: Some(0), position: Vec3::ZERO, rotation: Quat::IDENTITY });
+    let mut sim = sim();
+    sim.app.world_mut().insert_resource(ViewModels::of([vm]));
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], GRENADE_LAUNCHER);
+    sim.ticks(5);
+    (sim, p, w)
+}
+
+/// The drum's turn (degrees) in `p`'s view model now.
+fn drum_angle(sim: &Sim, p: Entity) -> f32 {
+    let view = sim.app.world().get::<chimera_world::map::ViewAnimator>(p).unwrap();
+    view.bone_rolls.iter().find(|(b, _)| *b == 1).map_or(0.0, |(_, a)| a.to_degrees())
+}
+
+/// `n` ticks (frames), attack held on the ticks `fire` says: the drum's
+/// angle after each.
+fn drum_run(sim: &mut Sim, p: Entity, n: usize, fire: impl Fn(usize) -> bool) -> Vec<f32> {
+    (0..n)
+        .map(|t| {
+            sim.intent(p).fire = fire(t);
+            sim.ticks(1);
+            drum_angle(sim, p)
+        })
+        .collect()
+}
+
+/// 52: one shot turns the drum 60 degrees (positive about its z:
+/// clockwise seen from behind), from the frame after the shot, slow,
+/// then fast, then slow, done 0.13-0.15 s after it.
+#[test]
+fn one_shot_turns_the_drum_one_chamber_smoothly_52() {
+    let (mut sim, p, _) = drum();
+    assert_eq!(drum_angle(&sim, p), 0.0, "at rest");
+    let a = drum_run(&mut sim, p, 30, |t| t == 0);
+    assert_eq!(a[0], 0.0, "not in the shot's frame: {a:?}");
+    assert!(a[1] > 0.0 && a[1] < 6.0, "starts slowly the frame after: {a:?}");
+    assert!(a.windows(2).all(|w| w[1] >= w[0] - 1e-4), "one way: {a:?}");
+    let steps: Vec<f32> = a.windows(2).map(|w| w[1] - w[0]).collect();
+    let fastest = steps.iter().enumerate().max_by(|x, y| x.1.total_cmp(y.1)).unwrap().0;
+    assert!((3..=6).contains(&fastest), "fastest about halfway: {steps:?}");
+    let done = a.iter().position(|x| (x - 60.0).abs() < 0.01).expect("60 degrees");
+    let at = done as f32 * TICK_INTERVAL as f32;
+    assert!((0.12..=0.16).contains(&at), "settled {at} s after the shot: {a:?}");
+    assert!(a[done..].iter().all(|x| (x - 60.0).abs() < 0.01), "and stays: {a:?}");
+}
+
+/// 53: two shots 0.8 s apart, two separate 60-degree turns.
+#[test]
+fn two_shots_turn_it_twice_53() {
+    let (mut sim, p, _) = drum();
+    let gap = (0.8 / TICK_INTERVAL).round() as usize;
+    let a = drum_run(&mut sim, p, gap + 30, |t| t == 0 || t == gap);
+    assert!((a[gap - 1] - 60.0).abs() < 0.01, "{}", a[gap - 1]);
+    assert!((a[gap + 29] - 120.0).abs() < 0.01, "{}", a[gap + 29]);
+}
+
+/// 54: a reload of two (clip 2 of 4) never turns it.
+#[test]
+fn a_reload_never_turns_the_drum_54() {
+    let (mut sim, p, w) = drum();
+    let _ = drum_run(&mut sim, p, 60, |t| t < 2);
+    let shot = drum_angle(&sim, p);
+    sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 2;
+    let a: Vec<f32> = (0..200)
+        .map(|t| {
+            sim.intent(p).reload = t == 0;
+            sim.ticks(1);
+            drum_angle(&sim, p)
+        })
+        .collect();
+    assert_eq!(sim.app.world().get::<Magazine>(w).unwrap().clip, 4, "reloaded");
+    assert!(a.iter().all(|x| (x - shot).abs() < 1e-4), "{a:?}");
+}
+
+/// 55: only the view model turns (`ViewAnimator::bone_rolls`); nothing
+/// turns the held model others see (the rule writes no `HeldTurn`, whose
+/// turned parts are the Minigun's barrel's alone).
+#[test]
+fn the_world_models_drum_never_turns_55() {
+    let (mut sim, p, _) = drum();
+    let _ = drum_run(&mut sim, p, 30, |t| t == 0);
+    assert!((drum_angle(&sim, p) - 60.0).abs() < 0.01);
+    let w = sim.app.world_mut();
+    let turned: Vec<String> = w.query::<&chimera_world::map::HeldTurn>().iter(w).map(|t| t.bone.clone()).collect();
+    assert!(turned.iter().all(|b| !b.eq_ignore_ascii_case("procedural_chamber")), "{turned:?}");
+}

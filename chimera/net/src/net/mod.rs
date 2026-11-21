@@ -59,7 +59,7 @@
 //! `FireBullets`, `WeaponFx`, `Detonation`, `Senses`, `Killed`, `HitConfirm`,
 //! `Hurt`, `DropRequest`; game rules' `NetScore`, `BuyRequest`, `ServerMotd`
 //! (`motd.rs`), `SayRequest`, `RadioRequest`, `Notice`, `ChatMessage`,
-//! `RadioCall`, `ServerSound`, `ServerStopSound`, `CvarValues`, `NameRequest`, `NameChanged`,
+//! `RadioCall`, `ServerSound`, `ServerStopSound`, `ServerFadeSound`, `CvarValues`, `NameRequest`, `NameChanged`,
 //! `decals::Decals`, voice (`voice::VoiceData`, `VoiceRelay`), votes' `CallVote`,
 //! `CastVote`, `VoteNews` (`vote`), `weapon_params::WeaponParams` (a weapon id's
 //! server-decided parameters, once per id per client), `server_docs::DocsRequest`,
@@ -1268,6 +1268,17 @@ pub struct ServerStopSound {
     pub entry: String,
 }
 
+/// Server -> clients: ramp a source's sound's volume (`map::FadeSound`:
+/// TF2's Flame Thrower's burst), to every client but its maker's.
+#[derive(Message, Serialize, Deserialize, Clone, Debug, PartialEq, bevy::ecs::entity::MapEntities)]
+pub struct ServerFadeSound {
+    #[entities]
+    pub source: Entity,
+    pub entry: String,
+    pub to: f32,
+    pub over: f32,
+}
+
 /// Server -> clients: replicated cvars' values (`console::CvarScope::
 /// Replicated`): all of them when a client joins, then those that
 /// changed. A client sets them and refuses local changes while connected.
@@ -1453,6 +1464,7 @@ impl Plugin for NetPlugin {
             .add_mapped_server_message::<RadioCall>(Channel::Ordered)
             .add_mapped_server_message::<ServerSound>(Channel::Unreliable)
             .add_mapped_server_message::<ServerStopSound>(Channel::Ordered)
+            .add_mapped_server_message::<ServerFadeSound>(Channel::Ordered)
             .add_server_message::<CvarValues>(Channel::Ordered)
             .make_message_independent::<CvarValues>()
             .add_client_message::<NameRequest>(Channel::Ordered)

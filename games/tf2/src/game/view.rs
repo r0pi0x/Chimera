@@ -490,10 +490,9 @@ pub fn spin_barrels(
 ) {
     let frac = fixed.overstep_fraction();
     for (inv, mut view) in &mut holders {
+        // Not a Minigun: its rolls are another's (a data rule's,
+        // `weapon::view_bones`), cleared when its model went.
         let Some(gun) = inv.active.and_then(|w| guns.get(w).ok()) else {
-            if !view.bone_rolls.is_empty() {
-                view.bone_rolls.clear();
-            }
             continue;
         };
         let barrel = view

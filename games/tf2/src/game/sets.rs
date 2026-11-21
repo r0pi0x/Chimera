@@ -242,6 +242,7 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
             "Weapon_FlameThrower.FireLoop",
             "Weapon_FlameThrower.FireLoopCrit",
             "Weapon_FlameThrower.FireEnd",
+            "Weapon_FlameThrower.WindDown",
             "Weapon_FlameThrower.FireHit",
             "Weapon_FlameThrower.PilotLoop",
             "Weapon_FlameThrower.Draw",

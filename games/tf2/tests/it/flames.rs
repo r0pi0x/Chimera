@@ -10,18 +10,23 @@
 //!   under-water names;
 //! - damage only where the points are (no cone): a target beside the
 //!   stream takes nothing, every hit on one in it has a point's box on him;
-//! - a wall: the points slide on it and climb, never through it.
+//! - a wall: the points slide on it and climb, never through it;
+//! - the burst's sounds and the pilot light (effects.md 14.2): when each
+//!   starts, stops and fades, on the Pyro's machine and another's.
 
 use std::collections::HashMap;
 
-use bevy::prelude::*;
+use bevy::{ecs::message::MessageCursor, prelude::*};
 use chimera_core::core::{Health, Intent};
 use chimera_net::{harness::NetSim, net::memory::LinkConditions};
 use chimera_sim::weapon::{self, Inventory, Weapon};
 use chimera_world::{
     greybox::{self, GreyboxMapPlugin},
     harness::Sim,
-    map::psys::{ParticleControlPoints, StartParticleSystem, StopParticleSystems},
+    map::{
+        FadeSound, PlaySound, StopSound,
+        psys::{ParticleControlPoints, StartParticleSystem, StopParticleSystems},
+    },
 };
 use tf2::{
     game::{
@@ -293,4 +298,200 @@ fn every_client_draws_the_servers_points() {
             }
         }
     }
+}
+
+// --- The burst's sounds and the pilot light (specs/tf2/effects.md 14.2)
+
+/// What one tick sent of the Flame Thrower's sounds: played (entry,
+/// volume, channel), stopped, faded (entry, to, over).
+#[derive(Default, Debug, Clone)]
+struct Heard {
+    played: Vec<(String, Option<f32>, Option<u8>)>,
+    stopped: Vec<String>,
+    faded: Vec<(String, f32, f32)>,
+}
+
+impl Heard {
+    fn played(&self, end: &str) -> Option<&(String, Option<f32>, Option<u8>)> {
+        self.played.iter().find(|p| p.0.ends_with(end))
+    }
+    fn stopped(&self, end: &str) -> bool {
+        self.stopped.iter().any(|s| s.ends_with(end))
+    }
+    fn faded(&self, end: &str) -> Option<(f32, f32)> {
+        self.faded.iter().find(|f| f.0.ends_with(end)).map(|f| (f.1, f.2))
+    }
+    fn is_empty(&self) -> bool {
+        self.played.is_empty() && self.stopped.is_empty() && self.faded.is_empty()
+    }
+}
+
+/// Cursors on one app's sound messages.
+struct Ears(MessageCursor<PlaySound>, MessageCursor<StopSound>, MessageCursor<FadeSound>);
+
+impl Ears {
+    fn new(app: &App) -> Self {
+        let w = app.world();
+        Self(
+            w.resource::<Messages<PlaySound>>().get_cursor_current(),
+            w.resource::<Messages<StopSound>>().get_cursor_current(),
+            w.resource::<Messages<FadeSound>>().get_cursor_current(),
+        )
+    }
+    /// The Flame Thrower's sounds since the last read.
+    fn read(&mut self, app: &App) -> Heard {
+        let w = app.world();
+        let ours = |e: &str| e.contains("FlameThrower.") && !e.ends_with(".FireHit") && !e.ends_with(".Draw");
+        Heard {
+            played: self.0.read(w.resource::<Messages<PlaySound>>()).filter(|s| ours(&s.entry)).map(|s| (s.entry.clone(), s.volume, s.channel)).collect(),
+            stopped: self.1.read(w.resource::<Messages<StopSound>>()).filter(|s| ours(&s.entry)).map(|s| s.entry.clone()).collect(),
+            faded: self.2.read(w.resource::<Messages<FadeSound>>()).filter(|s| ours(&s.entry)).map(|s| (s.entry.clone(), s.to, s.over)).collect(),
+        }
+    }
+}
+
+/// `n` ticks, `fire` deciding the attack button by tick: what each sent.
+fn listen(sim: &mut Sim, p: Entity, n: usize, fire: impl Fn(usize) -> bool) -> Vec<Heard> {
+    let mut ears = Ears::new(&sim.app);
+    (0..n)
+        .map(|t| {
+            sim.intent(p).fire = fire(t);
+            sim.ticks(1);
+            ears.read(&sim.app)
+        })
+        .collect()
+}
+
+/// The ticks that sent anything.
+fn busy(h: &[Heard]) -> Vec<usize> {
+    h.iter().enumerate().filter(|(_, x)| !x.is_empty()).map(|(i, _)| i).collect()
+}
+
+const PILOT: &str = ".PilotLoop";
+const START: &str = ".FireStart";
+const LOOP: &str = ".FireLoop";
+const END: &str = ".WindDown";
+
+/// Test cases (effects.md 14.2): the draw starts the pilot light once,
+/// nothing restarts it in 15 s idle; a 15-tick tap: in its first tick the
+/// pilot light stops, the start (volume 1, no channel) and the loop
+/// (volume 0, the weapon channel) start with their 3.5 s fades to 0 and
+/// 1, nothing more while held; in the release's tick both are cut, the
+/// end (`.WindDown`, no channel) plays and the pilot light again; a burst
+/// 10 ticks later leaves the end alone and starts both again; switching
+/// away stops the pilot light.
+#[test]
+fn a_burst_fades_start_and_loop_and_a_release_cuts_both_14_2() {
+    let mut sim = sim();
+    let p = sim.spawn_character(greybox::SPAWNS[1], tf2::game::movement::ID);
+    sim.seconds(1.0);
+    let w = weapon::give(sim.app.world_mut(), p, FLAMETHROWER).unwrap();
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(w);
+    let drawn = listen(&mut sim, p, 1000, |_| false);
+    let pilots: Vec<usize> = drawn.iter().enumerate().filter(|(_, h)| h.played(PILOT).is_some()).map(|(i, _)| i).collect();
+    assert_eq!(pilots.len(), 1, "the pilot light once, from the draw: {:?}", busy(&drawn));
+    assert!(pilots[0] <= 2, "in the draw's tick: {pilots:?}");
+    assert_eq!(drawn[pilots[0]].played(PILOT).unwrap().1, None, "at its entry's volume (0.25)");
+    assert_eq!(busy(&drawn), pilots, "nothing else, nothing restarts it");
+
+    // A tap of 15 ticks, then 10 ticks off, then 20 more.
+    let h = listen(&mut sim, p, 60, |t| t < 15 || (25..45).contains(&t));
+    assert_eq!(busy(&h), [0, 15, 25, 45], "{h:#?}");
+    let first = &h[0];
+    assert!(first.stopped(PILOT), "the pilot light out: {first:?}");
+    let start = first.played(START).expect("the start");
+    assert_eq!((start.1, start.2), (None, None), "volume 1, never replaced");
+    let lp = first.played(LOOP).expect("the loop");
+    assert_eq!((lp.1, lp.2), (Some(0.0), Some(weapon::CHAN_WEAPON)), "from 0, the weapon channel");
+    assert_eq!(first.faded(START), Some((0.0, 3.5)));
+    assert_eq!(first.faded(LOOP), Some((1.0, 3.5)));
+    let release = &h[15];
+    assert!(release.stopped(START) && release.stopped(LOOP), "both cut in the release's tick: {release:?}");
+    let end = release.played(END).expect("the end");
+    assert_eq!((end.1, end.2), (None, None));
+    assert!(release.played(PILOT).is_some(), "the pilot light again: {release:?}");
+    assert!(release.played(".FireEnd").is_none());
+    // Fired again within the end: the end left alone, the pilot out.
+    let again = &h[25];
+    assert!(!again.stopped(END), "{again:?}");
+    assert!(again.stopped(PILOT) && again.played(START).is_some() && again.played(LOOP).is_some(), "{again:?}");
+
+    // Switching to the Shotgun stops the pilot light.
+    let shotgun = weapon::give(sim.app.world_mut(), p, tf2::game::weapons::SHOTGUN).unwrap();
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(shotgun);
+    let away = listen(&mut sim, p, 5, |_| false);
+    assert!(away.iter().any(|x| x.stopped(PILOT)), "{away:#?}");
+    assert!(away.iter().all(|x| x.played(PILOT).is_none()));
+}
+
+/// Test case: fired until the ammo runs out, the burst ends as a release
+/// (start and loop cut, the end) but the pilot light doesn't restart.
+#[test]
+fn running_dry_ends_the_burst_without_the_pilot_light_14_2() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[1], FLAMETHROWER);
+    sim.app.world_mut().get_mut::<weapon::Magazine>(w).unwrap().clip = 3;
+    let h = listen(&mut sim, p, 120, |_| true);
+    let ends: Vec<usize> = h.iter().enumerate().filter(|(_, x)| x.played(END).is_some()).map(|(i, _)| i).collect();
+    assert_eq!(ends.len(), 1, "{h:#?}");
+    let dry = &h[ends[0]];
+    assert!(dry.stopped(START) && dry.stopped(LOOP), "{dry:?}");
+    assert!(h.iter().all(|x| x.played(PILOT).is_none()), "no pilot light on an empty gun");
+}
+
+/// The fades' volumes are the measured ones (effects.md 14.2 rule 4, the
+/// channel list's 0-255 scale; tick 0 the burst's first) and the burst
+/// table's.
+#[test]
+fn the_fades_are_straight_lines_over_3_5_s_14_2() {
+    use chimera_world::map::sound::ramp_volume;
+    let start = |tick: f32| ramp_volume(1.0, 0.0, 3.5, tick * TICK_INTERVAL as f32) * 255.0;
+    let lp = |tick: f32| ramp_volume(0.0, 1.0, 3.5, tick * TICK_INTERVAL as f32) * 255.0;
+    for (tick, s, l) in [(3.0, 252.0, 2.0), (12.0, 242.0, 12.0), (60.0, 190.0, 64.0), (86.0, 162.0, 92.0), (218.0, 17.0, 237.0)] {
+        // Within 2 ticks (about 2.2 on this scale): the pictures were
+        // taken a tick or two off the tick they name.
+        assert!((start(tick) - s).abs() <= 2.5, "start at tick {tick}: {} vs {s}", start(tick));
+        assert!((lp(tick) - l).abs() <= 2.5, "loop at tick {tick}: {} vs {l}", lp(tick));
+    }
+    assert_eq!(lp(234.0), 255.0, "the loop holds 1 from 3.5 s");
+    assert_eq!(start(240.0), 0.0);
+    // The table: a tap (0.225 s) 0.94 / 0.06, a 1 s burst 0.71 / 0.29.
+    assert!((ramp_volume(1.0, 0.0, 3.5, 0.225) - 0.94).abs() < 0.005);
+    assert!((ramp_volume(0.0, 1.0, 3.5, 1.0) - 0.29).abs() < 0.005);
+}
+
+/// Test case: another player hears the same sounds from the Pyro's
+/// burst (the server's `PredictedSound`, `StopSound` and `FadeSound`),
+/// 0-2 ticks after the Pyro's own.
+#[test]
+fn others_hear_the_burst_and_its_fades_14_2() {
+    let link = LinkConditions { latency: std::time::Duration::from_millis(40), ..LinkConditions::default() };
+    let mut sim = NetSim::new(Tf2Sim, link, 5, 0, |app| {
+        app.add_plugins(GreyboxMapPlugin);
+    });
+    sim.add_client(|_| {});
+    sim.add_client(|_| {});
+    sim.set_frame(TICK_INTERVAL);
+    sim.until_joined(900);
+    sim.until_looks_taken(600);
+    let theirs = sim.character_of(0).unwrap();
+    let sw = weapon::give(sim.server.app.world_mut(), theirs, FLAMETHROWER).unwrap();
+    sim.server.app.world_mut().get_mut::<Inventory>(theirs).unwrap().wanted = Some(sw);
+    sim.ticks(150);
+    let mut ears = Ears::new(&sim.clients[1].app);
+    let mut heard = Heard::default();
+    for k in 0..60 {
+        let me = sim.local_player(0).unwrap();
+        sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = k < 15;
+        sim.step();
+        let h = ears.read(&sim.clients[1].app);
+        heard.played.extend(h.played);
+        heard.stopped.extend(h.stopped);
+        heard.faded.extend(h.faded);
+    }
+    assert!(heard.played(START).is_some() && heard.played(LOOP).is_some_and(|l| l.1 == Some(0.0)), "{heard:#?}");
+    assert_eq!(heard.faded(START), Some((0.0, 3.5)), "{heard:#?}");
+    assert_eq!(heard.faded(LOOP), Some((1.0, 3.5)), "{heard:#?}");
+    assert!(heard.stopped(START) && heard.stopped(LOOP) && heard.stopped(PILOT), "{heard:#?}");
+    assert!(heard.played(END).is_some() && heard.played(PILOT).is_some(), "{heard:#?}");
 }

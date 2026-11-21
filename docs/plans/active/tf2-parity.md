@@ -140,6 +140,28 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Log
 
+### The Flame Thrower's sounds, the Grenade Launcher's drum: built (tf2-flame-drum, 2026-11-21)
+
+From effects.md 14.2 and weapons_more.md 9.6 (the spec pass below):
+
+- **Flame Thrower** (`weapons::flame::sounds`; data `flamethrower.toml`:
+  `end_sound` `.WindDown`, `pilot_sound`, `burst_fade = 3.5`): the user's
+  "keeps sounding after the release" was the start sound (3.63 s, on its
+  own channel) never stopped and the release detected only once the last
+  round aged out (2 ticks); now the release cuts the start and the loop
+  in its tick (attack let go), plays the end on no channel (a new burst
+  leaves it alone) and the pilot light (also at each draw, not after
+  running dry; stopped by a burst and a holster). The fades are a new
+  general message, `map::FadeSound` (a straight-line volume ramp of a
+  source's playing entry; playback's `audio::sound::VolumeRamp`; sent to
+  other clients as `ServerFadeSound`). Tests: `flames::*_14_2` (own
+  machine, running dry, the measured volumes, another client).
+- **Grenade Launcher's drum**: a general data rule, `[[anim.procedural]]`
+  (`weapon::view_bones`: a view-model bone turned `per_shot` degrees per
+  round about its z, smoothstep over `time`); the launcher's
+  `procedural_chamber` 60 degrees over 0.14 s. First person only, never
+  in reloads. Tests: `weapons_more::*_52` to `_55`.
+
 ### The Flame Thrower's sounds, the Grenade Launcher's drum (spec-tf2-flame-drum, 2026-11-21)
 
 Spec pass from two user reports (ours' flame keeps sounding long after

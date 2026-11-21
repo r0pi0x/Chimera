@@ -45,13 +45,22 @@
 //!   any is left, `burn_damage` (4) and `burn_interval` less of it (one
 //!   hit: 3.4 s, 7 ticks, 28); out at waist-deep water. An enemy Pyro
 //!   takes the hits but only a `pyro_burn` (0.25 s) look, no afterburn.
-//! - **Sounds** (`sounds`, predicted): the start and the loop when it
-//!   starts flaming, the end when it stops (the weapon channel); the
-//!   start and the loop stop when the gun leaves the hand
-//!   (`held_sounds::HeldSounds`: a rung's swap, a death); a critical
-//!   burst (its Pyro crit-boosted, `crit_boost`) loops `loop_crit_sound`,
-//!   and a burst turning critical or not while firing swaps the loops at
-//!   once, no start, no end (effects.md 14).
+//! - **Sounds** (`sounds`, predicted; effects.md 14.2): the pilot light
+//!   (`pilot_sound`, played once, not looped) from the tick the gun is
+//!   drawn; a burst stops it and starts the start sound (volume 1, no
+//!   channel: never replaced) and the loop (volume 0, the weapon
+//!   channel), ramped in straight lines over `burst_fade` (3.5 s) to 0
+//!   and 1 (`map::FadeSound`, one each per burst); the release cuts both
+//!   in its tick and plays the end (`end_sound`, `.WindDown`, no channel,
+//!   so a new burst doesn't cut it) and the pilot light from its start,
+//!   but not when the burst ended with the clip empty. The start, the
+//!   loops and the pilot light stop when the gun leaves the hand
+//!   (`held_sounds::HeldSounds`: a switch, a rung's swap, a death); a
+//!   critical burst (its Pyro crit-boosted, `crit_boost`) loops
+//!   `loop_crit_sound`, and a burst turning critical or not while firing
+//!   swaps the loops at once at full volume, no start, no end (effects.md
+//!   14). Others get them all from the server (`PredictedSound`,
+//!   `StopSound`, `FadeSound`).
 //!
 //! The flames' look is `looks::flame_stream`'s (`new_flame` riding the
 //! drawn points).
@@ -66,8 +75,8 @@
 //! machine's own player's points are predicted (TF2's appear a network
 //! update late); the line from the eye to the muzzle isn't checked and a
 //! press under 0.2 s emits only while held; no airblast (attack2); random
-//! crits are off; the start's 3.5 s fade out and the loop's fade in
-//! aren't played (both at full volume); Pyros aren't immune to afterburn (no classes on the victims);
+//! crits are off; the fades run on each machine's own clock from the
+//! burst's first tick (TF2 re-sends the volumes every tick); Pyros aren't immune to afterburn (no classes on the victims);
 //! health kits and Medics don't put a burn out.
 
 use bevy::prelude::*;
@@ -75,7 +84,7 @@ use serde::Deserialize;
 
 use avian3d::prelude::*;
 use chimera_sim::weapon::{
-    CHAN_ITEM, CHAN_WEAPON, Inventory, held_sounds::HeldSounds, Magazine, NetPart, Trigger, Weapon, WeaponEvent, WeaponEventKind, aim_of,
+    CHAN_WEAPON, Inventory, held_sounds::HeldSounds, Magazine, NetPart, Trigger, Weapon, WeaponEvent, WeaponEventKind, aim_of,
     random::shared_random, remote::RemoteShot,
 };
 use source_engine::source_movement::SourceMovement;
@@ -137,6 +146,14 @@ pub struct FlameParams {
     pub end_sound: Option<String>,
     #[serde(default)]
     pub hit_sound: Option<String>,
+    /// The pilot light: played once from each draw and release
+    /// (effects.md 14.2).
+    #[serde(default)]
+    pub pilot_sound: Option<String>,
+    /// The burst's fades (s): the start sound from 1 to 0, the loop from
+    /// 0 to 1 (0: both at full volume).
+    #[serde(default)]
+    pub burst_fade: f32,
 }
 
 impl FlameParams {
@@ -177,6 +194,9 @@ pub struct Tf2Flame {
     pub owed: f32,
     /// The burst playing is critical (its loop the crit one).
     pub crit: bool,
+    /// It was its holder's drawn weapon last tick (the pilot light starts
+    /// when it becomes so; this machine's own, not sent).
+    pub drawn: bool,
 }
 
 impl NetPart for Tf2Flame {
@@ -193,9 +213,11 @@ impl NetPart for Tf2Flame {
 
 /// `tf2:flame` on a weapon.
 pub fn attach(e: &mut EntityWorldMut, p: &FlameParams) {
-    e.insert((Tf2Flame { params: p.clone(), flaming: false, owed: 0.0, crit: false }, FlameStream::default(), FlameShown::default()));
-    // The start and the loops end when it leaves the hand (`held_sounds`).
-    let held: Vec<String> = p.start_sound.iter().chain(p.loop_sound.iter()).chain(p.loop_crit_sound.iter()).cloned().collect();
+    e.insert((Tf2Flame { params: p.clone(), flaming: false, owed: 0.0, crit: false, drawn: false }, FlameStream::default(), FlameShown::default()));
+    // The start, the loops and the pilot light end when it leaves the
+    // hand (`held_sounds`).
+    let held: Vec<String> =
+        p.start_sound.iter().chain(p.loop_sound.iter()).chain(p.loop_crit_sound.iter()).chain(p.pilot_sound.iter()).cloned().collect();
     if !held.is_empty() {
         e.insert(HeldSounds::new(held));
     }
@@ -469,62 +491,108 @@ pub fn ammo(mut events: MessageReader<WeaponEvent>, mut guns: Query<(&mut Tf2Fla
 }
 
 /// The flaming state and its sounds (predicted, after the frame;
-/// effects.md 14): starting, the start sound (its own channel) and the
-/// loop, the crit one when the burst is critical (its owner crit-boosted:
-/// `crit_boost::CritBoosted`); the burst turning critical or not while
-/// firing cuts both and starts the other loop, no start, no end;
-/// stopping, the end (replacing the loop on the weapon's channel).
+/// effects.md 14 and 14.2; module doc): drawn, the pilot light; starting,
+/// the pilot light stopped, the start sound (no channel) and the loop
+/// (the crit one when the burst is critical: its owner crit-boosted,
+/// `crit_boost::CritBoosted`) on the weapon channel, faded over
+/// `burst_fade`; the burst turning critical or not while firing cuts
+/// both and starts the other loop at full volume, no start, no end;
+/// stopping, both cut, the end (no channel) and, with ammo left and the
+/// gun in hand, the pilot light again.
 #[allow(clippy::type_complexity)]
 pub fn sounds(
-    owners: Query<(Entity, &Inventory, &Transform, Has<super::crit_boost::CritBoosted>)>,
-    mut guns: Query<(&mut Tf2Flame, &Tf2Gun, Option<&Trigger>)>,
+    owners: Query<(Entity, &Inventory, &Transform, Option<&Intent>, Has<super::crit_boost::CritBoosted>)>,
+    mut guns: Query<(&mut Tf2Flame, &Tf2Gun, Option<&Trigger>, Option<&Magazine>)>,
     clock: Res<SimClock>,
     first: Res<FirstTimePredicted>,
     mut out: MessageWriter<PredictedSound>,
     mut stops: MessageWriter<crate::map::StopSound>,
+    mut fades: MessageWriter<crate::map::FadeSound>,
 ) {
-    for (owner, inv, at, boosted) in &owners {
+    for (owner, inv, at, intent, boosted) in &owners {
         for &w in &inv.weapons {
-            let Ok((mut f, gun, trigger)) = guns.get_mut(w) else { continue };
-            let now = inv.active == Some(w) && flaming(gun, trigger, clock.now, clock.dt() as f64);
+            let Ok((mut f, gun, trigger, mag)) = guns.get_mut(w) else { continue };
+            let drawn = inv.active == Some(w);
+            let deployed = drawn && !f.drawn;
+            f.drawn = drawn;
+            // A release ends the burst in its tick (not when the last
+            // round has aged out).
+            let held = intent.is_none_or(|i| i.fire);
+            let now = drawn && held && flaming(gun, trigger, clock.now, clock.dt() as f64);
             let crit = now && boosted;
-            if now == f.flaming && (!now || crit == f.crit) {
-                continue;
-            }
-            let swap = now && f.flaming;
-            let was_crit = f.crit;
+            let changed = now != f.flaming || (now && crit != f.crit);
+            let (swap, was_crit) = (now && f.flaming, f.crit);
             f.flaming = now;
             f.crit = crit;
-            if !first.0 {
+            if !first.0 || !(changed || deployed) {
                 continue;
             }
-            let loop_of = |crit: bool| if crit { f.params.loop_crit_sound.clone().or(f.params.loop_sound.clone()) } else { f.params.loop_sound.clone() };
-            let play = |out: &mut MessageWriter<PredictedSound>, entry: String, channel: u8| {
+            let p = &f.params;
+            let loop_of = |crit: bool| if crit { p.loop_crit_sound.clone().or(p.loop_sound.clone()) } else { p.loop_sound.clone() };
+            let play = |out: &mut MessageWriter<PredictedSound>, entry: String, channel: Option<u8>, volume: Option<f32>| {
                 out.write(PredictedSound {
                     by: owner,
-                    sound: PlaySound { entry, at: Some(at.translation), volume: None, pitch: None, source: Some(owner), channel: Some(channel) },
+                    sound: PlaySound { entry, at: Some(at.translation), volume, pitch: None, source: Some(owner), channel },
                 });
             };
-            if swap {
-                // Both cut at once, the other loop at full volume.
-                for e in f.params.start_sound.iter().cloned().chain(loop_of(was_crit)) {
-                    stops.write(crate::map::StopSound { by: Some(owner), source: owner, entry: e, local: false });
-                }
-                if let Some(l) = loop_of(crit) {
-                    play(&mut out, l, CHAN_WEAPON);
+            let stop = |stops: &mut MessageWriter<crate::map::StopSound>, entry: String| {
+                stops.write(crate::map::StopSound { by: Some(owner), source: owner, entry, local: false });
+            };
+            let fade = |fades: &mut MessageWriter<crate::map::FadeSound>, entry: String, to: f32| {
+                fades.write(crate::map::FadeSound { by: Some(owner), source: owner, entry, to, over: p.burst_fade, local: false });
+            };
+            if !changed {
+                // Drawn, not flaming: the pilot light from its start.
+                if let Some(pilot) = p.pilot_sound.clone() {
+                    play(&mut out, pilot, None, None);
                 }
                 continue;
             }
-            if now {
-                // The start on its own channel, the loop on the weapon's.
-                if let Some(s) = f.params.start_sound.clone() {
-                    play(&mut out, s, CHAN_ITEM);
+            if swap {
+                // Both cut at once, the other loop at full volume.
+                for e in p.start_sound.iter().cloned().chain(loop_of(was_crit)) {
+                    stop(&mut stops, e);
                 }
                 if let Some(l) = loop_of(crit) {
-                    play(&mut out, l, CHAN_WEAPON);
+                    play(&mut out, l, Some(CHAN_WEAPON), None);
                 }
-            } else if let Some(e) = f.params.end_sound.clone() {
-                play(&mut out, e, CHAN_WEAPON);
+                continue;
+            }
+            let fading = p.burst_fade > 0.0;
+            if now {
+                // The pilot light out; the start on no channel fading out,
+                // the loop on the weapon's fading in.
+                if let Some(pilot) = p.pilot_sound.clone() {
+                    stop(&mut stops, pilot);
+                }
+                if let Some(s) = p.start_sound.clone() {
+                    play(&mut out, s.clone(), None, None);
+                    if fading {
+                        fade(&mut fades, s, 0.0);
+                    }
+                }
+                if let Some(l) = loop_of(crit) {
+                    play(&mut out, l.clone(), Some(CHAN_WEAPON), fading.then_some(0.0));
+                    if fading {
+                        fade(&mut fades, l, 1.0);
+                    }
+                }
+            } else {
+                // Released (or run dry, or holstered): both cut in this
+                // tick, the end, the pilot light again with ammo left.
+                for e in p.start_sound.iter().cloned().chain(loop_of(was_crit)) {
+                    stop(&mut stops, e);
+                }
+                if let Some(e) = p.end_sound.clone() {
+                    play(&mut out, e, None, None);
+                }
+                let dry = mag.is_some_and(|m| m.clip == 0);
+                if drawn
+                    && !dry
+                    && let Some(pilot) = p.pilot_sound.clone()
+                {
+                    play(&mut out, pilot, None, None);
+                }
             }
         }
     }

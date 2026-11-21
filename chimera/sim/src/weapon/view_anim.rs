@@ -3,7 +3,7 @@
 //! weapon is drawn, fired, reloaded and zoomed, and the effects the
 //! animation's events ask for (`map::ViewModelEvent`). Per character and
 //! frame (`drive`, in `map::DriveAnimation`, simulation side so it runs
-//! headless): show the active weapon's view model (drawing it when it
+//! headless; its data's procedural bones after it, `view_bones`): show the active weapon's view model (drawing it when it
 //! changes, or when its model comes in after the weapon did; nothing when
 //! dead), react to the weapon's `WeaponEvent`s,
 //! advance the animation and send the effects of the events its cycle
@@ -95,7 +95,7 @@ impl Plugin for ViewAnimPlugin {
             .add_message::<crate::map::PlaySound>()
             .init_resource::<ViewModelSettings>()
             .init_resource::<EffectSettings>()
-            .add_systems(Update, (drive, play_view_sounds).chain().in_set(DriveAnimation));
+            .add_systems(Update, (drive, super::view_bones::turn, play_view_sounds).chain().in_set(DriveAnimation));
     }
 }
 

@@ -179,6 +179,7 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
     // when there is one: then these change nothing).
     app.add_message::<PlaySound>()
         .add_message::<StopSound>()
+        .add_message::<FadeSound>()
         .add_message::<SoundControl>()
         .add_message::<entities::FireEntityOutput>()
         .add_message::<entities::FireEntityOutputValue>()

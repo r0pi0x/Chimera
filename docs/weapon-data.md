@@ -171,6 +171,10 @@ idle_interval = 20.0            # s between idles
 #                               # reload_loop, reload_end, zoom_in,
 #                               # zoom_out); without it the game's
 #                               # view_anim::ViewAnimRules choose
+# [[anim.procedural]]          # a view-model bone each round turns on top of
+# bone = "procedural_chamber"   # the animation, about its own z, eased in
+# per_shot = 60.0               # and out over `time` s, first person only
+# time = 0.14                   # (weapon::view_bones: TF2's drum)
 
 [hooks."cs_source:recoil"]      # a game's behaviour, with its parameters
 standing = { up = 1.0, up_step = 0.175, side = 0.375, side_step = 0.0375, up_cap = 5.75, side_cap = 1.75 }

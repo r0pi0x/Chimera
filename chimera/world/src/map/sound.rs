@@ -1,6 +1,7 @@
 //! Sounds for any game (docs/plans/active/sound.md), the simulation's
 //! side: the map carries named sound entries and decoded clips (and
-//! soundscapes); game code writes `PlaySound`, and starts, changes and
+//! soundscapes); game code writes `PlaySound` (and `StopSound`, `FadeSound`
+//! for a source's playing one), and starts, changes and
 //! stops long-lived sounds with `SoundControl` under a `SoundKey`; the
 //! distance model (`distance_gain`, also for bots' hearing; a level is a
 //! Source sound level, an attenuation, or an inner and outer radius with
@@ -336,6 +337,30 @@ pub struct StopSound {
     /// derives for itself from replicated state (TF2's Minigun,
     /// specs/tf2/minigun.md 6).
     pub local: bool,
+}
+
+/// Ramp `source`'s playing sound `entry` in a straight line from the
+/// volume it has to `to` over `over` seconds (then it holds `to`): TF2's
+/// Flame Thrower's start sound fading out and its loop in over a burst's
+/// first 3.5 s (specs/tf2/effects.md 14.2). One message per ramp, not one
+/// per tick: playback steps it each frame. A sound started in the same
+/// frame (or a little after: a network client's sounds and fades come on
+/// different channels) takes it from its start. Sent like `StopSound`:
+/// to every client but `by`'s, unless `local`.
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct FadeSound {
+    pub by: Option<Entity>,
+    pub source: Entity,
+    pub entry: String,
+    pub to: f32,
+    pub over: f32,
+    pub local: bool,
+}
+
+/// The volume a straight-line ramp from `from` to `to` over `over`
+/// seconds has `t` seconds in (`FadeSound`): `to` from `over` on.
+pub fn ramp_volume(from: f32, to: f32, over: f32, t: f32) -> f32 {
+    if over <= 0.0 { to } else { from + (to - from) * (t / over).clamp(0.0, 1.0) }
 }
 
 /// A sound of a character's action that everyone hears but that

@@ -78,8 +78,14 @@ pyro_burn = 0.25
 start_sound = "tf2:Weapon_FlameThrower.FireStart"
 loop_sound = "tf2:Weapon_FlameThrower.FireLoop"
 loop_crit_sound = "tf2:Weapon_FlameThrower.FireLoopCrit"
-end_sound = "tf2:Weapon_FlameThrower.FireEnd"
+# A burst's sounds (specs/tf2/effects.md 14.2): the start fading 1 -> 0
+# and the loop 0 -> 1 in straight lines over `burst_fade`; the release
+# cuts both and plays the end (the stock gun's `.WindDown`) and the pilot
+# light (a wave played once, not looped), also played at each draw.
+end_sound = "tf2:Weapon_FlameThrower.WindDown"
 hit_sound = "tf2:Weapon_FlameThrower.FireHit"
+pilot_sound = "tf2:Weapon_FlameThrower.PilotLoop"
+burst_fade = 3.5
 
 # The stream (specs/tf2/flames.md 3): one `new_flame` per burst at the
 # muzzle, its sprites riding the flame points (control points 1-30); a

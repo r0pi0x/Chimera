@@ -399,6 +399,7 @@ impl Plugin for Tf2GunsPlugin {
             // after the tick, once per tick (not in replays).
             .add_message::<crate::map::PlaySound>()
             .add_message::<crate::map::StopSound>()
+            .add_message::<crate::map::FadeSound>()
             .add_systems(
                 FixedUpdate,
                 (
