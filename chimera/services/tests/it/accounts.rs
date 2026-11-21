@@ -661,3 +661,72 @@ fn a_recovery_key_alone_finds_its_account() {
     assert_eq!((new.account.as_str(), new.username.as_str()), (old.account.as_str(), "lena"));
     assert!(again.is_some());
 }
+
+/// The account page's calls: a rename's availability with free names (the
+/// sign-up's rule; its own name free to it), and signing this device out
+/// (its tickets refused at once, the account's other devices kept).
+#[test]
+fn the_account_page_checks_renames_and_signs_out() {
+    let hub = Hub::new("account-page");
+    hub.redeem(&hub.invite_named("rocket"), None).unwrap();
+    let (file, _) = hub.redeem(&hub.invite_named("sam"), None).unwrap();
+    let t = file.ticket.clone().unwrap();
+    let taken = account::check_rename(&file, &t, "Rocket").unwrap();
+    assert_eq!((taken.available, taken.problem.as_deref()), (false, Some("taken")));
+    assert_eq!(taken.suggestions, ["rocket2", "rocket_gg", "rocket_10"]);
+    assert!(account::check_rename(&file, &t, "sam").unwrap().available, "its own name");
+    assert!(account::check_rename(&file, &t, "sam_rocket").unwrap().available);
+    assert!(!account::check_rename(&file, &t, "9lives").unwrap().available);
+    let link = account::link_code(&file, &t).unwrap();
+    let (other, _) = account::redeem(&hub.link(), &link.code, None, "other pc").unwrap();
+    account::sign_out(&file, &t).unwrap();
+    assert_eq!(status(&account::me(&file, &t).unwrap_err()), 401, "this device's ticket is refused");
+    assert_eq!(status(&account::sign_out(&file, &t).unwrap_err()), 401);
+    assert!(account::request_ticket(&file).is_err(), "no new tickets for it");
+    assert!(account::me(&other, other.ticket.as_deref().unwrap()).is_ok(), "the other PC stays signed in");
+}
+
+/// An owner's invites in the game: made with an intent, a recipient and a
+/// tester's or host's role (never an owner's), the link filled from the
+/// account's hub; listed while open, newest first; revoked by id (a
+/// revoked one can't be redeemed). Anyone else is refused.
+#[test]
+fn an_owner_makes_lists_and_revokes_invites_in_the_game() {
+    use chimera_assets::account::InviteRequest;
+    let hub = Hub::new("owner-invites");
+    let (owner, _) = hub.redeem(&hub.invite(InviteSpec { name: "boss".into(), role: Some("owner".into()), ..Default::default() }).code, None).unwrap();
+    let (player, _) = hub.redeem(&hub.invite_named("player"), None).unwrap();
+    let (ot, pt) = (owner.ticket.clone().unwrap(), player.ticket.clone().unwrap());
+    let ask = |intent: &str, recipient: Option<&str>, role: Option<&str>| InviteRequest {
+        intent: intent.into(),
+        recipient: recipient.map(String::from),
+        role: role.map(String::from),
+    };
+    assert_eq!(status(&account::make_invite(&player, &pt, &ask("for Kim", None, None)).unwrap_err()), 403);
+    assert_eq!(status(&account::open_invites(&player, &pt).unwrap_err()), 403);
+    assert_eq!(status(&account::make_invite(&owner, &ot, &ask("  ", None, None)).unwrap_err()), 400, "an intent is needed");
+    assert_eq!(status(&account::make_invite(&owner, &ot, &ask("x", None, Some("owner"))).unwrap_err()), 400, "no owner invites");
+
+    let kim = account::make_invite(&owner, &ot, &ask("sent on Discord", Some("Kim"), None)).unwrap();
+    let link = HubLink::parse(kim.link.as_deref().unwrap()).unwrap();
+    assert_eq!((link.host.as_str(), link.code.as_deref()), (hub.link().host.as_str(), Some(kim.code.as_str())));
+    let lee = account::make_invite(&owner, &ot, &ask("a LAN host", Some("Lee"), Some("host"))).unwrap();
+    let open = account::open_invites(&owner, &ot).unwrap();
+    let names: Vec<(&str, &str)> = open.iter().map(|i| (i.name.as_str(), i.role.as_str())).collect();
+    assert!(names.starts_with(&[("Lee", "host"), ("Kim", "tester")]), "newest first: {names:?}");
+    let kim_open = open.iter().find(|i| i.name == "Kim").unwrap();
+    assert_eq!((kim_open.intent.as_deref(), kim_open.recipient.as_deref()), (Some("sent on Discord"), Some("Kim")));
+
+    // Redeemed or revoked: no longer open; a revoked code is refused.
+    let request = RedeemRequest { code: lee.code.clone(), username: Some("lee".into()), ..Default::default() };
+    account::redeem_request(&hub.link(), request).unwrap();
+    account::revoke_invite(&owner, &ot, kim_open.id).unwrap();
+    assert_eq!(status(&account::revoke_invite(&owner, &ot, kim_open.id).unwrap_err()), 404, "once");
+    assert!(account::open_invites(&owner, &ot).unwrap().iter().all(|i| i.name != "Kim" && i.name != "Lee"));
+    assert_eq!(status(&account::check(&hub.link(), &kim.code, None).unwrap_err()), 410);
+    let lee_account = hub.accounts().into_iter().find(|a| a.username == "lee").unwrap();
+    assert_eq!(lee_account.role, "host");
+    // A demoted owner is refused at once (the role read at the call).
+    let _: AccountView = hub.admin.post("/admin/account/set", &serde_json::json!({ "username": "boss", "role": "tester" })).unwrap();
+    assert_eq!(status(&account::open_invites(&owner, &ot).unwrap_err()), 403);
+}

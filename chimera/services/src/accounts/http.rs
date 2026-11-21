@@ -11,8 +11,15 @@
 //!   the hub's name and MOTD, a username's availability with
 //!   suggestions; nothing used up): no ticket needed, rate limited.
 //! - `POST /accounts/link`, `POST /accounts/display-name`, `POST
-//!   /accounts/username` (a rename, one a minute), `POST /accounts/avatar`,
-//!   `GET /accounts/me`: with `Authorization: Bearer <ticket>`.
+//!   /accounts/username` (a rename, one a minute), `POST
+//!   /accounts/username/check` (a rename's availability, free names when
+//!   taken), `POST /accounts/avatar`, `POST /accounts/sign-out` (this
+//!   device revoked), `GET /accounts/me`: with `Authorization: Bearer
+//!   <ticket>`.
+//! - An owner's account (its role read at the call) in the game: `POST
+//!   /accounts/invites` (intent, recipient, a tester's or host's role),
+//!   `GET /accounts/invites` (the open ones, with ids), `POST
+//!   /accounts/invites/revoke` (`{id}`); 403 for any other account.
 //!
 //! This machine only (a loopback connection relayed by no front: neither
 //! the in-process TLS one nor the hub's, whose `X-Chimera-Peer` marks a
@@ -263,6 +270,30 @@ impl Http {
                 self.with_ticket(request)
                     .and_then(|t| Ok((t, body::<chimera_assets::account::RenameRequest>(request)?)))
                     .and_then(|(t, r)| a.rename(&t, &r.username)),
+            ),
+            (Method::Post, ["accounts", "username", "check"]) => answer(
+                200,
+                self.with_ticket(request)
+                    .and_then(|t| Ok((t, body::<chimera_assets::account::NameCheckRequest>(request)?)))
+                    .and_then(|(t, r)| a.check_rename(&t, &r.username)),
+            ),
+            (Method::Post, ["accounts", "sign-out"]) => answer(
+                200,
+                self.with_ticket(request).and_then(|t| a.sign_out(&t)).map(|()| serde_json::json!({ "signed_out": true })),
+            ),
+            (Method::Post, ["accounts", "invites"]) => answer(
+                201,
+                self.with_ticket(request)
+                    .and_then(|t| Ok((t, body::<chimera_assets::account::InviteRequest>(request)?)))
+                    .and_then(|(t, r)| a.invite_by_owner(&t, &r)),
+            ),
+            (Method::Get, ["accounts", "invites"]) => answer(200, self.with_ticket(request).and_then(|t| a.open_invites(&t))),
+            (Method::Post, ["accounts", "invites", "revoke"]) => answer(
+                200,
+                self.with_ticket(request)
+                    .and_then(|t| Ok((t, body::<chimera_assets::account::InviteId>(request)?)))
+                    .and_then(|(t, r)| a.revoke_invite_by_owner(&t, r.id))
+                    .map(|()| serde_json::json!({ "revoked": 1 })),
             ),
             (Method::Post, ["accounts", "avatar"]) => answer(
                 200,

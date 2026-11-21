@@ -13,7 +13,7 @@
 //! session storage and drops it from the address bar. A page elsewhere
 //! can't send that header without a preflight the service never answers.
 //!
-//! - **Invites**: make one (name, role, content, games, expiry, a
+//! - **Invites**: make one (intent, recipient, or a name; role, content, games, expiry, a
 //!   re-invite `--for` an account with `keep`), the link or code shown
 //!   once with a Copy button; the list with each one's state; Revoke.
 //! - **Accounts**: username, display name, role, rights, devices (Revoke
@@ -58,7 +58,9 @@ button.go { background:var(--accent); color:#fff; border-color:var(--accent); } 
 <section>
   <h2>New invite</h2>
   <div class="row">
-    <input id="iname" placeholder="name (suggested username)" size="22">
+    <input id="iintent" placeholder="intent: why (for Sam, sent on Discord)" size="30">
+    <input id="irecipient" placeholder="recipient (optional)" size="18">
+    <input id="iname" placeholder="or a name (suggested username)" size="22">
     <select id="irole"><option>tester</option><option>host</option><option>owner</option></select>
     <input id="icontent" placeholder="content: * or a,b (role's default)" size="26">
     <input id="igames" placeholder="games: * or a,b" size="16">
@@ -71,7 +73,7 @@ button.go { background:var(--accent); color:#fff; border-color:var(--accent); } 
 </section>
 <section>
   <h2>Invites</h2>
-  <table><thead><tr><th>Name</th><th>Role</th><th>State</th><th>Made</th><th>Until</th><th>Into</th><th></th></tr></thead><tbody id="invites"></tbody></table>
+  <table><thead><tr><th>Name</th><th>Intent</th><th>Role</th><th>State</th><th>Made</th><th>Until</th><th>Into</th><th></th></tr></thead><tbody id="invites"></tbody></table>
 </section>
 <section>
   <h2>Accounts</h2>
@@ -102,7 +104,7 @@ async function load() {
   const ib = $("invites"); ib.replaceChildren();
   for (const i of invites.slice().reverse()) {
     const tr = el("tr");
-    for (const v of [i.name, i.role, i.state, when(i.created), when(i.expires), i.for_username || ""]) tr.append(el("td", v));
+    for (const v of [i.name, i.intent || "", i.role, i.state, when(i.created), when(i.expires), i.for_username || ""]) tr.append(el("td", v));
     const td = el("td");
     if (i.state === "unused") td.append(button("Revoke", () => act("revoked " + i.name, () => api("POST", "/admin/invite/revoke", { name: i.name })), "bad"));
     tr.append(td); ib.append(tr);
@@ -146,18 +148,20 @@ function setAccount(a) {
 }
 $("igo").addEventListener("click", () => {
   const spec = { name: $("iname").value.trim(), role: $("irole").value, keep: $("ikeep").checked };
+  if ($("iintent").value.trim()) spec.intent = $("iintent").value.trim();
+  if ($("irecipient").value.trim()) spec.recipient = $("irecipient").value.trim();
   if ($("icontent").value.trim()) spec.content = $("icontent").value.trim();
   if ($("igames").value.trim()) spec.games = $("igames").value.trim();
   if ($("iexpires").value.trim()) spec.expires_days = Number($("iexpires").value.trim());
   if ($("ifor").value.trim()) spec.for_username = $("ifor").value.trim();
-  act("invited " + spec.name, async () => {
+  act("invited " + (spec.name || spec.recipient || spec.intent || ""), async () => {
     const r = await api("POST", "/admin/invite", spec);
     const box = $("ionce"); box.replaceChildren();
     const text = r.link || r.code;
     const once = el("div", text, "once"); box.append(once);
     box.append(el("div", "Shown once: send it privately. Valid until " + when(r.expires) + (r.link ? "" : " (a code: the service has no public address, chimera_accounts serve --public)"), "muted"));
     box.append(button("Copy", () => navigator.clipboard.writeText(text)));
-    for (const id of ["iname", "icontent", "igames", "iexpires", "ifor"]) $(id).value = "";
+    for (const id of ["iintent", "irecipient", "iname", "icontent", "igames", "iexpires", "ifor"]) $(id).value = "";
     $("ikeep").checked = false;
   });
 });

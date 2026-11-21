@@ -54,7 +54,7 @@ use std::{
 };
 
 use chimera_assets::{
-    account::{CheckAnswer, CheckRequest, HubPreview, LinkAnswer, NameCheck, RecoverRequest, RedeemRequest, SignedIn, TicketRequest},
+    account::{CheckAnswer, CheckRequest, HubPreview, InviteRequest, LinkAnswer, NameCheck, OpenInvite, RecoverRequest, RedeemRequest, SignedIn, TicketRequest},
     store::{hex, unhex},
     ticket::{self, Claims, Id, id_hex, parse_id},
 };
@@ -225,6 +225,9 @@ pub struct Invited {
 /// An invite as the owner lists it (no code).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InviteView {
+    /// Its row (what an owner's revoke in the game names).
+    #[serde(default)]
+    pub id: i64,
     pub name: String,
     #[serde(default)]
     pub intent: Option<String>,
@@ -1159,6 +1162,97 @@ impl Accounts {
             .ok_or_else(|| refuse(404, "no such account"))
     }
 
+    /// `POST /accounts/username/check`: whether the ticket's account could
+    /// take `wanted`, with free names when it is taken (its own name is
+    /// free to it). Nothing changes.
+    pub fn check_rename(&self, ticket_text: &str, wanted: &str) -> R<NameCheck> {
+        let claims = self.check_ticket(ticket_text)?;
+        Self::name_check(&self.db(), wanted, Some(&claims.account))
+    }
+
+    /// `POST /accounts/sign-out`: the ticket's device revoked (its tickets
+    /// into the revocation feed); the client deletes its file.
+    pub fn sign_out(&self, ticket_text: &str) -> R<()> {
+        let claims = self.check_ticket(ticket_text)?;
+        let device = id_hex(&claims.device);
+        self.revoke_device_as(&device, &device)
+    }
+
+    /// The ticket's, when its account is the hub's owner (the role read
+    /// now, not the ticket's: a demotion counts at once).
+    fn owner(&self, ticket_text: &str) -> R<Claims> {
+        let claims = self.check_ticket(ticket_text)?;
+        let role: String = self
+            .db()
+            .query_row("SELECT role FROM accounts WHERE id = ?1", params![blob(&claims.account)], |r| r.get(0))
+            .map_err(internal)?;
+        if role != "owner" {
+            return Err(refuse(403, "only the hub's owner manages invites"));
+        }
+        Ok(claims)
+    }
+
+    /// `POST /accounts/invites`: an owner makes an invite in the game, with
+    /// an intent, perhaps a recipient, a tester's or a host's role (an
+    /// owner's is made on the command line only).
+    pub fn invite_by_owner(&self, ticket_text: &str, request: &InviteRequest) -> R<Invited> {
+        let claims = self.owner(ticket_text)?;
+        let role = request.role.as_deref().map(str::trim).filter(|r| !r.is_empty()).unwrap_or("tester");
+        if !matches!(role, "tester" | "host") {
+            return Err(refuse(400, "an invite made in the game is a tester's or a host's (an owner's: the hub's command line)"));
+        }
+        if request.intent.trim().is_empty() {
+            return Err(refuse(400, "an invite needs an intent: why it was made"));
+        }
+        let spec = InviteSpec {
+            intent: Some(request.intent.clone()),
+            recipient: request.recipient.clone(),
+            role: Some(role.into()),
+            ..Default::default()
+        };
+        self.invite_as(&spec, &id_hex(&claims.device))
+    }
+
+    /// `GET /accounts/invites`: an owner's open invites (unused, live),
+    /// newest first.
+    pub fn open_invites(&self, ticket_text: &str) -> R<Vec<OpenInvite>> {
+        self.owner(ticket_text)?;
+        let mut open: Vec<OpenInvite> = self
+            .list_invites()?
+            .into_iter()
+            .filter(|v| v.state == "unused")
+            .map(|v| OpenInvite {
+                id: v.id,
+                name: v.name,
+                intent: v.intent,
+                recipient: v.recipient,
+                role: v.role,
+                created: v.created,
+                expires: v.expires,
+            })
+            .collect();
+        open.reverse();
+        Ok(open)
+    }
+
+    /// `POST /accounts/invites/revoke`: an owner withdraws an open invite.
+    pub fn revoke_invite_by_owner(&self, ticket_text: &str, id: i64) -> R<()> {
+        let claims = self.owner(ticket_text)?;
+        let now = self.now();
+        let conn = self.db();
+        let n = conn
+            .execute(
+                "UPDATE invites SET revoked_at = ?1 WHERE rowid = ?2 AND redeemed_at IS NULL AND revoked_at IS NULL",
+                params![now as i64, id],
+            )
+            .map_err(internal)?;
+        if n == 0 {
+            return Err(refuse(404, "no open invite with that id"));
+        }
+        Self::audit(&conn, now, &id_hex(&claims.device), "invite.revoke", &id.to_string(), "1")?;
+        Ok(())
+    }
+
     /// The feed's entries after `since`: `<seq> <kind> <id hex> <at>` lines.
     pub fn revoked_since(&self, since: u64) -> R<String> {
         let conn = self.db();
@@ -1175,6 +1269,11 @@ impl Accounts {
 
     /// Mint an invite (the code is returned once, stored hashed).
     pub fn invite(&self, spec: &InviteSpec) -> R<Invited> {
+        self.invite_as(spec, "cli")
+    }
+
+    /// `invite`, the audit row naming `actor` (`cli`, or an owner's device).
+    fn invite_as(&self, spec: &InviteSpec, actor: &str) -> R<Invited> {
         let words = |w: &Option<String>, what: &str| -> R<Option<String>> {
             match w.as_deref().map(str::trim).filter(|w| !w.is_empty()) {
                 None => Ok(None),
@@ -1237,7 +1336,7 @@ impl Accounts {
         )
         .map_err(internal)?;
         let detail = format!("role={role} content={content} games={games}{}", if spec.for_username.is_some() { " re-invite" } else { "" });
-        Self::audit(&conn, now, "cli", "invite.create", name, &detail)?;
+        Self::audit(&conn, now, actor, "invite.create", name, &detail)?;
         let fingerprint = chimera_assets::tls::fingerprint_in(&self.paths.tls());
         let link = self.options.public.as_ref().map(|public| {
             chimera_assets::account::HubLink { host: public.clone(), fingerprint: fingerprint.clone(), code: Some(code.clone()) }
@@ -1251,8 +1350,8 @@ impl Accounts {
         let conn = self.db();
         let mut stmt = conn
             .prepare(
-                "SELECT i.name, i.role, i.created, i.expires, i.redeemed_at, i.revoked_at, a.username, i.intent, i.recipient
-                 FROM invites i LEFT JOIN accounts a ON a.id = i.for_account ORDER BY i.created",
+                "SELECT i.name, i.role, i.created, i.expires, i.redeemed_at, i.revoked_at, a.username, i.intent, i.recipient, i.rowid
+                 FROM invites i LEFT JOIN accounts a ON a.id = i.for_account ORDER BY i.created, i.rowid",
             )
             .map_err(internal)?;
         let rows = stmt
@@ -1268,6 +1367,7 @@ impl Accounts {
                     "unused"
                 };
                 Ok(InviteView {
+                    id: r.get(9)?,
                     name: r.get(0)?,
                     role: r.get(1)?,
                     state: state.into(),
@@ -1532,6 +1632,10 @@ impl Accounts {
 
     /// Revoke one device (by its id).
     pub fn revoke_device(&self, device: &str) -> R<()> {
+        self.revoke_device_as(device, "cli")
+    }
+
+    fn revoke_device_as(&self, device: &str, actor: &str) -> R<()> {
         let id = parse_id(device).ok_or_else(|| refuse(400, "a device id is 32 hex digits"))?;
         let now = self.now();
         let mut conn = self.db();
@@ -1543,7 +1647,7 @@ impl Accounts {
             return Err(refuse(404, "no such device, or revoked already"));
         }
         Self::revoke_row(&tx, "device", &id, now)?;
-        Self::audit(&tx, now, "cli", "device.revoke", device, "")?;
+        Self::audit(&tx, now, actor, "device.revoke", device, "")?;
         tx.commit().map_err(internal)?;
         Ok(())
     }

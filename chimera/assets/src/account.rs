@@ -21,6 +21,12 @@
 //!   `Failure` sorts an error into unreachable, another certificate, a
 //!   refusal; `rename` (one a minute, the last 10 names kept) and
 //!   `set_avatar` change the account; `me` reads it.
+//! - **The account page** (Settings > Account, `party_kit::account_page`):
+//!   `check_rename` (a rename's availability with free names),
+//!   `link_code`, `sign_out` (this device revoked at the hub); an owner's
+//!   `make_invite` (intent, recipient, role; the link filled from the
+//!   account's hub, `hub_link_of`, when the hub names none),
+//!   `open_invites` and `revoke_invite`.
 //! - **The file** (`AccountFile`): `<data_local>/chimera/account.toml`
 //!   (`CHIMERA_ACCOUNT` names another), mode 0600 on Unix: the hub's URL
 //!   and fingerprint, the asset service's (the same origin unless given),
@@ -370,6 +376,68 @@ pub struct LinkAnswer {
     pub expires: u64,
 }
 
+/// `POST /accounts/username/check` (with a ticket): whether a rename to
+/// `username` would go through, with free names when it is taken (the
+/// sign-up's rule, `codes::suggestions`); the account's own name counts
+/// as free.
+pub type NameCheckRequest = RenameRequest;
+
+/// `POST /accounts/invites` (an owner's ticket): an invite made in the
+/// game (docs/plans/active/onboarding.md, "The owner's side"). A tester's
+/// or a host's; an owner's is made on the hub's command line.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InviteRequest {
+    /// Why it was made ("for Sam, sent on Discord"): required.
+    pub intent: String,
+    /// Who it is meant for, in the owner's words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipient: Option<String>,
+    /// `tester` (the default) or `host`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+}
+
+/// An invite made: its code (shown once) and, when the hub knows its
+/// public address, the whole link (`make_invite` fills it from the
+/// account's hub otherwise).
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InviteMade {
+    pub name: String,
+    pub code: String,
+    pub expires: u64,
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+impl std::fmt::Debug for InviteMade {
+    // Never the code.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InviteMade").field("name", &self.name).field("expires", &self.expires).finish_non_exhaustive()
+    }
+}
+
+/// An open (unused, live) invite as an owner lists it in the game: no
+/// code (only its hash is kept).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenInvite {
+    /// What `POST /accounts/invites/revoke` names.
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub intent: Option<String>,
+    #[serde(default)]
+    pub recipient: Option<String>,
+    pub role: String,
+    pub created: u64,
+    pub expires: u64,
+}
+
+/// `POST /accounts/invites/revoke`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InviteId {
+    pub id: i64,
+}
+
 // --- The file.
 
 /// The account file.
@@ -583,6 +651,46 @@ pub fn rename(file: &AccountFile, ticket: &str, username: &str) -> Result<serde_
 /// Set `file`'s account's avatar.
 pub fn set_avatar(file: &AccountFile, ticket: &str, avatar: u8) -> Result<serde_json::Value, String> {
     post(&file.url, file.fingerprint.as_deref(), "/accounts/avatar", Some(ticket), &AvatarRequest { avatar })
+}
+
+/// Whether `file`'s account could be renamed to `username`, with free
+/// names when it is taken (nothing changes).
+pub fn check_rename(file: &AccountFile, ticket: &str, username: &str) -> Result<NameCheck, String> {
+    post(&file.url, file.fingerprint.as_deref(), "/accounts/username/check", Some(ticket), &RenameRequest { username: username.into() })
+}
+
+/// The hub link of `file`'s hub (no code): where invites made in the game
+/// point when the hub doesn't name its public address.
+pub fn hub_link_of(file: &AccountFile) -> HubLink {
+    let host = file.url.split_once("://").map_or(file.url.as_str(), |(_, h)| h).trim_end_matches('/').to_string();
+    HubLink { host, fingerprint: file.fingerprint.clone(), code: None }
+}
+
+/// An owner makes an invite in the game; its link always filled (from the
+/// account's hub when the hub didn't name one).
+pub fn make_invite(file: &AccountFile, ticket: &str, request: &InviteRequest) -> Result<InviteMade, String> {
+    let mut made: InviteMade = post(&file.url, file.fingerprint.as_deref(), "/accounts/invites", Some(ticket), request)?;
+    if made.link.is_none() {
+        made.link = Some(HubLink { code: Some(made.code.clone()), ..hub_link_of(file) }.to_text(true));
+    }
+    Ok(made)
+}
+
+/// An owner's open invites, newest first.
+pub fn open_invites(file: &AccountFile, ticket: &str) -> Result<Vec<OpenInvite>, String> {
+    get(&file.url, file.fingerprint.as_deref(), "/accounts/invites", ticket)
+}
+
+/// An owner withdraws an open invite.
+pub fn revoke_invite(file: &AccountFile, ticket: &str, id: i64) -> Result<(), String> {
+    post::<serde_json::Value>(&file.url, file.fingerprint.as_deref(), "/accounts/invites/revoke", Some(ticket), &InviteId { id }).map(|_| ())
+}
+
+/// Sign this device out at the hub (its device revoked, its tickets in the
+/// revocation feed). The caller deletes the file either way: a hub that
+/// can't be reached leaves the device listed for the owner to revoke.
+pub fn sign_out(file: &AccountFile, ticket: &str) -> Result<(), String> {
+    post::<serde_json::Value>(&file.url, file.fingerprint.as_deref(), "/accounts/sign-out", Some(ticket), &serde_json::json!({})).map(|_| ())
 }
 
 /// Recover `username` (empty: whoever the key is) with its recovery key on
