@@ -11,7 +11,8 @@
 //!   (`MapBrushEntity`: doors, trains, platforms) and moving bodies
 //!   (dynamic or kinematic `RigidBody`: props, gibs, dropped weapons,
 //!   ragdolls) get it from `InterpPlugin`; other layers add it as a
-//!   required component (the client: grenades).
+//!   required component (the client: grenades and every game's flyers,
+//!   `weapon::projectile::Flyer`).
 //! - `RenderedView` on characters eases what the camera and bodies take
 //!   from the simulation besides the position: eye offset (ducking),
 //!   view roll and punch, and other characters' look angles (the local

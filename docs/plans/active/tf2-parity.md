@@ -1221,4 +1221,8 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   `Interpolated`, so a projectile not drawn late is drawn at its newest
   tick while the camera is eased one tick behind (up to one tick of
   flight ahead, 15 units for a needle; a moving shooter's start off by
-  his tick's move).
+  his tick's move). Fixed 2026-11-21: the client makes every flyer
+  `Interpolated` (`client::interp`), drawn between its last two ticks
+  like the world, first at its start; the late copies still sample the
+  latest tick (`net::late`);
+  `weapons_more::a_needle_is_drawn_between_its_ticks_from_its_start_8`.

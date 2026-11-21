@@ -51,7 +51,10 @@ use bevy::prelude::*;
 use super::{NetItem, interp::InterpSettings, own_items::PredictedItem};
 use crate::{
     core::NetRole,
-    map::loose::{DrawnLate, LateCopy, LateDelay, ShownItem},
+    map::{
+        interp::Interpolated,
+        loose::{DrawnLate, LateCopy, LateDelay, ShownItem},
+    },
 };
 
 /// A copy's places by this machine's time (s), oldest first, and when it
@@ -128,7 +131,7 @@ fn copy_late(
     time: Res<Time>,
     late: Res<DrawnLate>,
     added: Query<Entity, (Added<ShownItem>, Without<LateCopy>, Without<PredictedItem>)>,
-    items: Query<(&ShownItem, &Transform, Option<&NetItem>, Option<&crate::weapon::projectile::Flyer>)>,
+    items: Query<(&ShownItem, &Transform, Option<&NetItem>, Option<&crate::weapon::projectile::Flyer>, Option<&Interpolated>)>,
     (tick, fixed, role): (Option<Res<crate::core::SimTick>>, Res<Time<Fixed>>, Option<Res<NetRole>>),
     mut waiting: Local<Vec<Entity>>,
     mut commands: Commands,
@@ -147,7 +150,7 @@ fn copy_late(
     let client = role.as_deref() == Some(&NetRole::Client);
     let snapshot = |t: u64| (t as f64 * dt * super::server::DEFAULT_UPDATERATE as f64 + 1e-6).floor() as u64;
     waiting.retain(|&e| {
-        let Ok((shown, t, net, flyer)) = items.get(e) else { return false };
+        let Ok((shown, t, net, flyer, eased)) = items.get(e) else { return false };
         // Sent in a snapshot yet (a client's item came in one).
         if !client
             && let Some(f) = flyer
@@ -155,7 +158,7 @@ fn copy_late(
         {
             return true;
         }
-        let (at, turn) = place(t, net);
+        let (at, turn) = place(t, net, eased);
         let at = late.received(&shown.0, at);
         let mut places = LatePlaces { born: now, ..default() };
         places.add(now, at, turn);
@@ -171,12 +174,14 @@ fn copy_late(
     });
 }
 
-/// Where an item is now: the simulated place, or on a client the newest
-/// the server sent.
-fn place(t: &Transform, net: Option<&NetItem>) -> (Vec3, Quat) {
-    match net {
-        Some(n) => (Vec3::from_array(n.origin), Quat::from_array(n.rotation).normalize()),
-        None => (t.translation, t.rotation),
+/// Where an item is now: the simulated place (its latest tick, not the
+/// place it is drawn at between ticks where it is `Interpolated`), or on
+/// a client the newest the server sent.
+fn place(t: &Transform, net: Option<&NetItem>, eased: Option<&Interpolated>) -> (Vec3, Quat) {
+    match (net, eased.and_then(Interpolated::ticks)) {
+        (Some(n), _) => (Vec3::from_array(n.origin), Quat::from_array(n.rotation).normalize()),
+        (None, Some((_, latest))) => (latest.translation, latest.rotation),
+        (None, None) => (t.translation, t.rotation),
     }
 }
 
@@ -185,7 +190,7 @@ fn place(t: &Transform, net: Option<&NetItem>) -> (Vec3, Quat) {
 fn move_late(
     time: Res<Time>,
     delay: Res<LateDelay>,
-    items: Query<(&Transform, Option<&NetItem>), Without<LateCopy>>,
+    items: Query<(&Transform, Option<&NetItem>, Option<&Interpolated>), Without<LateCopy>>,
     mut copies: Query<(Entity, &LateCopy, &mut LatePlaces, &mut Transform)>,
     mut commands: Commands,
 ) {
@@ -193,8 +198,8 @@ fn move_late(
     let drawn = now - delay.0 as f64;
     for (e, copy, mut places, mut t) in &mut copies {
         match items.get(copy.of) {
-            Ok((it, net)) => {
-                let (at, turn) = place(it, net);
+            Ok((it, net, eased)) => {
+                let (at, turn) = place(it, net, eased);
                 places.add(now, at, turn);
             }
             Err(_) => {

@@ -1,6 +1,9 @@
 //! Drawing between simulation ticks (`map::interp`): the plugin, the
-//! `cl_interpolate` switch, the view punch in the eased eye, grenades in
-//! flight, and the local player's per-frame look in its eye.
+//! `cl_interpolate` switch, the view punch in the eased eye, grenades and
+//! every game's projectiles in flight (`weapon::projectile::Flyer`:
+//! rockets, pipes, stickies, needles, bolts; drawn one tick behind as the
+//! world is, not at their newest tick), and the local player's per-frame
+//! look in its eye.
 
 use bevy::prelude::*;
 
@@ -8,7 +11,7 @@ use crate::{
     console::resource_cvar,
     core::{Intent, LocalPlayer},
     map::interp::{InterpPlugin, InterpSystems, Interpolated, Interpolation, RenderedView},
-    weapon::{ViewPunch, grenade::Projectile},
+    weapon::{ViewPunch, grenade::Projectile, projectile::Flyer},
 };
 
 pub struct ClientInterpPlugin;
@@ -17,6 +20,7 @@ impl Plugin for ClientInterpPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(InterpPlugin)
             .register_required_components::<Projectile, Interpolated>()
+            .register_required_components::<Flyer, Interpolated>()
             .add_systems(FixedLast, sample_punch.in_set(InterpSystems::Extend))
             .add_systems(
                 Update,
