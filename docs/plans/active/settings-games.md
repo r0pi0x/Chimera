@@ -67,7 +67,13 @@ keys, gameplay and look live, declared by the game in data.
   planned ones too; Auto reload and Auto switch when empty moved from
   Party, same cvars); every game a sensitivity and a field-of-view
   override. Binds stay in the game layers (no migration needed).
-- Next: screenshots at 1080 and 720 (step 4) in the scratchpad; TF2's
-  alt-fire actions share `+attack2` (per-gun keys need the input to know
-  the gun's action); taunt, inspect, call for Medic and special attack
-  are planned rows (no game code yet).
+- 2026-11-21: pushed (b1b8f4740, merged 222494aff; abfe28922: a game's
+  key counts as changed only when the keys that work differ from the
+  shipped ones). Step 4: screenshots of every tab, TF2's three pages,
+  CA's keys and Halo's look at 1920x1080 and 1280x720 (`ui_scene settings
+  ... ` staged one after another in one run; OBSERVABILITY 2).
+- Next: per-gun keys for TF2's alt-fire actions (one `+attack2` now);
+  the planned TF2 actions (taunt, inspect, call for Medic, special
+  attack) need game code; a long label with a note can push the control
+  column right at 1280x720 (Detonate stickies); a Clear button or right
+  click for keys (Delete only, as the mockup).
