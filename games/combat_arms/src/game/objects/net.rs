@@ -36,7 +36,11 @@
 //! (`movers::carried`), as the server's frame carries riders. The stepped
 //! poses go onto the client's object world, nodes and volumes
 //! (attachments follow: HGOILRIG's rising sea carries its water and gas
-//! volumes, its keyframers the water sounds); the server's poses
+//! volumes, its keyframers the water sounds) and into the spatial queries
+//! at once (`core::refresh_moved_colliders`: the physics refreshes them
+//! only in its step, and a replay places them many times a frame; a lift's
+//! 5 u steps outran the stale query boxes and a replaying client met its
+//! lift where it had been); the server's poses
 //! (`read`) don't overwrite them (`CaObjects::predicted`). What the
 //! client can't know ahead (a door or keyframer starting, a key's
 //! command, a trigger, another player in the way) shows up as a
@@ -66,14 +70,7 @@
 //! keyframer faces its target where the client has the target when the
 //! stepping starts (no stock keyframer has one). Only our own player
 //! meets the stepped movers on the client (others are drawn in the
-//! past). With jitter (150 +- 20 ms) a client riding a descending lift (5 u
-//! steps every 3 ticks) predicts its first states up to 0.15 m above the
-//! server's for the whole ride, resyncing at the steps, and its movement
-//! state sometimes differs in the last bit without moving it; at 0.018 m a
-//! unit neither showed, at the spec's 0.0185 both do (the `object_carry`
-//! tests allow a 0.2 m gap there and skip that descent's resync check).
-//! Why it's OK for now: the states converge as the server's arrive and the
-//! drawn position is smoothed; the cause is not found.
+//! past).
 
 use bevy::prelude::*;
 use bevy_replicon::{prelude::*, shared::server_entity_map::ServerEntityMap};

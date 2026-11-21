@@ -822,6 +822,12 @@ pub fn apply_effects(world: &mut World) {
             return;
         }
         write_objects(world, &dirty, scale);
+        // The nodes' new poses in the spatial queries now (a client's
+        // stepped movers are met by the movement that follows in the same
+        // tick, many ticks a frame in a replay).
+        if !dirty.is_empty() {
+            chimera_core::core::refresh_moved_colliders(world);
+        }
         for f in fx {
             effect(world, f, scale);
         }

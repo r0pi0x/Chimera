@@ -2015,6 +2015,24 @@ impl Predict {
     }
 }
 
+/// Bring the spatial queries up to date with colliders moved by hand
+/// since the last physics step (a `Position` written outside the physics:
+/// a mover placed or stepped by map logic, `Predict::PlaceMovers` and
+/// `CarryRiders`). The queries find colliders through a tree of enlarged
+/// boxes that the physics refreshes only in its step, so until then a
+/// collider moved further than its box's margin (5 cm for a kinematic
+/// body) is missed by rays and casts near where it now is: a client
+/// replaying ticks, many in one frame, met its lift where the lift was
+/// before the replay and moved differently from the server (Combat Arms'
+/// lifts, 5 u steps). Cheap when nothing moved (each collider's change
+/// ticks are compared).
+pub fn refresh_moved_colliders(world: &mut World) {
+    use avian3d::prelude::Collider;
+    if let Err(e) = world.run_system_cached(avian3d::collider_tree::update_moved_collider_aabbs::<Collider>) {
+        warn_once!("moved colliders not refreshed for the spatial queries: {e}");
+    }
+}
+
 /// An exclusive system that runs the `stage` schedule (and those that go
 /// with it: `Predict::stages`), placed in `FixedUpdate` where that stage
 /// belongs.
