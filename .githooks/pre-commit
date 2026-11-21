@@ -13,6 +13,11 @@
 # old full build of their test binaries) and runs only the changed
 # packages' own (`affected --direct`) and repo_checks'; the dependents'
 # tests, and the heavy ones, run after the push (tools/post-push-tests.sh).
+# On Linux the type-check runs beside the fast tier (the tests are built,
+# then their binaries run directly while cargo checks; doctests after),
+# and leaves out the packages the fast tier builds anyway;
+# CHIMERA_COMMIT_FAST=0 runs them one after the other as before. Each run
+# logs its phases' seconds to <git common dir>/agent-timing/commit-hook.log.
 # CHIMERA_COMMIT_TESTS=affected runs every affected package's fast tier
 # (the old behaviour); =all the whole fast tier; =0 skips it (the old
 # name, MASHUP_COMMIT_TESTS, still works).

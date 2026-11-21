@@ -2087,7 +2087,16 @@ then 6.3 s per change.
   `cargo test -p repo_checks` when a stamp of the same working tree tested
   `repo_checks` (every commit hook run does), and stamps its own pass.
   The hook prints the exact commands it runs and, with `--worktree`, what
-  passed (the packages type-checked and tested, the seconds).
+  passed (the packages type-checked and tested, each phase's seconds). On
+  Linux the type-check runs beside the fast tier: `cargo test --no-run`
+  builds the tests, `cargo check` starts, and the test binaries run
+  directly meanwhile (in their package's folder, with `CARGO_MANIFEST_DIR`
+  and the library path, as `cargo test` runs them; a second cargo would
+  wait for `cargo test`'s locks until its tests ended), doctests after the
+  check; the check leaves out the packages the fast tier builds anyway.
+  `CHIMERA_COMMIT_FAST=0` runs them one after the other. Each run's line in
+  `<git common dir>/agent-timing/commit-hook.log` ends with the check's
+  and the fast tier's seconds.
   `CHIMERA_COMMIT_RUNNER=nextest` runs the fast tier under `cargo nextest
   run` plus `cargo test --doc` (nextest skips doctests); the default is
   `cargo test` (docs/plans/active/iteration-speed.md, "Done (2026-11-21,

@@ -133,6 +133,32 @@ threads), so wall times are rough; each comparison alternated its runs.
    ~30 GB, and a separate capture target would be another 20-30 GB on a
    disk at 75%.
 
+7. **The hook's type-check beside its tests.** The architecture study
+   (architecture-for-iteration.md) measured 704 s for the hook after a
+   one-constant `chimera_sim` edit, 131 s of it tests and the rest
+   `cargo check --all-targets` of 29 packages. Now on Linux: the fast
+   tier's binaries are built (`cargo test --no-run`) and run directly
+   while the check runs (cargo holds its locks for a whole `cargo test`,
+   so a second cargo waited out the tests: measured, a check started 8 s
+   into a 57 s `cargo test` finished at 73 s); doctests after; the check
+   leaves out the packages the fast tier builds. The log gains the
+   phases. Same edit (a constant in a function appended to
+   `chimera_sim`'s lib.rs, a new value per run), slot1, alternating,
+   `CHIMERA_COMMIT_STAMPS=0`:
+
+   | Run | Mode | Load | Wall | Check | Fast tier |
+   |---|---|---:|---:|---:|---:|
+   | 1 | before | 65 | 249 s | 42 s | 204 s |
+   | 2 | after | 33 | 64 s | 46 s | 57 s |
+   | 3 | before | 36 | 90 s | 42 s | 46 s |
+   | 4 | after | 55 | 70 s | 49 s | 61 s |
+
+   About -25% warm (90 to 64-70 s at similar loads); the first run paid a
+   cold test build. In this slot the check itself was 42-49 s, not the
+   study's ~570 s: incremental check builds of the same packages and
+   features were warm. A cold check (another feature set, a merge that
+   touched many crates) is where the remaining cost is; see Next.
+
 Seen while measuring: `cs_source`'s
 `view_models::everyone_hears_the_view_models_reload_events_the_others_a_little_late`
 failed in all four runs on 55277a2d1, with both runners.
@@ -142,6 +168,7 @@ failed in all four runs on 55277a2d1, with both runners.
 | Idea | Estimate | Notes |
 |---|---|---|
 | Measure the second pass: `tools/agent-timing --since 2026-11-22` against the baseline (tests, commit hook, captures buckets; `stamp` rows in commit-hook.log) | - | A week of data |
+| The hook's check when cold (the study's ~570 s): check only the dependents' libraries and binaries in the hook and leave their test targets to post-push (`CHIMERA_COMMIT_DEPENDENTS=lib`), or keep one feature set for every check so its build stays warm | most of a cold hook run | A weaker gate (a dependent's test code breaking shows after the push): the user's call; measure first how often the check is cold (`commit-hook.log`'s check column) |
 | nextest only for big selections (cs_source and the apps above it), `cargo test` for the rest | part of cs_source's fast tier (-7% to -40% above) | Measure on a quiet box first; the split needs two runs and a merged log |
 | Cheaper models for mechanical briefs, narrower briefs, `docs/agent-index.md` before reading whole docs | part of the 145 h of model time | Orchestrator's choice; measure per agent type |
 | Post-push affected runs coalesced across pushes (already) and split by crate onto idle slots | FAIL latency, not agent time | Only matters once nobody waits |
@@ -153,4 +180,4 @@ rebuilds, type-checks and selects; plugins per game) is
 ## Progress
 
 2026-11-21: plan written, baseline taken, items 1-4 done.
-2026-11-21: second pass: the hook as the agents' test run, pre-push reuses stamps, the racy key fixed, nextest measured (opt-in), tools/run-built; a shared capture target ruled out.
+2026-11-21: second pass: the hook as the agents' test run, pre-push reuses stamps, the racy key fixed, nextest measured (opt-in), tools/run-built; a shared capture target ruled out. Then the hook's type-check beside its tests (-25% warm), phases logged, stamps written when nothing was only checked.
