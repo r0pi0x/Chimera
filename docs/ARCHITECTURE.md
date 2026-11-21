@@ -31,7 +31,8 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
-  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its twelve guns and nine melee weapons and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim; `ui` its HUD
+  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its twelve guns and nine melee weapons and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim
+  |    tf2_ui (games/tf2/ui/)   TF2's front end as its own crate (its HUD, its guns' kill icons): on tf2 and the shell; tf2 and its tests build no client
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -68,7 +69,11 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `lithtech/`, `blam/`) is a loader layer, on the engine and its own family
   only; `games/<id>` is a game, on the engine and the loader layers its
   manifest declares (`[package.metadata.chimera] loaders = ["source"]`),
-  never on a game or an app; `apps/*` (and a game's tools, and the root
+  never on a game or an app; `games/<id>/ui` is that game's front end as
+  its own crate (`<id>_ui`), on the engine, its own game and that game's
+  loader layers, never another game, front end or app (TF2's so far; the
+  other games' front ends are still their crate's `ui` feature,
+  docs/plans/active/architecture-for-iteration.md, stage 1); `apps/*` (and a game's tools, and the root
   package) compose them, and build on another app only when their
   manifest says so (`apps = ["party_kit"]`). The rows of
   `workspace_crates` add each crate's finer rules. Every game crate has
@@ -815,7 +820,8 @@ A module may use only the modules below it. Enforced by
   it runs headless in tests and, later, on a dedicated server.
 - `games/<a>` never uses `games/<b>`. Shared needs go into `core` once two or
   three games need them (README, "rule of three"), or through a bridge.
-- A game's front end (its crate's `ui`, behind its `ui` feature: menus, panels, HUD) sits on
+- A game's front end (its own crate `<id>_ui` in games/<id>/ui, as TF2's;
+  or its crate's `ui`, behind its `ui` feature: menus, panels, HUD) sits on
   `client` (the shell: input, camera, console UI, VGUI-like widgets, debug
   tools, net glue); the rest of the game never uses it. The shell reaches
   it only through `client::front_end` (hooks the game registers), and the

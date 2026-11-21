@@ -70,8 +70,6 @@ mod heavy {
     mod mount;
     mod pack;
     mod player_anim;
-    #[cfg(feature = "ui")]
-    mod particles;
     mod scripts;
     mod sound_loops;
     mod view_sounds;

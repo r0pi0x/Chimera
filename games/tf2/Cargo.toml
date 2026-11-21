@@ -16,16 +16,11 @@ loaders = ["source"]
 [lib]
 doctest = false
 
-# What only a feature compiles, for the hooks' test selection
-# (checks/src/affected.rs): an edit under src/ui/ runs the crates above, not
-# the simulation's tests (tests/it/).
-[package.metadata.affected]
-feature-paths = { ui = ["src/ui/"] }
-
-# The engine's crates and Source's shared crates; never `mashup`, another
-# game (`cs_source`, `hl2dm`) or an app, and the presentation
-# (`chimera_present`) and the shell only for `ui` (checks/tests/it/
-# architecture.rs checks it). Same versions and features as the other
+# The engine's simulation crates and Source's shared crates; never `mashup`,
+# another game (`cs_source`, `hl2dm`), an app, the presentation
+# (`chimera_present`) or the shell: the front end is its own crate above
+# this one, `tf2_ui` (games/tf2/ui; checks/tests/it/architecture.rs checks
+# it). Same versions and features as the other
 # members' (workspace dependencies), so `cargo test -p tf2` reuses the
 # workspace's builds.
 [dependencies]
@@ -50,21 +45,13 @@ avian3d.workspace = true
 serde.workspace = true
 # The class table (data/classes.toml).
 toml.workspace = true
-# The front end (`ui`, the `ui` feature): the client shell and the
-# presentation it draws with.
-chimera_client = { workspace = true, optional = true }
-chimera_present = { workspace = true, optional = true }
 workspace-hack.workspace = true
 
 # The tests' own: the presentation's Bevy and Avian features, for this
 # crate's own tests only (the dedicated servers build without them), so
 # `cargo test -p tf2` shares the clients' builds of Bevy (hakari.toml).
+# No client shell: its tests build none of it (`tf2_ui` has the front end's).
 [dev-dependencies]
-# This crate with its front end (`ui`), as the apps build it: its tests then
-# use the one build of it every other selection uses (the workspace's, the
-# hooks', `cargo run`'s) instead of a second one without the front end, with
-# its own incremental cache (docs/performance.md, "Iteration speed").
-tf2 = { workspace = true, features = ["ui"] }
 # The map's `render` feature, as every build with the presentation has it:
 # this crate's own tests then share the workspace's build of `chimera_world`
 # and of everything above it.
@@ -86,10 +73,6 @@ name = "it"
 path = "tests/it/main.rs"
 
 [features]
-# TF2's front end (`ui`): nothing of its own yet (the shell's fallback
-# HUD). A party app's client turns it on, and this crate's own tests (the
-# dev-dependency on itself); the dedicated server builds without it.
-ui = ["dep:chimera_client", "dep:chimera_present"]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on):
 # `cargo test -p tf2 --features dev` shares the apps' Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_engine/dev", "source_logic/dev", "source_formats/dev", "chimera_client?/dev", "chimera_present?/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_engine/dev", "source_logic/dev", "source_formats/dev"]

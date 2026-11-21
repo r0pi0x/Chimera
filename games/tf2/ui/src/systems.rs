@@ -23,8 +23,8 @@ use chimera_core::core::{Dead, Health, LocalPlayer, Team};
 use chimera_sim::weapon::{HeldGauge, Inventory, Magazine, Weapon};
 use chimera_world::map::hud::{ActiveHud, GameHud, font_for_height};
 
-use super::hud::{Ammo, Draw, Inputs, Rgba, Scheme, Screen, Tf2Hud};
-use crate::game::{GAME, INFO, classes::{Classes, Tf2Class}};
+use crate::hud::{Ammo, Draw, Inputs, Rgba, Scheme, Screen, Tf2Hud};
+use tf2::game::{GAME, INFO, classes::{Classes, Tf2Class}};
 
 /// What this HUD draws instead of the shell's: the crosshair, health and
 /// ammo (the kill feed stays the app's).
@@ -101,9 +101,9 @@ pub fn collect(
         clip: m.clip as i32,
         reserve: (m.reserve_max > 0).then_some(m.reserve as i32),
     });
-    let blu = super::super::game::bodies::skin_of(team.copied()) == 1;
-    let table = classes.get_or_insert_with(super::super::game::classes::classes);
-    let portrait = class.and_then(|c| super::super::game::hud::portrait(&c.class(table).name, blu));
+    let blu = tf2::game::bodies::skin_of(team.copied()) == 1;
+    let table = classes.get_or_insert_with(tf2::game::classes::classes);
+    let portrait = class.and_then(|c| tf2::game::hud::portrait(&c.class(table).name, blu));
     let inputs = Inputs {
         alive: !dead && health.current > 0.0,
         health: (health.current * 100.0).round(),
@@ -199,7 +199,7 @@ pub fn sync(
                                 text: String::new(),
                                 color: Color::NONE,
                                 at: Vec2::ZERO,
-                                align: super::hud::Align::Left,
+                                align: crate::hud::Align::Left,
                             },
                             ChildOf(id),
                         ));
@@ -275,7 +275,7 @@ pub fn sync(
     }
 }
 
-pub use crate::game::hud::{crop, icon_cells};
+pub use tf2::game::hud::{crop, icon_cells};
 
 /// When `register_kill_icons` looks again (`Local`): registered, or the
 /// next try and the wait after it.
@@ -313,7 +313,7 @@ pub fn register_kill_icons(
     tries.wait = (tries.wait * 2.0).clamp(2.0, MOST_WAIT);
     tries.next = now + tries.wait;
     let Some(mount) = INFO.mount() else { return };
-    let Some(pictures) = crate::game::hud::kill_icon_pictures(&mount) else { return };
+    let Some(pictures) = tf2::game::hud::kill_icon_pictures(&mount) else { return };
     tries.done = true;
     if pictures.is_empty() {
         warn!("TF2: no kill icons (scripts/mod_textures.txt or its sheets don't read)");

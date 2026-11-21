@@ -37,6 +37,7 @@ members = [
     "games/hl2dm",
     "games/halo_ce",
     "games/tf2",
+    "games/tf2/ui",
     "apps/cs_source",
     "apps/cs_source_server",
     "apps/combat_arms",
@@ -83,6 +84,7 @@ default-members = [
     "games/hl2dm",
     "games/halo_ce",
     "games/tf2",
+    "games/tf2/ui",
     "apps/cs_source",
     "apps/cs_source_server",
     "apps/combat_arms",
@@ -155,6 +157,8 @@ halo_ce = { path = "games/halo_ce" }
 # Team Fortress 2 as a game crate (games/tf2): its skeleton and maps
 # (docs/plans/active/tf2.md).
 tf2 = { path = "games/tf2" }
+# Its front end on the client shell (games/tf2/ui), above the simulation.
+tf2_ui = { path = "games/tf2/ui" }
 # Lucker Party's original minigames (games/originals): their definitions
 # (minigames/) and rules hooks, on Chimera only.
 originals = { path = "games/originals" }
@@ -368,7 +372,7 @@ default = ["present"]
 # (Its `default`, not `present` alone, and the other games' front ends: the
 # same builds of them as every other selection's; architecture.rs,
 # `selections_share_one_build`.)
-present = ["cs_source_app/default", "combat_arms/ui", "hl2dm/ui", "tf2/ui", "halo_ce/ui"]
+present = ["cs_source_app/default", "combat_arms/ui", "hl2dm/ui", "halo_ce/ui"]
 
 # Host tools (`chimera_pack`), not in releases.
 tools = []

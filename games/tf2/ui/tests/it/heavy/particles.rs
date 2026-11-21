@@ -59,7 +59,7 @@ fn show(i: &Instance, defs: &[SystemDef], map: &MapData, depth: usize) {
 /// file's base radius 32.
 #[test]
 fn the_flash_child_keeps_its_remapped_size() {
-    let Some(map) = super::looks::dressed() else { return };
+    let Some(map) = super::install::dressed() else { return };
     let defs = &map.particle_systems.defs;
     run(&map, "muzzle_scattergun_flash", &[0.004, 0.02, 0.04, 0.08], |t, i| {
         let r = i.own_radii(defs);
@@ -71,7 +71,7 @@ fn the_flash_child_keeps_its_remapped_size() {
 
 #[test]
 fn dump_a_system_over_time() {
-    let Some(map) = super::looks::dressed() else { return };
+    let Some(map) = super::install::dressed() else { return };
     let name = std::env::var("PROBE_SYS").unwrap_or("muzzle_smg".into());
     let times: Vec<f32> = std::env::var("PROBE_T").map(|s| s.split(",").filter_map(|x| x.parse().ok()).collect()).unwrap_or(vec![0.01, 0.03, 0.06]);
     run(&map, &name, &times, |t, i| {
@@ -82,7 +82,7 @@ fn dump_a_system_over_time() {
 
 #[test]
 fn dump_a_system_as_loaded_and_in_its_file() {
-    let Some(map) = super::looks::dressed() else { return };
+    let Some(map) = super::install::dressed() else { return };
     let systems = &map.particle_systems;
     let name = std::env::var("PROBE_SYS").unwrap_or("muzzle_scattergun_flash".into()).to_lowercase();
     if let Some(i) = systems.find(&name) {
@@ -94,7 +94,7 @@ fn dump_a_system_as_loaded_and_in_its_file() {
     for w in map.warnings.iter().filter(|w| w.contains("particle")) {
         eprintln!("warning: {w}");
     }
-    let Some(mount) = super::maps::install_mount() else { return };
+    let Some(mount) = super::install::install_mount() else { return };
     let file = std::env::var("PROBE_PCF").unwrap_or("particles/muzzle_flash.pcf".into());
     let Ok(elements) = read_dmx(&mount.read(&file).unwrap()) else { return };
     let Some(sys) = elements.iter().find(|e| e.kind == "DmeParticleSystemDefinition" && e.name.to_lowercase() == name) else {
@@ -129,7 +129,7 @@ fn dump_a_system_as_loaded_and_in_its_file() {
 #[test]
 fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_flashups_thirty() {
     use chimera_world::map::particles::Shape;
-    let Some(map) = super::looks::dressed() else { return };
+    let Some(map) = super::install::dressed() else { return };
     let systems = &map.particle_systems;
     let defs = &systems.defs;
     let embers = &defs[systems.find("Explosion_FlyingEmbers").expect("loaded")];
@@ -199,7 +199,7 @@ fn the_blast_draws_thin_ember_rays_broad_core_streaks_and_flashups_thirty() {
 #[test]
 fn a_started_blast_draws_its_core_flash_and_embers_within_three_frames() {
     use chimera_present::render::psys::StartedSystems;
-    let Some(map) = super::looks::dressed() else { return };
+    let Some(map) = super::install::dressed() else { return };
     let sheets = MaterialSheets(Some(&map.particles));
     let defs = &map.particle_systems.defs;
     fn drawing(i: &Instance, defs: &[SystemDef], out: &mut Vec<String>) {
@@ -245,7 +245,7 @@ fn a_started_blast_draws_its_core_flash_and_embers_within_three_frames() {
 #[test]
 fn the_minigun_flash_by_its_caps_and_fades_8_3_1() {
     use chimera_world::map::psys::OpFade;
-    let Some(map) = super::looks::dressed() else { return };
+    let Some(map) = super::install::dressed() else { return };
     let systems = &map.particle_systems;
     let defs = &systems.defs;
     let root = systems.find("muzzle_minigun_constant").expect("muzzle_minigun_constant loaded");

@@ -30,6 +30,8 @@ cs_source.workspace = true
 hl2dm.workspace = true
 # Team Fortress 2's maps (`MAP_GAMES`; docs/plans/active/tf2.md, M1).
 tf2.workspace = true
+# Its front end (`tf2_ui`: its HUD, its guns' kill icons), for `present`.
+tf2_ui = { workspace = true, optional = true }
 # Halo's maps (its disc image), played with the other games' parts.
 halo_ce.workspace = true
 source_logic.workspace = true
@@ -95,7 +97,7 @@ tools = []
 # and both games' front ends (`combat_arms/ui`; `cs_source/ui` for CS:S's
 # HUD, shown to a player holding a CS:S gun): everything but the
 # dedicated server.
-present = ["dep:chimera_present", "dep:chimera_client", "dep:chimera_ui", "combat_arms/ui", "cs_source/ui", "hl2dm/ui", "tf2/ui", "halo_ce/ui"]
+present = ["dep:chimera_present", "dep:chimera_client", "dep:chimera_ui", "combat_arms/ui", "cs_source/ui", "hl2dm/ui", "dep:tf2_ui", "halo_ce/ui"]
 
 # Faster iteration: link Bevy as a dynamic library, serve the remote
 # protocol. `cargo run --features dev --bin lucker_party`. Never for
@@ -112,6 +114,7 @@ dev = [
     "cs_source/dev",
     "hl2dm/dev",
     "tf2/dev",
+    "tf2_ui?/dev",
     "halo_ce/dev",
     "source_logic/dev",
     "combat_arms/dev",

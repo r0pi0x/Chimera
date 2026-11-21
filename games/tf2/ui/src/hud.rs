@@ -230,7 +230,7 @@ impl Tf2Hud {
         // drawn first: the health panel (zpos 2) overlaps its right edge
         // and its number is above it.
         if let (true, Some(p)) = (i.alive, i.portrait) {
-            let bg = super::super::game::hud::portrait_bg(i.blu);
+            let bg = tf2::game::hud::portrait_bg(i.blu);
             if scheme.has(bg) {
                 let rect = screen.rect(HudCoord::Start(9.0), HudCoord::End(60.0), 100.0, 50.0);
                 out.push(Draw::Sprite { sprite: bg, rect, uv: full, color: white });
@@ -485,7 +485,7 @@ mod tests {
     /// names; none when dead.
     #[test]
     fn class_portrait_3_10() {
-        use crate::game::hud::portrait;
+        use tf2::game::hud::portrait;
         assert_eq!(portrait("demoman", false), Some("class_demored"));
         assert_eq!(portrait("engineer", true), Some("class_engiblue"));
         assert_eq!(portrait("scout", true), Some("class_scoutblue"));

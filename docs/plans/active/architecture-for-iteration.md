@@ -283,13 +283,13 @@ Small and reversible: `tf2`'s `src/ui/` is 979 lines in 3 files with no
 `tests/ui/`; one commit moves it to `games/tf2/ui` (crate `tf2_ui`) and
 one revert puts it back.
 
-- [ ] `tf2_ui` on `tf2` and `chimera_client`; `tf2` loses its `ui`
+- [x] `tf2_ui` on `tf2` and `chimera_client`; `tf2` loses its `ui`
       feature, the optional client dependencies and the dev-dependency on
       itself. The 4 `tests/it` files that name the client move to the new
       crate's tests. Apps and the party kit take `tf2_ui::CLIENT`.
-- [ ] The layering test (`checks/tests/it/architecture.rs`), hakari,
+- [x] The layering test (`checks/tests/it/architecture.rs`), hakari,
       docs/new-game.md and ARCHITECTURE.md's crate list follow.
-- [ ] Keep or revert by: (a) `affected --files chimera/client/src/lib.rs`
+- [x] Keep or revert by (results below, "Stage 1 results"): (a) `affected --files chimera/client/src/lib.rs`
       no longer selects `tf2`; (b) after an edit in `chimera_client`,
       `cargo test -p tf2 --features dev --no-run` compiles nothing (now:
       the client, `tf2` and its two test targets); (c) after an edit in
@@ -309,6 +309,81 @@ after the push: the 19-minute class of post-push runs moves toward the
 drops the client chain; the hook after a client-side edit type-checks
 the front ends and apps, not the games' simulation test crates (191k
 lines); a dedicated-server build reuses the client build's game crates.
+
+#### Stage 1 results (`tf2`, 2026-11-21)
+
+Kept. Measured in an agent slot at load 34-47 on 12 threads:
+
+- (a) `affected --files chimera/client/src/lib.rs` selects 24 packages
+  before and after, `tf2_ui` where `tf2` was: TF2's 279 fast simulation
+  tests (221 in `it`, 58 unit) leave a client edit's selection; the 10
+  that need the client (`tf2_ui`) stay in it.
+- (b) After a function appended to `chimera_client`, `cargo test -p tf2
+  --features dev --no-run` compiles nothing (0.55 s; before: the client,
+  `tf2` and its two test targets). The front end's own test build after
+  the same edit: `chimera_client` and `tf2_ui`, 17.7 s.
+- (c) After a function appended to `chimera_sim`, `tf2`'s test build
+  compiles `chimera_sim`, `chimera_net`, `source_logic`,
+  `source_engine`, `tf2` and its two test targets: 80 unit-seconds, 62 s
+  wall; no `chimera_client`. Its unit graph (`--unit-graph`): 745 units,
+  12 workspace packages, no client, presentation or UI kit (before: 781
+  units, 15 packages with `chimera_client`, `chimera_present`,
+  `chimera_ui`).
+- (d) `selections_share_one_build` passes. `tf2`'s own unit has the same
+  features (`dev`) in the client (`ultimate_gun_game`), the servers
+  (`ultimate_gun_game_server`, `lucker_party_server`) and `--workspace`;
+  before, the client and `--workspace` built `[dev, ui]` and a server
+  `[dev]`. **But a server built alone still does not reuse the client's
+  `tf2` artifact**: the servers' Bevy and Avian are built without render
+  features on purpose, so the unit's dependency closure differs (668
+  units under `tf2` for a server, 743 for the client) and so does its
+  hash. The expectation above that "a dedicated-server build reuses the
+  client build's game crates" holds only within one cargo invocation
+  (`--workspace`, the hooks), where it held before too. Worth knowing
+  before splitting more games for that reason alone; the other three
+  numbers are the reason to go on.
+
+#### The recipe, per game
+
+One commit per game; `<g>` is the game's id.
+
+1. `git mv games/<g>/src/ui/mod.rs games/<g>/ui/src/lib.rs` and the
+   rest of `src/ui/` to `games/<g>/ui/src/`; in them `crate::game::`
+   and `super::super::game::` become `<g>::game::`, `super::<m>` (a
+   sibling) `crate::<m>`. Remove `pub mod ui;` (and its `cfg`) from
+   `src/lib.rs` and its doc's mention.
+2. `games/<g>/ui/Cargo.toml` (copy games/tf2/ui's): package `<g>_ui`;
+   dependencies `<g>`, the Chimera crates its code names,
+   `chimera_client` (and `chimera_present`/`chimera_ui`/`source_gameui`
+   if named), `bevy`, `workspace-hack`; the dev-dependencies the
+   presentation's builds have (`chimera_world` with `render`, Bevy
+   `default`+`wav`, Avian's three features, `bevy_winit`), so
+   `selections_share_one_build` holds; a `dev` feature forwarding to
+   every workspace dependency's `dev`; one test binary `tests/it/main.rs`.
+3. `games/<g>/Cargo.toml`: drop the `ui` feature, the optional client
+   dependencies, the dev-dependency on itself with `ui`,
+   `[package.metadata.affected] feature-paths`, and the `?/dev` entries
+   of the client crates in `dev`.
+4. The root Cargo.toml: `games/<g>/ui` in `members` and
+   `default-members`, `<g>_ui = { path = "games/<g>/ui" }`; drop
+   `<g>/ui` from the root's `present`. `apps/party_kit`: `<g>_ui`
+   optional, `dep:<g>_ui` in `present` for `<g>/ui`, `<g>_ui?/dev` in
+   `dev`; the game's own app the same (non-optional). `<g>::ui::` becomes
+   `<g>_ui::` everywhere (`grep -rn "<g>::ui"`).
+5. Tests: whatever in `games/<g>/tests/it` names `chimera_client`,
+   `chimera_present` or `<g>::ui` moves to `games/<g>/ui/tests/it/`
+   with the helpers it needs (copied: test helpers are not shared across
+   crates).
+6. checks/tests/it/architecture.rs: `games/<g>/ui/src` in `CRATE_SRC`;
+   the game's row out of `UI_FEATURES`; a `FORBIDDEN` row for
+   `games/<g>` naming `chimera_present`, `chimera_client`, `chimera_ui`
+   (`layers_follow_paths` and `games_share_one_shape` already know
+   `games/<id>/ui`). `cargo hakari manage-deps -y && cargo hakari
+   generate`; ARCHITECTURE.md's crate tree; `docs_index`.
+7. Measure (a)-(c) as above (`affected --files chimera/client/src/lib.rs`;
+   an appended function in `chimera_client`, then `chimera_sim`, and
+   `cargo test -p <g> --features dev --no-run`), then the game's fast
+   tier, `<g>_ui`'s tests, `repo_checks`.
 
 ### Stage 2: data at run time in dev, logic outside the `Sim`
 
@@ -375,6 +450,9 @@ measured cost per event and per tick.
 
 2026-11-21: measured, options compared, plan written; `survey.py radius`
 added. Nothing in the product changed.
+2026-11-21: stage 1 for `tf2`: its front end is `tf2_ui` (games/tf2/ui);
+criteria (a)-(c) met, (d) as far as features go (results above); the
+layering check knows a front-end crate by its path (`Layer::FrontEnd`).
 
 ## Decision log
 
@@ -384,3 +462,8 @@ the tests it selects, which a loader does not change, and a stable ABI
 would cost a rewrite of the games.
 2026-11-21: first step is `tf2`'s front end as its own crate: the
 smallest game, no UI tests, one commit to move and one to revert.
+2026-11-21: `tf2_ui` kept: a client edit no longer builds or selects
+`tf2`'s simulation tests, and a base edit no longer builds the client
+for them. A server built on its own still builds its own `tf2` (its
+Bevy has no render features), so "servers share the client's game
+build" is not a reason to split; iteration on the client side is.

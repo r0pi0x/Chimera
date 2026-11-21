@@ -355,6 +355,7 @@ const CRATE_SRC: &[&str] = &[
     "games/hl2dm/src",
     "games/halo_ce/src",
     "games/tf2/src",
+    "games/tf2/ui/src",
 ];
 
 /// The CS:S app's glue (crate `cs_source_app`): `lib.rs` (`SimPlugins`,
@@ -407,6 +408,10 @@ fn module_of(src: &Path, file: &Path) -> Option<String> {
     if (first == "ui" || first == "ui.rs") && crate_game(src).is_some() {
         return Some("games_ui".to_string());
     }
+    // A game's front end as its own crate (`games/<game>/ui/src`).
+    if front_end_game(src).is_some() {
+        return Some("games_ui".to_string());
+    }
     // GameUI drawn, the front end of a Source game (`source_gameui`).
     if src == root().join("source/gameui/src") {
         return Some("games_ui".to_string());
@@ -418,6 +423,15 @@ fn module_of(src: &Path, file: &Path) -> Option<String> {
 fn crate_game(src: &Path) -> Option<String> {
     let game = src.parent()?;
     (game.parent()?.file_name()? == "games" && src.file_name()? == "src")
+        .then(|| game.file_name().unwrap().to_string_lossy().to_string())
+}
+
+/// The game whose front-end crate's source folder (`games/<game>/ui/src`)
+/// `src` is.
+fn front_end_game(src: &Path) -> Option<String> {
+    let ui = src.parent()?;
+    let game = ui.parent()?;
+    (game.parent()?.file_name()? == "games" && ui.file_name()? == "ui" && src.file_name()? == "src")
         .then(|| game.file_name().unwrap().to_string_lossy().to_string())
 }
 
@@ -533,6 +547,12 @@ fn module_layering() {
             ));
             continue;
         };
+        // A front end as its own crate (`games/<game>/ui`): its `crate::`
+        // is itself, and its crate's dependencies are its layering
+        // (`layers_follow_paths`).
+        if front_end_game(&base).is_some() {
+            continue;
+        }
         let text = fs::read_to_string(&file).unwrap();
         // Strip line comments and join, so grouped imports can span lines.
         let mut code = text
@@ -755,7 +775,7 @@ fn games_leave_the_overlay_alone() {
     let games = root().join("games");
     for game in fs::read_dir(&games).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir()) {
         let mut files = Vec::new();
-        for sub in ["src", "tests"] {
+        for sub in ["src", "tests", "ui/src", "ui/tests"] {
             if game.join(sub).is_dir() {
                 rust_files(&game.join(sub), &mut files);
             }
@@ -1978,6 +1998,26 @@ fn workspace_crates() {
             ],
             GAME,
         ),
+        // TF2's simulation: its front end is its own crate (`tf2_ui`,
+        // games/tf2/ui), so no optional client dependencies either.
+        (
+            "games/tf2",
+            &[
+                "chimera_present",
+                "chimera_client",
+                "chimera_ui",
+                "source_gameui",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "halo_ce",
+                "mashup",
+                "originals",
+                "lucker_party",
+                "party_kit",
+            ],
+            GAME,
+        ),
         (
             "games/halo_ce",
             &[
@@ -2323,6 +2363,10 @@ enum Layer {
     Loader(String),
     /// `games/<id>`: a game as a library.
     Game,
+    /// `games/<id>/ui`: a game's front end as its own crate, on its game
+    /// and the client shell (docs/plans/active/architecture-for-iteration.md,
+    /// stage 1).
+    FrontEnd(String),
     /// `apps/<name>`, a game's tools (`games/<id>/tools`) and the root
     /// package: what composes games.
     App,
@@ -2333,6 +2377,7 @@ enum Layer {
 fn layer_of(member: &str) -> Layer {
     let parts: Vec<&str> = member.split('/').collect();
     match parts.as_slice() {
+        ["games", game, "ui"] => Layer::FrontEnd(game.to_string()),
         ["."] | ["apps", _] | ["games", _, _] => Layer::App,
         ["checks"] => Layer::Checks,
         ["chimera", _] => Layer::Engine,
@@ -2425,6 +2470,13 @@ fn layers_follow_paths() {
             _ => None,
         })
         .collect();
+    let game_loaders = |g: &str| -> BTreeSet<String> {
+        manifests
+            .iter()
+            .find(|(m, _)| *m == format!("games/{g}"))
+            .map(|(_, t)| declared(t, "loaders"))
+            .unwrap_or_default()
+    };
     let mut errors = Vec::new();
     for (member, table) in &manifests {
         let layer = layer_of(member);
@@ -2493,11 +2545,19 @@ fn layers_follow_paths() {
                      an app."
                         .to_string(),
                 ),
-                (Layer::Game, Layer::App) => Some(
-                    "a game is a library below the apps: move the piece into the game, or give the game a \
-                     hook the app fills."
+                (Layer::Game, Layer::App | Layer::FrontEnd(_)) => Some(
+                    "a game is a library below its front end and the apps: move the piece into the game, or \
+                     give the game a hook the front end or the app fills."
                         .to_string(),
                 ),
+                (Layer::FrontEnd(_), Layer::Engine) => None,
+                (Layer::FrontEnd(g), Layer::Game) if dep_member == &format!("games/{g}") => None,
+                (Layer::FrontEnd(g), Layer::Loader(f)) if game_loaders(g).contains(f) => None,
+                (Layer::FrontEnd(g), _) => Some(format!(
+                    "a game's front end (games/{g}/ui) builds on Chimera, its own game (`{g}`) and the loader \
+                     layers that game declares; never another game, another front end or an app: what two \
+                     front ends need moves into the client shell or the loader layer (a lift)."
+                )),
                 (Layer::App, Layer::App) if apps.contains(&dep) => None,
                 (Layer::App, Layer::App) => Some(format!(
                     "an app builds on another app only when its manifest says so. If `{member}` is meant to \
@@ -2642,21 +2702,38 @@ fn games_share_one_shape() {
             manifest["package"]["name"].as_str() == Some(id),
             &format!("the package is named after its folder and the game's id, `{id}`"),
         );
+        // Its front end: its own crate `<id>_ui` in games/<id>/ui (stage 1 of
+        // docs/plans/active/architecture-for-iteration.md), or, until each
+        // game is split, a `ui` feature and `src/ui/`.
+        let front_crate = dir.join("ui/Cargo.toml").is_file();
         let features = manifest.get("features").and_then(|f| f.as_table());
-        need(
-            features.is_some_and(|f| f.contains_key("ui")),
-            "a `ui` feature turns on its front end and the front end's optional dependencies",
-        );
         let read = |rel: &str| fs::read_to_string(dir.join(rel)).unwrap_or_default();
         let lib = read("src/lib.rs");
+        if front_crate {
+            let ui: toml::Table = read("ui/Cargo.toml").parse().unwrap();
+            need(
+                ui["package"]["name"].as_str() == Some(&format!("{id}_ui")),
+                &format!("its front end's crate (games/{id}/ui) is named `{id}_ui`"),
+            );
+            need(
+                !features.is_some_and(|f| f.contains_key("ui")) && !lib.contains("pub mod ui"),
+                "a game whose front end is its own crate (ui/) has no `ui` feature or module of its own",
+            );
+        } else {
+            need(
+                features.is_some_and(|f| f.contains_key("ui")),
+                "a `ui` feature turns on its front end and the front end's optional dependencies (or the front \
+                 end is its own crate, games/<id>/ui)",
+            );
+            need(
+                lib.contains("#[cfg(feature = \"ui\")]\npub mod ui;"),
+                "src/lib.rs has its front end as `#[cfg(feature = \"ui\")] pub mod ui;`",
+            );
+        }
         need(lib.contains("pub struct SimPlugins"), "src/lib.rs has `pub struct SimPlugins`, its simulation's base");
         need(
             lib.contains("pub mod game;") && lib.contains("pub mod harness;"),
             "src/lib.rs has `pub mod game;` and `pub mod harness;`",
-        );
-        need(
-            lib.contains("#[cfg(feature = \"ui\")]\npub mod ui;"),
-            "src/lib.rs has its front end as `#[cfg(feature = \"ui\")] pub mod ui;`",
         );
         let mut files = Vec::new();
         if dir.join("src/game").is_dir() {
@@ -2686,13 +2763,14 @@ fn games_share_one_shape() {
             "src/harness.rs has the base of its scenario tests (`pub struct <Game>Sim`)",
         );
         let mut ui = Vec::new();
-        if dir.join("src/ui").is_dir() {
-            rust_files(&dir.join("src/ui"), &mut ui);
+        let ui_src = if front_crate { "ui/src" } else { "src/ui" };
+        if dir.join(ui_src).is_dir() {
+            rust_files(&dir.join(ui_src), &mut ui);
         }
         let ui: String = ui.iter().map(|f| fs::read_to_string(f).unwrap_or_default()).collect();
         need(
             ui.contains("pub fn with_hud(") && ui.contains("CLIENT") && ui.contains("pub mod party"),
-            "src/ui/ has `with_hud` (its HUD on the client shell) and `party::CLIENT` (its `GameClient`)",
+            &format!("{ui_src}/ has `with_hud` (its HUD on the client shell) and `party::CLIENT` (its `GameClient`)"),
         );
         need(dir.join("tests/it/main.rs").is_file(), "its tests are one binary, tests/it/main.rs");
         need(
@@ -2712,6 +2790,7 @@ fn layers_by_path() {
     assert_eq!(layer_of("blam/formats"), Layer::Loader("blam".into()));
     assert_eq!(layer_of("games/hl2dm"), Layer::Game);
     assert_eq!(layer_of("games/cs_source/tools"), Layer::App);
+    assert_eq!(layer_of("games/tf2/ui"), Layer::FrontEnd("tf2".into()));
     assert_eq!(layer_of("apps/party_kit"), Layer::App);
     assert_eq!(layer_of("."), Layer::App);
     assert_eq!(layer_of("checks"), Layer::Checks);
@@ -2726,7 +2805,6 @@ const UI_FEATURES: &[(&str, &str, &[&str])] = &[
     ("games/combat_arms", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
     ("games/hl2dm", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
     ("games/halo_ce", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
-    ("games/tf2", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
 ];
 
 /// Crates a member's `FORBIDDEN` list names that its tests alone may use

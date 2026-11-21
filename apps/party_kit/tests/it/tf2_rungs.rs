@@ -102,7 +102,7 @@ fn the_rocket_launchers_rung_kills_with_a_rocket() {
     assert_eq!(rung(&sim, a), r + 1);
 }
 
-/// TF2's HUD in the party (`tf2::ui::party::CLIENT`): up while the local
+/// TF2's HUD in the party (`tf2_ui::party::CLIENT`): up while the local
 /// player holds a TF2 gun, its root shown, the other game's HUD up again
 /// on another game's rung; while it is up the shell's crosshair and status
 /// are off (`GameDraws`), and its declared kill feed stays empty (the

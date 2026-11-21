@@ -11,10 +11,10 @@ module list is `docs/modules.md`.
 
 - 1: Architecture | A map of the code
 - 6: Crates | A Cargo workspace (docs/plans/active/engine-split.md, "Crates and compile time"); every member is a default member, so `cargo test` and...
-- 709: Layers | Exact edges: console_scope uses core, console, game_registry and slots (the console's scope from the game played, the games'...
-- 833: Modules | The module list is `docs/modules.md`: one line per source file, grouped by crate folder, generated from the first sentence of each...
-- 844: Data flow per tick | Intent buttons are levels, not edges
-- 918: Slots | An implementation registers under a namespaced ID (`chimera:noclip`,
+- 714: Layers | Exact edges: console_scope uses core, console, game_registry and slots (the console's scope from the game played, the games'...
+- 839: Modules | The module list is `docs/modules.md`: one line per source file, grouped by crate folder, generated from the first sentence of each...
+- 850: Data flow per tick | Intent buttons are levels, not edges
+- 924: Slots | An implementation registers under a namespaced ID (`chimera:noclip`,
 
 ## docs/DESIGN.md
 
@@ -156,9 +156,9 @@ module list is `docs/modules.md`.
 - 1: Porting a new game | The checklist for game number N, end to end
 - 15: Before any code | before writing a loader): the install (where it comes from, how it is found), the formats, the milestones below, what is out of scope
 - 29: The crates | A new family's folder is a loader layer the day a crate lives in it; its formats crate may use `chimera_vfs` (archives as mount layers) and
-- 52: The game crate's shape | party mode finds the same seams in every game:
-- 88: Order of work | What Combat Arms' skeleton and HL2:DM's milestones taught: get a character walking on the greybox with placeholder parts first, then...
-- 168: Don't rely on | run-time choice (`chimera_core::gameplay`)
+- 53: The game crate's shape | party mode finds the same seams in every game:
+- 100: Order of work | What Combat Arms' skeleton and HL2:DM's milestones taught: get a character walking on the greybox with placeholder parts first, then...
+- 180: Don't rely on | run-time choice (`chimera_core::gameplay`)
 
 ## docs/performance.md
 

@@ -15,15 +15,12 @@
 //! `SimPlugins`: everything TF2's simulation needs but its parts (the
 //! engine's base, Source's map logic, the tick metrics), what its apps run
 //! with `game::Tf2Plugins` after it; `harness`: TF2 on the engine's
-//! headless harness (`harness::Tf2Sim`, its scenario tests' base). With
-//! the `ui` feature, `ui` is its front end on the client shell (its HUD,
-//! its guns' kill icons).
+//! headless harness (`harness::Tf2Sim`, its scenario tests' base). Its
+//! front end on the client shell (its HUD, its guns' kill icons) is its own
+//! crate above this one, `tf2_ui` (games/tf2/ui).
 
 pub mod game;
 pub mod harness;
-// The front end: built on the client shell (the `ui` feature).
-#[cfg(feature = "ui")]
-pub mod ui;
 
 // `crate::game_registry`, `crate::map` and the rest inside, as in the other
 // game crates (the architecture check reads `crate::<module>` against its

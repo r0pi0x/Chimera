@@ -1,10 +1,12 @@
-//! TF2's front end on the client shell (the `ui` feature, M3 of
+//! TF2's front end on the client shell, its own crate above the game's
+//! simulation (`tf2`) so that the simulation and its tests never build the
+//! shell (docs/plans/active/architecture-for-iteration.md, stage 1; M3 of
 //! docs/plans/active/tf2.md; specs/tf2/hud.md): its HUD while a TF2 gun is
 //! in hand, drawn under its own root (`HudRoot(GAME)`) by its own unit
 //! (H / 480): the health cross with its number, the overheal and low-health
 //! pulses, the ammo panel in the team's colour (clip and reserve, or one
 //! number), the crosshair; in TF2's fonts and colours from the install's
-//! scheme (its look comes with the map: `game::hud`). Its guns' kill icons
+//! scheme (its look comes with the map: `tf2::game::hud`). Its guns' kill icons
 //! join every app's kill feed (`systems::register_kill_icons`); the feed's
 //! rows are the app's.
 //!
@@ -18,7 +20,7 @@ pub mod systems;
 use bevy::{app::PluginGroupBuilder, prelude::*};
 use chimera_world::game_bundle::GameClient;
 
-use crate::game::GAME;
+use tf2::game::GAME;
 
 /// TF2's HUD: its state, root and nodes, drawing while its HUD is the
 /// gameplay's.
@@ -54,7 +56,7 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 /// `game::BUNDLE`): its HUD while a TF2 gun is in hand.
 pub static CLIENT: GameClient = GameClient { game: GAME, hud: Some(with_hud), app: None };
 
-/// TF2's front end under the name every game's has it (`ui::party::CLIENT`;
+/// TF2's front end under the name every game's has it (`party::CLIENT`;
 /// docs/new-game.md).
 pub mod party {
     pub use super::{CLIENT, with_hud};

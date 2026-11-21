@@ -31,7 +31,8 @@ a game of a new engine family, Combat Arms is the example:
 | Crate | Folder | Holds | Example |
 |---|---|---|---|
 | `<family>_formats` | `<family>/formats` | the engine family's file formats as plain data: no Bevy, fixtures written by tests, `heavy::` tests on the install that skip without it. Only for a new family | `lithtech/formats` |
-| `<id>` | `games/<id>` | the game as a library (below) | `games/hl2dm` |
+| `<id>` | `games/<id>` | the game's simulation as a library (below) | `games/hl2dm` |
+| `<id>_ui` | `games/<id>/ui` | its front end on the client shell (HUD, menus, front-end hooks): on its game and `chimera_client`, never another game or an app | `games/tf2/ui` |
 | `<id>_app` | `apps/<id>` | the game's binary: a `GameApp` static and one call (below) | `apps/hl2dm` |
 | `<id>_server` | `apps/<id>_server` | a static and one call (below); Chimera and the game only, never an app (`game_servers_use_no_app`) | `apps/hl2dm_server` |
 
@@ -56,9 +57,8 @@ party mode finds the same seams in every game:
 
 ```
 games/<id>/Cargo.toml        [package.metadata.chimera] loaders = ["<family>"]
-                             features: `ui` (the front end's optional
-                             dependencies), `dev`
-games/<id>/src/lib.rs        pub mod game; pub mod harness; #[cfg(feature = "ui")] pub mod ui;
+                             features: `dev`; no client, presentation or UI kit
+games/<id>/src/lib.rs        pub mod game; pub mod harness;
                              pub struct SimPlugins   (Chimera's base + what its maps need)
 games/<id>/src/game/mod.rs   pub const GAME, pub static INFO: GameInfo,
                              pub struct <Game>Plugins (its parts, `RegisterGame(&INFO)` first),
@@ -66,7 +66,19 @@ games/<id>/src/game/mod.rs   pub const GAME, pub static INFO: GameInfo,
 games/<id>/src/harness.rs    pub struct <Game>Sim    (its scenario tests' base)
 games/<id>/tests/it/main.rs  one test binary; slow tests in tests/it/heavy/
 games/<id>/data/             its numbers as data (weapons, movement), our own files
+games/<id>/ui/               crate `<id>_ui`: its front end; src/lib.rs has
+                             `with_hud` and `party::CLIENT`; tests/it/ for
+                             what only the client shows
 ```
+
+The front end is its own crate so that the simulation and its tests
+never build the client shell: a client-side edit then selects the front
+ends' and apps' tests, not every game's simulation suite, and a
+dedicated server links the same build of the game as the client
+(docs/plans/active/architecture-for-iteration.md, stage 1). Older games
+still have it as a `ui` feature and `src/ui/` (`#[cfg(feature = "ui")]
+pub mod ui;`) until they are split the same way; the check accepts
+either.
 
 - `loaders` lists the loader layers the game builds on (`[]` for a game
   with none). A game never depends on another game or on an app; what
@@ -82,7 +94,7 @@ games/<id>/data/             its numbers as data (weapons, movement), our own fi
   game's own keys and options on the party apps' Options screen (Games
   tab: its actions, its cvars, its own values of shared settings;
   party_kit `game_options`).
-- With `ui`: `ui::party::CLIENT` (`GameClient`: its HUD and the rest of
+- In `<id>_ui`: `party::CLIENT` (`GameClient`: its HUD and the rest of
   its front end for a party app) and `with_hud` for its own app.
 
 ## Order of work
@@ -145,9 +157,9 @@ replace one part at a time, each behind its spec and a scenario test.
 7. **Network**: `net_part("<id>", ...)` for what the game replicates of
    its own, own-state parts, `JoinRules` if the default join doesn't
    fit. One network test per feature on `harness::NetSim`.
-8. **Front end** (`ui`): its HUD on the client shell's plugins, menus
+8. **Front end** (`<id>_ui`, games/<id>/ui): its HUD on the client shell's plugins, menus
    through `client::front_end`, layouts on `client::canvas` or
-   `client::vgui`. Nothing outside `ui` uses `ui`.
+   `client::vgui`. The game's crate never uses it.
    Your HUD scales under its own roots (`client::hud::HudRoot`) by its
    own rule (node sizes from its canvas), never Bevy's global `UiScale`,
    and draws nothing of the shell's overlay (a minigame's panel and

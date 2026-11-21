@@ -100,7 +100,7 @@ pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 5] = [
     &cs_source::ui::party::CLIENT,
     &hl2dm::ui::party::CLIENT,
     &halo_ce::ui::party::CLIENT,
-    &tf2::ui::party::CLIENT,
+    &tf2_ui::party::CLIENT,
 ];
 
 /// The client after the shell with both games' HUDs (`PARTY`'s front
