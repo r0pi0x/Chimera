@@ -146,6 +146,10 @@ failed in all four runs on 55277a2d1, with both runners.
 | Cheaper models for mechanical briefs, narrower briefs, `docs/agent-index.md` before reading whole docs | part of the 145 h of model time | Orchestrator's choice; measure per agent type |
 | Post-push affected runs coalesced across pushes (already) and split by crate onto idle slots | FAIL latency, not agent time | Only matters once nobody waits |
 
+The architecture's side of the same question (how many crates a change
+rebuilds, type-checks and selects; plugins per game) is
+[architecture-for-iteration.md](architecture-for-iteration.md).
+
 ## Progress
 
 2026-11-21: plan written, baseline taken, items 1-4 done.

@@ -8,6 +8,9 @@ section 2), kept so the next pass compares like with like (T5).
     tools/arch_survey/survey.py structs    # widest Resource/Component/Message structs
     tools/arch_survey/survey.py closures   # each crate's dependency closure inside the workspace
     tools/arch_survey/survey.py commits [N]  # N (default 300) non-merge commits, by lowest crate touched
+    tools/arch_survey/survey.py radius [DAYS]  # the last DAYS (default 14) days' commits: by kind, by lowest
+                                             # layer, and how many crates' tests each can affect
+                                             # (docs/plans/active/architecture-for-iteration.md)
 
 Python 3 standard library only; run from anywhere in the repository. Counts
 are approximate by design (brace matching on comment- and string-stripped
@@ -256,6 +259,122 @@ def commits_cmd(limit):
     print(f"{total} commits touching Rust")
 
 
+def radius_cmd(days):
+    """How far a change reaches: the commits of the last `days` days by what
+    they change, by the lowest layer they touch, and the number of workspace
+    crates above the crates they touch (those whose tests a change can
+    affect, by normal dependencies; `affected` adds dev-dependencies)."""
+    md = metadata()
+    names = {p["name"] for p in md["packages"]}
+    dirs = crates()
+    deps = {
+        p["name"]: {d["name"] for d in p["dependencies"] if d["name"] in names and d.get("kind") is None} - {"workspace-hack"}
+        for p in md["packages"]
+    }
+
+    def below(n, seen):
+        for d in deps[n]:
+            if d not in seen:
+                seen.add(d)
+                below(d, seen)
+        return seen
+
+    under = {n: below(n, set()) for n in names}
+    above = {n: {m for m in names if n in under[m]} | {n} for n in names}
+
+    def owner(f):
+        return crate_of(f, dirs) or ("mashup" if f.startswith(("src/", "tests/")) else None)
+
+    def kind(f):
+        if f.startswith("specs/"):
+            return "specs"
+        if f.startswith("docs/") or f.endswith(".md"):
+            return "docs"
+        if f.startswith(("tools/", "scripts/", ".githooks/", ".claude/", ".config/", ".cargo/")):
+            return "tooling"
+        if f.endswith(".rs"):
+            return "rust tests" if "/tests/" in f or f.startswith("tests/") else "rust source"
+        if f.endswith("Cargo.toml") or f == "Cargo.lock":
+            return "manifests"
+        if f.endswith((".toml", ".ron", ".json", ".txt", ".csv")):
+            return "data"
+        return "other"
+
+    def layer(crate):
+        d = dirs[crate]
+        top = d.split("/")[0]
+        if top == "chimera":
+            part = d.split("/")[1]
+            if part in ("core", "world", "sim", "assets", "vfs", "formats"):
+                return "Chimera's base (core, world, sim, assets, vfs, formats)"
+            if part in ("client", "present", "ui"):
+                return "Chimera's client side (client, present, ui)"
+            return "chimera_net" if part == "net" else "Chimera, other (services, tools)"
+        if top in ("source", "lithtech", "blam"):
+            return "a loader"
+        return "games only" if top == "games" else "apps only"
+
+    order = [
+        "Chimera's base (core, world, sim, assets, vfs, formats)",
+        "chimera_net",
+        "Chimera's client side (client, present, ui)",
+        "Chimera, other (services, tools)",
+        "a loader",
+        "games only",
+        "apps only",
+    ]
+    log = subprocess.check_output(
+        ["git", "log", "--no-merges", f"--since={days} days ago", "--name-only", "--format=@@%h"], cwd=ROOT, text=True
+    )
+    files_by_kind, commits_by_kind, lowest, reach, direct = Counter(), Counter(), Counter(), [], []
+    total = 0
+    for chunk in log.split("@@")[1:]:
+        files = [f for f in chunk.splitlines()[1:] if f]
+        if not files:
+            continue
+        total += 1
+        kinds = {kind(f) for f in files}
+        for f in files:
+            files_by_kind[kind(f)] += 1
+        if "rust source" in kinds:
+            commits_by_kind["touching Rust source"] += 1
+        elif "rust tests" in kinds:
+            commits_by_kind["Rust tests only"] += 1
+        elif "data" in kinds:
+            commits_by_kind["data only"] += 1
+        else:
+            commits_by_kind["docs, specs, tooling, other"] += 1
+        touched = {owner(f) for f in files if kind(f) == "rust source"} - {None}
+        if not touched:
+            continue
+        layers = {layer(c) for c in touched}
+        lowest[next(name for name in order if name in layers)] += 1
+        reached = set()
+        for c in touched:
+            reached |= above[c]
+        reach.append(len(reached))
+        direct.append(len(touched))
+    print(f"{total} non-merge commits in {days} days")
+    for k, n in commits_by_kind.most_common():
+        print(f"{n:5}  {100 * n / total:5.1f}%  {k}")
+    print("file changes: " + ", ".join(f"{n} {k}" for k, n in files_by_kind.most_common()))
+    n = len(reach)
+    if not n:
+        return
+    print(f"\nof the {n} commits touching Rust source, by the lowest layer touched:")
+    for name in order:
+        if lowest[name]:
+            print(f"{lowest[name]:5}  {100 * lowest[name] / n:5.1f}%  {name}")
+    reach.sort()
+    direct.sort()
+    print(
+        f"\ncrates a commit can affect (of {len(names)}): median {reach[n // 2]}, mean {sum(reach) / n:.1f}; "
+        f"crates it touches: median {direct[n // 2]}, mean {sum(direct) / n:.1f}"
+    )
+    for at in (10, 20, 30):
+        print(f"{sum(1 for r in reach if r >= at):5}  {100 * sum(1 for r in reach if r >= at) / n:5.1f}%  can affect {at} crates or more")
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "lines":
@@ -270,6 +389,8 @@ def main():
         closures_cmd()
     elif cmd == "commits":
         commits_cmd(int(sys.argv[2]) if len(sys.argv) > 2 else 300)
+    elif cmd == "radius":
+        radius_cmd(int(sys.argv[2]) if len(sys.argv) > 2 else 14)
     else:
         print(__doc__)
         sys.exit(0 if cmd in ("", "-h", "--help") else 2)

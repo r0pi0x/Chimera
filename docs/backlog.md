@@ -6,6 +6,14 @@ Things to build, **in priority order** (top first; reprioritized
 [plans/active/](plans/active/engine-split.md). Move items into a
 plan when work starts; delete them when done.
 
+## Architecture for iteration speed (2026-11-21)
+
+[plans/active/architecture-for-iteration.md](plans/active/architecture-for-iteration.md):
+measured where an edit's cost comes from (the median Rust commit can
+affect 26 of 44 crates) and compared plugin options. Games stay Rust
+crates, not loaded libraries; next is its stage 1, a game's front end
+as its own crate, `tf2` first, kept or reverted by its numbers.
+
 ## Architecture pass for many games (2026-11-09)
 
 [plans/active/architecture-pass.md](plans/active/architecture-pass.md):
