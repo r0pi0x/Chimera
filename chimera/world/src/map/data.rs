@@ -286,6 +286,10 @@ pub struct MapMesh {
     /// its texel (Source's DecalModulate: 0.5 grey leaves it unchanged),
     /// unlit; with `alpha` Blend.
     pub modulate: bool,
+    /// How fog fades a `modulate` decal toward neutral: by the fog amount
+    /// raised to this power, its game's rule (`decal::SOURCE_FOG_FADE`,
+    /// `decal::LINEAR_FOG_FADE`; 0: Source's, as `MapDecal::fog_fade`).
+    pub modulate_fog_fade: f32,
     /// Surface property name (footsteps, impacts), lower-case.
     pub surface: Option<String>,
     /// A blended surface's second surface property (Source `$surfaceprop2`

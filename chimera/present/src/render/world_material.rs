@@ -141,6 +141,9 @@ pub struct WorldParams {
     /// weights of the lightmap's rgb in xyz, 1 - its floor in w; zero
     /// (none) leaves reflections unscaled.
     pub envmap_light: Vec4,
+    /// A modulate decal's fog fade power (`MapMesh::modulate_fog_fade`;
+    /// 0: Source's 0.4).
+    pub modulate_fog_fade: f32,
 }
 
 impl WorldParams {

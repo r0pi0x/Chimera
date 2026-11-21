@@ -1190,6 +1190,7 @@ fn lit_world_material(
                 0.0
             },
             flat_envmap_scale: m.flat_envmap.map_or(1.0, |e| e.scale),
+            modulate_fog_fade: m.modulate_fog_fade,
             envmap_light: m
                 .envmap
                 .and_then(|e| e.light_mask)
@@ -2467,5 +2468,31 @@ mod tests {
         // skeletons for a rigged model: made in place instead.
         assert!(PropMeshesAhead::build(&data).take(0, 1.0, false).is_none());
         assert!(PropMeshesAhead::build(&data).take(0, 2.0, true).is_none());
+    }
+
+    /// A baked modulate decal's fog fade is its game's rule (`MapMesh::
+    /// modulate_fog_fade`, as `MapDecal::fog_fade`), carried to the shader's
+    /// params: unset is Source's, a Halo-style mesh fades linearly.
+    #[test]
+    fn a_baked_decal_s_fog_fade_is_its_games_rule() {
+        let data = Arc::new(MapData::default());
+        let prepared = crate::map::prepare::Prepared::default();
+        let s = MapSpawn {
+            data: &data,
+            view: MapDebugView::Normal,
+            root: Entity::PLACEHOLDER,
+            statics: Entity::PLACEHOLDER,
+            entity_nodes: Vec::new(),
+            visibility: None,
+            prepared: &prepared,
+        };
+        let lightmaps = Lightmaps { plain: None, world: None, bumped: None, source_ldr: false };
+        let fade = |m: MapMesh| {
+            lit_world_material(&m, &s, &[], &[], &lightmaps, &Handle::default()).0.params.modulate_fog_fade
+        };
+        let source = MapMesh { modulate: true, ..default() };
+        assert_eq!(fade(source), 0.0, "unset: the shader's Source 0.4");
+        let halo = MapMesh { modulate: true, modulate_fog_fade: crate::map::decal::LINEAR_FOG_FADE, ..default() };
+        assert_eq!(fade(halo), 1.0);
     }
 }

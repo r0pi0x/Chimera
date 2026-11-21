@@ -124,6 +124,9 @@ struct WorldParams {
     // The reflection's lightmap mask (map::EnvmapLightMask): lightmap rgb
     // weights, 1 - floor; zero leaves reflections unscaled.
     envmap_light: vec4<f32>,
+    // A modulate decal's fog fade power (MapMesh::modulate_fog_fade; 0:
+    // Source's 0.4).
+    modulate_fog_fade: f32,
 }
 
 // Gamma space for the fixed-function blends of LithTech's second layers
@@ -281,14 +284,15 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // partial alpha doesn't fade it. The blend is src x dst + dst x src,
     // so this returns half the factor (in our linear framebuffer the
     // factor raised to 2.2, as decal.wesl). Fog fades it to neutral by
-    // the fog amount^0.4.
+    // the fog amount raised to its game's power (Source's 0.4, Halo's 1:
+    // `MapDecal::fog_fade`, as decal.wesl).
     if params.translucent > 2.5 {
         if albedo.a <= 0.0 {
             discard;
         }
         var factor = 2.0 * pow(max(albedo.rgb, vec3(0.0)), vec3(1.0 / 2.2));
         let f = source_fog(params.fog_color, params.fog_range, params.water_fog_color, params.water_fog_range, in.world_position.xyz);
-        factor = mix(factor, vec3(1.0), pow(f.a, 0.4));
+        factor = mix(factor, vec3(1.0), pow(f.a, select(0.4, params.modulate_fog_fade, params.modulate_fog_fade > 0.0)));
         return vec4<f32>(min(pow(factor, vec3(2.2)), vec3(2.0)) * 0.5, 1.0);
     }
     // Self-illumination masks by the base texture's own alpha (before the
