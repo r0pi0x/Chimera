@@ -579,6 +579,7 @@ fn build_character_assets(
                 1.0
             };
             commands.insert_resource(probe_lit::ProbeLightScale(data.look.light_scale * lighting_scale));
+            commands.insert_resource(probe_lit::ModelLightRule(data.look.model_light));
         }
         let to = (from + BODIES_PER_STEP).min(data.kit.characters.len());
         // Their meshes, made on the loading thread (`BodyMeshesAhead`).

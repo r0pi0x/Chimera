@@ -291,7 +291,10 @@ impl MapLayers for Present {
     fn drawing(&self, app: &mut App) {
         // Moving models' probe light, by slot (uploaded by
         // `PropMaterialPlugin` where there is a renderer).
-        app.init_resource::<render::probe_lit::ProbeTable>();
+        app.init_resource::<render::probe_lit::ProbeTable>().add_systems(
+            PostUpdate,
+            render::probe_lit::set_model_light.before(render::probe_lit::upload_probes),
+        );
         // Moving shadows' frames, by slot (uploaded by
         // `ShadowMaterialPlugin`).
         app.init_resource::<render::shadows::ShadowFrames>();

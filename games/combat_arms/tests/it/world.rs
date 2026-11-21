@@ -156,6 +156,35 @@ fn converts_axes_spawns_and_meshes() {
     assert_eq!(map.spawn_yaws, [-0.3]);
 }
 
+/// Every model on a Combat Arms map is lit as the game lights its own
+/// (specs/combat_arms/models_ltb.md Follow-up (2026-10-31) 3, the
+/// `default` style): 2 x T x (0.275 + 0.294 A + 0.761 x the lights), A the
+/// light grid's sample. The 2026-11-21 playtest's dark bodies: on
+/// DARKHILLS (grid 25 at its start points, its ambient light) a body was
+/// drawn at the grid's light alone, about a fortieth of the game's in
+/// linear terms (texel 0.5: 0.06 of white in gamma for the game's 0.30).
+#[test]
+fn models_on_its_maps_take_the_games_model_light() {
+    let map = world::convert(&small_world(), "small", 0.01, &|_| None);
+    let rule = map.look.model_light.expect("a Combat Arms map lights its models");
+    assert_eq!((rule.emissive, rule.ambient, rule.diffuse, rule.factor), (0.275, 0.294, 0.761, 2.0));
+    let srgb = |b: u8| Color::srgb_u8(b, b, b).to_linear().red;
+    let gamma = |lin: f32| Color::linear_rgb(lin, 0.0, 0.0).to_srgba().red;
+    // DARKHILLS' grid, no lights: L = 0.275 + 0.294 x 25/255 = 0.3038.
+    let a = Vec3::splat(srgb(25));
+    let light = rule.light(a, Vec3::ZERO).x;
+    let texel = srgb(128);
+    let drawn = gamma(texel * light);
+    let game = 2.0 * (128.0 / 255.0) * (0.275 + 0.294 * 25.0 / 255.0);
+    assert!((drawn - game).abs() < 0.02, "drawn {drawn}, the game's {game}");
+    assert!(gamma(texel * a.x) < 0.07, "the grid alone, as before: {}", gamma(texel * a.x));
+    // Black grid: the material's emissive still shows the model.
+    assert!((gamma(texel * rule.light(Vec3::ZERO, Vec3::ZERO).x) - 2.0 * 0.502 * 0.275).abs() < 0.02);
+    // Bright light clamps L at 1: 2 x T at most (white for this texel).
+    let bright = gamma(texel * rule.light(Vec3::ONE, Vec3::ONE).x);
+    assert!((0.99..1.06).contains(&bright), "{bright}");
+}
+
 /// Spawned at the start point (yaw 0: +Z in file axes, −Z here), a
 /// player stands on the floor, walks forward and stops at the wall 500 u
 /// ahead.

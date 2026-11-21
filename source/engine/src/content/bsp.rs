@@ -1611,6 +1611,7 @@ pub fn source_look() -> crate::map::MapLook {
         // RenderDoc capture as 4 taps per lightmap page).
         bicubic_lightmaps: true,
         hdr: None,
+        model_light: None,
     }
 }
 

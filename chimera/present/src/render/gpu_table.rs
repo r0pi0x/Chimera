@@ -104,6 +104,22 @@ impl SlotTable {
         self.dirty |= changed;
     }
 
+    /// Write slot 0's record (never handed out: a table-wide value every
+    /// reader can find, e.g. `probe_lit::ModelLightRule`); marks the table
+    /// for upload only when it changed.
+    pub fn set_header(&mut self, values: &[[f32; 4]]) {
+        let row = &mut self.data[..self.stride];
+        let mut changed = false;
+        for (i, v) in row.iter_mut().enumerate() {
+            let new = values.get(i).copied().unwrap_or([0.0; 4]);
+            if *v != new {
+                *v = new;
+                changed = true;
+            }
+        }
+        self.dirty |= changed;
+    }
+
     /// Slots the uploaded buffer holds for `used` slots.
     fn capacity(used: usize) -> usize {
         used.max(MIN_SLOTS).next_power_of_two()

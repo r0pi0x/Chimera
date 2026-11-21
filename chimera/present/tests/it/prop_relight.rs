@@ -299,3 +299,28 @@ fn a_rope_end_follows_its_parent() {
     assert!(r.sway.nodes[3].distance(nodes[3]) < 1e-3, "{}", r.sway.nodes[3]);
     assert!(r.look.points[0].y > 1.5, "it's redrawn: {}", r.look.points[0]);
 }
+
+/// The map's game decides how every probe-lit model on it is lit
+/// (`MapLook::model_light`, e.g. Combat Arms' fixed-function rule): the
+/// probe table's slot 0 carries the rule to the prop shader, for any
+/// model whatever its own game; a map without one leaves it zero (the
+/// probe's light as it is).
+#[test]
+fn the_maps_model_light_reaches_the_probe_table() {
+    let mut sim = start(true);
+    sim.ticks(2);
+    step(&mut sim);
+    let header = |sim: &Sim| sim.app.world().resource::<ProbeTable>().get(0).to_vec();
+    assert!(header(&sim).iter().all(|r| *r == [0.0; 4]), "no rule on this map");
+    let rule = chimera_world::map::ModelLight { emissive: 0.275, ambient: 0.294, diffuse: 0.761, factor: 2.0 };
+    sim.app
+        .world_mut()
+        .insert_resource(chimera_present::render::probe_lit::ModelLightRule(Some(rule)));
+    step(&mut sim);
+    let rows = header(&sim);
+    assert_eq!(rows[0], [1.0, 0.275, 0.294, 0.761]);
+    assert_eq!(rows[1], [2.0, 0.0, 0.0, 0.0]);
+    sim.app.world_mut().remove_resource::<chimera_present::render::probe_lit::ModelLightRule>();
+    step(&mut sim);
+    assert!(header(&sim).iter().all(|r| *r == [0.0; 4]), "gone with the map's rule");
+}

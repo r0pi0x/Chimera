@@ -15,7 +15,9 @@
 //! styles' formulas over the lit colour L of the style file's own
 //! lighting material (`Layer::lighting`: M_e + M_a x A + M_d x the lights'
 //! sum, on a probe-lit model; half our light where there is no probe),
-//! with the material's specular added after the texture stages;
+//! with the material's specular added after the texture stages; every
+//! other piece (and any other game's model on a Combat Arms map) is lit
+//! by `default`'s material, the map's model light (`model_light`);
 //! `pv_char_b`'s three passes are one combine (`pv_char_b`). A second slot
 //! a piece names without a skin reads white (`WHITE_SLOT`); a worn piece's
 //! slots follow its kind's rules (`piece_skin`: faces, head pieces,
@@ -26,7 +28,9 @@
 //! against the install in `heavy::render_styles`), so a style not in it
 //! draws opaque, as the default style; `pv_glass` draws blended, not as
 //! its own lit pass; the materials' specular sums only the probe's four
-//! directional lights, not the scene's point lights; head pieces' clan
+//! directional lights, not the scene's point lights; the map's model
+//! light (`model_light`) leaves out `default`'s specular and lights each
+//! model as one equivalent light (no per-texel clamp at white); head pieces' clan
 //! slots (7, 8) and the figure-type skin choice aren't modelled.
 
 use std::{collections::HashMap, sync::OnceLock};
@@ -150,10 +154,25 @@ fn lighting(er: f32, eg: f32, eb: f32, ambient: f32, diffuse: [f32; 3], specular
 }
 
 /// `default`'s material (models_ltb.md R2/R8): the style the sprite-skinned
-/// guns and most pieces name; drawn lit by our light, so only the tests
-/// of the formula read it.
+/// guns and most pieces name; the map's model light (`model_light`).
 pub fn default_lighting() -> LayerLighting {
     lighting(0.275, 0.275, 0.275, 0.294, [0.761; 3], [0.392; 3], 10.0)
+}
+
+/// How Combat Arms lights the models on its maps (Chimera's
+/// `map::ModelLight`, every model whatever its game): `default`'s
+/// material (`default_lighting`: L = 0.275 + 0.294 A + 0.761 x the
+/// lights), drawn 2 x T x L (its stage's colour op 4), A the light grid's
+/// sample (world_dat.md "Light grid") as the engine gives it. Layered
+/// pieces keep their own style's material (`Layer::lighting`).
+pub fn model_light() -> crate::map::ModelLight {
+    let m = default_lighting();
+    crate::map::ModelLight {
+        emissive: m.emissive.x,
+        ambient: m.ambient.x,
+        diffuse: m.diffuse.x,
+        factor: 2.0,
+    }
 }
 
 /// `pv_char_b`'s three passes evaluated for one texel (models_ltb.md

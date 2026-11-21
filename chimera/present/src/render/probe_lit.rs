@@ -26,6 +26,13 @@
 //! group a material, eight a body), which cost 14% of the render world with
 //! six bodies moving (docs/performance.md, "Render performance").
 //!
+//! The map's game decides how every probe-lit model on it is lit, whatever
+//! the model's own game (`MapLook::model_light`, e.g. Combat Arms'
+//! fixed-function 2 x T x (emissive + ambient x A + diffuse x lights) in
+//! gamma space): `ModelLightRule`, written into the probe table's slot 0
+//! (`set_model_light`), which the prop shader applies to the probe's
+//! light. Without one the probe's light is drawn as it is.
+//!
 //! Known shortcuts (docs/tech-debt.md): a moved prop's skin change goes
 //! back to the baked light (only `PropVariants`' shared materials know the
 //! skins; no stock prop_physics changes skin).
@@ -144,6 +151,20 @@ pub fn upload_probes(table: Option<ResMut<ProbeTable>>, buffers: Option<ResMut<A
         table.upload(&mut buffers);
     }
 }
+
+/// The probe table's slot 0 holds the map's model light
+/// (`ModelLightRule`; zeros: none), which prop.wesl reads.
+pub fn set_model_light(table: Option<ResMut<ProbeTable>>, rule: Option<Res<ModelLightRule>>) {
+    let Some(mut table) = table else { return };
+    let rows = rule.and_then(|r| r.0).map(|m| m.rows());
+    table.set_header(rows.as_ref().map_or(&[][..], |r| &r[..]));
+}
+
+/// How the map's game lights the models drawn on it (`MapLook::
+/// model_light`), for every probe-lit model whatever its game: the probe
+/// table's slot 0 holds it (`set_model_light`), which prop.wesl reads.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct ModelLightRule(pub Option<crate::map::ModelLight>);
 
 /// Give a lit entity's table slot back (its `ProbeLit` removed or replaced).
 fn free_probe_slot(mut world: DeferredWorld, ctx: HookContext) {

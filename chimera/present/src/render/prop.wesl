@@ -243,6 +243,30 @@ fn probe_direct_half(n: vec3<f32>) -> vec3<f32> {
     return light;
 }
 
+// The map's game's model lighting (map::ModelLight, in the probe table's
+// slot 0: (on, emissive, ambient, diffuse), (factor, ...)): L = clamp(e +
+// a A + d D) on gamma values, the model drawn factor x T x L; as a linear
+// light (ModelLight::light mirrors it).
+fn model_rule_on() -> bool {
+    return probes[0].cube[0].x > 0.5;
+}
+
+fn srgb_encode(c: vec3<f32>) -> vec3<f32> {
+    let x = max(c, vec3<f32>(0.0));
+    return select(1.055 * pow(x, vec3<f32>(1.0 / 2.4)) - 0.055, 12.92 * x, x <= vec3<f32>(0.0031308));
+}
+
+fn srgb_decode(c: vec3<f32>) -> vec3<f32> {
+    let x = max(c, vec3<f32>(0.0));
+    return select(pow((x + 0.055) / 1.055, vec3<f32>(2.4)), x / 12.92, x <= vec3<f32>(0.04045));
+}
+
+fn model_rule_light(ambient: vec3<f32>, direct: vec3<f32>) -> vec3<f32> {
+    let r = probes[0].cube[0];
+    let l = clamp(vec3<f32>(r.y) + r.z * srgb_encode(ambient) + r.w * srgb_encode(direct), vec3<f32>(0.0), vec3<f32>(1.0));
+    return srgb_decode(l * probes[0].cube[1].x);
+}
+
 fn probe_light(n: vec3<f32>) -> vec3<f32> {
     return probe_ambient(n) + probe_direct(n);
 }
@@ -470,6 +494,11 @@ fn phong_shade(in: VertexOutput, uv: vec2<f32>, base: vec4<f32>, a: vec3<f32>, n
     if params.dynamic > 0.5 {
         sum = phong_dynamic(sum, p, n, r, k, fresnel, in.position.xy, params.dynamic > 1.5);
     }
+    // The map's game's model lighting (model_rule_light) on the diffuse.
+    if params.probe > 0.5 && model_rule_on() {
+        let ambient = probe_ambient(n);
+        sum.diffuse = model_rule_light(ambient, max(sum.diffuse - ambient, vec3<f32>(0.0)));
+    }
     // The envmap (8): its own mask rules, the fresnel ramp by
     // $envmapfresnel, the tint raw.
     var env = vec3<f32>(0.0);
@@ -583,6 +612,18 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if params.dynamic > 0.5 {
         direct_extra = dynamic_light(in.world_position.xyz, n, in.position.xy, params.dynamic > 1.5);
         light = light + direct_extra;
+    }
+    // The map's game's model lighting (model_rule_light).
+    if params.probe > 0.5 && model_rule_on() {
+        var direct = probe_direct(n);
+        if params.face > 0.5 && params.face < 1.5 {
+            direct = probe_direct_half(n);
+        }
+        var shade = 1.0;
+        if params.face > 1.5 {
+            shade = face_up().w * saturate(dot(n, face_up().xyz));
+        }
+        light = shade * model_rule_light(probe_ambient(n), direct + direct_extra);
     }
     var rgb = color.rgb * light;
     // A second texture on generated coordinates (map::LayerCombine), with

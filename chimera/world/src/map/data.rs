@@ -1917,6 +1917,53 @@ pub struct MapLook {
     /// HDR presentation (Source's mat_hdr_level 1 and 2): cameras render
     /// in HDR with bloom and, at level 2, auto exposure. None: LDR.
     pub hdr: Option<MapHdr>,
+    /// How the map's game lights the models drawn on it (every probe-lit
+    /// model, whatever its own game: a body, a view model, a moved
+    /// prop). None: the probe's light as it is (Source's rule).
+    #[serde(default)]
+    pub model_light: Option<ModelLight>,
+}
+
+/// A game's fixed-function model lighting, which its maps apply to every
+/// model drawn on them: the lit colour L = clamp(emissive + ambient x A +
+/// diffuse x D) in gamma space, A the probe's ambient light and D its
+/// direct light (lights and the scene's point lights) as gamma values,
+/// and the model drawn `factor` x texture x L (LithTech's default render
+/// style: specs/combat_arms/models_ltb.md Follow-up (2026-10-31) 3; the
+/// game's `RenderStyle` lighting material on the model, `default`'s for a
+/// model of another game). The prop shader (prop.wesl
+/// `model_rule_light`) mirrors `light`.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ModelLight {
+    pub emissive: f32,
+    pub ambient: f32,
+    pub diffuse: f32,
+    pub factor: f32,
+}
+
+impl ModelLight {
+    /// The light (linear, what the shader multiplies the linear texture
+    /// by) for the probe's linear `ambient` and `direct` light: factor x L
+    /// turned to linear, so a texel comes out as the game's gamma-space
+    /// factor x T x L (but for the game's clamp of each texel at white).
+    pub fn light(&self, ambient: Vec3, direct: Vec3) -> Vec3 {
+        let gamma = |v: Vec3| v.max(Vec3::ZERO).to_array().map(|c| Color::linear_rgb(c, 0.0, 0.0).to_srgba().red);
+        let (a, d) = (Vec3::from(gamma(ambient)), Vec3::from(gamma(direct)));
+        let l = (Vec3::splat(self.emissive) + self.ambient * a + self.diffuse * d).clamp(Vec3::ZERO, Vec3::ONE) * self.factor;
+        Vec3::from(l.to_array().map(srgb_decode))
+    }
+
+    /// The rule as the probe table's slot 0 holds it (prop.wesl
+    /// `model_rule`): (1, emissive, ambient, diffuse), (factor, 0, 0, 0).
+    pub fn rows(&self) -> [[f32; 4]; 2] {
+        [[1.0, self.emissive, self.ambient, self.diffuse], [self.factor, 0.0, 0.0, 0.0]]
+    }
+}
+
+/// sRGB's decoding curve, continued above 1 (a lit colour times 2).
+fn srgb_decode(x: f32) -> f32 {
+    let x = x.max(0.0);
+    if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) }
 }
 
 /// How a map is shown in HDR: the client's cameras follow it.
@@ -1967,6 +2014,7 @@ impl Default for MapLook {
             source_ldr_lightmaps: false,
             bicubic_lightmaps: false,
             hdr: None,
+            model_light: None,
         }
     }
 }

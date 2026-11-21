@@ -44,7 +44,10 @@
 //!   `objects::lights` switches as the object's messages say. The light is the game's fixed-function multiply:
 //!   2 (`Saturate`) × texture × light × `LightmapTFactor`² (`light_value`,
 //!   the stored bytes as sRGB), with the map's look untonemapped (clamped,
-//!   as the game's output).
+//!   as the game's output). Models on the map (every body, whatever its
+//!   game) are lit by the game's rule (`MapLook::model_light`,
+//!   `render_style::model_light`: the `default` style's material, 2 x T x
+//!   L, over the light grid's sample).
 //! - Textures come from the install's `.dtx` files (`lithtech_formats::
 //!   dtx`, the level the shipped "DetailLevel" loads: `skipped_levels`;
 //!   `alpharef` cuts out; DXT files also keep their blocks, mip levels
@@ -621,6 +624,9 @@ pub fn convert_with(
     }
     // The game's output is clamped, not tonemapped.
     map.look.tonemapping = false;
+    // Models here are lit as the game lights its own (each body, whatever
+    // its game).
+    map.look.model_light = Some(super::render_style::model_light());
 
     let properties = world.objects_of("WorldProperties").map(|(_, o)| o).last();
     let t_factor = properties
