@@ -137,6 +137,16 @@ impl Plugin for WidgetsPlugin {
             },
         );
         app.console_command(
+            "chimera:ui_hover",
+            "ui_hover <x> <y>: move the pointer there (window pixels) and leave it, no button: hover looks and \
+             their steadiness (an offscreen dump of a hovered button).",
+            |w, a| {
+                let at = point(a, 0).ok_or("ui_hover <x> <y>")?;
+                w.resource_mut::<PointerScript>().0.push_back(PointerStep { at, button: None });
+                Ok(None)
+            },
+        );
+        app.console_command(
             "chimera:ui_drag",
             "ui_drag <x0> <y0> <x1> <y1> [<frames>]: press the left button at x0 y0, move to x1 y1 over that \
              many frames (default 10) and let go (window pixels): a scroll bar's thumb, a slider, a frame.",

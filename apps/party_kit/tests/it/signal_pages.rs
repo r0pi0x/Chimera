@@ -1323,3 +1323,38 @@ fn host_dialogs_take_the_pointer_and_keys_from_the_page() {
         assert!(!sim.app.world().resource::<Modals>().is_open(), "{kind:?}: no modal left");
     }
 }
+
+/// Host's Start, hovered, stays hovered through the page drawn again (a
+/// letter typed into the server name redraws it, as any change of the
+/// page does): the new button is hovered and lifted from its first frame
+/// (the report "the start game button keeps flashing while hovering":
+/// each redraw showed it at rest and eased the hover in again;
+/// `chimera_ui::controls::carry_hover`).
+#[test]
+fn a_hovered_start_stays_hovered_through_a_redraw() {
+    use bevy::ui::DeprecatedInteraction as Interaction;
+    use chimera_ui::controls::HeroSlab;
+    let mut sim = sim(PAGES_THEME);
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    assert_eq!(menu(&sim).page, MenuPage::Play);
+    press(&mut sim, KeyCode::Enter);
+    assert!(menu(&sim).focus.is_some(), "the server name has the keys");
+    let start = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        let b = w.query::<(Entity, &A)>().iter(w).find(|(_, a)| **a == A::Start).map(|(e, _)| e).expect("Start");
+        let slab = w.get::<Children>(b).unwrap().iter().find(|c| w.get::<HeroSlab>(*c).is_some()).unwrap();
+        (b, *w.get::<Interaction>(b).unwrap(), w.get::<HeroSlab>(slab).unwrap().lift)
+    };
+    let (s0, _, _) = start(&mut sim);
+    *sim.app.world_mut().get_mut::<Interaction>(s0).unwrap() = Interaction::Hovered;
+    for _ in 0..3 {
+        sim.app.world_mut().resource_mut::<chimera_ui::UiClock>().step(0.1);
+        sim.ticks(1);
+    }
+    assert_eq!(start(&mut sim), (s0, Interaction::Hovered, 1.0), "hovered and lifted");
+    type_text(&mut sim, "x");
+    let (s1, i, lift) = start(&mut sim);
+    assert_ne!(s1, s0, "the page was drawn again");
+    assert_eq!((i, lift), (Interaction::Hovered, 1.0), "the new Start as the old one was");
+}

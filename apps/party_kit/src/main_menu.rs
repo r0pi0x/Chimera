@@ -966,6 +966,17 @@ impl Plugin for MainMenuPlugin {
             .add_observer(joining)
             .add_observer(join_failed)
             .add_observer(map_load_failed)
+            .init_resource::<MenuTarget>()
+            .add_observer(born_on_menu::<ConsoleRoot>)
+            .add_observer(born_on_menu::<chimera_client::client::prematch_lobby::LobbyRoot>)
+            .add_observer(born_on_menu::<chimera_client::client::logo_pass::LogoPassRoot>)
+            .add_observer(born_on_menu::<crate::esc_menu::MenuRoot>)
+            .add_observer(born_on_menu::<crate::settings::SettingsRoot>)
+            .add_observer(born_on_menu::<crate::controls::PageRoot>)
+            .add_observer(born_on_menu::<crate::feedback_signal::DialogRoot>)
+            .add_observer(born_on_menu::<crate::feedback_signal::NoticeRoot>)
+            .add_observer(born_on_menu::<crate::party_signal::PanelRoot>)
+            .add_observer(born_on_menu::<crate::party_signal::PromptRoot>)
             .add_plugins((crate::signal_menu::SignalMenuPlugin, crate::signal_pages::SignalPagesPlugin, crate::loading_signal::LoadingSignalPlugin))
             .add_systems(Startup, ((start_look, init_play).chain(), spawn_backdrop))
             // After the browser's lists are read (`signal_pages`' Startup).
@@ -2194,10 +2205,27 @@ fn music(
 #[derive(Component)]
 pub struct MenuUiCamera;
 
+/// The menu's UI camera while the menu owns the screen (`cameras`): what
+/// a root drawn over it is born on (`born_on_menu`).
+#[derive(Resource, Default)]
+struct MenuTarget(Option<Entity>);
+
+/// A root drawn over the menu (the ones `cameras` moves) is born on the
+/// menu's camera while the menu owns the screen: given it only by
+/// `cameras` a frame later, a root spawned again (the report dialog on
+/// every key, a page's root) drew its first frame on the shell's camera,
+/// which is off then: the whole dialog blinked out.
+fn born_on_menu<M: Component>(add: On<Add<M>>, target: Res<MenuTarget>, mut commands: Commands) {
+    if let Some(cam) = target.0 {
+        commands.entity(add.entity).try_insert(UiTargetCamera(cam));
+    }
+}
+
 #[allow(clippy::type_complexity)]
 #[allow(clippy::type_complexity)]
 fn cameras(
     shown: Res<ShownScreen>,
+    mut target: ResMut<MenuTarget>,
     ca: Option<Res<combat_arms::ui::loading::CaLoading>>,
     lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
     mut shell: Query<&mut Camera, (With<IsDefaultUiCamera>, Without<MenuUiCamera>)>,
@@ -2251,6 +2279,10 @@ fn cameras(
     };
     if camera.is_active != menu_owns {
         camera.is_active = menu_owns;
+    }
+    let born = menu_owns.then_some(cam);
+    if target.0 != born {
+        target.0 = born;
     }
     for mut s in &mut shell {
         if s.is_active == menu_owns {

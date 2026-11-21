@@ -736,7 +736,14 @@ client only with the server's `sv_cheats 1` (and only on itself).
   open` (after `+menu`, `+wait 10` before inputs that need the page drawn).
   `ui_click <x> <y>` and `ui_drag <x0> <y0> <x1> <y1> [<frames>]` drive the
   real pointer path (Bevy's input, `Interaction`) in window pixels over the
-  remote console: a scroll bar's thumb dragged, a drop-down's box clicked. `vgui_windows` lists the frames
+  remote console: a scroll bar's thumb dragged, a drop-down's box clicked;
+  `ui_hover <x> <y>` moves the pointer there and leaves it (no button). A
+  screen's steadiness under a resting pointer or typing (a rebuild must
+  draw no different frame): an offscreen scene (`ui_scene lobby host`,
+  `ui_hover` on Start, `cl_avatar 5` / `cl_avatar 6` to redraw the lobby;
+  `ui_scene report` and `type` lines for the report dialog) with `--dump
+  <dir> --dump-every 1`, then count the frames whose crop differs from
+  the one before and the last. `vgui_windows` lists the frames
   (place, size, stacking); `vgui_windows <frame> <x> <y> [<wide> <tall>]`
   moves one as a title-bar drag would (and sizes a sizeable one), e.g.
   `+openserverbrowser lan +wait 30 +vgui_windows servers 40 30 760 520`.

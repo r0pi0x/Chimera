@@ -23,6 +23,13 @@
 //!   kit's loads (`console::KitLoads`: loading now for how long, each
 //!   game's view models handed over ahead of it, the kit's own time), so
 //!   a gun slow to show names what it waited for.
+//! - `world.txt`'s UI part (`ui_text`): the cameras (order, on or off,
+//!   the default UI one), every UI root (its own components' names, its
+//!   nodes, its z, the camera it draws on and whether that camera is
+//!   on: a root on an off camera isn't drawn) and what was spawned of
+//!   the UI over the last 10 s (`UiChurn`: nodes and roots a second, the
+//!   roots by name), so a screen drawn again every frame, or a dialog
+//!   blinking out, shows in the report.
 //! - Events for the timeline (`frame_events`): a map loaded, a bot joined
 //!   or left, the local rung and the minigame changed.
 //!
@@ -38,9 +45,9 @@ pub struct WorldReportPlugin;
 
 impl Plugin for WorldReportPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Baselines>().add_systems(
+        app.init_resource::<Baselines>().init_resource::<UiChurn>().add_systems(
             Last,
-            (watch_map, take_baseline.run_if(|b: Res<Baselines>| b.pending.as_ref().is_some_and(|(_, at)| Instant::now() >= *at)), watch_play),
+            (watch_map, take_baseline.run_if(|b: Res<Baselines>| b.pending.as_ref().is_some_and(|(_, at)| Instant::now() >= *at)), watch_play, watch_ui),
         );
     }
 }
@@ -138,6 +145,123 @@ pub fn world_text(world: &mut World) -> String {
         && let Ok(i) = i.0.lock()
     {
         out += &i.timeline_text();
+    }
+    out += "\n\n";
+    out += &ui_text(world);
+    out
+}
+
+/// The UI spawned over the last seconds (`watch_ui`): per second, the
+/// nodes and the roots by their names.
+#[derive(Resource, Default)]
+pub struct UiChurn {
+    /// (second since start, frames, nodes spawned, roots spawned by name).
+    secs: std::collections::VecDeque<(u64, u32, u32, std::collections::BTreeMap<String, u32>)>,
+    start: Option<Instant>,
+}
+
+/// How many seconds `UiChurn` keeps.
+const CHURN_SECS: u64 = 10;
+
+/// A UI root's name: its own components' short names (`ids`), Bevy's
+/// left out, after its `Name`.
+fn root_name(components: &bevy::ecs::component::Components, ids: &[bevy::ecs::component::ComponentId], name: Option<&Name>) -> String {
+    let mut names: Vec<String> = ids
+        .iter()
+        .filter_map(|id| components.get_info(*id))
+        .filter(|i| !i.name().to_string().starts_with("bevy_"))
+        .map(|i| i.name().shortname().to_string())
+        .collect();
+    names.sort();
+    if let Some(n) = name {
+        names.insert(0, format!("\"{n}\""));
+    }
+    if names.is_empty() { "(Bevy's components only)".into() } else { names.join(" ") }
+}
+
+fn watch_ui(
+    added: Query<(bevy::ecs::world::EntityRef, Has<ChildOf>), (Added<Node>, Without<bevy::ecs::resource::IsResource>)>,
+    components: &bevy::ecs::component::Components,
+    mut churn: ResMut<UiChurn>,
+) {
+    let start = *churn.start.get_or_insert_with(Instant::now);
+    let sec = start.elapsed().as_secs();
+    if churn.secs.back().is_none_or(|s| s.0 != sec) {
+        churn.secs.push_back((sec, 0, 0, Default::default()));
+    }
+    while churn.secs.front().is_some_and(|s| s.0 + CHURN_SECS <= sec) {
+        churn.secs.pop_front();
+    }
+    let last = churn.secs.back_mut().unwrap();
+    last.1 += 1;
+    for (e, child) in &added {
+        last.2 += 1;
+        if !child {
+            *last.3.entry(root_name(components, e.archetype().components(), e.get::<Name>())).or_default() += 1;
+        }
+    }
+}
+
+/// `world.txt`'s UI part (module doc).
+pub fn ui_text(world: &mut World) -> String {
+    use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
+    let mut out = String::from("ui cameras:\n");
+    let mut cams = world.query::<(Entity, &Camera, Option<&Name>, Has<IsDefaultUiCamera>)>();
+    let mut default_cam = None;
+    let mut cam_rows: Vec<(isize, String)> = Vec::new();
+    for (e, c, name, default) in cams.iter(world) {
+        if default {
+            default_cam = Some(e);
+        }
+        cam_rows.push((
+            c.order,
+            format!(
+                "  {e} {}order {} {}{}\n",
+                name.map_or(String::new(), |n| format!("{n} ")),
+                c.order,
+                if c.is_active { "on" } else { "OFF" },
+                if default { ", the default UI camera" } else { "" }
+            ),
+        ));
+    }
+    cam_rows.sort();
+    for (_, r) in cam_rows {
+        out += &r;
+    }
+    let mut roots_q = world.query_filtered::<(Entity, Option<&UiTargetCamera>, Option<&GlobalZIndex>, Option<&InheritedVisibility>), (With<Node>, Without<ChildOf>)>();
+    let roots: Vec<(Entity, Option<Entity>, i32, bool)> = roots_q
+        .iter(world)
+        .map(|(e, t, z, v)| (e, t.map(|t| t.entity()).or(default_cam), z.map_or(0, |z| z.0), v.is_none_or(|v| v.get())))
+        .collect();
+    out += &format!("ui roots ({}):\n", roots.len());
+    for (e, cam, z, shown) in roots {
+        let mut nodes = 0;
+        let mut stack = vec![e];
+        while let Some(n) = stack.pop() {
+            nodes += 1;
+            if let Some(ch) = world.get::<Children>(n) {
+                stack.extend(ch.iter());
+            }
+        }
+        let on = cam.and_then(|c| world.get::<Camera>(c)).map(|c| c.is_active);
+        let name = world.get_entity(e).map_or_else(|_| "?".into(), |r| root_name(world.components(), r.archetype().components(), r.get::<Name>()));
+        out += &format!(
+            "  {e} {name}: {nodes} nodes, z {z}, {}, camera {}\n",
+            if shown { "visible" } else { "hidden" },
+            match (cam, on) {
+                (Some(c), Some(true)) => format!("{c} (on)"),
+                (Some(c), Some(false)) => format!("{c} (OFF: not drawn)"),
+                (Some(c), None) => format!("{c} (gone)"),
+                (None, _) => "none".into(),
+            }
+        );
+    }
+    if let Some(churn) = world.get_resource::<UiChurn>() {
+        out += &format!("ui spawned over the last {CHURN_SECS} s (frames, nodes, roots by name, a second each):\n");
+        for (sec, frames, nodes, roots) in &churn.secs {
+            let roots: Vec<String> = roots.iter().map(|(n, k)| format!("{n} x{k}")).collect();
+            out += &format!("  s{sec}: {frames} frames, {nodes} nodes; {}\n", if roots.is_empty() { "no roots".into() } else { roots.join(", ") });
+        }
     }
     out
 }

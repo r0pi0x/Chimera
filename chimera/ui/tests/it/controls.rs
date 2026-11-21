@@ -1071,3 +1071,66 @@ fn a_toggle_reads_on_off_or_yes_no() {
     let yn = build(&mut app, |ui, c, root| ui.toggle_words(c, root, true, State::NONE, TOGGLE_YES_NO));
     assert_eq!(texts(&mut app, yn), ["NO", "YES"]);
 }
+
+/// Draws `screen` under `root` in place of `old` (a screen drawn again:
+/// the old tree despawned and the new spawned in one go), then a frame.
+fn redraw(app: &mut App, root: Entity, old: Option<Entity>) -> (Entity, Entity, Entity) {
+    let theme = app.world().resource::<Theme>().clone();
+    let units = *app.world().resource::<UiUnits>();
+    let ui = Ui::new(&theme, None, units);
+    let world = app.world_mut();
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    let mut c = Commands::new(&mut queue, world);
+    if let Some(old) = old {
+        c.entity(old).despawn();
+    }
+    let screen = c.spawn((Node::default(), ChildOf(root))).id();
+    let back = ui.button(&mut c, screen, Kind::Secondary, "Back", None, 2.4, State::NONE);
+    let start = ui.button(&mut c, screen, Kind::Primary, "Start", None, controls::HERO_H, State::NONE);
+    queue.apply(world);
+    app.update();
+    (screen, back, start)
+}
+
+/// A screen drawn again under a resting pointer draws the same frame
+/// (the report "the Start button keeps flashing while hovering": each
+/// redraw of the lobby showed Start at rest for a frame and eased its
+/// hover in again): the button spawned where a hovered one went is
+/// hovered, tinted and as lifted from its first frame; the others stay
+/// at rest, and a button where none went (or whose old one lives) isn't
+/// touched.
+#[test]
+fn a_redrawn_screen_keeps_the_pointers_look() {
+    let mut app = app();
+    app.insert_resource(Motion::new(1.0));
+    let root = app.world_mut().spawn(Node::default()).id();
+    let (screen, back, start) = redraw(&mut app, root, None);
+    *app.world_mut().get_mut::<Interaction>(start).unwrap() = Interaction::Hovered;
+    for _ in 0..3 {
+        app.world_mut().resource_mut::<UiClock>().step(0.1);
+        app.update();
+    }
+    let look = |app: &mut App, b: Entity| {
+        let slab = descendants_entities::<controls::HeroSlab>(app, b).first().copied();
+        let glow = descendants_entities::<controls::HeroGlow>(app, b).first().copied();
+        let w = app.world();
+        (
+            *w.get::<Interaction>(b).unwrap(),
+            w.get::<BackgroundColor>(b).unwrap().0,
+            slab.map(|s| (w.get::<controls::HeroSlab>(s).unwrap().lift, w.get::<Node>(s).unwrap().right)),
+            glow.map(|g| w.get::<UiSlant>(g).unwrap().alpha),
+        )
+    };
+    let (hovered, rest) = (look(&mut app, start), look(&mut app, back));
+    assert_eq!(hovered.2.unwrap().0, 1.0, "lifted before the redraw");
+    let mut screen = screen;
+    for frame in 0..3 {
+        let (next, back, start) = redraw(&mut app, root, Some(screen));
+        screen = next;
+        assert_eq!(look(&mut app, start), hovered, "redraw {frame}: Start as it was, from its first frame");
+        assert_eq!(look(&mut app, back), rest, "redraw {frame}: Back at rest");
+    }
+    // A second screen beside it (nothing went): at rest.
+    let (_, _, other) = redraw(&mut app, root, None);
+    assert_eq!(look(&mut app, other).0, Interaction::None, "a new button where none went stays at rest");
+}
