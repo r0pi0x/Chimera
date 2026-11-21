@@ -258,8 +258,25 @@ fn layer_entries(layer: Option<&BTreeMap<String, String>>, shared: &BTreeMap<Str
 
 /// `game`'s keys for `command` differ from what the game ships
 /// (`Console::layer_defaults`).
+/// Compared by what works: the keys that run it while the game is played
+/// now, and with the game's layer as shipped (a config with the shared
+/// key already on the shipped one, and no layer of its own, is no
+/// change).
 pub fn game_bind_changed(console: &Console, game: &str, command: &str) -> bool {
-    layer_entries(console.layers.get(game), &console.binds, command) != layer_entries(console.layer_defaults.get(game), &console.binds, command)
+    fn bare(c: &str) -> String {
+        let c = c.trim();
+        c.rsplit_once(':').map_or(c, |(_, n)| n).to_ascii_lowercase()
+    }
+    let keys = |m: &BTreeMap<String, String>| -> Vec<String> {
+        let cmd = bare(command);
+        m.iter().filter(|(_, v)| bare(v) == cmd).map(|(k, _)| k.to_ascii_lowercase()).collect()
+    };
+    let now = keys(&console.effective_binds(Some(game)));
+    let mut shipped = console.binds.clone();
+    if let Some(l) = console.layer_defaults.get(game) {
+        shipped.extend(l.iter().map(|(k, v)| (k.clone(), v.clone())));
+    }
+    now != keys(&shipped)
 }
 
 /// The console line that puts `game`'s keys for `command` back as the

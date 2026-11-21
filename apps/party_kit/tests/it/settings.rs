@@ -823,6 +823,11 @@ fn the_games_tab_holds_each_games_keys_and_options_with_their_resets() {
     sim.app.world_mut().resource_mut::<Console>().submit("bindgame combat_arms shift combat_arms:+sprint");
     sim.app.update();
     assert!(!party_kit::controls::game_bind_changed(sim.app.world().resource::<Console>(), "combat_arms", "+sprint"));
+    // A config with no layer of its own but the shared key already where
+    // the game ships its own is no change either.
+    sim.app.world_mut().resource_mut::<Console>().submit("unbindgameall; bind shift +sprint");
+    sim.app.update();
+    assert!(!party_kit::controls::game_bind_changed(sim.app.world().resource::<Console>(), "combat_arms", "+sprint"));
     // A game's own binds from an old config show on its page.
     sim.app.world_mut().resource_mut::<Console>().submit("bindgame cs_source x +speed");
     sim.app.update();
