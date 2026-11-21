@@ -115,3 +115,75 @@ fn a_game_without_rules_leaves_its_weapons_alone() {
     assert!(rules.for_weapon(OTHER_PISTOL).is_none());
     assert!(rules.for_weapon("pistol").is_none(), "an id without a game");
 }
+
+/// A gun shown ahead of its kit draws before the sound table has its
+/// sounds (or while the map still loads): the owner's draw sound waits for
+/// them and plays once, instead of being asked of an audio that drops it.
+#[test]
+fn an_owners_view_sound_waits_for_its_sound_table() {
+    use chimera_world::map::{
+        LocalMapLoad, MapSoundEntry, MapSounds, PlaySound, SoundLevel, ViewModelEvent, ViewModelEventKind,
+        sound::Interval,
+    };
+    use chimera_core::core::LocalPlayer;
+    use chimera_sim::weapon::view_anim::{DRAW_SOUND_WAIT, play_view_sounds};
+    use chimera_world::map::sound::SoundBank;
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .add_message::<ViewModelEvent>()
+        .add_message::<PlaySound>()
+        .add_systems(Update, play_view_sounds);
+    let owner = app.world_mut().spawn((Transform::default(), LocalPlayer)).id();
+    let draw = || ViewModelEvent {
+        owner,
+        kind: ViewModelEventKind::Sound { entry: "Weapon_Glock.Draw".into() },
+        others: None,
+        reload: false,
+    };
+    let heard = |app: &mut App| app.world_mut().resource_mut::<Messages<PlaySound>>().drain().count();
+    let step = |app: &mut App, secs: f64| {
+        // Frames of at most 0.1 s (virtual time clamps a longer one).
+        let frames = (secs / 0.1).ceil().max(1.0) as u32;
+        let each = std::time::Duration::from_secs_f64(secs / frames as f64);
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(each));
+        for _ in 0..frames {
+            app.update();
+        }
+    };
+    // No sound table yet: nothing is asked.
+    app.world_mut().write_message(draw());
+    step(&mut app, 0.1);
+    assert_eq!(heard(&mut app), 0, "waits, no table");
+    // The table comes in, but the map still loads.
+    let mut sounds = MapSounds::default();
+    sounds.entries.insert(
+        "weapon_glock.draw".into(),
+        MapSoundEntry {
+            waves: vec![0],
+            volume: Interval::fixed(1.0),
+            pitch: Interval::fixed(100.0),
+            level: SoundLevel::Db(75.0),
+            channel: 0,
+            dry: false,
+        },
+    );
+    app.insert_resource(SoundBank(std::sync::Arc::new(sounds)));
+    app.insert_resource(LocalMapLoad::default());
+    step(&mut app, 0.1);
+    assert_eq!(heard(&mut app), 0, "waits, map loading");
+    // Loaded: it plays, once.
+    app.world_mut().remove_resource::<LocalMapLoad>();
+    step(&mut app, 0.1);
+    assert_eq!(heard(&mut app), 1, "plays when it can");
+    step(&mut app, 0.1);
+    assert_eq!(heard(&mut app), 0, "once");
+    // Never audible: asked once after its wait, not kept.
+    app.world_mut().insert_resource(LocalMapLoad::default());
+    app.world_mut().write_message(draw());
+    step(&mut app, 0.1);
+    assert_eq!(heard(&mut app), 0);
+    step(&mut app, DRAW_SOUND_WAIT);
+    assert_eq!(heard(&mut app), 1, "past its wait it is asked (the audio says why it is silent)");
+    step(&mut app, 0.1);
+    assert_eq!(heard(&mut app), 0);
+}

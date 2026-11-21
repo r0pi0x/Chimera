@@ -19,7 +19,10 @@
 //! `play_view_sounds`). An owner's sound event whose entry has no wave
 //! here (its file missing from the install or the asset store) is said
 //! once per entry and map and, in a reload, stands in as the gun's world
-//! reload.
+//! reload. The owner's sound waits (`DRAW_SOUND_WAIT`) while the map loads
+//! or its sound table lacks the entry (a gun shown ahead of its kit draws
+//! before its sounds are in; the audio drops what is asked then), then
+//! plays once.
 //!
 //! What plays when is the weapon's:
 //!
@@ -123,8 +126,21 @@ pub fn play_view_sounds(
     bank: Option<Res<crate::map::sound::SoundBank>>,
     mut play: MessageWriter<crate::map::PlaySound>,
     (mut later, mut said): (Local<Vec<(f64, Entity, String)>>, Local<bevy::platform::collections::HashSet<String>>),
+    (load, joining, mut waiting): (
+        Option<Res<crate::map::LocalMapLoad>>,
+        Option<Res<crate::map::JoiningServer>>,
+        Local<Vec<(f64, Entity, String)>>,
+    ),
 ) {
     let now = time.elapsed_secs_f64();
+    // Whether a sound can sound now: the audio drops what is asked while
+    // the map loads or with no sound table, and one the table lacks plays
+    // nothing. A gun shown ahead of its kit (`EarlyViewModels`) draws
+    // before its sounds are in, so its first draw's sound waits for them
+    // (`DRAW_SOUND_WAIT`) rather than being lost.
+    let audible = |entry: &str| {
+        load.is_none() && joining.is_none() && bank.as_ref().is_some_and(|b| b.0.entry(entry).is_some())
+    };
     if bank.as_ref().is_some_and(|b| b.is_changed()) {
         said.clear();
     }
@@ -136,6 +152,17 @@ pub fn play_view_sounds(
             });
         }
     };
+    let mut i = 0;
+    while i < waiting.len() {
+        if audible(&waiting[i].2) || waiting[i].0 <= now {
+            // Past its wait it is asked anyway: the audio says once why it
+            // was not heard.
+            let (_, owner, entry) = waiting.remove(i);
+            say(owner, entry, &mut play);
+        } else {
+            i += 1;
+        }
+    }
     let mut i = 0;
     while i < later.len() {
         if later[i].0 <= now {
@@ -167,6 +194,7 @@ pub fn play_view_sounds(
             continue;
         }
         match ev.others {
+            _ if local && !audible(entry) => waiting.push((now + DRAW_SOUND_WAIT, ev.owner, entry.clone())),
             _ if local => say(ev.owner, entry.clone(), &mut play),
             Some(lag) if lag > 0.0 => later.push((now + lag as f64, ev.owner, entry.clone())),
             Some(_) => say(ev.owner, entry.clone(), &mut play),
@@ -174,6 +202,11 @@ pub fn play_view_sounds(
         }
     }
 }
+
+/// How long an owner's view-model sound waits for its sound table and the
+/// map's load (`play_view_sounds`), seconds: about a draw's length; later
+/// it would be heard after its motion.
+pub const DRAW_SOUND_WAIT: f64 = 1.5;
 
 /// What a view model's sound event that can't play says (`play_view_sounds`):
 /// its entry's waves are missing, and what is heard instead.
