@@ -110,6 +110,7 @@ pub const ENGINE_NAMES: &[&str] = &[
     "name",
     "cl_autowepswitch",
     "cl_autoreload",
+    "cl_autoswitch_empty",
     "say",
     "say_team",
     "messagemode",

@@ -717,6 +717,10 @@ eye angles, the active weapon's `m_iClip1`. Movies of the own player
   "Auto reload (TF2)"), default 0 by the user's choice (TF2's own built-in
   default is 1: `cl_autoreload 0` then reads `( def. "1" )` in its
   console); a character without userinfo (a bot) doesn't auto-reload.
+- `cl_autoswitch_empty` likewise (the Party tab's "Auto switch when empty
+  (TF2)"), default 0 by the user's choice: an empty Minigun let go of
+  switches away (minigun.md 3.3, 77 ticks after the wind-down) only with
+  it 1; off, it stays in hand. Manual switching is unaffected.
 - The Minigun's barrel spun in nothing at first: the bone merge folded the
   `c_minigun`'s `barrel` into the arms' `weapon_bone`, so there was no
   bone to turn. `map::merge_keeping` keeps named weapon bones as joints of

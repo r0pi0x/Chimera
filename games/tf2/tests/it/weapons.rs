@@ -231,6 +231,44 @@ fn minigun_stops_0_3_s_after_attack2_and_only_the_switch_waits_35_36() {
     assert_eq!(sim.app.world().get::<Tf2Minigun>(w).unwrap().state, weapons::minigun::State::Idle);
 }
 
+/// minigun.md 3.3: an empty Minigun let go of switches away only with the
+/// player's `cl_autoswitch_empty 1` (ours' default is 0: it stays in
+/// hand, dry). On: the switch comes 77 ticks after the wind-down.
+fn empty_minigun_with(on: bool) -> (Sim, Entity, Entity, Entity) {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], MINIGUN);
+    let other = give(sim.app.world_mut(), p, SCATTERGUN).unwrap();
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(w);
+    sim.ticks(100);
+    if on {
+        let info = chimera_core::core::UserInfo(
+            [("cl_autoswitch_empty".to_string(), "1".to_string())].into_iter().collect(),
+        );
+        sim.app.world_mut().entity_mut(p).insert(info);
+    }
+    {
+        let mut m = sim.app.world_mut().get_mut::<Magazine>(w).unwrap();
+        m.clip = 0;
+        m.reserve = 0;
+    }
+    (sim, p, w, other)
+}
+
+#[test]
+fn an_empty_minigun_stays_in_hand_without_cl_autoswitch_empty() {
+    let (mut sim, p, w, _) = empty_minigun_with(false);
+    run(&mut sim, p, 400, |s, _| s.intent(p).fire = false);
+    assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(w), "still in hand");
+}
+
+#[test]
+fn an_empty_minigun_switches_away_with_cl_autoswitch_empty() {
+    let (mut sim, p, w, other) = empty_minigun_with(true);
+    run(&mut sim, p, 400, |s, _| s.intent(p).fire = false);
+    let inv = sim.app.world().get::<Inventory>(p).unwrap();
+    assert_eq!(inv.active, Some(other), "switched to the weapon with ammo (was {w:?})");
+}
+
 /// 7.2, test 49: spun on attack2 for 2 s from the press, then attack: the
 /// first shot is full damage (36 at 512).
 #[test]
