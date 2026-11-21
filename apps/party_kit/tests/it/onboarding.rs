@@ -8,7 +8,10 @@
 //! link; the entry never blocks (Enter works on the first frame and ends
 //! the entry); the menus behind take no keys; a device link code signs
 //! in without the name and key screens; recovery by the key shows the
-//! new key; Skip writes its mark; every staged screen draws its words.
+//! new key; Skip writes its mark; every staged screen draws its words;
+//! each error offers its one action as the hero (Enter clears a used
+//! code, a certificate that isn't the invite's has no way on and copies
+//! its details for the owner); the bar carries the game's own lockup.
 
 use bevy::{
     input::{
@@ -21,8 +24,8 @@ use chimera_core::console::Console;
 use chimera_ui::{Timeline, UiClock};
 use chimera_world::harness::Sim;
 use party_kit::onboarding::{
-    HaveTab, NameField, ObAction, Onboarding, OnboardingBackend, OnboardingFiles, OnboardingPlugin, OnboardingRoot, Problem,
-    STAGED_KEY, Step, ToastRoot, ChipRoot,
+    ChipRoot, HaveTab, NameField, ObAction, Onboarding, OnboardingBackend, OnboardingFiles, OnboardingLockup, OnboardingPlugin,
+    OnboardingRoot, Problem, STAGED_KEY, Step, ToastRoot,
 };
 
 use super::signal_menu::step;
@@ -210,6 +213,58 @@ fn each_error_says_what_happened_and_keeps_the_input() {
     assert_eq!(o(&sim).problem, Some(Problem::NeedsHub));
     // The menus behind take no keys while it shows.
     assert!(party_kit::onboarding::takes_keys(Some(o(&sim))));
+}
+
+/// Each error's hero is the one action that helps (the mockups' 03b-d).
+#[test]
+fn each_error_offers_its_one_action() {
+    let mut sim = sim();
+    // Used: Try another (Enter) clears the field; I already have an account.
+    typed(&mut sim, &LINK.replace("K7Q-M2P-9TR", "AAA-AAA-AAA"));
+    enter(&mut sim);
+    let text = words(&mut sim);
+    assert!(text.contains("TRY ANOTHER") && text.contains("I ALREADY HAVE AN ACCOUNT"), "{text}");
+    enter(&mut sim);
+    assert_eq!((o(&sim).input.as_str(), o(&sim).problem.clone()), ("", None), "Enter tries another");
+    // Unreachable: Retry, and playing without an account.
+    typed(&mut sim, &LINK.replace("K7Q-M2P-9TR", "RRR-RRR-RRR"));
+    enter(&mut sim);
+    let text = words(&mut sim);
+    assert!(text.contains("RETRY") && text.contains("PLAY WITHOUT AN ACCOUNT"), "{text}");
+    // Another certificate: no field, no way on; the details for the owner.
+    act(&mut sim, ObAction::Clear);
+    typed(&mut sim, &LINK.replace("K7Q-M2P-9TR", "CER-T00-000"));
+    enter(&mut sim);
+    let text = words(&mut sim);
+    assert!(text.contains("COPY DETAILS FOR THE OWNER") && !text.contains("INVITE · LINK, WEB ADDRESS OR CODE"), "{text}");
+    enter(&mut sim);
+    assert!(matches!(o(&sim).problem, Some(Problem::Certificate { .. })), "Enter doesn't go on");
+    act(&mut sim, ObAction::CopyDetails);
+    let got = sim.app.world_mut().resource_mut::<chimera_ui::clipboard::Clipboard>().get().unwrap_or_default();
+    assert!(got.contains("3F9A 0B71") && got.contains("77D0 E2C4") && got.contains("hub.example.net"), "{got}");
+    key(&mut sim, Key::Escape, KeyCode::Escape);
+    assert_eq!((o(&sim).input.as_str(), o(&sim).problem.clone()), ("", None), "Esc goes back");
+}
+
+/// The bar carries the game's own lockup (the main menu's mark and
+/// wordmark), not a stand-in.
+#[test]
+fn the_bar_carries_the_games_lockup() {
+    let mut sim = sim();
+    let w = sim.app.world_mut();
+    let lockups: Vec<Entity> = w.query_filtered::<Entity, With<OnboardingLockup>>().iter(w).collect();
+    assert_eq!(lockups.len(), 1);
+    let mut stack = lockups;
+    let mut mark = false;
+    while let Some(e) = stack.pop() {
+        mark |= w.get::<chimera_ui::controls::KitIcon>(e).is_some_and(|k| k.key == "mark");
+        if let Some(ch) = w.get::<Children>(e) {
+            stack.extend(ch.iter());
+        }
+    }
+    assert!(mark, "the mark");
+    let text = words(&mut sim);
+    assert!(text.contains("GUN GAME") && !text.contains("LUCKER PARTY"), "{text}");
 }
 
 #[test]

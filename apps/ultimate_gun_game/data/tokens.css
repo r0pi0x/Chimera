@@ -126,6 +126,8 @@
   --l-feed-pitch:2.15cqw;
   --l-feed-row-h:1.85cqw;
   --l-feed-w:26cqw;
+  --l-field-hero-h:3.2cqw;
+  --l-field-hero-text:.9cqw;
   --l-form-badge-h:1.15cqw;
   --l-form-blink:1cqw;
   --l-form-control-h:2.2cqw;
@@ -190,6 +192,16 @@
   --l-menu-tabs-y:1.4cqw;
   --l-menu-vt:.56cqw;
   --l-menu-vt-x:2.1cqw;
+  --l-onboarding-bar-y:2.6cqw;
+  --l-onboarding-col-w:42cqw;
+  --l-onboarding-col-x:8.4cqw;
+  --l-onboarding-col-y:11.6cqw;
+  --l-onboarding-corner:1.1cqw;
+  --l-onboarding-lockup:1.05cqw;
+  --l-onboarding-margin:4.6cqw;
+  --l-onboarding-pane-w:33.6cqw;
+  --l-onboarding-pane-x:58cqw;
+  --l-onboarding-rule-y:7.2cqw;
   --l-pages-bar-h:3.4cqw;
   --l-pages-join-w:30cqw;
   --l-pages-margin:4.6cqw;
