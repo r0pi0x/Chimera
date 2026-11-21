@@ -23,6 +23,7 @@ pub static BUNDLE: GameBundle = GameBundle {
     view_model_fov: Some(fov),
     sim: party_sim,
     display_names: Some(super::weapons::display_names),
+    player_options: Some(include_str!("../../data/player_options.toml")),
 };
 
 

@@ -162,9 +162,34 @@ pub fn option_tabs() -> Vec<(String, Vec<Setting>)> {
                         .unwrap_or_default();
                     (name, settings)
                 })
-                .collect()
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default()
+        .into_iter()
+        .chain(std::iter::once((GAMES_TAB.to_string(), game_settings())))
+        .collect()
+}
+
+/// The tab of each game's own options (`game_options`): the Signal
+/// look's Settings draws it as the game rail and pages; the older look
+/// lists the games' own settings (not the overrides), each labelled with
+/// its game.
+pub const GAMES_TAB: &str = "Games";
+
+/// Every game's own settings (its cvars, not overrides of shared ones),
+/// labelled "Auto reload (TF2)".
+pub fn game_settings() -> Vec<Setting> {
+    crate::game_options::games()
+        .iter()
+        .flat_map(|g| {
+            g.options.iter().filter(|o| !o.overrides).map(move |o| {
+                let mut s = o.setting.clone();
+                s.label = format!("{} ({})", s.label, g.short);
+                s.ours = o.ours;
+                s
+            })
+        })
+        .collect()
 }
 
 /// The menu's pages.

@@ -35,6 +35,13 @@
 //! in full (`Console::qualify_line`; Chimera's unshared names, `+`/`-`
 //! actions and polled binds, `Console::keep_short`, stay short).
 //!
+//! Game cvar layers (docs/plans/active/settings-games.md): a game may have
+//! its own value of a shared setting (`setgame tf2 sensitivity 2.4`,
+//! `resetgame`), in while it is the game played (`Console::played`, the
+//! local player's identity) and the player's own back after
+//! (`apply_game_cvars`, `cvar_bases`); the config saves the player's own
+//! value and the games' in `setgame` lines, as it does the binds' layers.
+//!
 //! Each cvar's `CvarScope` comes from its name (`SERVER_PREFIXES`,
 //! `SERVER_NAMES`: replicated or server-only in a network game; a network
 //! client can't set them, `net::cvars` sends the replicated ones by full
@@ -219,6 +226,23 @@ pub struct Console {
     /// Each overlay as its game ships it (`binddefaults` for a game
     /// restores it: `bindgamedefaults`).
     pub layer_defaults: BTreeMap<String, BTreeMap<String, String>>,
+    /// Per-game values of shared cvars (a game id -> a cvar's full name,
+    /// lower case -> its value): while that game is the one played
+    /// (`played`), the cvar holds the game's value (`apply_game_cvars`),
+    /// the player's own kept in `cvar_bases`. Saved in the config
+    /// (`setgame` lines), like the binds' layers.
+    pub game_cvars: BTreeMap<String, BTreeMap<String, String>>,
+    /// The player's own value of each cvar a game's value stands in for
+    /// now (full name, lower case): what the config saves for it and what
+    /// comes back when the game changes.
+    pub cvar_bases: BTreeMap<String, String>,
+    /// The game the local player plays (its `GameIdentity`, canonical;
+    /// `console_scope::follow_scope`), None out of a match: `game_cvars`
+    /// apply to it.
+    pub played: Option<String>,
+    /// `game_cvars` changed (bumped) and the game and change applied last.
+    game_cvars_gen: u64,
+    game_cvars_applied: Option<(Option<String>, u64)>,
     pub output: Vec<Line>,
     /// Lines waiting to run, and frames to wait before the next.
     queue: VecDeque<String>,
@@ -252,6 +276,112 @@ pub struct Console {
     /// migrations done (`client::binds::APP_BINDS_MARK`), kept by an app
     /// that read them so another app's config keeps saying so.
     pub config_marks: std::collections::BTreeSet<String>,
+}
+
+impl Console {
+    /// `game`'s own value of the cvar `name` (any spelling), if it has one.
+    pub fn game_cvar(&self, game: &str, name: &str) -> Option<&String> {
+        let full = self.full_name(name)?;
+        self.game_cvars.get(game)?.get(&full)
+    }
+
+    /// Gives `game` its own value of the cvar `name` (None: back to the
+    /// shared one); applied while `game` is played.
+    pub fn set_game_cvar(&mut self, game: &str, name: &str, value: Option<&str>) -> Result<(), String> {
+        let full = self.full_name(name).ok_or_else(|| format!("no cvar `{name}`"))?;
+        let game = self.canonical_namespace(game);
+        match value {
+            Some(v) => {
+                self.game_cvars.entry(game).or_default().insert(full, v.to_string());
+            }
+            None => {
+                if let Some(m) = self.game_cvars.get_mut(&game) {
+                    m.remove(&full);
+                    if m.is_empty() {
+                        self.game_cvars.remove(&game);
+                    }
+                }
+            }
+        }
+        self.game_cvars_gen += 1;
+        self.dirty = true;
+        Ok(())
+    }
+}
+
+/// The player's own value of the cvar `name`: kept aside while a game's
+/// value stands in (`Console::cvar_bases`), else the cvar's.
+pub fn cvar_base(w: &mut World, name: &str) -> Option<String> {
+    let c = w.resource::<Console>();
+    let full = c.full_name(name)?;
+    if let Some(v) = c.cvar_bases.get(&full) {
+        return Some(v.clone());
+    }
+    let get = c.cvars.get(&full)?.get.clone();
+    get(w)
+}
+
+/// Sets the player's own value of `name` (`cvar_base`): kept aside while
+/// a game's value stands in, else set at once.
+pub fn set_cvar_base(w: &mut World, name: &str, value: &str) -> Result<(), String> {
+    let full = w.resource::<Console>().full_name(name).ok_or_else(|| format!("no cvar `{name}`"))?;
+    let mut c = w.resource_mut::<Console>();
+    if let Some(v) = c.cvar_bases.get_mut(&full) {
+        *v = value.to_string();
+        c.dirty = true;
+        return Ok(());
+    }
+    let set = c.cvars.get(&full).map(|v| v.set.clone()).ok_or_else(|| format!("no cvar `{name}`"))?;
+    c.dirty = true;
+    set(w, value)
+}
+
+/// The played game's own cvar values in, the player's own back for the
+/// others (`Console::game_cvars`): only when the game played or the
+/// values changed (`run_queue` calls it each frame first).
+pub fn apply_game_cvars(w: &mut World) {
+    let (played, generation) = {
+        let c = w.resource::<Console>();
+        if c.game_cvars.is_empty() && c.cvar_bases.is_empty() {
+            return;
+        }
+        let key = (c.played.clone(), c.game_cvars_gen);
+        if c.game_cvars_applied.as_ref() == Some(&key) {
+            return;
+        }
+        key
+    };
+    let names: std::collections::BTreeSet<String> = {
+        let c = w.resource::<Console>();
+        c.game_cvars.values().flat_map(|m| m.keys().cloned()).chain(c.cvar_bases.keys().cloned()).collect()
+    };
+    for full in names {
+        let (cvar, want, base) = {
+            let c = w.resource::<Console>();
+            let Some(cvar) = c.cvars.get(&full).cloned() else { continue };
+            let want = played.as_ref().and_then(|g| c.game_cvars.get(g)).and_then(|m| m.get(&full)).cloned();
+            (cvar, want, c.cvar_bases.get(&full).cloned())
+        };
+        match (want, base) {
+            (Some(v), base) => {
+                if base.is_none() {
+                    let own = (cvar.get)(w).unwrap_or_else(|| cvar.default.clone());
+                    w.resource_mut::<Console>().cvar_bases.insert(full.clone(), own);
+                }
+                if let Err(e) = (cvar.set)(w, &v) {
+                    warn!("{full}: a game's value {v:?}: {e}");
+                }
+            }
+            (None, Some(own)) => {
+                w.resource_mut::<Console>().cvar_bases.remove(&full);
+                if let Err(e) = (cvar.set)(w, &own) {
+                    warn!("{full}: back to {own:?}: {e}");
+                }
+            }
+            (None, None) => {}
+        }
+    }
+    w.resource_mut::<Console>().game_cvars_applied = Some((played, generation));
 }
 
 /// Chimera's own namespace: the console's language (`bind`, `alias`,
@@ -1029,6 +1159,14 @@ pub fn quote(word: &str) -> String {
 
 /// Run queued lines (until a `wait`), in an exclusive system.
 pub fn run_queue(world: &mut World) {
+    // The game cvar layers before (the game played changed) and after (a
+    // `setgame` or `resetgame` just ran).
+    apply_game_cvars(world);
+    run_lines(world);
+    apply_game_cvars(world);
+}
+
+fn run_lines(world: &mut World) {
     let mut budget = 1024;
     loop {
         let next = {
@@ -1657,6 +1795,57 @@ fn builtins(app: &mut App) {
             },
         )
         .console_command(
+            "chimera:setgame",
+            "setgame <game> <cvar> [value]: <game>'s own value of a shared setting, in while it is the game played \
+             (no value: says it).",
+            |w, a| match a {
+                [game, name] => Ok(Some(match console(w).game_cvar(game, name) {
+                    Some(v) => format!("{name} = \"{v}\" in {game}"),
+                    None => format!("{name} has no value of its own in {game}"),
+                })),
+                [game, name, value @ ..] => console(w).set_game_cvar(game, name, Some(&value.join(" "))).map(|_| None),
+                _ => Err("setgame <game> <cvar> [value]".into()),
+            },
+        )
+        .console_command(
+            "chimera:resetgame",
+            "resetgame <game|*> [cvar]: <game>'s own value of a shared setting (none: all of them; *: every game's) \
+             gone, the shared one back.",
+            |w, a| {
+                let mut c = console(w);
+                match a {
+                    [all] if all == "*" => {
+                        if !c.game_cvars.is_empty() {
+                            c.game_cvars.clear();
+                            c.game_cvars_gen += 1;
+                            c.dirty = true;
+                        }
+                        Ok(None)
+                    }
+                    [game] => {
+                        let game = c.canonical_namespace(game);
+                        if c.game_cvars.remove(&game).is_some() {
+                            c.game_cvars_gen += 1;
+                            c.dirty = true;
+                        }
+                        Ok(None)
+                    }
+                    [game, name] => c.set_game_cvar(game, name, None).map(|_| None),
+                    _ => Err("resetgame <game|*> [cvar]".into()),
+                }
+            },
+        )
+        .console_command(
+            "chimera:cvar_base",
+            "cvar_base <cvar> [value]: the player's own value of a setting, kept aside while a game's own stands in \
+             (setgame); set at once otherwise.",
+            |w, a| match a {
+                [name] => cvar_base(w, name).map(|v| Some(format!("{name} = \"{v}\""))).ok_or_else(|| format!("no cvar `{name}`")),
+                [name, value @ ..] => set_cvar_base(w, name, &value.join(" ")).map(|_| None),
+                _ => Err("cvar_base <cvar> [value]".into()),
+            },
+        )
+        .console_command(
             "chimera:scope",
             "scope [game|auto]: the game whose names short names mean first (then chimera's): a game's id or alias \
              (cs_source, css, combat_arms, ca); auto follows the game played (the gun in hand in the party apps).",
@@ -1841,11 +2030,23 @@ pub fn config_text(w: &mut World) -> String {
     for (k, v) in aliases {
         out += &format!("alias {} {}\n", quote(&k), quote(&qualified(&v, scope)));
     }
+    let bases = w.resource::<Console>().cvar_bases.clone();
     for v in cvars.into_iter().filter(|v| v.archive) {
-        if let Some(value) = (v.get)(w)
+        // The player's own value, not a game's standing in for it.
+        let own = bases.get(&v.name.to_lowercase()).cloned().or_else(|| (v.get)(w));
+        if let Some(value) = own
             && value != v.default
         {
             out += &format!("{} {}\n", v.name, quote(&value));
+        }
+    }
+    // The games' own values of shared cvars: all anew (`resetgame *`).
+    let games = w.resource::<Console>().game_cvars.clone();
+    out += "resetgame *\n";
+    for (game, values) in games {
+        for (name, value) in values {
+            let spelled = w.resource::<Console>().spelled(&name);
+            out += &format!("setgame {} {} {}\n", quote(&game), spelled, quote(&value));
         }
     }
     out
@@ -1939,6 +2140,52 @@ pub(crate) mod tests {
             .iter()
             .map(|l| l.text.clone())
             .collect()
+    }
+
+    /// A game's own value of a shared cvar (`setgame`) stands in while
+    /// that game is played and the player's own comes back after; the
+    /// player's own is what the config keeps, the game's in `setgame`
+    /// lines that read back; `cvar_base` sets the own one aside meanwhile;
+    /// `resetgame` drops it.
+    #[test]
+    fn a_games_own_value_stands_in_while_it_is_played() {
+        let mut app = app();
+        app.world_mut().resource_mut::<Console>().archive("sv_speed");
+        let speed = |app: &mut App| {
+            let get = app.world().resource::<Console>().cvar("sv_speed").unwrap().get.clone();
+            get(app.world_mut()).unwrap()
+        };
+        run(&mut app, "sv_speed 300; setgame tf2 sv_speed 450");
+        assert_eq!(speed(&mut app), "300", "not played: the own value");
+        app.world_mut().resource_mut::<Console>().played = Some("tf2".into());
+        app.update();
+        assert_eq!(speed(&mut app), "450", "played: the game's");
+        run(&mut app, "cvar_base sv_speed 320");
+        assert_eq!(speed(&mut app), "450", "the own value set aside");
+        let cfg = config_text(app.world_mut());
+        assert!(cfg.contains("sv_speed 320"), "the own value saved:\n{cfg}");
+        assert!(cfg.contains("setgame tf2 cs_source:sv_speed 450"), "the game's saved:\n{cfg}");
+        app.world_mut().resource_mut::<Console>().played = Some("cs_source".into());
+        app.update();
+        assert_eq!(speed(&mut app), "320", "another game: the own value back");
+        // The config read back into a fresh console gives the same.
+        let mut fresh = app_with_config(&cfg);
+        fresh.world_mut().resource_mut::<Console>().played = Some("tf2".into());
+        fresh.update();
+        assert_eq!(speed(&mut fresh), "450");
+        run(&mut fresh, "resetgame tf2 sv_speed");
+        assert_eq!(speed(&mut fresh), "320", "reset: the shared one");
+        assert!(fresh.world().resource::<Console>().game_cvars.is_empty());
+    }
+
+    fn app_with_config(cfg: &str) -> App {
+        let mut app = app();
+        app.world_mut().resource_mut::<Console>().archive("sv_speed");
+        for line in cfg.lines().filter(|l| !l.starts_with("//")) {
+            app.world_mut().resource_mut::<Console>().submit(line);
+        }
+        app.update();
+        app
     }
 
     #[test]

@@ -42,6 +42,9 @@ pub struct GameBundle {
     /// Its weapons' display names by weapon id from its install's strings
     /// (a HUD of another game names its guns so).
     pub display_names: Option<fn(&chimera_core::mount::Mount) -> Vec<(String, String)>>,
+    /// Its own keys and options on a party app's Options screen (its
+    /// `data/player_options.toml`: party_kit's `game_options`).
+    pub player_options: Option<&'static str>,
 }
 
 /// A game's front end in an app made of several games: its own crate's

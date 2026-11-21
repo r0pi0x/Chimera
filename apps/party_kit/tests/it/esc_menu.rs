@@ -143,7 +143,7 @@ fn escape_goes_back_from_a_page_and_the_options_set_the_players_cvars() {
     act(&mut sim.app, Action::Options);
     assert_eq!(menu(&sim.app).page, Page::Options(0));
     let tabs = esc_menu::option_tabs();
-    let party = tabs.iter().position(|(n, _)| n == "Party").expect("a Party tab");
+    let party = tabs.iter().position(|(n, _)| n == "General").expect("a General tab");
     act(&mut sim.app, Action::Tab(party));
     let index = tabs[party].1.iter().position(|s| s.cvar == "party_swap_effect").expect("the swap effect");
     let read = |sim: &mut Sim| party_kit::controls::cvar_value(sim.app.world_mut(), "party_swap_effect");

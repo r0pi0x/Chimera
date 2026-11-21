@@ -6,9 +6,10 @@
 //!   slanted right edge and white text, `HERO_H` the big one with a bold
 //!   label; secondary outlined, ghost, danger with the threat mark), labels
 //!   in Display, an optional key cap (`kbd`: the lockup, equal padding,
-//!   .82 of the label, full strength); `tabs` (sub-tabs: the active one's
-//!   cobalt 12° strip; `tabs_ex` with the Q and E caps at the strip's
-//!   ends); `progress` (the progress component, variant B: a sheared bar,
+//!   .82 of the label, full strength); `tabs` (sub-tabs: grey names, the
+//!   selected one white, a hovered one white too (`HoverText`), no strip
+//!   under any (the user's review, 2026-11-21); `tabs_ex` with the Q and E
+//!   caps at the strip's ends, `tabs_badged` with a badge after a name); `progress` (the progress component, variant B: a sheared bar,
 //!   hollow and filling while running, filled when ready, striped while
 //!   connecting, a dim outline pending, the word and the share inside);
 //!   `status_block` (a slanted light and STATUS on a hairline, its words
@@ -26,7 +27,8 @@
 //!   in place (a number, checked by `typed_number`: any finite number
 //!   inside the setting's hard limits); `dropdown` (a field with the
 //!   upright `chevron` icon, flipped up while open, and, open, its list);
-//!   `key_field` (key caps, "press a key" while listening); `text_field`
+//!   `key_field` (key caps; listening, the capture chip: an accent tint,
+//!   a blinking light, "Press a key", Esc's cap: "cancel"); `text_field`
 //!   (typed text or stars, a placeholder, a thin white caret just after
 //!   the text while it has the keys, the selection on an accent tint; its keys, copy, cut
 //!   and paste are the screen's: `chimera_client::client::widgets::
@@ -47,8 +49,9 @@
 //! - **States** (`State`; the kit's design rules, 2026-11-14): hover is a
 //!   faint tint (`Hover`, shown live by `show_hover` from the pointer, no
 //!   rebuild), the element's own fill lifting: no tick anywhere (the
-//!   user's call; a sub-tab's short underline stays); focus is the accent bar at the left (a
-//!   control's own accent detail on its shape); selected is a white fill;
+//!   user's call); a row hovered or focused lifts and shows the accent
+//!   bar at the left, its control no focus of its own (one marker a row,
+//!   2026-11-21); a control alone shows focus as its own accent detail; selected is a white fill;
 //!   a toggle that is on is white (cobalt stays for focus and changed
 //!   rows: a changed row's accent square); threat red only as a mark (an
 //!   error's underline, the danger button's mark), never a fill.
@@ -192,11 +195,19 @@ pub struct Hover {
 }
 
 /// A hover mark shown while its parent is hovered, or always (`always`):
-/// the sub-tabs' short underline (rows, lines, buttons and fields have no
-/// tick: their own fill lifts).
+/// a row's accent bar, a segmented option's tint.
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
 pub struct Tick {
     pub always: bool,
+}
+
+/// A text whose tone follows its parent's hover (`show_hover`): the
+/// tabs' and the nav's grey that goes white (the user's review,
+/// 2026-11-21: no underline, the text lights).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct HoverText {
+    pub base: Tone,
+    pub over: Tone,
 }
 
 /// What makes a node clickable: an `Interaction` that blocks the pointer.
@@ -537,8 +548,8 @@ impl<'a> Ui<'a> {
     }
 
     /// Sub-tabs (the settings' pages): Display .78 cq, the selected one
-    /// white with a slanted white underline, a focused one's underline in
-    /// accent, others `fg_3`; a hairline under all. Returns each tab.
+    /// white, others `fg_3` (white while hovered), no underline; a
+    /// hairline under all. Returns each tab.
     pub fn tabs(&self, c: &mut Commands, parent: Entity, names: &[&str], selected: usize, focus: bool) -> Vec<Entity> {
         self.tabs_ex(c, parent, names, selected, focus, None)
     }
@@ -547,6 +558,15 @@ impl<'a> Ui<'a> {
     /// before the first, E after the last; design rules 11.5); the
     /// hairline runs on to the parent's edge.
     pub fn tabs_ex(&self, c: &mut Commands, parent: Entity, names: &[&str], selected: usize, focus: bool, keys: Option<(&str, &str)>) -> Vec<Entity> {
+        self.tabs_badged(c, parent, names, &[], selected, focus, keys)
+    }
+
+    /// `tabs_ex` with a badge after a tab's name (`badges[i]`, None or
+    /// missing: none; `badge`: a page's changes). The selected tab's
+    /// name is white, the others `fg_3`, white while hovered
+    /// (`HoverText`); no strip under any (the user's review, 2026-11-21).
+    #[allow(clippy::too_many_arguments)]
+    pub fn tabs_badged(&self, c: &mut Commands, parent: Entity, names: &[&str], badges: &[Option<String>], selected: usize, _focus: bool, keys: Option<(&str, &str)>) -> Vec<Entity> {
         let bar = c
             .spawn((UiStyle { gap: Some(1.6), align: Some(AlignItems::FlexEnd), ..UiStyle::row() }, Node::default(), ChildOf(parent)))
             .id();
@@ -567,7 +587,7 @@ impl<'a> Ui<'a> {
                 let tone = if sel { Tone::Fg } else { Tone::Fg3 };
                 let t = c
                     .spawn((
-                        UiStyle { pad: Some([0.0, 0.0, 0.7, 0.0].into()), ..UiStyle::column() },
+                        UiStyle { gap: Some(0.5), pad: Some([0.0, 0.0, 0.7, 0.0].into()), align: Some(AlignItems::Center), ..UiStyle::row() },
                         Node::default(),
                         BackgroundColor(Color::NONE),
                         Hover { base: Color::NONE, over: Color::NONE },
@@ -575,38 +595,12 @@ impl<'a> Ui<'a> {
                         ChildOf(bar),
                     ))
                     .id();
-                self.text(c, t, Role::DisplayRegular, 0.86, tone, n);
-                if sel {
-                    c.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::ZERO,
-                            right: Val::ZERO,
-                            bottom: Val::ZERO,
-                            height: self.units.val(0.3),
-                            ..default()
-                        },
-                        UiSlant::new(Tone::Acc, if focus { 1.0 } else { 0.92 }),
-                        Pickable::IGNORE,
-                        ChildOf(t),
-                    ));
-                } else {
-                    // Hover: a short underline (the tick's place in a tab).
-                    c.spawn((
-                        Tick { always: false },
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::ZERO,
-                            bottom: Val::ZERO,
-                            width: percent(18.0),
-                            height: self.units.val(0.24),
-                            ..default()
-                        },
-                        UiSlant::new(Tone::Fg3, 1.0),
-                        Visibility::Hidden,
-                        Pickable::IGNORE,
-                        ChildOf(t),
-                    ));
+                let tx = self.text(c, t, Role::DisplayRegular, 0.86, tone, n);
+                if !sel {
+                    c.entity(tx).insert(HoverText { base: Tone::Fg3, over: Tone::Fg });
+                }
+                if let Some(Some(b)) = badges.get(i) {
+                    self.badge(c, t, b, crate::form::BadgeKind::Hero);
                 }
                 t
             })
@@ -625,8 +619,17 @@ impl<'a> Ui<'a> {
     /// focus: tint .06 and the accent bar; changed: the accent square before the label; error: the
     /// threat bar at the left. Returns (row, value box).
     pub fn row(&self, c: &mut Commands, parent: Entity, label: &str, small: Option<&str>, min_h: f32, st: State) -> (Entity, Entity) {
+        let (row, _, vl) = self.row_parts(c, parent, label, small, min_h, st);
+        (row, vl)
+    }
+
+    /// `row`, also returning its label box: (row, label box, value box).
+    pub fn row_parts(&self, c: &mut Commands, parent: Entity, label: &str, small: Option<&str>, min_h: f32, st: State) -> (Entity, Entity, Entity) {
+        // One marker a row (the user's review, 2026-11-21): hovered or
+        // focused, the row alone lifts and shows the accent bar; the
+        // control in it draws no focus line of its own.
         let base = if st.focus { self.color(Tone::Fg, 0.06) } else { Color::NONE };
-        let over = if st.focus { base } else { self.color(Tone::Fg, 0.035) };
+        let over = if st.focus { base } else { self.color(Tone::Fg, 0.05) };
         let row = c
             .spawn((
                 UiStyle { pad: Some([0.0, 1.3, 0.0, 1.1].into()), gap: Some(1.2), shrink: Some(0.0), ..UiStyle::row() }
@@ -656,8 +659,11 @@ impl<'a> Ui<'a> {
             c.entity(bar).insert(BackgroundColor(self.color(Tone::Threat, 1.0)));
         } else if st.focus {
             self.focus_bar(c, row, 0.24);
+        } else if !st.disabled {
+            let bar = self.focus_bar(c, row, 0.24);
+            c.entity(bar).insert((Tick { always: false }, Visibility::Hidden));
         }
-        (row, vl)
+        (row, lb, vl)
     }
 
     /// A section header: the accent mark, the title in Mono .56 `fg_3`, a
@@ -702,9 +708,22 @@ impl<'a> Ui<'a> {
 
     /// `toggle_ex` with its words (off, on).
     pub fn toggle_with(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>, words: (&str, &str)) -> Entity {
+        self.toggle_sized(c, parent, on, st, slide, words, TOGGLE_W, TOGGLE_H)
+    }
+
+    /// `toggle_with` `w` x `h` cq (the big toggle of a settings column,
+    /// `form`): the slab and its insets scale with the height, each half
+    /// as wide as the track allows; the same slide.
+    #[allow(clippy::too_many_arguments)]
+    pub fn toggle_sized(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>, words: (&str, &str), w: f32, h: f32) -> Entity {
+        let k = h / TOGGLE_H;
+        let (off_left, top) = (TOGGLE_OFF_LEFT * k, 0.2 * k);
+        let slab_w = w / 2.0 - off_left - 0.05 * k;
+        let on_left = w - off_left - slab_w;
+        let word = 0.5 * k.min(1.3);
         let t = c
             .spawn((
-                UiStyle { w: Some(TOGGLE_W), h: Some(TOGGLE_H), shrink: Some(0.0), ..UiStyle::row() },
+                UiStyle { w: Some(w), h: Some(h), shrink: Some(0.0), ..UiStyle::row() },
                 Node::default(),
                 BackgroundColor(Color::NONE),
                 Hover { base: Color::NONE, over: Color::NONE },
@@ -724,11 +743,11 @@ impl<'a> Ui<'a> {
         full(c, UiSlant::new(Tone::Fg4, 1.0).outline(self.units.phys(self.units.hairline())));
         // The slab: half the track less its insets.
         let slab = UiSlant::new(if on { Tone::Fg } else { Tone::Fg4 }, 1.0);
-        let left = if on { TOGGLE_ON_LEFT } else { TOGGLE_OFF_LEFT };
-        let s = self.slant_at(c, t, slab, [Some(left), Some(0.2), None, None], TOGGLE_SLAB_W, 1.1);
+        let left = if on { on_left } else { off_left };
+        let s = self.slant_at(c, t, slab, [Some(left), Some(top), None, None], slab_w, h - 2.0 * top);
         c.entity(s).insert((ToggleSlab { track: t }, UiTransform::default()));
         if let Some(sl) = slide.filter(|sl| !sl.motion.snaps()) {
-            let from = if on { TOGGLE_OFF_LEFT - TOGGLE_ON_LEFT } else { TOGGLE_ON_LEFT - TOGGLE_OFF_LEFT };
+            let from = if on { off_left - on_left } else { on_left - off_left };
             let tl = Timeline::new([Track::new(Prop::X, from, 0.0).dur(sl.motion.secs(Pace::Normal)).ease(Pace::Normal.ease())]).started(sl.since);
             if !tl.done(sl.now) {
                 let x = tl.sample(Prop::X, tl.local(sl.now)).unwrap_or(0.0);
@@ -736,11 +755,11 @@ impl<'a> Ui<'a> {
             }
         }
         // Each label centred on its half, where the slab stands for it.
-        for (l, x, lit) in [(words.0, TOGGLE_OFF_LEFT, !on), (words.1, TOGGLE_ON_LEFT, on)] {
+        for (l, x, lit) in [(words.0, off_left, !on), (words.1, on_left, on)] {
             let half = self.boxed(
                 c,
                 t,
-                UiStyle { abs: Some([Some(x), Some(0.0), None, Some(0.0)]), w: Some(TOGGLE_SLAB_W), justify: Some(JustifyContent::Center), ..UiStyle::row() },
+                UiStyle { abs: Some([Some(x), Some(0.0), None, Some(0.0)]), w: Some(slab_w), justify: Some(JustifyContent::Center), ..UiStyle::row() },
             );
             c.entity(half).insert((ToggleLabel, Pickable::IGNORE));
             // On: ink on the white slab; off: white on the dim one; the
@@ -750,15 +769,15 @@ impl<'a> Ui<'a> {
                 (true, false) => Tone::Fg,
                 _ => Tone::Fg3,
             };
-            self.text(c, half, Role::Mono, 0.5, tone, l);
+            self.text(c, half, Role::Mono, word, tone, l);
         }
         if (st.focus || st.error) && !st.disabled {
             // Focus (error: threat) as a strip along the track's bottom
             // edge, its ends on the track's slant (Rule 2).
             let tone = if st.error { Tone::Threat } else { Tone::Acc };
-            let h = 0.2;
+            let sh = 0.2;
             let tan = self.theme.tan();
-            let strip = self.slant_at(c, t, UiSlant::new(tone, 1.0), [Some(0.0), None, None, Some(0.0)], TOGGLE_W - TOGGLE_H * tan + h * tan, h);
+            let strip = self.slant_at(c, t, UiSlant::new(tone, 1.0), [Some(0.0), None, None, Some(0.0)], w - h * tan + sh * tan, sh);
             c.entity(strip).insert(ToggleFocus);
         }
         t
@@ -777,11 +796,19 @@ impl<'a> Ui<'a> {
     /// `segmented` with the options at `off` greyed out (`fg_4` words, no
     /// hover, not clickable: a choice that can't be made now).
     pub fn segmented_with(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], st: State) -> Vec<Entity> {
+        self.segmented_sized(c, parent, options, selected, off, st, None)
+    }
+
+    /// `segmented_with` `size` = (w, h) cq (a settings column, `form`):
+    /// the options share the width equally; None: as wide as their words,
+    /// the toggle's height.
+    #[allow(clippy::too_many_arguments)]
+    pub fn segmented_sized(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], st: State, size: Option<(f32, f32)>) -> Vec<Entity> {
         // One slanted track (fill .05, a `fg_4` outline), slanted `fg_5`
         // dividers, the pick a white slanted slab; the words stay upright
         // (Display for words, Mono for numbers). Hover and pick are
         // parallelograms on the dividers' slant, not rectangles.
-        let h = TOGGLE_H - 0.4;
+        let h = size.map_or(TOGGLE_H, |s| s.1) - 0.4;
         let lean = h * self.theme.tan();
         let u = self.units;
         let key = {
@@ -791,7 +818,7 @@ impl<'a> Ui<'a> {
             hs.finish()
         };
         let g = c
-            .spawn((UiStyle { shrink: Some(0.0), pad: Some([0.2, 0.25, 0.2, 0.25].into()), ..UiStyle::row() }, Node::default(), SegmentedTrack, ChildOf(parent)))
+            .spawn((UiStyle { w: size.map(|s| s.0), shrink: Some(0.0), pad: Some([0.2, 0.25, 0.2, 0.25].into()), ..UiStyle::row() }, Node::default(), SegmentedTrack, ChildOf(parent)))
             .id();
         let full = || Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, right: Val::ZERO, ..default() };
         c.spawn((full(), UiSlant::new(Tone::Fg, 0.05), Pickable::IGNORE, ChildOf(g)));
@@ -815,7 +842,17 @@ impl<'a> Ui<'a> {
                 let greyed = off.contains(&i) && !sel;
                 let (lp, rp) = (0.75 + if i == 0 { lean * 0.6 } else { lean * 0.5 }, 0.75 + if i + 1 == n { lean * 0.6 } else { lean * 0.5 });
                 let b = c
-                    .spawn((UiStyle { h: Some(h), pad: Some([0.0, rp, 0.0, lp].into()), justify: Some(JustifyContent::Center), ..UiStyle::row() }, Node::default(), ChildOf(g)))
+                    .spawn((
+                        UiStyle {
+                            h: Some(h),
+                            pad: Some(if size.is_some() { [0.0, 0.3, 0.0, 0.3] } else { [0.0, rp, 0.0, lp] }.into()),
+                            w: size.map(|s| (s.0 - 0.5) / n as f32),
+                            justify: Some(JustifyContent::Center),
+                            ..UiStyle::row()
+                        },
+                        Node::default(),
+                        ChildOf(g),
+                    ))
                     .id();
                 if !greyed {
                     c.entity(b).insert(clickable());
@@ -1269,8 +1306,8 @@ impl<'a> Ui<'a> {
 
     /// A key-binding field (min `w` cq, 1.8 cq tall): the keys as caps
     /// (the first a white slanted slab, others outlined), a dash for none;
-    /// listening, an accent tint and outline and "Press a key, button or
-    /// wheel • Esc: cancel". Returns the field.
+    /// listening, the capture chip (an accent tint and outline, a blinking
+    /// light, "Press a key", Esc's cap: "cancel"). Returns the field.
     pub fn key_field(&self, c: &mut Commands, parent: Entity, keys: &[String], listening: bool, w: f32, st: State) -> Entity {
         let (base, over) = if listening {
             (self.color(Tone::Acc, 0.16), self.color(Tone::Acc, 0.16))
@@ -1283,8 +1320,14 @@ impl<'a> Ui<'a> {
         }
         let f = c.spawn((s, Node::default(), BackgroundColor(base), Hover { base, over }, clickable(), ChildOf(parent))).id();
         if listening {
-            self.mark(c, f, Tone::Acc, 0.36, 0.8);
-            self.text(c, f, Role::Mono, 0.58, Tone::Fg, "Press a key, button or wheel • Esc: cancel");
+            // The capture chip (the user's review, 2026-11-21): a
+            // blinking light, "Press a key", Esc's cap at the end.
+            let light = self.mark(c, f, Tone::AccText, 0.5, 0.5);
+            c.entity(light).insert(crate::form::Blink);
+            self.text(c, f, Role::Mono, 0.58, Tone::AccText, "Press a key");
+            let end = self.boxed(c, f, UiStyle { gap: Some(0.4), grow: Some(1.0), justify: Some(JustifyContent::FlexEnd), ..UiStyle::row() });
+            self.kbd(c, end, "Esc", 0.5, Tone::Fg3);
+            self.text(c, end, Role::Mono, 0.5, Tone::Fg3, "cancel");
         } else if keys.is_empty() {
             self.text(c, f, Role::Mono, 0.62, Tone::Fg3, "-");
         } else {
@@ -2172,6 +2215,7 @@ pub fn apply_wipes(
 pub fn show_hover(
     mut nodes: Query<(&Interaction, Option<&Hover>, Option<&Children>, Option<&mut BackgroundColor>), Changed<Interaction>>,
     mut ticks: Query<(&Tick, &mut Visibility)>,
+    mut texts: Query<(&HoverText, &mut UiText)>,
 ) {
     for (i, hover, children, bg) in &mut nodes {
         let over = *i != Interaction::None;
@@ -2185,6 +2229,12 @@ pub fn show_hover(
             for ch in children.iter() {
                 if let Ok((t, mut v)) = ticks.get_mut(ch) {
                     v.set_if_neq(if over || t.always { Visibility::Inherited } else { Visibility::Hidden });
+                }
+                if let Ok((h, mut text)) = texts.get_mut(ch) {
+                    let want = if over { h.over } else { h.base };
+                    if text.tone != want {
+                        text.tone = want;
+                    }
                 }
             }
         }
@@ -2338,7 +2388,7 @@ impl Plugin for ControlsPlugin {
     fn build(&self, app: &mut App) {
         crate::motion::init(app);
         app.init_resource::<PickMemory>()
-            .add_systems(Update, (show_hover, animate_heroes))
+            .add_systems(Update, (show_hover, animate_heroes, crate::form::blink))
             .add_systems(PostUpdate, draw_kit_icons.in_set(crate::UiKitSystems))
             .add_systems(
                 PostUpdate,

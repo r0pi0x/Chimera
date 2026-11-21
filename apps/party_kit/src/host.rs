@@ -155,6 +155,12 @@ pub struct Setting {
     /// The pre-match lobby tells it to every player (`lobby = true`:
     /// `chimera_net::prematch::LobbyFact`).
     pub lobby: bool,
+    /// A header over it and the rows after it (`section = "..."`; the
+    /// Signal look's Settings).
+    pub section: Option<String>,
+    /// Ours, not the original game's (`origin = "chimera"`): the Chimera
+    /// mark (party_kit::game_options).
+    pub ours: bool,
 }
 
 impl Setting {
@@ -218,6 +224,8 @@ pub fn setting_of(v: &toml::Value) -> Result<Setting, String> {
         hard_max: t.get("hard_max").and_then(num),
         percent: t.get("percent").and_then(|v| v.as_bool()).unwrap_or(false),
         lobby: t.get("lobby").and_then(|v| v.as_bool()).unwrap_or(false),
+        section: s("section"),
+        ours: s("origin").as_deref() == Some("chimera"),
     })
 }
 

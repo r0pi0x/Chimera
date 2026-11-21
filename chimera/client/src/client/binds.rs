@@ -588,7 +588,7 @@ fn bound_down(
 }
 
 /// `norm(a) == norm(b)` without the two new strings.
-fn same_command(a: &str, b: &str) -> bool {
+pub fn same_command(a: &str, b: &str) -> bool {
     let (a, b) = (a.trim(), b.trim());
     if a.is_ascii() && b.is_ascii() {
         return a.eq_ignore_ascii_case(b);

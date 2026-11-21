@@ -129,7 +129,7 @@ fn set(app: &mut App) -> Settings {
 
 fn rows(app: &App) -> Vec<Row> {
     let s = app.world().resource::<Settings>();
-    settings::rows(s.ctx.unwrap(), &party_kit::esc_menu::shown_tabs(app.world()), s.tab, s.bind_game)
+    settings::rows(s.ctx.unwrap(), &party_kit::esc_menu::shown_tabs(app.world()), s.tab, s.view())
 }
 
 fn row_of(app: &App, cvar: &str) -> usize {
@@ -153,13 +153,14 @@ fn esc_menu_keys_open_settings_with_the_options_pages() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
     let tabs = party_kit::esc_menu::shown_tabs(sim.app.world());
-    assert_eq!(settings::pages(Context::Game, &tabs), ["Video", "Audio", "Controls", "Party", "Network"]);
+    assert_eq!(settings::pages(Context::Game, &tabs), ["General", "Video", "Audio", "Controls", "Games"]);
     let roots = sim.app.world_mut().query_filtered::<(), With<settings::SettingsRoot>>().iter(sim.app.world()).count();
     assert_eq!(roots, 1, "drawn");
     // Q/E change the page; Controls has the mouse rows and the binds.
-    tap(&mut sim.app, KeyCode::KeyE);
-    tap(&mut sim.app, KeyCode::KeyE);
-    assert_eq!(set(&mut sim.app).tab, 2);
+    for _ in 0..3 {
+        tap(&mut sim.app, KeyCode::KeyE);
+    }
+    assert_eq!(set(&mut sim.app).tab, 3);
     let r = rows(&sim.app);
     assert!(r.iter().any(|r| matches!(r, Row::Setting { s, .. } if s.cvar == "sensitivity")));
     assert!(r.iter().any(|r| matches!(r, Row::Bind { command: "+jump", .. })));
@@ -181,6 +182,7 @@ fn after(app: &mut App, secs: f32) {
 fn a_change_applies_at_once_and_the_config_is_written_soon() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
+    send(&mut sim.app, SettingsAction::Tab(1));
     let row = row_of(&sim.app, "fov_desired");
     let before = cvar(&mut sim.app, "fov_desired");
     let saves0 = saves(&sim.app);
@@ -205,6 +207,7 @@ fn a_change_applies_at_once_and_the_config_is_written_soon() {
 fn closing_writes_a_change_not_yet_saved() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
+    send(&mut sim.app, SettingsAction::Tab(1));
     let row = row_of(&sim.app, "fov_desired");
     let saves0 = saves(&sim.app);
     send(&mut sim.app, SettingsAction::Step { row, dir: -1 });
@@ -218,6 +221,7 @@ fn closing_writes_a_change_not_yet_saved() {
 fn a_waiting_display_change_reverts_and_leaving_with_it_asks() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
+    send(&mut sim.app, SettingsAction::Tab(1));
     let row = row_of(&sim.app, "chimera_fullscreen");
     send(&mut sim.app, SettingsAction::Pick { row, option: 2 });
     assert_eq!(changes(&sim.app), 1, "the display waits for Apply");
@@ -248,7 +252,7 @@ fn a_waiting_display_change_reverts_and_leaving_with_it_asks() {
 fn a_volume_is_heard_and_kept_at_once() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
-    send(&mut sim.app, SettingsAction::Tab(1));
+    send(&mut sim.app, SettingsAction::Tab(2));
     let row = row_of(&sim.app, "volume");
     let saves0 = saves(&sim.app);
     // (0 to 200 %: a quarter of the track is half volume.)
@@ -265,14 +269,14 @@ fn a_volume_is_heard_and_kept_at_once() {
 /// The row of `cvar` on page `tab`.
 fn row_of_tab(app: &mut App, tab: usize, cvar: &str) -> usize {
     let tabs = party_kit::esc_menu::shown_tabs(app.world());
-    settings::rows(Context::Game, &tabs, tab, 0).iter().position(|r| matches!(r, Row::Setting { s, .. } if s.cvar == cvar)).unwrap()
+    settings::rows(Context::Game, &tabs, tab, settings::View::default()).iter().position(|r| matches!(r, Row::Setting { s, .. } if s.cvar == cvar)).unwrap()
 }
 
 #[test]
 fn a_rebind_applies_at_once_and_is_saved() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
-    send(&mut sim.app, SettingsAction::Tab(2));
+    send(&mut sim.app, SettingsAction::Tab(3));
     let row = rows(&sim.app).iter().position(|r| matches!(r, Row::Bind { command: "+use", .. })).unwrap();
     let keys = |app: &App| party_kit::controls::keys_on(app.world().resource::<Console>(), 0, "+use");
     assert_ne!(keys(&sim.app), ["g"]);
@@ -284,13 +288,14 @@ fn a_rebind_applies_at_once_and_is_saved() {
     assert_eq!(changes(&sim.app), 0, "nothing waits");
     after(&mut sim.app, 0.6);
     assert_eq!(saves(&sim.app), saves0 + 1, "saved");
-    let _ = row_of_tab(&mut sim.app, 0, "fov_desired");
+    let _ = row_of_tab(&mut sim.app, 1, "fov_desired");
 }
 
 #[test]
 fn reset_tab_asks_and_sets_the_page_back_to_its_defaults() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
+    send(&mut sim.app, SettingsAction::Tab(1));
     let row = row_of(&sim.app, "fov_desired");
     let def = sim.app.world().resource::<Console>().cvar("fov_desired").unwrap().default.clone();
     send(&mut sim.app, SettingsAction::Step { row, dir: -1 });
@@ -312,6 +317,7 @@ fn reset_tab_asks_and_sets_the_page_back_to_its_defaults() {
 fn an_applied_display_mode_goes_back_unless_kept() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
+    send(&mut sim.app, SettingsAction::Tab(1));
     let row = row_of(&sim.app, "chimera_fullscreen");
     let saves0 = saves(&sim.app);
     send(&mut sim.app, SettingsAction::Pick { row, option: 2 });
@@ -347,7 +353,7 @@ fn an_applied_display_mode_goes_back_unless_kept() {
 fn a_bind_row_takes_the_next_key() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
-    send(&mut sim.app, SettingsAction::Tab(2));
+    send(&mut sim.app, SettingsAction::Tab(3));
     let row = rows(&sim.app).iter().position(|r| matches!(r, Row::Bind { command: "+use", .. })).unwrap();
     send(&mut sim.app, SettingsAction::Bind(row));
     assert_eq!(set(&mut sim.app).capture, Some(row));
@@ -513,7 +519,7 @@ fn audio_page() -> (Sim, usize) {
     let mut sim = party(true);
     sim.app.init_resource::<SliderCues>().add_systems(Update, count_slider_cues.after(settings::SettingsSystems));
     open_settings(&mut sim.app);
-    send(&mut sim.app, SettingsAction::Tab(1));
+    send(&mut sim.app, SettingsAction::Tab(2));
     let row = row_of(&sim.app, "volume");
     (sim, row)
 }
@@ -675,6 +681,7 @@ fn hover_cues_once_per_row_spaced_and_never_while_dragging() {
     sim.app.init_resource::<HoverCues>().add_systems(Update, count_hover_cues.after(settings::SettingsSystems));
     let app = &mut sim.app;
     open_settings(app);
+    send(app, SettingsAction::Tab(1));
     let fov = row_of(app, "fov_desired");
     later(app, 1.0);
     app.update();
@@ -699,7 +706,7 @@ fn hover_cues_once_per_row_spaced_and_never_while_dragging() {
     assert_eq!(hover_cues(app) - n0, 3, "a different row cues, and coming back does");
 
     // A fast sweep down Controls' rows, 30 ms each.
-    send(app, SettingsAction::Tab(2));
+    send(app, SettingsAction::Tab(3));
     later(app, 1.0);
     let live: Vec<usize> = rows(app).iter().enumerate().filter(|(_, r)| r.focusable()).map(|(i, _)| i).take(10).collect();
     assert_eq!(live.len(), 10);
@@ -738,11 +745,89 @@ fn a_flipped_toggle_slides() {
     let mut sim = party(true);
     let app = &mut sim.app;
     open_settings(app);
-    send(app, SettingsAction::Tab(3));
+    send(app, SettingsAction::Tab(0));
     let row = row_of(app, "party_swap_effect");
     send(app, SettingsAction::Step { row, dir: 1 });
     assert_eq!(set(app).flip.map(|(r, _)| r), Some(row));
     let w = app.world_mut();
     let sliding = w.query_filtered::<(), (With<chimera_ui::controls::ToggleSlab>, With<chimera_ui::Timeline>)>().iter(w).count();
     assert_eq!(sliding, 1, "its slab slides");
+}
+
+/// The Games tab (docs/plans/active/settings-games.md): each game's
+/// pages from its data; TF2's Keys hold its own actions (the planned
+/// ones too), its Gameplay the two rows moved from the old Party tab
+/// (same cvars, the Chimera mark on ours), its Look an override of the
+/// shared field of view that is the game's own once changed (`setgame`),
+/// counted on the badges and reset by its key; a key bound on a game's
+/// page lands in that game's layer, a reset puts the shipped keys back;
+/// binds a config already had (a game's layer) show on its page.
+#[test]
+fn the_games_tab_holds_each_games_keys_and_options_with_their_resets() {
+    use party_kit::game_options::games;
+    let mut sim = party(true);
+    open_settings(&mut sim.app);
+    let tabs = party_kit::esc_menu::shown_tabs(sim.app.world());
+    let games_tab = settings::pages(Context::Game, &tabs).iter().position(|n| n == "Games").expect("a Games tab");
+    send(&mut sim.app, SettingsAction::Tab(games_tab));
+    assert!(settings::game_changes(sim.app.world_mut()).iter().all(|b| *b == [0, 0, 0]), "nothing changed yet: {:?}", settings::game_changes(sim.app.world_mut()));
+    let tf2 = games().iter().position(|g| g.id == "tf2").expect("TF2 ships its page");
+    send(&mut sim.app, SettingsAction::Game(tf2));
+    let binds = |app: &App| -> Vec<(&'static str, bool)> {
+        rows(app).into_iter().filter_map(|r| match r {
+            Row::Bind { game: Some("tf2"), command, action, .. } => Some((command, action.is_some_and(|a| a.planned))),
+            _ => None,
+        }).collect()
+    };
+    let keys = binds(&sim.app);
+    assert!(keys.contains(&("+attack2", false)), "the alt-fire actions: {keys:?}");
+    for planned in ["taunt", "+inspect", "voicemenu 0 0"] {
+        assert!(keys.contains(&(planned, true)), "{planned} listed, planned");
+    }
+
+    send(&mut sim.app, SettingsAction::GamePage(1));
+    let gameplay: Vec<(String, bool)> = rows(&sim.app).into_iter().filter_map(|r| match r {
+        Row::Setting { s, .. } => Some((s.cvar, s.ours)),
+        _ => None,
+    }).collect();
+    assert!(gameplay.contains(&("cl_autoreload".into(), false)), "{gameplay:?}");
+    assert!(gameplay.contains(&("cl_autoswitch_empty".into(), true)), "ours: {gameplay:?}");
+
+    // The Look page's field of view: the shared one until changed.
+    send(&mut sim.app, SettingsAction::GamePage(2));
+    let key = settings::override_key("tf2", "fov_desired");
+    let row = row_of(&sim.app, &key);
+    sim.app.world_mut().resource_mut::<Console>().submit(format!("settings_set {key} 80"));
+    sim.app.update();
+    sim.app.update();
+    assert_eq!(sim.app.world().resource::<Console>().game_cvar("tf2", "fov_desired").map(String::as_str), Some("80"));
+    assert_eq!(cvar(&mut sim.app, "fov_desired"), "90", "not playing TF2: the shared value");
+    let badges = settings::game_changes(sim.app.world_mut());
+    assert_eq!(badges[tf2], [0, 0, 1], "one change, on Look");
+    send(&mut sim.app, SettingsAction::Reset(row));
+    assert!(sim.app.world().resource::<Console>().game_cvar("tf2", "fov_desired").is_none(), "reset: the shared one again");
+
+    // A key bound on TF2's Keys page is TF2's own; reset takes it back.
+    send(&mut sim.app, SettingsAction::GamePage(0));
+    let alt = rows(&sim.app).iter().position(|r| matches!(r, Row::Bind { command: "+attack2", .. })).unwrap();
+    send(&mut sim.app, SettingsAction::Bind(alt));
+    tap(&mut sim.app, KeyCode::F7);
+    let layer = sim.app.world().resource::<Console>().layers.get("tf2").cloned().unwrap_or_default();
+    assert_eq!(layer.get("f7").map(String::as_str), Some("+attack2"), "{layer:?}");
+    assert_eq!(settings::game_changes(sim.app.world_mut())[tf2][0], 1, "the alt-fire actions count once");
+    send(&mut sim.app, SettingsAction::Reset(alt));
+    assert!(!party_kit::controls::game_bind_changed(sim.app.world().resource::<Console>(), "tf2", "+attack2"), "as shipped");
+
+    // A shipped key saved with its namespace (as a config writes it) is
+    // not a change.
+    sim.app.world_mut().resource_mut::<Console>().submit("bindgame combat_arms shift combat_arms:+sprint");
+    sim.app.update();
+    assert!(!party_kit::controls::game_bind_changed(sim.app.world().resource::<Console>(), "combat_arms", "+sprint"));
+    // A game's own binds from an old config show on its page.
+    sim.app.world_mut().resource_mut::<Console>().submit("bindgame cs_source x +speed");
+    sim.app.update();
+    let css = games().iter().position(|g| g.id == "cs_source").unwrap();
+    send(&mut sim.app, SettingsAction::Game(css));
+    let c = sim.app.world().resource::<Console>();
+    assert!(party_kit::controls::keys_in_game(&c.binds, &c.layers, Some("cs_source"), "+speed").contains(&"x".to_string()));
 }
