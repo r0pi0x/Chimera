@@ -14,7 +14,11 @@
 //!   key).
 //! - **The capture** goes through `FeedbackCapture` (the window's
 //!   `Screenshot` by default; tests put in `FeedbackCapture::fake`): the
-//!   dialog opens on its `ScreenshotCaptured`, never before. The rest of
+//!   dialog opens on its `ScreenshotCaptured`, never before. The frame
+//!   is the window's whole image, every camera's UI over the world (the
+//!   HUD, the menu, the lobby, the console); nothing drawn reacts to the
+//!   report until its dialog shows (`Feedback::shown`; `active` is for
+//!   input), so the frame is what the player saw at the key. The rest of
 //!   what the report says (`capture::report_text`: build, map, `setpos`,
 //!   weapon, health, perf, the last console lines) is taken at the key
 //!   press.
@@ -47,7 +51,9 @@
 //! Console: `feedback` (the key's command; `feedback menu` waits for a
 //! menu to go), `feedback_send <text>`, `feedback_status` (where reports
 //! go, what waits and why), `feedback_press
-//! <send|cancel|bug|feedback|shot|details>` (tests, screenshots).
+//! <send|cancel|bug|feedback|shot|details>` (tests, screenshots),
+//! `feedback_shot <file.jpg>` (the frame the report holds, as it would be
+//! sent: checks of what a report shows).
 //!
 //! `log.txt` is the session's log tail (`diagnostics`: every `tracing`
 //! line at INFO and above and every console line, filtered), when a
@@ -195,7 +201,9 @@ impl Feedback {
         self.phase == Phase::Open
     }
 
-    /// Asked for and not closed (the capture too).
+    /// Asked for and not closed (the capture too). Not for what is drawn:
+    /// a screen that changes on it changes the frame being reported
+    /// (what draws differently for the report waits for `shown`).
     pub fn active(&self) -> bool {
         self.phase != Phase::Closed
     }
@@ -865,6 +873,18 @@ impl Plugin for FeedbackPlugin {
                 "chimera:feedback_status",
                 "feedback_status: where reports go, what waits to be sent and why.",
                 |w, _| Ok(Some(w.resource::<FeedbackOutbox>().0.status().trim_end().to_string())),
+            )
+            .console_command(
+                "chimera:feedback_shot",
+                "feedback_shot <file.jpg>: save the frame the open report holds, as the report's JPEG (checks, \
+                 screenshots).",
+                |w, a| {
+                    let path = PathBuf::from(a.first().ok_or("feedback_shot <file.jpg>")?);
+                    let shot = w.resource::<Feedback>().shot.clone().ok_or("no report frame taken")?;
+                    let jpeg = encode_screenshot(shot)?;
+                    std::fs::write(&path, &jpeg.bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+                    Ok(Some(format!("report frame saved to {}", path.display())))
+                },
             )
             .console_command(
                 "chimera:feedback_press",

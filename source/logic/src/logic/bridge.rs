@@ -790,6 +790,9 @@ fn set_prop_look(world: &mut World, node: Entity, state: &super::props::PropStat
     }
 }
 
+/// The Source logic's writer name in `map::LightStyles`.
+const SOURCE_STYLES: &str = "source_logic";
+
 /// Sprites and dust volumes (`map::EntityPart`) follow their entity: on,
 /// off, or gone (killed) until a round restart; light styles follow the
 /// lights (`map::LightStyles`), areaportals their doors and inputs
@@ -875,10 +878,9 @@ fn sync_visuals(world: &mut World, logic: &Logic) {
             e.insert(*look);
         }
     }
-    let styles = LightStyles {
-        styles: logic.world.light_styles().to_vec(),
-    };
-    if world.get_resource::<LightStyles>() != Some(&styles) {
+    // Source's own list (another game's logic may keep one too).
+    let own = logic.world.light_styles().to_vec();
+    if let Some(styles) = world.get_resource::<LightStyles>().cloned().unwrap_or_default().with(SOURCE_STYLES, own) {
         world.insert_resource(styles);
     }
     let tonemap = logic.world.tonemap();

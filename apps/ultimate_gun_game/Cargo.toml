@@ -47,6 +47,8 @@ chimera_world.workspace = true
 chimera_present.workspace = true
 combat_arms.workspace = true
 hl2dm.workspace = true
+# Decoding the offscreen runs' pictures (tests/it/heavy/report_frame.rs).
+image.workspace = true
 
 # The game.
 [[bin]]

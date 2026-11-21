@@ -8393,6 +8393,7 @@ dependencies = [
  "chimera_world",
  "combat_arms",
  "hl2dm",
+ "image",
  "party_kit",
  "winresource",
  "workspace-hack",

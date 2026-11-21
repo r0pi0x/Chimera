@@ -13,12 +13,14 @@ mod heavy {
     mod death_frames;
     mod ladder_build;
     mod hl2_map_items;
+    mod map_lights;
     mod map_swap_frames;
     mod map_swap_render;
     mod map_ticks;
     mod nav_in_play;
     mod no_fetch_in_match;
     mod pool_maps;
+    mod report_frame;
     mod rung_frames;
     mod session_maps;
     mod spawn_views;

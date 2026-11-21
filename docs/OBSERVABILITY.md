@@ -989,7 +989,11 @@ client only with the server's `sv_cheats 1` (and only on itself).
   "During the session"). Headless: `FeedbackCapture::fake`, a test's own
   `Outbox`, or `AssetsOutbox::at(<dir>, targets)` against a service on
   port 0 (apps/party_kit/tests/it/feedback.rs); staged:
-  `ui_scene report [details|sent|queued|off]`.
+  `ui_scene report [details|sent|queued|off]`. What a report's frame
+  shows: `feedback` then `feedback_shot <file.jpg>` (the JPEG it would
+  send) in an offscreen run, next to a `screenshot` taken at the key
+  (apps/ultimate_gun_game/tests/it/heavy/report_frame.rs: menu, lobby,
+  match).
 - `version` (console, client and server) prints the build: tag or `git
   describe`, short commit hash and the commit's UTC date, e.g.
   `v0.1.0-playtest3 (feac156, 2026-10-11)` (no tag: `feac156,
@@ -1617,7 +1621,9 @@ load; work counts don't (performance.md, "Work counts"):
   INFO and above, asset stores' additions and frees by type,
   pipelines queued and compiled, a game's own `frame_events::note`), ticks run,
   RSS and the GPU allocator's bytes. The 8 worst records go into the
-  F10 bundle's `perf.txt` (and its `world.txt` has the census, growth
+  F10 bundle's `perf.txt`, headed by the systems the latest 32 timed
+  spikes share (own ms summed, in how many: a stutter that keeps coming
+  back, which map loads would crowd out of the worst) (and its `world.txt` has the census, growth
   by kind since the session's first map and this map, memory by kind
   and the event timeline: `client::world_report`); each logged `hitch:` line ends with its
   record's `; systems: ...; events (N): ...`. `frame_spikes` prints the

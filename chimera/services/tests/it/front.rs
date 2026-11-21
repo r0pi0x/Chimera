@@ -113,24 +113,28 @@ impl Hub {
         .unwrap()
     }
 
-    fn access_log(&self) -> String {
-        fs::read_to_string(self.store.root.join("server").join("access.log")).unwrap_or_default()
-    }
-
     /// The access log once `want` holds for it: the service writes a
     /// request's line just after the answer goes out, so a test reading
     /// right after its request can be a line early (waits up to 2 s).
     fn access_log_when(&self, want: impl Fn(&str) -> bool) -> String {
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        loop {
-            let log = self.access_log();
-            if want(&log) || std::time::Instant::now() > until {
-                return log;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
+        log_when(&self.store.root.join("server").join("access.log"), want)
     }
+}
 
+/// The log at `path` once `want` holds for it (waits up to 2 s; see
+/// `Hub::access_log_when`).
+fn log_when(path: &std::path::Path, want: impl Fn(&str) -> bool) -> String {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        let log = fs::read_to_string(path).unwrap_or_default();
+        if want(&log) || std::time::Instant::now() > until {
+            return log;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+impl Hub {
     /// Raw requests on one TLS connection to the front: each answer's
     /// status line and body, in order (stops at a closed connection).
     fn raw(&self, requests: &[String]) -> Vec<(u16, String)> {
@@ -304,7 +308,7 @@ fn a_forged_peer_header_is_ignored() {
     assert!(log.lines().filter(|l| l.contains("GET /whoami") && l.contains("ip=127.0.0.1")).count() >= 3, "{log}");
     // The accounts service too: its log names the real peer.
     let _ = hub.raw(&[format!("POST /accounts/redeem HTTP/1.1\r\nHost: hub\r\nX-Chimera-Peer: 203.0.113.9:1\r\nContent-Length: 2\r\n\r\n{{}}")]);
-    let log = fs::read_to_string(hub.paths.access_log()).unwrap();
+    let log = log_when(&hub.paths.access_log(), |log| log.contains("POST /accounts/redeem"));
     assert!(log.contains("POST /accounts/redeem") && !log.contains("203.0.113"), "{log}");
 }
 

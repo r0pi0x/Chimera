@@ -55,6 +55,11 @@ fn capture(w: &mut World) {
     let phase = w.resource::<Feedback>().phase;
     let esc_open = w.resource::<EscMenu>().open;
     assert!(!esc_open, "the Escape menu is gone before the capture");
+    // Nothing drawn reacts to the report before its frame is taken: the
+    // lobby hid its whole panel for an overlay from the key press, so a
+    // report from the lobby was a black frame (report 3025fbb1).
+    let overlaid = w.resource::<chimera_client::client::prematch_lobby::LobbyOverlay>().0;
+    assert!(!overlaid, "the lobby is drawn as it was in the frame the report takes");
     w.resource_mut::<Captures>().0.push(phase);
     captured(w, fake_frame());
 }
@@ -396,4 +401,34 @@ fn a_report_reaches_the_named_service_and_the_notice_says_sent() {
     assert!(got[0].account.contains("tester"), "{}", got[0].account);
     drop(running);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The report from the pre-match lobby: the lobby takes the report as an
+/// overlay (its panel hidden under the dialog) only once the dialog shows,
+/// so the frame taken is the lobby as the player saw it (`capture`
+/// asserts it), from the key and from the lobby's Report button.
+#[test]
+fn the_lobby_stays_drawn_for_the_reports_frame() {
+    use chimera_client::client::prematch_lobby::LobbyOverlay;
+    let (mut sim, _) = party();
+    let overlaid = |sim: &Sim| sim.app.world().resource::<LobbyOverlay>().0;
+    assert!(!overlaid(&sim));
+    tap(&mut sim.app, KeyCode::F10);
+    assert!(!overlaid(&sim), "not while the frame is taken");
+    for _ in 0..6 {
+        sim.app.update();
+    }
+    assert_eq!(fb(&sim.app).phase, Phase::Open);
+    assert!(overlaid(&sim), "the dialog over the lobby is its overlay");
+    key(&mut sim.app, KeyCode::Escape, Key::Escape);
+    sim.app.update();
+    assert_eq!(fb(&sim.app).phase, Phase::Closed);
+    assert!(!overlaid(&sim));
+    // The lobby's Report a bug: the menu way (settling first).
+    chimera_client::client::feedback::request(sim.app.world_mut(), true);
+    for _ in 0..8 {
+        sim.app.update();
+    }
+    assert_eq!(fb(&sim.app).phase, Phase::Open);
+    assert_eq!(sim.app.world().resource::<Captures>().0.len(), 2);
 }
