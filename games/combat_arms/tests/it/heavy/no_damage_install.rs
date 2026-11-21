@@ -116,8 +116,13 @@ fn the_installs_guns_without_a_shop_item_stay_off_drawn_ladders() {
         assert!(hit > 20, "the shop rule skipped only {hit}");
         eprintln!("{hit} unshopped records were drawable");
         // The explicit non-player entries (data/ladder_exclusions.toml) too.
-        for id in ["combat_arms:test_gun_mg42", "combat_arms:m4a1-nsm", "combat_arms:mp5a4_npc", "combat_arms:hg2_auto_turret"] {
+        for id in ["combat_arms:test_gun_mg42", "combat_arms:m4a1-nsm", "combat_arms:mp5a4_npc", "combat_arms:powered_suit_boss_mg"] {
             assert!(skipped.iter().any(|s| s.id == id), "{id} skipped by an entry");
+        }
+        // The borderline ones are dealt (the user, 2026-11-21): they are
+        // in the picker's list unless the install lacks them.
+        for id in ["combat_arms:hg2_auto_turret", "combat_arms:minimi_para_camo_infecteds_super", "combat_arms:g36e_ugly"] {
+            assert!(skipped.iter().all(|s| s.id != id), "{id} dealt");
         }
         // The sandbox's list loses them as well, but keeps a bad skin.
         let mut sandbox = vec![Capabilities::of(&PARTS, catalog, None)];

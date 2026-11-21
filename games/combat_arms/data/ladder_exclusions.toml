@@ -57,7 +57,10 @@ weapons = [
 ]
 
 # Records of the weapon file with a shop item that are still no player's
-# (2026-11-20; the ones without a shop item are excluded by rule,
+# (2026-11-20; the user, 2026-11-21: "I'm fine having funny guns in the gun
+# game", so the borderline ones are dealt again: Shylock's Machinegun and
+# Shotgun, the player's turret copy HG2_Auto_Turret, and the unreleased
+# records of data/ladder_unshopped_dealt.toml; the ones without a shop item are excluded by rule,
 # `game::data::UNSHOPPED_WHY`): the enemies' guns of the missions and
 # modes, and test records.
 [[exclude]]
@@ -80,15 +83,6 @@ weapons = [
     "combat_arms:powered_suit_basic_pistol",
     "combat_arms:powered_suit_boss_mg",         # Zeus
     "combat_arms:powered_suit_boss_launcher",   # Hephaestus
-    "combat_arms:minimi_para_camo_infecteds_super",   # Shylock's Machinegun
-    "combat_arms:r870mcs_infecteds_super",            # Shylock's Shotgun
-]
-
-[[exclude]]
-reason = "an enemy turret (a placed gun of a mission, not a player's; the player's Auto-Turret is a device and stays)"
-not_player = true
-weapons = [
-    "combat_arms:hg2_auto_turret",
 ]
 
 [[exclude]]

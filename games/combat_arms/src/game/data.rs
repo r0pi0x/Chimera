@@ -370,12 +370,45 @@ impl InstallAttributes {
         // By address (an ordered map: no std hasher).
         let index: std::collections::BTreeMap<usize, usize> =
             weapons.weapons.iter().enumerate().map(|(i, w)| (std::ptr::from_ref(w) as usize, i)).collect();
+        let dealt = dealt_unshopped();
         install_weapons_by_id(weapons)
             .into_iter()
             .filter(|(_, w)| index.get(&(std::ptr::from_ref(*w) as usize)).is_some_and(|i| !shop.contains(i)))
             .map(|(id, _)| id)
+            .filter(|id| !unshopped_dealt(&dealt, id))
             .collect()
     }
+}
+
+/// The records no shop item sells that the draw deals anyway
+/// (data/ladder_unshopped_dealt.toml; an id ending in `*` is a prefix).
+const UNSHOPPED_DEALT: &str = include_str!("../../data/ladder_unshopped_dealt.toml");
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DealtDoc {
+    #[serde(default)]
+    dealt: Vec<DealtEntry>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DealtEntry {
+    weapons: Vec<String>,
+    #[allow(dead_code)]
+    reason: String,
+}
+
+/// The ids (lower case) data/ladder_unshopped_dealt.toml names.
+fn dealt_unshopped() -> Vec<String> {
+    let doc: DealtDoc = toml::from_str(UNSHOPPED_DEALT).expect("data/ladder_unshopped_dealt.toml");
+    doc.dealt.into_iter().flat_map(|e| e.weapons).map(|w| w.to_ascii_lowercase()).collect()
+}
+
+/// Whether `list` (`dealt_unshopped`) names `id`.
+fn unshopped_dealt(list: &[String], id: &str) -> bool {
+    let id = id.to_ascii_lowercase();
+    list.iter().any(|w| w.strip_suffix('*').map_or(id == *w, |prefix| id.starts_with(prefix)))
 }
 
 /// Why a drawn ladder leaves out a weapon no shop item sells.
@@ -2079,6 +2112,19 @@ pub fn renew(world: &mut World, old: &CaData, fresh: CaData) {
 mod tests {
     use super::*;
     use crate::weapon::data::WeaponSet;
+
+    /// The unshopped records the draw deals anyway (exact ids and
+    /// prefixes); the rest stay out.
+    #[test]
+    fn the_dealt_unshopped_records_read() {
+        let list = dealt_unshopped();
+        let unshopped_dealt = |id: &str| unshopped_dealt(&list, id);
+        assert!(unshopped_dealt("combat_arms:g36e_ugly"));
+        assert!(unshopped_dealt("combat_arms:Devil_Soul_P901"));
+        assert!(unshopped_dealt("combat_arms:acr_contempt_2"));
+        assert!(!unshopped_dealt("combat_arms:hqraid_boss_minigun"));
+        assert!(!unshopped_dealt("combat_arms:g36e_ugly_npc"));
+    }
 
     /// Every file in data/weapons is built in (`WEAPON_DATA`), as it is
     /// on disk.

@@ -120,5 +120,9 @@ mod tests {
         }
         assert!(!nobody.iter().any(|n| n == "combat_arms:asw338lmspunk"));
         assert!(nobody.iter().all(|n| list.iter().any(|(id, _)| id == n)));
+        // The borderline guns the user allowed (2026-11-21) are dealt.
+        for id in ["combat_arms:hg2_auto_turret", "combat_arms:minimi_para_camo_infecteds_super", "combat_arms:r870mcs_infecteds_super"] {
+            assert!(!list.iter().any(|(w, _)| w == id), "{id} is dealt");
+        }
     }
 }

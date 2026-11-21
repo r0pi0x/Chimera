@@ -14,7 +14,7 @@ draw = 1.333
 undroppable = false
 # An automatic gun game's specials band (docs/DESIGN.md "Gun game rules",
 # "A turret rung"; ours: the spec has no ladder). Its install copies keep it
-# (HG2_Auto_Turret; the infected ship turrets, whose top gun's rays do
+# (HG2_Auto_Turret, dealt since 2026-11-21; the infected ship turrets, whose top gun's rays do
 # nothing here, and the perk ammo box are left out by their data).
 class = "launcher"
 

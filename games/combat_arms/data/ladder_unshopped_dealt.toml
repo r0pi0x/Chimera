@@ -1,0 +1,14 @@
+# Weapon records no shop item sells that a drawn gun game ladder still deals
+# (`game::data::set_unshopped` leaves out every record without a shop item
+# unless it is listed here). The user's decision, 2026-11-21: "I'm fine having
+# funny guns in the gun game". These are unreleased player guns (hand-held,
+# with a view model), not NPC, boss or test records. An id ending in `*`
+# names every record starting so.
+[[dealt]]
+reason = "an unreleased player gun (the user, 2026-11-21: funny guns are fine)"
+weapons = [
+    "combat_arms:devil_soul_p90*",
+    "combat_arms:acr_contempt*",
+    "combat_arms:g36e_ugly",
+    "combat_arms:glock_23_org",
+]

@@ -276,3 +276,10 @@ GUN) (SMG) and `weapon_ar2` (above).
    ones that have a shop item and are still no player's (NPC copies,
    powered-suit and Shylock guns, turrets, test records). They are also
    absent from the Host's Guns picker and the sandbox's Change gun list.
+   Relaxed (user, 2026-11-21: "I'm fine having funny guns in the gun
+   game"): the borderline ones are dealt again: Shylock's Machinegun and
+   Shotgun, the player's turret copy `HG2_Auto_Turret` (a placed device
+   like `Auto-Turret`, so it works as a rung), and the unreleased player
+   guns `data/ladder_unshopped_dealt.toml` names (`devil_soul_p90*`,
+   `acr_contempt*`, `g36e_ugly`, `glock_23_org`). NPC, boss, test and
+   enemy-turret records stay out.
