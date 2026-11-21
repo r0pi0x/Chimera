@@ -2828,7 +2828,8 @@ load stage, `chimera_net::net::load_stages`).
 stages the first run's screens (`party_kit::onboarding`, docs/plans/active/onboarding.md) with a made-up hub
 ("Friday Night Hub"; nothing is sent or written): the invite field empty or filled from the clipboard, checking, each
 error, the hub, the name screen free, breaking a rule or taken (with suggestions), the recovery key, "I already have
-an account" on each tab, and the main menu's welcome toast (`done`). Offscreen: `ultimate_gun_game --offscreen
+an account" on each tab, and the main menu's welcome toast (`done`). `ui_scene onboarding intro [t]` plays the first-launch
+intro (held still `t` seconds in when given: a contact strip is one run per time). Offscreen: `ultimate_gun_game --offscreen
 1920x1080 --frames 60 --screenshot <out>.png +mainmenu +ui_scene onboarding name-taken`; `onboarding 1` shows the
 real flow in a running game.
 `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range|map>`

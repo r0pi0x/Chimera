@@ -12,6 +12,28 @@
 //!   test): the run starts at the main menu and this PC has no account
 //!   and no skip mark (`OnboardingFiles`, `first_run_due`): an account is
 //!   the only way onto a hub, so nothing else counts.
+//! - **Intro** (decision 7; `start_first_run`, `intro_due`): on the
+//!   first run's first start only (no `onboarding-intro-seen` mark beside
+//!   `account.toml`, written when it ends or is skipped), a 2.6 s
+//!   broadcast-style title over Welcome (`IntroRoot`, `draw_intro`):
+//!   0-0.4 s the blueprint hairlines flicker on from the middle, the bar
+//!   (channel and app, ON AIR, a running timecode) and its rule draw out;
+//!   0.05-0.9 s the logo pass (accent hairline, the hero slab carrying the
+//!   mark, accent and light bands on the slant) sweeps, standing over the
+//!   middle while the lockup comes up under it; 0.4-1.0 s the game's own
+//!   lockup (`Ui::lockup_parts`, the same nodes as `lockup_drawn`): the
+//!   mark pops, ULTIMATE tracks in, GUN GAME flickers on; 0.9-1.5 s the
+//!   rule scans out under it, "Welcome to <app>" (`EscMenuTitle`) rises
+//!   with its eyebrow and tagline (`[intro]` in the data); 1.3-1.9 s the
+//!   system check types in (display, audio, games installed from the
+//!   mount doctor's `LocalMounts`, account: none yet); the tick bar runs
+//!   the whole length; 2.3-2.6 s it fades into Welcome, whose entry plays
+//!   under the fade. Never blocking: any key or click ends it at once
+//!   (`end_intro`), Welcome settled, the key going no further, and the
+//!   field types on the next. `ui_motion_scale` stretches it; at 0 it is
+//!   its last frame, still, for 0.6 s. A sting from the app's UI sounds
+//!   (`pass_sweep`, `end_reveal`: the `ui` bus at its volume, silent
+//!   without them).
 //! - **Welcome** (`Step::Welcome`): the one field takes the whole hub
 //!   link, a web address with the code, or the bare code
 //!   (`chimera_assets::account::InviteInput`), read on Enter; the pane
@@ -57,13 +79,14 @@
 //!   banner** ("Can't reach <hub>", playing offline goes on, Retry now;
 //!   it retries by itself every `RETRY_SECS`). `AccountShown` is the
 //!   account's names (the app's start, or the first run's end).
-//! - `ui_scene onboarding <welcome|clipboard|checking|used|unknown|
+//! - `ui_scene onboarding intro [t]` plays the intro (held still at `t`
+//!   seconds when given, for screenshots); `ui_scene onboarding <welcome|clipboard|checking|used|unknown|
 //!   unreachable|certificate|hub|name|name-bad|name-taken|key|have|
 //!   recover|done|returning|offline|off>` stages each screen with a made-up hub
 //!   (`StagedHub`), for screenshots.
 //!
-//! Known shortcuts: the first-launch intro (decision 7) isn't built
-//! (the plan's next step); clicking an invite link doesn't open the game
+//! Known shortcuts: the intro's timings are numbers in the code (its
+//! words are data); clicking an invite link doesn't open the game
 //! yet (no link handler registered); the screens rebuild whole on any
 //! change; no keyboard focus between the buttons (Enter is the hero,
 //! Esc goes back); the chip opens nothing yet (no Profile screen: rename,
@@ -281,6 +304,18 @@ pub struct Onboarding {
     pub asked: u32,
     /// The main menu's toast after the last screen.
     pub toast: Option<(String, String, f64)>,
+    /// The first-launch intro playing over Welcome (`Intro`).
+    pub intro: Option<Intro>,
+}
+
+/// The first-launch intro under way (module doc, "Intro").
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Intro {
+    /// When it started (`UiClock`).
+    pub start: f64,
+    /// Held still this many seconds in (`ui_scene onboarding intro <t>`):
+    /// it never ends by itself.
+    pub held: Option<f32>,
 }
 
 impl Onboarding {
@@ -319,6 +354,9 @@ pub struct OnboardingFiles {
     pub skip_mark: Option<PathBuf>,
     /// Where "Save as file" puts the recovery key.
     pub key_dir: Option<PathBuf>,
+    /// Written when the first-launch intro ends or is skipped: it plays
+    /// once.
+    pub intro_mark: Option<PathBuf>,
 }
 
 impl OnboardingFiles {
@@ -326,8 +364,9 @@ impl OnboardingFiles {
     pub fn user() -> Self {
         let account = AccountFile::path();
         let skip_mark = account.as_ref().map(|p| p.with_file_name("onboarding-skipped"));
+        let intro_mark = account.as_ref().map(|p| p.with_file_name("onboarding-intro-seen"));
         let key_dir = dirs::document_dir().or_else(|| account.as_ref().and_then(|p| p.parent().map(PathBuf::from)));
-        Self { account, skip_mark, key_dir }
+        Self { account, skip_mark, key_dir, intro_mark }
     }
 }
 
@@ -609,8 +648,9 @@ impl Plugin for OnboardingPlugin {
                 Ok(None)
             },
         );
-        app.add_systems(Update, (from_clipboard, clicks, keys, poll, name_pause, act, show, show_toast).chain())
-            .add_systems(Update, (retry_hub, show_chip).chain());
+        app.add_systems(Update, (from_clipboard, clicks, keys, intro_tick, poll, name_pause, act, show, show_intro, show_toast).chain())
+            .add_systems(Update, (retry_hub, show_chip).chain())
+            .add_systems(Update, (hold_intro, intro_clock).after(show_intro));
     }
 }
 
@@ -624,17 +664,40 @@ pub fn first_run_due(files: &OnboardingFiles) -> bool {
 
 /// The app's start: the first run when this PC has no account and no skip
 /// mark (module doc).
-pub fn maybe_start(mut o: ResMut<Onboarding>, mut files: ResMut<OnboardingFiles>, mut shown: ResMut<AccountShown>, clock: Option<Res<UiClock>>) {
+pub fn maybe_start(
+    mut o: ResMut<Onboarding>,
+    mut files: ResMut<OnboardingFiles>,
+    mut shown: ResMut<AccountShown>,
+    clock: Option<Res<UiClock>>,
+    motion: Option<Res<Motion>>,
+) {
     *files = OnboardingFiles::user();
     if let Some(file) = files.account.as_ref().and_then(|p| AccountFile::load_from(p).ok().flatten()) {
         shown.0 = Some(Shown::of(&file, "the hub"));
     }
-    if !first_run_due(&files) {
-        return;
+    start_first_run(&mut o, &files, clock.map_or(0.0, |c| c.now), motion.map_or(1.0, |m| m.scale));
+}
+
+/// The first run at `now` when it is due with `files`, the intro first
+/// when that is due too (`intro_due`); false when nothing is due.
+pub fn start_first_run(o: &mut Onboarding, files: &OnboardingFiles, now: f64, scale: f32) -> bool {
+    if !first_run_due(files) {
+        return false;
     }
     o.active = true;
-    o.go(Step::Welcome, clock.map_or(0.0, |c| c.now));
+    o.go(Step::Welcome, now);
     o.avatar = rand_avatar();
+    if intro_due(files) {
+        o.intro = Some(Intro { start: now, held: None });
+        o.since = now + welcome_at(scale);
+    }
+    true
+}
+
+/// Whether the first-launch intro plays: the first run is due and the
+/// intro's mark isn't there (it played, or was skipped, once already).
+pub fn intro_due(files: &OnboardingFiles) -> bool {
+    first_run_due(files) && !files.intro_mark.as_ref().is_some_and(|p| p.exists())
 }
 
 fn rand_avatar() -> u8 {
@@ -662,6 +725,7 @@ fn keys(
     guard: Option<ResMut<chimera_ui::shell::BackGuard>>,
     console: Option<Res<chimera_client::client::console::ConsoleUi>>,
     (shared, mut own): (Option<ResMut<chimera_ui::clipboard::Clipboard>>, Local<chimera_ui::clipboard::Clipboard>),
+    files: Res<OnboardingFiles>,
 ) {
     if !o.active || console.is_some_and(|c| c.open) {
         events.clear();
@@ -669,6 +733,14 @@ fn keys(
     }
     if let Some(mut g) = guard {
         g.hold();
+    }
+    // The intro: any key skips it to Welcome at once, and goes no further
+    // (decision 8: never blocking).
+    if o.intro.is_some() {
+        if events.read().any(|k| k.state.is_pressed()) {
+            end_intro(&mut o, &files, clock.now, true);
+        }
+        return;
     }
     let clipboard = match shared {
         Some(c) => c.into_inner(),
@@ -1150,6 +1222,7 @@ fn show(
     let key = o.active.then(|| {
         let mut snap = o.clone();
         snap.toast = None;
+        snap.intro = None;
         snap.typed_at = 0.0;
         snap.asked_name = None;
         (snap, ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32), cam)
@@ -2174,6 +2247,382 @@ pub fn short_fp(f: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// The first-launch intro (module doc, "Intro").
+
+/// The intro's length at motion scale 1, seconds; its last `INTRO_OUT`
+/// fade it into Welcome.
+pub const INTRO_SECS: f32 = 2.6;
+pub const INTRO_OUT: f32 = 0.3;
+/// How long its last frame stands at motion scale 0, seconds.
+pub const INTRO_STILL: f32 = 0.6;
+/// The lockup's size in the intro (its wordmark's, cq).
+const INTRO_LK: f32 = 3.0;
+
+/// The intro's length at motion scale `scale`, seconds.
+pub fn intro_len(scale: f32) -> f32 {
+    if scale <= 0.0 { INTRO_STILL } else { INTRO_SECS * scale }
+}
+
+/// When Welcome's entry starts, seconds after the intro's: under the
+/// intro's fade out (at motion scale 0, as it ends).
+fn welcome_at(scale: f32) -> f64 {
+    if scale <= 0.0 { INTRO_STILL as f64 } else { ((INTRO_SECS - INTRO_OUT) * scale) as f64 }
+}
+
+/// Ends the intro (on its own, or `skipped` by a key or click: Welcome
+/// then shows settled at once) and writes its mark, so it plays once.
+pub fn end_intro(o: &mut Onboarding, files: &OnboardingFiles, now: f64, skipped: bool) {
+    if o.intro.take().is_none() {
+        return;
+    }
+    if skipped {
+        o.since = now - 10.0;
+    } else if o.since > now {
+        o.since = now;
+    }
+    if let Some(mark) = &files.intro_mark {
+        if let Some(dir) = mark.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Err(e) = std::fs::write(mark, "") {
+            warn!("onboarding: the intro's mark {}: {e}", mark.display());
+        }
+    }
+}
+
+/// The intro's root (over the first run's screens).
+#[derive(Component)]
+pub struct IntroRoot;
+
+/// A node the intro animates (`hold_intro` keeps it still when held).
+#[derive(Component)]
+pub struct IntroPart;
+
+/// The intro's timecode (`intro_clock`).
+#[derive(Component)]
+struct IntroClock;
+
+/// The intro's end, its skip by a click, and its sound cues.
+#[allow(clippy::too_many_arguments)]
+fn intro_tick(
+    mut o: ResMut<Onboarding>,
+    files: Res<OnboardingFiles>,
+    clock: Res<UiClock>,
+    motion: Option<Res<Motion>>,
+    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    pressed: Query<&Interaction, (With<IntroRoot>, Changed<Interaction>)>,
+    cues: Option<ResMut<Messages<chimera_ui::UiCue>>>,
+    mut sent: Local<(f64, u8)>,
+) {
+    let Some(intro) = o.intro else { return };
+    let now = clock.now;
+    if !o.active {
+        o.intro = None;
+        return;
+    }
+    let clicked = mouse.is_some_and(|m| m.get_just_pressed().next().is_some()) || pressed.iter().any(|i| *i == Interaction::Pressed);
+    if clicked {
+        end_intro(&mut o, &files, now, true);
+        return;
+    }
+    let scale = motion.map_or(1.0, |m| m.scale);
+    let t = intro.held.map_or((now - intro.start) as f32, |h| h);
+    if intro.held.is_none() && t >= intro_len(scale) {
+        end_intro(&mut o, &files, now, false);
+        return;
+    }
+    // The sting: the pass's sweep with the bands, the reveal as the
+    // lockup lands (the app's table, on the `ui` bus at its volume; silent
+    // where the theme has no UI sound). Not when held or at scale 0.
+    if sent.0 != intro.start {
+        *sent = (intro.start, 0);
+    }
+    if let Some(mut cues) = cues.filter(|_| intro.held.is_none() && scale > 0.0) {
+        for (i, (at, event)) in [(0.02, "pass_sweep"), (0.62, "end_reveal")].into_iter().enumerate() {
+            if sent.1 as usize == i && t >= at * scale {
+                cues.write(chimera_ui::UiCue::new(event));
+                sent.1 += 1;
+            }
+        }
+    }
+}
+
+/// A held intro's timelines stay at its time (screenshots).
+fn hold_intro(o: Res<Onboarding>, clock: Res<UiClock>, mut parts: Query<&mut Timeline, With<IntroPart>>) {
+    let Some(Intro { held: Some(t), .. }) = o.intro else { return };
+    let start = clock.now - t as f64;
+    for mut tl in &mut parts {
+        if tl.start != Some(start) {
+            tl.start = Some(start);
+        }
+    }
+}
+
+/// The timecode in the intro's corner, HH:MM:SS:FF at 30 frames.
+fn intro_clock(o: Res<Onboarding>, clock: Res<UiClock>, mut texts: Query<&mut Text, With<IntroClock>>) {
+    let Some(intro) = o.intro else { return };
+    let t = intro.held.unwrap_or((clock.now - intro.start) as f32).max(0.0);
+    let tc = timecode(t);
+    for mut text in &mut texts {
+        if text.0 != tc {
+            text.0 = tc.clone();
+        }
+    }
+}
+
+/// `t` seconds as broadcast timecode at 30 frames a second.
+pub fn timecode(t: f32) -> String {
+    let frames = (t * 30.0).floor() as u32;
+    let (ff, s) = (frames % 30, frames / 30);
+    format!("00:{:02}:{:02}:{ff:02}", s / 60, s % 60)
+}
+
+/// What the intro's system check reads.
+#[derive(Clone, Debug, PartialEq)]
+struct Readout {
+    /// The window's size in pixels, if there is one.
+    display: Option<(u32, u32)>,
+    /// Games installed, of the games the app knows (the mount doctor's).
+    games: Option<(usize, usize)>,
+}
+
+/// The intro's nodes, rebuilt when it starts or the window changes.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn show_intro(
+    o: Res<Onboarding>,
+    words: Res<Words>,
+    camera: Query<Entity, With<MenuUiCamera>>,
+    root: Query<Entity, With<IntroRoot>>,
+    (theme, kit, units, motion): (Option<Res<chimera_ui::Theme>>, Option<Res<chimera_ui::KitFonts>>, Option<Res<chimera_ui::UiUnits>>, Option<Res<Motion>>),
+    (title, mounts, windows): (
+        Option<Res<crate::esc_menu::EscMenuTitle>>,
+        Option<Res<chimera_net::net::manifest::LocalMounts>>,
+        Query<&Window, With<bevy::window::PrimaryWindow>>,
+    ),
+    clock: Res<UiClock>,
+    mut shown: Local<Option<(Intro, (u32, u32), u32, Option<Entity>)>>,
+    mut commands: Commands,
+) {
+    let (Some(theme), Some(units)) = (theme.as_deref(), units.as_deref()) else { return };
+    let scale = motion.map_or(1.0, |m| m.scale);
+    let cam = camera.iter().next();
+    let key = o.intro.filter(|_| o.active).map(|i| (i, ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32), (scale * 1000.0) as u32, cam));
+    if *shown == key {
+        return;
+    }
+    for e in &root {
+        commands.entity(e).despawn();
+    }
+    if let Some((intro, ..)) = key {
+        let ui = Ui::new(theme, kit.as_deref(), *units);
+        let readout = Readout {
+            display: windows.iter().next().map(|w| (w.physical_width(), w.physical_height())),
+            games: mounts.as_deref().map(|m| (m.0.games.iter().filter(|g| g.installed).count(), m.0.games.len())),
+        };
+        let app = title.map_or_else(|| crate::esc_menu::EscMenuTitle::default().0, |t| t.0.clone());
+        // Held: every timeline starts `held` seconds ago (`hold_intro`
+        // keeps it there).
+        let start = intro.held.map_or(intro.start, |h| clock.now - h as f64);
+        let r = draw_intro(&mut commands, &ui, &words, &app, &readout, start, scale);
+        if let Some(cam) = cam {
+            commands.entity(r).insert(UiTargetCamera(cam));
+        }
+    }
+    *shown = key;
+}
+
+/// One track, its times scaled by the motion setting.
+fn tr(prop: Prop, from: f32, to: f32, at: f32, dur: f32, ease: Ease, s: f32) -> Track {
+    Track::new(prop, from, to).at(at * s).dur(dur * s).ease(ease)
+}
+
+/// The intro's frame (module doc, "Intro", beat by beat). At motion scale
+/// 0 it is its last frame, nothing moving.
+fn draw_intro(c: &mut Commands, ui: &Ui, w: &Words, app: &str, readout: &Readout, start: f64, s: f32) -> Entity {
+    let moving = s > 0.0;
+    // Animates `e` with `tracks` (not at scale 0: the spawned state is the
+    // end state).
+    let put = |c: &mut Commands, e: Entity, tracks: Vec<Track>| {
+        if moving {
+            c.entity(e).insert((Timeline::new(tracks).started(start), IntroPart));
+        }
+        e
+    };
+    let fill = [("app", app)];
+    let t = ui.theme;
+    let root = c
+        .spawn((
+            IntroRoot,
+            GlobalZIndex(ONBOARDING_Z + 1),
+            UiStyle { w_pct: Some(100.0), h_pct: Some(100.0), ..UiStyle::column() }.abs([Some(0.0), Some(0.0), None, None]).bg(Tone::Ink),
+            Node::default(),
+            bevy::ui::FocusPolicy::Block,
+            Interaction::None,
+        ))
+        .id();
+    // The out: the whole frame fades into Welcome, whose entry plays under it.
+    put(c, root, vec![tr(Prop::Opacity, 1.0, 0.0, INTRO_SECS - INTRO_OUT, INTRO_OUT, Ease::ExpoIn, s)]);
+    // The ground: Welcome's own navy fall, so the fade out changes nothing
+    // of it (no radial glows: they band).
+    let wash = ui.boxed(c, root, UiStyle { w_pct: Some(100.0), h_pct: Some(100.0), ..UiStyle::column() }.abs([Some(0.0), Some(0.0), None, None]));
+    c.entity(wash).insert(BackgroundGradient(vec![
+        LinearGradient::new(
+            162f32.to_radians(),
+            vec![
+                ColorStop::percent(t.tone_a(Tone::Hero, 0.16), 0.0),
+                ColorStop::percent(t.tone_a(Tone::Hero, 0.05), 42.0),
+                ColorStop::percent(t.tone_a(Tone::Hero, 0.0), 100.0),
+            ],
+        )
+        .into(),
+    ]));
+    let (m, top, foot) = (4.6, 7.2, 4.4);
+    // Beat 1 (0-0.4 s): the blueprint. Eleven hairlines flicker on from
+    // the middle out, the registration marks at the corners.
+    for k in 0..11 {
+        let x = m + k as f32 * (100.0 - 2.0 * m) / 10.0;
+        let l = ui.boxed(c, root, UiStyle { w: Some(0.06), ..UiStyle::column() }.abs([Some(x), Some(top), None, Some(foot)]).bg_a(Tone::AccText, 0.07));
+        let at = 0.04 + (k as f32 - 5.0).abs() * 0.035;
+        put(c, l, vec![tr(Prop::Opacity, 0.0, 1.0, at, 0.12, Ease::Steps(3), s)]);
+    }
+    for (l, tp, r, b) in [(Some(1.8), Some(1.8), None, None), (None, Some(1.8), Some(1.8), None), (Some(1.8), None, None, Some(1.8)), (None, None, Some(1.8), Some(1.8))] {
+        let mk = ui.boxed(c, root, UiStyle { w: Some(1.3), h: Some(1.3), ..UiStyle::column() }.abs([l, tp, r, b]));
+        ui.boxed(c, mk, UiStyle { w: Some(1.3), h: Some(0.06), ..UiStyle::row() }.abs([Some(0.0), Some(0.62), None, None]).bg(Tone::Fg3));
+        ui.boxed(c, mk, UiStyle { w: Some(0.06), h: Some(1.3), ..UiStyle::row() }.abs([Some(0.62), Some(0.0), None, None]).bg(Tone::Fg3));
+    }
+    // The broadcast bar: the channel and the app at the left, ON AIR and
+    // the timecode at the right, the rule under them drawn out from the
+    // middle.
+    let bar = ui.boxed(c, root, UiStyle { align: Some(AlignItems::Center), justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() }.abs([Some(m), Some(2.6), Some(m), None]));
+    put(c, bar, vec![tr(Prop::Opacity, 0.0, 1.0, 0.12, 0.16, Ease::Steps(2), s)]);
+    let left = ui.boxed(c, bar, UiStyle { gap: Some(1.0), align: Some(AlignItems::Center), ..UiStyle::row() });
+    ui.boxed(c, left, UiStyle { w: Some(0.5), h: Some(0.5), ..UiStyle::row() }.bg(Tone::Acc));
+    ui.text(c, left, Role::Mono, 0.62, Tone::Fg3, &w.f("intro.channel", &fill));
+    let right = ui.boxed(c, bar, UiStyle { gap: Some(1.0), align: Some(AlignItems::Center), ..UiStyle::row() });
+    let dot = ui.boxed(c, right, UiStyle { w: Some(0.55), h: Some(0.55), ..UiStyle::row() }.bg(Tone::Threat));
+    // The light blinks twice a second while it plays.
+    let blink: Vec<Track> = (0..6).map(|i| tr(Prop::Opacity, if i % 2 == 0 { 1.0 } else { 0.25 }, if i % 2 == 0 { 0.25 } else { 1.0 }, 0.2 + i as f32 * 0.5, 0.02, Ease::Linear, s)).collect();
+    put(c, dot, blink);
+    ui.text(c, right, Role::Mono, 0.62, Tone::Threat, &w.t("intro.live"));
+    let tc = ui.text(c, right, Role::Mono, 0.62, Tone::Fg2, &timecode(if moving { 0.0 } else { INTRO_SECS }));
+    c.entity(tc).insert(IntroClock);
+    let rule = ui.boxed(c, root, UiStyle { h: Some(0.06), ..UiStyle::row() }.abs([Some(m), Some(top), Some(m), None]).bg(Tone::Fg5));
+    put(c, rule, vec![tr(Prop::ScaleX, 0.0, 1.0, 0.1, 0.6, Ease::ExpoOut, s)]);
+
+    // Beat 2 (0.05-0.9 s): the logo pass. Four bands on the slant (an
+    // accent hairline, the hero slab with the mark, an accent band, a light
+    // band) sweep the frame, fast, slow while the slab stands over the
+    // lockup, fast; the lockup comes up under it and its trailing edge
+    // reveals it.
+    let (lk, lock_y) = (INTRO_LK, 15.4);
+    let lockup_row = ui.boxed(c, root, UiStyle { justify: Some(JustifyContent::Center), ..UiStyle::row() }.abs([Some(0.0), Some(lock_y), Some(0.0), None]));
+    let parts = ui.lockup_parts(c, lockup_row, lk);
+    // Beat 3 (0.4-1.0 s): the lockup assembles. The mark pops (on a back
+    // ease) and flickers on; ULTIMATE tracks in from wide; GUN GAME
+    // flickers on like a tube warming.
+    put(
+        c,
+        parts.mark,
+        vec![
+            tr(Prop::ScaleX, 0.55, 1.0, 0.5, 0.5, Ease::Back(1.7), s),
+            tr(Prop::ScaleY, 0.55, 1.0, 0.5, 0.5, Ease::Back(1.7), s),
+            tr(Prop::Opacity, 0.0, 1.0, 0.4, 0.12, Ease::Steps(3), s),
+        ],
+    );
+    let n = parts.ultimate.len() as f32;
+    for (i, &e) in parts.ultimate.iter().enumerate() {
+        let off = (i as f32 - (n - 1.0) / 2.0) * 1.4;
+        put(c, e, vec![tr(Prop::X, off, 0.0, 0.5, 0.75, Ease::ExpoOut, s), tr(Prop::Opacity, 0.0, 1.0, 0.45 + i as f32 * 0.02, 0.25, Ease::Linear, s)]);
+    }
+    put(
+        c,
+        parts.wordmark,
+        vec![
+            tr(Prop::Opacity, 0.0, 0.85, 0.6, 0.04, Ease::Linear, s),
+            tr(Prop::Opacity, 0.85, 0.12, 0.68, 0.03, Ease::Linear, s),
+            tr(Prop::Opacity, 0.12, 1.0, 0.74, 0.05, Ease::Linear, s),
+            tr(Prop::Opacity, 1.0, 0.45, 0.84, 0.02, Ease::Linear, s),
+            tr(Prop::Opacity, 0.45, 1.0, 0.88, 0.06, Ease::Steps(4), s),
+        ],
+    );
+    if moving {
+        let height = 100.0 * 9.0 / 16.0 + 4.0;
+        let lean = height * t.tan();
+        // The hero slab (30 cq) stands over the lockup at the sweep's slow
+        // middle (0.35-0.6 s): its left at 50 - 15 cq at mid-height.
+        let (slab_x, slab_w) = (1.8, 30.0);
+        let mid = 50.0 - slab_w / 2.0 - slab_x - lean / 2.0;
+        let from = -40.0 - lean;
+        let group = ui.boxed(c, root, UiStyle { w: Some(40.0 + lean), ..UiStyle::row() }.abs([Some(0.0), Some(-2.0), None, Some(-2.0)]));
+        c.entity(group).insert(Pickable::IGNORE);
+        put(c, group, vec![tr(Prop::X, from, 2.0 * mid - from, 0.05, 0.85, Ease::Hold, s)]);
+        for (x, bw, tone) in [(0.0, 0.8, Tone::Acc), (slab_x, slab_w, Tone::Hero), (32.4, 5.0, Tone::Acc), (38.2, 1.4, Tone::Fg)] {
+            ui.slant_at(c, group, chimera_ui::style::UiSlant::new(tone, 1.0), [Some(x), Some(0.0), None, None], bw + lean, height);
+        }
+        // The mark rides in the hero slab, as in the logo pass.
+        let mh = 4.2;
+        let ride = ui.boxed(c, group, UiStyle { w: Some(slab_w), h: Some(mh), justify: Some(JustifyContent::Center), ..UiStyle::row() }.abs([Some(1.8 + lean / 2.0), Some(height / 2.0 - mh / 2.0), None, None]));
+        ui.kit_icon(c, ride, "mark", mh, chimera_ui::controls::MARK_ASPECT, Tone::OnHero);
+    }
+
+    // Beat 4 (0.9-1.5 s): the rule under the lockup scans out from the
+    // middle, an accent tick riding it; the welcome comes up: an eyebrow,
+    // "Welcome to <app>" rising, the tagline.
+    let rule_y = lock_y + 2.05 * lk + 2.8;
+    let under = ui.boxed(c, root, UiStyle { justify: Some(JustifyContent::Center), ..UiStyle::row() }.abs([Some(0.0), Some(rule_y), Some(0.0), None]));
+    let line = ui.boxed(c, under, UiStyle { w: Some(46.0), h: Some(0.06), ..UiStyle::row() }.bg(Tone::Fg4));
+    put(c, line, vec![tr(Prop::ScaleX, 0.0, 1.0, 0.9, 0.55, Ease::ExpoOut, s)]);
+    let tick = ui.boxed(c, line, UiStyle { w: Some(4.0), h: Some(0.2), ..UiStyle::row() }.abs([Some(21.0), Some(-0.07), None, None]).bg(Tone::Acc));
+    put(c, tick, vec![tr(Prop::X, -21.0, 0.0, 0.9, 0.7, Ease::ExpoOut, s), tr(Prop::Opacity, 0.0, 1.0, 0.9, 0.05, Ease::Linear, s)]);
+    let col = ui.boxed(c, root, UiStyle { gap: Some(1.0), align: Some(AlignItems::Center), ..UiStyle::column() }.abs([Some(0.0), Some(rule_y + 1.9), Some(0.0), None]));
+    let eyebrow = ui.text(c, col, Role::Mono, 0.7, Tone::AccText, &w.f("intro.eyebrow", &fill));
+    put(c, eyebrow, vec![tr(Prop::Opacity, 0.0, 1.0, 0.98, 0.12, Ease::Steps(3), s)]);
+    let title = ui.text(c, col, Role::DisplayBlack, 2.7, Tone::Fg, &w.f("intro.title", &fill));
+    put(c, title, vec![tr(Prop::Y, 1.6, 0.0, 1.05, 0.6, Ease::ExpoOut, s), tr(Prop::Opacity, 0.0, 1.0, 1.05, 0.22, Ease::Linear, s)]);
+    let tagline = ui.sentence(c, col, 1.0, Tone::Fg2, &w.f("intro.tagline", &fill));
+    put(c, tagline, vec![tr(Prop::Y, 0.8, 0.0, 1.22, 0.5, Ease::ExpoOut, s), tr(Prop::Opacity, 0.0, 1.0, 1.22, 0.3, Ease::Linear, s)]);
+
+    // Beat 5 (1.3-1.9 s): the system check types in at the bottom left
+    // (display, audio, games found, account: none yet), the skip hint at
+    // the right.
+    let check = ui.boxed(c, root, UiStyle { gap: Some(0.55), ..UiStyle::column() }.abs([Some(m), None, None, Some(foot + 2.0)]));
+    let head = ui.boxed(c, check, UiStyle { gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() });
+    ui.boxed(c, head, UiStyle { w: Some(1.6), h: Some(0.12), ..UiStyle::row() }.bg(Tone::Acc));
+    ui.text(c, head, Role::Mono, 0.56, Tone::Fg3, &w.t("intro.check"));
+    put(c, head, vec![tr(Prop::Opacity, 0.0, 1.0, 1.28, 0.1, Ease::Steps(2), s)]);
+    let display = readout.display.map_or_else(|| w.t("intro.display_none"), |(x, y)| format!("{x} x {y}"));
+    let games = match readout.games {
+        Some((n, of)) if n > 0 => w.f("intro.games", &[("n", &n.to_string()), ("of", &of.to_string())]),
+        _ => w.t("intro.games_none"),
+    };
+    let values = [(display, Tone::Fg), (w.t("intro.audio"), Tone::Fg), (games, Tone::Fg), (w.t("intro.account"), Tone::AccText)];
+    for (i, (value, tone)) in values.iter().enumerate() {
+        let row = ui.boxed(c, check, UiStyle { gap: Some(1.0), align: Some(AlignItems::Center), ..UiStyle::row() });
+        let k = ui.boxed(c, row, UiStyle { w: Some(7.4), ..UiStyle::row() });
+        ui.text(c, k, Role::Mono, 0.62, Tone::Fg3, &w.at("intro.rows", i));
+        ui.text(c, row, Role::Mono, 0.62, *tone, value);
+        let at = 1.36 + i as f32 * 0.12;
+        put(c, row, vec![tr(Prop::Opacity, 0.0, 1.0, at, 0.1, Ease::Steps(2), s), tr(Prop::X, 0.8, 0.0, at, 0.3, Ease::ExpoOut, s)]);
+    }
+    let skip = ui.boxed(c, root, UiStyle { gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([None, None, Some(m), Some(foot + 2.0)]));
+    ui.text(c, skip, Role::Mono, 0.62, Tone::Fg3, &w.t("intro.skip"));
+    ui.kbd(c, skip, &w.t("intro.skip_key"), 0.62, Tone::Fg2);
+    put(c, skip, vec![tr(Prop::Opacity, 0.0, 1.0, 0.3, 0.2, Ease::Linear, s)]);
+
+    // The tick bar along the foot runs out over the whole intro, into
+    // Welcome.
+    let bar = ui.boxed(c, root, UiStyle { h: Some(0.7), justify: Some(JustifyContent::SpaceBetween), align: Some(AlignItems::FlexEnd), ..UiStyle::row() }.abs([Some(m), None, Some(m), Some(foot)]));
+    for i in 0..41 {
+        let h = if i % 10 == 0 { 0.7 } else if i % 5 == 0 { 0.45 } else { 0.25 };
+        ui.boxed(c, bar, UiStyle { w: Some(0.06), h: Some(h), ..UiStyle::row() }.bg(Tone::Fg4));
+    }
+    let full = 100.0 - 2.0 * m;
+    let run = ui.boxed(c, bar, UiStyle { w: Some(full), h: Some(0.18), ..UiStyle::row() }.abs([Some(0.0), None, None, Some(0.0)]).bg(Tone::Acc));
+    put(c, run, vec![tr(Prop::Width, 0.0, full, 0.0, INTRO_SECS - INTRO_OUT, Ease::Linear, s)]);
+    root
+}
+
+// ---------------------------------------------------------------------------
 // Staging.
 
 /// `ui_scene onboarding <screen>` (module doc): each screen with the
@@ -2202,6 +2651,16 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
             return Ok(());
         }
         "welcome" => {}
+        "intro" => {
+            // Live from now (into Welcome), or held at `t` seconds.
+            let held = match args.get(1) {
+                Some(t) => Some(t.parse::<f32>().map_err(|_| format!("ui_scene onboarding intro {t}: seconds"))?.max(0.0)),
+                None => None,
+            };
+            let scale = w.get_resource::<Motion>().map_or(1.0, |m| m.scale);
+            o.intro = Some(Intro { start: now, held });
+            o.since = now + welcome_at(scale);
+        }
         "clipboard" => {
             typed(&mut o, &full);
             o.source = Source::Clipboard;
@@ -2275,7 +2734,7 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
         }
         other => {
             return Err(format!(
-                "ui_scene onboarding {other}: welcome, clipboard, checking, used, unknown, unreachable, certificate, hub, name, \
+                "ui_scene onboarding {other}: intro [t], welcome, clipboard, checking, used, unknown, unreachable, certificate, hub, name, \
                  name-bad, name-taken, key, have, recover, done, returning, offline or off"
             ));
         }

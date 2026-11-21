@@ -149,3 +149,20 @@ offline = "Offline · {hub}"
 banner_title = "Can't reach {hub}"
 banner_body = "Playing offline: LAN and direct connect still work. Parties, the server list and downloads come back when it does."
 retry_now = "Retry now"
+
+# The first-launch intro (`{app}`: the app's name, as its Escape menu's).
+[intro]
+channel = "CH 01 · {app}"
+live = "On air"
+eyebrow = "First transmission"
+title = "Welcome to {app}"
+tagline = "Many games. One party. Let's get you onto a hub."
+check = "System check"
+rows = ["Display", "Audio", "Games", "Account"]
+display_none = "No window"
+audio = "Ready"
+games = "{n} of {of} installed · the rest from your hub"
+games_none = "From your hub"
+account = "None yet"
+skip = "Skip"
+skip_key = "Any key"

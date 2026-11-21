@@ -445,15 +445,19 @@ impl<'a> Ui<'a> {
     /// `lockup` with its mark drawn by `draw_kit_icons` (no image assets
     /// at hand: the first run's bar). The same lockup as the main menu's.
     pub fn lockup_drawn(&self, c: &mut Commands, parent: Entity, lk: f32) -> Entity {
-        let l = self.boxed(c, parent, UiStyle { gap: Some(0.55 * lk), shrink: Some(0.0), ..UiStyle::row() });
-        self.kit_icon(c, l, "mark", 2.05 * lk, MARK_ASPECT, Tone::Fg);
-        let words = self.boxed(c, l, UiStyle { gap: Some(0.3 * lk), ..UiStyle::column() });
+        self.lockup_parts(c, parent, lk).root
+    }
+
+    /// `lockup_drawn` with its parts named, for a screen that animates
+    /// them (the first run's intro): the same nodes, nothing else.
+    pub fn lockup_parts(&self, c: &mut Commands, parent: Entity, lk: f32) -> LockupParts {
+        let root = self.boxed(c, parent, UiStyle { gap: Some(0.55 * lk), shrink: Some(0.0), ..UiStyle::row() });
+        let mark = self.kit_icon(c, root, "mark", 2.05 * lk, MARK_ASPECT, Tone::Fg);
+        let words = self.boxed(c, root, UiStyle { gap: Some(0.3 * lk), ..UiStyle::column() });
         let ult = self.boxed(c, words, UiStyle::row().justify(JustifyContent::SpaceBetween));
-        for ch in "ULTIMATE".chars() {
-            self.text(c, ult, Role::DisplayRegular, 0.62 * lk, Tone::Fg2, &ch.to_string());
-        }
-        self.text(c, words, Role::Wordmark, lk, Tone::Fg, "Gun game");
-        l
+        let ultimate = "ULTIMATE".chars().map(|ch| self.text(c, ult, Role::DisplayRegular, 0.62 * lk, Tone::Fg2, &ch.to_string())).collect();
+        let wordmark = self.text(c, words, Role::Wordmark, lk, Tone::Fg, "Gun game");
+        LockupParts { root, mark, ultimate, wordmark }
     }
 
     // -----------------------------------------------------------------
@@ -1877,6 +1881,18 @@ pub fn draw_kit_icons(
 }
 
 /// The `mark` icon's width over its height (icons.toml: 1248 x 896).
+/// The lockup's nodes (`Ui::lockup_parts`).
+#[derive(Clone, Debug)]
+pub struct LockupParts {
+    pub root: Entity,
+    /// The mark (three helmeted profiles).
+    pub mark: Entity,
+    /// ULTIMATE, one node a letter (spread over the wordmark's width).
+    pub ultimate: Vec<Entity>,
+    /// GUN GAME in the wordmark role.
+    pub wordmark: Entity,
+}
+
 pub const MARK_ASPECT: f32 = 1248.0 / 896.0;
 
 /// A toggle's size, cq.

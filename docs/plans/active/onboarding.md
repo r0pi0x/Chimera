@@ -232,36 +232,15 @@ admin page lists invites by intent, with status and Revoke.
 
 **Now (after milestones a-c):**
 
-1. **The first-launch intro** (decision 7), in `party_kit::onboarding`
-   before `Step::Welcome`, first launch only (no account and no
-   `onboarding-intro-seen` mark beside `account.toml`; a mark written
-   when it ends or is skipped): the mockup's title moment as the base,
-   made richer. About 2 s at motion scale 1: the logo pass (the
-   client's `logo_pass` bands: accent, ink with the mark, accent, white)
-   sweeps the black window; behind it the lockup's three bars pop up
-   (`Ease::Back`), "Lucker" tracks in (`Prop::Spacing` from 1.4 em to
-   .62 em) and "PARTY" flickers on letter by letter (`Ease::Steps(4)`
-   on opacity, 70 ms apart), the rule wipes along the slant
-   (`Prop::ClipRight`), then a creative welcome line ("Welcome to Lucker
-   Party" with a short tagline from `data/onboarding.toml [intro]`) and
-   the boot readout (display, audio, games found from the mounts,
-   "Account: none yet") fade up; the tick bar runs out into Welcome.
-   Rules: never blocking (decision 8): any key or click jumps to
-   Welcome at once, and Welcome's field works the moment it shows;
-   `ui_motion_scale` stretches it, 0 shows the final frame for 0.6 s.
-   Tests: the intro shows on a first launch only, any key skips it, the
-   mark is written, motion 0 ends at once; `ui_scene onboarding intro
-   [t]` stages it at time t for screenshots (1920x1080 frames at 0.3,
-   0.8, 1.4 and 2.0 s).
-2. The link handler (decision 4): register `chimera-hub://` on Windows
+1. The link handler (decision 4): register `chimera-hub://` on Windows
    (HKCU\Software\Classes) and Linux (a .desktop file with
    `x-scheme-handler`), the game opened with `+chimera:onboard <link>`
    filling the field (`Source::Opened`).
-3. Settings > Account: rename (one a minute, `account::rename`), the
+2. Settings > Account: rename (one a minute, `account::rename`), the
    avatar (`set_avatar`), link a device (shows the code), devices and
    Revoke, a new recovery key, sign out; the chip opens it.
-4. The admin page's invite form: intent and recipient.
-5. Downloads up front (decision 12): the base sets every game needs
+3. The admin page's invite form: intent and recipient.
+4. Downloads up front (decision 12): the base sets every game needs
    start after the first run; a hub's own sets later; bulk sets an
    option (future).
 
@@ -336,8 +315,29 @@ admin page lists invites by intent, with status and Revoke.
   now, retried every 30 s). Test: `onboarding::a_returning_player_sees_
   the_chip_and_the_offline_banner`; `ui_scene onboarding
   returning|offline`.
-- Milestone (d), the first-launch intro: not built in this run; its
-  plan is "Now" 1 above.
+- Milestone (d), the first-launch intro (decision 7), done 2026-11-21:
+  on the first run's first start only (no account, no skip mark, no
+  `onboarding-intro-seen` mark beside `account.toml`; the mark written
+  when it ends or is skipped), never for returning players. 2.6 s at
+  motion scale 1, over Welcome: the blueprint hairlines and a broadcast
+  bar (channel and app, ON AIR, a running timecode) come up (0-0.4 s);
+  the logo pass's bands sweep on the slant, the hero slab with the mark
+  standing over the middle (0.05-0.9 s) while the game's own lockup comes
+  up under it (`Ui::lockup_parts`, the same nodes as `lockup_drawn`: the
+  mark pops, ULTIMATE tracks in, GUN GAME flickers on, 0.4-1.0 s); a rule
+  scans out and "Welcome to <app>" (the app's own name) rises with a
+  tagline (0.9-1.5 s); a system check types in (display, audio, games
+  installed, account: none yet, 1.3-1.9 s); a tick bar runs the length;
+  it fades into Welcome (2.3-2.6 s), whose entry plays under the fade.
+  Never blocking: any key or click shows Welcome at once, settled, and
+  the field types on the next key; `ui_motion_scale` stretches it, 0
+  shows its last frame still for 0.6 s. A sting from the app's UI sounds
+  (`pass_sweep`, `end_reveal`). Its words in `data/onboarding.toml
+  [intro]`. No soft radial glows (the screens' linear navy fall only).
+  `ui_scene onboarding intro [t]` (held at t). Tests: `onboarding::
+  the_intro_plays_on_a_first_launch_only`, `any_key_or_click_skips_the_intro`,
+  `the_intro_ends_into_welcome_by_itself`,
+  `motion_zero_shows_the_intros_last_frame`.
 - Decision 13, done: the hub takes accounts alone (`chimera_services`'
   accounts give tickets for a device's signed request only, accounts
   migration 3 `0003_key_devices_only.sql` keeps key devices only, the

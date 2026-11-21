@@ -13,7 +13,10 @@
 //! code, a certificate that isn't the invite's has no way on and copies
 //! its details for the owner); the bar carries the game's own lockup; a
 //! PC with no account sees the first run (a no-hub asset token aside)
-//! until it signs in or skips.
+//! until it signs in or skips; the first-launch intro plays on a first
+//! run only and once, any key or click skips it to a Welcome that types at
+//! once, it ends into Welcome by itself, and at motion scale 0 it is its
+//! last frame, still, for a moment.
 
 use bevy::{
     input::{
@@ -29,6 +32,7 @@ use party_kit::onboarding::{
     ChipRoot, HaveTab, NameField, ObAction, Onboarding, OnboardingBackend, OnboardingFiles, OnboardingLockup, OnboardingPlugin,
     OnboardingRoot, Problem, STAGED_KEY, Step, ToastRoot, first_run_due,
 };
+use party_kit::onboarding::{IntroPart, IntroRoot, end_intro, intro_due, start_first_run};
 
 use super::signal_menu::step;
 
@@ -337,6 +341,7 @@ fn a_pc_with_no_account_sees_the_first_run() {
         account: Some(dir.join("account.toml")),
         skip_mark: Some(dir.join("onboarding-skipped")),
         key_dir: None,
+        intro_mark: None,
     };
     let mut access = chimera_assets::access::Access::default();
     access.set_token(&format!("chimera1_{}", "0".repeat(64))).unwrap();
@@ -413,4 +418,149 @@ fn a_returning_player_sees_the_chip_and_the_offline_banner() {
     sim.ticks(2);
     let shown = sim.app.world().resource::<party_kit::onboarding::AccountShown>().0.clone().unwrap();
     assert_eq!((shown.username.as_str(), shown.hub.as_str()), ("sam_rocket", "Friday Night Hub"));
+}
+
+/// The intro's words (upper or own case), joined; empty without it.
+fn intro_words(sim: &mut Sim) -> String {
+    let w = sim.app.world_mut();
+    let mut stack: Vec<Entity> = w.query_filtered::<Entity, With<IntroRoot>>().iter(w).collect();
+    let mut out = String::new();
+    while let Some(e) = stack.pop() {
+        if let Some(t) = w.get::<Text>(e) {
+            out.push_str(&t.0);
+            out.push('|');
+        }
+        if let Some(ch) = w.get::<Children>(e) {
+            stack.extend(ch.iter());
+        }
+    }
+    out
+}
+
+/// Stages the intro live (or held at `t`) at motion scale `scale`.
+fn intro_sim(scale: f32, t: Option<&str>) -> Sim {
+    let mut sim = sim();
+    sim.app.insert_resource(chimera_ui::motion::Motion::new(scale));
+    let at = t.map(|t| format!(" {t}")).unwrap_or_default();
+    sim.app.world_mut().resource_mut::<Console>().submit(&format!("ui_scene onboarding intro{at}"));
+    sim.ticks(2);
+    sim
+}
+
+/// The intro plays when the first run starts (no account, no skip mark)
+/// and its mark isn't there; it writes the mark when it ends, so the next
+/// start goes straight to Welcome; a returning player gets neither.
+#[test]
+fn the_intro_plays_on_a_first_launch_only() {
+    let dir = std::env::temp_dir().join(format!("onboarding-intro-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = OnboardingFiles {
+        account: Some(dir.join("account.toml")),
+        skip_mark: Some(dir.join("onboarding-skipped")),
+        intro_mark: Some(dir.join("onboarding-intro-seen")),
+        key_dir: None,
+    };
+    assert!(intro_due(&files));
+    let mut first = Onboarding::default();
+    assert!(start_first_run(&mut first, &files, 5.0, 1.0));
+    assert!(first.active && first.step == Step::Welcome && first.intro.is_some(), "a first launch: the intro over Welcome");
+    assert!(first.since > 5.0, "Welcome's entry waits for the intro's end");
+    end_intro(&mut first, &files, 6.0, true);
+    assert!(first.intro.is_none() && first.since < 0.0, "skipped: Welcome at once, settled");
+    assert!(files.intro_mark.as_ref().unwrap().exists(), "the mark is written");
+    assert!(!intro_due(&files));
+    let mut again = Onboarding::default();
+    assert!(start_first_run(&mut again, &files, 9.0, 1.0));
+    assert!(again.active && again.intro.is_none(), "the first run again, without the intro");
+
+    // A returning player: no first run, no intro (the mark aside).
+    std::fs::remove_file(files.intro_mark.as_ref().unwrap()).unwrap();
+    let file = chimera_assets::account::AccountFile {
+        url: "https://hub.example.net:27080".into(),
+        account: "00".repeat(16),
+        device: "11".repeat(16),
+        username: "sam".into(),
+        device_key: "03".repeat(32),
+        ..Default::default()
+    };
+    file.save_to(files.account.as_ref().unwrap()).unwrap();
+    let mut back = Onboarding::default();
+    assert!(!start_first_run(&mut back, &files, 9.0, 1.0) && !back.active && back.intro.is_none());
+    assert!(!intro_due(&files));
+    // Skipped the first run: neither.
+    std::fs::remove_file(files.account.as_ref().unwrap()).unwrap();
+    std::fs::write(files.skip_mark.as_ref().unwrap(), "").unwrap();
+    assert!(!intro_due(&files));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Any key skips the intro straight to Welcome, the key going no further;
+/// the field types on the very next key. A click does the same.
+#[test]
+fn any_key_or_click_skips_the_intro() {
+    let mut sim = intro_sim(1.0, None);
+    assert!(o(&sim).intro.is_some());
+    let text = intro_words(&mut sim);
+    assert!(text.contains("WELCOME TO LUCKER PARTY") && text.contains("ANY KEY"), "{text}");
+    let parts = {
+        let w = sim.app.world_mut();
+        w.query_filtered::<(), With<IntroPart>>().iter(w).count()
+    };
+    assert!(parts > 10, "the intro moves ({parts} parts)");
+    key(&mut sim, Key::Enter, KeyCode::Enter);
+    sim.ticks(1);
+    assert!(o(&sim).intro.is_none() && o(&sim).step == Step::Welcome, "a key skips it");
+    assert!(o(&sim).problem.is_none() && o(&sim).pending.is_none(), "and goes no further (no Continue)");
+    assert!(intro_words(&mut sim).is_empty(), "the intro is gone");
+    assert!(words(&mut sim).contains("PASTE YOUR INVITE"));
+    assert!(o(&sim).since < 0.0, "Welcome shows settled");
+    typed(&mut sim, "k");
+    assert_eq!(o(&sim).input, "k", "the field works at once");
+
+    let mut sim = intro_sim(1.0, None);
+    let root = {
+        let w = sim.app.world_mut();
+        w.query_filtered::<Entity, With<IntroRoot>>().single(w).unwrap()
+    };
+    sim.app.world_mut().entity_mut(root).insert(bevy::ui::DeprecatedInteraction::Pressed);
+    sim.ticks(2);
+    assert!(o(&sim).intro.is_none(), "a click skips it");
+    assert!(intro_words(&mut sim).is_empty());
+}
+
+/// Left alone, the intro ends into Welcome after its length; held
+/// (`ui_scene onboarding intro <t>`) it stays at that time.
+#[test]
+fn the_intro_ends_into_welcome_by_itself() {
+    let mut sim = intro_sim(1.0, None);
+    step(&mut sim, 1.5);
+    assert!(o(&sim).intro.is_some(), "still playing at 1.5 s");
+    step(&mut sim, 1.2);
+    sim.ticks(1);
+    assert!(o(&sim).intro.is_none() && o(&sim).active && o(&sim).step == Step::Welcome, "ended at 2.6 s");
+    assert!(intro_words(&mut sim).is_empty());
+
+    let mut sim = intro_sim(1.0, Some("1.4"));
+    step(&mut sim, 5.0);
+    assert!(o(&sim).intro.is_some(), "held");
+    assert!(intro_words(&mut sim).contains("00:00:01:12"), "its timecode at 1.4 s");
+}
+
+/// At motion scale 0 nothing moves: the intro is its last frame at once,
+/// standing a moment (any key still skips it), then Welcome.
+#[test]
+fn motion_zero_shows_the_intros_last_frame() {
+    let mut sim = intro_sim(0.0, None);
+    let parts = {
+        let w = sim.app.world_mut();
+        w.query_filtered::<(), With<IntroPart>>().iter(w).count()
+    };
+    assert_eq!(parts, 0, "nothing animates");
+    assert!(intro_words(&mut sim).contains("WELCOME TO LUCKER PARTY"), "the end state at once");
+    step(&mut sim, 0.4);
+    assert!(o(&sim).intro.is_some());
+    step(&mut sim, 0.3);
+    sim.ticks(1);
+    assert!(o(&sim).intro.is_none() && words(&mut sim).contains("PASTE YOUR INVITE"), "then Welcome");
 }
