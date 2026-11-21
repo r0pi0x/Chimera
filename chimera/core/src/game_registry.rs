@@ -73,7 +73,7 @@ pub struct GameInfo {
     /// it sets).
     pub movement_cvars: &'static [(&'static str, &'static str)],
     /// The game's world unit in metres (Source's inch, 0.0254; Combat
-    /// Arms' 0.018): what its console variables' distances are in when
+    /// Arms' 0.0185): what its console variables' distances are in when
     /// it is the gameplay (`cam_idealdist`).
     pub meters_per_unit: f32,
     /// Its console namespaces (docs/plans/active/console-namespaces.md):

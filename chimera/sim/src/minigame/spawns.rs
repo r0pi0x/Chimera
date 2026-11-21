@@ -131,7 +131,7 @@ pub const MAX_SPOTS: usize = 1500;
 pub const BUILD_TRIES: u8 = 3;
 /// The standing player a spot must hold: the widest the hosted games make
 /// (Source's hull, 32 units square and 72 tall; Combat Arms' is 30 by
-/// 100 of its 0.018 m units), half its width and its height (m).
+/// 100 of its 0.0185 m units), half its width and its height (m).
 pub const HALF_WIDTH: f32 = 16.0 * 0.0254;
 pub const HEIGHT: f32 = 72.0 * 0.0254;
 /// The box is tested from a stair step over the feet (18 units: a slope or

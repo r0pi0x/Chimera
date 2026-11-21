@@ -371,7 +371,7 @@ impl Plugin for PartyPartsPlugin {
             bots.gun_types.extend(bot_gun_types());
         }
         // A bot wears the hull of its gun's game: a mesh for Combat Arms'
-        // narrow one (15 u of 0.018 m) leads a Source hull into gaps it
+        // narrow one (15 u of 0.0185 m) leads a Source hull into gaps it
         // doesn't fit, where it stands pressing on.
         if let Some(mut bots) = app.world_mut().get_resource_mut::<combat_arms::game::bots::BotSettings>() {
             bots.walker_radius = Some(WIDEST_HULL);

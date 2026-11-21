@@ -11,7 +11,7 @@
 //! here. A network test checks the fitted parts are the server's and
 //! predicted.
 //!
-//! Units: world units of 1.8 cm, hit points (health x 100). Tolerances:
+//! Units: world units of 1.85 cm, hit points (health x 100). Tolerances:
 //! 1e-3 HP for damage, 1e-5 for the meters, 1e-3 degrees for view angles
 //! and the field of view, one tick (15 ms) for times, 1e-3 s for reload
 //! lengths.

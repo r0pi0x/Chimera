@@ -2367,6 +2367,7 @@ pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>)
     w.remove_resource::<FreshGame>();
     // A code-built map's kit still loading is called off.
     w.remove_resource::<CodeMapKit>();
+    w.remove_resource::<crate::map::MapKitLoading>();
     w.insert_resource(crate::map::LoadedMapName(id.to_string()));
     // The local player's map isn't ready until the game is entered
     // (`settle_map`): what starts play waits for it.
@@ -2630,6 +2631,7 @@ pub fn load_greybox(w: &mut World) {
 pub fn unload_to_menu(w: &mut World) {
     w.remove_resource::<MapLoad>();
     w.remove_resource::<CodeMapKit>();
+    w.remove_resource::<crate::map::MapKitLoading>();
     w.remove_resource::<crate::map::LocalMapLoad>();
     if let Some(spawning) = w.remove_resource::<Spawning>()
         && !spawning.was_paused
@@ -2650,6 +2652,7 @@ pub fn load_code_map(w: &mut World, map: &str) {
     let id = chimera_world::greybox::select(w, map);
     w.remove_resource::<MapLoad>();
     w.remove_resource::<CodeMapKit>();
+    w.remove_resource::<crate::map::MapKitLoading>();
     w.remove_resource::<crate::map::LocalMapLoad>();
     // A spawn under way is called off (`unload_map` drops it).
     if let Some(spawning) = w.remove_resource::<Spawning>()
@@ -2707,6 +2710,7 @@ pub fn load_code_map(w: &mut World, map: &str) {
         } else {
             let task = chimera_core::tasks::thread(load);
             w.insert_resource(CodeMapKit { id, task, began, early, ahead: Vec::new() });
+            w.insert_resource(crate::map::MapKitLoading);
         }
         (hooks.respawn_greybox)(w);
     }
@@ -2743,6 +2747,7 @@ fn finish_code_map_kit(w: &mut World) {
         return;
     }
     let Some(CodeMapKit { id, began, task, .. }) = w.remove_resource::<CodeMapKit>() else { return };
+    w.remove_resource::<crate::map::MapKitLoading>();
     let result = task.join().unwrap_or_else(|_| Err("the kit's load panicked".into()));
     // Another map since (its load removes this): nothing to do.
     if w.get_resource::<crate::map::LoadedMapName>().is_none_or(|n| n.0 != id) {

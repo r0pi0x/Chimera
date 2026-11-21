@@ -7,7 +7,7 @@
 //! directly (14-25), the weapon's own parts (`CaSpread`, `CaRecoil`, as
 //! the data built them in the sim) are stepped as the systems step them.
 //!
-//! Units: the data's world units are 1.8 cm (`units` in m4a1.toml); damage
+//! Units: the data's world units are 1.85 cm (`units` in m4a1.toml); damage
 //! is read as hit points (health x 100). Tolerances: 1e-3 HP for damage,
 //! 1e-5 for the meters, 1e-3 degrees for view angles, one tick for times.
 

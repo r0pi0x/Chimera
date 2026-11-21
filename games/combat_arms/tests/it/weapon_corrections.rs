@@ -5,7 +5,7 @@
 //! (`base = ...` with a few keys changed: no roll for "roll 1.0", no
 //! spread or kick where a case aims at one body part).
 //!
-//! Units: world units are 1.8 cm, damage is read as hit points (health
+//! Units: world units are 1.85 cm, damage is read as hit points (health
 //! x 100). Tolerances: 1e-3 HP for damage, 1e-7 rad for the kick.
 
 use std::f32::consts::PI;

@@ -18,7 +18,10 @@ use chimera_sim::{
     weapon::{Inventory, Weapon},
 };
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
-use combat_arms::game::{inventory::KNIFE as CA_KNIFE, movement::CaMovement};
+use combat_arms::game::{
+    inventory::{KNIFE as CA_KNIFE, UNIT as CA_UNIT},
+    movement::CaMovement,
+};
 use cs_source::game::{
     movement::{self as cs_movement, SourceMovement},
     weapons::{self as cs_weapons, KNIFE as CS_KNIFE},
@@ -110,7 +113,7 @@ fn a_switch_keeps_the_feet_on_the_floor_standing_and_crouched() {
 }
 
 /// Against a wall a switch to CS:S's wider box (16 units from the
-/// centre, Combat Arms' 15 u x 1.8 cm = 10.6) puts the box out of the
+/// centre, Combat Arms' 15 u, about 28 cm) puts the box out of the
 /// wall, not into it; and a jump's switch keeps the player in the air.
 #[test]
 fn a_switch_by_a_wall_or_in_the_air_stays_out_of_solids() {
@@ -123,7 +126,7 @@ fn a_switch_by_a_wall_or_in_the_air_stays_out_of_solids() {
     assert_eq!(game_of(&sim, a), "combat_arms");
     // Against the east wall (its face at x = 40).
     let at = sim.position(a);
-    place(&mut sim, a, Vec3::new(40.0 - 15.0 * 0.018 - 0.005, at.y, 0.0));
+    place(&mut sim, a, Vec3::new(40.0 - 15.0 * CA_UNIT - 0.005, at.y, 0.0));
     sim.seconds(0.5);
     let x = sim.position(a).x;
     assert!(x > 39.6, "Combat Arms' hull at the wall: x {x}");

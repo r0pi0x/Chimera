@@ -173,7 +173,7 @@ static LT: GameInfo = GameInfo {
     default_binds: &[],
     old_default_binds: &[],
     movement_cvars: &[],
-    meters_per_unit: 0.018,
+    meters_per_unit: 0.0185,
     console_namespaces: &[],
 };
 

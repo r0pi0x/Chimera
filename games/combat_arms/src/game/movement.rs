@@ -1482,11 +1482,17 @@ fn step(
         } else {
             let delay = me.crouch_held && now - me.crouch_pressed_at < d.crouch_release_delay - 1e-9;
             let fully = me.half_height <= crouch_h + 1e-4;
-            let feet = pos.y - me.half_height;
-            // Headroom: the standing hull a skin above the feet, so a
-            // crouched hull resting right on the floor (a sandbox target
-            // placed on it) isn't kept down by the floor itself.
-            let no_room = me.crouch_held && fully && !space.fits(Vec3::new(pos.x, feet + stand_h + space.skin, pos.z), stand_h);
+            // Headroom: the crouched hull swept up by the standing one's
+            // extra height meets nothing. Not an overlap test of the
+            // standing hull: a crouched hull resting on a large floor (a
+            // sandbox target on the range's) overlaps it by the contact
+            // tests' tolerance (about 2 cm there, past a skin of 0.1 u),
+            // so the floor itself kept it down; the sweep ignores what it
+            // starts in and moves away from.
+            let rise = 2.0 * (stand_h - crouch_h);
+            let no_room = me.crouch_held
+                && fully
+                && space.cast(pos, me.half_height, Vec3::Y * rise).is_some_and(|h| h.distance < rise - 1e-3);
             delay || no_room
         };
         let key_press = held_flag && !me.crouch_held;

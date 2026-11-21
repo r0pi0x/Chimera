@@ -116,13 +116,15 @@ fn a_game_without_rules_leaves_its_weapons_alone() {
     assert!(rules.for_weapon("pistol").is_none(), "an id without a game");
 }
 
-/// A gun shown ahead of its kit draws before the sound table has its
-/// sounds (or while the map still loads): the owner's draw sound waits for
-/// them and plays once, instead of being asked of an audio that drops it.
+/// A gun shown ahead of its kit draws before the kit's sounds are in (or
+/// while the map still loads): the owner's draw sound waits for them and
+/// plays once, instead of being asked of an audio that drops it. With
+/// nothing loading it is asked at once, table or not (nothing would bring
+/// a missing entry).
 #[test]
 fn an_owners_view_sound_waits_for_its_sound_table() {
     use chimera_world::map::{
-        LocalMapLoad, MapSoundEntry, MapSounds, PlaySound, SoundLevel, ViewModelEvent, ViewModelEventKind,
+        LocalMapLoad, MapKitLoading, MapSoundEntry, MapSounds, PlaySound, SoundLevel, ViewModelEvent, ViewModelEventKind,
         sound::Interval,
     };
     use chimera_core::core::LocalPlayer;
@@ -150,11 +152,17 @@ fn an_owners_view_sound_waits_for_its_sound_table() {
             app.update();
         }
     };
-    // No sound table yet: nothing is asked.
+    // Nothing loading, no table: asked at once (a headless world's).
     app.world_mut().write_message(draw());
     step(&mut app, 0.1);
-    assert_eq!(heard(&mut app), 0, "waits, no table");
-    // The table comes in, but the map still loads.
+    assert_eq!(heard(&mut app), 1, "nothing to wait for");
+    // The kit still loads (no table yet): nothing is asked.
+    app.insert_resource(MapKitLoading);
+    app.world_mut().write_message(draw());
+    step(&mut app, 0.1);
+    assert_eq!(heard(&mut app), 0, "waits, kit loading");
+    // The table comes in with the kit, but the map still loads.
+    app.world_mut().remove_resource::<MapKitLoading>();
     let mut sounds = MapSounds::default();
     sounds.entries.insert(
         "weapon_glock.draw".into(),

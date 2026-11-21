@@ -22,7 +22,13 @@ use chimera_world::{
         sound::{EvenFootsteps, Interval, MapSoundEntry, SoundBank, distance_gain, silent_from},
     },
 };
-use combat_arms::game::effects::sounds::CaSound;
+use combat_arms::game::{
+    effects::{
+        rules::{inner_radius, FOOTSTEP_RADIUS},
+        sounds::CaSound,
+    },
+    inventory::UNIT,
+};
 use cs_source::game::weapons as cs_weapons;
 
 use crate::gun_game::{held, party, soldier};
@@ -211,8 +217,9 @@ fn off_each_game_keeps_its_own_falloff() {
     let SoundLevel::Radius { inner, outer, .. } = ca.level else {
         panic!("Combat Arms' steps fall off by radius: {:?}", ca.level)
     };
-    // FootStepSoundRadius 1200 u, the inner radius 7 % of it, 1 u = 1.8 cm.
-    assert!((outer - 21.6).abs() < 1e-3 && (inner - 1.512).abs() < 1e-3, "radii {inner} {outer}");
+    // FootStepSoundRadius, the inner radius 7 % of it, in the game's unit.
+    let want = FOOTSTEP_RADIUS * UNIT;
+    assert!((outer - want).abs() < 1e-3 && (inner - inner_radius(want)).abs() < 1e-3, "radii {inner} {outer}");
     assert!((ca.volume - 1.0).abs() < 1e-4, "Combat Arms' step at full volume: {}", ca.volume);
     // The gap the setting closes: Combat Arms' steps are louder close by.
     assert!(ca.gain(5.0) > cs.gain(5.0) * 2.0, "{} vs {}", ca.gain(5.0), cs.gain(5.0));

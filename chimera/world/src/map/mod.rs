@@ -450,6 +450,14 @@ pub struct LocalMapLoad {
     pub map: String,
 }
 
+/// A code-built map's kit (the party's bodies, guns, sounds) still loads
+/// behind the map already in (the client's `load_code_map`): a gun shown
+/// ahead of it (`sources::EarlyViewModels`) draws before its sounds are
+/// in, and the owner's view-model sounds wait for them
+/// (`play_view_sounds`).
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct MapKitLoading;
+
 /// A network client is joining its server or following its change of
 /// level (from the server's notice, through any download, to the game
 /// entered): its player's map isn't ready either (`net::client`'s join
