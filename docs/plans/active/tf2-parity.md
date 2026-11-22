@@ -156,6 +156,35 @@ Captured imagery stays in scratch, never in the repo.
 
 ## Log
 
+### Knockback "way too much" (tf2-knockback, 2026-11-22)
+
+User report: TF2 guns knock back far too much. Our push is weapons.md
+5.4's formula exactly (min(1000, D x s x 48·48·82 / V), bullets summed
+per victim per shot, scale 6), but V was the victim's real box: a TF2
+body fitted into a smaller map's envelope (a CS:S map's 32 x 32 x 72) or
+another game's body took 2.56 x the push (a Scattergun at 512: 922
+units/s, not 360; point blank: the 1000 cap). Fixed: V is TF2's hull for
+the victim's stance (`blast::tf2_hull`: standing, ducked 62, own ducked
+55), test `a_scattergun_pushes_any_body_as_a_tf2_player_47`.
+
+Still open, for a spec agent (real TF2; the numbers in 5.4 are derived
+from the SDK reading, tests 43-47 are not measured): on a TF2 map, bots
+standing still on flat ground, `host_timescale` slow or a velocity log
+(`cl_showpos`-style speed readout or a demo's origins per tick):
+1. Scattergun, all 10 pellets on a standing enemy at 512 and at point
+   blank (≈ 64): the victim's peak horizontal speed and how far he
+   slides (expected by 5.4: 360 and ≈ 630 units/s).
+2. The same on an airborne victim (mid-jump): the speed added.
+3. Minigun spun, a 1 s burst on a standing enemy at 512 and at 256: his
+   steady speed and distance pushed (5.4 with ground friction 4
+   predicts a sawtooth of 216 units/s a shot at 512 settling at about
+   440-655 units/s, faster than he can run – likely far above the real
+   game; if so, what rule limits bullets' push: grounded victims, a
+   per-bullet or per-tick rule, a different scale).
+4. An enemy rocket direct hit on a standing Soldier at 512 (test 44:
+   540 units/s) and a splash at 100 units: the speed added.
+5. Shotgun, all 10 pellets at 512 (expected 360 like the Scattergun).
+
 ### The spec answers built (tf2-spec-impl, 2026-11-22)
 
 From commit 1cb4ace47 (weapons_more.md 4.4, 5.1, 7.1; particles.md Open

@@ -689,6 +689,44 @@ fn a_scattergun_hit_pushes_360_47() {
     assert!(sim.velocity(t).z < 0.0, "away from the shooter (along -Z)");
 }
 
+/// 5.4's push on a body of another size: the volume is TF2's hull for
+/// the stance, whatever the box (blast.rs, `tf2_hull`), so a TF2 body
+/// fitted into a CS:S-sized map's envelope (32 x 32 x 72: 2.56 x less
+/// volume, once pushed 922 units/s) and another game's body (the
+/// placeholder movement's) both take test 47's 360 units/s.
+#[test]
+fn a_scattergun_pushes_any_body_as_a_tf2_player_47() {
+    use chimera_core::{
+        core::MapGame,
+        envelope::{MovementEnvelope, MovementEnvelopes},
+    };
+    let push_on = |small_map: bool, movement: &'static str| {
+        let mut sim = sim();
+        if small_map {
+            let env = MovementEnvelope { radius: 16.0 * U, height: 72.0 * U, crouch_height: 54.0 * U, step: 18.0 * U, eye: 64.0 * U, crouch_eye: 46.0 * U };
+            let w = sim.app.world_mut();
+            w.resource_mut::<MovementEnvelopes>().0.push(("knockback_test", env));
+            w.insert_resource(MapGame("knockback_test".into()));
+        }
+        let from = greybox::SPAWNS[0];
+        let (p, w) = holding(&mut sim, from, SCATTERGUN);
+        no_spread(&mut sim, w);
+        let t = sim.spawn_character(from - Vec3::Z * 512.0 * U, movement);
+        sim.seconds(1.0);
+        sim.app.world_mut().get_mut::<Health>(t).unwrap().current = 10.0;
+        let at = sim.position(t);
+        testkit::aim_at(&mut sim, p, at);
+        let before = health_points(&sim, t);
+        let (_, flat) = peak_speeds(&mut sim, p, t, 4, |s, k| s.intent(p).fire = k == 0);
+        (before - health_points(&sim, t), flat)
+    };
+    for (small, movement) in [(true, movement::ID), (false, chimera_sim::movement::placeholder::ID)] {
+        let (took, flat) = push_on(small, movement);
+        assert!((took - 60.0).abs() < 0.01, "{movement} small map {small}: took {took}");
+        assert!((330.0..=361.0).contains(&flat), "{movement} small map {small}: pushed at {flat}");
+    }
+}
+
 /// weapons.md 4, step 4 (`cl_autoreload` 1; real TF2 captured 2026-11-19:
 /// the Scattergun's reload starts about 0.7 s after one shot): a clip not
 /// full reloads once neither attack is held and the gun may fire again;

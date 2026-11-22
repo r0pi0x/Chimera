@@ -24,7 +24,12 @@
 //!   to the victim's centre, D the damage before rounding; the scale
 //!   `push_other` (6) for others, `push_self_air` / `push_self_ground`
 //!   for the owner (the Soldier's 10 / 5, the Demoman's 9); a crouched
-//!   owner's hull counts 55 tall; a Heavy takes half of another's. A push
+//!   owner's hull counts 55 tall; a Heavy takes half of another's. The
+//!   volume is TF2's hull for the victim's stance (`tf2_hull`: standing
+//!   48 x 48 x 82, ducked 62 tall), whatever box the victim really has:
+//!   another game's character, or one fitted into a smaller map's
+//!   envelope (a CS:S map's 32 x 32 x 72 is 2.56 x less volume), is
+//!   pushed as a TF2 player in its stance would be, not harder. A push
 //!   upward above `LIFT` (250 units/s) takes him off the ground at his
 //!   next move (the movement's own rule; `MovementState::on_ground` too,
 //!   for another game's movement). The owner's own push sets
@@ -71,6 +76,8 @@ use crate::{
 pub const STANDING: Vec3 = Vec3::new(48.0, 48.0, 82.0);
 /// A crouched owner's hull height for his own blast's push (units).
 pub const SELF_CROUCH_HEIGHT: f32 = 55.0;
+/// TF2's ducked hull height (units, specs/tf2/classes.md).
+pub const CROUCH_HEIGHT: f32 = 62.0;
 /// The most speed one hit adds (units/s).
 pub const FORCE_CAP: f32 = 1000.0;
 /// The push comes from this far below the inflictor's centre (units).
@@ -222,6 +229,17 @@ pub fn push(points: f32, scale: f32, size: Vec3, away: Vec3) -> Vec3 {
     away * (points * scale * (STANDING.x * STANDING.y * STANDING.z) / volume).min(FORCE_CAP)
 }
 
+/// The hull (units) a push divides by (5.4's V): TF2's own for the
+/// victim's stance, whatever its real box (module doc). `ducked`: its
+/// hull is the ducked one; `own`: the owner's own blast (55 tall ducked).
+pub fn tf2_hull(ducked: bool, own: bool) -> Vec3 {
+    match (ducked, own) {
+        (false, _) => STANDING,
+        (true, true) => Vec3::new(STANDING.x, STANDING.y, SELF_CROUCH_HEIGHT),
+        (true, false) => Vec3::new(STANDING.x, STANDING.y, CROUCH_HEIGHT),
+    }
+}
+
 /// How far a blast at `centre` is from a character whose box is
 /// `min`..`max` (m): (the nearest point of its box, the nearer of its
 /// centre and its feet), units.
@@ -276,6 +294,8 @@ pub struct BlastWorld<'w, 's> {
     pub chars: Chars<'w, 's>,
     spatial: SpatialQuery<'w, 's>,
     colliders: Query<'w, 's, &'static ColliderOf>,
+    /// Source movements' duck state (the hull, not the key: `ducked`).
+    ducks: Query<'w, 's, &'static SourceMovement>,
     friendly_fire: Option<Res<'w, FriendlyFire>>,
     classes: Option<Res<'w, Classes>>,
     damage: MessageWriter<'w, Damage>,
@@ -310,6 +330,15 @@ impl BlastWorld<'_, '_> {
         let ff = self.friendly_fire.as_ref().is_some_and(|f| f.0 != 0);
         let team = |e: Entity| self.chars.get(e).ok().and_then(|c| c.4.copied()).filter(|t| t.0 != 0);
         !ff && a != b && team(a).is_some() && team(a) == team(b)
+    }
+
+    /// Whether `e`'s hull is ducked: a Source movement's ducked hull,
+    /// another movement's crouch.
+    fn ducked(&self, e: Entity, state: Option<&MovementState>) -> bool {
+        match self.ducks.get(e) {
+            Ok(m) => m.ducked,
+            Err(_) => state.is_some_and(|s| s.crouching),
+        }
     }
 
     /// Whether `e` plays the Heavy.
@@ -414,7 +443,7 @@ impl BlastWorld<'_, '_> {
             }
             let (min, max) = boxed(at, aabb, state);
             let c = (min + max) / 2.0;
-            let mut size = (max - min).abs() / U;
+            let ducked = self.ducked(e, state);
             let hit = touched == Some(e);
             let (nearest, r) = reach(centre, min, max);
             let radius = if is_owner { p.self_radius.unwrap_or(blast.radius) } else { blast.radius };
@@ -428,16 +457,13 @@ impl BlastWorld<'_, '_> {
             let airborne = state.is_some_and(|s| !s.on_ground);
             if is_owner {
                 let scale = if airborne { p.self_air_scale } else { p.self_ground_scale };
-                // His own push counts a crouched hull 55 tall.
-                if state.is_some_and(|s| s.crouching) {
-                    size.y = SELF_CROUCH_HEIGHT;
-                }
                 own = Some(Dealt {
                     e,
                     points: p.self_damage.unwrap_or(p.damage) * f * scale,
                     centre: c,
                     scale: if airborne { p.push_self_air } else { p.push_self_ground },
-                    size,
+                    // His own push counts a crouched hull 55 tall.
+                    size: tf2_hull(ducked, true),
                     own: true,
                 });
             } else {
@@ -445,7 +471,7 @@ impl BlastWorld<'_, '_> {
                     Some(k) => modifier(owner_at.map_or(0.0, |o| o.distance(c) / U), k),
                     None => 1.0,
                 };
-                dealt.push(Dealt { e, points: p.damage * blast.scale * m * f, centre: c, scale: p.push_other, size, own: false });
+                dealt.push(Dealt { e, points: p.damage * blast.scale * m * f, centre: c, scale: p.push_other, size: tf2_hull(ducked, false), own: false });
             }
         }
         // The owner after everyone else.
@@ -560,7 +586,8 @@ pub fn bullet_push(mut hits: MessageReader<BulletHit>, guns: Query<(), With<Tf2G
         }
         let Some(shooter) = d.attacker.and_then(|a| world.centre(a)) else { continue };
         let Ok((_, at, aabb, _, _, state, ..)) = world.chars.get(d.target) else { continue };
-        let (size, c) = bounds(at, aabb, state);
+        let c = bounds(at, aabb, state).1;
+        let size = tf2_hull(world.ducked(d.target, state), false);
         let from = shooter - Vec3::Y * FORCE_LOWER * U;
         let dir = (c - from).normalize_or(Vec3::Y);
         let half = if world.heavy(d.target) { HEAVY_KNOCKBACK } else { 1.0 };
