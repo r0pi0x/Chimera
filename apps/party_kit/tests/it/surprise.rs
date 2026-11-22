@@ -278,9 +278,9 @@ fn moon_gravity_applies_and_reverts_on_server_and_clients() {
     }
 }
 
-/// Jumps of client 0 for `ticks` ticks: its prediction errors and the
-/// worst one, m.
-fn jumps(sim: &mut chimera_net::harness::NetSim, ticks: u32) -> (u64, f32) {
+/// Jumps of client 0 for `ticks` ticks: its prediction errors and what
+/// they were (the worst, m; the last one's tick and differing components).
+fn jumps(sim: &mut chimera_net::harness::NetSim, ticks: u32) -> (u64, String) {
     *sim.clients[0].app.world_mut().resource_mut::<NetGraph>() = NetGraph::default();
     for k in 0..ticks {
         let me = sim.local_player(0).unwrap();
@@ -291,21 +291,23 @@ fn jumps(sim: &mut chimera_net::harness::NetSim, ticks: u32) -> (u64, f32) {
         sim.step();
     }
     let g = sim.clients[0].app.world().resource::<NetGraph>().clone();
-    (g.errors, g.worst_error)
+    let why = format!("worst {} m, last at tick {} in {:?}", g.worst_error, g.last_error_tick, g.last_differing);
+    (g.errors, why)
 }
 
 /// A client playing CS:S's movement (the first rung's Glock) jumps under
 /// moon gravity: it predicts with the replicated `sv_gravity`, so the
 /// server agrees with it after the switch; on a Combat Arms rung it
 /// predicts with the replicated `combat_arms:sv_gravity`: no corrections
-/// either.
+/// either, though its landings there hurt (Combat Arms' fall damage is by
+/// height): the hit's punch is HL2:DM's only on an HL2:DM gun.
 #[test]
 fn a_cs_source_players_prediction_agrees_under_moon_gravity() {
     let mut sim = joined();
     sim.server.app.world_mut().resource_mut::<Console>().submit("surprise gravity 30 0.2");
     sim.ticks(30);
     let (errors, worst) = jumps(&mut sim, 360);
-    assert_eq!(errors, 0, "CS:S's movement predicted with the server's gravity (worst {worst} m)");
+    assert_eq!(errors, 0, "CS:S's movement predicted with the server's gravity ({worst})");
     // A Combat Arms gun's rung: Combat Arms' movement.
     let them = sim.character_of(0).unwrap();
     let server = sim.server.app.world_mut();
@@ -314,7 +316,7 @@ fn a_cs_source_players_prediction_agrees_under_moon_gravity() {
     set_rung(server, them, ca, &ladder);
     sim.ticks(120);
     let (errors, worst) = jumps(&mut sim, 360);
-    assert_eq!(errors, 0, "Combat Arms' movement predicted with the server's gravity (worst {worst} m)");
+    assert_eq!(errors, 0, "Combat Arms' movement predicted with the server's gravity ({worst})");
 }
 
 /// Effect groups and Combat Arms sounds a world asked for.

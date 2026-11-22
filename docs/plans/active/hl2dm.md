@@ -2064,8 +2064,10 @@ implementing (owner branch) / done.
   spec-only.
 
 - **2026-11-21 (low-health cues, specs/hl2dm/low_health.md):** the damage
-  view punch (pitch set to -2 degrees on every damage taken, any gun in
-  hand: `weapons::recoil::damage_punch`) and the damage indicator's side
+  view punch (pitch set to -2 degrees on every damage taken while
+  HL2:DM's recoil owns the punch, `RecoilGame`: `weapons::recoil::damage_punch`;
+  at first on any gun, which left a Combat Arms holder's aim 2 degrees off
+  for good and broke party_kit's moon-gravity prediction test) and the damage indicator's side
   shapes as additive trapezoids (`ui::shape`, `Draw::Trapezoid`) are in;
   the explosion hearing effect was already shared (`grenade::BlastHearing`
   on HL2:DM's blasts, after armour; the spec's table said "no" by
