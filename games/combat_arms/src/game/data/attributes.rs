@@ -384,6 +384,10 @@ pub struct WeaponRecord {
     /// `PlayAutoThrowSound` (default on): a thrown weapon (`Guntype` 7)
     /// makes the thrower's team call-out at its release.
     pub play_auto_throw_sound: bool,
+    /// `OnceActivate`: a new device of it removes its owner's previous one
+    /// (special_weapons.md 6.11; the HG2 turret has none, Follow-up
+    /// (2026-11-21) T5).
+    pub once_activate: bool,
     /// `SilencedFireRadius1..10`.
     pub silenced_fire_radius: [i32; 10],
     pub drop_by_player_dead: bool,
@@ -568,6 +572,7 @@ impl WeaponRecord {
                 s.string(&format!("MiscSound{}", k + 1)).map(text).unwrap_or_default()
             }),
             play_auto_throw_sound: s.bool("PlayAutoThrowSound", true),
+            once_activate: s.bool("OnceActivate", false),
             silenced_fire_radius: silenced,
             drop_by_player_dead: s.bool("DropByPlayerDead", true),
             damage_weapon: s.bool("DamageWeapon", true),
@@ -948,6 +953,9 @@ pub struct ProjectileRecord {
     /// `CreateSound` and `CreateSoundRadius`: the server's sound when a
     /// player's shot makes it (special_weapons.md Corrections
     /// (2026-10-31) 3).
+    /// `ZoneLoopSFX`: a landed device's looping zone effect, drawn for
+    /// its owner's team (special_weapons.md 6.0).
+    pub zone_fx: String,
     pub create_sound: String,
     pub create_radius: f64,
     /// `TurretName`: an auto turret's `Turret#` record (special_weapons.md
@@ -976,8 +984,11 @@ pub struct TurretRecord {
     pub shooting_angle: Option<[i32; 2]>,
     pub bottom_link: String,
     pub top_link: String,
-    /// `Model`: the gun's model on top (archive path as written).
+    /// `Model`: the turret's head, turning about the vertical on the
+    /// base's `BottomLinkNode` (archive path as written), and its `Skin`
+    /// (special_weapons.md Follow-up (2026-11-21) T2).
     pub model: String,
+    pub skin: String,
 }
 
 impl TurretRecord {
@@ -996,6 +1007,7 @@ impl TurretRecord {
             bottom_link: string("BottomLinkNode"),
             top_link: string("TopLinkNode"),
             model: string("Model"),
+            skin: string("Skin"),
         }
     }
 
@@ -1071,6 +1083,7 @@ impl ProjectileRecord {
             skins: s.string_list("Skin").iter().map(|b| text(b)).collect(),
             look: ProjectileLookRecord::read(s),
             create_sound: s.string("CreateSound").map(text).unwrap_or_default(),
+            zone_fx: s.string("ZoneLoopSFX").map(text).unwrap_or_default(),
             create_radius: s.number("CreateSoundRadius", 0.0),
             turret_name: s.string("TurretName").map(text).unwrap_or_default(),
         }

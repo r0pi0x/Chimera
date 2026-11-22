@@ -1104,7 +1104,7 @@ fn t35_melee_reach() {
 
 /// Whether `amount` is `base` times one of the hit table's zone factors
 /// (the level ray meets whichever sphere is first on the line).
-fn in_a_zone(amount: f32, base: f32) -> bool {
+pub(super) fn in_a_zone(amount: f32, base: f32) -> bool {
     [1.0f32, 0.9, 0.75, 0.5, 6.0]
         .iter()
         .any(|z| (amount - base * z).abs() < 0.01)

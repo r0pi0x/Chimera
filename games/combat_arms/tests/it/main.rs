@@ -72,6 +72,7 @@ mod search_destroy;
 mod server_docs;
 mod skeleton;
 mod special_devices;
+mod special_turret;
 mod special_weapons;
 mod view_model;
 mod vip_escort;

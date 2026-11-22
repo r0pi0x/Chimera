@@ -591,6 +591,7 @@ pub fn throwable(e: &mut EntityWorldMut, d: &'static WeaponData, p: &GrenadePara
             hold_loop: Some(p.throw_loop),
             drop_primed: false,
             game_launch: true,
+            keep_unreleased: false,
         },
         CaGrenadeData {
             params: p.clone(),

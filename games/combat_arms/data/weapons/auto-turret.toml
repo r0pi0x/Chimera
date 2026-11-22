@@ -4,7 +4,9 @@
 # not a file from the game; the install's attribute data overrides them
 # where it can be read (game/data.rs). Where the spec has no value the line
 # says PLACEHOLDER. Units: world units (1.85 cm each, by body size) and hit
-# points. No sounds or models yet (the front end draws a placeholder).
+# points. Sounds and the flare by the spec's file names (Follow-up
+# (2026-11-21)); no models without the install (the front end draws a
+# placeholder; the install's merge sets the base, head and gun).
 id = "combat_arms:auto-turret"
 units = { length = 0.0185, damage = 0.01 }
 # Special class (key 5) [inventory.md 1].
@@ -35,6 +37,12 @@ max = 1
 # meet; a gun game's turret rung tunes nothing else (docs/DESIGN.md).
 kind = "turret"
 prefire = 0.0
+# The release is `fire_0`'s FIRE_KEY (3100 ms): a switch or death before it
+# keeps the turret [Follow-up (2026-11-21) T1].
+keep_unreleased = true
+# Its zone effect (`ZoneLoopSFX`) once landed, for its owner's team [6.0,
+# T3 3].
+zone_fx = "Ind_Mine_SH"
 key = 3.1
 postfire = 3.666
 redraw = 1.333
@@ -50,8 +58,25 @@ weak = [[7, 3.0], [40, 3.0]]
 # 0.13 s, Perturb 50, SensorOffset (0, 10, 0), ShootingAngle (-45, 60),
 # SensorAreaRadius 800; its gun `Turret-TopGun`: 12 damage, bullet, +-5 %,
 # bands 800/900/1000 at 1.0/0.7/0.35, range 1000.
+# `Flare` 1: the red flicker sprite 5 u above it, from launch to removal
+# [Follow-up (2026-11-21) T3 2].
+[hooks."combat_arms:device".look.flare]
+sprite = "fx/weapons/m16mine/flicker_ind.spr"
+scale = [1.0, 1.0]
+y_offset = 5.0
+
 [hooks."combat_arms:device".turret]
 setup = 2.833
+# `ReadySoundFX` (`SoundFX1` `AutoTurret_Ready`), radius 1000, when the
+# unfold starts [T3 4]; the gun's `FireSnd` at `FireSndRadius` 2000 with
+# its third-person muzzle and the ammo's tracer (every third ray of all
+# turrets) [T3 7].
+ready_sound = "guns_snd_throwing/autoturret/set.wav"
+ready_radius = 1000.0
+fire_sound = "guns_snd_launcher/minigun_sp/fire.wav"
+fire_radius = 2000.0
+muzzle = "M4_HH_Muzz"
+tracer = "AR01"
 ammo = 100
 fire_delay = 0.13
 perturb = 50.0
@@ -69,3 +94,14 @@ fire_delay = 0.0
 
 [hooks."combat_arms:handling"]
 move_penalty = 0.35
+
+# The keypad (`sound_key 1`, six presses), the unlock (`sound_key 2`)
+# relayed to others at 2000 u, the throw (`FireSnd`) at 500 u, and the
+# disappear effect (its ammo's ImpactFX, data/effects.toml) [T1, T3 8].
+[hooks."combat_arms:effects"]
+ammo_kind = "thrown"
+impact = "Auto-Turret_disappear"
+fire_sound = "guns_snd_throwing/autoturret/throw.wav"
+fire_radius = 500
+reload_sounds = ["guns_snd_throwing/autoturret/button.wav", "guns_snd_throwing/autoturret/unlock.wav"]
+reload_radius = 2000

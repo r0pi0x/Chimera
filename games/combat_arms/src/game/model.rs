@@ -333,7 +333,13 @@ pub fn posed_globals(model: &Model, entry: Option<&lta::Entry>) -> Vec<Mat4> {
 /// `entry`'s pose at t = 0, each vertex by its joints and weights: the
 /// model as drawn in that pose, in model space.
 pub fn pose_meshes(model: &Model, entry: &lta::Entry, meshes: &mut [MapMesh], scale: f32) {
-    let pose: Vec<(ltb::Vec3, ltb::Quat)> = (0..model.nodes.len()).map(|j| lta::sample(entry, j, 0.0)).collect();
+    pose_meshes_at(model, entry, 0.0, meshes, scale);
+}
+
+/// `pose_meshes` at `ms` into `entry` (a still frame of an animation: the
+/// auto turret's unfold, `characters::models`).
+pub fn pose_meshes_at(model: &Model, entry: &lta::Entry, ms: f32, meshes: &mut [MapMesh], scale: f32) {
+    let pose: Vec<(ltb::Vec3, ltb::Quat)> = (0..model.nodes.len()).map(|j| lta::sample(entry, j, ms)).collect();
     let skins: Vec<Mat4> = lta::skin_matrices(model, &lta::globals(model, &pose))
         .iter()
         .map(|k| {

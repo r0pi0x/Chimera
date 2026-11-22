@@ -35,7 +35,9 @@
 //! restart; buying stacks grenades up to their limit and keeps the hand.
 //! Another game's throw (`ThrowOptions` on the weapon; Combat Arms'):
 //! the release when the pin animation ends whatever the button does, no
-//! live drop on death, and its own projectile (`ThrowOptions::
+//! live drop on death, a throw that counts only when it leaves the hand
+//! (`ThrowOptions::keep_unreleased`: a switch or death before then keeps
+//! it), and its own projectile (`ThrowOptions::
 //! game_launch`: a `Launch` event on the weapon where the grenade leaves
 //! the hand, the server's only, which the game's observer answers for its
 //! own weapons with a `Projectile` marked `GameFlown` that it flies and
@@ -699,6 +701,13 @@ pub struct ThrowOptions {
     /// hand (where the default would `launch` one by `ThrowRule`): a
     /// `Launch` event on the weapon, which the game observes.
     pub game_launch: bool,
+    /// The throw counts only when the grenade leaves the hand: until then
+    /// (between the release and `throw_delay` later) a switch away or the
+    /// thrower's death cancels it and keeps the grenade, and the next
+    /// throw starts over (Combat Arms' auto turret: the release is its
+    /// view model's fire key, special_weapons.md Follow-up (2026-11-21)
+    /// T1). Off: the release spends it.
+    pub keep_unreleased: bool,
 }
 
 impl Default for ThrowOptions {
@@ -709,6 +718,7 @@ impl Default for ThrowOptions {
             hold_loop: None,
             drop_primed: true,
             game_launch: false,
+            keep_unreleased: false,
         }
     }
 }
@@ -970,7 +980,9 @@ fn throw_frame(
         if active && alive && t.pin && released {
             t.pin = false;
             t.throw_at = Some(now + t.throw_delay as f64);
-            t.count = t.count.saturating_sub(1);
+            if !options.keep_unreleased {
+                t.count = t.count.saturating_sub(1);
+            }
             t.redraw_at = Some(now + t.throw_time as f64);
             st.next_primary = now + t.throw_time as f64;
             st.next_secondary = st.next_primary;
@@ -990,11 +1002,23 @@ fn throw_frame(
                 });
             }
         }
+        // A throw that counts only when it leaves the hand, cut short by a
+        // switch or a death: nothing thrown, the grenade kept.
+        if options.keep_unreleased && t.throw_at.is_some() && (!active || !alive) {
+            t.throw_at = None;
+            t.redraw_at = None;
+            st.next_primary = now;
+            st.next_secondary = now;
+            st.pending.clear();
+        }
         // 3. The grenade leaves the hand (strictly after its time).
         if let Some(at) = t.throw_at
             && now > at + 1e-9
         {
             t.throw_at = None;
+            if options.keep_unreleased {
+                t.count = t.count.saturating_sub(1);
+            }
             let eye = transform.translation + state.eye_offset;
             let carried = vel.map_or(Vec3::ZERO, |v| v.0);
             if options.game_launch {

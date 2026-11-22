@@ -66,10 +66,20 @@
 //! collider on the traces-only layer with `Damageable` (`turret_body`),
 //! so every game's rounds and blasts damage it (our own meet its box and
 //! pass the collider); broken, its breaker gets a kill-feed line
-//! (`core::Destroyed`, no score); its rays are `CaTurretShots` on it
-//! (replicated: each machine plays the gun's sound, muzzle and tracer,
-//! `effects::turret_shots`), its model faces its target, drawn as its
-//! projectile record's model (`DeviceParams::shown_model`). In a gun
+//! (`core::Destroyed`, no score). Its deploy (Follow-up (2026-11-21)):
+//! the throw counts when it leaves the hand on the view model's fire key
+//! (`DeviceParams::keep_unreleased`), it lands facing the throw's
+//! horizontal direction, its unfold starts on the update after the
+//! landing with its set-up sound and it is ready (fire enabled) on the
+//! first update past the unfold's end; it aims at once on each shot (the
+//! head flat, the gun along the line) and shoots from the gun's flash
+//! socket; replaced, out of its lifetime, broken or empty it goes with
+//! its disappear effect (its ammo's impact record at its floor point),
+//! with its owner or the round silently. Its state as drawn is
+//! `CaTurretShots` on it (replicated: each machine draws the closed case,
+//! the unfold, the head and gun, `turret`, and plays the gun's sound,
+//! muzzle and the tracer of every third ray of all turrets,
+//! `effects::turret_shots`). In a gun
 //! game (the owner on a ladder rung, `ladder::OnRung`) leaving the rung
 //! removes the owner's devices (`rung_left`) and his death his turrets
 //! (`on_death`): a turret never scores for the next rung (docs/DESIGN.md
@@ -92,12 +102,26 @@
 //!   the frame fires the flamethrower, launchers and controllers when the
 //!   press is processed (a controller's key at 25 ms, a launcher's at 0 are
 //!   below a tick), devices leave the hand at their key by `Throwable`'s
-//!   timing. Claymores are placed by the throw's launch (no `Velocity`).
+//!   timing (the turret's key and `fire_0` end from its view model where
+//!   the install reads, `weapons::timing`). Only the turret's throw counts
+//!   when it leaves the hand (a switch or death before keeps it, T1); the
+//!   other devices' release spends them. Claymores are placed by the
+//!   throw's launch (no `Velocity`).
 //! - The turret's target is the nearest candidate that passes (the owner's
-//!   client scan runs once per server frame here and is not the flicker of
-//!   Quirk 3), its rays use the torso zone for any sphere hit and don't
-//!   spend armour twice; nerve mine victims get `CaCameraReverse` (the
-//!   effect itself is another spec's, Open question 8).
+//!   client scan runs once per server frame here, from the update after the
+//!   ready one, and is not the flicker of Quirk 3), its rays use the torso
+//!   zone for any sphere hit and don't spend armour twice; nerve mine
+//!   victims get `CaCameraReverse` (the effect itself is another spec's,
+//!   Open question 8).
+//! - The turret's head, gun and flash socket are the data's points (the
+//!   spec's, `TurretParams::head_at`, `gun_at`, `flash`), not read from
+//!   the models; the HG2's set-up sound is its template's `SET.wav` (the
+//!   `SoundFX#` record `ReadySoundFX` names has fields the spec doesn't
+//!   give); its disappear effect has no blast mark. Open questions 17-20
+//!   stand: a machine that first sees a turret mid-unfold plays the unfold
+//!   from then (17); others see the held case with the generic body
+//!   animation (18); a shot meets the base's box only, not the head or gun
+//!   (19); `Exp_AutoTurret_SH` is played as a group by name (20).
 //! - The explosive bolt's `Range` is measured in a straight line from the
 //!   fire position.
 //! - Placeholder looks: devices (but a turret with its record's model) are
@@ -105,10 +129,7 @@
 //!   devices yet; their sounds in flight, `CaFlightLook`); a bolt by its
 //!   projectile record's model (`BoltParams::shown_model`, the `CrossBow`
 //!   record's; the placeholder without an install), never the crossbow's;
-//!   the turret's `Lower_set` and its gun's own turn aren't played (the
-//!   whole model turns), its setup sound isn't either; a broken turret
-//!   shows its ammo's impact effect, if any (the spec names no break or
-//!   disappear effect), and a turret removed otherwise goes silently;
+//!   the turret's unfold is drawn as still frames (`turret`);
 //!   an impact projectile by its record's model (`ProjectileParams::
 //!   shown_key`, from the install; a model-less one, the flame puff, and
 //!   any without an install, by the front end's placeholder ball; the
@@ -135,6 +156,7 @@ pub mod bolts;
 pub mod data;
 pub mod devices;
 pub mod impact;
+pub mod turret;
 
 use std::sync::Arc;
 
@@ -210,12 +232,19 @@ pub struct State {
     /// Caltrops: (victim, server time of his last count), the total.
     pub counted: Vec<(Entity, f64)>,
     pub counts: u32,
-    /// The turret: rounds left, the next shot's time, the target, when it
-    /// is set up.
+    /// The turret: rounds left, the next shot's time, the target; when
+    /// its unfold started (server time), whether it is ready (fire
+    /// enabled), and where its head (horizontal) and gun point (unit),
+    /// turned only by its shots (Follow-up (2026-11-21) T3).
     pub ammo: u32,
     pub next_shot: f64,
     pub target: Option<Entity>,
-    pub ready_at: f64,
+    pub unfold_at: Option<f64>,
+    pub ready: bool,
+    pub head_dir: Vec3,
+    pub gun_dir: Vec3,
+    /// Its owner's team as last drawn (0: none).
+    pub team: u8,
     /// The first-aid kit: the pool left and the next tick.
     pub pool: f32,
     pub next_tick: f64,
@@ -235,9 +264,11 @@ pub struct State {
     /// feed's line for a broken turret: `core::Destroyed`).
     pub broken_by: Option<Entity>,
     pub broken_with: Option<&'static str>,
-    /// The turret's rays fired, and the last one's line (m): what the
-    /// clients draw and hear (`CaTurretShots`).
+    /// The turret's rays fired, the last one's number among all the
+    /// server's turrets' rays (its tracer's count, T3 7) and its line
+    /// (m): what the clients draw and hear (`CaTurretShots`).
     pub shots: u32,
+    pub serial: u32,
     pub shot_from: Vec3,
     pub shot_to: Vec3,
     /// A landed turret's collider is on (`turret_body`).
@@ -335,7 +366,8 @@ impl CaObject {
             && p.kind == DeviceKind::Turret
             && self.s.landed
         {
-            // A turret turns to its target (6.7: the gun turns to it).
+            // A landed turret's base faces its throw; its head and gun
+            // turn apart (`CaTurretShots`, `turret`).
             return self.s.facing;
         }
         if !matches!(self.kind, Kind::Impact(_) | Kind::Bolt(_)) {
@@ -364,16 +396,27 @@ impl CaObject {
     }
 }
 
-/// An auto turret's rays as the clients draw them (special_weapons.md
-/// 6.7 says nothing of how a shot shows: ours): the turret weapon's id,
-/// how many rays it fired and the last one's line (m). Kept on the
+/// An auto turret as the clients draw it (special_weapons.md 6.7 and
+/// Follow-up (2026-11-21) T3): the turret weapon's id, its owner's team,
+/// its phase (closed,
+/// unfolding, ready: fire enabled), its head's and gun's directions
+/// (world, unit), how many rays it fired, the last one's number among the
+/// server's turrets' rays (`serial`: its tracer is every
+/// `TracerFX` `Frequency`-th of them) and its line (m). Kept on the
 /// turret by the server's frames (`devices::update`) and replicated; each
-/// machine's effects play the gun's sound, muzzle group and tracer per
-/// new ray (`effects::turret_shots`).
+/// machine draws the turret's parts from it (`turret::draw`) and its
+/// effects play the gun's sound, muzzle group and tracer per new ray
+/// (`effects::turret_shots`).
 #[derive(Component, serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct CaTurretShots {
     pub weapon: String,
+    /// Its owner's team (0: none): its zone effect is drawn for that team.
+    pub team: u8,
+    pub phase: turret::TurretPhase,
+    pub head: [f32; 3],
+    pub gun: [f32; 3],
     pub shots: u32,
+    pub serial: u32,
     pub from: [f32; 3],
     pub to: [f32; 3],
 }
@@ -385,6 +428,8 @@ pub struct CaTurretShots {
 pub struct CaSpecialFrames {
     pub frame: u64,
     pub next_seq: u64,
+    /// Every turret's rays so far (`CaTurretShots::serial`).
+    pub turret_rays: u32,
 }
 
 /// A heal over time (6.9): HP/s for the seconds left, at most `left`
@@ -527,6 +572,9 @@ impl Plugin for CaSpecialPlugin {
         .add_message::<Died>()
         .add_message::<WeaponEvent>()
         .add_observer(devices::on_launch)
+        // Each machine that draws: a turret's unfold, head and gun, and
+        // its zone effect.
+        .add_systems(Update, (turret::draw, turret::zone))
         // The flame's keys pace the frame's trigger; predicted with it.
         .add_systems(Predict::Weapons, flame_pace.before(WeaponFrame))
         .predicted_part::<CaFlame>()
@@ -809,14 +857,24 @@ pub(super) fn turret_body(e: Entity, o: &CaObject, commands: &mut Commands) {
     ));
 }
 
-/// A turret's new ray into its `CaTurretShots` (`devices::turret`).
-pub(super) fn turret_shots(e: Entity, o: &CaObject, commands: &mut Commands) {
-    commands.entity(e).insert(CaTurretShots {
+/// A turret as the clients draw it (`CaTurretShots`), from its state.
+pub(super) fn turret_state(o: &CaObject) -> CaTurretShots {
+    let phase = match (o.s.ready, o.s.unfold_at) {
+        (true, _) => turret::TurretPhase::Ready,
+        (false, Some(_)) => turret::TurretPhase::Unfolding,
+        (false, None) => turret::TurretPhase::Closed,
+    };
+    CaTurretShots {
         weapon: o.weapon.to_string(),
+        team: o.s.team,
+        phase,
+        head: o.s.head_dir.to_array(),
+        gun: o.s.gun_dir.to_array(),
         shots: o.s.shots,
+        serial: o.s.serial,
         from: o.s.shot_from.to_array(),
         to: o.s.shot_to.to_array(),
-    });
+    }
 }
 
 /// A map's unload takes every object with it (Chimera's `MapHooks`): a
@@ -1029,6 +1087,8 @@ pub(crate) struct Cx<'a, 'w, 's, 'ow, 'os, 'xw, 'xs> {
     pub out: &'a mut Out<'ow, 'os>,
     pub x: &'a mut Extra<'xw, 'xs>,
     pub round_over: bool,
+    /// The server's count of every turret's rays (the tracer's, T3 7).
+    pub turret_rays: &'a mut u32,
 }
 
 impl Cx<'_, '_, '_, '_, '_, '_, '_> {
@@ -1074,6 +1134,7 @@ fn special_frames(
         let mut order: Vec<(u64, Entity)> = objects.iter().map(|(e, o)| (o.seq, e)).collect();
         order.sort_unstable_by_key(|(s, _)| *s);
         let round_over = x.round_over();
+        let mut rays = mine.turret_rays;
         for (_, e) in order {
             if f.gone.contains(&e) {
                 continue;
@@ -1085,6 +1146,7 @@ fn special_frames(
                 out: &mut out,
                 x: &mut x,
                 round_over,
+                turret_rays: &mut rays,
             };
             o.created.get_or_insert(mine.frame - 1);
             o.drawn_from = o.pos;
@@ -1095,6 +1157,7 @@ fn special_frames(
                 Kind::Bolt(p) => bolts::update(&mut cx, e, &mut o, &p),
             }
         }
+        mine.turret_rays = rays;
         // 4. Heals (6.9): each entry gives its rate for the frame.
         let dt = f.dt;
         let entries = std::mem::take(&mut x.heals.entries);

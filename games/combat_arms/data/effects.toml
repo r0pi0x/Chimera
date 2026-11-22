@@ -69,6 +69,19 @@ surface_fx = false
 fx = "Smoke_Grenade_01"
 area = true
 
+# Both auto turrets' disappear effect (special_weapons.md Follow-up
+# (2026-11-21) T3 8: ImpactFX38), at the turret's floor point: no surface
+# effect, no damage. Its blast mark (`BlastMark` 1, fading after 10-30 s)
+# is left out: the record's mark fields aren't in the spec.
+[impact."Auto-Turret_disappear"]
+sound = "guns_snd_impacts/explosions/turret_explode.wav"
+sound_radius = 1200
+create_mark = false
+mark = ""
+mark_scale = 0.0
+surface_fx = false
+fx = "Exp_AutoTurret_SH"
+
 # ---------------------------------------------------------------------------
 # FireFX records (the ammo's FireFXName): the group only the shooter sees at
 # their muzzle, casings (model and skin, ShellScale: PLACEHOLDER 0.5, the spec

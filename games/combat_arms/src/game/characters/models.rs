@@ -23,7 +23,9 @@
 //! `ModelScale`, in its `World` pose: `THROWN_POSE`) as a held model in no
 //! hand under `grenades::thrown_key`; each impact projectile's model in
 //! flight (the same fields of its record, `special::ProjectileParams`) under
-//! `ProjectileParams::shown_key`, once per model and look. The body's nodes, sockets, weight sets and
+//! `ProjectileParams::shown_key`, once per model and look; each auto
+//! turret's parts (`turret_models`: its base's unfold as still frames, its
+//! head, its gun idle and firing, under `special::turret::TurretKeys`). The body's nodes, sockets, weight sets and
 //! animation list are kept as a `Rig` (`rig`, every record of the group
 //! posing on the first's) for posing.
 //!
@@ -533,6 +535,20 @@ pub fn add_character_models(map: &mut MapData, ca: &CaDataInner, file: &dyn Fn(&
             Err(e) => map.warnings.push(format!("{} projectile model: {e}", w.id)),
         }
     }
+    // Auto turrets' unfold, head and gun (`special::turret`), once per
+    // set of keys.
+    let mut turrets = std::collections::BTreeSet::new();
+    for w in &ca.weapon_set().weapons {
+        let Some(d) = w.hook::<crate::game::special::DeviceParams>(crate::game::special::DEVICE) else { continue };
+        let Some(keys) = crate::game::special::turret::TurretKeys::of(&d) else { continue };
+        if !turrets.insert(keys.ready.clone()) {
+            continue;
+        }
+        match turret_models(&d, map, file) {
+            Ok(h) => map.kit.held.extend(h),
+            Err(e) => map.warnings.push(format!("{} turret models: {e}", w.id)),
+        }
+    }
 }
 
 /// Weapon `id`'s third-person model as `add_character_models` makes the
@@ -680,6 +696,123 @@ fn thrown(
         nose: None,
         turned: Vec::new(),
     })
+}
+
+/// An auto turret's drawn parts (`special::turret`, special_weapons.md
+/// Follow-up (2026-11-21) T2-T3) for device `d`, under
+/// `special::turret::TurretKeys`: the base's unfold (`TurretParams::
+/// unfold_anim`) as still frames with the pieces its `PIECE_VISIBLE 0`
+/// keys have hidden by each frame's time, its last frame with all of
+/// them hidden (the ready base), the head in its first pose and the gun
+/// idle then through its fire animation. Err: a model that doesn't read.
+fn turret_models(
+    d: &crate::game::special::DeviceParams,
+    map: &mut MapData,
+    file: &dyn Fn(&str) -> Option<Vec<u8>>,
+) -> Result<Vec<MapHeldModel>, String> {
+    use crate::game::special::turret::{self, TurretKeys};
+    let (Some(keys), Some(t)) = (TurretKeys::of(d), d.turret.as_ref()) else { return Ok(Vec::new()) };
+    let base = model::load(d.model.as_deref().unwrap_or_default(), file)?;
+    let unfold = base.list.find(&t.unfold_anim).map(|i| &base.list.entries[i]);
+    // The pieces the unfold hides, with when (ms).
+    let hides: Vec<(f32, String)> = unfold
+        .map(|e| {
+            e.animation
+                .keys
+                .iter()
+                .flat_map(|k| {
+                    lithtech_formats::anim::key_commands(&k.string)
+                        .into_iter()
+                        .filter(|c| c.len() >= 3 && c[0].eq_ignore_ascii_case("PIECE_VISIBLE") && c[1] == "0")
+                        .map(move |c| (k.time as f32, c[2].clone()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let end = unfold.map_or(0.0, |e| e.length() as f32);
+    let mut out = Vec::new();
+    for (i, key) in keys.unfold.iter().enumerate() {
+        let at = turret::unfold_time(i).min(end);
+        out.push(posed(&base, key, &d.skins, d.model_scale, unfold.map(|e| (e, at)), &hidden_by(&hides, at), map, file));
+    }
+    out.push(posed(&base, &keys.ready, &d.skins, d.model_scale, unfold.map(|e| (e, end)), &hidden_by(&hides, f32::MAX), map, file));
+    let head = model::load(t.head_model.as_deref().unwrap_or_default(), file)?;
+    out.push(posed(&head, &keys.head, &t.head_skins, [1.0; 3], model::rest_entry(&head, "").map(|e| (e, 0.0)), &[], map, file));
+    let gun = model::load(t.gun_model.as_deref().unwrap_or_default(), file)?;
+    let fire = gun.list.find(&t.fire_anim).map(|i| &gun.list.entries[i]);
+    for (i, key) in keys.gun.iter().enumerate() {
+        let pose = match turret::gun_time(i, t) {
+            Some(ms) => fire.map(|e| (e, ms)),
+            None => model::rest_entry(&gun, "").map(|e| (e, 0.0)),
+        };
+        out.push(posed(&gun, key, &t.gun_skins, [1.0; 3], pose, &[], map, file));
+    }
+    Ok(out)
+}
+
+/// The pieces hidden at `at` ms by keys `hides`.
+fn hidden_by(hides: &[(f32, String)], at: f32) -> Vec<String> {
+    hides.iter().filter(|(t, _)| *t <= at).map(|(_, p)| p.clone()).collect()
+}
+
+/// `loaded` as one still model under `key`: `pose` an animation entry at
+/// a time (ms; None: the bind pose), its pieces named in `hidden` left
+/// out, skinned by `skins` (by each piece's first texture index), scaled
+/// by `scale` (the conversion's axes).
+#[allow(clippy::too_many_arguments)]
+fn posed(
+    loaded: &model::LoadedModel,
+    key: &str,
+    skins: &[String],
+    scale: [f32; 3],
+    pose: Option<(&lithtech_formats::anim::Entry, f32)>,
+    hidden: &[String],
+    map: &mut MapData,
+    file: &dyn Fn(&str) -> Option<Vec<u8>>,
+) -> MapHeldModel {
+    let mut m = model::convert(loaded, 1.0, &|lod| {
+        let i = lod.used_textures().first().copied().unwrap_or(-1);
+        usize::try_from(i).ok().and_then(|i| skins.get(i)).cloned().unwrap_or_default()
+    });
+    super::super::world::model_textures(&mut m.meshes, map, file);
+    if let Some((entry, ms)) = pose {
+        model::pose_meshes_at(&loaded.model, entry, ms, &mut m.meshes, 1.0);
+    }
+    m.rig = None;
+    let keep: Vec<bool> = m
+        .mesh_names
+        .iter()
+        .map(|n| !hidden.iter().any(|h| h.eq_ignore_ascii_case(n)))
+        .collect();
+    let mut i = 0;
+    m.meshes.retain(|_| {
+        i += 1;
+        keep.get(i - 1).copied().unwrap_or(true)
+    });
+    let mut i = 0;
+    m.mesh_names.retain(|_| {
+        i += 1;
+        keep.get(i - 1).copied().unwrap_or(true)
+    });
+    let s = Vec3::from(ltb::to_rh_vec(scale)).abs();
+    for mesh in &mut m.meshes {
+        for p in &mut mesh.positions {
+            *p = (Vec3::from(*p) * s).to_array();
+        }
+        mesh.joints.clear();
+        mesh.joint_weights.clear();
+    }
+    MapHeldModel {
+        key: key.to_string(),
+        model: m,
+        bone: String::new(),
+        muzzle: None,
+        attachments: Vec::new(),
+        merged: Vec::new(),
+        own: None,
+        nose: None,
+        turned: Vec::new(),
+    }
 }
 
 /// The character models every map carries (`add_character_models` into

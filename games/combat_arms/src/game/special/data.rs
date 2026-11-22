@@ -134,7 +134,7 @@ pub fn projectiles_of(w: &chimera_sim::weapon::data::WeaponData) -> Vec<Projecti
 /// The files weapon `w`'s thrown or fired object names, which play or
 /// show when it is used, not when it is drawn: its projectile's,
 /// grenade's, device's or bolt's looks and sounds in flight, its create
-/// sound, its model and skins. `chimera_pack sets` adds them to the
+/// sound, its model and skins (a turret's head and gun too). `chimera_pack sets` adds them to the
 /// weapon's `weapon/<id>` set.
 pub fn object_files(w: &chimera_sim::weapon::data::WeaponData) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -150,10 +150,14 @@ pub fn object_files(w: &chimera_sim::weapon::data::WeaponData) -> Vec<String> {
     if let Some(g) = w.hook::<super::super::grenades::GrenadeParams>(super::super::grenades::HOOK) {
         add(&g.look, &g.create_sound, g.thrown_model.as_ref(), &g.thrown_skins);
     }
-    let mut turret_sound = None;
+    let mut turret_sound = Vec::new();
     if let Some(d) = w.hook::<DeviceParams>(DEVICE) {
         add(&d.look, &d.create_sound, None, &[]);
-        turret_sound = d.turret.map(|t| t.fire_sound);
+        // The turret's gun and set-up sounds, its head and gun models.
+        if let Some(t) = d.turret {
+            turret_sound.extend([t.fire_sound, t.ready_sound]);
+            turret_sound.extend(t.head_model.into_iter().chain(t.head_skins).chain(t.gun_model).chain(t.gun_skins));
+        }
     }
     if let Some(b) = w.hook::<BoltParams>(BOLT) {
         add(&b.look, "", None, &[]);
@@ -383,12 +387,51 @@ pub struct NerveParams {
     pub radius: f32,
 }
 
-/// The auto turret (6.7): the `Turret#` record and its gun.
+/// The auto turret (6.7 and Follow-up (2026-11-21)): the `Turret#`
+/// record, its gun, its models and its set-up.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TurretParams {
-    /// `Lower_set`, s: the time from landing to firing.
+    /// The base's unfold (`unfold_anim`, `Lower_set`) length, s: it starts
+    /// on the update after the landing and the turret is ready on the
+    /// first update past its end (T3 4, 5).
     pub setup: f32,
+    /// The set-up sound (the projectile record's `ReadySoundFX`: a server
+    /// sound at the turret when the unfold starts) and its radius, u.
+    #[serde(default)]
+    pub ready_sound: String,
+    #[serde(default)]
+    pub ready_radius: f32,
+    /// The base's unfold animation and the gun's fire animation (restarted
+    /// by each shot), by name.
+    #[serde(default = "lower_set")]
+    pub unfold_anim: String,
+    #[serde(default = "upper_fire")]
+    pub fire_anim: String,
+    /// `Upper_fire`'s length, s (the drawn gun's flip-book).
+    #[serde(default = "upper_fire_length")]
+    pub fire_length: f32,
+    /// The head (`Turret#` `Model`, `Skin`) and the gun (the top gun's
+    /// `HHModel`, `HHSkin0`): archive paths, from the install (None: not
+    /// drawn apart; the base's own model stays).
+    #[serde(default)]
+    pub head_model: Option<String>,
+    #[serde(default)]
+    pub head_skins: Vec<String>,
+    #[serde(default)]
+    pub gun_model: Option<String>,
+    #[serde(default)]
+    pub gun_skins: Vec<String>,
+    /// Where the head and the gun turn (the base's `BottomLinkNode` and
+    /// `TopLinkNode` in its last unfold frame) in the base's frame, and
+    /// the gun's `flash` socket in the gun's: LithTech axes (x right, y
+    /// up, z ahead), u (T3 5, 7; case 68's points).
+    #[serde(default = "head_at")]
+    pub head_at: [f32; 3],
+    #[serde(default = "gun_at")]
+    pub gun_at: [f32; 3],
+    #[serde(default = "flash_at")]
+    pub flash: [f32; 3],
     /// `MaxAmmo`, `FireDelay`, `Perturb` (u, each axis), `SensorOffset`.
     pub ammo: u32,
     pub fire_delay: f32,
@@ -415,6 +458,25 @@ pub struct TurretParams {
     pub muzzle: String,
     #[serde(default)]
     pub tracer: String,
+}
+
+fn lower_set() -> String {
+    "Lower_set".into()
+}
+fn upper_fire() -> String {
+    "Upper_fire".into()
+}
+fn upper_fire_length() -> f32 {
+    0.133
+}
+fn head_at() -> [f32; 3] {
+    [0.2, 19.1, 0.0]
+}
+fn gun_at() -> [f32; 3] {
+    [0.2, 25.8, -0.2]
+}
+fn flash_at() -> [f32; 3] {
+    [1.6, 8.8, 35.1]
 }
 
 /// The first-aid kit (6.8): `AreaDamageTickTime`, `AreaDamageTickDamage`,
@@ -485,6 +547,12 @@ pub struct DeviceParams {
     /// `OnceActivate`: a new one replaces the old.
     #[serde(default)]
     pub once_only: bool,
+    /// The throw counts only when the device leaves the hand (its view
+    /// model's fire key): a switch or death before then keeps it (the
+    /// auto turret, Follow-up (2026-11-21) T1; Chimera's
+    /// `ThrowOptions::keep_unreleased`).
+    #[serde(default)]
+    pub keep_unreleased: bool,
     /// `SubControlWeaponName`: the detonator that goes with it.
     #[serde(default)]
     pub controller: Option<String>,
@@ -526,6 +594,10 @@ pub struct DeviceParams {
     pub auto_throw: bool,
     #[serde(default)]
     pub turret: Option<TurretParams>,
+    /// Its zone effect (`ZoneLoopSFX`): a looping group on it once landed,
+    /// drawn for its owner's team only (6.0; the turret's, T3 3).
+    #[serde(default)]
+    pub zone_fx: String,
     /// Its projectile record's world model (`Model`, `ModelScale`,
     /// `Skin#`, from the install), drawn where it lies in the projectile
     /// draw key (`shown_key`); None: its weapon's key (the hand-held
@@ -566,7 +638,12 @@ impl DeviceParams {
             model: Some(model),
             model_scale: self.model_scale,
             skins: self.skins.clone(),
-            look: ProjectileLook::default(),
+            // Its flare rides its drawn model (the turret's red flicker,
+            // T3 2); its sounds are `CaFlightLook`'s.
+            look: ProjectileLook {
+                flare: self.look.flare.clone(),
+                ..Default::default()
+            },
             create_sound: String::new(),
             create_radius: 0.0,
         })

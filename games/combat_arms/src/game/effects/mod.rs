@@ -52,7 +52,9 @@
 //!   reload, select, deselect or misc sound (yours local, others' 3D, R
 //!   `ReloadSndRadius`/`SelectSndRadius`, 2000 for misc; none from the
 //!   dead); `SHELL_CASING` drops a casing
-//!   for a weapon whose FireFX doesn't eject.
+//!   for a weapon whose FireFX doesn't eject; a device's fire key (the
+//!   auto turret's release) plays its `FireSnd` (others' at
+//!   `FireSndRadius`).
 //! - **Grenades** (`grenade_effects`, 9): the ImpactFX by weapon
 //!   (`[grenade]` in data/effects.toml; an impact projectile's, a rocket's
 //!   or a launcher shell's, its weapon's `combat_arms:effects` `impact`,
@@ -1427,7 +1429,7 @@ fn key_sounds(
     mut keys: MessageReader<CaViewKey>,
     cameras: CameraQuery,
     owners: Query<(&Inventory, Option<&Transform>, Option<&MovementState>, Option<&CaViewModel>, &Intent, Option<&Health>)>,
-    weapons: Query<(Option<&CaWeaponFx>, Option<&CaMods>)>,
+    weapons: Query<(Option<&CaWeaponFx>, Option<&CaMods>, Has<crate::game::special::CaDeviceData>)>,
     tables: Res<CaFxTables>,
     settings: Res<CaFxSettings>,
     mut sounds: MessageWriter<CaSound>,
@@ -1437,9 +1439,21 @@ fn key_sounds(
     let me = camera(&cameras).map(|c| c.player);
     for k in keys.read() {
         let Ok((inv, t, ms, vm, intent, health)) = owners.get(k.owner) else { continue };
-        let Some((Some(fx), mods)) = inv.active.and_then(|w| weapons.get(w).ok()) else { continue };
+        let Some((Some(fx), mods, device)) = inv.active.and_then(|w| weapons.get(w).ok()) else { continue };
         let mine = Some(k.owner) == me;
         match k.key {
+            // A device's release (its `fire_0`'s fire key: the auto
+            // turret's throw, special_weapons.md Follow-up (2026-11-21)
+            // T1): its `FireSnd`, others' at its `FireSndRadius`.
+            ViewKey::Fire if device && !fx.fire_sound.is_empty() => {
+                let eye = t.map_or(Vec3::ZERO, |t| t.translation) + ms.map_or(Vec3::ZERO, |m| m.eye_offset);
+                let at = vm.map_or(eye, |v| v.flash_point);
+                sounds.write(if mine {
+                    CaSound::local(fx.fire_sound.clone())
+                } else {
+                    CaSound::at(fx.fire_sound.clone(), at, fx.fire_radius)
+                });
+            }
             ViewKey::Sound(n) => {
                 let Some((file, radius)) = fx.key_sound(n) else { continue };
                 // No key sound is sent to others while the player is dead
@@ -1499,10 +1513,12 @@ fn play_dings(mut dings: ResMut<DingQueue>, tables: Res<CaFxTables>, mut sounds:
 
 /// An auto turret's new rays (`special::CaTurretShots`, the server's, on
 /// the turret here or replicated to a client): per ray its gun's fire
-/// sound at the gun, its muzzle group and its tracer along the ray
-/// (`TurretParams::fire_sound`, `muzzle`, `tracer`: the gun's record's;
-/// ours, special_weapons.md 6.7 doesn't say how a shot shows). A turret
-/// first seen plays nothing for the rays it fired before.
+/// sound at the gun (`FireSndRadius`), its muzzle group and, on every
+/// `Frequency`-th ray of all the server's turrets (`CaTurretShots::
+/// serial`, special_weapons.md Follow-up (2026-11-21) T3 7), its tracer
+/// along the ray (`TurretParams::fire_sound`, `muzzle`, `tracer`: the
+/// gun's record's). A turret first seen plays nothing for the rays it
+/// fired before.
 #[allow(clippy::too_many_arguments)]
 fn turret_shots(
     mut turrets: Query<
@@ -1552,6 +1568,7 @@ fn turret_shots(
         }
         if settings.tracers
             && let Some(look) = tables.tracer(if t.tracer.is_empty() { "Standard" } else { &t.tracer })
+            && crate::game::special::turret::tracer(shots.serial, look.frequency)
             && let Some(path) = TracerPath::new(from / UNIT, to / UNIT, look.velocity, look.length)
         {
             if tracers.0.len() >= rules::TRACER_LIST_MAX {

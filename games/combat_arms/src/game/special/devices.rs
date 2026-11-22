@@ -138,6 +138,7 @@ pub(super) fn device_weapon(e: &mut EntityWorldMut, d: &'static WeaponData, p: &
             hold_loop: (p.throw_loop > 0.0).then_some(p.throw_loop),
             drop_primed: false,
             game_launch: true,
+            keep_unreleased: p.keep_unreleased,
         },
         CaDeviceData {
             params: std::sync::Arc::new(p.clone()),
@@ -235,6 +236,12 @@ pub(super) fn update(cx: &mut Cx, e: Entity, o: &mut CaObject, p: &DeviceParams)
             o.s.strike_at = Some(time);
         }
     } else if owner_gone || cx.round_over || aged || o.s.expire {
+        // A turret replaced (6.11) or out of its lifetime goes with its
+        // disappear effect; its owner gone or the round over, silently
+        // (Follow-up (2026-11-21) T3 8).
+        if p.kind == DeviceKind::Turret && !owner_gone && !cx.round_over {
+            disappear(cx, o);
+        }
         cx.remove(e);
         return;
     }
@@ -253,16 +260,20 @@ pub(super) fn update(cx: &mut Cx, e: Entity, o: &mut CaObject, p: &DeviceParams)
         DeviceKind::NerveMine => nerve_mine(cx, o, p),
         DeviceKind::Turret => match &p.turret {
             Some(t) => {
-                let shots = o.s.shots;
+                let before = super::turret_state(o);
+                // Its owner's team, followed if he changes team (T3 3).
+                o.s.team = o.owner.and_then(|w| cx.x.teams.get(w).ok()).map_or(0, |t| t.0);
                 let gone = turret(cx, o, t);
-                // Landed: a collider every game meets; a new ray: what the
-                // clients draw (`special::turret_body`, `turret_shots`).
+                // Landed: a collider every game meets; its phase, aim or a
+                // new ray: what the clients draw (`special::turret_body`,
+                // `turret_state`).
                 if o.s.landed && !o.s.body && !gone {
                     o.s.body = true;
                     super::turret_body(e, o, &mut cx.out.commands);
                 }
-                if o.s.shots != shots && !gone {
-                    super::turret_shots(e, o, &mut cx.out.commands);
+                let now = super::turret_state(o);
+                if now != before && !gone {
+                    cx.out.commands.entity(e).insert(now);
                 }
                 gone
             }
@@ -308,13 +319,11 @@ fn land(cx: &mut Cx, o: &mut CaObject, p: &DeviceParams, at: Vec3, _n: Vec3) {
     o.s.landed_at = time;
     o.s.next_resnap = time + RESNAP;
     o.health = p.health;
-    let flat = Vec3::new(o.s.last_dir.x, 0.0, o.s.last_dir.z).normalize_or_zero();
+    // Turned to the horizontal part of its throw direction (6.0, T1).
+    let dir = o.s.launch_dir;
+    let flat = Vec3::new(dir.x, 0.0, dir.z).normalize_or_zero();
     if p.speed > 0.0 && flat != Vec3::ZERO {
         o.s.facing = flat;
-    }
-    if let Some(t) = &p.turret {
-        o.s.ammo = t.ammo;
-        o.s.ready_at = time + t.setup as f64;
     }
     if let Some(k) = &p.kit {
         o.s.pool = k.pool;
@@ -636,13 +645,21 @@ fn line_clear(cx: &Cx, a: Vec3, b: Vec3, skip: Option<Entity>) -> bool {
         .is_none_or(|(d, ..)| d >= a.distance(b) - 1e-4)
 }
 
+/// A turret's end with its disappear effect (T3 8): its ammo's impact
+/// record (`Auto-Turret_disappear`: `Turret_Explode.wav`, the
+/// `Exp_AutoTurret_SH` group) at the base's floor point (its position
+/// lowered by its half-height).
+fn disappear(cx: &mut Cx, o: &CaObject) {
+    let at = o.at() - Vec3::Y * o.half.y * o.unit;
+    detonated(cx, None, o, at);
+}
+
 fn turret(cx: &mut Cx, o: &mut CaObject, t: &TurretParams) -> bool {
     if o.destroyed {
-        // Broken: its effect where it stood (no blast: its ammo's
-        // `AreaDamage` is 0) and the breaker's kill-feed line (ours; the
-        // spec has no line for it). No rung, no score: it is no `Died`.
-        let at = o.at();
-        detonated(cx, None, o, at);
+        // Broken: its disappear effect (no blast: its ammo's `AreaDamage`
+        // is 0) and the breaker's kill-feed line (ours; the spec has no
+        // line for it). No rung, no score: it is no `Died`.
+        disappear(cx, o);
         cx.out.destroyed.write(crate::core::Destroyed {
             what: o.weapon,
             owner: o.owner,
@@ -655,10 +672,36 @@ fn turret(cx: &mut Cx, o: &mut CaObject, t: &TurretParams) -> bool {
         return false;
     }
     let time = cx.f.time;
-    if time + 1e-9 < o.s.ready_at {
+    let unit = o.unit;
+    // The first update after landing starts the unfold (T3 4): the ready
+    // sound at the turret, the gun's rounds loaded.
+    let Some(unfold_at) = o.s.unfold_at else {
+        o.s.unfold_at = Some(time);
+        o.s.ammo = t.ammo;
+        if !t.ready_sound.is_empty() {
+            let (file, radius, at) = (t.ready_sound.clone(), t.ready_radius, o.at());
+            cx.out.commands.queue(move |w: &mut World| {
+                crate::game::effects::sounds::write_create_sound(w, &file, radius, false, at);
+            });
+        }
+        return false;
+    };
+    // Ready on the first update after the unfold's end (T3 5): head and
+    // gun along the throw, level; fire enabled from the next update (the
+    // owner's scan starts on the enable message).
+    if !o.s.ready {
+        if time - unfold_at > t.setup as f64 + 1e-9 {
+            o.s.ready = true;
+            o.s.head_dir = o.s.facing;
+            o.s.gun_dir = o.s.facing;
+        }
         return false;
     }
-    let unit = o.unit;
+    // Its last round fired on the update before: gone (6.7).
+    if o.s.ammo == 0 {
+        disappear(cx, o);
+        return true;
+    }
     let me = o.at();
     let sensor = me + Vec3::from(t.sensor_offset) * unit;
     let bodies = cx.world.bodies();
@@ -693,52 +736,58 @@ fn turret(cx: &mut Cx, o: &mut CaObject, t: &TurretParams) -> bool {
         o.s.target = None;
         return false;
     };
-    if o.s.ammo == 0 {
-        return true;
-    }
     if time + 1e-9 < o.s.next_shot {
         return false;
     }
     o.s.next_shot = time + t.fire_delay as f64;
     o.s.ammo -= 1;
-    // One instant ray from the gun toward the target's centre, the aim
-    // point off by a uniform +-Perturb on each axis (at any range).
+    // Aim at once (T3 7): the head along the horizontal from the gun to
+    // the target's centre, the gun along the full line; the ray from the
+    // gun's flash socket after the turn.
+    let gun_at = super::turret::place(o.pos, o.s.facing, t.gun_at) * unit;
+    let to = tb.centre - gun_at;
+    o.s.head_dir = Vec3::new(to.x, 0.0, to.z).normalize_or(o.s.head_dir);
+    o.s.gun_dir = to.normalize_or(o.s.gun_dir);
+    let muzzle = super::turret::place(gun_at / unit, o.s.gun_dir, t.flash) * unit;
+    // One instant ray toward the target's centre, the aim point off by a
+    // uniform +-Perturb on each axis (at any range).
     let mut rng = crate::weapon::random::shared_random(o.seq as u32, "combat_arms:turret", o.steps as i32 + o.s.ammo as i32);
     let mut jit = || (rng.next() * 2.0 - 1.0) * t.perturb * unit;
     let aim = tb.centre + Vec3::new(jit(), jit(), jit());
-    let dir = (aim - sensor).normalize_or(Vec3::Z);
-    let flat = Vec3::new(dir.x, 0.0, dir.z).normalize_or(o.s.facing);
-    o.s.facing = flat;
-    let end = sensor + dir * t.range * unit;
-    let wall = cx.world.cast(sensor, end, o.owner).map_or(f32::MAX, |(d, ..)| d);
+    let dir = (aim - muzzle).normalize_or(o.s.gun_dir);
+    let end = muzzle + dir * t.range * unit;
+    let wall = cx.world.cast(muzzle, end, o.owner).map_or(f32::MAX, |(d, ..)| d);
     let mut best: Option<(f32, usize, usize)> = None;
     for (bi, b) in bodies.iter().enumerate() {
         if !cx.x.enemy(o.owner, b.entity) {
             continue;
         }
-        let Some(tbx) = box_entry(b.min, b.max, sensor, dir, t.range * unit) else { continue };
+        let Some(tbx) = box_entry(b.min, b.max, muzzle, dir, t.range * unit) else { continue };
         if tbx >= wall || best.is_some_and(|(bt, ..)| bt <= tbx) {
             continue;
         }
-        if let Some(si) = pick_sphere(&b.spheres, sensor, end) {
+        if let Some(si) = pick_sphere(&b.spheres, muzzle, end) {
             best = Some((tbx, bi, si));
         }
     }
     o.s.shots += 1;
-    o.s.shot_from = sensor;
+    // The server's one count of every turret's rays (the tracer's).
+    *cx.turret_rays += 1;
+    o.s.serial = *cx.turret_rays;
+    o.s.shot_from = muzzle;
     o.s.shot_to = match best {
-        Some((tbx, ..)) => sensor + dir * tbx,
-        None => sensor + dir * wall.min(t.range * unit),
+        Some((tbx, ..)) => muzzle + dir * tbx,
+        None => muzzle + dir * wall.min(t.range * unit),
     };
     if let Some((tbx, bi, si)) = best {
         let b = &bodies[bi];
         let dmg = CaDamage::new(&t.gun, unit, o.hp);
-        let point = sensor + dir * tbx;
+        let point = muzzle + dir * tbx;
         let u = rng.next();
         let base = base_damage(&dmg, u, false, tbx);
         shoot(cx, o, b, si, base, t.gun.damage_type, point);
     }
-    o.s.ammo == 0
+    false
 }
 
 /// A shot's damage on `b`'s sphere `si`: the zone and the armour step, the

@@ -101,7 +101,13 @@
 //!   `TurretName` names (`attributes::TurretRecord`: `MaxAmmo`,
 //!   `FireDelay`, `Perturb`, `SensorOffset`, `ShootingAngle`) with its gun,
 //!   the `TopWeaponID` record (its default ammo's damage, type and bands,
-//!   its roll, range, fire sound, muzzle group and tracer);
+//!   its roll, range, fire sound, muzzle group and tracer), the head (the
+//!   record's `Model`, `Skin`) and the gun (the top gun's `HHModel`,
+//!   `HHSkin0`) drawn once it has unfolded; a device's `OnceActivate`
+//!   (`special_values`). The set-up sound (`ReadySoundFX`'s `SoundFX#`
+//!   record) isn't read: that record's fields aren't in the spec, so a
+//!   copy plays its template's (the HG2's `SET_HG2.wav` is the stock
+//!   `SET.wav` here);
 //! - air strike designators (`strike_patch`, special_weapons.md 6.10):
 //!   the shell record `AirStrikeID` names gives the device hook's
 //!   `strike.shell` its projectile record's model, skins, looks in flight
@@ -756,6 +762,9 @@ fn special_values(w: &WeaponRecord, a: &AmmoRecord, length_scale: f64) -> Vec<Se
     out.extend([
         set(&["hooks", DEVICE, "spawned"], i64::from(a.spawned_amount.max(0))),
         set(&["hooks", DEVICE, "max"], i64::from(a.max_amount.max(0))),
+        // `OnceActivate` (6.11): not set on the HG2 turret (Follow-up
+        // (2026-11-21) T5).
+        set(&["hooks", DEVICE, "once_only"], w.once_activate),
         set(&["hooks", DEVICE, "caltrops", "rate"], a.prog_damage),
         set(&["hooks", DEVICE, "caltrops", "duration"], a.prog_damage_duration),
         set(&["hooks", DEVICE, "caltrops", "radius"], a.prog_damage_radius),
@@ -1546,14 +1555,21 @@ pub fn merge_weapon_docs_with_mods(
 
 /// A copy's own fire sequence, reload and draw: the `combat_arms:timing`
 /// table (`weapons::timing`, read from its view model when built) on a
-/// gun with a trigger and a view model, and on a knife (its swings and
-/// hit keys); not on a grenade (its own hook times it).
+/// gun with a trigger and a view model, on a knife (its swings and hit
+/// keys) and on a device thrown on its fire key (the auto turret's
+/// release); not on a grenade (its own hook times it).
 fn timing_table(doc: &mut Table) {
     use super::weapons::timing::TIMING;
     let has_view = doc.get("models").and_then(|m| m.get("view")).is_some();
     let Some(Value::Table(hooks)) = doc.get("hooks") else { return };
     let knife = hooks.contains_key(super::inventory::KNIFE_HOOK);
-    if !has_view || !(doc.contains_key("trigger") || knife) || hooks.contains_key(super::grenades::HOOK) {
+    // A device released on its view model's fire key (the auto turret).
+    let on_key = hooks
+        .get(super::special::DEVICE)
+        .and_then(|d| d.get("keep_unreleased"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !has_view || !(doc.contains_key("trigger") || knife || on_key) || hooks.contains_key(super::grenades::HOOK) {
         return;
     }
     if let Some(Value::Table(hooks)) = doc.get_mut("hooks") {
@@ -1823,6 +1839,7 @@ fn turret_patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, length_sc
         }
         return;
     }
+    out.push(set(&["hooks", DEVICE, "zone_fx"], p.zone_fx.clone()));
     if !p.model.is_empty() {
         let skins = skin_paths(&p.skins).into_iter().map(Value::String).collect::<Vec<_>>();
         out.push(set(&["hooks", DEVICE, "model"], super::model::normalize(&p.model)));
@@ -1844,6 +1861,25 @@ fn turret_patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, length_sc
         }
         if let Some([below, above]) = r.shooting_angle {
             out.push(set_t("angles", floats([below as f64, above as f64])));
+        }
+        // The head (the record's `Model`, `Skin`) and the gun (the top
+        // gun's `HHModel`, `HHSkin0`), drawn apart once it is ready
+        // (`special::turret`, Follow-up (2026-11-21) T2).
+        if !r.model.is_empty() {
+            out.push(set_t("head_model", Value::String(super::model::normalize(&r.model))));
+            out.push(set_t(
+                "head_skins",
+                Value::Array(skin_paths(std::slice::from_ref(&r.skin)).into_iter().map(Value::String).collect()),
+            ));
+        }
+        if let Some(gun) = r.top_weapon.and_then(|i| file.weapons.get(i))
+            && !gun.hh_model.is_empty()
+        {
+            out.push(set_t("gun_model", Value::String(super::model::normalize(&gun.hh_model))));
+            out.push(set_t(
+                "gun_skins",
+                Value::Array(skin_paths(&gun.hh_skins).into_iter().map(Value::String).collect()),
+            ));
         }
         if let Some(gun) = r.top_weapon.and_then(|i| file.weapons.get(i)) {
             let g = |k: &str, v: Value| {

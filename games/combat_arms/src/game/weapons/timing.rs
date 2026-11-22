@@ -26,7 +26,12 @@
 //!   the post-fire;
 //! - a knife's (`inventory::Knife`): each swing's length (`fire_0`,
 //!   `alt_fire_0`), hits (its `FIRE_KEY`s, `ALT_FIRE_KEY`s) and post-fire,
-//!   at 1 + the record's `FireAniRate`.
+//!   at 1 + the record's `FireAniRate`;
+//! - a device thrown on its view model's fire key (`special::DeviceParams::
+//!   keep_unreleased`, the auto turret): its first `FIRE_KEY` in `fire_0`
+//!   is the release and `fire_0`'s end the switch away (`Throwable`'s
+//!   `throw_delay` and `throw_time`, special_weapons.md Follow-up
+//!   (2026-11-21) T1).
 //!
 //! The `combat_arms:timing` hook (written by `data`'s merge on the
 //! install's copies, never on our documents: their numbers are the
@@ -84,7 +89,7 @@ use super::{
     classes::CaSpin,
 };
 use super::super::attachments::{CaFitted, CaMods};
-use crate::weapon::{Magazine, ShellReload, Trigger, Weapon, data::WeaponData};
+use crate::weapon::{Magazine, ShellReload, Trigger, Weapon, data::WeaponData, grenade::Throwable};
 
 /// The hook's name: after `combat_arms:attachments`, `:damage` and
 /// `:inventory` in name order, so their components are there.
@@ -293,6 +298,10 @@ pub struct CaTimingValues {
     /// `Knife`'s played rate and each attack's pre-fire, length, hits and
     /// post-fire.
     pub knife: Option<(f32, Vec<(f32, f32, Vec<f32>, f32)>)>,
+    /// A device released on its view model's fire key (`Throwable`'s
+    /// `throw_delay`, `throw_time`).
+    #[serde(default)]
+    pub throw: Option<(f32, f32)>,
 }
 
 impl CaTimingValues {
@@ -317,6 +326,7 @@ impl CaTimingValues {
                 let attacks = k.attacks.iter().map(|a| (a.prefire, a.length, a.hits.clone(), a.postfire)).collect();
                 (k.rate, attacks)
             }),
+            throw: on_key(e).then(|| e.get::<Throwable>().map(|t| (t.throw_delay, t.throw_time))).flatten(),
         }
     }
 }
@@ -382,6 +392,9 @@ pub fn push(world: &mut World, e: Entity, bytes: &[u8]) {
     if let (Some(r), Some(mut d)) = (v.reload_third_person, e.get_mut::<CaDamage>()) {
         d.reload_third_person = r;
     }
+    if let (Some((delay, time)), Some(mut t)) = (v.throw, e.get_mut::<Throwable>()) {
+        (t.throw_delay, t.throw_time) = (delay, time);
+    }
     if let Some(mut f) = e.get_mut::<CaFitted>() {
         f.set_changed();
     }
@@ -403,6 +416,16 @@ pub fn apply_times(e: &mut EntityWorldMut, t: &AnimTimes) {
         .map_or(crate::game::TICK_INTERVAL, |t| t.timestep().as_secs_f64());
     if e.contains::<Knife>() {
         knife_times(e, t, fire_rate);
+    }
+    // A device released on its view model's fire key (the auto turret:
+    // `fire_0` alone, its first `FIRE_KEY` the release, its end the
+    // switch away; special_weapons.md Follow-up (2026-11-21) T1).
+    if on_key(e)
+        && let (Some(&key), Some(fire)) = (t.fire_keys.first(), t.fire)
+        && let Some(mut th) = e.get_mut::<Throwable>()
+    {
+        th.throw_delay = key / rate;
+        th.throw_time = fire / rate;
     }
     // The cycle at rate 1: `fire_0`; a spinning gun's a round per fire
     // key of its loop, a flame gun's its keys' spacing.
@@ -482,6 +505,12 @@ pub fn apply_times(e: &mut EntityWorldMut, t: &AnimTimes) {
     {
         dmg.reload_third_person = r;
     }
+}
+
+/// Whether weapon `e` is a device thrown on its view model's fire key
+/// (`DeviceParams::keep_unreleased`).
+fn on_key(e: &EntityWorldMut) -> bool {
+    e.get::<crate::game::special::CaDeviceData>().is_some_and(|d| d.params.keep_unreleased)
 }
 
 /// The updates from the press to the first round of a weapon whose class
