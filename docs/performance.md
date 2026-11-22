@@ -1512,7 +1512,7 @@ What did not move, and its size (`docs/backlog.md`, "Nothing blocks the main thr
 - Dedicated servers flood at once: a server's first bot tick is still 3-7 G (nobody watches its frames). (Since: on a task or sliced, as a front end's, "A dedicated server's map change" below.)
 
 Guards: `chimera_client`'s `each_hud_is_shown_then_the_playing_one_stays` and `text_warm` (`chimera/client/tests/it/text_warm.rs`: after the warm-up the feed's first kill (its gun's icon glyph and headshot mark too), the board, the panel and a game menu's first opening make no atlas, Bevy's `FontAtlasSet` counted; every atlas put in ahead was under Bevy's own key; an undeclared size is noticed; in play no frame lays out more than `GLYPHS_PER_FRAME` glyphs), `combat_arms`' `ui::text_warm` (its drawn HUD, with and without the warm-up: the feed's first line makes an atlas only without), `chimera/present/tests/it/late_build.rs` (three models far over any game's size come
-in with no frame over 8 M instructions; here 3.5 M; in a process of its own, as other tests' tasks ran into its frames under load), `apps/ultimate_gun_game/tests/it/heavy/rung_frames.rs`
+in with no frame over 8 M instructions; here 3.5 M; in a process of its own, as other tests' tasks ran into its frames under load), `apps/ultimate_gun_game/tests/base/heavy/rung_frames.rs`
 (with the installs: de_dust2 headless, a bot walking a seeded ladder, each rung's worst
 main-thread frame under 45 M, ticks included; measured 12.5-27.7 M. It covers the
 simulation and the bodies' and held models' drawing, not the HUD, the render thread or
@@ -1520,7 +1520,7 @@ install guns: that ladder draws only Combat Arms' own guns, so the real-app numb
 remain the check for those), `chimera_sim`'s
 `spots_made_a_slice_a_tick_are_the_same_spots`, `a_sliced_flood_makes_the_same_mesh` and
 `a_flood_on_a_task_makes_the_same_mesh` (the snapshot's queries make the world's mesh, bounded or
-not, ignored colliders alike), and `apps/ultimate_gun_game/tests/it/heavy/nav_in_play.rs` (with the
+not, ignored colliders alike), and `apps/ultimate_gun_game/tests/base/heavy/nav_in_play.rs` (with the
 installs: de_dust2 headless, no loading screen, a bot walking within 6 s of the round's start, no
 tick over 60 M meanwhile).
 
@@ -1715,7 +1715,7 @@ What waits for a display: the real app's walk (`CHIMERA_FRAME_LOG`, `tools/frame
 and the loading screen's frame times; time to enter each map there (the offscreen wall times
 above are a dev build's, at load 15-30, and moved by 0.1-0.3 s between runs).
 
-Guards: `apps/ultimate_gun_game/tests/it/heavy/map_swap_frames.rs` (the four maps in a row
+Guards: `apps/ultimate_gun_game/tests/hl2dm/heavy/map_swap_frames.rs` (the four maps in a row
 through the shell's `map` flow; no frame from the command to the game over
 `WORST_LOAD_FRAME`, 500 M; measured 150-340 M, 150-300 M with the colliders' mass kept) and `chimera_client`'s `map_load_steps` (a
 map spawned in steps: no tick and no part of the map while it spawns, the same parts as a
@@ -1976,7 +1976,7 @@ the crates above (run for this change: the fast tier of `chimera_world`, `chimer
 changes among them; `heavy::map_de_dust2`, with its walks, landings, prop collisions and
 `maps_change_in_place`, and `heavy::map_net_changelevel`).
 
-Guard: `apps/ultimate_gun_game/tests/it/heavy/map_swap_frames.rs` (headless, dev build): the
+Guard: `apps/ultimate_gun_game/tests/hl2dm/heavy/map_swap_frames.rs` (headless, dev build): the
 frame each map goes into the world brings no collider and stays under `INSERT_FRAME` (200 M;
 measured de_dust2 46-51 M, cs_office 118-139 M, dm_lockdown 68-78 M, warehouse 13 M, where "A
 map's swap" had 149-156, 250-297, 155-210 and 71-89 M with the colliders in it), and its

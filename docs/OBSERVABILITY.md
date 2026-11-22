@@ -218,6 +218,13 @@ in the lowest crate whose public API it needs:
   it exercises by their crates' paths (`tf2::game::weapons::..`): a test
   that only reaches a game through id strings isn't selected by its
   changes, so put it in that game's binary;
+- `ultimate_gun_game` (apps/ultimate_gun_game/tests/): the same split for
+  the automatic gun game: `tests/base/` (no guest game named: the default
+  party's guns, the shared slow runs), `tests/hl2dm/`, `tests/tf2/`,
+  `tests/halo_ce/` the tests naming one guest, `tests/it/` those naming
+  several; helpers (`parts`, the party and its ladder) in `tests/common/`.
+  Here an id string counts too (`tests-by-game-ids`: `"tf2:tf_weapon_..."`
+  outside comments names TF2), as the roster's would select it all;
 - `repo_checks` (checks/tests/it/architecture.rs): the repository's
   rules (layering, assets, specs, docs);
 - `lithtech_formats` (lithtech/formats/tests/it/): LithTech's readers on
@@ -1007,7 +1014,7 @@ client only with the server's `sv_cheats 1` (and only on itself).
   `ui_scene report [details|sent|queued|off]`. What a report's frame
   shows: `feedback` then `feedback_shot <file.jpg>` (the JPEG it would
   send) in an offscreen run, next to a `screenshot` taken at the key
-  (apps/ultimate_gun_game/tests/it/heavy/report_frame.rs: menu, lobby,
+  (apps/ultimate_gun_game/tests/base/heavy/report_frame.rs: menu, lobby,
   match).
 - `version` (console, client and server) prints the build: tag or `git
   describe`, short commit hash and the commit's UTC date, e.g.
@@ -1701,7 +1708,7 @@ load; work counts don't (performance.md, "Work counts"):
   or allocated again in the render world; performance.md, "Render
   performance").
 - A map change's frames without a display: `cargo test -p ultimate_gun_game
-  --features dev --test it heavy::map_swap_frames -- --nocapture` (the
+  --features dev --test hl2dm heavy::map_swap_frames -- --nocapture` (the
   shell's `map` flow headless over four maps, each frame's main-thread
   instructions by stage: loading, spawning, settling; `CHIMERA_SWAP_FRAMES=1`
   each frame with its `CLOCK_MONOTONIC` span for `perf`,
@@ -1710,7 +1717,7 @@ load; work counts don't (performance.md, "Work counts"):
   offscreen: the main schedule, extraction and the render world counted
   apart; performance.md, "A map's swap").
 - A dedicated server's map change, frame by frame: `cargo test -p
-  ultimate_gun_game --features dev --test it heavy::server_map_change --
+  ultimate_gun_game --features dev --test hl2dm heavy::server_map_change --
   --nocapture` (Ultimate Gun Game's server as its binary composes it, a
   new ladder on another map four times; each frame's main-thread
   instructions from the command to 400 ticks of the new map, the frames
@@ -1718,7 +1725,7 @@ load; work counts don't (performance.md, "Work counts"):
   old change, the whole map in a frame and floods whole in a tick;
   performance.md, "A dedicated server's map change").
 - A new ladder's cost and a death's tick: `cargo test -p ultimate_gun_game
-  --features dev --test it heavy::ladder_build -- --nocapture` (the
+  --features dev --test base heavy::ladder_build -- --nocapture` (the
   install's catalogue on the greybox: the definition made, the ladder
   drawn and a match started, five times, each in instructions; 2 s) and
   `... heavy::death_frames -- --nocapture` (de_dust2 with the drawing's
@@ -1730,13 +1737,13 @@ load; work counts don't (performance.md, "Work counts"):
   atlases made on a text's first frame (... at [sizes] px)`; `text warm: N
   fonts and sizes to lay out ahead` says what the warm-up took on.
 - Bots on a map started with no loading screen (`--map`): `cargo test -p
-  ultimate_gun_game --features dev --test it heavy::nav_in_play --
+  ultimate_gun_game --features dev --test base heavy::nav_in_play --
   --nocapture` prints when the navigation mesh (flooded on a task,
   `nav_gen::NavGenTask`) is in, when a bot first walks, and the main
   thread's ticks meanwhile (performance.md, "Nothing blocks the main
   thread").
 - A tick's cost on a map with a large generated navigation mesh: `cargo
-  test -p ultimate_gun_game --features dev --test it heavy::map_ticks --
+  test -p ultimate_gun_game --features dev --test base heavy::map_ticks --
   --nocapture` (Combat Arms' deserthole and cs_militia, 6 bots, 3000
   ticks by work counts: median,
   p99, the bots' thinking, the systems of the costliest tick, each under

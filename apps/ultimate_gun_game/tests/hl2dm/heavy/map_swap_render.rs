@@ -11,7 +11,7 @@
 //! frame instead (the A/B). A tool, not a check: runs only with
 //! `CHIMERA_RENDER_BENCH=1` (and the installs, and a GPU).
 //!
-//! `CHIMERA_RENDER_BENCH=1 cargo test -p ultimate_gun_game --features dev --test it heavy::map_swap_render -- --nocapture`
+//! `CHIMERA_RENDER_BENCH=1 cargo test -p ultimate_gun_game --features dev --test hl2dm heavy::map_swap_render -- --nocapture`
 
 use bevy::{
     app::PluginsState,

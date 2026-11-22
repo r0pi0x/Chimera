@@ -26,7 +26,7 @@
 //! `CHIMERA_SPAWN_MAPS=<game:map>,...` and `CHIMERA_SPAWN_COUNTS=4,8`
 //! narrow the runs. Passes with a note without the installs.
 //!
-//! `cargo test -p ultimate_gun_game --features dev --test it heavy::spawn_views -- --nocapture`
+//! `cargo test -p ultimate_gun_game --features dev --test hl2dm heavy::spawn_views -- --nocapture`
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};

@@ -5,6 +5,12 @@
 //! played by the minigame runtime (each rung's gun makes its holder that
 //! gun's game).
 
+// The helpers every binary includes (tests/common/parts.rs), here for the
+// modules that say `crate::parts::`.
+#[path = "../common/parts.rs"]
+mod helpers;
+pub(crate) use helpers::*;
+
 use bevy::prelude::*;
 use chimera_core::{
     game_parts::GunClass,
@@ -14,36 +20,8 @@ use chimera_sim::{
     minigame::{self, Minigames, auto, ladder::Ladder},
     testkit,
 };
-use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
-use combat_arms::{game::movement, harness::CaSim};
-use party_roster::PartyPartsPlugin;
-use ultimate_gun_game::{MINIGAME, RUNGS, SEED, UltimateGunGamePlugin};
-
-pub(crate) fn ugg() -> Sim {
-    Sim::new(CaSim, (GreyboxMapPlugin, PartyPartsPlugin, UltimateGunGamePlugin::default()))
-}
-
-/// The automatic gun game's ladder as `world` has it.
-pub(crate) fn rungs(world: &World) -> Vec<String> {
-    let def = world.resource::<Minigames>().get(MINIGAME).expect("the automatic gun game is made");
-    def.rules.params["ladder"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect()
-}
-
-/// The powers of the guns of `caps` (`auto::powers`) as `world` scores them.
-pub(crate) fn powers(world: &World, caps: &[auto::Capabilities]) -> chimera_sim::minigame::power::Powers {
-    use chimera_sim::minigame::power::{PowerCurve, PowerReaders};
-    let catalog = world.resource::<chimera_sim::weapon::data::WeaponCatalog>();
-    auto::powers(caps, catalog, world.resource::<PowerReaders>(), &PowerCurve::shipped())
-}
-
-pub(crate) fn of(rungs: &[String], game: &str) -> usize {
-    rungs.iter().filter(|id| id.starts_with(&format!("{game}:"))).count()
-}
+use combat_arms::game::movement;
+use ultimate_gun_game::{MINIGAME, RUNGS, SEED};
 
 #[test]
 fn each_game_reports_what_it_lends() {

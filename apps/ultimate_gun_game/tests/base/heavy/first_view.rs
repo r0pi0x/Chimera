@@ -17,7 +17,7 @@
 //! frames after its cover went. Needs Combat Arms (an install); passes with
 //! a note without one or without a GPU adapter. About a minute.
 //!
-//! `cargo test -p ultimate_gun_game --features dev --test it heavy::first_view -- --nocapture`
+//! `cargo test -p ultimate_gun_game --features dev --test base heavy::first_view -- --nocapture`
 
 use std::{
     fs::File,

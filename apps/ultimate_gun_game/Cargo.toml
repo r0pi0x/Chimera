@@ -11,6 +11,11 @@ license.workspace = true
 # `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path").
 [package.metadata.chimera]
 apps = ["party_roster"]
+# Its tests are a binary per guest game, selected by the games their files
+# name (checks/src/affected.rs, "tests by game").
+tests-by-game = true
+# Its tests spell guns as ids ("tf2:tf_weapon_scattergun"): those name the game too.
+tests-by-game-ids = true
 
 # No doc tests (none written): skips a rustdoc pass on every test run.
 [lib]
@@ -48,7 +53,7 @@ chimera_present.workspace = true
 combat_arms.workspace = true
 combat_arms_ui.workspace = true
 hl2dm.workspace = true
-# Decoding the offscreen runs' pictures (tests/it/heavy/report_frame.rs).
+# Decoding the offscreen runs' pictures (tests/base/heavy/report_frame.rs).
 image.workspace = true
 
 # The game.
@@ -58,11 +63,29 @@ path = "src/main.rs"
 test = false
 required-features = ["present"]
 
-# Its integration tests (tests/it/): the automatic gun game on the
-# composed simulation, headless.
+# Its integration tests: the automatic gun game on the composed simulation,
+# headless; `it` (tests/it/) the tests naming several guest games, the
+# default party's in tests/base/, one binary per guest game (tests/hl2dm/,
+# tests/tf2/, tests/halo_ce/), helpers in tests/common/.
 [[test]]
 name = "it"
 path = "tests/it/main.rs"
+
+[[test]]
+name = "base"
+path = "tests/base/main.rs"
+
+[[test]]
+name = "hl2dm"
+path = "tests/hl2dm/main.rs"
+
+[[test]]
+name = "tf2"
+path = "tests/tf2/main.rs"
+
+[[test]]
+name = "halo_ce"
+path = "tests/halo_ce/main.rs"
 
 # The Windows executable's icon (build.rs: a no-op elsewhere).
 [target.'cfg(windows)'.build-dependencies]

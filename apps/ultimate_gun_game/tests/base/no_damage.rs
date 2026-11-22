@@ -99,7 +99,7 @@ fn drawn_ladders_never_deal_a_gun_without_damage() {
     let skipped = auto::drawable(sim.app.world(), &mut caps);
     let ids: Vec<&str> = skipped.iter().map(|s| s.id).collect();
     // Halo's Hunter cannon is drawn: campaign bodies are on by default
-    // (`halo_ce:campaign_bodies` 1), which deal its rung.
+    // (its `campaign_bodies` setting, 1), which deal its rung.
     assert_eq!(ids, [RMS12, APOLLO, STUN], "{}", auto::skipped_lines(&skipped));
     assert_eq!(skipped[0].why, "no damage");
     assert!(skipped[2].why.contains("stun"), "{}", skipped[2].why);

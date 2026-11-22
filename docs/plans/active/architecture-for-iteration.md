@@ -698,9 +698,47 @@ binary of a selected package (its `--test` would apply to every
 package), so the build after a game edit is not smaller; the run is.
 Kept: the selection is what the post-push runs and the hook's fast
 tier spend, and a guest game's edit now runs a fifth of the roster's
-tests. Not done: `ultimate_gun_game`'s tests (121 + 23) still run for
-every game (they compose the party through the roster); CS:S and Combat
-Arms select everything while the default gun game is theirs.
+tests. Not done here: CS:S and Combat Arms select everything while the
+default gun game is theirs.
+
+`ultimate_gun_game`'s tests the same way (2026-11-22; 145 tests, 24
+heavy): `base` (46: no guest game named, the default party's guns and
+the slow runs of its maps), `hl2dm` (23), `tf2` (19), `halo_ce` (7), `it`
+(50: what names several guests), the library's 5 unit tests; the shared
+helper `parts` (the party and its ladder) in `tests/common/`, which `it`
+re-exports for its modules (test names unchanged: the name lists before
+and after are identical). Files naming exactly one guest moved to that
+guest's binary (a ladder test that merely lists `"hl2dm:dm_lockdown"`
+among its maps with it); `no_damage`'s comment naming a Halo setting by
+id was reworded to keep it in `base`. No test depended on another's
+process state (the fast tier, 126 tests, passes one process per test
+under nextest). `affected`: a tf2 edit runs 74 of its 150 tests (71
+fast), Halo 62 (59), HL2:DM 78 (67), against all of them (126 fast)
+before; CS:S and Combat Arms all.
+
+The shortcut "a test that reaches a game only through id strings isn't
+picked up": `affected` now also reads an id string, a literal starting
+`"<game>:` outside comment lines, as naming the game, per package by
+`tests-by-game-ids = true`. On for `ultimate_gun_game`, whose tests
+spell guns that way (it changes none of its selections today: they were
+placed by the same names, and it keeps a new test that spells "tf2:"
+from staying in `base`). Off for the roster: measured on its binaries
+the rule selects far too much, because a halo test lists a TF2 gun, the
+menu test a Halo one and the shared `play.rs` HL2:DM's crowbar: a TF2
+edit 80 -> 134 tests, Halo 109 -> 458, HL2:DM 121 -> 523 of its 536.
+Those are real uses, but of the ids as data, not behaviour the tests
+check; per-test selection is the cure (the backlog's), not the rule.
+(Unit test `a_game_named_by_id_strings_only_is_named`.) The rule also
+exposed a bug of the first version, fixed: the crates of a game a binary
+does not name were reached through the roster (an app depending on it),
+so `ultimate_gun_game` selected everything; `binary_deps` no longer
+enters the crates of unnamed games at any depth.
+
+Link time, after an edit to `party_roster`'s library (`cargo test -p
+ultimate_gun_game --features dev --no-run --timings`, sccache warm, load
+3-7): the five test binaries link in parallel, 5.2-6.7 s each, 8 s wall
+for the whole; one binary took about 6.6 s alone, so the split adds about
+25 CPU-seconds and no wall time on 12 threads.
 
 ### Stage 4: contracts apart from implementations (spike, then decide)
 
@@ -759,6 +797,8 @@ front end, `affected --code` and the hook's type-check of code only
 (results above). Stage 2's follow-up: menu layout and UGG theme reload.
 2026-11-22: the roster's tests by game: six binaries, `affected`
 selects them by the games their files name (stage 3 follow-up above).
+2026-11-22: `ultimate_gun_game`'s tests by game the same way, and `affected`
+reads id strings (opt-in per package; stage 3 follow-up above).
 
 ## Decision log
 

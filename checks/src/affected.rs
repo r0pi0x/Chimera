@@ -45,6 +45,12 @@
 //! end with it), everything else as for any package. The library's unit
 //! tests run for any of it. A binary naming every game (the roster's
 //! `it`, the cross-game tests) runs for any game's change.
+//! `tests-by-game-ids = true` also counts a game named by an id string
+//! outside comments (`"hl2dm:weapon_crowbar"`, `names_game_id`): for a
+//! package whose tests spell guns that way (`ultimate_gun_game`); off for
+//! the roster, whose every binary spells another game's ids (a menu test's
+//! `"halo_ce:"`, the shared `play.rs`' crowbar), which would select it all
+//! again (halo 109 -> 458 of its tests, HL2:DM 121 -> 523).
 //!
 //! The graph is `cargo metadata --all-features`: optional dependencies
 //! count (a game's `ui` front end's), so it never misses one a feature
@@ -63,10 +69,9 @@
 //! (`tools/testmap` is mapped to `source_tools`, the tools' data to
 //! `cs_source_tools`, the minigames' definitions, `minigames/`, to
 //! `originals`). Tests by game read names in the text, comments included
-//! (a comment naming a game selects more, never less), and miss a game a
-//! test reaches only by id strings (`"hl2dm:weapon_crowbar"` in a ladder's
-//! text) or through the library's composition: the binary naming every
-//! game holds the party's start-up and every-HUD tests for that.
+//! (a comment naming a game by path selects more, never less), and miss a game a test reaches through the
+//! library's composition only: the binary naming every game holds the party's
+//! start-up and every-HUD tests for that.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -101,6 +106,9 @@ pub struct Package {
     /// taken to involve only the games its files name
     /// (`Selection::with_lock`, "tests by game").
     pub tests_by_game: bool,
+    /// `tests-by-game-ids = true` too: a binary also names a game by an
+    /// id string (`"tf2:rocket"`, `names_game_id`).
+    pub tests_by_game_ids: bool,
 }
 
 /// An integration test binary (`[[test]]`, or one cargo found in `tests/`).
@@ -191,6 +199,7 @@ impl Workspace {
             }
             names.insert(id.to_string(), name.clone());
             let tests_by_game = p["metadata"]["chimera"]["tests-by-game"].as_bool().unwrap_or(false);
+            let tests_by_game_ids = p["metadata"]["chimera"]["tests-by-game-ids"].as_bool().unwrap_or(false);
             packages.insert(
                 id.to_string(),
                 Package {
@@ -200,6 +209,7 @@ impl Workspace {
                     dev_deps: Vec::new(),
                     tests,
                     tests_by_game,
+                    tests_by_game_ids,
                 },
             );
         }
@@ -266,9 +276,16 @@ impl Workspace {
         (parts.next() == Some("games")).then(|| parts.next().map(|g| format!("games/{g}"))).flatten()
     }
 
+    /// A game's id when `name` is the game crate itself (`games/<id>`): the
+    /// prefix its ids carry (`hl2dm:weapon_crowbar`).
+    fn game_id(&self, name: &str) -> Option<&str> {
+        self.package(name)?.dir.strip_prefix("games/").filter(|id| !id.contains('/'))
+    }
+
     /// What test binary `bin` of `p` (a `tests_by_game` package) builds
     /// on as far as the selection goes: everything its tests do except
-    /// the games' crates, and of those only the crates of the games its
+    /// the games' crates (directly or through a library composing them),
+    /// and of those only the crates of the games its
     /// files name (`named`: workspace members). Its library composes
     /// every game, but a test that names none of a game's crates is
     /// taken not to exercise that game: the shared binaries name every
@@ -276,20 +293,26 @@ impl Workspace {
     /// change.
     fn binary_deps(&self, p: &Package, named: &BTreeSet<String>) -> BTreeSet<String> {
         let games: BTreeSet<String> = named.iter().filter_map(|n| self.game_of(n)).collect();
-        let keep = |d: &String| self.game_of(d).is_none_or(|g| games.contains(&g));
-        let mut out = BTreeSet::from([p.name.clone()]);
-        for d in p.deps.iter().chain(&p.dev_deps).filter(|d| keep(d)) {
-            self.lib_deps(d, &mut out);
-        }
-        // The named games' other crates (a game's front end with it).
-        for q in &self.packages {
-            if self.game_of(&q.name).is_some_and(|g| games.contains(&g))
-                && (p.deps.contains(&q.name) || p.dev_deps.contains(&q.name))
-            {
-                self.lib_deps(&q.name, &mut out);
-            }
+        let mut out = BTreeSet::new();
+        self.deps_of_games(&p.name, &games, &mut out);
+        for d in &p.dev_deps {
+            self.deps_of_games(d, &games, &mut out);
         }
         out
+    }
+
+    /// `lib_deps` that does not enter the crates of games outside `games`,
+    /// reached directly or through a library that composes them (the
+    /// roster, for an app on top of it).
+    fn deps_of_games(&self, name: &str, games: &BTreeSet<String>, out: &mut BTreeSet<String>) {
+        if self.game_of(name).is_some_and(|g| !games.contains(&g)) || !out.insert(name.to_string()) {
+            return;
+        }
+        if let Some(p) = self.package(name) {
+            for d in &p.deps {
+                self.deps_of_games(d, games, out);
+            }
+        }
     }
 
     /// The member whose folder holds `path` (the deepest one), with the
@@ -771,7 +794,7 @@ impl Selection {
                 // the unit tests (the library's) by everything.
                 let mut bins = BTreeMap::new();
                 for bin in &p.tests {
-                    let named = binary_names(ws, root, bin);
+                    let named = binary_names(ws, root, bin, p.tests_by_game_ids);
                     let deps = ws.binary_deps(p, &named);
                     let hit: Vec<&String> = changed_packages.keys().filter(|c| deps.contains(*c)).collect();
                     if !hit.is_empty() {
@@ -956,7 +979,7 @@ impl Selection {
 /// `crate as`), its files being every `.rs` file in its folder (or its one
 /// file) and those they include by `#[path = "..."]` (a shared helper in
 /// `tests/common/`), resolved against the including file's folder.
-fn binary_names(ws: &Workspace, root: &Path, bin: &TestBinary) -> BTreeSet<String> {
+fn binary_names(ws: &Workspace, root: &Path, bin: &TestBinary, ids: bool) -> BTreeSet<String> {
     let mut files = Vec::new();
     match bin.module_dir() {
         Some(dir) => rust_files(&root.join(dir), &mut files),
@@ -983,9 +1006,23 @@ fn binary_names(ws: &Workspace, root: &Path, bin: &TestBinary) -> BTreeSet<Strin
     }
     ws.packages
         .iter()
-        .filter(|p| names_module(&text, &p.name) || names_crate_as(&text, &p.name))
+        .filter(|p| {
+            names_module(&text, &p.name)
+                || names_crate_as(&text, &p.name)
+                || (ids && ws.game_id(&p.name).is_some_and(|id| names_game_id(&text, id)))
+        })
         .map(|p| p.name.clone())
         .collect()
+}
+
+/// Whether `text` names a game by an id string: a string literal starting
+/// with the game's prefix (`"hl2dm:weapon_crowbar"`, `starts_with("tf2:")`),
+/// outside comment lines. Not a path (`id::`), a field or a longer name.
+fn names_game_id(text: &str, id: &str) -> bool {
+    let pat = format!("\"{id}:");
+    text.lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .any(|l| l.match_indices(&pat).any(|(i, _)| !l[i + pat.len()..].starts_with(':')))
 }
 
 /// Whether `text` names crate `name` in a `use name as ...` rename.
@@ -1078,6 +1115,7 @@ mod tests {
                 })
                 .collect(),
             tests_by_game: false,
+            tests_by_game_ids: false,
         }
     }
 
@@ -1392,6 +1430,30 @@ mod tests {
         ];
         let s = Selection::new(&ws(), &dir, &files);
         assert!(s.partial["cs_source_app"]["it"].0.is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_game_named_by_id_strings_only_is_named() {
+        assert!(names_game_id(r#"let id = "hl2dm:weapon_crowbar";"#, "hl2dm"));
+        assert!(names_game_id(r#"id.starts_with("tf2:")"#, "tf2"));
+        // A path, a field, a longer name, a comment: not the id.
+        assert!(!names_game_id(r#"use hl2dm::game; let s = "hl2dm::game";"#, "hl2dm"));
+        assert!(!names_game_id("tf2: Option<u8>,", "tf2"));
+        assert!(!names_game_id(r#""my_hl2dm:x" "hl2dm_ui:x""#, "hl2dm"));
+        assert!(!names_game_id(r#"    // the id "hl2dm:weapon_crowbar""#, "hl2dm"));
+        assert!(!names_game_id("nothing here", "tf2"));
+        // Through a test binary: its folder names the game by an id string only.
+        let dir = std::env::temp_dir().join(format!("repo-checks-ids-{}", std::process::id()));
+        fs::create_dir_all(dir.join("apps/party_roster/tests/ladder")).unwrap();
+        fs::write(dir.join("apps/party_roster/tests/ladder/main.rs"), r#"const GUN: &str = "tf2:scattergun";"#).unwrap();
+        let mut ws = ws();
+        ws.packages.push(pkg("tf2", "games/tf2", &["chimera_core"], &[], &[]));
+        ws.packages.push(pkg("tf2_ui", "games/tf2/ui", &["tf2"], &[], &[]));
+        let bin = TestBinary { name: "ladder".into(), main: "apps/party_roster/tests/ladder/main.rs".into(), required_features: vec![] };
+        let named = binary_names(&ws, &dir, &bin, true);
+        assert!(binary_names(&ws, &dir, &bin, false).is_empty(), "off unless the manifest asks");
+        assert_eq!(named, BTreeSet::from(["tf2".to_string()]));
         let _ = fs::remove_dir_all(&dir);
     }
 
