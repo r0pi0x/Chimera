@@ -718,8 +718,11 @@ started; the user asked to avoid server lag while testers play.
   and Ctrl+A, with the selection drawn (`chimera_ui::clipboard`,
   `widgets::text_key`; a password pastes but never copies); the report
   dialog's text takes them too (a paste keeps its line breaks, Ctrl+A
-  selects the whole text). Still open:
-  right-click paste (no context menu), the token entry when it comes.
+  selects the whole text). Right click in any kit text field opens its
+  context menu (Cut, Copy, Paste, Select all; greyed when they do not
+  apply, a password: Paste only; `chimera_ui::text_menu`, done 2026-11-22,
+  confirm in a playtest). Still open: the token entry when it comes; the
+  console's own line (not a kit field) has no menu.
 - **Kill feed gun icons too small** (done after 7.1, confirm in a
   playtest): game icons fitted by their ink (`client::ink_icon`): the
   feed's 1.25 cq in its row, the headshot mark 1 cq, the race chip's

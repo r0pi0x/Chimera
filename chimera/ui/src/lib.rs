@@ -84,6 +84,7 @@ pub mod icon_ink;
 pub mod icons;
 pub mod materials;
 pub mod modal;
+pub mod text_menu;
 pub mod motion;
 pub mod parity;
 pub mod picker;
@@ -146,6 +147,7 @@ impl Plugin for ChimeraUiPlugin {
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare));
         pointer_lead::add(app);
         secret::add(app);
+        text_menu::add(app);
         app
             .add_systems(
                 PostUpdate,

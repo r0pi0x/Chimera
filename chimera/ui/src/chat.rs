@@ -318,6 +318,8 @@ impl Ui<'_> {
         let f = c
             .spawn((
                 ChatField,
+                bevy::ui::RelativeCursorPosition::default(),
+                crate::text_menu::TextField::of(text, cursor, false),
                 Node {
                     flex_direction: FlexDirection::Row,
                     align_items: AlignItems::Center,

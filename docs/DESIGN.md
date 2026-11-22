@@ -1213,6 +1213,18 @@ Settings had the new ones, and the match end's Leave had no hover.
   the UI's (`CapturedKeys`): it fires no secondary. Enforced by
   `kit_conformance` (every staged dialog closes or is flagged) and the
   kit tests (`chimera/ui/tests/it/modal.rs`).
+- **A text field's context menu** (the playtest's "right-click paste"):
+  a right click on any kit text field (`text_field`, `search_field`,
+  `text_area`, a value box, the chat's field) opens Cut, Copy, Paste and
+  Select all (`chimera_ui::text_menu`; greyed when they do not apply, a
+  masked field offers Paste only). It is a modal layer, so a right click on
+  a field inside a dialog opens the menu instead of closing the dialog
+  (elsewhere it still closes), and nothing falls through to the screen or
+  the game; Up, Down, Enter and Esc drive it, and the Menu key or Shift+F10
+  opens it from the keys. A choice is typed as Ctrl+X, C, V or A, so every
+  screen's own text handling does it: a screen adds nothing, and a field
+  built by the kit has the menu (`kit_conformance` need not know). Tests:
+  `chimera/ui/tests/it/text_menu.rs`.
 - **A missing feature** is an option on the kit's builder (an icon on a
   button, a narrower control column for a dialog's rules), shown in a
   `ui_scene` gallery, not a copy in the screen.

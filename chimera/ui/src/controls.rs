@@ -1120,6 +1120,12 @@ impl<'a> Ui<'a> {
                 Hover { base, over },
                 RelativeCursorPosition::default(),
                 pressable(),
+                crate::text_menu::TextField {
+                    masked: false,
+                    editing: typing.is_some(),
+                    selected: typing.is_some_and(|t| t.caret != t.anchor),
+                    empty: typing.map_or(value.is_empty(), |t| t.text.is_empty()),
+                },
                 ChildOf(parent),
             ))
             .id();
@@ -1573,7 +1579,7 @@ impl<'a> Ui<'a> {
             ))
             .id();
         if !st.disabled {
-            c.entity(f).insert(pressable());
+            c.entity(f).insert((pressable(), crate::text_menu::TextField::of(value, caret.filter(|_| typing), masked)));
         }
         if search {
             let px = self.units.phys(self.units.cq(SEARCH_H)).round().max(1.0);
@@ -1657,6 +1663,8 @@ impl<'a> Ui<'a> {
                 UiStyle { w: Some(w), h: Some(h), pad: Some([0.7, 0.9].into()), ..UiStyle::column() }.align(AlignItems::Stretch),
                 Node { overflow: Overflow::clip(), ..default() },
                 BackgroundColor(base),
+                RelativeCursorPosition::default(),
+                crate::text_menu::TextField::of(value, caret.filter(|_| typing), false),
                 ChildOf(parent),
             ))
             .id();

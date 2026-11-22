@@ -50,7 +50,7 @@
 use bevy::{
     input::{ButtonState, keyboard::{Key, KeyboardInput}},
     prelude::*,
-    ui::DeprecatedInteraction as Interaction,
+    ui::{DeprecatedInteraction as Interaction, RelativeCursorPosition},
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 
@@ -471,6 +471,7 @@ pub fn back_keys(
     crumbs: Query<&Interaction, (With<ShellBack>, Changed<Interaction>)>,
     cursor: Query<&CursorOptions, With<PrimaryWindow>>,
     window: Query<Entity, With<PrimaryWindow>>,
+    fields: Query<&RelativeCursorPosition, With<crate::text_menu::TextField>>,
     mut release: Local<bool>,
     mut keys: MessageWriter<KeyboardInput>,
     mut pressed: MessageWriter<ShellBackPressed>,
@@ -481,6 +482,10 @@ pub fn back_keys(
     let esc = |state| KeyboardInput { key_code: KeyCode::Escape, logical_key: Key::Escape, state, text: None, repeat: false, window: win };
     if std::mem::take(&mut *release) {
         keys.write(esc(ButtonState::Released));
+        return;
+    }
+    // A right click on a text field is the field's menu (`text_menu`).
+    if crate::text_menu::over_field(&fields) {
         return;
     }
     // A modal layer up (`modal`): right click is its Back, Esc as ever,

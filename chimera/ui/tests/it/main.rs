@@ -13,6 +13,7 @@ mod scroll;
 mod secret;
 mod shell;
 mod style;
+mod text_menu;
 mod text_fit;
 mod theme;
 mod units;
