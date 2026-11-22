@@ -105,16 +105,13 @@ fn typing(
     mut keys: MessageReader<KeyboardInput>,
     mut panel: ResMut<PartyPanel>,
     party: Option<Res<PartyClient>>,
-    guard: Option<ResMut<chimera_ui::shell::BackGuard>>,
     mut out: MessageWriter<PartyAction>,
 ) {
     if !panel.open {
         keys.clear();
         return;
     }
-    if let Some(mut g) = guard {
-        g.hold();
-    }
+    // No BackGuard: right click closes the panel as Esc does (a modal).
     let in_party = party.is_some_and(|p| p.in_party());
     for k in keys.read() {
         if !k.state.is_pressed() {

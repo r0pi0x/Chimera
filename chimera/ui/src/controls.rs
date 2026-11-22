@@ -1921,7 +1921,20 @@ impl<'a> Ui<'a> {
     /// in `parent`, which becomes the modal layer (`modal::Modal`: the UI
     /// behind it takes no input). Returns the plate.
     pub fn modal(&self, c: &mut Commands, parent: Entity, w: f32, danger: bool) -> Entity {
+        self.modal_with(c, parent, w, danger, false)
+    }
+
+    /// `modal` that right click does not close (`modal::Blocking`: a
+    /// required decision, a first-run step, an unsaved-changes guard).
+    pub fn modal_blocking(&self, c: &mut Commands, parent: Entity, w: f32, danger: bool) -> Entity {
+        self.modal_with(c, parent, w, danger, true)
+    }
+
+    fn modal_with(&self, c: &mut Commands, parent: Entity, w: f32, danger: bool, blocking: bool) -> Entity {
         c.entity(parent).insert(crate::modal::Modal);
+        if blocking {
+            c.entity(parent).insert(crate::modal::Blocking);
+        }
         let m = c
             .spawn((
                 UiStyle { w: Some(w), pad: Some([1.8, 2.0, 1.7, 2.0].into()), ..UiStyle::column() }.bg(Tone::Ink2).outline(Tone::Fg4, 1.0),

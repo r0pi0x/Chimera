@@ -1200,6 +1200,19 @@ Settings had the new ones, and the match end's Leave had no hover.
   is for a number, decided by the setting's data type (`Pick::Range`), not
   its labels (`tests/it/kit_conformance.rs`). The old small toggle
   and the natural-width segmented choice are kit-internal now.
+- **Right click closes a dialog** (the user's rule, 2026-11-22: the party
+  panel's dialog did not): every modal layer (`chimera_ui::Modal`: a
+  dialog, picker, confirm, the Escape menu) closes on a right click
+  anywhere, as on Esc, with Esc's own close behaviour (its Cancel or
+  Back: no side effect, the focus returns), done once in the kit
+  (`shell::back_keys` presses Esc for the top modal; nothing per dialog).
+  A dialog that is a required decision (a confirm that must be answered,
+  a first-run step, an unsaved-changes guard, the display-mode
+  keep-or-revert) is built `Ui::modal_blocking` (`chimera_ui::Blocking`)
+  and ignores right click; the default is closable. The right press is
+  the UI's (`CapturedKeys`): it fires no secondary. Enforced by
+  `kit_conformance` (every staged dialog closes or is flagged) and the
+  kit tests (`chimera/ui/tests/it/modal.rs`).
 - **A missing feature** is an option on the kit's builder (an icon on a
   button, a narrower control column for a dialog's rules), shown in a
   `ui_scene` gallery, not a copy in the screen.

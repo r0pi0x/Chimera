@@ -301,3 +301,64 @@ fn hosts_game_tab_draws_dropdowns_not_steppers() {
     let (steppers, _) = count(&mut sim);
     assert!(steppers >= 1, "a number is a stepper ({steppers})");
 }
+
+/// Every dialog a staged scene draws (`chimera_ui::Modal`) is closable by
+/// right click (docs/DESIGN.md, "UI: always the kit": the kit presses Esc
+/// for it, and it closes, as on Esc) or flagged `Blocking` (a required
+/// decision). The right press on a dialog is the dialog's Back, never
+/// the screen behind's.
+#[test]
+fn every_staged_dialog_closes_on_right_click_or_is_flagged_blocking() {
+    use bevy::input::{ButtonState, keyboard::KeyboardInput};
+    use chimera_ui::{Blocking, Modal};
+    let mut sim = sim_with(SIGNAL);
+    if !sim.app.world().contains_resource::<ButtonInput<MouseButton>>() {
+        sim.app.init_resource::<ButtonInput<MouseButton>>();
+    }
+    let have: Vec<&str> = sim.app.world().resource::<UiSceneHooks>().0.iter().map(|(n, _)| *n).collect();
+    let (mut bad, mut dialogs, mut closable) = (Vec::new(), 0, 0);
+    for (name, args) in SCENES {
+        if !have.contains(name) || stage(&mut sim, name, args).is_err() {
+            continue;
+        }
+        let up: Vec<(Entity, bool)> = {
+            let w = sim.app.world_mut();
+            let modals = w.resource::<chimera_ui::Modals>().stack().to_vec();
+            modals.into_iter().map(|e| (e, w.get::<Blocking>(e).is_some())).collect()
+        };
+        let _ = sim.app.world_mut().query::<&Modal>();
+        for (e, blocking) in up {
+            dialogs += 1;
+            let scene = format!("ui_scene {name} {}", args.join(" "));
+            // Only the top modal takes the press; stage the dialog on top by
+            // asking the stack.
+            if sim.app.world().resource::<chimera_ui::Modals>().top() != Some(e) {
+                continue;
+            }
+            let mut cursor = bevy::ecs::message::MessageCursor::<KeyboardInput>::default();
+            {
+                let msgs = sim.app.world().resource::<Messages<KeyboardInput>>();
+                let _ = cursor.read(msgs).count();
+            }
+            sim.app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Right);
+            sim.ticks(1);
+            sim.app.world_mut().resource_mut::<ButtonInput<MouseButton>>().release(MouseButton::Right);
+            sim.app.world_mut().resource_mut::<ButtonInput<MouseButton>>().clear();
+            let msgs = sim.app.world().resource::<Messages<KeyboardInput>>();
+            let esc = cursor.read(msgs).filter(|k| k.key_code == KeyCode::Escape && k.state == ButtonState::Pressed).count();
+            if blocking {
+                if esc != 0 {
+                    bad.push(format!("{scene}: a blocking dialog pressed Esc on a right click"));
+                }
+            } else if esc == 0 {
+                bad.push(format!("{scene}: a dialog that right click does not close and is not flagged `Blocking`"));
+            } else {
+                closable += 1;
+            }
+            // Let go and settle.
+            sim.ticks(3);
+        }
+    }
+    assert!(dialogs >= 4 && closable >= 3, "dialogs staged: {dialogs}, closable {closable}");
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}

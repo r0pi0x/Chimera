@@ -25,7 +25,9 @@
 //!   then released), so each screen's own Esc does what Back does there.
 //!   Not while a text field has the keys or a bind listens (`BackGuard`,
 //!   held by the screens each frame), never while the left button is held,
-//!   never twice for one press.
+//!   never twice for one press. With a modal layer up (`modal`) the
+//!   right click is the top modal's Back (Esc, whatever the screen
+//!   behind) unless it is `Blocking`; the screen gets none.
 //! - **Unbuilt features** (`Disabled`): drawn `fg_4` with a `fg_5`
 //!   outline, no hover lift, no sound, skipped by the keys; their tooltip
 //!   still names them, "Coming soon" under it.
@@ -464,6 +466,8 @@ pub fn back_keys(
     mouse: Option<Res<ButtonInput<MouseButton>>>,
     mut guard: ResMut<BackGuard>,
     screens: Query<(), With<ShellScreen>>,
+    modals: Option<Res<crate::modal::Modals>>,
+    blocking: Query<(), With<crate::modal::Blocking>>,
     crumbs: Query<&Interaction, (With<ShellBack>, Changed<Interaction>)>,
     cursor: Query<&CursorOptions, With<PrimaryWindow>>,
     window: Query<Entity, With<PrimaryWindow>>,
@@ -479,7 +483,20 @@ pub fn back_keys(
         keys.write(esc(ButtonState::Released));
         return;
     }
-    if screens.is_empty() || guard.last || !pointer_free(&cursor) {
+    // A modal layer up (`modal`): right click is its Back, Esc as ever,
+    // unless it is `Blocking`; the screen behind gets no Back.
+    let top = modals.as_ref().and_then(|m| m.top());
+    if top.is_some_and(|t| blocking.contains(t)) {
+        return;
+    }
+    if (screens.is_empty() && top.is_none()) || guard.last || !pointer_free(&cursor) {
+        return;
+    }
+    if top.is_some() {
+        if mouse.is_some_and(|m| m.just_pressed(MouseButton::Right) && !m.pressed(MouseButton::Left)) {
+            keys.write(esc(ButtonState::Pressed));
+            *release = true;
+        }
         return;
     }
     // The crumb's Interaction is last frame's (Bevy's focus runs later in

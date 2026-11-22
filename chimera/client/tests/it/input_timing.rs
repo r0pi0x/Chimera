@@ -379,3 +379,29 @@ fn a_click_that_closes_a_menu_fires_nothing() {
         assert!(take(&mut sim).iter().all(|c| !c.1.fire), "held {held}: the menu's click fired");
     }
 }
+
+/// A dialog that closes on a right press (the kit's right click is its
+/// Esc): the secondary fire does not fire, held or tapped.
+#[test]
+fn a_right_click_that_closes_a_dialog_fires_nothing() {
+    fn close_on_right(mouse: Res<ButtonInput<MouseButton>>, mut menu: ResMut<MenuStatus>) {
+        if menu.open && mouse.just_pressed(MouseButton::Right) {
+            menu.open = false;
+        }
+    }
+    for held in [true, false] {
+        let mut sim = menu_closing_on_press(false);
+        sim.app.add_systems(Update, close_on_right);
+        mouse(&mut sim).press(MouseButton::Right);
+        if !held {
+            mouse(&mut sim).release(MouseButton::Right);
+        }
+        frame(&mut sim);
+        assert!(!sim.app.world().resource::<MenuStatus>().open, "the right click closed the dialog");
+        for _ in 0..5 {
+            frame(&mut sim);
+        }
+        assert!(grabbed(&mut sim), "back in the game");
+        assert!(take(&mut sim).iter().all(|c| !c.1.secondary), "held {held}: the dialog's right click fired the alt-fire");
+    }
+}

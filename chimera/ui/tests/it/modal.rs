@@ -213,3 +213,63 @@ fn a_hidden_modal_is_not_up() {
     frame(&mut app);
     assert!(!app.world().resource::<Modals>().is_open());
 }
+
+/// The Esc messages written since the last call.
+fn escapes(app: &mut App) -> Vec<bevy::input::ButtonState> {
+    #[derive(Resource, Default)]
+    struct Seen(bevy::ecs::message::MessageCursor<bevy::input::keyboard::KeyboardInput>);
+    app.world_mut().init_resource::<Seen>();
+    app.world_mut().resource_scope(|w, mut seen: Mut<Seen>| {
+        let msgs = w.resource::<Messages<bevy::input::keyboard::KeyboardInput>>();
+        seen.0.read(msgs).filter(|k| k.key_code == KeyCode::Escape).map(|k| k.state).collect()
+    })
+}
+
+#[test]
+fn right_click_presses_esc_for_the_top_modal_unless_it_is_blocking() {
+    use bevy::input::ButtonState;
+    let mut app = app();
+    let s = scene(&mut app);
+    // The dialog: a right click is Esc, pressed once then released; the
+    // button held down is not a Back.
+    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Right);
+    frame(&mut app);
+    assert_eq!(escapes(&mut app), [ButtonState::Pressed], "right click is the dialog's Esc");
+    frame(&mut app);
+    assert_eq!(escapes(&mut app), [ButtonState::Released]);
+    frame(&mut app);
+    assert!(escapes(&mut app).is_empty(), "once per press");
+    // A blocking confirm over it takes the right click and does nothing.
+    let confirm = app.world_mut().spawn((Node::default(), Modal, chimera_ui::Blocking, ChildOf(s.dialog))).id();
+    frame(&mut app);
+    assert_eq!(app.world().resource::<Modals>().top(), Some(confirm));
+    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Right);
+    frame(&mut app);
+    frame(&mut app);
+    assert!(escapes(&mut app).is_empty(), "a blocking modal ignores right click");
+    // Gone, the dialog under it closes on right click again.
+    app.world_mut().entity_mut(confirm).despawn();
+    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().release(MouseButton::Right);
+    frame(&mut app);
+    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Right);
+    frame(&mut app);
+    assert_eq!(escapes(&mut app), [ButtonState::Pressed]);
+}
+
+/// The kit's `Ui::modal` closes on right click, `modal_blocking` does not.
+#[test]
+fn the_kits_modal_builders_set_the_flag() {
+    let mut app = app();
+    let theme = app.world().resource::<Theme>().clone();
+    let units = *app.world().resource::<UiUnits>();
+    let world = app.world_mut();
+    let (a, b) = (world.spawn(Node::default()).id(), world.spawn(Node::default()).id());
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    let mut c = Commands::new(&mut queue, world);
+    let ui = Ui::new(&theme, None, units);
+    ui.modal(&mut c, a, 30.0, false);
+    ui.modal_blocking(&mut c, b, 30.0, true);
+    queue.apply(world);
+    assert!(world.get::<Modal>(a).is_some() && world.get::<chimera_ui::Blocking>(a).is_none());
+    assert!(world.get::<Modal>(b).is_some() && world.get::<chimera_ui::Blocking>(b).is_some());
+}

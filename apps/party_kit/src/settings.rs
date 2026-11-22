@@ -2413,7 +2413,7 @@ fn keep_modal(c: &mut Commands, ui: &Ui, root: Entity, left: u64) {
             ChildOf(root),
         ))
         .id();
-    let m = ui.modal(c, shade, 30.0, false);
+    let m = ui.modal_blocking(c, shade, 30.0, false);
     ui.text(c, m, Role::DisplayBold, 1.35, Tone::Fg, "Keep this display mode?");
     let big = ui.boxed(c, m, UiStyle { gap: Some(0.8), margin: Some([1.0, 0.0, 0.3, 0.0].into()), ..UiStyle::row() }.align(AlignItems::Baseline));
     ui.text(c, big, Role::DisplayBold, 2.6, Tone::Fg, &format!("{left}"));
@@ -2443,7 +2443,7 @@ fn leave_modal(c: &mut Commands, ui: &Ui, root: Entity, at: usize, changes: usiz
             ChildOf(root),
         ))
         .id();
-    let m = ui.modal(c, shade, 32.0, false);
+    let m = ui.modal_blocking(c, shade, 32.0, false);
     ui.text(c, m, Role::DisplayBold, 1.35, Tone::Fg, "Apply your changes?");
     let line = if changes == 1 { "1 change is not applied yet.".to_string() } else { format!("{changes} changes are not applied yet.") };
     let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });

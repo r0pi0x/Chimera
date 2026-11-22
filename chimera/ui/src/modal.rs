@@ -24,6 +24,9 @@
 //!   Enter, Tab and the arrows drive the top layer only and Esc closes
 //!   the top dialog alone.
 //!
+//! - **Right click** closes the top modal as Esc does (`shell::back_keys`),
+//!   unless it carries `Blocking`; see `Blocking`.
+//!
 //! Known shortcuts: the stack is the last layout's (a modal spawned this
 //! frame counts from the next `PreUpdate`), so a screen that opens a
 //! dialog keeps its own "open" flag for that first frame; the keys are
@@ -39,6 +42,17 @@ use bevy::{
 /// A modal layer's root (module doc).
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Modal;
+
+/// A modal layer that right click does not close (a required decision: a
+/// confirm that must be answered, a first-run step, an unsaved-changes
+/// guard). Every other modal closes on a right click anywhere, as on
+/// Esc (`shell::back_keys` presses Esc for it, so it has the same close
+/// behaviour as its Esc and Cancel), and the press is the UI's: the
+/// client takes every mouse button pressed while a panel owns the mouse
+/// until it is let go (`CapturedKeys`), so it fires nothing. Put it on
+/// the layer's root with `Modal` (`Ui::modal_blocking`).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct Blocking;
 
 /// The open modals, back to front (module doc).
 #[derive(Resource, Clone, Debug, Default)]
