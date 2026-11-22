@@ -3274,11 +3274,13 @@ fn step(
                 .filter(|(_, _, p)| p.push != PushAway::Collide)
                 .map(|(e, ..)| e),
         );
-    // Players-only surfaces too (another game's map's: Combat Arms'
-    // collision blockers); a Source map's player clips are among its
-    // brushes, their collider left out with the rest.
-    let filter = SpatialQueryFilter::from_excluded_entities(excluded)
-        .with_mask(crate::core::SOLID_LAYERS | crate::core::PLAYER_CLIP_LAYER);
+    // What a character's body meets (`CHARACTER_FILTER`): players-only
+    // surfaces too (another game's map's: Combat Arms' collision
+    // blockers), not traces-only ones (Combat Arms' non-solid detail, a
+    // ramp of which filled coldseed's doorway) or loose items; a Source
+    // map's player clips are among its brushes, their collider left out
+    // with the rest.
+    let filter = SpatialQueryFilter::from_excluded_entities(excluded).with_mask(crate::core::CHARACTER_FILTER);
     // The broad phase over the map's brushes, rebuilt with them.
     let grid = &mut *grid_cache;
     if let Some(b) = brushes.as_ref()

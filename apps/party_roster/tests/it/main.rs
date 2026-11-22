@@ -33,4 +33,5 @@ mod heavy {
     mod converted;
     mod converted_prints;
     mod halo_party_hud;
+    mod report_spots;
 }
