@@ -165,7 +165,15 @@ impl Fixture {
             Service::new(store.clone()).unwrap()
         };
         let running = server::serve(service.with_latency(latency), "127.0.0.1:0", 4).unwrap();
-        let identity = Identity::from_seed(&[3; 32], [5; 16]);
+        // A certificate of its own per fixture: the process's live session
+        // (`account::set_live`, the last account a test opened) is sent to any
+        // service whose certificate it names (`AccountFile::serves`), so
+        // fixtures sharing one identity sent each other's tickets (refused:
+        // another service's key) when `cargo test`'s threads overlapped.
+        static NEXT_IDENTITY: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(1);
+        let mut seed = [3; 32];
+        seed[31] = NEXT_IDENTITY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let identity = Identity::from_seed(&seed, [5; 16]);
         let front = tls::front(
             "127.0.0.1:0",
             running.addr,

@@ -191,7 +191,9 @@ fn a_dedicated_server_hosts_with_a_players_signed_in_account() {
     let line = chimera_net::net::hub::host_account_line(Some(&player));
     assert!(line.starts_with("hub: hosting as player on https://127.0.0.1:"), "{line}");
     let mut sim = listed_server(&player);
-    pump("listed", &mut [&mut sim], |_| s.hub().admin_list().len() == 1);
+    // The hub has it, and the server has read the reply (its state flips on
+    // a later update than the hub's registration).
+    pump("listed", &mut [&mut sim], |sims| s.hub().admin_list().len() == 1 && matches!(state(sims[0]), ListState::Listed(_)));
     assert!(matches!(state(&sim), ListState::Listed(_)), "{:?}", state(&sim));
     assert_eq!(s.hub().admin_list()[0].listing.addr, format!("127.0.0.1:{}", port_of(&sim)));
     chimera_core::shutdown::run_steps(sim.app.world_mut());
