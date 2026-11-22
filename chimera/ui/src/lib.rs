@@ -61,6 +61,9 @@
 //! - `pointer_lead`: `PointerLead`, whether the keys or the pointer drive
 //!   a list's selection (a navigation key takes it, a real pointer move
 //!   gives it back): one rule for every list hover and keys both select in.
+//! - `secret`: values hidden by default (addresses, the recovery key):
+//!   masked, an eye key to reveal (`Ui::secret`, `Reveals`), masked again
+//!   whenever a screen opens.
 //! - `text_fit`: `ellipsize` and `Ellipsize` (a text cut to a width with
 //!   `…`, measured in the kit's faces: `KitFonts::width`), for the names
 //!   in the Signal screens.
@@ -85,6 +88,7 @@ pub mod motion;
 pub mod parity;
 pub mod picker;
 pub mod scroll;
+pub mod secret;
 pub mod shell;
 pub mod pointer_lead;
 pub mod sound;
@@ -141,6 +145,7 @@ impl Plugin for ChimeraUiPlugin {
             .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, modal::ModalPlugin, scroll::ScrollPlugin, vlist::VListPlugin, picker::PickerPlugin, shell::ShellPlugin))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare));
         pointer_lead::add(app);
+        secret::add(app);
         app
             .add_systems(
                 PostUpdate,

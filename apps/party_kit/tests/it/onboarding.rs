@@ -273,18 +273,168 @@ fn the_bar_carries_the_games_lockup() {
     assert!(text.contains("GUN GAME") && !text.contains("LUCKER PARTY"), "{text}");
 }
 
+/// A screen appears whole: no entrance slide (the kit's rule), and it
+/// types at once.
 #[test]
-fn the_entry_slides_in_but_never_blocks() {
+fn screens_appear_without_an_entrance_slide() {
     let mut sim = sim();
     let n = {
         let w = sim.app.world_mut();
-        w.query_filtered::<(), With<Timeline>>().iter(w).count()
+        let mut stack: Vec<Entity> = w.query_filtered::<Entity, With<OnboardingRoot>>().iter(w).collect();
+        assert!(!stack.is_empty(), "drawn");
+        let mut n = 0;
+        while let Some(e) = stack.pop() {
+            n += usize::from(w.get::<Timeline>(e).is_some());
+            if let Some(ch) = w.get::<Children>(e) {
+                stack.extend(ch.iter());
+            }
+        }
+        n
     };
-    assert!(n > 3, "the parts slide in ({n})");
-    let since = o(&sim).since;
+    assert_eq!(n, 0, "no part slides in");
     typed(&mut sim, "x");
-    assert!(o(&sim).since < since - 5.0, "a key ends the entry");
-    assert_eq!(o(&sim).input, "x", "and still types");
+    assert_eq!(o(&sim).input, "x", "it types at once");
+}
+
+fn clip(sim: &mut Sim, text: &str) {
+    sim.app.world_mut().resource_mut::<chimera_ui::clipboard::Clipboard>().set(text);
+}
+
+fn paste(sim: &mut Sim) {
+    sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::ControlLeft);
+    key(sim, Key::Character("v".into()), KeyCode::KeyV);
+    sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(KeyCode::ControlLeft);
+}
+
+fn focus_window(sim: &mut Sim) {
+    sim.app.world_mut().write_message(bevy::window::WindowFocused { window: Entity::PLACEHOLDER, focused: true });
+    sim.ticks(1);
+}
+
+/// The invite field checks itself (the user's review, 2026-11-21): at
+/// once on a paste, else a moment after the last key; the screen stays,
+/// says so, and Continue then goes on with no other call.
+#[test]
+fn the_invite_is_checked_on_paste_and_after_a_pause() {
+    let mut sim = sim();
+    clip(&mut sim, LINK);
+    paste(&mut sim);
+    let ob = o(&sim).clone();
+    assert_eq!(ob.input, LINK);
+    assert_eq!(ob.step, Step::Welcome, "the screen stays");
+    assert_eq!(ob.valid.as_deref(), Some(LINK), "checked at once: {:?}", ob.problem);
+    assert!(words(&mut sim).contains("INVITE CHECKED · FRIDAY NIGHT HUB"), "{}", words(&mut sim));
+    assert!(!words(&mut sim).to_lowercase().contains("press enter"), "no Enter to check");
+    enter(&mut sim);
+    assert_eq!(o(&sim).step, Step::Hub);
+    // Typed: nothing until a pause, then checked.
+    act(&mut sim, ObAction::Back);
+    act(&mut sim, ObAction::Clear);
+    typed(&mut sim, &LINK.replace("K7Q-M2P-9TR", "AAA-AAA-AAA"));
+    step(&mut sim, 0.3);
+    assert_eq!(o(&sim).problem, None, "still typing");
+    step(&mut sim, 0.4);
+    sim.ticks(1);
+    assert_eq!((o(&sim).step, o(&sim).problem.clone()), (Step::Welcome, Some(Problem::Used)), "checked after the pause");
+    // Not an invite: said after the pause too.
+    act(&mut sim, ObAction::Clear);
+    typed(&mut sim, "see you friday!");
+    step(&mut sim, 0.7);
+    sim.ticks(1);
+    assert_eq!(o(&sim).problem, Some(Problem::NotInvite));
+}
+
+/// The window back in front: a link on the clipboard fills an empty field
+/// (or one holding something that isn't a checked invite) and is checked;
+/// a checked invite is never replaced.
+#[test]
+fn coming_back_to_the_window_reads_the_clipboard() {
+    let mut sim = sim();
+    clip(&mut sim, LINK);
+    focus_window(&mut sim);
+    let ob = o(&sim).clone();
+    assert_eq!((ob.input.as_str(), ob.source), (LINK, party_kit::onboarding::Source::Clipboard));
+    assert_eq!(ob.valid.as_deref(), Some(LINK), "and checked");
+    // A checked invite stays.
+    let other = LINK.replace("K7Q-M2P-9TR", "BBB-BBB-BBB");
+    clip(&mut sim, &other);
+    focus_window(&mut sim);
+    assert_eq!(o(&sim).input, LINK, "a checked one is never replaced");
+    // Something else that isn't an invite gives way.
+    act(&mut sim, ObAction::Clear);
+    typed(&mut sim, "hello");
+    step(&mut sim, 0.7);
+    sim.ticks(1);
+    assert_eq!(o(&sim).problem, Some(Problem::NotInvite));
+    clip(&mut sim, LINK);
+    focus_window(&mut sim);
+    assert_eq!(o(&sim).input, LINK);
+    assert_eq!(o(&sim).valid.as_deref(), Some(LINK));
+    // Not a link on the clipboard: nothing changes.
+    act(&mut sim, ObAction::Clear);
+    clip(&mut sim, "just words");
+    focus_window(&mut sim);
+    assert!(o(&sim).input.is_empty());
+}
+
+/// Addresses and the recovery key are hidden by default, with an eye key
+/// that shows them; leaving the screen hides them again. Copy works
+/// hidden.
+#[test]
+fn addresses_and_the_key_are_hidden_until_shown() {
+    use chimera_ui::secret::{RevealKey, Reveals};
+    let mut sim = sim();
+    typed(&mut sim, LINK);
+    enter(&mut sim);
+    assert_eq!(o(&sim).step, Step::Hub);
+    let host = "hub.example.net";
+    assert!(!words(&mut sim).contains(host), "masked: {}", words(&mut sim));
+    let eyes = {
+        let w = sim.app.world_mut();
+        w.query::<&RevealKey>().iter(w).map(|k| k.0.clone()).collect::<Vec<_>>()
+    };
+    assert!(eyes.iter().any(|k| k == party_kit::onboarding::REVEAL_HOST), "an eye key: {eyes:?}");
+    sim.app.world_mut().resource_mut::<Reveals>().toggle(party_kit::onboarding::REVEAL_HOST);
+    sim.ticks(2);
+    assert!(words(&mut sim).contains(host), "shown");
+    // The next screen has no address: the reveal is forgotten.
+    enter(&mut sim);
+    sim.ticks(2);
+    act(&mut sim, ObAction::Back);
+    sim.ticks(1);
+    assert_eq!(o(&sim).step, Step::Hub);
+    assert!(!words(&mut sim).contains(host), "hidden again");
+    // The recovery key.
+    sim.app.world_mut().resource_mut::<Console>().submit("ui_scene onboarding key");
+    sim.ticks(3);
+    let group = STAGED_KEY.split('-').next().unwrap();
+    assert!(!words(&mut sim).contains(group), "the key masked");
+    act(&mut sim, ObAction::Copy);
+    let got = sim.app.world_mut().resource_mut::<chimera_ui::clipboard::Clipboard>().get();
+    assert_eq!(got.as_deref(), Some(STAGED_KEY), "copied hidden");
+    sim.app.world_mut().resource_mut::<Reveals>().toggle(party_kit::onboarding::REVEAL_KEY);
+    sim.ticks(2);
+    assert!(words(&mut sim).contains(group), "shown");
+}
+
+/// Save as file shows where the key went: its whole path, and Copy path.
+#[test]
+fn saving_the_key_shows_its_whole_path() {
+    let mut sim = sim();
+    sim.app.world_mut().resource_mut::<Console>().submit("ui_scene onboarding key");
+    sim.ticks(3);
+    let dir = std::env::temp_dir().join(format!("chimera-onboarding-path-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    sim.app.world_mut().resource_mut::<OnboardingFiles>().key_dir = Some(dir.clone());
+    act(&mut sim, ObAction::Save);
+    let path = o(&sim).saved_path.clone().expect("saved");
+    assert!(std::path::Path::new(&path).is_absolute() && std::path::Path::new(&path).exists(), "{path}");
+    assert!(path.starts_with(&*dir.to_string_lossy()), "{path}");
+    assert!(words(&mut sim).contains(&path), "the whole path shows");
+    act(&mut sim, ObAction::CopyPath);
+    let got = sim.app.world_mut().resource_mut::<chimera_ui::clipboard::Clipboard>().get();
+    assert_eq!(got.as_deref(), Some(path.as_str()));
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -368,8 +518,8 @@ fn a_pc_with_no_account_sees_the_first_run() {
 fn every_staged_screen_draws_its_words() {
     let mut sim = sim();
     for s in [
-        "welcome", "clipboard", "checking", "used", "unknown", "unreachable", "certificate", "hub", "name", "name-bad", "name-taken",
-        "key", "have", "recover", "done",
+        "welcome", "clipboard", "checked", "checking", "used", "unknown", "unreachable", "certificate", "hub", "name", "name-bad", "name-taken",
+        "key", "key-saved", "have", "recover", "done",
     ] {
         sim.app.world_mut().resource_mut::<Console>().submit(&format!("ui_scene onboarding {s}"));
         sim.ticks(3);

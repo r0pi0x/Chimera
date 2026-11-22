@@ -1030,6 +1030,11 @@ fn typed_text_keeps_its_case_and_labels_stay_capitals() {
     act(&mut sim, A::Entry(1));
     submit(&mut sim, "mainmenu_type address Home.Example:27015");
     sim.ticks(3);
+    // Addresses are hidden until the field's eye key shows them.
+    let texts: Vec<String> = sim.app.world_mut().query::<&Text>().iter(sim.app.world()).map(|t| t.0.clone()).collect();
+    assert!(!texts.iter().any(|t| t.contains("Home.Example") || t.contains("HOME.EXAMPLE")), "masked by default");
+    sim.app.world_mut().resource_mut::<chimera_ui::secret::Reveals>().toggle(party_kit::signal_pages::REVEAL_ADDRESSES);
+    sim.ticks(3);
     let texts: Vec<String> = sim.app.world_mut().query::<&Text>().iter(sim.app.world()).map(|t| t.0.clone()).collect();
     // A field's text is one node a character (`controls::EditText`).
     let w = sim.app.world_mut();

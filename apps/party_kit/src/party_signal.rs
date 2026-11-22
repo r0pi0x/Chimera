@@ -332,8 +332,9 @@ fn in_party(c: &mut Commands, ui: &Ui, m: Entity, v: &PartyView, at: Option<&str
     }
 }
 
-fn shown_name(t: &Target) -> &str {
-    if t.name.trim().is_empty() { &t.addr } else { &t.name }
+/// The server's name, else its address hidden (`chimera_ui::secret`).
+fn shown_name(t: &Target) -> String {
+    if t.name.trim().is_empty() { chimera_ui::secret::mask(&t.addr) } else { t.name.clone() }
 }
 
 /// The follow prompt at the top, while the panel is shut.

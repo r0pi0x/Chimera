@@ -10,6 +10,7 @@ mod modal;
 mod motion;
 mod picker;
 mod scroll;
+mod secret;
 mod shell;
 mod style;
 mod text_fit;

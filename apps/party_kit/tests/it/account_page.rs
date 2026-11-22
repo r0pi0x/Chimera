@@ -314,3 +314,30 @@ fn the_first_runs_end_starts_the_base_files_and_the_strip_never_blocks() {
     let picks: Vec<Pickable> = w.query_filtered::<&Pickable, With<BaseStrip>>().iter(w).cloned().collect();
     assert_eq!(picks, [Pickable::IGNORE], "the strip takes no clicks");
 }
+
+/// The hub's address is hidden until its eye key shows it, and hidden
+/// again when the page opens anew; the avatar's 32 looks are in the list
+/// (what you change), the username a form's field with its help line.
+#[test]
+fn the_hub_address_is_hidden_and_the_avatar_grid_is_in_the_list() {
+    use chimera_ui::secret::Reveals;
+    let mut sim = sim(false);
+    open(&mut sim);
+    let host = "hub.example.net";
+    assert!(words(&mut sim).contains("How you sign in and how people find you"), "the username's help line");
+    let avatars = {
+        let w = sim.app.world_mut();
+        w.query::<&AccountAction>().iter(w).filter(|a| matches!(a, AccountAction::Avatar(_))).count()
+    };
+    assert_eq!(avatars, 32, "the looks are in the list");
+    focus(&mut sim, Row::Hub);
+    assert!(!words(&mut sim).contains(host), "masked");
+    sim.app.world_mut().resource_mut::<Reveals>().toggle(party_kit::account_page::REVEAL_HOST);
+    sim.ticks(2);
+    assert!(words(&mut sim).contains(host), "shown");
+    sim.app.world_mut().resource_mut::<Console>().submit("account_page 0");
+    sim.ticks(3);
+    open(&mut sim);
+    focus(&mut sim, Row::Hub);
+    assert!(!words(&mut sim).contains(host), "hidden again");
+}

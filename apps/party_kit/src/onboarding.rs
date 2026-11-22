@@ -1,7 +1,8 @@
 //! The first run: from an invite to the main menu, signed in (feature
 //! `present`; docs/plans/active/onboarding.md, the approved mockups and
 //! the user's decisions of 2026-11-21). Drawn in the Signal look over the
-//! main menu (`ONBOARDING_Z`), its words from `data/onboarding.toml`
+//! main menu (`ONBOARDING_Z`) on the main menu's own ground
+//! (`chimera_ui::shell::menu_ground`), its words from `data/onboarding.toml`
 //! (`Words`), its colours and sizes the theme's (places:
 //! `[layout.onboarding]`). The bar carries the game's own lockup (the
 //! main menu's: `Ui::lockup_drawn`, `OnboardingLockup`), the screen's
@@ -41,9 +42,16 @@
 //!   without them).
 //! - **Welcome** (`Step::Welcome`): the one field takes the whole hub
 //!   link, a web address with the code, or the bare code
-//!   (`chimera_assets::account::InviteInput`), read on Enter; the pane
-//!   "What an invite carries" lights each part found. A link already on
-//!   the clipboard is filled in at the start (nothing is sent).
+//!   (`chimera_assets::account::InviteInput`), checked with its hub by
+//!   itself (`invite_pause`): at once on a paste, else `INVITE_PAUSE`
+//!   after the last key, the screen staying (`Onboarding::auto`); a yes
+//!   is kept for that text (`valid`) and Continue goes on with no other
+//!   call (Continue while the check runs waits on Checking); the pane
+//!   "What an invite carries" lights each part found. A link on the
+//!   clipboard fills the field and is checked: at the start
+//!   (`from_clipboard`), and whenever the window comes back to the front
+//!   (`refocus_clipboard`) while the field is empty or holds something
+//!   else that isn't a checked invite.
 //!   A clicked invite link (`chimera_client::client::link_handler`: the
 //!   game started by it, or the running game it was handed to;
 //!   `open_links`) brings Welcome up with the field filled
@@ -59,16 +67,25 @@
 //!   another clears the field, Retry, Back with "Copy details for the
 //!   owner" for a certificate: no field, no way on). A device link code
 //!   goes straight to redeeming.
+//! - **Addresses hidden** (`chimera_ui::secret`, `REVEAL_HOST`): the
+//!   hub's address shows masked in the field, the pane, Checking and Hub,
+//!   with an eye key; masked again whenever a screen opens.
 //! - **Hub**: "You're joining <name>", the hub's address, the certificate
 //!   check, its players and its MOTD; "Not this one" goes back.
-//! - **Name**: the username (the rules lit as typed,
+//! - **Name**: what you choose at the left, as a form (the kit's
+//!   `form_field`: a title, a line on what it's for, the input): the
+//!   username (the rules lit as typed,
 //!   `chimera_assets::codes::UsernameRules`; availability asked of the
 //!   hub 0.45 s after the last key, with free suggestions when taken), the
-//!   display name (optional), the avatar (`cl_avatar`'s 32 looks; arrows
-//!   move it while it has the focus) and a preview of how others see you.
+//!   display name (optional), the avatar beside them (`cl_avatar`'s 32
+//!   looks in tiles as big as the room allows; arrows move it while it has
+//!   the focus); at the right only the preview of how others see you.
 //!   Continue redeems: the device key is made here.
-//! - **Key**: the recovery key in groups, Copy (Ctrl+C), Save as file
-//!   (`OnboardingFiles::key_dir`), "I saved it" (Space) unlocks Continue.
+//! - **Key**: the recovery key in groups, masked with an eye key
+//!   (`REVEAL_KEY`: streamers), Copy (Ctrl+C) and Save as file
+//!   (`OnboardingFiles::key_dir`) never needing it shown; a saved file's
+//!   whole path shows under them (`SavedPath`) with Copy path; "I saved
+//!   it" (Space) unlocks Continue.
 //! - **Have**: Link a device (a link code in six cells, where it comes
 //!   from drawn small at the right) or Recover with key (Q and E);
 //!   the hub's link asked when this PC knows none. A recovery shows the
@@ -76,10 +93,9 @@
 //! - **Done** (`finish`): the account file written and made live, the
 //!   avatar set (`cl_avatar`), the hub and parties of the account taken
 //!   up, and a toast on the main menu ("Welcome, <name>").
-//! - **No blocking animations** (decision 8): each screen's parts slide in
-//!   (`Timeline`, staggered, scaled by `ui_motion_scale`), but the field
-//!   and buttons work from the first frame, and any key or click while
-//!   they move ends the entry at once (`skip_entry`).
+//! - **No blocking animations** (decision 8) and no entrance slide (the
+//!   kit's rule, `chimera_ui::shell`): each screen appears whole; only the
+//!   intro and the controls' own small motions move.
 //! - The menus behind it take no keys while it shows (`takes_keys`).
 //! - **Returning players** see no sign-in screen: the account's tickets
 //!   come silently (`chimera_assets::account::keep_fresh`, the hub's
@@ -92,8 +108,8 @@
 //!   Settings > Account (`account_page`). `AccountShown` is the
 //!   account's names (the app's start, or the first run's end).
 //! - `ui_scene onboarding intro [t]` plays the intro (held still at `t`
-//!   seconds when given, for screenshots); `ui_scene onboarding <welcome|clipboard|checking|used|unknown|
-//!   unreachable|certificate|hub|name|name-bad|name-taken|key|have|
+//!   seconds when given, for screenshots); `ui_scene onboarding <welcome|clipboard|checked|checking|used|unknown|
+//!   unreachable|certificate|hub|name|name-bad|name-taken|key|key-saved|have|
 //!   recover|done|returning|offline|off>` stages each screen with a made-up hub
 //!   (`StagedHub`), for screenshots.
 //!
@@ -117,11 +133,11 @@ use chimera_assets::{
     codes::{self, UsernameRules},
 };
 use chimera_ui::{
-    Role, Tone, UiStyle,
+    Role, Tone, UiStyle, secret,
     avatar::{AvatarLook, AvatarMarks, Face},
     controls::{HERO_H, Kind, NOTE, SENTENCE, State, Ui, clickable},
     motion::{Ease, Motion, Prop, Timeline, Track, UiClock},
-    text_edit::{Caret, text_key},
+    text_edit::{Caret, TextKey, text_key},
 };
 
 use crate::main_menu::MenuUiCamera;
@@ -137,9 +153,13 @@ pub const ONBOARDING_TOML: &str = include_str!("../data/onboarding.toml");
 pub const NAME_PAUSE: f64 = 0.45;
 /// Seconds the welcome toast stays on the main menu.
 pub const TOAST_SECS: f64 = 6.0;
-/// The entry's length and its stagger, seconds at motion scale 1.
-const ENTRY_SECS: f32 = 0.52;
-const STAGGER: f32 = 0.055;
+/// Seconds after the last key before the invite field is checked with
+/// its hub (a paste checks at once).
+pub const INVITE_PAUSE: f64 = 0.6;
+/// The reveal keys (`chimera_ui::secret`): the hub's address, the
+/// recovery key.
+pub const REVEAL_HOST: &str = "onboarding.host";
+pub const REVEAL_KEY: &str = "onboarding.key";
 
 // ---------------------------------------------------------------------------
 // The words.
@@ -280,8 +300,18 @@ pub struct Onboarding {
     pub input: String,
     pub caret: Caret,
     pub source: Source,
-    /// The field as read at the last Enter.
+    /// The field as last read (a check, or Enter).
     pub parsed: Option<InviteInput>,
+    /// When the field last changed (`UiClock`): checked `INVITE_PAUSE`
+    /// after it.
+    pub input_at: f64,
+    /// Check the field at the next frame (a paste, a clipboard fill).
+    pub check_now: bool,
+    /// The field's own check under way (its call number): the screen stays.
+    pub auto: Option<u32>,
+    /// The field's text the hub answered for (`answer` is its answer):
+    /// Continue goes on with no other call.
+    pub valid: Option<String>,
     /// The hub this PC used last (a bare code's).
     pub last_hub: Option<HubLink>,
     /// The hub being joined and the code.
@@ -302,6 +332,8 @@ pub struct Onboarding {
     pub recovery: Option<String>,
     pub saved: bool,
     pub said: Option<String>,
+    /// Where "Save as file" put the key (its whole path).
+    pub saved_path: Option<String>,
     pub signed_in: Option<AccountFile>,
     pub tab: HaveTab,
     pub have_hub: String,
@@ -604,10 +636,16 @@ pub enum ObAction {
     Tab(HaveTab),
     HaveField(bool),
     Clear,
+    /// Copies where "Save as file" put the key.
+    CopyPath,
 }
 
 #[derive(Component)]
 pub struct OnboardingRoot;
+
+/// The recovery key file's path on the key screen (after Save as file).
+#[derive(Component)]
+pub struct SavedPath;
 
 /// The bar's lockup (the game's own logo, `chimera_ui::controls::Ui::
 /// lockup_drawn`).
@@ -658,6 +696,9 @@ impl Plugin for OnboardingPlugin {
         if !app.world().contains_resource::<Messages<KeyboardInput>>() {
             app.add_message::<KeyboardInput>();
         }
+        if !app.world().contains_resource::<Messages<bevy::window::WindowFocused>>() {
+            app.add_message::<bevy::window::WindowFocused>();
+        }
         chimera_client::client::ui_scene::UiSceneHooks::add(app.world_mut(), "onboarding", scene);
         let _ = chimera_core::console::ConsoleAppExt::console_command(
             app,
@@ -672,7 +713,7 @@ impl Plugin for OnboardingPlugin {
                 Ok(None)
             },
         );
-        app.add_systems(Update, (from_clipboard, open_links, clicks, keys, intro_tick, poll, name_pause, act, show, show_intro, show_toast).chain())
+        app.add_systems(Update, (from_clipboard, refocus_clipboard, open_links, clicks, keys, intro_tick, invite_pause, poll, name_pause, act, show, show_intro, show_toast).chain())
             .add_systems(Update, (retry_hub, show_chip).chain())
             .add_systems(Update, (hold_intro, intro_clock).after(show_intro));
     }
@@ -713,6 +754,8 @@ pub fn open_links(
     o.caret = Caret::end_of(&o.input);
     o.source = Source::Opened;
     o.parsed = Some(parsed);
+    o.auto = None;
+    o.valid = None;
     out.write(ObAction::Continue);
     for mut w in &mut windows {
         if !w.focused {
@@ -782,7 +825,7 @@ fn clicks(pressed: Query<(&Interaction, &ObAction), Changed<Interaction>>, mut o
 }
 
 /// The keys: typing into the screen's field, Enter, Esc, Tab, Q and E,
-/// Space, the avatar's arrows; any key ends a screen's entry.
+/// Space, the avatar's arrows.
 #[allow(clippy::too_many_arguments)]
 fn keys(
     mut events: MessageReader<KeyboardInput>,
@@ -825,7 +868,6 @@ fn keys(
         if !k.state.is_pressed() {
             continue;
         }
-        skip_entry(&mut o, now);
         match (&k.logical_key, o.step) {
             (Key::Enter, _) => {
                 out.write(ObAction::Continue);
@@ -881,10 +923,11 @@ fn keys(
         match o.step {
             Step::Welcome => {
                 let mut caret = o.caret;
+                let paste = matches!(tk, TextKey::Paste);
                 if caret.key(&mut o.input, tk, clipboard, 512, false) {
-                    o.parsed = None;
-                    o.problem = None;
-                    o.source = Source::Typed;
+                    edited(o, now);
+                    // A paste is checked at once; typing after a pause.
+                    o.check_now = paste;
                 }
                 o.caret = caret;
             }
@@ -916,10 +959,59 @@ fn keys(
     }
 }
 
-/// Ends the screen's entry (any key or click while it plays).
-fn skip_entry(o: &mut Onboarding, now: f64) {
-    if now - o.since < 2.0 {
-        o.since = now - 10.0;
+/// The invite field changed (`now`): what was read of it is dropped and
+/// a check of it under way is forgotten.
+fn edited(o: &mut Onboarding, now: f64) {
+    o.parsed = None;
+    o.problem = None;
+    o.source = Source::Typed;
+    o.input_at = now;
+    o.auto = None;
+    o.valid = None;
+}
+
+/// Checks the invite field with its hub once the player paused
+/// (`INVITE_PAUSE`) or pasted, the screen staying on Welcome: no Enter or
+/// Continue is needed to check it (the user's review, 2026-11-21).
+fn invite_pause(mut o: ResMut<Onboarding>, backend: Res<OnboardingBackend>, answers: Res<Answers>, clock: Res<UiClock>) {
+    if !o.active || o.step != Step::Welcome || o.intro.is_some() || o.pending.is_some() || o.auto.is_some() || o.problem.is_some() {
+        return;
+    }
+    let text = o.input.trim().to_string();
+    if text.is_empty() || o.valid.as_deref() == Some(text.as_str()) || (!o.check_now && clock.now - o.input_at < INVITE_PAUSE) {
+        return;
+    }
+    o.check_now = false;
+    let parsed = InviteInput::parse(&text);
+    o.parsed = parsed.clone();
+    let Some(p) = parsed else {
+        o.problem = Some(Problem::NotInvite);
+        return;
+    };
+    let Some(link) = p.link(o.last_hub.as_ref()) else {
+        o.problem = Some(Problem::NeedsHub);
+        return;
+    };
+    let Some(code) = link.code.clone() else {
+        o.problem = Some(Problem::NotInvite);
+        return;
+    };
+    o.link = Some(link.clone());
+    ask(&mut o, &backend, &answers, Ask::Check { link, code, username: None }, true);
+    o.auto = Some(o.asked);
+}
+
+/// The hub said yes to the field (`a`): an invite goes on to the hub's
+/// screen; a link code or a re-invite is an account already, redeemed at
+/// once.
+fn go_on(o: &mut Onboarding, a: CheckAnswer, backend: &OnboardingBackend, answers: &Answers, now: f64) {
+    let invite = a.kind == "invite";
+    o.answer = Some(a);
+    if invite {
+        o.go(Step::Hub, now);
+    } else if let (Some(link), Some(code)) = (o.link.clone(), o.link.as_ref().and_then(|l| l.code.clone())) {
+        let request = RedeemRequest { code, device_label: account::device_label(), ..Default::default() };
+        ask(o, backend, answers, Ask::Redeem { link, request }, false);
     }
 }
 
@@ -939,20 +1031,25 @@ fn poll(answers: Res<Answers>, mut o: ResMut<Onboarding>, backend: Res<Onboardin
                     }
                 }
             }
+            Reply::Checked(r, None) if o.auto == Some(n) => {
+                // The field's own check: the screen stays, Continue goes on.
+                o.auto = None;
+                if o.step == Step::Welcome {
+                    match r {
+                        Ok(a) => {
+                            o.valid = Some(o.input.trim().to_string());
+                            o.answer = Some(a);
+                        }
+                        Err(e) => o.problem = Some(Problem::of(&e)),
+                    }
+                }
+            }
             Reply::Checked(r, None) if ours => {
                 o.pending = None;
                 match r {
-                    Ok(a) if a.kind == "invite" => {
-                        o.answer = Some(a);
-                        o.go(Step::Hub, now);
-                    }
                     Ok(a) => {
-                        // A link code or a re-invite: an account already, no name to choose.
-                        o.answer = Some(a);
-                        if let (Some(link), Some(code)) = (o.link.clone(), o.link.as_ref().and_then(|l| l.code.clone())) {
-                            let request = RedeemRequest { code, device_label: account::device_label(), ..Default::default() };
-                            ask(&mut o, &backend, &answers, Ask::Redeem { link, request }, false);
-                        }
+                        o.valid = Some(o.input.trim().to_string());
+                        go_on(&mut o, a, &backend, &answers, now);
                     }
                     Err(e) => {
                         let back = if o.step == Step::Have { Step::Have } else { Step::Welcome };
@@ -1045,7 +1142,6 @@ fn act(
         if !o.active {
             continue;
         }
-        skip_entry(&mut o, now);
         if o.pending.is_some() && !matches!(a, ObAction::Back) {
             continue;
         }
@@ -1053,10 +1149,8 @@ fn act(
             (ObAction::Clear, _) => {
                 o.input.clear();
                 o.caret = Caret::default();
-                o.parsed = None;
-                o.problem = None;
+                edited(&mut o, now);
                 o.said = None;
-                o.source = Source::Typed;
             }
             (ObAction::CopyDetails, Step::Welcome) => {
                 if let Some(Problem::Certificate { offered }) = o.problem.clone() {
@@ -1076,10 +1170,8 @@ fn act(
                 if !matches!(o.problem, Some(Problem::Certificate { .. })) {
                     o.input.clear();
                     o.caret = Caret::default();
-                    o.parsed = None;
-                    o.problem = None;
+                    edited(&mut o, now);
                     o.said = None;
-                    o.source = Source::Typed;
                 }
             }
             (ObAction::Skip, _) => {
@@ -1095,7 +1187,18 @@ fn act(
                 o.go(Step::Have, now);
                 o.have_on_hub = false;
             }
+            // Checked already (as typed or pasted): on at once.
+            (ObAction::Continue, Step::Welcome) if o.answer.is_some() && o.valid.as_deref() == Some(o.input.trim()) => {
+                let a = o.answer.clone().unwrap_or_default();
+                go_on(&mut o, a, &backend, &answers, now);
+            }
+            // Its check under way: the checking screen waits for it.
+            (ObAction::Continue, Step::Welcome) if o.auto.is_some() => {
+                o.pending = o.auto.take();
+                o.go(Step::Checking, now);
+            }
             (ObAction::Continue | ObAction::Retry, Step::Welcome) => {
+                o.auto = None;
                 let parsed = InviteInput::parse(&o.input);
                 o.parsed = parsed.clone();
                 let Some(p) = parsed else {
@@ -1173,9 +1276,16 @@ fn act(
                 match chimera_assets::store::write_atomic(&path, text.as_bytes()) {
                     Ok(()) => {
                         chimera_assets::sign::restrict(&path);
-                        o.said = Some(words.f("key.saved", &[("name", &name)]));
+                        o.said = Some(words.t("key.saved"));
+                        o.saved_path = Some(std::path::absolute(&path).unwrap_or(path.clone()).display().to_string());
                     }
                     Err(e) => o.said = Some(format!("{}: {e}", path.display())),
+                }
+            }
+            (ObAction::CopyPath, Step::Key) => {
+                if let Some(p) = o.saved_path.clone() {
+                    clipboard.set(&p);
+                    o.said = Some(words.t("key.path_copied"));
                 }
             }
             (ObAction::Saved, Step::Key) => {
@@ -1279,7 +1389,7 @@ fn finish(o: &mut Onboarding, files: &OnboardingFiles, words: &Words, now: f64, 
 // ---------------------------------------------------------------------------
 // Drawing.
 
-type ScreenKey = (Onboarding, (u32, u32), Option<Entity>);
+type ScreenKey = (Onboarding, chimera_ui::secret::Reveals, (u32, u32), Option<Entity>);
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn show(
@@ -1287,8 +1397,8 @@ fn show(
     words: Res<Words>,
     camera: Query<Entity, With<MenuUiCamera>>,
     root: Query<Entity, With<OnboardingRoot>>,
-    (theme, kit, units, motion): (Option<Res<chimera_ui::Theme>>, Option<Res<chimera_ui::KitFonts>>, Option<Res<chimera_ui::UiUnits>>, Option<Res<Motion>>),
-    (mut images, mut icons): (Option<ResMut<Assets<Image>>>, Option<ResMut<chimera_ui::icons::IconImages>>),
+    (theme, kit, units, reveals): (Option<Res<chimera_ui::Theme>>, Option<Res<chimera_ui::KitFonts>>, Option<Res<chimera_ui::UiUnits>>, Option<Res<chimera_ui::secret::Reveals>>),
+    (mut images, mut icons, mut ambients): (Option<ResMut<Assets<Image>>>, Option<ResMut<chimera_ui::icons::IconImages>>, Option<ResMut<Assets<chimera_ui::AmbientMaterial>>>),
     mut shown: Local<Option<ScreenKey>>,
     mut commands: Commands,
 ) {
@@ -1300,7 +1410,10 @@ fn show(
         snap.intro = None;
         snap.typed_at = 0.0;
         snap.asked_name = None;
-        (snap, ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32), cam)
+        snap.since = 0.0;
+        snap.input_at = 0.0;
+        snap.check_now = false;
+        (snap, reveals.as_deref().cloned().unwrap_or_default(), ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32), cam)
     });
     if *shown == key {
         return;
@@ -1310,9 +1423,9 @@ fn show(
     }
     if key.is_some() {
         let ui = Ui::new(theme, kit.as_deref(), *units);
-        let scale = motion.map_or(1.0, |m| m.scale);
-        let mut d = Draw { ui: &ui, w: &words, o: &o, since: o.since, scale, i: 0, images: images.as_deref_mut(), icons: icons.as_deref_mut() };
-        let r = d.screen(&mut commands);
+        let none = chimera_ui::secret::Reveals::default();
+        let mut d = Draw { ui: &ui, w: &words, o: &o, reveals: reveals.as_deref().unwrap_or(&none), images: images.as_deref_mut(), icons: icons.as_deref_mut() };
+        let r = d.screen(&mut commands, ambients.as_deref_mut());
         if let Some(cam) = cam {
             commands.entity(r).insert(UiTargetCamera(cam));
         }
@@ -1469,26 +1582,12 @@ struct Draw<'a, 'b> {
     ui: &'a Ui<'a>,
     w: &'a Words,
     o: &'a Onboarding,
-    since: f64,
-    scale: f32,
-    i: u32,
+    reveals: &'a chimera_ui::secret::Reveals,
     images: Option<&'b mut Assets<Image>>,
     icons: Option<&'b mut chimera_ui::icons::IconImages>,
 }
 
 impl Draw<'_, '_> {
-    /// `e` slides in with the next stagger (decision 8: never blocking).
-    fn anim(&mut self, c: &mut Commands, e: Entity) -> Entity {
-        let i = self.i;
-        self.i += 1;
-        if self.scale > 0.0 {
-            let at = (0.12 + i as f32 * STAGGER) * self.scale;
-            let t = Timeline::new([Track::new(Prop::Y, 1.2, 0.0).at(at).dur(ENTRY_SECS * self.scale).ease(Ease::ExpoOut)]).started(self.since);
-            c.entity(e).insert(t);
-        }
-        e
-    }
-
     /// A layout number (`[layout.onboarding]`, the theme's), else `d`.
     fn lay(&self, key: &str, d: f32) -> f32 {
         self.ui.theme.layout_opt("onboarding", key).unwrap_or(d)
@@ -1516,7 +1615,7 @@ impl Draw<'_, '_> {
         self.ui.boxed(c, parent, UiStyle { w: Some(w), gap: Some(0.9), ..UiStyle::column() }.abs([Some(left), Some(top), None, None]))
     }
 
-    fn screen(&mut self, c: &mut Commands) -> Entity {
+    fn screen(&mut self, c: &mut Commands, ambients: Option<&mut Assets<chimera_ui::AmbientMaterial>>) -> Entity {
         let ui = self.ui;
         let root = c
             .spawn((
@@ -1528,27 +1627,9 @@ impl Draw<'_, '_> {
                 Interaction::None,
             ))
             .id();
-        // The ground (the mockups' ambience): a navy wash falling from the
-        // top left, then the registration marks. (The mockups' radial glows
-        // band in 8-bit UI gradients at these alphas: left out.)
-        let wash = ui.boxed(c, root, UiStyle { w_pct: Some(100.0), h_pct: Some(100.0), ..UiStyle::column() }.abs([Some(0.0), Some(0.0), None, None]));
-        let t = ui.theme;
-        c.entity(wash).insert(BackgroundGradient(vec![
-            LinearGradient::new(
-                162f32.to_radians(),
-                vec![
-                    ColorStop::percent(t.tone_a(Tone::Hero, 0.16), 0.0),
-                    ColorStop::percent(t.tone_a(Tone::Hero, 0.05), 42.0),
-                    ColorStop::percent(t.tone_a(Tone::Hero, 0.0), 100.0),
-                ],
-            )
-            .into(),
-        ]));
-        for (l, t, r, b) in [(Some(1.8), Some(1.8), None, None), (None, Some(1.8), Some(1.8), None), (Some(1.8), None, None, Some(1.8)), (None, None, Some(1.8), Some(1.8))] {
-            let m = ui.boxed(c, root, UiStyle { w: Some(1.3), h: Some(1.3), ..UiStyle::column() }.abs([l, t, r, b]));
-            ui.boxed(c, m, UiStyle { w: Some(1.3), h: Some(0.06), ..UiStyle::row() }.abs([Some(0.0), Some(0.62), None, None]).bg(Tone::Fg3));
-            ui.boxed(c, m, UiStyle { w: Some(0.06), h: Some(1.3), ..UiStyle::row() }.abs([Some(0.62), Some(0.0), None, None]).bg(Tone::Fg3));
-        }
+        // The ground: the main menu's (the user's review, 2026-11-21: one
+        // look with the menus and Settings).
+        chimera_ui::shell::menu_ground(c, root, ui.theme, ambients);
         let (tag, step) = match self.o.step {
             Step::Welcome | Step::Checking => (self.w.t("welcome.tag"), Some(0)),
             Step::Hub => (self.w.t("welcome.tag"), Some(1)),
@@ -1613,18 +1694,15 @@ impl Draw<'_, '_> {
         let e = ui.boxed(c, col, UiStyle { gap: Some(0.9), align: Some(AlignItems::Center), ..UiStyle::row() });
         ui.mark(c, e, Tone::Acc, 0.7, 1.1);
         ui.text(c, e, Role::Mono, 0.66, Tone::AccText, text);
-        self.anim(c, e);
     }
 
     fn h1(&mut self, c: &mut Commands, col: Entity, text: &str, size: f32) {
-        let e = self.ui.text(c, col, Role::DisplayBlack, size, Tone::Fg, text);
-        self.anim(c, e);
+        self.ui.text(c, col, Role::DisplayBlack, size, Tone::Fg, text);
     }
 
     fn lead(&mut self, c: &mut Commands, col: Entity, text: &str) {
         let b = self.ui.boxed(c, col, UiStyle { max_w: Some(38.0), ..UiStyle::column() });
         self.ui.paragraph(c, b, Role::Text, 1.02, Tone::Fg2, text);
-        self.anim(c, b);
     }
 
     /// A field: its label line, the kit's text field, a status line.
@@ -1643,6 +1721,7 @@ impl Draw<'_, '_> {
         st: State,
         status: Option<(Tone, &str)>,
         prefix: Option<&str>,
+        eye: Option<(&str, bool)>,
     ) -> Entity {
         let ui = self.ui;
         let f = ui.boxed(c, col, UiStyle { gap: Some(0.6), w: Some(w), ..UiStyle::column() });
@@ -1657,13 +1736,18 @@ impl Draw<'_, '_> {
             ui.text_plain(c, line, Role::Text, 1.1, Tone::Fg3, p);
             fw -= 1.7;
         }
+        if eye.is_some() {
+            fw -= 2.8;
+        }
         let tf = ui.text_field_hero(c, line, value, placeholder, caret.map(|k| k.cursor(value)), fw, st);
+        if let Some((key, on)) = eye {
+            ui.reveal_key(c, line, key, on, 2.2);
+        }
         if let Some((tone, s)) = status {
             let row = ui.boxed(c, f, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
             ui.mark(c, row, tone, 0.6, 0.6);
             ui.text_plain(c, row, Role::Mono, 0.62, if tone == Tone::Fg4 { Tone::Fg3 } else { tone }, &s.to_uppercase());
         }
-        self.anim(c, f);
         tf
     }
 
@@ -1679,7 +1763,6 @@ impl Draw<'_, '_> {
 
     fn btns(&mut self, c: &mut Commands, col: Entity, top: f32) -> Entity {
         let r = self.ui.boxed(c, col, UiStyle { gap: Some(1.1), align: Some(AlignItems::Center), margin: Some([top, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
-        self.anim(c, r);
         r
     }
 
@@ -1696,7 +1779,6 @@ impl Draw<'_, '_> {
         let d = ui.boxed(c, body, UiStyle { gap: Some(0.8), margin: Some([0.4, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
         ui.text(c, d, Role::Mono, 0.6, Tone::Fg3, "Do");
         ui.paragraph(c, d, Role::Text, 0.9, Tone::Fg, todo);
-        self.anim(c, a);
     }
 
     fn problem(&mut self, c: &mut Commands, col: Entity) {
@@ -1738,7 +1820,6 @@ impl Draw<'_, '_> {
                 11.0,
             );
             c.entity(rows).insert(Node { width: self.ui.units.val(36.0), margin: UiRect::top(self.ui.units.val(1.2)), ..default() });
-            self.anim(c, rows);
         }
     }
 
@@ -1761,6 +1842,8 @@ impl Draw<'_, '_> {
         let status = match (&o.problem, &o.parsed) {
             (Some(Problem::NotInvite), _) => (Tone::Threat, w.t("welcome.not_invite")),
             (Some(Problem::NeedsHub), _) => (Tone::Warn, w.t("welcome.needs_hub")),
+            _ if o.auto.is_some() => (Tone::Fg3, w.t("welcome.checking")),
+            _ if o.answer.is_some() && o.valid.as_deref() == Some(o.input.trim()) => (Tone::AccText, w.f("welcome.valid", &[("hub", &o.hub_name())])),
             (_, Some(p)) => {
                 let kind = match p.kind {
                     InputKind::Link => "Invite link recognised · hub, fingerprint and code",
@@ -1776,8 +1859,10 @@ impl Draw<'_, '_> {
         // A certificate that isn't the invite's leaves nothing to edit: the
         // field gives way to the two fingerprints (the mockups' 03d).
         if !matches!(o.problem, Some(Problem::Certificate { .. })) {
-            let (value, caret) = field_view(&o.input, o.caret, o.parsed.as_ref());
-            let tf = self.field(c, col, &label, label_tone, Some("Ctrl+V"), &value, &w.t("welcome.placeholder"), caret, self.lay("col_w", 42.0), st, Some((status.0, &status_text)), None);
+            let shown = self.reveals.shown(REVEAL_HOST);
+            let (value, caret) = masked_view(field_view(&o.input, o.caret, o.parsed.as_ref()), o.parsed.as_ref(), shown);
+            let has_host = o.parsed.as_ref().is_some_and(|p| p.host.is_some());
+            let tf = self.field(c, col, &label, label_tone, Some("Ctrl+V"), &value, &w.t("welcome.placeholder"), caret, self.lay("col_w", 42.0), st, Some((status.0, &status_text)), None, has_host.then_some((REVEAL_HOST, shown)));
             c.entity(tf).insert(clickable());
         }
         self.problem(c, col);
@@ -1802,12 +1887,11 @@ impl Draw<'_, '_> {
         let skip = ui.boxed(c, root, UiStyle { gap: Some(1.2), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([Some(self.lay("col_x", 8.4) - 0.6), None, None, Some(4.4)]));
         self.button(c, skip, Kind::Ghost, &w.t("welcome.skip"), None, ObAction::Skip, State::NONE);
         ui.text(c, skip, Role::Mono, 0.58, Tone::Fg3, &w.t("welcome.skip_note"));
-        self.anim(c, skip);
         self.carries(c, root);
         if matches!(o.problem, Some(Problem::Certificate { .. })) {
             self.keys(c, root, &[("Esc", w.t(hero))]);
         } else {
-            let enter = if o.problem.is_some() && !bad { w.t(hero) } else { "Check".into() };
+            let enter = if o.problem.is_some() && !bad { w.t(hero) } else { w.t("welcome.continue") };
             self.keys(c, root, &[("Enter", enter), ("Esc", "Clear".into())]);
         }
     }
@@ -1833,8 +1917,8 @@ impl Draw<'_, '_> {
             let (state, value): (Option<(Tone, &str)>, String) = match (p, i) {
                 (None, _) => (None, w.at("welcome.parts_idle", i)),
                 (Some(p), 0) => match (&p.host, &last) {
-                    (Some(h), _) => (Some((Tone::Acc, "Found")), h.clone()),
-                    (None, Some(h)) => (Some((Tone::Warn, "Last used")), h.clone()),
+                    (Some(h), _) => (Some((Tone::Acc, "Found")), secret::shown(h, self.reveals.shown(REVEAL_HOST))),
+                    (None, Some(h)) => (Some((Tone::Warn, "Last used")), secret::shown(h, self.reveals.shown(REVEAL_HOST))),
                     (None, None) => (Some((Tone::Warn, "Ask")), w.t("welcome.needs_hub")),
                 },
                 (Some(p), 1) => match &p.fingerprint {
@@ -1865,7 +1949,7 @@ impl Draw<'_, '_> {
         let ex = |i: usize| ex.get(i).cloned().unwrap_or_default();
         let parts = match p {
             Some(p) => [
-                p.host.clone().unwrap_or_else(|| ex(0)),
+                p.host.as_deref().map(|h| secret::shown(h, self.reveals.shown(REVEAL_HOST))).unwrap_or_else(|| ex(0)),
                 p.fingerprint.as_deref().map(short_link_fp).unwrap_or_else(|| ex(1)),
                 p.code.clone().map(|c| c.to_uppercase()).unwrap_or_else(|| ex(2)),
             ],
@@ -1888,7 +1972,6 @@ impl Draw<'_, '_> {
         seg(c, &parts[2], Some(3));
         let note = ui.boxed(c, pane, UiStyle { margin: Some([1.4, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t("welcome.pane_note"));
-        self.anim(c, pane);
     }
 
     fn checking(&mut self, c: &mut Commands, root: Entity) {
@@ -1897,12 +1980,13 @@ impl Draw<'_, '_> {
         self.eyebrow(c, col, &w.t("welcome.eyebrow"));
         self.h1(c, col, &w.t("checking.title"), 3.3);
         ui.boxed(c, col, UiStyle { h: Some(1.6), ..UiStyle::column() });
-        let (value, _) = field_view(&o.input, o.caret, InviteInput::parse(&o.input).as_ref());
-        self.field(c, col, &w.t("welcome.label"), Tone::Fg3, None, &value, "", None, self.lay("col_w", 42.0), State { disabled: true, ..State::NONE }, None, None);
+        let parsed = InviteInput::parse(&o.input);
+        let shown = self.reveals.shown(REVEAL_HOST);
+        let (value, _) = masked_view(field_view(&o.input, o.caret, parsed.as_ref()), parsed.as_ref(), shown);
+        self.field(c, col, &w.t("welcome.label"), Tone::Fg3, None, &value, "", None, self.lay("col_w", 42.0), State { disabled: true, ..State::NONE }, None, None, Some((REVEAL_HOST, shown)));
         let bar = ui.boxed(c, col, UiStyle { margin: Some([2.2, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
         ui.progress(c, bar, chimera_ui::controls::Progress::Connecting, &w.t("checking.connecting"), 30.0, 1.7, 0.62, true);
-        self.anim(c, bar);
-        let host = o.host();
+        let host = secret::shown(&o.host(), shown);
         // Each check with its light: under way (accent) or waiting (unlit).
         let rows = [
             (w.at("checking.rows", 0), host, Some(Tone::Acc)),
@@ -1912,7 +1996,6 @@ impl Draw<'_, '_> {
         let rows: Vec<(&str, String, Option<Tone>)> = rows.iter().map(|(k, v, l)| (k.as_str(), v.clone(), *l)).collect();
         let kv = ui.kv_lit(c, col, &rows, 11.0);
         c.entity(kv).insert(Node { width: ui.units.val(30.0), margin: UiRect::top(ui.units.val(1.8)), ..default() });
-        self.anim(c, kv);
         let row = self.btns(c, col, 2.4);
         self.button(c, row, Kind::Secondary, &w.t("checking.cancel"), Some("Esc"), ObAction::Back, State::NONE);
     }
@@ -1924,11 +2007,11 @@ impl Draw<'_, '_> {
         self.eyebrow(c, col, &w.t("hub.eyebrow"));
         let t = ui.text(c, col, Role::Mono, 0.8, Tone::Fg2, &w.t("hub.joining"));
         c.entity(t).insert(Node { margin: UiRect::top(ui.units.val(2.4)), ..default() });
-        self.anim(c, t);
         self.h1(c, col, &a.hub.name, 4.6);
         let pinned = o.link.as_ref().is_some_and(|l| l.fingerprint.is_some());
+        let shown = self.reveals.shown(REVEAL_HOST);
         let pairs = [
-            (w.at("hub.rows", 0), o.host()),
+            (w.at("hub.rows", 0), secret::shown(&o.host(), shown)),
             (w.at("hub.rows", 1), if pinned { w.t("hub.matches") } else { w.t("hub.pinned_none") }),
             (w.at("hub.rows", 2), a.hub.players.to_string()),
         ];
@@ -1936,7 +2019,9 @@ impl Draw<'_, '_> {
         let pairs: Vec<(&str, String, Option<Tone>)> = pairs.iter().enumerate().map(|(i, (k, v))| (*k, v.clone(), Some(if i == 1 && pinned { Tone::Acc } else { Tone::Fg2 }))).collect();
         let kv = ui.kv_lit(c, col, &pairs, 11.0);
         c.entity(kv).insert(Node { width: ui.units.val(40.0), margin: UiRect::top(ui.units.val(2.2)), ..default() });
-        self.anim(c, kv);
+        // The address's eye key, on its line's right end.
+        let eye = ui.boxed(c, kv, UiStyle { w: Some(2.0), h: Some(2.0), ..UiStyle::row() }.abs([None, Some(0.1), Some(0.0), None]));
+        ui.reveal_key(c, eye, REVEAL_HOST, shown, 2.0);
         let row = self.btns(c, col, 2.4);
         self.button(c, row, Kind::Primary, &w.f("hub.join", &[("hub", &a.hub.name)]), Some("Enter"), ObAction::Continue, State::focused(true));
         self.button(c, row, Kind::Secondary, &w.t("hub.not_this"), None, ObAction::Back, State::NONE);
@@ -1961,7 +2046,6 @@ impl Draw<'_, '_> {
         ui.text(c, em, Role::DisplayBlack, 1.4, Tone::OnHero, &initials(&a.hub.name));
         let note = ui.boxed(c, foot, UiStyle { max_w: Some(20.0), ..UiStyle::column() });
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t("hub.note"));
-        self.anim(c, pane);
         self.keys(c, root, &[("Enter", "Join".into()), ("Esc", "Back".into())]);
     }
 
@@ -1980,9 +2064,15 @@ impl Draw<'_, '_> {
     fn name(&mut self, c: &mut Commands, root: Entity) {
         let (ui, w, o) = (self.ui, self.w, self.o);
         let hub = o.hub_name();
-        let col = self.col(c, root, -1.0, self.lay("col_w", 42.0));
+        // What you choose, at the left: the two fields, then the avatar
+        // filling the room beside them; at the right only what follows
+        // from it (the user's review, 2026-11-21).
+        let col = self.col(c, root, -1.0, self.lay("name_w", 56.0));
         self.eyebrow(c, col, &w.t("name.eyebrow"));
-        self.h1(c, col, &w.t("name.title"), 3.3);
+        self.h1(c, col, &w.t("name.title"), 3.0);
+        let two = ui.boxed(c, col, UiStyle { gap: Some(2.6), margin: Some([1.2, 0.0, 0.0, 0.0].into()), align: Some(AlignItems::FlexStart), ..UiStyle::row() });
+        let fw = self.lay("name_field_w", 25.0);
+        let fields = ui.boxed(c, two, UiStyle { w: Some(fw), gap: Some(1.6), shrink: Some(0.0), ..UiStyle::column() });
         let folded = o.username.trim().to_ascii_lowercase();
         let rules = UsernameRules::of(&folded);
         let taken = o.name.as_ref().is_some_and(|n| n.username == folded && !n.available);
@@ -2000,63 +2090,101 @@ impl Draw<'_, '_> {
         };
         let count = format!("{} / {}", folded.chars().count(), codes::NAME_MAX);
         let st = State { focus: o.field == NameField::Username, error: !folded.is_empty() && (!rules.all() || taken), ..State::NONE };
-        let uf = self.field(c, col, &w.t("name.username"), Tone::Fg3, Some(&count), &o.username, "", (o.field == NameField::Username).then_some(o.ucaret), self.lay("col_w", 42.0), st, Some((tone, &status)), Some("@"));
-        c.entity(uf).insert((clickable(), ObAction::Focus(NameField::Username)));
+        let uf = ui.form_field(
+            c,
+            fields,
+            &w.t("name.username"),
+            &w.f("name.username_help", &[("hub", &hub)]),
+            Some(&count),
+            &o.username,
+            "",
+            (o.field == NameField::Username).then(|| o.ucaret.cursor(&o.username)),
+            false,
+            fw,
+            st,
+        );
+        c.entity(uf.input).insert((clickable(), ObAction::Focus(NameField::Username)));
+        let line = ui.boxed(c, uf.root, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), margin: Some([0.2, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
+        ui.mark(c, line, tone, 0.6, 0.6);
+        ui.text_plain(c, line, Role::Mono, 0.58, if tone == Tone::Fg4 { Tone::Fg3 } else { tone }, &status.to_uppercase());
         // The rules, lit as typed.
-        let grid = ui.boxed(c, col, UiStyle { gap: Some(0.6), margin: Some([1.0, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
+        let grid = ui.boxed(c, uf.root, UiStyle { gap: Some(0.45), margin: Some([0.4, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
         let met = [rules.length, rules.characters, rules.starts_with_letter, rules.all() && o.name_ok()];
-        for pair in [[0, 1], [2, 3]] {
-            let r = ui.boxed(c, grid, UiStyle { gap: Some(2.0), ..UiStyle::row() });
-            for i in pair {
-                let cell = ui.boxed(c, r, UiStyle { w: Some(20.0), gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
-                let lit = if folded.is_empty() || (i == 3 && (checking || !rules.all())) {
-                    Tone::Fg4
-                } else if met[i] {
-                    Tone::Acc
-                } else {
-                    Tone::Threat
-                };
-                ui.mark(c, cell, lit, 0.6, 0.6);
-                ui.text_plain(c, cell, Role::Mono, 0.6, if lit == Tone::Fg4 { Tone::Fg3 } else if lit == Tone::Acc { Tone::AccText } else { Tone::Threat }, &w.at("name.rules", i));
-            }
+        for i in 0..4 {
+            let cell = ui.boxed(c, grid, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
+            let lit = if folded.is_empty() || (i == 3 && (checking || !rules.all())) {
+                Tone::Fg4
+            } else if met[i] {
+                Tone::Acc
+            } else {
+                Tone::Threat
+            };
+            ui.mark(c, cell, lit, 0.5, 0.5);
+            ui.text_plain(c, cell, Role::Mono, 0.54, if lit == Tone::Fg4 { Tone::Fg3 } else if lit == Tone::Acc { Tone::AccText } else { Tone::Threat }, &w.at("name.rules", i));
         }
-        self.anim(c, grid);
         if taken {
-            let free = ui.boxed(c, col, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), margin: Some([1.0, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
+            let free = ui.boxed(c, uf.root, UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), margin: Some([0.4, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
             ui.text(c, free, Role::Mono, 0.56, Tone::Fg3, &w.t("name.free"));
             // The free names: the kit's small secondary buttons.
             for s in o.name.as_ref().map(|n| n.suggestions.clone()).unwrap_or_default() {
                 let b = ui.button(c, free, Kind::Secondary, &s, None, 1.9, State::NONE);
                 c.entity(b).insert(ObAction::Suggest(s.clone()));
             }
-            self.anim(c, free);
         }
-        let df = self.field(
+        let df = ui.form_field(
             c,
-            col,
+            fields,
             &w.t("name.display"),
-            Tone::Fg3,
+            &w.t("name.display_help"),
             Some(&w.t("name.optional")),
             &o.display,
             if folded.is_empty() { "" } else { &folded },
-            (o.field == NameField::Display).then_some(o.dcaret),
-            self.lay("col_w", 42.0),
+            (o.field == NameField::Display).then(|| o.dcaret.cursor(&o.display)),
+            false,
+            fw,
             State::focused(o.field == NameField::Display),
-            None,
-            None,
         );
-        c.entity(df).insert((clickable(), ObAction::Focus(NameField::Display)));
-        let note = ui.boxed(c, col, UiStyle { margin: Some([1.0, 0.0, 0.0, 0.0].into()), max_w: Some(42.0), ..UiStyle::column() });
+        c.entity(df.input).insert((clickable(), ObAction::Focus(NameField::Display)));
+        // The avatar: the 32 looks (decision 10), as large as the room
+        // beside the fields allows.
+        let aw = self.lay("name_w", 56.0) - fw - 2.6;
+        let av = ui.boxed(c, two, UiStyle { w: Some(aw), gap: Some(0.35), shrink: Some(0.0), ..UiStyle::column() });
+        let on = o.field == NameField::Avatar;
+        let head = ui.boxed(c, av, UiStyle { gap: Some(0.8), align: Some(AlignItems::Baseline), ..UiStyle::row() });
+        ui.text(c, head, Role::DisplayBold, 1.0, Tone::Fg, &w.t("name.avatar"));
+        ui.boxed(c, head, UiStyle::row().grow(1.0));
+        ui.text(c, head, Role::Mono, 0.56, if on { Tone::AccText } else { Tone::Fg3 }, &format!("{} / 32", o.avatar as u32 + 1));
+        let help = ui.boxed(c, av, UiStyle { w: Some(aw), ..UiStyle::column() });
+        ui.paragraph(c, help, Role::Text, 0.78, Tone::Fg3, &w.t("name.avatar_help"));
+        let gap = 0.4;
+        let tile = ((aw - 7.0 * gap) / 8.0).max(1.6);
+        let tiles = ui.boxed(c, av, UiStyle { gap: Some(gap), margin: Some([0.6, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
+        for row in 0..4u8 {
+            let r = ui.boxed(c, tiles, UiStyle { gap: Some(gap), ..UiStyle::row() });
+            for col_i in 0..8u8 {
+                let b = row * 8 + col_i;
+                let sel = b == o.avatar;
+                let cell = ui.boxed(
+                    c,
+                    r,
+                    UiStyle { w: Some(tile), h: Some(tile), pad: Some([0.2, 0.2].into()), shrink: Some(0.0), ..UiStyle::row() }
+                        .outline(if sel { if on { Tone::Acc } else { Tone::Fg } } else { Tone::Fg5 }, if sel { 2.0 } else { 1.0 }),
+                );
+                c.entity(cell).insert((clickable(), ObAction::Avatar(b)));
+                let a = self.avatar(c, cell, b, tile - 0.4);
+                c.entity(a).insert(Pickable::IGNORE);
+            }
+        }
+        let note = ui.boxed(c, col, UiStyle { margin: Some([1.4, 0.0, 0.0, 0.0].into()), max_w: Some(50.0), ..UiStyle::column() });
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t("name.note"));
-        self.anim(c, note);
         self.problem(c, col);
-        let row = self.btns(c, col, 1.4);
+        let row = self.btns(c, col, 1.2);
         let ready = o.name_ok() && o.pending.is_none();
         self.button(c, row, Kind::Primary, &w.t("name.continue"), Some("Enter"), ObAction::Continue, State { focus: ready, disabled: !ready, ..State::NONE });
         self.button(c, row, Kind::Ghost, &w.t("name.back"), None, ObAction::Back, State::NONE);
-        // The preview: how others see you.
+        // The preview: how others see you (nothing to change here).
         let shown = if o.display.trim().is_empty() { if folded.is_empty() { "...".to_string() } else { folded.clone() } } else { o.display.trim().to_string() };
-        let pane = self.pane(c, root, 0.0, 1.8, self.lay("pane_w", 33.6));
+        let pane = self.pane(c, root, self.lay("name_pane_dx", 9.0), 1.8, self.lay("name_pane_w", 27.0));
         let bp = self.blueprint(c, pane, 0.8);
         let head = ui.boxed(c, bp, UiStyle { justify: Some(JustifyContent::SpaceBetween), margin: Some([0.0, 0.0, 0.6, 0.0].into()), ..UiStyle::row() });
         ui.text(c, head, Role::Mono, 0.62, Tone::AccText, &w.t("name.preview"));
@@ -2077,23 +2205,7 @@ impl Draw<'_, '_> {
         ui.kit_icon(c, feed, "kill", 0.9, 1.0, Tone::Fg);
         ui.text_plain(c, feed, Role::Text, 0.86, Tone::Fg2, &w.t("name.feed_victim"));
         ui.text(c, bp, Role::Mono, 0.56, Tone::Fg3, &w.t("name.profile"));
-        let kv = ui.kv(c, bp, &[("Username", format!("@{}", if folded.is_empty() { "..." } else { &folded })), ("Hub", hub.clone())], 9.0);
-        let _ = kv;
-        // The avatar: the 32 looks (decision 10).
-        let av = ui.boxed(c, bp, UiStyle { gap: Some(0.6), margin: Some([1.0, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
-        ui.text(c, av, Role::Mono, 0.56, if o.field == NameField::Avatar { Tone::AccText } else { Tone::Fg3 }, &w.t("name.avatar"));
-        for row in 0..4u8 {
-            let r = ui.boxed(c, av, UiStyle { gap: Some(0.35), ..UiStyle::row() });
-            for col_i in 0..8u8 {
-                let b = row * 8 + col_i;
-                let sel = b == o.avatar;
-                let cell = ui.boxed(c, r, UiStyle { pad: Some([0.15, 0.15].into()), ..UiStyle::row() }.outline(if sel { if o.field == NameField::Avatar { Tone::Acc } else { Tone::Fg } } else { Tone::Fg5 }, if sel { 2.0 } else { 1.0 }));
-                c.entity(cell).insert((clickable(), ObAction::Avatar(b)));
-                let a = self.avatar(c, cell, b, 1.7);
-                c.entity(a).insert(Pickable::IGNORE);
-            }
-        }
-        self.anim(c, pane);
+        ui.kv(c, bp, &[("Username", format!("@{}", if folded.is_empty() { "..." } else { &folded })), ("Hub", hub.clone())], 7.0);
         self.keys(c, root, &[("Tab", "Next field".into()), ("Enter", "Continue".into())]);
     }
 
@@ -2110,15 +2222,21 @@ impl Draw<'_, '_> {
         // Its label sits on the box's top edge (a legend), on the ground.
         let legend = ui.boxed(c, kb, UiStyle { pad: Some([0.0, 0.6].into()), ..UiStyle::row() }.abs([Some(1.2), Some(-0.4), None, None]).bg(Tone::Ink));
         ui.text(c, legend, Role::Mono, 0.56, Tone::Fg3, &label);
-        let groups = ui.boxed(c, kb, UiStyle { gap: Some(1.0), ..UiStyle::row() });
+        // Hidden until its eye key is pressed (streamers); Copy and Save
+        // never need it shown.
+        let groups = ui.boxed(c, kb, UiStyle { gap: Some(1.0), align: Some(AlignItems::Center), ..UiStyle::row() });
+        c.entity(groups).insert(secret::Secret(REVEAL_KEY.into()));
         let key = o.recovery.clone().unwrap_or_default();
+        let shown = self.reveals.shown(REVEAL_KEY);
         for (i, g) in key.split('-').enumerate() {
             if i > 0 {
                 ui.text_plain(c, groups, Role::Mono, 1.7, Tone::Fg3, "–");
             }
-            ui.text_plain(c, groups, Role::Mono, 1.7, Tone::Fg, g);
+            let g = if shown { g.to_string() } else { secret::mask_chars(g) };
+            ui.text_plain(c, groups, Role::Mono, 1.7, if shown { Tone::Fg } else { Tone::Fg2 }, &g);
         }
-        self.anim(c, kb);
+        ui.boxed(c, groups, UiStyle::row().grow(1.0));
+        ui.reveal_key(c, groups, REVEAL_KEY, shown, 2.6);
         let row = self.btns(c, col, 1.6);
         self.button(c, row, Kind::Secondary, &w.t("key.copy"), Some("Ctrl+C"), ObAction::Copy, State::NONE);
         self.button(c, row, Kind::Secondary, &w.t("key.save"), None, ObAction::Save, State::NONE);
@@ -2126,6 +2244,15 @@ impl Draw<'_, '_> {
             let r = ui.boxed(c, row, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
             ui.mark(c, r, Tone::Acc, 0.6, 0.6);
             ui.text_plain(c, r, Role::Mono, 0.6, Tone::AccText, &s.to_uppercase());
+        }
+        // Where the file went: its whole path, with Copy path.
+        if let Some(path) = &o.saved_path {
+            let r = ui.boxed(c, col, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), margin: Some([0.8, 0.0, 0.0, 0.0].into()), w: Some(46.0), ..UiStyle::row() });
+            ui.text(c, r, Role::Mono, 0.56, Tone::Fg3, &w.t("key.saved_to"));
+            let plate = ui.boxed(c, r, UiStyle { pad: Some([0.4, 0.8].into()), grow: Some(1.0), shrink: Some(1.0), ..UiStyle::row() }.bg_a(Tone::Fg, 0.05).outline(Tone::Fg5, 1.0));
+            let t = ui.text_plain(c, plate, Role::Mono, 0.62, Tone::Fg, path);
+            c.entity(t).insert(SavedPath);
+            self.button(c, r, Kind::Secondary, &w.t("key.copy_path"), None, ObAction::CopyPath, State::NONE);
         }
         let row = self.btns(c, col, 2.6);
         let check = ui.check(c, row, o.saved, &w.t("key.saved_it"), 1.5);
@@ -2149,7 +2276,6 @@ impl Draw<'_, '_> {
         }
         let note = ui.boxed(c, pane, UiStyle { margin: Some([1.4, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t("key.pane_note"));
-        self.anim(c, pane);
         self.keys(c, root, &[("Space", w.t("key.saved_it")), ("Enter", "Continue".into())]);
     }
 
@@ -2164,13 +2290,15 @@ impl Draw<'_, '_> {
         for (i, t) in ui.tabs_ex(c, tabs_row, &names, sel, true, Some(("Q", "E"))).into_iter().enumerate() {
             c.entity(t).insert((clickable(), ObAction::Tab(if i == 0 { HaveTab::Link } else { HaveTab::Recover })));
         }
-        self.anim(c, tabs_row);
         let link = o.tab == HaveTab::Link;
         self.lead(c, col, &w.t(if link { "have.link_lead" } else { "have.recover_lead" }));
         ui.boxed(c, col, UiStyle { h: Some(1.4), ..UiStyle::column() });
         if o.last_hub.is_none() {
             let st = State::focused(o.have_on_hub);
-            let hf = self.field(c, col, &w.t("have.hub_label"), Tone::Fg3, None, &o.have_hub, "chimera-hub://...", o.have_on_hub.then(|| Caret::end_of(&o.have_hub)), self.lay("col_w", 42.0), st, None, None);
+            let parsed = InviteInput::parse(&o.have_hub).filter(|p| p.host.is_some());
+            let shown = self.reveals.shown(REVEAL_HOST);
+            let (value, caret) = masked_view((o.have_hub.clone(), o.have_on_hub.then(|| Caret::end_of(&o.have_hub))), parsed.as_ref(), shown);
+            let hf = self.field(c, col, &w.t("have.hub_label"), Tone::Fg3, None, &value, "chimera-hub://...", caret, self.lay("col_w", 42.0), st, None, None, parsed.is_some().then_some((REVEAL_HOST, shown)));
             c.entity(hf).insert((clickable(), ObAction::HaveField(true)));
             ui.boxed(c, col, UiStyle { h: Some(1.0), ..UiStyle::column() });
         }
@@ -2187,7 +2315,7 @@ impl Draw<'_, '_> {
                 (w.t("have.recover_label"), "XXXX-XXXX-XXXX-XXXX", None)
             };
             let status_ref = status.as_ref().map(|(t, s)| (*t, s.as_str()));
-            let cf = self.field(c, col, &label, Tone::Fg3, None, &o.have_code, ph, (!o.have_on_hub).then(|| Caret::end_of(&o.have_code)), self.lay("col_w", 42.0), st, status_ref, None);
+            let cf = self.field(c, col, &label, Tone::Fg3, None, &o.have_code, ph, (!o.have_on_hub).then(|| Caret::end_of(&o.have_code)), self.lay("col_w", 42.0), st, status_ref, None, None);
             c.entity(cf).insert((clickable(), ObAction::HaveField(false)));
         }
         if let Some(Problem::NeedsHub) = o.problem {
@@ -2203,7 +2331,6 @@ impl Draw<'_, '_> {
         self.button(c, row, Kind::Primary, &label, Some("Enter"), ObAction::Continue, State { focus: ready, disabled: !ready, ..State::NONE });
         let note = ui.boxed(c, col, UiStyle { margin: Some([2.2, 0.0, 0.0, 0.0].into()), max_w: Some(40.0), ..UiStyle::column() });
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t(if link { "have.lost" } else { "have.recover_note" }));
-        self.anim(c, note);
         if link {
             self.other_pc(c, root);
         }
@@ -2245,7 +2372,6 @@ impl Draw<'_, '_> {
         let sr = ui.boxed(c, f, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), margin: Some([0.4, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
         ui.mark(c, sr, Tone::Fg4, 0.6, 0.6);
         ui.text_plain(c, sr, Role::Mono, 0.62, Tone::Fg3, &w.t("have.link_status").to_uppercase());
-        self.anim(c, f);
     }
 
     /// Where the code comes from: the other PC's Settings, drawn small at
@@ -2264,7 +2390,6 @@ impl Draw<'_, '_> {
             ui.mark(c, ticks, if i < 12 { Tone::Fg } else { Tone::Fg4 }, 1.4, 0.6);
         }
         ui.text(c, body, Role::Mono, 0.56, Tone::Fg3, &w.t("have.other_note"));
-        self.anim(c, plate);
     }
 }
 
@@ -2290,6 +2415,15 @@ fn short_link_fp(f: &str) -> String {
 /// Characters the invite field shows (42 cq at the hero field's typed
 /// size, `[layout.field] hero_text`).
 const FIELD_CHARS: usize = 64;
+
+/// `view` (`field_view`'s) with the hub's address masked unless shown
+/// (`chimera_ui::secret`); the caret hidden while masked (typing goes on).
+fn masked_view(view: (String, Option<Caret>), parsed: Option<&InviteInput>, shown: bool) -> (String, Option<Caret>) {
+    match parsed.and_then(|p| p.host.as_deref()).filter(|h| !shown && !h.is_empty() && view.0.contains(*h)) {
+        Some(h) => (view.0.replace(h, &secret::mask(h)), None),
+        None => view,
+    }
+}
 
 /// What the invite field shows: a link read at Enter with its fingerprint
 /// shortened (no caret: Esc clears, typing starts over), else the text's
@@ -2749,10 +2883,14 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
             o.intro = Some(Intro { held, ..Intro::live(now) });
             o.since = now + welcome_at(scale);
         }
-        "clipboard" => {
+        "clipboard" | "checked" => {
             typed(&mut o, &full);
             o.source = Source::Clipboard;
             o.parsed = InviteInput::parse(&full);
+            if what == "checked" {
+                at_hub(&mut o);
+                o.valid = Some(full.clone());
+            }
         }
         "checking" => {
             typed(&mut o, &full);
@@ -2789,11 +2927,17 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
             o.asked_name = Some(name.into());
             o.name = staged.check(&link, "K7Q-M2P-9TR", Some(name)).ok().and_then(|a| a.username);
         }
-        "key" => {
+        "key" | "key-saved" => {
             at_hub(&mut o);
             o.step = Step::Key;
             o.signed_in = Some(staged.file("sam_rocket", None));
             o.recovery = Some(STAGED_KEY.into());
+            if what == "key-saved" {
+                // A made-up place, a USB stick (nothing is written).
+                let path = if cfg!(windows) { r"E:\keys\friday-night-hub-recovery-key.txt" } else { "/media/usb-stick/keys/friday-night-hub-recovery-key.txt" };
+                o.saved_path = Some(path.into());
+                o.said = Some(w.resource::<Words>().t("key.saved"));
+            }
         }
         "have" | "recover" => {
             o.step = Step::Have;
@@ -2822,8 +2966,8 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
         }
         other => {
             return Err(format!(
-                "ui_scene onboarding {other}: intro [t], welcome, clipboard, checking, used, unknown, unreachable, certificate, hub, name, \
-                 name-bad, name-taken, key, have, recover, done, returning, offline or off"
+                "ui_scene onboarding {other}: intro [t], welcome, clipboard, checked, checking, used, unknown, unreachable, certificate, hub, name, \
+                 name-bad, name-taken, key, key-saved, have, recover, done, returning, offline or off"
             ));
         }
     }
@@ -2832,7 +2976,7 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
 }
 
 /// Fills the welcome field from the clipboard at the first frame when it
-/// holds a hub link (nothing is sent until Enter).
+/// holds a hub link, and checks it (as a paste).
 pub fn from_clipboard(mut o: ResMut<Onboarding>, mut done: Local<bool>, shared: Option<ResMut<chimera_ui::clipboard::Clipboard>>, mut own: Local<chimera_ui::clipboard::Clipboard>) {
     if *done || !o.active {
         return;
@@ -2851,5 +2995,43 @@ pub fn from_clipboard(mut o: ResMut<Onboarding>, mut done: Local<bool>, shared: 
         o.caret = Caret::end_of(&o.input);
         o.source = Source::Clipboard;
         o.parsed = Some(p);
+        o.check_now = true;
     }
+}
+
+/// The game's window back in front (the player copied the invite in
+/// another app): an invite link on the clipboard fills Welcome's field and
+/// is checked, when the field is empty or holds something else that isn't
+/// a checked invite (a checked one, or one being checked, is never
+/// replaced).
+pub fn refocus_clipboard(
+    mut focus: MessageReader<bevy::window::WindowFocused>,
+    mut o: ResMut<Onboarding>,
+    clock: Res<UiClock>,
+    shared: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
+    mut own: Local<chimera_ui::clipboard::Clipboard>,
+) {
+    if !focus.read().any(|f| f.focused) || !o.active || o.step != Step::Welcome || o.intro.is_some() || o.pending.is_some() || o.auto.is_some() {
+        return;
+    }
+    let current = o.input.trim().to_string();
+    if !current.is_empty() && o.valid.as_deref() == Some(current.as_str()) {
+        return;
+    }
+    let clipboard = match shared {
+        Some(c) => c.into_inner(),
+        None => &mut *own,
+    };
+    let Some(text) = clipboard.get() else { return };
+    let text = chimera_ui::clipboard::single_line(&text).trim().to_string();
+    let Some(p) = InviteInput::parse(&text).filter(|p| p.kind == InputKind::Link) else { return };
+    if text == current {
+        return;
+    }
+    o.input = text;
+    o.caret = Caret::end_of(&o.input);
+    edited(&mut o, clock.now);
+    o.source = Source::Clipboard;
+    o.parsed = Some(p);
+    o.check_now = true;
 }

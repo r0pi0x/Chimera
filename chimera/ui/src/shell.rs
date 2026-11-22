@@ -32,6 +32,13 @@
 //! - **Tooltips** (`Tip`, `show_tips`): after 350 ms of hover, an `ink_3`
 //!   plate with an outline under the node, right-aligned: the name, a
 //!   note in `fg_3`, the key's cap.
+//! - **The ground** (`menu_ground`): the main menu's ambient (the kit's
+//!   `AmbientMaterial::MENU`) under a menu screen (Settings, Account, the
+//!   first run), so every screen off the match stands on one ground.
+//! - **No entrance slide**: a screen appears in place, whole; its parts
+//!   don't slide or rise in (the user's review of the first run,
+//!   2026-11-21). An intro and a control's own small motions (a toggle's
+//!   slab, a hover, a tab's wipe) stay.
 //!
 //! Known shortcuts: the "+" opens the party panel only with a hub account
 //! (`Party::invite`; parties: docs/plans/active/parties.md), Friends is
@@ -595,3 +602,25 @@ impl Plugin for ShellPlugin {
             .add_systems(Update, (crumb_hover, show_tips));
     }
 }
+
+/// The main menu's ground under a menu screen (module doc, "The ground"):
+/// the ambient across `parent`, taking no pointer. None without the
+/// materials (headless): the screen's own colour shows.
+pub fn menu_ground(c: &mut Commands, parent: Entity, t: &Theme, ambients: Option<&mut Assets<crate::AmbientMaterial>>) -> Option<Entity> {
+    let amb = ambients?;
+    let (col, bloom) = crate::AmbientMaterial::MENU;
+    Some(
+        c.spawn((
+            MenuGround,
+            MaterialNode(amb.add(crate::AmbientMaterial::new(t).column(Some(col)).bloom(bloom))),
+            Node { position_type: PositionType::Absolute, width: percent(100.0), height: percent(100.0), ..default() },
+            Pickable::IGNORE,
+            ChildOf(parent),
+        ))
+        .id(),
+    )
+}
+
+/// The ground's node (`menu_ground`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct MenuGround;

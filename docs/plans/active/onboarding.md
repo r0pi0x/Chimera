@@ -92,6 +92,48 @@ the returning player) and said to start building, with these changes:
     A plain token stays only for a game server's own asset service with
     no hub (`chimera_pack token add`, `+chimera:asset_token`).
 
+## Decisions (user, 2026-11-21: the first run tried)
+
+The user went through the built first run and asked for these; each is
+built (`party_kit::onboarding`, `account_page`, the kit):
+
+14. **One ground**: the first run stands on the main menu's own ground
+    (the kit's `shell::menu_ground`, the ambient Settings uses too), not
+    a look of its own; the account page uses it as well.
+15. **The invite checks itself**: no "press Enter to check". The field is
+    checked with its hub at once on a paste, else 0.6 s after the last
+    key (`INVITE_PAUSE`), staying on Welcome; Continue then goes on with
+    no other call (pressed while the check runs, it waits on Checking).
+    When the window comes back to the front, an invite link on the
+    clipboard fills the field and is checked, if the field is empty or
+    holds something else that isn't a checked invite: a checked one (or
+    one being checked) is never replaced. The clipboard's link at the
+    start is checked the same way.
+16. **No entrance slide**, as a kit rule (`chimera_ui::shell`'s doc):
+    screens appear in place, whole; the intro and the controls' own
+    small motions stay.
+17. **Addresses hidden by default, everywhere** (streamers): the kit's
+    `chimera_ui::secret` shows a masked value with an eye key (like a
+    password field), masked again whenever a screen opens. The first
+    run's field, pane, Checking and Hub; the account page's hub; Join's
+    Address field, Recent and servers named by their address (one eye
+    for the page); the party's "your party is on" and the Host page's
+    UPnP line mask theirs with no eye. Copying never needs the reveal.
+18. **The avatar with what you change**: on Choose a name, the 32 looks
+    sit at the left beside the fields, in tiles as big as the room
+    allows; the right-hand pane shows only the preview (what follows from
+    your choices). The account page draws the grid under the avatar's
+    row, across the list; its help tile keeps only words.
+19. **Forms look like forms**: the kit's `form::form_field` (a title, a
+    line on what the field is for, the input in the smaller typed size)
+    for the username and display name here and the account page's
+    username. Kept minimal and in one place: a forms design pass
+    restyles it (and the Invites tab) later.
+20. **The recovery key hidden by default** with the same eye key; Copy
+    and Save as file work hidden.
+21. **Save as file says where**: the whole path of the saved key file,
+    with Copy path.
+
 ## The flow (client)
 
 1. **First launch:** a short title moment with motion (the kit's
@@ -99,7 +141,8 @@ the returning player) and said to start building, with these changes:
    screen with the redeem field as the hero ("Paste your invite"), a
    secondary "I already have an account", and a small "Play without an
    account" link.
-2. **Redeem:** the one field. While checking it says "Reaching the
+2. **Redeem:** the one field, checked as it is pasted or typed
+   (decision 15). While checking it says "Reaching the
    hub…", and a wrong or used code, an unreachable hub, or a bad
    fingerprint each say what happened and what to do.
 3. **Confirm the hub:** "You're joining *<hub name>*", with its message

@@ -304,7 +304,7 @@ fn the_report_key_is_a_shared_controls_row_that_rebinds() {
 /// The user's outbox (`AssetsOutbox`) with no service: Send queues a zip
 /// in `outbox/` with the words, the frame as JPEG and the game's state,
 /// a secret typed into the console filtered out, and the notice says it
-/// is saved on this PC.
+/// is kept on this PC until signed in.
 #[test]
 fn a_report_without_a_service_is_a_bundle_saved_on_this_pc() {
     use chimera_client::client::feedback::{AssetsOutbox, FeedbackOutbox};
@@ -318,13 +318,13 @@ fn a_report_without_a_service_is_a_bundle_saved_on_this_pc() {
     open_with_f10(&mut sim.app);
     assert_eq!(
         sim.app.world().resource::<FeedbackOutbox>().0.destination(),
-        "No report service: saved on this PC"
+        "Not signed in: reports kept on this PC"
     );
     type_text(&mut sim.app, "stuck on the ramp");
     ctrl_enter(&mut sim.app);
     sim.app.update();
     let notice = fb(&sim.app).notice.clone().expect("a notice");
-    assert!(notice.text.starts_with("Saved on this PC"), "{}", notice.text);
+    assert!(notice.text.starts_with("Sign in to send reports; kept on this PC"), "{}", notice.text);
     // The bundle is written off the main thread.
     let outbox = dir.join("outbox");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);

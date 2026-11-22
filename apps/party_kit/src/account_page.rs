@@ -7,13 +7,17 @@
 //! at the right, the action bar), its words in `data/onboarding.toml
 //! [account]`.
 //!
-//! - **Profile**: the username (Enter or a click edits it; its
+//! - **Ground**: the main menu's (`chimera_ui::shell::menu_ground`).
+//! - **Profile**: the username as a form's field (the kit's `form_field`:
+//!   its title, what it is for, the input; Enter or a click edits it; its
 //!   availability asked of the hub `NAME_PAUSE` after the last key, with
 //!   the sign-up's free names when taken, `account::check_rename`; Enter
 //!   renames, one a minute, the chip and `account.toml` follow); the
-//!   avatar (←→ or a click in the tile's 32 looks: `cl_avatar` at once,
-//!   the hub told `AVATAR_PAUSE` after the last change); the hub (its
-//!   name, address and whether it answers); **Link another device** (a
+//!   avatar (←→ or a click in the 32 looks drawn under its row, across
+//!   the list: `cl_avatar` at once, the hub told `AVATAR_PAUSE` after the
+//!   last change); the hub (its name and whether it answers; its address
+//!   in the help tile masked with an eye key, `chimera_ui::secret`,
+//!   `REVEAL_HOST`); **Link another device** (a
 //!   10-minute code for "I already have an account" on the other PC,
 //!   `account::link_code`); **Sign out** (asks in the row itself: Stay or
 //!   Sign out; then this device is revoked at the hub when it answers,
@@ -64,6 +68,8 @@ use crate::{
 
 /// Over the main menu (Settings' place: never both).
 pub const ACCOUNT_Z: i32 = 92;
+/// The hub's address's reveal key (`chimera_ui::secret`).
+pub const REVEAL_HOST: &str = "account.host";
 /// Seconds after the last key before a new username is asked of the hub.
 pub const NAME_PAUSE: f64 = crate::onboarding::NAME_PAUSE;
 /// Seconds after the last avatar change before the hub is told.
@@ -1038,7 +1044,7 @@ pub fn short_link(link: &str) -> String {
     format!("{}{host}/{fp}{q}", account::SCHEME)
 }
 
-type DrawKey = (AccountPage, Option<Shown>, (String, bool), i32, (u32, u32), Option<Entity>, chimera_ui::shell::Party);
+type DrawKey = (AccountPage, Option<Shown>, (String, bool), i32, (u32, u32), Option<Entity>, chimera_ui::shell::Party, chimera_ui::secret::Reveals);
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn show(
@@ -1050,8 +1056,8 @@ fn show(
     party: Option<Res<chimera_ui::shell::Party>>,
     camera: Query<Entity, With<MenuUiCamera>>,
     root: Query<Entity, With<AccountRoot>>,
-    (theme, kit, units): (Option<Res<chimera_ui::Theme>>, Option<Res<chimera_ui::KitFonts>>, Option<Res<chimera_ui::UiUnits>>),
-    (mut images, mut icons): (Option<ResMut<Assets<Image>>>, Option<ResMut<chimera_ui::icons::IconImages>>),
+    (theme, kit, units, reveals): (Option<Res<chimera_ui::Theme>>, Option<Res<chimera_ui::KitFonts>>, Option<Res<chimera_ui::UiUnits>>, Option<Res<chimera_ui::secret::Reveals>>),
+    (mut images, mut icons, mut ambients): (Option<ResMut<Assets<Image>>>, Option<ResMut<chimera_ui::icons::IconImages>>, Option<ResMut<Assets<chimera_ui::AmbientMaterial>>>),
     mut drawn: Local<Option<DrawKey>>,
     mut commands: Commands,
 ) {
@@ -1074,6 +1080,7 @@ fn show(
             ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32),
             cam,
             party.as_deref().cloned().unwrap_or_default(),
+            reveals.as_deref().cloned().unwrap_or_default(),
         )
     });
     if *drawn == key {
@@ -1082,7 +1089,7 @@ fn show(
     for e in &root {
         commands.entity(e).despawn();
     }
-    if let Some((_, shown, (hub_name, offline), look, _, cam, party)) = key.clone() {
+    if let Some((_, shown, (hub_name, offline), look, _, cam, party, reveals)) = key.clone() {
         let ui = Ui::new(theme, kit.as_deref(), *units);
         let hub_name = if hub_name.is_empty() { shown.as_ref().map(|s| s.hub.clone()).unwrap_or_default() } else { hub_name };
         let host = account::live().map(|s| account::hub_link_of(&s.file()).host).unwrap_or_else(|| "hub.example.net:27080".into());
@@ -1096,10 +1103,11 @@ fn show(
             host: &host,
             offline,
             fallback,
+            reveals: &reveals,
             images: images.as_deref_mut(),
             icons: icons.as_deref_mut(),
         };
-        let r = d.screen(&mut commands, &party);
+        let r = d.screen(&mut commands, &party, ambients.as_deref_mut());
         if let Some(cam) = cam {
             commands.entity(r).insert(UiTargetCamera(cam));
         }
@@ -1116,6 +1124,7 @@ struct Draw<'a, 'b> {
     host: &'a str,
     offline: bool,
     fallback: u8,
+    reveals: &'a chimera_ui::secret::Reveals,
     images: Option<&'b mut Assets<Image>>,
     icons: Option<&'b mut chimera_ui::icons::IconImages>,
 }
@@ -1151,7 +1160,7 @@ impl Draw<'_, '_> {
         }
     }
 
-    fn screen(&mut self, c: &mut Commands, party: &chimera_ui::shell::Party) -> Entity {
+    fn screen(&mut self, c: &mut Commands, party: &chimera_ui::shell::Party, ambients: Option<&mut Assets<chimera_ui::AmbientMaterial>>) -> Entity {
         let ui = self.ui;
         let t = ui.theme;
         let p = self.p;
@@ -1173,15 +1182,8 @@ impl Draw<'_, '_> {
                 bevy::ui::FocusPolicy::Block,
             ))
             .id();
-        // The ground: Settings' navy fall from the top left.
-        let wash = ui.boxed(c, root, UiStyle { w_pct: Some(100.0), h_pct: Some(100.0), ..UiStyle::column() }.abs([Some(0.0), Some(0.0), None, None]));
-        c.entity(wash).insert(BackgroundGradient(vec![
-            LinearGradient::new(
-                162f32.to_radians(),
-                vec![ColorStop::percent(t.tone_a(Tone::Hero, 0.14), 0.0), ColorStop::percent(t.tone_a(Tone::Hero, 0.0), 60.0)],
-            )
-            .into(),
-        ]));
+        // The ground: the main menu's and Settings'.
+        chimera_ui::shell::menu_ground(c, root, t, ambients);
         let frame = ui.boxed(c, root, UiStyle { w: Some(100.0), h: Some(56.25), shrink: Some(0.0), ..UiStyle::row() });
         let sh = chimera_ui::shell::ShellLayout::of(t);
         let title = self.t("title");
@@ -1286,48 +1288,23 @@ impl Draw<'_, '_> {
                 )
             }
         };
+        if r == Row::Username {
+            self.username_form(c, list, i, focus);
+            return;
+        }
         let sr = ui.setting_row(c, list, &label, RowLook { note: note.as_deref(), ..default() }, st);
         c.entity(sr.row).insert((clickable(), AccountAction::Row(i)));
         let ctl = sr.control;
         let w = f.control_w;
         match r {
-            Row::Username => {
-                let editing = p.editing == Some(Editing::Name);
-                let value = if editing { p.name.clone() } else { format!("@{}", self.username()) };
-                let folded = p.name.trim().to_ascii_lowercase();
-                let taken = editing && p.name_check.as_ref().is_some_and(|n| n.username == folded && !n.available);
-                let bad = editing && !folded.is_empty() && !UsernameRules::of(&folded).all();
-                let fst = State { focus: editing, error: taken || bad, ..State::NONE };
-                let tf = ui.text_field(c, ctl, &value, "", editing.then(|| p.caret.cursor(&p.name)), false, w, fst);
-                c.entity(tf).insert((clickable(), AccountAction::Edit(Editing::Name)));
-                if editing {
-                    let (tone, line) = if bad {
-                        (Tone::Threat, self.w.t("name.fix"))
-                    } else if taken {
-                        (Tone::Threat, self.w.f("name.taken", &[("hub", self.hub), ("name", &folded)]))
-                    } else if p.name_ok() {
-                        (Tone::AccText, self.t("name_free"))
-                    } else {
-                        (Tone::Fg3, self.w.f("name.checking", &[("hub", self.hub)]))
-                    };
-                    let under = self.under(c, list);
-                    ui.mark(c, under, tone, 0.5, 0.5);
-                    ui.text_plain(c, under, Role::Mono, 0.56, tone, &line.to_uppercase());
-                    if taken {
-                        ui.text(c, under, Role::Mono, 0.56, Tone::Fg3, &self.w.t("name.free"));
-                        for s in p.name_check.as_ref().map(|n| n.suggestions.clone()).unwrap_or_default() {
-                            let b = ui.button(c, under, Kind::Secondary, &s, None, 1.7, State::NONE);
-                            c.entity(b).insert(AccountAction::Suggest(s.clone()));
-                        }
-                    }
-                }
-            }
+            Row::Username => {}
             Row::Avatar => {
                 let a = p.avatar_now(self.fallback);
                 let line = ui.boxed(c, ctl, UiStyle { w: Some(w), gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
                 let av = self.avatar(c, line, a, 2.0);
                 c.entity(av).insert(Pickable::IGNORE);
                 ui.text_plain(c, line, Role::DisplayBold, 0.86, Tone::Fg, &self.display());
+                self.avatar_grid(c, list, a);
             }
             Row::Hub => {
                 let line = ui.boxed(c, ctl, UiStyle { w: Some(w), gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() });
@@ -1420,6 +1397,79 @@ impl Draw<'_, '_> {
         }
     }
 
+    /// The username as a form's field (`chimera_ui::form`'s `form_field`):
+    /// its title, what it is for, the input (Enter or a click edits), and
+    /// the check's line under it while editing.
+    fn username_form(&mut self, c: &mut Commands, list: Entity, i: usize, focus: bool) {
+        let ui = self.ui;
+        let p = self.p;
+        let block = ui.boxed(c, list, UiStyle { pad: Some([0.8, 1.4, 1.0, 1.4].into()), shrink: Some(0.0), w_pct: Some(100.0), ..UiStyle::column() });
+        c.entity(block).insert((clickable(), AccountAction::Row(i)));
+        if focus {
+            ui.focus_bar(c, block, 0.22);
+        }
+        let editing = p.editing == Some(Editing::Name);
+        let value = if editing { p.name.clone() } else { format!("@{}", self.username()) };
+        let folded = p.name.trim().to_ascii_lowercase();
+        let taken = editing && p.name_check.as_ref().is_some_and(|n| n.username == folded && !n.available);
+        let bad = editing && !folded.is_empty() && !UsernameRules::of(&folded).all();
+        let fst = State { focus: editing, error: taken || bad, ..State::NONE };
+        let w = self.ui.form().control_w + 8.0;
+        let help = self.w.f("account.username_help", &[("hub", self.hub)]);
+        let ff = ui.form_field(c, block, &self.t("username"), &help, None, &value, "", editing.then(|| p.caret.cursor(&p.name)), false, w, fst);
+        c.entity(ff.input).insert((clickable(), AccountAction::Edit(Editing::Name)));
+        if editing {
+            let (tone, line) = if bad {
+                (Tone::Threat, self.w.t("name.fix"))
+            } else if taken {
+                (Tone::Threat, self.w.f("name.taken", &[("hub", self.hub), ("name", &folded)]))
+            } else if p.name_ok() {
+                (Tone::AccText, self.t("name_free"))
+            } else {
+                (Tone::Fg3, self.w.f("name.checking", &[("hub", self.hub)]))
+            };
+            let under = ui.boxed(c, ff.root, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), margin: Some([0.3, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
+            ui.mark(c, under, tone, 0.5, 0.5);
+            ui.text_plain(c, under, Role::Mono, 0.56, tone, &line.to_uppercase());
+            if taken {
+                ui.text(c, under, Role::Mono, 0.56, Tone::Fg3, &self.w.t("name.free"));
+                for s in p.name_check.as_ref().map(|n| n.suggestions.clone()).unwrap_or_default() {
+                    let b = ui.button(c, under, Kind::Secondary, &s, None, 1.7, State::NONE);
+                    c.entity(b).insert(AccountAction::Suggest(s.clone()));
+                }
+            }
+        }
+    }
+
+    /// The 32 looks under the avatar's row, across the list (the user's
+    /// review, 2026-11-21: what you change at the left, in big tiles; the
+    /// help tile keeps only what you can't): one marker, the chosen one
+    /// outlined.
+    fn avatar_grid(&mut self, c: &mut Commands, list: Entity, chosen: u8) {
+        let ui = self.ui;
+        let sh = chimera_ui::shell::ShellLayout::of(ui.theme);
+        let gap = 0.4;
+        // The list's width: the window's less the help tile and the insets.
+        let list_w = 100.0 - 2.0 * sh.margin - 4.0 * sh.rows_in - sh.side_w - 2.8;
+        let tile = ((list_w - 7.0 * gap) / 8.0).min(ui.theme.layout_opt("account", "avatar_tile").unwrap_or(4.4));
+        let grid = ui.boxed(c, list, UiStyle { gap: Some(gap), pad: Some([0.2, 1.4, 1.0, 1.4].into()), shrink: Some(0.0), ..UiStyle::column() });
+        for row in 0..4u8 {
+            let line = ui.boxed(c, grid, UiStyle { gap: Some(gap), ..UiStyle::row() });
+            for col in 0..8u8 {
+                let b = row * 8 + col;
+                let sel = b == chosen;
+                let cell = ui.boxed(
+                    c,
+                    line,
+                    UiStyle { w: Some(tile), h: Some(tile), pad: Some([0.2, 0.2].into()), shrink: Some(0.0), ..UiStyle::row() }.outline(if sel { Tone::Acc } else { Tone::Fg5 }, if sel { 2.0 } else { 1.0 }),
+                );
+                c.entity(cell).insert((clickable(), AccountAction::Avatar(b)));
+                let a = self.avatar(c, cell, b, tile - 0.4);
+                c.entity(a).insert(Pickable::IGNORE);
+            }
+        }
+    }
+
     /// A line under a row (its check, its code, its confirm), indented.
     fn under(&self, c: &mut Commands, list: Entity) -> Entity {
         self.ui.boxed(c, list, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), pad: Some([0.4, 1.4, 0.8, 1.4].into()), shrink: Some(0.0), w_pct: Some(100.0), ..UiStyle::row() })
@@ -1468,7 +1518,6 @@ impl Draw<'_, '_> {
             }
             Row::Hub => vec![
                 ("Hub", self.hub.to_string()),
-                ("Address", self.host.to_string()),
                 ("Status", if self.offline { "Offline".into() } else { "Online".into() }),
                 ("Role", if me.role.is_empty() { "-".into() } else { me.role.clone() }),
             ],
@@ -1490,24 +1539,16 @@ impl Draw<'_, '_> {
             _ => Vec::new(),
         };
         if !kv.is_empty() {
-            let kv: Vec<(&str, String)> = kv.into_iter().map(|(k, v)| (k, if k == "Username" || k == "Was" || k == "Address" { v } else { v.to_uppercase() })).collect();
+            let kv: Vec<(&str, String)> = kv.into_iter().map(|(k, v)| (k, if k == "Username" || k == "Was" { v } else { v.to_uppercase() })).collect();
             ui.kv(c, help, &kv, 7.0);
         }
-        if r == Row::Avatar {
-            // The 32 looks: one marker, the chosen one outlined.
-            let chosen = p.avatar_now(self.fallback);
-            let grid = ui.boxed(c, help, UiStyle { gap: Some(0.35), margin: Some([0.4, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
-            for row in 0..4u8 {
-                let line = ui.boxed(c, grid, UiStyle { gap: Some(0.35), ..UiStyle::row() });
-                for col in 0..8u8 {
-                    let b = row * 8 + col;
-                    let sel = b == chosen;
-                    let cell = ui.boxed(c, line, UiStyle { pad: Some([0.15, 0.15].into()), ..UiStyle::row() }.outline(if sel { Tone::Acc } else { Tone::Fg5 }, if sel { 2.0 } else { 1.0 }));
-                    c.entity(cell).insert((clickable(), AccountAction::Avatar(b)));
-                    let a = self.avatar(c, cell, b, 2.4);
-                    c.entity(a).insert(Pickable::IGNORE);
-                }
-            }
+        if r == Row::Hub {
+            // The address hidden until its eye key (streamers).
+            let line = ui.boxed(c, help, UiStyle { gap: Some(1.0), pad: Some([0.6, 0.0].into()), align: Some(AlignItems::Center), ..UiStyle::row() });
+            ui.hairline(c, line, Tone::Fg, 0.07);
+            let k = ui.boxed(c, line, UiStyle { w: Some(7.0), shrink: Some(0.0), ..UiStyle::row() });
+            ui.text(c, k, Role::Mono, 0.6, Tone::Fg3, "Address");
+            ui.secret(c, line, REVEAL_HOST, self.host, self.reveals.shown(REVEAL_HOST), false, Role::Mono, 0.6, Tone::Fg);
         }
     }
 }

@@ -27,7 +27,9 @@
 //!   bar, the eased wheel); ↑↓ keep the focused row in view
 //!   (`SignalPages::reveal`).
 //! - **Join**: Direct (the address and the password, text fields), the
-//!   recent addresses, and the **server browser** (main-menu.md M2 and
+//!   recent addresses (addresses masked until the Address field's eye key
+//!   shows them: `REVEAL_ADDRESSES`, `chimera_ui::secret`; servers named
+//!   by their address too), and the **server browser** (main-menu.md M2 and
 //!   M3; its rows and files are `server_list`'s) in four tabs:
 //!   **Internet** (docs/plans/active/hub.md 4.3: the servers the
 //!   account's hub lists, `chimera_net::net::hub::Hub`, asked when the
@@ -1556,10 +1558,14 @@ struct DrawKey {
     guns_line: String,
     /// The world's Guns rules and rungs (the Host page's Guns field).
     gun_rules: (chimera_sim::minigame::gun_rules::GunRules, usize),
+    /// The addresses shown (`chimera_ui::secret`: hidden by default).
+    reveals: chimera_ui::secret::Reveals,
 }
 
 /// What the drawing reads besides the state.
 struct Ctx<'a> {
+    /// Addresses shown (`REVEAL_ADDRESSES`).
+    shown: bool,
     data: &'a MenuData,
     lan: &'a LanList,
     pool: &'a [String],
@@ -1607,10 +1613,11 @@ fn draw(
         Res<crate::guns_picker::GunsListing>,
         Option<Res<chimera_ui::motion::Motion>>,
     ),
-    (rules, note, rungs): (
+    (rules, note, rungs, reveals): (
         Option<Res<chimera_sim::minigame::gun_rules::GunRules>>,
         Option<Res<chimera_sim::minigame::gun_rules::GunRulesNote>>,
         Option<Res<chimera_sim::minigame::gun_rules::LadderRungs>>,
+        Option<Res<chimera_ui::secret::Reveals>>,
     ),
     mut commands: Commands,
 ) {
@@ -1638,6 +1645,7 @@ fn draw(
             rules.as_deref().cloned().unwrap_or_default(),
             rungs.as_deref().map_or(chimera_sim::minigame::power::PowerCurve::shipped().rungs.default, |r| r.0),
         ),
+        reveals: reveals.as_deref().cloned().unwrap_or_default(),
     };
     if *drawn == key {
         return;
@@ -1649,6 +1657,7 @@ fn draw(
     let Some(page) = p.up else { return };
     let ui = Ui::new(&theme, fonts.as_deref(), *units);
     let cx = Ctx {
+        shown: drawn.reveals.shown(REVEAL_ADDRESSES),
         data: &data,
         lan: &lan,
         pool: &pool,
@@ -1684,6 +1693,8 @@ fn upnp_status(u: Option<&chimera_net::net::upnp::Upnp>, menu: &PartyMenu, data:
         let mut ch = l.chars();
         ch.next().map(|f| f.to_uppercase().collect::<String>() + ch.as_str()).unwrap_or_default()
     });
+    // Its addresses (the router's, the outside one) hidden (`secret`).
+    let line = line.map(|l| chimera_ui::secret::mask_addresses(&l));
     match (u.map(|u| &u.state), line) {
         (Some(UpnpState::Mapped(..)), Some(l)) => (L::Ok, l),
         (Some(UpnpState::Failed(..)), Some(l)) => (L::Failed, l),
@@ -1699,6 +1710,10 @@ fn upnp_status(u: Option<&chimera_net::net::upnp::Upnp>, menu: &PartyMenu, data:
         }
     }
 }
+
+/// Join's addresses' reveal key (the Address field, Recent, servers named
+/// by their address; `chimera_ui::secret`).
+pub const REVEAL_ADDRESSES: &str = "join.addresses";
 
 fn lay(t: &Theme, k: &str, or: f32) -> f32 {
     t.layout_opt(L, k).unwrap_or(or)
@@ -1812,7 +1827,7 @@ fn spawn(
                 if matches!(l, Line::Server(_)) {
                     continue;
                 }
-                join_line(c, ui, left, i, *l, menu, p, row_h);
+                join_line(c, ui, left, i, *l, menu, p, row_h, cx.shown);
             }
             if menu.recent.is_empty() {
                 ui.section(c, left, "Recent", None);
@@ -2093,25 +2108,31 @@ fn summary(c: &mut Commands, ui: &Ui, cols: Entity, menu: &PartyMenu, cx: &Ctx) 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn join_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu: &PartyMenu, p: &SignalPages, row_h: f32) {
+#[allow(clippy::too_many_arguments)]
+fn join_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu: &PartyMenu, p: &SignalPages, row_h: f32, shown: bool) {
     let focus = p.focus == i;
     let st = State { focus, error: p.error == Some(i), ..State::NONE };
     match line {
         Line::Address | Line::Password => {
             let (label, field, value, masked, ph) = if line == Line::Address {
-                ("Address", Field::Address, &menu.address, false, "host or host:port")
+                ("Address", Field::Address, &menu.address, !shown, "host or host:port")
             } else {
                 ("Password", Field::Password, &menu.password, true, "None")
             };
             let (e, vl) = ui.row(c, list, label, None, row_h, st);
             c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
             let caret = (menu.focus == Some(field) && p.ask.is_none()).then(|| menu.caret.cursor(value));
-            let f = ui.text_field(c, vl, value, ph, caret, masked, 15.0, st);
+            let w = if line == Line::Address { 13.0 } else { 15.0 };
+            let f = ui.text_field(c, vl, value, ph, caret, masked, w, st);
             c.entity(f).insert(MainMenuAction::Focus(field));
+            if line == Line::Address {
+                ui.reveal_key(c, vl, REVEAL_ADDRESSES, shown, 1.9);
+            }
         }
         Line::Recent(r) => {
             let Some(a) = menu.recent.get(r) else { return };
-            let (e, vl) = ui.row(c, list, a, None, row_h, State::focused(focus));
+            let a = chimera_ui::secret::shown(a, shown);
+            let (e, vl) = ui.row(c, list, &a, None, row_h, State::focused(focus));
             c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
             if focus {
                 ui.kbd(c, vl, "Enter", 0.56, Tone::Fg2);
@@ -2256,7 +2277,8 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
             small.push("favourite".into());
         }
         let small = small.join(" • ");
-        let (e, vl) = ui.row(c, list, &sv.name, Some(&small), row_h, State { focus, disabled: !sv.same_version || sv.barred || sv.status == Status::Down, ..State::NONE });
+        let name = chimera_ui::secret::name_or_masked(&sv.name, cx.shown);
+        let (e, vl) = ui.row(c, list, &name, Some(&small), row_h, State { focus, disabled: !sv.same_version || sv.barred || sv.status == Status::Down, ..State::NONE });
         c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
         if sv.status == Status::Up || sv.listed {
             // (A listed server's numbers are the hub's until it answers.)
