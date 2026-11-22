@@ -19,8 +19,11 @@
 #    warm) cargo's incremental builds stay on instead: the registry crates
 #    still come from sccache, the workspace crates rebuild incrementally. The
 #    server is
-#    started WITHOUT MAKEFLAGS, and tools/sccache-heal.sh restarts it if it
-#    has leaked its own jobserver tokens (the "hung at 0% CPU" failure).
+#    started WITHOUT MAKEFLAGS, and only when none is listening (under a
+#    lock). Sourcing never stops or restarts a server: another agent's build
+#    may be running through it. tools/sccache-heal.sh only reports one that
+#    looks hung (leaked jobserver tokens); `tools/sccache-heal.sh --force`
+#    restarts it, by hand, with no build running.
 # The FIFO only holds its tokens while some process has it open, so a small
 # holder process (`sleep infinity`) is started once, race-free under flock.
 # A cargo killed mid-build (a tool timeout) takes its tokens with it; each
@@ -109,8 +112,15 @@ _agent_sccache_init() {
       fi ;;
   esac
   "$here/sccache-heal.sh"
+  # Start a server only when none listens (a second --start-server against a
+  # live one is harmless but pointless); one starter at a time. Never stop.
   # The server must not inherit the agents' jobserver: it uses its own.
-  env -u MAKEFLAGS -u CARGO_MAKEFLAGS -u MFLAGS "$bin" --start-server >/dev/null 2>&1
+  (
+    flock 7
+    if [ -z "$(ss -ltnH "sport = :$SCCACHE_SERVER_PORT" 2>/dev/null)" ]; then
+      env -u MAKEFLAGS -u CARGO_MAKEFLAGS -u MFLAGS "$bin" --start-server >/dev/null 2>&1
+    fi
+  ) 7>"${XDG_RUNTIME_DIR:-/tmp}/sccache-start.$SCCACHE_SERVER_PORT.lock"
 }
 
 # Run a command in agents.slice (falls back to running it directly).

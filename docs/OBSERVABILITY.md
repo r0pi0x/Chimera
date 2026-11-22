@@ -1963,6 +1963,14 @@ usual. It sets `RUSTC_WRAPPER` to sccache 0.19 (`~/.local/sccache-0.19/bin/sccac
 The cache (100 GiB, `~/.cache/sccache-0.19`) is set in `~/.config/sccache/config`.
 `AGENT_NO_SCCACHE=1` builds without it.
 
+The one right way: `source tools/agent-env.sh` in every shell that builds,
+the same way each time (the hooks do). A build without it differs in
+`RUSTFLAGS` (in a slot, `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS`
+selects mold), in `CARGO_INCREMENTAL` and in `CARGO_TARGET_DIR`; cargo
+fingerprints each, so switching between a sourced and an unsourced shell
+rebuilt ~300 crates once. Don't set `RUSTFLAGS` or `CARGO_TARGET_DIR` by
+hand either.
+
 What the keys need, learned the hard way:
 
 - sccache cannot cache incremental builds (`CARGO_INCREMENTAL=0`; the dev
@@ -1981,16 +1989,20 @@ What the keys need, learned the hard way:
   tool timeout) the server kills its rustc, and the tokens that rustc held
   are lost. After a few such kills all are gone and every later request
   waits at 0% CPU forever: the "hung server" of 2026-10. `tools/sccache-heal.sh`
-  (run by `agent-env.sh`) restarts the server when it has no children and
-  fewer tokens than CPU threads on two looks 3 s apart. A killed build also
+  (run by `agent-env.sh`) only *reports* a server with no children and
+  fewer tokens than CPU threads on two looks 3 s apart. It never restarts
+  one by itself: it used to, and with ~10 agents sourcing `agent-env.sh`
+  that killed other agents' running builds (exit 101, nothing printed,
+  2026-11-21). `agent-env.sh` starts a server only when none listens (under
+  a lock) and never stops one. A truly hung server is restarted on purpose,
+  with no build running: `tools/sccache-heal.sh --force`. A killed build also
   never stores the crates it was compiling, so a long one (bevy_pbr under
   load 30) can miss again and again until one run finishes.
 
 Check it: `$RUSTC_WRAPPER --show-stats` (hits, misses, "Non-cacheable
 reasons", "Cache location"); a hang shows as requests waiting while
 `pgrep -P $(ss -ltnpH 'sport = :4227' | sed 's/.*pid=\([0-9]*\).*/\1/')`
-lists no rustc: run `tools/sccache-heal.sh`, or `$RUSTC_WRAPPER --stop-server`
-when no build is running. Measured (12 threads, load 30 from other
+lists no rustc: run `tools/sccache-heal.sh --force` when no build is running. Measured (12 threads, load 30 from other
 agents, `cargo build -p source_formats --tests`, new worktree each): cold
 79 s with 0 of 20 hits, second worktree 25 s with 19 of 20 (the miss is
 `source_formats` itself).

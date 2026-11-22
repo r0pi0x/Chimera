@@ -12,7 +12,7 @@ use std::{
     fs::{self, File},
     path::{Path, PathBuf},
     process::Command,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 fn repo() -> PathBuf {
@@ -319,4 +319,70 @@ fn stamps_key_the_working_tree_and_merge_the_packages_that_passed() {
     );
     assert_eq!(out, "pushed-covered\n0\n", "{out}");
     fs::remove_dir_all(&root).ok();
+}
+
+/// Sourcing `tools/agent-env.sh` (twice at once) never stops or restarts a
+/// running sccache server, not even one that looks hung (no jobserver
+/// tokens, no children), and starts none while one listens: a restart
+/// killed other agents' builds (docs/OBSERVABILITY.md, "Shared compile
+/// cache").
+#[test]
+fn sourcing_agent_env_leaves_a_running_sccache_server_alone() {
+    use std::process::Stdio;
+    let ok = |c: &str| Command::new(c).arg("--version").output().is_ok();
+    if !ok("python3") || !ok("flock") || Command::new("ss").arg("-V").output().is_err() {
+        return;
+    }
+    let root = temp("sccache_env");
+    let log = root.join("calls.log");
+    let fake = root.join("sccache");
+    fs::write(&fake, format!("#!/bin/sh\necho \"$@\" >> {}\n", log.display())).unwrap();
+    Command::new("chmod").arg("+x").arg(&fake).status().unwrap();
+    // A listener with an empty jobserver pipe: what a hung server looks like.
+    let port = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().port()
+    };
+    let mut server = Command::new("python3")
+        .arg("-c")
+        .arg(
+            "import os,socket,sys,time\nr,w=os.pipe()\ns=socket.socket()\n\
+             s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)\n\
+             s.bind(('127.0.0.1',int(sys.argv[1])))\ns.listen()\ntime.sleep(120)",
+        )
+        .arg(port.to_string())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let up = Instant::now();
+    while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
+        assert!(up.elapsed() < Duration::from_secs(10), "the fake server never listened");
+        std::thread::yield_now();
+    }
+    let source = || {
+        Command::new("bash")
+            .arg("-c")
+            .arg(format!("source {}/tools/agent-env.sh", repo().display()))
+            .env("SCCACHE_BIN", &fake)
+            .env("SCCACHE_SERVER_PORT", port.to_string())
+            .env("AGENT_JS_DIR", root.join("js"))
+            .env("XDG_RUNTIME_DIR", &root)
+            .env("AGENT_JOBS", "2")
+            .env("AGENT_NO_SLICE", "1")
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    };
+    let (a, b) = (source(), source());
+    let said: String = [a, b]
+        .into_iter()
+        .map(|c| String::from_utf8_lossy(&c.wait_with_output().unwrap().stderr).into_owned())
+        .collect();
+    let alive = server.try_wait().unwrap().is_none();
+    let calls = fs::read_to_string(&log).unwrap_or_default();
+    server.kill().ok();
+    server.wait().ok();
+    fs::remove_dir_all(&root).ok();
+    assert!(alive, "the running server was stopped: {said}");
+    assert_eq!(calls, "", "sccache was called (stop or start) while a server listened: {said}");
 }

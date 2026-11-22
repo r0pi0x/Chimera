@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Restart the box's sccache server if it has leaked jobserver tokens.
+# Report (and, only on request, fix) an sccache server that has leaked
+# jobserver tokens.
+#
+# NEVER stops a server on its own: other agents' builds run through it, and a
+# restart kills them (exit 101, no message: 2026-11-21). Without --force this
+# only says what it sees; `tools/sccache-heal.sh --force` restarts it, which
+# a human or an agent must do on purpose, with no build running.
 #
 # sccache's server keeps its own jobserver (one token per CPU thread) and
 # hands it to the rustc it runs. When a client is killed mid-build (a tool
@@ -7,9 +13,11 @@
 # held are gone for good. Once all are gone every later request waits forever
 # at 0% CPU, which looks like a hung server. Whenever the server has no
 # children, its pipe must hold every token; fewer, on two looks 3 s apart,
-# means a leak and nothing real is in flight, so the server is restarted.
-# Usage: tools/sccache-heal.sh   (agent-env.sh runs it when sourced)
+# means a leak and nothing real is in flight: reported (--force restarts).
+# Usage: tools/sccache-heal.sh [--force]   (agent-env.sh runs it without
+# --force when sourced)
 set -u
+force=0; [ "${1:-}" = --force ] && force=1
 bin="${RUSTC_WRAPPER:-sccache}"
 port="${SCCACHE_SERVER_PORT:-4226}"
 pid=$(ss -ltnpH "sport = :$port" 2>/dev/null | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)
@@ -65,5 +73,10 @@ read -r t k < <(look 2>/dev/null)
 sleep 3
 read -r t k < <(look 2>/dev/null)
 { [ "${k:-1}" -ne 0 ] || [ "${t:--1}" -lt 0 ] || [ "$t" -ge "$want" ]; } && exit 0
-echo "sccache-heal: server $pid has $t of $want jobserver tokens and no children; restarting it" >&2
-"$bin" --stop-server >/dev/null 2>&1
+if [ "$force" = 1 ]; then
+  echo "sccache-heal: server $pid has $t of $want jobserver tokens and no children; restarting it (--force)" >&2
+  "$bin" --stop-server >/dev/null 2>&1
+  env -u MAKEFLAGS -u CARGO_MAKEFLAGS -u MFLAGS "$bin" --start-server >/dev/null 2>&1
+else
+  echo "sccache-heal: server $pid has $t of $want jobserver tokens and no children (hung?); left running. With no build in flight: tools/sccache-heal.sh --force" >&2
+fi

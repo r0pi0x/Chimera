@@ -181,3 +181,4 @@ rebuilds, type-checks and selects; plugins per game) is
 
 2026-11-21: plan written, baseline taken, items 1-4 done.
 2026-11-21: second pass: the hook as the agents' test run, pre-push reuses stamps, the racy key fixed, nextest measured (opt-in), tools/run-built; a shared capture target ruled out. Then the hook's type-check beside its tests (-25% warm), phases logged, stamps written when nothing was only checked.
+2026-11-21: sccache-heal no longer restarts the server (it killed other agents' running builds, exit 101, nothing printed): `agent-env.sh` starts one only when none listens, under a lock, and heal only reports a hung one (`tools/sccache-heal.sh --force` restarts it by hand); test in checks/tests/it/scripts.rs. One right way against full rebuilds: always source `agent-env.sh` (RUSTFLAGS/mold, incremental and target dir differ otherwise; docs/OBSERVABILITY.md, "Shared compile cache").
