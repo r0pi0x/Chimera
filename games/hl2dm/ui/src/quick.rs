@@ -14,7 +14,7 @@ use super::{
     look::Look,
     numeric::static_font,
 };
-use crate::game::hud::icon_key;
+use hl2dm::game::hud::icon_key;
 
 /// Health at or below this warns.
 pub const HEALTH_WARN: i32 = 25;

@@ -2,7 +2,7 @@
 //! 4, 7; test cases 6, 8-23, 67, 68), on the stand-in look.
 
 use bevy::prelude::*;
-use hl2dm::ui::{
+use hl2dm_ui::{
     frame::{Draw, Screen},
     hud::Inputs,
     quick::blink_alpha,
@@ -10,7 +10,7 @@ use hl2dm::ui::{
 
 use crate::common::*;
 
-fn text_at(f: &hl2dm::ui::frame::Frame, text: &str) -> Vec2 {
+fn text_at(f: &hl2dm_ui::frame::Frame, text: &str) -> Vec2 {
     match f.find_text(text) {
         Some(Draw::Text { at, .. }) => *at,
         other => panic!("{text}: {other:?}"),
@@ -28,7 +28,7 @@ fn health_changes_start_events_even_when_it_fell() {
     inp.health = 80.0;
     hud.think(&inp, 0.1);
     assert_eq!(hud.fired(0.0), ["HealthIncreasedAbove20"]);
-    hud.damage_message(&hl2dm::ui::damage::DamageMsg { health: 20.0, angle: Some(90.0), ..Default::default() }, 80.0);
+    hud.damage_message(&hl2dm_ui::damage::DamageMsg { health: 20.0, angle: Some(90.0), ..Default::default() }, 80.0);
     assert!(hud.fired(0.0).contains(&"HealthDamageTaken"));
     let _ = look;
 }
@@ -168,7 +168,7 @@ fn weapons_without_clips_or_primary_ammo() {
     let (mut hud, look) = base();
     let mut inp = inputs();
     hud.think(&inp, 0.0);
-    inp.weapon = Some(hl2dm::ui::hud::WeaponNow { class: "weapon_frag".into(), uses_primary: true, clip: None, reserve: 3, ..Default::default() });
+    inp.weapon = Some(hl2dm_ui::hud::WeaponNow { class: "weapon_frag".into(), uses_primary: true, clip: None, reserve: 3, ..Default::default() });
     hud.think(&inp, 1.0);
     hud.think(&inp, 1.4);
     let f = hud.frame(&look, &inp);
@@ -176,7 +176,7 @@ fn weapons_without_clips_or_primary_ammo() {
     assert_eq!(b.min.x, 640.0 - 118.0);
     assert!(f.find_text("3").is_some());
     assert!(f.texts().all(|t| t.as_text() != Some("0")), "no reserve number");
-    inp.weapon = Some(hl2dm::ui::hud::WeaponNow { class: "weapon_slam".into(), uses_primary: false, clip: None, reserve: 0, ..Default::default() });
+    inp.weapon = Some(hl2dm_ui::hud::WeaponNow { class: "weapon_slam".into(), uses_primary: false, clip: None, reserve: 0, ..Default::default() });
     hud.think(&inp, 2.0);
     assert!(hud.frame(&look, &inp).find_text("AMMO").is_none());
 }
@@ -305,7 +305,7 @@ fn a_spawn_resets_the_panels() {
     inp.armour = 40.0;
     hud.think(&inp, 0.0);
     hud.history.item(Some(("WeaponIcons", '+')), 0.0);
-    hud.damage_message(&hl2dm::ui::damage::DamageMsg { health: 10.0, angle: Some(90.0), ..Default::default() }, 100.0);
+    hud.damage_message(&hl2dm_ui::damage::DamageMsg { health: 10.0, angle: Some(90.0), ..Default::default() }, 100.0);
     hud.think(&inp, 0.1);
     hud.reset(&look);
     assert!(hud.history.entries.is_empty());

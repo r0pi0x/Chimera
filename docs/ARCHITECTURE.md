@@ -30,6 +30,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    halo_ce_server (apps/halo_ce_server/)   Halo's dedicated server: no presentation
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
+  |    hl2dm_ui (games/hl2dm/ui/)   HL2:DM's front end as its own crate (its HUD, GameUI menus, kill icons, quick info): on hl2dm, Source's shared crates and the shell
   |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim
   |    halo_ce_ui (games/halo_ce/ui/)   Halo's front end as its own crate (its HUD, buttons, kill icons, party view): on halo_ce, blam_formats and the shell
   |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its twelve guns and nine melee weapons and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim
@@ -72,8 +73,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   manifest declares (`[package.metadata.chimera] loaders = ["source"]`),
   never on a game or an app; `games/<id>/ui` is that game's front end as
   its own crate (`<id>_ui`), on the engine, its own game and that game's
-  loader layers, never another game, front end or app (TF2's and Halo's so
-  far; the other games' front ends are still their crate's `ui` feature,
+  loader layers, never another game, front end or app (TF2's, Halo's and HL2:DM's
+  so far; the other games' front ends are still their crate's `ui` feature,
   docs/plans/active/architecture-for-iteration.md, stage 1); `apps/*` (and a game's tools, and the root
   package) compose them, and build on another app only when their
   manifest says so (`apps = ["party_kit"]`). The rows of
@@ -821,7 +822,7 @@ A module may use only the modules below it. Enforced by
   it runs headless in tests and, later, on a dedicated server.
 - `games/<a>` never uses `games/<b>`. Shared needs go into `core` once two or
   three games need them (README, "rule of three"), or through a bridge.
-- A game's front end (its own crate `<id>_ui` in games/<id>/ui, as TF2's and Halo's;
+- A game's front end (its own crate `<id>_ui` in games/<id>/ui, as TF2's, Halo's and HL2:DM's;
   or its crate's `ui`, behind its `ui` feature: menus, panels, HUD) sits on
   `client` (the shell: input, camera, console UI, VGUI-like widgets, debug
   tools, net glue); the rest of the game never uses it. The shell reaches

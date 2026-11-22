@@ -16,7 +16,7 @@ use source_formats::keyvalues::{self, Kv};
 
 use chimera_core::core::DamageKind;
 
-use crate::game::{
+use hl2dm::game::{
     GAME, INFO, mount,
     rules::deaths::{kill_notice_name, notice_name, weapon_notice_name},
 };
@@ -164,8 +164,8 @@ mod tests {
             Some(WeaponIcon::Glyph { ch, .. }) => Some(ch),
             _ => None,
         };
-        assert_eq!(ch(crate::game::physics::PHYSICS_WEAPON, DamageKind::Crush), Some('9'));
-        assert_eq!(ch(crate::game::physics::PHYSICS_WEAPON, DamageKind::BlastSurface), Some('9'));
+        assert_eq!(ch(hl2dm::game::physics::PHYSICS_WEAPON, DamageKind::Crush), Some('9'));
+        assert_eq!(ch(hl2dm::game::physics::PHYSICS_WEAPON, DamageKind::BlastSurface), Some('9'));
         assert_eq!(ch("hl2dm:weapon_crowbar", DamageKind::Melee), Some('6'));
         assert_eq!(ch("weapon_crowbar", DamageKind::Melee), None, "a gun's class");
         assert_eq!(ch("env_explosion", DamageKind::Blast), None);

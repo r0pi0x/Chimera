@@ -21,7 +21,7 @@ use super::{
     frame::{Align, Draw, Frame, Screen},
     look::Look,
 };
-use crate::game::rules::{COMBINE, REBELS, SPECTATOR, UNASSIGNED, team_name};
+use hl2dm::game::rules::{COMBINE, REBELS, SPECTATOR, UNASSIGNED, team_name};
 
 /// The panel's size (units), its list's left edge and the rows' pitch.
 pub const WIDE: f32 = 480.0;
@@ -179,7 +179,7 @@ pub fn frame(look: &Look, board: &Board) -> Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::look::spec_look;
+    use crate::look::spec_look;
 
     fn player(name: &str, team: u8, frags: i32, deaths: u32, index: u32) -> BoardPlayer {
         BoardPlayer { name: name.into(), team, frags, deaths, ping: 0, bot: false, local: false, index }

@@ -1,7 +1,7 @@
 //! The weapon selection (specs/hl2dm/hud.md 5; test cases 24 to 34).
 
 use bevy::prelude::*;
-use hl2dm::ui::{
+use hl2dm_ui::{
     frame::{Draw, Screen},
     selection::{Action, SOUND_DENY, SOUND_MOVE},
 };
@@ -10,7 +10,7 @@ use crate::common::*;
 
 /// Crowbar, gravity gun, pistol, .357, SMG1 and a frag: buckets 0 (crowbar,
 /// gravity gun), 1 (pistol, .357), 2 (SMG1), 4 (frag).
-fn loadout() -> Vec<hl2dm::ui::hud::Owned> {
+fn loadout() -> Vec<hl2dm_ui::hud::Owned> {
     vec![
         owned(1, "weapon_crowbar", 0, 0, true, "#HL2_Crowbar"),
         owned(2, "weapon_physcannon", 0, 1, true, "#HL2_GravityGun"),
@@ -21,7 +21,7 @@ fn loadout() -> Vec<hl2dm::ui::hud::Owned> {
     ]
 }
 
-fn open(screen: Screen, slot: u8) -> (hl2dm::ui::hud::Hl2Hud, hl2dm::ui::look::Look, hl2dm::ui::hud::Inputs) {
+fn open(screen: Screen, slot: u8) -> (hl2dm_ui::hud::Hl2Hud, hl2dm_ui::look::Look, hl2dm_ui::hud::Inputs) {
     let (mut hud, look) = setup(screen);
     let mut inp = inputs();
     inp.owned = loadout();
@@ -32,7 +32,7 @@ fn open(screen: Screen, slot: u8) -> (hl2dm::ui::hud::Hl2Hud, hl2dm::ui::look::L
     (hud, look, inp)
 }
 
-fn boxes(f: &hl2dm::ui::frame::Frame) -> Vec<Rect> {
+fn boxes(f: &hl2dm_ui::frame::Frame) -> Vec<Rect> {
     f.boxes().map(|(r, _)| *r).collect()
 }
 
@@ -97,7 +97,7 @@ fn empty_positions_are_boxes_unless_hidden() {
     hud.think(&inp, 0.0);
     hud.select_slot(4, &inp.owned.clone(), inp.active, 0);
     run(&mut hud, &inp, 0.2);
-    let large = |inp: &hl2dm::ui::hud::Inputs, hud: &hl2dm::ui::hud::Hl2Hud| {
+    let large = |inp: &hl2dm_ui::hud::Inputs, hud: &hl2dm_ui::hud::Hl2Hud| {
         boxes(&hud.frame(&look, inp)).into_iter().filter(|r| r.width() == 112.0).map(|r| r.min.y).collect::<Vec<_>>()
     };
     assert_eq!(large(&inp, &hud), [16.0, 108.0, 200.0]);

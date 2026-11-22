@@ -4,7 +4,7 @@
 //! the install's), and builders for the HUD's inputs.
 
 use bevy::prelude::*;
-use hl2dm::ui::{
+use hl2dm_ui::{
     frame::Screen,
     hud::{Hl2Hud, Inputs, Owned, WeaponNow},
     look::{Look, spec_look},

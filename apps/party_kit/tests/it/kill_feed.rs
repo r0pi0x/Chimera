@@ -309,7 +309,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
             // What its drawing writes to (no renderer here).
             .init_asset::<chimera_client::client::hud_text::HudGlyphMaterial>()
             .init_asset::<Image>()
-            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm::ui::Hl2dmHudPlugin, halo_ce_ui::hud::HaloHudPlugin, tf2_ui::Tf2HudPlugin))
+            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm_ui::Hl2dmHudPlugin, halo_ce_ui::hud::HaloHudPlugin, tf2_ui::Tf2HudPlugin))
             .insert_resource(HudLookOwner(cs_source::game::GAME))
             .insert_resource(crate::hud::cs_look())
             .insert_resource(chimera_world::map::hud::GuestLooks(vec![hl2_look()]));
@@ -363,7 +363,7 @@ fn mixed_with_halo_and_tf2() -> String {
 /// HL2:DM's stand-in look (its spec's layout and colours, no install) as
 /// the map's guest look: HL2:DM's HUD builds on it while it is up.
 pub(crate) fn hl2_look() -> ActiveHud {
-    let look = hl2dm::ui::look::spec_look(hl2dm::ui::frame::Screen::base());
+    let look = hl2dm_ui::look::spec_look(hl2dm_ui::frame::Screen::base());
     let mut hud = (*look.hud).clone();
     hud.game = hl2dm::game::GAME.into();
     let mut menus = chimera_world::map::hud::GameMenus::default();

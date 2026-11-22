@@ -33,7 +33,7 @@ use super::{
     scoreboard::{Board, BoardPlayer},
     selection::Action,
 };
-use crate::game::{
+use hl2dm::game::{
     GAME,
     hud::{ANIMATIONS, animations, icon_key},
     hud_notes::{HudPickup, PickupNote},
@@ -145,7 +145,7 @@ pub fn teardown(mut state: ResMut<Hl2dmHud>) {
 /// ammo; the S.L.A.M.'s are its secondary, its ammo panel hidden; beside a
 /// clip they are the secondary (the SMG1's grenades, the AR2's balls).
 pub fn weapon_now(w: &Weapon, mag: Option<&Magazine>, item: Option<&Hl2Item>, rounds: Option<&Hl2Rounds>) -> WeaponNow {
-    let class = crate::game::scripts::class_of(w.id).to_string();
+    let class = hl2dm::game::scripts::class_of(w.id).to_string();
     let primary_type = item.map_or(mag.is_some(), |i| i.ammo.is_some());
     let slam = class == "weapon_slam";
     let beside_clip = primary_type || slam;
@@ -228,7 +228,7 @@ pub fn collect(
     windows: Query<&Window>,
     player: Option<Single<(Entity, &Health, Option<&Armor>, Option<&Suit>, Option<&Inventory>, Has<Dead>, Option<&Hl2Team>, Option<&Transform>, Option<&Hl2Ammo>), With<LocalPlayer>>>,
     weapons: Query<(&Weapon, Option<&Magazine>, Option<&Hl2Item>, Option<&Hl2Rounds>)>,
-    carrying: Query<(), (With<LocalPlayer>, With<crate::game::carry::Carried>)>,
+    carrying: Query<(), (With<LocalPlayer>, With<hl2dm::game::carry::Carried>)>,
     catalog: Option<Res<WeaponCatalog>>,
     (mut taken, mut notes): (MessageReader<DamageTaken>, MessageReader<HudPickup>),
     feed: OwnKillFeed,
@@ -274,7 +274,7 @@ pub fn collect(
         armour: armor.map_or(0.0, |a| a.amount * 100.0),
         aux: suit.map_or(100.0, |s| s.aux),
         sprinting: suit.is_some_and(|s| s.sprinting),
-        breathing: suit.is_some_and(|s| s.devices & crate::game::suit::BREATHER != 0),
+        breathing: suit.is_some_and(|s| s.devices & hl2dm::game::suit::BREATHER != 0),
         zoomed: suit.is_some_and(|s| s.zoom.is_some_and(|z| z.to < z.from)),
         fov: fov.map_or(75.0, |f| f.0),
         teamplay: view.is_some_and(|v| v.teamplay),
@@ -288,7 +288,7 @@ pub fn collect(
         ..Inputs::default()
     };
     if inp.zoomed {
-        inp.fov = inp.fov.min(crate::game::suit::ZOOM_FOV);
+        inp.fov = inp.fov.min(hl2dm::game::suit::ZOOM_FOV);
     }
     // The weapons: in hand, and every one owned for the selection.
     if let Some(inv) = inventory {
@@ -299,7 +299,7 @@ pub fn collect(
             let has_ammo = selectable(mag, rounds);
             inp.owned.push(Owned {
                 entity: e,
-                class: crate::game::scripts::class_of(w.id).to_string(),
+                class: hl2dm::game::scripts::class_of(w.id).to_string(),
                 bucket: w.slot,
                 position: item.map_or(0, |i| i.position),
                 selectable: has_ammo,

@@ -20,7 +20,7 @@ use super::{
     look::Look,
     numeric::static_font,
 };
-use crate::game::hud::icon_key;
+use hl2dm::game::hud::icon_key;
 
 /// Buckets 0-5 exist.
 pub const BUCKETS: u8 = 6;

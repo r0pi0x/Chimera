@@ -8,7 +8,8 @@
 
 use bevy::prelude::*;
 use chimera_ui::icon_ink::glyph_shape;
-use hl2dm::{game::{INFO, mount}, ui::kill_icons::FONT};
+use hl2dm::game::{INFO, mount};
+use hl2dm_ui::kill_icons::FONT;
 
 /// The winding number of `contours` around `p` (a ray to +x).
 fn winding(contours: &[Vec<Vec2>], p: Vec2) -> i32 {

@@ -18,8 +18,8 @@ use hl2dm::{
         rules::deaths::kill_notice_name,
         weapons::{AR2, CROSSBOW, CROWBAR, FRAG, MAGNUM, PHYSCANNON, PISTOL, RPG, SHOTGUN, SLAM, SMG1, STUNSTICK},
     },
-    ui::kill_icons::{FONT, TEXTURES, death_glyphs, register_glyphs},
 };
+use hl2dm_ui::kill_icons::{FONT, TEXTURES, death_glyphs, register_glyphs};
 
 /// (weapon id, how it killed, the glyph hud.md 10 gives it).
 const KILLS: [(&str, DamageKind, char); 18] = [

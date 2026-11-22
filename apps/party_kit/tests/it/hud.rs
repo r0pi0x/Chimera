@@ -176,7 +176,7 @@ fn the_hud_follows_the_gun_with_the_minigame_on_both() {
 #[test]
 fn hl2dms_hud_is_down_under_other_games_guns() {
     let (mut sim, me, _other) = party_with_huds_and(|app| {
-        app.add_plugins(hl2dm::ui::Hl2dmHudPlugin);
+        app.add_plugins(hl2dm_ui::Hl2dmHudPlugin);
         // Its root (the plugin spawns it at startup, which the harness skips).
         app.world_mut().spawn((Node::default(), HudRoot(hl2dm::game::GAME)));
     });
@@ -187,7 +187,7 @@ fn hl2dms_hud_is_down_under_other_games_guns() {
     // CS:S's HUD stays up, HL2:DM's builds no panels on CS:S's map (the
     // look is CS:S's), whichever way the local gun's identity goes.
     assert!(cs_panels(&mut sim) > 0);
-    assert!(sim.app.world().resource::<hl2dm::ui::systems::Hl2dmHud>().hud.is_none());
+    assert!(sim.app.world().resource::<hl2dm_ui::systems::Hl2dmHud>().hud.is_none());
     // What its systems read that only its game's own pickups would add.
     assert!(sim.app.world().contains_resource::<Messages<hl2dm::game::hud_notes::HudPickup>>());
     let _ = me;

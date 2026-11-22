@@ -14,7 +14,7 @@
 
 use bevy::prelude::*;
 
-use crate::game::set_piece_fx::RespawnLight;
+use hl2dm::game::set_piece_fx::RespawnLight;
 
 /// How long the flash lives (s).
 pub const LIFE: f32 = 0.05;

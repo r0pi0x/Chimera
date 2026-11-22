@@ -310,7 +310,21 @@ one revert puts it back.
       registers them now. Recipe step 5 gains: grep the tests for grouped
       imports too (`halo_ce::{ game::.., ui::.. }`), and run the whole
       fast tier, not only the moved tests.
-- [ ] Then `hl2dm` (3.8k), `cs_source` (12.4k, 112 UI tests), `combat_arms`
+- [x] `hl2dm` (3.8k lines, 54 UI tests): `hl2dm_ui` (games/hl2dm/ui), its
+      `tests/ui` (9 files plus the kill-icon heavy one) and the two
+      install-look tests of `tests/it/heavy/hud_look.rs` that named it
+      (the rest of that file stays). (a) a client edit selects `hl2dm_ui`
+      and `hl2dm_app`, not `hl2dm`; (b) after a function appended to
+      `chimera_client`, `cargo test -p hl2dm --features dev --no-run`
+      compiles nothing (0.4 s); (c) after one appended to `chimera_sim` it
+      compiles `chimera_sim`, `chimera_net`, `source_engine`,
+      `source_logic`, `hl2dm` (20 s wall, warm): its test build's unit graph
+      is 745 units, 12 workspace packages, no client, presentation, UI kit
+      or GameUI; (d) `selections_share_one_build` passes. Fast tiers: `hl2dm`
+      68 unit + 354 `it`, `hl2dm_ui` 24 unit + 54 `it`, all passing.
+      Grouped imports again (`hl2dm::{ game::.., ui::.. }` in three test
+      files) were what the first test build tripped on.
+- [ ] Then `cs_source` (12.4k, 112 UI tests), `combat_arms`
       (17.9k, 322 UI tests), one commit each.
 
 Expected once all five are split: the 131 client-side commits per 14
@@ -480,3 +494,4 @@ smallest game, no UI tests, one commit to move and one to revert.
 for them. A server built on its own still builds its own `tf2` (its
 Bevy has no render features), so "servers share the client's game
 build" is not a reason to split; iteration on the client side is.
+2026-11-21: `hl2dm` the same: `hl2dm_ui` (games/hl2dm/ui).

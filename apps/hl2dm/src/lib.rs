@@ -12,7 +12,7 @@
 //! client::app`; main.rs is `run(&APP)`): `SimPlugin`, the client shell
 //! with this app's hooks (`client_hooks`) and, after it (`front_end`),
 //! HL2:DM's field of view (75, specs/hl2dm/source_deltas.md 1.8) and its
-//! HUD (M9: `hl2dm::ui`; the shell's own draws until a map brings the
+//! HUD (M9: `hl2dm_ui`; the shell's own draws until a map brings the
 //! look).
 //!
 //! `VERSION` and `BUILD`: this build's version and commit, stamped by
@@ -149,8 +149,8 @@ pub fn front_end(app: &mut App, _: &Args) {
         // Its server name until the player's own (`cfg/settings.scr`'s
         // default, Create Server's Game page).
         .insert_resource(chimera_net::net::query::Hosting { hostname: "Half-Life 2 Deathmatch".into(), ..default() })
-        // HL2:DM's HUD (hl2dm::ui), over the shell's fallback.
-        .add_plugins(hl2dm::ui::Hl2dmUiPlugin);
+        // HL2:DM's HUD (hl2dm_ui), over the shell's fallback.
+        .add_plugins(hl2dm_ui::Hl2dmUiPlugin);
 }
 
 #[cfg(test)]

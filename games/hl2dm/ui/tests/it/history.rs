@@ -2,7 +2,7 @@
 //! 52, 53). The entries' rules are the module's own tests.
 
 use bevy::prelude::*;
-use hl2dm::ui::frame::Draw;
+use hl2dm_ui::frame::Draw;
 
 use crate::common::*;
 
@@ -33,7 +33,7 @@ fn entries_fade_over_their_last_3_seconds() {
     let inp = inputs();
     hud.think(&inp, 0.0);
     hud.history.ammo("hl2dm:pistol", 20, Some(("WeaponIconsSmall", 'p')), 0.0);
-    let alpha = |hud: &hl2dm::ui::hud::Hl2Hud| match hud.frame(&look, &inp).find_text("20") {
+    let alpha = |hud: &hl2dm_ui::hud::Hl2Hud| match hud.frame(&look, &inp).find_text("20") {
         Some(Draw::Text { color, .. }) => Some(color[3]),
         _ => None,
     };

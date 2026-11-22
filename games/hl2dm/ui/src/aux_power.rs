@@ -12,7 +12,7 @@ use super::{
     hud::{Hl2Hud, Inputs, devices},
     look::Look,
 };
-use crate::game::rules::{COMBINE, REBELS, SPECTATOR, team_name};
+use hl2dm::game::rules::{COMBINE, REBELS, SPECTATOR, team_name};
 
 /// What the bar remembers.
 #[derive(Clone, Debug, Default)]

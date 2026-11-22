@@ -1,5 +1,5 @@
 //! HL2:DM's Escape and main menus (GameUI's, `source_gameui`, with
-//! `hl2dm::ui::MENU_GAME`) as a player meets them: Esc opens the menu and
+//! `hl2dm_ui::MENU_GAME`) as a player meets them: Esc opens the menu and
 //! frees the cursor, the game's keys then do nothing; Resume gives both
 //! back; Disconnect leaves for the main menu, which stays open. With real
 //! key presses through the menu's and the shell's own systems, no window.
@@ -20,7 +20,7 @@ use chimera_core::{
     console::{Console, ConsoleAppExt, ConsolePlugin},
     core::{Intent, LocalPlayer},
 };
-use hl2dm::ui::MENU_GAME;
+use hl2dm_ui::MENU_GAME;
 use source_gameui::game_menu::{self, AfterLoad, GameMenu, MainItem, Page, RegrabCursor};
 
 struct Play {

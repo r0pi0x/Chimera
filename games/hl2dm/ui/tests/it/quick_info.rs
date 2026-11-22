@@ -2,7 +2,7 @@
 //! cases 35 to 44).
 
 use bevy::prelude::*;
-use hl2dm::ui::{frame::Draw, hud::Inputs};
+use hl2dm_ui::{frame::Draw, hud::Inputs};
 
 use crate::common::*;
 
@@ -17,7 +17,7 @@ fn low_health_warns_once() {
     inp.health = 25.0;
     hud.think(&inp, 0.1);
     assert!(hud.quick.warn_health);
-    assert_eq!(hud.quick.sounds, [hl2dm::ui::quick::LOW_HEALTH_SOUND]);
+    assert_eq!(hud.quick.sounds, [hl2dm_ui::quick::LOW_HEALTH_SOUND]);
     inp.health = 20.0;
     hud.think(&inp, 0.2);
     assert_eq!(hud.quick.sounds.len(), 1, "once");
@@ -40,10 +40,10 @@ fn low_ammo_warns_from_a_quarter() {
     inp.weapon = Some(pistol(4, 100));
     hud.think(&inp, 0.2);
     assert!(hud.quick.warn_ammo);
-    assert_eq!(hud.quick.sounds, [hl2dm::ui::quick::LOW_AMMO_SOUND]);
+    assert_eq!(hud.quick.sounds, [hl2dm_ui::quick::LOW_AMMO_SOUND]);
     let (mut hud, _) = base();
     let mut inp = inputs();
-    let bolt = |clip| hl2dm::ui::hud::WeaponNow { class: "weapon_crossbow".into(), uses_primary: true, clip: Some(clip), max_clip: 1, reserve: 5, ..Default::default() };
+    let bolt = |clip| hl2dm_ui::hud::WeaponNow { class: "weapon_crossbow".into(), uses_primary: true, clip: Some(clip), max_clip: 1, reserve: 5, ..Default::default() };
     inp.weapon = Some(bolt(1));
     hud.think(&inp, 0.0);
     inp.weapon = Some(bolt(0));
@@ -110,7 +110,7 @@ fn the_default_field_of_view_draws_the_default_crosshair() {
     look.hud = std::sync::Arc::new(h);
     let mut inp = inputs();
     hud.think(&inp, 0.0);
-    let cross = |inp: &Inputs, hud: &hl2dm::ui::hud::Hl2Hud| hud.frame(&look, inp);
+    let cross = |inp: &Inputs, hud: &hl2dm_ui::hud::Hl2Hud| hud.frame(&look, inp);
     let f = cross(&inp, &hud);
     assert!(f.0.iter().any(|d| matches!(d, Draw::Text { font: "Crosshairs", color: [255, 208, 64, 255], .. })), "FOV 90: Q in Normal");
     inp.fov = 75.0;

@@ -1,4 +1,4 @@
-//! The HUD fed by the running game (`ui::systems`, on `Hl2Sim` and the
+//! The HUD fed by the running game (`hl2dm_ui::systems`, on `Hl2Sim` and the
 //! greybox with the stand-in look): the secondary ammo panel's counts and
 //! table (hud.md 4.6), target ID's ray (hud.md 11), the history's rows
 //! from the server's messages (hud.md 9), the death notices from the
@@ -19,10 +19,10 @@ use hl2dm::{
         weapons::{self, launch::Hl2Rounds},
     },
     harness::Hl2Sim,
-    ui::{
-        frame::Draw,
-        systems::{self, Hl2dmHud, HudCvars},
-    },
+};
+use hl2dm_ui::{
+    frame::Draw,
+    systems::{self, Hl2dmHud, HudCvars},
 };
 
 use crate::common::base;

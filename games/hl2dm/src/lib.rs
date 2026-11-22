@@ -4,8 +4,7 @@
 //! (`game::INFO`), its install as a mount (`game::mount`, from its
 //! `gameinfo.txt`), its maps (`game::maps`, `game::MAP_LOADER`), its
 //! movement and suit (M3) and its bullet and melee weapons
-//! (`game::weapons`, M4; `game::Hl2dmPlugins`), its HUD (`ui`, M9, behind the
-//! `ui` feature), its pickups and rules
+//! (`game::weapons`, M4; `game::Hl2dmPlugins`), its pickups and rules
 //! (`game::pickups`, `game::rules`, M7; `rules`: its game events and log
 //! lines). Source
 //! behaviour it shares with CS:S comes from `source_engine`, never from
@@ -20,9 +19,6 @@
 pub mod game;
 pub mod harness;
 pub mod rules;
-// The front end: built on the client shell (the `ui` feature).
-#[cfg(feature = "ui")]
-pub mod ui;
 
 // `crate::game_registry`, `crate::map` and the rest inside, as in the
 // other game crates (the architecture check reads `crate::<module>`

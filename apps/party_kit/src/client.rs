@@ -98,7 +98,7 @@ pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 5] = [
     &combat_arms::ui::PARTY_CLIENT,
     &cs_source::ui::party::CLIENT,
-    &hl2dm::ui::party::CLIENT,
+    &hl2dm_ui::party::CLIENT,
     &halo_ce_ui::party::CLIENT,
     &tf2_ui::party::CLIENT,
 ];
@@ -172,7 +172,7 @@ pub fn front_end(app: &mut App, args: &Args) {
 /// `hl2dm:hud_fastswitch` (0 in HL2:DM, as in its game; not saved), set
 /// to 1 here and made its default.
 fn hl2_fast_switch(
-    cvars: Option<ResMut<hl2dm::ui::systems::HudCvars>>,
+    cvars: Option<ResMut<hl2dm_ui::systems::HudCvars>>,
     console: Option<ResMut<chimera_core::console::Console>>,
 ) {
     if let Some(mut c) = cvars {

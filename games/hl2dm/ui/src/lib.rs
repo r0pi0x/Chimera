@@ -1,4 +1,4 @@
-//! HL2:DM's front end (the `ui` feature, M9 of docs/plans/active/hl2dm.md;
+//! HL2:DM's front end (the crate `hl2dm_ui`, M9 of docs/plans/active/hl2dm.md;
 //! specs/hl2dm/hud.md, H8): its menus (GameUI's, `source_gameui`, with
 //! `MENU_GAME`) and its HUD on the client shell. The panels are
 //! Half-Life 2's: translucent rounded boxes in the bottom corners with a
@@ -68,13 +68,13 @@ use bevy::prelude::*;
 use chimera_client::client::weapon_menu::{WeaponMenuTimes, menu_input};
 use chimera_world::map::hud::ActiveHud;
 
-use crate::game::GAME;
+use hl2dm::game::GAME;
 
 /// What's HL2:DM's own in GameUI's menus (`source_gameui`): its names. Its
 /// real menus have no bots (`hl2mp_bot_*` isn't built), no team dialog (specs/
 /// hl2dm/hud.md 14: the client creates none) and no rounds.
 pub static MENU_GAME: source_gameui::MenuGame = source_gameui::MenuGame {
-    info: &crate::game::INFO,
+    info: &hl2dm::game::INFO,
     name: "Half-Life 2: Deathmatch",
     steam_folder: "Half-Life 2 Deathmatch",
     strings: "resource/hl2mp_english.txt",
@@ -108,7 +108,7 @@ impl Plugin for Hl2dmHudPlugin {
         app.init_resource::<systems::Hl2dmHud>()
             .init_resource::<chimera_client::client::weapon_icons::WeaponIcons>()
             // The game's pickups say them (not composed in the party apps).
-            .add_message::<crate::game::hud_notes::HudPickup>()
+            .add_message::<hl2dm::game::hud_notes::HudPickup>()
             .add_systems(Startup, (systems::spawn_root, kill_icons::register))
             .add_systems(
                 Update,

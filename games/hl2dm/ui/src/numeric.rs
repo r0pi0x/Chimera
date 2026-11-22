@@ -8,7 +8,7 @@
 
 use bevy::prelude::*;
 
-use crate::game::hud::icon_key;
+use hl2dm::game::hud::icon_key;
 use super::{
     frame::{Align, Draw, Frame, fade},
     hud::{Hl2Hud, Inputs, WeaponNow},

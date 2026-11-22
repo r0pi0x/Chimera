@@ -1,9 +1,9 @@
-//! `hl2dm`'s front end's tests (feature `ui`), as one test binary (each
+//! `hl2dm_ui`'s tests, as one test binary (each
 //! file a module): the HUD's state machine and its draw list on a stand-in
 //! look carrying the spec's numbers (specs/hl2dm/hud.md "Test cases": no
-//! game needed), the install's look is checked in tests/it/heavy/hud_look.rs;
+//! game needed), the install's look is checked in hl2dm's tests/it/heavy/hud_look.rs and ui/tests/it/heavy/hud_look.rs;
 //! `heavy::` reads the install (the kill icons, skipped without one).
-//! `cargo test -p hl2dm --features dev,ui --test ui`.
+//! `cargo test -p hl2dm_ui --features dev --test it`.
 
 mod common;
 mod damage_and_death;
@@ -17,5 +17,6 @@ mod selection;
 
 // The user's install: the fast tier skips `heavy::`.
 mod heavy {
+    mod hud_look;
     mod kill_icons;
 }
