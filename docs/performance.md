@@ -1841,11 +1841,61 @@ build offscreen 640x360, from the greybox, box at load 45-70):
   7 visible meshes' pipelines compiling (the player's own models, not in
   the world while it settled), dm_lockdown and de_dust2 0.
 
-Not covered: a network client's ladder models (the server's ladder comes
-with the match) still load in play; TF2 and Halo maps were not measured
-(not installed on the dev box). Guard: cs_source_app's `heavy::first_view`
-(the binary offscreen, `map de_dust2`: the first gameplay frame has nothing
-pending) and `first_view`'s unit tests.
+Then (same day, the same counts plus `shown+N`: the frames after the
+last cover goes, with the names of a few meshes not drawn and the cameras
+drawing; a listen host and a client joining it, both offscreen 640x360,
+`ugg_new 7 13 <map>`):
+
+- **The map's meshes no camera saw.** The 7 left on warehouse weren't the
+  player's own models but the map's decals, glass and light rays: the
+  camera drawing under the cover was the player's, where it waited
+  (32-41 meshes in view), and the spawn spot's view (164-222 meshes) had
+  7-9 meshes whose pipelines nothing had needed, compiling for 15 frames
+  after the cover went. Fix: a copy of the player's camera (its HDR,
+  tonemapping, prepasses) draws the whole map from above, under the cover
+  (`staging::overview`; 307-436 meshes on warehouse, 2,600-2,800 on
+  de_dust2, 7,300-8,400 on ctf_2fort). TF2's props with a fade band
+  (Bevy's `VisibilityRange`) are culled at that distance, and moving ones
+  hidden past their fade distance from the player's eye: ctf_2fort had 61
+  (host) and 28 (client) of them compiling for 14-20 frames after the
+  cover; one copy of each kind of prop mesh is drawn in front of that
+  camera (`chimera_present::render::first_view_warm`).
+- **The client's first gun.** A joining client's player holds the first
+  rung's gun only once it plays: its view model (HL2:DM's pistol, 2
+  parts) compiled for 28 frames after the cover. Each view model camera
+  now draws a part of each kind of view model part under the cover
+  (`view_model::warm_view_models`: by game, blending, culled faces,
+  normal map; the copies' bones all the root, nothing else spawned),
+  shown whatever its owner's state (the joiner's player is hidden).
+- **A client's ladder.** The server's manifest (`Welcome`, `ChangeLevel`,
+  `ChangeMatch`) carries the match's ladder (`MinigameOffer::ladder`:
+  rungs, melee count, rung extras; the coming match's draw during a level
+  change; none for a sandbox), so a client plans it as the host does
+  (`minigame_net::server_ladder`, Combat Arms' `plan_coming_ladder`):
+  "the coming ladder loads 5 bodies and 14 weapon models behind the
+  loading screen", `main=[]` at entry and after, where its models loaded
+  in its first seconds of play before. A ladder that changes during the
+  load (the old match's, as a client joins during the level change)
+  doesn't replace that plan (`preload::ComingPlanned`). `net71`.
+
+After: 0 visible meshes not drawn and nothing loading at every frame after
+the cover on warehouse and de_dust2, host and client, and on ctf_2fort's
+host (`compiling` 1-5 for a frame as the HUD comes: its own pipelines).
+ctf_2fort's client still had 16 props' pipelines compiling for about 8
+frames (from 28 for 20): its sky camera, which draws the 3D skybox, was
+not drawing while the map settled there, and those props weren't
+identified further. On a loaded box (load 40-70) ctf_2fort's settle took
+9-17 s, and once ran out of its 20 s. With
+`CHIMERA_FIRST_VIEW_GATE=0` on warehouse the game is entered with 328
+(host) and 18 (client) visible meshes' pipelines not ready and 9-10
+compiling, which the lobby then hides. The game's own shell (CS:S's
+`map`, no cover) has no overview: its camera's view only. Guards:
+cs_source_app's `heavy::first_view` (the binary offscreen, `map
+de_dust2`: the first gameplay frame has nothing pending), ultimate_gun_game's
+`heavy::first_view` (a listen host and a client joining it on warehouse:
+the client plans the server's ladder behind its loading screen, nothing
+pending in the four frames after either's cover goes) and `first_view`'s
+unit tests.
 
 ### A map's colliders after its swap frame (2026-11-12)
 

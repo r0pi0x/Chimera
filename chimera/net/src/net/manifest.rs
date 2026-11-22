@@ -6,7 +6,8 @@
 //!   (`GameNeed`: the map's game required, the others the match names
 //!   wanted: without them it loads but looks or sounds wrong), the
 //!   gameplay's slots, the weapon sets, and the minigame (`MinigameOffer`:
-//!   its id, the SHA-256 of its definition's text, the text). Built by
+//!   its id, the SHA-256 of its definition's text, the text, and the
+//!   ladder it deals, `LadderOffer`: what the client loads ahead). Built by
 //!   `current` from the served map and the gameplay, then each part's hook
 //!   (`NetHooks::manifest`: the minigame's, `minigame_net`). Sent in
 //!   `Welcome`, in `ChangeLevel`, and alone as `ChangeMatch` when it
@@ -87,6 +88,23 @@ pub struct MinigameOffer {
     pub id: String,
     pub hash: [u8; 32],
     pub text: String,
+    /// The match's ladder as the server deals it (`minigame_net::
+    /// match_ladder`: the one playing, or during a map change the coming
+    /// match's draw), so a client loads its models behind its loading
+    /// screen as the host does, not in the match's first seconds
+    /// (`minigame_net::server_ladder`). None: not a ladder, or a sandbox's
+    /// (every gun there is, loaded when first held).
+    pub ladder: Option<LadderOffer>,
+}
+
+/// A ladder on the wire (`MinigameOffer::ladder`): what a client's draw
+/// can't know (the host's draw of the guns, melee rungs and rung extras),
+/// as `minigame_net::NetMinigame` later carries them.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct LadderOffer {
+    pub rungs: Vec<String>,
+    pub melee_rungs: usize,
+    pub extras: Vec<Option<chimera_sim::minigame::ladder::RungExtras>>,
 }
 
 impl MatchManifest {

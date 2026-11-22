@@ -1031,22 +1031,35 @@ pub fn melee_band(rungs: &[&str], catalog: &WeaponCatalog, hooks: &[RungExtrasHo
 pub fn take_rungs(world: &mut World, ids: &[String], melee_rungs: usize) {
     let Some(catalog) = world.get_resource::<WeaponCatalog>().cloned() else { return };
     let Some(mut ladder) = world.get_resource_mut::<Ladder>() else { return };
-    if ids.is_empty() || melee_rungs > ids.len() {
-        return;
+    let mut next = ladder.clone();
+    next.take_rungs(&catalog, ids, melee_rungs);
+    if next.rungs != ladder.rungs || next.melee_rungs != ladder.melee_rungs || next.knife_finale != ladder.knife_finale {
+        *ladder = next;
     }
-    let same = ids.len() == ladder.rungs.len() && ladder.rungs.iter().zip(ids).all(|(a, b)| a == b);
-    if !same {
-        let taken: Option<Vec<&'static str>> = if ids.len() == ladder.rungs.len() {
-            Some(ids.iter().zip(&ladder.rungs).map(|(b, a)| catalog.get(b).map_or(*a, |w| w.id.as_str())).collect())
-        } else {
-            ids.iter().map(|b| catalog.get(b).map(|w| w.id.as_str())).collect()
-        };
-        let Some(taken) = taken else { return };
-        ladder.rungs = taken;
-    }
-    if ladder.melee_rungs != melee_rungs {
-        ladder.melee_rungs = melee_rungs;
-        ladder.knife_finale = melee_rungs > 0;
+}
+
+impl Ladder {
+    /// `take_rungs` on this ladder (a client's copy of the server's, also
+    /// the coming match's from the server's manifest,
+    /// `chimera_net::minigame_net::server_ladder`).
+    pub fn take_rungs(&mut self, catalog: &WeaponCatalog, ids: &[String], melee_rungs: usize) {
+        if ids.is_empty() || melee_rungs > ids.len() {
+            return;
+        }
+        let same = ids.len() == self.rungs.len() && self.rungs.iter().zip(ids).all(|(a, b)| a == b);
+        if !same {
+            let taken: Option<Vec<&'static str>> = if ids.len() == self.rungs.len() {
+                Some(ids.iter().zip(&self.rungs).map(|(b, a)| catalog.get(b).map_or(*a, |w| w.id.as_str())).collect())
+            } else {
+                ids.iter().map(|b| catalog.get(b).map(|w| w.id.as_str())).collect()
+            };
+            let Some(taken) = taken else { return };
+            self.rungs = taken;
+        }
+        if self.melee_rungs != melee_rungs {
+            self.melee_rungs = melee_rungs;
+            self.knife_finale = melee_rungs > 0;
+        }
     }
 }
 

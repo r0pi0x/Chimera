@@ -30,6 +30,7 @@ pub mod emitters;
 pub mod fog;
 pub mod dust;
 pub mod fish;
+pub mod first_view_warm;
 pub mod late_build;
 pub mod glow;
 pub mod gpu_table;

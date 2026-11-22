@@ -891,6 +891,7 @@ fn tracked_files() -> Vec<String> {
 /// a paced dedicated-server loop, a real thread to wait for.
 const TEST_SLEEPS: &[(&str, usize, &str)] = &[
     ("apps/party_roster/tests/it/feedback.rs", 2, "waits for the outbox's zip on a thread"),
+    ("apps/ultimate_gun_game/tests/it/heavy/first_view.rs", 2, "two game processes: the client joins the listen host a few seconds in, then their logs are polled"),
     ("apps/ultimate_gun_game/tests/it/heavy/map_swap_frames.rs", 1, "a frame's real pace, so the load's threads run beside it"),
     ("apps/ultimate_gun_game/tests/it/heavy/nav_in_play.rs", 1, "paces the loop at the tick rate, real time"),
     ("apps/ultimate_gun_game/tests/it/heavy/no_fetch_in_match.rs", 1, "the dedicated loop's frame cap"),

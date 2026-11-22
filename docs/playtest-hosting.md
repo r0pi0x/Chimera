@@ -27,7 +27,9 @@ service"). Design and limits: [plans/active/asset-service.md](plans/active/asset
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net69` since what a character holds carries
+   The network version is `net71` since the match's manifest carries its
+   ladder (`MinigameOffer::ladder`: a client loads the ladder's models
+   behind its loading screen); `net69` since what a character holds carries
    its weapon's own state (`NetHeld::state`: TF2's Minigun's, whose sounds
    and barrel every client derives from it); `net68` (the lobby tells every player the
    match's settings (`NetLobby::settings`: its length and the host's

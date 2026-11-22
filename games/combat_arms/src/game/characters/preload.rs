@@ -12,12 +12,13 @@
 //! A ladder is made as its match starts, once the map is in (a client's
 //! comes with the match after that). On the host the coming match's ladder
 //! is drawn while its map loads (`plan_coming_ladder`: `ladder::draw`, the
-//! same draw as the match's start) and its models load then, behind the
-//! loading screen, which waits for them (`waiting_count` in
+//! same draw as the match's start); a network client takes the server's
+//! from its manifest (`minigame_net::server_ladder`: the server's join or
+//! level change carries the match's ladder). Its models load then, behind
+//! the loading screen, which waits for them (`waiting_count` in
 //! `map::loading::LoadPending`): they were loading in the match's first
-//! seconds, in front of the player. A network client's still load in its
-//! first seconds of play, off the main thread, and the swap holds
-//! (`setup`, `pose_bodies`) if a rung is reached sooner.
+//! seconds, in front of the player. One wanted sooner than it arrives
+//! holds the swap (`setup`, `pose_bodies`).
 //!
 //! A sandbox's ladder (`chimera_sim::minigame::rung_command::HoldRungs`
 //! in force) is every gun of every game: none of it is loaded ahead, each
@@ -221,9 +222,19 @@ pub fn ladder_keys_waiting(world: &World) -> Vec<String> {
     out
 }
 
+/// The map whose load `plan_coming_ladder` planned the coming ladder for,
+/// while it loads: a ladder that changes meanwhile (a client's, the old
+/// match's coming in as it joins during a level change) doesn't replace
+/// that plan (`plan_ladder`).
+#[derive(Resource, Clone, Debug, PartialEq, Eq)]
+pub struct ComingPlanned(pub String);
+
 /// A new ladder (or the server's coming in): what it loads.
+#[allow(clippy::too_many_arguments)]
 pub fn plan_ladder(
     ladder: Res<Ladder>,
+    coming: Option<Res<ComingPlanned>>,
+    load: Option<Res<crate::map::LocalMapLoad>>,
     active: Option<Res<ActiveMinigame>>,
     data: Res<CaData>,
     catalog: Option<Res<WeaponCatalog>>,
@@ -232,6 +243,9 @@ pub fn plan_ladder(
     mut out: ResMut<LadderModels>,
 ) {
     let Some(catalog) = catalog else { return };
+    if coming.zip(load).is_some_and(|(c, l)| c.0 == l.map) {
+        return;
+    }
     // A sandbox's ladder is every gun there is (thousands of models, many
     // gigabytes): nothing is loaded ahead, each loads when first held.
     if hold.as_deref().zip(active.as_deref()).is_some_and(|(h, a)| a.def.id == h.0) {
@@ -252,27 +266,36 @@ pub fn plan_ladder(
 
 /// While a map loads for a match whose ladder is not made yet (it is made
 /// as the match starts, once the map is in): the ladder the match will make
-/// (`ladder::draw`, the host's next draw) planned now, so its bodies, held
-/// and view models load behind the loading screen, which waits for them
-/// (`waiting_count`, `map::loading::LoadPending`), not in front of the
-/// player in the match's first seconds. Once per load; not on a network
-/// client (its ladder is the server's, which comes with the match).
+/// planned now, so its bodies, held and view models load behind the
+/// loading screen, which waits for them (`waiting_count`,
+/// `map::loading::LoadPending`), not in front of the player in the match's
+/// first seconds. On the host the ladder is its next draw (`ladder::draw`);
+/// on a network client the server's, which its manifest carries
+/// (`minigame_net::server_ladder`: the one playing for a joiner, the coming
+/// match's on a level change). Once per load.
 pub fn plan_coming_ladder(world: &mut World, mut planned: Local<Option<String>>) {
     let Some(map) = world.get_resource::<crate::map::LocalMapLoad>().map(|l| l.map.clone()) else {
         *planned = None;
+        if world.contains_resource::<ComingPlanned>() {
+            world.remove_resource::<ComingPlanned>();
+        }
         return;
     };
-    if planned.as_deref() == Some(map.as_str())
-        || world.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Client)
-    {
+    if planned.as_deref() == Some(map.as_str()) {
         return;
     }
-    *planned = Some(map);
-    // The match the map change brings (`minigame_net::MapChange`), else
-    // the one in play (a rotation's next match of it).
-    let coming = world.get_resource::<chimera_net::minigame_net::MapChange>().map(|c| c.def);
-    let Some(def) = coming.or_else(|| world.get_resource::<ActiveMinigame>().map(|a| a.def)) else { return };
-    let Some(ladder) = chimera_sim::minigame::ladder::draw(world, def) else { return };
+    *planned = Some(map.clone());
+    let (def, ladder) = if world.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Client) {
+        let Some(server) = chimera_net::minigame_net::server_ladder(world) else { return };
+        server
+    } else {
+        // The match the map change brings (`minigame_net::MapChange`),
+        // else the one in play (a rotation's next match of it).
+        let coming = world.get_resource::<chimera_net::minigame_net::MapChange>().map(|c| c.def);
+        let Some(def) = coming.or_else(|| world.get_resource::<ActiveMinigame>().map(|a| a.def)) else { return };
+        let Some(ladder) = chimera_sim::minigame::ladder::draw(world, def) else { return };
+        (def, ladder)
+    };
     let hold = world.get_resource::<chimera_sim::minigame::rung_command::HoldRungs>();
     if hold.is_some_and(|h| def.id == h.0) {
         return;
@@ -283,6 +306,7 @@ pub fn plan_coming_ladder(world: &mut World, mut planned: Local<Option<String>>)
     let kit: Vec<&str> = def.spawn.kit.all();
     let table = world.get_resource::<CaModTable>().unwrap_or(CaModTable::built_in());
     let next = plan(data.characters(), catalog, table, &ladder, &kit);
+    world.insert_resource(ComingPlanned(map));
     if world.get_resource::<LadderModels>() != Some(&next) {
         info!(
             "Combat Arms: the coming ladder loads {} bodies and {} weapon models behind the loading screen",

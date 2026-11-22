@@ -265,6 +265,8 @@ impl MapLayers for Present {
                 // Code-built shapes (the sandbox's props), on any map.
                 render::shapes::draw_shapes
                     .run_if(resource_exists::<Assets<Mesh>>.and_then(resource_exists::<Assets<StandardMaterial>>)),
+                // A map's first view warmed behind a cover.
+                render::first_view_warm::warm_props,
                 // View models added with no map spawned (the greybox) get
                 // drawing assets of their own first.
                 render::view_model::assets_without_map
@@ -274,6 +276,7 @@ impl MapLayers for Present {
                     render::view_model::build_late,
                     render::view_model::swap_view_bodies,
                     render::view_model::draw_view_models,
+                    render::view_model::warm_view_models,
                     render::view_model::view_model_screens,
                 )
                     .chain()

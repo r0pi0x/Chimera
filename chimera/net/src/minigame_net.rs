@@ -44,7 +44,10 @@
 //!
 //! - **The manifest** (`net::manifest`): the server's hook adds the
 //!   minigame (its id, its definition's SHA-256 and text), the games it
-//!   names (wanted; `needs`) and its weapon sets; a client's hook plays the
+//!   names (wanted; `needs`), its weapon sets and the ladder it deals
+//!   (`MinigameOffer::ladder`, the server's `match_ladder`: a client knows
+//!   it before its map loads, `server_ladder`, and a game loads its models
+//!   behind the loading screen); a client's hook plays the
 //!   server's definition (its own if the hash matches, else the text, read
 //!   and checked: `minigame::add`) or leaves saying why. A client starts a
 //!   minigame only once a manifest names it. Another minigame on the
@@ -135,7 +138,7 @@ use crate::{
     net::{
         GREYBOX, NetAppExt, NetHooks,
         game::{ServerTime, tick_of},
-        manifest::{self, CANT_PLAY, GameNeed, MatchManifest, MinigameOffer, ServerManifest},
+        manifest::{self, CANT_PLAY, GameNeed, LadderOffer, MatchManifest, MinigameOffer, ServerManifest},
         maps::sha256,
         ordered::OrderedAppExt,
     },
@@ -948,11 +951,7 @@ pub fn match_weapons(world: &World) -> Vec<String> {
 /// picked (`net::units`).
 pub fn offered_weapons(world: &World) -> Vec<String> {
     let mut out = match_weapons(world);
-    let sandbox = match (world.get_resource::<chimera_sim::minigame::rung_command::HoldRungs>(), match_def(world)) {
-        (Some(h), Some(d)) => d.id == h.0,
-        _ => false,
-    };
-    let Some(def) = match_def(world).filter(|_| sandbox) else { return out };
+    let Some(def) = match_def(world).filter(|d| sandbox(world, d)) else { return out };
     let mut rungs: Vec<String> = match_ladder(world).map(|l| l.rungs.iter().map(|r| r.to_string()).collect()).unwrap_or_default();
     rungs.extend(
         def.rules.params.get("ladder").and_then(|l| l.as_array()).into_iter().flatten().filter_map(|w| w.as_str().map(String::from)),
@@ -961,6 +960,30 @@ pub fn offered_weapons(world: &World) -> Vec<String> {
     let kit: Vec<String> = def.spawn.kit.all().into_iter().map(String::from).collect();
     out.retain(|w| Some(w) == first.as_ref() || kit.contains(w) || !rungs.contains(w));
     out
+}
+
+/// Whether `def` is played as a sandbox here (`rung_command::HoldRungs`
+/// names it): its ladder is every gun of every game.
+fn sandbox(world: &World, def: &MinigameDef) -> bool {
+    world.get_resource::<chimera_sim::minigame::rung_command::HoldRungs>().is_some_and(|h| h.0 == def.id)
+}
+
+/// On a network client: the ladder of the match the server's manifest
+/// names (`MinigameOffer::ladder`: the one playing, or the coming match's
+/// while the map changes for it) and its minigame, as this client's ladder
+/// will be once the match is in (`ladder::draw`, then the server's rungs
+/// and extras, as `apply_minigame` takes them): known before the map
+/// loads, so a game loads its models behind the loading screen (Combat
+/// Arms' `preload::plan_coming_ladder`). None without one.
+pub fn server_ladder(world: &World) -> Option<(&'static MinigameDef, Ladder)> {
+    let offer = world.get_resource::<ServerManifest>()?.0.minigame.as_ref()?;
+    let wire = offer.ladder.as_ref()?;
+    let def = world.get_resource::<Minigames>()?.get(&offer.id)?;
+    let mut ladder = minigame::ladder::draw(world, def)?;
+    let catalog = world.get_resource::<chimera_sim::weapon::data::WeaponCatalog>()?;
+    ladder.take_rungs(catalog, &wire.rungs, wire.melee_rungs);
+    ladder.extras = wire.extras.clone();
+    Some((def, ladder))
 }
 
 /// The playing ladder (`Ladder`), while no map change for another match
@@ -1048,11 +1071,19 @@ fn add_to_manifest(world: &mut World, m: &mut MatchManifest) {
             s.1 = g.clone();
         }
     }
-    let text = world.get_resource::<Minigames>().and_then(|ms| ms.text(&def.id)).unwrap_or_default();
+    let text = world.get_resource::<Minigames>().and_then(|ms| ms.text(&def.id)).unwrap_or_default().to_string();
+    // The ladder it deals (a client loads its models behind its loading
+    // screen, `server_ladder`); not a sandbox's (every gun there is).
+    let ladder = (!sandbox(world, def)).then(|| match_ladder(world)).flatten().map(|l| LadderOffer {
+        rungs: l.rungs.iter().map(|r| r.to_string()).collect(),
+        melee_rungs: l.melee_rungs,
+        extras: l.extras.clone(),
+    });
     m.minigame = Some(MinigameOffer {
         id: def.id.clone(),
         hash: sha256(text.as_bytes()),
-        text: text.to_string(),
+        text,
+        ladder,
     });
 }
 

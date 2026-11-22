@@ -3,7 +3,9 @@
 //! definition (its text in the match manifest), and a new ladder
 //! (`ugg_new`) leaves out the games a connected player hasn't installed
 //! (their mount doctor reports, `minigame_net::installed_by_all`), then
-//! takes them back once that player leaves.
+//! takes them back once that player leaves. The manifest carries the
+//! ladder (`minigame_net::server_ladder`: a client knows it before the
+//! match's map loads).
 
 use std::time::Duration;
 
@@ -67,6 +69,13 @@ fn assert_clients_play_the_servers(sim: &NetSim, clients: &[usize]) {
             sim.server.app.world().resource::<Minigames>().text(MINIGAME),
             "client {i}: the server's text"
         );
+        // Known before the match's map loads (its models load behind the
+        // loading screen): the manifest's ladder, as the client plays it.
+        let (def, coming) = chimera_net::minigame_net::server_ladder(w).expect("the manifest carries the ladder");
+        assert_eq!(def.id, MINIGAME, "client {i}");
+        let coming_rungs: Vec<String> = coming.rungs.iter().map(|s| s.to_string()).collect();
+        assert_eq!(coming_rungs, server, "client {i}: the manifest's ladder");
+        assert_eq!(coming.extras, sim.server.app.world().resource::<Ladder>().extras, "client {i}: its rung extras");
     }
 }
 

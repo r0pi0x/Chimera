@@ -967,6 +967,115 @@ fn spawn_body(
     });
 }
 
+/// The copies `warm_view_models` draws under a view model camera, and how
+/// many view models were built when they were picked.
+#[derive(Component)]
+pub struct WarmViewModel(usize);
+
+/// One part of each kind (`warm_kinds`) of the built view models, drawn by
+/// each view model camera while a map settles behind a cover
+/// (`first_view_warm::WarmFirstView`), unseen: their pipelines compile
+/// then, not on the first frames a player holds a gun (measured: a joining
+/// client's first rung's pistol compiling for 28 frames as the cover
+/// went); gone after. A
+/// part's kind is what picks its pipeline here: its game (its mesh's
+/// layout), its material's blending and the faces it culls (mirrored or
+/// not), whether it is normal-mapped. The copies' bones are all the
+/// model's root (they are never seen), so nothing but the parts spawns.
+#[allow(clippy::type_complexity)]
+pub fn warm_view_models(
+    warm: Option<Res<super::first_view_warm::WarmFirstView>>,
+    assets: Res<ViewModelAssets>,
+    materials: Option<Res<Assets<PropMaterial>>>,
+    dormant: Option<Res<super::prop_material::DormantProps>>,
+    cameras: Query<(Entity, Option<&Children>), With<ViewModelCamera>>,
+    warmed: Query<(Entity, &WarmViewModel)>,
+    mut commands: Commands,
+) {
+    let built = assets.models.len();
+    if warm.is_none() || built == 0 {
+        for (e, _) in &warmed {
+            commands.entity(e).try_despawn();
+        }
+        return;
+    }
+    let Some(materials) = materials else { return };
+    let mut kinds: Option<Vec<(&ViewModelAsset, Handle<Mesh>, Handle<PropMaterial>)>> = None;
+    for (camera, children) in &cameras {
+        let have = children.into_iter().flatten().find_map(|c| warmed.get(*c).ok());
+        if have.is_some_and(|(_, w)| w.0 == built) {
+            continue;
+        }
+        if let Some((e, _)) = have {
+            commands.entity(e).try_despawn();
+        }
+        let kinds = kinds.get_or_insert_with(|| warm_kinds(&assets, &materials, dormant.as_deref()));
+        let root = commands
+            .spawn((
+                Name::new("View models warming"),
+                WarmViewModel(built),
+                placement(&ViewModelOffset::default(), false),
+                // Shown whatever its owner's state (a joining client's
+                // player is hidden until it plays).
+                Visibility::Visible,
+                ChildOf(camera),
+            ))
+            .id();
+        debug!("view models: {} kinds of part warming under {camera} ({built} models built)", kinds.len());
+        for (asset, mesh, material) in kinds.iter() {
+            let joint = commands.spawn((asset.root, Visibility::Inherited, ChildOf(root))).id();
+            let joints = vec![joint; asset.bones.len().max(1)];
+            commands.spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material.clone()),
+                bevy::mesh::skinning::SkinnedMesh {
+                    inverse_bindposes: asset.bindposes.clone(),
+                    joints,
+                },
+                RenderLayers::layer(VIEW_MODEL_LAYER),
+                NotShadowCaster,
+                NotShadowReceiver,
+                bevy::camera::visibility::NoFrustumCulling,
+                ChildOf(joint),
+            ));
+        }
+    }
+}
+
+/// One part (its model, mesh and material, either hand's) of each kind of
+/// part the built view models have (`warm_view_models`), in key order.
+fn warm_kinds<'a>(
+    assets: &'a ViewModelAssets,
+    store: &Assets<PropMaterial>,
+    dormant: Option<&super::prop_material::DormantProps>,
+) -> Vec<(&'a ViewModelAsset, Handle<Mesh>, Handle<PropMaterial>)> {
+    use bevy::pbr::Material;
+    let mut keys: Vec<&String> = assets.models.keys().collect();
+    keys.sort();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for key in keys {
+        let asset = &assets.models[key];
+        let game = key.split_once(':').map_or("", |(g, _)| g);
+        for part in &asset.parts {
+            for material in &part.materials {
+                let Some(m) = super::prop_material::prop(store, dormant, material) else { continue };
+                let kind = (
+                    game,
+                    std::mem::discriminant(&m.alpha_mode()),
+                    m.double_sided,
+                    m.cull_front,
+                    part.normal_map.is_some(),
+                );
+                if seen.insert(kind) {
+                    out.push((asset, part.mesh.clone(), material.clone()));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// The screen quad drawn on a view model body (on the body: the quad).
 #[derive(Component)]
 pub struct ScreenQuad(Entity);

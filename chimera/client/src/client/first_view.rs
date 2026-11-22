@@ -14,13 +14,22 @@
 //! (`chimera_world::map::loading::LoadPending`: the late-built bodies,
 //! held and view models; Combat Arms' coming ladder's models).
 //!
+//! Behind a party app's cover the world's cameras draw unseen while a map
+//! settles, beside a copy drawing the whole map from above and each view
+//! model camera drawing one part of each kind of view model
+//! (`staging::overview`, `chimera_present`'s `WarmViewModels`), so what
+//! the player's first view needs, wherever it spawns, is counted here.
+//! A network client's ladder models load behind its loading screen too
+//! (the server's manifest carries the ladder: `chimera_net::
+//! minigame_net::server_ladder`).
+//!
 //! Known shortcuts (docs/tech-debt.md): the render counts see only what a
-//! camera draws while the map settles; a party app's camera draws nothing
-//! until its player spawns, so its first view's pipelines are not checked
-//! there (measured: none compiling at its first drawn frame, the map's
-//! having compiled behind the loading screen). A network client's ladder
-//! models (the server's ladder, which comes with the match) still load in
-//! play.
+//! camera draws while the map settles; where no cover hides an overview
+//! (a game's own shell entering a map) the first view's pipelines are
+//! only those its camera sees from where it waits. A client's sky camera
+//! (a 3D skybox) that doesn't draw while the map settles leaves what it
+//! alone draws to compile when the cover goes (TF2's ctf_2fort: 16 props
+//! for about 8 frames on a client).
 //!
 //! The map's `Settling` waits for it (`first_view_ready`, a
 //! `MapHooks::settle` hook): nothing pending in two render frames in a row.
@@ -30,7 +39,10 @@
 //!
 //! `CHIMERA_FIRST_VIEW_GATE=0`: the settle doesn't wait for it (the A/B).
 //! `CHIMERA_FIRST_VIEW_LOG=<frames>`: the counts logged every frame from the
-//! map's spawn until that many frames after entering the game (measuring).
+//! map's spawn until that many frames after entering the game (`in+<n>`),
+//! and that many frames after the last `staging::WorldCover` goes
+//! (`shown+<n>`: a party app's match starting behind its lobby), with the
+//! names of a few meshes not drawn yet (measuring).
 
 use std::sync::{
     Arc,
@@ -58,7 +70,7 @@ impl Plugin for FirstViewPlugin {
         app.init_resource::<crate::map::MapHooks>();
         app.init_resource::<crate::map::loading::LoadPending>();
         app.world_mut().resource_mut::<crate::map::MapHooks>().settle.push(first_view_ready);
-        app.add_systems(Last, log_counts);
+        app.add_systems(Last, log_counts.run_if(|| log_limit().is_some()));
         // Without a render world (headless) there is nothing to wait for:
         // no `FirstView`, and the hook counts only the main world's work.
         let Some(render) = app.get_sub_app_mut(RenderApp) else { return };
@@ -107,6 +119,9 @@ pub struct Counts {
     clear_frames: AtomicUsize,
     /// Render frames counted.
     frames: AtomicUsize,
+    /// A few of the last frame's visible meshes not drawn yet (their main
+    /// world entities), for the log.
+    sample: std::sync::Mutex<Vec<Entity>>,
 }
 
 impl FirstView {
@@ -132,6 +147,11 @@ impl FirstView {
         self.0.frames.load(Ordering::Relaxed)
     }
 
+    /// A few of the last frame's visible meshes not drawn yet.
+    pub fn sample(&self) -> Vec<Entity> {
+        self.0.sample.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
     fn store(&self, u: Unready) {
         let c = &self.0;
         c.visible.store(u.visible, Ordering::Relaxed);
@@ -147,6 +167,9 @@ impl FirstView {
         }
     }
 }
+
+/// How many meshes not drawn yet the log names.
+const SAMPLE: usize = 6;
 
 /// After the frame's specialization and queues: what the views see and
 /// cannot draw yet.
@@ -165,6 +188,7 @@ fn count_unready(
         compiling: cache.waiting_pipelines().count(),
         ..default()
     };
+    let mut sample = Vec::new();
     for (view, visible) in &views {
         let Some(class) = visible.get::<Mesh3d>() else { continue };
         let view_cache = specialized.get(&view.retained_view_entity);
@@ -174,6 +198,7 @@ fn count_unready(
             let material = material_instances.instances.get(main).map(|m| m.asset_id);
             // A mesh without a material is someone's own pipeline's.
             let material_in = material.is_none_or(|id| materials.get(id).is_some());
+            let before = u.pending();
             if !mesh_in {
                 u.meshes += 1;
             } else if !material_in {
@@ -186,7 +211,13 @@ fn count_unready(
                     u.pipelines += 1;
                 }
             }
+            if u.pending() != before && sample.len() < SAMPLE {
+                sample.push(main.id());
+            }
         }
+    }
+    if let Ok(mut s) = state.0.sample.lock() {
+        *s = sample;
     }
     state.store(u);
 }
@@ -232,14 +263,16 @@ pub fn pending_words(w: &World) -> String {
 }
 
 /// `CHIMERA_FIRST_VIEW_LOG=<frames>`: the counts each frame while a map
-/// loads and that many frames into the game.
-fn log_counts(world: &World, mut after: Local<Option<u32>>, mut was_loading: Local<bool>) {
-    static FRAMES: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
-    let Some(limit) =
-        *FRAMES.get_or_init(|| chimera_core::env::var("CHIMERA_FIRST_VIEW_LOG").ok().and_then(|v| v.parse().ok()))
-    else {
-        return;
-    };
+/// loads and that many frames into the game (`in+<n>`), and that many
+/// frames after the world's last cover goes (`shown+<n>`).
+fn log_counts(
+    world: &World,
+    mut after: Local<Option<u32>>,
+    mut shown: Local<Option<u32>>,
+    mut was_loading: Local<bool>,
+    mut was_covered: Local<bool>,
+) {
+    let Some(limit) = log_limit() else { return };
     let loading = world.contains_resource::<crate::map::LocalMapLoad>();
     if loading {
         *after = None;
@@ -247,26 +280,68 @@ fn log_counts(world: &World, mut after: Local<Option<u32>>, mut was_loading: Loc
         *after = Some(0);
     }
     *was_loading = loading;
-    let n = match (*after, loading) {
-        (_, true) => None,
-        (Some(n), false) if n < limit => Some(n),
-        _ => return,
-    };
-    let u = world.get_resource::<FirstView>().map(FirstView::unready).unwrap_or_default();
+    let covered = world.get_resource::<super::staging::WorldCover>().is_some_and(|c| c.covered());
+    if covered {
+        *shown = None;
+    } else if *was_covered {
+        *shown = Some(0);
+    }
+    *was_covered = covered;
+    let mut labels = Vec::new();
+    if loading {
+        labels.push("loading".to_string());
+    }
+    if let Some(n) = after.filter(|n| *n < limit && !loading) {
+        labels.push(format!("in+{n}"));
+        *after = Some(n + 1);
+    }
+    if let Some(n) = shown.filter(|n| *n < limit) {
+        labels.push(format!("shown+{n}"));
+        *shown = Some(n + 1);
+    }
+    if labels.is_empty() {
+        return;
+    }
+    // The 3D cameras drawing (by name), whose views the counts are.
+    let cams: Vec<String> = world
+        .try_query::<(Entity, &Camera, Has<Camera3d>)>()
+        .map(|mut q| q.iter(world).filter(|(_, c, d3)| *d3 && c.is_active).map(|(e, ..)| name_of(world, e)).collect())
+        .unwrap_or_default();
+    let state = world.get_resource::<FirstView>();
+    let u = state.map(FirstView::unready).unwrap_or_default();
     let main: Vec<String> = main_pending(world).into_iter().map(|(k, v)| format!("{k}={v}")).collect();
+    let names: Vec<String> = state.map(FirstView::sample).unwrap_or_default().into_iter().map(|e| name_of(world, e)).collect();
     info!(
-        "first_view {} visible={} meshes={} materials={} pipelines={} compiling={} main=[{}]",
-        n.map_or("loading".to_string(), |n| format!("in+{n}")),
+        "first_view {} visible={} meshes={} materials={} pipelines={} compiling={} main=[{}] cameras=[{}]{}",
+        labels.join(" "),
         u.visible,
         u.meshes,
         u.materials,
         u.pipelines,
         u.compiling,
-        main.join(",")
+        main.join(","),
+        cams.join("; "),
+        if names.is_empty() { String::new() } else { format!(" e.g. [{}]", names.join("; ")) }
     );
-    if let Some(n) = n {
-        *after = Some(n + 1);
+}
+
+/// `CHIMERA_FIRST_VIEW_LOG`'s frames, if set.
+fn log_limit() -> Option<u32> {
+    static FRAMES: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *FRAMES.get_or_init(|| chimera_core::env::var("CHIMERA_FIRST_VIEW_LOG").ok().and_then(|v| v.parse().ok()))
+}
+
+/// `e`'s name, or its nearest named ancestor's (the log's sample).
+fn name_of(world: &World, e: Entity) -> String {
+    let mut at = Some(e);
+    for _ in 0..8 {
+        let Some(x) = at.and_then(|x| world.get_entity(x).ok()) else { break };
+        if let Some(n) = x.get::<Name>() {
+            return n.as_str().to_string();
+        }
+        at = x.get::<ChildOf>().map(|c| c.parent());
     }
+    format!("{e}")
 }
 
 #[cfg(test)]

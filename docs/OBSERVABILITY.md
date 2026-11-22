@@ -1593,14 +1593,17 @@ load; work counts don't (performance.md, "Work counts"):
   combat_arms --features dev --test it heavy::map_load -- --nocapture`
   (performance.md, "Combat Arms map loads").
 - A map's first view (`client::first_view`): `CHIMERA_FIRST_VIEW_LOG=<n>`
-  logs every frame while a map loads and `n` frames after the game is
-  entered what the cameras see and can't draw yet (`first_view loading|in+N
-  visible= meshes= materials= pipelines= compiling= main=[...]`; `main`:
-  the late-built models and Combat Arms' ladder still loading).
+  logs every frame while a map loads, `n` frames after the game is
+  entered and `n` frames after the last cover (a party app's loading
+  screen or lobby) goes what the cameras see and can't draw yet
+  (`first_view loading|in+N|shown+N visible= meshes= materials= pipelines=
+  compiling= main=[...] cameras=[...] e.g. [...]`; `main`: the late-built
+  models and Combat Arms' ladder still loading; `cameras`: the 3D cameras
+  drawing; `e.g.`: the names of a few meshes not drawn yet).
   `CHIMERA_FIRST_VIEW_GATE=0` enters without waiting for it (the A/B). A
-  settle that runs out of time logs what was still pending. Guard:
-  cs_source_app's `heavy::first_view` (performance.md, "A map's first
-  view").
+  settle that runs out of time logs what was still pending. Guards:
+  cs_source_app's `heavy::first_view` and ultimate_gun_game's (a listen
+  host and a client joining it; performance.md, "A map's first view").
 - Load-independent numbers (`metrics`, `client::frame_metrics`;
   performance.md, "Load-independent metrics"): the readout also gives
   distributions over the last 4096 frames and ticks: `frame ms (N): p50
