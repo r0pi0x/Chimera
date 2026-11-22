@@ -11,3 +11,8 @@ mod sandbox_gun_files;
 mod sandbox_platform;
 mod sandbox_range;
 mod target_staging;
+
+// Slow ones (the user's installs): the fast tier skips `heavy::`.
+mod heavy {
+    mod first_view;
+}

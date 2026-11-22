@@ -26,10 +26,8 @@
 //! Known shortcuts (docs/tech-debt.md): the render counts see only what a
 //! camera draws while the map settles; where no cover hides an overview
 //! (a game's own shell entering a map) the first view's pipelines are
-//! only those its camera sees from where it waits. A client's sky camera
-//! (a 3D skybox) that doesn't draw while the map settles leaves what it
-//! alone draws to compile when the cover goes (TF2's ctf_2fort: 16 props
-//! for about 8 frames on a client).
+//! only those its camera sees from where it waits. Other secondary cameras
+//! (monitors, portals: they draw to images) are not warmed.
 //!
 //! The map's `Settling` waits for it (`first_view_ready`, a
 //! `MapHooks::settle` hook): nothing pending in two render frames in a row.
@@ -121,7 +119,7 @@ pub struct Counts {
     frames: AtomicUsize,
     /// A few of the last frame's visible meshes not drawn yet (their main
     /// world entities), for the log.
-    sample: std::sync::Mutex<Vec<Entity>>,
+    sample: std::sync::Mutex<Vec<(Entity, Entity)>>,
 }
 
 impl FirstView {
@@ -148,7 +146,7 @@ impl FirstView {
     }
 
     /// A few of the last frame's visible meshes not drawn yet.
-    pub fn sample(&self) -> Vec<Entity> {
+    pub fn sample(&self) -> Vec<(Entity, Entity)> {
         self.0.sample.lock().map(|s| s.clone()).unwrap_or_default()
     }
 
@@ -212,7 +210,7 @@ fn count_unready(
                 }
             }
             if u.pending() != before && sample.len() < SAMPLE {
-                sample.push(main.id());
+                sample.push((main.id(), view.retained_view_entity.main_entity.id()));
             }
         }
     }
@@ -310,7 +308,9 @@ fn log_counts(
     let state = world.get_resource::<FirstView>();
     let u = state.map(FirstView::unready).unwrap_or_default();
     let main: Vec<String> = main_pending(world).into_iter().map(|(k, v)| format!("{k}={v}")).collect();
-    let names: Vec<String> = state.map(FirstView::sample).unwrap_or_default().into_iter().map(|e| name_of(world, e)).collect();
+    let names: Vec<String> = state.map(FirstView::sample).unwrap_or_default().into_iter()
+        .map(|(e, cam)| format!("{} in {}", name_of(world, e), name_of(world, cam)))
+        .collect();
     info!(
         "first_view {} visible={} meshes={} materials={} pipelines={} compiling={} main=[{}] cameras=[{}]{}",
         labels.join(" "),
@@ -341,7 +341,21 @@ fn name_of(world: &World, e: Entity) -> String {
         }
         at = x.get::<ChildOf>().map(|c| c.parent());
     }
-    format!("{e}")
+    // Unnamed: its components, the few that say what it is.
+    let comps: Vec<String> = world
+        .get_entity(e)
+        .map(|x| {
+            x.archetype()
+                .components()
+                .iter()
+                .filter_map(|c| world.components().get_name(*c))
+                .map(|n| n.shortname().to_string())
+                .filter(|n| !n.contains("Visib") && !n.contains("Transform") && !n.contains("Aabb"))
+                .take(6)
+                .collect()
+        })
+        .unwrap_or_default();
+    format!("{e} ({})", comps.join(","))
 }
 
 #[cfg(test)]

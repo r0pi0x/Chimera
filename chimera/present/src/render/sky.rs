@@ -106,6 +106,11 @@ pub fn follow_sky_camera(
     vis: Option<Res<SkyVis>>,
     has_3d_sky: Option<Res<ActiveMapHas3dSky>>,
     water_view: Option<Res<water::WaterView>>,
+    warm: Option<Res<super::first_view_warm::WarmFirstView>>,
+    sky_meshes: Query<
+        (&bevy::camera::primitives::Aabb, &GlobalTransform, Option<&bevy::camera::visibility::RenderLayers>),
+        (With<Mesh3d>, Without<SkyboxCamera>),
+    >,
     mut main: Query<
         (
             &GlobalTransform,
@@ -158,7 +163,16 @@ pub fn follow_sky_camera(
     let under = water_view.as_ref().and_then(|w| w.clear);
     let through = water_view.as_ref().is_some_and(|w| w.sky_through_surface);
     let sky_on = matches!(leaf, LeafSky::Sky2d | LeafSky::Sky3d) && (under.is_none() || through);
-    let layer = if leaf == LeafSky::Sky3d && has_3d_sky.is_some() {
+    // A map settling behind a cover (`first_view_warm`): the sky camera
+    // draws the whole 3D sky from above too, as the overview camera does
+    // the world, so its meshes' pipelines compile there (its view's own),
+    // not as the player first looks up.
+    let warming = warm.is_some() && has_3d_sky.is_some();
+    let warm_pose = warming
+        .then(|| super::first_view_warm::overview_pose(&sky_meshes, SKYBOX_LAYER))
+        .flatten();
+    let sky_on = sky_on || warm_pose.is_some();
+    let layer = if warm_pose.is_some() || (leaf == LeafSky::Sky3d && has_3d_sky.is_some()) {
         SKYBOX_LAYER
     } else {
         EMPTY_LAYER
@@ -189,17 +203,33 @@ pub fn follow_sky_camera(
             if !layers.intersects(&bevy::camera::visibility::RenderLayers::layer(layer)) {
                 *layers = bevy::camera::visibility::RenderLayers::layer(layer);
             }
-            tf.translation = translation;
-            tf.rotation = rotation;
+            match warm_pose {
+                Some((at, _)) => *tf = at,
+                None => {
+                    tf.translation = translation;
+                    tf.rotation = rotation;
+                }
+            }
             // Propagation has run: set the global transform too (no parent).
             *global = GlobalTransform::from(*tf);
             // Only real changes: a changed projection, target or tonemapping
             // makes Bevy redo the camera's setup.
+            let (fov, far) = match warm_pose {
+                Some((_, far)) => (std::f32::consts::FRAC_PI_2, far),
+                None => (
+                    match projection {
+                        Projection::Perspective(m) => m.fov,
+                        _ => std::f32::consts::FRAC_PI_4,
+                    },
+                    PerspectiveProjection::default().far,
+                ),
+            };
             if let (Projection::Perspective(p), Projection::Perspective(main_p)) = (&*proj, projection)
-                && (p.fov != main_p.fov || p.aspect_ratio != main_p.aspect_ratio)
+                && (p.fov != fov || p.aspect_ratio != main_p.aspect_ratio || p.far != far)
                 && let Projection::Perspective(p) = &mut *proj
             {
-                p.fov = main_p.fov;
+                p.fov = fov;
+                p.far = far;
                 p.aspect_ratio = main_p.aspect_ratio;
             }
             let mut e = commands.entity(entity);

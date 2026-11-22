@@ -143,3 +143,41 @@ pub fn warm_props(
     debug!("first view: {copies} kinds of prop mesh warming ({count} prop meshes)");
     *made = Some((warm.0, count, root));
 }
+
+/// Above the bounds of the meshes on a render layer (the world's 0, the 3D
+/// sky's `SKYBOX_LAYER`), looking down, far enough that a 90-degree view
+/// holds them all, and the far plane past them; none without meshes. The
+/// overview camera's pose, and the sky camera's meanwhile.
+#[allow(clippy::type_complexity)]
+pub fn overview_pose<F: bevy::ecs::query::QueryFilter>(
+    meshes: &Query<
+        (&bevy::camera::primitives::Aabb, &GlobalTransform, Option<&RenderLayers>),
+        F,
+    >,
+    layer: usize,
+) -> Option<(Transform, f32)> {
+    let wanted = RenderLayers::layer(layer);
+    let mut lo = Vec3::splat(f32::MAX);
+    let mut hi = Vec3::splat(f32::MIN);
+    for (aabb, at, layers) in meshes {
+        if layers.is_some_and(|l| !l.intersects(&wanted)) || (layers.is_none() && layer != 0) {
+            continue;
+        }
+        let c = at.transform_point(Vec3::from(aabb.center));
+        let r = (at.affine().matrix3 * Vec3::from(aabb.half_extents)).abs();
+        // An axis-aligned box around the turned one, wide enough.
+        let r = Vec3::splat(r.length());
+        lo = lo.min(c - r);
+        hi = hi.max(c + r);
+    }
+    if lo.x > hi.x || !(hi - lo).is_finite() {
+        return None;
+    }
+    let centre = (lo + hi) * 0.5;
+    let half = (hi - lo) * 0.5;
+    // Rounded, so the pose holds still as meshes come and go.
+    let height = (half.y + half.x.max(half.z) * 1.1 + 1.0).ceil();
+    let eye = (centre + Vec3::Y * height).round();
+    let far = (height + half.y + 10.0).ceil();
+    Some((Transform::from_translation(eye).looking_at(eye - Vec3::Y, Vec3::NEG_Z), far))
+}

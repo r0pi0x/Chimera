@@ -46,7 +46,7 @@
 use std::collections::HashMap;
 
 use bevy::{camera::RenderTarget, prelude::*};
-use chimera_present::render::first_view_warm::WarmFirstView;
+use chimera_present::render::first_view_warm::{WarmFirstView, overview_pose};
 
 /// The `WorldCover` name of the pre-match lobby.
 pub const LOBBY: &str = "lobby";
@@ -231,7 +231,7 @@ fn overview(
         }
         return;
     }
-    let Some((at, far)) = overview_pose(&meshes) else { return };
+    let Some((at, far)) = overview_pose(&meshes, 0) else { return };
     let fov = std::f32::consts::FRAC_PI_2;
     let projection = Projection::Perspective(PerspectiveProjection { fov, far, ..default() });
     let Some((overview, mut cam, mut transform, mut proj)) = have.iter_mut().next() else {
@@ -280,42 +280,6 @@ fn overview(
     if !same {
         *proj = projection;
     }
-}
-
-/// Above the bounds of the meshes on the world's layer, looking down, far
-/// enough that a 90-degree view holds them all, and the far plane past
-/// them; none without meshes.
-#[allow(clippy::type_complexity)]
-fn overview_pose(
-    meshes: &Query<
-        (&bevy::camera::primitives::Aabb, &GlobalTransform, Option<&bevy::camera::visibility::RenderLayers>),
-        With<Mesh3d>,
-    >,
-) -> Option<(Transform, f32)> {
-    let world_layer = bevy::camera::visibility::RenderLayers::default();
-    let mut lo = Vec3::splat(f32::MAX);
-    let mut hi = Vec3::splat(f32::MIN);
-    for (aabb, at, layers) in meshes {
-        if layers.is_some_and(|l| !l.intersects(&world_layer)) {
-            continue;
-        }
-        let c = at.transform_point(Vec3::from(aabb.center));
-        let r = (at.affine().matrix3 * Vec3::from(aabb.half_extents)).abs();
-        // An axis-aligned box around the turned one, wide enough.
-        let r = Vec3::splat(r.length());
-        lo = lo.min(c - r);
-        hi = hi.max(c + r);
-    }
-    if lo.x > hi.x || !(hi - lo).is_finite() {
-        return None;
-    }
-    let centre = (lo + hi) * 0.5;
-    let half = (hi - lo) * 0.5;
-    // Rounded, so the pose holds still as meshes come and go.
-    let height = (half.y + half.x.max(half.z) * 1.1 + 1.0).ceil();
-    let eye = (centre + Vec3::Y * height).round();
-    let far = (height + half.y + 10.0).ceil();
-    Some((Transform::from_translation(eye).looking_at(eye - Vec3::Y, Vec3::NEG_Z), far))
 }
 
 /// The world's cameras off while covered, each back after; the blank

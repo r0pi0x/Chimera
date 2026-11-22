@@ -1881,10 +1881,15 @@ drawing; a listen host and a client joining it, both offscreen 640x360,
 After: 0 visible meshes not drawn and nothing loading at every frame after
 the cover on warehouse and de_dust2, host and client, and on ctf_2fort's
 host (`compiling` 1-5 for a frame as the HUD comes: its own pipelines).
-ctf_2fort's client still had 16 props' pipelines compiling for about 8
-frames (from 28 for 20): its sky camera, which draws the 3D skybox, was
-not drawing while the map settled there, and those props weren't
-identified further. On a loaded box (load 40-70) ctf_2fort's settle took
+ctf_2fort's client had 16 props' pipelines compiling for about 8
+frames (CHIMERA_FIRST_VIEW_LOG now names the camera of each mesh not
+drawn: they were the 3D skybox's, "Prop N in Sky camera"): the sky camera
+followed the overview camera's pose (a view of no sky) while the map
+settled. Now, while the overview camera is up, the sky camera draws the
+whole 3D sky from above too (`first_view_warm::overview_pose` over the
+sky layer): 0 pending in `shown+0..5` on ctf_2fort, host and client
+(one run of four on the client had 2 beam halos' pipelines pending for 3
+frames, unexplained; it ran beside a stale game process). On a loaded box (load 40-70) ctf_2fort's settle took
 9-17 s, and once ran out of its 20 s. With
 `CHIMERA_FIRST_VIEW_GATE=0` on warehouse the game is entered with 328
 (host) and 18 (client) visible meshes' pipelines not ready and 9-10
@@ -1892,7 +1897,7 @@ compiling, which the lobby then hides. The game's own shell (CS:S's
 `map`, no cover) has no overview: its camera's view only. Guards:
 cs_source_app's `heavy::first_view` (the binary offscreen, `map
 de_dust2`: the first gameplay frame has nothing pending), ultimate_gun_game's
-`heavy::first_view` (a listen host and a client joining it on warehouse:
+`heavy::first_view` (a listen host and a client joining it on warehouse and, with a TF2 install, ctf_2fort:
 the client plans the server's ladder behind its loading screen, nothing
 pending in the four frames after either's cover goes) and `first_view`'s
 unit tests.
