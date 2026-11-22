@@ -482,17 +482,82 @@ One commit per game; `<g>` is the game's id.
 
 ### Stage 2: data at run time in dev, logic outside the `Sim`
 
-- [ ] One macro in `chimera_core` for a crate's data documents: with
-      `dev`, the file is read from the crate's folder at run time (and
-      can be read again: a console command); without, `include_str!` as
-      now. `tf2` first (9 sites), then the other games and the apps
-      (104 sites in all). A test asserts the two paths agree.
-- [ ] Keep by: a data edit rebuilds nothing (now 17.4 s for `tf2` alone
-      at load 20, plus everything above it), and the changed crate's
-      tests still run in the hook (`affected` maps the file by its path).
+- [x] One macro in `chimera_core` for a crate's data documents:
+      `chimera_core::game_data!("data/x.toml")` (a path from the calling
+      crate's folder; pieces joined as `concat!` does) makes a `const
+      GameData`. With `dev` (chimera_core's feature, which every crate's
+      `dev` turns on, so one switch for the whole build) it keeps the
+      file's absolute path and the first `text()` reads it, kept for the
+      process; `data_reload` (console) reads every file read so far again
+      and bumps `game_data::generation()`. Without `dev` (releases,
+      `--profile playtest`, servers as released) it is `include_str!`:
+      the bytes in the binary, no path. `GameData` derefs to `str`;
+      `game_data::texts` turns a named list into the `&[(&str, &str)]` the
+      weapon and minigame registries take. Its tests check the two paths
+      give the file's text and that a reload picks up an edit. All 100
+      `include_str!` sites of games and apps migrated (`tf2` first,
+      measured, then the rest), `GameBundle::player_options`,
+      `GameParts::announcer`/`cues` and `SurfaceTable::text` are
+      `GameData`; the 4 `include_bytes!` (party kit icons, UGG's UI
+      sounds) stay compiled in. `game_data_stays_home` (architecture
+      test) refuses a new `include_str!` in games and apps and a
+      `game_data!` path outside its crate unless `affected` knows the
+      reader (`SHARED_DATA`: the mashup's surface table, read by the party
+      kit; `TOOL_DATA`: `minigames/`, read by `originals`).
+- [x] UI data with the front end: Combat Arms' `data/ui/` (fonts,
+      strings, menu and options layouts, mission HUD) moved to
+      `games/combat_arms/ui/data/`; the other four front ends had none.
+- [x] `affected`: a non-Rust file of a member outside `tests/` (data,
+      shaders, images) is `Change::Data`: the same tests as its code (a
+      reader may behave differently), but `--code` leaves it out, and the
+      commit hook type-checks only the `--code` selection, so a data-only
+      change type-checks nothing and runs its crate's fast tier. The
+      `feature-paths` metadata, `Change::Feature`, `UI_FEATURES` and
+      `game_ui_only_with_its_feature` are gone (no game has a `ui`
+      feature since stage 1).
+- [x] Kept, by the numbers below ("Stage 2 results").
 - [ ] The rule for new code, in AGENTS.md and the scenario-test skill:
       decide in a plain function, apply in a system; test the function
       directly and keep one scenario test for the wiring.
+
+#### Stage 2 results (2026-11-22)
+
+Kept. Measured in an agent slot (12 threads) at load 17-50, a comment
+appended to `games/tf2/data/weapons/scattergun.toml` (before: main at
+8c2a21a9b; after: the `tf2` migration, then all sites):
+
+| Loop after the data edit | Before | After |
+|---|---|---|
+| `cargo build --features dev --bin ultimate_gun_game` | 21.5 s: `tf2`, `tf2_ui`, `party_kit`, `ultimate_gun_game` and the link | 0.43 s, nothing compiled |
+| `cargo test -p tf2 --features dev --no-run` | 8.7 s: `tf2` | 0.39 s, nothing compiled |
+| The sandbox running the edit (`--offscreen 640x360 --frames 120 +sandbox`, start to exit) | the build above, then the run (8.7-27.5 s) | the run alone: 8.7 s |
+| `affected` (tests) | `tf2` and 8 packages above it | the same 9: whatever composes TF2 reads the file |
+| `affected --code` (what the hook type-checks) | the same 9 | `repo_checks` only |
+| `.githooks/pre-commit --worktree` | a Rust edit's path: `tf2` rebuilt, its dependents' targets type-checked | 34 s: `tf2`'s and `repo_checks`' fast tiers, no type-check |
+
+The edited text reaches what runs without a compile: a broken TOML
+failed `tf2`'s `the_data_is_built_in_and_loads` straight away (and
+passed again once restored), no crate rebuilt.
+
+A front end's data: `games/combat_arms/ui/data/fonts.toml` (was
+`games/combat_arms/data/ui/`) selects `combat_arms_ui` and the 7
+packages above it; before, `combat_arms` (its 1,749 fast `it` and 101
+unit tests), `combat_arms_server` and the same apps.
+
+Checked: the workspace's `cargo check --all-targets --features dev`;
+the fast tiers of `chimera_core`, `chimera_world`, the five games and
+their front ends, `originals`, `party_kit`, `ultimate_gun_game` and
+`mashup_demo` (4,990 tests, all passing); `repo_checks`; `chimera_core`'s
+`game_data` tests with and without `dev`; `cargo check` without `dev` (the compiled-in path) of `tf2`, `originals`, `combat_arms_ui` and `party_kit`.
+
+What stays: a data edit still selects every package above its owner
+(the selection is per package, not per test that reads the file);
+readers that parse once at start-up (weapon sets, registries) need a
+restart, not `data_reload`, because rebuilding a registered weapon set
+in a running match would renumber what the network names by index.
+Next for this stage: the rule for new code (the item below), and
+hot reload for the readers where it is cheap (HUD and menu layouts,
+the UI theme) behind `game_data::generation()`.
 
 ### Stage 3: the party kit above no game
 
@@ -549,6 +614,10 @@ added. Nothing in the product changed.
 criteria (a)-(c) met, (d) as far as features go (results above); the
 layering check knows a front-end crate by its path (`Layer::FrontEnd`).
 2026-11-21: `halo_ce` the same: `halo_ce_ui` (games/halo_ce/ui).
+2026-11-22: stage 2's data half: `chimera_core::game_data!`, every
+games' and apps' `include_str!` migrated, Combat Arms' UI data in its
+front end, `affected --code` and the hook's type-check of code only
+(results above).
 
 ## Decision log
 
@@ -566,3 +635,9 @@ build" is not a reason to split; iteration on the client side is.
 2026-11-21: `hl2dm` the same: `hl2dm_ui` (games/hl2dm/ui).
 2026-11-22: `cs_source` the same: `cs_source_ui` (games/cs_source/ui).
 2026-11-22: `combat_arms` the same: `combat_arms_ui` (games/combat_arms/ui); stage 1 complete.
+2026-11-22: stage 2: data read from the checkout in dev builds, compiled
+in otherwise, switched by `chimera_core`'s `dev` (one switch for a whole
+build, not each crate's); a front end's data in its own crate's `data/`,
+so its edits leave the game's simulation tests; `affected` keeps
+selecting a data file's dependents (their tests read it) but the hook
+type-checks nothing for it.
