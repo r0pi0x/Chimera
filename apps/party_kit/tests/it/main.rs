@@ -99,6 +99,7 @@ mod heavy {
     mod halo_envelope;
     mod halo_gun_bots;
     mod halo_net_rung;
+    mod net_smoothness;
     mod halo_maps;
     mod halo_gun_sounds;
     mod halo_ladders;

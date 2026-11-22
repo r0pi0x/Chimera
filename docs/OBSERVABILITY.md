@@ -1206,6 +1206,11 @@ client runs ahead); `PredictedComponents::parts` splits a state blob by
 component to see what differs (the soak's `CHIMERA_SOAK_DIAGNOSE`
 decodes positions and velocities). `cargo test --features dev --test it net_prediction
 -- --nocapture` prints the numbers per latency, jitter and loss.
+Every game's body on another game's map, over the network
+(`apps/party_kit/tests/it/heavy/net_smoothness.rs`): per rung, prediction
+errors and restarts (0) and, drawn at 144 frames a second, the own body's
+per-frame steps (none held still, their change at most a quarter, turning at the ticks); the first
+thing to run when play "feels laggy" (its `--nocapture` prints the numbers).
 
 **Soak** (`games/cs_source/tests/it/heavy/net_soak.rs`, multiplayer.md "Soak"): a
 server on de_dust2 with four clients on their own links (0, 50, 150 ms
