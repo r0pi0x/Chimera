@@ -18,8 +18,12 @@
 //! Known shortcuts: the mine event (its sight sense firing on a placed
 //! device) is never raised, the game has no placed devices as targets; the
 //! install's profile file isn't read, so every profile has the default
-//! cooldown unless `data/bots.toml` names one (Open question 26); the line
-//! isn't sent to network clients.
+//! cooldown unless `data/bots.toml` names one (Open question 26).
+//!
+//! On a server each line goes to every remote player too (`CaBotSay`, the
+//! key, not its text: each client resolves it in its own string table), who
+//! turns it back into a `CaBotChat` for the same chat box (`hear`); the
+//! host of a listen server reads the server's own message.
 
 use bevy::prelude::*;
 
@@ -32,6 +36,47 @@ pub struct CaBotChat {
     pub bot: Entity,
     /// The string-table key (`$Message0_Kill_3`).
     pub key: String,
+}
+
+/// Server -> each remote player: a bot's chat line (the string-table key,
+/// resolved at the viewer's end); `hear` makes it a `CaBotChat` there.
+#[derive(Message, serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, bevy::ecs::entity::MapEntities)]
+pub struct CaBotSay {
+    #[entities]
+    pub bot: Entity,
+    pub key: String,
+}
+
+/// The server: each line a bot said, to every remote player (the host's
+/// own client reads `CaBotChat` itself).
+pub fn forward(mut said: MessageReader<CaBotChat>, mut commands: Commands) {
+    let lines: Vec<CaBotSay> = said.read().map(|l| CaBotSay { bot: l.bot, key: l.key.clone() }).collect();
+    if lines.is_empty() {
+        return;
+    }
+    commands.queue(move |world: &mut World| {
+        for (target, _) in crate::game::chat::readers(world) {
+            if let crate::game::chat::Target::Client(bevy_replicon::prelude::ClientId::Client(_)) = target {
+                for l in &lines {
+                    crate::game::chat::send(world, target, l.clone());
+                }
+            }
+        }
+    });
+}
+
+/// A remote client: a bot's line the server sent, as the `CaBotChat` the
+/// chat box reads.
+pub fn hear(mut said: MessageReader<CaBotSay>, mut out: MessageWriter<CaBotChat>) {
+    for l in said.read() {
+        out.write(CaBotChat { bot: l.bot, key: l.key.clone() });
+    }
+}
+
+/// The protocol: the line's message.
+pub fn register(app: &mut App) {
+    use bevy_replicon::prelude::{Channel, ServerMessageAppExt};
+    app.add_mapped_server_message::<CaBotSay>(Channel::Ordered);
 }
 
 /// A chat event a bot's brain or the rules raised, before its cooldown and

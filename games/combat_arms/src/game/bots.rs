@@ -456,6 +456,8 @@ impl Plugin for CaBotsPlugin {
         use crate::map::MapScopedApp;
         let server = crate::core::authoritative;
         app.add_message::<chat::CaBotChat>()
+            .add_message::<chat::CaBotSay>()
+            .add_systems(Update, chat::hear)
             .add_message::<chat::CaBotEvent>()
             .add_message::<crate::core::Died>()
             .init_resource::<BotSettings>()
@@ -483,6 +485,8 @@ impl Plugin for CaBotsPlugin {
                     // rules', or a minigame's that names them).
                     .run_if(crate::gameplay::bots_are(super::GAME)),
             );
+        app.add_systems(Update, chat::forward.run_if(server));
+        crate::net::NetAppExt::net_part(app, "combat_arms_bot_chat", chat::register);
         app.world_mut().resource_mut::<crate::map::MapHooks>().settle.push(brain::settle_nav);
         // The network's `kick <name>` and its quota at serving's start.
         crate::gameplay::GameplayAppExt::game_hook(app, super::GAME, crate::net::BotHooks {

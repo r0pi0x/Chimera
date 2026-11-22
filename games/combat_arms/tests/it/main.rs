@@ -53,6 +53,7 @@ mod movement_volumes;
 mod music_ambience;
 mod net;
 mod net_modes;
+mod net_bot_chat;
 mod net_modes_2;
 mod net_projectiles;
 mod npc_bodies;

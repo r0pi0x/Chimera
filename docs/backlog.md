@@ -611,12 +611,7 @@ Fixed ones are on branch `release-7.1` (tag v0.1.0-playtest7.1, not yet
 published): confirm each in a playtest, then delete it. The rest is not
 started; the user asked to avoid server lag while testers play.
 
-- **Combat Arms' "enemy down" voice line is in no set** (found
-  2026-11-15, `heavy::no_fetch_in_match` in its default mode, a first
-  join): `chars_snd/female/vm_enemydown_fa.wav` (a kill call-out,
-  `effects::kill_callout`) is fetched on demand during the first match;
-  the published manifests and the lean ones list it in no set. Put the
-  kill call-outs' sounds in `common` (`chimera_pack sets`, `lean`) and
+- **Combat Arms' "enemy down" voice line in no set** (done: `700c62ee0`; `declared.rs` puts the call-out, radio and announcer voices in `common`; publish with `chimera_pack sets`).
   publish.
 
 - **Others' voice lines in 3D** (done on branch `voice-3d`, confirm in a
@@ -740,12 +735,7 @@ started; the user asked to avoid server lag while testers play.
   rows labelled; Brightness is "Gamma" (lower is brighter); the CA gun
   view FOV steps on whole degrees; "Combat Arms' loop"; Music None stops
   at once; Host settings say they last this session (still not saved).
-- **Crash reporting, automated.** On a panic or native crash, write a
-  crash bundle (backtrace, log tail, build and net version, GPU and OS,
-  map and rung, Windows minidumps included) and send it to the
-  `/feedback` receiver, or queue it, on the next start. Ties into
-  [plans/active/feedback-reports.md](plans/active/feedback-reports.md)
-  P3 "crash bundles".
+- **Crash reporting, automated** (done: `a578ee5c2`, `85434e5b0`, `fcf303978`; `client::crash`, feedback plan P3b): crash bundles, minidumps, unclean-exit notice.
 - On main already, for the next build: the scroll container and slider
   drag and typed values (ui-scroll, merging); the screenshot-tour UI
   fixes (cb133450).
@@ -760,8 +750,6 @@ Y/U and Combat Arms' keys, docked in the lobby and the match end,
   captured); today a click on a name in the open chat, or `ignore`.
 - Who is talking (voice) in the feed or by the names; Combat Arms' talk
   icon is the only indicator.
-- Bot chat reaches only a listen server's host (`CaBotChat` isn't sent
-  to clients): send it as a `ChatMessage` from the server.
 - Time stamps are the session's clock (no local time zone without a date
   crate).
 - Lucker Party keeps the games' chat until its theme turns the Signal
