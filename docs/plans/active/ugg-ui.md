@@ -1270,9 +1270,9 @@ four stages, each merged on its own:
    `MapsSource` (`LocalCatalogue`: the minigame's pool, all Official) —
    **the seam** for the asset service's listing API (by game, official or
    custom, filters): another `MapCatalogue` in its place. "Start when:
-   Host presses Start" (`mp_lobby_host_start`, default 1 on listen and
-   ordinary servers; the party apps' dedicated servers set 0, nobody
-   being there to press it); UPnP's STATUS block with its outcome in
+   Host presses Start" (`mp_lobby_host_start`, now default 0: the match
+   starts 3 s after everyone has loaded; the row's other choice holds it
+   for the host's Start); UPnP's STATUS block with its outcome in
    words on hover. Join: the tools in the tab row, Q/E on its tabs, "None
    yet." in the text face. The lobby (stage 2): parties grouped (`LobbyRow::
    party`, 0 until parties exist: the seam), each party's thin coloured

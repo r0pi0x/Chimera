@@ -122,7 +122,8 @@ and the percentage), Loading map, Ready; bots are ready at once, and your
 own row is on a gold band. A line says how many players it waits for and
 when it starts anyway (the host's longest wait, 90 s by default, counted
 from when the first player arrived). Once everyone is ready a big countdown
-(5 s) runs and everyone spawns together. If you are ready first you stand
+(3 s, by itself: nobody presses Start; it stops while a joiner is still
+loading and begins again once all are ready) runs and everyone spawns together. If you are ready first you stand
 frozen at your spawn until then. If you are still downloading when it
 starts, you join the running match when you are ready, as a late joiner.
 

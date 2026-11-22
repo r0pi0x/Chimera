@@ -207,15 +207,46 @@ fn the_lobby_waits_for_a_downloading_player_then_counts_down_and_starts() {
     assert!(sim.until(600, |s| server_lobby(s).is_some_and(|l| l.countdown.is_some())), "the countdown");
     let at = sim.server.app.world().resource::<chimera_core::core::SimClock>().now;
     let l = server_lobby(&mut sim).unwrap();
-    assert_eq!((l.countdown, l.waiting), (Some(5), 0), "{l:?}");
+    assert_eq!((l.countdown, l.waiting), (Some(3), 0), "{l:?}");
     assert!(sim.until(10 * HZ, |s| !in_lobby(s)), "the lobby ends");
     let took = sim.server.app.world().resource::<chimera_core::core::SimClock>().now - at;
-    assert!((took - 5.0).abs() < 0.1, "5 s of countdown: {took}");
+    assert!((took - 3.0).abs() < 0.1, "3 s of countdown: {took}");
     assert!(server_lobby(&mut sim).is_none());
     assert!(sim.until(HZ, |s| playing(s, 2)), "both spawn and the round runs");
     assert!(!sim.server.app.world().resource::<FreezeTime>().0, "unfrozen");
     sim.ticks(10);
     assert!(client_lobby(&mut sim, 0).is_none() && client_lobby(&mut sim, 1).is_none(), "gone on the clients");
+}
+
+/// Nobody presses Start: once the one client has the map the countdown (3 s,
+/// `mp_lobby_countdown`'s default) runs and starts the match; a player
+/// taking its readiness back (a joiner not ready) stops it until all are
+/// ready again.
+#[test]
+fn everyone_loaded_starts_the_match_after_the_default_countdown_without_the_host() {
+    assert_eq!(chimera_net::prematch::LobbySettings::default().countdown, 3.0);
+    assert_eq!(chimera_net::prematch::LobbySettings::default().host_start, 0);
+    let mut sim = sim(1);
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_ready_up 1");
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts");
+    assert!(sim.until(600, |s| joined(s, 0)), "client 0 is in");
+    sim.ticks(2 * HZ);
+    assert!(in_lobby(&sim) && server_lobby(&mut sim).is_some_and(|l| l.countdown.is_none()), "not ready: no countdown");
+    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("lobby_ready 1");
+    assert!(sim.until(HZ, |s| server_lobby(s).is_some_and(|l| l.countdown == Some(3))), "the countdown, by itself");
+    // Not ready again during it: it stops.
+    sim.ticks(HZ);
+    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("lobby_ready 0");
+    sim.ticks(HZ / 2);
+    assert!(server_lobby(&mut sim).is_some_and(|l| l.countdown.is_none()), "stopped");
+    sim.ticks(5 * HZ);
+    assert!(in_lobby(&sim), "still held");
+    // Ready again: three more seconds, then the match.
+    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("lobby_ready 1");
+    assert!(sim.until(HZ, |s| server_lobby(s).is_some_and(|l| l.countdown == Some(3))), "it begins again");
+    sim.ticks(2 * HZ);
+    assert!(in_lobby(&sim), "3 s not over");
+    assert!(sim.until(2 * HZ, |s| !in_lobby(s)), "the match begins at 0");
 }
 
 #[test]
@@ -366,8 +397,8 @@ fn the_host_starts_it_now() {
     assert!(in_lobby(&sim));
     sim.server.app.world_mut().resource_mut::<Console>().submit("lobby_start");
     sim.ticks(2);
-    assert_eq!(server_lobby(&mut sim).and_then(|l| l.countdown), Some(5));
-    assert!(sim.until(6 * HZ, |s| !in_lobby(s)));
+    assert_eq!(server_lobby(&mut sim).and_then(|l| l.countdown), Some(3));
+    assert!(sim.until(4 * HZ, |s| !in_lobby(s)));
 }
 
 /// By default (`mp_lobby_host_start 1`) the server run's first lobby waits

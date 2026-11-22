@@ -1,6 +1,7 @@
 //! Hosting from the party apps' main menu goes through the pre-match lobby
 //! (`chimera_net::prematch`): Host's Start (its Server tab's lobby rows:
-//! `mp_lobby 1`, `mp_lobby_min_players 2`, `mp_lobby_host_start 1`; no
+//! `mp_lobby 1`, `mp_lobby_min_players 2`, `mp_lobby_host_start 0`, here
+//! set to 1 to hold the start; no
 //! ready-up) on a listen host with its own player and bots holds the gun
 //! game's first match in the lobby; the host sees the panel (its row
 //! tagged, the bots ready, its key starting the match); nothing starts it
@@ -150,12 +151,15 @@ fn hosting_from_the_menu_holds_the_match_in_the_lobby_until_the_host_starts_it()
     // on, waiting for 2, nobody readies up (loaded is ready), the first
     // match starting when the host presses Start.
     let data = MenuData::shipped();
-    for (cvar, want) in [("mp_lobby", "1"), ("mp_lobby_min_players", "2"), ("mp_lobby_host_start", "1")] {
+    for (cvar, want) in [("mp_lobby", "1"), ("mp_lobby_min_players", "2"), ("mp_lobby_host_start", "0")] {
         let row = data.play.iter().find(|r| r.cvar == cvar).unwrap_or_else(|| panic!("a {cvar} row"));
         assert_eq!(row.default.as_deref(), Some(want), "{cvar}'s default");
     }
     assert!(data.play.iter().all(|r| r.cvar != "mp_lobby_ready_up"), "no ready-up row");
     server_act(&mut sim, A::Entry(0));
+    // The host holds the start for itself (the row's other choice).
+    let hold = data.play.iter().position(|r| r.cvar == "mp_lobby_host_start").unwrap();
+    sim.server.app.world_mut().resource_mut::<PartyMenu>().play[hold] = "1".into();
     server_act(&mut sim, A::Start);
     assert!(
         sim.until(5 * HZ, |s| s.server.app.world().resource::<PartyMenu>().screen == Screen::InGame
@@ -217,7 +221,7 @@ fn hosting_from_the_menu_holds_the_match_in_the_lobby_until_the_host_starts_it()
 #[test]
 fn a_dedicated_servers_lobby_keeps_players_ready_once_they_have_the_map() {
     assert_eq!(LobbySettings::default().ready_up, 0, "no ready-up by default");
-    assert_eq!(LobbySettings::default().host_start, 1, "the first match waits for the host's start (its console or an RCON admin)");
+    assert_eq!(LobbySettings::default().host_start, 0, "nothing to press: the match counts down once everyone has loaded");
     assert_eq!(LobbySettings::default().min_players, 1);
 }
 

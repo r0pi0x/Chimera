@@ -308,16 +308,16 @@ module list is `docs/modules.md`.
 - 580: Building or updating the server | Easiest: the server from the release zip (`ultimate_gun_game_server` or
 - 597: The server's own game files (no install, no keys) | A game server reads each game it has no install of from the asset store, as a player does, and fetches what it needs from the asset...
 - 671: Starting it | reach, not localhost)
-- 827: Ports to open | On the router and the host's firewall:
-- 851: Download speed and your upload | What a tester without the games downloads from the asset service:
-- 903: Accounts and invites | Everyone gets in with an account on the hub (the services in the next section): a tester, a developer; a dedicated server uses the...
-- 951: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
-- 1068: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
-- 1090: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
-- 1195: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
-- 1218: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
-- 1263: After | Revoke the session's test accounts (`chimera_accounts account revoke
-- 1270: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
+- 830: Ports to open | On the router and the host's firewall:
+- 854: Download speed and your upload | What a tester without the games downloads from the asset service:
+- 906: Accounts and invites | Everyone gets in with an account on the hub (the services in the next section): a tester, a developer; a dedicated server uses the...
+- 954: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
+- 1071: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
+- 1093: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
+- 1198: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
+- 1221: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
+- 1266: After | Revoke the session's test accounts (`chimera_accounts account revoke
+- 1273: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
 
 ## docs/playtest.md
 
@@ -327,10 +327,10 @@ module list is `docs/modules.md`.
 - 36: Download and start | (`LuckerParty-<version>-windows.zip` or `UltimateGunGame-<version>-windows.zip`; the host will say which)
 - 52: First run: your invite | The first time the game starts it asks for your **invite**: paste the link the host sent you (it starts with `chimera-hub://`; the bare...
 - 83: Joining the server | The main menu starts over its own animated backdrop
-- 141: Controls | The defaults (Esc > Options > Binds, or `F6`, changes any of them):
-- 186: Settings worth knowing | Esc > Options:
-- 203: Reporting a bug | Please send the host (a message in the group chat is fine):
-- 255: Known issues | Things you may hit, so you do not need to report them (unless they look worse than described):
+- 142: Controls | The defaults (Esc > Options > Binds, or `F6`, changes any of them):
+- 187: Settings worth knowing | Esc > Options:
+- 204: Reporting a bug | Please send the host (a message in the group chat is fine):
+- 256: Known issues | Things you may hit, so you do not need to report them (unless they look worse than described):
 
 ## docs/tech-debt.md
 

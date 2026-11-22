@@ -1292,6 +1292,7 @@ fn rotate(world: &mut World) {
             // The vote is open: its close picks the map.
             Some(vote) if vote.open() => {
                 if now < vote.closes {
+                    shorten_vote(world, now);
                     return;
                 }
                 let m = close_vote(world);
@@ -1383,6 +1384,31 @@ fn open_vote(world: &mut World, def: &'static MinigameDef, first: &str) -> bool 
     let mut next = world.resource_mut::<NextMatch>();
     next.at = closes + settings.reveal as f64;
     true
+}
+
+/// Every human in the match has voted: the vote closes `mp_vote_all_voted`
+/// s from now (if it had longer), the change that long plus the reveal
+/// after it. Bots don't count; with no human nothing changes.
+fn shorten_vote(world: &mut World, now: f64) {
+    let left = crate::prematch::vote_all_voted(world) as f64;
+    let Some(closes_at) = world.get_resource::<MapVote>().map(|v| v.closes) else { return };
+    if closes_at - now <= left {
+        return;
+    }
+    let humans: Vec<Entity> = {
+        let mut q = world.query_filtered::<(Entity, &crate::net::NetCharacter, Has<chimera_core::core::LocalPlayer>), With<InMinigame>>();
+        q.iter(world).filter(|(_, c, local)| c.owner.is_some() || *local).map(|(e, _, _)| e).collect()
+    };
+    let vote = world.resource::<MapVote>();
+    if humans.is_empty() || !humans.iter().all(|h| vote.ballots.iter().any(|(v, _)| v == h)) {
+        return;
+    }
+    let reveal = world.resource::<ActiveMinigame>().def;
+    let reveal = MapVoteSettings::of(reveal).ok().flatten().map_or(0.0, |s| s.reveal as f64);
+    let closes = now + left;
+    info!("map vote: everyone has voted; it closes in {left} s");
+    world.resource_mut::<MapVote>().closes = closes;
+    world.resource_mut::<NextMatch>().at = closes + reveal;
 }
 
 /// The open vote closed: the winner (`MapVote::tally`), said on the

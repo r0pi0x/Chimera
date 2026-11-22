@@ -124,6 +124,34 @@ fn the_players_vote_for_the_next_map_and_the_most_votes_win() {
     }
 }
 
+/// A ten-second vote (`voting`'s, longer): once every human has voted it
+/// closes in 3 s (`mp_vote_all_voted`); with one not voted it runs its
+/// whole time.
+#[test]
+fn every_human_voting_closes_the_vote_in_three_seconds_else_it_runs_its_time() {
+    let long = || {
+        let (mut sim, _a) = a_won_match_and(&voting().replace("time = \"4s\"", "time = \"10s\""), with_screen);
+        assert!(sim.until(2000, |s| s.clients.iter().all(|c| c.app.world().contains_resource::<MapVote>())), "the vote opens");
+        sim
+    };
+    let now = |s: &NetSim| s.server.app.world().resource::<SimClock>().now;
+    // One of two has voted: the vote keeps its time.
+    let mut sim = long();
+    let closes = server_vote(&sim).closes;
+    assert!(closes - now(&sim) > 8.0, "ten seconds");
+    minigame_net::vote_map(sim.clients[0].app.world_mut(), 1).unwrap();
+    sim.ticks(3 * 64);
+    assert!((server_vote(&sim).closes - closes).abs() < 1e-6 && server_vote(&sim).open(), "still open for the other");
+    // The other votes: it closes 3 s later, not at its own end.
+    minigame_net::vote_map(sim.clients[1].app.world_mut(), 1).unwrap();
+    assert!(sim.until(64, |s| server_vote(s).closes - now(s) <= 3.01), "shortened to 3 s");
+    let at = now(&sim);
+    assert!(sim.until(5 * 64, |s| !s.server.app.world().resource::<MapVote>().open()), "closed");
+    let took = now(&sim) - at;
+    assert!(took < 3.2 && took > 1.5, "about 3 s after the last vote: {took}");
+    assert_eq!(server_vote(&sim).winner, Some(1));
+}
+
 #[test]
 fn with_no_votes_the_rotations_pick_stands() {
     let mut sim = vote_open();

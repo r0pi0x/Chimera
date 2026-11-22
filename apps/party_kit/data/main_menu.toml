@@ -160,8 +160,9 @@ default = "8"
 
 # The pre-match lobby (chimera_net::prematch) of each match the host
 # starts: everyone waits on the map until loaded (loaded is ready; nobody
-# readies up); the first match starts when the host presses Start
-# (mp_lobby_host_start), later ones once everyone has the map. After each
+# readies up); the match starts by itself 3 s (mp_lobby_countdown) after
+# everyone has the map, or when the host presses Start if held
+# (mp_lobby_host_start 1). After each
 # match everyone is back in the lobby while the next map loads.
 [[play]]
 label = "Pre-match lobby"
@@ -175,12 +176,11 @@ cvar = "mp_lobby_min_players"
 range = [1, 16, 1]
 default = "2"
 
-# One choice: shown as its words (no control), set at the start.
 [[play]]
 label = "Start when"
 cvar = "mp_lobby_host_start"
-choices = [["1", "Host presses Start"]]
-default = "1"
+choices = [["0", "Everyone has loaded"], ["1", "Host presses Start"]]
+default = "0"
 
 # The lobby after each match (the next map loading under it) starts once
 # everyone has loaded, or after this long since the match was ready

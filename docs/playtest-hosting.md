@@ -790,11 +790,12 @@ Maps and matches:
   | Cvar | Default | Meaning |
   |---|---|---|
   | `mp_lobby` | 1 (the party servers; 0 elsewhere) | 0 starts each match at once, as before |
-  | `mp_lobby_countdown` | 5 | the countdown once everyone is ready, s |
+  | `mp_lobby_countdown` | 3 | the countdown once everyone is ready, s |
   | `mp_lobby_max_wait` | 90 | the longest wait, s, from the lobby's start or the first player's arrival (whichever is later), before the countdown starts anyway; the stragglers join late |
   | `mp_lobby_min_players` | 1 | players (not bots) connected before being ready counts; set it to the testers you expect for the first match, so it doesn't start for the first one in (the max wait still applies) |
   | `mp_lobby_ready_up` | 0 | 1: a player on the map is "Not ready" until it presses F3 (`lobby_ready`; again takes it back); 0: having the map is ready |
-  | `mp_lobby_host_start` | 1 (0 on the party apps' dedicated servers) | 1: the server run's first lobby waits for the host's start (a listen host's Start, `lobby_start` on the console); nothing counts it down by itself. 0: it counts down once everyone is ready or after the longest wait |
+  | `mp_lobby_host_start` | 0 | 1: the server run's first lobby waits for the host's start (a listen host's Start, `lobby_start` on the console); nothing counts it down by itself. 0: it counts down once everyone is ready (3 s, stopped while a joiner is still loading) or after the longest wait |
+  | `mp_vote_all_voted` | 3 | the end-of-match map vote's seconds left once every human has voted (if it had more); bots don't vote |
 
   `lobby` on the console lists the players and what it waits for;
   `lobby_start` starts the countdown now (`lobby_start 0`: the match at
@@ -802,13 +803,15 @@ Maps and matches:
 
   **Hosting from the app's menu** (Host, Start: a listen server) has the
   same lobby: the Server tab's rows turn it on (`mp_lobby 1`), wait for 2
-  players (`mp_lobby_min_players`) and have the first match wait for the
-  host (`mp_lobby_host_start 1`). Nobody readies up: a player who has the
+  players (`mp_lobby_min_players`); the match starts by itself 3 s after
+  everyone has the map (the Start-when row's "Host presses Start" sets
+  `mp_lobby_host_start 1` to hold it). Nobody readies up: a player who has the
   map is ready. The host and joiners see the panel (one list, you first:
   each player's avatar, status bar and ping, HOST, the map, the
-  countdown). The host's Start (Enter, or F3) starts the countdown;
-  nothing else starts the first match. Later matches (map changes) start
-  once everyone has the map, or after the longest wait (90 s).
+  countdown). The host's Start (Enter, or F3) starts the countdown early; held
+  (`mp_lobby_host_start 1`), nothing else starts the first match. Later
+  matches (map changes) start once everyone has the map, or after the
+  longest wait (90 s).
 
 Console commands on the server's stdin (type in its window; run it inside
 `tmux` or `screen`, or a PowerShell window you keep open):

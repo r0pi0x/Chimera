@@ -54,9 +54,9 @@
 //!   a label, a server cvar, its values as words; the party's from its host
 //!   settings' `lobby = true`), as label and value; a value of "" (the
 //!   minigame's own) is left out.
-//! - **The host's start** (`mp_lobby_host_start`, default 1; the party
-//!   apps' Host page shows it): the server run's first lobby waits for the
-//!   host's `lobby_start` (a dedicated server's console or an RCON admin) (`Lobby::host_start`, `NetLobby::host_start`):
+//! - **The host's start** (`mp_lobby_host_start`, default 0: nothing to
+//!   press; 1 holds the start, the party apps' Host page's "Start when"):
+//!   the server run's first lobby waits for the host's `lobby_start` (a dedicated server's console or an RCON admin) (`Lobby::host_start`, `NetLobby::host_start`):
 //!   neither everyone being ready nor the longest wait counts it down.
 //!   Later lobbies (map changes) start as below.
 //! - **Shown first** (`show_first`, `HostLobbyFirst`): a listen host's
@@ -77,13 +77,15 @@
 //!   longer held) ends it.
 //! - **Avatars**: each row carries its player's `cl_avatar` userinfo
 //!   (`LobbyRow::avatar`, `NO_AVATAR` for a bot or none).
-//! - **The countdown** (`mp_lobby_countdown` s, default 5): once every
+//! - **The countdown** (`mp_lobby_countdown` s, default 3): once every
 //!   connected player is ready and at least `mp_lobby_min_players` humans
 //!   (default 1) are connected; or once `mp_lobby_max_wait` s (default
 //!   90) have passed since the lobby began or the first human connected,
 //!   whichever is later, with the stragglers joining as late joiners when
 //!   they are ready. Neither starts while the server fetches its own
-//!   game files for the match (`net::server_assets`). A countdown under way isn't reset by a joiner. With
+//!   game files for the match (`net::server_assets`). A countdown that began because everyone was ready stops while a
+//!   player is not ready (a joiner loading) and begins again once all are
+//!   (the host's `lobby_start` and the longest wait's aren't stopped). With
 //!   no human connected it waits (nothing to play for).
 //! - **Console**: `lobby` (the rows, the server's or as a client heard
 //!   them), `lobby_start [s]` (the host: the countdown now, of `s`
@@ -171,23 +173,32 @@ pub struct LobbySettings {
     /// 1: a remote player on the map is ready once it says so
     /// (`lobby_ready`); 0: once it is on the map.
     pub ready_up: u8,
-    /// 1 (the default): the server run's first lobby waits for the host's
-    /// start (`lobby_start`: a listen host's Start, a dedicated server's
-    /// console or an RCON admin): nothing counts it down by itself; 0: it
-    /// counts down once everyone is ready or after the longest wait.
-    /// Later lobbies start once everyone has loaded.
+    /// 1: the server run's first lobby waits for the host's start
+    /// (`lobby_start`: a listen host's Start, a dedicated server's console
+    /// or an RCON admin): nothing counts it down by itself; 0 (the
+    /// default): it counts down once everyone is ready or after the
+    /// longest wait. Later lobbies start once everyone has loaded.
     pub host_start: u8,
+    /// Seconds the map vote keeps open once every human has voted
+    /// (`mp_vote_all_voted`; `minigame_net::shorten_vote`).
+    pub vote_all_voted: f32,
+}
+
+/// `mp_vote_all_voted` (3 without the lobby's settings).
+pub fn vote_all_voted(world: &World) -> f32 {
+    world.get_resource::<LobbySettings>().map_or(3.0, |s| s.vote_all_voted.max(0.0))
 }
 
 impl Default for LobbySettings {
     fn default() -> Self {
         Self {
             enabled: 0,
-            countdown: 5.0,
+            countdown: 3.0,
             max_wait: 90.0,
             min_players: 1,
             ready_up: 0,
-            host_start: 1,
+            host_start: 0,
+            vote_all_voted: 3.0,
         }
     }
 }
@@ -399,6 +410,10 @@ pub struct Lobby {
     /// in (`BetweenMaps`); nothing counts down until the match is made
     /// there.
     pub between: bool,
+    /// The countdown running began because everyone was ready (not the
+    /// host's start, not the longest wait): a player not ready again
+    /// stops it (`serve`).
+    pub on_ready: bool,
 }
 
 /// The lobby between maps (`begin_between`): the map coming in and the
@@ -462,6 +477,12 @@ pub(crate) fn register(app: &mut App) {
         "Server: the longest the pre-match lobby waits for players, s (from its start or the first player's \
          arrival), before the countdown starts anyway; the rest join when ready.",
         |s| &mut s.max_wait,
+    );
+    resource_cvar::<LobbySettings, f32>(
+        app,
+        "mp_vote_all_voted",
+        "Server: the map vote's seconds left once every human player has voted (if it had more); bots don't vote.",
+        |s| &mut s.vote_all_voted,
     );
     resource_cvar::<LobbySettings, u32>(
         app,
@@ -664,6 +685,7 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
         began: now,
         humans_since: None,
         countdown_ends: None,
+        on_ready: false,
         written: f64::MIN,
         host_start: s.host_start != 0 && begun == 0,
         between: false,
@@ -721,6 +743,7 @@ pub fn begin_between(world: &mut World, map: &str, mode: &str) {
         began: now,
         humans_since: None,
         countdown_ends: None,
+        on_ready: false,
         written: f64::MIN,
         host_start: s.host_start != 0 && begun == 0,
         between: true,
@@ -1055,10 +1078,18 @@ pub(crate) fn serve(world: &mut World) {
     let wait_ends = lobby.humans_since.map(|h| h.max(lobby.began) + s.max_wait as f64);
     // The server's own game files for the match first (`server_assets`).
     let files_coming = crate::net::server_assets::fetching(world);
+    // A countdown that began because everyone was ready waits for the one
+    // who is not (a joiner loading): it starts again once all are ready.
+    if lobby.on_ready && lobby.countdown_ends.is_some() && (not_ready > 0 || to_come > 0) {
+        info!("pre-match lobby: a player is not ready; the countdown stops");
+        lobby.countdown_ends = None;
+        lobby.on_ready = false;
+    }
     if lobby.countdown_ends.is_none() && !lobby.host_start && !files_coming {
         if humans > 0 && not_ready == 0 && to_come == 0 {
             info!("pre-match lobby: everyone is ready; the match starts in {} s", s.countdown);
             lobby.countdown_ends = Some(now + s.countdown.max(0.0) as f64);
+            lobby.on_ready = true;
         } else if wait_ends.is_some_and(|w| now >= w) {
             let late: Vec<&str> = rows.iter().filter(|r| !r.ready()).map(|r| r.name.as_str()).collect();
             info!(
@@ -1136,6 +1167,7 @@ pub fn start_now(world: &mut World, secs: Option<f64>) -> Result<String, String>
     let secs = secs.unwrap_or(world.resource::<LobbySettings>().countdown as f64);
     let now = world.resource::<SimClock>().now;
     lobby.countdown_ends = Some(now + secs);
+    lobby.on_ready = false;
     world.insert_resource(lobby);
     info!("pre-match lobby: started by the host; the match starts in {secs} s");
     Ok(format!("the match starts in {secs} s"))

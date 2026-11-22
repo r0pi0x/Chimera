@@ -21,6 +21,10 @@
 //! (`chimera_client::client::match_end`). Gone with the results when
 //! the next match starts.
 //!
+//! Once every human in the match has voted (bots don't), the vote has at
+//! most `mp_vote_all_voted` s (default 3) left (`minigame_net::shorten_vote`),
+//! the change after it and the reveal.
+//!
 //! Known shortcuts: bots don't vote; a player who leaves keeps their vote
 //! counted.
 

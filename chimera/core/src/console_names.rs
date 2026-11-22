@@ -60,6 +60,7 @@ pub const ENGINE_NAMES: &[&str] = &[
     // The pre-match lobby (`chimera_net::prematch`): the engine's, any game's.
     "mp_lobby",
     "mp_lobby_countdown",
+    "mp_vote_all_voted",
     "mp_lobby_max_wait",
     "mp_lobby_min_players",
     "mp_lobby_ready_up",
