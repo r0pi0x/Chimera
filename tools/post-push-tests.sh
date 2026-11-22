@@ -131,7 +131,7 @@ proc_field() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f"$2"; }
 proc_start() { proc_field "$1" 20; }
 runner_alive() {
     local pid st
-    read -r pid st _ <"$out/.running" 2>/dev/null || return 1
+    read -r pid st _ 2>/dev/null <"$out/.running" || return 1
     [ -n "$pid" ] && [ "$(proc_start "$pid")" = "$st" ]
 }
 lock_ino() { stat -Lc %i "/proc/$$/fd/8" 2>/dev/null; }
