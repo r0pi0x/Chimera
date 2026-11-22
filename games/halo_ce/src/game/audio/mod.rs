@@ -17,6 +17,9 @@
 //!   rocket's flight) and to the held guns (the plasma pistol's charge).
 //! - `steps`: the Spartan's footsteps, jumps and landings by the surface's
 //!   material.
+//! - `warnings`: the Spartan's low-shield and low-health warning sounds
+//!   (the unit HUD interface's sound elements: shield hit, charge, low,
+//!   depleted, the heartbeat), from its vitality.
 //!
 //! Where the data comes from (`kit`, `dress`): a Halo map's own file at
 //! its conversion (`maps::audio`: the kit and the level's part, through the
@@ -31,6 +34,7 @@ pub mod level;
 pub mod library;
 pub mod looping;
 pub mod steps;
+pub mod warnings;
 
 use std::sync::{Arc, Mutex};
 
@@ -80,6 +84,7 @@ pub fn kit(c: &mut Compiler) {
             c.sound(&r);
         }
     }
+    warning_sounds(c);
     let foot = file
         .find(class::BIPED, super::body::load::BIPED)
         .and_then(|t| Biped::read(file, t).ok())
@@ -89,6 +94,26 @@ pub fn kit(c: &mut Compiler) {
         for kind in foot.kinds.iter().take(STEP_KINDS) {
             let row = kind.iter().map(|m| c.sound(&m.sound).unwrap_or_default()).collect();
             c.set.library.footsteps.push(row);
+        }
+    }
+}
+
+/// The Spartan's unit HUD interface's warning sound elements, compiled
+/// (`warnings`): `snd!` as one-shots, `lsnd` as loops; an element whose
+/// sound won't compile is left out.
+fn warning_sounds(c: &mut Compiler) {
+    let file = c.file;
+    let Some(biped) = file.find(class::BIPED, super::body::load::BIPED).and_then(|t| Biped::read(file, t).ok()) else { return };
+    let Some(hud) = biped.unit.new_hud_interfaces.first().and_then(|h| blam_formats::hud::weapon::resolve(file, &h.hud)) else { return };
+    let Ok(hud) = blam_formats::hud::UnitHud::read(file, hud) else { return };
+    for el in &hud.sounds {
+        let (sound, looped) = match el.sound.class {
+            class::SOUND_LOOPING => (c.looping(&el.sound), true),
+            class::SOUND => (c.sound(&el.sound), false),
+            _ => continue,
+        };
+        if let Some(sound) = sound {
+            c.set.library.warnings.push(library::Warning { sound, looped, flags: el.state_flags, scale: el.scale });
         }
     }
 }
@@ -162,7 +187,7 @@ impl Plugin for HaloAudioPlugin {
                 Update,
                 (
                     (library::follow, looping::listen, level::environment).chain().in_set(HaloAudioSet::Listen),
-                    (level::background, level::scenery, attached::projectiles, attached::weapons, super::maps::teleporters::effects)
+                    (level::background, level::scenery, attached::projectiles, attached::weapons, warnings::play, super::maps::teleporters::effects)
                         .in_set(HaloAudioSet::Ask),
                     looping::play.in_set(HaloAudioSet::Play),
                 ),

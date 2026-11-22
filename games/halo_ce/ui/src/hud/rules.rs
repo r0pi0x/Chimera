@@ -19,7 +19,47 @@ pub const FLASH_TWO_PI: f32 = 6.283;
 /// The shield bar's background flashes below this shield.
 pub const SHIELD_FLASH_BELOW: f32 = 0.25;
 /// How long the lost part of a hit shield stays marked (ticks).
-pub const SHIELD_HIT_HOLD: i64 = 15;
+pub use crate::game::vitality::mark::SHIELD_HIT_HOLD;
+/// An arrow draws while its counter (1 at the hit, plus the ticks since)
+/// is in 1..ARROW_TICKS: just under a second (hud.md 12).
+pub const ARROW_TICKS: i64 = 30;
+
+/// The damage arrows' sides, in `HudState::arrows`' order.
+pub const ARROW_TOP: usize = 0;
+pub const ARROW_LEFT: usize = 1;
+pub const ARROW_BOTTOM: usize = 2;
+pub const ARROW_RIGHT: usize = 3;
+
+/// The arrows a hit from `to` (the direction to the attacker in the
+/// camera's frame: right, forward, up) sets (hud.md 12, the reference's
+/// literal test): top or bottom when |up| > 0.5 of the unit direction;
+/// and with a = atan2(forward, right), when a < pi/4 or a > 3 pi/4 the
+/// left one if |a| > pi/2 else the right one. Straight ahead sets neither
+/// (a hole in front of the player: Open question 6); behind sets one of
+/// the sides. `down_only`: the damage effect's "indicators always point
+/// down" flag sets only the bottom one.
+pub fn arrow_sides(to: [f32; 3], down_only: bool) -> [bool; 4] {
+    let mut out = [false; 4];
+    if down_only {
+        out[ARROW_BOTTOM] = true;
+        return out;
+    }
+    let n = (to[0] * to[0] + to[1] * to[1] + to[2] * to[2]).sqrt();
+    if n < 1e-6 {
+        return out;
+    }
+    let [right, forward, up] = to.map(|v| v / n);
+    if up.abs() > 0.5 {
+        out[if up > 0.0 { ARROW_TOP } else { ARROW_BOTTOM }] = true;
+    }
+    let a = forward.atan2(right);
+    let pi = std::f32::consts::PI;
+    if a < pi / 4.0 || a > 3.0 * pi / 4.0 {
+        out[if a.abs() > pi / 2.0 { ARROW_LEFT } else { ARROW_RIGHT }] = true;
+    }
+    out
+}
+
 /// The overshield stages' fixed colours (hud.md 6: stage 1 up): red,
 /// green, yellow, violet.
 pub const OVERSHIELD: [u32; 4] = [0xFF0000, 0x00FF00, 0xFFFF00, 0x7F00FF];
@@ -144,49 +184,7 @@ pub fn meter_draw(m: &MeterElement, min_value: i32, max_value: i32, flashing: bo
     }
 }
 
-/// The shield's hit bookkeeping of one local player (section 5): L (the
-/// shield last shown), f (a fade time or -1) and t (a tick).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ShieldMark {
-    pub last: f32,
-    pub fade: f32,
-    pub tick: i64,
-}
-
-impl Default for ShieldMark {
-    fn default() -> Self {
-        ShieldMark { last: -1.0, fade: -1.0, tick: 0 }
-    }
-}
-
-impl ShieldMark {
-    /// One tick with the shield at `s` on tick `now`.
-    pub fn update(&mut self, s: f32, now: i64) {
-        if self.last < 0.0 {
-            *self = ShieldMark { last: s, fade: -1.0, tick: now };
-            return;
-        }
-        if self.last > s {
-            if self.fade < 0.0 || self.fade > 1.0 {
-                self.tick = now;
-            }
-            if now - self.tick < SHIELD_HIT_HOLD {
-                self.fade = 0.0;
-            } else {
-                self.last = s;
-                self.fade += (now - self.tick) as f32 / TICKS;
-                self.tick = now;
-            }
-        } else if self.last < s {
-            *self = ShieldMark { last: s, fade: -1.0, tick: now };
-        } else {
-            if self.fade > 0.0 {
-                self.fade += (now - self.tick) as f32 / TICKS;
-            }
-            self.tick = now;
-        }
-    }
-}
+pub use crate::game::vitality::mark::ShieldMark;
 
 /// One stage of the shield meter (section 6): its min and max values, the
 /// reference time and its colour (None: the tag's).

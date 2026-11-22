@@ -108,7 +108,8 @@ impl Plugin for HaloHudPlugin {
     fn build(&self, app: &mut App) {
         app.world_mut().get_resource_or_init::<HudDraws>().0.push((GAME, DRAWS));
         chimera_client::client::kill_feed::GameKillFeedAppExt::register_game_kill_feed(app, GAME, feed_lines);
-        app.init_resource::<nodes::HudLoad>()
+        app.add_message::<chimera_core::core::DamageTaken>()
+            .init_resource::<nodes::HudLoad>()
             .init_resource::<nodes::HudImages>()
             .init_resource::<nodes::HaloHud>()
             .init_resource::<material::HudFilterSetting>()

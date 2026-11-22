@@ -345,3 +345,135 @@ fn every_rung_gun_draws_its_crosshair_in_the_party_layout() {
         }
     }
 }
+
+// ---------------------------------------------------------------------
+// The damage arrows (specs/halo_ce/low_health.md 4, hud.md 12).
+
+/// The arrows' sides in the order of `HudState::arrows`.
+const TOP: usize = 0;
+const LEFT: usize = 1;
+const BOTTOM: usize = 2;
+const RIGHT: usize = 3;
+
+fn arrows_at(d: &HudData, sides: [bool; 4], ticks_after: i64) -> Vec<Quad> {
+    let unit = Unit { alive: true, shield: 1.0, body: 1.0, ..Default::default() };
+    let mut s = HudState::default();
+    s.hit(sides, 100);
+    draw::draw(d, &unit, &s, &Canvas::ORIGINAL, 100 + ticks_after)
+}
+
+fn arrow_quads(d: &HudData, q: &[Quad]) -> Vec<([i32; 4], u8)> {
+    q.iter().filter(|q| page(d, q) == "hud_damage_arrows").map(|q| (rect(q), if let Fill::Arrow { quarters, .. } = q.fill { quarters } else { 9 })).collect()
+}
+
+/// Each side's arrow is the globals' wedge (231 x 40), turned to point
+/// outward, centred 10 in from the safe frame's edge; it draws for
+/// counters 1 to 29 (ticks 0 to 28 after the hit) and is gone at 29.
+#[test]
+fn a_hit_draws_the_wedge_at_its_edge_for_just_under_a_second() {
+    let Some(d) = data() else { return };
+    let at = |side, t| arrow_quads(&d, &arrows_at(&d, std::array::from_fn(|i| i == side), t));
+    // Centres (320, 46), (58, 240), (320, 434), (582, 240).
+    assert_eq!(at(TOP, 0), [([205, 26, 435, 66], 2)]);
+    assert_eq!(at(LEFT, 0), [([38, 125, 78, 355], 1)]);
+    assert_eq!(at(BOTTOM, 0), [([205, 414, 435, 454], 0)]);
+    assert_eq!(at(RIGHT, 0), [([562, 125, 602, 355], 3)]);
+    assert_eq!(at(LEFT, 28).len(), 1, "counter 29: still drawn");
+    assert!(at(LEFT, 29).is_empty(), "counter 30: gone");
+    // The colour: red, alpha 200, no fade.
+    let q = arrows_at(&d, [false, true, false, false], 14);
+    let Fill::Arrow { colour, .. } = q.iter().find(|q| page(&d, q) == "hud_damage_arrows").unwrap().fill else { panic!() };
+    assert_eq!(colour.map(|c| (c * 255.0).round() as u8), [255, 0, 0, 200]);
+    // None for a dead unit.
+    let dead = Unit { alive: false, ..Default::default() };
+    let mut s = HudState::default();
+    s.hit([true; 4], 100);
+    assert!(arrow_quads(&d, &draw::draw(&d, &dead, &s, &Canvas::ORIGINAL, 100)).is_empty());
+}
+
+/// A photograph of the four arrows on a grey ramp, by the shader's rule
+/// (premultiplied add, `material::arrow_local`'s turns), to
+/// `$CHIMERA_CAPTURE_DIR/halo_arrows.png` when that is set.
+#[test]
+fn capture_the_arrows() {
+    let (Some(d), Ok(dir)) = (data(), std::env::var("CHIMERA_CAPTURE_DIR")) else { return };
+    let quads = arrows_at(&d, [true; 4], 5);
+    let (w, h) = (640usize, 480usize);
+    let mut px: Vec<[f32; 3]> = (0..w * h).map(|i| {
+        let (x, y) = ((i % w) as f32 / w as f32, (i / w) as f32 / h as f32);
+        let v = 0.25 + 0.35 * (x * 0.6 + y * 0.4);
+        [v, v * 1.05, v * 1.1]
+    }).collect();
+    for q in quads.iter().filter(|q| page(&d, q) == "hud_damage_arrows") {
+        let Fill::Arrow { colour, quarters } = q.fill else { continue };
+        let (_, _, rgba) = &d.pages[&q.picture.page].images[q.picture.image];
+        let (iw, ih, _) = d.pages[&q.picture.page].images[q.picture.image];
+        let [l, t, r, b] = q.rect;
+        for y in t as usize..b as usize {
+            for x in l as usize..r as usize {
+                let local = halo_ce_ui::hud::material::arrow_local(quarters, [(x as f32 + 0.5 - l) / (r - l), (y as f32 + 0.5 - t) / (b - t)]);
+                let [u0, v0, u1, v1] = q.picture.uv;
+                let (u, v) = (u0 + (u1 - u0) * local[0], v0 + (v1 - v0) * local[1]);
+                let (tx, ty) = (((u * iw as f32) as usize).min(iw as usize - 1), ((v * ih as f32) as usize).min(ih as usize - 1));
+                let texel = &rgba[(ty * iw as usize + tx) * 4..][..4];
+                let a = f32::from(texel[3]) / 255.0 * colour[3];
+                let dst = &mut px[y * w + x];
+                for c in 0..3 {
+                    dst[c] = f32::from(texel[c]) / 255.0 * colour[c] * 1.0 + dst[c] * (1.0 - a);
+                }
+            }
+        }
+    }
+    let bytes: Vec<u8> = px.iter().flat_map(|p| p.map(|c| (c.clamp(0.0, 1.0) * 255.0) as u8)).collect();
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(std::path::Path::new(&dir).join("halo_arrows.png"), png(w as u32, h as u32, &bytes)).unwrap();
+}
+
+/// An RGB8 PNG (stored deflate blocks): enough to look at a capture.
+fn png(w: u32, h: u32, rgb: &[u8]) -> Vec<u8> {
+    fn crc(data: &[u8]) -> u32 {
+        let mut c = 0xFFFF_FFFFu32;
+        for b in data {
+            c ^= u32::from(*b);
+            for _ in 0..8 {
+                c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+            }
+        }
+        !c
+    }
+    fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+        out.extend((data.len() as u32).to_be_bytes());
+        let mut body = kind.to_vec();
+        body.extend(data);
+        out.extend(&body);
+        out.extend(crc(&body).to_be_bytes());
+    }
+    let mut raw = Vec::new();
+    for row in rgb.chunks(w as usize * 3) {
+        raw.push(0);
+        raw.extend(row);
+    }
+    let mut z = vec![0x78, 0x01];
+    let blocks: Vec<&[u8]> = raw.chunks(65535).collect();
+    for (i, b) in blocks.iter().enumerate() {
+        z.push(u8::from(i + 1 == blocks.len()));
+        z.extend((b.len() as u16).to_le_bytes());
+        z.extend((!(b.len() as u16)).to_le_bytes());
+        z.extend(*b);
+    }
+    let (mut a, mut s2) = (1u32, 0u32);
+    for b in &raw {
+        a = (a + u32::from(*b)) % 65521;
+        s2 = (s2 + a) % 65521;
+    }
+    z.extend(((s2 << 16) | a).to_be_bytes());
+    let mut out = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    let mut ihdr = Vec::new();
+    ihdr.extend(w.to_be_bytes());
+    ihdr.extend(h.to_be_bytes());
+    ihdr.extend([8, 2, 0, 0, 0]);
+    chunk(&mut out, b"IHDR", &ihdr);
+    chunk(&mut out, b"IDAT", &z);
+    chunk(&mut out, b"IEND", &[]);
+    out
+}

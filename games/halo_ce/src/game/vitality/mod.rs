@@ -86,6 +86,7 @@
 
 pub mod apply;
 pub mod data;
+pub mod mark;
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{Armor, ArmorPieces, ArmorRatio, Coverage, Depletion, PiecesOf, hits::ArmorPiece};

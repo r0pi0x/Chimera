@@ -29,6 +29,7 @@ use super::{
     hud::{Hl2Hud, Inputs, Owned, WeaponNow},
     look::Look,
     notices::Target,
+    shape::{ShapeKey, shape_image, shape_key},
     scoreboard::{Board, BoardPlayer},
     selection::Action,
 };
@@ -617,6 +618,7 @@ pub fn sync(
     mut sprites: Query<&mut MaterialNode<HudGlyphMaterial>>,
     (hud_fonts, active, mut materials): (Option<Res<UiFonts>>, Option<Res<ActiveHud>>, ResMut<Assets<HudGlyphMaterial>>),
     images: Res<Assets<Image>>,
+    (mut image_assets, mut shapes): (Option<ResMut<Assets<Image>>>, Local<HashMap<ShapeKey, Handle<Image>>>),
     mut commands: Commands,
 ) {
     let Some(root) = roots.iter().next() else { return };
@@ -635,7 +637,7 @@ pub fn sync(
             Draw::Box { rect, .. } | Draw::Fade { rect, .. } => (KIND_BOX, *rect),
             Draw::Ring { centre, radius, .. } => (KIND_BOX, Rect::from_center_half_size(*centre, Vec2::splat(*radius))),
             Draw::Text { clip, .. } => (KIND_TEXT, clip.unwrap_or(Rect::new(0.0, 0.0, look.screen.w, look.screen.h))),
-            Draw::Sprite { rect, .. } => (KIND_SPRITE, *rect),
+            Draw::Sprite { rect, .. } | Draw::Trapezoid { rect, .. } => (KIND_SPRITE, *rect),
         };
         let slot = used[kind as usize];
         used[kind as usize] += 1;
@@ -741,6 +743,27 @@ pub fn sync(
                     });
                 }
                 let _ = &mut texts;
+            }
+            Draw::Trapezoid { rect, color, alpha, top, bottom } => {
+                place(&mut node, *rect);
+                let Some(image_assets) = image_assets.as_mut() else { continue };
+                let key = shape_key(rect, alpha, top, bottom);
+                let image = shapes.entry(key).or_insert_with(|| image_assets.add(shape_image(key))).clone();
+                let want = HudGlyphMaterial {
+                    params: GlyphParams::whole(rgba(*color)),
+                    coverage: image,
+                    additive: true,
+                };
+                match sprites.get_mut(entity) {
+                    Ok(m) => {
+                        if materials.get(&m.0).is_none_or(|cur| cur.params != want.params || cur.coverage != want.coverage || cur.additive != want.additive) {
+                            let _ = materials.insert(&m.0, want);
+                        }
+                    }
+                    Err(_) => {
+                        commands.entity(entity).insert(MaterialNode(materials.add(want)));
+                    }
+                }
             }
             Draw::Sprite { sprite, rect, color, additive, flip } => {
                 place(&mut node, *rect);

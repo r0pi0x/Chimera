@@ -2062,3 +2062,12 @@ implementing (owner branch) / done.
   flexes), model lighting, animation layers, sky and HUD, and is usable
   directly with credit. The Source SDK 2013 and everything unlisted stay
   spec-only.
+
+- **2026-11-21 (low-health cues, specs/hl2dm/low_health.md):** the damage
+  view punch (pitch set to -2 degrees on every damage taken, any gun in
+  hand: `weapons::recoil::damage_punch`) and the damage indicator's side
+  shapes as additive trapezoids (`ui::shape`, `Draw::Trapezoid`) are in;
+  the explosion hearing effect was already shared (`grenade::BlastHearing`
+  on HL2:DM's blasts, after armour; the spec's table said "no" by
+  mistake) and a respawn now ends it (`client::senses`). No suit voice,
+  heartbeat or low-health post effect, as in the game.

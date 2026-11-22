@@ -61,6 +61,7 @@ pub mod numeric;
 pub mod quick;
 pub mod scoreboard;
 pub mod selection;
+pub mod shape;
 pub mod systems;
 
 use bevy::prelude::*;

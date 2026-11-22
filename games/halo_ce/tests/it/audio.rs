@@ -331,3 +331,78 @@ fn footstep_kinds() {
     let hard = Seen { state: State::LandHard, ..a };
     assert_eq!(kinds(&a, &hard, 0, false, false), [JUMP_LAND]);
 }
+
+// The Spartan's warning sounds (low_health.md 3): the unit HUD's five
+// elements as the tags give them, by the state word of the local unit.
+mod warnings {
+    use halo_ce::game::audio::{
+        library::Warning,
+        warnings::{CHARGING, DEAD, EMPTY_SHIELD, FELL, LOW_BODY, LOW_SHIELD, Vitals, Warnings, word},
+    };
+
+    /// hit, charge, low, depleted, heartbeat (the disc's flags).
+    fn elements() -> Vec<Warning> {
+        let w = |sound: &str, looped, flags| Warning { sound: sound.into(), looped, flags, scale: 0.0 };
+        vec![w("hit", false, FELL), w("charge", true, CHARGING), w("low", true, LOW_SHIELD), w("empty", true, EMPTY_SHIELD), w("heart", true, LOW_BODY)]
+    }
+
+    fn unit(shield: f32, body: f32) -> Vitals {
+        Vitals { alive: true, shield, body, charging: false }
+    }
+
+    /// One tick at `now` with the unit as `v`: the plays.
+    fn step(w: &mut Warnings, v: Vitals, now: i64) -> (Vec<usize>, Vec<usize>) {
+        w.tick(v.shield, now);
+        let p = w.frame(&elements(), &v);
+        (p.loops, p.shots)
+    }
+
+    #[test]
+    fn the_word_follows_the_thresholds_strictly() {
+        assert_eq!(word(&unit(1.0, 1.0), false), 0);
+        assert_eq!(word(&unit(0.25, 1.0), false), 0, "s = 0.25 is not low");
+        assert_eq!(word(&unit(0.2, 1.0), false), LOW_SHIELD);
+        assert_eq!(word(&unit(0.0, 1.0), false), EMPTY_SHIELD, "empty, not low (the low loop needs s > 0)");
+        assert_eq!(word(&unit(0.5, 0.25), false), 0, "b = 0.25 is not low");
+        assert_eq!(word(&unit(0.5, 0.2), false), LOW_BODY);
+        assert_eq!(word(&Vitals { alive: false, ..unit(0.0, 0.0) }, true), DEAD);
+        assert_eq!(word(&Vitals { charging: true, ..unit(0.5, 1.0) }, true), CHARGING | FELL);
+    }
+
+    /// The spec's fight: a hit plays `hit` once; under a quarter `low`
+    /// loops; at zero `empty` replaces it; a low body adds the heart;
+    /// recharge adds `charge` and the alarms stop as s passes 0 and 0.25.
+    #[test]
+    fn a_fight_plays_and_stops_the_loops() {
+        let mut w = Warnings::default();
+        assert_eq!(step(&mut w, unit(1.0, 1.0), 0), (vec![], vec![]));
+        // Hit to 0.6: the one-shot once; the 15-tick hold must not repeat it.
+        assert_eq!(step(&mut w, unit(0.6, 1.0), 1), (vec![], vec![0]));
+        for t in 2..16 {
+            assert_eq!(step(&mut w, unit(0.6, 1.0), t), (vec![], vec![]), "latched at {t}");
+        }
+        // The hold ends; the memory follows; a new hit is a new episode.
+        assert_eq!(step(&mut w, unit(0.6, 1.0), 17), (vec![], vec![]));
+        assert_eq!(step(&mut w, unit(0.2, 1.0), 18), (vec![2], vec![0]), "a new episode, and low");
+        assert_eq!(step(&mut w, unit(0.0, 1.0), 19).0, vec![3], "empty: the low loop stops");
+        assert_eq!(step(&mut w, unit(0.0, 0.3), 20).0, vec![3]);
+        assert_eq!(step(&mut w, unit(0.0, 0.2), 21).0, vec![3, 4], "the heartbeat joins");
+        // Recharging: the charge loop, low again from s > 0, silent from 0.25.
+        let rising = |s| Vitals { charging: true, ..unit(s, 0.2) };
+        assert_eq!(step(&mut w, rising(0.1), 300).0, vec![1, 2, 4]);
+        assert_eq!(step(&mut w, rising(0.5), 301).0, vec![1, 4]);
+        // Full: only the heartbeat (the body does not regenerate).
+        assert_eq!(step(&mut w, unit(1.0, 0.2), 302).0, vec![4]);
+    }
+
+    #[test]
+    fn death_stops_everything_and_clears_the_memory() {
+        let mut w = Warnings::default();
+        step(&mut w, unit(0.0, 0.2), 0);
+        let dead = Vitals { alive: false, ..unit(0.0, 0.0) };
+        assert_eq!(step(&mut w, dead, 1), (vec![], vec![]));
+        assert_eq!(w, Warnings::default());
+        // Respawned at full: the first frame marks nothing.
+        assert_eq!(step(&mut w, unit(1.0, 1.0), 100), (vec![], vec![]));
+    }
+}

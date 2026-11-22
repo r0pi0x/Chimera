@@ -29,8 +29,11 @@
 //! - In the party layout the crosshairs also hide the frame behind them by
 //!   their brightness (`Fill::Reticle`, ours: added on a bright map of
 //!   another game, the plasma pistol's light blue reticle vanished).
-//! - The flashlight meter, damage arrows, waypoints, teammate markers,
-//!   messages and prompts are not drawn; the warning sounds do not play.
+//! - The flashlight meter, waypoints, teammate markers, messages and
+//!   prompts are not drawn. The damage arrows (`arrows`) take their side
+//!   from the hit's direction alone (no "indicators always point down"
+//!   flag of the damage effect: a `DamageTaken` carries none). The warning
+//!   sounds are not the HUD's (`game::audio::warnings`).
 
 use blam_formats::{
     cache::{Bounds, TagRef},
@@ -63,6 +66,10 @@ pub enum Fill {
     /// frame behind it by its brightness (the party's maps are other
     /// games', often bright, where an added light blue disappears).
     Reticle(Rgba),
+    /// A damage arrow (section 12): a `Sprite` turned clockwise by
+    /// `quarters` quarter turns about its centre (the rectangle is the
+    /// turned picture's).
+    Arrow { colour: Rgba, quarters: u8 },
 }
 
 /// One picture drawn: where (canvas units: left, top, right, bottom) and
@@ -127,6 +134,8 @@ pub struct HudState {
     pub grenade_flash: Option<i64>,
     pub crosshairs: CrosshairStates,
     pub tracker: Tracker,
+    /// The tick each damage arrow (top, left, bottom, right) was set.
+    pub arrows: [Option<i64>; 4],
 }
 
 fn latch(slot: &mut Option<i64>, on: bool, now: i64) {
@@ -175,6 +184,16 @@ fn hold(chain: &[WeaponHud], n: usize) -> i64 {
 }
 
 impl HudState {
+    /// A hit set these arrows at tick `now` (`rules::arrow_sides`): their
+    /// counters restart.
+    pub fn hit(&mut self, sides: [bool; 4], now: i64) {
+        for (slot, on) in self.arrows.iter_mut().zip(sides) {
+            if on {
+                *slot = Some(now);
+            }
+        }
+    }
+
     /// One Halo tick at `now`: the crosshair states, the shield's
     /// bookkeeping, the flash start ticks, and the tracker's history.
     pub fn tick(&mut self, data: &HudData, unit: &Unit, others: &[Other], yaw: f32, now: i64) {
@@ -550,6 +569,7 @@ pub fn draw_blocks_at(data: &HudData, unit: &Unit, state: &HudState, canvas: &Ca
             }
         }
         blocks.unit = bounds(&p.out[block..]);
+        arrows(&mut p, state, unit, canvas);
         return (p.out, blocks);
     }
     blocks.unit = bounds(&p.out[block..tracker_from]);
@@ -558,7 +578,41 @@ pub fn draw_blocks_at(data: &HudData, unit: &Unit, state: &HudState, canvas: &Ca
         let time = p.time;
         tracker(&mut p, state, centre, time);
     }
+    arrows(&mut p, state, unit, canvas);
     (p.out, blocks)
+}
+
+/// The damage arrows (section 12): each side whose counter is 1 to 29
+/// draws the globals' arrow picture centred `offset` in from the frame's
+/// edge (the middle of the view along it), turned to point outward (top
+/// two quarter turns, left one, bottom none, right three), in the
+/// globals' colour with no fade. With one window the centres are (320,
+/// 46), (58, 240), (320, 434) and (582, 240). None without a living unit.
+fn arrows(p: &mut Painter, state: &HudState, unit: &Unit, canvas: &Canvas) {
+    if !unit.alive {
+        return;
+    }
+    let g = &p.data.globals.damage;
+    let Some(pic) = p.data.picture(&g.bitmap, g.sequence, 0) else { return };
+    let colour = rules::rgba(g.color);
+    let [fl, ft, fr, fb] = p.frame;
+    let (mx, my) = (canvas.width / 2, layout::CANVAS_HEIGHT / 2);
+    // (offset, centre, quarter turns) by side.
+    let sides = [
+        (g.top, [mx, ft + i32::from(g.top)], 2u8),
+        (g.left, [fl + i32::from(g.left), my], 1),
+        (g.bottom, [mx, fb - i32::from(g.bottom)], 0),
+        (g.right, [fr - i32::from(g.right), my], 3),
+    ];
+    for (start, (_, c, quarters)) in state.arrows.iter().zip(sides) {
+        let Some(start) = *start else { continue };
+        if !(0..rules::ARROW_TICKS - 1).contains(&(p.now - start)) {
+            continue;
+        }
+        let [w, h] = if quarters % 2 == 1 { [pic.size[1], pic.size[0]] } else { pic.size };
+        let rect = [c[0] as f32 - (w / 2.0).trunc(), c[1] as f32 - (h / 2.0).trunc(), c[0] as f32 + (w / 2.0).trunc(), c[1] as f32 + (h / 2.0).trunc()];
+        p.out.push(Quad { picture: pic, rect, fill: Fill::Arrow { colour, quarters } });
+    }
 }
 
 /// The tracker's sweep and blips about `centre`.

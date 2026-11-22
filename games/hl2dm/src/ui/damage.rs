@@ -145,18 +145,34 @@ impl Hl2Hud {
                 frame.push(Draw::Fade { rect: Rect::new(half, 0.0, s.w, s.h), color: high_right, from: 0.0, to: 1.0 });
             }
         } else {
-            // The normal shape: between x1 and x2, its outer edge faint
-            // and its inner edge full (the trapezoid's slanted ends are
-            // a straight band here).
+            // The normal shape (spec 8): a trapezoid between x1 (the outer
+            // edge, y from `dmg_ypos` for `dmg_tall1`, alpha 0) and x2 =
+            // x1 + `dmg_wide` (the inner edge, `dmg_tall2` tall and
+            // centred on the outer one, full alpha); the right side
+            // mirrored. Added to the screen.
             let (x1, wide) = (look.key(P, "dmg_xpos"), look.key(P, "dmg_wide"));
             let (y, t1, t2) = (look.key(P, "dmg_ypos"), look.key(P, "dmg_tall1"), look.key(P, "dmg_tall2"));
-            let (top, bottom) = (s.scaled(y + (t1 - t2) / 4.0), s.scaled(y + t1 - (t1 - t2) / 4.0));
+            let inset = (t1 - t2) / 2.0;
+            let (outer, inner) = ([s.scaled(y), s.scaled(y + t1)], [s.scaled(y + inset), s.scaled(y + t1 - inset)]);
             let (xa, xb) = (s.scaled(x1), s.scaled(x1 + wide));
+            let (top, bottom) = (outer[0].min(inner[0]), outer[1].max(inner[1]));
             if left[3] > 0 {
-                frame.push(Draw::Fade { rect: Rect::new(xa, top, xb, bottom), color: left, from: 0.0, to: 1.0 });
+                frame.push(Draw::Trapezoid {
+                    rect: Rect::new(xa, top, xb, bottom),
+                    color: left,
+                    alpha: [0.0, 1.0],
+                    top: [outer[0], inner[0]],
+                    bottom: [outer[1], inner[1]],
+                });
             }
             if right[3] > 0 {
-                frame.push(Draw::Fade { rect: Rect::new(s.w - xb, top, s.w - xa, bottom), color: right, from: 1.0, to: 0.0 });
+                frame.push(Draw::Trapezoid {
+                    rect: Rect::new(s.w - xb, top, s.w - xa, bottom),
+                    color: right,
+                    alpha: [1.0, 0.0],
+                    top: [inner[0], outer[0]],
+                    bottom: [inner[1], outer[1]],
+                });
             }
         }
     }

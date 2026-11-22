@@ -260,6 +260,44 @@ pub fn player_commands(app: &mut App) {
             Ok(None)
         },
     )
+    .console_command(
+        "hurt",
+        "hurt <points> [bearing] [elevation]: take that many points of damage (100 = a full 100-health life) from another character, as if it shot you from bearing degrees clockwise of where you face (0 ahead, 90 right, 180 behind, 270 left) and elevation degrees above you: for photographing the damage cues (needs another character in the world, a practice target will do; god mode refuses it).",
+        |w, a| {
+            use crate::core::{Damage, DamageKind, Dead, Health, Hitgroup, Intent, LocalPlayer};
+            let n = |s: &String| s.parse::<f32>().map_err(|_| format!("bad number \"{s}\""));
+            let points = n(a.first().ok_or("hurt <points> [bearing] [elevation]")?)?;
+            let bearing = a.get(1).map(n).transpose()?.unwrap_or(0.0).to_radians();
+            let elevation = a.get(2).map(n).transpose()?.unwrap_or(0.0).to_radians();
+            let p = command_player(w)?;
+            if w.get::<Dead>(p).is_some() {
+                return Ok(None);
+            }
+            let t = *w.get::<Transform>(p).ok_or("no transform")?;
+            let yaw = w.get::<Intent>(p).ok_or("no intent")?.yaw;
+            let _ = w.get::<Health>(p).ok_or("no health")?;
+            let attacker = w
+                .query_filtered::<Entity, (With<Health>, Without<LocalPlayer>)>()
+                .iter(w)
+                .find(|e| *e != p)
+                .ok_or("hurt needs another character (add a target)")?;
+            let turn = Quat::from_rotation_y(yaw);
+            let level = turn * (Vec3::NEG_Z * bearing.cos() + Vec3::X * bearing.sin());
+            let to_attacker = (level * elevation.cos() + Vec3::Y * elevation.sin()).normalize();
+            w.write_message(Damage {
+                force: Vec3::ZERO,
+                target: p,
+                attacker: Some(attacker),
+                amount: points / 100.0,
+                point: t.translation,
+                dir: -to_attacker,
+                hitgroup: Hitgroup::Generic,
+                kind: DamageKind::Bullet,
+                weapon: None,
+            });
+            Ok(None)
+        },
+    )
     .console_command("god", "Toggle taking no damage.", |w, _| {
         let p = command_player(w)?;
         let on = w.get::<crate::core::God>(p).is_none();

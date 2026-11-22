@@ -88,6 +88,12 @@ pub enum Draw {
     /// A box fading across: alpha times `from` at its left edge to times
     /// `to` at its right (the damage flashes), added to the screen.
     Fade { rect: Rect, color: Rgba, from: f32, to: f32 },
+    /// A quadrilateral with a vertical edge at each side of `rect`, the
+    /// slanted top and bottom between them (their y at the left and right
+    /// edges), its vertex alpha (times the colour's) `alpha` at the left
+    /// and right edges: the damage indicator's side shape, added to the
+    /// screen (`vgui/white_additive`).
+    Trapezoid { rect: Rect, color: Rgba, alpha: [f32; 2], top: [f32; 2], bottom: [f32; 2] },
     /// A circle's outline, one pixel wide.
     Ring { centre: Vec2, radius: f32, color: Rgba },
     /// Text in a scheme font (`font`, `tall` pixels), `at` the anchor.

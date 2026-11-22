@@ -94,7 +94,17 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
         let a = s.a * m.a;
         return vec4<f32>(linear(params.color.rgb * s.rgb) * a, 0.0);
     }
-    let t = mix(params.uv.xy, params.uv.zw, in.uv);
+    // A sprite turned clockwise by z quarter turns (the damage arrows).
+    var local = in.uv;
+    let quarters = select(0.0, params.mode.z, params.mode.x < 0.5);
+    if quarters > 2.5 {
+        local = vec2<f32>(1.0 - in.uv.y, in.uv.x);
+    } else if quarters > 1.5 {
+        local = vec2<f32>(1.0) - in.uv;
+    } else if quarters > 0.5 {
+        local = vec2<f32>(in.uv.y, 1.0 - in.uv.x);
+    }
+    let t = mix(params.uv.xy, params.uv.zw, local);
     // Meters keep their nearest sampling; the sprites take the setting.
     var texel: vec4<f32>;
     if mode > 0.5 {

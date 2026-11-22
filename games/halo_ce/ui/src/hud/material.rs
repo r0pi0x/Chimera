@@ -81,6 +81,18 @@ pub fn sharp_coord(p: f32, scale: f32) -> f32 {
     base + (centre - centre.clamp(-flat, flat)) * scale + 0.5
 }
 
+/// Where a damage arrow's pixel at (`x`, `y`) of its turned rectangle
+/// (fractions) samples the picture, for `quarters` clockwise quarter turns
+/// (hud.wesl's `local`, mirrored here to test it).
+pub fn arrow_local(quarters: u8, [x, y]: [f32; 2]) -> [f32; 2] {
+    match quarters % 4 {
+        1 => [y, 1.0 - x],
+        2 => [1.0 - x, 1.0 - y],
+        3 => [1.0 - y, x],
+        _ => [x, y],
+    }
+}
+
 impl HudParams {
     /// The numbers of a quad's fill over the texture rectangle `uv`.
     pub fn of(fill: &Fill, uv: [f32; 4]) -> HudParams {
@@ -89,6 +101,7 @@ impl HudParams {
         match fill {
             Fill::Sprite(c) => HudParams { mode: Vec4::ZERO, color: Vec4::from_array(*c), uv, ..default() },
             Fill::Reticle(c) => HudParams { mode: Vec4::new(0.0, 1.0, 0.0, 0.0), color: Vec4::from_array(*c), uv, ..default() },
+            Fill::Arrow { colour, quarters } => HudParams { mode: Vec4::new(0.0, 0.0, f32::from(*quarters), 0.0), color: Vec4::from_array(*colour), uv, ..default() },
             Fill::Meter(m) => HudParams {
                 mode: Vec4::new(1.0, m.value, m.extension, m.tint),
                 color: Vec4::ONE,
@@ -157,6 +170,21 @@ impl Plugin for HudRenderPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A turn is clockwise: the picture's bottom edge (where the bottom
+    /// arrow's wedge points) lands on the left edge after one quarter turn,
+    /// the top edge after two, the right edge after three.
+    #[test]
+    fn an_arrow_turns_clockwise() {
+        // The turned rectangle's left-edge middle (0, 0.5) samples the
+        // picture's bottom middle after one turn; its top middle (0.5, 0)
+        // the picture's bottom after two; its right middle (1, 0.5) the
+        // picture's bottom middle after three.
+        assert_eq!(arrow_local(0, [0.5, 1.0]), [0.5, 1.0]);
+        assert_eq!(arrow_local(1, [0.0, 0.5]), [0.5, 1.0]);
+        assert_eq!(arrow_local(2, [0.5, 0.0]), [0.5, 1.0]);
+        assert_eq!(arrow_local(3, [1.0, 0.5]), [0.5, 1.0]);
+    }
 
     #[test]
     fn sharp_sampling_is_flat_inside_a_texel_and_runs_over_one_pixel_at_its_edge() {

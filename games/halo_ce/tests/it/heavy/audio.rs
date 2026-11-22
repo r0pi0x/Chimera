@@ -212,3 +212,28 @@ fn a_client_hears_the_ambience_and_a_remote_players_steps() {
     let last = steps.last().unwrap().at.unwrap();
     assert!(theirs.iter().any(|p| p.distance(last) < 3.0), "{last} against {theirs:?}");
 }
+
+/// The unit HUD's warning sounds as the disc has them, compiled by the
+/// kit: five elements, the one-shot `shield_hit` on bit 1 and the four
+/// loops on bits 0, 2, 3 and 4 (hud.md 6).
+#[test]
+fn the_spartans_five_warning_sounds_are_on_the_disc() {
+    let Some(mount) = mount() else { return };
+    let map = load(&mount, "bloodgulch", false);
+    let lib = library(&map);
+    let mut got: Vec<(&str, bool, u32)> = lib.warnings.iter().map(|w| (w.sound.as_str(), w.looped, w.flags)).collect();
+    got.sort();
+    let name = |n: &str| format!("sound\\sfx\\ui\\{n}");
+    let mut want: Vec<(String, bool, u32)> = vec![
+        (name("health_low_heart"), true, 1 << 4),
+        (name("shield_charge"), true, 1),
+        (name("shield_depleted"), true, 1 << 3),
+        (name("shield_hit"), false, 1 << 1),
+        (name("shield_low"), true, 1 << 2),
+    ];
+    want.sort();
+    assert_eq!(got.iter().map(|(s, l, f)| (s.to_string(), *l, *f)).collect::<Vec<_>>(), want);
+    for w in &lib.warnings {
+        assert!(lib.sounds.contains_key(&w.sound) || lib.loops.contains_key(&w.sound), "{} compiled", w.sound);
+    }
+}

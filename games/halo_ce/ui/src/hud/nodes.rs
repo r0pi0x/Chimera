@@ -27,7 +27,7 @@ use super::{
     rules::{BlipKind, WeaponNow},
 };
 use crate::{
-    core::{Dead, Health, Intent, LocalPlayer, Team, Velocity},
+    core::{DamageTaken, Dead, Health, Intent, LocalPlayer, Team, Velocity},
     game::{
         GAME, INFO, METERS_PER_UNIT,
         body::load::DONOR_MAP,
@@ -188,14 +188,20 @@ pub fn collect(
     window: Query<&Window, With<PrimaryWindow>>,
     mut hud: ResMut<HaloHud>,
     layout: Option<Res<super::HaloHudLayout>>,
+    mut taken: MessageReader<DamageTaken>,
 ) {
     let layout = layout.map_or_else(Default::default, |l| l.0);
-    let Some(data) = load.data() else { return };
+    let Some(data) = load.data() else {
+        taken.clear();
+        return;
+    };
     let now = (time.elapsed_secs_f64() * 30.0).floor() as i64;
     let Some((me_e, at, vitality, health, dead, inventory, intent, team)) = me.iter().next() else {
         hud.unit = None;
         hud.quads.clear();
         hud.blur = None;
+        hud.state.arrows = [None; 4];
+        taken.clear();
         return;
     };
     let firing = intent.is_some_and(|i| i.fire);
@@ -246,6 +252,20 @@ pub fn collect(
         })
         .collect();
     let hud = &mut *hud;
+    // The damage arrows: each hit that reached the player from a source
+    // (hud.md 12), by where it came from in the camera's frame.
+    for t in taken.read() {
+        let d = &t.damage;
+        if d.target != me_e || !t.directed || d.amount <= 0.0 {
+            continue;
+        }
+        let to = -d.dir;
+        let sides = super::rules::arrow_sides([to.dot(*eye.right()), to.dot(*eye.forward()), to.dot(*eye.up())], false);
+        hud.state.hit(sides, now);
+    }
+    if !alive {
+        hud.state.arrows = [None; 4];
+    }
     let from = hud.state.tick.map_or(now, |t| (t + 1).max(now - 30));
     // The party's layout draws no tracker: its units are not followed.
     let others = if layout == super::layout::HudLayout::Party { Vec::new() } else { others };
@@ -284,7 +304,7 @@ pub fn sync(
             _ => Handle::default(),
         };
         let mut params = HudParams::of(&q.fill, q.picture.uv);
-        if matches!(q.fill, Fill::Sprite(_) | Fill::Reticle(_)) {
+        if matches!(q.fill, Fill::Sprite(_) | Fill::Reticle(_) | Fill::Arrow { .. }) {
             params.style.x = f32::from(super::material::HudFilter::from_code(filter).code());
         }
         let want = HudMaterial { params, image, mask };

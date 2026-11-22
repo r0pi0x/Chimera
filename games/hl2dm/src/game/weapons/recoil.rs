@@ -23,6 +23,12 @@
 //! local `Intent` in the frame, `apply_view_nudge`, so the next command
 //! carries it): a lasting turn of the aim, not a punch.
 //!
+//! **The damage punch** (`damage_punch`, specs/hl2dm/low_health.md 3):
+//! every damage taken sets the punch's pitch to -2 degrees, replacing a
+//! recoil's, on any character whatever gun it holds (`DamageTaken`, on
+//! the authority). The explosion hearing effect (the DSP presets) is the
+//! shared `grenade::BlastHearing` on HL2:DM's blasts (`weapons::launch`).
+//!
 //! Known shortcuts: the randoms are Chimera's generator seeded per command
 //! and use (weapons.md Q4: the ranges and seeding, not the game's
 //! numbers); the nudge's numbers don't shift the client's punch yaw as the
@@ -36,7 +42,7 @@ use chimera_sim::weapon::{
     random::{Rng, shared_random, shot_seed},
 };
 
-use crate::core::{Intent, LocalPlayer, SimClock};
+use crate::core::{DamageTaken, Intent, LocalPlayer, SimClock};
 
 /// Source's punch spring (shared with CS:S: weapons.md constants).
 pub const DAMPING: f32 = 9.0;
@@ -134,6 +140,37 @@ pub fn machine_gun_kick(gun: &Hl2MachineGun, held: f32, punch: Vec3, velocity: V
     let clipped = (punch + delta).clamp(-KICK_CLIP, KICK_CLIP) - punch;
     velocity += clipped * 0.5 * IMPULSE_SCALE;
     (punch, velocity)
+}
+
+/// The pitch a damage taken sets the punch to (specs/hl2dm/low_health.md
+/// 3), Source degrees: negative looks up (the view kicks up 2 degrees).
+pub const DAMAGE_PITCH: f32 = -2.0;
+
+/// The punch after damage: pitch set to `DAMAGE_PITCH` (replacing what a
+/// weapon's recoil left: set, not added), yaw and roll as they were.
+/// `punch` and the result are `ViewPunch` values (radians, pitch up).
+pub fn damaged_punch(punch: Vec3) -> Vec3 {
+    let mut source = from_view(punch);
+    source.x = DAMAGE_PITCH;
+    to_view(source)
+}
+
+/// Every time a character takes damage (`core::DamageTaken`: after
+/// armour, god mode and the team rules; any amount, any type, a lethal
+/// hit too) its punch's pitch is set to -2 degrees; several hits in a
+/// tick are each the same (no build-up). The punch is the character's, not
+/// the gun's: it applies whatever game's gun is in hand (the spring that
+/// decays it is that game's own); the velocity of HL2:DM's spring is left
+/// as it was (Source sets the angle alone).
+pub fn damage_punch(mut taken: MessageReader<DamageTaken>, mut victims: Query<&mut ViewPunch>) {
+    for t in taken.read() {
+        if let Ok(mut punch) = victims.get_mut(t.damage.target) {
+            let next = damaged_punch(punch.0);
+            if punch.0 != next {
+                punch.0 = next;
+            }
+        }
+    }
 }
 
 /// Before the weapon frame: each character's punch on its spring while

@@ -47,7 +47,7 @@ fn solid(data: &mut MapData, lo: Vec3, hi: Vec3) {
     );
 }
 
-fn floor() -> MapData {
+pub(crate) fn floor() -> MapData {
     let mut data = MapData {
         name: "test:blast_rules".into(),
         entity_scale: U,
@@ -87,14 +87,14 @@ fn door(data: &mut MapData, class: &str, lo: Vec3, hi: Vec3) {
     });
 }
 
-fn start(data: MapData) -> Sim {
+pub(crate) fn start(data: MapData) -> Sim {
     let mut sim = Sim::new(Hl2Sim, MapSimPlugin::new(data));
     sim.set_tick_interval(hl2dm::game::TICK_INTERVAL);
     sim
 }
 
 /// A standing player with his feet at `feet`, 5000 health.
-fn player(sim: &mut Sim, feet: Vec3) -> Entity {
+pub(crate) fn player(sim: &mut Sim, feet: Vec3) -> Entity {
     let p = sim.spawn_character(to_engine(feet + Vec3::Z * 36.0), movement::ID);
     sim.app.world_mut().get_mut::<Health>(p).unwrap().current = 50.0;
     p

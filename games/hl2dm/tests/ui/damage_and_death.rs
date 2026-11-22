@@ -52,7 +52,9 @@ fn a_heavy_hit_draws_the_high_shape() {
     assert_eq!(fades, [Rect::new(0.0, 0.0, 320.0, 480.0)], "the left half only");
 }
 
-/// Test 51: the normal shape sits at x 30 to 66 (right: 574 to 610).
+/// Test 51: the normal shape is a trapezoid at x 30 to 66 (right: 574 to
+/// 610): the outer edge y 100 to 340 with alpha 0, the inner y 120 to 320
+/// with full alpha (spec 8), the right side mirrored.
 #[test]
 fn the_side_flash_sits_where_the_layout_puts_it() {
     let (mut hud, mut look) = base();
@@ -67,8 +69,17 @@ fn the_side_flash_sits_where_the_layout_puts_it() {
     hud.think(&inp, 0.0);
     hud.think(&inp, 0.1);
     let f = hud.frame(&look, &inp);
-    let r = f.0.iter().find_map(|d| if let Draw::Fade { rect, .. } = d { Some(*rect) } else { None }).expect("the right side's flash");
+    let (r, alpha, top, bottom) = f
+        .0
+        .iter()
+        .find_map(|d| if let Draw::Trapezoid { rect, alpha, top, bottom, .. } = d { Some((*rect, *alpha, *top, *bottom)) } else { None })
+        .expect("the right side's flash");
     assert_eq!((r.min.x, r.max.x), (574.0, 610.0));
+    // Mirrored: the inner edge (full alpha) at the left of the right shape.
+    assert_eq!(alpha, [1.0, 0.0]);
+    assert_eq!((top, bottom), ([120.0, 100.0], [320.0, 340.0]));
+    // Only the right side was hit.
+    assert_eq!(f.0.iter().filter(|d| matches!(d, Draw::Trapezoid { .. })).count(), 1);
 }
 
 /// Test 49: fall damage (the world) starts nothing; the message of a death

@@ -389,6 +389,7 @@ impl Plugin for Hl2GunsPlugin {
     fn build(&self, app: &mut App) {
         use chimera_core::character::CharacterPartsExt;
         app.on_every_character::<recoil::Hl2Punch>();
+        app.add_message::<crate::core::DamageTaken>();
         register_hooks(app);
         // Its guns' short names (data/display_names.toml).
         chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(
@@ -427,6 +428,7 @@ impl Plugin for Hl2GunsPlugin {
                     .before(crate::core::apply_damage)
                     .run_if(crate::core::authoritative),
                 rewind_speeds.before(SimSet::Weapons).run_if(crate::core::authoritative),
+                recoil::damage_punch.after(crate::core::apply_damage).run_if(crate::core::authoritative),
             ),
         )
         .add_systems(Update, recoil::apply_view_nudge)

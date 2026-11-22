@@ -9,6 +9,7 @@
 
 mod animation;
 mod blast_rules;
+mod damage_cues;
 mod effects;
 mod gravity_gun;
 mod hitboxes;

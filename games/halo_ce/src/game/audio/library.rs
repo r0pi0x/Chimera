@@ -163,6 +163,23 @@ pub struct AudioLibrary {
     /// scenery (`maps::audio`); absent on another game's map.
     #[serde(default)]
     pub level: Option<super::level::LevelAudio>,
+    /// The Spartan's unit HUD warning sounds (`warnings`), in the tag's
+    /// order.
+    #[serde(default)]
+    pub warnings: Vec<Warning>,
+}
+
+/// One warning sound element of the unit HUD interface (`warnings`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Warning {
+    /// The sound's tag path (lower case): a looping sound when `looped`,
+    /// else a one-shot sound.
+    pub sound: String,
+    pub looped: bool,
+    /// The state word's bits that play it.
+    pub flags: u32,
+    /// The scale a loop plays at.
+    pub scale: f32,
 }
 
 impl AudioLibrary {

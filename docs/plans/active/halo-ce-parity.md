@@ -438,7 +438,8 @@ SND-03 Handling sounds. Do: reload, switch near the partner at 5 and 12
 SND-04 Warnings. Do: take hits down to empty shield, then low health.
   Spec: hit one-shot; loop while recharging; low loop under 0.25;
   depleted loop at 0; heartbeat under 0.25 body (hud.md 6; Open
-  questions 7). Our port plays none.
+  questions 7). Played since 2026-11-21 (`game::audio::warnings`, from
+  the unit HUD interface's own sound elements; whatever gun is in hand).
 
 ### Vehicles (VEH, milestone M6)
 
@@ -498,8 +499,7 @@ in the `//!` docs of `games/halo_ce/src`). Our build does not yet:
   level of detail; breakable glass (solid); teleporter message, sound,
   shimmer.
 - **HUD:** split screen; scope effects, night vision; flashlight meter,
-  arrows, waypoints, friend markers, messages, warning sounds, grenade
-  counts; the sweep's look is ours; tracker ignores `hud_radar`.
+  waypoints, friend markers, messages, grenade counts; the sweep's look is ours; tracker ignores `hud_radar`.
 - **Sound:** Doppler, cones, obstruction, reverb (console hardware).
 
 ## 5. Recording results
@@ -515,3 +515,25 @@ the filled table, then one line per difference naming what the spec
 writer must check. Spec corrections come first, then code with a test
 that encodes the measured number; the plan's M5 row and Open questions
 follow.
+
+## 6. Low-shield and low-health cues (2026-11-21, specs/halo_ce/low_health.md)
+
+Done: the five unit-HUD warning sounds (`game::audio::warnings`: the
+unit HUD interface's sound elements compiled with the audio kit,
+`AudioLibrary::warnings`; a state word from the local `Vitality`; loops
+as unspatialized `LoopRequest`s at scale 0, the hit as a latched
+one-shot; none while dead); the damage direction arrows (`ui::hud::draw`
+`arrows`: the globals' `hud_damage_arrows` picture turned to the side,
+red 0xC8FF0000, counters 1 to 29 ticks, from `DamageTaken`'s direction in
+the camera's frame, `rules::arrow_sides`). The sounds are the unit's
+state (any gun in hand); the arrows are the HUD's (Halo's gun in hand).
+
+Not done: the victim's screen flash, camera impulse and shake from the
+hit's damage effect (low_health.md 5, Open question 1). The mechanism
+needs the hit's damage effect on the victim's machine (`HaloHurt` is
+server-side; a client's `DamageTaken` carries no effect id) and the
+`jpt!` presentation fields (`blam_formats::damage_effect`, read, never
+evaluated) read at the HUD's donor load; the numbers then come from the
+tags, not from us. The arrows lack the damage effect's "indicators point
+down" flag for the same reason. The overshield's drain above 1.0 counts
+as a fall for `shield_hit` (the spec's HUD lowers its memory).

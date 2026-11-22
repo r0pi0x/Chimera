@@ -287,14 +287,21 @@ fn flash_overlay(
 // ---------------------------------------------------------------------------
 // Hearing
 
-/// The local player's hearing effects go to the listener.
+/// The local player's hearing effects go to the listener; a respawn
+/// ends them (Source sets the player's DSP preset back to none at
+/// spawn: specs/hl2dm/low_health.md 4).
 fn local_hearing(
     mut deafened: MessageReader<Deafened>,
-    local: Option<Single<Entity, With<LocalPlayer>>>,
+    local: Option<Single<(Entity, Has<crate::core::Dead>), With<LocalPlayer>>>,
     mut hearing: ResMut<Hearing>,
     time: Res<Time>,
+    mut was_dead: Local<bool>,
 ) {
-    let me = local.map(|l| *l);
+    let (me, dead) = local.map_or((None, false), |l| (Some(l.0), l.1));
+    if *was_dead && !dead {
+        hearing.effect = None;
+    }
+    *was_dead = dead;
     let now = time.elapsed_secs_f64();
     for d in deafened.read() {
         if Some(d.target) == me {
@@ -393,6 +400,26 @@ pub const VIEW_MODEL_SHAKE: f32 = 0.1;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::HearingEffect;
+
+    /// A hearing effect runs until its time is out, or the local player
+    /// respawns (the DSP preset back to none at spawn).
+    #[test]
+    fn a_respawn_ends_the_hearing_effect() {
+        let mut app = App::new();
+        app.add_message::<Deafened>().init_resource::<Hearing>().init_resource::<Time>().add_systems(Update, local_hearing);
+        let me = app.world_mut().spawn((LocalPlayer, crate::core::Dead { since: 0.0 })).id();
+        let ring = HearingEffect { hold: 1.6, fade: 1.0, exponential: true, mix: 0.7, cutoff: 1000.0, wet_gain: 0.25, ring_hz: 3000.0, ring_gain: 0.0 };
+        app.update();
+        app.world_mut().write_message(Deafened { target: me, effect: ring });
+        app.update();
+        assert!(app.world().resource::<Hearing>().effect.is_some(), "heard while dead");
+        app.update();
+        assert!(app.world().resource::<Hearing>().effect.is_some(), "still dead: it runs on");
+        app.world_mut().entity_mut(me).remove::<crate::core::Dead>();
+        app.update();
+        assert!(app.world().resource::<Hearing>().effect.is_none(), "respawned: none");
+    }
 
     #[test]
     fn fade_to_black_over_a_second_after_death() {
