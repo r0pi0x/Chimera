@@ -1195,7 +1195,10 @@ Settings had the new ones, and the match end's Leave had no hover.
   (segmented or dropdown), `stepper`, `slider`, `dropdown`, `text_field`,
   `key_field`, `dialog_field`. party_kit's pages pick a setting's control
   by one rule (`settings::widget_of`, `settings::pick_control`), shared by
-  Settings, the Escape menu's host settings and Host. The old small toggle
+  Settings, the Escape menu's host settings and Host: a choice set that fits
+  is segmented (Off/On a toggle), else a dropdown, never a stepper; a stepper
+  is for a number, decided by the setting's data type (`Pick::Range`), not
+  its labels (`tests/it/kit_conformance.rs`). The old small toggle
   and the natural-width segmented choice are kit-internal now.
 - **A missing feature** is an option on the kit's builder (an icon on a
   button, a narrower control column for a dialog's rules), shown in a

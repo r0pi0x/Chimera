@@ -236,3 +236,68 @@ fn a_hand_made_pressable_node_is_caught() {
     assert_eq!(p.len(), 1, "{p:?}");
     assert!(p[0].contains("not from the kit"), "{p:?}");
 }
+
+/// The kit's rule for a choice set (docs/DESIGN.md, "UI: always the kit";
+/// the user's review, 2026-11-21): one that fits the control column is a
+/// segmented control (Off/On a toggle), else a dropdown; a stepper only
+/// for a number, and the setting's data type says which (`Pick::Range`
+/// is a number, `Pick::Choices` never is, even with digits for labels).
+#[test]
+fn a_choice_set_that_does_not_fit_is_a_dropdown_and_only_a_range_is_a_stepper() {
+    use party_kit::{game_options, host::{self, Pick}, settings::{Widget, game_rows, widget_of, Row, View}};
+    let mut all = host::settings();
+    for game in 0..game_options::games().len() {
+        for page in 1..3 {
+            all.extend(game_rows(View { game, page }).into_iter().filter_map(|r| match r {
+                Row::Setting { s, .. } => Some(s),
+                _ => None,
+            }));
+        }
+    }
+    let theme = chimera_ui::Theme::from_toml(SIGNAL).unwrap();
+    let sizes = chimera_ui::form::FormSizes::of(&theme);
+    let (mut dropdowns, mut ranges) = (0, 0);
+    for s in &all {
+        match (&s.pick, widget_of(&s.pick, s.widget.as_deref())) {
+            (Pick::Range { .. }, Widget::Slider { .. }) => ranges += 1,
+            (Pick::Range { .. }, w) => panic!("{}: a number is a slider or stepper, not {w:?}", s.label),
+            (Pick::Choices(_), Widget::Stepper | Widget::Slider { .. }) => {
+                panic!("{}: a choice set is never a stepper or slider", s.label)
+            }
+            (Pick::Choices(c), w) => {
+                let words: Vec<&str> = c.iter().map(|(_, l)| l.as_str()).collect();
+                let fits = chimera_ui::form::fits_segmented(&theme, &sizes, &words, sizes.control_w);
+                if w == Widget::Dropdown {
+                    dropdowns += 1;
+                } else if w == Widget::Segmented {
+                    assert!(fits, "{}: segmented but {words:?} don't fit", s.label);
+                }
+                if !fits && c.len() > 1 && w != Widget::Toggle {
+                    assert_eq!(w, Widget::Dropdown, "{}: {words:?} don't fit: a dropdown", s.label);
+                }
+            }
+        }
+    }
+    assert!(dropdowns >= 4 && ranges >= 1, "the data has both ({dropdowns} dropdowns, {ranges} ranges)");
+}
+
+/// The same, drawn: Host's Game tab (choice sets only, four of them too
+/// long for segments) has dropdowns and no stepper; Host's Server tab (a
+/// number or two) has steppers.
+#[test]
+fn hosts_game_tab_draws_dropdowns_not_steppers() {
+    let mut sim = sim_with(SIGNAL);
+    let count = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        let steppers = w.query::<&StepperBorder>().iter(w).count();
+        let chevrons = w.query::<&Chevron>().iter(w).count();
+        (steppers, chevrons)
+    };
+    stage(&mut sim, "play", &["game"]).unwrap();
+    let (steppers, chevrons) = count(&mut sim);
+    assert_eq!(steppers, 0, "a choice set is never a stepper");
+    assert!(chevrons >= 4, "Infected odds, Melee rungs, Avoid recent maps and Spawn protection are dropdowns ({chevrons})");
+    stage(&mut sim, "play", &["server"]).unwrap();
+    let (steppers, _) = count(&mut sim);
+    assert!(steppers >= 1, "a number is a stepper ({steppers})");
+}
