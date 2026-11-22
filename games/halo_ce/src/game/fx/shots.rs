@@ -52,7 +52,11 @@
 //! pistol's second trigger: the charged bolt) from the eye moved by the
 //! trigger's first-person offset, as the server's (a gun whose muzzle is
 //! data, `load::FxGun::shown_from_muzzle`, the Hunter's cannon: drawn
-//! leaving from its muzzle, parallel to the server's from the eye); a guided one (the
+//! leaving from its muzzle, parallel to the server's from the eye); as
+//! everyone but the shooter sees it, drawn leaving the held gun's muzzle
+//! (`map::muzzle::HeldMuzzles`, on any body) and meeting its true line
+//! within `DRAWN_BLEND` metres (`HaloShown::drawn`), its hits the flight's
+//! from the eye; a guided one (the
 //! needles, the charged bolt) is steered toward the shot's target
 //! (`HaloFired::target`, the server's pick on the shooter's machine and in
 //! `HaloShotNet`) by the server's rule (the guided rate, half against a
@@ -193,6 +197,23 @@ pub struct HaloShown {
     /// Stuck (a needle): in a character at an offset from its centre
     /// (metres), or in the level; with the Halo ticks left to show it.
     pub stuck: Option<(Option<Entity>, Vec3, u32)>,
+    /// Where it is drawn from, as everyone but the shooter sees it: its
+    /// flight's start (WU) and the held gun's muzzle less that start
+    /// (metres), an offset its drawing leaves behind over its first
+    /// `DRAWN_BLEND` metres (`drawn_offset`); the flight itself (its hits)
+    /// stays the server's, from the eye.
+    pub drawn: (Vec3, Vec3),
+}
+
+/// Over how many metres of flight a shown projectile drawn from the held
+/// gun's muzzle meets its true line from the eye (`HaloShown::drawn`).
+pub const DRAWN_BLEND: f32 = 4.0;
+
+/// The offset a shown projectile is drawn with at flight point `at` (WU):
+/// `drawn`'s muzzle offset, gone after `DRAWN_BLEND` metres from its start.
+pub fn drawn_offset((start, offset): (Vec3, Vec3), at: Vec3) -> Vec3 {
+    let gone = ((at - start).length() * METERS_PER_UNIT / DRAWN_BLEND).clamp(0.0, 1.0);
+    offset * (1.0 - gone)
 }
 
 /// The longest a stuck needle is shown without its detonation (Halo
@@ -344,6 +365,7 @@ fn on_fired(
     role: Option<Res<NetRole>>,
     mut lights: MessageWriter<HaloLight>,
     placer: Placer,
+    mut muzzles: crate::map::muzzle::HeldMuzzles,
     clock: Res<SimClock>,
     noses: Option<Res<LooseAssets>>,
     mut commands: Commands,
@@ -376,6 +398,13 @@ fn on_fired(
                 origin = m.at / METERS_PER_UNIT;
             }
         }
+        // Everyone else sees it leave the held gun's muzzle (the eye's
+        // offset only when no held gun is drawn: `map::muzzle`).
+        let drawn = if fp {
+            Vec3::ZERO
+        } else {
+            muzzles.at_or_eye(f.owner, origin * METERS_PER_UNIT) - origin * METERS_PER_UNIT
+        };
         let model = fx.0.as_ref().and_then(|l| look_of(l, gun, &proj)).is_some_and(|l| l.model);
         for (i, (dir, tracer)) in f.projectiles.iter().enumerate() {
             let flight = super::super::weapons::flight::Flight::new(&proj, origin, *dir, 0.0);
@@ -394,6 +423,7 @@ fn on_fired(
                     tick: clock.tick,
                     k: (clock.tick as u32).wrapping_add(i as u32),
                     stuck: None,
+                    drawn: (origin, drawn),
                 },
                 Name::new("halo_ce shown projectile"),
             ));
@@ -401,7 +431,7 @@ fn on_fired(
             if model {
                 let key = object_key(&proj.tag);
                 let turn = nose_turn(noses.as_deref(), &key);
-                e.insert((ShownItem(key), facing(origin * METERS_PER_UNIT, *dir, turn)));
+                e.insert((ShownItem(key), facing(origin * METERS_PER_UNIT + drawn, *dir, turn)));
             }
         }
         let Some(lib) = fx.0.clone() else { continue };
@@ -600,7 +630,8 @@ fn fly(
             s.updates += 1;
             if let Some(t) = at.as_deref_mut() {
                 let turn = nose_turn(noses.as_deref(), &object_key(&s.proj.tag));
-                *t = facing(s.flight.position * METERS_PER_UNIT, s.flight.velocity, turn);
+                let off = drawn_offset(s.drawn, s.flight.position);
+                *t = facing(s.flight.position * METERS_PER_UNIT + off, s.flight.velocity, turn);
             }
             if let Some(lib) = &lib {
                 let look = look_of(lib, &gun, &proj);
@@ -608,7 +639,8 @@ fn fly(
                 for (k, (from, to, hit)) in moved.segments.iter().enumerate() {
                     let (a, b) = (*from * METERS_PER_UNIT, *to * METERS_PER_UNIT);
                     if let Some(look) = look {
-                        draw_segment(&mut particles, look.tracer, look.light, a, b, s.tracer, s.updates == 1);
+                        let (da, db) = (drawn_offset(s.drawn, *from), drawn_offset(s.drawn, *to));
+                        draw_segment(&mut particles, look.tracer, look.light, a + da, b + db, s.tracer, s.updates == 1);
                     }
                     let Some(h) = hit else { continue };
                     let material = match h.object {

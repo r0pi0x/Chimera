@@ -10,7 +10,10 @@
 //!
 //! Character bodies (by team or `BodyName`; the local one hidden unless
 //! `ShowLocalBody`), held models with their muzzles and bone-merged parts (a body
-//! lacking a joint some part merges onto holds the model whole),
+//! lacking a joint some part merges onto holds the model whole; every held
+//! model has a muzzle, its own or its bone's, and a body of another
+//! game's skeleton, lacking the model's bone, draws none of it but its
+//! muzzle at its right hand: `map::muzzle`),
 //! posed from the character's `Animator`, culled by their posed bounds
 //! (`DynamicSkinnedMeshBounds`, not the bind pose's), lit where they are
 //! (`probe_lit`); `PlayModels`/`HeldAssets` are built when the map
@@ -803,6 +806,7 @@ pub fn attach_held(
     mut materials: Option<ResMut<Assets<PropMaterial>>>,
     dormant: Option<Res<DormantProps>>,
     (real, mut wanted): (Res<Time<Real>>, Option<ResMut<LateWanted>>),
+    mut logged: Local<bevy::platform::collections::HashSet<String>>,
     mut commands: Commands,
 ) {
     let (Some(held), Some(bodies)) = (held, bodies) else {
@@ -839,6 +843,24 @@ pub fn attach_held(
                 .and_then(|i| body.joints.get(i).copied())
         };
         let Some(joint) = joint_of(&parts.bone) else {
+            // Another game's skeleton (a Halo gun on a CS:S body): no
+            // bone to hold it on, so not drawn; its effects still start
+            // at the body's right hand (`map::muzzle`), not at the eye.
+            let hand = crate::map::muzzle::right_hand(drawn.bones.iter().map(|b| b.name.as_str()))
+                .and_then(|i| body.joints.get(i).copied());
+            if logged.insert(format!("{key}@{}", body.model)) {
+                info!(
+                    "held model {key}: the body lacks its bone `{}`; not drawn, its muzzle at the body's {}",
+                    parts.bone,
+                    if hand.is_some() { "right hand" } else { "eye (no right hand found)" }
+                );
+            }
+            if let Some(hand) = hand {
+                let e = commands
+                    .spawn((Transform::default(), Visibility::Inherited, ChildOf(hand), view_model::HeldMuzzle { owner: character }))
+                    .id();
+                body.held = Some((e, key.clone()));
+            }
             continue;
         };
         // Its own materials, lit where it is (probe_lit).
@@ -867,9 +889,12 @@ pub fn attach_held(
                 for ((mesh, _), material) in shown.iter().zip(own) {
                     m.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material)));
                 }
-                if let Some(t) = parts.muzzle {
-                    m.spawn((t, view_model::HeldMuzzle { owner: character }));
+                // Every held model reports a muzzle (`map::muzzle`): its own,
+                // else its bone's origin, the hand (not the eye).
+                if parts.muzzle.is_none() && logged.insert(key.clone()) {
+                    debug!("held model {key}: no muzzle attachment; its muzzle at its bone `{}`", parts.bone);
                 }
+                m.spawn((parts.muzzle.unwrap_or_default(), view_model::HeldMuzzle { owner: character }));
                 for (index, (name, t)) in parts.attachments.iter().enumerate() {
                     m.spawn((
                         *t,

@@ -146,3 +146,56 @@ fn everyone_else_sees_them_at_the_held_models_muzzle() {
     let (light, _) = shot_light(&mut sim, p);
     assert!(light.at.abs_diff_eq(held, 1e-4), "{:?} at the held model's muzzle", light.at);
 }
+
+/// The shown projectiles of `p`'s next shot, as spawned (a bullet may
+/// hit the greybox's wall and go in the same update).
+fn shown_of_a_shot(sim: &mut Sim, p: Entity) -> Vec<halo_ce::game::fx::shots::HaloShown> {
+    use halo_ce::game::fx::shots::HaloShown;
+    #[derive(Resource, Default)]
+    struct Seen(Vec<HaloShown>);
+    sim.app.init_resource::<Seen>();
+    sim.app.add_observer(|add: On<Add<HaloShown>>, q: Query<&HaloShown>, mut seen: ResMut<Seen>| {
+        if let Ok(s) = q.get(add.entity) {
+            seen.0.push(s.clone());
+        }
+    });
+    shot_light(sim, p);
+    std::mem::take(&mut sim.app.world_mut().resource_mut::<Seen>().0).into_iter().filter(|s| s.owner == p).collect()
+}
+
+#[test]
+fn everyone_else_sees_its_projectiles_leave_the_held_guns_muzzle() {
+    use halo_ce::game::fx::shots::{DRAWN_BLEND, drawn_offset};
+    let k = halo_ce::game::METERS_PER_UNIT;
+    let (mut sim, p) = armed(true);
+    sim.app.world_mut().spawn(LocalPlayer);
+    // The held gun's muzzle in front of the body at the hand's height,
+    // well below and beside the eye.
+    let eye = sim.position(p) + sim.app.world().get::<MovementState>(p).unwrap().eye_offset;
+    let held = eye + Vec3::new(0.25, -0.45, -0.5);
+    sim.app.world_mut().spawn((
+        chimera_world::map::view_model::HeldMuzzle { owner: p },
+        GlobalTransform::from(Transform::from_translation(held)),
+    ));
+    let shown = shown_of_a_shot(&mut sim, p);
+    assert!(!shown.is_empty(), "a shown projectile");
+    for s in &shown {
+        let (start, offset) = s.drawn;
+        // Drawn from the muzzle; its flight (the hits) still from the eye.
+        assert!((start * k + offset).abs_diff_eq(held, 1e-3), "drawn from {:?}, muzzle {held:?}", start * k + offset);
+        assert!((start * k).distance(eye) < 0.3, "its flight from the eye: {:?} vs {eye:?}", start * k);
+        // Meets its true line within DRAWN_BLEND metres.
+        let dir = s.flight.velocity.normalize();
+        assert_eq!(drawn_offset(s.drawn, start + dir * (DRAWN_BLEND / k + 0.01)), Vec3::ZERO);
+        assert!(drawn_offset(s.drawn, start + dir * (DRAWN_BLEND / k * 0.5)).abs_diff_eq(offset * 0.5, 1e-4));
+    }
+    // The shooter's own (first person): from the eye as Halo draws it.
+    let (mut sim, p) = armed(true);
+    sim.app.world_mut().entity_mut(p).insert(LocalPlayer);
+    sim.app.world_mut().spawn((
+        chimera_world::map::view_model::HeldMuzzle { owner: p },
+        GlobalTransform::from(Transform::from_translation(held)),
+    ));
+    let shown = shown_of_a_shot(&mut sim, p);
+    assert!(!shown.is_empty() && shown.iter().all(|s| s.drawn.1 == Vec3::ZERO));
+}

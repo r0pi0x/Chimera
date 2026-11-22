@@ -2,7 +2,8 @@
 //! message (from the shot's start to its end, with the game's look); the
 //! streak starts at the shooter's gun muzzle as last drawn (the view
 //! model's for your own gun, re-projected as its muzzle flash is, else the
-//! held world model's), falling back to the shot's start.
+//! held world model's), else at the held weapon's muzzle
+//! (`map::muzzle::HeldMuzzles`), the shot's start (the eye) only without one.
 //!
 //! Bullet tracers for any game: `Tracer` requests (the game's look and
 //! frequency) and the shooters' last muzzle-flash points (`MuzzleCache`);

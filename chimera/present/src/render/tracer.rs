@@ -1,8 +1,9 @@
 //! Drawing bullet tracers (`map::tracer::Tracer`): the streak starts at
 //! the shooter's gun muzzle as last drawn (`map::tracer::MuzzleCache`: the
 //! view model's for your own gun, re-projected as its muzzle flash is, else
-//! the held world model's), falling back to the shot's start after a short
-//! wait, and is drawn as `particles::Shape::Streak`.
+//! the held world model's); with no flash after a short wait, at the held
+//! weapon's muzzle (`map::muzzle::HeldMuzzles`), the shot's start (the
+//! eye) only without one; drawn as `particles::Shape::Streak`.
 
 use bevy::prelude::*;
 
@@ -22,6 +23,7 @@ pub fn draw_tracers(
     mut requests: MessageReader<Tracer>,
     mut pending: ResMut<PendingTracers>,
     muzzles: Res<MuzzleCache>,
+    mut held: crate::map::muzzle::HeldMuzzles,
     materials: Option<Res<ParticleMaterials>>,
     mut particles: ResMut<Particles>,
     time: Res<Time>,
@@ -46,7 +48,7 @@ pub fn draw_tracers(
                 keep.push((t, asked));
                 continue;
             }
-            None => t.from,
+            None => held.at_or_eye(t.owner, t.from),
         };
         let Some(material) = materials.0.find(t.look.material) else {
             continue;

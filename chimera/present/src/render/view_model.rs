@@ -1193,7 +1193,7 @@ pub fn muzzle_flashes(
     bodies: Query<&ViewModelBody>,
     owners: Query<(&ViewAnimator, Option<&ViewModelOffset>)>,
     cam_children: Query<&Children, With<ViewModelCamera>>,
-    muzzles: Query<(&HeldMuzzle, &GlobalTransform)>,
+    muzzles: crate::map::muzzle::HeldMuzzles,
     characters: Query<Entity, With<crate::core::Intent>>,
     spatial: SpatialQuery,
     mut pool: LightPool,
@@ -1270,12 +1270,7 @@ pub fn muzzle_flashes(
                 (eye.transform_point(ahead) - eye.transform_point(at)).normalize_or_zero(),
             ))
         });
-        let world_model = || {
-            muzzles
-                .iter()
-                .find(|(m, _)| m.owner == ev.owner)
-                .map(|(_, g)| (g.translation(), g.rotation() * Vec3::X))
-        };
+        let world_model = || muzzles.of(ev.owner).map(|m| (m.at, m.forward));
         let on_view_model = first_person.is_some();
         let Some((at, forward)) = first_person.or_else(world_model) else {
             continue;

@@ -22,6 +22,7 @@ mod body_swap;
 mod camera_outputs;
 mod idle_lights;
 mod held_merge;
+mod held_muzzle;
 mod hitboxes_facing;
 mod late_build;
 mod particle_depth;
