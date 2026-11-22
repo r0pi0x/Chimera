@@ -12,6 +12,7 @@ mod history;
 mod menus;
 mod motd;
 mod panels;
+mod params;
 mod quick_info;
 mod selection;
 

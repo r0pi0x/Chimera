@@ -25,8 +25,10 @@
 //!
 //! **The damage punch** (`damage_punch`, specs/hl2dm/low_health.md 3):
 //! every damage taken sets the punch's pitch to -2 degrees, replacing a
-//! recoil's, on any character whatever gun it holds (`DamageTaken`, on
-//! the authority). The explosion hearing effect (the DSP presets) is the
+//! recoil's, on a character whose punch HL2:DM's rules own (an HL2:DM
+//! gun in hand, or none yet: `RecoilGame`; in a party a victim holding
+//! another game's gun keeps that game's hit reaction), on the authority
+//! (`DamageTaken`). The explosion hearing effect (the DSP presets) is the
 //! shared `grenade::BlastHearing` on HL2:DM's blasts (`weapons::launch`).
 //!
 //! Known shortcuts: the randoms are Chimera's generator seeded per command
@@ -158,13 +160,17 @@ pub fn damaged_punch(punch: Vec3) -> Vec3 {
 /// Every time a character takes damage (`core::DamageTaken`: after
 /// armour, god mode and the team rules; any amount, any type, a lethal
 /// hit too) its punch's pitch is set to -2 degrees; several hits in a
-/// tick are each the same (no build-up). The punch is the character's, not
-/// the gun's: it applies whatever game's gun is in hand (the spring that
-/// decays it is that game's own); the velocity of HL2:DM's spring is left
-/// as it was (Source sets the angle alone).
-pub fn damage_punch(mut taken: MessageReader<DamageTaken>, mut victims: Query<&mut ViewPunch>) {
+/// tick are each the same (no build-up). Only while HL2:DM's rules own
+/// the victim's punch (`RecoilGame`: an HL2:DM gun in hand, or none yet),
+/// as its spring that decays it: a party player holding another game's
+/// gun gets that game's hit reaction, not this one (party_kit's
+/// `cs_parts`). The velocity of HL2:DM's spring is left as it was (Source
+/// sets the angle alone).
+pub fn damage_punch(mut taken: MessageReader<DamageTaken>, mut victims: Query<(&mut ViewPunch, Option<&RecoilGame>)>) {
     for t in taken.read() {
-        if let Ok(mut punch) = victims.get_mut(t.damage.target) {
+        if let Ok((mut punch, game)) = victims.get_mut(t.damage.target)
+            && RecoilGame::is(game, super::super::GAME)
+        {
             let next = damaged_punch(punch.0);
             if punch.0 != next {
                 punch.0 = next;

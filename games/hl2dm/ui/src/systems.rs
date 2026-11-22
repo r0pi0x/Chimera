@@ -617,8 +617,9 @@ pub fn sync(
     mut texts: Query<&mut HudText>,
     mut sprites: Query<&mut MaterialNode<HudGlyphMaterial>>,
     (hud_fonts, active, mut materials): (Option<Res<UiFonts>>, Option<Res<ActiveHud>>, ResMut<Assets<HudGlyphMaterial>>),
-    images: Res<Assets<Image>>,
-    (mut image_assets, mut shapes): (Option<ResMut<Assets<Image>>>, Local<HashMap<ShapeKey, Handle<Image>>>),
+    // One access to the images: the trapezoids add theirs, the sprites read sizes
+    // (a second `Res`/`ResMut` of the same assets is a B0002 conflict).
+    (mut images, mut shapes): (ResMut<Assets<Image>>, Local<HashMap<ShapeKey, Handle<Image>>>),
     mut commands: Commands,
 ) {
     let Some(root) = roots.iter().next() else { return };
@@ -746,9 +747,8 @@ pub fn sync(
             }
             Draw::Trapezoid { rect, color, alpha, top, bottom } => {
                 place(&mut node, *rect);
-                let Some(image_assets) = image_assets.as_mut() else { continue };
                 let key = shape_key(rect, alpha, top, bottom);
-                let image = shapes.entry(key).or_insert_with(|| image_assets.add(shape_image(key))).clone();
+                let image = shapes.entry(key).or_insert_with(|| images.add(shape_image(key))).clone();
                 let want = HudGlyphMaterial {
                     params: GlyphParams::whole(rgba(*color)),
                     coverage: image,
