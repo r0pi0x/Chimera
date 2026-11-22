@@ -725,14 +725,14 @@ copy clipped to it, ↑↓ and Enter, the pointer; the account chip with an
 inert Friends; the keys; the rule up the right edge; the backdrop tabs
 with the dwell bar and caption; the ambient under everything; no live
 map and no `MenuBackdrop` under it; `ui_scene menu [backdrop] [t]` and
-`ui_scene menu enter <t>`; tests `apps/party_roster/tests/it/signal_menu.rs`).
+`ui_scene menu enter <t>`; tests `apps/party_roster/tests/party/signal_menu.rs`).
 The pages are Signal's (2026-11-14): Options opens M7's Settings, Play
 and Join are `party_kit::signal_pages` (`[layout.pages]`; Settings' frame
 over the ambient, the kit's controls with a new `text_field`; Play's
 Server and Game tabs with a summary pane, Join's address, password,
 recent addresses and the LAN server list; ↑↓/Tab, ←→, Q/E, F5, Enter,
 Esc; `ui_scene play [game]`, `ui_scene join`; tests
-`apps/party_roster/tests/it/signal_pages.rs`). Lucker Party and the plain
+`apps/party_roster/tests/party/signal_pages.rs`). Lucker Party and the plain
 apps keep the VGUI frames.
 The backdrops are in (`party_kit::menu_backdrops`): Ladder, Assembly and
 the Ident (slot C until M5b's Showcase) painted on the CPU into a
@@ -744,7 +744,7 @@ Ladder uses the games' own kill icons when at hand. Cost (seeded,
 headless, instructions a frame, the menu's systems): Ladder 0.3 M,
 Assembly 1.2 M, Ident 2.5 M at its lock and 1.6 M under its sheen
 (`menu_backdrops::the_menus_frame_stays_in_budget`, limit 3 M); a frozen
-backdrop is painted once. Tests `apps/party_roster/tests/it/menu_backdrops.rs`.
+backdrop is painted once. Tests `apps/party_roster/tests/party/menu_backdrops.rs`.
 The ground is the shared ambient (M4's `AmbientMaterial`, the `MENU`
 preset: calm left of 30 % of the width, the bloom behind the backdrops;
 still with reduced motion and in staged scenes; test
@@ -777,7 +777,7 @@ the four sizes beyond 1080p.
   scan, filed onto a shelf; 3.4 s a gun), slot C from look book V, and
   the ambient shader (`AmbientMaterial`) under them. They rotate every
   16 s; the live background map stays an option when at hand.
-- Tests (`apps/party_roster/tests/it/main_menu.rs`): `menu_has_four_entries_from_data`,
+- Tests (`apps/party_roster/tests/party/main_menu.rs`): `menu_has_four_entries_from_data`,
   `backdrops_rotate_every_16_s`, `backdrop_tab_click_resets_the_dwell`;
   scripted runs (`--map`, `+connect`) skip the menu as before.
 
@@ -1185,7 +1185,7 @@ the server's clock, s):
   the lobby). Lucker Party's plain lobby keeps the match's Escape menu.
 - No network change (NET_VERSION stays).
 
-Tests (`apps/party_roster/tests/it/lobby_staging.rs`):
+Tests (`apps/party_roster/tests/party/lobby_staging.rs`):
 `nobody_plays_in_the_lobby_and_everyone_spawns_at_its_end`,
 `escape_in_the_themed_lobby_only_closes_what_is_open`,
 `escape_in_the_plain_lobby_opens_the_match_menu`,

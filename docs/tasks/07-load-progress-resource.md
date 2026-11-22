@@ -16,7 +16,7 @@ client in one process share it, as would two apps in one test. Step 10 of
   `games/cs_source/ui/src/game_menu/loading.rs` (reads); grep for
   `loading::` for others (Combat Arms' loaders)
 - Guards: `checks/tests/it/determinism.rs` (counts statics),
-  `apps/party_roster/tests/it/listen_server.rs`
+  `apps/party_roster/tests/party/listen_server.rs`
 
 ## Definition of done
 

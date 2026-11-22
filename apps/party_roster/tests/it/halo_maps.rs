@@ -83,10 +83,10 @@ fn a_halo_rung_makes_its_holder_halos() {
     use chimera_world::greybox::GreyboxMapPlugin;
     use halo_ce::game::{movement, vitality::Vitality, weapons};
 
-    use crate::gun_game::{held, no_finale, soldier};
+    use crate::play::{held, no_finale, soldier};
 
     let ladder = [weapons::ASSAULT_RIFLE, "cs_source:weapon_glock", weapons::PISTOL];
-    let text = crate::hl2dm_parts::ladder_text(&ladder, false).replace(
+    let text = crate::play::ladder_text(&ladder, false).replace(
         "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
         "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"combat_arms\"]",
     );
@@ -128,9 +128,9 @@ fn a_halo_rung_makes_its_holder_halos() {
 /// last rung (5), Halo's guns allowed: the every-HUD party's
 /// (`kill_feed::every_hud_sim`), so each game with a HUD has a rung.
 pub(crate) fn mixed_with_halo() -> String {
-    let mut ladder = crate::hl2dm_parts::LADDER.to_vec();
+    let mut ladder = crate::mixed::LADDER.to_vec();
     ladder.push(halo_ce::game::weapons::ASSAULT_RIFLE);
-    crate::hl2dm_parts::ladder_text(&ladder, false).replace(
+    crate::play::ladder_text(&ladder, false).replace(
         "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
         "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"combat_arms\"]",
     )
@@ -145,17 +145,17 @@ pub(crate) fn mixed_with_halo() -> String {
 fn halos_hud_follows_its_gun() {
     use chimera_client::client::hud::GameDraws;
     let (mut sim, me, _) = crate::kill_feed::every_hud_sim_and(true, |_| {});
-    crate::hud::swap_to(&mut sim, me, 5);
-    assert_eq!(crate::hud::hud(&sim), halo_ce::game::GAME, "Halo's gun, Halo's HUD");
-    assert!(crate::hud::shown(&mut sim, halo_ce::game::GAME));
+    crate::huds::swap_to(&mut sim, me, 5);
+    assert_eq!(crate::huds::hud(&sim), halo_ce::game::GAME, "Halo's gun, Halo's HUD");
+    assert!(crate::huds::shown(&mut sim, halo_ce::game::GAME));
     let draws = *sim.app.world().resource::<GameDraws>();
     assert!(draws.crosshair && draws.status && !draws.killfeed, "{draws:?}");
     let feeds = chimera_client::client::kill_feed::GameKillFeeds::lines(sim.app.world());
     assert!(feeds.contains(&(halo_ce::game::GAME, 0)), "{feeds:?}");
-    crate::hud::swap_to(&mut sim, me, 0);
-    assert_eq!(crate::hud::hud(&sim), hl2dm::game::GAME);
-    assert!(!crate::hud::shown(&mut sim, halo_ce::game::GAME), "Halo's root hidden on HL2:DM's rung");
-    assert!(crate::hud::shown(&mut sim, hl2dm::game::GAME), "HL2:DM's up");
-    crate::hud::swap_to(&mut sim, me, 5);
-    assert!(crate::hud::shown(&mut sim, halo_ce::game::GAME), "back with the gun");
+    crate::huds::swap_to(&mut sim, me, 0);
+    assert_eq!(crate::huds::hud(&sim), hl2dm::game::GAME);
+    assert!(!crate::huds::shown(&mut sim, halo_ce::game::GAME), "Halo's root hidden on HL2:DM's rung");
+    assert!(crate::huds::shown(&mut sim, hl2dm::game::GAME), "HL2:DM's up");
+    crate::huds::swap_to(&mut sim, me, 5);
+    assert!(crate::huds::shown(&mut sim, halo_ce::game::GAME), "back with the gun");
 }

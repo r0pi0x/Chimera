@@ -157,7 +157,7 @@ Each game's armour:
 - **Halo shield** (`games/halo_ce/src/game/vitality/mod.rs:257-277`): `shield_armour()` covers every part, including the head, and every damage class with P = 1 and wear 1, `Depletion::Blocked`. It also carries `weapon::ArmorRatio(1.0)` (`vitality/mod.rs:330`; `weapon/mod.rs:1456-1464`), which replaces the gun's own ratio.
   - With P = 1 and ratio 1, `(1 - 2) + 1 = 0`: **the shield takes 100% of every hit** until what it has left is no more than the hit.
   - The overflow (raw minus the shield left) then reaches health (`hits.rs:233-243`).
-- **`weapon::PiecesOf("halo_ce")`** (`weapon/mod.rs:1466-1472`) marks those pieces as Halo's, so Combat Arms' armour step does not strip them off a Halo holder each tick (`apps/party_roster/tests/it/halo_ladder.rs` module doc).
+- **`weapon::PiecesOf("halo_ce")`** (`weapon/mod.rs:1466-1472`) marks those pieces as Halo's, so Combat Arms' armour step does not strip them off a Halo holder each tick (`apps/party_roster/tests/halo_ce/halo_ladder.rs` module doc).
 
 ### 2.3 Another game's bullet on a Halo holder
 
@@ -450,7 +450,7 @@ This follows from `vitality/mod.rs:324-338` ("one it had stays") and the module 
   - After an HL2:DM rung, armour is the suit's 0, inserted by `games/hl2dm/src/game/suit.rs:386`. The shield then starts empty and takes 4 s to fill.
   - After a Combat Arms rung, the shield starts at whatever Combat Arms armour is left.
   - With no armour at all, the shield starts full.
-- **Leaving.** The shield's value **stays as the player's armour** on the next rung (`docs/DESIGN.md` "Armour when the identity switches"; `apps/party_roster/tests/it/halo_ladder.rs` checks the pieces are removed, not the amount):
+- **Leaving.** The shield's value **stays as the player's armour** on the next rung (`docs/DESIGN.md` "Armour when the identity switches"; `apps/party_roster/tests/halo_ce/halo_ladder.rs` checks the pieces are removed, not the amount):
   - On a CS:S rung it becomes up to 100 kevlar, with no helmet. It halves ratio-1 damage to the torso and arms.
   - On an HL2 rung it becomes up to 100 suit armour (`insert_if_new` keeps it, `suit.rs:378-386`): 80% of each hit absorbed, until the next death.
   - On a Combat Arms rung it becomes the gear's AP.
@@ -693,7 +693,7 @@ shield's armour unit and `core::DamageScale` on its health), so a hit
 that takes armour in a game's own step (Combat Arms') counts it too; the
 two together are the pair's scale, once. Halo's own hits on a Halo body do not take the engine's
 armour step: Halo's seam asks the same `Balance::pair` itself
-(`cross_game::own_scale`) and counts it in its own rule. `apps/party_roster/tests/it/balance_table.rs` checks
+(`cross_game::own_scale`) and counts it in its own rule. `apps/party_roster/tests/halo_ce/balance_table.rs` checks
 every pair with one gun of each game against the appendix's numbers.
 
 **The switch** `mp_balance` (a host setting, "Cross-game balance"; 1 the

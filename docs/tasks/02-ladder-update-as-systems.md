@@ -19,7 +19,7 @@ own; Combat Arms' modes follow separately).
 - `chimera/sim/src/mode.rs`, `chimera/sim/src/mode/flow.rs`
   (`update`, `touches`, where they are scheduled)
 - Guards: `chimera/sim/tests/it/minigame.rs`, `mode.rs`;
-  `apps/party_roster/tests/it/gun_game.rs`; each game's `tests/it/schedules.rs`
+  `apps/party_roster/tests/party/gun_game.rs`; each game's `tests/it/schedules.rs`
 
 ## Definition of done
 

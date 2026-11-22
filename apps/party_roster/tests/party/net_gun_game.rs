@@ -1,0 +1,579 @@
+//! The gun game over the network (docs/plans/active/multiplayer.md,
+//! `minigame_net`): a server playing `originals:gun_game_dust2` and two
+//! clients that only `connect` (on `NetSim`'s in-memory link, the party's
+//! simulation on the greybox). The clients learn the minigame from the
+//! server, show its HUD (rung, next gun, leader, the match's state), and
+//! follow a player up the ladder: each rung's gun, CS:S's and Combat
+//! Arms', drawn on both clients with rounds in it, to the winner and the
+//! match over.
+
+use std::time::Duration;
+
+use bevy::{ecs::message::MessageCursor, prelude::*};
+use chimera_core::{
+    console::Console,
+    core::{God, Score},
+    gameplay::Gameplay,
+};
+use chimera_net::{harness::NetSim, minigame_net::NetMinigame, net::memory::LinkConditions};
+use chimera_sim::{
+    minigame::{self, MINIGAME, ladder::Rung, runtime::InMinigame},
+    mode::{Match, Phase},
+    testkit,
+    weapon::{Magazine, WeaponEvent, WeaponEventKind, WeaponSounds},
+};
+use chimera_world::map::PlaySound;
+use combat_arms::{
+    game::TICK_INTERVAL,
+    harness::CaSim,
+};
+use party_roster::DEFAULT_MINIGAME;
+
+use crate::net_play::*;
+
+#[test]
+fn a_client_that_only_connects_plays_the_servers_minigame() {
+    let mut sim = joined();
+    for i in 0..2 {
+        let w = sim.clients[i].app.world();
+        assert_eq!(w.resource::<Gameplay>().rules, MINIGAME, "client {i} plays the minigame's rules");
+        assert_eq!(w.resource::<minigame::ActiveMinigame>().def.id, DEFAULT_MINIGAME);
+        assert!(w.contains_resource::<minigame::ladder::Ladder>(), "client {i} has the ladder");
+        let me = sim.local_player(i).unwrap();
+        let w = sim.clients[i].app.world();
+        assert!(w.get::<InMinigame>(me).is_some(), "client {i}'s player is in the minigame");
+        assert_eq!(w.get::<Rung>(me).map(|r| r.0), Some(0));
+        assert_eq!(held(&mut sim, i), Some(cs_source::game::weapons::GLOCK), "the first rung's Glock on client {i}");
+        assert!(clip(&mut sim, i).is_some_and(|c| c > 0), "rounds in client {i}'s clip");
+    }
+    // The match's state: live (both are in), a minigame entity for each.
+    let m = sim.clients[0].app.world().resource::<Match>();
+    assert_eq!(m.phase, Phase::Live);
+    assert!(m.round_ends.is_some());
+    let lines = hud_lines(&sim, 0);
+    assert!(lines.iter().any(|l| l.starts_with("Rung 1/10")), "{lines:?}");
+    assert!(lines.iter().any(|l| l.starts_with("Next:")), "{lines:?}");
+    assert!(lines.iter().any(|l| l.starts_with("Time ")), "the match's time: {lines:?}");
+    assert!(!lines.iter().any(|l| l.contains("Waiting")), "{lines:?}");
+    let w = sim.clients[1].app.world_mut();
+    let n = w.query::<&NetMinigame>().iter(w).count();
+    assert_eq!(n, 1, "one replicated match");
+}
+
+#[test]
+fn a_client_cant_start_or_restart_the_minigame_itself() {
+    let mut sim = joined();
+    for line in ["minigame originals:gun_game_dust2", "minigame_restart"] {
+        sim.clients[0].app.world_mut().resource_mut::<Console>().submit(line);
+        sim.ticks(2);
+    }
+    let out: Vec<String> =
+        sim.clients[0].app.world().resource::<Console>().output.iter().map(|l| l.text.clone()).collect();
+    assert_eq!(out.iter().filter(|l| l.contains("the server picks the minigame")).count(), 2, "{out:?}");
+    assert_eq!(
+        sim.clients[0].app.world().resource::<Match>().phase,
+        Phase::Live,
+        "the match wasn't started over"
+    );
+}
+
+/// Client `i`'s minigame panel: the rules' status lines, then the match's
+/// own line (its time, waiting or over).
+fn panel(sim: &NetSim, i: usize) -> (Vec<String>, String) {
+    let mut lines = hud_lines(sim, i);
+    let phase = lines.pop().unwrap_or_default();
+    (lines, phase)
+}
+
+/// What the server's rules tell player `who` (a server entity), as HUD text
+/// (`{weapon}` and `{player}` left in).
+fn server_status(sim: &mut NetSim, who: Entity) -> Vec<String> {
+    let w = sim.server.app.world();
+    w.get::<minigame::hud::MinigameStatus>(who).map(|s| s.0.iter().map(|l| l.text.clone()).collect()).unwrap_or_default()
+}
+
+/// The first line of the server's status for `who` without its `{...}`
+/// placeholders' words: what a client's line must start with.
+fn stem(line: &str) -> &str {
+    line.split('{').next().unwrap_or(line).trim_end_matches([' ', ':'])
+}
+
+/// Client 0 kills client 1 with each of the first rungs' guns. Before each
+/// kill and after the last, each client's minigame panel says what the
+/// server's rules say to its own player (rung, next gun, leader), the time
+/// on it is the server's, the match is live (never "waiting"), and the HUD
+/// in use is the game of the gun in hand (CS:S's and Combat Arms'
+/// alternate on this ladder).
+#[test]
+fn each_clients_minigame_panel_follows_the_servers_state_and_the_held_gun() {
+    let mut sim = joined();
+    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    let ladder = sim.server.app.world().resource::<minigame::ladder::Ladder>().rungs.clone();
+    for kill in 0..=4usize {
+        for (i, who) in [(0usize, a), (1, b)] {
+            let (lines, phase) = panel(&sim, i);
+            let want = server_status(&mut sim, who);
+            assert_eq!(lines.len(), want.len(), "kill {kill}, client {i}: {lines:?} against the server's {want:?}");
+            for (got, want) in lines.iter().zip(&want) {
+                assert!(got.starts_with(stem(want)), "kill {kill}, client {i}: {got:?} against {want:?}");
+            }
+            let rung = if i == 0 { kill } else { 0 };
+            assert!(lines[0].starts_with(&format!("Rung {}/10", rung + 1)), "kill {kill}, client {i}: {lines:?}");
+            assert_eq!(
+                lines.last().is_some_and(|l| l.starts_with("Leader:")),
+                i == 1 && kill > 0,
+                "kill {kill}, client {i}: only the one behind is told who leads: {lines:?}"
+            );
+            // The match: live, with the server's time.
+            let time = phase.strip_prefix("Time ").unwrap_or_else(|| panic!("kill {kill}, client {i}: {phase:?}"));
+            let (m, s) = time.split_once(':').unwrap();
+            let shown = m.parse::<f64>().unwrap() * 60.0 + s.parse::<f64>().unwrap();
+            let w = sim.server.app.world();
+            let left = w.resource::<Match>().round_ends.unwrap() - w.resource::<chimera_core::core::SimClock>().now;
+            assert!((shown - left).abs() < 3.0, "kill {kill}, client {i}: {phase} against {left:.1} s left");
+            // The HUD in use is the held gun's game's.
+            // (The one just killed holds nothing until it respawns.)
+            let Some(gun) = held(&mut sim, i) else {
+                assert_eq!((i, kill > 0), (1, true), "kill {kill}: client {i} holds a gun");
+                continue;
+            };
+            let w = sim.clients[i].app.world();
+            let game = w.resource::<chimera_core::game_registry::Games>().get(gun.split(':').next().unwrap()).map(|g| g.id);
+            assert_eq!(Some(w.resource::<Gameplay>().hud), game, "kill {kill}, client {i}: the HUD of {gun}");
+        }
+        if kill < 4 {
+            kill_once(&mut sim, kill, a, b, &ladder);
+        }
+    }
+}
+
+/// Client 0 shoots client 1 with every rung's gun to the win. Each client
+/// draws the rung's gun with rounds in it, the HUD follows (rung, next
+/// gun, leader), and the match ends with the shooter the winner on both.
+#[test]
+fn a_ladder_climbed_by_a_client_shows_on_both_clients() {
+    let mut sim = joined();
+    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    let ladder = sim.server.app.world().resource::<minigame::ladder::Ladder>().rungs.clone();
+    assert_eq!(ladder.len(), 10);
+    for kill in 0..10usize {
+        kill_once(&mut sim, kill, a, b, &ladder);
+        if kill < 9 {
+            let rung = |sim: &mut NetSim, i: usize| {
+                let me = sim.local_player(i).unwrap();
+                sim.clients[i].app.world().get::<Rung>(me).map(|r| r.0)
+            };
+            assert_eq!(rung(&mut sim, 0), Some(kill + 1), "client 0 sees its rung up");
+            assert_eq!(rung(&mut sim, 1), Some(0), "client 1 sees its own rung");
+            let lines = hud_lines(&sim, 0);
+            assert!(lines.iter().any(|l| l.starts_with(&format!("Rung {}/10", kill + 2))), "{lines:?}");
+            let theirs = hud_lines(&sim, 1);
+            assert!(theirs.iter().any(|l| l.starts_with("Leader:") || l.starts_with("Tied")), "{theirs:?}");
+        }
+    }
+    let team_a = sim.server.app.world().get::<chimera_core::core::Team>(a).unwrap().0;
+    assert_eq!(sim.server.app.world().resource::<Match>().winner, Some(team_a));
+    assert_eq!(sim.server.app.world().get::<Score>(a).unwrap().kills, 10);
+    // The match ends: over on both clients, the HUD says so.
+    sim.until(1200, |s| s.clients.iter().all(|c| c.app.world().resource::<Match>().phase == Phase::MatchOver));
+    for i in 0..2 {
+        assert_eq!(sim.clients[i].app.world().resource::<Match>().phase, Phase::MatchOver, "client {i}");
+        let lines = hud_lines(&sim, i);
+        assert!(lines.iter().any(|l| l == "Match over"), "client {i}: {lines:?}");
+    }
+    let kills = {
+        let me = sim.local_player(0).unwrap();
+        sim.clients[0].app.world().get::<Score>(me).map(|s| s.kills)
+    };
+    assert_eq!(kills, Some(10), "the scoreboard's kills on the winner's own client");
+}
+
+/// A swap from Combat Arms' gun to CS:S's (the server's rung change) ends
+/// Combat Arms' recoil on the server and on the client predicting the
+/// player alike (`weapon::impact::RecoilGame`, predicted): the punch is
+/// zero on both and doesn't drift down on the client.
+#[test]
+fn a_swap_ends_the_old_games_recoil_on_server_and_client_alike() {
+    use chimera_sim::weapon::{ViewPunch, impact::RecoilGame};
+    let mut sim = joined();
+    let a = sim.character_of(0).unwrap();
+    let set = |sim: &mut NetSim, r: usize| {
+        let w = sim.server.app.world_mut();
+        let l = w.resource::<minigame::ladder::Ladder>().clone();
+        minigame::ladder::set_rung(w, a, r, &l);
+    };
+    set(&mut sim, 7);
+    assert!(sim.until(300, |s| held(s, 0) == Some("combat_arms:m4a1")), "the M4A1 on the client");
+    sim.ticks(60);
+    let me = sim.local_player(0).unwrap();
+    let ahead = sim.server.position(a) + Vec3::new(0.0, 1.5, -20.0);
+    for t in 0..40u64 {
+        testkit::aim_at(&mut sim.clients[0], me, ahead);
+        sim.clients[0].intent(me).fire = t % 2 == 0;
+        sim.step();
+    }
+    sim.clients[0].intent(me).fire = false;
+    let punch = |w: &World, e: Entity| w.get::<ViewPunch>(e).map_or(Vec3::ZERO, |p| p.0);
+    assert!(punch(sim.clients[0].app.world(), me).x > 0.01, "kicked on the client");
+    set(&mut sim, 6);
+    assert!(sim.until(300, |s| held(s, 0) == Some("cs_source:weapon_ak47")), "the AK-47 on the client");
+    sim.ticks(10);
+    for _ in 0..60 {
+        sim.step();
+        let (c, s) = (punch(sim.clients[0].app.world(), me), punch(sim.server.app.world(), a));
+        assert!(c.length() < 1e-6 && s.length() < 1e-6, "no punch left or drifting: client {c:?}, server {s:?}");
+    }
+    let game = |w: &World, e: Entity| w.get::<RecoilGame>(e).map(|g| g.0.clone());
+    assert_eq!(game(sim.server.app.world(), a).as_deref(), Some("cs_source"));
+    assert_eq!(game(sim.clients[0].app.world(), me).as_deref(), Some("cs_source"));
+}
+
+/// Reload starts client 0's own weapons showed (`WeaponEvent::shown`: what
+/// the view models play a reload animation for).
+#[derive(Resource, Default)]
+struct ShownReloads(u32);
+
+fn count_shown_reloads(
+    mut events: MessageReader<chimera_sim::weapon::WeaponEvent>,
+    me: Query<(), With<chimera_core::core::LocalPlayer>>,
+    mut n: ResMut<ShownReloads>,
+) {
+    for e in events.read() {
+        if e.shown() && me.contains(e.owner) && matches!(e.kind, chimera_sim::weapon::WeaponEventKind::ReloadStarted) {
+            n.0 += 1;
+        }
+    }
+}
+
+/// On client 0, rung `rung`'s gun emptied by firing (fire held after the
+/// last round until the reload is over, or let go): one reload shown, one predicted reload, and the
+/// server's one, over the next seconds.
+fn empty_and_reload_on_a_client(sim: &mut NetSim, rung: usize, hold: bool) {
+    let a = sim.character_of(0).unwrap();
+    {
+        let w = sim.server.app.world_mut();
+        let l = w.resource::<minigame::ladder::Ladder>().clone();
+        minigame::ladder::set_rung(w, a, rung, &l);
+    }
+    let gun = sim.server.app.world().resource::<minigame::ladder::Ladder>().rungs[rung];
+    assert!(sim.until(300, |s| held(s, 0) == Some(gun)), "{gun} on the client");
+    sim.ticks(60);
+    if clip(sim, 0).is_none() {
+        // A knife or a grenade: nothing to reload.
+        return;
+    }
+    let me = sim.local_player(0).unwrap();
+    // Three rounds left, on both sides: emptying a whole clip is the gun's
+    // rate of fire over again, not what is checked here.
+    for (w, e) in [(sim.server.app.world_mut(), a), (sim.clients[0].app.world_mut(), me)] {
+        let g = testkit::active(w, e).expect("the gun in hand");
+        w.get_mut::<Magazine>(g).unwrap().clip = 3;
+    }
+    let ahead = sim.server.position(a) + Vec3::new(0.0, 6.0, -20.0);
+    let reloading = |w: &World, e: Entity| {
+        testkit::active(w, e)
+            .and_then(|g| w.get::<chimera_sim::weapon::WeaponState>(g))
+            .is_some_and(|s| s.reloading())
+    };
+    sim.clients[0].app.world_mut().resource_mut::<ShownReloads>().0 = 0;
+    // Fire (pressed again and again for a semi-automatic) until empty.
+    let mut t = 0u64;
+    while clip(sim, 0).is_some_and(|c| c > 0) {
+        testkit::aim_at(&mut sim.clients[0], me, ahead);
+        sim.clients[0].intent(me).fire = t % 2 == 0;
+        sim.step();
+        t += 1;
+        assert!(t < 2000, "{gun} emptied");
+    }
+    let (mut client, mut server) = (0, 0);
+    let (mut was_c, mut was_s) = (false, false);
+    // Held until the clip has rounds again (a shell-by-shell reload: until
+    // it starts, as a shot ends it; CS:S's guns wait for the trigger let
+    // go: a second at most).
+    let shells = {
+        let w = sim.clients[0].app.world();
+        testkit::active(w, me).is_some_and(|g| w.get::<chimera_sim::weapon::ShellReload>(g).is_some())
+    };
+    // Until the reload is over everywhere and 0.7 s of quiet have passed
+    // (a second reload would show in it): at most 8 s.
+    let mut quiet = 0u32;
+    for n in 0..(8.0 / TICK_INTERVAL) as u64 {
+        if quiet > (0.7 / TICK_INTERVAL) as u32 {
+            break;
+        }
+        testkit::aim_at(&mut sim.clients[0], me, ahead);
+        let refilled = client > 0 && (shells || clip(sim, 0).is_some_and(|c| c > 0));
+        let waits = client == 0 && n as f64 * TICK_INTERVAL > 1.0;
+        sim.clients[0].intent(me).fire = hold && !refilled && !waits;
+        sim.step();
+        let c = reloading(sim.clients[0].app.world(), me);
+        let s = reloading(sim.server.app.world(), a);
+        client += (c && !was_c) as u32;
+        server += (s && !was_s) as u32;
+        (was_c, was_s) = (c, s);
+        let done = client > 0 && server > 0 && !c && !s && clip(sim, 0).is_some_and(|c| c > 0);
+        quiet = if done { quiet + 1 } else { 0 };
+    }
+    sim.clients[0].intent(me).fire = false;
+    let shown = sim.clients[0].app.world().resource::<ShownReloads>().0;
+    assert_eq!(
+        (shown, client, server),
+        (1, 1, 1),
+        "{gun}, fire held {hold}: reloads shown, predicted, on the server"
+    );
+    assert!(clip(sim, 0).is_some_and(|c| c > 0), "{gun} refilled");
+}
+
+/// Emptying `gun` on a client reloads it once: one reload shown (one
+/// reload animation), predicted and on the server, fire held or not, with
+/// the ladder's ammo refill on, on a link that jitters and loses packets
+/// (corrections re-run commands).
+fn an_emptied_gun_reloads_once(gun: &str) {
+    let mut sim = joined();
+    sim.set_conditions(
+        0,
+        LinkConditions {
+            latency: Duration::from_millis(30),
+            jitter: Duration::from_millis(15),
+            loss: 0.05,
+        },
+    );
+    sim.clients[0].app.init_resource::<ShownReloads>().add_systems(Update, count_shown_reloads);
+    let ladder = sim.server.app.world().resource::<minigame::ladder::Ladder>().rungs.clone();
+    let rung = ladder.iter().position(|g| *g == gun).unwrap();
+    for hold in [false, true] {
+        empty_and_reload_on_a_client(&mut sim, rung, hold);
+    }
+}
+
+/// CS:S's Glock (one test a gun: they run side by side).
+#[test]
+fn an_emptied_glock_reloads_once_on_a_client() {
+    an_emptied_gun_reloads_once(cs_source::game::weapons::GLOCK);
+}
+
+/// Combat Arms' M92FS.
+#[test]
+fn an_emptied_m92fs_reloads_once_on_a_client() {
+    an_emptied_gun_reloads_once("combat_arms:beretta_m92fs");
+}
+
+/// Combat Arms' 870 (shell by shell).
+#[test]
+fn an_emptied_870_reloads_once_on_a_client() {
+    an_emptied_gun_reloads_once("combat_arms:remington_870");
+}
+
+/// Combat Arms' M4A1.
+#[test]
+fn an_emptied_m4a1_reloads_once_on_a_client() {
+    an_emptied_gun_reloads_once("combat_arms:m4a1");
+}
+
+/// Rounds fired by `who` this far (first runs only, not a correction's
+/// replays) and the fire sounds `entry` heard, counted tick by tick.
+#[derive(Default)]
+struct Shots {
+    rounds: usize,
+    heard: usize,
+}
+
+fn count_shots(
+    sim: &mut NetSim,
+    app: usize,
+    who: Entity,
+    entry: &str,
+    cursors: &mut (MessageCursor<WeaponEvent>, MessageCursor<PlaySound>),
+    into: &mut Shots,
+) {
+    let w = if app == usize::MAX { sim.server.app.world() } else { sim.clients[app].app.world() };
+    into.rounds += cursors
+        .0
+        .read(w.resource::<Messages<WeaponEvent>>())
+        .filter(|e| e.owner == who && !e.replay && matches!(e.kind, WeaponEventKind::Fired { .. }))
+        .count();
+    into.heard += cursors.1.read(w.resource::<Messages<PlaySound>>()).filter(|s| s.entry == entry).count();
+}
+
+/// Client 0's own killing round, predicted, sounds once on it (the server's
+/// echo doesn't sound it again, nor does the swap that follows silence it)
+/// and once on the other client, which sees it as someone else's.
+#[test]
+fn a_clients_own_killing_shot_sounds_once() {
+    let mut sim = joined();
+    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    let me = sim.local_player(0).unwrap();
+    let ladder = sim.server.app.world().resource::<minigame::ladder::Ladder>().rungs.clone();
+    let entry = {
+        let w = sim.clients[0].app.world();
+        let sounds = w.get::<WeaponSounds>(testkit::active(w, me).unwrap());
+        sounds.and_then(|s| s.fire.clone()).expect("the first rung's gun has a fire sound")
+    };
+    assert_eq!(held(&mut sim, 0), Some(ladder[0]));
+    assert!(
+        sim.until(600, |s| server_alive(s, b) && s.server.app.world().get::<God>(b).is_none()),
+        "the victim is in play"
+    );
+    sim.ticks(30);
+    face_off(&mut sim, a, b);
+    sim.ticks(90);
+    let cursors = |w: &World| (
+        w.resource::<Messages<WeaponEvent>>().get_cursor_current(),
+        w.resource::<Messages<PlaySound>>().get_cursor_current(),
+    );
+    let id0 = sim.client_id(0);
+    let a_seen = NetSim::owned_by(&mut sim.clients[1], Some(id0)).expect("client 1 sees player a");
+    let mut own = cursors(sim.clients[0].app.world());
+    let mut other = cursors(sim.clients[1].app.world());
+    let mut server = cursors(sim.server.app.world());
+    let (mut mine, mut theirs, mut served) = (Shots::default(), Shots::default(), Shots::default());
+    let mut dead_for = 0;
+    for t in 0..(10.0 / TICK_INTERVAL) as u64 {
+        let target = sim.server.position(b);
+        testkit::aim_at(&mut sim.clients[0], me, target);
+        sim.clients[0].intent(me).fire = dead_for == 0 && t % 2 == 0;
+        sim.step();
+        count_shots(&mut sim, 0, me, &entry, &mut own, &mut mine);
+        count_shots(&mut sim, 1, a_seen, &entry, &mut other, &mut theirs);
+        count_shots(&mut sim, usize::MAX, a, &entry, &mut server, &mut served);
+        if !server_alive(&sim, b) {
+            dead_for += 1;
+            if dead_for > 6 {
+                break;
+            }
+        }
+    }
+    sim.clients[0].intent(me).fire = false;
+    assert!(dead_for > 0, "the victim died");
+    // Let the swap, the echoes and any corrections arrive.
+    for _ in 0..60 {
+        sim.step();
+        count_shots(&mut sim, 0, me, &entry, &mut own, &mut mine);
+        count_shots(&mut sim, 1, a_seen, &entry, &mut other, &mut theirs);
+        count_shots(&mut sim, usize::MAX, a, &entry, &mut server, &mut served);
+    }
+    assert_ne!(held(&mut sim, 0), Some(ladder[0]), "the kill swapped the gun");
+    assert!(mine.rounds > 1, "rounds fired: {}", mine.rounds);
+    assert_eq!(mine.heard, mine.rounds, "the shooter hears each of its own rounds once, the killing one too");
+    assert_eq!(theirs.heard, served.rounds, "the other client hears each round the server fired once");
+}
+
+/// The announcer over the network (specs/combat_arms/kill_streaks.md A1,
+/// A3): the server counts client 0's head kill of client 1 and sends its
+/// facts with the kill; client 0 (the killer) shows the server's pack's
+/// FIRST KILL with the skull over it and plays that one voice only (one
+/// event and one voice per kill: kill_streaks.md case 36); client 1 (the
+/// victim) neither.
+#[test]
+fn the_killers_client_announces_the_servers_facts() {
+    use chimera_client::client::announcer::{AnnouncerPlugin, AnnouncerView};
+    let mut sim = NetSim::new(
+        CaSim,
+        LinkConditions {
+            latency: Duration::from_millis(20),
+            jitter: Duration::ZERO,
+            loss: 0.0,
+        },
+        7,
+        2,
+        |app| {
+            setup(app);
+            app.add_plugins(AnnouncerPlugin);
+        },
+    );
+    sim.set_frame(TICK_INTERVAL);
+    minigame::start(sim.server.app.world_mut(), DEFAULT_MINIGAME).expect("the gun game starts");
+    sim.until_joined(900);
+    sim.ticks(300);
+    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    assert!(sim.until(600, |s| server_alive(s, b) && s.server.app.world().get::<God>(b).is_none()));
+    let at = sim.server.position(b);
+    sim.server.app.world_mut().write_message(chimera_core::core::Damage {
+        target: b,
+        attacker: Some(a),
+        amount: 5.0,
+        point: at,
+        dir: Vec3::NEG_Z,
+        hitgroup: chimera_core::core::Hitgroup::Head,
+        kind: chimera_core::core::DamageKind::Bullet,
+        weapon: None,
+        force: Vec3::ZERO,
+    });
+    sim.ticks(20);
+    let view = sim.clients[0].app.world().resource::<AnnouncerView>();
+    assert_eq!(view.voices, ["UI_SND/FirstKill.wav"]);
+    let shown = view.player.shown.as_ref().expect("a banner on the killer's client");
+    assert_eq!(shown.request.image, "UI_HUD_Message/Effect/FirstKill.dtx");
+    assert_eq!(shown.request.top.as_deref(), Some("UI_HUD_Message/Effect/Head.dtx"));
+    let victim = sim.clients[1].app.world().resource::<AnnouncerView>();
+    assert!(victim.voices.is_empty() && victim.player.shown.is_none(), "not on the victim's client");
+}
+
+
+/// Parts on every character from its spawn (`weapon::ViewPunch`, Combat
+/// Arms' `CaKillMe`: docs/performance.md, "A session's archetypes"; the
+/// client puts the defaults on its characters too) reach a client as the
+/// server has them: at rest zero and empty on both sides; client 0's shots
+/// with CS:S's AK-47 (rung 7) kick its view on its machine and the
+/// server's, the victim's flinch shows on its own client when the server's
+/// has one; and the kill counts on the victim's client as on the server.
+#[test]
+fn parts_kept_from_the_spawn_reach_the_client_as_the_server_has_them() {
+    use chimera_sim::weapon::ViewPunch;
+    use combat_arms::game::death_cam::{CaKillMe, CaSlot};
+    let mut sim = joined();
+    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    let (me, victim) = (sim.local_player(0).unwrap(), sim.local_player(1).unwrap());
+    let punch = |w: &World, e: Entity| w.get::<ViewPunch>(e).map(|p| p.0);
+    let kills = |w: &World, e: Entity| w.get::<CaKillMe>(e).cloned();
+    assert!(
+        sim.until(600, |s| server_alive(s, b) && s.server.app.world().get::<God>(b).is_none()),
+        "the victim is in play"
+    );
+    for (side, w, e) in [
+        ("server", sim.server.app.world(), a),
+        ("server", sim.server.app.world(), b),
+        ("client 0", sim.clients[0].app.world(), me),
+        ("client 1", sim.clients[1].app.world(), victim),
+    ] {
+        assert_eq!(punch(w, e), Some(Vec3::ZERO), "{side}: a view punch at rest");
+        assert_eq!(kills(w, e), Some(CaKillMe::default()), "{side}: no kills counted yet");
+    }
+    {
+        let w = sim.server.app.world_mut();
+        let l = w.resource::<minigame::ladder::Ladder>().clone();
+        minigame::ladder::set_rung(w, a, 6, &l);
+    }
+    assert!(sim.until(300, |s| held(s, 0) == Some("cs_source:weapon_ak47")), "the AK-47 on the client");
+    face_off(&mut sim, a, b);
+    sim.ticks(90);
+    let (mut kick, mut flinch) = ([0.0f32; 2], [0.0f32; 2]);
+    let mut dead = false;
+    for t in 0..(10.0 / TICK_INTERVAL) as u64 {
+        let target = sim.server.position(b);
+        testkit::aim_at(&mut sim.clients[0], me, target);
+        sim.clients[0].intent(me).fire = t % 2 == 0;
+        sim.step();
+        let len = |p: Option<Vec3>| p.map_or(0.0, Vec3::length);
+        kick[0] = kick[0].max(len(punch(sim.server.app.world(), a)));
+        kick[1] = kick[1].max(len(punch(sim.clients[0].app.world(), me)));
+        if !server_alive(&sim, b) {
+            dead = true;
+            break;
+        }
+        flinch[0] = flinch[0].max(len(punch(sim.server.app.world(), b)));
+        flinch[1] = flinch[1].max(len(punch(sim.clients[1].app.world(), victim)));
+    }
+    sim.clients[0].intent(me).fire = false;
+    assert!(dead, "the AK-47 killed in 10 s");
+    assert!(kick[0] > 0.01 && kick[1] > 0.01, "the AK-47's kick on the server and the shooter's client: {kick:?}");
+    assert!(flinch[0] <= 1e-6 || flinch[1] > 1e-6, "the victim's flinch on the server, not on its client: {flinch:?}");
+    let slot = sim.server.app.world().get::<CaSlot>(a).expect("the shooter's client id").0;
+    let server_kills = kills(sim.server.app.world(), b).unwrap();
+    assert_eq!(server_kills.count(slot), 1, "the kill counted on the server: {server_kills:?}");
+    assert!(
+        sim.until(300, |s| kills(s.clients[1].app.world(), victim).as_ref() == Some(&server_kills)),
+        "the victim's client counts it as the server: {:?} against {server_kills:?}",
+        kills(sim.clients[1].app.world(), victim)
+    );
+}

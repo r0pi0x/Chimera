@@ -20,7 +20,7 @@ later systems: `minigame::results::record` (match end) and
 - `chimera/sim/src/minigame/results.rs` (`record`),
   `chimera/world/src/map/breakables.rs` (`round_restart`)
 - Guards: `chimera/sim/tests/it/mode.rs`;
-  `apps/party_roster/tests/it/rotation.rs`, `results_hud.rs`,
+  `apps/party_roster/tests/party/rotation.rs`, `results_hud.rs`,
   `party_music.rs`; `games/cs_source/tests/it/net_breakables.rs`
 
 ## Definition of done

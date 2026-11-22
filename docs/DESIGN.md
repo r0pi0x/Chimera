@@ -641,7 +641,7 @@ numbers (pinned by `parity_pin_*` tests in each game).
   bounding sphere (which let Combat Arms' rules pick a big chest box over
   the head a round met first, or hit the chest on a round just beside the
   head: playtest of Ultimate Gun Game, the head matrix in
-  apps/party_roster/tests/it/heavy/head_matrix.rs). A rule that tests the character's box first
+  apps/party_roster/tests/hl2dm/heavy/head_matrix.rs). A rule that tests the character's box first
   (Combat Arms') widens it to hold the body's shapes
   (`Hitboxes::bounds`): a taller model's head poking out of the hull
   still counts, as in Source. A game that keeps posing its own skeleton

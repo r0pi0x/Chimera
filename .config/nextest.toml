@@ -140,7 +140,7 @@ priority = 90
 # tests' 720 s in a loaded post-push run). 18 minutes (180 s x 6) each;
 # they start early so the slots overlap them.
 [[profile.default.overrides]]
-filter = 'binary_id(party_roster::it) & test(/^heavy::spawn_spots::/)'
+filter = 'binary_id(party_roster::party) & test(/^heavy::spawn_spots::/)'
 test-group = 'heavy'
 priority = 90
 slow-timeout = { period = "180s", terminate-after = 6 }

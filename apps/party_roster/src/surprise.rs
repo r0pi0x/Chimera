@@ -107,7 +107,7 @@ impl Plugin for SurprisePlugin {
     fn build(&self, app: &mut App) {
         // Nothing in the world until a surprise is asked for (`arm`): with
         // a resource more at the start, the party's bots played otherwise
-        // in apps/party_roster/tests/it/archetypes.rs (its tick measured 1.37x
+        // in apps/party_roster/tests/party/archetypes.rs (its tick measured 1.37x
         // with more archetypes, against 1.19x).
         app.console_command(
                 "chimera:surprise",

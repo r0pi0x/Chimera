@@ -325,7 +325,7 @@ Each is one commit; behaviour unchanged.
 | 11 | Cargo.toml's member lists and ARCHITECTURE.md's crate diagram generated or checked from the folders (`docs_index`) | S | a new crate edits one place |
 | 12 | Several local players: `LocalPlayer` as "the player this view belongs to" (a view id), starting with the shell's camera and HUD | L | split screen (GoldenEye), a spectator wall |
 | 13 | New contracts as the next family needs them, each with its plan: terrain extra, seats/vehicles slot, a ROM mount | L each | Halo, Battlefield |
-| 14 | Compile and test scale: the party kit's tests against two reference games only; a game's fast tier split by module with nextest filters; `cargo test -p` of a game never builds another | M | time per game flat |
+| 14 | Compile and test scale: the party kit's tests against two reference games only; a game's fast tier split by module with nextest filters; `cargo test -p` of a game never builds another. Done: the party kit names no game, the roster's tests are a binary per guest game, selected by the games they name (architecture-for-iteration.md, stage 3 and its follow-up) | M | time per game flat |
 | 15 | Second user of LithTech or of a Combat Arms subsystem (objects, effects library, lobby): lift into `lithtech/engine` or Chimera, as the Source lifts went | L | the first-of-a-family cost falls for the next one |
 
 Step 8 is a mechanical move like steps 4, 6 and 7. Step 9 touches the party kit's client, which

@@ -613,9 +613,9 @@ roster's crate, split by game where they compose one game.
       roster's functions, not `GameBundle`/`GameClient` fields every game
       fills; the pairs' spawn teams and surfaces are the roster's tables,
       not a neutral vocabulary; the Controls rows are the roster's, not
-      each game's `player_options`. A game edit still selects the
-      roster's 510 + 14 composition tests (they compose it), and
-      `ultimate_gun_game` (it builds on the roster).
+      each game's `player_options`. A game edit still selects
+      `ultimate_gun_game` (it builds on the roster); of the roster's
+      tests, since the follow-up below, only those naming the game.
 
 The moves were one commit, not one per game: the composition was one
 set of tables (`GUESTS` names all five bundles at once) and the client's
@@ -650,6 +650,57 @@ Checked: the fast tiers of `party_kit` (11), `party_roster` (11 unit,
 23 `it`) and the four apps, all passing; `repo_checks` (51);
 `cargo check` of `party_kit` and both servers without `present`.
 
+
+#### Stage 3 follow-up: the roster's tests by game (2026-11-22)
+
+architecture-pass.md step 14's first lever. The roster's one `it`
+binary (511 tests) is six, by the guest games their files name:
+`party` (338: menus, lobby, settings, the default gun game of CS:S and
+Combat Arms guns), `hl2dm` (65), `halo_ce` (53), `tf2` (10), `it` (45:
+what mixes guests, every game's HUD, the kill feed, the party's
+start-up, the converted prints) and `server` (14, unchanged). Shared
+helpers moved to `tests/common/` (`play`, `mixed`, `huds`, `halo_party`,
+`bodies`, `local`, `lobby`, `net_play`, `aim`), each binary including
+the ones it uses by `#[path]`; three tests moved file (TF2's every-HUD
+test to `it/kill_feed.rs`, HL2:DM's network rung to
+`hl2dm/net_hl2dm.rs`), one got its own party installed
+(`persist::options_rows_read_right` relied on another test's in the
+same process: it failed alone under nextest). Same 511 tests, the fast
+tier (441) passing.
+
+`affected` derives the selection (no list by hand): the roster's
+manifest says `tests-by-game = true`; for such a package a game's
+crates (a folder under `games/`, its front end with it) count only for
+the binaries whose files name one of them (`tf2::`, `tf2 as _`, in the
+binary's folder and its `#[path]` helpers); everything else, and the
+library's unit tests, as before. `common/play.rs`, which every binary
+includes, names the default party's games (`combat_arms`, `cs_source`,
+`originals`), so their edits still select everything; `it/main.rs`
+names every game, so any game's edit runs the cross-game binary.
+
+| `affected --files ...` (the roster's tests: all / fast tier) | Before | After |
+|---|---|---|
+| `games/tf2/src/lib.rs` (or `tf2/ui`) | 536 / 441 | 80 / 55 (`tf2`, `it`, `server`, unit) |
+| `games/halo_ce/src/lib.rs` | 536 / 441 | 109 / 79 (`halo_ce`, `it`, unit) |
+| `games/hl2dm/src/lib.rs` | 536 / 441 | 121 / 89 (`hl2dm`, `it`, unit) |
+| `games/combat_arms/src/lib.rs`, `games/cs_source/src/lib.rs` | 536 / 441 | 536 / 441 (the default party's games) |
+
+The cost is links: each binary links the whole party. After an edit to
+the roster's library (everything above it rebuilds; `cargo test -p
+party_roster --features dev --no-run --timings`), before: `it` 27.5 s,
+`server` 8.9 s, 26.8-28.9 s wall at load 10; after: `party` 29.7 s,
+`it` 27.3, `hl2dm` 29.9, `halo_ce` 31.3, `tf2` 18.8, `server` 30.8,
+29.7 s wall at load 36 (the six in parallel). About 110 more
+CPU-seconds per change below the roster, the wall about the same on 12
+threads; the box's load during the second run makes the per-unit
+numbers high, not comparable one to one. nextest still builds every
+binary of a selected package (its `--test` would apply to every
+package), so the build after a game edit is not smaller; the run is.
+Kept: the selection is what the post-push runs and the hook's fast
+tier spend, and a guest game's edit now runs a fifth of the roster's
+tests. Not done: `ultimate_gun_game`'s tests (121 + 23) still run for
+every game (they compose the party through the roster); CS:S and Combat
+Arms select everything while the default gun game is theirs.
 
 ### Stage 4: contracts apart from implementations (spike, then decide)
 
@@ -706,6 +757,8 @@ front end, `affected --code` and the hook's type-check of code only
 2026-11-22: stage 3: the party kit names no game; the roster
 (apps/party_roster) composes them and holds the composition tests
 (results above). Stage 2's follow-up: menu layout and UGG theme reload.
+2026-11-22: the roster's tests by game: six binaries, `affected`
+selects them by the games their files name (stage 3 follow-up above).
 
 ## Decision log
 
@@ -733,3 +786,9 @@ type-checks nothing for it.
 `games/roster`): a game may not build on an app, and the roster needs the
 kit's `Party` type; the kit takes the party as data, so no game crate
 had to change.
+2026-11-22: the roster's tests split by test binary inside the roster,
+not into per-game composition crates: each game's tests compose the
+whole party anyway (one library), so a crate per game would add a
+library build per game for no change in what links; the binary is the
+unit nextest filters and `affected` already selects. The games a binary
+involves are read from its files, so a new test file needs no list.

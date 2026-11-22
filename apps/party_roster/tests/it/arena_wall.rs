@@ -31,7 +31,7 @@ use chimera_world::{
 use combat_arms::harness::CaSim;
 use party_roster::PartyPartsPlugin;
 
-use crate::gun_game::{OPEN, line_up, shoot_until_dead};
+use crate::play::{OPEN, line_up, shoot_until_dead};
 
 const CSS: &str = cs_source::game::movement::ID;
 const HL2: &str = hl2dm::game::movement::ID;
@@ -117,7 +117,7 @@ fn every_movement_stays_inside_the_wall() {
 #[test]
 fn the_play_area_holds_spawns_teleporters_and_characters() {
     // With the map's systems (`MapSimPlugin`: the put-back's), a match on.
-    let mut sim = crate::halo_ladder::party_with(&ladder());
+    let mut sim = crate::halo_party::party_with(&ladder());
     sim.ticks(2);
     let inside = Vec3::new(1.0, 0.0, 1.0);
     let outside = Vec3::new(20.0, 0.0, 1.0);
@@ -149,10 +149,10 @@ fn the_play_area_holds_spawns_teleporters_and_characters() {
     assert_eq!(put_backs(&sim), 0);
     // A player in the match (a fresh character is dead until the match
     // takes it in: the dead are left to their respawn).
-    let p = crate::gun_game::soldier(&mut sim);
+    let p = crate::play::soldier(&mut sim);
     sim.seconds(1.5);
-    assert!(crate::gun_game::alive(&sim, p));
-    crate::gun_game::place(&mut sim, p, Vec3::new(7.0, 1.0, 0.0));
+    assert!(crate::play::alive(&sim, p));
+    crate::play::place(&mut sim, p, Vec3::new(7.0, 1.0, 0.0));
     sim.ticks(3);
     let at = sim.position(p);
     assert!(poly.contains3(at), "put back inside: {at}, {} put back", put_backs(&sim));
@@ -166,15 +166,15 @@ fn the_play_area_holds_spawns_teleporters_and_characters() {
 #[test]
 fn a_slice_makes_its_spawn_points_and_puts_loose_items_back() {
     use chimera_sim::{minigame::arena::ArenaMadeSpawn, weapon::drop::Loose};
-    let mut sim = crate::halo_ladder::party_with(&ladder());
+    let mut sim = crate::halo_party::party_with(&ladder());
     sim.ticks(2);
     // 30 m square about the middle, the crates in it.
     let s = slice(&[[-15.0, -15.0], [15.0, -15.0], [15.0, 15.0], [-15.0, 15.0]], Vec3::new(0.0, 0.1, 0.0));
     let poly = s.polygon().unwrap();
     play(&mut sim, s);
-    let p = crate::gun_game::soldier(&mut sim);
+    let p = crate::play::soldier(&mut sim);
     sim.seconds(1.5);
-    assert!(crate::gun_game::alive(&sim, p));
+    assert!(crate::play::alive(&sim, p));
     let w = sim.app.world_mut();
     let made: Vec<Vec3> = w
         .query_filtered::<&Transform, (With<ArenaMadeSpawn>, With<SpawnPoint>)>()
@@ -257,7 +257,7 @@ fn ladder() -> String {
     // A last rung no shot climbs past (a kill on the last would win).
     let mut guns: Vec<&str> = SHOTS.iter().map(|s| s.0).collect();
     guns.push("cs_source:weapon_glock");
-    crate::hl2dm_parts::ladder_text(&guns, false).replace(
+    crate::play::ladder_text(&guns, false).replace(
         "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
         "weapons = [\"cs_source\", \"hl2dm\", \"tf2\", \"halo_ce\", \"combat_arms\"]",
     )
@@ -279,7 +279,7 @@ fn hurt_by_each(sim: &mut Sim, a: Entity, b: Entity) -> Vec<(&'static str, bool)
         // Let a last rocket or grenade arrive.
         sim.seconds(1.5);
         let after = sim.app.world().get::<Health>(b).map_or(0.0, |h| h.current);
-        let dead = died || !crate::gun_game::alive(sim, b);
+        let dead = died || !crate::play::alive(sim, b);
         out.push((gun, dead || after < before - 1e-4));
         // Back to full for the next gun.
         if let Some(mut h) = sim.app.world_mut().get_mut::<Health>(b) {
@@ -294,9 +294,9 @@ fn hurt_by_each(sim: &mut Sim, a: Entity, b: Entity) -> Vec<(&'static str, bool)
 #[test]
 fn every_games_shots_stop_at_the_wall() {
     let text = ladder();
-    let mut sim = crate::halo_ladder::party_with(&text);
-    let a = crate::gun_game::soldier(&mut sim);
-    let b = crate::gun_game::soldier(&mut sim);
+    let mut sim = crate::halo_party::party_with(&text);
+    let a = crate::play::soldier(&mut sim);
+    let b = crate::play::soldier(&mut sim);
     sim.seconds(1.5);
     let control = hurt_by_each(&mut sim, a, b);
     let missed: Vec<_> = control.iter().filter(|(_, hurt)| !hurt).map(|(g, _)| *g).collect();

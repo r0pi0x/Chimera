@@ -29,7 +29,7 @@ use combat_arms_ui::hud::{CaHud, radar::CaRadar};
 use cs_source_ui::game_hud::Part;
 use party_roster::{DEFAULT_MINIGAME, PartyHudPlugin, PartyPartsPlugin};
 
-use crate::hud::{hud, party_with_huds_and, swap_to};
+use crate::huds::{hud, party_with_huds_and, swap_to};
 
 /// The party with both HUDs, a CS:S notices panel to draw into, a window,
 /// the shell's feed widget and, with `party`, the party's HUD settings.
@@ -308,7 +308,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
             .init_asset::<Image>()
             .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm_ui::Hl2dmHudPlugin, halo_ce_ui::hud::HaloHudPlugin, tf2_ui::Tf2HudPlugin))
             .insert_resource(HudLookOwner(cs_source::game::GAME))
-            .insert_resource(crate::hud::cs_look())
+            .insert_resource(crate::huds::cs_look())
             .insert_resource(chimera_world::map::hud::GuestLooks(vec![hl2_look()]));
         app.world_mut().spawn((Node::default(), HudRoot(combat_arms::game::GAME)));
         app.world_mut()
@@ -316,8 +316,8 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
             .0
             .push((combat_arms::game::GAME, combat_arms_ui::hud::DRAWS));
     });
-    crate::gun_game::plain_rungs(sim.app.world_mut());
-    crate::gun_game::no_finale(sim.app.world_mut());
+    crate::play::plain_rungs(sim.app.world_mut());
+    crate::play::no_finale(sim.app.world_mut());
     sim.app.add_minigames(&[("hl2dm.toml", &mixed_with_halo_and_tf2())]).unwrap();
     minigame::start(sim.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
     let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
@@ -348,10 +348,10 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
 /// `halo_maps::mixed_with_halo`'s ladder with a TF2 rung after Halo's (the
 /// Scattergun, rung 6), so every game's HUD has a rung of its own.
 fn mixed_with_halo_and_tf2() -> String {
-    let mut ladder = crate::hl2dm_parts::LADDER.to_vec();
+    let mut ladder = crate::mixed::LADDER.to_vec();
     ladder.push(halo_ce::game::weapons::ASSAULT_RIFLE);
     ladder.push(tf2::game::weapons::SCATTERGUN);
-    crate::hl2dm_parts::ladder_text(&ladder, false).replace(
+    crate::play::ladder_text(&ladder, false).replace(
         "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
         "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"tf2\", \"combat_arms\"]",
     )
@@ -429,4 +429,25 @@ fn without_the_partys_flag_hl2dms_hud_has_its_own_notice() {
     let (shell, games) = feed_lines(&mut sim);
     assert_eq!(shell, 0, "the shell's feed not drawn");
     assert!(games.contains(&(hl2dm::game::GAME, 1)), "HL2:DM's death notice: {games:?}");
+}
+
+/// TF2's HUD in the party (`tf2_ui::party::CLIENT`): up while the local
+/// player holds a TF2 gun, its root shown, the other game's HUD up again
+/// on another game's rung; while it is up the shell's crosshair and status
+/// are off (`GameDraws`), and its declared kill feed stays empty (the
+/// app's feed shows its kills).
+#[test]
+fn tf2s_hud_follows_its_gun() {
+    use chimera_client::client::hud::GameDraws;
+    let (mut sim, me, _) = crate::kill_feed::every_hud_sim_and(true, |_| {});
+    crate::huds::swap_to(&mut sim, me, 6);
+    assert_eq!(crate::huds::hud(&sim), tf2::game::GAME, "TF2's gun, TF2's HUD");
+    assert!(crate::huds::shown(&mut sim, tf2::game::GAME));
+    let draws = *sim.app.world().resource::<GameDraws>();
+    assert!(draws.crosshair && draws.status && !draws.killfeed, "{draws:?}");
+    let feeds = chimera_client::client::kill_feed::GameKillFeeds::lines(sim.app.world());
+    assert!(feeds.contains(&(tf2::game::GAME, 0)), "{feeds:?}");
+    crate::huds::swap_to(&mut sim, me, 0);
+    assert_ne!(crate::huds::hud(&sim), tf2::game::GAME);
+    assert!(!crate::huds::shown(&mut sim, tf2::game::GAME));
 }

@@ -204,6 +204,20 @@ in the lowest crate whose public API it needs:
   games, are `chimera_net`'s (tests/it/dedicated.rs);
 - `cs_source_app` (apps/cs_source/tests/it/): only what the app alone
   has (its build's version, its hooks, map loading by id);
+- `party_roster` (apps/party_roster/tests/): the party's composition
+  (Lucker Party, Ultimate Gun Game), one test binary per game it
+  composes so a game's change runs only the tests that name it
+  (`affected`'s "tests by game"): `tests/party/` the party as such
+  (menus, lobby, settings, the default gun game of CS:S and Combat Arms
+  guns), `tests/hl2dm/`, `tests/halo_ce/`, `tests/tf2/` one guest game's
+  parts, `tests/it/` what mixes several guests (every game's HUD, the
+  kill feed, mixed ladders); `tests/server/` the dedicated server. Their
+  helpers are in `tests/common/`, each binary including the ones it uses
+  by `#[path]` (a helper's game names count for every binary that
+  includes it: keep a guest game's helper apart). A test names the games
+  it exercises by their crates' paths (`tf2::game::weapons::..`): a test
+  that only reaches a game through id strings isn't selected by its
+  changes, so put it in that game's binary;
 - `repo_checks` (checks/tests/it/architecture.rs): the repository's
   rules (layering, assets, specs, docs);
 - `lithtech_formats` (lithtech/formats/tests/it/): LithTech's readers on
@@ -989,7 +1003,7 @@ client only with the server's `sv_cheats 1` (and only on itself).
   `http://127.0.0.1:<plain port>/feedback/admin/` (docs/playtest-hosting.md,
   "During the session"). Headless: `FeedbackCapture::fake`, a test's own
   `Outbox`, or `AssetsOutbox::at(<dir>, targets)` against a service on
-  port 0 (apps/party_roster/tests/it/feedback.rs); staged:
+  port 0 (apps/party_roster/tests/party/feedback.rs); staged:
   `ui_scene report [details|sent|queued|off]`. What a report's frame
   shows: `feedback` then `feedback_shot <file.jpg>` (the JPEG it would
   send) in an offscreen run, next to a `screenshot` taken at the key
@@ -1208,7 +1222,7 @@ component to see what differs (the soak's `CHIMERA_SOAK_DIAGNOSE`
 decodes positions and velocities). `cargo test --features dev --test it net_prediction
 -- --nocapture` prints the numbers per latency, jitter and loss.
 Every game's body on another game's map, over the network
-(`apps/party_roster/tests/it/heavy/net_smoothness.rs`): per rung, prediction
+(`apps/party_roster/tests/halo_ce/heavy/net_smoothness.rs`): per rung, prediction
 errors and restarts (0) and, drawn at 144 frames a second, the own body's
 per-frame steps (none held still, their change at most a quarter, turning at the ticks); the first
 thing to run when play "feels laggy" (its `--nocapture` prints the numbers).

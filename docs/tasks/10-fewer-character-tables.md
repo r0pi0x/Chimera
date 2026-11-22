@@ -8,7 +8,7 @@ game's movement and view parts, the body model a map change removes), so
 each death and map change visits new tables, and every query matching
 characters steps over the empty ones (+25-70k instructions a call with
 2,000 more). Backlog "Fewer character tables" (docs/backlog.md); the
-measurement exists: `apps/party_roster/tests/it/archetypes.rs`.
+measurement exists: `apps/party_roster/tests/party/archetypes.rs`.
 
 ## Files
 
@@ -17,7 +17,7 @@ measurement exists: `apps/party_roster/tests/it/archetypes.rs`.
   the tick"): spawn protection (`chimera/sim/src/minigame/`), the
   movement and view parts swapped per gun's game, the body model
   `map::unload_map` takes off
-- Guards: `apps/party_roster/tests/it/archetypes.rs`, `gun_game.rs`,
+- Guards: `apps/party_roster/tests/party/archetypes.rs`, `gun_game.rs`,
   `net_gun_game.rs`; each game's `schedules.rs`
 
 ## Definition of done

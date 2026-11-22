@@ -15,7 +15,7 @@ Every minigame runs on `chimera_sim::minigame::runtime`. Its per-tick
 - `chimera/sim/src/minigame/runtime.rs` (`respawn_dead`, `end_protection`,
   `hold_the_end`, `join`, `number_players`)
 - Guards: `chimera/sim/tests/it/minigame.rs`;
-  `apps/party_roster/tests/it/gun_game.rs`, `protection_look.rs`,
+  `apps/party_roster/tests/party/gun_game.rs`, `protection_look.rs`,
   `swap_effect.rs`, `rotation.rs`, `net_gun_game.rs`
 
 ## Definition of done

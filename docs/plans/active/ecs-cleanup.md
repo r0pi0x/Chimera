@@ -438,7 +438,7 @@ what must pass, beyond each crate's fast tier. The guards:
   server/client opposite pairs may only fall;
 - system dumps before and after (`CHIMERA_SYSTEM_DUMP`,
   docs/OBSERVABILITY.md);
-- the listen server (`apps/party_roster/tests/it/listen_server.rs`) and the
+- the listen server (`apps/party_roster/tests/party/listen_server.rs`) and the
   party's network tests (`net_party.rs`, `net_gun_game.rs`);
 - the network prediction suites (`games/cs_source/tests/it/
   net_prediction.rs`, `prediction.rs`; `games/combat_arms/tests/it/
@@ -550,7 +550,7 @@ what must pass, beyond each crate's fast tier. The guards:
     weapon use; a joiner comes in by the default `enter_at_spawn`, which
     is what Combat Arms' `enter_game` did under `ca_mode none` without
     the lobby. Bots stay Combat Arms' (the bots slot)
-    (`apps/party_roster/tests/it/game_hooks.rs`).
+    (`apps/party_roster/tests/party/game_hooks.rs`).
   - Tests: `chimera_core` gameplay unit test (both orders),
     `chimera/net/tests/it/game_hooks.rs` (two stand-in games, either
     order: a network join, a bot kick, the freeze, a new game, the log;
@@ -633,7 +633,7 @@ what must pass, beyond each crate's fast tier. The guards:
   `game_modes_followups.rs`, `capture_the_flag.rs`, `clan_modes.rs`,
   `search_destroy.rs`, `vip_escort.rs`, `hired_guns.rs`,
   `other_modes.rs`, `net_modes*.rs`; `chimera/sim/tests/it/mode.rs`,
-  `minigame.rs`; `apps/party_roster/tests/it/gun_game.rs`; schedule
+  `minigame.rs`; `apps/party_roster/tests/party/gun_game.rs`; schedule
   ratchets; system dumps; `perfgate` and `bot_cost` (about 20 more
   systems a tick, most gated off: about 20 µs of executor work by the
   third pass's per-system cost, docs/performance.md).
@@ -782,7 +782,7 @@ what must pass, beyond each crate's fast tier. The guards:
   damage reads. Keep the order with `.chain()` before damage, and
   remove the components with `Commands` before a sync point that
   damage follows (check `protection_look.rs`, `swap_effect.rs`).
-- Guards: `apps/party_roster/tests/it/gun_game.rs`, `protection_look.rs`,
+- Guards: `apps/party_roster/tests/party/gun_game.rs`, `protection_look.rs`,
   `rotation.rs`, `net_gun_game.rs`; `chimera/sim/tests/it/minigame.rs`.
 - Effect: the runtime that every minigame of every game runs on uses
   declared queries.
@@ -829,7 +829,7 @@ gone. Test: `each_players_status_lines_follow_the_ladder_in_a_component`;
   Today each client computes them from replicated state; keep that
   (each client's rules system writes its own component) rather than
   replicating text.
-- Guards: `apps/party_roster/tests/it/hud.rs`, `results_hud.rs`,
+- Guards: `apps/party_roster/tests/hl2dm/hud.rs`, `results_hud.rs`,
   `kill_feed.rs`, `announcer.rs`; frozen-scene screenshots of the
   minigame panel (docs/performance.md's third pass method).
 - Effect: the HUD-layer seam (DESIGN.md "One HUD layer over several
@@ -890,7 +890,7 @@ gone. Test: `each_players_status_lines_follow_the_ladder_in_a_component`;
   rest of the step still writes; if it does, keep a message read by
   the same system instead.
 - Guards: `games/combat_arms/tests/it/missions.rs`, `music_ambience.rs`;
-  `apps/party_roster/tests/it/rotation.rs`, `results_hud.rs`,
+  `apps/party_roster/tests/party/rotation.rs`, `results_hud.rs`,
   `party_music.rs`; `games/cs_source/tests/it/net_breakables.rs`.
 - **Done 2026-10-30.** `mode::ModeStep(FlowEvent)`, an `Event` the flow
   triggers (`world.trigger`, then `world.flush()` so what observers queue

@@ -11,6 +11,11 @@ license.workspace = true
 # architecture-for-iteration.md, stage 3).
 [package.metadata.chimera]
 apps = ["party_kit"]
+# Each test binary is selected by the games its files name, not by every
+# game the library composes (checks/src/affected.rs, "tests by game"):
+# tests/<game>/ a game's, tests/party/ the party's own (the default
+# party's games), tests/it/ the cross-game ones (every game).
+tests-by-game = true
 
 # No doc tests (none written): skips a rustdoc pass on every test run.
 [lib]
@@ -71,11 +76,31 @@ source_logic.workspace = true
 # The UI kit's theme and clock (tests/it/main_menu.rs: the logo pass).
 chimera_ui.workspace = true
 
-# Its integration tests (tests/it/): minigames on the composed
-# simulation, headless (`heavy::`: the user's installs).
+# Its integration tests, by game (docs/plans/active/
+# architecture-for-iteration.md, stage 3): minigames on the composed
+# simulation, headless (`heavy::`: the user's installs); shared helpers in
+# tests/common/. `it`: the cross-game tests (every game's change selects
+# them); `party`: the party as such (menus, lobby, settings, the default
+# gun game); `hl2dm`, `halo_ce`, `tf2`: one game's parts in the party.
 [[test]]
 name = "it"
 path = "tests/it/main.rs"
+
+[[test]]
+name = "party"
+path = "tests/party/main.rs"
+
+[[test]]
+name = "hl2dm"
+path = "tests/hl2dm/main.rs"
+
+[[test]]
+name = "halo_ce"
+path = "tests/halo_ce/main.rs"
+
+[[test]]
+name = "tf2"
+path = "tests/tf2/main.rs"
 
 # The dedicated server's integration tests (tests/server/): the server as the
 # binaries compose it (`server::ServerPlugin`), headless; `heavy::` on the

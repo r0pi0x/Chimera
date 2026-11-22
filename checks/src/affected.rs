@@ -35,13 +35,25 @@
 //!   file or a file of no binary (a shared helper such as
 //!   `tests/common/mod.rs`) select all of the package's test binaries.
 //!
+//! Tests by game: a package whose library composes games (the party's
+//! roster: `[package.metadata.chimera] tests-by-game = true`) has a test
+//! binary per game. A change below or in it selects each binary by what
+//! the binary's files name (`binary_names`: `tf2::` or `tf2 as _`, in its
+//! folder and the helpers it includes by `#[path]`): a game's crates count
+//! only for the binaries naming one of that game's crates
+//! (`Workspace::binary_deps`; a game is a folder under `games/`, its front
+//! end with it), everything else as for any package. The library's unit
+//! tests run for any of it. A binary naming every game (the roster's
+//! `it`, the cross-game tests) runs for any game's change.
+//!
 //! The graph is `cargo metadata --all-features`: optional dependencies
 //! count (a game's `ui` front end's), so it never misses one a feature
 //! turns on. This crate's own tests (the architecture tests) always run:
 //! any change can break a layering or repository rule.
 //!
-//! Known shortcuts: the selection is per package (or test module), not per
-//! test that reads a data document: a TF2 weapon file selects every test of
+//! Known shortcuts: the selection is per package (or test module, or a
+//! tests-by-game package's binary), not per test that reads a data
+//! document: a TF2 weapon file selects every test of
 //! `tf2` and of what depends on it. The scenario tests of a crate run for any change below it:
 //! most of them (the heavy map tests above all) are `cs_source`'s, so an
 //! edit to Chimera or Source's logic still selects nearly the whole suite.
@@ -50,7 +62,11 @@
 //! crate: the architecture test checks it) isn't known; none does today
 //! (`tools/testmap` is mapped to `source_tools`, the tools' data to
 //! `cs_source_tools`, the minigames' definitions, `minigames/`, to
-//! `originals`).
+//! `originals`). Tests by game read names in the text, comments included
+//! (a comment naming a game selects more, never less), and miss a game a
+//! test reaches only by id strings (`"hl2dm:weapon_crowbar"` in a ladder's
+//! text) or through the library's composition: the binary naming every
+//! game holds the party's start-up and every-HUD tests for that.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -80,6 +96,11 @@ pub struct Package {
     pub dev_deps: Vec<String>,
     /// Its integration test binaries.
     pub tests: Vec<TestBinary>,
+    /// `[package.metadata.chimera] tests-by-game = true`: its library
+    /// composes games (the party's roster) and each test binary is
+    /// taken to involve only the games its files name
+    /// (`Selection::with_lock`, "tests by game").
+    pub tests_by_game: bool,
 }
 
 /// An integration test binary (`[[test]]`, or one cargo found in `tests/`).
@@ -169,6 +190,7 @@ impl Workspace {
                 });
             }
             names.insert(id.to_string(), name.clone());
+            let tests_by_game = p["metadata"]["chimera"]["tests-by-game"].as_bool().unwrap_or(false);
             packages.insert(
                 id.to_string(),
                 Package {
@@ -177,6 +199,7 @@ impl Workspace {
                     deps: Vec::new(),
                     dev_deps: Vec::new(),
                     tests,
+                    tests_by_game,
                 },
             );
         }
@@ -230,6 +253,40 @@ impl Workspace {
         if let Some(p) = self.package(name) {
             for d in &p.dev_deps {
                 self.lib_deps(d, &mut out);
+            }
+        }
+        out
+    }
+
+    /// A game's folder (`games/tf2`) when `name` is one of its crates
+    /// (the game, its front end, its tools).
+    fn game_of(&self, name: &str) -> Option<String> {
+        let dir = &self.package(name)?.dir;
+        let mut parts = dir.split('/');
+        (parts.next() == Some("games")).then(|| parts.next().map(|g| format!("games/{g}"))).flatten()
+    }
+
+    /// What test binary `bin` of `p` (a `tests_by_game` package) builds
+    /// on as far as the selection goes: everything its tests do except
+    /// the games' crates, and of those only the crates of the games its
+    /// files name (`named`: workspace members). Its library composes
+    /// every game, but a test that names none of a game's crates is
+    /// taken not to exercise that game: the shared binaries name every
+    /// game, so the composition as a whole is still tested on any game's
+    /// change.
+    fn binary_deps(&self, p: &Package, named: &BTreeSet<String>) -> BTreeSet<String> {
+        let games: BTreeSet<String> = named.iter().filter_map(|n| self.game_of(n)).collect();
+        let keep = |d: &String| self.game_of(d).is_none_or(|g| games.contains(&g));
+        let mut out = BTreeSet::from([p.name.clone()]);
+        for d in p.deps.iter().chain(&p.dev_deps).filter(|d| keep(d)) {
+            self.lib_deps(d, &mut out);
+        }
+        // The named games' other crates (a game's front end with it).
+        for q in &self.packages {
+            if self.game_of(&q.name).is_some_and(|g| games.contains(&g))
+                && (p.deps.contains(&q.name) || p.dev_deps.contains(&q.name))
+            {
+                self.lib_deps(&q.name, &mut out);
             }
         }
         out
@@ -688,20 +745,45 @@ impl Selection {
             sel.packages
                 .insert(CHECKS.to_string(), "always (the repository's rules)".to_string());
         }
+        let depends = |what: &str, hit: &[&String]| {
+            if hit.len() == 1 {
+                format!("{what} depend on {} (changed)", hit[0])
+            } else {
+                format!(
+                    "{what} depend on {} (changed)",
+                    hit.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                )
+            }
+        };
         for p in &ws.packages {
             let deps = ws.test_deps(&p.name);
             let hit: Vec<&String> = changed_packages.keys().filter(|c| deps.contains(*c)).collect();
-            let Some(first) = hit.first() else { continue };
+            if hit.is_empty() {
+                continue;
+            }
             let why = if changed_packages.contains_key(&p.name) {
                 format!("changed ({})", changed_packages[&p.name])
-            } else if hit.len() == 1 {
-                format!("its tests depend on {first} (changed)")
             } else {
-                format!(
-                    "its tests depend on {} (changed)",
-                    hit.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
-                )
+                depends("its tests", &hit)
             };
+            if p.tests_by_game && !changed_packages.contains_key(&p.name) {
+                // Tests by game: each binary by the games its files name;
+                // the unit tests (the library's) by everything.
+                let mut bins = BTreeMap::new();
+                for bin in &p.tests {
+                    let named = binary_names(ws, root, bin);
+                    let deps = ws.binary_deps(p, &named);
+                    let hit: Vec<&String> = changed_packages.keys().filter(|c| deps.contains(*c)).collect();
+                    if !hit.is_empty() {
+                        bins.insert(bin.name.clone(), (None, depends("its tests", &hit)));
+                    }
+                }
+                if bins.len() < p.tests.len() {
+                    bins.insert(LIB.to_string(), (None, why));
+                    sel.partial.insert(p.name.clone(), bins);
+                    continue;
+                }
+            }
             sel.packages.entry(p.name.clone()).or_insert(why);
         }
         for (package, binary, module, path) in tests {
@@ -870,6 +952,53 @@ impl Selection {
     }
 }
 
+/// The workspace members test binary `bin`'s files name (`crate::` or
+/// `crate as`), its files being every `.rs` file in its folder (or its one
+/// file) and those they include by `#[path = "..."]` (a shared helper in
+/// `tests/common/`), resolved against the including file's folder.
+fn binary_names(ws: &Workspace, root: &Path, bin: &TestBinary) -> BTreeSet<String> {
+    let mut files = Vec::new();
+    match bin.module_dir() {
+        Some(dir) => rust_files(&root.join(dir), &mut files),
+        None => files.push(root.join(&bin.main)),
+    }
+    let mut seen = BTreeSet::new();
+    let mut text = String::new();
+    while let Some(f) = files.pop() {
+        let Ok(f) = f.canonicalize() else { continue };
+        if !seen.insert(f.clone()) {
+            continue;
+        }
+        let Ok(t) = fs::read_to_string(&f) else { continue };
+        for line in t.lines() {
+            if let Some(rest) = line.trim_start().strip_prefix("#[path = \"")
+                && let Some(path) = rest.split('"').next()
+                && let Some(parent) = f.parent()
+            {
+                files.push(parent.join(path));
+            }
+        }
+        text.push_str(&t);
+        text.push('\n');
+    }
+    ws.packages
+        .iter()
+        .filter(|p| names_module(&text, &p.name) || names_crate_as(&text, &p.name))
+        .map(|p| p.name.clone())
+        .collect()
+}
+
+/// Whether `text` names crate `name` in a `use name as ...` rename.
+fn names_crate_as(text: &str, name: &str) -> bool {
+    let pat = format!("{name} as ");
+    text.match_indices(&pat).any(|(i, _)| {
+        text[..i]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == ':'))
+    })
+}
+
 /// `module` of test binary `bin` and the modules of the same binary that
 /// use it by path (`super::map_flows::Flow`), until none is added.
 fn expand_modules(root: &Path, bin: &TestBinary, module: &str) -> BTreeSet<String> {
@@ -948,6 +1077,7 @@ mod tests {
                     required_features: features.iter().map(|s| s.to_string()).collect(),
                 })
                 .collect(),
+            tests_by_game: false,
         }
     }
 
@@ -1262,6 +1392,50 @@ mod tests {
         ];
         let s = Selection::new(&ws(), &dir, &files);
         assert!(s.partial["cs_source_app"]["it"].0.is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tests_by_game_select_the_binaries_that_name_the_game() {
+        let dir = std::env::temp_dir().join(format!("repo-checks-by-game-{}", std::process::id()));
+        let tests = dir.join("apps/party_roster/tests");
+        for (bin, text) in [
+            ("it", "use {cs_source as _, tf2 as _};"),
+            ("tf2", "#[path = \"../common/play.rs\"] mod play; fn t() { tf2::x(); }"),
+            ("party", "#[path = \"../common/play.rs\"] mod play;"),
+        ] {
+            fs::create_dir_all(tests.join(bin)).unwrap();
+            fs::write(tests.join(bin).join("main.rs"), text).unwrap();
+        }
+        fs::create_dir_all(tests.join("common")).unwrap();
+        fs::write(tests.join("common/play.rs"), "use cs_source::Base;").unwrap();
+        let mut ws = ws();
+        ws.packages.push(pkg("tf2", "games/tf2", &["chimera_core"], &[], &[]));
+        ws.packages.push(pkg("tf2_ui", "games/tf2/ui", &["tf2", "chimera_present"], &[], &[]));
+        let mut roster = pkg(
+            "party_roster",
+            "apps/party_roster",
+            &["chimera_core", "cs_source", "cs_source_ui", "tf2", "tf2_ui"],
+            &[],
+            &[("it", &[]), ("tf2", &[]), ("party", &[])],
+        );
+        roster.tests_by_game = true;
+        ws.packages.push(roster);
+        let pick = |file: &str| {
+            let s = Selection::new(&ws, &dir, &[file.to_string()]);
+            if s.packages.contains_key("party_roster") {
+                return vec!["(all)".to_string()];
+            }
+            s.partial.get("party_roster").map(|b| b.keys().cloned().collect()).unwrap_or_default()
+        };
+        // TF2 (or its front end): the binaries naming it, and the unit tests.
+        assert_eq!(pick("games/tf2/src/lib.rs"), [LIB, "it", "tf2"]);
+        assert_eq!(pick("games/tf2/ui/src/lib.rs"), [LIB, "it", "tf2"]);
+        // CS:S, named by the shared helper every binary includes: all.
+        assert_eq!(pick("games/cs_source/src/lib.rs"), ["(all)"]);
+        // Below the games, or the roster itself: all.
+        assert_eq!(pick("chimera/core/src/lib.rs"), ["(all)"]);
+        assert_eq!(pick("apps/party_roster/src/lib.rs"), ["(all)"]);
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -1497,7 +1497,7 @@ the original's own behaviour isn't a bug (say so instead).
   specialists included, loaded when first worn) and a melee weapon per
   Combat Arms rung, the same for everyone on it, the fitted parts in the
   HUD's rung line (tests `chimera/sim/tests/it/rung_extras.rs`,
-  `apps/party_roster/tests/it/rung_extras.rs`). Some Combat
+  `apps/party_roster/tests/party/rung_extras.rs`). Some Combat
   Arms guns come bare. When the ladder is made, give each Combat Arms
   rung a random fitted set from that gun's accepted attachments
   (`game/attachments.rs`, each weapon's `combat_arms:attachments`), the
@@ -2102,7 +2102,7 @@ sections above already list.
   (and a footstep range option).
   *Opt-in setting added (default off), confirm in a playtest
   (2026-10-28):* measured for others' steps as our mixer computes them
-  (apps/party_roster/tests/it/footstep_levels.rs, gain = volume x
+  (apps/party_roster/tests/party/footstep_levels.rs, gain = volume x
   `distance_gain` at 5 / 15 / 30 m): CS:S identity running 0.50 volume,
   0.40 / 0.21 / 0 (linear, CompatibilityAttenuation 1.0, silent from
   25.4 m), its jump step 1.0: 0.80 / 0.41 / 0; Combat Arms identity

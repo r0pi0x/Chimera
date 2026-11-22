@@ -4,7 +4,7 @@
 //! person can pick from. Plain functions over the graph, the spawn spots
 //! and a line-of-sight test the caller gives, so `map_fitness
 //! --candidates` (a physics ray) and the unit tests (toy maps drawn in
-//! code, `apps/party_roster/tests/it/slice_gen.rs`) generate alike.
+//! code, `apps/party_roster/tests/party/slice_gen.rs`) generate alike.
 //!
 //! - Seeds (`pick_seeds`): the map's spawn clusters' middles, then
 //!   farthest-point sampling over the cells, each cell's distance to the

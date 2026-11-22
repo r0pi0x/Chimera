@@ -318,7 +318,7 @@ comes first, then this plan's M1.
   host with people connected confirms; clients are told "The host left
   the game." (`net::client::HOST_LEFT`, from the hang-up of a server
   that had a host's player).
-- Tests: apps/party_roster/tests/it/main_menu.rs (startup, data, Play's
+- Tests: apps/party_roster/tests/party/main_menu.rs (startup, data, Play's
   lines and game, a pool map, Cancel while loading and joining, Join in
   game, a refused and a full join, Disconnect, a host's Disconnect with
   "host left", Combat Arms' loading kept to its maps). Screenshots: the
@@ -368,7 +368,7 @@ comes first, then this plan's M1.
     face; the UGG faces are capitals only, "lower case maps to capitals"),
     labels stay capitals. Direct's address and the Play text rows show as
     typed.
-- Tests: `apps/party_roster/tests/it/signal_pages.rs` (the list's model:
+- Tests: `apps/party_roster/tests/party/signal_pages.rs` (the list's model:
   ours only, by ping; the scroll window; favourites toggle, sort and file;
   history order, cap and file; a long list scrolled by keys and wheel;
   F, tabs, joining recording a visit; the password modal's flow; typed

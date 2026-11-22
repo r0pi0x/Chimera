@@ -1,119 +1,35 @@
-//! `party_roster`'s (Lucker Party's) integration tests, as one test binary (each file a
-//! module): minigames on the party's simulation, headless
-//! (`combat_arms::harness::CaSim` with `PartyPartsPlugin`); `heavy::`, the
-//! user's installs. `cargo test -p party_roster --features dev --test it`;
-//! where tests go: docs/OBSERVABILITY.md, section 1.
+//! `party_roster`'s cross-game tests, one test binary: every game's HUD,
+//! kill feed, ladders and bodies together, the party's start-up, the
+//! converted prints. It names every game the party composes (below), so a
+//! change to any of them selects it (checks/src/affected.rs, "tests by
+//! game"). Tests of one game go in that game's binary (`tests/<game>/`),
+//! of the party as such in `tests/party/`.
+//! `cargo test -p party_roster --features dev --test it`.
 
-mod account_page;
-mod announcer;
-#[cfg(feature = "present")]
-mod window_icons;
-mod arena_pool;
-mod arena_net;
+// Every game the party composes: a change to any selects this binary.
+use {combat_arms as _, cs_source as _, halo_ce as _, hl2dm as _, originals as _, tf2 as _};
+
+// Shared helpers (tests/common/): each binary includes the ones it uses.
+#[path = "../common/halo_party.rs"]
+mod halo_party;
+#[path = "../common/huds.rs"]
+mod huds;
+#[path = "../common/mixed.rs"]
+mod mixed;
+#[path = "../common/play.rs"]
+mod play;
+
 mod arena_wall;
-mod archetypes;
-mod balance_table;
-mod bodies_drawn;
 mod character_fit;
-mod clips_across_games;
-mod console_scope;
-mod controls;
-mod cross_game;
-mod cross_glass;
-mod cross_water_ladders;
-mod cs_parts;
-mod death_view;
-mod domination_ui;
-mod drawn_ladder;
-mod esc_menu;
-mod feedback;
-mod footstep_levels;
-mod game_hooks;
-mod grenade_looks;
-mod gun_game;
-mod halo_grenades;
-mod halo_grenade_rung;
-mod halo_balance;
-mod halo_ladder;
 mod halo_maps;
-mod halo_vehicle_looks;
-mod host_lobby;
-mod hl2dm_parts;
-mod hud;
-mod identity;
-mod identity_sounds;
 mod kill_feed;
-mod kit_conformance;
-mod overlay_guard;
-mod kill_icons;
 mod ladders_across_games;
-mod last_shot;
-mod listen_server;
-mod join_flow;
-mod lobby_staging;
-mod main_menu;
-mod map_files;
-mod map_pool_by_count;
-mod map_vote;
-mod menu_backdrops;
-mod net_gun_game;
-mod onboarding;
-mod party_music;
-mod persist;
-mod protection_look;
-mod net_party;
-mod results_hud;
-mod range_bodies;
-mod rotation;
-mod rung_characters;
-mod rung_extras;
-mod rung_holders;
-mod settings;
-mod shipped_map_pool;
-mod signal_menu;
-mod signal_pages;
-mod slice_gen;
+mod overlay_guard;
 mod startup;
-mod swap_effect;
-mod tf2_rungs;
-mod tf2_pool;
-mod surprise;
-mod switches;
-mod turrets;
-mod voice_lines;
 
+// Slow ones (the user's installs): the fast tier skips `heavy::`.
 mod heavy {
-    mod arena_bots;
-    mod bot_cost;
-    mod bots_on_rungs;
-    mod ca_mode_objects;
-    mod clips_on_maps;
     mod converted;
     mod converted_prints;
-    mod cs_decals;
-    mod death_bodies;
-    mod guest_cache;
-    mod guest_effects;
-    mod guest_shells;
-    mod halo_bots;
-    mod halo_envelope;
-    mod halo_gun_bots;
-    mod halo_net_rung;
-    mod net_smoothness;
-    mod halo_maps;
-    mod halo_gun_sounds;
-    mod halo_ladders;
-    mod halo_vehicles;
     mod halo_party_hud;
-    mod cross_hits;
-    mod head_matrix;
-    mod css_map_moves;
-    mod hud_looks;
-    mod icon_glyphs;
-    mod impacts;
-    mod ladders_across_maps;
-    mod nav_bounds;
-    mod range_kit;
-    mod spawn_spots;
-    mod tf2_maps;
 }
