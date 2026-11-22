@@ -49,8 +49,10 @@
 //!   `OPEN_REACH`: never in a duct, a crawlspace or a low narrow
 //!   passage, as ctf_turbine's vents once gave), it is inside the map (on a map with visibility data, its chest in a
 //!   leaf of a cluster: not solid, not the void outside the world), and
-//!   outside water and every zone a game registers as hurting or
-//!   killing (`SpawnHazards`). Without a mesh, or spots, the map's spawn
+//!   outside water, every zone a game registers as hurting or
+//!   killing (`SpawnHazards`) and, unless the match is a team one, the
+//!   map's team spawn rooms (`SpawnRooms`, `map::spawn_room_zones`: TF2's
+//!   `func_respawnroom`s, a team's points, resupply and doors). Without a mesh, or spots, the map's spawn
 //!   points are the spots; so they are, at once, on a map that asks for
 //!   it (`map::code_maps::SpawnOnPoints`: the range's firing line), facing
 //!   its way when it says one (`fixed_yaw`). `candidates` lists every spot without the
@@ -174,7 +176,9 @@ pub fn stuck_at(q: &SpatialQuery, filter: &SpatialQueryFilter, feet: Vec3) -> bo
 #[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpawnSeed(pub u32);
 
-pub use crate::map::{SpawnClimbAppExt, SpawnClimbs, SpawnHazardAppExt, SpawnHazards};
+pub use crate::map::{
+    SpawnClimbAppExt, SpawnClimbs, SpawnHazardAppExt, SpawnHazards, SpawnRoomAppExt, SpawnRooms, spawn_room_zones,
+};
 
 /// The loaded map's spawn spots (removed when the map unloads).
 #[derive(Resource, Clone, Debug, Default)]
@@ -634,14 +638,7 @@ impl SpotsJob {
             world.insert_resource(points_as_spots(points));
             return None;
         }
-        let mut hazards: Vec<MapBrush> = Vec::new();
-        let sources: Vec<_> = world.get_resource::<SpawnHazards>().map(|h| h.0.clone()).unwrap_or_default();
-        for source in sources {
-            hazards.extend(source(world));
-        }
-        if let Some(water) = world.get_resource::<MapWater>() {
-            hazards.extend(water.0.iter().map(|v| v.brush.clone()));
-        }
+        let hazards = keep_out_zones(world);
         let walker = walker_for(world);
         let flood = needs_walk(world.get_resource::<NavMesh>()).then(|| nav_gen::NavGenJob::new(&points, &walker.0, walker.1));
         let plan = play_area::held_plan(world);
@@ -762,6 +759,28 @@ impl SpotsJob {
             spots: if empty { self.points } else { self.found },
         }
     }
+}
+
+/// What spots keep out of: every registered hazard (`SpawnHazards`), the
+/// map's water and, unless the match playing is a team one, its team spawn
+/// rooms (`map::spawn_room_zones`: TF2's, whose doors and resupply are a
+/// team's; a free-for-all spawns anyone anywhere but there).
+fn keep_out_zones(world: &mut World) -> Vec<MapBrush> {
+    let mut zones: Vec<MapBrush> = Vec::new();
+    let sources: Vec<_> = world.get_resource::<SpawnHazards>().map(|h| h.0.clone()).unwrap_or_default();
+    for source in sources {
+        zones.extend(source(world));
+    }
+    if let Some(water) = world.get_resource::<MapWater>() {
+        zones.extend(water.0.iter().map(|v| v.brush.clone()));
+    }
+    let teams = world
+        .get_resource::<super::ActiveMinigame>()
+        .is_some_and(|a| a.def.teams.teams() != crate::mode::Teams::FreeForAll);
+    if !teams {
+        zones.extend(crate::map::spawn_room_zones(world));
+    }
+    zones
 }
 
 fn on_spots(def: &super::MinigameDef) -> bool {
@@ -913,14 +932,7 @@ pub fn walker_for(world: &World) -> (NavGenParams, Option<NavGenParams>) {
 /// without a mesh).
 fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
     let seed = seed_of(world);
-    let mut hazards: Vec<MapBrush> = Vec::new();
-    let sources: Vec<_> = world.get_resource::<SpawnHazards>().map(|h| h.0.clone()).unwrap_or_default();
-    for source in sources {
-        hazards.extend(source(world));
-    }
-    if let Some(water) = world.get_resource::<MapWater>() {
-        hazards.extend(water.0.iter().map(|v| v.brush.clone()));
-    }
+    let hazards = keep_out_zones(world);
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let (walker, bound) = walker_for(world);
     let characters: Vec<Entity> = world.iter_entities().filter(|r| r.contains::<Intent>()).map(|r| r.id()).collect();

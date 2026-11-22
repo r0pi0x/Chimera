@@ -7,7 +7,9 @@
 //! pool (M4: data/map_pool.toml) lets a player out of each spawn room
 //! (`a_player_walks_out_of_every_spawn_room_of_the_tf2_pool`;
 //! `CHIMERA_TF2_POOL=<text>`: only the pool's maps whose id has it).
-//! Passes with a note without the TF2 and Combat Arms installs.
+//! A free for all spawns outside the spawn rooms on ctf_2fort and
+//! cp_badlands (`a_free_for_all_spawns_outside_the_spawn_rooms`, TF2's
+//! install alone: `$CHIMERA_TF2_ROOT` will do). Passes with a note without the TF2 and Combat Arms installs.
 
 use bevy::prelude::*;
 use chimera_core::mount::config::LocalConfig;
@@ -285,4 +287,49 @@ fn a_player_walks_out_of_every_spawn_room_of_the_tf2_pool() {
         }
     }
     assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+/// The gun game (free for all) on ctf_2fort and cp_badlands: no spawn spot
+/// is in a spawn room (`func_respawnroom`, `chimera_world::map::SpawnRooms`),
+/// the spots still spread over the map, and none is a spot a standing
+/// player is stuck in.
+#[test]
+fn a_free_for_all_spawns_outside_the_spawn_rooms() {
+    if !tf2::game::INFO.install().is_some_and(|p| chimera_core::mount::served::usable("tf2", p, "tf")) {
+        eprintln!("skipping: needs the TF2 install");
+        return;
+    }
+    for map in ["tf2:ctf_2fort", "tf2:cp_badlands"] {
+        let context = LoadContext::default();
+        let options = MapLoadOptions { kit: KitLoad::Only(&[]), ..MapLoadOptions::lean().in_context(&context) };
+        let data = party_kit::load_map_with(map, &options).expect("the map loads");
+        let mut sim = Sim::new(CaSim, (MapSimPlugin::new(data), PartyPartsPlugin));
+        chimera_sim::minigame::start(sim.app.world_mut(), DEFAULT_MINIGAME).expect("the gun game starts");
+        sim.ticks(3);
+        let w = sim.app.world_mut();
+        let rooms = chimera_world::map::spawn_room_zones(w);
+        let feet = spot_checks::spawn_feet(w);
+        let in_room = |p: Vec3| [0.1, 1.0, 1.7].iter().any(|h| rooms.iter().any(|b| b.contains(p + Vec3::Y * *h)));
+        let roomed = feet.iter().filter(|p| in_room(**p)).count();
+        let spots = chimera_sim::minigame::spawns::candidates(w);
+        let inside: Vec<Vec3> = spots.iter().copied().filter(|p| in_room(*p)).collect();
+        let cells: std::collections::BTreeSet<(i32, i32)> =
+            spots.iter().map(|p| ((p.x / 10.0).floor() as i32, (p.z / 10.0).floor() as i32)).collect();
+        let stuck = spot_checks::stuck(w, &spots);
+        eprintln!(
+            "{map}: {} spawn-room volumes, {roomed} of {} spawn points in them; {} spots in {} 10 m cells, {} in a room, {} stuck",
+            rooms.len(),
+            feet.len(),
+            spots.len(),
+            cells.len(),
+            inside.len(),
+            stuck.len()
+        );
+        eprintln!("{map}: the first spots: {:?}", &spots[..spots.len().min(4)]);
+        assert!(!rooms.is_empty(), "{map}: its spawn rooms' volumes");
+        assert!(roomed * 2 > feet.len(), "{map}: most team spawns are in the rooms ({roomed} of {})", feet.len());
+        assert!(inside.is_empty(), "{map}: spots in a spawn room: {inside:?}");
+        assert!(spots.len() > 1000 && cells.len() > 60, "{map}: spread ({} spots, {} cells)", spots.len(), cells.len());
+        assert!(stuck.is_empty(), "{map}: spots a standing player is stuck in: {stuck:?}");
+    }
 }

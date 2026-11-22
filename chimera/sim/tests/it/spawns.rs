@@ -7,7 +7,8 @@
 //! its wall), never in a solid or void leaf; off the areas' centred grid
 //! (de_dust2's "seam": a row of eyes in the plane where two faces meet);
 //! in open space only, never in a duct or a crawlspace (ctf_turbine's
-//! vents).
+//! vents); in a free for all never in the map's team spawn rooms
+//! (`map::SpawnRooms`, TF2's `func_respawnroom`).
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
@@ -582,4 +583,103 @@ fn spots_stand_in_open_space_not_in_ducts_or_crawlspaces() {
     assert!(!spots.iter().any(crawl), "a spot in the crawlspace: {:?}", spots.iter().filter(|p| crawl(p)).collect::<Vec<_>>());
     assert!(spots.iter().filter(|p| low_room(p)).count() > 20, "spots under the low room's ceiling");
     assert!(!spots.iter().any(hallway), "a spot in the low hallway");
+}
+
+/// The greybox as a map of game `kit` whose spawn points stand in spawn
+/// rooms (`map::SpawnRooms`, TF2's `func_respawnroom`): a `kit_spawnroom`
+/// volume 12 m square around each, rotated 30 degrees and given as entity
+/// space (Z up) to check the conversion, under the minigame `def`.
+fn with_spawn_rooms(def: &str) -> Sim {
+    use chimera_core::core::MapGame;
+    use chimera_world::map::{MapEntities, MapEntity, MapHull, SpawnRoomAppExt, entities::engine_to_entity};
+    let mut sim = Sim::with(chimera_sim::SimBasePlugins, |app| {
+        app.add_plugins((greybox::GreyboxMapPlugin, MinigamePlugin));
+        testkit::add_weapons(app);
+        app.add_minigames(&[("kit_deathmatch.toml", def)]).expect("the definition reads");
+        app.add_spawn_rooms("kit", &["kit_spawnroom"]);
+    });
+    sim.ticks(5);
+    // A box 12 m square and 6 m tall about the entity's origin (Source
+    // units of 1 m: scale 1), the origin at each spawn point's feet.
+    let b = MapBrush::from_box(Vec3::new(-6.0, -6.0, -1.0), Vec3::new(6.0, 6.0, 5.0));
+    let mut points = Vec::new();
+    for x in [-6.0, 6.0] {
+        for y in [-6.0, 6.0] {
+            for z in [-1.0, 5.0] {
+                points.push(Vec3::new(x, y, z));
+            }
+        }
+    }
+    let hull = MapHull { planes: b.planes.clone(), points };
+    let entities = greybox::SPAWNS
+        .iter()
+        .map(|s| {
+            let o = engine_to_entity(*s - Vec3::Y, 1.0);
+            MapEntity {
+                keyvalues: vec![
+                    ("classname".into(), "kit_spawnroom".into()),
+                    ("origin".into(), format!("{} {} {}", o.x, o.y, o.z)),
+                    ("angles".into(), "0 30 0".into()),
+                ],
+                hulls: vec![hull.clone()],
+                ..default()
+            }
+        })
+        .collect();
+    let w = sim.app.world_mut();
+    w.insert_resource(MapGame("kit".into()));
+    w.insert_resource(MapEntities { entities: std::sync::Arc::new(entities), scale: 1.0 });
+    minigame::start(sim.app.world_mut(), "kit:deathmatch").expect("it starts");
+    sim
+}
+
+/// Whether `p` is in a spawn room of `with_spawn_rooms` (its 12 m square
+/// turned 30 degrees about each spawn point, with a body's margin).
+fn in_spawn_room(p: Vec3) -> bool {
+    greybox::SPAWNS.iter().any(|s| {
+        // Entity yaw 30 about Z up is engine yaw 30 about Y up.
+        let d = Quat::from_rotation_y(-30f32.to_radians()) * (p - *s);
+        d.x.abs() < 6.0 && d.z.abs() < 6.0 && p.y < s.y + 4.0
+    })
+}
+
+#[test]
+fn a_free_for_all_spawns_outside_the_map_s_spawn_rooms() {
+    let mut sim = with_spawn_rooms(DEF);
+    let (_, _, at) = respawns(&mut sim, 40);
+    assert!(at.iter().all(|p| !in_spawn_room(*p)), "in a spawn room: {at:?}");
+    let spots = sim.app.world().resource::<SpawnSpots>().spots.clone();
+    assert!(spots.len() > 100, "{} spots", spots.len());
+    assert!(spots.iter().all(|s| !in_spawn_room(*s)), "a spot in a spawn room");
+    // Spread over the map, every spot with a standing player's room.
+    let cells: std::collections::BTreeSet<(i32, i32)> =
+        at.iter().map(|p| ((p.x / 10.0).floor() as i32, (p.z / 10.0).floor() as i32)).collect();
+    assert!(cells.len() >= 12, "{} 10 m cells in 40 spawns: {cells:?}", cells.len());
+    let w = sim.app.world_mut();
+    let characters: Vec<Entity> = w.query_filtered::<Entity, With<Intent>>().iter(w).collect();
+    let mut state = SystemState::<SpatialQuery>::new(w);
+    let q = state.get(w).unwrap();
+    let filter = SpatialQueryFilter::from_mask(chimera_core::core::CHARACTER_FILTER).with_excluded_entities(characters);
+    for s in &spots {
+        assert!(!spawns::stuck_at(&q, &filter, *s), "no room to stand at {s}");
+    }
+}
+
+#[test]
+fn spawning_at_the_map_s_points_still_uses_the_rooms() {
+    // The rooms are found (one volume each, in engine space)...
+    let mut sim = with_spawn_rooms(DEF);
+    let rooms = spawns::spawn_room_zones(sim.app.world());
+    assert_eq!(rooms.len(), 2);
+    for (room, s) in rooms.iter().zip(greybox::SPAWNS) {
+        assert!(room.contains(s), "{s} in its room {room:?}");
+        assert!(!room.contains(s + Vec3::new(9.0, 0.0, 0.0)), "the room ends");
+    }
+    // ...and a mode spawning at the map's or its team's points (a team
+    // mode's) spawns there, in them.
+    for points in ["map", "team"] {
+        let mut sim = with_spawn_rooms(&DEF.replace("random_hidden", points));
+        let (_, _, at) = respawns(&mut sim, 3);
+        assert!(at.iter().all(|p| greybox::SPAWNS.iter().any(|s| s.xz().distance(p.xz()) < 0.3)), "{points}: {at:?}");
+    }
 }

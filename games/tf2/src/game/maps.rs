@@ -18,8 +18,10 @@
 //! 16 (its home spawns).
 //!
 //! Free for all (M4a, `free_for_all_doors`, the conversion's
-//! `entity_rule`): a gun game spawns anyone anywhere, so the spawn rooms
-//! open to all. Every door a trigger opens on touch starts open (the spawn
+//! `entity_rule`): a gun game spawns anyone anywhere but in the spawn
+//! rooms (`SPAWN_ROOMS`, `map::SpawnRooms`: their `func_respawnroom`
+//! volumes, kept by the conversion, are left out of the spawn spots), and
+//! the rooms open to all. Every door a trigger opens on touch starts open (the spawn
 //! rooms' and the bases' auto doors; their triggers' team filters let
 //! anyone through), so the spawn spots, drawn by a walk from the spawn
 //! points through the world as it stands, spread over the whole map
@@ -137,6 +139,25 @@ pub fn team_spawn(e: &MapEntity, all: &[MapEntity]) -> Option<Option<Team>> {
         }
     }
     Some(Some(ours))
+}
+
+/// Its team spawn rooms' volumes (install.md 2.4): a free-for-all spawns
+/// anywhere on the map but in them (`map::SpawnRooms`).
+pub const SPAWN_ROOMS: &[&str] = &["func_respawnroom"];
+
+/// TF2's maps' rules for every app that plays them: its spawn rooms.
+pub fn add_map_rules(app: &mut bevy::app::App) {
+    use crate::map::SpawnRoomAppExt;
+    app.add_spawn_rooms(super::GAME, SPAWN_ROOMS);
+}
+
+/// TF2's maps' rules as a plugin (`Tf2Plugins`).
+pub struct Tf2MapsPlugin;
+
+impl bevy::app::Plugin for Tf2MapsPlugin {
+    fn build(&self, app: &mut bevy::app::App) {
+        add_map_rules(app);
+    }
 }
 
 /// The trigger outputs that open a door when a player walks in.

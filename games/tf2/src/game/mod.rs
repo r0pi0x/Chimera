@@ -133,6 +133,7 @@ impl PluginGroup for Tf2Plugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .add(crate::game_registry::RegisterGame(&INFO))
+            .add(maps::Tf2MapsPlugin)
             .add(movement::Tf2MovementPlugin)
             .add(weapons::Tf2GunsPlugin)
             .add(Tf2ViewPlugin)
@@ -203,6 +204,7 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 pub fn party_sim(app: &mut bevy::app::App) {
     use crate::game_registry::GameAppExt;
     app.register_game(&INFO);
+    maps::add_map_rules(app);
     if !app.is_plugin_added::<source_logic::logic::LogicPlugin>() {
         app.add_plugins(source_logic::logic::LogicPlugin);
     }

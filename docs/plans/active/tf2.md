@@ -552,6 +552,14 @@ the probe server.
   `func_regenerate`, `func_nobuild`, the flag zones) neither draw nor
   collide (`source_engine::content::bsp::brush_entities`): the spawn rooms'
   door brushes, solid to the room's enemies in TF2, shut nobody out.
+  Spawning anywhere (`points = "scored"`/`"random_hidden"`) keeps out of
+  the spawn rooms in a free for all (2026-11-21, a playtest's "you spawn
+  inside the normal spawns"): the conversion keeps `func_respawnroom`'s
+  volumes (`MapEntity::hulls`), TF2 registers the class as its spawn rooms
+  (`maps::SPAWN_ROOMS`, `chimera_world::map::SpawnRooms`, any game can),
+  and the spots leave them out unless the match is a team one
+  (`chimera_sim::minigame::spawns`). Test: party_kit
+  `heavy::tf2_maps::a_free_for_all_spawns_outside_the_spawn_rooms`.
 - **Fixed on the way**: a material path with `..` (koth_viaduct's
   `models/props_trainyard/../props_forest/train_gate001_forest`) resolves
   (`chimera_vfs::normalize` steps up a folder); `chimera_pack sets tf2

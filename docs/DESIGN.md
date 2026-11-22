@@ -992,6 +992,16 @@ that):
   checked each spawn against the others' old places, so players opened
   in each other's view. Never fails: the least bad spot wins on a map too
   small to hide.
+- **A free for all spawns outside team spawn rooms** (user, 2026-11-21,
+  playtesting TF2's maps: "you spawn inside the normal spawns ... you
+  should just spawn in random spots"): a game names the classes of its
+  maps' spawn-room volumes (`map::SpawnRooms`; TF2's `func_respawnroom`,
+  with a team's spawn points, resupply and team-only doors), and the
+  spots of spawning anywhere (`scored`, `random_hidden`) leave them out,
+  as they leave out hazards, unless the match is a team one (`teams`
+  other than `free_for_all`). A mode spawning at its team's points
+  (`team`) still spawns in them; maps with deathmatch spawns of their own
+  have no spawn rooms to leave out.
 
 ### Automatic gun games (variety)
 

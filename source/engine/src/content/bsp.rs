@@ -2159,10 +2159,11 @@ pub fn map_entities(bsp: &Bsp, leaves: &[RawLeaf]) -> Vec<crate::map::MapEntity>
                 .and_then(|m| m.strip_prefix('*'))
                 .and_then(|m| m.parse::<usize>().ok())
                 .filter(|m| *m > 0);
-            // Buy zones, bomb sites, rescue zones and footstep volumes
-            // (`sound::step_remaps`) are trigger-like volumes too, and
-            // physics clips (`map::physics_clip`: solid to physics
-            // objects only).
+            // Buy zones, bomb sites, rescue zones, footstep volumes
+            // (`sound::step_remaps`) and TF2's spawn rooms (a free-for-all's
+            // spawns keep out of them: `map::SpawnRooms`) are trigger-like
+            // volumes too, and physics clips (`map::physics_clip`: solid to
+            // physics objects only).
             let trigger = class.starts_with("trigger_")
                 || matches!(
                     class,
@@ -2171,6 +2172,7 @@ pub fn map_entities(bsp: &Bsp, leaves: &[RawLeaf]) -> Vec<crate::map::MapEntity>
                         | "func_hostage_rescue"
                         | "func_clip_vphysics"
                         | "func_footstep_control"
+                        | "func_respawnroom"
                 );
             let mover = movers.contains(&index);
             let hulls = match model {
