@@ -35,6 +35,7 @@ HL2:DM spec continues it and must not contradict it.
 | H9 | [effects_sounds.md](effects_sounds.md) | 3 | draft | effects and sounds |
 | H10 | [maps_entities.md](maps_entities.md) | 3 | draft | HL2:DM's map entities beyond specs/source/ |
 | – | [game_ui.md](game_ui.md) | – | draft | GameUI data: main menu, Multiplayer options (models, sprays), Create Server |
+| – | [low_health.md](low_health.md) | – | draft | every low-health and damage cue the local player gets (index over H8/H9, plus damage punch, explosion ear ringing, fade maths; no HEV voice in multiplayer) |
 
 The "Covers" lines are short; the full brief for each item is in the plan.
 
