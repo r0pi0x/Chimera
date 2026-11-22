@@ -1,6 +1,6 @@
 //! The games' full-screen passes on the view (`render::screen_post`: the
 //! scene light and the focus blur) and the view's own effects a game asks
-//! for (`ViewEffects`: a camera roll and a field-of-view offset). The
+//! for (`ViewEffects`: a camera roll, a field-of-view offset, and a turn and move in the camera's frame). The
 //! passes run on the last camera drawing the view (the view model's when
 //! it draws, else the world's), after colour correction and before night
 //! vision and the HUD, while the game's `ScreenPost` has work; the roll
@@ -22,6 +22,11 @@ pub struct ViewEffects {
     pub roll: f32,
     /// Added to the vertical field of view, degrees.
     pub fov: f32,
+    /// A turn of the view in the camera's own frame (x right, y up, -z
+    /// forward): a rotation vector (axis times radians).
+    pub rotation: Vec3,
+    /// A move of the camera in its own frame, metres.
+    pub offset: Vec3,
 }
 
 pub struct ScreenPostClientPlugin;

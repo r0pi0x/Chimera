@@ -56,6 +56,7 @@ mod skeleton;
 mod ticks;
 mod view;
 mod vitality;
+mod victim_fx;
 mod vitality_data;
 mod weapons;
 mod weapons_rules;

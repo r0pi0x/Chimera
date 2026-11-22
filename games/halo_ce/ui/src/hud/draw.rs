@@ -31,9 +31,11 @@
 //!   another game, the plasma pistol's light blue reticle vanished).
 //! - The flashlight meter, waypoints, teammate markers, messages and
 //!   prompts are not drawn. The damage arrows (`arrows`) take their side
-//!   from the hit's direction alone (no "indicators always point down"
-//!   flag of the damage effect: a `DamageTaken` carries none). The warning
-//!   sounds are not the HUD's (`game::audio::warnings`).
+//!   from the hit's direction, or the bottom alone for a damage effect
+//!   with "indicators always point down", known from the frame's
+//!   `fx::victim::HaloVictim` (it and its `DamageTaken` are matched by
+//!   frame, not one to one). The warning sounds are not the HUD's
+//!   (`game::audio::warnings`).
 
 use blam_formats::{
     cache::{Bounds, TagRef},

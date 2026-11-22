@@ -20,7 +20,8 @@
 //! and detonation-started effects, its contrail, light and effect
 //! attachments (the rocket's exhaust, the grenades' trails) and whether it
 //! has a model. Per item (the guns' weapon tags and every equipment tag):
-//! its pickup sound. Through the effects: every sound, decal (and its
+//! its pickup sound. Every damage effect tag's victim-side presentation
+//! (`victim::compile`). Through the effects: every sound, decal (and its
 //! chain), light and particle (with its bitmap's sprite sequences and its
 //! point physics).
 //!
@@ -358,6 +359,9 @@ pub struct HaloFx {
     pub projectiles: BTreeMap<String, FxProjectile>,
     /// Equipment and weapon items' pickup sounds by tag path.
     pub pickups: BTreeMap<String, String>,
+    /// Every damage effect's victim-side presentation by tag path
+    /// (`victim::look_of`).
+    pub damage: BTreeMap<String, super::victim::DamageLook>,
 }
 
 impl HaloFx {
@@ -444,6 +448,9 @@ impl FxSet {
             }
             e
         }));
+        for (path, look) in &other.library.damage {
+            lib.damage.entry(path.clone()).or_insert_with(|| look.clone());
+        }
         for (path, i) in &other.library.by_path {
             lib.by_path.entry(path.clone()).or_insert(i + eff);
         }
@@ -1040,6 +1047,8 @@ pub fn compile(file: &MapFile, guns: &[&str], decode: bool) -> FxSet {
             c.set.library.pickups.insert(i, sound);
         }
     }
+    // Every damage effect's presentation (`victim`).
+    c.set.library.damage = super::victim::compile(file);
     // The Spartan's animation sounds (its deaths': `body::death`).
     for r in super::super::body::load::sound_tags(file) {
         c.sound(&r);

@@ -32,11 +32,15 @@ fn show(
     fx: Option<Res<CaScreenFx>>,
     post: Option<ResMut<chimera_present::render::screen_post::ScreenPost>>,
     view: Option<ResMut<ViewEffects>>,
+    mut written: Local<Option<(Vec3, Vec3)>>,
 ) {
     let fx = fx.as_deref().cloned().unwrap_or_default();
     if let Some(mut post) = post {
         let add = combine_tint(&[fx.tint]);
-        if post.light_add != add || post.light_scale != fx.light_scale {
+        // Written when ours changes, so another game's light (Halo's
+        // screen flash) is not undone every frame.
+        if *written != Some((add, fx.light_scale)) {
+            *written = Some((add, fx.light_scale));
             post.light_add = add;
             post.light_scale = fx.light_scale;
         }
@@ -45,6 +49,7 @@ fn show(
         let want = ViewEffects {
             roll: fx.roll,
             fov: fx.fov.y,
+            ..*view
         };
         view.set_if_neq(want);
     }

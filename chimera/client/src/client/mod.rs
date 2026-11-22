@@ -1152,7 +1152,8 @@ fn follow_eye(
         let mut cams = cameras.iter_many_mut(children).matched();
         // Blasts shake the eye's view (not a detached camera's).
         let (offset, look) = if watched.is_none() && freecam.mode == 0 && spectating.pose.is_none() && camera.is_none() {
-            (offset + shake.offset, look * Quat::from_rotation_z(shake.roll + effects.roll))
+            let look = look * Quat::from_rotation_z(shake.roll + effects.roll);
+            (offset + shake.offset + look * effects.offset, look * Quat::from_scaled_axis(effects.rotation))
         } else {
             (offset, look)
         };

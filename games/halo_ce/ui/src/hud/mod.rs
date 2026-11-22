@@ -114,7 +114,8 @@ impl Plugin for HaloHudPlugin {
             .init_resource::<nodes::HaloHud>()
             .init_resource::<material::HudFilterSetting>()
             .add_systems(Startup, nodes::spawn_root)
-            .add_systems(Update, (nodes::load, nodes::collect, nodes::sync).chain().run_if(hud_is(GAME)))
+            .add_message::<crate::game::fx::victim::HaloVictim>()
+            .add_systems(Update, (nodes::load, nodes::collect, nodes::sync).chain().after(crate::game::fx::victim::VictimSystems).run_if(hud_is(GAME)))
             .add_systems(Update, (nodes::clear_blur.run_if(not(hud_is(GAME))), nodes::scope_post).chain().after(nodes::sync));
         filter_cvar(app);
         super::kill_icons::plugin(app);

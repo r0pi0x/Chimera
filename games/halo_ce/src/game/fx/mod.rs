@@ -27,6 +27,8 @@
 //!   projectiles' lights and attached effects in flight, detonations and a
 //!   plasma grenade's countdown on every machine, items lying on the map
 //!   and their pickup sound.
+//! - `victim`: what a hit shows its victim: the damage effect's screen
+//!   flash, camera impulses and shake (`VictimView`).
 //!
 //! Known shortcuts: see `play`, `shots`, `sound` and `load`; the full-body
 //! shield shader (the shield's glow over the body) is later work, only the
@@ -38,6 +40,7 @@ pub mod place;
 pub mod play;
 pub mod shots;
 pub mod sound;
+pub mod victim;
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -93,6 +96,7 @@ impl Plugin for HaloFxPlugin {
             .add_systems(PreUpdate, take_library);
         shots::plugin(app);
         objects::plugin(app);
+        victim::plugin(app);
     }
 }
 

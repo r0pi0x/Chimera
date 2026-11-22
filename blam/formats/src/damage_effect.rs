@@ -16,7 +16,8 @@
 //!
 //! Known shortcuts:
 //! - Presentation values (screen flash, rumble, camera impulse and shake)
-//!   are read, never evaluated: they belong to the HUD and camera.
+//!   are read, not evaluated here: the game evaluates them
+//!   (`halo_ce::game::fx::victim`; rumble is not played).
 //! - Modifier slots 33 to 39 are kept as stored (zero on the disc).
 //! - The pad ranges are not read.
 

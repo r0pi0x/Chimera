@@ -189,8 +189,17 @@ pub fn collect(
     mut hud: ResMut<HaloHud>,
     layout: Option<Res<super::HaloHudLayout>>,
     mut taken: MessageReader<DamageTaken>,
+    (mut victims, effects): (MessageReader<crate::game::fx::victim::HaloVictim>, Option<Res<crate::game::vitality::DamageEffects>>),
 ) {
     let layout = layout.map_or_else(Default::default, |l| l.0);
+    // A hit whose damage effect has "indicators always point down" sets
+    // only the bottom arrow (hud.md 12): its `HaloVictim` comes in the
+    // same frame as its `DamageTaken`.
+    let downs: Vec<bool> = victims
+        .read()
+        .filter(|v| v.directed)
+        .map(|v| effects.as_deref().is_some_and(|e| points_down(v, e)))
+        .collect();
     let Some(data) = load.data() else {
         taken.clear();
         return;
@@ -254,14 +263,21 @@ pub fn collect(
     let hud = &mut *hud;
     // The damage arrows: each hit that reached the player from a source
     // (hud.md 12), by where it came from in the camera's frame.
+    let down = downs.iter().any(|d| *d);
+    let mut arrows = 0;
     for t in taken.read() {
         let d = &t.damage;
         if d.target != me_e || !t.directed || d.amount <= 0.0 {
             continue;
         }
         let to = -d.dir;
-        let sides = super::rules::arrow_sides([to.dot(*eye.right()), to.dot(*eye.forward()), to.dot(*eye.up())], false);
+        let sides = super::rules::arrow_sides([to.dot(*eye.right()), to.dot(*eye.forward()), to.dot(*eye.up())], down);
         hud.state.hit(sides, now);
+        arrows += 1;
+    }
+    // A down-pointing hit whose `DamageTaken` came in another frame.
+    if down && arrows == 0 {
+        hud.state.hit(super::rules::arrow_sides([0.0; 3], true), now);
     }
     if !alive {
         hud.state.arrows = [None; 4];
@@ -278,6 +294,12 @@ pub fn collect(
     hud.canvas = Some(canvas);
     hud.blur = draw::scope_blur(data, &unit, v);
     hud.unit = Some(unit);
+}
+
+/// A hit's damage effect has "indicators always point down" (hud.md 12).
+pub fn points_down(v: &crate::game::fx::victim::HaloVictim, effects: &crate::game::vitality::DamageEffects) -> bool {
+    use crate::game::vitality::data::flags::DAMAGE_INDICATORS_ALWAYS_POINT_DOWN;
+    effects.at(v.effect).is_some_and(|(_, e)| e.has(DAMAGE_INDICATORS_ALWAYS_POINT_DOWN))
 }
 
 /// The quads as nodes under the root: one node per quad in draw order

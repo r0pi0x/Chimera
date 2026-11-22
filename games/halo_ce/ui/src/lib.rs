@@ -5,7 +5,8 @@
 //! specs/halo_ce/hud.md, drawn from the disc's HUD tags in place of the
 //! shell's fallback crosshair and status), its weapons' kill-feed icons
 //! from the disc (`kill_icons`) and, in the party apps, its zoom on the
-//! player's own field of view (`party_view`).
+//! player's own field of view (`party_view`); a hit's screen flash and
+//! camera impulse and shake on its victim (`victim_view`).
 
 pub mod hud;
 
@@ -14,6 +15,8 @@ pub mod fx_lights;
 pub mod party_view;
 
 pub mod kill_icons;
+
+pub mod victim_view;
 
 // `crate::game`, `crate::map` and the rest, as inside the game's crate,
 // where this code began.
@@ -44,6 +47,7 @@ pub fn binds(app: &mut bevy::app::App) {
     };
     app.bound_action(MELEE_ACTION).bound_action(ZOOM_ACTION).bound_action(GRENADE_ACTION).bound_action(SWITCH_ACTION);
     fx_lights::plugin(app);
+    victim_view::plugin(app);
 }
 
 /// Halo's front end in an app made of several games (beside its

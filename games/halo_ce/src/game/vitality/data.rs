@@ -285,6 +285,8 @@ pub mod flags {
     pub const DETONATES_EXPLOSIVES: u32 = 1 << 5;
     pub const ONLY_HURTS_SHIELDS: u32 = 1 << 6;
     pub const CAUSES_FLAMING_DEATH: u32 = 1 << 7;
+    /// The HUD's damage arrows point down whatever the side.
+    pub const DAMAGE_INDICATORS_ALWAYS_POINT_DOWN: u32 = 1 << 8;
     pub const SKIPS_SHIELDS: u32 = 1 << 9;
     pub const CAN_CAUSE_MULTIPLAYER_HEADSHOTS: u32 = 1 << 11;
 }
@@ -453,6 +455,17 @@ impl DamageEffects {
     /// The table compiled in (a test checks it parses).
     pub fn load() -> Self {
         Self::parse(DAMAGE).expect("data/damage.toml parses (a test checks it)")
+    }
+
+    /// An effect's index in the table's (sorted) order: what the network
+    /// carries (`fx::victim::HaloVictimNet`).
+    pub fn index_of(&self, id: &str) -> Option<usize> {
+        self.0.keys().position(|k| k == id)
+    }
+
+    /// The effect at `index_of`'s index.
+    pub fn at(&self, index: usize) -> Option<(&String, &DamageEffect)> {
+        self.0.iter().nth(index)
     }
 
     /// Parse a table in `data/damage.toml`'s form.

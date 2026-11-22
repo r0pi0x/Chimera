@@ -218,6 +218,10 @@ pub struct HaloHurt {
     pub instigator: Option<Entity>,
     pub effect: EffectId,
     pub outcome: Outcome,
+    /// The event's scale and the direction the damage travelled (its
+    /// victim's presentation, `fx::victim`).
+    pub scale: f32,
+    pub dir: Vec3,
 }
 
 /// One remembered attacker (health_shields.md "Death", credit).
@@ -471,6 +475,8 @@ pub fn deliver_hits(
                 instigator: hit.instigator,
                 effect: hit.effect,
                 outcome,
+                scale: hit.scale,
+                dir: hit.dir,
             });
         } else {
             // Another game's body: an unshielded Spartan's, then its own

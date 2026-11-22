@@ -528,12 +528,26 @@ red 0xC8FF0000, counters 1 to 29 ticks, from `DamageTaken`'s direction in
 the camera's frame, `rules::arrow_sides`). The sounds are the unit's
 state (any gun in hand); the arrows are the HUD's (Halo's gun in hand).
 
-Not done: the victim's screen flash, camera impulse and shake from the
-hit's damage effect (low_health.md 5, Open question 1). The mechanism
-needs the hit's damage effect on the victim's machine (`HaloHurt` is
-server-side; a client's `DamageTaken` carries no effect id) and the
-`jpt!` presentation fields (`blam_formats::damage_effect`, read, never
-evaluated) read at the HUD's donor load; the numbers then come from the
-tags, not from us. The arrows lack the damage effect's "indicators point
-down" flag for the same reason. The overshield's drain above 1.0 counts
-as a fall for `shield_hit` (the spec's HUD lowers its memory).
+Done since (2026-11-22): the victim's screen flash, temporary and
+permanent camera impulse and shake from the hit's damage effect
+(`game::fx::victim`): every `jpt!` on the donor map is read into a
+`DamageLook` at conversion (`HaloFx::damage`, by tag path; numbers from
+the tags, none in the repo); the server's `HaloHurt` (now with the event's
+scale and direction) reaches the victim as `HaloVictim`, locally or as
+`HaloVictimNet` to that client only (effect index in `DamageEffects`, a
+flags byte, scale, direction); the spec's intensity, truncation,
+replacement, fade, falloff and wobble rules give `VictimView`, which
+`halo_ce_ui::victim_view` draws as `ScreenPost` light and
+`ViewEffects` rotation/offset; the permanent impulse turns the local
+`Intent`. The arrows honour "indicators always point down" (matched to
+their `DamageTaken` by frame). The overshield's drain above 1.0 no longer
+counts as a fall for `shield_hit` (`ShieldMark` follows it, up to four
+ticks' drain at once).
+
+Still unspecified (spec questions): how the renderer blends each flash
+type with the frame (ours: lighten/max add, darken/min multiply, tint
+mixes, invert turns over; the colour's alpha unused); the per-weapon
+victim-side values (low_health.md Open question 1; ours come from the
+tags, unchecked against the original); whether the impulse's direction
+is applied in the pitched camera frame (ours) or the yaw's; rumble is not
+played. Not checked on screen here (no Halo data in the agent's slot).

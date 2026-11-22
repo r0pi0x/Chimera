@@ -16,10 +16,10 @@
 //! gun is in hand (a party app's Halo character holding another game's),
 //! and on a network client from the replicated `Vitality`.
 //!
-//! Known shortcuts: the shield bits assume a game type with shields; the
-//! overshield's slow drain above 1.0 counts as a fall (the spec's HUD
-//! lowers its memory with it, so no `shield_hit`; only the bar's mark and
-//! this sound differ, and only for an overshield draining).
+//! An overshield's drain above 1.0 is no fall (`ShieldMark` lowers its
+//! memory with it): no `shield_hit`.
+//!
+//! Known shortcuts: the shield bits assume a game type with shields.
 
 use bevy::prelude::*;
 
