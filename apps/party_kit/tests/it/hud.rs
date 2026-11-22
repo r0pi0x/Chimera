@@ -27,11 +27,8 @@ use chimera_world::{
     harness::Sim,
     map::hud::{ActiveHud, GameHud, HudCoord, HudPanel},
 };
-use combat_arms::{
-    game::movement,
-    harness::CaSim,
-    ui::hud::CaHudStatePlugin,
-};
+use combat_arms::{game::movement, harness::CaSim};
+use combat_arms_ui::hud::CaHudStatePlugin;
 use cs_source_ui::{
     game_hud::{GameHudPlugin, Part},
     minigame_hud::{MinigameHudPlugin, PanelLine},
@@ -82,7 +79,7 @@ pub(crate) fn party_with_huds_and(extra: impl FnOnce(&mut App)) -> (Sim, Entity,
         // shell's (`ui::hud::CaHudPlugin` spawns its roots so, with
         // `HudRoot`, and registers its `GameDraws`).
         app.world_mut().spawn((Node::default(), HudRoot(combat_arms::game::GAME)));
-        app.insert_resource(HudDraws(vec![(combat_arms::game::GAME, combat_arms::ui::hud::DRAWS)]));
+        app.insert_resource(HudDraws(vec![(combat_arms::game::GAME, combat_arms_ui::hud::DRAWS)]));
     });
     crate::gun_game::plain_rungs(sim.app.world_mut());
     crate::gun_game::no_finale(sim.app.world_mut());

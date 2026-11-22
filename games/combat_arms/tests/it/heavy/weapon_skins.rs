@@ -13,9 +13,9 @@
 //!
 //! Needs the V1 key (the weapons file) and the V2 key (the rifles',
 //! SMGs', snipers' and third-person archives) in chimera.local.toml; run
-//! `cargo test -p combat_arms --features dev,ui --test it
-//! heavy::weapon_skins -- --nocapture` for the report (`ui`: with the
-//! names the game shows); `CHIMERA_SKINS_SHOW=m416,sig550` also prints
+//! `cargo test -p combat_arms --features dev --test it
+//! heavy::weapon_skins -- --nocapture` for the report;
+//! `CHIMERA_SKINS_SHOW=m416,sig550` also prints
 //! every piece of the weapons named so (slots, skins, render styles). Skips with a note
 //! without the install or the weapons file.
 
@@ -70,17 +70,10 @@ fn resolve(entry: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Option
     texture(&path).map(|_| None)
 }
 
-/// The weapons' names as the game shows them (with the `ui` feature: the
-/// install's string table), by id.
-fn display_names(mount: &chimera_core::mount::Mount) -> std::collections::HashMap<String, String> {
-    #[cfg(feature = "ui")]
-    {
-        use combat_arms::ui::install;
-        if let Some(strings) = install::strings(mount, &install::language()) {
-            return install::weapon_names(mount, &strings).into_iter().collect();
-        }
-    }
-    let _ = mount;
+/// The weapons' names as the game shows them, by id: the front end's
+/// string table is `combat_arms_ui`'s, which this crate's tests can't use,
+/// so none (ids only).
+fn display_names(_mount: &chimera_core::mount::Mount) -> std::collections::HashMap<String, String> {
     Default::default()
 }
 

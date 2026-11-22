@@ -14,11 +14,8 @@ use chimera_core::{metrics::ThreadCounters, mount::config::LocalConfig};
 use chimera_present::render::{bodies::PlayModels, prop_material::PropMaterial};
 use chimera_sim::minigame::{self, ladder::{Ladder, set_rung}};
 use chimera_world::harness::Sim;
-use combat_arms::{
-    game::TICK_INTERVAL,
-    harness::CaSim,
-    ui::visuals::CaVisualsPlugin,
-};
+use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
+use combat_arms_ui::visuals::CaVisualsPlugin;
 use party_kit::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 

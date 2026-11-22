@@ -12,15 +12,16 @@
 //! attribute files), `rules` (game modes: TDM, Elimination Pro) and
 //! `world` (the install's
 //! maps); `CombatArmsPlugins` adds
-//! them all. With the `ui` feature, `ui` is its front end on the client
-//! shell: `ui::hud` (crosshair and basic HUD) and `ui::visuals`
-//! (placeholder box guns). `harness::CaSim` is the simulation as the
+//! them all. Its front end on the client shell (`hud`, the crosshair and
+//! basic HUD, and `visuals`, the placeholder box guns, among others) is
+//! its own crate above this one, `combat_arms_ui` (games/combat_arms/ui).
+//! `harness::CaSim` is the simulation as the
 //! headless harness's base (its scenario tests, tests/it/).
 //!
 //! It uses the engine crates (`chimera_core`, `chimera_world`,
 //! `chimera_sim`, `chimera_net`), never `mashup`, Source's map logic or another game
-//! (checked: checks/tests/it/architecture.rs); only `ui` uses the
-//! presentation and the shell (optional dependencies of the feature).
+//! nor the presentation or the shell (checked:
+//! checks/tests/it/architecture.rs).
 //!
 //! `SimPlugins`: everything Combat Arms' simulation needs but its parts
 //! (the engine's base, `chimera_sim::SimBasePlugins`, and the tick
@@ -30,9 +31,6 @@
 
 pub mod game;
 pub mod harness;
-// The front end: built on the client shell (the `ui` feature).
-#[cfg(feature = "ui")]
-pub mod ui;
 
 // `crate::core`, `crate::weapon` and the rest inside, as in CS:S's crate
 // (the architecture check reads `crate::<module>` against its layering
@@ -41,13 +39,6 @@ use chimera_core::{character, console, core, game_registry, gameplay, mount, pro
 use chimera_net::net;
 use chimera_sim::{mode, rule_module, spawning, weapon};
 use chimera_world::{map, music};
-
-// The front end's: the shell, the presentation's drawing and the
-// installs as asset sources.
-#[cfg(feature = "ui")]
-use chimera_client::client;
-#[cfg(feature = "ui")]
-use chimera_present::{assets, render};
 
 use bevy::prelude::*;
 

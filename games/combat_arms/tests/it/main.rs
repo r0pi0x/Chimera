@@ -98,7 +98,6 @@ mod heavy {
     mod body_skins;
     mod bots;
     mod characters;
-    mod display_names;
     mod dressing_view_models;
     mod effects_sounds;
     mod flight_looks;

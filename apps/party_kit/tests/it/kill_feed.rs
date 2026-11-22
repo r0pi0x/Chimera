@@ -24,11 +24,8 @@ use chimera_world::{
     harness::Sim,
     map::hud::{ActiveHud, HudCoord, HudPanel},
 };
-use combat_arms::{
-    game::TICK_INTERVAL,
-    harness::CaSim,
-    ui::hud::{CaHud, radar::CaRadar},
-};
+use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
+use combat_arms_ui::hud::{CaHud, radar::CaRadar};
 use cs_source_ui::game_hud::Part;
 use party_kit::{DEFAULT_MINIGAME, PartyHudPlugin, PartyPartsPlugin};
 
@@ -293,7 +290,7 @@ fn every_hud_sim(party: bool) -> (Sim, Entity, Entity) {
 pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entity, Entity) {
     use chimera_client::client::{fonts::UiFonts, hud::{HudDraws, HudLookOwner, HudRoot, HudSwitchPlugin}};
     use chimera_sim::minigame::MinigameAppExt;
-    use combat_arms::ui::hud::CaHudStatePlugin;
+    use combat_arms_ui::hud::CaHudStatePlugin;
     use cs_source_ui::{game_hud::GameHudPlugin, minigame_hud::MinigameHudPlugin};
     let mut sim = Sim::with(CaSim, move |app| {
         extra(app);
@@ -317,7 +314,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
         app.world_mut()
             .get_resource_or_init::<HudDraws>()
             .0
-            .push((combat_arms::game::GAME, combat_arms::ui::hud::DRAWS));
+            .push((combat_arms::game::GAME, combat_arms_ui::hud::DRAWS));
     });
     crate::gun_game::plain_rungs(sim.app.world_mut());
     crate::gun_game::no_finale(sim.app.world_mut());

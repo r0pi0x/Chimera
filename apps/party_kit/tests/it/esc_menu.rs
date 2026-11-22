@@ -61,7 +61,7 @@ fn local_with_menu() -> (Sim, Entity) {
             chimera_world::greybox::GreyboxMapPlugin,
             party_kit::PartyPartsPlugin,
             EscMenuPlugin,
-            combat_arms::ui::menu::CaMenuStatePlugin,
+            combat_arms_ui::menu::CaMenuStatePlugin,
             chimera_client::client::swap_effect::SwapEffectPlugin,
         ),
     );
@@ -95,7 +95,7 @@ fn escape_opens_the_partys_menu_and_the_game_gets_no_input_while_it_is_open() {
     tap(&mut sim.app, KeyCode::Escape);
     let w = sim.app.world();
     assert!(menu(&sim.app).open && menu(&sim.app).page == Page::Main);
-    assert!(!w.resource::<combat_arms::ui::menu::InGameMenu>().open, "Combat Arms' menu yields Esc");
+    assert!(!w.resource::<combat_arms_ui::menu::InGameMenu>().open, "Combat Arms' menu yields Esc");
     assert!(w.resource::<AppMenu>().open);
     assert!(w.resource::<MenuStatus>().open, "the shell sees a menu open: binds and clicks wait");
     assert!(!grabbed(&mut sim), "the mouse is free");

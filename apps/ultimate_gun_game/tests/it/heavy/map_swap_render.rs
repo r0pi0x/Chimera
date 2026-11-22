@@ -24,7 +24,8 @@ use bevy::{
 use chimera_client::client::console::{self, MapLoadStage};
 use chimera_core::metrics::ThreadCounters;
 use chimera_core::core::SpawnPoint;
-use combat_arms::{game::TICK_INTERVAL, harness::CaSim, ui::visuals::CaVisualsPlugin};
+use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
+use combat_arms_ui::visuals::CaVisualsPlugin;
 use party_kit::PartyPartsPlugin;
 use ultimate_gun_game::UltimateGunGamePlugin;
 

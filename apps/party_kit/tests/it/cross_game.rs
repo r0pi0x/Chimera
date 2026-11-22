@@ -517,7 +517,7 @@ fn combat_arms_gear_takes_a_cs_source_round_by_the_shared_rule() {
 
 #[test]
 fn armour_follows_the_identity_and_each_hud_shows_it() {
-    use combat_arms::ui::hud::CaHud;
+    use combat_arms_ui::hud::CaHud;
     use cs_source_ui::game_hud::{Part, PanelKind};
     use crate::hud::{party_with_huds, swap_to};
     let (mut sim, me, other) = party_with_huds();

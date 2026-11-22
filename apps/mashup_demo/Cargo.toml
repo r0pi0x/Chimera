@@ -28,7 +28,8 @@ chimera_client.workspace = true
 cs_source.workspace = true
 # Source's map logic, run on CS:S maps for any game's characters.
 source_logic.workspace = true
-combat_arms = { workspace = true, features = ["ui"] }
+combat_arms.workspace = true
+combat_arms_ui.workspace = true
 avian3d.workspace = true
 bevy.workspace = true
 workspace-hack.workspace = true
@@ -59,6 +60,7 @@ dev = [
     "cs_source/dev",
     "source_logic/dev",
     "combat_arms/dev",
+    "combat_arms_ui/dev",
 ]
 
 # Profiling (docs/performance.md, "See a frame yourself"): `trace` records

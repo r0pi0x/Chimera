@@ -42,7 +42,7 @@ use chimera_client::client::{
     app::{AppMaps, GameApp, GameAppHooks, RunningApp, StartMap},
 };
 use chimera_core::game_registry::Games;
-use combat_arms::ui::hud::ItemNames;
+use combat_arms_ui::hud::ItemNames;
 
 /// What this app tells the client shell: its commit, its maps
 /// (`MAP_SOURCES`) and the greybox's own hooks (`PARTY`'s).
@@ -96,7 +96,7 @@ pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 /// HUD while a Halo gun is in hand; TF2's: its HUD while a TF2 gun is in
 /// hand).
 pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 5] = [
-    &combat_arms::ui::PARTY_CLIENT,
+    &combat_arms_ui::PARTY_CLIENT,
     &cs_source_ui::party::CLIENT,
     &hl2dm_ui::party::CLIENT,
     &halo_ce_ui::party::CLIENT,
@@ -163,7 +163,7 @@ pub fn front_end(app: &mut App, args: &Args) {
         }
     }
     // Combat Arms' other looks.
-    app.add_plugins(combat_arms::ui::CaUiPlugin);
+    app.add_plugins(combat_arms_ui::CaUiPlugin);
 }
 
 /// Number keys switch weapons at once in the party (the user's choice):
@@ -224,7 +224,7 @@ pub struct PartyMousePlugin;
 
 impl Plugin for PartyMousePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(combat_arms::ui::options_apply::ShellOptions)
+        app.insert_resource(combat_arms_ui::options_apply::ShellOptions)
             .add_systems(Startup, start_mouse);
     }
 }
@@ -233,7 +233,7 @@ fn start_mouse(
     mouse: Option<ResMut<chimera_client::client::input::MouseSettings>>,
     console: Option<ResMut<chimera_core::console::Console>>,
 ) {
-    let d = combat_arms::ui::options_apply::degrees_per_count(&combat_arms::game::options::CaMouseLook::default());
+    let d = combat_arms_ui::options_apply::degrees_per_count(&combat_arms::game::options::CaMouseLook::default());
     if let Some(mut m) = mouse {
         m.sensitivity = 1.0;
         m.m_yaw = d;

@@ -167,9 +167,9 @@ pub static APP: GameApp = GameApp {
         use chimera_core::gameplay::{Gameplay, GameplayAppExt};
         app.add_plugins(MashupPlugins).set_gameplay(Gameplay::of(&combat_arms::game::INFO));
     },
-    hud: combat_arms::ui::with_hud,
+    hud: combat_arms_ui::with_hud,
     front_end: |app, _| {
-        app.add_systems(Startup, cs_source_names).add_plugins(combat_arms::ui::CaUiPlugin);
+        app.add_systems(Startup, cs_source_names).add_plugins(combat_arms_ui::CaUiPlugin);
     },
     hooks: GameAppHooks {
         args: Some(with_defaults),
@@ -276,7 +276,7 @@ pub fn set_slot(kit: &mut StartingWeapons, catalog: &data::WeaponCatalog, slot: 
 /// strings in its install (`weapons::display_names`).
 fn cs_source_names(
     games: Res<chimera_core::game_registry::Games>,
-    mut names: ResMut<combat_arms::ui::hud::ItemNames>,
+    mut names: ResMut<combat_arms_ui::hud::ItemNames>,
 ) {
     let Some(mount) = games.get(cs_source::game::GAME).and_then(|g| g.mount()) else {
         return;

@@ -347,7 +347,54 @@ one revert puts it back.
       `party_kit`'s tests and sources and the CS:S app's re-export
       (`::cs_source_ui as ui`); `mashup_demo`'s dev-dependency on
       `cs_source` with `ui` is gone (its tests share the one build now).
-- [ ] Then `combat_arms` (17.9k, 322 UI tests), one commit.
+- [x] `combat_arms` (17.9k lines, 322 UI tests): `combat_arms_ui`
+      (games/combat_arms/ui), its `tests/ui` (20 files, 8 heavy), plus a
+      copy of `tests/it/mode_kit.rs` and of the HUD rifle's weapon data.
+      The crate root aliases the `crate::` names (`client`, `core`,
+      `game`, ...); `crate::ui::` became `crate::`. Three install checks
+      of the game's `heavy::radar` (art and icons, the large-map and
+      layout attribute files) and `heavy::display_names` named the front
+      end: they moved to `combat_arms_ui`'s `heavy::radar_install` and
+      `heavy::display_names`; `heavy::weapon_skins` lost its optional
+      display names (ids only; the front end's string table is above the
+      game). `game::world::dtx_bc` is `pub` now (the front end's texture
+      loader calls it). The data under `games/combat_arms/data/ui/` stays
+      where it is (nine `include_str!` sites in the front end read it
+      across the crate boundary). `UI_FEATURES` (the layering test's table
+      of games with a `ui` feature) is empty now. (a) `affected --files
+      chimera/client/src/lib.rs` selects 20 packages, `combat_arms_ui` and
+      `combat_arms_app` among them, no game crate: `combat_arms`'s 1,749
+      fast `it` and 101 unit tests leave a client edit's selection; (b)
+      after a function appended to `chimera_client`, `cargo test -p
+      combat_arms --features dev --no-run` compiles nothing (2.9 s, only
+      the link check; `combat_arms_ui`'s own build: `chimera_client`,
+      `combat_arms_ui`); (c) after one appended to `chimera_sim` it
+      compiles `chimera_sim`, `chimera_net`, `combat_arms` (45 s wall at
+      load 16-22): 702 units, 11 workspace packages, no client,
+      presentation or UI kit (`combat_arms_ui` after the same edit: 5
+      units, 46 s); (d) `selections_share_one_build` passes. Fast tiers:
+      `combat_arms` 101 unit + 1,749 `it`, `combat_arms_ui` 10 unit + 303
+      `it`, all passing; `cargo check --workspace --features dev
+      --all-targets` clean. Grouped imports again: `combat_arms::{ ..,
+      ui::.. }` in `party_kit`'s and `ultimate_gun_game`'s tests and
+      example (rewritten by script, all multi-line forms); the latter
+      gets `combat_arms_ui` as a dev-dependency.
+
+Stage 1 is complete for all five games. Counted for the four whose
+numbers were taken here (TF2 279, HL2:DM 422, CS:S 622, Combat Arms
+1,850 fast tests) 3,173 simulation tests leave a client edit's
+selection, plus Halo's.
+
+What Stage 2 (data at run time in dev) needs next: the macro must read
+a crate's data from that crate's folder, and the front ends now keep
+data in a sibling folder: `combat_arms_ui` reads `games/combat_arms/
+data/ui/` (nine sites: fonts, strings, menu and options layouts, mission
+HUD), and the first Stage 2 decision is whether UI data moves into
+`games/<g>/ui/data` (then a data edit selects only the front end's
+tests) or stays with the game's (then it selects the game and everything
+above it, as now). `affected` maps data files by path, so a moved file
+needs no change there; its `feature-paths` metadata, used only by the
+old `ui` features, can be deleted with the `UI_FEATURES` table.
 
 Expected once all five are split: the 131 client-side commits per 14
 days (18%) select the front ends' suites and the apps instead of every
@@ -518,3 +565,4 @@ Bevy has no render features), so "servers share the client's game
 build" is not a reason to split; iteration on the client side is.
 2026-11-21: `hl2dm` the same: `hl2dm_ui` (games/hl2dm/ui).
 2026-11-22: `cs_source` the same: `cs_source_ui` (games/cs_source/ui).
+2026-11-22: `combat_arms` the same: `combat_arms_ui` (games/combat_arms/ui); stage 1 complete.

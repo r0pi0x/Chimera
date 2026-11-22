@@ -1,0 +1,40 @@
+# Test fixture for tests/ui/hud.rs: a rifle the HUD reads as
+# specs/combat_arms/hud_crosshair.md's M4A1 at rest: its cone fixed at the
+# MinPerturb 3 (3 / 1000 on `Hitscan::spread`, as Combat Arms' firing
+# sets it), 30 rounds a clip, 90 in reserve, a display name. Not the
+# game's data: fire rate and damage are ours, and it has no
+# `combat_arms:spread` data (the HUD shows its cone as the gap).
+id = "combat_arms:test_hud_rifle"
+units = { length = 0.0185, damage = 0.01 }
+slot = 0
+draw = 0.1
+
+[ammo."combat_arms:test_hud_556"]
+max = 90
+
+[trigger]
+automatic = true
+cycle = 0.1
+timing = "set"
+
+[magazine]
+clip = 30
+ammo = "combat_arms:test_hud_556"
+reload = 2.3
+
+[hitscan]
+range = 35.0
+pellets = 1
+punch_scale = 0.0
+spread = { disc = { inaccuracy = 0.003, spread = 0.0 } }
+
+[damage]
+amount = 1.0
+falloff = 1.0
+falloff_step = 1.0
+hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
+impulse = 0.0
+
+[hud]
+name = "M4A1"
+

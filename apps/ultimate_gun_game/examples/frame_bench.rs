@@ -40,7 +40,8 @@ use chimera_core::{
     core::{Health, Intent, SpawnPoint},
     metrics::work::{self, WorkCounts},
 };
-use combat_arms::{game::TICK_INTERVAL, harness::CaSim, ui::visuals::CaVisualsPlugin};
+use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
+use combat_arms_ui::visuals::CaVisualsPlugin;
 use party_kit::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 

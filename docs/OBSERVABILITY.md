@@ -314,8 +314,7 @@ fetch) is fetched first.
   does.
 - One file: `cargo test -p cs_source --features dev --test it
   weapons::`; one test: `cargo test -p cs_source --features dev
-  --test it weapons::name` (a front end's: `--features dev,ui --test
-  ui`); `-- --ignored` runs
+  --test it weapons::name` (a front end's: `-p <id>_ui --features dev`); `-- --ignored` runs
   the ignored debug aids (filters work the same).
 
 ## 2. Screenshots
@@ -2376,7 +2375,7 @@ the map's `SoundFX` (file, radii, volume, looping, on) with the gain at
 the local player. Install facts: `heavy::music_ambience` (BGM.rez, the
 loose folder and our table against it, `training`'s ambience, the 33
 maps' census); the logic cases: `--test it music_ambience::` and
-`--features dev,ui --test ui music::`.
+`cargo test -p combat_arms_ui --features dev music::`.
 
 Combat Arms' dedicated server: `cargo run --features dev --bin
 combat_arms_server -- -port 27042 +map combat_arms:warehouse +ca_mode TDM
@@ -2426,10 +2425,11 @@ corners from the mission data), who is shown (`radar::look`), the legend
 and what the server sends at a round start are `--test it radar::`
 (spec cases 1-26, 37-44 and the arithmetic of 48-51); the panels' state
 from the world (zoom keys and the profile, the scanner items, deaths,
-objectives, the legend and markers) is `--features dev,ui --test ui
-radar::` (`CaRadar`, `CaScene`, `CaFullMap`, headless: read them in a
+objectives, the legend and markers) is `cargo test -p combat_arms_ui --features
+dev radar::` (`CaRadar`, `CaScene`, `CaFullMap`, headless: read them in a
 test to see what would be drawn); the install checks (46-52) are `--test it
-heavy::radar` (V1 key for the mission files). To see it drawn: `--map
+heavy::radar` (V1 key for the mission files; 47, 52 and 53, which need the front end, are
+`combat_arms_ui`'s `heavy::radar_install`). To see it drawn: `--map
 combat_arms:warehouse --window 1280x720 --frames 200 +wait 60 ++fulltacticalmap
 +wait 20 +screenshot map.png` (M held; the radar is in the corner of every
 shot; `+incradarscale` / `+decradarscale` zoom while held; with the install

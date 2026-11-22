@@ -1131,7 +1131,7 @@ fn autoexec(
 /// A config.cfg written since the party apps keep their own sound and
 /// brightness says so (`console::config_text`'s fourth line). One without
 /// it may carry what Combat Arms' options, its profile not loaded, set at
-/// each start of the party apps until the fix of 2026-11-14 (`combat_arms::ui::
+/// each start of the party apps until the fix of 2026-11-14 (`combat_arms_ui::
 /// options_apply::ShellOptions`) and the config then saved: `volume 0`
 /// with `snd_musicvolume 0`, and `mat_monitorgamma` at Combat Arms' default
 /// gamma's (2.2 / 1.22): `chimera_repair_options` puts those back to the

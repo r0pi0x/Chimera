@@ -53,7 +53,7 @@
 //!   `map::LocalMapLoad`, so nothing starts play under it; the log says
 //!   `loading panel up`); at the screen's foot while the server's
 //!   pre-match lobby shows over it (`loading_under_lobby`); Combat Arms' own loading screen instead for
-//!   its maps (user decision 5: `combat_arms::ui::loading`, its map
+//!   its maps (user decision 5: `combat_arms_ui::loading`, its map
 //!   picture), gated here (`ca_loading_gate`).
 //! - **The failure box**: a failed or refused join, a drop, a failed load
 //!   land on the menu with why (CS:S's "Disconnected" frame; the server's
@@ -1859,7 +1859,7 @@ fn start(world: &mut World) {
     }
     // Combat Arms' maps load behind its own loading screen.
     if map.starts_with("combat_arms:")
-        && let Some(mut ca) = world.get_resource_mut::<combat_arms::ui::loading::CaLoading>()
+        && let Some(mut ca) = world.get_resource_mut::<combat_arms_ui::loading::CaLoading>()
     {
         ca.label = Some(map);
     }
@@ -2100,7 +2100,7 @@ fn refresh_values(world: &mut World) {
 /// Combat Arms' loading screen shows only for its own maps (user
 /// decision 5); for the others the party's loading panel.
 fn ca_loading_gate(
-    ca: Option<ResMut<combat_arms::ui::loading::CaLoading>>,
+    ca: Option<ResMut<combat_arms_ui::loading::CaLoading>>,
     join: Option<Res<JoinProgress>>,
     menu: Res<PartyMenu>,
 ) {
@@ -2117,7 +2117,7 @@ fn ca_loading_gate(
 
 /// Whether Combat Arms' loading screen is up (the party's panel then
 /// isn't drawn).
-fn ca_shows(world_ca: Option<&combat_arms::ui::loading::CaLoading>) -> bool {
+fn ca_shows(world_ca: Option<&combat_arms_ui::loading::CaLoading>) -> bool {
     world_ca.is_some_and(|c| c.label.is_some())
 }
 
@@ -2261,7 +2261,7 @@ fn born_on_menu<M: Component>(add: On<Add<M>>, target: Res<MenuTarget>, mut comm
 fn cameras(
     shown: Res<ShownScreen>,
     mut target: ResMut<MenuTarget>,
-    ca: Option<Res<combat_arms::ui::loading::CaLoading>>,
+    ca: Option<Res<combat_arms_ui::loading::CaLoading>>,
     lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
     mut shell: Query<&mut Camera, (With<IsDefaultUiCamera>, Without<MenuUiCamera>)>,
     mut ours: Query<(Entity, &mut Camera), With<MenuUiCamera>>,
@@ -2441,7 +2441,7 @@ fn show(
     fonts: Option<Res<UiFonts>>,
     (title, opt_tabs): (Option<Res<crate::esc_menu::EscMenuTitle>>, Option<Res<crate::esc_menu::OptionTabs>>),
     version: Option<Res<chimera_core::core::BuildVersion>>,
-    ca: Option<Res<combat_arms::ui::loading::CaLoading>>,
+    ca: Option<Res<combat_arms_ui::loading::CaLoading>>,
     minigames: Option<Res<chimera_sim::minigame::Minigames>>,
     (game_id, theme): (Res<MenuMinigame>, Option<Res<chimera_ui::Theme>>),
     windows_q: Query<&Window>,

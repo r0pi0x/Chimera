@@ -18,7 +18,8 @@ use chimera_client::client::{
 use chimera_present::audio::live_sound::SoundMix;
 use chimera_core::console::{Console, ConsolePlugin, config_text};
 use chimera_world::map::{GameViewModelFovs, ViewModelSettings};
-use combat_arms::{game::options::CaOptionsPlugin, ui::options_apply::CaOptionsApplyPlugin};
+use combat_arms::game::options::CaOptionsPlugin;
+use combat_arms_ui::options_apply::CaOptionsApplyPlugin;
 use party_kit::{PartyMousePlugin, controls::cvar_value};
 
 /// The party's settings, as far as they are saved: a console, the shell's

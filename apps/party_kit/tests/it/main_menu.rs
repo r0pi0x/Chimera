@@ -723,7 +723,7 @@ fn a_hosts_disconnect_asks_and_drops_its_clients_with_host_left() {
 
 #[test]
 fn combat_arms_loading_screen_shows_only_for_its_maps() {
-    use combat_arms::ui::loading::CaLoading;
+    use combat_arms_ui::loading::CaLoading;
     let mut sim = local(false);
     sim.app.world_mut().init_resource::<CaLoading>();
     sim.app.world_mut().init_resource::<JoinProgress>();

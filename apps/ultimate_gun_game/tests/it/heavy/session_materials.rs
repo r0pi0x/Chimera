@@ -27,11 +27,8 @@ use chimera_sim::minigame::{
     ladder::{Ladder, set_rung},
 };
 use chimera_world::harness::Sim;
-use combat_arms::{
-    game::TICK_INTERVAL,
-    harness::CaSim,
-    ui::visuals::CaVisualsPlugin,
-};
+use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
+use combat_arms_ui::visuals::CaVisualsPlugin;
 use party_kit::{PartyPartsPlugin, server::swap_map};
 use ultimate_gun_game::{MINIGAME, RUNGS, UltimateGunGamePlugin, generate};
 

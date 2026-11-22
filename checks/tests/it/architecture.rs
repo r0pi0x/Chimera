@@ -353,6 +353,7 @@ const CRATE_SRC: &[&str] = &[
     "games/cs_source/src",
     "games/cs_source/ui/src",
     "games/combat_arms/src",
+    "games/combat_arms/ui/src",
     "games/hl2dm/src",
     "games/hl2dm/ui/src",
     "games/halo_ce/src",
@@ -1674,7 +1675,7 @@ fn workspace_crates() {
         (`server_builds_without_presentation`, `game_servers_use_no_app`), and never another game. Move what \
         needs them into the client's side (the app, `ui`).";
     const CA_SERVER: &str = "is Combat Arms' dedicated server (docs/ARCHITECTURE.md, \"Crates\"): Chimera's \
-        simulation crates and Combat Arms without its front end (`ui`), no presentation, client shell or \
+        simulation crates and Combat Arms without its front end, no presentation, client shell or \
         Combat Arms app (`server_builds_without_presentation`), and never CS:S or Source's logic. Move what \
         needs them into the client's side (the app, `ui`).";
     const TOOLS: &str = "is a layer's tools (docs/ARCHITECTURE.md, \"Crates\"): a tool lives at the lowest \
@@ -2810,9 +2811,10 @@ fn layers_by_path() {
 /// A game crate's front end feature and the dependencies only it may
 /// turn on (optional ones): the presentation and the client shell, which
 /// the game's simulation never uses (`workspace_crates`;
-/// `game_ui_only_with_its_feature` checks the dependency tree).
+/// `game_ui_only_with_its_feature` checks the dependency tree). Empty since
+/// the last game's front end became its own crate (stage 1 of
+/// docs/plans/active/architecture-for-iteration.md).
 const UI_FEATURES: &[(&str, &str, &[&str])] = &[
-    ("games/combat_arms", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
 ];
 
 /// Crates a member's `FORBIDDEN` list names that its tests alone may use
@@ -3051,9 +3053,9 @@ fn server_builds_without_presentation() {
     assert!(
         present.is_empty(),
         "`combat_arms_server` (the Combat Arms dedicated server's build) depends on {present:?}. It uses \
-         Chimera's simulation crates and `combat_arms` without its `ui` feature (apps/combat_arms_server/\
-         Cargo.toml): don't turn on `ui` or depend on the app (`combat_arms_app`), and keep the new \
-         dependency out of the simulation crates (the front end's optional ones: UI_FEATURES)."
+         Chimera's simulation crates and `combat_arms` (apps/combat_arms_server/Cargo.toml): don't depend \
+         on its front end (`combat_arms_ui`) or the app (`combat_arms_app`), and keep the new \
+         dependency out of the simulation crates."
     );
     let server = tree("hl2dm_server");
     let present: Vec<&str> = server

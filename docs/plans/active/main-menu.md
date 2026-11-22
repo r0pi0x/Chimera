@@ -45,7 +45,7 @@ parties or friends lists.
 | Server browser model | CS:S's Find Servers (`ServerBrowser::handle`: sort, filters, favourites and history in `serverbrowser.vdf`, password) | `games/cs_source/ui/src/server_browser.rs` |
 | Match end | the shell's match-end screen and rotation (`NextMatch`) | `chimera_client::client::match_end` |
 | Mount check at join | match manifest vs the client's mount report | `chimera_net::net::manifest` |
-| Loading screen | Combat Arms' (`CaLoading`, the install's layout; nothing drawn without it) | `games/combat_arms/src/ui/loading.rs` |
+| Loading screen | Combat Arms' (`CaLoading`, the install's layout; nothing drawn without it) | `games/combat_arms/ui/src/loading.rs` |
 
 CS:S's main menu (`game_menu`) is a model of what the flow needs
 (loading dialog with Cancel, Disconnected dialog with the game's

@@ -21,7 +21,9 @@ chimera_sim.workspace = true
 chimera_net.workspace = true
 chimera_present.workspace = true
 chimera_client.workspace = true
-combat_arms = { workspace = true, features = ["ui"] }
+combat_arms.workspace = true
+# Its front end: the HUD and menus (`combat_arms_ui`, games/combat_arms/ui).
+combat_arms_ui.workspace = true
 avian3d.workspace = true
 bevy.workspace = true
 workspace-hack.workspace = true
@@ -48,6 +50,7 @@ dev = [
     "chimera_present/dev",
     "chimera_client/dev",
     "combat_arms/dev",
+    "combat_arms_ui/dev",
 ]
 
 # Profiling (docs/performance.md, "See a frame yourself"): `trace` records

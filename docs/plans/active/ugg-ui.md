@@ -31,7 +31,7 @@ an ambient shader background), and an in-engine Showcase backdrop.
 | Pre-match lobby and its F3 ready/start | `chimera_net::prematch` (`NetLobby`, `LobbyRow`), `client::prematch_lobby` (`LobbyView`, `LOBBY_KEY`) | `chimera/net/src/prematch.rs`, `chimera/client/src/client/prematch_lobby.rs` |
 | Main menu, Esc menu, the menu's own camera, procedural backdrop, live background map | `main_menu` (`PartyMenu`, `MenuUiCamera`, `pick_background`, `fly`), `esc_menu`, `menu_backdrop` (+ `.wesl`) | `apps/party_kit/src/` |
 | The fallback HUD | `hud_minimal` (`MINIMAL_HUD`, `HudRoot`), chosen by `PartsRegistry::fallback_hud` | `chimera/client/src/client/hud_minimal.rs` |
-| Kill icons per game | `WeaponIcons` (CS:S and HL2:DM glyphs of their icon fonts, Combat Arms' images), `spawn_weapon_icon`, `kill_feed::icon_slot` | `chimera/client/src/client/weapon_icons.rs`; `games/cs_source/ui/src/game_hud.rs`, `games/combat_arms/src/ui/hud.rs` (`register_icons`), `games/hl2dm/src/ui/kill_icons.rs` |
+| Kill icons per game | `WeaponIcons` (CS:S and HL2:DM glyphs of their icon fonts, Combat Arms' images), `spawn_weapon_icon`, `kill_feed::icon_slot` | `chimera/client/src/client/weapon_icons.rs`; `games/cs_source/ui/src/game_hud.rs`, `games/combat_arms/ui/src/hud.rs` (`register_icons`), `games/hl2dm/src/ui/kill_icons.rs` |
 | Short gun names | `GunNameRules::short`, `names::fit`, `gun_short_name` | `chimera/sim/src/weapon/names.rs`, `minigame_scoreboard.rs` |
 | Gun class | `GunClass` (pistol ... grenade), from weapon data | `chimera/core/src/game_parts.rs` |
 | Matches won | `wins::MatchWins` (by name, per server run), `MatchesWon` replicated; `ResultRow::wins` | `chimera/sim/src/minigame/wins.rs`, `results.rs` |
@@ -1306,7 +1306,7 @@ three looks, none of them Signal:
 | Radio lines (CS:S Z/X/C) | `games/cs_source/ui/radio.rs` writes `ChatLine`s | the same box |
 | Joins, leaves, renames, team joins, CS:S objectives, a dedicated server's `say` | `net::PlayerCame`, `NameChanged`, `ChatMessage::console`, `team_joins`, `objectives_hud` as `ChatLine`s | the same box |
 | Refusals ("You are flooding the server") | `net::Notice` | `client::chat`'s hint box (`HudHintDisplay`) |
-| Combat Arms' chat and radio (Enter, F2, F3; B, V, N) | its own protocol (`CaSayRequest`, `CaSayIn`, `CaRadioIn`) and log | `games/combat_arms/src/ui/talk.rs` (its panel, input bar with tabs, radio menu): always drawn, not under a `HudRoot`; in the party apps the shared binds are Combat Arms', so Enter opened this one and Y/U were unbound |
+| Combat Arms' chat and radio (Enter, F2, F3; B, V, N) | its own protocol (`CaSayRequest`, `CaSayIn`, `CaRadioIn`) and log | `games/combat_arms/ui/src/talk.rs` (its panel, input bar with tabs, radio menu): always drawn, not under a `HudRoot`; in the party apps the shared binds are Combat Arms', so Enter opened this one and Y/U were unbound |
 | Bot chat ("AI_Alpha_3 : Gotcha, friend.", seen in the playtest) | `combat_arms::game::bots::chat` (`CaBotChat`, only on a host: not sent to clients) | `ui::bot_chat` as a `ChatLine` in the CS:S box |
 | HL2:DM | no chat of its own: its team colours in `client::chat::run_color` | the CS:S box |
 | "X is on the last level!" | the minigame's callout (`last_rung_other`) | `client::callouts`, centre screen (not chat) |

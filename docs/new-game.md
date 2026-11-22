@@ -75,10 +75,8 @@ The front end is its own crate so that the simulation and its tests
 never build the client shell: a client-side edit then selects the front
 ends' and apps' tests, not every game's simulation suite, and a
 dedicated server links the same build of the game as the client
-(docs/plans/active/architecture-for-iteration.md, stage 1). Older games
-still have it as a `ui` feature and `src/ui/` (`#[cfg(feature = "ui")]
-pub mod ui;`) until they are split the same way; the check accepts
-either.
+(docs/plans/active/architecture-for-iteration.md, stage 1). All
+five games have it so.
 
 - `loaders` lists the loader layers the game builds on (`[]` for a game
   with none). A game never depends on another game or on an app; what

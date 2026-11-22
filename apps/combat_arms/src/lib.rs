@@ -8,7 +8,7 @@
 //! `APP`: the game binary's app on Chimera's client app (`chimera_client::
 //! client::app`; main.rs is `run(&APP)`): `SimPlugin`, the client shell
 //! with this app's hooks (`client_hooks`) and Combat Arms' HUD in its
-//! place (`combat_arms::ui::with_hud`), its field of view, its looks and
+//! place (`combat_arms_ui::with_hud`), its field of view, its looks and
 //! the player's profile.
 //!
 //! `VERSION` and `BUILD`: this build's version and commit, stamped by
@@ -46,7 +46,7 @@ pub fn client_hooks() -> AppHooks {
 /// The game binary's app (`combat_arms`, main.rs), on Chimera's client
 /// app (`chimera_client::client::app`): `SimPlugin` on a map of the
 /// install, else straight into the greybox (no menus yet); the shell with
-/// Combat Arms' HUD (`combat_arms::ui::with_hud`), then its field of
+/// Combat Arms' HUD (`combat_arms_ui::with_hud`), then its field of
 /// view, its other looks (`CaUiPlugin`) and the player's profile
 /// (options: loaded at start, saved at exit).
 pub static APP: GameApp = GameApp {
@@ -77,10 +77,10 @@ pub static APP: GameApp = GameApp {
     sim: |app, _| {
         app.add_plugins(SimPlugin);
     },
-    hud: combat_arms::ui::with_hud,
+    hud: combat_arms_ui::with_hud,
     front_end: |app, _| {
         app.insert_resource(chimera_client::client::video::PlayerFov(combat_arms::game::view_model::DEFAULT_FOV))
-            .add_plugins(combat_arms::ui::CaUiPlugin);
+            .add_plugins(combat_arms_ui::CaUiPlugin);
         combat_arms::game::options::use_user_profile(app, None);
     },
     hooks: GameAppHooks {

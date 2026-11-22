@@ -1773,7 +1773,7 @@ the original's own behaviour isn't a bug (say so instead).
   Outlaw ASW338LM" above (the data, not our reading).
   Tests: `attribute_data::sprite_skins_and_an_added_weapons_held_look`,
   `model::a_sprite_skin_draws_its_first_frame`; the sweep:
-  `cargo test -p combat_arms --features dev,ui --test it
+  `cargo test -p combat_arms --features dev --test it
   heavy::weapon_skins -- --nocapture` (`CHIMERA_SKINS_SHOW=a,b`: every
   piece of the guns so named).
 - **Combat Arms install guns had no gun in third person (the R870):

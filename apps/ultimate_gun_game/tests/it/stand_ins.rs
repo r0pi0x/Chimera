@@ -28,18 +28,15 @@ use chimera_world::{
     harness::Sim,
     map::{CharacterModels, GameKit, MapBone, MapBrush, MapCharacterModel, MapData, MapMesh, MapModel, anim::AnimSet},
 };
-use combat_arms::{
-    game::{
+use combat_arms::{game::{
         TICK_INTERVAL,
         attachments::CaMods,
         characters::{preload::LadderModels, records::Selection},
         data::CaData,
         movement,
         view_model::{on_demand::LoadOnDemand, parts::view_key},
-    },
-    harness::CaSim,
-    ui::visuals::CaVisualsPlugin,
-};
+    }, harness::CaSim};
+use combat_arms_ui::visuals::CaVisualsPlugin;
 use party_kit::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 

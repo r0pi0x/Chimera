@@ -1,6 +1,6 @@
 //! Reference-canvas UI for any game whose screens are trees of widgets laid
 //! out in reference pixels on a fixed canvas and stretched to the screen
-//! (Combat Arms' 1024x768 layouts first, `combat_arms::ui::layout`), as
+//! (Combat Arms' 1024x768 layouts first, `combat_arms_ui::layout`), as
 //! plain data with no ECS or drawing, so a game's layout rules are unit
 //! tested headless:
 //!

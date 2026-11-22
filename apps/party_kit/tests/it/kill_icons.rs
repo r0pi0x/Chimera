@@ -2,7 +2,7 @@
 //! HUD is up: on CS:S's HUD a Combat Arms gun is drawn with Combat Arms'
 //! icon (from the shared registry, `client::weapon_icons::WeaponIcons`),
 //! else by its name; CS:S's own gun keeps its glyph path. The other way
-//! round (Combat Arms' feed with a CS:S gun) is `combat_arms::ui::hud`'s
+//! round (Combat Arms' feed with a CS:S gun) is `combat_arms_ui::hud`'s
 //! own tests. Headless, on the party with a stand-in CS:S HUD look that
 //! has a notices panel.
 

@@ -289,7 +289,7 @@ raw queries in the function itself.
 | games/combat_arms/src/game/rules/mercs.rs | `expire` 315 (q2) | C | |
 | games/combat_arms/src/game/rules/scoring.rs | `handle_deaths` 126 | B | step 5 |
 | games/combat_arms/src/game/rules/spawns.rs | `ask_for_respawns` 461 (q1) | C | |
-| games/combat_arms/src/ui/{lobby,options,scoreboard,talk}.rs | `update` lobby:1289, options:910, scoreboard:174 (q1), talk:150; `typing` talk:251 | A | menus and HUD panels |
+| games/combat_arms/ui/src/{lobby,options,scoreboard,talk}.rs | `update` lobby:1289, options:910, scoreboard:174 (q1), talk:150; `typing` talk:251 | A | menus and HUD panels |
 | games/cs_source/src/bot/mod.rs | `keep_quota` 563 (q1) | A | spawning |
 | games/cs_source/src/game/demo.rs | `play` 1263, `apply_round` 1817 | A | demo playback |
 | games/cs_source/src/game/net.rs | `write_round` 449 (q1), `apply_round` 838 (q2), `apply_bombs` 909 (q1) | A | net |
@@ -350,7 +350,7 @@ checked at all (step 1 fixes this).
 | `MOUNT` | games/combat_arms/src/game/world.rs:279 | gone | `CaData::mount`, the mount itself shared like the install data (item 13, done) |
 | `RIGS`, `GROUPS`, `SHARED` (and `SOCKETS`, added by 1f0a2972) | games/combat_arms/src/game/characters/models.rs:87, :162, :470 | gone | `models::CaModelIndex`: a map's in its `MapMemos`, the app's late loads' in `CaLateModels`, read together (`LoadedModels`); the converted models a memo of the install data (item 13, done) |
 | `CACHE` (view models) | games/combat_arms/src/game/view_model/on_demand.rs:64 | gone | a memo of the app's install data (`CaData::memo`), freed with it (item 13, done) |
-| `UI` (install UI) | games/combat_arms/src/ui/install.rs:702 | gone | a memo of the install data (`CaData::memo`) (item 13, done) |
+| `UI` (install UI) | games/combat_arms/ui/src/install.rs:702 | gone | a memo of the install data (`CaData::memo`) (item 13, done) |
 | `GAME_DEFAULTS`, `OLD_DEFAULTS` | chimera/client/src/client/binds.rs:189, :193 | gone | now `binds::BindDefaults`, a resource keyed by game (step 10, done); a gameplay switch still doesn't re-read binds (known shortcut) |
 | `MAP_NAMES`, `CYCLE` | chimera/client/src/client/console.rs:1890, :1923 | gone | now `console::MapLists`, a resource keyed by game (step 10, done) |
 | `PROGRESS` | chimera/world/src/map/loading.rs:16 | gone | now `loading::LoadReporter`, a resource the load also holds through `MapLoadOptions::progress` (step 10, done) |

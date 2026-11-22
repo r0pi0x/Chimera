@@ -23,12 +23,13 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    ultimate_gun_game_server (apps/ultimate_gun_game_server/)   its server: the party's `GameServer` with its minigame and parts
   |    originals (games/originals/)   the original minigames: definitions (minigames/) and rules hooks, Chimera only
   |    cs_source_server (apps/cs_source_server/)   CS:S's dedicated server: the game without its front end, no app
-  |    combat_arms_server (apps/combat_arms_server/)   Combat Arms' dedicated server: the game without `ui`
+  |    combat_arms_server (apps/combat_arms_server/)   Combat Arms' dedicated server: the game without its front end
   |    hl2dm_app (apps/hl2dm/)   the HL2:DM app: its game binary `hl2dm` (its maps, the greybox)
   |    hl2dm_server (apps/hl2dm_server/)   HL2:DM's dedicated server: no presentation
   |    halo_ce_app (apps/halo_ce/)   the Halo app: its game binary `halo_ce` (the greybox; the disc's maps as their loader lands)
   |    halo_ce_server (apps/halo_ce_server/)   Halo's dedicated server: no presentation
-  |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
+  |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source
+  |    combat_arms_ui (games/combat_arms/ui/)   Combat Arms' front end as its own crate (layout format's widgets, HUD, menus, scoreboard, lobby screens, radar, effects): on combat_arms, the engine's crates and the shell
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |    hl2dm_ui (games/hl2dm/ui/)   HL2:DM's front end as its own crate (its HUD, GameUI menus, kill icons, quick info): on hl2dm, Source's shared crates and the shell
   |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim
@@ -73,8 +74,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   manifest declares (`[package.metadata.chimera] loaders = ["source"]`),
   never on a game or an app; `games/<id>/ui` is that game's front end as
   its own crate (`<id>_ui`), on the engine, its own game and that game's
-  loader layers, never another game, front end or app (TF2's, Halo's, HL2:DM's and CS:S's
-  so far; the other games' front ends are still their crate's `ui` feature,
+  loader layers, never another game, front end or app (TF2's, Halo's, HL2:DM's, CS:S's and Combat Arms':
   docs/plans/active/architecture-for-iteration.md, stage 1); `apps/*` (and a game's tools, and the root
   package) compose them, and build on another app only when their
   manifest says so (`apps = ["party_kit"]`). The rows of
@@ -235,8 +235,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   network part and Source's logic), which the app runs; `harness::CsSim`
   is that as the tests' and tools' base, with its test maps for network
   tests. `cargo test -p cs_source --features dev` tests the simulation
-  (its scenario tests, heavy map tests among them), `--features dev,ui`
-  the front end too.
+  (its scenario tests, heavy map tests among them); `cargo test -p
+  cs_source_ui --features dev` the front end.
 - `source_logic` is Source's map logic (`logic`: entity I/O, logic
   classes, triggers, movers, breakables, props, fire, the bridge to the
   map's entities) with its part of the network (`logic::net`: movers,
@@ -272,7 +272,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   from the install through `source_engine::hud::gameui`; what's a game's own
   (its strings file, bots, teams, rounds, quick start) is data, `MenuGame`.
   Above the shell and `source_engine`, below the games, turned on by a
-  game's `ui` feature: dedicated servers never build it (checked).
+  game's front end crate (`<id>_ui`): dedicated servers never build it (checked).
 - `hl2dm` (games/hl2dm/) is Half-Life 2: Deathmatch, M0 and M1 of
   docs/plans/active/hl2dm.md: its `GameInfo` (`game::INFO`: Steam app
   320, folder `hl2mp`, console namespaces `hl2dm` and `hl2mp`), its
@@ -568,17 +568,17 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `lobby`: the lobby service (rooms, teams, ready, start and countdown,
   join in progress), the client's checks and room list, the loadout's
   rules and item lifetimes, and its host on the engine (`ca_lobby`;
-  `ui::lobby`: the room list, creation popup, waiting room and inventory
+  `combat_arms_ui::lobby`: the room list, creation popup, waiting room and inventory
   screens), `net`:
   its part of the
   network on `chimera_net`, `world`: the install's maps as `MapData`),
-  with its feature `ui` its
-  front end (`ui::layout`: its layouts on Chimera's `client::canvas`,
-  `ui::hud`, `ui::scoreboard`, `ui::menu`: the Esc menu, `ui::visuals`), and `harness::CaSim` as its
+  its
+  front end is its own crate, `combat_arms_ui` (games/combat_arms/ui; `layout`: its layouts on Chimera's `client::canvas`,
+  `hud`, `scoreboard`, `menu`: the Esc menu, `visuals`), and `harness::CaSim` as its
   scenario tests' base (with chimera_net's `NetSim` for its network
   tests). Layered as `cs_source`: the engine crates only,
-  never `cs_source`, Source's logic, `mashup` or an app (checked); only
-  `ui` uses the presentation and the shell. `apps/combat_arms`
+  never `cs_source`, Source's logic, `mashup` or an app (checked), nor the
+  presentation or the shell. `apps/combat_arms`
   (`combat_arms_app`) is its game binary (`combat_arms`): the greybox
   or `--map combat_arms:<name>`, the shell with its HUD, the network (a
   listen server or a client, the shell's options), its build's stamp:
@@ -643,7 +643,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   releases build it with `-p`.
 - `combat_arms_server` (apps/combat_arms_server/) is Combat Arms'
   dedicated server (`combat_arms_server`): Chimera's simulation crates,
-  the network and `combat_arms` without `ui`, on Chimera's dedicated
+  the network and `combat_arms`, on Chimera's dedicated
   server (`chimera_net::dedicated`: its `SERVER`, whose `ServerPlugin`
   its tests build too), so it links no render or audio code and never
   the app (`combat_arms_app`), CS:S or Source's logic (checked the same
@@ -820,8 +820,8 @@ A module may use only the modules below it. Enforced by
   it runs headless in tests and, later, on a dedicated server.
 - `games/<a>` never uses `games/<b>`. Shared needs go into `core` once two or
   three games need them (README, "rule of three"), or through a bridge.
-- A game's front end (its own crate `<id>_ui` in games/<id>/ui, as TF2's, Halo's, HL2:DM's and CS:S's;
-  or its crate's `ui`, behind its `ui` feature: menus, panels, HUD) sits on
+- A game's front end (its own crate `<id>_ui` in games/<id>/ui, as TF2's, Halo's, HL2:DM's, CS:S's and Combat Arms':
+  menus, panels, HUD) sits on
   `client` (the shell: input, camera, console UI, VGUI-like widgets, debug
   tools, net glue); the rest of the game never uses it. The shell reaches
   it only through `client::front_end` (hooks the game registers), and the

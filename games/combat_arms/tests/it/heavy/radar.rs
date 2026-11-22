@@ -5,16 +5,11 @@
 //! size, and the server's whole path from the world and mode to the image
 //! data (`mission::find`). Passes with a note without an install; the
 //! mission files need the V1 key. Nothing read here is written anywhere.
-#![cfg_attr(not(feature = "ui"), allow(unused_imports))]
 
 use chimera_core::mount::{Mount, config::LocalConfig};
 use combat_arms::game::{
     GAME, INFO, mount,
-    radar::{
-        legend,
-        look::{self, ARROW, FRAME, GUIDE, MASK, ZOOM_KNOB, ZOOM_TRACK},
-        mission::{self, MapImage},
-    },
+    radar::mission::{self, MapImage},
 };
 use lithtech_formats::{
     attributes::Document,
@@ -79,39 +74,6 @@ fn t46_the_map_images() {
     );
 }
 
-/// Test 47: the radar art and the icons, with the sizes the spec lists.
-#[cfg(feature = "ui")]
-#[test]
-fn t47_the_radar_art_and_icons() {
-    let Some(m) = install() else { return };
-    for (path, w, h) in [
-        (FRAME, 256, 256),
-        (MASK, 256, 256),
-        (GUIDE, 512, 512),
-        (ZOOM_TRACK, 16, 256),
-        (ZOOM_KNOB, 16, 16),
-        (ARROW, 64, 32),
-    ] {
-        let (_, d) = dtx(&m, path);
-        assert_eq!((d.width, d.height, d.format), (w, h, Format::Bgra32), "{path}");
-    }
-    // Every icon the radar and the map name: 64 x 32 32-bit, but the
-    // death mark (64 x 64).
-    for path in combat_arms::ui::hud::radar::art_names()
-        .into_iter()
-        .filter(|p| p.starts_with(look::ICON_DIR))
-    {
-        let (_, d) = dtx(&m, &path);
-        assert_eq!(d.format, Format::Bgra32, "{path}");
-        let want = if path.ends_with("area_death.dtx") {
-            (64, 64)
-        } else {
-            (64, 32)
-        };
-        assert_eq!((d.width, d.height), want, "{path}");
-    }
-}
-
 /// Tests 48 to 51: the corners from the mission files.
 fn corners_of(m: &Mount, file: &str) -> (MapImage, Document) {
     let bytes = m.read(&format!("gms/{file}")).unwrap_or_else(|e| panic!("{file}: {e}"));
@@ -157,49 +119,3 @@ fn the_mission_file_of_a_world_and_mode() {
     assert!(img.corners.is_some());
 }
 
-/// Test 52: `[RadarInfo]`'s `DefaultWorldSize`, and the legend lists.
-#[cfg(feature = "ui")]
-#[test]
-fn t52_the_large_map_attribute_file() {
-    let Some(m) = install() else { return };
-    if !v1(true) {
-        return;
-    }
-    let bytes = m
-        .read(combat_arms::ui::install::LARGE_MAP_ATTRIBUTES)
-        .expect("the large-map attribute file");
-    let doc = Document::parse(&bytes).unwrap();
-    let size = doc.section("RadarInfo").map(|s| s.number("DefaultWorldSize", 0.0));
-    assert_eq!(size, Some(combat_arms::game::radar::maths::WORLD_SIZE));
-    let lists = legend::parse(&doc);
-    assert!(!lists.is_empty(), "icon lists");
-    assert_eq!(lists[0].items.len(), 6, "Elimination's six rows");
-}
-
-/// Corrections 2026-10-22 (5): the install's `[HUDLargeMap]` section (in
-/// the HUD layout attributes) carries the correct Bravo flag badge key and
-/// no misspelt one (two letters of `LargeMapBravoFlagMove` swapped), so the
-/// radar's Alpha carriers have an empty badge (`look::radar_player`).
-#[cfg(feature = "ui")]
-#[test]
-fn t53_the_radars_misspelt_flag_badge_key() {
-    let Some(m) = install() else { return };
-    if !v1(true) {
-        return;
-    }
-    let layout = m
-        .read(combat_arms::ui::install::LAYOUT_ATTRIBUTES)
-        .expect("the layout attribute file");
-    let doc = Document::parse(&layout).unwrap();
-    let section = doc.section("HUDLargeMap").expect("[HUDLargeMap]");
-    let right: Vec<char> = "largemapbravoflagmove".chars().collect();
-    let swapped = |k: &str| {
-        let a: Vec<char> = k.to_lowercase().chars().collect();
-        a.len() == right.len() && a.iter().zip(&right).filter(|(x, y)| x != y).count() == 2
-    };
-    assert!(section.get("LargeMapBravoFlagMove").is_some(), "the correct key");
-    assert!(
-        !section.iter().any(|(k, _)| swapped(k)),
-        "no misspelt key: the radar's lookup finds nothing"
-    );
-}
