@@ -297,8 +297,20 @@ one revert puts it back.
       `chimera_client` (17 s of 87 at the measured load); (d)
       `selections_share_one_build` passes and the server and the client
       link the same `tf2` unit.
-- [ ] Then `halo_ce` (2.9k lines, no UI tests; the most edited game),
-      `hl2dm` (3.8k), `cs_source` (12.4k, 112 UI tests), `combat_arms`
+- [x] `halo_ce` (2.9k lines; the most edited game): `halo_ce_ui`
+      (games/halo_ce/ui), with its HUD's shader (now
+      `embedded://halo_ce_ui/hud/hud.wesl`), the `hud_filters` example and
+      the six test files and two tests that named the front end. (a) a
+      client edit selects `halo_ce_ui` and no longer `halo_ce`; its test
+      build's unit graph: 696 units, 10 workspace packages, no client,
+      presentation or UI kit (before: 733, 13 with all three). One test
+      (`campaign_units_come_with_the_matchs_ladder_not_the_apps_start`)
+      had passed only while the client was linked into the binary: its
+      plugin's voices read messages nothing in it registered; it
+      registers them now. Recipe step 5 gains: grep the tests for grouped
+      imports too (`halo_ce::{ game::.., ui::.. }`), and run the whole
+      fast tier, not only the moved tests.
+- [ ] Then `hl2dm` (3.8k), `cs_source` (12.4k, 112 UI tests), `combat_arms`
       (17.9k, 322 UI tests), one commit each.
 
 Expected once all five are split: the 131 client-side commits per 14
@@ -453,6 +465,7 @@ added. Nothing in the product changed.
 2026-11-21: stage 1 for `tf2`: its front end is `tf2_ui` (games/tf2/ui);
 criteria (a)-(c) met, (d) as far as features go (results above); the
 layering check knows a front-end crate by its path (`Layer::FrontEnd`).
+2026-11-21: `halo_ce` the same: `halo_ce_ui` (games/halo_ce/ui).
 
 ## Decision log
 

@@ -4448,13 +4448,10 @@ dependencies = [
  "bevy_replicon",
  "bevy_winit",
  "blam_formats",
- "chimera_client",
  "chimera_core",
  "chimera_net",
- "chimera_present",
  "chimera_sim",
  "chimera_world",
- "halo_ce",
  "serde",
  "sha2",
  "toml",
@@ -4474,6 +4471,7 @@ dependencies = [
  "chimera_sim",
  "chimera_world",
  "halo_ce",
+ "halo_ce_ui",
  "workspace-hack",
 ]
 
@@ -4486,6 +4484,24 @@ dependencies = [
  "bevy_winit",
  "chimera_core",
  "chimera_net",
+ "chimera_sim",
+ "chimera_world",
+ "halo_ce",
+ "workspace-hack",
+]
+
+[[package]]
+name = "halo_ce_ui"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "blam_formats",
+ "chimera_client",
+ "chimera_core",
+ "chimera_net",
+ "chimera_present",
  "chimera_sim",
  "chimera_world",
  "halo_ce",
@@ -6538,6 +6554,7 @@ dependencies = [
  "cs_source",
  "dirs",
  "halo_ce",
+ "halo_ce_ui",
  "hl2dm",
  "image",
  "originals",

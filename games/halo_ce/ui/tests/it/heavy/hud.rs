@@ -8,7 +8,7 @@
 //! canvas. Passes with a note without an install.
 
 use blam_formats::cache::MapFile;
-use halo_ce::ui::hud::{
+use halo_ce_ui::hud::{
     data::HudData,
     draw::{self, Fill, HudState, Held, Quad, Unit},
     layout::Canvas,
@@ -17,7 +17,7 @@ use halo_ce::ui::hud::{
 };
 
 fn data() -> Option<HudData> {
-    let mount = super::maps::mount()?;
+    let mount = super::disc::mount()?;
     let bytes = mount.read("maps/bloodgulch.map").unwrap();
     Some(HudData::load(&MapFile::load(&bytes).unwrap()).unwrap())
 }
@@ -161,8 +161,8 @@ fn a_hit_lowers_the_shield_meter_and_the_recharge_restores_it() {
     use halo_ce::{
         game::{damage::HaloHit, movement, vitality::{DamageEffects, ids}},
         harness::HaloSim,
-        ui::hud::{HaloHudPlugin, nodes::{HaloHud, HudLoad}},
     };
+    use halo_ce_ui::hud::{HaloHudPlugin, nodes::{HaloHud, HudLoad}};
     let Some(d) = data() else { return };
     let mut sim = Sim::with(HaloSim, move |app| {
         app.add_plugins((GreyboxMapPlugin, HaloHudPlugin)).insert_resource(HudLoad::Ready(Arc::new(d)));
@@ -260,7 +260,7 @@ fn s13_the_scopes_masks_grey_levels() {
 /// no tracker drawn; the disc's layout unchanged.
 #[test]
 fn the_party_layout_moves_the_shield_block_to_the_trackers_place() {
-    use halo_ce::ui::hud::layout::{HudLayout, rect_bounds};
+    use halo_ce_ui::hud::layout::{HudLayout, rect_bounds};
     let Some(d) = data() else { return };
     let unit = Unit { alive: true, shield: 1.0, body: 1.0, ..Default::default() };
     for (w, h) in [(1280.0, 720.0), (1920.0, 1080.0), (640.0, 480.0)] {
@@ -295,8 +295,8 @@ fn the_party_layout_moves_the_shield_block_to_the_trackers_place() {
 fn every_rung_gun_and_grenade_has_a_kill_feed_icon_with_ink() {
     use halo_ce::{
         game::weapons::{self as w, systems::{FRAG_GRENADE, PLASMA_GRENADE}},
-        ui::kill_icons::{icon_rgba, pictures},
     };
+    use halo_ce_ui::kill_icons::{icon_rgba, pictures};
     let Some(d) = data() else { return };
     let pics = pictures(&d);
     let ids = [w::ASSAULT_RIFLE, w::PISTOL, w::PLASMA_RIFLE, w::SHOTGUN, w::SNIPER_RIFLE, w::ROCKET_LAUNCHER, w::NEEDLER, w::PLASMA_PISTOL, FRAG_GRENADE, PLASMA_GRENADE];
@@ -320,8 +320,8 @@ fn every_rung_gun_and_grenade_has_a_kill_feed_icon_with_ink() {
 fn every_rung_gun_draws_its_crosshair_in_the_party_layout() {
     use halo_ce::{
         game::weapons::{self as w, HaloGun, HaloWeapon},
-        ui::hud::layout::HudLayout,
     };
+    use halo_ce_ui::hud::layout::HudLayout;
     let Some(d) = data() else { return };
     let guns = w::guns();
     for id in [w::ASSAULT_RIFLE, w::PISTOL, w::PLASMA_RIFLE, w::SHOTGUN, w::SNIPER_RIFLE, w::ROCKET_LAUNCHER, w::NEEDLER, w::PLASMA_PISTOL] {

@@ -218,7 +218,7 @@ fn the_hints_key_is_the_one_bound_now() {
 /// edge) and the kill feed and top-centre column (the top).
 #[test]
 fn the_hint_sits_bottom_centre_clear_of_the_huds() {
-    use halo_ce::ui::hud::layout::{Canvas, PARTY_STATUS_BAND, SAFE_X};
+    use halo_ce_ui::hud::layout::{Canvas, PARTY_STATUS_BAND, SAFE_X};
     for (w, h) in [(1920.0, 1080.0), (1280.0, 720.0), (1280.0, 960.0), (1024.0, 768.0), (2560.0, 1080.0)] {
         let units = chimera_ui::UiUnits::new(chimera_ui::units::layout_height(w, h), 1.0);
         let (bw, bh) = (units.cq(16.0), units.cq(2.4));

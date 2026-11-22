@@ -168,7 +168,7 @@ fn every_option_is_archived() {
         app.add_plugins(chimera_client::client::third_person::ThirdPersonPlugin);
         perf::frame_limit_cvar(app);
         hud::default_radars(app, false);
-        halo_ce::ui::hud::filter_cvar(app);
+        halo_ce_ui::hud::filter_cvar(app);
         // "Use my installed games" (the network's).
         chimera_net::net::assets::install_setting(app);
         // "Developer mode" (the UI kit's gallery).

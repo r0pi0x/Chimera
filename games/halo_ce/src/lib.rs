@@ -9,14 +9,12 @@
 //! `SimPlugins`: everything Halo's simulation needs but its parts (so far
 //! the engine's base and the tick metrics), what its apps run with
 //! `game::HaloPlugins` after it; `harness`: Halo on the engine's headless
-//! harness (`harness::HaloSim`, its scenario tests' base). With the `ui`
-//! feature, `ui` is its front end on the client shell.
+//! harness (`harness::HaloSim`, its scenario tests' base). Its front end on
+//! the client shell is its own crate above this one, `halo_ce_ui`
+//! (games/halo_ce/ui).
 
 pub mod game;
 pub mod harness;
-// The front end: built on the client shell (the `ui` feature).
-#[cfg(feature = "ui")]
-pub mod ui;
 
 // `crate::game_registry`, `crate::map` and the rest inside, as in the other
 // game crates (the architecture check reads `crate::<module>` against its

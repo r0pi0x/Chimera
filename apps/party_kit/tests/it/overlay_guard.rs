@@ -265,7 +265,7 @@ fn the_overlay_is_laid_out_alike_under_every_games_hud() {
 /// never runs it, keeps the disc's (the resource's default).
 #[test]
 fn halos_front_end_puts_its_hud_in_the_party_layout() {
-    use halo_ce::ui::hud::{HaloHudLayout, layout::HudLayout};
+    use halo_ce_ui::hud::{HaloHudLayout, layout::HudLayout};
     let client = party_kit::client::CLIENTS.iter().find(|c| c.game == halo_ce::game::GAME).expect("Halo's front end in the party");
     let mut app = App::new();
     (client.app.expect("its app hook"))(&mut app);

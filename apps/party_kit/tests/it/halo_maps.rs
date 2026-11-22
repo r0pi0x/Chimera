@@ -136,7 +136,7 @@ pub(crate) fn mixed_with_halo() -> String {
     )
 }
 
-/// Halo's HUD in the party (`halo_ce::ui::party::CLIENT`): up while the
+/// Halo's HUD in the party (`halo_ce_ui::party::CLIENT`): up while the
 /// local player holds a Halo gun, its root hidden and the other game's HUD
 /// up again on another game's rung; while it is up the shell's fallback
 /// crosshair and status are off (`GameDraws`), and its declared kill feed

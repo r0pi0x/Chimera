@@ -9,7 +9,7 @@
 //!
 //! `APP`: the game binary's app on Chimera's client app (`chimera_client::
 //! client::app`; main.rs is `run(&APP)`): `SimPlugin`, the client shell
-//! with Halo's HUD (`halo_ce::ui::with_hud`: specs/halo_ce/hud.md) and Halo's
+//! with Halo's HUD (`halo_ce_ui::with_hud`: specs/halo_ce/hud.md) and Halo's
 //! front end (`front_end`: its weapons' melee and zoom buttons).
 //!
 //! `VERSION` and `BUILD`: this build's version and commit, stamped by
@@ -62,7 +62,7 @@ pub static APP: GameApp = GameApp {
     sim: |app, _| {
         app.add_plugins(SimPlugin);
     },
-    hud: halo_ce::ui::with_hud,
+    hud: halo_ce_ui::with_hud,
     front_end,
     hooks: GameAppHooks {
         server: Some("halo_ce_server"),
@@ -108,7 +108,7 @@ impl Plugin for SimPlugin {
 /// shell's `hud`): its field of view and menus come with their specs.
 pub fn front_end(app: &mut App, _: &Args) {
     // The weapons' melee and zoom buttons.
-    halo_ce::ui::binds(app);
+    halo_ce_ui::binds(app);
     // The camera's field of view, the view models' too (`game::view`).
     app.insert_resource(chimera_client::client::video::PlayerFov(game::view::FOV))
         .insert_resource(game::view::settings())

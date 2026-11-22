@@ -1,12 +1,10 @@
-//! The match's text on Halo's HUD (`ui::hud::score`): the score line of a
+//! The match's text on Halo's HUD (`hud::score`): the score line of a
 //! team game and of free for all (a time-scored game in minutes and
 //! seconds, the clock counting down under a time limit), and the game-over
 //! line by winner.
 
-use halo_ce::{
-    game::rules::{BLUE, RED, view::HaloMatchView},
-    ui::hud::score::{clock, game_over, line},
-};
+use halo_ce::game::rules::{BLUE, RED, view::HaloMatchView};
+use halo_ce_ui::hud::score::{clock, game_over, line};
 
 #[test]
 fn the_score_and_game_over_lines() {

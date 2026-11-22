@@ -1,4 +1,6 @@
-//! Halo's front end on the client shell (the `ui` feature): its weapons'
+//! Halo's front end on the client shell, its own crate above the game's
+//! simulation (`halo_ce`), so that the simulation and its tests never build
+//! the shell (docs/plans/active/architecture-for-iteration.md, stage 1): its weapons'
 //! own buttons (`binds`: `+melee`, `+zoom`, `+grenade`, `+grenade_switch`) and its HUD (`hud`:
 //! specs/halo_ce/hud.md, drawn from the disc's HUD tags in place of the
 //! shell's fallback crosshair and status), its weapons' kill-feed icons
@@ -12,6 +14,12 @@ pub mod fx_lights;
 pub mod party_view;
 
 pub mod kill_icons;
+
+// `crate::game`, `crate::map` and the rest, as inside the game's crate,
+// where this code began.
+use chimera_core::{core, gameplay};
+use chimera_world::map;
+use halo_ce::game;
 
 use bevy::app::PluginGroupBuilder;
 use chimera_world::game_bundle::GameClient;
@@ -57,7 +65,7 @@ pub fn party_app(app: &mut bevy::app::App) {
     app.add_systems(bevy::app::Update, hud::nodes::load);
 }
 
-/// Halo's front end under the name every game's has it (`ui::party::CLIENT`;
+/// Halo's front end under the name every game's has it (`party::CLIENT`;
 /// docs/new-game.md).
 pub mod party {
     pub use super::{CLIENT, with_hud};

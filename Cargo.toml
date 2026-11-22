@@ -36,6 +36,7 @@ members = [
     "games/originals",
     "games/hl2dm",
     "games/halo_ce",
+    "games/halo_ce/ui",
     "games/tf2",
     "games/tf2/ui",
     "apps/cs_source",
@@ -83,6 +84,7 @@ default-members = [
     "games/originals",
     "games/hl2dm",
     "games/halo_ce",
+    "games/halo_ce/ui",
     "games/tf2",
     "games/tf2/ui",
     "apps/cs_source",
@@ -154,6 +156,8 @@ hl2dm = { path = "games/hl2dm" }
 # Halo: Combat Evolved (Xbox) as a game crate (games/halo_ce): its skeleton
 # (docs/plans/active/halo-ce.md).
 halo_ce = { path = "games/halo_ce" }
+# Its front end on the client shell (games/halo_ce/ui), above the simulation.
+halo_ce_ui = { path = "games/halo_ce/ui" }
 # Team Fortress 2 as a game crate (games/tf2): its skeleton and maps
 # (docs/plans/active/tf2.md).
 tf2 = { path = "games/tf2" }
@@ -372,7 +376,7 @@ default = ["present"]
 # (Its `default`, not `present` alone, and the other games' front ends: the
 # same builds of them as every other selection's; architecture.rs,
 # `selections_share_one_build`.)
-present = ["cs_source_app/default", "combat_arms/ui", "hl2dm/ui", "halo_ce/ui"]
+present = ["cs_source_app/default", "combat_arms/ui", "hl2dm/ui"]
 
 # Host tools (`chimera_pack`), not in releases.
 tools = []

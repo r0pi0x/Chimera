@@ -4,7 +4,7 @@
 //! episode (S5), the flash function (S6), the weapons' flashing thresholds
 //! (S7), crosshair states and latches (S8), number layout (S9), blip
 //! positions, fades and the sweep (S10) and who shows on the tracker
-//! (S11). Pure functions of `halo_ce::ui::hud::{layout, rules}`; the disc's
+//! (S11). Pure functions of `halo_ce_ui::hud::{layout, rules}`; the disc's
 //! own layout is `heavy::hud`.
 
 // The spec's numbers are written as it states them.
@@ -14,7 +14,7 @@ use blam_formats::{
     cache::{Argb8, TagRef},
     hud::{Anchor, ColorBlock, MeterElement, MeteredPanel, Placement, StaticElement, weapon::FlashCutoffs},
 };
-use halo_ce::ui::hud::{
+use halo_ce_ui::hud::{
     layout::{self, Canvas, Value},
     rules::{self, CrosshairStates, ShieldMark, WeaponNow, crosshair},
 };
@@ -356,7 +356,7 @@ fn s11_who_shows_on_the_tracker() {
 /// frame when it would poke out.
 #[test]
 fn the_party_layouts_offset() {
-    use halo_ce::ui::hud::layout::party_offset;
+    use halo_ce_ui::hud::layout::party_offset;
     let frame = [48, 36, 592, 444];
     // A top-right block onto a bottom-left tracker.
     assert_eq!(party_offset([440.0, 40.0, 590.0, 80.0], [50.0, 330.0, 140.0, 440.0], frame, 0.0), [-390.0, 360.0]);

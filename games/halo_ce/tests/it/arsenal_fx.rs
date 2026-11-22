@@ -628,18 +628,6 @@ fn a_rockets_trail_follows_its_contrails_states() {
     assert!((q.current_alpha() - 0.125).abs() < 1e-4, "halfway to nothing: {}", q.current_alpha());
 }
 
-/// effects.md "Effect lights": intensity = 1 - the fall-off function of the
-/// elapsed fraction (the frag's linear, the plasma grenade's late, the
-/// tank shell's early).
-#[test]
-fn an_effect_lights_intensity_follows_its_falloff_function() {
-    use halo_ce::ui::fx_lights::intensity;
-    assert!((intensity(0, 0.5) - 0.5).abs() < 1e-6);
-    assert!((intensity(3, 0.5) - 0.75).abs() < 1e-6, "late: stays bright");
-    assert!((intensity(1, 0.25) - 0.5).abs() < 1e-6, "early: drops fast");
-    assert_eq!((intensity(0, 0.0), intensity(0, 1.0)), (1.0, 0.0));
-}
-
 /// effects.md test cases, "Particle systems and contrails (fourth errata
 /// batch)": each state's own physics, blended in reverse through a
 /// transition; the radius the physics uses.

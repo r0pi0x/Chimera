@@ -127,7 +127,7 @@ pub struct HudMaterial {
 
 impl UiMaterial for HudMaterial {
     fn fragment_shader() -> ShaderRef {
-        "embedded://halo_ce/ui/hud/hud.wesl".into()
+        "embedded://halo_ce_ui/hud/hud.wesl".into()
     }
 
     fn specialize(descriptor: &mut RenderPipelineDescriptor, _key: UiMaterialKey<Self>) {

@@ -1,5 +1,5 @@
 //! Halo's zoom in the party apps (`game::view::party_zoom_fov`,
-//! `ui::party_view`): for the pistol's 2x, the sniper rifle's 2x and 8x
+//! `halo_ce_ui::party_view`): for the pistol's 2x, the sniper rifle's 2x and 8x
 //! and the rocket launcher's 2x (each zoomed angle as the weapons' tick
 //! sets `Zoomed::fov`), the party's zoomed view at a player's 75 and 110
 //! degrees is that player's view narrowed by Halo's magnification in the
@@ -74,7 +74,7 @@ fn camera_after(player: f32, halo_gun: bool, zoomed: Option<Zoomed>) -> f32 {
     app.add_plugins(MinimalPlugins).insert_resource(PlayerFov(player));
     app.add_systems(Update, chimera_client::client::zoom_camera);
     app.init_resource::<chimera_client::client::spectate::SpecView>();
-    halo_ce::ui::party_view::plugin(&mut app);
+    halo_ce_ui::party_view::plugin(&mut app);
     let w = app.world_mut();
     let gun = if halo_gun {
         let (_, g) = weapons::guns().into_iter().find(|(id, _)| id == SNIPER_RIFLE).unwrap();

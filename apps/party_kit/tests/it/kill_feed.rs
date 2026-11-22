@@ -309,7 +309,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
             // What its drawing writes to (no renderer here).
             .init_asset::<chimera_client::client::hud_text::HudGlyphMaterial>()
             .init_asset::<Image>()
-            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm::ui::Hl2dmHudPlugin, halo_ce::ui::hud::HaloHudPlugin, tf2_ui::Tf2HudPlugin))
+            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm::ui::Hl2dmHudPlugin, halo_ce_ui::hud::HaloHudPlugin, tf2_ui::Tf2HudPlugin))
             .insert_resource(HudLookOwner(cs_source::game::GAME))
             .insert_resource(crate::hud::cs_look())
             .insert_resource(chimera_world::map::hud::GuestLooks(vec![hl2_look()]));

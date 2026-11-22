@@ -402,6 +402,10 @@ fn campaign_units_come_with_the_matchs_ladder_not_the_apps_start() {
     use chimera_sim::minigame::ladder::Ladder;
     use halo_ce::game::campaign::{CampaignBodies, UnitsOnDemand, asset_names, ladder_kinds};
     let mut app = App::new();
+    // The messages its voices read, which the game's damage registers in an
+    // app: on their own, its voices' systems fail their parameters' checks
+    // (seen once the test binary stopped linking the client shell).
+    app.add_message::<halo_ce::game::damage::HaloHurt>().add_message::<chimera_core::core::Died>();
     app.add_plugins(MinimalPlugins).add_plugins(campaign::CampaignPlugin);
     app.update();
     assert!(app.world().resource::<UnitsOnDemand>().wanted.is_empty(), "nothing wanted at the start");

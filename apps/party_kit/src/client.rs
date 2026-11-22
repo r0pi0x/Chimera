@@ -99,7 +99,7 @@ pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 5] = [
     &combat_arms::ui::PARTY_CLIENT,
     &cs_source::ui::party::CLIENT,
     &hl2dm::ui::party::CLIENT,
-    &halo_ce::ui::party::CLIENT,
+    &halo_ce_ui::party::CLIENT,
     &tf2_ui::party::CLIENT,
 ];
 

@@ -251,16 +251,6 @@ fn a_wheel_turns_between_ticks_the_short_way() {
     assert!((m.turn - 0.5).abs() < 1e-6 && (m.suspension[0] - 0.5).abs() < 1e-6);
 }
 
-/// The tracker's sweep at the frame's time: between its ticks' sizes.
-#[test]
-fn the_trackers_sweep_moves_between_ticks() {
-    use halo_ce::ui::hud::rules::{sweep, sweep_at};
-    let (a, b) = (sweep(10), sweep(11));
-    let m = sweep_at(10.5);
-    assert!(m < a.max(b) && m > a.min(b), "{a} {m} {b}");
-    assert_eq!(sweep_at(10.0), a);
-}
-
 /// A carried body (a vehicle's rider: the engine's `Carried`) stays still
 /// in its seat whatever its keys and the carrier's speed: no running legs,
 /// so no foot frames (no footsteps: `audio::steps`, which skips it too).

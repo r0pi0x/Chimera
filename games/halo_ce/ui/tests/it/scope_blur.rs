@@ -11,7 +11,7 @@
 use bevy::prelude::*;
 use blam_formats::cache::Bounds;
 use chimera_present::render::screen_post::ScreenPost;
-use halo_ce::ui::hud::{
+use halo_ce_ui::hud::{
     data::Picture,
     draw::{ScopeBlur, scope_fov, scope_radius},
     nodes::{self, HaloHud, HudImages},

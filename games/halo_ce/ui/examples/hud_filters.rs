@@ -2,7 +2,7 @@
 //! with a made-up picture in each scaling (`HudFilter`): proves hud.wesl
 //! compiles and draws, and saves a PNG to look at.
 //!
-//! `cargo run -p halo_ce --features dev,ui --example hud_filters -- <out.png>`
+//! `cargo run -p halo_ce_ui --features dev --example hud_filters -- <out.png>`
 
 use bevy::{
     app::{PluginsState, ScheduleRunnerPlugin},
@@ -13,7 +13,7 @@ use bevy::{
     window::ExitCondition,
     winit::WinitPlugin,
 };
-use halo_ce::ui::hud::material::{HudMaterial, HudParams, HudRenderPlugin};
+use halo_ce_ui::hud::material::{HudMaterial, HudParams, HudRenderPlugin};
 
 const W: u32 = 1280;
 const H: u32 = 720;
@@ -77,7 +77,7 @@ fn main() {
     // a meter and a sweep.
     for (row, size) in [(0, Vec2::new(120.0, 90.0)), (1, Vec2::new(300.0, 225.0))] {
         for filter in 0..3u32 {
-            let mut params = HudParams::of(&halo_ce::ui::hud::draw::Fill::Sprite([1.0; 4]), [0.0, 0.0, 1.0, 1.0]);
+            let mut params = HudParams::of(&halo_ce_ui::hud::draw::Fill::Sprite([1.0; 4]), [0.0, 0.0, 1.0, 1.0]);
             params.style.x = filter as f32;
             let m = w.resource_mut::<Assets<HudMaterial>>().add(HudMaterial { params, image: image.clone(), mask: image.clone() });
             let (x, y) = (20.0 + filter as f32 * 420.0, 20.0 + row as f32 * 130.0 + if row == 1 { 0.0 } else { 0.0 });

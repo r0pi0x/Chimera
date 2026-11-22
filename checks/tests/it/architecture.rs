@@ -354,6 +354,7 @@ const CRATE_SRC: &[&str] = &[
     "games/combat_arms/src",
     "games/hl2dm/src",
     "games/halo_ce/src",
+    "games/halo_ce/ui/src",
     "games/tf2/src",
     "games/tf2/ui/src",
 ];
@@ -2018,6 +2019,8 @@ fn workspace_crates() {
             ],
             GAME,
         ),
+        // Halo's simulation: its front end is its own crate (`halo_ce_ui`,
+        // games/halo_ce/ui), so no optional client dependencies either.
         (
             "games/halo_ce",
             &[
@@ -2804,7 +2807,6 @@ const UI_FEATURES: &[(&str, &str, &[&str])] = &[
     ("games/cs_source", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
     ("games/combat_arms", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
     ("games/hl2dm", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
-    ("games/halo_ce", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
 ];
 
 /// Crates a member's `FORBIDDEN` list names that its tests alone may use

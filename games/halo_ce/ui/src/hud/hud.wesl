@@ -1,4 +1,4 @@
-// Halo's HUD pictures (games/halo_ce/src/ui/hud/material.rs): a sprite
+// Halo's HUD pictures (games/halo_ce/ui/src/hud/material.rs): a sprite
 // drawn "alpha-multiply add" (specs/halo_ce/hud.md, section 3: the texel
 // times the colour, the frame kept by 1 - its alpha), the meter shader's
 // rule (section 4: the texel's blue channel is the place along the bar),

@@ -7,17 +7,15 @@
 //! a dead unit. Passes with a note without an install.
 
 use blam_formats::cache::MapFile;
-use halo_ce::{
-    game::weapons::{self, guns},
-    ui::hud::{
-        data::HudData,
-        draw::{self, Held, Unit},
-        rules::WeaponNow,
-    },
+use halo_ce::game::weapons::{self, guns};
+use halo_ce_ui::hud::{
+    data::HudData,
+    draw::{self, Held, Unit},
+    rules::WeaponNow,
 };
 
 fn data() -> Option<HudData> {
-    let mount = super::maps::mount()?;
+    let mount = super::disc::mount()?;
     let bytes = mount.read("maps/bloodgulch.map").unwrap();
     Some(HudData::load(&MapFile::load(&bytes).unwrap()).unwrap())
 }

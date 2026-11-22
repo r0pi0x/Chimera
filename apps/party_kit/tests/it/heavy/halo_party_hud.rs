@@ -1,4 +1,4 @@
-//! Halo's HUD in a party app (its party layout, `halo_ce::ui::party_app`,
+//! Halo's HUD in a party app (its party layout, `halo_ce_ui::party_app`,
 //! `ui::hud::layout::HudLayout::Party`) against everything the party
 //! draws over play, from the disc image: a Halo-rung holder's HUD is
 //! Halo's in the party layout, and at 1280x720, 1920x1080, 1280x960 and
@@ -20,7 +20,7 @@ use chimera_client::client::kill_feed::{FeedName, KillEntry, KillFeed};
 use chimera_core::{core::DamageKind, gameplay::Gameplay};
 use chimera_world::harness::Sim;
 use halo_ce::game::weapons::{HaloHands, grenades::PartyGrenades};
-use halo_ce::ui::hud::{
+use halo_ce_ui::hud::{
     HaloHudLayout,
     data::HudData,
     layout::{Canvas, HudLayout},
@@ -161,7 +161,7 @@ fn a_halo_rung_holders_hud_leaves_the_partys_overlay_free() {
         let reticles = hud
             .quads
             .iter()
-            .filter(|q| matches!(q.fill, halo_ce::ui::hud::draw::Fill::Reticle(_)) && q.rect[0] <= cx && q.rect[2] >= cx && q.rect[1] <= cy && q.rect[3] >= cy)
+            .filter(|q| matches!(q.fill, halo_ce_ui::hud::draw::Fill::Reticle(_)) && q.rect[0] <= cx && q.rect[2] >= cx && q.rect[1] <= cy && q.rect[3] >= cy)
             .count();
         assert!(reticles > 0, "{id}: no crosshair in the party layout ({:?})", hud.unit.as_ref().and_then(|u| u.weapon.as_ref()).map(|w| &w.tag));
     }
