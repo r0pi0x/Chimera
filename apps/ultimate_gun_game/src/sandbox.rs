@@ -209,7 +209,7 @@ pub fn command(w: &mut World, a: &[String], base: &str) -> Result<Option<String>
     // match held): the map is loaded, and its load takes the front end
     // into the game as any map change does.
     #[cfg(feature = "present")]
-    let at_menu = w.get_resource::<party_kit::main_menu::PartyMenu>().is_some_and(|m| m.shown());
+    let at_menu = w.get_resource::<party_roster::main_menu::PartyMenu>().is_some_and(|m| m.shown());
     #[cfg(not(feature = "present"))]
     let at_menu = false;
     // Already playing there (or anywhere, with no map named: the range is

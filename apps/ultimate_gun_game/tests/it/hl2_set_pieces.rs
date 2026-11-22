@@ -12,7 +12,7 @@ use chimera_world::{
 };
 use combat_arms::harness::CaSim;
 use hl2dm::game::set_pieces::SetPiecesPlugin;
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::UltimateGunGamePlugin;
 
 #[derive(Resource, Default)]

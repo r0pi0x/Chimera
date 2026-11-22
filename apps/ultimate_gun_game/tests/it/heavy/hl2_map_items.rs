@@ -18,7 +18,7 @@ use chimera_world::{
     map::{MapEntities, MapLoadOptions, MapSimPlugin, PhysicsProp, PropEntity, PushAway},
 };
 use combat_arms::harness::CaSim;
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::UltimateGunGamePlugin;
 
 const MAP: &str = "hl2dm:dm_steamlab";
@@ -39,7 +39,7 @@ fn an_hl2_maps_pickups_are_not_placed_its_crates_are_and_its_props_follow_hl2s_r
         eprintln!("skipping: needs the HL2:DM install");
         return;
     }
-    let Ok(data) = party_kit::load_map_with(MAP, &MapLoadOptions::lean()) else {
+    let Ok(data) = party_roster::load_map_with(MAP, &MapLoadOptions::lean()) else {
         eprintln!("skipping: needs the HL2:DM install");
         return;
     };

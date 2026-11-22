@@ -890,7 +890,7 @@ fn tracked_files() -> Vec<String> {
 /// below is real wall-clock time on purpose: a real server's own timers,
 /// a paced dedicated-server loop, a real thread to wait for.
 const TEST_SLEEPS: &[(&str, usize, &str)] = &[
-    ("apps/party_kit/tests/it/feedback.rs", 2, "waits for the outbox's zip on a thread"),
+    ("apps/party_roster/tests/it/feedback.rs", 2, "waits for the outbox's zip on a thread"),
     ("apps/ultimate_gun_game/tests/it/heavy/map_swap_frames.rs", 1, "a frame's real pace, so the load's threads run beside it"),
     ("apps/ultimate_gun_game/tests/it/heavy/nav_in_play.rs", 1, "paces the loop at the tick rate, real time"),
     ("apps/ultimate_gun_game/tests/it/heavy/no_fetch_in_match.rs", 1, "the dedicated loop's frame cap"),
@@ -1714,22 +1714,27 @@ fn workspace_crates() {
         architecture-review.md A5): Chimera only. A game's parts reach a minigame through Chimera's slots and \
         registries (a weapon by id from the catalogue, a movement by id), filled by the app that composes the \
         games, never through a game crate or an app.";
-    const PARTY_KIT: &str = "is the party kit (docs/ARCHITECTURE.md, \"Crates\"): the games as libraries, \
-        the original minigames and Chimera composed once for the four party apps (Lucker Party, the Ultimate \
-        Gun Game, and their servers), never one of those apps: what they share lives here, not across them.";
+    const PARTY_KIT: &str = "is the party kit (docs/ARCHITECTURE.md, \"Crates\"): what the four party apps \
+        share (Lucker Party, the Ultimate Gun Game, and their servers), on Chimera's crates only: it names no \
+        game, no loader and no app (`party_kit_names_no_game`), so a game's edit doesn't rebuild it. What \
+        names a game goes into the roster (apps/party_roster) and reaches the kit as data or a hook in its \
+        `Party` or `client::PartyClient`.";
+    const PARTY_ROSTER: &str = "is the party's roster (docs/ARCHITECTURE.md, \"Crates\"): the games as \
+        libraries and the original minigames composed on the party kit for the four party apps, never one of \
+        those apps: what they share lives here or in the kit, not across them.";
     const PARTY_APP: &str = "is Lucker Party's game binary (docs/ARCHITECTURE.md, \"Crates\"): a thin binary \
-        over the party kit (`party_kit`), never another app and no game crate: what it needs from the games \
-        goes through the kit.";
+        over the party's roster (`party_roster`, on the kit), never another app and no game crate: what it \
+        needs from the games goes through the roster.";
     const PARTY_SERVER: &str = "is Lucker Party's dedicated server (docs/ARCHITECTURE.md, \"Crates\"): \
-        a thin binary over the party kit (`party_kit`) without its default `present`, so no presentation or \
+        a thin binary over the party's roster (`party_roster`) without its default `present`, so no presentation or \
         client shell links (`server_builds_without_presentation`). Move what needs them into the kit's \
         client side (`present`).";
     const UGG_APP: &str = "is the Ultimate Gun Game (docs/ARCHITECTURE.md, \"Crates\"; \
-        docs/plans/active/ultimate-gun-game.md): the party kit (`party_kit`) with an automatic gun game made \
+        docs/plans/active/ultimate-gun-game.md): the party's roster (`party_roster`) with an automatic gun game made \
         from the games' parts (`chimera_core::game_parts`). It names no game crate and no other app: what a \
-        game lends reaches it through the parts registry, and what it shares with the party lives in the kit.";
+        game lends reaches it through the parts registry, and what it shares with the party lives in the kit or the roster.";
     const UGG_SERVER: &str = "is the Ultimate Gun Game's dedicated server (docs/ARCHITECTURE.md, \"Crates\"): \
-        the party kit (`party_kit::server`) and `ultimate_gun_game` without their default `present`, so no \
+        the party's roster (`party_roster::server`) and `ultimate_gun_game` without their default `present`, so no \
         presentation or client shell links (`server_builds_without_presentation`).";
     const SERVER: &str = "is CS:S's dedicated server (docs/ARCHITECTURE.md, \"Crates\"): Chimera's \
         simulation crates and CS:S without its front end (`ui`), no presentation, client shell or CS:S app \
@@ -2189,8 +2194,27 @@ fn workspace_crates() {
         ),
         (
             "apps/party_kit",
-            &["mashup", "cs_source_app", "combat_arms_app", "ultimate_gun_game", "lucker_party"],
+            &[
+                "mashup",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "halo_ce",
+                "tf2",
+                "originals",
+                "source_",
+                "lithtech_",
+                "blam_",
+                "party_roster",
+                "ultimate_gun_game",
+                "lucker_party",
+            ],
             PARTY_KIT,
+        ),
+        (
+            "apps/party_roster",
+            &["mashup", "cs_source_app", "combat_arms_app", "ultimate_gun_game", "lucker_party"],
+            PARTY_ROSTER,
         ),
         (
             "apps/lucker_party",
@@ -3172,3 +3196,41 @@ fn tests_are_one_binary_per_crate() {
     }
     assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
 }
+
+/// The party kit depends on Chimera's crates only (docs/plans/active/
+/// architecture-for-iteration.md, stage 3): the games reach it as a
+/// `Party` from the roster (apps/party_roster), so a game's edit rebuilds
+/// the roster and the apps above it, never the kit, and a new game is a
+/// line in the roster. Every table counts, the tests' too: the composition
+/// tests are the roster's.
+#[test]
+fn party_kit_names_no_game() {
+    let members = workspace_members();
+    let manifests: Vec<(String, toml::Table)> = members
+        .iter()
+        .filter(|m| *m != ".")
+        .map(|m| {
+            let path = format!("{m}/Cargo.toml");
+            (m.clone(), fs::read_to_string(root().join(&path)).unwrap_or_else(|e| panic!("{path}: {e}")).parse().unwrap())
+        })
+        .collect();
+    let names: BTreeMap<String, String> = manifests
+        .iter()
+        .map(|(m, t): &(String, toml::Table)| (t["package"]["name"].as_str().unwrap().to_string(), m.clone()))
+        .collect();
+    let kit = &manifests.iter().find(|(m, _)| m == "apps/party_kit").expect("apps/party_kit is a member").1;
+    let off: Vec<String> = workspace_deps(kit, &names)
+        .into_iter()
+        .filter(|d| d != "workspace-hack" && !names[d].starts_with("chimera/"))
+        .map(|d| format!("{d} ({})", names[&d]))
+        .collect();
+    assert!(
+        off.is_empty(),
+        "apps/party_kit/Cargo.toml depends on {off:?}: the party kit {PARTY_KIT_RULE}"
+    );
+}
+
+const PARTY_KIT_RULE: &str = "builds on Chimera's crates only. Move what names a game into the roster \
+    (apps/party_roster: its `PARTY`, `client::CLIENT` or its own modules) and hand it to the kit as data or a \
+    hook (`party_kit::Party`, `party_kit::client::PartyClient`); a test that composes games goes to the \
+    roster's tests.";

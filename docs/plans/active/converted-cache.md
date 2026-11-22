@@ -10,8 +10,8 @@ docs/backlog.md §9, "Converted assets on disk and on the asset
 service"; it builds on "One kept-dressing cache in Chimera for every
 game" (the session cache, docs/performance.md, "Guest dressings kept
 for the session"). The prototype is on branch `converted-cache`
-(`apps/party_kit/tests/it/heavy/converted_cache.rs`); main has its
-successors (`apps/party_kit/tests/it/heavy/converted.rs`,
+(`apps/party_roster/tests/it/heavy/converted_cache.rs`); main has its
+successors (`apps/party_roster/tests/it/heavy/converted.rs`,
 `chimera_world::map::kept`).
 
 ## What was measured
@@ -377,7 +377,7 @@ copy.
   here, never from a cache (its guest dressing as kept; CS:S's
   `test_speakers`, HL2:DM's `halls3`, TF2's `itemtest`; Combat Arms'
   dressing), and compares the output's hash with
-  `apps/party_kit/tests/converted-prints.txt` (hashes only, never game
+  `apps/party_roster/tests/converted-prints.txt` (hashes only, never game
   files), one line per game, fixture, system and the install files read.
   Same files, another output and the same converter version (number
   and hash) fails ("bump VERSION in games/<game>/build.rs, or add the

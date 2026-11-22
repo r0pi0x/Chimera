@@ -38,7 +38,7 @@ says where inside a system the instructions go.
   `frame_bench` example of ultimate_gun_game for a frame with the renderer
   (docs/OBSERVABILITY.md 3c); `perf script --no-inline` into profsum.
 - Headless tick cost without a window: `Sim::work` in a test
-  (`apps/party_kit/tests/it/archetypes.rs`,
+  (`apps/party_roster/tests/it/archetypes.rs`,
   `apps/ultimate_gun_game/tests/it/session.rs`).
 - Frame time across many views: `refcmp bench --views tools/refcmp/<map>.toml`.
 - Windows: `scripts\profile.ps1` (span trace), then

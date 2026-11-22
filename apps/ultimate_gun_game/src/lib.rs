@@ -20,7 +20,7 @@
 //! server, apps/ultimate_gun_game_server: `UltimateGunGamePlugin::launch`) take a fresh seed at launch
 //! (`random_seed`), said on the console and in the log with each ladder;
 //! `ugg_new <seed>` replays one; `CHIMERA_RUNG_SEED=<n>` fixes the seed
-//! of the rungs' extras (bodies, attachments, melee: `party_kit::launch_rung_seed`); the default plugin (tests) keeps `SEED`.
+//! of the rungs' extras (bodies, attachments, melee: `party_roster::launch_rung_seed`); the default plugin (tests) keeps `SEED`.
 //! Its ladder has `ugg_rungs` rungs in all (`UggRungs`; `RUNGS` at launch,
 //! the curve's `[rungs]` bounds), drawn from every gun of the games
 //! every connected player has (`minigame_net::installed_by_all`, L3's
@@ -48,14 +48,14 @@
 //! yet, a ladder's models loading ahead (Combat Arms' `characters::preload`).
 //!
 //! `APP` (feature `present`): the binary's client app, the party's
-//! (`party_kit::client::PARTY`) with its own command line (`args`), the
+//! (`party_roster::client::PARTY`) with its own command line (`args`), the
 //! party's main-menu start over a background map (never the greybox or a
 //! stand-in behind it) and its last word (`launch`: the main menu, the
 //! plugin with a fresh seed, the minimal HUD, the Signal look: `signal`).
 //!
 //! Known shortcuts: the ladder isn't made again when a player without a
 //! game joins mid-match; with no CS:S install the client starts (a server
-//! offering its game files provides them: `party_kit::served_by_servers`),
+//! offering its game files provides them: `party_roster::served_by_servers`),
 //! but its own first map (the launch's, CS:S's) doesn't load; the
 //! installs' maps are the host's (a client lacking one gets it as any
 //! server map: CS:S's by download).
@@ -142,16 +142,16 @@ pub fn next_seed(seed: u64) -> u64 {
 /// right; the guns aren't checked): for the command line's first map.
 fn claimed() -> Vec<Capabilities> {
     let empty = WeaponCatalog::default();
-    party_kit::GAME_PARTS.iter().map(|p| Capabilities::of(p, &empty, None)).collect()
+    party_roster::GAME_PARTS.iter().map(|p| Capabilities::of(p, &empty, None)).collect()
 }
 
 /// The first map of minigame `id`'s pool: the automatic gun game's (every
-/// game's maps, in turn), else an original's (`party_kit::first_map`).
+/// game's maps, in turn), else an original's (`party_roster::first_map`).
 pub fn first_map(id: &str) -> Result<String, String> {
     if id == MINIGAME {
         return Ok(auto::map_pool(&claimed(), &|_| true).remove(0));
     }
-    party_kit::first_map(id)
+    party_roster::first_map(id)
 }
 
 /// The automatic gun game from the games' parts in `world`, its ladder of
@@ -304,7 +304,7 @@ impl UltimateGunGamePlugin {
             seed: random_seed(),
             rungs: RUNGS,
             find_maps: true,
-            rung_seed: party_kit::rung_seed_override(),
+            rung_seed: party_roster::rung_seed_override(),
         }
     }
 }
@@ -406,10 +406,10 @@ pub const APP_BINDS: &[chimera_client::client::binds::AppBind] = &[
 ];
 
 /// The game binary's app (`ultimate_gun_game`, main.rs): the party's
-/// client app (`party_kit::client::PARTY`) on Chimera's client app,
+/// client app (`party_roster::client::PARTY`) on Chimera's client app,
 /// playing the automatic gun game (`with_defaults_for` with `MINIGAME`
 /// and `first_map`) unless it starts at the party's main menu
-/// (`party_kit::start_at_menu`: nothing on the command line plays; the
+/// (`party_roster::start_at_menu`: nothing on the command line plays; the
 /// menu over its own backdrop, then a background map at hand, never the
 /// greybox), with the main menu
 /// (Play hosts the automatic gun game, Join connects), the Ultimate Gun
@@ -428,25 +428,25 @@ pub static APP: chimera_client::client::app::GameApp = chimera_client::client::a
     },
     hooks: chimera_client::client::app::GameAppHooks {
         args: Some(args),
-        start: Some(party_kit::start_at_menu),
+        start: Some(party_roster::start_at_menu),
         server: Some("ultimate_gun_game_server"),
         launch: Some(launch),
-        ..party_kit::client::PARTY.hooks
+        ..party_roster::client::PARTY.hooks
     },
-    ..party_kit::client::PARTY
+    ..party_roster::client::PARTY
 };
 
 /// The command line as the app plays it: as given at the main menu (no
 /// map, minigame, server or capture on it: `main_menu::starts_at_menu`),
 /// else the automatic gun game on its pool's first map unless it names
-/// others (`party_kit::with_defaults_for`).
+/// others (`party_roster::with_defaults_for`).
 #[cfg(feature = "present")]
 pub fn args(args: chimera_client::client::Args) -> chimera_client::client::Args {
     let args = sandbox::args(args);
-    if party_kit::main_menu::starts_at_menu(&args) {
+    if party_roster::main_menu::starts_at_menu(&args) {
         args
     } else {
-        party_kit::with_defaults_for(args, MINIGAME, &first_map)
+        party_roster::with_defaults_for(args, MINIGAME, &first_map)
     }
 }
 
@@ -457,7 +457,7 @@ pub fn args(args: chimera_client::client::Args) -> chimera_client::client::Args 
 /// binds (`APP_BINDS`).
 #[cfg(feature = "present")]
 fn launch(app: &mut App, args: &chimera_client::client::Args) {
-    let at_menu = party_kit::main_menu::starts_at_menu(args);
+    let at_menu = party_roster::main_menu::starts_at_menu(args);
     {
         let mut d = app.world_mut().get_resource_or_init::<chimera_client::client::binds::BindDefaults>();
         for b in APP_BINDS {
@@ -465,8 +465,8 @@ fn launch(app: &mut App, args: &chimera_client::client::Args) {
         }
     }
     // The background maps at hand without a download, before the menu.
-    app.insert_resource(party_kit::main_menu::BackgroundMaps::app(party_kit::client::background_at_hand))
-        .add_plugins(party_kit::main_menu::MainMenuPlugin {
+    app.insert_resource(party_roster::main_menu::BackgroundMaps::app(party_roster::client::background_at_hand))
+        .add_plugins(party_roster::main_menu::MainMenuPlugin {
             at_start: at_menu,
             minigame: MINIGAME.into(),
             // A tool run (`+mainmenu` photographing it) keeps nothing. A
@@ -474,7 +474,7 @@ fn launch(app: &mut App, args: &chimera_client::client::Args) {
             // relaunch) keeps them too: it comes back to this menu.
             keep_recent: !args.tool_run(),
         })
-        .add_plugins(party_kit::menu_backdrop::MenuBackdropPlugin)
+        .add_plugins(party_roster::menu_backdrop::MenuBackdropPlugin)
     .add_plugins((UltimateGunGamePlugin::launch(), chimera_client::client::hud_minimal::MinimalHudPlugin))
         .add_plugins(signal::SignalPlugin)
         // The sandbox's screens (its HUD, Change gun, the bench).
@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn the_first_map_is_the_pools() {
         assert_eq!(super::first_map(super::MINIGAME).unwrap(), "cs_source:de_dust2");
-        assert_eq!(super::first_map(party_kit::DEFAULT_MINIGAME).unwrap(), "cs_source:de_dust2");
+        assert_eq!(super::first_map(party_roster::DEFAULT_MINIGAME).unwrap(), "cs_source:de_dust2");
     }
 
     /// F10 reports in the app (over the shared binds, so under every
@@ -503,15 +503,15 @@ mod tests {
         }
         let mut console = chimera_core::console::Console::default();
         chimera_client::client::binds::bind_defaults(&mut console.binds, true, &ugg.default_binds());
-        for (game, binds) in &party_kit::GAME_BINDS {
+        for (game, binds) in &party_roster::GAME_BINDS {
             console.ship_layer(game, binds);
         }
-        assert_eq!(party_kit::GAME_BINDS.len(), 4);
-        for (game, _) in &party_kit::GAME_BINDS {
+        assert_eq!(party_roster::GAME_BINDS.len(), 4);
+        for (game, _) in &party_roster::GAME_BINDS {
             assert_eq!(console.effective_binds(Some(game)).get("f10").map(String::as_str), Some("feedback"), "{game}");
         }
         let mut css = BindDefaults::default();
-        let cs = party_kit::BUNDLES.iter().find(|b| b.info.id == "cs_source").expect("CS:S composed").info;
+        let cs = party_roster::BUNDLES.iter().find(|b| b.info.id == "cs_source").expect("CS:S composed").info;
         css.use_game(cs);
         assert!(css.default_binds().contains(&("f10".into(), "quit prompt".into())));
     }
@@ -534,7 +534,7 @@ mod tests {
             }
             let mut console = chimera_core::console::Console::default();
             bind_defaults(&mut console.binds, true, &ugg.default_binds());
-            for (game, binds) in &party_kit::GAME_BINDS {
+            for (game, binds) in &party_roster::GAME_BINDS {
                 console.ship_layer(game, binds);
             }
             console

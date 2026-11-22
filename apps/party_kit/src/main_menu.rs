@@ -52,9 +52,9 @@
 //!   swap doesn't flash; held that long, it keeps the local load on,
 //!   `map::LocalMapLoad`, so nothing starts play under it; the log says
 //!   `loading panel up`); at the screen's foot while the server's
-//!   pre-match lobby shows over it (`loading_under_lobby`); Combat Arms' own loading screen instead for
-//!   its maps (user decision 5: `combat_arms_ui::loading`, its map
-//!   picture), gated here (`ca_loading_gate`).
+//!   pre-match lobby shows over it (`loading_under_lobby`); the base game's own loading screen instead
+//!   for its maps (user decision 5: Combat Arms', its map picture; the
+//!   party's `PartyClient::base_loading`), gated here (`base_loading_gate`).
 //! - **The failure box**: a failed or refused join, a drop, a failed load
 //!   land on the menu with why (CS:S's "Disconnected" frame; the server's
 //!   or the game's words, `failure_text`), Close.
@@ -125,8 +125,11 @@
 //! `mainmenu_type <field> <text>`, `mainmenu_press <button>` and
 //! `mainmenu_failure <text>` (console) drive it for screenshots.
 //!
+//! - **Data**: data/main_menu.toml (`MenuData`), read again after
+//!   `data_reload` changed a data document (`MenuData::reload`).
 //! - **Music**: Combat Arms' menu playlist (the install's BGM) while the
-//!   menu shows (`combat_arms::game::music::AppMenuShown`), silent
+//!   menu shows (told by `client::MenuMusic`, which the party's front end observes:
+//!   `combat_arms::game::music::AppMenuShown`), silent
 //!   without the install; in an app with UI sound (Ultimate Gun Game's
 //!   Signal) its own loop instead (`UiMusic`'s `menu_loop`), on through
 //!   the loading panel and the pre-match lobby, Combat Arms' music silent
@@ -305,6 +308,29 @@ impl MenuData {
     /// The shipped file's.
     pub fn shipped() -> Self {
         Self::parse(&MAIN_MENU_TOML).expect("data/main_menu.toml reads")
+    }
+
+    /// data/main_menu.toml read again after `data_reload` changed a data
+    /// document (`chimera_core::game_data::generation`; a dev build reads
+    /// it from the checkout): the menu's entries and Escape list follow at
+    /// once. A file that doesn't read, or that changes the Play page's
+    /// rows (the menu's state is laid out by them), keeps the one in use
+    /// and says why.
+    fn reload(mut data: ResMut<MenuData>, mut seen: Local<u64>) {
+        let now = chimera_core::game_data::generation();
+        if *seen == now {
+            return;
+        }
+        *seen = now;
+        match Self::parse(&MAIN_MENU_TOML) {
+            Ok(new) if new.play.len() != data.play.len() => {
+                warn!("data/main_menu.toml: its Play rows changed in number; restart to take them")
+            }
+            Ok(new) => {
+                data.set_if_neq(new);
+            }
+            Err(e) => warn!("data/main_menu.toml: {e}; the menu keeps the one read before"),
+        };
     }
 
     pub fn parse(text: &str) -> Result<Self, String> {
@@ -963,11 +989,12 @@ impl Plugin for MainMenuPlugin {
             .insert_resource(if self.keep_recent { crate::server_list::BrowserFiles::in_config() } else { default() })
             .insert_resource(MenuMinigame(self.minigame.clone()))
             .init_resource::<MenuLook>()
+            .init_resource::<BaseLoadingUp>()
             .init_resource::<LoadingPanel>()
             .add_message::<MainMenuAction>()
             .add_message::<KeyboardInput>()
             .add_systems(Update, crate::ui_cues::hover::<MainMenuAction>.in_set(MainMenuSystems))
-            .add_systems(Update, (player_on_entering, lobby_first_ends).in_set(MainMenuSystems))
+            .add_systems(Update, (MenuData::reload, player_on_entering, lobby_first_ends).in_set(MainMenuSystems))
             .add_observer(entered_game)
             .add_observer(menu_pass_covered)
             .add_observer(left_game)
@@ -991,7 +1018,7 @@ impl Plugin for MainMenuPlugin {
             .add_systems(PostStartup, remember_command_line_join)
             .add_systems(
                 Update,
-                (look_loaded, typing, clicks, act, follow_loads, follow_reconnect, refresh_values, ca_loading_gate, fly, follow_shown, cover_world, cameras, show, backdrop, progress, loading_under_lobby, entry_hover, music)
+                (look_loaded, typing, clicks, act, follow_loads, follow_reconnect, refresh_values, base_loading_gate, fly, follow_shown, cover_world, cameras, show, backdrop, progress, loading_under_lobby, entry_hover, music)
                     .chain()
                     .in_set(MainMenuSystems)
                     .before(crate::esc_menu::EscMenuSystems),
@@ -1296,21 +1323,20 @@ pub fn failure_text(ui: Option<&GameUi>, kind: &JoinFailure, reason: &str) -> St
 // ---------------------------------------------------------------------------
 // The look.
 
-/// The GameUI look of CS:S's install, read on a thread at start.
+/// The GameUI look of a game's install (the party's `PartyClient::
+/// menu_look`: CS:S's), read on a thread at start.
 #[derive(Resource, Default)]
 pub struct MenuLook {
     pub ui: Option<std::sync::Arc<GameUi>>,
     loading: Option<std::sync::Arc<std::sync::Mutex<Option<Option<GameUi>>>>>,
 }
 
-fn start_look(mut look: ResMut<MenuLook>) {
+fn start_look(mut look: ResMut<MenuLook>, front: Option<Res<crate::client::Front>>) {
+    let Some(read) = front.map(|f| f.0.menu_look) else { return };
     let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
     look.loading = Some(slot.clone());
     std::thread::spawn(move || {
-        let loaded = cs_source::game::INFO
-            .install()
-            .and_then(|p| cs_source::game::mount::open(&p).ok())
-            .and_then(|m| cs_source::game::gameui::load(&m));
+        let loaded = read();
         if let Ok(mut s) = slot.lock() {
             *s = Some(loaded);
         }
@@ -1857,13 +1883,25 @@ fn start(world: &mut World) {
         let host = crate::controls::cvar_value(world, "name").unwrap_or_default();
         chimera_net::prematch::show_first(world, &map, &mode, &host);
     }
-    // Combat Arms' maps load behind its own loading screen.
-    if map.starts_with("combat_arms:")
-        && let Some(mut ca) = world.get_resource_mut::<combat_arms_ui::loading::CaLoading>()
+    // The base game's maps load behind its own loading screen.
+    if let Some((base, _)) = base_loading(world)
+        && map.starts_with(&format!("{base}:"))
     {
-        ca.label = Some(map);
+        world.trigger(crate::client::SetBaseLoading(Some(map)));
     }
 }
+
+/// The base game's id and its loading screen, if the party's base has one
+/// (`PartyClient::base_loading`).
+fn base_loading(world: &World) -> Option<(&'static str, fn(&World) -> Option<String>)> {
+    let front = world.get_resource::<crate::client::Front>()?.0;
+    Some((front.party.base.info.id, front.base_loading?))
+}
+
+/// Whether the base game's own loading screen is up (the party's panel
+/// then isn't drawn): `base_loading_gate`'s finding this frame.
+#[derive(Resource, Default)]
+struct BaseLoadingUp(bool);
 
 /// Whether Start's `lines` host a server whose matches wait in the
 /// pre-match lobby (`mp_lobby 1`, `maxplayers` over 1).
@@ -2097,28 +2135,24 @@ fn refresh_values(world: &mut World) {
     }
 }
 
-/// Combat Arms' loading screen shows only for its own maps (user
-/// decision 5); for the others the party's loading panel.
-fn ca_loading_gate(
-    ca: Option<ResMut<combat_arms_ui::loading::CaLoading>>,
-    join: Option<Res<JoinProgress>>,
-    menu: Res<PartyMenu>,
-) {
-    let Some(mut ca) = ca else { return };
-    let Some(label) = ca.label.clone() else { return };
-    let ca_map = |m: &str| m.starts_with("combat_arms:");
-    let own = ca_map(&label)
-        || join.as_ref().and_then(|j| j.map.as_deref()).is_some_and(ca_map)
-        || (menu.screen == Screen::Loading && menu.loading.as_deref().is_some_and(ca_map));
-    if !own || menu.background_load {
-        ca.label = None;
-    }
-}
-
-/// Whether Combat Arms' loading screen is up (the party's panel then
-/// isn't drawn).
-fn ca_shows(world_ca: Option<&combat_arms_ui::loading::CaLoading>) -> bool {
-    world_ca.is_some_and(|c| c.label.is_some())
+/// The base game's loading screen (Combat Arms') shows only for its own
+/// maps (user decision 5); for the others the party's loading panel.
+fn base_loading_gate(world: &mut World) {
+    let up = base_loading(world).is_some_and(|(base, label)| {
+        let Some(label) = label(world) else { return false };
+        let prefix = format!("{base}:");
+        let own_map = |m: &str| m.starts_with(&prefix);
+        let menu = world.resource::<PartyMenu>();
+        let own = own_map(&label)
+            || world.get_resource::<JoinProgress>().and_then(|j| j.map.as_deref()).is_some_and(own_map)
+            || (menu.screen == Screen::Loading && menu.loading.as_deref().is_some_and(own_map));
+        if !own || menu.background_load {
+            world.trigger(crate::client::SetBaseLoading(None));
+            return false;
+        }
+        true
+    });
+    world.get_resource_or_insert_with(BaseLoadingUp::default).0 = up;
 }
 
 /// The server's pre-match lobby is up (`prematch_lobby::LobbyView`): it
@@ -2197,11 +2231,10 @@ fn fly(
 /// `menu_loop`, on the music bus), never under the other.
 fn music(
     menu: Res<PartyMenu>,
-    shown: Option<Res<combat_arms::game::music::AppMenuShown>>,
     theme: Option<Res<chimera_client::client::ui_sound::Theme>>,
     sounds: Option<Res<chimera_client::client::ui_sound::UiSounds>>,
     ui_music: Option<ResMut<chimera_client::client::ui_sound::UiMusic>>,
-    app_plays: Option<Res<combat_arms::game::music::AppMusicPlays>>,
+    mut told: Local<Option<crate::client::MenuMusic>>,
     lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
     mut commands: Commands,
 ) {
@@ -2219,19 +2252,10 @@ fn music(
     }
     // Combat Arms' music (the playlist, a background map's, its loading
     // and in-game tracks) stays silent under ours.
-    let app_music = before_match && ours;
-    if app_music != app_plays.is_some() {
-        if app_music {
-            commands.insert_resource(combat_arms::game::music::AppMusicPlays);
-        } else {
-            commands.remove_resource::<combat_arms::game::music::AppMusicPlays>();
-        }
-    }
-    let want = on_menu && !ours;
-    if want && shown.is_none() {
-        commands.insert_resource(combat_arms::game::music::AppMenuShown);
-    } else if !want && shown.is_some() {
-        commands.remove_resource::<combat_arms::game::music::AppMenuShown>();
+    let now = crate::client::MenuMusic { app_plays: before_match && ours, menu_shown: on_menu && !ours };
+    if *told != Some(now) {
+        commands.trigger(now);
+        *told = Some(now);
     }
 }
 
@@ -2261,7 +2285,7 @@ fn born_on_menu<M: Component>(add: On<Add<M>>, target: Res<MenuTarget>, mut comm
 fn cameras(
     shown: Res<ShownScreen>,
     mut target: ResMut<MenuTarget>,
-    ca: Option<Res<combat_arms_ui::loading::CaLoading>>,
+    base_up: Res<BaseLoadingUp>,
     lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
     mut shell: Query<&mut Camera, (With<IsDefaultUiCamera>, Without<MenuUiCamera>)>,
     mut ours: Query<(Entity, &mut Camera), With<MenuUiCamera>>,
@@ -2288,7 +2312,7 @@ fn cameras(
     if shell.is_empty() {
         return;
     }
-    let menu_owns = owned_by_lobby(lobby.as_deref()) || (shown.screen != Screen::InGame && !ca_shows(ca.as_deref()));
+    let menu_owns = owned_by_lobby(lobby.as_deref()) || (shown.screen != Screen::InGame && !base_up.0);
     let Some((cam, mut camera)) = ours.iter_mut().next() else {
         if menu_owns {
             let cam = commands
@@ -2441,7 +2465,7 @@ fn show(
     fonts: Option<Res<UiFonts>>,
     (title, opt_tabs): (Option<Res<crate::esc_menu::EscMenuTitle>>, Option<Res<crate::esc_menu::OptionTabs>>),
     version: Option<Res<chimera_core::core::BuildVersion>>,
-    ca: Option<Res<combat_arms_ui::loading::CaLoading>>,
+    base_up: Res<BaseLoadingUp>,
     minigames: Option<Res<chimera_sim::minigame::Minigames>>,
     (game_id, theme): (Res<MenuMinigame>, Option<Res<chimera_ui::Theme>>),
     windows_q: Query<&Window>,
@@ -2463,7 +2487,7 @@ fn show(
         .iter()
         .next()
         .map_or(Vec2::new(1280.0, 720.0), |w| Vec2::new(w.width(), w.height()));
-    let ca_up = ca_shows(ca.as_deref());
+    let ca_up = base_up.0;
     let pool: Vec<String> = minigames
         .as_ref()
         .and_then(|m| m.get(&game_id.0))

@@ -64,7 +64,7 @@ use chimera_sim::{
     mode::{Match, Phase},
 };
 use chimera_world::map::LoadedMapName;
-use party_kit::server::PARTY;
+use party_roster::server::PARTY;
 
 /// The counts the pool is drawn for.
 const COUNTS: [usize; 3] = [4, 8, 12];
@@ -83,7 +83,7 @@ static SERVER: GameServer = GameServer {
             first_map: ultimate_gun_game::first_map,
         }),
         launch: Some(|app| {
-            party_kit::server::launch(app);
+            party_roster::server::launch(app);
             app.add_plugins(ultimate_gun_game::UltimateGunGamePlugin::launch());
         }),
         ..PARTY.hooks

@@ -42,7 +42,7 @@ use chimera_core::{
 };
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
 use combat_arms_ui::visuals::CaVisualsPlugin;
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 #[derive(Component)]
@@ -116,7 +116,7 @@ fn app(size: (u32, u32)) -> App {
     .add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin)
     .insert_resource(bevy::render::render_asset::RenderAssetBytesPerFrame::new(usize::MAX))
     .insert_resource(chimera_core::tasks::WaitForTasks)
-    .insert_resource(party_kit::client_hooks())
+    .insert_resource(party_roster::client_hooks())
     .init_resource::<Churn>()
     .add_systems(Update, console::finish_map_load)
     .add_systems(Last, count_churn);
@@ -210,7 +210,7 @@ fn main() {
             _ => map = a,
         }
     }
-    if let Err(e) = party_kit::load_map(&map, 0) {
+    if let Err(e) = party_roster::load_map(&map, 0) {
         eprintln!("{map}: {e} (needs the installs)");
         return;
     }

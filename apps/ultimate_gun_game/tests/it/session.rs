@@ -21,9 +21,9 @@ use crate::parts::ugg;
 /// machine's installs and asset store hold, and so did the counts.
 const PINNED: &[&str] = &["cs_source", "hl2dm", "combat_arms"];
 
-/// Every game the app composes (`party_kit::GAME_PARTS`).
+/// Every game the app composes (`party_roster::GAME_PARTS`).
 fn every_game() -> Vec<&'static str> {
-    party_kit::GAME_PARTS.iter().map(|p| p.game).collect()
+    party_roster::GAME_PARTS.iter().map(|p| p.game).collect()
 }
 
 /// The automatic gun game with eight bots, on room to spawn, its ladders

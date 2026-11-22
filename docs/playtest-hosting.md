@@ -1222,7 +1222,7 @@ admin:
 
 Two console commands on the server shake a match up. Every client sees
 them as the match's effects (a `net49` build; older ones are refused).
-Code: `apps/party_kit/src/surprise.rs`, drawn by
+Code: `apps/party_roster/src/surprise.rs`, drawn by
 `chimera/client/src/client/match_effects.rs`.
 
 - `surprise airstrike [count] [seconds]` (default 30 shells over 8 s): a

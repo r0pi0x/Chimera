@@ -32,7 +32,7 @@ use chimera_net::dedicated::{GameServer, Parsed, ServerHooks, ServerMinigame, Se
 use chimera_sim::minigame::NextMatch;
 use chimera_world::{harness::Sim, map::MapFile};
 use combat_arms::game::TICK_INTERVAL;
-use party_kit::server::PARTY;
+use party_roster::server::PARTY;
 
 /// Ultimate Gun Game's server (apps/ultimate_gun_game_server), its ladder
 /// seeded (`UltimateGunGamePlugin::default`) so runs compare.
@@ -49,7 +49,7 @@ static SERVER: GameServer = GameServer {
 };
 
 fn launch(app: &mut App) {
-    party_kit::server::launch(app);
+    party_roster::server::launch(app);
     app.add_plugins(ultimate_gun_game::UltimateGunGamePlugin::default());
 }
 

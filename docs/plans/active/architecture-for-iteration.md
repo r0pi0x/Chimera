@@ -567,6 +567,90 @@ in a game, `party_kit`'s library is not rebuilt (now 18 s) and its
 game-free tests are not selected; the composition tests move to the
 roster's crate, split by game where they compose one game.
 
+- [x] `party_kit` on Chimera's crates only: the games come in one
+      descriptor, `party_kit::Party` (the base game's and the guests'
+      `GameBundle`s, the map sources, the built-in minigames, and hooks
+      for what names a game: `base_plugins`, `sim_parts`, `sim_rules`,
+      `finish`, `requirements`), and its front end's,
+      `party_kit::client::PartyClient` (each game's `GameClient`, the
+      Controls rows, the menu's look, the base game's loading screen as
+      a read-only decision plus the `SetBaseLoading` event, its menu
+      music through the `MenuMusic` event). `PartyPlugins(&Party)`,
+      `PartyPartsPlugin(&Party)`, `client::front_end(&PartyClient, ..)`
+      take them and insert `Roster`/`client::Front` for the systems.
+- [x] The roster: `apps/party_roster` (crate `party_roster`; an app, so
+      the path rules apply and `[package.metadata.chimera] apps =
+      ["party_kit"]`), not `games/roster` as architecture-pass.md drew
+      it: it builds on the kit, and a game crate may not build on an
+      app. It holds `PARTY` (`GUESTS`, `BASE`, `TEAMS`, `SURFACES`,
+      `MAP_SOURCES`), `client::CLIENT`, the client app (`client::PARTY`,
+      `APP`) and the server (`server::PARTY`, `SERVER`), the one-game
+      mechanics the kit had (`surprise`: Combat Arms' air strike;
+      `target_bodies`; `spot_checks`; `map_fitness`), and the Combat Arms
+      glue (its bots' gun types, its mouse defaults, its HUD's gun
+      names, its loading screen and music answering the kit's events).
+      It re-exports the kit (`pub use party_kit::*`) with the
+      party-given versions of the kit's items over it (`load_map`,
+      `PartyPartsPlugin`, `with_defaults_for`, ...), so the apps and the
+      tests changed only `party_kit::` to `party_roster::`.
+- [x] The four party apps depend on the roster; all of the kit's
+      integration tests (tests/it, tests/server: 117 files, nearly all
+      on the composed simulation through `PartyPartsPlugin`) moved with
+      it. The kit keeps its unit tests (11).
+- [x] Checks: `party_kit_names_no_game` (architecture test: every
+      workspace dependency of the kit, tests' too, is under `chimera/`),
+      the kit's `FORBIDDEN` row names the games, loaders, originals and
+      the roster; `selections_share_one_build`, `layers_follow_paths`,
+      the ECS ratchets (one allowed registry: `PartyClient`'s read-only
+      decision) and the determinism ratchet (the kit's one `OnceLock`,
+      `game_options`' cache, now filled from the installed party) green.
+- [x] Stage 2's follow-up: the main menu's layout (`MenuData`,
+      data/main_menu.toml) and Ultimate Gun Game's theme
+      (data/theme.toml) are read again when `game_data::generation()`
+      moves (`data_reload`); the Options and host settings pages already
+      parse their data on each draw.
+- [ ] Not done (per game, step 9 proper): the base game's hooks are the
+      roster's functions, not `GameBundle`/`GameClient` fields every game
+      fills; the pairs' spawn teams and surfaces are the roster's tables,
+      not a neutral vocabulary; the Controls rows are the roster's, not
+      each game's `player_options`. A game edit still selects the
+      roster's 510 + 14 composition tests (they compose it), and
+      `ultimate_gun_game` (it builds on the roster).
+
+The moves were one commit, not one per game: the composition was one
+set of tables (`GUESTS` names all five bundles at once) and the client's
+descriptors (`PARTY`, `CLIENTS`) one static each, so a game-at-a-time
+split would have left the kit naming the other four through each step
+with nothing to measure in between. One revert puts it back.
+
+#### Stage 3 results (2026-11-22)
+
+Kept. Measured in an agent slot (12 threads) at load 40-51, a private
+function appended to `games/tf2/src/lib.rs` (before: the stage 1 numbers
+in section 1.3, main at 55277a2d1):
+
+| After the `tf2` edit | Before | After |
+|---|---|---|
+| `cargo build --features dev --bin ultimate_gun_game` | `tf2`, `tf2_ui`, `party_kit` 18.2 s, `ultimate_gun_game` 5.4 s, links | 21.6 s wall: `tf2` 7.1 s, `tf2_ui` 2.5 s, `party_roster` 2.8 s, `ultimate_gun_game` 2.4 s, the link 7.3 s; no `party_kit` |
+| `cargo test -p party_kit --features dev --no-run` | `tf2`, `party_kit` and its two test targets | 1.25 s, nothing compiled |
+| `affected --files games/tf2/src/lib.rs` (and `combat_arms`, `cs_source_ui`) | `party_kit` among 9 (12, 10) packages | `party_roster` in its place; `party_kit` not selected |
+| `affected --files apps/party_kit/src/host.rs` | - | `party_kit`, `party_roster` and the four apps (the composition tests rightly run) |
+
+The kit's library is 18 s of every game edit's chain no longer; the
+roster that replaces it in the chain is 2.8 s (its library is the
+tables and glue, 2.9k lines). What a game edit still selects is the
+same set of tests as before (the roster's 510 `it` and 14 `server`
+fast and heavy tests, which compose the games): stage 3 cut the build,
+not the selection. Splitting the roster's tests by game (`tf2_rungs`,
+`halo_*`, `hl2dm_parts` into per-game test binaries a game edit selects
+alone) is what would cut it; architecture-pass.md step 14 has it.
+
+Checked: the fast tiers of `party_kit` (11), `party_roster` (11 unit,
+428 + 82 child-run `it`, `server`), `ultimate_gun_game` (5 unit, 121 +
+23 `it`) and the four apps, all passing; `repo_checks` (51);
+`cargo check` of `party_kit` and both servers without `present`.
+
+
 ### Stage 4: contracts apart from implementations (spike, then decide)
 
 - [ ] Spike on `chimera_sim::minigame` (18.3k lines, 169 of the crate's
@@ -619,6 +703,10 @@ games' and apps' `include_str!` migrated, Combat Arms' UI data in its
 front end, `affected --code` and the hook's type-check of code only
 (results above).
 
+2026-11-22: stage 3: the party kit names no game; the roster
+(apps/party_roster) composes them and holds the composition tests
+(results above). Stage 2's follow-up: menu layout and UGG theme reload.
+
 ## Decision log
 
 2026-11-21: plugins as crates, not as loaded libraries, for iteration
@@ -641,3 +729,7 @@ build, not each crate's); a front end's data in its own crate's `data/`,
 so its edits leave the game's simulation tests; `affected` keeps
 selecting a data file's dependents (their tests read it) but the hook
 type-checks nothing for it.
+2026-11-22: the roster is `apps/party_roster`, an app over the kit (not
+`games/roster`): a game may not build on an app, and the roster needs the
+kit's `Party` type; the kit takes the party as data, so no game crate
+had to change.

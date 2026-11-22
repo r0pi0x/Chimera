@@ -2,57 +2,42 @@
 //! architecture-review.md L2, ultimate-gun-game.md gap 1): what Lucker Party
 //! (apps/lucker_party, apps/lucker_party_server) and the Ultimate Gun Game
 //! (apps/ultimate_gun_game, apps/ultimate_gun_game_server) share, so the four
-//! apps are thin binaries and none depends on another app. Minigames,
-//! each a data file (`minigames/`, the `originals` crate) played on
-//! Chimera's mode runtime (`chimera_sim::minigame`), with both games' parts:
-//! Combat Arms' soldiers, movement, HUD and guns, CS:S's maps, map logic,
-//! movement and guns, on CS:S's or Combat Arms' maps. A minigame with
-//! `identity = "weapon"` (the gun game) makes each player the game of the
-//! gun in hand (`chimera_sim::identity`): its movement and its body (CS:S's
-//! player models stay on CS:S's maps for it, `MapSources::players`; CS:S's
-//! per-tick body animation for a network server's hitboxes). The games are libraries composed
-//! here and nowhere else (checks/tests/it/architecture.rs), as in the
-//! mashup demo.
+//! apps are thin binaries and none depends on another app. It names no
+//! game (docs/plans/active/architecture-for-iteration.md, stage 3;
+//! checks/tests/it/architecture.rs, `party_kit_names_no_game`): the games
+//! come in a `Party`, which the roster (apps/party_roster, `party_roster::
+//! PARTY`) composes and the apps hand in, so a game's edit rebuilds the
+//! roster, not the kit. Minigames, each a data file (the party's
+//! `minigames`), played on Chimera's mode runtime (`chimera_sim::minigame`)
+//! with every game's parts. A minigame with `identity = "weapon"` (the gun
+//! game) makes each player the game of the gun in hand
+//! (`chimera_sim::identity`): its movement and its body.
 //!
-//! - `PartyPlugins`: the simulation: Combat Arms' (`combat_arms::
-//!   SimPlugins`, `CombatArmsPlugins`: the default game, for bare map
-//!   names), then `PartyPartsPlugin`: CS:S registered as a second game,
-//!   Source's map logic, CS:S's guns and their impacts (sounds, decals,
-//!   debris, blood, tracers; `weapon::impact` routes each impact to one
-//!   game; its grenades' explosion and smoke looks; props' collision and scrape sounds; the hit slowdown and view
-//!   flinch of a CS:S-identity player), the minigame runtime
+//! - `Party`: the base game's bundle (whose gameplay, bots and HUD
+//!   everything plays on: Combat Arms), the guests' (CS:S, HL2:DM, Halo,
+//!   TF2), the map sources, the built-in minigames, and hooks for what
+//!   names a game (`base_plugins`, `sim_parts`, `sim_rules`, `finish`,
+//!   `requirements`). `Roster` holds it in the app.
+//! - `PartyPlugins(&Party)`: the simulation: the base game's
+//!   (`Party::base_plugins`), then `PartyPartsPlugin(&Party)`: each game's
+//!   parts registered, each guest's own simulation (its bundle's `sim`:
+//!   its guns and their impacts, movement, view-model rules), the view
+//!   models' fields of view, the cross-game balance, the minigame runtime
 //!   (`MinigamePlugin`), its part of the network (`chimera_net::
-//!   minigame_net`) and the original minigames (`OriginalsPlugin`).
-//!   Every game's ragdolls and bodies go when their owner respawns
-//!   (`map::ragdoll::BodiesGoOnRespawn`, for performance), over each
-//!   game's own lifetime.
-//!   The app's gameplay is Combat Arms' until a minigame starts
-//!   (`minigame <id>`, `+minigame originals:gun_game_dust2` on the command
-//!   line), which takes the rules slot and names the others.
-//! - `MAP_SOURCES`: both games' map loaders with Combat Arms' gameplay
-//!   dressing, CS:S's terrorist and counter-terrorist spawns as Alpha's and
-//!   Bravo's, CS:S's surfaces as Combat Arms' through the mashup's table
-//!   (apps/mashup_demo/data/surfaces_cs_source_combat_arms.toml, read from
-//!   there: one table for both apps) and CS:S's guns' models kept. On
-//!   Combat Arms' maps CS:S is a guest (`CS_SOURCE_PARTS`,
-//!   `MapSources::guests`): its player bodies, guns' held and view models
-//!   and HUD look are read from the CS:S install and added to the map.
-//!   Halo's maps (`halo_ce:<name>`, from its disc image) load here too,
-//!   played with the other games' parts: its capture the flag starts as
-//!   Alpha's and Bravo's, its generic surface names through the same
-//!   table; a machine without the disc image is offered none of them
-//!   (its pool is the installed maps only: `halo_ce::game::parts`).
-//! - `minigame_of`, `first_map`: the minigame a command line asks for
-//!   (`DEFAULT_MINIGAME` without one) and its pool's first map, which the
-//!   app and the server load unless the command line names a map.
-//! - With `present` (the default; not the dedicated server's,
-//!   `server`): `client::PARTY`, the whole client app as Chimera's
-//!   `GameApp` (Lucker Party's `client::APP`; the Ultimate Gun Game's,
-//!   apps/ultimate_gun_game, is built on it): the shell with this app's
-//!   hooks and both games' HUDs (`with_huds`, the local player's game's
-//!   drawn), the party's front end (`client::front_end`), and
-//!   `with_defaults` (the command line as the app plays it;
-//!   `with_defaults_for` another app's minigame).
+//!   minigame_net`), the arena, each game's binds and the party's
+//!   options. Every game's ragdolls and bodies go when their owner
+//!   respawns (`map::ragdoll::BodiesGoOnRespawn`, for performance), over
+//!   each game's own lifetime. The app's gameplay is the base game's until
+//!   a minigame starts (`minigame <id>`), which takes the rules slot and
+//!   names the others.
+//! - `minigame_of`, `Party::first_map`: the minigame a command line asks
+//!   for and its pool's first map, which the app and the server load
+//!   unless the command line names a map.
+//! - With `present` (the default; not the dedicated server's): the client
+//!   app's game-free parts (`client`: the shell with every game's HUD,
+//!   `with_huds`, the local player's game's drawn; the party's front end,
+//!   `client::front_end`; `with_defaults_for`, the command line as an app
+//!   plays it), which the roster's `client::PARTY` (a `GameApp`) uses.
 //! - CS:S's radar, target ID, freeze cam and voice HUD (`client::with_huds`)
 //!   draw only while CS:S's HUD is the gameplay's (a CS:S gun in hand);
 //!   the radars (CS:S's and Combat Arms') only with `hud_radar 1`, and
@@ -64,17 +49,11 @@
 //!
 //! - `arena`: a slice of a big map (`arena halo_ce:bloodgulch@west_base`):
 //!   the match on a part of the map, behind a wall.
-//! - `surprise`: the host's surprises on the console (`surprise airstrike`,
-//!   `surprise gravity`), from what any client already draws.
-//! - Bots: Combat Arms' (the gun game's `bots` slot), with CS:S's guns'
-//!   types for their AI rows (data/bot_gun_types.toml), their generated
-//!   meshes for the widest hull they may wear (`WIDEST_HULL`); `MaxPlayer` is how
-//!   many the server keeps (none for a joiner: `+connect` skips the app's
-//!   default of `DEFAULT_BOTS` and its local minigame, the server's comes
-//!   over the network: `chimera_net::minigame_net`).
-//! - `requirements`, `missing`, `report`: what this machine lacks to play
-//!   (CS:S's install, Combat Arms' install and its V1 and V2 keys), told
-//!   exactly at start by both binaries; CS:S's missing stops them.
+//! - Bots: `MaxPlayer` is how many the server keeps (none for a joiner:
+//!   `+connect` skips the app's default bots and its local minigame, the
+//!   server's comes over the network: `chimera_net::minigame_net`).
+//! - `Missing`, `report`, `served_by_servers`: what this machine lacks to
+//!   play (`Party::requirements`), told exactly at start by both binaries.
 //!   `mount_report`: the same as the network's mount doctor report
 //!   (`net::manifest::MountReport`), which the client sends when it joins
 //!   (`LocalMounts`, set by the client's front end).
@@ -100,21 +79,20 @@
 //!   apps (`launch_rung_seed`; `CHIMERA_RUNG_SEED=<n>` fixes it); the plugins alone (the tests) keep seed 0.
 //!
 //! Known shortcuts: maps load by id only (no downloaded map files); the
-//! minigame's map pool isn't rotated (its first map plays); the bots fight
-//! with whatever their ladder gives but keep the reach of their first
-//! life's weapons; Combat Arms' guns show their ids as names (no item
-//! table yet: BERETTA_M92FS). The HUD shows the minigame's state
-//! (`chimera_sim::minigame::hud`: rung, next gun, leader, time, notices),
-//! CS:S's guns' names from CS:S's strings (`weapons::display_names`) and
-//! their view models by Chimera's driver with CS:S's rules
-//! (`PartyPartsPlugin`), on CS:S's maps only.
+//! minigame's map pool isn't rotated (its first map plays); the base game
+//! is one, named by the roster (its loading screen, menu music and bots
+//! come as the roster's hooks, not yet as `GameBundle`/`GameClient` hooks
+//! every game could fill: architecture-pass.md step 9); the pairs' spawn
+//! teams and surfaces are the roster's tables, not a neutral vocabulary;
+//! `game_options` reads the first party installed into a process-wide
+//! cache.
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
-use chimera_core::game_parts::GamePartsAppExt;
+use chimera_core::{game_data::GameData, game_parts::GamePartsAppExt};
 use chimera_sim::minigame::{MinigameDef, MinigamePlugin};
 use chimera_world::{
     game_bundle::GameBundle,
-    map::{MapData, MapDressing, MapLoadOptions, MapSources, SpawnTeams, SurfaceTable},
+    map::{MapData, MapLoadOptions, MapSources},
 };
 
 /// This build's version (`version`, bug reports): stamped by build.rs.
@@ -123,187 +101,109 @@ pub const VERSION: &str = env!("CHIMERA_VERSION");
 /// This build's commit (`git describe`): stamped by build.rs.
 pub const BUILD: &str = env!("CHIMERA_GIT");
 
-/// The minigame played without `+minigame`.
-pub const DEFAULT_MINIGAME: &str = originals::GUN_GAME_DUST2;
-
-/// The games the party composes besides its base game (Combat Arms,
-/// whose gameplay, bots and HUD everything plays on), each one bundle
-/// (`chimera_world::game_bundle`, lift C4): CS:S, HL2:DM, Halo (its maps
-/// from its disc image, its guns) and TF2 (its maps by id, its four guns:
-/// docs/plans/active/tf2.md, M2b), in the order an automatic ladder takes
-/// them. The kit loops over these; only the base game and the pairs' data
-/// (spawn teams, surface names) are named.
-pub static GUESTS: [&GameBundle; 4] = [&cs_source::game::BUNDLE, &hl2dm::game::BUNDLE, &halo_ce::game::BUNDLE, &tf2::game::BUNDLE];
-
-/// The base game's bundle.
-pub static BASE: &GameBundle = &combat_arms::game::BUNDLE;
-
-/// Every game the party composes: the guests, then the base.
-pub static BUNDLES: [&GameBundle; 5] = [GUESTS[0], GUESTS[1], GUESTS[2], GUESTS[3], BASE];
-
-/// CS:S's spawn teams as Combat Arms': terrorists (1) Alpha, counter-
-/// terrorists (2) Bravo; TF2's the same way (RED 1 Alpha, BLU 2 Bravo); Halo's capture the flag starts (`halo_ce::game::
-/// maps::spawns`: red 1, blue 2) likewise.
-pub const TEAMS: &[SpawnTeams] = &[
-    SpawnTeams {
-        game: cs_source::game::GAME,
-        from: 1,
-        to: combat_arms::game::rules::state::ALPHA,
-    },
-    SpawnTeams {
-        game: cs_source::game::GAME,
-        from: 2,
-        to: combat_arms::game::rules::state::BRAVO,
-    },
-    SpawnTeams {
-        game: halo_ce::game::GAME,
-        from: 1,
-        to: combat_arms::game::rules::state::ALPHA,
-    },
-    SpawnTeams {
-        game: halo_ce::game::GAME,
-        from: 2,
-        to: combat_arms::game::rules::state::BRAVO,
-    },
-    SpawnTeams {
-        game: tf2::game::GAME,
-        from: 1,
-        to: combat_arms::game::rules::state::ALPHA,
-    },
-    SpawnTeams {
-        game: tf2::game::GAME,
-        from: 2,
-        to: combat_arms::game::rules::state::BRAVO,
-    },
-];
-
-/// The Source games' surfaces (CS:S's, HL2:DM's and TF2's: Source's names and
-/// material letters) as Combat Arms' surface types: the mashup's table.
-/// Halo's maps name their surfaces with the engine's generic names
-/// (games/halo_ce/data/surfaces.toml: concrete, metal, dirt, ...), which
-/// are Source's too: the same table.
-pub const SURFACES: &[SurfaceTable] = &[
-    SurfaceTable {
-        map: cs_source::game::GAME,
-        gameplay: combat_arms::game::GAME,
-        text: chimera_core::game_data!("../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
-    },
-    SurfaceTable {
-        map: hl2dm::game::GAME,
-        gameplay: combat_arms::game::GAME,
-        text: chimera_core::game_data!("../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
-    },
-    SurfaceTable {
-        map: halo_ce::game::GAME,
-        gameplay: combat_arms::game::GAME,
-        text: chimera_core::game_data!("../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
-    },
-    SurfaceTable {
-        map: tf2::game::GAME,
-        gameplay: combat_arms::game::GAME,
-        text: chimera_core::game_data!("../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
-    },
-];
-
-/// What of the guests' parts stays on their own maps: their guns' held
-/// and view models (Halo's too: its guns in hand on its maps; TF2's).
-pub static KEPT: [&str; 4] = [GUESTS[0].kept[0], GUESTS[1].kept[0], GUESTS[2].kept[0], GUESTS[3].kept[0]];
-
-/// The guests' players, guns and HUD looks on the maps of other games
-/// (Halo's: its Spartan body; TF2's: its guns, no bodies yet).
-pub static GUEST_DRESSING: [&MapDressing; 4] =
-    [GUESTS[0].guest.unwrap(), GUESTS[1].guest.unwrap(), GUESTS[2].guest.unwrap(), GUESTS[3].guest.unwrap()];
-
-/// Where this app's maps come from (a bare map name is the first guest's,
-/// CS:S's) and whose gameplay dresses them.
-pub static MAP_SOURCES: MapSources = MapSources {
-    // Last, the code-built maps' kit (the range, the greybox: dressed as
-    // any other game's map).
-    loaders: &[
-        GUESTS[0].loader,
-        GUESTS[1].loader,
-        GUESTS[2].loader,
-        GUESTS[3].loader,
-        BASE.loader,
-        &chimera_world::map::sources::CODE_MAP_KIT,
-    ],
-    gameplay: Some(&combat_arms::game::world::DRESSING),
-    teams: TEAMS,
-    surfaces: SURFACES,
-    kept: &KEPT,
-    // A player holding a guest's gun is that game's (the gun game's
-    // `identity = "weapon"`): its player bodies and HUD look stay on its
-    // maps.
-    players: true,
-    // On the other games' maps (Combat Arms' Warehouse, CS:S's on
-    // HL2:DM's and back) a guest's gun's holder is its game's: its player
-    // models, its guns' view and held models, its HUD look, read from its
-    // install behind the map.
-    guests: &GUEST_DRESSING,
-};
-
-/// Map `id` (`cs_source:de_dust2`, `combat_arms:warehouse`) for the party.
-pub fn load_map(id: &str, hdr_level: u8) -> Result<MapData, String> {
-    MAP_SOURCES.load(id, hdr_level)
+/// What a party is made of, handed to the kit by the app that composes
+/// the games (apps/party_roster's `PARTY`): the kit names no game
+/// (checks/tests/it/architecture.rs, `party_kit_names_no_game`), so a
+/// game's edit doesn't rebuild it and a new game doesn't touch it. Plain
+/// data and function pointers, like the games' own descriptors
+/// (`GameBundle`, `GameClient`).
+pub struct Party {
+    /// The base game: whose gameplay, bots and HUD everything plays on.
+    pub base: &'static GameBundle,
+    /// The games composed besides the base, in the order an automatic
+    /// ladder takes them.
+    pub guests: &'static [&'static GameBundle],
+    /// Every game: the guests, then the base.
+    pub bundles: &'static [&'static GameBundle],
+    /// Where the party's maps come from and whose gameplay dresses them.
+    pub map_sources: &'static MapSources,
+    /// The built-in minigames (file name, text), and the one played
+    /// without `+minigame`.
+    pub minigames: &'static [(&'static str, GameData)],
+    pub default_minigame: &'static str,
+    /// The base game's simulation: its engine base, then its parts.
+    pub base_plugins: fn() -> PluginGroupBuilder,
+    /// The composition's parts that name games, after the guests' own
+    /// (`GameBundle::sim`) and the balance: each game's view-model field
+    /// of view cvar, the practice targets' bodies.
+    pub sim_parts: fn(&mut App),
+    /// After the minigame runtime: the built-in minigames' plugin, the
+    /// host's surprises, the base game's rules and bots set for the party.
+    pub sim_rules: fn(&mut App),
+    /// At `Plugin::finish`, after the host's.
+    pub finish: fn(&mut App),
+    /// What this machine lacks to play (`Missing`), read from it.
+    pub requirements: fn() -> Vec<Missing>,
 }
 
-/// Map `id` with `options` (the dedicated server's: no textures).
-pub fn load_map_with(id: &str, options: &MapLoadOptions) -> Result<MapData, String> {
-    MAP_SOURCES.load_with(id, options)
-}
+impl Party {
+    /// What each composed game lends (`chimera_core::game_parts`).
+    pub fn parts(&self) -> impl Iterator<Item = &'static chimera_core::game_parts::GameParts> + '_ {
+        self.bundles.iter().map(|b| b.parts)
+    }
 
-/// What each composed game lends (its capability claim, `chimera_core::
-/// game_parts`), in the order an automatic ladder takes them.
-pub static GAME_PARTS: [&chimera_core::game_parts::GameParts; 5] =
-    [BUNDLES[0].parts, BUNDLES[1].parts, BUNDLES[2].parts, BUNDLES[3].parts, BUNDLES[4].parts];
+    /// Each game's own binds over the shared ones (each bundle's `binds`;
+    /// the base game's first, games without any left out).
+    pub fn binds(&self) -> impl Iterator<Item = (&'static str, &'static [(&'static str, &'static str)])> + '_ {
+        std::iter::once(self.base).chain(self.guests.iter().copied()).filter(|b| !b.binds.is_empty()).map(|b| (b.info.id, b.binds))
+    }
 
-/// The simulation: Combat Arms' (the engine's base, then its parts, the
-/// default game), then `PartyPartsPlugin`.
-pub struct PartyPlugins;
+    /// Map `id` (`cs_source:de_dust2`, `combat_arms:warehouse`).
+    pub fn load_map(&self, id: &str, hdr_level: u8) -> Result<MapData, String> {
+        self.map_sources.load(id, hdr_level)
+    }
 
-impl PluginGroup for PartyPlugins {
-    fn build(self) -> PluginGroupBuilder {
-        combat_arms::game::CombatArmsPlugins
-            .build()
-            .add_before::<combat_arms::game::data::CaDataPlugin>(combat_arms::SimPlugins)
-            .add(PartyPartsPlugin)
+    /// Map `id` with `options` (the dedicated server's: no textures).
+    pub fn load_map_with(&self, id: &str, options: &MapLoadOptions) -> Result<MapData, String> {
+        self.map_sources.load_with(id, options)
+    }
+
+    /// The built-in minigames, read.
+    fn minigame_defs(&self) -> impl Iterator<Item = MinigameDef> + '_ {
+        self.minigames.iter().filter_map(|(file, text)| MinigameDef::parse(file, text).ok())
+    }
+
+    /// The first map of built-in minigame `id`'s pool.
+    pub fn first_map(&self, id: &str) -> Result<String, String> {
+        self.minigame_defs()
+            .find(|d| d.id == id)
+            .map(|d| d.maps[0].clone())
+            .ok_or_else(|| format!("no minigame `{id}` (the built-in ones: {})", self.ids().join(", ")))
+    }
+
+    /// The built-in minigames' ids.
+    pub fn ids(&self) -> Vec<String> {
+        self.minigame_defs().map(|d| d.id).collect()
+    }
+
+    /// The game `id`'s bundle, if the party composes it.
+    pub fn bundle(&self, id: &str) -> Option<&'static GameBundle> {
+        self.bundles.iter().copied().find(|b| b.info.id == id)
     }
 }
 
-/// Each game's own binds, over the shared ones (`Console::layers`, applied
-/// by the local input to a player whose identity is that game): where the
-/// games disagree about a key (each bundle's `binds`). Combat Arms: Shift
-/// sprints, C walks (Alt is free look in Chimera). CS:S: Shift walks
-/// (`+speed`), Ctrl ducks. HL2:DM: Shift sprints (`+speed`), Ctrl ducks,
-/// Alt walks, Z zooms the suit (`+zoom`; CS:S's Z is its radio, a game's own layer). The shared binds are the default ones (the gameplay game's);
-/// the Controls page (`controls`) edits each.
-/// Halo: F melees, G throws a grenade (a Halo rung's player is Halo's).
-pub static GAME_BINDS: [(&str, &[(&str, &str)]); 4] = [
-    (BASE.info.id, BASE.binds),
-    (BUNDLES[0].info.id, BUNDLES[0].binds),
-    (BUNDLES[1].info.id, BUNDLES[1].binds),
-    (BUNDLES[2].info.id, BUNDLES[2].binds),
-];
+/// The party an app runs (`Party`), for the kit's systems: inserted by
+/// `PartyPartsPlugin`.
+#[derive(Resource, Clone, Copy)]
+pub struct Roster(pub &'static Party);
 
-/// The widest player the party's games make (half, m): Source's, 16 u.
-pub const WIDEST_HULL: f32 = 16.0 * 0.0254;
+/// The simulation: the base game's (`Party::base_plugins`), then
+/// `PartyPartsPlugin`.
+pub struct PartyPlugins(pub &'static Party);
 
-/// Combat Arms' bots' gun types for CS:S's guns (data/bot_gun_types.toml).
-pub const BOT_GUN_TYPES: chimera_core::game_data::GameData = chimera_core::game_data!("data/bot_gun_types.toml");
-
-/// Bots the app keeps without a `MaxPlayer` of the user's: a gun game of
-/// four with the player.
-pub const DEFAULT_BOTS: u32 = 3;
+impl PluginGroup for PartyPlugins {
+    fn build(self) -> PluginGroupBuilder {
+        (self.0.base_plugins)().add(PartyPartsPlugin(self.0))
+    }
+}
 
 /// Each game's guns at the game's own view-model field of view, for a
-/// player of that game (each bundle's `view_model_fov`: `viewmodel_fov` is
-/// CS:S's, `ca_viewmodel_fov` Combat Arms', `hl2dm_viewmodel_fov`
-/// HL2:DM's (54 at its 75), `tf2_viewmodel_fov` TF2's (54), all saved in
-/// the config). After Combat Arms' view model settings are in.
-pub fn add_view_model_fovs(app: &mut App) {
-    let fovs = [BASE].iter().chain(GUESTS.iter()).filter_map(|b| b.view_model_fov.map(|f| f())).collect();
+/// player of that game (each bundle's `view_model_fov`), and
+/// `r_drawviewmodel` for all; each game's own cvar is the party's
+/// (`Party::sim_parts`).
+pub fn add_view_model_fovs(party: &Party, app: &mut App) {
+    let fovs = [party.base].iter().chain(party.guests.iter()).filter_map(|b| b.view_model_fov.map(|f| f())).collect();
     app.insert_resource(chimera_world::map::GameViewModelFovs(fovs));
-    cs_source::game::view_anim::viewmodel_fov_cvar(app);
     // Every game's view model hidden or shown (screenshots of a map
     // without a gun in hand), as CS:S's own console has it.
     chimera_core::console::resource_cvar::<chimera_world::map::ViewModelSettings, u8>(
@@ -312,69 +212,46 @@ pub fn add_view_model_fovs(app: &mut App) {
         "0: no view model.",
         |s| &mut s.draw,
     );
-    hl2dm::game::view::viewmodel_fov_cvar(app);
-    tf2::game::view::viewmodel_fov_cvar(app);
 }
 
-/// What the party adds to Combat Arms' simulation (the headless tests run
-/// it on `combat_arms::harness::CaSim`), after Combat Arms' parts: CS:S
-/// registered as a second game (its install and maps), Source's map
-/// logic, CS:S's guns, the minigame runtime and the original minigames;
-/// Combat Arms' modes off (`ca_mode none`: its rules leave the players
-/// to the minigame, a joiner comes in at a free spawn point) and its bots
-/// given CS:S's guns' types (`BOT_GUN_TYPES`) and, by their data's class,
-/// those of the other guns a ladder may hand out (`bot_gun_type_of`).
-pub struct PartyPartsPlugin;
+/// What the party adds to the base game's simulation: each game's parts
+/// registered (the capability reports: `chimera_sim::minigame::auto`),
+/// each guest's simulation (its bundle's `sim`: its guns, impacts,
+/// movement, view-model rules and motion, on Chimera's generic driver
+/// with its game's rules), the cross-game balance, the minigame runtime
+/// and its part of the network, a slice of a big map, each game's binds,
+/// the party's options, and what the party names (`Party::sim_parts`,
+/// `sim_rules`, `finish`).
+pub struct PartyPartsPlugin(pub &'static Party);
 
 impl Plugin for PartyPartsPlugin {
     fn build(&self, app: &mut App) {
-        // What each game lends a game made of several (the capability
-        // reports: `chimera_sim::minigame::auto`).
-        for parts in GAME_PARTS {
+        let party = self.0;
+        app.insert_resource(Roster(party));
+        game_options::install(party);
+        for parts in party.parts() {
             app.register_parts(parts);
         }
-        // Each guest's parts in the simulation (its bundle's `sim`: CS:S's
-        // guns, impacts, movement, view-model rules and motion; HL2:DM's
-        // guns, rung extras, view models; Halo's registration and map
-        // pool; TF2's guns, their rules and view models). A guest's guns'
-        // view models play on Chimera's generic driver with its game's
-        // rules (Combat Arms' driver lets go of a character holding
-        // another game's gun).
-        for bundle in GUESTS {
+        for bundle in party.guests {
             (bundle.sim)(app);
         }
-        add_view_model_fovs(app);
+        add_view_model_fovs(party, app);
         // The cross-game balance and its switch (data/party_balance.toml).
         balance::add(app);
-        // The bodies a sandbox's practice target may wear.
-        target_bodies::add(app);
+        (party.sim_parts)(app);
+        app.add_plugins(MinigamePlugin);
+        (party.sim_rules)(app);
         app.add_plugins((
-            MinigamePlugin,
-            originals::OriginalsPlugin,
             // The match and the ladder over the network (a part: nothing
             // runs without a `NetPlugin`).
             chimera_net::minigame_net::MinigameNetPlugin,
-            // The host's surprises (`surprise airstrike`, `surprise gravity`).
-            surprise::SurprisePlugin,
             // A slice of a big map (`arena <map@slice>`).
             arena::ArenaPlugin,
         ));
-        if let Some(mut s) = app.world_mut().get_resource_mut::<combat_arms::game::rules::CaRuleSettings>() {
-            s.mode = "none".into();
-        }
         if let Some(mut console) = app.world_mut().get_resource_mut::<chimera_core::console::Console>() {
-            for (game, binds) in &GAME_BINDS {
+            for (game, binds) in party.binds() {
                 console.ship_layer(game, binds);
             }
-        }
-        if let Some(mut bots) = app.world_mut().get_resource_mut::<combat_arms::game::bots::BotData>() {
-            bots.gun_types.extend(bot_gun_types());
-        }
-        // A bot wears the hull of its gun's game: a mesh for Combat Arms'
-        // narrow one (15 u of 0.0185 m) leads a Source hull into gaps it
-        // doesn't fit, where it stands pressing on.
-        if let Some(mut bots) = app.world_mut().get_resource_mut::<combat_arms::game::bots::BotSettings>() {
-            bots.walker_radius = Some(WIDEST_HULL);
         }
         even_footsteps(app);
         voice_lines(app);
@@ -388,20 +265,7 @@ impl Plugin for PartyPartsPlugin {
 
     fn finish(&self, app: &mut App) {
         host::finish(app);
-        // The guns a ladder may hand out that the table doesn't name (Combat
-        // Arms' launchers, its install's weapons): their AI row by class.
-        let classed: Vec<(String, chimera_core::game_parts::GunClass)> = app
-            .world()
-            .get_resource::<chimera_sim::weapon::data::WeaponCatalog>()
-            .map(|c| c.sets.iter().flat_map(|s| &s.weapons).filter_map(|w| Some((w.id.clone(), w.class?))).collect())
-            .unwrap_or_default();
-        if let Some(mut bots) = app.world_mut().get_resource_mut::<combat_arms::game::bots::BotData>() {
-            for (id, class) in classed {
-                if let Some(row) = bot_gun_type_of(class) {
-                    bots.gun_types.entry(id).or_insert_with(|| row.to_string());
-                }
-            }
-        }
+        (self.0.finish)(app);
     }
 }
 
@@ -434,29 +298,6 @@ fn voice_lines(app: &mut App) {
     }
 }
 
-/// Combat Arms' bots' AI row for a gun of `class` (None: a grenade, which
-/// they don't throw; they knife on its rung).
-pub fn bot_gun_type_of(class: chimera_core::game_parts::GunClass) -> Option<&'static str> {
-    use chimera_core::game_parts::GunClass::*;
-    match class {
-        Pistol | HeavyPistol => Some("Pistol"),
-        Smg | Carbine | Rifle => Some("Default"),
-        Shotgun => Some("SG"),
-        Heavy | Launcher | Flamethrower => Some("MG"),
-        Marksman | Sniper => Some("SR"),
-        Grenade => None,
-    }
-}
-
-/// `BOT_GUN_TYPES` read: weapon id to Combat Arms' gun type.
-pub fn bot_gun_types() -> Vec<(String, String)> {
-    let table: toml::Table = toml::from_str(&BOT_GUN_TYPES).expect("data/bot_gun_types.toml reads");
-    table
-        .into_iter()
-        .map(|(id, kind)| (id, kind.as_str().expect("a gun type's name").to_string()))
-        .collect()
-}
-
 /// The minigame a command line's console lines ask for (`minigame <id>`,
 /// from `+minigame <id>`), if any.
 pub fn minigame_of(console: &[String]) -> Option<String> {
@@ -475,109 +316,23 @@ pub struct Missing {
     /// wrong).
     pub fatal: bool,
     pub text: String,
-    /// The game it is of.
+    /// The game it is of, and that game's name in words.
     pub game: &'static str,
+    pub name: &'static str,
     /// The install itself is missing (or isn't the game's); else a part of
     /// it (a key).
     pub install: bool,
 }
 
-/// What a machine needs for the party: Counter-Strike: Source's install
-/// (`cstrike` in `css`, the folder a config or Steam names), Combat Arms'
-/// (`Game` in `ca`) and Combat Arms' two archive keys (`keys`: the names
-/// configured, `V1` and `V2`). Pure: `requirements` reads the machine.
-pub fn missing(css: Option<&std::path::Path>, ca: Option<&std::path::Path>, keys: &[&str]) -> Vec<Missing> {
-    let mut out = Vec::new();
-    let mut add = |fatal: bool, text: String| {
-        let (game, install) = if fatal {
-            (cs_source::game::GAME, true)
-        } else {
-            (combat_arms::game::GAME, !text.contains(" key isn't"))
-        };
-        out.push(Missing { fatal, text, game, install })
-    };
-    match css {
-        None => add(
-            true,
-            "Counter-Strike: Source isn't installed: install it from Steam (app 240), or name its folder under \
-             `[games.cs_source]` `path` in chimera.local.toml, or run `chimera_install <folder>`. Its maps and \
-             guns are the gun game's."
-                .into(),
-        ),
-        Some(p) if !p.join("cstrike").is_dir() => add(
-            true,
-            format!(
-                "Counter-Strike: Source's folder {} has no `cstrike` folder in it: point `[games.cs_source]` `path` \
-                 in chimera.local.toml (or `chimera_install`) at the folder that holds `cstrike` and `hl2`.",
-                p.display()
-            ),
-        ),
-        Some(_) => {}
-    }
-    match ca {
-        None => add(
-            false,
-            "Combat Arms isn't set up: put its install folder under `[games.combat_arms]` `path` in \
-             chimera.local.toml. Without it the soldiers, their guns and the HUD's art don't load."
-                .into(),
-        ),
-        Some(p) if !p.join("Game").is_dir() => add(
-            false,
-            format!(
-                "Combat Arms' folder {} has no `Game` folder in it: point `[games.combat_arms]` `path` in \
-                 chimera.local.toml at the folder that holds `Game`.",
-                p.display()
-            ),
-        ),
-        Some(_) => {}
-    }
-    for scheme in ["V1", "V2"] {
-        if ca.is_some() && !keys.contains(&scheme) {
-            add(
-                false,
-                format!(
-                    "Combat Arms' {scheme} key isn't in chimera.local.toml (`[games.combat_arms.keys.{scheme}]` with \
-                     `key` and `iv`; see chimera.local.example.toml): what is in its {scheme} archives (some \
-                     soldiers, guns and sounds) won't load, and players made of them look wrong."
-                ),
-            );
-        }
-    }
-    out
-}
-
-/// `missing` for this machine: its config (`chimera.local.toml`) and
-/// Steam's library; a game read from the asset store isn't missing.
-pub fn requirements() -> Vec<Missing> {
-    use chimera_core::mount::config::LocalConfig;
-    let config = LocalConfig::load().unwrap_or_default();
-    let css = config.game_path_in(cs_source::game::GAME, cs_source::game::INFO.steam.as_ref());
-    let ca = config.game_path(combat_arms::game::GAME);
-    let keys: Vec<&str> = config
-        .game_keys(combat_arms::game::GAME)
-        .map(|k| k.keys().map(String::as_str).collect())
-        .unwrap_or_default();
-    let served =
-        |game: &str, path: Option<&std::path::Path>| path.is_some_and(|p| chimera_core::mount::served::alone(game, p));
-    let (css_served, ca_served) = (
-        served(cs_source::game::GAME, css.as_deref()),
-        served(combat_arms::game::GAME, ca.as_deref()),
-    );
-    let mut out = missing(css.as_deref(), ca.as_deref(), &keys);
-    // A game read from the asset store (the service) has no install folder
-    // and needs no keys (its records are stored decrypted).
-    out.retain(|m| !(m.game == cs_source::game::GAME && css_served || m.game == combat_arms::game::GAME && ca_served));
-    out
-}
-
 /// What a client lacks (`requirements`), told: a missing install never
 /// stops it (`served_by_servers`), so the menu and Join work with no
-/// install and no config. A server's lacks stay fatal (`server::requirements`).
-pub fn client_requirements() -> (String, bool) {
+/// install and no config. A server's lacks stay fatal (the party's
+/// `server::requirements`).
+pub fn client_requirements(party: &Party) -> (String, bool) {
     use chimera_core::mount::config::LocalConfig;
     let service = chimera_net::net::assets::has_token()
         || LocalConfig::load().is_ok_and(|c| c.assets.resolve().remote.is_some());
-    report(&served_by_servers(requirements(), service))
+    report(&served_by_servers((party.requirements)(), service))
 }
 
 /// A missing install never stops the game: a server that offers its game
@@ -590,8 +345,7 @@ pub fn served_by_servers(mut out: Vec<Missing>, service: bool) -> Vec<Missing> {
     for m in out.iter_mut().filter(|m| m.install) {
         if service {
             m.fatal = false;
-            let name = if m.game == cs_source::game::GAME { "Counter-Strike: Source" } else { "Combat Arms" };
-            m.text = format!("{name} isn't installed here: its files come from the asset service when you join.");
+            m.text = format!("{} isn't installed here: its files come from the asset service when you join.", m.name);
         } else if m.fatal {
             m.fatal = false;
             m.text.push_str(
@@ -606,10 +360,10 @@ pub fn served_by_servers(mut out: Vec<Missing>, service: bool) -> Vec<Missing> {
 /// The mount doctor's report for the network (`net::manifest`): each
 /// registered game's install (`manifest::examine`), with what `requirements`
 /// finds: an install that isn't the game's counts as missing, a missing key
-/// is a note on Combat Arms' line.
-pub fn mount_report(games: &chimera_core::game_registry::Games) -> chimera_net::net::manifest::MountReport {
+/// is a note on its game's line.
+pub fn mount_report(party: &Party, games: &chimera_core::game_registry::Games) -> chimera_net::net::manifest::MountReport {
     let mut report = chimera_net::net::manifest::examine(games);
-    for m in requirements() {
+    for m in (party.requirements)() {
         if let Some(g) = report.games.iter_mut().find(|g| g.game == m.game) {
             if m.install {
                 g.installed = false;
@@ -633,32 +387,10 @@ pub fn report(problems: &[Missing]) -> (String, bool) {
     (text, problems.iter().any(|m| m.fatal))
 }
 
-/// The first map of built-in minigame `id`'s pool.
-pub fn first_map(id: &str) -> Result<String, String> {
-    originals::MINIGAMES
-        .iter()
-        .filter_map(|(file, text)| MinigameDef::parse(file, text).ok())
-        .find(|d| d.id == id)
-        .map(|d| d.maps[0].clone())
-        .ok_or_else(|| format!("no minigame `{id}` (the originals: {})", ids().join(", ")))
-}
-
-/// The original minigames' ids.
-pub fn ids() -> Vec<String> {
-    originals::MINIGAMES
-        .iter()
-        .filter_map(|(file, text)| MinigameDef::parse(file, text).ok())
-        .map(|d| d.id)
-        .collect()
-}
-
 pub mod arena;
 pub mod balance;
 pub mod game_options;
 pub mod host;
-pub mod spot_checks;
-pub mod surprise;
-pub mod target_bodies;
 pub mod server;
 #[cfg(feature = "present")]
 pub mod controls;
@@ -694,6 +426,7 @@ pub mod server_list;
 pub mod signal_pages;
 #[cfg(feature = "present")]
 pub mod guns_picker;
+#[cfg(feature = "present")]
 pub mod maps_picker;
 #[cfg(feature = "present")]
 pub mod loading_signal;
@@ -702,9 +435,7 @@ pub mod client;
 #[cfg(feature = "present")]
 pub mod ui_cues;
 #[cfg(feature = "present")]
-pub use client::{
-    PartyHudPlugin, PartyMousePlugin, client_hooks, joins_server, start_at_menu, with_defaults, with_defaults_for, with_huds,
-};
+pub use client::{PartyHudPlugin, joins_server, start_at_menu, with_defaults_for};
 
 #[cfg(test)]
 mod tests {
@@ -723,109 +454,13 @@ mod tests {
     }
 
     #[test]
-    fn a_command_line_names_its_minigame_and_its_first_map() {
+    fn a_command_line_names_its_minigame() {
         let lines = ["MaxPlayer 3".to_string(), "minigame originals:gun_game_dust2".to_string()];
         assert_eq!(super::minigame_of(&lines).as_deref(), Some("originals:gun_game_dust2"));
         assert_eq!(super::minigame_of(&lines[..1]), None);
-        assert_eq!(super::first_map(super::DEFAULT_MINIGAME).unwrap(), "cs_source:de_dust2");
-        assert!(super::first_map("originals:nothing").is_err());
-    }
-
-    #[test]
-    fn every_cs_source_gun_has_a_bot_gun_type_combat_arms_knows() {
-        let ca = combat_arms::game::bots::BotData::built_in();
-        let types = super::bot_gun_types();
-        for gun in cs_source::game::weapons::guns() {
-            let row = types.iter().find(|(id, _)| *id == gun.id);
-            let (_, kind) = row.unwrap_or_else(|| panic!("{} has no bot gun type", gun.id));
-            assert!(ca.guns.contains_key(kind.as_str()), "{}: {kind} isn't one of Combat Arms' gun types", gun.id);
-        }
-    }
-
-    #[test]
-    fn what_a_machine_lacks_is_named_exactly() {
-        use std::path::Path;
-        let both = ["V1", "V2"];
-        let nothing = super::missing(None, None, &[]);
-        assert_eq!(nothing.len(), 2);
-        assert!(nothing[0].fatal && nothing[0].text.contains("Counter-Strike: Source isn't installed"));
-        assert_eq!((nothing[0].game, nothing[0].install), ("cs_source", true));
-        assert_eq!((nothing[1].game, nothing[1].install), ("combat_arms", true));
-        assert!(!nothing[1].fatal && nothing[1].text.contains("`[games.combat_arms]` `path`"));
-        let here = Path::new(env!("CARGO_MANIFEST_DIR"));
-        // A folder that exists but isn't the game's.
-        let wrong = super::missing(Some(here), Some(here), &both);
-        assert_eq!(wrong.len(), 2, "{wrong:?}");
-        assert!(wrong[0].text.contains("has no `cstrike` folder") && wrong[0].fatal);
-        assert!(wrong[1].text.contains("has no `Game` folder"));
-        // Installed, one key missing: only that key is named.
-        let dir = here.join("../../target/party_kit_missing_test");
-        std::fs::create_dir_all(dir.join("cstrike")).unwrap();
-        std::fs::create_dir_all(dir.join("Game")).unwrap();
-        let one = super::missing(Some(&dir), Some(&dir), &["V1"]);
-        assert_eq!(one.len(), 1);
-        assert!(one[0].text.contains("V2 key isn't in chimera.local.toml") && !one[0].fatal, "{one:?}");
-        assert_eq!((one[0].game, one[0].install), ("combat_arms", false), "a key is a note, not the install");
-        assert!(super::missing(Some(&dir), Some(&dir), &both).is_empty());
-        let (text, fatal) = super::report(&nothing);
-        assert!(fatal && text.starts_with("error: Counter-Strike") && text.contains("\nwarning: Combat Arms"));
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    /// A tester with no install and no config reaches the menu and can
-    /// join: no missing install stops the game (a server offering its game
-    /// files provides them, `net::assets`); each still says what is missing
-    /// and how to get it, signed in or not.
-    #[test]
-    fn no_install_never_stops_the_game() {
-        for service in [false, true] {
-            let out = super::served_by_servers(super::missing(None, None, &[]), service);
-            assert_eq!(out.len(), 2);
-            assert!(out.iter().all(|m| !m.fatal), "{out:?}");
-            assert!(out[0].text.contains("Counter-Strike: Source isn't installed"));
-            if service {
-                // The files come from the service: no config-file hint.
-                for m in &out {
-                    assert!(m.text.contains("asset service") && !m.text.contains("chimera.local.toml"), "{}", m.text);
-                }
-            } else {
-                assert!(out[0].text.contains("+chimera:hub <invite link>"), "{}", out[0].text);
-                assert!(out[0].text.contains("chimera.local.toml"), "the plain warning stays");
-            }
-            let (text, fatal) = super::report(&out);
-            assert!(!fatal && text.starts_with("warning: Counter-Strike"), "{text}");
-        }
-        // A missing key isn't an install: left as it was.
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/party_kit_served_test");
-        std::fs::create_dir_all(dir.join("cstrike")).unwrap();
-        std::fs::create_dir_all(dir.join("Game")).unwrap();
-        let keys = super::served_by_servers(super::missing(Some(&dir), Some(&dir), &["V1"]), false);
-        assert!(keys[0].text.ends_with("look wrong."), "{keys:?}");
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn both_games_have_loaders_and_combat_arms_dresses() {
-        let s = &super::MAP_SOURCES;
-        assert!(s.loader("cs_source").is_some() && s.loader("combat_arms").is_some());
-        assert_eq!(s.gameplay.map(|g| g.game), Some(combat_arms::game::GAME));
-    }
-
-    /// Halo is composed for its maps: its loader, its capture the flag
-    /// teams as Combat Arms' two, its surfaces through the Source table.
-    #[test]
-    fn halo_lends_its_maps() {
-        let s = &super::MAP_SOURCES;
-        assert!(s.loader(halo_ce::game::GAME).is_some());
-        assert!(super::BUNDLES.iter().any(|b| b.info.id == halo_ce::game::GAME));
-        assert!(super::GAME_PARTS.iter().any(|p| p.game == halo_ce::game::GAME));
-        let teams: Vec<(u8, u8)> =
-            s.teams.iter().filter(|t| t.game == halo_ce::game::GAME).map(|t| (t.from, t.to)).collect();
-        use combat_arms::game::rules::state::{ALPHA, BRAVO};
-        assert_eq!(teams, [(1, ALPHA), (2, BRAVO)]);
-        assert!(s.surfaces.iter().any(|t| t.map == halo_ce::game::GAME && t.gameplay == combat_arms::game::GAME));
     }
 }
+
 
 /// The environment variable that fixes a launch's rung seed (a number).
 pub const RUNG_SEED_ENV: &str = "CHIMERA_RUNG_SEED";

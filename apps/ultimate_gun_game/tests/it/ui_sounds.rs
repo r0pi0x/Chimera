@@ -7,7 +7,7 @@ use chimera_client::client::ui_sound::{self, UiSounds};
 use ultimate_gun_game::signal::{UI_SOUNDS, UI_SOUND_TABLE, ui_sounds};
 
 /// Every event the screens send (`chimera_client::client::ui_cues`,
-/// `party_kit::ui_cues`, the main menu's music); `pass_sweep` for M1's
+/// `party_roster::ui_cues`, the main menu's music); `pass_sweep` for M1's
 /// logo pass.
 const EVENTS: &[&str] = &[
     "ui_hover", "ui_select", "ui_back", "ui_denied", "ui_slider", "pass_sweep", "lobby_ready", "lobby_unready",

@@ -17,7 +17,7 @@ use chimera_sim::minigame;
 use chimera_world::{harness::Sim, map::Ragdoll};
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
 use combat_arms_ui::visuals::CaVisualsPlugin;
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 const BOTS: u32 = 6;
@@ -45,7 +45,7 @@ fn combat_arms_installed() -> bool {
 
 #[test]
 fn a_death_costs_no_frame() {
-    let Some(map) = party_kit::load_map("cs_source:de_dust2", 0).ok().filter(|_| combat_arms_installed()) else {
+    let Some(map) = party_roster::load_map("cs_source:de_dust2", 0).ok().filter(|_| combat_arms_installed()) else {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
         return;
     };

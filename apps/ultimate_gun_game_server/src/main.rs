@@ -1,6 +1,6 @@
 //! Ultimate Gun Game's dedicated server (apps/ultimate_gun_game_server,
 //! binary `ultimate_gun_game_server`): the party's server
-//! (`party_kit::server::PARTY`, on Chimera's `chimera_net::dedicated::run`)
+//! (`party_roster::server::PARTY`, on Chimera's `chimera_net::dedicated::run`)
 //! with the Ultimate Gun Game's parts at launch
 //! (`ultimate_gun_game::UltimateGunGamePlugin::launch`: a fresh seed,
 //! printed, and a new ladder and a random map at every rotation), playing
@@ -11,7 +11,7 @@
 //! lends. Options: `--help` (`USAGE`).
 
 use chimera_net::dedicated::{GameServer, ServerHooks, ServerMinigame};
-use party_kit::server::PARTY;
+use party_roster::server::PARTY;
 
 const USAGE: &str = "\
 usage: ultimate_gun_game_server [-port <n>] [+minigame <id>] [+map <name>] [+<command> [args...]]
@@ -35,7 +35,7 @@ static SERVER: GameServer = GameServer {
         // The party's launch (a fresh rung seed) and the Ultimate Gun Game's
         // parts with a fresh seed.
         launch: Some(|app| {
-            party_kit::server::launch(app);
+            party_roster::server::launch(app);
             app.add_plugins(ultimate_gun_game::UltimateGunGamePlugin::launch());
         }),
         ..PARTY.hooks

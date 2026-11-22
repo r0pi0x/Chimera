@@ -1,6 +1,6 @@
 //! A session on real maps (backlog "frame rate decays over a session";
 //! docs/performance.md, "A session's frame rate"): one process, the
-//! server's map change (`party_kit::server::swap_map`), a new ladder and
+//! server's map change (`party_roster::server::swap_map`), a new ladder and
 //! bots walking its rungs on each map, three laps over maps of every game,
 //! each map with the same ladder every lap. What a map holds must be what it
 //! held on the first lap, the characters' tables must stop growing, a lap
@@ -42,7 +42,7 @@ use chimera_sim::minigame::{
 };
 use chimera_world::{harness::Sim, map::MapSimPlugin};
 use combat_arms::harness::CaSim;
-use party_kit::{PartyPartsPlugin, server::swap_map};
+use party_roster::{PartyPartsPlugin, server::swap_map};
 use ultimate_gun_game::{MINIGAME, RUNGS, UltimateGunGamePlugin, generate};
 
 const MAPS: [&str; 5] = [
@@ -164,7 +164,7 @@ fn tick_cost(sim: &mut Sim, map: &str) -> Option<(f64, chimera_core::metrics::wo
 
 #[test]
 fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
-    let first = party_kit::load_map(MAPS[0], 0);
+    let first = party_roster::load_map(MAPS[0], 0);
     let Some(first) = first.ok().filter(|_| combat_arms_installed()) else {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
         return;
@@ -185,7 +185,7 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
     for lap in 0..LAPS {
         for (i, map) in MAPS.iter().enumerate() {
             if lap > 0 || i > 0 {
-                let Ok(data) = party_kit::load_map(map, 0) else {
+                let Ok(data) = party_roster::load_map(map, 0) else {
                     eprintln!("{map}: not installed");
                     continue;
                 };

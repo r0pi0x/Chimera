@@ -37,7 +37,7 @@ use combat_arms::{game::{
         view_model::{on_demand::LoadOnDemand, parts::view_key},
     }, harness::CaSim};
 use combat_arms_ui::visuals::CaVisualsPlugin;
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 fn character(game: &'static str) -> MapCharacterModel {

@@ -34,7 +34,7 @@ fn play_on(map: Option<&str>) -> (Sim, Entity) {
 fn play_with<M>(map: Option<&str>, extra: impl bevy::app::Plugins<M>) -> (Sim, Entity) {
     let mut sim = Sim::new(
         combat_arms::harness::CaSim,
-        (chimera_world::greybox::GreyboxMapPlugin, party_kit::PartyPartsPlugin, ultimate_gun_game::UltimateGunGamePlugin::default(), SandboxUiPlugin, extra),
+        (chimera_world::greybox::GreyboxMapPlugin, party_roster::PartyPartsPlugin, ultimate_gun_game::UltimateGunGamePlugin::default(), SandboxUiPlugin, extra),
     );
     let mut at = Vec3::new(0.0, 1.0, 0.0);
     if let Some(map) = map {

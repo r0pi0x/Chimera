@@ -123,7 +123,7 @@ replace one part at a time, each behind its spec and a scenario test.
    (`ServerHooks { .., ..ServerHooks::NONE }`): the map cycle, the map's
    file for clients without it (`map_files`), the greybox's own tick,
    another player count, several games' maps, a minigame
-   (apps/cs_source_server, `party_kit::server`). The app is the same
+   (apps/cs_source_server, `party_roster::server`). The app is the same
    shape: a `GameApp` static (`chimera_client::client::app`: the game's
    `INFO` for the usage text, its title, maps, installs, `sim`, `hud`
    and `front_end`) and `chimera_client::client::app::run(&APP)` in
@@ -132,7 +132,7 @@ replace one part at a time, each behind its spec and a scenario test.
    defaults, what the machine lacks, a default map, a start of its own
    (a main menu), the start map at the HDR level, the debug views, its
    server's name for `--help`, a last word (apps/cs_source,
-   `party_kit::client`). An app's main.rs stays a call
+   `party_roster::client`). An app's main.rs stays a call
    (`app_mains_are_small`). Placeholder movement
    (`chimera_sim::movement`) and a test weapon as data.
 3. **Maps**: a `MapLoader` that returns `MapData` in metres (the world
@@ -172,12 +172,16 @@ replace one part at a time, each behind its spec and a scenario test.
    own rule (node sizes from its canvas), never Bevy's global `UiScale`,
    and draws nothing of the shell's overlay (a minigame's panel and
    callouts, the kill feed): the overlay guard
-   (`apps/party_kit/tests/it/overlay_guard.rs`) covers you once your
+   (`apps/party_roster/tests/it/overlay_guard.rs`) covers you once your
    `CLIENT` is in the party's list, and `repo_checks`
    (`games_leave_the_overlay_alone`) fails a game crate that names the
    overlay or `UiScale` (docs/DESIGN.md, "HUD layers").
 9. **Party**: `PARTS` (`GameParts`: what it lends), `BUNDLE`, `CLIENT`;
-   add the bundle to the party kit's list. Its gun rungs appear in the
+   add the bundle to the roster's `GUESTS` and its `CLIENT` to
+   `client::CLIENTS` (apps/party_roster; with its spawn teams in
+   `TEAMS`, its surface table in `SURFACES` and, if it has keys of its
+   own, its rows in `client::CONTROLS`). The party kit (apps/party_kit)
+   names no game and needs no edit. Its gun rungs appear in the
    Ultimate Gun Game from the parts registry.
 10. **Tools and docs**: the game in `dump` and `chimera_pack` (its row
     in `games()`: a game without a Steam app names how its install's

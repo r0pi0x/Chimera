@@ -5494,7 +5494,7 @@ name = "lucker_party"
 version = "0.1.0"
 dependencies = [
  "chimera_client",
- "party_kit",
+ "party_roster",
  "winresource",
  "workspace-hack",
 ]
@@ -5504,7 +5504,7 @@ name = "lucker_party_server"
 version = "0.1.0"
 dependencies = [
  "chimera_net",
- "party_kit",
+ "party_roster",
  "workspace-hack",
 ]
 
@@ -6614,17 +6614,37 @@ dependencies = [
  "chimera_sim",
  "chimera_ui",
  "chimera_world",
+ "dirs",
+ "toml",
+ "workspace-hack",
+]
+
+[[package]]
+name = "party_roster"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "chimera_assets",
+ "chimera_client",
+ "chimera_core",
+ "chimera_net",
+ "chimera_present",
+ "chimera_sim",
+ "chimera_ui",
+ "chimera_world",
  "combat_arms",
  "combat_arms_ui",
  "cs_source",
  "cs_source_ui",
- "dirs",
  "halo_ce",
  "halo_ce_ui",
  "hl2dm",
  "hl2dm_ui",
  "image",
  "originals",
+ "party_kit",
  "postcard",
  "serde",
  "source_engine",
@@ -8495,7 +8515,7 @@ dependencies = [
  "combat_arms_ui",
  "hl2dm",
  "image",
- "party_kit",
+ "party_roster",
  "winresource",
  "workspace-hack",
 ]
@@ -8506,7 +8526,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "chimera_net",
- "party_kit",
+ "party_roster",
  "ultimate_gun_game",
  "workspace-hack",
 ]

@@ -22,7 +22,7 @@ use chimera_present::render::prop_material::PropMaterial;
 use chimera_sim::minigame;
 use chimera_world::harness::Sim;
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 const MAP: &str = "combat_arms:roadkill";
@@ -49,7 +49,7 @@ fn roadkills_lights_are_not_relit_in_play() {
     let other = std::env::var("CHIMERA_MAP_LIGHTS").ok();
     let check = other.is_none();
     let name = other.as_deref().unwrap_or(MAP);
-    let Some(map) = party_kit::load_map(name, 0).ok().filter(|_| combat_arms_installed()) else {
+    let Some(map) = party_roster::load_map(name, 0).ok().filter(|_| combat_arms_installed()) else {
         eprintln!("skipping: needs the Combat Arms install");
         return;
     };

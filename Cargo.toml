@@ -52,6 +52,7 @@ members = [
     "apps/halo_ce_server",
     "apps/mashup_demo",
     "apps/party_kit",
+    "apps/party_roster",
     "apps/lucker_party",
     "apps/lucker_party_server",
     "apps/ultimate_gun_game",
@@ -103,6 +104,7 @@ default-members = [
     "apps/halo_ce_server",
     "apps/mashup_demo",
     "apps/party_kit",
+    "apps/party_roster",
     "apps/lucker_party",
     "apps/lucker_party_server",
     "apps/ultimate_gun_game",
@@ -177,9 +179,12 @@ tf2_ui = { path = "games/tf2/ui" }
 # (minigames/) and rules hooks, on Chimera only.
 originals = { path = "games/originals" }
 # The party kit (apps/party_kit): what Lucker Party and the Ultimate Gun Game
-# share; without its default `present` here so the dedicated servers can
+# share, over no game; without its default `present` here so the dedicated servers can
 # leave the presentation out.
 party_kit = { path = "apps/party_kit", default-features = false }
+# The party's roster (apps/party_roster): which games the party apps
+# compose, handed to the kit; without `present` here, as the kit.
+party_roster = { path = "apps/party_roster", default-features = false }
 ultimate_gun_game = { path = "apps/ultimate_gun_game", default-features = false }
 # The layers' tools (docs/ARCHITECTURE.md, "Crates"): Chimera's (the
 # perf gate, image comparison) and Source's (RCON) libraries, for the

@@ -10,7 +10,7 @@
 //!   walks on C, CS:S walks on Shift (`+speed`). The local input reads the
 //!   game's own binds first, then the shared ones (`Console::
 //!   effective_binds`), before the intent is sent, so prediction is not
-//!   involved. A later game adds a row list (`GAMES`) and ships binds.
+//!   involved. A later game adds a row list (its party's `PartyClient::controls`) and ships binds.
 //! - The page (`controls [tab]`, or the Escape menu's Options > Binds): a tab for "Shared" first, then
 //!   one for each game; a row is an action and its keys; clicking the keys
 //!   waits for the next key, mouse button or wheel notch (the wheel is a
@@ -48,7 +48,7 @@ pub struct Row {
     pub command: &'static str,
 }
 
-const fn row(label: &'static str, command: &'static str) -> Row {
+pub const fn row(label: &'static str, command: &'static str) -> Row {
     Row { label, command }
 }
 
@@ -103,57 +103,41 @@ pub struct GameRows {
     pub settings: &'static [Setting],
 }
 
-/// Each game's own rows, in tab order (after "Shared").
-pub const GAMES: &[GameRows] = &[
-    GameRows {
-        game: combat_arms::game::GAME,
-        label: "Combat Arms",
-        rows: &[row("Sprint", "+sprint"), row("Walk", "+walk"), row("Crouch", "+duck")],
-        settings: &[Setting { label: "Gun view FOV", cvar: "ca_viewmodel_fov", min: 63.74, max: 110.0, step: 1.0 }],
-    },
-    GameRows {
-        game: cs_source::game::GAME,
-        label: "Counter-Strike: Source",
-        rows: &[row("Walk", "+speed"), row("Duck", "+duck")],
-        settings: &[Setting { label: "Gun view FOV", cvar: "viewmodel_fov", min: 54.0, max: 110.0, step: 1.0 }],
-    },
-    GameRows {
-        game: hl2dm::game::GAME,
-        label: "Half-Life 2: Deathmatch",
-        rows: &[row("Sprint", "+speed"), row("Walk", "+walk"), row("Duck", "+duck"), row("Zoom", "+zoom")],
-        settings: &[Setting { label: "Gun view FOV", cvar: "hl2dm_viewmodel_fov", min: 54.0, max: 110.0, step: 1.0 }],
-    },
-    GameRows { game: halo_ce::game::GAME, label: "Halo", rows: &[row("Melee", "+melee"), row("Grenade", "+grenade"), row("Switch grenade", "+grenade_switch")], settings: &[] },
-];
-
-/// Tab 0 is "Shared", tab `n` is `GAMES[n - 1]`.
-pub fn tab_count() -> usize {
-    GAMES.len() + 1
+/// The party's games' rows (`PartyClient::controls`, through `Front`;
+/// none without a party front end).
+pub fn games_of(world: &World) -> &'static [GameRows] {
+    world.get_resource::<crate::client::Front>().map_or(&[], |f| f.0.controls)
 }
 
-pub fn tab_label(tab: usize) -> &'static str {
-    tab.checked_sub(1).and_then(|i| GAMES.get(i)).map_or("Shared", |g| g.label)
+/// Tab 0 is "Shared", tab `n` is `games[n - 1]` (the party's rows,
+/// `games_of`).
+pub fn tab_count(games: &[GameRows]) -> usize {
+    games.len() + 1
+}
+
+pub fn tab_label(games: &[GameRows], tab: usize) -> &'static str {
+    tab.checked_sub(1).and_then(|i| games.get(i)).map_or("Shared", |g| g.label)
 }
 
 /// The game a tab is of (None: the shared binds).
-pub fn tab_game(tab: usize) -> Option<&'static str> {
-    tab.checked_sub(1).and_then(|i| GAMES.get(i)).map(|g| g.game)
+pub fn tab_game(games: &[GameRows], tab: usize) -> Option<&'static str> {
+    tab.checked_sub(1).and_then(|i| games.get(i)).map(|g| g.game)
 }
 
-pub fn tab_rows(tab: usize) -> &'static [Row] {
-    tab.checked_sub(1).and_then(|i| GAMES.get(i)).map_or(SHARED, |g| g.rows)
+pub fn tab_rows(games: &[GameRows], tab: usize) -> &'static [Row] {
+    tab.checked_sub(1).and_then(|i| games.get(i)).map_or(SHARED, |g| g.rows)
 }
 
 /// The tab named `name` (a game's id or label, or "shared"); case-blind.
-pub fn tab_named(name: &str) -> Option<usize> {
-    (0..tab_count()).find(|t| {
-        let (label, game) = (tab_label(*t), tab_game(*t));
+pub fn tab_named(games: &[GameRows], name: &str) -> Option<usize> {
+    (0..tab_count(games)).find(|t| {
+        let (label, game) = (tab_label(games, *t), tab_game(games, *t));
         label.eq_ignore_ascii_case(name) || game.is_some_and(|g| g.eq_ignore_ascii_case(name))
     })
 }
 
-pub fn tab_settings(tab: usize) -> &'static [Setting] {
-    tab.checked_sub(1).and_then(|i| GAMES.get(i)).map_or(SHARED_SETTINGS, |g| g.settings)
+pub fn tab_settings(games: &[GameRows], tab: usize) -> &'static [Setting] {
+    tab.checked_sub(1).and_then(|i| games.get(i)).map_or(SHARED_SETTINGS, |g| g.settings)
 }
 
 /// `value` moved one step of `setting` (dir -1 or 1), within its range.
@@ -163,14 +147,14 @@ pub fn nudged(setting: &Setting, value: f32, dir: i8) -> f32 {
 }
 
 /// The keys `command` has on a tab: the shared binds', or the game's own.
-pub fn keys_on(console: &Console, tab: usize, command: &str) -> Vec<String> {
-    keys_in(&console.binds, &console.layers, tab, command)
+pub fn keys_on(games: &[GameRows], console: &Console, tab: usize, command: &str) -> Vec<String> {
+    keys_in(games, &console.binds, &console.layers, tab, command)
 }
 
 /// `keys_on` over a bind table and its game layers (a snapshot of the
 /// console's, as Settings keeps from before its pending binds).
-pub fn keys_in(shared: &BTreeMap<String, String>, layers: &BTreeMap<String, BTreeMap<String, String>>, tab: usize, command: &str) -> Vec<String> {
-    keys_in_game(shared, layers, tab_game(tab), command)
+pub fn keys_in(games: &[GameRows], shared: &BTreeMap<String, String>, layers: &BTreeMap<String, BTreeMap<String, String>>, tab: usize, command: &str) -> Vec<String> {
+    keys_in_game(shared, layers, tab_game(games, tab), command)
 }
 
 /// `keys_in` for a game by its id (None: the shared binds).
@@ -194,8 +178,8 @@ fn shared_keys_to_hide(console: &Console, game: &str, command: &str, keep: Optio
 }
 
 /// The console line that makes `key` the only key of `command` on `tab`.
-pub fn rebind_line(console: &Console, tab: usize, command: &str, key: &str) -> String {
-    rebind_line_game(console, tab_game(tab), command, key)
+pub fn rebind_line(games: &[GameRows], console: &Console, tab: usize, command: &str, key: &str) -> String {
+    rebind_line_game(console, tab_game(games, tab), command, key)
 }
 
 /// `rebind_line` for a game by its id (None: the shared binds).
@@ -222,8 +206,8 @@ pub fn rebind_line_game(console: &Console, game: Option<&str>, command: &str, ke
 }
 
 /// The console line that clears `command`'s keys on `tab` (None: none).
-pub fn clear_line(console: &Console, tab: usize, command: &str) -> Option<String> {
-    clear_line_game(console, tab_game(tab), command)
+pub fn clear_line(games: &[GameRows], console: &Console, tab: usize, command: &str) -> Option<String> {
+    clear_line_game(console, tab_game(games, tab), command)
 }
 
 /// `clear_line` for a game by its id (None: the shared binds).
@@ -328,8 +312,8 @@ pub fn reset_shared_line(console: &Console, defaults: &binds::BindDefaults, comm
 }
 
 /// The console line for "Defaults" on `tab`.
-pub fn defaults_line(tab: usize) -> String {
-    match tab_game(tab) {
+pub fn defaults_line(games: &[GameRows], tab: usize) -> String {
+    match tab_game(games, tab) {
         None => "binddefaults".into(),
         Some(game) => format!("bindgamedefaults {game}"),
     }
@@ -373,7 +357,7 @@ impl Plugin for ControlsPlugin {
         app.init_resource::<ControlsPage>()
             .console_command("chimera:controls", "controls [shared|combat_arms|cs_source]: the key binds page.", |w, a| {
                 let tab = match a.first() {
-                    Some(name) => tab_named(name).ok_or_else(|| format!("no tab `{name}`"))?,
+                    Some(name) => tab_named(games_of(w), name).ok_or_else(|| format!("no tab `{name}`"))?,
                     None => w.resource::<ControlsPage>().tab,
                 };
                 let mut page = w.resource_mut::<ControlsPage>();
@@ -403,8 +387,10 @@ fn capture(
     hovered: Query<&Interaction, With<Action>>,
     mut page: ResMut<ControlsPage>,
     mut console: ResMut<Console>,
+    front: Option<Res<crate::client::Front>>,
 ) {
     let Some(command) = page.capture else { return };
+    let games = front.map_or(&[][..], |f| f.0.controls);
     if keys.just_pressed(KeyCode::Escape) {
         page.capture = None;
         return;
@@ -414,7 +400,7 @@ fn capture(
     // the page's buttons is a click).
     let mouse_only_off_page = if on_page { ButtonInput::<MouseButton>::default() } else { mouse.clone() };
     if let Some(key) = binds::first_pressed(&keys, &mouse_only_off_page, Some(&scroll)) {
-        let line = rebind_line(&console, page.tab, command, key);
+        let line = rebind_line(games, &console, page.tab, command, key);
         console.submit(line);
         page.capture = None;
     }
@@ -433,7 +419,7 @@ fn refresh_values(world: &mut World) {
         return;
     }
     let tab = page.tab;
-    for s in tab_settings(tab) {
+    for s in tab_settings(games_of(world), tab) {
         let v = cvar_value(world, s.cvar).unwrap_or_default();
         let mut page = world.resource_mut::<ControlsPage>();
         if page.values.get(s.cvar) != Some(&v) {
@@ -446,8 +432,10 @@ fn click(
     pressed: Query<(&Interaction, &Action), Changed<Interaction>>,
     mut page: ResMut<ControlsPage>,
     mut console: ResMut<Console>,
+    front: Option<Res<crate::client::Front>>,
     mut commands: Commands,
 ) {
+    let games = front.map_or(&[][..], |f| f.0.controls);
     for (interaction, action) in &pressed {
         if *interaction != Interaction::Pressed {
             continue;
@@ -459,12 +447,12 @@ fn click(
             }
             Action::Rebind(command) => page.capture = Some(command),
             Action::Clear(command) => {
-                if let Some(line) = clear_line(&console, page.tab, command) {
+                if let Some(line) = clear_line(games, &console, page.tab, command) {
                     console.submit(line);
                 }
             }
             Action::Defaults => {
-                console.submit(defaults_line(page.tab));
+                console.submit(defaults_line(games, page.tab));
             }
             Action::Nudge(setting, dir) => {
                 commands.queue(move |w: &mut World| {
@@ -498,8 +486,10 @@ fn show(
     root: Query<Entity, With<PageRoot>>,
     mut cursor: Query<&mut CursorOptions>,
     mut shown: Local<Option<Shown>>,
+    front: Option<Res<crate::client::Front>>,
     mut commands: Commands,
 ) {
+    let games = front.map_or(&[][..], |f| f.0.controls);
     if !page.open {
         if shown.take().is_some() {
             for e in &root {
@@ -527,7 +517,7 @@ fn show(
     for e in &root {
         commands.entity(e).despawn();
     }
-    spawn(&mut commands, &page, &console);
+    spawn(&mut commands, games, &page, &console);
     *shown = Some(now);
 }
 
@@ -558,7 +548,7 @@ fn button(label: impl Into<String>, action: Action, color: Color, wide: f32) -> 
     )
 }
 
-fn spawn(commands: &mut Commands, page: &ControlsPage, console: &Console) {
+fn spawn(commands: &mut Commands, games: &'static [GameRows], page: &ControlsPage, console: &Console) {
     commands
         .spawn((
             PageRoot,
@@ -589,22 +579,22 @@ fn spawn(commands: &mut Commands, page: &ControlsPage, console: &Console) {
                 panel
                     .spawn(Node { flex_direction: FlexDirection::Row, margin: UiRect::vertical(px(6.0)), ..default() })
                     .with_children(|tabs| {
-                        for t in 0..tab_count() {
+                        for t in 0..tab_count(games) {
                             let color = if t == page.tab { ACTIVE } else { BUTTON };
-                            tabs.spawn(button(tab_label(t), Action::Tab(t), color, 150.0));
+                            tabs.spawn(button(tab_label(games, t), Action::Tab(t), color, 150.0));
                         }
                     });
                 if page.tab == 0 {
                     panel.spawn(text("Every game: the mouse wheel can be a key (Jump on a wheel notch).", 13.0));
                 } else {
                     panel.spawn(text(
-                        format!("{} only: these keys replace the shared ones while you play it.", tab_label(page.tab)),
+                        format!("{} only: these keys replace the shared ones while you play it.", tab_label(games, page.tab)),
                         13.0,
                     ));
                 }
-                for r in tab_rows(page.tab) {
+                for r in tab_rows(games, page.tab) {
                     let waiting = page.capture == Some(r.command);
-                    let keys = keys_on(console, page.tab, r.command);
+                    let keys = keys_on(games, console, page.tab, r.command);
                     let shown = if waiting {
                         "press a key, button or wheel (Esc: cancel)".to_string()
                     } else if keys.is_empty() {
@@ -621,7 +611,7 @@ fn spawn(commands: &mut Commands, page: &ControlsPage, console: &Console) {
                             line.spawn(button("Clear", Action::Clear(r.command), BUTTON, 60.0));
                         });
                 }
-                for s in tab_settings(page.tab) {
+                for s in tab_settings(games, page.tab) {
                     let value = page.values.get(s.cvar).cloned().unwrap_or_default();
                     panel
                         .spawn(Node { flex_direction: FlexDirection::Row, align_items: AlignItems::Center, ..default() })

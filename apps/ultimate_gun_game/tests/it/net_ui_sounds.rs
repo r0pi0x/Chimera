@@ -37,7 +37,7 @@ use chimera_sim::minigame::{
 use chimera_ui::{ChimeraUiPlugin, UiClock};
 use chimera_world::greybox::GreyboxMapPlugin;
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin, signal};
 
 const LINK: LinkConditions = LinkConditions {

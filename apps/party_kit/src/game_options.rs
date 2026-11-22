@@ -142,15 +142,26 @@ pub fn parse(id: &'static str, text: &str) -> Result<GameOptions, String> {
     Ok(GameOptions { id, name, short, actions, options })
 }
 
-/// The party's games' pages, in `BUNDLES` order (those that ship data).
-pub fn games() -> &'static [GameOptions] {
-    static GAMES: OnceLock<Vec<GameOptions>> = OnceLock::new();
+/// The pages, read once from the first party installed (a process runs
+/// one party: its roster's).
+static GAMES: OnceLock<Vec<GameOptions>> = OnceLock::new();
+
+/// Read `party`'s games' pages (`PartyPartsPlugin` does, at build): the
+/// first party's stay for the process.
+pub fn install(party: &crate::Party) {
     GAMES.get_or_init(|| {
-        crate::BUNDLES
+        party
+            .bundles
             .iter()
             .filter_map(|b| b.player_options.map(|t| parse(b.info.id, t.text()).unwrap_or_else(|e| panic!("data/player_options.toml: {e}"))))
             .collect()
-    })
+    });
+}
+
+/// The party's games' pages, in its `bundles` order (those that ship
+/// data); none before a party is installed (`install`).
+pub fn games() -> &'static [GameOptions] {
+    GAMES.get().map_or(&[], Vec::as_slice)
 }
 
 /// The game `id`'s page.

@@ -119,7 +119,7 @@ dropdown) and the user's kit preferences.
   `ui_scene play guns [default|collapsed|classoff|bans|short|menu]`.
   Pure rule edits in `gun_rules` (`set_game_on`, `set_class_on`, `solo`,
   `decided`, `cycle_family`, `set_listed`, `stage_rungs`). Tests:
-  apps/party_kit/tests/it/signal_pages.rs `guns_dialog_*`.
+  apps/party_roster/tests/it/signal_pages.rs `guns_dialog_*`.
 - Left: per-skin bans from a card (the console takes weapon ids), the
   example ladder with Reroll, the "a joiner lacks a game" state,
   controller bumpers, the help tile following the pointer, the rules

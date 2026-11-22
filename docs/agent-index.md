@@ -11,10 +11,10 @@ module list is `docs/modules.md`.
 
 - 1: Architecture | A map of the code
 - 6: Crates | A Cargo workspace (docs/plans/active/engine-split.md, "Crates and compile time"); every member is a default member, so `cargo test` and...
-- 719: Layers | Exact edges: console_scope uses core, console, game_registry and slots (the console's scope from the game played, the games'...
-- 844: Modules | The module list is `docs/modules.md`: one line per source file, grouped by crate folder, generated from the first sentence of each...
-- 855: Data flow per tick | Intent buttons are levels, not edges
-- 929: Slots | An implementation registers under a namespaced ID (`chimera:noclip`,
+- 735: Layers | Exact edges: console_scope uses core, console, game_registry and slots (the console's scope from the game played, the games'...
+- 860: Modules | The module list is `docs/modules.md`: one line per source file, grouped by crate folder, generated from the first sentence of each...
+- 871: Data flow per tick | Intent buttons are levels, not edges
+- 945: Slots | An implementation registers under a namespaced ID (`chimera:noclip`,
 
 ## docs/DESIGN.md
 
@@ -159,7 +159,7 @@ module list is `docs/modules.md`.
 - 29: The crates | A new family's folder is a loader layer the day a crate lives in it; its formats crate may use `chimera_vfs` (archives as mount layers) and
 - 53: The game crate's shape | party mode finds the same seams in every game:
 - 108: Order of work | What Combat Arms' skeleton and HL2:DM's milestones taught: get a character walking on the greybox with placeholder parts first, then...
-- 188: Don't rely on | run-time choice (`chimera_core::gameplay`)
+- 192: Don't rely on | run-time choice (`chimera_core::gameplay`)
 
 ## docs/performance.md
 

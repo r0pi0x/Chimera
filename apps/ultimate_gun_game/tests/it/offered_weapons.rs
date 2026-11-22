@@ -16,7 +16,7 @@ use chimera_net::{harness::NetSim, minigame_net, net::memory::LinkConditions};
 use chimera_sim::weapon::{Inventory, Weapon};
 use chimera_world::greybox::GreyboxMapPlugin;
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 fn setup(app: &mut App) {

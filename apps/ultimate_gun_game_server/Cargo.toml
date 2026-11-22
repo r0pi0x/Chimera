@@ -10,15 +10,15 @@ license.workspace = true
 # The app crates this one is built on (checks/tests/it/architecture.rs,
 # `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path").
 [package.metadata.chimera]
-apps = ["party_kit", "ultimate_gun_game"]
+apps = ["party_roster", "ultimate_gun_game"]
 
-# The party kit's server (`party_kit::server::PARTY`, on Chimera's
+# The party's server (`party_roster::server::PARTY`, on Chimera's
 # `chimera_net::dedicated`) with the Ultimate Gun Game's
 # parts (`ultimate_gun_game` without its default `present`), so no
 # presentation links (checks/tests/it/architecture.rs,
 # `server_builds_without_presentation`).
 [dependencies]
-party_kit.workspace = true
+party_roster.workspace = true
 ultimate_gun_game.workspace = true
 chimera_net.workspace = true
 bevy.workspace = true
@@ -30,4 +30,4 @@ path = "src/main.rs"
 test = false
 
 [features]
-dev = ["party_kit/dev", "ultimate_gun_game/dev", "chimera_net/dev"]
+dev = ["party_roster/dev", "ultimate_gun_game/dev", "chimera_net/dev"]

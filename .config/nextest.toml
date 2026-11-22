@@ -123,15 +123,15 @@ slow-timeout = { period = "300s", terminate-after = 4 }
 # 12 minutes three times with agents building (2026-11-09). 30 minutes,
 # like the soak.
 [[profile.default.overrides]]
-filter = 'binary_id(party_kit::server) & test(/^heavy::spawns::every_pool_map_s_spawn_spots_are_inside_it$/)'
+filter = 'binary_id(party_roster::server) & test(/^heavy::spawns::every_pool_map_s_spawn_spots_are_inside_it$/)'
 slow-timeout = { period = "180s", terminate-after = 10 }
 
 # The longest besides the soak (2-3 minutes: every pool map loaded in
-# turn) and Combat Arms' skins of every rung (2 minutes): party_kit's
+# turn) and Combat Arms' skins of every rung (2 minutes): party_roster's
 # sweep ended every run alone, its binary's turn coming last
 # (2026-10-31, the map-cache-2 runs: the last of 625 tests in each).
 [[profile.default.overrides]]
-filter = '(binary_id(party_kit::server) & test(/^heavy::spawns::every_pool_map_s_spawn_spots_are_inside_it$/)) | (binary_id(combat_arms::it) & test(/^heavy::body_skins::every_rung_bodys_skins_resolve$/))'
+filter = '(binary_id(party_roster::server) & test(/^heavy::spawns::every_pool_map_s_spawn_spots_are_inside_it$/)) | (binary_id(combat_arms::it) & test(/^heavy::body_skins::every_rung_bodys_skins_resolve$/))'
 test-group = 'heavy'
 priority = 90
 
@@ -140,7 +140,7 @@ priority = 90
 # tests' 720 s in a loaded post-push run). 18 minutes (180 s x 6) each;
 # they start early so the slots overlap them.
 [[profile.default.overrides]]
-filter = 'binary_id(party_kit::it) & test(/^heavy::spawn_spots::/)'
+filter = 'binary_id(party_roster::it) & test(/^heavy::spawn_spots::/)'
 test-group = 'heavy'
 priority = 90
 slow-timeout = { period = "180s", terminate-after = 6 }

@@ -24,7 +24,7 @@ use chimera_core::{metrics::work::WorkCounts, mount::config::LocalConfig};
 use chimera_sim::minigame;
 use chimera_world::{harness::Sim, map::MapSimPlugin};
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 /// The large generated mesh guarded.
@@ -109,7 +109,7 @@ fn a_tick_on_cs_militia_stays_in_its_budget() {
 /// the budget. The number of areas of its navigation mesh; None when
 /// skipped.
 fn within_budget(name: &str, check: bool) -> Option<usize> {
-    let Some(map) = party_kit::load_map(name, 0).ok().filter(|_| combat_arms_installed()) else {
+    let Some(map) = party_roster::load_map(name, 0).ok().filter(|_| combat_arms_installed()) else {
         eprintln!("skipping {name}: needs its game's and the Combat Arms installs");
         return None;
     };

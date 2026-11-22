@@ -16,7 +16,7 @@ use chimera_sim::minigame::{self, ladder::{Ladder, set_rung}};
 use chimera_world::harness::Sim;
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
 use combat_arms_ui::visuals::CaVisualsPlugin;
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 /// The worst frame of a rung change, ticks and all: 12.5-27.7 M measured
@@ -34,7 +34,7 @@ fn combat_arms_installed() -> bool {
 
 #[test]
 fn a_ladders_rungs_stay_under_the_limit() {
-    let Some(map) = party_kit::load_map("cs_source:de_dust2", 0).ok().filter(|_| combat_arms_installed()) else {
+    let Some(map) = party_roster::load_map("cs_source:de_dust2", 0).ok().filter(|_| combat_arms_installed()) else {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
         return;
     };

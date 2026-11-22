@@ -60,6 +60,11 @@ const ONE_OFF_SCHEDULES: &[&str] = &[
 /// events, observers or systems (the step named).
 const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
+        "apps/party_kit/src/client.rs",
+        "PartyClient",
+        "a decision the main menu asks (`base_loading: fn(&World) -> Option<String>`, read-only): the map the base game's own loading screen is up for; raising and lowering it is an event (`SetBaseLoading`)",
+    ),
+    (
         "chimera/world/src/map/loading.rs",
         "LoadPending",
         "map loading: a decision the settle asks (`fn(&World) -> usize`, read-only), each builder's count of work a map's first view still needs",

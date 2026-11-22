@@ -22,7 +22,7 @@ use ultimate_gun_game::{MINIGAME, RUNGS, generate};
 
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
 use combat_arms::{game::data::CaData, harness::CaSimWith};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::UltimateGunGamePlugin;
 
 /// `generate`: the definition from the games' parts (measured 2026-11-14:

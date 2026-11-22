@@ -10,12 +10,12 @@ license.workspace = true
 # The app crates this one is built on (checks/tests/it/architecture.rs,
 # `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path").
 [package.metadata.chimera]
-apps = ["party_kit"]
+apps = ["party_roster"]
 
-# A thin binary over the party kit (apps/party_kit), which composes the games.
+# A thin binary over the party's roster (apps/party_roster), which composes the games on the party kit.
 [dependencies]
 chimera_client = { workspace = true, optional = true }
-party_kit.workspace = true
+party_roster.workspace = true
 workspace-hack.workspace = true
 
 # The game: its window, the presentation, the client shell and Combat
@@ -32,14 +32,14 @@ winresource.workspace = true
 
 [features]
 default = ["present"]
-present = ["dep:chimera_client", "party_kit/default"]
+present = ["dep:chimera_client", "party_roster/default"]
 
 # Faster iteration: link Bevy as a dynamic library, serve the remote
 # protocol. `cargo run --features dev --bin lucker_party`. Never for
 # release builds.
-dev = ["party_kit/dev", "chimera_client?/dev"]
+dev = ["party_roster/dev", "chimera_client?/dev"]
 
 # Profiling (docs/performance.md, "See a frame yourself").
-trace = ["party_kit/trace"]
-profile = ["party_kit/profile"]
-tracy = ["party_kit/tracy"]
+trace = ["party_roster/trace"]
+profile = ["party_roster/profile"]
+tracy = ["party_roster/tracy"]

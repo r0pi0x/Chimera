@@ -16,10 +16,11 @@ mashup (repository root: src/, tests/it/)   `dump`; `cs_source_app` at the old p
 cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ its version), games::load_map
   |    combat_arms_app (apps/combat_arms/)   the Combat Arms app: its game binary (beside, not above, CS:S)
   |    mashup_demo (apps/mashup_demo/)   the first mashup app: CS:S's maps played as Combat Arms (both games as libraries)
-  |    party_kit (apps/party_kit/)   the party kit: both games composed, minigames, client app, server run loop (`present`: the client)
-  |    lucker_party (apps/lucker_party/)   Lucker Party: a thin binary over `party_kit`
-  |    lucker_party_server (apps/lucker_party_server/)   its dedicated server: `party_kit::server` on `chimera_net::dedicated`
-  |    ultimate_gun_game (apps/ultimate_gun_game/)   the automatic gun game from every game's parts, on `party_kit`
+  |    party_kit (apps/party_kit/)   the party kit, over no game: the minigame runtime composed, menus, client app, server launch (`present`: the client); the games come in a `Party`
+  |    party_roster (apps/party_roster/)   the party's games handed to the kit (`PARTY`, `client::CLIENT`), its client app and server; the composition tests
+  |    lucker_party (apps/lucker_party/)   Lucker Party: a thin binary over `party_roster`
+  |    lucker_party_server (apps/lucker_party_server/)   its dedicated server: `party_roster::server` on `chimera_net::dedicated`
+  |    ultimate_gun_game (apps/ultimate_gun_game/)   the automatic gun game from every game's parts, on `party_roster`
   |    ultimate_gun_game_server (apps/ultimate_gun_game_server/)   its server: the party's `GameServer` with its minigame and parts
   |    originals (games/originals/)   the original minigames: definitions (minigames/) and rules hooks, Chimera only
   |    cs_source_server (apps/cs_source_server/)   CS:S's dedicated server: the game without its front end, no app
@@ -77,7 +78,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   loader layers, never another game, front end or app (TF2's, Halo's, HL2:DM's, CS:S's and Combat Arms':
   docs/plans/active/architecture-for-iteration.md, stage 1); `apps/*` (and a game's tools, and the root
   package) compose them, and build on another app only when their
-  manifest says so (`apps = ["party_kit"]`). The rows of
+  manifest says so (`apps = ["party_roster"]`). The rows of
   `workspace_crates` add each crate's finer rules. Every game crate has
   the same public seams (checked: `games_share_one_shape`);
   [new-game.md](new-game.md) is the checklist for a port, and
@@ -457,7 +458,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   are the slayer starts (no team) and capture the flag's red and blue
   bases (`Team(1)`, `Team(2)`, after the game's flag check;
   `game::maps::spawns`). In the party apps (`game::BUNDLE`, one of
-  `party_kit::GUESTS`) it lends only its maps, played with the other
+  `party_roster::GUESTS`) it lends only its maps, played with the other
   games' bodies, movement and guns: its surface names are the engine's
   classes (`game::maps::surfaces::SURFACES`; Combat Arms' through the
   Source table), its teams Alpha and Bravo, and its pool is the disc
@@ -496,7 +497,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   their looks (`weapons::looks`: TF2's own `.pcf` explosion and muzzle
   flashes on its maps, Source's explosion elsewhere, explosions sent to
   clients as the `tf2_looks` net part), and `BUNDLE`: its maps by
-  id, its guns lent to the party's ladders (`party_kit::GUESTS`, its
+  id, its guns lent to the party's ladders (`party_roster::GUESTS`, its
   `GUEST` dressing on other games' maps). (M3) Its classes as data
   (`game::classes`, data/classes.toml: health, speed, eyes, air jumps,
   models; each gun's class): the class of the TF2 gun in hand sets
@@ -602,36 +603,51 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   its rules or front end. docs/plans/active/mashup-demo.md has what was
   generalised and what's left.
 - `party_kit` (apps/party_kit/) is what the four party apps share, so none
-  depends on another app (checked): the two-game composition
-  (`PartyPlugins`, `PartyPartsPlugin`, `GAME_PARTS`, `MAP_SOURCES`), the
-  requirements and mount report, the minigame a command line names, and
-  with `present` the client app (`client::PARTY`, a `GameApp`; Lucker
-  Party's `client::APP`; `with_defaults_for`, `start_at_menu`,
-  controls); its `server` module is the party's dedicated server as a
-  `GameServer` (`PARTY`, Lucker Party's `SERVER`) on `chimera_net::
-  dedicated`. Its tests are the party's and the
-  server's (tests/it/, tests/server/).
+  depends on another app (checked), over no game: it builds on Chimera's
+  crates only (`party_kit_names_no_game`), so a game's edit doesn't
+  rebuild it (docs/plans/active/architecture-for-iteration.md, stage 3).
+  The games come in as one descriptor, `Party` (the base game's and the
+  guests' bundles, the map sources, the minigames, and hooks for what
+  names a game), and its front end's, `client::PartyClient` (each game's
+  `GameClient`, the Controls rows, the menu's look, the base game's
+  loading screen and menu music); `PartyPlugins(&Party)`,
+  `PartyPartsPlugin(&Party)` and the client's `front_end` take them and
+  insert `Roster`/`client::Front` for the systems. It holds the party's
+  options, the host's settings and vote, the arena, the requirements'
+  telling and the mount report, and with `present` the menus, settings,
+  controls and the client app's game-free parts (`with_defaults_for`,
+  `start_at_menu`).
+- `party_roster` (apps/party_roster/) is the party's roster: the games
+  the party apps compose (`GUESTS`, `BASE`, the pairs' `TEAMS` and
+  `SURFACES`, `MAP_SOURCES`) as `PARTY`, the front ends as
+  `client::CLIENT`, the client app (`client::PARTY`, a `GameApp`; Lucker
+  Party's `client::APP`) and the dedicated server (`server::PARTY`, Lucker
+  Party's `SERVER`, on `chimera_net::dedicated`), and what is one game's
+  mechanics in the party (`surprise`, `target_bodies`, `spot_checks`,
+  `map_fitness`). It re-exports the kit (`pub use party_kit::*`). A new
+  game is a line here. Its tests are the party's and the server's
+  (tests/it/, tests/server/).
 - `lucker_party` (apps/lucker_party/) is Lucker Party (binary
-  `lucker_party`), a thin binary over `party_kit`: minigames (`chimera_sim::minigame`, definitions as data
+  `lucker_party`), a thin binary over `party_roster`: minigames (`chimera_sim::minigame`, definitions as data
   on the mode runtime) played with both games' parts, composed as the
   mashup demo composes them (Combat Arms' simulation, CS:S's maps, logic
   and guns) plus the minigame runtime and `originals`; it starts the
   minigame `+minigame <id>` names (the gun game without one) on its
   pool's first map. Its presentation, shell and Combat Arms' front end are
-  behind `party_kit`'s default feature `present`. Never another app (checked).
+  behind `party_roster`'s default feature `present`. Never another app (checked).
 - `lucker_party_server` (apps/lucker_party_server/) is Lucker Party's
-  dedicated server (a thin binary): `party_kit::server::SERVER` (the kit
-  without `present`) on `chimera_net::dedicated::run`, playing the minigame the command line names
+  dedicated server (a thin binary): `party_roster::server::SERVER` (the
+  roster without `present`) on `chimera_net::dedicated::run`, playing the minigame the command line names
   (`+minigame <id>`, its first map unless `+map`), so it links no render
   or audio code (checked the same way as the other servers).
 - `ultimate_gun_game` (apps/ultimate_gun_game/) is the Ultimate Gun Game
   (binary `ultimate_gun_game`; docs/plans/active/ultimate-gun-game.md):
-  `party_kit`'s client app (its `APP`: `GameApp { .., ..PARTY }` with
+  `party_roster`'s client app (its `APP`: `GameApp { .., ..PARTY }` with
   its own command line, main-menu start and launch) and composition plus a gun game made
   at run time from each game's parts (`chimera_core::game_parts`,
   `chimera_sim::minigame::auto`). It names no game crate.
   `ultimate_gun_game_server` (apps/ultimate_gun_game_server/) is its
-  dedicated server: the party's `GameServer` (`party_kit::server::PARTY`)
+  dedicated server: the party's `GameServer` (`party_roster::server::PARTY`)
   with its minigame and launch parts, no presentation (checked).
 - `originals` (games/originals/) is Lucker Party's original minigames:
   their definitions, our own TOML in the repository's `minigames/`

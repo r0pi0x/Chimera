@@ -989,7 +989,7 @@ client only with the server's `sv_cheats 1` (and only on itself).
   `http://127.0.0.1:<plain port>/feedback/admin/` (docs/playtest-hosting.md,
   "During the session"). Headless: `FeedbackCapture::fake`, a test's own
   `Outbox`, or `AssetsOutbox::at(<dir>, targets)` against a service on
-  port 0 (apps/party_kit/tests/it/feedback.rs); staged:
+  port 0 (apps/party_roster/tests/it/feedback.rs); staged:
   `ui_scene report [details|sent|queued|off]`. What a report's frame
   shows: `feedback` then `feedback_shot <file.jpg>` (the JPEG it would
   send) in an offscreen run, next to a `screenshot` taken at the key
@@ -1208,7 +1208,7 @@ component to see what differs (the soak's `CHIMERA_SOAK_DIAGNOSE`
 decodes positions and velocities). `cargo test --features dev --test it net_prediction
 -- --nocapture` prints the numbers per latency, jitter and loss.
 Every game's body on another game's map, over the network
-(`apps/party_kit/tests/it/heavy/net_smoothness.rs`): per rung, prediction
+(`apps/party_roster/tests/it/heavy/net_smoothness.rs`): per rung, prediction
 errors and restarts (0) and, drawn at 144 frames a second, the own body's
 per-frame steps (none held still, their change at most a quarter, turning at the ticks); the first
 thing to run when play "feels laggy" (its `--nocapture` prints the numbers).
@@ -2815,7 +2815,7 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
 
 ### Measuring maps for a gun game's pool (map_fitness)
 
-`map_fitness` (apps/party_kit/src/bin/map_fitness.rs, `--features
+`map_fitness` (apps/party_roster/src/bin/map_fitness.rs, `--features
 tools`) loads every installed map of the party's games (CS:S, Combat
 Arms, HL2:DM, Halo, TF2; `--game tf2` for one) headless, one at a time, floods the bots' generated
 navigation mesh from its spawn points and writes per map its walkable
@@ -2825,17 +2825,17 @@ the time N players spread over it take to meet, and its sight lines to
 says what each column means and the pool rule built on them).
 
 ```
-cargo run -p party_kit --features dev,tools --bin map_fitness -- --list     # the installed maps
-cargo run -p party_kit --features dev,tools --bin map_fitness -- --filter gg_  # some of them
-cargo run -p party_kit --features dev,tools --bin map_fitness -- --resume   # continue a sweep
-cargo run -p party_kit --features dev,tools --bin map_fitness -- --resume --write .   # then each game's
+cargo run -p party_roster --features dev,tools --bin map_fitness -- --list     # the installed maps
+cargo run -p party_roster --features dev,tools --bin map_fitness -- --filter gg_  # some of them
+cargo run -p party_roster --features dev,tools --bin map_fitness -- --resume   # continue a sweep
+cargo run -p party_roster --features dev,tools --bin map_fitness -- --resume --write .   # then each game's
                                    # data/map_fitness.toml (the pool's measurements)
-cargo run -p party_kit --features dev,tools --bin map_fitness -- --csv docs/plans/active/map-pool-fitness.csv --write .
+cargo run -p party_roster --features dev,tools --bin map_fitness -- --csv docs/plans/active/map-pool-fitness.csv --write .
                                    # the same from a sweep's CSV, loading nothing
 ```
 
-Its spawn spot columns are `party_kit::spot_checks`, which the heavy
-guard `heavy::spawn_spots` (party_kit) runs over the pool's maps. To find
+Its spawn spot columns are `party_roster::spot_checks`, which the heavy
+guard `heavy::spawn_spots` (party_roster) runs over the pool's maps. To find
 why spots are where they shouldn't be, or aren't where they should:
 
 ```

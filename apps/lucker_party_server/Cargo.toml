@@ -10,9 +10,9 @@ license.workspace = true
 # The app crates this one is built on (checks/tests/it/architecture.rs,
 # `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path").
 [package.metadata.chimera]
-apps = ["party_kit"]
+apps = ["party_roster"]
 
-# A thin binary: the party kit's server (apps/party_kit) on Chimera's
+# A thin binary: the party's server (apps/party_roster, on the party kit) on Chimera's
 # (`chimera_net::dedicated`), the kit without its default `present`, so
 # nothing of chimera_present, the client shell or Combat Arms'
 # front end links (checks/tests/it/architecture.rs,
@@ -20,7 +20,7 @@ apps = ["party_kit"]
 # the released server is built alone, `cargo build --release -p
 # lucker_party_server`.
 [dependencies]
-party_kit.workspace = true
+party_roster.workspace = true
 chimera_net.workspace = true
 workspace-hack.workspace = true
 
@@ -31,4 +31,4 @@ test = false
 
 [features]
 # Bevy as a dynamic library, as the other crates' `dev`.
-dev = ["party_kit/dev", "chimera_net/dev"]
+dev = ["party_roster/dev", "chimera_net/dev"]

@@ -1,0 +1,141 @@
+[package]
+name = "party_roster"
+version = "0.1.0"
+description = "The party's roster: which games Lucker Party and the Ultimate Gun Game compose and how, handed to the party kit as one descriptor (party_kit::Party); the composition tests"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# Over the party kit, which names no game (docs/plans/active/
+# architecture-for-iteration.md, stage 3).
+[package.metadata.chimera]
+apps = ["party_kit"]
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# The games as libraries (`combat_arms` the base: its soldiers, movement,
+# HUD, bots and guns; CS:S, HL2:DM, Halo and TF2 the guests: their maps,
+# guns, bodies and HUDs) and the original minigames (`originals`), composed
+# on the party kit; never one of the four party apps, which depend on this
+# crate. The games' front ends are behind the default feature `present`:
+# the dedicated servers build without them.
+[dependencies]
+party_kit.workspace = true
+chimera_core.workspace = true
+chimera_world.workspace = true
+chimera_sim.workspace = true
+chimera_net.workspace = true
+chimera_present = { workspace = true, optional = true }
+chimera_client = { workspace = true, optional = true }
+cs_source.workspace = true
+hl2dm.workspace = true
+tf2.workspace = true
+halo_ce.workspace = true
+combat_arms.workspace = true
+originals.workspace = true
+# Each game's front end, for `present`.
+cs_source_ui = { workspace = true, optional = true }
+combat_arms_ui = { workspace = true, optional = true }
+hl2dm_ui = { workspace = true, optional = true }
+tf2_ui = { workspace = true, optional = true }
+halo_ce_ui = { workspace = true, optional = true }
+avian3d.workspace = true
+bevy.workspace = true
+toml.workspace = true
+workspace-hack.workspace = true
+
+# The tests aim with the test kit's readers (`chimera_sim::testkit`).
+[dev-dependencies]
+image.workspace = true
+# A converted dressing's bytes (tests/it/heavy/converted.rs).
+postcard.workspace = true
+serde.workspace = true
+# The account file (tests/it/onboarding.rs).
+chimera_assets.workspace = true
+# The presentation's Bevy and Avian features, for this crate's own tests only
+# (the dedicated servers build without them): `cargo test -p <crate>` shares
+# the clients' builds of Bevy instead of building its own (hakari.toml).
+bevy = { workspace = true, features = ["default", "wav"] }
+avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+# bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it:
+# without this line a build that leaves the client shell out builds another
+# bevy_winit, and with it another Bevy and every crate of ours.
+bevy_winit.workspace = true
+chimera_sim = { workspace = true, features = ["testkit"] }
+# HL2:DM's view-model motion rules (tests/it/hl2dm_parts.rs).
+source_engine.workspace = true
+source_logic.workspace = true
+# The UI kit's theme and clock (tests/it/main_menu.rs: the logo pass).
+chimera_ui.workspace = true
+
+# Its integration tests (tests/it/): minigames on the composed
+# simulation, headless (`heavy::`: the user's installs).
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+# The dedicated server's integration tests (tests/server/): the server as the
+# binaries compose it (`server::ServerPlugin`), headless; `heavy::` on the
+# user's installs.
+[[test]]
+name = "server"
+path = "tests/server/main.rs"
+
+# The map-pool fitness tool (docs/plans/active/map-pool-fitness.md): a
+# host tool over every installed map of the party's games, `--features
+# tools`; never in releases.
+[[bin]]
+name = "map_fitness"
+test = false
+required-features = ["tools"]
+
+[features]
+default = ["present"]
+
+# Host tools (`map_fitness`), not in releases.
+tools = []
+
+# The kit's front end and every game's (`client`): everything but the
+# dedicated server.
+present = [
+    "party_kit/default",
+    "dep:chimera_present",
+    "dep:chimera_client",
+    "dep:combat_arms_ui",
+    "dep:cs_source_ui",
+    "dep:hl2dm_ui",
+    "dep:tf2_ui",
+    "dep:halo_ce_ui",
+]
+
+# Faster iteration: link Bevy as a dynamic library, serve the remote
+# protocol. `cargo run --features dev --bin lucker_party`. Never for
+# release builds.
+dev = [
+    "party_kit/dev",
+    "chimera_core/dev",
+    "chimera_world/dev",
+    "chimera_sim/dev",
+    "chimera_net/dev",
+    "chimera_present?/dev",
+    "chimera_client?/dev",
+    "cs_source/dev",
+    "hl2dm/dev",
+    "tf2/dev",
+    "halo_ce/dev",
+    "combat_arms/dev",
+    "originals/dev",
+    "cs_source_ui?/dev",
+    "hl2dm_ui?/dev",
+    "tf2_ui?/dev",
+    "halo_ce_ui?/dev",
+    "combat_arms_ui?/dev",
+]
+
+# Profiling: the kit's (docs/performance.md, "See a frame yourself").
+trace = ["party_kit/trace"]
+profile = ["party_kit/profile"]
+tracy = ["party_kit/tracy"]

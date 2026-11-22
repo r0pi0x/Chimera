@@ -18,7 +18,7 @@ react; a game's look or a mode's kit has to wrap the hook. Step 8 of
   `chimera/sim/src/minigame/runtime.rs` (the two call sites),
   `chimera/sim/src/minigame/ladder.rs` (`arm`, the join rung)
 - Guards: `chimera/sim/tests/it/rung_extras.rs`, `minigame.rs`;
-  `apps/party_kit/tests/it/rung_extras.rs`, `rung_characters.rs`,
+  `apps/party_roster/tests/it/rung_extras.rs`, `rung_characters.rs`,
   `gun_game.rs`
 
 ## Definition of done

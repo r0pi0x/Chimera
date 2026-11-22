@@ -15,7 +15,7 @@ the gameplay can't switch them. Step 10 of
 - `chimera/client/src/client/binds.rs` (`GAME_DEFAULTS`, `OLD_DEFAULTS`,
   `read_install_defaults`, `use_game_defaults`)
 - `chimera_core::gameplay::Gameplay` (its `binds` slot)
-- Guards: binds' unit tests, `apps/party_kit/tests/it/controls.rs`
+- Guards: binds' unit tests, `apps/party_roster/tests/it/controls.rs`
 
 ## Definition of done
 

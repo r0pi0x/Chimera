@@ -19,7 +19,7 @@ use chimera_net::{
 use chimera_sim::minigame::{ActiveMinigame, Minigames, ladder::Ladder};
 use chimera_world::greybox::GreyboxMapPlugin;
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 use crate::parts::{of, rungs};

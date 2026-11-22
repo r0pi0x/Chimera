@@ -41,7 +41,7 @@ are narrower than a TF2 box (specs/combat_arms/movement.md, "World scale
 Where: `chimera/core/src/envelope.rs` (the rule and helpers);
 `SourceMovementConfig::fitted` (every Source game; applied after a
 character's traits, TF2's classes); Combat Arms' `movement::body`;
-Halo's `movement::body`. Tests: `apps/party_kit/tests/it/character_fit.rs`
+Halo's `movement::body`. Tests: `apps/party_roster/tests/it/character_fit.rs`
 (a TF2 player through greyboxes of training's 136 x 56 u and
 graveyard's 104 x 60 u doorways on a Combat Arms map, blocked without
 the envelope, the eye under the top; a Combat Arms player's body the

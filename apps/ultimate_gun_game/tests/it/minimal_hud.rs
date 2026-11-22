@@ -18,7 +18,7 @@ use chimera_core::{
 use chimera_sim::minigame::{self, ladder::Ladder};
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim, map::MapSimPlugin};
 use combat_arms::{game::movement, harness::CaSim};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 struct StandIn;

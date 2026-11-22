@@ -502,7 +502,7 @@ pub const TOOL_DATA: &[(&str, &str)] = &[
 pub const SHARED_DATA: &[(&str, &str)] = &[
     // The CS:S-to-Combat-Arms surface table, the mashup's own; the party
     // apps put every guest's maps under Combat Arms by it.
-    ("apps/mashup_demo/data/surfaces_cs_source_combat_arms.toml", "party_kit"),
+    ("apps/mashup_demo/data/surfaces_cs_source_combat_arms.toml", "party_roster"),
 ];
 
 /// What changing `path` (relative to the root, `/`-separated) can affect.

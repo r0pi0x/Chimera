@@ -8,7 +8,7 @@ user: "fine to start with, we can tweak later"), and carries it as data;
 wired in 2026-11-13 (step 3, "Data shape (as wired)"). Parent plan:
 [ultimate-gun-game.md](ultimate-gun-game.md).
 
-How to check: `map_fitness` (apps/party_kit/src/bin/map_fitness.rs,
+How to check: `map_fitness` (apps/party_roster/src/bin/map_fitness.rs,
 `--features tools`; docs/OBSERVABILITY.md, "Measuring maps for a gun
 game's pool") writes one CSV row per installed map. The sweep of
 2026-11-13 is [map-pool-fitness.csv](map-pool-fitness.csv) (map names and

@@ -1,7 +1,8 @@
 //! The Ultimate Gun Game's look, "Signal" (feature `present`;
 //! docs/plans/active/ugg-ui.md): its theme (`THEME`, data/theme.toml)
-//! embedded in the binary, so nothing is read from disk on Linux or
-//! Windows, offscreen or headless; its faces are Chimera's (`FONTS`:
+//! embedded in a release binary, so nothing is read from disk on Linux or
+//! Windows, offscreen or headless (a dev build reads it from the checkout
+//! and again after `data_reload`: `reload_theme`); its faces are Chimera's (`FONTS`:
 //! `chimera_ui::fonts::OWN`, UGG Display Black, Bold, Regular and UGG
 //! Mono, OFL-1.1, ours). `SignalPlugin` (added last, over the shell's
 //! `chimera_ui::ChimeraUiPlugin`) makes sure the faces are fonts
@@ -102,5 +103,23 @@ impl Plugin for SignalPlugin {
             Err(e) => error!("{e}"),
         }
         KitFonts::install(app.world_mut());
+        app.add_systems(Update, reload_theme);
+    }
+}
+
+/// The theme read again after `data_reload` changed a data document
+/// (`chimera_core::game_data::generation`; a dev build reads
+/// data/theme.toml from the checkout): colours, sizes and motion follow in
+/// the running game. A theme that doesn't read keeps the one in use.
+fn reload_theme(theme: Option<ResMut<Theme>>, mut seen: Local<u64>) {
+    let now = chimera_core::game_data::generation();
+    if *seen == now {
+        return;
+    }
+    *seen = now;
+    let Some(mut theme) = theme else { return };
+    match Theme::from_toml(&THEME) {
+        Ok(new) => *theme = new,
+        Err(e) => warn!("apps/ultimate_gun_game/data/theme.toml: {e}; the theme in use stays"),
     }
 }

@@ -641,7 +641,7 @@ numbers (pinned by `parity_pin_*` tests in each game).
   bounding sphere (which let Combat Arms' rules pick a big chest box over
   the head a round met first, or hit the chest on a round just beside the
   head: playtest of Ultimate Gun Game, the head matrix in
-  apps/party_kit/tests/it/heavy/head_matrix.rs). A rule that tests the character's box first
+  apps/party_roster/tests/it/heavy/head_matrix.rs). A rule that tests the character's box first
   (Combat Arms') widens it to hold the body's shapes
   (`Hitboxes::bounds`): a taller model's head poking out of the hull
   still counts, as in Source. A game that keeps posing its own skeleton
@@ -1079,8 +1079,8 @@ game's:
   A game scales through its own nodes, never Bevy's global `UiScale`.
   Held by: `repo_checks`' `games_leave_the_overlay_alone` (a game crate
   naming the overlay or `UiScale` fails), the party's overlay guard
-  (`apps/party_kit/tests/it/overlay_guard.rs`: the layer laid out under
-  every game in `party_kit::client::CLIENTS` at 16:9, 4:3 and 21:9 must
+  (`apps/party_roster/tests/it/overlay_guard.rs`: the layer laid out under
+  every game in `party_roster::client::CLIENTS` at 16:9, 4:3 and 21:9 must
   be one layout, following the height), and a debug-build log when a
   game's HUD root ends up under the layer. The pre-match lobby follows
   the rule but stays a root of its own (a menu moves it to its camera).

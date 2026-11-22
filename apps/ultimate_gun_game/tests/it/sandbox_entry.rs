@@ -41,7 +41,7 @@ use chimera_world::{
     map::{LoadedMapName, MapFile},
 };
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin, sandbox::SANDBOX};
 
 fn setup(app: &mut App) {

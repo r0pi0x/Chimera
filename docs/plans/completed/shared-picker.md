@@ -111,7 +111,7 @@ nav`), and a side slot for the detail pane. Plan: add those to
 onto it, keeping the games column, popover, detail and pin bar as the
 screen's own around it.
 
-Each step: UI tests (as apps/party_kit/tests/it/signal_pages.rs), offscreen
+Each step: UI tests (as apps/party_roster/tests/it/signal_pages.rs), offscreen
 captures at 1920x1080 and 1280x720, a commit, post-push tests.
 
 ## Log

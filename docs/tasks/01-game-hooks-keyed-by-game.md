@@ -20,7 +20,7 @@ rule is DESIGN.md "ECS style" ("never a single-slot hook resource").
 - `chimera/core/src/core.rs` (`NewGame`), `chimera/core/src/game_log.rs`
   (`LogSubjects`), `chimera_core::gameplay::Gameplay` (`rules`, `bots`)
 - each game's `net.rs` and `rules.rs` (`games/cs_source`, `games/combat_arms`)
-- Guards: `apps/party_kit/tests/it/listen_server.rs`, `net_party.rs`, both
+- Guards: `apps/party_roster/tests/it/listen_server.rs`, `net_party.rs`, both
   games' `net_*` tests, `apps/mashup_demo/tests/it/two_games.rs`
 
 ## Definition of done

@@ -19,9 +19,9 @@
 //!   range setting's step (`ui_slider` at the value's place in its range,
 //!   `slider_value`). The backdrop swap's sound stays off.
 //! - **The surprises**: their cues come from the match's effects
-//!   (`chimera_client::client::ui_cues`); under UI sound Combat Arms' air
-//!   strike siren stays silent on this client (`mute_siren`), our
-//!   `air_alert` standing in for it.
+//!   (`chimera_client::client::ui_cues`); under UI sound the base game's
+//!   own siren stays silent on this client (the roster's `mute_siren`),
+//!   our `air_alert` standing in for it.
 
 use bevy::prelude::*;
 use chimera_client::client::{ui_sound::UiCue, widgets};
@@ -144,28 +144,6 @@ pub fn ensure_message(app: &mut App) {
     app.init_resource::<HoverCue>();
 }
 
-/// Under UI sound the air strike's own alert (`air_alert`, from the
-/// match's effects: `chimera_client::client::ui_cues`) stands in for
-/// Combat Arms' siren (`surprise::ALARM`), which this client then doesn't
-/// play (`MutedSounds`); without UI sound the siren plays as before.
-pub fn mute_siren(
-    theme: Option<Res<chimera_client::client::ui_sound::Theme>>,
-    sounds: Option<Res<chimera_client::client::ui_sound::UiSounds>>,
-    muted: Option<Res<chimera_present::audio::live_sound::MutedSounds>>,
-    mut commands: Commands,
-) {
-    let on = chimera_client::client::ui_sound::active(theme.as_deref(), sounds.as_deref());
-    let siren = crate::surprise::alarm_entry();
-    let has = muted.as_ref().is_some_and(|m| m.0.contains(&siren));
-    if on != has {
-        let mut list = muted.map(|m| m.0.clone()).unwrap_or_default();
-        list.retain(|e| *e != siren);
-        if on {
-            list.push(siren);
-        }
-        commands.insert_resource(chimera_present::audio::live_sound::MutedSounds(list));
-    }
-}
 
 #[cfg(test)]
 mod tests {

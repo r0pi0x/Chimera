@@ -26,7 +26,7 @@ use chimera_core::metrics::ThreadCounters;
 use chimera_core::core::SpawnPoint;
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
 use combat_arms_ui::visuals::CaVisualsPlugin;
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::UltimateGunGamePlugin;
 
 const MAPS: [&str; 4] = [
@@ -62,7 +62,7 @@ fn app() -> App {
         UltimateGunGamePlugin { seed: 36336, rungs: 13, ..Default::default() },
     ))
     .add_plugins(chimera_present::PresentationPlugins)
-    .insert_resource(party_kit::client_hooks())
+    .insert_resource(party_roster::client_hooks())
     .add_systems(Update, console::finish_map_load);
     while app.plugins_state() == PluginsState::Adding {
         bevy::tasks::tick_global_task_pools_on_main_thread();
@@ -125,7 +125,7 @@ fn map_swap_render() {
         eprintln!("a tool: CHIMERA_RENDER_BENCH=1 runs it");
         return;
     }
-    if !MAPS.iter().all(|id| party_kit::load_map(id, 0).is_ok()) {
+    if !MAPS.iter().all(|id| party_roster::load_map(id, 0).is_ok()) {
         eprintln!("skipping: needs the installs");
         return;
     }

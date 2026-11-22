@@ -17,7 +17,7 @@ use chimera_sim::{
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim, map::PlaySound};
 use combat_arms::{game::movement, harness::CaSim};
 use hl2dm::game::weapons::{AR2, SMG1, launch::Hl2Rounds};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 /// The automatic gun game with the SMG1 and the AR2 as its first rungs,

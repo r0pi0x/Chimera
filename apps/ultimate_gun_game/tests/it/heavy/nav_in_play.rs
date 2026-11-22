@@ -27,7 +27,7 @@ use combat_arms::{
     },
     harness::CaSim,
 };
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 /// From the round's start until a bot walks (wall time at the game's tick):
@@ -59,7 +59,7 @@ fn combat_arms_installed() -> bool {
 
 #[test]
 fn bots_walk_soon_on_a_map_loaded_without_a_screen() {
-    let Some(map) = party_kit::load_map("cs_source:de_dust2", 0).ok().filter(|_| combat_arms_installed()) else {
+    let Some(map) = party_roster::load_map("cs_source:de_dust2", 0).ok().filter(|_| combat_arms_installed()) else {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
         return;
     };

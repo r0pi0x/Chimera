@@ -216,7 +216,7 @@ installed map's `map/<name>` and Combat Arms' `character/<record>` and
   the kit"). Screens are built from `chimera_ui`'s builders (`Ui::button`,
   `Ui::item`, `Ui::setting_row` with `big_toggle`/`choice`/..., `Ui::tabs`),
   never from nodes made pressable by hand; a missing feature is an option
-  on the kit's builder. `checks/tests/it/ui_kit.rs` and party_kit's
+  on the kit's builder. `checks/tests/it/ui_kit.rs` and party_roster's
   `kit_conformance` test enforce it.
 - **Generalize for the second game.** When a second game needs a piece of
   the first, lift it into Chimera; games never depend on each other.

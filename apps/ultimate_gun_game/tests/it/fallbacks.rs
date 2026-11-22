@@ -21,7 +21,7 @@ use chimera_world::{
     map::{BodyModel, CharacterModels, MapCharacterModel, MapSimPlugin},
 };
 use combat_arms::{game::movement, harness::CaSim};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{BASE, MINIGAME, UltimateGunGamePlugin};
 
 use crate::parts::{of, rungs};

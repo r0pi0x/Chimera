@@ -39,7 +39,7 @@ use chimera_world::{
 };
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
 use combat_arms_ui::visuals::CaVisualsPlugin;
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::UltimateGunGamePlugin;
 
 const MAPS: [&str; 4] = [
@@ -128,7 +128,7 @@ fn sim() -> Sim {
                     .init_asset::<DetailMaterial>()
                     .init_asset::<SkinnedMeshInverseBindposes>()
                     .add_plugins(CaVisualsPlugin)
-                    .insert_resource(party_kit::client_hooks())
+                    .insert_resource(party_roster::client_hooks())
                     .insert_resource(Hold(0))
                     // Each step of a spawn in a frame of its own: its cost
                     // by itself, whatever the machine's speed.
@@ -283,7 +283,7 @@ fn load(sim: &mut Sim, counters: &mut ThreadCounters, id: &str) -> Load {
 
 #[test]
 fn a_map_change_costs_no_frame() {
-    let ready = MAPS.iter().all(|id| party_kit::load_map(id, 0).is_ok()) && combat_arms_installed();
+    let ready = MAPS.iter().all(|id| party_roster::load_map(id, 0).is_ok()) && combat_arms_installed();
     if !ready {
         eprintln!("skipping: needs the CS:S, HL2:DM and Combat Arms installs");
         return;

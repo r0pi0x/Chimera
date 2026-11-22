@@ -29,7 +29,7 @@ use chimera_sim::minigame::{
 use chimera_world::harness::Sim;
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
 use combat_arms_ui::visuals::CaVisualsPlugin;
-use party_kit::{PartyPartsPlugin, server::swap_map};
+use party_roster::{PartyPartsPlugin, server::swap_map};
 use ultimate_gun_game::{MINIGAME, RUNGS, UltimateGunGamePlugin, generate};
 
 /// Materials in the store that no entity draws, at most: the maps' props'
@@ -84,7 +84,7 @@ fn count(w: &mut World) -> (usize, usize, usize) {
 /// change between them), then checks the store against what is drawn. A map
 /// listed in `visits` is only swapped to and ticked briefly, not played.
 fn session(maps: &[&str], visits: &[&str]) {
-    let Some(first) = party_kit::load_map(maps[0], 0).ok().filter(|_| combat_arms_installed()) else {
+    let Some(first) = party_roster::load_map(maps[0], 0).ok().filter(|_| combat_arms_installed()) else {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs (and {})", maps[0]);
         return;
     };
@@ -113,7 +113,7 @@ fn session(maps: &[&str], visits: &[&str]) {
     let mut rows = Vec::new();
     for (i, map) in maps.iter().enumerate() {
         if i > 0 {
-            let Ok(data) = party_kit::load_map(map, 0) else {
+            let Ok(data) = party_roster::load_map(map, 0) else {
                 eprintln!("{map}: not installed");
                 continue;
             };

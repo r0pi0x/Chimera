@@ -14,7 +14,7 @@ use chimera_sim::{
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim, map::{MapEntities, MapEntity}};
 use combat_arms::{game::movement, harness::CaSim};
 use hl2dm::game::{pickups::{Pickup, PickupsPlugin}, weapons as hl2};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 /// Where the guns and the kit lie, and the player stands, on the greybox.

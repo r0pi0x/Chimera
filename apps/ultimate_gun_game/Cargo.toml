@@ -10,13 +10,13 @@ license.workspace = true
 # The app crates this one is built on (checks/tests/it/architecture.rs,
 # `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path").
 [package.metadata.chimera]
-apps = ["party_kit"]
+apps = ["party_roster"]
 
 # No doc tests (none written): skips a rustdoc pass on every test run.
 [lib]
 doctest = false
 
-# The party's glue (`party_kit`: both games composed, the minigame
+# The party's glue (`party_roster`: both games composed, the minigame
 # runtime, the client) plus an automatic definition made from the games'
 # parts (`chimera_sim::minigame::auto`); no game crate is named but for
 # the base game's id (checks/tests/it/architecture.rs). The presentation is
@@ -29,7 +29,7 @@ chimera_net.workspace = true
 chimera_client = { workspace = true, optional = true }
 # The Signal look's kit: its theme and faces (data/theme.toml, fonts/).
 chimera_ui = { workspace = true, optional = true }
-party_kit.workspace = true
+party_roster.workspace = true
 bevy.workspace = true
 workspace-hack.workspace = true
 
@@ -70,12 +70,12 @@ winresource.workspace = true
 
 [features]
 default = ["present"]
-present = ["dep:chimera_client", "dep:chimera_ui", "party_kit/default"]
+present = ["dep:chimera_client", "dep:chimera_ui", "party_roster/default"]
 dev = [
     "chimera_core/dev",
     "chimera_sim/dev",
     "chimera_net/dev",
     "chimera_client?/dev",
     "chimera_ui?/dev",
-    "party_kit/dev",
+    "party_roster/dev",
 ]

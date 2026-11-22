@@ -16,7 +16,7 @@ use chimera_sim::{
 };
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
 use combat_arms::{game::movement, harness::CaSim};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, RUNGS, SEED, UltimateGunGamePlugin};
 
 pub(crate) fn ugg() -> Sim {
@@ -63,7 +63,7 @@ fn each_game_reports_what_it_lends() {
     let halo = report.remove(2);
     assert!(halo.playable() && halo.missing.is_empty() && halo.maps.is_empty(), "{}", halo.line());
     assert_eq!(halo.guns.len(), 9, "{}", halo.line());
-    let parts: Vec<_> = party_kit::GAME_PARTS.iter().filter(|p| p.game != "halo_ce" && p.game != "tf2").collect();
+    let parts: Vec<_> = party_roster::GAME_PARTS.iter().filter(|p| p.game != "halo_ce" && p.game != "tf2").collect();
     let claimed_guns = |i: usize| parts[i].guns.iter().filter(|g| g.class != GunClass::Grenade).count();
     for c in &report {
         assert!(c.missing.is_empty(), "every claimed part is in the app: {}", c.line());

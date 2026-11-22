@@ -39,15 +39,59 @@
 use bevy::{app::PluginGroupBuilder, prelude::*};
 use chimera_client::client::{
     AppHooks, Args,
-    app::{AppMaps, GameApp, GameAppHooks, RunningApp, StartMap},
+    app::{GameApp, RunningApp, StartMap},
 };
 use chimera_core::game_registry::Games;
-use combat_arms_ui::hud::ItemNames;
+use chimera_world::{game_bundle::GameClient, map::hud::GameUi};
 
-/// What this app tells the client shell: its commit, its maps
-/// (`MAP_SOURCES`) and the greybox's own hooks (`PARTY`'s).
-pub fn client_hooks() -> AppHooks {
-    PARTY.app_hooks()
+use crate::{Party, Roster};
+
+/// A party's front end, handed to the kit by the app that composes the
+/// games (apps/party_roster's `client::CLIENT`), beside its `Party`.
+pub struct PartyClient {
+    pub party: &'static Party,
+    /// Each game's front end (its `ui`'s `GameClient`): the base game's
+    /// first, then the guests'.
+    pub clients: &'static [&'static GameClient],
+    /// Each game's own rows on the Controls page, in tab order (after
+    /// "Shared").
+    pub controls: &'static [crate::controls::GameRows],
+    /// The composition's own front end, after the guests' (`GameClient::
+    /// app`): the base game's other looks, the mouse's starting values,
+    /// the guns' names for its HUD.
+    pub front_end: fn(&mut App),
+    /// The main menu's look (a game's GameUI), read on a thread at start.
+    pub menu_look: fn() -> Option<GameUi>,
+    /// The map the base game's own loading screen is up for (None: down),
+    /// if it has one: shown only for its own maps (`main_menu`, which
+    /// raises and lowers it with `SetBaseLoading`).
+    pub base_loading: Option<fn(&World) -> Option<String>>,
+}
+
+/// What the main menu wants of the games' music, triggered on every
+/// change (`main_menu`): `app_plays`, the app's own music plays (none of
+/// a game's); `menu_shown`, the main menu is up (the base game's menu
+/// playlist may play). The party's front end observes it.
+#[derive(Event, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MenuMusic {
+    pub app_plays: bool,
+    pub menu_shown: bool,
+}
+
+/// The main menu raises the base game's loading screen for a map
+/// (`Some`) or lowers it (`None`); the party's front end observes it.
+#[derive(Event, Clone, Debug)]
+pub struct SetBaseLoading(pub Option<String>);
+
+/// The front end an app runs (`PartyClient`), for the kit's systems:
+/// inserted by `front_end`.
+#[derive(Resource, Clone, Copy)]
+pub struct Front(pub &'static PartyClient);
+
+/// What an app tells the client shell: its commit, its maps and the
+/// greybox's own hooks (the app's `GameApp`'s).
+pub fn client_hooks(app: &GameApp) -> AppHooks {
+    app.app_hooks()
 }
 
 /// The bytes of map `id`'s file as this app loads it, for the network's
@@ -62,15 +106,11 @@ pub fn client_hooks() -> AppHooks {
 /// ("The server has no file to send", rehearsal 2026-11-12). Halo's maps,
 /// like Combat Arms', are offered by id and hash only (`GameInfo::
 /// map_file` names none: a disc's file is never sent), so none here.
-pub fn map_file_bytes(id: &str) -> Option<Vec<u8>> {
+pub fn map_file_bytes(party: &Party, id: &str) -> Option<Vec<u8>> {
     let (game, name) = id.split_once(':')?;
-    let file = format!("maps/{name}.bsp");
-    match game {
-        cs_source::game::GAME => cs_source::game::mount::open(&cs_source::game::INFO.install()?).ok()?.read(&file).ok(),
-        hl2dm::game::GAME => hl2dm::game::mount::open(&hl2dm::game::INFO.install()?).ok()?.read(&file).ok(),
-        tf2::game::GAME => tf2::game::mount::open(&tf2::game::INFO.install()?).ok()?.read(&file).ok(),
-        _ => None,
-    }
+    let info = party.bundle(game)?.info;
+    let file = (info.map_file)(name)?;
+    (info.open)(&info.install()?).ok()?.read(&file).ok()
 }
 
 /// The shell's plugins with every game's HUD (each bundle's `client`):
@@ -81,9 +121,9 @@ pub fn map_file_bytes(id: &str) -> Option<Vec<u8>> {
 /// (the radar, target ID, freeze cam, voice status: each drawing only
 /// while CS:S's HUD is the gameplay's), and HL2:DM's panels (M9, drawing while its HUD is the gameplay's: on any map, its
 /// look coming with the map, `MapSources::guests`).
-pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
+pub fn with_huds(front: &PartyClient, shell: PluginGroupBuilder) -> PluginGroupBuilder {
     let mut shell = shell;
-    for client in CLIENTS {
+    for client in front.clients {
         if let Some(hud) = client.hud {
             shell = hud(shell);
         }
@@ -91,25 +131,14 @@ pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
     shell
 }
 
-/// Each game's front end (its `ui`'s `GameClient`, beside its bundle):
-/// the base game's first, then the guests' (HL2:DM's: M9; Halo's: its
-/// HUD while a Halo gun is in hand; TF2's: its HUD while a TF2 gun is in
-/// hand).
-pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 5] = [
-    &combat_arms_ui::PARTY_CLIENT,
-    &cs_source_ui::party::CLIENT,
-    &hl2dm_ui::party::CLIENT,
-    &halo_ce_ui::party::CLIENT,
-    &tf2_ui::party::CLIENT,
-];
-
 /// The client after the shell with both games' HUDs (`PARTY`'s front
 /// end; `with_huds` puts them among the shell's plugins, each drawing in
 /// its own look, `HudLookOwner`): the key binds page, the party's Escape
 /// menu, mouse and HUD settings, the minigame scoreboard, the swap
 /// effect, the mount doctor and the guests' guns' names, each guest's
 /// front end, then Combat Arms' other looks.
-pub fn front_end(app: &mut App, args: &Args) {
+pub fn front_end(front: &'static PartyClient, app: &mut App, args: &Args) {
+    app.insert_resource(Front(front));
     // Invite links (`chimera-hub://`) that open the game: the one this
     // start was opened with first; the first run shows it (`onboarding`).
     app.add_plugins(chimera_client::client::link_handler::LinkHandlerPlugin);
@@ -138,49 +167,24 @@ pub fn front_end(app: &mut App, args: &Args) {
         .add_plugins(crate::onboarding::OnboardingPlugin)
         // Settings > Account, from the chip; the base files up front.
         .add_plugins((crate::account_page::AccountPagePlugin, crate::base_download::BaseDownloadPlugin))
-        .add_plugins(PartyMousePlugin)
         .add_plugins(PartyHudPlugin)
         .add_plugins(chimera_client::client::minigame_scoreboard::MinigameScoreboardPlugin)
         // `party_swap_effect` (default 0): a flash on a rung's swap.
         .add_plugins(chimera_client::client::swap_effect::SwapEffectPlugin)
-        .add_systems(Startup, (guest_names, mount_doctor, hl2_fast_switch))
-        .add_systems(Update, sync_gun_names)
-        // Under UI sound our air-strike alert stands in for Combat Arms'
-        // siren (`ui_cues::mute_siren`).
-        .add_systems(
-            Update,
-            crate::ui_cues::mute_siren.run_if(resource_exists::<chimera_client::client::ui_sound::UiSounds>),
-        );
-    // A join that binds the asset service: the mount doctor and the
-    // guests' gun names again once the games' files arrived.
+        .add_systems(Startup, mount_doctor);
+    // A join that binds the asset service: the mount doctor again once
+    // the games' files arrived.
     app.add_observer(read_mounts_again);
     // The rest of each guest's front end (CS:S's: the map's HUD look
     // is its, and what its bodies play for a player holding its gun,
     // the gun game's `identity = "weapon"`).
-    for client in CLIENTS {
+    for client in front.clients {
         if let Some(add) = client.app {
             add(app);
         }
     }
-    // Combat Arms' other looks.
-    app.add_plugins(combat_arms_ui::CaUiPlugin);
-}
-
-/// Number keys switch weapons at once in the party (the user's choice):
-/// CS:S's `hud_fastswitch` is 1 by default in every app
-/// (`cs_source_ui::weapon_select::FastSwitch`); HL2:DM's HUD has its own,
-/// `hl2dm:hud_fastswitch` (0 in HL2:DM, as in its game; not saved), set
-/// to 1 here and made its default.
-fn hl2_fast_switch(
-    cvars: Option<ResMut<hl2dm_ui::systems::HudCvars>>,
-    console: Option<ResMut<chimera_core::console::Console>>,
-) {
-    if let Some(mut c) = cvars {
-        c.fastswitch = 1;
-    }
-    if let Some(mut c) = console {
-        c.set_default("hl2dm:hud_fastswitch", "1");
-    }
+    // The composition's own (the base game's other looks).
+    (front.front_end)(app);
 }
 
 /// The party's HUD settings over both games' HUDs: one kill feed, the
@@ -209,108 +213,32 @@ impl Plugin for PartyHudPlugin {
     }
 }
 
-/// The mouse look of the party: the shell's `sensitivity`, `m_yaw` and
-/// `m_pitch` (archived, saved in config.cfg), for every game. Combat
-/// Arms' options screen sets its own mouse look from its profile, which
-/// the party does not keep; left to itself it set the shell's mouse at
-/// start and again on every change, over what the config said (the
-/// sensitivity was back to the default at each start). The starting
-/// values are Combat Arms' defaults, as before, and they are the cvars'
-/// defaults, so a config that says nothing keeps them and one that says
-/// something wins. The same holds for the volumes and the brightness
-/// (`ShellOptions`): Combat Arms' unloaded profile had set `volume` to 0
-/// and `mat_monitorgamma` back at each start.
-pub struct PartyMousePlugin;
-
-impl Plugin for PartyMousePlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(combat_arms_ui::options_apply::ShellOptions)
-            .add_systems(Startup, start_mouse);
-    }
-}
-
-fn start_mouse(
-    mouse: Option<ResMut<chimera_client::client::input::MouseSettings>>,
-    console: Option<ResMut<chimera_core::console::Console>>,
-) {
-    let d = combat_arms_ui::options_apply::degrees_per_count(&combat_arms::game::options::CaMouseLook::default());
-    if let Some(mut m) = mouse {
-        m.sensitivity = 1.0;
-        m.m_yaw = d;
-        m.m_pitch = d;
-    }
-    if let Some(mut c) = console {
-        c.set_default("sensitivity", "1");
-        c.set_default("m_yaw", &d.to_string());
-        c.set_default("m_pitch", &d.to_string());
-    }
-}
-
 /// After a join bound the asset service and the games' files arrived
-/// (`net::assets::AssetsArrived`): the mount doctor and the guests' gun
-/// names again, now that the games read from the store.
+/// (`net::assets::AssetsArrived`): the mount doctor again, now that the
+/// games read from the store.
 fn read_mounts_again(
     _: On<chimera_net::net::assets::AssetsArrived>,
     games: Res<Games>,
-    names: Option<ResMut<ItemNames>>,
+    roster: Res<Roster>,
     mut commands: Commands,
 ) {
-    examine_mounts(&games, &mut commands);
-    if let Some(mut names) = names {
-        read_guest_names(&games, &mut names);
-    }
+    examine_mounts(roster.0, &games, &mut commands);
 }
 
 /// The mount doctor (`net::manifest`): what this machine has of each game,
 /// which a server checks its match against when this client joins.
-fn mount_doctor(games: Res<Games>, mut commands: Commands) {
-    examine_mounts(&games, &mut commands);
+fn mount_doctor(games: Res<Games>, roster: Res<Roster>, mut commands: Commands) {
+    examine_mounts(roster.0, &games, &mut commands);
 }
 
-fn examine_mounts(games: &Games, commands: &mut Commands) {
-    let report = super::mount_report(games);
+fn examine_mounts(party: &Party, games: &Games, commands: &mut Commands) {
+    let report = super::mount_report(party, games);
     for g in &report.games {
         let build = g.build.as_deref().map(|b| format!(", build {b}")).unwrap_or_default();
         let state = if g.installed { "installed" } else { "not installed" };
         info!("mount doctor: {} {state}{build}", g.game);
     }
     commands.insert_resource(chimera_net::net::manifest::LocalMounts(report));
-}
-
-/// The guests' guns' names for Combat Arms' HUD: its weapon panel and
-/// kill feed call a weapon by `ItemNames` (else its data's `hud.name`,
-/// which for CS:S and HL2:DM is a string token), so the names come from
-/// each game's own strings in its install (its bundle's `display_names`:
-/// CS:S's `weapons::display_names`, HL2:DM's; none without the install,
-/// the guns then show their ids).
-fn guest_names(games: Res<Games>, mut names: ResMut<ItemNames>) {
-    read_guest_names(&games, &mut names);
-}
-
-fn read_guest_names(games: &Games, names: &mut ItemNames) {
-    for bundle in super::GUESTS {
-        let Some(read) = bundle.display_names else { continue };
-        let Some(mount) = games.get(bundle.info.id).and_then(|g| g.mount()) else {
-            continue;
-        };
-        names.0.extend(read(&mount));
-    }
-}
-
-/// The guns' full names for the shell (the Tab scoreboard, callouts, kill
-/// feed, match-end screen): CS:S's (the minigame panel's) and Combat Arms'
-/// (`ItemNames`), merged as either changes; the shell derives their short
-/// names (`minigame_scoreboard::fill_short_names`).
-fn sync_gun_names(
-    cs: Res<cs_source_ui::minigame_hud::WeaponNames>,
-    ca: Res<ItemNames>,
-    mut out: ResMut<chimera_client::client::minigame_scoreboard::GunNames>,
-) {
-    if !(cs.is_changed() || ca.is_changed()) {
-        return;
-    }
-    out.full.extend(cs.0.iter().map(|(k, v)| (k.clone(), v.clone())));
-    out.full.extend(ca.0.iter().map(|(k, v)| (k.clone(), v.clone())));
 }
 
 /// The window's icon, one at random per start: the logo's three
@@ -322,81 +250,15 @@ pub const WINDOW_ICONS: &[&[u8]] = &[
     include_bytes!("../assets/icon/vanguard.png"),
 ];
 
-/// The party's client app (Lucker Party's, `APP`; another party app's is
-/// `GameApp { title, hooks: .., ..PARTY }`, apps/ultimate_gun_game) on
-/// Chimera's client app (`chimera_client::client::app`): what this
-/// machine lacks told first (`crate::client_requirements`: a missing
-/// install is a warning, a server's offer brings the files), the command line as it plays (`with_defaults`), the map
-/// (`cs_source:de_dust2` without one; an error ends the process), every
-/// install as asset sources, the party's simulation (`PartyPlugins`),
-/// Combat Arms' gameplay until a minigame takes it, the network and the
-/// client shell with every game's HUD (`with_huds`), then the party's
-/// front end (`front_end`).
-pub const PARTY: GameApp = GameApp {
-    bin: "lucker_party",
-    info: &combat_arms::game::INFO,
-    title: "Lucker Party",
-    about: || {
-        format!(
-            "lucker_party: minigames with Counter-Strike: Source's and Combat Arms' parts. Starts {} on\n\
-             its first map; +minigame <id> picks another ({}), --map cs_source:<name> (or\n\
-             combat_arms:<name>) the map.\n",
-            super::DEFAULT_MINIGAME,
-            super::ids().join(", "),
-        )
-    },
-    version: super::VERSION,
-    build: super::BUILD,
-    maps: AppMaps {
-        load: super::load_map_with,
-        load_file: |id, _, _| Err(format!("{id}: Lucker Party loads maps by id only, not from a file")),
-        file_bytes: map_file_bytes,
-    },
-    // Every install as `cs_source://`, `hl2dm://`, `tf2://` and
-    // `combat_arms://` assets.
-    installs: || {
-        super::GUESTS
-            .iter()
-            .map(|b| chimera_present::assets::InstallSource::of(b.info))
-            .chain([chimera_present::assets::InstallSource::shared(
-                combat_arms::game::INFO.id,
-                combat_arms::game::world::mount,
-            )])
-            .collect()
-    },
-    sim,
-    hud: with_huds,
-    front_end,
-    hooks: GameAppHooks {
-        args: Some(with_defaults),
-        // What this machine lacks, said exactly (a joiner without an install
-        // gets the files from a server that offers them: `net::assets`).
-        requirements: Some(crate::client_requirements),
-        default_map: Some("cs_source:de_dust2"),
-        server: Some("lucker_party_server"),
-        // Every composed game's startup files come before the window when
-        // they are read from the asset service (`client::startup`).
-        games: Some(|| super::BUNDLES.iter().map(|b| b.info).collect()),
-        // Its view models load on demand, its start map in the app's
-        // install data (`on_demand::front_end_context`).
-        load_context: Some(combat_arms::game::view_model::on_demand::front_end_context),
-        window_icons: WINDOW_ICONS,
-        ..GameAppHooks::NONE
-    },
-};
-
-/// Lucker Party's client app (`PARTY`): the `lucker_party` binary's.
-pub static APP: GameApp = PARTY;
-
 /// The party's simulation (`PartyPlugins`), Combat Arms' gameplay until
 /// the minigame (`+minigame`, its console line) takes the rules slot and
 /// names the others, the Escape menu titled by the app, and a ladder's
 /// rung extras that differ every launch.
-pub fn sim(app: &mut App, _: &Args) {
+pub fn sim(party: &'static Party, app: &mut App, _: &Args) {
     use chimera_core::gameplay::{Gameplay, GameplayAppExt};
     let title = app.world().resource::<RunningApp>().0.title;
-    app.add_plugins(super::PartyPlugins)
-        .set_gameplay(Gameplay::of(&combat_arms::game::INFO))
+    app.add_plugins(super::PartyPlugins(party))
+        .set_gameplay(Gameplay::of(party.base.info))
         .insert_resource(crate::esc_menu::EscMenuTitle(title.into()))
         .insert_resource(super::launch_rung_seed());
 }
@@ -423,17 +285,13 @@ pub fn start_at_menu(_: &'static GameApp, args: &Args) -> Option<StartMap> {
 /// `base` whole in the store (`mount::served::map_held`: from earlier
 /// joins or a fetch ahead). Asked with fetches
 /// held, so even finding the game's build asks no service.
-pub fn background_at_hand(id: &str) -> bool {
+pub fn background_at_hand(party: &Party, id: &str) -> bool {
     let Some((game, name)) = id.split_once(':') else {
         return false;
     };
     let _hold = chimera_core::mount::assets::cached::hold_fetches(Some(game));
-    let info = match game {
-        cs_source::game::GAME => &cs_source::game::INFO,
-        combat_arms::game::GAME => &combat_arms::game::INFO,
-        hl2dm::game::GAME => &hl2dm::game::INFO,
-        halo_ce::game::GAME => &halo_ce::game::INFO,
-        _ => return false,
+    let Some(info) = party.bundle(game).map(|b| b.info) else {
+        return false;
     };
     if info.install().is_none() {
         return false;
@@ -449,25 +307,23 @@ pub fn joins_server(console: &[String]) -> bool {
     console.iter().any(|c| c.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("connect")))
 }
 
-/// The command line as the app plays it: `DEFAULT_MINIGAME` without
-/// `+minigame`, and without `--map` that minigame's first map (a minigame
-/// that isn't built in keeps the default's); `DEFAULT_BOTS` bots unless it
-/// sets `MaxPlayer`. A joiner (`+connect`) gets neither the minigame nor
-/// the bots: the server plays its minigame (`minigame_net`) and fills its
-/// own slots; the map is the default's, loaded at once, until the server
-/// says its own (none, the greybox, without its game's install).
-pub fn with_defaults(args: Args) -> Args {
-    with_defaults_for(args, super::DEFAULT_MINIGAME, &|id| {
-        super::first_map(id).or_else(|_| super::first_map(super::DEFAULT_MINIGAME))
-    })
-}
-
-/// `with_defaults` for an app whose minigame without `+minigame` is
-/// `minigame`, and whose minigames' first maps `first_map` gives.
-pub fn with_defaults_for(mut args: Args, minigame: &str, first_map: &dyn Fn(&str) -> Result<String, String>) -> Args {
+/// The command line as an app plays it: `minigame` without `+minigame`,
+/// and without `--map` that minigame's first map (`first_map`);
+/// `DEFAULT_BOTS` bots unless it sets `MaxPlayer`. A joiner (`+connect`)
+/// gets neither the minigame nor the bots: the server plays its minigame
+/// (`minigame_net`) and fills its own slots; the map is the default's,
+/// loaded at once, until the server says its own (none, the greybox,
+/// without its game's install).
+pub fn with_defaults_for(
+    party: &Party,
+    mut args: Args,
+    minigame: &str,
+    bots: u32,
+    first_map: &dyn Fn(&str) -> Result<String, String>,
+) -> Args {
     let joining = joins_server(&args.console);
     if !joining && !args.console.iter().any(|c| c.to_lowercase().starts_with("maxplayer")) {
-        args.console.insert(0, format!("MaxPlayer {}", super::DEFAULT_BOTS));
+        args.console.insert(0, format!("MaxPlayer {bots}"));
     }
     let minigame = match super::minigame_of(&args.console) {
         Some(id) => id,
@@ -481,7 +337,7 @@ pub fn with_defaults_for(mut args: Args, minigame: &str, first_map: &dyn Fn(&str
         // A joiner without the map's game installed waits on the greybox
         // (`start_at_menu`): the server's offer brings the files
         // (`net::assets`).
-        args.map = first_map(&minigame).ok().filter(|m| !joining || map_installed(m));
+        args.map = first_map(&minigame).ok().filter(|m| !joining || map_installed(party, m));
     }
     args
 }
@@ -489,50 +345,9 @@ pub fn with_defaults_for(mut args: Args, minigame: &str, first_map: &dyn Fn(&str
 /// Whether map `id`'s game has an install here: its map loads at once,
 /// without a download (a game read from the asset store would fetch it
 /// before the join's download, with no progress shown).
-pub fn map_installed(id: &str) -> bool {
-    let info = match id.split_once(':').map(|(g, _)| g) {
-        Some(cs_source::game::GAME) => &cs_source::game::INFO,
-        Some(combat_arms::game::GAME) => &combat_arms::game::INFO,
-        Some(hl2dm::game::GAME) => &hl2dm::game::INFO,
-        Some(halo_ce::game::GAME) => &halo_ce::game::INFO,
-        Some(tf2::game::GAME) => &tf2::game::INFO,
-        _ => return true,
+pub fn map_installed(party: &Party, id: &str) -> bool {
+    let Some(info) = id.split_once(':').and_then(|(g, _)| party.bundle(g)).map(|b| b.info) else {
+        return true;
     };
     info.install().is_some() && !info.served_alone()
-}
-
-#[cfg(test)]
-mod tests {
-    use chimera_client::client::Args;
-
-    #[test]
-    fn it_starts_the_gun_game_on_its_first_map() {
-        let args = super::with_defaults(Args::default());
-        assert_eq!(args.map.as_deref(), Some("cs_source:de_dust2"));
-        assert_eq!(args.console, ["MaxPlayer 3", "minigame originals:gun_game_dust2"]);
-        let mut own = Args::default();
-        own.map = Some("combat_arms:warehouse".into());
-        own.console.push("minigame originals:gun_game_dust2".into());
-        own.console.push("maxplayer 0".into());
-        let own = super::with_defaults(own);
-        assert_eq!(own.map.as_deref(), Some("combat_arms:warehouse"));
-        assert_eq!(own.console.len(), 2);
-        assert_eq!(super::client_hooks().build, crate::BUILD);
-    }
-
-    #[test]
-    fn a_joiner_leaves_the_minigame_and_the_bots_to_the_server() {
-        let mut join = Args::default();
-        join.console.push("connect 127.0.0.1:28930".into());
-        let join = super::with_defaults(join);
-        assert!(super::joins_server(&join.console));
-        assert_eq!(join.console, ["connect 127.0.0.1:28930"], "no local minigame or bots");
-        let installed = super::map_installed("cs_source:de_dust2");
-        assert_eq!(
-            join.map.as_deref(),
-            installed.then_some("cs_source:de_dust2"),
-            "the default map meanwhile, if its game is installed"
-        );
-        assert!(!super::joins_server(&super::with_defaults(Args::default()).console));
-    }
 }

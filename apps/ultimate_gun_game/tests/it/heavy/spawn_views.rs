@@ -40,7 +40,7 @@ use chimera_sim::{
 };
 use chimera_world::{harness::Sim, map::MapSimPlugin};
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim};
-use party_kit::PartyPartsPlugin;
+use party_roster::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 
 const MAPS: [&str; 4] = [
@@ -165,7 +165,7 @@ fn measure(sim: &mut Sim, spawned: &[Entity], rates: &mut Rates) {
 /// One map and count: the rates of everyone joining, of the match
 /// starts and of the respawns.
 fn run(map: &str, bots: u32, points: Points) -> Option<[Rates; 3]> {
-    let data = party_kit::load_map(map, 0).ok()?;
+    let data = party_roster::load_map(map, 0).ok()?;
     let mut sim = Sim::new(
         CaSim,
         (

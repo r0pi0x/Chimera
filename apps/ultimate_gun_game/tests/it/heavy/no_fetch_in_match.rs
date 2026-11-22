@@ -77,7 +77,7 @@ use chimera_sim::minigame::{
     NextMatch,
     ladder::{Ladder, Rung, RungSeed, set_rung},
 };
-use party_kit::server::PARTY;
+use party_roster::server::PARTY;
 
 /// Each map's ladder: its seed and map (ladder seeds 217377-217379, as the
 /// measured session in docs/playtest-hosting.md).
@@ -99,7 +99,7 @@ const TF2_MAP: (u64, &str) = (217_381, "tf2:ctf_2fort");
 const RUNG_SEED: u64 = 4242;
 /// How long each rung is held.
 const RUNG_SECONDS: f64 = 2.0;
-/// The host's surprises on the last map (`party_kit::surprise`), and how
+/// The host's surprises on the last map (`party_roster::surprise`), and how
 /// long they are watched.
 const SURPRISES: [&str; 2] = ["surprise airstrike 12 3", "surprise gravity 6"];
 const SURPRISE_SECONDS: f64 = 10.0;
@@ -122,7 +122,7 @@ static SERVER: GameServer = GameServer {
             first_map: ultimate_gun_game::first_map,
         }),
         launch: Some(|app| {
-            party_kit::server::launch(app);
+            party_roster::server::launch(app);
             app.add_plugins(ultimate_gun_game::UltimateGunGamePlugin::launch());
         }),
         ..PARTY.hooks
