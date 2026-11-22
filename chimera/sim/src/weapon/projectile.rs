@@ -1523,7 +1523,7 @@ mod tests {
     #[test]
     fn a_model_noses_along_its_flight_whatever_its_axes() {
         for nose in [Vec3::X, Vec3::Y, Vec3::NEG_Y, Vec3::Z, Vec3::NEG_Z, Vec3::new(0.2, -0.7, 0.4).normalize()] {
-            let a = crate::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::ONE, surface: None, nose: Some(nose) };
+            let a = crate::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::ONE, surface: None, nose: Some(nose), attachments: Vec::new() };
             for d in [Vec3::Z, Vec3::X, Vec3::Y, Vec3::new(0.3, 0.5, -0.8).normalize()] {
                 let r = facing(d) * a.nose_turn();
                 assert!((r * nose - d).length() < 1e-5, "{nose} along {d}: {}", r * nose);

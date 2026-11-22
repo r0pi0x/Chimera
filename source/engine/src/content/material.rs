@@ -1004,7 +1004,8 @@ impl<'a> MaterialLoader<'a> {
     /// A particle or effect material (specs/cs_source/impact_effects.md):
     /// its base texture, blend (`$additive`), whether vertex colour and
     /// alpha apply (`$vertexcolor`, `$vertexalpha`; SpriteCard always
-    /// takes both), `$ignorez`, `$depthblend`, the texture's sprite sheet if it has one,
+    /// takes both), `$ignorez`, `$depthblend`, the texture's sprite sheet if it has one
+    /// (a sprite card's frames mixed unless `$blendframes` 0),
     /// and a sprite card's size limits (`$minsize`, `$maxsize`,
     /// `$startfadesize`, `$endfadesize`: fractions of the distance, the
     /// shader's defaults where unset).
@@ -1054,6 +1055,9 @@ impl<'a> MaterialLoader<'a> {
             vertex_alpha: sprite_card || flag("$vertexalpha"),
             no_depth: flag("$ignorez"),
             depth_blend: flag("$depthblend"),
+            // SpriteCard mixes a sheet's neighbouring frames unless told
+            // not to (particles.md 3, `$blendframes` 1 by default).
+            blend_frames: sprite_card && keys.get("$blendframes").is_none_or(|v| v.trim() != "0"),
             sequences,
             overbright,
             // Sprite cards' screen-size limits (impact_effects.md 14).

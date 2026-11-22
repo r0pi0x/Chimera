@@ -63,6 +63,15 @@ fn soft_depth(position: vec4<f32>) -> f32 {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var c = textureSample(base_texture, base_sampler, in.uv);
+    @if(VERTEX_UVS_B) {
+        // A sheet's next frame mixed in (specs/tf2/particles.md 3): UV1 is
+        // its coordinates with the mix in v as 4 x step + 1 + v, the step
+        // in 1/255 (particles.rs `encode_next_uv`).
+        let step = floor(in.uv_b.y / 4.0);
+        let next_uv = vec2<f32>(in.uv_b.x, in.uv_b.y - 4.0 * step - 1.0);
+        let next = textureSample(base_texture, base_sampler, next_uv);
+        c = mix(c, next, step / 255.0);
+    }
     var vertex_alpha = 1.0;
     @if(VERTEX_COLORS) {
         c = c * in.color;

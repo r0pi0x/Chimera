@@ -34,7 +34,7 @@ Captured imagery stays in scratch, never in the repo.
 | Minigun constant flash, brass | close (first person, rechecked on the stock Minigun 2026-11-20); close (third person) | first person: the core a compact glow; the brass lives 2 s. Stock Minigun (stock-recapture): spun and firing for 0.75 s the flash covers ~5,500 px in both (TF2 5,706); its first four frames TF2 2,000 / 5,700 / 5,200 / 4,500, ours 1,400 / 4,500 / 6,200 / 8,600 (ours swells on the fourth; TF2's flickers 4,000-5,200 after). Spec ([particles.md §8.3, §8.3.1, §10.11](../../../specs/tf2/particles.md)): caps (sparks 5), the starflash and flare emit only in the first 0.5 s, smoke from 2 s, per-frame counts and sizes; by its data the flash grows to frame 3-6 and holds, particles.md Open questions 10 answered 2026-11-21: TF2 has no frame-2 peak (re-captured frame-exact: the shot frame a tracer, then ~60 % / 95 % / full, held, flickering 5,300-8,200); ours (tf2-left: first glow the second frame after the shot, full by the fourth and held, ~10,000-12,000 px changed from the frame before `+attack`) grows and holds the same way, no change needed (Next item 10: whether ours' first glow is a frame later). Third person (pass 5, from 260 units above): TF2's casings lie 40-75 units out to the gun's side (most ~58), ours ~25-55 (most ~43); from the side TF2's leave upward first. Ours' numbers (local x 100-200, drag 0.05, gravity −252) landed ~40 out from a level eject; particles.md Open questions 6 (measured 2026-11-21): TF2's leave right, square to the aim, ~23° up at 150-180 units/s from 28 right and 41 below the eye. Ours now so (tf2-spec-impl: the system's x tilted 23° up, others' from that point by the eye); the landing band not recaptured |
 | Tracers | matches (SMG, Shotgun); from the front close | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered). From the front the geometry agrees (a streak passing ~20 units from the camera widens to tens of pixels in TF2 too); which pellets pass near is the spread's chance. Others' tracers now leave with the interpolated body (pass 4) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
-| Rocket trail | close (2026-11-20, `launch.tf2`/`.scene`) | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails. The "very long trail" was `rockettrail_burst`'s sprite trails streaking by the rocket's own 1100 units/s (a lock now carries a particle's last place too, particles.md 5.1) and the copy drawn late thrown back 110 units behind the eye a frame after the shot; drawn from its seeded copy (11.1); a step's particles now spread along the control point's path, the copy's trail made at the rocket's first place (tf2-psys). TF2's big glow ~50 units ahead of the launcher at frames 2-6 still missing: ours' first step leaves a smoke puff at the launcher and its glows mid-path behind the eye (log) |
+| Rocket trail | close (2026-11-20, `launch.tf2`/`.scene`) | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails. The "very long trail" was `rockettrail_burst`'s sprite trails streaking by the rocket's own 1100 units/s (a lock now carries a particle's last place too, particles.md 5.1) and the copy drawn late thrown back 110 units behind the eye a frame after the shot; drawn from its seeded copy (11.1); a step's particles now spread along the control point's path, the copy's trail made at the rocket's first place (tf2-psys). TF2's big glow ~50 units ahead of the launcher at frames 2-6 still missing: ours' first step leaves a smoke puff at the launcher and its glows mid-path behind the eye (log; since matched, tf2-psys2). The trail now rides the rocket's `trail` attachment, 9.6 units behind the model's centre (tf2-trails, 2026-11-22); no new TF2 pair taken |
 | Projectiles leaving the gun (pipes, stickies, needles) | close (2026-11-20) | pipes and needles show at the barrel 7 frames after the shot as TF2's (their models were hidden 0.2 s, so they appeared far down range); stickies drawn late too (were not); only the rocket's model hidden 0.2 s (`model_hidden`) |
 | Grenade and Stickybomb Launchers' flashes | matches (2026-11-20) | went straight up: their muzzles' z is the barrel and the flash's core leaves along z; a per-shot flash now takes its attachment's whole orientation (`start_with_axes`, `psys::Follow::up`); none visible in either now |
 | Needles on a wall | close (2026-11-20, tf2-leftovers) | TF2: no needle stays (seen from the side); a small hole mark and splinters, kept like a decal. Ours now the same: a flyer with `marks` leaves a bullet's impact (decal, debris, the surface's sound; Chimera's `projectile::FlyerMark`, sent as `NetMark`, shown when the drawn needle reaches it), on every map, the sandbox's too. TF2's mark is red at its centre head-on; ours the surface's bullet hole |
@@ -155,6 +155,62 @@ Captured imagery stays in scratch, never in the repo.
      would confirm its size and colour.
 
 ## Log
+
+### Flyer trails and sheet frames (tf2-trails, 2026-11-22)
+
+- Checked first: every flyer trail and glow the specs name was already
+  drawn (`rockettrail`/`_underwater`, `pipebombtrail_<team>` with its
+  timer ring, `stickybombtrail_<team>` and the armed pulse,
+  `nailtrails_medic_<team>`; docs/plans/active/tf2-effects.md was stale).
+  Ours' `launch.scene` (trimmed to frames 2, 4, 8, 12, 20, 30 a gun) shows
+  the rocket's fire glow then its white smoke, the pipe's and sticky's
+  faint glows and the needles' red specks.
+- **The rocket's trail on its `trail` attachment** (effects.md 1, "code"):
+  it started on the shown model's bounds centre. `LooseAsset::attachments`
+  (every game's shown items: the held model's attachments in the item's
+  frame) and the trail's data `at = "trail"`; `w_rocket`'s lies 9.6 units
+  behind the centre along the nose. Tests `effects::a_rockets_trail_rides_
+  its_models_trail_attachment_1`, `heavy::guns::each_projectile_models_
+  nose_is_its_long_axis` (the install's attachment behind the centre).
+- **Sprite-sheet frame blending** (particles.md 3, every Source game's
+  sprite cards): frames ⌊p⌋ and ⌊p⌋ + 1 mixed by p − ⌊p⌋ unless the
+  material says `$blendframes 0` (`ParticleMaterial::blend_frames`; the
+  next frame's coordinates and the mix ride in UV1, particle.wesl). The
+  flame core's and smoke's sheets no longer step. Test
+  `particles::tests::sheet_frames_mix_with_the_next_3`.
+- `$addself` was already as particles.md 2 (particle.wesl's
+  premultiplied branch: P (1 + O S a_v)).
+
+### Measurements for the remaining effects (nothing here may be guessed)
+
+1. **The airblast's look** (`pyro_blast`, flames.md 3.1): settled as a
+   name, but ours has no airblast (weapons_more.md 7.4 is reference
+   only). Before it can be drawn a spec must give the airblast itself:
+   the cone's length and angle, what it pushes and by how much, and for
+   the look: whether `pyro_blast` starts once per press on the first-
+   person muzzle re-projected (as the per-shot flash) and on others'
+   third-person `muzzle`, its control points, and its first frames at 60
+   frames a second (a `host_framerate 0.016667` capture, own view and a
+   bot's, on 2fort's bridge).
+2. **The weapon scripts' effect names** (effects.md Open questions 1-2):
+   `MuzzleFlashParticleEffect`, `TracerEffect`, `ExplosionEffect`,
+   `ExplosionPlayerEffect`, `ExplosionWaterEffect`, `BrassModel`,
+   `MuzzleFlashModel` for the twelve stock guns (the Rocket Launcher's
+   muzzle flash above all: none, or a model flash).
+3. **The sheet frame rate** (particles.md Open questions 1): with
+   "animation_fit_lifetime" and "use animation rate as FPS" both off
+   (rate 0.1 on most TF2 sprites), whether the rate is sequence loops a
+   second or a scale on the sheet's own per-frame times; ours plays
+   `rate` frames a second and ignores the sheet's frame durations and its
+   clamp/loop flag. A capture of one sheeted, non-fitted sprite (the
+   explosion's smoke) frame by frame settles it.
+4. **The trail's control-point axes**: whether `rockettrail`'s point 0
+   takes the `trail` attachment's orientation or the rocket's (ours: the
+   rocket's); only matters if an initializer reads the point's axes.
+5. **Crit glows on flyers** (`critical_rocket_*`, `critical_pipe_*`,
+   `critical_grenade_*`, `nailtrails_medic_*_crit`): named in effects.md
+   1 and not drawn while random crits are off; nothing to measure until
+   crits are on (a crit-boosted Soldier's rocket would show them).
 
 ### Knockback "way too much" (tf2-knockback, 2026-11-22)
 

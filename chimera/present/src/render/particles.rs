@@ -11,7 +11,10 @@
 //! (`ParticleMaterial::screen`: raised, faded and capped by fractions of
 //! their distance from the eye, specs/tf2/particles.md 4, the shader's
 //! reading of specs/cs_source/impact_effects.md 14); flipped particles show their
-//! texture mirrored. Materials that say `$depthblend`
+//! texture mirrored. A sheeted sprite card mixes its frame and the next
+//! by how far it is between them (`ParticleMaterial::blend_frames`,
+//! specs/tf2/particles.md 3: the next frame's coordinates and the mix
+//! ride in UV1). Materials that say `$depthblend`
 //! (`ParticleMaterial::depth_blend`, HL2's smoke puffs among them) fade out
 //! as they near the world behind them instead of being cut there, on views
 //! with a depth prepass (`soft_particle_prepass` gives main views one); the
@@ -444,10 +447,12 @@ pub fn draw_particles(
                 LinearRgba::WHITE
             };
             let rgba = [color.red, color.green, color.blue, alpha];
-            let mut rect = frame_rect(&def, p);
+            let (mut rect, mut next, mix) = frame_rects(&def, p);
             if p.flip {
                 rect = [rect[2], rect[1], rect[0], rect[3]];
+                next = [next[2], next[1], next[0], next[3]];
             }
+            b.next_frame(rect, next, mix);
             let size = p.current_size();
             let at = p.position - centre;
             match p.shape {
@@ -499,6 +504,8 @@ pub fn draw_particles(
                     b.quad([t - w, h - w, h + w, t + w], rect, rgba);
                 }
                 Shape::Quad { corners, rect } => {
+                    // Its own rectangle, no sheet frames.
+                    b.next_frame(rect, rect, 0.0);
                     b.quad(corners.map(|c| c - centre), rect, rgba);
                 }
                 Shape::Ribbon {
@@ -647,29 +654,59 @@ pub fn keep_sprite(cap: Option<usize>, filling: &mut usize, fraction: impl FnOnc
     *filling <= cap
 }
 
-/// The texture rectangle a particle shows now.
-fn frame_rect(def: &ParticleMaterial, p: &Particle) -> [f32; 4] {
+/// The texture rectangle a particle shows now, the next frame's and how
+/// far it is from the one to the other (0-1). A sheet's frame position
+/// p = age x frame rate; frames ⌊p⌋ and ⌊p⌋ + 1 (wrapped on a looping
+/// sequence, the last held on a clamped one) are mixed by p - ⌊p⌋ when
+/// the material blends frames (specs/tf2/particles.md 3), else the
+/// fraction is 0.
+fn frame_rects(def: &ParticleMaterial, p: &Particle) -> ([f32; 4], [f32; 4], f32) {
+    const WHOLE: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
     let Some(seq) = def.sequences.get(p.sequence as usize).filter(|s| !s.is_empty()) else {
-        return [0.0, 0.0, 1.0, 1.0];
+        return (WHOLE, WHOLE, 0.0);
     };
-    let frame = (p.age * p.fps).max(0.0) as usize;
-    let frame = if p.frame_loop {
-        frame % seq.len()
+    let at = (p.age * p.fps).max(0.0);
+    let n = seq.len();
+    let (frame, next) = if p.frame_loop {
+        let f = at as usize % n;
+        (f, (f + 1) % n)
     } else {
-        frame.min(seq.len() - 1)
+        let f = (at as usize).min(n - 1);
+        (f, (f + 1).min(n - 1))
     };
-    seq[frame]
+    let fraction = if def.blend_frames && frame != next { at.fract() } else { 0.0 };
+    (seq[frame], seq[next], fraction)
+}
+
+/// UV1 of a quad's corner: the next frame's texture coordinates, with v
+/// carrying the frame mix (`frame_rects`) in steps of 1/255 as 4 x step +
+/// 1 + v (decoded in particle.wesl: one unit of margin on each side, so
+/// interpolation never crosses a step).
+fn encode_next_uv(uv: [f32; 2], fraction: f32) -> [f32; 2] {
+    let step = (fraction.clamp(0.0, 1.0) * 255.0).round();
+    [uv[0], 4.0 * step + 1.0 + uv[1].clamp(0.0, 1.0)]
 }
 
 #[derive(Default)]
 struct QuadBuilder {
     positions: Vec<[f32; 3]>,
     uvs: Vec<[f32; 2]>,
+    /// The next sheet frame's coordinates and the mix (`encode_next_uv`).
+    next_uvs: Vec<[f32; 2]>,
     colors: Vec<[f32; 4]>,
     indices: Vec<u32>,
+    /// For the quads that follow: the frame they show, the next one and
+    /// how much of it they mix in (`frame_rects`).
+    next: ([f32; 4], [f32; 4], f32),
 }
 
 impl QuadBuilder {
+    /// The sheet frame the next quads show (`frame`), the one after it and
+    /// how much of that they mix in.
+    fn next_frame(&mut self, frame: [f32; 4], next: [f32; 4], mix: f32) {
+        self.next = (frame, next, mix);
+    }
+
     /// Corners: bottom-left, top-left, top-right, bottom-right.
     fn quad(&mut self, corners: [Vec3; 4], rect: [f32; 4], rgba: [f32; 4]) {
         self.quad_colors(corners, rect, [rgba; 4]);
@@ -678,9 +715,17 @@ impl QuadBuilder {
     /// A quad with a colour per corner.
     fn quad_colors(&mut self, corners: [Vec3; 4], [u0, v0, u1, v1]: [f32; 4], rgba: [[f32; 4]; 4]) {
         let base = self.positions.len() as u32;
-        for ((p, uv), c) in corners.iter().zip([[u0, v1], [u0, v0], [u1, v0], [u1, v1]]).zip(rgba) {
+        let ([a0, b0, a1, b1], [n0, m0, n1, m1], mix) = self.next;
+        // The same place in the next frame's rectangle as this corner's in
+        // the frame's (a ribbon's quad shows part of its rectangle).
+        let across = |x: f32, from: f32, to: f32, n_from: f32, n_to: f32| {
+            if (to - from).abs() < 1e-9 { n_from } else { n_from + (x - from) / (to - from) * (n_to - n_from) }
+        };
+        for ((p, [u, v]), c) in corners.iter().zip([[u0, v1], [u0, v0], [u1, v0], [u1, v1]]).zip(rgba) {
             self.positions.push(p.to_array());
-            self.uvs.push(uv);
+            self.uvs.push([u, v]);
+            let next = if mix > 0.0 { [across(u, a0, a1, n0, n1), across(v, b0, b1, m0, m1)] } else { [u, v] };
+            self.next_uvs.push(encode_next_uv(next, mix));
             self.colors.push(c);
         }
         self.indices
@@ -688,13 +733,52 @@ impl QuadBuilder {
     }
 
     fn write(self, mesh: &mut Mesh, normal: Vec3) {
+        let vertices = self.positions.len();
+        let mut next = self.next_uvs;
         dust::write_dynamic_mesh(mesh, normal, self.positions, self.uvs, self.colors, self.indices);
+        // As long as the other attributes (padding: no mix).
+        let len = mesh.attribute(Mesh::ATTRIBUTE_POSITION).map_or(vertices, |a| a.len());
+        next.resize(len, encode_next_uv([0.0; 2], 0.0));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, next);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// specs/tf2/particles.md 3: frames ⌊p⌋ and ⌊p⌋ + 1 mixed by
+    /// p - ⌊p⌋ (p = age x rate); a clamped sequence holds its last frame
+    /// unmixed, a looping one mixes its last into its first; a material
+    /// with `$blendframes` 0 shows whole frames. The mix survives the
+    /// UV1 encoding.
+    #[test]
+    fn sheet_frames_mix_with_the_next_3() {
+        let frames: Vec<[f32; 4]> = (0..4).map(|i| [i as f32 * 0.25, 0.0, i as f32 * 0.25 + 0.25, 1.0]).collect();
+        let mut def = ParticleMaterial { sequences: vec![frames.clone()], blend_frames: true, ..default() };
+        let mut p = Particle::new(Vec3::ZERO, 1.0, 0, 1.0);
+        p.fps = 10.0;
+        p.age = 0.13;
+        let (a, b, mix) = frame_rects(&def, &p);
+        assert_eq!((a, b), (frames[1], frames[2]));
+        assert!((mix - 0.3).abs() < 1e-4, "{mix}");
+        p.age = 0.37;
+        let (a, b, mix) = frame_rects(&def, &p);
+        assert_eq!((a, b, mix), (frames[3], frames[3], 0.0), "clamped: the last frame held");
+        p.frame_loop = true;
+        let (a, b, mix) = frame_rects(&def, &p);
+        assert_eq!((a, b), (frames[3], frames[0]), "looping: the last mixes into the first");
+        assert!((mix - 0.7).abs() < 1e-4, "{mix}");
+        def.blend_frames = false;
+        assert_eq!(frame_rects(&def, &p).2, 0.0, "`$blendframes` 0: whole frames");
+        // The shader's decoding (particle.wesl) gets the mix and v back.
+        for (mix, v) in [(0.0, 0.0), (0.3, 1.0), (1.0, 0.5)] {
+            let [_, y] = encode_next_uv([0.2, v], mix);
+            let step = (y / 4.0).floor();
+            assert!((step / 255.0 - mix).abs() <= 0.5 / 255.0 + 1e-6, "{mix}");
+            assert!((y - 4.0 * step - 1.0 - v).abs() < 1e-4, "{v}");
+        }
+    }
 
     /// specs/halo_ce/effects.md "View-filling sprites are capped": of 12
     /// sprites each covering the whole view, the first 11 are drawn; small

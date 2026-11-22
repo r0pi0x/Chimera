@@ -26,7 +26,7 @@ use chimera_world::map::{
     psys::{StartParticleSystem, StopParticleSystems},
     view_model::HeldAttachment,
 };
-use tf2::game::weapons::{MINIGUN, ROCKET_LAUNCHER, SCATTERGUN, STICKY_LAUNCHER, blast::Tf2Explosion, looks::TracerCount};
+use tf2::game::weapons::{GRENADE_LAUNCHER, MINIGUN, ROCKET_LAUNCHER, SCATTERGUN, STICKY_LAUNCHER, blast::Tf2Explosion, looks::TracerCount};
 
 use super::weapons::{holding, sim};
 
@@ -217,6 +217,37 @@ fn a_late_rockets_trail_is_made_on_its_copy_at_its_first_place_11_2() {
     let trail = starts.iter().find(|s| s.name == "rockettrail").expect("the copy's trail");
     assert_eq!(trail.follow.unwrap().entity, copy);
     assert_eq!(trail.position, first, "made at the first place");
+}
+
+/// effects.md 1: the rocket's trail starts on and follows its model's
+/// `trail` attachment (the data's `at`), in the rocket's frame; a pipe's
+/// on its origin (no attachment named).
+#[test]
+fn a_rockets_trail_rides_its_models_trail_attachment_1() {
+    use chimera_world::map::loose::{LooseAsset, LooseAssets, ShownItem};
+    let mut sim = sim();
+    let tail = Vec3::new(-0.3, 0.02, 0.0);
+    let model = |attachments: Vec<(String, Vec3)>| LooseAsset {
+        frame: Transform::IDENTITY,
+        half: Vec3::splat(0.1),
+        surface: None,
+        nose: None,
+        attachments,
+    };
+    let mut assets = LooseAssets::default();
+    assets.0.insert("tf2:tf_weapon_rocketlauncher/rocket".into(), model(vec![("trail".into(), tail)]));
+    assets.0.insert("tf2:tf_weapon_grenadelauncher/grenade".into(), model(vec![("trail".into(), tail)]));
+    sim.app.insert_resource(assets);
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), ROCKET_LAUNCHER);
+    let (starts, ..) = collect(&mut sim, 2, |s, t| s.intent(p).fire = t == 0);
+    let trail = starts.iter().find(|s| s.name == "rockettrail").expect("a trail").clone();
+    let follow = trail.follow.expect("follows the rocket");
+    assert_eq!(follow.local, tail, "on the `trail` attachment");
+    assert!(sim.app.world().get::<ShownItem>(follow.entity).is_some(), "on the rocket");
+    let (p, _) = holding(&mut sim, Vec3::new(3.0, 1.0, 0.0), GRENADE_LAUNCHER);
+    let (starts, ..) = collect(&mut sim, 2, |s, t| s.intent(p).fire = t == 0);
+    let pipe = starts.iter().find(|s| s.name.starts_with("pipebombtrail_")).expect("the pipe's trail");
+    assert_eq!(pipe.follow.unwrap().local, Vec3::ZERO, "a pipe's from its origin");
 }
 
 /// effects.md 1: a sticky trails `stickybombtrail_<team>` from its launch

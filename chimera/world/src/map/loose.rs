@@ -50,9 +50,20 @@ pub struct LooseAsset {
     /// the item's frame, unit; None: not known. `nose_turn` turns it to
     /// −Z, the axis movers put along their flight.
     pub nose: Option<Vec3>,
+    /// The model's named points (`MapHeldModel::attachments`) in the
+    /// item's frame (meters, from its bounds' centre): where a game starts
+    /// what follows the item (TF2's rocket trail on the rocket's `trail`,
+    /// specs/tf2/effects.md 1).
+    pub attachments: Vec<(String, Vec3)>,
 }
 
 impl LooseAsset {
+    /// Its attachment `name`'s place in the item's frame (case
+    /// insensitive), if the model has one.
+    pub fn attachment(&self, name: &str) -> Option<Vec3> {
+        self.attachments.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, p)| *p)
+    }
+
     /// The turn that puts this model's nose on the item's −Z (identity
     /// when its nose isn't known): a shown item turned `facing(dir) *
     /// turn` flies nose first, whatever its game or its model's axes.
@@ -105,11 +116,13 @@ pub fn asset(held: &MapHeldModel, root: Transform) -> LooseAsset {
     } else {
         (Vec3::ZERO, Vec3::splat(0.1))
     };
+    let frame = to.with_translation(-centre);
     LooseAsset {
-        frame: to.with_translation(-centre),
+        frame,
         half,
         surface: held.model.surfaceprop.clone(),
         nose: held.nose.map(|n| (to.rotation * (to.scale * n)).normalize_or(Vec3::NEG_Z)),
+        attachments: held.attachments.iter().map(|(n, t)| (n.clone(), frame.transform_point(t.translation))).collect(),
     }
 }
 

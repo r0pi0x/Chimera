@@ -767,7 +767,7 @@ fn every_projectile_flies_nose_first() {
         let mut sim = sim();
         let (p, _) = holding(&mut sim, greybox::SPAWNS[0], gun);
         let nose = [Vec3::new(0.3, -0.8, 0.5), Vec3::Y, Vec3::NEG_X, Vec3::new(-0.2, 0.1, 0.9)][i % 4].normalize();
-        let asset = LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(nose) };
+        let asset = LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(nose), attachments: Vec::new() };
         sim.app.world_mut().get_resource_or_insert_with(LooseAssets::default).0.insert(key.to_string(), asset);
         let (mut seen, mut spun) = (0, 0);
         for k in 0..60u64 {

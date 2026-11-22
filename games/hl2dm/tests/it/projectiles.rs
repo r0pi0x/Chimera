@@ -946,7 +946,7 @@ fn a_stuck_bolt_keeps_its_flight_direction() {
     let mut sim = sim();
     let p = player(&mut sim);
     let w = holding(&mut sim, p, weapons::CROSSBOW);
-    let bolt = chimera_world::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(Vec3::Y) };
+    let bolt = chimera_world::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(Vec3::Y), attachments: Vec::new() };
     sim.app
         .world_mut()
         .get_resource_or_insert_with(chimera_world::map::loose::LooseAssets::default)
@@ -1508,7 +1508,7 @@ fn every_projectile_flies_nose_first() {
         holding(&mut sim, p, weapon);
         look(&mut sim, p, EAST, 8.0);
         let nose = Vec3::new(0.3, -0.8, 0.5).normalize();
-        let asset = LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(nose) };
+        let asset = LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(nose), attachments: Vec::new() };
         sim.app.world_mut().get_resource_or_insert_with(LooseAssets::default).0.insert(key.into(), asset);
         let mut seen = 0;
         for k in 0..60u64 {

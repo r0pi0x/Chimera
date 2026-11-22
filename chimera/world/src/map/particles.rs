@@ -75,6 +75,12 @@ pub struct ParticleMaterial {
     /// (1 + overbright x add_self x the particle's alpha).
     #[serde(default)]
     pub add_self: f32,
+    /// SpriteCard's `$blendframes` (1 unless the material says 0): a
+    /// sheeted particle mixes its frame and the next by the fraction of
+    /// the way between them (specs/tf2/particles.md 3); else the frame
+    /// it is on, whole.
+    #[serde(default)]
+    pub blend_frames: bool,
 }
 
 /// A sprite card's size limits (specs/tf2/particles.md 4, from the

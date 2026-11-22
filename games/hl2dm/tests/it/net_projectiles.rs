@@ -44,7 +44,7 @@ fn joined() -> NetSim {
 /// `heavy::player_models::each_projectile_models_nose_is_its_long_axis`).
 /// The greybox loads no models; flyers turn by it as they are made.
 fn with_nose(sim: &mut NetSim, key: &str, nose: Vec3) {
-    let a = chimera_world::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(nose) };
+    let a = chimera_world::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(nose), attachments: Vec::new() };
     sim.server.app.world_mut().get_resource_or_insert_with(chimera_world::map::loose::LooseAssets::default).0.insert(key.into(), a);
 }
 

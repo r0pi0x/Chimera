@@ -373,6 +373,13 @@ fn each_projectile_models_nose_is_its_long_axis() {
         if *key == weapons::ROCKET_SHOWN || *key == "tf2:tf_weapon_syringegun_medic/syringe" {
             assert!(nose.dot(axis.normalize()).abs() > 0.95, "{key}: nose {nose}, half {}", a.half);
         }
+        if *key == weapons::ROCKET_SHOWN {
+            // effects.md 1: its trail starts on the `trail` attachment,
+            // which lies toward the tail (behind the bounds' centre).
+            let trail = a.attachment("trail").expect("the rocket's `trail` attachment");
+            println!("{key}: trail at {trail} m ({} units)", trail / 0.0254);
+            assert!(trail.dot(nose) < 0.0, "behind the centre: {trail}, nose {nose}");
+        }
     }
 }
 

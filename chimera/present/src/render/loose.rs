@@ -179,6 +179,7 @@ mod tests {
             half: Vec3::splat(0.1),
             surface: None,
             nose: None,
+            attachments: Vec::new(),
         };
         assets.insert("gun".to_string(), gun);
         app.insert_resource(LooseAssets(assets));
@@ -226,7 +227,7 @@ mod tests {
         app.update();
         assert!(app.world().get::<ShownItemDrawn>(e).is_none(), "waits");
         assert!(app.world().resource::<crate::render::bodies::LateWanted>().shown.contains_key("game:sticky"), "asked for");
-        let asset = crate::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.1), surface: None, nose: None };
+        let asset = crate::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.1), surface: None, nose: None, attachments: Vec::new() };
         app.world_mut().resource_mut::<LooseAssets>().0.insert("game:sticky".into(), asset);
         let parts = HeldParts {
             bone: String::new(),

@@ -46,7 +46,8 @@
 //!   7 frames (at 60) later.
 //! - **Trails** (effects.md 1): a gun's `trail` (`FlyerTrail`) starts on
 //!   each of its flyers as it appears (`ShownItem`: `rockettrail` on
-//!   the rocket, `pipebombtrail_<team>`, `stickybombtrail_<team>`,
+//!   the rocket's `trail` attachment, its data's `at`, from its loose
+//!   form `LooseAsset::attachment`; `pipebombtrail_<team>`, `stickybombtrail_<team>`,
 //!   `nailtrails_medic_<team>`; none on a needle left stuck in a wall,
 //!   `projectile::StuckMark`), following it without carrying what it
 //!   left, stopped when it is gone (`psys::Follow`); its `under_water`
@@ -100,14 +101,8 @@
 //!   `Bounce.Shrapnel` on 3 in 10 impacts, a needle's mark only RED's
 //!   (effects.md 12); impact sounds beyond 1024 units are skipped (7).
 //!
-//! Known shortcuts: a trail starts at the flyer's origin, not its model's
-//! `trail` attachment; a late-drawn rocket's trail starts where its copy
-//! is drawn (behind the eye), and an emitter puts a step's particles at
-//! its control point, not spread along its path (effects.md 11.1's
-//! nuance): TF2's first step lays particles from the first received place
-//! back to the drawn one, so its fire glow shows at the launcher from the
-//! frame after the shot; ours from when the drawn rocket passes the camera
-//! (about 6 frames at 60 later); no crit glows on flyers (crits are off); control point 0 of the stream is the muzzle as drawn
+//! Known shortcuts: a trail on an attachment (the rocket's `trail`)
+//! takes its place but the flyer's own axes, not the attachment's; no crit glows on flyers (crits are off); control point 0 of the stream is the muzzle as drawn
 //! (the view model's re-projected in first person), not the third-person
 //! model's (flames.md Open questions 2); random crits are off, so a crit
 //! stream starts only for a crit-boosted Pyro (`crit_boost`); no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
@@ -255,7 +250,7 @@ pub struct ArmedLook {
 impl ArmedLook {
     /// Its system's name for a flyer of `team` (as `FlyerTrail::name`).
     pub fn name(&self, blu: Option<bool>) -> String {
-        FlyerTrail { shown: self.shown.clone(), system: self.system.clone(), team: self.team, under_water: None }.name(blu)
+        FlyerTrail { shown: self.shown.clone(), system: self.system.clone(), team: self.team, under_water: None, at: None }.name(blu)
     }
 }
 
@@ -274,6 +269,10 @@ pub struct FlyerTrail {
     /// `rockettrail_underwater`, chosen once).
     #[serde(default)]
     pub under_water: Option<String>,
+    /// The flyer model's attachment it starts on and follows (effects.md
+    /// 1: the rocket's `trail`); none, or one the model lacks: its origin.
+    #[serde(default)]
+    pub at: Option<String>,
 }
 
 impl FlyerTrail {
@@ -847,6 +846,7 @@ fn flyer_trails(
     late: Option<Res<DrawnLate>>,
     water: Option<Res<MapWater>>,
     teams: Query<&Team>,
+    models: Option<Res<chimera_world::map::loose::LooseAssets>>,
     mut start: MessageWriter<StartParticleSystem>,
 ) {
     for (e, shown, at, flyer, copy) in &flyers {
@@ -860,11 +860,18 @@ fn flyer_trails(
         let forward = at.rotation * Vec3::X;
         // Chosen once, by the water at its first place (effects.md 9).
         let wet = in_water(water.as_deref(), copy.map_or(at.translation, |c| c.first));
+        // On its model's attachment (the rocket's `trail`, effects.md 1),
+        // in the item's frame; else its origin.
+        let local = trail
+            .at
+            .as_deref()
+            .and_then(|name| models.as_ref()?.0.get(&shown.0)?.attachment(name))
+            .unwrap_or(Vec3::ZERO);
         // A copy's trail is made where the copy is drawn, its first
         // received place (effects.md 11.2).
         start.write(StartParticleSystem {
-            follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false, up: None }),
-            ..StartParticleSystem::new(trail.name_in(blu, wet), at.translation, forward)
+            follow: Some(Follow { entity: e, local, forward: Vec3::X, carry: false, up: None }),
+            ..StartParticleSystem::new(trail.name_in(blu, wet), at.transform_point(local), forward)
         });
     }
 }

@@ -71,8 +71,23 @@ data; the weapon scripts' own names (`TracerEffect`,
   `particle_depth`; chimera_world `particles`. Left: trails and glows on
   flyers (step 3), the scripts' own names (effects.md Open questions 1),
   sheet frame blending, `$addself`, the flames (flames.md).
+- 2026-11-20 to 11-21 (tf2-parity's passes): step 3 done: `[hooks."tf2:looks"]
+  trail` on every flyer (`rockettrail`/`_underwater`, `pipebombtrail_`,
+  `stickybombtrail_`, `nailtrails_medic_` per team), the sticky's armed
+  pulse (`armed`), late copies' first frames (effects.md 11.1-11.3);
+  `$addself` as particles.md 2 (particle.wesl); the flames (flames.md).
+- 2026-11-22 (tf2-trails): the rocket's trail on its model's `trail`
+  attachment (effects.md 1; the data's `at`, `LooseAsset::attachments`),
+  not the model's bounds centre; sprite-sheet frames mixed with the next
+  (particles.md 3, `$blendframes`, every Source game's sprite cards).
+  Tests `effects::a_rockets_trail_rides_its_models_trail_attachment_1`,
+  `particles::tests::sheet_frames_mix_with_the_next_3`. Left, all needing
+  measurements (tf2-parity.md, "Measurements for the remaining effects"):
+  the airblast's `pyro_blast` (no airblast yet: weapons_more.md 7.4 is
+  reference only), the scripts' own names, crit glows on flyers (crits
+  are off), the sheet frame rate (particles.md Open questions 1).
 
-## Spec gaps (blocking the rest; no TF2 spec names these)
+## Spec gaps (as of 2026-11-18; answered by specs/tf2/effects.md and particles.md on 2026-11-19 except effects.md Open questions 1)
 
 Implementation reads specs only, and specs/tf2 has no value for any of
 these (weapon_scripts.md only says the script fields exist and are

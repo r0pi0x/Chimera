@@ -532,6 +532,7 @@ fn a_turret_draws_its_parts() {
                 half: Vec3::splat(0.1),
                 surface: None,
                 nose: None,
+                attachments: Vec::new(),
             },
         );
     }
