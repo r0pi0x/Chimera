@@ -1,8 +1,8 @@
 //! The campaign's characters as the sandbox's practice targets
 //! (`chimera_sim::minigame::targets`, `TargetCharacter`): `halo_ce:elite`,
 //! `halo_ce:grunt` and `halo_ce:jackal`, so `target add halo_ce:elite 5`
-//! places an Elite. The party kit registers them right after Halo's
-//! Spartan (apps/party_kit/src/target_bodies.rs: the Spartan stays the
+//! places an Elite. The party's roster registers them right after Halo's
+//! Spartan (apps/party_roster/src/target_bodies.rs: the Spartan stays the
 //! body a Halo gun alone gives).
 //!
 //! - **Which guns** (`holds`): those data/campaign.toml gives the kind a

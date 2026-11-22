@@ -213,8 +213,8 @@
 //! - A protected target's armour or shield is put back on the next tick:
 //!   for one tick `TargetVitals` shows the drop.
 //! - Bodies: only what a game registered (or its default); TF2's class and
-//!   Halo's Spartan are registered by the party kit
-//!   (apps/party_kit/src/target_bodies.rs).
+//!   Halo's Spartan are registered by the party's roster
+//!   (apps/party_roster/src/target_bodies.rs).
 
 use std::collections::BTreeMap;
 
