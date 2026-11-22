@@ -460,7 +460,8 @@ frames 1–4. Between 0.5 and 0.6 s it loses the starflash and the flare
 and settles to the core and sparks; smoke joins from 2 s. A
 measurement showing the flash peak at frame 2 and then shrink (the
 parity log of 2026-11-20) is not explained by the system itself
-(Open questions 10).
+(Open questions 10). **Re-measured 2026-11-21 frame-exact, it doesn't
+happen**: real TF2 grows exactly as above (Open questions 10).
 
 The `_core`'s 400-unit radius on a trail renderer would be a strip far
 wider than its 50-unit maximum length; real TF2 draws the firing Minigun's
@@ -1044,6 +1045,28 @@ has them all 0.
    units out; the farther band needs the eject attachment's x axis
    tilted upward (a longer flight), which depends on the spun Heavy's
    pose (player_animation.md). Unconfirmed.
+   **Measured 2026-11-21** (tools/tf2ref, our own Heavy with the stock
+   Minigun forced, firing level on 2fort 1.5 s into the fire; third
+   person at FOV 50, `cam_idealdist` 220: frozen with `setpause` and
+   photographed from above, both sides and the front; then 60 frames a
+   second from behind (camera on the aim line), the scale taken from
+   debug boxes drawn at known points beside the eye: 5.65 px/unit in
+   the eye's vertical plane square to the aim, the casings' plane):
+   - Direction: the casings leave to the Heavy's **right**, square to
+     the aim within ~5° (from above: the stream runs out sideways, a
+     little backward; no forward component seen), and **rising**.
+   - First velocity in the world, two casings tracked frame by frame
+     from just beside the ammo box (birth ~28 units right of and ~41
+     below the eye): (right 133, up 74) and (right 170, up 53)
+     units/s, i.e. |v| 150-180 and an elevation of ~17-29° (mean
+     ~23°) above level. So the eject attachment's x axis under the
+     spun firing pose points out to the right and about 20-25° up;
+     the speeds are inside this file's 100-200.
+   - In flight: the vertical speed falls ~0.5 px/frame² (≈ 320
+     units/s² including drag; the system's −252 plus drag); the
+     sideways speed loses ~2 % a frame. Not refitted to the
+     operators: the tracks are 8-13 frames long and centroids whole
+     pixels (±10 % on each speed).
 7. **A sprite trail's length fade-in and a still particle** (measured
    2026-11-20, tools/tf2ref): the Flame Thrower's `new_flame_pilot`
    (locked to the muzzle, no movement operator, a start speed of
@@ -1116,3 +1139,20 @@ has them all 0.
     third-person capture of a bot's firing start, or the first-person
     capture repeated with the arms' model hidden by a material override,
     would.
+    **Answered 2026-11-21: there is no frame-2 peak.** Re-captured on
+    our own Heavy with the stock Minigun forced (spun 1.7 s with
+    attack2, then attack), `host_framerate 0.016667` (one rendered
+    frame per 1/60 s of game time; the earlier captures used
+    `host_timescale`, under which TF2's particles are known to come out
+    wrong), 1024x768, FOV 90, `viewmodel_fov` 54, twice, plus a third
+    run with `r_drawparticles 0`. Pixels changed from the frame before
+    attack (fuzz 12 %), frames from the shot's frame: shot frame (a
+    tracer only) 1,460 / 617; then 4,047 / 3,420; 6,665 / 5,632;
+    7,020 / 5,689; then 5,300-8,200 flickering (the two runs). With
+    particles off the same frames change only 7-1,200 px (the view
+    model barely moves: it is no part of the flash's shape). So the
+    first glow is the frame after the tracer at ~60 % of full area,
+    ~95 % the next, full by the third and held, as §8.3.1's data says
+    (the core reaching its largest strip at its third frame). The
+    2,000 / 5,700 / 5,200 / 4,500 reading was most likely this flicker on a
+    differently stepped capture.

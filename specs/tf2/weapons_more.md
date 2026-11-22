@@ -571,9 +571,38 @@ f_{ang} = \rho\,\big(a_x|\omega_x| + a_y|\omega_y| + a_z|\omega_z|\big)
     absolute components, not the vector's length). a_z was not measured
     (a launch never spins about z); take 7.3 × 10⁻⁷. At ρ = 2 the
     launch spin (1200, ±1600, 0) loses 0.41 % a tick, (1200, 0, 0) 0.17 %.
-  - Grenade: about 0.2–0.25 % a tick at ~2500 degrees/s; its ω turns in
-    the body during flight (its inertia isn't the same about every
-    axis), so it isn't fitted (Open questions 22).
+  - Grenade: **a_x = 9.45 × 10⁻⁷, a_y = a_z = 3.98 × 10⁻⁷** per
+    (degree/s) per tick, the whole ω scaled by (1 − f_ang) as for the
+    sticky (fitted 2026-11-21 on ω_x alone, which only drag changes:
+    131 ticks of two launches, 0.11 % rms; the perpendicular part fitted
+    separately gave the same factor, 9.40 / 4.01 × 10⁻⁷). The grenade's
+    body x (its long axis, about which it is launched spinning at 1200)
+    has the least inertia, so ω also **precesses in the body**, which is
+    why a plain per-axis fit failed (Open questions 22, answered):
+    - Its inertia is symmetric about x: I_y = I_z = I_⊥, I_x = 0.288
+      I_⊥ ((I_⊥ − I_x) / I_⊥ = 0.712, measured with `air_density` 0:
+      ω_x stays exactly 1200.0 for 69 ticks while (ω_y, ω_z) turns
+      −12.81° a tick, i.e. 0.712 × ω_x × dt, from +y toward −z).
+    - **Order in a tick**: drag first (the f_ang above from the tick's
+      starting ω), then the rotation of the rigid body, integrated in
+      **n equal sub-steps**, n = 1 + floor(|ω| × dt / 4.775°) with |ω|
+      the tick's starting speed (4.775° = 1/12 radian; at dt = 0.015,
+      n = 1 + floor(|ω| / 318.3 degrees/s): 4 at 1205, 5 up to 1590,
+      6 from 1594, 7 up to 2227, 8 from 2233, measured). Each sub-step
+      is a forward (explicit) Euler step of the torque-free rigid body:
+      with φ = 0.712 × ω_x × dt / n in radians, ω_y ← ω_y + φ ω_z and
+      ω_z ← ω_z − φ ω_y (both from the sub-step's old values); ω_x
+      unchanged. So each tick ω_⊥ turns by n × atan(φ) and its length
+      grows by (1 + φ²)^(n/2) ≈ 1 + θ² / (2n), θ = nφ: with no drag
+      ×1.00626 a tick at n = 4 up to ×1.00313 at n = 8 (measured
+      1.00626, 1.00502, 1.00418, 1.00358, 1.00313 at n = 4–8). This
+      growth is the engine's integration, not physics; it is part of how
+      the real grenade tumbles.
+    - Check (forward simulation of this rule from a launch's first
+      measured ω over its first second, ρ = 2): within 4–15 degrees/s of
+      the measured ω on every tick (launches with |ω| 1384 and 2646).
+    - The sticky shows none of this (its ω keeps its direction in the
+      body): its inertia is the same about x and y.
 - Damping (the engine's other speed loss) is 0 for both models.
 - Worked (sticky, ρ = 2, measured): a sticky launched level at about
   1030 units/s lost about 0.4 % a tick on top of gravity: its horizontal
@@ -596,7 +625,18 @@ v_{fwd}(h) = 900 + 1500\,\min(h / 4,\ 1)
 ```
 
   along the aim's forward, plus exactly 200 up and the same ±10 random
-  jitter, spin, start point and hull check as the grenade (§4.1). The
+  jitter, spin, start point and hull check as the grenade (§4.1).
+  **The physics engine then caps the body's speed at 2000 units/s, on
+  the whole vector's length, direction kept** (measured 2026-11-21,
+  VScript physics velocity on the first tick of a stock sticky
+  auto-launched at full charge, aimed 10° up: 1984.7 units/s after
+  that tick's gravity and drag, which back out to a launch of 2000.4
+  along (0, 0.967, 0.255), the direction of the uncapped
+  2400 forward + 200 up (2408) vector; its spin, (1196.66, −706.03, 0),
+  is the launch (1200, 2r, 0) after exactly one tick of §4.4's drag).
+  So every charge above h ≈ 2.91 s (v_fwd ≈ 1990, |v| = 2000 with the
+  200 up) leaves at 2000; the angular cap (3600 degrees/s) is never
+  reached. The
   charge changes nothing but the speed (no damage effect on the stock
   launcher).
 - The next charge can start 0.6 s after the launch. A weapon switch
@@ -698,7 +738,11 @@ r_{max} = 146 \times \left(0.85 + 0.15\,\min\!\left(\max\!\left(\frac{a - 0.8}{2
 - While attack is held with ammo and the Pyro's eyes are not under water:
   if the line from his eye to the muzzle (the weapon's visual end) is
   blocked by something that can't be damaged (a wall he is pressed
-  against), nothing is emitted. Otherwise the Pyro emits one **flame
+  against), nothing is emitted. **The "muzzle" the server tests is a
+  fixed point of the eye's frame, not an animated attachment: 40 units
+  along the aim, 5 to the right, 0 up** (the flame point's own start
+  point, below) — the same standing and crouched and at every pitch
+  (measured 2026-11-21, see "Blocked at a wall" below). Otherwise the Pyro emits one **flame
   point** per attack, every 0.02 s nominally, which on 0.015 s ticks is
   every 2 ticks (≈ 33 a second). A press shorter than 0.2 s still emits
   for 0.2 s.
@@ -729,6 +773,34 @@ r_{max} = 146 \times \left(0.85 + 0.15\,\min\!\left(\max\!\left(\frac{a - 0.8}{2
   start and the 12-unit box, flames reach about 340 units ahead of the
   eye (the wiki's "≈ 350"). A simplest port may instead test a cone of
   that length every flame hit interval.
+- **Blocked at a wall** (measured 2026-11-21, tools/tf2ref, our own Pyro
+  with the stock Flame Thrower forced, against 2fort's flat wall at
+  y = −831.97; VScript every tick: the weapon's firing state, the ammo,
+  and whether a flame point was made that tick; the player moved 0.25 or
+  0.5 units a tick toward or away from the wall while attack is held):
+  - The test is a **line** (not a box) from the eye to the point E = eye
+    + 40 × forward + 5 × right (eye frame, no up offset). Measured
+    thresholds of the eye's distance D to the wall (± 0.5 units, the
+    tick's position lag): looking straight at it 40.0–40.5 standing and
+    40.0–40.5 crouched (eye 68 / 45 above the feet: no change); pitch
+    ±30° 35.0–35.5 (= 40 cos 30° = 34.6 plus the lag; up and down alike,
+    so no vertical offset); pitch ±60°, ±85° never blocked down to
+    D = 25 (the hull's own limit is 24); turned 40° so the right side
+    faces the wall 34.0–34.5 (40 cos 40° + 5 sin 40° = 33.8), the other
+    way 27.5–28.0 (30.6 − 3.2 = 27.4). The point does not follow the
+    animated gun.
+  - **While blocked nothing happens at all**: the weapon's firing state
+    stays idle (it never enters its start or firing state), no ammo is
+    taken, no point is made. So the client starts no stream system and
+    plays no start or loop sound (they follow that state; a third-person
+    picture against the wall showed no flame at all). Attack held, the
+    weapon starts normally (state "start", the start sound, one ammo
+    in the first tick, as from idle) on the first tick the line is clear.
+  - **Walking into the wall while firing**: the check is made at each
+    emission; the first emission whose line is blocked returns the
+    weapon to idle in that tick, as a release does (measured: last point
+    and last ammo at D = 40.0, idle on the next emission tick at 39.5);
+    no ammo is taken for it.
 
 How every client runs these points and draws the stream on them:
 [flames.md](flames.md).
@@ -1172,7 +1244,10 @@ f = 1 unless said, 66.7 tick (0.015 s).
 | 27 | Grenade Launcher clip 0, reserve 16 | – | clip 1 at +1.2 s (wiki 1.24), 4 at +3.0 s; reserve 12 |
 | 27b | Grenade passes a teammate at 0.1 s / at 0.5 s of flight | – | passes through / bounces off (× 0.45), no explosion |
 | 28 | Sticky, attack pressed and released at once, jitter off | – | forward speed 900, up 200 |
-| 29 | Sticky, held 2 s / 4 s | – | 1650 / 2400 (but see Open questions 23); at 4 s it launches without release; still held, the next charge starts at 4.6 s |
+| 29 | Sticky, held 2 s / 4 s | – | 1650 forward + 200 up / 2400 + 200 up, the latter capped to 2000 on the vector's length (§5.1); at 4 s it launches without release; still held, the next charge starts at 4.6 s |
+| 29e | Sticky, full charge, aimed 10° up, ρ = 2 | first tick | speed 2000 before the tick (direction of the uncapped vector), 1984.7 after its gravity and drag |
+| 29f | Grenade in flight, `air_density` 0, ω (1200, 107.9, −24.5) | one tick | n = 4 sub-steps; ω_x 1200; (ω_y, ω_z) turned −12.81°, length × 1.00626 |
+| 29g | Grenade in flight, ρ = 2, ω (1195.0, −2302.3, 521.6) | one tick | drag f = 2 × (9.45e-7 × 1195.0 + 3.98e-7 × 2823.9) = 0.00451, then n = 9 sub-steps of the precession; ω_x → 1189.6 |
 | 29b | Sticky launched with r = 187 | – | spin (1200, 374, 0) degrees/s about its forward, left, up |
 | 29c | Sticky in flight, ρ = 2, body-frame velocity (1000, 0, 0) / (577, 577, 577), ω (1200, 1600, 0) | one tick | speed × (1 − 0.00286) / × (1 − 0.00495); ω × (1 − 2 × (7.27e-7 × 1200 + 7.36e-7 × 1600)) = × (1 − 0.00410) |
 | 29d | Sticky in flight, `air_density` 0 | – | no speed or spin loss; only gravity (800) |
@@ -1196,6 +1271,9 @@ f = 1 unless said, 66.7 tick (0.015 s).
 | 44 | Enemy lit by one flame hit, then out of the flame | – | burn 3.4 s: 4 at +0.5, +1.0, …, +3.5 (7 ticks, 28) |
 | 45 | Enemy in flames 10 s, then out | – | burn capped at 10 s: 20 more ticks, 80 |
 | 46 | Enemy Pyro hit by flames | – | direct damage only, 0.25 s burn look, no afterburn |
+| 46b | Pyro facing a flat wall, eye 39.5 / 40.5 units from it (pitch 0, standing or crouched) | hold attack 1 s | nothing: state idle, ammo unchanged, no points, no stream or sound / fires normally |
+| 46c | The same at pitch 30° (or −30°), eye 34.5 / 35.5 from the wall; turned 40° with the right side toward the wall, 33.5 / 34.5 | hold | blocked / fires |
+| 46d | Firing, walking into the wall | – | the first emission whose eye-to-E line is blocked returns the weapon to idle that tick, no ammo for it; it restarts (start state, start sound) on the first clear tick while attack is held |
 | 47 | Burning player steps into water to the waist | – | burn ends |
 | 48 | Syringe at 0 / 512 / 1024 (Medic at impact) | hit | 12 / 10 / 5 |
 | 49 | Syringe Gun, hold attack, clip 40 | – | 40 needles in 4.095 s, then reload 1.305 s |
@@ -1302,15 +1380,21 @@ Probe checks (live dedicated server, bots; never ports 27015/27030):
     up, about half the disc at 1.5 s, the whole disc at 4 s. Others' view
     unmeasured: a puppet bot could not be made to scope (`bot_forceattack2`
     and `bot_mimic` both tried).
-22. **The grenade's angular drag** (§4.4): its spin vector turns in the
-    body during flight, so the per-axis fit failed (3 % error, a negative
-    term); about 0.2–0.25 % of |ω| a tick at ~2500 degrees/s, ρ = 2. Fit
-    it in the body's principal axes, or log the body's angles with ω.
-23. **The physics engine's speed limits**: its defaults cap a body at
-    2000 units/s and 3600 degrees/s. The spin (at most ~2683) is under
-    the angular cap, but a fully charged sticky (2400 forward + 200 up)
-    is over the linear one: whether it leaves at 2000 is unmeasured
-    (VScript: a 4 s charge, read the physics velocity the first tick).
+22. **The grenade's angular drag** (§4.4): *answered 2026-11-21*
+    (tools/tf2ref, VScript: the grenade's physics angular velocity in
+    its own axes every tick, stock launcher, `air_density` 2 and 0,
+    five launches). The model's axes are its principal axes (x the long
+    one, I_x = 0.288 I_y, I_y = I_z); drag a = (9.45, 3.98, 3.98) ×
+    10⁻⁷ on the whole ω as for the sticky; the turning of ω in the body
+    is the torque-free precession, integrated in 1 + floor(|ω| dt /
+    4.775°) forward-Euler sub-steps a tick (§4.4). Left open: the linear
+    drag's c was fitted while the body tumbled under this rule; it was
+    not refitted.
+23. **The physics engine's speed limits**: *answered 2026-11-21*
+    (VScript, the first tick of a full-charge stock sticky): it leaves
+    at 2000 units/s, the cap applied to the vector's length with its
+    direction kept (§5.1). The spin (at most ~2683) is under the angular
+    cap (3600 degrees/s).
 24. **The drum's turn** (§9.6): *answered 2026-11-21* by re-measuring
     with the stock gun forced: clockwise seen from behind the gun (and
     by the player), 60° a shot, smooth over about 0.13–0.15 s with slow

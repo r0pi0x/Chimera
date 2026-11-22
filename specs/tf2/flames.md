@@ -227,10 +227,14 @@ and drawn.
 ## Edge cases
 
 - Firing with the eye under water: no points, the bubble system only.
-- Pressed against a wall (eye-to-muzzle line blocked by something that
-  cannot be damaged): no points (weapons_more.md §7.1), but the burst's
-  particle system still starts at the muzzle and emits sprites whose
-  active CP is stale or absent (Open questions 3).
+- Pressed against a wall (the line from the eye to the fixed point 40
+  forward, 5 right of it blocked by something that cannot be damaged):
+  no points, and nothing else either: the weapon never leaves its idle
+  state, so no ammo is taken and **no burst starts**: no stream system,
+  no start or loop sound (measured 2026-11-21, weapons_more.md §7.1
+  "Blocked at a wall"; this replaces the earlier reading that the
+  system still starts). Walking into the wall while firing ends the
+  burst at the first blocked emission, as a release does.
 - A tap shorter than 0.2 s still emits for 0.2 s (≈ 7 points), so it is
   always visible.
 - 30 points in flight block new points: at 2 ticks per point and a
@@ -293,6 +297,26 @@ and drawn.
 3. The sprites' behaviour when their assigned CP is never set or its
    point has died (CP left at its last position, or the sprite dies):
    unconfirmed.
+   *Narrowed 2026-11-21:* a burst blocked at a wall never starts (Edge
+   cases), so "never set" does not happen there.
 4. The size-fade/maxsize of the flame material (0.3/0.5/0.4 × l) on the
    flame core when the Pyro looks at a wall at point-blank: sprites over
    0.5 × l vanish; check against the real game.
+   *Measured 2026-11-21* (tools/tf2ref, own Pyro, stock Flame Thrower,
+   2fort's bridge, looking 10° down at the low side wall from
+   `flames.tf2`'s spot, FOV 75; `tf_debug_flamethrower 1` drawing the
+   server's points as boxes, first person and from the side): the
+   points do not stop at the wall: they pile against it and slide, and
+   with the upward drift (+50 units/s a tick, kept by the slide,
+   §1's quirk) they climb the wall and pass over its top. At 0.5 s the
+   boxes stand in a column from near the floor to just above the
+   wall's top; at 1.0 s the column is about as wide on screen but
+   reaches higher above the top (about 20 px at 1024x768, ~5 % of its
+   height) and the oldest boxes sit over the edge, beyond the wall's
+   plane. A cloud drawn on these points is therefore higher at 1 s
+   than at 0.5 s; the "~25 % wider at 1 s" of the parity pass was
+   not reproduced on the points (a points-only measure: the width of
+   the drawn sprites, the bloom of 1, and the sprites' own catch-up
+   are left). Own-view sprites at the wall read small and violet at
+   0.5 and 1 s (the near, young part of the stream, faint near the
+   nozzle as in 1).
