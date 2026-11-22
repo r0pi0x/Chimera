@@ -58,6 +58,7 @@ port adds the ones below.
 | [hud.md](hud.md) | 3 | draft | the HUD's pieces |
 | [vehicles.md](vehicles.md) | 3 | draft | vehicles |
 | [characters.md](characters.md) | 4 | draft | the campaign's characters (Elite, Grunt, Jackal, Hunter, Marine, Flood) as playable bodies: roster, weapons, body, movement, vitality, voice, download units |
+| [change_colors.md](change_colors.md) | 4 | draft | change colours A to D: where each character's and rank's tint comes from (actor variant, tag permutations, player colour) and how a model shader applies it |
 | [low_health.md](low_health.md) | 4 | draft | every low-shield, low-health and damage cue the local player gets (index over hud.md, effects.md; warning sounds, arrows, flashes) |
 
 A file's link is added here when it lands.
