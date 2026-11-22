@@ -212,6 +212,21 @@ elif [ "$overlap" = 1 ]; then
 else
     cmds=("cargo test $t_args --features dev --quiet --no-fail-fast -- --skip heavy::")
 fi
+# The build without --features dev: game data (`game_data!`) is a different
+# build there (compiled in, not read from the checkout), and the root
+# package's bins (chimera_pack) read it. A cheap check of those bins, only
+# when Rust code or a data document changed; CHIMERA_COMMIT_NODEV=0 skips it.
+if [ "${CHIMERA_COMMIT_NODEV:-1}" != 0 ] && [ "$runner" = cargo -o "$runner" = nextest ]; then
+    if { if [ "$worktree" = 1 ]; then printf '%s\n' "${changed[@]}"; else git diff --cached --name-only; fi; } \
+        | grep -qE '\.(rs|toml)$'; then
+        echo "$who: checking the build without --features dev (-p mashup bins)" >&2
+        if ! run cargo check -p mashup --bins --quiet >"$log.nodev" 2>&1; then
+            grep -E "^error" -A6 "$log.nodev" | head -30
+            echo "$who: the build without --features dev fails (full log: $log.nodev); not committing." >&2
+            exit 1
+        fi
+    fi
+fi
 : >"$log"
 : >"$log.check"
 check_s=- test_s=-

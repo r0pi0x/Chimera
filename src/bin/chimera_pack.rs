@@ -594,7 +594,7 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
             // its minigame cue pack's sounds (a rung up or down, the lead).
             if "base".starts_with(only) {
                 take();
-                if let Ok(pack) = chimera_core::cues::CuePack::parse(cs_source::game::parts::CUES) {
+                if let Ok(pack) = chimera_core::cues::CuePack::parse(cs_source::game::parts::CUES.text()) {
                     for file in pack.sounds.values() {
                         let _ = tapped.read(file);
                     }
@@ -747,7 +747,7 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                     let _ = tapped.read(&normalize(path));
                 }
                 // The minigame cue pack's sounds (a rung up or down, the lead).
-                if let Ok(pack) = chimera_core::cues::CuePack::parse(combat_arms::game::parts::CUES) {
+                if let Ok(pack) = chimera_core::cues::CuePack::parse(combat_arms::game::parts::CUES.text()) {
                     for file in pack.sounds.values() {
                         let _ = tapped.read(&normalize(file));
                     }
