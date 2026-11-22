@@ -20,7 +20,8 @@ the rocket and its explosion, knockback, weapon switching and reloading,
 and the Minigun's states. The per-weapon numbers (damage, interval,
 spread, clip, range) live in the weapon scripts, which the SDK does not
 contain; those stay as before.
-Status: checked against the SDK's game code (2026-11-15)
+Status: checked against the SDK's game code (2026-11-15); knockback
+(§5.4) measured in the real game (2026-11-22)
 
 ## Summary
 
@@ -178,6 +179,7 @@ must spin up, slowing and grounding the Heavy while spun.
 | force_lower | 10 | units | the push comes from this far below the inflictor's centre |
 | lift_speed | 250 | units/s | vertical speed above which a player leaves the ground |
 | heavy_knockback_scale | 0.5 | – | the Heavy takes half knockback (not from his own blasts) |
+| ground_push_limit | 0.9 | × max speed | a grounded victim's horizontal speed at his next movement tick after a push (§5.4.1, measured) |
 | minigun_wind_up | 0.75 | s | spin-up before the gun counts as spun |
 | minigun_fire_step | 0.1 | s | from spun to the first shot |
 | minigun_penalty_time | 1.0 | s | damage and spread penalty fade by this spin time |
@@ -604,6 +606,82 @@ Worked: an enemy rocket hitting a standing Soldier directly at 512 units
 (90 damage): 540 units/s; a crit (270): 1620 → capped 1000; on a Heavy:
 270 (crit: 500). A Soldier's own rocket at his feet, airborne (D = 53.8):
 538 units/s standing, 802 crouched; on the ground (D = 89.6, s = 5): 448.
+These are the velocity **added**; on a victim who stays on the ground
+most of it is removed at once (§5.4.1).
+
+#### 5.4.1 Measured in the real game: the ground speed limit (2026-11-22)
+
+The push formula above is right (measured), but it is not what a victim
+standing on the ground feels. **At his next movement tick, a victim on the
+ground has his horizontal speed cut to 0.9 × his current maximum
+speed** (after that tick's friction; vertical speed 0 while grounded).
+So a push only carries a grounded victim at the full size when its
+vertical part exceeds 250 units/s (he leaves the ground first, §5.4's
+lift rule) or when he was already in the air. The added velocity is
+present for the one tick between the damage and his movement, but he
+never moves with it: his position advances by the limited speed only.
+Then ordinary ground friction (`sv_friction` 4, `sv_stopspeed` 100: × 0.94
+a tick above 100 units/s, −6 units/s a tick below, at 66.67 ticks a
+second) slows him.
+
+| Victim (max speed) | Limit 0.9 × max | Measured |
+|---|---|---|
+| Scout (400) | 360 | 360.0 |
+| Soldier (240) | 216 | 216.0 |
+| Medic (320) | 288 | 288.0 |
+| Heavy (230) | 207 | 207.0 |
+| Heavy, Minigun spun (110) | 99 | 99.0 |
+
+- In the air there is no limit and no drag: the full push stays on
+  horizontally until he lands; on the landing tick the limit applies
+  (616.5 units/s for the whole flight, then 216 on a Soldier).
+- A push already below the limit is untouched (only friction).
+- The Heavy's half (×0.5) is on the push itself and does not depend on
+  spinning; a spun Heavy resists more only because his maximum speed,
+  and with it his limit, is 110.
+- Not measured: a victim who is himself moving with input (all victims
+  here stood still, no buttons). Whether a running victim keeps a
+  higher speed is open (Open questions 9).
+
+Method: real TF2 (listen server, `sv_cheats 1`, muted, `tr_target`, flat
+floor at z = −64), stock weapons swapped in on the shooter (Scattergun 13,
+Rocket Launcher 18, Soldier's Shotgun 10, Minigun 15), victims puppet bots
+standing still with no input, crits off (`tf_weapon_criticals 0`), damage
+spread off (`tf_damage_disablespread 1`), fixed pellet spread
+(`tf_use_fixed_weaponspreads 1`); the victim's velocity, origin,
+ground flag and health logged every tick by a script, the shooter aiming
+at the victim's centre. Tolerances: speeds ±0.5 units/s, distances
+±1 unit; the push magnitude equals the health lost × 6 within 1 %
+(unrounded damage).
+
+Results (victim a Soldier unless said; "pushed" is the magnitude of the
+added velocity, "moves at" the speed of his first movement tick, "slide"
+his total displacement until he stops):
+
+| # | Shot | Damage | Pushed (horizontal, vertical) | Moves at | Slide |
+|---|---|---|---|---|---|
+| 1a | Scattergun at 512 (5 of 10 pellets hit) | 30 | 180 (180, 3.5) | 169 (friction only) | 30.5 |
+| 1b | Scattergun at 400 | 60 | 358 (357.6, 8.9) | 216 | ≈ 42 |
+| 1c | Scattergun at 64, all hit | 104 | 624 (616.5, 96.3) | 216 (Scout 360, Medic 288) | ≈ 42 |
+| 1d | Scattergun at 64 on a Heavy (idle / spun) | 104 | 312 (308.2, 48.2) | 207 / 99 | – |
+| 2 | Scattergun at 64 on a Soldier mid-jump | 104 | 624 (616.5 horizontal, +96 vertical) | 616.5 all the flight; 216 on landing | 570 (527 in the air) |
+| 3a | Minigun spun, ≈ 1 s burst at 512 | 7–25 a shot, 9 hits | ≤ 6 × damage a hit | sawtooth: 216 after each hit, ≈ 158 before the next; mean ≈ 180 | 125 |
+| 3b | Minigun spun, ≈ 1.3 s burst at 256 | 6–33 a shot, 13 hits | up to 346 | the same 216 sawtooth, mean ≈ 179 | 219 |
+| 4a | Rocket, direct hit at 512 | 90 | 540 (510.9, 174.9) | 216 (vertical < 250: stays grounded) | ≈ 42 |
+| 4b | Rocket on the floor ≈ 100 in front of him | 59 | 356 (317.9, 159.4) | 216 | 42 |
+| 4c | Rocket on the floor ≈ 50 in front of him | 72 | 435 (326.6, 287.0) | 326.6, airborne (vertical > 250) | – |
+| 5a | Shotgun at 512 (4 pellets hit) | 24 | 144 | 135 (friction only) | – |
+| 5b | Shotgun at 64 | 89 | 536 (529.5, 82.7) | 216 | ≈ 42 |
+
+So: the predicted 360 (Scattergun/Shotgun at 512) and ≈ 630 (point
+blank) are the velocity added, confirmed, but a grounded Soldier moves at
+216 at most and slides ≈ 42 units; the Minigun cannot push a grounded
+victim faster than his limit (no faster than he walks), not the
+440–655 units/s the formula alone gives. Bullets have no other rule: one
+push per shot of 6 × the damage, no per-tick or per-bullet cap seen. At
+512 not every pellet hits a standing bot even with fixed spread (the
+outer pellets pass beside the hitboxes): 5 of 10 Scattergun, 4 of 10
+Shotgun pellets in these runs.
 
 ### 6. Bullets and spread (Scattergun, Shotgun, Minigun)
 
@@ -970,11 +1048,15 @@ pellets unless said, damage rounded at the end.
 | 40 | Crit chance, 0 / 200 / 800 / 2000 damage dealt 2–20 s ago | – | 2 % / 3.5 % / 8 % / 8 %; 800 dealt 1 s ago: 2 % |
 | 41 | Minigun spun > 1 s, crit roll succeeds at t | keep firing | every shot from t to t + 2 s is a crit (27 per bullet, no distance modifier), the crit fire loop plays; next roll at t + 1 s at the earliest |
 | 42 | `tf_damage_disablespread` 0, Scattergun at 512, 1000 shots | – | damages spread over ≈ 60 × [0.85, 1.15] (t in [0.4, 0.6]: M₀ from 1.148 to 0.852; with k = 1.5 near: up to 1.222) |
-| 43 | Heavy hit by a rocket | – | half the knockback a Soldier would get from the same damage |
-| 44 | Enemy rocket direct hit on a standing Soldier at 512 | – | 90 damage; +540 units/s away from the point 10 below the rocket's centre; crit: 270 damage, push capped at 1000 |
+| 43 | Heavy hit by a rocket | – | half the knockback a Soldier would get from the same damage (measured with the Scattergun: 312 against 624) |
+| 44 | Enemy rocket direct hit on a standing Soldier at 512 | – | 90 damage; +540 units/s away from the point 10 below the rocket's centre (measured: 510.9 horizontal, 174.9 up); he stays grounded and moves at 216, slides ≈ 42; crit: 270 damage, push capped at 1000 |
 | 45 | Soldier airborne, own rocket at his feet (r ≈ 1) | – | 89.63 × 0.6 = 53.8 → 54 damage; push 538 units/s standing, 802 crouched; blast-jumping state set |
 | 46 | Soldier on the ground, own rocket at his feet (r ≈ 1) | – | 90 damage; push 448 units/s (scale 5); leaves the ground if its vertical part exceeds 250 |
-| 47 | Scattergun on a standing enemy at 512, all 10 hit | – | 60 damage, push 360 units/s from the shooter's centre lowered 10 |
+| 47 | Scattergun on a standing enemy at 512, all 10 hit | – | 60 damage, push 360 units/s from the shooter's centre lowered 10 (measured: 60 damage at 400 → 358 added); a grounded Soldier then moves at 216 |
+| 47a | Scattergun at 64 on a standing Scout / Soldier / Medic / Heavy / spun Heavy, all hit (measured) | – | 104 damage, 624 added (Heavy 312); first movement tick at 360 / 216 / 288 / 207 / 99, then friction × 0.94 a tick |
+| 47b | The same on a Soldier mid-jump (measured) | – | 616.5 horizontal kept until landing, then 216 |
+| 47c | Minigun spun, burst on a standing Soldier at 256 or 512 (measured) | – | his speed never exceeds 216: 216 after each hit, decaying to ≈ 158 before the next (mean ≈ 180) |
+| 47d | Rocket on the floor beside a standing Soldier: push vertical part 287 / 159 (measured) | – | leaves the ground, keeps 326.6 horizontal / stays grounded, moves at 216 |
 | 48 | Rapid-fire crit roll, p = 2 % / 8 % | – | per-second chance 1/98 ≈ 1.02 % / 1/23 ≈ 4.35 % |
 | 49 | Minigun spun on attack2 for 2 s from the press, then attack | – | first shot full damage (36 at 512) and spread 0.08 |
 | 50 | Rocket aimed at a wall 150 units ahead (aim trace hit nearer than 200) | – | flies toward the 2000-unit point along the view, not to the wall's crosshair point |
@@ -1018,7 +1100,9 @@ Probe checks (live dedicated server, bots; never port 27015/27030):
    rocket's damage type carries the "half fall-off" flag, else 90/146 ≈
    0.616 (55.5 at the edge); the per-weapon damage-type table is not in
    the published SDK. The wiki's 50 % says 0.5. P2.
-9. **Knockback.** Settled (§5.4).
+9. **Knockback.** Settled (§5.4) and measured (§5.4.1). Open: whether a
+   victim moving under his own input keeps more than 0.9 × his maximum
+   speed after a push (all measured victims stood still).
 10. **Fixed spread.** The pattern is settled (§6.2). Whether the Minigun
     uses it depends on whether its damage type includes buckshot (the
     missing damage-type table).
