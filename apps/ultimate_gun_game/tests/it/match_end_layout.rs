@@ -6,8 +6,8 @@
 //! - Leave top left; the chat down the left column from under it to the
 //!   bottom; the standings down the right (top-aligned, the winner their
 //!   first row and a taller one); the details line top centre; the climb
-//!   with the stat tiles directly under it; the vote cards bottom centre
-//!   and the countdown bottom right;
+//!   with the stat tiles directly under it; the vote cards four to a row under
+//!   the tiles in the centre and the countdown bottom right; the climb small and centred;
 //! - none of them overlaps another, all inside the window, every
 //!   standings row inside its column, the chat box one size whatever it
 //!   holds and its newest line inside it;
@@ -192,10 +192,14 @@ fn the_blocks_sit_where_the_layout_puts_them_and_never_overlap() {
                 assert!(panel.min.y < h * 0.07 && panel.min.x > w * 0.6 && (panel.width() / w - 0.3).abs() < 0.03, "{at}: standings top right, 30 %: {panel:?}");
                 assert!(details.center().y < h * 0.1 && details.max.y <= graph.min.y, "{at}: the details line is above the climb: {details:?}");
                 assert!((details.center().x - graph.center().x).abs() < w * 0.02, "{at}: the details line is centred over the climb");
-                assert!(graph.width() > w * 0.3 && graph.height() > h * 0.3, "{at}: a large climb: {graph:?}");
+                assert!(graph.width() > w * 0.25 && graph.width() < w * 0.3 && graph.height() > h * 0.15 && graph.height() < h * 0.4, "{at}: a small, readable climb: {graph:?}");
                 assert!(stats.min.y >= graph.max.y - 1.0 && stats.min.y < graph.max.y + h * 0.08, "{at}: the tiles directly under the climb: {stats:?} {graph:?}");
-                assert!(stats.min.x >= graph.min.x - 1.0 && stats.max.x <= graph.max.x + 1.0, "{at}: the tiles under the climb's width");
-                assert!(cards.iter().all(|c| c.min.y > h * 0.8 && c.center().x > dock.max.x && c.center().x < panel.min.x), "{at}: cards bottom centre: {cards:?}");
+                assert!(stats.min.x <= graph.min.x + 1.0 && stats.max.x >= graph.max.x - 1.0 && (stats.center().x - graph.center().x).abs() < 2.0, "{at}: the climb is centred over the tiles");
+                assert!(cards.iter().all(|c| c.min.y >= stats.max.y && c.center().x > dock.max.x && c.center().x < panel.min.x), "{at}: cards in the centre under the tiles: {cards:?}");
+                let row_y = cards[0].min.y;
+                assert!(cards.iter().all(|c| (c.min.y - row_y).abs() < 1.0), "{at}: four cards in one row: {cards:?}");
+                let (lo, hi) = cards.iter().fold((f32::MAX, f32::MIN), |(a, b), c| (a.min(c.min.x), b.max(c.max.x)));
+                assert!(lo < stats.min.x + 2.0 && hi > stats.max.x - w * 0.02, "{at}: the cards span the middle column");
                 assert!(countdown.center().x > w * 0.7 && countdown.max.y > h * 0.9, "{at}: the countdown bottom right: {countdown:?}");
 
                 // The winner is the first row, taller than the rest, in the accent frame's place.
@@ -208,8 +212,7 @@ fn the_blocks_sit_where_the_layout_puts_them_and_never_overlap() {
                 for (i, r) in rows.iter().enumerate() {
                     assert!(inside(*r, panel), "{at}: standings row {i} {r:?} is outside its column {panel:?}");
                 }
-                assert!(panel.max.y <= cards.iter().map(|c| c.min.y).fold(f32::MAX, f32::min) + 1.0, "{at}: the standings reach the footer");
-                assert!(panel.max.y <= countdown.min.y + 1.0, "{at}: the standings reach the countdown");
+                                assert!(panel.max.y <= countdown.min.y + 1.0, "{at}: the standings reach the countdown");
 
                 // Nothing covers anything, nothing leaves the window.
                 let mut blocks = vec![("Leave", leave), ("the chat", dock), ("the details", details), ("the climb", graph), ("the tiles", stats), ("the standings", panel), ("the countdown", countdown)];
@@ -257,6 +260,42 @@ fn the_blocks_sit_where_the_layout_puts_them_and_never_overlap() {
             }
             con(&mut sim, "ui_scene off");
             settle(&mut sim);
+        }
+        con(&mut sim, "ui_scene off");
+        settle(&mut sim);
+    }
+}
+
+/// Voting, a lead, the lock and a winner change only colours, the outline
+/// and the badge: the cards keep their size and place, and stay clear of
+/// the standings and the countdown.
+#[test]
+fn voting_never_moves_or_resizes_the_map_cards() {
+    let mut sim = sim();
+    for size in SIZES {
+        resize(&mut sim, size);
+        con(&mut sim, "ui_scene matchend");
+        settle(&mut sim);
+        let f = match_end_signal::staged_fixture();
+        let base = all::<VoteCard>(&mut sim);
+        assert_eq!(base.len(), 4, "{size:?}");
+        let states: [(Option<usize>, Vec<u32>, Option<usize>); 4] =
+            [(Some(1), vec![0, 1, 0, 0], None), (Some(3), vec![2, 1, 0, 5], None), (Some(0), vec![8, 8, 8, 8], None), (Some(2), vec![1, 0, 4, 2], Some(2))];
+        for (mine, counts, winner) in states {
+            let mut view = f.view();
+            let v = view.vote.as_mut().expect("a vote");
+            v.mine = mine;
+            v.counts = counts.clone();
+            v.winner = winner;
+            sim.app.world_mut().insert_resource(MatchEndStaged { view, left: f.left });
+            settle(&mut sim);
+            let now = all::<VoteCard>(&mut sim);
+            assert_eq!(now.len(), 4, "{size:?} {counts:?}");
+            let (panel, countdown) = (one::<StandingsPanel>(&mut sim), one::<VoteCountdownColumn>(&mut sim));
+            for (a, b) in base.iter().zip(&now) {
+                assert!((a.min - b.min).abs().max_element() < 0.5 && (a.size() - b.size()).abs().max_element() < 0.5, "{size:?}: a card moved or resized: {a:?} -> {b:?} ({mine:?}, {counts:?}, {winner:?})");
+                assert!(!overlap(*b, panel) && !overlap(*b, countdown), "{size:?}: a card covers the standings or countdown: {b:?}");
+            }
         }
         con(&mut sim, "ui_scene off");
         settle(&mut sim);

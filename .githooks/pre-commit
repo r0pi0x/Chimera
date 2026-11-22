@@ -263,7 +263,7 @@ import json, sys
 for line in open(sys.argv[1]):
     try: m = json.loads(line)
     except ValueError: continue
-    if m.get("reason") == "compiler-artifact" and m.get("executable"):
+    if m.get("reason") == "compiler-artifact" and m.get("executable") and "/build/" not in m["executable"]:
         print(m["executable"]); break
 PY
 )")

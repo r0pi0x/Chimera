@@ -16,10 +16,8 @@
 //!   party and the tiles: Settings (`LobbyAction::Settings`: the party
 //!   apps' Settings over the lobby), Report a bug. Hidden under an app's
 //!   overlay (`prematch_lobby::LobbyOverlay`), which draws its own.
-//! - **Mode**, pinned at the left (`layout.lobby.mode_w`): the minigame,
-//!   Free for all, the match's settings (`LobbyView::settings`: its length,
-//!   the host's that matter to a player), the games the guns come from,
-//!   one per line in full.
+//! - **Chat**, the whole left column (`layout.lobby.mode_w` wide; `signal_chat`
+//!   docks its box there with `[layout.chat]`).
 //! - **The list** (Call of Duty's, free for all): everyone in one list,
 //!   you first (then your party: `LobbyRow::party`), then the server's order;
 //!   "Loaded n / m" and the slots above. A row (`LobbyPlayerRow`): the
@@ -34,12 +32,14 @@
 //!   striped) and the ping (the bars and
 //!   ms; the loss mark on a bad line; a bot a dim meter and a dash). Free
 //!   slots read "Open" (`OpenSlot`).
-//! - **Up next**, at the right: the map's big card (a gradient tinted by
+//! - **Up next**, the right column: the map's big card (a gradient tinted by
 //!   the map's name stands in, "Preview coming") with its name and game;
 //!   once the countdown runs, STANDBY and its seconds over the tick bar
 //!   (`CountdownBar`: pixel-snapped ticks lit as it runs, stepped every
 //!   frame from `UiClock`, the last `layout.lobby.countdown_hot` seconds
-//!   in the accent).
+//!   in the accent). Under them the **mode** (`LobbyView::mode`, Free for
+//!   all, the match's settings, the games the guns come from, one per
+//!   line in full).
 //! - **The action bar**: the status sentence (how many have loaded; what
 //!   starts the match: "Waiting for the host to start" while the first
 //!   lobby waits for the host, `NetLobby::host_start`) and, for the
@@ -341,8 +341,9 @@ fn draw(
         let _ = rule;
     }
 
-    // The window: the mode at the left, the list in the middle, the map
-    // at the right, the action bar along its foot.
+    // The window: the chat's column at the left (`signal_chat` docks it),
+    // the list in the middle, the map with the countdown and the mode at
+    // the right, the action bar along its foot.
     let sh = chimera_ui::shell::ShellLayout::of(&theme);
     let win = chimera_ui::shell::window(&ui, c, frame);
     if overlaid {
@@ -351,46 +352,6 @@ fn draw(
     let body_bottom = sh.act_h + 1.4;
     let mode_w = p.lay("mode_w");
     let map_w = p.lay("map_w");
-
-    // The mode, pinned at the left.
-    let mode = p.boxed(
-        c,
-        win,
-        style!(column, gap: 0.6, w: mode_w).abs([Some(sh.rows_in), Some(1.6), None, Some(body_bottom)]),
-    );
-    c.spawn((
-        Node { position_type: PositionType::Absolute, right: units.val(-1.4), top: Val::ZERO, bottom: Val::ZERO, width: px(hair), ..default() },
-        BackgroundColor(theme.tone(Tone::Fg5)),
-        ChildOf(mode),
-    ));
-    p.label(c, mode, "Mode");
-    p.text(c, mode, Role::DisplayBold, 1.25, Tone::Fg, &view.mode);
-    let kv = |c: &mut Commands, k: &str, v: &str| {
-        let r = c
-            .spawn((
-                style!(row, gap: 1.0, pad: [0.6, 0.0]),
-                Node { border: UiRect::bottom(px(hair)), ..default() },
-                BorderColor::all(theme.tone(Tone::Fg5)),
-                ChildOf(mode),
-            ))
-            .id();
-        let dt = p.boxed(c, r, style!(row, w: 8.2).shrink(0.0));
-        p.text(c, dt, Role::Mono, 0.56, Tone::Fg3, k);
-        p.text(c, r, Role::Mono, 0.6, Tone::Fg, v);
-    };
-    kv(c, "Mode", "Free for all");
-    // The match's settings, so a player can leave before being put into
-    // one they don't want (`LobbyView::settings`).
-    for (k, v) in &view.settings {
-        kv(c, k, v);
-    }
-    if !view.guns_from.is_empty() {
-        let g = p.boxed(c, mode, style!(column, gap: 0.35, margin: [0.6, 0.0, 0.0, 0.0]));
-        p.text(c, g, Role::Mono, 0.56, Tone::Fg3, "Guns from");
-        for game in &view.guns_from {
-            p.text(c, g, Role::DisplayRegular, 0.78, Tone::Fg, &full_game_name(game));
-        }
-    }
 
     // The list: everyone, your party first; status a progress bar, ping
     // the bars and ms.
@@ -587,6 +548,42 @@ fn draw(
             Node { width: px(layout.w as f32 / sf), height: px(layout.h as f32 / sf), ..default() },
             ChildOf(well),
         ));
+    }
+
+    // The mode and its settings, the right column's lower part.
+    let mode = p.boxed(c, right, style!(column, gap: 0.4, margin: [1.0, 0.0, 0.0, 0.0]));
+    c.spawn((
+        Node { height: px(hair), width: percent(100.0), margin: UiRect::bottom(units.val(0.4)), ..default() },
+        BackgroundColor(theme.tone(Tone::Fg5)),
+        ChildOf(mode),
+    ));
+    p.label(c, mode, "Mode");
+    p.text(c, mode, Role::DisplayBold, 1.25, Tone::Fg, &view.mode);
+    let kv = |c: &mut Commands, k: &str, v: &str| {
+        let r = c
+            .spawn((
+                style!(row, gap: 1.0, pad: [0.25, 0.0]),
+                Node { border: UiRect::bottom(px(hair)), ..default() },
+                BorderColor::all(theme.tone(Tone::Fg5)),
+                ChildOf(mode),
+            ))
+            .id();
+        let dt = p.boxed(c, r, style!(row, w: 7.4).shrink(0.0));
+        p.text(c, dt, Role::Mono, 0.56, Tone::Fg3, k);
+        p.text(c, r, Role::Mono, 0.6, Tone::Fg, v);
+    };
+    kv(c, "Mode", "Free for all");
+    // The match's settings, so a player can leave before being put into
+    // one they don't want (`LobbyView::settings`).
+    for (k, v) in &view.settings {
+        kv(c, k, v);
+    }
+    if !view.guns_from.is_empty() {
+        let g = p.boxed(c, mode, style!(column, gap: 0.35, margin: [0.6, 0.0, 0.0, 0.0]));
+        p.text(c, g, Role::Mono, 0.56, Tone::Fg3, "Guns from");
+        for game in &view.guns_from {
+            p.text(c, g, Role::DisplayRegular, 0.78, Tone::Fg, &full_game_name(game));
+        }
     }
 
     // The action bar: the status sentence; Start, the host's hero. Nobody

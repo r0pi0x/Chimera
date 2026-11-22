@@ -194,9 +194,9 @@ mark_h = 9.33
 mark_x = 81.5          # its centre in the ink band, at mid-height: the frame's centre at the swap
 
 [layout.lobby]       # the pre-match lobby (chimera_client lobby_panel) in the shell's window
-mode_w = 18.0        # the mode column at the left
-map_w = 27.4         # the map card's column at the right
-card_h = 13.0        # the map card
+mode_w = 22.0        # the left column, the chat's (signal_chat docks it, [layout.chat])
+map_w = 30.0         # the right column: the map card, the countdown, the mode
+card_h = 9.0         # the map card
 big = 3.0            # "3 / 7"
 map_big = 2.0
 row_h = 2.9
@@ -210,12 +210,12 @@ countdown_ticks = 48.0
 countdown_hot = 3.0  # the last seconds lit in the accent
 
 # The chat docked in the lobby (chimera_client signal_chat): in the mode
-# column, above the action bar (the shell's window, revision 8).
+# column down the whole left side to the action bar (the shell's window).
 [layout.chat]
 dock_left = 4.4
 dock_bottom = 10.4
-dock_w = 18.0
-dock_h = 11.0
+dock_w = 22.0
+dock_h = 35.8     # the whole left column, from under the bar to the action bar
 
 [layout.menu]        # the party menu's first page (party_kit signal_menu): a 100 x 56.25 frame
 lockup_x = 2.6
@@ -307,13 +307,15 @@ std_w = 30.0         # the standings down the right, above the footer
 foot_gap = 1.4       # the standings end this far above the footer
 details_top = 3.3    # the details line, centre
 graph_top = 6.4      # the climb's head line; its chart follows
-graph_h = 27.5       # the chart's height
+graph_h = 11.0       # the chart's height
+graph_w = 28.0       # and width: small, centred in the middle column
 stats_gap = 1.2      # the stat tiles under the chart
 stats_h = 5.4
-foot_top = 46.4      # the vote cards (centre) and the countdown (right)
+vote_top = 29.5      # the map cards, four to a row, under the stat tiles
+foot_top = 46.4      # the countdown (right) and where the standings end
 row_h = 2.4          # the most a standings row gets; they shrink to fit
 win_h = 5.8          # the winner's row
-thumb_h = 2.0        # the map cards' picture
+thumb_h = 12.0       # the map cards' picture
 
 
 # The Escape menu over play (party_kit esc_signal; the components page's

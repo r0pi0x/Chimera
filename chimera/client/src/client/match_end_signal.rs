@@ -28,14 +28,14 @@
 //!   stronger fill and a pointer.
 //! - **Details** (`DetailsLine`), top centre: map (and its game), players,
 //!   rungs and the match's time, each after an icon.
-//! - **The climb** (`ClimbChart`), centre, drawn taller than the look
-//!   book's chart (`ChartAxes::with_height`), with its **stat tiles**
+//! - **The climb** (`ClimbChart`), small (`graph_w` x `graph_h`) and
+//!   centred in the middle column, with its **stat tiles**
 //!   (`StatsRow`, `StatTile`; `stats_of`) directly under it: kills,
 //!   deaths, K/D, best streak, fastest rung-up, longest stall; yours, else
 //!   the winner's when you have no entry (`stats_subject`). Headshots are
 //!   not tracked, so no tile.
-//! - **The footer**: the vote cards (`VoteCard`) in the centre and the
-//!   countdown bottom right ("Next match 0:14 >", `VoteCountdownColumn`).
+//! - **The vote**: the cards (`VoteCard`), four to a row, fill the centre
+//!   under the tiles (`vote_top`); the countdown is the footer, bottom right ("Next match 0:14 >", `VoteCountdownColumn`).
 //!
 //! More:
 //!
@@ -577,6 +577,10 @@ pub struct EndLayout {
     pub details_top: f32,
     pub graph_top: f32,
     pub graph_h: f32,
+    pub graph_x: f32,
+    pub graph_w: f32,
+    pub vote_top: f32,
+    pub vote_h: f32,
     pub stats_top: f32,
     pub stats_h: f32,
     pub foot_top: f32,
@@ -604,7 +608,9 @@ impl EndLayout {
         let foot_top = g("foot_top", 46.4);
         let std_top = g("std_top", pad);
         let graph_top = g("graph_top", 6.4);
-        let graph_h = g("graph_h", 27.5);
+        let graph_h = g("graph_h", 11.0);
+        let graph_w = g("graph_w", 28.0).min(std_x - gap - mid_x);
+        let vote_top = g("vote_top", 29.5);
         EndLayout {
             pad,
             leave_top: g("leave_top", pad),
@@ -621,13 +627,17 @@ impl EndLayout {
             details_top: g("details_top", 3.3),
             graph_top,
             graph_h,
+            graph_x: mid_x + (std_x - gap - mid_x - graph_w) / 2.0,
+            graph_w,
+            vote_top,
+            vote_h: bottom - vote_top,
             stats_top: graph_top + Self::HEAD_H + graph_h + g("stats_gap", 1.2),
             stats_h: g("stats_h", 5.4),
             foot_top,
             foot_h: bottom - foot_top,
             row_h: g("row_h", 2.4),
             win_h: g("win_h", 5.8),
-            thumb_h: g("thumb_h", 2.0),
+            thumb_h: g("thumb_h", 12.0),
         }
     }
 
@@ -1161,7 +1171,7 @@ fn build_climb(
     let row = &view.rows[shown];
     let lay = EndLayout::of(&look);
     // The chart is the look book's 47 cq wide drawing at a scale, stretched down to the layout's height.
-    let scale = lay.mid_w / 47.0;
+    let scale = lay.graph_w / 47.0;
     let dy = (lay.graph_h / (0.1 * scale) - 174.0).max(0.0);
     let axes = ChartAxes::new(view.length, view.rungs.max(row.rung.unwrap_or(1))).with_height(dy);
     let k = look.units.cq(0.1) * scale;
@@ -1203,7 +1213,7 @@ fn build_climb(
     let hair = look.hair() / k;
     commands.spawn((ClimbPart, ChildOf(*root), Pickable::IGNORE, Node { width: look.val(100.0), height: look.val(56.25), position_type: PositionType::Absolute, align_self: AlignSelf::Center, ..default() }))
         .with_children(|f| {
-            f.spawn((abs(&look, lay.mid_x, lay.graph_top, Some(lay.mid_w), None), enter(&look, came_up, 1.1, 0.0, 0.0), UiParityId::new("end.climb"), Pickable::IGNORE)).with_children(|c| {
+            f.spawn((abs(&look, lay.graph_x, lay.graph_top, Some(lay.graph_w), None), enter(&look, came_up, 1.1, 0.0, 0.0), UiParityId::new("end.climb"), Pickable::IGNORE)).with_children(|c| {
                 // The head: whose climb, what it came to.
                 c.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.8), height: look.val(EndLayout::HEAD_H - 0.6), ..default() }, Pickable::IGNORE)).with_children(|h| {
                     h.spawn((
@@ -1430,7 +1440,7 @@ fn animate(
     }
     // The climb's line and ticks.
     let draw = look.dur("matchend", "climb_draw", 0.7);
-    let k = look.units.cq(0.1) * (EndLayout::of(&look).mid_w / 47.0);
+    let k = look.units.cq(0.1) * (EndLayout::of(&look).graph_w / 47.0);
     let elapsed = state.drawing.map(|d| (clock.now - d) as f32);
     let done = elapsed.is_none_or(|e| e > draw.max(1.2));
     let key = (state.drawing.unwrap_or(-1.0), done);
@@ -1791,9 +1801,9 @@ fn build_vote(
                     flex_direction: FlexDirection::Row,
                     padding: UiRect::top(look.val(0.9)),
                     border: UiRect::top(px(hair)),
-                    align_items: AlignItems::FlexEnd,
-                    height: look.val(lay.foot_h),
-                    ..abs(&look, lay.mid_x, lay.foot_top, Some(lay.mid_w), None)
+                    align_items: AlignItems::FlexStart,
+                    height: look.val(lay.vote_h),
+                    ..abs(&look, lay.mid_x, lay.vote_top, Some(lay.mid_w), None)
                 },
                 BorderColor::all(look.tone(Tone::Fg4)),
                 enter(&look, came_up, 1.5, 0.8, 0.0),
@@ -1802,7 +1812,7 @@ fn build_vote(
             ))
             .with_children(|b| {
                 // The map cards.
-                b.spawn((Node { flex_grow: 1.0, column_gap: look.val(0.9), align_items: AlignItems::FlexEnd, ..default() }, Pickable::IGNORE)).with_children(|cards| {
+                b.spawn((Node { flex_grow: 1.0, flex_wrap: FlexWrap::Wrap, column_gap: look.val(CARD_GAP), row_gap: look.val(CARD_GAP), align_items: AlignItems::FlexStart, align_content: AlignContent::FlexStart, ..default() }, Pickable::IGNORE)).with_children(|cards| {
                     let Some(v) = &view.vote else { return };
                     let locked = !v.open();
                     let best = v.counts.iter().copied().max().unwrap_or(0);
@@ -1823,7 +1833,7 @@ fn build_vote(
                             VoteCard { index: i, mine, locked, won },
                             super::match_end::VoteButton(i),
                             super::widgets::clickable(),
-                            Node { flex_grow: 1.0, flex_basis: px(0.0), flex_direction: FlexDirection::Column, overflow: Overflow::clip(), ..default() },
+                            Node { width: look.val((lay.mid_w - CARD_GAP * 3.0 - 0.8) / 4.0), height: look.val(lay.thumb_h + CARD_BODY), flex_shrink: 0.0, flex_direction: FlexDirection::Column, overflow: Overflow::clip(), ..default() },
                             BackgroundColor(look.theme.tone_a(Tone::Ink, 0.75)),
                             Outline::new(px(w), px(-w), line),
                             UiParityId(p.clone()),
@@ -1941,6 +1951,12 @@ fn build_vote(
 /// The footer's right column: "Next match", the countdown and its ticks.
 #[derive(Component)]
 pub struct VoteCountdownColumn;
+
+/// The gap between the map cards, cq; they sit four to a row.
+const CARD_GAP: f32 = 0.9;
+/// A card's height under its picture, cq: fixed, so voting (or hovering)
+/// changes only colours, the outline and the badge, never the box.
+const CARD_BODY: f32 = 5.4;
 
 /// The one countdown's number and ticks, every frame from the clock.
 fn countdown(
