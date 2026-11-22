@@ -9,7 +9,11 @@
 //!   window is inactive (`apply`, in `PostUpdate`), so the map, the
 //!   players and the view model cost no frame and show nowhere, and a
 //!   blank camera clears the window under the UI (the UI cameras clear
-//!   nothing). When the last cover goes, each camera is set back to what
+//!   nothing). While a map settles behind it (`map::MapSettling`) they
+//!   draw under the blank camera instead (`UNDER`), unseen: the first
+//!   view's pipelines compile and its materials are prepared then, not as
+//!   the cover goes (`first_view`: 26-31 meshes' pipelines compiling for
+//!   5-10 frames as it went on Combat Arms' warehouse and dm_lockdown). When the last cover goes, each camera is set back to what
 //!   it was (or to what its owner set meanwhile). Cameras drawing to an
 //!   image (monitors, the menu's Showcase, captures) are left alone.
 //! - **The map left, unloaded.** A network client told the server
@@ -155,17 +159,46 @@ pub fn staging(app: &mut App) {
     }
 }
 
+/// How far below its own order a camera draws while it warms under the
+/// cover: below the blank camera (-1000), which clears over it.
+const UNDER: isize = -2000;
+
 /// The world's cameras off while covered, each back after; the blank
-/// camera on meanwhile.
+/// camera on meanwhile. While a map settles behind the cover they draw
+/// under the blank camera instead (`UNDER`).
 #[allow(clippy::type_complexity)]
 fn apply(
     cover: Res<WorldCover>,
+    settling: Option<Res<crate::map::MapSettling>>,
     mut cameras: Query<(Entity, &mut Camera, Option<&RenderTarget>), (With<Camera3d>, Without<BlankCamera>)>,
     mut blank: Query<&mut Camera, (With<BlankCamera>, Without<Camera3d>)>,
     mut off: Local<HashMap<Entity, bool>>,
+    mut under: Local<HashMap<Entity, isize>>,
     mut commands: Commands,
 ) {
     let covered = cover.covered();
+    // A map settling behind the cover: its cameras draw under the blank
+    // camera (`UNDER`), unseen, so the first view's pipelines compile and
+    // its materials are prepared behind the loading screen (`first_view`).
+    let warm = covered && settling.is_some();
+    for (e, mut cam, _) in &mut cameras {
+        match (warm && off.get(&e) == Some(&true), under.get(&e).copied()) {
+            (true, None) => {
+                under.insert(e, cam.order);
+                cam.order += UNDER;
+                cam.is_active = true;
+            }
+            (false, Some(order)) => {
+                under.remove(&e);
+                cam.order = order;
+                if covered {
+                    cam.is_active = false;
+                }
+            }
+            _ => {}
+        }
+    }
+    under.retain(|e, _| cameras.contains(*e));
     if !covered && off.is_empty() {
         if let Some(mut b) = blank.iter_mut().next()
             && b.is_active
@@ -180,6 +213,9 @@ fn apply(
             continue;
         }
         if covered {
+            if under.contains_key(&e) {
+                continue;
+            }
             if cam.is_active {
                 off.entry(e).or_insert(true);
                 cam.is_active = false;

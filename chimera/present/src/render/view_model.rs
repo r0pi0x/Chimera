@@ -285,6 +285,17 @@ impl ViewModelAssets {
 /// are still into those images alone.
 type CookedViewModel = (ViewModelAsset, Vec<Handle<Image>>);
 
+/// View models added after the map spawned not built yet (`build_late`;
+/// `map::loading::LoadPending`: the settle waits for them).
+pub fn late_pending(w: &World) -> usize {
+    let (Some(models), Some(late), Some(assets)) =
+        (w.get_resource::<ViewModels>(), w.get_resource::<LateViewModelTextures>(), w.get_resource::<ViewModelAssets>())
+    else {
+        return 0;
+    };
+    models.0.iter().filter(|v| late.0.contains_key(&v.key) && !assets.models.contains_key(&v.key)).count()
+}
+
 /// Build the render assets of view models added after the map spawned
 /// (`map::add_view_model`): their own textures (`LateViewModelTextures`)
 /// become images after the map's, on a task and over the next frames

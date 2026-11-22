@@ -975,6 +975,7 @@ impl Plugin for CaCharactersPlugin {
             .add_systems(
                 Update,
                 (
+                    preload::plan_coming_ladder.before(preload::plan_ladder),
                     preload::plan_ladder
                         .run_if(resource_exists_and_changed::<chimera_sim::minigame::ladder::Ladder>)
                         .before(held_on_demand::load_on_demand)
@@ -987,6 +988,9 @@ impl Plugin for CaCharactersPlugin {
             );
         app.init_resource::<crate::map::MapHooks>();
         app.world_mut().resource_mut::<crate::map::MapHooks>().unload.push(preload::forget_old);
+        app.world_mut()
+            .get_resource_or_init::<crate::map::loading::LoadPending>()
+            .register("Combat Arms ladder models loading", preload::waiting_count);
         look_cvars(app);
         use crate::console::ConsoleAppExt;
         app.console_command(

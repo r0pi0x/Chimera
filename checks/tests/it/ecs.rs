@@ -60,6 +60,11 @@ const ONE_OFF_SCHEDULES: &[&str] = &[
 /// events, observers or systems (the step named).
 const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
+        "chimera/world/src/map/loading.rs",
+        "LoadPending",
+        "map loading: a decision the settle asks (`fn(&World) -> usize`, read-only), each builder's count of work a map's first view still needs",
+    ),
+    (
         "chimera/sim/src/minigame/targets.rs",
         "TargetBots",
         "spawning: the bots' game adds a whole bot to the match (its roster, kit and entry) and kicks one, on a request or console line",
@@ -329,6 +334,7 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
 /// the map-logic interpreter, servers' state changes), with the reason.
 /// Their systems don't count in `EXCLUSIVE_BASELINE`.
 const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
+    ("games/combat_arms/src/game/characters/preload.rs", "map loading: draws the coming match's ladder while its map loads (`ladder::draw` reads the whole world), once per load"),
     ("chimera/client/src/client/scene.rs", "a tool run's script (`--scene`, only then): submits its console lines, reads the frame's facts and takes its pictures"),
     ("chimera/core/src/shutdown.rs", "the process's end: the quit's steps over the whole world, then the exit call"),
     ("apps/party_kit/src/controls.rs", "a menu"),

@@ -2240,8 +2240,13 @@ pub fn loading_map(w: &World) -> Option<String> {
 }
 
 /// The longest a spawned map stays behind the loading screen (`Settling`); a
-/// flood not done by then goes on a slice a tick in play.
-const SETTLE_MAX_SECS: f32 = 10.0;
+/// flood not done by then goes on a slice a tick in play, and what the first
+/// view still lacked is logged (`first_view::pending_words`). 20 s, not 10:
+/// the settle also waits for the first view (`first_view`: pipelines still
+/// compiling, a match's ladder models loading from the install), which a
+/// first run's shader compiles (Windows' drivers compile slower) or a cold
+/// install's conversions can take longer than the map's own settling.
+const SETTLE_MAX_SECS: f32 = 20.0;
 
 /// Physics steps a spawned map takes before its settle hooks start: the
 /// collision is in the spatial queries' trees after the first physics steps.
@@ -2595,7 +2600,17 @@ fn settle_map(w: &mut World) {
     if !done && started.elapsed().as_secs_f32() < SETTLE_MAX_SECS {
         return;
     }
-    info!("map settled behind the loading screen in {:.2} s", started.elapsed().as_secs_f32());
+    if done {
+        info!("map settled behind the loading screen in {:.2} s", started.elapsed().as_secs_f32());
+    } else {
+        // Out of time: into the game anyway, naming what wasn't ready (one
+        // missing asset never holds the load for good).
+        warn!(
+            "map settled behind the loading screen in {:.2} s, out of time; still pending: {}",
+            started.elapsed().as_secs_f32(),
+            super::first_view::pending_words(w)
+        );
+    }
     w.remove_resource::<Settling>();
     w.remove_resource::<crate::map::MapSettling>();
     w.remove_resource::<crate::map::LocalMapLoad>();

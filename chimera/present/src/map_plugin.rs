@@ -94,6 +94,12 @@ impl Plugin for MapPlugin {
         // The loading screen stays while props come to rest have shadows
         // still to redraw.
         hooks.settle.push(render::shadows::shadows_settled);
+        // The first view's late-built models: the settle waits for them
+        // (`map::loading::LoadPending`).
+        let mut pending = app.world_mut().get_resource_or_init::<crate::map::loading::LoadPending>();
+        pending.register("held models building", render::bodies::late_held_pending);
+        pending.register("bodies building", render::bodies::late_bodies_pending);
+        pending.register("view models building", render::view_model::late_pending);
     }
 }
 

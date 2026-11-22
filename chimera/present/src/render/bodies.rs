@@ -192,6 +192,33 @@ fn gpu_only(mut mesh: Mesh) -> Mesh {
     mesh
 }
 
+/// Held models added after the map spawned not built yet
+/// (`build_late_held`; `map::loading::LoadPending`).
+pub fn late_held_pending(w: &World) -> usize {
+    let (Some(late), Some(held)) = (w.get_resource::<LateHeldModels>(), w.get_resource::<HeldAssets>()) else {
+        return 0;
+    };
+    late.0.iter().filter(|(h, _)| !held.0.contains_key(&h.key)).count()
+}
+
+/// Character models appended after the map spawned not built yet
+/// (`build_late_bodies`; `map::loading::LoadPending`).
+pub fn late_bodies_pending(w: &World) -> usize {
+    let (Some(late), Some(models), Some(play)) = (
+        w.get_resource::<crate::map::LateCharacterModels>(),
+        w.get_resource::<CharacterModels>(),
+        w.get_resource::<PlayModels>(),
+    ) else {
+        return 0;
+    };
+    models
+        .0
+        .iter()
+        .enumerate()
+        .filter(|(i, m)| m.name.as_deref().is_some_and(|n| late.get(n).is_some()) && play.bodies.get(*i).is_none_or(|b| b.is_none()))
+        .count()
+}
+
 /// Build the held models added after the map spawned
 /// (`map::add_held_model`) that the map's `HeldAssets` lack (none at
 /// first after each map spawn): their own textures as images, their

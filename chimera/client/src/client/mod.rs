@@ -96,6 +96,7 @@ pub mod ui_cues;
 pub mod ui_sound;
 pub mod ui_write;
 pub mod upload_pace;
+pub mod first_view;
 pub mod widgets;
 
 
@@ -635,6 +636,7 @@ impl PluginGroup for ClientPlugins {
             .add(perf::PerfPlugin)
             .add(memory::MemoryPlugin)
             .add(upload_pace::UploadPacePlugin)
+            .add(first_view::FirstViewPlugin)
             .add(console::ConsoleUiPlugin)
             .add(net_graph::NetGraphPlugin)
             .add(hud::HudPlugin)

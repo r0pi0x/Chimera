@@ -172,6 +172,29 @@ impl LoadWork {
     }
 }
 
+/// What a load still builds that a map's first view needs, besides the
+/// render world's own uploads and pipelines (`chimera_client::client::
+/// first_view`): each part that builds such work over frames (the
+/// late-built bodies and view models) registers a count of what it still
+/// has to do, by name. The map's settling waits for every count to be 0;
+/// a settle that times out names the counts still above it.
+#[derive(Resource, Default, Clone)]
+pub struct LoadPending(Vec<(&'static str, fn(&bevy::prelude::World) -> usize)>);
+
+impl LoadPending {
+    /// Count `name`'s pending work with `count`.
+    pub fn register(&mut self, name: &'static str, count: fn(&bevy::prelude::World) -> usize) {
+        if !self.0.iter().any(|(n, _)| *n == name) {
+            self.0.push((name, count));
+        }
+    }
+
+    /// Every registered count now.
+    pub fn counts(&self, w: &bevy::prelude::World) -> Vec<(&'static str, usize)> {
+        self.0.iter().map(|(n, f)| (*n, f(w))).collect()
+    }
+}
+
 /// Where a load's time goes: a loader calls `lap` after each stage; the
 /// stages land in `MapData::load_times` (and the log), for finding what
 /// makes a map slow to load (docs/OBSERVABILITY.md, "Load times").

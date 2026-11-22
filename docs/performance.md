@@ -1803,6 +1803,50 @@ needing specialization (Bevy's `DirtySpecializations`) in the frame it arrives. 
 `late_meshes_are_reported_once_they_arrive` and cs_source_app's `heavy::map_swap_draws` (the
 binary offscreen, `map de_dust2` from the greybox: mean grey about 37 of 255, 1 without it).
 
+### A map's first view (2026-11-22)
+
+Playtest report: a map started with its models and materials coming in in
+front of the player. "Loaded" (`map::LocalMapLoad` gone: the game entered,
+the server told, the lobby's "everyone loaded") waited for the settle hooks
+(uploads, shadows, HUDs, spawn spots, navigation), not for what the first
+view draws. `client::first_view` counts, each render frame, the meshes the
+cameras see that Bevy can't draw yet (mesh not on the GPU, material not
+prepared, pipeline not specialized or still compiling) and the pipelines
+compiling anywhere; the main world's builders register theirs
+(`map::loading::LoadPending`: late bodies, held and view models, Combat
+Arms' ladder). The settle waits for all of it (`first_view_ready`, two
+clear render frames), at most `SETTLE_MAX_SECS` (now 20 s), and a timeout
+names what was pending.
+
+What was missing, by deterministic counts (`CHIMERA_FIRST_VIEW_LOG`; dev
+build offscreen 640x360, from the greybox, box at load 45-70):
+
+- **CS:S's shell (`map de_dust2`)**: its camera draws the map while it
+  settles; the pipelines (1,063 visible meshes' pipelines, 73 compiling at
+  most) finished 3 frames before the other hooks did. 0 pending at the
+  first gameplay frame with and without the wait: luck of timing, which a
+  slower shader compile (a first run, Windows' drivers) loses.
+- **Ultimate Gun Game** (`ugg_new 7 13 <map>`): the loading screen and the
+  lobby cover the world (`staging::WorldCover`), its cameras off, so nothing
+  was specialized or compiled behind them (visible 0 the whole settle).
+  As the cover went: Combat Arms' warehouse 31 visible meshes without a
+  ready pipeline (compiling for about 8 frames), dm_lockdown 26, and the
+  ladder's Combat Arms models (4 bodies, 14 weapon models: 24-28 pending)
+  loading over the first seconds of play, bodies still building on the
+  first drawn frame (3). Fixes: the cameras draw under the blank camera
+  while a map settles behind the cover (`staging`, `UNDER`), and the host
+  draws the coming match's ladder while its map loads
+  (Combat Arms' `characters::preload::plan_coming_ladder`). After: 0 ladder models
+  or bodies pending at entry and after it; at the cover's going, warehouse
+  7 visible meshes' pipelines compiling (the player's own models, not in
+  the world while it settled), dm_lockdown and de_dust2 0.
+
+Not covered: a network client's ladder models (the server's ladder comes
+with the match) still load in play; TF2 and Halo maps were not measured
+(not installed on the dev box). Guard: cs_source_app's `heavy::first_view`
+(the binary offscreen, `map de_dust2`: the first gameplay frame has nothing
+pending) and `first_view`'s unit tests.
+
 ### A map's colliders after its swap frame (2026-11-12)
 
 The frame the whole map goes into the world was a swap's worst. Measured as "A map's swap in
