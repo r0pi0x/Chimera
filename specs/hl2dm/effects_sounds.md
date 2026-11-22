@@ -1108,8 +1108,10 @@ dedicated server build 24600426):
 4. **Shell fade.** The fade-out length of HL2's shell temp entities after
    their 1–2 s life (view_models.md §8 has CS:S's 2 s rule for a
    different spawner); measure frames.
-5. **Gain curve.** sounds.md Open questions 1 (level → gain against
-   distance) applies unchanged; HL2:DM has no compatibility-attenuation
+5. **Gain curve.** Measured in TF2 (specs/source/sound_hearing.md:
+   140 dB keeps 0.954 to 6000 u, 0.76 at 9000; mixer 1.0 for player
+   guns); an HL2:DM spot check remains (its Open questions 8). Was:
+   sounds.md Open questions 1 (level → gain against distance) applies unchanged; HL2:DM has no compatibility-attenuation
    entries to measure separately.
 6. **RPG laser in third person.** The world model
    `w_rocket_launcher.mdl` has 3 attachments, but the third-person laser

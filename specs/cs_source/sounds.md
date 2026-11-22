@@ -930,7 +930,7 @@ Listen server on de_dust2, client `snd_showstart 2` (engine start time per sound
 
 ## Open questions
 
-1. **Distance falloff (engine-side).** What is gain(d) for a sound level L, and for "CompatibilityAttenuation" entries? H1 and H2 above are hypotheses.
+1. **Distance falloff (engine-side).** Answered by measurement in TF2's client (same engine; specs/source/sound_hearing.md sections 2-5, 2026-11-21): H1 holds in its middle range with an extra 1 dB per 300 u, a soft knee above gain 0.5 and a cap; H2 holds exactly for compatibility levels (gain 1 − d·a/1000); walls cost −8.1 dB; the pan law is measured there. A CS:S spot check remains (sound_hearing.md Open questions 7, 8). Originally: what is gain(d) for a sound level L, and for "CompatibilityAttenuation" entries? H1 and H2 above were hypotheses.
    - Measure on a dedicated server: the engine's sound interface for server plugins exposes the distance-gain query used by ambient_generic. A small server plugin can print gain for L ∈ {60, 70, 75, 80, 88, 100, 140} and also L + 256 (the compatibility range) at d = 0, 36, 100, 250, 500, 1000, 2000, 4000.
    - Cross-check by ear: record loopback audio of `playgamesound Weapon_AK47.Single` emitted by a bot at known distances.
    - Also: the stereo pan law, and whether sound passes through walls without occlusion.
