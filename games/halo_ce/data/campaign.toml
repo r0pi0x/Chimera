@@ -98,14 +98,17 @@ donor_map = "d20"
 # The game's own moving speed over the Spartan's (characters.md section 4:
 # it outruns the Spartan by 15 %, 0.0865 against 0.075 WU/t).
 speed_ratio = 1.15
-# Its armour takes the player's colour (the party's team or free-for-all
-# colour, as the Spartan's) through change colour A, which tints it all
-# over; a player given no colour wears the minor's blue violet
-# (characters.md section 1, "The Elite's colours": a player-worn `elite`
-# keeps the colour it is created with; the sheen stays permutation 0's
-# blue).
+# Its armour wears its rank's colour (specs/halo_ce/change_colors.md
+# section 5: the actor variants' slot A; `ranks`, lower and upper bound,
+# `rank` the one worn, a shade drawn once per body) through change colour
+# A, which tints it all over; never the party's colour (section 6; the
+# sheen stays permutation 0's blue).
 colour_slot = "A"
-uncoloured = [0.314, 0.302, 0.533]
+rank = "minor"
+ranks.minor = { lower = [0.314, 0.302, 0.533], upper = [0.314, 0.302, 0.533] }
+ranks.major = { lower = [0.251, 0.082, 0.086], upper = [0.251, 0.082, 0.086] }
+ranks.commander = { lower = [0.294, 0.239, 0.055], upper = [0.294, 0.239, 0.055] }
+ranks.spec_ops = { lower = [0.0, 0.0, 0.0], upper = [0.0, 0.0, 0.0] }
 # Its own lines (`[chatter]`): a challenge on becoming one, a boast after
 # a kill (its dialogue fills taunt 9, berserk 2, killed enemy player 7,
 # killed enemy 8: characters.md section 6).
@@ -177,15 +180,17 @@ soft_ping_interrupt_time = 0.5
 # the Spartan's moving speed (0.0628 against 0.075 WU/t), so 92 % with the
 # blend; its pill 0.55 / 0.45 WU, radius 0.2, and its camera at its chest,
 # 0.28 standing and crouched (section 3: below its head, kept); orange
-# armour through change colour A (section 1, "The Elite's colours": the
-# tag's own A, (0.863, 0.502, 0.173) to (0.824, 0.443, 0.157); the
-# lower bound for a player given none).
+# armour through change colour A (change_colors.md section 5: the rank's
+# colour, `ranks` as the Elite's; the minor's is the tag's own A).
 [bodies.grunt]
 biped = 'characters\grunt\grunt'
 donor_map = "d20"
 speed_ratio = 0.84
 colour_slot = "A"
-uncoloured = [0.863, 0.502, 0.173]
+rank = "minor"
+ranks.minor = { lower = [0.863, 0.502, 0.173], upper = [0.824, 0.443, 0.157] }
+ranks.major = { lower = [0.824, 0.075, 0.075], upper = [0.643, 0.090, 0.090] }
+ranks.spec_ops = { lower = [0.071, 0.071, 0.071], upper = [0.0, 0.0, 0.0] }
 # Its panic on becoming one (flee 24), its cheer after a kill
 # (celebration 14, killed enemy player 14).
 lines = { becoming = ["flee", "taunt"], kill = ["celebration", "killed enemy player", "killed enemy"] }
@@ -247,7 +252,9 @@ biped = 'characters\jackal\jackal'
 donor_map = "d20"
 speed_ratio = 0.61
 colour_slot = "A"
-uncoloured = [0.259, 0.373, 0.490]
+rank = "minor"
+ranks.minor = { lower = [0.259, 0.373, 0.490], upper = [0.267, 0.353, 0.482] }
+ranks.major = { lower = [0.675, 0.459, 0.459], upper = [0.710, 0.435, 0.443] }
 shield_disc = "shield"
 # Its taunt on becoming one (8), its celebration after a kill (9).
 lines = { becoming = ["taunt", "surprise"], kill = ["celebration", "killed enemy player", "killed enemy"] }

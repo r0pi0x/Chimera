@@ -61,8 +61,10 @@
 //!   fitted to the map's envelope by `movement::body` as the Spartan's is.
 //! - **Its colour**: the party's colour for the player (team or
 //!   free-for-all, as the Spartan's) through the kind's own change colour
-//!   slot (`BodyDef::colour_slot`: the Elite's A, all over its armour),
-//!   the minor's blue for a player given none (`BodyDef::uncoloured`).
+//!   slot (`BodyDef::colour_slot`: the Elite's A, all over its armour)
+//!   only for a kind with no rank; a Grunt, Jackal or Elite wears its
+//!   rank's colour (`BodyDef::rank`, change_colors.md section 6), a shade
+//!   drawn once (`body::RankStep`).
 //! - **Its vitality** (`vitality_of`): the kind's `Spartan` table (the
 //!   Elite's collision model: 100 body, 100 shield of type 30, a 12 s
 //!   delay, 10 s recharge, its four materials with the arms at x0.5).
@@ -249,9 +251,16 @@ pub struct BodyDef {
     /// (`A` to `D`; characters.md "The Elite's colours"); none: untinted.
     #[serde(default)]
     pub colour_slot: Option<char>,
-    /// Its colour for a player given none (linear RGB 0..1).
+    /// The ranks its colour can be, by name (the actor variants' slot A of
+    /// specs/halo_ce/change_colors.md section 5; linear RGB 0..1).
     #[serde(default)]
-    pub uncoloured: Option<[f32; 3]>,
+    pub ranks: std::collections::BTreeMap<String, RankColour>,
+    /// Which of `ranks` it wears (section 6: its rank's colour, never the
+    /// party's); none: the party's colour through `colour_slot`. A team
+    /// tint by rank (a rank per team) is not built: `docs/plans/active/
+    /// halo-ce-parity.md`.
+    #[serde(default)]
+    pub rank: Option<String>,
     /// An arm shield's disc (the Jackal's): the text its meshes' shader
     /// names hold; drawn only while the shield is up, and its hit box
     /// shrinks to the emitter while it is down (`shield_disc`).
@@ -274,6 +283,15 @@ pub struct BodyDef {
     /// Its first-person view made from its own model (`first_person`).
     #[serde(default)]
     pub first_person: Option<first_person::BodyView>,
+}
+
+/// A rank's change colour A: the lower and upper bound of the blend a
+/// body wears one shade of (`body::load::hsv_blend`).
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RankColour {
+    pub lower: [f32; 3],
+    pub upper: [f32; 3],
 }
 
 /// A character's own lines (`BodyDef::lines`): ordered lists of dialogue
@@ -307,7 +325,7 @@ impl Default for ChatterRules {
 }
 
 impl BodyDef {
-    /// How its armour takes the player's colour (`body::load::Tint`).
+    /// How its armour is coloured (`body::load::Tint`).
     pub fn tint(&self) -> super::body::load::Tint {
         use blam_formats::shader::AnimationSource as S;
         let source = match self.colour_slot.map(|c| c.to_ascii_uppercase()) {
@@ -317,7 +335,8 @@ impl BodyDef {
             Some('D') => S::D,
             _ => S::None,
         };
-        super::body::load::Tint { source, uncoloured: self.uncoloured }
+        let rank = self.rank.as_ref().and_then(|r| self.ranks.get(r)).map(|r| (r.lower, r.upper));
+        super::body::load::Tint { source, rank }
     }
 }
 

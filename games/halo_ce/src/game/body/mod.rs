@@ -81,7 +81,7 @@ use bevy::prelude::*;
 use self::anims::{ARMED_DEFAULT, HaloAnim, Inputs, Landing, SEATS, State, key};
 use super::{GAME, METERS_PER_UNIT};
 use crate::{
-    core::{Health, Intent, MovementState, Team, Velocity},
+    core::{Health, Intent, MovementState, Seed, Team, Velocity},
     map::{BodyModel, BodySkin, CharacterModels, SimAnimator, SimPose, anim::Animator},
 };
 
@@ -361,31 +361,46 @@ pub fn animate(
     }
 }
 
-/// Each Halo body shows its player's armour colour (`skin_of`).
+/// How many shades a campaign body's rank colour has (`load::Tint::rank`:
+/// the skins after `COLOURS`, from the rank's lower bound to its upper).
+pub const RANK_STEPS: usize = 8;
+
+/// Which shade of its rank a campaign body wears (the actor variant's
+/// random factor of change_colors.md section 1 step 4, drawn once and
+/// kept): the skin `COLOURS.len() + step`.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RankStep(pub u8);
+
+/// Each Halo body shows its player's armour colour (`skin_of`); a campaign
+/// body (a rank colour of its own after the table's: `load::Tint::rank`)
+/// wears its rank's instead, never the party's (change_colors.md section
+/// 6: the free-for-all colours make a Grunt look painted).
 #[allow(clippy::type_complexity)]
 pub fn wear_colours(
     models: Option<Res<CharacterModels>>,
-    bodies: Query<(Entity, &BodyModel, Option<&Team>, Option<&BodySkin>)>,
+    bodies: Query<(Entity, &BodyModel, Option<&Team>, Option<&BodySkin>, Option<&RankStep>, Option<&Seed>)>,
     mut commands: Commands,
 ) {
     let Some(models) = models else { return };
-    for (e, body, team, skin) in &bodies {
+    for (e, body, team, skin, step, seed) in &bodies {
         let Some(m) = models.0.get(body.0).filter(|m| m.game == Some(GAME)) else {
             continue;
         };
         if m.model.skins.is_empty() {
             continue;
         }
-        // A body with a colour of its own for a player given none (the
-        // Elite's minor blue: `load::Tint::uncoloured`) wears it then.
-        // Such a body's colour tints its armour all over (the Elite's):
-        // the table's black would leave it a silhouette, so it wears its
-        // own colour then too.
-        let own = m.model.skins.len() > COLOURS.len();
-        let index = match (team, skin_of(team.copied())) {
-            (None, _) if own => COLOURS.len(),
-            (_, BLACK) if own => COLOURS.len(),
-            (_, i) => i,
+        let index = if m.model.skins.len() > COLOURS.len() {
+            let step = match step {
+                Some(s) => *s,
+                None => {
+                    let s = RankStep((super::campaign::roll(&[Seed::of(seed, e), 0x72616e6b]) % RANK_STEPS as u64) as u8);
+                    commands.entity(e).insert(s);
+                    s
+                }
+            };
+            COLOURS.len() + usize::from(step.0).min(m.model.skins.len() - COLOURS.len() - 1)
+        } else {
+            skin_of(team.copied())
         };
         let want = BodySkin(index as i32);
         if skin != Some(&want) {

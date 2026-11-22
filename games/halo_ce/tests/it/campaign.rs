@@ -335,7 +335,7 @@ fn a_campaign_body_is_never_black() {
     };
     let mut app = App::new();
     app.add_systems(Update, body::wear_colours);
-    app.insert_resource(CharacterModels(Arc::new(vec![model(COLOURS.len()), model(COLOURS.len() + 1)])));
+    app.insert_resource(CharacterModels(Arc::new(vec![model(COLOURS.len()), model(COLOURS.len() + body::RANK_STEPS)])));
     // Team 4: a free-for-all player's second profile colour, the table's black.
     let black = chimera_core::core::Team(4);
     assert_eq!(body::skin_of(Some(black)), body::BLACK);
@@ -345,8 +345,87 @@ fn a_campaign_body_is_never_black() {
     app.update();
     let skin = |e| app.world().get::<BodySkin>(e).map(|s| s.0);
     assert_eq!(skin(spartan), Some(body::BLACK as i32));
-    assert_eq!(skin(elite), Some(COLOURS.len() as i32));
-    assert_eq!(skin(red), Some(body::RED as i32));
+    let rank = |e| skin(e).map(|s| s as usize - COLOURS.len()).filter(|s| *s < body::RANK_STEPS);
+    assert!(rank(elite).is_some(), "a rank's shade, not the party's: {:?}", skin(elite));
+    assert!(rank(red).is_some(), "a team's colour is not worn either (change_colors.md section 6)");
+}
+
+/// A playable Grunt in a free-for-all wears its rank's orange, not its
+/// profile colour; a shade is drawn once and kept; the Spartan gets the
+/// player's colour (change_colors.md section 6 and test cases).
+#[test]
+fn a_campaign_body_wears_its_rank_and_the_spartan_the_players_colour() {
+    use std::sync::Arc;
+    use chimera_world::map::{BodyModel, BodySkin, CharacterModels, MapCharacterModel};
+    use halo_ce::game::body::{self, COLOURS, RankStep, load::hsv_blend};
+    let mut m = MapCharacterModel {
+        game: Some(halo_ce::game::GAME),
+        team: None,
+        name: None,
+        class: None,
+        model: Default::default(),
+        hitboxes: Vec::new(),
+        bones: Vec::new(),
+        root: Transform::IDENTITY,
+        animations: None,
+        boxes: Vec::new(),
+        ragdoll: None,
+    };
+    m.model.skins = vec![Vec::new(); COLOURS.len()];
+    let mut grunt = m.clone();
+    grunt.model.skins = vec![Vec::new(); COLOURS.len() + body::RANK_STEPS];
+    let mut app = App::new();
+    app.add_systems(Update, body::wear_colours);
+    app.insert_resource(CharacterModels(Arc::new(vec![m, grunt])));
+    // Team 7: a free-for-all player's profile colour (index 4).
+    let ffa = chimera_core::core::Team(7);
+    let spartan = app.world_mut().spawn((BodyModel(0), ffa)).id();
+    let g = app.world_mut().spawn((BodyModel(1), ffa)).id();
+    app.update();
+    let skin = |app: &App, e| app.world().get::<BodySkin>(e).map(|s| s.0);
+    assert_eq!(skin(&app, spartan), Some(body::skin_of(Some(ffa)) as i32), "the player's colour");
+    let step = app.world().get::<RankStep>(g).copied().expect("a shade drawn");
+    assert_eq!(skin(&app, g), Some((COLOURS.len() + step.0 as usize) as i32));
+    app.update();
+    assert_eq!(app.world().get::<RankStep>(g).copied(), Some(step), "drawn once");
+
+    // The shades the skins hold, from the data's bounds, lie within the
+    // spec's measured bounds for the rank (test cases: Grunt major red in
+    // [0.643, 0.824], green and blue in [0.075, 0.090]; spec-ops every
+    // channel in [0, 0.071]; minor's orange; Jackal minor / major).
+    let data = CampaignData::builtin();
+    let shades = |kind: BodyKind, rank: &str| -> Vec<[f32; 3]> {
+        let r = data.body(kind).unwrap().ranks[rank];
+        (0..body::RANK_STEPS).map(|i| hsv_blend(r.lower, r.upper, i as f32 / (body::RANK_STEPS - 1) as f32)).collect()
+    };
+    let within = |v: Vec<[f32; 3]>, lo: [f32; 3], hi: [f32; 3]| {
+        for c in v {
+            for i in 0..3 {
+                assert!(c[i] >= lo[i] - 1e-3 && c[i] <= hi[i] + 1e-3, "{c:?} outside {lo:?}..{hi:?}");
+            }
+        }
+    };
+    within(shades(BodyKind::Grunt, "major"), [0.643, 0.075, 0.075], [0.824, 0.090, 0.090]);
+    within(shades(BodyKind::Grunt, "spec_ops"), [0.0; 3], [0.071; 3]);
+    within(shades(BodyKind::Grunt, "minor"), [0.824, 0.443, 0.157], [0.863, 0.502, 0.173]);
+    within(shades(BodyKind::Jackal, "minor"), [0.259, 0.353, 0.482], [0.267, 0.373, 0.490]);
+    within(shades(BodyKind::Jackal, "major"), [0.675, 0.435, 0.443], [0.710, 0.459, 0.459]);
+    within(shades(BodyKind::Elite, "minor"), [0.314, 0.302, 0.533], [0.314, 0.302, 0.533]);
+    // The default rank is the minor's, and its tint carries the bounds.
+    let t = data.body(BodyKind::Grunt).unwrap().tint();
+    assert_eq!(t.rank, Some(([0.863, 0.502, 0.173], [0.824, 0.443, 0.157])));
+}
+
+/// The HSV blend of change_colors.md section 2.
+#[test]
+fn the_hsv_blend_goes_the_short_way() {
+    use halo_ce::game::body::load::hsv_blend;
+    let (lo, hi) = ([0.824, 0.075, 0.075], [0.643, 0.090, 0.090]);
+    let near = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-4);
+    assert!(near(hsv_blend(lo, hi, 0.0), lo) && near(hsv_blend(lo, hi, 1.0), hi));
+    // Red to a red-magenta: the middle stays red-magenta, never green.
+    let m = hsv_blend([1.0, 0.0, 0.0], [1.0, 0.0, 0.2], 0.5);
+    assert!(m[0] > 0.99 && m[1] < 1e-4 && m[2] > 0.09 && m[2] < 0.11, "{m:?}");
 }
 
 

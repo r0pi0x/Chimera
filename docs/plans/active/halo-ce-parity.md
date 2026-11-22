@@ -551,3 +551,20 @@ victim-side values (low_health.md Open question 1; ours come from the
 tags, unchecked against the original); whether the impulse's direction
 is applied in the pitched camera frame (ours) or the yaw's; rumble is not
 played. Not checked on screen here (no Halo data in the agent's slot).
+
+## Campaign bodies' rank colours (2026-11-22)
+
+Done: a playable Grunt, Jackal or Elite wears its rank's slot A colour
+(`BodyDef::rank` / `ranks` in games/halo_ce/data/campaign.toml, values from
+specs/halo_ce/change_colors.md section 5), a shade of `RANK_STEPS` drawn once
+per body (`body::RankStep`), never the party's colour; Spartans keep it. The
+model shader's mask formula (`prop.wesl`: `mix(1, colour, mask)` times the
+diffuse before reflection) already matches section 3.
+
+Open: the ranks are data copied from the spec, not read from the actor
+variant tags (the character units' closure leaves `actv` out; reading them
+needs a converter change and a `VERSION` bump). A rank per team (Grunt minor
+orange vs major red) is not built: skins hold only the worn rank's shades.
+The shade is drawn per body, not per respawn. The spec's open questions
+(Grunt tag permutations, which shaders read which slot, mask coverage) stay
+open: no Halo install was available to measure them.

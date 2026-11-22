@@ -18,8 +18,9 @@
 //!   look sets): one skin per colour of `body::COLOURS`, the meshes
 //!   themselves showing skin 0 (white). A campaign body names its own
 //!   slot and a colour for a player given none (`Tint`: the Elite's armour
-//!   reads slot A, all over, and wears the minor's blue uncoloured, an
-//!   extra skin after `COLOURS`'); the Spartan's slot C left the Elite
+//!   reads slot A, all over, and wears its rank's colour (`Tint::rank`:
+//!   `RANK_STEPS` extra skins after `COLOURS`, a blend of the rank's two
+//!   bounds each); the Spartan's slot C left the Elite
 //!   untinted (its grey base map under the blue sheen: the white and teal
 //!   of stage one).
 //! - Skeleton, animations and hit volumes: `skeleton`, `anims`, `hits`.
@@ -48,7 +49,7 @@ use super::super::{
         space,
     },
 };
-use super::{COLOURS, anims, colour, hits, skeleton};
+use super::{COLOURS, RANK_STEPS, anims, colour, hits, skeleton};
 use crate::map::{
     LoadContext, MapCharacterModel, MapData, MapDressing, MapLoadOptions, MapMesh, MapMeshLook, MapModel, MapTexture,
 };
@@ -125,13 +126,56 @@ pub struct Tint {
     /// The change colour slot its armour shaders read: the Spartan's C,
     /// the Elite's A (characters.md, "The Elite's colours").
     pub source: AnimationSource,
-    /// The colour of a player given none (no team): an extra skin after
-    /// `COLOURS`' (the Elite minor's blue); None: `COLOURS`' first.
-    pub uncoloured: Option<[f32; 3]>,
+    /// The rank colour the body wears instead of the party's (specs/
+    /// halo_ce/change_colors.md section 6): its lower and upper bound,
+    /// `RANK_STEPS` extra skins after `COLOURS`' blending one into the
+    /// other (`hsv_blend`); None: the table's colours (the Spartan's).
+    pub rank: Option<([f32; 3], [f32; 3])>,
 }
 
 /// The Spartan's: slot C, white without a colour.
-pub const SPARTAN_TINT: Tint = Tint { source: AnimationSource::C, uncoloured: None };
+pub const SPARTAN_TINT: Tint = Tint { source: AnimationSource::C, rank: None };
+
+fn to_hsv([r, g, b]: [f32; 3]) -> [f32; 3] {
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let d = max - min;
+    let h = if d <= 0.0 {
+        0.0
+    } else if max == r {
+        ((g - b) / d).rem_euclid(6.0) / 6.0
+    } else if max == g {
+        ((b - r) / d + 2.0) / 6.0
+    } else {
+        ((r - g) / d + 4.0) / 6.0
+    };
+    [h, if max > 0.0 { d / max } else { 0.0 }, max]
+}
+
+fn from_hsv([h, s, v]: [f32; 3]) -> [f32; 3] {
+    let f = |n: f32| {
+        let k = (n + h * 6.0).rem_euclid(6.0);
+        v - v * s * k.min(4.0 - k).clamp(0.0, 1.0)
+    };
+    [f(5.0), f(3.0), f(1.0)]
+}
+
+/// The blend of `lo` into `hi` at factor `f`, in HSV space the short way
+/// round the hue circle (specs/halo_ce/change_colors.md section 2).
+pub fn hsv_blend(lo: [f32; 3], hi: [f32; 3], f: f32) -> [f32; 3] {
+    let (mut a, mut b) = (to_hsv(lo), to_hsv(hi));
+    if (b[0] - a[0]).abs() > 0.5 {
+        if a[0] < b[0] {
+            a[0] += 1.0;
+        } else {
+            b[0] += 1.0;
+        }
+    }
+    let mut m = [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * f);
+    if m[0] >= 1.0 {
+        m[0] -= 1.0;
+    }
+    from_hsv(m).map(|c| c.clamp(0.0, 1.0))
+}
 
 /// A mesh's look with `tint` (None: the mesh's own).
 fn look(m: &MapMesh, tint: Option<[f32; 3]>) -> MapMeshLook {
@@ -194,7 +238,12 @@ pub fn biped_body(file: &MapFile, biped_path: &str, decode: bool, tint: Tint) ->
         .into_iter()
         .map(|(m, _)| m)
         .collect();
-    let colours: Vec<[f32; 3]> = (0..COLOURS.len()).map(colour).chain(tint.uncoloured).collect();
+    let colours: Vec<[f32; 3]> = (0..COLOURS.len())
+        .map(colour)
+        .chain(tint.rank.into_iter().flat_map(|(lo, hi)| {
+            (0..RANK_STEPS).map(move |i| hsv_blend(lo, hi, i as f32 / (RANK_STEPS - 1) as f32))
+        }))
+        .collect();
     let skins: Vec<Vec<MapMeshLook>> = colours
         .iter()
         .map(|c| meshes.iter().zip(&tinted).map(|(m, t)| look(m, t.then_some(*c))).collect())
