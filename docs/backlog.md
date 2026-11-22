@@ -2240,8 +2240,14 @@ sections above already list.
   eye at 64): fixed 2026-10-13, to playtest. The eye was kept under a
   ceiling found by a ray straight up from the box's centre, so a lamp
   over the box's top but not over the eye let the near plane cut into it;
-  now a flat box as wide as the player's (15 units each side) is swept up
-  (`client::view::below_ceiling`; `console_commands::eye_drops_under_a_brush_edge_over_the_box`).
+  now a flat shape just inside the player's hull (15 of 16 units each
+  side; a disc for a round hull) is swept up from just under the hull's
+  top to the eye's reach, so only a true overhead obstruction counts
+  (2026-11-22: the old square from the hull's centre took Combat Arms'
+  barrels beside the hull for a ceiling; an eye under its hull's top is
+  never moved) (`client::view::below_ceiling`;
+  `console_commands::eye_drops_under_a_brush_edge_over_the_box`,
+  chimera_client's `eye_ceiling`).
   The movement spec doesn't cover the view against ceilings: our reading
   of the report. Capture to confirm: in CS:S, `setpos -12348.55 14205
   1408.03; setang 0 268.82 0` (feet on the floor, the box's top under the

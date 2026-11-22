@@ -146,7 +146,7 @@ fn jitter_offsets_stay_in_the_box() {
 fn the_eye_stays_up_against_a_wall() {
     use avian3d::prelude::{Collider, RigidBody, SpatialQuery};
     use bevy::ecs::system::RunSystemOnce;
-    use chimera_client::client::view::{CameraMode, camera_offset, camera_offset_for_hull, hull_radius};
+    use chimera_client::client::view::{CameraMode, camera_offset, camera_offset_for_hull, Hull};
     use chimera_core::core::MovementState;
     use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
     use combat_arms::{game::movement, harness::CaSim};
@@ -174,20 +174,82 @@ fn the_eye_stays_up_against_a_wall() {
     let at = sim.position(p);
     assert!(at.z > 29.0, "walked up to the wall: {at}");
     let eye = sim.app.world().get::<MovementState>(p).unwrap().eye_offset;
-    let radius = hull_radius(sim.app.world().get::<Collider>(p).unwrap());
+    let hull = Hull::of(sim.app.world().get::<Collider>(p).unwrap());
     let mode = CameraMode::default();
-    let mut y = |hull: Option<f32>| {
+    let mut y = |hull: Option<Hull>| {
         sim.app
             .world_mut()
             .run_system_once(move |spatial: SpatialQuery| match hull {
-                Some(r) => camera_offset_for_hull(&mode, at, eye, Quat::from_rotation_y(std::f32::consts::PI), &spatial, [p], r),
+                Some(h) => camera_offset_for_hull(&mode, at, eye, Quat::from_rotation_y(std::f32::consts::PI), &spatial, [p], Some(h)),
                 None => camera_offset(&mode, at, eye, Quat::from_rotation_y(std::f32::consts::PI), &spatial, [p]),
             })
             .unwrap()
             .y
     };
-    let (narrow, wide) = (y(Some(radius)), y(None));
+    let (narrow, wide) = (y(Some(hull)), y(None));
     assert!((narrow - eye.y).abs() < 1e-4, "eye {narrow} at the wall, wanted {}", eye.y);
     // The CS:S-wide probe took the ledge for a ceiling.
     assert!(wide < eye.y - 1e-3, "the wide probe sees the ledge: {wide}");
+}
+
+/// Walking diagonally into a green barrel (a map mesh, round, taller than
+/// the hull's centre and shorter than the eye) keeps the eye at eye height,
+/// from every side: the old ceiling probe, a square swept up from the hull's
+/// centre, reached past the round hull into the barrel and took its top for
+/// a ceiling (the camera dropped at Combat Arms' barrels).
+#[test]
+fn the_eye_stays_up_against_a_barrel() {
+    use avian3d::prelude::{Collider, RigidBody, SpatialQuery};
+    use bevy::ecs::system::RunSystemOnce;
+    use chimera_client::client::view::{CameraMode, Hull, camera_offset_for_hull};
+    use chimera_core::core::MovementState;
+    use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
+    use combat_arms::{game::movement, harness::CaSim};
+
+    // A 16-sided trimesh barrel, radius 0.3 m, 1.2 m tall, standing at `c`.
+    let barrel = |c: Vec3| {
+        let n = 16u32;
+        let mut points = Vec::new();
+        for y in [0.0, 1.2] {
+            for i in 0..n {
+                let a = i as f32 / n as f32 * std::f32::consts::TAU;
+                points.push(c + Vec3::new(0.3 * a.cos(), y, 0.3 * a.sin()));
+            }
+        }
+        points.push(c);
+        points.push(c + Vec3::Y * 1.2);
+        let mut tris = Vec::new();
+        for i in 0..n {
+            let j = (i + 1) % n;
+            tris.extend([[i, j, n + i], [j, n + j, n + i], [2 * n, j, i], [2 * n + 1, n + i, n + j]]);
+        }
+        (RigidBody::Static, Collider::trimesh(points, tris))
+    };
+    for yaw_deg in [45.0f32, 135.0, 30.0, 0.0] {
+        let mut sim = Sim::new(CaSim, GreyboxMapPlugin);
+        let start = Vec3::new(20.0, 60.0 * UNIT, 20.0);
+        // Facing yaw (forward is -Z turned by yaw), the barrel 3 m ahead.
+        let yaw = yaw_deg.to_radians();
+        let ahead = Quat::from_rotation_y(yaw) * Vec3::NEG_Z;
+        sim.app.world_mut().spawn(barrel(Vec3::new(start.x, 0.0, start.z) + ahead * 3.0));
+        let p = sim.spawn_character(start, movement::ID);
+        sim.intent(p).move_axis.y = 1.0;
+        sim.intent(p).yaw = yaw;
+        sim.ticks(400);
+        let at = sim.position(p);
+        let walked = (at - start).dot(ahead);
+        assert!(walked > 2.3 && walked < 2.8, "yaw {yaw_deg}: walked up to the barrel: {walked}");
+        let eye = sim.app.world().get::<MovementState>(p).unwrap().eye_offset;
+        let hull = Hull::of(sim.app.world().get::<Collider>(p).unwrap());
+        let mode = CameraMode::default();
+        let y = sim
+            .app
+            .world_mut()
+            .run_system_once(move |spatial: SpatialQuery| {
+                camera_offset_for_hull(&mode, at, eye, Quat::from_rotation_y(yaw), &spatial, [p], Some(hull))
+            })
+            .unwrap()
+            .y;
+        assert!((y - eye.y).abs() < 1e-4, "yaw {yaw_deg}: eye {y} at the barrel, wanted {}", eye.y);
+    }
 }

@@ -210,65 +210,104 @@ pub fn camera_look(mode: &CameraMode, look: Quat) -> Quat {
     }
 }
 
-/// The camera's offset from the character's origin: the eye in first
-/// person; in third person, behind it (along `look`, from `camera_look`),
-/// pulled in by a sweep against what bodies collide with (not characters
-/// nor loose items).
 /// Clearance kept between the eye and a ceiling just above it: Bevy's
 /// near plane (0.1 m) plus a little, so the near plane never cuts into it.
 const CEILING_CLEARANCE: f32 = 0.12;
 
 /// Half the width of the flat box swept up from the origin to find the
-/// ceiling over the eye: just inside the player's box (CS:S's is 16
-/// units), so a wall touching the box's side isn't taken for a ceiling.
-/// The whole box's width, not a ray from its centre: walking under a
-/// brush edge at head height, the box's top goes under it (62 units)
-/// while the eye (64) is still just short of it, and the near plane
-/// (several units wide around the eye) cut into the brush and showed the
-/// map through it. CS:S's view drops as soon as the top of the box is
-/// under the edge (a playtester's comparison; the movement spec doesn't
-/// cover the view against ceilings: our reading, a capture to confirm in
-/// docs/backlog.md).
-/// Metres (CS:S's 15 units), for any game's character.
+/// ceiling over the eye when the character's hull isn't known
+/// (`camera_offset`): just inside CS:S's box (16 units each side).
+/// Metres (CS:S's 15 units).
 const CEILING_PROBE_HALF_WIDTH: f32 = 15.0 * SOURCE_UNIT;
 
-/// The probe's half width as a fraction of the hull's radius (CS:S's 15
-/// of 16 units).
+/// The probe's half width as a fraction of the hull's (CS:S's 15 of 16
+/// units): just inside the hull, so nothing touching its side counts.
 const CEILING_PROBE_HULL_FRACTION: f32 = 15.0 / 16.0;
 
-/// The eye, lowered if a ceiling sits closer above it than
-/// `CEILING_CLEARANCE` anywhere over the player's box
-/// (`CEILING_PROBE_HALF_WIDTH`). The measured CS:S box (62 units, eye at
-/// 64) fits a 64-unit duct like de_nuke's vents standing, with the eye on
-/// the ceiling plane: the near plane then cut into the ceiling and the map
-/// showed through it. Only what the body collides with counts
-/// (`core::CHARACTER_FILTER`): a weapon or the bomb just dropped, still
-/// inside its dropper's box, lowered the view as a ceiling would
-/// (playtest 2026-10-14).
+/// How far (m) under the hull's top the probe starts: below a ceiling the
+/// hull touches (the body may sink into it by its contact skin), above
+/// anything beside the hull that is lower than the character.
+const CEILING_PROBE_TOP_INSET: f32 = 0.02;
+
+/// A character's hull as the first-person ceiling probe needs it, metres
+/// from its origin: half its width along x and z, its top, and whether it
+/// is round (a cylinder or capsule: the probe is a disc) or a box (the
+/// probe a box, axis-aligned as the hull is).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hull {
+    pub half: Vec2,
+    pub top: f32,
+    pub round: bool,
+}
+
+impl Hull {
+    /// The hull of a character's collider (at its origin, unrotated).
+    pub fn of(collider: &Collider) -> Self {
+        use avian3d::prelude::SimpleCollider;
+        let aabb = collider.aabb(Vec3::ZERO, Quat::IDENTITY, 0.0);
+        let half = (aabb.max - aabb.min) * 0.5;
+        Hull {
+            half: Vec2::new(half.x, half.z),
+            top: aabb.max.y,
+            round: collider.shape_scaled().as_cuboid().is_none(),
+        }
+    }
+}
+
+/// The eye, lowered if a ceiling over the character's own hull sits
+/// closer above it than `CEILING_CLEARANCE`. CS:S's eye is above its box
+/// (64 units over a 62-unit box): in a 64-unit duct like de_nuke's vents,
+/// or under a brush edge over the box's top but not yet over the eye, the
+/// near plane cut into the ceiling and the map showed through it.
+///
+/// Only a true overhead obstruction counts: a flat shape just inside the
+/// hull's footprint (a disc for a round hull, a box for a box) swept up
+/// from just under the hull's top to the eye's reach. Nothing beside the
+/// hull and lower than its top can be in that band, and an eye under its
+/// hull's top (Combat Arms', a fitted body's) is never moved: the hull
+/// itself keeps the world off it. (The old probe was a square swept from
+/// the origin: its corners reached past a round hull into a barrel or
+/// crate beside it, and its whole height below the top took their tops
+/// for a ceiling: Combat Arms' camera dropped at its maps' barrels.)
+/// Only what the body collides with counts (`core::CHARACTER_FILTER`): a
+/// weapon or the bomb just dropped, still inside its dropper's box,
+/// lowered the view as a ceiling would (playtest 2026-10-14). With no
+/// hull known, a CS:S-wide square from the origin.
 fn below_ceiling(
     origin: Vec3,
     eye: Vec3,
     spatial: &SpatialQuery,
     characters: impl IntoIterator<Item = Entity>,
-    hull_radius: f32,
+    hull: Option<Hull>,
 ) -> Vec3 {
     let filter = SpatialQueryFilter::from_excluded_entities(characters).with_mask(crate::core::CHARACTER_FILTER);
     let reach = eye.y + CEILING_CLEARANCE;
-    if reach <= 0.0 {
+    let (from, shape) = match hull {
+        Some(h) => {
+            let half = h.half * CEILING_PROBE_HULL_FRACTION;
+            let shape = if h.round {
+                Collider::cylinder(half.x.min(half.y), 0.001)
+            } else {
+                Collider::cuboid(2.0 * half.x, 0.001, 2.0 * half.y)
+            };
+            ((h.top - CEILING_PROBE_TOP_INSET).max(0.0), shape)
+        }
+        None => {
+            let w = 2.0 * CEILING_PROBE_HALF_WIDTH;
+            (0.0, Collider::cuboid(w, 0.001, w))
+        }
+    };
+    if reach <= from {
         return eye;
     }
-    // Never wider than the player's own hull (a narrower body, Combat
-    // Arms', would otherwise sweep into the wall it stands against and
-    // take its top for a ceiling).
-    let w = 2.0 * CEILING_PROBE_HALF_WIDTH.min(CEILING_PROBE_HULL_FRACTION * hull_radius);
     let config = ShapeCastConfig {
-        max_distance: reach,
+        max_distance: reach - from,
         ignore_origin_penetration: true,
         ..default()
     };
     let hit = spatial
-        .cast_shape(&Collider::cuboid(w, 0.001, w), origin, Quat::IDENTITY, Dir3::Y, &config, &filter)
-        .map(|h| h.distance);
+        .cast_shape(&shape, origin + Vec3::Y * from, Quat::IDENTITY, Dir3::Y, &config, &filter)
+        .map(|h| from + h.distance);
     eye.with_y(eye_under_ceiling(eye.y, hit))
 }
 
@@ -280,6 +319,8 @@ fn eye_under_ceiling(eye: f32, hit: Option<f32>) -> f32 {
     }
 }
 
+/// `camera_offset_for_hull` with the character's hull unknown (a
+/// CS:S-wide first-person ceiling probe from the origin).
 pub fn camera_offset(
     mode: &CameraMode,
     origin: Vec3,
@@ -288,19 +329,14 @@ pub fn camera_offset(
     spatial: &SpatialQuery,
     characters: impl IntoIterator<Item = Entity>,
 ) -> Vec3 {
-    camera_offset_for_hull(mode, origin, eye, look, spatial, characters, f32::INFINITY)
+    camera_offset_for_hull(mode, origin, eye, look, spatial, characters, None)
 }
 
-/// A character's hull radius, metres: half its collider's wider
-/// horizontal extent.
-pub fn hull_radius(collider: &Collider) -> f32 {
-    use avian3d::prelude::SimpleCollider;
-    let half = collider.aabb(Vec3::ZERO, Quat::IDENTITY, 0.0).size() * 0.5;
-    half.x.max(half.z)
-}
-
-/// `camera_offset` for a character whose hull is `hull_radius` metres
-/// wide (each side): the first-person ceiling probe is no wider.
+/// The camera's offset from the character's origin: the eye in first
+/// person (under a ceiling over its `hull`, `below_ceiling`); in third
+/// person, behind it (along `look`, from `camera_look`), pulled in by a
+/// sweep against what bodies collide with (not characters nor loose
+/// items).
 pub fn camera_offset_for_hull(
     mode: &CameraMode,
     origin: Vec3,
@@ -308,10 +344,10 @@ pub fn camera_offset_for_hull(
     look: Quat,
     spatial: &SpatialQuery,
     characters: impl IntoIterator<Item = Entity>,
-    hull_radius: f32,
+    hull: Option<Hull>,
 ) -> Vec3 {
     if !mode.third_person {
-        return below_ceiling(origin, eye, spatial, characters, hull_radius);
+        return below_ceiling(origin, eye, spatial, characters, hull);
     }
     let ideal = mode.ideal_dist.max(0.0) * mode.meters_per_unit;
     let Ok(dir) = Dir3::new(look * Vec3::Z) else {

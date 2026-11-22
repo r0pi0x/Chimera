@@ -9,6 +9,7 @@ mod match_end;
 mod match_end_signal;
 mod callouts;
 mod dead_view;
+mod eye_ceiling;
 mod game_app;
 mod hit_marker;
 mod lobby_panel;

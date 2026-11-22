@@ -110,13 +110,15 @@ fn third_person_camera_sits_as_css_does() {
 fn eye_drops_under_a_brush_edge_over_the_box() {
     use avian3d::prelude::{Collider, RigidBody, SpatialQuery};
     use bevy::ecs::system::RunSystemOnce;
-    use crate::stack::client::view::{CameraMode, camera_offset};
+    use crate::stack::client::view::{CameraMode, Hull, camera_offset_for_hull};
     const U: f32 = 0.0254;
     let mut sim = Sim::new(CsSim, (GreyboxMapPlugin, SourceMovementPlugin));
     // High over the greybox; the box's centre (origin) 31 units above its
     // feet, the eye 33 above that (CS:S: box 62, eye 64).
     let origin = Vec3::new(0.0, 40.0, 12.0);
     let eye = Vec3::Y * 33.0 * U;
+    // The player's box, 32 x 62 units.
+    let hull = Hull::of(&Collider::cuboid(32.0 * U, 62.0 * U, 32.0 * U));
     // A slab whose underside is 32.5 units above the origin (between the
     // box's top and the eye), 100 units wide; `edge` units from the
     // origin along +x.
@@ -135,7 +137,9 @@ fn eye_drops_under_a_brush_edge_over_the_box() {
         let mode = CameraMode::default();
         sim.app
             .world_mut()
-            .run_system_once(move |spatial: SpatialQuery| camera_offset(&mode, origin, eye, Quat::IDENTITY, &spatial, []))
+            .run_system_once(move |spatial: SpatialQuery| {
+                camera_offset_for_hull(&mode, origin, eye, Quat::IDENTITY, &spatial, [], Some(hull))
+            })
             .unwrap()
     };
     // Its edge 20 units away: beside the box, the eye stays.

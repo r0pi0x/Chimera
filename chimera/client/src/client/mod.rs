@@ -1112,13 +1112,13 @@ fn follow_eye(
         let placed = shoulder.place(at.translation, eye.eye_offset, look, look, kick, Vec2::new(free.yaw, free.pitch), &spatial, &filter);
         let third = placed.is_some();
         let (offset, look) = placed.unwrap_or_else(|| {
-            // The ceiling probe is no wider than the player's own hull.
-            let hull_radius = hull.map_or(f32::INFINITY, view::hull_radius);
+            // The ceiling probe is over the player's own hull.
+            let hull = hull.map(view::Hull::of);
             let first = view::CameraMode {
                 third_person: false,
                 ..*mode
             };
-            let offset = view::camera_offset_for_hull(&first, at.translation, eye.eye_offset, look, &spatial, &characters, hull_radius);
+            let offset = view::camera_offset_for_hull(&first, at.translation, eye.eye_offset, look, &spatial, &characters, hull);
             (offset, look)
         });
         // Over steps the eye lags the feet (first person: `smooth_stairs`).

@@ -89,7 +89,7 @@
 use avian3d::prelude::*;
 use bevy::{input::mouse::AccumulatedMouseMotion, prelude::*, window::CursorOptions};
 
-use super::view::{CameraMode, FreeCam, camera_offset};
+use super::view::{CameraMode, FreeCam, camera_offset, camera_offset_for_hull};
 use crate::{
     console::{ConsoleAppExt, resource_cvar},
     core::{Dead, Died, Health, Intent, LocalPlayer, MovementState, Npc, Spectating, Team},
@@ -730,7 +730,11 @@ pub fn place_camera(
     bodies: Query<&GlobalTransform>,
     spatial: SpatialQuery,
     characters: Query<Entity, With<Intent>>,
-    (orbit, spectating): (Option<Res<crate::core::OrbitDeadView>>, Query<(), With<crate::core::Spectating>>),
+    (orbit, spectating, hulls): (
+        Option<Res<crate::core::OrbitDeadView>>,
+        Query<(), With<crate::core::Spectating>>,
+        Query<&Collider>,
+    ),
     controls: (
         Option<Res<ButtonInput<KeyCode>>>,
         Option<Res<AccumulatedMouseMotion>>,
@@ -806,7 +810,9 @@ pub fn place_camera(
                     let p = e.punch;
                     let look = Quat::from_euler(EulerRot::YXZ, e.yaw + p.y, e.pitch + p.x, 0.0);
                     let fp = CameraMode::default();
-                    let offset = camera_offset(&fp, t, e.eye_offset, look, &spatial, &characters);
+                    // The ceiling probe over the watched character's own hull.
+                    let hull = spec.target.and_then(|w| hulls.get(w).ok()).map(super::view::Hull::of);
+                    let offset = camera_offset_for_hull(&fp, t, e.eye_offset, look, &spatial, &characters, hull);
                     Some((t + offset, look))
                 }
                 (SpecMode::Chase, Some((t, e))) => {
