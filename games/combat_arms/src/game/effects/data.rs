@@ -224,7 +224,7 @@ impl CaFxTables {
     pub fn built_in() -> &'static Self {
         static SET: OnceLock<CaFxTables> = OnceLock::new();
         SET.get_or_init(|| {
-            Self::parse(include_str!("../../../data/effects.toml"))
+            Self::parse(chimera_core::game_data!("data/effects.toml").text())
                 .unwrap_or_else(|e| panic!("Combat Arms effects.toml: {e}"))
         })
     }

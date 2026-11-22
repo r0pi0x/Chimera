@@ -1069,7 +1069,7 @@ fn install_modes(sim: &mut Sim, id: &str, fields: &str) {
     );
     let doc = lithtech_formats::attributes::Document::parse(text.as_bytes()).unwrap();
     let file = WeaponsFile::read(&doc).unwrap();
-    let docs = merge_weapon_docs(WEAPON_DATA, &file, 0.0185).unwrap();
+    let docs = merge_weapon_docs(&chimera_core::game_data::texts(WEAPON_DATA), &file, 0.0185).unwrap();
     let m4 = docs.iter().find(|(n, _)| n == "m4a1.toml").expect("our M4A1");
     let merged: toml::Table = toml::from_str(&m4.1).unwrap();
     let mut alt = toml::Table::new();

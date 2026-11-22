@@ -19,7 +19,7 @@ pub static BUNDLE: GameBundle = GameBundle {
     view_model_fov: Some(fov),
     sim: |_| {},
     display_names: None,
-    player_options: Some(include_str!("../../data/player_options.toml")),
+    player_options: Some(chimera_core::game_data!("data/player_options.toml")),
 };
 
 

@@ -101,7 +101,7 @@ pub const TEAMS: &[SpawnTeams] = &[
 pub const SURFACES: &[SurfaceTable] = &[SurfaceTable {
     map: cs_source::game::GAME,
     gameplay: combat_arms::game::GAME,
-    text: include_str!("../data/surfaces_cs_source_combat_arms.toml"),
+    text: chimera_core::game_data!("data/surfaces_cs_source_combat_arms.toml"),
 }];
 
 /// What of CS:S's parts stays on its maps: its weapons' held and view

@@ -3,7 +3,7 @@
 //! and one `Property` child whose attributes are the widget's settings,
 //! nested `Control`s as children. `ParentName` and the anchoring keys are
 //! ignored; an unknown type fails the load. Our own layouts are in this
-//! format (`data/ui/`); the game's sit in a keyed archive.
+//! format (`data/`); the game's sit in a keyed archive.
 //!
 //! The XML read is the subset layouts use: elements, attributes in single
 //! or double quotes, the five named entities and numeric ones, comments,

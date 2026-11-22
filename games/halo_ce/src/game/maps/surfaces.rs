@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use blam_formats::collision::MaterialType;
 
 /// The table's text, compiled in.
-pub const TABLE: &str = include_str!("../../../data/surfaces.toml");
+pub const TABLE: chimera_core::game_data::GameData = chimera_core::game_data!("data/surfaces.toml");
 
 #[derive(serde::Deserialize)]
 struct File {
@@ -28,7 +28,7 @@ pub struct Row {
 /// The table's rows, by code. Parsed on each call (a few dozen lines, a
 /// few times a load): no process-wide state.
 pub fn table() -> BTreeMap<i16, Row> {
-    let file: File = toml::from_str(TABLE).expect("data/surfaces.toml parses (a test checks it)");
+    let file: File = toml::from_str(&TABLE).expect("data/surfaces.toml parses (a test checks it)");
     file.types.into_iter().map(|r| (r.code, r)).collect()
 }
 

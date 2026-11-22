@@ -4,7 +4,7 @@
 //!
 //! Fonts are monospaced here: every glyph advances the font's average
 //! width, as the spec's test fonts (the real faces' advances are its Open
-//! question 3). Our font list (`data/ui/fonts.toml`) names each face's
+//! question 3). Our font list (`data/fonts.toml`) names each face's
 //! heights and its average width as a fraction of the height.
 
 use std::collections::HashMap;
@@ -74,7 +74,7 @@ impl Scaled {
     }
 }
 
-/// A face of the font list (`data/ui/fonts.toml`).
+/// A face of the font list (`data/fonts.toml`).
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct FontFace {
     /// What the face is for (`bold`, `light`, `number`).
@@ -108,9 +108,9 @@ pub struct FontList {
 }
 
 impl FontList {
-    /// Our font list (`data/ui/fonts.toml`).
+    /// Our font list (`data/fonts.toml`).
     pub fn ours() -> Self {
-        Self::parse(include_str!("../../../data/ui/fonts.toml")).expect("data/ui/fonts.toml")
+        Self::parse(chimera_core::game_data!("data/fonts.toml").text()).expect("data/fonts.toml")
     }
 
     pub fn parse(toml_text: &str) -> Result<Self, String> {
@@ -260,9 +260,9 @@ pub struct Strings {
 }
 
 impl Strings {
-    /// Our table (`data/ui/strings.txt`).
+    /// Our table (`data/strings.txt`).
     pub fn ours() -> Self {
-        Self::parse(include_str!("../../../data/ui/strings.txt"))
+        Self::parse(chimera_core::game_data!("data/strings.txt").text())
     }
 
     /// A table: lines split on CR and LF; a line without `=` ignored; the

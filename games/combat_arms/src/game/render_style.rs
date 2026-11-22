@@ -225,7 +225,7 @@ fn key(name: &str) -> String {
 fn table() -> &'static HashMap<String, Style> {
     static T: OnceLock<HashMap<String, Style>> = OnceLock::new();
     T.get_or_init(|| {
-        let t: Table = toml::from_str(include_str!("../../data/render_styles.toml")).expect("data/render_styles.toml");
+        let t: Table = toml::from_str(chimera_core::game_data!("data/render_styles.toml").text()).expect("data/render_styles.toml");
         t.styles.into_iter().map(|(k, v)| (key(&k), v)).collect()
     })
 }

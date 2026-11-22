@@ -72,7 +72,7 @@ pub const GRENADE_ACTION: &str = "grenade";
 pub const SWITCH_ACTION: &str = "grenade_switch";
 
 /// data/grenades.toml.
-pub const DATA: &str = include_str!("../../../data/grenades.toml");
+pub const DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/grenades.toml");
 
 /// The kinds, in the globals' order.
 pub const FRAG: usize = 0;
@@ -115,7 +115,7 @@ pub struct GrenadeData {
 impl GrenadeData {
     /// The table compiled in (a test checks it parses).
     pub fn load() -> Self {
-        toml::from_str(DATA).unwrap_or_else(|e| panic!("data/grenades.toml: {e}"))
+        toml::from_str(&DATA).unwrap_or_else(|e| panic!("data/grenades.toml: {e}"))
     }
 
     pub fn projectile(&self, kind: usize) -> &Projectile {

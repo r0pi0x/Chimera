@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// data/movement.toml, built in.
-pub const TABLE: &str = include_str!("../../../data/movement.toml");
+pub const TABLE: chimera_core::game_data::GameData = chimera_core::game_data!("data/movement.toml");
 
 /// Ticks per second of Halo's simulation (cache_file.md, "The world"): the
 /// unit the per-second fields are divided by. Structural, not a tuning.
@@ -74,7 +74,7 @@ impl MovementData {
     /// The built-in table (panics only if data/movement.toml is broken; a
     /// test parses it).
     pub fn builtin() -> Self {
-        toml::from_str(TABLE).expect("data/movement.toml parses")
+        toml::from_str(&TABLE).expect("data/movement.toml parses")
     }
 
     /// The pill's segment height h at crouch fraction `c` (spec "The

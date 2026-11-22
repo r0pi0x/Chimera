@@ -13,11 +13,11 @@ use serde::{Deserialize, Serialize};
 use super::physics::{ChannelDef, Friction, PhysicsDef, PointDef};
 
 /// data/vehicles/warthog.toml, built in.
-pub const WARTHOG: &str = include_str!("../../../data/vehicles/warthog.toml");
+pub const WARTHOG: chimera_core::game_data::GameData = chimera_core::game_data!("data/vehicles/warthog.toml");
 /// data/vehicles/ghost.toml, built in.
-pub const GHOST: &str = include_str!("../../../data/vehicles/ghost.toml");
+pub const GHOST: chimera_core::game_data::GameData = chimera_core::game_data!("data/vehicles/ghost.toml");
 /// data/vehicles/scorpion.toml, built in.
-pub const SCORPION: &str = include_str!("../../../data/vehicles/scorpion.toml");
+pub const SCORPION: chimera_core::game_data::GameData = chimera_core::game_data!("data/vehicles/scorpion.toml");
 
 /// The driving model a vehicle's type picks (vehicles.md "The vehicle
 /// tag", type).
@@ -209,17 +209,17 @@ impl VehicleDef {
     /// The built-in Warthog (panics only if the document is broken; a test
     /// parses it).
     pub fn warthog() -> Self {
-        toml::from_str(WARTHOG).expect("data/vehicles/warthog.toml parses")
+        toml::from_str(&WARTHOG).expect("data/vehicles/warthog.toml parses")
     }
 
     /// The built-in Ghost.
     pub fn ghost() -> Self {
-        toml::from_str(GHOST).expect("data/vehicles/ghost.toml parses")
+        toml::from_str(&GHOST).expect("data/vehicles/ghost.toml parses")
     }
 
     /// The built-in Scorpion.
     pub fn scorpion() -> Self {
-        toml::from_str(SCORPION).expect("data/vehicles/scorpion.toml parses")
+        toml::from_str(&SCORPION).expect("data/vehicles/scorpion.toml parses")
     }
 
     /// Every built-in vehicle, by name.

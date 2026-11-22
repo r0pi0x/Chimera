@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 /// The data (data/npc_bodies.toml).
-pub const DATA: &str = include_str!("../../../data/npc_bodies.toml");
+pub const DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/npc_bodies.toml");
 
 /// A boss's minimal mapping (13.8): the names played on every tracker.
 #[derive(Deserialize, Clone, Debug, Default, PartialEq)]
@@ -188,7 +188,7 @@ pub fn families() -> &'static Families {
 
 /// `DATA` parsed (bad built-in data panics; the tests load it).
 pub fn built_in() -> Families {
-    Families::parse(DATA).unwrap_or_else(|e| panic!("npc_bodies.toml: {e}"))
+    Families::parse(&DATA).unwrap_or_else(|e| panic!("npc_bodies.toml: {e}"))
 }
 
 #[cfg(test)]

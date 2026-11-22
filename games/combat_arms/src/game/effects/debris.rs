@@ -171,7 +171,7 @@ impl CaDebrisTable {
             record: Vec<DebrisRecord>,
         }
         let d: Doc =
-            toml::from_str(include_str!("../../../data/debris.toml")).unwrap_or_else(|e| panic!("Combat Arms debris.toml: {e}"));
+            toml::from_str(chimera_core::game_data!("data/debris.toml").text()).unwrap_or_else(|e| panic!("Combat Arms debris.toml: {e}"));
         Self(d.record)
     }
 

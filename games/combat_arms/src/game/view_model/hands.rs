@@ -91,7 +91,7 @@ pub struct HandTable {
 
 /// Our table (data/hands.toml).
 pub fn builtin() -> HandTable {
-    toml::from_str(include_str!("../../../data/hands.toml")).expect("data/hands.toml")
+    toml::from_str(chimera_core::game_data!("data/hands.toml").text()).expect("data/hands.toml")
 }
 
 /// What the player wears (the local profile's face and uniform: Quirk 5).

@@ -22,6 +22,9 @@
 //!   --direct          only the changed packages' own tests, not their
 //!                     dependents' (a change selecting everything narrows
 //!                     to repo_checks): what the pre-commit hook runs
+//!   --code            leave out the data files (`Change::Data`: a dev
+//!                     build reads them at run time): what the pre-commit
+//!                     hook type-checks
 //!   --quiet           no summary on stderr
 //! ```
 //!
@@ -43,7 +46,7 @@ use std::{
     process::{Command, ExitCode},
 };
 
-use repo_checks::affected::{Selection, Workspace, lock_affected};
+use repo_checks::affected::{Selection, Workspace, is_data, lock_affected};
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     let out = Command::new("git")
@@ -130,7 +133,7 @@ fn lock_at(root: &Path, rev: Option<&str>) -> Result<String, String> {
 
 fn usage() -> &'static str {
     "usage: affected [--staged] [--range A..B] [--new SHA] [--base REV] [--files F...] [--remote NAME] \
-     [--format nextest|cargo] [--skip-heavy] [--direct] [--quiet]"
+     [--format nextest|cargo] [--skip-heavy] [--direct] [--code] [--quiet]"
 }
 
 fn main() -> ExitCode {
@@ -157,6 +160,7 @@ fn run() -> Result<(), String> {
     let root = PathBuf::from(git(Path::new("."), &["rev-parse", "--show-toplevel"])?.trim());
     let mut everything: Option<String> = None;
     let (mut format, mut skip_heavy, mut quiet, mut direct) = ("nextest".to_string(), false, false, false);
+    let mut code = false;
     let mut remote = "origin".to_string();
     // The changes as given, resolved once `--remote` is known.
     let mut asked: Vec<(String, Vec<String>)> = Vec::new();
@@ -181,6 +185,7 @@ fn run() -> Result<(), String> {
             "--skip-heavy" => skip_heavy = true,
             "--quiet" => quiet = true,
             "--direct" => direct = true,
+            "--code" => code = true,
             "-h" | "--help" => {
                 println!("{}", usage());
                 return Ok(());
@@ -269,6 +274,9 @@ fn run() -> Result<(), String> {
         Ok(out)
     });
     let ws = Workspace::load(&root)?;
+    if code {
+        changed.retain(|p| !is_data(&ws, p));
+    }
     let mut sel = Selection::with_lock(&ws, &root, &changed, lock.as_ref());
     if let Some(why) = everything {
         sel.all = Some(why);

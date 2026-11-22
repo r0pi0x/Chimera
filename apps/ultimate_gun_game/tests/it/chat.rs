@@ -40,14 +40,14 @@ const LINK: LinkConditions = LinkConditions {
 fn setup(app: &mut App) {
     app.add_plugins((GreyboxMapPlugin, PartyPartsPlugin, UltimateGunGamePlugin::default()));
     chimera_net::prematch::enable(app);
-    app.insert_resource(chimera_ui::Theme::from_toml(signal::THEME).unwrap());
+    app.insert_resource(chimera_ui::Theme::from_toml(&signal::THEME).unwrap());
     app.add_plugins((ChimeraUiPlugin, LogoPassPlugin, PreMatchLobbyPlugin, SignalChatStatePlugin));
     app.add_plugins((SoundOptionsPlugin, UiSoundPlugin));
     if !app.world().contains_resource::<Assets<Image>>() {
         app.init_asset::<Image>();
     }
     app.insert_resource(UiClock::manual());
-    app.insert_resource(UiSounds::silent(signal::UI_SOUND_TABLE).unwrap());
+    app.insert_resource(UiSounds::silent(&signal::UI_SOUND_TABLE).unwrap());
 }
 
 fn sim(clients: usize, lobby: bool) -> NetSim {

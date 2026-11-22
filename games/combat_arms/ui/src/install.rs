@@ -3,7 +3,7 @@
 //! (`CBALAYOUT` files, read by `layout::xml`), the string table of the
 //! player's language in Language_Pack.rez and the art those layouts name
 //! (the `UI_*` archives' `.dtx` files, decoded by `lithtech_formats::dtx`)
-//! take the place of ours (data/ui/); without them ours stay.
+//! take the place of ours (data/); without them ours stay.
 //!
 //! - Layouts: the death screen (`KILLCAM_FILE`, `ui::hud::death`), the
 //!   main HUD (`HUD_FILE`, whose panels `ui::hud::install`

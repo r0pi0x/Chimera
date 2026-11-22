@@ -235,14 +235,14 @@ use super::{
 
 macro_rules! data_file {
     ($name:literal) => {
-        ($name, include_str!(concat!("../../data/weapons/", $name)))
+        ($name, chimera_core::game_data!("data/weapons/", $name))
     };
 }
 
 /// Combat Arms' weapon documents (games/combat_arms/data/weapons), built
 /// in, in registration order (the network names weapons by registry
 /// index).
-pub const WEAPON_DATA: &[(&str, &str)] = &[
+pub const WEAPON_DATA: &[(&str, chimera_core::game_data::GameData)] = &[
     data_file!("m9.toml"),
     data_file!("m4a1.toml"),
     data_file!("m67.toml"),
@@ -388,7 +388,7 @@ impl InstallAttributes {
 
 /// The records no shop item sells that the draw deals anyway
 /// (data/ladder_unshopped_dealt.toml; an id ending in `*` is a prefix).
-const UNSHOPPED_DEALT: &str = include_str!("../../data/ladder_unshopped_dealt.toml");
+const UNSHOPPED_DEALT: chimera_core::game_data::GameData = chimera_core::game_data!("data/ladder_unshopped_dealt.toml");
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -407,7 +407,7 @@ struct DealtEntry {
 
 /// The ids (lower case) data/ladder_unshopped_dealt.toml names.
 fn dealt_unshopped() -> Vec<String> {
-    let doc: DealtDoc = toml::from_str(UNSHOPPED_DEALT).expect("data/ladder_unshopped_dealt.toml");
+    let doc: DealtDoc = toml::from_str(&UNSHOPPED_DEALT).expect("data/ladder_unshopped_dealt.toml");
     doc.dealt.into_iter().flat_map(|e| e.weapons).map(|w| w.to_ascii_lowercase()).collect()
 }
 
@@ -2170,7 +2170,7 @@ mod tests {
         let files = WeaponSet::read_dir(&dir).unwrap();
         for (name, text) in &files {
             let built_in = WEAPON_DATA.iter().find(|(n, _)| n == name);
-            assert_eq!(built_in.map(|d| d.1), Some(text.as_str()), "{name} not in `WEAPON_DATA`");
+            assert_eq!(built_in.map(|d| d.1.text()), Some(text.as_str()), "{name} not in `WEAPON_DATA`");
         }
         assert_eq!(files.len(), WEAPON_DATA.len());
     }
@@ -2202,7 +2202,7 @@ mod tests {
         }
         // The built-in documents parse on their own and `CaData::builtin()`
         // holds them.
-        let builtin = WeaponSet::parse(WEAPON_DATA, &[]).unwrap();
+        let builtin = WeaponSet::parse(&chimera_core::game_data::texts(WEAPON_DATA), &[]).unwrap();
         assert_eq!(builtin.weapons.len(), WEAPON_DATA.len());
         let data = CaData::builtin();
         for id in data.builtin_weapon_ids() {

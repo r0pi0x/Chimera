@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use serde::Deserialize;
 
 /// The built-in data file.
-pub const BOT_DATA: &str = include_str!("../../../data/bots.toml");
+pub const BOT_DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/bots.toml");
 
 /// A difficulty level (the room's `BotLevel` 0-2; training's own).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -340,7 +340,7 @@ impl BotData {
     }
 
     pub fn built_in() -> Self {
-        Self::parse(BOT_DATA).expect("data/bots.toml")
+        Self::parse(&BOT_DATA).expect("data/bots.toml")
     }
 
     /// The gun type of weapon `id` (None: no AI row).

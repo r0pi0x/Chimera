@@ -174,7 +174,7 @@ use chimera_world::map::hud::GameUi;
 use crate::host::{self, Pick, Setting, setting_of};
 
 /// The menu's data (data/main_menu.toml).
-pub const MAIN_MENU_TOML: &str = include_str!("../data/main_menu.toml");
+pub const MAIN_MENU_TOML: chimera_core::game_data::GameData = chimera_core::game_data!("data/main_menu.toml");
 
 /// Why a host's clients were dropped when it left (`net::client::
 /// HOST_LEFT`'s words, shown in their failure box).
@@ -304,7 +304,7 @@ impl Default for MenuData {
 impl MenuData {
     /// The shipped file's.
     pub fn shipped() -> Self {
-        Self::parse(MAIN_MENU_TOML).expect("data/main_menu.toml reads")
+        Self::parse(&MAIN_MENU_TOML).expect("data/main_menu.toml reads")
     }
 
     pub fn parse(text: &str) -> Result<Self, String> {

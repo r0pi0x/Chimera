@@ -186,22 +186,22 @@ pub const SURFACES: &[SurfaceTable] = &[
     SurfaceTable {
         map: cs_source::game::GAME,
         gameplay: combat_arms::game::GAME,
-        text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
+        text: chimera_core::game_data!("../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
     },
     SurfaceTable {
         map: hl2dm::game::GAME,
         gameplay: combat_arms::game::GAME,
-        text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
+        text: chimera_core::game_data!("../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
     },
     SurfaceTable {
         map: halo_ce::game::GAME,
         gameplay: combat_arms::game::GAME,
-        text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
+        text: chimera_core::game_data!("../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
     },
     SurfaceTable {
         map: tf2::game::GAME,
         gameplay: combat_arms::game::GAME,
-        text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
+        text: chimera_core::game_data!("../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
     },
 ];
 
@@ -289,7 +289,7 @@ pub static GAME_BINDS: [(&str, &[(&str, &str)]); 4] = [
 pub const WIDEST_HULL: f32 = 16.0 * 0.0254;
 
 /// Combat Arms' bots' gun types for CS:S's guns (data/bot_gun_types.toml).
-pub const BOT_GUN_TYPES: &str = include_str!("../data/bot_gun_types.toml");
+pub const BOT_GUN_TYPES: chimera_core::game_data::GameData = chimera_core::game_data!("data/bot_gun_types.toml");
 
 /// Bots the app keeps without a `MaxPlayer` of the user's: a gun game of
 /// four with the player.
@@ -450,7 +450,7 @@ pub fn bot_gun_type_of(class: chimera_core::game_parts::GunClass) -> Option<&'st
 
 /// `BOT_GUN_TYPES` read: weapon id to Combat Arms' gun type.
 pub fn bot_gun_types() -> Vec<(String, String)> {
-    let table: toml::Table = toml::from_str(BOT_GUN_TYPES).expect("data/bot_gun_types.toml reads");
+    let table: toml::Table = toml::from_str(&BOT_GUN_TYPES).expect("data/bot_gun_types.toml reads");
     table
         .into_iter()
         .map(|(id, kind)| (id, kind.as_str().expect("a gun type's name").to_string()))

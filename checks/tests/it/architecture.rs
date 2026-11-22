@@ -29,7 +29,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // (`WaitForTasks`): Bevy only.
     ("tasks", &["pending_work"]),
     ("pending_work", &[]),
-    ("console", &["core", "env", "query_cache", "console_names"]),
+    ("console", &["core", "env", "query_cache", "console_names", "game_data"]),
     // Quitting quickly: the steps that must persist, then the process's
     // end (its `chimera:clean_exit` cvar).
     ("shutdown", &["console", "env"]),
@@ -89,11 +89,13 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("gameplay", &["core", "game_registry"]),
     // What each game lends a game made of several (plain data), its
     // announcer pack and minigame cue pack among them.
-    ("game_parts", &["announcer", "cues"]),
+    ("game_parts", &["announcer", "cues", "game_data"]),
     // Announcers' packs, the server's choice and kill facts (plain data).
     ("announcer", &[]),
     // Minigame cue packs: sounds by cue key (plain data).
     ("cues", &[]),
+    // A crate's data documents, from the checkout or compiled in: std only.
+    ("game_data", &[]),
     // A session's diagnostics: the rolling log, health lines, crash
     // capture (over chimera_assets' `feedback::session`); the console's
     // lines, the memory readers and the tick metrics; the session ends as
@@ -799,6 +801,66 @@ fn games_leave_the_overlay_alone() {
                      must look the same over every game's HUD. Draw the game's part under the game's own \
                      root; a shell overlay belongs in chimera/client (docs/DESIGN.md, \"HUD layers\").",
                     file.strip_prefix(root()).unwrap_or(&file).display()
+                ));
+            }
+        }
+    }
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
+/// Games' and apps' data documents are named with `chimera_core::
+/// game_data!` (read from the checkout in a dev build, so an edit rebuilds
+/// nothing; compiled in otherwise), not `include_str!`; and a path stays in
+/// the calling crate's folder, or is listed where `affected` maps a data
+/// file to the crates reading it (`SHARED_DATA`, `TOOL_DATA`), so a data
+/// edit selects the tests that read it. Binary files (`include_bytes!`)
+/// may stay compiled in.
+#[test]
+fn game_data_stays_home() {
+    use repo_checks::affected::{SHARED_DATA, TOOL_DATA};
+    let mut errors = Vec::new();
+    for f in tracked_files() {
+        if !(f.starts_with("games/") || f.starts_with("apps/")) || !f.ends_with(".rs") || f.contains("/tests/") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(root().join(&f)) else { continue };
+        for (n, line) in text.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or_default();
+            if code.contains("include_str!(") {
+                errors.push(format!(
+                    "{f}:{}: `include_str!`: name a data document with `chimera_core::game_data!(\"<path from the \
+                     crate's folder>\")` (docs/new-game.md, the layout)",
+                    n + 1
+                ));
+            }
+            let Some(rest) = code.split("game_data!(\"").nth(1) else { continue };
+            let path = rest.split('"').next().unwrap_or_default();
+            if !path.starts_with("../") {
+                continue;
+            }
+            // The crate's folder: the nearest Cargo.toml above the file.
+            let mut dir = Path::new(&f).parent();
+            while let Some(d) = dir {
+                if root().join(d).join("Cargo.toml").exists() {
+                    break;
+                }
+                dir = d.parent();
+            }
+            let mut resolved: Vec<&str> = dir.map(|d| d.to_str().unwrap_or_default()).unwrap_or_default().split('/').collect();
+            for part in path.split('/') {
+                if part == ".." {
+                    resolved.pop();
+                } else {
+                    resolved.push(part);
+                }
+            }
+            let resolved = resolved.join("/");
+            if !SHARED_DATA.iter().chain(TOOL_DATA).any(|(p, _)| resolved.starts_with(p)) {
+                errors.push(format!(
+                    "{f}:{}: `game_data!(\"{path}\")` reads {resolved}, outside its crate: move the file into the \
+                     crate (a front end's data in games/<g>/ui/data), or list it in checks/src/affected.rs's \
+                     SHARED_DATA so a change to it selects this crate's tests",
+                    n + 1
                 ));
             }
         }
@@ -1616,9 +1678,8 @@ fn workspace_crates() {
         network a hook (a part, a resource of fn pointers) that the crate above fills.";
     const GAME: &str = "is a game's simulation (docs/ARCHITECTURE.md, \"Crates\"): it builds on the \
         engine and runs on a dedicated server without drawing; its front end and the apps sit above it, \
-        and games never use each other. Move the piece into its front end (`ui`, whose feature alone may \
-        turn on the presentation and the shell: UI_FEATURES) or up into the app (`cs_source_app`), or give the engine a hook \
-        the game fills.";
+        and games never use each other. Move the piece into its front end (`games/<g>/ui`, the crate \
+        `<g>_ui`) or up into the app (`cs_source_app`), or give the engine a hook the game fills.";
     const SOURCE: &str = "is Source's shared behaviour (docs/ARCHITECTURE.md, \"Crates\"): it sits \
         on the engine's simulation, and what presents it and the games sit above it. Say what is needed in \
         plain data or give it a hook (a registry, a resource) that the crate above fills.";
@@ -2291,30 +2352,6 @@ fn workspace_crates() {
         let path = format!("{krate}/Cargo.toml");
         let text = fs::read_to_string(root().join(&path)).unwrap_or_else(|e| panic!("{path}: {e}"));
         let m: toml::Table = text.parse().unwrap();
-        // A game's front end (`UI_FEATURES`) may use the presentation, the
-        // shell and Source's logic: as optional dependencies only its
-        // feature turns on.
-        let ui_only = |dep: &str| {
-            UI_FEATURES.iter().any(|(k, feature, deps)| {
-                k == krate
-                    && deps.contains(&dep)
-                    && m.get("dependencies")
-                        .and_then(|d| d.get(dep))
-                        .and_then(|d| d.get("optional"))
-                        .and_then(|o| o.as_bool())
-                        == Some(true)
-                    && m.get("features").and_then(|f| f.as_table()).is_some_and(|features| {
-                        let turns_on = |list: &toml::Value| {
-                            list.as_array().into_iter().flatten().any(|v| {
-                                v.as_str().is_some_and(|v| {
-                                    v == format!("dep:{dep}") || v == dep || v.starts_with(&format!("{dep}/"))
-                                })
-                            })
-                        };
-                        features.iter().all(|(name, list)| name == feature || !turns_on(list))
-                    })
-            })
-        };
         let mut tables: Vec<(&str, &toml::Table)> = ["dependencies", "dev-dependencies", "build-dependencies"]
             .iter()
             .filter_map(|k| m.get(*k).and_then(|t| t.as_table()).map(|t| (*k, t)))
@@ -2332,7 +2369,7 @@ fn workspace_crates() {
             );
         }
         // A test-only dependency (`TEST_ONLY`): in dev-dependencies, and
-        // nowhere else but as the front end's optional one.
+        // nowhere else but as an optional one.
         let test_only = |dep: &str| {
             TEST_ONLY.iter().any(|(k, deps, _)| k == krate && deps.contains(&dep))
                 && ["dependencies", "build-dependencies"].iter().all(|t| {
@@ -2342,13 +2379,8 @@ fn workspace_crates() {
                 })
         };
         for (table, dep) in tables.iter().flat_map(|(name, t)| t.keys().map(move |k| (*name, k))) {
-            // The front end's optional dependencies in the build's tables;
-            // the test-only ones in the tests' (dev-dependencies).
-            let allowed = if table == "dev-dependencies" {
-                test_only(dep)
-            } else {
-                ui_only(dep)
-            };
+            // The test-only ones in the tests' tables (dev-dependencies).
+            let allowed = table == "dev-dependencies" && test_only(dep);
             // `chimera_vfs` and `chimera_formats` are the neutral layer
             // under the format crates, so the `chimera_` prefix in their
             // rules doesn't cover them (their own rules do list the whole
@@ -2808,76 +2840,16 @@ fn layers_by_path() {
     assert_eq!(layer_of("checks"), Layer::Checks);
 }
 
-/// A game crate's front end feature and the dependencies only it may
-/// turn on (optional ones): the presentation and the client shell, which
-/// the game's simulation never uses (`workspace_crates`;
-/// `game_ui_only_with_its_feature` checks the dependency tree). Empty since
-/// the last game's front end became its own crate (stage 1 of
-/// docs/plans/active/architecture-for-iteration.md).
-const UI_FEATURES: &[(&str, &str, &[&str])] = &[
-];
-
 /// Crates a member's `FORBIDDEN` list names that its tests alone may use
 /// (dev-dependencies, never a normal or build one): crates below it, not
 /// above, so it is no way around the layering. `cs_source`'s scenario
 /// tests run the map as the game does, its drawn parts and sounds with it
-/// (`chimera_present`'s `MapPlugin`); the game's own build never links it
-/// (`game_ui_only_with_its_feature`).
+/// (`chimera_present`'s `MapPlugin`); the game's own build never links it.
 const TEST_ONLY: &[(&str, &[&str], &str)] = &[(
     "games/cs_source",
     &["chimera_present"],
     "the scenario tests' maps with what draws and plays them",
 )];
-
-/// A game crate builds without its front end: `cs_source` alone depends
-/// on no presentation or shell; with `ui` it does (`UI_FEATURES`). The dedicated server never turns `ui` on
-/// (`server_builds_without_presentation`).
-#[test]
-fn game_ui_only_with_its_feature() {
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-    for (krate, feature, deps) in UI_FEATURES {
-        let package = krate.rsplit('/').next().unwrap();
-        let tree = |args: &[&str]| -> String {
-            let out = Command::new(&cargo)
-                .current_dir(root())
-                .args([
-                    "tree",
-                    "-p",
-                    package,
-                    "-e",
-                    "normal",
-                    "--prefix",
-                    "none",
-                    "--offline",
-                    "--locked",
-                ])
-                .args(args)
-                .output()
-                .expect("running cargo tree");
-            assert!(
-                out.status.success(),
-                "cargo tree failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-            String::from_utf8_lossy(&out.stdout).into_owned()
-        };
-        let has = |tree: &str, dep: &str| tree.lines().any(|l| l.starts_with(&format!("{dep} ")));
-        let bare = tree(&[]);
-        let present: Vec<&&str> = deps.iter().filter(|d| has(&bare, d)).collect();
-        assert!(
-            present.is_empty(),
-            "`{package}` without its `{feature}` feature depends on {present:?}: only its front end may. Make the \
-             dependency optional and turn it on in `{feature}` ({krate}/Cargo.toml), or move what needs it into \
-             the front end (`ui`)."
-        );
-        let with_ui = tree(&["--features", feature]);
-        assert!(
-            deps.iter().any(|d| has(&with_ui, d)),
-            "`{package}` with `{feature}` no longer depends on any of {deps:?}: update UI_FEATURES in \
-             checks/tests/it/architecture.rs and docs/ARCHITECTURE.md (\"Crates\")."
-        );
-    }
-}
 
 /// Every package's features in the build of `selection` (`cargo tree`
 /// arguments) with `--features dev`, tests included: package and version
@@ -3041,9 +3013,9 @@ fn server_builds_without_presentation() {
     assert!(
         present.is_empty(),
         "`cs_source_server` (the CS:S dedicated server's build) depends on {present:?}. It uses Chimera's \
-         simulation crates and `cs_source` without its `ui` feature (apps/cs_source_server/Cargo.toml): don't \
-         turn on `ui` or depend on the app (`cs_source_app`), and keep the new dependency out of the \
-         simulation crates (the front end's optional ones: UI_FEATURES)."
+         simulation crates and `cs_source` without its front end (apps/cs_source_server/Cargo.toml): don't \
+         depend on `cs_source_ui` or the app (`cs_source_app`), and keep the new dependency out of the \
+         simulation crates (the front end, `cs_source_ui`, takes them)."
     );
     let server = tree("combat_arms_server");
     let present: Vec<&str> = server

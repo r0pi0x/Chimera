@@ -63,7 +63,7 @@ fn pack() -> AnnouncerPack {
     // The skins before the pack registers (the plugins' order varies).
     let mut app = bevy::prelude::App::new();
     app.announcer_skins("combat_arms", attrs.announcer_skins.clone())
-        .register_announcer(combat_arms::game::parts::ANNOUNCER);
+        .register_announcer(&combat_arms::game::parts::ANNOUNCER);
     let packs = app.world().resource::<AnnouncerPacks>();
     (*packs.get("combat_arms").unwrap().clone()).clone()
 }

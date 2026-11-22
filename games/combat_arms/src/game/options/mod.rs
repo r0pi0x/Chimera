@@ -79,7 +79,7 @@ pub use self::{
 use crate::profile::Profile;
 
 /// The template profile (ours).
-pub const DEFAULT_PROFILE: &str = include_str!("../../../data/options/default_profile.prf");
+pub const DEFAULT_PROFILE: chimera_core::game_data::GameData = chimera_core::game_data!("data/options/default_profile.prf");
 
 /// The options' state: the profile, the screen and what it has pending.
 #[derive(Resource)]
@@ -128,7 +128,7 @@ pub struct CaOptions {
 
 impl Default for CaOptions {
     fn default() -> Self {
-        let default_profile = Profile::parse(DEFAULT_PROFILE);
+        let default_profile = Profile::parse(&DEFAULT_PROFILE);
         Self {
             table: settings::all(),
             presets: video::presets(),

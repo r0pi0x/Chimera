@@ -7,8 +7,9 @@
 # whose tests depend on them (checks/src/affected.rs has the rules: the
 # workspace manifest, .config/, the hooks or a build.rs select everything;
 # the lockfile the crates whose resolved dependencies changed; Markdown
-# and docs only the repository checks). The hook checks the tests of
-# all of those (`cargo check --all-targets`: type-checks every target
+# and docs only the repository checks; a data file the tests of what
+# reads it, with nothing to type-check). The hook checks the tests of
+# all of those whose code changed (`affected --code`; `cargo check --all-targets`: type-checks every target
 # without codegen or linking; CHIMERA_COMMIT_DEPENDENTS=build restores the
 # old full build of their test binaries) and runs only the changed
 # packages' own (`affected --direct`) and repo_checks'; the dependents'
@@ -111,6 +112,14 @@ else
     fi
 fi
 
+# What to type-check: the selection without its data files (`affected
+# --code`): a data document is read at run time in a dev build, so no
+# dependent's code can stop compiling for it (only its tests can change).
+checks=$build
+if [ "$build" != --workspace ] && c=$(pick --code --quiet); then
+    checks=$c
+fi
+
 # --- Pass stamps (.githooks/stamps.sh) -------------------------------------
 dependents=${CHIMERA_COMMIT_DEPENDENTS:-check}
 # shellcheck source=.githooks/stamps.sh
@@ -120,7 +129,7 @@ if [ "${CHIMERA_COMMIT_STAMPS:-1}" != 0 ]; then
     key=$(tree_key) || key=
 fi
 if [ -n "$key" ] && [ -f "$stamps/$key" ]; then
-    if covered "$(pkgs "$tests")" "$(stamp_tested "$key")" && covered "$(pkgs "$build")" "$(stamp_checked "$key")"; then
+    if covered "$(pkgs "$tests")" "$(stamp_tested "$key")" && covered "$(pkgs "$checks")" "$(stamp_checked "$key")"; then
         echo "$who: this exact working tree already passed these checks and fast tests ($(sed -n 's/^when //p' "$stamps/$key"), stamp $stamps/$key); not running them again (CHIMERA_COMMIT_STAMPS=0 does)." >&2
         touch "$stamps/$key"
         timing stamp
@@ -136,23 +145,23 @@ IFS='
 set -- $tests
 unset IFS
 tests_args=("$@")
-# The type-check of the affected tests ($build), less the packages the
+# The type-check of the affected tests ($checks), less the packages the
 # fast tier builds anyway (`cargo test` builds their libs, bins, tests and
 # examples: checking them too was the same work twice). A package a
 # feature argument names stays (the feature needs it selected).
 check_args=()
-if [ "$build" != "$tests" ]; then
+if [ "$checks" != "$tests" ]; then
     IFS='
 '
     # shellcheck disable=SC2086
-    set -- $build
+    set -- $checks
     unset IFS
     if [ "${CHIMERA_COMMIT_FAST:-1}" = 0 ] || [ "$dependents" = build ]; then
         check_args=("$@")
     else
         tested=$(pkgs "$tests")
         while [ $# -gt 0 ]; do
-            if [ "$1" = -p ] && grep -qx -- "$2" <<<"$tested" && ! grep -qE -- "(^|[ ,])$2/" <<<"$build"; then
+            if [ "$1" = -p ] && grep -qx -- "$2" <<<"$tested" && ! grep -qE -- "(^|[ ,])$2/" <<<"$checks"; then
                 shift 2; continue
             fi
             check_args+=("$1"); shift
@@ -305,12 +314,12 @@ if [ "$tested_ok" = 0 ]; then
     timing fail
     exit 1
 fi
-stamp_record "$key" "$who" "$(pkgs "$tests")" "$(pkgs "$build")"
+stamp_record "$key" "$who" "$(pkgs "$tests")" "$(pkgs "$checks")"
 timing pass
 if [ "$worktree" = 1 ]; then
     names() { pkgs "$1" | sed 's/^\*$/the workspace/' | paste -sd' ' -; }
     checked=
-    [ "$build" != "$tests" ] && checked="type-checked the tests of $(names "$build") ($check_s s) and "
+    [ "$checks" != "$tests" ] && [ -n "$check_cmd" ] && checked="type-checked the tests of $(names "$checks") ($check_s s) and "
     echo "$who: passed in $(( $(date +%s) - started )) s: ${checked}ran the fast tier of $(names "$tests") ($test_s s; heavy tests run after the push). Stamped: a commit of this exact working tree skips these." >&2
 fi
 exit 0

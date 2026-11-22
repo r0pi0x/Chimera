@@ -5,7 +5,7 @@
 //! - Texts: each line at its pixel position in its font's face at the
 //!   scaled height (`layout::text::Scaled`), the effect's copies (outline
 //!   or shadow) under it in the effect's colour. The faces are the
-//!   install's font files (`data/ui/fonts.toml`'s `file`, read from
+//!   install's font files (`data/fonts.toml`'s `file`, read from
 //!   FONTS.rez at startup, `CaFaces`) when there is an install, else the
 //!   shell's stand-ins (`UiFonts`: Tahoma or its fallback).
 //! - Quads: textures by name are the game's art, from the install's UI

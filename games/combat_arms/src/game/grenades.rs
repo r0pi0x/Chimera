@@ -466,7 +466,7 @@ impl CaGrenadeSurfaces {
 
     /// The built-in table (data/grenade_surfaces.toml).
     pub fn built_in() -> Self {
-        Self::parse(include_str!("../../data/grenade_surfaces.toml")).expect("grenade_surfaces.toml")
+        Self::parse(chimera_core::game_data!("data/grenade_surfaces.toml").text()).expect("grenade_surfaces.toml")
     }
 }
 

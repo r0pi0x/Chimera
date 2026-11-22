@@ -148,7 +148,7 @@ pub fn games() -> &'static [GameOptions] {
     GAMES.get_or_init(|| {
         crate::BUNDLES
             .iter()
-            .filter_map(|b| b.player_options.map(|t| parse(b.info.id, t).unwrap_or_else(|e| panic!("data/player_options.toml: {e}"))))
+            .filter_map(|b| b.player_options.map(|t| parse(b.info.id, t.text()).unwrap_or_else(|e| panic!("data/player_options.toml: {e}"))))
             .collect()
     })
 }

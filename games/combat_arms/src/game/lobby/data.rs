@@ -8,7 +8,7 @@ use std::sync::{Arc, OnceLock};
 use serde::Deserialize;
 
 /// data/lobby.toml, built in.
-pub const DATA: &str = include_str!("../../../data/lobby.toml");
+pub const DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/lobby.toml");
 
 /// Rooms per channel: ids 0-99 (the list shows id + 1).
 pub const ROOMS_PER_CHANNEL: u16 = 100;
@@ -254,7 +254,7 @@ impl LobbyData {
     pub fn built_in() -> Arc<Self> {
         static DATA_ONCE: OnceLock<Arc<LobbyData>> = OnceLock::new();
         DATA_ONCE
-            .get_or_init(|| Arc::new(Self::parse(DATA).expect("data/lobby.toml parses")))
+            .get_or_init(|| Arc::new(Self::parse(&DATA).expect("data/lobby.toml parses")))
             .clone()
     }
 

@@ -82,7 +82,7 @@ fn where_a_cold_dressing_goes() {
         });
         let merged = std::cell::RefCell::new(Vec::new());
         step("  weapon documents merged again", &mut || {
-            let docs: Vec<(&str, &str)> = combat_arms::game::data::WEAPON_DATA.to_vec();
+            let docs: Vec<(&str, &str)> = chimera_core::game_data::texts(combat_arms::game::data::WEAPON_DATA);
             let a = data.attributes().unwrap();
             let mpu = combat_arms::game::movement::movement_data().meters_per_unit as f64;
             *merged.borrow_mut() = combat_arms::game::data::merge_weapon_docs_with_mods(

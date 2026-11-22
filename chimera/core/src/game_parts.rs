@@ -113,7 +113,7 @@ pub struct GameParts {
     pub maps: &'static [&'static str],
     /// Its announcer pack, a TOML document (`announcer::AnnouncerPack`),
     /// registered with its parts.
-    pub announcer: Option<&'static str>,
+    pub announcer: Option<crate::game_data::GameData>,
     /// A sound file in its install (a path its mount reads, loaded at run
     /// time) that a party match's end plays when someone won (the shell's
     /// match-end screen, `chimera_client::client::match_end`: the HUD's
@@ -132,7 +132,7 @@ pub struct GameParts {
     /// Its minigame cue pack, a TOML document (`cues::CuePack`: the
     /// sounds of a gun game's rung ups, last rung, lead and win),
     /// registered with its parts.
-    pub cues: Option<&'static str>,
+    pub cues: Option<crate::game_data::GameData>,
 }
 
 impl GameParts {
@@ -227,10 +227,10 @@ impl GamePartsAppExt for App {
     fn register_parts(&mut self, parts: &'static GameParts) -> &mut Self {
         self.world_mut().get_resource_or_init::<PartsRegistry>().register(parts);
         if let Some(pack) = parts.announcer {
-            crate::announcer::AnnouncerAppExt::register_announcer(self, pack);
+            crate::announcer::AnnouncerAppExt::register_announcer(self, pack.text());
         }
         if let Some(pack) = parts.cues {
-            crate::cues::CueAppExt::register_cues(self, pack);
+            crate::cues::CueAppExt::register_cues(self, pack.text());
         }
         self
     }

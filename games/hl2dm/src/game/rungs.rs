@@ -34,11 +34,11 @@ use super::{
 };
 
 /// Who holds which gun (data/rung_characters.toml).
-pub const HOLDERS: &str = include_str!("../../data/rung_characters.toml");
+pub const HOLDERS: chimera_core::game_data::GameData = chimera_core::game_data!("data/rung_characters.toml");
 
 /// `HOLDERS` parsed (bad built-in data panics; the tests load it).
 pub fn holders() -> Holders {
-    Holders::parse(HOLDERS).unwrap_or_else(|e| panic!("rung_characters.toml: {e}"))
+    Holders::parse(&HOLDERS).unwrap_or_else(|e| panic!("rung_characters.toml: {e}"))
 }
 
 /// The models allowed to hold `weapon` under `holders` (model paths).

@@ -226,11 +226,12 @@ what it picked and why, and the arguments for `cargo nextest run`
 (checks/src/affected.rs has the rules). A crate's change selects its
 tests and those of every crate depending on it (dev-dependencies too);
 a test file's change only its own test module (and modules naming it);
-a file in a folder only a feature compiles (a manifest's
-`[package.metadata.affected] feature-paths`: cs_source's `src/ui/`) its
-crate's test binaries built with the feature and the crates above, not
-the crate's other tests (an edit to CS:S's HUD doesn't run its map
-tests); a Cargo.lock change the crates whose resolved dependencies
+a data file of a crate (anything but Rust and its manifest: its
+`data/` documents, which a dev build reads at run time through
+`chimera_core::game_data!`) the same tests as its code, but nothing to
+type-check (`--code` leaves data out; the commit hook checks only that);
+a front end's data lives in its own crate (`games/<g>/ui/data`), so a
+HUD or menu edit doesn't run the game's simulation tests; a Cargo.lock change the crates whose resolved dependencies
 changed between its two versions (the lockfile's graph, around the
 workspace-hack); the workspace manifest, .config/, the hooks, the
 workspace-hack or a build.rs select everything (the summary says

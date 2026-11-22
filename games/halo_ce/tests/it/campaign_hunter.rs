@@ -259,7 +259,7 @@ fn the_cannons_charge_paces_a_held_trigger_and_tapping() {
             .collect()
     };
     let gaps = |s: &[u32]| s.windows(2).map(|w| w[1] - w[0]).collect::<Vec<u32>>();
-    let set = chimera_sim::weapon::data::WeaponSet::parse(weapons::DATA, &[]).unwrap();
+    let set = chimera_sim::weapon::data::WeaponSet::parse(&chimera_core::game_data::texts(weapons::DATA), &[]).unwrap();
     let g: weapons::params::Gun = set.get(HUNTER_RUNG).unwrap().hooks.get(weapons::WEAPON_HOOK).cloned().unwrap().try_into().unwrap();
     assert!(g.trigger.charge_paces);
     let charge = g.trigger.charging_ticks() as u32;

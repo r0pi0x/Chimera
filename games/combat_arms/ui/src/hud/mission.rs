@@ -3,7 +3,7 @@
 //! CaMission`). **Ours, not from the original**: the original client's
 //! handlers aren't in the reference (world_objects.md Open question 15),
 //! so the places, looks and times are our choices
-//! (`data/ui/mission_hud.toml`), in the install's HUD fonts and the HUD's
+//! (`data/mission_hud.toml`), in the install's HUD fonts and the HUD's
 //! colours, scaled like the rest of the HUD (`Screen`, and the text by
 //! `layout::glyph_stretch` through `hud_text`). DESIGN.md "The mission
 //! display" says why.
@@ -40,7 +40,7 @@ use crate::{
         layout::{Effect, text::EFFECTS},
 };
 
-/// The display's data (`data/ui/mission_hud.toml`).
+/// The display's data (`data/mission_hud.toml`).
 #[derive(Resource, Clone, Debug, Deserialize)]
 pub struct MissionHudData {
     pub timer: TimerData,
@@ -95,7 +95,7 @@ pub struct ObjectivesData {
 impl MissionHudData {
     /// Our data.
     pub fn ours() -> Self {
-        Self::parse(include_str!("../../../data/ui/mission_hud.toml")).expect("data/ui/mission_hud.toml")
+        Self::parse(chimera_core::game_data!("data/mission_hud.toml").text()).expect("data/mission_hud.toml")
     }
 
     pub fn parse(text: &str) -> Result<Self, String> {

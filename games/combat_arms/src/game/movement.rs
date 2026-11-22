@@ -168,7 +168,7 @@ pub const ID: &str = "combat_arms:movement";
 const SPAWN_DROP: f32 = 100_000.0;
 
 /// data/movement.toml, built in.
-pub const MOVEMENT_DATA: &str = include_str!("../../data/movement.toml");
+pub const MOVEMENT_DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/movement.toml");
 
 /// The movement's numbers (data/movement.toml; spec "Constants").
 #[derive(Resource, Clone, Debug, Deserialize, Serialize)]
@@ -629,7 +629,7 @@ pub fn hud_metres(units: f32, data: &MovementData) -> u32 {
 pub fn movement_data() -> &'static MovementData {
     static DATA: OnceLock<MovementData> = OnceLock::new();
     DATA.get_or_init(|| {
-        toml::from_str(MOVEMENT_DATA).unwrap_or_else(|e| panic!("data/movement.toml: {e}"))
+        toml::from_str(&MOVEMENT_DATA).unwrap_or_else(|e| panic!("data/movement.toml: {e}"))
     })
 }
 

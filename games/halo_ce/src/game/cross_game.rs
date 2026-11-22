@@ -54,7 +54,7 @@ use super::{campaign::BodyKind, vitality::Mirrored, vitality::Vitality};
 use crate::core::DamageScale;
 
 /// The power reader's hand, as shipped.
-pub const DATA: &str = include_str!("../../data/power_hand.toml");
+pub const DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/power_hand.toml");
 
 /// What the power reader assumes of a hand (data/power_hand.toml).
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
@@ -67,7 +67,7 @@ pub struct PowerHand {
 impl PowerHand {
     /// The shipped data. Bad built-in data panics.
     pub fn load() -> Self {
-        toml::from_str(DATA).unwrap_or_else(|e| panic!("halo_ce data/power_hand.toml: {e}"))
+        toml::from_str(&DATA).unwrap_or_else(|e| panic!("halo_ce data/power_hand.toml: {e}"))
     }
 }
 

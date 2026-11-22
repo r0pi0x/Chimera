@@ -414,8 +414,9 @@ pub struct SurfaceTable {
     pub map: &'static str,
     /// The gameplay's game (`combat_arms`).
     pub gameplay: &'static str,
-    /// The table's text (the app's data file, built in).
-    pub text: &'static str,
+    /// The table's text (the app's data file: read from the checkout in a
+    /// dev build, built in otherwise).
+    pub text: chimera_core::game_data::GameData,
 }
 
 /// A `SurfaceTable`'s rows.
@@ -434,7 +435,7 @@ impl SurfaceTable {
     /// The table's rows (names lower-cased).
     pub fn rows(&self) -> Result<SurfaceRows, String> {
         let mut rows: SurfaceRows =
-            toml::from_str(self.text).map_err(|e| format!("{} to {} surfaces: {e}", self.map, self.gameplay))?;
+            toml::from_str(self.text.text()).map_err(|e| format!("{} to {} surfaces: {e}", self.map, self.gameplay))?;
         rows.names = rows.names.into_iter().map(|(k, v)| (k.to_lowercase(), v)).collect();
         rows.materials = rows.materials.into_iter().map(|(k, v)| (k.to_ascii_uppercase(), v)).collect();
         Ok(rows)
@@ -764,7 +765,9 @@ mod tests {
         surfaces: &[SurfaceTable {
             map: "a",
             gameplay: "b",
-            text: "default = \"Stone\"\n[names]\nWood_Crate = \"Wood\"\n[materials]\nN = \"Sand\"\n",
+            text: chimera_core::game_data::GameData::from_text(
+                "default = \"Stone\"\n[names]\nWood_Crate = \"Wood\"\n[materials]\nN = \"Sand\"\n",
+            ),
         }],
         kept: &["a:gun"],
         players: false,

@@ -139,7 +139,7 @@ impl MusicData {
     /// The built-in table.
     pub fn built_in() -> &'static Self {
         static DATA: OnceLock<MusicData> = OnceLock::new();
-        DATA.get_or_init(|| Self::parse(include_str!("../../../data/music.toml")).expect("data/music.toml"))
+        DATA.get_or_init(|| Self::parse(chimera_core::game_data!("data/music.toml").text()).expect("data/music.toml"))
     }
 
     /// A mode's start track on map `index`: the map's entry, else the

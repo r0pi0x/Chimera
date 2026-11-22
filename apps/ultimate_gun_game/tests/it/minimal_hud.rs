@@ -101,7 +101,7 @@ fn fallback_hud_only_without_a_game_hud() {
             MinimalHudPlugin,
         ),
     );
-    sim.app.insert_resource(chimera_ui::Theme::from_toml(ultimate_gun_game::signal::THEME).expect("the theme reads"));
+    sim.app.insert_resource(chimera_ui::Theme::from_toml(&ultimate_gun_game::signal::THEME).expect("the theme reads"));
     sim.app.world_mut().resource_mut::<PartsRegistry>().fallback_hud = MINIMAL_HUD;
     minigame::start(sim.app.world_mut(), MINIGAME).expect("the automatic gun game starts");
     let a = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);

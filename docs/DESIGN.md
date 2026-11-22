@@ -1154,9 +1154,9 @@ original.**
   state into `CaMissionHud` (headless, tested), `boxes` into the places,
   `draw_mission` into `hud_text` calls, so the text scales like the rest of
   the HUD (reference px by x_r and y_r, glyphs by `layout::glyph_stretch`).
-- **Data-driven.** Places, fonts (names from `data/ui/fonts.toml`),
+- **Data-driven.** Places, fonts (names from `games/combat_arms/ui/data/fonts.toml`),
   colours, effects, wrap widths and the warning threshold are in
-  `data/ui/mission_hud.toml`; the timer sits under the score panel (below
+  `games/combat_arms/ui/data/mission_hud.toml`; the timer sits under the score panel (below
   its objective lines), the caption at the bottom centre, the message
   centre-print, the objective list top left (no key hides it: the options
   data has none). Unknown ids show as their text id until the string table

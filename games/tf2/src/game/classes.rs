@@ -30,6 +30,7 @@
 //! numbers. The offer names only the drawn classes' sets
 //! (`super::bodies::asset_names`).
 
+use chimera_core::game_data::GameData;
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
@@ -40,7 +41,7 @@ use chimera_sim::minigame::{
 use serde::Deserialize;
 
 /// The class table and the guns' classes, as written.
-pub const DATA: &str = include_str!("../../data/classes.toml");
+pub const DATA: GameData = chimera_core::game_data!("data/classes.toml");
 
 /// One class (classes.md, "The class table").
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -358,7 +359,7 @@ pub fn set_of(name: &str) -> String {
 /// The built-in table, parsed (a fresh copy each call: systems read the
 /// `Classes` resource).
 pub fn classes() -> Classes {
-    Classes::parse(DATA).unwrap_or_else(|e| panic!("{e}"))
+    Classes::parse(&DATA).unwrap_or_else(|e| panic!("{e}"))
 }
 
 impl Default for Classes {
@@ -476,6 +477,6 @@ mod tests {
         assert_eq!(title("demoman"), "Demoman");
         // A list naming an unknown class is refused.
         let bad = DATA.replace("\"pyro\", \"heavy\"]", "\"pyro\", \"nobody\"]");
-        assert!(bad != DATA && Classes::parse(&bad).is_err());
+        assert!(bad != *DATA && Classes::parse(&bad).is_err());
     }
 }

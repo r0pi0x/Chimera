@@ -3,7 +3,7 @@
 //! only frees the mouse): a popup read from the game's own layout when
 //! the install's can be read (`ui::install::MENU_FILE`: its buttons bound
 //! by name, `INSTALL_BUTTONS`, its art and strings the install's), else
-//! from ours (`data/ui/ingame_menu.xml`, the game's format), drawn 1:1 in screen px
+//! from ours (`data/ingame_menu.xml`, the game's format), drawn 1:1 in screen px
 //! with its first control centred on the screen (⌊W/2⌋ − ⌊w/2⌋), modal
 //! (`desk::Desk`'s capture: nothing under it takes a click), its buttons
 //! firing on the left button going down with their sounds.
@@ -62,7 +62,7 @@ use crate::client::{
 use crate::console::{ConsoleAppExt, Console};
 
 /// The menu's layout (ours, the game's format).
-pub const LAYOUT: &str = include_str!("../../data/ui/ingame_menu.xml");
+pub const LAYOUT: chimera_core::game_data::GameData = chimera_core::game_data!("data/ingame_menu.xml");
 /// Its first control: the box centred on the screen.
 pub const BOX: &str = "InGameMenu";
 /// The buttons' command ids (the layout's Cmd_id).
@@ -117,7 +117,7 @@ impl InGameMenu {
     pub fn new(ui: &CaUi) -> Self {
         let install = ui.install.as_ref().and_then(|i| i.menu.clone());
         let installed = install.is_some();
-        let mut layout = install.unwrap_or_else(|| xml::read(LAYOUT).expect("data/ui/ingame_menu.xml"));
+        let mut layout = install.unwrap_or_else(|| xml::read(&LAYOUT).expect("data/ingame_menu.xml"));
         layout.check_fonts(&ui.fonts).expect("the in-game menu's fonts");
         let mut disabled: Vec<&str> = vec!["Report", "Record"];
         if installed {

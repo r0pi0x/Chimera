@@ -83,7 +83,7 @@ const UNIT: f32 = 0.0254;
 
 macro_rules! data_file {
     ($name:literal) => {
-        ($name, include_str!(concat!("../../data/weapons/", $name)))
+        ($name, chimera_core::game_data!("data/weapons/", $name))
     };
 }
 
@@ -94,7 +94,7 @@ pub(super) const HP: f32 = 0.01;
 /// docs/weapon-data.md), built into the game and parsed at run time, in
 /// registration order (network messages name weapons by registry index:
 /// knife, guns, grenades, C4, as before the data).
-const DATA: &[(&str, &str)] = &[
+const DATA: &[(&str, chimera_core::game_data::GameData)] = &[
     data_file!("_base.toml"),
     data_file!("_gun.toml"),
     data_file!("ammo.toml"),
@@ -134,7 +134,7 @@ const DATA: &[(&str, &str)] = &[
 pub fn cs_weapons() -> &'static WeaponSet {
     static SET: OnceLock<&'static WeaponSet> = OnceLock::new();
     SET.get_or_init(|| {
-        let set = WeaponSet::parse(DATA, &[]).unwrap_or_else(|e| panic!("CS:S weapon data: {e}"));
+        let set = WeaponSet::parse(&chimera_core::game_data::texts(DATA), &[]).unwrap_or_else(|e| panic!("CS:S weapon data: {e}"));
         Box::leak(Box::new(set))
     })
 }
@@ -427,20 +427,20 @@ pub const SOUNDS: &[&str] = &[
 /// docs/weapon-data.md for penetration), built in and parsed at run time:
 /// the shop (items, buy menu, spawn kit, its sounds) and how bullets pass
 /// materials (measured M13).
-const ECONOMY_DATA: (&str, &str) = ("economy.toml", include_str!("../../data/economy.toml"));
-const PENETRATION_DATA: (&str, &str) = ("penetration.toml", include_str!("../../data/penetration.toml"));
+const ECONOMY_DATA: (&str, chimera_core::game_data::GameData) = ("economy.toml", chimera_core::game_data!("data/economy.toml"));
+const PENETRATION_DATA: (&str, chimera_core::game_data::GameData) = ("penetration.toml", chimera_core::game_data!("data/penetration.toml"));
 
 /// CS:S's economy document, parsed once per process.
 pub fn cs_economy() -> &'static EconomyData {
     static DOC: OnceLock<EconomyData> = OnceLock::new();
     DOC.get_or_init(|| {
-        EconomyData::parse(ECONOMY_DATA.0, ECONOMY_DATA.1).unwrap_or_else(|e| panic!("CS:S economy data: {e}"))
+        EconomyData::parse(ECONOMY_DATA.0, ECONOMY_DATA.1.text()).unwrap_or_else(|e| panic!("CS:S economy data: {e}"))
     })
 }
 
 /// How CS:S's bullets pass things (games/cs_source/data/penetration.toml).
 pub fn pass_materials() -> PassMaterials {
-    PassMaterials::parse(PENETRATION_DATA.0, PENETRATION_DATA.1).unwrap_or_else(|e| panic!("CS:S penetration data: {e}"))
+    PassMaterials::parse(PENETRATION_DATA.0, PENETRATION_DATA.1.text()).unwrap_or_else(|e| panic!("CS:S penetration data: {e}"))
 }
 
 /// CS:S's weapons alone, for another game's gameplay (a mashup offering
@@ -459,7 +459,7 @@ impl Plugin for CsGunsPlugin {
         chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(
             app,
             "cs_source data/display_names.toml",
-            include_str!("../../data/display_names.toml"),
+            chimera_core::game_data!("data/display_names.toml").text(),
         );
         // A CS:S rung's player model (`rungs`).
         app.add_plugins(super::rungs::CsRungsPlugin);
@@ -525,7 +525,7 @@ impl Plugin for CsWeaponsPlugin {
             .get_resource::<StartingWeapons>()
             .filter(|s| !s.is_empty())
             .cloned();
-        if let Err(e) = app.add_economy_data(&[ECONOMY_DATA]) {
+        if let Err(e) = app.add_economy_data(&[(ECONOMY_DATA.0, ECONOMY_DATA.1.text())]) {
             panic!("CS:S economy data: {e}");
         }
         if let Some(kit) = kept {
@@ -959,7 +959,7 @@ mod tests {
         let files = WeaponSet::read_dir(&dir).unwrap();
         for (name, text) in &files {
             let built_in = DATA.iter().find(|(n, _)| n == name);
-            assert_eq!(built_in.map(|d| d.1), Some(text.as_str()), "{name} not in `DATA`");
+            assert_eq!(built_in.map(|d| d.1.text()), Some(text.as_str()), "{name} not in `DATA`");
         }
         assert_eq!(files.len(), DATA.len());
         let mut app = App::new();

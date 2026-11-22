@@ -36,7 +36,7 @@ pub fn voice_files(read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Vec<String> {
     if let Some(data) = read(radio::FILE).and_then(|b| RadioData::parse(&String::from_utf8_lossy(&b)).ok()) {
         out.extend(data.classes.iter().flat_map(|c| &c.entries).flat_map(|e| e.sounds.iter().flatten()).cloned());
     }
-    if let Ok(pack) = chimera_core::announcer::AnnouncerPack::parse(parts::ANNOUNCER) {
+    if let Ok(pack) = chimera_core::announcer::AnnouncerPack::parse(&parts::ANNOUNCER) {
         out.extend(pack.files().1);
     }
     if let Some(doc) = read(CLIENT_FILE).and_then(|b| Document::parse(&b).ok()) {

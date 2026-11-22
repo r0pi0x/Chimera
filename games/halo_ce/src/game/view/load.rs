@@ -130,7 +130,7 @@ pub struct GunModels {
 /// Each gun's model paths, from its weapon document.
 pub fn gun_models() -> Vec<GunModels> {
     let set =
-        chimera_sim::weapon::data::WeaponSet::parse(DATA, &[]).unwrap_or_else(|e| panic!("Halo weapon data: {e}"));
+        chimera_sim::weapon::data::WeaponSet::parse(&chimera_core::game_data::texts(DATA), &[]).unwrap_or_else(|e| panic!("Halo weapon data: {e}"));
     GUNS.iter()
         .filter_map(|id| {
             let d = set.get(id)?;

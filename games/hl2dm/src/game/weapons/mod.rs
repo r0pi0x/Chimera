@@ -79,13 +79,13 @@ use crate::core::{Predict, PredictedAppExt, SimSet};
 
 macro_rules! data_file {
     ($name:literal) => {
-        ($name, include_str!(concat!("../../../data/weapons/", $name)))
+        ($name, chimera_core::game_data!("data/weapons/", $name))
     };
 }
 
 /// The weapon documents, built in, in registration order (network
 /// messages name weapons by registry index).
-pub const DATA: &[(&str, &str)] = &[
+pub const DATA: &[(&str, chimera_core::game_data::GameData)] = &[
     data_file!("_base.toml"),
     data_file!("_gun.toml"),
     data_file!("ammo.toml"),
@@ -140,7 +140,7 @@ pub const STARTING: &[&str] = &[PISTOL, SMG1, FRAG, PHYSCANNON];
 /// HL2:DM's weapons as data, parsed (a fresh copy each call: a map's
 /// kit and the tests read it; an app's `WeaponCatalog` holds its own).
 pub fn hl2_weapons() -> WeaponSet {
-    WeaponSet::parse(DATA, &[]).unwrap_or_else(|e| panic!("HL2:DM weapon data: {e}"))
+    WeaponSet::parse(&chimera_core::game_data::texts(DATA), &[]).unwrap_or_else(|e| panic!("HL2:DM weapon data: {e}"))
 }
 
 /// World models (`playermodel`) by weapon.
@@ -395,11 +395,11 @@ impl Plugin for Hl2GunsPlugin {
         chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(
             app,
             "hl2dm data/display_names.toml",
-            include_str!("../../../data/display_names.toml"),
+            chimera_core::game_data!("data/display_names.toml").text(),
         );
         projectile_systems(app);
         physcannon_systems(app);
-        if let Err(e) = app.add_weapon_data(DATA) {
+        if let Err(e) = app.add_weapon_data(&chimera_core::game_data::texts(DATA)) {
             panic!("HL2:DM weapon data: {e}");
         }
         // A rung's player model and melee weapon (`rungs`).
@@ -521,13 +521,13 @@ mod tests {
         let files = WeaponSet::read_dir(&dir).unwrap();
         for (name, text) in &files {
             let built_in = DATA.iter().find(|(n, _)| n == name);
-            assert_eq!(built_in.map(|d| d.1), Some(text.as_str()), "{name} not in `DATA`");
+            assert_eq!(built_in.map(|d| d.1.text()), Some(text.as_str()), "{name} not in `DATA`");
         }
         assert_eq!(files.len(), DATA.len());
         let mut app = App::new();
         register_hooks(&mut app);
         chimera_sim::weapon::projectile::register_launcher(&mut app);
-        app.add_weapon_data(DATA).unwrap();
+        app.add_weapon_data(&chimera_core::game_data::texts(DATA)).unwrap();
         assert_eq!(hl2_weapons().weapons.len(), 12);
         assert_eq!(view_models().len(), 12);
     }

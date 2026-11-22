@@ -46,6 +46,7 @@
 //! common lines play by the spec's numbers; the rest wants parts TF2 here
 //! doesn't have yet.
 
+use chimera_core::game_data::GameData;
 use std::collections::BTreeMap;
 
 use bevy::{platform::collections::HashMap, prelude::*};
@@ -60,7 +61,7 @@ use crate::{
 };
 
 /// The voices, as written.
-pub const DATA: &str = include_str!("../../data/voices.toml");
+pub const DATA: GameData = chimera_core::game_data!("data/voices.toml");
 
 /// Source's voice channel.
 pub const CHAN_VOICE: u8 = 2;
@@ -153,7 +154,7 @@ impl Tf2Voices {
 
     /// The built-in table.
     pub fn built_in() -> Self {
-        Self::parse(DATA).unwrap_or_else(|e| panic!("{e}"))
+        Self::parse(&DATA).unwrap_or_else(|e| panic!("{e}"))
     }
 
     /// Every sound entry it can play (the maps' sound tables keep them):

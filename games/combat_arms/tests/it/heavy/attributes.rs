@@ -213,7 +213,12 @@ fn install_attribute_data() {
     eprintln!("weapon keys in no field table ({}): {unknown:?}", unknown.len());
 
     // The merge loads with our documents.
-    let docs = merge_weapon_docs(WEAPON_DATA, w, crate::attribute_data::meters_per_unit()).unwrap();
+    let docs = merge_weapon_docs(
+        &chimera_core::game_data::texts(WEAPON_DATA),
+        w,
+        crate::attribute_data::meters_per_unit(),
+    )
+    .unwrap();
     let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
     let set = WeaponSet::parse(&refs, &[]).unwrap();
     eprintln!("merged: {} weapons", set.weapons.len());
@@ -313,7 +318,13 @@ fn merged_numbers_against_ours() {
     };
     let w = attrs.weapons.as_ref().unwrap();
     let mpu = crate::attribute_data::meters_per_unit();
-    let docs = merge_weapon_docs_with_mods(WEAPON_DATA, w, attrs.mods.as_ref(), mpu).unwrap();
+    let docs = merge_weapon_docs_with_mods(
+        &chimera_core::game_data::texts(WEAPON_DATA),
+        w,
+        attrs.mods.as_ref(),
+        mpu,
+    )
+    .unwrap();
     let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
     let set = WeaponSet::parse(&refs, &[]).unwrap();
     let new = docs.len() - WEAPON_DATA.len();
@@ -355,7 +366,7 @@ fn merged_numbers_against_ours() {
     }
 
     // Movement: the body type over ours.
-    let ours: MovementData = toml::from_str(MOVEMENT_DATA).unwrap();
+    let ours: MovementData = toml::from_str(&MOVEMENT_DATA).unwrap();
     let mut merged = ours.clone();
     merge_movement(&mut merged, attrs.models.as_ref().unwrap());
     let (a, b) = (&ours.character.figure, &merged.character.figure);

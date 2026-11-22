@@ -164,12 +164,12 @@ pub const GUNS: [&str; 9] = [ASSAULT_RIFLE, PISTOL, PLASMA_RIFLE, SHOTGUN, SNIPE
 
 macro_rules! doc {
     ($name:literal) => {
-        ($name, include_str!(concat!("../../../data/weapons/", $name)))
+        ($name, chimera_core::game_data!("data/weapons/", $name))
     };
 }
 
 /// The weapon documents, base first.
-pub const DATA: &[(&str, &str)] = &[
+pub const DATA: &[(&str, chimera_core::game_data::GameData)] = &[
     doc!("_base.toml"),
     doc!("assault_rifle.toml"),
     doc!("pistol.toml"),
@@ -185,7 +185,7 @@ pub const DATA: &[(&str, &str)] = &[
 ];
 
 /// Its guns' names (data/display_names.toml).
-pub const DISPLAY_NAMES: &str = include_str!("../../../data/display_names.toml");
+pub const DISPLAY_NAMES: chimera_core::game_data::GameData = chimera_core::game_data!("data/display_names.toml");
 
 impl NetPart for HaloGun {
     type Net = HaloGun;
@@ -200,7 +200,7 @@ impl NetPart for HaloGun {
 /// Each weapon's numbers by id, read from `DATA` as the game loads them
 /// (bases merged): for tests and tools. Bad built-in data panics.
 pub fn guns() -> Vec<(String, params::Gun)> {
-    let set = chimera_sim::weapon::data::WeaponSet::parse(DATA, &[]).unwrap_or_else(|e| panic!("Halo weapon data: {e}"));
+    let set = chimera_sim::weapon::data::WeaponSet::parse(&chimera_core::game_data::texts(DATA), &[]).unwrap_or_else(|e| panic!("Halo weapon data: {e}"));
     GUNS.iter()
         .map(|id| {
             let d = set.get(id).unwrap_or_else(|| panic!("{id} in the data"));
@@ -374,10 +374,10 @@ impl Plugin for HaloWeaponsPlugin {
         chimera_sim::minigame::power::PowerAppExt::add_power_reader(app, WEAPON_HOOK, power);
         app.register_weapon_hook::<params::Gun>(WEAPON_HOOK, |e, _, p| build(e, p));
         rung::register(app);
-        if let Err(e) = app.add_weapon_data(DATA) {
+        if let Err(e) = app.add_weapon_data(&chimera_core::game_data::texts(DATA)) {
             panic!("Halo weapon data: {e}");
         }
-        chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(app, "halo_ce data/display_names.toml", DISPLAY_NAMES);
+        chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(app, "halo_ce data/display_names.toml", &DISPLAY_NAMES);
         app.intent_action(systems::MELEE_ACTION)
             .intent_action(systems::ZOOM_ACTION)
             .intent_action(grenades::GRENADE_ACTION)

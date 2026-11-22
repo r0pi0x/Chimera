@@ -83,11 +83,11 @@ pub struct CarryParams {
     pub throw_spin: f32,
 }
 
-pub const PARAMS: &str = include_str!("../../data/use_carry.toml");
+pub const PARAMS: chimera_core::game_data::GameData = chimera_core::game_data!("data/use_carry.toml");
 
 impl Default for CarryParams {
     fn default() -> Self {
-        toml::from_str(PARAMS).expect("data/use_carry.toml")
+        toml::from_str(&PARAMS).expect("data/use_carry.toml")
     }
 }
 

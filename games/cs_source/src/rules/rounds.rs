@@ -145,7 +145,7 @@ pub struct RoundSettings {
 }
 
 /// CS:S's round numbers (built in, parsed at run time).
-const ROUNDS_DATA: (&str, &str) = ("rounds.toml", include_str!("../../data/rounds.toml"));
+const ROUNDS_DATA: (&str, chimera_core::game_data::GameData) = ("rounds.toml", chimera_core::game_data!("data/rounds.toml"));
 
 impl Default for RoundSettings {
     /// CS:S's (`ROUNDS_DATA`); bad data panics (its tests load it).
@@ -153,7 +153,7 @@ impl Default for RoundSettings {
         static SETTINGS: std::sync::OnceLock<RoundSettings> = std::sync::OnceLock::new();
         SETTINGS
             .get_or_init(|| {
-                crate::rules::module::parse_settings(ROUNDS_DATA.0, ROUNDS_DATA.1)
+                crate::rules::module::parse_settings(ROUNDS_DATA.0, ROUNDS_DATA.1.text())
                     .unwrap_or_else(|e| panic!("CS:S round data: {e}"))
             })
             .clone()

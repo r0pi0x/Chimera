@@ -130,7 +130,7 @@ impl Plugin for CaGameplayPlugin {
         app.default_gameplay(Gameplay::of(&INFO));
         // Its announcer (kill_streaks.md): the default pack wherever the
         // game is played (`sv_announcer default`).
-        chimera_core::announcer::AnnouncerAppExt::register_announcer(app, parts::ANNOUNCER);
+        chimera_core::announcer::AnnouncerAppExt::register_announcer(app, &parts::ANNOUNCER);
     }
 }
 

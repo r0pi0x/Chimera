@@ -11,7 +11,8 @@
 //! each game lends a game made of several (`game_parts`), announcers'
 //! packs and kill facts (`announcer`), minigame cue packs (`cues`), queries
 //! kept between calls of exclusive code (`query_cache`), values worked out
-//! once and kept by their owner (`memo`), values made on first use
+//! once and kept by their owner (`memo`), a crate's data documents read
+//! from the checkout in a dev build (`game_data`), values made on first use
 //! (`later`), a session's diagnostics (`diagnostics`: the rolling log,
 //! health lines, crash capture), quitting quickly (`shutdown`: what must
 //! persist, then the process ends without dropping the app). Code
@@ -34,6 +35,7 @@ pub mod envelope;
 pub mod game_log;
 pub mod game_parts;
 pub mod gameplay;
+pub mod game_data;
 pub mod game_registry;
 pub mod later;
 pub mod memo;

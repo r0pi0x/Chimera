@@ -1596,6 +1596,20 @@ fn hint(c: &mut Console, hints: Vec<String>) -> Result<Option<String>, String> {
 
 fn builtins(app: &mut App) {
     app.console_command("chimera:echo", "Print text.", |_, a| Ok(Some(a.join(" "))))
+        .console_command(
+            "chimera:data_reload",
+            "data_reload: read the data documents again from the checkout (a dev build; chimera_core::game_data).",
+            |_, _| {
+                if !cfg!(feature = "dev") {
+                    return Ok(Some("data_reload: the data is compiled into this build".into()));
+                }
+                let changed = crate::game_data::reload();
+                Ok(Some(match changed.len() {
+                    0 => "data_reload: no data document changed".into(),
+                    n => format!("data_reload: {n} changed: {}", changed.join(", ")),
+                }))
+            },
+        )
         .console_command("chimera:clear", "Clear the console output.", |w, _| {
             console(w).output.clear();
             Ok(None)

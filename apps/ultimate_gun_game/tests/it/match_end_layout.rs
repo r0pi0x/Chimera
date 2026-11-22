@@ -49,7 +49,7 @@ fn sim() -> Sim {
             app.init_asset::<Image>();
         }
         app.add_plugins((bevy::text::TextPlugin, bevy::ui::UiPlugin));
-        app.insert_resource(Theme::from_toml(signal::THEME).unwrap());
+        app.insert_resource(Theme::from_toml(&signal::THEME).unwrap());
         let kit = KitFonts::load(&mut app.world_mut().resource_mut::<Assets<Font>>(), signal::FONTS);
         app.insert_resource(kit);
         app.add_plugins((ChimeraUiPlugin, UiScenePlugin, MatchEndPlugin, SignalChatPlugin));

@@ -27,11 +27,11 @@ use chimera_sim::{
 };
 
 /// The table, as shipped.
-pub const PARTY_BALANCE: &str = include_str!("../data/party_balance.toml");
+pub const PARTY_BALANCE: chimera_core::game_data::GameData = chimera_core::game_data!("data/party_balance.toml");
 
 /// The shipped table, on. Bad built-in data panics.
 pub fn table() -> Balance {
-    Balance::parse(PARTY_BALANCE).unwrap_or_else(|e| panic!("party_kit data/party_balance.toml: {e}"))
+    Balance::parse(&PARTY_BALANCE).unwrap_or_else(|e| panic!("party_kit data/party_balance.toml: {e}"))
 }
 
 /// The table in `app`, its switch (`mp_balance`) and the power curve's

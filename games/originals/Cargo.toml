@@ -17,13 +17,14 @@ doctest = false
 # (checks/tests/it/architecture.rs, docs/plans/active/architecture-review.md
 # A5).
 [dependencies]
+chimera_core.workspace = true
 chimera_sim.workspace = true
 bevy.workspace = true
 workspace-hack.workspace = true
 
 [features]
 # Bevy as a dynamic library, as the other crates' `dev`.
-dev = ["chimera_sim/dev"]
+dev = ["chimera_core/dev", "chimera_sim/dev"]
 
 [dev-dependencies]
 # The map's `render` feature, as every build with the presentation has it:

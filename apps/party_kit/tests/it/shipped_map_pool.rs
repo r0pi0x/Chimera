@@ -14,8 +14,8 @@ fn shipped() -> MapPool {
         ("combat_arms", combat_arms::game::parts::POOL_RULES, combat_arms::game::parts::MAP_FITNESS),
         ("hl2dm", hl2dm::game::parts::POOL_RULES, hl2dm::game::parts::MAP_FITNESS),
     ] {
-        p.add_rules(game, PoolRules::parse(rules).unwrap_or_else(|e| panic!("{game} map_pool.toml: {e}")));
-        p.add_fitness(game, parse_fitness(fitness).unwrap_or_else(|e| panic!("{game} map_fitness.toml: {e}")));
+        p.add_rules(game, PoolRules::parse(&rules).unwrap_or_else(|e| panic!("{game} map_pool.toml: {e}")));
+        p.add_fitness(game, parse_fitness(&fitness).unwrap_or_else(|e| panic!("{game} map_fitness.toml: {e}")));
     }
     p
 }
@@ -28,7 +28,7 @@ fn measured() -> Vec<String> {
         ("combat_arms", combat_arms::game::parts::MAP_FITNESS),
         ("hl2dm", hl2dm::game::parts::MAP_FITNESS),
     ] {
-        out.extend(parse_fitness(fitness).unwrap().into_keys().map(|m| format!("{game}:{m}")));
+        out.extend(parse_fitness(&fitness).unwrap().into_keys().map(|m| format!("{game}:{m}")));
     }
     out
 }

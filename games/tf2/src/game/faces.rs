@@ -21,6 +21,7 @@
 //! ragdoll keeps the face its body showed at death (spec 10: it follows
 //! the owner's scene to its end).
 
+use chimera_core::game_data::GameData;
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
@@ -30,7 +31,7 @@ use super::player_anim::Tf2PlayerAnim;
 use crate::{core::Health, map};
 
 /// The idle faces, as written.
-pub const DATA: &str = include_str!("../../data/faces.toml");
+pub const DATA: GameData = chimera_core::game_data!("data/faces.toml");
 
 /// One class's idle expression scene (spec 5).
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -71,7 +72,7 @@ impl IdleFaces {
 
     /// The built-in table.
     pub fn builtin() -> IdleFaces {
-        IdleFaces::parse(DATA).expect("data/faces.toml")
+        IdleFaces::parse(&DATA).expect("data/faces.toml")
     }
 
     /// The idle face of the class whose model is `model`.
@@ -267,7 +268,7 @@ mod tests {
     #[test]
     fn every_class_but_the_pyro_has_an_idle_face() {
         let t = IdleFaces::builtin();
-        let classes = super::super::classes::Classes::parse(super::super::classes::DATA).unwrap();
+        let classes = super::super::classes::Classes::parse(&super::super::classes::DATA).unwrap();
         for c in &classes.classes {
             assert_eq!(t.of_model(&c.model).is_some(), c.name != "pyro", "{}", c.name);
         }

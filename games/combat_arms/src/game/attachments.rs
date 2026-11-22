@@ -456,7 +456,7 @@ pub fn parse_mods(text: &str) -> Result<Vec<ModRecord>, String> {
 }
 
 /// The built-in attachment data (data/attachments/mods.toml).
-pub const MOD_DATA: &str = include_str!("../../data/attachments/mods.toml");
+pub const MOD_DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/attachments/mods.toml");
 
 /// Every attachment record there is, in order (an index is a record's
 /// ID on the network).
@@ -470,7 +470,7 @@ impl CaModTable {
     pub fn built_in() -> &'static CaModTable {
         static TABLE: OnceLock<CaModTable> = OnceLock::new();
         TABLE.get_or_init(|| CaModTable {
-            records: parse_mods(MOD_DATA).unwrap_or_else(|e| panic!("Combat Arms attachments mods.toml: {e}")),
+            records: parse_mods(&MOD_DATA).unwrap_or_else(|e| panic!("Combat Arms attachments mods.toml: {e}")),
         })
     }
 

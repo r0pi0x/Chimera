@@ -78,11 +78,11 @@ pub struct ItemData {
     pub crates: Vec<CrateType>,
 }
 
-pub const ITEMS: &str = include_str!("../../data/items.toml");
+pub const ITEMS: chimera_core::game_data::GameData = chimera_core::game_data!("data/items.toml");
 
 impl ItemData {
     pub fn hl2() -> Self {
-        toml::from_str(ITEMS).unwrap_or_else(|e| panic!("data/items.toml: {e}"))
+        toml::from_str(&ITEMS).unwrap_or_else(|e| panic!("data/items.toml: {e}"))
     }
 
     /// The model of item class `class` (a suit item or an ammo box), the

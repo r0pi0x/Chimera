@@ -25,7 +25,7 @@ use chimera_sim::{
 };
 
 /// The draw exclusions, as shipped.
-pub const LADDER_EXCLUSIONS: &str = include_str!("../../../data/ladder_exclusions.toml");
+pub const LADDER_EXCLUSIONS: chimera_core::game_data::GameData = chimera_core::game_data!("data/ladder_exclusions.toml");
 
 fn positive(p: &HookParams, key: &str) -> bool {
     num(p, key).is_some_and(|x| x > 0.0)
@@ -79,7 +79,7 @@ pub fn plugin(app: &mut bevy::prelude::App) {
         .add_harm_reader(super::super::special::data::BOLT, bolt)
         .add_harm_reader(super::super::grenades::HOOK, grenade)
         .add_harm_reader(super::super::special::data::DEVICE, device)
-        .add_draw_exclusions("combat_arms data/ladder_exclusions.toml", LADDER_EXCLUSIONS);
+        .add_draw_exclusions("combat_arms data/ladder_exclusions.toml", &LADDER_EXCLUSIONS);
 }
 
 #[cfg(test)]
@@ -109,12 +109,12 @@ mod tests {
 
     #[test]
     fn the_shipped_exclusions_read() {
-        let list = chimera_sim::minigame::auto::parse_exclusions(LADDER_EXCLUSIONS).expect("reads");
+        let list = chimera_sim::minigame::auto::parse_exclusions(&LADDER_EXCLUSIONS).expect("reads");
         assert!(list.iter().any(|(id, _)| id == "combat_arms:asw338lmspunk"));
         assert!(list.iter().all(|(id, r)| id.starts_with("combat_arms:") && !r.is_empty()));
         // The NPC, boss, turret and test records are marked no player's
         // (the sandbox's list leaves them out); the bad skins aren't.
-        let nobody = chimera_sim::minigame::auto::parse_not_players(LADDER_EXCLUSIONS).expect("reads");
+        let nobody = chimera_sim::minigame::auto::parse_not_players(&LADDER_EXCLUSIONS).expect("reads");
         for id in ["combat_arms:test_gun_mg42", "combat_arms:mp5a4_npc", "combat_arms:powered_suit_boss_mg"] {
             assert!(nobody.iter().any(|n| n == id), "{id}");
         }

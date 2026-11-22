@@ -304,7 +304,7 @@ pub struct InfectedOdds(pub f64);
 
 impl InfectedOdds {
     /// The built-in odds (data/rung_melee.toml).
-    pub const DATA: &str = include_str!("../../data/rung_melee.toml");
+    pub const DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/rung_melee.toml");
 
     /// The definition's (its `infected` table's `odds`, else the data's;
     /// 0 with the option off), within 0 and 1.
@@ -314,7 +314,7 @@ impl InfectedOdds {
         }
         let number = |v: &toml::Value| v.as_float().or_else(|| v.as_integer().map(|i| i as f64));
         let tuned = options.table(INFECTED_KEY).and_then(|t| t.get("odds")).and_then(number);
-        let data = toml::from_str::<toml::Table>(Self::DATA)
+        let data = toml::from_str::<toml::Table>(&Self::DATA)
             .unwrap_or_else(|e| panic!("rung_melee.toml: {e}"))
             .get("infected")
             .and_then(number)
@@ -447,7 +447,7 @@ impl Default for RungOdds {
 
 impl RungOdds {
     /// The built-in odds (data/attachments/rung_odds.toml).
-    pub const DATA: &str = include_str!("../../data/attachments/rung_odds.toml");
+    pub const DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/attachments/rung_odds.toml");
 
     /// `DATA` parsed (bad built-in data panics; the tests load it).
     pub fn built_in() -> RungOdds {
@@ -457,7 +457,7 @@ impl RungOdds {
     /// `DATA` with every value `t` names in its place (an integer chance,
     /// `sight = 1`, reads as a number).
     pub fn with(t: &toml::Table) -> Result<Self, String> {
-        let mut base: toml::Table = toml::from_str(Self::DATA).map_err(|e| e.to_string())?;
+        let mut base: toml::Table = toml::from_str(&Self::DATA).map_err(|e| e.to_string())?;
         for (k, v) in t {
             base.insert(k.clone(), v.clone());
         }
@@ -640,11 +640,11 @@ pub fn readable(name: &str) -> String {
 }
 
 /// Who holds which weapon (data/rung_characters.toml).
-pub const HOLDERS: &str = include_str!("../../data/rung_characters.toml");
+pub const HOLDERS: chimera_core::game_data::GameData = chimera_core::game_data!("data/rung_characters.toml");
 
 /// `HOLDERS` parsed (bad built-in data panics; the tests load it).
 pub fn holders() -> Holders {
-    Holders::parse(HOLDERS).unwrap_or_else(|e| panic!("rung_characters.toml: {e}"))
+    Holders::parse(&HOLDERS).unwrap_or_else(|e| panic!("rung_characters.toml: {e}"))
 }
 
 /// What the game's data says of `weapon` for the mapping: `infected` for

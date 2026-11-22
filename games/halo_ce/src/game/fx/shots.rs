@@ -161,7 +161,7 @@ pub const SHOWN: [&str; 10] = [
 
 impl Default for Guns {
     fn default() -> Self {
-        let set = chimera_sim::weapon::data::WeaponSet::parse(super::super::weapons::DATA, &[]).unwrap_or_else(|e| panic!("Halo weapon data: {e}"));
+        let set = chimera_sim::weapon::data::WeaponSet::parse(&chimera_core::game_data::texts(super::super::weapons::DATA), &[]).unwrap_or_else(|e| panic!("Halo weapon data: {e}"));
         Self(
             SHOWN
                 .iter()

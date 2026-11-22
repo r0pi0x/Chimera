@@ -39,7 +39,7 @@ fn the_key_names_file_names_the_stock_keys() {
     let names = KeyNames::parse(&Document::parse(&bytes).unwrap());
     assert!(!names.keyboard.is_empty(), "Keyboard0.. sections");
     assert!(!names.mouse.is_empty(), "Mouse0.. sections");
-    let default = chimera_core::profile::Profile::parse(DEFAULT_PROFILE);
+    let default = chimera_core::profile::Profile::parse(&DEFAULT_PROFILE);
     let table = bindings::load(&default, &default, true);
     for (a, b) in bindings::ACTIONS.iter().zip(&table.entries) {
         for (token, mouse) in [(&b.kbd, false), (&b.mouse, true)] {

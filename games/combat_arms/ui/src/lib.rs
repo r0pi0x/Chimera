@@ -36,8 +36,8 @@
 //! the rest after the shell: the in-game menu, the scoreboard, the
 //! visuals and `slot6` (key 6, the objective class: the mission bomb).
 //!
-//! `CaUi` is the UI's data: our font list (`data/ui/fonts.toml`), string
-//! table (`data/ui/strings.txt`) and stand-in textures.
+//! `CaUi` is the UI's data: our font list (`data/fonts.toml`), string
+//! table (`data/strings.txt`) and stand-in textures.
 //!
 //! With the V1 key the install's own layouts, string table, font list
 //! and art (`install`) replace ours in the app (`CaUi::installed`): the

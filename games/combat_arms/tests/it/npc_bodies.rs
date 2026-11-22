@@ -765,7 +765,7 @@ fn rung_bodies_for_npc_names() {
 /// forms; the data's families all read.
 #[test]
 fn family_data_reads() {
-    let f = Families::parse(families::DATA).unwrap();
+    let f = Families::parse(&families::DATA).unwrap();
     assert!(f.families.len() >= 15);
     assert_eq!(families::forms("UPRReL|UPWReS"), ("UPRReL".into(), "UPWReS".into()));
     assert_eq!(families::forms("USMG{s}AmS"), ("USMGRAmS".into(), "USMGWAmS".into()));

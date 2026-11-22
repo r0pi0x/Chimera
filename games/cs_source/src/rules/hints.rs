@@ -74,7 +74,7 @@ use crate::{
 pub const AUTOHELP_KEY: &str = "cl_autohelp";
 
 /// CS:S's hints (built in).
-const HINTS_DATA: (&str, &str) = ("hints.toml", include_str!("../../data/hints.toml"));
+const HINTS_DATA: (&str, chimera_core::game_data::GameData) = ("hints.toml", chimera_core::game_data!("data/hints.toml"));
 
 /// Ticks between the checks of where players stand and what they see.
 const CHECK_TICKS: u64 = 8;
@@ -123,7 +123,7 @@ pub(super) fn plugin(app: &mut App) {
         .add_hint_triggers(&["near_hostage"], near_hostage)
         .add_hint_triggers(&["out_of_ammo"], out_of_ammo)
         .add_hint_triggers(&["night_vision"], night_vision)
-        .add_hint_data(HINTS_DATA.0, HINTS_DATA.1);
+        .add_hint_data(HINTS_DATA.0, HINTS_DATA.1.text());
 }
 
 /// `cl_autohelp` (CS:S's default 1).
@@ -231,7 +231,7 @@ impl HintRules {
 
 /// CS:S's hint sound (its data's), for the sound loader.
 pub fn sound_entry() -> Option<String> {
-    let doc: Document = super::module::parse_settings(HINTS_DATA.0, HINTS_DATA.1).ok()?;
+    let doc: Document = super::module::parse_settings(HINTS_DATA.0, HINTS_DATA.1.text()).ok()?;
     doc.settings.sound
 }
 
@@ -559,7 +559,7 @@ mod tests {
     #[test]
     fn the_games_hints_load_and_name_registered_triggers() {
         let mut rules = HintRules::default();
-        rules.load(HINTS_DATA.0, HINTS_DATA.1, &known()).unwrap();
+        rules.load(HINTS_DATA.0, HINTS_DATA.1.text(), &known()).unwrap();
         assert_eq!(rules.sound.as_deref(), Some("Hud.Hint"));
         assert_eq!(sound_entry().as_deref(), Some("Hud.Hint"));
         assert!(rules.gap > 0.0);

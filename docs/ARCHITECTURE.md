@@ -149,6 +149,11 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   old paths (`mashup::core` adds `VERSION`, stamped in the app's crate
   so a commit doesn't rebuild the base). The layering table covers its
   modules too. `cargo test -p chimera_core --features dev` tests it alone.
+  Its `game_data!` names a crate's data documents (weapon TOMLs, rules,
+  HUD and menu layouts): read from the checkout at run time in a dev
+  build, so a data edit rebuilds nothing (`data_reload` in the console
+  reads them again), compiled in otherwise; a game's documents sit in
+  `games/<g>/data/`, its front end's in `games/<g>/ui/data/`.
 - `chimera_world` is the simulation's map (`map`): the neutral map data,
   collision, spawning a map's simulated parts (the drawn ones through
   `map::MapDrawer`), the map's systems. It uses `chimera_core` and

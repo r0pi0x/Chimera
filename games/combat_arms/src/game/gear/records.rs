@@ -335,7 +335,7 @@ pub struct GearData {
 }
 
 /// The built-in data (data/gear.toml).
-const BUILT_IN: &str = include_str!("../../../data/gear.toml");
+const BUILT_IN: chimera_core::game_data::GameData = chimera_core::game_data!("data/gear.toml");
 
 fn number(v: &toml::Value) -> Option<f32> {
     v.as_float().map(|f| f as f32).or_else(|| v.as_integer().map(|i| i as f32))
@@ -576,7 +576,7 @@ impl GearData {
 
     /// The built-in data.
     pub fn built_in() -> Self {
-        Self::parse(BUILT_IN).unwrap_or_else(|e| panic!("data/gear.toml: {e}"))
+        Self::parse(&BUILT_IN).unwrap_or_else(|e| panic!("data/gear.toml: {e}"))
     }
 
     /// The install's records over this data, by id (a record the install

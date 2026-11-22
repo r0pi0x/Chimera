@@ -72,12 +72,12 @@ fn the_map_loader_names_a_missing_maps_file() {
 fn its_pool_lets_in_every_map_but_the_vehicle_one() {
     use chimera_sim::minigame::map_fit::{MapPool, PoolRules, parse_fitness};
     use halo_ce::game::parts::{MAP_FITNESS, POOL_RULES};
-    let measured = parse_fitness(MAP_FITNESS).unwrap();
+    let measured = parse_fitness(&MAP_FITNESS).unwrap();
     let mut names: Vec<&str> = measured.keys().map(String::as_str).collect();
     names.sort();
     assert_eq!(names, MULTIPLAYER_MAPS);
     let mut pool = MapPool::default();
-    pool.add_rules(GAME, PoolRules::parse(POOL_RULES).unwrap());
+    pool.add_rules(GAME, PoolRules::parse(&POOL_RULES).unwrap());
     let listed: Vec<&str> = MULTIPLAYER_MAPS.iter().copied().filter(|m| pool.listed(GAME, m).is_ok()).collect();
     let all_but: Vec<&str> = MULTIPLAYER_MAPS.iter().copied().filter(|m| *m != "sidewinder").collect();
     assert_eq!(listed, all_but);

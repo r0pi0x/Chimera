@@ -40,7 +40,7 @@ fn the_shipped_kit_decodes_and_covers_every_event() {
     assert_eq!(kit.table.events["ui_hover"].voices, 1);
     assert!(kit.table.events["ui_slider"].rate_from_value);
     assert!(kit.table.events["menu_loop"].looping);
-    let theme = chimera_ui::Theme::from_toml(ultimate_gun_game::signal::THEME).unwrap();
+    let theme = chimera_ui::Theme::from_toml(&ultimate_gun_game::signal::THEME).unwrap();
     assert!(ui_sound::active(Some(&theme), Some(&kit)), "Signal turns it on");
     assert!(!ui_sound::active(Some(&chimera_ui::Theme::shell_default()), Some(&kit)));
     assert!(UI_SOUND_TABLE.contains("[bus]"));

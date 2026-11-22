@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::game::gear::records::GearData;
 
 /// data/lobby_items.toml, built in.
-pub const DATA: &str = include_str!("../../../data/lobby_items.toml");
+pub const DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/lobby_items.toml");
 
 /// Item numbers by type (E, "Item numbers").
 pub const HEAD_BASE: i32 = 4000;
@@ -228,7 +228,7 @@ impl Catalog {
     /// The built-in list over `gear`: the app's (`CaData::gear`, the
     /// install's records over ours).
     pub fn over(gear: &GearData) -> Arc<Self> {
-        Arc::new(Self::build(DATA, gear).expect("data/lobby_items.toml parses"))
+        Arc::new(Self::build(&DATA, gear).expect("data/lobby_items.toml parses"))
     }
 
     pub fn get(&self, no: i32) -> Option<&Item> {

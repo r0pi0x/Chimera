@@ -180,7 +180,7 @@ struct Table {
 
 /// G4's table (`data/options/presets.toml`).
 pub fn presets() -> Vec<Row> {
-    toml::from_str::<Table>(include_str!("../../../data/options/presets.toml"))
+    toml::from_str::<Table>(chimera_core::game_data!("data/options/presets.toml").text())
         .expect("data/options/presets.toml")
         .row
 }

@@ -442,7 +442,7 @@ impl CharacterData {
     /// install over it (`CaData::characters` keeps it).
     pub fn load(ca: &CaDataInner) -> Self {
         let mut data: CharacterData =
-            toml::from_str(include_str!("../../../data/characters.toml")).expect("data/characters.toml");
+            toml::from_str(chimera_core::game_data!("data/characters.toml").text()).expect("data/characters.toml");
         merge_install_weapons(&mut data, ca);
         merge_install_pieces(&mut data, ca);
         // Hands the install didn't give: ours (data/hands.toml) by record

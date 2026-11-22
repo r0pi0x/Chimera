@@ -17,13 +17,13 @@ use chimera_client::client::ui_sound::UiSounds;
 use chimera_ui::{FontFiles, KitFonts, Theme};
 
 /// The theme's TOML (over the shell's defaults: `Theme::from_toml`).
-pub const THEME: &str = include_str!("../data/theme.toml");
+pub const THEME: chimera_core::game_data::GameData = chimera_core::game_data!("data/theme.toml");
 
 /// The four faces, v0.5 (chimera/ui/fonts/FONTLOG.txt).
 pub const FONTS: FontFiles<'static> = chimera_ui::fonts::OWN;
 
 /// The UI sounds' event table.
-pub const UI_SOUND_TABLE: &str = include_str!("../data/ui_sounds.toml");
+pub const UI_SOUND_TABLE: chimera_core::game_data::GameData = chimera_core::game_data!("data/ui_sounds.toml");
 
 macro_rules! ui_sounds {
     ($($name:ident,)*) => {
@@ -85,7 +85,7 @@ pub const UI_SOUNDS: &[(&str, &[u8])] = ui_sounds![
 
 /// The kit's sounds, decoded.
 pub fn ui_sounds() -> Result<UiSounds, String> {
-    UiSounds::new(UI_SOUND_TABLE, UI_SOUNDS)
+    UiSounds::new(&UI_SOUND_TABLE, UI_SOUNDS)
 }
 
 /// Signal's theme and faces (module doc).
@@ -93,7 +93,7 @@ pub struct SignalPlugin;
 
 impl Plugin for SignalPlugin {
     fn build(&self, app: &mut App) {
-        let theme = Theme::from_toml(THEME).expect("apps/ultimate_gun_game/data/theme.toml is a valid theme");
+        let theme = Theme::from_toml(&THEME).expect("apps/ultimate_gun_game/data/theme.toml is a valid theme");
         app.insert_resource(theme);
         match ui_sounds() {
             Ok(sounds) => {

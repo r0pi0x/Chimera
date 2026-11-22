@@ -20,7 +20,7 @@ fn weapons(text: &str) -> Result<WeaponsFile, String> {
 
 /// The built-in movement data's metres per world unit.
 pub fn meters_per_unit() -> f64 {
-    toml::from_str::<MovementData>(MOVEMENT_DATA).unwrap().meters_per_unit as f64
+    toml::from_str::<MovementData>(&MOVEMENT_DATA).unwrap().meters_per_unit as f64
 }
 
 fn close(a: f64, b: f64) {
@@ -361,7 +361,7 @@ fn install_ammo_and_new_records() {
 /// figure.
 #[test]
 fn movement_takes_figure_type_0() {
-    let mut data: MovementData = toml::from_str(MOVEMENT_DATA).unwrap();
+    let mut data: MovementData = toml::from_str(&MOVEMENT_DATA).unwrap();
     let models = ModelsFile::read(&doc(
         r#"[FigureType0] Name="Male" DashSpeed=1.2 Maxstamina=120 DashGauge=20 GaugeRec=15 VariableJump=0.1"#,
     ));
@@ -444,10 +444,10 @@ fn reference_m4a1_onto_our_documents() {
           ReloadPerBullet=0
     "#;
     let f = weapons(install).unwrap();
-    let docs = merge_weapon_docs(WEAPON_DATA, &f, meters_per_unit()).unwrap();
+    let docs = merge_weapon_docs(&chimera_core::game_data::texts(WEAPON_DATA), &f, meters_per_unit()).unwrap();
     let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
     let merged = WeaponSet::parse(&refs, &[]).unwrap();
-    let builtin = WeaponSet::parse(WEAPON_DATA, &[]).unwrap();
+    let builtin = WeaponSet::parse(&chimera_core::game_data::texts(WEAPON_DATA), &[]).unwrap();
     // The install's pistol has no class in our data: no new weapon.
     assert_eq!(merged.weapons.len(), builtin.weapons.len());
     for (m, b) in merged.weapons.iter().zip(&builtin.weapons) {

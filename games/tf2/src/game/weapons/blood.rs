@@ -36,6 +36,7 @@
 //! held for the delay; the victim's and attacker's centres are their
 //! origins.
 
+use chimera_core::game_data::GameData;
 use bevy::platform::collections::HashMap;
 
 use bevy::prelude::*;
@@ -50,7 +51,7 @@ use super::super::classes::Tf2Class;
 use crate::map::{ClearBodyDecals, SkyboxCamera, loose::LateDelay, view_model::ViewModelCamera};
 
 /// The data.
-pub const DATA: &str = include_str!("../../../data/blood.toml");
+pub const DATA: GameData = chimera_core::game_data!("data/blood.toml");
 
 /// TF2's blood systems and numbers (data/blood.toml).
 #[derive(Resource, Clone, Debug, Deserialize, PartialEq)]
@@ -73,7 +74,7 @@ pub struct BloodLooks {
 
 impl Default for BloodLooks {
     fn default() -> Self {
-        toml::from_str(DATA).expect("data/blood.toml")
+        toml::from_str(&DATA).expect("data/blood.toml")
     }
 }
 

@@ -26,7 +26,7 @@ use super::super::weapons::CaAiDamage;
 use crate::{console::resource_cvar, rule_module};
 
 /// data/modes.toml, built in.
-pub const MODES_DATA: &str = include_str!("../../../data/modes.toml");
+pub const MODES_DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/modes.toml");
 
 /// A mode's own numbers (S2's goal table, the mission files).
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
@@ -280,7 +280,7 @@ pub struct CaRuleSettings {
 
 impl Default for CaRuleSettings {
     fn default() -> Self {
-        rule_module::parse_settings("data/modes.toml", MODES_DATA).unwrap_or_else(|e| panic!("{e}"))
+        rule_module::parse_settings("data/modes.toml", &MODES_DATA).unwrap_or_else(|e| panic!("{e}"))
     }
 }
 

@@ -146,7 +146,7 @@ use crate::map::BodyName;
 use chimera_core::character::CharacterPartsExt;
 
 /// data/campaign.toml, compiled in.
-pub const TABLE: &str = include_str!("../../../data/campaign.toml");
+pub const TABLE: chimera_core::game_data::GameData = chimera_core::game_data!("data/campaign.toml");
 
 /// The host setting's console variable.
 pub const CVAR: &str = "halo_ce:campaign_bodies";
@@ -391,7 +391,7 @@ impl Default for CampaignData {
 impl CampaignData {
     /// The table compiled in (a test checks it parses).
     pub fn builtin() -> Self {
-        Self::parse(TABLE).expect("data/campaign.toml parses (a test checks it)")
+        Self::parse(&TABLE).expect("data/campaign.toml parses (a test checks it)")
     }
 
     pub fn parse(text: &str) -> Result<Self, String> {
@@ -464,7 +464,7 @@ impl CampaignData {
 
     /// Body `kind`'s vitality: data/vitality.toml with its row's tables.
     pub fn vitality(&self, kind: BodyKind) -> Result<Spartan, String> {
-        let mut t: toml::Table = toml::from_str(super::vitality::data::VITALITY).map_err(|e| e.to_string())?;
+        let mut t: toml::Table = toml::from_str(&super::vitality::data::VITALITY).map_err(|e| e.to_string())?;
         if let Some(def) = self.body(kind) {
             merge(&mut t, &def.vitality);
         }

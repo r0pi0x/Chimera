@@ -101,7 +101,7 @@ fn the_hunter_is_cut_from_d20_with_its_cannon_and_loads() {
 fn the_cannon_is_the_tags() {
     let Some(mount) = mount() else { return };
     let map = MapFile::load(&mount.read(&maps::map_path("d20")).unwrap()).unwrap();
-    let set = chimera_sim::weapon::data::WeaponSet::parse(weapons::DATA, &[]).unwrap();
+    let set = chimera_sim::weapon::data::WeaponSet::parse(&chimera_core::game_data::texts(weapons::DATA), &[]).unwrap();
     let g: weapons::params::Gun = set.get(HUNTER_RUNG).unwrap().hooks[weapons::WEAPON_HOOK].clone().try_into().unwrap();
     let w = Weapon::read(&map, map.find(class::WEAPON, &g.tag).unwrap()).unwrap();
     let (t, dt) = (&g.trigger, &w.own.triggers[0]);

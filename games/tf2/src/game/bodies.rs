@@ -55,6 +55,7 @@
 //! dissolve...) or late-arrival check (Edge cases), and with no death
 //! animation the timer is never reset at one's end (3).
 
+use chimera_core::game_data::GameData;
 use bevy::prelude::*;
 use source_engine::content::{material::MaterialLoader, props, surfaceprops::SurfaceProps};
 
@@ -255,13 +256,13 @@ pub fn wear_bodies(
 }
 
 /// TF2's ragdolls' lifetime (data/ragdolls.toml; specs/tf2/ragdolls.md).
-pub const RAGDOLL_DATA: &str = include_str!("../../data/ragdolls.toml");
+pub const RAGDOLL_DATA: GameData = chimera_core::game_data!("data/ragdolls.toml");
 
 /// TF2's ragdoll rules: the shared Source ones (player_animation.md 9),
 /// kept past the respawn until the owner dies again and timed on each
 /// machine by its view (`RAGDOLL_DATA`).
 pub fn ragdoll_rules() -> crate::map::ragdoll::RagdollRules {
-    let fade: crate::map::ragdoll::RagdollFade = toml::from_str(RAGDOLL_DATA).expect("data/ragdolls.toml");
+    let fade: crate::map::ragdoll::RagdollFade = toml::from_str(&RAGDOLL_DATA).expect("data/ragdolls.toml");
     crate::map::ragdoll::RagdollRules {
         lifetime: crate::map::ragdoll::RagdollLifetime::Faded(fade),
         ..default()

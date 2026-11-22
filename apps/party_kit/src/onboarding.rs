@@ -148,7 +148,7 @@ pub const ONBOARDING_Z: i32 = 93;
 /// Seconds between the offline banner's own retries.
 pub const RETRY_SECS: f64 = 30.0;
 /// The screens' words.
-pub const ONBOARDING_TOML: &str = include_str!("../data/onboarding.toml");
+pub const ONBOARDING_TOML: chimera_core::game_data::GameData = chimera_core::game_data!("data/onboarding.toml");
 /// Seconds after the last key before a username is asked of the hub.
 pub const NAME_PAUSE: f64 = 0.45;
 /// Seconds the welcome toast stays on the main menu.
@@ -171,7 +171,7 @@ pub struct Words(toml::Table);
 
 impl Default for Words {
     fn default() -> Self {
-        Words(toml::from_str(ONBOARDING_TOML).expect("data/onboarding.toml parses"))
+        Words(toml::from_str(&ONBOARDING_TOML).expect("data/onboarding.toml parses"))
     }
 }
 

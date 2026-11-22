@@ -6393,6 +6393,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "bevy_winit",
+ "chimera_core",
  "chimera_sim",
  "chimera_world",
  "workspace-hack",

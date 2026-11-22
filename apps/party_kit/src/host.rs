@@ -44,7 +44,7 @@ use chimera_net::net::vote::{CallRefusal, VoteAppExt, VoteIssue, VoteSettings};
 use chimera_sim::minigame::{ActiveMinigame, overrides};
 
 /// The host settings' data (data/host_settings.toml).
-pub const SETTINGS_TOML: &str = include_str!("../data/host_settings.toml");
+pub const SETTINGS_TOML: chimera_core::game_data::GameData = chimera_core::game_data!("data/host_settings.toml");
 
 /// The skip-map vote's issue name (`callvote skipmap`).
 pub const SKIP_ISSUE: &str = "skipmap";
@@ -231,7 +231,7 @@ pub fn setting_of(v: &toml::Value) -> Result<Setting, String> {
 
 /// The host settings (`SETTINGS_TOML`), in order.
 pub fn settings() -> Vec<Setting> {
-    let doc: toml::Table = toml::from_str(SETTINGS_TOML).expect("data/host_settings.toml reads");
+    let doc: toml::Table = toml::from_str(&SETTINGS_TOML).expect("data/host_settings.toml reads");
     doc.get("setting")
         .and_then(|s| s.as_array())
         .map(|a| a.iter().map(|v| setting_of(v).expect("data/host_settings.toml")).collect())

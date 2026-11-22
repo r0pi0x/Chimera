@@ -79,6 +79,7 @@ pub mod script_numbers;
 pub mod sniper;
 pub mod sticky;
 
+use chimera_core::game_data::GameData;
 use bevy::prelude::*;
 use chimera_sim::weapon::{
     WeaponFrame,
@@ -90,13 +91,13 @@ use crate::core::Predict;
 
 macro_rules! data_file {
     ($name:literal) => {
-        ($name, include_str!(concat!("../../../data/weapons/", $name)))
+        ($name, chimera_core::game_data!("data/weapons/", $name))
     };
 }
 
 /// The weapon documents, built in, in registration order (network
 /// messages name weapons by registry index).
-pub const DATA: &[(&str, &str)] = &[
+pub const DATA: &[(&str, GameData)] = &[
     data_file!("_base.toml"),
     data_file!("_gun.toml"),
     data_file!("ammo.toml"),
@@ -199,7 +200,7 @@ pub const PROJECTILES: &[(&str, &str, &str)] = &[
 
 /// TF2's weapons as data, parsed (a fresh copy each call).
 pub fn tf2_weapons() -> WeaponSet {
-    WeaponSet::parse(DATA, &[]).unwrap_or_else(|e| panic!("TF2 weapon data: {e}"))
+    WeaponSet::parse(&chimera_core::game_data::texts(DATA), &[]).unwrap_or_else(|e| panic!("TF2 weapon data: {e}"))
 }
 
 /// Each gun's hook parameters as its data gives them.
@@ -453,7 +454,7 @@ mod tests {
         let files = WeaponSet::read_dir(&dir).unwrap();
         for (name, text) in &files {
             let built_in = DATA.iter().find(|(n, _)| n == name);
-            assert_eq!(built_in.map(|d| d.1), Some(text.as_str()), "{name} not in `DATA`");
+            assert_eq!(built_in.map(|d| d.1.text()), Some(text.as_str()), "{name} not in `DATA`");
         }
         assert_eq!(files.len(), DATA.len());
         let set = tf2_weapons();

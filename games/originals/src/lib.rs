@@ -23,9 +23,9 @@ use chimera_sim::minigame::MinigameAppExt;
 
 /// The original minigames' definitions, `(file, text)`: every file in
 /// `minigames/` (a test checks the list against the directory).
-pub const MINIGAMES: &[(&str, &str)] = &[
-    ("minigames/gun_game_dust2.toml", include_str!("../../../minigames/gun_game_dust2.toml")),
-    ("minigames/gun_game_2fort.toml", include_str!("../../../minigames/gun_game_2fort.toml")),
+pub const MINIGAMES: &[(&str, chimera_core::game_data::GameData)] = &[
+    ("minigames/gun_game_dust2.toml", chimera_core::game_data!("../../minigames/gun_game_dust2.toml")),
+    ("minigames/gun_game_2fort.toml", chimera_core::game_data!("../../minigames/gun_game_2fort.toml")),
 ];
 
 /// Gun Game on de_dust2.
@@ -39,7 +39,7 @@ pub struct OriginalsPlugin;
 
 impl Plugin for OriginalsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_minigames(MINIGAMES)
+        app.add_minigames(&chimera_core::game_data::texts(MINIGAMES))
             .unwrap_or_else(|e| panic!("an original minigame's definition: {e}"));
     }
 }
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn gun_game_is_the_ladder_on_dust2_mixing_both_games_guns() {
-        let def = MinigameDef::parse(MINIGAMES[0].0, MINIGAMES[0].1).unwrap();
+        let def = MinigameDef::parse(MINIGAMES[0].0, &MINIGAMES[0].1).unwrap();
         assert_eq!(def.rules.module, "chimera:ladder");
         assert_eq!(def.maps[0], "cs_source:de_dust2");
         let ladder = def.rules.params["ladder"].as_array().unwrap();
@@ -88,7 +88,7 @@ mod tests {
     /// TF2's four guns among CS:S's, HL2:DM's and Combat Arms', no Halo.
     #[test]
     fn gun_game_2fort_mixes_tf2_rungs_without_halo() {
-        let def = MinigameDef::parse(MINIGAMES[1].0, MINIGAMES[1].1).unwrap();
+        let def = MinigameDef::parse(MINIGAMES[1].0, &MINIGAMES[1].1).unwrap();
         assert_eq!(def.id, GUN_GAME_2FORT);
         assert_eq!(def.maps[0], "tf2:ctf_2fort");
         let ladder: Vec<&str> = def.rules.params["ladder"].as_array().unwrap().iter().map(|w| w.as_str().unwrap()).collect();

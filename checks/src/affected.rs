@@ -14,18 +14,19 @@
 //!   and .claude/settings.json: only
 //!   this crate's checks (CLAUDE.md's links, one-line docs entries, the
 //!   spec rule);
-//! - a package (`Change::Package`): a file of a workspace member outside
-//!   its `tests/` (its sources, manifest, shaders, the data files its tools
-//!   read under the root's tools/): its tests and the tests of every
-//!   package that depends on it, as a dependency or a dev-dependency, at
-//!   any depth (`Workspace::test_deps`);
-//! - a feature's part (`Change::Feature`): a file under a folder only a
-//!   feature compiles, as its manifest says (`[package.metadata.affected]
-//!   feature-paths = { ui = ["src/ui/"] }`: cs_source's front end): the
-//!   package's test binaries built with that feature, its unit tests of
-//!   that module (`binary_id(cs_source) & test(/^ui::/)`) and the tests
-//!   of every package depending on it, not its other binaries (the
-//!   simulation's scenario and heavy map tests);
+//! - a package (`Change::Package`): a Rust file or the manifest of a
+//!   workspace member outside its `tests/`: its tests and the tests of
+//!   every package that depends on it, as a dependency or a
+//!   dev-dependency, at any depth (`Workspace::test_deps`);
+//! - data (`Change::Data`): any other file of a member outside its
+//!   `tests/` (its data documents, which a dev build reads at run time,
+//!   `chimera_core::game_data`; shaders, images) and the data files the
+//!   root's tools/ and minigames/ hold for a member: the same tests as a
+//!   change to the package's code (whatever reads the document may behave
+//!   differently), but nothing to compile: `--code` leaves them out, so the
+//!   commit hook type-checks nothing for a data-only change. A front end's
+//!   data lives in its own crate (`games/<g>/ui/data`), so its edit selects
+//!   the front end and what is above it, not the game's simulation tests;
 //! - test code (`Change::Tests`): a file under a member's `tests/`: only
 //!   that package's tests, nothing above it can see them. A test module
 //!   (`apps/cs_source/tests/it/heavy/map_surf.rs`) selects that module's tests
@@ -39,15 +40,14 @@
 //! turns on. This crate's own tests (the architecture tests) always run:
 //! any change can break a layering or repository rule.
 //!
-//! Known shortcuts: the selection is per package (or test module, or a
-//! feature's folder), not per test binary's features beyond
-//! `feature-paths`: `cs_source`'s simulation tests run for a change to
-//! the presentation its `ui` feature uses (`chimera_present` is under
-//! both). The scenario tests of a crate run for any change below it:
+//! Known shortcuts: the selection is per package (or test module), not per
+//! test that reads a data document: a TF2 weapon file selects every test of
+//! `tf2` and of what depends on it. The scenario tests of a crate run for any change below it:
 //! most of them (the heavy map tests above all) are `cs_source`'s, so an
 //! edit to Chimera or Source's logic still selects nearly the whole suite.
-//! A test that reads a repository file at run time (not through
-//! `include_str!`) outside its package isn't known; none does today
+//! A test that reads a repository file at run time outside its package
+//! (other than through `game_data!`, whose paths stay inside the calling
+//! crate: the architecture test checks it) isn't known; none does today
 //! (`tools/testmap` is mapped to `source_tools`, the tools' data to
 //! `cs_source_tools`, the minigames' definitions, `minigames/`, to
 //! `originals`).
@@ -80,10 +80,6 @@ pub struct Package {
     pub dev_deps: Vec<String>,
     /// Its integration test binaries.
     pub tests: Vec<TestBinary>,
-    /// Folders only a feature compiles (`[package.metadata.affected]
-    /// feature-paths` in its manifest): (path prefix inside the package,
-    /// e.g. `src/ui/`, and the feature).
-    pub feature_paths: Vec<(String, String)>,
 }
 
 /// An integration test binary (`[[test]]`, or one cargo found in `tests/`).
@@ -172,13 +168,6 @@ impl Workspace {
                         .collect(),
                 });
             }
-            // `feature-paths = { ui = ["src/ui/"] }`.
-            let mut feature_paths = Vec::new();
-            for (feature, paths) in p["metadata"]["affected"]["feature-paths"].as_object().into_iter().flatten() {
-                for path in paths.as_array().into_iter().flatten().filter_map(|v| v.as_str()) {
-                    feature_paths.push((path.to_string(), feature.clone()));
-                }
-            }
             names.insert(id.to_string(), name.clone());
             packages.insert(
                 id.to_string(),
@@ -188,7 +177,6 @@ impl Workspace {
                     deps: Vec::new(),
                     dev_deps: Vec::new(),
                     tests,
-                    feature_paths,
                 },
             );
         }
@@ -292,15 +280,9 @@ pub enum Change {
     /// A package's library or binaries: its tests and those of every
     /// package depending on it.
     Package(String),
-    /// A part of a package's library only `feature` compiles (`module`
-    /// of it, a `::` path): the package's test binaries built with the
-    /// feature, its unit tests of that module, and every package
-    /// depending on it.
-    Feature {
-        package: String,
-        feature: String,
-        module: String,
-    },
+    /// A package's data (not Rust, not its manifest): the same tests as
+    /// `Package`, but nothing to compile (`Selection::code`).
+    Data(String),
     /// A package's test code: its test `binary` (all of them if None),
     /// `module` of it if Some (a `::` path, e.g. `heavy::map_surf`).
     Tests {
@@ -506,11 +488,21 @@ fn is_docs(path: &str) -> bool {
 
 /// The root's data files outside a crate (tools/'s, the minigames'
 /// definitions) and the package that reads them.
-const TOOL_DATA: &[(&str, &str)] = &[
+pub const TOOL_DATA: &[(&str, &str)] = &[
     ("minigames/", "originals"),
     ("tools/testmap/", "source_tools"),
     ("tools/perfgate/", "cs_source_tools"),
     ("tools/refcmp/", "cs_source_tools"),
+];
+
+/// Data documents a crate reads from another member's folder
+/// (`game_data!("../..")`), and that crate: a change selects it as well as
+/// the folder's owner. The architecture test `game_data_stays_home` checks
+/// that every such path is here or in `TOOL_DATA`.
+pub const SHARED_DATA: &[(&str, &str)] = &[
+    // The CS:S-to-Combat-Arms surface table, the mashup's own; the party
+    // apps put every guest's maps under Combat Arms by it.
+    ("apps/mashup_demo/data/surfaces_cs_source_combat_arms.toml", "party_kit"),
 ];
 
 /// What changing `path` (relative to the root, `/`-separated) can affect.
@@ -525,7 +517,7 @@ pub fn classify(ws: &Workspace, path: &str, exists: bool) -> Change {
         return Change::Docs;
     }
     if let Some((_, package)) = TOOL_DATA.iter().find(|(p, _)| path.starts_with(p)) {
-        return Change::Package(package.to_string());
+        return Change::Data(package.to_string());
     }
     let Some((package, rest)) = ws.owner(path) else {
         return Change::All(format!("{path}: no rule for this path (add one to checks/src/affected.rs)"));
@@ -538,13 +530,8 @@ pub fn classify(ws: &Workspace, path: &str, exists: bool) -> Change {
                 module: None,
             };
         }
-        if let Some((prefix, feature)) = package.feature_paths.iter().find(|(p, _)| rest.starts_with(p.as_str())) {
-            let module = prefix.trim_start_matches("src/").trim_end_matches('/').replace('/', "::");
-            return Change::Feature {
-                package: package.name.clone(),
-                feature: feature.clone(),
-                module,
-            };
+        if !rest.ends_with(".rs") && rest != "Cargo.toml" {
+            return Change::Data(package.name.clone());
         }
         return Change::Package(package.name.clone());
     }
@@ -584,6 +571,12 @@ pub fn classify(ws: &Workspace, path: &str, exists: bool) -> Change {
         };
     }
     whole
+}
+
+/// Whether `path` is data only (`Change::Data`): nothing to compile when
+/// it changes (`affected --code` leaves such files out).
+pub fn is_data(ws: &Workspace, path: &str) -> bool {
+    matches!(classify(ws, path, true), Change::Data(_))
 }
 
 /// A test binary's modules to run (None: all of it), and why.
@@ -628,7 +621,6 @@ impl Selection {
         let mut sel = Selection::default();
         let mut changed_packages: BTreeMap<String, String> = BTreeMap::new();
         let mut tests: Vec<(String, Option<String>, Option<String>, String)> = Vec::new();
-        let mut feature_parts: Vec<(String, String, String, String)> = Vec::new();
         let mut everything = Vec::new();
         for path in changed {
             let change = match (path.as_str(), lock) {
@@ -668,13 +660,12 @@ impl Selection {
                     changed_packages.entry(p.clone()).or_insert_with(|| path.clone());
                     format!("package {p}")
                 }
-                Change::Feature {
-                    package,
-                    feature,
-                    module,
-                } => {
-                    feature_parts.push((package.clone(), feature.clone(), module.clone(), path.clone()));
-                    format!("package {package}'s `{feature}` part ({module}::)")
+                Change::Data(p) => {
+                    changed_packages.entry(p.clone()).or_insert_with(|| path.clone());
+                    for (_, reader) in SHARED_DATA.iter().filter(|(f, _)| path.starts_with(f)) {
+                        changed_packages.entry(reader.to_string()).or_insert_with(|| format!("{path}, which it reads"));
+                    }
+                    format!("data of {p} (read at run time in a dev build: nothing to compile)")
                 }
                 Change::Tests { package, binary, module } => {
                     tests.push((package.clone(), binary.clone(), module.clone(), path.clone()));
@@ -688,7 +679,6 @@ impl Selection {
             sel.files.push((path.clone(), what));
         }
         sel.changed = changed_packages.keys().cloned().collect();
-        sel.changed.extend(feature_parts.iter().map(|f| f.0.clone()));
         sel.changed.extend(tests.iter().map(|t| t.0.clone()));
         if !everything.is_empty() {
             sel.all = Some(everything.join("; "));
@@ -713,31 +703,6 @@ impl Selection {
                 )
             };
             sel.packages.entry(p.name.clone()).or_insert(why);
-        }
-        // A feature's part: what depends on the package, and the package's
-        // own tests built with the feature.
-        for (package, feature, module, path) in &feature_parts {
-            for p in &ws.packages {
-                if p.name != *package && ws.test_deps(&p.name).contains(package) {
-                    sel.packages
-                        .entry(p.name.clone())
-                        .or_insert_with(|| format!("its tests depend on {package} (changed: {path})"));
-                }
-            }
-            if sel.packages.contains_key(package) {
-                continue;
-            }
-            let Some(p) = ws.package(package) else { continue };
-            let why = format!("its `{feature}` part changed ({path})");
-            let bins = sel.partial.entry(package.clone()).or_default();
-            for bin in p.tests.iter().filter(|b| b.required_features.contains(feature)) {
-                bins.insert(bin.name.clone(), (None, why.clone()));
-            }
-            let unit = bins.entry(LIB.to_string()).or_insert_with(|| (Some(BTreeSet::new()), why.clone()));
-            if let Some(modules) = &mut unit.0 {
-                modules.insert(module.clone());
-            }
-            sel.features.insert(format!("{package}/{feature}"));
         }
         for (package, binary, module, path) in tests {
             if sel.packages.contains_key(&package) {
@@ -983,7 +948,6 @@ mod tests {
                     required_features: features.iter().map(|s| s.to_string()).collect(),
                 })
                 .collect(),
-            feature_paths: Vec::new(),
         }
     }
 
@@ -994,10 +958,8 @@ mod tests {
                 pkg("source_formats", "source/formats", &[], &[], &[]),
                 pkg("chimera_core", "chimera/core", &["source_formats"], &[], &[]),
                 pkg("chimera_present", "chimera/present", &["chimera_core"], &[], &[("it", &[])]),
-                Package {
-                    feature_paths: vec![("src/ui/".into(), "ui".into())],
-                    ..pkg("cs_source", "games/cs_source", &["chimera_core", "chimera_present"], &["crc"], &[("it", &[]), ("ui", &["ui"])])
-                },
+                pkg("cs_source", "games/cs_source", &["chimera_core"], &["crc"], &[("it", &[])]),
+                pkg("cs_source_ui", "games/cs_source/ui", &["cs_source", "chimera_present"], &[], &[("it", &[])]),
                 pkg("cs_source_app", "apps/cs_source", &["cs_source"], &[], &[("it", &[])]),
                 pkg("cs_source_tools", "games/cs_source/tools", &["cs_source_app"], &[], &[]),
                 pkg("mashup", "", &["cs_source_app"], &[], &[("it", &["present"])]),
@@ -1015,18 +977,13 @@ mod tests {
 
     #[test]
     fn direct_keeps_only_changed_packages() {
-        let s = select(&["chimera/core/src/lib.rs", "games/cs_source/src/ui/hud.rs"]);
+        let s = select(&["chimera/core/src/lib.rs", "games/cs_source/ui/src/hud.rs"]);
         assert!(s.packages.contains_key("cs_source_app"), "{s:?}");
         let d = s.direct();
-        // cs_source (its `ui` part changed) stays, whole: chimera_core's
-        // change selected all of it.
-        assert_eq!(d.packages.keys().collect::<Vec<_>>(), ["chimera_core", "cs_source", CHECKS]);
-        assert!(d.features.iter().all(|f| f.starts_with("cs_source/")), "{:?}", d.features);
-        // Alone, the `ui` part: only its binaries with the feature.
-        let d = select(&["games/cs_source/src/ui/hud.rs"]).direct();
-        assert_eq!(d.packages.keys().collect::<Vec<_>>(), [CHECKS]);
-        assert!(d.partial.contains_key("cs_source"), "{d:?}");
-        assert_eq!(d.features.iter().collect::<Vec<_>>(), ["cs_source/ui"]);
+        assert_eq!(d.packages.keys().collect::<Vec<_>>(), ["chimera_core", "cs_source_ui", CHECKS]);
+        // A data document: its package's own tests, as for its code.
+        let d = select(&["games/cs_source/data/weapons/ak47.toml"]).direct();
+        assert_eq!(d.packages.keys().collect::<Vec<_>>(), ["cs_source", CHECKS]);
         // What selects everything narrows to the repository checks.
         let d = select(&[".githooks/pre-commit"]).direct();
         assert!(d.all.is_none());
@@ -1050,22 +1007,24 @@ mod tests {
             classify(&ws, "games/cs_source/src/rules.rs", true),
             Change::Package("cs_source".into())
         );
-        // A folder only a feature compiles (`feature-paths`).
+        // Data: no compiler reads it (a dev build reads it at run time).
         assert_eq!(
-            classify(&ws, "games/cs_source/src/ui/radar.wesl", true),
-            Change::Feature {
-                package: "cs_source".into(),
-                feature: "ui".into(),
-                module: "ui".into()
-            }
+            classify(&ws, "games/cs_source/data/weapons/ak47.toml", true),
+            Change::Data("cs_source".into())
         );
+        assert_eq!(
+            classify(&ws, "games/cs_source/ui/data/hud.toml", true),
+            Change::Data("cs_source_ui".into())
+        );
+        assert_eq!(classify(&ws, "games/cs_source/ui/src/radar.wesl", true), Change::Data("cs_source_ui".into()));
+        assert_eq!(classify(&ws, "games/cs_source/Cargo.toml", true), Change::Package("cs_source".into()));
         // The deepest member: cs_source's tools aren't cs_source.
         assert_eq!(
             classify(&ws, "games/cs_source/tools/src/bin/refcmp.rs", true),
             Change::Package("cs_source_tools".into())
         );
         assert_eq!(classify(&ws, "src/lib.rs", true), Change::Package("mashup".into()));
-        assert_eq!(classify(&ws, "tools/refcmp/de_dust2.toml", true), Change::Package("cs_source_tools".into()));
+        assert_eq!(classify(&ws, "tools/refcmp/de_dust2.toml", true), Change::Data("cs_source_tools".into()));
         assert_eq!(
             classify(&ws, "apps/cs_source/tests/it/heavy/map_surf.rs", true),
             Change::Tests {
@@ -1109,37 +1068,43 @@ mod tests {
         let names: Vec<&str> = s.packages.keys().map(|s| s.as_str()).collect();
         assert_eq!(
             names,
-            ["chimera_core", "chimera_present", "cs_source", "cs_source_app", "cs_source_tools", "mashup", CHECKS]
+            [
+                "chimera_core",
+                "chimera_present",
+                "cs_source",
+                "cs_source_ui",
+                "cs_source_app",
+                "cs_source_tools",
+                "mashup",
+                CHECKS
+            ]
                 .iter()
                 .copied()
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>()
         );
-        assert!(s.features.contains("cs_source/ui"));
         assert!(s.features.contains("mashup/present"));
     }
 
     #[test]
-    fn a_feature_part_selects_its_binaries_and_whats_above() {
-        let s = select(&["games/cs_source/src/ui/game_hud.rs"]);
+    fn data_selects_what_reads_it_but_nothing_to_check() {
+        // A front end's data: the front end and what is above it, not the
+        // game's simulation.
+        let s = select(&["games/cs_source/ui/data/hud.toml"]);
         assert!(s.all.is_none());
         let names: Vec<&str> = s.packages.keys().map(|s| s.as_str()).collect();
-        assert_eq!(names, ["cs_source_app", "cs_source_tools", "mashup", CHECKS]);
-        let bins = &s.partial["cs_source"];
-        assert_eq!(bins.keys().collect::<Vec<_>>(), [LIB, "ui"]);
-        assert!(bins["ui"].0.is_none(), "the whole `ui` binary");
-        assert_eq!(bins[LIB].0.as_ref().unwrap().iter().collect::<Vec<_>>(), ["ui"]);
-        assert!(s.features.contains("cs_source/ui"));
-        assert_eq!(
-            s.nextest_args(false).last().unwrap(),
-            "package(cs_source_app) | package(cs_source_tools) | package(mashup) | package(repo_checks) \
-             | (binary_id(cs_source) & (test(/^ui::/))) | binary_id(cs_source::ui)"
-        );
-        // With the rest of the crate changed too: all of it.
-        let s = select(&["games/cs_source/src/ui/game_hud.rs", "games/cs_source/src/rules.rs"]);
-        assert!(s.packages.contains_key("cs_source"));
-        assert!(s.partial.is_empty());
+        assert_eq!(names, ["cs_source_ui", CHECKS]);
+        // A game's data: the same tests as its code.
+        let data = select(&["games/cs_source/data/weapons/ak47.toml"]);
+        let code = select(&["games/cs_source/src/rules.rs"]);
+        assert_eq!(data.packages.keys().collect::<Vec<_>>(), code.packages.keys().collect::<Vec<_>>());
+        // `--code` (`is_data`) drops it from what is type-checked.
+        let ws = ws();
+        assert!(is_data(&ws, "games/cs_source/data/weapons/ak47.toml"));
+        assert!(!is_data(&ws, "games/cs_source/src/rules.rs"));
+        assert!(!is_data(&ws, "games/cs_source/Cargo.toml"));
+        assert!(!is_data(&ws, "games/cs_source/tests/it/data.toml"));
     }
 
     #[test]
@@ -1165,16 +1130,15 @@ mod tests {
 
     #[test]
     fn test_code_selects_its_binary_only() {
-        let s = select(&["games/cs_source/tests/ui/main.rs"]);
+        let s = select(&["tests/it/main.rs"]);
         assert_eq!(s.packages.keys().collect::<Vec<_>>(), [CHECKS]);
-        assert!(s.partial["cs_source"].contains_key("ui"));
-        assert!(!s.partial["cs_source"].contains_key("it"));
+        assert!(s.partial["mashup"].contains_key("it"));
         // The binary's feature is turned on, or cargo wouldn't build it.
-        assert_eq!(s.features.iter().collect::<Vec<_>>(), ["cs_source/ui"]);
+        assert_eq!(s.features.iter().collect::<Vec<_>>(), ["mashup/present"]);
         let args = s.nextest_args(true);
         assert_eq!(
             args.last().unwrap(),
-            "(package(repo_checks) | binary_id(cs_source::ui)) & !test(/^heavy::/)"
+            "(package(repo_checks) | binary_id(mashup::it)) & !test(/^heavy::/)"
         );
     }
 

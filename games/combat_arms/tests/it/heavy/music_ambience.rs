@@ -352,7 +352,7 @@ use bevy::prelude::Vec3;
 fn t29_the_partys_interface_sounds_are_in_the_install() {
     let Some(mount) = mount() else { return };
     let parts = &combat_arms::game::parts::PARTS;
-    let pack = chimera_core::cues::CuePack::parse(parts.cues.unwrap()).unwrap();
+    let pack = chimera_core::cues::CuePack::parse(&parts.cues.unwrap()).unwrap();
     assert_eq!(pack.game, GAME);
     let mut files: Vec<String> = pack.sounds.values().cloned().collect();
     files.extend(

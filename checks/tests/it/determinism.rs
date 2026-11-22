@@ -63,6 +63,11 @@ const NOT_SIMULATION_FILES: &[(&str, &str)] = &[
          never read by the simulation's state",
     ),
     (
+        "chimera/core/src/game_data.rs",
+        "the data documents' texts a dev build read from the checkout, the same bytes a release compiles in: a \
+         cache of read-only files, not state (`reload` is a developer's console command)",
+    ),
+    (
         "chimera/core/src/pending_work.rs",
         "measurement: a count of background jobs for tests and scenes to wait on, never read by the simulation",
     ),

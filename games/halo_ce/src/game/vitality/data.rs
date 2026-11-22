@@ -21,9 +21,9 @@ use bevy::prelude::*;
 use serde::Deserialize;
 
 /// `data/vitality.toml`, compiled in.
-pub const VITALITY: &str = include_str!("../../../data/vitality.toml");
+pub const VITALITY: chimera_core::game_data::GameData = chimera_core::game_data!("data/vitality.toml");
 /// `data/damage.toml`, compiled in.
-pub const DAMAGE: &str = include_str!("../../../data/damage.toml");
+pub const DAMAGE: chimera_core::game_data::GameData = chimera_core::game_data!("data/damage.toml");
 
 /// Seconds as the engine's ticks: `trunc(seconds x 30)` in f32
 /// (health_shields.md "Units and conventions": 0.15 s is 4 ticks).
@@ -175,7 +175,7 @@ pub struct Spartan {
 impl Spartan {
     /// The table compiled in (a test checks it parses).
     pub fn load() -> Self {
-        toml::from_str(VITALITY).expect("data/vitality.toml parses (a test checks it)")
+        toml::from_str(&VITALITY).expect("data/vitality.toml parses (a test checks it)")
     }
 
     /// Whether the shield protects the body at all: a shield, and the
@@ -454,7 +454,7 @@ pub struct DamageEffects(pub BTreeMap<String, DamageEffect>);
 impl DamageEffects {
     /// The table compiled in (a test checks it parses).
     pub fn load() -> Self {
-        Self::parse(DAMAGE).expect("data/damage.toml parses (a test checks it)")
+        Self::parse(&DAMAGE).expect("data/damage.toml parses (a test checks it)")
     }
 
     /// An effect's index in the table's (sorted) order: what the network

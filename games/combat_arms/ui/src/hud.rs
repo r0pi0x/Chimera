@@ -96,7 +96,7 @@
 //!   rank or revenge data drives them yet: the flag icon only); Spy
 //!   Hunt's marked-players rule for an intel holder isn't done.
 //! - Text (Q2 and Q3, settled by ui_system.md): placed by `ui::layout`
-//!   (its T2-T6): fonts of the font list (`data/ui/fonts.toml`) scaled
+//!   (its T2-T6): fonts of the font list (`data/fonts.toml`) scaled
 //!   ⌊H_f y_r⌋ tall and ⌊a_f x_r⌋ a glyph; aligned texts in their box,
 //!   their own position ignored on the aligned axis (the weapon name
 //!   right-aligned in its 250 x 10 box and centred on its y, the values

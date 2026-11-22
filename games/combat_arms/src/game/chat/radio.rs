@@ -98,7 +98,7 @@ impl RadioData {
 
     /// Ours (`data/radio.txt`).
     pub fn builtin() -> Self {
-        Self::parse(include_str!("../../../data/radio.txt")).unwrap_or_else(|e| panic!("Combat Arms radio data: {e}"))
+        Self::parse(chimera_core::game_data!("data/radio.txt").text()).unwrap_or_else(|e| panic!("Combat Arms radio data: {e}"))
     }
 
     /// The install's radio file when it can be read, else ours.

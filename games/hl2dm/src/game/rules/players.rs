@@ -74,11 +74,11 @@ pub struct PlayerModels {
     pub citizens: Vec<String>,
 }
 
-pub const MODELS: &str = include_str!("../../../data/player_models.toml");
+pub const MODELS: chimera_core::game_data::GameData = chimera_core::game_data!("data/player_models.toml");
 
 impl PlayerModels {
     pub fn hl2() -> Self {
-        toml::from_str(MODELS).unwrap_or_else(|e| panic!("data/player_models.toml: {e}"))
+        toml::from_str(&MODELS).unwrap_or_else(|e| panic!("data/player_models.toml: {e}"))
     }
 
     /// `name` is one of the 19 (ignoring case and slashes).

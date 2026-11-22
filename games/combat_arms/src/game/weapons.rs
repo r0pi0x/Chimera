@@ -1756,7 +1756,7 @@ impl CaSurfaces {
     pub fn built_in() -> &'static Self {
         static SET: OnceLock<CaSurfaces> = OnceLock::new();
         SET.get_or_init(|| {
-            Self::parse(include_str!("../../data/surfaces.toml"))
+            Self::parse(chimera_core::game_data!("data/surfaces.toml").text())
                 .unwrap_or_else(|e| panic!("Combat Arms surfaces.toml: {e}"))
         })
     }
@@ -1778,7 +1778,7 @@ impl Plugin for CaWeaponsPlugin {
         chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(
             app,
             "combat_arms data/display_names.toml",
-            include_str!("../../data/display_names.toml"),
+            chimera_core::game_data!("data/display_names.toml").text(),
         );
         // Its map pool's rules and measurements (beside the draw's
         // exclusions: what an automatic gun game takes of it).

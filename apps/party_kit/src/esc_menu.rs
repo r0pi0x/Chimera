@@ -105,7 +105,7 @@ use chimera_net::net::vote::{CallRefusal, VoteFailure, VoteNews, VoteSettings, V
 use crate::host::{self, Setting, setting_of};
 
 /// The options' data (data/options.toml).
-pub const OPTIONS_TOML: &str = include_str!("../data/options.toml");
+pub const OPTIONS_TOML: chimera_core::game_data::GameData = chimera_core::game_data!("data/options.toml");
 
 /// The options' tabs as shown: rows with `when = "ui_sound"` only in an
 /// app with UI sound (`ui_sound`).
@@ -148,7 +148,7 @@ fn sync_tabs(
 
 /// The options' tabs: name and settings, in order (every row of the data).
 pub fn option_tabs() -> Vec<(String, Vec<Setting>)> {
-    let doc: toml::Table = toml::from_str(OPTIONS_TOML).expect("data/options.toml reads");
+    let doc: toml::Table = toml::from_str(&OPTIONS_TOML).expect("data/options.toml reads");
     doc.get("tab")
         .and_then(|t| t.as_array())
         .map(|tabs| {

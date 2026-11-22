@@ -1,7 +1,7 @@
 //! Combat Arms' options screen (specs/combat_arms/options.md P, K, W, L):
 //! a modal screen with four tabs over the menus, on the game's layouts
 //! when the install has them (`popup_option.xml` and the four tab files,
-//! `install::OPTION_FILES`), else on ours (`data/ui/options*.xml`, the
+//! `install::OPTION_FILES`), else on ours (`data/options*.xml`, the
 //! same control names, flat stand-ins). The screen is a view of
 //! `game::options` (the profile, the settings, the bindings): each frame
 //! the controls are set from it, and a click or a drag calls its flow
@@ -77,12 +77,12 @@ use crate::{
 };
 
 /// Our layouts (the game's format).
-pub const LAYOUTS: [&str; 5] = [
-    include_str!("../../data/ui/options.xml"),
-    include_str!("../../data/ui/options_graphic.xml"),
-    include_str!("../../data/ui/options_sound.xml"),
-    include_str!("../../data/ui/options_control.xml"),
-    include_str!("../../data/ui/options_other.xml"),
+pub const LAYOUTS: [chimera_core::game_data::GameData; 5] = [
+    chimera_core::game_data!("data/options.xml"),
+    chimera_core::game_data!("data/options_graphic.xml"),
+    chimera_core::game_data!("data/options_sound.xml"),
+    chimera_core::game_data!("data/options_control.xml"),
+    chimera_core::game_data!("data/options_other.xml"),
 ];
 
 /// The window of each tab (L), in tab order.
@@ -304,7 +304,7 @@ impl OptionsScreen {
         let layouts: Vec<Layout> = install.unwrap_or_else(|| {
             LAYOUTS
                 .iter()
-                .map(|t| xml::read(t).expect("data/ui/options*.xml"))
+                .map(|t| xml::read(t).expect("data/options*.xml"))
                 .collect()
         });
         let mut desk = Desk::default();

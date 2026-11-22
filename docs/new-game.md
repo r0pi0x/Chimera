@@ -65,11 +65,21 @@ games/<id>/src/game/mod.rs   pub const GAME, pub static INFO: GameInfo,
                              pub static BUNDLE: GameBundle
 games/<id>/src/harness.rs    pub struct <Game>Sim    (its scenario tests' base)
 games/<id>/tests/it/main.rs  one test binary; slow tests in tests/it/heavy/
-games/<id>/data/             its numbers as data (weapons, movement), our own files
+games/<id>/data/             its numbers as data (weapons, movement), our own files,
+                             each named by `chimera_core::game_data!("data/..")`
 games/<id>/ui/               crate `<id>_ui`: its front end; src/lib.rs has
                              `with_hud` and `party::CLIENT`; tests/it/ for
-                             what only the client shows
+                             what only the client shows; ui/data/ its HUD and
+                             menu documents
 ```
+
+Data documents are `const`s made by `game_data!` (a path from the
+crate's folder, never outside it), not `include_str!`: a dev build reads
+them from the checkout at run time, so editing one rebuilds nothing
+(restart, or `data_reload` for readers that ask again), and a release
+compiles them in (`chimera_core::game_data`; architecture-for-iteration.md,
+stage 2). A front end's documents go in its own crate's `data/`, so their
+edits select only the front end's tests and what is above it.
 
 The front end is its own crate so that the simulation and its tests
 never build the client shell: a client-side edit then selects the front

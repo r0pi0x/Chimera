@@ -606,7 +606,7 @@ fn t30_blood_off_for_a_minor_in_the_us_build() {
 
 #[test]
 fn the_table_matches_the_default_profile() {
-    let default = Profile::parse(combat_arms::game::options::DEFAULT_PROFILE);
+    let default = Profile::parse(&combat_arms::game::options::DEFAULT_PROFILE);
     for a in bindings::ACTIONS {
         assert!(
             default.string("Bindings", a.name).is_some(),
@@ -1060,7 +1060,7 @@ fn t43_default_on_the_control_tab_leaves_the_sound_alone() {
         "the mouse values, at once"
     );
     ok(&mut s);
-    let default = Profile::parse(combat_arms::game::options::DEFAULT_PROFILE);
+    let default = Profile::parse(&combat_arms::game::options::DEFAULT_PROFILE);
     for a in bindings::ACTIONS {
         assert_eq!(
             opts(&s).profile.string("Bindings", a.name),
