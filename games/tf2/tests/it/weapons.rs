@@ -617,6 +617,124 @@ fn peak_speeds(sim: &mut Sim, p: Entity, e: Entity, n: u64, mut input: impl FnMu
     (up, flat)
 }
 
+/// `e`'s horizontal speed (units/s) at the end of each of `n` ticks.
+fn flat_speeds(sim: &mut Sim, p: Entity, e: Entity, n: u64, mut input: impl FnMut(&mut Sim, u64)) -> Vec<f32> {
+    let mut out = Vec::new();
+    run(sim, p, n, |s, k| {
+        input(s, k);
+        let v = s.velocity(e) / U;
+        out.push(Vec2::new(v.x, v.z).length());
+    });
+    out
+}
+
+/// A victim `distance` units along -Z from the shooter's spawn, the
+/// shooter holding `gun` aimed at him.
+fn shot_setup(gun: &str, distance: f32) -> (Sim, Entity, Entity) {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, w) = holding(&mut sim, from, gun);
+    no_spread(&mut sim, w);
+    let t = target(&mut sim, from, distance);
+    sim.app.world_mut().get_mut::<Health>(t).unwrap().current = 10.0;
+    let at = sim.position(t);
+    testkit::aim_at(&mut sim, p, at);
+    (sim, p, t)
+}
+
+/// 5.4.1, tests 47a, 47 (measured): a Scattergun's push of 360 on a
+/// grounded Soldier is cut at his first movement tick to 0.9 x 240 = 216,
+/// then friction (x 0.94 a tick above 100 units/s) slows him: he slides
+/// about 42 units, not the 360 x 0.94^n of an uncut push.
+#[test]
+fn a_grounded_soldier_is_pushed_at_most_216_47a() {
+    let (mut sim, p, t) = shot_setup(SCATTERGUN, 512.0);
+    let at = sim.position(t);
+    let speeds = flat_speeds(&mut sim, p, t, 120, |s, k| s.intent(p).fire = k == 0);
+    let push = speeds.iter().cloned().fold(0.0, f32::max);
+    // The push is there for the one tick between the damage and his move.
+    assert!((340.0..=361.0).contains(&push), "pushed at {push}");
+    let i = speeds.iter().position(|&v| v == push).unwrap();
+    assert!((speeds[i + 1] - 216.0).abs() < 1.0, "first movement tick at {}", speeds[i + 1]);
+    assert!(speeds[i + 2] < 216.0 * 0.95, "friction after: {}", speeds[i + 2]);
+    let slid = (sim.position(t) - at).length() / U;
+    assert!((30.0..=55.0).contains(&slid), "slid {slid} units");
+}
+
+/// 5.4.1, test 47a (measured): the limit is the victim's own max speed:
+/// a spun Heavy (110) takes half the push (312 at 64) and goes at 99.
+#[test]
+fn a_spun_heavy_goes_at_99_and_takes_half_47a() {
+    let (mut sim, p, t) = shot_setup(SCATTERGUN, 64.0);
+    let w = give(sim.app.world_mut(), t, MINIGUN).unwrap();
+    sim.app.world_mut().get_mut::<Inventory>(t).unwrap().wanted = Some(w);
+    sim.seconds(1.0);
+    sim.app.world_mut().get_mut::<Health>(t).unwrap().current = 10.0;
+    let at = sim.position(t);
+    testkit::aim_at(&mut sim, p, at);
+    sim.seconds(1.0);
+    let speeds = flat_speeds(&mut sim, p, t, 60, |s, k| {
+        s.intent(t).secondary = true;
+        s.intent(p).fire = k == 40;
+    });
+    let push = speeds.iter().cloned().fold(0.0, f32::max);
+    assert!((250.0..=313.0).contains(&push), "a Heavy's half push {push}");
+    let i = speeds.iter().position(|&v| v == push).unwrap();
+    assert!((speeds[i + 1] - 99.0).abs() < 1.0, "spun: first movement tick at {}", speeds[i + 1]);
+}
+
+/// 5.4.1, test 47b (measured): a victim already in the air keeps the whole
+/// push horizontally (no drag) until he lands.
+#[test]
+fn an_airborne_victim_keeps_the_whole_push_47b() {
+    let (mut sim, p, t) = shot_setup(SCATTERGUN, 64.0);
+    let mut speeds = flat_speeds(&mut sim, p, t, 240, |s, k| {
+        s.intent(t).jump = k == 0;
+        s.intent(p).fire = k == 8;
+    });
+    let push = speeds.iter().cloned().fold(0.0, f32::max);
+    assert!(push > 400.0, "pushed at {push}");
+    let i = speeds.iter().position(|&v| v > 400.0).unwrap();
+    // Flying on: the next ticks in the air hold it (gravity only moves y).
+    assert!(speeds[i..i + 20].iter().all(|v| (v - push).abs() < 1.0), "kept in the air: {:?}", &speeds[i..i + 20]);
+    speeds.drain(..i);
+    let low = speeds.iter().cloned().fold(f32::MAX, f32::min);
+    assert!(low < 230.0, "after landing the limit cuts it ({low})");
+}
+
+/// 5.4.1, test 47c (measured): the Minigun cannot push a grounded victim
+/// past his limit: 216 after each hit, never more.
+#[test]
+fn the_minigun_cannot_push_a_grounded_soldier_past_216_47c() {
+    let (mut sim, p, t) = shot_setup(MINIGUN, 256.0);
+    let speeds = flat_speeds(&mut sim, p, t, 150, |s, _| {
+        s.intent(p).fire = true;
+    });
+    // The instant between a hit and his move may read up to the push; every
+    // value after a movement tick stays under the limit.
+    let moved: Vec<f32> = speeds.windows(2).filter(|w| w[1] <= w[0] + 1e-3).map(|w| w[1]).collect();
+    assert!(moved.len() > 20 && moved.iter().all(|&v| v <= 216.5), "{moved:?}");
+    assert!(moved.iter().any(|&v| v > 150.0), "pushed: {moved:?}");
+}
+
+/// 5.4.1, test 47d (measured): a rocket on the floor 100 units in front of
+/// a grounded Soldier (push 356, vertical 159 < 250) moves him at 216.
+#[test]
+fn a_rocket_on_the_floor_moves_a_grounded_soldier_at_216_47d() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, ROCKET_LAUNCHER);
+    let t = target(&mut sim, from, 512.0);
+    sim.app.world_mut().get_mut::<Health>(t).unwrap().current = 10.0;
+    let aim = sim.position(t) + Vec3::Z * 100.0 * U - Vec3::Y * 36.0 * U;
+    testkit::aim_at(&mut sim, p, aim);
+    let speeds = flat_speeds(&mut sim, p, t, 120, |s, k| s.intent(p).fire = k == 0);
+    let push = speeds.iter().cloned().fold(0.0, f32::max);
+    assert!(push > 300.0, "pushed at {push}");
+    let i = speeds.iter().position(|&v| v > 300.0).unwrap();
+    assert!((speeds[i + 1] - 216.0).abs() < 1.0, "first movement tick at {}", speeds[i + 1]);
+}
+
 /// 5.3, 5.4 and the corrections from the SDK, test 46: a Soldier on the
 /// ground, his own rocket at his feet: 90 damage (89.63 by the distance to
 /// his feet), a push of about 448 units/s (scale 5, from 10 below the

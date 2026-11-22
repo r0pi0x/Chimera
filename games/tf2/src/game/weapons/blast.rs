@@ -35,6 +35,15 @@
 //!   for another game's movement). The owner's own push sets
 //!   `BlastJumping` (until he lands: `blast_jump_lands`) and his count of
 //!   air ducks back to 0.
+//! - **The ground limit** (5.4.1, measured): a grounded victim's
+//!   horizontal speed is cut, at his next movement tick after friction,
+//!   to `GROUND_PUSH_LIMIT` (0.9) x his own max speed (a Soldier 216, a
+//!   spun Heavy 99); a push that lifts him (> 250 up) or finds him in the
+//!   air is kept until he lands, where the limit applies. `shove` sets
+//!   `SourceMovement::push_limit`, and the movement applies it with the
+//!   victim's own max speed, so any body on a Source movement is capped
+//!   the same; a body on another movement (the placeholder's) isn't
+//!   (known shortcut).
 //! - **Bullets** push too (`bullet_push`, after the frame): one push per
 //!   victim per shot from its summed damage at scale 6, from the shooter's
 //!   centre lowered 10.
@@ -52,7 +61,8 @@
 //!
 //! Each damage rounds to whole points, of kind blast, naming the gun.
 //!
-//! Known shortcuts: crits are off; "airborne" ignores water (a swimming
+//! Known shortcuts: crits are off; a body on a non-Source movement takes
+//! the push without the ground limit; "airborne" ignores water (a swimming
 //! Soldier counts as airborne); a bullet push reads the summed damage
 //! rounded to whole points (the delivery's), not the unrounded sum.
 
@@ -86,6 +96,10 @@ pub const FORCE_LOWER: f32 = 10.0;
 pub const HEAVY_KNOCKBACK: f32 = 0.5;
 /// The bullets' push scale (`tf_damageforcescale_other`).
 pub const BULLET_PUSH: f32 = 6.0;
+/// A grounded victim's horizontal speed after a push, at his first
+/// movement tick, as a share of his own max speed (weapons.md 5.4.1,
+/// measured: 0.9); the movement applies it (`SourceMovement::push_limit`).
+pub const GROUND_PUSH_LIMIT: f32 = 0.9;
 /// An upward speed above this (units/s) lifts the victim off the ground.
 pub const LIFT: f32 = 250.0;
 /// A blast whose surface normal has every component under this is in the
@@ -538,10 +552,10 @@ impl BlastWorld<'_, '_> {
         let Ok((.., mut velocity, _)) = self.chars.get_mut(e) else { return };
         velocity.0 += dv;
         let lift = dv.y > LIFT * U;
-        if !lift && !own {
-            return;
-        }
         self.commands.entity(e).queue(move |mut w: EntityWorldMut| {
+            if let Some(mut m) = w.get_mut::<SourceMovement>() {
+                m.push_limit = GROUND_PUSH_LIMIT;
+            }
             if lift && let Some(mut s) = w.get_mut::<MovementState>() {
                 s.on_ground = false;
             }

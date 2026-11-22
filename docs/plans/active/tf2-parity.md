@@ -167,23 +167,20 @@ units/s, not 360; point blank: the 1000 cap). Fixed: V is TF2's hull for
 the victim's stance (`blast::tf2_hull`: standing, ducked 62, own ducked
 55), test `a_scattergun_pushes_any_body_as_a_tf2_player_47`.
 
-Still open, for a spec agent (real TF2; the numbers in 5.4 are derived
-from the SDK reading, tests 43-47 are not measured): on a TF2 map, bots
-standing still on flat ground, `host_timescale` slow or a velocity log
-(`cl_showpos`-style speed readout or a demo's origins per tick):
-1. Scattergun, all 10 pellets on a standing enemy at 512 and at point
-   blank (≈ 64): the victim's peak horizontal speed and how far he
-   slides (expected by 5.4: 360 and ≈ 630 units/s).
-2. The same on an airborne victim (mid-jump): the speed added.
-3. Minigun spun, a 1 s burst on a standing enemy at 512 and at 256: his
-   steady speed and distance pushed (5.4 with ground friction 4
-   predicts a sawtooth of 216 units/s a shot at 512 settling at about
-   440-655 units/s, faster than he can run – likely far above the real
-   game; if so, what rule limits bullets' push: grounded victims, a
-   per-bullet or per-tick rule, a different scale).
-4. An enemy rocket direct hit on a standing Soldier at 512 (test 44:
-   540 units/s) and a splash at 100 units: the speed added.
-5. Shotgun, all 10 pellets at 512 (expected 360 like the Scattergun).
+Measured afterwards (weapons.md 5.4.1, 2026-11-22): the formula is right,
+but a grounded victim's horizontal speed is cut, at his first movement
+tick after a push and after that tick's friction, to 0.9 x his own max
+speed (Soldier 216, spun Heavy 99); a push that lifts him (> 250 up) or
+finds him airborne is kept until he lands, where the limit applies; a
+Heavy takes half. Built: `SourceMovement::push_limit` (set by
+`blast::shove` to `GROUND_PUSH_LIMIT`, applied in the movement's tick
+with the body's own max speed, so any body on a Source movement is
+capped the same; a non-Source movement (the placeholder's) is not:
+known shortcut). Tests 47a-47d in games/tf2/tests/it/weapons.rs
+(Scattergun at 512: 216 then friction, slide about 42; spun Heavy 99;
+airborne keeps the push until landing; Minigun never past 216; rocket on
+the floor 216). Open: a victim moving under his own input (weapons.md
+Open questions 9).
 
 ### The spec answers built (tf2-spec-impl, 2026-11-22)
 

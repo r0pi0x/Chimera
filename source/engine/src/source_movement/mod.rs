@@ -945,6 +945,14 @@ pub struct SourceMovement {
     pub duck_key: bool,
     #[serde(default)]
     pub reduck_timer: f32,
+    /// A game's push (TF2 knockback) is waiting to meet the ground: its
+    /// ground limit as a share of this body's own max speed (0: none).
+    /// The first grounded tick after it, the horizontal speed is cut to
+    /// limit x max speed after friction, and it clears; in the air it
+    /// waits (no drag, no limit) until the landing tick. Any movement
+    /// config honours it: the cap is the victim's own max speed.
+    #[serde(default)]
+    pub push_limit: f32,
 }
 
 impl Default for SourceMovement {
@@ -988,6 +996,7 @@ impl Default for SourceMovement {
             air_ducks: 0,
             duck_key: false,
             reduck_timer: 0.0,
+            push_limit: 0.0,
         }
     }
 }
@@ -2961,6 +2970,12 @@ impl Mover<'_, '_, '_, '_> {
         if self.me.on_ground {
             self.v.z = 0.0;
             self.friction();
+            if self.me.push_limit > 0.0 {
+                // A push met the ground (specs/tf2/weapons.md 5.4.1): after
+                // friction, cut to the limit of this body's max speed.
+                self.clamp_flat(self.me.push_limit * max_speed);
+                self.me.push_limit = 0.0;
+            }
         }
         self.clamp_velocity();
         if self.me.on_ground {
