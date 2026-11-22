@@ -6,7 +6,7 @@
 //! - Leave top left; the chat down the left column from under it to the
 //!   bottom; the standings down the right (top-aligned, the winner their
 //!   first row and a taller one); the details line top centre; the climb
-//!   with the stat tiles directly under it; the vote cards four to a row under
+//!   with the stat tiles directly under it; the vote cards two to a row (2x2) under
 //!   the tiles in the centre and the countdown bottom right; the climb small and centred;
 //! - none of them overlaps another, all inside the window, every
 //!   standings row inside its column, the chat box one size whatever it
@@ -196,8 +196,13 @@ fn the_blocks_sit_where_the_layout_puts_them_and_never_overlap() {
                 assert!(stats.min.y >= graph.max.y - 1.0 && stats.min.y < graph.max.y + h * 0.08, "{at}: the tiles directly under the climb: {stats:?} {graph:?}");
                 assert!(stats.min.x <= graph.min.x + 1.0 && stats.max.x >= graph.max.x - 1.0 && (stats.center().x - graph.center().x).abs() < 2.0, "{at}: the climb is centred over the tiles");
                 assert!(cards.iter().all(|c| c.min.y >= stats.max.y && c.center().x > dock.max.x && c.center().x < panel.min.x), "{at}: cards in the centre under the tiles: {cards:?}");
-                let row_y = cards[0].min.y;
-                assert!(cards.iter().all(|c| (c.min.y - row_y).abs() < 1.0), "{at}: four cards in one row: {cards:?}");
+                let (row_y, col_x) = (cards[0].min.y, cards[0].min.x);
+                assert!(
+                    (cards[1].min.y - row_y).abs() < 1.0 && (cards[2].min.y - cards[3].min.y).abs() < 1.0 && cards[2].min.y > row_y + cards[0].height() - 1.0,
+                    "{at}: a 2x2 grid: {cards:?}"
+                );
+                assert!((cards[2].min.x - col_x).abs() < 1.0 && (cards[3].min.x - cards[1].min.x).abs() < 1.0 && cards[1].min.x > col_x + cards[0].width() - 1.0, "{at}: two columns: {cards:?}");
+                assert!(cards[0].width() > w * 0.17 && cards[0].height() > h * 0.18, "{at}: big cards: {:?}", cards[0]);
                 let (lo, hi) = cards.iter().fold((f32::MAX, f32::MIN), |(a, b), c| (a.min(c.min.x), b.max(c.max.x)));
                 assert!(lo < stats.min.x + 2.0 && hi > stats.max.x - w * 0.02, "{at}: the cards span the middle column");
                 assert!(countdown.center().x > w * 0.7 && countdown.max.y > h * 0.9, "{at}: the countdown bottom right: {countdown:?}");

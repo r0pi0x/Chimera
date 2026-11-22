@@ -34,7 +34,7 @@
 //!   deaths, K/D, best streak, fastest rung-up, longest stall; yours, else
 //!   the winner's when you have no entry (`stats_subject`). Headshots are
 //!   not tracked, so no tile.
-//! - **The vote**: the cards (`VoteCard`), four to a row, fill the centre
+//! - **The vote**: the cards (`VoteCard`), two to a row (a 2x2 grid for four maps; more maps add rows and the cards shrink to fit, picture first, down to a minimum height, then run on), fill the centre
 //!   under the tiles (`vote_top`); the countdown is the footer, bottom right ("Next match 0:14 >", `VoteCountdownColumn`).
 //!
 //! More:
@@ -587,7 +587,6 @@ pub struct EndLayout {
     pub foot_h: f32,
     pub row_h: f32,
     pub win_h: f32,
-    pub thumb_h: f32,
 }
 
 impl EndLayout {
@@ -637,7 +636,6 @@ impl EndLayout {
             foot_h: bottom - foot_top,
             row_h: g("row_h", 2.4),
             win_h: g("win_h", 5.8),
-            thumb_h: g("thumb_h", 12.0),
         }
     }
 
@@ -1783,6 +1781,13 @@ fn build_vote(
     let lay = EndLayout::of(&look);
     let ui = chimera_ui::controls::Ui { theme: &look.theme, kit: look.fonts.as_deref(), units: *look.units };
     let n = 40;
+    // Two columns; the rows share the band, so the cards keep one size
+    // whatever the votes (more than four maps: more rows, smaller pictures).
+    let maps_n = view.vote.as_ref().map_or(0, |v| v.maps.len());
+    let rows = maps_n.div_ceil(2).max(2) as f32;
+    let card_w = (lay.mid_w - CARD_GAP - 0.8) / 2.0;
+    let card_h = ((lay.vote_h - 1.2 - CARD_GAP * (rows - 1.0)) / rows).max(CARD_BODY + 1.5);
+    let thumb_h = card_h - CARD_BODY;
     commands
         .spawn((VotePart, ChildOf(*root), Pickable::IGNORE, Node { width: look.val(100.0), height: look.val(56.25), position_type: PositionType::Absolute, align_self: AlignSelf::Center, ..default() }))
         .with_children(|f| {
@@ -1824,7 +1829,7 @@ fn build_vote(
                             super::match_end::VoteButton(i),
                             // The kit's item: its fill and hover.
                             ui.item_bundle(Some((Tone::Ink, 0.75)), chimera_ui::controls::State { disabled: locked, ..chimera_ui::controls::State::NONE }, false),
-                            Node { width: look.val((lay.mid_w - CARD_GAP * 3.0 - 0.8) / 4.0), height: look.val(lay.thumb_h + CARD_BODY), flex_shrink: 0.0, flex_direction: FlexDirection::Column, overflow: Overflow::clip(), ..default() },
+                            Node { width: look.val(card_w), height: look.val(card_h), flex_shrink: 0.0, flex_direction: FlexDirection::Column, overflow: Overflow::clip(), ..default() },
                             Outline::new(px(w), px(-w), line),
                             UiParityId(p.clone()),
                         ));
@@ -1835,7 +1840,7 @@ fn build_vote(
                             let (a, b) = map_tint(map);
                             let (a, b) = (a.with_alpha(dim), b.with_alpha(dim));
                             c.spawn((
-                                Node { height: look.val(lay.thumb_h), ..default() },
+                                Node { height: look.val(thumb_h), ..default() },
                                 BackgroundGradient::from(LinearGradient::degrees(110.0, vec![ColorStop::percent(a, 0.0), ColorStop::percent(b, 100.0)])),
                                 UiParityId(format!("{p}.thumb")),
                                 Pickable::IGNORE,
@@ -1942,7 +1947,7 @@ fn build_vote(
 #[derive(Component)]
 pub struct VoteCountdownColumn;
 
-/// The gap between the map cards, cq; they sit four to a row.
+/// The gap between the map cards, cq; they sit two to a row.
 const CARD_GAP: f32 = 0.9;
 /// A card's height under its picture, cq: fixed, so voting (or hovering)
 /// changes only colours, the outline and the badge, never the box.

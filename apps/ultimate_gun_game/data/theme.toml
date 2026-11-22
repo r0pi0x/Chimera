@@ -311,11 +311,10 @@ graph_h = 11.0       # the chart's height
 graph_w = 28.0       # and width: small, centred in the middle column
 stats_gap = 1.2      # the stat tiles under the chart
 stats_h = 5.4
-vote_top = 29.5      # the map cards, four to a row, under the stat tiles
+vote_top = 27.0      # the map cards, two to a row (2x2), under the stat tiles
 foot_top = 46.4      # the countdown (right) and where the standings end
 row_h = 2.4          # the most a standings row gets; they shrink to fit
 win_h = 5.8          # the winner's row
-thumb_h = 12.0       # the map cards' picture
 
 
 # The Escape menu over play (party_kit esc_signal; the components page's
