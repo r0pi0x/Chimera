@@ -113,7 +113,9 @@
 //! stream starts only for a crit-boosted Pyro (`crit_boost`); no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
 //! used until the weapon scripts are read; only guns with a tracer count
 //! toward the shared tracer counter; the tracers leave along the aim,
-//! the `while_firing` systems along the view (the brass to its right),
+//! the `while_firing` systems along the view (the brass to its right, 23°
+//! up, as TF2's casings leave under the spun pose; on others' Minigun
+//! from 28 right and 41 below the eye, not the posed attachment),
 //! the backblast back along the aim, not the attachments' own axes (only
 //! the per-shot flash is turned as its attachment, `start_with_axes`);
 //! pellets' sounds aren't grouped (every pellet's, as HL2:DM's).
@@ -153,6 +155,17 @@ pub const LOOKS_HOOK: &str = "tf2:looks";
 pub struct AttachedSystem {
     pub system: String,
     pub at: String,
+    /// A `while_firing` system other than the muzzle's leaves along the
+    /// view's right tilted this many degrees up (its x axis: the Minigun's
+    /// brass, 23, particles.md Open questions 6).
+    #[serde(default)]
+    pub up: f32,
+    /// On the third-person (held) model, started here instead of at the
+    /// attachment: units forward, right and up of the eye in the aim's
+    /// frame (the Minigun's brass, (0, 28, -41): where TF2's casings are
+    /// born under the spun firing pose, particles.md Open questions 6).
+    #[serde(default)]
+    pub from_eye: Option<[f32; 3]>,
 }
 
 /// A blast's three effects (effects.md 5): on a surface, in the air or on
@@ -1162,9 +1175,16 @@ fn firing_looks(
                 continue;
             };
             // Out of the barrel along the view, the brass out to the
-            // right (module doc, Known shortcuts).
+            // right and `up` degrees up (module doc, Known shortcuts); on
+            // the held model the brass from its place by the eye.
             let turn = muzzles.view_turn(owner, &m);
-            let forward = if s.at == MUZZLE_ATTACHMENT { turn * Vec3::NEG_Z } else { turn * Vec3::X };
+            let up = s.up.to_radians();
+            let forward = if s.at == MUZZLE_ATTACHMENT { turn * Vec3::NEG_Z } else { turn * (Vec3::X * up.cos() + Vec3::Y * up.sin()) };
+            let mut m = m;
+            if let (MuzzleAt::Held(p), Some(o), Ok((at, state, _))) = (&mut m, s.from_eye, eyes.get(owner)) {
+                let eye = at.translation + state.map_or(Vec3::ZERO, |s| s.eye_offset);
+                *p = eye + turn * Vec3::new(o[1], o[2], -o[0]) * super::damage::U;
+            }
             start.write(StartParticleSystem { tag: Some(e), ..muzzles.start_on(owner, &m, &s.system, forward) });
         }
     }
@@ -1271,8 +1291,13 @@ mod tests {
         assert_eq!(
             m.while_firing,
             vec![
-                AttachedSystem { system: "muzzle_minigun_constant".into(), at: "muzzle".into() },
-                AttachedSystem { system: "eject_minigunbrass".into(), at: "eject_brass".into() },
+                AttachedSystem { system: "muzzle_minigun_constant".into(), at: "muzzle".into(), ..default() },
+                AttachedSystem {
+                    system: "eject_minigunbrass".into(),
+                    at: "eject_brass".into(),
+                    up: 23.0,
+                    from_eye: Some([0.0, 28.0, -41.0])
+                },
             ]
         );
         assert_eq!(looks.tracer_of(super::super::MINIGUN), Some(("bullet_tracer01", 4)));
@@ -1352,6 +1377,6 @@ mod tests {
         let sticky = looks.explosion_of(w::GRENADE_LAUNCHER);
         assert_eq!(Explosions::pick(sticky, true, wall, false).0, "ExplosionCore_MidAir_underwater");
         assert_eq!(Explosions::pick(None, false, wall, false).0, EXPLOSION_FALLBACK);
-        assert_eq!(looks.of(w::ROCKET_LAUNCHER).and_then(|l| l.backblast.clone()), Some(AttachedSystem { system: "rocketbackblast".into(), at: "backblast".into() }));
+        assert_eq!(looks.of(w::ROCKET_LAUNCHER).and_then(|l| l.backblast.clone()), Some(AttachedSystem { system: "rocketbackblast".into(), at: "backblast".into(), ..default() }));
     }
 }

@@ -31,7 +31,7 @@ Captured imagery stays in scratch, never in the repo.
 | Camera match (2fort bridge, setpos/setang) | matches | – |
 | Muzzle flashes, first person | close (scattergun, shotgun, SMG); Pistol (Engineer's and Scout's, stock) matches (2026-11-20, stock-recapture) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). The flash now rides the animated muzzle as TF2's does (`attached::AttachmentMark`); TF2's view model kicks harder (the Scattergun's pump) |
 | Muzzle flashes, third person | close (Scattergun, Shotgun) | the scenes compare now: ours' target fires `ahead` (TF2's `bot_forceattack`) and our camera stays while our body leaves the line of fire (`chimera_freecam 2`). The flashes' size and life agree. TF2 draws another player's flash some 7 frames before its tracers and fire gesture (seen on the Scattergun and the Shotgun); ours draws them together |
-| Minigun constant flash, brass | close (first person, rechecked on the stock Minigun 2026-11-20); close (third person) | first person: the core a compact glow; the brass lives 2 s. Stock Minigun (stock-recapture): spun and firing for 0.75 s the flash covers ~5,500 px in both (TF2 5,706); its first four frames TF2 2,000 / 5,700 / 5,200 / 4,500, ours 1,400 / 4,500 / 6,200 / 8,600 (ours swells on the fourth; TF2's flickers 4,000-5,200 after). Spec ([particles.md §8.3, §8.3.1, §10.11](../../../specs/tf2/particles.md)): caps (sparks 5), the starflash and flare emit only in the first 0.5 s, smoke from 2 s, per-frame counts and sizes; by its data the flash grows to frame 3-6 and holds, so TF2's frame-2 peak is left as particles.md Open questions 10 (rechecked 2026-11-21, tf2-left: ours now grows as §8.3.1 says, first glow the second frame after the shot, full by the fourth and held, ~10,000-12,000 px changed from the frame before `+attack`; needs a spec pass). Third person (pass 5, from 260 units above): TF2's casings lie 40-75 units out to the gun's side (most ~58), ours ~25-55 (most ~43); from the side TF2's leave upward first. Ours' numbers (local x 100-200, drag 0.05, gravity −252) land ~40 out from a level eject: the difference reads as the eject attachment's tilt under TF2's spun pose (particles.md Open questions 6; the animation agent's pose) |
+| Minigun constant flash, brass | close (first person, rechecked on the stock Minigun 2026-11-20); close (third person) | first person: the core a compact glow; the brass lives 2 s. Stock Minigun (stock-recapture): spun and firing for 0.75 s the flash covers ~5,500 px in both (TF2 5,706); its first four frames TF2 2,000 / 5,700 / 5,200 / 4,500, ours 1,400 / 4,500 / 6,200 / 8,600 (ours swells on the fourth; TF2's flickers 4,000-5,200 after). Spec ([particles.md §8.3, §8.3.1, §10.11](../../../specs/tf2/particles.md)): caps (sparks 5), the starflash and flare emit only in the first 0.5 s, smoke from 2 s, per-frame counts and sizes; by its data the flash grows to frame 3-6 and holds, particles.md Open questions 10 answered 2026-11-21: TF2 has no frame-2 peak (re-captured frame-exact: the shot frame a tracer, then ~60 % / 95 % / full, held, flickering 5,300-8,200); ours (tf2-left: first glow the second frame after the shot, full by the fourth and held, ~10,000-12,000 px changed from the frame before `+attack`) grows and holds the same way, no change needed (Next item 10: whether ours' first glow is a frame later). Third person (pass 5, from 260 units above): TF2's casings lie 40-75 units out to the gun's side (most ~58), ours ~25-55 (most ~43); from the side TF2's leave upward first. Ours' numbers (local x 100-200, drag 0.05, gravity −252) landed ~40 out from a level eject; particles.md Open questions 6 (measured 2026-11-21): TF2's leave right, square to the aim, ~23° up at 150-180 units/s from 28 right and 41 below the eye. Ours now so (tf2-spec-impl: the system's x tilted 23° up, others' from that point by the eye); the landing band not recaptured |
 | Tracers | matches (SMG, Shotgun); from the front close | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered). From the front the geometry agrees (a streak passing ~20 units from the camera widens to tens of pixels in TF2 too); which pellets pass near is the spread's chance. Others' tracers now leave with the interpolated body (pass 4) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
 | Rocket trail | close (2026-11-20, `launch.tf2`/`.scene`) | added (none drew): `rockettrail` on every rocket, pipes', stickies', needles' trails. The "very long trail" was `rockettrail_burst`'s sprite trails streaking by the rocket's own 1100 units/s (a lock now carries a particle's last place too, particles.md 5.1) and the copy drawn late thrown back 110 units behind the eye a frame after the shot; drawn from its seeded copy (11.1); a step's particles now spread along the control point's path, the copy's trail made at the rocket's first place (tf2-psys). TF2's big glow ~50 units ahead of the launcher at frames 2-6 still missing: ours' first step leaves a smoke puff at the launcher and its glows mid-path behind the eye (log) |
@@ -137,32 +137,60 @@ Captured imagery stays in scratch, never in the repo.
    `weapon/tf_weapon_pistol_scout`, `tf_weapon_shotgun_primary` and
    `tf_weapon_grenadelauncher` and CS:S's `weapon/awp`; the TMP's
    `Weapon_TMP.Deploy` has no wave, so `weapon/tmp` is unchanged.)
-10. **Needs a spec pass** (tf2-left, 2026-11-21: what the specs leave
-   open, so nothing was built; see the log):
-   - the Minigun flash's frame-2 peak (particles.md Open questions 10:
-     ours follows §8.3.1's data, which grows to frame 3-6 and holds);
-     its brass (Open questions 6: where `eject_brass` points under TF2's
-     spun pose, or the casings' first velocity in the world);
-   - the grenade's angular drag (weapons_more.md Open questions 22: a
-     fit in the body's principal axes; ours a uniform 3.3e-7) and the
-     physics engine's 2000 units/s and 3600 degrees/s caps (Open
-     questions 23: whether a full-charge sticky, 2400 + 200 up, leaves
-     at 2000, and whether the cap is on the vector's length);
-   - the Flame Thrower against a wall (weapons_more.md 7.1 and its edge
-     case: no emission while the line from the eye to the muzzle is
-     blocked): which muzzle the server tests (the world model's
-     attachment, posed how) and where it lies from the eye standing,
-     crouched and by pitch; whether a blocked emission still takes ammo
-     and keeps the burst's stream system and sounds (flames.md's edge
-     case says the system starts); the cloud at a wall ~25 % wider at
-     1 s and a little higher in TF2 (flames.md Open questions 3, 4).
-     The points' slide on walls (flames.md 1) is built and tested
-     (`flame::tests::a_point_slides_on_a_wall_and_rises_flames_1`);
+10. **Built from the spec answers** (tf2-spec-impl, 2026-11-22; commit
+   1cb4ace47's specs; the log's entry). Left open:
+   - the Minigun flash: particles.md Open questions 10 says TF2 has no
+     frame-2 peak and grows over its first three frames after the
+     tracer's (60 % / 95 % / full) and holds, as §8.3.1's data; ours
+     (tf2-left's `mini` capture, stepped by `host_timescale`) grows
+     over three and holds the same way, but its first glow counted from
+     a frame later. A `host_framerate 0.016667` capture of ours, as the
+     spec's, would settle whether that frame is real (no code change);
+   - the brass's flight after its start (the spec's tracks didn't refit
+     the operators; ours run TF2's system as it is);
+   - the flame cloud's width at a wall at 1 s (flames.md Open questions
+     4: not reproduced on the points; the drawn sprites unmeasured);
    - water explosions: nothing left that a spec must answer (the under
      water blast now shows, the table's row); a fresh TF2 `wunder` pair
      would confirm its size and colour.
 
 ## Log
+
+### The spec answers built (tf2-spec-impl, 2026-11-22)
+
+From commit 1cb4ace47 (weapons_more.md 4.4, 5.1, 7.1; particles.md Open
+questions 6, 10; flames.md's edge case):
+
+- **Grenade spin**: angular drag (9.45, 3.98, 3.98)e-7 on the whole ω
+  (grenadelauncher.toml), then its precession in the body (inertia
+  (0.288, 1, 1), `DragParams::inertia`), integrated as the engine does in
+  1 + floor(|ω| dt / (1/12 rad)) forward-Euler sub-steps from the tick's
+  starting |ω| (Chimera's `flight::precess`, also with no air). Unit
+  tests 29f (4 sub-steps, −12.81°, × 1.00626), 29g (9 sub-steps, ω_x
+  1189.6), the measured growth at n = 4-8; a scenario test in flight
+  (weapons_more.rs). The sticky gets no inertia (its ω keeps its
+  direction, as measured).
+- **Sticky cap**: the launch velocity's length capped at `max_speed`
+  2000 (pipebomblauncher.toml), direction kept: a full charge leaves at
+  2000 (test 29e: 2000 at launch, ~1984 after the first tick; test 29's
+  full charge now 1993 forward).
+- **Flame Thrower at a wall**: `flame::blocked`, predicted, before the
+  frame: on each emission due, the line from the eye to 40 forward, 5
+  right (the point's own `origin`, any stance and pitch) against the
+  world; blocked, the frame sees no attack: no point, no ammo, no burst
+  (no stream, no start or loop sound); a burst blocked at an emission
+  ends as a release (the end sound), and restarts on the first clear
+  tick. Tests 46b (39.5 / 40.5, standing and crouched), 46c (pitch ±30°
+  at 34.5 / 35.5, turned 40° at 33.5 / 34.5), 46d (flames.rs).
+- **Minigun brass**: `eject_minigunbrass` leaves along the view's right
+  tilted 23° up (`while_firing`'s `up`), so the system's own 100-200
+  units/s along its x is TF2's measured right-and-up 150-180 at ~23°;
+  on another player's Minigun it starts 28 right and 41 below the eye
+  (`from_eye`), not at the held model's attachment (effects.rs test).
+  The third-person landing band (TF2 40-75 out, ours ~25-55) should
+  move out with the tilt; not recaptured.
+- **Minigun flash**: no change (the spec: no frame-2 peak; ours grows
+  and holds as §8.3.1). Recorded in the table's row and Next item 10.
 
 ### The open parity items checked against the specs (tf2-left, 2026-11-21)
 

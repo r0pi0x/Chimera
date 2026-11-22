@@ -78,6 +78,9 @@ max = 8
 speed_min = 900.0
 speed_max = 2400.0
 up_speed = 200.0
+# The physics engine's cap on the launch velocity's length (weapons_more.md
+# 5.1): a full charge (2400 + 200 up) leaves at 2000, its direction kept.
+max_speed = 2000.0
 charge_time = 4.0
 gravity = 800.0
 offset = [16.0, 8.0, -6.0]

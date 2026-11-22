@@ -390,7 +390,7 @@ impl Plugin for Tf2GunsPlugin {
             .add_systems(
                 Predict::Weapons,
                 (
-                    (damage::centre_first, recoil::decay, melee::prepare).before(WeaponFrame),
+                    (damage::centre_first, recoil::decay, melee::prepare, flame::blocked).before(WeaponFrame),
                     (damage::note_shots, flame::ammo, flame::sounds, recoil::kick, melee::after).chain().after(WeaponFrame),
                 ),
             )

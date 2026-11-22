@@ -87,10 +87,11 @@ life = 2.1
 # ±1200, added twice: (1200, 2r, 0) (weapons_more.md 4.1).
 spin = { base = [600.0, 0.0, 0.0], random = [0.0, 1200.0, 0.0], times = 2 }
 # Air drag per 0.015 s tick x air_density (tf2:air_density, 2), along /
-# about its forward (its long axis), left, up (weapons_more.md 4.4, fitted).
-# Angular: ours, a uniform 3.3e-7 per degree/s giving the measured ~0.22 %
-# a tick at the typical launch spin (1200, 2200, 0) (Open questions 22).
-drag = { lin = [0.75e-6, 1.91e-6, 1.90e-6], ang = [3.3e-7, 3.3e-7, 3.3e-7], per = 0.015 }
+# about its forward (its long axis), left, up (weapons_more.md 4.4, fitted),
+# the angular on the whole spin; its inertia symmetric about the long axis,
+# I_x = 0.288 I_other, so the spin precesses in the body after the drag
+# (flight::precess, in the engine's sub-steps).
+drag = { lin = [0.75e-6, 1.91e-6, 1.90e-6], ang = [9.45e-7, 3.98e-7, 3.98e-7], per = 0.015, inertia = [0.288, 1.0, 1.0] }
 
 [hooks."tf2:grenade"]
 damage = 100.0

@@ -23,6 +23,12 @@
 //!   velocity: it climbs walls), started in a solid or its centre in water
 //!   it's gone; then its speed x (1 - `drag` x dt) (8.5): about 340 units
 //!   of reach, no range check and no cone. It dies at its life's end.
+//! - **At a wall** (`blocked`, predicted, before the frame; weapons_more.md
+//!   7.1): each emission due tests the line from the eye to `origin` (40
+//!   forward, 5 right, any stance or pitch) against the world; blocked,
+//!   the frame sees no attack: no point, no ammo, no burst (no stream, no
+//!   start or loop sound); a burst blocked at an emission ends as at a
+//!   release, and restarts on the first clear tick.
 //! - **The server's points** (`FlameStream`, `flames`, each tick) hurt;
 //!   **every drawing machine runs them again** (`FlameShown`,
 //!   `shown_flames`, each frame by its time) from the same rounds (its own
@@ -73,8 +79,7 @@
 //! last, not at the server's spawn tick: no catch-up for the time it
 //! missed) and take the Pyro's velocity as this machine has it; this
 //! machine's own player's points are predicted (TF2's appear a network
-//! update late); the line from the eye to the muzzle isn't checked and a
-//! press under 0.2 s emits only while held; no airblast (attack2); random
+//! update late); a press under 0.2 s emits only while held; no airblast (attack2); random
 //! crits are off; the fades run on each machine's own clock from the
 //! burst's first tick (TF2 re-sends the volumes every tick); Pyros aren't immune to afterburn (no classes on the victims);
 //! health kits and Medics don't put a burn out.
@@ -467,6 +472,40 @@ pub struct Burning {
     pub harmless: bool,
 }
 
+/// Before the frame (predicted; weapons_more.md 7.1 "Blocked at a wall"):
+/// a drawn Flame Thrower whose emission is due with attack held tests the
+/// line from the eye to the fixed point `origin` (40 forward, 5 right, 0
+/// up in the eye's frame, at any stance and pitch) against the world (what
+/// can't be damaged: solid, characters aside); blocked, the frame sees no
+/// attack that tick, so nothing happens at all: no point, no ammo, the
+/// burst never starts (no stream, no start or loop sound), and one firing
+/// ends at that emission as a release does. The first clear tick with
+/// attack held starts it as from idle. Off emission ticks (a burst's
+/// odd ticks) nothing is tested.
+#[allow(clippy::type_complexity)]
+pub fn blocked(
+    mut owners: Query<(&Inventory, &mut Intent, &Transform, Option<&MovementState>, Option<&Health>)>,
+    guns: Query<(&Tf2Flame, &chimera_sim::weapon::WeaponState)>,
+    world: FlameWorld,
+    clock: Res<SimClock>,
+) {
+    for (inv, mut intent, at, state, health) in &mut owners {
+        if !intent.fire || health.is_some_and(|h| h.current <= 0.0) {
+            continue;
+        }
+        let Some((f, st)) = inv.active.and_then(|w| guns.get(w).ok()) else { continue };
+        if st.next_primary > clock.now + 1e-5 {
+            continue;
+        }
+        let eye = at.translation + state.map_or(Vec3::ZERO, |s| s.eye_offset);
+        let aim = aim_of(intent.yaw, intent.pitch);
+        let to = eye + (aim * Vec3::NEG_Z * f.params.origin[0] + aim * Vec3::X * f.params.origin[1]) * U;
+        if world.line_blocked(eye, to) {
+            intent.fire = false;
+        }
+    }
+}
+
 /// Whether a gun is flaming at `now`: its last round at most an interval
 /// (and a tick of slack) old, its interval rounded up to whole ticks.
 fn flaming(gun: &Tf2Gun, trigger: Option<&Trigger>, now: f64, dt: f64) -> bool {
@@ -676,6 +715,18 @@ impl FlameWorld<'_, '_> {
             let body = self.colliders.get(e).map_or(e, |o| o.body);
             !self.characters.contains(body)
         })
+    }
+
+    /// Whether the line from `from` to `to` meets something solid that
+    /// isn't a character (the Flame Thrower's wall test).
+    pub fn line_blocked(&self, from: Vec3, to: Vec3) -> bool {
+        let Ok((dir, length)) = Dir3::new_and_length(to - from) else { return false };
+        let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
+        let through = |e: Entity| {
+            let body = self.colliders.get(e).map_or(e, |o| o.body);
+            !self.characters.contains(body)
+        };
+        self.spatial.cast_ray_predicate(from, dir, length, true, &filter, &through).is_some()
     }
 
     /// Whether `at` is in the map's water.

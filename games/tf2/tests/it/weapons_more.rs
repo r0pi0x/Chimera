@@ -344,7 +344,7 @@ fn a_sticky_drags_in_the_air_29c_29d() {
     }
     let spin = still[0].1.to_array().map(f32::to_degrees);
     assert!((spin[0] - 1200.0).abs() < 0.1 && spin[1] == 0.0, "(1200, 2r, 0): {spin:?}");
-    let drag = chimera_sim::weapon::flight::DragParams { lin: [1.43e-6, 1.41e-6, 1.45e-6], ang: [7.27e-7, 7.36e-7, 7.3e-7], per: 0.015 }.drag(U);
+    let drag = chimera_sim::weapon::flight::DragParams { lin: [1.43e-6, 1.41e-6, 1.45e-6], ang: [7.27e-7, 7.36e-7, 7.3e-7], per: 0.015, inertia: None }.drag(U);
     let fly = sticky_flight(2.0, 20);
     for w in fly.windows(2) {
         let ((v0, s0, r0), (v1, s1, _)) = (w[0], w[1]);
@@ -358,10 +358,12 @@ fn a_sticky_drags_in_the_air_29c_29d() {
 }
 
 /// Tests 28, 29: tapped, 900 forward; held 2 s, 1650; held on, it fires by
-/// itself at 4 s at 2400.
+/// itself at 4 s at 2400 forward + 200 up, capped to 2000 on the vector's
+/// length (5.1): 2400 x 2000 / 2408.3 forward.
 #[test]
 fn the_sticky_charge_sets_its_speed_28_29() {
-    for (hold, want) in [(1u64, 900.0), (133, 1650.0), (400, 2400.0)] {
+    let full = 2400.0 * 2000.0 / 2400f32.hypot(200.0);
+    for (hold, want) in [(1u64, 900.0), (133, 1650.0), (400, full)] {
         let mut sim = sim();
         let (p, _) = holding(&mut sim, greybox::SPAWNS[0], STICKY_LAUNCHER);
         let mut launched = None;
@@ -386,6 +388,103 @@ fn the_sticky_charge_sets_its_speed_28_29() {
         assert_eq!(st.len(), 1);
         let fwd = -st[0].1.velocity.z / U;
         assert!((fwd - want).abs() < want * 0.02, "held {hold}: {fwd}, want {want}");
+    }
+}
+
+/// Test 29e: a full-charge sticky aimed 10° up, ρ = 2, leaves at exactly
+/// 2000 units/s along the uncapped 2400 forward + 200 up (its jitter
+/// aside), and after its first tick's gravity and drag is at ~1984.7.
+#[test]
+fn a_full_charge_sticky_leaves_at_2000_29e() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0] + Vec3::Y * 3.0, STICKY_LAUNCHER);
+    let pitch = 10f32.to_radians();
+    let mut first = None;
+    for k in 0..300u64 {
+        run(&mut sim, p, 1, |s, _| {
+            s.intent(p).fire = true;
+            s.intent(p).yaw = 0.0;
+            s.intent(p).pitch = pitch;
+        });
+        let st = stickies(&mut sim, p);
+        if let Some((_, f)) = st.first() {
+            assert!(k > 250, "a full charge: launched at {k}");
+            first = Some(f.clone());
+            break;
+        }
+    }
+    let f = first.expect("launched by itself at 4 s");
+    let ticks = f.ticks;
+    let mut v = f.velocity / U;
+    if ticks == 1 {
+        // Seen after its first move: undo gravity and the drag's share
+        // only roughly; the check below is on the move's result.
+        assert!((v.length() - 1984.7).abs() < 3.0, "after the first tick: {}", v.length());
+        v += Vec3::Y * 800.0 * TICK_INTERVAL as f32;
+    } else {
+        assert_eq!(ticks, 0);
+        assert!((v.length() - 2000.0).abs() < 0.5, "launched at {}", v.length());
+        run(&mut sim, p, 1, |s, _| s.intent(p).fire = false);
+        let after = stickies(&mut sim, p)[0].1.velocity.length() / U;
+        assert!((after - 1984.7).abs() < 3.0, "after the first tick's gravity and drag: {after}");
+    }
+    // Its direction: the uncapped vector's (up to the ±10 jitter).
+    let (fwd, up) = (Vec3::new(0.0, pitch.sin(), -pitch.cos()), Vec3::new(0.0, pitch.cos(), pitch.sin()));
+    let want = (fwd * 2400.0 + up * 200.0).normalize();
+    assert!(v.normalize().angle_between(want) < 0.4f32.to_radians(), "{v} vs {want}");
+}
+
+/// Tests 29f, 29g in flight: a grenade's spin precesses in its body
+/// (inertia (0.288, 1, 1)): with no air ω_x stays and (ω_y, ω_z) turns
+/// by n atan(φ) a tick, n = 1 + floor(|ω| dt / 4.775°), φ = 0.712 ω_x dt
+/// / n; with ρ = 2 each tick is the drag from its start, then that.
+#[test]
+fn a_grenade_s_spin_precesses_in_flight_29f_29g() {
+    use chimera_sim::weapon::flight::{DragParams, precess};
+    let dt = TICK_INTERVAL as f32;
+    for rho in [0.0f32, 2.0] {
+        let mut sim = sim();
+        let words: Vec<String> = ["tf2:air_density".to_string(), rho.to_string()].into();
+        chimera_core::console::execute(sim.app.world_mut(), &words, 0);
+        let (p, _) = holding(&mut sim, greybox::SPAWNS[0] + Vec3::Y * 3.0, GRENADE_LAUNCHER);
+        let mut seen: Vec<Vec3> = Vec::new();
+        for k in 0..30u64 {
+            run(&mut sim, p, 1, |s, _| {
+                s.intent(p).fire = k == 0;
+                s.intent(p).yaw = 0.0;
+                s.intent(p).pitch = 30f32.to_radians();
+            });
+            let mut q = sim.app.world_mut().query::<&Flyer>();
+            if let Some(f) = q.iter(sim.app.world()).find(|f| f.owner == Some(p) && f.weapon == GRENADE_LAUNCHER && f.ticks > 0) {
+                seen.push(f.spin);
+            }
+        }
+        assert!(seen.len() >= 10, "flew: {}", seen.len());
+        let drag = DragParams { lin: [0.75e-6, 1.91e-6, 1.90e-6], ang: [9.45e-7, 3.98e-7, 3.98e-7], per: 0.015, inertia: Some([0.288, 1.0, 1.0]) }
+            .drag(U);
+        let mut turned = 0.0;
+        for w in seen.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if rho == 0.0 {
+                // ω_x (the engine's x, the long axis) unchanged; the rest
+                // turned by n atan(φ) and grown by (1 + φ²)^(n/2).
+                assert!((b.x - a.x).abs() < 1e-4, "{a} -> {b}");
+                let n = 1.0 + (a.length() * dt * 12.0).floor();
+                let phi = 0.712 * a.x * dt / n;
+                let (pa, pb) = (a.yz(), b.yz());
+                let ang = pa.angle_to(pb).abs();
+                assert!((ang - n * phi.atan()).abs() < 1e-4, "turned {ang}, want {}", n * phi.atan());
+                assert!((pb.length() / pa.length() - (1.0 + phi * phi).powf(n / 2.0)).abs() < 1e-5);
+                turned += ang;
+            } else {
+                let f = rho * dt * drag.ang.dot(a.abs());
+                let want = precess(a * (1.0 - f), drag.inertia.unwrap(), a.length(), dt);
+                assert!((b - want).length() < 1e-4, "{a} -> {b}, want {want}");
+            }
+        }
+        if rho == 0.0 {
+            assert!(turned > 1.0, "it precessed: {turned} rad");
+        }
     }
 }
 

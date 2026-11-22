@@ -495,3 +495,146 @@ fn others_hear_the_burst_and_its_fades_14_2() {
     assert!(heard.stopped(START) && heard.stopped(LOOP) && heard.stopped(PILOT), "{heard:#?}");
     assert!(heard.played(END).is_some() && heard.played(PILOT).is_some(), "{heard:#?}");
 }
+
+/// A wall (static, solid) whose near face is the plane z = `z` (engine
+/// space), facing +Z, 20 m wide and 10 m high around `around`.
+fn wall_at(sim: &mut Sim, around: Vec3, z: f32) -> Entity {
+    use avian3d::prelude::{Collider, RigidBody};
+    let c = Vec3::new(around.x, around.y, z - 0.5);
+    sim.app.world_mut().spawn((RigidBody::Static, Collider::cuboid(20.0, 10.0, 1.0), Transform::from_translation(c))).id()
+}
+
+/// The eye of `p` (engine space).
+fn eye_of(sim: &Sim, p: Entity) -> Vec3 {
+    let w = sim.app.world();
+    w.get::<Transform>(p).unwrap().translation + w.get::<chimera_core::core::MovementState>(p).map_or(Vec3::ZERO, |s| s.eye_offset)
+}
+
+/// What holding attack `n` ticks did: (points made, ammo used, flaming at
+/// the end, the start sound played).
+fn hold_fire(sim: &mut Sim, p: Entity, w: Entity, n: usize, yaw: f32, pitch: f32, crouch: bool) -> (usize, u32, bool, bool) {
+    let clip = sim.app.world().get::<weapon::Magazine>(w).unwrap().clip;
+    let mut shots = sim.app.world().resource::<Messages<weapon::WeaponEvent>>().get_cursor_current();
+    let mut ears = Ears::new(&sim.app);
+    let (mut made, mut started) = (0, false);
+    for _ in 0..n {
+        {
+            let mut i = sim.intent(p);
+            (i.fire, i.yaw, i.pitch, i.crouch) = (true, yaw, pitch, crouch);
+        }
+        sim.ticks(1);
+        made += shots
+            .read(sim.app.world().resource::<Messages<weapon::WeaponEvent>>())
+            .filter(|e| e.owner == p && matches!(e.kind, weapon::WeaponEventKind::Fired { .. }))
+            .count();
+        started |= ears.read(&sim.app).played(START).is_some();
+    }
+    let used = clip - sim.app.world().get::<weapon::Magazine>(w).unwrap().clip;
+    (made, used, sim.app.world().get::<Tf2Flame>(w).unwrap().flaming, started)
+}
+
+/// A Pyro (crouched or not) settled at the spawn, looking along `yaw`,
+/// `pitch`, a wall `d` units from his eye along -Z.
+fn pyro_at_wall(d: f32, yaw: f32, pitch: f32, crouch: bool) -> (Sim, Entity, Entity) {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[1], FLAMETHROWER);
+    for _ in 0..40 {
+        {
+            let mut i = sim.intent(p);
+            (i.fire, i.yaw, i.pitch, i.crouch) = (false, yaw, pitch, crouch);
+        }
+        sim.ticks(1);
+    }
+    let eye = eye_of(&sim, p);
+    wall_at(&mut sim, eye, eye.z - d * U);
+    sim.ticks(2);
+    (sim, p, w)
+}
+
+/// weapons_more.md test 46b: facing a flat wall, the eye 39.5 units from
+/// it (standing or crouched), holding attack a second does nothing at all
+/// (no point, no ammo, idle, no start sound: the line from the eye to 40
+/// forward, 5 right is blocked); at 40.5 it fires normally.
+#[test]
+fn a_pyro_at_a_wall_does_nothing_46b() {
+    for crouch in [false, true] {
+        let (mut sim, p, w) = pyro_at_wall(39.5, 0.0, 0.0, crouch);
+        let (made, used, flaming, started) = hold_fire(&mut sim, p, w, 67, 0.0, 0.0, crouch);
+        assert_eq!((made, used, flaming, started), (0, 0, false, false), "blocked at 39.5 (crouched {crouch})");
+        let (mut sim, p, w) = pyro_at_wall(40.5, 0.0, 0.0, crouch);
+        let (made, used, flaming, started) = hold_fire(&mut sim, p, w, 67, 0.0, 0.0, crouch);
+        assert!(made >= 30 && used >= 8 && flaming && started, "fires at 40.5 (crouched {crouch}): {made} {used} {flaming} {started}");
+    }
+}
+
+/// Test 46c: pitched ±30° the wall blocks at 34.5 and not at 35.5 (40 cos
+/// 30°: no vertical offset); turned 40° with the right side toward the
+/// wall, at 33.5 and not 34.5 (40 cos 40° + 5 sin 40° = 33.9).
+#[test]
+fn the_wall_test_follows_pitch_and_the_right_offset_46c() {
+    let turned = [40f32, -40.0]
+        .map(f32::to_radians)
+        .into_iter()
+        .find(|&y| (chimera_sim::weapon::aim_of(y, 0.0) * Vec3::X).z < 0.0)
+        .expect("one turn has the right side toward -Z");
+    for (yaw, pitch, blocked, clear) in [
+        (0.0, 30f32.to_radians(), 34.5, 35.5),
+        (0.0, -30f32.to_radians(), 34.5, 35.5),
+        (turned, 0.0, 33.5, 34.5),
+    ] {
+        let (mut sim, p, w) = pyro_at_wall(blocked, yaw, pitch, false);
+        let (made, ..) = hold_fire(&mut sim, p, w, 30, yaw, pitch, false);
+        assert_eq!(made, 0, "blocked at {blocked} (yaw {yaw}, pitch {pitch})");
+        let (mut sim, p, w) = pyro_at_wall(clear, yaw, pitch, false);
+        let (made, ..) = hold_fire(&mut sim, p, w, 30, yaw, pitch, false);
+        assert!(made >= 14, "fires at {clear} (yaw {yaw}, pitch {pitch}): {made}");
+    }
+}
+
+/// Test 46d: firing, then a wall comes within the line: the first
+/// emission blocked ends the burst in its tick as a release does (no
+/// point, no ammo for it, the end sound); with the line clear again and
+/// attack still held it restarts at once (a point, the start sound).
+#[test]
+fn a_burst_blocked_at_a_wall_ends_and_restarts_when_clear_46d() {
+    let (mut sim, p, w) = pyro_at_wall(60.0, 0.0, 0.0, false);
+    let (made, _, flaming, started) = hold_fire(&mut sim, p, w, 20, 0.0, 0.0, false);
+    assert!(made >= 9 && flaming && started, "firing: {made}");
+    let eye = eye_of(&sim, p);
+    let near = wall_at(&mut sim, eye, eye.z - 39.0 * U);
+    let mut shots = sim.app.world().resource::<Messages<weapon::WeaponEvent>>().get_cursor_current();
+    let mut ears = Ears::new(&sim.app);
+    let mut log = Vec::new();
+    for _ in 0..12 {
+        sim.intent(p).fire = true;
+        sim.ticks(1);
+        let fired = shots
+            .read(sim.app.world().resource::<Messages<weapon::WeaponEvent>>())
+            .any(|e| e.owner == p && matches!(e.kind, weapon::WeaponEventKind::Fired { .. }));
+        let heard = ears.read(&sim.app);
+        let clip = sim.app.world().get::<weapon::Magazine>(w).unwrap().clip;
+        log.push((fired, sim.app.world().get::<Tf2Flame>(w).unwrap().flaming, heard.played(END).is_some(), clip));
+    }
+    let stop = log.iter().position(|l| !l.1).unwrap_or_else(|| panic!("never stopped: {log:?}"));
+    assert!(stop <= 3, "at the first emission blocked (the wall seen from the next tick): {log:?}");
+    assert!(log[stop].2, "the end sound in that tick, as a release: {log:?}");
+    assert!(log[stop..].iter().all(|l| !l.0 && !l.1 && l.3 == log[stop].3), "no point, no ammo after: {log:?}");
+    // Clear again, attack held: it restarts as from idle.
+    sim.app.world_mut().despawn(near);
+    let mut ears = Ears::new(&sim.app);
+    let mut restarted = None;
+    for k in 0..6 {
+        sim.intent(p).fire = true;
+        sim.ticks(1);
+        let fired = shots
+            .read(sim.app.world().resource::<Messages<weapon::WeaponEvent>>())
+            .any(|e| e.owner == p && matches!(e.kind, weapon::WeaponEventKind::Fired { .. }));
+        let started = ears.read(&sim.app).played(START).is_some();
+        if fired {
+            assert!(started, "the start sound with the first point");
+            restarted = Some(k);
+            break;
+        }
+    }
+    assert!(restarted.is_some_and(|k| k <= 2), "restarted on the first clear tick: {restarted:?}");
+}

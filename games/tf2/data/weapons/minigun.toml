@@ -84,5 +84,8 @@ tracer = "bullet_tracer01"
 tracer_every = 4
 while_firing = [
     { system = "muzzle_minigun_constant", at = "muzzle" },
-    { system = "eject_minigunbrass", at = "eject_brass" },
+    # The casings leave to the right, square to the aim and ~23 degrees up
+    # (the system's own 100-200 units/s along its x: 150-180 measured), born
+    # ~28 right of and 41 below the eye (particles.md Open questions 6).
+    { system = "eject_minigunbrass", at = "eject_brass", up = 23.0, from_eye = [0.0, 28.0, -41.0] },
 ]

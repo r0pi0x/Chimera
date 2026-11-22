@@ -6,7 +6,11 @@
 //! (a physics engine's air drag on a body: each tick, after gravity, the
 //! velocity scaled by 1 − ρ Σ c_i |v_i| and the spin by 1 − ρ Σ a_i |ω_i|,
 //! v and ω in the body's own axes, ρ the game's air density; TF2's,
-//! weapons_more.md 4.4).
+//! weapons_more.md 4.4) with, for a body whose inertia differs per axis
+//! (`DragParams::inertia`), the physics engine's turning of ω in the body
+//! (torque-free precession, `precess`: after the drag, in 1 + floor(|ω| dt /
+//! (1/12 rad)) forward-Euler sub-steps from the tick's starting |ω|, whose
+//! growth of |ω| is part of how TF2's grenade tumbles, weapons_more.md 4.4).
 //!
 //! The data's vectors are in its own axes, z up and right-handed (x
 //! forward, y left, z up for a Source model): the engine's (x, z, −y).
@@ -18,8 +22,8 @@
 //! Known shortcuts: the body's axes are its drawn model's (`Flyer::turn`
 //! from its model's nose); without the model (a headless test) they are
 //! its launch's facing (−Z forward), so a model whose drag differs per axis
-//! drags as if turned. No speed caps (a physics engine's, specs/tf2/
-//! weapons_more.md Open questions 23).
+//! drags as if turned. No speed caps here (a physics engine's, specs/tf2/
+//! weapons_more.md 5.1: TF2's sticky caps its own launch, `sticky.rs`).
 
 use bevy::prelude::*;
 use serde::Deserialize;
@@ -74,6 +78,11 @@ pub struct DragParams {
     #[serde(default)]
     pub ang: [f32; 3],
     pub per: f32,
+    /// The body's moments of inertia about its axes (relative; none: the
+    /// same about every axis, so ω keeps its direction in the body):
+    /// TF2's grenade (0.288, 1, 1), its long axis x (weapons_more.md 4.4).
+    #[serde(default)]
+    pub inertia: Option<[f32; 3]>,
 }
 
 impl DragParams {
@@ -84,32 +93,62 @@ impl DragParams {
         AirDrag {
             lin: Vec3::new(l[0], l[2], l[1]) / (self.per * unit),
             ang: Vec3::new(a[0], a[2], a[1]) / self.per * (180.0 / std::f32::consts::PI),
+            inertia: self.inertia.map(|i| Vec3::new(i[0], i[2], i[1])),
         }
     }
 }
 
 /// A flyer's air drag (`Flyer::drag`): per second, per m/s along each of
 /// its model's axes (`lin`) and per rad/s about each (`ang`), × the air
-/// density.
+/// density; `inertia` its moments about its axes (`DragParams::inertia`,
+/// the engine's axes).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct AirDrag {
     pub lin: Vec3,
     pub ang: Vec3,
+    pub inertia: Option<Vec3>,
+}
+
+/// The physics engine's sub-step of a body's rotation: at most this many
+/// radians of |ω| dt a sub-step (1/12 rad, 4.775°; weapons_more.md 4.4).
+pub const PRECESSION_STEP: f32 = 1.0 / 12.0;
+
+/// `spin` (rad/s, the body's axes) after `dt` of torque-free rotation of
+/// a body with moments `inertia` (its axes), as the physics engine steps
+/// it: n = 1 + floor(|ω| dt / `PRECESSION_STEP`) forward-Euler sub-steps
+/// of Euler's equations, each from the sub-step's old ω (so |ω| grows by
+/// about θ² / 2n a tick: the engine's, kept; weapons_more.md 4.4, test
+/// 29f). `speed` is |ω| at the tick's start (before its drag).
+pub fn precess(spin: Vec3, inertia: Vec3, speed: f32, dt: f32) -> Vec3 {
+    let n = 1 + (speed * dt / PRECESSION_STEP).floor().max(0.0) as u32;
+    let h = dt / n as f32;
+    let i = inertia.max(Vec3::splat(1e-9));
+    let k = Vec3::new((i.y - i.z) / i.x, (i.z - i.x) / i.y, (i.x - i.y) / i.z);
+    let mut w = spin;
+    for _ in 0..n {
+        w += Vec3::new(k.x * w.y * w.z, k.y * w.z * w.x, k.z * w.x * w.y) * h;
+    }
+    w
 }
 
 impl AirDrag {
     /// One step of `dt` at density `rho` for a body turned `rotation`
     /// going `velocity` (world, m/s; gravity already applied) spinning
     /// `spin` (rad/s, its own axes): both scaled down, their directions
-    /// kept.
+    /// kept; then, with `inertia`, the spin precessed (`precess`, its
+    /// sub-steps from the tick's starting spin; also without air).
     pub fn step(&self, velocity: Vec3, spin: Vec3, rotation: Quat, rho: f32, dt: f32) -> (Vec3, Vec3) {
-        if rho <= 0.0 {
-            return (velocity, spin);
+        let (mut v, mut w) = (velocity, spin);
+        if rho > 0.0 {
+            let local = rotation.inverse() * velocity;
+            let f_lin = rho * dt * self.lin.dot(local.abs());
+            let f_ang = rho * dt * self.ang.dot(spin.abs());
+            (v, w) = (velocity * (1.0 - f_lin).max(0.0), spin * (1.0 - f_ang).max(0.0));
         }
-        let local = rotation.inverse() * velocity;
-        let f_lin = rho * dt * self.lin.dot(local.abs());
-        let f_ang = rho * dt * self.ang.dot(spin.abs());
-        (velocity * (1.0 - f_lin).max(0.0), spin * (1.0 - f_ang).max(0.0))
+        if let Some(i) = self.inertia {
+            w = precess(w, i, spin.length(), dt);
+        }
+        (v, w)
     }
 }
 
@@ -157,7 +196,66 @@ mod tests {
     const U: f32 = 0.0254;
 
     fn sticky() -> AirDrag {
-        DragParams { lin: [1.43e-6, 1.41e-6, 1.45e-6], ang: [7.27e-7, 7.36e-7, 7.3e-7], per: 0.015 }.drag(U)
+        DragParams { lin: [1.43e-6, 1.41e-6, 1.45e-6], ang: [7.27e-7, 7.36e-7, 7.3e-7], per: 0.015, inertia: None }.drag(U)
+    }
+
+    fn grenade() -> AirDrag {
+        DragParams { lin: [0.75e-6, 1.91e-6, 1.90e-6], ang: [9.45e-7, 3.98e-7, 3.98e-7], per: 0.015, inertia: Some([0.288, 1.0, 1.0]) }.drag(U)
+    }
+
+    /// The data's (x, y, z) degrees/s as the engine's rad/s, and back.
+    fn eng(d: [f32; 3]) -> Vec3 {
+        Vec3::new(d[0], d[2], -d[1]) * std::f32::consts::PI / 180.0
+    }
+    fn data(w: Vec3) -> [f32; 3] {
+        [w.x, -w.z, w.y].map(f32::to_degrees)
+    }
+
+    /// Test 29f: no air, ω (1200, 107.9, −24.5): 4 sub-steps, ω_x kept,
+    /// (ω_y, ω_z) turned −12.81° (+y toward −z), its length × 1.00626.
+    #[test]
+    fn a_grenade_precesses_in_4_sub_steps_29f() {
+        let w0 = [1200.0, 107.9, -24.5];
+        let (_, w) = grenade().step(Vec3::X, eng(w0), Quat::IDENTITY, 0.0, 0.015);
+        let w = data(w);
+        assert!((w[0] - 1200.0).abs() < 1e-2, "{w:?}");
+        let (a0, a1) = (w0[2].atan2(w0[1]), w[2].atan2(w[1]));
+        assert!(((a1 - a0).to_degrees() + 12.81).abs() < 0.02, "turned {}", (a1 - a0).to_degrees());
+        let (l0, l1) = (w0[1].hypot(w0[2]), w[1].hypot(w[2]));
+        assert!((l1 / l0 - 1.00626).abs() < 2e-5, "× {}", l1 / l0);
+    }
+
+    /// The sub-steps by |ω| (measured: 4 at 1205, 5 up to 1590, 6 from
+    /// 1594, 7 up to 2227, 8 from 2233 degrees/s) and the growth of ω⊥ a
+    /// tick with no drag at ω_x 1200 (measured × 1.00626, 1.00502,
+    /// 1.00418, 1.00358, 1.00313 at n = 4-8).
+    #[test]
+    fn the_sub_steps_and_their_growth_by_n() {
+        for (deg, n) in [(1205.0f32, 4u32), (1590.0, 5), (1594.0, 6), (2227.0, 7), (2233.0, 8)] {
+            assert_eq!(1 + (deg.to_radians() * 0.015 / PRECESSION_STEP).floor() as u32, n, "{deg}");
+        }
+        for (total, want) in [(1205.0f32, 1.00626f32), (1450.0, 1.00502), (1800.0, 1.00418), (2100.0, 1.00358), (2400.0, 1.00313)] {
+            let perp = (total * total - 1200.0 * 1200.0).sqrt();
+            let w0 = [1200.0, perp, 0.0];
+            let (_, w) = grenade().step(Vec3::X, eng(w0), Quat::IDENTITY, 0.0, 0.015);
+            let w = data(w);
+            let grew = w[1].hypot(w[2]) / perp;
+            assert!((grew - want).abs() < 3e-5, "|ω| {total}: × {grew}, want {want}");
+        }
+    }
+
+    /// Test 29g: ρ = 2, ω (1195.0, −2302.3, 521.6): drag f = 0.00451 from
+    /// the tick's start, then 9 sub-steps; ω_x → 1189.6.
+    #[test]
+    fn a_grenade_drags_then_precesses_29g() {
+        let w0 = [1195.0, -2302.3, 521.6];
+        let s = eng(w0);
+        assert_eq!(1 + (s.length() * 0.015 / PRECESSION_STEP).floor() as u32, 9);
+        let (_, w) = grenade().step(Vec3::X, s, Quat::IDENTITY, 2.0, 0.015);
+        let w = data(w);
+        assert!((w[0] - 1189.6).abs() < 0.05, "{w:?}");
+        let f = 2.0 * (9.45e-7 * 1195.0 + 3.98e-7 * (2302.3 + 521.6));
+        assert!((f - 0.00451f32).abs() < 1e-5);
     }
 
     /// specs/tf2/weapons_more.md 4.1, test 29b: r = 187 drawn, (600, r, 0)
@@ -208,6 +306,9 @@ mod tests {
     fn no_air_no_drag_29d() {
         let w = Vec3::new(1.0, 2.0, 3.0);
         assert_eq!(sticky().step(Vec3::splat(20.0), w, Quat::IDENTITY, 0.0, 0.015), (Vec3::splat(20.0), w));
+        // A sticky's ω keeps its direction in the body (no inertia given).
+        let (_, s) = sticky().step(Vec3::X, eng([1200.0, 1600.0, 0.0]), Quat::IDENTITY, 2.0, 0.015);
+        assert!((s.normalize() - eng([1200.0, 1600.0, 0.0]).normalize()).length() < 1e-6);
     }
 
     #[test]

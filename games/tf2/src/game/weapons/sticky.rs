@@ -12,7 +12,9 @@
 //!   round fired is a sticky (Chimera's flyer, gravity 800) from 16
 //!   forward, 8 right and 6 down of the eye at that speed along the aim
 //!   and `up_speed` (200) up, plus up to `jitter` (10) along the aim's
-//!   right and up at random (`launch_random`, from the shot's seed),
+//!   right and up at random (`launch_random`, from the shot's seed), the
+//!   whole vector's length capped at `max_speed` (2000, the physics
+//!   engine's, its direction kept: a full charge leaves at 2000),
 //!   through teammates, tumbling at `spin` ((600, a whole number in
 //!   ±1200, 0) degrees/s about its own axes added twice: (1200, 2r, 0),
 //!   `flight::LaunchSpin`) until it sticks, losing speed and spin to the
@@ -97,6 +99,12 @@ pub struct StickyParams {
     pub speed_min: f32,
     pub speed_max: f32,
     pub up_speed: f32,
+    /// The physics engine's speed cap on the launched body (units/s): the
+    /// launch velocity's length at most this, its direction kept (5.1:
+    /// 2000, so a full charge, 2400 + 200 up, leaves at 2000); none: no
+    /// cap.
+    #[serde(default)]
+    pub max_speed: Option<f32>,
     pub charge_time: f32,
     pub gravity: f32,
     pub offset: [f32; 3],
@@ -345,7 +353,11 @@ pub fn launch(
         let dir = aim * Vec3::NEG_Z;
         let r = launch_random(seed);
         let (right, up) = (p.jitter * r[0], p.jitter * r[1]);
-        let velocity = (dir * gun.speed + aim * Vec3::X * right + aim * Vec3::Y * (p.up_speed + up)) * U;
+        let mut velocity = dir * gun.speed + aim * Vec3::X * right + aim * Vec3::Y * (p.up_speed + up);
+        if let Some(cap) = p.max_speed {
+            velocity = velocity.clamp_length_max(cap);
+        }
+        let velocity = velocity * U;
         let mut f = Flyer::new(weapon.id, Some(e.owner), velocity, &clock);
         f.spin = p.spin.map_or(Vec3::ZERO, |s| s.draw(seed));
         f.drag = p.drag.map(|d| d.drag(U));

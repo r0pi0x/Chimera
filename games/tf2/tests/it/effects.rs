@@ -287,6 +287,42 @@ fn a_received_stickys_pulse_starts_its_arm_time_after_it_arrived() {
     }
 }
 
+/// particles.md Open questions 6 (measured): another player's Minigun
+/// ejects its brass to his right, square to the aim and ~23° up (the
+/// system's x, along which its 100-200 units/s go: 150-180 seen), born
+/// 28 right of and 41 below his eye, not at the held model's attachment.
+#[test]
+fn others_minigun_brass_leaves_right_and_up_from_beside_the_eye() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), MINIGUN);
+    for name in ["eject_brass", "muzzle"] {
+        sim.app.world_mut().spawn((HeldAttachment { owner: p, index: 0, name: name.into() }, GlobalTransform::from_translation(Vec3::new(0.3, 1.2, -0.5))));
+    }
+    let yaw = 0.7f32;
+    let (starts, ..) = collect(&mut sim, 120, |s, _| {
+        let mut i = s.intent(p);
+        (i.fire, i.yaw, i.pitch) = (true, yaw, 0.0);
+    });
+    let brass: Vec<_> = starts.iter().filter(|s| s.name == "eject_minigunbrass").collect();
+    assert_eq!(brass.len(), 1, "{starts:?}");
+    let b = brass[0];
+    let aim = chimera_sim::weapon::aim_of(yaw, 0.0);
+    let (right, fwd) = (aim * Vec3::X, aim * Vec3::NEG_Z);
+    let f = b.forward.normalize();
+    let up = f.y.asin().to_degrees();
+    assert!((20.0..=25.0).contains(&up), "{up}° up");
+    let flat = Vec3::new(f.x, 0.0, f.z).normalize();
+    assert!(flat.angle_between(right).to_degrees() < 5.0, "square to the aim, to the right: {f}");
+    assert!(flat.dot(fwd).abs() < 0.09);
+    let w = sim.app.world();
+    let eye = w.get::<Transform>(p).unwrap().translation + w.get::<chimera_core::core::MovementState>(p).unwrap().eye_offset;
+    let d = (b.position - eye) / 0.0254;
+    assert!((d.dot(right) - 28.0).abs() < 0.5 && (d.y + 41.0).abs() < 0.5 && d.dot(fwd).abs() < 0.5, "from the eye: {d}");
+    // The muzzle's system stays at its attachment.
+    let m = starts.iter().find(|s| s.name == "muzzle_minigun_constant").expect("the constant flash");
+    assert!((m.position - Vec3::new(0.3, 1.2, -0.5)).length() < 1e-4, "{m:?}");
+}
+
 #[test]
 fn others_see_the_backblast_and_the_shooter_never() {
     let run = |local: bool| {
