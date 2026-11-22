@@ -3,7 +3,9 @@
 //! never under a running cargo; a slot's trim takes them before built
 //! crates), `jobserver-heal.sh` (lost tokens put back) and `disk-free.sh`
 //! (the floor), `wait-for` (named waits with a timeout, logged) and the
-//! hooks' pass stamps (`.githooks/stamps.sh`: the key, merged passes). Unix only
+//! hooks' pass stamps (`.githooks/stamps.sh`: the key, merged passes), and
+//! `post-push-tests.sh`'s queue (a verdict under frequent pushes, a stale
+//! lock taken over, starvation reported). Unix only
 //! (the tools are bash); they run on temporary folders, never the repo's.
 
 #![cfg(unix)]
@@ -382,7 +384,227 @@ fn sourcing_agent_env_leaves_a_running_sccache_server_alone() {
     let calls = fs::read_to_string(&log).unwrap_or_default();
     server.kill().ok();
     server.wait().ok();
+    // The jobserver holder agent-env.sh started for this test's FIFO: left
+    // running, it held whatever it inherited (it once held post-push's lock
+    // for six hours).
+    if let Ok(pid) = fs::read_to_string(root.join("js/holder.pid")) {
+        Command::new("kill").arg(pid.trim()).status().ok();
+    }
     fs::remove_dir_all(&root).ok();
     assert!(alive, "the running server was stopped: {said}");
     assert_eq!(calls, "", "sccache was called (stop or start) while a server listened: {said}");
+}
+
+/// A wall-clock pause while real processes (the post-push runs) work.
+fn pause(ms: u64) {
+    std::thread::sleep(Duration::from_millis(ms));
+}
+
+/// A post-push setup on temporary folders: a bare origin, its clone (the
+/// main checkout, holding `tools/post-push-tests.sh`, the real
+/// `disk-free.sh` and stubs of the rest) and a fake cargo whose `test` takes
+/// `FAKE_SLOW` seconds and leaves a detached `sleep` behind, as a jobserver
+/// holder does.
+struct PostPush {
+    root: PathBuf,
+    main: PathBuf,
+    out: PathBuf,
+    leaks: PathBuf,
+    n: usize,
+}
+
+impl PostPush {
+    fn new(name: &str, slow: &str) -> PostPush {
+        let root = temp(name);
+        let (main, out, leaks) = (root.join("main"), root.join("out"), root.join("leaks"));
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(&out).unwrap();
+        fs::write(
+            bin.join("cargo"),
+            format!(
+                "#!/bin/sh\ncase \"$*\" in\n\
+                 \"hakari --version\"|\"nextest --version\") exit 1 ;;\n\
+                 *\"--bin affected\"*) echo --workspace ;;\n\
+                 test*) setsid sleep 120 </dev/null >/dev/null 2>&1 & echo $! >>{leaks}; sleep {slow} ;;\n\
+                 esac\nexit 0\n",
+                leaks = leaks.display()
+            ),
+        )
+        .unwrap();
+        let pp = PostPush { root, main, out, leaks, n: 0 };
+        pp.sh(&pp.root, "git init -q --bare -b main origin.git && git clone -q origin.git main 2>/dev/null");
+        let tools = pp.main.join("tools");
+        fs::create_dir_all(&tools).unwrap();
+        for f in ["post-push-tests.sh", "disk-free.sh"] {
+            fs::copy(repo().join("tools").join(f), tools.join(f)).unwrap();
+        }
+        fs::write(tools.join("agent-slot.sh"), "#!/bin/sh\nexit 0\n").unwrap();
+        fs::write(tools.join("agent-env.sh"), "agent_run() { \"$@\"; }\n").unwrap();
+        pp.sh(&pp.root, &format!("chmod +x {0}/cargo {1}/*.sh", bin.display(), tools.display()));
+        pp.sh(&pp.main, "git add -A && git commit -qm init && git push -q origin main");
+        pp
+    }
+
+    fn sh(&self, dir: &Path, script: &str) -> String {
+        let o = self.cmd("bash").arg("-c").arg(script).current_dir(dir).output().unwrap();
+        assert!(o.status.success(), "{script}: {}", String::from_utf8_lossy(&o.stderr));
+        String::from_utf8_lossy(&o.stdout).trim().to_string()
+    }
+
+    fn cmd(&self, program: &str) -> Command {
+        let mut c = Command::new(program);
+        c.env_clear()
+            .env("PATH", format!("{}:/usr/bin:/bin", self.root.join("bin").display()))
+            .env("HOME", &self.root)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .env("CHIMERA_POST_PUSH_DIR", self.root.join("pp"))
+            .env("CHIMERA_POST_PUSH_OUT", &self.out)
+            .env("CHIMERA_POST_PUSH_POLL", "1")
+            .env("CHIMERA_PUSH_TESTS", "affected")
+            .env("CHIMERA_DISK_FLOOR_GB", "0");
+        c
+    }
+
+    /// Commits and pushes one change to main; its short hash.
+    fn push(&mut self) -> String {
+        self.n += 1;
+        self.sh(
+            &self.main,
+            &format!("echo {0} >f && git add f && git commit -qm c{0} && git push -q origin main", self.n),
+        );
+        self.sh(&self.main, "git rev-parse --short HEAD")
+    }
+
+    /// Starts `tools/post-push-tests.sh` from the main checkout, as a push does.
+    fn run(&self, i: usize) -> std::process::Child {
+        let err = File::create(self.root.join(format!("run{i}.err"))).unwrap();
+        self.cmd("bash")
+            .arg(self.main.join("tools/post-push-tests.sh"))
+            .current_dir(&self.main)
+            .stdout(std::process::Stdio::null())
+            .stderr(err)
+            .spawn()
+            .unwrap()
+    }
+
+    fn file(&self, name: &str) -> String {
+        fs::read_to_string(self.out.join(name)).unwrap_or_default()
+    }
+
+    /// Waits for every run to end (a minute at most), then checks no
+    /// leftover process holds the lock and kills them.
+    fn finish(&self, runs: Vec<std::process::Child>) -> String {
+        let up = Instant::now();
+        for mut r in runs {
+            while r.try_wait().unwrap().is_none() {
+                if up.elapsed() > Duration::from_secs(90) {
+                    r.kill().ok();
+                }
+                pause(100);
+            }
+        }
+        let lock = self.out.join(".lock");
+        let mut holders = Vec::new();
+        for pid in fs::read_to_string(&self.leaks).unwrap_or_default().split_whitespace() {
+            for fd in fs::read_dir(format!("/proc/{pid}/fd")).into_iter().flatten().flatten() {
+                if fs::read_link(fd.path()).is_ok_and(|p| p == lock) {
+                    holders.push(pid.to_string());
+                }
+            }
+            Command::new("kill").arg(pid).status().ok();
+        }
+        let errs: String = (0..8)
+            .map(|i| fs::read_to_string(self.root.join(format!("run{i}.err"))).unwrap_or_default())
+            .collect();
+        assert!(up.elapsed() < Duration::from_secs(90), "the runs never ended: {errs}");
+        assert!(holders.is_empty(), "processes a run left behind hold its lock: {holders:?}");
+        errs
+    }
+}
+
+/// Pushes arriving while a slow run tests: the run finishes and records its
+/// verdict, the waiters replace each other, and the last one tests the
+/// latest main over the whole untested range. A run started from a copy of
+/// the script that differs from the pushed one re-executes the pushed one,
+/// and nothing a run leaves behind keeps the lock (a leaked jobserver
+/// holder had starved every run for six hours).
+#[test]
+fn post_push_under_frequent_pushes_records_a_verdict_for_the_latest_main() {
+    let ok = |c: &str| Command::new(c).arg("--version").output().is_ok();
+    if !ok("flock") || !ok("git") || !ok("setsid") {
+        return;
+    }
+    let mut pp = PostPush::new("post_push_queue", "3");
+    let first = pp.push();
+    // The main checkout's copy is older than the pushed one.
+    let script = pp.main.join("tools/post-push-tests.sh");
+    let mut s = fs::read_to_string(&script).unwrap();
+    s.push_str("# an older copy\n");
+    fs::write(&script, s).unwrap();
+    let mut runs = vec![pp.run(0)];
+    let up = Instant::now();
+    while !pp.file("last.log").contains("=== the tests") {
+        assert!(up.elapsed() < Duration::from_secs(30), "the first run never reached its tests");
+        pause(50);
+    }
+    let mut last = String::new();
+    for i in 1..4 {
+        last = pp.push();
+        runs.push(pp.run(i));
+        pause(400);
+    }
+    let errs = pp.finish(runs);
+    let history = pp.file("history.txt");
+    let verdicts: Vec<String> =
+        history.lines().map(|l| l.split(' ').take(2).collect::<Vec<_>>().join(" ")).collect();
+    assert_eq!(verdicts, [format!("PASS {first}"), format!("PASS {last}")], "{history}\n{errs}");
+    assert!(errs.contains("running the pushed copy"), "{errs}");
+    let log = fs::read_dir(&pp.out)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            let n = p.file_name().unwrap().to_string_lossy().into_owned();
+            n.ends_with(".log") && n != "last.log" && fs::read_to_string(p).unwrap().contains(&format!("..{last})"))
+        })
+        .expect("the last run's log");
+    let log = fs::read_to_string(log).unwrap();
+    assert!(log.contains(&format!("({first}..{last})")), "{log}");
+    fs::remove_dir_all(&pp.root).ok();
+}
+
+/// A lock no live run holds (here an outside `flock`, as a process that
+/// inherited it): the waiting run moves it aside after two polls and
+/// tests, and the inbox gets STALE lines, for the lock and for the hours
+/// without a verdict.
+#[test]
+fn post_push_takes_a_stale_lock_over_and_reports_starvation() {
+    let ok = |c: &str| Command::new(c).arg("--version").output().is_ok();
+    if !ok("flock") || !ok("git") || !ok("setsid") {
+        return;
+    }
+    let mut pp = PostPush::new("post_push_stale", "0");
+    fs::write(pp.out.join("history.txt"), "PASS 0000000 2020-01-01T00:00Z 1m tests: x\n").unwrap();
+    let mut holder = Command::new("flock").arg(pp.out.join(".lock")).args(["sleep", "120"]).spawn().unwrap();
+    let up = Instant::now();
+    while Command::new("flock").arg("-n").arg(pp.out.join(".lock")).arg("true").status().unwrap().success() {
+        assert!(up.elapsed() < Duration::from_secs(10), "the outside lock was never taken");
+        pause(20);
+    }
+    let sha = pp.push();
+    let errs = pp.finish(vec![pp.run(0)]);
+    let holder_pid = holder.id();
+    holder.kill().ok();
+    holder.wait().ok();
+    let (history, inbox) = (pp.file("history.txt"), pp.file("inbox"));
+    assert!(history.contains(&format!("PASS {sha}")), "{history}\n{errs}");
+    assert!(inbox.contains("no post-push verdict for over"), "{inbox}");
+    assert!(inbox.contains(&format!("held by no live run but by: {holder_pid} (flock")), "{inbox}");
+    fs::remove_dir_all(&pp.root).ok();
 }

@@ -897,6 +897,7 @@ const TEST_SLEEPS: &[(&str, usize, &str)] = &[
     ("apps/ultimate_gun_game/tests/it/heavy/no_fetch_in_match.rs", 1, "the dedicated loop's frame cap"),
     ("apps/ultimate_gun_game/tests/it/heavy/pool_maps.rs", 1, "the dedicated loop's frame cap"),
     ("apps/ultimate_gun_game/tests/hl2dm/heavy/server_map_memory.rs", 1, "waits for the memory release's own thread"),
+    ("checks/tests/it/scripts.rs", 1, "paces polls of real processes: the post-push runs and an outside flock"),
     ("chimera/assets/tests/it/feedback.rs", 4, "the feedback service's real timers"),
     ("chimera/assets/tests/it/service.rs", 3, "the asset server's once-a-second manifest check and access-log flush"),
     ("chimera/client/tests/it/metrics.rs", 1, "measures a real 40 ms stall"),

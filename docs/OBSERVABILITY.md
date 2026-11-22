@@ -312,7 +312,18 @@ fetch) is fetched first.
   `cargo sweep`. Runs queue on a `flock` (`.claude/post-push/.lock`), and
   only the newest waiter keeps waiting: each waiter writes a rising token
   to `.claude/post-push/.waiting`, and an older one exits 0 when it sees a
-  newer one (the newest tests the latest main anyway). Once it has the
+  newer one (the newest tests the latest main anyway, from the last pass
+  on). A run that holds the lock is never stopped. The lock and queue are
+  the repository's common `.claude/post-push` whichever checkout's copy of
+  the script started, and a run whose copy differs from the pushed one
+  re-executes the pushed one. Nothing a run starts inherits the lock's fd
+  (`8>&-`): a jobserver holder a test left behind once inherited it and
+  starved every run for six hours. A waiter that finds the lock held by no
+  live run (`.claude/post-push/.running`: pid and start time) for two polls
+  moves it aside and appends `STALE ... held by no live run but by: <pid>`
+  to the inbox (kill that pid by hand); no verdict for
+  `CHIMERA_POST_PUSH_STALE_MIN` (120) minutes while pushes wait appends one
+  `STALE ... no post-push verdict for over ...` line. Once it has the
   lock, a run whose commit already has a result in `history.txt` exits 0
   saying so; `CHIMERA_POST_PUSH_AGAIN=1` (or a `[base]` argument) tests it
   again. Don't wait for a run with a loop that pgreps its command line

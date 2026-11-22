@@ -53,10 +53,23 @@
 # a one-line summary to .claude/post-push/last.txt (appended to
 # history.txt), and exits non-zero on a failure. One run at a time: a second
 # waits, and only the newest waiter keeps waiting (older ones exit 0, the
-# newest tests the latest main). A commit with a result in history.txt
-# isn't tested again (it exits 0 saying so) unless CHIMERA_POST_PUSH_AGAIN=1
-# or a [base] is given.
+# newest tests the latest main, from the last pass on). A run that holds the
+# lock is never stopped. The lock and the queue live in the repository's
+# common .claude/post-push whichever checkout's copy of this script started,
+# and a run whose copy differs from the pushed one re-executes the pushed
+# one (from its checkout) before testing. Nothing the run starts inherits
+# the lock (a leaked `sleep infinity` holding it starved every run for six
+# hours); a lock that no live run holds is moved aside after two polls. No
+# verdict for CHIMERA_POST_PUSH_STALE_MIN (default 120) minutes while
+# pushes wait puts one `STALE` line in the inbox. A commit with a result in
+# history.txt isn't tested again (it exits 0 saying so) unless
+# CHIMERA_POST_PUSH_AGAIN=1 or a [base] is given.
 set -u
+# Set by a run that re-executes the pushed copy of this script (it holds
+# the lock on fd 8 already); never passed on to what this run starts.
+locked=${CHIMERA_POST_PUSH_LOCKED:-}
+reexec=${CHIMERA_POST_PUSH_REEXEC:-}
+unset CHIMERA_POST_PUSH_LOCKED CHIMERA_POST_PUSH_REEXEC
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 common=$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)
 repo=$(dirname "$common")
@@ -105,22 +118,116 @@ fi
 # One run at a time, and one waiter: each run tests the newest pushed main,
 # so a waiter that a newer one has joined behind has nothing left to do.
 # Waiters register a rising token (nanoseconds) in .waiting (written whole by
-# a rename) and poll the lock; one that sees a newer token exits. No pgrep
-# of our own command line: those loops deadlocked before.
-exec 8>"$out/.lock"
-if ! flock -n 8; then
-    token=$(date +%s%N)
-    printf '%s\n' "$token" >"$out/.waiting.$$" && mv -f "$out/.waiting.$$" "$out/.waiting"
-    echo "post-push: another run is going; waiting for it (a newer waiter replaces this one)" >&2
-    newer() { local w; w=$(cat "$out/.waiting" 2>/dev/null) && [ -n "$w" ] && [ "$w" -gt "$token" ] 2>/dev/null; }
-    until flock -w "${CHIMERA_POST_PUSH_POLL:-15}" 8; do
-        newer && { echo "post-push: a newer run is waiting; it will test the latest main, so this one stops" >&2; exit 0; }
+# a rename) and poll the lock; one that sees a newer token exits. A run that
+# holds the lock is never stopped. No pgrep of our own command line: those
+# loops deadlocked before.
+# The lock is an flock on fd 8, and every process that inherits fd 8 holds it
+# too: the run closes it for all it starts (`8>&-` below), else a leftover
+# descendant (a jobserver holder, a detached git gc) keeps the lock after the
+# run and every later run waits forever. The run's pid and start time go to
+# .running; a waiter that finds the lock held by no live run for two polls
+# moves the lock file aside (under .lock.recover) and queues on a new one.
+proc_field() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f"$2"; }
+proc_start() { proc_field "$1" 20; }
+runner_alive() {
+    local pid st
+    read -r pid st _ <"$out/.running" 2>/dev/null || return 1
+    [ -n "$pid" ] && [ "$(proc_start "$pid")" = "$st" ]
+}
+lock_ino() { stat -Lc %i "/proc/$$/fd/8" 2>/dev/null; }
+mine() { # this run or one of its subshells (they have fd 8 too)
+    local p=$1
+    while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do
+        [ "$p" = $$ ] && return 0
+        p=$(proc_field "$p" 2)
     done
-    newer && { echo "post-push: a newer run is waiting; it will test the latest main, so this one stops" >&2; exit 0; }
+    return 1
+}
+lock_holders() { # the pids (and commands) other than this run's with the lock file open
+    local f p
+    for f in /proc/[0-9]*/fd/*; do
+        [ "$(readlink "$f" 2>/dev/null)" = "$out/.lock" ] || continue
+        p=${f#/proc/}; p=${p%%/*}
+        mine "$p" && continue
+        printf '%s (%s) ' "$p" "$(tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null | cut -c1-60)"
+    done
+}
+# No verdict for a long time while pushes wait: one STALE line in the inbox
+# per last verdict, so starvation gets noticed.
+stale_check() {
+    local last t pushed limit=${CHIMERA_POST_PUSH_STALE_MIN:-120} who
+    last=$(awk '$1 == "PASS" || $1 == "FAIL" { l = $0 } END { print l }' "$out/history.txt" 2>/dev/null)
+    [ -n "$last" ] || return 0
+    t=$(date -u -d "$(echo "$last" | cut -d' ' -f3)" +%s 2>/dev/null) || return 0
+    [ $(( $(date +%s) - t )) -ge $(( limit * 60 )) ] || return 0
+    pushed=$(tail -n 1 "$out/pushes.txt" 2>/dev/null | cut -d' ' -f2)
+    pushed=$(date -u -d "$pushed" +%s 2>/dev/null) || return 0
+    [ "$pushed" -gt "$t" ] || return 0
+    [ "$(cat "$out/.stale" 2>/dev/null)" = "$last" ] && return 0
+    echo "$last" >"$out/.stale"
+    if runner_alive; then
+        who="a run is going (pid, since): $(cut -d' ' -f1,3 "$out/.running")"
+    else
+        who="no live run holds the lock; it is open in: $(lock_holders)"
+    fi
+    echo "STALE $(date -u +%Y-%m-%dT%H:%MZ) no post-push verdict for over ${limit} min while pushes wait (last: $(echo "$last" | cut -d' ' -f1-3)); $who" >>"$out/inbox"
+    echo "post-push: STALE: no verdict since $(echo "$last" | cut -d' ' -f3); $who" >&2
+}
+newer() { local w; w=$(cat "$out/.waiting" 2>/dev/null) && [ -n "$w" ] && [ "$w" -gt "$token" ] 2>/dev/null; }
+stale_check
+if [ "$locked" = 1 ] && [ -e "/proc/$$/fd/8" ]; then
+    : # the run that re-executed this copy holds it
+else
+    exec 8>"$out/.lock"
+    if ! flock -n 8; then
+        token=$(date +%s%N)
+        printf '%s\n' "$token" >"$out/.waiting.$$" && mv -f "$out/.waiting.$$" "$out/.waiting"
+        echo "post-push: another run is going; waiting for it (a newer waiter replaces this one)" >&2
+        dead=0
+        until flock -w "${CHIMERA_POST_PUSH_POLL:-15}" 8; do
+            newer && { echo "post-push: a newer run is waiting; it will test the latest main, so this one stops" >&2; exit 0; }
+            stale_check
+            # Another waiter moved a stale lock aside: queue on the new one.
+            if [ "$(lock_ino)" != "$(stat -c %i "$out/.lock" 2>/dev/null)" ]; then
+                exec 8>"$out/.lock"; dead=0; continue
+            fi
+            if runner_alive; then dead=0; continue; fi
+            dead=$((dead + 1))
+            [ "$dead" -ge 2 ] || continue
+            (
+                flock -n 7 || exit 0
+                [ "$(lock_ino)" = "$(stat -c %i "$out/.lock" 2>/dev/null)" ] || exit 0
+                runner_alive && exit 0
+                held=$(lock_holders)
+                mv -f "$out/.lock" "$out/.lock.stale" || exit 0
+                echo "post-push: the lock was held by no live run but by: ${held:-?}; moved it aside (.lock.stale)" >&2
+                echo "STALE $(date -u +%Y-%m-%dT%H:%MZ) the post-push lock was held by no live run but by: ${held:-?}(moved aside; kill that pid by hand)" >>"$out/inbox"
+            ) 7>"$out/.lock.recover"
+            exec 8>"$out/.lock"; dead=0
+        done
+        newer && { echo "post-push: a newer run is waiting; it will test the latest main, so this one stops" >&2; exit 0; }
+    fi
+fi
+printf '%s %s %s\n' $$ "$(proc_start $$)" "$(date -u +%Y-%m-%dT%H:%MZ)" >"$out/.running"
+trap '[ "$(cut -d" " -f1 "$out/.running" 2>/dev/null)" = $$ ] && rm -f "$out/.running"' EXIT
+
+# From here on, nothing this run starts gets fd 8 (`8>&-`).
+git -C "$repo" fetch --quiet --no-tags "$remote" 8>&- || echo "post-push: couldn't fetch $remote; testing what's here" >&2
+sha=$(git -C "$repo" rev-parse --verify --quiet "$ref^{commit}" 8>&-) || { echo "post-push: no commit $ref" >&2; exit 2; }
+# The pushed copy of this script tests the push: a run started from another
+# copy (an older slot's) re-executes the pushed one, lock and all.
+if [ -z "$reexec" ] && ! git -C "$repo" show "$sha:tools/post-push-tests.sh" 2>/dev/null 8>&- | cmp -s - "$here/post-push-tests.sh"; then
+    if { [ -e "$dir/.git" ] || git -C "$repo" worktree add --quiet --detach "$dir" "$sha" 8>&-; } \
+        && git -C "$dir" reset --quiet --hard 8>&- && git -C "$dir" checkout --quiet --detach "$sha" 8>&- \
+        && [ -x "$dir/tools/post-push-tests.sh" ]; then
+        echo "post-push: running the pushed copy of this script ($dir/tools/post-push-tests.sh)" >&2
+        CHIMERA_POST_PUSH_LOCKED=1 CHIMERA_POST_PUSH_REEXEC=1 CHIMERA_POST_PUSH_CHILD=1 exec "$dir/tools/post-push-tests.sh" "$@"
+    fi
 fi
 
-git -C "$repo" fetch --quiet --no-tags "$remote" || echo "post-push: couldn't fetch $remote; testing what's here" >&2
-sha=$(git -C "$repo" rev-parse --verify --quiet "$ref^{commit}") || { echo "post-push: no commit $ref" >&2; exit 2; }
+# The run proper, called with fd 8 closed: bash keeps its own copy
+# (close-on-exec), so the lock stays held, and no process it starts holds it.
+the_run() {
 # Already tested (a result in history.txt): nothing to do, unless asked
 # (CHIMERA_POST_PUSH_AGAIN=1, or a base given on the command line).
 short=$(git -C "$repo" rev-parse --short "$sha")
@@ -296,3 +403,5 @@ if [ "$(wc -l <"$out/inbox" 2>/dev/null || echo 0)" -gt 1000 ]; then
     mv -f "$out/inbox" "$out/inbox.old"
 fi
 [ -z "$failed" ]
+}
+the_run "$@" 8>&-
