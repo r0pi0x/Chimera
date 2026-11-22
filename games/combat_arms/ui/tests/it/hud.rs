@@ -1363,6 +1363,22 @@ fn t67_aiming_does_not_change_the_crosshair() {
     assert_eq!((on.crosshair.elements, on.crosshair.colour), (off.crosshair.elements, off.crosshair.colour));
 }
 
+/// The over-the-shoulder camera's blocked-shot marker dims the crosshair
+/// (`CrosshairView::dim`, in eighths), and only while it shows.
+#[test]
+fn the_blocked_shot_marker_dims_the_crosshair() {
+    use chimera_client::client::third_person::Shoulder;
+    let (mut sim, _me) = setup(&[RIFLE]);
+    sim.ticks(1);
+    assert_eq!(hud(&sim).crosshair.dim, 0, "no camera: not dimmed");
+    sim.app.world_mut().insert_resource(Shoulder { dim: 1.0, ..default() });
+    sim.ticks(1);
+    assert_eq!(hud(&sim).crosshair.dim, 8);
+    sim.app.world_mut().resource_mut::<Shoulder>().dim = 0.0;
+    sim.ticks(1);
+    assert_eq!(hud(&sim).crosshair.dim, 0);
+}
+
 // ---------------------------------------------------------------------------
 // Spread (B): the gap from r (r's stepping is the firing part's,
 // weapon_firing.md, and its tests)

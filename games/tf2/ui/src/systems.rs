@@ -87,6 +87,7 @@ pub fn collect(
     mut classes: Local<Option<Classes>>,
     weapons: Query<(&Weapon, Option<&Magazine>, Option<&HeldGauge>)>,
     scope: Option<Res<ScopeUp>>,
+    shoulder: Option<Res<chimera_client::client::third_person::Shoulder>>,
 ) {
     let (Some(active), Some(w)) = (ours(active.as_deref()), windows.iter().next()) else {
         state.frame.clear();
@@ -113,6 +114,7 @@ pub fn collect(
         portrait,
         time: time.elapsed_secs_f64(),
         scope: scope.is_some_and(|s| s.0).then(|| gun.and_then(|(.., g)| g).map_or(0.0, |g| g.0)),
+        crosshair_dim: shoulder.map_or(0.0, |s| s.dim),
     };
     let look = Look { hud: &active.0, screen: Screen::new(w.width(), w.height()) };
     let st = &mut *state;

@@ -149,7 +149,7 @@ fails when this file is stale; never edit the generated lines).
 - `chimera/client/src/client/spectate.rs`: Spectating (`client::spectate`) is measured only in part (specs/cs_source/spectating.md, from bots in a SourceTV demo: the 6.5 s without a freeze...
 - `chimera/client/src/client/swap_effect.rs`: the puff is one sphere, not particles
 - `chimera/client/src/client/text_warm.rs`: - Every font and size declared or waiting in an empty text gets its atlas, shown later or not: 1 MB in memory and 1 MB on the GPU each
-- `chimera/client/src/client/third_person.rs`: A game that draws its own crosshair (Combat Arms, TF2, HL2:DM, Halo) isn't dimmed by the marker (`Shoulder::dim` is there for it)
+- `chimera/client/src/client/third_person.rs`: Entering third person hides the view model at once (the body fades in with the glide); leaving shows it when the glide ends
 - `chimera/client/src/client/trace_capture.rs`: a span still open when the window ends is left out; spans entered on several threads at once (none of Bevy's) would pair up wrongly
 - `chimera/client/src/client/ui_parity.rs`: a fixture's guns get made-up ids (`parity:<class>`, `made_up_class`), so the board, chip and feed draw the kit's icons by class, never a game's
 - `chimera/client/src/client/ui_sound.rs`: the rank-up plays the nearest of the table's pre-rendered grid (17 renders, p in steps of 1/16) instead of rendering `rank_up(p, seed)` for the...

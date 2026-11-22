@@ -48,16 +48,27 @@
 //!   (`Shoulder::dim`); target IDs look along the crosshair's ray
 //!   (`aim::crosshair_ray`, from `Shoulder::ray`).
 //!
-//! Known shortcuts (docs/tech-debt.md): A game that draws its own
-//! crosshair (Combat Arms, TF2, HL2:DM, Halo) isn't dimmed by the marker
-//! (`Shoulder::dim` is there for it). Entering third person hides the view
+//! - **Follow lag and the scope** (M3). The pivot hangs off an anchor that
+//!   trails the eye (`follow_step`, a critically damped spring,
+//!   `chimera:cam_smooth` seconds, at most `MAX_LAG` behind); the look is
+//!   never smoothed, so the aim stays one-to-one. A gun's scope
+//!   (`Zoomed::scope`) takes the view to first person at once, for its
+//!   overlay, and the camera glides back when it ends.
+//! - **Data** (M4). `data/third_person_camera.toml` holds the defaults
+//!   (`ShoulderSettings::default`), the marker's look and each game's
+//!   factors on the distances (`CameraData::games`); the archived cvars
+//!   `chimera:cam_*` and `chimera:thirdperson` change them. Each game's
+//!   HUD dims its own crosshair by `Shoulder::dim` (Combat Arms, TF2,
+//!   HL2:DM, Halo; their `crosshair_dim` inputs).
+//!
+//! Known shortcuts (docs/tech-debt.md): Entering third person hides the view
 //! model at once (the body fades in with the glide); leaving shows it when
 //! the glide ends. The own-hull and near-plane margins rely on the sphere
 //! sweep's radius. A game with half-weight first key presses
 //! (`HalfFirstPress`) turns that tick's move share unturned. The sight's
 //! range readout and the defuse prompt still use the eye's ray. The
 //! camera's recoil shake isn't in the marker's aim. Why it's OK for now:
-//! M2 of the plan; M3 (follow lag) and M4 take the rest.
+//! M2 to M4 of the plan are in; the plan lists what is left.
 
 use avian3d::prelude::*;
 use bevy::{camera::visibility::VisibilityRange, ecs::system::SystemParam, prelude::*};
@@ -68,6 +79,8 @@ use crate::{
     core::{Dead, Intent, LocalPlayer, MovementState, NetRole, SOLID_LAYERS, ThirdPersonRules},
 };
 
+/// The follow lag never trails the eye by more than this, metres.
+const MAX_LAG: f32 = 0.5;
 /// Radius of the sphere swept to place the camera.
 const CAMERA_RADIUS: f32 = 0.2;
 /// How much of its opacity the crosshair loses while the marker shows.
@@ -82,8 +95,9 @@ const TAP_GRACE_SECS: f64 = 0.35;
 const RANGE_UNITS: f32 = 8192.0;
 const PITCH_LIMIT: f32 = 89f32.to_radians();
 
-/// The shoulder camera's tuning (metres, seconds; archived cvars).
-#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+/// The shoulder camera's tuning (metres, seconds; archived cvars), by
+/// default from `data/third_person_camera.toml`.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, serde::Deserialize)]
 pub struct ShoulderSettings {
     /// 1 the right shoulder, -1 the left (`chimera:cam_shoulder`).
     pub shoulder: i8,
@@ -98,6 +112,12 @@ pub struct ShoulderSettings {
     pub aim_dist: f32,
     pub aim_side: f32,
     pub aim_fov: f32,
+    /// The third-person field of view, degrees at 4:3 (`chimera:cam_fov`);
+    /// 0 keeps the player's own.
+    pub fov: f32,
+    /// Follow lag: seconds the pivot takes to settle (`chimera:cam_smooth`);
+    /// 0 is off.
+    pub smooth: f32,
     pub swap_secs: f32,
     pub zoom_secs: f32,
     pub ease_out_secs: f32,
@@ -110,6 +130,49 @@ pub struct ShoulderSettings {
     pub fade_whole: f32,
     /// Right mouse let go sooner than this is a tap.
     pub tap_secs: f32,
+    /// The blocked-shot marker: pixels across, and its colour.
+    pub marker_size: f32,
+    pub marker_color: [f32; 4],
+}
+
+/// One game's factors on the camera's distances (`CameraData::games`).
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize)]
+#[serde(default)]
+pub struct GameCamera {
+    pub dist: f32,
+    pub side: f32,
+    pub up: f32,
+}
+
+impl Default for GameCamera {
+    fn default() -> Self {
+        Self { dist: 1.0, side: 1.0, up: 1.0 }
+    }
+}
+
+/// `data/third_person_camera.toml`: the defaults and each game's factors.
+#[derive(Resource, Clone, Debug, PartialEq, serde::Deserialize)]
+pub struct CameraData {
+    pub camera: ShoulderSettings,
+    #[serde(default)]
+    pub games: std::collections::BTreeMap<String, GameCamera>,
+}
+
+impl CameraData {
+    /// The embedded file.
+    pub fn builtin() -> Self {
+        static DATA: std::sync::OnceLock<CameraData> = std::sync::OnceLock::new();
+        DATA.get_or_init(|| {
+            toml::from_str(include_str!("../../data/third_person_camera.toml")).expect("data/third_person_camera.toml is valid")
+        })
+        .clone()
+    }
+}
+
+impl Default for CameraData {
+    fn default() -> Self {
+        Self::builtin()
+    }
 }
 
 /// The eye height the metre settings are for (CS:S's standing eye, 64
@@ -131,22 +194,7 @@ impl ShoulderSettings {
 
 impl Default for ShoulderSettings {
     fn default() -> Self {
-        Self {
-            shoulder: 1,
-            dist: 2.2,
-            side: 0.6,
-            up: 0.15,
-            aim_dist: 0.5,
-            aim_side: 0.85,
-            aim_fov: 0.7,
-            swap_secs: 0.15,
-            zoom_secs: 0.15,
-            ease_out_secs: 0.3,
-            transition_secs: 0.25,
-            fade_hidden: 0.45,
-            fade_whole: 1.0,
-            tap_secs: 0.2,
-        }
+        CameraData::builtin().camera
     }
 }
 
@@ -243,6 +291,11 @@ pub struct Shoulder {
     /// short of it (the marker), world space; this frame's.
     pub aim_point: Option<Vec3>,
     pub blocked: Option<Vec3>,
+    /// The follow lag's pivot anchor and its speed (world space): trails
+    /// the eye (`ShoulderSettings::smooth`).
+    pub follow: Option<(Vec3, Vec3)>,
+    /// The game's factors on the distances (`CameraData::games`).
+    pub game: GameCamera,
 }
 
 impl Shoulder {
@@ -254,6 +307,18 @@ impl Shoulder {
     /// The camera is drawn off the eye this frame (on, or gliding back).
     pub fn drawn(&self) -> bool {
         self.on || self.blend > 0.0
+    }
+
+    /// `settings` with the distances scaled for the body (`scale`) and the
+    /// game (`game`).
+    pub fn tuned(&self, settings: &ShoulderSettings) -> ShoulderSettings {
+        let s = settings.scaled(self.scale());
+        ShoulderSettings {
+            dist: s.dist * self.game.dist,
+            side: s.side * self.game.side,
+            up: s.up * self.game.up,
+            ..s
+        }
     }
 
     /// The look as a rotation.
@@ -286,6 +351,19 @@ pub fn wanted_offsets(s: &ShoulderSettings, side: f32, zoom: f32, look: Quat) ->
 pub fn camera_from_eye(pivot: Vec3, reach: f32, look: Quat, max: f32) -> Vec3 {
     let o = pivot + look * Vec3::Z * reach;
     if max > 0.0 && o.length() > max { o * (max / o.length()) } else { o }
+}
+
+/// One step of a critically damped spring: `pos` and `vel` toward `target`
+/// settling in about `smooth` seconds (no overshoot). 0: at the target.
+pub fn follow_step(pos: Vec3, vel: Vec3, target: Vec3, smooth: f32, dt: f32) -> (Vec3, Vec3) {
+    if smooth <= 0.0 || dt <= 0.0 {
+        return (target, Vec3::ZERO);
+    }
+    let w = 2.0 / smooth;
+    let e = (-w * dt).exp();
+    let x = pos - target;
+    let t = (vel + x * w) * dt;
+    (target + (x + t) * e, (vel - t * w) * e)
 }
 
 /// Sweep the camera's sphere from `from` along `to - from`: how far it gets.
@@ -378,7 +456,7 @@ impl ShoulderInput<'_, '_> {
     /// The turn multiplier while the aim zoom narrows the view.
     pub fn zoom_scale(&self, mouse: &super::input::MouseSettings) -> f32 {
         match (&self.state, &self.settings) {
-            (Some(s), Some(t)) if s.on && s.zoom > 0.0 => mouse.zoom_scale(Some(90.0 * (1.0 + (t.aim_fov - 1.0) * s.zoom))),
+            (Some(s), Some(t)) if s.on && s.zoom > 0.0 => mouse.zoom_scale(Some(if t.fov > 0.0 { t.fov } else { 90.0 } * (1.0 + (t.aim_fov - 1.0) * s.zoom))),
             _ => 1.0,
         }
     }
@@ -416,6 +494,7 @@ impl Plugin for ThirdPersonPlugin {
             .init_resource::<CameraMode>()
             .init_resource::<super::input::FreeLook>()
             .init_resource::<ShoulderSettings>()
+            .init_resource::<CameraData>()
             .init_resource::<ThirdPersonRules>()
             .add_systems(
                 RunFixedMainLoop,
@@ -472,9 +551,47 @@ fn console(app: &mut App) {
         "Third-person camera's height above the eye, metres.",
         |s| &mut s.up,
     );
+    resource_cvar::<ShoulderSettings, f32>(
+        app,
+        "chimera:cam_fov",
+        "Third-person camera's field of view, degrees at 4:3 (0: yours).",
+        |s| &mut s.fov,
+    );
+    resource_cvar::<ShoulderSettings, f32>(
+        app,
+        "chimera:cam_smooth",
+        "Third-person camera's follow lag, seconds (0: none).",
+        |s| &mut s.smooth,
+    );
+    app.console_cvar(
+        "chimera:thirdperson",
+        "The over-the-shoulder camera on (1) or off (0): the same as thirdperson / firstperson.",
+        "0",
+        |w| w.get_resource::<CameraMode>().map(|m| (m.third_person as u8).to_string()),
+        |w, v| {
+            let on = match v.trim() {
+                "0" => false,
+                "1" => true,
+                _ => return Err(format!("bad value \"{v}\"")),
+            };
+            w.get_resource_mut::<CameraMode>().ok_or("not available")?.third_person = on;
+            Ok(())
+        },
+    );
     let mut c = app.world_mut().resource_mut::<crate::console::Console>();
     c.set_range("chimera:cam_shoulder", -1.0, 1.0);
-    for name in ["chimera:cam_shoulder", "chimera:cam_dist", "chimera:cam_side", "chimera:cam_up"] {
+    c.set_range("chimera:cam_smooth", 0.0, 0.5);
+    c.set_range("chimera:cam_fov", 0.0, 140.0);
+    c.set_range("chimera:thirdperson", 0.0, 1.0);
+    for name in [
+        "chimera:cam_shoulder",
+        "chimera:cam_dist",
+        "chimera:cam_side",
+        "chimera:cam_up",
+        "chimera:cam_fov",
+        "chimera:cam_smooth",
+        "chimera:thirdperson",
+    ] {
         c.archive(name);
     }
 }
@@ -489,8 +606,10 @@ fn update_shoulder(
     rules: Res<ThirdPersonRules>,
     role: Option<Res<NetRole>>,
     time: Res<Time>,
+    data: Res<CameraData>,
+    active: Option<Res<crate::map::hud::ActiveHud>>,
     player: Option<
-        Single<(&Intent, &MovementState, Has<Dead>, Has<crate::core::MapView>, Has<crate::weapon::Zoomed>), With<LocalPlayer>>,
+        Single<(&Intent, &MovementState, Has<Dead>, Has<crate::core::MapView>, Option<&crate::weapon::Zoomed>, Option<&crate::slots::GameIdentity>), With<LocalPlayer>>,
     >,
     others: (
         Option<Res<super::view::FreeCam>>,
@@ -499,10 +618,21 @@ fn update_shoulder(
     ),
 ) {
     let now = time.elapsed_secs_f64();
-    let zoomed = player.as_ref().is_some_and(|p| p.4);
+    let zoomed = player.as_ref().is_some_and(|p| p.4.is_some());
+    // A scope's overlay is first person's: the camera leaves for it.
+    let scoped = player.as_ref().is_some_and(|p| p.4.is_some_and(|z| z.scope));
     state.aim.settle(now, zoomed);
+    let game = player
+        .as_ref()
+        .and_then(|p| p.5.map(|g| g.0.as_str()))
+        .or(active.as_ref().map(|a| a.0.game.as_str()))
+        .and_then(|g| data.games.get(g).copied())
+        .unwrap_or_default();
+    if state.game != game {
+        state.game = game;
+    }
     let allowed = rules.allows(role.map_or(NetRole::Standalone, |r| *r));
-    let held_off = !allowed || state.aim.tap_zoom.is_some();
+    let held_off = !allowed || state.aim.tap_zoom.is_some() || scoped;
     if mode.held_off != held_off {
         mode.held_off = held_off;
     }
@@ -544,7 +674,9 @@ fn update_shoulder(
         let h = eye_height(p.1);
         s.stand_eye = if was_drawn { s.stand_eye.max(h) } else { h };
     }
-    s.blend = step(s.blend, if on { 1.0 } else { 0.0 }, settings.transition_secs, 1.0);
+    // The scope takes the view at once (no glide); leaving it glides out.
+    let secs = if scoped { 0.0 } else { settings.transition_secs };
+    s.blend = step(s.blend, if on { 1.0 } else { 0.0 }, secs, 1.0);
     let to_zoom = if on && s.aim.hold_zoom { 1.0 } else { 0.0 };
     s.zoom = step(s.zoom, to_zoom, settings.zoom_secs, 1.0);
     if !on {
@@ -589,7 +721,7 @@ fn aim_through_crosshair(
         return;
     }
     let eye = at.translation + crate::map::interp::EyeView::of(intent, ms).eye_offset;
-    let (pivot, dist) = wanted_offsets(&settings.scaled(state.scale()), state.side, state.zoom, rot);
+    let (pivot, dist) = wanted_offsets(&state.tuned(&settings), state.side, state.zoom, rot);
     let pivot = if state.reach.is_some() { state.pivot } else { pivot };
     let camera = eye + camera_from_eye(pivot, state.reach.unwrap_or(dist).min(dist), rot, rules.max_offset);
     let Ok(dir) = Dir3::new(rot * Vec3::NEG_Z) else { return };
@@ -634,6 +766,7 @@ impl ShoulderView<'_> {
         let max = self.rules.as_deref().map_or(0.0, |r| r.max_offset);
         let s = self.state.as_mut()?;
         if !s.drawn() {
+            s.follow = None;
             return None;
         }
         let look = if s.orbit {
@@ -649,9 +782,26 @@ impl ShoulderView<'_> {
                 -kick.z,
             )
         };
-        let settings = settings.scaled(s.scale());
+        let settings = s.tuned(&settings);
         let (pivot, dist) = wanted_offsets(&settings, s.side, s.zoom, look);
-        let (pivot, fits) = fit(spatial, filter, origin + eye, pivot, dist, look);
+        // Follow lag: the pivot hangs off an anchor that trails the eye (a
+        // critically damped spring); the look is never smoothed. Crouching,
+        // landing and stairs ease with it.
+        let eye_at = origin + eye;
+        let lag = match s.follow {
+            Some((pos, vel)) if pos.distance(eye_at) < 4.0 => {
+                let (pos, vel) = follow_step(pos, vel, eye_at, settings.smooth, dt);
+                let lag = (pos - eye_at).clamp_length_max(MAX_LAG);
+                s.follow = Some((eye_at + lag, vel));
+                lag
+            }
+            _ => {
+                s.follow = Some((eye_at, Vec3::ZERO));
+                Vec3::ZERO
+            }
+        };
+        let (pivot, fits) = fit(spatial, filter, eye_at + lag, pivot, dist, look);
+        let pivot = pivot + lag;
         let reach = match s.reach {
             Some(r) if fits >= r => {
                 let rate = if settings.ease_out_secs > 0.0 { dist / settings.ease_out_secs * dt } else { f32::INFINITY };
@@ -722,13 +872,12 @@ fn fade_body(
 #[derive(Component)]
 struct Marker;
 
-const MARKER_SIZE: f32 = 10.0;
-
 /// The blocked-shot marker: where the shot stops short of the crosshair's
 /// point, from the camera as drawn this frame.
 #[allow(clippy::type_complexity)]
 fn draw_marker(
     mut state: ResMut<Shoulder>,
+    settings: Res<ShoulderSettings>,
     mode: Res<CameraMode>,
     time: Res<Time>,
     player: Option<Single<(Entity, &Transform, &Intent, &MovementState, Option<&crate::weapon::Inventory>), With<LocalPlayer>>>,
@@ -758,8 +907,8 @@ fn draw_marker(
             if let Ok(p) = cam.world_to_viewport(&view, hit)
                 && let Ok((mut node, mut vis)) = marker.single_mut()
             {
-                node.left = px(p.x - MARKER_SIZE / 2.0);
-                node.top = px(p.y - MARKER_SIZE / 2.0);
+                node.left = px(p.x - settings.marker_size / 2.0);
+                node.top = px(p.y - settings.marker_size / 2.0);
                 vis.set_if_neq(Visibility::Visible);
             }
         }
@@ -781,18 +930,19 @@ fn draw_marker(
             vis.set_if_neq(Visibility::Hidden);
         }
         Err(_) if state.on => {
+            let c = settings.marker_color;
             commands.spawn((
                 Marker,
                 Name::new("Blocked-shot marker"),
                 Node {
                     position_type: PositionType::Absolute,
-                    width: px(MARKER_SIZE),
-                    height: px(MARKER_SIZE),
+                    width: px(settings.marker_size),
+                    height: px(settings.marker_size),
                     border: UiRect::all(px(2.0)),
                     border_radius: BorderRadius::MAX,
                     ..default()
                 },
-                BackgroundColor(Color::srgb(1.0, 0.35, 0.2)),
+                BackgroundColor(Color::srgba(c[0], c[1], c[2], c[3])),
                 BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.8)),
                 GlobalZIndex(5),
                 Visibility::Hidden,

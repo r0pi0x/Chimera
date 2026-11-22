@@ -105,6 +105,18 @@ pub enum Draw {
 }
 
 impl Draw {
+    /// This draw's opacity times `k`.
+    pub fn fade_by(&mut self, k: f32) {
+        match self {
+            Draw::Box { color, .. }
+            | Draw::Fade { color, .. }
+            | Draw::Trapezoid { color, .. }
+            | Draw::Ring { color, .. }
+            | Draw::Text { color, .. }
+            | Draw::Sprite { color, .. } => *color = fade(*color, k),
+        }
+    }
+
     pub fn text(font: &'static str, tall: f32, text: impl Into<String>, color: Rgba, at: Vec2, align: Align) -> Draw {
         Draw::Text { font, tall, text: text.into(), color, at, align, clip: None }
     }

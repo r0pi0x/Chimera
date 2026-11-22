@@ -107,6 +107,9 @@ pub struct Inputs {
     pub hide_empty_slots: bool,
     /// `hud_centerid` is 0: the target ID at the bottom left.
     pub target_id_left: bool,
+    /// How much the crosshair dims, 0 .. 1 (the over-the-shoulder camera's
+    /// blocked-shot marker shows: `client::third_person::Shoulder::dim`).
+    pub crosshair_dim: f32,
 }
 
 /// A suit device count, from the inputs.
@@ -260,8 +263,16 @@ impl Hl2Hud {
             self.draw_history(look, &mut frame);
             self.draw_notices(look, &mut frame);
         }
+        let crosshair_from = frame.0.len();
         self.draw_crosshair(look, inp, &mut frame);
         self.draw_quick(look, inp, &mut frame);
+        // The crosshair's draws (these two) dim with the blocked-shot marker.
+        if inp.crosshair_dim > 0.0 {
+            let k = 1.0 - chimera_client::client::third_person::DIM_AMOUNT * inp.crosshair_dim.min(1.0);
+            for d in &mut frame.0[crosshair_from..] {
+                d.fade_by(k);
+            }
+        }
         self.draw_zoom(look, inp, &mut frame);
         if !inp.hide_misc {
             self.draw_target(look, inp, &mut frame);

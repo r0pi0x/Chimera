@@ -1011,7 +1011,12 @@ pub fn zoom_camera(
     let fov_43 = zoom.unwrap_or_else(|| player_fov.map_or(90.0, |f| f.0));
     // The shoulder camera's aim zoom narrows it.
     let fov_43 = match shoulder {
-        (Some(s), Some(t)) if s.drawn() && spectating.pose.is_none() => fov_43 * (1.0 + (t.aim_fov - 1.0) * s.zoom),
+        (Some(s), Some(t)) if s.drawn() && spectating.pose.is_none() => {
+            // The third-person field of view (a gun's own zoom keeps its),
+            // glided to with the camera.
+            let base = if t.fov > 0.0 && zoom.is_none() { fov_43 + (t.fov - fov_43) * s.blend.clamp(0.0, 1.0) } else { fov_43 };
+            base * (1.0 + (t.aim_fov - 1.0) * s.zoom)
+        }
         _ => fov_43,
     };
     let fov = (crate::map::view_model::vertical_fov(fov_43) + effects.map_or(0.0, |e| e.fov)).to_radians();

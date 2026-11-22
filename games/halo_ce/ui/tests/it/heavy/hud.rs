@@ -477,3 +477,28 @@ fn png(w: u32, h: u32, rgb: &[u8]) -> Vec<u8> {
     chunk(&mut out, b"IEND", &[]);
     out
 }
+
+/// The over-the-shoulder camera's blocked-shot marker dims the crosshair
+/// (`Unit::crosshair_dim`): the reticle's picture only.
+#[test]
+fn the_blocked_shot_marker_dims_the_reticle() {
+    let Some(d) = data() else { return };
+    let ar = WeaponNow { loaded: 60, reserve: 180, loaded_max: 60, ready: true, magazine: true, zoom: -1, ..Default::default() };
+    let alpha = |dim: f32, name: &str| {
+        let mut u = held("weapons\\assault rifle\\assault rifle", ar);
+        u.crosshair_dim = dim;
+        let q = frame(&d, &u, 5);
+        q.iter()
+            .filter(|q| page(&d, q) == name)
+            .filter_map(|q| match q.fill {
+                halo_ce_ui::hud::draw::Fill::Sprite(c) => Some(c[3]),
+                _ => None,
+            })
+            .next()
+            .unwrap()
+    };
+    let k = 1.0 - chimera_client::client::third_person::DIM_AMOUNT;
+    let whole = alpha(0.0, "hud_reticles");
+    assert!((alpha(1.0, "hud_reticles") - whole * k).abs() < 1e-5);
+    assert_eq!(alpha(1.0, "hud_ammo_alphas"), alpha(0.0, "hud_ammo_alphas"), "the rest stays");
+}

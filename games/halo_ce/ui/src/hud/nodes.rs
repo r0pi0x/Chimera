@@ -190,6 +190,7 @@ pub fn collect(
     layout: Option<Res<super::HaloHudLayout>>,
     mut taken: MessageReader<DamageTaken>,
     (mut victims, effects): (MessageReader<crate::game::fx::victim::HaloVictim>, Option<Res<crate::game::vitality::DamageEffects>>),
+    shoulder: Option<Res<chimera_client::client::third_person::Shoulder>>,
 ) {
     let layout = layout.map_or_else(Default::default, |l| l.0);
     // A hit whose damage effect has "indicators always point down" sets
@@ -232,6 +233,7 @@ pub fn collect(
         throwing: hands.get(me_e).is_ok_and(|h| h.grenade_held),
         grenade_kind: hands.get(me_e).map_or(0, |h| h.throw.selected().unwrap_or(0)),
         no_grenade_type: hands.get(me_e).is_ok_and(|h| h.throw.selected().is_none()),
+        crosshair_dim: shoulder.map_or(0.0, |s| s.dim),
     };
     let eye = camera.iter().next().unwrap_or(at);
     let f = eye.forward();

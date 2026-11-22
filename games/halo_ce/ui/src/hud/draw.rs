@@ -109,6 +109,9 @@ pub struct Unit {
     /// The unit has no current grenade type (a new life before its first
     /// update, or no grenades at all): no grenade HUD.
     pub no_grenade_type: bool,
+    /// How much the crosshairs dim, 0 .. 1 (the over-the-shoulder camera's
+    /// blocked-shot marker shows: `client::third_person::Shoulder::dim`).
+    pub crosshair_dim: f32,
 }
 
 /// A unit the tracker may show: an id, its kind, its horizontal
@@ -433,6 +436,14 @@ pub fn draw_blocks_at(data: &HudData, unit: &Unit, state: &HudState, canvas: &Ca
                 for item in &c.items {
                     crosshair_item(&mut p, c.kind, &c.bitmap, item, xs);
                 }
+            }
+        }
+    }
+    if unit.crosshair_dim > 0.0 {
+        let k = 1.0 - chimera_client::client::third_person::DIM_AMOUNT * unit.crosshair_dim.min(1.0);
+        for q in &mut p.out[crosshairs_from..] {
+            if let Fill::Sprite(c) = &mut q.fill {
+                c[3] *= k;
             }
         }
     }

@@ -121,6 +121,11 @@ impl Draw {
     }
 }
 
+/// The opacity left of a crosshair that is `dim` dimmed.
+fn dim_alpha(dim: f32) -> f32 {
+    1.0 - chimera_client::client::third_person::DIM_AMOUNT * dim.clamp(0.0, 1.0)
+}
+
 /// The weapon in hand as the HUD reads it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Ammo {
@@ -149,7 +154,14 @@ pub struct Inputs {
     /// held gun's charge as a fraction 0-1 (`HeldGauge`); the charge
     /// meter then, the crosshair still drawn (measured).
     pub scope: Option<f32>,
+    /// How much the crosshair dims (0 .. 1): the over-the-shoulder camera's
+    /// blocked-shot marker shows (`client::third_person::Shoulder::dim`).
+    pub crosshair_dim: f32,
 }
+
+/// The pictures of this HUD that are the crosshair: they dim with the
+/// blocked-shot marker (data per HUD; `Inputs::crosshair_dim`).
+pub const CROSSHAIR_SPRITES: &[&str] = &["crosshairs"];
 
 /// The scheme's colours and fonts this HUD uses, by name.
 pub trait Scheme {
@@ -327,7 +339,8 @@ impl Tf2Hud {
             let size = 32.0;
             let c = Vec2::new(screen.w / 2.0, screen.h / 2.0);
             let rect = Rect::from_center_size(c, Vec2::splat(size));
-            out.push(Draw::Sprite { sprite: "crosshairs", rect, uv: Rect::new(0.0, 0.0, 0.25, 0.25), color: [200, 200, 200, 255] });
+            let alpha = (255.0 * dim_alpha(i.crosshair_dim)).round() as u8;
+            out.push(Draw::Sprite { sprite: CROSSHAIR_SPRITES[0], rect, uv: Rect::new(0.0, 0.0, 0.25, 0.25), color: [200, 200, 200, alpha] });
         }
         out
     }
@@ -503,6 +516,34 @@ mod tests {
         assert!(order.windows(2).all(|w| w[0] < w[1]), "the portrait over its background, the health panel over both");
         let d = Tf2Hud::default().frame(&Inputs { alive: false, ..i }, s, &Plain);
         assert!(sprite(&d, "class_soldierred").is_none());
+    }
+
+    /// The over-the-shoulder camera's blocked-shot marker dims the
+    /// crosshair (`Inputs::crosshair_dim`), and nothing else.
+    #[test]
+    fn the_blocked_shot_marker_dims_the_crosshair() {
+        struct Sheets;
+        impl Scheme for Sheets {
+            fn colour(&self, _: &str) -> Option<Rgba> {
+                None
+            }
+            fn tall(&self, _: &str) -> Option<f32> {
+                None
+            }
+            fn has(&self, _: &str) -> bool {
+                true
+            }
+        }
+        let s = Screen::new(1024.0, 768.0);
+        let open = Inputs { alive: true, health: 125.0, max: 125.0, ..default() };
+        let alpha = |dim: f32| {
+            let d = Tf2Hud::default().frame(&Inputs { crosshair_dim: dim, ..open.clone() }, s, &Sheets);
+            sprite(&d, CROSSHAIR_SPRITES[0]).map(|(.., c)| c[3]).unwrap()
+        };
+        assert_eq!(alpha(0.0), 255);
+        let full = (255.0 * (1.0 - chimera_client::client::third_person::DIM_AMOUNT)).round() as u8;
+        assert_eq!(alpha(1.0), full);
+        assert!(alpha(0.5) < 255 && alpha(0.5) > full);
     }
 
     /// Behind a scope: the crosshair still (measured, hud.md Open

@@ -263,6 +263,9 @@ pub struct CrosshairView {
     /// What is drawn (empty when `draws.lines` is off).
     pub elements: Vec<Element>,
     pub colour: Rgba,
+    /// How much the crosshair dims, in eighths (0 .. 8): the over-the-shoulder
+    /// camera's blocked-shot marker shows (`client::third_person::Shoulder::dim`).
+    pub dim: u8,
     pub dot_sight: Option<PxRect>,
     /// The reticle's texture (`DotSightName`, A8); the install's art draws it.
     pub dot_sight_image: Option<String>,
@@ -912,6 +915,7 @@ fn update(
     mut memory: ResMut<HudMemory>,
     world: HudInputs,
     mut hud: ResMut<CaHud>,
+    shoulder: Option<Res<chimera_client::client::third_person::Shoulder>>,
 ) {
     let (ms, now) = clocks(&real, &time, sim.as_deref());
     let screen = screen.0;
@@ -970,6 +974,7 @@ fn update(
     next.crosshair = CrosshairView {
         draws,
         colour,
+        dim: shoulder.map_or(0, |s| (s.dim.clamp(0.0, 1.0) * 8.0).round() as u8),
         dot_sight: (draws.dot_sight > 0).then(|| dot_sight_rect(screen)),
         dot_sight_image: data.dot_sight.clone(),
         ..default()
@@ -1725,11 +1730,17 @@ pub fn range_text(fonts: &FontList, screen: Screen, text: &str, colour: Rgba) ->
 
 /// The weapon's reticle image over the A8 rect (an outline while the
 /// install has no such image).
+/// The opacity (0 .. 255) the crosshair keeps while it is dimmed `dim` eighths.
+fn dim_alpha(dim: u8) -> u8 {
+    let k = 1.0 - chimera_client::client::third_person::DIM_AMOUNT * (dim as f32 / 8.0).min(1.0);
+    (255.0 * k).round() as u8
+}
+
 fn spawn_reticle(p: &mut ChildSpawnerCommands, c: &CrosshairView, art: Option<&draw::CaArt>) {
     let Some(r) = c.dot_sight else { return };
     if let Some((image, size)) = c.dot_sight_image.as_deref().and_then(|n| art?.get(n)) {
         let full = Rect::new(0.0, 0.0, size.x as f32, size.y as f32);
-        draw::image_part(p, image, [r.min.x, r.min.y, r.max.x, r.max.y], full, [255; 4]);
+        draw::image_part(p, image, [r.min.x, r.min.y, r.max.x, r.max.y], full, [255, 255, 255, dim_alpha(c.dim)]);
     } else {
         // PLACEHOLDER: a red outline.
         p.spawn((rect(r, Color::NONE), Outline::new(px(1.0), px(0.0), Color::srgba(1.0, 0.1, 0.1, 0.5))));
@@ -1750,6 +1761,7 @@ fn draw_crosshair(
         return;
     }
     let col = colour(c.colour);
+    let col = col.with_alpha(col.alpha() * dim_alpha(c.dim) as f32 / 255.0);
     let pen = pen(&params, hud.screen);
     commands.entity(*root).with_children(|p| {
         // The range readout: its right end and top at `RANGE_AT` (A9).

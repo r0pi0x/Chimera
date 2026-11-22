@@ -1,0 +1,51 @@
+# The over-the-shoulder camera's tuning (docs/plans/active/third-person-camera.md,
+# M4): Chimera's own camera, not any game's. Read by
+# `client/third_person.rs` (`ShoulderSettings::default`, `CameraData`).
+# Metres for a character of the reference eye height (CS:S's standing eye,
+# 1.626 m); each body's distances scale with its own eye height. Players
+# change the archived ones from the console (`chimera:cam_*`).
+
+[camera]
+# 1 the right shoulder, -1 the left (`chimera:cam_shoulder`).
+shoulder = 1
+# Back from the pivot, out to the shoulder, and above the eye
+# (`chimera:cam_dist`, `cam_side`, `cam_up`).
+dist = 2.2
+side = 0.6
+up = 0.15
+# The aim zoom (right mouse held): the distance's and the side's fraction
+# of the above, and the field of view's fraction.
+aim_dist = 0.5
+aim_side = 0.85
+aim_fov = 0.7
+# The third-person field of view, degrees (horizontal at 4:3, as
+# `fov_desired`); 0 keeps the player's own (`chimera:cam_fov`).
+fov = 0.0
+# Follow lag, seconds the camera takes to settle after the character moves
+# (a critically damped spring); 0 is off (`chimera:cam_smooth`). The look
+# is never smoothed.
+smooth = 0.08
+# Seconds: the shoulder swap's slide, the aim zoom's ease, the camera
+# easing back out once a wall clears, and the glide between the eye and
+# the shoulder.
+swap_secs = 0.15
+zoom_secs = 0.15
+ease_out_secs = 0.3
+transition_secs = 0.25
+# The body fades as the camera nears the eye: hidden at this distance from
+# it and whole again at the second, metres.
+fade_hidden = 0.45
+fade_whole = 1.0
+# Right mouse let go sooner than this is a tap, seconds.
+tap_secs = 0.2
+# The blocked-shot marker: its size in pixels and colour (r, g, b, a).
+marker_size = 10.0
+marker_color = [1.0, 0.35, 0.2, 1.0]
+
+# Per game (by its id): factors on the distances above, for a body that
+# frames differently once scaled by its eye height. Absent: 1.
+[games.cs_source]
+[games.combat_arms]
+[games.hl2dm]
+[games.tf2]
+[games.halo_ce]

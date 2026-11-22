@@ -156,11 +156,11 @@ camera's ray through the crosshair first hits.
 
 ### M3. Smoothing, aim zoom, body fade, recoil, transitions
 
-- [ ] Follow lag. The pivot trails the character's movement a little
+- [x] Follow lag (2026-11-22). The pivot trails the character's movement a little
       (critically damped spring, `chimera:cam_smooth`, 0 off). Rotation is
       never smoothed: aim stays one-to-one with the mouse. Crouch and land
       height changes ease.
-- [ ] Aim zoom. While aiming (a hold), the camera moves closer and higher
+- [x] Aim zoom (M1; scope switch 2026-11-22). While aiming (a hold), the camera moves closer and higher
       on the shoulder and the FOV narrows. Both ease over about 0.15 s.
       Mouse sensitivity scales with the FOV, as the zoom does today
       (`zoom_sensitivity_ratio`). A weapon with a scope switches to first
@@ -181,7 +181,7 @@ camera's ray through the crosshair first hits.
 
 - [x] The crosshair dims while the marker shows (the shared one;
       `Shoulder::dim`). Combat Arms', TF2's, HL2:DM's and Halo's own
-      crosshairs aren't dimmed yet.
+      crosshairs dim too (2026-11-22, each HUD's `crosshair_dim` input).
 - [x] Camera distances scale with the standing eye height
       (`Shoulder::scale`, `REF_EYE`), so every game's body frames alike.
 - [x] Options: Controls tab, "Third-person camera" (shoulder side,
@@ -192,14 +192,14 @@ camera's ray through the crosshair first hits.
 
 ### M4. Settings
 
-- [ ] A data file of defaults and tuning (Chimera's client data:
+- [x] A data file of defaults (`chimera/client/data/third_person_camera.toml`, 2026-11-22; per-game factors on the distances) and tuning (Chimera's client data:
       offsets, distances, aim-zoom offsets and FOV, spring-arm speeds,
       fade distances, marker look). The theme holds the marker's colours
       and shape.
-- [ ] Archived cvars: `chimera:thirdperson` (the mode on or off),
+- [x] Archived cvars (`cam_side`/`cam_up` too): `chimera:thirdperson` (the mode on or off),
       `chimera:cam_shoulder` (right or left), `chimera:cam_dist`,
       `chimera:cam_fov` (the third-person FOV), `chimera:cam_smooth`.
-- [ ] A "Camera" group in `apps/party_kit/data/options.toml`. Each row is
+- [~] (Camera lag and field-of-view rows added to the Third-person camera section; no separate group) A "Camera" group in `apps/party_kit/data/options.toml`. Each row is
       marked as a Chimera option (the UI kit's origin field: the Chimera
       icon, plus a line in the help tile saying the original game has no
       such setting).
@@ -304,6 +304,16 @@ the glide ends on leaving), Options rows, network tests. Left: M3's
 follow lag and aim-zoom scope switch, M4's data file and cvars
 (`cam_fov`, `cam_smooth`, the `thirdperson` cvar), the own crosshairs'
 dim in Combat Arms, TF2, HL2:DM and Halo.
+
+2026-11-22 (M3, M4): follow lag (`follow_step`, `chimera:cam_smooth`), a
+scope takes the view to first person at once, `data/third_person_camera.toml`
+(defaults, marker look, per-game factors), cvars `cam_fov`, `cam_smooth`,
+`thirdperson`, Options rows for lag and field of view, and every game's
+own crosshair dims at the marker. Scenario tests in
+`chimera/client/tests/it/third_person.rs`, HUD tests in each game's UI
+crate. Left: a playtest, the sandbox's `ThirdPerson` condition (it sets
+the same mode flag, so it already shows the shoulder camera; not
+separately tested).
 
 ## Decision log
 

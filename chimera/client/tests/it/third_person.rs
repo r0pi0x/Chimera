@@ -16,8 +16,8 @@ use chimera_client::client::{
     aim::{AimRay, character_under, crosshair_ray},
     input::FreeLook,
     third_person::{
-        Shoulder, ShoulderSettings, ShoulderView, ThirdPersonPlugin, aim_point, angles_of, blocked_point, camera_from_eye, fit,
-        wanted_offsets,
+        CameraData, GameCamera, Shoulder, ShoulderSettings, ShoulderView, ThirdPersonPlugin, aim_point, angles_of, blocked_point,
+        camera_from_eye, fit, follow_step, wanted_offsets,
     },
     view::CameraMode,
 };
@@ -307,4 +307,128 @@ fn a_server_that_forbids_third_person_keeps_the_client_in_first() {
     sim.app.world_mut().resource_mut::<ThirdPersonRules>().allow = 1;
     sim.seconds(0.6);
     assert_eq!(sim.app.world().resource::<Shoulder>().blend, 1.0, "allowed: the shoulder camera");
+}
+
+/// Run console words on the sim's world.
+fn console(sim: &mut Sim, words: &[&str]) {
+    let words: Vec<String> = words.iter().map(|w| w.to_string()).collect();
+    chimera_core::console::execute(sim.app.world_mut(), &words, 0);
+}
+
+/// Where the shoulder camera stands relative to the shooter's origin now.
+fn camera_offset(sim: &mut Sim, shooter: Entity) -> Vec3 {
+    let origin = sim.position(shooter);
+    let eye_off = sim.state(shooter).eye_offset;
+    sim.app
+        .world_mut()
+        .run_system_once(move |mut view: ShoulderView, spatial: SpatialQuery| {
+            let filter = SpatialQueryFilter::from_excluded_entities([shooter]).with_mask(CHARACTER_FILTER);
+            view.place(origin, eye_off, Quat::IDENTITY, Quat::IDENTITY, Vec3::ZERO, Vec2::ZERO, &spatial, &filter)
+        })
+        .unwrap()
+        .expect("drawn")
+        .0
+}
+
+#[test]
+fn the_follow_spring_settles_without_overshoot() {
+    let (mut pos, mut vel) = (Vec3::ZERO, Vec3::ZERO);
+    let target = Vec3::X;
+    let mut last = 0.0;
+    for _ in 0..200 {
+        (pos, vel) = follow_step(pos, vel, target, 0.1, 1.0 / 60.0);
+        assert!(pos.x <= 1.0 + 1e-5 && pos.x >= last - 1e-6, "monotone, no overshoot: {}", pos.x);
+        last = pos.x;
+    }
+    assert!((pos.x - 1.0).abs() < 1e-3 && vel.length() < 1e-2, "settled: {pos} {vel}");
+    assert_eq!(follow_step(Vec3::ZERO, Vec3::ZERO, target, 0.0, 0.01).0, target, "0 is off");
+}
+
+#[test]
+fn the_camera_trails_the_character_a_little_and_settles() {
+    let (mut sim, shooter, _) = client_scene(10.0);
+    third_person(&mut sim, true);
+    sim.seconds(1.0);
+    let at_rest = camera_offset(&mut sim, shooter);
+    // The character jumps 0.3 m sideways: the camera stays behind a moment.
+    sim.app.world_mut().get_mut::<Transform>(shooter).unwrap().translation.x += 0.3;
+    sim.ticks(1);
+    let lagging = camera_offset(&mut sim, shooter);
+    let lag = (lagging - at_rest).x;
+    assert!(lag < -0.05 && lag > -0.3, "trails the move, but not all of it: {lag}");
+    // (The camera is placed once a frame.)
+    for _ in 0..200 {
+        sim.ticks(1);
+        camera_offset(&mut sim, shooter);
+    }
+    let settled = camera_offset(&mut sim, shooter);
+    assert!(settled.distance(at_rest) < 0.01, "back on its spot: {settled} vs {at_rest}");
+    // cam_smooth 0: none.
+    console(&mut sim, &["chimera:cam_smooth", "0"]);
+    sim.app.world_mut().get_mut::<Transform>(shooter).unwrap().translation.x += 0.3;
+    sim.ticks(1);
+    assert!(camera_offset(&mut sim, shooter).distance(at_rest) < 0.01, "no lag with cam_smooth 0");
+}
+
+#[test]
+fn a_scope_takes_the_view_to_first_person_and_gives_it_back() {
+    let (mut sim, shooter, _) = client_scene(10.0);
+    third_person(&mut sim, true);
+    sim.seconds(0.6);
+    assert_eq!(sim.app.world().resource::<Shoulder>().blend, 1.0);
+    let scope = chimera_sim::weapon::Zoomed { fov: 20.0, scope: true, sensitivity: None };
+    let place = |sim: &mut Sim, z: Option<chimera_sim::weapon::Zoomed>| {
+        let mut e = sim.app.world_mut().entity_mut(shooter);
+        match z {
+            Some(z) => e.insert(z),
+            None => e.remove::<chimera_sim::weapon::Zoomed>(),
+        };
+    };
+    place(&mut sim, Some(scope));
+    sim.app.world_mut().run_system_once(|| {}).unwrap();
+    sim.ticks(1);
+    let s = sim.app.world().resource::<Shoulder>().clone();
+    assert!(!s.on && s.blend == 0.0 && !s.drawn(), "scoped: first person at once ({} {})", s.on, s.blend);
+    // A zoom without a scope keeps the camera (the sights are the gun's).
+    place(&mut sim, None);
+    sim.seconds(0.6);
+    assert_eq!(sim.app.world().resource::<Shoulder>().blend, 1.0, "unscoped: back on the shoulder");
+}
+
+#[test]
+fn the_cvars_set_the_camera_and_the_mode() {
+    let (mut sim, ..) = client_scene(10.0);
+    console(&mut sim, &["chimera:cam_fov", "100"]);
+    console(&mut sim, &["chimera:cam_smooth", "0.2"]);
+    let s = *sim.app.world().resource::<ShoulderSettings>();
+    assert_eq!((s.fov, s.smooth), (100.0, 0.2));
+    assert!(!sim.app.world().resource::<CameraMode>().third_person);
+    console(&mut sim, &["chimera:thirdperson", "1"]);
+    assert!(sim.app.world().resource::<CameraMode>().third_person);
+    sim.seconds(0.6);
+    assert!(sim.app.world().resource::<Shoulder>().on);
+    console(&mut sim, &["chimera:thirdperson", "0"]);
+    assert!(!sim.app.world().resource::<CameraMode>().third_person);
+}
+
+#[test]
+fn the_data_file_gives_the_defaults_and_each_game_its_factors() {
+    let data = CameraData::builtin();
+    assert_eq!(ShoulderSettings::default(), data.camera);
+    assert!(data.camera.dist > 1.0 && data.camera.smooth > 0.0 && data.camera.marker_size > 0.0);
+    for game in ["cs_source", "combat_arms", "hl2dm", "tf2", "halo_ce"] {
+        assert!(data.games.contains_key(game), "{game} has a table");
+    }
+    // A game's factors reach the distances the camera uses.
+    let (mut sim, shooter, _) = client_scene(10.0);
+    let mut d = CameraData::builtin();
+    d.games.insert("tester".into(), GameCamera { dist: 2.0, side: 1.0, up: 1.0 });
+    sim.app.insert_resource(d);
+    sim.app.world_mut().entity_mut(shooter).insert(chimera_core::slots::GameIdentity("tester".into()));
+    third_person(&mut sim, true);
+    sim.seconds(0.6);
+    let s = sim.app.world().resource::<Shoulder>().clone();
+    assert_eq!(s.game.dist, 2.0);
+    let base = ShoulderSettings::default();
+    assert!((s.tuned(&base).dist - base.dist * s.scale() * 2.0).abs() < 1e-5);
 }

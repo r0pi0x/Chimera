@@ -237,6 +237,7 @@ pub fn collect(
     cvars: Res<HudCvars>,
     fov: Option<Res<PlayerFov>>,
     mut play: MessageWriter<PlaySound>,
+    shoulder: Option<Res<chimera_client::client::third_person::Shoulder>>,
 ) {
     let st = &mut *state;
     let (Some(hud), Some(look)) = (st.hud.as_mut(), st.look.as_mut()) else {
@@ -285,6 +286,7 @@ pub fn collect(
         // The weapon is holstered while carrying by `+use` (gravity_gun.md 8).
         hide_selection: !carrying.is_empty(),
         target_id_left: cvars.centerid == 0,
+        crosshair_dim: shoulder.map_or(0.0, |s| s.dim),
         ..Inputs::default()
     };
     if inp.zoomed {

@@ -146,3 +146,27 @@ fn the_zoom_overlay_grows_and_shrinks() {
     hud.think(&inp, 12.4);
     assert!(!hud.frame(&look, &inp).0.iter().any(|d| matches!(d, Draw::Ring { .. })), "nothing once it has run its 0.4 s");
 }
+
+/// The over-the-shoulder camera's blocked-shot marker dims the crosshair
+/// (`Inputs::crosshair_dim`): its glyph, only that.
+#[test]
+fn the_blocked_shot_marker_dims_the_crosshair() {
+    let (mut hud, mut look) = base();
+    let mut h = (*look.hud).clone();
+    h.icons.insert("weapon_pistol/crosshair".into(), ("Crosshairs".into(), 'Q'));
+    look.hud = std::sync::Arc::new(h);
+    let mut inp = inputs();
+    hud.think(&inp, 0.0);
+    let alpha = |inp: &Inputs, font: &str| {
+        hud.frame(&look, inp).0.iter().find_map(|d| match d {
+            Draw::Text { font: f, color, .. } if *f == font => Some(color[3]),
+            _ => None,
+        })
+    };
+    assert_eq!(alpha(&inp, "Crosshairs"), Some(255));
+    let normal = alpha(&inp, "HudNumbers");
+    inp.crosshair_dim = 1.0;
+    let dimmed = alpha(&inp, "Crosshairs").expect("still drawn");
+    assert_eq!(dimmed, (255.0 * (1.0 - chimera_client::client::third_person::DIM_AMOUNT)).round() as u8);
+    assert_eq!(alpha(&inp, "HudNumbers"), normal, "the rest of the HUD stays");
+}
