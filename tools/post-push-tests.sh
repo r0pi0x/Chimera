@@ -60,8 +60,8 @@
 # one (from its checkout) before testing. Nothing the run starts inherits
 # the lock (a leaked `sleep infinity` holding it starved every run for six
 # hours); a lock that no live run holds is moved aside after two polls. No
-# verdict for CHIMERA_POST_PUSH_STALE_MIN (default 120) minutes while
-# pushes wait puts one `STALE` line in the inbox. A commit with a result in
+# verdict for a push for CHIMERA_POST_PUSH_STALE_MIN (default 120) minutes
+# (the oldest push after the last verdict) puts one `STALE` line in the inbox. A commit with a result in
 # history.txt isn't tested again (it exits 0 saying so) unless
 # CHIMERA_POST_PUSH_AGAIN=1 or a [base] is given.
 set -u
@@ -152,26 +152,35 @@ lock_holders() { # the pids (and commands) other than this run's with the lock f
         printf '%s (%s) ' "$p" "$(tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null | cut -c1-60)"
     done
 }
-# No verdict for a long time while pushes wait: one STALE line in the inbox
-# per last verdict, so starvation gets noticed.
+# A push has waited for a verdict for a long time: one STALE line in the
+# inbox per such push, so starvation gets noticed. The age is that of the
+# oldest push after the last verdict (not the time since that verdict: an
+# idle night followed by one push is no starvation).
 stale_check() {
-    local last t pushed limit=${CHIMERA_POST_PUSH_STALE_MIN:-120} who
+    local last t first pushed holders limit=${CHIMERA_POST_PUSH_STALE_MIN:-120} who
     last=$(awk '$1 == "PASS" || $1 == "FAIL" { l = $0 } END { print l }' "$out/history.txt" 2>/dev/null)
     [ -n "$last" ] || return 0
     t=$(date -u -d "$(echo "$last" | cut -d' ' -f3)" +%s 2>/dev/null) || return 0
-    [ $(( $(date +%s) - t )) -ge $(( limit * 60 )) ] || return 0
-    pushed=$(tail -n 1 "$out/pushes.txt" 2>/dev/null | cut -d' ' -f2)
-    pushed=$(date -u -d "$pushed" +%s 2>/dev/null) || return 0
-    [ "$pushed" -gt "$t" ] || return 0
-    [ "$(cat "$out/.stale" 2>/dev/null)" = "$last" ] && return 0
-    echo "$last" >"$out/.stale"
+    first=
+    while read -r c ts _; do
+        pushed=$(date -u -d "$ts" +%s 2>/dev/null) || continue
+        [ "$pushed" -gt "$t" ] || continue
+        first="$c $ts"; break
+    done < <(tail -n 200 "$out/pushes.txt" 2>/dev/null)
+    [ -n "$first" ] || return 0
+    pushed=$(date -u -d "${first#* }" +%s 2>/dev/null) || return 0
+    [ $(( $(date +%s) - pushed )) -ge $(( limit * 60 )) ] || return 0
+    [ "$(cat "$out/.stale" 2>/dev/null)" = "$first" ] && return 0
+    echo "$first" >"$out/.stale"
     if runner_alive; then
         who="a run is going (pid, since): $(cut -d' ' -f1,3 "$out/.running")"
     else
-        who="no live run holds the lock; it is open in: $(lock_holders)"
+        who="no live run holds the lock"
+        holders=$(lock_holders)
+        [ -z "$holders" ] || who="$who; it is open in: $holders"
     fi
-    echo "STALE $(date -u +%Y-%m-%dT%H:%MZ) no post-push verdict for over ${limit} min while pushes wait (last: $(echo "$last" | cut -d' ' -f1-3)); $who" >>"$out/inbox"
-    echo "post-push: STALE: no verdict since $(echo "$last" | cut -d' ' -f3); $who" >&2
+    echo "STALE $(date -u +%Y-%m-%dT%H:%MZ) no post-push verdict for over ${limit} min for the push of ${first% *} at ${first#* } (last verdict: $(echo "$last" | cut -d' ' -f1-3)); $who" >>"$out/inbox"
+    echo "post-push: STALE: no verdict for the push of ${first% *} since ${first#* }; $who" >&2
 }
 newer() { local w; w=$(cat "$out/.waiting" 2>/dev/null) && [ -n "$w" ] && [ "$w" -gt "$token" ] 2>/dev/null; }
 stale_check

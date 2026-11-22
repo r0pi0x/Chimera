@@ -591,6 +591,7 @@ fn post_push_takes_a_stale_lock_over_and_reports_starvation() {
     }
     let mut pp = PostPush::new("post_push_stale", "0");
     fs::write(pp.out.join("history.txt"), "PASS 0000000 2020-01-01T00:00Z 1m tests: x\n").unwrap();
+    fs::write(pp.out.join("pushes.txt"), "1111111 2020-01-02T00:00Z main x -\n").unwrap();
     let mut holder = Command::new("flock").arg(pp.out.join(".lock")).args(["sleep", "120"]).spawn().unwrap();
     let up = Instant::now();
     while Command::new("flock").arg("-n").arg(pp.out.join(".lock")).arg("true").status().unwrap().success() {
@@ -606,5 +607,23 @@ fn post_push_takes_a_stale_lock_over_and_reports_starvation() {
     assert!(history.contains(&format!("PASS {sha}")), "{history}\n{errs}");
     assert!(inbox.contains("no post-push verdict for over"), "{inbox}");
     assert!(inbox.contains(&format!("held by no live run but by: {holder_pid} (flock")), "{inbox}");
+    fs::remove_dir_all(&pp.root).ok();
+}
+
+/// An idle period (the last verdict long ago) followed by one push is no
+/// starvation: no STALE line.
+#[test]
+fn post_push_idle_period_then_one_push_is_not_stale() {
+    let ok = |c: &str| Command::new(c).arg("--version").output().is_ok();
+    if !ok("flock") || !ok("git") || !ok("setsid") {
+        return;
+    }
+    let mut pp = PostPush::new("post_push_idle", "0");
+    fs::write(pp.out.join("history.txt"), "PASS 0000000 2020-01-01T00:00Z 1m tests: x\n").unwrap();
+    let sha = pp.push();
+    let errs = pp.finish(vec![pp.run(0)]);
+    let (history, inbox) = (pp.file("history.txt"), pp.file("inbox"));
+    assert!(history.contains(&format!("PASS {sha}")), "{history}\n{errs}");
+    assert!(!inbox.contains("STALE"), "{inbox}");
     fs::remove_dir_all(&pp.root).ok();
 }

@@ -321,9 +321,11 @@ fetch) is fetched first.
   starved every run for six hours. A waiter that finds the lock held by no
   live run (`.claude/post-push/.running`: pid and start time) for two polls
   moves it aside and appends `STALE ... held by no live run but by: <pid>`
-  to the inbox (kill that pid by hand); no verdict for
-  `CHIMERA_POST_PUSH_STALE_MIN` (120) minutes while pushes wait appends one
-  `STALE ... no post-push verdict for over ...` line. Once it has the
+  to the inbox (kill that pid by hand); a push (the oldest one
+  after the last verdict) without a verdict for
+  `CHIMERA_POST_PUSH_STALE_MIN` (120) minutes appends one
+  `STALE ... no post-push verdict for over ...` line (idle time before a push
+  doesn't count). Once it has the
   lock, a run whose commit already has a result in `history.txt` exits 0
   saying so; `CHIMERA_POST_PUSH_AGAIN=1` (or a `[base]` argument) tests it
   again. Don't wait for a run with a loop that pgreps its command line
