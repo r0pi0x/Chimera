@@ -8,7 +8,8 @@
 //! kinematic ones at rest, the logic's brush entities by their
 //! `MovingSolid`); a direct hit's damage (`Direct`: through the shared armour
 //! step, `HitArmor`; the head's multiplier when it hits characters'
-//! hitboxes). Games steer flyers (guidance, seeking) in `FlyerSet::Think`
+//! hitboxes; with `Flyer::hull_boxes` a character with a movement hull
+//! is met as that box, not its collider: TF2's). Games steer flyers (guidance, seeking) in `FlyerSet::Think`
 //! and answer `FlyerHit`s in `FlyerSet::Touch`. Movement is Source's toss
 //! (`grenade::gravity_step`, exact for constant gravity) and a swept shape
 //! against `core::SOLID_LAYERS`, never touching its owner (nor loose
@@ -36,7 +37,7 @@
 //!
 //! Also here, shared with Combat Arms' special weapons (whose objects run
 //! on their own 20 Hz frames): the ray tests `ray_box` and `ray_sphere`,
-//! and `facing` (the rotation a model flying along a direction is drawn
+//! `box_face`, and `facing` (the rotation a model flying along a direction is drawn
 //! with).
 //!
 //! Units: meters, seconds, damage normalized like `Health`.
@@ -197,6 +198,11 @@ pub struct Flyer {
     pub meets_clips: bool,
     /// Characters with hitboxes are hit only where a hitbox is.
     pub hitboxes: bool,
+    /// A character with a movement hull (`MovementState::hull_min`..
+    /// `hull_max`: Source's, Combat Arms') is met as that box, not its
+    /// collider (TF2's projectiles meet players' collision boxes,
+    /// specs/tf2/weapons.md Open questions 12).
+    pub hull_boxes: bool,
     pub touch: Touch,
     pub direct: Option<Direct>,
     pub blast: Option<Arc<Blast>>,
@@ -261,6 +267,7 @@ impl Flyer {
             passed: Vec::new(),
             meets_clips: false,
             hitboxes: false,
+            hull_boxes: false,
             touch: Touch::Report,
             direct: None,
             blast: None,
@@ -494,6 +501,9 @@ pub struct LauncherParams {
     /// Characters with hitboxes are hit only there.
     #[serde(default)]
     pub hitboxes: bool,
+    /// Characters are met as their movement hull's box (`Flyer::hull_boxes`).
+    #[serde(default)]
+    pub hull_boxes: bool,
     #[serde(default)]
     pub pass_items: bool,
     /// It passes the map's grates (`Flyer::pass_grates`).
@@ -681,6 +691,7 @@ impl LauncherParams {
             expired: false,
         });
         f.hitboxes = self.hitboxes;
+        f.hull_boxes = self.hull_boxes;
         f.pass_teammates = self.pass_teammates;
         f.marks = self.marks;
         f.marks_stay = self.marks_stay;
@@ -794,6 +805,22 @@ pub fn ray_box(min: Vec3, max: Vec3, from: Vec3, dir: Vec3, limit: f32) -> Optio
         leave = leave.min(a.max(b));
     }
     (enter <= leave && leave >= 0.0 && enter.max(0.0) <= limit).then_some(enter.max(0.0))
+}
+
+/// The outward normal of the face of box `min`..`max` that `p` (on it)
+/// lies nearest: where `ray_box` entered it.
+pub fn box_face(min: Vec3, max: Vec3, p: Vec3) -> Vec3 {
+    let (mut n, mut gap) = (Vec3::Y, f32::MAX);
+    for i in 0..3 {
+        for (face, sign) in [(min[i], -1.0), (max[i], 1.0)] {
+            if (p[i] - face).abs() < gap {
+                gap = (p[i] - face).abs();
+                n = Vec3::ZERO;
+                n[i] = sign;
+            }
+        }
+    }
+    n
 }
 
 /// Where the segment `from`..`to` enters the sphere (`centre`, `r`), as a
@@ -998,6 +1025,7 @@ struct Body {
     damageable: Option<&'static Damageable>,
     intent: Option<&'static Intent>,
     hitboxes: crate::core::HitShapes,
+    state: Option<&'static crate::core::MovementState>,
 }
 
 /// The world access flyers need.
@@ -1078,6 +1106,35 @@ impl FlyWorld<'_, '_> {
         // The sky brush's own face stops the line at `at`.
         const FACE: f32 = 0.02;
         at <= FACE || self.spatial.cast_ray(from, dir, at - FACE, true, filter).is_none()
+    }
+
+    /// A character's movement hull box (m), when it has one.
+    fn hull(&self, e: Entity) -> Option<(Vec3, Vec3)> {
+        let b = self.bodies.get(e).ok().filter(|b| b.intent.is_some())?;
+        let s = b.state.filter(|s| s.hull_max != s.hull_min)?;
+        let (lo, hi) = (b.transform.translation + s.hull_min, b.transform.translation + s.hull_max);
+        Some((lo.min(hi), hi.max(lo)))
+    }
+
+    /// The nearest living character's hull box (`hull`) a box of `half`
+    /// (m; zero: a point) swept from `from` along `dir` for `len` meets,
+    /// leaving out what `filter` excludes and `skip`s: (its distance, the
+    /// face's normal, the character).
+    fn hull_hit(&self, from: Vec3, dir: Vec3, len: f32, half: Vec3, filter: &SpatialQueryFilter, skip: [&[Entity]; 2]) -> Option<(f32, Vec3, Entity)> {
+        let mut best: Option<(f32, Vec3, Entity)> = None;
+        for b in &self.bodies {
+            if b.health.is_some_and(|h| h.current <= 0.0) || filter.excluded_entities.contains(&b.entity) || skip.iter().any(|s| s.contains(&b.entity)) {
+                continue;
+            }
+            let Some((lo, hi)) = self.hull(b.entity) else { continue };
+            let (lo, hi) = (lo - half, hi + half);
+            let Some(t) = ray_box(lo, hi, from, dir, len) else { continue };
+            if best.is_some_and(|(d, ..)| d <= t) {
+                continue;
+            }
+            best = Some((t, box_face(lo, hi, from + dir * t), b.entity));
+        }
+        best
     }
 
     fn takes_damage(&self, e: Entity) -> bool {
@@ -1236,6 +1293,7 @@ fn fly(
         let clips_q = &world.clips;
         let grates_q = &world.grates;
         let pass_grates = f.pass_grates;
+        let hull_boxes = f.hull_boxes;
         let passed = &f.passed;
         let not_flyer = |c: Entity| {
             let b = colliders_q.get(c).map_or(c, |o| o.body);
@@ -1257,6 +1315,7 @@ fn fly(
                     && !skip_chars.contains(&b)
                     && !passed.contains(&b)
                     && !(pass_grates && (grates_q.contains(c) || grates_q.contains(b)))
+                    && !(hull_boxes && world.hull(b).is_some())
             };
             let h = if f.half == Vec3::ZERO {
                 world
@@ -1278,6 +1337,11 @@ fn fly(
                     .spatial
                     .cast_shape_predicate(&shape, from, Quat::IDENTITY, dir, &config, &filter, &pred)
                     .map(|h| (h.distance, h.normal1, h.entity))
+            };
+            // Characters with a hull met as its box (`Flyer::hull_boxes`).
+            let h = match hull_boxes.then(|| world.hull_hit(from, *dir, len, f.half, &filter, [&skip_chars, passed])).flatten() {
+                Some(b) if h.is_none_or(|a| b.0 < a.0) => Some(b),
+                _ => h,
             };
             // A character with hitboxes is hit only where a hitbox is.
             if let Some((_, _, c)) = h

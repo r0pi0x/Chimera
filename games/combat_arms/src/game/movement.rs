@@ -10,6 +10,12 @@
 //! gauge; jumps set the vertical speed and leave a jump factor that weakens
 //! the next jump and the air acceleration; landings from high enough deal
 //! fall damage (`core::Damage`, crush, from the player).
+//! Another game's push (`core::ExternalPush`: TF2's knockback in a party
+//! match) is honoured as every movement does: on the first tick it starts
+//! on the ground the horizontal speed is cut to its share of this tick's
+//! speed limit (Combat Arms' "max speed", the stance's, penalties and
+//! all) and any part away from the ground dropped; a lift's upward speed
+//! leaves the ground by itself; in the air the limit's own clamp holds.
 //!
 //! The maths runs in world units (u, +Y up, as the spec); the character's
 //! `Transform` (engine meters) is the hull's centre, `meters_per_unit`
@@ -154,7 +160,7 @@ use super::{
 use crate::{
     character::{CAPSULE_HEIGHT, CAPSULE_RADIUS},
     core::{
-        CHARACTER_FILTER, Damage, DamageKind, Dead, FirstTimePredicted, Hitgroup, Intent, MovementState, Predict,
+        CHARACTER_FILTER, Damage, DamageKind, Dead, ExternalPush, FirstTimePredicted, Hitgroup, Intent, MovementState, Predict,
         PredictedAppExt, SimClock, Velocity,
     },
     slots::{Footing, Loadout, RegisterSlots},
@@ -1295,6 +1301,7 @@ fn step(
         Has<Zoomed>,
         Has<Dead>,
         Has<MovementLocked>,
+        Option<&mut ExternalPush>,
     ), Without<crate::core::Carried>>,
     characters: Query<(), With<Intent>>,
     bodies: Query<&RigidBody>,
@@ -1341,7 +1348,7 @@ fn step(
     }
     // The open-form step: no friction, a quarter-step displacement.
     let quarter = |v: Vec3, a: Vec3| (v + a * dt, v * dt + a * (0.25 * dt * dt));
-    for (entity, intent, mut me, mut transform, mut vel, mut state, character, (held, stun, mode, action, custom, vip, perk), mut knock, zoomed, dead, lock) in
+    for (entity, intent, mut me, mut transform, mut vel, mut state, character, (held, stun, mode, action, custom, vip, perk), mut knock, zoomed, dead, lock, mut pushed) in
         &mut q
     {
         let me = &mut *me;
@@ -1770,6 +1777,24 @@ fn step(
                     v.x = h.x;
                     v.z = h.y;
                 }
+            }
+            // Another game's push (`core::ExternalPush`: TF2's knockback in
+            // a party match) meeting the ground: cut to its share of this
+            // tick's limit, any part away from the ground dropped; a lift
+            // flies first (an upward speed leaves the ground by itself). In
+            // the air the limit above holds as ever.
+            if let Some(p) = pushed.as_mut().filter(|p| p.lift || p.ground_limit > 0.0) {
+                if me.on_ground
+                    && let Some(share) = p.take_on_ground()
+                {
+                    let h = Vec2::new(v.x, v.z).clamp_length_max(share * limit);
+                    v.x = h.x;
+                    v.z = h.y;
+                    if let Some(g) = me.standing {
+                        v -= g.normal * v.dot(g.normal).max(0.0);
+                    }
+                }
+                p.lift = false;
             }
             if was_eye_free && !free {
                 v = Vec3::ZERO;

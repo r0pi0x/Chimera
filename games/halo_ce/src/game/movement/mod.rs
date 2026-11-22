@@ -27,6 +27,14 @@
 //! whatever else data/campaign.toml sets; the mover is this one for every
 //! body (the owner's rule: `campaign` module doc).
 //!
+//! Another game's push (`core::ExternalPush`: TF2's knockback in a party
+//! match) is honoured as every movement does: a lift makes the biped
+//! airborne (as `push`); its ground limit applies on the first tick it
+//! starts on the ground, after the ground step (`tick::Controls::
+//! push_limit`), as a share of the forward run speed at its crouch blend
+//! (x stun and m_p) - Halo's "max speed"; in the air, Halo's own air
+//! control.
+//!
 //! Teleporters are the engine's (`map::teleport`, from the map's netgame
 //! flags: `maps::teleporters`), which move a Halo player as any other.
 //!
@@ -152,7 +160,7 @@ use super::{
     vitality::{DamageEffects, Stun, UnitStep},
 };
 use crate::core::{
-    CHARACTER_FILTER, Dead, LadderZone, MapBrush, MapLadders, FirstTimePredicted, Intent, MovementState, Predict, PredictedAppExt, SimClock, Velocity,
+    CHARACTER_FILTER, Dead, ExternalPush, LadderZone, MapBrush, MapLadders, FirstTimePredicted, Intent, MovementState, Predict, PredictedAppExt, SimClock, Velocity,
 };
 
 /// The movement's id.
@@ -344,6 +352,7 @@ fn step(
         &mut Velocity,
         &mut MovementState,
         (Option<&Stun>, Option<&SpeedMultiplier>, Has<ControllerStick>, Has<Dead>, Option<&BodyKind>),
+        Option<&mut ExternalPush>,
     ), Without<crate::game::vehicles::Seated>>,
     move_and_slide: MoveAndSlide,
     data: Res<MovementData>,
@@ -372,7 +381,7 @@ fn step(
     let per_tick = s * data::TICKS_PER_SECOND;
     let k = tick_scale(&clock);
     let first = first.is_none_or(|f| f.0);
-    for (e, intent, mut me, mut transform, mut vel, mut state, (stun, mult, controller, dead, kind)) in &mut q {
+    for (e, intent, mut me, mut transform, mut vel, mut state, (stun, mult, controller, dead, kind), mut pushed) in &mut q {
         // How this body moves (`campaign::movement_of`: its kind's table),
         // in the map's envelope (`body`).
         let d = &*body(movement_of(&data, tables.as_deref(), kind), map.as_ref());
@@ -401,6 +410,16 @@ fn step(
             );
             transform.translation += out;
         }
+        // Another game's push (`ExternalPush`): a lift takes the biped
+        // off as `push` does; on the ground its limit applies this tick.
+        if let Some(p) = pushed.as_mut().filter(|p| p.lift) {
+            p.lift = false;
+            me.airborne = true;
+        }
+        let push_limit = match pushed.as_mut() {
+            Some(p) if !me.airborne && p.ground_limit > 0.0 => p.take_on_ground().unwrap_or(0.0),
+            _ => 0.0,
+        };
         let origin = transform.translation / s - Vec3::Y * d.centre_above_origin(me.crouch);
         let velocity = vel.0 / per_tick;
         let rot = Quat::from_rotation_y(intent.yaw);
@@ -414,6 +433,7 @@ fn step(
             controller,
             stun: stun.map_or(0.0, |s| s.value),
             speed_multiplier: mult.map_or(1.0, |m| m.0),
+            push_limit,
         };
         let out = tick::tick(d, &mut me, origin, velocity, controls, k, &space);
         transform.translation = (out.origin + Vec3::Y * d.centre_above_origin(me.crouch)) * s;

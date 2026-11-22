@@ -26,7 +26,8 @@
 //! displacement mesh with its internal edges fixed (`ITEM_GROUND_LAYER`);
 //! gameplay queries mask with `SOLID_LAYERS`, characters' bodies and movement
 //! with `CHARACTER_FILTER`, which leaves loose items out), `MaxSpeed`
-//! (equipment speed cap), `God`, `SpawnProtected` (spawn protection's
+//! (equipment speed cap), `ExternalPush` (a knockback's ground limit and
+//! lift, the contract every movement honours), `God`, `SpawnProtected` (spawn protection's
 //! windows: attacks pass through the player, hits on it show nothing), `Team`, `Seed` (a character's own dice seed
 //! for rolls that must repeat run to run: bots' choices and route noise,
 //! buying, bullet spread; never entity ids, which shift with every spawn,
@@ -1552,6 +1553,45 @@ pub const ITEM_GROUND_LAYER: avian3d::prelude::LayerMask = avian3d::prelude::Lay
 #[component(storage = "SparseSet")]
 pub struct MaxSpeed(pub Option<f32>);
 
+/// A push from game logic (a blast's or a bullet's knockback) waiting
+/// for the character's movement: the one contract every movement honours,
+/// whichever game pushed and whichever game's body it hit (a TF2 rocket on
+/// a Combat Arms or Halo body in a party match). From TF2's measured rule
+/// (specs/tf2/weapons.md 5.4.1); the pusher adds its velocity to
+/// `Velocity` and sets this:
+/// - `ground_limit` (a share of the body's own current max speed; 0:
+///   none): the first tick the body moves on the ground after the push,
+///   after that tick's friction (or the movement's own slowing on the
+///   ground), its horizontal speed is cut to `ground_limit` x its max
+///   speed and any part away from the ground dropped; then it clears. In
+///   the air it waits (no limit; the movement's own air rules) until the
+///   landing.
+/// - `lift`: the push lifts the body (TF2: more than 250 units/s up), so
+///   its next tick moves it in the air whatever its own rule for leaving
+///   the ground; the movement clears it.
+///
+/// What "max speed" is, per movement, is in each movement's doc (Source:
+/// the tick's max speed; Combat Arms: its speed limit; Halo: the forward
+/// run speed at its crouch blend; the placeholder: its speed for the
+/// stance). On every character from the spawn (`MaxSpeed`'s way).
+#[derive(Component, Reflect, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[reflect(Component)]
+pub struct ExternalPush {
+    pub ground_limit: f32,
+    pub lift: bool,
+}
+
+impl ExternalPush {
+    /// A push to honour on a tick the body starts on the ground: the
+    /// limit (None: none waiting, or a lift: it flies first). Clears it.
+    pub fn take_on_ground(&mut self) -> Option<f32> {
+        if self.lift || self.ground_limit <= 0.0 {
+            return None;
+        }
+        Some(std::mem::take(&mut self.ground_limit))
+    }
+}
+
 /// A place a character can spawn, provided by the Map slot.
 #[derive(Component, Reflect, Default, Clone, Copy, Debug)]
 #[reflect(Component)]
@@ -2904,6 +2944,7 @@ impl Plugin for CorePlugin {
             .register_type::<UserInfo>()
             .register_type::<Seed>()
             .register_type::<MaxSpeed>()
+            .register_type::<ExternalPush>()
             .register_type::<BaseVelocity>()
             .register_type::<EntityGravity>()
             .register_type::<Hitboxes>()
@@ -2964,10 +3005,12 @@ impl Plugin for CorePlugin {
             .predicted_net::<Velocity>()
             .predicted_net::<MovementState>()
             .predicted_net::<BaseVelocity>()
-            .predicted_net::<MaxSpeed>();
+            .predicted_net::<MaxSpeed>()
+            .predicted_net::<ExternalPush>();
         // On every character from the spawn (`character::CharacterPartsExt::
         // on_every_character`'s way, which this layer can't name).
         app.register_required_components::<Intent, MaxSpeed>();
+        app.register_required_components::<Intent, ExternalPush>();
         app.register_required_components::<Intent, DamageScale>();
         app.add_observer(no_collider_mass);
         for stage in Predict::ALL {

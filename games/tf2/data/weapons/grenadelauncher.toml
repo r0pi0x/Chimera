@@ -82,6 +82,9 @@ touch = "report"
 shown = "tf2:tf_weapon_grenadelauncher/grenade"
 offset = [16.0, 8.0, -6.0]
 pass_teammates = true
+# Players are met as their collision boxes, not their colliders (weapons.md
+# Open questions 12, effects.md 13).
+hull_boxes = true
 life = 2.1
 # (600, r, 0) degrees/s about its forward, left, up, r a whole number in
 # ±1200, added twice: (1200, 2r, 0) (weapons_more.md 4.1).

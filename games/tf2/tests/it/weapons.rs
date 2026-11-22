@@ -715,6 +715,11 @@ fn the_minigun_cannot_push_a_grounded_soldier_past_216_47c() {
     let moved: Vec<f32> = speeds.windows(2).filter(|w| w[1] <= w[0] + 1e-3).map(|w| w[1]).collect();
     assert!(moved.len() > 20 && moved.iter().all(|&v| v <= 216.5), "{moved:?}");
     assert!(moved.iter().any(|&v| v > 150.0), "pushed: {moved:?}");
+    // The sawtooth: 216 after each hit, friction until the next.
+    let first = moved.iter().position(|&v| v > 200.0).unwrap();
+    let saw = &moved[first..];
+    let mean = saw.iter().sum::<f32>() / saw.len() as f32;
+    assert!((170.0..=192.0).contains(&mean), "mean {mean}: {saw:?}");
 }
 
 /// 5.4.1, test 47d (measured): a rocket on the floor 100 units in front of
@@ -733,6 +738,103 @@ fn a_rocket_on_the_floor_moves_a_grounded_soldier_at_216_47d() {
     assert!(push > 300.0, "pushed at {push}");
     let i = speeds.iter().position(|&v| v > 300.0).unwrap();
     assert!((speeds[i + 1] - 216.0).abs() < 1.0, "first movement tick at {}", speeds[i + 1]);
+}
+
+/// `e`'s box centre (m): its movement hull's middle.
+fn hull_centre(sim: &Sim, e: Entity) -> Vec3 {
+    let s = sim.state(e);
+    sim.position(e) + (s.hull_min + s.hull_max) / 2.0
+}
+
+/// `e`'s velocity (units/s) and whether it stands, at the end of each of
+/// `n` ticks.
+fn track(sim: &mut Sim, p: Entity, e: Entity, n: u64, mut input: impl FnMut(&mut Sim, u64)) -> Vec<(Vec3, bool)> {
+    let mut out = Vec::new();
+    run(sim, p, n, |s, k| {
+        input(s, k);
+        out.push((s.velocity(e) / U, s.state(e).on_ground));
+    });
+    out.remove(0);
+    out
+}
+
+fn flat(v: Vec3) -> f32 {
+    Vec2::new(v.x, v.z).length()
+}
+
+/// 5.4.1, test 44 (measured): an enemy rocket hitting a standing Soldier
+/// at 512 dead centre: 90 damage, 540 added from 10 below the blast,
+/// which is 1 unit off his box's face (effects.md 13; the rocket meets his
+/// box, not his collider: `hull_boxes`): 510.9 across, 174.9 up, under
+/// 250, so he stays on the ground and moves at 216.
+#[test]
+fn a_direct_hit_leaves_a_soldier_grounded_at_216_44() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, ROCKET_LAUNCHER);
+    let t = target(&mut sim, from, 512.0);
+    let c = hull_centre(&sim, t);
+    testkit::aim_at(&mut sim, p, c);
+    let before = health_points(&sim, t);
+    let ticks = track(&mut sim, p, t, 80, |s, k| s.intent(p).fire = k == 0);
+    let took = before - health_points(&sim, t);
+    assert!((took - 90.0).abs() < 1.5, "took {took}");
+    let i = ticks.iter().position(|(v, _)| flat(*v) > 300.0).expect("pushed");
+    let (pushed, _) = ticks[i];
+    assert!((flat(pushed) - 510.9).abs() < 6.0 && (pushed.y - 174.9).abs() < 8.0, "added {} across, {} up", flat(pushed), pushed.y);
+    assert!(ticks[i..].iter().all(|(_, g)| *g), "stays on the ground");
+    assert!((flat(ticks[i + 1].0) - 216.0).abs() < 1.0, "first movement tick at {}", flat(ticks[i + 1].0));
+}
+
+/// 5.4.1, test 4c (measured): a rocket on the floor about 57 units in
+/// front of a standing Soldier's centre (72 damage, 435 added: 326.6
+/// across, 287 up, over 250) lifts him: he keeps 326.6 across until he
+/// lands, where the limit cuts it.
+#[test]
+fn a_lifting_rocket_keeps_the_push_until_landing_4c() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, ROCKET_LAUNCHER);
+    let t = target(&mut sim, from, 512.0);
+    // On the greybox's floor (its top at 0).
+    let aim = hull_centre(&sim, t).with_y(0.0) + Vec3::Z * 57.0 * U;
+    testkit::aim_at(&mut sim, p, aim);
+    let before = health_points(&sim, t);
+    let ticks = track(&mut sim, p, t, 150, |s, k| s.intent(p).fire = k == 0);
+    let took = before - health_points(&sim, t);
+    assert!((took - 72.0).abs() < 2.0, "took {took}");
+    let i = ticks.iter().position(|(v, _)| flat(*v) > 250.0).expect("pushed");
+    let (pushed, _) = ticks[i];
+    assert!((flat(pushed) - 326.6).abs() < 6.0 && (pushed.y - 287.0).abs() < 10.0, "added {} across, {} up", flat(pushed), pushed.y);
+    let land = i + ticks[i..].iter().position(|(_, g)| *g).expect("lands");
+    assert!(land > i + 10, "flew {} ticks", land - i);
+    assert!(ticks[i..land].iter().all(|(v, _)| (flat(*v) - flat(pushed)).abs() < 1.0), "kept in the air");
+    assert!(ticks[land + 1..].iter().all(|(v, _)| flat(*v) <= 216.5), "the limit after landing");
+}
+
+/// 5.4.1, test 47b (measured): a Scattergun at 64 on a Soldier mid-jump,
+/// the shooter jumping beside him (level, as measured): 616.5 across,
+/// kept the whole flight, then 216 on landing.
+#[test]
+fn an_aimed_mid_air_shot_keeps_616_until_landing_47b() {
+    let (mut sim, p, t) = shot_setup(SCATTERGUN, 64.0);
+    let ticks = track(&mut sim, p, t, 150, |s, k| {
+        s.intent(t).jump = k == 0;
+        s.intent(p).jump = k == 0;
+        if k == 8 {
+            let c = hull_centre(s, t);
+            testkit::aim_at(s, p, c);
+        }
+        s.intent(p).fire = k == 8;
+    });
+    let i = ticks.iter().position(|(v, _)| flat(*v) > 400.0).expect("pushed");
+    let push = flat(ticks[i].0);
+    assert!((push - 616.5).abs() < 4.0, "pushed at {push}");
+    assert!(!ticks[i].1, "in the air");
+    let land = i + ticks[i..].iter().position(|(_, g)| *g).expect("lands");
+    assert!(ticks[i..land].iter().all(|(v, _)| (flat(*v) - push).abs() < 1.0), "kept in the air");
+    let after = flat(ticks[land + 1].0);
+    assert!((after - 216.0).abs() < 1.0, "216 on landing: {after}");
 }
 
 /// 5.3, 5.4 and the corrections from the SDK, test 46: a Soldier on the
@@ -878,3 +980,4 @@ fn a_clip_not_full_reloads_when_attack_is_let_go() {
     let shot = run(&mut sim, p, 1, |s, _| s.intent(p).fire = true);
     assert!(shot.iter().any(|(_, k)| matches!(k, WeaponEventKind::Fired { .. })), "fired in the start: {shot:?}");
 }
+

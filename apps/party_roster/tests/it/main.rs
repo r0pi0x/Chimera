@@ -25,6 +25,7 @@ mod halo_maps;
 mod kill_feed;
 mod ladders_across_games;
 mod overlay_guard;
+mod push_across_games;
 mod startup;
 
 // Slow ones (the user's installs): the fast tier skips `heavy::`.

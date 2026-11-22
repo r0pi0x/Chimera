@@ -172,15 +172,27 @@ but a grounded victim's horizontal speed is cut, at his first movement
 tick after a push and after that tick's friction, to 0.9 x his own max
 speed (Soldier 216, spun Heavy 99); a push that lifts him (> 250 up) or
 finds him airborne is kept until he lands, where the limit applies; a
-Heavy takes half. Built: `SourceMovement::push_limit` (set by
-`blast::shove` to `GROUND_PUSH_LIMIT`, applied in the movement's tick
-with the body's own max speed, so any body on a Source movement is
-capped the same; a non-Source movement (the placeholder's) is not:
-known shortcut). Tests 47a-47d in games/tf2/tests/it/weapons.rs
-(Scattergun at 512: 216 then friction, slide about 42; spun Heavy 99;
-airborne keeps the push until landing; Minigun never past 216; rocket on
-the floor 216). Open: a victim moving under his own input (weapons.md
-Open questions 9).
+Heavy takes half. Built: Chimera's `core::ExternalPush` (set by
+`blast::shove`: `GROUND_PUSH_LIMIT` and the lift), a contract every
+movement honours with the body's own max speed: Source's (the tick's
+max speed), Combat Arms' (its speed limit, cut before its friction; its
+own clamp in the air), Halo's (the forward run speed at its crouch
+blend; its air control in the air) and the placeholder's (its stance's
+speed), so TF2's guns in a party match cap every body (test
+apps/party_roster/tests/it/push_across_games.rs). Tests 47a-47d in
+games/tf2/tests/it/weapons.rs (Scattergun at 512: 216 then friction,
+slide about 42; spun Heavy 99; airborne keeps the push until landing;
+Minigun never past 216, sawtooth mean 170-192; rocket on the floor 216),
+44 (a direct hit at 512: 510.9 across, 174.9 up, grounded, 216), 4c
+(rocket on the floor 57 in front: 326.6 kept until landing), 47b aimed
+mid-air (616.5 kept until landing, then 216). The direct hit had lifted
+him (446 across, 304 up): the rocket met his collider (a capsule 32
+units wide, 71 tall), not his 48-wide box, so its blast sat 17 units
+from his centre instead of 25 and (with the test's aim 12 units to the
+side) the push came out steep. Now TF2's rocket and pipe meet players'
+boxes (`Flyer::hull_boxes`, data `hull_boxes`; the blast's own lines
+too, `BlastWorld::line`). Open: a victim moving under his own input
+(weapons.md Open questions 9).
 
 ### The spec answers built (tf2-spec-impl, 2026-11-22)
 

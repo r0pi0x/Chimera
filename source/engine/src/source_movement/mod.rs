@@ -28,7 +28,12 @@
 //! tick's max speed before the step (`SourceSpeed`, ordered before
 //! `SourceMovementStep`: HL2:DM's walk, run and sprint), and a
 //! character's own kind its speed, eyes and air jumps (`SourceTraits`:
-//! TF2's classes).
+//! TF2's classes). A game's push (`core::ExternalPush`, TF2's knockback)
+//! is honoured as every movement does: a lift takes the body off the
+//! ground as logic does (`BaseVelocity::unground`); its ground limit cuts
+//! the horizontal speed, after the first grounded tick's friction, to
+//! that share of the tick's max speed (the held weapon's, the game's or
+//! the class's).
 //!
 //! The maths runs in Source units (inches, Z up) like the spec; the
 //! character's `Transform` (engine meters, Y up) is the centre of the
@@ -136,7 +141,7 @@ use bevy::prelude::*;
 
 use crate::{
     core::{
-        BaseVelocity, Damage, EntityGravity, Health, Hitgroup, Intent, LadderZone, MapBrush, MaxSpeed, MovementState, MovingSolid,
+        BaseVelocity, Damage, EntityGravity, ExternalPush, Health, Hitgroup, Intent, LadderZone, MapBrush, MaxSpeed, MovementState, MovingSolid,
         PredictedAppExt, Velocity, WaterZone,
     },
     map::{
@@ -945,14 +950,6 @@ pub struct SourceMovement {
     pub duck_key: bool,
     #[serde(default)]
     pub reduck_timer: f32,
-    /// A game's push (TF2 knockback) is waiting to meet the ground: its
-    /// ground limit as a share of this body's own max speed (0: none).
-    /// The first grounded tick after it, the horizontal speed is cut to
-    /// limit x max speed after friction, and it clears; in the air it
-    /// waits (no drag, no limit) until the landing tick. Any movement
-    /// config honours it: the cap is the victim's own max speed.
-    #[serde(default)]
-    pub push_limit: f32,
 }
 
 impl Default for SourceMovement {
@@ -996,7 +993,6 @@ impl Default for SourceMovement {
             air_ducks: 0,
             duck_key: false,
             reduck_timer: 0.0,
-            push_limit: 0.0,
         }
     }
 }
@@ -1634,6 +1630,8 @@ struct Mover<'a, 'b, 'w, 's> {
     base: Vec3,
     base_touched: bool,
     unground: bool,
+    /// A game's push waiting for the ground (`core::ExternalPush`).
+    push: ExternalPush,
     /// Gravity multiplier (0 = normal).
     gravity_scale: f32,
     /// Moving solids' velocities (Source units/s), for riders.
@@ -2970,11 +2968,10 @@ impl Mover<'_, '_, '_, '_> {
         if self.me.on_ground {
             self.v.z = 0.0;
             self.friction();
-            if self.me.push_limit > 0.0 {
-                // A push met the ground (specs/tf2/weapons.md 5.4.1): after
+            if let Some(limit) = self.push.take_on_ground() {
+                // A push met the ground (`core::ExternalPush`): after
                 // friction, cut to the limit of this body's max speed.
-                self.clamp_flat(self.me.push_limit * max_speed);
-                self.me.push_limit = 0.0;
+                self.clamp_flat(limit * max_speed);
             }
         }
         self.clamp_velocity();
@@ -3140,6 +3137,7 @@ fn step(
             Option<&StepSounds>,
             Option<&mut crate::core::IgnoreFallDamage>,
             Option<&SourceTraits>,
+            Option<&mut ExternalPush>,
         ),
     ), Without<crate::core::Carried>>,
     query: SpatialQuery,
@@ -3234,7 +3232,7 @@ fn step(
     let mut boxes: Vec<(Entity, MapBrush)> = q
         .iter()
         .filter(|(e, ..)| alive(*e))
-        .map(|(e, _, me, t, .., (slot, _, _, _, _))| {
+        .map(|(e, _, me, t, .., (slot, ..))| {
             let feet = me.forced.map_or(to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET, |f| f.goal);
             (e, hull_box(&configs.of(slot), feet, me.ducked))
         })
@@ -3328,7 +3326,7 @@ fn step(
         touch,
         controls,
         settle,
-        (slot, speed, step_sounds, mut ignore_fall, traits),
+        (slot, speed, step_sounds, mut ignore_fall, traits, mut pushed),
     ) in &mut q
     {
         // The character's own traits over its movement's config (TF2's
@@ -3424,7 +3422,9 @@ fn step(
             fall_damage: 0.0,
             base: base.as_ref().map_or(Vec3::ZERO, |b| to_source(b.velocity)),
             base_touched: base.as_ref().is_some_and(|b| b.touched),
-            unground: base.as_ref().is_some_and(|b| b.unground),
+            // A lifting push (`core::ExternalPush`) takes it off as logic does.
+            unground: base.as_ref().is_some_and(|b| b.unground) || pushed.as_ref().is_some_and(|p| p.lift),
+            push: pushed.as_deref().copied().unwrap_or_default(),
             gravity_scale: gravity.map_or(1.0, |g| g.0),
             mover_velocity: &mover_velocity,
             floating: &floating,
@@ -3452,6 +3452,12 @@ fn step(
         let (feet, v) = (mover.feet, mover.v);
         if let Some(mut touch) = touch {
             *touch = shadow_props.touch(&mover.touched, mover.ground_collider, start, feet, mover.wish, dt);
+        }
+        if let Some(p) = pushed.as_mut() {
+            let new = ExternalPush { lift: false, ..mover.push };
+            if **p != new {
+                **p = new;
+            }
         }
         if let Some(b) = base.as_mut() {
             let new = BaseVelocity {

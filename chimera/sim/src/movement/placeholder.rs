@@ -6,8 +6,12 @@
 //! id with its spec's plain numbers (speeds, gravity, jump: `Tuning`,
 //! `PlaceholderAppExt::placeholder_movement`); the way it moves stays
 //! the placeholder's (eased velocity, no friction or air control rules).
-//! A push that clears its `MovementState::on_ground` (a blast's knockback:
-//! TF2's rocket jump) sends it flying with the velocity it was given.
+//! A push that clears its `MovementState::on_ground` or lifts it
+//! (`core::ExternalPush::lift`: a blast's knockback, TF2's rocket jump)
+//! sends it flying with the velocity it was given; a push's ground limit
+//! (`ExternalPush::ground_limit`) cuts its horizontal speed, on its first
+//! tick on the ground after its easing, to that share of its speed for
+//! the stance (walk, sprint or crouch, the tuning's).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -15,7 +19,7 @@ use bevy::prelude::*;
 use super::wish_dir;
 use crate::{
     character::CAPSULE_HEIGHT,
-    core::{Intent, MovementState, Predict, PredictedAppExt, SimClock, Velocity},
+    core::{ExternalPush, Intent, MovementState, Predict, PredictedAppExt, SimClock, Velocity},
     slots::{MovementSlot, RegisterSlots},
 };
 
@@ -112,13 +116,19 @@ fn step(
         &mut MovementState,
         &Collider,
         Option<&MovementSlot>,
+        Option<&mut ExternalPush>,
     ), Without<crate::core::Carried>>,
     move_and_slide: MoveAndSlide,
     clock: Res<SimClock>,
     tunings: Res<Tunings>,
 ) {
     let dt = clock.dt();
-    for (entity, intent, mut me, mut transform, mut vel, mut state, collider, slot) in &mut q {
+    for (entity, intent, mut me, mut transform, mut vel, mut state, collider, slot, mut pushed) in &mut q {
+        // A lifting push (`ExternalPush`) flies first.
+        if let Some(p) = pushed.as_mut().filter(|p| p.lift) {
+            p.lift = false;
+            state.on_ground = false;
+        }
         let tuning = slot.map_or(DEFAULT, |s| tunings.of(s.0));
         // Characters walk through ragdolls and loose items.
         let filter = SpatialQueryFilter::from_excluded_entities([entity]).with_mask(crate::core::CHARACTER_FILTER);
@@ -137,7 +147,13 @@ fn step(
         let wish = wish_dir(intent.move_axis, intent.yaw_rotation()) * speed;
         let response = if state.on_ground { GROUND_RESPONSE } else { AIR_RESPONSE };
         let t = 1.0 - (-response * dt).exp();
-        let horizontal = Vec3::new(vel.x, 0.0, vel.z).lerp(wish, t);
+        let mut horizontal = Vec3::new(vel.x, 0.0, vel.z).lerp(wish, t);
+        // A push meets the ground: cut to its share of this stance's speed.
+        if state.on_ground
+            && let Some(limit) = pushed.as_mut().filter(|p| p.ground_limit > 0.0 && !p.lift).and_then(|p| p.take_on_ground())
+        {
+            horizontal = horizontal.clamp_length_max(limit * speed);
+        }
 
         // Jumping needs a fresh press.
         let jumped = intent.jump && !me.jump_held && state.on_ground;

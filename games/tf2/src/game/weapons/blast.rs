@@ -40,15 +40,18 @@
 //!   to `GROUND_PUSH_LIMIT` (0.9) x his own max speed (a Soldier 216, a
 //!   spun Heavy 99); a push that lifts him (> 250 up) or finds him in the
 //!   air is kept until he lands, where the limit applies. `shove` sets
-//!   `SourceMovement::push_limit`, and the movement applies it with the
-//!   victim's own max speed, so any body on a Source movement is capped
-//!   the same; a body on another movement (the placeholder's) isn't
-//!   (known shortcut).
+//!   Chimera's `ExternalPush` (the limit, and the lift), which every
+//!   movement honours with the victim's own max speed: Source's, Combat
+//!   Arms', Halo's and the placeholder's (each one's doc says what its max
+//!   speed is), so another game's body in a party match is capped too.
 //! - **Bullets** push too (`bullet_push`, after the frame): one push per
 //!   victim per shot from its summed damage at scale 6, from the shooter's
 //!   centre lowered 10.
 //! - **Where** (effects.md 13, `Placement`): 1 unit out along the
-//!   normal of what its trace met (a rocket's touch: `touched`; a pipe's
+//!   normal of what its trace met (a player: his box, `boxed`, as the
+//!   rocket and the pipe meet it: their flyers' `hull_boxes`; not his
+//!   collider, which is smaller, so a direct hit's push came out steeper
+//!   and lifted him) (a rocket's touch: `touched`; a pipe's
 //!   direct hit: a 64-unit line through it along its flight, `pipe_hit`;
 //!   a fused pipe or detonated sticky: a line from 8 units above its
 //!   centre to 24 below, `fused`, which snaps it onto a floor there and
@@ -61,16 +64,20 @@
 //!
 //! Each damage rounds to whole points, of kind blast, naming the gun.
 //!
-//! Known shortcuts: crits are off; a body on a non-Source movement takes
-//! the push without the ground limit; "airborne" ignores water (a swimming
-//! Soldier counts as airborne); a bullet push reads the summed damage
+//! Known shortcuts: crits are off; another game's movement keeps its own
+//! air rules for a push in flight (Combat Arms' speed clamp, Halo's air
+//! control) where TF2 keeps it whole until landing; "airborne" ignores
+//! water (a swimming Soldier counts as airborne); a bullet push reads the summed damage
 //! rounded to whole points (the delivery's), not the unrounded sum.
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemParam, prelude::*};
 use serde::Deserialize;
 
-use chimera_sim::weapon::{BulletHit, Inflicted};
+use chimera_sim::weapon::{
+    BulletHit, Inflicted,
+    projectile::{box_face, ray_box},
+};
 use source_engine::source_movement::SourceMovement;
 
 use super::{
@@ -78,7 +85,7 @@ use super::{
     damage::{HP, Tf2Gun, U, modifier, round_points},
 };
 use crate::{
-    core::{Damage, DamageKind, FriendlyFire, Health, Hitgroup, Intent, MovementState, SOLID_LAYERS, Team, Velocity},
+    core::{Damage, DamageKind, ExternalPush, FriendlyFire, Health, Hitgroup, Intent, MovementState, SOLID_LAYERS, Team, Velocity},
     map::{GameSound, PlaySound},
 };
 
@@ -98,7 +105,7 @@ pub const HEAVY_KNOCKBACK: f32 = 0.5;
 pub const BULLET_PUSH: f32 = 6.0;
 /// A grounded victim's horizontal speed after a push, at his first
 /// movement tick, as a share of his own max speed (weapons.md 5.4.1,
-/// measured: 0.9); the movement applies it (`SourceMovement::push_limit`).
+/// measured: 0.9); the movement applies it (`ExternalPush::ground_limit`).
 pub const GROUND_PUSH_LIMIT: f32 = 0.9;
 /// An upward speed above this (units/s) lifts the victim off the ground.
 pub const LIFT: f32 = 250.0;
@@ -375,18 +382,34 @@ impl BlastWorld<'_, '_> {
     }
 
     /// What a line from `from` along `dir` for `length` (m) meets first
-    /// among solids (characters too): the point, the surface's normal and
-    /// the body. A line starting inside a solid meets nothing there
-    /// (effects.md 13: a sticky on a ceiling).
+    /// among solids, characters as their boxes (`boxed`, as a rocket
+    /// meets them: the flyer's `hull_boxes`): the point, the surface's
+    /// normal and the body. A line starting inside a solid meets nothing
+    /// there (effects.md 13: a sticky on a ceiling).
     fn line(&self, from: Vec3, dir: Vec3, length: f32) -> Option<(Vec3, Vec3, Entity)> {
         let dir = Dir3::new(dir).ok()?;
         let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
-        let hit = self.spatial.cast_ray(from, dir, length, true, &filter)?;
-        if hit.distance <= 0.0 {
-            return None;
-        }
-        let body = self.colliders.get(hit.entity).map_or(hit.entity, |o| o.body);
-        Some((from + *dir * hit.distance, hit.normal, body))
+        let world = self
+            .spatial
+            .cast_ray_predicate(from, dir, length, true, &filter, &|c| {
+                !self.chars.contains(self.colliders.get(c).map_or(c, |o| o.body))
+            })
+            .map(|h| (h.distance, h.normal, self.colliders.get(h.entity).map_or(h.entity, |o| o.body)));
+        let body = self
+            .chars
+            .iter()
+            .filter(|c| c.3.current > 0.0)
+            .filter_map(|(e, t, aabb, _, _, state, ..)| {
+                let (lo, hi) = boxed(t, aabb, state);
+                let d = ray_box(lo, hi, from, *dir, length)?;
+                Some((d, box_face(lo, hi, from + *dir * d), e))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        let (d, n, e) = match (world, body) {
+            (Some(w), Some(b)) => if b.0 < w.0 { b } else { w },
+            (w, b) => w.or(b)?,
+        };
+        (d > 0.0).then_some((from + *dir * d, n, e))
     }
 
     /// A placement from what a trace met: `OUT` along its normal, the
@@ -553,8 +576,11 @@ impl BlastWorld<'_, '_> {
         velocity.0 += dv;
         let lift = dv.y > LIFT * U;
         self.commands.entity(e).queue(move |mut w: EntityWorldMut| {
-            if let Some(mut m) = w.get_mut::<SourceMovement>() {
-                m.push_limit = GROUND_PUSH_LIMIT;
+            // Every movement honours it (`ExternalPush`): the ground
+            // limit, and a lift off the ground.
+            if let Some(mut p) = w.get_mut::<ExternalPush>() {
+                p.ground_limit = GROUND_PUSH_LIMIT;
+                p.lift |= lift;
             }
             if lift && let Some(mut s) = w.get_mut::<MovementState>() {
                 s.on_ground = false;

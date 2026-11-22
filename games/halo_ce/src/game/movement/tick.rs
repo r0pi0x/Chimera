@@ -102,6 +102,12 @@ pub struct Controls {
     pub stun: f32,
     /// The player's speed multiplier m_p (1 unless the game type sets it).
     pub speed_multiplier: f32,
+    /// Another game's push meets the ground this tick (`core::
+    /// ExternalPush`; 0: none): after the ground step, the horizontal
+    /// speed is cut to this share of the forward run speed at the
+    /// crouch blend (x stun and m_p), and any part away from the ground
+    /// dropped. Ours, not Halo's (Halo's own pushes are `push`'s).
+    pub push_limit: f32,
 }
 
 /// The falling damage of a tick (spec section 6): the damage system turns
@@ -229,6 +235,14 @@ pub fn tick(
         }
         dv -= n * d.ground_push;
         v += dv;
+        if c.push_limit > 0.0 {
+            let full = (d.run_forward * u + d.sneak_forward * c0) * k_s / tps;
+            let flat = Vec2::new(v.x, v.z).clamp_length_max(c.push_limit * full);
+            v = Vec3::new(flat.x, v.y, flat.y);
+            // Its part away from the ground dropped, the step's push
+            // into the ground kept (which keeps the ground's contact).
+            v -= n * (v.dot(n) + d.ground_push).max(0.0);
+        }
     }
     // 9. The move: the velocity plus the crouch lift.
     let lift_v = if k > 0.0 { lift / k } else { 0.0 };
