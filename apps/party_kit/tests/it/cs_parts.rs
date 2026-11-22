@@ -157,6 +157,7 @@ fn a_prop_knocked_about_makes_a_collision_sound() {
             level: SoundLevel::Db(60.0),
             channel: 0,
             dry: false,
+            hearing: None,
         });
     sim.app.insert_resource(SoundBank(Arc::new(sounds)));
     let heard = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));

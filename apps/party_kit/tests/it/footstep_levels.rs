@@ -117,6 +117,7 @@ fn sim(even: bool) -> (Sim, Entity) {
                 level: SoundLevel::Attenuation(1.0),
                 channel: 4,
                 dry: false,
+                hearing: None,
             },
         );
     }

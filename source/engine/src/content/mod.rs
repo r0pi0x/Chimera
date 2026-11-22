@@ -34,6 +34,7 @@ pub mod dust;
 pub mod face;
 pub mod lightmap;
 pub mod material;
+pub mod mixer;
 pub mod nav;
 pub mod overlays;
 pub mod pcf;

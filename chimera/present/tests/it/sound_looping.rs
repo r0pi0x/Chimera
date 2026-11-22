@@ -36,7 +36,7 @@ fn sim() -> Sim {
     for (i, name) in ["once", "loop", "tail"].iter().enumerate() {
         sounds.entries.insert(
             (*name).into(),
-            MapSoundEntry { waves: vec![i], volume: Interval::fixed(1.0), pitch: Interval::fixed(100.0), level: SoundLevel::Db(0.0), channel: 0, dry: false },
+            MapSoundEntry { waves: vec![i], volume: Interval::fixed(1.0), pitch: Interval::fixed(100.0), level: SoundLevel::Db(0.0), channel: 0, dry: false, hearing: None },
         );
     }
     let data = MapData { name: "test:sound_looping".into(), sounds: Arc::new(sounds), ..default() };

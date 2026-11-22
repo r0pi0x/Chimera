@@ -200,6 +200,7 @@ fn a_reload_event_without_waves_plays_the_world_reload_instead() {
         level: SoundLevel::Db(75.0),
         channel: 0,
         dry: false,
+        hearing: None,
     };
     let mut sounds = MapSounds::default();
     sounds.entries.insert(RELOAD_SCOUT.to_lowercase(), entry(vec![0]));

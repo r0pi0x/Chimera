@@ -395,15 +395,31 @@ fn play_randoms(
                 Some(ear.translation() + dir * RANDOM_DISTANCE * METERS_PER_UNIT)
             }
         };
-        let (left, right, send) = match at {
-            Some(at) => {
+        let mut fold = None;
+        let (left, right, send) = match (at, &bank.0.scape_hearing) {
+            // A Source map's: Source's rules (no wall trace: the
+            // soundscape places them around the listener).
+            (Some(at), Some(rules)) => {
+                let h = super::sound::Ear { at: *ear, owner: None }.hear(
+                    at,
+                    None,
+                    SoundLevel::Db(level),
+                    rules,
+                    false,
+                    false,
+                    super::sound::room_mix(room.preset),
+                );
+                fold = h.fold;
+                (h.left * volume, h.right * volume, h.send)
+            }
+            (Some(at), None) => {
                 let to = at - ear.translation();
                 let d = to.length();
                 let g = distance_gain(SoundLevel::Db(level), d) * volume;
                 let (pl, pr) = pan(to.normalize_or_zero(), ear.right().as_vec3());
                 (g * pl, g * pr, distance_send(d))
             }
-            None => (volume, volume, AMBIENT_SEND),
+            (None, _) => (volume, volume, AMBIENT_SEND),
         };
         if left.max(right) < 1e-3 {
             continue;
@@ -412,7 +428,7 @@ fn play_randoms(
             loop_start: None,
             ..bank.0.clips[r.clips[pick]].clone()
         };
-        let gains = Gains::new(left, right).with_send(if r.dry { 0.0 } else { send });
+        let gains = Gains::new(left, right).with_send(if r.dry { 0.0 } else { send }).with_fold(fold);
         let handle = sources.add(LiveClip::new(once, Arc::new(gains), hearing.mix.clone()).with_room(&room));
         commands.spawn((AudioPlayer(handle), PlaybackSettings::DESPAWN.with_speed(pitch / 100.0)));
     }

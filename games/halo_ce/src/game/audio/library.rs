@@ -297,6 +297,7 @@ impl<'a> Compiler<'a> {
             level: level(min),
             channel: 0,
             dry: info.dry(),
+            hearing: None,
         });
         self.set.library.sounds.insert(path.clone(), info);
         Some(path)

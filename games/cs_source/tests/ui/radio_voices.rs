@@ -50,6 +50,7 @@ fn bank() -> SoundBank {
             level: SoundLevel::Db(0.0),
             channel: 0,
             dry: false,
+            hearing: None,
         },
     );
     SoundBank(Arc::new(sounds))

@@ -76,6 +76,7 @@ fn stock(mut asked: MessageReader<CaSound>, bank: Option<ResMut<SoundBank>>) {
                 level,
                 channel: 0,
                 dry: false,
+                hearing: None,
             },
         );
     }

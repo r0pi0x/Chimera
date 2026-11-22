@@ -255,6 +255,7 @@ fn ensure(
             level,
             channel: 0,
             dry: false,
+            hearing: None,
         },
     );
     true

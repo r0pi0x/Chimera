@@ -1228,6 +1228,7 @@ fn add_sounds(world: &mut World, files: &[String]) {
                 level: SoundLevel::Db(75.0),
                 channel: 6,
                 dry: false,
+                hearing: Some(source_engine::content::mixer::hearing(&f, SoundLevel::Db(75.0), false)),
             },
         );
         added += 1;

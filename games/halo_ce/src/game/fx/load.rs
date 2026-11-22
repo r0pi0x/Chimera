@@ -588,6 +588,7 @@ impl Compiler<'_> {
             level: level(min),
             channel: 0,
             dry: false,
+            hearing: None,
         });
         Some(name)
     }

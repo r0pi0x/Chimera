@@ -93,6 +93,7 @@ fn scrape_sounds() -> MapSounds {
             level: SoundLevel::Db(75.0),
             channel: 4,
             dry: false,
+            hearing: None,
         },
     );
     s.surfaces.insert(
@@ -365,6 +366,7 @@ fn a_burst_on_one_channel_replaces_cleanly() {
             level: SoundLevel::Db(75.0),
             channel: 1,
             dry: false,
+            hearing: None,
         },
     );
     let mut sim = Sim::new(CsSim, (MapPlugin::new(map(Vec::new(), s)), SourceMovementPlugin));

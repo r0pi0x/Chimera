@@ -8,12 +8,17 @@
 //! inside one steps on its `source` surface with its `destination`'s
 //! sounds (`movement`'s `play_step`).
 //!
-//! Known shortcuts (docs/tech-debt.md): a `^` wave (distance-variant
-//! stereo: left channel near, right channel far, specs/cs_source/sounds.md
-//! section 1) plays as the mono average of its two channels, not the
-//! near/far blend by listener distance (`wave_distant`); the spec
-//! doesn't give the blend curve. Why it's OK for now: both channels are
-//! heard from every distance, as one sound, instead of one in each ear.
+//! Levels go through Source's encoding (specs/source/sound_hearing.md 3):
+//! a "CompatibilityAttenuation" entry falls off linearly at the
+//! attenuation its level gives back (0.52 → level 88 → 0.526), a plain
+//! "attenuation" one is that level. Every entry is heard by Source's
+//! rules (`EntryHearing`, from the mixer table: `content::mixer`); an
+//! entry whose every wave is `^` (distance-variant stereo: left channel
+//! near, right far) keeps both channels for the distance blend.
+//!
+//! Known shortcuts (docs/tech-debt.md): a `^` wave in an entry with
+//! other waves plays as the mono average of its two channels. Why it's
+//! OK for now: the stock entries are all `^` or none.
 //!
 //! func_footstep_control as the
 //! public FGD describes it, unmeasured: the feet point decides "inside"
@@ -28,7 +33,11 @@ use std::collections::HashMap;
 use source_formats::keyvalues::{Escapes, tokens};
 
 use super::{material::MaterialLoader, surfaceprops::SurfaceProps};
-use crate::map::{MapEntity, MapSoundEntry, MapSounds, MapSurface, SoundLevel, StepRemap, sound::Interval};
+use crate::map::{
+    MapEntity, MapSoundEntry, MapSounds, MapSurface, SoundLevel, StepRemap,
+    hearing::{compat_attenuation, compat_level},
+    sound::Interval,
+};
 
 /// An entry as written: its keys, and its waves in order.
 #[derive(Clone, Debug, Default)]
@@ -418,6 +427,9 @@ pub fn load_with(
         // A wave with `$gender` (HL2's citizens) is a male entry and, under
         // `FEMALE_SUFFIX`, a female one: the game picks by the emitter.
         let female_too = raw.waves.iter().any(|w| w.contains(GENDER));
+        // Distance-variant entries (every wave `^`) keep both channels,
+        // blended by distance as they play (`hearing::far_weight`).
+        let near_far = !raw.waves.is_empty() && raw.waves.iter().all(|w| wave_distant(w));
         let mut waves = Vec::new();
         let mut female_waves = Vec::new();
         for (female, list) in [(false, &mut waves), (true, &mut female_waves)] {
@@ -429,7 +441,7 @@ pub fn load_with(
                 let index = *decoded.entry(file.clone()).or_insert_with(|| {
                     let clip = predecoded.remove(&file).flatten();
                     clip.map(|c| {
-                        out.clips.push(if wave_distant(w) { c.downmixed() } else { c });
+                        out.clips.push(if wave_distant(w) && !(near_far && c.channels == 2) { c.downmixed() } else { c });
                         out.clips.len() - 1
                     })
                 });
@@ -446,7 +458,11 @@ pub fn load_with(
             keys.get("attenuation"),
         ) {
             (Some(l), ..) => SoundLevel::Db(named_level(l).unwrap_or_else(|| interval(l).start)),
-            (None, Some(a), _) | (None, None, Some(a)) => SoundLevel::Attenuation(attenuation(a)),
+            // Through the level encoding (specs/source/sound_hearing.md 3):
+            // a compatibility entry falls off linearly at the attenuation
+            // its level gives back; a plain one is that level.
+            (None, Some(a), _) => SoundLevel::Attenuation(compat_attenuation(attenuation(a))),
+            (None, None, Some(a)) => SoundLevel::Db(compat_level(attenuation(a))),
             _ => SoundLevel::Db(75.0),
         };
         let volume = keys.get("volume").map_or(Interval::fixed(1.0), |v| {
@@ -471,6 +487,7 @@ pub fn load_with(
             level,
             channel: keys.get("channel").map_or(0, |c| channel(c)),
             dry: !raw.waves.is_empty() && raw.waves.iter().all(|w| wave_dry(w)),
+            hearing: Some(super::mixer::hearing(raw.waves.first().map_or("", String::as_str), level, near_far)),
         };
         if female_too {
             out.entries.insert(
@@ -497,6 +514,7 @@ pub fn load_with(
             continue;
         };
         let dry = wave_dry(&name);
+        let hearing = Some(super::mixer::hearing(&name, SoundLevel::Db(75.0), false));
         out.entries.entry(name).or_insert(MapSoundEntry {
             waves: vec![index],
             volume: Interval::fixed(1.0),
@@ -504,12 +522,14 @@ pub fn load_with(
             level: SoundLevel::Db(75.0),
             channel: 6,
             dry,
+            hearing,
         });
     }
     if failed > 0 {
         bevy::log::warn!("sounds: {failed} waves couldn't be read or decoded");
     }
     out.step_remaps = step_remaps(entities);
+    out.scape_hearing = Some(super::mixer::hearing("", SoundLevel::Db(75.0), false));
     out
 }
 

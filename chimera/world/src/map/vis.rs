@@ -133,6 +133,20 @@ impl MapVisibility {
             .is_none_or(|w| w >> (to % 64) & 1 != 0)
     }
 
+    /// Whether a point at `at` is in the PVS of a viewer at `viewer` (the
+    /// viewer's cluster sees the point's): who Source sends a PVS temp
+    /// entity to (TF2's explosions, specs/source/sound_hearing.md 1). True
+    /// without visibility data or with either point outside every cluster.
+    pub fn sees_point(&self, viewer: Vec3, at: Vec3) -> bool {
+        if self.visible.is_empty() {
+            return true;
+        }
+        match (self.cluster_at(viewer), self.cluster_at(at)) {
+            (Some(from), Some(to)) => self.sees(from, to),
+            _ => true,
+        }
+    }
+
     /// Whether the segment from `a` to `b` stays out of solid leaves
     /// (Source's trace against world brushes; detail brushes and
     /// displacements aren't in the tree). Without a tree: clear.

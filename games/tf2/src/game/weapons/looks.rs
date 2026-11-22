@@ -1174,14 +1174,22 @@ fn firing_looks(
     *running = now;
 }
 
-/// The server: this frame's explosions to every client.
-fn forward(mut blasts: MessageReader<Tf2Explosion>, mut out: MessageWriter<bevy_replicon::prelude::ToClients<ExplosionMsg>>) {
+/// The server: this frame's explosions to the clients whose PVS holds
+/// them (the explosion temp entity's audience, specs/source/
+/// sound_hearing.md 1: a blast out of view is neither seen nor heard).
+fn forward(
+    mut blasts: MessageReader<Tf2Explosion>,
+    viewers: chimera_net::net::weapons::PvsViewers,
+    mut out: MessageWriter<bevy_replicon::prelude::ToClients<ExplosionMsg>>,
+) {
     use bevy_replicon::prelude::*;
     for b in blasts.read() {
-        out.write(ToClients {
-            targets: SendTargets::CLIENTS_ONLY,
-            message: ExplosionMsg { at: b.at, normal: b.normal, on_player: b.on_player, weapon: b.weapon.into() },
-        });
+        for client in viewers.seeing(b.at) {
+            out.write(ToClients {
+                targets: SendTargets::Single(ClientId::Client(client)),
+                message: ExplosionMsg { at: b.at, normal: b.normal, on_player: b.on_player, weapon: b.weapon.into() },
+            });
+        }
     }
 }
 

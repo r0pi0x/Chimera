@@ -68,6 +68,10 @@ pub mod shot_flags {
     pub const TRACERS: u8 = 2;
     /// One of its bullets hit something (else no impact is drawn here).
     pub const IMPACTS: u8 = 4;
+    /// The listener is beyond the round's sound's send radius (Source's
+    /// attenuation filter, specs/source/sound_hearing.md 1): its tracers
+    /// and impacts are drawn, its sound not played. Any round may carry it.
+    pub const UNHEARD: u8 = 8;
 }
 
 /// Something else someone else's weapon did (for its body's animation).
@@ -202,7 +206,7 @@ fn remote_shots(
             // shot's sound still plays.
             let fire = known.0.iter().find(|(id, ..)| *id == s.weapon);
             let entry = fire.and_then(|(_, f, alt)| if s.mode > 0 && alt.is_some() { alt.clone() } else { f.clone() });
-            if let Some(entry) = entry {
+            if let Some(entry) = entry.filter(|_| s.flags & shot_flags::UNHEARD == 0) {
                 world.sound(super::owner_sound(entry, s.shooter, s.origin, super::CHAN_WEAPON));
             }
             continue;
@@ -247,7 +251,7 @@ fn remote_shots(
             (true, Some(alt)) => Some(alt.clone()),
             _ => x.fire.clone(),
         });
-        if let Some(entry) = sound {
+        if let Some(entry) = sound.filter(|_| s.flags & shot_flags::UNHEARD == 0) {
             world.sound(super::owner_sound(entry, s.shooter, s.origin, super::CHAN_WEAPON));
         }
     }

@@ -1072,6 +1072,7 @@ mod tests {
             level: crate::map::SoundLevel::Db(75.0),
             channel: 0,
             dry: false,
+            hearing: None,
         };
         let full = 450.0 * 0.0254;
         assert_eq!(gib_bounce_sound(&p, &entry, -full, 0.5, 0.0, 0.0), None, "missed the 1/6");

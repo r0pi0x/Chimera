@@ -99,6 +99,7 @@ pub use ragdoll::{MapCollisionHooks, MapRagdoll, MapRagdollBody, MapRagdollJoint
 pub mod rope_sway;
 pub mod solver_bodies;
 pub mod sound;
+pub mod hearing;
 pub mod steam;
 pub mod teleport;
 pub use sound::{

@@ -52,6 +52,7 @@ pub(crate) fn sim_of(level: i16) -> Sim {
             level: SoundLevel::Db(0.0),
             channel: 0,
             dry: false,
+            hearing: None,
         },
     );
     let shot = sounds.entries["test.shot"].clone();

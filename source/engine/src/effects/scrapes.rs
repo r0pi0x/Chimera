@@ -435,6 +435,7 @@ mod tests {
             level: crate::map::SoundLevel::Db(75.0),
             channel: 4,
             dry: false,
+            hearing: None,
         };
         assert_eq!(scrape_pitch(&entry, 0.0), 90.0);
         assert_eq!(scrape_pitch(&entry, 0.5), 100.0);

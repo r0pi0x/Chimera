@@ -173,6 +173,7 @@ fn an_owners_view_sound_waits_for_its_sound_table() {
             level: SoundLevel::Db(75.0),
             channel: 0,
             dry: false,
+            hearing: None,
         },
     );
     app.insert_resource(SoundBank(std::sync::Arc::new(sounds)));

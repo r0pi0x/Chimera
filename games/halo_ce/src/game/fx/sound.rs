@@ -1,6 +1,6 @@
 //! Halo's sounds on the engine's (specs/halo_ce/sounds.md "Distance",
 //! "Gain"; the four weapons' table): the distance law as a `SoundLevel`
-//! (`level`) and which first-person graph sound a weapon event starts,
+//! (`level`, an `Inverse` level: the plain law, not Source's curve) and which first-person graph sound a weapon event starts,
 //! and when (`event_sound`).
 //!
 //! **The distance mapping.** Halo attenuates a positional mono sound as
@@ -28,7 +28,7 @@ const REFERENCE: f32 = 36.0 * 0.0254;
 /// (WU; module doc).
 pub fn level(min: f32) -> SoundLevel {
     let m = (min.max(0.01)) * super::super::METERS_PER_UNIT;
-    SoundLevel::Db(60.0 + 20.0 * (m / REFERENCE).log10())
+    SoundLevel::Inverse(60.0 + 20.0 * (m / REFERENCE).log10())
 }
 
 /// Halo's gain at `d` WU of a sound of distances `min`, `max` (WU):

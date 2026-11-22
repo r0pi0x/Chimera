@@ -22,8 +22,10 @@
 //! presets are engine-side, so every `PRESETS` value (decay, predelay, damping,
 //! send low-pass, wet level, echo delay/feedback/level per S/M/L room) is
 //! UNMEASURED, derived from the preset names; an index past 28 plays as
-//! Generic. Ours too: the send grows with distance (0.6 at the ear to 1.0 at
-//! 1500 units), unspatialized world sounds send fully and interface sounds
+//! Generic; the automatic room (preset 1) is not analysed from the
+//! space around the listener (specs/source/sound_hearing.md 7, Q9): it plays as
+//! Generic with the measured 0.32-0.80 wet range. Ours too: a non-Source sound's send grows with distance (0.6 at the ear to 1.0 at
+//! 1500 units; a Source entry's is the spec's wet share, `map::hearing::dsp_wet`), unspatialized world sounds send fully and interface sounds
 //! (`PlaySound` without a position) none; the dry signal is untouched (Source's
 //! water rooms may muffle it); a soundscape without "dsp" keeps the previous
 //! room (spec silent); `dsp_volume` scales the room (default 1); a soundscape's

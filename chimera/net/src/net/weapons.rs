@@ -324,7 +324,7 @@ fn send_weapon_events(
     vis: Option<Res<ActiveVisibility>>,
     replicated: Query<(), (With<Replicated>, With<NetCharacter>)>,
     registry: Res<WeaponRegistry>,
-    scans: Query<&Hitscan>,
+    (scans, fire_sounds, bank): (Query<&Hitscan>, Query<&crate::weapon::WeaponSounds>, Option<Res<crate::map::sound::SoundBank>>),
     mut tracer_count: Local<u64>,
     mut fire: MessageWriter<ToClients<FireBullets>>,
     mut fx: MessageWriter<ToClients<WeaponFx>>,
@@ -333,7 +333,7 @@ fn send_weapon_events(
     // Rounds go out once their bullets are counted (each round's `Shot`
     // events follow its `Fired`): (owner, bullets per tracer, message,
     // the clients it goes to).
-    let mut rounds: Vec<(Entity, u32, FireBullets, Vec<Entity>)> = Vec::new();
+    let mut rounds: Vec<(Entity, u32, FireBullets, Vec<(Entity, bool)>)> = Vec::new();
     for e in events.read().filter(|e| e.shown()) {
         if !replicated.contains(e.owner) {
             continue;
@@ -422,10 +422,26 @@ fn send_weapon_events(
                     };
                     h.current <= 0.0 || vis.0.hears(*origin, t.translation + m.map_or(Vec3::ZERO, |m| m.eye_offset))
                 };
+                // Its sound reaches only listeners within the send radius of
+                // its level (Source's attenuation filter,
+                // specs/source/sound_hearing.md 1: 100 (L - 50) units); those
+                // beyond it get the round unheard (`shot_flags::UNHEARD`).
+                let entry = fire_sounds.get(e.weapon).ok().and_then(|x| match (*mode > 0, &x.fire_alt) {
+                    (true, Some(alt)) => Some(alt.clone()),
+                    _ => x.fire.clone(),
+                });
+                let range = entry
+                    .and_then(|n| bank.as_ref().and_then(|b| b.0.entry(&n).map(|x| x.level)))
+                    .and_then(crate::map::sound::send_range);
+                let heard = |listener: Entity| {
+                    let Ok((t, m, h)) = eyes.get(listener) else { return true };
+                    let eye = t.translation + m.map_or(Vec3::ZERO, |m| m.eye_offset);
+                    h.is_some_and(|h| h.current <= 0.0) || range.is_none_or(|r| fire_heard(*origin, eye, r))
+                };
                 let to = players
                     .iter()
                     .filter(|(_, p)| p.character != e.owner && audible(p.character))
-                    .map(|(c, _)| c)
+                    .map(|(c, p)| (c, !heard(p.character)))
                     .collect();
                 rounds.push((e.owner, every, message, to));
                 continue;
@@ -449,13 +465,50 @@ fn send_weapon_events(
         }
     }
     for (_, _, message, to) in rounds {
-        for client in to {
+        for (client, unheard) in to {
+            let mut message = message.clone();
+            if unheard {
+                message.flags |= shot_flags::UNHEARD;
+            }
             fire.write(ToClients {
                 targets: SendTargets::Single(ClientId::Client(client)),
-                message: message.clone(),
+                message,
             });
         }
     }
+}
+
+/// The clients whose player's eye has a point in its PVS (Source's PVS
+/// temp entities: TF2's explosions, specs/source/sound_hearing.md 1). The
+/// dead and those without a character see everything (the server doesn't
+/// know where their client looks from), as does a map without vis data.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct PvsViewers<'w, 's> {
+    players: Query<'w, 's, (Entity, &'static Player)>,
+    eyes: Query<'w, 's, (&'static Transform, Option<&'static MovementState>, Option<&'static Health>)>,
+    vis: Option<Res<'w, ActiveVisibility>>,
+}
+
+impl PvsViewers<'_, '_> {
+    /// The client entities that see `at`.
+    pub fn seeing(&self, at: Vec3) -> Vec<Entity> {
+        self.players
+            .iter()
+            .filter(|(_, p)| {
+                let (Some(vis), Ok((t, m, Some(h)))) = (self.vis.as_ref(), self.eyes.get(p.character)) else {
+                    return true;
+                };
+                h.current <= 0.0 || vis.0.sees_point(t.translation + m.map_or(Vec3::ZERO, |m| m.eye_offset), at)
+            })
+            .map(|(c, _)| c)
+            .collect()
+    }
+}
+
+/// Whether a gun fired at `origin` is heard at `eye` (engine space) for a
+/// send radius of `range` metres (`map::sound::send_range`).
+pub fn fire_heard(origin: Vec3, eye: Vec3, range: f32) -> bool {
+    origin.distance(eye) <= range
 }
 
 /// `Detonation::weapon` of an explosion that is no registered weapon's.
@@ -1089,5 +1142,24 @@ fn pose_of(p: &NetItem) -> Transform {
         translation: Vec3::from_array(p.origin),
         rotation: Quat::from_array(p.rotation).normalize(),
         scale: Vec3::ONE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::sound::{SOURCE_UNIT, SoundLevel, send_range};
+
+    /// A TF2 gun (94 dB) is sent within 4400 u and not beyond; HL2:DM's
+    /// (140 dB) within 9000 (specs/source/sound_hearing.md 1).
+    #[test]
+    fn guns_are_heard_within_their_send_radius() {
+        let tf2 = send_range(SoundLevel::Db(94.0)).unwrap();
+        let at = |u: f32| Vec3::new(0.0, 0.0, -u * SOURCE_UNIT);
+        assert!(fire_heard(Vec3::ZERO, at(4000.0), tf2));
+        assert!(fire_heard(Vec3::ZERO, at(4399.0), tf2));
+        assert!(!fire_heard(Vec3::ZERO, at(4401.0), tf2));
+        let hl2 = send_range(SoundLevel::Db(140.0)).unwrap();
+        assert!(fire_heard(Vec3::ZERO, at(8990.0), hl2) && !fire_heard(Vec3::ZERO, at(9010.0), hl2));
     }
 }

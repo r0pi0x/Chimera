@@ -38,6 +38,7 @@ mod scene_fog;
 mod shader_spec;
 mod shadow_spec;
 mod sound_looping;
+mod source_hearing;
 mod stand_ins;
 mod underwater_fog_volume;
 mod underwater_overlay;

@@ -26,6 +26,25 @@
 //! its blast (full-scale stereo waves at gain 1) clipped the output for
 //! 1-2 s at `volume` 1, a moment at 0.5; ours.
 //!
+//! An entry with Source's hearing (`map::hearing::EntryHearing`, every
+//! Source game's: specs/source/sound_hearing.md) is heard by Source's
+//! rules (`Ear::hear`): the measured distance curve, one wall trace from
+//! the ear against the static map when it starts (`obscured`, × 0.393
+//! when blocked; never for the listener's own), the mixer's value (a
+//! player's or the world's), the stereo-speaker pan law, a stereo wave
+//! folded to mono (a distance-variant one blended near to far) and the
+//! room's wet share by distance (`room_mix`); the listener's own sounds
+//! play centred, as stereo, at full level. Other games' entries keep the
+//! even pan (`pan`) and no wall loss.
+//!
+//! Known shortcuts (docs/tech-debt.md): a one-shot's wall trace is taken
+//! once, when it starts (Source defers it a frame and redoes it, at a rate
+//! the spec leaves open, Q2); only the static map blocks (Q3: brush
+//! entities, props and water untested); the dry signal keeps its level
+//! whatever the wet share (the room's presets' levels are ours,
+//! unmeasured). Why it's OK for now: one-shots are short; long-lived
+//! sounds are re-traced (`live_sound::RETRACE`).
+//!
 //! The listener: `SoundListener` (the client has one) and its `Ear`s.
 
 use std::sync::Arc;
@@ -42,7 +61,9 @@ use super::{
 };
 use crate::map::{
     FadeSound, MapHooks, MapSoundClip, PlaySound, SoundLevel, StopSound,
-    sound::{SoundBank, distance_cutoff, distance_gain, ramp_volume},
+    hearing as hearing_rules,
+    particles::{WorldTrace, WorldTracer},
+    sound::{EntryHearing, SOURCE_UNIT, SoundBank, distance_cutoff, distance_gain, ramp_volume},
 };
 
 /// A screen stands in for the match (the client's `staging::WorldCover`:
@@ -89,7 +110,7 @@ impl Ear {
     /// sound at `at` (engine space) made by `source`.
     ///
     /// The listener's own sounds (its gunfire, reloads, footsteps) play
-    /// centred at full distance gain, as Source plays the local player's
+    /// centred at full gain, as Source plays the local player's
     /// own sounds: they are emitted from the simulation's latest tick
     /// while the camera is drawn between the last two ticks
     /// (`map::interp`), so while strafing a shot sat a few centimetres to
@@ -98,8 +119,7 @@ impl Ear {
     /// centre for the same reason (a spectated player's eye).
     pub fn gains(&self, at: Vec3, source: Option<Entity>, level: SoundLevel) -> (f32, f32, f32) {
         if source.is_some() && source == self.owner {
-            let g = distance_gain(level, 0.0);
-            return (g, g, distance_send(0.0));
+            return (1.0, 1.0, distance_send(0.0));
         }
         let to = at - self.at.translation();
         let d = to.length();
@@ -114,6 +134,73 @@ impl Ear {
 /// Sounds this close to the listener (metres, about a head's width)
 /// pan less, down to centred at the ear.
 pub const NEAR_PAN: f32 = 0.4;
+
+/// What the listener hears of a sound by Source's rules (`Ear::hear`):
+/// per-ear gains, the room's share and how a stereo clip folds
+/// (`live_sound::Gains::set_fold`; None: played as stereo).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Heard {
+    pub left: f32,
+    pub right: f32,
+    pub send: f32,
+    pub fold: Option<f32>,
+}
+
+impl Ear {
+    /// A sound at `at` made by `source` with an entry heard by Source's
+    /// rules (specs/source/sound_hearing.md, "Per-frame order"): the
+    /// listener's own centred at full level, as stereo, with no distance,
+    /// wall or mixer; a level-0 one centred at 0.89 per ear; any other
+    /// by the distance curve, times the wall loss when `blocked`, times the
+    /// mixer's value (a player's or the world's), panned by the
+    /// stereo-speaker law (a stereo wave folded to mono, a distance-variant
+    /// one blended near to far). The room gets the wet share of `room_mix`
+    /// (the room's range, `hearing::dsp_wet`).
+    pub fn hear(&self, at: Vec3, source: Option<Entity>, level: SoundLevel, rules: &EntryHearing, player: bool, blocked: bool, room_mix: (f32, f32)) -> Heard {
+        let l = hearing_rules::level_of(level);
+        if source.is_some() && source == self.owner {
+            return Heard { left: 1.0, right: 1.0, send: hearing_rules::dsp_wet(room_mix, 0.0, l), fold: None };
+        }
+        let to = at - self.at.translation();
+        let units = to.length() / SOURCE_UNIT;
+        let mix = rules.mix(player);
+        let send = hearing_rules::dsp_wet(room_mix, units, l);
+        let fold = Some(if rules.near_far { hearing_rules::far_weight(units) } else { 0.5 });
+        if matches!(level, SoundLevel::Db(l) if l <= 0.0) {
+            let g = hearing_rules::UNSPATIAL_LEVEL * mix;
+            return Heard { left: g, right: g, send, fold };
+        }
+        let wall = if blocked { rules.obscured } else { 1.0 };
+        let g = distance_gain(level, to.length()) * wall * mix;
+        let local = self.at.rotation().inverse() * to.normalize_or_zero();
+        let (pl, pr) = hearing_rules::speaker_pan(local.to_array());
+        // Within a head's width of the ear, toward centred.
+        let near = (to.length() / NEAR_PAN).clamp(0.0, 1.0);
+        let centre = (pl + pr) * 0.5;
+        let (pl, pr) = (centre + (pl - centre) * near, centre + (pr - centre) * near);
+        Heard { left: g * pl, right: g * pr, send, fold }
+    }
+}
+
+/// Whether the world blocks the line from the ear at `ear` to a sound at
+/// `at` (the static map only, `map::particles::WorldTracer`): a hit short
+/// of the sound by more than `OBSCURE_SLACK` (a sound on a surface, a
+/// footstep on the floor, isn't behind it).
+pub fn obscured(world: &impl WorldTrace, ear: Vec3, at: Vec3) -> bool {
+    let len = ear.distance(at);
+    len > OBSCURE_SLACK && world.trace(ear, at).is_some_and(|(f, _)| f * len < len - OBSCURE_SLACK)
+}
+
+/// How far short of a sound a wall must stop the line to block it
+/// (metres, 2 units).
+pub const OBSCURE_SLACK: f32 = 2.0 * SOURCE_UNIT;
+
+/// The room's wet-share range for preset `index` (sound_hearing.md 7: the
+/// automatic room, 1, as measured on TF2's itemtest; the fixed ones
+/// 0.2-0.7).
+pub fn room_mix(index: u16) -> (f32, f32) {
+    if index == 1 { hearing_rules::AUTO_ROOM_MIX } else { hearing_rules::FIXED_ROOM_MIX }
+}
 
 /// A playing sound: who made it on which channel, and its live gains
 /// (to fade it out when another replaces it). Public to read (tests
@@ -326,7 +413,11 @@ fn play_sounds(
     mut messages: MessageReader<PlaySound>,
     mut stops: MessageReader<StopSound>,
     bank: Option<Res<SoundBank>>,
-    listeners: Query<(&GlobalTransform, Option<&ChildOf>), With<SoundListener>>,
+    (listeners, world, players): (
+        Query<(&GlobalTransform, Option<&ChildOf>), With<SoundListener>>,
+        Option<WorldTracer>,
+        Query<(), (With<crate::core::MovementState>, Without<crate::core::Npc>)>,
+    ),
     playing: Query<(Entity, &Playing, Option<&VolumeRamp>)>,
     mut sources: ResMut<Assets<LiveClip>>,
     hearing: Res<Hearing>,
@@ -409,8 +500,20 @@ fn play_sounds(
         };
         // Unspatialized sounds (interface, announcer) stay out of the room.
         let base = mix.gain(&m.entry);
-        let (left, right, send) = match (m.at, listener) {
-            (Some(at), Some(ear)) => {
+        let mut fold = None;
+        let (left, right, send) = match (m.at, listener, &entry.hearing) {
+            // Source's rules (specs/source/sound_hearing.md): one wall
+            // trace from the ear when the sound starts (not for the
+            // listener's own).
+            (Some(at), Some(ear), Some(rules)) => {
+                let own = m.source.is_some() && m.source == ear.owner;
+                let blocked = !own && world.as_ref().is_some_and(|w| obscured(w, ear.at.translation(), at));
+                let player = m.source.is_some_and(|s| players.contains(s));
+                let h = ear.hear(at, m.source, level, rules, player, blocked, room_mix(room.preset));
+                fold = h.fold;
+                (h.left * base, h.right * base, h.send)
+            }
+            (Some(at), Some(ear), None) => {
                 let (l, r, send) = ear.gains(at, m.source, level);
                 (l * base, r * base, send)
             }
@@ -488,7 +591,7 @@ fn play_sounds(
         } else {
             frames as f64 / clip.rate.max(1) as f64 / (pitch as f64 / 100.0)
         };
-        let gains = Arc::new(Gains::new(left * volume, right * volume).with_send(send).with_cutoff(cutoff));
+        let gains = Arc::new(Gains::new(left * volume, right * volume).with_send(send).with_cutoff(cutoff).with_fold(fold));
         let handle = sources.add(LiveClip::new(clip.clone(), gains.clone(), hearing.mix.clone()).with_room(&room).with_limit(&mix_limit));
         let e = commands
             .spawn((

@@ -51,6 +51,7 @@ fn looks(game: &str, tag: usize) -> MapData {
                 level: SoundLevel::Db(75.0),
                 channel: 0,
                 dry: false,
+                hearing: None,
             },
         );
         sounds.clips.push(MapSoundClip {

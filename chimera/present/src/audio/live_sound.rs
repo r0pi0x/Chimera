@@ -34,7 +34,7 @@ use bevy::{
 use super::hearing::{Hearing, HearingMix, Muffle};
 use super::room::{AMBIENT_SEND, RoomBus, RoomDsp, RoomSend};
 use super::sound::{Ear, SoundListener};
-use crate::map::{MapSoundClip, SoundControl, SoundKey, SoundLevel, sound::SoundBank};
+use crate::map::{MapSoundClip, SoundControl, SoundKey, SoundLevel, sound::{EntryHearing, SoundBank}};
 
 /// The mix's limit: a gain 0-1 every one-shot clip's output is multiplied
 /// by, set each frame by `sound::limit_mix` from the voices playing (summed
@@ -84,8 +84,21 @@ pub struct LiveSound {
     pub left: f32,
     /// Bypasses the room.
     pub dry: bool,
+    /// Heard by Source's rules (its entry's, or the map's soundscapes'
+    /// for a soundscape loop; `map::hearing::EntryHearing`).
+    pub hearing: Option<EntryHearing>,
+    /// The world blocks the line from the ear to it, as last traced, and
+    /// when (`Time` elapsed, s; re-traced every `RETRACE`).
+    pub blocked: bool,
+    traced: f64,
     audio: Option<(Entity, Arc<Gains>)>,
 }
+
+/// How often a long-lived sound's wall trace is redone (s). The spec
+/// leaves the original's rate open (sound_hearing.md Q2); ours: ten
+/// times a second, the gain gliding to the new value over a few ms
+/// (`GAIN_SMOOTHING`).
+pub const RETRACE: f64 = 0.1;
 
 /// Volume by kind of sound: music (`snd_musicvolume`, set by the
 /// client's options) and an app's interface sounds (`snd_uivolume`, the
@@ -170,6 +183,11 @@ pub struct Gains {
     /// A low-pass cut-off as a fraction of the clip's bandwidth (its
     /// Nyquist frequency); 0 or 1 and above: none.
     cutoff: AtomicU32,
+    /// A stereo clip folded to one channel before the per-ear gains: 1 +
+    /// the right channel's weight (0.5 averages them, the far weight
+    /// blends a distance-variant wave's near and far versions); 0: played
+    /// as stereo.
+    fold: AtomicU32,
 }
 
 impl Gains {
@@ -188,6 +206,22 @@ impl Gains {
     pub fn with_cutoff(self, fraction: f32) -> Self {
         self.cutoff.store(fraction.to_bits(), Ordering::Relaxed);
         self
+    }
+    /// A stereo clip folded to one channel, the right one weighing `right`
+    /// (0-1; `set_fold`).
+    pub fn with_fold(self, right: Option<f32>) -> Self {
+        self.set_fold(right);
+        self
+    }
+    /// Fold a stereo clip: the right channel weighing `right` (0.5: the
+    /// mean; a distance-variant wave: the far weight), None: stereo.
+    pub fn set_fold(&self, right: Option<f32>) {
+        self.fold.store(right.map_or(0.0, |w| 1.0 + w.clamp(0.0, 1.0)).to_bits(), Ordering::Relaxed);
+    }
+    /// The right channel's weight when folded.
+    pub fn fold(&self) -> Option<f32> {
+        let f = f32::from_bits(self.fold.load(Ordering::Relaxed));
+        (f >= 1.0).then_some(f - 1.0)
     }
     fn cutoff(&self) -> f32 {
         f32::from_bits(self.cutoff.load(Ordering::Relaxed))
@@ -316,7 +350,13 @@ impl Iterator for LiveDecoder {
         }
         let i = self.frame * self.channels;
         let (l, r) = if self.channels >= 2 {
-            (self.samples[i], self.samples[i + 1])
+            match self.gains.fold() {
+                Some(w) => {
+                    let m = (self.samples[i] as f32 * (1.0 - w) + self.samples[i + 1] as f32 * w) as i16;
+                    (m, m)
+                }
+                None => (self.samples[i], self.samples[i + 1]),
+            }
         } else {
             (self.samples[i], self.samples[i])
         };
@@ -464,13 +504,14 @@ fn control(
                     stop(&mut commands, &sinks, old);
                 }
                 let Some(bank) = &bank else { continue };
-                let (clip_index, volume, pitch, level, dry) = match s.clip {
+                let (clip_index, volume, pitch, level, dry, rules) = match s.clip {
                     Some(c) if c < bank.0.clips.len() => (
                         c,
                         s.volume.unwrap_or(1.0),
                         s.pitch.unwrap_or(100.0),
                         s.level.unwrap_or(SoundLevel::Db(75.0)),
                         s.dry,
+                        bank.0.scape_hearing.filter(|_| s.key.soundscape()),
                     ),
                     Some(_) => continue,
                     None => {
@@ -488,6 +529,7 @@ fn control(
                             s.pitch.unwrap_or_else(|| entry.pitch.draw(unit()).trunc()),
                             s.level.unwrap_or(entry.level),
                             s.dry || entry.dry,
+                            entry.hearing,
                         )
                     }
                 };
@@ -513,6 +555,9 @@ fn control(
                         looping,
                         left: frames as f32 / clip.rate.max(1) as f32,
                         dry,
+                        hearing: rules,
+                        blocked: false,
+                        traced: f64::NEG_INFINITY,
                         audio: None,
                     },
                 );
@@ -576,9 +621,15 @@ fn drive_audio(
     room: Res<RoomDsp>,
     mix: Option<Res<SoundMix>>,
     hold: (Option<Res<crate::map::LocalMapLoad>>, Option<Res<super::sound::WorldUnheard>>),
+    (world, players, time): (
+        Option<crate::map::particles::WorldTracer>,
+        Query<(), (With<crate::core::MovementState>, Without<crate::core::Npc>)>,
+        Res<Time>,
+    ),
     mut commands: Commands,
 ) {
     let Some(bank) = bank else { return };
+    let now = time.elapsed_secs_f64();
     let mix = mix.map_or_else(SoundMix::default, |m| *m);
     // Held (`sound::held`): everything but music at nothing, going on.
     let held = super::sound::held(hold.0.as_deref(), hold.1.as_deref());
@@ -588,8 +639,21 @@ fn drive_audio(
     let ear = Ear::find(listener.iter());
     for s in live.sounds.values_mut() {
         let volume = if held && !is_music(&s.entry) { 0.0 } else { s.volume * mix.gain(&s.entry) };
-        let (left, right, send) = match (s.at, ear) {
-            (Some(at), Some(ear)) if !matches!(s.level, SoundLevel::Db(l) if l <= 0.0) => {
+        let mut fold = None;
+        let (left, right, send) = match (s.at, ear, &s.hearing) {
+            // Source's rules: the wall trace redone every `RETRACE`.
+            (Some(at), Some(ear), Some(rules)) => {
+                let own = s.follow.is_some() && s.follow == ear.owner;
+                if now - s.traced >= RETRACE {
+                    s.traced = now;
+                    s.blocked = !own && world.as_ref().is_some_and(|w| super::sound::obscured(w, ear.at.translation(), at));
+                }
+                let player = s.follow.is_some_and(|f| players.contains(f));
+                let h = ear.hear(at, s.follow, s.level, rules, player, s.blocked && !own, super::sound::room_mix(room.preset));
+                fold = h.fold;
+                (h.left * volume, h.right * volume, h.send)
+            }
+            (Some(at), Some(ear), None) if !matches!(s.level, SoundLevel::Db(l) if l <= 0.0) => {
                 let (l, r, send) = ear.gains(at, s.follow, s.level);
                 (l * volume, r * volume, send)
             }
@@ -601,6 +665,7 @@ fn drive_audio(
             Some((e, gains)) => {
                 gains.set(left, right);
                 gains.set_send(send);
+                gains.set_fold(fold);
                 if let Ok(mut sink) = sinks.get_mut(*e) {
                     if (sink.speed() - speed).abs() > 1e-4 {
                         sink.set_speed(speed);
@@ -617,7 +682,7 @@ fn drive_audio(
                 if s.looping && clip.loop_start.is_none_or(|l| l >= frames) {
                     clip.loop_start = Some(0);
                 }
-                let gains = Arc::new(Gains::new(left, right).with_send(send));
+                let gains = Arc::new(Gains::new(left, right).with_send(send).with_fold(fold));
                 let handle = clips.add(LiveClip::new(clip, gains.clone(), hearing.mix.clone()).with_room(&room));
                 let e = commands
                     .spawn((AudioPlayer(handle), PlaybackSettings::DESPAWN.with_speed(speed)))

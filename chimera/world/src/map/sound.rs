@@ -4,8 +4,9 @@
 //! for a source's playing one), and starts, changes and
 //! stops long-lived sounds with `SoundControl` under a `SoundKey`; the
 //! distance model (`distance_gain`, also for bots' hearing; a level is a
-//! Source sound level, an attenuation, or an inner and outer radius with
-//! a distance low-pass, `distance_cutoff`: LithTech's) and the
+//! Source sound level on Source's measured curve (`hearing`), a plain
+//! inverse-distance level (Halo's), an attenuation, or an inner and outer
+//! radius with a distance low-pass, `distance_cutoff`: LithTech's) and the
 //! surface under a point (`SurfaceGrid`, footsteps) and volumes that
 //! swap one surface's footsteps for another's (`StepRemap`), and the
 //! party's one footstep profile for every game's characters
@@ -31,8 +32,14 @@ pub fn decode_clip(bytes: &[u8]) -> Result<MapSoundClip, String> {
 /// How a sound falls off with distance.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SoundLevel {
-    /// Source sound level (0..255 "dB"); 0 is heard everywhere.
+    /// Source sound level (0..255 "dB"); 0 is heard everywhere. Falls off
+    /// by Source's measured curve (`source_gain`: inverse distance, air
+    /// loss, a knee toward 1 and a fade to silence).
     Db(f32),
+    /// A level on the plain inverse-distance law of `Db`'s reference
+    /// (gain 10^((L - 60) / 20) x 36 u / d, at most 1; no air loss, knee
+    /// or fade): a game whose own law that is (Halo's `fx::sound::level`).
+    Inverse(f32),
     /// Linear falloff, silent beyond 1000 / attenuation units (GoldSrc
     /// style, Source's "CompatibilityAttenuation").
     Attenuation(f32),
@@ -75,7 +82,14 @@ pub struct MapSoundEntry {
     pub channel: u8,
     /// Bypasses the room DSP (Source: every wave marked `#`).
     pub dry: bool,
+    /// Heard by Source's rules (mixer, walls, stereo-speaker pan, the
+    /// room's wet share, distance-variant waves: `hearing::EntryHearing`);
+    /// None: the game's own (the even pan, no wall loss, mixer 1).
+    #[serde(default)]
+    pub hearing: Option<EntryHearing>,
 }
+
+pub use super::hearing::EntryHearing;
 
 /// Ground properties that sounds use (Source surface properties).
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -123,6 +137,10 @@ pub struct MapSounds {
     pub surfaces: HashMap<String, MapSurface>,
     /// Ambience: named soundscapes and where each one applies.
     pub soundscapes: Vec<Soundscape>,
+    /// How the soundscapes' sounds are heard (Source's rules for a Source
+    /// map's: `EntryHearing`); None: the even pan, mixer 1.
+    #[serde(default)]
+    pub scape_hearing: Option<EntryHearing>,
     pub soundscape_zones: Vec<SoundscapeZone>,
     pub soundscape_emitters: Vec<SoundscapeEmitter>,
     /// Volumes that swap one surface's footsteps for another's.
@@ -424,15 +442,17 @@ pub const SOURCE_UNIT: f32 = 0.0254;
 /// Distances closer than this don't get louder (Source units).
 const MIN_DISTANCE: f32 = 36.0;
 
-/// Gain at `metres` from the source (spec open question 1: hypotheses H1
-/// for sound levels, H2 for attenuation entries, until measured): a
-/// Source level over Source units, a `Radius` one over metres, so any
-/// game's sounds fall off right on any game's map.
+/// Gain at `metres` from the source: a Source level by Source's measured
+/// curve (`source_gain`, specs/source/sound_hearing.md 2), a compatibility
+/// attenuation linearly (section 3), an `Inverse` level by the plain law,
+/// all over Source units; a `Radius` one over metres, so any game's
+/// sounds fall off right on any game's map.
 pub fn distance_gain(level: SoundLevel, metres: f32) -> f32 {
     let units = metres / SOURCE_UNIT;
     match level {
-        SoundLevel::Db(l) if l <= 0.0 => 1.0,
-        SoundLevel::Db(l) => (10f32.powf((l - 60.0) / 20.0) * MIN_DISTANCE / units.max(MIN_DISTANCE)).min(1.0),
+        SoundLevel::Db(l) => super::hearing::source_gain(l, units),
+        SoundLevel::Inverse(l) if l <= 0.0 => 1.0,
+        SoundLevel::Inverse(l) => (10f32.powf((l - 60.0) / 20.0) * MIN_DISTANCE / units.max(MIN_DISTANCE)).min(1.0),
         SoundLevel::Attenuation(a) if a <= 0.0 => 1.0,
         SoundLevel::Attenuation(a) => (1.0 - units * a / 1000.0).clamp(0.0, 1.0),
         SoundLevel::Radius { inner, outer, .. } => radius_gain(inner, outer, metres),
@@ -490,9 +510,11 @@ pub fn even_step_volume(pace: StepPace) -> f32 {
 }
 
 /// The distance (metres) from which a sound of `level` is silent (None:
-/// heard everywhere): Source's levels' falloff never reaches zero.
+/// heard everywhere): a Source level where its curve's fade reaches
+/// zero (`source_silent_from`); an `Inverse` level never does.
 pub fn silent_from(level: SoundLevel) -> Option<f32> {
     match level {
+        SoundLevel::Db(l) if l > 0.0 => Some(super::hearing::source_silent_from(l) * SOURCE_UNIT),
         SoundLevel::Attenuation(a) if a > 0.0 => Some(1000.0 / a * SOURCE_UNIT),
         SoundLevel::Radius { inner, outer, .. } => Some(outer.min((inner * inner + (outer - inner).powi(2)).sqrt())),
         _ => None,
@@ -507,9 +529,9 @@ pub fn silent_from(level: SoundLevel) -> Option<f32> {
 /// silent point.
 pub fn send_range(level: SoundLevel) -> Option<f32> {
     match level {
-        SoundLevel::Db(l) if l <= 0.0 => None,
-        SoundLevel::Db(l) if l <= 50.0 => Some(500.0 * SOURCE_UNIT),
-        SoundLevel::Db(l) => Some(100.0 * (l - 50.0) * SOURCE_UNIT),
+        SoundLevel::Db(l) | SoundLevel::Inverse(l) if l <= 0.0 => None,
+        SoundLevel::Db(l) | SoundLevel::Inverse(l) if l <= 50.0 => Some(500.0 * SOURCE_UNIT),
+        SoundLevel::Db(l) | SoundLevel::Inverse(l) => Some(100.0 * (l - 50.0) * SOURCE_UNIT),
         SoundLevel::Attenuation(a) if a <= 0.0 => None,
         SoundLevel::Attenuation(a) => Some(2000.0 / a * SOURCE_UNIT),
         SoundLevel::Radius { .. } => silent_from(level),
