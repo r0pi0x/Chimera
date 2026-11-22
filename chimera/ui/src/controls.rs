@@ -1005,9 +1005,8 @@ impl<'a> Ui<'a> {
                         ));
                     }
                 }
-                let number = o.chars().all(|ch| ch.is_ascii_digit() || ch == '.' || ch == ' ');
-                let role = if number { Role::Mono } else { Role::DisplayRegular };
-                self.text(c, b, role, if number { 0.58 } else { 0.62 }, if sel { Tone::Ink } else if greyed { Tone::Fg4 } else { Tone::Fg2 }, o);
+                let (role, size) = crate::form::seg_face(o);
+                self.text(c, b, role, size, if sel { Tone::Ink } else if greyed { Tone::Fg4 } else { Tone::Fg2 }, o);
                 b
             })
             .collect()
@@ -1257,7 +1256,20 @@ impl<'a> Ui<'a> {
     /// its end of the range (`StepperRange::reached`) or a disabled
     /// stepper is dimmed (still a node, so a click lands where it did).
     pub fn stepper_ex(&self, c: &mut Commands, parent: Entity, value: &str, range: StepperRange, st: State, typing: Option<Typing>) -> StepperParts {
-        let g = c.spawn((UiStyle { shrink: Some(0.0), ..UiStyle::row() }, Node { align_self: AlignSelf::FlexStart, ..default() }, ChildOf(parent))).id();
+        self.stepper_at(c, parent, value, range, st, typing, None)
+    }
+
+    /// `stepper` filling a column `w` cq wide (a settings row's control
+    /// column, `form`): the keys keep their size, the value box takes the
+    /// rest (never less than `range` asks).
+    pub fn stepper_filling(&self, c: &mut Commands, parent: Entity, value: &str, range: StepperRange, st: State, w: f32) -> (Entity, Entity) {
+        let p = self.stepper_at(c, parent, value, range, st, None, Some(w));
+        (p.minus, p.plus)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn stepper_at(&self, c: &mut Commands, parent: Entity, value: &str, range: StepperRange, st: State, typing: Option<Typing>, fill: Option<f32>) -> StepperParts {
+        let g = c.spawn((UiStyle { w: fill, shrink: Some(0.0), ..UiStyle::row() }, Node { align_self: AlignSelf::FlexStart, ..default() }, ChildOf(parent))).id();
         let key = |c: &mut Commands, label: &str, dim: bool, edges: (bool, bool)| {
             let b = c
                 .spawn((
@@ -1286,7 +1298,7 @@ impl<'a> Ui<'a> {
         let minus = key(c, "-", off || range.at_min, (true, false));
         // As tall as the keys, so the focus underline sits under the
         // value with a gap, as the slider's and the fields' do.
-        let w = range.width(value);
+        let w = fill.map_or(0.0, |f| f - 2.0 * STEPPER_KEY_W).max(range.width(value));
         let value = self.value_box(c, g, value, w, st, typing, ValueLook::STEPPER);
         let plus = key(c, "+", off || range.at_max, (false, true));
         // The one border: the whole control's, leaning with the kit's slant.

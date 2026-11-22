@@ -973,7 +973,7 @@ fn form(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<chi
                 ui.big_toggle(c, sr.control, false, State::NONE, None, TOGGLE_ON_OFF);
             }
             4 => {
-                let _ = ui.choice(c, sr.control, &["On", "Team only", "Off"], Some(1), None, State::NONE);
+                let _ = ui.choice(c, sr.control, &["On", "Team", "Off"], Some(1), None, State::NONE);
             }
             _ => {
                 let made = ui.choice(c, sr.control, &["Party playlist", "Combat Arms' loop", "None"], Some(0), None, State::NONE);

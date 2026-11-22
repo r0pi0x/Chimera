@@ -1156,11 +1156,13 @@ fn a_redrawn_screen_keeps_the_pointers_look() {
 fn a_form_row_has_one_column_its_reset_key_and_its_mark() {
     use chimera_ui::form::{self, Choice, FormSizes, OriginMark, ResetKey, RowLook};
     let mut app = app();
-    let f = FormSizes::of(app.world().resource::<Theme>());
-    assert!(form::fits_segmented(&f, &["On", "Team only", "Off"], f.control_w));
-    assert!(form::fits_segmented(&f, &["None", "60", "144", "240", "300"], f.control_w));
-    assert!(!form::fits_segmented(&f, &["Party playlist", "Combat Arms' loop", "None"], f.control_w), "a long word");
-    assert!(!form::fits_segmented(&f, &["1", "2", "3", "4", "5", "6"], f.control_w), "six");
+    let theme = app.world().resource::<Theme>().clone();
+    let f = FormSizes::of(&theme);
+    assert!(form::fits_segmented(&theme, &f, &["On", "Team", "Off"], f.control_w));
+    assert!(form::fits_segmented(&theme, &f, &["60", "144", "240", "300"], f.control_w));
+    assert!(!form::fits_segmented(&theme, &f, &["On", "Team only", "Off"], f.control_w), "measured in the font: too wide");
+    assert!(!form::fits_segmented(&theme, &f, &["Party playlist", "Combat Arms' loop", "None"], f.control_w), "a long word");
+    assert!(!form::fits_segmented(&theme, &f, &["1", "2", "3", "4", "5", "6"], f.control_w), "six");
     let seg = build(&mut app, |ui, c, root| ui.choice(c, root, &["On", "Off"], Some(0), None, State::NONE));
     assert!(matches!(seg, Choice::Segmented(ref o) if o.len() == 2));
     let dd = build(&mut app, |ui, c, root| ui.choice(c, root, &["Party playlist", "Combat Arms' loop"], Some(0), None, State::NONE));
@@ -1221,4 +1223,46 @@ fn the_capture_chip_blinks_and_says_esc_cancels() {
         app.update();
         assert_eq!(app.world().get::<Visibility>(light), Some(&Visibility::Inherited), "steady");
     }
+}
+
+/// A choice set the kit calls fitting never overflows its segments in the
+/// real layout (the text's laid-out width within its option's box), and
+/// the long label that overflowed before ("Minigame's" with its
+/// neighbours) falls back to a dropdown.
+#[test]
+fn segmented_choices_that_fit_do_not_overflow() {
+    use chimera_ui::form::{self, Choice, FormSizes};
+    let mut app = laid_out();
+    let theme = app.world().resource::<Theme>().clone();
+    let f = FormSizes::of(&theme);
+    let sets: [&[&str]; 10] = [
+        &["Default", "On", "Off"],
+        &["Default", "Random", "In turn"],
+        &["On", "Team", "Off"],
+        &["Off", "On"],
+        &["60", "144", "240", "300"],
+        &["Default", "0", "3", "5", "10"],
+        &["On", "Team only", "Off"],
+        &["Windowed", "Full screen"],
+        &["Minigame's", "On", "Off"],
+        &["Minigame's", "Random", "In turn"],
+    ];
+    let mut fitting = 0;
+    for set in sets {
+        let fits = form::fits_segmented(&theme, &f, set, f.control_w);
+        let made = build_laid(&mut app, |ui, c, root| ui.choice(c, root, set, Some(0), None, State::NONE));
+        let Choice::Segmented(opts) = made else {
+            assert!(!fits, "{set:?}: not fitting is a dropdown");
+            continue;
+        };
+        assert!(fits);
+        fitting += 1;
+        for (o, label) in opts.iter().zip(set) {
+            let words = descendants_with_entity::<Text>(&mut app, *o)[0];
+            let cq = { let u = *app.world().resource::<UiUnits>(); u.phys(u.cq(1.0)) };
+            let (w, avail) = (size_of(&app, words).x / cq, size_of(&app, *o).x / cq);
+            assert!(w + 0.6 <= avail, "{set:?}: {label} is {w} px in a {avail} px segment");
+        }
+    }
+    assert!(fitting >= 5, "the usual sets stay segmented ({fitting})");
 }

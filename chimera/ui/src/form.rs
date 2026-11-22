@@ -14,7 +14,7 @@
 //! - `big_toggle`: the toggle as wide as the column and `control_h`
 //!   tall, its slab's slide kept (`controls::ToggleSlide`).
 //! - `choice`: a choice set that fits the column shows segmented
-//!   (`fits_segmented`: each option's words in an equal share), else a
+//!   (`fits_segmented`: each option's words, measured in the theme's font, in an equal share), else a
 //!   dropdown.
 //! - The key-capture chip is `controls::key_field` listening: its light
 //!   blinks (`Blink`, `blink`: shown `layout.form.blink` s of each two,
@@ -62,7 +62,6 @@ pub struct FormSizes {
     /// The reset key's column.
     pub state_w: f32,
     pub badge_h: f32,
-    pub seg_char: f32,
     pub seg_pad: f32,
     pub blink: f32,
 }
@@ -75,7 +74,6 @@ impl FormSizes {
             control_h: g("control_h", 2.2),
             state_w: g("state_w", 2.6),
             badge_h: g("badge_h", 1.15),
-            seg_char: g("seg_char", 0.36),
             seg_pad: g("seg_pad", 0.8),
             blink: g("blink", 1.0),
         }
@@ -128,14 +126,24 @@ pub fn blink(
     }
 }
 
+/// A segmented option's words' role and size (cq): numbers in Mono, words
+/// in Display Regular (`Ui::segmented_sized` draws them so).
+pub fn seg_face(option: &str) -> (Role, f32) {
+    if option.chars().all(|ch| ch.is_ascii_digit() || ch == '.' || ch == ' ') { (Role::Mono, 0.58) } else { (Role::DisplayRegular, 0.62) }
+}
+
 /// Whether `options` fit `w` cq as a segmented choice: each in an equal
-/// share, its words (`seg_char` a character) and its padding.
-pub fn fits_segmented(sizes: &FormSizes, options: &[&str], w: f32) -> bool {
+/// share, its words as the theme's font sets them (`fonts::text_width`:
+/// capitals, tracking) and the option's padding (`seg_pad`).
+pub fn fits_segmented(theme: &Theme, sizes: &FormSizes, options: &[&str], w: f32) -> bool {
     if options.is_empty() || options.len() > 5 {
         return false;
     }
     let share = (w - 0.5) / options.len() as f32;
-    options.iter().all(|o| o.chars().count() as f32 * sizes.seg_char + sizes.seg_pad <= share)
+    options.iter().all(|o| {
+        let (role, size) = seg_face(o);
+        crate::fonts::text_width(theme, role, size, o) + sizes.seg_pad <= share
+    })
 }
 
 /// What `Ui::choice` drew.
@@ -280,7 +288,7 @@ impl Ui<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn choice_with(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], open: Option<usize>, st: State) -> Choice {
         let f = self.form();
-        if fits_segmented(&f, options, f.control_w) {
+        if fits_segmented(self.theme, &f, options, f.control_w) {
             Choice::Segmented(self.segmented_sized(c, parent, options, selected, off, st, Some((f.control_w, f.control_h))))
         } else {
             let (field, options) = self.dropdown(c, parent, options, selected.unwrap_or(0), open, f.control_w, st);

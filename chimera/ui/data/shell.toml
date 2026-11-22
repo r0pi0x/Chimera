@@ -130,8 +130,7 @@ control_w = 14.0
 control_h = 2.2
 state_w = 2.6        # the reset key's column
 badge_h = 1.15       # a badge's height
-seg_char = 0.36      # a segmented option's width a character (fits or a dropdown)
-seg_pad = 0.8        # and its padding
+seg_pad = 0.8        # a segmented option's padding besides its words (fits or a dropdown)
 blink = 1.0          # the capture chip's light: one blink, s
 
 # The text field (chimera_ui::controls), every app's, cq: a screen's one

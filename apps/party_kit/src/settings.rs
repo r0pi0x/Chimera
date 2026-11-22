@@ -296,10 +296,11 @@ pub fn widget_of(pick: &Pick, forced: Option<&str>) -> Widget {
         Pick::Choices(c) => {
             let labels: Vec<String> = c.iter().map(|(_, l)| l.to_ascii_lowercase()).collect();
             let words: Vec<&str> = c.iter().map(|(_, l)| l.as_str()).collect();
-            let sizes = chimera_ui::form::FormSizes::of(&Theme::shell_default());
+            let theme = Theme::shell_default();
+            let sizes = chimera_ui::form::FormSizes::of(&theme);
             if (labels == ["off", "on"] || labels == ["no", "yes"]) && forced.is_none() {
                 Widget::Toggle
-            } else if forced != Some("dropdown") && chimera_ui::form::fits_segmented(&sizes, &words, sizes.control_w) {
+            } else if forced != Some("dropdown") && chimera_ui::form::fits_segmented(&theme, &sizes, &words, sizes.control_w) {
                 Widget::Segmented
             } else {
                 Widget::Dropdown
@@ -364,7 +365,7 @@ pub fn pick_control(
             }
         }
         (_, Pick::Range { .. }) => {
-            let (minus, plus) = ui.stepper(c, col, shown, pick.stepper_range(v), vst);
+            let (minus, plus) = ui.stepper_filling(c, col, shown, pick.stepper_range(v), vst, ui.form().control_w);
             out.extend([(PickPress::Step(-1), minus), (PickPress::Step(1), plus)]);
         }
     }
@@ -1992,7 +1993,9 @@ fn help_of(world: &World, ctx: Context, tabs: &[(String, Vec<Setting>)], s: &Set
                 let short = game.map_or(g, |x| x.short.as_str());
                 kv.push(("Comes from", if console.game_cvar(g, n).is_some() { format!("{short}'s own (reset: {})", from.to_lowercase()) } else { from }));
             } else if let Some(c) = cvar {
-                kv.push(("Default", set.shown(&c.default)));
+                // A host override's "" is each minigame's own value.
+                let shown = if set.key.is_some() && c.default.is_empty() { "Each minigame's own value".to_string() } else { set.shown(&c.default) };
+                kv.push(("Default", shown));
             }
             kv.push(("Range", range_text(set)));
             if let Some(n) = note {

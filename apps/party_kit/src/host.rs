@@ -30,7 +30,7 @@
 //!
 //! - **Told in the lobby**: a setting with `lobby = true` is also a
 //!   `chimera_net::prematch::LobbyFact`: the pre-match lobby shows its
-//!   value (in the choice's words; "Minigame's" says nothing and is left
+//!   value (in the choice's words; "Default" says nothing and is left
 //!   out) to every player, who can leave before the match they don't want.
 //!
 //! Known shortcuts: the settings last for the host's process (not
@@ -379,7 +379,7 @@ mod tests {
         assert!(!knife.live);
         assert_eq!(knife.pick.next("", 1), "true");
         assert_eq!(knife.pick.next("false", 1), "");
-        assert_eq!(knife.pick.shown(""), "Minigame's");
+        assert_eq!(knife.pick.shown(""), "Default");
         let bots = s.iter().find(|s| s.cvar == "MaxPlayer").unwrap();
         assert!(bots.live);
         assert_eq!(bots.pick.next("3", 1), "4");

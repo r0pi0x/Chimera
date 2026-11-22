@@ -37,7 +37,7 @@ cvar = "mp_rung_extras_attachments"
 lobby = true
 key = "rules.rung_extras.attachments"
 help = "A gun game's Combat Arms rungs draw fitted parts for their guns (true or false); the other games' guns take no parts."
-choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
+choices = [["", "Default"], ["true", "On"], ["false", "Off"]]
 
 [[setting]]
 label = "Rung extras: characters"
@@ -45,7 +45,7 @@ cvar = "mp_rung_extras_character"
 lobby = true
 key = "rules.rung_extras.character"
 help = "A gun game's rungs draw a character for everyone on them (true or false)."
-choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
+choices = [["", "Default"], ["true", "On"], ["false", "Off"]]
 
 [[setting]]
 label = "Rung extras: melee"
@@ -53,7 +53,7 @@ cvar = "mp_rung_extras_melee"
 lobby = true
 key = "rules.rung_extras.melee"
 help = "A gun game's rungs draw a melee weapon of their own (true or false)."
-choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
+choices = [["", "Default"], ["true", "On"], ["false", "Off"]]
 
 [[setting]]
 label = "Rung extras: infected odds (Combat Arms)"
@@ -61,7 +61,7 @@ cvar = "mp_rung_extras_infected_odds"
 lobby = true
 key = "rules.rung_extras.infected.odds"
 help = "How often a melee rung (the knife finale's; at most one a ladder) makes its players the infected, with their hands alone (0 to 1; Combat Arms' data: 0.25)."
-choices = [["", "Minigame's"], ["0", "Never"], ["0.1", "10%"], ["0.25", "25%"], ["0.5", "50%"], ["1", "Always"]]
+choices = [["", "Default"], ["0", "Never"], ["0.1", "10%"], ["0.25", "25%"], ["0.5", "50%"], ["1", "Always"]]
 
 [[setting]]
 label = "Demote on suicide"
@@ -69,7 +69,7 @@ cvar = "mp_demote_on_suicide"
 lobby = true
 key = "rules.demote_on_suicide"
 help = "A suicide, fall or `kill` costs a rung (true or false)."
-choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
+choices = [["", "Default"], ["true", "On"], ["false", "Off"]]
 
 [[setting]]
 label = "Knife finale"
@@ -77,7 +77,7 @@ cvar = "mp_knife_finale"
 lobby = true
 key = "rules.knife_finale"
 help = "The ladder ends on knife-only melee rungs (true or false)."
-choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
+choices = [["", "Default"], ["true", "On"], ["false", "Off"]]
 
 [[setting]]
 label = "Melee rungs"
@@ -85,7 +85,7 @@ cvar = "mp_melee_rungs"
 lobby = true
 key = "rules.melee_rungs"
 help = "How many melee rungs end the ladder: auto (7% of the ladder, at least 1) or a number."
-choices = [["", "Minigame's"], ["auto", "Auto"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]]
+choices = [["", "Default"], ["auto", "Auto"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]]
 
 [[setting]]
 label = "Map rotation"
@@ -93,14 +93,14 @@ cvar = "mp_map_rotation"
 lobby = true
 key = "rotation"
 help = "How the next map is picked: random or in_turn."
-choices = [["", "Minigame's"], ["random", "Random"], ["in_turn", "In turn"]]
+choices = [["", "Default"], ["random", "Random"], ["in_turn", "In turn"]]
 
 [[setting]]
 label = "Avoid recent maps"
 cvar = "mp_avoid_recent"
 key = "avoid_recent"
 help = "A random rotation skips the last this many maps played."
-choices = [["", "Minigame's"], ["0", "0"], ["3", "3"], ["5", "5"], ["10", "10"]]
+choices = [["", "Default"], ["0", "0"], ["3", "3"], ["5", "5"], ["10", "10"]]
 
 [[setting]]
 label = "Spawn protection"
@@ -108,7 +108,7 @@ cvar = "mp_spawn_protection"
 lobby = true
 key = "spawn.respawn.protection"
 help = "Seconds a respawned player can't be hurt: shots pass through, drawn see-through (ended by attacking)."
-choices = [["", "Minigame's"], ["0", "Off"], ["1", "1 s"], ["1.5", "1.5 s"], ["2", "2 s"], ["3", "3 s"]]
+choices = [["", "Default"], ["0", "Off"], ["1", "1 s"], ["1.5", "1.5 s"], ["2", "2 s"], ["3", "3 s"]]
 
 [[setting]]
 label = "Cross-game balance"

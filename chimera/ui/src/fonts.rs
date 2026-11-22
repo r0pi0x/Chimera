@@ -236,3 +236,32 @@ pub fn has_glyph(data: &[u8], ch: char) -> bool {
         f.charmap().map(ch).is_some()
     })
 }
+
+/// How wide `text` is set in `role` at `size_cq` cq (a capitals role's text
+/// is measured upper-cased, as it is drawn): the face's own advances (our
+/// embedded faces) plus the role's tracking after each character. Another
+/// face than ours counts 0.6 em a character. For layout decisions (does a
+/// choice fit a segment), not for drawing.
+pub fn text_width(theme: &Theme, role: Role, size_cq: f32, text: &str) -> f32 {
+    use skrifa::{MetadataProvider, raw::TableProvider};
+    let Some(spec) = theme.type_spec(role.key()) else { return text.chars().count() as f32 * size_cq * 0.6 };
+    let text = if spec.upper { text.to_uppercase() } else { text.to_string() };
+    let data: Option<&[u8]> = match (spec.face.as_str(), spec.weight) {
+        ("display", 0..=549) => Some(OWN.display_regular),
+        ("display", 550..=799) => Some(OWN.display_bold),
+        ("display", _) => Some(OWN.display_black),
+        ("mono", _) => Some(OWN.mono),
+        _ => None,
+    };
+    let font = data.and_then(|d| skrifa::FontRef::from_index(d, 0).ok());
+    let em = text.chars().count() as f32 * (size_cq * spec.tracking);
+    let Some(font) = font else { return text.chars().count() as f32 * size_cq * 0.6 + em };
+    let upem = font.head().map_or(1000.0, |h| h.units_per_em() as f32).max(1.0);
+    let charmap = font.charmap();
+    let metrics = font.glyph_metrics(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::default());
+    let adv: f32 = text
+        .chars()
+        .map(|ch| charmap.map(ch).and_then(|g| metrics.advance_width(g)).unwrap_or(upem * 0.6))
+        .sum();
+    adv / upem * size_cq + em
+}
