@@ -14,7 +14,12 @@
 //!   screen draws `OwnStates` (each on ui_kit.rs's allowlist);
 //! - a form control (a toggle, a segmented choice, a stepper, a dropdown)
 //!   inside one of the kit's rows sits in a setting row's control column
-//!   (`Ui::setting_row`: one column width, one marker a row).
+//!   (`Ui::setting_row`: one column width, one marker a row);
+//! - the controls in one row (a node's children: buttons, toggles,
+//!   segmented choices, steppers, dropdowns) share one `Size`, and each
+//!   draws one of the kit's borders for its kind (`ControlBox`; the
+//!   user's review of the lobby mock, 2026-11-22: an Auto/Hold choice
+//!   taller than Start now beside it, Add bot with another border).
 //!
 //! The text scan beside it, `checks/tests/it/ui_kit.rs`
 //! (`controls_are_the_kits`), catches the same by the code; this one by
@@ -24,7 +29,7 @@
 use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_client::client::ui_scene::UiSceneHooks;
 use chimera_ui::controls::{
-    Chevron, KitControl, KitRow, OwnStates, PointerCatch, SegmentedTrack, SettingRowMark, StepperBorder, ToggleSlab,
+    Border, Chevron, ControlBox, KitControl, KitRow, OwnStates, PointerCatch, SegmentedTrack, SettingRowMark, StepperBorder, ToggleSlab,
 };
 use chimera_world::harness::Sim;
 
@@ -169,6 +174,7 @@ fn problems(sim: &mut Sim) -> Vec<String> {
             .iter(w)
             .map(|e| (e, "dropdown")),
     );
+    out.extend(row_sizes(sim.app.world_mut()));
     let w = sim.app.world();
     for (e, what) in forms {
         let up = ancestors(w, e);
@@ -178,6 +184,36 @@ fn problems(sim: &mut Sim) -> Vec<String> {
         if w.get::<SettingRowMark>(*row).is_none() {
             out.push(format!(
                 "a {what} in a plain `Ui::row` ({row}): a setting's control goes in `Ui::setting_row`'s column"
+            ));
+        }
+    }
+    out
+}
+
+/// Rows whose controls differ in size, or a control with a border the
+/// kit doesn't define (the one button system; module doc).
+pub(crate) fn row_sizes(w: &mut World) -> Vec<String> {
+    let mut out = Vec::new();
+    let boxes: Vec<(Entity, ControlBox, Option<Entity>)> = w
+        .query::<(Entity, &ControlBox, Option<&ChildOf>)>()
+        .iter(w)
+        .map(|(e, b, p)| (e, *b, p.map(|p| p.parent())))
+        .collect();
+    let mut rows: std::collections::HashMap<Entity, Vec<(Entity, ControlBox)>> = Default::default();
+    for (e, b, parent) in &boxes {
+        if !matches!(b.border, Border::None | Border::Line | Border::Dim | Border::Threat) {
+            out.push(format!("{e}: a border not the kit's ({:?})", b.border));
+        }
+        if let Some(p) = parent {
+            rows.entry(*p).or_default().push((*e, *b));
+        }
+    }
+    for (row, cs) in rows {
+        let sizes: std::collections::BTreeSet<String> = cs.iter().map(|(_, b)| format!("{:?}", b.size)).collect();
+        if sizes.len() > 1 {
+            out.push(format!(
+                "controls of different sizes in one row ({row}: {}): one row, one `Size` (controls::Size)",
+                cs.iter().map(|(e, b)| format!("{e} {:?}", b.size)).collect::<Vec<_>>().join(", ")
             ));
         }
     }
@@ -361,4 +397,27 @@ fn every_staged_dialog_closes_on_right_click_or_is_flagged_blocking() {
     }
     assert!(dialogs >= 4 && closable >= 3, "dialogs staged: {dialogs}, closable {closable}");
     assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+/// A row with a regular button beside a large one is caught (the lobby
+/// mock's host bar: the choice taller than Start now).
+#[test]
+fn controls_of_two_sizes_in_one_row_are_caught() {
+    use chimera_ui::controls::{Kind, Size, State, Ui};
+    let mut sim = sim_with(SIGNAL);
+    stage(&mut sim, "menu", &[]).unwrap();
+    assert!(row_sizes(sim.app.world_mut()).is_empty());
+    let w = sim.app.world_mut();
+    let theme = w.resource::<chimera_ui::Theme>().clone();
+    let units = *w.resource::<chimera_ui::UiUnits>();
+    let row = w.spawn(Node::default()).id();
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    let mut c = Commands::new(&mut queue, w);
+    let ui = Ui::new(&theme, None, units);
+    ui.button(&mut c, row, Kind::Primary, "Start now", None, Size::Large, State::NONE);
+    ui.button(&mut c, row, Kind::Secondary, "Add bot", None, Size::Regular, State::NONE);
+    queue.apply(w);
+    let p = row_sizes(w);
+    assert_eq!(p.len(), 1, "{p:?}");
+    assert!(p[0].contains("different sizes"), "{p:?}");
 }

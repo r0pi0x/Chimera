@@ -1242,8 +1242,9 @@ four stages, each merged on its own:
    list, you first, avatars, the progress bars, ping bars and ms, no
    ready-up: `mp_lobby_host_start`, the host's Start as the hero).
 3. **Controls** (in): the hero white on #2D6BEB (`Tone::Hero`; hover
-   `acc` and its edge leaning out), a dialog's hero the big one (`HERO_H`,
-   Display Bold .9) beside a regular secondary, labels in Display, key
+   `acc` and its edge leaning out), bold, as tall as the buttons beside
+   it (one button system, 2026-11-22: `controls::Size`; it was the big
+   one, `HERO_H`, beside a regular secondary), labels in Display, key
    caps as the lockup; the thin white caret just after the text; the
    progress component (`Ui::progress`, variant B: hollow and filling,
    filled when ready, striped while connecting, dim pending, the word and
@@ -1433,6 +1434,71 @@ through small interfaces, with fakes for the stagings.
   model renders (generated per asset, the ingest plan); the 3D model
   viewer; Q's quick panel.
 - Stagings: `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range>`.
+
+### Design directions (2026-11-22): lobby and match end
+
+For the user's review, not built: "Lobby and Match End Directions"
+(claude.ai artifact, private). Three directions per screen with key
+states at 1920x1080 and 1280x720, precedents, and match-end and lobby
+timelines. Recommended: the lobby as a **starting grid** (a lane per
+player filling to a start line as it loads; chat left, map and mode
+right; host bar with Auto/Hold, Start now, Add bot) and the match end
+as a **ladder wall** (the climb as fourteen gun columns with everyone's
+tile on their final rung and the selected player's time per rung under
+it, replacing the line chart; six personal tiles; standings right; the
+vote as a fixed band along the bottom, open from 0 s). Needs a
+per-client load fraction and personal bests if approved.
+
+### Lobby: the starting grid (user's review, 2026-11-22; built)
+
+The user chose direction A, the starting grid, with these changes (all
+binding), built in `chimera_client::client::lobby_panel` on the kit:
+
+- **One button system first** (the mock's host bar had the Auto/Hold
+  choice taller than Start now and Add bot with a border of its own;
+  treated as a kit problem): `chimera_ui::controls::Size` (Small 1.9,
+  Regular 2.4, Large 2.8 cq) for every button, toggle, segmented choice,
+  stepper and dropdown; kinds Primary, Secondary, Tertiary, Destructive;
+  borders `controls::Border` only; the controls in one row share one
+  size (a dialog's hero no longer taller than its Cancel). Every screen
+  was moved onto it; `kit_conformance` checks the rows of every staged
+  screen (docs/DESIGN.md, "UI: always the kit").
+- **Top**: the lobby's name (the server's `hostname`, e.g. "Friday
+  Frags"), no address. The right keeps the party and settings tiles (no
+  Invite button there); **Invite to game** sits on the players' head and
+  opens the party panel.
+- **Lanes**: full-width load bars; no row numbers, no status or ping
+  columns (the ping is the kit's meter at the lane's end); the player's
+  avatar left of the name; the Host tag kept; bots show their robot avatar
+  (no BOT tag); parties grouped with their edges (your party first);
+  no "load to start line" flavour.
+- **Load states**, mapped from ours (`row_load`): Joining (connected,
+  nothing measured) an indeterminate sweep; Downloading a striped,
+  half-translucent bar (not yellow); Loading (the map, the models, the
+  physics: `load_stages`) a white bar advancing, its stage's word; the
+  share in words on both; **Ready**: the bar disappears, "Ready" only, so
+  the eye goes to who is still loading. Kit: `chimera_ui::load`
+  (`Ui::load_line`, `Load`).
+- **Kick**: on the lane under the pointer, in the ping's place, for the
+  host only; `ui_lobby_kick 0` (a host setting, "Kick in the lobby")
+  hides it. A bot's Kick removes a bot (`MaxPlayer` one fewer).
+- **Host bar**: Start: Auto | Hold (Auto the default; Hold for a player
+  who will be right back: `lobby_hold`), Start now (F3), Add bot
+  (`MaxPlayer` one more), one size. A player sees who hosts and how it
+  starts, and Leave.
+- **Right column**: the map's card without a game tag; no "Match 3" or
+  "Up next" counter; the mode named big with the ladder's rungs drawn
+  small; the match's settings; the games the guns come from.
+- **Waiting mark** (bottom right): counting down, the seconds over the
+  tick bar; held, "Held by host"; else who it waits for. The mock's
+  sheared squares are a kit component, `Ui::busy` (a lit head running
+  along, `chimera_ui::load`), for waiting and loading states elsewhere.
+- **Chat** at the left as mocked.
+- Answers to the mock's open questions: Auto start by default with the
+  host's Auto/Hold; no warm-up room (players stay staged); a long list
+  scrolls with the kit's bar and a "more players below" mark
+  (`Ui::scroll_more`); lanes don't shrink.
+- Stagings: `ui_scene lobby <host|between|join|count|held|crowd>`.
 
 ## 6. Decisions (user, 2026-11-14)
 

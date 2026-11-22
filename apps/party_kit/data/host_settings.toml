@@ -19,6 +19,12 @@ live = true
 range = [0, 15, 1]
 
 [[setting]]
+label = "Kick in the lobby"
+cvar = "ui_lobby_kick"
+live = true
+choices = [["1", "On the player under the pointer"], ["0", "Hidden"]]
+
+[[setting]]
 label = "Even footsteps"
 cvar = "party_even_footsteps"
 lobby = true

@@ -2,9 +2,13 @@
 //! Components & Views" page's component table, its sizes in cq and its
 //! tokens): what menus are built from.
 //!
+//! - **One button system** (docs/DESIGN.md, "UI: always the kit"): every
+//!   control at a `Size` (`Small`, `Regular`, `Large`: 1.9, 2.4, 2.8 cq),
+//!   the controls in one row at one; borders `Border` only; `ControlBox`
+//!   on each control's root says which.
 //! - `button` (`Kind`: primary the hero, a `hero` cobalt slab with a
-//!   slanted right edge and white text, `HERO_H` the big one with a bold
-//!   label; secondary outlined, ghost, danger with the threat mark), labels
+//!   slanted right edge and a white bold label; secondary the line
+//!   border, tertiary text only, destructive the threat border and mark), labels
 //!   in Display, an optional key cap (`kbd`: the lockup, equal padding,
 //!   .82 of the label, full strength); `tabs` (sub-tabs: grey names, the
 //!   selected one white, a hovered one white too (`HoverText`), no strip
@@ -58,7 +62,7 @@
 //!   2026-11-21); a control alone shows focus as its own accent detail; selected is a white fill;
 //!   a toggle that is on is white (cobalt stays for focus and changed
 //!   rows: a changed row's accent square); threat red only as a mark (an
-//!   error's underline, the danger button's mark), never a fill.
+//!   error's underline, the destructive button's mark), never a fill.
 //! - **Wipes** (`Wipe`): a moving cover or bar on the 12° slant, clipped
 //!   along it by its `Timeline` (`Prop::ClipLeft`/`ClipRight`), the
 //!   menus' moves inside a screen (`wipe_cover`, `Wipe::bar`); the logo
@@ -124,17 +128,90 @@ impl State {
     }
 }
 
-/// A button's look.
+/// A button's look (the kit's one button system: docs/DESIGN.md, "UI:
+/// always the kit", "One button system").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
-    /// White fill, slanted right edge: the safe or main choice.
+    /// The hero: a cobalt slab, slanted right edge, bold label: the main
+    /// choice. No border (`Border::None`).
     Primary,
-    /// Ink with an outline.
+    /// Ink with the line border (`Border::Line`).
     Secondary,
-    /// Text only.
-    Ghost,
-    /// Ink with a threat outline and the warning mark: it ends something.
-    Danger,
+    /// Text only, no border (`Border::None`): a minor choice.
+    Tertiary,
+    /// Ink with the threat border and the warning mark (`Border::Threat`):
+    /// it ends or removes something.
+    Destructive,
+}
+
+/// A control's size: buttons, toggles, segmented choices, steppers and
+/// dropdowns all come in these heights only, and the controls in one row
+/// share one (`kit_conformance`'s `controls_in_a_row_share_height_and_border`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Size {
+    /// A toolbar's or a list row's tools (filters, Refresh, Undo).
+    Small,
+    /// Everything else: a dialog's or an action bar's buttons, a setting
+    /// row's controls.
+    #[default]
+    Regular,
+    /// A screen's lone hero (the first run's steps).
+    Large,
+}
+
+impl Size {
+    /// The height, cq.
+    pub const fn h(self) -> f32 {
+        match self {
+            Size::Small => SMALL_H,
+            Size::Regular => BUTTON_H,
+            Size::Large => HERO_H,
+        }
+    }
+
+    /// The label's size, cq.
+    pub const fn label(self) -> f32 {
+        match self {
+            Size::Small => 0.58,
+            Size::Regular => 0.66,
+            Size::Large => 0.9,
+        }
+    }
+}
+
+/// A control's border: the only ones a control draws. One weight, the
+/// hairline (one physical pixel at 1080 lines).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Border {
+    /// No border: the hero's slab, a tertiary's text.
+    None,
+    /// The line: `fg_3`, a secondary button, a toggle's or segmented
+    /// choice's track, a stepper's frame, a dropdown's field.
+    Line,
+    /// Disabled: `fg_5`.
+    Dim,
+    /// Destructive: threat at .55.
+    Threat,
+}
+
+impl Border {
+    /// The tone and alpha drawn (None: no border).
+    pub const fn tone(self) -> Option<(Tone, f32)> {
+        match self {
+            Border::None => None,
+            Border::Line => Some((Tone::Fg3, 1.0)),
+            Border::Dim => Some((Tone::Fg5, 1.0)),
+            Border::Threat => Some((Tone::Threat, 0.55)),
+        }
+    }
+}
+
+/// On every control's root: the size and border it was built with (the
+/// conformance check reads them; a screen never sets them).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ControlBox {
+    pub size: Size,
+    pub border: Border,
 }
 
 /// The hero's slab (`Ui::button`): its fill lifts and its edge leans out
@@ -291,9 +368,11 @@ pub fn clickable() -> (Interaction, FocusPolicy) {
     (Interaction::default(), FocusPolicy::Block)
 }
 
-/// Height of the default button, cq.
+/// `Size::Small`'s height, cq.
+pub const SMALL_H: f32 = 1.9;
+/// `Size::Regular`'s height, cq: the default button, a setting's control.
 pub const BUTTON_H: f32 = 2.4;
-/// Height of the big hero (Start, Connect, Done; a dialog's), cq.
+/// `Size::Large`'s height, cq.
 pub const HERO_H: f32 = 2.8;
 /// A row's least height, cq.
 pub const ROW_H: f32 = 2.9;
@@ -543,28 +622,39 @@ impl<'a> Ui<'a> {
     /// its action).
     ///
     /// The primary is the hero: a `hero` slab with its right edge on the
-    /// slant and white text (`on_hero`); hover lifts it to `acc` and leans
-    /// its edge out .4 cq (`HeroSlab`); disabled it stays a slab at `fg`
-    /// .07 with `fg_3` text.
+    /// slant and white bold text (`on_hero`); hover lifts it to `acc` and
+    /// leans its edge out .4 cq (`HeroSlab`); disabled it stays a slab at
+    /// `fg` .07 with `fg_3` text. Every kind at every `Size` is that
+    /// size's height with its border (`Border`, on `ControlBox`).
     #[allow(clippy::too_many_arguments)]
-    pub fn button(&self, c: &mut Commands, parent: Entity, kind: Kind, label: &str, key: Option<&str>, h: f32, st: State) -> Entity {
-        self.button_icon(c, parent, kind, None, label, key, h, st)
+    pub fn button(&self, c: &mut Commands, parent: Entity, kind: Kind, label: &str, key: Option<&str>, size: Size, st: State) -> Entity {
+        self.button_icon(c, parent, kind, None, label, key, size, st)
+    }
+
+    /// The border a button of `kind` draws in state `st`.
+    pub fn button_border(kind: Kind, st: State) -> Border {
+        match kind {
+            Kind::Primary | Kind::Tertiary => Border::None,
+            _ if st.disabled => Border::Dim,
+            Kind::Secondary => Border::Line,
+            Kind::Destructive => Border::Threat,
+        }
     }
 
     /// `button` with one of the kit's icons (`kit_icon`: icons.toml's key)
     /// before its label, in the label's tone (Leave's arrow).
     #[allow(clippy::too_many_arguments)]
-    pub fn button_icon(&self, c: &mut Commands, parent: Entity, kind: Kind, icon: Option<&'static str>, label: &str, key: Option<&str>, h: f32, st: State) -> Entity {
-        let big = kind == Kind::Primary && h >= HERO_H - 0.01;
-        let size = if big { 0.9 } else if h < 2.2 { 0.58 } else if h > 3.0 { 0.8 } else { 0.66 };
+    pub fn button_icon(&self, c: &mut Commands, parent: Entity, kind: Kind, icon: Option<&'static str>, label: &str, key: Option<&str>, size: Size, st: State) -> Entity {
+        let h = size.h();
+        let text_size = size.label();
         let lean = h * self.theme.tan();
         let right = match kind {
             Kind::Primary => 1.5 + lean,
-            Kind::Ghost => 0.9,
+            Kind::Tertiary => 0.9,
             _ => 1.2,
         };
         let left = match kind {
-            Kind::Ghost => 0.6,
+            Kind::Tertiary => 0.6,
             Kind::Primary => 1.4,
             _ => 1.05,
         };
@@ -572,18 +662,15 @@ impl<'a> Ui<'a> {
             Kind::Primary if st.disabled => (Color::NONE, Color::NONE, Tone::Fg3),
             _ if st.disabled => (self.color(Tone::Fg, 0.05), self.color(Tone::Fg, 0.05), Tone::Fg3),
             Kind::Primary => (Color::NONE, Color::NONE, Tone::OnHero),
-            Kind::Secondary | Kind::Danger => (self.color(Tone::Ink, 0.85), self.color(Tone::Fg, 0.06), Tone::Fg),
-            Kind::Ghost => (Color::NONE, self.color(Tone::Fg, 0.06), Tone::Fg2),
+            Kind::Secondary | Kind::Destructive => (self.color(Tone::Ink, 0.85), self.color(Tone::Fg, 0.06), Tone::Fg),
+            Kind::Tertiary => (Color::NONE, self.color(Tone::Fg, 0.06), Tone::Fg2),
         };
+        let border = Self::button_border(kind, st);
         let mut s = UiStyle { h: Some(h), pad: Some([0.0, right, 0.0, left].into()), gap: Some(0.5), shrink: Some(0.0), ..UiStyle::row() };
-        s = match kind {
-            Kind::Primary => s,
-            _ if st.disabled => s.outline(Tone::Fg5, 1.0),
-            Kind::Secondary => s.outline(Tone::Fg3, 1.0),
-            Kind::Danger => s.outline(Tone::Threat, 0.55),
-            _ => s,
-        };
-        let b = c.spawn((s, Node::default(), BackgroundColor(base), ChildOf(parent))).id();
+        if let Some((t, a)) = border.tone() {
+            s = s.outline(t, a);
+        }
+        let b = c.spawn((s, Node::default(), BackgroundColor(base), ControlBox { size, border }, ChildOf(parent))).id();
         if !st.disabled {
             c.entity(b).insert((Hover { base, over }, pressable()));
         } else {
@@ -612,21 +699,21 @@ impl<'a> Ui<'a> {
                 ));
             }
         }
-        if kind == Kind::Danger {
+        if kind == Kind::Destructive {
             self.mark(c, b, Tone::Threat, 0.5, 0.7);
         }
-        let role = if big { Role::DisplayBold } else { Role::DisplayRegular };
+        let role = if kind == Kind::Primary { Role::DisplayBold } else { Role::DisplayRegular };
         if let Some(icon) = icon {
-            self.kit_icon(c, b, icon, size * 1.15, 1.0, text_tone);
+            self.kit_icon(c, b, icon, text_size * 1.15, 1.0, text_tone);
         }
-        self.text(c, b, role, size, text_tone, label);
+        self.text(c, b, role, text_size, text_tone, label);
         if let Some(k) = key {
             let cap_tone = match kind {
                 _ if st.disabled => Tone::Fg4,
                 Kind::Primary => Tone::OnHero,
                 _ => Tone::Fg2,
             };
-            self.kbd(c, b, k, size, cap_tone);
+            self.kbd(c, b, k, text_size, cap_tone);
         }
         if st.focus && !st.disabled {
             // On the hero's own cobalt the bar is white.
@@ -826,7 +913,8 @@ impl<'a> Ui<'a> {
     /// allows. Screens use `form`'s `big_toggle` (the user's review,
     /// 2026-11-21: the small toggle is gone).
     #[allow(clippy::too_many_arguments)]
-    pub fn toggle_sized(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>, words: (&str, &str), w: f32, h: f32) -> Entity {
+    pub fn toggle_sized(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>, words: (&str, &str), w: f32, size: Size) -> Entity {
+        let h = size.h();
         let k = h / TOGGLE_H;
         let (off_left, top) = (TOGGLE_OFF_LEFT * k, 0.2 * k);
         let slab_w = w / 2.0 - off_left - 0.05 * k;
@@ -837,6 +925,7 @@ impl<'a> Ui<'a> {
                 UiStyle { w: Some(w), h: Some(h), shrink: Some(0.0), ..UiStyle::row() },
                 Node::default(),
                 BackgroundColor(Color::NONE),
+                ControlBox { size, border: Border::Line },
                 Hover { base: Color::NONE, over: Color::NONE },
                 pressable(),
                 ChildOf(parent),
@@ -851,7 +940,8 @@ impl<'a> Ui<'a> {
             ));
         };
         full(c, UiSlant::new(Tone::Fg, 0.05));
-        full(c, UiSlant::new(Tone::Fg4, 1.0).outline(self.units.phys(self.units.hairline())));
+        let (line, line_a) = Border::Line.tone().unwrap_or((Tone::Fg3, 1.0));
+        full(c, UiSlant::new(line, line_a).outline(self.units.phys(self.units.hairline())));
         // The slab: half the track less its insets.
         let slab = UiSlant::new(if on { Tone::Fg } else { Tone::Fg4 }, 1.0);
         let left = if on { on_left } else { off_left };
@@ -904,12 +994,13 @@ impl<'a> Ui<'a> {
     /// bar of a set width); None: as wide as their words. Returns the
     /// options.
     #[allow(clippy::too_many_arguments)]
-    pub fn segmented_sized(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], st: State, size: Option<(f32, f32)>) -> Vec<Entity> {
+    pub fn segmented_sized(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], st: State, w: Option<f32>, ctl: Size) -> Vec<Entity> {
+        let size = w.map(|w| (w, ctl.h()));
         // One slanted track (fill .05, a `fg_4` outline), slanted `fg_5`
         // dividers, the pick a white slanted slab; the words stay upright
         // (Display for words, Mono for numbers). Hover and pick are
         // parallelograms on the dividers' slant, not rectangles.
-        let h = size.map_or(TOGGLE_H, |s| s.1) - 0.4;
+        let h = ctl.h() - 0.4;
         let lean = h * self.theme.tan();
         let u = self.units;
         let key = {
@@ -919,11 +1010,18 @@ impl<'a> Ui<'a> {
             hs.finish()
         };
         let g = c
-            .spawn((UiStyle { w: size.map(|s| s.0), shrink: Some(0.0), pad: Some([0.2, 0.25, 0.2, 0.25].into()), ..UiStyle::row() }, Node::default(), SegmentedTrack, ChildOf(parent)))
+            .spawn((
+                UiStyle { w: size.map(|s| s.0), shrink: Some(0.0), pad: Some([0.2, 0.25, 0.2, 0.25].into()), ..UiStyle::row() },
+                Node::default(),
+                SegmentedTrack,
+                ControlBox { size: ctl, border: Border::Line },
+                ChildOf(parent),
+            ))
             .id();
         let full = || Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, right: Val::ZERO, ..default() };
         c.spawn((full(), UiSlant::new(Tone::Fg, 0.05), Pickable::IGNORE, ChildOf(g)));
-        c.spawn((full(), UiSlant::new(Tone::Fg4, 1.0).outline(u.phys(u.hairline())), Pickable::IGNORE, ChildOf(g)));
+        let (line, line_a) = Border::Line.tone().unwrap_or((Tone::Fg3, 1.0));
+        c.spawn((full(), UiSlant::new(line, line_a).outline(u.phys(u.hairline())), Pickable::IGNORE, ChildOf(g)));
         let n = options.len();
         // Option i's parallelogram: on the dividers' slant at both sides
         // (a box reaching half a lean past the rectangle at an inner edge).
@@ -1248,7 +1346,7 @@ impl<'a> Ui<'a> {
     }
 
     /// A stepper: one compact control, a single slanted border around
-    /// `-`, the value and `+` (keys 1.5 x 1.7 cq, no gaps), the value
+    /// `-`, the value and `+` (keys `STEPPER_KEY_W` x `Size::Regular`, no gaps), the value
     /// box as wide as `range` asks (`StepperRange::width`). Returns
     /// (minus, plus).
     pub fn stepper(&self, c: &mut Commands, parent: Entity, value: &str, range: StepperRange, st: State) -> (Entity, Entity) {
@@ -1275,7 +1373,15 @@ impl<'a> Ui<'a> {
 
     #[allow(clippy::too_many_arguments)]
     fn stepper_at(&self, c: &mut Commands, parent: Entity, value: &str, range: StepperRange, st: State, typing: Option<Typing>, fill: Option<f32>) -> StepperParts {
-        let g = c.spawn((UiStyle { w: fill, shrink: Some(0.0), ..UiStyle::row() }, Node { align_self: AlignSelf::FlexStart, ..default() }, ChildOf(parent))).id();
+        let border = if st.disabled { Border::Dim } else { Border::Line };
+        let g = c
+            .spawn((
+                UiStyle { w: fill, shrink: Some(0.0), ..UiStyle::row() },
+                Node { align_self: AlignSelf::FlexStart, ..default() },
+                ControlBox { size: Size::Regular, border },
+                ChildOf(parent),
+            ))
+            .id();
         let key = |c: &mut Commands, label: &str, dim: bool, edges: (bool, bool)| {
             let b = c
                 .spawn((
@@ -1322,7 +1428,7 @@ impl<'a> Ui<'a> {
         StepperParts { minus, value, plus }
     }
 
-    /// A dropdown `w` cq wide: the field (1.9 cq, a faint fill, a hairline
+    /// A dropdown `w` cq wide: the field (`Size::Regular`, a faint fill, a hairline
     /// under it, accent when focused; white when open) and, when `open`,
     /// its list below (the chosen option's accent cut, the keys' line the
     /// accent bar). Returns (field, options).
@@ -1344,9 +1450,10 @@ impl<'a> Ui<'a> {
         };
         let f = c
             .spawn((
-                UiStyle { h: Some(1.9), gap: Some(0.6), pad: Some([0.0, 0.8].into()), justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() },
+                UiStyle { h: Some(Size::Regular.h()), gap: Some(0.6), pad: Some([0.0, 0.8].into()), justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() },
                 Node::default(),
                 BackgroundColor(base),
+                ControlBox { size: Size::Regular, border: Border::Line },
                 Hover { base, over },
                 pressable(),
                 ChildOf(holder),
@@ -2195,8 +2302,9 @@ pub struct SearchParts {
 pub struct SearchClear;
 
 /// A stepper's key width and height, cq (the control's height too).
-pub const STEPPER_KEY_W: f32 = 1.5;
-pub const STEPPER_H: f32 = 1.7;
+pub const STEPPER_KEY_W: f32 = 1.9;
+/// A stepper's height: `Size::Regular`'s.
+pub const STEPPER_H: f32 = BUTTON_H;
 
 /// The one border around a stepper's parts (`Ui::stepper_ex`).
 #[derive(Component, Clone, Copy, Debug)]

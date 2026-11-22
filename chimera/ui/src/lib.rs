@@ -82,6 +82,7 @@ pub mod fonts;
 pub mod form;
 pub mod icon_ink;
 pub mod icons;
+pub mod load;
 pub mod materials;
 pub mod modal;
 pub mod text_menu;
@@ -162,6 +163,7 @@ impl Plugin for ChimeraUiPlugin {
                     motion::track_warmth,
                     motion::step_timelines,
                     motion::apply_timelines,
+                    load::step_loads,
                 )
                     .chain()
                     .in_set(UiKitSystems),

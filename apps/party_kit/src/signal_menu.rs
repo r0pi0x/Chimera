@@ -628,7 +628,7 @@ fn spawn_page(
         }
         if n.dismiss.is_some() {
             let foot = ui.boxed(c, card, UiStyle { margin: Some([0.2, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
-            let b = ui.button(c, foot, chimera_ui::controls::Kind::Secondary, "Dismiss", None, 1.7, chimera_ui::controls::State::NONE);
+            let b = ui.button(c, foot, chimera_ui::controls::Kind::Secondary, "Dismiss", None, chimera_ui::controls::Size::Small, chimera_ui::controls::State::NONE);
             c.entity(b).insert(MainMenuAction::NewsDismiss);
         }
     }

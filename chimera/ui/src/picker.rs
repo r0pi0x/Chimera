@@ -77,7 +77,7 @@ use crate::{
     IconImages, KitFonts, Role, Theme, Tone, UiSlant, UiStyle, UiUnits, VCursor, VSection, VShape, VSlot, VirtualList,
     VirtualLists,
     VHit, VListState, VNav,
-    controls::{HERO_H, Hover, Kind, State, Ui, pressable},
+    controls::{Hover, Kind, State, Ui, pressable},
     text_edit::{Caret, TextKey},
     text_fit::Ellipsize,
     vlist::VLine,
@@ -1097,12 +1097,12 @@ pub fn dialog(
         ui.text(c, g, Role::Mono, l("keys_size"), Tone::Fg2, w);
     }
     let acts = ui.boxed(c, plate, UiStyle { gap: Some(l("acts_gap")), ..UiStyle::row() });
-    let all_off = ui.button(c, acts, Kind::Ghost, "All off", None, l("ghost_h"), State::NONE);
+    let all_off = ui.button(c, acts, Kind::Tertiary, "All off", None, crate::controls::Size::Regular, State::NONE);
     c.entity(all_off).insert(PickerAction::AllOff);
     ui.boxed(c, acts, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-    let cancel = ui.button(c, acts, Kind::Secondary, "Cancel", Some("Esc"), l("cancel_h"), State::NONE);
+    let cancel = ui.button(c, acts, Kind::Secondary, "Cancel", Some("Esc"), crate::controls::Size::Regular, State::NONE);
     c.entity(cancel).insert(PickerAction::Cancel);
-    let done = ui.button(c, acts, Kind::Primary, "Done", Some("Enter"), HERO_H, State::NONE);
+    let done = ui.button(c, acts, Kind::Primary, "Done", Some("Enter"), crate::controls::Size::Regular, State::NONE);
     c.entity(done).insert(PickerAction::Done);
     scrim
 }

@@ -870,7 +870,7 @@ fn build_static(
     // Leave, top left: the kit's secondary button with the arrow (its
     // hover and press states), in a place that fades in.
     let at = commands.spawn((StaticPart, Pickable::IGNORE, abs(&look, lay.pad, lay.leave_top, None, None), enter(&look, came_up, 0.2, 0.0, 0.0), ChildOf(frame))).id();
-    let leave = ui.button_icon(&mut commands, at, chimera_ui::controls::Kind::Secondary, Some("arrow_left"), "Leave", None, chimera_ui::controls::BUTTON_H * 0.8, chimera_ui::controls::State::NONE);
+    let leave = ui.button_icon(&mut commands, at, chimera_ui::controls::Kind::Secondary, Some("arrow_left"), "Leave", None, chimera_ui::controls::Size::Small, chimera_ui::controls::State::NONE);
     commands.entity(leave).insert((LeaveButton, UiParityId::new("end.vote.leave")));
 }
 

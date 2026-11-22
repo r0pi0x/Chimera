@@ -32,6 +32,9 @@
 //!   `ui_reduce_motion`): no easing (the offset jumps to the target), no
 //!   fling, no elastic band.
 //!
+//! - **More below** (`Ui::scroll_more`, `ScrollMore`): a fade with words
+//!   over the view's foot while its content goes on under it.
+//!
 //! `ui_scroll <view> <cq|top|end>` puts a view somewhere at once
 //! (screenshots, tests).
 //!
@@ -561,6 +564,61 @@ impl<'a> Ui<'a> {
     }
 }
 
+/// The "more below" mark over a view's foot (`Ui::scroll_more`): shown
+/// while the view's content goes on under its bottom edge.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ScrollMore {
+    pub view: Entity,
+}
+
+/// Whether a view's content goes on below what it shows.
+pub fn more_below(s: &ScrollState) -> bool {
+    s.overflows() && s.inside() < s.max - 0.05
+}
+
+impl Ui<'_> {
+    /// The "more below" mark for a scroll's view (the lobby's long player
+    /// list, the user's call of 2026-11-22: rows don't shrink, the list
+    /// scrolls and says there is more): a fade over the view's foot, `h`
+    /// cq tall, with `words` and a down chevron; hidden while the end is
+    /// in view (`show_more`). Returns the mark.
+    pub fn scroll_more(&self, c: &mut Commands, parts: &ScrollParts, words: &str, h: f32) -> Entity {
+        let ink = self.color(Tone::Ink, 0.0);
+        let solid = self.color(Tone::Ink, 0.92);
+        let m = c
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::ZERO,
+                    right: Val::Px(self.units.snap(self.units.cq(ScrollTuning::from_theme(self.theme).bar_w + ScrollTuning::from_theme(self.theme).gap))),
+                    bottom: Val::ZERO,
+                    height: self.units.val(h),
+                    align_items: AlignItems::FlexEnd,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                BackgroundGradient::from(LinearGradient::to_bottom(vec![ColorStop::percent(ink, 0.0), ColorStop::percent(solid, 70.0)])),
+                ScrollMore { view: parts.view },
+                Visibility::Hidden,
+                Pickable::IGNORE,
+                ChildOf(parts.frame),
+            ))
+            .id();
+        let row = self.boxed(c, m, UiStyle { gap: Some(0.4), pad: Some([0.0, 0.0, 0.25, 0.0].into()), ..UiStyle::row() });
+        self.chevron(c, row, Tone::Fg2, false);
+        self.text(c, row, crate::Role::Mono, 0.5, Tone::Fg2, words);
+        m
+    }
+}
+
+/// Shows each "more below" mark while its view has more under its foot.
+pub fn show_more(views: Res<ScrollViews>, keys: Query<&ScrollView>, mut marks: Query<(&ScrollMore, &mut Visibility)>) {
+    for (m, mut vis) in &mut marks {
+        let more = keys.get(m.view).ok().and_then(|k| views.get(&k.key)).is_some_and(more_below);
+        vis.set_if_neq(if more { Visibility::Inherited } else { Visibility::Hidden });
+    }
+}
+
 /// The input's systems (in `PreUpdate`, after Bevy's UI focus).
 #[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ScrollInput;
@@ -801,7 +859,7 @@ impl Plugin for ScrollPlugin {
             .add_systems(PreUpdate, scroll_input.in_set(ScrollInput))
             .add_systems(
                 PostUpdate,
-                scroll_step.after(crate::motion::advance_clock).after(crate::style::resolve_styles).in_set(crate::UiKitSystems),
+                (scroll_step.after(crate::motion::advance_clock).after(crate::style::resolve_styles), show_more.after(scroll_step)).in_set(crate::UiKitSystems),
             );
         use chimera_core::console::ConsoleAppExt;
         app.console_command(

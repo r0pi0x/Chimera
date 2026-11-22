@@ -1873,7 +1873,7 @@ fn spawn(
         (_, Some(Line::Recent(i))) => ("Join", MainMenuAction::Recent(*i)),
         _ => ("Connect", MainMenuAction::Connect),
     };
-    let go = ui.button(c, bar, Kind::Primary, label, Some("Enter"), chimera_ui::controls::HERO_H, State::NONE);
+    let go = ui.button(c, bar, Kind::Primary, label, Some("Enter"), chimera_ui::controls::Size::Large, State::NONE);
     c.entity(go).insert(action);
 
     // The keys at the foot (Back is the breadcrumb; the tabs' Q and E sit
@@ -1929,9 +1929,9 @@ fn password_modal(c: &mut Commands, ui: &Ui, root: Entity, menu: &PartyMenu, p: 
         ui.sentence(c, row, NOTE, Tone::Fg, n);
     }
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
-    let join = ui.button(c, acts, Kind::Primary, "Join", Some("Enter"), chimera_ui::controls::HERO_H, State::NONE);
+    let join = ui.button(c, acts, Kind::Primary, "Join", Some("Enter"), chimera_ui::controls::Size::Regular, State::NONE);
     c.entity(join).insert(MainMenuAction::PasswordJoin);
-    let cancel = ui.button(c, acts, Kind::Secondary, "Cancel", Some("Esc"), 2.4, State::NONE);
+    let cancel = ui.button(c, acts, Kind::Secondary, "Cancel", Some("Esc"), chimera_ui::controls::Size::Regular, State::NONE);
     c.entity(cancel).insert(MainMenuAction::PasswordCancel);
 }
 
@@ -2170,13 +2170,13 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
         None => ("Favourite", 0),
     };
     let tools = ui.boxed(c, top, UiStyle { gap: Some(0.6), margin: Some([0.0, 0.0, 0.5, 0.0].into()), ..UiStyle::row() });
-    let fav = ui.button(c, tools, Kind::Secondary, label, Some("F"), 1.9, State { disabled: focused.is_none(), ..State::NONE });
+    let fav = ui.button(c, tools, Kind::Secondary, label, Some("F"), chimera_ui::controls::Size::Small, State { disabled: focused.is_none(), ..State::NONE });
     c.entity(fav).insert(MainMenuAction::Favourite(i));
     if internet && hub.signed_in {
-        let all = ui.button(c, tools, Kind::Secondary, if cx.lan.all_games { "This game" } else { "All games" }, None, 1.9, State::NONE);
+        let all = ui.button(c, tools, Kind::Secondary, if cx.lan.all_games { "This game" } else { "All games" }, None, chimera_ui::controls::Size::Small, State::NONE);
         c.entity(all).insert(MainMenuAction::BrowserAllGames);
     }
-    let refresh = ui.button(c, tools, Kind::Secondary, "Refresh", Some("F5"), 1.9, State { disabled: cx.lan.scanning, ..State::NONE });
+    let refresh = ui.button(c, tools, Kind::Secondary, "Refresh", Some("F5"), chimera_ui::controls::Size::Small, State { disabled: cx.lan.scanning, ..State::NONE });
     c.entity(refresh).insert(MainMenuAction::Refresh);
     // Where the list is (a long one's window, a scan under way, the hub
     // not answering).

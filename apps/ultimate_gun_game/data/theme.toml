@@ -195,14 +195,16 @@ mark_x = 81.5          # its centre in the ink band, at mid-height: the frame's 
 
 [layout.lobby]       # the pre-match lobby (chimera_client lobby_panel) in the shell's window
 mode_w = 22.0        # the left column, the chat's (signal_chat docks it, [layout.chat])
-map_w = 30.0         # the right column: the map card, the countdown, the mode
+map_w = 24.0         # the right column: the map card, the mode, the waiting mark
 card_h = 9.0         # the map card
 big = 3.0            # "3 / 7"
 map_big = 2.0
-row_h = 2.9
-avatar = 2.3         # a row's avatar
-status_w = 11.2      # the status column (the progress bar inside)
-ping_w = 4.6
+row_h = 2.7         # a player's lane (lanes never shrink: the list scrolls)
+avatar = 2.0         # a lane's avatar
+name_w = 9.5         # the name, its HOST tag and wins, before the load bar
+bar_h = 0.6          # the load bar (chimera_ui::load)
+words_w = 7.6        # the load's words at the bar's end ("Models 62%")
+ping_w = 4.6         # the ping (the host's Kick in its place under the pointer)
 name = 0.9
 tag = 0.62
 ticks_h = 1.4

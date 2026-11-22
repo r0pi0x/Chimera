@@ -53,7 +53,7 @@
 use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_ui::{
     Role, Tone, UiParityId, UiStyle,
-    controls::{HERO_H, Kind, State, Ui},
+    controls::{Kind, State, Ui},
 };
 
 use super::{
@@ -518,7 +518,7 @@ fn draw(
 }
 
 fn button(c: &mut Commands, ui: &Ui, parent: Entity, label: &str, key: Option<&str>, a: BenchAction) -> Entity {
-    let b = ui.button(c, parent, Kind::Secondary, label, key, 1.9, State::NONE);
+    let b = ui.button(c, parent, Kind::Secondary, label, key, chimera_ui::controls::Size::Small, State::NONE);
     c.entity(b).insert(a);
     b
 }
@@ -551,13 +551,13 @@ fn section(c: &mut Commands, ui: &Ui, parent: Entity, title: &str, note: &str) -
 /// drawer is `W` wide), every toggle and two- or three-way choice in it
 /// this wide, `CTL_H` tall; six distances `DIST_W`.
 const CTL_W: f32 = 9.0;
-const CTL_H: f32 = 1.6;
+const CTL_H: f32 = chimera_ui::controls::SMALL_H;
 const MOVES_W: f32 = 12.0;
 const DIST_W: f32 = 16.5;
 
 /// The kit's toggle at the drawer's column width.
 fn toggle(c: &mut Commands, ui: &Ui, parent: Entity, on: bool, a: BenchAction) {
-    let t = ui.toggle_sized(c, parent, on, State::NONE, None, chimera_ui::controls::TOGGLE_ON_OFF, CTL_W, CTL_H);
+    let t = ui.toggle_sized(c, parent, on, State::NONE, None, chimera_ui::controls::TOGGLE_ON_OFF, CTL_W, chimera_ui::controls::Size::Small);
     c.entity(t).insert(a);
 }
 
@@ -697,7 +697,7 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         }
         let places = [TargetPlace::Line, TargetPlace::Platform];
         let names: Vec<&str> = places.iter().map(|p| place_label(*p)).collect();
-        for (k, e) in ui.segmented_sized(c, r, &names, places.iter().position(|p| *p == t.spec.place), &[], State::NONE, Some((CTL_W, CTL_H))).into_iter().enumerate() {
+        for (k, e) in ui.segmented_sized(c, r, &names, places.iter().position(|p| *p == t.spec.place), &[], State::NONE, Some(CTL_W), chimera_ui::controls::Size::Small).into_iter().enumerate() {
             c.entity(e).insert(BenchAction::Place(t.id, places[k]));
         }
         let r = row(c, "Distance");
@@ -707,7 +707,7 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         // (A platform target has no line: none picked; a press puts it on one.)
         let sel = DISTANCES.iter().position(|d| !on_platform && (*d - t.spec.distance_m).abs() < 0.01);
         // Six distances: each an equal share of `DIST_W`.
-        for (k, e) in ui.segmented_sized(c, r, &refs, sel, &[], State::NONE, Some((DIST_W, CTL_H))).into_iter().enumerate() {
+        for (k, e) in ui.segmented_sized(c, r, &refs, sel, &[], State::NONE, Some(DIST_W), chimera_ui::controls::Size::Small).into_iter().enumerate() {
             c.entity(e).insert(BenchAction::Distance(t.id, DISTANCES[k]));
         }
         let r = row(c, "Moves");
@@ -717,7 +717,7 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         // On the platform it stands still: Strafes and Walks greyed out.
         let off: &[usize] = if on_platform { &[1, 2] } else { &[] };
         c.entity(r).insert(UiParityId::new("bench.moves"));
-        for (k, e) in ui.segmented_sized(c, r, &names, sel, off, State::NONE, Some((MOVES_W, CTL_H))).into_iter().enumerate() {
+        for (k, e) in ui.segmented_sized(c, r, &names, sel, off, State::NONE, Some(MOVES_W), chimera_ui::controls::Size::Small).into_iter().enumerate() {
             if !off.contains(&k) {
                 c.entity(e).insert(BenchAction::Motion(t.id, TargetMotion::ALL[k]));
             }
@@ -750,7 +750,7 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         };
         ui.text(c, r, Role::Mono, 0.42, Tone::Fg3, &state);
         ui.text(c, r, Role::Mono, 0.44, Tone::Fg2, &format!("{} m", p.spec.distance_m));
-        let reset = ui.button(c, r, Kind::Ghost, if p.group.is_some() { "Clear" } else { "Reset" }, None, 1.5, State::NONE);
+        let reset = ui.button(c, r, Kind::Tertiary, if p.group.is_some() { "Clear" } else { "Reset" }, None, chimera_ui::controls::Size::Small, State::NONE);
         c.entity(reset).insert(BenchAction::ResetProp(p.id));
         trash(c, ui, look, r, BenchAction::RemoveProp(p.id));
     }
@@ -893,11 +893,11 @@ fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, every: &[Charact
     let foot = ui.boxed(c, plate, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
     ui.sentence(c, foot, 0.76, Tone::Fg2, "A target holds its own game's default gun. It fires only with Shoots back on.");
     ui.boxed(c, foot, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-    let cancel = ui.button(c, foot, Kind::Secondary, "Cancel", Some("Esc"), 2.4, State::NONE);
+    let cancel = ui.button(c, foot, Kind::Secondary, "Cancel", Some("Esc"), chimera_ui::controls::Size::Regular, State::NONE);
     c.entity(cancel).insert(BenchAction::PickerCancel);
     let name = chosen.and_then(|id| every.iter().find(|x| x.id == id)).map_or("Use".to_string(), |ch| format!("Use {}", ch.name));
     let st = if chosen.is_some() { State::NONE } else { State { disabled: true, ..State::NONE } };
-    let use_ = ui.button(c, foot, Kind::Primary, &name, Some("Enter"), HERO_H, st);
+    let use_ = ui.button(c, foot, Kind::Primary, &name, Some("Enter"), chimera_ui::controls::Size::Regular, st);
     c.entity(use_).insert(BenchAction::PickerUse);
     let _ = tag;
 }

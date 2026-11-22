@@ -5,7 +5,7 @@ use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_ui::{
     motion::{Motion, Pace},
     ChimeraUiPlugin, KitFonts, Role, Theme, Tone, UiClock, UiSlant, UiText, UiUnits,
-    controls::{self, Hover, Kind, State, Tick, Ui, Wipe},
+    controls::{self, Hover, Kind, Size, State, Tick, Ui, Wipe},
 };
 
 const SIGNAL: &str = include_str!("../../../../apps/ultimate_gun_game/data/theme.toml");
@@ -93,7 +93,7 @@ fn descendants_with<C: Component + Clone>(app: &mut App, e: Entity) -> Vec<C> {
 #[test]
 fn buttons_carry_their_kind_and_focus() {
     let mut app = app();
-    let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Apply", Some("Ctrl S"), 2.0, State::focused(true)));
+    let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Apply", Some("Ctrl S"), Size::Regular, State::focused(true)));
     assert_eq!(texts_under(&mut app, b), ["APPLY", "CTRL S"]);
     let slants = descendants_with::<UiSlant>(&mut app, b);
     assert!(slants.iter().any(|s| s.fill == Tone::Hero && s.edges == (false, true)), "the hero's slab leans at the right");
@@ -101,21 +101,21 @@ fn buttons_carry_their_kind_and_focus() {
     assert!(ticks.is_empty(), "no tick on a button");
     let texts = descendants_with::<UiText>(&mut app, b);
     assert!(texts.iter().all(|t| t.tone == Tone::OnHero), "white on the hero");
-    assert!(texts.iter().any(|t| t.role == Role::DisplayRegular), "button labels are words: Display");
+    assert!(texts.iter().any(|t| t.role == Role::DisplayBold), "the hero's label is bold Display");
     assert!(texts.iter().any(|t| t.role == Role::Mono), "key caps stay Mono");
     assert_eq!(app.world().resource::<Theme>().tone(Tone::Hero).to_srgba().to_hex(), "#2D6BEB");
     *app.world_mut().get_mut::<Interaction>(b).unwrap() = Interaction::Hovered;
     app.update();
     assert!(descendants_with::<UiSlant>(&mut app, b).iter().any(|s| s.fill == Tone::Acc), "hover lifts the slab");
-    // The big hero (Start, Connect, a dialog's) is bold and bigger.
-    let big = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", Some("Enter"), controls::HERO_H, State::NONE));
+    // The large size (a lone hero) is bigger.
+    let big = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", Some("Enter"), Size::Large, State::NONE));
     let t = descendants_with::<UiText>(&mut app, big);
     assert!(t.iter().any(|t| t.role == Role::DisplayBold && t.size > 0.85), "{t:?}");
     // A disabled hero stays a slab.
-    let off = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Apply", None, 2.0, State { disabled: true, ..State::NONE }));
+    let off = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Apply", None, Size::Regular, State { disabled: true, ..State::NONE }));
     assert!(descendants_with::<UiSlant>(&mut app, off).iter().any(|s| s.fill == Tone::Fg && s.alpha < 0.1));
     // Danger: the threat mark, never a threat fill.
-    let d = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Danger, "End the game", None, 2.4, State::NONE));
+    let d = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Destructive, "End the game", None, Size::Regular, State::NONE));
     let slants = descendants_with::<UiSlant>(&mut app, d);
     assert!(slants.iter().any(|s| s.fill == Tone::Threat), "the threat mark");
     let bg = app.world().get::<BackgroundColor>(d).unwrap().0;
@@ -158,7 +158,7 @@ fn rows_toggles_and_segments_show_their_state() {
     let (row, vl, tog) = build(&mut app, |ui, c, root| {
         let st = State { changed: true, ..State::NONE };
         let (row, vl) = ui.row(c, root, "Vertical sync", None, 2.9, st);
-        let t = ui.toggle_sized(c, vl, true, State::NONE, None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H);
+        let t = ui.toggle_sized(c, vl, true, State::NONE, None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, Size::Small);
         (row, vl, t)
     });
     assert_eq!(texts_under(&mut app, row)[0], "VERTICAL SYNC");
@@ -172,7 +172,7 @@ fn rows_toggles_and_segments_show_their_state() {
     let on_tone = descendants_with::<UiText>(&mut app, tog).into_iter().find(|t| t.tone == Tone::Ink);
     assert!(on_tone.is_some());
     assert_eq!(texts_under(&mut app, tog), ["OFF", "ON"]);
-    let opts = build(&mut app, |ui, c, root| ui.segmented_sized(c, root, &["None", "60", "144"], Some(1), &[], State::NONE, None));
+    let opts = build(&mut app, |ui, c, root| ui.segmented_sized(c, root, &["None", "60", "144"], Some(1), &[], State::NONE, None, Size::Small));
     assert_eq!(opts.len(), 3);
     // Segmented (slanted): the pick a white slanted slab, the others none.
     assert_eq!(descendants_with_entity::<controls::SegmentedPick>(&mut app, opts[1]).len(), 1);
@@ -196,8 +196,8 @@ fn text_on_white_is_full_strength_ink() {
     let mut app = app();
     let theme = app.world().resource::<Theme>().clone();
     let ink = theme.tone(Tone::Ink);
-    let seg = build(&mut app, |ui, c, root| ui.segmented_sized(c, root, &["Windowed", "Full screen"], Some(0), &[], State::NONE, None));
-    let tog = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H));
+    let seg = build(&mut app, |ui, c, root| ui.segmented_sized(c, root, &["Windowed", "Full screen"], Some(0), &[], State::NONE, None, Size::Small));
+    let tog = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, Size::Small));
     let colours = |app: &mut App, e: Entity| -> Vec<(String, Color, Option<TextShadow>)> {
         let mut out = Vec::new();
         let mut stack = vec![e];
@@ -224,7 +224,7 @@ fn text_on_white_is_full_strength_ink() {
         assert!(s.offset.x > 0.0 && s.offset.y == 0.0, "{t}: one pixel to the right");
     }
     // A key cap is full strength (the lockup: no .75 alpha).
-    let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Secondary, "Revert", Some("Ctrl Z"), 2.0, State::NONE));
+    let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Secondary, "Revert", Some("Ctrl Z"), Size::Regular, State::NONE));
     let cap_outline = descendants_with::<chimera_ui::UiStyle>(&mut app, b).into_iter().filter_map(|s| s.outline).last();
     assert!(cap_outline.is_some_and(|(_, a)| a == 1.0), "{cap_outline:?}");
     // Light text: no weight; a tone turning light drops it.
@@ -249,10 +249,10 @@ fn stepper_underline_clears_the_value() {
     let group = app.world().get::<ChildOf>(minus).unwrap().parent();
     let out = app.world().get::<Children>(group).unwrap()[1];
     let px = |v: f32| (v * 19.2).round();
-    assert_eq!(app.world().get::<Node>(out).unwrap().height, Val::Px(px(1.7)));
+    assert_eq!(app.world().get::<Node>(out).unwrap().height, Val::Px(px(controls::STEPPER_H)));
     // The value's text is smaller than its box: room above the underline.
     let text = descendants_with::<UiText>(&mut app, out);
-    assert!(text[0].size < 1.7 - 2.0 * 0.18, "the text clears the .18 cq underline");
+    assert!(text[0].size < controls::STEPPER_H - 2.0 * 0.18, "the text clears the .18 cq underline");
 }
 
 /// Slider values: a press's place on the track to a value on its step,
@@ -697,7 +697,7 @@ fn a_press_places_a_drag_selects_a_double_press_selects_all() {
 #[test]
 fn the_toggles_labels_are_centred_and_its_slab_slides() {
     let mut app = laid_out();
-    let t = build_laid(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::focused(true), None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H));
+    let t = build_laid(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::focused(true), None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, Size::Small));
     let units = *app.world().resource::<UiUnits>();
     let left = centre_of(&app, t).x - size_of(&app, t).x / 2.0;
     let labels: Vec<Entity> = {
@@ -710,11 +710,12 @@ fn the_toggles_labels_are_centred_and_its_slab_slides() {
     for l in labels {
         let text = descendants_of_text(&mut app, l);
         let tc = centre_of(&app, text).x;
-        let want = left + if joined(&mut app, l) == "OFF" {
-            units.cq(controls::TOGGLE_OFF_LEFT + controls::TOGGLE_SLAB_W / 2.0)
-        } else {
-            units.cq(controls::TOGGLE_ON_LEFT + controls::TOGGLE_SLAB_W / 2.0)
-        };
+        // The insets scale with the size's height (`toggle_sized`).
+        let k = Size::Small.h() / controls::TOGGLE_H;
+        let off_left = controls::TOGGLE_OFF_LEFT * k;
+        let slab_w = controls::TOGGLE_W / 2.0 - off_left - 0.05 * k;
+        let on_left = controls::TOGGLE_W - off_left - slab_w;
+        let want = left + if joined(&mut app, l) == "OFF" { units.cq(off_left + slab_w / 2.0) } else { units.cq(on_left + slab_w / 2.0) };
         offs.push(tc - want);
         assert!((tc - want).abs() <= 1.0, "{} centred on its slab: {tc} vs {want}", joined(&mut app, l));
     }
@@ -725,14 +726,17 @@ fn the_toggles_labels_are_centred_and_its_slab_slides() {
     // The slide.
     let now = app.world().resource::<UiClock>().now;
     let slide = controls::ToggleSlide { since: now, now, motion: Motion::default() };
-    let t = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, Some(slide), controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H));
+    let t = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, Some(slide), controls::TOGGLE_ON_OFF, controls::TOGGLE_W, Size::Small));
     let slab = descendants_entities::<controls::ToggleSlab>(&mut app, t)[0];
     let x = |app: &App| match app.world().get::<UiTransform>(slab).unwrap().translation.x {
         Val::Px(v) => v,
         _ => 0.0,
     };
     let start = x(&app);
-    let off = units.cq(controls::TOGGLE_OFF_LEFT - controls::TOGGLE_ON_LEFT);
+    let k = Size::Small.h() / controls::TOGGLE_H;
+    let off_left = controls::TOGGLE_OFF_LEFT * k;
+    let slab_w = controls::TOGGLE_W / 2.0 - off_left - 0.05 * k;
+    let off = units.cq(off_left - (controls::TOGGLE_W - off_left - slab_w));
     assert!((start - off).abs() < 1.0, "starts at the off place: {start} vs {off}");
     app.world_mut().resource_mut::<UiClock>().step(0.07);
     app.update();
@@ -742,7 +746,7 @@ fn the_toggles_labels_are_centred_and_its_slab_slides() {
     app.update();
     assert_eq!(x(&app), 0.0, "at rest on the on side after the normal pace");
     let reduced = controls::ToggleSlide { motion: Motion::new(0.0), ..slide };
-    let r = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, Some(reduced), controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H));
+    let r = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, Some(reduced), controls::TOGGLE_ON_OFF, controls::TOGGLE_W, Size::Small));
     let rs = descendants_entities::<controls::ToggleSlab>(&mut app, r)[0];
     assert!(app.world().get::<chimera_ui::Timeline>(rs).is_none(), "reduced motion: it jumps");
 }
@@ -861,7 +865,7 @@ fn hero_hover_eases_through_the_motion_tokens() {
     for (scale, snaps) in [(1.0, false), (0.0, true)] {
         let mut app = app();
         app.insert_resource(Motion::new(scale));
-        let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", None, controls::HERO_H, State::NONE));
+        let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", None, Size::Large, State::NONE));
         let slab = descendants_entities::<controls::HeroSlab>(&mut app, b)[0];
         let glow = descendants_entities::<controls::HeroGlow>(&mut app, b)[0];
         let lift = |app: &App| app.world().get::<controls::HeroSlab>(slab).unwrap().lift;
@@ -896,8 +900,8 @@ fn hero_hover_eases_through_the_motion_tokens() {
 fn a_disabled_hero_ignores_hover() {
     let mut app = app();
     app.insert_resource(Motion::new(1.0));
-    let off = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", None, controls::HERO_H, State { disabled: true, ..State::NONE }));
-    let on = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", None, controls::HERO_H, State::NONE));
+    let off = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", None, Size::Large, State { disabled: true, ..State::NONE }));
+    let on = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", None, Size::Large, State::NONE));
     let slab_of = |app: &mut App, b| descendants_entities::<controls::HeroSlab>(app, b)[0];
     let (soff, son) = (slab_of(&mut app, off), slab_of(&mut app, on));
     assert!(app.world().get::<controls::Hover>(off).is_none(), "a disabled hero has no hover tint");
@@ -919,12 +923,12 @@ fn a_disabled_hero_ignores_hover() {
 #[test]
 fn segmented_is_inset_like_the_toggle_with_slanted_hover() {
     let mut app = app();
-    let opts = build(&mut app, |ui, c, root| ui.segmented_sized(c, root, &["A", "B", "C"], Some(1), &[], State::focused(true), None));
+    let opts = build(&mut app, |ui, c, root| ui.segmented_sized(c, root, &["A", "B", "C"], Some(1), &[], State::focused(true), None, Size::Small));
     let track = app.world().get::<ChildOf>(opts[0]).unwrap().parent();
     let pad = app.world().get::<chimera_ui::UiStyle>(track).unwrap().pad.unwrap();
     assert!(pad.0.iter().all(|p| *p > 0.0), "inset: {pad:?}");
     let h = app.world().get::<chimera_ui::UiStyle>(opts[0]).unwrap().h.unwrap();
-    assert!((h + pad.0[0] + pad.0[2] - controls::TOGGLE_H).abs() < 0.001, "as tall as the toggle");
+    assert!((h + pad.0[0] + pad.0[2] - Size::Small.h()).abs() < 0.001, "as tall as a toggle of its size");
     // Hover: a slanted tick on the others, none on the pick.
     assert_eq!(descendants_with_entity::<Tick>(&mut app, opts[0]).len(), 1);
     assert!(descendants_with_entity::<Tick>(&mut app, opts[1]).is_empty());
@@ -1078,9 +1082,9 @@ fn a_toggle_reads_on_off_or_yes_no() {
         out.sort();
         out
     };
-    let plain = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H));
+    let plain = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, Size::Small));
     assert_eq!(texts(&mut app, plain), ["OFF", "ON"], "drawn upper case");
-    let yn = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, None, TOGGLE_YES_NO, controls::TOGGLE_W, controls::TOGGLE_H));
+    let yn = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, None, TOGGLE_YES_NO, controls::TOGGLE_W, Size::Small));
     assert_eq!(texts(&mut app, yn), ["NO", "YES"]);
 }
 
@@ -1097,8 +1101,8 @@ fn redraw(app: &mut App, root: Entity, old: Option<Entity>) -> (Entity, Entity, 
         c.entity(old).despawn();
     }
     let screen = c.spawn((Node::default(), ChildOf(root))).id();
-    let back = ui.button(&mut c, screen, Kind::Secondary, "Back", None, 2.4, State::NONE);
-    let start = ui.button(&mut c, screen, Kind::Primary, "Start", None, controls::HERO_H, State::NONE);
+    let back = ui.button(&mut c, screen, Kind::Secondary, "Back", None, Size::Regular, State::NONE);
+    let start = ui.button(&mut c, screen, Kind::Primary, "Start", None, Size::Large, State::NONE);
     queue.apply(world);
     app.update();
     (screen, back, start)
@@ -1265,4 +1269,113 @@ fn segmented_choices_that_fit_do_not_overflow() {
         }
     }
     assert!(fitting >= 5, "the usual sets stay segmented ({fitting})");
+}
+
+/// One button system (the user's review of the lobby mock, 2026-11-22: a
+/// segmented choice taller than the hero beside it, a button with another
+/// border): every kind, the toggle, the segmented choice, the dropdown
+/// and the stepper in one row at one `Size` are that size's height, and
+/// each carries one of the defined borders.
+#[test]
+fn one_size_is_one_height_for_every_control_and_kind() {
+    use controls::{Border, ControlBox, StepperRange};
+    let mut app = laid_out();
+    let units = *app.world().resource::<UiUnits>();
+    for size in [Size::Small, Size::Regular, Size::Large] {
+        let ctls = build_laid(&mut app, |ui, c, root| {
+            let row = ui.boxed(c, root, chimera_ui::UiStyle::row());
+            let mut v = vec![
+                ui.button(c, row, Kind::Primary, "Start now", Some("F3"), size, State::NONE),
+                ui.button(c, row, Kind::Secondary, "Add bot", None, size, State::NONE),
+                ui.button(c, row, Kind::Tertiary, "Later", None, size, State::NONE),
+                ui.button(c, row, Kind::Destructive, "Kick", None, size, State::NONE),
+                ui.button(c, row, Kind::Secondary, "Off", None, size, State { disabled: true, ..State::NONE }),
+                ui.toggle_sized(c, row, true, State::NONE, None, controls::TOGGLE_ON_OFF, 6.0, size),
+            ];
+            let seg = ui.segmented_sized(c, row, &["Auto", "Hold"], Some(0), &[], State::NONE, Some(8.0), size);
+            v.push(c.entity(seg[0]).id());
+            v
+        });
+        let w = app.world_mut();
+        let boxes: Vec<(Entity, ControlBox)> = w.query::<(Entity, &ControlBox)>().iter(w).filter(|(_, b)| b.size == size).map(|(e, b)| (e, *b)).collect();
+        assert!(boxes.len() >= 7, "{size:?}: every control carries its ControlBox ({})", boxes.len());
+        let want = units.cq(size.h());
+        for (e, b) in &boxes {
+            let h = size_of(&app, *e).y;
+            assert!((h - want).abs() <= 1.0, "{size:?}: {e} is {h} px tall, not {want} ({b:?})");
+        }
+        let borders: Vec<Border> = boxes.iter().map(|(_, b)| b.border).collect();
+        for want in [Border::None, Border::Line, Border::Threat, Border::Dim] {
+            assert!(borders.contains(&want), "{size:?}: {want:?} drawn ({borders:?})");
+        }
+        let _ = ctls;
+    }
+    // The stepper and the dropdown are the regular size.
+    let (st, dd) = build_laid(&mut app, |ui, c, root| {
+        let row = ui.boxed(c, root, chimera_ui::UiStyle::row());
+        let s = ui.stepper_ex(c, row, "8", StepperRange::new().range(0.0, 10.0), State::NONE, None);
+        let d = ui.dropdown(c, row, &["One", "Two"], 0, None, 10.0, State::NONE);
+        (s.minus, d.0)
+    });
+    let want = units.cq(Size::Regular.h());
+    for e in [st, dd] {
+        assert!((size_of(&app, e).y - want).abs() <= 1.0, "{e}: {} px, not {want}", size_of(&app, e).y);
+    }
+}
+
+/// The load line's four looks (the lobby's starting grid): joining the
+/// indeterminate sweep, moving with the clock; downloading a striped
+/// half-translucent fill to its share; loading a white fill; ready no bar,
+/// only its word.
+#[test]
+fn load_lines_show_joining_downloading_loading_and_ready() {
+    use chimera_ui::load::{BusyTick, Load, LoadLine, LoadStripes, LoadSweep, LoadTrack};
+    let mut app = app();
+    let lines = build(&mut app, |ui, c, root| {
+        [
+            ui.load_line(c, root, Load::Joining, "Joining", 0.0, 0.6, 7.0, 0.54),
+            ui.load_line(c, root, Load::Downloading(0.31), "Downloading", 0.0, 0.6, 7.0, 0.54),
+            ui.load_line(c, root, Load::Loading(0.62), "Models", 0.0, 0.6, 7.0, 0.54),
+            ui.load_line(c, root, Load::Ready, "Ready", 0.0, 0.6, 7.0, 0.54),
+        ]
+    });
+    let [join, dl, ld, ready] = lines;
+    assert_eq!(app.world().get::<LoadLine>(join).unwrap().0, Load::Joining);
+    // Joining: a sweep that moves.
+    let sweep = descendants_with_entity::<LoadSweep>(&mut app, join);
+    assert_eq!(sweep.len(), 1);
+    let at0 = app.world().get::<UiSlant>(sweep[0]).unwrap().clip;
+    app.world_mut().resource_mut::<UiClock>().step(0.5);
+    app.update();
+    let at1 = app.world().get::<UiSlant>(sweep[0]).unwrap().clip;
+    assert_ne!(at0, at1, "the sweep moves");
+    // Downloading: stripes over a half-translucent fill, with its share.
+    assert_eq!(descendants_with_entity::<LoadStripes>(&mut app, dl).len(), 1);
+    let fills = descendants_with::<UiSlant>(&mut app, dl);
+    assert!(fills.iter().any(|s| s.alpha > 0.1 && s.alpha < 0.6 && (s.clip.1 - 0.69).abs() < 0.01), "{fills:?}");
+    assert_eq!(texts_under(&mut app, dl), ["DOWNLOADING 31%"]);
+    // Loading: the white fill to 62%.
+    let fills = descendants_with::<UiSlant>(&mut app, ld);
+    assert!(fills.iter().any(|s| s.fill == Tone::Fg && s.alpha == 1.0 && (s.clip.1 - 0.38).abs() < 0.01), "{fills:?}");
+    assert_eq!(texts_under(&mut app, ld), ["MODELS 62%"]);
+    // Ready: no bar at all.
+    assert!(descendants_with_entity::<LoadTrack>(&mut app, ready).is_empty(), "ready draws no bar");
+    assert!(!descendants_with_entity::<LoadTrack>(&mut app, ld).is_empty());
+    assert_eq!(texts_under(&mut app, ready), ["READY"]);
+    // The busy mark: sheared squares whose lit head runs along.
+    let busy = build(&mut app, |ui, c, root| ui.busy(c, root, 6, 0.5));
+    let alphas = |app: &mut App| descendants_with::<BusyTick>(app, busy).len();
+    assert_eq!(alphas(&mut app), 6);
+    let lit = |app: &mut App| -> Vec<f32> {
+        let mut v: Vec<(u32, f32)> = descendants_with_entity::<BusyTick>(app, busy)
+            .into_iter()
+            .map(|e| (app.world().get::<BusyTick>(e).unwrap().i, app.world().get::<UiSlant>(e).unwrap().alpha))
+            .collect();
+        v.sort_by_key(|p| p.0);
+        v.into_iter().map(|p| p.1).collect()
+    };
+    let a = lit(&mut app);
+    app.world_mut().resource_mut::<UiClock>().step(0.2);
+    app.update();
+    assert_ne!(a, lit(&mut app), "the head runs along");
 }

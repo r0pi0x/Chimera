@@ -6,7 +6,8 @@
 //! owns the screen.
 //!
 //! - **The shell**: the breadcrumb ("‹ Join", "‹ Host" for a listen
-//!   host's own load) over "Connecting" (or "Loading" between matches);
+//!   host's own load) over "Connecting" (or "Loading" between matches),
+//!   the kit's waiting mark (`Ui::busy`) in the card's corner;
 //!   Back (the breadcrumb, Esc or a right click) asks first.
 //! - **The map**: its big card (a gradient stands in for previews) with
 //!   its name, its game and the server's name.
@@ -41,7 +42,7 @@ use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_net::net::client::{JoinProgress, JoinStage};
 use chimera_ui::{
     IconImages, KitFonts, Role, Theme, Tone, UiStyle, UiUnits,
-    controls::{HERO_H, Kind, Progress, State, Ui},
+    controls::{Kind, Progress, State, Ui},
     shell,
 };
 
@@ -406,6 +407,9 @@ fn spawn(c: &mut Commands, ui: &Ui, v: &View, res: Option<(&mut Assets<Image>, &
             ChildOf(frame),
         ))
         .id();
+    // The kit's waiting mark in the card's corner while it loads.
+    let spin = ui.boxed(c, card, UiStyle::row().abs([None, Some(1.2), Some(1.4), None]));
+    ui.busy(c, spin, 8, 0.45);
     c.spawn((
         Node { position_type: PositionType::Absolute, width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
         BackgroundGradient::from(LinearGradient::to_bottom(vec![ColorStop::percent(Color::NONE, 70.0), ColorStop::percent(t.tone_a(Tone::Ink, 0.85), 100.0)])),
@@ -485,9 +489,9 @@ fn leave_modal(c: &mut Commands, ui: &Ui, root: Entity) {
     let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
     ui.paragraph(c, tx, Role::Text, chimera_ui::controls::SENTENCE, Tone::Fg2, "You're still loading in. Leaving drops the connection; what has downloaded stays cached for next time.");
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.7), margin: Some([1.4, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
-    let stay = ui.button(c, acts, Kind::Secondary, "Stay", Some("Esc"), 2.4, State::NONE);
+    let stay = ui.button(c, acts, Kind::Secondary, "Stay", Some("Esc"), chimera_ui::controls::Size::Regular, State::NONE);
     c.entity(stay).insert(LeaveAsk::Stay);
-    let leave = ui.button(c, acts, Kind::Primary, "Leave", Some("Enter"), HERO_H, State::focused(true));
+    let leave = ui.button(c, acts, Kind::Primary, "Leave", Some("Enter"), chimera_ui::controls::Size::Regular, State::focused(true));
     c.entity(leave).insert(LeaveAsk::Leave);
 }
 

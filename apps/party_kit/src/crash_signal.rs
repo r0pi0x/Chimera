@@ -136,11 +136,11 @@ fn spawn(c: &mut Commands, ui: &Ui, what: &Shown, reports: &CrashReports) -> Ent
             let foot = ui.boxed(c, plate, UiStyle { gap: Some(0.5), margin: Some([0.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
             ui.sentence(c, foot, NOTE, Tone::Fg3, "Sent to this playtest's host");
             ui.boxed(c, foot, UiStyle::row().grow(1.0));
-            let not_now = ui.button(c, foot, Kind::Ghost, "Not now", None, 2.2, State::NONE);
+            let not_now = ui.button(c, foot, Kind::Tertiary, "Not now", None, chimera_ui::controls::Size::Regular, State::NONE);
             c.entity(not_now).insert(CrashAction::Dismiss);
-            let always = ui.button(c, foot, Kind::Secondary, "Always send", None, 2.2, State::NONE);
+            let always = ui.button(c, foot, Kind::Secondary, "Always send", None, chimera_ui::controls::Size::Regular, State::NONE);
             c.entity(always).insert(CrashAction::Always);
-            let send = ui.button(c, foot, Kind::Primary, "Send", None, chimera_ui::controls::HERO_H, State::focused(true));
+            let send = ui.button(c, foot, Kind::Primary, "Send", None, chimera_ui::controls::Size::Regular, State::focused(true));
             c.entity(send).insert(CrashAction::Send);
         }
         Shown::Said(text) => {

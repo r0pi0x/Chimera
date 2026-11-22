@@ -57,7 +57,7 @@ const L: &str = "form";
 pub struct FormSizes {
     /// Every control's width in a settings row.
     pub control_w: f32,
-    /// A toggle's and a segmented choice's height.
+    /// Every control's height (`controls::Size::Regular`).
     pub control_h: f32,
     /// The reset key's column.
     pub state_w: f32,
@@ -71,7 +71,7 @@ impl FormSizes {
         let g = |k: &str, d: f32| t.layout_opt(L, k).unwrap_or(d);
         FormSizes {
             control_w: g("control_w", 14.0),
-            control_h: g("control_h", 2.2),
+            control_h: crate::controls::Size::Regular.h(),
             state_w: g("state_w", 2.6),
             badge_h: g("badge_h", 1.15),
             seg_pad: g("seg_pad", 0.8),
@@ -274,7 +274,7 @@ impl Ui<'_> {
     /// The big toggle: `control_w` x `control_h` (module doc).
     pub fn big_toggle(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>, words: (&str, &str)) -> Entity {
         let f = self.form();
-        self.toggle_sized(c, parent, on, st, slide, words, f.control_w, f.control_h)
+        self.toggle_sized(c, parent, on, st, slide, words, f.control_w, crate::controls::Size::Regular)
     }
 
     /// A choice in the column (module doc): segmented when it fits
@@ -289,7 +289,7 @@ impl Ui<'_> {
     pub fn choice_with(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], open: Option<usize>, st: State) -> Choice {
         let f = self.form();
         if fits_segmented(self.theme, &f, options, f.control_w) {
-            Choice::Segmented(self.segmented_sized(c, parent, options, selected, off, st, Some((f.control_w, f.control_h))))
+            Choice::Segmented(self.segmented_sized(c, parent, options, selected, off, st, Some(f.control_w), crate::controls::Size::Regular))
         } else {
             let (field, options) = self.dropdown(c, parent, options, selected.unwrap_or(0), open, f.control_w, st);
             Choice::Dropdown { field, options }

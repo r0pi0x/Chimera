@@ -87,6 +87,12 @@ impl Plugin for PreMatchLobbyPlugin {
     fn build(&self, app: &mut App) {
         super::staging::staging(app);
         super::hud::hud_cover(app);
+        crate::console::resource_cvar::<LobbyKick, u8>(
+            app,
+            "ui_lobby_kick",
+            "1 (default): the host's pre-match lobby shows Kick on the player row under the pointer; 0: hidden.",
+            |k| &mut k.0,
+        );
         app.init_resource::<LobbyView>()
             .init_resource::<LobbyGate>()
             .init_resource::<LobbyAsked>()
@@ -107,13 +113,17 @@ impl Plugin for PreMatchLobbyPlugin {
         use crate::console::ConsoleAppExt;
         app.console_command(
             "chimera:lobby_press",
-            "lobby_press <ready|settings|report|leave>: press that button of the pre-match lobby (tests, screenshots).",
+            "lobby_press <ready|settings|report|leave|hold|auto|add_bot|kick <row>>: press that button of the pre-match lobby (tests, screenshots).",
             |w, a| {
                 let action = match a.first().map(String::as_str) {
                     Some("ready") => LobbyAction::Ready,
                     Some("settings") => LobbyAction::Settings,
                     Some("report") => LobbyAction::Report,
                     Some("leave") => LobbyAction::Leave,
+                    Some("hold") => LobbyAction::Hold(true),
+                    Some("auto") => LobbyAction::Hold(false),
+                    Some("add_bot") => LobbyAction::AddBot,
+                    Some("kick") => LobbyAction::Kick(a.get(1).and_then(|i| i.parse().ok()).ok_or("lobby_press kick <row>")?),
                     other => return Err(format!("no button {other:?}")),
                 };
                 w.write_message(action);
@@ -144,10 +154,17 @@ fn cover(
 
 /// What the lobby's buttons do (also sent by tests): the panel's Ready
 /// (the key's line: the host's start, a player's ready or not),
-/// Settings, Report a bug and Leave.
+/// Settings, Report a bug and Leave; the host's Auto/Hold (`Hold`:
+/// `lobby_hold`), Add bot (`MaxPlayer` one more) and Kick (a row of
+/// `LobbyView::rows`: `kick <name>`, a bot `MaxPlayer` one fewer).
 #[derive(Message, Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LobbyAction {
     Ready,
+    /// The host holds the lobby (true) or lets it start by itself.
+    Hold(bool),
+    AddBot,
+    /// The row at this index of `LobbyView::rows`.
+    Kick(u8),
     /// The app's settings over the lobby (`LobbyAppAsked`).
     Settings,
     /// The report dialog (`feedback::request`).
@@ -220,6 +237,15 @@ fn act(
             }
             LobbyAction::Settings => None,
             LobbyAction::Leave => Some("disconnect".to_string()),
+            LobbyAction::Hold(_) | LobbyAction::AddBot | LobbyAction::Kick(_) if !view.hosting => None,
+            LobbyAction::Hold(h) => Some(format!("lobby_hold {}", u8::from(*h))),
+            LobbyAction::AddBot => Some(format!("MaxPlayer {}", view.rows.iter().filter(|r| r.bot).count() + 1)),
+            LobbyAction::Kick(i) => match view.rows.get(*i as usize) {
+                Some(r) if r.local || r.host => None,
+                Some(r) if r.bot => Some(format!("MaxPlayer {}", view.rows.iter().filter(|r| r.bot).count().saturating_sub(1))),
+                Some(r) => Some(format!("kick {}", r.name)),
+                None => None,
+            },
             LobbyAction::Report => {
                 commands.queue(|w: &mut World| {
                     if w.contains_resource::<super::feedback::Feedback>() {
@@ -320,6 +346,23 @@ pub struct LobbyView {
     pub host_start: bool,
     /// The match's settings (`NetLobby::settings`): label and value.
     pub settings: Vec<(String, String)>,
+    /// The lobby's name: the server's (`hostname`; a joiner's from the
+    /// server's welcome); empty when unknown.
+    pub server: String,
+    /// The ladder's rungs (0 off a ladder).
+    pub rungs: u32,
+    /// The host shows Kick on a hovered row (`ui_lobby_kick`).
+    pub kick: bool,
+}
+
+/// The host's Kick on a hovered lobby row shown (`ui_lobby_kick`, 1).
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LobbyKick(pub u8);
+
+impl Default for LobbyKick {
+    fn default() -> Self {
+        LobbyKick(1)
+    }
 }
 
 /// The lobby's key while it shows (a Source key name), in place of its bind.
@@ -500,6 +543,11 @@ fn follow(
     (mut passes, mut gate, first): (super::logo_pass::Passes, ResMut<LobbyGate>, Query<(), With<chimera_net::prematch::HostLobbyFirst>>),
     mut view: ResMut<LobbyView>,
     own: chimera_net::net::load_stages::LoadSource,
+    (welcome, hosting, kick): (
+        Option<Res<chimera_net::net::client::ServerWelcome>>,
+        Option<Res<chimera_net::net::query::Hosting>>,
+        Option<Res<LobbyKick>>,
+    ),
 ) {
     // A listen host's lobby shown from its Start (`prematch::show_first`):
     // seen as its host, as the staged one.
@@ -541,6 +589,7 @@ fn follow(
         Some(NetRole::Server) if !host.is_empty() => Some(HOST_ID),
         _ => None,
     };
+    let is_staged = staged.is_some();
     let mut v = LobbyView {
         shown: true,
         mode: l.mode.clone(),
@@ -565,6 +614,13 @@ fn follow(
         guns_from: Vec::new(),
         host_start: l.host_start,
         settings: l.settings.clone(),
+        server: match (staged.is_some(), role.as_deref()) {
+            (true, _) => "Friday Frags".into(),
+            (_, Some(NetRole::Client)) => welcome.map(|w| w.0.server_name.clone()).unwrap_or_default(),
+            _ => hosting.map(|h| h.hostname.clone()).unwrap_or_default(),
+        },
+        rungs: 0,
+        kick: kick.is_none_or(|k| k.0 != 0),
     };
     v.hint = hint(&v);
     let short = |id: &str| games.as_ref().and_then(|g| g.get(id)).map(|g| g.short_name.to_string());
@@ -577,6 +633,7 @@ fn follow(
         _ => None,
     };
     if let Some(ladder) = ladder {
+        v.rungs = ladder.rungs.len() as u32;
         for rung in &ladder.rungs {
             if let Some(g) = rung.split_once(':').and_then(|(g, _)| short(g))
                 && !v.guns_from.contains(&g)
@@ -584,6 +641,11 @@ fn follow(
                 v.guns_from.push(g);
             }
         }
+    }
+    if is_staged && v.rungs == 0 {
+        // The staged lobby's made-up ladder (`ui_scene lobby`).
+        v.rungs = 14;
+        v.guns_from = ["CS:S", "HL2:DM", "Halo", "CA", "TF2"].map(String::from).to_vec();
     }
     view.set_if_neq(v);
 }

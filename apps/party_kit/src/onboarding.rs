@@ -135,7 +135,7 @@ use chimera_assets::{
 use chimera_ui::{
     Role, Tone, UiStyle, secret,
     avatar::{AvatarLook, AvatarMarks, Face},
-    controls::{HERO_H, Kind, NOTE, SENTENCE, State, Ui, clickable},
+    controls::{Kind, NOTE, SENTENCE, State, Ui, clickable},
     motion::{Ease, Motion, Prop, Timeline, Track, UiClock},
     text_edit::{Caret, TextKey, text_key},
 };
@@ -1568,7 +1568,7 @@ fn show_chip(
             ui.text(c, b, Role::DisplayBold, 0.92, Tone::Warn, &words.f("chip.banner_title", &fill));
             let s = ui.boxed(c, b, UiStyle { grow: Some(1.0), ..UiStyle::column() });
             ui.paragraph(c, s, Role::Text, 0.86, Tone::Fg2, &words.t("chip.banner_body"));
-            let retry = ui.button(c, b, Kind::Secondary, &words.t("chip.retry_now"), None, 2.4, State::NONE);
+            let retry = ui.button(c, b, Kind::Secondary, &words.t("chip.retry_now"), None, chimera_ui::controls::Size::Regular, State::NONE);
             c.entity(retry).insert(RetryHub);
         }
         if let Some(cam) = cam {
@@ -1753,8 +1753,8 @@ impl Draw<'_, '_> {
 
     #[allow(clippy::too_many_arguments)]
     fn button(&mut self, c: &mut Commands, row: Entity, kind: Kind, label: &str, key: Option<&str>, a: ObAction, st: State) -> Entity {
-        let h = if kind == Kind::Primary { HERO_H } else { 2.6 };
-        let b = self.ui.button(c, row, kind, label, key, h, st);
+        // The first run's rows: every button the large size (one row, one size).
+        let b = self.ui.button(c, row, kind, label, key, chimera_ui::controls::Size::Large, st);
         if !st.disabled {
             c.entity(b).insert(a);
         }
@@ -1872,8 +1872,8 @@ impl Draw<'_, '_> {
             Some(Problem::Used | Problem::Unknown | Problem::Withdrawn | Problem::Busy) => {
                 ("errors.try_another", "Enter", ObAction::Clear, (Kind::Secondary, "welcome.have_account", ObAction::Have))
             }
-            Some(Problem::Unreachable) => ("errors.retry", "Enter", ObAction::Retry, (Kind::Ghost, "welcome.skip", ObAction::Skip)),
-            Some(Problem::Certificate { .. }) => ("errors.back", "Esc", ObAction::Clear, (Kind::Ghost, "errors.copy_details", ObAction::CopyDetails)),
+            Some(Problem::Unreachable) => ("errors.retry", "Enter", ObAction::Retry, (Kind::Tertiary, "welcome.skip", ObAction::Skip)),
+            Some(Problem::Certificate { .. }) => ("errors.back", "Esc", ObAction::Clear, (Kind::Tertiary, "errors.copy_details", ObAction::CopyDetails)),
             _ => ("welcome.continue", "Enter", ObAction::Continue, (Kind::Secondary, "welcome.have_account", ObAction::Have)),
         };
         self.button(c, row, Kind::Primary, &w.t(hero), Some(hero_key), hero_act, State::focused(true));
@@ -1885,7 +1885,7 @@ impl Draw<'_, '_> {
         }
         // Play without an account: tertiary, but plainly a choice (decision 9).
         let skip = ui.boxed(c, root, UiStyle { gap: Some(1.2), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([Some(self.lay("col_x", 8.4) - 0.6), None, None, Some(4.4)]));
-        self.button(c, skip, Kind::Ghost, &w.t("welcome.skip"), None, ObAction::Skip, State::NONE);
+        self.button(c, skip, Kind::Tertiary, &w.t("welcome.skip"), None, ObAction::Skip, State::NONE);
         ui.text(c, skip, Role::Mono, 0.58, Tone::Fg3, &w.t("welcome.skip_note"));
         self.carries(c, root);
         if matches!(o.problem, Some(Problem::Certificate { .. })) {
@@ -2127,7 +2127,7 @@ impl Draw<'_, '_> {
             ui.text(c, free, Role::Mono, 0.56, Tone::Fg3, &w.t("name.free"));
             // The free names: the kit's small secondary buttons.
             for s in o.name.as_ref().map(|n| n.suggestions.clone()).unwrap_or_default() {
-                let b = ui.button(c, free, Kind::Secondary, &s, None, 1.9, State::NONE);
+                let b = ui.button(c, free, Kind::Secondary, &s, None, chimera_ui::controls::Size::Small, State::NONE);
                 c.entity(b).insert(ObAction::Suggest(s.clone()));
             }
         }
@@ -2181,7 +2181,7 @@ impl Draw<'_, '_> {
         let row = self.btns(c, col, 1.2);
         let ready = o.name_ok() && o.pending.is_none();
         self.button(c, row, Kind::Primary, &w.t("name.continue"), Some("Enter"), ObAction::Continue, State { focus: ready, disabled: !ready, ..State::NONE });
-        self.button(c, row, Kind::Ghost, &w.t("name.back"), None, ObAction::Back, State::NONE);
+        self.button(c, row, Kind::Tertiary, &w.t("name.back"), None, ObAction::Back, State::NONE);
         // The preview: how others see you (nothing to change here).
         let shown = if o.display.trim().is_empty() { if folded.is_empty() { "...".to_string() } else { folded.clone() } } else { o.display.trim().to_string() };
         let pane = self.pane(c, root, self.lay("name_pane_dx", 9.0), 1.8, self.lay("name_pane_w", 27.0));

@@ -519,6 +519,21 @@ pub(crate) fn register(app: &mut App) {
         },
     )
     .console_command(
+        "lobby_hold",
+        "lobby_hold [0|1]: the host holds the pre-match lobby (1: nothing starts it but lobby_start, a running \
+         countdown stops; for a player who will be right back) or lets it start by itself once everyone has \
+         loaded (0, the default). No argument: flips it.",
+        |w, a| {
+            let want = match a.first().map(String::as_str) {
+                None => None,
+                Some("0") => Some(false),
+                Some("1") => Some(true),
+                Some(s) => return Err(format!("not 0 or 1: {s}")),
+            };
+            hold(w, want).map(Some)
+        },
+    )
+    .console_command(
         "lobby_ready",
         "lobby_ready [0|1]: you are ready for the pre-match lobby's match (a player's; no argument: flips it). \
          Counts where players ready up (mp_lobby_ready_up 1).",
@@ -1171,6 +1186,27 @@ pub fn start_now(world: &mut World, secs: Option<f64>) -> Result<String, String>
     world.insert_resource(lobby);
     info!("pre-match lobby: started by the host; the match starts in {secs} s");
     Ok(format!("the match starts in {secs} s"))
+}
+
+/// `lobby_hold [0|1]`: the host holds the lobby (`want`; None flips it):
+/// held, nothing counts down by itself and a running countdown stops;
+/// let go, it starts once everyone has loaded (`serve`).
+pub fn hold(world: &mut World, want: Option<bool>) -> Result<String, String> {
+    if world.get_resource::<NetRole>() == Some(&NetRole::Client) {
+        return Err("the server holds the lobby; you are a client of it".into());
+    }
+    let Some(mut lobby) = world.get_resource::<Lobby>().copied() else {
+        return Err("no pre-match lobby now".into());
+    };
+    let held = want.unwrap_or(!lobby.host_start);
+    lobby.host_start = held;
+    if held {
+        lobby.countdown_ends = None;
+        lobby.on_ready = false;
+    }
+    world.insert_resource(lobby);
+    info!("pre-match lobby: {}", if held { "held by the host" } else { "starts once everyone has loaded" });
+    Ok(if held { "the lobby is held: lobby_start starts the match" } else { "the match starts once everyone has loaded" }.into())
 }
 
 /// `lobby_ready [0|1]`: the player it runs for (a network client's, sent

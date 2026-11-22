@@ -77,7 +77,9 @@ pub struct StagedLobby;
 /// every machine, each row at its own stage (downloading, loading the
 /// map, building models, physics); `ui_scene lobby join`: a joiner's view
 /// (its own row second, downloading; no Start, a Leave button) of a lobby
-/// with the match's settings.
+/// with the match's settings; `count`: everyone loaded, counting down;
+/// `held`: the host holding the start (Hold); `crowd`: fifteen players,
+/// the list scrolling.
 fn stage_lobby(w: &mut World, how: Option<&str>) {
     use chimera_net::prematch::{LobbyRow, NetLobby, status};
     let row = |id: Option<u64>, name: &str, st: u8, ping: Option<u16>, wins: u32| LobbyRow {
@@ -93,10 +95,12 @@ fn stage_lobby(w: &mut World, how: Option<&str>) {
         avatar: if id.is_some() { (name.len() as u8 * 7) % 32 } else { chimera_net::prematch::NO_AVATAR },
         party: 0,
     };
-    if matches!(how, Some("host" | "between" | "join")) {
+    if matches!(how, Some("host" | "between" | "join" | "count" | "held" | "crowd")) {
         use chimera_net::net::HOST_ID;
         let between = how == Some("between");
         let join = how == Some("join");
+        let count = how == Some("count");
+        let held = how == Some("held");
         let mut dl = row(Some(2), "AI_alpha_9", status::DOWNLOADING, Some(31), 0);
         (dl.done, dl.total, dl.party, dl.avatar) = (42, 100, 1, 6 * 1 + 8 * 2);
         (dl.step, dl.permille) = (0, 420);
@@ -117,17 +121,30 @@ fn stage_lobby(w: &mut World, how: Option<&str>) {
         }
         let mut st = row(Some(6), "Stranger", status::READY, Some(140), 0);
         st.avatar = 8 * 2 + 7;
+        let mut rows = vec![me, dl, ld, nj, wr, st, row(None, "Bot_Kilo", status::READY, None, 0)];
+        if count {
+            for r in &mut rows {
+                r.status = status::READY;
+            }
+        }
+        if how == Some("crowd") {
+            for (k, n) in ["Vexa", "Brickhouse", "Lowkey", "nullpointer", "Mossy", "K4ttegat", "Orbit", "Tumbleweed"].iter().enumerate() {
+                let mut r = row(Some(10 + k as u64), n, if k % 3 == 0 { status::LOADING } else { status::READY }, Some(20 + 9 * k as u16), 0);
+                (r.step, r.permille) = (1, 150 + 90 * k as u16);
+                rows.push(r);
+            }
+        }
         w.insert_resource(super::prematch_lobby::StagedLobbyHost { slots: 8, joiner: how == Some("join") });
         w.spawn((
             StagedLobby,
             NetLobby {
                 map: "cs_source:de_dust2".into(),
                 mode: "Ultimate Gun Game".into(),
-                rows: vec![me, dl, ld, nj, wr, st, row(None, "Bot_Kilo", status::READY, None, 0)],
-                waiting: if between { 4 } else { 3 },
+                rows,
+                waiting: if count { 0 } else if between { 4 } else { 3 },
                 wait_left: (between || join).then_some(75),
-                countdown: None,
-                host_start: !between && !join,
+                countdown: count.then_some(2),
+                host_start: held,
                 settings: vec![
                 ("Length".into(), "10 min".into()),
                 ("Bots".into(), "3".into()),
@@ -674,12 +691,12 @@ fn controls(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets
     ui.section(c, left, "Buttons", Some("default • focus • disabled • danger"));
     for (k, st) in [(Kind::Primary, State::NONE), (Kind::Primary, State::focused(true)), (Kind::Secondary, State::NONE), (Kind::Secondary, State::focused(true))] {
         let r = ui.boxed(c, left, chimera_ui::UiStyle::row());
-        ui.button(c, r, k, "Apply", Some("Ctrl S"), 2.4, st);
+        ui.button(c, r, k, "Apply", Some("Ctrl S"), chimera_ui::controls::Size::Regular, st);
     }
     let r = ui.boxed(c, left, chimera_ui::UiStyle { gap: Some(0.5), ..chimera_ui::UiStyle::row() });
-    ui.button(c, r, Kind::Danger, "End the game", None, 2.4, State::NONE);
-    ui.button(c, r, Kind::Ghost, "Back", Some("Esc"), 2.4, State::NONE);
-    ui.button(c, r, Kind::Secondary, "Revert", None, 2.4, State { disabled: true, ..State::NONE });
+    ui.button(c, r, Kind::Destructive, "End the game", None, chimera_ui::controls::Size::Regular, State::NONE);
+    ui.button(c, r, Kind::Tertiary, "Back", Some("Esc"), chimera_ui::controls::Size::Regular, State::NONE);
+    ui.button(c, r, Kind::Secondary, "Revert", None, chimera_ui::controls::Size::Regular, State { disabled: true, ..State::NONE });
     ui.section(c, left, "Tabs", None);
     ui.tabs(c, left, &["Video", "Audio", "Controls", "Party"], 1, false);
     ui.section(c, left, "Key binding", None);
@@ -868,11 +885,11 @@ fn fields(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<c
         (chimera_ui::controls::Kind::Secondary, State::NONE),
         (chimera_ui::controls::Kind::Secondary, State::focused(true)),
         (chimera_ui::controls::Kind::Secondary, State { disabled: true, ..State::NONE }),
-        (chimera_ui::controls::Kind::Ghost, State::NONE),
-        (chimera_ui::controls::Kind::Danger, State::NONE),
+        (chimera_ui::controls::Kind::Tertiary, State::NONE),
+        (chimera_ui::controls::Kind::Destructive, State::NONE),
     ] {
         let r = ui.boxed(c, e, UiStyle::row());
-        ui.button(c, r, k, "Apply", None, 2.4, st);
+        ui.button(c, r, k, "Apply", None, chimera_ui::controls::Size::Regular, st);
     }
     ui.section(c, e, "Dropdown", Some("rest, open, focus, disabled"));
     let r = cell(c, e, "Rest");

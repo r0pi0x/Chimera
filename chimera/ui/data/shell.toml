@@ -123,11 +123,11 @@ thumb_min = 2.4        # the thumb's least length, cq
 gap = 0.6              # between the content and the bar, cq
 
 # A settings column (chimera_ui::form), every app's, cq: every control
-# in a row is `control_w` wide (the user's review, 2026-11-21), toggles
-# and segmented choices `control_h` tall; the reset key's column after it.
+# in a row is `control_w` wide (the user's review, 2026-11-21), every
+# control the kit's `Size::Regular` tall (`controls::Size`, not data: one
+# button system); the reset key's column after it.
 [layout.form]
 control_w = 14.0
-control_h = 2.2
 state_w = 2.6        # the reset key's column
 badge_h = 1.15       # a badge's height
 seg_pad = 0.8        # a segmented option's padding besides its words (fits or a dropdown)
@@ -218,5 +218,3 @@ keys_gap = 1.4
 keys_inner = 0.45
 keys_size = 0.54
 acts_gap = 0.7
-ghost_h = 2.0
-cancel_h = 2.4

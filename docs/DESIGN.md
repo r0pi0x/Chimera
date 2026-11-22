@@ -1187,7 +1187,7 @@ else a dropdown, the reset key in the row, one marker a row) misses it:
 Host kept the old small toggles and per-control focus lines while
 Settings had the new ones, and the match end's Leave had no hover.
 
-- **What to use**: `Ui::button`/`button_icon`, `Ui::tabs`, `Ui::item`
+- **What to use**: `Ui::button`/`button_icon` (at a `Size`), `Ui::tabs`, `Ui::item`
   (a pressable surface: a list entry, a rail item, a card, a chip, a
   fold's head; `item_bundle` in a `with_children` closure,
   `controls::press_tint` for a node another system spawned), and for a
@@ -1200,6 +1200,23 @@ Settings had the new ones, and the match end's Leave had no hover.
   is for a number, decided by the setting's data type (`Pick::Range`), not
   its labels (`tests/it/kit_conformance.rs`). The old small toggle
   and the natural-width segmented choice are kit-internal now.
+- **One button system** (the user's review of the lobby mock,
+  2026-11-22: an Auto/Hold choice taller than Start now beside it, Add
+  bot with a border of its own): a control comes in three sizes only,
+  `controls::Size` (`Small` 1.9 cq for a toolbar's or a list row's tools,
+  `Regular` 2.4 for everything else: a dialog's or an action bar's
+  buttons, a setting row's controls; `Large` 2.8 for a screen's lone
+  hero, the first run's rows), and every kind of control takes one:
+  buttons (`Kind`: `Primary` the hero slab, bold, no border;
+  `Secondary` the line border; `Tertiary` text only; `Destructive` the
+  threat border and mark), the toggle, the segmented choice, the
+  stepper, the dropdown. Borders are `controls::Border` only (none, the
+  `fg_3` line, `fg_5` disabled, threat), one hairline weight. **The
+  controls in one row share one size**: a dialog's hero is no taller
+  than its Cancel. Each control's root carries `ControlBox` (its size
+  and border); `kit_conformance` fails a staged screen with two sizes in
+  one row (`row_sizes`), and the kit's tests measure every kind at
+  every size (`one_size_is_one_height_for_every_control_and_kind`).
 - **Right click closes a dialog** (the user's rule, 2026-11-22: the party
   panel's dialog did not): every modal layer (`chimera_ui::Modal`: a
   dialog, picker, confirm, the Escape menu) closes on a right click

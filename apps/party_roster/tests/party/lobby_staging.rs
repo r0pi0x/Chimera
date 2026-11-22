@@ -724,3 +724,25 @@ fn the_map_left_is_unloaded_under_the_next_lobby() {
     // The staging's replication follows the lobby's by a few frames.
     assert!(sim.until(10, |s| lobby_owns(s, 0).is_ok()), "{:?}", lobby_owns(&mut sim, 0));
 }
+
+/// The host's Hold (the user's call, 2026-11-22: Auto the default, Hold
+/// for a player who'll be right back): `lobby_hold 1` stops a running
+/// countdown and keeps the lobby however ready everyone is; every client
+/// sees it held; `lobby_hold 0` lets it count down by itself again.
+#[test]
+fn the_host_holds_the_lobby_and_lets_it_go() {
+    let mut sim = staged_signal_party();
+    sim.server.app.world_mut().resource_mut::<LobbySettings>().countdown = 60.0;
+    assert!(sim.until(900, |s| (0..2).all(|i| s.clients[i].app.world().contains_resource::<Joined>() && lobby_view(s, i))));
+    let counting = |s: &NetSim| s.clients[0].app.world().resource::<LobbyView>().countdown.is_some();
+    assert!(sim.until(300, |s| counting(s)), "Auto: everyone loaded, it counts down");
+    sim.server.app.world_mut().resource_mut::<Console>().submit("lobby_hold 1");
+    assert!(
+        sim.until(120, |s| !counting(s) && (0..2).all(|i| s.clients[i].app.world().resource::<LobbyView>().host_start)),
+        "held: the countdown stops, every client sees it held"
+    );
+    sim.ticks(120);
+    assert!(!counting(&sim), "held however ready everyone is");
+    sim.server.app.world_mut().resource_mut::<Console>().submit("lobby_hold 0");
+    assert!(sim.until(300, |s| counting(s)), "let go: it counts down again");
+}

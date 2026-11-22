@@ -65,6 +65,7 @@ pub const ENGINE_NAMES: &[&str] = &[
     "mp_lobby_min_players",
     "mp_lobby_ready_up",
     "lobby_start",
+    "lobby_hold",
     "lobby_ready",
     "lobby",
     // The network: rates, interpolation, lag compensation, downloads.

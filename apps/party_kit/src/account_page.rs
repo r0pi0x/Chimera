@@ -1248,7 +1248,7 @@ impl Draw<'_, '_> {
         }
         if p.tab == Tab::Invites {
             let ready = !p.intent.trim().is_empty() && p.pending.is_none();
-            let b = ui.button(c, bar, Kind::Primary, &self.t("make"), Some("Enter"), 2.4, State { disabled: !ready, ..State::NONE });
+            let b = ui.button(c, bar, Kind::Primary, &self.t("make"), Some("Enter"), chimera_ui::controls::Size::Regular, State { disabled: !ready, ..State::NONE });
             c.entity(b).insert(AccountAction::Make);
         }
         let mut foot = vec![("↑↓", "Row"), ("Enter", "Change")];
@@ -1312,7 +1312,7 @@ impl Draw<'_, '_> {
                 ui.text_plain(c, line, Role::DisplayBold, 0.86, Tone::Fg, self.hub);
             }
             Row::Link => {
-                let b = ui.button(c, ctl, Kind::Secondary, &self.t(if p.link.is_some() { "link_again" } else { "link_show" }), None, f.control_h, State { focus, ..State::NONE });
+                let b = ui.button(c, ctl, Kind::Secondary, &self.t(if p.link.is_some() { "link_again" } else { "link_show" }), None, chimera_ui::controls::Size::Regular, State { focus, ..State::NONE });
                 c.entity(b).insert(AccountAction::Link);
                 if let Some((code, minutes)) = &p.link {
                     let under = self.under(c, list);
@@ -1333,9 +1333,9 @@ impl Draw<'_, '_> {
             Row::SignOut => {
                 if p.confirm_sign_out {
                     let two = ui.boxed(c, ctl, UiStyle { w: Some(w), gap: Some(0.5), ..UiStyle::row() });
-                    let stay = ui.button(c, two, Kind::Secondary, &self.t("stay"), Some("Esc"), f.control_h, State::NONE);
+                    let stay = ui.button(c, two, Kind::Secondary, &self.t("stay"), Some("Esc"), chimera_ui::controls::Size::Regular, State::NONE);
                     c.entity(stay).insert(AccountAction::SignOutStay);
-                    let go = ui.button(c, two, Kind::Danger, &self.t("sign_out_confirm"), None, f.control_h, State { focus: true, ..State::NONE });
+                    let go = ui.button(c, two, Kind::Destructive, &self.t("sign_out_confirm"), None, chimera_ui::controls::Size::Regular, State { focus: true, ..State::NONE });
                     c.entity(go).insert(AccountAction::SignOutConfirm);
                     let under = self.under(c, list);
                     ui.mark(c, under, Tone::Warn, 0.5, 0.5);
@@ -1343,7 +1343,7 @@ impl Draw<'_, '_> {
                     let words = ui.boxed(c, under, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() });
                     ui.paragraph(c, words, Role::Text, 0.84, Tone::Fg, &line);
                 } else {
-                    let b = ui.button(c, ctl, Kind::Danger, &self.t("sign_out_button"), None, f.control_h, State { focus, ..State::NONE });
+                    let b = ui.button(c, ctl, Kind::Destructive, &self.t("sign_out_button"), None, chimera_ui::controls::Size::Regular, State { focus, ..State::NONE });
                     c.entity(b).insert(AccountAction::SignOut);
                 }
             }
@@ -1369,7 +1369,7 @@ impl Draw<'_, '_> {
             Row::Make => {
                 match &p.made {
                     Some(m) => {
-                        let b = ui.button(c, ctl, Kind::Secondary, &self.t("copy"), Some("Ctrl C"), f.control_h, State { focus, ..State::NONE });
+                        let b = ui.button(c, ctl, Kind::Secondary, &self.t("copy"), Some("Ctrl C"), chimera_ui::controls::Size::Regular, State { focus, ..State::NONE });
                         c.entity(b).insert(AccountAction::CopyLink);
                         // The link, once, on a plate across the list.
                         let plate = ui.boxed(c, list, UiStyle { gap: Some(0.5), pad: Some([1.0, 1.4].into()), margin: Some([0.2, 0.0, 0.6, 0.0].into()), shrink: Some(0.0), ..UiStyle::column() }.bg_a(Tone::Ink2, 0.8).outline(Tone::AccText, 0.4));
@@ -1391,7 +1391,7 @@ impl Draw<'_, '_> {
                 if let Some(x) = inv {
                     ui.badge(c, line, &x.role, if x.role == "host" { BadgeKind::Hero } else { BadgeKind::Quiet });
                 }
-                let b = ui.button(c, line, Kind::Secondary, &self.t("revoke"), None, f.control_h, State { focus, ..State::NONE });
+                let b = ui.button(c, line, Kind::Secondary, &self.t("revoke"), None, chimera_ui::controls::Size::Regular, State { focus, ..State::NONE });
                 c.entity(b).insert(AccountAction::Revoke(id));
             }
         }
@@ -1434,7 +1434,7 @@ impl Draw<'_, '_> {
             if taken {
                 ui.text(c, under, Role::Mono, 0.56, Tone::Fg3, &self.w.t("name.free"));
                 for s in p.name_check.as_ref().map(|n| n.suggestions.clone()).unwrap_or_default() {
-                    let b = ui.button(c, under, Kind::Secondary, &s, None, 1.7, State::NONE);
+                    let b = ui.button(c, under, Kind::Secondary, &s, None, chimera_ui::controls::Size::Small, State::NONE);
                     c.entity(b).insert(AccountAction::Suggest(s.clone()));
                 }
             }

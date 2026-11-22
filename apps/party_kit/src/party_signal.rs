@@ -222,8 +222,7 @@ fn show(
 }
 
 fn button(c: &mut Commands, ui: &Ui, parent: Entity, kind: Kind, label: &str, key: Option<&str>, a: PartyAction) -> Entity {
-    let h = if kind == Kind::Primary { chimera_ui::controls::HERO_H } else { 2.4 };
-    let b = ui.button(c, parent, kind, label, key, h, State::NONE);
+    let b = ui.button(c, parent, kind, label, key, chimera_ui::controls::Size::Regular, State::NONE);
     c.entity(b).insert(a);
     b
 }
@@ -267,7 +266,7 @@ fn spawn(c: &mut Commands, ui: &Ui, s: &Shown) {
     }
     let foot = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.4, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
     if s.view.is_some() {
-        button(c, ui, foot, Kind::Danger, "Leave party", None, PartyAction::Leave);
+        button(c, ui, foot, Kind::Destructive, "Leave party", None, PartyAction::Leave);
     }
     ui.boxed(c, foot, UiStyle::row().grow(1.0));
     button(c, ui, foot, Kind::Secondary, "Close", Some("Esc"), PartyAction::Close);
@@ -306,7 +305,7 @@ fn member_row(c: &mut Commands, ui: &Ui, list: Entity, v: &PartyView, mm: &Membe
     let _ = row;
     if v.leading() && mm.id != v.you {
         button(c, ui, right, Kind::Secondary, "Promote", None, PartyAction::Promote(mm.id.clone()));
-        button(c, ui, right, Kind::Danger, "Kick", None, PartyAction::Kick(mm.id.clone()));
+        button(c, ui, right, Kind::Destructive, "Kick", None, PartyAction::Kick(mm.id.clone()));
     }
 }
 

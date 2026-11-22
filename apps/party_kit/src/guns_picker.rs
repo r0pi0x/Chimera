@@ -1207,12 +1207,12 @@ pub fn spawn(c: &mut Commands, ui: &Ui, root: Entity, picker: &GunsPicker, cx: &
         ui.kbd(c, g, k, 0.5, Tone::Fg2);
         ui.text(c, g, Role::Mono, 0.5, Tone::Fg2, words);
     }
-    let reset = ui.button(c, foot, Kind::Ghost, "Reset to preset", None, 2.0, State::NONE);
+    let reset = ui.button(c, foot, Kind::Tertiary, "Reset to preset", None, chimera_ui::controls::Size::Regular, State::NONE);
     c.entity(reset).insert(GunsAct::Reset);
-    let cancel = ui.button(c, foot, Kind::Secondary, "Cancel", Some("Esc"), 2.4, State::NONE);
+    let cancel = ui.button(c, foot, Kind::Secondary, "Cancel", Some("Esc"), chimera_ui::controls::Size::Regular, State::NONE);
     c.entity(cancel).insert(GunsAct::Cancel);
     let empty = pv.empty();
-    let done = ui.button(c, foot, Kind::Primary, "Done", Some("Enter"), chimera_ui::controls::HERO_H, State { disabled: empty, ..State::NONE });
+    let done = ui.button(c, foot, Kind::Primary, "Done", Some("Enter"), chimera_ui::controls::Size::Regular, State { disabled: empty, ..State::NONE });
     c.entity(done).insert(GunsAct::Done);
     Some(scrim)
 }
@@ -1246,7 +1246,7 @@ fn preset_row(c: &mut Commands, ui: &Ui, plate: Entity, picker: &GunsPicker, w: 
     if let Some(t) = w.toast.as_deref() {
         ui.text(c, row, Role::Mono, 0.56, Tone::Fg2, t);
         if w.undo.is_some() {
-            let u = ui.button(c, row, Kind::Ghost, "Undo", Some("Ctrl+Z"), 1.8, State::NONE);
+            let u = ui.button(c, row, Kind::Tertiary, "Undo", Some("Ctrl+Z"), chimera_ui::controls::Size::Small, State::NONE);
             c.entity(u).insert(GunsAct::Undo);
         }
     }
@@ -1387,7 +1387,6 @@ fn rules_column(c: &mut Commands, ui: &Ui, cols: Entity, picker: &GunsPicker, w:
     // Toggles and the stepper one width, the segmented choices another.
     let ctl_w = 7.5;
     let seg_w = 11.5;
-    let ctl_h = ui.form().control_h;
     let slide = |key: String| {
         w.flip.as_ref().filter(|(k, _)| *k == key).map(|(_, since)| ToggleSlide { since: *since, now: cx.now, motion: cx.motion })
     };
@@ -1406,9 +1405,9 @@ fn rules_column(c: &mut Commands, ui: &Ui, cols: Entity, picker: &GunsPicker, w:
             let note = if skins > fams.len() { format!("{dealt} of {} in \u{00b7} {skins} skins", fams.len()) } else { format!("{dealt} of {} in", fams.len()) };
             let st = State::focused(focus_of(RuleRow::Game(i)));
             let ctl = rule_row(c, ui, list, name, &note, st, changed(RowKey::Game(i)), ctl_w + 3.6);
-            let solo = ui.button(c, ctl, Kind::Ghost, "Solo", None, 1.6, State::NONE);
+            let solo = ui.button(c, ctl, Kind::Tertiary, "Solo", None, chimera_ui::controls::Size::Regular, State::NONE);
             c.entity(solo).insert(GunsAct::Solo(i));
-            let tg = ui.toggle_sized(c, ctl, w.rules.game_on(g), State::NONE, slide(format!("game:{g}")), ("Off", "On"), ctl_w, ctl_h);
+            let tg = ui.toggle_sized(c, ctl, w.rules.game_on(g), State::NONE, slide(format!("game:{g}")), ("Off", "On"), ctl_w, chimera_ui::controls::Size::Regular);
             c.entity(tg).insert(GunsAct::Game(i));
         }
     }
@@ -1437,7 +1436,7 @@ fn rules_column(c: &mut Commands, ui: &Ui, cols: Entity, picker: &GunsPicker, w:
                 let n = listing.families.iter().filter(|f| f.class == k && f.game.as_str() != "" && w.rules.game_on(&f.game)).count();
                 let st = State::focused(focus_of(RuleRow::Class(k)));
                 let ctl = rule_row(c, ui, group, class_name(k), &format!("{n} guns"), st, changed(RowKey::Class(k)), ctl_w);
-                let tg = ui.toggle_sized(c, ctl, w.rules.class_on(k), State::NONE, slide(format!("class:{}", k.name())), ("Off", "On"), ctl_w, ctl_h);
+                let tg = ui.toggle_sized(c, ctl, w.rules.class_on(k), State::NONE, slide(format!("class:{}", k.name())), ("Off", "On"), ctl_w, chimera_ui::controls::Size::Regular);
                 c.entity(tg).insert(GunsAct::Class(k));
             }
         }
@@ -1462,13 +1461,13 @@ fn rules_column(c: &mut Commands, ui: &Ui, cols: Entity, picker: &GunsPicker, w:
         }
         let ctl = rule_row(c, ui, list, "Skins", "skins, editions", State::focused(focus_of(RuleRow::Skins)), changed(RowKey::Skins), seg_w);
         let sel = if w.rules.skins == Skins::One { 0 } else { 1 };
-        for (i, e) in ui.segmented_sized(c, ctl, &["One a gun", "Every skin"], Some(sel), &[], State::NONE, Some((seg_w, ctl_h))).into_iter().enumerate() {
+        for (i, e) in ui.segmented_sized(c, ctl, &["One a gun", "Every skin"], Some(sel), &[], State::NONE, Some(seg_w), chimera_ui::controls::Size::Regular).into_iter().enumerate() {
             c.entity(e).insert(GunsAct::Skins(if i == 0 { Skins::One } else { Skins::All }));
         }
         let ctl = rule_row(c, ui, list, "When short", "too few guns", State::focused(focus_of(RuleRow::Short)), changed(RowKey::Short), seg_w);
         let all = [WhenShort::Shorter, WhenShort::Repeat, WhenShort::Borrow];
         let sel = all.iter().position(|s| *s == w.rules.short);
-        for (i, e) in ui.segmented_sized(c, ctl, &["Shorter", "Repeat", "Borrow"], sel, &[], State::NONE, Some((seg_w, ctl_h))).into_iter().enumerate() {
+        for (i, e) in ui.segmented_sized(c, ctl, &["Shorter", "Repeat", "Borrow"], sel, &[], State::NONE, Some(seg_w), chimera_ui::controls::Size::Regular).into_iter().enumerate() {
             c.entity(e).insert(GunsAct::Short(all[i]));
         }
     }
@@ -1495,7 +1494,7 @@ fn browser(c: &mut Commands, ui: &Ui, cols: Entity, w: &Working, listing: &GunsL
     ui.text(c, lab, Role::Mono, 0.46, Tone::Fg3, "Group by");
     let groups = [Group::Game, Group::Stage, Group::None];
     let gsel = groups.iter().position(|g| *g == w.group);
-    for (i, e) in ui.segmented_sized(c, bar, &["Game", "Stage", "None"], gsel, &[], State::NONE, Some((10.0, 1.6))).into_iter().enumerate() {
+    for (i, e) in ui.segmented_sized(c, bar, &["Game", "Stage", "None"], gsel, &[], State::NONE, Some(10.0), chimera_ui::controls::Size::Small).into_iter().enumerate() {
         c.entity(e).insert(GunsAct::Group(groups[i]));
     }
     let bar = ui.boxed(c, col, UiStyle { gap: Some(0.6), ..UiStyle::row() });
@@ -1504,7 +1503,7 @@ fn browser(c: &mut Commands, ui: &Ui, cols: Entity, w: &Working, listing: &GunsL
     let shows = [Show::All, Show::In, Show::Out, Show::Exceptions];
     let ssel = shows.iter().position(|s| *s == w.show);
     let exc = format!("Exceptions {}", pv.exceptions);
-    for (i, e) in ui.segmented_sized(c, bar, &["All", "In", "Out", &exc], ssel, &[], State::NONE, Some(((width - 5.1).min(24.0), 1.6))).into_iter().enumerate() {
+    for (i, e) in ui.segmented_sized(c, bar, &["All", "In", "Out", &exc], ssel, &[], State::NONE, Some((width - 5.1).min(24.0)), chimera_ui::controls::Size::Small).into_iter().enumerate() {
         c.entity(e).insert(GunsAct::Show(shows[i]));
     }
     let sections = browse(listing, w);

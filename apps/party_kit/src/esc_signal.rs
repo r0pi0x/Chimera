@@ -237,9 +237,9 @@ fn vote_box(c: &mut Commands, ui: &Ui, panel: Entity, v: &VoteShown) {
     let acts = ui.boxed(c, b, UiStyle { gap: Some(0.4), margin: Some([0.2, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
     match v.mine {
         None if v.may_vote => {
-            let y = ui.button(c, acts, Kind::Secondary, "Vote yes", Some("F1"), 1.9, State::NONE);
+            let y = ui.button(c, acts, Kind::Secondary, "Vote yes", Some("F1"), chimera_ui::controls::Size::Small, State::NONE);
             c.entity(y).insert(Action::VoteYes);
-            let n = ui.button(c, acts, Kind::Secondary, "Vote no", Some("F2"), 1.9, State::NONE);
+            let n = ui.button(c, acts, Kind::Secondary, "Vote no", Some("F2"), chimera_ui::controls::Size::Small, State::NONE);
             c.entity(n).insert(Action::VoteNo);
         }
         None => {
@@ -276,11 +276,11 @@ fn confirm_party(c: &mut Commands, ui: &Ui, root: Entity, shade: f32, focus: usi
     ui.text(c, ttl, Role::DisplayBold, 1.35, Tone::Fg, "Leave the match?");
     ui.paragraph(c, m, Role::Text, SENTENCE, Tone::Fg2, "You lead your party: it can come back to the menu with you.");
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
-    let stay = ui.button(c, acts, Kind::Secondary, "Stay", Some("Esc"), 2.4, State::focused(focus == 2));
+    let stay = ui.button(c, acts, Kind::Secondary, "Stay", Some("Esc"), chimera_ui::controls::Size::Regular, State::focused(focus == 2));
     c.entity(stay).insert(Action::Back);
-    let alone = ui.button(c, acts, Kind::Secondary, "Leave alone", None, 2.4, State::focused(focus == 1));
+    let alone = ui.button(c, acts, Kind::Secondary, "Leave alone", None, chimera_ui::controls::Size::Regular, State::focused(focus == 1));
     c.entity(alone).insert(Action::LeaveAlone);
-    let with = ui.button(c, acts, Kind::Primary, "Leave with my party", Some("Enter"), chimera_ui::controls::HERO_H, State::focused(focus == 0));
+    let with = ui.button(c, acts, Kind::Primary, "Leave with my party", Some("Enter"), chimera_ui::controls::Size::Regular, State::focused(focus == 0));
     c.entity(with).insert(Action::LeaveWithParty);
 }
 
@@ -309,8 +309,8 @@ fn confirm(c: &mut Commands, ui: &Ui, root: Entity, shade: f32, title: &str, lin
     ui.text(c, ttl, Role::DisplayBold, 1.35, Tone::Fg, title);
     ui.paragraph(c, m, Role::Text, SENTENCE, Tone::Fg2, line);
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
-    let stay = ui.button(c, acts, Kind::Primary, "Stay", Some("Esc"), chimera_ui::controls::HERO_H, State::focused(focus == 0));
+    let stay = ui.button(c, acts, Kind::Primary, "Stay", Some("Esc"), chimera_ui::controls::Size::Regular, State::focused(focus == 0));
     c.entity(stay).insert(Action::Back);
-    let end = ui.button(c, acts, Kind::Danger, go, None, 2.4, State::focused(focus == 1));
+    let end = ui.button(c, acts, Kind::Destructive, go, None, chimera_ui::controls::Size::Regular, State::focused(focus == 1));
     c.entity(end).insert(Action::DisconnectYes);
 }

@@ -2202,16 +2202,16 @@ fn spawn(
     }
     let on_binds = names.get(s.tab).is_some_and(|n| n == BINDS_TAB) || (games_tab && s.game_page == 0);
     if on_binds {
-        let b = ui.button(c, bar, Kind::Ghost, "Default keys", None, 2.0, State::NONE);
+        let b = ui.button(c, bar, Kind::Tertiary, "Default keys", None, chimera_ui::controls::Size::Regular, State::NONE);
         c.entity(b).insert(SettingsAction::Defaults);
     }
     if d.ctx != Context::Host {
-        let rs = ui.button(c, bar, Kind::Secondary, "Reset tab", None, 2.4, State::NONE);
+        let rs = ui.button(c, bar, Kind::Secondary, "Reset tab", None, chimera_ui::controls::Size::Regular, State::NONE);
         c.entity(rs).insert(SettingsAction::ResetTab);
         if changed > 0 {
-            let rv = ui.button(c, bar, Kind::Secondary, "Revert", Some("Ctrl Z"), 2.4, State::NONE);
+            let rv = ui.button(c, bar, Kind::Secondary, "Revert", Some("Ctrl Z"), chimera_ui::controls::Size::Regular, State::NONE);
             c.entity(rv).insert(SettingsAction::Revert);
-            let ap = ui.button(c, bar, Kind::Primary, "Apply", Some("Ctrl S"), 2.4, State::NONE);
+            let ap = ui.button(c, bar, Kind::Primary, "Apply", Some("Ctrl S"), chimera_ui::controls::Size::Regular, State::NONE);
             c.entity(ap).insert(SettingsAction::Apply);
         }
     }
@@ -2294,9 +2294,9 @@ fn reset_modal(c: &mut Commands, ui: &Ui, root: Entity, at: usize, page: &str) {
     let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
     ui.paragraph(c, tx, Role::Text, SENTENCE, Tone::Fg2, "Every setting on this page goes back to its default, at once.");
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.7), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
-    let stay = ui.button(c, acts, Kind::Secondary, "Stay", Some("Esc"), 2.4, State::focused(at == 0));
+    let stay = ui.button(c, acts, Kind::Secondary, "Stay", Some("Esc"), chimera_ui::controls::Size::Regular, State::focused(at == 0));
     c.entity(stay).insert(SettingsAction::ResetStay);
-    let go = ui.button(c, acts, Kind::Primary, "Reset", Some("Enter"), chimera_ui::controls::HERO_H, State::focused(at == 1));
+    let go = ui.button(c, acts, Kind::Primary, "Reset", Some("Enter"), chimera_ui::controls::Size::Regular, State::focused(at == 1));
     c.entity(go).insert(SettingsAction::ResetConfirm);
 }
 
@@ -2419,9 +2419,9 @@ fn keep_modal(c: &mut Commands, ui: &Ui, root: Entity, left: u64) {
     ui.text(c, big, Role::DisplayBold, 2.6, Tone::Fg, &format!("{left}"));
     ui.sentence(c, big, SENTENCE, Tone::Fg2, "s, then it goes back");
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
-    let k = ui.button(c, acts, Kind::Primary, "Keep", Some("Enter"), chimera_ui::controls::HERO_H, State::focused(true));
+    let k = ui.button(c, acts, Kind::Primary, "Keep", Some("Enter"), chimera_ui::controls::Size::Regular, State::focused(true));
     c.entity(k).insert(SettingsAction::Keep);
-    let r = ui.button(c, acts, Kind::Secondary, "Revert", Some("Esc"), 2.4, State::NONE);
+    let r = ui.button(c, acts, Kind::Secondary, "Revert", Some("Esc"), chimera_ui::controls::Size::Regular, State::NONE);
     c.entity(r).insert(SettingsAction::KeepRevert);
 }
 
@@ -2449,13 +2449,12 @@ fn leave_modal(c: &mut Commands, ui: &Ui, root: Entity, at: usize, changes: usiz
     let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
     ui.paragraph(c, tx, Role::Text, SENTENCE, Tone::Fg2, &format!("{line} Apply keeps them and saves; Discard puts them back."));
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
-    let buttons = [(Kind::Primary, "Apply"), (Kind::Secondary, "Discard"), (Kind::Ghost, "Stay")];
+    let buttons = [(Kind::Primary, "Apply"), (Kind::Secondary, "Discard"), (Kind::Tertiary, "Stay")];
     for (k, ((kind, label), action)) in buttons.into_iter().zip(LEAVE_CHOICES).enumerate() {
         // Enter presses the focused one (←→ move it), Esc stays.
         let key = if k == at { Some("Enter") } else if action == SettingsAction::LeaveStay { Some("Esc") } else { None };
-        // The dialog's hero is the bigger one.
-        let h = if kind == Kind::Primary { chimera_ui::controls::HERO_H } else { 2.4 };
-        let b = ui.button(c, acts, kind, label, key, h, State::focused(k == at));
+        // One row, one size (the kit's button system).
+        let b = ui.button(c, acts, kind, label, key, chimera_ui::controls::Size::Regular, State::focused(k == at));
         c.entity(b).insert(action);
     }
 }
