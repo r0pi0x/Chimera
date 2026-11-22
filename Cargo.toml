@@ -35,6 +35,7 @@ members = [
     "games/combat_arms",
     "games/originals",
     "games/hl2dm",
+    "games/cs_source/ui",
     "games/hl2dm/ui",
     "games/halo_ce",
     "games/halo_ce/ui",
@@ -84,6 +85,7 @@ default-members = [
     "games/combat_arms",
     "games/originals",
     "games/hl2dm",
+    "games/cs_source/ui",
     "games/hl2dm/ui",
     "games/halo_ce",
     "games/halo_ce/ui",
@@ -156,6 +158,7 @@ combat_arms = { path = "games/combat_arms" }
 # (docs/plans/active/hl2dm.md).
 hl2dm = { path = "games/hl2dm" }
 # Its front end on the client shell (games/hl2dm/ui), above the simulation.
+cs_source_ui = { path = "games/cs_source/ui" }
 hl2dm_ui = { path = "games/hl2dm/ui" }
 # Halo: Combat Evolved (Xbox) as a game crate (games/halo_ce): its skeleton
 # (docs/plans/active/halo-ce.md).

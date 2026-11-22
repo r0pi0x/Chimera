@@ -1,5 +1,5 @@
 //! What both of `cs_source`'s test binaries share (`mod common;` in
-//! tests/it/main.rs and tests/ui/main.rs; a change here runs all of the
+//! tests/it/main.rs (and a copy in `cs_source_ui`'s tests); a change here runs all of the
 //! crate's tests, `repo_checks`' `affected`).
 //!
 //! `load_map`: a CS:S map by id from the user's install, as the CS:S app

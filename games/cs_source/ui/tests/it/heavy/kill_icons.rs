@@ -5,7 +5,8 @@
 
 use bevy::{ecs::system::RunSystemOnce, prelude::*};
 use chimera_client::client::weapon_icons::{WeaponIcon, WeaponIcons};
-use cs_source::{game::INFO, ui::game_hud::register_install_icons};
+use cs_source::game::INFO;
+use cs_source_ui::game_hud::register_install_icons;
 
 #[test]
 fn guns_icons_register_from_the_install_without_a_hud() {

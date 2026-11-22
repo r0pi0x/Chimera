@@ -1,8 +1,8 @@
 //! Counter-Strike: Source as a game crate (docs/ARCHITECTURE.md,
-//! "Crates"): its simulation on the engine's crates and, with the `ui`
-//! feature, its front end (`ui`: the GameUI menus and dialogs, the join
-//! flow, the buy, team, radio and spectator menus, the scoreboard and
-//! CS:S's HUD, on the client shell, `chimera_client`). `game` is the
+//! "Crates"): its simulation on the engine's crates (its front end, the
+//! GameUI menus and dialogs, the join flow, the buy, team, radio and
+//! spectator menus, the scoreboard and CS:S's HUD on the client shell, is
+//! its own crate above this one, `cs_source_ui`, games/cs_source/ui). `game` is the
 //! game's parts: its loaders (BSP, materials, models,
 //! sounds, the install's search path), Source movement, the weapons and
 //! grenades, impacts and effects, animation and `CsSourcePlugins`;
@@ -15,10 +15,8 @@
 //! network's hooks). It uses the engine crates
 //! (`chimera_core`, `chimera_world`, `chimera_sim`, `chimera_net`),
 //! Source's map logic (`source_logic`) and `source_formats`, never
-//! `mashup` or another game (checked); only `ui` uses the presentation
-//! and the shell (optional dependencies of the feature, checked), so a
-//! dedicated server builds and runs the game without drawing and nothing
-//! but `ui` uses `ui`.
+//! `mashup` or another game, nor the presentation or the shell (checked),
+//! so a dedicated server builds and runs the game without drawing.
 //!
 //! `SimPlugins`: everything CS:S's simulation needs but its parts (the
 //! engine's base, Source's map logic, CS:S's rules, objectives, bots and
@@ -27,10 +25,10 @@
 //! game's `map` does without the view (the dedicated server's
 //! `changelevel`, tests); `harness`: CS:S on the engine's headless
 //! harness (`harness::CsSim`, the base of its scenario tests, tests/it/
-//! and tests/ui/; maps for network tests).
+//! and the front end's tests; maps for network tests).
 //!
 //! The game crate re-exports `game` as `mashup::games::cs_source` with
-//! `ui` beside it (with `present`), and `rules`, `objectives` and `bot` at
+//! `ui` (`cs_source_ui`) beside it, and `rules`, `objectives` and `bot` at
 //! their old paths (`mashup::rules`, ...).
 
 pub mod bot;
@@ -38,9 +36,6 @@ pub mod game;
 pub mod harness;
 pub mod objectives;
 pub mod rules;
-// The front end: built on the client shell (the `ui` feature).
-#[cfg(feature = "ui")]
-pub mod ui;
 
 // `crate::core`, `crate::map` and the rest inside, as in the game crate.
 use chimera_core::{character, console, core, game_log, game_registry, gameplay, mount, slots};
@@ -50,12 +45,6 @@ use chimera_world::map;
 
 // Source's map logic: in `SimPlugins` (and the front end's objectives).
 use source_logic::logic;
-
-// The front end's: the shell, the presentation.
-#[cfg(feature = "ui")]
-use chimera_client::client;
-#[cfg(feature = "ui")]
-use chimera_present::{assets, audio, render};
 
 use bevy::prelude::*;
 

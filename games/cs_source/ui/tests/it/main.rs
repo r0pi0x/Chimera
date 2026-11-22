@@ -1,9 +1,9 @@
-//! `cs_source`'s integration tests of its front end (feature `ui`), as one
+//! `cs_source_ui`'s integration tests of CS:S's front end, as one
 //! test binary (each file a module): menus and HUD logic on the client
 //! shell, checks that need the presentation, and the scenario tests that
 //! use the shell's or the front end's state (on the headless harness with
 //! CS:S's base, `harness::CsSim`, as tests/it/'s). `cargo test -p
-//! cs_source --features dev,ui --test ui`. Where tests go:
+//! cs_source_ui --features dev`. Where tests go:
 //! docs/OBSERVABILITY.md, section 1.
 //!
 //! `stack` (tests/common/stack.rs) re-exports what the scenario tests run

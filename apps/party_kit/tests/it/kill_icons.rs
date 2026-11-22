@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use chimera_client::client::weapon_icons::{WeaponIcon, WeaponIcons};
 use chimera_core::core::{Damage, DamageKind, Died, Hitgroup};
 use chimera_world::{harness::Sim, map::hud::{ActiveHud, HudCoord, HudPanel}};
-use cs_source::ui::game_hud::Part;
+use cs_source_ui::game_hud::Part;
 
 use crate::hud::party_with_huds;
 

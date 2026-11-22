@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 use chimera_core::core::{Damage, Died, LocalPlayer};
 use chimera_sim::dominations::{KillMark, Relationships};
-use cs_source::ui::freeze_cam::{DominationUi, FreezeCase, FreezeCamPlugin, MyDeath, case_for};
+use cs_source_ui::freeze_cam::{DominationUi, FreezeCase, FreezeCamPlugin, MyDeath, case_for};
 
 use crate::hud::party_with_huds_and;
 
@@ -46,7 +46,7 @@ fn sim(party_app: bool) -> (chimera_world::harness::Sim, Entity, Entity) {
         app.init_resource::<chimera_client::client::spectate::Spectator>();
         if party_app {
             // What the party client runs for CS:S's front end.
-            cs_source::ui::party::client_app(app);
+            cs_source_ui::party::client_app(app);
         }
         app.add_plugins(FreezeCamPlugin);
         app.world_mut().spawn(Window::default());

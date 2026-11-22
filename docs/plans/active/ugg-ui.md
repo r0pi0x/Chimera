@@ -31,7 +31,7 @@ an ambient shader background), and an in-engine Showcase backdrop.
 | Pre-match lobby and its F3 ready/start | `chimera_net::prematch` (`NetLobby`, `LobbyRow`), `client::prematch_lobby` (`LobbyView`, `LOBBY_KEY`) | `chimera/net/src/prematch.rs`, `chimera/client/src/client/prematch_lobby.rs` |
 | Main menu, Esc menu, the menu's own camera, procedural backdrop, live background map | `main_menu` (`PartyMenu`, `MenuUiCamera`, `pick_background`, `fly`), `esc_menu`, `menu_backdrop` (+ `.wesl`) | `apps/party_kit/src/` |
 | The fallback HUD | `hud_minimal` (`MINIMAL_HUD`, `HudRoot`), chosen by `PartsRegistry::fallback_hud` | `chimera/client/src/client/hud_minimal.rs` |
-| Kill icons per game | `WeaponIcons` (CS:S and HL2:DM glyphs of their icon fonts, Combat Arms' images), `spawn_weapon_icon`, `kill_feed::icon_slot` | `chimera/client/src/client/weapon_icons.rs`; `games/cs_source/src/ui/game_hud.rs`, `games/combat_arms/src/ui/hud.rs` (`register_icons`), `games/hl2dm/src/ui/kill_icons.rs` |
+| Kill icons per game | `WeaponIcons` (CS:S and HL2:DM glyphs of their icon fonts, Combat Arms' images), `spawn_weapon_icon`, `kill_feed::icon_slot` | `chimera/client/src/client/weapon_icons.rs`; `games/cs_source/ui/src/game_hud.rs`, `games/combat_arms/src/ui/hud.rs` (`register_icons`), `games/hl2dm/src/ui/kill_icons.rs` |
 | Short gun names | `GunNameRules::short`, `names::fit`, `gun_short_name` | `chimera/sim/src/weapon/names.rs`, `minigame_scoreboard.rs` |
 | Gun class | `GunClass` (pistol ... grenade), from weapon data | `chimera/core/src/game_parts.rs` |
 | Matches won | `wins::MatchWins` (by name, per server run), `MatchesWon` replicated; `ResultRow::wins` | `chimera/sim/src/minigame/wins.rs`, `results.rs` |

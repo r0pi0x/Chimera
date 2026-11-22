@@ -4,7 +4,7 @@
 //! `--screenshot` and the other tool runs skip it exactly as before);
 //! Lucker Party (shelved) still starts in its minigame and has none.
 //!
-//! The first iteration copies CS:S's main menu (`cs_source::ui::
+//! The first iteration copies CS:S's main menu (`cs_source_ui::
 //! game_menu`), drawn with the same VGUI widgets (`chimera_client::
 //! client::widgets`) in the GameUI look of CS:S's install (its scheme's
 //! colours and fonts and its title font, read on a thread at start:

@@ -3,7 +3,7 @@ use crate::options::setting_index;
 use crate::map::hud::{GameUiItem, ServerSetting};
 
 /// A game with everything the menus can hold of a game's own (CS:S's
-/// shape, as `cs_source::ui::MENU_GAME`; CS:S's own numbers aren't
+/// shape, as `cs_source_ui::MENU_GAME`; CS:S's own numbers aren't
 /// needed here).
 const DIFFICULTIES: [(&str, f32, f32, f32); 4] =
     [("Easy", 0.6, 5.0, 220.0), ("Normal", 0.35, 2.5, 360.0), ("Hard", 0.2, 1.5, 540.0), ("Expert", 0.12, 0.75, 720.0)];

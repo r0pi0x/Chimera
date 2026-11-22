@@ -54,7 +54,7 @@ cs_assault, cs_compound, de_port or the mg_ maps. Ours were captured
 again from this branch (`refcmp capture-ours --out <scratch>`, then
 `report`). No HUD references are in the dump folder
 (`refcmp/hud/ref/` is empty), so `hudcmp` couldn't run; the HUD's
-measured rectangles live in `games/cs_source/tests/ui/heavy/hud_layout.rs` and pass.
+measured rectangles live in `games/cs_source/ui/tests/it/heavy/hud_layout.rs` and pass.
 
 | Map | Views | Mean abs diff (this branch) | Before (2026-10-07 captures) | Mean luma error | Worst three views |
 |---|---|---|---|---|---|

@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 
 use bevy::prelude::*;
 use chimera_client::client::widgets::{Caret, Edit, Windows, edges_at};
-use cs_source::ui::{ game_menu::{Action, Control, Field, GameMenu, Input, MainItem, Page, Row, Target}, server_browser::{self, ButtonId, Check, Focus, ServerBrowser}, };
+use cs_source_ui::{ game_menu::{Action, Control, Field, GameMenu, Input, MainItem, Page, Row, Target}, server_browser::{self, ButtonId, Check, Focus, ServerBrowser}, };
 use chimera_net::net::{ NET_VERSION, query::{QueryResult, QueryState, ServerInfo}, };
 
 fn run(m: &mut GameMenu, inputs: &[Input]) -> (Vec<String>, Vec<String>) {
@@ -32,7 +32,7 @@ fn row(m: &GameMenu, f: Field) -> usize {
 
 #[test]
 fn create_server_by_keyboard_and_mouse() {
-    let mut m = GameMenu::for_game(&cs_source::ui::MENU_GAME);
+    let mut m = GameMenu::for_game(&cs_source_ui::MENU_GAME);
     let maps = ["cs_italy", "de_dust2", "de_inferno", "de_nuke"]
         .map(String::from)
         .to_vec();
@@ -89,7 +89,7 @@ fn create_server_by_keyboard_and_mouse() {
 
 #[test]
 fn create_server_cancel_and_escape() {
-    let mut m = GameMenu::for_game(&cs_source::ui::MENU_GAME);
+    let mut m = GameMenu::for_game(&cs_source_ui::MENU_GAME);
     m.open(Page::NewGame, vec!["de_dust2".into()], None, |_| None);
     // Esc with a list open closes only the list; again, the dialog.
     let map = row(&m, Field::Map);
@@ -250,7 +250,7 @@ fn frames_drag_stack_and_resize() {
 #[test]
 fn a_lost_connection_shows_the_reconnect_box_with_cancel() {
     use chimera_net::net::{memory::LinkConditions, reconnect::Reconnecting};
-    use cs_source::ui::game_menu::reconnect_dialog;
+    use cs_source_ui::game_menu::reconnect_dialog;
     let mut sim = crate::stack::harness::NetSim::new(
         crate::stack::harness::CsSim,
         LinkConditions::default(),
@@ -265,7 +265,7 @@ fn a_lost_connection_shows_the_reconnect_box_with_cancel() {
         },
     );
     sim.until_joined(600);
-    sim.clients[0].app.world_mut().insert_resource(GameMenu::for_game(&cs_source::ui::MENU_GAME));
+    sim.clients[0].app.world_mut().insert_resource(GameMenu::for_game(&cs_source_ui::MENU_GAME));
     let menu = |s: &crate::stack::harness::NetSim| s.clients[0].app.world().resource::<GameMenu>().clone();
     let tick = |s: &mut crate::stack::harness::NetSim| {
         s.step();

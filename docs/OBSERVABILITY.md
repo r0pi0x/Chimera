@@ -147,8 +147,9 @@ in the lowest crate whose public API it needs:
   paths (`crate::stack::{core, map, harness, games, ...}`, `map::MapPlugin`
   from the presentation, a dev-dependency). Its front end's (menus, HUD)
   and the scenario tests that read the client shell's or the front end's
-  state go in tests/ui/, built with `ui` (`stack::client`), so an edit to
-  `src/ui/` runs only those (and the crates above);
+  state go in `cs_source_ui`'s tests (games/cs_source/ui/tests/it/, with
+  its own copy of the stack: `stack::client`), so an edit to the front
+  end runs only those (and the crates above);
 - `combat_arms` (games/combat_arms/tests/it/): Combat Arms' scenario
   tests (the options' profile, bindings and settings: `options.rs`) on `Sim::new(CaSim, ..)` (`combat_arms::harness::CaSim`: its
   whole simulation, placeholders included) and the greybox, or a map
@@ -749,7 +750,7 @@ client only with the server's `sv_cheats 1` (and only on itself).
   `+openserverbrowser lan +wait 30 +vgui_windows servers 40 30 760 520`.
   The widget state machines (drop-down, slider, text entry, Tab order,
   frame drags and stacking) are unit-tested in `client::widgets`, the
-  dialogs driven by scripted input in `games/cs_source/tests/ui/menus.rs`. Cvars it shows are read
+  dialogs driven by scripted input in `games/cs_source/ui/tests/it/menus.rs`. Cvars it shows are read
   when it opens: put `+cl_crosshaircolor 3` before `+menu`. The log
   line `game menu: GameUI look (...)` says the install's look loaded,
   with how many main menu backgrounds and the title it found (else the
@@ -792,7 +793,7 @@ client only with the server's `sv_cheats 1` (and only on itself).
   +wait 30 +buymenu 4` (the `wait` lets the map's HUD and menu layouts
   load first, so the game-look pages are used). Their key and button
   logic is tested headless in `games::cs_source::ui::buy_menu` and `games::cs_source::ui::team_menu`
-  (the join flow's in `games/cs_source/tests/ui/join_flow.rs`);
+  (the join flow's in `games/cs_source/ui/tests/it/join_flow.rs`);
   `games/cs_source/tests/it/heavy/map_de_dust2.rs` checks the install's layouts load.
 - `ent_fire <target> <input> [value]` sends a map entity an input through
   the logic layer (names, `*` wildcards, classnames; the local player is
@@ -810,7 +811,7 @@ client only with the server's `sv_cheats 1` (and only on itself).
   `chimera_drawtriggers 1` outlines the brush triggers' boxes, coloured by
   kind (hurt red, push blue, teleport magenta, gravity cyan, remove orange,
   multiple/once yellow, others grey; a disabled one dim; 2: all). Both are
-  check boxes on `menu debug` (`games/cs_source/src/ui/debug_world.rs`).
+  check boxes on `menu debug` (`games/cs_source/ui/src/debug_world.rs`).
   `fog_enable 0` turns the map's fog off in the world, prop, detail, rope,
   decal and particle materials (water fog stays) without rebuilding them
   (a debug-UI and `menu debug` check box); `fog_enable 1` brings it back.
@@ -886,12 +887,12 @@ client only with the server's `sv_cheats 1` (and only on itself).
   toward it, the picture held 5 s with the freeze sound and panel;
   `cl_disablefreezecam 1` skips it, the server's
   `spec_freeze_traveltime`/`spec_freeze_time` time it;
-  `games/cs_source/tests/ui/spectate.rs`). The target ID (the name under the
+  `games/cs_source/ui/tests/it/spectate.rs`). The target ID (the name under the
   crosshair; `hud_centerid`, `mp_playerid`) is the `TargetId`
-  resource (`games/cs_source/tests/ui/target_id.rs`). Drive it
+  resource (`games/cs_source/ui/tests/it/target_id.rs`). Drive it
   with `spec_mode 4|5|6` (first person, chase, free look), `spec_next`
   and `spec_prev`, `mp_forcecamera 0` to watch enemies too; the state is
-  the `Spectator` resource (`games/cs_source/tests/ui/spectate.rs` drives it headless).
+  the `Spectator` resource (`games/cs_source/ui/tests/it/spectate.rs` drives it headless).
   The spectator bars on a real map: `--map cs_source:de_dust2 --window
   1280x720 --screenshot spec.png --frames 400 +chimera_rounds 1
   +mp_freezetime 0 +bot_add 2 +bot_add 2 +wait 60 +chimera_hurtme chest
@@ -899,15 +900,15 @@ client only with the server's `sv_cheats 1` (and only on itself).
   watched in first person, with their crosshair). The spectator team:
   `+spectate` (or `+jointeam 1`) flies free at once; `spec_player <name>`
   watches one; pressing duck opens the spectator menu; the scoreboard lists
-  spectators (`games/cs_source/tests/ui/spectate.rs::the_spectator_team`, over the
-  network `games/cs_source/tests/ui/net_rules.rs::a_client_spectates_then_joins_a_team`).
+  spectators (`games/cs_source/ui/tests/it/spectate.rs::the_spectator_team`, over the
+  network `games/cs_source/ui/tests/it/net_rules.rs::a_client_spectates_then_joins_a_team`).
   `spec_menuinput <options|players|view> [entry [subentry]]` opens the
   spectator menu's drop-down (screenshots) or picks an entry (0 first):
   `--map cs_source:de_dust2 --window 1280x720 --frames 400 --screenshot
   s.png +wait 30 +bot_add 1 +bot_add 2 +spectate +wait 120 +overview_mode 1
   +spec_menuinput options 2` shows Options with its Overview submenu over
   the small map (`overview_mode 2`, `overview_zoom 2`: the large one);
-  `games/cs_source/tests/ui/spectate.rs::the_spectator_menu_picks_the_camera_player_and_overview`.
+  `games/cs_source/ui/tests/it/spectate.rs::the_spectator_menu_picks_the_camera_player_and_overview`.
 - Scoreboard: `++showscores` holds it from the start (`--map
   cs_source:de_dust2 --window 1280x720 --screenshot sb.png +bot_add 1
   +bot_add 2 ++showscores`); a dead player shows the skull icon,
@@ -1328,7 +1329,7 @@ moved); the server's `status` ends with a `lagcomp:` line. `cargo test
 without compensation, rewind times, prediction errors while firing and
 the pellet comparison.
 
-Rules (`games/cs_source/tests/ui/net_rules.rs`): a client's `RoundState`, `BuyWindow`,
+Rules (`games/cs_source/ui/tests/it/net_rules.rs`): a client's `RoundState`, `BuyWindow`,
 `BombState`, `HostageTally`, `PlantedBomb` and its own `Money` are the
 server's, with times on the client's fixed clock: compare a time left
 (e.g. `RoundState::clock`, `PlantedBomb::explode_at` less
@@ -1487,7 +1488,7 @@ with `rate` (bytes a second) and `cl_updaterate`, the host with
 games must be the same build (`status` shows the version); another build
 is refused with a message.
 
-**Finding games** (slice 8; `games/cs_source/tests/ui/net_query.rs`). Every server
+**Finding games** (slice 8; `games/cs_source/ui/tests/it/net_query.rs`). Every server
 answers info queries on its own port (`net::query`, A2S_INFO's layout):
 `serverinfo <ip[:port]> ...` prints name, map, players/max (bots), ping,
 dedicated or listen, password; `lanscan` lists servers on the LAN
@@ -1916,7 +1917,7 @@ and keys typed into its fields don't reach binds.
 - Cvars: every cvar, searchable, "changed only", edited in place (Enter
   sets it), reset to default; matching commands with their help.
 
-Headless: `games/cs_source/tests/ui/debug_ui.rs` opens it, walks the tabs and runs the
+Headless: `games/cs_source/ui/tests/it/debug_ui.rs` opens it, walks the tabs and runs the
 lines its tabs run in a `Sim` (`DebugUiStatePlugin`).
 
 ## 3e. Several agents at once (builds and tests)
@@ -2879,7 +2880,7 @@ cargo run --features dev,tools --bin refcmp -- hudcmp --out <scratch> --hud-ref 
   red, ours green) go to `<out>/hud/report/`. Different text (the clock,
   ammo counts) still lines up by its left or right edge.
 - The measured reference rectangles are numbers in
-  `games/cs_source/tests/ui/heavy/hud_layout.rs`, checked against `game_hud::layout`,
+  `games/cs_source/ui/tests/it/heavy/hud_layout.rs`, checked against `game_hud::layout`,
   `weapon_select::selection_layout` and `history_layout` through
   `hud_text::ink_rect` (no images needed).
 

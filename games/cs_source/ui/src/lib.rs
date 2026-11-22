@@ -46,7 +46,18 @@ use bevy::{app::PluginGroupBuilder, prelude::*};
 pub use source_gameui::{first_run, game_menu, options, server_browser};
 use source_gameui::{BotMenu, MenuGame, QuickStart};
 
-use crate::client;
+// The names the modules below reach through `crate::` (the game crate's
+// parts and the engine's crates, as `cs_source`'s own root aliases them).
+use chimera_client::client;
+use chimera_core::{console, core, game_registry, gameplay};
+#[cfg(test)]
+use chimera_core::mount;
+use chimera_net::net;
+use chimera_present::{assets, audio, render};
+use chimera_sim::weapon;
+use chimera_world::map;
+use cs_source::{bot, game, objectives, rules};
+use source_logic::logic;
 
 /// What's CS:S's own in GameUI's menus: its bots, teams, rounds and quick
 /// start.
@@ -166,7 +177,7 @@ mod tests {
     #[test]
     fn normal_difficulty_is_the_bots_default() {
         let c = crate::bot::BotConfig::default();
-        let (_, r, a, t) = super::MENU_GAME.bots.as_ref().unwrap().difficulties[1];
+        let (_, r, a, t) = crate::MENU_GAME.bots.as_ref().unwrap().difficulties[1];
         assert_eq!((r, a, t), (c.reaction, c.aim_error, c.turn_rate));
     }
 

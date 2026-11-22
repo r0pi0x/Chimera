@@ -18,7 +18,7 @@ use chimera_world::{
     },
 };
 use cs_source::game::movement::SourceMovement;
-use cs_source::ui::{radar::RadarFrame, target_id::TargetIdText};
+use cs_source_ui::{radar::RadarFrame, target_id::TargetIdText};
 
 use crate::gun_game::{held, line_up, party, place, soldier};
 use crate::hud::{hud, party_with_huds_and, swap_to};
@@ -98,10 +98,10 @@ fn target_id_and_radar_follow_the_gun_in_hand() {
         app.init_asset::<bevy::shader::Shader>().init_asset::<Image>();
         app.init_resource::<chimera_client::client::spectate::Spectator>();
         app.add_plugins((
-            cs_source::ui::target_id::TargetIdPlugin,
-            cs_source::ui::radar::RadarPlugin,
-            cs_source::ui::freeze_cam::FreezeCamPlugin,
-            cs_source::ui::voice_hud::VoiceHudPlugin,
+            cs_source_ui::target_id::TargetIdPlugin,
+            cs_source_ui::radar::RadarPlugin,
+            cs_source_ui::freeze_cam::FreezeCamPlugin,
+            cs_source_ui::voice_hud::VoiceHudPlugin,
         ))
         .insert_resource(overview());
         app.world_mut().spawn(Window::default());
@@ -119,7 +119,7 @@ fn target_id_and_radar_follow_the_gun_in_hand() {
     // The Glock: CS:S's HUD, the name of the player aimed at, the radar.
     assert_eq!(held(&sim, me), Some(cs_source::game::weapons::GLOCK));
     aim(&mut sim);
-    let id = sim.app.world().resource::<cs_source::ui::target_id::TargetId>().clone();
+    let id = sim.app.world().resource::<cs_source_ui::target_id::TargetId>().clone();
     assert_eq!(id.target, Some(other), "{id:?}");
     assert!(id.text.contains("Mate"), "{id:?}");
     assert_eq!(visible(&mut sim, "target"), [Visibility::Inherited], "the name shows");
@@ -187,7 +187,7 @@ fn a_prop_knocked_about_makes_a_collision_sound() {
 #[test]
 fn kill_feed_icons_are_by_the_full_weapon_id() {
     let icons: HashMap<String, u8> = [("d_m4a1".to_string(), 1), ("d_glock".to_string(), 2)].into();
-    let icon = |id| cs_source::ui::game_hud::kill_icon(id, &icons);
+    let icon = |id| cs_source_ui::game_hud::kill_icon(id, &icons);
     assert_eq!(icon("cs_source:weapon_m4a1"), Some(1));
     assert_eq!(icon("cs_source:weapon_glock"), Some(2));
     assert_eq!(icon("combat_arms:m4a1"), None, "a Combat Arms M4A1 isn't CS:S's");

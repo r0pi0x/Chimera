@@ -6176,7 +6176,7 @@ again (load 6-18):
 
 | Edit | Command | Time |
 |---|---|---|
-| a leaf in CS:S's front end (`games/cs_source/src/ui/window_icon.rs`) | `cargo test --features dev --no-run` | 14 s, 15 s (was 18-20 s) |
+| a leaf in CS:S's front end (`games/cs_source/ui/src/window_icon.rs`) | `cargo test --features dev --no-run` | 14 s, 15 s (was 18-20 s) |
 | the same | `cargo test -p cs_source --features dev,ui` (249 tests) | 5 s, 5 s |
 | a leaf in the shell (`chimera/client/src/client/chat.rs`) | `cargo test --features dev --no-run` | 21 s, 22 s (was 19-23 s, 36-64 s before `chimera_net`) |
 | the same | `cargo test -p chimera_client --features dev` (85 tests) | 6 s, 3 s |

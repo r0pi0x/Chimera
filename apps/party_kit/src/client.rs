@@ -97,7 +97,7 @@ pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 /// hand).
 pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 5] = [
     &combat_arms::ui::PARTY_CLIENT,
-    &cs_source::ui::party::CLIENT,
+    &cs_source_ui::party::CLIENT,
     &hl2dm_ui::party::CLIENT,
     &halo_ce_ui::party::CLIENT,
     &tf2_ui::party::CLIENT,
@@ -168,7 +168,7 @@ pub fn front_end(app: &mut App, args: &Args) {
 
 /// Number keys switch weapons at once in the party (the user's choice):
 /// CS:S's `hud_fastswitch` is 1 by default in every app
-/// (`cs_source::ui::weapon_select::FastSwitch`); HL2:DM's HUD has its own,
+/// (`cs_source_ui::weapon_select::FastSwitch`); HL2:DM's HUD has its own,
 /// `hl2dm:hud_fastswitch` (0 in HL2:DM, as in its game; not saved), set
 /// to 1 here and made its default.
 fn hl2_fast_switch(
@@ -302,7 +302,7 @@ fn read_guest_names(games: &Games, names: &mut ItemNames) {
 /// (`ItemNames`), merged as either changes; the shell derives their short
 /// names (`minigame_scoreboard::fill_short_names`).
 fn sync_gun_names(
-    cs: Res<cs_source::ui::minigame_hud::WeaponNames>,
+    cs: Res<cs_source_ui::minigame_hud::WeaponNames>,
     ca: Res<ItemNames>,
     mut out: ResMut<chimera_client::client::minigame_scoreboard::GunNames>,
 ) {

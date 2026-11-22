@@ -853,7 +853,7 @@ with tests passing and something to see.
      maps may not set it (point_servercommand).
    - [x] Spectating while dead works on a client as it was: it targets the
      interpolated others.
-   - [x] Tests (`games/cs_source/tests/ui/net_rules.rs`, `NetSim`, greybox with CS:S's
+   - [x] Tests (`games/cs_source/ui/tests/it/net_rules.rs`, `NetSim`, greybox with CS:S's
      weapons and rounds): a full round with two clients at 50±5 ms (the
      freeze clock on both clients within 0.06 s of the server's, money,
      buying a Desert Eagle in the freeze, the round going live, a win by
@@ -1225,7 +1225,7 @@ with tests passing and something to see.
      `games::cs_source::ui::server_browser` unit tests (sorting, filters, connect,
      double-click, password dialog, Internet greyed, Add a Server,
      history order, the saved file's round trip);
-     `games/cs_source/tests/ui/net_query.rs`: a server answers with its name, map,
+     `games/cs_source/ui/tests/it/net_query.rs`: a server answers with its name, map,
      players, bots, max, dedicated or listen, password, version, port and
      a ping, and its game connection on the same port checks the
      password; a LAN scan of two ports finds the two servers there once

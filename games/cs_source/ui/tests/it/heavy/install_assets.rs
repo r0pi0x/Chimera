@@ -13,7 +13,7 @@ use chimera_present::{
     assets::{InstallSource, InstallSourcesPlugin, install_path},
     audio::clip_asset::{SoundAsset, SoundAssetPlugin},
 };
-use cs_source::ui::textures::{VtfLoader, VtfSettings, vtf_image};
+use cs_source_ui::textures::{VtfLoader, VtfSettings, vtf_image};
 
 fn wait(app: &mut App, handle: UntypedAssetId) -> LoadState {
     for _ in 0..20_000 {

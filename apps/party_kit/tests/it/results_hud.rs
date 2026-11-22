@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 use chimera_core::core::{Damage, DamageKind, Hitgroup};
 use chimera_sim::minigame::{self, MatchResults, runtime};
-use cs_source::ui::minigame_hud::PanelLine;
+use cs_source_ui::minigame_hud::PanelLine;
 
 use crate::{
     gun_game::held,

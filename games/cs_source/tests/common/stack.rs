@@ -1,8 +1,7 @@
 //! What the scenario tests run on, at the paths the CS:S app re-exports it
 //! (`cs_source_app::core`, `::map`, `::harness`, ...: where these tests
 //! lived until 2026-10-15), so a test reads the same here as there:
-//! Chimera's crates, Source's logic, CS:S's simulation (and with `ui` its
-//! front end and the client shell), the harness with CS:S's base
+//! Chimera's crates, Source's logic, CS:S's simulation, the harness with CS:S's base
 //! (`harness::CsSim`), the greybox, and maps from the install
 //! (`games::load_map`, tests/common/mod.rs). `mod stack;` in a binary's
 //! main.rs; `use crate::stack::{core::Intent, harness::{CsSim, Sim}};`.
@@ -53,7 +52,7 @@ pub mod harness {
 }
 
 /// Maps by id from the install, and CS:S's parts (`cs_source::game`)
-/// with its front end (`ui`, with the feature).
+/// (the front end's: `cs_source_ui`'s own tests).
 pub mod games {
     pub use crate::common::{
         load_map, load_map_file, load_map_lean, load_map_level, load_map_level_lean, load_map_with, map_file_bytes,
@@ -61,21 +60,6 @@ pub mod games {
 
     pub mod cs_source {
         pub use ::cs_source::game::*;
-        #[cfg(feature = "ui")]
-        pub use ::cs_source::ui;
     }
 }
 
-/// The client shell with CS:S's HUD modules where the app has them
-/// (`ui` only).
-#[cfg(feature = "ui")]
-pub mod client {
-    pub use chimera_client::client::*;
-    pub use cs_source::ui::{game_hud, hud_sprites, overview, radar, weapon_select, win_panel};
-
-    /// Spectating: the shell's state and camera with CS:S's spectator HUD.
-    pub mod spectate {
-        pub use chimera_client::client::spectate::*;
-        pub use cs_source::ui::spectator_hud::*;
-    }
-}

@@ -151,7 +151,7 @@ pub(super) struct RadarParams {
 
 impl UiMaterial for RadarMaterial {
     fn fragment_shader() -> ShaderRef {
-        "embedded://cs_source/ui/radar.wesl".into()
+        "embedded://cs_source_ui/radar.wesl".into()
     }
 }
 

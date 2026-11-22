@@ -298,7 +298,7 @@ raw queries in the function itself.
 | games/cs_source/src/objectives/bomb.rs | `arm` 456 (q1, **`Predict::Weapons`**) | C | runs per replayed command on a client; a raw query over every character archetype; step 3 |
 | games/cs_source/src/rules.rs | `respawn` 673 (q1) | C | |
 | games/cs_source/src/rules/rounds.rs | `run_rounds` 568 (q1) | A | CS:S's round driver around `flow::step_game`; keep |
-| games/cs_source/src/ui/{demo,spectator_menu}.rs | `start_when_loaded` demo:95, `read_cvars` spectator_menu:365 | A | |
+| games/cs_source/ui/src/{demo,spectator_menu}.rs | `start_when_loaded` demo:95, `read_cvars` spectator_menu:365 | A | |
 | source/logic/src/logic/bridge.rs | `load` 289 (q1), `pre` 2285, `post` 2296, `damage` 2359 | A | the map-logic interpreter's I/O; needs the world |
 | | `follow_bodies` 2138 (FixedPostUpdate) | C (low) | |
 | source/logic/src/logic/net.rs | `write_movers` 222 (q1), `place` 389 (q3, also `NetHooks::replay`) | A | net |

@@ -13,7 +13,7 @@ client in one process share it, as would two apps in one test. Step 10 of
 
 - `chimera/world/src/map/loading.rs` (`PROGRESS`, `report`, `reset`, `current`)
 - callers: `games/cs_source/src/game/bsp.rs` (reports),
-  `games/cs_source/src/ui/game_menu/loading.rs` (reads); grep for
+  `games/cs_source/ui/src/game_menu/loading.rs` (reads); grep for
   `loading::` for others (Combat Arms' loaders)
 - Guards: `checks/tests/it/determinism.rs` (counts statics),
   `apps/party_kit/tests/it/listen_server.rs`

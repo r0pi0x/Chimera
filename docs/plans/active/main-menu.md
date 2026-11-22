@@ -42,7 +42,7 @@ parties or friends lists.
 | Join stages and download progress | `net::client::JoinProgress` (`JoinStage`, `DownloadInfo`, `failure`, `log`) | `chimera_net::net::client` |
 | Map download | over the connection or `sv_downloadurl`, hash-checked, content cache | `chimera_net::net::maps`, `net::http` |
 | Server queries, LAN scan | A2S_INFO-shaped query on the game port, `ServerQueries` (LAN on `net_lan_ports`, ping, one entry per instance) | `chimera_net::net::query` |
-| Server browser model | CS:S's Find Servers (`ServerBrowser::handle`: sort, filters, favourites and history in `serverbrowser.vdf`, password) | `games/cs_source/src/ui/server_browser.rs` |
+| Server browser model | CS:S's Find Servers (`ServerBrowser::handle`: sort, filters, favourites and history in `serverbrowser.vdf`, password) | `games/cs_source/ui/src/server_browser.rs` |
 | Match end | the shell's match-end screen and rotation (`NextMatch`) | `chimera_client::client::match_end` |
 | Mount check at join | match manifest vs the client's mount report | `chimera_net::net::manifest` |
 | Loading screen | Combat Arms' (`CaLoading`, the install's layout; nothing drawn without it) | `games/combat_arms/src/ui/loading.rs` |

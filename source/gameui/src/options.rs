@@ -10,8 +10,8 @@
 //! / reverse-mouse / window-size kinds, stepping, showing and a combo box's
 //! entries).
 //!
-//! Known shortcuts (docs/tech-debt.md): Options dialog (`cs_source::ui::game_menu`,
-//! `cs_source::ui::options`): only the keyboard tab places its controls from the
+//! Known shortcuts (docs/tech-debt.md): Options dialog (`cs_source_ui::game_menu`,
+//! `cs_source_ui::options`): only the keyboard tab places its controls from the
 //! game's `.res` (the others are our column of labelled controls); GameUI is
 //! drawn in screen pixels scaled by window height / 720 (CS:S doesn't scale);
 //! `cl_crosshairscale`'s meaning (screen height the crosshair is drawn for; 0

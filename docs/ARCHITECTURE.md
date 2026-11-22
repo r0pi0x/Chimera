@@ -22,7 +22,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    ultimate_gun_game (apps/ultimate_gun_game/)   the automatic gun game from every game's parts, on `party_kit`
   |    ultimate_gun_game_server (apps/ultimate_gun_game_server/)   its server: the party's `GameServer` with its minigame and parts
   |    originals (games/originals/)   the original minigames: definitions (minigames/) and rules hooks, Chimera only
-  |    cs_source_server (apps/cs_source_server/)   CS:S's dedicated server: the game without `ui`, no app
+  |    cs_source_server (apps/cs_source_server/)   CS:S's dedicated server: the game without its front end, no app
   |    combat_arms_server (apps/combat_arms_server/)   Combat Arms' dedicated server: the game without `ui`
   |    hl2dm_app (apps/hl2dm/)   the HL2:DM app: its game binary `hl2dm` (its maps, the greybox)
   |    hl2dm_server (apps/hl2dm_server/)   HL2:DM's dedicated server: no presentation
@@ -36,7 +36,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its twelve guns and nine melee weapons and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim
   |    tf2_ui (games/tf2/ui/)   TF2's front end as its own crate (its HUD, its guns' kill icons): on tf2 and the shell; tf2 and its tests build no client
   |
-  |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
+  |    cs_source_ui (games/cs_source/ui/)   CS:S's front end as its own crate (menus, panels, HUD, scoreboard): on cs_source, Source's shared crates, source_gameui and the shell
   |   /         \
   |   source_gameui (source/gameui/)   GameUI drawn: main and Esc menus, options, Create Server, server browser (CS:S's and HL2:DM's `ui`)
   |   /         \
@@ -73,7 +73,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   manifest declares (`[package.metadata.chimera] loaders = ["source"]`),
   never on a game or an app; `games/<id>/ui` is that game's front end as
   its own crate (`<id>_ui`), on the engine, its own game and that game's
-  loader layers, never another game, front end or app (TF2's, Halo's and HL2:DM's
+  loader layers, never another game, front end or app (TF2's, Halo's, HL2:DM's and CS:S's
   so far; the other games' front ends are still their crate's `ui` feature,
   docs/plans/active/architecture-for-iteration.md, stage 1); `apps/*` (and a game's tools, and the root
   package) compose them, and build on another app only when their
@@ -222,17 +222,15 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `mashup::games::cs_source`), CS:S's rules, `rules` and `objectives`,
   its bots, `bot`, and its part of the network (`game::net`: its round,
   bomb and hostages replicated, its join flow and bots behind the
-  network's hooks); with its feature `ui`, its front end (`ui`:
-  `mashup::games::cs_source::ui`; the GameUI menus and dialogs, the join
+  network's hooks); its front end is its own crate, `cs_source_ui`
+  (games/cs_source/ui; `mashup::games::cs_source::ui`; the GameUI menus and dialogs, the join
   flow, the buy, team, radio and spectator menus, the scoreboard and its
   HUD, on the shell, `with_hud` putting the HUD among the shell's
   plugins). The simulation uses the engine crates (not `chimera_present`),
   Source's logic and `source_formats`, never `mashup` or another game
-  (checked); only `ui` uses the presentation and the shell, as optional
-  dependencies of the feature (checked: `workspace_crates`,
-  `game_ui_only_with_its_feature`), and nothing else of the crate uses
-  `ui`; its tests may use the presentation too (a dev-dependency:
-  `TEST_ONLY`). `SimPlugins` is CS:S's simulation (Chimera's base,
+  (checked); it never uses the presentation or the shell
+  (`workspace_crates`; its tests may use the presentation: a
+  dev-dependency, `TEST_ONLY`). `SimPlugins` is CS:S's simulation (Chimera's base,
   `chimera_sim::SimBasePlugins`, with its rules, objectives, bots,
   network part and Source's logic), which the app runs; `harness::CsSim`
   is that as the tests' and tools' base, with its test maps for network
@@ -551,7 +549,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `games::load_map`, `client_hooks` and `client` (the shell with this app's hooks
   and CS:S's HUD), re-exports at the old paths, and build.rs's stamp. It
   uses `chimera_present` only with its default feature `present` (with
-  the client shell and CS:S's front end, `cs_source/ui`).
+  the client shell and CS:S's front end, `cs_source_ui`).
 - `combat_arms` (games/combat_arms/) is Combat Arms, wave 0: a skeleton
   of placeholder parts on Chimera, each replaced by Combat Arms'
   behaviour as its spec lands (specs/combat_arms/; firing, inventory,
@@ -637,7 +635,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   reach it by id through Chimera's registries (checked; review A5).
 - `cs_source_server` (apps/cs_source_server/) is CS:S's dedicated server
   (`cs_source_server`): Chimera's simulation crates, the network and
-  `cs_source` without `ui` on `chimera_net::dedicated` (its `SERVER`, with
+  `cs_source` on `chimera_net::dedicated` (its `SERVER`, with
   the map cycle, `MapFiles` and the greybox's 64 Hz tick as hooks), so
   built alone it links no render or audio code and never an app (checked:
   `server_builds_without_presentation`, `workspace_crates`,
@@ -671,7 +669,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   in its library.
 - Each crate keeps its tests: unit tests beside the code, integration
   tests in one binary per crate (`<crate>/tests/it/`, `heavy::` for the
-  slow ones; `cs_source`'s front end's in tests/ui/ with `ui`), in the
+  slow ones; `cs_source_ui`'s own in games/cs_source/ui/tests/it/), in the
   lowest crate whose API they need (docs/OBSERVABILITY.md, section 1;
   checked: `tests_are_one_binary_per_crate`). Scenario tests run on the
   engine's harness (`chimera_world::harness::Sim`) with the base of
@@ -822,7 +820,7 @@ A module may use only the modules below it. Enforced by
   it runs headless in tests and, later, on a dedicated server.
 - `games/<a>` never uses `games/<b>`. Shared needs go into `core` once two or
   three games need them (README, "rule of three"), or through a bridge.
-- A game's front end (its own crate `<id>_ui` in games/<id>/ui, as TF2's, Halo's and HL2:DM's;
+- A game's front end (its own crate `<id>_ui` in games/<id>/ui, as TF2's, Halo's, HL2:DM's and CS:S's;
   or its crate's `ui`, behind its `ui` feature: menus, panels, HUD) sits on
   `client` (the shell: input, camera, console UI, VGUI-like widgets, debug
   tools, net glue); the rest of the game never uses it. The shell reaches

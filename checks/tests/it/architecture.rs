@@ -351,6 +351,7 @@ const CRATE_SRC: &[&str] = &[
     "source/engine/src",
     "source/gameui/src",
     "games/cs_source/src",
+    "games/cs_source/ui/src",
     "games/combat_arms/src",
     "games/hl2dm/src",
     "games/hl2dm/ui/src",
@@ -1914,12 +1915,15 @@ fn workspace_crates() {
             ],
             NET,
         ),
+        // CS:S's simulation: its front end is its own crate (`cs_source_ui`,
+        // games/cs_source/ui), so no optional client dependencies either.
         (
             "games/cs_source",
             &[
                 "chimera_present",
                 "chimera_client",
                 "chimera_ui",
+                "source_gameui",
                 "cs_source_app",
                 "mashup",
                 "combat_arms",
@@ -2808,7 +2812,6 @@ fn layers_by_path() {
 /// the game's simulation never uses (`workspace_crates`;
 /// `game_ui_only_with_its_feature` checks the dependency tree).
 const UI_FEATURES: &[(&str, &str, &[&str])] = &[
-    ("games/cs_source", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
     ("games/combat_arms", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
 ];
 

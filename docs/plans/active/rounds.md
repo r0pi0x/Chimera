@@ -84,7 +84,7 @@ restarts.
    hostages as team-less characters led by +use over the nav mesh and
    rescued in `func_hostage_rescue`; Ts win on time on hostage maps.
    HUD icons, progress bar, messages, radar bomb marker. Tests:
-   games/cs_source/tests/ui/objectives.rs (O1, O5-O7, O10-O24 shape, O32-O41),
+   games/cs_source/ui/tests/it/objectives.rs (O1, O5-O7, O10-O24 shape, O32-O41),
    games/cs_source/tests/it/heavy/map_objectives.rs (dust2 A, cs_office). Left: see backlog §3.
 5. Done (2026-10-13, `rules::game_end`): `mp_timelimit`, `mp_maxrounds`,
    `mp_winlimit`, `mp_chattime`, the intermission and the next map of the

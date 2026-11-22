@@ -29,7 +29,7 @@ use combat_arms::{
     harness::CaSim,
     ui::hud::{CaHud, radar::CaRadar},
 };
-use cs_source::ui::game_hud::Part;
+use cs_source_ui::game_hud::Part;
 use party_kit::{DEFAULT_MINIGAME, PartyHudPlugin, PartyPartsPlugin};
 
 use crate::hud::{hud, party_with_huds_and, swap_to};
@@ -294,7 +294,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
     use chimera_client::client::{fonts::UiFonts, hud::{HudDraws, HudLookOwner, HudRoot, HudSwitchPlugin}};
     use chimera_sim::minigame::MinigameAppExt;
     use combat_arms::ui::hud::CaHudStatePlugin;
-    use cs_source::ui::{game_hud::GameHudPlugin, minigame_hud::MinigameHudPlugin};
+    use cs_source_ui::{game_hud::GameHudPlugin, minigame_hud::MinigameHudPlugin};
     let mut sim = Sim::with(CaSim, move |app| {
         extra(app);
         app.add_plugins(KillFeedPlugin);

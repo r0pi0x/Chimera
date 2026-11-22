@@ -15,7 +15,7 @@
 //! menus (HL2:DM): it opens when a local player first appears in a game an
 //! interactive run starts (`core::JoinChoice::Menus`; tool runs and tests
 //! join straight in). CS:S's join flow (team and class menus after the
-//! OK) is its own (`cs_source::ui::join_menus`) and shares the rest.
+//! OK) is its own (`cs_source_ui::join_menus`) and shares the rest.
 //!
 //! What it shows (hud.md 14, answered 2026-11-09): the title is the
 //! server's `hostname`; the `motd` entry by its first characters

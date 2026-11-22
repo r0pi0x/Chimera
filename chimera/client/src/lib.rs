@@ -11,7 +11,7 @@
 //! game, the app or Source's logic: a game says what it needs as data
 //! (`game_registry`, `core`'s vocabulary and hooks, `debug_ui::GameDebug`),
 //! the map logic as `map::logic_view`, the app as `client::AppHooks`. A
-//! game's front end builds on it (CS:S's: `cs_source::ui`, its `ui`
+//! game's front end builds on it (CS:S's: `cs_source_ui`, its `ui`
 //! feature) and puts its HUD among the shell's plugins
 //! (`client::ClientPlugins`). A game's client app is a `GameApp` static
 //! run by `client::app::run` (the start map, the plugins' order, the

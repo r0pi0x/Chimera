@@ -1,0 +1,64 @@
+[package]
+name = "cs_source_ui"
+version = "0.1.0"
+description = "Counter-Strike: Source's front end on the client shell: GameUI's menus, the join flow, the buy, team and radio menus, the HUD, the scoreboard and the spectator panels, above the game's simulation (`cs_source`)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# The game's simulation, Source's shared crates and the client shell with
+# the presentation; never another game, its front end or an app
+# (checks/tests/it/architecture.rs, `layers_follow_paths`). Its own crate so
+# that `cs_source` and its tests build without the shell, and a client-side
+# edit selects this crate's tests, not the simulation's
+# (docs/plans/active/architecture-for-iteration.md, stage 1).
+[dependencies]
+cs_source.workspace = true
+chimera_core.workspace = true
+chimera_world.workspace = true
+chimera_sim.workspace = true
+chimera_net.workspace = true
+chimera_client.workspace = true
+chimera_present.workspace = true
+source_logic.workspace = true
+source_engine.workspace = true
+source_formats.workspace = true
+# GameUI's menus and dialogs, shared with HL2:DM.
+source_gameui.workspace = true
+avian3d.workspace = true
+bevy.workspace = true
+image.workspace = true
+serde.workspace = true
+arboard.workspace = true
+winit.workspace = true
+# Joining's progress (the loading dialog reads the netcode client).
+bevy_replicon_renet.workspace = true
+workspace-hack.workspace = true
+
+# The tests' own: the presentation's Bevy and Avian features, as every
+# build with the presentation has them, so `cargo test -p cs_source_ui`
+# shares the clients' builds (`selections_share_one_build`); the tests'
+# checksums and wire format.
+[dev-dependencies]
+chimera_world = { workspace = true, features = ["render"] }
+bevy = { workspace = true, features = ["default", "wav"] }
+avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+bevy_winit.workspace = true
+crc32fast = "1.5.2"
+serde_json.workspace = true
+postcard.workspace = true
+vbsp.workspace = true
+
+# The front end's integration tests (tests/it/; the install's in tests/it/heavy/).
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[features]
+# Bevy as a dynamic library, as an app's `dev` (which turns this on).
+dev = ["cs_source/dev", "chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "chimera_client/dev", "chimera_present/dev", "source_logic/dev", "source_engine/dev", "source_gameui/dev", "source_formats/dev"]

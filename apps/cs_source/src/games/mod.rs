@@ -2,16 +2,16 @@
 //! never uses another game's module (enforced by checks/tests/it/architecture.rs).
 //!
 //! `cs_source` is the `cs_source` crate's parts (games/cs_source,
-//! `cs_source::game`) with the game's front end (`cs_source::ui`).
+//! `cs_source::game`) with the game's front end (`cs_source_ui`).
 
 /// Counter-Strike: Source: its parts (crate `cs_source`, games/cs_source)
-/// at their old paths, and its front end (`ui`, the crate's `ui`
-/// feature).
+/// at their old paths, and its front end (`ui`, `cs_source_ui`; the
+/// crate's `present` feature).
 pub mod cs_source {
     pub use ::cs_source::game::*;
     // The front end: built on the client shell (the `present` feature).
     #[cfg(feature = "present")]
-    pub use ::cs_source::ui;
+    pub use ::cs_source_ui as ui;
 }
 
 use crate::{

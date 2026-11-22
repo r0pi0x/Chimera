@@ -324,8 +324,30 @@ one revert puts it back.
       68 unit + 354 `it`, `hl2dm_ui` 24 unit + 54 `it`, all passing.
       Grouped imports again (`hl2dm::{ game::.., ui::.. }` in three test
       files) were what the first test build tripped on.
-- [ ] Then `cs_source` (12.4k, 112 UI tests), `combat_arms`
-      (17.9k, 322 UI tests), one commit each.
+- [x] `cs_source` (12.4k lines, 112 UI tests): `cs_source_ui`
+      (games/cs_source/ui), its `tests/ui` (19 files, 5 heavy), the radar's
+      shader (now `embedded://cs_source_ui/radar.wesl`) and a copy of
+      `tests/common` (the helpers, `stack.rs` with `client`). The crate
+      root aliases the names the modules reach by `crate::` (`client`,
+      `core`, `map`, `game`, `bot`, ...) instead of rewriting them. (a)
+      `affected --files chimera/client/src/lib.rs` selects 21 packages,
+      `cs_source_ui` and `cs_source_app` among them, not `cs_source`
+      (545 fast `it` tests and 77 unit tests leave a client edit's
+      selection); (b) after a function appended to `chimera_client`,
+      `cargo test -p cs_source --features dev --no-run` compiles nothing
+      (0.72 s); (c) after one appended to `chimera_sim` it compiles
+      `chimera_sim`, `chimera_net`, `source_logic`, `source_engine`,
+      `cs_source` (33 s wall, warm): 746 units, 14 workspace packages, no
+      client, UI kit or GameUI. `chimera_present` stays in that graph on
+      purpose: the scenario tests' maps run with its `MapPlugin` and
+      `render::lod` (a dev-dependency, `TEST_ONLY`), so it is listed in
+      `dev`; (d) `selections_share_one_build` passes. Fast tiers:
+      `cs_source` 77 unit + 545 `it`, `cs_source_ui` 47 unit + 86 `it`
+      (26 heavy), all passing. Grouped imports: `cs_source::ui::` in
+      `party_kit`'s tests and sources and the CS:S app's re-export
+      (`::cs_source_ui as ui`); `mashup_demo`'s dev-dependency on
+      `cs_source` with `ui` is gone (its tests share the one build now).
+- [ ] Then `combat_arms` (17.9k, 322 UI tests), one commit.
 
 Expected once all five are split: the 131 client-side commits per 14
 days (18%) select the front ends' suites and the apps instead of every
@@ -495,3 +517,4 @@ for them. A server built on its own still builds its own `tf2` (its
 Bevy has no render features), so "servers share the client's game
 build" is not a reason to split; iteration on the client side is.
 2026-11-21: `hl2dm` the same: `hl2dm_ui` (games/hl2dm/ui).
+2026-11-22: `cs_source` the same: `cs_source_ui` (games/cs_source/ui).

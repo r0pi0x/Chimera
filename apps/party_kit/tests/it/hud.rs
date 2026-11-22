@@ -32,7 +32,7 @@ use combat_arms::{
     harness::CaSim,
     ui::hud::CaHudStatePlugin,
 };
-use cs_source::ui::{
+use cs_source_ui::{
     game_hud::{GameHudPlugin, Part},
     minigame_hud::{MinigameHudPlugin, PanelLine},
 };

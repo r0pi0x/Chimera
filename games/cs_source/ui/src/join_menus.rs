@@ -605,7 +605,7 @@ mod game_menu_over_panels {
         use crate::{
             client::{vgui::VguiOpen, widgets::PointerScript},
             map::hud::{ActiveHud, GameHud, GameMenus, UiControl, UiKind, UiLayout},
-            ui::team_menu::TeamMenu,
+            team_menu::TeamMenu,
         };
         use std::collections::HashMap;
         for class in [false, true] {
@@ -636,7 +636,7 @@ mod game_menu_over_panels {
                 .init_resource::<TeamMenu>()
                 .init_resource::<VguiOpen>()
                 .insert_resource({
-                    let mut m = GameMenu { in_game: true, ..GameMenu::for_game(&crate::ui::MENU_GAME) };
+                    let mut m = GameMenu { in_game: true, ..GameMenu::for_game(&crate::MENU_GAME) };
                     m.open(Page::Main, vec!["de_dust2".into()], Some("de_dust2"), |_| None);
                     m
                 })

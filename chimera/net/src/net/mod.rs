@@ -196,7 +196,7 @@
 //! local client's ping reads ~60 ms and each client missed ~7 % of ticks'
 //! commands over a 12-minute live run (most during map loads). Why it's OK for
 //! now: Slice 8 and the open questions replace the rest; the rules are tested
-//! in `games/cs_source/tests/ui/net_rules.rs`; commands, clock sync, prediction and
+//! in `games/cs_source/ui/tests/it/net_rules.rs`; commands, clock sync, prediction and
 //! reconciliation are tested (`games/cs_source/tests/it/net_prediction.rs`), the join, map
 //! check and replication too (`games/cs_source/tests/it/net.rs`).
 

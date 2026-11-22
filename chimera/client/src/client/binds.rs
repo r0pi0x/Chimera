@@ -1054,7 +1054,7 @@ mod tests {
 
     /// A game's default binds file as it might read (CS:S's
     /// `config_default.cfg` has this shape; its own test checks the real
-    /// table, games/cs_source/src/ui/mod.rs).
+    /// table, games/cs_source/ui/src/lib.rs).
     const SAMPLE_DEFAULTS_CFG: &str = r#"// first run
 unbindall
 

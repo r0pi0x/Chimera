@@ -7,7 +7,7 @@
 //! (`motd`).
 //!
 //! What differs per game is data: `MenuGame`, given to `GameMenuPlugin` and
-//! `FirstRunPlugin`. CS:S's: `cs_source::ui::MENU_GAME`, with its bots, teams and
+//! `FirstRunPlugin`. CS:S's: `cs_source_ui::MENU_GAME`, with its bots, teams and
 //! rounds; HL2:DM's: `hl2dm::ui::MENU_GAME`, with none of those. A setting
 //! a game lacks shows greyed, since its cvar isn't registered.
 //!

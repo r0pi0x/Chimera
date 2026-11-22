@@ -94,7 +94,7 @@ and back push, HL2:DM's items, crates, prop rules and blast hearing).
     rule, are ours.** Spec: cs_source/tracers.md 1, Q1-Q2; damage
     indicator unspecified (parity-gaps.md, capture C8). Code:
     `games/cs_source/src/game/impact_effects.rs` `TRACER_EVERY`,
-    `games/cs_source/src/ui/hud_sprites.rs`. S each. Captures.
+    `games/cs_source/ui/src/hud_sprites.rs`. S each. Captures.
 34. **CS:S: flashbang and HE feedback curves approximated** (flash
     hold-and-fade, DSP presets 134-136, ring, shake). Spec:
     cs_source/grenades.md 5.4-5.5, 6.3-6.4, Q9, Q11, Q13-Q14. Code:

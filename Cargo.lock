@@ -3417,21 +3417,18 @@ dependencies = [
 name = "cs_source"
 version = "0.1.0"
 dependencies = [
- "arboard",
  "avian3d",
  "bevy",
  "bevy_replicon",
  "bevy_replicon_renet",
  "bevy_winit",
  "bzip2",
- "chimera_client",
  "chimera_core",
  "chimera_net",
  "chimera_present",
  "chimera_sim",
  "chimera_world",
  "crc32fast",
- "cs_source",
  "half",
  "image",
  "postcard",
@@ -3440,13 +3437,11 @@ dependencies = [
  "sha2",
  "source_engine",
  "source_formats",
- "source_gameui",
  "source_logic",
  "vbsp",
  "vmdl",
  "vmt-parser",
  "vtf",
- "winit",
  "workspace-hack",
 ]
 
@@ -3463,6 +3458,7 @@ dependencies = [
  "chimera_sim",
  "chimera_world",
  "cs_source",
+ "cs_source_ui",
  "image",
  "source_formats",
  "source_logic",
@@ -3498,6 +3494,36 @@ dependencies = [
  "source_tools",
  "toml",
  "vbsp",
+ "workspace-hack",
+]
+
+[[package]]
+name = "cs_source_ui"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "avian3d",
+ "bevy",
+ "bevy_replicon_renet",
+ "bevy_winit",
+ "chimera_client",
+ "chimera_core",
+ "chimera_net",
+ "chimera_present",
+ "chimera_sim",
+ "chimera_world",
+ "crc32fast",
+ "cs_source",
+ "image",
+ "postcard",
+ "serde",
+ "serde_json",
+ "source_engine",
+ "source_formats",
+ "source_gameui",
+ "source_logic",
+ "vbsp",
+ "winit",
  "workspace-hack",
 ]
 
@@ -6569,6 +6595,7 @@ dependencies = [
  "chimera_world",
  "combat_arms",
  "cs_source",
+ "cs_source_ui",
  "dirs",
  "halo_ce",
  "halo_ce_ui",

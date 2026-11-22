@@ -39,7 +39,7 @@
 //! open 3 s and a fast switch shows it 1.5 s, each fading over the last 0.5 s,
 //! the history 5 s fading over 1 s (ours); the radar is ours (zoom,
 //! translucency, markers). Why it's OK for now: Each part lands within 1-2 px
-//! of the captures (`refcmp hudcmp`, `games/cs_source/tests/ui/heavy/hud_layout.rs`).
+//! of the captures (`refcmp hudcmp`, `games/cs_source/ui/tests/it/heavy/hud_layout.rs`).
 //!
 //! Known shortcuts (docs/tech-debt.md): Game-look HUD parts read from the
 //! install's layouts, with guesses where the layouts stop: the scoreboard's

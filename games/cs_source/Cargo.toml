@@ -16,17 +16,11 @@ loaders = ["source"]
 [lib]
 doctest = false
 
-# What only a feature compiles, for the hooks' test selection
-# (checks/src/affected.rs): an edit under src/ui/ runs the front end's
-# tests (tests/ui/, the unit tests in `ui::`) and the crates above, not
-# the simulation's (tests/it/).
-[package.metadata.affected]
-feature-paths = { ui = ["src/ui/"] }
-
 # The engine's crates and the formats, Bevy and physics, Source's file
 # readers and map logic; never `mashup` or another game, and the
-# presentation (`chimera_present`) and the shell only for `ui`
-# (checks/tests/it/architecture.rs checks it). Same versions and features
+# presentation (`chimera_present`) and the shell never: the front end is
+# its own crate above this one, `cs_source_ui` (games/cs_source/ui;
+# checks/tests/it/architecture.rs checks it). Same versions and features
 # as the game's (workspace dependencies), so `cargo test -p cs_source`
 # reuses the game's builds.
 [dependencies]
@@ -55,16 +49,6 @@ vbsp.workspace = true
 vmdl.workspace = true
 vmt-parser.workspace = true
 vtf.workspace = true
-# The front end (`ui`, the `ui` feature): the client shell, the
-# presentation it draws with, the clipboard and the window icon.
-chimera_client = { workspace = true, optional = true }
-# GameUI's menus and dialogs, shared with HL2:DM (the front end's).
-source_gameui = { workspace = true, optional = true }
-chimera_present = { workspace = true, optional = true }
-arboard = { workspace = true, optional = true }
-winit = { workspace = true, optional = true }
-# Joining's progress (the loading dialog reads the netcode client).
-bevy_replicon_renet = { workspace = true, optional = true }
 workspace-hack.workspace = true
 
 # The tests' own crates: checksums of files read through the mount
@@ -74,13 +58,6 @@ workspace-hack.workspace = true
 # build, checks/tests/it/architecture.rs); the network's client side and
 # wire format (tests/it/net*.rs).
 [dev-dependencies]
-# This crate with its front end (`ui`), as the apps build it: its tests then
-# use the one build of it every other selection uses (the workspace's, the
-# hooks', `cargo run`'s) instead of a second one without the front end, with
-# its own incremental cache (docs/performance.md, "Iteration speed"). That
-# the simulation builds without `ui` the dedicated server's build checks
-# (tools/post-push-tests.sh) and architecture.rs (`game_parts_do_not_use_their_ui`).
-cs_source = { workspace = true, features = ["ui"] }
 # The presentation's Bevy and Avian features, for this crate's own tests only
 # (the dedicated servers build without them): `cargo test -p <crate>` shares
 # the clients' builds of Bevy instead of building its own (hakari.toml).
@@ -103,19 +80,7 @@ postcard.workspace = true
 name = "it"
 path = "tests/it/main.rs"
 
-# The front end's (tests/ui/): built with `ui` only; its scenario tests
-# too (the client shell's and CS:S's menus' and HUD's state).
-[[test]]
-name = "ui"
-path = "tests/ui/main.rs"
-required-features = ["ui"]
-
 [features]
-# CS:S's front end (`ui`): its menus, panels and HUD on the client shell.
-# The game's client turns it on (`mashup`'s `present`); the dedicated
-# server builds without it. This crate's own tests build with it (the
-# dev-dependency on itself), as every other build does.
-ui = ["dep:chimera_client", "dep:chimera_present", "dep:source_gameui", "dep:arboard", "dep:winit", "dep:bevy_replicon_renet"]
 # Bevy as a dynamic library, as the game's `dev` (which turns this on):
 # `cargo test -p cs_source --features dev` shares the game's Bevy build.
 dev = [
@@ -123,9 +88,7 @@ dev = [
     "chimera_world/dev",
     "chimera_sim/dev",
     "chimera_net/dev",
-    "chimera_client?/dev",
-    "source_gameui?/dev",
-    "chimera_present?/dev",
+    "chimera_present/dev",
     "source_logic/dev",
     "source_engine/dev",
     "source_formats/dev",

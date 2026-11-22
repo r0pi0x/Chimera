@@ -9,7 +9,7 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use chimera_client::client::hud_text::{self, ink_rect};
 use ::cs_source::game as cs_source;
-use ::cs_source::ui::{ game_hud::{self, Drawn, HudValues, PanelKind, Part}, weapon_select::{self, Row}, };
+use ::cs_source_ui::{ game_hud::{self, Drawn, HudValues, PanelKind, Part}, weapon_select::{self, Row}, };
 use chimera_world::map::hud::GameHud;
 use chimera_core::mount::config::LocalConfig;
 
