@@ -24,7 +24,7 @@ use std::collections::BTreeSet;
 
 use bevy::{
     prelude::*,
-    ui::{DeprecatedInteraction as Interaction, FocusPolicy},
+    ui::DeprecatedInteraction as Interaction,
 };
 
 use crate::{
@@ -120,8 +120,7 @@ impl Ui<'_> {
                 Node::default(),
                 BackgroundColor(base),
                 Hover { base, over },
-                Interaction::default(),
-                FocusPolicy::Block,
+                crate::controls::pressable(),
                 RevealKey(key.to_string()),
                 Secret(key.to_string()),
                 ChildOf(parent),

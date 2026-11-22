@@ -50,10 +50,10 @@
 //! per-asset portraits yet, design rules section 21); the drawer is
 //! rebuilt whole on a change.
 
-use bevy::{prelude::*, ui::{DeprecatedInteraction as Interaction, FocusPolicy}};
+use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_ui::{
     Role, Tone, UiParityId, UiStyle,
-    controls::{HERO_H, Kind, State, Ui, clickable},
+    controls::{HERO_H, Kind, State, Ui},
 };
 
 use super::{
@@ -524,15 +524,11 @@ fn button(c: &mut Commands, ui: &Ui, parent: Entity, label: &str, key: Option<&s
 }
 
 fn trash(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, a: BenchAction) {
-    let b = c
-        .spawn((
-            UiStyle { w: Some(1.5), h: Some(1.5), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), shrink: Some(0.0), margin: Some([0.0, 0.0, 0.0, 0.3].into()), ..UiStyle::row() }.outline(Tone::Fg5, 1.0),
-            Node::default(),
-            a,
-            clickable(),
-            ChildOf(parent),
-        ))
-        .id();
+    let b = {
+        let e = ui.item(c, parent, UiStyle { w: Some(1.5), h: Some(1.5), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), shrink: Some(0.0), margin: Some([0.0, 0.0, 0.0, 0.3].into()), ..UiStyle::row() }.outline(Tone::Fg5, 1.0), State::NONE, false);
+        c.entity(e).insert(a);
+        e
+    };
     kit_icon(c, look, b, "trash", 0.62, Tone::Fg2, 1.0);
     let _ = ui;
 }
@@ -551,9 +547,18 @@ fn section(c: &mut Commands, ui: &Ui, parent: Entity, title: &str, note: &str) -
     r
 }
 
-fn small_toggle(c: &mut Commands, ui: &Ui, parent: Entity, on: bool, a: BenchAction) {
-    let t = ui.toggle(c, parent, on, State::NONE);
-    c.entity(t).insert((a, clickable()));
+/// The drawer's control column (cq): narrower than the form's (the
+/// drawer is `W` wide), every toggle and two- or three-way choice in it
+/// this wide, `CTL_H` tall; six distances `DIST_W`.
+const CTL_W: f32 = 9.0;
+const CTL_H: f32 = 1.6;
+const MOVES_W: f32 = 12.0;
+const DIST_W: f32 = 16.5;
+
+/// The kit's toggle at the drawer's column width.
+fn toggle(c: &mut Commands, ui: &Ui, parent: Entity, on: bool, a: BenchAction) {
+    let t = ui.toggle_sized(c, parent, on, State::NONE, None, chimera_ui::controls::TOGGLE_ON_OFF, CTL_W, CTL_H);
+    c.entity(t).insert(a);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -562,8 +567,7 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         .spawn((
             UiStyle { w: Some(W), gap: Some(0.35), pad: Some([1.0, 1.4, 0.0, 1.4].into()), ..UiStyle::column() }.abs([None, Some(1.6), Some(M), Some(1.6)]).bg(Tone::Ink2).outline(Tone::Fg5, 1.0),
             Node::default(),
-            FocusPolicy::Block,
-            Interaction::default(),
+            chimera_ui::controls::catch_pointer(),
             UiParityId::new("bench.drawer"),
             ChildOf(root),
         ))
@@ -590,9 +594,11 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         if open {
             ui.focus_bar(c, card, 0.24);
         }
-        let head = c
-            .spawn((UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), h: Some(1.95), ..UiStyle::row() }, Node::default(), BenchAction::Select(i), clickable(), ChildOf(card)))
-            .id();
+        let head = {
+            let e = ui.item(c, card, UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), h: Some(1.95), ..UiStyle::row() }, State::NONE, false);
+            c.entity(e).insert(BenchAction::Select(i));
+            e
+        };
         portrait(c, ui, look, head, 1.7);
         // The name and the stats give way (cut with an ellipsis), the
         // trash never does.
@@ -620,25 +626,22 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
             r
         };
         let r = row(c, "Character");
-        let f = c
-            .spawn((UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), grow: Some(1.0), h: Some(1.45), pad: Some([0.0, 0.5, 0.0, 0.5].into()), ..UiStyle::row() }.bg_a(Tone::Fg, 0.04), Node::default(), BenchAction::Character(Some(t.id)), clickable(), ChildOf(r)))
-            .id();
+        let f = {
+            let e = ui.item(c, r, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), grow: Some(1.0), h: Some(1.45), pad: Some([0.0, 0.5, 0.0, 0.5].into()), ..UiStyle::row() }.bg_a(Tone::Fg, 0.04), State::NONE, false);
+            c.entity(e).insert(BenchAction::Character(Some(t.id)));
+            e
+        };
         ui.underline(c, f, Tone::Fg3, 0.05);
         ui.text(c, f, Role::DisplayRegular, 0.64, Tone::Fg, &t.name);
         ui.text(c, f, Role::Mono, 0.42, Tone::Fg3, &short_game(&t.game));
         ui.boxed(c, f, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         kit_icon(c, look, f, "listchev", 0.6, Tone::Fg2, 1.0);
         let r = row(c, "Holds");
-        let f = c
-            .spawn((
-                UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), grow: Some(1.0), h: Some(1.45), pad: Some([0.0, 0.5, 0.0, 0.5].into()), ..UiStyle::row() }.bg_a(Tone::Fg, if bench.holds_open { 0.1 } else { 0.04 }),
-                Node::default(),
-                BenchAction::HoldsOpen,
-                clickable(),
-                UiParityId::new("bench.holds"),
-                ChildOf(r),
-            ))
-            .id();
+        let f = {
+            let e = ui.item(c, r, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), grow: Some(1.0), h: Some(1.45), pad: Some([0.0, 0.5, 0.0, 0.5].into()), ..UiStyle::row() }.bg_a(Tone::Fg, if bench.holds_open { 0.1 } else { 0.04 }), State::NONE, false);
+            c.entity(e).insert((BenchAction::HoldsOpen, UiParityId::new("bench.holds")));
+            e
+        };
         ui.underline(c, f, if bench.holds_open { Tone::Acc } else { Tone::Fg3 }, 0.05);
         let held = t.spec.gun.as_deref().map_or_else(|| "Its default".to_string(), name);
         ui.text(c, f, Role::DisplayRegular, 0.64, Tone::Fg, &held);
@@ -657,15 +660,11 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
                 ))
                 .id();
             let item = |c: &mut Commands, label: &str, note: &str, on: bool, a: BenchAction| {
-                let it = c
-                    .spawn((
-                        UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), h: Some(1.3), pad: Some([0.0, 0.6, 0.0, 0.6].into()), shrink: Some(0.0), ..UiStyle::row() }.bg_a(Tone::Fg, if on { 0.1 } else { 0.0 }),
-                        Node::default(),
-                        a,
-                        clickable(),
-                        ChildOf(list),
-                    ))
-                    .id();
+                let it = {
+                    let e = ui.item(c, list, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), h: Some(1.3), pad: Some([0.0, 0.6, 0.0, 0.6].into()), shrink: Some(0.0), ..UiStyle::row() }.bg_a(Tone::Fg, if on { 0.1 } else { 0.0 }), State::NONE, false);
+                    c.entity(e).insert(a);
+                    e
+                };
                 if on {
                     ui.focus_bar(c, it, 0.2);
                 }
@@ -684,11 +683,11 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         let r = row(c, "Protection");
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         ui.text(c, r, Role::Mono, 0.44, Tone::Fg2, if t.spec.armored { "Shield or gear \u{00b7} health" } else { "Health only" });
-        small_toggle(c, ui, r, t.spec.armored, BenchAction::Armored(t.id, !t.spec.armored));
+        toggle(c, ui, r, t.spec.armored, BenchAction::Armored(t.id, !t.spec.armored));
         let r = row(c, "Never falls");
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         ui.text(c, r, Role::Mono, 0.44, Tone::Fg3, if t.spec.protected { "Hits measured, it stays up" } else { "Falls, back in 3 s" });
-        small_toggle(c, ui, r, t.spec.protected, BenchAction::Protected(t.id, !t.spec.protected));
+        toggle(c, ui, r, t.spec.protected, BenchAction::Protected(t.id, !t.spec.protected));
         let on_platform = t.spec.place == TargetPlace::Platform;
         let r = row(c, "Place");
         c.entity(r).insert(UiParityId::new("bench.place"));
@@ -698,8 +697,8 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         }
         let places = [TargetPlace::Line, TargetPlace::Platform];
         let names: Vec<&str> = places.iter().map(|p| place_label(*p)).collect();
-        for (k, e) in ui.segmented(c, r, &names, places.iter().position(|p| *p == t.spec.place), State::NONE).into_iter().enumerate() {
-            c.entity(e).insert((BenchAction::Place(t.id, places[k]), clickable()));
+        for (k, e) in ui.segmented_sized(c, r, &names, places.iter().position(|p| *p == t.spec.place), &[], State::NONE, Some((CTL_W, CTL_H))).into_iter().enumerate() {
+            c.entity(e).insert(BenchAction::Place(t.id, places[k]));
         }
         let r = row(c, "Distance");
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
@@ -707,8 +706,9 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         let refs: Vec<&str> = words.iter().map(String::as_str).collect();
         // (A platform target has no line: none picked; a press puts it on one.)
         let sel = DISTANCES.iter().position(|d| !on_platform && (*d - t.spec.distance_m).abs() < 0.01);
-        for (k, e) in ui.segmented(c, r, &refs, sel, State::NONE).into_iter().enumerate() {
-            c.entity(e).insert((BenchAction::Distance(t.id, DISTANCES[k]), clickable()));
+        // Six distances: each an equal share of `DIST_W`.
+        for (k, e) in ui.segmented_sized(c, r, &refs, sel, &[], State::NONE, Some((DIST_W, CTL_H))).into_iter().enumerate() {
+            c.entity(e).insert(BenchAction::Distance(t.id, DISTANCES[k]));
         }
         let r = row(c, "Moves");
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
@@ -717,15 +717,15 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         // On the platform it stands still: Strafes and Walks greyed out.
         let off: &[usize] = if on_platform { &[1, 2] } else { &[] };
         c.entity(r).insert(UiParityId::new("bench.moves"));
-        for (k, e) in ui.segmented_with(c, r, &names, sel, off, State::NONE).into_iter().enumerate() {
+        for (k, e) in ui.segmented_sized(c, r, &names, sel, off, State::NONE, Some((MOVES_W, CTL_H))).into_iter().enumerate() {
             if !off.contains(&k) {
-                c.entity(e).insert((BenchAction::Motion(t.id, TargetMotion::ALL[k]), clickable()));
+                c.entity(e).insert(BenchAction::Motion(t.id, TargetMotion::ALL[k]));
             }
         }
         let r = row(c, "Shoots back");
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         ui.text(c, r, Role::Mono, 0.44, Tone::Fg3, "Off unless you want it");
-        small_toggle(c, ui, r, t.spec.shoots_back, BenchAction::ShootsBack(t.id, !t.spec.shoots_back));
+        toggle(c, ui, r, t.spec.shoots_back, BenchAction::ShootsBack(t.id, !t.spec.shoots_back));
     }
     if let Some(why) = &view.refused {
         let r = ui.boxed(c, d, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
@@ -758,12 +758,12 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
     section(c, ui, d, "Options", "");
     for o in [SandboxOption::EndlessAmmo, SandboxOption::NoDamage, SandboxOption::BlastRings, SandboxOption::HalfSpeed, SandboxOption::ThirdPerson] {
         let on = options.get(o);
-        let r = ui.boxed(c, d, UiStyle { align: Some(AlignItems::Center), h: Some(1.6), pad: Some([0.0, 0.3, 0.0, 0.3].into()), ..UiStyle::row() });
+        let r = ui.boxed(c, d, UiStyle { align: Some(AlignItems::Center), h: Some(CTL_H + 0.3), pad: Some([0.0, 0.3, 0.0, 0.3].into()), ..UiStyle::row() });
         ui.hairline(c, r, Tone::Fg5, 1.0);
         let label = if o == SandboxOption::BlastRings { "Blast rings after an explosion" } else { o.label() };
         ui.text(c, r, Role::DisplayRegular, 0.58, Tone::Fg, label);
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-        small_toggle(c, ui, r, on, BenchAction::Option(o, !on));
+        toggle(c, ui, r, on, BenchAction::Option(o, !on));
     }
     ui.boxed(c, d, UiStyle { grow: Some(1.0), ..UiStyle::column() });
     let foot = ui.boxed(c, d, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), h: Some(3.0), shrink: Some(0.0), ..UiStyle::row() });
@@ -794,8 +794,7 @@ fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, every: &[Charact
         .spawn((
             Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
             BackgroundColor(ui.color(Tone::Ink, 0.6)),
-            FocusPolicy::Block,
-            Interaction::default(),
+            chimera_ui::controls::catch_pointer(),
             ZIndex(10),
             ChildOf(root),
         ))
@@ -1030,17 +1029,11 @@ fn bind_picker(
                     let Some(ch) = grid.games.get(section).and_then(|g| g.1.get(first + col)) else { continue };
                     let _ = VCursor::Item(section, first + col);
                     let on = grid.chosen.as_deref() == Some(ch.id.as_str());
-                    let t = c
-                        .spawn((
-                            UiStyle { gap: Some(0.3), pad: Some([0.3, 0.3, 0.3, 0.3].into()), grow: Some(1.0), min_w: Some(0.0), ..UiStyle::column() }
-                                .bg_a(Tone::Fg, if on { 0.1 } else { 0.03 })
-                                .outline(if on { Tone::Fg2 } else { Tone::Fg5 }, 1.0),
-                            Node { min_width: Val::Px(0.0), overflow: Overflow::clip_x(), ..default() },
-                            BenchAction::PickerChoose(ch.id.clone()),
-                            clickable(),
-                            ChildOf(cell),
-                        ))
-                        .id();
+                    let t = {
+                        let e = ui.item(&mut c, cell, UiStyle { gap: Some(0.3), pad: Some([0.3, 0.3, 0.3, 0.3].into()), grow: Some(1.0), min_w: Some(0.0), ..UiStyle::column() }.bg_a(Tone::Fg, if on { 0.1 } else { 0.03 }).outline(if on { Tone::Fg2 } else { Tone::Fg5 }, 1.0), State::NONE, false);
+                        c.entity(e).insert((Node { min_width: Val::Px(0.0), overflow: Overflow::clip_x(), ..default() }, BenchAction::PickerChoose(ch.id.clone())));
+                        e
+                    };
                     if on {
                         ui.underline(&mut c, t, Tone::Acc, 0.22);
                     }

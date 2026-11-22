@@ -43,6 +43,7 @@ mod hud;
 mod identity;
 mod identity_sounds;
 mod kill_feed;
+mod kit_conformance;
 mod overlay_guard;
 mod kill_icons;
 mod ladders_across_games;

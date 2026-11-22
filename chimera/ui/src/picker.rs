@@ -77,7 +77,7 @@ use crate::{
     IconImages, KitFonts, Role, Theme, Tone, UiSlant, UiStyle, UiUnits, VCursor, VSection, VShape, VSlot, VirtualList,
     VirtualLists,
     VHit, VListState, VNav,
-    controls::{HERO_H, Hover, Kind, State, Ui, clickable},
+    controls::{HERO_H, Hover, Kind, State, Ui, pressable},
     text_edit::{Caret, TextKey},
     text_fit::Ellipsize,
     vlist::VLine,
@@ -946,7 +946,7 @@ fn fill_bar(c: &mut Commands, ui: &Ui, bar: Entity, key: &str, games: &[PickerGa
     if frame.search {
         let caret = frame.caret.or(state.search_cursor());
         let f = ui.search_field(c, bar, &state.search, &frame.placeholder, caret, l("search_w").min(frame.w), State::focused(caret.is_some()));
-        c.entity(f.field).insert((PickerAction::FocusSearch, PickerSearch(key.to_string()), clickable()));
+        c.entity(f.field).insert((PickerAction::FocusSearch, PickerSearch(key.to_string()), pressable()));
         if let Some(k) = f.clear {
             c.entity(k).insert(PickerAction::ClearSearch);
         }
@@ -966,7 +966,7 @@ fn fill_bar(c: &mut Commands, ui: &Ui, bar: Entity, key: &str, games: &[PickerGa
                 .outline(if on { Tone::Fg } else { Tone::Fg4 }, 1.0),
         );
         let bg = if on { ui.color(Tone::Fg, 1.0) } else { ui.color(Tone::Fg, 0.0) };
-        c.entity(ch).insert((PickerAction::Chip(i), Hover { base: bg, over: if on { bg } else { ui.color(Tone::Fg, l("hover")) } }, clickable()));
+        c.entity(ch).insert((PickerAction::Chip(i), Hover { base: bg, over: if on { bg } else { ui.color(Tone::Fg, l("hover")) } }, pressable()));
         ui.text(c, ch, Role::Mono, l("chip_size"), if on { Tone::Ink } else { Tone::Fg2 }, &words);
     }
 }
@@ -1196,7 +1196,7 @@ fn list_row(c: &mut Commands, ui: &Ui, slot: Entity, view: &PickerView, i: usize
             Node::default(),
             act,
             Hover { base: ui.color(Tone::Fg, bg), over: ui.color(Tone::Fg, bg + l("hover")) },
-            clickable(),
+            pressable(),
             ChildOf(slot),
         ))
         .id();
@@ -1225,7 +1225,7 @@ fn list_row(c: &mut Commands, ui: &Ui, slot: Entity, view: &PickerView, i: usize
                 PickerAction::Toggle(i),
                 TriHit,
                 Hover { base: ui.color(Tone::Fg, 0.0), over: ui.color(Tone::Fg, l("slop_hover")) },
-                clickable(),
+                pressable(),
             ));
             tri_box(c, ui, hit, picker.state(games, row));
         } else {
@@ -1290,7 +1290,7 @@ fn card(c: &mut Commands, ui: &Ui, parent: Entity, view: &PickerView, i: usize, 
             PickerCard(i),
             PickerId(it.id.clone()),
             Hover { base: ui.color(Tone::Fg, base), over: ui.color(Tone::Fg, base + l("hover")) },
-            clickable(),
+            pressable(),
             ChildOf(parent),
         ))
         .id();

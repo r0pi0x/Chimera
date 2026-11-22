@@ -16,11 +16,12 @@
 //!   the tooltip); `dialog_field` (a field that opens a dialog: the
 //!   list-with-chevron icon); `row` (a label and a value, `min_h` 2.9 cq, a
 //!   hairline under it) and `section` (a small header with the accent
-//!   mark); `toggle` (a slab on a slanted track, white when on, each
-//!   label centred on its slab's place; `toggle_ex` slides the slab over,
+//!   mark); `toggle_sized` (a slab on a slanted track, white when on, each
+//!   label centred on its slab's place; `form::big_toggle` the one screens
+//!   use; it slides the slab over,
 //!   `ToggleSlide`, `Pace::Normal`, a snap at motion scale 0; focus a
 //!   strip clipped to the track's bottom edge);
-//!   `segmented`; `slider` (track, fill, the default's mark, a slanted
+//!   `segmented_sized` (`form::choice` for a setting); `slider` (track, fill, the default's mark, a slanted
 //!   thumb, the value); `stepper` (`-`, the value, `+` in one slanted border, the value box
 //!   sized from its `StepperRange`, a key at its end dimmed); their `_ex`
 //!   forms make the value box clickable and, while `Typing`, typed into
@@ -63,8 +64,18 @@
 //!   menus' moves inside a screen (`wipe_cover`, `Wipe::bar`); the logo
 //!   pass stays for screen changes.
 //!
+//! - **Pressable** (`KitControl`): every node a builder makes pressable
+//!   carries it; a screen never makes a node pressable itself (docs/
+//!   DESIGN.md, "UI: always the kit"). `item` is the pressable surface a
+//!   screen lays out itself (a list entry, a rail item, a card, a chip),
+//!   `button_icon` a button with a kit icon, `press_tint` the state for a
+//!   node another system spawned, `catch_pointer` a panel that only
+//!   blocks the pointer. Screens use `form`'s `big_toggle` and `choice`
+//!   (the small toggle and the natural-width segmented builders are gone,
+//!   2026-11-21).
+//!
 //! Builders spawn under a parent (`ChildOf`) and return the entity a
-//! screen gives its action (with `clickable`), sized from `UiUnits` at
+//! screen gives its action, sized from `UiUnits` at
 //! the time: screens rebuild when the units change, as the lobby does.
 //! Labels go upper case (`text`); sentences (`paragraph`) and what a
 //! person types or is called (`text_field`, `text_plain`) keep their case,
@@ -213,7 +224,69 @@ pub struct HoverText {
     pub over: Tone,
 }
 
-/// What makes a node clickable: an `Interaction` that blocks the pointer.
+/// The mark of a control the kit built (`pressable`): every node a screen
+/// can press carries it, so its hover, focus and selected states are the
+/// kit's. `checks/tests/it/ui_kit.rs` keeps screens from making nodes
+/// pressable by hand, and party_kit's `kit_conformance` test stages every
+/// screen and finds any `Interaction` without it (docs/DESIGN.md, "UI:
+/// always the kit").
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct KitControl;
+
+/// A setting row (`Ui::setting_row`; `kit_conformance`: a form control in
+/// a row sits in a setting row's control column).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct SettingRowMark;
+
+/// A row of the kit's (`Ui::row`, `Ui::setting_row`).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct KitRow;
+
+/// What makes a kit node pressable: an `Interaction` that blocks the
+/// pointer and `KitControl`. Kit-internal: a screen presses only what a
+/// builder returns (`button`, `item`, `setting_row`, ...).
+pub(crate) fn pressable() -> (Interaction, FocusPolicy, KitControl) {
+    (Interaction::default(), FocusPolicy::Block, KitControl)
+}
+
+/// A panel's or a scrim's hold on the pointer (no control: it only keeps
+/// clicks and hover from what is under it).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct PointerCatch;
+
+/// What a panel or a scrim takes to catch the pointer (`PointerCatch`):
+/// an `Interaction` that blocks it. Not a control: nothing to press.
+pub fn catch_pointer() -> (Interaction, FocusPolicy, PointerCatch) {
+    (Interaction::default(), FocusPolicy::Block, PointerCatch)
+}
+
+/// A pressable node whose hover and selected states a screen's own system
+/// draws (the main menu's highlight slab that follows the keys and the
+/// pointer, the match end's standings rows that preview the hovered
+/// player): `own_states`. Each use is on `checks/tests/it/ui_kit.rs`'s
+/// allowlist with its reason; `kit_conformance` accepts it.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct OwnStates;
+
+/// What a node with its own drawn states takes (`OwnStates`): an
+/// `Interaction` that blocks the pointer.
+pub fn own_states() -> (Interaction, FocusPolicy, OwnStates) {
+    (Interaction::default(), FocusPolicy::Block, OwnStates)
+}
+
+/// The kit's pressable state for a node another system spawned (a chat
+/// line's name, made pressable while the history is open): no fill, the
+/// kit's hover tint (`Fg` .06), `KitControl`. `Ui::item` for a node the
+/// screen builds.
+pub fn press_tint(theme: &Theme) -> impl Bundle + use<> {
+    let over = theme.tone_a(Tone::Fg, 0.06);
+    (BackgroundColor(Color::NONE), Hover { base: Color::NONE, over }, pressable())
+}
+
+/// An `Interaction` that blocks the pointer, without the kit's states:
+/// for other looks only (the VGUI/GameUI widgets, in-world and HUD nodes
+/// on `checks/tests/it/ui_kit.rs`'s allowlist). A screen of the kit's
+/// look uses a builder (`Ui::item` for a pressable surface).
 pub fn clickable() -> (Interaction, FocusPolicy) {
     (Interaction::default(), FocusPolicy::Block)
 }
@@ -475,6 +548,13 @@ impl<'a> Ui<'a> {
     /// .07 with `fg_3` text.
     #[allow(clippy::too_many_arguments)]
     pub fn button(&self, c: &mut Commands, parent: Entity, kind: Kind, label: &str, key: Option<&str>, h: f32, st: State) -> Entity {
+        self.button_icon(c, parent, kind, None, label, key, h, st)
+    }
+
+    /// `button` with one of the kit's icons (`kit_icon`: icons.toml's key)
+    /// before its label, in the label's tone (Leave's arrow).
+    #[allow(clippy::too_many_arguments)]
+    pub fn button_icon(&self, c: &mut Commands, parent: Entity, kind: Kind, icon: Option<&'static str>, label: &str, key: Option<&str>, h: f32, st: State) -> Entity {
         let big = kind == Kind::Primary && h >= HERO_H - 0.01;
         let size = if big { 0.9 } else if h < 2.2 { 0.58 } else if h > 3.0 { 0.8 } else { 0.66 };
         let lean = h * self.theme.tan();
@@ -505,9 +585,9 @@ impl<'a> Ui<'a> {
         };
         let b = c.spawn((s, Node::default(), BackgroundColor(base), ChildOf(parent))).id();
         if !st.disabled {
-            c.entity(b).insert((Hover { base, over }, clickable()));
+            c.entity(b).insert((Hover { base, over }, pressable()));
         } else {
-            c.entity(b).insert(clickable());
+            c.entity(b).insert(pressable());
         }
         if kind == Kind::Primary {
             // The slab behind, its right edge on the slant.
@@ -536,6 +616,9 @@ impl<'a> Ui<'a> {
             self.mark(c, b, Tone::Threat, 0.5, 0.7);
         }
         let role = if big { Role::DisplayBold } else { Role::DisplayRegular };
+        if let Some(icon) = icon {
+            self.kit_icon(c, b, icon, size * 1.15, 1.0, text_tone);
+        }
         self.text(c, b, role, size, text_tone, label);
         if let Some(k) = key {
             let cap_tone = match kind {
@@ -604,7 +687,7 @@ impl<'a> Ui<'a> {
                         Node::default(),
                         BackgroundColor(Color::NONE),
                         Hover { base: Color::NONE, over: Color::NONE },
-                        clickable(),
+                        pressable(),
                         ChildOf(bar),
                     ))
                     .id();
@@ -622,6 +705,42 @@ impl<'a> Ui<'a> {
             cap(c, e);
         }
         tabs
+    }
+
+    /// A pressable surface laid out as `style` says (a list entry, a rail
+    /// item, a card, a chip, a fold's head): the kit's states on it. Hover
+    /// lifts its fill (`Fg` .06 over none, a faint `Fg` fill by .06, any
+    /// other fill to `Fg` .1); `selected` is the white fill (give its text
+    /// `Tone::Ink`); `st.focus` the row tint and the accent bar;
+    /// `st.disabled` takes no hover. Returns it (give it its action).
+    pub fn item(&self, c: &mut Commands, parent: Entity, style: UiStyle, st: State, selected: bool) -> Entity {
+        let bg = style.bg;
+        let e = c.spawn((UiStyle { bg: None, ..style }, Node::default(), self.item_bundle(bg, st, selected), ChildOf(parent))).id();
+        if st.focus && !selected {
+            self.focus_bar(c, e, 0.24);
+        }
+        e
+    }
+
+    /// What `item` puts on its node, for a screen that spawns its nodes
+    /// in a `with_children` closure (the match end's): its fill (`bg`, a
+    /// tone and alpha), the kit's hover and `KitControl`.
+    pub fn item_bundle(&self, bg: Option<(Tone, f32)>, st: State, selected: bool) -> impl Bundle + use<> {
+        let base = if selected {
+            self.color(Tone::Fg, 1.0)
+        } else if st.focus {
+            self.color(Tone::Fg, 0.06)
+        } else {
+            bg.map_or(Color::NONE, |(t, a)| self.color(t, a))
+        };
+        let over = match (selected || st.disabled, st.focus, bg) {
+            (true, ..) => base,
+            (_, true, _) => self.color(Tone::Fg, 0.09),
+            (_, _, None) => self.color(Tone::Fg, 0.06),
+            (_, _, Some((Tone::Fg, a))) if a < 0.5 => self.color(Tone::Fg, a + 0.06),
+            _ => self.color(Tone::Fg, 0.1),
+        };
+        (BackgroundColor(base), Hover { base, over }, pressable())
     }
 
     // -----------------------------------------------------------------
@@ -650,7 +769,8 @@ impl<'a> Ui<'a> {
                 Node::default(),
                 BackgroundColor(base),
                 Hover { base, over },
-                clickable(),
+                pressable(),
+                KitRow,
                 ChildOf(parent),
             ))
             .id();
@@ -697,36 +817,14 @@ impl<'a> Ui<'a> {
     // -----------------------------------------------------------------
     // Values.
 
-    /// A toggle: a slab sliding on a slanted track 4.4 x 1.5 cq, OFF/ON
-    /// each centred on its half (the slab's place); on, the slab is white
-    /// at the right. Focus: the track's own slanted outline in accent (no
-    /// underline). Returns the toggle.
-    pub fn toggle(&self, c: &mut Commands, parent: Entity, on: bool, st: State) -> Entity {
-        self.toggle_ex(c, parent, on, st, None)
-    }
-
-    /// `toggle` with its own words (off, on): `Off`/`On` for a setting that
-    /// switches a feature, `toggle_words(.., TOGGLE_YES_NO)` for one that
-    /// answers a question ("Include ...", "Ask ...", "Show ...?").
-    pub fn toggle_words(&self, c: &mut Commands, parent: Entity, on: bool, st: State, words: (&str, &str)) -> Entity {
-        self.toggle_with(c, parent, on, st, None, words)
-    }
-
-    /// `toggle` with the slab sliding over from the other side
+    /// A toggle: a slab sliding on a slanted track, OFF/ON (or its
+    /// words) each centred on its half (the slab's place); on, the slab
+    /// is white at the right; `slide` slides it over from the other side
     /// (`ToggleSlide`: flipped at `since`, `TOGGLE_SLIDE_SECS`, eased out;
-    /// none under reduced motion).
-    pub fn toggle_ex(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>) -> Entity {
-        self.toggle_with(c, parent, on, st, slide, TOGGLE_ON_OFF)
-    }
-
-    /// `toggle_ex` with its words (off, on).
-    pub fn toggle_with(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>, words: (&str, &str)) -> Entity {
-        self.toggle_sized(c, parent, on, st, slide, words, TOGGLE_W, TOGGLE_H)
-    }
-
-    /// `toggle_with` `w` x `h` cq (the big toggle of a settings column,
-    /// `form`): the slab and its insets scale with the height, each half
-    /// as wide as the track allows; the same slide.
+    /// none under reduced motion). It is `w` x `h` cq: the slab and its
+    /// insets scale with the height, each half as wide as the track
+    /// allows. Screens use `form`'s `big_toggle` (the user's review,
+    /// 2026-11-21: the small toggle is gone).
     #[allow(clippy::too_many_arguments)]
     pub fn toggle_sized(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>, words: (&str, &str), w: f32, h: f32) -> Entity {
         let k = h / TOGGLE_H;
@@ -740,7 +838,7 @@ impl<'a> Ui<'a> {
                 Node::default(),
                 BackgroundColor(Color::NONE),
                 Hover { base: Color::NONE, over: Color::NONE },
-                clickable(),
+                pressable(),
                 ChildOf(parent),
             ))
             .id();
@@ -797,24 +895,14 @@ impl<'a> Ui<'a> {
     }
 
     /// A segmented choice: the toggle's look (a slanted track with a
-    /// `fg_4` outline, the options inset in it, 1.5 cq tall like the
-    /// toggle), each option Mono .58 cq; the selected one a white slanted
-    /// pick (ink text); focus underlines it in accent, clipped to the
-    /// pick's slant. A changed selection slides the pick over from the old
-    /// one (`slide_picks`). Returns the options.
-    pub fn segmented(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, st: State) -> Vec<Entity> {
-        self.segmented_with(c, parent, options, selected, &[], st)
-    }
-
-    /// `segmented` with the options at `off` greyed out (`fg_4` words, no
-    /// hover, not clickable: a choice that can't be made now).
-    pub fn segmented_with(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], st: State) -> Vec<Entity> {
-        self.segmented_sized(c, parent, options, selected, off, st, None)
-    }
-
-    /// `segmented_with` `size` = (w, h) cq (a settings column, `form`):
-    /// the options share the width equally; None: as wide as their words,
-    /// the toggle's height.
+    /// `fg_4` outline, the options inset in it), each option Mono; the
+    /// selected one a white slanted pick (ink text); focus underlines it
+    /// in accent, clipped to the pick's slant. A changed selection slides
+    /// the pick over from the old one (`slide_picks`). The options at
+    /// `off` are greyed out (no hover, not pressable). `size` = (w, h) cq:
+    /// the options share the width equally (`form`'s `choice`, a filter
+    /// bar of a set width); None: as wide as their words. Returns the
+    /// options.
     #[allow(clippy::too_many_arguments)]
     pub fn segmented_sized(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], st: State, size: Option<(f32, f32)>) -> Vec<Entity> {
         // One slanted track (fill .05, a `fg_4` outline), slanted `fg_5`
@@ -868,7 +956,7 @@ impl<'a> Ui<'a> {
                     ))
                     .id();
                 if !greyed {
-                    c.entity(b).insert(clickable());
+                    c.entity(b).insert(pressable());
                 }
                 if sel {
                     c.spawn((
@@ -958,7 +1046,7 @@ impl<'a> Ui<'a> {
                 BackgroundColor(Color::NONE),
                 Hover { base: Color::NONE, over: Color::NONE },
                 RelativeCursorPosition::default(),
-                clickable(),
+                pressable(),
                 ChildOf(s),
             ))
             .id();
@@ -1032,7 +1120,7 @@ impl<'a> Ui<'a> {
                 BackgroundColor(base),
                 Hover { base, over },
                 RelativeCursorPosition::default(),
-                clickable(),
+                pressable(),
                 ChildOf(parent),
             ))
             .id();
@@ -1176,7 +1264,7 @@ impl<'a> Ui<'a> {
                     UiStyle { w: Some(STEPPER_KEY_W), h: Some(STEPPER_H), justify: Some(JustifyContent::Center), ..UiStyle::row() },
                     Node::default(),
                     BackgroundColor(Color::NONE),
-                    clickable(),
+                    pressable(),
                     ChildOf(g),
                 ))
                 .id();
@@ -1242,7 +1330,7 @@ impl<'a> Ui<'a> {
                 Node::default(),
                 BackgroundColor(base),
                 Hover { base, over },
-                clickable(),
+                pressable(),
                 ChildOf(holder),
             ))
             .id();
@@ -1277,7 +1365,7 @@ impl<'a> Ui<'a> {
                         Node::default(),
                         BackgroundColor(base),
                         Hover { base, over: self.color(Tone::Fg, 0.07) },
-                        clickable(),
+                        pressable(),
                         ChildOf(list),
                     ))
                     .id();
@@ -1331,7 +1419,7 @@ impl<'a> Ui<'a> {
         if listening {
             s = s.outline(Tone::Acc, 1.0);
         }
-        let f = c.spawn((s, Node::default(), BackgroundColor(base), Hover { base, over }, clickable(), ChildOf(parent))).id();
+        let f = c.spawn((s, Node::default(), BackgroundColor(base), Hover { base, over }, pressable(), ChildOf(parent))).id();
         if listening {
             // The capture chip (the user's review, 2026-11-21): a
             // blinking light, "Press a key", Esc's cap at the end.
@@ -1473,7 +1561,7 @@ impl<'a> Ui<'a> {
             ))
             .id();
         if !st.disabled {
-            c.entity(f).insert(clickable());
+            c.entity(f).insert(pressable());
         }
         if search {
             let px = self.units.phys(self.units.cq(SEARCH_H)).round().max(1.0);
@@ -1513,7 +1601,7 @@ impl<'a> Ui<'a> {
                     Node::default(),
                     BackgroundColor(Color::NONE),
                     Hover { base: Color::NONE, over: self.color(Tone::Fg, 0.1) },
-                    clickable(),
+                    pressable(),
                     SearchClear,
                     ChildOf(f),
                 ))
@@ -1698,8 +1786,7 @@ impl<'a> Ui<'a> {
             .spawn((
                 UiStyle { gap: Some(0.45), pad: Some([0.25, 0.4, 0.25, 0.4].into()), shrink: Some(0.0), ..UiStyle::row() },
                 Node::default(),
-                Interaction::default(),
-                FocusPolicy::Block,
+                pressable(),
                 StatusBlock(light),
                 ChildOf(parent),
             ))
@@ -1735,7 +1822,7 @@ impl<'a> Ui<'a> {
                 Node::default(),
                 BackgroundColor(base),
                 Hover { base, over },
-                clickable(),
+                pressable(),
                 ChildOf(parent),
             ))
             .id();
@@ -1801,7 +1888,7 @@ impl<'a> Ui<'a> {
     /// Bold). Returns the row (give it its action).
     pub fn check(&self, c: &mut Commands, parent: Entity, on: bool, label: &str, h: f32) -> Entity {
         let row = self.boxed(c, parent, UiStyle { gap: Some(0.7 * h), align: Some(AlignItems::Center), pad: Some([0.3, 0.6, 0.3, 0.0].into()), ..UiStyle::row() });
-        c.entity(row).insert(clickable());
+        c.entity(row).insert(pressable());
         let bx = self.boxed(c, row, UiStyle { w: Some(h), h: Some(h), align: Some(AlignItems::Center), justify: Some(JustifyContent::Center), shrink: Some(0.0), ..UiStyle::row() });
         let slant = if on { UiSlant::new(Tone::Fg, 1.0) } else { UiSlant::new(Tone::Fg2, 1.0).outline(1.0) };
         c.spawn((
@@ -1904,7 +1991,7 @@ pub const TOGGLE_OFF_LEFT: f32 = 0.25;
 pub const TOGGLE_ON_LEFT: f32 = 2.25;
 
 /// A toggle flipped at `since` (UI clock), drawn at `now`: its slab
-/// slides over (`Ui::toggle_ex`) over `Pace::Normal` of `motion`; scale 0:
+/// slides over (`Ui::toggle_sized`) over `Pace::Normal` of `motion`; scale 0:
 /// it jumps.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ToggleSlide {

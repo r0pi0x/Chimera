@@ -48,7 +48,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use bevy::{
     input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
     prelude::*,
-    ui::{ComputedNode, DeprecatedInteraction as Interaction, FocusPolicy, RelativeCursorPosition, ScrollPosition, UiGlobalTransform, UiSystems},
+    ui::{ComputedNode, RelativeCursorPosition, ScrollPosition, UiGlobalTransform, UiSystems},
 };
 
 use crate::{
@@ -526,8 +526,7 @@ impl<'a> Ui<'a> {
                 },
                 ScrollTrack { view },
                 RelativeCursorPosition::default(),
-                Interaction::default(),
-                FocusPolicy::Block,
+                crate::controls::pressable(),
                 Visibility::Hidden,
                 ChildOf(frame),
             ))

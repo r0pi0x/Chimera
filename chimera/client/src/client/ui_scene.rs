@@ -688,12 +688,14 @@ fn controls(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets
     ui.key_field(c, r, &[], true, 8.5, State::NONE);
     let right = col(c, 46.0);
     ui.section(c, right, "Rows", Some("focus • changed • error"));
-    let (_, v) = ui.row(c, right, "Vertical sync", None, 2.9, State::NONE);
-    ui.toggle(c, v, true, State::NONE);
-    let (_, v) = ui.row(c, right, "Mouse filter", None, 2.9, State { focus: true, changed: true, ..State::NONE });
-    ui.toggle(c, v, false, State::focused(true));
-    let (_, v) = ui.row(c, right, "Frame limit", None, 2.9, State::NONE);
-    ui.segmented(c, v, &["None", "60", "144", "240", "300"], Some(2), State::NONE);
+    // Setting rows (`form`): one marker a row, the control none.
+    let look = chimera_ui::form::RowLook::default();
+    let sr = ui.setting_row(c, right, "Vertical sync", look, State::NONE);
+    ui.big_toggle(c, sr.control, true, State::NONE, None, chimera_ui::controls::TOGGLE_ON_OFF);
+    let sr = ui.setting_row(c, right, "Mouse filter", chimera_ui::form::RowLook { changed: true, ..look }, State { focus: true, changed: true, ..State::NONE });
+    ui.big_toggle(c, sr.control, false, State::NONE, None, chimera_ui::controls::TOGGLE_ON_OFF);
+    let sr = ui.setting_row(c, right, "Frame limit", look, State::NONE);
+    ui.choice(c, sr.control, &["None", "60", "144", "240", "300"], Some(2), None, State::NONE);
     let (_, v) = ui.row(c, right, "Field of view", None, 2.9, State::focused(true));
     ui.slider(c, v, 0.6, Some(1.0), "84", 15.0, State::focused(true));
     let (_, v) = ui.row(c, right, "Brightness (gamma)", None, 2.9, State { error: true, ..State::NONE });
@@ -711,7 +713,7 @@ fn controls(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets
 fn fields(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<chimera_ui::AmbientMaterial>, c: &mut Commands) {
     use chimera_ui::{
         UiStyle,
-        controls::{Hover, State, StepperRange, TextCursor, Typing, Ui},
+        controls::{State, StepperRange, TextCursor, Typing, Ui},
     };
     let ui = Ui::new(t, kit, u);
     let root = c
@@ -802,14 +804,14 @@ fn fields(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<c
 
     let d = col(c, 27.0);
     ui.section(c, d, "Toggle", Some("off, on, yes/no, focus, disabled"));
-    let r = ui.boxed(c, d, UiStyle { gap: Some(0.5), ..UiStyle::row() });
-    ui.toggle(c, r, false, State::NONE);
-    ui.toggle(c, r, true, State::NONE);
-    ui.toggle_words(c, r, false, State::NONE, chimera_ui::controls::TOGGLE_YES_NO);
-    ui.toggle_words(c, r, true, State::NONE, chimera_ui::controls::TOGGLE_YES_NO);
-    ui.toggle(c, r, true, State::focused(true));
-    ui.toggle(c, r, false, State::focused(true));
-    ui.toggle(c, r, true, State { disabled: true, ..State::NONE });
+    // The kit's one toggle (`big_toggle`, the form's column wide).
+    let r = ui.boxed(c, d, UiStyle { gap: Some(0.5), ..UiStyle::column() });
+    let on_off = chimera_ui::controls::TOGGLE_ON_OFF;
+    ui.big_toggle(c, r, false, State::NONE, None, on_off);
+    ui.big_toggle(c, r, true, State::NONE, None, on_off);
+    ui.big_toggle(c, r, true, State::NONE, None, chimera_ui::controls::TOGGLE_YES_NO);
+    ui.big_toggle(c, r, true, State::focused(true), None, on_off);
+    ui.big_toggle(c, r, true, State { disabled: true, ..State::NONE }, None, on_off);
     ui.section(c, d, "Slider", Some("rest, focus, typing the value, disabled"));
     let r = cell(c, d, "Rest");
     ui.slider(c, r, 0.45, Some(0.6), "84", 17.0, State::NONE);
@@ -879,7 +881,6 @@ fn fields(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<c
     ui.dropdown(c, r, &["Party playlist", "None"], 0, None, 12.0, State { disabled: true, ..State::NONE });
     let r = cell(c, e, "Open");
     ui.dropdown(c, r, &["Party playlist", "The game's loop", "None"], 0, Some(1), 12.0, State::focused(true));
-    let _ = Hover { base: Color::NONE, over: Color::NONE };
 }
 
 /// A settings form's pieces (`chimera_ui::form`) in their states: badges,

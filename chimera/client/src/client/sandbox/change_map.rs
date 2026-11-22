@@ -30,7 +30,7 @@ use bevy::{
         keyboard::{Key, KeyboardInput},
     },
     prelude::*,
-    ui::{DeprecatedInteraction as Interaction, FocusPolicy},
+    ui::DeprecatedInteraction as Interaction,
 };
 use chimera_ui::{
     Role, Tone, UiParityId, UiStyle, VNav, VirtualLists,
@@ -263,8 +263,7 @@ fn draw(
             UiStyle { gap: Some(0.9), pad: Some([1.8, m, 1.2, m].into()), ..UiStyle::column() }.abs([Some(0.0), Some(0.0), Some(0.0), Some(0.0)]).bg_a(Tone::Ink, 0.97),
             Node::default(),
             GlobalZIndex(super::change_gun::Z),
-            FocusPolicy::Block,
-            Interaction::default(),
+            chimera_ui::controls::catch_pointer(),
             ChangeMapView,
             UiParityId::new("map.view"),
             Name::new("Change map"),

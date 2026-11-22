@@ -283,21 +283,92 @@ pub enum Widget {
 /// fits the control column segmented, else a dropdown
 /// (`chimera_ui::form::fits_segmented`, the user's review 2026-11-21).
 pub fn widget(s: &Setting) -> Widget {
-    match &s.pick {
+    widget_of(&s.pick, s.widget.as_deref())
+}
+
+/// `widget` for a pick (`forced`: data's `widget = "dropdown"`): Off/On or
+/// No/Yes a toggle, a choice set that fits the control column segmented,
+/// else a dropdown; a range a slider. One rule for every settings page
+/// (Settings, the Escape menu's host settings, Host).
+pub fn widget_of(pick: &Pick, forced: Option<&str>) -> Widget {
+    match pick {
         Pick::Range { min, max, step } => Widget::Slider { min: *min, max: *max, step: *step },
         Pick::Choices(c) => {
             let labels: Vec<String> = c.iter().map(|(_, l)| l.to_ascii_lowercase()).collect();
             let words: Vec<&str> = c.iter().map(|(_, l)| l.as_str()).collect();
             let sizes = chimera_ui::form::FormSizes::of(&Theme::shell_default());
-            if labels == ["off", "on"] && s.widget.is_none() {
+            if (labels == ["off", "on"] || labels == ["no", "yes"]) && forced.is_none() {
                 Widget::Toggle
-            } else if s.widget.as_deref() != Some("dropdown") && chimera_ui::form::fits_segmented(&sizes, &words, sizes.control_w) {
+            } else if forced != Some("dropdown") && chimera_ui::form::fits_segmented(&sizes, &words, sizes.control_w) {
                 Widget::Segmented
             } else {
                 Widget::Dropdown
             }
         }
     }
+}
+
+/// What a press on a setting's control asks (`pick_control`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PickPress {
+    /// A step by `dir` (a toggle's flip: 1).
+    Step(i8),
+    /// The choice at this index.
+    Option(usize),
+    /// The dropdown's field: open or close its list.
+    Open,
+}
+
+/// A choice or range setting's control in a setting row's column
+/// (`chimera_ui::form::setting_row`): the toggle, the segmented choice or
+/// the dropdown (`widget_of`), a range's stepper (a page without the
+/// slider's drag: Settings draws its own slider). The row has the focus
+/// (one marker a row): the control none. `open`: the dropdown's list open
+/// at its active option; `slide`: a toggle just flipped. Returns each
+/// pressable part with what it asks (give it its action).
+#[allow(clippy::too_many_arguments)]
+pub fn pick_control(
+    c: &mut Commands,
+    ui: &Ui,
+    col: Entity,
+    pick: &Pick,
+    forced: Option<&str>,
+    shown: &str,
+    v: &str,
+    open: Option<usize>,
+    slide: Option<controls::ToggleSlide>,
+) -> Vec<(PickPress, Entity)> {
+    let vst = State::NONE;
+    let mut out = Vec::new();
+    match (widget_of(pick, forced), pick) {
+        // One choice: its words, nothing to pick.
+        (_, Pick::Choices(ch)) if ch.len() == 1 => {
+            ui.sentence(c, col, controls::TYPED, Tone::Fg2, &ch[0].1);
+        }
+        (Widget::Toggle, Pick::Choices(ch)) => {
+            let on = ch.get(1).is_some_and(|(cv, _)| host::same_value(cv, v));
+            let tg = ui.big_toggle(c, col, on, vst, slide, (ch[0].1.as_str(), ch[1].1.as_str()));
+            out.push((PickPress::Step(1), tg));
+        }
+        (_, Pick::Choices(ch)) => {
+            let labels: Vec<&str> = ch.iter().map(|(_, l)| l.as_str()).collect();
+            let sel = ch.iter().position(|(cv, _)| host::same_value(cv, v));
+            match ui.choice(c, col, &labels, sel, open, vst) {
+                chimera_ui::form::Choice::Segmented(opts) => {
+                    out.extend(opts.into_iter().enumerate().map(|(k, e)| (PickPress::Option(k), e)));
+                }
+                chimera_ui::form::Choice::Dropdown { field, options } => {
+                    out.push((PickPress::Open, field));
+                    out.extend(options.into_iter().enumerate().map(|(k, e)| (PickPress::Option(k), e)));
+                }
+            }
+        }
+        (_, Pick::Range { .. }) => {
+            let (minus, plus) = ui.stepper(c, col, shown, pick.stepper_range(v), vst);
+            out.extend([(PickPress::Step(-1), minus), (PickPress::Step(1), plus)]);
+        }
+    }
+    out
 }
 
 /// The pages' names.
@@ -2173,19 +2244,8 @@ fn game_rail(c: &mut Commands, ui: &Ui, cols: Entity, d: &Draw) -> Entity {
     ui.text(c, hd, Role::Mono, 0.52, Tone::Fg3, "Games");
     for (i, g) in games().iter().enumerate() {
         let sel = i == s.game;
-        let (base, over) = if sel { (ui.color(Tone::Fg, 1.0), ui.color(Tone::Fg, 1.0)) } else { (Color::NONE, ui.color(Tone::Fg, 0.05)) };
-        let item = c
-            .spawn((
-                UiStyle { h: Some(2.6), gap: Some(0.6), pad: Some([0.0, 0.8, 0.0, 1.1].into()), justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() },
-                Node::default(),
-                BackgroundColor(base),
-                controls::Hover { base, over },
-                controls::clickable(),
-                SettingsAction::Game(i),
-                crate::ui_cues::CueItem(format!("settings:game:{i}")),
-                ChildOf(rail),
-            ))
-            .id();
+        let item = ui.item(c, rail, UiStyle { h: Some(2.6), gap: Some(0.6), pad: Some([0.0, 0.8, 0.0, 1.1].into()), justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() }, State::NONE, sel);
+        c.entity(item).insert((SettingsAction::Game(i), crate::ui_cues::CueItem(format!("settings:game:{i}"))));
         let t = ui.text(c, item, Role::DisplayRegular, 0.74, if sel { Tone::Ink } else { Tone::Fg2 }, &g.name);
         if !sel {
             c.entity(t).insert(controls::HoverText { base: Tone::Fg2, over: Tone::Fg });
@@ -2265,7 +2325,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                 (None, true) => Some("not in yet".to_string()),
                 (None, false) => None,
             };
-            let look = RowLook { note: note.as_deref(), ours: game.is_none() && crate::controls::OURS.contains(command), changed: resettable, min_h: t.layout(L, "bind_h") };
+            let look = RowLook { note: note.as_deref(), ours: game.is_none() && crate::controls::OURS.contains(command), changed: resettable, min_h: t.layout(L, "bind_h"), ..RowLook::default() };
             let sr = ui.setting_row(c, list, label, look, State { focus, changed: changed || resettable, disabled: false, error: false });
             c.entity(sr.row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
             let keys = d.keys.get(i).cloned().unwrap_or_default();
@@ -2282,7 +2342,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
             // display change waiting.
             let changed = s.pending.contains_key(&set.cvar) || d.differs.contains(&set.cvar) || resettable;
             let st = State { focus, changed, ..State::NONE };
-            let look = RowLook { note: *note, ours: set.ours, changed: resettable, min_h: t.layout(L, "row_h") };
+            let look = RowLook { note: *note, ours: set.ours, changed: resettable, min_h: t.layout(L, "row_h"), ..RowLook::default() };
             let sr = ui.setting_row(c, list, &set.label, look, st);
             let (row, vl) = (sr.row, sr.control);
             c.entity(row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
@@ -2312,37 +2372,19 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                         ui.sentence(c, n, NOTE, Tone::Fg2, why);
                     }
                 }
-                (Widget::Toggle, Pick::Choices(ch)) => {
-                    let on = ch.get(1).is_some_and(|(cv, _)| host::same_value(cv, &v));
-                    let slide = s.flip.filter(|(r, _)| *r == i).map(|(_, since)| controls::ToggleSlide { since, now: d.now, motion: if d.reduced { chimera_ui::motion::Motion::new(0.0) } else { d.motion } });
-                    let words = (ch[0].1.as_str(), ch[1].1.as_str());
-                    let tg = ui.big_toggle(c, vl, on, vst, slide, words);
-                    c.entity(tg).insert(SettingsAction::Step { row: i, dir: 1 });
-                }
-                (_, Pick::Choices(ch)) => {
-                    let labels: Vec<&str> = ch.iter().map(|(_, l)| l.as_str()).collect();
-                    let sel = ch.iter().position(|(cv, _)| host::same_value(cv, &v));
-                    let open = s.open_list.filter(|(r, _)| *r == i).map(|(_, a)| a);
-                    match widget(set) {
-                        Widget::Segmented => {
-                            let f = ui.form();
-                            for (k, e) in ui.segmented_sized(c, vl, &labels, sel, &[], vst, Some((f.control_w, f.control_h))).into_iter().enumerate() {
-                                c.entity(e).insert(SettingsAction::Pick { row: i, option: k });
-                            }
-                        }
-                        _ => {
-                            let (f, opts) = ui.dropdown(c, vl, &labels, sel.unwrap_or(0), open, fw, vst);
-                            c.entity(f).insert(SettingsAction::OpenList(i));
-                            for (k, e) in opts.into_iter().enumerate() {
-                                c.entity(e).insert((SettingsAction::Pick { row: i, option: k }, crate::ui_cues::CueItem(format!("settings:list:{i}:{k}"))));
-                            }
-                        }
-                    }
-                }
                 _ => {
-                    let (minus, plus) = ui.stepper(c, vl, &set.shown(&v), set.stepper_range(&v), vst);
-                    c.entity(minus).insert(SettingsAction::Step { row: i, dir: -1 });
-                    c.entity(plus).insert(SettingsAction::Step { row: i, dir: 1 });
+                    let slide = s.flip.filter(|(r, _)| *r == i).map(|(_, since)| controls::ToggleSlide { since, now: d.now, motion: if d.reduced { chimera_ui::motion::Motion::new(0.0) } else { d.motion } });
+                    let open = s.open_list.filter(|(r, _)| *r == i).map(|(_, a)| a);
+                    let list_open = open.is_some();
+                    for (p, e) in pick_control(c, ui, vl, &set.pick, set.widget.as_deref(), &set.shown(&v), &v, open, slide) {
+                        match p {
+                            PickPress::Step(dir) => c.entity(e).insert(SettingsAction::Step { row: i, dir }),
+                            PickPress::Open => c.entity(e).insert(SettingsAction::OpenList(i)),
+                            // A list's options sound as they're hovered.
+                            PickPress::Option(option) if list_open => c.entity(e).insert((SettingsAction::Pick { row: i, option }, crate::ui_cues::CueItem(format!("settings:list:{i}:{option}")))),
+                            PickPress::Option(option) => c.entity(e).insert(SettingsAction::Pick { row: i, option }),
+                        };
+                    }
                 }
             }
             Some(row)

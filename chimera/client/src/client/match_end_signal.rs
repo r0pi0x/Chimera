@@ -686,6 +686,7 @@ fn build_static(
     let hair = look.hair();
     let pointer = state.pointer.as_ref().map(|(_, h)| h.clone()).unwrap_or_default();
     let lay = EndLayout::of(&look);
+    let ui = chimera_ui::controls::Ui { theme: &look.theme, kit: look.fonts.as_deref(), units: *look.units };
     let frame = commands
         .spawn((
             StaticPart,
@@ -710,25 +711,6 @@ fn build_static(
                 ));
             });
         }
-        // Leave, top left: an arrow and the word.
-        f.spawn((
-            LeaveButton,
-            super::widgets::clickable(),
-            Node {
-                align_items: AlignItems::Center,
-                column_gap: look.val(0.55),
-                padding: UiRect::new(look.val(0.7), look.val(0.8), look.val(0.45), look.val(0.45)),
-                ..abs(&look, lay.pad, lay.leave_top, None, None)
-            },
-            BackgroundColor(look.theme.tone_a(Tone::Ink, 0.9)),
-            Outline::new(px(hair), px(-hair), look.tone(Tone::Fg3)),
-            enter(&look, came_up, 0.2, 0.0, 0.0),
-            UiParityId::new("end.vote.leave"),
-        ))
-        .with_children(|t| {
-            signal::icons::spawn(t, &look, "arrow_left", look.px(0.7), look.tone(Tone::Fg));
-            t.spawn((look.tracked(Role::Mono, 0.6, 0.06, look.tone(Tone::Fg), "Leave"), Pickable::IGNORE));
-        });
         // The details line, top centre: map, players, rungs, time.
         f.spawn((
             DetailsLine,
@@ -865,7 +847,9 @@ fn build_static(
                 let h = if row.winner { lay.win_h } else { row_h };
                 let mut r = s.spawn((
                     StandingsRow { index: i, you: row.local },
-                    super::widgets::clickable(),
+                    // Its hover and pin are the selection's fills
+                    // (`decorate_rows`: the climb previews the hovered).
+                    chimera_ui::controls::own_states(),
                     Node { height: look.val(h), border: UiRect::bottom(px(hair)), flex_shrink: 0.0, ..row_node() },
                     BorderColor::all(look.tone(Tone::Fg5)),
                     BackgroundColor(Color::NONE),
@@ -885,6 +869,11 @@ fn build_static(
             }
         });
     });
+    // Leave, top left: the kit's secondary button with the arrow (its
+    // hover and press states), in a place that fades in.
+    let at = commands.spawn((StaticPart, Pickable::IGNORE, abs(&look, lay.pad, lay.leave_top, None, None), enter(&look, came_up, 0.2, 0.0, 0.0), ChildOf(frame))).id();
+    let leave = ui.button_icon(&mut commands, at, chimera_ui::controls::Kind::Secondary, Some("arrow_left"), "Leave", None, chimera_ui::controls::BUTTON_H * 0.8, chimera_ui::controls::State::NONE);
+    commands.entity(leave).insert((LeaveButton, UiParityId::new("end.vote.leave")));
 }
 
 /// `n` of `total` as the standings show a rung (`07/14`; the rung alone
@@ -1792,6 +1781,7 @@ fn build_vote(
     let hair = look.hair();
     let tan = look.theme.tan();
     let lay = EndLayout::of(&look);
+    let ui = chimera_ui::controls::Ui { theme: &look.theme, kit: look.fonts.as_deref(), units: *look.units };
     let n = 40;
     commands
         .spawn((VotePart, ChildOf(*root), Pickable::IGNORE, Node { width: look.val(100.0), height: look.val(56.25), position_type: PositionType::Absolute, align_self: AlignSelf::Center, ..default() }))
@@ -1832,9 +1822,9 @@ fn build_vote(
                         let mut card = cards.spawn((
                             VoteCard { index: i, mine, locked, won },
                             super::match_end::VoteButton(i),
-                            super::widgets::clickable(),
+                            // The kit's item: its fill and hover.
+                            ui.item_bundle(Some((Tone::Ink, 0.75)), chimera_ui::controls::State { disabled: locked, ..chimera_ui::controls::State::NONE }, false),
                             Node { width: look.val((lay.mid_w - CARD_GAP * 3.0 - 0.8) / 4.0), height: look.val(lay.thumb_h + CARD_BODY), flex_shrink: 0.0, flex_direction: FlexDirection::Column, overflow: Overflow::clip(), ..default() },
-                            BackgroundColor(look.theme.tone_a(Tone::Ink, 0.75)),
                             Outline::new(px(w), px(-w), line),
                             UiParityId(p.clone()),
                         ));

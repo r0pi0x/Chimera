@@ -63,7 +63,7 @@ use chimera_sim::minigame::{
 };
 use chimera_ui::{
     Role, Theme, Tone, UiSlant, UiStyle, VCursor, VHit, VNav, VSection, VShape, VSlot, VirtualList, VirtualLists,
-    controls::{Kind, State, StepperRange, ToggleSlide, Ui, clickable},
+    controls::{Kind, State, StepperRange, ToggleSlide, Ui},
     form::BadgeKind,
     text_edit::Caret,
 };
@@ -1344,21 +1344,8 @@ fn strip(c: &mut Commands, ui: &Ui, plate: Entity, listing: &GunsListing, pv: &P
 /// A rules section's head: the chevron, the title, its summary, a badge.
 #[allow(clippy::too_many_arguments)]
 fn head(c: &mut Commands, ui: &Ui, parent: Entity, key: &str, title: &str, note: &str, badge: Option<(String, BadgeKind)>, folded: bool, focus: bool, sub: bool) {
-    let base = if focus { ui.color(Tone::Fg, 0.06) } else { Color::NONE };
-    let h = c
-        .spawn((
-            UiStyle { gap: Some(0.6), pad: Some([0.0, 1.0, 0.0, if sub { 1.6 } else { 0.6 }].into()), h: Some(if sub { 2.0 } else { 2.4 }), shrink: Some(0.0), ..UiStyle::row() },
-            Node::default(),
-            BackgroundColor(base),
-            chimera_ui::controls::Hover { base, over: ui.color(Tone::Fg, 0.05) },
-            clickable(),
-            GunsAct::Fold(key.to_string()),
-            ChildOf(parent),
-        ))
-        .id();
-    if focus {
-        ui.focus_bar(c, h, 0.24);
-    }
+    let h = ui.item(c, parent, UiStyle { gap: Some(0.6), pad: Some([0.0, 1.0, 0.0, if sub { 1.6 } else { 0.6 }].into()), h: Some(if sub { 2.0 } else { 2.4 }), shrink: Some(0.0), ..UiStyle::row() }, State::focused(focus), false);
+    c.entity(h).insert(GunsAct::Fold(key.to_string()));
     ui.chevron(c, h, Tone::Fg2, !folded);
     if !sub {
         ui.mark(c, h, Tone::Acc, 0.42, 0.7);
@@ -1374,15 +1361,14 @@ fn head(c: &mut Commands, ui: &Ui, parent: Entity, key: &str, title: &str, note:
 /// A rule row: the label and note, the control column, the reset key.
 #[allow(clippy::too_many_arguments)]
 fn rule_row(c: &mut Commands, ui: &Ui, parent: Entity, label: &str, note: &str, st: State, changed: Option<RowKey>, ctl_w: f32) -> Entity {
-    let (row, _lb, vl) = ui.row_parts(c, parent, label, Some(note), 2.6, st);
-    let ctl = ui.boxed(c, vl, UiStyle { w: Some(ctl_w), gap: Some(0.4), shrink: Some(0.0), justify: Some(JustifyContent::FlexEnd), ..UiStyle::row() });
-    let state = ui.boxed(c, vl, UiStyle { w: Some(ui.form().state_w), shrink: Some(0.0), justify: Some(JustifyContent::FlexEnd), ..UiStyle::row() });
-    if let Some(k) = changed {
-        let r = ui.reset_key(c, state);
+    // The kit's setting row, its column as wide as this dialog's rules
+    // column allows (the form's is wider).
+    let look = chimera_ui::form::RowLook { note: Some(note), changed: changed.is_some(), min_h: 2.6, control_w: ctl_w, ..Default::default() };
+    let sr = ui.setting_row(c, parent, label, look, st);
+    if let (Some(k), Some(r)) = (changed, sr.reset) {
         c.entity(r).insert(GunsAct::ResetRow(k));
     }
-    let _ = row;
-    ctl
+    sr.control
 }
 
 /// The rules column (module doc).
@@ -1580,15 +1566,8 @@ pub fn bind_cards(
             chimera_ui::vlist::VLine::Header(sec) => {
                 let Some((_, title, items)) = sections.get(sec) else { continue };
                 let dealt = items.iter().filter(|i| decided(&listing.families[**i], &w.rules).dealt()).count();
-                let h = c
-                    .spawn((
-                        UiStyle { gap: Some(0.6), pad: Some([0.0, 0.6].into()), grow: Some(1.0), ..UiStyle::row() },
-                        Node::default(),
-                        clickable(),
-                        VHit { slot, col: None },
-                        ChildOf(slot),
-                    ))
-                    .id();
+                let h = ui.item(&mut c, slot, UiStyle { gap: Some(0.6), pad: Some([0.0, 0.6].into()), grow: Some(1.0), ..UiStyle::row() }, State::NONE, false);
+                c.entity(h).insert(VHit { slot, col: None });
                 ui.chevron(&mut c, h, Tone::Fg2, !st.is_folded(sec));
                 ui.text(&mut c, h, Role::DisplayBold, 0.72, Tone::Fg, title);
                 ui.text(&mut c, h, Role::Mono, 0.46, Tone::Fg3, &format!("{dealt} of {} in", items.len()));
@@ -1617,20 +1596,11 @@ fn card(c: &mut Commands, ui: &Ui, parent: Entity, f: &GunFamily, index: usize, 
         Decided::Banned => (Tone::Threat, 0.9, "Banned", Tone::Threat, Tone::Fg3),
         Decided::Allowed => (Tone::Good, 0.9, "Allowed", Tone::Good, Tone::Fg),
     };
-    let base = ui.color(Tone::Fg, if cursor { 0.1 } else if d.dealt() { 0.05 } else { 0.015 });
-    let card = c
-        .spawn((
-            UiStyle { w: Some(w), h: Some(4.4), gap: Some(0.2), pad: Some([0.45, 0.55].into()), shrink: Some(0.0), justify: Some(JustifyContent::SpaceBetween), ..UiStyle::column() }
-                .outline(if cursor { Tone::Acc } else { edge }, ea),
-            Node::default(),
-            BackgroundColor(base),
-            chimera_ui::controls::Hover { base, over: ui.color(Tone::Fg, 0.09) },
-            clickable(),
-            GunsAct::Card(index),
-            GunCard(index),
-            ChildOf(parent),
-        ))
-        .id();
+    let style = UiStyle { w: Some(w), h: Some(4.4), gap: Some(0.2), pad: Some([0.45, 0.55].into()), shrink: Some(0.0), justify: Some(JustifyContent::SpaceBetween), ..UiStyle::column() }
+        .outline(if cursor { Tone::Acc } else { edge }, ea)
+        .bg_a(Tone::Fg, if cursor { 0.1 } else if d.dealt() { 0.05 } else { 0.015 });
+    let card = ui.item(c, parent, style, State::NONE, false);
+    c.entity(card).insert((GunsAct::Card(index), GunCard(index)));
     let top = ui.boxed(c, card, UiStyle { justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() });
     ui.text(c, top, Role::Mono, 0.4, Tone::Fg3, class_name(f.class));
     ui.text(c, top, Role::Mono, 0.42, word_tone, word);
@@ -1690,7 +1660,7 @@ pub fn page_field(c: &mut Commands, ui: &Ui, vl: Entity, picker: &GunsPicker, ru
         Some(_) => (words.iter().map(String::as_str).collect(), all.iter().position(|p| p.name == label).unwrap_or(0)),
         None => (vec![label.as_str()], 0),
     };
-    let (field, options) = ui.dropdown(c, vl, &opts, sel, picker.page_menu, 14.0, st);
+    let (field, options) = ui.dropdown(c, vl, &opts, sel, picker.page_menu, ui.form().control_w, st);
     c.entity(field).insert(GunsAct::PageMenu);
     for (i, o) in options.into_iter().enumerate() {
         c.entity(o).insert(GunsAct::PagePick(i));

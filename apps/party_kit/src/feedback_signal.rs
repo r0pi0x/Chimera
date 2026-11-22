@@ -176,9 +176,10 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
     ui.boxed(c, top, UiStyle::row().grow(1.0));
     let cats = [Category::Bug, Category::Feedback];
     let sel = cats.iter().position(|k| *k == f.category);
-    let seg = ui.segmented(c, top, &["Bug", "Feedback"], sel, State::NONE);
-    for (e, k) in seg.into_iter().zip(cats) {
-        c.entity(e).insert(FeedbackAction::Category(k));
+    if let chimera_ui::form::Choice::Segmented(seg) = ui.choice(c, top, &["Bug", "Feedback"], sel, None, State::NONE) {
+        for (e, k) in seg.into_iter().zip(cats) {
+            c.entity(e).insert(FeedbackAction::Category(k));
+        }
     }
     ui.kbd(c, top, "Tab", 0.5, Tone::Fg3);
     // The text area: several lines, the caret at the end (the whole text
@@ -210,22 +211,13 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
     }
     let col = ui.boxed(c, shot, UiStyle { gap: Some(0.6), ..UiStyle::column() });
     let trow = ui.boxed(c, col, UiStyle { gap: Some(0.9), ..UiStyle::row() });
-    let tg = ui.toggle_words(c, trow, f.include_screenshot && f.thumb.is_some(), State { disabled: f.thumb.is_none(), ..State::NONE }, chimera_ui::controls::TOGGLE_YES_NO);
+    let tg = ui.big_toggle(c, trow, f.include_screenshot && f.thumb.is_some(), State { disabled: f.thumb.is_none(), ..State::NONE }, None, chimera_ui::controls::TOGGLE_YES_NO);
     c.entity(tg).insert(FeedbackAction::ToggleScreenshot);
     ui.text(c, trow, Role::DisplayRegular, 0.72, Tone::Fg, "Include screenshot");
     ui.sentence(c, col, NOTE, Tone::Fg3, "The frame when you pressed the key");
     // What's sent, folded.
-    let head = c
-        .spawn((
-            UiStyle { gap: Some(0.6), h: Some(1.7), ..UiStyle::row() },
-            Node::default(),
-            BackgroundColor(Color::NONE),
-            chimera_ui::controls::Hover { base: Color::NONE, over: ui.color(Tone::Fg, 0.06) },
-            chimera_ui::controls::clickable(),
-            FeedbackAction::ToggleDetails,
-            ChildOf(m),
-        ))
-        .id();
+    let head = ui.item(c, m, UiStyle { gap: Some(0.6), h: Some(1.7), ..UiStyle::row() }, State::NONE, false);
+    c.entity(head).insert(FeedbackAction::ToggleDetails);
     ui.text(c, head, Role::Mono, 0.6, Tone::Fg2, if f.details_open { "-" } else { "+" });
     ui.text(c, head, Role::Mono, 0.56, Tone::Fg2, "What's sent");
     if f.details_open {

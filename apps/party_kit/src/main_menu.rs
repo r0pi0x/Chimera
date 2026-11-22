@@ -861,6 +861,11 @@ pub enum MainMenuAction {
         index: usize,
         option: usize,
     },
+    /// A Host row's dropdown (`signal_pages::SignalPages::open_list`, its
+    /// page line): open its list, or close it.
+    OpenList(usize),
+    /// Close the open dropdown (Esc).
+    CloseList,
     /// Join a server of the LAN list (`signal_pages::LanList`'s index).
     Server(usize),
     /// Scan the LAN again (and ask the hub's list again).
@@ -1350,11 +1355,12 @@ fn typing(
         Option<Res<crate::loading_signal::LoadingSignal>>,
         Option<Res<crate::guns_picker::GunsPicker>>,
     ),
-    (mut clipboard, party, onboarding, account): (
+    (mut clipboard, party, onboarding, account, pages): (
         Local<chimera_ui::clipboard::Clipboard>,
         Option<Res<crate::party_signal::PartyPanel>>,
         Option<Res<crate::onboarding::Onboarding>>,
         Option<Res<crate::account_page::AccountPage>>,
+        Option<Res<crate::signal_pages::SignalPages>>,
     ),
     shared_clipboard: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
@@ -1396,6 +1402,11 @@ fn typing(
             }
             if picker.as_ref().is_some_and(|p| p.took_keys) || guns.as_ref().is_some_and(|p| p.took_keys) {
                 // The Maps or Guns picker's Cancel.
+                continue;
+            }
+            if signal_page && pages.as_ref().is_some_and(|p| p.open_list.is_some()) {
+                // Host's open dropdown closes first.
+                out.write(MainMenuAction::CloseList);
                 continue;
             }
             if loading.as_ref().is_some_and(|l| l.esc_taken) {
@@ -1630,6 +1641,9 @@ fn act_one(world: &mut World, action: MainMenuAction) {
             step_cvar(world, &s, dir);
         }
         A::PlayPick { row, option } => {
+            if let Some(mut p) = world.get_resource_mut::<crate::signal_pages::SignalPages>() {
+                p.open_list = None;
+            }
             let rows = world.resource::<MenuData>().play.clone();
             if let Some(PlayRow { kind: PlayKind::Pick(Pick::Choices(c)), .. }) = rows.get(row)
                 && let Some((v, _)) = c.get(option)
@@ -1638,7 +1652,33 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                 *slot = v.clone();
             }
         }
+        A::OpenList(line) => {
+            let options = match crate::signal_pages::lines_now(world).get(line) {
+                Some(crate::signal_pages::Line::Game(g)) => game_settings().get(*g).map(|s| (s.pick.clone(), menu.values.get(&s.cvar).cloned().unwrap_or_default())),
+                Some(crate::signal_pages::Line::Play(r)) => world.resource::<MenuData>().play.get(*r).and_then(|row| match &row.kind {
+                    PlayKind::Pick(p) => Some((p.clone(), menu.play.get(*r).cloned().unwrap_or_default())),
+                    _ => None,
+                }),
+                _ => None,
+            };
+            if let Some(mut p) = world.get_resource_mut::<crate::signal_pages::SignalPages>() {
+                p.open_list = match (p.open_list, options) {
+                    (Some((l, _)), _) if l == line => None,
+                    (_, Some((Pick::Choices(c), v))) => Some((line, c.iter().position(|(cv, _)| crate::host::same_value(cv, &v)).unwrap_or(0))),
+                    _ => None,
+                };
+                p.focus = line;
+            }
+        }
+        A::CloseList => {
+            if let Some(mut p) = world.get_resource_mut::<crate::signal_pages::SignalPages>() {
+                p.open_list = None;
+            }
+        }
         A::GamePick { index, option } => {
+            if let Some(mut p) = world.get_resource_mut::<crate::signal_pages::SignalPages>() {
+                p.open_list = None;
+            }
             let Some(s) = game_settings().get(index).cloned() else {
                 return;
             };

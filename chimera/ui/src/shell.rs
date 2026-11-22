@@ -48,14 +48,14 @@
 use bevy::{
     input::{ButtonState, keyboard::{Key, KeyboardInput}},
     prelude::*,
-    ui::{DeprecatedInteraction as Interaction, FocusPolicy},
+    ui::DeprecatedInteraction as Interaction,
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 
 use crate::{
     IconImages, Role, Theme, Tone, UiClock, UiStyle, UiUnits,
     avatar::{self, AvatarMarks, EdgeState, Face},
-    controls::{Hover, Ui, clickable},
+    controls::{Hover, Ui, pressable},
 };
 
 /// The shell's numbers (`[layout.shell]`, cq; module doc).
@@ -260,7 +260,7 @@ pub fn bar(ui: &Ui, c: &mut Commands, frame: Entity, images: &mut Assets<Image>,
                 Node::default(),
                 BackgroundColor(Color::NONE),
                 ShellBack,
-                clickable(),
+                pressable(),
                 Name::new("shell crumb"),
                 ChildOf(left),
             ))
@@ -302,8 +302,7 @@ pub fn bar(ui: &Ui, c: &mut Commands, frame: Entity, images: &mut Assets<Image>,
             .spawn((
                 Node { height: ui.units.val(l.tile), column_gap: Val::Px(gap2), flex_direction: FlexDirection::Row, ..default() },
                 Tip::new(&m.name).note(if m.marks.you { "Profile coming soon" } else { "Party" }),
-                Interaction::default(),
-                FocusPolicy::Block,
+                pressable(),
                 ChildOf(party),
             ))
             .id();
@@ -359,9 +358,9 @@ fn tile(ui: &Ui, c: &mut Commands, parent: Entity, images: &mut Assets<Image>, i
         ))
         .id();
     if disabled {
-        c.entity(e).insert((Disabled, Interaction::default(), FocusPolicy::Block));
+        c.entity(e).insert((Disabled, pressable()));
     } else {
-        c.entity(e).insert((Hover { base, over }, clickable()));
+        c.entity(e).insert((Hover { base, over }, pressable()));
     }
     if divider > 0 {
         c.spawn((

@@ -98,12 +98,12 @@ use bevy::{
         keyboard::{Key, KeyboardInput},
     },
     prelude::*,
-    ui::{DeprecatedInteraction as Interaction, FocusPolicy, RelativeCursorPosition},
+    ui::{DeprecatedInteraction as Interaction, RelativeCursorPosition},
     window::PrimaryWindow,
 };
 use chimera_ui::{
     Role, Theme, Tone, UiParityId, UiStyle, VCursor, VHit, VListEvent, VNav, VSlot, VirtualLists,
-    controls::{Ui, clickable},
+    controls::{State, Ui},
     picker::{self, PickerAction, PickerFamily, PickerFrame, PickerGame, PickerGroup, PickerId, PickerItem, PickerLook, PickerMode, PickerPart, PickerSlot, PickerState, Pickers},
     vlist::VLine,
 };
@@ -738,8 +738,7 @@ fn open_close(
             UiStyle { gap: Some(0.9), pad: Some([1.8, m, 1.2, m].into()), ..UiStyle::column() }.abs([Some(0.0), Some(0.0), Some(0.0), Some(0.0)]).bg_a(Tone::Ink, 0.97),
             Node::default(),
             GlobalZIndex(Z),
-            FocusPolicy::Block,
-            Interaction::default(),
+            chimera_ui::controls::catch_pointer(),
             UiParityId::new("gun.view"),
             Name::new("Change gun"),
         ))
@@ -931,11 +930,12 @@ fn games_column(c: &mut Commands, ui: &Ui, parent: Entity, guns: &[SandboxGun], 
     let all = tiles(&|_| true);
     let row = |c: &mut Commands, name: &str, count: usize, sel: bool, sub: Option<String>, new: bool, action: GunAction| {
         let tone = if sel { Tone::Ink } else if count == 0 { Tone::Fg4 } else { Tone::Fg2 };
-        let mut st = UiStyle { gap: Some(0.3), pad: Some([0.45, 0.7, 0.45, 0.7].into()), min_w: None, ..UiStyle::column() };
-        if sel {
-            st = st.bg(Tone::Fg);
-        }
-        let r = c.spawn((st, Node { min_height: ui.units.val(2.0), justify_content: JustifyContent::Center, ..default() }, action, clickable(), ChildOf(parent))).id();
+        let st = UiStyle { gap: Some(0.3), pad: Some([0.45, 0.7, 0.45, 0.7].into()), min_w: None, ..UiStyle::column() };
+        let r = {
+            let e = ui.item(c, parent, st, State::NONE, sel);
+            c.entity(e).insert((Node { min_height: ui.units.val(2.0), justify_content: JustifyContent::Center, ..default() }, action));
+            e
+        };
         let line = ui.boxed(c, r, UiStyle { gap: Some(0.35), align: Some(AlignItems::Center), ..UiStyle::row() });
         ui.text(c, line, Role::DisplayRegular, 0.7, tone, name);
         if new {
@@ -992,14 +992,24 @@ fn games_column(c: &mut Commands, ui: &Ui, parent: Entity, guns: &[SandboxGun], 
             let ticked = s.view.facets.get(id);
             for fc in facets {
                 let on = ticked.is_some_and(|t| t.contains(&fc));
-                let t = tick_tag(c, ui, chips, &fc, on);
-                c.entity(t).insert((GunAction::Facet(id.to_string(), fc.clone()), clickable()));
+                let t = press_tag(c, ui, chips, &fc, on);
+                c.entity(t).insert(GunAction::Facet(id.to_string(), fc.clone()));
             }
         }
     }
 }
 
 /// A tick tag: Mono .46, outlined; on, a white fill.
+/// `tick_tag` that's pressed (a facet, a tag, the body to play as): the
+/// kit's item, ticked the white (selected) fill.
+fn press_tag(c: &mut Commands, ui: &Ui, parent: Entity, text: &str, on: bool) -> Entity {
+    let s = UiStyle { pad: Some([0.26, 0.4, 0.22, 0.4].into()), shrink: Some(0.0), ..UiStyle::row() };
+    let s = if on { s } else { s.outline(Tone::Fg4, 1.0) };
+    let b = ui.item(c, parent, s, State::NONE, on);
+    ui.text(c, b, Role::Mono, 0.46, if on { Tone::Ink } else { Tone::Fg2 }, text);
+    b
+}
+
 pub fn tick_tag(c: &mut Commands, ui: &Ui, parent: Entity, text: &str, on: bool) -> Entity {
     let s = UiStyle { pad: Some([0.26, 0.4, 0.22, 0.4].into()), shrink: Some(0.0), ..UiStyle::row() };
     let s = if on { s.bg(Tone::Fg) } else { s.outline(Tone::Fg4, 1.0) };
@@ -1010,24 +1020,19 @@ pub fn tick_tag(c: &mut Commands, ui: &Ui, parent: Entity, text: &str, on: bool)
 
 #[allow(clippy::too_many_arguments)]
 fn filter_bar(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, s: &SandboxUi, shown: usize, guns: &[SandboxGun], progress: &UnitProgress) {
-    let b = c
-        .spawn((
-            UiStyle { gap: Some(0.35), align: Some(AlignItems::Center), pad: Some([0.3, 0.5, 0.3, 0.5].into()), ..UiStyle::row() }
-                .bg_a(Tone::Fg, if s.view.tags_open { 0.14 } else { 0.04 })
-                .outline(if s.view.tags_open { Tone::Fg2 } else { Tone::Fg3 }, 1.0),
-            Node::default(),
-            GunAction::TagsButton,
-            clickable(),
-            UiParityId::new("gun.tags"),
-            ChildOf(parent),
-        ))
-        .id();
+    let b = {
+        let e = ui.item(c, parent, UiStyle { gap: Some(0.35), align: Some(AlignItems::Center), pad: Some([0.3, 0.5, 0.3, 0.5].into()), ..UiStyle::row() }.bg_a(Tone::Fg, if s.view.tags_open { 0.14 } else { 0.04 }).outline(if s.view.tags_open { Tone::Fg2 } else { Tone::Fg3 }, 1.0), State::NONE, false);
+        c.entity(e).insert((GunAction::TagsButton, UiParityId::new("gun.tags")));
+        e
+    };
     kit_icon(c, look, b, "filter", 0.6, Tone::Fg, 1.0);
     ui.text(c, b, Role::Mono, 0.48, Tone::Fg, "Tags");
     for &(g, t) in &s.view.tags {
-        let chip = c
-            .spawn((UiStyle { gap: Some(0.3), align: Some(AlignItems::Center), pad: Some([0.26, 0.4, 0.22, 0.4].into()), ..UiStyle::row() }.bg(Tone::Fg), Node::default(), GunAction::Tag(g, t), clickable(), ChildOf(parent)))
-            .id();
+        let chip = {
+            let e = ui.item(c, parent, UiStyle { gap: Some(0.3), align: Some(AlignItems::Center), pad: Some([0.26, 0.4, 0.22, 0.4].into()), ..UiStyle::row() }, State::NONE, true);
+            c.entity(e).insert(GunAction::Tag(g, t));
+            e
+        };
         ui.text(c, chip, Role::Mono, 0.46, Tone::Ink, t);
         kit_icon(c, look, chip, "close", 0.36, Tone::Ink, 1.0);
     }
@@ -1054,8 +1059,7 @@ fn tag_popover(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, s: &Sandb
             UiStyle { w: Some(36.0), gap: Some(0.6), pad: Some([0.9, 1.0, 0.9, 1.0].into()), ..UiStyle::column() }.abs([Some(16.6), Some(8.4), None, None]).bg(Tone::Ink2).outline(Tone::Fg3, 1.0),
             Node::default(),
             BoxShadow::new(Color::srgba(0.0, 0.0, 0.0, 0.7), Val::ZERO, look.val(1.4), Val::ZERO, look.val(3.0)),
-            FocusPolicy::Block,
-            Interaction::default(),
+            chimera_ui::controls::catch_pointer(),
             UiParityId::new("gun.popover"),
             ChildOf(parent),
         ))
@@ -1083,8 +1087,8 @@ fn tag_popover(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, s: &Sandb
         let chips = c.spawn((UiStyle { gap: Some(0.25), grow: Some(1.0), ..UiStyle::row() }, Node { flex_wrap: FlexWrap::Wrap, row_gap: ui.units.val(0.25), ..default() }, ChildOf(row))).id();
         for t in tags {
             let on = s.view.tags.contains(&(g, t));
-            let e = tick_tag(c, ui, chips, t, on);
-            c.entity(e).insert((GunAction::Tag(g, t), clickable()));
+            let e = press_tag(c, ui, chips, t, on);
+            c.entity(e).insert(GunAction::Tag(g, t));
         }
     }
     // More filters: later (greyed).
@@ -1116,15 +1120,11 @@ fn tile_foot(c: &mut Commands, ui: &Ui, look: &Look, foot: Entity, g: &SandboxGu
             ui.text(c, foot, Role::Mono, 0.36, Tone::Fg3, &words.join(" \u{00b7} "));
         }
         UnitState::NotHere { bytes } => {
-            let b = c
-                .spawn((
-                    UiStyle { gap: Some(0.3), align: Some(AlignItems::Center), pad: Some([0.12, 0.25, 0.12, 0.25].into()), ..UiStyle::row() }.outline(Tone::Fg5, 1.0),
-                    Node::default(),
-                    GunAction::Download(g.id.clone()),
-                    clickable(),
-                    ChildOf(foot),
-                ))
-                .id();
+            let b = {
+                let e = ui.item(c, foot, UiStyle { gap: Some(0.3), align: Some(AlignItems::Center), pad: Some([0.12, 0.25, 0.12, 0.25].into()), ..UiStyle::row() }.outline(Tone::Fg5, 1.0), State::NONE, false);
+                c.entity(e).insert(GunAction::Download(g.id.clone()));
+                e
+            };
             kit_icon(c, look, b, "download", 0.5, Tone::Fg2, 1.0);
             ui.text(c, b, Role::Mono, 0.38, Tone::Fg2, &size_words(*bytes));
         }
@@ -1236,18 +1236,11 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
         }
         UnitState::NotHere { .. } | UnitState::Failed { .. } => {
             gun_icon(c, look, viewer, &g.id, g.icon_class, 2.9, Tone::Fg5, 1.0);
-            let b = c
-                .spawn((
-                    UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), pad: Some([0.55, 0.8, 0.55, 0.8].into()), ..UiStyle::row() }
-                        .abs([None, None, None, None])
-                        .bg_a(Tone::Ink, 0.6)
-                        .outline(Tone::Fg3, 1.0),
-                    Node::default(),
-                    GunAction::Download(g.id.clone()),
-                    clickable(),
-                    ChildOf(viewer),
-                ))
-                .id();
+            let b = {
+                let e = ui.item(c, viewer, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), pad: Some([0.55, 0.8, 0.55, 0.8].into()), ..UiStyle::row() }.abs([None, None, None, None]).bg_a(Tone::Ink, 0.6).outline(Tone::Fg3, 1.0), State::NONE, false);
+                c.entity(e).insert(GunAction::Download(g.id.clone()));
+                e
+            };
             kit_icon(c, look, b, "download", 0.7, Tone::Fg, 1.0);
             ui.text(c, b, Role::Mono, 0.5, Tone::Fg, if matches!(st, UnitState::Failed { .. }) { "Failed: R retries" } else { "Download to see the model" });
         }
@@ -1266,16 +1259,11 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
         c.entity(list.frame).insert(UiParityId::new("gun.variants"));
         for v in variants {
             let on = v.id == g.id;
-            let row = c
-                .spawn((
-                    UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), h: Some(VARIANT_H), pad: Some([0.0, 0.6, 0.0, 0.7].into()), shrink: Some(0.0), ..UiStyle::row() }.bg_a(Tone::Fg, if on { 0.1 } else { 0.0 }),
-                    Node { min_width: Val::Px(0.0), overflow: Overflow::clip_x(), ..default() },
-                    GunAction::Variant(v.id.clone()),
-                    clickable(),
-                    UiParityId::new(format!("gun.variant.{}", v.id)),
-                    ChildOf(list.content),
-                ))
-                .id();
+            let row = {
+                let e = ui.item(c, list.content, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), h: Some(VARIANT_H), pad: Some([0.0, 0.6, 0.0, 0.7].into()), shrink: Some(0.0), ..UiStyle::row() }.bg_a(Tone::Fg, if on { 0.1 } else { 0.0 }), State::NONE, false);
+                c.entity(e).insert((Node { min_width: Val::Px(0.0), overflow: Overflow::clip_x(), ..default() }, GunAction::Variant(v.id.clone()), UiParityId::new(format!("gun.variant.{}", v.id))));
+                e
+            };
             if on {
                 ui.focus_bar(c, row, 0.2);
                 chimera_ui::scroll::scroll_into_view(c, row);
@@ -1334,12 +1322,12 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
         ui.section(c, parent, "Play as", None);
         let chips = c.spawn((UiStyle { gap: Some(0.25), ..UiStyle::row() }, Node { flex_wrap: FlexWrap::Wrap, row_gap: ui.units.val(0.25), ..default() }, ChildOf(parent))).id();
         let own = body.filter(|b| b.starts_with(&format!("{}:", g.game)));
-        let e = tick_tag(c, ui, chips, "Its own", own.is_none());
-        c.entity(e).insert((GunAction::Body(None), clickable()));
+        let e = press_tag(c, ui, chips, "Its own", own.is_none());
+        c.entity(e).insert(GunAction::Body(None));
         for class in &g.game_tags {
             let id = format!("{}:{}", g.game, class.to_lowercase());
-            let e = tick_tag(c, ui, chips, class, own == Some(id.as_str()));
-            c.entity(e).insert((GunAction::Body(Some(id)), clickable()));
+            let e = press_tag(c, ui, chips, class, own == Some(id.as_str()));
+            c.entity(e).insert(GunAction::Body(Some(id)));
         }
     }
     // Tags.
@@ -1366,9 +1354,11 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
             ui.text(c, f, Role::Mono, 0.46, Tone::Fg, "Here");
         }
         UnitState::NotHere { bytes } => {
-            let b = c
-                .spawn((UiStyle { gap: Some(0.35), align: Some(AlignItems::Center), pad: Some([0.25, 0.4, 0.25, 0.4].into()), ..UiStyle::row() }.outline(Tone::Fg5, 1.0), Node::default(), GunAction::Download(g.id.clone()), clickable(), ChildOf(f)))
-                .id();
+            let b = {
+                let e = ui.item(c, f, UiStyle { gap: Some(0.35), align: Some(AlignItems::Center), pad: Some([0.25, 0.4, 0.25, 0.4].into()), ..UiStyle::row() }.outline(Tone::Fg5, 1.0), State::NONE, false);
+                c.entity(e).insert(GunAction::Download(g.id.clone()));
+                e
+            };
             kit_icon(c, look, b, "download", 0.6, Tone::Fg2, 1.0);
             ui.text(c, b, Role::Mono, 0.46, Tone::Fg2, &size_words(*bytes));
             ui.sentence(c, f, 0.62, Tone::Fg3, "Not here yet. Click to download, or pick it.");

@@ -212,6 +212,12 @@ installed map's `map/<name>` and Combat Arms' `character/<record>` and
   registers its hooks under its own id, never a single-slot resource
   another game would replace. `checks/tests/it/ecs.rs` and
   `determinism.rs` ratchet this.
+- **UI: always the kit** ([docs/DESIGN.md](docs/DESIGN.md), "UI: always
+  the kit"). Screens are built from `chimera_ui`'s builders (`Ui::button`,
+  `Ui::item`, `Ui::setting_row` with `big_toggle`/`choice`/..., `Ui::tabs`),
+  never from nodes made pressable by hand; a missing feature is an option
+  on the kit's builder. `checks/tests/it/ui_kit.rs` and party_kit's
+  `kit_conformance` test enforce it.
 - **Generalize for the second game.** When a second game needs a piece of
   the first, lift it into Chimera; games never depend on each other.
 - **Judge performance by deterministic counts, never by wall clock.** A

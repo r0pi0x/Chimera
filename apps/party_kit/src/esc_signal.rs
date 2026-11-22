@@ -168,20 +168,12 @@ fn entry(c: &mut Commands, ui: &Ui, list: Entity, i: usize, e: &ShownEntry, d: &
     let h = t.layout(L, "item_h");
     let sel = d.page == Page::Main && i == d.focus && e.action.is_some();
     let off = e.action.is_none();
-    let base = Color::NONE;
-    let over = if off { base } else { ui.color(Tone::Fg, 0.06) };
-    let mut b = c.spawn((
-        UiStyle { h: Some(h), gap: Some(1.1), pad: Some([0.0, 1.5, 0.0, 1.1].into()), ..UiStyle::row() },
-        Node::default(),
-        BackgroundColor(base),
-        chimera_ui::controls::Hover { base, over },
-        chimera_ui::controls::clickable(),
-        ChildOf(list),
-    ));
+    // The kit's item (its hover); the white slab of the selection is
+    // drawn in it below.
+    let b = ui.item(c, list, UiStyle { h: Some(h), gap: Some(1.1), pad: Some([0.0, 1.5, 0.0, 1.1].into()), ..UiStyle::row() }, State { disabled: off, ..State::NONE }, false);
     if let Some(a) = e.action {
-        b.insert(a);
+        c.entity(b).insert(a);
     }
-    let b = b.id();
     if i > 0 {
         c.spawn((
             Node { position_type: PositionType::Absolute, left: ui.units.val(1.1), right: Val::ZERO, top: Val::ZERO, height: Val::Px(ui.units.hairline()), ..default() },

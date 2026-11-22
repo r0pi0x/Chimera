@@ -16,11 +16,14 @@
 //!   `[[play]]` rows: Server name, Password and Port first; the Maps
 //!   field opening the picker, `maps_picker`, the kit's shared picker; the
 //!   Guns field a preset dropdown whose last entry, or Enter on the row,
-//!   opens the Guns dialog, `guns_picker`; ranges steppers, Off/On a
-//!   toggle, up to five choices segmented, one choice its words, text a
-//!   text field; UPnP's outcome a STATUS block, its words on hover) and
-//!   Game (host_settings.toml's next-match rows, `main_menu::
-//!   game_settings`), Q and E at the tab strip's ends; a pane at the right
+//!   opens the Guns dialog, `guns_picker`; UPnP's outcome a STATUS block
+//!   after its label, its words on hover) and Game (host_settings.toml's
+//!   next-match rows, `main_menu::game_settings`), Q and E at the tab
+//!   strip's ends. Every row is the kit's setting row (Settings' look: one
+//!   control column, one marker a row) and its control Settings' rule
+//!   (`settings::pick_control`: Off/On the big toggle, choices that fit
+//!   segmented else a dropdown, `SignalPages::open_list`, Esc closing it;
+//!   ranges steppers; one choice its words; text a text field); a pane at the right
 //!   sums the match up (its Guns line: `gun_rules::summary`, the preset or
 //!   what differs, the rungs, a fallback note). Enter starts (on the Maps row: opens the picker).
 //!   Its rows scroll in the kit's container (`chimera_ui::scroll`: the
@@ -101,7 +104,7 @@ use chimera_ui::{
 };
 
 use crate::{
-    host::{Pick, Setting, same_value},
+    settings::PickPress,
     main_menu::{Field, MainMenuAction, MenuData, MenuMinigame, MenuPage, MenuUiCamera, PartyMenu, PlayKind, Screen, ShownScreen},
 };
 pub use crate::server_list::{BrowserTab, LanServer, Status, VISIBLE_ROWS, lan_servers};
@@ -259,6 +262,13 @@ impl Line {
 }
 
 /// The lines of the page shown, in focus order.
+/// `lines` for this world's menu, data and list.
+pub fn lines_now(world: &World) -> Vec<Line> {
+    let (Some(menu), Some(data)) = (world.get_resource::<PartyMenu>(), world.get_resource::<MenuData>()) else { return Vec::new() };
+    let lan = world.get_resource::<LanList>().cloned().unwrap_or_default();
+    lines(menu, data, &lan)
+}
+
 pub fn lines(menu: &PartyMenu, data: &MenuData, lan: &LanList) -> Vec<Line> {
     match menu.page {
         MenuPage::Play if menu.play_tab == 0 => (0..data.play.len()).map(Line::Play).collect(),
@@ -294,6 +304,9 @@ pub struct SignalPages {
     /// A staged scene's page (`ui_scene play|join`), opened once the menu
     /// is up, and its Play tab.
     pub stage: Option<(MenuPage, usize)>,
+    /// A Host row's dropdown open (`MainMenuAction::OpenList`): its line
+    /// and the list's active option.
+    pub open_list: Option<(usize, usize)>,
 }
 
 /// The password modal: a locked server (a row of the tab shown) joined
@@ -1937,17 +1950,6 @@ fn value_of(data: &MenuData, menu: &PartyMenu, cvar: &str) -> String {
         .unwrap_or_default()
 }
 
-/// How a pick is changed on the page: a toggle, segmented, or a stepper.
-fn pick_widget(pick: &Pick) -> u8 {
-    match pick {
-        Pick::Choices(ch) if ch.iter().map(|(_, l)| l.to_ascii_lowercase()).collect::<Vec<_>>() == ["off", "on"] => 0,
-        Pick::Choices(ch) if ch.iter().map(|(_, l)| l.to_ascii_lowercase()).collect::<Vec<_>>() == ["no", "yes"] => 0,
-        Pick::Choices(ch) if ch.len() <= 5 => 1,
-        _ => 2,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn play_line(
     c: &mut Commands,
@@ -1961,18 +1963,23 @@ fn play_line(
     row_h: f32,
     res: Option<(&mut Assets<Image>, &mut IconImages)>,
 ) {
+    use chimera_ui::form::RowLook;
     let focus = p.focus == i;
-    let vst = State::focused(focus);
+    // One marker a row (the kit's setting row, as Settings): the control
+    // in it draws no focus of its own.
+    let vst = State::NONE;
+    let cw = ui.form().control_w;
+    let open = p.open_list.filter(|(l, _)| *l == i).map(|(_, a)| a);
     match line {
         Line::Play(r) => {
             let Some(row) = cx.data.play.get(r) else { return };
             let v = menu.play.get(r).cloned().unwrap_or_default();
             // The Guns row's note: the rules' summary.
             let note = (row.kind == PlayKind::Guns && !cx.guns_line.is_empty()).then_some(cx.guns_line.as_str());
-            let (e, vl) = ui.row(c, list, &row.label, note, row_h, State { focus, error: p.error == Some(i), ..State::NONE });
-            c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
+            let sr = ui.setting_row(c, list, &row.label, RowLook { note, min_h: row_h, ..RowLook::default() }, State { focus, error: p.error == Some(i), ..State::NONE });
+            c.entity(sr.row).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
             if focus && p.reveal {
-                chimera_ui::scroll_into_view(c, e);
+                chimera_ui::scroll_into_view(c, sr.row);
             }
             match &row.kind {
                 PlayKind::Map => {
@@ -1980,7 +1987,7 @@ fn play_line(
                     // chevron icon: a dialog, not a dropdown or a link).
                     let shown = if v.is_empty() { cx.picker.summary(&cx.games) } else { map_label(&v) };
                     if let Some((images, icons)) = res {
-                        let f = ui.dialog_field(c, vl, images, icons, &shown, 14.0, vst);
+                        let f = ui.dialog_field(c, sr.control, images, icons, &shown, cw, vst);
                         c.entity(f).insert(MainMenuAction::OpenMaps);
                     }
                 }
@@ -1989,27 +1996,28 @@ fn play_line(
                     // the dialog; Enter on the row opens it too), the
                     // rules' summary under the label.
                     let (rules, rungs) = &cx.gun_rules;
-                    crate::guns_picker::page_field(c, ui, vl, cx.guns, rules, *rungs, vst);
+                    crate::guns_picker::page_field(c, ui, sr.control, cx.guns, rules, *rungs, vst);
                     let _ = res;
                 }
-                PlayKind::Pick(pick) if row.cvar == "net_upnp" => {
-                    // The outcome as a status block (its words on hover),
-                    // then the toggle.
-                    let b = ui.status_block(c, vl, cx.upnp.0);
-                    c.entity(b).insert(chimera_ui::shell::Tip::new("UPnP").note(&cx.upnp.1));
-                    pick_value(c, ui, vl, pick, &v, vst, |k| match k {
-                        PickAct::Step(dir) => MainMenuAction::PlayStep { row: r, dir },
-                        PickAct::Option(option) => MainMenuAction::PlayPick { row: r, option },
-                    })
+                PlayKind::Pick(pick) => {
+                    if row.cvar == "net_upnp" {
+                        // The outcome as a status block after the label
+                        // (its words on hover).
+                        let b = ui.status_block(c, sr.label, cx.upnp.0);
+                        c.entity(b).insert(chimera_ui::shell::Tip::new("UPnP").note(&cx.upnp.1));
+                    }
+                    for (press, e) in crate::settings::pick_control(c, ui, sr.control, pick, None, &pick.shown(&v), &v, open, None) {
+                        c.entity(e).insert(match press {
+                            PickPress::Step(dir) => MainMenuAction::PlayStep { row: r, dir },
+                            PickPress::Option(option) => MainMenuAction::PlayPick { row: r, option },
+                            PickPress::Open => MainMenuAction::OpenList(i),
+                        });
+                    }
                 }
-                PlayKind::Pick(pick) => pick_value(c, ui, vl, pick, &v, vst, |k| match k {
-                    PickAct::Step(dir) => MainMenuAction::PlayStep { row: r, dir },
-                    PickAct::Option(option) => MainMenuAction::PlayPick { row: r, option },
-                }),
                 PlayKind::Text { masked, .. } => {
                     let caret = (menu.focus == Some(Field::Play(r))).then(|| menu.caret.cursor(&v));
                     let placeholder = if row.cvar == "hostport" { "27015" } else { "None" };
-                    let f = ui.text_field(c, vl, &v, placeholder, caret, *masked, 13.0, vst);
+                    let f = ui.text_field(c, sr.control, &v, placeholder, caret, *masked, cw, vst);
                     c.entity(f).insert(MainMenuAction::Focus(Field::Play(r)));
                 }
             }
@@ -2017,60 +2025,22 @@ fn play_line(
         Line::Game(g) => {
             let Some(s) = crate::main_menu::game_settings().get(g).cloned() else { return };
             let v = menu.values.get(&s.cvar).cloned().unwrap_or_default();
-            let (e, vl) = ui.row(c, list, &s.label, Some("next match"), row_h, State::focused(focus));
-            c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
+            let look = RowLook { note: Some("next match"), ours: s.ours, min_h: row_h, ..RowLook::default() };
+            let sr = ui.setting_row(c, list, &s.label, look, State::focused(focus));
+            c.entity(sr.row).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
             if focus && p.reveal {
-                chimera_ui::scroll_into_view(c, e);
+                chimera_ui::scroll_into_view(c, sr.row);
             }
-            game_value(c, ui, vl, &s, &v, vst, g);
+            for (press, e) in crate::settings::pick_control(c, ui, sr.control, &s.pick, s.widget.as_deref(), &s.shown(&v), &v, open, None) {
+                c.entity(e).insert(match press {
+                    PickPress::Step(dir) => MainMenuAction::GameStep { index: g, dir },
+                    PickPress::Option(option) => MainMenuAction::GamePick { index: g, option },
+                    PickPress::Open => MainMenuAction::OpenList(i),
+                });
+            }
         }
         _ => {}
     }
-}
-
-enum PickAct {
-    Step(i8),
-    Option(usize),
-}
-
-#[allow(clippy::too_many_arguments)]
-fn pick_value(c: &mut Commands, ui: &Ui, vl: Entity, pick: &Pick, v: &str, st: State, act: impl Fn(PickAct) -> MainMenuAction) {
-    match (pick_widget(pick), pick) {
-        // One choice: its words, nothing to pick.
-        (_, Pick::Choices(ch)) if ch.len() == 1 => {
-            ui.sentence(c, vl, chimera_ui::controls::TYPED, Tone::Fg2, &ch[0].1);
-        }
-        (0, Pick::Choices(ch)) => {
-            let on = ch.get(1).is_some_and(|(cv, _)| same_value(cv, v));
-            // Yes/No when the choices say so (a question), else On/Off.
-            let word = |i: usize| ch.get(i).map(|(_, w)| w.as_str());
-            let words = match (word(0), word(1)) {
-                (Some(a), Some(b)) if a.eq_ignore_ascii_case("no") && b.eq_ignore_ascii_case("yes") => chimera_ui::controls::TOGGLE_YES_NO,
-                _ => chimera_ui::controls::TOGGLE_ON_OFF,
-            };
-            let tg = ui.toggle_words(c, vl, on, st, words);
-            c.entity(tg).insert(act(PickAct::Step(1)));
-        }
-        (1, Pick::Choices(ch)) => {
-            let labels: Vec<&str> = ch.iter().map(|(_, l)| l.as_str()).collect();
-            let sel = ch.iter().position(|(cv, _)| same_value(cv, v));
-            for (k, e) in ui.segmented(c, vl, &labels, sel, st).into_iter().enumerate() {
-                c.entity(e).insert(act(PickAct::Option(k)));
-            }
-        }
-        _ => {
-            let (minus, plus) = ui.stepper(c, vl, &pick.shown(v), pick.stepper_range(v), st);
-            c.entity(minus).insert(act(PickAct::Step(-1)));
-            c.entity(plus).insert(act(PickAct::Step(1)));
-        }
-    }
-}
-
-fn game_value(c: &mut Commands, ui: &Ui, vl: Entity, s: &Setting, v: &str, st: State, index: usize) {
-    pick_value(c, ui, vl, &s.pick, v, st, |k| match k {
-        PickAct::Step(dir) => MainMenuAction::GameStep { index, dir },
-        PickAct::Option(option) => MainMenuAction::GamePick { index, option },
-    });
 }
 
 /// The pane at the right of Play: the match as it will start.
@@ -2119,14 +2089,17 @@ fn join_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
             } else {
                 ("Password", Field::Password, &menu.password, true, "None")
             };
-            let (e, vl) = ui.row(c, list, label, None, row_h, st);
-            c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
+            // The kit's setting row: one marker a row, the field's error
+            // its own (threat as a mark).
+            let sr = ui.setting_row(c, list, label, chimera_ui::form::RowLook { min_h: row_h, ..Default::default() }, st);
+            c.entity(sr.row).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
             let caret = (menu.focus == Some(field) && p.ask.is_none()).then(|| menu.caret.cursor(value));
-            let w = if line == Line::Address { 13.0 } else { 15.0 };
-            let f = ui.text_field(c, vl, value, ph, caret, masked, w, st);
+            // The address's eye key shares the control column.
+            let w = ui.form().control_w - if line == Line::Address { 2.3 } else { 0.0 };
+            let f = ui.text_field(c, sr.control, value, ph, caret, masked, w, State { error: st.error, ..State::NONE });
             c.entity(f).insert(MainMenuAction::Focus(field));
             if line == Line::Address {
-                ui.reveal_key(c, vl, REVEAL_ADDRESSES, shown, 1.9);
+                ui.reveal_key(c, sr.control, REVEAL_ADDRESSES, shown, 1.9);
             }
         }
         Line::Recent(r) => {

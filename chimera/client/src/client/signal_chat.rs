@@ -718,12 +718,14 @@ fn mute_clicks(
     rows: Query<&FeedLineId>,
     clicks: Query<(&Interaction, &ChatName, &ChildOf), Changed<Interaction>>,
     mut mutes: ResMut<ChatMutes>,
+    theme: Option<Res<chimera_ui::Theme>>,
     mut commands: Commands,
 ) {
     // Clickable only while the history is open (the cursor is free).
+    let Some(theme) = theme else { return };
     for (e, interaction) in &names {
         if interaction.is_none() && input.open.is_some() {
-            commands.entity(e).insert(chimera_ui::controls::clickable());
+            commands.entity(e).insert(chimera_ui::controls::press_tint(&theme));
         }
     }
     for (i, name, parent) in &clicks {

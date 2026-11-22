@@ -688,7 +688,8 @@ fn spawn_page(
                 c.entity(row).insert((
                     SignalItem(i),
                     MainMenuAction::Entry(i),
-                    widgets::clickable(),
+                    // Its states are the highlight slab's (`SignalHighlight`).
+                    chimera_ui::controls::own_states(),
                     UiParityId::new(format!("menu.item.{}", i + 1)),
                 ));
                 if i > 0 {
@@ -944,7 +945,8 @@ fn spawn_page(
                 SignalTab(i),
                 k.node(style!(row, gap: 0.5, pad: [0.5, 0.75])),
                 BackgroundColor(Color::NONE),
-                widgets::clickable(),
+                // Its states are the backdrop tabs' own (the selected slab).
+                chimera_ui::controls::own_states(),
                 UiParityId::new(format!("menu.tab.{}", i + 1)),
                 ChildOf(tabs),
             ))

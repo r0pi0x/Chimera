@@ -158,7 +158,7 @@ fn rows_toggles_and_segments_show_their_state() {
     let (row, vl, tog) = build(&mut app, |ui, c, root| {
         let st = State { changed: true, ..State::NONE };
         let (row, vl) = ui.row(c, root, "Vertical sync", None, 2.9, st);
-        let t = ui.toggle(c, vl, true, State::NONE);
+        let t = ui.toggle_sized(c, vl, true, State::NONE, None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H);
         (row, vl, t)
     });
     assert_eq!(texts_under(&mut app, row)[0], "VERTICAL SYNC");
@@ -172,7 +172,7 @@ fn rows_toggles_and_segments_show_their_state() {
     let on_tone = descendants_with::<UiText>(&mut app, tog).into_iter().find(|t| t.tone == Tone::Ink);
     assert!(on_tone.is_some());
     assert_eq!(texts_under(&mut app, tog), ["OFF", "ON"]);
-    let opts = build(&mut app, |ui, c, root| ui.segmented(c, root, &["None", "60", "144"], Some(1), State::NONE));
+    let opts = build(&mut app, |ui, c, root| ui.segmented_sized(c, root, &["None", "60", "144"], Some(1), &[], State::NONE, None));
     assert_eq!(opts.len(), 3);
     // Segmented (slanted): the pick a white slanted slab, the others none.
     assert_eq!(descendants_with_entity::<controls::SegmentedPick>(&mut app, opts[1]).len(), 1);
@@ -196,8 +196,8 @@ fn text_on_white_is_full_strength_ink() {
     let mut app = app();
     let theme = app.world().resource::<Theme>().clone();
     let ink = theme.tone(Tone::Ink);
-    let seg = build(&mut app, |ui, c, root| ui.segmented(c, root, &["Windowed", "Full screen"], Some(0), State::NONE));
-    let tog = build(&mut app, |ui, c, root| ui.toggle(c, root, true, State::NONE));
+    let seg = build(&mut app, |ui, c, root| ui.segmented_sized(c, root, &["Windowed", "Full screen"], Some(0), &[], State::NONE, None));
+    let tog = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H));
     let colours = |app: &mut App, e: Entity| -> Vec<(String, Color, Option<TextShadow>)> {
         let mut out = Vec::new();
         let mut stack = vec![e];
@@ -697,7 +697,7 @@ fn a_press_places_a_drag_selects_a_double_press_selects_all() {
 #[test]
 fn the_toggles_labels_are_centred_and_its_slab_slides() {
     let mut app = laid_out();
-    let t = build_laid(&mut app, |ui, c, root| ui.toggle(c, root, true, State::focused(true)));
+    let t = build_laid(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::focused(true), None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H));
     let units = *app.world().resource::<UiUnits>();
     let left = centre_of(&app, t).x - size_of(&app, t).x / 2.0;
     let labels: Vec<Entity> = {
@@ -725,7 +725,7 @@ fn the_toggles_labels_are_centred_and_its_slab_slides() {
     // The slide.
     let now = app.world().resource::<UiClock>().now;
     let slide = controls::ToggleSlide { since: now, now, motion: Motion::default() };
-    let t = build(&mut app, |ui, c, root| ui.toggle_ex(c, root, true, State::NONE, Some(slide)));
+    let t = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, Some(slide), controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H));
     let slab = descendants_entities::<controls::ToggleSlab>(&mut app, t)[0];
     let x = |app: &App| match app.world().get::<UiTransform>(slab).unwrap().translation.x {
         Val::Px(v) => v,
@@ -742,7 +742,7 @@ fn the_toggles_labels_are_centred_and_its_slab_slides() {
     app.update();
     assert_eq!(x(&app), 0.0, "at rest on the on side after the normal pace");
     let reduced = controls::ToggleSlide { motion: Motion::new(0.0), ..slide };
-    let r = build(&mut app, |ui, c, root| ui.toggle_ex(c, root, true, State::NONE, Some(reduced)));
+    let r = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, Some(reduced), controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H));
     let rs = descendants_entities::<controls::ToggleSlab>(&mut app, r)[0];
     assert!(app.world().get::<chimera_ui::Timeline>(rs).is_none(), "reduced motion: it jumps");
 }
@@ -919,7 +919,7 @@ fn a_disabled_hero_ignores_hover() {
 #[test]
 fn segmented_is_inset_like_the_toggle_with_slanted_hover() {
     let mut app = app();
-    let opts = build(&mut app, |ui, c, root| ui.segmented(c, root, &["A", "B", "C"], Some(1), State::focused(true)));
+    let opts = build(&mut app, |ui, c, root| ui.segmented_sized(c, root, &["A", "B", "C"], Some(1), &[], State::focused(true), None));
     let track = app.world().get::<ChildOf>(opts[0]).unwrap().parent();
     let pad = app.world().get::<chimera_ui::UiStyle>(track).unwrap().pad.unwrap();
     assert!(pad.0.iter().all(|p| *p > 0.0), "inset: {pad:?}");
@@ -1078,9 +1078,9 @@ fn a_toggle_reads_on_off_or_yes_no() {
         out.sort();
         out
     };
-    let plain = build(&mut app, |ui, c, root| ui.toggle(c, root, true, State::NONE));
+    let plain = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, None, controls::TOGGLE_ON_OFF, controls::TOGGLE_W, controls::TOGGLE_H));
     assert_eq!(texts(&mut app, plain), ["OFF", "ON"], "drawn upper case");
-    let yn = build(&mut app, |ui, c, root| ui.toggle_words(c, root, true, State::NONE, TOGGLE_YES_NO));
+    let yn = build(&mut app, |ui, c, root| ui.toggle_sized(c, root, true, State::NONE, None, TOGGLE_YES_NO, controls::TOGGLE_W, controls::TOGGLE_H));
     assert_eq!(texts(&mut app, yn), ["NO", "YES"]);
 }
 

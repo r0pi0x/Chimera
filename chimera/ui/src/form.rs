@@ -32,7 +32,7 @@
 use bevy::prelude::*;
 
 use crate::{
-    controls::{self, Hover, KitIcon, State, TextCursor, ToggleSlide, Ui, clickable},
+    controls::{self, Hover, KitIcon, State, TextCursor, ToggleSlide, Ui, pressable},
     fonts::Role,
     motion::UiClock,
     style::{UiSlant, UiStyle},
@@ -151,6 +151,8 @@ pub enum Choice {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SettingRow {
     pub row: Entity,
+    /// The label's box (a status after the label).
+    pub label: Entity,
     /// The control column (`control_w` wide).
     pub control: Entity,
     /// The reset key, when the value was changed (give it its reset).
@@ -167,6 +169,10 @@ pub struct RowLook<'a> {
     /// Changed from where it comes from: the reset key.
     pub changed: bool,
     pub min_h: f32,
+    /// The control column's width (cq); 0: `[layout.form] control_w`. A
+    /// narrower column only where the form's doesn't fit (the Guns
+    /// dialog's rules column); every row of one list the same.
+    pub control_w: f32,
 }
 
 impl Ui<'_> {
@@ -231,7 +237,7 @@ impl Ui<'_> {
                 Node::default(),
                 BackgroundColor(base),
                 Hover { base, over },
-                clickable(),
+                pressable(),
                 ResetKey,
                 ChildOf(parent),
             ))
@@ -249,10 +255,12 @@ impl Ui<'_> {
         if look.ours {
             self.origin_mark(c, lb, 0.7);
         }
-        let control = self.boxed(c, vl, UiStyle { w: Some(f.control_w), shrink: Some(0.0), justify: Some(JustifyContent::FlexEnd), ..UiStyle::row() });
+        c.entity(row).insert(controls::SettingRowMark);
+        let w = if look.control_w > 0.0 { look.control_w } else { f.control_w };
+        let control = self.boxed(c, vl, UiStyle { w: Some(w), gap: Some(0.4), shrink: Some(0.0), justify: Some(JustifyContent::FlexEnd), ..UiStyle::row() });
         let state = self.boxed(c, vl, UiStyle { w: Some(f.state_w), shrink: Some(0.0), justify: Some(JustifyContent::FlexEnd), ..UiStyle::row() });
         let reset = look.changed.then(|| self.reset_key(c, state));
-        SettingRow { row, control, reset }
+        SettingRow { row, label: lb, control, reset }
     }
 
     /// The big toggle: `control_w` x `control_h` (module doc).
@@ -264,9 +272,16 @@ impl Ui<'_> {
     /// A choice in the column (module doc): segmented when it fits
     /// `control_w`, else a dropdown (`open`: its list's active option).
     pub fn choice(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, open: Option<usize>, st: State) -> Choice {
+        self.choice_with(c, parent, options, selected, &[], open, st)
+    }
+
+    /// `choice` with the options at `off` greyed out (segmented: no hover,
+    /// not pressable; a choice that can't be made now).
+    #[allow(clippy::too_many_arguments)]
+    pub fn choice_with(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], open: Option<usize>, st: State) -> Choice {
         let f = self.form();
         if fits_segmented(&f, options, f.control_w) {
-            Choice::Segmented(self.segmented_sized(c, parent, options, selected, &[], st, Some((f.control_w, f.control_h))))
+            Choice::Segmented(self.segmented_sized(c, parent, options, selected, off, st, Some((f.control_w, f.control_h))))
         } else {
             let (field, options) = self.dropdown(c, parent, options, selected.unwrap_or(0), open, f.control_w, st);
             Choice::Dropdown { field, options }

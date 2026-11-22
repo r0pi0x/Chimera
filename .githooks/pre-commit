@@ -273,7 +273,7 @@ PY
         echo "     Running $exe" >>"$log"
         ( cd "$(dirname "$manifest")" && CARGO=$(command -v cargo) CARGO_MANIFEST_DIR=$(dirname "$manifest") \
             CARGO_MANIFEST_PATH=$manifest CARGO_PKG_NAME=$pkg \
-            LD_LIBRARY_PATH="$out:$(dirname "$out")${libpath:+:$libpath}:$sysroot/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            LD_LIBRARY_PATH="$out:$out/deps:$(dirname "$out")/deps:$(dirname "$out")${libpath:+:$libpath}:$sysroot/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
             "$exe" --skip heavy:: --quiet ) >>"$log" 2>&1 || tested_ok=0
     done < <(python3 -I - "$json" <<'PY'
 import json, sys, tomllib

@@ -2628,8 +2628,14 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
   the egui debug UI; a missing feature is first an option on the kit's
   component); the gallery (`ui_scene fields`, `ui_gallery`, Options'
   Developer mode and the Escape menu's Developer entry); a test that typing
-  moves no text. *Left:* a rule for the other controls (buttons, toggles,
-  sliders built by hand: only text inputs are flagged), the main menu's
+  moves no text. *Done (2026-11-21):* the rule for the other controls
+  (`controls_are_the_kits`, `kit_conformance`; docs/DESIGN.md, "UI: always
+  the kit"): Host, Join, the report dialog, the Escape menu, Settings' game
+  rail, the Guns dialog, the sandbox's bench and Change gun and the match
+  end's Leave and vote cards moved onto the kit. *Left:* the plain look of
+  apps without a Signal theme (Lucker Party's Escape menu and Controls
+  page) and the onboarding screens (their form components pending), on
+  the allowlist; the main menu's
   Developer entry (only the Escape menu has it), the VGUI look's own
   text entry stays (the GameUI copy).
 

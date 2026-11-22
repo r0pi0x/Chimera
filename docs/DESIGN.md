@@ -1163,6 +1163,44 @@ background are that game's at run time. What's a game's own in them is data
 or a quick start (HL2:DM: none of these). A setting whose cvar the app lacks
 is greyed, as under CS:S.
 
+### UI: always the kit
+
+Every screen of our look (the Signal look: the Ultimate Gun Game's menus,
+dialogs, the sandbox's panels, the match end) is built from one component
+library, `chimera_ui` (the kit), never from controls a screen makes
+itself. A screen that builds its own button, toggle, row or pressable
+card gets none of the kit's agreed states, and every later change to the
+kit (the user's Options review of 2026-11-21: grey-to-white text on hover
+and selection with no underline, the big toggle, the key-capture chip, the
+badge, one control column of equal widths, segmented when the choices fit
+else a dropdown, the reset key in the row, one marker a row) misses it:
+Host kept the old small toggles and per-control focus lines while
+Settings had the new ones, and the match end's Leave had no hover.
+
+- **What to use**: `Ui::button`/`button_icon`, `Ui::tabs`, `Ui::item`
+  (a pressable surface: a list entry, a rail item, a card, a chip, a
+  fold's head; `item_bundle` in a `with_children` closure,
+  `controls::press_tint` for a node another system spawned), and for a
+  setting `Ui::setting_row` with its column's `big_toggle`, `choice`
+  (segmented or dropdown), `stepper`, `slider`, `dropdown`, `text_field`,
+  `key_field`, `dialog_field`. party_kit's pages pick a setting's control
+  by one rule (`settings::widget_of`, `settings::pick_control`), shared by
+  Settings, the Escape menu's host settings and Host. The old small toggle
+  and the natural-width segmented choice are kit-internal now.
+- **A missing feature** is an option on the kit's builder (an icon on a
+  button, a narrower control column for a dialog's rules), shown in a
+  `ui_scene` gallery, not a copy in the screen.
+- **Enforced**: `checks/tests/it/ui_kit.rs` (`controls_are_the_kits`: no
+  `clickable()`, hand-built `Hover` or `Interaction::default()`
+  (`controls::catch_pointer` for a panel that only blocks the pointer)
+  outside the kit but on its exact-count allowlist with reasons: the
+  games' own looks, the VGUI widgets and the plain look of apps without a
+  Signal theme, the developer console, the onboarding screens until their
+  form components land; `text_inputs_are_the_kits` for text inputs), and
+  party_kit's `kit_conformance` test, which stages every `ui_scene` under
+  the Ultimate Gun Game's theme and fails on a pressable node without the
+  kit's `KitControl` or a form control in a plain row.
+
 ### The party apps' Escape menu
 
 Ultimate Gun Game and Lucker Party have a menu of their own
