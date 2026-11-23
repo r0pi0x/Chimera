@@ -14,7 +14,13 @@
 //!   Bevy 0.20 has no way to put systems already added into a set, so the
 //!   condition goes on each system (the same effect: a skipped system's
 //!   queries never run). A system a game names with `serves_every_game`
-//!   stays ungated (work it does for other games too).
+//!   stays ungated (work it does for other games too). `gate_since` is the
+//!   same for systems added since a moment (`systems_now`) in a list of
+//!   crates: a party's client gates each guest's front end with it (its
+//!   `GameClient::ui_crate` and its game's crate, per frame:
+//!   `party_kit::client::gate_front_ends`), and `LateGatePlugin` (added
+//!   with the first `gate_game`) the systems plugins add in
+//!   `Plugin::finish`, in each gated game's crates.
 //! - **In play**: a game enters play, and its systems run from then on,
 //!   when anything of it appears: a character takes its `GameIdentity`
 //!   (an observer, so the same tick), a weapon of it is made (its id's
@@ -33,9 +39,14 @@
 //! - **First entry** (`GameEntersPlay`, triggered): work a game wants done
 //!   only once it is in play (its data documents) observes it.
 //!
-//! Known shortcuts: systems a game's plugins add in `Plugin::finish` or
-//! `cleanup`, or outside `gate_game`, are not gated; games never leave play
-//! (a long-lived server that has played every game runs them all).
+//! Known shortcuts: systems a game's plugins add in `Plugin::cleanup`, or
+//! outside `gate_game` (and a client's front-end window), are not gated;
+//! `Plugin::finish`'s are gated by crate alone (a game's plugin adding
+//! another gated game's system there would gate it on that game); games
+//! never leave play (a long-lived server that has played every game runs
+//! them all); the front ends' install reads at `Startup` (kill icons, gun
+//! names) are not deferred to `GameEntersPlay`: the main menu's Ladder
+//! backdrop and gun lists show every game's guns before any is in play.
 
 use std::sync::{
     Arc,
@@ -81,6 +92,9 @@ pub struct GamesInPlay {
     /// Systems (by type) that serve every game: never gated
     /// (`serves_every_game`).
     every: Vec<std::any::TypeId>,
+    /// The crates whose systems each game's switch gates (its own, its
+    /// front end's: `gate_since`).
+    crates: Vec<(&'static str, &'static str)>,
     /// Archetypes `watch_entities` has looked at.
     seen: usize,
     /// Archetypes that hold a component of a gated game not in play yet.
@@ -184,11 +198,80 @@ fn runs_once(label: &str) -> bool {
         .any(|s| label.starts_with(s))
 }
 
+/// Each schedule's systems at a moment (`systems_now`): what was added
+/// after it is gated by `gate_since`.
+#[derive(Resource, Default, Clone)]
+pub struct SystemsAt(Vec<(String, Vec<SystemKey>)>);
+
+/// The systems registered now (`gate_since`'s start).
+pub fn systems_now(app: &App) -> SystemsAt {
+    SystemsAt(keys(app.world()))
+}
+
+/// Gives every system added since `since` whose type path starts in one of
+/// `crates` game `game`'s switch as a run condition (per-tick and per-frame
+/// schedules; not those that run once, nor `serves_every_game`'s); the
+/// crates are remembered as the game's, for the systems plugins add later
+/// in `Plugin::finish` (`LateGatePlugin`). Nothing in an app that gates no
+/// games (`GateGameExt::gate_game` starts gating). Returns how many systems
+/// it gated.
+pub fn gate_since(app: &mut App, since: &SystemsAt, game: &'static str, crates: &[&'static str]) -> usize {
+    let Some(mut games) = app.world_mut().get_resource_mut::<GamesInPlay>() else {
+        return 0;
+    };
+    let flag = games.flag(game);
+    for c in crates {
+        if !games.crates.contains(&(game, *c)) {
+            games.crates.push((game, *c));
+        }
+    }
+    let every = games.every.clone();
+    let mut gated = 0;
+    app.world_mut().resource_scope(|world, mut schedules: Mut<Schedules>| {
+        for (label, schedule) in schedules.iter_mut() {
+            let label = format!("{label:?}");
+            if runs_once(&label) {
+                continue;
+            }
+            let old = since.0.iter().find(|(l, _)| *l == label).map(|(_, k)| k);
+            let systems = &mut schedule.graph_mut().systems;
+            let new: Vec<SystemKey> = systems
+                .iter()
+                .filter(|(k, s, _)| {
+                    old.is_none_or(|o| !o.contains(k))
+                        && crates.contains(&crate_of(&s.name().as_string()))
+                        && !every.contains(&s.system_type())
+                })
+                .map(|(k, _, _)| k)
+                .collect();
+            for key in new {
+                if let Some(s) = systems.get(key) {
+                    trace!("game {game}: {label} {} gated", s.name());
+                }
+                let Some(conditions) = systems.get_conditions_mut(key) else { continue };
+                let flag = flag.clone();
+                let mut condition: Box<dyn ReadOnlySystem<In = (), Out = bool>> =
+                    Box::new(IntoSystem::into_system(move || flag.load(Ordering::Relaxed)));
+                // Initialized now: the schedule may have initialized the
+                // system already (a second initialization is harmless).
+                let access = condition.initialize(world);
+                let mut c = ConditionWithAccess::new(condition);
+                c.access = access;
+                conditions.push(c);
+                gated += 1;
+            }
+        }
+    });
+    debug!("game {game}: {gated} systems of {crates:?} gated");
+    gated
+}
+
 /// Gating a game's systems on an app (module doc).
 pub trait GateGameExt {
     /// Runs `add` (a game's plugins, systems), then gives the systems it
     /// added whose type path starts in crate `game` the game's switch as a
-    /// run condition. The first call inserts `GamesInPlay` and its watch.
+    /// run condition (`gate_since`). The first call inserts `GamesInPlay`,
+    /// its watch and `LateGatePlugin`.
     fn gate_game(&mut self, game: &'static str, add: impl FnOnce(&mut App)) -> &mut Self;
 }
 
@@ -198,50 +281,47 @@ impl GateGameExt for App {
             self.init_resource::<GamesInPlay>();
             self.add_systems(First, watch_entities);
             self.add_observer(identity_enters);
+            self.add_plugins(LateGatePlugin);
         }
-        let before = keys(self.world());
+        let before = systems_now(self);
         add(self);
-        let flag = self.world_mut().resource_mut::<GamesInPlay>().flag(game);
-        let every = self.world().resource::<GamesInPlay>().every.clone();
-        let mut gated = 0;
-        self.world_mut().resource_scope(|world, mut schedules: Mut<Schedules>| {
-            for (label, schedule) in schedules.iter_mut() {
-                let label = format!("{label:?}");
-                if runs_once(&label) {
-                    continue;
-                }
-                let old = before.iter().find(|(l, _)| *l == label).map(|(_, k)| k);
-                let systems = &mut schedule.graph_mut().systems;
-                let new: Vec<SystemKey> = systems
-                    .iter()
-                    .filter(|(k, s, _)| {
-                        old.is_none_or(|o| !o.contains(k))
-                            && crate_of(&s.name().as_string()) == game
-                            && !every.contains(&s.system_type())
-                    })
-                    .map(|(k, _, _)| k)
-                    .collect();
-                for key in new {
-                    let Some(conditions) = systems.get_conditions_mut(key) else { continue };
-                    let flag = flag.clone();
-                    let mut condition: Box<dyn ReadOnlySystem<In = (), Out = bool>> =
-                        Box::new(IntoSystem::into_system(move || flag.load(Ordering::Relaxed)));
-                    // Initialized now: the schedule may have initialized the
-                    // system already (a second initialization is harmless).
-                    let access = condition.initialize(world);
-                    let mut c = ConditionWithAccess::new(condition);
-                    c.access = access;
-                    conditions.push(c);
-                    gated += 1;
-                }
-            }
-        });
-        debug!("game {game}: {gated} systems gated");
+        gate_since(self, &before, game, &[game]);
         self
     }
 }
 
-/// Each schedule's system keys (to tell what `gate_game`'s `add` added).
+/// Gates what the games' plugins add in `Plugin::finish`: its own `finish`
+/// (run in plugin order: it is added with the first `gate_game`, before the
+/// games' plugins) notes the systems there are, its `cleanup` (after every
+/// plugin's `finish`) gates those added since in each gated game's crates
+/// (`gate_since`'s). Systems added in `cleanup` stay ungated.
+pub struct LateGatePlugin;
+
+impl Plugin for LateGatePlugin {
+    fn build(&self, _: &mut App) {}
+
+    fn finish(&self, app: &mut App) {
+        let at = systems_now(app);
+        app.insert_resource(at);
+    }
+
+    fn cleanup(&self, app: &mut App) {
+        let Some(at) = app.world_mut().remove_resource::<SystemsAt>() else { return };
+        let Some(games) = app.world().get_resource::<GamesInPlay>() else { return };
+        let mut by_game: Vec<(&'static str, Vec<&'static str>)> = Vec::new();
+        for &(game, c) in &games.crates {
+            match by_game.iter_mut().find(|(g, _)| *g == game) {
+                Some((_, cs)) => cs.push(c),
+                None => by_game.push((game, vec![c])),
+            }
+        }
+        for (game, crates) in by_game {
+            gate_since(app, &at, game, &crates);
+        }
+    }
+}
+
+/// Each schedule's system keys (to tell what was added since).
 fn keys(world: &World) -> Vec<(String, Vec<SystemKey>)> {
     world.get_resource::<Schedules>().map_or_else(Vec::new, |s| {
         s.iter()
@@ -455,6 +535,34 @@ mod tests {
         });
         app.update();
         assert_eq!(app.world().resource::<Runs>().0, 10, "only the one serving every game ran");
+    }
+
+    #[test]
+    fn systems_added_in_finish_and_after_a_moment_are_gated() {
+        struct Late;
+        impl Plugin for Late {
+            fn build(&self, _: &mut App) {}
+            fn finish(&self, app: &mut App) {
+                app.add_systems(Update, count);
+            }
+        }
+        fn front(mut runs: ResMut<Runs>) {
+            runs.0 += 10;
+        }
+        let mut app = App::new();
+        app.init_resource::<Runs>().gate_game("chimera_core", |app| {
+            app.add_plugins(Late);
+        });
+        let since = systems_now(&app);
+        app.add_systems(Update, front);
+        assert_eq!(gate_since(&mut app, &since, "chimera_core", &["chimera_core"]), 1, "the front end's system");
+        app.finish();
+        app.cleanup();
+        app.update();
+        assert_eq!(app.world().resource::<Runs>().0, 0, "out of play: neither ran");
+        enter(app.world_mut(), "chimera_core", "a test");
+        app.update();
+        assert_eq!(app.world().resource::<Runs>().0, 11, "in play: both ran");
     }
 
     #[test]

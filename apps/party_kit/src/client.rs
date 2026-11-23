@@ -28,6 +28,9 @@
 //! player's gun changes game, a puff at others' (`client::swap_effect`).
 //! Number keys switch weapons at once under every game's HUD
 //! (`hl2_fast_switch`; CS:S's `hud_fastswitch` is 1 by default).
+//! Each guest's front end runs only while its game is in play
+//! (`gate_front_ends`: the systems its HUD and `GameClient::app` add, as
+//! its simulation's, `chimera_core::games_in_play`).
 //! The Escape menu is the party's own (`esc_menu`), titled by the app;
 //! `start_at_menu` starts an app at the main menu (`main_menu`) with no
 //! map, over the menu's own backdrop; `background_at_hand` says which maps
@@ -41,7 +44,10 @@ use chimera_client::client::{
     AppHooks, Args,
     app::{GameApp, RunningApp, StartMap},
 };
-use chimera_core::game_registry::Games;
+use chimera_core::{
+    game_registry::Games,
+    games_in_play::{self, SystemsAt},
+};
 use chimera_world::{game_bundle::GameClient, map::hud::GameUi};
 
 use crate::{Party, Roster};
@@ -177,6 +183,34 @@ pub fn front_end(front: &'static PartyClient, app: &mut App, args: &Args) {
         (base.app)(app);
     }
     (front.front_end)(app);
+    if let Some(FrontEndsFrom(since)) = app.world_mut().remove_resource::<FrontEndsFrom>() {
+        gate_front_ends(app, &since, front);
+    }
+}
+
+/// The systems there were once the party's simulation was set up (`sim`):
+/// what the shell and the front ends add after it is the client's
+/// (`gate_front_ends`).
+#[derive(Resource)]
+struct FrontEndsFrom(SystemsAt);
+
+/// Each guest's front end runs only while its game is in play
+/// (`chimera_core::games_in_play`, as its simulation): the systems added
+/// since `since` (the shell's plugins with every game's HUD, `with_huds`,
+/// and the front ends, `front_end`) whose type path starts in a guest's
+/// front-end crate (`GameClient::ui_crate`) or its game's crate get the
+/// game's switch. Its HUD and view model are drawn only for a character
+/// holding its gun, which puts it in play first; a system that draws for
+/// other games too opts out (`games_in_play::serves_every_game`). The base
+/// game's front end always runs. Returns how many systems were gated.
+pub fn gate_front_ends(app: &mut App, since: &SystemsAt, front: &PartyClient) -> usize {
+    let base = front.party.base.info.id;
+    front
+        .clients
+        .iter()
+        .filter(|c| c.game != base)
+        .map(|c| games_in_play::gate_since(app, since, c.game, &[c.game, c.ui_crate]))
+        .sum()
 }
 
 /// The party's HUD settings over both games' HUDs: one kill feed, the
@@ -253,6 +287,8 @@ pub fn sim(party: &'static Party, app: &mut App, _: &Args) {
         .set_gameplay(Gameplay::of(party.base.info))
         .insert_resource(crate::esc_menu::EscMenuTitle(title.into()))
         .insert_resource(super::launch_rung_seed());
+    let at = games_in_play::systems_now(app);
+    app.insert_resource(FrontEndsFrom(at));
 }
 
 /// A party app's start at its main menu (`main_menu`; its

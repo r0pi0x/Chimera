@@ -159,7 +159,7 @@ pub mod party {
 
     use super::{GAME, lights, systems};
 
-    pub static CLIENT: GameClient = GameClient { game: GAME, hud: Some(with_hud), app: Some(client_app), base: None };
+    pub static CLIENT: GameClient = GameClient { game: GAME, ui_crate: env!("CARGO_CRATE_NAME"), hud: Some(with_hud), app: Some(client_app), base: None };
 
     /// The HUD over the shell's plugins, after the base game's.
     pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {

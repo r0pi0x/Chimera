@@ -109,6 +109,7 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 /// its HUD on the shell (`with_hud`).
 pub static PARTY_CLIENT: chimera_world::game_bundle::GameClient = chimera_world::game_bundle::GameClient {
     game: crate::game::GAME,
+    ui_crate: env!("CARGO_CRATE_NAME"),
     hud: Some(with_hud),
     app: None,
     base: Some(&BASE_CLIENT),

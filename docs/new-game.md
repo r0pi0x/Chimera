@@ -123,16 +123,23 @@ runs inside `chimera_core::games_in_play::gate_game`: every per-tick
 system whose type path starts in the game's crate runs only while the
 game is in play (a character has its `GameIdentity`, a weapon of its
 `game:` ids exists, the ladder names its guns, its map spawned, or any
-entity holds one of its crate's components). So: keep the crate's name
-equal to the game's id; add systems in plugins' `build` (not `finish`);
-a system of the crate that must also work for other games (a map's
-explosions of no game) is named with `serves_every_game`; a
+entity holds one of its crate's components). Its front end is gated the
+same way on the party's client: every per-frame system of `<id>_ui` (its
+`GameClient::ui_crate`) or of the game's crate that its `party::CLIENT`
+adds (`party_kit::client::gate_front_ends`); its HUD and view model are
+drawn only for a character holding its gun, which puts it in play first.
+So: keep the crate's name equal to the game's id; add systems in
+plugins' `build` (`finish`'s are gated by crate alone, `cleanup`'s not
+at all); a system of the crate that must also work for other games (a
+map's explosions of no game, a HUD part drawn under another game's HUD)
+is named with `serves_every_game`; a
 per-character loop visits the game's own characters
 (`games_in_play::GameCharacters::of`), not every character; and leave
 data the game needs only once it plays to `GameEntersPlay` (an observer). A
 match without the game must cost no instructions of its systems
 (`apps/ultimate_gun_game/tests/it/heavy/idle_games.rs`, under 1% for all
-absent games together).
+absent games together; a client frame with every front end:
+`idle_front_ends.rs`).
 
 ## Order of work
 

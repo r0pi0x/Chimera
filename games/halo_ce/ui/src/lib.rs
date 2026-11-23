@@ -53,7 +53,7 @@ pub fn binds(app: &mut bevy::app::App) {
 /// Halo's front end in an app made of several games (beside its
 /// `game::BUNDLE`): its HUD while a Halo gun is in hand (`with_hud`), its
 /// weapons' buttons (`binds`) and the HUD's party layout (`party_app`).
-pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, hud: Some(with_hud), app: Some(party_app), base: None };
+pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, ui_crate: env!("CARGO_CRATE_NAME"), hud: Some(with_hud), app: Some(party_app), base: None };
 
 /// The party apps' front end: the buttons, and the HUD's shield and
 /// health block moved to the bottom left in the motion tracker's place

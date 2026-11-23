@@ -74,6 +74,11 @@ pub struct BaseGame {
 /// composer's client lists them beside the bundles.
 pub struct GameClient {
     pub game: &'static str,
+    /// The crate of its front end (`env!("CARGO_CRATE_NAME")`): in an app
+    /// that gates its game (`chimera_core::games_in_play`), the systems of
+    /// this crate and the game's that its front end adds run only while
+    /// the game is in play (`party_kit::client::gate_front_ends`).
+    pub ui_crate: &'static str,
     /// Its HUD on the client shell's plugins, after the base game's.
     pub hud: Option<fn(PluginGroupBuilder) -> PluginGroupBuilder>,
     /// The rest of its front end on the client (what its bodies play, the

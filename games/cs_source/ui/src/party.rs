@@ -13,6 +13,7 @@ use chimera_world::game_bundle::GameClient;
 /// CS:S's front end in a party app (beside its `game::BUNDLE`).
 pub static CLIENT: GameClient = GameClient {
     game: crate::game::GAME,
+    ui_crate: env!("CARGO_CRATE_NAME"),
     hud: Some(with_hud),
     app: Some(client_app),
     base: None,

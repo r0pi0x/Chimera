@@ -54,7 +54,7 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 
 /// TF2's front end in an app made of several games (beside its
 /// `game::BUNDLE`): its HUD while a TF2 gun is in hand.
-pub static CLIENT: GameClient = GameClient { game: GAME, hud: Some(with_hud), app: None, base: None };
+pub static CLIENT: GameClient = GameClient { game: GAME, ui_crate: env!("CARGO_CRATE_NAME"), hud: Some(with_hud), app: None, base: None };
 
 /// TF2's front end under the name every game's has it (`party::CLIENT`;
 /// docs/new-game.md).

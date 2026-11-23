@@ -18,7 +18,7 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 
 /// DoD:S's front end in an app made of several games (beside its
 /// `game::BUNDLE`): its prone key (`party_app`).
-pub static CLIENT: GameClient = GameClient { game: GAME, hud: None, app: Some(party_app), base: None };
+pub static CLIENT: GameClient = GameClient { game: GAME, ui_crate: env!("CARGO_CRATE_NAME"), hud: None, app: Some(party_app), base: None };
 
 /// The party apps' front end: `+alt1` (prone, `dods::game::stance`) read
 /// from the keys bound to it.

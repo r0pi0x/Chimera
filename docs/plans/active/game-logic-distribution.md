@@ -299,13 +299,13 @@ are; do not split the party.
       per-character scan that cost more than a system's floor
 - [x] `heavy::idle_games` as a bound (absent games under 1% of a tick) and
       a game entering play mid-match running that tick
-- [ ] The same for the front ends' per-frame systems, counted in a client
-      frame
+- [x] The same for the front ends' per-frame systems, counted in a client
+      frame, and for systems added in `Plugin::finish` (section 7)
 - [ ] Per-game install scans and parsed data loaded when the game enters
       play (`GameEntersPlay` (an observer) is the hook; the guests' simulations
       load no install data at build: their weapon data feed the catalogue
       every ladder draws from, their bodies already load by the match's
-      offer. What remains is the front ends' installs, with the step above)
+      offer. The front ends' reads at start stay: section 7)
 - [x] new-game.md: a new game is gated from its first commit
 
 ## 6. Gating done (2026-11-23)
@@ -349,6 +349,59 @@ its own: `wear_bodies` now takes TF2's characters from it and the others
 only when they wear TF2's skin or a body name and their identity changed
 or is none; it fell under 6k, the every-game tick 4,491k -> 4,358k.
 
-Still open: the front ends' frame systems (`GameClient`), games leaving
-play, and data loaded on first entry where a game has any worth
-deferring.
+Still open: games leaving play, and data loaded on first entry where a
+game has any worth deferring (section 7: the front ends' is not).
+
+## 7. Front ends and `Plugin::finish` gated (2026-11-23)
+
+- **Front ends**: `party_kit::client` notes the systems there are once
+  the party's simulation is set up (`sim`: `games_in_play::systems_now`)
+  and, at the end of `front_end`, gives every system added since (the
+  shell with every game's HUD, `with_huds`; each `GameClient::app`) whose
+  type path starts in a guest's front-end crate (`GameClient::ui_crate`,
+  a new field: `env!("CARGO_CRATE_NAME")`) or its game's crate (CS:S's
+  `PlayerAnimPlugin`) the game's switch (`gate_front_ends` on
+  `games_in_play::gate_since`): 57 systems in UGG. A guest's HUD and view
+  model draw only for a character holding its gun, which puts it in play
+  first; the shell's HUD switch and the HUD roots (spawned empty at
+  `Startup`, ungated) are Chimera's. No front-end system needed
+  `serves_every_game`.
+- **`Plugin::finish`**: `LateGatePlugin` (added with the first
+  `gate_game`) notes the systems in its own `finish`, which runs before
+  the games' plugins' (plugin order), and in its `cleanup` gates those
+  added since in each gated game's crates. In UGG's client that is the
+  games' network parts (`NetAppExt::net_part`, which `NetPlugin` applies
+  in its `finish`): HL2:DM's, Halo's and TF2's effects forwarded to
+  clients (`PostUpdate`) and received (`PreUpdate`), 16 systems. A
+  game's effects come only from its guns, characters and things, which
+  put it in play first (on a client too: replicated identities, weapons
+  and the ladder); a message that arrives the frame its game enters
+  waits in its queue for the next.
+- **Install reads at start: left.** The front ends' `Startup` reads are
+  CS:S's and HL2:DM's kill-icon glyphs (`register_install_icons`,
+  `kill_icons::register`) and CS:S's guns' names (`minigame_hud::
+  read_names`): the main menu's Ladder backdrop and the gun lists show
+  every game's guns before any game is in play, so they can't wait for
+  `GameEntersPlay`. They read a scheme, a font and the weapon scripts:
+  small beside the base game's start (section 1.2). Halo's HUD data
+  (`hud::nodes::load`, per frame until read) is now read when Halo
+  enters play.
+
+`heavy::idle_front_ends` (UGG's `it`): `idle_games`' match with a local
+player and every guest's front end as the client adds them, headless
+(the shell's own plugins out: no renderer), 300 frames (a `Sim` update
+runs every schedule) by work counts:
+
+| | instructions a frame | absent games' systems | of them front ends |
+|---|---|---|---|
+| front ends ungated (before) | 3,660k | 34.2k (0.93%) | 25.7k: CS:S 13.8k, Halo 10.0k, TF2 1.9k (HL2:DM's wait for its HUD) |
+| gated | 3,623k | 4.5k (0.12%) | 0 |
+
+1.0% of the frame saved (the absent games' own 26k, CS:S's player
+animation 4k, and the schedule runner's starts). What is left is CS:S's
+two `serves_every_game` systems (a map's explosions, smoke clouds). The
+test bounds the absent games under 1% with no front-end system run, and
+checks a game entering mid-match (a Halo rung for the local player) runs
+its front end that frame. Most HUD systems already carried
+`hud_is(GAME)` conditions, so the front ends were cheap while absent; the
+gating mainly keeps a new game's from adding to it.
