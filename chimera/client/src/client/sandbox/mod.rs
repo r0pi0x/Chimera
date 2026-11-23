@@ -181,35 +181,19 @@ impl SandboxCatalogue {
     }
 }
 
-/// A game's full name by its id.
+/// A game's full name by its id (the registered game's:
+/// `game_registry::known::full_name`).
 pub fn game_name(id: &str) -> String {
-    match id {
-        "cs_source" => "Counter-Strike: Source".into(),
-        "combat_arms" => "Combat Arms".into(),
-        "hl2dm" => "Half-Life 2: Deathmatch".into(),
-        "halo_ce" => "Halo: Combat Evolved".into(),
-        "tf2" => "Team Fortress 2".into(),
-        "dods" => "Day of Defeat: Source".into(),
-        "" => "Other".into(),
-        other => other.replace('_', " "),
-    }
+    chimera_core::game_registry::known::full_name(id)
 }
 
-/// A game's short name by its id (the registry's, else a table).
+/// A game's short name by its id (the registry's, else any registered
+/// game's, else the id).
 pub fn game_short(id: &str, games: Option<&chimera_core::game_registry::Games>) -> String {
-    if let Some(i) = games.and_then(|r| r.get(id)) {
-        return i.short_name.to_string();
+    match games.and_then(|r| r.get(id)).or_else(|| chimera_core::game_registry::known::known(id)) {
+        Some(i) => i.short_name.to_string(),
+        None => id.to_string(),
     }
-    match id {
-        "cs_source" => "CS:S",
-        "combat_arms" => "CA",
-        "hl2dm" => "HL2:DM",
-        "halo_ce" => "Halo",
-        "tf2" => "TF2",
-        "dods" => "DoD:S",
-        other => other,
-    }
-    .to_string()
 }
 
 /// The catalogue of `rungs` (ids, in the ladder's order) with what

@@ -1,18 +1,21 @@
-# The Colt M1911 (weapons.md, "The guns": the script's values): 40 a
-# bullet, one bullet, semi-automatic (weapons.md, "Firing"), 0.1 s between
-# shots, 7 rounds and 3 spare clips. A stand-in for M0: no sounds, recoil,
-# movement penalty or view-model animation rules yet (M1).
+# The Colt .45 (specs/dods/weapons.md, "The guns": the script's values):
+# 40 a bullet, 1 bullet a shot, 0.1 s between shots (rounded up to ticks),
+# 7 rounds and 3 spare clips; semi-automatic.
 id = "dods:weapon_colt"
-base = "dods:base"
+base = "dods:gun"
 class = "pistol"
 slot = 1
+# Unmeasured (weapons.md, open question 10): a stand-in draw time.
 draw = 0.5
-weight = 2
+weight = 5
+
+[ammo."dods:colt"]
+# The spare clips (3) of 7 rounds.
+max = 21
 
 [trigger]
 automatic = false
 cycle = 0.1
-timing = "carry_over"
 
 [magazine]
 clip = 7
@@ -21,29 +24,19 @@ ammo = "dods:colt"
 reload = 2.0
 
 [hitscan]
-range = 8192.0
 pellets = 1
-punch_scale = 0.0
-# The script's `Accuracy` as a cone's half-angle sine (weapons.md, M1 to
-# confirm the spread model).
+# `Accuracy` as a cone's half-angle sine (weapons.md, open question 1:
+# CS:S's seeded spread assumed); `dods:gun` sets it each shot.
 spread = { cone = 0.055 }
 
 [damage]
 amount = 40.0
-# No range falloff (damage.md, "Hit zones").
-falloff = 1.0
-falloff_step = 500.0
-# damage.md, "Hit zones": head x2.5, limbs x0.75, no stomach zone.
-hitgroups = { head = 2.5, chest = 1.0, stomach = 1.0, arm = 0.75, leg = 0.75 }
-armor_ratio = 1.0
-# Unmeasured: no ragdoll push from the bullet yet (M1); whole hit points.
-impulse = 0.0
-quantum = 1.0
 
-[models]
-world = "models/weapons/w_colt.mdl"
-view = "models/weapons/v_colt.mdl"
-view_right_handed = true
+[hooks."dods:gun"]
+script = "weapon_colt"
+accuracy = 0.055
+move_penalty = 0.1
+recoil = 1.4
 
 [hud]
 name = "Colt .45"

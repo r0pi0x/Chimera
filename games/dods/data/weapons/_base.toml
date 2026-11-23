@@ -1,12 +1,11 @@
 # DoD:S's weapons' shared base: Source units (inches) and hit points
 # (specs/dods/weapons.md, "Units and conventions"). The format:
-# docs/weapon-data.md. M0 has one stand-in gun (colt.toml) so a DoD:S body
-# can be worn in the party apps; M1 reads the guns' numbers from the
-# install's scripts (`scripts/weapon_<id>.txt`, plain KeyValues).
+# docs/weapon-data.md. Each gun's numbers are its script's
+# (`scripts/weapon_<name>.txt`, plain KeyValues), applied over these
+# documents when the install or the asset store has them
+# (`game::weapons::script_numbers`); the documents hold the specs' numbers
+# as the fallback, and no sound entries or model paths: those only the
+# scripts give.
 id = "dods:base"
 abstract = true
 units = { length = 0.0254, damage = 0.01 }
-
-[ammo."dods:colt"]
-# The script's spare clips (3) of 7 rounds (weapons.md, "The guns").
-max = 21

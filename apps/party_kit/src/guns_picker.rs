@@ -555,17 +555,10 @@ pub fn class_name(c: GunClass) -> &'static str {
     }
 }
 
-/// A game's short name (the pool tile's mix).
+/// A game's short name (the pool tile's mix): the registered game's
+/// (`game_registry::known::short_name`).
 pub fn game_short(id: &str) -> String {
-    match id {
-        "cs_source" => "CS:S".into(),
-        "combat_arms" => "CA".into(),
-        "tf2" => "TF2".into(),
-        "dods" => "DoD:S".into(),
-        "halo_ce" => "Halo".into(),
-        "hl2dm" => "HL2:DM".into(),
-        o => o.to_ascii_uppercase(),
-    }
+    chimera_core::game_registry::known::short_name(id)
 }
 
 /// The browser's sections: (key, title, families), each weakest first.

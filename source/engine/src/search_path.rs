@@ -330,6 +330,58 @@ impl SearchPath {
     }
 }
 
+impl SearchPath {
+    /// Archives whose numbered parts are missing on disk (a dedicated
+    /// server's layout ships `hl2/hl2_textures_dir.vpk` alone: its files
+    /// would read as missing) replaced by the same archive of another
+    /// Source install in `donors` (install roots: the folder holding
+    /// `hl2/`), the first one whose archive is whole. The archive keeps
+    /// its place in the order, as the game's own client would mount its
+    /// own copy. Returns a note per archive replaced or left incomplete.
+    pub fn borrow_incomplete_archives(&mut self, donors: &[PathBuf]) -> Vec<String> {
+        let mut notes = Vec::new();
+        for layer in self.layers.iter_mut().filter(|l| l.kind == Kind::Vpk && l.exists()) {
+            let Ok(own) = Vpk::open(&layer.path) else { continue };
+            if own.skipped() == 0 {
+                continue;
+            }
+            let (Some(file), Some(folder)) = (layer.path.file_name(), layer.path.parent().and_then(Path::file_name)) else {
+                continue;
+            };
+            let whole = donors
+                .iter()
+                .map(|d| d.join(folder).join(file))
+                .filter(|p| *p != layer.path)
+                .find(|p| Vpk::open(p).is_ok_and(|v| v.skipped() == 0));
+            match whole {
+                Some(p) => {
+                    notes.push(format!("{} lacks {} files' archives: {} mounted in its place", layer.path.display(), own.skipped(), p.display()));
+                    layer.path = p;
+                }
+                None => notes.push(format!(
+                    "{} lacks {} files' archives and no other install has it whole",
+                    layer.path.display(),
+                    own.skipped()
+                )),
+            }
+        }
+        notes
+    }
+}
+
+/// Install roots of Source games under the Steam libraries of `roots`
+/// (`steamapps/common/*`), for `SearchPath::borrow_incomplete_archives`.
+pub fn steam_source_installs(roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for lib in roots.iter().flat_map(|r| chimera_core::mount::install::libraries(r)) {
+        let Ok(read) = fs::read_dir(lib.path.join("steamapps").join("common")) else { continue };
+        let mut found: Vec<PathBuf> = read.flatten().map(|e| e.path()).filter(|p| p.join("hl2").is_dir()).collect();
+        found.sort();
+        out.extend(found);
+    }
+    out
+}
+
 /// A wildcard folder's layers: each sub-folder and each `_dir.vpk`, by
 /// name in any case; nothing when the folder is missing.
 fn folder_contents(folder: &Path) -> Vec<(PathBuf, Kind)> {

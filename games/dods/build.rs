@@ -20,13 +20,13 @@ mod source_hash;
 /// data, a gameplay module a dressing calls); the converted-output test
 /// (party_kit `heavy::converted::converted_output_matches_its_version`)
 /// fails until it is.
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 /// What shapes the converted output (module doc).
 const CONVERTING: &[&str] = &[
     "src/game/maps.rs",
     "src/game/bodies.rs",
-    "src/game/weapons.rs",
+    "src/game/weapons",
     "data/weapons",
     // Source's content converters, the HUD look, the effects' looks,
     // Source's formats and Chimera's (KeyValues, WAV).

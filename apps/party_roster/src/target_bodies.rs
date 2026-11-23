@@ -16,7 +16,7 @@
 //! table's health / 100 and none, Combat Arms 1.0 and its default 100
 //! points of gear (docs/DESIGN.md, "Armour when the identity switches"),
 //! CS:S and HL2:DM 1.0 and none (kevlar is bought; HL2:DM's suit starts
-//! empty). And the games' full names (`target_game_name`).
+//! empty). The games' full names are their `GameInfo::name`.
 //!
 //! Known shortcuts: Combat Arms' looks (`CaLook`: bodies, heads, camo) are
 //! not offered yet; the TF2 class is put on again after each arming
@@ -116,14 +116,5 @@ pub fn add(app: &mut App) {
             vitals,
             second_bar: None,
         });
-    }
-    for (game, name) in [
-        ("combat_arms", "Combat Arms"),
-        ("cs_source", "Counter-Strike: Source"),
-        ("hl2dm", "Half-Life 2: Deathmatch"),
-        ("halo_ce", "Halo: Combat Evolved"),
-        ("tf2", "Team Fortress 2"),
-    ] {
-        app.target_game_name(game, name);
     }
 }

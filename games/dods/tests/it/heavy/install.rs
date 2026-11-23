@@ -3,8 +3,8 @@
 //! `dod_english.vpk` too), lists the nine stock maps, each a BSP 20 that
 //! converts (lean: no textures) with the Allies' and the Axis' spawns
 //! (dod_avalanche and dod_flash 20 each), and every class body loads (MDL
-//! 44, its sequences from the shared model) with a head box; the Colt's
-//! view and held models load. Converted fresh (no map cache). Each test
+//! 44, its sequences from the shared model) with a head box; every
+//! weapon's view and held models (the scripts') load. Converted fresh (no map cache). Each test
 //! passes with a note without an install (Steam, `[games.dods] path`, or
 //! `$CHIMERA_DODS_ROOT`).
 
@@ -97,7 +97,7 @@ fn every_class_body_loads_with_sequences_and_a_head() {
 }
 
 #[test]
-fn the_colt_s_models_load_on_the_body() {
+fn every_weapon_s_models_load_on_the_body() {
     let Some(mount) = install_mount() else { return };
     let mut materials = MaterialLoader::guest(&mount, 0, 0).lean(true);
     let surfaces = SurfaceProps::load(&mut materials);
@@ -107,6 +107,8 @@ fn the_colt_s_models_load_on_the_body() {
     weapons::add_guns(&mut materials, &surfaces, &|g| wants.wants(g), &mut kit, &mut warnings);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(kit.characters.len(), bodies::CLASSES.len());
-    assert!(kit.view_models.iter().any(|v| v.key == weapons::COLT), "the Colt's view model");
-    assert!(kit.held.iter().any(|h| h.key == weapons::COLT), "the Colt held");
+    for g in weapons::GUNS.iter().chain(weapons::MELEE) {
+        assert!(kit.view_models.iter().any(|v| v.key == *g), "{g}'s view model");
+        assert!(kit.held.iter().any(|h| h.key == *g), "{g} held");
+    }
 }

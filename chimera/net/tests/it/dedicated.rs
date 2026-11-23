@@ -31,6 +31,7 @@ use chimera_world::{
 static GAME: GameInfo = GameInfo {
     id: "stand_in",
     short_name: "SI",
+    name: "SI",
     content_dir: "si",
     tick_interval: 0.02,
     open: |_| Err(std::io::ErrorKind::NotFound.into()),

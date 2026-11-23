@@ -105,6 +105,7 @@ pub const M1_MAPS: &[&str] = &["ctf_2fort", "cp_badlands"];
 pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo {
     id: GAME,
     short_name: "TF2",
+    name: "Team Fortress 2",
     content_dir: CONTENT_DIR,
     tick_interval: TICK_INTERVAL,
     open: mount::open,

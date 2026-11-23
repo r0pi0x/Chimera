@@ -8,3 +8,8 @@
 mod parts;
 
 mod sandbox_bodies;
+
+// Slow ones (the user's install): the fast tier skips `heavy::`.
+mod heavy {
+    mod sandbox_targets;
+}

@@ -16,6 +16,7 @@ use chimera_world::map::{MapData, MapDebugView, MapLoadOptions};
 static GAME: GameInfo = GameInfo {
     id: "a_game",
     short_name: "A",
+    name: "A",
     content_dir: "a",
     tick_interval: 0.015,
     open: |_| Err(std::io::ErrorKind::NotFound.into()),

@@ -15,6 +15,7 @@ const BOT_TEAMS: [(&str, &str); 3] = [("", "Any"), ("#Team_T", "Terrorists"), ("
 static TEST_INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo {
     id: "a_game",
     short_name: "A",
+    name: "A",
     content_dir: "a",
     tick_interval: 0.015,
     open: |_| Err(std::io::Error::other("no install")),

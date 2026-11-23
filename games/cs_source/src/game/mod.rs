@@ -226,6 +226,7 @@ pub const GAME: &str = crate::objectives::GAME;
 pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo {
     id: GAME,
     short_name: "CS:S",
+    name: "Counter-Strike: Source",
     content_dir: "cstrike",
     tick_interval: TICK_INTERVAL,
     open: mount::open,

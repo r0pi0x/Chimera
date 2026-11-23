@@ -115,18 +115,10 @@ pub fn name_slices(games: &mut [CatalogueGame], slices: Option<&chimera_sim::min
     }
 }
 
-/// A game's full name by its id.
+/// A game's full name by its id (the registered game's:
+/// `game_registry::known::full_name`).
 pub fn game_name(id: &str) -> String {
-    match id {
-        "cs_source" => "Counter-Strike: Source".into(),
-        "combat_arms" => "Combat Arms".into(),
-        "hl2dm" => "Half-Life 2: Deathmatch".into(),
-        "halo_ce" => "Halo: Combat Evolved".into(),
-        "tf2" => "Team Fortress 2".into(),
-        "dods" => "Day of Defeat: Source".into(),
-        "" => "Other".into(),
-        other => other.replace('_', " "),
-    }
+    chimera_core::game_registry::known::full_name(id)
 }
 
 /// The catalogue in use (`LocalCatalogue` until the asset service's).

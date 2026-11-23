@@ -19,7 +19,7 @@ and the game's own data.
 |---|---|---|
 | Plan and first specs | done (2026-11-23) | this plan; specs/dods/: install, weapons, movement, classes, damage (measured on the dedicated server where marked) |
 | M0 install, mount, maps, bodies in the sandbox | done (2026-11-23) | §4; the log |
-| M1 weapons | not started | §4 |
+| M1 weapons | M1a done (2026-11-23); M1b not started | §4; the log |
 | M2 movement specifics | not started | §4 |
 | M3 party rungs | not started | §4 |
 
@@ -192,6 +192,44 @@ event's presents.
 
 ## Log
 
+- 2026-11-23, M0 fixes and M1a: (a) the dedicated server's
+  `hl2/hl2_textures_dir.vpk` lacks its archives: an archive whose parts
+  are missing is replaced, in its place in the search path, by the same
+  archive of another Source install (`SearchPath::borrow_incomplete_archives`;
+  donors: the other registered games' installs, every `[games.*] path`,
+  Steam's Source games; HL2:DM's on the dev box), so the maps' HL2
+  concrete, brick and detail textures load. (b) No game-name tables: a
+  game's full name is `GameInfo::name`, named process-wide where no world
+  is at hand (`chimera_core::game_registry::known`); the pickers, the sandbox's
+  headings and the target cards read it; architecture.rs's layering lists
+  say `<games>` (every `games/<id>` crate but the crate's own) instead of
+  each game. A new game is its crates plus its roster lines (`GUESTS`,
+  `CLIENTS`). (c) Sandbox targets on DoD:S maps: see the next entry's
+  findings (`tests/dods/heavy/sandbox_targets.rs`). M1a: every gun of
+  weapons.md's table but the explosives as data (data/weapons; the MGs in
+  no ladder until they deploy, M2), each built from its script at run time
+  (`script_numbers`: damage, bullets, accuracy, alt accuracy, move
+  penalty, recoil, fire delay rounded up to ticks, clip, spare clips, the
+  fire/empty/deploy sounds and the models; the committed numbers are the
+  spec's fallback, checked equal in `heavy::scripts`), sent to clients as
+  server documents; `dods:gun` (spread by sights and movement, the sights
+  and scopes blocking the trigger 0.49 s, the Garand's reload only when
+  empty), `dods:hit_slow` (0.5 s, a leg 2 s), the knife and spade (60,
+  300 from behind, the hit zones on both through Chimera's new
+  `[melee] hitgroup_scale`). Stand-ins, each a Known shortcut in its
+  file: reload and draw times, the sights' and scopes' FOV, the slow's
+  speed (×0.5), the swing's reach and backstab cone (CS:S's knife's); not
+  done: the recoil kick (shape unmeasured), the BAR/StG44 sighted delay,
+  the SMGs' stock strike, the view model's iron-sight offset, HUD and kill
+  icons (M3).
+- M1b (not started; only what weapons.md specifies): frag grenades (180
+  damage; gravity −420, throw speed 500-1400 from the cvars; fuse,
+  radius and priming unmeasured), rifle grenades (a separate weapon, 2
+  rounds, 100 damage; flight, fuse and radius unmeasured), the bazooka
+  and Panzerschreck (shoulder ≈0.79 s with alt fire, unshoulder ≈0.99 s,
+  no fire unshouldered, ≤50 u/s shouldered; `mp_rocketdamage` 150 /
+  `mp_rocketradius` 200; flight unmeasured). Each needs its unmeasured
+  numbers measured first (a `tools/dods_probe`, §5).
 - 2026-11-23, M0: `games/dods` and `games/dods/ui` (crates `dods`,
   `dods_ui`), a guest in the party roster (`GUESTS`, `CLIENTS`); no
   apps of its own yet (as TF2). The install found by `$CHIMERA_DODS_ROOT`

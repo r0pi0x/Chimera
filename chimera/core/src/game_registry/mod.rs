@@ -23,6 +23,8 @@ use std::{
 
 use bevy::prelude::*;
 
+pub mod known;
+
 use crate::mount::{Mount, config, install::SteamGame};
 
 /// One game, as the shell needs to know it.
@@ -34,6 +36,9 @@ pub struct GameInfo {
     pub id: &'static str,
     /// A short name for menus and headings (`CS:S`).
     pub short_name: &'static str,
+    /// Its full name (`Counter-Strike: Source`): pickers, target cards,
+    /// the sandbox's headings (`full_name`).
+    pub name: &'static str,
     /// The game's own folder inside its install (`cstrike`): its
     /// `download/` folder, its `cfg/`.
     pub content_dir: &'static str,
@@ -169,10 +174,12 @@ impl Games {
     }
 
     /// Add `game` (once; a second registration of the same id is ignored).
+    /// It is also known process-wide from then on (`known`).
     pub fn register(&mut self, game: &'static GameInfo) {
         if self.get(game.id).is_none() {
             self.0.push(game);
         }
+        known::note(game);
     }
 }
 
@@ -219,6 +226,7 @@ mod tests {
     const A_INFO: GameInfo = GameInfo {
         id: "a_game",
         short_name: "A",
+        name: "A",
         content_dir: "a",
         tick_interval: 0.015,
         open: no_mount,

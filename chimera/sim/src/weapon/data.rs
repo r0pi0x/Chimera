@@ -445,6 +445,9 @@ pub struct SwingData {
     pub delay: f32,
     #[serde(default)]
     pub hitgroups: bool,
+    /// `Swing::scales`: the hit zones' multipliers (implies `hitgroups`).
+    #[serde(default)]
+    pub hitgroup_scale: Option<HitgroupData>,
     pub hit_refire: f32,
     pub miss_refire: f32,
     pub miss_refire_other: f32,
@@ -1359,7 +1362,16 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                 },
             }),
             delay: s.delay,
-            hitgroups: s.hitgroups,
+            hitgroups: s.hitgroups || s.hitgroup_scale.is_some(),
+            scales: s.hitgroup_scale.map(|x| {
+                super::hits::RegionScale::from_hitgroups(&HitgroupScale {
+                    head: x.head,
+                    chest: x.chest,
+                    stomach: x.stomach,
+                    arm: x.arm,
+                    leg: x.leg,
+                })
+            }),
             hit_refire: s.hit_refire,
             miss_refire: s.miss_refire,
             miss_refire_other: s.miss_refire_other,

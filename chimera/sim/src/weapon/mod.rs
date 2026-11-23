@@ -1495,6 +1495,10 @@ pub struct Swing {
     pub delay: f32,
     /// Hits scale by hitgroup (the SDK); CS:S's knife reports generic.
     pub hitgroups: bool,
+    /// Each body region's multiplier on the swing's damage (backstab's
+    /// too), the region found as for `hitgroups` (DoD:S's melee: head
+    /// x2.5, limbs x0.75); none: the damage as it is.
+    pub scales: Option<hits::RegionScale>,
     /// Seconds until either attack after a hit.
     pub hit_refire: f32,
     /// After a miss: until this swing again, and until the other one.

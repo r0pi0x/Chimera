@@ -68,6 +68,11 @@ const NOT_SIMULATION_FILES: &[(&str, &str)] = &[
          cache of read-only files, not state (`reload` is a developer's console command)",
     ),
     (
+        "chimera/core/src/game_registry/known.rs",
+        "the games' static descriptions (`GameInfo`) registered in the process, for naming a game in menus where no \
+         world is at hand; the same for every app, never read by the simulation",
+    ),
+    (
         "chimera/core/src/pending_work.rs",
         "measurement: a count of background jobs for tests and scenes to wait on, never read by the simulation",
     ),

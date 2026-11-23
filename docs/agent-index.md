@@ -182,8 +182,8 @@ module list is `docs/modules.md`.
 - 26: Before any code | before writing a loader): the install (where it comes from, how it is found), the formats, the milestones below, what is out of scope
 - 40: The crates | A new family's folder is a loader layer the day a crate lives in it; its formats crate may use `chimera_vfs` (archives as mount layers) and
 - 64: The game crate's shape | party mode finds the same seams in every game:
-- 134: Order of work | Get a character walking on the greybox with stand-in parts first (M0: tools/new-game), then replace one part at a time, each behind its...
-- 195: Don't rely on | run-time choice (`chimera_core::gameplay`)
+- 135: Order of work | Get a character walking on the greybox with stand-in parts first (M0: tools/new-game), then replace one part at a time, each behind its...
+- 199: Don't rely on | run-time choice (`chimera_core::gameplay`)
 
 ## docs/performance.md
 
@@ -368,6 +368,6 @@ module list is `docs/modules.md`.
 
 - 1: Weapon data | Weapons are data loaded at run time (docs/plans/active/engine-split.md, "Data-driven first"): a TOML document per weapon, parsed and...
 - 34: Documents | A document holds a weapon (a top-level `id`), ammo types (`[ammo."<id>"]` tables), or both
-- 217: Rules | inches: 0.0254) and health per damage point (hit points of 100: 0.01); both default to 1
-- 312: Loading more | data (games/cs_source/tests/data/weapon_rail.toml), buys it, fires it and plays it over the network
-- 324: Penetration by material | How bullets pass walls and characters (`PassMaterials`) is a game's document too, read by `PassMaterials::parse` (`weapon::pass_data`)...
+- 219: Rules | inches: 0.0254) and health per damage point (hit points of 100: 0.01); both default to 1
+- 319: Loading more | data (games/cs_source/tests/data/weapon_rail.toml), buys it, fires it and plays it over the network
+- 331: Penetration by material | How bullets pass walls and characters (`PassMaterials`) is a game's document too, read by `PassMaterials::parse` (`weapon::pass_data`)...

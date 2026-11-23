@@ -103,7 +103,8 @@ five games have it so.
   with none). A game never depends on another game or on an app; what
   two games need moves into Chimera or their family's crates.
 - `INFO` (`chimera_core::game_registry::GameInfo`): id, short name,
-  content folder, tick, how its install mounts, its map names and
+  full name (every menu, picker and card names the game by these, through
+  `chimera_core::game_registry::known`: no table of names elsewhere), content folder, tick, how its install mounts, its map names and
   cycle, its Steam app if it has one, its world unit in metres, its
   console namespaces.
 - `BUNDLE` (`chimera_world::game_bundle::GameBundle`): what a party app
@@ -180,7 +181,10 @@ doc and [engine-capabilities.md](engine-capabilities.md).
    (`chimera_world::map::MapWords`: spawn teams as `SIDE_FIRST`/
    `SIDE_SECOND`, surfaces as the neutral kinds; a Source game reuses
    `source_engine::maps::SURFACE_WORDS`). The roster lines (`GUESTS`,
-   `client::CLIENTS`) are scaffolded; no table names a pair of games.
+   `client::CLIENTS`) are scaffolded; no table names a pair of games,
+   or a game: menus, pickers and cards name it by `INFO`'s `name` and
+   `short_name` (`game_registry::known`), and the layering rules
+   (checks/tests/it/architecture.rs) say `<games>` for every game crate.
    The Controls tab is made of `data/player_options.toml`. A game that
    can be a party's base fills `BUNDLE.base` and `CLIENT.base`.
 10. **Tools and docs**: the game in `dump` and `chimera_pack` (its row in

@@ -1,0 +1,42 @@
+# The Thompson (specs/dods/weapons.md, "The guns": the script's values):
+# 40 a bullet, 1 bullet a shot, 0.085 s between shots (rounded up to ticks),
+# 30 rounds and 7 spare clips; automatic (measured: a shot every 6 ticks).
+id = "dods:weapon_thompson"
+base = "dods:gun"
+class = "smg"
+slot = 0
+# Unmeasured (weapons.md, open question 10): a stand-in draw time.
+draw = 1.0
+weight = 25
+
+[ammo."dods:thompson"]
+# The spare clips (7) of 30 rounds.
+max = 210
+
+[trigger]
+automatic = true
+cycle = 0.085
+
+[magazine]
+clip = 30
+ammo = "dods:thompson"
+# Unmeasured (weapons.md, open question 9: the view model's sequence).
+reload = 2.5
+
+[hitscan]
+pellets = 1
+# `Accuracy` as a cone's half-angle sine (weapons.md, open question 1:
+# CS:S's seeded spread assumed); `dods:gun` sets it each shot.
+spread = { cone = 0.055 }
+
+[damage]
+amount = 40.0
+
+[hooks."dods:gun"]
+script = "weapon_thompson"
+accuracy = 0.055
+move_penalty = 0.1
+recoil = 2.15
+
+[hud]
+name = "Thompson"

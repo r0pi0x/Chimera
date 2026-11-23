@@ -1,0 +1,35 @@
+# Every DoD:S gun (specs/dods/weapons.md, damage.md): a hitscan bullet
+# with no falloff (damage.md, "Distance"), DoD:S's hit zones (head x2.5,
+# chest x1, limbs x0.75, no stomach zone: damage.md, "Damage scaling by
+# hit zone"), damage kept as a real number (37.5 is dealt as such; how
+# health rounds it is damage.md's open question 2), each shot's interval
+# set from the shot (weapons.md, "Units and conventions": a fire delay is
+# rounded up to whole ticks, `script_numbers::fire_cycle`), and the slow a
+# hit gives (damage.md, "Being slowed when hit").
+id = "dods:gun"
+base = "dods:base"
+abstract = true
+
+[trigger]
+timing = "set"
+
+[hitscan]
+# Unmeasured (damage.md, open question 3): the trace's length.
+range = 8192.0
+pellets = 1
+# DoD:S's recoil shape is unmeasured (weapons.md, open question 8): the
+# view kick doesn't move the shots.
+punch_scale = 0.0
+
+[damage]
+falloff = 1.0
+falloff_step = 500.0
+hitgroups = { head = 2.5, chest = 1.0, stomach = 1.0, arm = 0.75, leg = 0.75 }
+armor_ratio = 1.0
+# Unmeasured: no ragdoll push from the bullet yet.
+impulse = 0.0
+quantum = 0.0
+
+[hooks."dods:hit_slow"]
+body = 0.5
+legs = 2.0

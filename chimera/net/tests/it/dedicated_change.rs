@@ -40,6 +40,7 @@ const TICK: f64 = 0.02;
 static GAME: GameInfo = GameInfo {
     id: "stand_in",
     short_name: "SI",
+    name: "SI",
     content_dir: "si",
     tick_interval: TICK,
     open: |_| Err(std::io::ErrorKind::NotFound.into()),

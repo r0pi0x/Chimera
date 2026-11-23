@@ -3729,9 +3729,11 @@ dependencies = [
  "chimera_core",
  "chimera_sim",
  "chimera_world",
+ "serde",
  "source_engine",
  "source_formats",
  "source_logic",
+ "toml",
  "vbsp",
  "workspace-hack",
 ]

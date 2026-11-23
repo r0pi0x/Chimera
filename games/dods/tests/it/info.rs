@@ -22,13 +22,18 @@ fn allies_and_axis_spawn_as_the_two_sides() {
 }
 
 #[test]
-fn it_lends_a_gun_and_its_movement() {
+fn it_lends_its_guns_knife_and_movement() {
     assert_eq!(PARTS.game, GAME);
     assert!(PARTS.playable());
     assert_eq!(PARTS.movement, Some(movement::ID));
+    assert_eq!(PARTS.knife, Some(weapons::KNIFE));
     let set = weapons::dods_weapons();
-    for g in weapons::GUNS {
-        let w = set.weapons.iter().find(|w| w.id == *g).unwrap_or_else(|| panic!("{g} in the data"));
-        assert!(w.models.view.is_some() && w.models.world.is_some(), "{g}'s models");
+    for g in PARTS.guns {
+        let w = set.weapons.iter().find(|w| w.id == g.id).unwrap_or_else(|| panic!("{} in the data", g.id));
+        assert_eq!(w.class, Some(g.class), "{}'s class", g.id);
+    }
+    // The machine guns wait for their deploy (M2): in no ladder.
+    for mg in [weapons::CAL30, weapons::MG42] {
+        assert!(PARTS.guns.iter().all(|g| g.id != mg) && set.get(mg).unwrap().class.is_none(), "{mg}");
     }
 }

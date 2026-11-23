@@ -1,0 +1,42 @@
+# The P38 (specs/dods/weapons.md, "The guns": the script's values):
+# 40 a bullet, 1 bullet a shot, 0.1 s between shots (rounded up to ticks),
+# 8 rounds and 3 spare clips; semi-automatic (assumed, weapons.md, "Fire modes").
+id = "dods:weapon_p38"
+base = "dods:gun"
+class = "pistol"
+slot = 1
+# Unmeasured (weapons.md, open question 10): a stand-in draw time.
+draw = 0.5
+weight = 5
+
+[ammo."dods:p38"]
+# The spare clips (3) of 8 rounds.
+max = 24
+
+[trigger]
+automatic = false
+cycle = 0.1
+
+[magazine]
+clip = 8
+ammo = "dods:p38"
+# Unmeasured (weapons.md, open question 9: the view model's sequence).
+reload = 2.0
+
+[hitscan]
+pellets = 1
+# `Accuracy` as a cone's half-angle sine (weapons.md, open question 1:
+# CS:S's seeded spread assumed); `dods:gun` sets it each shot.
+spread = { cone = 0.055 }
+
+[damage]
+amount = 40.0
+
+[hooks."dods:gun"]
+script = "weapon_p38"
+accuracy = 0.055
+move_penalty = 0.1
+recoil = 1.4
+
+[hud]
+name = "P38"

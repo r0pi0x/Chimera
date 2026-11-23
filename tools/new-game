@@ -19,7 +19,7 @@
 #   apps/party_roster      GUESTS and CLIENTS (the one roster line each), so
 #                          its gun is in the Ultimate Gun Game's sandbox
 #                          (skip with --no-roster)
-#   the pickers' name tables, chimera.local.example.toml ([games.<id>] path)
+#   chimera.local.example.toml ([games.<id>] path); no name tables (INFO names it)
 # then (unless --no-cargo) `cargo hakari generate` and `repo_checks`' docs_index (docs/modules.md and friends).
 #
 # Install discovery needs no code: `$CHIMERA_<ID>_ROOT` or `[games.<id>]
@@ -125,10 +125,8 @@ if [ "$roster" = 1 ]; then
     edit $p/src/client.rs 's/(pub static CLIENTS: \[&GameClient; )(\d+)(\] = \[)(.*?)\s*,?\s*\];/$1.($2+1).$3.$4.",\n    &$ENV{NG_ID}_ui::party::CLIENT,\n];"/se'
 fi
 
-# 4. The names the pickers show (their fallback is the id).
-edit apps/party_kit/src/maps_picker.rs 's/(\n(\s*)"" => "Other"\.into\(\),)/\n$2"$ENV{NG_ID}" => "$ENV{NG_NAME}".into(),$1/'
-edit chimera/client/src/client/sandbox/mod.rs 's/(\n(\s*)"" => "Other"\.into\(\),)/\n$2"$ENV{NG_ID}" => "$ENV{NG_NAME}".into(),$1/'
-edit apps/party_kit/src/guns_picker.rs 's/(\n(\s*)o => o\.to_ascii_uppercase\(\),)/\n$2"$ENV{NG_ID}" => "$ENV{NG_SHORT}".into(),$1/'
+# 4. The names the pickers show: none to edit (they read INFO's `name`
+# and `short_name` through `game_registry::known`).
 
 # 5. Where a player's install is found.
 cat >> chimera.local.example.toml <<EOF

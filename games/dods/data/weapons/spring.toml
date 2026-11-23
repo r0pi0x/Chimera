@@ -1,0 +1,51 @@
+# The Springfield (specs/dods/weapons.md, "The guns": the script's values):
+# 120 a bullet, 1 bullet a shot, 1.85 s between shots (rounded up to ticks),
+# 5 rounds and 11 spare clips; bolt action (measured: the next shot 1.85 s after one).
+id = "dods:weapon_spring"
+base = "dods:gun"
+class = "sniper"
+slot = 0
+# Unmeasured (weapons.md, open question 10): a stand-in draw time.
+draw = 1.0
+weight = 25
+
+[ammo."dods:spring"]
+# The spare clips (11) of 5 rounds.
+max = 55
+
+[trigger]
+automatic = false
+cycle = 1.85
+
+[magazine]
+clip = 5
+ammo = "dods:spring"
+# Unmeasured (weapons.md, open question 9: the view model's sequence).
+reload = 2.5
+
+[hitscan]
+pellets = 1
+# `Accuracy` as a cone's half-angle sine (weapons.md, open question 1:
+# CS:S's seeded spread assumed); `dods:gun` sets it each shot.
+spread = { cone = 0.06 }
+
+[damage]
+amount = 120.0
+
+[alt]
+kind = "scope"
+# The scope (weapons.md, "Alt fire": as the iron sights, 0.49 s before
+# the next shot). Its field of view is unmeasured: a stand-in.
+fov = [20.0]
+overlay = true
+step = 0.49
+
+[hooks."dods:gun"]
+script = "weapon_spring"
+accuracy = 0.06
+alt_accuracy = 0.0
+move_penalty = 0.1
+recoil = 5.6
+
+[hud]
+name = "Springfield"

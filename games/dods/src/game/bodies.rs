@@ -141,7 +141,6 @@ pub fn add_targets(app: &mut App) {
             second_bar: None,
         });
     }
-    app.target_game_name(GAME, "Day of Defeat: Source");
 }
 
 /// DoD:S's bodies worn and taken off.

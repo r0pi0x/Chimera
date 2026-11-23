@@ -33,6 +33,8 @@ source_engine.workspace = true
 # simulation (`SimPlugins`).
 source_logic.workspace = true
 bevy.workspace = true
+serde.workspace = true
+toml.workspace = true
 vbsp.workspace = true
 workspace-hack.workspace = true
 

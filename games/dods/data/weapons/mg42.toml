@@ -1,0 +1,42 @@
+# The MG 42 (specs/dods/weapons.md, "The guns": the script's values):
+# 85 a bullet, 2 bullets a shot, 0.05 s between shots (rounded up to ticks),
+# 250 rounds and 2 spare clips; automatic, two bullets a shot (weapons.md, open question 2: both traced here); useful only deployed (M2), so in no ladder yet.
+id = "dods:weapon_mg42"
+base = "dods:gun"
+slot = 0
+# Unmeasured (weapons.md, open question 10): a stand-in draw time.
+draw = 1.0
+weight = 25
+
+[ammo."dods:mg42"]
+# The spare clips (2) of 250 rounds.
+max = 500
+
+[trigger]
+automatic = true
+cycle = 0.05
+
+[magazine]
+clip = 250
+ammo = "dods:mg42"
+# Unmeasured (weapons.md, open question 9: the view model's sequence).
+reload = 2.5
+
+[hitscan]
+pellets = 2
+# `Accuracy` as a cone's half-angle sine (weapons.md, open question 1:
+# CS:S's seeded spread assumed); `dods:gun` sets it each shot.
+spread = { cone = 0.2 }
+
+[damage]
+amount = 85.0
+
+[hooks."dods:gun"]
+script = "weapon_mg42"
+accuracy = 0.2
+alt_accuracy = 0.025
+move_penalty = 0.1
+recoil = 20.0
+
+[hud]
+name = "MG 42"

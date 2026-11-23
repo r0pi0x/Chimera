@@ -547,6 +547,7 @@ mod tests {
     static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo {
         id: "a_game",
         short_name: "A",
+        name: "A",
         content_dir: "cstrike",
         tick_interval: 0.015,
         open: |_| Err(std::io::Error::other("no install")),

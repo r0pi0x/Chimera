@@ -1,0 +1,42 @@
+# The M1 Carbine (specs/dods/weapons.md, "The guns": the script's values):
+# 40 a bullet, 1 bullet a shot, 0.1 s between shots (rounded up to ticks),
+# 15 rounds and 3 spare clips; semi-automatic (assumed).
+id = "dods:weapon_m1carbine"
+base = "dods:gun"
+class = "carbine"
+slot = 1
+# Unmeasured (weapons.md, open question 10): a stand-in draw time.
+draw = 0.5
+weight = 5
+
+[ammo."dods:m1carbine"]
+# The spare clips (3) of 15 rounds.
+max = 45
+
+[trigger]
+automatic = false
+cycle = 0.1
+
+[magazine]
+clip = 15
+ammo = "dods:m1carbine"
+# Unmeasured (weapons.md, open question 9: the view model's sequence).
+reload = 2.0
+
+[hitscan]
+pellets = 1
+# `Accuracy` as a cone's half-angle sine (weapons.md, open question 1:
+# CS:S's seeded spread assumed); `dods:gun` sets it each shot.
+spread = { cone = 0.019 }
+
+[damage]
+amount = 40.0
+
+[hooks."dods:gun"]
+script = "weapon_m1carbine"
+accuracy = 0.019
+move_penalty = 0.1
+recoil = 1.4
+
+[hud]
+name = "M1 Carbine"

@@ -32,6 +32,7 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod view;
 pub mod weapons;
 
 pub use maps::MAP_LOADER;
@@ -76,6 +77,7 @@ pub const STOCK_MAPS: &[&str] = &[
 pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo {
     id: GAME,
     short_name: "DoD:S",
+    name: "Day of Defeat: Source",
     content_dir: CONTENT_DIR,
     tick_interval: TICK_INTERVAL,
     open: mount::open,
@@ -105,14 +107,25 @@ impl PluginGroup for DodsPlugins {
         PluginGroupBuilder::start::<Self>()
             .add(crate::game_registry::RegisterGame(&INFO))
             .add(movement::DodsMovementPlugin)
+            .add(DodsViewPlugin)
             .add(weapons::DodsGunsPlugin)
             .add(bodies::DodsBodiesPlugin)
     }
 }
 
+/// DoD:S's view models in its own simulation: the rules and settings.
+pub struct DodsViewPlugin;
+
+impl bevy::app::Plugin for DodsViewPlugin {
+    fn build(&self, app: &mut bevy::app::App) {
+        view::add_rules(app);
+        app.insert_resource(crate::map::ViewModelSettings { fov: view::VIEWMODEL_FOV, default_fov: 90.0, right_hand: 1, draw: 1 });
+    }
+}
+
 /// DoD:S as one bundle for an app made of several games
-/// (`chimera_world::game_bundle`): its info, parts and maps, its gun's
-/// models and its class bodies on other games' maps (`GUEST`), its guns'
+/// (`chimera_world::game_bundle`): its info, parts and maps, its guns'
+/// models and its class bodies on other games' maps (`GUEST`), its view models' field of view, its guns'
 /// names, and its parts in a composed simulation (`party_sim`).
 pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_bundle::GameBundle {
     info: &INFO,
@@ -121,7 +134,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     guest: Some(&GUEST),
     kept: &["dods:weapon_"],
     binds: &[],
-    view_model_fov: None,
+    view_model_fov: Some(view::fov),
     view_model_fov_cvar: None,
     base: None,
     sim: party_sim,
@@ -151,7 +164,8 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 };
 
 /// What DoD:S adds to a game of several games: the game registered, map
-/// logic for its maps, its movement (not the match's), its gun, its
+/// logic for its maps, its movement (not the match's), its view-model
+/// rules, its guns, its
 /// bodies, and its class bodies as practice targets (`targets`).
 pub fn party_sim(app: &mut bevy::app::App) {
     use crate::game_registry::GameAppExt;
@@ -160,6 +174,7 @@ pub fn party_sim(app: &mut bevy::app::App) {
         app.add_plugins(source_logic::logic::LogicPlugin);
     }
     movement::add_movement(app);
+    view::add_rules(app);
     if !app.is_plugin_added::<weapons::DodsGunsPlugin>() {
         app.add_plugins((weapons::DodsGunsPlugin, bodies::DodsBodiesPlugin));
         bodies::add_targets(app);

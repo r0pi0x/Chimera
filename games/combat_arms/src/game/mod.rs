@@ -146,6 +146,7 @@ pub const TICK_INTERVAL: f64 = 0.015;
 pub static INFO: GameInfo = GameInfo {
     id: GAME,
     short_name: "CA",
+    name: "Combat Arms",
     // PLACEHOLDER: no file of the install is read yet.
     content_dir: "",
     tick_interval: TICK_INTERVAL,

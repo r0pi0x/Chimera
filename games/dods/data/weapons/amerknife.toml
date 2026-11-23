@@ -1,0 +1,39 @@
+# The US knife (specs/dods/weapons.md, "The guns"; damage.md, "Melee"): 60
+# a hit from the front, five times that from behind (300), the hit
+# zones' multipliers on both (a leg 45, or 225 from behind); the
+# script's 0.1 s fire delay as its refires (rounded up to 7 ticks). The swing's reach, box and
+# the angle that counts as behind are unmeasured (damage.md, "Melee":
+# hits at 40 units; open question 4): CS:S's knife's as stand-ins.
+id = "dods:weapon_amerknife"
+base = "dods:base"
+slot = 2
+# Unmeasured (weapons.md, open question 10): a stand-in draw time.
+draw = 0.5
+weight = 0
+undroppable = true
+
+[melee.primary]
+range = 48.0
+hull = 16.0
+facing_cos = 0.70721
+damage = 60.0
+backstab = 300.0
+hitgroup_scale = { head = 2.5, chest = 1.0, stomach = 1.0, arm = 0.75, leg = 0.75 }
+hit_refire = 0.1
+miss_refire = 0.1
+miss_refire_other = 0.1
+# dod_meleeattackforcescale 8 is a ragdoll scale; unmeasured as a push.
+force = 0.0
+kind = "melee"
+armor_ratio = 1.0
+quantum = 0.0
+
+[hooks."dods:melee"]
+script = "weapon_amerknife"
+
+[hooks."dods:hit_slow"]
+body = 0.5
+legs = 2.0
+
+[hud]
+name = "US knife"

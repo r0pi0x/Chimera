@@ -6,7 +6,10 @@
 //! `game::bots`) with a small rule on top (its home, its motion, whether it
 //! may fire), put on a rung of the sandbox's ladder (`rung_command::
 //! move_to`), which gives it that gun's game's body, health rules and gun
-//! (`identity = "weapon"`), and held there like the player.
+//! (`identity = "weapon"`), and held there like the player. Off a range,
+//! a target asked for where another already stands is moved aside, a
+//! metre at a time across the line of sight (`free_spot`), so several at
+//! one distance stand side by side.
 //!
 //! **Requests** (messages, applied in `Update` by a system that queues the
 //! world work, `commands.queue`; the console calls the same functions):
@@ -742,13 +745,13 @@ fn game_of(id: &str) -> &str {
 }
 
 /// A game's full name: registered (`TargetsAppExt::target_game_name`),
-/// else its Steam name, else its short tag.
+/// else its `GameInfo::name`, else its short tag.
 fn game_name(world: &World, game: &str) -> String {
     if let Some(n) = world.get_resource::<TargetGameNames>().and_then(|n| n.0.iter().find(|(g, _)| *g == game)) {
         return n.1.to_string();
     }
     let info = world.get_resource::<chimera_core::game_registry::Games>().and_then(|g| g.get(game));
-    info.and_then(|g| g.steam.as_ref().map(|s| s.name.to_string())).unwrap_or_else(|| game_tag(world, game))
+    info.map(|g| g.name.to_string()).unwrap_or_else(|| game_tag(world, game))
 }
 
 /// A game's short tag (`GameInfo::short_name`: "CA").
@@ -878,6 +881,37 @@ pub(super) fn find_spot(world: &mut World, origin: Vec3, dir: Vec3, distance: f3
     stand_below(world, Vec3::new(at.x, origin.y + 1.5, at.z), &format!("{distance} m ahead"))
 }
 
+/// Targets closer than this to each other stand in one another, metres
+/// (a standing player's width, 32 units, and a little).
+const TARGET_SPACING: f32 = 1.0;
+
+/// `find_spot`, moved aside along the line across `dir` (one spacing at a
+/// time, right then left, out to 8) while another target already stands
+/// there: several targets asked for at one distance stand side by side,
+/// not in one place (seven at once on a DoD:S map looked like three).
+fn free_spot(world: &mut World, origin: Vec3, dir: Vec3, distance: f32) -> Result<Vec3, String> {
+    let taken: Vec<Vec3> = world.query::<&Target>().iter(world).map(|t| t.home).collect();
+    let free = |p: Vec3| taken.iter().all(|h| h.with_y(0.0).distance(p.with_y(0.0)) >= TARGET_SPACING);
+    let first = find_spot(world, origin, dir, distance);
+    if let Ok(p) = first
+        && free(p)
+    {
+        return first;
+    }
+    let across = Vec3::new(-dir.z, 0.0, dir.x).normalize_or_zero();
+    for step in 1..=8 {
+        for side in [1.0, -1.0] {
+            let at = origin + dir * distance + across * (side * step as f32 * TARGET_SPACING);
+            if let Ok(p) = stand_below(world, Vec3::new(at.x, origin.y + 1.5, at.z), &format!("{distance} m ahead"))
+                && free(p)
+            {
+                return Ok(p);
+            }
+        }
+    }
+    first
+}
+
 /// The feet of a standing player on the floor found straight below `from`
 /// (8 m at most), or why not (`what` names the spot in the reason).
 pub(super) fn stand_below(world: &mut World, from: Vec3, what: &str) -> Result<Vec3, String> {
@@ -989,7 +1023,7 @@ pub fn spawn_placed_from(
             let s = super::range_place::line_spot(world, l, req.distance_m, side, reach, None)?;
             (s.home, s.origin, l.dir, Some(RangeLine { distance_m: req.distance_m, side_m: s.side }))
         }
-        None => (find_spot(world, origin, dir, req.distance_m)?, origin, dir, None),
+        None => (free_spot(world, origin, dir, req.distance_m)?, origin, dir, None),
     };
     let hooks = chimera_core::gameplay::active_hook::<TargetBots>(world, |g| g.bots)
         .ok_or("no game's bots play here to be targets")?;

@@ -876,6 +876,7 @@ fn a_join_that_cant_bind_says_why_in_the_game() {
 static FIXTURE_GAME: chimera_core::game_registry::GameInfo = chimera_core::game_registry::GameInfo {
     id: GAME,
     short_name: "FG",
+    name: "FG",
     content_dir: "fg",
     tick_interval: 1.0 / 64.0,
     open: |_| Err(std::io::ErrorKind::NotFound.into()),

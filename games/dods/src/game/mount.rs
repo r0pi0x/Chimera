@@ -6,6 +6,14 @@
 //! `dod/dod_english.vpk` (the client's only: absent from the dedicated
 //! server's layout, skipped), `dod/dod_pak.vpk`, the `hl2` VPKs and
 //! `platform`'s, missing entries skipped. The content is unencrypted.
+//!
+//! The dedicated server's layout ships `hl2/hl2_textures_dir.vpk` without
+//! its numbered archives, so the HL2 textures DoD:S's maps borrow
+//! (concrete, brick, detail) would be missing: an archive whose parts are
+//! missing is replaced by the same archive of another Source install on
+//! the machine (`hl2_donors`: every other registered game's install, then
+//! Steam's Source games; HL2:DM's on the dev box), as a real DoD:S
+//! client mounts its own whole copy (`SearchPath::borrow_incomplete_archives`).
 
 use std::{io, path::Path};
 
@@ -29,7 +37,31 @@ pub fn search_path(install: &Path) -> io::Result<SearchPath> {
             format!("{}: no {CONTENT_DIR}/ folder; is this a DoD:S install?", install.display()),
         ));
     }
-    SearchPath::read_gameinfo(install, CONTENT_DIR)
+    let mut path = SearchPath::read_gameinfo(install, CONTENT_DIR)?;
+    for note in path.borrow_incomplete_archives(&hl2_donors(install)) {
+        bevy::log::debug!("dods: {note}");
+    }
+    Ok(path)
+}
+
+/// Other Source installs whose `hl2/` archives may stand in for missing
+/// ones: the other registered games' installs, every game's install path
+/// in the local config, then Steam's Source games.
+pub fn hl2_donors(install: &Path) -> Vec<std::path::PathBuf> {
+    let configured: Vec<_> = crate::mount::config::LocalConfig::load()
+        .map(|c| c.games.into_iter().filter(|(g, _)| g != GAME).filter_map(|(_, g)| g.path).collect())
+        .unwrap_or_default();
+    let mut out: Vec<_> = chimera_core::game_registry::known::all_known()
+        .into_iter()
+        .filter(|g| g.id != GAME)
+        .filter_map(|g| g.install())
+        .chain(configured.into_iter().map(|p| crate::mount::install::expand_home(&p)))
+        .chain(source_engine::search_path::steam_source_installs(&crate::mount::install::steam_roots()))
+        .filter(|p| p != install && p.join("hl2").is_dir())
+        .collect();
+    let mut seen = std::collections::BTreeSet::new();
+    out.retain(|p| seen.insert(p.clone()));
+    out
 }
 
 /// Mount a DoD:S install: `search_path`, then Chimera's content cache

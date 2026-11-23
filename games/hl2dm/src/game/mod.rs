@@ -80,6 +80,7 @@ pub const TICK_INTERVAL: f64 = 0.015;
 pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo {
     id: GAME,
     short_name: "HL2:DM",
+    name: "Half-Life 2: Deathmatch",
     content_dir: CONTENT_DIR,
     tick_interval: TICK_INTERVAL,
     open: mount::open,

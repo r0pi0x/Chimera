@@ -154,6 +154,7 @@ pub const MULTIPLAYER_MAPS: &[&str] = &[
 pub static INFO: GameInfo = GameInfo {
     id: GAME,
     short_name: "Halo",
+    name: "Halo: Combat Evolved",
     // The install is a disc image or the disc's files: no game folder
     // inside it (so the shell's `download/` and `cfg/` lookups find
     // nothing and the built-in binds are used).

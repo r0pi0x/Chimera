@@ -3530,6 +3530,7 @@ mod tests {
         static GAME: GameInfo = GameInfo {
             id: "some_game",
             short_name: "SG",
+            name: "SG",
             content_dir: "sg",
             tick_interval: 0.015,
             open: |_| Err(std::io::ErrorKind::NotFound.into()),
@@ -3566,6 +3567,7 @@ mod tests {
         static GAME: GameInfo = GameInfo {
             id: "ahead_game",
             short_name: "AG",
+            name: "AG",
             content_dir: "ag",
             tick_interval: 0.015,
             open: |_| Err(std::io::ErrorKind::NotFound.into()),

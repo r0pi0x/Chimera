@@ -188,7 +188,9 @@ distance and its corners: HL2:DM's), damage, follow_up = [window, damage], backs
 same_way, health, credit }`: TF2's three flattened dot tests, the damage
 `health` times the target's current health, the kill credited to the id
 `credit`), delay (seconds from the swing's start to its hit, traced along
-the view then: TF2's smack delay; 0 hits at once), hitgroups, hit/miss
+the view then: TF2's smack delay; 0 hits at once), hitgroups, hitgroup_scale (`{ head, chest,
+stomach, arm, leg }`: the hit zone's multiplier on the swing's damage and
+its backstab, implying hitgroups: DoD:S's knife and spade), hit/miss
 refires, force per damage point, armor_ratio, quantum, sounds:
 sound_hit, sound_hit_world, sound_miss, and sound_swing, every swing's at
 its start); `undroppable = true` and `pickup_team = 1` are flags; `death_drop
@@ -289,7 +291,12 @@ hud_icon = "ammo_762"
   sticking, attack2's detonation), `tf2:flame` (`damage`, `tick`,
   `range`, `cone`, `reach`, `life`, the age and burn ramps, the afterburn
   and sounds: a cone tested every flame tick) and `tf2:needle`
-  (`damage`: a `chimera:projectile` needle's hit by distance). A gun's
+  (`damage`: a `chimera:projectile` needle's hit by distance). DoD:S's (games/dods/src/game/weapons/): `dods:gun` (`script`,
+  `accuracy`, `alt_accuracy`, `move_penalty`, `recoil`, `reload_when_empty`:
+  the script's spread by sights and movement, the sights' step blocking the
+  trigger), `dods:melee` (`script`) and `dods:hit_slow` (`body`, `legs`:
+  seconds a hit slows its victim); each weapon's numbers its script's over
+  the committed document (`script_numbers`). A gun's
   `[models] view_offset` moves its view model (`tf2::game::view`).
 - **Chimera's flyers** (`chimera:projectile`, `LauncherParams`): beside
   speed, gravity, box, touch and direct damage, `up_speed` (added along

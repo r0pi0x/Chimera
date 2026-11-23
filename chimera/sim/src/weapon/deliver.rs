@@ -924,6 +924,7 @@ impl Shot<'_, '_, '_> {
                 Some(b) => BodyRegion::from_hitgroup(hitgroup_at(&b, hit.point)),
                 None => BodyRegion::Generic,
             };
+            let amount = amount * swing.scales.as_ref().map_or(1.0, |s| s.get(group));
             self.apply(
                 hit.entity,
                 amount,

@@ -161,6 +161,7 @@ fn the_ladders_drawn_weapons_are_the_matchs() {
 static LT: GameInfo = GameInfo {
     id: "lt",
     short_name: "LT",
+    name: "LT",
     content_dir: "lt",
     tick_interval: 0.02,
     open: |_| Err(std::io::ErrorKind::NotFound.into()),
@@ -243,6 +244,7 @@ melee_rungs = 2
 static KIT: GameInfo = GameInfo {
     id: "kit",
     short_name: "Kit",
+    name: "Kit",
     content_dir: "kit",
     ..LT
 };
