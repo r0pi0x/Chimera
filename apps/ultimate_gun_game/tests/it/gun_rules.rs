@@ -65,3 +65,44 @@ fn rungs_outside_the_bounds_snap_back() {
     run(&mut sim, &["ugg_rungs 99", "ugg_new 1"]);
     assert_eq!(sim.app.world().resource::<ultimate_gun_game::AutoLadder>().rungs, 40);
 }
+
+/// Submits the command line's `+` lines as the server does
+/// (`ServerPlugin::build`), before the plugins' `finish` draws the launch
+/// ladder.
+struct CommandLine(Vec<&'static str>);
+
+impl bevy::prelude::Plugin for CommandLine {
+    fn build(&self, app: &mut bevy::prelude::App) {
+        let mut console = app.world_mut().resource_mut::<Console>();
+        for l in &self.0 {
+            console.submit(*l);
+        }
+    }
+}
+
+#[test]
+fn a_game_off_on_the_command_line_shapes_the_first_ladder() {
+    use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
+    let launch = |line: &'static str| {
+        let mut sim = Sim::new(
+            combat_arms::harness::CaSim,
+            (
+                GreyboxMapPlugin,
+                party_roster::PartyPartsPlugin,
+                CommandLine(vec![line, "ugg_rungs 12", "minigame ultimate_gun_game:auto"]),
+                ultimate_gun_game::UltimateGunGamePlugin::default(),
+            ),
+        );
+        sim.ticks(3);
+        let r = rungs(sim.app.world());
+        (sim, r)
+    };
+    let (_, base) = launch("mp_guns_ban none");
+    assert!(base.iter().any(|id| id.starts_with("hl2dm:")), "HL2:DM's guns are in a default ladder: {base:?}");
+    for seed_try in ["mp_guns_games_off hl2dm", "mp_guns_games_off \"hl2dm\""] {
+        let (sim, r) = launch(seed_try);
+        assert!(!r.iter().any(|id| id.starts_with("hl2dm:")), "{seed_try}: no HL2:DM guns: {r:?}");
+        let melee = sim.app.world().resource::<chimera_sim::minigame::Minigames>().get(ultimate_gun_game::MINIGAME).unwrap().rules.params["melee_rungs"].as_integer().unwrap() as usize;
+        assert_eq!(r.len() + melee, 12, "ugg_rungs from the command line too");
+    }
+}

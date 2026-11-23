@@ -675,6 +675,7 @@ fn change_match_on(world: &mut World, id: &str, map: Option<&str>, load: bool) -
     if world.get_resource::<NetRole>() == Some(&NetRole::Client) {
         return Err("the server picks the minigame; you are a client of it".into());
     }
+    minigame::announce_start(world, id);
     let def = world
         .get_resource::<Minigames>()
         .and_then(|m| m.get(id))

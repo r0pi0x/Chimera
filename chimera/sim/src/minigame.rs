@@ -388,10 +388,30 @@ pub fn weapon(def: &MinigameDef, catalog: &WeaponCatalog, id: &str) -> Result<&'
         .ok_or_else(|| format!("weapon {id}: not in the weapon catalogue"))
 }
 
+/// Triggered as any match of minigame `id` is about to start (`start`,
+/// `chimera_net::minigame_net::change_match`: the command line's
+/// `+minigame`, the menu's Play, a rotation), before its definition is
+/// read; observers run at once. Ultimate Gun Game draws its ladder again
+/// when the host's Guns rules changed since it was drawn (a
+/// `+mp_guns_games_off` on the command line runs after the launch ladder
+/// was made). Host only.
+#[derive(Event, Clone, Debug)]
+pub struct MatchStarting {
+    pub id: String,
+}
+
+/// Trigger `MatchStarting` for `id` (not on a client).
+pub fn announce_start(world: &mut World, id: &str) {
+    if !client(world) {
+        world.trigger(MatchStarting { id: id.to_string() });
+    }
+}
+
 /// Start minigame `id`: its definition (with the host's overrides,
 /// `overrides`) checked and made the active one, the gameplay switched to
 /// it, a fresh match that every player joins (a `MatchHold` lifted).
 pub fn start(world: &mut World, id: &str) -> Result<&'static MinigameDef, String> {
+    announce_start(world, id);
     if !client(world) {
         overrides::apply(world, id);
     }

@@ -70,6 +70,7 @@ use chimera_core::{
     game_parts::PartsRegistry,
 };
 use chimera_net::minigame_net::NextMatchHooks;
+use chimera_sim::minigame::gun_rules::GunRules;
 use chimera_sim::{
     minigame::{
         self, MinigameDef,
@@ -218,7 +219,44 @@ fn generate_as(world: &mut World, seed: u64, rungs: usize, again: bool) -> Resul
         .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
         .unwrap_or_default();
     world.get_resource_or_init::<auto::Recency>().record(dealt, &opts.curve.draw);
+    let host_rules = world.get_resource::<GunRules>().cloned().unwrap_or_default();
+    let setting = world.get_resource::<UggRungs>().map_or(rungs, |r| r.0);
+    world.insert_resource(Drawn { rules: host_rules, setting, rungs });
     Ok(def)
+}
+
+/// The Guns rules and rung count the ladder in `Minigames` was drawn with.
+#[derive(Resource, Clone, Debug, PartialEq, Eq)]
+struct Drawn {
+    rules: GunRules,
+    /// `ugg_rungs` then.
+    setting: usize,
+    /// The rungs asked of the draw (`AutoLadder`).
+    rungs: usize,
+}
+
+/// A match of `id` is about to start (`MatchStarting`): the ladder drawn
+/// again, same seed, if the host's Guns rules or `ugg_rungs` changed since
+/// it was drawn. The launch ladder is made before the command line's `+`
+/// lines run, so `+mp_guns_games_off hl2dm` reaches it only here.
+fn redraw_if_rules_changed(world: &mut World, id: &str) {
+    if id != MINIGAME {
+        return;
+    }
+    let rules = world.get_resource::<GunRules>().cloned().unwrap_or_default();
+    let Some(drawn) = world.get_resource::<Drawn>().cloned() else { return };
+    let setting = world.get_resource::<UggRungs>().map_or(drawn.setting, |r| r.0);
+    if drawn.rules == rules && drawn.setting == setting {
+        return;
+    }
+    // A changed `ugg_rungs` sets the length; else the draw's own stays.
+    let now = Drawn { rules, setting, rungs: if drawn.setting == setting { drawn.rungs } else { setting } };
+    let seed = world.resource::<AutoLadder>().seed;
+    let rungs = chimera_sim::minigame::power::PowerCurve::shipped().rungs.clamp(now.rungs);
+    world.insert_resource(AutoLadder { seed, rungs });
+    if let Err(e) = generate_as(world, seed, rungs, true) {
+        world.resource_mut::<Console>().print(Level::Error, e);
+    }
 }
 
 /// The seed and rungs the definition was last made with.
@@ -367,6 +405,10 @@ impl Plugin for UltimateGunGamePlugin {
             |r| &mut r.0,
         );
         app.world_mut().get_resource_or_init::<NextMatchHooks>().0.push(next_ladder);
+        app.add_observer(|e: On<chimera_sim::minigame::MatchStarting>, mut commands: Commands| {
+            let id = e.id.clone();
+            commands.queue(move |w: &mut World| redraw_if_rules_changed(w, &id));
+        });
     }
 
     fn finish(&self, app: &mut App) {
