@@ -19,7 +19,7 @@
 
 use bevy::prelude::*;
 use chimera_core::core::{Health, SpawnPoint};
-use chimera_sim::minigame::ladder::Ladder;
+use chimera_sim::{minigame::ladder::Ladder, testkit};
 use chimera_world::{
     greybox::GreyboxMapPlugin,
     harness::Sim,
@@ -31,7 +31,7 @@ use chimera_world::{
 use combat_arms::harness::CaSim;
 use party_roster::PartyPartsPlugin;
 
-use crate::play::{OPEN, line_up, shoot_until_dead};
+use crate::play::{OPEN, line_up};
 
 const CSS: &str = cs_source::game::movement::ID;
 const HL2: &str = hl2dm::game::movement::ID;
@@ -231,6 +231,9 @@ const SHOTS: &[(&str, f64)] = &[
     (halo_ce::game::weapons::NEEDLER, 3.0),
 ];
 
+/// The guns whose shots reach their target the tick they are fired.
+const HITSCAN: &[&str] = &["cs_source:weapon_ak47", hl2dm::game::weapons::SMG1, tf2::game::weapons::SCATTERGUN, "combat_arms:m4a1", halo_ce::game::weapons::PISTOL];
+
 /// How far south of `OPEN` the target stands.
 const RANGE: f32 = 8.0;
 
@@ -264,10 +267,10 @@ fn ladder() -> String {
 }
 
 /// Each gun fired at `b` from `a`: whether `b` was hurt.
-fn hurt_by_each(sim: &mut Sim, a: Entity, b: Entity) -> Vec<(&'static str, bool)> {
+fn hurt_by_each(sim: &mut Sim, a: Entity, b: Entity, game: &str) -> Vec<(&'static str, bool)> {
     let ladder = sim.app.world().resource::<Ladder>().clone();
     let mut out = Vec::new();
-    for &(gun, secs) in SHOTS {
+    for &(gun, secs) in SHOTS.iter().filter(|s| s.0.starts_with(game)) {
         let r = ladder.rungs.iter().position(|w| *w == gun).unwrap_or_else(|| panic!("{gun} on the ladder"));
         {
             let w = sim.app.world_mut();
@@ -275,12 +278,36 @@ fn hurt_by_each(sim: &mut Sim, a: Entity, b: Entity) -> Vec<(&'static str, bool)
         }
         line_up(sim, a, b, RANGE);
         let before = sim.app.world().get::<Health>(b).map_or(0.0, |h| h.current);
-        let died = shoot_until_dead(sim, a, b, secs);
-        // Let a last rocket or grenade arrive.
-        sim.seconds(1.5);
-        let after = sim.app.world().get::<Health>(b).map_or(0.0, |h| h.current);
-        let dead = died || !crate::play::alive(sim, b);
-        out.push((gun, dead || after < before - 1e-4));
+        let hurt = |sim: &Sim| {
+            sim.app.world().get::<Health>(b).map_or(0.0, |h| h.current) < before - 1e-4 || !crate::play::alive(sim, b)
+        };
+        // Fired until the target is hurt (the control ends at the first
+        // hit); a gun whose bullets arrive at once needs little time to
+        // show the wall stops them.
+        let secs = if HITSCAN.contains(&gun) { secs.min(0.7) } else { secs };
+        let ticks = (secs * sim.tick_hz()) as u64;
+        for t in 0..ticks {
+            let at = sim.position(b);
+            testkit::aim_at(sim, a, at);
+            let punch = sim.app.world().get::<chimera_sim::weapon::ViewPunch>(a).map_or(Vec3::ZERO, |p| p.0);
+            {
+                let mut i = sim.intent(a);
+                i.pitch -= punch.x;
+                i.yaw -= punch.y;
+                i.fire = t % 2 == 0;
+            }
+            sim.ticks(1);
+            if hurt(sim) {
+                break;
+            }
+        }
+        sim.intent(a).fire = false;
+        // Let a last rocket or grenade arrive (unless it already did).
+        if !hurt(sim) {
+            sim.seconds(1.5);
+        }
+        let dead = hurt(sim);
+        out.push((gun, dead));
         // Back to full for the next gun.
         if let Some(mut h) = sim.app.world_mut().get_mut::<Health>(b) {
             h.current = h.max;
@@ -289,21 +316,48 @@ fn hurt_by_each(sim: &mut Sim, a: Entity, b: Entity) -> Vec<(&'static str, bool)
     out
 }
 
-/// The guard: no game's bullet, rocket or grenade passes the wall; the
-/// control: without it each hurts.
-#[test]
-fn every_games_shots_stop_at_the_wall() {
+/// The guard: no bullet, rocket or grenade of the game's passes the wall;
+/// the control: without it each hurts. (One test a game: each is a sim
+/// of its own, so each is a fraction of the cost, and a loaded machine
+/// does not run all of them in one test's time.)
+fn shots_stop_at_the_wall(game: &str) {
     let text = ladder();
     let mut sim = crate::halo_party::party_with(&text);
     let a = crate::play::soldier(&mut sim);
     let b = crate::play::soldier(&mut sim);
     sim.seconds(1.5);
-    let control = hurt_by_each(&mut sim, a, b);
+    let control = hurt_by_each(&mut sim, a, b, game);
+    assert!(!control.is_empty(), "{game} has shots");
     let missed: Vec<_> = control.iter().filter(|(_, hurt)| !hurt).map(|(g, _)| *g).collect();
     assert!(missed.is_empty(), "without the wall these did not hurt (the control): {missed:?}");
     play(&mut sim, slotted());
     assert!(sim.app.world().resource::<PlayArea>().polygon.contains3(OPEN));
-    let through: Vec<_> = hurt_by_each(&mut sim, a, b).into_iter().filter(|(_, hurt)| *hurt).map(|(g, _)| g).collect();
+    let through: Vec<_> = hurt_by_each(&mut sim, a, b, game).into_iter().filter(|(_, hurt)| *hurt).map(|(g, _)| g).collect();
     assert!(through.is_empty(), "through the wall: {through:?}");
     assert_eq!(put_backs(&sim), 0);
+}
+
+#[test]
+fn cs_sources_shots_stop_at_the_wall() {
+    shots_stop_at_the_wall("cs_source:");
+}
+
+#[test]
+fn hl2dms_shots_stop_at_the_wall() {
+    shots_stop_at_the_wall("hl2dm:");
+}
+
+#[test]
+fn tf2s_shots_stop_at_the_wall() {
+    shots_stop_at_the_wall("tf2:");
+}
+
+#[test]
+fn combat_arms_shots_stop_at_the_wall() {
+    shots_stop_at_the_wall("combat_arms:");
+}
+
+#[test]
+fn halo_ces_shots_stop_at_the_wall() {
+    shots_stop_at_the_wall("halo_ce:");
 }

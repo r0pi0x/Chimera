@@ -47,7 +47,8 @@ pub(crate) fn joined() -> NetSim {
     crate::play::no_finale(sim.server.app.world_mut());
     minigame::start(sim.server.app.world_mut(), DEFAULT_MINIGAME).expect("the gun game starts");
     sim.until_joined(900);
-    sim.ticks(300);
+    sim.until(300, |s| (0..2).all(|i| held(s, i).is_some() && clip(s, i).is_some()));
+    sim.ticks(60);
     sim
 }
 
@@ -93,10 +94,10 @@ pub(crate) fn kill_once(sim: &mut NetSim, kill: usize, a: Entity, b: Entity, lad
         sim.until(600, |s| server_alive(s, b) && s.server.app.world().get::<God>(b).is_none()),
         "the victim is back"
     );
-    sim.ticks(30);
+    sim.ticks(20);
     assert_eq!(held(sim, 1), Some(ladder[0]), "the victim, back, has the first rung's gun on its client");
     face_off(sim, a, b);
-    sim.ticks(90);
+    sim.ticks(30);
     let me = sim.local_player(0).unwrap();
     let mut dead = false;
     for t in 0..(10.0 / TICK_INTERVAL) as u64 {
@@ -111,5 +112,5 @@ pub(crate) fn kill_once(sim: &mut NetSim, kill: usize, a: Entity, b: Entity, lad
     }
     sim.clients[0].intent(me).fire = false;
     assert!(dead, "kill {kill}: {} killed in 10 s", ladder[kill]);
-    sim.ticks(40);
+    sim.ticks(25);
 }

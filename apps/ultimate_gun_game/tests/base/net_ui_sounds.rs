@@ -63,19 +63,25 @@ fn setup(app: &mut App) {
 }
 
 /// A dedicated server and `clients` clients, with or without the
-/// pre-match lobby (ready-up on, two players, 5 s of countdown, started
+/// pre-match lobby (ready-up on, two players, 3 s of countdown, started
 /// by everyone being ready rather than the host).
 fn sim(clients: usize, lobby: bool) -> NetSim {
     let mut sim = NetSim::new(CaSim, LINK, 7, clients, setup);
     sim.set_frame(TICK_INTERVAL);
     let lines: &[&str] =
-        if lobby { &["mp_lobby 1", "mp_lobby_host_start 0", "mp_lobby_ready_up 1", "mp_lobby_min_players 2", "mp_lobby_countdown 5"] } else { &["mp_lobby 0"] };
+        if lobby { &["mp_lobby 1", "mp_lobby_host_start 0", "mp_lobby_ready_up 1", "mp_lobby_min_players 2", "mp_lobby_countdown 3"] } else { &["mp_lobby 0", "mp_vote_all_voted 3"] };
     for l in lines {
         con(&mut sim, l);
     }
     chimera_net::minigame_net::change_match(sim.server.app.world_mut(), MINIGAME, Some("greybox")).unwrap();
     sim.until_joined(900);
-    step(&mut sim, 200);
+    if lobby {
+        // Up once the logo pass has played on each client.
+        step_until(&mut sim, 200, |s| (0..clients).all(|i| !played(s, i).is_empty()));
+        step(&mut sim, 60);
+    } else {
+        step(&mut sim, 60);
+    }
     sim
 }
 
@@ -197,7 +203,7 @@ fn the_last_rung_plays_the_knife_and_a_rung_down_plays_nothing() {
 }
 
 #[test]
-fn the_lobby_strike_and_match_end_cues_reach_each_client_once() {
+fn the_lobby_and_countdown_cues_reach_each_client_once() {
     let mut sim = sim(2, true);
     // The lobby came up through the logo pass.
     for i in 0..2 {
@@ -206,30 +212,40 @@ fn the_lobby_strike_and_match_end_cues_reach_each_client_once() {
     // Each readies: its own `lobby_ready`, the other's `lobby_peer`.
     for i in 0..2 {
         sim.clients[i].app.world_mut().resource_mut::<Console>().submit("lobby_ready 1");
-        step(&mut sim, 100);
+        step_until(&mut sim, 100, |s| count(s, i, "lobby_ready") == 1 && count(s, 1 - i, "lobby_peer") == 1);
     }
     assert_eq!(played(&sim, 0)[1..3], ["lobby_ready", "lobby_peer"]);
     assert_eq!(played(&sim, 1)[1..3], ["lobby_peer", "lobby_ready"]);
-    // The countdown (5 s): 5 and 4 tick, 3, 2, 1, then the go as the
-    // lobby goes (through the pass).
-    step(&mut sim, 700);
+    // The countdown (3 s): 3, 2, 1, then the go as the lobby goes
+    // (through the pass); the plain tick is the vote's below.
+    step_until(&mut sim, 700, |s| (0..2).all(|i| count(s, i, "count_go") == 1));
+    step(&mut sim, 20);
     for i in 0..2 {
         assert_eq!(
             played(&sim, i)[3..],
-            ["count_tick", "count_tick", "count_tick_3", "count_tick_2", "count_tick_1", "pass_sweep", "count_go"],
+            ["count_tick_3", "count_tick_2", "count_tick_1", "pass_sweep", "count_go"],
             "client {i}"
         );
     }
+}
 
+#[test]
+fn the_strike_cues_reach_each_client_once() {
+    let mut sim = sim(2, false);
     // The air strike: alert, a pulse a second to the impact, the chip,
     // the impact; once each on both clients.
     let from = (played(&sim, 0).len(), played(&sim, 1).len());
     con(&mut sim, "surprise airstrike 3 2");
-    step(&mut sim, 900);
+    step_until(&mut sim, 900, |s| (0..2).all(|i| count(s, i, "air_impact") == 1));
+    step(&mut sim, 20);
     for (i, f) in [(0, from.0), (1, from.1)] {
         assert_eq!(since(&sim, i, f), ["air_alert", "air_pulse", "air_pulse", "hud_chip", "air_impact"], "client {i}");
     }
+}
 
+#[test]
+fn the_match_end_and_vote_cues_reach_each_client_once() {
+    let mut sim = sim(2, false);
     // The match won by client 0: its knife, then the end on both.
     let a = sim.character_of(0).unwrap();
     let l = sim.server.app.world().resource::<Ladder>().clone();
@@ -238,7 +254,7 @@ fn the_lobby_strike_and_match_end_cues_reach_each_client_once() {
     let from = (played(&sim, 0).len(), played(&sim, 1).len());
     kill(&mut sim, 0, 1);
     // The match end comes up with its vote on both clients (through the
-    // logo pass); then client 1 votes for the second map.
+    // logo pass); then both vote (so it closes early), client 1 for the second map.
     let shown = |s: &mut NetSim| {
         (0..2).all(|i| {
             let v = s.clients[i].app.world().resource::<MatchEndView>();
@@ -247,6 +263,7 @@ fn the_lobby_strike_and_match_end_cues_reach_each_client_once() {
     };
     assert!(step_until(&mut sim, 900, shown), "the vote shows on both clients");
     chimera_net::minigame_net::vote_map(sim.clients[1].app.world_mut(), 1).unwrap();
+    chimera_net::minigame_net::vote_map(sim.clients[0].app.world_mut(), 0).unwrap();
     assert!(
         step_until(&mut sim, 3000, |s| s.clients[0].app.world().get_resource::<MapVote>().is_some_and(|v| v.winner.is_some())),
         "the vote closes"
@@ -258,8 +275,9 @@ fn the_lobby_strike_and_match_end_cues_reach_each_client_once() {
         assert_eq!(once("end_reveal"), 1, "client {i}: {heard:?}");
         assert_eq!(once("vote_lock"), 1, "client {i}: {heard:?}");
         assert_eq!(once("vote_cast_2"), usize::from(i == 1), "client {i}: only the voter's cast: {heard:?}");
-        assert_eq!(once("vote_other"), usize::from(i == 0), "client {i}: the other's vote: {heard:?}");
-        assert_eq!(once("count_tick"), 10, "client {i}: the vote's last 10 s: {heard:?}");
+        assert_eq!(once("vote_cast_1"), usize::from(i == 0), "client {i}: only the voter's cast: {heard:?}");
+        assert_eq!(once("vote_other"), 1, "client {i}: the other's vote: {heard:?}");
+        assert_eq!(once("count_tick"), 3, "client {i}: the vote's last 3 s: {heard:?}");
         assert!(!heard.iter().any(|e| RANK.contains(&e.as_str())), "client {i}: the end isn't a rank-up: {heard:?}");
     }
 }
@@ -290,6 +308,7 @@ fn snd_uivolume_sets_a_clients_bus() {
     sim.clients[0].app.world_mut().resource_mut::<Console>().submit("snd_uivolume 0.5");
     step(&mut sim, 2);
     let (ea, eb) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    assert!(step_until(&mut sim, 900, |s| s.server.app.world().get::<God>(eb).is_none()), "the victim is unprotected");
     let at = sim.server.position(eb);
     sim.server.app.world_mut().write_message(Damage {
         target: eb,
