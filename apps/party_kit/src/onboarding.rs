@@ -99,14 +99,18 @@
 //! - The menus behind it take no keys while it shows (`takes_keys`).
 //! - **Returning players** see no sign-in screen: the account's tickets
 //!   come silently (`chimera_assets::account::keep_fresh`, the hub's
-//!   `use_user_hub`). The main menu shows the **account chip** under the
-//!   bar's rack (`show_chip`: the avatar, the display name, `@username ·
-//!   <hub>` and a light, green while the hub answers, amber when its last
-//!   call failed), and while the hub can't be reached a slim **offline
-//!   banner** ("Can't reach <hub>", playing offline goes on, Retry now;
-//!   it retries by itself every `RETRY_SECS`). A click on the chip opens
-//!   Settings > Account (`account_page`). `AccountShown` is the
-//!   account's names (the app's start, or the first run's end).
+//!   `use_user_hub`). The main menu shows a **hub indicator** under the
+//!   bar's rack (`show_chip`: a light, green while the hub answers, amber
+//!   when its last call failed, and the hub's name, "Offline · <hub>"
+//!   then; the address never), and while the hub can't be reached a slim
+//!   **offline banner** ("Can't reach <hub>", playing offline goes on,
+//!   Retry now; it retries by itself every `RETRY_SECS`). There is no
+//!   account card (the user's report, 2026-11-22): your own avatar in the
+//!   party strip opens Settings > Account (`account_page`), hovering any
+//!   member's avatar previews them (`chimera_ui::shell::Tip::card`).
+//!   `AccountShown` is the account's names (the app's start, or the first
+//!   run's end), which the strip's preview of you uses
+//!   (`chimera_client::client::profile::AccountNames`).
 //! - `ui_scene onboarding intro [t]` plays the intro (held still at `t`
 //!   seconds when given, for screenshots); `ui_scene onboarding <welcome|clipboard|checked|checking|used|unknown|
 //!   unreachable|certificate|hub|name|name-bad|name-taken|key|key-saved|have|
@@ -738,7 +742,8 @@ impl Plugin for OnboardingPlugin {
             },
         );
         app.add_systems(Update, (from_clipboard, refocus_clipboard, open_links, clicks, keys, intro_tick, invite_pause, poll, name_pause, act, show, show_intro, show_toast).chain())
-            .add_systems(Update, (retry_hub, show_chip).chain())
+            .init_resource::<chimera_client::client::profile::AccountNames>()
+            .add_systems(Update, (retry_hub, share_names, show_chip).chain())
             .add_systems(Update, (hold_intro, intro_clock).after(show_intro));
     }
 }
@@ -1538,19 +1543,26 @@ fn retry_hub(
     }
 }
 
-/// The account chip and the offline banner on the main menu (module doc).
+/// The account's names to the party strip's preview of you.
+fn share_names(shown: Res<AccountShown>, mut names: ResMut<chimera_client::client::profile::AccountNames>) {
+    let want = chimera_client::client::profile::AccountNames(shown.0.as_ref().map(|a| (a.username.clone(), a.display.clone())));
+    if *names != want {
+        *names = want;
+    }
+}
+
+/// The hub indicator and the offline banner on the main menu (module doc).
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn show_chip(
     shown_account: Res<AccountShown>,
     (o, page): (Res<Onboarding>, Option<Res<crate::account_page::AccountPage>>),
     hub: Option<Res<chimera_net::net::hub::Hub>>,
-    avatar: Option<Res<chimera_client::client::profile::AvatarSetting>>,
     menu: Option<Res<crate::main_menu::PartyMenu>>,
     camera: Query<Entity, With<MenuUiCamera>>,
     root: Query<Entity, With<ChipRoot>>,
     (theme, kit, units): (Option<Res<chimera_ui::Theme>>, Option<Res<chimera_ui::KitFonts>>, Option<Res<chimera_ui::UiUnits>>),
-    (mut images, mut icons, words): (Option<ResMut<Assets<Image>>>, Option<ResMut<chimera_ui::icons::IconImages>>, Res<Words>),
-    mut shown: Local<Option<(Shown, bool, String, i32, (u32, u32), Option<Entity>)>>,
+    words: Res<Words>,
+    mut shown: Local<Option<(Shown, bool, String, (u32, u32), Option<Entity>)>>,
     mut commands: Commands,
 ) {
     let (Some(theme), Some(units)) = (theme.as_deref(), units.as_deref()) else { return };
@@ -1560,7 +1572,7 @@ fn show_chip(
     let key = shown_account.0.clone().filter(|_| on_menu && !o.active && !page_open && crate::esc_menu::signal(Some(theme))).map(|a| {
         let offline = hub.as_deref().is_some_and(|h| h.offline());
         let hub_name = hub.as_deref().filter(|h| h.doc.is_some()).map(|h| h.name()).unwrap_or_else(|| a.hub.clone());
-        (a, offline, hub_name, avatar.as_deref().map_or(-1, |s| s.0), ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32), cam)
+        (a, offline, hub_name, ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32), cam)
     });
     if *shown == key {
         return;
@@ -1568,40 +1580,18 @@ fn show_chip(
     for e in &root {
         commands.entity(e).despawn();
     }
-    if let Some((a, offline, hub_name, look, _, cam)) = key.clone() {
+    if let Some((a, offline, hub_name, _, cam)) = key.clone() {
         let ui = Ui::new(theme, kit.as_deref(), *units);
         let c = &mut commands;
         let r = c
             .spawn((ChipRoot, GlobalZIndex(ONBOARDING_Z - 1), UiStyle::column().abs([Some(0.0), Some(0.0), None, None]).w_pct(100.0).h_pct(100.0), Node::default(), Pickable::IGNORE))
             .id();
-        // The chip, under the rack at the right.
-        // A click opens Settings > Account (`account_page`): the kit's
-        // pressable surface (its hover lifts the plate).
-        let chip = ui.item(
-            c,
-            r,
-            UiStyle { gap: Some(1.2), h: Some(4.2), pad: Some([0.0, 1.2, 0.0, 0.4].into()), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([None, Some(8.2), Some(4.6), None]).bg_a(Tone::Ink2, 0.8).outline(if offline { Tone::Fg4 } else { Tone::AccText }, 1.0),
-            State::NONE,
-            false,
-        );
-        c.entity(chip).insert(crate::account_page::OpenAccount);
-        let byte = u8::try_from(look).ok().and_then(AvatarLook::from_byte).unwrap_or_else(|| AvatarLook::for_name(&a.username));
-        match (images.as_deref_mut(), icons.as_deref_mut()) {
-            (Some(images), Some(icons)) => {
-                chimera_ui::avatar::spawn(&ui, c, chip, images, icons, Face::Look(byte), AvatarMarks { idle: offline, ..default() }, 3.4);
-            }
-            _ => {
-                let e = ui.boxed(c, chip, UiStyle { w: Some(3.4), h: Some(3.4), ..UiStyle::row() });
-                c.entity(e).insert(BackgroundColor(byte.ground()));
-            }
-        }
-        let names = ui.boxed(c, chip, UiStyle { gap: Some(0.45), ..UiStyle::column() });
-        ui.text_plain(c, names, Role::DisplayBold, 1.02, Tone::Fg, &a.display);
-        let sub = ui.boxed(c, names, UiStyle { gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() });
-        ui.mark(c, sub, if offline { Tone::Warn } else { Tone::Good }, 0.7, 0.7);
+        // The hub indicator, under the rack at the right: not pressable.
+        let chip = ui.boxed(c, r, UiStyle { gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([None, Some(8.2), Some(4.6), None]));
+        ui.mark(c, chip, if offline { Tone::Warn } else { Tone::Good }, 0.7, 0.7);
         let fill = [("hub", hub_name.as_str()), ("user", a.username.as_str())];
         let line = words.f(if offline { "chip.offline" } else { "chip.online" }, &fill);
-        ui.text_plain(c, sub, Role::Mono, 0.56, if offline { Tone::Warn } else { Tone::Fg3 }, &line.to_uppercase());
+        ui.text_plain(c, chip, Role::Mono, 0.56, if offline { Tone::Warn } else { Tone::Fg3 }, &line.to_uppercase());
         if offline {
             // The banner: a warning's tint, its bar at the left, a faint
             // outline (the mockups' 09b), on ink so the backdrop stays behind.

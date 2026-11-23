@@ -156,9 +156,9 @@ back = "Back"
 toast = "Welcome, {name}"
 toast_note = "You're in {hub}. This PC stays signed in."
 
-# The main menu's account chip and the offline banner (a returning player).
+# The main menu's hub indicator and the offline banner (a returning player).
 [chip]
-online = "@{user} · {hub}"
+online = "{hub}"
 offline = "Offline · {hub}"
 banner_title = "Can't reach {hub}"
 banner_body = "Playing offline: LAN and direct connect still work. Parties, the server list and downloads come back when it does."

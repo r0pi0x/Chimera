@@ -34,6 +34,9 @@ fn me() -> Member {
         marks: AvatarMarks { you: true, ..default() },
         state: EdgeState::Ready,
         lead: true,
+        display: None,
+        role: None,
+        ping: None,
     }
 }
 
@@ -171,4 +174,65 @@ fn the_invite_tile_is_live_with_parties() {
     let plus = parts.tile(ShellTile::Invite).unwrap();
     assert!(app.world().get::<Disabled>(plus).is_none());
     assert!(app.world().get::<shell::Tip>(plus).is_some_and(|t| t.name == "Party"));
+}
+
+/// A hover on any member's avatar, yours too, shows the preview card
+/// (avatar, names, role) after the delay and takes nothing from the
+/// pointer; leaving takes it away.
+#[test]
+fn hovering_an_avatar_shows_the_member_card() {
+    use bevy::ui::DeprecatedInteraction as Interaction;
+    let mut app = app();
+    let theme = app.world().resource::<Theme>().clone();
+    let units = *app.world().resource::<UiUnits>();
+    let mut other = me();
+    other.name = "rocket_gg".into();
+    other.marks.you = false;
+    other.role = Some("Party leader".into());
+    let party = [me(), other];
+    let world = app.world_mut();
+    let mut images = world.remove_resource::<Assets<Image>>().unwrap();
+    let mut icons = world.remove_resource::<IconImages>().unwrap();
+    let root = world.spawn((Node::default(), ShellScreen)).id();
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    {
+        let mut c = Commands::new(&mut queue, world);
+        let ui = Ui::new(&theme, None, units);
+        shell::bar(&ui, &mut c, root, &mut images, &mut icons, &Bar { left: Left::Lockup, party: &party, party_max: 8, invite: false, open: None });
+    }
+    queue.apply(world);
+    world.insert_resource(images);
+    world.insert_resource(icons);
+    app.update();
+    let cells: Vec<Entity> = app.world_mut().query::<(Entity, &shell::Tip)>().iter(app.world()).filter(|(_, t)| t.card.is_some()).map(|(e, _)| e).collect();
+    assert_eq!(cells.len(), 2, "every member's avatar has a card");
+    let plates = |app: &mut App| app.world_mut().query::<&shell::TipPlate>().iter(app.world()).count();
+    for cell in cells {
+        app.world_mut().entity_mut(cell).insert(Interaction::Hovered);
+        app.world_mut().resource_mut::<UiClock>().step(0.1);
+        app.update();
+        assert_eq!(plates(&mut app), 0, "not before the delay");
+        app.world_mut().resource_mut::<UiClock>().step(0.5);
+        app.update();
+        app.update();
+        assert_eq!(plates(&mut app), 1, "the card after the delay");
+        let card = app.world_mut().query_filtered::<Entity, With<shell::TipPlate>>().single(app.world()).unwrap();
+        let has_avatar = app.world_mut().query::<(&avatar::Avatar, &ChildOf)>().iter(app.world()).any(|(_, p)| {
+            let mut at = p.parent();
+            loop {
+                if at == card {
+                    return true;
+                }
+                match app.world().get::<ChildOf>(at) {
+                    Some(up) => at = up.parent(),
+                    None => return false,
+                }
+            }
+        });
+        assert!(has_avatar, "the card shows the avatar");
+        app.world_mut().entity_mut(cell).insert(Interaction::None);
+        app.update();
+        app.update();
+        assert_eq!(plates(&mut app), 0, "gone when the pointer leaves");
+    }
 }

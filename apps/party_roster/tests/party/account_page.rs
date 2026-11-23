@@ -1,9 +1,10 @@
 //! Settings > Account (`party_roster::account_page`; docs/plans/active/
 //! onboarding.md, "The account page") and the base files up front
 //! (`party_roster::base_download`), headless on a manual UI clock with the
-//! staged hub answering in the same frame: the chip opens the profile;
+//! staged hub answering in the same frame: a click on your own avatar in the
+//! party strip (or P on the main menu) opens the profile;
 //! a rename to a taken name offers the sign-up's free names and one of
-//! them renames (the chip follows); the avatar changes at once and the
+//! them renames (the preview of you follows); the avatar changes at once and the
 //! hub hears after a pause; a link code shows; sign out asks in its row
 //! (Esc stays), then deletes this PC's account file and shows the first
 //! run; an owner makes an invite (intent, recipient, role), copies its
@@ -376,4 +377,49 @@ fn discard_restores_and_a_saving_footer_disables_every_action() {
     assert_eq!(footer.len(), 2, "{footer:?}");
     assert!(footer.iter().all(|(_, pressable)| !pressable), "busy: {footer:?}");
     assert!(words(&mut sim).contains("SAVING"), "the primary and the line say so");
+}
+
+/// Your own avatar in the party strip is the Profile tile: a click opens
+/// the page, no other tile does, and a second press on the open page's
+/// own tile does nothing; P opens it from the main menu; nobody with no
+/// account gets one (the user's report, 2026-11-22: no card in the corner).
+#[test]
+fn clicking_your_own_avatar_opens_the_account_page() {
+    use bevy::ui::DeprecatedInteraction as Interaction;
+    use chimera_ui::shell::ShellTile;
+    let mut sim = sim(false);
+    let settings = sim.app.world_mut().spawn((ShellTile::Settings, Interaction::None)).id();
+    let avatar = sim.app.world_mut().spawn((ShellTile::Profile, Interaction::None)).id();
+    sim.ticks(2);
+    assert!(!p(&sim).open);
+    sim.app.world_mut().entity_mut(settings).insert(Interaction::Pressed);
+    sim.ticks(2);
+    assert!(!p(&sim).open, "Settings' tile is not the profile");
+    sim.app.world_mut().entity_mut(avatar).insert(Interaction::Pressed);
+    sim.ticks(2);
+    assert!(p(&sim).open, "your avatar opens the Account page");
+    sim.app.world_mut().resource_mut::<Console>().submit("account_page 0");
+    sim.ticks(2);
+    assert!(!p(&sim).open);
+    // Without an account the avatar opens nothing.
+    sim.app.world_mut().insert_resource(AccountShown(None));
+    sim.app.world_mut().entity_mut(avatar).insert(Interaction::None);
+    sim.ticks(2);
+    sim.app.world_mut().entity_mut(avatar).insert(Interaction::Pressed);
+    sim.ticks(2);
+    assert!(!p(&sim).open, "no account, no profile");
+}
+
+/// A dialog opening closes the Host page's open dropdown (the user's
+/// report, 2026-11-22; `chimera_ui::ClosePopovers`, once in the kit's
+/// modal layer; Settings' list in `settings.rs`).
+#[test]
+fn opening_a_dialog_closes_the_open_host_dropdown() {
+    let mut sim = sim(false);
+    sim.app.world_mut().resource_mut::<party_roster::signal_pages::SignalPages>().open_list = Some((0, 0));
+    sim.ticks(3);
+    assert!(sim.app.world().resource::<party_roster::signal_pages::SignalPages>().open_list.is_some(), "no dialog: the list stays");
+    sim.app.world_mut().spawn((Node::default(), chimera_ui::Modal));
+    sim.ticks(3);
+    assert!(sim.app.world().resource::<party_roster::signal_pages::SignalPages>().open_list.is_none(), "Host's dropdown closed");
 }

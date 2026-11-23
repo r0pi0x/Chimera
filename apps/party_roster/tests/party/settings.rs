@@ -836,3 +836,18 @@ fn the_games_tab_holds_each_games_keys_and_options_with_their_resets() {
     let c = sim.app.world().resource::<Console>();
     assert!(party_roster::controls::keys_in_game(&c.binds, &c.layers, Some("cs_source"), "+speed").contains(&"x".to_string()));
 }
+
+/// A dialog opening (`ClosePopovers`) closes Settings' open dropdown (the user's report,
+/// 2026-11-22: `chimera_ui::ClosePopovers`, once in the kit's modal layer).
+#[test]
+fn opening_a_dialog_closes_settings_open_dropdown() {
+    let mut sim = party(true);
+    open_settings(&mut sim.app);
+    sim.app.world_mut().resource_mut::<Settings>().open_list = Some((1, 0));
+    sim.ticks(2);
+    assert!(set(&mut sim.app).open_list.is_some(), "no dialog: the list stays");
+    // What the kit's modal layer writes when a dialog opens (its own test).
+    sim.app.world_mut().write_message(chimera_ui::ClosePopovers);
+    sim.ticks(2);
+    assert!(set(&mut sim.app).open_list.is_none(), "the dialog closed the dropdown");
+}

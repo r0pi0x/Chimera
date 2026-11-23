@@ -1,6 +1,8 @@
 //! Settings > Account (feature `present`; docs/plans/active/onboarding.md,
-//! "The account page"): this PC's hub account, opened from the main
-//! menu's account chip (`onboarding::show_chip`, `OpenAccount`). A shell
+//! "The account page"): this PC's hub account, opened by a click on
+//! your own avatar in the party strip (`ShellTile::Profile`, on any shell
+//! screen; `open_from_avatar`) or P on the main menu (`open_from_key`);
+//! no card in the corner (the user's report, 2026-11-22). A shell
 //! screen in Settings' look (the bar's crumb "Main menu ‹ Account", the
 //! window, the grey-to-white tabs with badges, one row marker, each row's
 //! control in the one control column, the focused row's help in the tile
@@ -555,10 +557,6 @@ pub enum AccountAction {
     Close,
 }
 
-/// The main menu's account chip: a click opens the page.
-#[derive(Component, Clone, Copy, Debug)]
-pub struct OpenAccount;
-
 #[derive(Component)]
 pub struct AccountRoot;
 
@@ -585,7 +583,7 @@ impl Plugin for AccountPagePlugin {
             }
             Ok(None)
         });
-        app.add_systems(Update, (open_from_chip, clicks, keys, poll, pauses, act, show).chain());
+        app.add_systems(Update, (open_from_avatar, open_from_key, clicks, keys, poll, pauses, act, show).chain());
     }
 }
 
@@ -604,10 +602,46 @@ pub fn open_page(w: &mut World) {
     }
 }
 
-fn open_from_chip(pressed: Query<&Interaction, (Changed<Interaction>, With<OpenAccount>)>, mut commands: Commands) {
-    if pressed.iter().any(|i| *i == Interaction::Pressed) {
+/// Your own avatar in the party strip (`ShellTile::Profile`), on any
+/// shell screen, opens the page (the user's report, 2026-11-22). Not
+/// from the page itself, and only with an account.
+fn open_from_avatar(
+    pressed: Query<(&Interaction, &chimera_ui::shell::ShellTile), Changed<Interaction>>,
+    page: Res<AccountPage>,
+    shown: Res<crate::onboarding::AccountShown>,
+    mut commands: Commands,
+) {
+    if page.open || shown.0.is_none() {
+        return;
+    }
+    if pressed.iter().any(|(i, t)| *i == Interaction::Pressed && *t == chimera_ui::shell::ShellTile::Profile) {
         commands.queue(open_page);
     }
+}
+
+/// P on the main menu opens the page too (the keyboard's way to what the
+/// avatar opens; a controller reaches it by the avatar's tile).
+#[allow(clippy::too_many_arguments)]
+fn open_from_key(
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    menu: Option<Res<crate::main_menu::PartyMenu>>,
+    shown: Res<crate::onboarding::AccountShown>,
+    console: Option<Res<chimera_client::client::console::ConsoleUi>>,
+    (page, party, onboarding): (Res<AccountPage>, Option<Res<crate::party_signal::PartyPanel>>, Option<Res<crate::onboarding::Onboarding>>),
+    mut commands: Commands,
+) {
+    let on_menu = menu.as_deref().is_some_and(|m| m.shown() && m.screen == crate::main_menu::Screen::MainMenu && m.page == crate::main_menu::MenuPage::Main && m.failure.is_none());
+    if !keys.is_some_and(|k| k.just_pressed(KeyCode::KeyP))
+        || !on_menu
+        || page.open
+        || shown.0.is_none()
+        || party.is_some_and(|p| p.open)
+        || crate::onboarding::takes_keys(onboarding.as_deref())
+        || console.is_some_and(|c| c.open)
+    {
+        return;
+    }
+    commands.queue(open_page);
 }
 
 fn clicks(pressed: Query<(&Interaction, &AccountAction), Changed<Interaction>>, p: Res<AccountPage>, mut out: MessageWriter<AccountAction>) {

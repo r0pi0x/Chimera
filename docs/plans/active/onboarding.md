@@ -257,11 +257,12 @@ Tests: `party_kit` `onboarding::each_error_offers_its_one_action`,
 
 ## The account page (2026-11-21)
 
-Settings > Account (`party_kit::account_page`), opened by a click on the
-main menu's account chip. Decisions made building it:
+Settings > Account (`party_kit::account_page`), opened by a click on your
+own avatar in the party strip (the Profile tile, on any shell screen) or P
+on the main menu. Decisions made building it:
 
 - **A shell screen of its own, "Main menu ‹ Account"** (it opens from the
-  chip and goes back to the menu; the bar's Profile tile white), not a tab inside
+  avatar and goes back to the menu; the bar's Profile tile white), not a tab inside
   Settings' window: Settings' rows are cvars and binds with reset keys
   and pending changes, the account's are calls to the hub. It keeps
   Settings' look and the kit rules of 2026-11-21: tabs grey to white
@@ -464,11 +465,13 @@ admin page lists invites by intent, with status and Revoke.
   screen's words); `ui_scene onboarding <screen>` (OBSERVABILITY 2).
 - Milestone (c), the returning player, done: no screen; the tickets
   come silently as before (`keep_fresh`, `use_user_hub`); the main
-  menu's account chip under the rack (avatar, display name, `@username ·
-  hub`, a green or amber light) and, while the hub's last call failed,
+  menu's hub indicator under the rack (a green or amber light and the hub's
+  name; no account card: the user's reports of 2026-11-22 found the
+  card's hover bad and wanted the profile behind the party strip's own
+  avatar, with a hover preview of every member) and, while the hub's last call failed,
   the offline banner ("Can't reach <hub>", offline play goes on, Retry
   now, retried every 30 s). Test: `onboarding::a_returning_player_sees_
-  the_chip_and_the_offline_banner`; `ui_scene onboarding
+  the_hub_indicator_and_the_offline_banner`; `ui_scene onboarding
   returning|offline`.
 - Milestone (d), the first-launch intro (decision 7), done 2026-11-21:
   on the first run's first start only (no account, no skip mark, no

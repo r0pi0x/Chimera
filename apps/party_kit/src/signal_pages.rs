@@ -344,6 +344,8 @@ impl Plugin for SignalPagesPlugin {
             .init_resource::<BrowserFiles>()
             .init_resource::<ButtonInput<KeyCode>>()
             .add_message::<MouseWheel>()
+            .add_message::<chimera_ui::ClosePopovers>()
+            .add_systems(PreUpdate, close_popovers.after(chimera_ui::modal::ModalSystems))
             .add_systems(Startup, load_saved)
             .add_systems(
                 Update,
@@ -369,6 +371,20 @@ impl Plugin for SignalPagesPlugin {
         use chimera_client::client::ui_scene::UiSceneHooks;
         UiSceneHooks::add(app.world_mut(), "play", |w, a| stage(w, MenuPage::Play, a));
         UiSceneHooks::add(app.world_mut(), "join", |w, a| stage(w, MenuPage::Join, a));
+    }
+}
+
+/// A modal opened: the Host page's dropdowns (a row's list, the Guns
+/// preset list) close (`chimera_ui::ClosePopovers`).
+fn close_popovers(mut closes: MessageReader<chimera_ui::ClosePopovers>, mut pages: ResMut<SignalPages>, mut guns: ResMut<crate::guns_picker::GunsPicker>) {
+    if closes.read().count() == 0 {
+        return;
+    }
+    if pages.open_list.is_some() {
+        pages.open_list = None;
+    }
+    if guns.page_menu.is_some() {
+        guns.page_menu = None;
     }
 }
 

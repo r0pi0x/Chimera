@@ -545,23 +545,25 @@ fn every_staged_screen_draws_its_words() {
     let _ = sim.app.world().resource::<UiClock>();
 }
 
-/// A returning player: no screen, the account chip on the main menu;
-/// with the hub unreachable the chip turns amber and the banner says
-/// offline play goes on.
+/// A returning player: no screen, the hub indicator on the main menu (the
+/// hub's name and a light, no account card: your avatar in the party strip
+/// opens the account); with the hub unreachable it turns amber and the
+/// banner says offline play goes on.
 #[test]
-fn a_returning_player_sees_the_chip_and_the_offline_banner() {
+fn a_returning_player_sees_the_hub_indicator_and_the_offline_banner() {
     let mut sim = sim();
     sim.app.world_mut().resource_mut::<Console>().submit("ui_scene onboarding returning");
     sim.ticks(3);
     assert!(!o(&sim).active, "no sign-in screen");
     let text = words(&mut sim);
-    assert!(text.contains("Sam Rocket") && text.contains("@SAM_ROCKET · FRIDAY NIGHT HUB"), "{text}");
+    assert!(text.contains("FRIDAY NIGHT HUB"), "{text}");
+    assert!(!text.contains("Sam Rocket") && !text.to_uppercase().contains("SAM_ROCKET"), "no account card in the corner: {text}");
     assert!(!text.contains("CAN'T REACH"));
     sim.app.world_mut().resource_mut::<Console>().submit("ui_scene onboarding offline");
     sim.ticks(3);
     let text = words(&mut sim);
     assert!(text.contains("OFFLINE · FRIDAY NIGHT HUB") && text.contains("CAN'T REACH FRIDAY NIGHT HUB"), "{text}");
-    // The first run's end gives the chip its names.
+    // The first run's end gives the preview of you its names.
     let mut sim = self::sim();
     typed(&mut sim, LINK);
     enter(&mut sim);

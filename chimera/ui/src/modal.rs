@@ -27,6 +27,14 @@
 //! - **Right click** closes the top modal as Esc does (`shell::back_keys`),
 //!   unless it carries `Blocking`; see `Blocking`.
 //!
+//! - **Popovers close** (`ClosePopovers`, a message): when a modal opens
+//!   (a layer joins the stack) `track_modals` writes it once, and every
+//!   open dropdown, popover or context menu closes before the dialog is
+//!   drawn (the user's rule, 2026-11-22: a dropdown stayed open under a
+//!   dialog). A screen that keeps such a list's open state clears it on
+//!   the message (`MessageReader<ClosePopovers>`); nothing per dialog.
+//!   A popover that is about to open may write it too, to close the others.
+//!
 //! Known shortcuts: the stack is the last layout's (a modal spawned this
 //! frame counts from the next `PreUpdate`), so a screen that opens a
 //! dialog keeps its own "open" flag for that first frame; the keys are
@@ -53,6 +61,11 @@ pub struct Modal;
 /// the layer's root with `Modal` (`Ui::modal_blocking`).
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Blocking;
+
+/// Every open dropdown, popover and context menu closes (module doc):
+/// written when a modal opens, or by a popover that is about to open.
+#[derive(Message, Clone, Copy, Debug, Default)]
+pub struct ClosePopovers;
 
 /// The open modals, back to front (module doc).
 #[derive(Resource, Clone, Debug, Default)]
@@ -142,6 +155,7 @@ pub fn track_modals(
     marked: Query<(Entity, Option<&ComputedStackIndex>), With<Modal>>,
     up: Query<(Option<&ChildOf>, Option<&Visibility>, Option<&Node>)>,
     children: Query<&Children>,
+    mut close: MessageWriter<ClosePopovers>,
 ) {
     let mut open: Vec<(Entity, u32)> = marked.iter().filter(|(e, _)| !hidden(*e, &up)).map(|(e, i)| (e, i.map_or(0, |i| i.0))).collect();
     // Back to front: the UI stack, then (the same index: no layout yet) a
@@ -159,6 +173,9 @@ pub fn track_modals(
     });
     let stack: Vec<Entity> = open.iter().map(|(e, _)| *e).collect();
     let top_index = open.last().map_or(0, |t| t.1);
+    if stack.iter().any(|e| !modals.stack.contains(e)) {
+        close.write(ClosePopovers);
+    }
     if modals.stack != stack || modals.top_index != top_index {
         modals.stack = stack;
         modals.top_index = top_index;
@@ -204,6 +221,7 @@ pub struct ModalPlugin;
 impl Plugin for ModalPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Modals>()
+            .add_message::<ClosePopovers>()
             .configure_sets(PreUpdate, ModalSystems.after(UiSystems::Focus))
             .add_systems(PreUpdate, (track_modals, gate_pointer).chain().in_set(ModalSystems));
     }

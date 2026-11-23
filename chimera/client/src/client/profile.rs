@@ -18,6 +18,9 @@
 //!   hub account (`Party::invite`). Your name and avatar go to the party's
 //!   hub (`PartyMe`).
 //!
+//! A member's preview card on hover (`chimera_ui::shell::Tip::card`) shows
+//! the role (Host, Party leader); no ping (it would rebuild every screen).
+//!
 //! `Party` is written only when it changes, so screens rebuild on it.
 
 use bevy::{
@@ -73,6 +76,7 @@ impl Plugin for ProfilePlugin {
             .init_resource::<Presence>()
             .init_resource::<LocalStatus>()
             .init_resource::<Party>()
+            .init_resource::<AccountNames>()
             .add_message::<WindowFocused>()
             .add_message::<KeyboardInput>()
             .add_message::<MouseMotion>();
@@ -163,6 +167,11 @@ fn local_status(
     }
 }
 
+/// The signed-in account's username and display name (the app writes it
+/// from the hub account), for your own preview card in the party strip.
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct AccountNames(pub Option<(String, String)>);
+
 #[allow(clippy::too_many_arguments)]
 fn update_party(
     setting: Res<AvatarSetting>,
@@ -172,6 +181,8 @@ fn update_party(
     hub_party: Option<Res<chimera_net::net::party::PartyClient>>,
     mut party_me: ResMut<chimera_net::net::party::PartyMe>,
     mut party: ResMut<Party>,
+    lobby: Option<Res<super::prematch_lobby::LobbyView>>,
+    account: Option<Res<AccountNames>>,
 ) {
     let name = net.map_or_else(|| "Player".to_string(), |n| if n.name.is_empty() { "Player".into() } else { n.name.clone() });
     let look = setting.look().unwrap_or_else(|| AvatarLook::for_name(&name));
@@ -181,12 +192,20 @@ fn update_party(
         party_me.0 = who;
     }
     let view = hub_party.as_deref().and_then(|p| p.view.as_ref());
+    let (shown_name, display) = match account.as_deref().and_then(|a| a.0.as_ref()) {
+        Some((user, display)) => (user.clone(), Some(display.clone()).filter(|d| d != user)),
+        None => (name, None),
+    };
     let me = Member {
-        name,
+        name: shown_name,
         face: Face::Look(look),
         marks: AvatarMarks { you: true, away: presence.unfocused, idle: presence.idle },
         state: status.0,
         lead: view.is_none_or(|v| v.leading()),
+        display,
+        role: lobby.as_deref().filter(|l| l.shown).and_then(|l| l.rows.iter().find(|r| r.local)).filter(|r| r.host).map(|_| "Host".to_string()),
+        // A ping changes every second: it would rebuild every screen.
+        ping: None,
     };
     let mut members = vec![me];
     // The party's others, in join order (the hub's), offline marked away.
@@ -198,6 +217,9 @@ fn update_party(
             marks: AvatarMarks { you: false, away: !m.online, idle: false },
             state: if m.at.is_some() { EdgeState::InMatch } else { EdgeState::Idle },
             lead: m.leader,
+            display: None,
+            role: m.leader.then(|| "Party leader".to_string()),
+            ping: None,
         });
     }
     let want = Party { members, max: party.max, invite: hub_party.is_some_and(|p| p.available()) };

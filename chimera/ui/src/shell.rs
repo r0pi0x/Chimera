@@ -42,10 +42,17 @@
 //!   2026-11-21). An intro and a control's own small motions (a toggle's
 //!   slab, a hover, a tab's wipe) stay.
 //!
+//! - **The party's avatars** (the user's report, 2026-11-22: no account
+//!   card in the corner): yours is the Profile tile (`ShellTile::Profile`):
+//!   a click opens the Account page (`party_kit::account_page`), it lights
+//!   white on hover. A hover on any member's avatar, yours too, shows a
+//!   small preview card after the tooltip delay (`Tip::card`: the avatar,
+//!   the display name, `@username`, "You" and the role, the ping when
+//!   known); it never takes the pointer.
+//!
 //! Known shortcuts: the "+" opens the party panel only with a hub account
 //! (`Party::invite`; parties: docs/plans/active/parties.md), Friends is
-//! disabled; your avatar opens nothing yet (no Profile
-//! screen), its tooltip names you.
+//! disabled; a hub party's others have no ping or display name yet.
 
 use bevy::{
     input::{ButtonState, keyboard::{Key, KeyboardInput}},
@@ -57,7 +64,7 @@ use bevy::{
 use crate::{
     IconImages, Role, Theme, Tone, UiClock, UiStyle, UiUnits,
     avatar::{self, AvatarMarks, EdgeState, Face},
-    controls::{Hover, Ui, pressable},
+    controls::{Hover, Tick, Ui, pressable},
 };
 
 /// The shell's numbers (`[layout.shell]`, cq; module doc).
@@ -143,11 +150,19 @@ pub struct Tip {
     pub name: String,
     pub note: Option<String>,
     pub key: Option<String>,
+    /// A party member's preview card instead of the plain plate (module doc).
+    pub card: Option<Box<Member>>,
 }
 
 impl Tip {
     pub fn new(name: &str) -> Self {
-        Tip { name: name.to_string(), note: None, key: None }
+        Tip { name: name.to_string(), note: None, key: None, card: None }
+    }
+
+    /// The member's preview card (avatar, names, role, ping).
+    pub fn card(mut self, m: &Member) -> Self {
+        self.card = Some(Box::new(m.clone()));
+        self
     }
 
     pub fn note(mut self, n: &str) -> Self {
@@ -173,6 +188,12 @@ pub struct Member {
     pub marks: AvatarMarks,
     pub state: EdgeState,
     pub lead: bool,
+    /// The display name, when it differs from `name` (the username).
+    pub display: Option<String>,
+    /// The role tag on the preview card ("Host", "Party leader"), when any.
+    pub role: Option<String>,
+    /// The round trip, ms, when known.
+    pub ping: Option<u16>,
 }
 
 /// The party the bar shows (you first), and how big it may grow; an app
@@ -195,6 +216,9 @@ impl Default for Party {
                 marks: AvatarMarks { you: true, ..default() },
                 state: EdgeState::Idle,
                 lead: true,
+                display: None,
+                role: None,
+                ping: None,
             }],
             max: 8,
             invite: false,
@@ -303,7 +327,7 @@ pub fn bar(ui: &Ui, c: &mut Commands, frame: Entity, images: &mut Assets<Image>,
         let cell = c
             .spawn((
                 Node { height: ui.units.val(l.tile), column_gap: Val::Px(gap2), flex_direction: FlexDirection::Row, ..default() },
-                Tip::new(&m.name).note(if m.marks.you { "Profile coming soon" } else { "Party" }),
+                Tip::new(&m.name).card(m),
                 pressable(),
                 ChildOf(party),
             ))
@@ -314,6 +338,27 @@ pub fn bar(ui: &Ui, c: &mut Commands, frame: Entity, images: &mut Assets<Image>,
         }
         avatar::spawn(ui, c, cell, images, icons, m.face, m.marks, l.tile);
         avatar::spawn_strip(ui, c, cell, images, icons, m.state, m.lead && b.party.len() > 1, l.tile);
+        if i == 0 {
+            // Yours opens the Profile: it lights on hover (a white frame
+            // and a veil over the avatar), as the other tiles do.
+            c.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::ZERO,
+                    right: Val::ZERO,
+                    top: Val::ZERO,
+                    bottom: Val::ZERO,
+                    border: UiRect::all(Val::Px(ui.units.hairline().max(1.0) * 1.5)),
+                    ..default()
+                },
+                BackgroundColor(ui.color(Tone::Fg, 0.14)),
+                BorderColor::all(ui.color(Tone::Fg, 1.0)),
+                Tick { always: false },
+                Visibility::Hidden,
+                Pickable::IGNORE,
+                ChildOf(cell),
+            ));
+        }
     }
     // The invite slot: the party panel (provisional), disabled without a
     // hub account.
@@ -553,6 +598,7 @@ pub fn show_tips(
     clock: Res<UiClock>,
     tips: Query<(Entity, &Tip, &Interaction)>,
     plates: Query<(Entity, &TipPlate)>,
+    (mut images, mut icons): (Option<ResMut<Assets<Image>>>, Option<ResMut<IconImages>>),
     mut since: Local<Option<(Entity, f64)>>,
     mut c: Commands,
 ) {
@@ -600,6 +646,24 @@ pub fn show_tips(
             ChildOf(holder),
         ))
         .id();
+    if let (Some(m), Some(images), Some(icons)) = (tip.card.as_deref(), images.as_deref_mut(), icons.as_deref_mut()) {
+        // A party member's preview card: the avatar, the names, the tags.
+        avatar::spawn(&ui, &mut c, plate, images, icons, m.face, m.marks, 3.4);
+        let col = ui.boxed(&mut c, plate, UiStyle { gap: Some(0.3), justify: Some(JustifyContent::Center), ..UiStyle::column() });
+        ui.text(&mut c, col, Role::DisplayBold, 1.0, Tone::Fg, m.display.as_deref().unwrap_or(&m.name));
+        if m.display.as_deref().is_some_and(|d| d != m.name) {
+            ui.text(&mut c, col, Role::Mono, 0.56, Tone::Fg3, &format!("@{}", m.name));
+        }
+        let tags = ui.boxed(&mut c, col, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
+        for tag in [m.marks.you.then_some("You"), m.role.as_deref()].into_iter().flatten() {
+            let t = ui.boxed(&mut c, tags, UiStyle { pad: Some([0.1, 0.3, 0.1, 0.3].into()), ..UiStyle::row() }.outline(Tone::Fg3, 1.0));
+            ui.text(&mut c, t, Role::Mono, 0.5, Tone::Fg2, &tag.to_uppercase());
+        }
+        if let Some(ms) = m.ping {
+            ui.text(&mut c, tags, Role::Mono, 0.54, Tone::Fg3, &format!("{ms} ms"));
+        }
+        return;
+    }
     ui.text(&mut c, plate, Role::Mono, 0.6, Tone::Fg, &tip.name);
     if let Some(n) = &tip.note {
         ui.text(&mut c, plate, Role::Mono, 0.6, Tone::Fg3, n);

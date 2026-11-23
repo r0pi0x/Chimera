@@ -1247,6 +1247,19 @@ Settings had the new ones, and the match end's Leave had no hover.
   screen's own text handling does it: a screen adds nothing, and a field
   built by the kit has the menu (`kit_conformance` need not know). Tests:
   `chimera/ui/tests/it/text_menu.rs`.
+- **A modal closes the popovers** (the user's rule, 2026-11-22: a dropdown
+  stayed open under a dialog): when a modal opens, `track_modals` writes
+  `chimera_ui::ClosePopovers` once and every open dropdown, popover or
+  context menu closes before the dialog draws. A screen that keeps such a
+  list's open state clears it on the message (Settings' and the Host
+  page's lists do); a new popover does the same, nothing per dialog.
+  Test: `chimera/ui/tests/it/modal.rs`.
+- **The party strip is the profile** (the user's report, 2026-11-22): no
+  account card in a corner. Your avatar is the Profile tile (a click opens
+  the Account page; P on the main menu too), and hovering any member's
+  avatar shows a small preview card (`Tip::card`: avatar, name, tags, ping
+  when known), never blocking. The main menu's top right is a hub
+  indicator (name and an online light, never the address).
 - **A missing feature** is an option on the kit's builder (an icon on a
   button, a narrower control column for a dialog's rules), shown in a
   `ui_scene` gallery, not a copy in the screen.

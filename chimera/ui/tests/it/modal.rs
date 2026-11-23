@@ -273,3 +273,31 @@ fn the_kits_modal_builders_set_the_flag() {
     assert!(world.get::<Modal>(a).is_some() && world.get::<chimera_ui::Blocking>(a).is_none());
     assert!(world.get::<Modal>(b).is_some() && world.get::<chimera_ui::Blocking>(b).is_some());
 }
+
+#[derive(Resource, Default)]
+struct Closed(u32);
+
+fn count_closes(mut r: MessageReader<chimera_ui::ClosePopovers>, mut n: ResMut<Closed>) {
+    n.0 += r.read().count() as u32;
+}
+
+/// A modal opening tells every popover to close, once (a dropdown open
+/// under it stays open nowhere); a modal already up says nothing again.
+#[test]
+fn opening_a_modal_closes_every_popover_once() {
+    let mut app = app();
+    app.init_resource::<Closed>().add_systems(Update, count_closes);
+    let root = app.world_mut().spawn(Node::default()).id();
+    frame(&mut app);
+    frame(&mut app);
+    assert_eq!(app.world().resource::<Closed>().0, 0, "no modal: nothing closes");
+    let first = app.world_mut().spawn((Node::default(), Modal, ChildOf(root))).id();
+    frame(&mut app);
+    frame(&mut app);
+    assert_eq!(app.world().resource::<Closed>().0, 1, "a dialog opens: the popovers close once");
+    // A second modal over it (a confirm) closes them again; the first staying up does not.
+    app.world_mut().spawn((Node::default(), Modal, ChildOf(first)));
+    frame(&mut app);
+    frame(&mut app);
+    assert_eq!(app.world().resource::<Closed>().0, 2, "a confirm over it closes them again");
+}

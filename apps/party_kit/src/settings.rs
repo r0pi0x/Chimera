@@ -559,6 +559,8 @@ impl Plugin for SettingsPlugin {
             .init_resource::<AccumulatedMouseScroll>()
             .add_message::<SettingsAction>()
             .add_message::<KeyboardInput>()
+            .add_message::<chimera_ui::ClosePopovers>()
+            .add_systems(PreUpdate, close_popovers.after(chimera_ui::modal::ModalSystems))
             .configure_sets(
                 Update,
                 SettingsSystems.before(crate::main_menu::MainMenuSystems).before(crate::esc_menu::EscMenuSystems),
@@ -730,6 +732,13 @@ fn submit(world: &mut World, line: impl Into<String>) {
 
 fn cue(world: &mut World, c: UiCue) {
     crate::ui_cues::cue(world, c);
+}
+
+/// A modal opened: an open dropdown's list closes (`chimera_ui::ClosePopovers`).
+fn close_popovers(mut closes: MessageReader<chimera_ui::ClosePopovers>, mut s: ResMut<Settings>) {
+    if closes.read().count() > 0 && s.open_list.is_some() {
+        s.open_list = None;
+    }
 }
 
 /// Opening, closing (anything pending discarded: Esc and Back asked
