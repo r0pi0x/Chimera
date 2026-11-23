@@ -277,7 +277,8 @@ fn the_match_end_and_vote_cues_reach_each_client_once() {
         assert_eq!(once("vote_cast_2"), usize::from(i == 1), "client {i}: only the voter's cast: {heard:?}");
         assert_eq!(once("vote_cast_1"), usize::from(i == 0), "client {i}: only the voter's cast: {heard:?}");
         assert_eq!(once("vote_other"), 1, "client {i}: the other's vote: {heard:?}");
-        assert_eq!(once("count_tick"), 3, "client {i}: the vote's last 3 s: {heard:?}");
+        // One a second of the vote's last 3 s (a fourth when the vote's close fell mid-second).
+        assert!((3..=4).contains(&once("count_tick")), "client {i}: the vote's last 3 s: {heard:?}");
         assert!(!heard.iter().any(|e| RANK.contains(&e.as_str())), "client {i}: the end isn't a rank-up: {heard:?}");
     }
 }
