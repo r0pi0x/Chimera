@@ -294,8 +294,9 @@ are; do not split the party.
       game (Combat Arms in the party) never is. A game enters play on its
       identity, weapon, ladder rung, map or any entity with its crate's
       components, and stays in play (section 6)
-- [ ] Marker-filtered character queries in `think`, `wear_bodies` and the
-      like, for matches where several games are in play (section 6)
+- [x] Each game's characters for matches where several games are in
+      play (`GameCharacters`, section 6): TF2's `wear_bodies`, the one
+      per-character scan that cost more than a system's floor
 - [x] `heavy::idle_games` as a bound (absent games under 1% of a tick) and
       a game entering play mid-match running that tick
 - [ ] The same for the front ends' per-frame systems, counted in a client
@@ -337,7 +338,17 @@ too: fewer systems to start). The test bounds the absent games under 1%
 and checks a game entering play mid-match (a rung's gun of a game not in
 the ladder) runs its systems that same tick.
 
-Still open: the front ends' frame systems (`GameClient`), per-game
-character lists for matches with several games in play (each in-play
-game's loops still visit every character), games leaving play, and data
-loaded on first entry where a game has any worth deferring.
+With every game in play, each game's costliest systems
+(`heavy::idle_games` prints them) were TF2's `wear_bodies` at 137k a
+tick (a query over every entity, nine optional parts, the identity
+checked inside) and then systems near the floor of a run (HL2:DM's
+`before_frame` 40k over 12 runs, Halo's weapons `run` 18k over 2).
+`GameCharacters` (each game's characters by `GameIdentity`, kept by
+observers, no component of its own so no archetypes) lets a game visit
+its own: `wear_bodies` now takes TF2's characters from it and the others
+only when they wear TF2's skin or a body name and their identity changed
+or is none; it fell under 6k, the every-game tick 4,491k -> 4,358k.
+
+Still open: the front ends' frame systems (`GameClient`), games leaving
+play, and data loaded on first entry where a game has any worth
+deferring.

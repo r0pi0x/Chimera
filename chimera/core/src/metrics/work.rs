@@ -509,10 +509,12 @@ impl WorkCounts {
 
     /// `take`, and the same rows summed by the crate each system comes
     /// from (labels name systems apart only by schedule and short name:
-    /// two crates' `think`s share a row).
-    pub fn take_with_crates() -> (Self, BTreeMap<String, (u64, u64)>) {
+    /// two crates' `think`s share a row), and by crate and label
+    /// (`hl2dm FixedUpdate think`).
+    pub fn take_with_crates() -> (Self, BTreeMap<String, (u64, u64)>, BTreeMap<String, (u64, u64)>) {
         let mut out = BTreeMap::new();
         let mut by_crate = BTreeMap::new();
+        let mut by_system = BTreeMap::new();
         let rows = ROWS.with(|r| std::mem::take(&mut *r.borrow_mut()));
         let labels = LABELS.lock().unwrap_or_else(|e| e.into_inner());
         let crates = CRATES.lock().unwrap_or_else(|e| e.into_inner());
@@ -523,12 +525,16 @@ impl WorkCounts {
                 let e: &mut (u64, u64) = out.entry(label.clone()).or_default();
                 e.0 += ins;
                 e.1 += runs;
-                let c: &mut (u64, u64) = by_crate.entry(crates.get(i).cloned().unwrap_or_default()).or_default();
+                let krate = crates.get(i).cloned().unwrap_or_default();
+                let s: &mut (u64, u64) = by_system.entry(format!("{krate} {label}")).or_default();
+                s.0 += ins;
+                s.1 += runs;
+                let c: &mut (u64, u64) = by_crate.entry(krate).or_default();
                 c.0 += ins;
                 c.1 += runs;
             }
         }
-        (Self(out), by_crate)
+        (Self(out), by_crate, by_system)
     }
 
     /// Add `other`'s rows to these.

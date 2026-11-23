@@ -125,8 +125,10 @@ game is in play (a character has its `GameIdentity`, a weapon of its
 `game:` ids exists, the ladder names its guns, its map spawned, or any
 entity holds one of its crate's components). So: keep the crate's name
 equal to the game's id; add systems in plugins' `build` (not `finish`);
-don't make a system that must run for other games' characters part of
-the game crate (it belongs in Chimera or the family crate); and leave
+a system of the crate that must also work for other games (a map's
+explosions of no game) is named with `serves_every_game`; a
+per-character loop visits the game's own characters
+(`games_in_play::GameCharacters::of`), not every character; and leave
 data the game needs only once it plays to `GameEntersPlay` (an observer). A
 match without the game must cost no instructions of its systems
 (`apps/ultimate_gun_game/tests/it/heavy/idle_games.rs`, under 1% for all

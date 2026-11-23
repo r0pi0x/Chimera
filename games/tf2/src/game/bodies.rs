@@ -55,7 +55,7 @@
 //! dissolve...) or late-arrival check (Edge cases), and with no death
 //! animation the timer is never reset at one's end (3).
 
-use chimera_core::game_data::GameData;
+use chimera_core::{game_data::GameData, games_in_play::GameCharacters};
 use bevy::prelude::*;
 use source_engine::content::{material::MaterialLoader, props, surfaceprops::SurfaceProps};
 
@@ -181,7 +181,11 @@ pub fn skin_of(team: Option<Team>) -> i32 {
 pub struct Tf2Skin;
 
 /// Players whose identity is TF2's wear their gun's class's body by name
-/// and their team's skin; leaving TF2, the names and skins it set go.
+/// and their team's skin; leaving TF2, the names and skins it set go. TF2's
+/// own players come from `GameCharacters` (not a scan of every entity);
+/// the others only when they wear TF2's skin, or a body name and their
+/// identity changed or is none (what TF2 set is undone the frame after a
+/// player leaves TF2).
 #[allow(clippy::type_complexity)]
 pub fn wear_bodies(
     players: Query<(
@@ -195,6 +199,8 @@ pub fn wear_bodies(
         Has<Tf2Skin>,
         Option<&RungClass>,
     )>,
+    leaving: Query<Entity, Or<(With<Tf2Skin>, (With<BodyName>, Or<(Changed<GameIdentity>, Without<GameIdentity>)>))>>,
+    tf2_players: Res<GameCharacters>,
     weapons: Query<&Weapon>,
     models: Option<Res<CharacterModels>>,
     table: Option<Res<Classes>>,
@@ -202,7 +208,11 @@ pub fn wear_bodies(
 ) {
     let Some(table) = table else { return };
     let ours = |name: &str| table.classes.iter().any(|c| c.model.eq_ignore_ascii_case(name));
-    for (e, identity, inv, team, name, skin, body, skinned, drawn) in &players {
+    let tf2_list = tf2_players.of(GAME);
+    let leaving = leaving.iter().filter(|e| tf2_list.binary_search(e).is_err());
+    for (e, identity, inv, team, name, skin, body, skinned, drawn) in
+        players.iter_many(leaving.chain(tf2_list.iter().copied())).flatten()
+    {
         let tf2 = identity.is_some_and(|i| i.0 == GAME);
         if !tf2 {
             // What TF2 set goes in one move (each removal alone makes
@@ -277,6 +287,7 @@ pub struct Tf2BodiesPlugin;
 
 impl Plugin for Tf2BodiesPlugin {
     fn build(&self, app: &mut App) {
+        chimera_core::games_in_play::track_game_characters(app);
         app.init_resource::<Classes>().add_systems(Update, wear_bodies);
         // Its ragdolls' lifetime (specs/tf2/ragdolls.md).
         let mut rules = app.world_mut().get_resource_or_init::<crate::map::ragdoll::RagdollGameRules>();

@@ -149,6 +149,8 @@ pub struct Work {
     /// The systems' instructions and runs by the crate each comes from
     /// (`WorkCounts::take_with_crates`).
     pub crates: std::collections::BTreeMap<String, (u64, u64)>,
+    /// The same by crate and system (`hl2dm FixedUpdate think`).
+    pub crate_systems: std::collections::BTreeMap<String, (u64, u64)>,
 }
 
 impl Work {
@@ -444,7 +446,7 @@ impl Sim {
             archetypes.push(self.app.world().archetypes().len());
             last = work::now();
         }
-        let (systems, crates) = work::WorkCounts::take_with_crates();
+        let (systems, crates, crate_systems) = work::WorkCounts::take_with_crates();
         work::set_enabled(false);
         if work::multiplexed() {
             eprintln!(
@@ -452,7 +454,7 @@ impl Sim {
                  thread than the PMU has counters): the counts are estimates and won't repeat"
             );
         }
-        (ticks.len() as u64 == n).then_some(Work { ticks, archetypes, systems, crates })
+        (ticks.len() as u64 == n).then_some(Work { ticks, archetypes, systems, crates, crate_systems })
     }
 
     /// A hash of the simulation's state: every entity's place, turn,

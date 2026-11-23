@@ -28,6 +28,8 @@
 //!   app's lifetime: what it put on characters, projectiles in flight and
 //!   its timers keep being handled as before, so behaviour in play is
 //!   unchanged. Apps without `GamesInPlay` gate nothing.
+//! - **Each game's characters** (`GameCharacters`): a game in play beside
+//!   others loops over its own characters only.
 //! - **First entry** (`GameEntersPlay`, triggered): work a game wants done
 //!   only once it is in play (its data documents) observes it.
 //!
@@ -321,6 +323,69 @@ fn watch_entities(
     }
 }
 
+/// Each game's characters (by `GameIdentity`), kept as identities come,
+/// change and go: a game's per-character loop visits its own characters
+/// only (`of`, then `Query::get`), instead of scanning every character and
+/// checking whose it is. No component of its own, so no new archetypes.
+/// `track_game_characters` installs it (any app; once).
+#[derive(Resource, Default, Debug)]
+pub struct GameCharacters(Vec<(String, Vec<Entity>)>);
+
+impl GameCharacters {
+    /// `game`'s characters (any case), by entity.
+    pub fn of(&self, game: &str) -> &[Entity] {
+        self.0.iter().find(|(g, _)| g.eq_ignore_ascii_case(game)).map_or(&[], |(_, v)| v.as_slice())
+    }
+
+    fn add(&mut self, game: &str, e: Entity) {
+        let i = self.0.iter().position(|(g, _)| g.eq_ignore_ascii_case(game)).unwrap_or_else(|| {
+            self.0.push((game.to_ascii_lowercase(), Vec::new()));
+            self.0.len() - 1
+        });
+        let list = &mut self.0[i].1;
+        if let Err(at) = list.binary_search(&e) {
+            list.insert(at, e);
+        }
+    }
+
+    fn remove(&mut self, game: &str, e: Entity) {
+        if let Some((_, list)) = self.0.iter_mut().find(|(g, _)| g.eq_ignore_ascii_case(game))
+            && let Ok(at) = list.binary_search(&e)
+        {
+            list.remove(at);
+        }
+    }
+}
+
+/// Keeps `GameCharacters` (once per app).
+pub fn track_game_characters(app: &mut App) {
+    if app.world().contains_resource::<GameCharacters>() {
+        return;
+    }
+    app.init_resource::<GameCharacters>().add_observer(character_joins).add_observer(character_leaves);
+}
+
+fn character_joins(
+    on: On<Insert<crate::slots::GameIdentity>>,
+    identities: Query<&crate::slots::GameIdentity>,
+    mut chars: ResMut<GameCharacters>,
+) {
+    if let Ok(identity) = identities.get(on.event_target()) {
+        chars.add(&identity.0, on.event_target());
+    }
+}
+
+/// Before an identity is replaced or removed (the entity despawned too).
+fn character_leaves(
+    on: On<Discard<crate::slots::GameIdentity>>,
+    identities: Query<&crate::slots::GameIdentity>,
+    mut chars: ResMut<GameCharacters>,
+) {
+    if let Ok(identity) = identities.get(on.event_target()) {
+        chars.remove(&identity.0, on.event_target());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,6 +455,25 @@ mod tests {
         });
         app.update();
         assert_eq!(app.world().resource::<Runs>().0, 10, "only the one serving every game ran");
+    }
+
+    #[test]
+    fn each_games_characters_follow_their_identities() {
+        use crate::slots::GameIdentity;
+        let mut app = App::new();
+        track_game_characters(&mut app);
+        let a = app.world_mut().spawn(GameIdentity("tf2".into())).id();
+        let b = app.world_mut().spawn(GameIdentity("hl2dm".into())).id();
+        let chars = |app: &App, g: &str| app.world().resource::<GameCharacters>().of(g).to_vec();
+        assert_eq!(chars(&app, "tf2"), [a]);
+        app.world_mut().entity_mut(b).insert(GameIdentity("TF2".into()));
+        let mut both = [a, b];
+        both.sort();
+        assert_eq!(chars(&app, "tf2"), both, "kept sorted, any case");
+        assert!(chars(&app, "hl2dm").is_empty());
+        app.world_mut().entity_mut(a).remove::<GameIdentity>();
+        app.world_mut().despawn(b);
+        assert!(chars(&app, "tf2").is_empty());
     }
 
     #[test]
