@@ -145,6 +145,9 @@ IFS='
 set -- $tests
 unset IFS
 tests_args=("$@")
+# CHIMERA_HOOK_FAILFAST=1: stop the test run at the first failure (a failed run
+# averaged 741 s, 1.8x a pass; fix that test, rerun). Default: all failures.
+ff=--no-fail-fast; [ "${CHIMERA_HOOK_FAILFAST:-0}" = 1 ] && ff=
 # The type-check of the affected tests ($checks), less the packages the
 # fast tier builds anyway (`cargo test` builds their libs, bins, tests and
 # examples: checking them too was the same work twice). A package a
@@ -204,13 +207,13 @@ if [ -n "$check_cmd" ] && [ "$runner" = cargo ] && [ "${CHIMERA_COMMIT_FAST:-1}"
 fi
 t_args="${tests_args[*]}"
 if [ "$runner" = nextest ]; then
-    cmds=("cargo nextest run $t_args --features dev --no-fail-fast --no-tests=pass --color never -E '!test(/heavy::/)'"
-          "cargo test --doc $t_args --features dev --quiet --no-fail-fast")
+    cmds=("cargo nextest run $t_args --features dev $ff --no-tests=pass --color never -E '!test(/heavy::/)'"
+          "cargo test --doc $t_args --features dev --quiet $ff")
 elif [ "$overlap" = 1 ]; then
     cmds=("cargo test $t_args --features dev --no-run, then each test binary with --skip heavy:: --quiet"
-          "cargo test --doc $t_args --features dev --quiet --no-fail-fast")
+          "cargo test --doc $t_args --features dev --quiet $ff")
 else
-    cmds=("cargo test $t_args --features dev --quiet --no-fail-fast -- --skip heavy::")
+    cmds=("cargo test $t_args --features dev --quiet $ff -- --skip heavy::")
 fi
 # The build without --features dev: game data (`game_data!`) is a different
 # build there (compiled in, not read from the checkout), and the root
@@ -241,7 +244,7 @@ fi
 echo "$who: running the fast tier of: $t_args" >&2
 for c in "${cmds[@]}"; do echo "$who:   $c" >&2; done
 doc_tests() { # doctests; a selection without a library has none
-    run cargo test --doc "${tests_args[@]}" --features dev --quiet --no-fail-fast >>"$log" 2>&1 && return 0
+    run cargo test --doc "${tests_args[@]}" --features dev --quiet $ff >>"$log" 2>&1 && return 0
     tail -n 3 "$log" | grep -q "no library targets found"
 }
 tested_ok=1
@@ -253,7 +256,7 @@ if [ -n "$check_cmd" ] && [ "$overlap" = 0 ]; then
 fi
 t0=$(date +%s)
 if [ "$runner" = nextest ]; then
-    run cargo nextest run "${tests_args[@]}" --features dev --no-fail-fast --no-tests=pass --color never -E '!test(/heavy::/)' >>"$log" 2>&1 || tested_ok=0
+    run cargo nextest run "${tests_args[@]}" --features dev $ff --no-tests=pass --color never -E '!test(/heavy::/)' >>"$log" 2>&1 || tested_ok=0
     doc_tests || tested_ok=0
 elif [ "$overlap" = 1 ]; then
     json=target/pre-commit-tests.json
@@ -320,7 +323,7 @@ PY
     doc_tests || tested_ok=0
     test_s=$(( test_s + $(date +%s) - t1 ))
 else
-    run cargo test "${tests_args[@]}" --features dev --quiet --no-fail-fast -- --skip heavy:: >>"$log" 2>&1 || tested_ok=0
+    run cargo test "${tests_args[@]}" --features dev --quiet $ff -- --skip heavy:: >>"$log" 2>&1 || tested_ok=0
 fi
 [ "$test_s" = - ] && test_s=$(( $(date +%s) - t0 ))
 if [ "$tested_ok" = 0 ]; then

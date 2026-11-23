@@ -163,6 +163,54 @@ Seen while measuring: `cs_source`'s
 `view_models::everyone_hears_the_view_models_reload_events_the_others_a_little_late`
 failed in all four runs on 55277a2d1, with both runners.
 
+## Checkpoint 2026-11-23
+
+`tools/agent-timing --since 2026-11-22` (66 agents, 91.8 h wall, 73.5 h
+accounted; 36 commits, a partial day) against the baseline week (the
+`--since 2026-11-14` totals minus that, 346 agents, 387.8 h accounted;
+about 1,150 commits, so per commit is not comparable: shares of accounted
+time are). The report now files named waits (`tools/wait-for`) under their
+own bucket; the old "unidentified" 24 h is 0.3 h now.
+
+| Bucket | Baseline h (share) | Now h (share) | Waiting before / now |
+|---|---:|---:|---:|
+| Model thinking and writing | 148.3 (38%) | 17.5 (24%) | - |
+| Tests (own runs) | 62.2 (16%) | 13.4 (18%) | 31.0 / 7.4 |
+| Game runs and captures | 40.8 (11%) | 2.2 (3%) | 22.3 / 0.8 |
+| Commit hook | 34.0 (9%) | 5.8 (8%) | 24.4 / 5.4 |
+| Post-push tests | 35.3 (9%) | 1.2 (2%) | 32.5 / 0.6 |
+| Builds | 21.2 (5%) | 7.5 (10%) | 8.7 / 5.5 |
+| Waiting, named + unidentified | 25.3 (7%) | 24.2 (33%) | all |
+
+Improved: post-push waiting 32.5 h to 0.6 h (nobody waits); captures
+waiting 22 h to 0.8 h; unidentified waits 24 h to 0.3 h (named now).
+Not improved: the hook's stamp reuse is 40 of 170 runs plus stamps (24%),
+as in the first day of logging (6 of 25); 42 of 130 hook runs failed, and a
+failed run averages 741 s against 408 s for a pass (7.9 h in three days).
+The biggest bucket is now named waiting (24 h), mostly builds (cs_source,
+ugg, `slot12 build`: 15 of 15 cs_source waits ended in the wait-for timeout
+after 2.8 h) and `pc` (Windows PC); then the hook and builds together
+(13 h). Of 1,334 logged waits 780 ended in timeout, 621 of them at 6 min
+or less (a poll in slices, 30 h): counted as waits, not failures.
+
+Top remaining wastes:
+
+1. **Failed hook runs run to the end** (`--no-fail-fast`, 7.9 h per 3
+   days). Done: `CHIMERA_HOOK_FAILFAST=1` stops at the first failure; try
+   it in briefs for iteration, keep the default for the final run. Saves
+   perhaps 4 h per 3 days.
+2. **Cold builds waited on in the foreground** (cs_source cold 1-2 h
+   timeouts, `slot12 build`, ugg: ~8 h per 3 days). Fix (plan item): keep
+   slots warm (agent-slot acquire prefers a slot already built for the
+   crate; sccache hit rate in the report), and brief "build in the
+   background and read the next file meanwhile". Not done.
+3. **Hook reuse stays at 24%**: agents change a file after the
+   `--worktree` pass (docs, rebase) and the stamp no longer matches. Fix
+   (plan item): key the stamp on the tested crates' inputs, not the whole
+   tree, so doc-only or other-crate edits keep it. Saves up to 5 h.
+
+Next: measure FAILFAST use next week; add the slot-warmth item to Next.
+
 ## Next, by estimated saving
 
 | Idea | Estimate | Notes |
