@@ -116,6 +116,55 @@ fn a_tf2_player_walks_through_coldseeds_doorway() {
     assert!(tf2 > own - 0.75, "the TF2 player did too: {tf2} m against {own}");
 }
 
+/// Report 04df6301 (2026-11-22): a CS:S player went through one of Chill
+/// Out's teleporters and was stuck where it arrived: the exit flags are
+/// 0.37 m under their pads' tops, and a box put there is in the floor
+/// (`teleport::on_floor`). A CS:S, TF2 and Combat Arms player, through
+/// every pad, arrives and walks away from the target afterwards (some
+/// heading of four takes it 1 m). Halo's map comes from the disc image or
+/// the asset store (`CHIMERA_ASSET_STORE`).
+#[test]
+fn players_walk_away_from_chill_outs_teleporter_targets() {
+    use chimera_world::map::teleport::MapTeleporters;
+    let Some(mut sim) = party_on("halo_ce:chillout") else { return };
+    let t = sim.app.world().resource::<MapTeleporters>().clone();
+    let mut stuck = Vec::new();
+    for movement in [cs_source::game::movement::ID, combat_arms::game::movement::ID, tf2::game::movement::ID] {
+        for (i, pad) in t.pads.iter().enumerate() {
+            let mut best = 0.0f32;
+            for k in 0..4 {
+                let p = sim.spawn_character(pad.source + Vec3::Y * 0.3, movement);
+                let mut arrived = false;
+                for _ in 0..60 {
+                    sim.ticks(1);
+                    if (sim.position(p) - pad.dest).xz().length() < 0.6 {
+                        arrived = true;
+                        break;
+                    }
+                }
+                sim.seconds(0.3);
+                let at = sim.position(p);
+                {
+                    let mut it = sim.intent(p);
+                    it.yaw = pad.dest_yaw + k as f32 * std::f32::consts::FRAC_PI_2;
+                    it.move_axis = Vec2::Y;
+                }
+                sim.seconds(1.5);
+                let moved = (sim.position(p) - at).xz().length();
+                eprintln!("{movement} pad {i} heading {k}: arrived {arrived} at {at} (target {}), walked {moved} m", pad.dest);
+                assert!(arrived, "{movement} pad {i}: arrived");
+                best = best.max(moved);
+                sim.app.world_mut().despawn(p);
+                sim.ticks(1);
+            }
+            if best < 1.0 {
+                stuck.push(format!("{movement} pad {i}: best {best} m"));
+            }
+        }
+    }
+    assert!(stuck.is_empty(), "{stuck:#?}");
+}
+
 /// Where a ray from `origin` along `dir` meets triangle `a b c`: its
 /// distance and whether it meets the front.
 fn ray_tri(origin: Vec3, dir: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<(f32, bool)> {

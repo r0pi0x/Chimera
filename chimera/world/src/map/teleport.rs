@@ -14,7 +14,11 @@
 //!   first such pad in order, unless that pad is the one it last arrived
 //!   at (`TeleportArrival`): a pad stays disarmed for a character that
 //!   arrived beside it until its feet are farther than `rearm` from it.
-//! - Moved: its feet to the destination (the body by the same offset), its
+//! - Moved: its feet to the destination (the body by the same offset;
+//!   onto the floor there when the destination is in or under it, up to
+//!   `FLOOR_REACH`: `on_floor`, Chill Out's exit flags are 0.37 m under
+//!   their pads' tops, which Halo's pill rides out of but a box is stuck
+//!   in), its
 //!   look turned by the destination's yaw minus the source's
 //!   (`core::set_view`; its pitch levelled with `level_view`), its
 //!   velocity kept in world axes (or zeroed, `keep_velocity`), and it then counts as arrived at the first pad whose
@@ -314,6 +318,26 @@ fn feet(world: &World, e: Entity) -> Option<(Vec3, bool)> {
     }
 }
 
+/// How far above a destination (m) a floor it is in or under is looked
+/// for (`on_floor`).
+pub const FLOOR_REACH: f32 = 0.5;
+
+/// Feet at `dest` raised onto the top of the floor they are in or just
+/// under (within `FLOOR_REACH`, what character `e`'s body meets), else
+/// `dest` itself: a destination marked at or below the surface it stands
+/// for puts no body inside the level.
+pub fn on_floor(world: &mut World, dest: Vec3, e: Entity) -> Vec3 {
+    use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
+    let mut state = bevy::ecs::system::SystemState::<SpatialQuery>::new(world);
+    let Ok(query) = state.get(world) else { return dest };
+    let filter = SpatialQueryFilter::from_excluded_entities([e]).with_mask(chimera_core::core::CHARACTER_FILTER);
+    let from = dest + Vec3::Y * FLOOR_REACH;
+    match query.cast_ray(from, Dir3::NEG_Y, FLOOR_REACH, true, &filter) {
+        Some(hit) if hit.distance > 0.0 && hit.normal.y > 0.7 => Vec3::new(dest.x, from.y - hit.distance + 1e-3, dest.z),
+        _ => dest,
+    }
+}
+
 /// Whether the teleporters have work this tick (characters as their
 /// body's place, arrival and refusals): a character near a pad (its body
 /// within the radius and a body's height of a source), or one with an
@@ -380,7 +404,7 @@ pub fn apply(world: &mut World) {
             world.write_message(TeleportRefused { character: e });
         }
         let Outcome::Moved { to, turn, .. } = outcome else { continue };
-        let offset = *to - before[*i].feet;
+        let offset = on_floor(world, *to, e) - before[*i].feet;
         if let Some(mut tr) = world.get_mut::<Transform>(e) {
             tr.translation += offset;
         }
