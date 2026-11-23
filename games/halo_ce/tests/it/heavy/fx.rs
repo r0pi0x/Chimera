@@ -44,7 +44,7 @@ fn the_four_guns_effects_compile() {
     let e = &set.entries["halo_ce:sound\\sfx\\weapons\\assault rifle\\fire"];
     assert_eq!(e.waves.len(), 4);
     assert!((e.volume.start - 0.5).abs() < 1e-6);
-    assert!(matches!(e.level, chimera_world::map::sound::SoundLevel::Db(l) if (l - 82.5).abs() < 0.1), "{:?}", e.level);
+    assert!(matches!(e.level, chimera_world::map::sound::SoundLevel::Inverse(l) if (l - 82.5).abs() < 0.1), "{:?}", e.level);
     for (name, entry) in &set.entries {
         assert!(!entry.waves.is_empty(), "{name}");
     }
