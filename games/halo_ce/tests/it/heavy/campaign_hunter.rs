@@ -53,7 +53,7 @@ fn the_hunter_is_cut_from_d20_with_its_cannon_and_loads() {
         bytes.len()
     );
     let file = MapFile::load(&c.body).unwrap();
-    let body = load::biped_body(&file, &def.biped, false, def.tint()).unwrap();
+    let body = load::biped_body(&file, &def.biped, false, def.tint(&c.ranks)).unwrap();
     let m = &body.character;
     let set = m.animations.as_ref().unwrap();
     for slot in ["idle", "aim-still", "fire-1", "melee", "move-front"] {

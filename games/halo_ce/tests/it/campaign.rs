@@ -389,31 +389,97 @@ fn a_campaign_body_wears_its_rank_and_the_spartan_the_players_colour() {
     app.update();
     assert_eq!(app.world().get::<RankStep>(g).copied(), Some(step), "drawn once");
 
-    // The shades the skins hold, from the data's bounds, lie within the
-    // spec's measured bounds for the rank (test cases: Grunt major red in
-    // [0.643, 0.824], green and blue in [0.075, 0.090]; spec-ops every
-    // channel in [0, 0.071]; minor's orange; Jackal minor / major).
-    let data = CampaignData::builtin();
-    let shades = |kind: BodyKind, rank: &str| -> Vec<[f32; 3]> {
-        let r = data.body(kind).unwrap().ranks[rank];
+    // The shades the skins hold, from the converted ranks' bounds, lie
+    // within the spec's measured bounds for the rank (test cases: Grunt
+    // major red in [0.643, 0.824], green and blue in [0.075, 0.090];
+    // spec-ops every channel in [0, 0.071]; minor's orange).
+    let ranks = grunt_ranks();
+    let shades = |rank: &str| -> Vec<[f32; 3]> {
+        let r = &ranks.ranks[rank];
         (0..body::RANK_STEPS).map(|i| hsv_blend(r.lower, r.upper, i as f32 / (body::RANK_STEPS - 1) as f32)).collect()
     };
-    let within = |v: Vec<[f32; 3]>, lo: [f32; 3], hi: [f32; 3]| {
-        for c in v {
-            for i in 0..3 {
-                assert!(c[i] >= lo[i] - 1e-3 && c[i] <= hi[i] + 1e-3, "{c:?} outside {lo:?}..{hi:?}");
-            }
+    within(shades("major"), [0.643, 0.075, 0.075], [0.824, 0.090, 0.090]);
+    within(shades("specops"), [0.0; 3], [0.071; 3]);
+    within(shades("minor"), [0.824, 0.443, 0.157], [0.863, 0.502, 0.173]);
+    // The default rank is the minor's, then the teams' (major, minor).
+    let t = CampaignData::builtin().body(BodyKind::Grunt).unwrap().tint(&ranks);
+    assert_eq!(t.ranks[0], (ranks.ranks["minor"].lower, ranks.ranks["minor"].upper));
+    assert_eq!(t.ranks[1], (ranks.ranks["major"].lower, ranks.ranks["major"].upper));
+    assert_eq!(t.ranks.len(), 3);
+}
+
+fn within(v: Vec<[f32; 3]>, lo: [f32; 3], hi: [f32; 3]) {
+    for c in v {
+        for i in 0..3 {
+            assert!(c[i] >= lo[i] - 1e-3 && c[i] <= hi[i] + 1e-3, "{c:?} outside {lo:?}..{hi:?}");
         }
+    }
+}
+
+/// The Grunt's ranks as the converter writes them (`unit::ranks_of` on
+/// d20's variants, values of change_colors.md section 5), read back from
+/// the file's text.
+fn grunt_ranks() -> halo_ce::game::campaign::unit::Ranks {
+    use halo_ce::game::campaign::unit::{Ranks, VariantColour, ranks_of};
+    let g = r"characters\grunt\grunt";
+    let v = |path: &str, unit: &str, entry| VariantColour { path: path.into(), unit: unit.into(), entry, permutation: 0 };
+    let variants = [
+        v(r"characters\grunt\grunt minor plasma pistol", g, None),
+        v(r"characters\grunt\grunt major plasma pistol", g, Some(([0.823529, 0.0745098, 0.0745098], [0.643137, 0.0901961, 0.0901961]))),
+        v(r"characters\grunt\grunt specops needler", r"characters\grunt\grunt specops", Some(([0.0705882; 3], [0.0; 3]))),
+    ];
+    let orange = ([0.862745, 0.501961, 0.172549], [0.823529, 0.443137, 0.156863]);
+    Ranks::parse(&ranks_of(g, &variants, |u| (u == g).then_some(orange)).to_text()).unwrap()
+}
+
+/// The colours a campaign body wears come from its converted ranks file
+/// (`unit::Ranks`, the tags' actor variants), and with the host setting
+/// `halo_ce:team_ranks` 1 a team game's Grunts wear their team's rank
+/// (change_colors.md section 6: the first team the major's red, the
+/// second the minor's orange); off, both the minor's.
+#[test]
+fn campaign_colours_come_from_the_converted_ranks_and_the_teams_with_the_setting() {
+    use std::sync::Arc;
+    use chimera_world::map::{BodyModel, BodySkin, CharacterModels, MapCharacterModel};
+    use halo_ce::game::{
+        body::{self, load::skin_colours},
+        campaign::{TeamRanks, team_ranks},
     };
-    within(shades(BodyKind::Grunt, "major"), [0.643, 0.075, 0.075], [0.824, 0.090, 0.090]);
-    within(shades(BodyKind::Grunt, "spec_ops"), [0.0; 3], [0.071; 3]);
-    within(shades(BodyKind::Grunt, "minor"), [0.824, 0.443, 0.157], [0.863, 0.502, 0.173]);
-    within(shades(BodyKind::Jackal, "minor"), [0.259, 0.353, 0.482], [0.267, 0.373, 0.490]);
-    within(shades(BodyKind::Jackal, "major"), [0.675, 0.435, 0.443], [0.710, 0.459, 0.459]);
-    within(shades(BodyKind::Elite, "minor"), [0.314, 0.302, 0.533], [0.314, 0.302, 0.533]);
-    // The default rank is the minor's, and its tint carries the bounds.
-    let t = data.body(BodyKind::Grunt).unwrap().tint();
-    assert_eq!(t.rank, Some(([0.863, 0.502, 0.173], [0.824, 0.443, 0.157])));
+    let tint = CampaignData::builtin().body(BodyKind::Grunt).unwrap().tint(&grunt_ranks());
+    let colours = skin_colours(&tint);
+    let mut m = MapCharacterModel {
+        game: Some(halo_ce::game::GAME),
+        team: None,
+        name: None,
+        class: None,
+        model: Default::default(),
+        hitboxes: Vec::new(),
+        bones: Vec::new(),
+        root: Transform::IDENTITY,
+        animations: None,
+        boxes: Vec::new(),
+        ragdoll: None,
+    };
+    m.model.skins = vec![Vec::new(); colours.len()];
+    let mut app = App::new();
+    app.add_systems(Update, (team_ranks, body::wear_colours).chain());
+    app.insert_resource(CharacterModels(Arc::new(vec![m])));
+    let first = app.world_mut().spawn((BodyModel(0), BodyKind::Grunt, chimera_core::core::Team(1))).id();
+    let second = app.world_mut().spawn((BodyModel(0), BodyKind::Grunt, chimera_core::core::Team(2))).id();
+    let worn = |app: &mut App, e| {
+        app.update();
+        app.update();
+        colours[app.world().get::<BodySkin>(e).unwrap().0 as usize]
+    };
+    let orange = ([0.824, 0.443, 0.157], [0.863, 0.502, 0.173]);
+    let red = ([0.643, 0.075, 0.075], [0.824, 0.090, 0.090]);
+    // Off (the default): each its own rank, the minor's orange.
+    within(vec![worn(&mut app, first), worn(&mut app, second)], orange.0, orange.1);
+    // On: the first team the major's red, the second the minor's orange.
+    app.insert_resource(TeamRanks(true));
+    within(vec![worn(&mut app, first)], red.0, red.1);
+    within(vec![worn(&mut app, second)], orange.0, orange.1);
+    assert_eq!(app.world().get::<body::RankGroup>(first), Some(&body::RankGroup(1)));
 }
 
 /// The HSV blend of change_colors.md section 2.

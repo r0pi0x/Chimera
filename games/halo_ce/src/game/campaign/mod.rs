@@ -64,7 +64,12 @@
 //!   slot (`BodyDef::colour_slot`: the Elite's A, all over its armour)
 //!   only for a kind with no rank; a Grunt, Jackal or Elite wears its
 //!   rank's colour (`BodyDef::rank`, change_colors.md section 6), a shade
-//!   drawn once (`body::RankStep`).
+//!   drawn once (`body::RankStep`); the ranks' bounds are the converter's,
+//!   read from the actor variants and bipeds (`unit::read_ranks`, the
+//!   set's `ranks.toml`). With the host setting `halo_ce:team_ranks` 1
+//!   (`TeamRanks`, default 0) a team game's bodies wear their team's rank
+//!   (`BodyDef::team_ranks`: the first team the major's, the second the
+//!   minor's), by the replicated `body::RankGroup` (`team_ranks`).
 //! - **Its vitality** (`vitality_of`): the kind's `Spartan` table (the
 //!   Elite's collision model: 100 body, 100 shield of type 30, a 12 s
 //!   delay, 10 s recharge, its four materials with the arms at x0.5).
@@ -251,16 +256,18 @@ pub struct BodyDef {
     /// (`A` to `D`; characters.md "The Elite's colours"); none: untinted.
     #[serde(default)]
     pub colour_slot: Option<char>,
-    /// The ranks its colour can be, by name (the actor variants' slot A of
-    /// specs/halo_ce/change_colors.md section 5; linear RGB 0..1).
-    #[serde(default)]
-    pub ranks: std::collections::BTreeMap<String, RankColour>,
-    /// Which of `ranks` it wears (section 6: its rank's colour, never the
-    /// party's); none: the party's colour through `colour_slot`. A team
-    /// tint by rank (a rank per team) is not built: `docs/plans/active/
-    /// halo-ce-parity.md`.
+    /// Which rank's colour it wears (section 6: its rank's colour, never
+    /// the party's), by the name the converter gives it from the actor
+    /// variants (`unit::read_ranks`: `minor`, `major`, `specops`); none,
+    /// or a rank its unit's `ranks.toml` lacks: the party's colour through
+    /// `colour_slot`.
     #[serde(default)]
     pub rank: Option<String>,
+    /// The ranks the first and second team wear with the host setting
+    /// `halo_ce:team_ranks` 1 (section 6: a rank per team, e.g. the Grunt's
+    /// major red against minor orange); empty: its `rank` on both.
+    #[serde(default)]
+    pub team_ranks: Vec<String>,
     /// An arm shield's disc (the Jackal's): the text its meshes' shader
     /// names hold; drawn only while the shield is up, and its hit box
     /// shrinks to the emitter while it is down (`shield_disc`).
@@ -283,15 +290,6 @@ pub struct BodyDef {
     /// Its first-person view made from its own model (`first_person`).
     #[serde(default)]
     pub first_person: Option<first_person::BodyView>,
-}
-
-/// A rank's change colour A: the lower and upper bound of the blend a
-/// body wears one shade of (`body::load::hsv_blend`).
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RankColour {
-    pub lower: [f32; 3],
-    pub upper: [f32; 3],
 }
 
 /// A character's own lines (`BodyDef::lines`): ordered lists of dialogue
@@ -325,8 +323,11 @@ impl Default for ChatterRules {
 }
 
 impl BodyDef {
-    /// How its armour is coloured (`body::load::Tint`).
-    pub fn tint(&self) -> super::body::load::Tint {
+    /// How its armour is coloured (`body::load::Tint`), with its unit's
+    /// rank colours `ranks` (converted from the tags: `unit::Ranks`): its
+    /// rank's bounds, then each of `team_ranks`' (a team rank its unit
+    /// lacks: its own rank's); none when its rank has no colour there.
+    pub fn tint(&self, ranks: &unit::Ranks) -> super::body::load::Tint {
         use blam_formats::shader::AnimationSource as S;
         let source = match self.colour_slot.map(|c| c.to_ascii_uppercase()) {
             Some('A') => S::A,
@@ -335,8 +336,12 @@ impl BodyDef {
             Some('D') => S::D,
             _ => S::None,
         };
-        let rank = self.rank.as_ref().and_then(|r| self.ranks.get(r)).map(|r| (r.lower, r.upper));
-        super::body::load::Tint { source, rank }
+        let bounds = |r: &String| ranks.ranks.get(r).map(|r| (r.lower, r.upper));
+        let ranks = match self.rank.as_ref().and_then(bounds) {
+            Some(own) => std::iter::once(own).chain(self.team_ranks.iter().map(|r| bounds(r).unwrap_or(own))).collect(),
+            None => Vec::new(),
+        };
+        super::body::load::Tint { source, ranks }
     }
 }
 
@@ -529,6 +534,55 @@ pub fn movement_of<'a>(base: &'a MovementData, tables: Option<&'a BodyTables>, k
 /// own).
 pub fn vitality_of<'a>(spartan: &'a Spartan, tables: Option<&'a BodyTables>, kind: Option<&BodyKind>) -> &'a Spartan {
     kind.and_then(|k| tables?.vitality.get(k)).unwrap_or(spartan)
+}
+
+/// The host setting `halo_ce:team_ranks`'s console variable.
+pub const TEAM_RANKS_CVAR: &str = "halo_ce:team_ranks";
+
+/// The host setting: in a team game a campaign body wears its team's rank
+/// (`BodyDef::team_ranks`; change_colors.md section 6, an opt-in); off
+/// (the default), every body its own rank.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TeamRanks(pub bool);
+
+/// The host: each body's rank group (`body::RankGroup`, replicated): with
+/// `TeamRanks` on, 1 for the first team, 2 for the second (`Team` 1 and
+/// 2, as `body::skin_of` reads them); else 0, its own rank.
+pub fn team_ranks(
+    q: Query<(Entity, Option<&chimera_core::core::Team>, Option<&super::body::RankGroup>), With<BodyKind>>,
+    on: Option<Res<TeamRanks>>,
+    mut commands: Commands,
+) {
+    let on = on.is_some_and(|t| t.0);
+    for (e, team, group) in &q {
+        let want = match team.map(|t| t.0) {
+            Some(t @ (1 | 2)) if on => super::body::RankGroup(t as u8),
+            _ => super::body::RankGroup(0),
+        };
+        if group != Some(&want) {
+            commands.entity(e).insert(want);
+        }
+    }
+}
+
+fn team_ranks_cvar(app: &mut App) {
+    use chimera_core::console::ConsoleAppExt;
+    app.console_cvar(
+        TEAM_RANKS_CVAR,
+        "1: in a team game a Grunt, Jackal or Elite wears its team's rank's colour (data/campaign.toml's team_ranks: the \
+         first team the major's, the second the minor's); 0: every one its own rank's. The host's.",
+        "0",
+        |w| Some(if w.get_resource::<TeamRanks>().is_some_and(|c| c.0) { "1" } else { "0" }.to_string()),
+        |w, v| {
+            let on = match v.trim() {
+                "0" => false,
+                "1" => true,
+                other => return Err(format!("bad value \"{other}\" (0 or 1)")),
+            };
+            w.insert_resource(TeamRanks(on));
+            Ok(())
+        },
+    );
 }
 
 /// The host setting: campaign bodies on for the match (module doc).
@@ -903,7 +957,7 @@ pub fn shield_boxes(mut q: Query<(&BodyKind, &super::vitality::Vitality, &mut cr
 /// The kinds' replication (net part `halo_ce_bodies`).
 pub fn register(app: &mut App) {
     use bevy_replicon::prelude::AppRuleExt;
-    app.replicate::<BodyKind>().replicate::<BodyVoice>();
+    app.replicate::<BodyKind>().replicate::<BodyVoice>().replicate::<super::body::RankGroup>();
 }
 
 /// The campaign's bodies in a party app (module doc).
@@ -919,6 +973,7 @@ impl Plugin for CampaignPlugin {
         app.insert_resource(data)
             .insert_resource(tables)
             .init_resource::<CampaignBodies>()
+            .init_resource::<TeamRanks>()
             .init_resource::<UnitsOnDemand>()
             .add_observer(arrive)
             .on_every_character::<BodyKind>()
@@ -930,6 +985,7 @@ impl Plugin for CampaignPlugin {
             .add_message::<voice::RegionLost>()
             .add_systems(Update, (unit::load_on_demand, name_bodies, voice::join_banks, shield_disc))
             .add_systems(Update, (targets::sandbox_wants, draw_voices).before(unit::load_on_demand))
+            .add_systems(Update, team_ranks.run_if(crate::core::authoritative))
             .add_systems(FixedUpdate, shield_boxes.after(crate::map::pose_hitboxes).before(crate::core::SimSet::Movement))
             .add_systems(FixedLast, shield_boxes.after(crate::map::SimPose))
             .add_systems(
@@ -949,6 +1005,7 @@ impl Plugin for CampaignPlugin {
             .add_systems(FixedUpdate, voice::chatter.after(crate::core::apply_damage).run_if(crate::core::authoritative))
             .net_part("halo_ce_bodies", register);
         campaign_cvar(app);
+        team_ranks_cvar(app);
         own_guns_drawn(app.world_mut(), true);
         // The kinds a match's ladder can draw: wanted once its ladder is
         // made, and named in its asset offer (not at the app's start).

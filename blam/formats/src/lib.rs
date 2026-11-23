@@ -46,6 +46,8 @@
 //!   triggers) and the pure formulas on its fields.
 //! - `effect`: the effect family (effect, particle, point physics, light,
 //!   decal, material effects, contrail) as the four weapons' effects use it.
+//! - `actor_variant`: the actor variant tag's unit, forced shader
+//!   permutation and rank change colours.
 //! - `hud`: the HUD tags (unit, weapon and grenade HUD interfaces, the HUD
 //!   globals and the HUD number tag).
 
@@ -70,3 +72,4 @@ pub mod sound;
 pub mod structure_bsp;
 pub mod vehicle;
 pub mod unit;
+pub mod actor_variant;

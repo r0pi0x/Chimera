@@ -18,6 +18,14 @@
 //!   (`voice_set_of`, file `voice_<name>.map`: the dialogue and what only
 //!   it reaches), and a body loads the one it speaks (`load_voice`).
 //!
+//! - its ranks' colours (`read_ranks`, `ranks.toml` beside the body, in
+//!   its set): change colour A of each rank (change_colors.md sections 1
+//!   and 5) from the donor's actor variants whose unit lies in the
+//!   biped's folder and whose name says a rank (`RANK_NAMES`): the
+//!   variant's entry, or its biped's slot A when that is one permutation
+//!   (the Grunt minor's orange); the first variant of a rank in tag order.
+//!   The game reads them for the body's tint (`BodyDef::tint`).
+//!
 //! - its own weapons (`BodyDef::weapons`: the Hunter's cannon), each a
 //!   file of the body's set (`weapon_path`, `weapon_<name>.map`: a body
 //!   and its own gun are what "play as it" downloads, characters.md
@@ -58,6 +66,9 @@
 //! Known shortcuts:
 //! - On-demand fetching of a set the store lacks is the asset service's
 //!   (`request_set`): a client without the files has no Elite.
+//! - A rank's colour is its first variant's (the Grunt major's needler
+//!   variant ends at 0.600 red, not 0.643); a biped slot A with several
+//!   permutations (picked by position in the game) gives no colour.
 //! - The unit keeps the donor's file offsets, so its image inflates to
 //!   about 97 MB (the Elite's) for the moment of its conversion
 //!   (`blam_formats::unit` "Known shortcuts").
@@ -83,7 +94,7 @@ use crate::{
 pub const CONVERTER: &str = "halo_ce:character_unit";
 
 /// Its version: bumped by hand whenever any output byte could change.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// Where its outputs live in Halo's manifest.
 pub const GEN_ROOT: &str = "chimera/gen/halo_ce.character_unit";
@@ -140,6 +151,12 @@ pub fn dialogue_name(path: &str) -> String {
     path.rsplit(['\\', '/']).next().unwrap_or(path).to_ascii_lowercase()
 }
 
+/// The body's rank colours (`read_ranks`, `Ranks::to_text`), beside its
+/// body in its set.
+pub fn ranks_path(id: &str) -> String {
+    format!("{}/ranks.toml", dir(id))
+}
+
 /// The recipe: what the outputs were made from.
 pub fn recipe_path(id: &str) -> String {
     format!("{}/recipe.txt", dir(id))
@@ -159,6 +176,142 @@ pub struct Converted {
     pub voices: Vec<(String, Vec<u8>, unit::Unit)>,
     /// Its own weapons (`BodyDef::weapons`): each tag, file and measure.
     pub weapons: Vec<(String, Vec<u8>, unit::Unit)>,
+    /// Its ranks' colours (`read_ranks`), as written to `ranks_path`.
+    pub ranks: Ranks,
+}
+
+/// The rank names an actor variant's path may name after its character's
+/// (`grunt major needler`: `major`): the disc's naming of the campaign's
+/// ranks (characters.md section 1).
+pub const RANK_NAMES: &[&str] = &["minor", "major", "commander", "specops", "stealth"];
+
+/// One rank's change colour A (change_colors.md section 1 step 4, section
+/// 5): the bounds a body of the rank wears a blend of, the actor variant
+/// they came from (or the biped, for a rank without an actor entry: the
+/// tag's own single permutation), and its forced shader permutation.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RankColour {
+    pub lower: [f32; 3],
+    pub upper: [f32; 3],
+    pub from: String,
+    #[serde(default)]
+    pub permutation: i16,
+}
+
+/// A body's ranks by name (`ranks_path`'s file).
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Ranks {
+    #[serde(default)]
+    pub ranks: BTreeMap<String, RankColour>,
+}
+
+impl Ranks {
+    /// The file's text: deterministic (ranks by name, floats in Rust's
+    /// shortest exact form).
+    pub fn to_text(&self) -> String {
+        let rgb = |c: [f32; 3]| format!("[{:?}, {:?}, {:?}]", c[0], c[1], c[2]);
+        let mut out = format!("# {CONVERTER} {VERSION}: change colour A of each rank (change_colors.md section 5)\n");
+        for (name, r) in &self.ranks {
+            out.push_str(&format!(
+                "\n[ranks.{name}]\nlower = {}\nupper = {}\nfrom = '{}'\npermutation = {}\n",
+                rgb(r.lower),
+                rgb(r.upper),
+                r.from.replace('\'', ""),
+                r.permutation
+            ));
+        }
+        out
+    }
+
+    /// The file's ranks (`to_text`).
+    pub fn parse(text: &str) -> Result<Ranks, String> {
+        toml::from_str(text).map_err(|e| e.to_string())
+    }
+}
+
+/// One actor variant as the rank rule sees it (`ranks_of`).
+#[derive(Clone, Debug)]
+pub struct VariantColour {
+    /// The variant's path.
+    pub path: String,
+    /// Its unit's path.
+    pub unit: String,
+    /// Its change colour block's first entry (slot A), if any.
+    pub entry: Option<([f32; 3], [f32; 3])>,
+    /// Its forced shader permutation.
+    pub permutation: i16,
+}
+
+/// The ranks of the character whose biped is `biped` (change_colors.md
+/// sections 1 and 5): from `variants` (in the map's tag order) whose unit
+/// lies in the biped's folder and whose name says a rank of `RANK_NAMES`
+/// right after the folder's name, the first of each rank: its actor
+/// entry's bounds, or without one its unit's own slot A when that is a
+/// single permutation (`unit_colour`: the Grunt minor's orange). A rank
+/// with neither has no colour (the creator's: the party's).
+pub fn ranks_of(
+    biped: &str,
+    variants: &[VariantColour],
+    unit_colour: impl Fn(&str) -> Option<([f32; 3], [f32; 3])>,
+) -> Ranks {
+    let folder = |p: &str| p.rsplit_once(['\\', '/']).map_or(String::new(), |(d, _)| d.to_ascii_lowercase());
+    let home = folder(biped);
+    let character = home.rsplit(['\\', '/']).next().unwrap_or("").to_string();
+    let mut ranks = Ranks::default();
+    for v in variants {
+        if folder(&v.unit) != home {
+            continue;
+        }
+        let own = v.path.rsplit(['\\', '/']).next().unwrap_or("").to_ascii_lowercase();
+        let Some(rank) = own
+            .strip_prefix(&character)
+            .and_then(|r| r.split_whitespace().next())
+            .filter(|r| RANK_NAMES.contains(r))
+        else {
+            continue;
+        };
+        if ranks.ranks.contains_key(rank) {
+            continue;
+        }
+        let (bounds, from) = match v.entry {
+            Some(b) => (Some(b), v.path.clone()),
+            None => (unit_colour(&v.unit), v.unit.clone()),
+        };
+        if let Some((lower, upper)) = bounds {
+            ranks.ranks.insert(rank.to_string(), RankColour { lower, upper, from, permutation: v.permutation });
+        }
+    }
+    ranks
+}
+
+/// `ranks_of` on map `map`'s actor variants and bipeds.
+pub fn read_ranks(map: &MapFile, biped: &str) -> Ranks {
+    use blam_formats::{actor_variant::ActorVariant, object::ObjectBase};
+    let rgb = |c: blam_formats::cache::RealRgb| [c.r, c.g, c.b];
+    let variants: Vec<VariantColour> = map
+        .tags()
+        .iter()
+        .filter(|t| t.class == class::ACTOR_VARIANT)
+        .filter_map(|t| {
+            let a = ActorVariant::read(map, t).ok()?;
+            Some(VariantColour {
+                path: t.path.clone(),
+                unit: map.tag(a.unit.id)?.path.clone(),
+                entry: a.change_colors.first().map(|c| (rgb(c.color_lower_bound), rgb(c.color_upper_bound))),
+                permutation: a.forced_shader_permutation,
+            })
+        })
+        .collect();
+    ranks_of(biped, &variants, |unit| {
+        let t = map.find(class::BIPED, unit)?;
+        let a = ObjectBase::read(map, t).ok()?.change_colors.into_iter().next()?;
+        match a.permutations.as_slice() {
+            [p] => Some((rgb(p.color_lower_bound), rgb(p.color_upper_bound))),
+            _ => None,
+        }
+    })
 }
 
 /// The SHA-256 of `bytes`, as hex.
@@ -209,6 +362,7 @@ pub fn convert(id: &str, def: &BodyDef, donor: &[u8]) -> Result<Converted, Strin
     };
     let body_unit = unit::measure(&map, body).map_err(e)?;
     let voice_unit = unit::measure(&map, voice).map_err(e)?;
+    let ranks = read_ranks(&map, &def.biped);
     let mut recipe = format!(
         "converter {CONVERTER} {VERSION}\ncharacter {id}\ninput maps/{}.map {}\nbiped {}\nbody {} tags {} bytes\nvoice {} tags {} bytes\n",
         def.donor_map,
@@ -222,6 +376,7 @@ pub fn convert(id: &str, def: &BodyDef, donor: &[u8]) -> Result<Converted, Strin
     for (name, _, u) in &voices {
         recipe.push_str(&format!("voice {name} {} tags {} bytes\n", u.tags.len(), u.total()));
     }
+    recipe.push_str(&format!("ranks {}\n", ranks.ranks.keys().cloned().collect::<Vec<_>>().join(" ")));
     Ok(Converted {
         body: unit::cut(&map, &body_unit).map_err(e)?,
         voice: unit::cut(&map, &voice_unit).map_err(e)?,
@@ -230,6 +385,7 @@ pub fn convert(id: &str, def: &BodyDef, donor: &[u8]) -> Result<Converted, Strin
         voice_unit,
         voices,
         weapons,
+        ranks,
     })
 }
 
@@ -254,7 +410,11 @@ pub fn generated(mount: &Mount, only: &str) -> Vec<(String, Vec<(String, Vec<u8>
                 if wanted(&body_set) {
                     // Its own weapons go with the body: "play as" it needs
                     // both (characters.md section 8).
-                    let mut files = vec![(body_path(id), c.body), (recipe_path(id), c.recipe.into_bytes())];
+                    let mut files = vec![
+                        (body_path(id), c.body),
+                        (ranks_path(id), c.ranks.to_text().into_bytes()),
+                        (recipe_path(id), c.recipe.into_bytes()),
+                    ];
                     files.extend(c.weapons.into_iter().map(|(tag, bytes, _)| (weapon_path(id, &tag), bytes)));
                     out.push((body_set, files));
                 }
@@ -281,7 +441,17 @@ pub fn load_body(kind: BodyKind, def: &BodyDef, mount: &Mount, decode: bool, gun
     let path = body_path(kind.id());
     let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
     let file = MapFile::load(&bytes).map_err(|e| format!("{path}: {e}"))?;
-    let body = super::super::body::load::biped_body(&file, &def.biped, decode, def.tint()).map_err(|e| format!("{path}: {e}"))?;
+    // Its ranks' colours from the converted file (none without it: the
+    // party's colour).
+    let ranks = mount
+        .read(&ranks_path(kind.id()))
+        .map_err(|e| e.to_string())
+        .and_then(|b| Ranks::parse(&String::from_utf8_lossy(&b)))
+        .unwrap_or_else(|e| {
+            warn!("halo_ce: the {} wears no rank colour: {}: {e}", kind.id(), ranks_path(kind.id()));
+            Ranks::default()
+        });
+    let body = super::super::body::load::biped_body(&file, &def.biped, decode, def.tint(&ranks)).map_err(|e| format!("{path}: {e}"))?;
     let mut character = body.character;
     character.name = kind.model_name();
     // An arm shield's disc: a body part of two choices, drawn on 0 and
@@ -628,5 +798,70 @@ pub fn load_on_demand(
             Ok((body, views))
         });
         pending.tasks.insert(kind, task);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v(path: &str, unit: &str, entry: Option<([f32; 3], [f32; 3])>, permutation: i16) -> VariantColour {
+        VariantColour { path: path.into(), unit: unit.into(), entry, permutation }
+    }
+
+    /// The rank rule on d20's Grunt variants as the spec records them
+    /// (change_colors.md section 5): the major's from its actor entry (the
+    /// first in tag order: the plasma pistol's), the minor's from the
+    /// biped's single permutation, the spec-ops' from its own biped's
+    /// folder; other folders' and unnamed ranks left out; the file's text
+    /// is deterministic and reads back.
+    #[test]
+    fn ranks_come_from_the_actor_variants_and_the_bipeds() {
+        let red = ([0.823529, 0.0745098, 0.0745098], [0.643137, 0.0901961, 0.0901961]);
+        let needler_red = ([0.823529, 0.0745098, 0.0745098], [0.6, 0.0823529, 0.0823529]);
+        let black = ([0.0705882; 3], [0.0; 3]);
+        let orange = ([0.862745, 0.501961, 0.172549], [0.823529, 0.443137, 0.156863]);
+        let g = r"characters\grunt\grunt";
+        let variants = [
+            v(r"characters\grunt\grunt minor plasma pistol", g, None, 0),
+            v(r"characters\grunt\grunt major plasma pistol", g, Some(red), 0),
+            v(r"characters\grunt\grunt major needler", g, Some(needler_red), 0),
+            v(r"characters\grunt\grunt specops needler", r"characters\grunt\grunt specops", Some(black), 0),
+            v(r"characters\grunt\grunt", g, Some(red), 0),
+            v(r"characters\jackal\jackal major plasma pistol", r"characters\jackal\jackal major", Some(red), 0),
+        ];
+        let ranks = ranks_of(g, &variants, |unit| (unit == g).then_some(orange));
+        assert_eq!(ranks.ranks.keys().map(String::as_str).collect::<Vec<_>>(), ["major", "minor", "specops"]);
+        assert_eq!((ranks.ranks["major"].lower, ranks.ranks["major"].upper), red);
+        assert_eq!(ranks.ranks["major"].from, r"characters\grunt\grunt major plasma pistol");
+        assert_eq!((ranks.ranks["minor"].lower, ranks.ranks["minor"].upper), orange);
+        assert_eq!(ranks.ranks["minor"].from, g, "the tag's own colour");
+        assert_eq!((ranks.ranks["specops"].lower, ranks.ranks["specops"].upper), black);
+        // A rank whose unit has no single permutation and no entry: none.
+        let none = ranks_of(g, &variants[..1], |_| None);
+        assert!(none.ranks.is_empty());
+        // The file: the same text every time, read back unchanged.
+        let text = ranks.to_text();
+        assert_eq!(text, ranks_of(g, &variants, |unit| (unit == g).then_some(orange)).to_text());
+        assert!(text.starts_with(&format!("# {CONVERTER} {VERSION}:")));
+        assert_eq!(Ranks::parse(&text).unwrap(), ranks);
+    }
+
+    /// The Elite's ranks live one folder down (`elite\elite minor\...`)
+    /// and keep their forced permutation.
+    #[test]
+    fn an_elites_ranks_keep_their_permutation() {
+        let e = r"characters\elite\elite";
+        let blue = ([0.313726, 0.301961, 0.533333], [0.313726, 0.301961, 0.533333]);
+        let dark = ([0.25098, 0.0823529, 0.0862745], [0.25098, 0.0823529, 0.0862745]);
+        let variants = [
+            v(r"characters\elite\elite minor\elite minor plasma rifle", e, Some(blue), 0),
+            v(r"characters\elite\elite major\elite major plasma rifle", e, Some(dark), 1),
+            v(r"characters\elite\elite specops\elite specops needler", r"characters\elite\elite special", Some(([0.0; 3], [0.0; 3])), 3),
+        ];
+        let ranks = ranks_of(e, &variants, |_| None);
+        assert_eq!(ranks.ranks["minor"].lower, blue.0);
+        assert_eq!(ranks.ranks["major"].permutation, 1);
+        assert_eq!(ranks.ranks["specops"].permutation, 3);
     }
 }

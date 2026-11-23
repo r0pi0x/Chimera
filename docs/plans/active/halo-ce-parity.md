@@ -561,13 +561,34 @@ per body (`body::RankStep`), never the party's colour; Spartans keep it. The
 model shader's mask formula (`prop.wesl`: `mix(1, colour, mask)` times the
 diffuse before reflection) already matches section 3.
 
-Open: the ranks are data copied from the spec, not read from the actor
-variant tags (the character units' closure leaves `actv` out; reading them
-needs a converter change and a `VERSION` bump). A rank per team (Grunt minor
-orange vs major red) is not built: skins hold only the worn rank's shades.
-The shade is drawn per body, not per respawn. The spec's open questions
-(Grunt tag permutations, which shaders read which slot, mask coverage) stay
-open: no Halo install was available to measure them.
+Done (2026-11-23): the ranks' colours are read from the tags by the
+converter (`halo_ce:character_unit` version 2, `campaign::unit::read_ranks`
+over `blam_formats::actor_variant`): each actor variant whose unit lies in
+the character's folder and whose name says a rank (`minor`, `major`,
+`specops`, ...) gives its slot A entry, or without one its biped's slot A
+when that is a single permutation (the Grunt minor's orange); the first
+variant of a rank in tag order wins (the Grunt major's plasma pistol
+variant, upper bound 0.643, over the needler's 0.600). The set
+`character/<id>` holds them as `ranks.toml` (republished 2026-11-23);
+data/campaign.toml names only the rank worn. Measured on d20 (answers
+change_colors.md Open question 1): the `grunt`, `grunt specops`, `jackal`
+and `jackal major` bipeds' slot A is one permutation (orange; black; blue
+grey twice), `elite` has none, `elite special` one grey; Grunt minors and
+Hunters have no actor entry. d20 holds no Elite commander or stealth
+variant, so the Elite's ranks are minor, major and spec-ops.
+
+Done (2026-11-23): a rank per team, the host setting `halo_ce:team_ranks`
+(default 0; `campaign::TeamRanks`): in a team game the first team wears
+`team_ranks[0]` (the major's: Grunt red, Jackal pink, Elite dark red), the
+second `team_ranks[1]` (the minor's), by the replicated `body::RankGroup`;
+a body's skins hold three groups of `RANK_STEPS` shades (its own rank, then
+the two teams').
+
+Open: the Elite's forced shader permutation per rank (the sheen) is read
+into `ranks.toml` but not drawn (it stays permutation 0's blue). The shade
+is drawn per body, not per respawn. The spec's open questions 2 to 5
+(Marines and Flood, which shaders read which slot, mask coverage, the
+random factor) stay open.
 
 ## Decals' colours and blends (2026-11-23, specs/halo_ce/effects.md "Decals")
 

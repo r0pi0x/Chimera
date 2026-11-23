@@ -361,7 +361,7 @@ pub fn animate(
     }
 }
 
-/// How many shades a campaign body's rank colour has (`load::Tint::rank`:
+/// How many shades a campaign body's rank colour has (`load::Tint::ranks`:
 /// the skins after `COLOURS`, from the rank's lower bound to its upper).
 pub const RANK_STEPS: usize = 8;
 
@@ -371,18 +371,26 @@ pub const RANK_STEPS: usize = 8;
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RankStep(pub u8);
 
+/// Which of its rank groups a campaign body wears (`load::Tint::ranks`):
+/// 0 its own rank, 1 and 2 the first and second team's with the host
+/// setting `halo_ce:team_ranks` 1 (`campaign::team_ranks`, the host's,
+/// replicated); absent: 0.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RankGroup(pub u8);
+
 /// Each Halo body shows its player's armour colour (`skin_of`); a campaign
-/// body (a rank colour of its own after the table's: `load::Tint::rank`)
+/// body (a rank colour of its own after the table's: `load::Tint::ranks`)
 /// wears its rank's instead, never the party's (change_colors.md section
-/// 6: the free-for-all colours make a Grunt look painted).
+/// 6: the free-for-all colours make a Grunt look painted): its
+/// `RankGroup`'s shades (its own rank, or its team's), the `RankStep`th.
 #[allow(clippy::type_complexity)]
 pub fn wear_colours(
     models: Option<Res<CharacterModels>>,
-    bodies: Query<(Entity, &BodyModel, Option<&Team>, Option<&BodySkin>, Option<&RankStep>, Option<&Seed>)>,
+    bodies: Query<(Entity, &BodyModel, Option<&Team>, Option<&BodySkin>, Option<&RankStep>, Option<&Seed>, Option<&RankGroup>)>,
     mut commands: Commands,
 ) {
     let Some(models) = models else { return };
-    for (e, body, team, skin, step, seed) in &bodies {
+    for (e, body, team, skin, step, seed, group) in &bodies {
         let Some(m) = models.0.get(body.0).filter(|m| m.game == Some(GAME)) else {
             continue;
         };
@@ -398,7 +406,12 @@ pub fn wear_colours(
                     s
                 }
             };
-            COLOURS.len() + usize::from(step.0).min(m.model.skins.len() - COLOURS.len() - 1)
+            // Its group's shades when the skins hold that group, else its
+            // own rank's.
+            let groups = (m.model.skins.len() - COLOURS.len()).div_ceil(RANK_STEPS);
+            let g = group.map_or(0, |g| usize::from(g.0)).min(groups - 1);
+            let first = COLOURS.len() + g * RANK_STEPS;
+            (first + usize::from(step.0).min(RANK_STEPS - 1)).min(m.model.skins.len() - 1)
         } else {
             skin_of(team.copied())
         };

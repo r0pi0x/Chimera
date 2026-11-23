@@ -31,15 +31,22 @@ fn the_elite_is_cut_from_d20_and_loads() {
     assert_eq!(c.body_unit.total() + c.voice_unit.total(), 6_682_822);
     assert_eq!(c.body, unit::convert("elite", def, &bytes).unwrap().body, "deterministic");
     let file = MapFile::load(&c.body).unwrap();
-    let body = load::biped_body(&file, &def.biped, false, def.tint()).unwrap();
+    let body = load::biped_body(&file, &def.biped, false, def.tint(&c.ranks)).unwrap();
     let m = &body.character;
     // Its armour takes the player's colour through slot A (every armour
-    // shader), and a player given none wears the minor's blue.
+    // shader), and wears its rank's (the minor's blue, then the teams':
+    // major's dark red, minor's), read from d20's actor variants.
     let skins = &m.model.skins;
-    assert_eq!(skins.len(), halo_ce::game::body::COLOURS.len() + 1);
+    assert_eq!(skins.len(), halo_ce::game::body::COLOURS.len() + 3 * halo_ce::game::body::RANK_STEPS);
+    assert_eq!(c.ranks.ranks.keys().map(String::as_str).collect::<Vec<_>>(), ["major", "minor", "specops"]);
+    assert_eq!(c.ranks.ranks["major"].permutation, 1);
+    assert_eq!(c.ranks.to_text(), unit::convert("elite", def, &bytes).unwrap().ranks.to_text(), "deterministic");
     let tinted = skins[0].iter().filter(|l| l.tint.is_some()).count();
     assert!(tinted * 2 > skins[0].len(), "{tinted} of {} meshes tinted", skins[0].len());
-    assert!(skins.last().unwrap().iter().any(|l| l.tint == Some([0.314, 0.302, 0.533])));
+    let blue = c.ranks.ranks["minor"].lower;
+    assert!((blue[0] - 0.314).abs() < 1e-3 && (blue[2] - 0.533).abs() < 1e-3, "{blue:?}");
+    let near = |t: Option<[f32; 3]>| t.is_some_and(|t| (0..3).all(|i| (t[i] - blue[i]).abs() < 1e-3));
+    assert!(skins.last().unwrap().iter().any(|l| near(l.tint)));
     let set = m.animations.as_ref().unwrap();
     for name in ["stand pr idle", "stand pr move-front", "stand ne idle", "crouch pr idle", "stand pr aim-still"] {
         assert!(set.names.contains_key(name), "{name}");
@@ -123,7 +130,7 @@ fn the_feet_meet_the_ground() {
     let data = CampaignData::builtin();
     let def = data.body(BodyKind::Elite).unwrap();
     let c = unit::convert("elite", def, &mount.read(&maps::map_path(&def.donor_map)).unwrap()).unwrap();
-    let elite = load::biped_body(&MapFile::load(&c.body).unwrap(), &def.biped, false, def.tint()).unwrap();
+    let elite = load::biped_body(&MapFile::load(&c.body).unwrap(), &def.biped, false, def.tint(&c.ranks)).unwrap();
     let spartan = load::spartan(&MapFile::load(&mount.read(&maps::map_path(load::DONOR_MAP)).unwrap()).unwrap(), false).unwrap();
     for (who, m, label) in [("elite", &elite.character, "pr"), ("spartan", &spartan.character, "pr")] {
         {
@@ -160,7 +167,7 @@ fn the_grunt_and_the_jackal_are_cut_and_load() {
         assert_eq!(c.body_unit.tags.len() + c.voice_unit.tags.len(), tags, "{kind:?}");
         assert_eq!(c.body_unit.total() + c.voice_unit.total(), bytes, "{kind:?}");
         let file = MapFile::load(&c.body).unwrap();
-        let body = load::biped_body(&file, &def.biped, false, def.tint()).unwrap();
+        let body = load::biped_body(&file, &def.biped, false, def.tint(&c.ranks)).unwrap();
         let m = &body.character;
         let heads = m.hitboxes.iter().filter(|h| h.region == chimera_core::core::BodyRegion::Head).count();
         let shields = m.hitboxes.iter().filter(|h| h.region == halo_ce::game::body::hits::SHIELD_REGION).count();
@@ -204,7 +211,7 @@ fn the_marine_is_cut_with_its_voices_apart() {
     assert!(c.voice.is_empty() || c.voice_unit.tags.is_empty(), "no voice in one piece");
     assert_eq!(c.voices.len(), 4);
     let file = MapFile::load(&c.body).unwrap();
-    let body = load::biped_body(&file, &def.biped, false, def.tint()).unwrap();
+    let body = load::biped_body(&file, &def.biped, false, def.tint(&c.ranks)).unwrap();
     let set = body.character.animations.as_ref().unwrap();
     for label in ["ar", "sg", "sr", "pr", "ne"] {
         assert!(set.names.contains_key(&key("stand", label, "idle")), "{label}");
@@ -241,7 +248,7 @@ fn every_body_aims_its_gun_along_its_facing() {
         let bytes = mount.read(&maps::map_path(donor)).unwrap();
         let c = unit::convert(kind.id(), def, &bytes).unwrap();
         let file = MapFile::load(&c.body).unwrap();
-        let body = load::biped_body(&file, &def.biped, false, def.tint()).unwrap();
+        let body = load::biped_body(&file, &def.biped, false, def.tint(&c.ranks)).unwrap();
         let set = body.character.animations.as_ref().unwrap();
         let bones = &body.character.bones;
         let biped = Biped::read(&file, file.find(class::BIPED, &def.biped).unwrap()).unwrap();

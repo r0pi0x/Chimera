@@ -1,0 +1,23 @@
+# Halo's campaign bodies in their ranks' colours, side by side on Hang 'Em
+# High, left to right: an Elite (minor's blue violet), a Grunt (minor's
+# orange) and a Jackal (minor's blue grey), each colour read from the tags' actor variants by
+# the converter (the set's ranks.toml, game::campaign::unit::read_ranks).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox halo_ce:hangemhigh \
+#       --scene apps/ultimate_gun_game/scenes/halo_ranks.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 1500                    # units in; the change of level's kill feed line (6 s) gone
+halo_ce:body status
+rung halo_ce:plasma_pistol
+setpos -1150 3000 -770       # the first spawn's hall, down off its ledge
+setang 2 332
+target add halo_ce:jackal 4
+setang 2 342
+target add halo_ce:grunt 3.5
+setang 2 352
+target add halo_ce:elite 4
+setang 2 342
+cl_drawhud 0
+wait 300
+shot ranks
+target list
