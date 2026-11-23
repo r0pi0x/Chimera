@@ -348,7 +348,8 @@ fn signal_keys_move_the_selection_and_stay_comes_first() {
     tap(&mut sim.app, KeyCode::Escape);
     assert_eq!(menu(&sim.app).focus, 0);
     tap(&mut sim.app, KeyCode::ArrowUp);
-    let entries = esc_menu::shown_entries(true, false, false);
+    // (No spectate switch here: its entry is not shown, `esc_menu::with_spectate`.)
+    let entries = esc_menu::with_spectate(esc_menu::shown_entries(true, false, false), None);
     assert_eq!(menu(&sim.app).focus, entries.len() - 1, "↑ wraps to the last entry");
     assert_eq!(entries.last().unwrap().action, Some(Action::Quit));
     tap(&mut sim.app, KeyCode::ArrowDown);

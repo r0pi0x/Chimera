@@ -432,3 +432,27 @@ fn a_cs_grenade_rungs_next_throw_waits_the_bands_supply() {
         assert!(w[1] - w[0] >= supply - 0.05, "the next throw waited the supply ({supply} s): {times:?}");
     }
 }
+
+/// A bot on the grenade rung can attack: its ranged reach is fixed at its
+/// first life, when Halo has not yet given the frags (the rung's count is
+/// given after the life's start), so the weapon's named attack action
+/// counts for the reach with none counted (a bot with no reach chased its
+/// target and never threw).
+#[test]
+fn a_bot_on_the_grenade_rung_has_a_reach_and_throws() {
+    use combat_arms::game::bots::{BotSettings, CaBot};
+    let mut sim = crate::halo_party::party_with(&crate::play::ladder_text(&[FRAG_RUNG; 40], false).replace(
+        "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
+        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"combat_arms\"]",
+    ));
+    {
+        let mut s = sim.app.world_mut().resource_mut::<BotSettings>();
+        s.quota = 2;
+        s.quota_set = true;
+    }
+    sim.seconds(8.0);
+    let w = sim.app.world_mut();
+    let reaches: Vec<f32> = w.query::<&CaBot>().iter(w).map(|b| b.ranged_reach).collect();
+    assert_eq!(reaches.len(), 2, "two bots");
+    assert!(reaches.iter().all(|r| *r > 0.0), "the bots have a reach: {reaches:?}");
+}

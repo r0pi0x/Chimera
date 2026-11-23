@@ -15,7 +15,7 @@ use crate::game::rules::spawns::CaHeld;
 use crate::{
     character::spawn_character,
     core::{Connecting, Dead, Health, Intent, Seed, Spectating, Team},
-    weapon::{Inventory, Magazine, OwnKit, Weapon, grenade::Throwable},
+    weapon::{AttackAction, Inventory, Magazine, OwnKit, Weapon, grenade::Throwable},
 };
 
 /// The two teams (game_modes.md: 1 JSF "Alpha", 2 Creed "Bravo").
@@ -148,7 +148,7 @@ pub fn kick(world: &mut World, e: Entity) {
 pub(super) fn arm(
     data: Res<BotData>,
     mut bots: Query<(&mut CaBot, &Inventory, &Health), (Without<Connecting>, Without<Dead>, Without<CaHeld>)>,
-    mut weapons: Query<(&Weapon, Option<&mut Magazine>, Option<&mut Throwable>)>,
+    mut weapons: Query<(&Weapon, Option<&mut Magazine>, Option<&mut Throwable>, Has<AttackAction>)>,
 ) {
     for (mut b, inv, health) in &mut bots {
         if b.armed || inv.weapons.is_empty() || health.current <= 0.0 {
@@ -157,14 +157,18 @@ pub(super) fn arm(
         let template = b.template;
         let (mut ranged, mut thrown_kinds) = (0.0f32, Vec::new());
         for &w in &inv.weapons {
-            let Ok((weapon, magazine, throwable)) = weapons.get_mut(w) else { continue };
+            let Ok((weapon, magazine, throwable, attacked)) = weapons.get_mut(w) else { continue };
             let id = weapon.id;
             let Some(gun) = data.gun(id, template) else { continue };
             let kind = data.gun_type(id).unwrap_or_default().to_string();
             if let Some(mut m) = magazine {
                 let total = (m.reserve_max as f32 * gun.ammo).round() as u32;
                 m.reserve = total.saturating_sub(m.clip);
-                if (m.reserve > 0 || m.clip > 0) && kind != "Knife" {
+                // A weapon attacked by a named action (a grenade rung's frags,
+                // `weapon::AttackAction`) counts with none counted yet: its
+                // game gives the count after the life's start, and the reach
+                // is fixed at the first life.
+                if (m.reserve > 0 || m.clip > 0 || attacked) && kind != "Knife" {
                     ranged = ranged.max(gun.range.1);
                 }
             }
