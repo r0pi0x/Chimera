@@ -356,8 +356,22 @@ install: tests/it/heavy/items.rs):
   (`items::stock_of`); the holster multiplier and the sword's ×1.75 from
   the switched-from side apply (`items::mods::holster`). Left: `anim_slot`
   and `animation_replacement`, its own muzzle/tracer/attached particles
-  (recorded only), and per-item asset sets (the asset service serves no
-  item model yet: the stand-in shows there).
+  (recorded only).
+- **Per-item asset sets** (2026-11-23): each item weapon's
+  `weapon/<name>` (`weapon/direct_hit`; `tf2::game::sets::item_pieces`,
+  `chimera_pack sets tf2 --only weapon/ --pack`): its own model, skin's
+  materials, held model and the waves of its own sound entries, less
+  `base`, `common`, `players`, its classes' `players/<class>` (the arms
+  and their sequences) and its base's `weapon/<id>`. A map's dressing
+  loads only the items whose models are here (`items::on_mount_here`),
+  so no load fetches every item's set; an item whose set comes later
+  (the sandbox's pick) is built then (`tf2::game::late_items`: view and
+  held models, sound entries). Published: 31 sets,
+  0.6-6.3 MB stored each (2.4 MB median), 392 records, 65 MB (60.6 MB of
+  it in no other set). A match's offer and the sandbox's unit fetch name
+  it as any gun's, so a player served by the asset service with no
+  install sees the item's own model (heavy test
+  `heavy::items::an_items_set_serves_its_own_view_model_from_the_store_alone`).
 
 ### Batch 2: small new mechanics (68 entries)
 

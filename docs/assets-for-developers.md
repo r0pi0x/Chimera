@@ -270,7 +270,8 @@ scripts are plain text: no key.
 ## Team Fortress 2: an install of your own, or the service
 
 TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
-`weapon/<id>`, `map/ctf_2fort`, `base`, and since 2026-11-16 its bodies per
+`weapon/<id>`, since 2026-11-23 each unlock's too, `weapon/<name>` (its
+own model and sounds: docs/plans/active/tf2-weapons.md), `map/ctf_2fort`, `base`, and since 2026-11-16 its bodies per
 class: `players/<class>`, its voice's waves too since 2026-11-18,
 offered only for the classes a match's TF2 guns make, with `players`
 holding what every class shares, the HUD's look and the kill icons). Its tests and the party's `tf2:` maps read an install,

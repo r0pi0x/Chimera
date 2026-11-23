@@ -54,7 +54,10 @@
 //! animations, sounds, the rocket, and the script, packed decrypted:
 //! `publish tf2` and `pack tf2` read the install's `.ctx` files through
 //! `tf2::game::scripts::decrypting` with this host's key, and leave them
-//! out, warning loudly, without one), and
+//! out, warning loudly, without one), TF2's `weapon/<name>` per item
+//! weapon (`tf2::game::sets::item_pieces`: its own model and sounds, less
+//! `players`, its class's `players/<class>`, its base's `weapon/<id>`,
+//! `base` and `common`), and
 //! Combat Arms' `character/<record>` per body record with a file (its
 //! model, animation library and textures, as a rung's body loads them:
 //! `characters::models::load_body`, and the hand model and skins of the
@@ -1178,9 +1181,10 @@ fn sets(args: &[String]) -> Result<(), String> {
             );
         }
         let mut kept: std::collections::BTreeSet<String> = kept.into_iter().collect();
-        if name.starts_with("map/") {
+        if name.starts_with("map/") || (game.info.id == "tf2" && tf2::game::sets::is_item_set(&name)) {
             // What every match fetches anyway: the game's `base`,
-            // `players` and `common` (`resolve::MATCH_SETS`). A map all
+            // `players` and `common` (`resolve::MATCH_SETS`); a TF2
+            // item's set too (`tf2::game::sets::item_pieces`). A map all
             // of whose files those hold (Halo's donor map, its `base`)
             // keeps them: an empty set isn't written, and a map needs its
             // set for `sets::map_held` and the offer.

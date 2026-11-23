@@ -297,6 +297,8 @@ impl Plugin for Tf2BodiesPlugin {
         // Bodies that come late: a class picked mid-match, a body built
         // again when files of its look arrive.
         super::late_bodies::add(app);
+        // Unlocks whose files come later (the sandbox's pick).
+        super::late_items::add(app);
         // The match's class sets in its asset offer (once per app).
         let mut hooks = app.world_mut().get_resource_or_init::<chimera_net::net::assets::AssetHooks>();
         if !hooks.0.contains(&(asset_names as fn(&World) -> _)) {

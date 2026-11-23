@@ -591,7 +591,7 @@ pub fn load(
     into: &mut Vec<crate::map::MapViewModel>,
     warnings: &mut Vec<String>,
 ) {
-    let items = super::items::on_mount(materials.mount());
+    let items = super::items::on_mount_here(materials.mount());
     load_with(materials, wants, every_class, &items, into, warnings);
 }
 

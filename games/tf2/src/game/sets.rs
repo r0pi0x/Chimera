@@ -29,13 +29,24 @@
 //! the class's arms with the `c_` model (the Fists' arms alone), the
 //! sounds of weapons_stock.md 8.3 and the script.
 //!
+//! Each item weapon's (`items`) set, `weapon/<name>` (`item_pieces`), is
+//! what loading it reads (its own `c_` model on its class's arms) with
+//! the waves of its own sound entries, less `players`, its classes'
+//! `players/<class>` (the arms and their sequences) and its base's
+//! `weapon/<id>`; `chimera_pack sets` also takes out what the game's
+//! `base` and `common` hold. The items come from the pack
+//! converted in memory from the install (`item_weapons`).
+//!
 //! Known shortcuts:
 //! - The sound entries are the spec's lists (weapons.md 8.3,
 //!   weapons_stock.md 8.3), not read from the scripts.
 
 use source_engine::content::{material::MaterialLoader, props, sound::SoundScripts};
 
-use super::scripts;
+use super::{
+    items::{self, ItemWeapon},
+    scripts,
+};
 use crate::mount::{Access, Mount};
 
 /// Sound entries any TF2 gun can play, in `players`: the crit boost's
@@ -465,12 +476,82 @@ pub fn player_pieces(mount: &Mount) -> Vec<(String, Vec<String>)> {
     out
 }
 
-/// `weapon/<id>` for each M2 gun, `players` and `players/<class>`: each
-/// set's name and files.
+/// The item weapons the item sets are made for: the pack converted from
+/// `mount` in memory (`items::generated`: the install's schema; an
+/// item's looks don't depend on the scripts), every one data/items.toml
+/// names (`items::weapons`), in data order.
+pub fn item_weapons(mount: &Mount) -> Vec<ItemWeapon> {
+    let made = items::generated(mount, items::SET);
+    let Some((_, bytes)) = made.first().and_then(|(_, files)| files.first()) else { return Vec::new() };
+    let Ok(pack) = items::ItemPack::parse(&String::from_utf8_lossy(bytes)) else { return Vec::new() };
+    items::weapons(&pack, &items::ItemsData::builtin(), &super::weapons::script_numbers::GunNumbers::builtin().docs).0
+}
+
+/// An item weapon's set's name: `weapon/<name>` (`tf2:winger`:
+/// `weapon/winger`), as a match's offer names its set.
+pub fn item_set(item: &ItemWeapon) -> String {
+    format!("weapon/{}", item.id.strip_prefix("tf2:").unwrap_or(&item.id))
+}
+
+/// The files item `item` reads as a match loads it (`maps::add_guns_with`
+/// over `all`: its own `c_` model, skin and materials on its class's
+/// arms, the held model, its base's projectile) with the waves of its
+/// own sound entries (its `visuals`'), sorted.
+pub fn item_files(mount: &Mount, item: &ItemWeapon, all: &[ItemWeapon], sound_scripts: &SoundScripts) -> Vec<String> {
+    let mut files = read_by(mount, || {
+        let mut materials = MaterialLoader::guest(mount, 0, 0);
+        let (mut kit, mut warnings) = (crate::map::GameKit::default(), Vec::new());
+        super::maps::add_guns_with(&mut materials, &|g| g == item.id, false, all, &mut kit, &mut warnings);
+        for wave in item.looks.sounds.iter().flat_map(|name| sound_scripts.waves(name)) {
+            let _ = mount.read(&wave);
+        }
+    });
+    files.sort();
+    files.dedup();
+    files
+}
+
+/// Whether set `name` is an item weapon's (`item_set`): data/items.toml
+/// names the item, not a wearable.
+pub fn is_item_set(name: &str) -> bool {
+    name.strip_prefix("weapon/")
+        .is_some_and(|n| items::ItemsData::builtin().items.get(n).is_some_and(|d| !d.wearable))
+}
+
+/// `weapon/<name>` for each item weapon (`item_weapons`, `item_files`),
+/// less what other sets hold of it (`shared`, as `pieces` makes them):
+/// `players` and its classes' own `players/<class>` (`classes::Classes::
+/// sets_for`: the arms and their sequences, the projectile's model),
+/// which come with it, and its base's `weapon/<id>` (the base's sounds,
+/// which every TF2 map's load reads: so a read of one never fetches an
+/// item's set as the smallest holding it). What is left is the item's
+/// own: its model, skin's materials and sounds.
+pub fn item_pieces(mount: &Mount, shared: &[(String, Vec<String>)], sound_scripts: &SoundScripts) -> Vec<(String, Vec<String>)> {
+    let all = item_weapons(mount);
+    let of = |set: &str| shared.iter().find(|(n, _)| n == set).map(|(_, f)| f.as_slice()).unwrap_or_default();
+    all.iter()
+        .map(|item| {
+            let mut table = super::classes::classes();
+            table.add_gun(&item.id, &item.classes, &item.base);
+            let base = format!("weapon/{}", item.base.strip_prefix("tf2:").unwrap_or(&item.base));
+            let mut others: std::collections::BTreeSet<&str> = of("players").iter().chain(of(&base)).map(String::as_str).collect();
+            for set in table.sets_for([item.id.as_str()]) {
+                others.extend(of(&set).iter().map(String::as_str));
+            }
+            let files = item_files(mount, item, &all, sound_scripts).into_iter().filter(|p| !others.contains(p.as_str())).collect();
+            (item_set(item), files)
+        })
+        .collect()
+}
+
+/// `weapon/<id>` for each M2 gun, each item weapon's `weapon/<name>`,
+/// `players` and `players/<class>`: each set's name and files.
 pub fn pieces(mount: &Mount) -> Vec<(String, Vec<String>)> {
     let sounds = sound_scripts(mount);
     let mut out: Vec<(String, Vec<String>)> =
         M2_WEAPONS.iter().map(|w| (format!("weapon/{}", w.id), weapon_files(mount, w, &sounds))).collect();
     out.extend(player_pieces(mount));
+    let unlocks = item_pieces(mount, &out, &sounds);
+    out.extend(unlocks);
     out
 }

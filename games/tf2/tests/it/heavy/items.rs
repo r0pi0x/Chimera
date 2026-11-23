@@ -121,3 +121,125 @@ fn every_batch_one_item_shows_its_own_model_on_its_class_arms() {
     }
     assert!(own >= 25, "{own} of {} items have a model of their own", batch.len());
 }
+
+/// An item's asset set (`sets::item_pieces`, what `chimera_pack sets tf2`
+/// publishes as `weapon/<name>`) packed into a scratch store under
+/// `target/` with what a match offers with it (`players`, its class's
+/// `players/<class>`) and the item pack (`items::generated`), then read
+/// back from that store alone, as a player served by the asset service
+/// with no install: the item registers (`items::on_mount`), its view
+/// model is its own `c_` model on its class's arms with nothing missing,
+/// and its set holds neither the arms nor its class's sequences (they
+/// are the class set's) nor its base's set's files, but its own model
+/// and sounds. A map's dressing
+/// takes only the unlocks whose sets are here, and one loaded late
+/// (`late_items::load`) builds from the store, or waits for its set.
+#[test]
+fn an_items_set_serves_its_own_view_model_from_the_store_alone() {
+    use std::path::Path;
+
+    use chimera_core::mount::{
+        assets::{AssetSettings, FileRecord, Manifest, Store, pack},
+        served,
+    };
+    use source_engine::content::material::MaterialLoader;
+    use tf2::game::{GAME, classes, sets};
+
+    let Some(install) = install() else { return };
+    if !install.join("tf").is_dir() {
+        eprintln!("skipping: packs from the install's own files (served from the asset store here)");
+        return;
+    }
+    let key = scripts::key().expect("the key's config");
+    let source = scripts::decrypting(mount::open_install(&install).unwrap(), key);
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("tf2-item-sets-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let store = Store::new(&root);
+    let build = "item-sets-test";
+    let mut manifest = Manifest::new(GAME, build, Some(440));
+
+    let sounds = sets::sound_scripts(&source);
+    let players = sets::player_pieces(&source);
+    let base = sets::M2_WEAPONS.iter().find(|w| w.id == "tf_weapon_rocketlauncher").unwrap();
+    let base_files = sets::weapon_files(&source, base, &sounds);
+    let mut shared = players.clone();
+    shared.push(("weapon/tf_weapon_rocketlauncher".into(), base_files.clone()));
+    let pieces = sets::item_pieces(&source, &shared, &sounds);
+    let all = sets::item_weapons(&source);
+    assert_eq!(pieces.len(), all.len(), "a set per item weapon");
+    let id = "tf2:direct_hit";
+    let item = all.iter().find(|i| i.id == id).expect("the Direct Hit");
+    let set = sets::item_set(item);
+    assert_eq!(set, "weapon/direct_hit");
+    assert!(sets::is_item_set(&set) && !sets::is_item_set("weapon/tf_weapon_rocketlauncher"));
+    let files = &pieces.iter().find(|(n, _)| *n == set).expect("its set").1;
+    let view = item.looks.view.clone().expect("its own model");
+    assert!(files.contains(&view), "{set}: {view}");
+    // Its own sounds' waves: in its set, or in one that comes with it.
+    let anywhere = |p: &String| files.contains(p) || shared.iter().any(|(_, f)| f.contains(p));
+    for w in item.looks.sounds.iter().flat_map(|e| sounds.waves(e)).filter(|w| source.contains(w)) {
+        assert!(anywhere(&w), "{set}: {w}");
+    }
+    assert!(!files.iter().any(|p| p.contains("_arms.") || p.ends_with("_animations.mdl")), "{set}: the arms are the class set's");
+    assert!(!files.iter().any(|p| base_files.contains(p)), "{set}: nothing of its base's set");
+    // A second making gives the same set.
+    assert_eq!(sets::item_files(&source, item, &all, &sounds).iter().filter(|p| files.contains(p)).count(), files.len());
+
+    let class = classes::set_of("soldier");
+    for (name, paths) in players.iter().filter(|(n, _)| *n == "players" || *n == class).chain([(set.clone(), files.clone())].iter()) {
+        let report = pack(&source, paths, &store, &mut manifest, Some(name), 2).unwrap();
+        assert!(report.missing.is_empty(), "{name}: {:?}", report.missing);
+        eprintln!("{name}: {} files, {} bytes stored", report.files, report.stored);
+    }
+    for (name, made) in items::generated(&source, items::SET) {
+        for (path, bytes) in made {
+            let put = store.put(&bytes).unwrap();
+            manifest.files.insert(path.clone(), FileRecord { id: put.id, size: bytes.len() as u64, stored: put.stored });
+            manifest.sets.entry(name.clone()).or_default().insert(path);
+        }
+    }
+    manifest.save(&store.manifest_path(GAME, build)).unwrap();
+
+    // The store alone.
+    let settings = AssetSettings {
+        store: Some(store.clone()),
+        use_install: false,
+        service_first: false,
+        builds: [(GAME.to_string(), build.to_string())].into(),
+        remote: None,
+        lock: None,
+    };
+    let served = served::open_with(&settings, GAME, Path::new("no-install"), mount::open_install).unwrap();
+    assert!(!served.contains("models/weapons/c_models/c_rocketlauncher/c_rocketlauncher.mdl"), "the base's model isn't served");
+    let on = items::on_mount(&served);
+    let served_item = on.iter().find(|i| i.id == id).expect("the item registers from the store");
+    assert_eq!(served_item.looks.view.as_deref(), Some(view.as_str()));
+    let mut materials = MaterialLoader::guest(&served, 0, 0);
+    let (mut views, mut warnings) = (Vec::new(), Vec::new());
+    tf2::game::view::load_with(&mut materials, &|g| g == id, false, &on, &mut views, &mut warnings);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let v = views.iter().find(|v| v.key == id).unwrap_or_else(|| panic!("no view model: {warnings:?}"));
+    let arms = source_engine::content::props::load_view_model(&mut materials, &sets::arms_model("soldier"), "arms", true).unwrap();
+    assert!(v.model.meshes.len() > arms.model.meshes.len(), "its own model merged on the arms");
+    assert!(v.animations.is_some(), "the arms' sequences");
+
+    // A map's dressing takes only the unlocks whose sets are here
+    // (`items::on_mount_here`): the Winger's isn't in this store.
+    let here = items::on_mount_here(&served);
+    assert!(here.iter().any(|i| i.id == id) && !here.iter().any(|i| i.id == "tf2:winger"), "{:?}", here.iter().map(|i| &i.id).collect::<Vec<_>>());
+    // Loaded late (`late_items`, the sandbox's pick after the map): built
+    // from the store when its set is here, waiting when not.
+    let open = move || served::open_with(&settings, GAME, Path::new("no-install"), mount::open_install).map_err(|e| e.to_string());
+    let files = tf2::game::late_bodies::Tf2Files(std::sync::Arc::new(open));
+    use tf2::game::late_items::{Outcome, load};
+    match load(&files, id, true).unwrap() {
+        Outcome::Built(b) => {
+            assert!(b.view_models.iter().any(|v| v.key == id), "its view model");
+            assert!(b.held.iter().any(|h| h.key == id), "its held model");
+            assert!(item.looks.sounds.iter().all(|e| b.sounds.entries.contains_key(&tf2::game::maps::own_sound(e).to_lowercase())), "its sound entries");
+        }
+        Outcome::NotHere => panic!("{id}: its set is here"),
+    }
+    assert!(matches!(load(&files, "tf2:winger", true).unwrap(), Outcome::NotHere), "the Winger's set isn't here");
+    let _ = std::fs::remove_dir_all(&root);
+}

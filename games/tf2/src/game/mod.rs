@@ -62,6 +62,7 @@ pub mod hud;
 pub mod items;
 pub mod ice;
 pub mod late_bodies;
+pub mod late_items;
 pub mod maps;
 pub mod mount;
 pub mod movement;

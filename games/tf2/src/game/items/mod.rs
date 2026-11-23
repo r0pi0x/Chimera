@@ -40,6 +40,19 @@
 //! Switching from an item weapon (`mods::holster`) applies its holster
 //! multiplier and the sword's ×1.75 (§4.9).
 //!
+//! **Its files on the asset service**: each item weapon has a set,
+//! `weapon/<name>` (`weapon/direct_hit`; `sets::item_pieces`, recorded by
+//! `chimera_pack sets tf2 --only weapon/ --pack`): what loading it as a
+//! match does reads (its `c_` model, skin's materials, held model) with
+//! the waves of its own sound entries, less what other sets hold (`base`,
+//! `common`, `players`, its classes' `players/<class>`: the arms and
+//! their sequences; its base's `weapon/<id>`). A match's offer names it
+//! as any gun's (`chimera_net::net::assets::weapon_set`), the sandbox
+//! fetches it when the item is picked, so a player with no install sees
+//! the item's own model. A map's dressing takes only the items whose
+//! models are here (`on_mount_here`: a load never fetches every item's
+//! set); one whose set comes later is loaded then (`late_items`).
+//!
 //! Known shortcuts:
 //! - An item's `anim_slot` and `animation_replacement` (none in batch 1
 //!   change a sequence on its own class's arms) are recorded, not
@@ -48,9 +61,6 @@
 //!   effects play; a one-piece view model (`attach_to_hands` 0) is still
 //!   bone-merged; of its sounds the shot, crit shot (Minigun), empty and
 //!   melee hit/miss entries are used, the reload and deploy entries not.
-//! - The asset service has no per-item sets yet: an item's model and
-//!   sounds load where the files are (the install, or a set that holds
-//!   them), else the stand-in gun shows.
 
 pub mod convert;
 pub mod docs;
@@ -202,6 +212,22 @@ pub fn on_mount(mount: &Mount) -> Vec<ItemWeapon> {
     let Ok(pack) = ItemPack::parse(&String::from_utf8_lossy(&bytes)) else { return Vec::new() };
     let docs = crate::game::weapons::script_numbers::GunNumbers::builtin().docs;
     weapons(&pack, &ItemsData::builtin(), &docs).0
+}
+
+/// The item weapons of `on_mount` whose own models are here
+/// (`ItemWeapon::models_here`): what a map's dressing loads, so a load
+/// never fetches an item's set; one whose set comes later is loaded
+/// then (`late_items`).
+pub fn on_mount_here(mount: &Mount) -> Vec<ItemWeapon> {
+    on_mount(mount).into_iter().filter(|i| i.models_here(mount)).collect()
+}
+
+impl ItemWeapon {
+    /// Whether its own view and held models are on `mount` without a
+    /// fetch (`Mount::held`; one it hasn't is its base's, `base`'s files).
+    pub fn models_here(&self, mount: &Mount) -> bool {
+        [&self.looks.view, &self.looks.world].iter().all(|m| m.as_deref().is_none_or(|p| mount.held(p)))
+    }
 }
 
 /// The pack's display name for `r`.

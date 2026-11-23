@@ -306,17 +306,19 @@ pub fn weapon_sounds() -> impl Iterator<Item = String> {
     weapon_sounds_on(None)
 }
 
-/// `weapon_sounds` with the entries of the unlocks on `mount`
-/// (`items::on_mount`: those their `visuals` name).
+/// `weapon_sounds` with the entries of the unlocks on `mount` whose files
+/// are here (`items::on_mount_here`: those their `visuals` name; a later
+/// one's come with it, `late_items`).
 pub fn weapon_sounds_on(mount: Option<&crate::mount::Mount>) -> impl Iterator<Item = String> {
     gun_sounds(mount).into_iter().chain(super::voices::Tf2Voices::built_in().entries())
 }
 
 /// The guns' sound entries alone (kept under `SOUND_PREFIX`), the
-/// unlocks' on `mount` too.
+/// unlocks' on `mount` whose files are here too (a map's load reads every
+/// entry's waves: an item's set is never fetched by it).
 fn gun_sounds(mount: Option<&crate::mount::Mount>) -> Vec<String> {
     let mut out: Vec<String> = super::sets::M2_WEAPONS.iter().flat_map(|w| w.sounds.iter().map(|s| s.to_string())).collect();
-    for item in mount.map(super::items::on_mount).unwrap_or_default() {
+    for item in mount.map(super::items::on_mount_here).unwrap_or_default() {
         for s in item.looks.sounds {
             if !out.contains(&s) {
                 out.push(s);
@@ -342,7 +344,7 @@ pub fn own_sound(script_name: &str) -> String {
 /// TF2's weapon entries in `sounds` moved under `SOUND_PREFIX` (`own_sound`);
 /// the bare names stay too unless `guest` (on another game's map they would
 /// shadow or be shadowed by that game's).
-fn own_weapon_sounds(sounds: &mut MapSounds, guest: bool, guns: &[String]) {
+pub(super) fn own_weapon_sounds(sounds: &mut MapSounds, guest: bool, guns: &[String]) {
     for name in guns {
         let key = name.to_lowercase();
         let entry = if guest { sounds.entries.remove(&key) } else { sounds.entries.get(&key).cloned() };
@@ -373,7 +375,8 @@ fn held_kit(kit: &mut Kit) {
 /// `is_view_bone`) and their
 /// projectiles' models (`weapons::PROJECTILES`: the rocket, the grenade,
 /// the sticky, the needle), and the unlocks on the mount the same way
-/// (`items::on_mount`: their own models, their base's projectile). What a gun's
+/// (`items::on_mount_here`: those whose own models are here; their base's
+/// projectile). What a gun's
 /// `weapon/<id>` set holds is what this reads for it (`sets`).
 pub fn add_guns(
     materials: &mut MaterialLoader,
@@ -382,9 +385,22 @@ pub fn add_guns(
     into: &mut crate::map::GameKit,
     warnings: &mut Vec<String>,
 ) {
+    let items = super::items::on_mount_here(materials.mount());
+    add_guns_with(materials, wants, every_class, &items, into, warnings);
+}
+
+/// `add_guns` with the unlocks given (`items`), not read from the mount:
+/// the item sets' packing (`sets::item_files`) gives the pack it made.
+pub fn add_guns_with(
+    materials: &mut MaterialLoader,
+    wants: &dyn Fn(&str) -> bool,
+    every_class: bool,
+    items: &[super::items::ItemWeapon],
+    into: &mut crate::map::GameKit,
+    warnings: &mut Vec<String>,
+) {
     use super::weapons::{self as w, PROJECTILES};
-    let items = super::items::on_mount(materials.mount());
-    super::view::load_with(materials, wants, every_class, &items, &mut into.view_models, warnings);
+    super::view::load_with(materials, wants, every_class, items, &mut into.view_models, warnings);
     let set = w::tf2_weapons();
     // The stock guns, then the unlocks on the mount (`items::on_mount`:
     // their own models; their projectiles their base's).
@@ -393,7 +409,7 @@ pub fn add_guns(
         .map(|(g, arms)| (g.to_string(), arms, set.weapons.iter().find(|d| d.id == g).and_then(|d| d.models.world.clone()), g.to_string()))
         .collect();
     for item in items {
-        guns.push((item.id, item.looks.arms, item.looks.world, item.base));
+        guns.push((item.id.clone(), item.looks.arms.clone(), item.looks.world.clone(), item.base.clone()));
     }
     let mut projectiles: Vec<&str> = Vec::new();
     for (gun, arms, path, base) in guns {

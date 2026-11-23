@@ -116,7 +116,7 @@ module list is `docs/modules.md`.
 - 238: What still needs an install | Everything that reads the game through its mount runs from the service, the community maps the heavy tests load included (they are in...
 - 251: Day of Defeat: Source: an install of your own | DoD:S (docs/plans/active/dods.md) is not served yet (its sets are packed by `chimera_pack pack dods`: `weapon/colt`, `players`,
 - 270: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
-- 314: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
+- 315: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
 
 ## docs/backlog.md
 
