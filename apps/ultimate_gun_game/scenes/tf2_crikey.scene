@@ -7,12 +7,10 @@
 wait_for map_loaded 6000
 wait_for spawned 3000
 wait 120
-setpos 0 -1181 0
-setang 2 90
 god
 sandbox ammo on
 rung tf2:cleaners_carbine
-target add tf2:tf_weapon_minigun 6 protect
+target add tf2:tf_weapon_minigun 6
 wait 2
 wait_for idle 3000
 wait 120

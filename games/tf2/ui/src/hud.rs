@@ -359,8 +359,9 @@ impl Tf2Hud {
 }
 
 /// An item's meter (batch2b_mechanics.md 14) in `HudItemEffectMeter`'s
-/// box (hud.md 1: r162, r52, 100 x 50): a faint backing, its label
-/// (`HudFontSmall`, `TanLight`) and a bar (10, 30, 80 x 8) filled by
+/// box (hud.md 1: r162, r52, 100 x 50): a faint backing (4, 4, 60 x 42,
+/// clear of the ammo panel at r95), its label (`HudFontSmall`,
+/// `TanLight`) and a bar (10, 30, 50 x 8) filled by
 /// `fill` in `HudProgressBarActive` over `HudProgressBarInActive`, the
 /// fill `HudProgressBarActiveLow` below a quarter. Its inner layout is
 /// ours (the meter's own `.res` isn't specified).
@@ -368,13 +369,13 @@ pub fn item_meter(label: &str, fill: f32, screen: Screen, scheme: &dyn Scheme) -
     let mut out = Vec::new();
     let p = screen.rect(HudCoord::End(162.0), HudCoord::End(52.0), 100.0, 50.0);
     let radius = screen.scaled(4.0);
-    out.push(Draw::Box { rect: screen.child(p, 4.0, 4.0, 92.0, 42.0), color: [0, 0, 0, 115], radius });
+    out.push(Draw::Box { rect: screen.child(p, 4.0, 4.0, 60.0, 42.0), color: [0, 0, 0, 115], radius });
     if let Some(tall) = scheme.tall("HudFontSmall") {
         let tan = scheme.colour("TanLight").unwrap_or([235, 226, 202, 255]);
-        let b = screen.child(p, 10.0, 10.0, 80.0, 16.0);
+        let b = screen.child(p, 10.0, 10.0, 50.0, 16.0);
         out.push(Draw::Text { font: "HudFontSmall", tall, text: label.to_string(), color: tan, at: Vec2::new(b.min.x, b.min.y), align: Align::Left });
     }
-    let bar = screen.child(p, 10.0, 30.0, 80.0, 8.0);
+    let bar = screen.child(p, 10.0, 30.0, 50.0, 8.0);
     let back = scheme.colour("HudProgressBarInActive").unwrap_or([140, 120, 73, 255]);
     let f = fill.clamp(0.0, 1.0);
     let front = if f < 0.25 {
@@ -640,7 +641,7 @@ mod tests {
         assert!(d.iter().any(|x| x.as_text() == Some("HYPE")));
         let boxes: Vec<Rect> = d.iter().filter_map(|x| match x { Draw::Box { rect, color, .. } if *color == [240, 207, 78, 255] => Some(*rect), _ => None }).collect();
         assert_eq!(boxes.len(), 1, "the fill");
-        let bar = s.child(s.rect(HudCoord::End(162.0), HudCoord::End(52.0), 100.0, 50.0), 10.0, 30.0, 80.0, 8.0);
+        let bar = s.child(s.rect(HudCoord::End(162.0), HudCoord::End(52.0), 100.0, 50.0), 10.0, 30.0, 50.0, 8.0);
         assert!((boxes[0].width() - bar.width() / 2.0).abs() < 0.01);
         let low = item_meter("BOOST", 0.1, s, &Plain);
         assert!(low.iter().any(|x| matches!(x, Draw::Box { color, .. } if *color == [240, 30, 30, 255])));
