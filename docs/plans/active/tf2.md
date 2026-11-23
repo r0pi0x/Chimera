@@ -26,7 +26,7 @@ from specs, measurements and the game's own data.
 | SDK parity (tf2-parity) | done (2026-11-15) | the specs' "Corrections from the SDK" in the code: the Minigun, the blasts and knockback, movement, the scripts' mapping, grenades and stickies; the flame's points, heat and afterburn, the scope's timing, the needle's and the rocket's aim (what's left: the section) |
 | M4b the nine stock melee weapons | done (2026-11-16) | specs/tf2/weapons_stock.md (T10): the Bat, Shovel, Fire Axe, Bottle, Fists, Wrench, Bonesaw, Kukri and Knife as data on Chimera's delayed swing (the smack), the Knife's backstab, the class's arms and sequences, sounds, kill icons with `backstab`; each TF2 rung carries its class's melee, TF2's kit knife the Knife |
 | Follow-ups (tf2-followups) | done (2026-11-16) | the drawn class's melee tested; spawn spots in open space (no vent-duct spawns); TF2's class parts on and off in one move; the duct's material checked |
-| M4 more weapons, effects, the probe | not started | |
+| M4 more weapons, effects, the probe | not started | the weapon inventory and batches: [tf2-weapons.md](tf2-weapons.md) |
 
 ## 1. Rules for this port
 
