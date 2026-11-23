@@ -7,7 +7,10 @@
 //! the bodies' animation (`player_anim`: the sequence families by stance,
 //! movement, sights and deploy; the gestures; in `heavy`, the real model
 //! and the held gun in the hands),
-//! its prone, deployed machine guns and stamina (`stance`), and, in
+//! its prone, deployed machine guns and stamina (`stance`), its movement
+//! (`movement`: the run, sprint and stamina, jump, duck, getting up, the
+//! hit slow), its explosives (`explosives`: grenades, rifle grenades,
+//! rockets, the blast), and, in
 //! `heavy`, the user's install (its mount, the nine stock maps converted
 //! with their spawns, the class bodies, its guns' sounds under its own
 //! names: `sounds`), found through Steam, `[games.dods] path` or
@@ -15,7 +18,9 @@
 //! `cargo test -p dods --features dev --test it`; where tests go:
 //! docs/OBSERVABILITY.md, section 1.
 
+mod explosives;
 mod info;
+mod movement;
 mod player_anim;
 mod skeleton;
 mod stance;

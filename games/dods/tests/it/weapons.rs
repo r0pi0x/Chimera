@@ -26,7 +26,6 @@ use dods::{
     },
     harness::DodsSim,
 };
-use source_engine::source_movement::SourceMovement;
 
 const U: f32 = 0.0254;
 
@@ -212,26 +211,6 @@ fn hit_zones_and_the_slow() {
     assert!((slow - 0.5).abs() < 0.05, "slowed {slow}");
 }
 
-#[test]
-fn a_slowed_player_moves_slower() {
-    let mut sim = sim();
-    let p = sim.spawn_character(greybox::SPAWNS[0], movement::ID);
-    sim.seconds(1.0);
-    let until = sim.app.world().resource::<SimClock>().now + 2.0;
-    sim.app.world_mut().get_mut::<DodsSlowed>(p).expect("on every character").until = until;
-    sim.ticks(2);
-    let m = sim.app.world().get::<SourceMovement>(p).unwrap().velocity_modifier;
-    // Held at the slow's speed before each move (the move's own recovery
-    // adds a tick's worth).
-    assert!(m <= weapons::hit_slow::SLOWED_SPEED + 0.01, "{m}");
-    // The slow's 2 s, then Source's climb back from 0.5 (a third a second).
-    sim.seconds(4.0);
-    let now = sim.app.world().resource::<SimClock>().now;
-    assert!(!sim.app.world().get::<DodsSlowed>(p).unwrap().at(now), "the slow ends");
-    let m = sim.app.world().get::<SourceMovement>(p).unwrap().velocity_modifier;
-    assert!(m > 0.99, "back to full speed: {m}");
-}
-
 /// One swing of `id` at a target 40 units ahead facing `away` (true: its
 /// back to the swinger), aimed `aim` units over its feet: the damage.
 fn one_swing(id: &str, away: bool, aim: f32) -> f32 {
@@ -259,4 +238,79 @@ fn the_knife_and_spade_60_and_five_times_from_behind() {
     assert!((got[0] - 150.0).abs() < 0.01, "{got:?}");
     assert!((got[1] - 750.0).abs() < 0.01, "{got:?}");
     assert!((got[2] - 45.0).abs() < 0.01, "a leg: 60 x 0.75: {got:?}");
+}
+
+#[test]
+fn the_thompsons_draw_and_empty_reload_are_measured() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], KNIFE);
+    sim.intent(p).pitch = 1.2;
+    let w = give(sim.app.world_mut(), p, THOMPSON).unwrap();
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(w);
+    let ev = run(&mut sim, p, 100, |s, _| s.intent(p).fire = true);
+    // Switched on tick 0: the first shot 63 ticks after the switch.
+    assert_eq!(fired(&ev).first().copied(), Some(63), "{:?}", fired(&ev));
+    // Empty, reloaded: fires again 3.0 s on with 30 rounds.
+    sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 0;
+    let ev = run(&mut sim, p, 300, |s, t| {
+        s.intent(p).fire = t >= 20;
+        s.intent(p).reload = t < 10;
+    });
+    let started = ev.iter().find(|(_, k)| matches!(k, WeaponEventKind::ReloadStarted)).map(|(t, _)| *t).expect("a reload");
+    let first = *fired(&ev).first().expect("fires after the reload");
+    let after = (first - started) as f64 * TICK_INTERVAL;
+    assert!((3.0..3.03).contains(&after), "{after} s");
+}
+
+/// The holder's view: its zoom's field of view, if any.
+fn fov(sim: &Sim, p: Entity) -> Option<f32> {
+    sim.app.world().get::<chimera_sim::weapon::Zoomed>(p).map(|z| z.fov)
+}
+
+#[test]
+fn the_sights_narrow_the_view_21_ticks_after_the_press() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], GARAND);
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    sim.ticks(19);
+    assert_eq!(fov(&sim, p), None, "20 ticks after the press");
+    sim.ticks(2);
+    assert_eq!(fov(&sim, p), Some(55.0), "22 ticks after");
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    sim.seconds(1.0);
+    let mut sim2 = self::sim();
+    let (q, _) = holding(&mut sim2, greybox::SPAWNS[0], SPRING);
+    sim2.intent(q).secondary = true;
+    sim2.ticks(1);
+    sim2.intent(q).secondary = false;
+    sim2.seconds(0.5);
+    assert_eq!(fov(&sim2, q), Some(20.0), "the Springfield's scope");
+}
+
+#[test]
+fn the_bars_alt_fire_selects_semi_automatic() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, weapons_spawn(), weapons::BAR);
+    sim.intent(p).pitch = 1.2;
+    let ev = run(&mut sim, p, 60, |s, t| {
+        s.intent(p).secondary = t == 0;
+        s.intent(p).fire = t >= 2;
+    });
+    assert_eq!(sim.app.world().get::<AltModes>(w).unwrap().current, 1, "semi-automatic");
+    assert_eq!(fired(&ev).len(), 1, "one shot a press: {:?}", fired(&ev));
+    assert_eq!(fov(&sim, p), None, "no sights");
+    assert_eq!(sim.app.world().get::<Hitscan>(w).unwrap().spread, SpreadShape::Cone(0.02), "its alt accuracy");
+    // A press every other tick: one shot each 0.3 s (20 ticks) at most.
+    let ev = run(&mut sim, p, 100, |s, t| s.intent(p).fire = t % 2 == 0);
+    let shots = fired(&ev);
+    assert!(shots.len() >= 4, "{shots:?}");
+    assert!(shots.windows(2).all(|w| w[1] - w[0] >= 20), "{shots:?}");
+}
+
+fn weapons_spawn() -> Vec3 {
+    greybox::SPAWNS[0]
 }

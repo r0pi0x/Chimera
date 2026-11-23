@@ -19,8 +19,8 @@ and the game's own data.
 |---|---|---|
 | Plan and first specs | done (2026-11-23) | this plan; specs/dods/: install, weapons, movement, classes, damage (measured on the dedicated server where marked) |
 | M0 install, mount, maps, bodies in the sandbox | done (2026-11-23) | §4; the log |
-| M1 weapons | M1a done (2026-11-23, its gaps fixed the same day); M1b not started | §4; the log |
-| M2 movement specifics | M2a done (2026-11-23): prone, deployed MGs, stamina pool, MGs in the ladders; sprint, jump, getting up, the slow, draw/reload times, FOVs and the explosives measured and specified since (§4, "Specified since M2a") | §4; the log |
+| M1 weapons | M1a done (2026-11-23, its gaps fixed the same day); M1b done (2026-11-23): frags and stick grenades, rifle grenades, bazooka and Panzerschreck, the blast | §4; the log |
+| M2 movement specifics | M2a done (2026-11-23): prone, deployed MGs, stamina pool, MGs in the ladders; M2b done (2026-11-23): sprint and stamina caps, jump, unduck, getting up, the hit slow, draw/reload times, FOVs, fire select, MG undeploy/reload/yaw (§4, "Specified since M2a") | §4; the log |
 | M3 party rungs | M3a done (2026-11-23): the bodies animate (stances, movement, each gun's set, sights, deploy, fire and reload gestures, jump; death a ragdoll); the rungs themselves not started | §4; the log |
 
 ## 1. Rules for this port
@@ -147,8 +147,8 @@ where the install is needed, `heavy::` tests that skip without it.
      spread, no movement), the stamina pool and the undeployed MGs' cost,
      the MGs as the ladders' `heavy` rungs; Source movement's generic
      `SourceStance` (a game's own box, eye, speed and no jump).
-   - **Specified since M2a** (2026-11-23, `tools/dods_probe`; implement
-     from the specs, replacing the Known shortcuts): sprint and stamina
+   - **Specified since M2a** (2026-11-23, `tools/dods_probe`; done in
+     M2b and M1b, 2026-11-23: the log): sprint and stamina
      (movement.md: forward-only, starts at 80 u/s for 15 stamina, drains
      0.3 a tick above 100 u/s, regenerates 0.9 / 0.75 / 0.15 a tick still /
      ducked moving / moving, no delay; **the stamina caps the speed**:
@@ -243,6 +243,43 @@ event's presents.
    options, or never?
 
 ## Log
+
+- 2026-11-23, M2b and M1b (§4, "Specified since M2a", from the specs):
+  `stamina` (sprint on `+speed` forward, standing, from 80 u/s, 15 to
+  start, 0.3 a tick above 100, regeneration 0.9 / 0.75 / 0.15; predicted),
+  `stance::step` the tick's speed cap (120 + stamina running, 230 +
+  stamina sprinting at most 320, 120 empty; 120 while hit-slowed; 50 with a
+  rocket shouldered; ducked the run's 220 by Source's third), clamped the
+  same tick (`ground_clamp`); the jump 262.33 / 268.33 ducked
+  (one impulse of 268.33: Source's jump adds it standing to the half
+  tick of gravity already taken, sets it ducked); the duck 0.4 s (the
+  measured curve) and the unduck counting its release tick
+  (`unduck_counts_first_tick`: 0.21 s); duck slows from its first tick;
+  getting up from prone with the standing box at once and a smoothstep cap
+  50 to 220 (leaving a game's stance is no duck for the input scale), duck
+  while prone to a crouch (`SourceStance::crouch`); the
+  slow's ×0.5 stand-in gone. Weapons: the measured draw and empty-reload
+  table in every gun's data; sights FOV 55 and scopes 20, 0.315 s after
+  the press (`gun::sights`); the BAR's and StG44's alt fire a semi-auto
+  select (a burst of one, 0.3 s); the MGs' deploy 1.2163 / 1.1667, undeploy
+  1.3635 / 1.1667, reload only deployed (4.6 / 4.71), undeployed past 45°.
+  M1b (`weapons::explosives`): frags and stick grenades (`dods:grenade`:
+  Chimera's `Throwable` with the game's launch, the fuse from the pin, 5.1
+  s, off in the hand when held; the throw's lift and squeeze, 500 u/s up to
+  a fit of the measured speeds aiming up; gravity 420), rifle grenades
+  (`dods:rifle_grenade`: 2000 u/s, 3.63 s fuse), bazooka and Panzerschreck
+  (`dods:rocket` on `chimera:projectile`: 1300 u/s, gravity 80, explode on
+  players and the world; shouldering 0.79 / 0.99 s, no fire lowered), the
+  blast 150 × (1 − r / radius) to the body's middle with a clear line,
+  the thrower hurt; Source's explosion look and its particle materials on
+  DoD:S's maps and guest dressing; the frags in the ladders' grenade
+  band, the rifle grenades and rockets in the launcher band. Chimera:
+  `grenade::Projectile::new`, `grenade::ThrowFrame`. Shortcuts left (each
+  in its file): the stun event and view shake, characters not shielding
+  a blast, the throw speed's fit above 15° up, our pin/throw/redraw times,
+  CS:S's bounce, the rockets' and rifle grenades' reloads, shouldering not
+  predicted, the getting-up eye curve, the yaw limit undeploying rather
+  than holding the view, the still/moving threshold of the regeneration.
 
 - 2026-11-23, spec measurements (`tools/dods_probe`, port 27050):
   movement.md (sprint, stamina, jump, unduck, getting up, the slow),

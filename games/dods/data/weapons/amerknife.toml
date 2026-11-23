@@ -7,8 +7,8 @@
 id = "dods:weapon_amerknife"
 base = "dods:base"
 slot = 2
-# Unmeasured (weapons.md, open question 10): a stand-in draw time.
-draw = 0.5
+# Measured (weapons.md, "Draw and reload times").
+draw = 1.0
 weight = 0
 undroppable = true
 

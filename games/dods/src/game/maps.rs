@@ -11,7 +11,9 @@
 //!
 //! Its kit: the class bodies (`bodies::add_bodies`) and its guns' view
 //! and held models (`weapons::add_guns`); on another game's map the same
-//! (`dress_guest_in`), so a DoD:S player wears its body there.
+//! (`dress_guest_in`), so a DoD:S player wears its body there; and the
+//! particle materials of Source's explosion and impact effects (its
+//! explosives' look), on another game's map those it lacks.
 //!
 //! Its sounds: Source's sound scripts (the map's own entries and its
 //! surfaces') and its guns' (`weapon_sounds`: every entry of the game's
@@ -23,7 +25,8 @@
 //! the map's soundscapes.
 //!
 //! Known shortcuts (M0):
-//! - No HUD look, impact decals or effects of its own.
+//! - No HUD look or impact decals of its own; its effects are Source's
+//!   shared explosion only.
 //! - Its objectives (`dod_control_point`, `dod_capture_area`, bomb
 //!   targets) and team-only walls (`func_teamblocker`) are not read.
 
@@ -105,9 +108,17 @@ pub fn load_level_with(mount: &crate::mount::Mount, name: &str, options: &MapLoa
     bsp::load_level_with(&DODS, mount, name, options)
 }
 
-/// Its players' kit: the class bodies.
+/// Its players' kit: the class bodies, and the effect materials its
+/// explosives' look draws with (`weapons::explosives::looks`).
 fn body_kit(k: &mut Kit) {
     super::bodies::add_bodies(k.materials, k.surfaces, k.kit, &mut k.data.kit, &mut k.data.warnings);
+    k.data.particles = effect_materials(k.materials);
+}
+
+/// The particle materials of Source's explosion (`source_engine::effects::
+/// explosions`) and the impact effects, from the install.
+fn effect_materials(materials: &mut MaterialLoader) -> crate::map::particles::MapParticles {
+    source_engine::effects::impact_effects::load_materials(materials, &[source_engine::effects::explosions::MATERIALS])
 }
 
 /// What players hold on its maps: its guns' view and held models.
@@ -181,7 +192,8 @@ pub fn guest_mount() -> Result<std::sync::Arc<crate::mount::Mount>, String> {
 
 /// DoD:S's players and guns on another game's map (the party apps'):
 /// the guns `kept` names (view and held models) and the class bodies,
-/// read from `mount`, their textures appended to the map's, and their
+/// read from `mount`, their textures appended to the map's, the
+/// explosions' particle materials the map lacks, and their
 /// guns' sounds (`weapon_sounds`, under `SOUND_PREFIX` only). `lean`: the
 /// textures' sizes only.
 pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
@@ -194,6 +206,12 @@ pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'st
     let mut warnings = Vec::new();
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     super::weapons::add_guns(&mut materials, &surfaces, &|g| kit.wants(g), &mut guest, &mut warnings);
+    // Its explosions' materials, each the map lacks by name.
+    for m in effect_materials(&mut materials).materials {
+        if map.particles.find(&m.name).is_none() {
+            map.particles.materials.push(m);
+        }
+    }
     let guns = weapon_sounds(mount);
     let mut sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], guns.clone(), true);
     own_weapon_sounds(&mut sounds, true, &guns);

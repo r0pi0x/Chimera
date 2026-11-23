@@ -13,13 +13,16 @@
 //! models (`w_*.mdl`) on the default body's skeleton (`add_guns`).
 //!
 //! The machine guns (`dods:mg`, `mg`: deployed while prone, `stance`) are
-//! the ladders' `heavy` class; the explosives (grenades, rifle grenades,
-//! bazooka and Panzerschreck) are M1b (docs/plans/active/dods.md).
+//! the ladders' `heavy` class; the explosives (`explosives`: frag and
+//! stick grenades, rifle grenades, bazooka and Panzerschreck) the
+//! ladders' `grenade` and `launcher` classes. Draw and empty-reload times
+//! are weapons.md's measured table (the data's `draw` and `[magazine]
+//! reload`).
 //!
-//! Known shortcuts (beside `gun`'s and `hit_slow`'s): reload and draw
-//! times are stand-ins (weapons.md, open questions 9 and 10); no kill
-//! icons or HUD (M3); the melee swing's reach and box and the backstab's
-//! cone are CS:S's knife's (damage.md, open question 4).
+//! Known shortcuts (beside `gun`'s, `hit_slow`'s and `explosives`'): a
+//! partial reload takes the empty one's time (unmeasured); no kill icons
+//! or HUD (M3); the melee swing's reach and box and the backstab's cone
+//! are CS:S's knife's (damage.md, open question 4).
 
 use bevy::prelude::*;
 use chimera_sim::weapon::data::{WeaponDataAppExt, WeaponSet};
@@ -29,6 +32,7 @@ use source_engine::content::{material::MaterialLoader, props, surfaceprops::Surf
 
 use crate::map::GameKit;
 
+pub mod explosives;
 pub mod gun;
 pub mod hit_slow;
 pub mod mg;
@@ -60,6 +64,12 @@ pub const DATA: &[(&str, chimera_core::game_data::GameData)] = &[
     data_file!("m1carbine.toml"),
     data_file!("amerknife.toml"),
     data_file!("spade.toml"),
+    data_file!("frag_us.toml"),
+    data_file!("frag_ger.toml"),
+    data_file!("riflegren_us.toml"),
+    data_file!("riflegren_ger.toml"),
+    data_file!("bazooka.toml"),
+    data_file!("pschreck.toml"),
 ];
 
 /// The hooks' names.
@@ -85,12 +95,21 @@ pub const C96: &str = "dods:weapon_c96";
 pub const M1CARBINE: &str = "dods:weapon_m1carbine";
 pub const KNIFE: &str = "dods:weapon_amerknife";
 pub const SPADE: &str = "dods:weapon_spade";
+pub const FRAG_US: &str = "dods:weapon_frag_us";
+pub const FRAG_GER: &str = "dods:weapon_frag_ger";
+pub const RIFLEGREN_US: &str = "dods:weapon_riflegren_us";
+pub const RIFLEGREN_GER: &str = "dods:weapon_riflegren_ger";
+pub const BAZOOKA: &str = "dods:weapon_bazooka";
+pub const PSCHRECK: &str = "dods:weapon_pschreck";
 
 /// Every gun of DoD:S's data (the melee weapons apart: `MELEE`).
 pub const GUNS: &[&str] = &[GARAND, K98, SPRING, K98_SCOPED, THOMPSON, MP40, BAR, MP44, CAL30, MG42, COLT, P38, C96, M1CARBINE];
 
 /// The melee weapons.
 pub const MELEE: &[&str] = &[KNIFE, SPADE];
+
+/// The explosives (M1b: `explosives`).
+pub const EXPLOSIVES: &[&str] = &[FRAG_US, FRAG_GER, RIFLEGREN_US, RIFLEGREN_GER, BAZOOKA, PSCHRECK];
 
 /// The server documents' name of DoD:S's weapon set (`server_docs`).
 pub const SERVER_DOCS: &str = "dods:weapons";
@@ -160,6 +179,7 @@ pub fn register_hooks(app: &mut App) {
         .register_weapon_hook::<super::player_anim::BodyAnim>(super::player_anim::BODY_ANIM_HOOK, |e, _, p| {
             e.insert(p.clone());
         });
+    explosives::register_hooks(app);
 }
 
 /// `dods:melee`'s parameters: the script it reads (`script_numbers`).
@@ -194,12 +214,26 @@ impl Plugin for DodsGunsPlugin {
         app.server_weapon_docs(SERVER_DOCS, set, numbers.docs.clone());
         app.insert_resource(numbers);
         chimera_core::character::CharacterPartsExt::on_every_character::<hit_slow::DodsSlowed>(app);
-        app.add_systems(Predict::Weapons, gun::before_frame.before(WeaponFrame)).add_systems(
+        app.add_systems(
+            Predict::Weapons,
+            (
+                (gun::before_frame, explosives::shoulders).before(WeaponFrame),
+                explosives::pins.after(chimera_sim::weapon::grenade::ThrowFrame),
+                gun::sights.after(WeaponFrame),
+            ),
+        )
+        .add_systems(
+            FixedUpdate,
+            (
+                explosives::rifle_shots.after(WeaponFrame).in_set(SimSet::Weapons).run_if(crate::core::authoritative),
+                explosives::looks.after(SimSet::Weapons),
+            ),
+        )
+        .add_systems(
             FixedUpdate,
             (
                 hit_slow::on_hit.after(SimSet::Weapons).after(crate::core::apply_damage),
-                hit_slow::hold.before(SimSet::Movement),
-                super::stamina::tick.after(SimSet::Weapons),
+                super::stamina::mg_shots.after(SimSet::Weapons),
             )
                 .run_if(crate::core::authoritative),
         );

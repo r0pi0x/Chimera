@@ -5,8 +5,8 @@ id = "dods:weapon_30cal"
 base = "dods:gun"
 class = "heavy"
 slot = 0
-# Unmeasured (weapons.md, open question 10): a stand-in draw time.
-draw = 1.0
+# Measured (weapons.md, "Draw and reload times").
+draw = 1.3334
 weight = 25
 
 [ammo."dods:30cal"]
@@ -20,8 +20,8 @@ cycle = 0.1
 [magazine]
 clip = 150
 ammo = "dods:30cal"
-# Unmeasured (weapons.md, open question 9: the view model's sequence).
-reload = 2.5
+# Measured, empty (weapons.md, "Draw and reload times"); deployed only (`dods:mg`).
+reload = 4.6
 
 [hitscan]
 pellets = 1
@@ -40,9 +40,13 @@ move_penalty = 0.1
 recoil = 20.0
 
 [hooks."dods:mg"]
-# weapons.md, "Alt fire" (measured): the first shot about 1.2 s after
-# deploying; 15 stamina a shot fired undeployed (100 to 85; open question 4).
-deploy_time = 1.2
+# weapons.md, "Alt fire" (measured): the first shot 1.2163 s after
+# deploying, the next 1.3635 s after undeploying; 45 degrees either way
+# of the deploy (the limit fields); 15 stamina a shot fired undeployed
+# (100 to 85; open question 4).
+deploy_time = 1.2163
+undeploy_time = 1.3635
+yaw_limit = 45.0
 stamina_per_shot = 15.0
 
 [hooks."dods:body_anim"]

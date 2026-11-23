@@ -5,8 +5,8 @@ id = "dods:weapon_thompson"
 base = "dods:gun"
 class = "smg"
 slot = 0
-# Unmeasured (weapons.md, open question 10): a stand-in draw time.
-draw = 1.0
+# Measured (weapons.md, "Draw and reload times").
+draw = 0.9376
 weight = 25
 
 [ammo."dods:thompson"]
@@ -20,8 +20,8 @@ cycle = 0.085
 [magazine]
 clip = 30
 ammo = "dods:thompson"
-# Unmeasured (weapons.md, open question 9: the view model's sequence).
-reload = 2.5
+# Measured, empty (weapons.md, "Draw and reload times").
+reload = 3.0
 
 [hitscan]
 pellets = 1

@@ -129,6 +129,12 @@ pub fn apply_script(data: &Kv, doc: &mut Table) -> Applied {
             swing.insert("sound_miss".into(), Value::String(s));
             out.set.push("[melee.primary] sounds");
         }
+    } else if explosive(doc) {
+        // An explosive's blast isn't its script's `Damage` (damage.md,
+        // "Explosions") and its cycle is measured: its clip, spare clips,
+        // sounds and models only.
+        apply_clips(data, doc, &mut out, &num);
+        apply_sounds(data, doc, &mut out);
     } else {
         if let Some(d) = num("Damage", &mut out.notes) {
             table(doc, "damage").insert("amount".into(), Value::Float(d));
@@ -159,31 +165,8 @@ pub fn apply_script(data: &Kv, doc: &mut Table) -> Applied {
             table(doc, "trigger").insert("cycle".into(), Value::Float(d));
             out.set.push("[trigger] cycle");
         }
-        let clip = num("clip_size", &mut out.notes).filter(|c| *c >= 1.0).map(|c| c as i64);
-        if let Some(c) = clip {
-            table(doc, "magazine").insert("clip".into(), Value::Integer(c));
-            out.set.push("[magazine] clip");
-        }
-        let clip = clip.or_else(|| doc.get("magazine")?.get("clip")?.as_integer());
-        let ammo = doc.get("magazine").and_then(|m| m.get("ammo")).and_then(Value::as_str).map(str::to_string);
-        if let (Some(spare), Some(clip), Some(ammo)) = (num("DefaultAmmoClips", &mut out.notes), clip, ammo)
-            && spare >= 0.0
-        {
-            table(table(doc, "ammo"), &ammo).insert("max".into(), Value::Integer(spare as i64 * clip));
-            out.set.push("ammo max");
-        }
-        let sounds = data.get("SoundData");
-        let sound = |k: &str| sounds.and_then(|s| s.str(k)).map(str::trim).filter(|s| !s.is_empty()).map(own_sound);
-        let mut any = false;
-        for (from, to) in [("single_shot", "fire"), ("empty", "empty"), ("deploy", "deploy"), ("reload", "world_reload")] {
-            if let Some(s) = sound(from) {
-                table(doc, "sounds").insert(to.into(), Value::String(s));
-                any = true;
-            }
-        }
-        if any {
-            out.set.push("[sounds]");
-        }
+        apply_clips(data, doc, &mut out, &num);
+        apply_sounds(data, doc, &mut out);
     }
     let model = |k: &str| data.str(k).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
     if let Some(v) = model("viewmodel") {
@@ -197,6 +180,50 @@ pub fn apply_script(data: &Kv, doc: &mut Table) -> Applied {
         out.set.push("[models] world");
     }
     out
+}
+
+/// Whether `doc` is an explosive's (`explosives`' hooks).
+fn explosive(doc: &Table) -> bool {
+    doc.get("hooks").is_some_and(|h| {
+        [super::explosives::GRENADE_HOOK, super::explosives::RIFLE_GRENADE_HOOK, super::explosives::ROCKET_HOOK].iter().any(|k| h.get(*k).is_some())
+    })
+}
+
+/// `clip_size` (`[magazine] clip`) and `DefaultAmmoClips` (its ammo's
+/// `max`: that many spare clips).
+fn apply_clips(data: &Kv, doc: &mut Table, out: &mut Applied, num: &dyn Fn(&str, &mut Vec<String>) -> Option<f64>) {
+    let clip = num("clip_size", &mut out.notes).filter(|c| *c >= 1.0).map(|c| c as i64);
+    if let Some(c) = clip
+        && doc.contains_key("magazine")
+    {
+        table(doc, "magazine").insert("clip".into(), Value::Integer(c));
+        out.set.push("[magazine] clip");
+    }
+    let clip = clip.or_else(|| doc.get("magazine")?.get("clip")?.as_integer());
+    let ammo = doc.get("magazine").and_then(|m| m.get("ammo")).and_then(Value::as_str).map(str::to_string);
+    if let (Some(spare), Some(clip), Some(ammo)) = (num("DefaultAmmoClips", &mut out.notes), clip, ammo)
+        && spare >= 0.0
+    {
+        table(table(doc, "ammo"), &ammo).insert("max".into(), Value::Integer(spare as i64 * clip));
+        out.set.push("ammo max");
+    }
+    let _ = data;
+}
+
+/// The `SoundData` block's shot, empty, deploy and reload entries.
+fn apply_sounds(data: &Kv, doc: &mut Table, out: &mut Applied) {
+    let sounds = data.get("SoundData");
+    let sound = |k: &str| sounds.and_then(|s| s.str(k)).map(str::trim).filter(|s| !s.is_empty()).map(own_sound);
+    let mut any = false;
+    for (from, to) in [("single_shot", "fire"), ("empty", "empty"), ("deploy", "deploy"), ("reload", "world_reload")] {
+        if let Some(s) = sound(from) {
+            table(doc, "sounds").insert(to.into(), Value::String(s));
+            any = true;
+        }
+    }
+    if any {
+        out.set.push("[sounds]");
+    }
 }
 
 fn to_label(key: &str) -> &'static str {
@@ -228,7 +255,9 @@ fn round_cycle(doc: &mut Table) {
 /// The script a document names (`dods:gun`'s or `dods:melee`'s `script`).
 pub fn script_of(doc: &Table) -> Option<String> {
     let hooks = doc.get("hooks")?;
-    let h = hooks.get(super::GUN_HOOK).or_else(|| hooks.get(super::MELEE_HOOK))?;
+    let h = [super::GUN_HOOK, super::MELEE_HOOK, super::explosives::GRENADE_HOOK, super::explosives::RIFLE_GRENADE_HOOK, super::explosives::ROCKET_HOOK]
+        .iter()
+        .find_map(|k| hooks.get(*k))?;
     h.get("script")?.as_str().map(str::to_string)
 }
 

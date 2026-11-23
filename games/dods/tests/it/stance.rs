@@ -3,8 +3,7 @@
 //! specs/dods/movement.md's and weapons.md's test cases: `+alt1` eases the
 //! eye to 10 over 80 ticks with the standing box kept to the 79th and the
 //! 24-high box on the 80th, no movement meanwhile; a crawl of 7.5, 9.0,
-//! then 50 units/s, the sprint key changing nothing; getting up (a
-//! stand-in time); the .30 cal deployed by the alt fire while prone, its
+//! then 50 units/s, the sprint key changing nothing; getting up; the .30 cal deployed by the alt fire while prone, its
 //! first shot no sooner than 1.2 s later, a shot every 7 ticks, its sights'
 //! spread, no movement and no stamina spent; fired standing, 100 to 85 on
 //! the first shot and 8.7 less a shot after; the machine guns in the
@@ -130,7 +129,7 @@ fn alt1_again_gets_up_to_the_standing_box() {
     let p = prone_player(&mut sim);
     press_prone(&mut sim, p);
     assert_eq!(stance_of(&sim, p).stance, Stance::GettingUp);
-    assert!((hull_top(&sim, p) - 24.0).abs() < 0.01, "the low box while getting up");
+    assert!((hull_top(&sim, p) - 72.0).abs() < 0.01, "the standing box at once");
     sim.seconds(stance::GET_UP as f64 + 0.1);
     assert_eq!(stance_of(&sim, p).stance, Stance::Up);
     assert!((hull_top(&sim, p) - 72.0).abs() < 0.01, "standing: {}", hull_top(&sim, p));
@@ -167,7 +166,7 @@ fn fire_ticks(sim: &mut Sim, p: Entity, n: u64, mut input: impl FnMut(&mut Sim, 
 }
 
 fn stamina(sim: &Sim, p: Entity) -> f32 {
-    sim.app.world().get::<DodsStamina>(p).unwrap().0
+    sim.app.world().get::<DodsStamina>(p).unwrap().value
 }
 
 #[test]
@@ -239,4 +238,66 @@ fn the_machine_guns_are_the_ladders_heavy_class() {
         assert_eq!(w.class, Some(chimera_core::game_parts::GunClass::Heavy), "{id}");
         assert!(w.hooks.contains_key(weapons::MG_HOOK), "{id}");
     }
+}
+
+#[test]
+fn the_30cal_reloads_only_deployed_and_waits_after_undeploying() {
+    let mut sim = sim();
+    let p = prone_player(&mut sim);
+    let w = hold(&mut sim, p, CAL30);
+    sim.intent(p).pitch = 1.2;
+    let mag = |s: &Sim| s.app.world().get::<chimera_sim::weapon::Magazine>(w).unwrap().clip;
+    // Undeployed: the reload key does nothing.
+    sim.app.world_mut().get_mut::<chimera_sim::weapon::Magazine>(w).unwrap().clip = 0;
+    sim.intent(p).reload = true;
+    sim.seconds(5.0);
+    sim.intent(p).reload = false;
+    assert_eq!(mag(&sim), 0, "no reload undeployed");
+    // Deployed: 150 rounds 4.6 s after the reload starts.
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    assert!(stance_of(&sim, p).deployed);
+    let mut cursor = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();
+    let (mut started, mut full) = (None, None);
+    for t in 0..700u64 {
+        sim.intent(p).reload = true;
+        sim.ticks(1);
+        let events = sim.app.world().resource::<Messages<WeaponEvent>>();
+        if cursor.read(events).any(|e| e.owner == p && matches!(e.kind, WeaponEventKind::ReloadStarted)) && started.is_none() {
+            started = Some(t);
+        }
+        if mag(&sim) == 150 && full.is_none() {
+            full = Some(t);
+        }
+    }
+    sim.intent(p).reload = false;
+    let took = (full.expect("full") - started.expect("a reload")) as f64 * TICK_INTERVAL;
+    assert!((4.59..4.63).contains(&took), "the reload took {took} s");
+    // Undeployed again: the next shot 1.3635 s on.
+    let shots = fire_ticks(&mut sim, p, 120, |s, t| {
+        s.intent(p).secondary = t == 0;
+        s.intent(p).fire = true;
+    });
+    assert!(!stance_of(&sim, p).deployed);
+    let first = *shots.first().expect("fires undeployed");
+    assert!(first as f64 * TICK_INTERVAL >= 1.3635 - 1e-3 && (first as f64 * TICK_INTERVAL) < 1.4, "{first} ticks");
+}
+
+#[test]
+fn turning_past_45_degrees_undeploys() {
+    let mut sim = sim();
+    let p = prone_player(&mut sim);
+    hold(&mut sim, p, CAL30);
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    assert!(stance_of(&sim, p).deployed);
+    let yaw = sim.intent(p).yaw;
+    sim.intent(p).yaw = yaw + 40f32.to_radians();
+    sim.ticks(2);
+    assert!(stance_of(&sim, p).deployed, "40 degrees");
+    sim.intent(p).yaw = yaw + 50f32.to_radians();
+    sim.ticks(1);
+    assert!(!stance_of(&sim, p).deployed, "50 degrees");
 }

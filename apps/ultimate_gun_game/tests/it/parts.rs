@@ -41,12 +41,12 @@ fn each_game_reports_what_it_lends() {
     // own cannon (a rung of its own, dealt only with campaign bodies on)
     // with its movement, and claims no map (they come from its disc image:
     // tests/it/halo_maps.rs in party_kit). The others as before.
-    // DoD:S lends its M1a guns (the machine guns wait for M2) with its
-    // knife and movement, and claims no pool map yet (docs/plans/active/
-    // dods.md).
+    // DoD:S lends its guns (M1a's, the machine guns, M1b's launchers) and
+    // its two grenades with its knife and movement, and claims no pool map
+    // yet (docs/plans/active/dods.md).
     let dods = report.remove(report.iter().position(|c| c.game == "dods").unwrap());
     assert!(dods.playable() && dods.missing.is_empty() && dods.maps.is_empty() && dods.knife.is_some(), "{}", dods.line());
-    let lent = party_roster::GAME_PARTS.iter().find(|p| p.game == "dods").unwrap().guns.len();
+    let lent = party_roster::GAME_PARTS.iter().find(|p| p.game == "dods").unwrap().guns.iter().filter(|g| g.class != GunClass::Grenade).count();
     assert!(lent >= 12 && dods.guns.len() == lent, "{}", dods.line());
     let halo = report.remove(2);
     assert!(halo.playable() && halo.missing.is_empty() && halo.maps.is_empty(), "{}", halo.line());

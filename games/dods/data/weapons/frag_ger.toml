@@ -1,0 +1,42 @@
+# The German stick grenade (specs/dods/weapons.md, "Grenades"; damage.md,
+# "Explosions"; measured): one in hand, thrown with the attack (left
+# click). The pin comes out on the press and the fuse runs from it, thrown
+# or not: it goes off 5.1 s after the press (335-347 ticks measured), in
+# the hand when held that long. Thrown from the eye at 500 units/s, 10
+# degrees above the aim squeezed (aiming A up: 10 + A x 80/90; D down:
+# 10 - D x 100/90), faster aiming higher (4.18 x (90 + the elevation), at
+# most dod_grenademaxspeed 1400), under dod_grenadegravity 420. The blast
+# 150 x (1 - r / 375), a clear line needed, the thrower hurt too (the
+# script's Damage 180 isn't it). Both nations' alike (measured).
+id = "dods:weapon_frag_ger"
+base = "dods:base"
+# A grenade that kills: the ladders' grenade rung.
+class = "grenade"
+slot = 3
+# Unmeasured: a stand-in draw time.
+draw = 1.0
+weight = 1
+undroppable = true
+
+[hooks."dods:grenade"]
+script = "weapon_frag_ger"
+damage = 150.0
+radius = 375.0
+fuse = 5.1
+gravity = 420.0
+lift = 10.0
+scale_up = 0.888889
+scale_down = 1.111111
+# Fitted to the measured speeds aiming up (527-716 at 30-80 degrees up).
+speed_per_deg = 4.18
+speed_min = 500.0
+speed_max = 1400.0
+# Unmeasured (ours): the pin's least time, release to throw, the throw,
+# the redraw.
+pin_time = 0.1
+throw_delay = 0.1
+throw_time = 0.5
+redraw_time = 0.5
+
+[hud]
+name = "Stick grenade"

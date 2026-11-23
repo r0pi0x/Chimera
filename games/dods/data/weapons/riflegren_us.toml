@@ -1,0 +1,48 @@
+# The US rifle grenade (specs/dods/weapons.md, "Rifle grenades"; damage.md,
+# "Explosions"; measured): the rifleman's second weapon, a launcher with
+# one round in it and two spare (the script's clip and spare clips),
+# fired from the eye along the aim at 2000 units/s, falling under gravity
+# and drag together (440-456 units/s², 448 here), bouncing, going off 3.63 s
+# after the shot whatever it meets: 150 x (1 - r / 375) (the grenade
+# entity's numbers; the script's Damage 100 isn't it). Unmeasured: its
+# draw and reload (weapons.md, open question 9; stand-ins giving the
+# measured next shot 1.0 s after one).
+id = "dods:weapon_riflegren_us"
+base = "dods:base"
+class = "launcher"
+slot = 1
+draw = 1.0
+weight = 20
+
+[ammo."dods:riflegren_us"]
+max = 2
+
+[trigger]
+automatic = false
+cycle = 0.5
+timing = "set"
+
+[magazine]
+clip = 1
+ammo = "dods:riflegren_us"
+reload = 0.5
+auto_reload = true
+
+# Without [damage] the frame traces nothing: the round is a grenade
+# (`dods:rifle_grenade`).
+[hitscan]
+range = 8192.0
+pellets = 1
+punch_scale = 0.0
+spread = { cone = 0.0 }
+
+[hooks."dods:rifle_grenade"]
+script = "weapon_riflegren_us"
+damage = 150.0
+radius = 375.0
+speed = 2000.0
+gravity = 448.0
+fuse = 3.63
+
+[hud]
+name = "M1 Garand rifle grenade"

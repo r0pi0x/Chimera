@@ -5,8 +5,8 @@ id = "dods:weapon_mp40"
 base = "dods:gun"
 class = "smg"
 slot = 0
-# Unmeasured (weapons.md, open question 10): a stand-in draw time.
-draw = 1.0
+# Measured (weapons.md, "Draw and reload times").
+draw = 1.4001
 weight = 25
 
 [ammo."dods:mp40"]
@@ -20,8 +20,8 @@ cycle = 0.09
 [magazine]
 clip = 30
 ammo = "dods:mp40"
-# Unmeasured (weapons.md, open question 9: the view model's sequence).
-reload = 2.5
+# Measured, empty (weapons.md, "Draw and reload times").
+reload = 3.3636
 
 [hitscan]
 pellets = 1

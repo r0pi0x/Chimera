@@ -294,8 +294,17 @@ hud_icon = "ammo_762"
   (`damage`: a `chimera:projectile` needle's hit by distance). DoD:S's (games/dods/src/game/weapons/): `dods:gun` (`script`,
   `accuracy`, `alt_accuracy`, `move_penalty`, `recoil`, `reload_when_empty`:
   the script's spread by sights and movement, the sights' step blocking the
-  trigger), `dods:melee` (`script`) and `dods:hit_slow` (`body`, `legs`:
-  seconds a hit slows its victim); each weapon's numbers its script's over
+  trigger), `dods:melee` (`script`), `dods:hit_slow` (`body`, `legs`:
+  seconds a hit slows its victim), `dods:mg` (`deploy_time`,
+  `undeploy_time`, `yaw_limit`, `stamina_per_shot`), `dods:grenade`
+  (`script`, `damage`, `radius`, `fuse` from the pin, `gravity`, the throw's
+  `lift`, `scale_up`, `scale_down`, `speed_per_deg`, `speed_min`,
+  `speed_max` and `pin_time`, `throw_delay`, `throw_time`, `redraw_time`:
+  a `Throwable` whose projectile DoD:S makes), `dods:rifle_grenade`
+  (`script`, `damage`, `radius`, `speed`, `gravity`, `fuse`: each round a
+  grenade) and `dods:rocket` (`script`, `damage`, `radius`,
+  `shoulder_time`, `unshoulder_time`: a `chimera:projectile` rocket's blast
+  and the launcher's shouldering); each weapon's numbers its script's over
   the committed document (`script_numbers`). A gun's
   `[models] view_offset` moves its view model (`tf2::game::view`).
 - **Chimera's flyers** (`chimera:projectile`, `LauncherParams`): beside

@@ -31,7 +31,9 @@
 //! TF2's classes), and a game's own stance beyond standing and ducking
 //! its box, eye, speed and jump (`SourceStance`: DoD:S's prone, held as a
 //! lower ducked box; leaving it stands up where there is room, else stays
-//! ducked until there is). A game's push (`core::ExternalPush`, TF2's knockback)
+//! ducked until there is, or lands ducked as if duck were held: a crouch;
+//! a stance held is no duck for the input's scale), and an unduck that
+//! counts its release tick (`unduck_counts_first_tick`: DoD:S's). A game's push (`core::ExternalPush`, TF2's knockback)
 //! is honoured as every movement does: a lift takes the body off the
 //! ground as logic does (`BaseVelocity::unground`); its ground limit cuts
 //! the horizontal speed, after the first grounded tick's friction, to
@@ -319,6 +321,11 @@ pub struct SourceMovementConfig {
     /// measured: the eye 64.68 on the press tick of a Scout's duck, the box
     /// switched on the 14th); the shared code's first tick is 0 in.
     pub duck_counts_first_tick: bool,
+    /// The unduck's timer alone counts the tick of the release (DoD:S,
+    /// measured: the eye 34.385 on the release tick, the standing box on
+    /// the 14th, 0.21 s; its duck doesn't: specs/dods/movement.md
+    /// "Getting up").
+    pub unduck_counts_first_tick: bool,
     /// A jump caps the speed (3D) at this times the player's max speed P
     /// (TF2's 1.2: the cap follows the class, a weapon's lower speed too;
     /// not reduced by the surface or the ceiling); 0: `bunnyhop_cap` alone.
@@ -635,6 +642,7 @@ impl SourceMovementConfig {
             half_width: 16.0,
             duck_time: 0.4,
             duck_counts_first_tick: false,
+            unduck_counts_first_tick: false,
             bunnyhop_cap_scale: 0.0,
             back_speed: 1.0,
             back_min_speed: 100.0,
@@ -734,12 +742,18 @@ pub struct SourceSpeed(pub f32);
 ///   (`SourceSpeed`), the traits' and the held weapon's; a hit's velocity
 ///   modifier still scales it.
 /// - `no_jump`: the jump key does nothing.
+/// - `crouch`: with `height`, leaving the stance lands ducked, as if duck
+///   had been held all along: still held, the character stays ducked;
+///   let go, it stands up by the usual unduck (DoD:S's prone to a crouch:
+///   specs/dods/movement.md "Getting up").
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SourceStance {
     pub height: Option<f32>,
     pub eye: Option<f32>,
     pub max_speed: Option<f32>,
     pub no_jump: bool,
+    #[serde(default)]
+    pub crouch: bool,
 }
 
 impl SourceStance {
@@ -994,9 +1008,12 @@ pub struct SourceMovement {
     pub duck_key: bool,
     #[serde(default)]
     pub reduck_timer: f32,
-    /// Held in a game's low stance last tick (`SourceStance::height`).
+    /// Held in a game's low stance last tick (`SourceStance::height`),
+    /// and whether it was a crouch (`SourceStance::crouch`).
     #[serde(default)]
     pub stance_low: bool,
+    #[serde(default)]
+    pub stance_crouch: bool,
 }
 
 impl Default for SourceMovement {
@@ -1041,6 +1058,7 @@ impl Default for SourceMovement {
             duck_key: false,
             reduck_timer: 0.0,
             stance_low: false,
+            stance_crouch: false,
         }
     }
 }
@@ -2633,6 +2651,7 @@ impl Mover<'_, '_, '_, '_> {
         self.me.duck_held = false;
         self.me.duck_timer = 0.0;
         self.me.stance_low = true;
+        self.me.stance_crouch = self.stance.crouch;
     }
 
     /// Out of a game's low stance: up at once where the standing box fits,
@@ -2642,6 +2661,14 @@ impl Mover<'_, '_, '_, '_> {
             return;
         }
         self.me.stance_low = false;
+        if std::mem::take(&mut self.me.stance_crouch) {
+            // A crouch: ducked, duck as if held (`SourceStance::crouch`).
+            self.me.ducked = true;
+            self.me.ducking = false;
+            self.me.duck_held = true;
+            self.me.eye = self.cfg.eye_duck;
+            return;
+        }
         if self.can_stand() {
             self.me.ducked = false;
             self.me.ducking = false;
@@ -2706,7 +2733,11 @@ impl Mover<'_, '_, '_, '_> {
         } else if self.me.ducked || self.me.ducking {
             if released {
                 if !self.me.ducking || self.me.ducked {
-                    self.me.duck_timer = self.duck_timer_start();
+                    self.me.duck_timer = if self.cfg.unduck_counts_first_tick {
+                        DUCK_TIMER_START - 1000.0 * self.dt
+                    } else {
+                        self.duck_timer_start()
+                    };
                 } else if !self.cfg.unduck_keeps_duck_timer {
                     // Released partway down: the unduck starts from the
                     // matching point (shared code).
@@ -2918,7 +2949,9 @@ impl Mover<'_, '_, '_, '_> {
         }
         let water_before = self.me.water_level;
         self.footsteps();
-        let was_ducking = self.me.ducked || self.me.ducking;
+        // A game's low stance held last tick is no duck (its own speed:
+        // `SourceStance::max_speed`), so leaving it isn't slowed.
+        let was_ducking = (self.me.ducked || self.me.ducking) && !self.me.stance_low;
         let low = self.stance.height.is_some();
         let mut scale = if low {
             self.hold_stance();

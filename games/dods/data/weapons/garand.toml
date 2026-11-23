@@ -5,8 +5,8 @@ id = "dods:weapon_garand"
 base = "dods:gun"
 class = "rifle"
 slot = 0
-# Unmeasured (weapons.md, open question 10): a stand-in draw time.
-draw = 1.0
+# Measured (weapons.md, "Draw and reload times").
+draw = 0.9375
 weight = 25
 
 [ammo."dods:garand"]
@@ -20,8 +20,8 @@ cycle = 0.37
 [magazine]
 clip = 8
 ammo = "dods:garand"
-# Unmeasured (weapons.md, open question 9: the view model's sequence).
-reload = 2.5
+# Measured, empty (weapons.md, "Draw and reload times").
+reload = 1.6286
 
 [hitscan]
 pellets = 1
@@ -36,7 +36,8 @@ amount = 80.0
 kind = "scope"
 # Iron sights (weapons.md, "Alt fire"): the next shot waits 0.49 s
 # (measured on the Garand; `dods:gun` makes the step block the primary).
-# The sighted field of view is unmeasured: a stand-in.
+# The sights' field of view, 55 (measured; `dods:gun` sets it 0.315 s
+# after the press).
 fov = [55.0]
 step = 0.49
 

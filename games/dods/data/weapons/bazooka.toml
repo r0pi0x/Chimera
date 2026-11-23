@@ -1,0 +1,55 @@
+# The Bazooka (specs/dods/weapons.md, "Rockets", "Alt fire"; damage.md,
+# "Explosions"; measured): shouldered by the alt fire (the next shot
+# 0.79 s later; again, or held past that, lowered: 0.99 s), it fires only
+# shouldered, its holder then at most 50 units/s. The rocket leaves the
+# eye along the aim at 1300 units/s with 0.1 of the gravity (80 units/s²)
+# and explodes on a player, and on the world by the spec's party rule
+# (the dedicated server's rockets didn't; open question 12): 150 x (1 - r
+# / 200) (mp_rocketdamage, mp_rocketradius). One in the launcher, five
+# spare (the script's); the next rocket 1.5 s after one (measured; the
+# reload a stand-in that gives it: open question 9).
+id = "dods:weapon_bazooka"
+base = "dods:base"
+class = "launcher"
+slot = 0
+# Measured (weapons.md, "Draw and reload times").
+draw = 1.0
+weight = 25
+
+[ammo."dods:bazooka"]
+max = 5
+
+[trigger]
+automatic = false
+cycle = 1.0
+timing = "set"
+
+[magazine]
+clip = 1
+ammo = "dods:bazooka"
+reload = 0.5
+auto_reload = true
+
+# Without [damage] the frame traces nothing: the round is a rocket.
+[hitscan]
+range = 8192.0
+pellets = 1
+punch_scale = 0.0
+spread = { cone = 0.0 }
+
+[hooks."chimera:projectile"]
+speed = 1300.0
+gravity = 80.0
+touch = "explode"
+half = [2.0, 2.0, 2.0]
+life = 10.0
+
+[hooks."dods:rocket"]
+script = "weapon_bazooka"
+damage = 150.0
+radius = 200.0
+shoulder_time = 0.79
+unshoulder_time = 0.99
+
+[hud]
+name = "Bazooka"

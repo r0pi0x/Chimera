@@ -1,0 +1,27 @@
+# DoD:S's bazooka on its own map (a scene script: chimera_client's
+# `scene`; games/dods weapons::explosives): shouldered with the alt fire,
+# a rocket fired at the ground a few metres ahead and its blast (Source's
+# explosion), photographed just after it goes off.
+#   CHIMERA_DODS_ROOT=<install> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 \
+#       +sandbox dods:dod_avalanche --scene apps/ultimate_gun_game/scenes/dods_bazooka.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 2
+wait_for idle
+wait 120
+god
+rung dods:weapon_bazooka
+wait 120
+setang 25 0
++attack2
+wait 2
+-attack2
+wait 90
+shot bazooka_before
+shot_after blast 3 bazooka_blast_a
+shot_after blast 12 bazooka_blast_b
++attack
+wait 2
+-attack
+wait_for blast 600
+wait 60

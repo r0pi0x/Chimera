@@ -5,8 +5,8 @@ id = "dods:weapon_spring"
 base = "dods:gun"
 class = "sniper"
 slot = 0
-# Unmeasured (weapons.md, open question 10): a stand-in draw time.
-draw = 1.0
+# Measured (weapons.md, "Draw and reload times").
+draw = 1.3334
 weight = 25
 
 [ammo."dods:spring"]
@@ -20,8 +20,8 @@ cycle = 1.85
 [magazine]
 clip = 5
 ammo = "dods:spring"
-# Unmeasured (weapons.md, open question 9: the view model's sequence).
-reload = 2.5
+# Measured, empty (weapons.md, "Draw and reload times").
+reload = 4.5
 
 [hitscan]
 pellets = 1
@@ -35,7 +35,8 @@ amount = 120.0
 [alt]
 kind = "scope"
 # The scope (weapons.md, "Alt fire": as the iron sights, 0.49 s before
-# the next shot). Its field of view is unmeasured: a stand-in.
+# the next shot). Its field of view, 20 (measured; `dods:gun` sets it 0.315 s after the
+# press).
 fov = [20.0]
 overlay = true
 step = 0.49

@@ -5,7 +5,14 @@
 //! step 18, the measured ground friction (a drop of max(speed, 50) x 8 per
 //! second: friction 8 over a control speed of 50, the same law), the
 //! 32 x 32 x 72 standing box with its eye at 58, ducked 45 high with its
-//! eye at 34 over ≈0.42 s, ducked a third of the speed. Its box is the
+//! eye at 34 over 0.4 s (the measured 28 ticks: the shared code's duck),
+//! ducked a third of the speed, up again in 0.21 s (the unduck's timer
+//! counting its release tick: the measured eye curve), the jump 262.33
+//! units/s standing and 268.33 ducked (apex 43 and 45; no stamina cost;
+//! one impulse, `config`),
+//! and the ground speed clamped to the tick's cap (`ground_clamp`: the
+//! stamina's caps and the slow cap the speed itself, not the wish:
+//! movement.md, "Stamina and sprint"). Its box is the
 //! envelope its maps carry (`chimera_core::envelope`, registered by
 //! `source_movement`), so other games' characters fit on its maps and its
 //! own on theirs.
@@ -13,13 +20,15 @@
 //! With it go a DoD:S player's own parts, on and off in one move with the
 //! movement (`put_on`, `leave`, `take_off`): its stance (`stance`: prone
 //! and the deployed machine guns, handed to Source's movement as its
-//! `SourceStance` each tick, before the step) and its stamina (`stamina`).
+//! `SourceStance` each tick, before the step, with the tick's speed cap)
+//! and its stamina and sprint (`stamina`, after the stance: the cap reads
+//! the stamina the tick started with).
 //! `+alt1` (`stance::PRONE_ACTION`) is a named action.
 //!
 //! Known shortcuts:
-//! - The jump is CS:S's stand-in (unmeasured: movement.md, open question
-//!   4), with no stamina cost; no sprint (unmeasured: `stamina`); ladders,
-//!   water and fall damage are the shared code's.
+//! - Ladders, water and fall damage are the shared code's (movement.md,
+//!   open question 7); the caps clamp the ground speed only (in the air
+//!   the air move's own limits).
 
 use bevy::prelude::*;
 use source_engine::source_movement::{
@@ -52,10 +61,15 @@ pub fn config() -> SourceMovementConfig {
         friction: 8.0,
         stopspeed: 50.0,
         gravity: 800.0,
-        maxspeed: RUN_SPEED,
+        // `sv_maxspeed`: no lower than the sprint's top (`stamina`).
+        maxspeed: super::stamina::SPRINT_TOP,
         stepsize: 18.0,
-        // Unmeasured: CS:S's √(2 · 800 · 57) stand-in.
-        jump_impulse: 301.993,
+        // Measured (movement.md, "Jumping"): 262.33 standing, 268.33 ducked
+        // as the vertical speed the jump leaves; Source's jump adds its
+        // impulse to the half tick of gravity already taken standing and
+        // sets it ducked, so one impulse of 268.33 gives both (250.33 and
+        // 256.33 after the tick, apex 43.01 and 45).
+        jump_impulse: 268.33,
         player_maxspeed: RUN_SPEED,
         client_maxspeed: RUN_SPEED,
         key_speed: 450.0,
@@ -66,8 +80,15 @@ pub fn config() -> SourceMovementConfig {
         eye_stand: EYE_STAND,
         eye_duck: EYE_DUCK,
         half_width: 16.0,
-        // 28 ticks of 0.015 s.
-        duck_time: 0.42,
+        // The measured eye curve and the box on the 28th tick (the press
+        // tick 0 s in); the unduck 0.2 s with its release tick counted:
+        // the box stands on the 14th (0.21 s).
+        // The third applies from the duck key's first tick (measured:
+        // +11 u/s from rest).
+        duck_slows_everywhere: true,
+        duck_time: 0.4,
+        unduck_counts_first_tick: true,
+        ground_clamp: true,
         jump_stamina: 0.0,
         enable_bunnyhopping: false,
         bunnyhop_cap: 0.0,
@@ -98,7 +119,11 @@ pub fn add_movement(app: &mut App) {
         .intent_action(super::stance::PRONE_ACTION)
         .predicted_net::<DodsStance>()
         .predicted_net::<SourceStance>()
-        .add_systems(crate::core::Predict::Movement, super::stance::step.before(SourceMovementStep));
+        .predicted_net::<DodsStamina>()
+        .add_systems(
+            crate::core::Predict::Movement,
+            (super::stance::step, super::stamina::step).chain().before(SourceMovementStep),
+        );
     if let Some(mut registry) = app.world_mut().get_resource_mut::<crate::slots::MovementRegistry>()
         && let Some(m) = registry.0.iter_mut().find(|m| m.id == ID)
     {

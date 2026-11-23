@@ -5,8 +5,8 @@ id = "dods:weapon_c96"
 base = "dods:gun"
 class = "pistol"
 slot = 1
-# Unmeasured (weapons.md, open question 10): a stand-in draw time.
-draw = 0.5
+# Measured (weapons.md, "Draw and reload times").
+draw = 1.2501
 weight = 5
 
 [ammo."dods:c96"]
@@ -20,8 +20,8 @@ cycle = 0.065
 [magazine]
 clip = 20
 ammo = "dods:c96"
-# Unmeasured (weapons.md, open question 9: the view model's sequence).
-reload = 2.0
+# Measured, empty (weapons.md, "Draw and reload times").
+reload = 2.6471
 
 [hitscan]
 pellets = 1

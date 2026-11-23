@@ -1,12 +1,12 @@
 # The BAR (specs/dods/weapons.md, "The guns": the script's values):
 # 50 a bullet, 1 bullet a shot, 0.12 s between shots (rounded up to ticks),
-# 20 rounds and 13 spare clips; automatic; sighted, its alt fire delay 0.3 is unapplied (weapons.md, open question 3).
+# 20 rounds and 13 spare clips; automatic; its alt fire selects semi-automatic fire, one shot each 0.3 s at the most.
 id = "dods:weapon_bar"
 base = "dods:gun"
 class = "rifle"
 slot = 0
-# Unmeasured (weapons.md, open question 10): a stand-in draw time.
-draw = 1.0
+# Measured (weapons.md, "Draw and reload times").
+draw = 1.3637
 weight = 25
 
 [ammo."dods:bar"]
@@ -20,8 +20,8 @@ cycle = 0.12
 [magazine]
 clip = 20
 ammo = "dods:bar"
-# Unmeasured (weapons.md, open question 9: the view model's sequence).
-reload = 2.5
+# Measured, empty (weapons.md, "Draw and reload times").
+reload = 2.9767
 
 [hitscan]
 pellets = 1
@@ -33,12 +33,17 @@ spread = { cone = 0.025 }
 amount = 50.0
 
 [alt]
-kind = "scope"
-# Iron sights (weapons.md, "Alt fire"): the next shot waits 0.49 s
-# (measured on the Garand; `dods:gun` makes the step block the primary).
-# The sighted field of view is unmeasured: a stand-in.
-fov = [55.0]
-step = 0.49
+# Fire select (weapons.md, "Alt fire", measured): the alt fire toggles
+# semi-automatic fire, no sights (the field of view unchanged): one shot a
+# press, the next 0.3 s on (`SecondaryFireDelay`), the spread then the
+# script's `SecondaryAccuracy` (`dods:gun`); again, full auto. How long the
+# switch takes is unmeasured: the next attack a tick on.
+kind = "burst"
+count = 1
+interval = 0.0
+refire = 0.3
+once_per_press = true
+step = 0.015
 
 [hooks."dods:gun"]
 script = "weapon_bar"

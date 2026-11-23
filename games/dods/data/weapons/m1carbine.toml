@@ -5,8 +5,8 @@ id = "dods:weapon_m1carbine"
 base = "dods:gun"
 class = "carbine"
 slot = 1
-# Unmeasured (weapons.md, open question 10): a stand-in draw time.
-draw = 0.5
+# Measured (weapons.md, "Draw and reload times").
+draw = 0.7813
 weight = 5
 
 [ammo."dods:m1carbine"]
@@ -20,8 +20,8 @@ cycle = 0.1
 [magazine]
 clip = 15
 ammo = "dods:m1carbine"
-# Unmeasured (weapons.md, open question 9: the view model's sequence).
-reload = 2.0
+# Measured, empty (weapons.md, "Draw and reload times").
+reload = 2.8126
 
 [hitscan]
 pellets = 1

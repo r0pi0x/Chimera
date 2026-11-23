@@ -41,7 +41,10 @@
 //! game_launch`: a `Launch` event on the weapon where the grenade leaves
 //! the hand, the server's only, which the game's observer answers for its
 //! own weapons with a `Projectile` marked `GameFlown` that it flies and
-//! detonates; `Detonated` and the network's drawing still apply). Other
+//! detonates; `Detonated` and the network's drawing still apply). A game's
+//! own grenade made outside a throw (DoD:S's rifle grenade, one going off
+//! in the hand) is a `Projectile::new` it spawns; a game's rules over the
+//! throw go after `ThrowFrame` (DoD:S's fuse from the pin). Other
 //! projectiles (`projectile`'s flyers, a game's own bodies) ask for a
 //! blast with `BlastAt`; `Blast::radius_rule` (`SourceRadius`) is
 //! Source's generic radius damage (HL2:DM's: characters' distance to
@@ -112,6 +115,12 @@ use crate::{
     },
 };
 
+/// The throw's step of the predicted weapon frame (pin, release, the
+/// projectile's launch, redraw), after `weapon::WeaponFrame`: a game's own
+/// grenade rules go after it (DoD:S's fuse from the pin).
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ThrowFrame;
+
 /// Source's voice channel (grenade bounces).
 const CHAN_VOICE: u8 = 2;
 /// Timers due on this tick fire on it (see `TIME_SLACK` in the frame).
@@ -136,7 +145,7 @@ pub(super) fn plugin(app: &mut App) {
         // server's.
         .add_systems(
             crate::core::Predict::Weapons,
-            throw_frame.after(super::WeaponFrame),
+            throw_frame.after(super::WeaponFrame).in_set(ThrowFrame),
         )
         .add_systems(
             FixedUpdate,
@@ -772,6 +781,31 @@ pub struct Projectile {
     /// The breakable it broke into last (a second contact bounces).
     pub breakable: Option<Entity>,
     in_water: bool,
+}
+
+impl Projectile {
+    /// A grenade of weapon `weapon` by `thrower`, leaving at `velocity`
+    /// with `flight`, going off `fuse` seconds after it starts with
+    /// `effect`, spinning at `spin` (radians/s): a game's own grenade made
+    /// outside a throw (DoD:S's rifle grenade, a grenade going off in the
+    /// hand). Spawn it with a `Transform` and its `ShownItem`.
+    pub fn new(weapon: &'static str, thrower: Option<Entity>, velocity: Vec3, flight: Flight, fuse: f32, effect: GrenadeEffect, spin: Vec3) -> Self {
+        Self {
+            velocity,
+            thrower,
+            weapon,
+            flight,
+            fuse,
+            effect,
+            bounce_sound: None,
+            water_sounds: None,
+            ticks: 0,
+            resting: false,
+            spin,
+            breakable: None,
+            in_water: false,
+        }
+    }
 }
 
 /// A smoke cloud: where, when it started, and its rule. Carries a

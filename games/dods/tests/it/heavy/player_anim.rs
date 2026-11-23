@@ -49,11 +49,13 @@ fn setup() -> Option<(Arc<AnimSet>, Vec<(String, String, BodyAnim)>)> {
             .iter()
             .find(|d| d.id == h.key)
             .unwrap_or_else(|| panic!("{}'s data", h.key));
-        let anim: BodyAnim = data
-            .hooks
-            .get(dods::game::player_anim::BODY_ANIM_HOOK)
-            .map(|v| v.clone().try_into().expect("dods:body_anim"))
-            .unwrap_or_else(|| panic!("{} has no dods:body_anim", h.key));
+        // The explosives have no set of their own yet (the Thompson's,
+        // `player_anim::FALLBACK`); every gun has one.
+        let Some(anim) = data.hooks.get(dods::game::player_anim::BODY_ANIM_HOOK) else {
+            assert!(weapons::EXPLOSIVES.contains(&h.key.as_str()), "{} has no dods:body_anim", h.key);
+            continue;
+        };
+        let anim: BodyAnim = anim.clone().try_into().expect("dods:body_anim");
         guns.push((h.key.clone(), h.bone.clone(), anim));
     }
     Some((body.animations.clone().expect("animations"), guns))

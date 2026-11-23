@@ -11,7 +11,15 @@
 //!   hook makes the step block the primary (`AltModes::blocks_primary`).
 //! - **Reload only when empty** (`reload_when_empty`, the Garand's:
 //!   weapons.md "Fire modes"): the reload key does nothing while rounds
-//!   are left (`WeaponState::reload_held`).
+//!   are left (`WeaponState::reload_held`); a machine gun (`dods:mg`)
+//!   reloads only deployed (measured).
+//! - **The sights' and scopes' field of view** (the data's `[alt]` FOV:
+//!   55 the sights, 20 the scopes, measured): the view narrows
+//!   `ZOOM_DELAY` (0.315 s, 21 ticks) after the press and widens at once
+//!   (`sights`, the gun's own zoom: `OwnZoom`).
+//! - **Fire select** (the BAR's and StG44's alt fire, the data's burst of
+//!   one): semi-automatic, the next shot 0.3 s on, `SecondaryAccuracy` the
+//!   spread (sighted counts any alt mode past the first).
 //!
 //! Known shortcuts (docs/tech-debt.md):
 //! - Spread is a plain cone of the script's number; how it combines with
@@ -20,22 +28,32 @@
 //!   `MOVING` (unmeasured).
 //! - `Recoil` is kept in the parameters but gives no view kick: its shape
 //!   and recovery are unmeasured (weapons.md, open question 8).
-//! - The BAR's and StG44's sighted fire delay (0.3, `SecondaryFireDelay`)
-//!   is not applied (weapons.md, open question 3); the sights' and
-//!   scopes' fields of view are stand-ins (unmeasured); the view model
-//!   doesn't move to its iron-sight offset.
+//! - The field of view changes in one step (measured: over 0.1 s); the
+//!   view model doesn't move to its iron-sight offset; the semi-automatic
+//!   mode's spread is unmeasured (the script's alt accuracy).
 //! - The SMGs' stock strike (their alt fire) is not there (unmeasured).
 
 use bevy::prelude::*;
 use serde::Deserialize;
 
-use chimera_sim::weapon::{AltModes, Hitscan, Inventory, Magazine, SpreadShape, WeaponState};
+use chimera_sim::weapon::{AltModes, Hitscan, Inventory, Magazine, OwnZoom, SpreadShape, WeaponState, Zoom, Zoomed};
 
 use crate::core::Velocity;
 
 /// Ground speed over which a holder counts as moving, m/s (unmeasured:
 /// one unit a second).
 pub const MOVING: f32 = 0.0254;
+
+/// From the sights' or scope's press to the narrower view, seconds
+/// (measured: 21 ticks).
+pub const ZOOM_DELAY: f64 = 0.315;
+
+/// A sighted gun's mode and since when (game seconds), for `sights`.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct DodsSights {
+    pub mode: u8,
+    pub since: f64,
+}
 
 /// `dods:gun`'s parameters: the script's numbers (`script_numbers`).
 #[derive(Component, Clone, Debug, Deserialize, PartialEq)]
@@ -77,6 +95,9 @@ pub fn insert(e: &mut EntityWorldMut, p: &DodsGun) {
     if let Some(mut m) = e.get_mut::<AltModes>() {
         m.blocks_primary = true;
     }
+    if e.contains::<Zoom>() {
+        e.insert((OwnZoom, DodsSights::default()));
+    }
     e.insert(p.clone());
 }
 
@@ -85,21 +106,47 @@ pub fn insert(e: &mut EntityWorldMut, p: &DodsGun) {
 #[allow(clippy::type_complexity)]
 pub fn before_frame(
     owners: Query<(&Inventory, Option<&Velocity>, Option<&crate::game::stance::DodsStance>), Without<crate::map::interp::NetDrawn>>,
-    mut guns: Query<(&DodsGun, &mut Hitscan, &mut WeaponState, Option<&AltModes>, Option<&Magazine>)>,
+    mut guns: Query<(&DodsGun, &mut Hitscan, &mut WeaponState, Option<&AltModes>, Option<&Magazine>, Has<super::mg::DodsMg>)>,
 ) {
     for (inv, velocity, stance) in &owners {
-        let Some(Ok((gun, mut scan, mut st, alt, mag))) = inv.active.map(|a| guns.get_mut(a)) else { continue };
+        let Some(Ok((gun, mut scan, mut st, alt, mag, mg))) = inv.active.map(|a| guns.get_mut(a)) else { continue };
         let moving = velocity.is_some_and(|v| v.0.with_y(0.0).length() > MOVING);
         let sighted = alt.is_some_and(|a| a.current > 0) || stance.is_some_and(|s| s.deployed);
         let cone = SpreadShape::Cone(gun.cone(sighted, moving));
         if scan.spread != cone {
             scan.spread = cone;
         }
-        if gun.reload_when_empty {
-            let held = mag.is_some_and(|m| m.clip > 0);
+        if gun.reload_when_empty || mg {
+            let held = (gun.reload_when_empty && mag.is_some_and(|m| m.clip > 0)) || (mg && !stance.is_some_and(|s| s.deployed));
             if st.reload_held != held {
                 st.reload_held = held;
             }
+        }
+    }
+}
+
+/// After the weapon frame: the view of a sighted gun's holder, narrowed
+/// `ZOOM_DELAY` after the sights went up, wide at once when they go down.
+#[allow(clippy::type_complexity)]
+pub fn sights(
+    owners: Query<(Entity, &Inventory, Option<&Zoomed>), Without<crate::map::interp::NetDrawn>>,
+    mut guns: Query<(&Zoom, &AltModes, &mut DodsSights)>,
+    clock: Res<crate::core::SimClock>,
+    mut commands: Commands,
+) {
+    for (owner, inv, zoomed) in &owners {
+        let Some(Ok((zoom, alt, mut s))) = inv.active.map(|a| guns.get_mut(a)) else { continue };
+        if s.mode != alt.current {
+            *s = DodsSights { mode: alt.current, since: clock.now };
+        }
+        let want = (s.mode > 0 && clock.now + 1e-6 >= s.since + ZOOM_DELAY)
+            .then(|| zoom.fov.get(s.mode as usize - 1).map(|f| Zoomed { fov: *f, scope: zoom.scope, sensitivity: None }))
+            .flatten();
+        if zoomed != want.as_ref() {
+            match want {
+                Some(z) => commands.entity(owner).insert(z),
+                None => commands.entity(owner).remove::<Zoomed>(),
+            };
         }
     }
 }
