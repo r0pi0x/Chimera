@@ -570,12 +570,17 @@ pub fn kits(
 }
 
 /// A player's regeneration state (module doc).
-#[derive(Component, Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Regen {
     pub next: f64,
     pub carry: f32,
     pub hurt: f64,
 }
+
+/// Each regenerating player's state: a resource, not a part (no
+/// archetype per Medic).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct Regens(pub HashMap<Entity, Regen>);
 
 /// The regeneration's rate (points/s) `since` s after the last hurt: the
 /// Medic's `medic` (none: 0) and the items' `item`.
@@ -589,16 +594,17 @@ pub fn regen_rate(medic: bool, item: f32, since: f32) -> f32 {
 /// Once a second, each regenerating player's gain (module doc).
 #[allow(clippy::type_complexity)]
 pub fn regen(
-    mut q: Query<(Entity, &crate::game::classes::Tf2Class, &mut Health, Option<&Inventory>, Option<&mut Regen>)>,
+    mut q: Query<(Entity, &crate::game::classes::Tf2Class, &mut Health, Option<&Inventory>)>,
     mut taken: MessageReader<DamageTaken>,
     items: Query<&Tf2Item>,
     table: Res<crate::game::classes::Classes>,
     clock: Res<SimClock>,
-    mut commands: Commands,
+    mut regens: ResMut<Regens>,
 ) {
     let now = clock.now;
     let hurt: Vec<Entity> = taken.read().filter(|t| t.damage.amount > 0.0).map(|t| t.damage.target).collect();
-    for (e, class, mut h, inv, r) in &mut q {
+    regens.0.retain(|e, _| q.contains(*e));
+    for (e, class, mut h, inv) in &mut q {
         let medic = class.class(&table).name == MEDIC;
         let item: f32 = inv.map_or(0.0, |inv| {
             inv.weapons
@@ -608,10 +614,12 @@ pub fn regen(
                 .map(|(_, i)| i.0.regen)
                 .sum()
         });
-        let Some(mut r) = r else {
-            if medic || item != 0.0 {
-                commands.entity(e).insert(Regen { next: now + 1.0, carry: 0.0, hurt: f64::MIN });
-            }
+        if !medic && item == 0.0 {
+            regens.0.remove(&e);
+            continue;
+        }
+        let Some(r) = regens.0.get_mut(&e) else {
+            regens.0.insert(e, Regen { next: now + 1.0, carry: 0.0, hurt: f64::MIN });
             continue;
         };
         if hurt.contains(&e) {
@@ -652,7 +660,7 @@ pub fn overheal(mut q: Query<(Entity, &mut Health, &Overhealed)>, time: Res<Time
 /// The rules' schedule (`mods::add` calls it).
 pub fn add(app: &mut App) {
     chimera_sim::status::add(app);
-    app.init_resource::<HitHealth>().add_systems(
+    app.init_resource::<HitHealth>().init_resource::<Regens>().add_systems(
         FixedUpdate,
         (
             crits.after(crate::core::SimSet::Weapons).before(super::mods::taken).before(crate::core::apply_damage),

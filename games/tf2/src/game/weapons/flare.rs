@@ -31,7 +31,9 @@
 //! 34 at 49 units, where 35 was measured) and push (5.6 per point); a flare touching
 //! the world goes at once (the game's stays 0.1 s); its life is 60 s;
 //! the explosion and the flare show no particles of their own (its
-//! model only).
+//! model only); the flare guns' view-model animation sounds (the class
+//! script's draw and grab entries) aren't loaded, and their view model
+//! plays the `item1` activities by activity (their `anim_slot`).
 
 use std::sync::Arc;
 

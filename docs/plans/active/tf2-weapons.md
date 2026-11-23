@@ -400,6 +400,9 @@ hook, each weapon data/items.toml's entry plus those.
 - *Flares*: Flare Gun, Detonator (attack2 detonation, own blast), Scorch
   Shot (bounce, push, floor explosion) on an abstract flare gun base
   (data/weapons/flaregun.toml).
+- Their asset sets: the 26 new `weapon/<name>` sets published
+  2026-11-23 (`chimera_pack sets tf2 --only weapon/ --pack --sign`: 57
+  item sets now, the Candy Cane's with the small kit's model).
 - *Speed buffs*: the speed boost (x1.4, +105 at most), Escape Plan,
   Equalizer, Disciplinary Action, Eviction Notice, Gloves of Running
   Urgently, Atomizer (an air jump while out).
