@@ -1619,3 +1619,132 @@ fn t46_hit_keys_in_one_advance_make_one_hit() {
     let n = swings(&sim, p).len() - before;
     assert_eq!(n, 5, "hits in one swing");
 }
+
+// ---------------------------------------------------------------------------
+// The fist (special_weapons.md, Follow-up (2026-11-22): test cases 75-82)
+
+/// The M9's knife set up as the fist (the install's `fist`: damage type
+/// 49, 2 and 6 points a punch, `Range` 130), roll 1.0, against a target
+/// `ahead` units in front of the eye facing `yaw`, with health to spare.
+fn fist_target(ahead: f32, yaw: f32) -> (Sim, Entity, Entity) {
+    let (mut sim, p) = knife_out(STOCK);
+    let k = carried(&sim, p, KNIFE);
+    {
+        let mut e = sim.app.world_mut().entity_mut(k);
+        let mut knife = e.get_mut::<Knife>().unwrap();
+        knife.spread = 0.0;
+        knife.damage_type = inventory::FIST_DAMAGE;
+        knife.range = 130.0 * UNIT;
+        knife.attacks[0].damage = 0.02;
+        knife.attacks[1].damage = 0.06;
+    }
+    let target = fist_victim(&mut sim, p, ahead, yaw);
+    (sim, p, target)
+}
+
+fn fist_victim(sim: &mut Sim, p: Entity, ahead: f32, yaw: f32) -> Entity {
+    let target = sim.spawn_character(sim.position(p) - Vec3::Z * ahead * UNIT, movement::ID);
+    sim.intent(target).yaw = yaw;
+    sim.app.world_mut().get_mut::<Health>(target).unwrap().current = 1.0e6;
+    sim.seconds(0.5);
+    target
+}
+
+fn punch_at(sim: &mut Sim, p: Entity, target: Entity, zone: &str, secondary: bool) -> f32 {
+    let d = super::aim_points::point(sim.app.world(), p, target, zone) - (sim.position(p) + sim.state(p).eye_offset);
+    let mut i = sim.intent(p);
+    i.yaw = (-d.x).atan2(-d.z);
+    i.pitch = d.y.atan2(d.xz().length());
+    sim.ticks(1);
+    one_hit(sim, p, target, secondary)
+}
+
+/// 75, 77. Punch damage: secondary to the chest 6, head 36, shin 4.5, foot
+/// 3; primary chest 2, head 12; the default gear reduces nothing and no
+/// armour point is used.
+#[test]
+fn t75_punch_damage_and_t77_no_armour() {
+    let (mut sim, p, target) = fist_target(70.0, std::f32::consts::PI);
+    for (zone, secondary, want) in [
+        ("Torso", true, 6.0),
+        ("Face_Eyelid1", true, 36.0),
+        ("Right_legl1", true, 4.5),
+        ("Right_foot", true, 3.0),
+        ("Torso", false, 2.0),
+        ("Face_Eyelid1", false, 12.0),
+    ] {
+        let got = punch_at(&mut sim, p, target, zone, secondary);
+        assert!((got - want).abs() < 1e-3, "{zone} secondary {secondary}: {got}, want {want}");
+    }
+    let ap = sim.app.world().get::<chimera_sim::weapon::Armor>(target).map(combat_arms::game::weapons::points).unwrap();
+    assert_eq!(ap, 100.0, "a punch uses no armour");
+}
+
+/// 76. From behind: secondary chest 7.8, head 46.8; primary head 15.6.
+#[test]
+fn t76_punch_from_behind() {
+    let (mut sim, p, target) = fist_target(70.0, 0.0);
+    for (zone, secondary, want) in [("Torso", true, 7.8), ("Face_Eyelid1", true, 46.8), ("Face_Eyelid1", false, 15.6)] {
+        let got = punch_at(&mut sim, p, target, zone, secondary);
+        assert!((got - want).abs() < 1e-3, "{zone} secondary {secondary}: {got}, want {want}");
+    }
+}
+
+/// 80. A second victim on the ray within `Range` is hurt as well; beyond
+/// it, or after a knife's swing, not.
+#[test]
+fn t80_punch_reaches_a_second_character() {
+    let (mut sim, p, a) = fist_target(40.0, std::f32::consts::PI);
+    let b = fist_victim(&mut sim, p, 90.0, std::f32::consts::PI);
+    let c = fist_victim(&mut sim, p, 190.0, std::f32::consts::PI);
+    sim.app.world_mut().resource_mut::<Hurt>().0.clear();
+    let from = sim.tick();
+    punch_at(&mut sim, p, a, "Torso", true);
+    let hit = |sim: &Sim, e: Entity| sim.app.world().resource::<Hurt>().0.iter().any(|(t, v, _)| *t > from && *v == e);
+    assert!(hit(&sim, a), "the first");
+    assert!(hit(&sim, b), "the second, within 130 u");
+    assert!(!hit(&sim, c), "the third, beyond the reach");
+    // A knife's ray ends at its first intersection.
+    let (mut sim, p, a) = {
+        let (mut sim, p) = knife_out(STOCK);
+        let a = fist_victim(&mut sim, p, 40.0, std::f32::consts::PI);
+        (sim, p, a)
+    };
+    let b = fist_victim(&mut sim, p, 90.0, std::f32::consts::PI);
+    let from = sim.tick();
+    punch_at(&mut sim, p, a, "Torso", true);
+    let hit = |sim: &Sim, e: Entity| sim.app.world().resource::<Hurt>().0.iter().any(|(t, v, _)| *t > from && *v == e);
+    assert!(hit(&sim, a));
+    assert!(!hit(&sim, b), "a knife never reaches a second character");
+}
+
+/// 81, 82. A punch is ordinary damage (not the stab kind): its death is
+/// the ordinary choice and it plays no gun-kind hurt sound, but the head
+/// sound; its impact sound is the surface's fist list.
+#[test]
+fn t81_t82_punch_kind_and_sounds() {
+    use combat_arms::game::effects::{
+        self,
+        data::{AmmoKind, CaFxTables, ImpactFx},
+    };
+    #[derive(Resource, Default)]
+    struct Kinds(Vec<DamageKind>);
+    let (mut sim, p, target) = fist_target(70.0, std::f32::consts::PI);
+    sim.app.init_resource::<Kinds>().add_systems(
+        FixedPostUpdate,
+        |mut r: MessageReader<Damage>, mut out: ResMut<Kinds>| out.0.extend(r.read().map(|d| d.kind)),
+    );
+    punch_at(&mut sim, p, target, "Face_Eyelid1", false);
+    let kinds = &sim.app.world().resource::<Kinds>().0;
+    assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == DamageKind::Generic), "not the stab kind: {kinds:?}");
+    assert_eq!(effects::hurt_kinds(DamageKind::Generic, Hitgroup::Head, false)[0], None, "no gun sound");
+    assert!(effects::hurt_kinds(DamageKind::Generic, Hitgroup::Head, false)[1].is_some(), "the head sound");
+    assert!(effects::hurt_kinds(DamageKind::Melee, Hitgroup::Head, false)[0].is_some(), "a knife's gun sound");
+    let tables = CaFxTables::built_in();
+    let wood = tables.surface(tables.surface_id("Wood").unwrap());
+    let record = ImpactFx { sound: "surface".into(), ..Default::default() };
+    let fist = effects::impact_sound(&record, wood, AmmoKind::Fist, 0.0).unwrap();
+    let melee = effects::impact_sound(&record, wood, AmmoKind::Melee, 0.0).unwrap();
+    assert!(fist.contains("fist"), "{fist}");
+    assert_ne!(fist, melee);
+}

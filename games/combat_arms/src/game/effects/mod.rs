@@ -857,6 +857,7 @@ pub fn impact_sound<'a>(record: &'a ImpactFx, surface: &'a data::Surface, kind: 
     let list = match kind {
         AmmoKind::Bullet => &surface.bullet,
         AmmoKind::Melee => &surface.melee,
+        AmmoKind::Fist => &surface.fist,
         AmmoKind::Thrown => &surface.projectile,
     };
     rules::draw_slot(list, 4, roll)
@@ -1286,11 +1287,12 @@ fn shot_effects(
                         grid.hit(*hit, *point)
                     };
                     if let Some(record) = wfx.impact_of(&tables) {
+                        let swing_kind = if wfx.ammo_kind == AmmoKind::Fist { AmmoKind::Fist } else { AmmoKind::Melee };
                         let seen = cam.is_some_and(|c| c.gates(*point, *point, !mine).impact_seen);
                         let rolls = [state.rolls.next(), state.rolls.next()];
-                        let mut out = impact(record, tables.surface(ty), AmmoKind::Melee, seen, false, false, &settings, rolls);
+                        let mut out = impact(record, tables.surface(ty), swing_kind, seen, false, false, &settings, rolls);
                         if in_liquid(volumes.iter(), *point + *n * UNIT) {
-                            submerge(&mut out, record, tables.surface(ty), AmmoKind::Melee, seen);
+                            submerge(&mut out, record, tables.surface(ty), swing_kind, seen);
                         }
                         emit_impact(&out, *point, *n, Some(e.weapon), &mut sounds, &mut fx, &mut marks, &mut state.rolls, record);
                     }

@@ -56,6 +56,13 @@ fn the_fist_is_its_records_punches_and_bare_hands() {
     assert_eq!(knife["primary"]["damage"].as_float(), Some(2.0));
     assert_eq!(knife["secondary"]["damage"].as_float(), Some(6.0));
     assert_eq!(knife["range"].as_float(), Some(130.0));
+    // Damage type 49 (F2), the surface's fist impact sounds, no select
+    // sound (F1), the third person's world model with its knuckle piece.
+    assert_eq!(knife["damage_type"].as_integer(), Some(49));
+    let fx = &doc["hooks"]["combat_arms:effects"];
+    assert_eq!(fx["ammo_kind"].as_str(), Some("fist"));
+    assert_eq!(fx["select_sound"].as_str(), Some(""), "the fist names no select sound");
+    assert!(doc["models"]["world"].as_str().is_some_and(|w| w.to_ascii_lowercase().contains("hh_melee_fist_ke")));
 
     // The look: no pieces of its own, the swing animations, and the hand
     // model's 43 bones all found in its skeleton.
@@ -71,6 +78,28 @@ fn the_fist_is_its_records_punches_and_bare_hands() {
     for name in ["select", "idle_0", "fire_0", "alt_fire_0"] {
         assert!(set.sequence(name).is_some(), "{name}");
     }
+    // The grip (case 84): the knuckles' idle, the right hand's finger
+    // joints closed (about 70 degrees, 60 at least), the left relaxed.
+    let mean = |side: &str| {
+        let s = v.animations.as_ref().unwrap();
+        let seq = s.sequence("idle_0").unwrap();
+        let mut pose = s.defaults.clone();
+        s.sequence_pose(seq, 0.24, &[], &mut pose);
+        let angles: Vec<f32> = v
+            .bones
+            .iter()
+            .zip(&pose)
+            .filter(|(b, _)| {
+                let n = b.name.to_ascii_lowercase();
+                n.starts_with(&format!("bip01 {side} finger")) && n.len() > "bip01 r finger0".len() - 1 && !n.ends_with("finger0") && !n.ends_with("finger01") && !n.ends_with("finger02")
+            })
+            .map(|(_, p)| p.0.to_axis_angle().1.to_degrees())
+            .collect();
+        angles.iter().sum::<f32>() / angles.len() as f32
+    };
+    let (right, left) = (mean("r"), mean("l"));
+    assert!(right > 60.0 && right < 90.0, "right hand closed: {right}");
+    assert!(left > 20.0 && left < 40.0, "left hand relaxed: {left}");
     // Held, the hands are what shows: the default character's, attached.
     let choice = hands::default_choice(data.characters()).expect("the default character's hands");
     let (meshes, bones) = view_model::load_hands(&choice, &mut map, &read).expect("the hand model");

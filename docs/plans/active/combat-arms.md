@@ -834,6 +834,22 @@ emitter) (view_models.md Corrections 3, Open question 18).
 
 ## The fist: open questions for a spec session (2026-11-22)
 
+**Answered and done (special_weapons.md Follow-up (2026-11-22), F1-F4;
+implemented 2026-11-23).** Type 49 is read from the install's ammo
+(`damage_type` in the knife hook): base 2 / 6, zones, rear x1.3, no armour
+reduction, ordinary damage kind (ordinary death animations, no gun-kind
+hurt sound), the AI cap, the surface's `FistImpactSnd` list (`fist` in
+`data/effects.toml`, read from the install's SURFACE.TXT), a ray walked on
+through up to four characters within `Range` (shoot-through surfaces
+excepted: inventory.rs Known shortcuts), silent draw (no `SelectSnd`), the
+kill icon from `Weaponkillimage`, swing timing from the shared animations.
+Question 21: the "open hands" screenshot was taken during the 800 ms draw;
+at idle our right hand is the closed fist and the left half open (no
+binding fault; `heavy::fist_install` checks the finger angles). Third
+person draws the install's `HH_Melee_Fist_KE` (its `HH_Knuckle` piece).
+Tests: `inventory.rs` t75-t82, `heavy::fist_install`. Still excluded from
+gun-game ladders (`ladder_exclusions.toml`). Original text follows.
+
 Feedback 045da13b (an Ultimate Gun Game knife finale dealt the install's
 `fist`, Hunted's start weapon, game_modes.md M15 and case 84): "too little
 damage, doesn't look like you're holding anything". What our data and

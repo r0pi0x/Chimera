@@ -158,6 +158,8 @@ pub struct Surface {
     /// Slots 1..4 (empty strings: undefined slots).
     pub bullet: Vec<String>,
     pub melee: Vec<String>,
+    /// `FistImpactSnd0..3`: the fist's (damage type 49).
+    pub fist: Vec<String>,
     pub projectile: Vec<String>,
     pub shell: String,
     pub shell_radius: f32,
@@ -187,6 +189,7 @@ impl Default for Surface {
             uw_grenade_fx: String::new(),
             bullet: Vec::new(),
             melee: Vec::new(),
+            fist: Vec::new(),
             projectile: Vec::new(),
             shell: String::new(),
             shell_radius: 200.0,
@@ -306,7 +309,7 @@ impl CaFxTables {
             out.extend(list.iter().map(String::as_str));
         }
         for f in &self.surface {
-            for list in [&f.bullet, &f.melee, &f.projectile, &f.right, &f.left] {
+            for list in [&f.bullet, &f.melee, &f.fist, &f.projectile, &f.right, &f.left] {
                 out.extend(list.iter().map(String::as_str));
             }
             out.push(&f.shell);
@@ -348,6 +351,8 @@ pub enum AmmoKind {
     #[default]
     Bullet,
     Melee,
+    /// A punch: the surface's fist list.
+    Fist,
     Thrown,
 }
 

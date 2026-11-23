@@ -84,6 +84,11 @@
 //!   `DROPPED_LIFETIME`. Respawn (13): `respawn_inventory`.
 //!
 //! Known shortcuts:
+//! - The fist (damage type 49, special_weapons.md Follow-up (2026-11-22)
+//!   F2): its ray walks on through characters like a bullet's (up to four,
+//!   within `Range`), but shoot-through surfaces (wood, glass ...) stop it,
+//!   where the original passes them (the server's penetration walk,
+//!   `weapons::walk`, isn't reused by the swing).
 //! - Units: movement's `meters_per_unit` (`UNIT`, by body size: movement.md
 //!   Open question 3). Health 100 = 1.0 (`HP`).
 //! - Updates are the game's fixed tick (movement.md's 15 ms,
@@ -346,6 +351,10 @@ struct KnifeData {
     /// spread meters stay 0, so its `MinPerturb` (8.3).
     #[serde(default)]
     perturb: f32,
+    /// The ammo's `InstDamageType` where it isn't melee's 13: the fist's
+    /// 49 (special_weapons.md, Follow-up (2026-11-22) F2).
+    #[serde(default)]
+    damage_type: Option<i32>,
     primary: AttackData,
     #[serde(default)]
     secondary: Option<AttackData>,
@@ -403,12 +412,27 @@ pub struct Knife {
     pub rate: f32,
     /// The attack ray's square spread, half-width (n / 1000).
     pub perturb: f32,
+    /// The attacks' damage type: 13 melee, or the fist's 49.
+    pub damage_type: i32,
     /// Primary, then the secondary if any.
     pub attacks: Vec<Attack>,
     pub state: KnifeState,
 }
 
+/// The fist's damage type (special_weapons.md F2): no rule of its own in
+/// the damage path, so it takes a bullet's: the ordinary death
+/// animations, no damage-kind hurt sound, the AI cap, a server walk like
+/// a bullet's.
+pub const FIST_DAMAGE: i32 = 49;
+/// How many characters a punch's walk can reach (a bullet's four
+/// intersections).
+const FIST_WALK: usize = 4;
+
 impl Knife {
+    /// Whether this is the fist (damage type 49).
+    pub fn is_fist(&self) -> bool {
+        self.damage_type == FIST_DAMAGE
+    }
     /// Whether an attack animation is playing (not idle).
     pub fn busy(&self) -> bool {
         self.state.phase != KnifePhase::Idle
@@ -633,6 +657,7 @@ fn knife(d: &WeaponData, p: &KnifeData) -> Knife {
         spread: damage_spread(p.damage_spread),
         rate: played_rate(1.0 + p.fire_rate),
         perturb: p.perturb / 1000.0,
+        damage_type: p.damage_type.unwrap_or(MELEE_DAMAGE),
         attacks: std::iter::once(attack(&p.primary)).chain(p.secondary.iter().map(attack)).collect(),
         state: KnifeState::default(),
     }
@@ -1088,7 +1113,6 @@ fn swing_knives(
                     }
                     let end = hit.map_or(eye + dir * range, |h| eye + dir * h.0);
                     let body = hit.map(|h| h.3);
-                    let back = rewound.iter().find(|r| body == Some(r.entity));
                     events.write(WeaponEvent {
                         owner,
                         weapon: entity,
@@ -1102,11 +1126,56 @@ fn swing_knives(
                         replay: !first.0,
                     });
                     let Some(target) = body else { continue };
+                    // The victims: the ray's first, and for a punch (the
+                    // server walks it like a bullet's) the characters
+                    // behind it within `Range`.
+                    let mut chain = vec![(target, hit.map_or(target, |h| h.2), end)];
+                    if knife.is_fist() && targets.get(target).is_ok_and(|t| t.1) {
+                        let mut done: Vec<Entity> = vec![target];
+                        let mut skip: Vec<Entity> = hit.map(|h| h.2).into_iter().collect();
+                        let mut travelled = (end - eye).length();
+                        for _ in 0..(FIST_WALK * 2) {
+                            if chain.len() >= FIST_WALK || range - travelled <= 1e-3 {
+                                break;
+                            }
+                            let start = eye + dir * travelled;
+                            let remaining = range - travelled;
+                            let filter = SpatialQueryFilter::from_excluded_entities(
+                                std::iter::once(owner).chain(rewound.iter().map(|r| r.entity)).chain(skip.iter().copied()),
+                            )
+                            .with_mask(core::SOLID_LAYERS.0 & !core::ITEM_LAYER.0);
+                            let mut next = spatial
+                                .cast_ray(start + dir * 1e-3, ray, remaining, true, &filter)
+                                .map(|h| (h.distance + 1e-3, h.entity, colliders.get(h.entity).map_or(h.entity, |c| c.body)));
+                            for r in rewound.iter().filter(|r| !done.contains(&r.entity)) {
+                                if let Some(t) = r.box_entry(start, dir, next.map_or(remaining, |h| h.0), 0.0) {
+                                    next = Some((t, r.entity, r.entity));
+                                }
+                            }
+                            let Some((d, collider, body2)) = next else { break };
+                            travelled += d;
+                            let point = eye + dir * travelled;
+                            if done.contains(&body2) {
+                                skip.push(collider);
+                                continue;
+                            }
+                            if !targets.get(body2).is_ok_and(|t| t.1) {
+                                // Solid scenery stops the punch (a
+                                // shoot-through surface is not walked:
+                                // Known shortcuts).
+                                break;
+                            }
+                            done.push(body2);
+                            skip.push(collider);
+                            chain.push((body2, collider, point));
+                        }
+                    }
+                    for (target, hit_entity, end) in chain {
+                    let back = rewound.iter().find(|r| target == r.entity);
                     let mut roll = shared_random(intent.command, "combat_arms:knife", n as i32);
                     let u = roll.range(1.0 - knife.spread, 1.0 + knife.spread);
                     // A map's breakable (a window, a vent): the swing's
                     // damage at the hit, as any knife's on those brushes.
-                    let hit_entity = hit.map_or(target, |h| h.2);
                     let thing = [target, hit_entity].into_iter().find(|e| breakables.contains(*e));
                     if let Some(thing) = thing {
                         if server && first.0 {
@@ -1180,7 +1249,7 @@ fn swing_knives(
                         (None, None) => (Location::Torso, 1.0),
                     };
                     let hit = ArmourHit {
-                        damage_type: MELEE_DAMAGE,
+                        damage_type: knife.damage_type,
                         location,
                         zone,
                         infected: infected.contains(target),
@@ -1192,6 +1261,9 @@ fn swing_knives(
                         Ok((a, pieces)) => armour_and_zone(points, hit, Some(a.into_inner()), pieces, true),
                         Err(_) => armour_and_zone(points, hit, None, None, true),
                     } * HP;
+                    // A punch is capped like a bullet on a player when an
+                    // AI throws it (F2); a knife's isn't.
+                    let amount = ai.cap(Some(owner), target, amount / HP, !knife.is_fist()) * HP;
 
                     let side = |l, r| if sphere.is_some_and(|s| s.at.x < 0.0) { l } else { r };
                     let hitgroup = match sphere.map(|s| s.location) {
@@ -1210,7 +1282,7 @@ fn swing_knives(
                         point: end,
                         dir,
                         hitgroup,
-                        kind: DamageKind::Melee,
+                        kind: if knife.is_fist() { DamageKind::Generic } else { DamageKind::Melee },
                         weapon: None,
                         force: Vec3::ZERO,
                     });
@@ -1230,6 +1302,7 @@ fn swing_knives(
                                 Some(Location::Leg) => if left { core::BodyRegion::LeftThigh } else { core::BodyRegion::RightThigh },
                             },
                         });
+                    }
                     }
                 }
                 if t >= attack.length as f64 {

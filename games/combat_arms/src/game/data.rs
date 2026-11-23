@@ -784,6 +784,10 @@ fn special_values(w: &WeaponRecord, a: &AmmoRecord, length_scale: f64) -> Vec<Se
         set(&["hooks", KNIFE, "primary", "damage"], a.inst_damage as f64),
         set(&["hooks", KNIFE, "secondary", "damage"], a.alt_inst_damage as f64),
     ]);
+    // The ammo's damage type where it isn't melee's 13 (the fist's 49).
+    if a.inst_damage_type >= 0 && a.inst_damage_type != 13 {
+        out.push(set(&["hooks", KNIFE, "damage_type"], i64::from(a.inst_damage_type)));
+    }
     out
 }
 
@@ -1004,6 +1008,10 @@ fn effects_patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile) {
     let Value::Table(fx) = hooks.entry(EFFECTS).or_insert_with(|| Value::Table(Table::new())) else { return };
     if made && w.gun_type == THROWN_GUNTYPE {
         fx.insert("ammo_kind".into(), Value::String("thrown".into()));
+    }
+    // A punch (`InstDamageType` 49) plays the surface's fist sounds.
+    if ammo.is_some_and(|a| a.inst_damage_type == 49) {
+        fx.insert("ammo_kind".into(), Value::String("fist".into()));
     }
     fx.insert("fire_sound".into(), text(&w.fire_snd));
     fx.insert("fire_radius".into(), Value::Float(f64::from(w.fire_snd_radius)));
