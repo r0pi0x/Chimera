@@ -200,16 +200,43 @@ Top remaining wastes:
    it in briefs for iteration, keep the default for the final run. Saves
    perhaps 4 h per 3 days.
 2. **Cold builds waited on in the foreground** (cs_source cold 1-2 h
-   timeouts, `slot12 build`, ugg: ~8 h per 3 days). Fix (plan item): keep
-   slots warm (agent-slot acquire prefers a slot already built for the
-   crate; sccache hit rate in the report), and brief "build in the
-   background and read the next file meanwhile". Not done.
+   timeouts, `slot12 build`, ugg: ~8 h per 3 days). Done: `agent-slot
+   acquire` takes the free slot warmest for the branch (the fewest Rust
+   files and manifests between its last commit and the base or
+   origin/main; a lockfile or settings difference counts as nearly cold;
+   then the newest build) and prints "warm", "lukewarm" or "cold";
+   AGENTS.md and OBSERVABILITY 3e say to start long builds in the
+   background and wait with tools/wait-for. Still open: the sccache hit
+   rate in the report.
 3. **Hook reuse stays at 24%**: agents change a file after the
    `--worktree` pass (docs, rebase) and the stamp no longer matches. Fix
    (plan item): key the stamp on the tested crates' inputs, not the whole
    tree, so doc-only or other-crate edits keep it. Saves up to 5 h.
+   Done: passes are reused per package (`stamp_reuse`, `affected --trees`
+   on what changed since a stamp's tree); `commit-hook.log` says
+   `partial` for a run that reused some.
 
-Next: measure FAILFAST use next week; add the slot-warmth item to Next.
+Simulated agent sequence (a leaf crate, cs_source_server, changed;
+then a docs edit, a rebase over another crate's commit, the commit; warm
+slot), packages whose fast tier ran per hook run:
+
+| Step | Before | After |
+|---|---|---|
+| `--worktree` pass | cs_source_server, repo_checks | cs_source_server, repo_checks |
+| docs edit, `--worktree` | both again | repo_checks (cs_source_server reused) |
+| rebase over hl2dm_server, `--worktree` | both again | repo_checks (reused) |
+| commit | stamp | stamp |
+| The changed crate's pass reused | 1 of 3 later runs | 3 of 3 |
+
+repo_checks reruns after any change by design (it holds the docs rules);
+its fast tier is ~16-28 s warm, so the saving is the agent's own crate
+(cs_source's fast tier is minutes) and its dependents' type-check. The
+lookup costs about 2 s per stamp consulted (a `cargo run` of `affected`;
+at most 3, only stamps holding a package the run needs). Wall time for
+this leaf was flat (its tests take seconds); judge the change by
+commit-hook.log's `partial` and `stamp` share next week.
+
+Next: measure FAILFAST use and the `partial`/`stamp` share next week.
 
 ## Next, by estimated saving
 
@@ -231,3 +258,4 @@ rebuilds, type-checks and selects; plugins per game) is
 2026-11-21: second pass: the hook as the agents' test run, pre-push reuses stamps, the racy key fixed, nextest measured (opt-in), tools/run-built; a shared capture target ruled out. Then the hook's type-check beside its tests (-25% warm), phases logged, stamps written when nothing was only checked.
 2026-11-21: sccache-heal no longer restarts the server (it killed other agents' running builds, exit 101, nothing printed): `agent-env.sh` starts one only when none listens, under a lock, and heal only reports a hung one (`tools/sccache-heal.sh --force` restarts it by hand); test in checks/tests/it/scripts.rs. One right way against full rebuilds: always source `agent-env.sh` (RUSTFLAGS/mold, incremental and target dir differ otherwise; docs/OBSERVABILITY.md, "Shared compile cache").
 2026-11-22: post-push starved for six hours (no verdict over ~15 pushes): a `sleep infinity` jobserver holder that `scripts::sourcing_agent_env_leaves_a_running_sccache_server_alone` left behind inside a post-push run had inherited the lock's fd and held it after the run ended, so every later run waited and the waiters replaced one another forever. Fixed: the run closes the lock's fd for all it starts, a lock held by no live run is moved aside after two polls, the inbox gets `STALE` lines (the lock; no verdict for 2 h while pushes wait), a run from a slot's older copy re-executes the pushed copy, and the test kills its holder (about 80 had piled up); tests `scripts::post_push_*`.
+2026-11-23: hook stamps reused per package (a docs edit, a docs_index regeneration or a rebase over other crates after a `--worktree` pass reruns only repo_checks; the agent's crate is reused; tests `scripts::stamps_reuse_each_package_whose_inputs_did_not_change`); `agent-slot acquire` prefers the warmest slot and says how warm (`scripts::acquire_prefers_the_warmest_slot_and_says_so`); background builds in AGENTS.md.

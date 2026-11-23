@@ -112,7 +112,9 @@ stamp_changes() {
 # packages passed on inputs identical to this tree's, so they still pass.
 # Sets reuse_tested and reuse_checked (pkgs lists, the union over the
 # stamps; "*" only from a stamp of an identical tree) and reuse_from (the
-# stamps used). Never fails: no stamp, no reuse.
+# stamps used). $1, when given, is what this run needs (a pkgs list): a
+# stamp with none of it is skipped (each lookup costs a cargo run, ~2 s).
+# Never fails: no stamp, no reuse.
 stamp_reuse() {
     local f n changes sel invalid tested checked best
     local -a extra
@@ -128,6 +130,8 @@ stamp_reuse() {
         [ -n "$f" ] || continue
         tested=$(stamp_tested "$f")
         checked=$(stamp_checked "$f")
+        # Nothing this run needs (pkgs list $1, when given): no lookup.
+        if [ -n "${1:-}" ] && [ -z "$(comm -12 <(printf '%s\n' "$checked") <(printf '%s\n' "$1" | sort -u) | sed '/^$/d')" ]; then continue; fi
         invalid=
         if [ "$n" != 0 ]; then
             # A pass of the whole workspace names no packages to keep.

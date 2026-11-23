@@ -151,7 +151,7 @@ fi
 # difference). Only the others run.
 if [ -n "$key" ]; then
     affected_cmd() { run cargo run --quiet -p repo_checks --bin affected -- "$@"; }
-    stamp_reuse
+    stamp_reuse "$( { pkgs "$tests"; pkgs "$checks"; } | sort -u)"
     if [ -n "$reuse_tested$reuse_checked" ] && ! grep -qx '\*' <<<"$(pkgs "$tests")$(pkgs "$checks")"; then
         left_tests=$(comm -23 <(pkgs "$tests") <(printf '%s\n' "$reuse_tested"))
         left_checks=$(comm -23 <(pkgs "$checks") <(printf '%s\n' "$reuse_checked"))
