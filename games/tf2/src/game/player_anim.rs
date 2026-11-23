@@ -318,13 +318,12 @@ impl Default for Tf2PlayerAnim {
     }
 }
 
-/// `(cos d, -sin d)` pushed out to the unit square (3).
-pub fn square(d_degrees: f32) -> Vec2 {
-    let d = d_degrees.to_radians();
-    let v = Vec2::new(d.cos(), -d.sin());
-    let m = v.x.abs().max(v.y.abs());
-    if m > 1e-6 { v / m } else { Vec2::ZERO }
-}
+/// The move grid's unit square (3; Source's shared half).
+pub use source_engine::player_anim::square;
+
+/// The feet's rules (4).
+pub const FEET: source_engine::player_anim::FeetRules =
+    source_engine::player_anim::FeetRules { max_torso: FEET_MAX_TORSO, rate: FEET_TURN_RATE, fade: FEET_FADE, clamp: BODY_YAW };
 
 impl Tf2PlayerAnim {
     /// The feet toward the eyes (4) for eye yaw `eye`, moving or not;
@@ -339,20 +338,9 @@ impl Tf2PlayerAnim {
             self.snap = false;
             self.snap_offset = 0.0;
         }
-        if moving {
-            self.goal_yaw = eye;
-        } else if normalize(self.goal_yaw - eye).abs() > FEET_MAX_TORSO {
-            // Standing: the goal steps 45 degrees toward the eyes.
-            self.goal_yaw = normalize(self.goal_yaw + FEET_MAX_TORSO * normalize(eye - self.goal_yaw).signum());
-        }
-        if self.feet_yaw != self.goal_yaw {
-            // The slow-down on the unwrapped gap (Quirks).
-            let k = ((self.goal_yaw - self.feet_yaw).abs() / FEET_FADE).clamp(0.01, 1.0);
-            let step = FEET_TURN_RATE * dt * k;
-            let diff = normalize(self.goal_yaw - self.feet_yaw);
-            self.feet_yaw = if diff.abs() <= step { self.goal_yaw } else { normalize(self.feet_yaw + step * diff.signum()) };
-        }
-        (-normalize(eye - self.feet_yaw)).clamp(-BODY_YAW, BODY_YAW)
+        // Standing, the goal steps 45 degrees toward the eyes; the
+        // slow-down on the unwrapped gap (Quirks).
+        source_engine::player_anim::turn_feet(&mut self.feet_yaw, &mut self.goal_yaw, eye, moving, dt, &FEET)
     }
 
     /// Snap the feet and their goal to the eyes (plus `offset` degrees,
@@ -578,26 +566,11 @@ impl Tf2PlayerAnim {
             }
         }
         // The pose parameters (3, 4), by name.
-        let speed = i.velocity.length();
-        let moving = speed > MOVING_SPEED;
         let body_yaw = self.turn(i.eye_yaw, (i.velocity.length_squared() + i.vertical * i.vertical).sqrt() > 1.0, dt);
         let body_pitch = normalize(-i.eye_pitch).clamp(PITCH_DOWN, PITCH_UP);
-        let mut mv = Vec2::ZERO;
-        if moving {
-            // The movement direction against the eyes (3).
-            let d = normalize(i.velocity.y.atan2(i.velocity.x).to_degrees() - i.eye_yaw);
-            mv = square(d);
-            // The grid's ground speed in that direction, at the full cell.
-            let (px, py) = (set.param("move_x"), set.param("move_y"));
-            if let (Some(px), Some(py), Some(main)) = (px, py, a.main) {
-                a.set_param(px, mv.x);
-                a.set_param(py, mv.y);
-                let g = set.ground_motion(main, &a.params);
-                if g > 0.0 && speed < g {
-                    mv *= speed / g;
-                }
-            }
-        }
+        // The movement direction against the eyes, scaled by the grid's
+        // ground speed in that direction at the full cell (3).
+        let mv = source_engine::player_anim::move_grid(a, i.velocity, i.eye_yaw, MOVING_SPEED);
         let values = [mv.x, mv.y, body_yaw, body_pitch];
         for (name, v) in ["move_x", "move_y", "body_yaw", "body_pitch"].into_iter().zip(values) {
             if let Some(p) = set.param(name) {

@@ -38,5 +38,10 @@ accuracy = 0.055
 move_penalty = 0.1
 recoil = 2.15
 
+[hooks."dods:body_anim"]
+# The body's animations (`player_anim`): the script's anim_prefix "tommy",
+# as the shared player model names its activities (ACT_DOD_STAND_IDLE_TOMMY).
+suffix = "TOMMY"
+
 [hud]
 name = "Thompson"

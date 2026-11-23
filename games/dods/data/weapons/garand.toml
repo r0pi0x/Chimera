@@ -48,5 +48,10 @@ move_penalty = 0.1
 recoil = 4.0
 reload_when_empty = true
 
+[hooks."dods:body_anim"]
+# The body's animations (`player_anim`): the script's anim_prefix "rifle", reload_anim_prefix "garand" (no such reload in the model: the rifle's),
+# as the shared player model names its activities (ACT_DOD_STAND_IDLE_RIFLE).
+suffix = "RIFLE"
+
 [hud]
 name = "M1 Garand"

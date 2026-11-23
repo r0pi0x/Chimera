@@ -21,7 +21,7 @@ and the game's own data.
 | M0 install, mount, maps, bodies in the sandbox | done (2026-11-23) | §4; the log |
 | M1 weapons | M1a done (2026-11-23, its gaps fixed the same day); M1b not started | §4; the log |
 | M2 movement specifics | M2a done (2026-11-23): prone, deployed MGs, stamina pool, MGs in the ladders; sprint, jump and the rest wait for measurements (§4, "Needs measuring") | §4; the log |
-| M3 party rungs | not started | §4 |
+| M3 party rungs | M3a done (2026-11-23): the bodies animate (stances, movement, each gun's set, sights, deploy, fire and reload gestures, jump; death a ragdoll); the rungs themselves not started | §4; the log |
 
 ## 1. Rules for this port
 
@@ -159,7 +159,27 @@ where the install is needed, `heavy::` tests that skip without it.
      regeneration after an undeployed MG shot (ours: the spec's fit, 0.9 a
      tick, no delay); the slow's speed when hit (stand-in from M1a);
      unducking time.
-4. **M3, party rungs**: each DoD:S gun a rung of the Ultimate Gun Game,
+4. **M3, party rungs**:
+   - **M3a, body animation** (done): `player_anim` on Source's shared
+     half (`source_engine::player_anim`; the move grid and the feet lifted
+     there from TF2's), from the shared model's own activities
+     (`ACT_DOD_<stance>_<IDLE|AIM|ZOOM>_<gun>`, `ACT_GET_DOWN_*`,
+     `ACT_DOD_PRONE_DEPLOY_*`, `ACT_DOD_PRIMARYATTACK_*`,
+     `ACT_DOD_RELOAD_*`, `ACT_HOP`), each gun's set in its data
+     (`dods:body_anim`: the script's `anim_prefix` as the model names it);
+     the rest-pose weapon bones (M2a's `bodies::HOLDS`) gone.
+   - **Needs a spec** (no spec covers DoD:S's player animation; what the
+     model's names and lengths don't answer is ours, a Known shortcut in
+     `player_anim`): when the idle and when the aim set plays (ours: aim
+     only with the sights up); walk against run (ours: the midpoint of the
+     grids' ground speeds) and the sprint set (sprint unmeasured); the
+     feet's and the torso's rules (ours: TF2's) and the deployed yaw
+     limits; `body_height`; the jump's sequence and landing; hand signals,
+     the SMGs' stock strike, the bazooka's shouldering and zoomed reload,
+     flinches; the MG42's deployed and reloading world models; how the
+     game maps `anim_prefix` to the model's suffixes (`stg44` -> `MP44`,
+     the Garand's and MG42's reload prefixes with no sequences).
+   - Each DoD:S gun a rung of the Ultimate Gun Game,
    the holder its class (a gun carried by one class only: no draw
    needed; the pistols and melee are shared: the rung's class drawn
    before the match from the ladder's seed, as TF2's), DoD:S's HUD while
@@ -209,13 +229,28 @@ event's presents.
 
 ## Log
 
+- 2026-11-23, M3a, body animation: DoD:S's bodies play the shared model's
+  sequences (`player_anim`): going prone and getting up over the stance's
+  time (the files' 37 frames at 30 fps are the measured 1.2 s), prone,
+  crawling and deployed, crouched, standing, walking, running (the run
+  grid's forward speed is the measured 220, the crouch-walk's 73, the
+  crawl's 50), the sights' zoom set, `ACT_HOP` in the air after a jump;
+  each gun's set from `dods:body_anim` (the BAR plays the rifle's set with
+  its own reload, as its script says); `move_x` / `move_y`, `body_pitch`,
+  `body_yaw` with the files' aim-matrix autolayers, IK locks and rules; fire
+  and reload gestures by stance and deploy. The gun's bone is in a hand in
+  every stance (`heavy::player_anim`), so `bodies::HOLDS` is gone. Death is
+  Chimera's ragdoll (the model's only death activity is `ACT_DIERAGDOLL`).
+  TF2's move grid and feet rules moved to `source_engine::player_anim`
+  (`square`, `move_grid`, `turn_feet`). What needs a spec: §4, M3.
+
 - 2026-11-23, M1 gaps and M2a: (a) targets and other players held no gun:
   nothing gave a DoD:S body its held model (`map::Held`, which each game's
   player animation sets: `bodies::hold_weapons` now), and the DoD:S `w_`
   models hang on the body's `ValveBiped.weapon_bone` (SMGs, pistols, MGs)
   or `weapon_bone_left` (rifles), which the bodies have but only the
   game's animations put in the hands (at rest they sit at the feet);
-  until the bodies animate (M3) each weapon bone rests where the body's
+  until the bodies animate (M3a, since done) each weapon bone rests where the body's
   own `StandIdle_tommy` / `StandIdle_RIFLE` puts it (`bodies::HOLDS`). (b) The guns' sounds:
   every entry of `scripts/game_sounds_weapons.txt` loads with a DoD:S map
   and with its guest dressing, under `dods:` (`maps::own_sound`, TF2's

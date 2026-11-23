@@ -2,8 +2,7 @@
 //! read for players, `map::KitLoad::Players`, and kept by
 //! `GameKit::stay`): all twelve class bodies stay, those worn by name too
 //! (the Axis rifleman showed the US body when only the unnamed default
-//! stayed), each with its weapon bones in its hands (dods' `bodies::HOLDS`), and
-//! the guns' sound entries are in the map's table under DoD:S's names
+//! stayed), and the guns' sound entries are in the map's table under DoD:S's names
 //! (dods' `maps::own_sound`: the view models' draw, the scripts' shots). Passes
 //! with a note without the install.
 //! `cargo test -p ultimate_gun_game --features dev --test dods heavy::party_map_kit -- --nocapture`
@@ -31,20 +30,16 @@ fn a_dods_map_keeps_every_class_body_and_its_guns_sounds() {
         let model = format!("models/player/{class}.mdl");
         assert!(ours.iter().any(|c| c.name.as_deref() == Some(model.as_str())), "{model} kept by name");
     }
-    for c in &ours {
-        let hand = c.bones.iter().position(|b| b.name == "ValveBiped.Bip01_R_Hand").unwrap();
-        let weapon = c.bones.iter().find(|b| b.name == "ValveBiped.weapon_bone").unwrap();
-        assert_eq!(weapon.parent, Some(hand));
-        assert!(weapon.position.length() < 1.0, "{:?}: the weapon bone in the hand: {:?}", c.name, weapon.position);
-    }
     for entry in ["Weapon_Thompson.Draw", "Weapon_Thompson.Shoot", "Weapon_Garand.ClipIn1", "Weapon_Thompson.WorldReload"] {
         let ours = format!("dods:{entry}").to_lowercase();
         assert!(data.sounds.entries.contains_key(&ours), "{ours} in the map's table");
     }
 }
 
-/// A practice target on a DoD:S map wears its class body and holds its
-/// gun's world model (`bodies::hold_weapons`: `map::Held`).
+/// A practice target on a DoD:S map wears its class body, holds its
+/// gun's world model (`bodies::hold_weapons`: `map::Held`) and plays a
+/// sequence of the shared model (dods' `player_anim`), which puts the gun's
+/// bone in its hands.
 #[test]
 fn a_dods_target_holds_its_gun() {
     use bevy::prelude::*;
@@ -52,7 +47,7 @@ fn a_dods_target_holds_its_gun() {
     use chimera_sim::minigame::{self, targets::Target};
     use chimera_world::{
         harness::Sim,
-        map::{BodyModel, Held, MapSimPlugin},
+        map::{BodyModel, Held, MapSimPlugin, anim::Animator},
     };
     use combat_arms::{game::movement, harness::CaSim};
     use party_roster::PartyPartsPlugin;
@@ -77,9 +72,10 @@ fn a_dods_target_holds_its_gun() {
         sim.ticks(3);
     }
     sim.seconds(2.0);
-    let mut q = sim.app.world_mut().query_filtered::<(Option<&Held>, Option<&BodyModel>), With<Target>>();
-    let got: Vec<_> = q.iter(sim.app.world()).map(|(h, b)| (h.cloned(), b.copied())).collect();
+    let mut q = sim.app.world_mut().query_filtered::<(Option<&Held>, Option<&BodyModel>, Option<&Animator>), With<Target>>();
+    let got: Vec<_> = q.iter(sim.app.world()).map(|(h, b, a)| (h.cloned(), b.copied(), a.and_then(|a| a.main.map(|m| a.set.sequences[m].activity.clone())))).collect();
     assert_eq!(got.len(), 1);
+    assert!(got[0].2.as_deref().is_some_and(|a| a.starts_with("ACT_DOD_")), "an animated body: {got:?}");
     assert!(got[0].1.is_some(), "a body: {got:?}");
     assert_eq!(got[0].0.as_ref().and_then(|h| h.0.as_deref()), Some("dods:weapon_k98"), "{got:?}");
 }

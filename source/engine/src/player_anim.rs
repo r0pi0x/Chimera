@@ -15,7 +15,10 @@
 //! The choice of sequence, the pose parameters and the layers are the
 //! game's (`PlayerAnimRules`: CS:S's by weapon suffix, specs/cs_source/
 //! animation.md 12; HL2:DM's activities by weapon kind, specs/hl2dm/
-//! player_models.md 3-8).
+//! player_models.md 3-8; TF2's and DoD:S's). The multiplayer bodies' shared
+//! parts are here: the 3 x 3 move grid (`square`, `move_grid`) and feet
+//! that follow the eyes (`turn_feet`, `FeetRules`), TF2's
+//! (specs/tf2/player_animation.md 3, 4), on DoD:S's bodies too.
 
 use std::{marker::PhantomData, sync::Arc};
 
@@ -42,6 +45,83 @@ pub fn normalize(a: f32) -> f32 {
     } else {
         a
     }
+}
+
+/// `(cos d, -sin d)` pushed out to the unit square: the multiplayer
+/// bodies' 3 x 3 move grid (`move_x` forward, `move_y` right) for a
+/// movement `d_degrees` counter-clockwise of the eyes (TF2's,
+/// specs/tf2/player_animation.md 3; DoD:S's bodies carry the same grid).
+pub fn square(d_degrees: f32) -> Vec2 {
+    let d = d_degrees.to_radians();
+    let v = Vec2::new(d.cos(), -d.sin());
+    let m = v.x.abs().max(v.y.abs());
+    if m > 1e-6 { v / m } else { Vec2::ZERO }
+}
+
+/// The move grid's `move_x` and `move_y` for horizontal `velocity` against
+/// eye yaw `eye_yaw` (degrees), on `a`'s main sequence: the direction
+/// pushed out to the unit square (`square`), scaled by the speed over the
+/// grid's ground speed in that direction at the full cell, never above 1
+/// (specs/tf2/player_animation.md 3). Zero at or below `moving_speed`.
+/// Writes them to the animator (by name) and returns them.
+pub fn move_grid(a: &mut Animator, velocity: Vec2, eye_yaw: f32, moving_speed: f32) -> Vec2 {
+    let set = a.set.clone();
+    let speed = velocity.length();
+    let mut mv = Vec2::ZERO;
+    let (px, py) = (set.param("move_x"), set.param("move_y"));
+    if speed > moving_speed {
+        mv = square(normalize(velocity.y.atan2(velocity.x).to_degrees() - eye_yaw));
+        if let (Some(px), Some(py), Some(main)) = (px, py, a.main) {
+            a.set_param(px, mv.x);
+            a.set_param(py, mv.y);
+            let g = set.ground_motion(main, &a.params);
+            if g > 0.0 && speed < g {
+                mv *= speed / g;
+            }
+        }
+    }
+    if let Some(px) = px {
+        a.set_param(px, mv.x);
+    }
+    if let Some(py) = py {
+        a.set_param(py, mv.y);
+    }
+    mv
+}
+
+/// How a multiplayer body's feet follow its eyes (`turn_feet`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FeetRules {
+    /// Standing: once the eyes are more than this off the feet's goal, the
+    /// goal steps this far toward them (degrees).
+    pub max_torso: f32,
+    /// The feet's turn rate (degrees/s) ...
+    pub rate: f32,
+    /// ... slower in proportion below this remaining angle.
+    pub fade: f32,
+    /// The returned torso twist's clamp (degrees).
+    pub clamp: f32,
+}
+
+/// The feet `feet` toward their goal `goal` for eye yaw `eye` (degrees):
+/// moving, the goal is the eyes; standing, it steps `max_torso` toward
+/// them once they are more than that off it; the feet turn at `rate`,
+/// slower in the last `fade` (on the unwrapped gap, TF2's quirk,
+/// specs/tf2/player_animation.md 4). Returns the body yaw pose (minus the
+/// eyes against the feet, clamped).
+pub fn turn_feet(feet: &mut f32, goal: &mut f32, eye: f32, moving: bool, dt: f32, r: &FeetRules) -> f32 {
+    if moving {
+        *goal = eye;
+    } else if normalize(*goal - eye).abs() > r.max_torso {
+        *goal = normalize(*goal + r.max_torso * normalize(eye - *goal).signum());
+    }
+    if *feet != *goal {
+        let k = ((*goal - *feet).abs() / r.fade).clamp(0.01, 1.0);
+        let step = r.rate * dt * k;
+        let diff = normalize(*goal - *feet);
+        *feet = if diff.abs() <= step { *goal } else { normalize(*feet + step * diff.signum()) };
+    }
+    (-normalize(eye - *feet)).clamp(-r.clamp, r.clamp)
 }
 
 /// What the body sees this update, in Source terms: degrees, units/s, the

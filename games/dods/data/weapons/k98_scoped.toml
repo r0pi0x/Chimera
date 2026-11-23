@@ -47,5 +47,10 @@ alt_accuracy = 0.0
 move_penalty = 0.1
 recoil = 6.0
 
+[hooks."dods:body_anim"]
+# The body's animations (`player_anim`): the script's anim_prefix "bolt",
+# as the shared player model names its activities (ACT_DOD_STAND_IDLE_BOLT).
+suffix = "BOLT"
+
 [hud]
 name = "Scoped Karabiner 98k"

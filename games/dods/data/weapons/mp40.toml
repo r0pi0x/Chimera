@@ -38,5 +38,10 @@ accuracy = 0.055
 move_penalty = 0.1
 recoil = 2.2
 
+[hooks."dods:body_anim"]
+# The body's animations (`player_anim`): the script's anim_prefix "mp40",
+# as the shared player model names its activities (ACT_DOD_STAND_IDLE_MP40).
+suffix = "MP40"
+
 [hud]
 name = "MP40"

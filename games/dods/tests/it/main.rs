@@ -4,6 +4,9 @@
 //! greybox, a DoD:S player standing at 220 u/s with its eyes at 58 and,
 //! ducked, 34; its envelope), its weapons (`weapons`: fire delays in
 //! ticks, the sights' block, hit zones, the slow, melee from behind),
+//! the bodies' animation (`player_anim`: the sequence families by stance,
+//! movement, sights and deploy; the gestures; in `heavy`, the real model
+//! and the held gun in the hands),
 //! its prone, deployed machine guns and stamina (`stance`), and, in
 //! `heavy`, the user's install (its mount, the nine stock maps converted
 //! with their spawns, the class bodies, its guns' sounds under its own
@@ -13,6 +16,7 @@
 //! docs/OBSERVABILITY.md, section 1.
 
 mod info;
+mod player_anim;
 mod skeleton;
 mod stance;
 mod weapons;
@@ -22,4 +26,5 @@ mod heavy {
     mod install;
     mod scripts;
     mod sounds;
+    mod player_anim;
 }

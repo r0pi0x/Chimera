@@ -156,6 +156,9 @@ pub fn register_hooks(app: &mut App) {
         })
         .register_weapon_hook::<mg::DodsMg>(MG_HOOK, |e, _, p| {
             e.insert(*p);
+        })
+        .register_weapon_hook::<super::player_anim::BodyAnim>(super::player_anim::BODY_ANIM_HOOK, |e, _, p| {
+            e.insert(p.clone());
         });
 }
 

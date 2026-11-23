@@ -35,5 +35,10 @@ script = "weapon_amerknife"
 body = 0.5
 legs = 2.0
 
+[hooks."dods:body_anim"]
+# The body's animations (`player_anim`): the script's anim_prefix "knife",
+# as the shared player model names its activities (ACT_DOD_STAND_AIM_KNIFE).
+suffix = "KNIFE"
+
 [hud]
 name = "US knife"

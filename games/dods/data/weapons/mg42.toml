@@ -45,5 +45,10 @@ recoil = 20.0
 deploy_time = 1.2
 stamina_per_shot = 15.0
 
+[hooks."dods:body_anim"]
+# The body's animations (`player_anim`): the script's anim_prefix "mg", reload_anim_prefix "mg42" (no such reload in the model: the MG's),
+# as the shared player model names its activities (ACT_DOD_STAND_IDLE_MG).
+suffix = "MG"
+
 [hud]
 name = "MG 42"

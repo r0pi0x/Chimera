@@ -47,5 +47,11 @@ alt_accuracy = 0.02
 move_penalty = 0.1
 recoil = 5.0
 
+[hooks."dods:body_anim"]
+# The body's animations (`player_anim`): the script's anim_prefix "rifle", reload_anim_prefix "bar",
+# as the shared player model names its activities (ACT_DOD_STAND_IDLE_RIFLE).
+suffix = "RIFLE"
+reload = "BAR"
+
 [hud]
 name = "BAR"

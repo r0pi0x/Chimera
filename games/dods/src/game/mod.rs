@@ -16,6 +16,9 @@
 //!   speed, friction and stances (stand 72 / eye 58, duck 45 / eye 34),
 //!   with `stance` (prone, deployed machine guns) and `stamina`;
 //! - `weapons`: M0's stand-in gun, the Colt, as data;
+//! - `player_anim`: the bodies' animation from the shared model's
+//!   activities (stance, movement, the gun's set, sights, deploy, fire and
+//!   reload gestures);
 //! - `parts`: what the game lends other games' apps (`PARTS`).
 //!
 //! `DodsPlugins` adds the game's parts after `crate::SimPlugins`; `BUNDLE`
@@ -33,6 +36,7 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod player_anim;
 pub mod stamina;
 pub mod stance;
 pub mod view;
@@ -113,6 +117,7 @@ impl PluginGroup for DodsPlugins {
             .add(DodsViewPlugin)
             .add(weapons::DodsGunsPlugin)
             .add(bodies::DodsBodiesPlugin)
+            .add(player_anim::DodsAnimPlugin)
     }
 }
 
@@ -170,7 +175,7 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 /// What DoD:S adds to a game of several games: the game registered, map
 /// logic for its maps, its movement (not the match's), its view-model
 /// rules, its guns, its
-/// bodies, and its class bodies as practice targets (`targets`).
+/// bodies and their animation, and its class bodies as practice targets (`targets`).
 pub fn party_sim(app: &mut bevy::app::App) {
     use crate::game_registry::GameAppExt;
     app.register_game(&INFO);
@@ -180,7 +185,7 @@ pub fn party_sim(app: &mut bevy::app::App) {
     movement::add_movement(app);
     view::add_rules(app);
     if !app.is_plugin_added::<weapons::DodsGunsPlugin>() {
-        app.add_plugins((weapons::DodsGunsPlugin, bodies::DodsBodiesPlugin));
+        app.add_plugins((weapons::DodsGunsPlugin, bodies::DodsBodiesPlugin, player_anim::DodsAnimPlugin));
         bodies::add_targets(app);
     }
 }
