@@ -21,7 +21,9 @@
 //! A member's preview card on hover (`chimera_ui::shell::Tip::card`) shows
 //! the display name and `@username` (yours from `AccountNames`, the
 //! others' as the hub has them from their tickets: `others_names`) and
-//! the role (Host, Party leader); no ping (it would rebuild every screen).
+//! the role (Host, Party leader) and, for a member on the lobby's server with a
+//! round trip (not you), the ping, live (`update_pings`: `MemberPings`, apart
+//! from `Party`, which a ping would rebuild every second).
 //!
 //! `Party` is written only when it changes, so screens rebuild on it.
 
@@ -104,7 +106,7 @@ impl Plugin for ProfilePlugin {
             }
             Ok(Some(format!("{:?}", *p)))
         });
-        app.add_systems(Update, ((draw_avatar, track_presence, local_status, update_party).chain(), report_tile));
+        app.add_systems(Update, ((draw_avatar, track_presence, local_status, update_party, update_pings).chain(), report_tile));
     }
 }
 
@@ -230,6 +232,27 @@ fn update_party(
     let want = Party { members, max: party.max, invite: hub_party.is_some_and(|p| p.available()) };
     if *party != want {
         *party = want;
+    }
+}
+
+/// The pings of the party's members that are on the lobby's server (their
+/// row by the name their client gave; remote rows only: the local one has
+/// none), keyed as the card's member is (`others_names`).
+fn update_pings(
+    hub_party: Option<Res<chimera_net::net::party::PartyClient>>,
+    lobby: Option<Res<super::prematch_lobby::LobbyView>>,
+    mut pings: ResMut<chimera_ui::shell::MemberPings>,
+) {
+    let mut want = bevy::platform::collections::HashMap::new();
+    if let (Some(v), Some(l)) = (hub_party.as_deref().and_then(|p| p.view.as_ref()), lobby.as_deref().filter(|l| l.shown)) {
+        for m in v.members.iter().filter(|m| m.id != v.you && m.online) {
+            if let Some(ms) = l.rows.iter().find(|r| !r.local && !r.bot && r.name == m.name).and_then(|r| r.ping_ms) {
+                want.insert(others_names(m).0, ms);
+            }
+        }
+    }
+    if pings.0 != want {
+        pings.0 = want;
     }
 }
 

@@ -52,7 +52,8 @@
 //!
 //! Known shortcuts: the "+" opens the party panel only with a hub account
 //! (`Party::invite`; parties: docs/plans/active/parties.md), Friends is
-//! disabled; a hub party's others have no ping yet.
+//! disabled; a ping shows only for a member the server has one for
+//! (`MemberPings`: connected, not yourself).
 
 use bevy::{
     input::{ButtonState, keyboard::{Key, KeyboardInput}},
@@ -173,6 +174,31 @@ impl Tip {
     pub fn key(mut self, k: &str) -> Self {
         self.key = Some(k.to_string());
         self
+    }
+}
+
+/// The round trips (ms) of the connected members, by `Member::name`; an app
+/// keeps it current (`chimera_client`'s profile). Apart from `Party`, so a
+/// ping changing every second rebuilds no screen: a shown card's text
+/// follows it (`update_card_pings`). A member without an entry has no ping.
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct MemberPings(pub bevy::platform::collections::HashMap<String, u16>);
+
+/// A preview card's ping text, of the member of this name.
+#[derive(Component, Clone, Debug)]
+pub struct CardPing(pub String);
+
+/// A shown card's ping follows `MemberPings` (the entry going away leaves
+/// the last value: the card goes with the pointer).
+fn update_card_pings(pings: Option<Res<MemberPings>>, mut texts: Query<(&CardPing, &mut Text)>) {
+    let Some(pings) = pings.filter(|p| p.is_changed()) else { return };
+    for (who, mut text) in &mut texts {
+        if let Some(ms) = pings.0.get(&who.0) {
+            let now = format!("{ms} MS");
+            if text.0 != now {
+                text.0 = now;
+            }
+        }
     }
 }
 
@@ -599,6 +625,7 @@ pub fn show_tips(
     tips: Query<(Entity, &Tip, &Interaction)>,
     plates: Query<(Entity, &TipPlate)>,
     (mut images, mut icons): (Option<ResMut<Assets<Image>>>, Option<ResMut<IconImages>>),
+    pings: Option<Res<MemberPings>>,
     mut since: Local<Option<(Entity, f64)>>,
     mut c: Commands,
 ) {
@@ -659,8 +686,11 @@ pub fn show_tips(
             let t = ui.boxed(&mut c, tags, UiStyle { pad: Some([0.1, 0.3, 0.1, 0.3].into()), ..UiStyle::row() }.outline(Tone::Fg3, 1.0));
             ui.text(&mut c, t, Role::Mono, 0.5, Tone::Fg2, &tag.to_uppercase());
         }
-        if let Some(ms) = m.ping {
-            ui.text(&mut c, tags, Role::Mono, 0.54, Tone::Fg3, &format!("{ms} ms"));
+        // The ping: live (`MemberPings`, updated while the card shows),
+        // else the member's own, when any.
+        if let Some(ms) = pings.as_deref().and_then(|p| p.0.get(&m.name).copied()).or(m.ping) {
+            let t = ui.text(&mut c, tags, Role::Mono, 0.54, Tone::Fg3, &format!("{ms} ms"));
+            c.entity(t).insert(CardPing(m.name.clone()));
         }
         return;
     }
@@ -684,7 +714,8 @@ impl Plugin for ShellPlugin {
             .add_message::<KeyboardInput>()
             .add_message::<ShellBackPressed>()
             .add_systems(PreUpdate, back_keys.before(bevy::input::InputSystems))
-            .add_systems(Update, (crumb_hover, show_tips));
+            .init_resource::<MemberPings>()
+            .add_systems(Update, (crumb_hover, show_tips, update_card_pings).chain());
     }
 }
 

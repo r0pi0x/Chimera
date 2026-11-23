@@ -236,3 +236,58 @@ fn hovering_an_avatar_shows_the_member_card() {
         assert_eq!(plates(&mut app), 0, "gone when the pointer leaves");
     }
 }
+
+/// A connected member's card shows its ping, which follows `MemberPings`
+/// while the card is up; a member without one (yourself, offline) shows none.
+#[test]
+fn a_member_card_shows_the_live_ping_of_a_connected_member() {
+    use bevy::ui::DeprecatedInteraction as Interaction;
+    let mut app = app();
+    let theme = app.world().resource::<Theme>().clone();
+    let units = *app.world().resource::<UiUnits>();
+    let mut other = me();
+    other.name = "rocket_gg".into();
+    other.marks.you = false;
+    let party = [me(), other];
+    let world = app.world_mut();
+    let mut images = world.remove_resource::<Assets<Image>>().unwrap();
+    let mut icons = world.remove_resource::<IconImages>().unwrap();
+    let root = world.spawn((Node::default(), ShellScreen)).id();
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    {
+        let mut c = Commands::new(&mut queue, world);
+        let ui = Ui::new(&theme, None, units);
+        shell::bar(&ui, &mut c, root, &mut images, &mut icons, &Bar { left: Left::Lockup, party: &party, party_max: 8, invite: false, open: None });
+    }
+    queue.apply(world);
+    world.insert_resource(images);
+    world.insert_resource(icons);
+    world.resource_mut::<shell::MemberPings>().0.insert("rocket_gg".into(), 48);
+    app.update();
+    let cell_of = |app: &mut App, name: &str| {
+        app.world_mut().query::<(Entity, &shell::Tip)>().iter(app.world()).find(|(_, t)| t.card.as_ref().is_some_and(|m| m.name == name)).map(|(e, _)| e).unwrap()
+    };
+    let pings = |app: &mut App| -> Vec<String> { app.world_mut().query::<(&shell::CardPing, &Text)>().iter(app.world()).map(|(_, t)| t.0.clone()).collect() };
+    let hover = |app: &mut App, cell: Entity| {
+        app.world_mut().entity_mut(cell).insert(Interaction::Hovered);
+        app.world_mut().resource_mut::<UiClock>().step(0.1);
+        app.update();
+        app.world_mut().resource_mut::<UiClock>().step(0.5);
+        app.update();
+        app.update();
+    };
+    // Yourself: no ping, whatever the map holds for others.
+    let mine = cell_of(&mut app, "Player");
+    hover(&mut app, mine);
+    assert!(pings(&mut app).is_empty(), "no ping on your own card");
+    app.world_mut().entity_mut(mine).insert(Interaction::None);
+    app.update();
+    app.update();
+    // A connected member: its ping, then the next one.
+    let theirs = cell_of(&mut app, "rocket_gg");
+    hover(&mut app, theirs);
+    assert_eq!(pings(&mut app), vec!["48 MS".to_string()]);
+    app.world_mut().resource_mut::<shell::MemberPings>().0.insert("rocket_gg".into(), 73);
+    app.update();
+    assert_eq!(pings(&mut app), vec!["73 MS".to_string()], "the ping updates while the card shows");
+}

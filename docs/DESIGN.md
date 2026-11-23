@@ -1272,7 +1272,7 @@ Settings had the new ones, and the match end's Leave had no hover.
   account card in a corner. Your avatar is the Profile tile (a click opens
   the Account page; P on the main menu too), and hovering any member's
   avatar shows a small preview card (`Tip::card`: avatar, name, tags, ping
-  when known), never blocking. The main menu's top right is a hub
+  of a connected member, live: `MemberPings`, apart from `Party`), never blocking. The main menu's top right is a hub
   indicator (name and an online light, never the address).
 - **A missing feature** is an option on the kit's builder (an icon on a
   button, a narrower control column for a dialog's rules), shown in a

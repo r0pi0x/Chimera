@@ -478,7 +478,10 @@ admin page lists invites by intent, with status and Revoke.
   card's hover bad and wanted the profile behind the party strip's own
   avatar, with a hover preview of every member) and, while the hub's last call failed,
   the offline banner ("Can't reach <hub>", offline play goes on, Retry
-  now, retried every 30 s). Test: `onboarding::a_returning_player_sees_
+  now, retried every 30 s). The member card shows a connected member's ping, live
+  (done 2026-11-23: `chimera_ui::shell::MemberPings`, fed by `profile::update_pings`
+  from the lobby's rows; none for you or an offline member; test `chimera_ui`
+  `shell::a_member_card_shows_the_live_ping_of_a_connected_member`). Test: `onboarding::a_returning_player_sees_
   the_hub_indicator_and_the_offline_banner`; `ui_scene onboarding
   returning|offline`.
 - Milestone (d), the first-launch intro (decision 7), done 2026-11-21:
