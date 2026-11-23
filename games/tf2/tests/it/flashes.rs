@@ -165,7 +165,7 @@ fn the_view_model_switched_off_shows_no_flash() {
         out.extend(cursor.read(sim.app.world().resource::<Messages<StartParticleSystem>>()).cloned());
     }
     assert!(out.iter().all(|s| !s.name.starts_with("muzzle_")), "{out:?}");
-    assert!(out.iter().any(|s| s.name.starts_with("bullet_tracer01")), "tracers still from the eye: {out:?}");
+    assert!(out.iter().any(|s| s.name.starts_with("bullet_pistol_tracer01")), "tracers still from the eye: {out:?}");
 }
 
 /// A tracer heads for the bullet's end from the re-projected muzzle,
@@ -176,7 +176,7 @@ fn tracers_start_at_the_muzzle_and_head_for_the_bullets_end() {
     let tracers: Vec<_> = starts.iter().filter(|s| s.name.starts_with("bullet_")).collect();
     assert!(!tracers.is_empty(), "the SMG drew tracers");
     for t in &tracers {
-        assert!(t.name == "bullet_tracer01_red" || t.name == "bullet_tracer01_blue", "{}", t.name);
+        assert!(t.name == "bullet_pistol_tracer01_red" || t.name == "bullet_pistol_tracer01_blue", "{}", t.name);
         assert!(t.end.is_some(), "heads for the bullet's end");
         assert!(t.follow.is_none(), "a tracer flies on its own");
     }

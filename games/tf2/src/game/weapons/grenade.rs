@@ -23,7 +23,8 @@
 //! The explosion is the shared one (`blast`): 100 x the splash (60 on the
 //! fuse), no distance modifier; the Demoman's own the base 100 x the
 //! splash to 146 units x0.75 grounded or airborne, pushed at scale 9
-//! (weapons_more.md 6 and its corrections from the SDK).
+//! (weapons_more.md 6 and its corrections from the SDK). A pipe an
+//! airblast turned (`airblast::Deflected`) mini-crits (7.4).
 //!
 //! Known shortcuts: the restitution and friction are ours (the physics
 //! engine's in the game: open question 7), as is the grenade's 2-unit box
@@ -86,19 +87,19 @@ pub fn bounce(v: Vec3, n: Vec3) -> Vec3 {
 pub fn touch(
     mut hits: MessageReader<FlyerHit>,
     rules: Res<GrenadeRules>,
-    mut flyers: Query<(&mut Flyer, &Transform, Has<Rolled>)>,
+    mut flyers: Query<(&mut Flyer, &Transform, Has<Rolled>, Has<super::airblast::Deflected>)>,
     mut world: BlastWorld,
     mut gone: MessageWriter<FlyerGone>,
     mut commands: Commands,
 ) {
     for hit in hits.read() {
         let Some((p, _)) = rules.0.get(hit.weapon) else { continue };
-        let Ok((mut f, t, rolled)) = flyers.get_mut(hit.flyer) else { continue };
+        let Ok((mut f, t, rolled, deflected)) = flyers.get_mut(hit.flyer) else { continue };
         let enemy = hit.character && hit.other.is_some_and(|o| hit.owner.is_none_or(|w| !world.mates(w, o)));
         if enemy && !rolled {
             // Its 64-unit line through its centre (effects.md 13).
             let at = world.pipe_hit(t.translation, hit.velocity);
-            let blast = Blast { params: p, radius: p.radius, ramp: None, scale: 1.0 };
+            let blast = Blast { params: p, radius: p.radius, ramp: None, scale: 1.0, mini_crit: deflected };
             world.detonate(&blast, &at, hit.owner, hit.weapon, hit.other);
             gone.write(FlyerGone { flyer: hit.flyer, weapon: hit.weapon, owner: hit.owner, at: at.centre, expired: false });
             commands.entity(hit.flyer).despawn();
@@ -127,13 +128,13 @@ pub fn touch(
 }
 
 /// The fuse: a grenade whose life ended explodes where it is.
-pub fn fuse(mut ends: MessageReader<FlyerGone>, rules: Res<GrenadeRules>, mut world: BlastWorld) {
+pub fn fuse(mut ends: MessageReader<FlyerGone>, rules: Res<GrenadeRules>, deflected: Query<(), With<super::airblast::Deflected>>, mut world: BlastWorld) {
     for end in ends.read() {
         if !end.expired {
             continue;
         }
         let Some((p, _)) = rules.0.get(end.weapon) else { continue };
-        let blast = Blast { params: p, radius: p.radius, ramp: None, scale: p.fuse_scale.unwrap_or(1.0) };
+        let blast = Blast { params: p, radius: p.radius, ramp: None, scale: p.fuse_scale.unwrap_or(1.0), mini_crit: deflected.contains(end.flyer) };
         // Snapped onto a floor within 24 units below (effects.md 13).
         let at = world.fused(end.at, None);
         world.detonate(&blast, &at, end.owner, end.weapon, None);

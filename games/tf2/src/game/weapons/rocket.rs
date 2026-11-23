@@ -16,6 +16,9 @@
 //! 200 units (else the line's end), from its offset pulled back by the
 //! world (`chimera:projectile` `aim_trace`, `start_trace`; weapons.md 5.1).
 //!
+//! A rocket an airblast turned (`airblast::Deflected`) mini-crits what it
+//! hits (weapons_more.md 7.4).
+//!
 //! Known shortcuts: the blast's (`blast`).
 
 use std::sync::Arc;
@@ -66,19 +69,17 @@ impl RocketRules {
 pub fn explode(
     mut hits: MessageReader<FlyerHit>,
     rules: Res<RocketRules>,
-    flyers: Query<&Flyer>,
+    flyers: Query<(&Flyer, Has<super::airblast::Deflected>)>,
     mut world: BlastWorld,
     mut gone: MessageWriter<FlyerGone>,
     mut commands: Commands,
 ) {
     for hit in hits.read() {
         let Some((p, ramp)) = rules.get(hit.weapon) else { continue };
-        if !flyers.contains(hit.flyer) {
-            continue;
-        }
+        let Ok((_, deflected)) = flyers.get(hit.flyer) else { continue };
         // 1 unit off the surface it touched (effects.md 13).
         let at = world.touched(hit.point, hit.normal, hit.other);
-        let blast = Blast { params: p, radius: p.radius, ramp: p.by_distance.then_some(ramp), scale: 1.0 };
+        let blast = Blast { params: p, radius: p.radius, ramp: p.by_distance.then_some(ramp), scale: 1.0, mini_crit: deflected };
         world.detonate(&blast, &at, hit.owner, hit.weapon, hit.other);
         gone.write(FlyerGone {
             flyer: hit.flyer,

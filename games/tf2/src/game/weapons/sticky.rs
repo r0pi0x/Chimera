@@ -21,7 +21,8 @@
 //!   air (`drag`, 4.4: Chimera's `flight::AirDrag` at `tf2:air_density`,
 //!   2).
 //! - **Touches** (5.2, `touch`): the world (what doesn't move) stops it
-//!   dead and it stays (`Flyer::stuck_until` far away); anything else
+//!   dead and it stays (`Flyer::stuck_until` far away; not for 1 s after
+//!   an airblast moved it, `Unstuck`); anything else
 //!   bounces it off at half speed; it never explodes on contact.
 //! - **Detonation** (5.3, 5.4, `detonate`): attack2 with the launcher, or any
 //!   other TF2 weapon, out detonates every sticky of its owner armed (`arm_time`: `arm` +
@@ -419,14 +420,27 @@ const FOREVER: f64 = 1.0e12;
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
 pub struct StuckNormal(pub Vec3);
 
-/// Stickies' touches: stuck on the world, bounced off the rest.
-pub fn touch(mut hits: MessageReader<FlyerHit>, rules: Res<StickyRules>, mut flyers: Query<&mut Flyer>, mut commands: Commands) {
+/// On a sticky knocked loose or turned by an airblast (weapons_more.md
+/// 7.4): it doesn't stick again before this time.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[component(storage = "SparseSet")]
+pub struct Unstuck(pub f64);
+
+/// Stickies' touches: stuck on the world (not while `Unstuck`), bounced
+/// off the rest.
+pub fn touch(
+    mut hits: MessageReader<FlyerHit>,
+    rules: Res<StickyRules>,
+    mut flyers: Query<(&mut Flyer, Option<&Unstuck>)>,
+    clock: Res<SimClock>,
+    mut commands: Commands,
+) {
     for hit in hits.read() {
         if rules.get(hit.weapon).is_none() {
             continue;
         }
-        let Ok(mut f) = flyers.get_mut(hit.flyer) else { continue };
-        if hit.world {
+        let Ok((mut f, unstuck)) = flyers.get_mut(hit.flyer) else { continue };
+        if hit.world && unstuck.is_none_or(|u| clock.now + 1e-6 >= u.0) {
             f.velocity = Vec3::ZERO;
             f.stuck_until = Some(FOREVER);
             commands.entity(hit.flyer).insert(StuckNormal(hit.normal));
@@ -514,6 +528,7 @@ pub fn detonate(
             radius: p.radius_at(age, stuck),
             ramp: (age <= p.flat_after).then_some(ramp),
             scale: charged.get(e).map_or(1.0, |c| c.0),
+            mini_crit: false,
         };
         // Snapped onto a floor within 24 units below, with the normal of
         // the surface it stuck to (effects.md 13).

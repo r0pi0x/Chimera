@@ -246,6 +246,11 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
             "Weapon_FlameThrower.FireHit",
             "Weapon_FlameThrower.PilotLoop",
             "Weapon_FlameThrower.Draw",
+            // The airblast (weapons_more.md 7.4).
+            "Weapon_FlameThrower.AirBurstAttack",
+            "Weapon_FlameThrower.AirBurstAttackDeflect",
+            "TFPlayer.AirBlastImpact",
+            "TFPlayer.FlameOut",
         ],
         models: &[],
     },

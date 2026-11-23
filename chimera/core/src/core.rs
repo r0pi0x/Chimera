@@ -1574,21 +1574,77 @@ pub struct MaxSpeed(pub Option<f32>);
 /// the tick's max speed; Combat Arms: its speed limit; Halo: the forward
 /// run speed at its crouch blend; the placeholder: its speed for the
 /// stance). On every character from the spawn (`MaxSpeed`'s way).
+///
+/// A push that also knocks the body off its feet (TF2's airblast,
+/// specs/tf2/weapons_more.md 7.4) sets two more:
+/// - `no_footing` (s left; `push_footing` counts it down for every
+///   movement): the ground limit waits (`take_on_ground` gives none), and
+///   while the body slides on the ground at `slide_min` (m/s) or more its
+///   ground friction is x `slide_friction`; slower than that on the
+///   ground it has its footing back (cleared). A movement that has
+///   friction honours the share; every one gets the wait.
+/// - `air_control` (a share of the movement's air acceleration; 0: its
+///   own): until the body next stands on the ground (`push_footing`
+///   clears it there).
 #[derive(Component, Reflect, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[reflect(Component)]
 pub struct ExternalPush {
     pub ground_limit: f32,
     pub lift: bool,
+    pub no_footing: f32,
+    pub slide_min: f32,
+    pub slide_friction: f32,
+    pub air_control: f32,
 }
 
 impl ExternalPush {
     /// A push to honour on a tick the body starts on the ground: the
-    /// limit (None: none waiting, or a lift: it flies first). Clears it.
+    /// limit (None: none waiting, a lift: it flies first, or the body has
+    /// no footing yet). Clears it.
     pub fn take_on_ground(&mut self) -> Option<f32> {
-        if self.lift || self.ground_limit <= 0.0 {
+        if self.lift || self.ground_limit <= 0.0 || self.no_footing > 0.0 {
             return None;
         }
         Some(std::mem::take(&mut self.ground_limit))
+    }
+
+    /// The share of the ground friction a body sliding at `speed` (m/s,
+    /// horizontal) takes: `slide_friction` without footing at
+    /// `slide_min` or more, else 1.
+    pub fn friction_share(&self, speed: f32) -> f32 {
+        if self.no_footing > 0.0 && speed >= self.slide_min && self.slide_friction > 0.0 { self.slide_friction } else { 1.0 }
+    }
+
+    /// The share of the air acceleration the body has (1: its own).
+    pub fn air_share(&self) -> f32 {
+        if self.air_control > 0.0 { self.air_control } else { 1.0 }
+    }
+}
+
+/// Before every movement (`Predict::PlaceMovers`): a push's lost footing
+/// counts down (`ExternalPush::no_footing`), ends on the ground below its
+/// slide speed, and its air control ends once the body stands
+/// (`air_control`). Any movement, any game's body.
+pub fn push_footing(mut q: Query<(&mut ExternalPush, &MovementState, &Velocity)>, clock: Res<SimClock>) {
+    let dt = clock.dt();
+    for (mut p, state, v) in &mut q {
+        if p.no_footing <= 0.0 && p.air_control <= 0.0 {
+            continue;
+        }
+        let mut next = *p;
+        let standing = state.on_ground && !p.lift;
+        if next.no_footing > 0.0 {
+            next.no_footing = (next.no_footing - dt).max(0.0);
+            if standing && Vec2::new(v.0.x, v.0.z).length() < next.slide_min {
+                next.no_footing = 0.0;
+            }
+        }
+        if standing {
+            next.air_control = 0.0;
+        }
+        if *p != next {
+            *p = next;
+        }
     }
 }
 
@@ -3016,6 +3072,7 @@ impl Plugin for CorePlugin {
         for stage in Predict::ALL {
             app.init_schedule(stage);
         }
+        app.add_systems(Predict::PlaceMovers, push_footing);
     }
 }
 

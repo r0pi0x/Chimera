@@ -154,7 +154,7 @@ fn a_rocket_on_the_floor_leaves_a_scorch_and_shows_the_wall_effect() {
     assert!(scorch[0].point.y < b[0].at.y && scorch[0].normal.y > 0.9, "on the floor under it: {:?}", scorch[0]);
     let e: Vec<_> = starts.iter().filter(|s| s.name.starts_with("ExplosionCore")).collect();
     assert_eq!(e.len(), 1, "{starts:?}");
-    assert_eq!(e[0].name, "ExplosionCore_Wall");
+    assert_eq!(e[0].name, "ExplosionCore_wall", "the script's spelling (effects.md 5)");
     assert!(e[0].forward.y > 0.9, "along the floor's normal");
     // Its trail (effects.md 1): `rockettrail` once, following the flyer
     // without carrying what it left (psys::Follow::carry).
@@ -232,7 +232,7 @@ fn a_rockets_trail_rides_its_models_trail_attachment_1() {
         half: Vec3::splat(0.1),
         surface: None,
         nose: None,
-        attachments,
+        attachments: attachments.into_iter().map(|(n, p)| (n, Transform::from_translation(p))).collect(),
     };
     let mut assets = LooseAssets::default();
     assets.0.insert("tf2:tf_weapon_rocketlauncher/rocket".into(), model(vec![("trail".into(), tail)]));
@@ -248,6 +248,33 @@ fn a_rockets_trail_rides_its_models_trail_attachment_1() {
     let (starts, ..) = collect(&mut sim, 2, |s, t| s.intent(p).fire = t == 0);
     let pipe = starts.iter().find(|s| s.name.starts_with("pipebombtrail_")).expect("the pipe's trail");
     assert_eq!(pipe.follow.unwrap().local, Vec3::ZERO, "a pipe's from its origin");
+}
+
+/// effects.md 1 (the trail's control point, 2026-11-23): the rocket's
+/// trail takes the `trail` attachment's axes, not the rocket's: its x out
+/// of the tail (the rocket's -x), its z along the rocket's left, so the
+/// burst's sparks leave backward and the smoke drifts right.
+#[test]
+fn a_rockets_trail_takes_its_attachments_axes_1() {
+    use chimera_world::map::loose::{LooseAsset, LooseAssets};
+    let mut sim = sim();
+    // The attachment's x back along the rocket, its y up, its z the
+    // third (a half turn about up).
+    let axes = Mat3::from_cols(Vec3::NEG_X, Vec3::Y, Vec3::NEG_Z);
+    let turn = Quat::from_mat3(&axes);
+    let tail = Transform::from_translation(Vec3::new(-0.245, 0.0, 0.0)).with_rotation(turn);
+    let mut assets = LooseAssets::default();
+    assets.0.insert(
+        "tf2:tf_weapon_rocketlauncher/rocket".into(),
+        LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.1), surface: None, nose: None, attachments: vec![("trail".into(), tail)] },
+    );
+    sim.app.insert_resource(assets);
+    let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), ROCKET_LAUNCHER);
+    let (starts, ..) = collect(&mut sim, 2, |s, t| s.intent(p).fire = t == 0);
+    let trail = starts.iter().find(|s| s.name == "rockettrail").expect("a trail").clone();
+    let f = trail.follow.expect("follows the rocket");
+    assert!((f.forward - Vec3::NEG_X).length() < 1e-5, "x out of the tail: {}", f.forward);
+    assert!(f.up.is_some_and(|u| (u - Vec3::NEG_Z).length() < 1e-5), "z as the attachment's: {:?}", f.up);
 }
 
 /// effects.md 1: a sticky trails `stickybombtrail_<team>` from its launch
@@ -542,7 +569,7 @@ fn a_detonated_sticky_on_the_floor_uses_the_wall_effect_and_scorches_13() {
     assert!((b[0].at.y - 0.0254).abs() < 0.002, "1 unit above the floor: {:?}", b[0]);
     assert_eq!(scorch.len(), 1, "a scorch");
     assert!(scorch[0].point.y.abs() < 1e-3, "on the floor: {:?}", scorch[0]);
-    assert!(starts.iter().any(|s| s.name == "ExplosionCore_Wall"), "{:?}", starts.iter().map(|s| &s.name).collect::<Vec<_>>());
+    assert!(starts.iter().any(|s| s.name == "ExplosionCore_wall"), "{:?}", starts.iter().map(|s| &s.name).collect::<Vec<_>>());
 }
 
 /// effects.md 9, 13: a rocket on a river bed under water goes off 1 unit

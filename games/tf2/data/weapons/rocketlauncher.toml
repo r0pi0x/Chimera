@@ -102,11 +102,12 @@ sound = "tf2:BaseExplosionEffect.Sound"
 # Its looks (specs/tf2/effects.md 1, 4, 5; looks.rs): no muzzle flash (no
 # rocket-launcher system exists); `rocketbackblast` at the launcher's
 # `backblast` attachment on each shot, for everyone but the shooter; its
-# blasts' effects (explosion.pcf names; which script field holds which is
-# unconfirmed).
+# blasts' effects (the script's names, effects.md 1 and 5: the wall one
+# spelled `ExplosionCore_wall`, names matched ignoring case); a crit-boosted
+# owner's rocket also shows `critical_rocket_<team>` on itself (`crit`).
 [hooks."tf2:looks"]
 # The trail: `rockettrail_underwater` instead when the rocket first shows in
 # water, chosen once (effects.md 9).
-trail = { shown = "tf2:tf_weapon_rocketlauncher/rocket", system = "rockettrail", under_water = "rockettrail_underwater", at = "trail" }
+trail = { shown = "tf2:tf_weapon_rocketlauncher/rocket", system = "rockettrail", crit = "critical_rocket", under_water = "rockettrail_underwater", at = "trail" }
 backblast = { system = "rocketbackblast", at = "backblast" }
-explosion = { wall = "ExplosionCore_Wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }
+explosion = { wall = "ExplosionCore_wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }

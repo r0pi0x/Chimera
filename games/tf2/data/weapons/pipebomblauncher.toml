@@ -109,13 +109,14 @@ model_hidden = 0.1
 # The shot's look (specs/tf2/effects.md 1, 2, 5; looks.rs): its muzzle
 # flash system (muzzle_flash.pcf) at the gun's `muzzle` attachment; its
 # blasts' effects (explosion.pcf: on a surface, in the air or on a player,
-# under water; which name sits in which script field is unconfirmed, the
-# pcf names are used), the Stickybomb Launcher's for pipes too.
+# under water: the script's names, effects.md 1 and 5), the Stickybomb
+# Launcher's for pipes too; a crit-boosted owner's sticky also shows
+# `critical_grenade_<team>` on itself (`crit`).
 [hooks."tf2:looks"]
-trail = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybombtrail", team = true }
+trail = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybombtrail", team = true, crit = "critical_grenade" }
 # Its pulse once armed (effects.md 11.3): each machine starts it the
 # arm time (tf2:sticky's arm + sticky_arm_time, 0.8) after it first
 # received the sticky.
 armed = { shown = "tf2:tf_weapon_pipebomblauncher/sticky", system = "stickybomb_pulse", team = true }
 muzzle = "muzzle_pipelauncher"
-explosion = { wall = "ExplosionCore_Wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }
+explosion = { wall = "ExplosionCore_wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }

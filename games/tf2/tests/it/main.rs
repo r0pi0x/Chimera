@@ -31,10 +31,12 @@
 //! test passing with a note without one. Also crit boosts' loop and
 //! glow and the Flame Thrower's crit loop swap (`crit_boost`), and the
 //! reload sounds the shooter (his view model's events) and the others
-//! (the world reload) hear (`viewmodel_sounds`).
+//! (the world reload) hear (`viewmodel_sounds`), and the Pyro's
+//! airblast (`airblast`).
 //! `cargo test -p tf2 --features dev --test it`; where tests go:
 //! docs/OBSERVABILITY.md, section 1.
 
+mod airblast;
 mod crit_boost;
 mod ice;
 mod items;

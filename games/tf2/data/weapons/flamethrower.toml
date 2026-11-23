@@ -87,8 +87,47 @@ hit_sound = "tf2:Weapon_FlameThrower.FireHit"
 pilot_sound = "tf2:Weapon_FlameThrower.PilotLoop"
 burst_fade = 3.5
 
+# Attack2's airblast (specs/tf2/weapons_more.md 7.4; airblast.rs): 20 ammo,
+# the next in 0.75 s, the next flame in 1.0 s, not under water. A sphere of
+# 128 centred 128 ahead of the eye (seen from it); enemies also in a 35
+# degree cone 256 long. Enemies pushed 600 (`tf_airblast_cray_power`)
+# along the aim's pitch at the yaw to them, a speed toward the Pyro
+# mirrored (x 2) with half its cost off, standing ones bounced off the
+# ground (a 5-unit sweep) and lifted at least 100; no footing 0.5 s
+# (sliding at 0.1 x friction from 50 units/s), air control 0.25 x and air
+# friction 0.75 x until landing; a 10-15 degree view punch. Projectiles
+# keep their speed toward the aim point; a stuck sticky is knocked loose
+# at 2000 and doesn't stick for 1 s.
+[hooks."tf2:flame".airblast]
+cost = 20
+refire = 0.75
+flame_after = 1.0
+reach = 128.0
+cone = 35.0
+power = 600.0
+reflect = 2.0
+cost_coeff = 0.5
+ground_min_z = 100.0
+ground_probe = 5.0
+punch = [10.0, 15.0]
+no_footing = 0.5
+slide_speed = 50.0
+slide_friction = 0.1
+air_control = 0.25
+air_friction = 0.75
+sticky_push = 2000.0
+no_restick = 1.0
+sound = "tf2:Weapon_FlameThrower.AirBurstAttack"
+deflect_sound = "tf2:Weapon_FlameThrower.AirBurstAttackDeflect"
+impact_sound = "tf2:TFPlayer.AirBlastImpact"
+flame_out_sound = "tf2:TFPlayer.FlameOut"
+
 # The stream (specs/tf2/flames.md 3): one `new_flame` per burst at the
 # muzzle, its sprites riding the flame points (control points 1-30); a
 # crit's by team, under water's.
 [hooks."tf2:looks"]
 stream = { system = "new_flame", crit = "new_flame_crit", under_water = "flamethrower_underwater", burst_gap = 0.1 }
+# The airblast's look (flames.md 3.1.1) on the muzzle, and each deflected
+# projectile's (weapons_more.md 7.4).
+airblast = "pyro_blast"
+deflect = "deflect_fx"

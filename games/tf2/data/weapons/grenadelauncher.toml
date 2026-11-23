@@ -115,9 +115,10 @@ bounce_sound = "tf2:Weapon_Grenade_Pipebomb.Bounce"
 # The shot's look (specs/tf2/effects.md 1, 2, 5; looks.rs): its muzzle
 # flash system (muzzle_flash.pcf) at the gun's `muzzle` attachment; its
 # blasts' effects (explosion.pcf: on a surface, in the air or on a player,
-# under water; which name sits in which script field is unconfirmed, the
-# pcf names are used): the Stickybomb Launcher's, as TF2 reads for pipes.
+# under water: the script's names, effects.md 1 and 5): the Stickybomb
+# Launcher's, as TF2 reads for pipes; a crit-boosted owner's pipe also
+# shows `critical_pipe_<team>` on itself (`crit`).
 [hooks."tf2:looks"]
-trail = { shown = "tf2:tf_weapon_grenadelauncher/grenade", system = "pipebombtrail", team = true }
+trail = { shown = "tf2:tf_weapon_grenadelauncher/grenade", system = "pipebombtrail", team = true, crit = "critical_pipe" }
 muzzle = "muzzle_grenadelauncher"
 explosion_of = "tf2:tf_weapon_pipebomblauncher"

@@ -33,7 +33,9 @@
 //! ground as logic does (`BaseVelocity::unground`); its ground limit cuts
 //! the horizontal speed, after the first grounded tick's friction, to
 //! that share of the tick's max speed (the held weapon's, the game's or
-//! the class's).
+//! the class's); a push that took the footing (TF2's airblast) waits for
+//! it, slides at its share of the friction, keeps any upward speed in
+//! the air and accelerates in the air at its share until it lands.
 //!
 //! The maths runs in Source units (inches, Z up) like the spec; the
 //! character's `Transform` (engine meters, Y up) is the centre of the
@@ -1722,7 +1724,10 @@ impl Mover<'_, '_, '_, '_> {
             return;
         }
         let control = speed.max(self.cfg.stopspeed);
-        let drop = control * self.cfg.friction * self.me.surface_friction * self.dt;
+        // A push that took the footing (`core::ExternalPush`): sliding,
+        // a share of the friction.
+        let share = self.push.friction_share(self.v.truncate().length() * METERS_PER_UNIT);
+        let drop = control * self.cfg.friction * self.me.surface_friction * share * self.dt;
         let new_speed = (speed - drop).max(0.0);
         self.v *= new_speed / speed;
     }
@@ -1741,7 +1746,8 @@ impl Mover<'_, '_, '_, '_> {
         if add <= 0.0 {
             return;
         }
-        let amount = (accel * wish_speed * self.dt * self.me.surface_friction).min(add);
+        // A push's air current (`core::ExternalPush::air_control`).
+        let amount = (accel * self.push.air_share() * wish_speed * self.dt * self.me.surface_friction).min(add);
         self.v += dir * amount;
     }
 
@@ -2012,7 +2018,10 @@ impl Mover<'_, '_, '_, '_> {
     fn categorize(&mut self) {
         self.me.surface_friction = 1.0;
         // Moving up on a ladder always counts as airborne.
-        if self.v.z > self.cfg.leave_ground_vz || (self.me.ladder.is_some() && self.v.z > 0.0) {
+        // Without footing (`core::ExternalPush::no_footing`) any speed
+        // away from the ground keeps the body in the air.
+        let footless = self.push.no_footing > 0.0 && self.v.z > 0.0;
+        if self.v.z > self.cfg.leave_ground_vz || (self.me.ladder.is_some() && self.v.z > 0.0) || footless {
             self.set_ground(false, None);
         } else {
             let (lo, hi) = self.trace.hull(self.me.ducked);

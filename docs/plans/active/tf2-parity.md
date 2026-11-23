@@ -183,6 +183,17 @@ Captured imagery stays in scratch, never in the repo.
 
 ### Measurements for the remaining effects (nothing here may be guessed)
 
+Done 2026-11-23 (tf2-airblast, from the specs of 86a53a083): 1 (the
+airblast itself, weapons_more.md 7.4: `weapons::airblast`, its look
+`pyro_blast` on the muzzle and `deflect_fx` on deflected flyers, tests in
+games/tf2/tests/it/airblast.rs; the push through Chimera's `ExternalPush`,
+now with lost footing and air control every movement honours), 2 (the
+scripts' names: SMG tracer `bullet_pistol_tracer01`, the wall blast
+`ExplosionCore_wall` matched ignoring case), 4 (the trail takes the `trail`
+attachment's axes: `LooseAsset::attachment_frame`) and 5 (a crit-boosted
+owner's flyer shows `critical_rocket_`/`critical_pipe_`/`critical_grenade_
+<team>`; blast damage still never crits). 3 stays open.
+
 1. **The airblast's look** (`pyro_blast`, flames.md 3.1): settled as a
    name, but ours has no airblast (weapons_more.md 7.4 is reference
    only). Before it can be drawn a spec must give the airblast itself:

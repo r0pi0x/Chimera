@@ -13,7 +13,7 @@
 //! Chimera's view-model driver (`rules`): the
 //! draw, idle, fire and the reload (a whole clip, or its start, rounds
 //! and end), the Minigun's spin up, spun idle and spin down, the
-//! Stickybomb Launcher's charge, from the specs' sequence tables
+//! Stickybomb Launcher's charge, the Flame Thrower's airblast, from the specs' sequence tables
 //! (`SEQUENCES`, and for a gun in another class's hands
 //! `CLASS_SEQUENCES`: weapons.md 8.2, weapons_more.md 9.2); drawn at
 //! `VIEWMODEL_FOV` (`tf2_viewmodel_fov` in an app of several games),
@@ -65,7 +65,7 @@ use crate::map::{ViewModelEventKind, anim::AnimEvent};
 
 use super::weapons::{
     BAT, BONESAW, BOTTLE, FIREAXE, FISTS, FLAMETHROWER, GRENADE_LAUNCHER, KNIFE, KUKRI, MINIGUN, PISTOL_SCOUT, REVOLVER,
-    ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN, SHOVEL, SMG, SNIPER_RIFLE, STICKY_LAUNCHER, SYRINGE_GUN, WRENCH, melee, minigun, sticky,
+    ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN, SHOVEL, SMG, SNIPER_RIFLE, STICKY_LAUNCHER, SYRINGE_GUN, WRENCH, airblast, melee, minigun, sticky,
 };
 use crate::map::GameFov;
 
@@ -111,6 +111,9 @@ pub struct Sequences {
     pub spin_down: Option<(&'static str, &'static str)>,
     /// The Stickybomb Launcher's charge (`weapons::sticky::CHARGE`).
     pub charge: Option<(&'static str, &'static str)>,
+    /// The Flame Thrower's airblast (`weapons::airblast::AIRBLAST`,
+    /// weapons_more.md 9.2).
+    pub alt_fire: Option<(&'static str, &'static str)>,
     /// Its fire sequence loops while it fires (the Minigun's, the Flame
     /// Thrower's): a shot doesn't restart it.
     pub fire_loops: bool,
@@ -129,6 +132,7 @@ const fn plain(draw: (&'static str, &'static str), idle: (&'static str, &'static
         spin_idle: None,
         spin_down: None,
         charge: None,
+        alt_fire: None,
         fire_loops: false,
     }
 }
@@ -243,7 +247,11 @@ pub const SEQUENCES: &[(&str, Sequences)] = &[
     // picked by name (open question 17).
     (
         FLAMETHROWER,
-        Sequences { fire_loops: true, ..plain((P_DRAW, "ft_draw"), (P_IDLE, "ft_idle"), (P_FIRE, "ft_fire")) },
+        Sequences {
+            fire_loops: true,
+            alt_fire: Some(("ACT_PRIMARY_VM_SECONDARYATTACK", "ft_alt_fire")),
+            ..plain((P_DRAW, "ft_draw"), (P_IDLE, "ft_idle"), (P_FIRE, "ft_fire"))
+        },
     ),
     (SYRINGE_GUN, clip((P_DRAW, "sg_draw"), (P_IDLE, "sg_idle"), (P_FIRE, "sg_fire"), (P_RELOAD, "sg_reload"))),
 ];
@@ -440,6 +448,9 @@ fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
         }
         WeaponEventKind::Action(sticky::CHARGE) => {
             f.attack(&named(q.charge));
+        }
+        WeaponEventKind::Action(airblast::AIRBLAST) => {
+            f.attack(&named(q.alt_fire));
         }
         _ => {}
     }

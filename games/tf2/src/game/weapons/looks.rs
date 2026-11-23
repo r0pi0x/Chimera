@@ -49,6 +49,11 @@
 //!   the rocket's `trail` attachment, its data's `at`, from its loose
 //!   form `LooseAsset::attachment`; `pipebombtrail_<team>`, `stickybombtrail_<team>`,
 //!   `nailtrails_medic_<team>`; none on a needle left stuck in a wall,
+//!   turned as its attachment is: the rocket's `trail` x out of the tail,
+//!   z along its left, so the burst's sparks leave backward and the smoke
+//!   drifts right (effects.md 1; `LooseAsset::attachment_frame`); a
+//!   crit-boosted owner's flyer also its `crit` glow (`critical_rocket_`,
+//!   `critical_pipe_`, `critical_grenade_<team>`) on its origin;
 //!   `projectile::StuckMark`), following it without carrying what it
 //!   left, stopped when it is gone (`psys::Follow`); its `under_water`
 //!   one instead when its first place is in water, never chosen again
@@ -89,6 +94,12 @@
 //!   (`flame::FlameShown`: the same rounds, seeds and motion as the
 //!   server's damage points), the newest the active one each new sprite
 //!   rides, so the fire is where the damage is.
+//! - **The airblast** (flames.md 3.1.1; `airblast_looks`): the gun's
+//!   `airblast` (`pyro_blast`) once per blast on the muzzle as the
+//!   per-shot flash (the view model's re-projected for this machine's own
+//!   player, predicted; the held model's for others, from the server's
+//!   `AirblastMsg`), the stream stopped first; each deflected projectile
+//!   the gun's `deflect` (`deflect_fx`) following it.
 //! - **The laser dot** (weapons_more.md 3.1): a gun's `dot` where a
 //!   scoped holder aims (`dot`).
 //! - **Impacts**: Source's impact effects, decals and impact sounds with
@@ -101,12 +112,13 @@
 //!   `Bounce.Shrapnel` on 3 in 10 impacts, a needle's mark only RED's
 //!   (effects.md 12); impact sounds beyond 1024 units are skipped (7).
 //!
-//! Known shortcuts: a trail on an attachment (the rocket's `trail`)
-//! takes its place but the flyer's own axes, not the attachment's; no crit glows on flyers (crits are off); control point 0 of the stream is the muzzle as drawn
+//! Known shortcuts: a flyer's crit glow follows its owner's boost as it
+//! appears (blast damage itself never crits); a reflected pipe's trail
+//! keeps its first colour; a deflected flyer drawn late shows `deflect_fx`
+//! on its replicated entity, not its late copy; control point 0 of the stream is the muzzle as drawn
 //! (the view model's re-projected in first person), not the third-person
 //! model's (flames.md Open questions 2); random crits are off, so a crit
-//! stream starts only for a crit-boosted Pyro (`crit_boost`); no airblast look; the per-gun names marked "pcf (inferred)" in effects.md 1 are
-//! used until the weapon scripts are read; only guns with a tracer count
+//! stream starts only for a crit-boosted Pyro (`crit_boost`); only guns with a tracer count
 //! toward the shared tracer counter; the tracers leave along the aim,
 //! the `while_firing` systems along the view (the brass to its right, 23°
 //! up, as TF2's casings leave under the spun pose; on others' Minigun
@@ -230,6 +242,14 @@ pub struct LooksParams {
     /// Rifle's, weapons_more.md 3.1; `dot`).
     #[serde(default)]
     pub dot: Option<super::dot::DotLook>,
+    /// Its airblast's look on the muzzle (the Flame Thrower's
+    /// `pyro_blast`, flames.md 3.1.1).
+    #[serde(default)]
+    pub airblast: Option<String>,
+    /// What a projectile its airblast deflected shows, following it
+    /// (`deflect_fx`, weapons_more.md 7.4).
+    #[serde(default)]
+    pub deflect: Option<String>,
 }
 
 /// A system started on each flyer drawn as `shown`, `after` seconds after
@@ -250,7 +270,7 @@ pub struct ArmedLook {
 impl ArmedLook {
     /// Its system's name for a flyer of `team` (as `FlyerTrail::name`).
     pub fn name(&self, blu: Option<bool>) -> String {
-        FlyerTrail { shown: self.shown.clone(), system: self.system.clone(), team: self.team, under_water: None, at: None }.name(blu)
+        FlyerTrail { shown: self.shown.clone(), system: self.system.clone(), team: self.team, ..default() }.name(blu)
     }
 }
 
@@ -273,6 +293,11 @@ pub struct FlyerTrail {
     /// 1: the rocket's `trail`); none, or one the model lacks: its origin.
     #[serde(default)]
     pub at: Option<String>,
+    /// A crit's glow besides, before the team suffix, on its origin
+    /// (effects.md 1: `critical_rocket_<team>`), started when its owner
+    /// is crit-boosted as it appears.
+    #[serde(default)]
+    pub crit: Option<String>,
 }
 
 impl FlyerTrail {
@@ -282,6 +307,12 @@ impl FlyerTrail {
             return self.system.clone();
         }
         format!("{}_{}", self.system, if blu == Some(true) { "blue" } else { "red" })
+    }
+
+    /// Its crit glow for a flyer of `team` (`Some(true)`: BLU; RED
+    /// otherwise), if it has one.
+    pub fn crit_name(&self, blu: Option<bool>) -> Option<String> {
+        Some(format!("{}_{}", self.crit.as_ref()?, if blu == Some(true) { "blue" } else { "red" }))
     }
 
     /// Its system for a flyer whose first place is in water (`wet`) or
@@ -430,6 +461,16 @@ impl GunLooks {
         self.0.iter().filter_map(|(_, l)| l.armed.as_ref()).find(|t| t.shown == shown)
     }
 
+    /// A gun's airblast look.
+    pub fn airblast_of(&self, gun: &str) -> Option<&str> {
+        self.of(gun)?.airblast.as_deref()
+    }
+
+    /// What a deflected projectile shows (the first gun naming one).
+    pub fn deflect(&self) -> Option<&str> {
+        self.0.iter().find_map(|(_, l)| l.deflect.as_deref())
+    }
+
     /// A gun's stream on flame points.
     pub fn stream_of(&self, gun: &str) -> Option<&StreamLooks> {
         self.of(gun)?.stream.as_ref()
@@ -448,9 +489,12 @@ impl GunLooks {
             out.extend(l.while_firing.iter().map(|s| s.system.clone()));
             out.extend(l.backblast.iter().map(|s| s.system.clone()));
             out.extend(l.stream.iter().flat_map(StreamLooks::names));
+            out.extend(l.airblast.clone());
+            out.extend(l.deflect.clone());
             if let Some(t) = &l.trail {
                 out.extend([t.name(Some(false)), t.name(Some(true))]);
                 out.extend(t.under_water.clone());
+                out.extend([t.crit_name(Some(false)), t.crit_name(Some(true))].into_iter().flatten());
             }
             if let Some(a) = &l.armed {
                 out.extend([a.name(Some(false)), a.name(Some(true))]);
@@ -532,6 +576,8 @@ pub const PARTICLE_FILES: &[&str] = &[
     "particles/blood_impact.pcf",
     // The crit boost's glow (effects.md 14.1).
     "particles/firstperson_weapon_fx.pcf",
+    // A deflected projectile's `deflect_fx` (weapons_more.md 7.4).
+    "particles/rocketjumptrail.pcf",
 ];
 
 /// An explosion on the wire (the server's `Tf2Explosion`, to clients).
@@ -846,6 +892,7 @@ fn flyer_trails(
     late: Option<Res<DrawnLate>>,
     water: Option<Res<MapWater>>,
     teams: Query<&Team>,
+    boosted: Query<(), With<super::crit_boost::CritBoosted>>,
     models: Option<Res<chimera_world::map::loose::LooseAssets>>,
     mut start: MessageWriter<StartParticleSystem>,
 ) {
@@ -861,18 +908,26 @@ fn flyer_trails(
         // Chosen once, by the water at its first place (effects.md 9).
         let wet = in_water(water.as_deref(), copy.map_or(at.translation, |c| c.first));
         // On its model's attachment (the rocket's `trail`, effects.md 1),
-        // in the item's frame; else its origin.
-        let local = trail
-            .at
-            .as_deref()
-            .and_then(|name| models.as_ref()?.0.get(&shown.0)?.attachment(name))
-            .unwrap_or(Vec3::ZERO);
+        // in the item's frame, turned as it is (its x out of the tail, its
+        // z along the rocket's left: the trail's local velocities are
+        // authored in it); else its origin, turned as the flyer.
+        let frame = trail.at.as_deref().and_then(|name| models.as_ref()?.0.get(&shown.0)?.attachment_frame(name));
+        let (local, x, z) = frame.map_or((Vec3::ZERO, Vec3::X, None), |f| (f.translation, f.rotation * Vec3::X, Some(f.rotation * Vec3::Z)));
         // A copy's trail is made where the copy is drawn, its first
         // received place (effects.md 11.2).
         start.write(StartParticleSystem {
-            follow: Some(Follow { entity: e, local, forward: Vec3::X, carry: false, up: None }),
-            ..StartParticleSystem::new(trail.name_in(blu, wet), at.transform_point(local), forward)
+            follow: Some(Follow { entity: e, local, forward: x, carry: false, up: z }),
+            ..StartParticleSystem::new(trail.name_in(blu, wet), at.transform_point(local), if frame.is_some() { at.rotation * x } else { forward })
         });
+        // A crit-boosted owner's: its glow on its origin (effects.md 1).
+        if owner.is_some_and(|o| boosted.contains(o))
+            && let Some(glow) = trail.crit_name(blu)
+        {
+            start.write(StartParticleSystem {
+                follow: Some(Follow { entity: e, local: Vec3::ZERO, forward: Vec3::X, carry: false, up: None }),
+                ..StartParticleSystem::new(glow, at.translation, forward)
+            });
+        }
     }
 }
 
@@ -1201,6 +1256,98 @@ fn firing_looks(
     *running = now;
 }
 
+/// Each airblast's look (flames.md 3.1.1, weapons_more.md 7.4;
+/// `airblast::AirblastLook`: this machine's own predicted one, the
+/// server's for others): the Pyro's gun's `airblast` (`pyro_blast`) on
+/// its muzzle as the per-shot flash is (the view model's re-projected in
+/// first person, turned as the attachment; the held model's for others),
+/// his stream stopped first; a deflected projectile's `deflect`
+/// (`deflect_fx`) following it.
+#[allow(clippy::type_complexity)]
+fn airblast_looks(
+    looks: Res<GunLooks>,
+    mut blasts: MessageReader<super::airblast::AirblastLook>,
+    owners: Query<(&Inventory, &Transform, Option<&chimera_core::core::MovementState>, Option<&chimera_core::core::Intent>)>,
+    places: Query<&Transform>,
+    weapons: Query<&Weapon>,
+    muzzles: Muzzles,
+    mut start: MessageWriter<StartParticleSystem>,
+    mut stop: MessageWriter<StopParticleSystems>,
+) {
+    for b in blasts.read() {
+        if b.deflect {
+            let (Some(name), Ok(at)) = (looks.deflect(), places.get(b.entity)) else { continue };
+            start.write(StartParticleSystem {
+                follow: Some(Follow { entity: b.entity, local: Vec3::ZERO, forward: Vec3::X, carry: false, up: None }),
+                ..StartParticleSystem::new(name, at.translation, at.rotation * Vec3::X)
+            });
+            continue;
+        }
+        let owner = b.entity;
+        let Ok((inv, at, state, intent)) = owners.get(owner) else { continue };
+        let Some(w) = inv.active else { continue };
+        let Some(name) = weapons.get(w).ok().and_then(|g| looks.airblast_of(g.id)) else { continue };
+        // Any flame stream stops first (flames.md 3.1.1).
+        stop.write(StopParticleSystems { tag: w });
+        if muzzles.view_model_off(owner) {
+            continue;
+        }
+        let aim = intent.map_or(at.rotation, |i| aim_of(i.yaw, i.pitch));
+        let forward = aim * Vec3::NEG_Z;
+        let s = match muzzles.placed(owner) {
+            Some(m) => muzzles.start_with_axes(owner, &m, MUZZLE_ATTACHMENT, name, forward),
+            None => {
+                let eye = at.translation + state.map_or(Vec3::ZERO, |s| s.eye_offset);
+                StartParticleSystem::new(name, ahead_of(eye, aim), forward)
+            }
+        };
+        start.write(s);
+    }
+}
+
+/// An airblast's look on the wire (`airblast::AirblastLook`, server to
+/// clients).
+#[derive(Message, Clone, Debug, Serialize, Deserialize, bevy::ecs::entity::MapEntities)]
+pub struct AirblastMsg {
+    #[entities]
+    pub entity: Entity,
+    pub deflect: bool,
+}
+
+/// The server: this tick's airblast looks to the clients that see them.
+fn forward_airblasts(
+    mut blasts: MessageReader<super::airblast::AirblastLook>,
+    places: Query<&Transform>,
+    viewers: chimera_net::net::weapons::PvsViewers,
+    mut out: MessageWriter<bevy_replicon::prelude::ToClients<AirblastMsg>>,
+) {
+    use bevy_replicon::prelude::*;
+    for b in blasts.read() {
+        let Ok(at) = places.get(b.entity) else { continue };
+        for client in viewers.seeing(at.translation) {
+            out.write(ToClients {
+                targets: SendTargets::Single(ClientId::Client(client)),
+                message: AirblastMsg { entity: b.entity, deflect: b.deflect },
+            });
+        }
+    }
+}
+
+/// A client: the server's airblast looks, but its own player's (drawn
+/// when predicted).
+fn receive_airblasts(
+    mut fx: MessageReader<AirblastMsg>,
+    local: Query<(), With<LocalPlayer>>,
+    mut out: MessageWriter<super::airblast::AirblastLook>,
+) {
+    for f in fx.read() {
+        if !f.deflect && local.contains(f.entity) {
+            continue;
+        }
+        out.write(super::airblast::AirblastLook { entity: f.entity, deflect: f.deflect });
+    }
+}
+
 /// The server: this frame's explosions to the clients whose PVS holds
 /// them (the explosion temp entity's audience, specs/source/
 /// sound_hearing.md 1: a blast out of view is neither seen nor heard).
@@ -1229,13 +1376,14 @@ fn receive(mut fx: MessageReader<ExplosionMsg>, mut out: MessageWriter<Tf2Explos
     }
 }
 
-/// The protocol: explosions, from the server.
+/// The protocol: explosions and airblast looks, from the server.
 fn register(app: &mut App) {
     use bevy_replicon::prelude::*;
     use crate::core::NetRole;
     app.add_server_message::<ExplosionMsg>(Channel::Unreliable)
-        .add_systems(PostUpdate, forward.before(ServerSystems::Send).run_if(resource_equals(NetRole::Server)))
-        .add_systems(PreUpdate, receive.after(ClientSystems::Receive).run_if(resource_equals(NetRole::Client)));
+        .add_mapped_server_message::<AirblastMsg>(Channel::Unreliable)
+        .add_systems(PostUpdate, (forward, forward_airblasts).before(ServerSystems::Send).run_if(resource_equals(NetRole::Server)))
+        .add_systems(PreUpdate, (receive, receive_airblasts).after(ClientSystems::Receive).run_if(resource_equals(NetRole::Client)));
 }
 
 /// The looks, on any machine that draws (systems that only write
@@ -1256,7 +1404,7 @@ pub fn add(app: &mut App) {
             Update,
             (
                 (explosions, muzzle_flashes, tracers, firing_looks, flyer_trails, armed_looks, super::dot::laser_dots),
-                (super::flame::shown_flames.run_if(not(resource_exists::<chimera_net::dedicated::Serving>)), flame_stream)
+                (super::flame::shown_flames.run_if(not(resource_exists::<chimera_net::dedicated::Serving>)), flame_stream, airblast_looks)
                     .chain()
                     .before(StartedSystemsRun),
             )
@@ -1285,7 +1433,7 @@ mod tests {
         }
         assert_eq!(looks.muzzle_of(w::FLAMETHROWER), None, "its stream is its muzzle effect (effects.md 1)");
         assert!(muzzle_of(w::ROCKET_LAUNCHER).is_none(), "no rocket-launcher muzzle system exists (effects.md 1)");
-        assert!(particle_systems().contains(&"muzzle_pipelauncher") && particle_systems().contains(&"ExplosionCore_Wall"));
+        assert!(particle_systems().contains(&"muzzle_pipelauncher") && particle_systems().contains(&"ExplosionCore_wall"));
     }
 
     /// effects.md 1 and 3: the Minigun has no per-shot flash, its
@@ -1329,7 +1477,7 @@ mod tests {
             (w::SHOTGUN, "bullet_shotgun_tracer01"),
             (w::PISTOL_SCOUT, "bullet_pistol_tracer01"),
             (w::REVOLVER, "bullet_pistol_tracer01"),
-            (w::SMG, "bullet_tracer01"),
+            (w::SMG, "bullet_pistol_tracer01"),
         ] {
             assert_eq!(looks.tracer_of(gun), Some((base, 2)), "{gun}");
         }
@@ -1376,7 +1524,7 @@ mod tests {
         let rocket = looks.explosion_of(w::ROCKET_LAUNCHER);
         assert!(rocket.is_some());
         let wall = Vec3::X;
-        assert_eq!(Explosions::pick(rocket, false, wall, false), ("ExplosionCore_Wall", Vec3::X));
+        assert_eq!(Explosions::pick(rocket, false, wall, false), ("ExplosionCore_wall", Vec3::X), "the script's spelling");
         assert_eq!(Explosions::pick(rocket, false, wall, true).0, "ExplosionCore_MidAir", "on a player: in the air");
         assert_eq!(Explosions::pick(rocket, false, Vec3::ZERO, false), ("ExplosionCore_MidAir", Vec3::X), "zero angles");
         // Pipes and stickies read the Stickybomb Launcher's.

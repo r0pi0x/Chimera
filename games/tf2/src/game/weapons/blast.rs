@@ -187,7 +187,14 @@ pub struct Blast<'a> {
     pub radius: f32,
     pub ramp: Option<f32>,
     pub scale: f32,
+    /// It mini-crits others (a deflected rocket or pipe, weapons_more.md
+    /// 7.4): x `MINI_CRIT` on the damage after the ramp-up, no fall-off
+    /// (weapons.md 2.5).
+    pub mini_crit: bool,
 }
+
+/// A mini-crit's damage factor (weapons.md 2.5).
+pub const MINI_CRIT: f32 = 1.35;
 
 /// An explosion to draw: the server's, sent to every client (`looks`):
 /// its centre, the surface normal it went off on (zero in the air), on a
@@ -524,6 +531,7 @@ impl BlastWorld<'_, '_> {
                     Some(k) => modifier(owner_at.map_or(0.0, |o| o.distance(c) / U), k),
                     None => 1.0,
                 };
+                let m = if blast.mini_crit { m.max(1.0) * MINI_CRIT } else { m };
                 dealt.push(Dealt { e, points: p.damage * blast.scale * m * f, centre: c, scale: p.push_other, size: tf2_hull(ducked, false), own: false });
             }
         }

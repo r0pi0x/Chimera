@@ -68,6 +68,8 @@
 //!   14). Others get them all from the server (`PredictedSound`,
 //!   `StopSound`, `FadeSound`).
 //!
+//! Attack2's airblast is `airblast`'s (its `[hooks."tf2:flame".airblast]`).
+//!
 //! The flames' look is `looks::flame_stream`'s (`new_flame` riding the
 //! drawn points).
 //!
@@ -79,7 +81,7 @@
 //! last, not at the server's spawn tick: no catch-up for the time it
 //! missed) and take the Pyro's velocity as this machine has it; this
 //! machine's own player's points are predicted (TF2's appear a network
-//! update late); a press under 0.2 s emits only while held; no airblast (attack2); random
+//! update late); a press under 0.2 s emits only while held; random
 //! crits are off; the fades run on each machine's own clock from the
 //! burst's first tick (TF2 re-sends the volumes every tick); Pyros aren't immune to afterburn (no classes on the victims);
 //! health kits and Medics don't put a burn out.
@@ -159,6 +161,9 @@ pub struct FlameParams {
     /// 0 to 1 (0: both at full volume).
     #[serde(default)]
     pub burst_fade: f32,
+    /// Attack2's airblast (weapons_more.md 7.4; `airblast`), if it has one.
+    #[serde(default)]
+    pub airblast: Option<super::airblast::AirblastParams>,
 }
 
 impl FlameParams {
@@ -202,23 +207,26 @@ pub struct Tf2Flame {
     /// It was its holder's drawn weapon last tick (the pilot light starts
     /// when it becomes so; this machine's own, not sent).
     pub drawn: bool,
+    /// When the next airblast may go (`airblast::fire`).
+    pub next_blast: f64,
 }
 
 impl NetPart for Tf2Flame {
-    type Net = (bool, f32, bool);
+    type Net = (bool, f32, bool, f64);
     fn net(&self) -> Self::Net {
-        (self.flaming, self.owed, self.crit)
+        (self.flaming, self.owed, self.crit, self.next_blast)
     }
-    fn set_net(&mut self, (flaming, owed, crit): Self::Net) {
+    fn set_net(&mut self, (flaming, owed, crit, next_blast): Self::Net) {
         self.flaming = flaming;
         self.owed = owed;
         self.crit = crit;
+        self.next_blast = next_blast;
     }
 }
 
 /// `tf2:flame` on a weapon.
 pub fn attach(e: &mut EntityWorldMut, p: &FlameParams) {
-    e.insert((Tf2Flame { params: p.clone(), flaming: false, owed: 0.0, crit: false, drawn: false }, FlameStream::default(), FlameShown::default()));
+    e.insert((Tf2Flame { params: p.clone(), flaming: false, owed: 0.0, crit: false, drawn: false, next_blast: 0.0 }, FlameStream::default(), FlameShown::default()));
     // The start, the loops and the pilot light end when it leaves the
     // hand (`held_sounds`).
     let held: Vec<String> =
@@ -748,6 +756,36 @@ impl FlameWorld<'_, '_> {
             !self.characters.contains(body)
         };
         self.spatial.cast_ray_predicate(from, dir, length, true, &filter, &through).is_some()
+    }
+
+    /// How far (m) a line from `from` along `dir` (unit) goes before it
+    /// meets something solid that isn't a character, at most `length`.
+    pub fn line_reach(&self, from: Vec3, dir: Vec3, length: f32) -> f32 {
+        let Ok(dir) = Dir3::new(dir) else { return 0.0 };
+        let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
+        let through = |e: Entity| {
+            let body = self.colliders.get(e).map_or(e, |o| o.body);
+            !self.characters.contains(body)
+        };
+        self.spatial.cast_ray_predicate(from, dir, length, true, &filter, &through).map_or(length, |h| h.distance)
+    }
+
+    /// The normal of the ground the box `min`..`max` (m) meets swept
+    /// `depth` (m) down (characters aside), if any.
+    pub fn ground_under(&self, min: Vec3, max: Vec3, depth: f32) -> Option<Vec3> {
+        // From a unit up, a little narrower: not started touching the
+        // floor or a wall beside it.
+        let size = ((max - min).abs() * Vec3::new(0.95, 1.0, 0.95)).max(Vec3::splat(1e-3));
+        let shape = Collider::cuboid(size.x, size.y, size.z);
+        let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
+        let config = ShapeCastConfig::from_max_distance(depth + U);
+        let through = |e: Entity| {
+            let body = self.colliders.get(e).map_or(e, |o| o.body);
+            !self.characters.contains(body)
+        };
+        self.spatial
+            .cast_shape_predicate(&shape, (min + max) / 2.0 + Vec3::Y * U, Quat::IDENTITY, Dir3::NEG_Y, &config, &filter, &through)
+            .map(|h| h.normal1.normalize_or(Vec3::Y))
     }
 
     /// Whether `at` is in the map's water.

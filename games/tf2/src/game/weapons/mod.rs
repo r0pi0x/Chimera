@@ -35,7 +35,7 @@
 //! - `tf2:sticky` (`sticky`): the charged launch, sticking, arming, the
 //!   limit and attack2's detonation;
 //! - `tf2:flame` (`flame`): the flame points, their heat and the
-//!   afterburn;
+//!   afterburn; attack2's airblast (`airblast`: pushes, deflections);
 //! - `tf2:needle` (`needle`): a needle's hit by distance;
 //! - crit boosts' loop and glow on the held weapon (`crit_boost`,
 //!   effects.md 14);
@@ -62,6 +62,7 @@
 //! - A network client redraws another's shot without its centred first
 //!   pellet (its own and the server's have it).
 
+pub mod airblast;
 pub mod blast;
 pub mod blood;
 pub mod crit_boost;
@@ -408,11 +409,13 @@ impl Plugin for Tf2GunsPlugin {
         .add_message::<crate::map::GameSound>()
             .add_message::<crate::map::PredictedSound>()
             .add_message::<blast::Tf2Explosion>()
+            .add_message::<airblast::Airblast>()
+            .add_message::<airblast::AirblastLook>()
             .add_message::<chimera_sim::weapon::grenade::BlastDealt>()
             .add_systems(
                 Predict::Weapons,
                 (
-                    (damage::centre_first, recoil::decay, melee::prepare, flame::blocked).before(WeaponFrame),
+                    (damage::centre_first, recoil::decay, melee::prepare, (flame::blocked, airblast::fire).chain()).before(WeaponFrame),
                     (damage::note_shots, flame::ammo, flame::sounds, recoil::kick, melee::after).chain().after(WeaponFrame),
                 ),
             )
@@ -433,6 +436,7 @@ impl Plugin for Tf2GunsPlugin {
                 FixedUpdate,
                 (
                     sticky::launch.in_set(FlyerSet::Launch),
+                    airblast::deflect.in_set(FlyerSet::Think),
                     (
                         blast::blast_jump_lands,
                         rocket::explode,
