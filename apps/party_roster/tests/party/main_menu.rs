@@ -1336,3 +1336,42 @@ fn the_report_dialog_redrawn_per_key_is_on_the_menus_camera_from_its_first_frame
     }
     assert!(sim.app.world().resource::<Feedback>().text.ends_with("keeps"));
 }
+
+// ---------------------------------------------------------------------------
+// Joining as a spectator (ugg-ui.md, "Spectators").
+
+fn is_spectating(sim: &mut NetSim) -> bool {
+    let w = sim.server.app.world_mut();
+    w.query_filtered::<(), With<chimera_core::core::Spectating>>().iter(w).count() > 0
+}
+
+#[test]
+fn the_join_toggle_sends_a_spectator_join() {
+    let (mut sim, c) = server_and_menu_client();
+    let on = |sim: &NetSim| sim.clients[c].app.world().resource::<chimera_net::spectators::JoinAsSpectator>().0;
+    assert_eq!(on(&sim), 0, "off by default");
+    client_act(&mut sim, c, A::ToggleSpectator);
+    assert_eq!(on(&sim), 1, "on");
+    client_act(&mut sim, c, A::ToggleSpectator);
+    assert_eq!(on(&sim), 0, "off again");
+    client_act(&mut sim, c, A::ToggleSpectator);
+    type_in(&mut sim, c, "mainmenu_type address 127.0.0.1");
+    client_act(&mut sim, c, A::Connect);
+    assert!(sim.until(900, |s| s.clients[c].app.world().contains_resource::<chimera_net::net::client::Joined>()), "{:?}", client_menu(&sim, c));
+    assert!(sim.until(300, |s| is_spectating(s)), "the server made the player a spectator");
+}
+
+#[test]
+fn a_refused_spectator_join_says_why() {
+    let (mut sim, c) = server_and_menu_client();
+    // The host allows none.
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_spectators_max 0");
+    sim.ticks(2);
+    client_act(&mut sim, c, A::ToggleSpectator);
+    type_in(&mut sim, c, "mainmenu_type address 127.0.0.1");
+    client_act(&mut sim, c, A::Connect);
+    assert!(sim.until(900, |s| client_menu(s, c).failure.is_some()), "{:?}", client_menu(&sim, c));
+    assert_eq!(client_menu(&sim, c).failure.as_deref(), Some(chimera_net::spectators::NONE_ALLOWED));
+    assert!(!is_spectating(&mut sim), "it did not play instead");
+    assert!(sim.server.app.world_mut().query_filtered::<(), With<chimera_net::net::server::Player>>().iter(sim.server.app.world()).next().is_none());
+}

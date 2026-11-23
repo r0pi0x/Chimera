@@ -451,6 +451,8 @@ pub mod maps_picker;
 #[cfg(feature = "present")]
 pub mod loading_signal;
 #[cfg(feature = "present")]
+pub mod failure_signal;
+#[cfg(feature = "present")]
 pub mod client;
 #[cfg(feature = "present")]
 pub mod ui_cues;

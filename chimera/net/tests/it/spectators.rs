@@ -184,6 +184,34 @@ fn take_handshake(world: &mut World) {
 }
 
 #[test]
+fn a_spectator_join_is_refused_when_none_fit() {
+    use chimera_net::spectators::{NONE_ALLOWED, NO_ROOM};
+    let mut sim = sim(1, false);
+    sim.until_joined(900);
+    let refused = |sim: &NetSim, i: usize| sim.clients[i].app.world().resource::<JoinProgress>().failure.as_ref().map(|(_, why)| why.clone());
+    // The host allows none: refused with why, and it did not play instead.
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_spectators_max 0");
+    sim.ticks(HZ / 2);
+    let none = add_spectator(&mut sim);
+    assert!(sim.until(900, |s| refused(s, none).is_some()), "told why");
+    assert_eq!(refused(&sim, none).as_deref(), Some(NONE_ALLOWED));
+    assert!(sim.character_of(none).is_none(), "not in the game");
+    // One place, taken: the next is refused for the room, the first in.
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_spectators_max 1");
+    sim.ticks(HZ / 2);
+    let first = add_spectator(&mut sim);
+    assert!(sim.until(900, |s| joined(s, first) && s.character_of(first).is_some()), "the first fits");
+    assert!(watching(&mut sim, first));
+    let second = add_spectator(&mut sim);
+    assert!(sim.until(900, |s| refused(s, second).is_some()), "told why");
+    assert_eq!(refused(&sim, second).as_deref(), Some(NO_ROOM));
+    // A player who doesn't ask to watch is not refused for it.
+    let player = sim.add_client(|_| {});
+    assert!(sim.until(900, |s| joined(s, player) && s.character_of(player).is_some()), "a player is let in");
+    assert!(!watching(&mut sim, player));
+}
+
+#[test]
 fn the_lobby_lists_spectators_apart_and_never_waits_for_them() {
     let mut sim = sim(1, true);
     // A spectator still downloading: the lobby doesn't wait for it.

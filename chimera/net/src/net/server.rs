@@ -616,6 +616,12 @@ fn join(join: On<FromClient<Join>>, mut commands: Commands) {
     commands.queue(move |world: &mut World| admit(world, client, msg));
 }
 
+/// The first reason a part (`NetHooks::refuse_join`) gives to refuse a join.
+fn refused_by_parts(world: &mut World, userinfo: &[(String, String)]) -> Option<String> {
+    let hooks = world.resource::<super::NetHooks>().refuse_join.clone();
+    hooks.into_iter().find_map(|refuse| refuse(world, userinfo))
+}
+
 fn admit(world: &mut World, client: Entity, msg: Join) {
     let ours = world.resource::<NetVersion>().0.clone();
     let protocol = *world.resource::<ProtocolHash>();
@@ -639,6 +645,9 @@ fn admit(world: &mut World, client: Entity, msg: Join) {
     } else if !password_ok(world, client) {
         // Source's words.
         Some("Bad password.".to_string())
+    } else if let Some(why) = refused_by_parts(world, &msg.userinfo) {
+        // A part's say (`NetHooks::refuse_join`: no room to watch).
+        Some(why)
     } else {
         let taken = world.query_filtered::<(), With<Player>>().iter(world).count();
         if taken >= remote_slots(world) {

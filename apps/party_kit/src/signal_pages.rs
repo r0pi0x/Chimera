@@ -245,6 +245,8 @@ pub enum Line {
     Game(usize),
     Address,
     Password,
+    /// Join's "Join as spectator" toggle (`cl_spectator`).
+    Spectate,
     Recent(usize),
     Server(usize),
 }
@@ -261,6 +263,10 @@ impl Line {
     }
 }
 
+/// Join's Direct lines (address, password, the spectator toggle), before
+/// the recent and the servers.
+pub const DIRECT_LINES: usize = 3;
+
 /// The lines of the page shown, in focus order.
 /// `lines` for this world's menu, data and list.
 pub fn lines_now(world: &World) -> Vec<Line> {
@@ -273,7 +279,7 @@ pub fn lines(menu: &PartyMenu, data: &MenuData, lan: &LanList) -> Vec<Line> {
     match menu.page {
         MenuPage::Play if menu.play_tab == 0 => (0..data.play.len()).map(Line::Play).collect(),
         MenuPage::Play => (0..crate::main_menu::game_settings().len()).map(Line::Game).collect(),
-        MenuPage::Join => [Line::Address, Line::Password]
+        MenuPage::Join => [Line::Address, Line::Password, Line::Spectate]
             .into_iter()
             .chain((0..menu.recent.len()).map(Line::Recent))
             .chain((0..lan.rows().len()).map(Line::Server))
@@ -1052,7 +1058,7 @@ pub fn record_join(world: &mut World, address: &str) {
 
 /// The browser's tab `t` (a click, the keys): from its first row.
 pub fn set_tab(world: &mut World, t: usize) {
-    let base = world.resource::<PartyMenu>().recent.len() + 2;
+    let base = world.resource::<PartyMenu>().recent.len() + DIRECT_LINES;
     let tab = BrowserTab::from_index(t);
     let Some(mut lan) = world.get_resource_mut::<LanList>() else { return };
     if lan.tab == tab {
@@ -1276,7 +1282,7 @@ fn follow(
             if stage_ask
                 && let Some(i) = lan.servers.iter().position(|s| s.locked)
             {
-                let base = menu.recent.len() + 2;
+                let base = menu.recent.len() + DIRECT_LINES;
                 let name = lan.servers[i].name.clone();
                 p.focus = base + i;
                 open_ask(&mut p, &mut menu, i, &name);
@@ -1327,6 +1333,7 @@ fn press(line: Line, menu: &mut PartyMenu, lan: &LanList, p: &mut SignalPages) -
             }
             Some(MainMenuAction::Connect)
         }
+        Line::Spectate => Some(MainMenuAction::ToggleSpectator),
         Line::Recent(i) => Some(MainMenuAction::Recent(i)),
         Line::Server(i) => {
             let s = lan.rows().get(i)?;
@@ -1520,6 +1527,10 @@ fn keys(
         Some(Line::Game(index)) => Some(MainMenuAction::GameStep { index, dir }),
         _ => None,
     };
+    if k(KeyCode::Space) && line == Some(Line::Spectate) {
+        out.write(MainMenuAction::ToggleSpectator);
+        return;
+    }
     if k(KeyCode::ArrowLeft) || k(KeyCode::ArrowRight) || k(KeyCode::Space) {
         if let Some(a) = step(if k(KeyCode::ArrowLeft) { -1 } else { 1 }) {
             out.write(a);
@@ -1593,12 +1604,16 @@ struct DrawKey {
     gun_rules: (chimera_sim::minigame::gun_rules::GunRules, usize),
     /// The addresses shown (`chimera_ui::secret`: hidden by default).
     reveals: chimera_ui::secret::Reveals,
+    /// Join's spectator toggle (`cl_spectator`).
+    spectate: bool,
 }
 
 /// What the drawing reads besides the state.
 struct Ctx<'a> {
     /// Addresses shown (`REVEAL_ADDRESSES`).
     shown: bool,
+    /// Join as a spectator (`cl_spectator`).
+    spectate: bool,
     data: &'a MenuData,
     lan: &'a LanList,
     pool: &'a [String],
@@ -1646,11 +1661,12 @@ fn draw(
         Res<crate::guns_picker::GunsListing>,
         Option<Res<chimera_ui::motion::Motion>>,
     ),
-    (rules, note, rungs, reveals): (
+    (rules, note, rungs, reveals, spectate): (
         Option<Res<chimera_sim::minigame::gun_rules::GunRules>>,
         Option<Res<chimera_sim::minigame::gun_rules::GunRulesNote>>,
         Option<Res<chimera_sim::minigame::gun_rules::LadderRungs>>,
         Option<Res<chimera_ui::secret::Reveals>>,
+        Option<Res<chimera_net::spectators::JoinAsSpectator>>,
     ),
     mut commands: Commands,
 ) {
@@ -1679,6 +1695,7 @@ fn draw(
             rungs.as_deref().map_or(chimera_sim::minigame::power::PowerCurve::shipped().rungs.default, |r| r.0),
         ),
         reveals: reveals.as_deref().cloned().unwrap_or_default(),
+        spectate: spectate.as_deref().is_some_and(|s| s.0 != 0),
     };
     if *drawn == key {
         return;
@@ -1691,6 +1708,7 @@ fn draw(
     let ui = Ui::new(&theme, fonts.as_deref(), *units);
     let cx = Ctx {
         shown: drawn.reveals.shown(REVEAL_ADDRESSES),
+        spectate: drawn.spectate,
         data: &data,
         lan: &lan,
         pool: &pool,
@@ -1860,7 +1878,7 @@ fn spawn(
                 if matches!(l, Line::Server(_)) {
                     continue;
                 }
-                join_line(c, ui, left, i, *l, menu, p, row_h, cx.shown);
+                join_line(c, ui, left, i, *l, menu, p, row_h, cx.shown, cx.spectate);
             }
             if menu.recent.is_empty() {
                 ui.section(c, left, "Recent", None);
@@ -2099,7 +2117,7 @@ fn summary(c: &mut Commands, ui: &Ui, cols: Entity, menu: &PartyMenu, cx: &Ctx) 
 
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
-fn join_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu: &PartyMenu, p: &SignalPages, row_h: f32, shown: bool) {
+fn join_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu: &PartyMenu, p: &SignalPages, row_h: f32, shown: bool, spectate: bool) {
     let focus = p.focus == i;
     let st = State { focus, error: p.error == Some(i), ..State::NONE };
     match line {
@@ -2121,6 +2139,13 @@ fn join_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
             if line == Line::Address {
                 ui.reveal_key(c, sr.control, REVEAL_ADDRESSES, shown, 1.9);
             }
+        }
+        Line::Spectate => {
+            let look = chimera_ui::form::RowLook { note: Some("watch, don't play"), min_h: row_h, ..Default::default() };
+            let sr = ui.setting_row(c, list, "Join as spectator", look, State::focused(focus));
+            c.entity(sr.row).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
+            let tg = ui.big_toggle(c, sr.control, spectate, State::NONE, None, chimera_ui::controls::TOGGLE_YES_NO);
+            c.entity(tg).insert(MainMenuAction::ToggleSpectator);
         }
         Line::Recent(r) => {
             let Some(a) = menu.recent.get(r) else { return };

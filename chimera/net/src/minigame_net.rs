@@ -300,6 +300,8 @@ fn register(app: &mut App) {
     {
         let mut hooks = app.world_mut().resource_mut::<NetHooks>();
         hooks.stopped_serving.push(stopped_serving);
+        // A join that asks to watch where none fit is refused.
+        hooks.refuse_join.push(crate::spectators::refusal);
         hooks.manifest.push(add_to_manifest);
         hooks.accept.push(accept_minigame);
     }

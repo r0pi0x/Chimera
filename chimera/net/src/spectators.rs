@@ -34,8 +34,12 @@
 //! The cvars and the command are engine names (`chimera:`,
 //! `console_names`).
 //!
-//! Known shortcuts: a spectator refused at the join (no room) is told on
-//! the server's log only; a bot never spectates.
+//! - **A refused join**: a client that asks to watch while no spectator
+//!   fits (`mp_spectators_max` 0 or reached) is refused at the join with
+//!   `NONE_ALLOWED` or `NO_ROOM`, which the client's failure dialog shows
+//!   (`server::admit`, `refusal`); it does not play instead.
+//!
+//! Known shortcuts: a bot never spectates.
 
 use bevy::prelude::*;
 
@@ -156,6 +160,28 @@ pub fn switch(world: &mut World, player: Entity, want: Option<bool>) -> Result<S
     }
 }
 
+/// Why a join as a spectator is refused: the host allows none.
+pub const NONE_ALLOWED: &str = "This server doesn't allow spectators.";
+
+/// Why a join as a spectator is refused: all the places to watch are taken.
+pub const NO_ROOM: &str = "No room for another spectator on this server.";
+
+/// The refusal of a join whose userinfo asks to watch (`cl_spectator 1`),
+/// while no spectator fits; None when it doesn't ask, no minigame is
+/// playing (a spectator needs one) or there is room.
+pub fn refusal(world: &mut World, userinfo: &[(String, String)]) -> Option<String> {
+    let asks = userinfo
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(JOIN_KEY))
+        .and_then(|(_, v)| v.trim().parse::<f32>().ok())
+        .is_some_and(|n| n != 0.0);
+    if !asks || !world.contains_resource::<ActiveMinigame>() || room(world) {
+        return None;
+    }
+    let max = world.get_resource::<SpectatorSettings>().copied().unwrap_or_default().max;
+    Some(if max == 0 { NONE_ALLOWED } else { NO_ROOM }.to_string())
+}
+
 /// A remote player who asked to join as a spectator (`cl_spectator 1` in
 /// its userinfo) watches from its arrival, while there is room.
 fn joined_watching(new: Query<(Entity, &UserInfo, Option<&Name>), (Added<UserInfo>, With<RemotePlayer>)>, mut commands: Commands) {
@@ -173,7 +199,7 @@ fn joined_watching(new: Query<(Entity, &UserInfo, Option<&Name>), (Added<UserInf
                 return;
             }
             if !room(world) {
-                info!("{name} asked to spectate; no room (mp_spectators_max): plays");
+                info!("{name} asked to spectate; no room (mp_spectators_max)");
                 continue;
             }
             if minigame::spectators::watch(world, e).is_ok() {

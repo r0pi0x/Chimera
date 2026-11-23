@@ -189,6 +189,9 @@ pub struct NetHooks {
     /// play it (and readies what it needs: the server's minigame
     /// definition); Err leaves the server with that reason.
     pub accept: Vec<fn(&mut World, &super::manifest::MatchManifest) -> Result<(), String>>,
+    /// The server admits a client (`server::admit`), given the userinfo it
+    /// joined with: Some(why) refuses it (a spectator's, when none fit).
+    pub refuse_join: Vec<fn(&mut World, &[(String, String)]) -> Option<String>>,
 }
 
 /// How a remote player comes into the game (the game's join flow; CS:S's

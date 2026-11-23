@@ -848,7 +848,7 @@ fn a_long_list_scrolls_with_the_keys_and_the_wheel() {
     let mut sim = sim(PAGES_THEME);
     open_join_with(&mut sim, lan_results(12));
     assert_eq!(sim.app.world().resource::<LanList>().servers.len(), 12, "all of them, not eight");
-    let direct = 2; // the address and password rows; no recent yet
+    let direct = signal_pages::DIRECT_LINES; // address, password, spectator; no recent yet
     // Eight server rows and the two Direct ones are on the page.
     assert_eq!(page_lines(&mut sim), VISIBLE_ROWS + direct);
     let first = lines_of(&sim).iter().position(|l| *l == Line::Server(0)).unwrap();
@@ -1516,4 +1516,47 @@ fn guns_dialog_dropdown_closes_for_modals_and_other_popovers() {
     sim.app.world_mut().spawn((Node::default(), chimera_ui::Modal));
     sim.ticks(3);
     assert!(working(&sim).unwrap().menu.is_none(), "a modal opened over the dialog: it closes");
+}
+
+// ---------------------------------------------------------------------------
+// Spectating from Join, and a refusal's box (ugg-ui.md, "Spectators").
+
+fn failure_boxes(sim: &mut Sim) -> usize {
+    sim.app.world_mut().query_filtered::<(), With<party_roster::failure_signal::FailureSignalRoot>>().iter(sim.app.world()).count()
+}
+
+#[test]
+fn join_offers_a_spectator_toggle_in_the_kit() {
+    let mut sim = sim(PAGES_THEME);
+    sim.app.init_resource::<chimera_net::spectators::JoinAsSpectator>();
+    act(&mut sim, A::Entry(1));
+    assert_eq!(menu(&sim).page, MenuPage::Join);
+    let lines = signal_pages::lines_now(sim.app.world());
+    let at = lines.iter().position(|l| *l == Line::Spectate).expect("a Spectate line on Join");
+    let on = |sim: &Sim| sim.app.world().resource::<chimera_net::spectators::JoinAsSpectator>().0;
+    // Down to it (the address and password lines come first), Enter flips it.
+    for _ in 0..at {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    assert_eq!(pages(&sim).focus, at);
+    press(&mut sim, KeyCode::Enter);
+    assert_eq!(on(&sim), 1, "Enter turns it on, and does not connect");
+    assert!(asked(&sim).is_empty());
+    press(&mut sim, KeyCode::Space);
+    assert_eq!(on(&sim), 0, "Space turns it off");
+    // The toggle is a button of the kit's: pressing it is the same action.
+    act(&mut sim, A::ToggleSpectator);
+    assert_eq!(on(&sim), 1);
+}
+
+#[test]
+fn a_failed_join_shows_in_the_kit_box_and_close_closes_it() {
+    let mut sim = sim(PAGES_THEME);
+    assert_eq!(failure_boxes(&mut sim), 0);
+    submit(&mut sim, "mainmenu_failure No room for another spectator on this server.");
+    assert!(menu(&sim).failure.is_some());
+    assert_eq!(failure_boxes(&mut sim), 1, "the kit's box");
+    act(&mut sim, A::CloseFailure);
+    assert!(menu(&sim).failure.is_none());
+    assert_eq!(failure_boxes(&mut sim), 0);
 }

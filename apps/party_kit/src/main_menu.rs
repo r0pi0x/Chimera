@@ -866,6 +866,9 @@ pub enum MainMenuAction {
     Focus(Field),
     /// Join's Connect.
     Connect,
+    /// Join's "Join as spectator" toggle: flips `cl_spectator`, which the
+    /// join carries in its userinfo (`chimera_net::spectators`).
+    ToggleSpectator,
     /// Join a recent address.
     Recent(usize),
     /// The server browser's tab (`server_list::BrowserTab`'s index).
@@ -1016,7 +1019,7 @@ impl Plugin for MainMenuPlugin {
             .add_observer(born_on_menu::<crate::feedback_signal::NoticeRoot>)
             .add_observer(born_on_menu::<crate::party_signal::PanelRoot>)
             .add_observer(born_on_menu::<crate::party_signal::PromptRoot>)
-            .add_plugins((crate::signal_menu::SignalMenuPlugin, crate::signal_pages::SignalPagesPlugin, crate::loading_signal::LoadingSignalPlugin))
+            .add_plugins((crate::signal_menu::SignalMenuPlugin, crate::signal_pages::SignalPagesPlugin, crate::loading_signal::LoadingSignalPlugin, crate::failure_signal::FailureSignalPlugin))
             .add_systems(Startup, ((start_look, init_play).chain(), spawn_backdrop))
             // After the browser's lists are read (`signal_pages`' Startup).
             .add_systems(PostStartup, remember_command_line_join)
@@ -1752,6 +1755,13 @@ fn act_one(world: &mut World, action: MainMenuAction) {
             let caret = Caret::end_of(m.text_mut(f).map_or("", |s| s.as_str()));
             m.focus = Some(f);
             m.caret = caret;
+        }
+        A::ToggleSpectator => {
+            // The cvar's resource itself (`cl_spectator`).
+            if let Some(mut s) = world.get_resource_mut::<chimera_net::spectators::JoinAsSpectator>() {
+                s.0 = u8::from(s.0 == 0);
+                crate::ui_cues::cue(world, chimera_ui::UiCue::new("ui_select"));
+            }
         }
         A::Connect => {
             let (address, password) = (menu.address.trim().to_string(), menu.password.clone());
@@ -2558,7 +2568,10 @@ fn show(
     let root = root.id();
     let title = title.map_or_else(|| "Ultimate Gun Game".to_string(), |t| t.0.clone());
     if let Some(f) = &menu.failure {
-        failure_frame(&mut commands, root, &look, f);
+        // The Signal look's box (`failure_signal`) says it over this root.
+        if !crate::signal_pages::themed(theme.as_deref()) {
+            failure_frame(&mut commands, root, &look, f);
+        }
         return;
     }
     if let Some(r) = &menu.reconnecting {

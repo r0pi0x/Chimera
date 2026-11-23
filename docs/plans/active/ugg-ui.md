@@ -1581,9 +1581,25 @@ Decisions (agent's, for the user's review):
   never spawns, sends no commands; switching and the cap; the lobby
   never waits for one; the map vote), `chimera_client`
   `spectators_net` (the camera cycles the players).
-- Left: a refused join-as-spectator (no room) is told on the server's
-  log only; the Join page has no "Join as spectator" toggle yet
-  (`cl_spectator` on the console or command line).
+- **Join as spectator** (2026-11-23): the Join page's Direct group has
+  a "Join as spectator" row (the kit's big toggle, Yes/No, note "watch,
+  don't play"; Enter, Space or a click flips it: `MainMenuAction::
+  ToggleSpectator`, which flips `cl_spectator`, carried in the join's
+  userinfo; `signal_pages::Line::Spectate`).
+- **A refused join** (2026-11-23): a join that asks to watch while no
+  spectator fits is refused by the server (`spectators::refusal`, in
+  `server::admit`: "This server doesn't allow spectators." with
+  `mp_spectators_max 0`, "No room for another spectator on this
+  server." when the places are taken; it no longer plays instead). Any
+  refusal or drop (full server, bad password, these) shows in the kit's
+  box over the menu (`failure_signal`: a modal, the title "Couldn't
+  join" or "Disconnected", the words with a threat mark, Close with
+  Enter, Esc or a click); an app without the Signal layout keeps the
+  VGUI box. Tests: `party_roster` `main_menu` (`the_join_toggle_sends_a_
+  spectator_join`, `a_refused_spectator_join_says_why`), `signal_pages`
+  (`join_offers_a_spectator_toggle_in_the_kit`, `a_failed_join_shows_in_
+  the_kit_box_and_close_closes_it`), `chimera_net` `spectators`
+  (`a_spectator_join_is_refused_when_none_fit`).
 
 ## 6. Decisions (user, 2026-11-14)
 
