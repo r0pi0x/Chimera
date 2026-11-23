@@ -318,7 +318,7 @@ fn part(app: &mut App) {
         .add_systems(PreUpdate, read.after(ClientSystems::Receive).run_if(client()))
         .add_systems(PreUpdate, hold_heard::<NetCaMotion>.after(HearTicks).run_if(client()))
         // Each predicted and each replayed tick (`core::Predict`).
-        .add_systems(Predict::PlaceMovers, place_motion.run_if(client()))
+        .add_systems(Predict::PlaceMovers, place_motion.after(crate::core::PushFooting).run_if(client()))
         .add_systems(Predict::CarryRiders, step_motion.run_if(client()));
     app.world_mut().resource_mut::<NetHooks>().stopped_serving.push(stopped_serving);
     app.world_mut().resource_mut::<NetHooks>().stopped_serving.push(super::mission::stopped_serving);

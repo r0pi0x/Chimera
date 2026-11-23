@@ -90,7 +90,7 @@ fn register(app: &mut App) {
         .add_message::<HudEvent>()
         .add_systems(FixedLast, write_movers.run_if(resource_equals(NetRole::Server)))
         // Each predicted and each replayed tick (`core::Predict`).
-        .add_systems(Predict::PlaceMovers, place.run_if(client()))
+        .add_systems(Predict::PlaceMovers, place.after(crate::core::PushFooting).run_if(client()))
         .add_systems(Update, copy_tints.run_if(client()))
         .add_systems(PreUpdate, hold_heard::<NetMover>.after(HearTicks).run_if(client()))
         .add_systems(

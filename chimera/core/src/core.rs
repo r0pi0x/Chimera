@@ -1625,6 +1625,11 @@ impl ExternalPush {
 /// counts down (`ExternalPush::no_footing`), ends on the ground below its
 /// slide speed, and its air control ends once the body stands
 /// (`air_control`). Any movement, any game's body.
+/// `push_footing`'s set: footing is decided before movers are placed
+/// (a game's mover placement runs after it).
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PushFooting;
+
 pub fn push_footing(mut q: Query<(&mut ExternalPush, &MovementState, &Velocity)>, clock: Res<SimClock>) {
     let dt = clock.dt();
     for (mut p, state, v) in &mut q {
@@ -3072,7 +3077,7 @@ impl Plugin for CorePlugin {
         for stage in Predict::ALL {
             app.init_schedule(stage);
         }
-        app.add_systems(Predict::PlaceMovers, push_footing);
+        app.add_systems(Predict::PlaceMovers, push_footing.in_set(PushFooting));
     }
 }
 
