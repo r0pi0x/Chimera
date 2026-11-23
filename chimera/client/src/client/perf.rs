@@ -155,7 +155,9 @@ impl Plugin for PerfPlugin {
 
 /// `chimera:decal <group>`: a decal of the loaded map's group `group`
 /// (`MapDecals::groups`, every game's on the map: `tf2:material:c`,
-/// `scorch`, ...) where the main view looks; alone, the group names.
+/// `scorch`, ...) where the main view looks (a name with spaces, Halo's
+/// `halo_ce:effects\decals\blood splats\blood splat`, is its words
+/// joined); alone, the group names.
 fn place_decal_command(w: &mut World, args: &[String]) -> Result<Option<String>, String> {
     use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
     use bevy::ecs::system::SystemState;
@@ -165,19 +167,25 @@ fn place_decal_command(w: &mut World, args: &[String]) -> Result<Option<String>,
         .get_resource::<crate::render::decal::DecalAssets>()
         .map(|a| a.data.groups.keys().cloned().collect())
         .ok_or("no impact decals on this map")?;
-    let Some(name) = args.first().map(|a| a.to_lowercase()) else {
+    let name = args.join(" ").to_lowercase();
+    if name.is_empty() {
         return Ok(Some(groups.join(" ")));
-    };
+    }
     if !groups.contains(&name) {
         return Err(format!("no decal group \"{name}\" (`chimera:decal` lists them)"));
     }
-    // The first drawn 3D view (the world's, not the view model's).
-    let mut cams = w.query_filtered::<(&Camera, &GlobalTransform), With<Camera3d>>();
+    // The player's view: the first-person camera, else the first drawn 3D
+    // view (not the view model's, nor a 3D skybox's, which sits far away).
+    let mut cams = w.query_filtered::<(&Camera, &GlobalTransform, Has<super::FirstPersonCamera>), (
+        With<Camera3d>,
+        Without<crate::map::SkyboxCamera>,
+        Without<crate::map::ViewModelCamera>,
+    )>();
     let eye = cams
         .iter(w)
-        .filter(|(c, _)| c.is_active)
-        .min_by_key(|(c, _)| c.order)
-        .map(|(_, t)| *t)
+        .filter(|(c, ..)| c.is_active)
+        .min_by_key(|(c, _, first)| (!*first, c.order))
+        .map(|(_, t, _)| *t)
         .ok_or("no view")?;
     // Not the viewer's own body (the eye is inside its colliders).
     let mut own = w.query_filtered::<Entity, With<chimera_core::core::LocalPlayer>>();
