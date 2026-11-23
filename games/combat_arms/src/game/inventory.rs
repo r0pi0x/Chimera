@@ -84,11 +84,12 @@
 //!   `DROPPED_LIFETIME`. Respawn (13): `respawn_inventory`.
 //!
 //! Known shortcuts:
-//! - The fist (damage type 49, special_weapons.md Follow-up (2026-11-22)
-//!   F2): its ray walks on through characters like a bullet's (up to four,
-//!   within `Range`), but shoot-through surfaces (wood, glass ...) stop it,
-//!   where the original passes them (the server's penetration walk,
-//!   `weapons::walk`, isn't reused by the swing).
+//! - The fist's walk (special_weapons.md F2, a bullet's server walk:
+//!   surfaces passed through `weapons::Passage`, the second victim behind
+//!   the reported one) picks every victim's zone by the swing's
+//!   strongest-sphere rule, where the server picks a walk-found
+//!   character's sphere by node priority on its unwidened box
+//!   (weapon_firing.md Corrections 5).
 //! - Units: movement's `meters_per_unit` (`UNIT`, by body size: movement.md
 //!   Open question 3). Health 100 = 1.0 (`HP`).
 //! - Updates are the game's fixed tick (movement.md's 15 ms,
@@ -424,9 +425,29 @@ pub struct Knife {
 /// animations, no damage-kind hurt sound, the AI cap, a server walk like
 /// a bullet's.
 pub const FIST_DAMAGE: i32 = 49;
-/// How many characters a punch's walk can reach (a bullet's four
-/// intersections).
-const FIST_WALK: usize = 4;
+
+/// Which of a swing's victims (weapon_firing.md "Server" and Edge cases):
+/// the client's (the ray's first), the one the server's walk meets behind
+/// it (a punch's), or one the walk met with no client hit before it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Victim {
+    Reported,
+    Behind,
+    Found,
+}
+
+/// One thing a swing's ray struck: its body and collider, where, the ray
+/// segment's start and direction there, and the damage factor of the
+/// surfaces passed before it.
+struct Struck {
+    target: Entity,
+    collider: Entity,
+    point: Vec3,
+    from: Vec3,
+    dir: Vec3,
+    dampen: f32,
+    kind: Victim,
+}
 
 impl Knife {
     /// Whether this is the fist (damage type 49).
@@ -1020,7 +1041,7 @@ fn swing_knives(
     mut armour: Query<(&mut crate::weapon::Armor, Option<&crate::weapon::ArmorPieces>)>,
     infected: Query<(), With<CaInfected>>,
     colliders: Query<&ColliderOf>,
-    (spatial, mut lag): (SpatialQuery, LagComp),
+    (spatial, mut lag, passage): (SpatialQuery, LagComp, super::weapons::Passage),
     mut damage: MessageWriter<Damage>,
     mut events: MessageWriter<WeaponEvent>,
     mut regions: Option<ResMut<Messages<core::RegionHit>>>,
@@ -1112,7 +1133,6 @@ fn swing_knives(
                         }
                     }
                     let end = hit.map_or(eye + dir * range, |h| eye + dir * h.0);
-                    let body = hit.map(|h| h.3);
                     events.write(WeaponEvent {
                         owner,
                         weapon: entity,
@@ -1125,52 +1145,102 @@ fn swing_knives(
                         },
                         replay: !first.0,
                     });
-                    let Some(target) = body else { continue };
-                    // The victims: the ray's first, and for a punch (the
-                    // server walks it like a bullet's) the characters
-                    // behind it within `Range`.
-                    let mut chain = vec![(target, hit.map_or(target, |h| h.2), end)];
-                    if knife.is_fist() && targets.get(target).is_ok_and(|t| t.1) {
-                        let mut done: Vec<Entity> = vec![target];
-                        let mut skip: Vec<Entity> = hit.map(|h| h.2).into_iter().collect();
-                        let mut travelled = (end - eye).length();
-                        for _ in 0..(FIST_WALK * 2) {
-                            if chain.len() >= FIST_WALK || range - travelled <= 1e-3 {
-                                break;
-                            }
-                            let start = eye + dir * travelled;
-                            let remaining = range - travelled;
+                    // The victims, in order along the ray.
+                    let chain: Vec<Struck> = if knife.is_fist() {
+                        // A punch is walked like a bullet on the server
+                        // (special_weapons.md F2, weapon_firing.md
+                        // "Server" and "Penetration"): from the eye, at
+                        // most `SERVER_INTERSECTIONS` intersections (every
+                        // surface, object or skipped character counts
+                        // one) within `Range` of the eye, shoot-through
+                        // surfaces passed (dampened, re-perturbed), the
+                        // first character met reported by the client and
+                        // skipped, the walk ending at the next character.
+                        let mut out = Vec::new();
+                        let (mut from, mut along, mut left, mut dampen) = (eye, dir, range, 1.0);
+                        let mut skip: Vec<Entity> = Vec::new();
+                        let mut walk_roll = shared_random(intent.command, "combat_arms:fist_walk", n as i32);
+                        let (mut met, mut guard) = (0, 0);
+                        while met < super::weapons::SERVER_INTERSECTIONS && guard < 16 && left >= UNIT {
+                            guard += 1;
+                            let Ok(ray) = Dir3::new(along) else { break };
                             let filter = SpatialQueryFilter::from_excluded_entities(
                                 std::iter::once(owner).chain(rewound.iter().map(|r| r.entity)).chain(skip.iter().copied()),
                             )
                             .with_mask(core::SOLID_LAYERS.0 & !core::ITEM_LAYER.0);
                             let mut next = spatial
-                                .cast_ray(start + dir * 1e-3, ray, remaining, true, &filter)
-                                .map(|h| (h.distance + 1e-3, h.entity, colliders.get(h.entity).map_or(h.entity, |c| c.body)));
-                            for r in rewound.iter().filter(|r| !done.contains(&r.entity)) {
-                                if let Some(t) = r.box_entry(start, dir, next.map_or(remaining, |h| h.0), 0.0) {
+                                .cast_ray(from, ray, left, true, &filter)
+                                .map(|h| (h.distance, h.entity, colliders.get(h.entity).map_or(h.entity, |c| c.body)));
+                            for r in rewound.iter().filter(|r| !skip.contains(&r.entity)) {
+                                if let Some(t) = r.box_entry(from, along, next.map_or(left, |h| h.0), 0.0) {
                                     next = Some((t, r.entity, r.entity));
                                 }
                             }
-                            let Some((d, collider, body2)) = next else { break };
-                            travelled += d;
-                            let point = eye + dir * travelled;
-                            if done.contains(&body2) {
+                            let Some((t, collider, thing)) = next else { break };
+                            let point = from + along * t;
+                            if skip.contains(&thing) {
+                                // Another collider of a character already
+                                // met: the same box, not a new intersection.
                                 skip.push(collider);
+                                left -= t;
+                                from = point + along * 1e-3;
                                 continue;
                             }
-                            if !targets.get(body2).is_ok_and(|t| t.1) {
-                                // Solid scenery stops the punch (a
-                                // shoot-through surface is not walked:
-                                // Known shortcuts).
+                            met += 1;
+                            let struck = |kind| Struck { target: thing, collider, point, from, dir: along, dampen, kind };
+                            if targets.get(thing).is_ok_and(|t| t.1) {
+                                if out.is_empty() && met == 1 {
+                                    // The client's hit (the first thing on
+                                    // the ray): its own damage, then the
+                                    // walk skips its box.
+                                    out.push(struck(Victim::Reported));
+                                    skip.extend([thing, collider]);
+                                    left -= t;
+                                    from = point + along * 1e-3;
+                                    continue;
+                                }
+                                let reported = out.iter().any(|s: &Struck| s.kind == Victim::Reported);
+                                out.push(struck(if reported { Victim::Behind } else { Victim::Found }));
                                 break;
                             }
-                            done.push(body2);
-                            skip.push(collider);
-                            chain.push((body2, collider, point));
+                            if breakables.contains(thing) || breakables.contains(collider) {
+                                out.push(struck(Victim::Found));
+                            }
+                            // Through it? A shoot-through surface passes.
+                            let Some((restart, pass)) = passage.through(&spatial, &filter, collider, point, along, UNIT) else {
+                                break;
+                            };
+                            left = (range - restart.distance(eye)) * pass.range;
+                            dampen *= pass.damage;
+                            let p = pass.perturb.round() as i32;
+                            let (k_r, k_u) = (
+                                super::weapons::whole_draw(walk_roll.next(), p),
+                                super::weapons::whole_draw(walk_roll.next(), p),
+                            );
+                            along = super::weapons::reperturb(along, k_r, k_u);
+                            from = restart + along * 1e-3;
                         }
-                    }
-                    for (target, hit_entity, end) in chain {
+                        out
+                    } else {
+                        // A knife's ray ends at its first intersection.
+                        match hit {
+                            Some(h) => vec![Struck {
+                                target: h.3,
+                                collider: h.2,
+                                point: end,
+                                from: eye,
+                                dir,
+                                dampen: 1.0,
+                                kind: Victim::Reported,
+                            }],
+                            None => continue,
+                        }
+                    };
+                    // The reported victim's behind bonus, which a second
+                    // victim behind it inherits (weapon_firing.md Edge
+                    // cases, "Server-side second victim").
+                    let mut first_bonus = 1.0;
+                    for Struck { target, collider: hit_entity, point: end, from: start, dir, dampen, kind } in chain {
                     let back = rewound.iter().find(|r| target == r.entity);
                     let mut roll = shared_random(intent.command, "combat_arms:knife", n as i32);
                     let u = roll.range(1.0 - knife.spread, 1.0 + knife.spread);
@@ -1182,11 +1252,11 @@ fn swing_knives(
                             damage.write(Damage {
                                 target: thing,
                                 attacker: Some(owner),
-                                amount: attack.damage * u,
+                                amount: attack.damage * u * dampen,
                                 point: end,
                                 dir,
                                 hitgroup: Hitgroup::Generic,
-                                kind: DamageKind::Melee,
+                                kind: if knife.is_fist() { DamageKind::Generic } else { DamageKind::Melee },
                                 weapon: None,
                                 force: Vec3::ZERO,
                             });
@@ -1206,7 +1276,16 @@ fn swing_knives(
                         let yaw = Quat::from_rotation_y(back.map_or(body, |r| r.yaw + (body - i.yaw)));
                         behind(yaw * Vec3::NEG_Z, yaw * Vec3::X, dir)
                     });
-                    let b = if rear { 1.0 + BEHIND_BONUS } else { 1.0 };
+                    // The reported victim's own; the one behind it
+                    // inherits it; one the walk found alone has none.
+                    let b = match kind {
+                        Victim::Reported => {
+                            first_bonus = if rear { 1.0 + BEHIND_BONUS } else { 1.0 };
+                            first_bonus
+                        }
+                        Victim::Behind => first_bonus,
+                        Victim::Found => 1.0,
+                    };
                     // The body part the ray passes on through the target
                     // (8.4: melee uses the zones), then the armour step
                     // (no stock gear covers melee).
@@ -1223,7 +1302,7 @@ fn swing_knives(
                             Some(_) => None,
                             None => super::weapons::their_shapes(t, i, aabb, identity, boxes),
                         }?;
-                        Some(shapes.by_power(eye, through).map(|k| shapes.0[k]))
+                        Some(shapes.by_power(start, through).map(|k| shapes.0[k]))
                     });
                     let sphere = match theirs {
                         Some(_) => None,
@@ -1236,7 +1315,7 @@ fn swing_knives(
                                 }
                                 None => body_geometry(t, i, s, aabb, data)?.2,
                             };
-                            pick_sphere(&world, eye, through).map(|k| data[k])
+                            pick_sphere(&world, start, through).map(|k| data[k])
                         }),
                     };
                     let shape = theirs.flatten();
@@ -1256,7 +1335,7 @@ fn swing_knives(
                     };
                     // An AI's knife x `AIDamageFactor` (weapon_firing.md
                     // Corrections 7; melee: no cap).
-                    let points = attack.damage * u * b / HP * ai.factor(Some(owner));
+                    let points = attack.damage * u * b * dampen / HP * ai.factor(Some(owner));
                     let amount = match armour.get_mut(target) {
                         Ok((a, pieces)) => armour_and_zone(points, hit, Some(a.into_inner()), pieces, true),
                         Err(_) => armour_and_zone(points, hit, None, None, true),

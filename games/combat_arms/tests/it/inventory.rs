@@ -1637,6 +1637,11 @@ fn fist_target(ahead: f32, yaw: f32) -> (Sim, Entity, Entity) {
         knife.range = 130.0 * UNIT;
         knife.attacks[0].damage = 0.02;
         knife.attacks[1].damage = 0.06;
+        // The knuckles' swings (F4): one hit key each.
+        knife.attacks[0].length = 0.8;
+        knife.attacks[0].hits = vec![0.412];
+        knife.attacks[1].length = 1.0;
+        knife.attacks[1].hits = vec![0.424];
     }
     let target = fist_victim(&mut sim, p, ahead, yaw);
     (sim, p, target)
@@ -1736,7 +1741,7 @@ fn t81_t82_punch_kind_and_sounds() {
     );
     punch_at(&mut sim, p, target, "Face_Eyelid1", false);
     let kinds = &sim.app.world().resource::<Kinds>().0;
-    assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == DamageKind::Generic), "not the stab kind: {kinds:?}");
+    assert_eq!(kinds, &[DamageKind::Generic], "one punch, not the stab kind");
     assert_eq!(effects::hurt_kinds(DamageKind::Generic, Hitgroup::Head, false)[0], None, "no gun sound");
     assert!(effects::hurt_kinds(DamageKind::Generic, Hitgroup::Head, false)[1].is_some(), "the head sound");
     assert!(effects::hurt_kinds(DamageKind::Melee, Hitgroup::Head, false)[0].is_some(), "a knife's gun sound");
@@ -1747,4 +1752,87 @@ fn t81_t82_punch_kind_and_sounds() {
     let melee = effects::impact_sound(&record, wood, AmmoKind::Melee, 0.0).unwrap();
     assert!(fist.contains("fist"), "{fist}");
     assert_ne!(fist, melee);
+}
+
+/// Every damage message of one swing (`fire` or alt-fire), the swing let
+/// end: (tick, target, points).
+fn swing_damage(sim: &mut Sim, p: Entity, target: Entity, zone: &str, secondary: bool) -> Vec<(u64, Entity, f32)> {
+    let d = super::aim_points::point(sim.app.world(), p, target, zone) - (sim.position(p) + sim.state(p).eye_offset);
+    let mut i = sim.intent(p);
+    i.yaw = (-d.x).atan2(-d.z);
+    i.pitch = d.y.atan2(d.xz().length());
+    sim.ticks(1);
+    sim.app.world_mut().resource_mut::<Hurt>().0.clear();
+    if secondary {
+        tap(sim, p, |i, on| i.secondary = on);
+    } else {
+        tap(sim, p, |i, on| i.fire = on);
+    }
+    sim.seconds(1.6);
+    sim.app.world().resource::<Hurt>().0.clone()
+}
+
+/// Melee damage is dealt once per victim per hit key: a punch (one key)
+/// on two characters in line is one message each, the spec's amounts (6
+/// on the reported victim's chest; the one behind it 6 x its zone); the
+/// M9's primary (keys at 155 and 402 ms) two on its victim, 45 each, a
+/// key apart. (Two messages in the punch tests came from the M9's two
+/// keys, which the fist set-up kept before it took the knuckles' swings.)
+#[test]
+fn melee_one_damage_per_victim_per_hit_key() {
+    let (mut sim, p, a) = fist_target(40.0, std::f32::consts::PI);
+    let b = fist_victim(&mut sim, p, 90.0, std::f32::consts::PI);
+    for secondary in [true, false] {
+        let hurt = swing_damage(&mut sim, p, a, "Torso", secondary);
+        let on = |e: Entity| hurt.iter().filter(|h| h.1 == e).map(|h| h.2).collect::<Vec<_>>();
+        let want = if secondary { 6.0 } else { 2.0 };
+        assert_eq!(on(a).len(), 1, "secondary {secondary}: {hurt:?}");
+        assert!((on(a)[0] - want).abs() < 1e-3, "secondary {secondary}: {hurt:?}");
+        assert_eq!(on(b).len(), 1, "secondary {secondary}, behind: {hurt:?}");
+        assert!(on(b)[0] > 0.0 && on(b)[0] <= want * 6.0 + 1e-3, "{hurt:?}");
+        assert_eq!(hurt.len(), 2, "nothing else: {hurt:?}");
+    }
+    let (mut sim, p) = knife_out(STOCK);
+    let k = carried(&sim, p, KNIFE);
+    sim.app.world_mut().get_mut::<Knife>(k).unwrap().spread = 0.0;
+    let a = fist_victim(&mut sim, p, 40.0, std::f32::consts::PI);
+    let hurt = swing_damage(&mut sim, p, a, "Torso", false);
+    assert_eq!(hurt.len(), 2, "one a key: {hurt:?}");
+    assert!(hurt.iter().all(|h| h.1 == a && (h.2 - 45.0).abs() < 1e-3), "{hurt:?}");
+    assert_ne!(hurt[0].0, hurt[1].0, "a key apart");
+}
+
+/// A static panel `units` thick across the lane `ahead` units in front of
+/// `p`, of `surface`.
+fn panel_ahead(sim: &mut Sim, p: Entity, ahead: f32, units: f32, surface: &str) {
+    let at = sim.position(p) + sim.state(p).eye_offset - Vec3::Z * ahead * UNIT;
+    sim.app.world_mut().spawn((
+        Transform::from_translation(at),
+        avian3d::prelude::RigidBody::Static,
+        avian3d::prelude::Collider::cuboid(3.0, 3.0, units * UNIT),
+        chimera_core::core::PropSurface(surface.into()),
+    ));
+    sim.ticks(1);
+}
+
+/// F2 (and 80's walk): a punch passes a shoot-through surface as a bullet
+/// does: 6 units of wood between the fist and a chest 70 units away ->
+/// 6 x Wood's 0.5 = 3 (the walk found it: no client hit, no behind
+/// bonus); concrete stops it; a knife's swing stops at the wood.
+#[test]
+fn fist_punches_through_wood() {
+    for (surface, want) in [("Wood", 3.0), ("Concrete", 0.0)] {
+        let (mut sim, p, target) = fist_target(70.0, std::f32::consts::PI);
+        panel_ahead(&mut sim, p, 35.0, 6.0, surface);
+        let hurt = swing_damage(&mut sim, p, target, "Torso", true);
+        let got: f32 = hurt.iter().filter(|h| h.1 == target).map(|h| h.2).sum();
+        assert!((got - want).abs() < 1e-3, "{surface}: {hurt:?}, want {want}");
+    }
+    let (mut sim, p) = knife_out(STOCK);
+    let k = carried(&sim, p, KNIFE);
+    sim.app.world_mut().get_mut::<Knife>(k).unwrap().range = 130.0 * UNIT;
+    let target = fist_victim(&mut sim, p, 70.0, std::f32::consts::PI);
+    panel_ahead(&mut sim, p, 35.0, 6.0, "Wood");
+    let hurt = swing_damage(&mut sim, p, target, "Torso", true);
+    assert!(hurt.iter().all(|h| h.1 != target), "a knife stops at the wood: {hurt:?}");
 }

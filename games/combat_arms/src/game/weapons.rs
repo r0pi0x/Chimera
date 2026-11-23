@@ -2059,22 +2059,12 @@ struct Delivery<'w, 's> {
     knockback: Query<'w, 's, &'static super::movement::HitKnockback>,
     now: Res<'w, SimClock>,
     commands: Commands<'w, 's>,
-    /// Colliders' own surfaces: props' and Combat Arms' glass sets'
-    /// (`PropSurface`), brush entities' (`map::BrushSurface`).
-    surfaces: (Query<'w, 's, &'static PropSurface>, Query<'w, 's, &'static crate::map::BrushSurface>),
+    /// How rays pass what they hit (the shoot-through surfaces).
+    passage: Passage<'w, 's>,
     colliders: Query<'w, 's, &'static ColliderOf>,
     bodies: Query<'w, 's, (&'static RigidBody, Option<&'static ColliderAabb>)>,
-    table: Res<'w, CaSurfaces>,
-    /// The world's surfaces (walls without a `PropSurface`), another
-    /// game's surface names as Combat Arms' (a mashup's map), what
-    /// takes damage that isn't a character (map breakables, props), and
-    /// the map's world models (shot through by their thickness alone).
-    ground: (
-        Option<Res<'w, SurfaceGrid>>,
-        Option<Res<'w, SurfaceNames>>,
-        Query<'w, 's, (), (With<Damageable>, Without<Intent>)>,
-        Query<'w, 's, (), With<crate::map::MapBrushEntity>>,
-    ),
+    /// What takes damage that isn't a character (map breakables, props).
+    ground: Query<'w, 's, (), (With<Damageable>, Without<Intent>)>,
     /// Live grenades, which rounds hit (grenades.md 13), and special
     /// weapons' objects (rockets, mines: special_weapons.md 1.4).
     grenades: Query<'w, 's, (Entity, &'static super::grenades::CaGrenade)>,
@@ -2232,7 +2222,31 @@ impl Delivery<'_, '_> {
     fn body(&self, collider: Entity) -> Entity {
         self.colliders.get(collider).map_or(collider, |c| c.body)
     }
+}
 
+/// How a ray passes what it hits (the spec's "Penetration"): the
+/// surfaces' table and where each collider's surface comes from. Shared
+/// by the rounds' server walk and the fist's (special_weapons.md
+/// Follow-up (2026-11-22) F2: a punch is walked like a bullet).
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Passage<'w, 's> {
+    /// Colliders' own surfaces: props' and Combat Arms' glass sets'
+    /// (`PropSurface`), brush entities' (`map::BrushSurface`).
+    surfaces: (Query<'w, 's, &'static PropSurface>, Query<'w, 's, &'static crate::map::BrushSurface>),
+    colliders: Query<'w, 's, &'static ColliderOf>,
+    bodies: Query<'w, 's, (&'static RigidBody, Option<&'static ColliderAabb>)>,
+    table: Res<'w, CaSurfaces>,
+    /// The world's surfaces (walls without a `PropSurface`), another
+    /// game's surface names as Combat Arms' (a mashup's map), and the
+    /// map's world models (shot through by their thickness alone).
+    ground: (
+        Option<Res<'w, SurfaceGrid>>,
+        Option<Res<'w, SurfaceNames>>,
+        Query<'w, 's, (), With<crate::map::MapBrushEntity>>,
+    ),
+}
+
+impl Passage<'_, '_> {
     /// The name of the surface a round hit (`CaSurfaces`' key): the
     /// collider's own (`effects::owned_surface`: a prop's, a glass set's, a
     /// brush entity's such as a CS:S window), else the world's surface
@@ -2266,6 +2280,59 @@ impl Delivery<'_, '_> {
     /// None: it stops there.
     fn surface_at(&self, collider: Entity, point: Vec3) -> Option<SurfacePass> {
         self.table.get(&self.surface_name(collider, point)?)
+    }
+
+    /// Whether a ray along `dir` that hit `collider` at `point` passes it
+    /// (`unit`: one world unit in metres; `filter`: what the ray meets):
+    /// the back-cast from the limit + 1 unit beyond the entry to 1 unit
+    /// before it, the restart point (the exit when its surface is the
+    /// entry's, else the entry) and the surface's pass. None: it stops.
+    pub fn through(
+        &self,
+        spatial: &SpatialQuery,
+        filter: &SpatialQueryFilter,
+        collider: Entity,
+        point: Vec3,
+        dir: Vec3,
+        unit: f32,
+    ) -> Option<(Vec3, SurfacePass)> {
+        let name = self.surface_name(collider, point);
+        let pass = self.surface_at(collider, point)?;
+        if pass.thickness <= 0.0 {
+            return Some((point, pass));
+        }
+        // Anything the back-cast meets passes (the thickness itself is
+        // never compared).
+        let reach = pass.thickness + unit;
+        // The level's own geometry (no surface of its own: the world's)
+        // is solid behind its polygons, which are open meshes here: a
+        // point inside a thick wall is found by looking for the wall's
+        // far side ahead, not by the back-cast alone (the original's cast
+        // from inside solid space hits at once).
+        let ahead = Dir3::new(dir).unwrap_or(Dir3::NEG_Z);
+        if !self.owns_surface(collider) && spatial.cast_ray(point + dir * 1e-3, ahead, reach, false, filter).is_none() {
+            return None;
+        }
+        let far = point + dir * reach;
+        let back = Dir3::new(-dir).unwrap_or(Dir3::NEG_Z);
+        let h = spatial.cast_ray(far, back, reach + unit, true, filter)?;
+        if h.distance <= 0.0 {
+            // Still inside it at the limit: too thick.
+            return None;
+        }
+        // An object (not the world or a world model: effects_sounds.md
+        // Follow-up (2026-10-31b) 3) must be thinner than the limit on
+        // some axis too.
+        let body = self.colliders.get(collider).map_or(collider, |c| c.body);
+        if let Ok((rb, aabb)) = self.bodies.get(body)
+            && !rb.is_static()
+            && !self.ground.2.contains(body)
+            && aabb.is_some_and(|b| (b.max - b.min).min_element() >= pass.thickness)
+        {
+            return None;
+        }
+        let exit = far - dir * h.distance;
+        Some((if self.surface_name(h.entity, exit) == name { exit } else { point }, pass))
     }
 }
 
@@ -3229,9 +3296,9 @@ fn server_walk(w: &mut Delivery, dmg: &CaDamage, r: &Round, walk: Walk, bodies: 
                 impulse: push,
             });
         }
-        if walk.lands && (w.ground.2.contains(hit.entity) || w.ground.2.contains(body)) {
+        if walk.lands && (w.ground.contains(hit.entity) || w.ground.contains(body)) {
             w.damage.write(Damage {
-                target: if w.ground.2.contains(body) { body } else { hit.entity },
+                target: if w.ground.contains(body) { body } else { hit.entity },
                 attacker: Some(r.owner),
                 amount: d,
                 point,
@@ -3243,47 +3310,7 @@ fn server_walk(w: &mut Delivery, dmg: &CaDamage, r: &Round, walk: Walk, bodies: 
             });
         }
         // Through it? A collider's surface, else the world's there.
-        let name = w.surface_name(hit.entity, point);
-        let Some(pass) = w.surface_at(hit.entity, point) else { return };
-        let restart = if pass.thickness <= 0.0 {
-            point
-        } else {
-            // Cast back from the limit + 1 unit beyond the entry to 1 unit
-            // before it: anything it meets passes (the thickness itself is
-            // never compared).
-            let reach = pass.thickness + unit;
-            // The level's own geometry (no surface of its own: the
-            // world's) is solid behind its polygons, which are open
-            // meshes here: a point inside a thick wall is found by looking
-            // for the wall's far side ahead, not by the back-cast alone
-            // (the original's cast from inside solid space hits at once).
-            let ahead = Dir3::new(dir).unwrap_or(Dir3::NEG_Z);
-            if !w.owns_surface(hit.entity)
-                && w.spatial.cast_ray(point + dir * 1e-3, ahead, reach, false, &filter).is_none()
-            {
-                return;
-            }
-            let far = point + dir * reach;
-            let back = Dir3::new(-dir).unwrap_or(Dir3::NEG_Z);
-            let Some(h) = w.spatial.cast_ray(far, back, reach + unit, true, &filter) else { return };
-            if h.distance <= 0.0 {
-                // Still inside it at the limit: too thick.
-                return;
-            }
-            // An object (not the world or a world model: effects_sounds.md
-            // Follow-up (2026-10-31b) 3) must be thinner than the limit on
-            // some axis too.
-            if let Ok((rb, aabb)) = w.bodies.get(body)
-                && !rb.is_static()
-                && !w.ground.3.contains(body)
-                && aabb.is_some_and(|b| (b.max - b.min).min_element() >= pass.thickness)
-            {
-                return;
-            }
-            // The exit when its surface is the entry's, else the entry.
-            let exit = far - dir * h.distance;
-            if w.surface_name(h.entity, exit) == name { exit } else { point }
-        };
+        let Some((restart, pass)) = w.passage.through(&w.spatial, &filter, hit.entity, point, dir, unit) else { return };
         left = (walk.range - restart.distance(r.origin)) * pass.range;
         dampen *= pass.damage;
         let p = pass.perturb.round() as i32;

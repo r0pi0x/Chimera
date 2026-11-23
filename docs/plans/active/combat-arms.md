@@ -839,15 +839,18 @@ implemented 2026-11-23).** Type 49 is read from the install's ammo
 (`damage_type` in the knife hook): base 2 / 6, zones, rear x1.3, no armour
 reduction, ordinary damage kind (ordinary death animations, no gun-kind
 hurt sound), the AI cap, the surface's `FistImpactSnd` list (`fist` in
-`data/effects.toml`, read from the install's SURFACE.TXT), a ray walked on
-through up to four characters within `Range` (shoot-through surfaces
-excepted: inventory.rs Known shortcuts), silent draw (no `SelectSnd`), the
+`data/effects.toml`, read from the install's SURFACE.TXT), a ray walked
+like a bullet's within `Range` (four intersections, shoot-through surfaces
+passed and dampened by the rounds' `weapons::Passage`, the reported
+victim skipped, the walk ending at the character behind it; 2026-11-22),
+silent draw (no `SelectSnd`), the
 kill icon from `Weaponkillimage`, swing timing from the shared animations.
 Question 21: the "open hands" screenshot was taken during the 800 ms draw;
 at idle our right hand is the closed fist and the left half open (no
 binding fault; `heavy::fist_install` checks the finger angles). Third
 person draws the install's `HH_Melee_Fist_KE` (its `HH_Knuckle` piece).
-Tests: `inventory.rs` t75-t82, `heavy::fist_install`. Still excluded from
+Tests: `inventory.rs` t75-t82, `melee_one_damage_per_victim_per_hit_key`,
+`fist_punches_through_wood`, `heavy::fist_install`. Still excluded from
 gun-game ladders (`ladder_exclusions.toml`). Original text follows.
 
 Feedback 045da13b (an Ultimate Gun Game knife finale dealt the install's
