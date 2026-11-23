@@ -109,8 +109,6 @@ Port **Day of Defeat: Source** next (smallest effort, high reuse, clean
 legal path), then start the **GoldSrc family** with CS 1.6 as the next new
 engine, since one loader yields six games.
 
-First step: write `docs/plans/active/dods.md` (install path from Steam app
-300, the BSP/VPK checks, milestones per new-game.md) and run a spec session
-for DoD:S's deltas from CS:S (weapon scripts, deploy, prone, stamina,
-classes). In parallel, ask the user to approve `qbsp` (MIT OR Apache-2.0)
-for THIRD_PARTY.md so the GoldSrc plan can count on it.
+Started 2026-11-23 (user's go): the plan is [dods.md](dods.md), the
+first specs are in `specs/dods/`; `qbsp` (MIT OR Apache-2.0) is
+approved in THIRD_PARTY.md for the GoldSrc plan, not yet a dependency.

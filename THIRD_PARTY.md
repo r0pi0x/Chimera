@@ -78,3 +78,44 @@ from this page. There are no patents or copyrights, so its
 use is unrestricted. Naturally, if you do decide to use it, the
 author would love to hear about it.
 ```
+
+## qbsp
+
+A Rust reader for Quake-family BSP files, including GoldSrc's BSP 30.
+Approved for the GoldSrc loader family (Counter-Strike 1.6, Half-Life
+DM, DoD 1.3, ...; docs/plans/active/next-games.md, rank 2). **Not yet a
+dependency**: nothing in the workspace uses it, and no code of it is
+copied. When the GoldSrc plan adopts it, it enters as a crates.io
+dependency (or adapted files with the header above), and this entry gets
+the commit or version actually taken. The crate is dual-licensed; we
+take it under MIT (its text below); Apache-2.0 is the alternative.
+
+- URL: https://github.com/Noxmore/qbsp
+- Licence: MIT OR Apache-2.0 (we use MIT)
+- Copyright: Copyright (c) 2026 Noxmore
+- Commit: 7c0b23e5152c87620765cd7499f5a377973dfb10 (main, 2026-10-09; crate version 0.17.0), reviewed, not yet taken
+- Approved: 2026-11-23 (user)
+
+```text
+MIT License
+
+Copyright (c) 2026 Noxmore
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
