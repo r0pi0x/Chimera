@@ -13,13 +13,24 @@
 // are approximated the same way, as a stain: factor = texel colour where
 // the texel is opaque; on glass (where a stain on what shows through
 // wouldn't show) they are alpha-blended, lit by the light probe there.
+//
+// Halo's framebuffer blend functions (specs/halo_ce/shaders.md): the
+// game's value src = texel x the decal's colour (gamma space), moved
+// toward the blend's neutral value (1/2 for double multiply, white for
+// multiply and min, black for add, subtract and max) by 1 minus its
+// strength, edge fade and fog, then multiply (src x dst), add (src +
+// dst), subtract (dst - src), min or max per channel by the pipeline's
+// blend state (`DecalMaterial::specialize`). Their output is src in
+// linear light: exact for multiply, min and max; add and subtract are in
+// linear light, not the game's gamma space.
 
 import bevy_pbr::render::forward_io::VertexOutput;
 import chimera_present::render::fog::{source_fog, fog_mix};
 
 struct DecalParams {
-    // 1: modulate 2x; 0: stain.
-    modulate: f32,
+    // The blend (render::decal::blend_code): 0 stain, 1 modulate 2x, 2
+    // multiply, 3 add, 4 subtract, 5 min, 6 max.
+    blend: f32,
     // The fog fade's power (map::decal::MapDecal::fog_fade; 0: Source's
     // 0.4).
     fog_fade: f32,
@@ -42,6 +53,8 @@ struct FogUniform {
 // rgb: the surface's light; w 1: a lit decal drawn alpha-blended (on
 // glass), texel x light over what is there.
 @group(constants::MATERIAL_BIND_GROUP) @binding(4) var<uniform> light: vec4<f32>;
+// rgb: the decal's colour (multiplies the texel); w: its strength.
+@group(constants::MATERIAL_BIND_GROUP) @binding(5) var<uniform> tint: vec4<f32>;
 
 // Share of the decal's width over which its edge fades out (about 3
 // texels of a 64-texel decal).
@@ -53,7 +66,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if light.w > 0.5 {
         // Lit, alpha-blended (the game's lightmapped alpha decals): the
         // texel lit by the light where it lies, fogged like a surface.
-        var alpha = texel.a;
+        var alpha = texel.a * tint.w;
         @if(VERTEX_UVS_B) {
             let e = min(min(in.uv_b.x, 1.0 - in.uv_b.x), min(in.uv_b.y, 1.0 - in.uv_b.y));
             alpha = alpha * smoothstep(0.0, EDGE_FADE, e);
@@ -62,36 +75,51 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             discard;
         }
         let lf = source_fog(fog.color, fog.range, fog.water_color, fog.water_range, in.world_position.xyz);
-        let lit = fog_mix(texel.rgb * light.rgb, lf, fog.range);
+        let lit = fog_mix(texel.rgb * tint.rgb * light.rgb, lf, fog.range);
         return vec4(lit, alpha);
     }
-    // The texture is sRGB: back to the game's gamma-space value.
-    let gamma = pow(max(texel.rgb, vec3(0.0)), vec3(1.0 / 2.2));
-    var factor: vec3<f32>;
-    if params.modulate > 0.5 {
-        factor = 2.0 * gamma;
-    } else {
-        factor = mix(vec3(1.0), gamma, texel.a);
-    }
+    // The texture is sRGB: back to the game's gamma-space value, times
+    // the decal's colour.
+    let gamma = pow(max(texel.rgb, vec3(0.0)), vec3(1.0 / 2.2)) * tint.rgb;
+    let blend = u32(params.blend + 0.5);
+    // How much of the decal shows: its strength, the edge fade and fog.
+    var k = clamp(tint.w, 0.0, 1.0);
     // Fade to neutral over the decal's outer edge: decals share an atlas,
     // and filtering (most of all the small mip levels seen from afar)
     // pulls in the neighbouring decal's texels there, as dark lines.
     @if(VERTEX_UVS_B) {
         let t = in.uv_b;
         let edge = min(min(t.x, 1.0 - t.x), min(t.y, 1.0 - t.y));
-        factor = mix(vec3(1.0), factor, smoothstep(0.0, EDGE_FADE, edge));
+        k = k * smoothstep(0.0, EDGE_FADE, edge);
     }
-    // Fog: toward a neutral factor by the amount raised to the game's
-    // power (mirror `render::decal::fog_fade`). Source's (specs/cs_source/
-    // shaders.md section 5, DecalModulate): toward 0.5 grey by the fog
-    // factor raised to 0.4 before section 7's use of it: (f^0.4)^2 for
-    // range fog, f^0.4 for the water's height fog; both are the surface's
-    // amount^0.4. Halo's (specs/halo_ce/shaders.md "Fade and fog stage"):
-    // double multiply toward 1/2, multiply toward white, by the amount
-    // itself (linear fog: `source_fog`'s f), power 1.
+    // Fog: toward neutral by the amount raised to the game's power (mirror
+    // `render::decal::fog_fade`). Source's (specs/cs_source/shaders.md
+    // section 5, DecalModulate): toward 0.5 grey by the fog factor raised
+    // to 0.4 before section 7's use of it: (f^0.4)^2 for range fog, f^0.4
+    // for the water's height fog; both are the surface's amount^0.4.
+    // Halo's (specs/halo_ce/shaders.md "Fade and fog stage"): double
+    // multiply toward 1/2, multiply toward white, add toward black, by the
+    // amount itself (linear fog: `source_fog`'s f), power 1.
     let f = source_fog(fog.color, fog.range, fog.water_color, fog.water_range, in.world_position.xyz);
     let fade = select(0.4, params.fog_fade, params.fog_fade > 0.0);
-    factor = mix(factor, vec3(1.0), pow(clamp(f.a, 0.0, 1.0), fade));
+    k = k * (1.0 - pow(clamp(f.a, 0.0, 1.0), fade));
+    if blend >= 2u {
+        // Halo's other blend functions: src toward its neutral value.
+        let neutral = select(vec3(0.0), vec3(1.0), blend == 2u || blend == 5u);
+        let src = mix(neutral, gamma, k);
+        // Nothing to show: skip the blend.
+        if all(abs(src - neutral) < vec3(0.008)) {
+            discard;
+        }
+        return vec4(pow(max(src, vec3(0.0)), vec3(2.2)), 1.0);
+    }
+    var factor: vec3<f32>;
+    if blend == 1u {
+        factor = 2.0 * gamma;
+    } else {
+        factor = mix(vec3(1.0), gamma, texel.a);
+    }
+    factor = mix(vec3(1.0), factor, k);
     // Nothing to show: skip the blend.
     if all(abs(factor - vec3(1.0)) < vec3(0.02)) {
         discard;

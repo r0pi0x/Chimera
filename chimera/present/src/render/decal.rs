@@ -30,7 +30,14 @@
 //! or the map's decals: they multiply in any order, the result of the
 //! game's creation order), oldest
 //! removed past `mp_decals` (`DecalSettings::limit`, Source's client setting,
-//! 200).
+//! 200). A decal's own blend (`MapDecal::blend`: Halo's framebuffer blend
+//! functions, multiply, add, subtract, component min and max, besides
+//! modulate 2x) is its pipeline's (`DecalMaterial::specialize`); each placed
+//! copy draws its colour between the decal's bounds and its strength
+//! (`MapDecal::tint`, `intensity`: its own material then), lasts its
+//! lifetime and fades by the intensity byte over its decay (`DecalLife`,
+//! `age_decals`, `strength_at`), and brings its chain (`MapDecal::then`:
+//! Halo's plasma burn and its additive glows).
 //!
 //! Known shortcuts (docs/tech-debt.md): Runtime decals: world and props
 //! (projected onto the prop's own model triangles, as a child so they move with
@@ -46,7 +53,12 @@
 //! decal rule (walls upright, floors along world X; the engine's rule isn't
 //! public); limit 512 (the game's is a client setting); fog fades them to
 //! neutral by the fog amount^0.4 (shaders.md section 5) for Source's, by
-//! the amount itself for Halo's (`MapDecal::fog_fade`, `fog_fade`). Why it's OK for now:
+//! the amount itself for Halo's (`MapDecal::fog_fade`, `fog_fade`); a
+//! decal's strength moves it toward its blend's neutral value as fog does
+//! (inferred from Halo's fade stage; halo-ce-parity.md "Decals"); add and
+//! subtract act in linear light (the game's in gamma space); every layer
+//! draws after the opaque world (Halo draws its light layer under the
+//! diffuse texture); a chain's next decal takes a new frame. Why it's OK for now:
 //! Bullet holes on world surfaces look right; the rest needs observation in the
 //! game.
 //!
@@ -432,6 +444,8 @@ impl DecalAssets {
             texture,
             fog: fog.map_or_else(Default::default, |f| f.0),
             light: Vec4::ZERO,
+            // One look for every copy: the lower colour, full strength.
+            tint: decal.tint[0].extend(decal.intensity.y),
         });
         self.materials.insert(index, m.clone());
         Some(m)
@@ -452,18 +466,25 @@ pub fn place_decals(
     light_field: Option<Res<crate::map::LightField>>,
     light_scale: Option<Res<super::probe_lit::ProbeLightScale>>,
     settings: Option<Res<DecalSettings>>,
+    time: Option<Res<Time>>,
     mut commands: Commands,
 ) {
     let limit = settings.map_or(MAX_DECALS, |s| s.limit.min(MAX_DECALS * 8));
+    let now = time.map_or(0.0, |t| t.elapsed_secs_f64());
     let (Some(surfaces), Some(mut assets), Some(mut meshes), Some(mut materials)) =
         (surfaces, assets, meshes, materials)
     else {
         asks.clear();
         return;
     };
-    for ask in asks.read() {
+    // Each ask, then the groups chained to what it placed.
+    let mut queue: VecDeque<PlaceDecal> = asks.read().cloned().collect();
+    while let Some(ask) = queue.pop_front() {
         let Some(index) = assets.pick(&ask.group) else { continue };
         let decal = assets.data.decals[index].clone();
+        if let Some(next) = &decal.then {
+            queue.push_back(PlaceDecal { group: DecalGroup::Named(next.clone()), ..ask.clone() });
+        }
         let (mut right, mut down) = basis(ask.normal);
         if ask.spin {
             let turn = Quat::from_axis_angle(ask.normal.normalize_or_zero(), assets.random() * std::f32::consts::TAU);
@@ -541,7 +562,17 @@ pub fn place_decals(
             let scale = light_scale.as_ref().map_or(1.0, |s| s.0);
             probe.map_or(Vec3::ONE, |p| p.eval(ask.normal.normalize_or_zero()) * scale).extend(1.0)
         });
-        let shared = light.is_none();
+        // This one's colour and strength, drawn between its bounds
+        // (specs/halo_ce/effects.md "Decals", placement step 6).
+        let life = (decal.lifetime.max_element() > 0.0).then(|| {
+            let lifetime = between(decal.lifetime, assets.random());
+            let decay = between(decal.decay, assets.random());
+            (lifetime, decay)
+        });
+        let strength = between(decal.intensity, assets.random());
+        let pick = assets.random();
+        let tint = decal.tint[0].lerp(decal.tint[1], pick).extend(strength);
+        let shared = light.is_none() && decal.uniform();
         let colour = match assets.materials.get(&index).filter(|_| shared) {
             Some(m) => m.clone(),
             None => {
@@ -550,6 +581,7 @@ pub fn place_decals(
                     texture,
                     fog: fog.as_ref().map_or_else(Default::default, |f| f.0),
                     light: light.unwrap_or(Vec4::ZERO),
+                    tint,
                 });
                 if shared {
                     assets.materials.insert(index, m.clone());
@@ -557,6 +589,7 @@ pub fn place_decals(
                 m
             }
         };
+        let life = life.map(|(lifetime, decay)| DecalLife { born: now, lifetime, decay, strength, material: colour.clone() });
         let mesh = meshes.add(mesh);
         let mut decal_entity = commands.spawn((
             Name::new("Decal"),
@@ -580,6 +613,9 @@ pub fn place_decals(
         }
         if ask.round {
             decal_entity.insert(RoundDecal);
+        }
+        if let Some(life) = life {
+            decal_entity.insert(life);
         }
         let e = decal_entity.id();
         assets.placed.push_back(e);
@@ -657,7 +693,84 @@ pub fn clear_decals(
 
 /// A decal's shader parameters (`DecalMaterial::params`).
 fn params(decal: &MapDecal) -> Vec4 {
-    Vec4::new(if decal.blend == DecalBlend::Modulate2x { 1.0 } else { 0.0 }, decal.fog_fade, 0.0, 0.0)
+    Vec4::new(blend_code(decal.blend) as f32, decal.fog_fade, 0.0, 0.0)
+}
+
+/// The shader's and pipeline key's number for a blend (decal.wesl).
+fn blend_code(blend: DecalBlend) -> u8 {
+    match blend {
+        DecalBlend::Alpha => 0,
+        DecalBlend::Modulate2x => 1,
+        DecalBlend::Multiply => 2,
+        DecalBlend::Add => 3,
+        DecalBlend::Subtract => 4,
+        DecalBlend::Min => 5,
+        DecalBlend::Max => 6,
+    }
+}
+
+/// A uniform draw `t` (0..1) between bounds.
+fn between(bounds: Vec2, t: f32) -> f32 {
+    bounds.x + (bounds.y - bounds.x) * t
+}
+
+/// A placed decal that lasts a while (`MapDecal::lifetime`): when it was
+/// made (`Time` seconds), how long it lasts, how long its fade-out is, its
+/// strength, and its materials (colour, depth copy) to fade.
+#[derive(Component)]
+pub struct DecalLife {
+    pub born: f64,
+    pub lifetime: f32,
+    pub decay: f32,
+    pub strength: f32,
+    material: Handle<DecalMaterial>,
+}
+
+/// The strength a decal living `lifetime` with `decay` seconds of fade
+/// has at `elapsed` seconds, of `strength` (None: gone). In the decay its
+/// intensity byte is trunc(remaining / decay x 255) (specs/halo_ce/
+/// effects.md "Decals", Lifetime).
+pub fn strength_at(lifetime: f32, decay: f32, strength: f32, elapsed: f32) -> Option<f32> {
+    if elapsed >= lifetime {
+        return None;
+    }
+    if decay > 0.0 && lifetime - elapsed < decay {
+        return Some(strength * ((lifetime - elapsed) / decay * 255.0).trunc() / 255.0);
+    }
+    Some(strength)
+}
+
+/// Decals that last a while fade out over their decay and go at the end
+/// of their lifetime.
+pub fn age_decals(
+    time: Res<Time>,
+    decals: Query<(Entity, &DecalLife)>,
+    mut materials: ResMut<Assets<DecalMaterial>>,
+    assets: Option<ResMut<DecalAssets>>,
+    mut commands: Commands,
+) {
+    let now = time.elapsed_secs_f64();
+    let mut gone = Vec::new();
+    for (e, life) in &decals {
+        let elapsed = (now - life.born) as f32;
+        match strength_at(life.lifetime, life.decay, life.strength, elapsed) {
+            None => {
+                commands.entity(e).try_despawn();
+                gone.push(e);
+            }
+            Some(k) => {
+                // Only when it changed (a write re-uploads it).
+                if materials.get(&life.material).is_some_and(|m| m.tint.w != k)
+                    && let Some(mut m) = materials.get_mut(&life.material)
+                {
+                    m.tint.w = k;
+                }
+            }
+        }
+    }
+    if let Some(mut assets) = assets.filter(|_| !gone.is_empty()) {
+        assets.placed.retain(|e| !gone.contains(e));
+    }
 }
 
 /// A decal's factor on the surface (1: no change) after fog `amount`
@@ -674,7 +787,8 @@ pub fn fog_fade(factor: Vec3, amount: f32, fade: f32) -> Vec3 {
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 #[bind_group_data(DecalMaterialKey)]
 pub struct DecalMaterial {
-    /// x: 1 for modulate 2x, 0 for a stain; y: the fog fade's power
+    /// x: the blend (`blend_code`: 0 a stain, 1 modulate 2x, 2 multiply,
+    /// 3 add, 4 subtract, 5 min, 6 max); y: the fog fade's power
     /// (`MapDecal::fog_fade`, `fog_fade`; 0: Source's 0.4).
     #[uniform(0)]
     pub params: Vec4,
@@ -690,6 +804,11 @@ pub struct DecalMaterial {
     /// multiplying what shows through would not show), else 0.
     #[uniform(4)]
     pub light: Vec4,
+    /// rgb: the decal's colour (its texel's factor, `MapDecal::tint`); w:
+    /// its strength (`MapDecal::intensity`, faded over its decay): 1 - w
+    /// of the way to its blend's neutral value.
+    #[uniform(5)]
+    pub tint: Vec4,
 }
 
 /// Pipeline key data: a lit decal on glass blends over, the rest
@@ -698,12 +817,15 @@ pub struct DecalMaterial {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DecalMaterialKey {
     alpha_blend: bool,
+    /// `blend_code`.
+    blend: u8,
 }
 
 impl From<&DecalMaterial> for DecalMaterialKey {
     fn from(m: &DecalMaterial) -> Self {
         Self {
             alpha_blend: m.light.w > 0.5,
+            blend: m.params.x as u8,
         }
     }
 }
@@ -773,12 +895,22 @@ impl Material for DecalMaterial {
             dst_factor: BlendFactor::One,
             operation: BlendOperation::Add,
         };
+        // The other framebuffer blend functions (specs/halo_ce/shaders.md
+        // "Framebuffer blend functions"): src x dst; src + dst; dst - src;
+        // per-channel min and max (their factors must be one).
+        let with = |src_factor, dst_factor, operation| BlendComponent { src_factor, dst_factor, operation };
+        let color = match (key.bind_group_data.alpha_blend, key.bind_group_data.blend) {
+            (true, _) => over,
+            (false, 2) => with(BlendFactor::Dst, BlendFactor::Zero, BlendOperation::Add),
+            (false, 3) => with(BlendFactor::One, BlendFactor::One, BlendOperation::Add),
+            (false, 4) => with(BlendFactor::One, BlendFactor::One, BlendOperation::ReverseSubtract),
+            (false, 5) => with(BlendFactor::One, BlendFactor::One, BlendOperation::Min),
+            (false, 6) => with(BlendFactor::One, BlendFactor::One, BlendOperation::Max),
+            _ => multiply,
+        };
         if let Some(fragment) = descriptor.fragment.as_mut() {
             for target in fragment.targets.iter_mut().flatten() {
-                target.blend = Some(BlendState {
-                    color: if key.bind_group_data.alpha_blend { over } else { multiply },
-                    alpha: keep,
-                });
+                target.blend = Some(BlendState { color, alpha: keep });
             }
         }
         if let Some(depth) = descriptor.depth_stencil.as_mut() {
@@ -847,6 +979,85 @@ mod tests {
         TriSet::new(&[m])
     }
 
+    /// Halo's decals (specs/halo_ce/effects.md "Decals"): a decal's chain
+    /// is placed with it (the plasma burn's additive glows); each copy draws
+    /// its colour between the bounds and its strength, has its blend's
+    /// pipeline, fades over its last `decay` seconds by the intensity byte
+    /// and is gone at the end of its lifetime.
+    #[test]
+    fn halo_decals_chain_colour_fade_and_expire() {
+        use std::time::Duration;
+        let mut app = App::new();
+        app.add_plugins((AssetPlugin::default(), bevy::time::TimePlugin))
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(Duration::from_millis(250)))
+            .init_asset::<Mesh>()
+            .init_asset::<Image>()
+            .init_asset::<DecalMaterial>()
+            .add_message::<PlaceDecal>()
+            .add_systems(Update, (place_decals, age_decals).chain());
+        let mut data = MapDecals::default();
+        // The burn: double multiply, lasting; then its glow: add, coloured,
+        // 1 s with 1 s of decay.
+        data.decals.push(MapDecal { then: Some("glow".into()), ..decal(0.1) });
+        data.decals.push(MapDecal {
+            blend: DecalBlend::Add,
+            tint: [Vec3::new(0.2, 0.9, 1.0), Vec3::new(0.4, 1.0, 1.0)],
+            intensity: Vec2::new(0.5, 1.0),
+            lifetime: Vec2::splat(1.0),
+            decay: Vec2::splat(1.0),
+            ..decal(0.1)
+        });
+        data.groups.insert("burn".into(), vec![(1.0, 0)]);
+        data.groups.insert("glow".into(), vec![(1.0, 1)]);
+        app.insert_resource(DecalSurfaces { world: wall(), ..default() })
+            .insert_resource(DecalAssets::new(data, vec![Handle::default()]));
+        app.world_mut().write_message(PlaceDecal {
+            target: None,
+            group: DecalGroup::Named("burn".into()),
+            point: Vec3::ZERO,
+            normal: Vec3::Z,
+            dir: Vec3::NEG_Z,
+            spin: false,
+            round: false,
+        });
+        app.update();
+        let materials = |app: &mut App| {
+            let w = app.world_mut();
+            let handles: Vec<_> = w.query_filtered::<&MeshMaterial3d<DecalMaterial>, With<RuntimeDecal>>().iter(w).map(|m| m.0.clone()).collect();
+            let assets = w.resource::<Assets<DecalMaterial>>();
+            handles.iter().map(|h| assets.get(h).unwrap().clone()).collect::<Vec<_>>()
+        };
+        let placed = materials(&mut app);
+        assert_eq!(placed.len(), 2, "the burn and its glow");
+        let glow = placed.iter().find(|m| m.params.x == blend_code(DecalBlend::Add) as f32).expect("an additive glow");
+        let burn = placed.iter().find(|m| m.params.x == blend_code(DecalBlend::Modulate2x) as f32).expect("the burn");
+        assert_eq!(burn.tint, Vec4::ONE, "white, full strength");
+        assert!((0.2..=0.4).contains(&glow.tint.x) && (0.9..=1.0).contains(&glow.tint.y), "{}", glow.tint);
+        let strength = glow.tint.w;
+        assert!((0.5..=1.0).contains(&strength), "{strength}");
+        // Its decay covers its whole life: fading from the start.
+        app.update();
+        let now = materials(&mut app);
+        let glow = now.iter().find(|m| m.params.x == 3.0).expect("still there");
+        assert!(glow.tint.w < strength, "fading: {} < {strength}", glow.tint.w);
+        for _ in 0..4 {
+            app.update();
+        }
+        let left = materials(&mut app);
+        assert_eq!(left.len(), 1, "the glow gone after its lifetime, the burn stays");
+        assert_eq!(left[0].params.x, 1.0);
+    }
+
+    /// The intensity byte over a decal's last `decay` seconds.
+    #[test]
+    fn a_decal_fades_by_its_intensity_byte() {
+        assert_eq!(strength_at(180.0, 20.0, 1.0, 100.0), Some(1.0));
+        // 10 s left of 20: trunc(127.5) = 127.
+        assert_eq!(strength_at(180.0, 20.0, 1.0, 170.0), Some(127.0 / 255.0));
+        assert_eq!(strength_at(180.0, 20.0, 0.5, 170.0), Some(0.5 * 127.0 / 255.0));
+        assert_eq!(strength_at(180.0, 20.0, 1.0, 180.0), None);
+    }
+
     /// Feedback 04321aa6 (runtime decals hid the map's decals under
     /// them): an impact is one blended item, ordered after the map's
     /// decals (`IMPACT_ORDER`), with no depth-writing copy to cut a hole
@@ -901,6 +1112,7 @@ mod tests {
             size: Vec2::splat(size),
             blend: DecalBlend::Modulate2x,
             fog_fade: crate::map::decal::SOURCE_FOG_FADE,
+            ..Default::default()
         }
     }
 

@@ -13,7 +13,9 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 
 /// One decal image: a rectangle of a texture (often a decal atlas) and its
-/// size on surfaces.
+/// size on surfaces; how it meets the frame (`blend`), its colour and
+/// strength (each placed decal draws its own between the bounds), how long
+/// it lasts, and the group placed with it (a chain).
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapDecal {
     /// Index into `MapData::textures`.
@@ -29,6 +31,48 @@ pub struct MapDecal {
     /// Halo's 1, linearly (`LINEAR_FOG_FADE`, specs/halo_ce/shaders.md
     /// "Fade and fog stage").
     pub fog_fade: f32,
+    /// Colour bounds (lower, upper; the game's gamma-space factors): a
+    /// placed decal's texel is multiplied by lower + (upper - lower) x a
+    /// draw (specs/halo_ce/effects.md "Decals", placement step 6). White
+    /// for most games' (no change).
+    pub tint: [Vec3; 2],
+    /// Strength bounds (Halo's intensity, the colour's alpha): a placed
+    /// decal draws one and is moved toward its blend's neutral value by 1
+    /// minus it, as by fog (specs/halo_ce/shaders.md "Fade and fog stage").
+    pub intensity: Vec2,
+    /// Lifetime bounds, seconds (0: until the map changes or the limit
+    /// takes it); the last `decay` seconds of it fade it out.
+    pub lifetime: Vec2,
+    pub decay: Vec2,
+    /// A group placed right after it at the same spot (Halo's "next decal
+    /// in chain": the plasma burn's glows).
+    pub then: Option<String>,
+}
+
+impl Default for MapDecal {
+    fn default() -> Self {
+        Self {
+            texture: 0,
+            uv_min: Vec2::ZERO,
+            uv_max: Vec2::ONE,
+            size: Vec2::ONE,
+            blend: DecalBlend::Modulate2x,
+            fog_fade: 0.0,
+            tint: [Vec3::ONE; 2],
+            intensity: Vec2::ONE,
+            lifetime: Vec2::ZERO,
+            decay: Vec2::ZERO,
+            then: None,
+        }
+    }
+}
+
+impl MapDecal {
+    /// Whether every placed copy looks the same and lasts (one shared
+    /// material serves them all).
+    pub fn uniform(&self) -> bool {
+        self.tint[0] == self.tint[1] && self.intensity.x == self.intensity.y && self.lifetime == Vec2::ZERO
+    }
 }
 
 /// Source's decals fade toward neutral in fog by the fog amount^0.4
@@ -40,11 +84,23 @@ pub const LINEAR_FOG_FADE: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DecalBlend {
-    /// The surface times 2 x texel (0.5 grey leaves it unchanged).
+    /// The surface times 2 x texel (0.5 grey leaves it unchanged; Halo's
+    /// "double multiply").
     Modulate2x,
     /// Alpha-blended decals (lit by the surface in the game); drawn as a
     /// stain for now.
     Alpha,
+    /// The surface times the texel (white leaves it).
+    Multiply,
+    /// The texel added to the surface (black leaves it).
+    Add,
+    /// The texel taken from the surface (black leaves it).
+    Subtract,
+    /// The darker of texel and surface per channel (white leaves it).
+    Min,
+    /// The lighter of texel and surface per channel (black leaves it;
+    /// Halo's alien blood).
+    Max,
 }
 
 /// The map's runtime decals: definitions, named groups of weighted

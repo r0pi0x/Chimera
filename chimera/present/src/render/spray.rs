@@ -93,6 +93,7 @@ pub fn draw_sprays(
                 size: Vec2::splat(IMPORTED_SIZE),
                 blend: DecalBlend::Alpha,
                 fog_fade: crate::map::decal::SOURCE_FOG_FADE,
+                ..Default::default()
             };
             (decal, images.add(image))
         } else {

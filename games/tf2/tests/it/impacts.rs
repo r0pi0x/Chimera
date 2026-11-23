@@ -68,6 +68,7 @@ fn looks(game: &str, tag: usize) -> MapData {
         size: Vec2::splat(tag as f32),
         blend: DecalBlend::Modulate2x,
         fog_fade: chimera_world::map::decal::SOURCE_FOG_FADE,
+        ..Default::default()
     });
     map.kit.decals.groups.insert("impact.concrete".into(), vec![(1.0, 0)]);
     map.kit.decals.by_material.insert('C', "impact.concrete".into());

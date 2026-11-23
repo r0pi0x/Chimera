@@ -41,8 +41,9 @@
 //! a particle's sprites come from its bitmap's first
 //! page only (all the weapons' particle bitmaps on the disc are one page);
 //! a decal's size is its radius bounds' mean (one variant per sprite
-//! sequence) and additive decals (the plasma burn's glows) are left out:
-//! the engine's decals multiply or blend; object parts, damage parts,
+//! sequence), its colour bounds are interpolated in RGB (no decal on the
+//! disc asks for HSV) and its chain's next decal takes a frame of its own
+//! (none on the disc inherits the geometry); object parts, damage parts,
 //! collision and death effects and material effects (the casings' clicks)
 //! are not compiled; a particle system keeps each type's birth state (its
 //! length and creation rate) and its particle states (`FxSystem`; the type
@@ -512,6 +513,22 @@ fn path(file: &MapFile, r: &TagRef) -> Option<String> {
     (!r.id.is_none()).then(|| file.tag(r.id).map(|t| t.path.to_ascii_lowercase())).flatten()
 }
 
+/// The engine's blend for a decal's framebuffer blend function
+/// (specs/halo_ce/shaders.md "Framebuffer blend functions"; on the disc 1
+/// multiply, 2 double multiply, 3 add, 6 component max). Alpha blend (0)
+/// and alpha-multiply add (7) are drawn as the engine's alpha decals.
+pub fn decal_blend(code: i16) -> DecalBlend {
+    match code {
+        1 => DecalBlend::Multiply,
+        2 => DecalBlend::Modulate2x,
+        3 => DecalBlend::Add,
+        4 => DecalBlend::Subtract,
+        5 => DecalBlend::Min,
+        6 => DecalBlend::Max,
+        _ => DecalBlend::Alpha,
+    }
+}
+
 impl Compiler<'_> {
     fn warn(&mut self, w: String) {
         self.set.warnings.push(w);
@@ -607,11 +624,9 @@ impl Compiler<'_> {
             return Some(name);
         }
         let d = Decal::read(self.file, tag).map_err(|e| self.warn(format!("{}: {e}", tag.path))).ok()?;
-        let blend = match d.blend {
-            Decal::DOUBLE_MULTIPLY => DecalBlend::Modulate2x,
-            Decal::ADD => return None,
-            _ => DecalBlend::Alpha,
-        };
+        let blend = decal_blend(d.blend);
+        // The next decal in its chain is made right after it.
+        let then = if d.next.id.is_none() { None } else { self.decal(&d.next) };
         // Halo's fade stage moves the decal toward its blend's neutral value
         // (½ for double multiply, white for multiply) by the fog amount
         // itself (specs/halo_ce/shaders.md "Fade and fog stage").
@@ -621,7 +636,19 @@ impl Compiler<'_> {
         let variants: Vec<MapDecal> = seqs
             .iter()
             .filter_map(|s| s.first())
-            .map(|uv| MapDecal { texture, uv_min: Vec2::new(uv[0], uv[1]), uv_max: Vec2::new(uv[2], uv[3]), size: Vec2::splat(size), blend, fog_fade })
+            .map(|uv| MapDecal {
+                texture,
+                uv_min: Vec2::new(uv[0], uv[1]),
+                uv_max: Vec2::new(uv[2], uv[3]),
+                size: Vec2::splat(size),
+                blend,
+                fog_fade,
+                tint: [d.color_lower, d.color_upper].map(|c| Vec3::new(c.r, c.g, c.b)),
+                intensity: Vec2::new(d.intensity.lower, d.intensity.upper),
+                lifetime: Vec2::new(d.lifetime.lower, d.lifetime.upper),
+                decay: Vec2::new(d.decay.lower, d.decay.upper),
+                then: then.clone(),
+            })
             .collect();
         self.set.decals.push((name.clone(), variants));
         Some(name)
@@ -802,12 +829,8 @@ impl Compiler<'_> {
                 let kind = match p.base_class {
                     c if c == class::SOUND => self.sound(&p.kind).map(FxPartKind::Sound),
                     c if c == class::DECAL => {
-                        let first = self.decal(&p.kind);
-                        // The chain's next decal is made with it.
-                        if let Some(next) = self.file.tag(p.kind.id).and_then(|t| Decal::read(self.file, t).ok()).map(|d| d.next) {
-                            let _ = self.decal(&next);
-                        }
-                        first.map(FxPartKind::Decal)
+                        // Its chain comes with it (`MapDecal::then`).
+                        self.decal(&p.kind).map(FxPartKind::Decal)
                     }
                     c if c == class::LIGHT => self.light(&p.kind).map(FxPartKind::Light),
                     c if c == class::PARTICLE_SYSTEM => self.system(&p.kind).map(FxPartKind::System),

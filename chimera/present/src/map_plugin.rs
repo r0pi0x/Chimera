@@ -239,6 +239,7 @@ impl MapLayers for Present {
                 render::sky::show_skybox_in_place,
                 (
                     render::decal::place_decals,
+                    render::decal::age_decals.run_if(resource_exists::<Assets<render::decal::DecalMaterial>>),
                     render::decal::drop_brush_decals,
                     render::decal::clear_decals,
                     render::spray::draw_sprays,

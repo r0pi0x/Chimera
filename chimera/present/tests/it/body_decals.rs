@@ -76,6 +76,7 @@ fn decal() -> MapDecal {
         size: Vec2::splat(0.1),
         blend: DecalBlend::Alpha,
         fog_fade: chimera_world::map::decal::SOURCE_FOG_FADE,
+        ..Default::default()
     }
 }
 

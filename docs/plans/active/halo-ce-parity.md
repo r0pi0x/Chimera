@@ -568,3 +568,28 @@ orange vs major red) is not built: skins hold only the worn rank's shades.
 The shade is drawn per body, not per respawn. The spec's open questions
 (Grunt tag permutations, which shaders read which slot, mask coverage) stay
 open: no Halo install was available to measure them.
+
+## Decals' colours and blends (2026-11-23, specs/halo_ce/effects.md "Decals")
+
+Drawn now on any map (`chimera_present::render::decal`): each decal's
+blend function (multiply: blood; double multiply: holes, burns; add: the
+plasma glows; component max: alien blood), its colour drawn between the
+tag's bounds, its intensity, lifetime and decay (the intensity byte), and
+its chain (plasma burn -> inner glow -> outer glow). Inferred, to measure
+on the disc:
+
+- How intensity acts on a non-alpha-blend decal: ours moves the decal's
+  value toward its blend's neutral value (1/2 double multiply, white
+  multiply, black add and max) by 1 - intensity, as the fade stage does
+  with fog. Check `blood splat small` (intensity 0.5 - 1) beside `blood
+  splat` on one wall: the faintest should be half way to no stain.
+- Whether the texel is multiplied by the colour in gamma space before the
+  blend (ours), e.g. the plasma rifle's `plasma burn outer glow` (cyan
+  0.31, 0.97, 1.0) on a white wall vs a black one.
+- The light layer (2, the outer glows) is drawn before the level's
+  diffuse texture pass (shaders.md, order step 4): its add is then
+  multiplied by the surface's texture. Ours adds after the lit surface;
+  compare an outer glow on a dark texture.
+- Add in the game's gamma-space framebuffer vs ours in linear light: the
+  same glow's brightness on mid-grey.
+

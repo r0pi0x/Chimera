@@ -10,6 +10,7 @@
 //! firing effect, the projectiles' looks and the three explosions, the
 //! pickup sounds, and the grenades' and items' models.
 
+use bevy::prelude::{Vec2, Vec3};
 use blam_formats::cache::MapFile;
 use halo_ce::game::fx::load::{FxPartKind, compile, gun_tags};
 
@@ -197,4 +198,43 @@ fn the_plasma_flares_and_flashes_are_sized_by_the_spec() {
         let used = p.first_sequence.max(0) as usize;
         assert_eq!(p.sprites.get(used), Some(&1), "{path}: {:?}", p.sprites);
     }
+}
+
+/// The decals' colours, blends, lifetimes and chains (effects.md
+/// "Decals"): the plasma burn (double multiply, 180 s with 20 s of decay)
+/// brings its inner glow (add, grey 0.68 - 0.81, 1 s) and that its outer
+/// glow (add, cyan, 2 s); blood is multiply, the stone hole double
+/// multiply for 300 s.
+#[test]
+fn decals_keep_their_colours_blends_lifetimes_and_chains() {
+    use chimera_world::map::decal::DecalBlend;
+    let Some(map) = bloodgulch() else { return };
+    let tags = gun_tags();
+    let set = compile(&map, &tags.iter().map(String::as_str).collect::<Vec<_>>(), false);
+    let get = |name: &str| {
+        let full = format!("halo_ce:effects\\decals\\{name}");
+        set.decals.iter().find(|(n, _)| *n == full).map(|(_, v)| v[0].clone()).unwrap_or_else(|| {
+            panic!("no {full}: {:?}", set.decals.iter().map(|(n, _)| n).collect::<Vec<_>>())
+        })
+    };
+    let burn = get("bullet holes\\plasma burn");
+    assert_eq!(burn.blend, DecalBlend::Modulate2x);
+    assert_eq!((burn.lifetime, burn.decay), (Vec2::splat(180.0), Vec2::splat(20.0)));
+    assert_eq!(burn.tint, [Vec3::ONE; 2]);
+    assert_eq!(burn.then.as_deref(), Some("halo_ce:effects\\decals\\bullet holes\\plasma burn inner glow"));
+    let inner = get("bullet holes\\plasma burn inner glow");
+    assert_eq!(inner.blend, DecalBlend::Add);
+    assert!((inner.tint[0].x - 0.8118).abs() < 1e-3 && (inner.tint[1].x - 0.6824).abs() < 1e-3, "{:?}", inner.tint);
+    assert_eq!(inner.lifetime, Vec2::splat(1.0));
+    assert_eq!(inner.then.as_deref(), Some("halo_ce:effects\\decals\\bullet holes\\plasma burn outer glow"));
+    let outer = get("bullet holes\\plasma burn outer glow");
+    assert_eq!(outer.blend, DecalBlend::Add);
+    assert!(outer.tint[0].x < 0.32 && outer.tint[0].y > 0.96, "cyan: {:?}", outer.tint);
+    assert_eq!(get("bullet holes\\stone").lifetime, Vec2::splat(300.0));
+    for (n, v) in &set.decals {
+        if n.contains("blood splat") && !n.contains("grunt") && !n.contains("hunter glow") && !n.contains("engineer") {
+            assert_eq!(v[0].blend, DecalBlend::Multiply, "{n}");
+        }
+    }
+    eprintln!("decals: {:?}", set.decals.iter().map(|(n, v)| (n, v[0].blend)).collect::<Vec<_>>());
 }

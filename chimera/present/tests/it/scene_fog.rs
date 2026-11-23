@@ -63,6 +63,7 @@ fn materials(sim: &mut Sim) -> (Handle<DecalMaterial>, Handle<ParticleDrawMateri
         texture: Handle::default(),
         fog: FogUniform::default(),
         light: Vec4::ZERO,
+        tint: Vec4::ONE,
     });
     let particle = w.resource_mut::<Assets<ParticleDrawMaterial>>().add(ParticleDrawMaterial {
         texture: None,

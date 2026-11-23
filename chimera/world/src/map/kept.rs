@@ -517,6 +517,14 @@ pub fn add_decals_of(map: &mut MapDecals, guest: MapDecals, game: Option<&str>) 
         }
         held.insert(name, key);
     }
+    // Chains name the guest's groups as the map now holds them.
+    for d in &mut map.decals[base..] {
+        if let Some(next) = d.then.as_mut()
+            && let Some(key) = held.get(next.as_str())
+        {
+            *next = key.clone();
+        }
+    }
     for (letter, group) in guest.by_material {
         let Some(key) = held.get(&group).cloned() else {
             map.by_material.entry(letter).or_insert(group);
@@ -930,6 +938,7 @@ mod tests {
             size: Vec2::splat(tag as f32),
             blend: DecalBlend::Modulate2x,
             fog_fade: crate::map::decal::SOURCE_FOG_FADE,
+            ..Default::default()
         });
         map.kit.decals.groups.insert("impact.concrete".into(), vec![(1.0, 0)]);
         map.kit.decals.by_material.insert('C', "impact.concrete".into());
