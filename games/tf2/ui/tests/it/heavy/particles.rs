@@ -69,6 +69,27 @@ fn the_flash_child_keeps_its_remapped_size() {
     });
 }
 
+/// specs/tf2/batch2b_mechanics.md 18: the crit texts emit one sprite
+/// each, 24 above the point, at twice their radius at birth (12 and 8),
+/// and keep just that one through their 2 s.
+#[test]
+fn a_crit_text_is_one_sprite_for_its_life() {
+    let Some(map) = super::install::dressed() else { return };
+    let defs = &map.particle_systems.defs;
+    for (name, radius) in [("crit_text", 12.0), ("minicrit_text", 8.0)] {
+        let Some(_) = map.particle_systems.find(name) else { panic!("{name}: not loaded") };
+        run(&map, name, &[0.004, 0.5, 1.0, 1.9], |t, i| {
+            let r = i.own_radii(defs);
+            assert_eq!(r.len(), 1, "{name} at {t}: {r:?}");
+            if t < 0.01 {
+                assert!((r[0] - 2.0 * radius).abs() < 0.2, "{name}: born at {} not 2 x {radius}", r[0]);
+                let (at, ..) = i.own_details(defs)[0];
+                assert!((at.z - 24.0).abs() < 0.1, "{name}: at {at}");
+            }
+        });
+    }
+}
+
 #[test]
 fn dump_a_system_over_time() {
     let Some(map) = super::install::dressed() else { return };

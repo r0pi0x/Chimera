@@ -9,11 +9,17 @@
 //! it, rising, 2 s, fading out over its second half, green for a crit and
 //! yellow for a mini-crit, easing to red). The text goes to the attacker's
 //! own client (a host's own player: here) and is drawn by every machine
-//! that draws (`draw`).
+//! that draws (`draw`), one at a time over each victim: a new hit's text
+//! replaces the one still running there (`StartParticleSystem::replace`).
+//! Each hit used to start its own, and a fast gun's (the Cleaner's
+//! Carbine's, about ten a second) piled up over the victim, each at its
+//! own size (2 x easing to 1 x over 0.4 s) and yellow: a smeared stack.
 //!
 //! Known shortcuts: the point is the victim's eyes (where the game puts
 //! it, head or centre, was not measured); only the attacker sees the
-//! text (the spec leaves the audience open; the usual TF2 behaviour).
+//! text (the spec leaves the audience open; the usual TF2 behaviour); a
+//! victim's newer text replacing the older is ours (the spec does not
+//! say how the game treats texts that overlap).
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -41,8 +47,11 @@ pub struct CritHit {
 }
 
 /// The attacker's text over the victim (to his client).
-#[derive(Message, Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Message, Clone, Copy, Debug, Serialize, Deserialize, bevy::ecs::entity::MapEntities)]
 pub struct CritText {
+    /// Whom it is over: his newer text replaces this one.
+    #[entities]
+    pub victim: Entity,
     pub at: Vec3,
     pub mini: bool,
 }
@@ -69,7 +78,7 @@ fn feedback(
             sounds.write(GameSound(PlaySound { source: Some(h.victim), ..PlaySound::at(name, h.at) }));
         }
         let at = victims.get(h.victim).map_or(h.at, |(t, s)| t.translation + s.map_or(Vec3::ZERO, |s| s.eye_offset));
-        let text = CritText { at, mini: h.mini };
+        let text = CritText { victim: h.victim, at, mini: h.mini };
         if local.contains(h.attacker) {
             texts.write(text);
         }
@@ -101,14 +110,14 @@ fn forward(
 /// Every machine that draws: the texts.
 fn draw(mut texts: MessageReader<CritText>, mut start: MessageWriter<StartParticleSystem>) {
     for t in texts.read() {
-        start.write(StartParticleSystem::new(t.system(), t.at, Vec3::Z));
+        start.write(StartParticleSystem { tag: Some(t.victim), replace: true, ..StartParticleSystem::new(t.system(), t.at, Vec3::Z) });
     }
 }
 
 fn register(app: &mut App) {
     use crate::core::NetRole;
     use bevy_replicon::prelude::*;
-    app.add_server_message::<CritText>(Channel::Unreliable)
+    app.add_mapped_server_message::<CritText>(Channel::Unreliable)
         .add_systems(PostUpdate, forward.before(ServerSystems::Send).run_if(resource_equals(NetRole::Server)));
 }
 

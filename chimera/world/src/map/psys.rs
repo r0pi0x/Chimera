@@ -620,6 +620,11 @@ pub struct StartParticleSystem {
     /// (and its active one) are the tag's `ParticleControlPoints` while
     /// it has them (TF2's flame points).
     pub tag: Option<Entity>,
+    /// With a `tag`: first end at once the running systems of the same
+    /// name and tag, their live particles too (one at a time per tag:
+    /// TF2's crit text over its victim, each hit's replacing the last
+    /// rather than piling up).
+    pub replace: bool,
 }
 
 /// One control point a game sets on its started systems (engine space):
@@ -695,6 +700,6 @@ pub struct Follow {
 impl StartParticleSystem {
     /// `name` at `position` facing `forward`, as its definition runs.
     pub fn new(name: impl Into<String>, position: Vec3, forward: Vec3) -> Self {
-        Self { name: name.into(), position, forward, emit_for: None, follow: None, end: None, tag: None }
+        Self { name: name.into(), position, forward, emit_for: None, follow: None, end: None, tag: None, replace: false }
     }
 }

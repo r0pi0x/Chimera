@@ -16,6 +16,8 @@
 //! a tracer's end, "move particles between 2 control points" heading
 //! there at its maximum speed and living until it arrives), stopped by
 //! tag (`StopParticleSystems`: a gun's systems that run while it fires),
+//! ended at once by a replacing start of the same name and tag
+//! (`StartParticleSystem::replace`: a crit text over its victim),
 //! with control points 1-63 and an active one from the tag's
 //! `ParticleControlPoints` each frame (TF2's flame points: "Assign target
 //! CP" gives each new particle the active one, "Movement Follow CP" moves
@@ -1747,6 +1749,14 @@ impl StartedSystems {
         }
     }
 
+    /// End at once the systems named `name` started with `tag`, their
+    /// live particles too (`StartParticleSystem::replace`).
+    pub fn end_tagged(&mut self, tag: Entity, name: &str) {
+        let Some(defs) = self.defs.clone() else { return };
+        self.running
+            .retain(|r| r.tag != Some(tag) || !defs.defs.get(r.instance.def).is_some_and(|d| d.name.eq_ignore_ascii_case(name)));
+    }
+
     /// Set the last started system's control point 1 (game space) and
     /// tag.
     pub fn set_last(&mut self, end: Option<Vec3>, tag: Option<Entity>) {
@@ -1955,6 +1965,11 @@ pub fn run_started_systems(
         })
     };
     for s in starts.read() {
+        if s.replace
+            && let Some(tag) = s.tag
+        {
+            started.end_tagged(tag, &s.name);
+        }
         let f = Vec3::new(s.forward.x, -s.forward.z, s.forward.y);
         let light = light_field
             .as_deref()
@@ -2948,6 +2963,31 @@ mod tests {
         let other = std::sync::Arc::new((*defs).clone());
         started.start(&other, "test", Vec3::ZERO, Vec3::Z, Vec3::ONE);
         assert_eq!(started.running.len(), 1);
+    }
+
+    /// A replacing start (`StartParticleSystem::replace`) ends its tag's
+    /// earlier system of that name, particles too; others stay.
+    #[test]
+    fn a_replacing_start_ends_its_tags_earlier_system_of_that_name() {
+        let defs = std::sync::Arc::new(MapParticleSystems {
+            defs: vec![system()],
+            placed: Vec::new(),
+            scale: 0.0254,
+        });
+        let (a, b) = (Entity::from_raw_u32(1).unwrap(), Entity::from_raw_u32(2).unwrap());
+        let mut s = StartedSystems::default();
+        for tag in [a, b] {
+            assert!(s.start(&defs, "test", Vec3::ZERO, Vec3::Z, Vec3::ONE));
+            s.set_last(None, Some(tag));
+        }
+        s.step(0.0, &none);
+        s.step(0.1, &none);
+        assert!(s.count() > 0);
+        s.end_tagged(a, "other");
+        assert_eq!(s.running.len(), 2, "another name: kept");
+        s.end_tagged(a, "TEST");
+        assert_eq!(s.running.len(), 1);
+        assert_eq!(s.running[0].tag, Some(b), "the other tag's stays");
     }
 
     /// A start with `emit_for` stops emitting then (TF2's flames, one

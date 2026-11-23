@@ -434,6 +434,40 @@ fn jarate_makes_a_rifle_body_hit_a_mini_crit_with_its_sound() {
     assert!(names.iter().any(|n| n == tf2::game::weapons::crit_hits::CRIT_HIT_MINI), "{names:?}");
 }
 
+/// Batch2b 18: each mini-crit bullet starts one `minicrit_text` over its
+/// victim, replacing the victim's earlier one (tagged by him) rather than
+/// piling up (a buffed Cleaner's Carbine's stream once stacked a smeared
+/// heap of them).
+#[test]
+fn each_mini_crit_starts_one_text_that_replaces_its_victims_last() {
+    use chimera_world::map::psys::StartParticleSystem;
+    use tf2::game::weapons::crit_hits::MINICRIT_TEXT;
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, "tf2:cleaners_carbine");
+    sim.app.world_mut().entity_mut(p).insert(chimera_core::core::LocalPlayer);
+    let t = victim(&mut sim, from, 200.0, tf2::game::weapons::MINIGUN, 1000.0);
+    give_cond(&mut sim, p, Condition::MiniCritBuff, 10.0);
+    let at = sim.position(t);
+    testkit::aim_at(&mut sim, p, at);
+    let mut starts = sim.app.world().resource::<Messages<StartParticleSystem>>().get_cursor_current();
+    let mut texts = Vec::new();
+    let mut shots = 0;
+    for _ in 0..2 {
+        let before = 1000.0 - health_points(&sim, t);
+        run(&mut sim, p, 30, |s, k| {
+            s.intent(p).fire = k == 0;
+            texts.extend(starts.read(s.app.world().resource::<Messages<StartParticleSystem>>()).filter(|s| s.name == MINICRIT_TEXT).cloned());
+        });
+        if 1000.0 - health_points(&sim, t) > before {
+            shots += 1;
+        }
+    }
+    assert_eq!(shots, 2, "both bullets hit");
+    assert_eq!(texts.len(), 2, "one text a hit: {texts:?}");
+    assert!(texts.iter().all(|s| s.tag == Some(t) && s.replace), "{texts:?}");
+}
+
 #[test]
 fn mad_milk_heals_the_attacker_60_per_cent_rounded_down() {
     let mut sim = sim();

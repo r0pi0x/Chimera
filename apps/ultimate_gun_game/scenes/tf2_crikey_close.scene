@@ -1,0 +1,40 @@
+# TF2's mini-crit text up close (specs/tf2/batch2b_mechanics.md 18): the
+# Cleaner's Carbine's crikey filled at a target 3 m away, attack2, then
+# one bullet (`minicrit_text`) and a stream of them (`minicrit_stream`,
+# 12 frames after its first hit past 0.3 s; game-time waits, so a
+# slow frame rate fires no more): each must show one crisp
+# yellow text (a stream's once piled up as several jittered copies, each
+# hit's at its own size). Needs the item pack.
+#   CHIMERA_ASSET_STORE=<store> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/tf2_crikey_close.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+rung tf2:cleaners_carbine
+target add tf2:tf_weapon_minigun 3
+wait 2
+wait_for idle 3000
+wait 120
+target look 1
++attack
+gwait 1.2
+-attack
+wait 10
++attack2
+wait 5
+-attack2
+wait 20
+target look 1
+shot_after hit 12 minicrit_text
++attack
+wait 1
+-attack
+wait 60
++attack
+gwait 0.3
+shot_after hit 12 minicrit_stream
+gwait 0.3
+-attack
+wait 30
