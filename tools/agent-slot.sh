@@ -14,7 +14,11 @@
 #   tools/agent-slot.sh trim [slot...]            # shrink target/ past the limit
 #   tools/agent-slot.sh trim-incremental [target...]   # trim target/*/incremental
 #
-# acquire takes a free slot (flock), creates its worktree the first time,
+# acquire takes a free slot (flock): the one that last held <branch>,
+# else the one whose build is warmest for it (the fewest Rust files and
+# manifests differing from [base], the branch or origin/main; a lockfile
+# or workspace-settings difference counts as nearly cold; then the most
+# recent build), and says how warm it is; it creates its worktree the first time,
 # and checks out <branch>: reset to [base] when given (`git checkout -B`),
 # else the existing branch, else a new branch from main. What a previous
 # holder left uncommitted is saved as a patch next to the slots
@@ -145,17 +149,49 @@ slot_of() {
   esac
 }
 
+# How warm <slot>'s build is for commit <rev>, as "<score> <built>
+# <words>": the score is the Rust files and manifests that differ between
+# the slot's last commit (what its target/ was built from) and <rev>, plus
+# 100000 when the lockfile, the workspace manifest or the build settings
+# differ (most crates rebuild), 1000000 with no build at all; <built> is
+# when target/debug/deps last changed (seconds since the epoch).
+warmth() {
+  local slot=$1 rev=$2 head n built extra=0 why=""
+  if [ ! -e "$slot/.git" ] || [ ! -d "$slot/target/debug/deps" ]; then
+    echo "1000000 0 cold: nothing built yet"
+    return
+  fi
+  head=$(git -C "$slot" rev-parse --verify --quiet HEAD) || { echo "1000000 0 cold: no commit"; return; }
+  built=$(stat -c %Y "$slot/target/debug/deps" 2>/dev/null || echo 0)
+  n=$(git -C "$repo" diff --name-only "$head" "$rev" -- '*.rs' '*.toml' 2>/dev/null | wc -l)
+  if ! git -C "$repo" diff --quiet "$head" "$rev" -- Cargo.lock Cargo.toml .cargo .config 'rust-toolchain*' 2>/dev/null; then
+    extra=100000 why="; the lockfile or workspace settings differ: most crates rebuild"
+  fi
+  echo "$((n + extra)) $built built at $(git -C "$slot" log -1 --format=%h "$head"), $(( ($(date +%s) - built) / 3600 )) h ago; $n Rust files or manifests differ$why"
+}
+
 acquire() {
-  local branch=${1:-} base=${2:-} slot="" name i
+  local branch=${1:-} base=${2:-} slot="" name i rev w ws wb best_s=0 best_b=0 warm="" size=0
   [ -n "$branch" ] || { say "usage: agent-slot.sh acquire <branch> [base]"; exit 2; }
-  # Pick and mark a free slot under the lock; prefer the one that last
-  # held this branch (its build is the closest).
+  # What the branch will build: the base, the branch, else main (the
+  # remote's, which agents merge first, when this clone has it).
+  if [ -n "$base" ]; then rev=$base
+  elif git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then rev=$branch
+  elif git -C "$repo" rev-parse --verify --quiet origin/main >/dev/null; then rev=origin/main
+  else rev=main; fi
+  # Pick and mark a free slot under the lock: the one that last held
+  # this branch, else the warmest for it (fewest differing files, then
+  # the most recent build).
   {
     flock 9
     for i in $(seq 1 "$count"); do
       [ -e "$slots_dir/slot$i.lock" ] && continue
-      if [ -z "$slot" ] || [ "$(cat "$slots_dir/slot$i.last" 2>/dev/null)" = "$branch" ]; then
-        slot="$slots_dir/slot$i"
+      w=$(warmth "$slots_dir/slot$i" "$rev")
+      ws=${w%% *} wb=$(cut -d' ' -f2 <<<"$w")
+      if [ "$(cat "$slots_dir/slot$i.last" 2>/dev/null)" = "$branch" ]; then
+        slot="$slots_dir/slot$i" warm=$w best_s=-1 best_b=0
+      elif [ -z "$slot" ] || [ "$ws" -lt "$best_s" ] || { [ "$ws" = "$best_s" ] && [ "$wb" -gt "$best_b" ]; }; then
+        slot="$slots_dir/slot$i" warm=$w best_s=$ws best_b=$wb
       fi
     done
     if [ -z "$slot" ]; then
@@ -190,7 +226,18 @@ acquire() {
   trap - ERR
   echo "$branch" >"$slot.last"
   trim_slot "$slot"
+  size=$(target_gb "$slot")
   say "$name holds $branch at $(git -C "$slot" log -1 --format='%h %s' | cut -c1-70)"
+  # How warm it was for the branch (before the checkout), and what to do
+  # when it's cold: a long build runs in the background.
+  case "${warm%% *}" in
+    1000000) say "$name's build: ${warm#* * } (target ${size:-0} GB): the first build is a cold one (an hour or more): start it in the background and wait with tools/wait-for" ;;
+    *) if [ "${warm%% *}" -ge 100000 ]; then
+         say "$name's build: lukewarm, ${warm#* * } (target ${size:-0} GB): start long builds in the background and wait with tools/wait-for"
+       else
+         say "$name's build: warm, ${warm#* * } (target ${size:-0} GB)"
+       fi ;;
+  esac
   say "work there: cd $slot; source tools/agent-env.sh; agent_run cargo ...; release with tools/agent-slot.sh release"
   echo "$slot"
 }

@@ -2063,8 +2063,13 @@ tools/agent-slot.sh release                           # when done
 tools/agent-slot.sh status                            # who holds which
 ```
 
-`acquire` takes a free slot under a lock (the one that last held the
-branch first), creates its worktree the first time, saves whatever a
+`acquire` takes a free slot under a lock: the one that last held the
+branch, else the one whose build is warmest for it (the fewest Rust
+files and manifests differing between the slot's last commit and the
+base, the branch or `origin/main`; a lockfile or workspace-settings
+difference counts as nearly cold; then the most recent build of
+`target/debug/deps`), and prints how warm it is ("warm, built at abc123,
+2 h ago; 14 Rust files or manifests differ", "lukewarm" or "cold"). It creates its worktree the first time, saves whatever a
 previous holder left uncommitted as `.claude/slots/slotN-discarded-*.patch`,
 resets and cleans it (ignored files, `target/`, stay) and checks out the
 branch: reset to `base` when given (`git checkout -B`), else the existing
@@ -2081,6 +2086,13 @@ off). The hooks source `agent-env.sh` in `.claude/` checkouts, so a
 commit reuses the agent's build: toggling `CARGO_INCREMENTAL` between
 the agent's builds and the hook's (as before) kept two builds of every
 workspace crate, each rebuilt per change.
+
+**Long builds run in the background.** A cold or lukewarm slot's first
+build takes an hour or more (cs_source's from cold hit wait-for's 2 h
+limit 15 times in three days): start it with the shell tool's background
+mode (`run_in_background`) or `tools/wait-for <label> --timeout 2h --
+agent_run cargo build ...` in the background, read the files you need
+meanwhile, and wait for its notification; never in the foreground.
 
 `tools/agent-slot.sh trim` (and `tools/clean-worktrees.sh`, which
 otherwise leaves slots alone) shrinks a free slot's `target/` past
@@ -2141,12 +2153,24 @@ then 6.3 s per change.
   tree as tested: the tracked files' tree (`git add -u` into a scratch
   copy of the index, so neither the index nor the object store gets the
   untracked files), the untracked files' names, sizes and times, `rustc
-  -vV`, `cargo -V`, the hook's mode and `CHIMERA_*` settings. The hook
-  computes the same key; when a stamp matches and its packages cover the
-  commit's selection it prints "this exact working tree already passed"
-  with the stamp's path and doesn't run them. Any edit, a new untracked
-  file, another toolchain or a wider selection runs them as before; the
-  hook stamps its own passes too, so a retried commit is free.
+  -vV`, `cargo -V`, the hook's mode and `CHIMERA_*` settings; the stamp
+  keeps the tree and the untracked list too. A pass is reused per
+  package: of the newest 30 stamps with the same toolchain and settings,
+  the hook takes the 3 whose trees differ least from this one, runs
+  `affected --trees <stamp's tree> <this tree>` (plus the untracked
+  files' changes) and keeps each package the stamp tested or checked
+  that the difference doesn't select: none of its own files, its
+  dependencies', the lockfile's resolution, the workspace's settings or
+  the hooks changed. Only the rest runs ("reusing earlier passes whose
+  inputs are unchanged"), and when nothing is left it says "every
+  package's checks and fast tests passed on an earlier tree". So a docs
+  edit, a `docs_index` regeneration or a rebase over other crates after
+  a `--worktree` pass reruns only `repo_checks`' tests (the docs rules,
+  which any change selects); an edit to a tested crate or anything below
+  it reruns that crate. An exact match says "this exact working tree
+  already passed". The hook stamps its own passes too, so a retried
+  commit is free. `commit-hook.log`'s outcome is `stamp` when nothing
+  ran, `partial` when some packages' passes were reused.
   `CHIMERA_COMMIT_STAMPS=0` ignores stamps. Windows runs the same hook in
   Git's bash; without a stamp it tests as always. The stamp code is
   `.githooks/stamps.sh`, shared with the push hook: `pre-push` skips its

@@ -3,7 +3,8 @@
 //! never under a running cargo; a slot's trim takes them before built
 //! crates), `jobserver-heal.sh` (lost tokens put back) and `disk-free.sh`
 //! (the floor), `wait-for` (named waits with a timeout, logged) and the
-//! hooks' pass stamps (`.githooks/stamps.sh`: the key, merged passes), and
+//! hooks' pass stamps (`.githooks/stamps.sh`: the key, merged passes,
+//! per-package reuse after docs edits and rebases), and
 //! `post-push-tests.sh`'s queue (a verdict under frequent pushes, a stale
 //! lock taken over, starvation reported). Unix only
 //! (the tools are bash); they run on temporary folders, never the repo's.
@@ -320,6 +321,125 @@ fn stamps_key_the_working_tree_and_merge_the_packages_that_passed() {
         ls "$stamps" | grep -c tmp || true"#,
     );
     assert_eq!(out, "pushed-covered\n0\n", "{out}");
+    fs::remove_dir_all(&root).ok();
+}
+
+/// Per-package reuse (`stamp_reuse`): after a pass on one tree, a later
+/// tree keeps each package whose inputs (its files, its dependencies',
+/// as `affected` reads the crate graph) are unchanged. The sequence an
+/// agent makes: a pass with crate `b` changed, a docs edit, a rebase
+/// bringing an unrelated crate's change, then a change to `b`'s
+/// dependency `a`, which reruns `b`.
+#[test]
+fn stamps_reuse_each_package_whose_inputs_did_not_change() {
+    let root = temp("stamp_reuse");
+    let git = |args: &[&str]| {
+        let ok = Command::new("git").args(args).current_dir(&root).env_remove("GIT_DIR").env_remove("GIT_INDEX_FILE").output().unwrap();
+        assert!(ok.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&ok.stderr));
+    };
+    // `checks` is repo_checks, which any change selects (the docs rules).
+    let members = "[workspace]\nmembers = [\"a\", \"b\", \"c\", \"checks\"]\nresolver = \"2\"\n";
+    fs::write(root.join("Cargo.toml"), members).unwrap();
+    for (dir, name, deps) in [("a", "a", ""), ("b", "b", "a = { path = \"../a\" }\n"), ("c", "c", ""), ("checks", "repo_checks", "")] {
+        fs::create_dir_all(root.join(dir).join("src")).unwrap();
+        fs::write(
+            root.join(dir).join("Cargo.toml"),
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n{deps}"),
+        )
+        .unwrap();
+        fs::write(root.join(dir).join("src/lib.rs"), "pub fn f() {}\n").unwrap();
+    }
+    fs::write(root.join("README.md"), "# t\n").unwrap();
+    let lock = Command::new(std::env::var("CARGO").unwrap_or("cargo".into()))
+        .args(["generate-lockfile", "--offline"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(lock.status.success(), "{}", String::from_utf8_lossy(&lock.stderr));
+    git(&["init", "-q"]);
+    git(&["add", "."]);
+    git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]);
+    let reuse = |label: &str| {
+        let out = with_stamps(
+            &root,
+            &format!(
+                "affected_cmd() {{ '{}' \"$@\"; }}\ntree_state\nstamp_reuse\necho \"tested $(echo $reuse_tested)\"\necho \"checked $(echo $reuse_checked)\"",
+                env!("CARGO_BIN_EXE_affected")
+            ),
+        );
+        eprintln!("{label}: {out}");
+        out
+    };
+    // The agent's change to b, and its `--worktree` pass: b's fast tier
+    // and repo_checks', b's tests type-checked.
+    fs::write(root.join("b/src/lib.rs"), "pub fn f() { a::f() }\n").unwrap();
+    with_stamps(&root, "k=$(tree_key); stamp_record \"$k\" 'pre-commit --worktree' \"$(printf 'b\\nrepo_checks\\n')\" b");
+    // A docs edit: b still passes; repo_checks (the docs rules) reruns.
+    fs::write(root.join("README.md"), "# t\nmore\n").unwrap();
+    assert_eq!(reuse("docs edit"), "tested b\nchecked b\n");
+    // A new untracked doc too, then a rebase that brings c's change: still b.
+    fs::write(root.join("notes.md"), "n\n").unwrap();
+    git(&["add", "b", "README.md"]);
+    git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "b"]);
+    fs::write(root.join("c/src/lib.rs"), "pub fn g() {}\n").unwrap();
+    git(&["add", "c"]);
+    git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "main's c"]);
+    assert_eq!(reuse("rebase over c"), "tested b\nchecked b\n");
+    // A dependency's source change: b's inputs changed, nothing reused.
+    fs::write(root.join("a/src/lib.rs"), "pub fn f() { let _ = 1; }\n").unwrap();
+    assert_eq!(reuse("a changed"), "tested \nchecked \n");
+    // The workspace manifest (or the hooks) invalidates every package.
+    fs::write(root.join("a/src/lib.rs"), "pub fn f() {}\n").unwrap();
+    assert_eq!(reuse("a restored"), "tested b\nchecked b\n");
+    fs::write(root.join("Cargo.toml"), format!("{members}# x\n")).unwrap();
+    assert_eq!(reuse("workspace manifest"), "tested \nchecked \n");
+    // keep_pkgs narrows a selection to the packages left to run.
+    let out = with_stamps(&root, "keep_pkgs \"$(printf -- '-p\\na\\n-p\\nb\\n--features\\na/x,b/y\\n')\" b | tr '\\n' ' '");
+    assert_eq!(out, "-p b --features b/y ");
+    fs::remove_dir_all(&root).ok();
+}
+
+/// `agent-slot.sh acquire` takes the free slot whose build is warmest for
+/// the branch's base (a built target/ over an empty one, then the fewest
+/// differing files) and says how warm it is.
+#[test]
+fn acquire_prefers_the_warmest_slot_and_says_so() {
+    let root = temp("slot_warmth");
+    let repo_dir = root.join("repo");
+    fs::create_dir_all(repo_dir.join("tools")).unwrap();
+    fs::copy(repo().join("tools/agent-slot.sh"), repo_dir.join("tools/agent-slot.sh")).unwrap();
+    let git = |args: &[&str]| {
+        let ok = Command::new("git").args(args).current_dir(&repo_dir).env_remove("GIT_DIR").env_remove("GIT_INDEX_FILE").output().unwrap();
+        assert!(ok.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&ok.stderr));
+    };
+    fs::write(repo_dir.join("lib.rs"), "a").unwrap();
+    git(&["init", "-q", "-b", "main"]);
+    git(&["add", "."]);
+    git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a"]);
+    let slot = |args: &[&str]| {
+        let out = Command::new("bash")
+            .arg(repo_dir.join("tools/agent-slot.sh"))
+            .args(args)
+            .current_dir(&repo_dir)
+            .env("AGENT_SLOTS", "2")
+            .env("AGENT_SLOTS_DIR", root.join("slots"))
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_INDEX_FILE")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        (String::from_utf8_lossy(&out.stdout).trim().to_string(), String::from_utf8_lossy(&out.stderr).into_owned())
+    };
+    let (one, err) = slot(&["acquire", "x"]);
+    assert!(err.contains("cold"), "{err}");
+    let (two, _) = slot(&["acquire", "y"]);
+    slot(&["release", &one]);
+    slot(&["release", &two]);
+    // Only slot2 has a build: a new branch gets it, warm.
+    fs::create_dir_all(Path::new(&two).join("target/debug/deps")).unwrap();
+    let (got, err) = slot(&["acquire", "z"]);
+    assert_eq!(got, two, "{err}");
+    assert!(err.contains("warm, built at"), "{err}");
     fs::remove_dir_all(&root).ok();
 }
 

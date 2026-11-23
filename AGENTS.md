@@ -108,13 +108,19 @@ cargo run --features dev -- --help               # screenshot, spawn, look optio
   section starts at and open that section, not the file.
 - **Before committing**, `.githooks/pre-commit --worktree` runs what the
   commit hook will (the affected tests' check and the changed crates' fast
-  tier) on your working tree and stamps the pass; a commit of that exact
-  tree then skips them and says so, and the push hook skips its
+  tier) on your working tree and stamps the pass; a commit then reruns
+  only the packages whose inputs changed since (a docs edit or a rebase
+  over other crates keeps the rest) and says so, and the push hook skips its
   `repo_checks` run too. It prints the exact commands it ran and the
   packages it covered. Make it your test run before committing, instead
   of whole-crate `cargo test -p <crate>` runs or the whole fast tier;
   while iterating, run just the test you're working on (`cargo test -p
   <crate> --features dev --test it <module>::`).
+- **Long builds in the background:** `tools/agent-slot.sh acquire` says
+  how warm the slot's build is; when it says cold or lukewarm, start the
+  first build in the background (the shell tool's `run_in_background`)
+  and read what you need meanwhile; wait only with `tools/wait-for` or
+  the background command's notification, never in the foreground.
 - **Game runs and captures:** `tools/run-built --features dev <bin> --
   <args>` runs a binary as `cargo run` would, but builds it only when the
   working tree changed since its last build (no cargo per capture).

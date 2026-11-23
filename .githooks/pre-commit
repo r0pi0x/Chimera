@@ -29,13 +29,17 @@
 #
 # selects from every change against HEAD (staged, unstaged and untracked
 # files), runs the same checks and tests, and on a pass records a stamp.
-# The hook itself stamps its passes too. A commit whose working tree is
-# exactly the one a stamp passed on (the tracked files' tree, the
-# untracked files' names, sizes and times), with the same toolchain,
-# mode, features and CHIMERA_* settings, and whose selection the stamp's
-# covers, is not tested again: the hook says so and which stamp. Any
-# difference runs the tests as before (the hook has always tested the
-# working tree, not the index alone: the stamp checks the same thing).
+# The hook itself stamps its passes too. A package whose checks or fast
+# tier passed on an earlier working tree (with the same toolchain, mode,
+# features and CHIMERA_* settings) is not tested again when none of its
+# inputs changed since: `affected` on the difference between the two
+# trees (untracked files too) selects every package whose own files, or
+# a dependency's, the lockfile's resolution or the workspace's settings
+# changed, and only those run. A docs edit or a rebase over other crates
+# after a `--worktree` pass reruns only repo_checks' tests (the docs
+# rules). A commit of exactly the stamped tree runs nothing: the hook
+# says so and which stamps (the hook has always tested the working tree,
+# not the index alone: the stamp checks the same thing).
 # Stamps: <git common dir>/test-stamps, the newest 100 kept.
 # CHIMERA_COMMIT_STAMPS=0 ignores them.
 #
@@ -126,8 +130,12 @@ dependents=${CHIMERA_COMMIT_DEPENDENTS:-check}
 . "$(dirname "${BASH_SOURCE[0]}")/stamps.sh"
 key=
 if [ "${CHIMERA_COMMIT_STAMPS:-1}" != 0 ]; then
-    key=$(tree_key) || key=
+    if tree_state; then key=$(state_key); else key=; fi
 fi
+# What every package of the selection needs, whatever a stamp lets us
+# skip: recorded on a pass.
+all_tests=$tests all_checks=$checks
+reused=0
 if [ -n "$key" ] && [ -f "$stamps/$key" ]; then
     if covered "$(pkgs "$tests")" "$(stamp_tested "$key")" && covered "$(pkgs "$checks")" "$(stamp_checked "$key")"; then
         echo "$who: this exact working tree already passed these checks and fast tests ($(sed -n 's/^when //p' "$stamps/$key"), stamp $stamps/$key); not running them again (CHIMERA_COMMIT_STAMPS=0 does)." >&2
@@ -137,6 +145,30 @@ if [ -n "$key" ] && [ -f "$stamps/$key" ]; then
     fi
     echo "$who: a stamp for this working tree covers fewer packages; testing." >&2
 fi
+# Per package: a pass on an earlier tree still holds for each package
+# none of whose inputs (its files, its dependencies', the lockfile, the
+# workspace's settings) changed since (`stamp_reuse`: `affected` on the
+# difference). Only the others run.
+if [ -n "$key" ]; then
+    affected_cmd() { run cargo run --quiet -p repo_checks --bin affected -- "$@"; }
+    stamp_reuse
+    if [ -n "$reuse_tested$reuse_checked" ] && ! grep -qx '\*' <<<"$(pkgs "$tests")$(pkgs "$checks")"; then
+        left_tests=$(comm -23 <(pkgs "$tests") <(printf '%s\n' "$reuse_tested"))
+        left_checks=$(comm -23 <(pkgs "$checks") <(printf '%s\n' "$reuse_checked"))
+        reused=$(comm -12 <(pkgs "$tests") <(printf '%s\n' "$reuse_tested") | sed '/^$/d' | wc -l)
+        if [ -z "$left_tests$left_checks" ]; then
+            echo "$who: every package's checks and fast tests passed on an earlier tree, and none of their inputs changed since (stamps: $reuse_from); not running them again (CHIMERA_COMMIT_STAMPS=0 does)." >&2
+            stamp_record "$key" "$who" "$(pkgs "$all_tests")" "$(pkgs "$all_checks")"
+            timing stamp
+            exit 0
+        fi
+        if [ "$reused" -gt 0 ] || [ "$(pkgs "$checks")" != "$left_checks" ]; then
+            echo "$who: reusing earlier passes whose inputs are unchanged (stamps: $reuse_from): fast tier of $(comm -12 <(pkgs "$tests") <(printf '%s\n' "$reuse_tested") | paste -sd' ' -) not run again; running only what changed." >&2
+            tests=$(keep_pkgs "$tests" "$left_tests")
+            checks=$(keep_pkgs "$checks" "$left_checks")
+        fi
+    fi
+fi
 
 set -f
 IFS='
@@ -145,6 +177,9 @@ IFS='
 set -- $tests
 unset IFS
 tests_args=("$@")
+# Every package's fast tier reused (only checks left): no test run.
+no_tests=0
+printf '%s\n' "${tests_args[@]}" | grep -qx -- '-p\|--workspace' || no_tests=1
 # CHIMERA_HOOK_FAILFAST=1: stop the test run at the first failure (a failed run
 # averaged 741 s, 1.8x a pass; fix that test, rerun). Default: all failures.
 ff=--no-fail-fast; [ "${CHIMERA_HOOK_FAILFAST:-0}" = 1 ] && ff=
@@ -201,12 +236,14 @@ runner=${CHIMERA_COMMIT_RUNNER:-cargo}
 # package's folder, with its CARGO_MANIFEST_DIR and the library path);
 # the doctests (`cargo test --doc`) run after the check.
 overlap=0
-if [ -n "$check_cmd" ] && [ "$runner" = cargo ] && [ "${CHIMERA_COMMIT_FAST:-1}" != 0 ] \
+if [ -n "$check_cmd" ] && [ "$no_tests" = 0 ] && [ "$runner" = cargo ] && [ "${CHIMERA_COMMIT_FAST:-1}" != 0 ] \
     && [ "$(uname -s)" = Linux ] && command -v python3 >/dev/null 2>&1; then
     overlap=1
 fi
 t_args="${tests_args[*]}"
-if [ "$runner" = nextest ]; then
+if [ "$no_tests" = 1 ]; then
+    cmds=()
+elif [ "$runner" = nextest ]; then
     cmds=("cargo nextest run $t_args --features dev $ff --no-tests=pass --color never -E '!test(/heavy::/)'"
           "cargo test --doc $t_args --features dev --quiet $ff")
 elif [ "$overlap" = 1 ]; then
@@ -241,7 +278,7 @@ if [ -n "$check_cmd" ]; then
     fi
     echo "$who:   $check_cmd" >&2
 fi
-echo "$who: running the fast tier of: $t_args" >&2
+[ "$no_tests" = 0 ] && echo "$who: running the fast tier of: $t_args" >&2
 for c in "${cmds[@]}"; do echo "$who:   $c" >&2; done
 doc_tests() { # doctests; a selection without a library has none
     run cargo test --doc "${tests_args[@]}" --features dev --quiet $ff >>"$log" 2>&1 && return 0
@@ -255,7 +292,9 @@ if [ -n "$check_cmd" ] && [ "$overlap" = 0 ]; then
     check_s=$(( $(date +%s) - t0 ))
 fi
 t0=$(date +%s)
-if [ "$runner" = nextest ]; then
+if [ "$no_tests" = 1 ]; then
+    :
+elif [ "$runner" = nextest ]; then
     run cargo nextest run "${tests_args[@]}" --features dev $ff --no-tests=pass --color never -E '!test(/heavy::/)' >>"$log" 2>&1 || tested_ok=0
     doc_tests || tested_ok=0
 elif [ "$overlap" = 1 ]; then
@@ -332,12 +371,15 @@ if [ "$tested_ok" = 0 ]; then
     timing fail
     exit 1
 fi
-stamp_record "$key" "$who" "$(pkgs "$tests")" "$(pkgs "$checks")"
-timing pass
+stamp_record "$key" "$who" "$(pkgs "$all_tests")" "$(pkgs "$all_checks")"
+if [ "$reused" -gt 0 ]; then timing partial; else timing pass; fi
 if [ "$worktree" = 1 ]; then
     names() { pkgs "$1" | sed 's/^\*$/the workspace/' | paste -sd' ' -; }
     checked=
     [ "$checks" != "$tests" ] && [ -n "$check_cmd" ] && checked="type-checked the tests of $(names "$checks") ($check_s s) and "
-    echo "$who: passed in $(( $(date +%s) - started )) s: ${checked}ran the fast tier of $(names "$tests") ($test_s s; heavy tests run after the push). Stamped: a commit of this exact working tree skips these." >&2
+    ran="ran the fast tier of $(names "$tests") ($test_s s; heavy tests run after the push)"
+    [ "$no_tests" = 1 ] && ran="ran no tests"
+    [ "$reused" -gt 0 ] && ran="$ran, reused earlier passes of $reused unchanged packages"
+    echo "$who: passed in $(( $(date +%s) - started )) s: ${checked}${ran}. Stamped: a later tree reruns only the packages whose inputs change." >&2
 fi
 exit 0

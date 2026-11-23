@@ -13,6 +13,9 @@
 //!                     origin/main (everything without one)
 //!   --base REV        HEAD against its merge-base with REV
 //!   --files F...      these paths (relative to the repository root)
+//!   --trees A B       what tree (or commit) B changes against tree A,
+//!                     nothing fetched (the hooks' pass stamps: what
+//!                     changed since a tree passed, .githooks/stamps.sh)
 //!   --remote NAME     where to fetch a commit that isn't here (default
 //!                     origin; the pre-push hook passes its remote)
 //! OUTPUT:
@@ -133,7 +136,7 @@ fn lock_at(root: &Path, rev: Option<&str>) -> Result<String, String> {
 
 fn usage() -> &'static str {
     "usage: affected [--staged] [--range A..B] [--new SHA] [--base REV] [--files F...] [--remote NAME] \
-     [--format nextest|cargo] [--skip-heavy] [--direct] [--code] [--quiet]"
+     [--trees A B] [--format nextest|cargo] [--skip-heavy] [--direct] [--code] [--quiet]"
 }
 
 fn main() -> ExitCode {
@@ -179,6 +182,11 @@ fn run() -> Result<(), String> {
                     files.push(f.replace('\\', "/"));
                 }
                 asked.push((arg, files));
+            }
+            "--trees" => {
+                let a = value()?;
+                let b = args.next().ok_or_else(|| format!("--trees needs two values\n{}", usage()))?;
+                asked.push((arg, vec![a, b]));
             }
             "--remote" => remote = value()?,
             "--format" => format = value()?,
@@ -233,6 +241,11 @@ fn run() -> Result<(), String> {
                 ensure_commit(&root, &remote, &rev);
                 let base = git(&root, &["merge-base", &rev, "HEAD"])?;
                 sources.push(Source::Revs(base.trim().into(), "HEAD".into()));
+            }
+            "--trees" => {
+                let b = values.pop().unwrap_or_default();
+                let a = values.pop().unwrap_or_default();
+                sources.push(Source::Revs(a, b));
             }
             _ => sources.push(Source::Files(values)),
         }
