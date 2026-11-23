@@ -1,0 +1,56 @@
+//! __NAME__'s movement (`__ID__:movement`): Chimera's placeholder movement
+//! (`chimera_sim::movement::placeholder`) under the game's id, with the
+//! numbers of data/movement.toml (`Tuning`: walk, sprint, crouch, gravity,
+//! jump, in metres and seconds). The way it moves stays the placeholder's.
+//!
+//! Known shortcuts:
+//! - A stand-in made by tools/new-game: replace it with the game's own
+//!   movement from specs/__ID__/movement.md (a marker component and
+//!   `register_movement`, its state `predicted_net`, its numbers as data;
+//!   docs/new-game.md, step 4; docs/engine-capabilities.md, "Movement").
+
+use bevy::prelude::*;
+use chimera_sim::movement::placeholder::{PlaceholderAppExt, Tuning, Tunings};
+use serde::Deserialize;
+
+use crate::slots::Loadout;
+
+/// The movement's id.
+pub const ID: &str = "__ID__:movement";
+
+/// The movement's numbers (data/movement.toml).
+pub const DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/movement.toml");
+
+#[derive(Deserialize)]
+struct Numbers {
+    walk: f32,
+    sprint: f32,
+    crouch: f32,
+    gravity: f32,
+    jump: f32,
+}
+
+/// The numbers of data/movement.toml.
+pub fn tuning() -> Tuning {
+    let n: Numbers = toml::from_str(DATA.text()).unwrap_or_else(|e| panic!("{}: {e}", DATA.path()));
+    Tuning { walk: n.walk, sprint: n.sprint, crouch: n.crouch, gravity: n.gravity, jump: n.jump }
+}
+
+/// `__ID__:movement`, and the match's movement.
+pub struct __CAMEL__MovementPlugin;
+
+impl Plugin for __CAMEL__MovementPlugin {
+    fn build(&self, app: &mut App) {
+        add_movement(app);
+        app.insert_resource(Loadout { movement: ID });
+    }
+}
+
+/// `__ID__:movement` on a composed game's simulation (a party's) without
+/// making it the match's; once.
+pub fn add_movement(app: &mut App) {
+    if app.world().get_resource::<Tunings>().is_some_and(|t| t.0.iter().any(|(id, _)| *id == ID)) {
+        return;
+    }
+    app.placeholder_movement(ID, tuning());
+}

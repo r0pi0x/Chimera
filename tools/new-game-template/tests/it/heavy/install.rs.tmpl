@@ -1,0 +1,15 @@
+//! The user's install (`[games.__ID__] path` or `$CHIMERA___UPPER___ROOT`):
+//! it mounts. Passes with a note without one. Add a test here for each
+//! file format the game reads (its maps, models, sounds), on the real
+//! files, never on copies in the repository.
+
+use __ID__::game::INFO;
+
+#[test]
+fn the_install_mounts() {
+    let Some(install) = INFO.install() else {
+        eprintln!("no __NAME__ install ([games.__ID__] path or CHIMERA___UPPER___ROOT): skipped");
+        return;
+    };
+    (INFO.open)(&install).unwrap_or_else(|e| panic!("{}: {e}", install.display()));
+}

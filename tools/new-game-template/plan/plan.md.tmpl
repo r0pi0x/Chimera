@@ -1,0 +1,52 @@
+# Plan: __NAME__ on Chimera
+
+Started __DATE__ (made by tools/new-game; docs/CONTRIBUTING-GAMES.md).
+Kept up to date as the work goes: the status table, then the log.
+
+Goal: __NAME__ is a game library (`games/__ID__`, crate and id `__ID__`)
+that lends its guns, movement and bodies to the party apps, as the other
+games do ([new-game.md](../../new-game.md)). Parity first: it plays as
+the real game, from specs (specs/__ID__/), measurements and the game's
+own data read at run time.
+
+## Status
+
+| Milestone | State | Summary |
+|---|---|---|
+| M0 skeleton | scaffolded | `tools/new-game`: registration, stand-in movement and gun, the sandbox |
+| Specs | not started | specs/__ID__/: install, movement, weapons |
+| M1 install and mount | not started | the install found and mounted; a heavy test |
+| M2 maps | not started | `MAP_LOADER` from the install |
+| M3 movement | not started | its own movement from movement.md |
+| M4 weapons | not started | its guns as data from weapons.md |
+| M5 party | not started | bodies, HUD, guest dressing |
+
+## 1. Rules for this port
+
+- Clean room: spec sessions study the game and write only specs/__ID__/;
+  implementation sessions read only the specs and our code
+  (docs/CONTRIBUTING-GAMES.md). No leaked, decompiled or SDK code.
+- No game files, extracted files or keys in the repository: the game's
+  files are read at run time from the player's own install or the
+  owner's asset service.
+
+## 2. The install
+
+How a player gets it, where it is found (`$CHIMERA___UPPER___ROOT`,
+`[games.__ID__] path`, Steam if it is a Steam game), the files that make
+a folder an install.
+
+## 3. Formats
+
+| Format | Holds | Parser (ours, or a THIRD_PARTY.md source) | Milestone |
+|---|---|---|---|
+
+## 4. Milestones
+
+What each milestone delivers and its tests.
+
+## 5. Out of scope
+
+## Log
+
+- __DATE__: scaffolded with tools/new-game.

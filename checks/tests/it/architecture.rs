@@ -343,7 +343,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
 /// The crates' source folders cut out of `mashup`, scanned with `src/`
 /// (their modules keep their names in `ALLOWED`; a game crate's `game`
 /// module is `games`, as `src/games/<game>/` was). The CS:S app's glue
-/// (`APP_SRC`) keeps the names it had as `mashup`'s.
+/// (`APP_SRC`) keeps the names it had as `mashup`'s. Every game crate
+/// (`[package.metadata.chimera] loaders`) and its front end (`ui/`) is
+/// added by `crate_src`, so a new game (tools/new-game) is scanned with
+/// no line here.
 const CRATE_SRC: &[&str] = &[
     APP_SRC,
     "chimera/core/src",
@@ -355,19 +358,33 @@ const CRATE_SRC: &[&str] = &[
     "source/logic/src",
     "source/engine/src",
     "source/gameui/src",
-    "games/cs_source/src",
-    "games/cs_source/ui/src",
-    "games/combat_arms/src",
-    "games/combat_arms/ui/src",
-    "games/hl2dm/src",
-    "games/hl2dm/ui/src",
-    "games/halo_ce/src",
-    "games/halo_ce/ui/src",
-    "games/tf2/src",
-    "games/tf2/ui/src",
-    "games/dods/src",
-    "games/dods/ui/src",
 ];
+
+/// `CRATE_SRC` and every game crate's `src` and front end's `ui/src`.
+fn crate_src() -> Vec<String> {
+    let mut dirs: Vec<String> = CRATE_SRC.iter().map(|d| d.to_string()).collect();
+    for member in workspace_members().iter().filter(|m| layer_of(m) == Layer::Game) {
+        let manifest: toml::Table = fs::read_to_string(root().join(member).join("Cargo.toml")).unwrap().parse().unwrap();
+        if declared_any(&manifest, "loaders") {
+            dirs.push(format!("{member}/src"));
+            if root().join(member).join("ui/src").is_dir() {
+                dirs.push(format!("{member}/ui/src"));
+            }
+        }
+    }
+    dirs
+}
+
+/// Whether a manifest's `[package.metadata.chimera]` has `key` at all
+/// (`loaders = []` counts: a game on no loader layer).
+fn declared_any(manifest: &toml::Table, key: &str) -> bool {
+    manifest
+        .get("package")
+        .and_then(|p| p.get("metadata"))
+        .and_then(|m| m.get("chimera"))
+        .and_then(|c| c.get(key))
+        .is_some()
+}
 
 /// The CS:S app's glue (crate `cs_source_app`): `lib.rs` (`SimPlugins`,
 /// `client_hooks`, the harness's and greybox's old paths) and `client.rs`
@@ -534,7 +551,7 @@ fn module_layering() {
     // `crate::render`, `source_logic`'s `crate::logic`, re-exported by
     // `mashup` at the same paths), so one table covers them all.
     let mut files = Vec::new();
-    for dir in CRATE_SRC.iter().copied().chain(["src"]) {
+    for dir in crate_src().iter().map(String::as_str).chain(["src"]) {
         let mut more = Vec::new();
         rust_files(&root().join(dir), &mut more);
         files.extend(more.into_iter().map(|f| (root().join(dir), f)));
@@ -667,7 +684,7 @@ fn simulation_builds_no_drawn_parts() {
         "games",
     ];
     let mut files = Vec::new();
-    for dir in CRATE_SRC.iter().copied().chain(["src"]) {
+    for dir in crate_src().iter().map(String::as_str).chain(["src"]) {
         let mut more = Vec::new();
         rust_files(&root().join(dir), &mut more);
         files.extend(more.into_iter().map(|f| (root().join(dir), f)));

@@ -1,0 +1,19 @@
+//! __NAME__ on the engine's headless harness (`chimera_world::harness::Sim`),
+//! for its scenario tests: `__CAMEL__Sim`, the base they build on.
+//! `Sim::new(__CAMEL__Sim, GreyboxMapPlugin)`.
+
+use bevy::prelude::*;
+
+/// The game's simulation (`crate::SimPlugins` with `game::__CAMEL__Plugins`)
+/// as the harness runs it, headless, this game the gameplay (its tick,
+/// `game::TICK_INTERVAL`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct __CAMEL__Sim;
+
+impl Plugin for __CAMEL__Sim {
+    fn build(&self, app: &mut App) {
+        use crate::gameplay::{Gameplay, GameplayAppExt};
+        app.add_plugins((crate::SimPlugins, crate::game::__CAMEL__Plugins))
+            .set_gameplay(Gameplay::of(&crate::game::INFO));
+    }
+}

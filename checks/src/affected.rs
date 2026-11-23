@@ -574,6 +574,8 @@ pub const TOOL_DATA: &[(&str, &str)] = &[
     ("tools/testmap/", "source_tools"),
     ("tools/perfgate/", "cs_source_tools"),
     ("tools/refcmp/", "cs_source_tools"),
+    // tools/new-game, its template and .ps1 twin (checks/tests/it/scripts.rs runs it).
+    ("tools/new-game", "repo_checks"),
 ];
 
 /// Data documents a crate reads from another member's folder

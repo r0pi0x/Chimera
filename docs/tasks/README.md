@@ -5,6 +5,11 @@ file, in the shape of
 [.github/ISSUE_TEMPLATE/agent-task.md](../../.github/ISSUE_TEMPLATE/agent-task.md).
 Drafts: not yet posted as issues. Rules for every task: [AGENTS.md](../../AGENTS.md).
 
+Porting a game: the two session briefs every game's work uses
+([CONTRIBUTING-GAMES.md](../CONTRIBUTING-GAMES.md)):
+[a spec session](game-spec-session.md) and
+[an implementation session](game-implementation-session.md).
+
 | Brief | Size | Needs install |
 |---|---|---|
 | [01 Key the single-slot net and core hooks by game](01-game-hooks-keyed-by-game.md) (done) | M | no |

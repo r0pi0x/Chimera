@@ -21,7 +21,7 @@ This file is a map. Follow the links for detail; keep it short.
 | Ready-to-run task briefs | [docs/tasks/](docs/tasks/README.md) |
 | Design decisions and why (slots, mounts, weapon model, legal rules) | [docs/DESIGN.md](docs/DESIGN.md) |
 | Code layout, layers, data flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Porting a new game (checklist, the crate's shape) | [docs/new-game.md](docs/new-game.md) |
+| Adding a game (`tools/new-game`, spec and implementation sessions; checklist; what Chimera has) | [docs/CONTRIBUTING-GAMES.md](docs/CONTRIBUTING-GAMES.md), [docs/new-game.md](docs/new-game.md), [docs/engine-capabilities.md](docs/engine-capabilities.md) |
 | Every source file, one line (generated) | [docs/modules.md](docs/modules.md) |
 | Converted formats' versions (generated) | [docs/formats.md](docs/formats.md) |
 | Where each doc's section starts (generated) | [docs/agent-index.md](docs/agent-index.md) |
@@ -116,6 +116,7 @@ tools/wait-for <label> --file F --match RE   # instead of an until/sleep loop
                                    # (or --pid N, -- <cmd>; timeout, dies with you)
 tools/agent-timing --since 7d   # where agents' time goes (docs/plans/active/iteration-speed.md)
 cargo hakari generate   # after changing a dependency (chimera/workspace-hack)
+tools/new-game <id> "<Name>"   # scaffold a game (docs/CONTRIBUTING-GAMES.md)
 cargo run -q -p repo_checks --bin docs_index   # regenerate docs/modules.md, the
                                    # debt list and docs/agent-index.md
 ```

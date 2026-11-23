@@ -51,7 +51,8 @@ maps the code; [docs/DESIGN.md](docs/DESIGN.md) gives the reasons.
    fix things.
    A crate's folder is its layer (`chimera/`, a loader layer, `games/`,
    `apps/`): games never use each other or an app, Chimera uses no
-   loader or game. Porting a game: [docs/new-game.md](docs/new-game.md).
+   loader or game. Porting a game: [docs/CONTRIBUTING-GAMES.md](docs/CONTRIBUTING-GAMES.md)
+   (`tools/new-game`), [docs/new-game.md](docs/new-game.md).
 7. **Bevy and avian3d APIs** change often: check the pinned crate source
    (`~/.cargo/registry/src/*/bevy_*-0.20.0/`, avian3d 0.8) or its examples,
    not memory.

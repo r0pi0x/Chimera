@@ -16,6 +16,18 @@ module list is `docs/modules.md`.
 - 893: Data flow per tick | Intent buttons are levels, not edges
 - 967: Slots | An implementation registers under a namespaced ID (`chimera:noclip`,
 
+## docs/CONTRIBUTING-GAMES.md
+
+- 1: Adding a game to Chimera | For friends porting a game with their own AI coding assistant
+- 9: Zero to a game in the sandbox | The last line opens the Ultimate Gun Game's sandbox on the greybox with your game's stand-in pistol in hand: you are a `blood_gulch`...
+- 41: The rule that shapes everything: two kinds of sessions | Chimera reimplements games; it never copies them
+- 65: A milestone, as an example | Movement, for the game above:
+- 85: Testing | Every new behaviour gets a scenario test; every file format the game reads gets a heavy test on the real install
+- 100: What the checks enforce | breaks a hard rule, and says how to fix it:
+- 117: How players get the game's files | Never through the repository
+- 131: Needing something from the engine | Look in [engine-capabilities.md](engine-capabilities.md) first: most things a shooter needs exist
+- 145: Pull request checklist | repo_checks)
+
 ## docs/DESIGN.md
 
 - 1: Chimera: design | The design behind Chimera and the games built on it: why the layers, slots, mounts and weapon model look the way they do, and the legal...
@@ -148,6 +160,16 @@ module list is `docs/modules.md`.
 - 90: Round numbers | CS:S's rule module's numbers (`rules::rounds::RoundSettings`: timers, start and most money, bonuses and rewards) are
 - 98: Not data yet | Bots' buying thresholds and grenade chances (`economy::BOT_*`, ours, the engine's), the default autobuy and rebuy lists (`AUTOBUY_DEFAULT`,
 
+## docs/engine-capabilities.md
+
+- 1: What Chimera gives a game | A catalog for game authors: what already exists, where it lives, and how to use it in one line
+- 8: The game's seams
+- 22: Movement and bodies
+- 34: Weapons and damage
+- 45: Effects, sound, HUD
+- 58: Rules, network, assets
+- 71: Generalize on the second user | A game may build anything it needs inside its own crate first
+
 ## docs/formats.md
 
 - 1: Converted formats and their versions | Generated from the sources by `cargo run -q -p repo_checks --bin docs_index` (`repo_checks::formats`): do not edit
@@ -156,12 +178,12 @@ module list is `docs/modules.md`.
 
 ## docs/new-game.md
 
-- 1: Porting a new game | The checklist for game number N, end to end
-- 15: Before any code | before writing a loader): the install (where it comes from, how it is found), the formats, the milestones below, what is out of scope
-- 29: The crates | A new family's folder is a loader layer the day a crate lives in it; its formats crate may use `chimera_vfs` (archives as mount layers) and
-- 53: The game crate's shape | party mode finds the same seams in every game:
-- 109: Order of work | What Combat Arms' skeleton and HL2:DM's milestones taught: get a character walking on the greybox with placeholder parts first, then...
-- 201: Don't rely on | run-time choice (`chimera_core::gameplay`)
+- 1: Porting a new game | The checklist for game number N
+- 26: Before any code | before writing a loader): the install (where it comes from, how it is found), the formats, the milestones below, what is out of scope
+- 40: The crates | A new family's folder is a loader layer the day a crate lives in it; its formats crate may use `chimera_vfs` (archives as mount layers) and
+- 64: The game crate's shape | party mode finds the same seams in every game:
+- 120: Order of work | Get a character walking on the greybox with stand-in parts first (M0: tools/new-game), then replace one part at a time, each behind its...
+- 181: Don't rely on | run-time choice (`chimera_core::gameplay`)
 
 ## docs/performance.md
 

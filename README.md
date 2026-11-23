@@ -264,7 +264,8 @@ reasons.
 [AGENTS.md](AGENTS.md) is the contract for contributors and their coding
 agents (rules, setup with `tools/doctor`, definition of done; task briefs
 in [docs/tasks/](docs/tasks/README.md)); [CLAUDE.md](CLAUDE.md) has the
-full command list;
+full command list; adding a game (one command, then spec and
+implementation sessions): [docs/CONTRIBUTING-GAMES.md](docs/CONTRIBUTING-GAMES.md);
 [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) explains how to test,
 take screenshots and compare against the real game. Tests:
 

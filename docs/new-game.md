@@ -1,16 +1,27 @@
 # Porting a new game
 
-The checklist for game number N, end to end. The reasons are in
+The checklist for game number N. Start with
+[CONTRIBUTING-GAMES.md](CONTRIBUTING-GAMES.md) (the workflow, the two
+kinds of sessions, the session briefs) and
+[engine-capabilities.md](engine-capabilities.md) (what Chimera already
+does). The reasons are in
 [plans/active/architecture-pass.md](plans/active/architecture-pass.md)
-(sections 3 and 4); the rules it leans on are checked by `cargo test -p
-repo_checks` (`layers_follow_paths`, `games_share_one_shape`,
-`workspace_crates`), whose failures say what to change.
+(sections 3 and 4); the rules are checked by `cargo test -p repo_checks`
+(`layers_follow_paths`, `games_share_one_shape`, `workspace_crates`),
+whose failures say what to change.
 
-The newest complete example is HL2:DM: `games/hl2dm`, `apps/hl2dm`,
-`apps/hl2dm_server`, [plans/active/hl2dm.md](plans/active/hl2dm.md). For
-a game of a new engine family, Combat Arms is the example:
-`lithtech/formats`, `games/combat_arms`,
-[plans/active/combat-arms.md](plans/active/combat-arms.md).
+**`tools/new-game <id> "<Display Name>"`** (`tools\new-game.ps1` on
+Windows) does M0's mechanical part: the crates below in this shape, a
+stand-in movement and gun as data, the specs' templates, the plan, the
+workspace and roster lines, install discovery and a fast scenario test.
+The game then plays in the sandbox at once (with
+`CHIMERA_<ID>_ROOT` set: a game's guns are offered only when its install
+is found): `cargo run --features dev --bin ultimate_gun_game -- +sandbox +rung <id>:weapon_standin`.
+
+Examples: HL2:DM (`games/hl2dm`, `apps/hl2dm`,
+[plans/active/hl2dm.md](plans/active/hl2dm.md)); DoD:S's M0 for a Source
+game (`games/dods`); Combat Arms for a new engine family
+(`lithtech/formats`, `games/combat_arms`).
 
 ## Before any code
 
@@ -43,12 +54,12 @@ workspace. Behaviour that every game of the family will share stays in
 the first game's crate until a second game needs it; then it moves to
 `<family>/engine` (a lift, as `source/engine` came out of `cs_source`).
 
-For each new crate: add it to `members`, `default-members` and
-`[workspace.dependencies]` in the root Cargo.toml; give it a `dev`
-feature; run `cargo hakari manage-deps -y` and `cargo hakari generate`
-(a plain-data crate goes on `.config/hakari.toml`'s `final-excludes`
-and the check's `NO_HACK` instead); add its paragraph to
-docs/ARCHITECTURE.md.
+For each new crate (tools/new-game does this for the game's two): add
+it to `members`, `default-members` and `[workspace.dependencies]` in the
+root Cargo.toml; give it a `dev` feature; run `cargo hakari manage-deps
+-y` and `cargo hakari generate` (a plain-data crate goes on
+`.config/hakari.toml`'s `final-excludes` and the check's `NO_HACK`
+instead); add its paragraph to docs/ARCHITECTURE.md.
 
 ## The game crate's shape
 
@@ -108,95 +119,64 @@ five games have it so.
 
 ## Order of work
 
-What Combat Arms' skeleton and HL2:DM's milestones taught: get a
-character walking on the greybox with placeholder parts first, then
-replace one part at a time, each behind its spec and a scenario test.
+Get a character walking on the greybox with stand-in parts first (M0:
+tools/new-game), then replace one part at a time, each behind its spec
+and a scenario test. Each step's detail is in the named module's `//!`
+doc and [engine-capabilities.md](engine-capabilities.md).
 
-1. **M0, the skeleton**: `INFO`, the mount (`game::mount::open`; the
-   install's archives as layers of a `Mount`, through
-   `chimera_core::mount::served::open` so the asset store works), `SimPlugins`,
-   the harness, a test that the game registers and (heavy) that the
-   install mounts. HL2:DM's M0 was 167 lines of game crate.
-2. **M1, the apps**: the server is a `GameServer` static and
-   `chimera_net::dedicated::run(&SERVER)` (apps/hl2dm_server: its usage
-   text, the static, and a build.rs for the version stamp). What only
-   some servers have is an optional hook on the static
-   (`ServerHooks { .., ..ServerHooks::NONE }`): the map cycle, the map's
-   file for clients without it (`map_files`), the greybox's own tick,
-   another player count, several games' maps, a minigame
-   (apps/cs_source_server, `party_roster::server`). The app is the same
-   shape: a `GameApp` static (`chimera_client::client::app`: the game's
-   `INFO` for the usage text, its title, maps, installs, `sim`, `hud`
-   and `front_end`) and `chimera_client::client::app::run(&APP)` in
-   main.rs (apps/hl2dm); what only some apps have is a
-   `GameAppHooks { .., ..GameAppHooks::NONE }` hook: command-line
-   defaults, what the machine lacks, a default map, a start of its own
-   (a main menu), the start map at the HDR level, the debug views, its
-   server's name for `--help`, a last word (apps/cs_source,
-   `party_roster::client`). An app's main.rs stays a call
-   (`app_mains_are_small`). Placeholder movement
-   (`chimera_sim::movement`) and a test weapon as data.
-3. **Maps**: a `MapLoader` that returns `MapData` in metres (the world
-   and the game's kit apart; engine-specific features in typed
-   `extras`, never a new `MapData` field), `MapLoadOptions` honoured
-   (lean: no textures, for servers and tests). Then a `MapDressing` so
-   the game's players and guns can stand on other games' maps, kept
-   by Chimera (`chimera_world::map::kept`): give `dress_cached` a
-   `Dressing` (the game's id, its converter's version, its mount, its
-   dress function onto an empty map; a texture of whole DXT blocks it
-   keeps as blocks without decoding when the map is `BlocksOnly`), and
-   Chimera converts it once per app, copies it into each map, dresses
-   again when a late file arrives and logs the time and instructions
-   (CS:S's `bundle::GUEST`). What the dressing leaves in the map's
-   memos that later maps need goes with it through `Dressing::memos`
-   (`KeptMemos`: how to append, write and read them; Combat Arms'
-   `world::DRESSING`), and an app's choice that changes the dressing
-   is its `variant`. Never a cache of your own.
+1. **M0, the skeleton**: `INFO`, the mount (`game::mount::open` through
+   `chimera_core::mount::served::open`, so the asset store works),
+   `SimPlugins`, the harness, a test that the game registers and (heavy)
+   that the install mounts. Scaffolded.
+2. **M1, the apps** (optional for a guest game): the server is a
+   `GameServer` static and `chimera_net::dedicated::run(&SERVER)`, the
+   app a `GameApp` static and `chimera_client::client::app::run(&APP)`
+   (apps/hl2dm_server, apps/hl2dm); what only some have is a hook on
+   `ServerHooks`/`GameAppHooks` with `..NONE`. A main.rs stays a call
+   (`app_mains_are_small`).
+3. **Maps**: a `MapLoader` that returns `MapData` in metres
+   (engine-specific features in typed `extras`, never a new `MapData`
+   field), `MapLoadOptions` honoured (lean: no textures). Then a
+   `MapDressing` for its players and guns on other games' maps, kept by
+   Chimera: give `chimera_world::map::kept::dress_cached` a `Dressing`
+   (CS:S's `bundle::GUEST`; memos through `Dressing::memos`, Combat
+   Arms' `world::DRESSING`). Never a cache of your own.
 4. **Movement**: a marker component, `register_movement` under
    `<id>:movement`, its state registered with `predicted_net`, its
-   numbers as data in the game's own unit.
+   numbers as data in the game's own unit, its envelope
+   (`add_movement_envelope`).
 5. **Weapons**: TOML documents in `data/weapons/`
    ([weapon-data.md](weapon-data.md)), behaviour as registered hooks,
-   predicted parts by name. Hit zones through Chimera's `Hitgroup`.
+   predicted parts by name, hit zones through `Hitgroup`.
 6. **Rules**: rule modules on the mode runtime (`chimera_sim::mode`),
-   gated by the gameplay (`gameplay_is(GAME)`), respawns through
-   `chimera_sim::spawning`. Commands only the server's operator may run:
-   `Console::server_command`; commands that act on the caller's player:
-   `Console::player_command`.
-7. **Network**: `net_part("<id>", ...)` for what the game replicates of
-   its own, own-state parts, `JoinRules` if the default join doesn't
-   fit. One network test per feature on `harness::NetSim`.
-8. **Front end** (`<id>_ui`, games/<id>/ui): its HUD on the client shell's plugins, menus
-   through `client::front_end`, layouts on `client::canvas` or
-   `client::vgui`. The game's crate never uses it.
-   Your HUD scales under its own roots (`client::hud::HudRoot`) by its
-   own rule (node sizes from its canvas), never Bevy's global `UiScale`,
-   and draws nothing of the shell's overlay (a minigame's panel and
-   callouts, the kill feed): the overlay guard
-   (`apps/party_roster/tests/it/overlay_guard.rs`) covers you once your
-   `CLIENT` is in the party's list, and `repo_checks`
-   (`games_leave_the_overlay_alone`) fails a game crate that names the
-   overlay or `UiScale` (docs/DESIGN.md, "HUD layers").
-9. **Party**: `PARTS` (`GameParts`: what it lends), `BUNDLE`, `CLIENT`,
-   and on its map loader its `WORDS` (`chimera_world::map::MapWords`:
-   its spawn teams as the neutral sides `SIDE_FIRST`/`SIDE_SECOND`, its
-   surfaces as the neutral surface kinds, Source's surface property
-   names; a Source game reuses `source_engine::maps::SURFACE_WORDS`).
-   Then one line in the roster (apps/party_roster): the bundle in
-   `GUESTS` (everything else there is made from it), and its `CLIENT`
-   in `client::CLIENTS`. No table names a pair of games, and the
-   Controls page's tab is made of its `data/player_options.toml` (its
-   actions not `planned`, its own cvars with a range). A game that can
-   be a party's base fills `BUNDLE.base` (`BaseGame`: its simulation,
-   its rules and bots set for the party) and `CLIENT.base`
-   (`BaseClient`: its loading screen and menu music, its other looks).
-   The party kit (apps/party_kit) names no game and needs no edit. Its
-   gun rungs appear in the Ultimate Gun Game from the parts registry.
-10. **Tools and docs**: the game in `dump` and `chimera_pack` (its row
-    in `games()`: a game without a Steam app names how its install's
-    build is read, `Game::build`, as Halo does from its maps' headers;
-    its sets in `record_pieces`); its commands in CLAUDE.md; its
-    paragraphs in docs/ARCHITECTURE.md.
+   gated by `gameplay_is(GAME)`, respawns through
+   `chimera_sim::spawning`; operator commands `Console::server_command`,
+   the caller's `Console::player_command`.
+7. **Network**: `net_part("<id>", ...)` for what it replicates of its
+   own, `JoinRules` if the default join doesn't fit; one test per
+   feature on `harness::NetSim`.
+8. **Front end** (`<id>_ui`): its HUD on the shell's plugins
+   (`with_hud`), menus through `client::front_end`, layouts on
+   `client::canvas` or `client::vgui`. Your HUD scales under its own
+   roots (`client::hud::HudRoot`), never Bevy's global `UiScale`, and
+   draws nothing of the shell's overlay (the overlay guard,
+   `apps/party_roster/tests/it/overlay_guard.rs`;
+   `games_leave_the_overlay_alone`; docs/DESIGN.md, "HUD layers").
+9. **Party**: `PARTS`, `BUNDLE`, `CLIENT`, and the map loader's `WORDS`
+   (`chimera_world::map::MapWords`: spawn teams as `SIDE_FIRST`/
+   `SIDE_SECOND`, surfaces as the neutral kinds; a Source game reuses
+   `source_engine::maps::SURFACE_WORDS`). The roster lines (`GUESTS`,
+   `client::CLIENTS`) are scaffolded; no table names a pair of games.
+   The Controls tab is made of `data/player_options.toml`. A game that
+   can be a party's base fills `BUNDLE.base` and `CLIENT.base`.
+10. **Tools and docs**: the game in `dump` and `chimera_pack` (its row in
+    `games()`; a game without a Steam app names how its build is read,
+    `Game::build`; its sets in `record_pieces`); its commands in
+    CLAUDE.md; its paragraphs in docs/ARCHITECTURE.md.
+
+New systems go behind the game's run condition once per-game gating
+lands ([game-logic-distribution.md](plans/active/game-logic-distribution.md),
+section 4): an absent game should cost nothing a tick.
 
 ## Don't rely on
 

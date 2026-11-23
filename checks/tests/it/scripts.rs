@@ -6,7 +6,8 @@
 //! hooks' pass stamps (`.githooks/stamps.sh`: the key, merged passes,
 //! per-package reuse after docs edits and rebases), and
 //! `post-push-tests.sh`'s queue (a verdict under frequent pushes, a stale
-//! lock taken over, starvation reported). Unix only
+//! lock taken over, starvation reported), and `new-game`'s scaffold (a
+//! game of the shared shape, its lines in the workspace and roster). Unix only
 //! (the tools are bash); they run on temporary folders, never the repo's.
 
 #![cfg(unix)]
@@ -846,4 +847,132 @@ fn acquire_puts_the_slot_at_origin_main_and_never_discards_work() {
     assert!(said.contains("uncommitted"), "{said}");
     assert_eq!(fs::read_to_string(slot.join("f")).unwrap(), "dirty");
     fs::remove_dir_all(&root).ok();
+}
+
+/// The files `tools/new-game` edits, copied from the repository into `dir`.
+const NEW_GAME_EDITS: &[&str] = &[
+    "Cargo.toml",
+    "apps/party_roster/Cargo.toml",
+    "apps/party_roster/src/lib.rs",
+    "apps/party_roster/src/client.rs",
+    "apps/party_kit/src/maps_picker.rs",
+    "apps/party_kit/src/guns_picker.rs",
+    "chimera/client/src/client/sandbox/mod.rs",
+    "chimera.local.example.toml",
+];
+
+/// `tools/new-game <args>` on a copy of the files it edits in `dir`:
+/// (success, stderr).
+fn new_game(dir: &Path, args: &[&str]) -> (bool, String) {
+    let out = Command::new("bash")
+        .arg(repo().join("tools/new-game"))
+        .args(args)
+        .arg("--no-cargo")
+        .env("CHIMERA_NEW_GAME_ROOT", dir)
+        .output()
+        .unwrap();
+    (out.status.success(), String::from_utf8_lossy(&out.stderr).into_owned())
+}
+
+/// `tools/new-game` (docs/CONTRIBUTING-GAMES.md) makes a game of the shape
+/// `games_share_one_shape` checks, with its specs, plan, workspace and
+/// roster lines and install discovery, every placeholder filled; it
+/// refuses a bad id and a game that exists. (That the scaffold builds and
+/// its tests pass is checked by hand when the template changes: a build
+/// here would take minutes.)
+#[test]
+fn new_game_scaffolds_a_game_of_the_shared_shape() {
+    let dir = temp("new_game");
+    for f in NEW_GAME_EDITS {
+        fs::create_dir_all(dir.join(f).parent().unwrap()).unwrap();
+        fs::copy(repo().join(f), dir.join(f)).unwrap();
+    }
+    let guests_before = fs::read_to_string(dir.join("apps/party_roster/src/lib.rs")).unwrap();
+    let count = |text: &str, what: &str| -> usize {
+        let at = text.find(what).unwrap_or_else(|| panic!("{what}")) + what.len();
+        text[at..].split(']').next().unwrap().trim().parse().unwrap()
+    };
+    let n = count(&guests_before, "pub static GUESTS: [&GameBundle;");
+
+    let (ok, err) = new_game(&dir, &["zz_game", "Zed Game", "--short", "ZG"]);
+    assert!(ok, "{err}");
+    let read = |f: &str| fs::read_to_string(dir.join(f)).unwrap_or_else(|e| panic!("{f}: {e}"));
+    let g = "games/zz_game";
+    // The crate's shape (`games_share_one_shape`).
+    let manifest: toml::Table = read(&format!("{g}/Cargo.toml")).parse().unwrap();
+    assert_eq!(manifest["package"]["name"].as_str(), Some("zz_game"));
+    assert!(manifest["package"]["metadata"]["chimera"].get("loaders").is_some());
+    let ui: toml::Table = read(&format!("{g}/ui/Cargo.toml")).parse().unwrap();
+    assert_eq!(ui["package"]["name"].as_str(), Some("zz_game_ui"));
+    let lib = read(&format!("{g}/src/lib.rs"));
+    assert!(lib.contains("pub struct SimPlugins") && lib.contains("pub mod game;") && lib.contains("pub mod harness;"));
+    let game = read(&format!("{g}/src/game/mod.rs"));
+    for want in ["pub const GAME: &str = \"zz_game\"", "pub static INFO:", "pub static BUNDLE:", "pub struct ZzGamePlugins"] {
+        assert!(game.contains(want), "{want}");
+    }
+    assert!(read(&format!("{g}/src/game/maps.rs")).contains("pub static MAP_LOADER:"));
+    assert!(read(&format!("{g}/src/harness.rs")).contains("pub struct ZzGameSim"));
+    let front = read(&format!("{g}/ui/src/lib.rs"));
+    assert!(front.contains("pub fn with_hud(") && front.contains("pub mod party") && front.contains("CLIENT"));
+    for f in [
+        "tests/it/main.rs",
+        "tests/it/skeleton.rs",
+        "tests/it/heavy/install.rs",
+        "ui/tests/it/main.rs",
+        "data/movement.toml",
+        "data/weapons/standin.toml",
+        "data/player_options.toml",
+    ] {
+        assert!(dir.join(g).join(f).is_file(), "{f}");
+    }
+    for f in ["README.md", "install.md", "movement.md", "weapons.md"] {
+        let spec = read(&format!("specs/zz_game/{f}"));
+        assert!(!spec.lines().any(|l| l.trim_start().starts_with("```")), "specs/zz_game/{f}: no code blocks");
+    }
+    assert!(read("docs/plans/active/zz_game.md").contains("# Plan: Zed Game on Chimera"));
+    // Every placeholder filled.
+    let mut files = Vec::new();
+    for top in [g, "specs/zz_game"] {
+        let mut stack = vec![dir.join(top)];
+        while let Some(d) = stack.pop() {
+            for e in fs::read_dir(&d).unwrap().flatten() {
+                if e.path().is_dir() { stack.push(e.path()) } else { files.push(e.path()) }
+            }
+        }
+    }
+    for f in files.iter().chain([&dir.join("docs/plans/active/zz_game.md")]) {
+        let text = fs::read_to_string(f).unwrap();
+        for p in ["__ID__", "__NAME__", "__SHORT__", "__CAMEL__", "__UPPER__", "__DATE__"] {
+            assert!(!text.contains(p), "{}: {p}", f.display());
+        }
+    }
+    // The workspace, the roster, the pickers, the install's config key.
+    let root: toml::Table = read("Cargo.toml").parse().unwrap();
+    for list in ["members", "default-members"] {
+        let members: Vec<&str> = root["workspace"][list].as_array().unwrap().iter().filter_map(|m| m.as_str()).collect();
+        assert!(members.contains(&"games/zz_game") && members.contains(&"games/zz_game/ui"), "{list}");
+    }
+    let deps = &root["workspace"]["dependencies"];
+    assert!(deps.get("zz_game").is_some() && deps.get("zz_game_ui").is_some());
+    let roster: toml::Table = read("apps/party_roster/Cargo.toml").parse().unwrap();
+    assert!(roster["dependencies"].get("zz_game").is_some() && roster["dependencies"].get("zz_game_ui").is_some());
+    let features = &roster["features"];
+    let has = |f: &str, v: &str| features[f].as_array().unwrap().iter().any(|x| x.as_str() == Some(v));
+    assert!(has("present", "dep:zz_game_ui") && has("dev", "zz_game/dev") && has("dev", "zz_game_ui?/dev"));
+    let guests = read("apps/party_roster/src/lib.rs");
+    assert_eq!(count(&guests, "pub static GUESTS: [&GameBundle;"), n + 1);
+    assert!(guests.contains("&zz_game::game::BUNDLE,"));
+    let clients = read("apps/party_roster/src/client.rs");
+    assert!(clients.contains("&zz_game_ui::party::CLIENT,"));
+    assert!(read("apps/party_kit/src/maps_picker.rs").contains("\"zz_game\" => \"Zed Game\".into(),"));
+    assert!(read("apps/party_kit/src/guns_picker.rs").contains("\"zz_game\" => \"ZG\".into(),"));
+    assert!(read("chimera.local.example.toml").contains("# [games.zz_game]\n"));
+    assert!(read("chimera.local.example.toml").contains("CHIMERA_ZZ_GAME_ROOT"));
+
+    // Refusals: the game exists now; an id that isn't one.
+    let (ok, err) = new_game(&dir, &["zz_game", "Again"]);
+    assert!(!ok && err.contains("exists"), "{err}");
+    let (ok, err) = new_game(&dir, &["Bad-Id", "Bad"]);
+    assert!(!ok && err.contains("the id"), "{err}");
+    let _ = fs::remove_dir_all(&dir);
 }

@@ -1,0 +1,48 @@
+[package]
+name = "__ID__"
+version = "0.1.0"
+description = "__NAME__ as a game crate: registration, a stand-in gun and movement so far (docs/plans/active/__ID__.md)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# The layers this crate builds on, beside Chimera (checks/tests/it/architecture.rs,
+# `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path"). Add the
+# loader family when the game reads one (`["source"]`, `["lithtech"]`, ...).
+[package.metadata.chimera]
+loaders = []
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# The engine's simulation crates; never another game, an app, the
+# presentation (`chimera_present`) or the shell: the front end is its own
+# crate above this one, `__ID___ui` (games/__ID__/ui).
+[dependencies]
+chimera_core.workspace = true
+chimera_world.workspace = true
+chimera_sim.workspace = true
+bevy.workspace = true
+# The data documents (data/*.toml).
+serde.workspace = true
+toml.workspace = true
+workspace-hack.workspace = true
+
+# The tests' own: the presentation's Bevy and Avian features, so
+# `cargo test -p __ID__` shares the clients' builds of Bevy (hakari.toml).
+[dev-dependencies]
+chimera_world = { workspace = true, features = ["render"] }
+bevy = { workspace = true, features = ["default", "wav"] }
+avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+bevy_winit.workspace = true
+
+# The integration tests (tests/it/; the install's in tests/it/heavy/).
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[features]
+# Bevy as a dynamic library, as an app's `dev` (which turns this on).
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev"]

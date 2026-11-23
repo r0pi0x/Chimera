@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# Scaffold a new game on Chimera (docs/CONTRIBUTING-GAMES.md):
+#
+#   tools/new-game <id> "<Display Name>" [--short <name>] [--no-roster] [--no-cargo]
+#
+# Makes, from tools/new-game-template/:
+#   games/<id>/            the game crate in the shape every game has
+#                          (docs/new-game.md; `games_share_one_shape`): INFO,
+#                          BUNDLE, MAP_LOADER, SimPlugins, the harness, a
+#                          stand-in movement (data/movement.toml) and gun
+#                          (data/weapons/), a fast scenario test (the game
+#                          registers, a body spawns and walks) and a heavy
+#                          one (the install mounts)
+#   games/<id>/ui/         its front end crate `<id>_ui` (party::CLIENT, with_hud)
+#   specs/<id>/            README and spec templates (install, movement, weapons)
+#   docs/plans/active/<id>.md   the plan skeleton
+# and adds the game to:
+#   Cargo.toml             members, default-members, [workspace.dependencies]
+#   apps/party_roster      GUESTS and CLIENTS (the one roster line each), so
+#                          its gun is in the Ultimate Gun Game's sandbox
+#                          (skip with --no-roster)
+#   the pickers' name tables, chimera.local.example.toml ([games.<id>] path)
+# then (unless --no-cargo) `cargo hakari generate` and `repo_checks`' docs_index (docs/modules.md and friends).
+#
+# Install discovery needs no code: `$CHIMERA_<ID>_ROOT` or `[games.<id>]
+# path` in chimera.local.toml (chimera_core::mount::install).
+#
+# Runs in Git Bash on Windows (tools/new-game.ps1 finds it) and on Linux.
+# Needs bash, perl and git; cargo for the last step.
+set -euo pipefail
+
+usage() {
+    sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//'
+    exit 2
+}
+
+id=""
+name=""
+short=""
+roster=1
+run_cargo=1
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --short) short=${2:?--short needs a name}; shift 2 ;;
+        --no-roster) roster=0; shift ;;
+        --no-cargo) run_cargo=0; shift ;;
+        -h|--help) usage ;;
+        -*) echo "new-game: unknown option $1" >&2; usage ;;
+        *)
+            if [ -z "$id" ]; then id=$1; elif [ -z "$name" ]; then name=$1; else usage; fi
+            shift ;;
+    esac
+done
+[ -n "$id" ] && [ -n "$name" ] || usage
+short=${short:-$name}
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=${CHIMERA_NEW_GAME_ROOT:-$(cd "$here/.." && pwd)}
+template="$here/new-game-template"
+cd "$root"
+
+die() { echo "new-game: $*" >&2; exit 1; }
+
+# The id names the crate, the folder, the maps (`<id>:<map>`), the console
+# namespace and the install's config key (docs/new-game.md, "Pick the id").
+[[ "$id" =~ ^[a-z][a-z0-9_]*[a-z0-9]$ ]] || die "the id is lower case letters, digits and _ (e.g. halo_ce), got '$id'"
+[[ "$id" != *__* ]] || die "no double underscore in the id"
+[ ! -e "games/$id" ] || die "games/$id exists already"
+for word in chimera source lithtech blam games apps checks mashup originals party_kit party_roster workspace_hack; do
+    [ "$id" != "$word" ] || die "'$id' is taken by the workspace"
+done
+! grep -qE "^${id}(_ui)? = \{" Cargo.toml || die "a crate named $id or ${id}_ui is in the workspace already"
+command -v perl >/dev/null || die "needs perl (Git for Windows has it)"
+for f in '"\' '\'; do
+    [[ "$name$short" != *"$f"* ]] || die "no quotes or backslashes in the names"
+done
+
+camel=$(echo "$id" | perl -pe 's/(^|_)([a-z0-9])/\U$2/g')
+upper=$(echo "$id" | tr '[:lower:]' '[:upper:]')
+date=$(date -u +%Y-%m-%d)
+export NG_ID=$id NG_NAME=$name NG_SHORT=$short NG_CAMEL=$camel NG_UPPER=$upper NG_DATE=$date
+
+# A template file to its place, the placeholders filled.
+fill() { # <template path> <destination>
+    mkdir -p "$(dirname "$2")"
+    perl -pe 's/__UPPER__/$ENV{NG_UPPER}/g; s/__CAMEL__/$ENV{NG_CAMEL}/g; s/__SHORT__/$ENV{NG_SHORT}/g;
+              s/__NAME__/$ENV{NG_NAME}/g; s/__DATE__/$ENV{NG_DATE}/g; s/__ID__/$ENV{NG_ID}/g' "$1" > "$2"
+}
+
+# 1. The crates, the specs and the plan.
+(cd "$template" && find src data tests ui -name '*.tmpl' -type f) | while read -r t; do
+    fill "$template/$t" "games/$id/${t%.tmpl}"
+done
+fill "$template/Cargo.toml.tmpl" "games/$id/Cargo.toml"
+for t in "$template"/specs/*.tmpl; do
+    f=$(basename "$t" .tmpl)
+    [ -e "specs/$id/$f" ] || fill "$t" "specs/$id/$f"
+done
+[ -e "docs/plans/active/$id.md" ] || fill "$template/plan/plan.md.tmpl" "docs/plans/active/$id.md"
+
+# Edits a file in place with a perl program (-0: the whole file at once);
+# fails when the program changed nothing (an anchor moved: say so).
+edit() { # <file> <perl program>
+    local before
+    before=$(cksum < "$1")
+    perl -0pi -e "$2" "$1"
+    [ "$(cksum < "$1")" != "$before" ] || die "$1: the anchor for the edit was not found; add the game by hand (docs/new-game.md)"
+}
+
+# 2. The workspace: members and default-members (before the first app),
+# and the dependency table (after the last game front end's line).
+edit Cargo.toml 's/(\n    "games\/[^\n]*",)(\n    "apps\/)/$1\n    "games\/$ENV{NG_ID}",\n    "games\/$ENV{NG_ID}\/ui",$2/g'
+edit Cargo.toml 's/(.*\n[a-z0-9_]+_ui = \{ path = "games\/[^\n]*\n)/$1# $ENV{NG_NAME} as a game crate (games\/$ENV{NG_ID}; docs\/plans\/active\/$ENV{NG_ID}.md).\n$ENV{NG_ID} = { path = "games\/$ENV{NG_ID}" }\n# Its front end on the client shell (games\/$ENV{NG_ID}\/ui), above the simulation.\n$ENV{NG_ID}_ui = { path = "games\/$ENV{NG_ID}\/ui" }\n/s'
+
+# 3. The party's roster: one bundle in GUESTS, one client in CLIENTS.
+if [ "$roster" = 1 ]; then
+    p=apps/party_roster
+    edit $p/Cargo.toml 's/\noriginals\.workspace = true\n/\n$ENV{NG_ID}.workspace = true\noriginals.workspace = true\n/'
+    edit $p/Cargo.toml 's/(.*\n[a-z0-9_]+_ui = \{ workspace = true, optional = true \}\n)/$1$ENV{NG_ID}_ui = { workspace = true, optional = true }\n/s'
+    edit $p/Cargo.toml 's/(.*\n    "dep:[a-z0-9_]+_ui",\n)/$1    "dep:$ENV{NG_ID}_ui",\n/s'
+    edit $p/Cargo.toml 's/(\n    "originals\/dev",\n)/\n    "$ENV{NG_ID}\/dev",$1/'
+    edit $p/Cargo.toml 's/(.*\n    "[a-z0-9_]+_ui\?\/dev",\n)/$1    "$ENV{NG_ID}_ui?\/dev",\n/s'
+    # GUESTS one per line (rustfmt's layout past 120 columns).
+    edit $p/src/lib.rs 's/(pub static GUESTS: \[&GameBundle; )(\d+)(\] =)\s*\[(.*?)\s*,?\s*\];/$1.($2+1).$3." [\n".join("", map { "    $_,\n" } grep { length } split(m{\s*,\s*}, $4))."    &$ENV{NG_ID}::game::BUNDLE,\n];"/se'
+    edit $p/src/client.rs 's/(pub static CLIENTS: \[&GameClient; )(\d+)(\] = \[)(.*?)\s*,?\s*\];/$1.($2+1).$3.$4.",\n    &$ENV{NG_ID}_ui::party::CLIENT,\n];"/se'
+fi
+
+# 4. The names the pickers show (their fallback is the id).
+edit apps/party_kit/src/maps_picker.rs 's/(\n(\s*)"" => "Other"\.into\(\),)/\n$2"$ENV{NG_ID}" => "$ENV{NG_NAME}".into(),$1/'
+edit chimera/client/src/client/sandbox/mod.rs 's/(\n(\s*)"" => "Other"\.into\(\),)/\n$2"$ENV{NG_ID}" => "$ENV{NG_NAME}".into(),$1/'
+edit apps/party_kit/src/guns_picker.rs 's/(\n(\s*)o => o\.to_ascii_uppercase\(\),)/\n$2"$ENV{NG_ID}" => "$ENV{NG_SHORT}".into(),$1/'
+
+# 5. Where a player's install is found.
+cat >> chimera.local.example.toml <<EOF
+
+# [games.$id]
+# The folder of $name's install, or CHIMERA_${upper}_ROOT for one run
+# (docs/plans/active/$id.md, "The install").
+# path = "~/games/$id"
+EOF
+
+echo "new-game: made games/$id, games/$id/ui, specs/$id, docs/plans/active/$id.md"
+
+# 6. The lock, the workspace-hack and the generated docs.
+if [ "$run_cargo" = 1 ] && command -v cargo >/dev/null; then
+    if cargo hakari --version >/dev/null 2>&1; then
+        cargo hakari generate -q || echo "new-game: cargo hakari generate failed; run it after fixing the build" >&2
+    else
+        echo "new-game: cargo-hakari is not installed (cargo install cargo-hakari); run cargo hakari generate" >&2
+    fi
+    cargo run -q -p repo_checks --bin docs_index || echo "new-game: docs_index failed" >&2
+fi
+
+cat <<EOF
+
+Next (docs/CONTRIBUTING-GAMES.md):
+  cargo test -p $id --features dev                  # the skeleton's tests
+  cargo test -p repo_checks                         # the shape and the rules
+  export CHIMERA_${upper}_ROOT=/path/to/the/install   # or [games.$id] path; its guns
+                                                    # are offered only when it is found
+  cargo run --features dev --bin ultimate_gun_game -- +sandbox +rung $id:weapon_standin
+  then a spec session: docs/tasks/game-spec-session.md
+EOF

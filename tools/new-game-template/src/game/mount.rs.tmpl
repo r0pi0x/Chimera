@@ -1,0 +1,33 @@
+//! __NAME__'s install as a mount: the install's folder as loose files,
+//! then Chimera's content cache, with the asset store under or instead of
+//! it (`open`, `mount::served`). When the game keeps its files in
+//! archives, read them with a loader layer's format crate (a `FileSource`
+//! per archive; docs/new-game.md, "The crates") and push them here.
+//!
+//! Known shortcuts:
+//! - Loose files only (tools/new-game's stand-in).
+
+use std::{io, path::Path};
+
+use super::GAME;
+use crate::mount::{LooseDir, Mount};
+
+/// Mount the game: its install (`open_install`) and/or the asset store, as
+/// the local config's `[assets]` says (`mount::served`).
+pub fn open(install: &Path) -> io::Result<Mount> {
+    crate::mount::served::open(GAME, install, open_install)
+}
+
+/// Mount an install: its folder, then Chimera's content cache (last: it
+/// never replaces the game's own files).
+pub fn open_install(install: &Path) -> io::Result<Mount> {
+    if !install.is_dir() {
+        return Err(io::Error::new(io::ErrorKind::NotFound, format!("{}: not a folder", install.display())));
+    }
+    let mut mount = Mount::default();
+    mount.push(LooseDir::new(install));
+    if let Some(cache) = crate::mount::config::content_dir(GAME) {
+        mount.push(LooseDir::new(cache));
+    }
+    Ok(mount)
+}
