@@ -469,6 +469,47 @@ fn the_loose_cannons_fuse_runs_from_the_press() {
     assert!((life - 0.505).abs() < 0.02, "{life}");
 }
 
+#[test]
+fn the_loose_cannon_holds_on_input_set_once() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], "tf2:loose_cannon");
+    let ev = run(&mut sim, p, 40, |s, k| match k {
+        0 => s.intent(p).fire = true,
+        30 => s.intent(p).fire = false,
+        _ => {}
+    });
+    assert_eq!(fired(&ev), [30], "fired on the release only");
+}
+
+/// A stuck arrow's origin is at the surface it hit (the shot's skin, a
+/// millimetre, short of it), not above it: a ray along the flight from
+/// half a metre back meets the surface at once past the arrow.
+#[test]
+fn a_stuck_arrow_sits_on_its_surface() {
+    use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
+    use bevy::ecs::system::RunSystemOnce;
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], "tf2:huntsman");
+    let ahead = Vec3::new(0.0, 1.6, greybox::NORTH_WALL_Z);
+    testkit::aim_at(&mut sim, p, ahead);
+    run(&mut sim, p, 120, |s, k| s.intent(p).fire = k < 30);
+    let (_, at, v) = flyers(&mut sim, p)[0];
+    assert_eq!(v, Vec3::ZERO, "stuck");
+    let dir = {
+        let i = sim.intent(p);
+        chimera_sim::weapon::aim_of(i.yaw, i.pitch) * Vec3::NEG_Z
+    };
+    let back = at - dir * 0.5;
+    let hit = sim
+        .app
+        .world_mut()
+        .run_system_once(move |sq: SpatialQuery| sq.cast_ray(back, Dir3::new(dir).unwrap(), 5.0, true, &SpatialQueryFilter::default()).map(|h| h.distance))
+        .unwrap()
+        .expect("a surface ahead of the arrow");
+    let gap = hit - 0.5;
+    assert!((0.0..0.01).contains(&gap), "the arrow is {gap} m short of its surface");
+}
+
 // ---- 8. Ullapool Caber ----
 
 #[test]

@@ -391,6 +391,20 @@ fn the_sticky_charge_sets_its_speed_28_29() {
     }
 }
 
+/// An app sets the button once a frame, so several ticks read the same:
+/// the charge holds while it stays down and fires on the release only.
+#[test]
+fn the_sticky_charge_holds_on_input_set_once() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], STICKY_LAUNCHER);
+    let ev = run(&mut sim, p, 60, |s, k| match k {
+        0 => s.intent(p).fire = true,
+        40 => s.intent(p).fire = false,
+        _ => {}
+    });
+    assert_eq!(fired(&ev), [40], "fired on the release only");
+}
+
 /// Test 29e: a full-charge sticky aimed 10° up, ρ = 2, leaves at exactly
 /// 2000 units/s along the uncapped 2400 forward + 200 up (its jitter
 /// aside), and after its first tick's gravity and drag is at ~1984.7.

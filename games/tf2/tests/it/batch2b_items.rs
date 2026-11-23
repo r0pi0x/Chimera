@@ -26,7 +26,7 @@ use tf2::{
     harness::Tf2Sim,
 };
 
-use super::weapons::{health_points, hold_still, holding, no_spread, run};
+use super::weapons::{fired, health_points, hold_still, holding, no_spread, run};
 
 const U: f32 = 0.0254;
 
@@ -583,6 +583,19 @@ fn the_classic_charges_held_and_fires_on_release() {
     };
     assert_eq!(shot(0.85, 150.0), 450.0, "a full charge's head crit");
     assert_eq!(shot(0.0, 51.0), 46.0, "51 x 0.9");
+}
+
+/// Input set once a frame: the Classic keeps charging while it stays down.
+#[test]
+fn the_classic_holds_its_charge_on_input_set_once() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], "tf2:classic");
+    let ev = run(&mut sim, p, 60, |s, k| match k {
+        0 => s.intent(p).fire = true,
+        40 => s.intent(p).fire = false,
+        _ => {}
+    });
+    assert_eq!(fired(&ev), [40], "fired on the release only");
 }
 
 // ---- 16. Revolvers ----

@@ -284,17 +284,18 @@ impl StickyRules {
 #[allow(clippy::type_complexity)]
 pub fn charge(
     mut owners: Query<(Entity, &mut Intent, &Inventory, &Transform, Option<&Health>)>,
-    mut guns: Query<(Entity, &mut Tf2Sticky, &WeaponState, Option<&Magazine>)>,
+    mut guns: Query<(Entity, &mut Tf2Sticky, &mut WeaponState, Option<&Magazine>)>,
     clock: Res<SimClock>,
     first: Res<FirstTimePredicted>,
     mut sounds: MessageWriter<PredictedSound>,
     mut events: MessageWriter<WeaponEvent>,
 ) {
+    const HOLD: f64 = 1e-3;
     let now = clock.now;
     for (owner, mut intent, inv, at, health) in &mut owners {
         let alive = health.is_none_or(|h| h.current > 0.0);
         for &w in &inv.weapons {
-            let Ok((we, mut gun, st, mag)) = guns.get_mut(w) else { continue };
+            let Ok((we, mut gun, mut st, mag)) = guns.get_mut(w) else { continue };
             if inv.active != Some(w) || !alive {
                 if gun.charging.is_some() || gun.wait_release {
                     gun.charging = None;
@@ -304,18 +305,18 @@ pub fn charge(
             }
             let held = intent.fire;
             if gun.wait_release {
-                if !held {
-                    gun.wait_release = false;
+                if held {
+                    st.next_primary = st.next_primary.max(now + HOLD);
+                    continue;
                 }
-                intent.fire = false;
-                continue;
+                gun.wait_release = false;
             }
             match gun.charging {
                 None => {
                     let ready = st.next_primary <= now + 1e-6 && mag.is_none_or(|m| m.clip > 0);
                     if held && ready {
                         gun.charging = Some(now);
-                        intent.fire = false;
+                        st.next_primary = now + HOLD;
                         if let Some(s) = gun.params.charge_sound.clone()
                             && first.0
                         {
@@ -332,9 +333,6 @@ pub fn charge(
                             });
                         }
                         events.write(WeaponEvent { owner, weapon: we, kind: WeaponEventKind::Action(CHARGE), replay: !first.0 });
-                    } else if held && mag.is_some_and(|m| m.clip > 0) {
-                        // Not ready: nothing fires before a charge.
-                        intent.fire = false;
                     }
                 }
                 Some(start) => {
@@ -346,9 +344,10 @@ pub fn charge(
                         gun.charging = None;
                         gun.wait_release = held;
                         // One attack through: the frame fires the round.
+                        st.next_primary = now;
                         intent.fire = true;
                     } else {
-                        intent.fire = false;
+                        st.next_primary = now + HOLD;
                     }
                 }
             }

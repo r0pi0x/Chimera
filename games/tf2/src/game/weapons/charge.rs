@@ -22,9 +22,7 @@
 //!   each shot, from the tick), at a full charge's speed.
 //!
 //! Known shortcuts: the Stickybomb Launcher keeps its own charge
-//! (`sticky::charge`, same shape, but it holds the frame back by the
-//! button, which an app's once-a-frame input may read as a release on a
-//! frame's second tick); a Loose Cannon held to its fuse's end
+//! (`sticky::charge`, same shape); a Loose Cannon held to its fuse's end
 //! fires a ball that goes off at once (the game's goes off in the
 //! barrel, its own blast on its holder); the wobble's random draw is
 //! ours (the game's stream is unmeasured).

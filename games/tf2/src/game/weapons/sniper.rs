@@ -318,9 +318,12 @@ pub fn scope(
             if intent.fire && ready {
                 s.held = true;
                 s.charge = (s.charge + rate * dt as f32).min(p.charge_max);
-                intent.fire = false;
+                // Held back by the next attack time, the button left the
+                // player's (an app sets it once a frame).
+                st.next_primary = now + 1e-3;
             } else if s.held && !intent.fire {
                 s.held = false;
+                st.next_primary = now;
                 intent.fire = true;
             } else if !intent.fire {
                 s.held = false;
