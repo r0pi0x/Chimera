@@ -477,15 +477,23 @@ code. Order by what batch 1/2 needs:
    [specs/tf2/batch2_mechanics.md](../../../specs/tf2/batch2_mechanics.md)
    (measured): health on hit/kill, mini-crit conditions, bleed, the flare
    projectile (Flare Gun, Detonator, Scorch Shot) and the melee speed
-   buffs. Still to spec: knockback on hit of the Force-a-Nature and the
-   Shortstop's shove, the arrow, ball, cleaver/ornament, bolt and
-   cannonball projectiles, lunchbox/drink timings, meters, sniper and
-   revolver variants. Looks no spec names yet (batch 2's polish): the
-   mini-crit's hit sound, the "MINI CRIT!" and "CRITICAL HIT!!!" texts
-   over a victim, the flare's trail and its crit glow (which system, on
-   what, by team), what a Flare Gun flare ending on the world shows, and
-   whether a Pyro's 0.25-s burn look counts as burning for the flares'
-   crits.
+   buffs. **The rest specified 2026-11-23** in
+   [specs/tf2/batch2b_mechanics.md](../../../specs/tf2/batch2b_mechanics.md)
+   (measured): the arrow, bolt, ball, ornament, cleaver, Bison ring,
+   cannonball and Caber; the Force-a-Nature's knockback and self push,
+   the Shortstop's shove; lunchbox items, drinks and jars with their
+   recharge; the hype, boost, crikey and heads meters; the Machina,
+   Sydney Sleeper and Classic; the Ambassador, Diamondback and Enforcer;
+   part 1's Back Scatter range (3-D), Eyelander drain and flare
+   re-ignition; and the looks batch 2's polish asked for (the mini-crit
+   sound `TFPlayer.CritHitMini`, the `crit_text`/`minicrit_text`
+   particles, `flaregun_trail_<team>` and `flaregun_crit_<team>` on the
+   flare's origin, `flaregun_destroyed` as the likely world-impact look,
+   and another Pyro's burn counting for the flare's crit). Left open
+   (its Open questions): the Loose Cannon's impact push and the shove's
+   direction law (puppet bots as victims), physics projectiles' drag
+   laws, the Guillotine's crit on stunned targets, the Soda Popper's air
+   jumps, Bonk's immunity, kill-based refills, where the crit texts sit.
 3. Airblast, shield charge, cloak/disguise, medigun, banners, building
    rules (batch 3): each its own spec file, the large ones in parts.
 
