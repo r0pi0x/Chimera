@@ -557,6 +557,21 @@ code. Order by what batch 1/2 needs:
    jumps, Bonk's immunity, kill-based refills, where the crit texts sit.
 3. Airblast, shield charge, cloak/disguise, medigun, banners, building
    rules (batch 3): each its own spec file, the large ones in parts.
+   **Part 1 specified 2026-11-23** in
+   [specs/tf2/batch3_mechanics.md](../../../specs/tf2/batch3_mechanics.md)
+   (measured): the shield charge as its condition runs it (750 HU/s,
+   1.5 s meter, 12 s recharge, the turn cap per attribute, the crit-boost
+   condition below 75 %, Tide Turner, boots, Claidheamh Mòr, Skullcutter
+   and Eyelander interactions), the three banners (rage per damage, the
+   horn, the 450 HU pulsed buff and each buff's effect), the three
+   watches (fades, drain and regen, the 20 % cloak cut, the Dead Ringer's
+   feign and cut), Your Eternal Reward, Big Earner, Spy-cicle, disguise
+   basics, and batch 2's leftovers (Dalokohs end, Bonk immunity, Soda
+   Popper air jumps, Diamondback cap, Bazaar heads). Left open: what the
+   shield entity itself does (attack2 start, impact damage, the crit or
+   mini-crit after an impact, debuff removal), because VScript cannot
+   equip a wearable on the local player; sappers (need a building);
+   airblast, medigun and buildings are later parts.
 
 ## 7. Recommended order
 
