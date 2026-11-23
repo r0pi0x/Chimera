@@ -96,7 +96,7 @@ impl DamageClass {
             DamageKind::Drown => Self::DROWN,
             DamageKind::Poison => Self::POISON,
             DamageKind::Radiation => Self::RADIATION,
-            DamageKind::Generic => Self::GENERIC,
+            DamageKind::Generic | DamageKind::Bleed => Self::GENERIC,
         }
     }
 }

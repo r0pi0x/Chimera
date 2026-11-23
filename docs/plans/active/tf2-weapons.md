@@ -1,6 +1,6 @@
 # TF2 weapons: every player weapon, what is in, what is left
 
-Status: batches 0 and 1 built (2026-11-23; section 4); batches 2-3 planned.
+Status: batches 0 and 1 built, batch 2's first five families built (2026-11-23; section 4); the rest of batch 2 and batch 3 planned.
 Inventory by class and slot, then a phased build order.
 
 Sources: the installed game's `scripts/items/items_game.txt` (read locally
@@ -337,9 +337,9 @@ install: tests/it/heavy/items.rs):
   Back Scratcher (packs/healers recorded, none in a party match),
   Homewrecker, Maul, Fists of Steel (ranged/melee taken, the next
   deploy's ×2), Holy Mackerel, AWPer Hand, Black Rose.
-- **Partial**: Direct Hit (mini-crit vs airborne: batch 2), Neon
-  Annihilator (crit vs wet: batch 2), Bushwacka (mini-crit promotion:
-  batch 2; its damage taken applied), Quickiebomb (destroying enemy
+- **Completed by batch 2**: Direct Hit (mini-crit vs a blast-launched
+  victim), Bushwacka (mini-crits become crits).
+- **Partial**: Neon Annihilator (crit vs wet: batch 2), Quickiebomb (destroying enemy
   stickies), Loch-n-Load (shatter and stats done; vs buildings), Tomislav
   (silent spin sounds), The Original (centre fire done; its models),
   Claidheamohmor (stats, sword and damage taken; the shield charge is
@@ -377,23 +377,48 @@ install: tests/it/heavy/items.rs):
 
 Each mechanic is reused by several weapons; build it once.
 
-- *Health on hit/kill*: Black Box, Blutsauger, Powerjack, Conniver's
-  Kunai, Candy Cane, Eyelander heads.
-- *Mini-crit conditions*: airborne (Direct Hit, Reserve Shooter, Market
-  Gardener), from behind (Back Scatter), wet/burning (Axtinguisher,
-  Flare Gun family).
-- *Bleed* (DoT like afterburn): Boston Basher, Wrap Assassin, Shiv,
-  Southern Hospitality, Flying Guillotine.
-- *Speed/jump buffs on hit or on state*: Equalizer, Escape Plan,
-  Disciplinary Action, Eviction Notice, Gloves of Running Urgently,
-  Atomizer.
-- *Knockback on hit* (Force-a-Nature, Scorch Shot), *shove* (Shortstop).
-- *New projectile types*: flare (Flare Gun, Detonator, Scorch Shot),
-  arrow (Huntsman, Crossbow), ball (Sandman), cleaver/ornament, energy
-  bolt (Bison), cannonball (Loose Cannon), explosive melee (Caber).
+**Built 2026-11-23** (specs/tf2/batch2_mechanics.md; `game::items::effects`,
+`game::weapons::flare`, Chimera's `status`: a bleeding wound and a speed
+boost any game can give; scenario tests: games/tf2/tests/it/batch2.rs):
+each mechanic a rule named by the item's attributes on its `tf2:item`
+hook, each weapon data/items.toml's entry plus those.
+
+- *Health on hit/kill*: Black Box (per rocket, by enemy damage), Blutsauger
+  (3 a needle; its -2 on the Medic's regeneration, now built: 3 rising to
+  6), Powerjack, Conniver's Kunai (backstab heal to 3x, overheal drain),
+  Candy Cane (a small kit dropped, taken for 20 %, 32 s), Eyelander,
+  Headtaker and Nessie's Nine Iron (heads: health and speed up to 4).
+- *Mini-crit/crit conditions*: a victim in the air after another's blast
+  (`BlastLaunched`: the Direct Hit now complete, the Reserve Shooter),
+  the Market Gardener, the Back Scatter, burning victims (Flare Gun crit,
+  Detonator and Scorch Shot mini-crit), the Axtinguisher and Postal
+  Pummeler (fitted burn law, burn put out, boost on a burning kill); the
+  Escape Plan's mark; the Bushwacka's mini-crits as crits (now complete).
+- *Bleed*: Boston Basher and Three-Rune Blade (with the miss's self hit),
+  Tribalman's Shiv, Southern Hospitality. Flying Guillotine and Wrap
+  Assassin wait for their projectiles' spec.
+- *Flares*: Flare Gun, Detonator (attack2 detonation, own blast), Scorch
+  Shot (bounce, push, floor explosion) on an abstract flare gun base
+  (data/weapons/flaregun.toml).
+- *Speed buffs*: the speed boost (x1.4, +105 at most), Escape Plan,
+  Equalizer, Disciplinary Action, Eviction Notice, Gloves of Running
+  Urgently, Atomizer (an air jump while out).
+- Provisional numbers (the spec's open questions) are each module's Known
+  shortcuts: the Detonator's own blast law and push, the kit's life and
+  reach, the head excess's drain, heads lost at death, the Axtinguisher's
+  law beyond flare burns.
+
+Still to build in batch 2:
+
+- *Mini-crit conditions*: wet (Neon Annihilator's crit).
+- *Bleed*: Wrap Assassin, Flying Guillotine (their projectiles first).
+- *Knockback on hit* (Force-a-Nature), *shove* (Shortstop).
+- *New projectile types*: arrow (Huntsman, Crossbow), ball (Sandman),
+  cleaver/ornament, energy bolt (Bison), cannonball (Loose Cannon),
+  explosive melee (Caber).
 - *Consumables*: lunchbox (Sandvich family), drinks (Bonk, Crit-a-Cola),
   jars (Jarate, Mad Milk): one "use and cooldown" slot plus a status.
-- *Meters*: head counter (Eyelander, Bazaar), Hype (Soda Popper), Boost
+- *Meters*: head counter (Bazaar; the Eyelander's is built), Hype (Soda Popper), Boost
   (Baby Face's), crikey (Cleaner's Carbine), kill-based refills.
 - *Sniper variants*: pierce, Classic's charge, Sydney's jarate shot.
 - *Revolver variants*: Ambassador, Diamondback, Enforcer.

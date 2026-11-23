@@ -34,6 +34,10 @@ tf_weapon_wrench = "tf2:tf_weapon_wrench"
 tf_weapon_sniperrifle = "tf2:tf_weapon_sniperrifle"
 tf_weapon_club = "tf2:tf_weapon_club"
 tf_weapon_knife = "tf2:tf_weapon_knife"
+tf_weapon_syringegun_medic = "tf2:tf_weapon_syringegun_medic"
+tf_weapon_scattergun = "tf2:tf_weapon_scattergun"
+tf_weapon_flaregun = "tf2:tf_weapon_flaregun"
+tf_weapon_bat = "tf2:tf_weapon_bat"
 
 # Batch 1 (33 items, 31 entries).
 [items.winger]
@@ -66,7 +70,6 @@ note = "cannot carry the intelligence (no flags in a party match)"
 [items.direct_hit]
 index = 127
 batch = 1
-note = "mini-crit vs blast-airborne targets (batch 2: mini-crit conditions)"
 
 [items.pain_train]
 index = 154
@@ -175,7 +178,6 @@ note = "its own models and sounds"
 [items.bushwacka]
 index = 232
 batch = 1
-note = "mini-crits become crits (no mini-crits yet: batch 2)"
 
 [items.darwins_danger_shield]
 index = 231
@@ -193,3 +195,114 @@ note = "worn: nothing gives a wearable yet; regen, scoped knockback and flinch"
 index = 727
 batch = 1
 note = "its own models; its taunt"
+
+# Batch 2 (specs/tf2/batch2_mechanics.md; `items::effects`, `weapons::flare`).
+[items.blutsauger]
+index = 36
+batch = 2
+
+[items.axtinguisher]
+index = 38
+batch = 2
+
+[items.flare_gun]
+index = 39
+batch = 2
+
+[items.equalizer]
+index = 128
+batch = 2
+note = "healing from Medics x0.1 (no Medi Gun yet)"
+
+[items.eyelander]
+index = 132
+batch = 2
+note = "the shield charge (batch 3); decapitation look"
+
+[items.southern_hospitality]
+index = 155
+batch = 2
+note = "building rates (no buildings yet)"
+
+[items.tribalmans_shiv]
+index = 171
+batch = 2
+
+[items.powerjack]
+index = 214
+batch = 2
+
+[items.black_box]
+index = 228
+batch = 2
+
+[items.gloves_of_running_urgently]
+index = 239
+batch = 2
+
+[items.horseless_headless_horsemanns_headtaker]
+index = 266
+batch = 2
+note = "the shield charge (batch 3); decapitation look"
+
+[items.candy_cane]
+index = 317
+batch = 2
+
+[items.boston_basher]
+index = 325
+batch = 2
+
+[items.detonator]
+index = 351
+batch = 2
+
+[items.connivers_kunai]
+index = 356
+batch = 2
+
+[items.reserve_shooter]
+index = 415
+batch = 2
+
+[items.market_gardener]
+index = 416
+batch = 2
+
+[items.eviction_notice]
+index = 426
+batch = 2
+
+[items.disciplinary_action]
+index = 447
+batch = 2
+
+[items.atomizer]
+index = 450
+batch = 2
+
+[items.three_rune_blade]
+index = 452
+batch = 2
+
+[items.postal_pummeler]
+index = 457
+batch = 2
+
+[items.nessies_nine_iron]
+index = 482
+batch = 2
+note = "the shield charge (batch 3); decapitation look"
+
+[items.scorch_shot]
+index = 740
+batch = 2
+
+[items.escape_plan]
+index = 775
+batch = 2
+note = "healing from Medics x0.1 (no Medi Gun yet); the mark's icon"
+
+[items.back_scatter]
+index = 1103
+batch = 2

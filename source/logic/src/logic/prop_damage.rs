@@ -750,7 +750,8 @@ fn client_damage(w: &mut LogicWorld, id: EntId, p: &Prop, hit: Hit) {
         | DamageKind::Burn
         | DamageKind::Drown
         | DamageKind::Poison
-        | DamageKind::Radiation => return,
+        | DamageKind::Radiation
+        | DamageKind::Bleed => return,
         DamageKind::Melee => CLIENT_OTHER_DAMAGE,
     };
     let p = prop(w, id).unwrap();

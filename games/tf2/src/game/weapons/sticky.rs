@@ -529,6 +529,7 @@ pub fn detonate(
             ramp: (age <= p.flat_after).then_some(ramp),
             scale: charged.get(e).map_or(1.0, |c| c.0),
             mini_crit: false,
+            self_law: None,
         };
         // Snapped onto a floor within 24 units below, with the normal of
         // the surface it stuck to (effects.md 13).

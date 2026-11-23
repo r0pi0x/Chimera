@@ -166,9 +166,9 @@ module list is `docs/modules.md`.
 - 8: The game's seams
 - 22: Movement and bodies
 - 34: Weapons and damage
-- 45: Effects, sound, HUD
-- 58: Rules, network, assets
-- 71: Generalize on the second user | A game may build anything it needs inside its own crate first
+- 46: Effects, sound, HUD
+- 59: Rules, network, assets
+- 72: Generalize on the second user | A game may build anything it needs inside its own crate first
 
 ## docs/formats.md
 

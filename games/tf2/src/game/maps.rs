@@ -445,7 +445,7 @@ pub fn add_guns_with(
             }
             Err(e) => warnings.push(e),
         }
-        for (_, key, model) in PROJECTILES.iter().filter(|(g, ..)| *g == base) {
+        for (_, key, model) in PROJECTILES.iter().filter(|(g, ..)| *g == base || *g == gun) {
             // Once (an unlock and its base share it).
             if projectiles.contains(key) {
                 continue;

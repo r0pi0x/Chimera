@@ -37,6 +37,7 @@
 //! docs/OBSERVABILITY.md, section 1.
 
 mod airblast;
+mod batch2;
 mod crit_boost;
 mod ice;
 mod items;

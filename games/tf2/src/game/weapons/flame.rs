@@ -478,6 +478,10 @@ pub struct Burning {
     pub damage: f32,
     pub interval: f32,
     pub harmless: bool,
+    /// Each next tick `interval` after the last one's tick (a flare's
+    /// burn: 0.5 s every 34 ticks, batch2_mechanics.md); false: on the
+    /// burn's own 0.5-s grid (the Flame Thrower's).
+    pub from_tick: bool,
 }
 
 /// The stock Flame Thrower's numbers (its data's).
@@ -498,6 +502,7 @@ pub fn ignited(now: f64, attacker: Entity, weapon: &'static str, p: &FlameParams
         damage: p.burn_damage,
         interval: p.burn_interval,
         harmless: false,
+        from_tick: false,
     }
 }
 
@@ -895,6 +900,7 @@ pub fn flames(
                         damage: 0.0,
                         interval: p.burn_interval,
                         harmless: true,
+                        from_tick: false,
                     }
                 } else {
                     let old = burning.filter(|b| !b.harmless);
@@ -906,6 +912,7 @@ pub fn flames(
                         damage: p.burn_damage,
                         interval: p.burn_interval,
                         harmless: false,
+                        from_tick: false,
                     }
                 };
                 commands.entity(v).insert(lit);
@@ -997,7 +1004,7 @@ pub fn afterburn(
                 force: Vec3::ZERO,
             });
             b.left -= b.interval;
-            b.next += b.interval as f64;
+            b.next = if b.from_tick { now + b.interval as f64 } else { b.next + b.interval as f64 };
         }
     }
 }

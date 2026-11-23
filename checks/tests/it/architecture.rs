@@ -164,6 +164,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // guns' hit regions, the server's `sv_announcer`.
     ("announce", &["core", "console", "map", "weapon"]),
     ("dominations", &["core", "weapon"]),
+    ("status", &["core"]),
     // Kill voices (chimera/sim): each kill asked of the killer's game, the
     // outcome settled before the announcer.
     ("kill_voice", &["core", "slots"]),

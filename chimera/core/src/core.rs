@@ -681,6 +681,9 @@ pub enum DamageKind {
     /// bits 131072 and 262144): HL2's suit lets them through.
     Poison,
     Radiation,
+    /// A bleeding wound's tick (`chimera_sim::status::Bleeding`: TF2's
+    /// bleed): damage over time, no crit, no on-hit effect of its own.
+    Bleed,
 }
 
 impl DamageKind {

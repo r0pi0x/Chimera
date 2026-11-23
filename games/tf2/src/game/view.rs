@@ -69,7 +69,7 @@ use crate::map::{ViewModelEventKind, anim::AnimEvent};
 
 use super::weapons::{
     BAT, BONESAW, BOTTLE, FIREAXE, FISTS, FLAMETHROWER, GRENADE_LAUNCHER, KNIFE, KUKRI, MINIGUN, PISTOL_SCOUT, REVOLVER,
-    ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN, SHOVEL, SMG, SNIPER_RIFLE, STICKY_LAUNCHER, SYRINGE_GUN, WRENCH, airblast, melee, minigun, sticky,
+    ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN, SHOVEL, SMG, SNIPER_RIFLE, STICKY_LAUNCHER, SYRINGE_GUN, FLAREGUN, WRENCH, airblast, melee, minigun, sticky,
 };
 use crate::map::GameFov;
 
@@ -258,6 +258,9 @@ pub const SEQUENCES: &[(&str, Sequences)] = &[
         },
     ),
     (SYRINGE_GUN, clip((P_DRAW, "sg_draw"), (P_IDLE, "sg_idle"), (P_FIRE, "sg_fire"), (P_RELOAD, "sg_reload"))),
+    // The flare guns animate as `item1` (their `anim_slot`): picked by
+    // activity (no name: `named`).
+    (FLAREGUN, plain(("ACT_ITEM1_VM_DRAW", ""), ("ACT_ITEM1_VM_IDLE", ""), ("ACT_ITEM1_VM_PRIMARYATTACK", ""))),
 ];
 
 /// The guns' sequences in another class's hands than their own
@@ -357,6 +360,9 @@ fn of_state(s: &ViewState) -> Option<&'static Sequences> {
 
 /// The pick of a table entry: its sequence by name (none: nothing).
 fn named(s: Option<(&'static str, &'static str)>) -> Pick {
+    if let Some((activity, "")) = s {
+        return Pick::activities(&[activity]);
+    }
     Pick::Names(s.map(|(_, n)| n.to_string()).into_iter().collect())
 }
 

@@ -79,7 +79,7 @@ pub fn explode(
         let Ok((_, deflected)) = flyers.get(hit.flyer) else { continue };
         // 1 unit off the surface it touched (effects.md 13).
         let at = world.touched(hit.point, hit.normal, hit.other);
-        let blast = Blast { params: p, radius: p.radius, ramp: p.by_distance.then_some(ramp), scale: 1.0, mini_crit: deflected };
+        let blast = Blast { params: p, radius: p.radius, ramp: p.by_distance.then_some(ramp), scale: 1.0, mini_crit: deflected, self_law: None };
         world.detonate(&blast, &at, hit.owner, hit.weapon, hit.other);
         gone.write(FlyerGone {
             flyer: hit.flyer,

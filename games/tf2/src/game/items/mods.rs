@@ -28,6 +28,10 @@
 //!   (20 at once on a deploy after a refill), never below 100; holstered,
 //!   it comes back as fast; his health keeps its share
 //!   (`movement::class_health` takes `ItemDrains::of`).
+//! - **Batch 2** (specs/tf2/batch2_mechanics.md): the attributes of the
+//!   batch-2 mechanics ride on the same hook (`max_health`, `taken_blast`
+//!   here; crits, bleed, flares' burns, heals on kill, heads, kits, speed
+//!   buffs and regeneration in `super::effects`).
 //! - **Switching** (4.9, `holster`, predicted with the switch): the
 //!   weapon switched to deploys in its `draw` × the one switched from's
 //!   `holster` (`mult_switch_from_wep_deploy_time`, only when that one had
@@ -80,6 +84,61 @@ pub struct ItemParams {
     pub base: String,
     /// Its model's skin (`visuals` `skin`; none: the team's).
     pub skin: Option<i32>,
+    /// Batch 2 (specs/tf2/batch2_mechanics.md; `super::effects`): max
+    /// health added (`add_maxhealth`, provided), blast damage taken
+    /// (`mult_dmgtaken_from_explosions`).
+    pub max_health: f32,
+    pub taken_blast: f32,
+    /// Its weapon's own damage before rounding (the class script's ×
+    /// its damage attributes): the Axtinguisher's and Equalizer's laws.
+    pub base_damage: f32,
+    /// Health per rocket from the enemy damage it dealt (the Black Box's
+    /// `add_health_on_radius_damage`, §1.1).
+    pub heal_on_radius: f32,
+    /// A backstab kill heals the victim's health, overheal to 3 × max
+    /// (`sanguisuge`, §1.4).
+    pub sanguisuge: bool,
+    /// A kill drops a small health kit (`drop_health_pack_on_kill`, §1.5).
+    pub drop_kit: bool,
+    /// A kill takes a head (`decapitate_type`, §1.6).
+    pub decapitate: bool,
+    /// Mini-crits a victim in the air after a blast's push
+    /// (`mini_crit_airborne`, §2.1).
+    pub mini_crit_airborne: bool,
+    /// Crits while its holder blast jumps (`crit_while_airborne`, §2.2).
+    pub crit_airborne: bool,
+    /// Mini-crits from behind and close (`closerange_backattack_minicrits`,
+    /// §2.3).
+    pub back_attack: bool,
+    /// Mini-crits a burning victim (`or_minicrit_vs_playercond_burning`).
+    pub minicrit_burning: bool,
+    /// Crits a burning victim (the flare gun class's own rule in its
+    /// first mode, the Flare Gun's; its attribute is a tooltip, §2.4).
+    pub crit_burning: bool,
+    /// Mini-crits a burning victim, its damage growing with the burn
+    /// left, and puts the burn out (`attack_minicrits_and_consumes_burning`,
+    /// §2.5).
+    pub consume_burning: bool,
+    /// Every mini-crit a full crit (`minicrits_become_crits`).
+    pub minicrits_crit: bool,
+    /// A hit bleeds for this long (s; `bleeding_duration`, §3).
+    pub bleed: f32,
+    /// A swing at nothing hits its holder (`hit_self_on_miss`, §3).
+    pub hit_self_on_miss: bool,
+    /// A hit on an enemy boosts its holder's speed this long (s;
+    /// `speed_boost_on_hit`, §5.5).
+    pub boost_on_hit: f32,
+    /// A hit on a teammate boosts both (`speed_buff_ally`, §5.4).
+    pub buff_ally: bool,
+    /// The Equalizer's damage by health, the Escape Plan's speed by
+    /// health (a shovel's `set_weapon_mode` 1 and 2, §5.2, §5.3).
+    pub damage_by_health: bool,
+    pub speed_by_health: bool,
+    /// Every hit on its holder mini-crits while it is out
+    /// (`self_mark_for_death`, §5.2).
+    pub mark_self: bool,
+    /// Air jumps added while it is out (`air_dash_count`, §5.7).
+    pub air_dash: f32,
 }
 
 impl Default for ItemParams {
@@ -106,6 +165,28 @@ impl Default for ItemParams {
             sword: false,
             base: String::new(),
             skin: None,
+            max_health: 0.0,
+            taken_blast: 1.0,
+            base_damage: 0.0,
+            heal_on_radius: 0.0,
+            sanguisuge: false,
+            drop_kit: false,
+            decapitate: false,
+            mini_crit_airborne: false,
+            crit_airborne: false,
+            back_attack: false,
+            minicrit_burning: false,
+            crit_burning: false,
+            consume_burning: false,
+            minicrits_crit: false,
+            bleed: 0.0,
+            hit_self_on_miss: false,
+            boost_on_hit: 0.0,
+            buff_ally: false,
+            damage_by_health: false,
+            speed_by_health: false,
+            mark_self: false,
+            air_dash: 0.0,
         }
     }
 }
@@ -137,6 +218,28 @@ impl ItemParams {
             sword: r.flag("is_a_sword"),
             base: String::new(),
             skin: r.visuals.skin.and_then(|s| i32::try_from(s).ok()),
+            max_health: add("add_maxhealth"),
+            taken_blast: a("mult_dmgtaken_from_explosions"),
+            base_damage: (r.base.get("damage").copied().unwrap_or(0.0) * r.attr("mult_dmg", 1.0) * r.attr("mult_dmg_vs_players", 1.0)) as f32,
+            heal_on_radius: add("add_health_on_radius_damage"),
+            sanguisuge: r.flag("sanguisuge"),
+            drop_kit: r.flag("drop_health_pack_on_kill"),
+            decapitate: r.flag("decapitate_type"),
+            mini_crit_airborne: r.flag("mini_crit_airborne"),
+            crit_airborne: r.flag("crit_while_airborne"),
+            back_attack: r.flag("closerange_backattack_minicrits"),
+            minicrit_burning: r.flag("or_minicrit_vs_playercond_burning"),
+            crit_burning: r.class == "tf_weapon_flaregun" && add("set_weapon_mode") == 0.0,
+            consume_burning: r.flag("attack_minicrits_and_consumes_burning"),
+            minicrits_crit: r.flag("minicrits_become_crits"),
+            bleed: add("bleeding_duration"),
+            hit_self_on_miss: r.flag("hit_self_on_miss"),
+            boost_on_hit: add("speed_boost_on_hit"),
+            buff_ally: r.flag("speed_buff_ally"),
+            damage_by_health: r.class == "tf_weapon_shovel" && add("set_weapon_mode") == 1.0,
+            speed_by_health: r.class == "tf_weapon_shovel" && add("set_weapon_mode") == 2.0,
+            mark_self: r.flag("self_mark_for_death"),
+            air_dash: add("air_dash_count"),
         }
     }
 }
@@ -156,11 +259,34 @@ pub struct Factors {
     pub taken_ranged: f32,
     pub taken_melee: f32,
     pub spun_resist: f32,
+    /// Blast damage taken (provided).
+    pub taken_blast: f32,
+    /// Max health added (points, provided).
+    pub max_health: f32,
+    /// Air jumps added, the Escape Plan's speed by health and its mark
+    /// for death (the active weapon's).
+    pub air_dash: u8,
+    pub speed_by_health: bool,
+    pub marked: bool,
 }
 
 impl Default for Factors {
     fn default() -> Self {
-        Self { speed: 1.0, jump: 1.0, taken: 1.0, taken_bullets: 1.0, taken_fire: 1.0, taken_ranged: 1.0, taken_melee: 1.0, spun_resist: 1.0 }
+        Self {
+            speed: 1.0,
+            jump: 1.0,
+            taken: 1.0,
+            taken_bullets: 1.0,
+            taken_fire: 1.0,
+            taken_ranged: 1.0,
+            taken_melee: 1.0,
+            spun_resist: 1.0,
+            taken_blast: 1.0,
+            max_health: 0.0,
+            air_dash: 0,
+            speed_by_health: false,
+            marked: false,
+        }
     }
 }
 
@@ -177,12 +303,17 @@ impl Factors {
                 f.taken_bullets *= p.taken_bullets;
                 f.taken_fire *= p.taken_fire;
                 f.spun_resist *= p.spun_resist;
+                f.taken_blast *= p.taken_blast;
+                f.max_health += p.max_health;
             }
             if active {
                 f.speed *= p.move_speed_active;
                 f.jump *= p.jump;
                 f.taken_ranged *= p.taken_ranged;
                 f.taken_melee *= p.taken_melee;
+                f.air_dash = f.air_dash.saturating_add(p.air_dash.max(0.0) as u8);
+                f.speed_by_health |= p.speed_by_health;
+                f.marked |= p.mark_self;
             }
         }
         f
@@ -195,6 +326,7 @@ impl Factors {
         match kind {
             DamageKind::Bullet => x *= self.taken_bullets,
             DamageKind::Burn => x *= self.taken_fire,
+            k if k.is_blast() => x *= self.taken_blast,
             _ => {}
         }
         if spun && health - x <= max * 0.5 {
@@ -259,7 +391,7 @@ pub fn heals(
     let mut gains: Vec<(Entity, f32)> = Vec::new();
     for t in taken.read() {
         let d = &t.damage;
-        if d.kind == DamageKind::Burn || d.amount <= 0.0 {
+        if matches!(d.kind, DamageKind::Burn | DamageKind::Bleed) || d.amount <= 0.0 {
             continue;
         }
         let Some((p, weapon)) = item(d) else { continue };
@@ -409,6 +541,7 @@ pub fn holster(
 /// `tf2:item`'s hook and rules.
 pub fn add(app: &mut App) {
     use chimera_sim::weapon::data::WeaponDataAppExt;
+    super::effects::add(app);
     app.register_weapon_hook::<ItemParams>(super::ITEM_HOOK, |e, _, p| {
         e.insert(Tf2Item(p.clone()));
     })

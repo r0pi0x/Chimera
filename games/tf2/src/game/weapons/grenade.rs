@@ -99,7 +99,7 @@ pub fn touch(
         if enemy && !rolled {
             // Its 64-unit line through its centre (effects.md 13).
             let at = world.pipe_hit(t.translation, hit.velocity);
-            let blast = Blast { params: p, radius: p.radius, ramp: None, scale: 1.0, mini_crit: deflected };
+            let blast = Blast { params: p, radius: p.radius, ramp: None, scale: 1.0, mini_crit: deflected, self_law: None };
             world.detonate(&blast, &at, hit.owner, hit.weapon, hit.other);
             gone.write(FlyerGone { flyer: hit.flyer, weapon: hit.weapon, owner: hit.owner, at: at.centre, expired: false });
             commands.entity(hit.flyer).despawn();
@@ -134,7 +134,7 @@ pub fn fuse(mut ends: MessageReader<FlyerGone>, rules: Res<GrenadeRules>, deflec
             continue;
         }
         let Some((p, _)) = rules.0.get(end.weapon) else { continue };
-        let blast = Blast { params: p, radius: p.radius, ramp: None, scale: p.fuse_scale.unwrap_or(1.0), mini_crit: deflected.contains(end.flyer) };
+        let blast = Blast { params: p, radius: p.radius, ramp: None, scale: p.fuse_scale.unwrap_or(1.0), mini_crit: deflected.contains(end.flyer), self_law: None };
         // Snapped onto a floor within 24 units below (effects.md 13).
         let at = world.fused(end.at, None);
         world.detonate(&blast, &at, end.owner, end.weapon, None);

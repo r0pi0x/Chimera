@@ -37,6 +37,7 @@ pub mod movement;
 pub mod rule_module;
 pub mod server_docs;
 pub mod spawning;
+pub mod status;
 #[cfg(feature = "testkit")]
 pub mod testkit;
 pub mod weapon;

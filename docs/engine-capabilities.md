@@ -41,6 +41,7 @@ look here; if it's missing, see "Generalize on the second user" below.
 | Blasts and grenades | `chimera_sim::weapon::grenade` (`Blast`, `Throwable`) | a `Blast` with radius and falloff; a thrown weapon as data |
 | Lag compensation | `chimera_sim::weapon::lagcomp` | a network server traces remote players' shots where they saw them; nothing to add for hitscan |
 | Behaviour hooks | `chimera_sim::weapon::data` (registered hooks by name) | `[hooks."<id>:<hook>"]` in the data, the hook registered in Rust |
+| Bleeding and speed boosts | `chimera_sim::status` (`Bleeding`, `SpeedBoost`) | `status::add(app)`; insert `Bleeding::start(..)` (refresh with `Bleeding::refresh`) on a hit: ticks of `DamageKind::Bleed`; a `SpeedBoost` your movement multiplies by `factor(base)` |
 
 ## Effects, sound, HUD
 

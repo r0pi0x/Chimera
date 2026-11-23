@@ -763,7 +763,9 @@ fn a_kept_gun_keeps_its_projectiles_model() {
 #[test]
 fn every_projectile_flies_nose_first() {
     use chimera_world::map::loose::{LooseAsset, LooseAssets};
-    for (i, (gun, key, _)) in tf2::game::weapons::PROJECTILES.iter().enumerate() {
+    // The stock guns' (an unlock's base or kit has no weapon of its own).
+    let stock: Vec<&str> = tf2::game::weapons::all_weapons().collect();
+    for (i, (gun, key, _)) in tf2::game::weapons::PROJECTILES.iter().filter(|(g, ..)| stock.contains(g)).enumerate() {
         let mut sim = sim();
         let (p, _) = holding(&mut sim, greybox::SPAWNS[0], gun);
         let nose = [Vec3::new(0.3, -0.8, 0.5), Vec3::Y, Vec3::NEG_X, Vec3::new(-0.2, 0.1, 0.9)][i % 4].normalize();

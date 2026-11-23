@@ -64,7 +64,13 @@
 //!
 //! Each damage rounds to whole points, of kind blast, naming the gun.
 //!
-//! Known shortcuts: crits are off; another game's movement keeps its own
+//! **Conditions** (batch2_mechanics.md 2): another's push that leaves a
+//! victim in the air sets `BlastLaunched` (until he lands); a victim the
+//! blast's weapon's conditions name (`items::effects::Conditions`: the
+//! Direct Hit's airborne victim, a flare's burning one, a marked one)
+//! takes it as a mini-crit, as a deflected rocket does.
+//!
+//! Known shortcuts: random crits are off; another game's movement keeps its own
 //! air rules for a push in flight (Combat Arms' speed clamp, Halo's air
 //! control) where TF2 keeps it whole until landing; "airborne" ignores
 //! water (a swimming Soldier counts as airborne); a bullet push reads the summed damage
@@ -191,6 +197,9 @@ pub struct Blast<'a> {
     /// 7.4): x `MINI_CRIT` on the damage after the ramp-up, no fall-off
     /// (weapons.md 2.5).
     pub mini_crit: bool,
+    /// The owner's own damage at r units, in place of the splash (the
+    /// flares' provisional law, batch2_mechanics.md 4.3); None: the splash.
+    pub self_law: Option<fn(f32) -> f32>,
 }
 
 /// A mini-crit's damage factor (weapons.md 2.5).
@@ -258,6 +267,11 @@ pub struct Placement {
 /// Launched by his own blast, until he lands (weapons.md 5.4).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
 pub struct BlastJumping;
+
+/// In the air after another's blast pushed him, until he lands
+/// (batch2_mechanics.md 2.1: what the airborne mini-crit asks).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct BlastLaunched;
 
 /// The splash factor at `r` units of a blast of `radius` with `edge` at
 /// its edge, clamped at the edge (one reached by its box past the radius
@@ -349,6 +363,8 @@ pub struct BlastWorld<'w, 's> {
     decals: MessageWriter<'w, crate::map::PlaceDecal>,
     /// The blast as measured (`BlastDealt`: the sandbox's blast rings).
     dealt_out: MessageWriter<'w, chimera_sim::weapon::grenade::BlastDealt>,
+    /// Who a blast mini-crits (`crate::game::items::effects::Conditions`).
+    pub conditions: crate::game::items::effects::Conditions<'w, 's>,
     commands: Commands<'w, 's>,
 }
 
@@ -517,6 +533,10 @@ impl BlastWorld<'_, '_> {
             let airborne = state.is_some_and(|s| !s.on_ground);
             if is_owner {
                 let scale = if airborne { p.self_air_scale } else { p.self_ground_scale };
+                let f = match blast.self_law {
+                    Some(law) if !hit => law(r),
+                    _ => f,
+                };
                 own = Some(Dealt {
                     e,
                     points: p.self_damage.unwrap_or(p.damage) * f * scale,
@@ -531,7 +551,8 @@ impl BlastWorld<'_, '_> {
                     Some(k) => modifier(owner_at.map_or(0.0, |o| o.distance(c) / U), k),
                     None => 1.0,
                 };
-                let m = if blast.mini_crit { m.max(1.0) * MINI_CRIT } else { m };
+                let mini = blast.mini_crit || self.conditions.blast_mini_crit(weapon, owner, e);
+                let m = if mini { m.max(1.0) * MINI_CRIT } else { m };
                 dealt.push(Dealt { e, points: p.damage * blast.scale * m * f, centre: c, scale: p.push_other, size: tf2_hull(ducked, false), own: false });
             }
         }
@@ -567,7 +588,7 @@ impl BlastWorld<'_, '_> {
             self.inflicted.write(Inflicted { target: d.e, amount, from: centre });
             let half = if !d.own && self.heavy(d.e) { HEAVY_KNOCKBACK } else { 1.0 };
             let dv = push(d.points, d.scale, d.size, dir) * half * U;
-            self.shove(d.e, dv, d.own);
+            self.shove_by(d.e, dv, d.own, true);
         }
         self.dealt_out.write(chimera_sim::weapon::grenade::BlastDealt {
             attacker: owner,
@@ -600,9 +621,38 @@ impl BlastWorld<'_, '_> {
         }
     }
 
+    /// A hit's push on `target` (5.4): `points` at `scale` from `from`
+    /// (m) lowered 10 to his centre, a Heavy half.
+    pub fn knock(&mut self, target: Entity, from: Vec3, points: f32, scale: f32) {
+        let Ok((_, at, aabb, _, _, state, ..)) = self.chars.get(target) else { return };
+        let c = bounds(at, aabb, state).1;
+        let size = tf2_hull(self.ducked(target, state), false);
+        let from = from - Vec3::Y * FORCE_LOWER * U;
+        let dir = (c - from).normalize_or(Vec3::Y);
+        let half = if self.heavy(target) { HEAVY_KNOCKBACK } else { 1.0 };
+        let dv = push(points, scale, size, dir) * half * U;
+        self.shove(target, dv, false);
+    }
+
+    /// `dv` (units/s) added to `target`'s velocity as a push from another
+    /// (the Scorch Shot's, batch2_mechanics.md 4.4).
+    pub fn add_push(&mut self, target: Entity, dv: Vec3) {
+        self.shove(target, dv * U, false);
+    }
+
+    /// Whether `e` stands on the ground.
+    pub fn grounded(&self, e: Entity) -> bool {
+        self.chars.get(e).ok().and_then(|c| c.5.map(|s| s.on_ground)).unwrap_or(false)
+    }
+
     /// Add `dv` (m/s) to `e`'s velocity; `own`: his own blast (blast
     /// jumping, his air ducks counted again).
     fn shove(&mut self, e: Entity, dv: Vec3, own: bool) {
+        self.shove_by(e, dv, own, false);
+    }
+
+    /// `shove`, `blast`: another's blast (it sets `BlastLaunched`).
+    fn shove_by(&mut self, e: Entity, dv: Vec3, own: bool, blast: bool) {
         let Ok((.., mut velocity, _)) = self.chars.get_mut(e) else { return };
         velocity.0 += dv;
         let lift = dv.y > LIFT * U;
@@ -615,6 +665,10 @@ impl BlastWorld<'_, '_> {
             }
             if lift && let Some(mut s) = w.get_mut::<MovementState>() {
                 s.on_ground = false;
+            }
+            // In the air after another's push (batch2_mechanics.md 2.1).
+            if blast && !own && w.get::<MovementState>().is_some_and(|s| !s.on_ground) {
+                w.insert(BlastLaunched);
             }
             if own {
                 if let Some(mut m) = w.get_mut::<SourceMovement>() {
@@ -637,11 +691,11 @@ impl BlastWorld<'_, '_> {
     }
 }
 
-/// The blast-jumping state ends on landing.
-pub fn blast_jump_lands(q: Query<(Entity, &MovementState), With<BlastJumping>>, mut commands: Commands) {
+/// The blast-jumping and blast-launched states end on landing.
+pub fn blast_jump_lands(q: Query<(Entity, &MovementState), Or<(With<BlastJumping>, With<BlastLaunched>)>>, mut commands: Commands) {
     for (e, s) in &q {
         if s.on_ground {
-            commands.entity(e).remove::<BlastJumping>();
+            commands.entity(e).remove::<(BlastJumping, BlastLaunched)>();
         }
     }
 }

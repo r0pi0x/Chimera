@@ -36,5 +36,9 @@ max = 24
 [ammo."tf2:flame"]
 max = 0
 
+# The flare guns' 16 are their clip (batch2_mechanics.md 4.1).
+[ammo."tf2:flares"]
+max = 0
+
 [ammo."tf2:syringes"]
 max = 150

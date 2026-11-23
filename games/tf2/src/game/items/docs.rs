@@ -27,7 +27,14 @@
 //!   hurt no enemy), `no_self_blast_dmg` (`self_harm` off: still pushed);
 //! - the Minigun: wind-up (`mult_minigun_spinup_time`), spun speed
 //!   (`mult_player_aiming_movespeed`);
-//! - swords (`is_a_sword`): swing range 72, deploy ×1.75;
+//! - swords (`is_a_sword`): swing range 72, deploy ×1.75; the swing's
+//!   range and box (`melee_range_multiplier`, `melee_bounds_multiplier`);
+//!   its own deploy (`mult_single_wep_deploy_time`);
+//! - the flare (`tf2:flare`, batch2_mechanics.md 4): the class script's
+//!   damage as its hit and its owner's own base, × the damage attributes
+//!   (the owner's base kept), `blast_dmg_to_self` as `self_scale`,
+//!   `mult_dmgself_push_force` on its own push, `set_weapon_mode` 1 the
+//!   Detonator's, 3 the Scorch Shot's;
 //! - the rest that modifies the player (speed, jump, damage taken, heals,
 //!   max-health drain, ignite) goes to the item's `tf2:item` hook
 //!   (`super::mods::ItemParams`).
@@ -128,6 +135,11 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
     } else {
         if let Some(d) = base("damage").filter(|_| !sniper && !flame) {
             let blast = BLASTS.iter().find(|h| hook(&mut doc, h).is_some()).copied();
+            if let Some(t) = hook(&mut doc, crate::game::weapons::FLARE_HOOK) {
+                // The flare: its hit and its owner's own base (4.3).
+                t.insert("damage".into(), Value::Float(d.trunc()));
+                t.insert("self_damage".into(), Value::Float(d.trunc()));
+            } else {
             match blast {
                 Some(h) => {
                     let t = hook(&mut doc, h).expect("the hook");
@@ -139,6 +151,7 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
                         t.insert("amount".into(), Value::Float(d.trunc()));
                     }
                 }
+            }
             }
         }
         if let Some(i) = base("interval").filter(|_| !flame)
@@ -159,11 +172,15 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
     if let Some(t) = doc.get_mut("damage").and_then(Value::as_table_mut) {
         scale(t, "amount", dmg);
     }
+    let mut swing_damage: Option<f64> = None;
     if melee {
         let swings: Vec<String> = table(&mut doc, "melee").keys().cloned().collect();
         for s in swings {
             let t = table(table(&mut doc, "melee"), &s);
             scale(t, "damage", dmg);
+            if s == "primary" || swing_damage.is_none() {
+                swing_damage = t.get("damage").and_then(num);
+            }
             // Whole points, halves up (§3.2 step 10): a swing's damage has
             // nothing after it, and the frame's quantum truncates.
             if let Some(d) = t.get("damage").and_then(num) {
@@ -175,6 +192,9 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
             if r.flag("is_a_sword") {
                 t.insert("range".into(), Value::Float(constants::SWORD_RANGE));
             }
+            // Reach and box (batch2_mechanics.md 5.4).
+            scale(t, "range", a("melee_range_multiplier"));
+            scale(t, "hull", a("melee_bounds_multiplier"));
         }
     }
     for h in BLASTS {
@@ -203,6 +223,23 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
     for h in [crate::game::weapons::FLAME_HOOK, crate::game::weapons::NEEDLE_HOOK] {
         if let Some(t) = hook(&mut doc, h) {
             scale(t, "damage", dmg);
+        }
+    }
+    // The flare (batch2_mechanics.md 4): its damage (the owner's own base
+    // kept), `blast dmg to self`, its own push, its mode.
+    if let Some(t) = hook(&mut doc, crate::game::weapons::FLARE_HOOK) {
+        scale(t, "damage", dmg);
+        if a("blast_dmg_to_self") != 1.0 {
+            t.insert("self_scale".into(), Value::Float(a("blast_dmg_to_self")));
+        }
+        scale(t, "push_self", a("mult_dmgself_push_force"));
+        let mode = match add("set_weapon_mode") as i64 {
+            1 => Some("detonator"),
+            3 => Some("scorch"),
+            _ => None,
+        };
+        if let Some(m) = mode {
+            t.insert("mode".into(), Value::String(m.into()));
         }
     }
 
@@ -284,12 +321,22 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
         let d = doc.get("draw").and_then(num).unwrap_or(constants::SWITCH);
         doc.insert("draw".into(), Value::Float(d * constants::SWORD_SWITCH));
     }
+    // Its own deploy (`mult_single_wep_deploy_time`: the Atomizer's 1.5).
+    if a("mult_single_wep_deploy_time") != 1.0 {
+        let d = doc.get("draw").and_then(num).unwrap_or(constants::SWITCH);
+        doc.insert("draw".into(), Value::Float(d * a("mult_single_wep_deploy_time")));
+    }
 
     looks(&mut doc, r);
 
     // The player's numbers, its base and skin.
     let mut params = ItemParams::of(r);
     params.base = base_id.to_string();
+    // A swing's damage before rounding (the Axtinguisher's and Equalizer's
+    // laws, the Boston Basher's half).
+    if let Some(d) = swing_damage {
+        params.base_damage = d as f32;
+    }
     let t: Table = Value::try_from(&params).ok().and_then(|v| v.as_table().cloned()).unwrap_or_default();
     table(&mut doc, "hooks").insert(super::ITEM_HOOK.into(), Value::Table(t));
 

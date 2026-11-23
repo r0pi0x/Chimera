@@ -1,0 +1,88 @@
+# The flare gun class (`tf_weapon_flaregun`, specs/tf2/batch2_mechanics.md
+# 4): no stock weapon of its own, the base the Flare Gun, the Detonator
+# and the Scorch Shot are built over (data/items.toml `[bases]`; their
+# numbers the class script's and their attributes, `items::docs`). The
+# Pyro's secondary: a flare every 2 s, 16 carried (the Pyro's secondary
+# 32 x every flare gun's 0.5), no clip to reload. The flare (Chimera's
+# flyers) starts 23.5 forward, 12 right, 3 down from the eye toward what
+# the crosshair is on, at 2000 units/s falling at 0.3 of gravity; its
+# hit, burn, explosion and pushes are `tf2:flare`'s (`weapons::flare`).
+id = "tf2:tf_weapon_flaregun"
+base = "tf2:base"
+abstract = true
+class = "launcher"
+slot = 1
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 2.0
+timing = "set"
+
+[magazine]
+clip = 16
+ammo = "tf2:flares"
+reload = 1.0
+
+# Without [damage] the frame traces nothing: the round is a flare.
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 1.0
+spread = { template = 0.0 }
+
+[sounds]
+fire = "tf2:Weapon_FlareGun.Single"
+
+[models]
+world = "models/weapons/c_models/c_flaregun_pyro/c_flaregun_pyro.mdl"
+view = "models/weapons/c_models/c_flaregun_pyro/c_flaregun_pyro.mdl"
+view_right_handed = true
+
+[hud]
+name = "Flare Gun"
+icon = "flaregun"
+
+[hooks."tf2:gun"]
+# No distance modifier on a flare (4.2).
+ramp = 1.0
+flat = true
+arms = "pyro"
+script = "tf_weapon_flaregun"
+
+[hooks."chimera:projectile"]
+interp = true
+whole_units = true
+speed = 2000.0
+gravity = 240.0
+touch = "report"
+shown = "tf2:tf_weapon_flaregun/flare"
+offset = [23.5, 12.0, -3.0]
+pass_teammates = true
+hull_boxes = true
+# Toward what the eye's line meets (batch2_mechanics.md 4.1).
+aim_trace = 56754.0
+start_trace = true
+sky_probe = 16.0
+# None was seen to end in 12 s: a long bound.
+life = 60.0
+
+[hooks."tf2:flare"]
+damage = 30.0
+mode = "flare"
+# The flare's burn: 7.5 s of 4 every 0.5 s (rounded up to whole ticks).
+burn = 7.5
+burn_damage = 4.0
+burn_interval = 0.5
+# The Detonator's and the Scorch Shot's explosion (4.3).
+radius = 110.0
+edge = 0.5
+self_damage = 30.0
+push_other = 6.0
+push_self = 5.6
+# The Scorch Shot's push on the player it hits and its bounce (4.4).
+scorch_push = 100.0
+scorch_push_burning = 400.0
+ground_lift = 268.3
+bounce = [139.0, 100.0]
+

@@ -53,6 +53,13 @@
 //! models are here (`on_mount_here`: a load never fetches every item's
 //! set); one whose set comes later is loaded then (`late_items`).
 //!
+//! **Batch 2** (specs/tf2/batch2_mechanics.md): each mechanic built once
+//! and named by the item's attributes (`effects`: crits and mini-crits,
+//! bleed, heals on hit and kill, heads, the dropped kit, regeneration,
+//! overheal, speed buffs; `weapons::flare`: the flare guns, whose class
+//! has no stock weapon: an abstract base document, data/weapons/
+//! flaregun.toml).
+//!
 //! Known shortcuts:
 //! - An item's `anim_slot` and `animation_replacement` (none in batch 1
 //!   change a sequence on its own class's arms) are recorded, not
@@ -64,6 +71,7 @@
 
 pub mod convert;
 pub mod docs;
+pub mod effects;
 pub mod mods;
 
 use std::collections::BTreeMap;
@@ -356,6 +364,7 @@ mod tests {
     fn the_data_reads_and_names_batch_one() {
         let d = ItemsData::builtin();
         assert_eq!(d.items.values().filter(|i| i.batch == 1).count(), 33);
+        assert_eq!(d.items.values().filter(|i| i.batch == 2).count(), 26);
         let mut idx: Vec<u32> = d.items.values().map(|i| i.index).collect();
         idx.sort();
         idx.dedup();
@@ -363,7 +372,8 @@ mod tests {
         let stock: Vec<String> =
             crate::game::weapons::tf2_weapons().weapons.into_iter().map(|w| w.id).collect();
         for b in d.bases.values() {
-            assert!(stock.contains(b), "{b}");
+            // The flare gun class has no stock weapon: an abstract base.
+            assert!(stock.contains(b) || b == crate::game::weapons::FLAREGUN, "{b}");
         }
         assert!(PACK_PATH.starts_with(&format!("{GEN_ROOT}/v{VERSION}/")));
     }

@@ -37,6 +37,9 @@
 //! - `tf2:flame` (`flame`): the flame points, their heat and the
 //!   afterburn; attack2's airblast (`airblast`: pushes, deflections);
 //! - `tf2:needle` (`needle`): a needle's hit by distance;
+//! - `tf2:flare` (`flare`): the flare guns' flare (no stock weapon: the
+//!   unlocks' base, `FLAREGUN`), its hit, the Detonator's and Scorch
+//!   Shot's explosion and the Scorch Shot's bounce and push;
 //! - crit boosts' loop and glow on the held weapon (`crit_boost`,
 //!   effects.md 14);
 //! - `tf2:melee` (`melee`): the nine stock melee weapons
@@ -69,6 +72,7 @@ pub mod crit_boost;
 pub mod damage;
 pub mod dot;
 pub mod flame;
+pub mod flare;
 pub mod grenade;
 pub mod looks;
 pub mod melee;
@@ -114,6 +118,7 @@ pub const DATA: &[(&str, GameData)] = &[
     data_file!("pipebomblauncher.toml"),
     data_file!("flamethrower.toml"),
     data_file!("syringegun_medic.toml"),
+    data_file!("flaregun.toml"),
     data_file!("_melee.toml"),
     data_file!("bat.toml"),
     data_file!("shovel.toml"),
@@ -138,6 +143,9 @@ pub const GRENADE_LAUNCHER: &str = "tf2:tf_weapon_grenadelauncher";
 pub const STICKY_LAUNCHER: &str = "tf2:tf_weapon_pipebomblauncher";
 pub const FLAMETHROWER: &str = "tf2:tf_weapon_flamethrower";
 pub const SYRINGE_GUN: &str = "tf2:tf_weapon_syringegun_medic";
+/// The flare gun class: no stock weapon, the base of the Flare Gun, the
+/// Detonator and the Scorch Shot (data/weapons/flaregun.toml, abstract).
+pub const FLAREGUN: &str = "tf2:tf_weapon_flaregun";
 
 /// The guns, in the ladder's order (M2b's four, then weapons_more.md's
 /// eight).
@@ -182,6 +190,7 @@ pub const STICKY_HOOK: &str = "tf2:sticky";
 pub const AIR_DENSITY: f32 = 2.0;
 pub const FLAME_HOOK: &str = "tf2:flame";
 pub const NEEDLE_HOOK: &str = "tf2:needle";
+pub const FLARE_HOOK: &str = "tf2:flare";
 pub const MELEE_HOOK: &str = "tf2:melee";
 /// Chimera's flyers' hook (a projectile's launch and flight).
 pub const PROJECTILE_HOOK: &str = "chimera:projectile";
@@ -199,6 +208,9 @@ pub const PROJECTILES: &[(&str, &str, &str)] = &[
     (GRENADE_LAUNCHER, "tf2:tf_weapon_grenadelauncher/grenade", "models/weapons/w_models/w_grenade_grenadelauncher.mdl"),
     (STICKY_LAUNCHER, sticky::SHOWN, sticky::MODEL),
     (SYRINGE_GUN, "tf2:tf_weapon_syringegun_medic/syringe", "models/weapons/w_models/w_syringe_proj.mdl"),
+    (FLAREGUN, "tf2:tf_weapon_flaregun/flare", "models/weapons/w_models/w_flaregun_shell.mdl"),
+    // The Candy Cane's dropped kit (`items::effects`), with the unlock.
+    (super::items::effects::KIT, super::items::effects::KIT_SHOWN, super::items::effects::KIT_MODEL),
 ];
 
 /// TF2's weapons as data, parsed (a fresh copy each call).
@@ -261,6 +273,7 @@ pub fn register_hooks(app: &mut App) {
         .register_weapon_hook::<sticky::StickyParams>(STICKY_HOOK, |e, _, p| sticky::attach(e, p))
         .register_weapon_hook::<flame::FlameParams>(FLAME_HOOK, |e, _, p| flame::attach(e, p))
         .register_weapon_hook::<needle::NeedleParams>(NEEDLE_HOOK, |_, _, _| {})
+        .register_weapon_hook::<flare::FlareParams>(FLARE_HOOK, |_, _, _| {})
         .register_weapon_hook::<melee::MeleeParams>(MELEE_HOOK, |e, _, p| melee::attach(e, p))
         .register_weapon_hook::<looks::LooksParams>(looks::LOOKS_HOOK, |_, _, _| {})
         .register_weapon_hook::<std::collections::BTreeMap<String, f32>>(super::player_anim::POSEPARAM_HOOK, |e, _, p| {
@@ -273,7 +286,7 @@ pub fn register_hooks(app: &mut App) {
     // that do): the blasts, the flames, the needles; the guns' damage is
     // their `[damage]`.
     let hurts = |p: &chimera_sim::weapon::harm::HookParams| chimera_sim::weapon::harm::num(p, "damage").is_some_and(|d| d > 0.0);
-    for hook in [ROCKET_HOOK, GRENADE_HOOK, STICKY_HOOK, FLAME_HOOK, NEEDLE_HOOK] {
+    for hook in [ROCKET_HOOK, GRENADE_HOOK, STICKY_HOOK, FLAME_HOOK, NEEDLE_HOOK, FLARE_HOOK] {
         app.add_harm_reader(hook, hurts);
     }
     // What a drawn ladder's power curve reads of them: the distance
@@ -286,7 +299,8 @@ pub fn register_hooks(app: &mut App) {
         .add_power_reader(GRENADE_HOOK, power_grenade)
         .add_power_reader(STICKY_HOOK, power_rocket)
         .add_power_reader(FLAME_HOOK, power_flame)
-        .add_power_reader(NEEDLE_HOOK, power_rocket);
+        .add_power_reader(NEEDLE_HOOK, power_rocket)
+        .add_power_reader(FLARE_HOOK, power_grenade);
 }
 
 use chimera_sim::{
@@ -350,6 +364,8 @@ fn insert_rules(world: &mut World, set: &WeaponSet) {
     stickies.draw_late(&mut world.get_resource_or_init::<chimera_world::map::loose::DrawnLate>());
     world.insert_resource(stickies);
     world.insert_resource(needle::NeedleRules::from_set(set));
+    world.insert_resource(flare::FlareRules::from_set(set));
+    world.insert_resource(super::items::effects::ItemRules::from_set(set));
 }
 
 /// The rules read again when TF2's set changed (a server's documents put
@@ -368,6 +384,8 @@ fn refresh_rules(catalog: Res<chimera_sim::weapon::data::WeaponCatalog>, mut com
     });
     commands.insert_resource(stickies);
     commands.insert_resource(needle::NeedleRules::from_set(set));
+    commands.insert_resource(flare::FlareRules::from_set(set));
+    commands.insert_resource(super::items::effects::ItemRules::from_set(set));
 }
 
 /// TF2's guns: their data, hooks and systems.
@@ -449,6 +467,8 @@ impl Plugin for Tf2GunsPlugin {
                         grenade::fuse,
                         sticky::touch,
                         needle::touch,
+                        flare::touch,
+                        flare::detonate,
                         sticky::detonate,
                         flame::flames,
                         flame::afterburn,

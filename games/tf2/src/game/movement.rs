@@ -320,12 +320,20 @@ fn set_max(h: &mut Health, max: f32) {
 /// movement tick, predicted.
 #[allow(clippy::type_complexity)]
 pub fn select_class(
-    mut q: Query<(&MovementSlot, &Inventory, &mut Tf2Class, &mut SourceTraits, Option<&RungClass>, Option<&MaxSpeed>)>,
+    mut q: Query<(
+        &MovementSlot,
+        &Inventory,
+        &mut Tf2Class,
+        &mut SourceTraits,
+        Option<&RungClass>,
+        Option<&MaxSpeed>,
+        (Option<&Health>, Option<&super::items::effects::Heads>, Option<&chimera_sim::status::SpeedBoost>),
+    )>,
     mut weapons: Query<(&Weapon, Option<&Tf2Gun>, Option<&mut ShellReload>, Option<&mut Magazine>)>,
     items: Query<&super::items::mods::Tf2Item>,
     table: Res<Classes>,
 ) {
-    for (slot, inv, mut class, mut traits, drawn, zoomed) in &mut q {
+    for (slot, inv, mut class, mut traits, drawn, zoomed, (health, heads, boost)) in &mut q {
         if slot.0 != ID {
             continue;
         }
@@ -350,10 +358,14 @@ pub fn select_class(
         // the class rules, the active one's jump.
         let f = super::items::mods::Factors::of(inv, &|w| items.get(w).ok().map(|i| i.0.clone()));
         let p = p * f.speed;
+        // Batch 2 (`items::effects::speed_with`): the heads, the Escape
+        // Plan's tiers, the speed boost; the Atomizer's air jump.
+        let share = health.filter(|h| h.max > 0.0).map_or(1.0, |h| h.current / h.max);
+        let p = super::items::effects::speed_with(p, c.speed, boost, f.speed_by_health, share, heads.map_or(0, |h| h.0));
         let want = SourceTraits {
             max_speed: Some(p),
             eye_stand: Some(c.eye),
-            air_jumps: Some(c.air_jumps),
+            air_jumps: Some(c.air_jumps.saturating_add(f.air_dash)),
             loud_landings_only: Some(c.loud_landings_only),
             jump_scale: (f.jump != 1.0).then_some(f.jump),
         };
@@ -366,19 +378,24 @@ pub fn select_class(
 /// Each TF2 player's max health is its class's (classes.md; the server's,
 /// replicated), its share of health kept across a change; the max it had
 /// before TF2's is kept for when it leaves.
+#[allow(clippy::type_complexity)]
 pub fn class_health(
-    mut q: Query<(Entity, &Tf2Class, &mut Health, Option<&HealthBefore>)>,
+    mut q: Query<(Entity, &Tf2Class, &mut Health, Option<&HealthBefore>, Option<&Inventory>, Option<&super::items::effects::Heads>)>,
+    items: Query<&super::items::mods::Tf2Item>,
     table: Res<Classes>,
     drains: Option<Res<super::items::mods::ItemDrains>>,
     mut commands: Commands,
 ) {
-    for (e, class, mut h, before) in &mut q {
+    for (e, class, mut h, before, inv, heads) in &mut q {
         if before.is_none() {
             commands.entity(e).insert(HealthBefore(h.max));
         }
-        // Less what an item drains (item_attributes.md 4.10).
+        // Less what an item drains (item_attributes.md 4.10); plus what
+        // the items add and the heads (batch2_mechanics.md 1.4, 1.6).
         let drained = drains.as_ref().map_or(0.0, |d| d.of(e));
-        let max = (class.class(&table).health - drained) / 100.0;
+        let added = inv.map_or(0.0, |inv| super::items::mods::Factors::of(inv, &|w| items.get(w).ok().map(|i| i.0.clone())).max_health);
+        let heads = heads.map_or(0, |h| h.0.min(super::items::effects::HEAD_CAP)) as f32 * super::items::effects::HEAD_HEALTH;
+        let max = (class.class(&table).health + added + heads - drained) / 100.0;
         if (h.max - max).abs() > 1e-6 {
             set_max(&mut h, max);
         }
