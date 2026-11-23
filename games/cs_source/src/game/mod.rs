@@ -256,6 +256,15 @@ pub use source_engine::maps::{map_cycle, map_names, parse_map_cycle};
 pub static MAP_LOADER: crate::map::MapLoader = crate::map::MapLoader {
     game: GAME,
     load: load_installed_map,
+    words: Some(&WORDS),
+};
+
+/// CS:S's words for what maps of different games share (`map::MapWords`):
+/// its terrorists (1) the first side, its counter-terrorists (2) the
+/// second; its surfaces Source's (`source_engine::maps::SURFACE_WORDS`).
+pub static WORDS: crate::map::MapWords = crate::map::MapWords {
+    teams: &[(1, crate::map::SIDE_FIRST), (2, crate::map::SIDE_SECOND)],
+    surfaces: Some(source_engine::maps::SURFACE_WORDS),
 };
 
 /// Map `name` (`de_dust2`) from the install (`mount::install`:

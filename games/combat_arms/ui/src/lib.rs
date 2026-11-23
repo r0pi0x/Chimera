@@ -111,7 +111,81 @@ pub static PARTY_CLIENT: chimera_world::game_bundle::GameClient = chimera_world:
     game: crate::game::GAME,
     hud: Some(with_hud),
     app: None,
+    base: Some(&BASE_CLIENT),
 };
+
+/// Combat Arms' front end as a party's base game: its loading screen and
+/// menu music answering the party's main menu (`menu`), its other looks
+/// (`CaUiPlugin`) and the mouse look's starting values
+/// (`BaseMousePlugin`).
+pub static BASE_CLIENT: chimera_world::game_bundle::BaseClient = chimera_world::game_bundle::BaseClient {
+    menu: base_menu,
+    app: |app| {
+        app.add_plugins((BaseMousePlugin, CaUiPlugin));
+    },
+    // Combat Arms' maps load behind its own loading screen.
+    loading: Some(|world| world.get_resource::<loading::CaLoading>().and_then(|c| c.label.clone())),
+};
+
+/// Combat Arms' answers to a party's main menu: its music told what the
+/// menu wants (`MenuMusic`: none of its own while the app's plays,
+/// `music::AppMusicPlays`; its menu playlist while the main menu shows,
+/// `AppMenuShown`), its loading screen raised and lowered
+/// (`SetBaseLoading`).
+fn base_menu(app: &mut App) {
+    use chimera_world::game_bundle::{MenuMusic, SetBaseLoading};
+    app.add_observer(|music: On<MenuMusic>, mut commands: Commands| {
+        use game::music::{AppMenuShown, AppMusicPlays};
+        if music.app_plays {
+            commands.insert_resource(AppMusicPlays);
+        } else {
+            commands.remove_resource::<AppMusicPlays>();
+        }
+        if music.menu_shown {
+            commands.insert_resource(AppMenuShown);
+        } else {
+            commands.remove_resource::<AppMenuShown>();
+        }
+    })
+    .add_observer(|set: On<SetBaseLoading>, ca: Option<ResMut<loading::CaLoading>>| {
+        if let Some(mut ca) = ca {
+            ca.label = set.0.clone();
+        }
+    });
+}
+
+/// The mouse look of a party on Combat Arms: the shell's `sensitivity`,
+/// `m_yaw` and `m_pitch` (archived, saved in config.cfg), for every game.
+/// Combat Arms' options screen sets its own mouse look from its profile,
+/// which the party does not keep; left to itself it set the shell's mouse
+/// at start and again on every change, over what the config said (the
+/// sensitivity was back to the default at each start). The starting
+/// values are Combat Arms' defaults, as before, and they are the cvars'
+/// defaults, so a config that says nothing keeps them and one that says
+/// something wins. The same holds for the volumes and the brightness
+/// (`ShellOptions`): Combat Arms' unloaded profile had set `volume` to 0
+/// and `mat_monitorgamma` back at each start.
+pub struct BaseMousePlugin;
+
+impl Plugin for BaseMousePlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(options_apply::ShellOptions).add_systems(Startup, start_mouse);
+    }
+}
+
+fn start_mouse(mouse: Option<ResMut<client::input::MouseSettings>>, console: Option<ResMut<console::Console>>) {
+    let d = options_apply::degrees_per_count(&game::options::CaMouseLook::default());
+    if let Some(mut m) = mouse {
+        m.sensitivity = 1.0;
+        m.m_yaw = d;
+        m.m_pitch = d;
+    }
+    if let Some(mut c) = console {
+        c.set_default("sensitivity", "1");
+        c.set_default("m_yaw", &d.to_string());
+        c.set_default("m_pitch", &d.to_string());
+    }
+}
 
 /// The same under the name every game's front end has it
 /// (`combat_arms_ui::party::CLIENT`; docs/new-game.md).

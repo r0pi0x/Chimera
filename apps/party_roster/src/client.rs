@@ -1,14 +1,13 @@
 //! The party's front end as the roster composes it (feature `present`):
 //! the kit's client (`party_kit::client`, re-exported) given this party's
-//! games, `CLIENT` (each game's `GameClient`, its Controls rows, the main
-//! menu's look, Combat Arms' loading screen and menu music), and the
-//! client app, `PARTY` (Lucker Party's `APP`; the Ultimate Gun Game's,
+//! games, `CLIENT` (each game's `GameClient`, the main menu's look), and
+//! the client app, `PARTY` (Lucker Party's `APP`; the Ultimate Gun Game's,
 //! apps/ultimate_gun_game, is built on it).
 //!
 //! What is one game's in the party's front end lives here
-//! (`front_end_parts`): Combat Arms' other looks (`CaUiPlugin`), the
-//! party's mouse look from Combat Arms' defaults (`PartyMousePlugin`), the
-//! guests' guns' names for Combat Arms' HUD and the shell's (`guest_names`,
+//! (`front_end_parts`; Combat Arms' other looks, mouse look, loading
+//! screen and music are its own as the base, `combat_arms_ui::
+//! BASE_CLIENT`): the guests' guns' names for Combat Arms' HUD and the shell's (`guest_names`,
 //! `sync_gun_names`), HL2:DM's fast switch on (`hl2_fast_switch`), and
 //! Combat Arms' air-strike siren silent under UI sound (`mute_siren`).
 
@@ -21,7 +20,7 @@ use chimera_core::game_registry::Games;
 use chimera_world::game_bundle::GameClient;
 use combat_arms_ui::hud::ItemNames;
 pub use party_kit::client::*;
-use party_kit::controls::{GameRows, Setting, row};
+use party_kit::controls::GameRows;
 
 use crate::PARTY as THE_PARTY;
 
@@ -37,35 +36,18 @@ pub static CLIENTS: [&GameClient; 5] = [
     &tf2_ui::party::CLIENT,
 ];
 
-/// Each game's own rows on the Controls page, in tab order (after
-/// "Shared").
-pub const CONTROLS: &[GameRows] = &[
-    GameRows {
-        game: combat_arms::game::GAME,
-        label: "Combat Arms",
-        rows: &[row("Sprint", "+sprint"), row("Walk", "+walk"), row("Crouch", "+duck")],
-        settings: &[Setting { label: "Gun view FOV", cvar: "ca_viewmodel_fov", min: 63.74, max: 110.0, step: 1.0 }],
-    },
-    GameRows {
-        game: cs_source::game::GAME,
-        label: "Counter-Strike: Source",
-        rows: &[row("Walk", "+speed"), row("Duck", "+duck")],
-        settings: &[Setting { label: "Gun view FOV", cvar: "viewmodel_fov", min: 54.0, max: 110.0, step: 1.0 }],
-    },
-    GameRows {
-        game: hl2dm::game::GAME,
-        label: "Half-Life 2: Deathmatch",
-        rows: &[row("Sprint", "+speed"), row("Walk", "+walk"), row("Duck", "+duck"), row("Zoom", "+zoom")],
-        settings: &[Setting { label: "Gun view FOV", cvar: "hl2dm_viewmodel_fov", min: 54.0, max: 110.0, step: 1.0 }],
-    },
-    GameRows { game: halo_ce::game::GAME, label: "Halo", rows: &[row("Melee", "+melee"), row("Grenade", "+grenade"), row("Switch grenade", "+grenade_switch")], settings: &[] },
-];
+/// Each game's own tab on the Controls page, in tab order (after
+/// "Shared"): made of each game's `data/player_options.toml` (`party_kit::
+/// game_options::controls`), the party installed first.
+pub fn controls() -> &'static [GameRows] {
+    party_kit::game_options::install(&THE_PARTY);
+    party_kit::game_options::controls()
+}
 
 /// The party's front end, handed to the kit.
 pub static CLIENT: PartyClient = PartyClient {
     party: &THE_PARTY,
     clients: &CLIENTS,
-    controls: CONTROLS,
     front_end: front_end_parts,
     // The GameUI look of CS:S's install.
     menu_look: || {
@@ -74,26 +56,7 @@ pub static CLIENT: PartyClient = PartyClient {
             .and_then(|p| cs_source::game::mount::open(&p).ok())
             .and_then(|m| cs_source::game::gameui::load(&m))
     },
-    // Combat Arms' maps load behind its own loading screen.
-    base_loading: Some(|world| world.get_resource::<combat_arms_ui::loading::CaLoading>().and_then(|c| c.label.clone())),
 };
-
-/// Combat Arms' music told what the main menu wants (`MenuMusic`): none
-/// of its own while the app's plays (`AppMusicPlays`), its menu playlist
-/// while the main menu shows (`AppMenuShown`).
-fn menu_music(music: On<MenuMusic>, mut commands: Commands) {
-    use combat_arms::game::music::{AppMenuShown, AppMusicPlays};
-    if music.app_plays {
-        commands.insert_resource(AppMusicPlays);
-    } else {
-        commands.remove_resource::<AppMusicPlays>();
-    }
-    if music.menu_shown {
-        commands.insert_resource(AppMenuShown);
-    } else {
-        commands.remove_resource::<AppMenuShown>();
-    }
-}
 
 /// What this app tells the client shell: its commit, its maps
 /// (`MAP_SOURCES`) and the greybox's own hooks (`PARTY`'s).
@@ -217,30 +180,29 @@ pub const PARTY: GameApp = GameApp {
 pub static APP: GameApp = PARTY;
 
 /// The party's front end for the kit's menus (`party_kit::client::Front`:
-/// the Controls rows, the menu's look) and the base game's answers to them
-/// (Combat Arms' loading screen raised and lowered, its music told what
-/// the main menu wants): part of `front_end`, and alone for a test that
+/// the menu's look) and the base game's answers to them (its
+/// `BaseClient::menu`: Combat Arms' loading screen raised and lowered, its
+/// music told what the main menu wants): part of `front_end`, and alone for a test that
 /// builds the menus without the whole front end.
 pub struct FrontPlugin;
 
 impl Plugin for FrontPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Front(&CLIENT)).add_observer(menu_music).add_observer(
-            |set: On<SetBaseLoading>, ca: Option<ResMut<combat_arms_ui::loading::CaLoading>>| {
-                if let Some(mut ca) = ca {
-                    ca.label = set.0.clone();
-                }
-            },
-        );
+        // The Controls tabs are made of the games' page data.
+        party_kit::game_options::install(&THE_PARTY);
+        app.insert_resource(Front(&CLIENT));
+        if let Some(base) = CLIENT.base_client() {
+            (base.menu)(app);
+        }
     }
 }
 
-/// The party's front end that names games, after the guests' own: the
-/// party's mouse look, the guests' guns' names, HL2:DM's fast switch, the
-/// siren under UI sound, then Combat Arms' other looks.
+/// The party's front end that names games, after the guests' own and the
+/// base game's (`BaseClient::app`: Combat Arms' other looks, the mouse
+/// look): the guests' guns' names, HL2:DM's fast switch, the siren under
+/// UI sound.
 fn front_end_parts(app: &mut App) {
-    app.add_plugins(PartyMousePlugin)
-        .add_systems(Startup, (guest_names, hl2_fast_switch))
+    app.add_systems(Startup, (guest_names, hl2_fast_switch))
         .add_systems(Update, sync_gun_names)
         // Under UI sound our air-strike alert stands in for Combat Arms'
         // siren (`mute_siren`).
@@ -249,8 +211,6 @@ fn front_end_parts(app: &mut App) {
     // once the games' files arrived.
     app.add_observer(read_names_again);
     app.add_plugins(FrontPlugin);
-    // Combat Arms' other looks.
-    app.add_plugins(combat_arms_ui::CaUiPlugin);
 }
 
 /// Number keys switch weapons at once in the party (the user's choice):
@@ -270,42 +230,9 @@ fn hl2_fast_switch(
     }
 }
 
-/// The mouse look of the party: the shell's `sensitivity`, `m_yaw` and
-/// `m_pitch` (archived, saved in config.cfg), for every game. Combat
-/// Arms' options screen sets its own mouse look from its profile, which
-/// the party does not keep; left to itself it set the shell's mouse at
-/// start and again on every change, over what the config said (the
-/// sensitivity was back to the default at each start). The starting
-/// values are Combat Arms' defaults, as before, and they are the cvars'
-/// defaults, so a config that says nothing keeps them and one that says
-/// something wins. The same holds for the volumes and the brightness
-/// (`ShellOptions`): Combat Arms' unloaded profile had set `volume` to 0
-/// and `mat_monitorgamma` back at each start.
-pub struct PartyMousePlugin;
-
-impl Plugin for PartyMousePlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(combat_arms_ui::options_apply::ShellOptions)
-            .add_systems(Startup, start_mouse);
-    }
-}
-
-fn start_mouse(
-    mouse: Option<ResMut<chimera_client::client::input::MouseSettings>>,
-    console: Option<ResMut<chimera_core::console::Console>>,
-) {
-    let d = combat_arms_ui::options_apply::degrees_per_count(&combat_arms::game::options::CaMouseLook::default());
-    if let Some(mut m) = mouse {
-        m.sensitivity = 1.0;
-        m.m_yaw = d;
-        m.m_pitch = d;
-    }
-    if let Some(mut c) = console {
-        c.set_default("sensitivity", "1");
-        c.set_default("m_yaw", &d.to_string());
-        c.set_default("m_pitch", &d.to_string());
-    }
-}
+/// The mouse look of the party: Combat Arms' as the base
+/// (`combat_arms_ui::BaseMousePlugin`).
+pub use combat_arms_ui::BaseMousePlugin as PartyMousePlugin;
 
 /// After a join bound the asset service and the games' files arrived
 /// (`net::assets::AssetsArrived`): the guests' gun names again, now that

@@ -155,6 +155,8 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     kept: &["hl2dm:weapon_"],
     binds: &[("shift", "+speed"), ("ctrl", "+duck"), ("alt", "+walk"), ("z", "+zoom")],
     view_model_fov: Some(view::fov),
+    view_model_fov_cvar: Some(view::viewmodel_fov_cvar),
+    base: None,
     sim: party_sim,
     display_names: Some(weapons::display_names),
     player_options: Some(chimera_core::game_data!("data/player_options.toml")),

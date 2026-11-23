@@ -21,6 +21,8 @@ pub static BUNDLE: GameBundle = GameBundle {
     kept: &["cs_source:weapon_"],
     binds: &[("shift", "+speed"), ("ctrl", "+duck")],
     view_model_fov: Some(fov),
+    view_model_fov_cvar: Some(super::view_anim::viewmodel_fov_cvar),
+    base: None,
     sim: party_sim,
     display_names: Some(super::weapons::display_names),
     player_options: Some(chimera_core::game_data!("data/player_options.toml")),

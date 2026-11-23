@@ -143,25 +143,86 @@ pub fn parse(id: &'static str, text: &str) -> Result<GameOptions, String> {
 }
 
 /// The pages, read once from the first party installed (a process runs
-/// one party: its roster's).
-static GAMES: OnceLock<Vec<GameOptions>> = OnceLock::new();
+/// one party: its roster's), and the Controls page's tabs made of them
+/// (`controls`).
+static GAMES: OnceLock<Installed> = OnceLock::new();
+
+struct Installed {
+    games: Vec<GameOptions>,
+    #[cfg(feature = "present")]
+    controls: Vec<crate::controls::GameRows>,
+}
 
 /// Read `party`'s games' pages (`PartyPartsPlugin` does, at build): the
 /// first party's stay for the process.
 pub fn install(party: &crate::Party) {
     GAMES.get_or_init(|| {
-        party
+        let games: Vec<GameOptions> = party
             .bundles
             .iter()
             .filter_map(|b| b.player_options.map(|t| parse(b.info.id, t.text()).unwrap_or_else(|e| panic!("data/player_options.toml: {e}"))))
-            .collect()
+            .collect();
+        #[cfg(feature = "present")]
+        let controls = std::iter::once(party.base)
+            .chain(party.guests.iter().copied())
+            .filter_map(|b| games.iter().find(|g| g.id == b.info.id))
+            .filter_map(controls_of)
+            .collect();
+        Installed {
+            games,
+            #[cfg(feature = "present")]
+            controls,
+        }
     });
+}
+
+/// A game's tab on the Controls page (`controls::GameRows`) from its page
+/// data: its name, its actions that are in the game (`planned` ones left
+/// out; one row per command, the first action's label), its own cvars
+/// with a range (the gun view FOV: not the shared settings it
+/// overrides). None: it has no such row. Read once per process (the
+/// strings live for it).
+#[cfg(feature = "present")]
+fn controls_of(g: &GameOptions) -> Option<crate::controls::GameRows> {
+    use crate::controls::{GameRows, Row, Setting};
+    let keep = |s: &str| -> &'static str { Box::leak(s.to_string().into_boxed_str()) };
+    let mut rows: Vec<Row> = Vec::new();
+    for a in g.actions.iter().filter(|a| !a.planned) {
+        if !rows.iter().any(|r| r.command == a.command) {
+            rows.push(Row { label: keep(&a.label), command: keep(&a.command) });
+        }
+    }
+    let settings: Vec<Setting> = g
+        .options
+        .iter()
+        .filter(|o| !o.overrides)
+        .filter_map(|o| match o.setting.pick {
+            crate::host::Pick::Range { min, max, step } => {
+                Some(Setting { label: keep(&o.setting.label), cvar: keep(&o.setting.cvar), min, max, step })
+            }
+            crate::host::Pick::Choices(_) => None,
+        })
+        .collect();
+    (!rows.is_empty() || !settings.is_empty()).then(|| GameRows {
+        game: g.id,
+        label: keep(&g.name),
+        rows: Box::leak(rows.into_boxed_slice()),
+        settings: Box::leak(settings.into_boxed_slice()),
+    })
+}
+
+/// The Controls page's game tabs (`controls::GameRows`), the base game's
+/// first, then the guests' (those with rows); none before a party is
+/// installed (`install`).
+#[cfg(feature = "present")]
+pub fn controls() -> &'static [crate::controls::GameRows] {
+    GAMES.get().map_or(&[], |i| i.controls.as_slice())
 }
 
 /// The party's games' pages, in its `bundles` order (those that ship
 /// data); none before a party is installed (`install`).
 pub fn games() -> &'static [GameOptions] {
-    GAMES.get().map_or(&[], Vec::as_slice)
+    GAMES.get().map_or(&[], |i| i.games.as_slice())
 }
 
 /// The game `id`'s page.

@@ -99,7 +99,8 @@ options, team map and surface tables).
   hl2dm]`; beyond the bundles it names Combat Arms' loading screen,
   music, options, rule settings and bots, and CS:S's GameUI look and
   view-model cvar.
-- Two tables are per **pair** of games: `TEAMS` (a map game's spawn
+- (Since step 9: each game's `MapWords`, no pair tables.) Two tables
+  were per **pair** of games: `TEAMS` (a map game's spawn
   teams to the gameplay's) and `SURFACES` (a map game's surface names
   to the gameplay's, one TOML per pair, the HL2:DM row reusing CS:S's).
   At 30 games a pairwise table is 870 rows; it has to be per game, to a
@@ -320,7 +321,7 @@ Each is one commit; behaviour unchanged.
 | # | Step | Size | Unlocks |
 |---|---|---|---|
 | 8 | `games/roster`: the games' descriptors in one list, a cargo feature per game; `dump`, `chimera_pack`, `mapsweep` and the party kit iterate it (each game's tool hooks move into the game: `open_install`, what `chimera_pack` roots a set at) | M | tools and party apps cost nothing per game; subset builds; a check that apps name a game crate only for its descriptors |
-| 9 | The party kit's base game by descriptor: the loading screen, menu music, mouse options, requirements text and bots settings it takes from Combat Arms become `GameClient`/`GameBundle` hooks; `TEAMS` and `SURFACES` per game to a neutral vocabulary (review A3's surface kinds) | M-L | any game as the base; no pairwise tables |
+| 9 | The party kit's base game by descriptor: the loading screen, menu music, mouse options, requirements text and bots settings it takes from Combat Arms become `GameClient`/`GameBundle` hooks; `TEAMS` and `SURFACES` per game to a neutral vocabulary (review A3's surface kinds). Done but the requirements text (architecture-for-iteration.md, "Stage 3, step 9 proper"): `GameBundle::base`, `GameClient::base`, `MapLoader::words`, Controls from `player_options` | M-L | any game as the base; no pairwise tables |
 | 10 | Chimera's Source words: the console's home namespace from the registered games instead of `SOURCE_NAMESPACE`, `SERVER_NAMES` registered like step 3, the 90 `0.0254` literals to `GameInfo::meters_per_unit` or named constants of the game that measured them, a ratchet on the literal | M (slices) | a non-Source game doesn't inherit inches or CS:S's cvars |
 | 11 | Cargo.toml's member lists and ARCHITECTURE.md's crate diagram generated or checked from the folders (`docs_index`) | S | a new crate edits one place |
 | 12 | Several local players: `LocalPlayer` as "the player this view belongs to" (a view id), starting with the shell's camera and HUD | L | split screen (GoldenEye), a spectator wall |

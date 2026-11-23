@@ -159,8 +159,8 @@ module list is `docs/modules.md`.
 - 15: Before any code | before writing a loader): the install (where it comes from, how it is found), the formats, the milestones below, what is out of scope
 - 29: The crates | A new family's folder is a loader layer the day a crate lives in it; its formats crate may use `chimera_vfs` (archives as mount layers) and
 - 53: The game crate's shape | party mode finds the same seams in every game:
-- 108: Order of work | What Combat Arms' skeleton and HL2:DM's milestones taught: get a character walking on the greybox with placeholder parts first, then...
-- 192: Don't rely on | run-time choice (`chimera_core::gameplay`)
+- 109: Order of work | What Combat Arms' skeleton and HL2:DM's milestones taught: get a character walking on the greybox with placeholder parts first, then...
+- 201: Don't rely on | run-time choice (`chimera_core::gameplay`)
 
 ## docs/performance.md
 

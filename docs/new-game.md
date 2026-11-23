@@ -97,7 +97,8 @@ five games have it so.
   console namespaces.
 - `BUNDLE` (`chimera_world::game_bundle::GameBundle`): what a party app
   takes of the game: its info, parts, map loader, its players and guns
-  on other games' maps, its binds, what it adds to a composed
+  on other games' maps, its binds, its view-model FOV and its cvar,
+  what it brings as a base game (`base`), what it adds to a composed
   simulation, and `player_options`: its `data/player_options.toml`, the
   game's own keys and options on the party apps' Options screen (Games
   tab: its actions, its cvars, its own values of shared settings;
@@ -176,13 +177,21 @@ replace one part at a time, each behind its spec and a scenario test.
    `CLIENT` is in the party's list, and `repo_checks`
    (`games_leave_the_overlay_alone`) fails a game crate that names the
    overlay or `UiScale` (docs/DESIGN.md, "HUD layers").
-9. **Party**: `PARTS` (`GameParts`: what it lends), `BUNDLE`, `CLIENT`;
-   add the bundle to the roster's `GUESTS` and its `CLIENT` to
-   `client::CLIENTS` (apps/party_roster; with its spawn teams in
-   `TEAMS`, its surface table in `SURFACES` and, if it has keys of its
-   own, its rows in `client::CONTROLS`). The party kit (apps/party_kit)
-   names no game and needs no edit. Its gun rungs appear in the
-   Ultimate Gun Game from the parts registry.
+9. **Party**: `PARTS` (`GameParts`: what it lends), `BUNDLE`, `CLIENT`,
+   and on its map loader its `WORDS` (`chimera_world::map::MapWords`:
+   its spawn teams as the neutral sides `SIDE_FIRST`/`SIDE_SECOND`, its
+   surfaces as the neutral surface kinds, Source's surface property
+   names; a Source game reuses `source_engine::maps::SURFACE_WORDS`).
+   Then one line in the roster (apps/party_roster): the bundle in
+   `GUESTS` (everything else there is made from it), and its `CLIENT`
+   in `client::CLIENTS`. No table names a pair of games, and the
+   Controls page's tab is made of its `data/player_options.toml` (its
+   actions not `planned`, its own cvars with a range). A game that can
+   be a party's base fills `BUNDLE.base` (`BaseGame`: its simulation,
+   its rules and bots set for the party) and `CLIENT.base`
+   (`BaseClient`: its loading screen and menu music, its other looks).
+   The party kit (apps/party_kit) names no game and needs no edit. Its
+   gun rungs appear in the Ultimate Gun Game from the parts registry.
 10. **Tools and docs**: the game in `dump` and `chimera_pack` (its row
     in `games()`: a game without a Steam app names how its install's
     build is read, `Game::build`, as Halo does from its maps' headers;

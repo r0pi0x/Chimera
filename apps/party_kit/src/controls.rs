@@ -10,7 +10,8 @@
 //!   walks on C, CS:S walks on Shift (`+speed`). The local input reads the
 //!   game's own binds first, then the shared ones (`Console::
 //!   effective_binds`), before the intent is sent, so prediction is not
-//!   involved. A later game adds a row list (its party's `PartyClient::controls`) and ships binds.
+//!   involved. A game's tab is made of its own `data/player_options.toml`
+//!   (`game_options::controls`): a new game ships its rows and binds.
 //! - The page (`controls [tab]`, or the Escape menu's Options > Binds): a tab for "Shared" first, then
 //!   one for each game; a row is an action and its keys; clicking the keys
 //!   waits for the next key, mouse button or wheel notch (the wheel is a
@@ -103,10 +104,10 @@ pub struct GameRows {
     pub settings: &'static [Setting],
 }
 
-/// The party's games' rows (`PartyClient::controls`, through `Front`;
-/// none without a party front end).
+/// The party's games' rows (`game_options::controls`, each game's
+/// `player_options`; none without a party front end, `Front`).
 pub fn games_of(world: &World) -> &'static [GameRows] {
-    world.get_resource::<crate::client::Front>().map_or(&[], |f| f.0.controls)
+    if world.contains_resource::<crate::client::Front>() { crate::game_options::controls() } else { &[] }
 }
 
 /// Tab 0 is "Shared", tab `n` is `games[n - 1]` (the party's rows,
@@ -390,7 +391,7 @@ fn capture(
     front: Option<Res<crate::client::Front>>,
 ) {
     let Some(command) = page.capture else { return };
-    let games = front.map_or(&[][..], |f| f.0.controls);
+    let games = if front.is_some() { crate::game_options::controls() } else { &[] };
     if keys.just_pressed(KeyCode::Escape) {
         page.capture = None;
         return;
@@ -435,7 +436,7 @@ fn click(
     front: Option<Res<crate::client::Front>>,
     mut commands: Commands,
 ) {
-    let games = front.map_or(&[][..], |f| f.0.controls);
+    let games = if front.is_some() { crate::game_options::controls() } else { &[] };
     for (interaction, action) in &pressed {
         if *interaction != Interaction::Pressed {
             continue;
@@ -489,7 +490,7 @@ fn show(
     front: Option<Res<crate::client::Front>>,
     mut commands: Commands,
 ) {
-    let games = front.map_or(&[][..], |f| f.0.controls);
+    let games = if front.is_some() { crate::game_options::controls() } else { &[] };
     if !page.open {
         if shown.take().is_some() {
             for e in &root {

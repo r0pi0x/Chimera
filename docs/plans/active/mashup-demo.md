@@ -11,7 +11,8 @@ neither game knows the other (checks/tests/it/architecture.rs).
 - Chimera's `map::sources` (chimera/world/src/map/sources.rs): an app's
   maps as `MapSources`, each game's `MapLoader` (`game:name` to
   `MapData`), the gameplay's `MapDressing` (its parts on any map) and
-  `SpawnTeams` (another game's spawn teams as the gameplay's).
+  each loader's `MapWords` (its game's spawn teams as neutral sides,
+  so another game's spawn teams become the gameplay's).
   `MapData::kit` (a `GameKit`) holds what a map's game brings to every
   map (bodies, held and view models, HUD, radio, bot names, navigation,
   round sounds, muzzle flash, shells, decals); a mashup replaces it
@@ -47,9 +48,11 @@ neither game knows the other (checks/tests/it/architecture.rs).
   as `Intent::use_key`, `core::Damage` on `Damageable` nodes); the gap
   was Combat Arms' rounds, which now deal their damage to anything
   `Damageable` that isn't a character (`combat_arms::game::weapons`).
-- Surfaces: Chimera's `map::sources::SurfaceTable` (the app's data
-  file per game pair, apps/mashup_demo/data/surfaces_cs_source_combat_arms.toml:
-  by name, by Source game material letter, a default) gives the map's
+- Surfaces: each game's `map::sources::SurfaceWords` (its loader's
+  `MapWords::surfaces`: the map's game's names and Source material
+  letters to neutral surface kinds, source/engine/data/surface_words.toml;
+  the gameplay's kinds to its own names and a default,
+  games/combat_arms/data/surface_words.toml) give the map's
   surface names as the gameplay's (`MapData::surface_names`, spawned
   as `map::SurfaceNames`); the map keeps its own names, so its game's
   parts (CS:S's guns' penetration) still read them. Combat Arms reads
@@ -84,7 +87,7 @@ neither game knows the other (checks/tests/it/architecture.rs).
 
 - Map logic: the logic maps teams by Source's numbering (gameplay team
   + 1); a gameplay whose team ids differ from the spawn mapping's needs
-  `SpawnTeams` read back. Combat Arms' knife and grenades' own damage to
+  the gameplay's `MapWords::teams` read back. Combat Arms' knife and grenades' own damage to
   breakables isn't checked on CS:S maps.
 - CS:S's guns in the mashup: no impact effects (Combat Arms' effects
   read only its weapons' `CaWeaponFx`; CS:S's impact plugins would also

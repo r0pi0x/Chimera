@@ -54,7 +54,7 @@
 //!   `loading panel up`); at the screen's foot while the server's
 //!   pre-match lobby shows over it (`loading_under_lobby`); the base game's own loading screen instead
 //!   for its maps (user decision 5: Combat Arms', its map picture; the
-//!   party's `PartyClient::base_loading`), gated here (`base_loading_gate`).
+//!   base game's `BaseClient::loading`), gated here (`base_loading_gate`).
 //! - **The failure box**: a failed or refused join, a drop, a failed load
 //!   land on the menu with why (CS:S's "Disconnected" frame; the server's
 //!   or the game's words, `failure_text`), Close.
@@ -1897,10 +1897,10 @@ fn start(world: &mut World) {
 }
 
 /// The base game's id and its loading screen, if the party's base has one
-/// (`PartyClient::base_loading`).
+/// (`BaseClient::loading`).
 fn base_loading(world: &World) -> Option<(&'static str, fn(&World) -> Option<String>)> {
     let front = world.get_resource::<crate::client::Front>()?.0;
-    Some((front.party.base.info.id, front.base_loading?))
+    Some((front.party.base.info.id, front.base_client()?.loading?))
 }
 
 /// Whether the base game's own loading screen is up (the party's panel

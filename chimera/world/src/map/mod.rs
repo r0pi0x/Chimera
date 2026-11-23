@@ -110,7 +110,7 @@ pub mod shells;
 pub mod shapes;
 pub mod parallel;
 pub mod sources;
-pub use sources::{KitLoad, LoadContext, MapDressing, MapLoadOptions, MapLoader, MapSources, SpawnTeams, SurfaceNames, SurfaceTable};
+pub use sources::{KitLoad, LoadContext, MapDressing, MapLoadOptions, MapLoader, MapSources, MapWords, SIDE_FIRST, SIDE_SECOND, SurfaceNames, SurfaceWords};
 pub mod surface_color;
 pub mod texture_refs;
 pub mod view_model;

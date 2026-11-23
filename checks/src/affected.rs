@@ -580,11 +580,7 @@ pub const TOOL_DATA: &[(&str, &str)] = &[
 /// (`game_data!("../..")`), and that crate: a change selects it as well as
 /// the folder's owner. The architecture test `game_data_stays_home` checks
 /// that every such path is here or in `TOOL_DATA`.
-pub const SHARED_DATA: &[(&str, &str)] = &[
-    // The CS:S-to-Combat-Arms surface table, the mashup's own; the party
-    // apps put every guest's maps under Combat Arms by it.
-    ("apps/mashup_demo/data/surfaces_cs_source_combat_arms.toml", "party_roster"),
-];
+pub const SHARED_DATA: &[(&str, &str)] = &[];
 
 /// What changing `path` (relative to the root, `/`-separated) can affect.
 /// `exists`: whether the file is still there (a deleted test module

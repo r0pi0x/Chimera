@@ -35,8 +35,6 @@ static BODIES: MapDressing = MapDressing { game: "combat_arms", dress: two_bodie
 static SOURCES: MapSources = MapSources {
     loaders: &[&CODE_MAP_KIT],
     gameplay: Some(&BODIES),
-    teams: &[],
-    surfaces: &[],
     kept: &[],
     players: true,
     guests: &[],

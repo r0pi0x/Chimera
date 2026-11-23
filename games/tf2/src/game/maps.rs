@@ -64,7 +64,7 @@ use source_engine::content::{
 
 use crate::{
     core::Team,
-    map::{MapData, MapEntity, MapLoadOptions, MapLoader, sound::MapSounds},
+    map::{MapData, MapEntity, MapLoadOptions, MapLoader, MapWords, sound::MapSounds},
 };
 
 /// The converter's version for the converted-map cache, the kept guest
@@ -213,6 +213,15 @@ pub fn free_for_all_doors(entities: &mut [MapEntity]) {
 pub static MAP_LOADER: MapLoader = MapLoader {
     game: super::GAME,
     load: load_installed_map,
+    words: Some(&WORDS),
+};
+
+/// TF2's words for what maps of different games share (`map::MapWords`):
+/// RED (1) the first side, BLU (2) the second; its surfaces Source's
+/// (`source_engine::maps::SURFACE_WORDS`).
+pub static WORDS: MapWords = MapWords {
+    teams: &[(1, crate::map::SIDE_FIRST), (2, crate::map::SIDE_SECOND)],
+    surfaces: Some(source_engine::maps::SURFACE_WORDS),
 };
 
 /// Map `name` (`ctf_2fort`) from the install (`mount::install`: Steam,

@@ -33,7 +33,7 @@ postcard.workspace = true
 bytemuck.workspace = true
 # BC blocks decoded again when a cached map is read (`map::texture_serde`).
 texpresso = "2.0"
-# Surface tables of mashups (`map::sources::SurfaceTable`).
+# The games' surface words (`map::sources::SurfaceWords`).
 toml.workspace = true
 workspace-hack.workspace = true
 

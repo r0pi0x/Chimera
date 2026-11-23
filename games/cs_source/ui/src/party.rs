@@ -15,6 +15,7 @@ pub static CLIENT: GameClient = GameClient {
     game: crate::game::GAME,
     hud: Some(with_hud),
     app: Some(client_app),
+    base: None,
 };
 
 /// CS:S's HUD over the shell's plugins, after the base game's HUD.

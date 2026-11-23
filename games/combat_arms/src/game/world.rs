@@ -267,6 +267,19 @@ pub const ATLAS_MAX: u32 = 8192;
 pub static MAP_LOADER: MapLoader = MapLoader {
     game: super::GAME,
     load: |name, options| load_with(name, options),
+    words: Some(&WORDS),
+};
+
+/// Combat Arms' words for what maps of different games share
+/// (`map::MapWords`): Alpha the first side, Bravo the second; the neutral
+/// surface kinds as its surface types (data/surface_words.toml), so its
+/// gameplay on another game's map hears and shows its own surfaces.
+pub static WORDS: crate::map::MapWords = crate::map::MapWords {
+    teams: &[
+        (super::rules::state::ALPHA, crate::map::SIDE_FIRST),
+        (super::rules::state::BRAVO, crate::map::SIDE_SECOND),
+    ],
+    surfaces: Some(chimera_core::game_data!("data/surface_words.toml")),
 };
 
 /// What Combat Arms' gameplay brings to another game's map

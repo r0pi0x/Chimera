@@ -88,7 +88,7 @@ fn shift_walks_for_a_cs_source_player_and_sprints_for_a_combat_arms_one() {
 #[test]
 fn a_mouse_wheel_jump_bind_jumps_in_both_games() {
     let (mut sim, a) = local_party();
-    let line = controls::rebind_line(party_roster::client::CONTROLS, &sim.app.world().resource::<Console>(), 0, "+jump", "mwheeldown");
+    let line = controls::rebind_line(party_roster::client::controls(), &sim.app.world().resource::<Console>(), 0, "+jump", "mwheeldown");
     submit(&mut sim, &line);
     for (rung, game) in [(0, "cs_source"), (1, "combat_arms")] {
         set_rung(&mut sim, a, rung);
@@ -192,7 +192,7 @@ fn tap(app: &mut App, key: KeyCode) {
 }
 
 fn keys(app: &App, tab: usize, command: &str) -> Vec<String> {
-    controls::keys_on(party_roster::client::CONTROLS, app.world().resource::<Console>(), tab, command)
+    controls::keys_on(party_roster::client::controls(), app.world().resource::<Console>(), tab, command)
 }
 
 /// Shared tab first, then a tab a game; the wheel can be a bind; a game's
@@ -206,7 +206,7 @@ fn the_controls_page_rebinds_shared_and_per_game_keys() {
     app.update();
     let page = actions(&mut app);
     let tabs: Vec<_> = page.iter().filter(|(_, a)| matches!(a, Action::Tab(_))).collect();
-    assert_eq!(tabs.len(), 5, "Shared, Combat Arms, CS:S, HL2:DM, Halo");
+    assert_eq!(tabs.len(), 6, "Shared, Combat Arms, CS:S, HL2:DM, Halo, TF2 (each game's player_options)");
     assert!(page.iter().any(|(_, a)| *a == Action::Rebind("+jump")), "Shared first: Jump");
     assert!(!page.iter().any(|(_, a)| *a == Action::Rebind("+speed")), "CS:S's walk isn't on the shared page");
     let grabbed = app.world_mut().query::<&CursorOptions>().iter(app.world()).any(|c| c.grab_mode != CursorGrabMode::None);
@@ -261,12 +261,12 @@ fn the_controls_page_rebinds_shared_and_per_game_keys() {
 #[test]
 fn hl2dm_has_its_own_controls_tab() {
     use party_roster::controls::{tab_game, tab_named, tab_rows};
-    const GAMES: &[party_roster::controls::GameRows] = party_roster::client::CONTROLS;
-    let tab = tab_named(GAMES, "hl2dm").expect("an HL2:DM tab");
-    assert_eq!(tab_game(GAMES, tab), Some(hl2dm::game::GAME));
-    let commands: Vec<_> = tab_rows(GAMES, tab).iter().map(|r| r.command).collect();
+    let games = party_roster::client::controls();
+    let tab = tab_named(games, "hl2dm").expect("an HL2:DM tab");
+    assert_eq!(tab_game(games, tab), Some(hl2dm::game::GAME));
+    let commands: Vec<_> = tab_rows(games, tab).iter().map(|r| r.command).collect();
     assert_eq!(commands, ["+speed", "+walk", "+duck", "+zoom"]);
-    let fov = &GAMES.iter().find(|g| g.game == hl2dm::game::GAME).unwrap().settings[0];
+    let fov = &games.iter().find(|g| g.game == hl2dm::game::GAME).unwrap().settings[0];
     assert_eq!(fov.cvar, "hl2dm_viewmodel_fov");
     let mut app = App::new();
     app.add_plugins((MinimalPlugins, chimera_core::console::ConsolePlugin))
@@ -283,8 +283,8 @@ fn hl2dm_has_its_own_controls_tab() {
 /// its least.
 #[test]
 fn steps_land_on_whole_values() {
-    use party_roster::{client::CONTROLS as GAMES, controls::nudged};
-    let ca = &GAMES.iter().find(|g| g.game == combat_arms::game::GAME).unwrap().settings[0];
+    use party_roster::controls::nudged;
+    let ca = &party_roster::client::controls().iter().find(|g| g.game == combat_arms::game::GAME).unwrap().settings[0];
     assert_eq!(nudged(ca, 63.74, 1), 64.0);
     assert_eq!(nudged(ca, 64.0, 1), 65.0);
     assert_eq!(nudged(ca, 65.0, -1), 64.0);

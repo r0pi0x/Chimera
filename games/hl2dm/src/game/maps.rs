@@ -37,7 +37,7 @@ use source_engine::content::{
     surfaceprops::SurfaceProps,
 };
 
-use crate::map::{MapData, MapEntity, MapLoadOptions, MapLoader, sound::MapSounds};
+use crate::map::{MapData, MapEntity, MapLoadOptions, MapLoader, MapWords, sound::MapSounds};
 
 /// The converter's version for the converted-map cache, the kept guest
 /// dressing and the served converted entries: `v<number>-<hash>`, a
@@ -153,7 +153,13 @@ pub const SOUNDS: &[&str] = &[
 pub static MAP_LOADER: MapLoader = MapLoader {
     game: super::GAME,
     load: load_installed_map,
+    words: Some(&WORDS),
 };
+
+/// HL2:DM's words for what maps of different games share (`map::
+/// MapWords`): no spawn teams (its maps' spawns are anyone's); its
+/// surfaces Source's (`source_engine::maps::SURFACE_WORDS`).
+pub static WORDS: MapWords = MapWords { teams: &[], surfaces: Some(source_engine::maps::SURFACE_WORDS) };
 
 /// Map `name` (`dm_lockdown`) from the install (`mount::install`: Steam,
 /// `[games.hl2dm] path` or `$CHIMERA_HL2DM_ROOT`) with `options`.

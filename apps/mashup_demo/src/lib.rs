@@ -16,10 +16,11 @@
 //!   (bodies, view models, HUD, radio, navigation, round sounds) but its
 //!   guns' held and view models (`KEPT`) and gets Combat Arms'
 //!   (`combat_arms::game::world::DRESSING`); its terrorist spawns are
-//!   Alpha's, its counter-terrorist spawns Bravo's (`TEAMS`); its surface
-//!   names are Combat Arms' surface types through this app's table
-//!   (`SURFACES`, data/surfaces_cs_source_combat_arms.toml), so Combat
-//!   Arms' impacts, footsteps and shoot-through pick the right surface.
+//!   Alpha's, its counter-terrorist spawns Bravo's; its surface names are
+//!   Combat Arms' surface types through the neutral surface kinds (both
+//!   through each game's own `map::MapWords`, on its map loader: no table
+//!   for the pair), so Combat Arms' impacts, footsteps and shoot-through
+//!   pick the right surface.
 //!   Combat Arms' own maps load as in its app.
 //! - Units: every loader gives metres (CS:S's inch, Combat Arms'
 //!   `meters_per_unit`), and each game's numbers stay in its own unit, so
@@ -64,7 +65,7 @@ use chimera_client::client::{
 use chimera_core::{console::ConsoleAppExt, game_registry::GameAppExt};
 use chimera_core::core::LocalPlayer;
 use chimera_sim::weapon::{Inventory, StartingWeapons, data};
-use chimera_world::map::{MapData, MapSources, SpawnTeams, SurfaceTable};
+use chimera_world::map::{MapData, MapSources};
 
 /// This build's version (`version` command, bug reports); stamped by
 /// build.rs.
@@ -81,29 +82,6 @@ pub const DEFAULT_MAP: &str = "cs_source:de_dust2";
 /// Bot Deathmatch quota): two a side with the player.
 pub const DEFAULT_BOTS: u32 = 3;
 
-/// CS:S's spawn teams as Combat Arms': terrorists (1) Alpha, counter-
-/// terrorists (2) Bravo (`combat_arms::game::rules::state`).
-pub const TEAMS: &[SpawnTeams] = &[
-    SpawnTeams {
-        game: cs_source::game::GAME,
-        from: 1,
-        to: combat_arms::game::rules::state::ALPHA,
-    },
-    SpawnTeams {
-        game: cs_source::game::GAME,
-        from: 2,
-        to: combat_arms::game::rules::state::BRAVO,
-    },
-];
-
-/// CS:S's surfaces as Combat Arms' surface types: this app's table
-/// (data/surfaces_cs_source_combat_arms.toml), neither game's.
-pub const SURFACES: &[SurfaceTable] = &[SurfaceTable {
-    map: cs_source::game::GAME,
-    gameplay: combat_arms::game::GAME,
-    text: chimera_core::game_data!("data/surfaces_cs_source_combat_arms.toml"),
-}];
-
 /// What of CS:S's parts stays on its maps: its weapons' held and view
 /// models (keyed by weapon id), for its guns in Combat Arms' slots.
 pub const KEPT: &[&str] = &["cs_source:weapon_"];
@@ -112,8 +90,6 @@ pub const KEPT: &[&str] = &["cs_source:weapon_"];
 pub static MAP_SOURCES: MapSources = MapSources {
     loaders: &[&cs_source::game::MAP_LOADER, &combat_arms::game::world::MAP_LOADER],
     gameplay: Some(&combat_arms::game::world::DRESSING),
-    teams: TEAMS,
-    surfaces: SURFACES,
     kept: KEPT,
     players: false,
     guests: &[],
@@ -335,13 +311,20 @@ mod tests {
     }
 
     #[test]
-    fn the_surface_table_reads() {
-        let rows = super::SURFACES[0].rows().unwrap();
+    fn the_surface_words_read() {
+        use chimera_world::map::sources::{SurfaceRows, SurfaceWords};
+        let read = |g: &str| {
+            SurfaceWords::read(g, super::MAP_SOURCES.words(g).and_then(|w| w.surfaces).unwrap().text()).unwrap()
+        };
+        let rows = SurfaceRows { map: read(cs_source::game::GAME), gameplay: read(combat_arms::game::GAME) };
         assert_eq!(rows.get("sand", None), Some("Desert_Sand"));
         assert_eq!(rows.get("wood_crate", None), Some("Wood"));
         assert_eq!(rows.get("something_else", Some('M')), Some("Metal"));
+        for kind in rows.map.materials.values() {
+            assert!(rows.gameplay.kinds.contains_key(kind), "{kind}: a letter's kind Combat Arms names");
+        }
         let tables = combat_arms::game::effects::data::CaFxTables::built_in();
-        for name in rows.names.values().chain(rows.materials.values()).chain(&rows.default) {
+        for name in rows.gameplay.kinds.values().chain(&rows.gameplay.default) {
             assert!(tables.surface_id(name).is_some(), "{name} is a Combat Arms surface type");
         }
     }

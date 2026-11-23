@@ -1,7 +1,8 @@
-# Combat Arms' bots' gun types for CS:S's guns (as games/combat_arms/data/
-# bots.toml's [gun_types] names Combat Arms' own): which AI row (range,
-# reaction, burst) a bot uses with each, so Combat Arms' bots fire them in
-# a minigame. Lucker Party's choice by each gun's kind, neither game's data.
+# Combat Arms' bots' gun types for other games' guns when it is a party's
+# base game (`game::bundle::BASE`; as data/bots.toml's [gun_types] names
+# its own): which AI row (range, reaction, burst) a bot uses with each, so
+# its bots fire them in a minigame. Our choice by each gun's kind, not the
+# games' data; a gun not listed goes by its class (`bot_gun_type_of`).
 "cs_source:weapon_glock" = "Pistol"
 "cs_source:weapon_usp" = "Pistol"
 "cs_source:weapon_p228" = "Pistol"

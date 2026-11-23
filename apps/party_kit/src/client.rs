@@ -53,35 +53,23 @@ pub struct PartyClient {
     /// Each game's front end (its `ui`'s `GameClient`): the base game's
     /// first, then the guests'.
     pub clients: &'static [&'static GameClient],
-    /// Each game's own rows on the Controls page, in tab order (after
-    /// "Shared").
-    pub controls: &'static [crate::controls::GameRows],
     /// The composition's own front end, after the guests' (`GameClient::
-    /// app`): the base game's other looks, the mouse's starting values,
-    /// the guns' names for its HUD.
+    /// app`) and the base game's (`BaseClient::app`): the guns' names for
+    /// the base game's HUD.
     pub front_end: fn(&mut App),
     /// The main menu's look (a game's GameUI), read on a thread at start.
     pub menu_look: fn() -> Option<GameUi>,
-    /// The map the base game's own loading screen is up for (None: down),
-    /// if it has one: shown only for its own maps (`main_menu`, which
-    /// raises and lowers it with `SetBaseLoading`).
-    pub base_loading: Option<fn(&World) -> Option<String>>,
 }
 
-/// What the main menu wants of the games' music, triggered on every
-/// change (`main_menu`): `app_plays`, the app's own music plays (none of
-/// a game's); `menu_shown`, the main menu is up (the base game's menu
-/// playlist may play). The party's front end observes it.
-#[derive(Event, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct MenuMusic {
-    pub app_plays: bool,
-    pub menu_shown: bool,
+impl PartyClient {
+    /// The base game's front end as the base (its `GameClient::base`), if
+    /// it has one.
+    pub fn base_client(&self) -> Option<&'static chimera_world::game_bundle::BaseClient> {
+        self.clients.iter().find(|c| c.game == self.party.base.info.id)?.base
+    }
 }
 
-/// The main menu raises the base game's loading screen for a map
-/// (`Some`) or lowers it (`None`); the party's front end observes it.
-#[derive(Event, Clone, Debug)]
-pub struct SetBaseLoading(pub Option<String>);
+pub use chimera_world::game_bundle::{MenuMusic, SetBaseLoading};
 
 /// The front end an app runs (`PartyClient`), for the kit's systems:
 /// inserted by `front_end`.
@@ -183,7 +171,11 @@ pub fn front_end(front: &'static PartyClient, app: &mut App, args: &Args) {
             add(app);
         }
     }
-    // The composition's own (the base game's other looks).
+    // The base game's own as the base (its other looks, the mouse look's
+    // starting values), then the composition's own.
+    if let Some(base) = front.base_client() {
+        (base.app)(app);
+    }
     (front.front_end)(app);
 }
 

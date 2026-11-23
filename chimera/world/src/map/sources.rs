@@ -20,8 +20,9 @@
 //!   left (`GameKit::stay`: a
 //!   field added to the kit needs no line here, a loader that ignores the
 //!   option is still stripped). Its spawn points' teams become the
-//!   gameplay's (`SpawnTeams`; unlisted teams: any team), and the
-//!   gameplay's dressing is added.
+//!   gameplay's through the neutral sides (each game's `MapWords::teams`;
+//!   a team either game doesn't name: any team), and the gameplay's
+//!   dressing is added.
 //! - Units: `MapData` is metres for every game (each loader applies its
 //!   own game's world unit: Source's 0.0254 m inch, Combat Arms'
 //!   `meters_per_unit`), the map's entity space keeps its own scale
@@ -31,11 +32,16 @@
 //!
 //! - Surfaces: a map of another game keeps its own surface names (its
 //!   game's parts that stay, a gun of its game among them, use them), and
-//!   the app's `SurfaceTable` for the pair (a data file the app owns, not
-//!   either game) gives each its gameplay name (`MapData::surface_names`,
-//!   spawned as `SurfaceNames`): by name, else by the Source game material
-//!   letter the map's surface has (`sound::MapSurface::game_material`),
-//!   else the table's default.
+//!   each gets its gameplay name (`MapData::surface_names`, spawned as
+//!   `SurfaceNames`) through the neutral surface kinds: the map's game
+//!   says which kind each of its names is (`SurfaceWords::names`; a name
+//!   it doesn't list is a kind's own name), the gameplay's game what it
+//!   calls each kind (`SurfaceWords::kinds`); a name whose kind the
+//!   gameplay doesn't know goes by the Source game material letter the
+//!   map's surface has (`sound::MapSurface::game_material`, the map's
+//!   game's `materials`), else the gameplay's `default`. Each game's words
+//!   are its own (`MapLoader::words`): a new game maps into the kinds
+//!   once, not into each other game's names.
 //! - Kept parts: the held and view models of the map's game whose keys
 //!   start with one of `MapSources::kept` stay (another game's weapons an
 //!   app offers in the gameplay's slots); with `MapSources::players`, also
@@ -339,6 +345,12 @@ pub struct MapLoader {
     /// Map `name` (without the prefix) with `options` (the app's context
     /// in `options.context`).
     pub load: fn(&str, &MapLoadOptions) -> Result<MapData, String>,
+    /// Its words for what maps of different games share (its spawn teams
+    /// as the neutral sides, its surfaces as the neutral kinds), both as a
+    /// map's game and as the gameplay's (None: it has none: its maps'
+    /// teams spawn anyone under another game's gameplay, their surfaces
+    /// keep their names).
+    pub words: Option<&'static MapWords>,
 }
 
 /// The kit of a map built in code (`code_maps::CODE_MAPS`: the greybox, the
@@ -353,6 +365,7 @@ pub struct MapLoader {
 pub static CODE_MAP_KIT: MapLoader = MapLoader {
     game: CODE_MAP_GAME,
     load: code_map_kit,
+    words: None,
 };
 
 /// The game id of the code-built maps' kit (`CODE_MAP_KIT`).
@@ -394,64 +407,87 @@ pub struct MapDressing {
     pub dress: fn(&mut MapData, &MapLoadOptions) -> Result<(), String>,
 }
 
-/// Spawn teams of another game's maps as the gameplay's teams: map
-/// `game`'s team `from` is the gameplay's `to` (CS:S's terrorists, 1, as
-/// Combat Arms' Alpha, 1).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SpawnTeams {
-    pub game: &'static str,
-    pub from: u8,
-    pub to: u8,
-}
+/// The neutral sides a game's spawn teams are (`MapWords::teams`): the
+/// first and the second of two teams (CS:S's terrorists and counter-
+/// terrorists, TF2's RED and BLU, Halo's red and blue, Combat Arms' Alpha
+/// and Bravo).
+pub const SIDE_FIRST: u8 = 1;
+pub const SIDE_SECOND: u8 = 2;
 
-/// One game's surface names as another's: a data file an app owns for
-/// the pair (TOML: `[names]` the map's surface property names, lower-case,
-/// to the gameplay's; `[materials]` Source game material letters to the
-/// gameplay's, for names not listed; `default`, for the rest).
+/// One game's words for what maps of different games share, both ways:
+/// as a map's game (its words to the neutral ones) and as the gameplay's
+/// (the neutral ones to its own). A composer puts game A's map under game
+/// B's gameplay through A's and B's words: no table per pair of games.
 #[derive(Clone, Copy, Debug)]
-pub struct SurfaceTable {
-    /// The maps' game (`cs_source`).
-    pub map: &'static str,
-    /// The gameplay's game (`combat_arms`).
-    pub gameplay: &'static str,
-    /// The table's text (the app's data file: read from the checkout in a
-    /// dev build, built in otherwise).
-    pub text: chimera_core::game_data::GameData,
+pub struct MapWords {
+    /// Its spawn teams and the neutral side each is (`SIDE_FIRST`,
+    /// `SIDE_SECOND`): `(own team, side)`.
+    pub teams: &'static [(u8, u8)],
+    /// Its surfaces and the neutral kinds (TOML, `SurfaceWords`; read from
+    /// the checkout in a dev build, built in otherwise). None: it says
+    /// nothing of surfaces (its maps' keep their names).
+    pub surfaces: Option<chimera_core::game_data::GameData>,
 }
 
-/// A `SurfaceTable`'s rows.
+impl MapWords {
+    /// Team `own` of this game's maps as `gameplay`'s team (None: either
+    /// game doesn't name the side).
+    pub fn team_as(&self, gameplay: &MapWords, own: u8) -> Option<u8> {
+        let side = self.teams.iter().find(|(t, _)| *t == own)?.1;
+        gameplay.teams.iter().find(|(_, s)| *s == side).map(|(t, _)| *t)
+    }
+}
+
+/// A game's surfaces in the neutral kinds (`MapWords::surfaces`, TOML).
+/// The kinds are Source's surface property names (concrete, metal_box,
+/// wood_crate, gravel, ladder, flesh, ...: the finest set our games
+/// speak; `impact::SurfaceClass` is their coarse grouping). As a map's
+/// game: `[names]` its own surface names to kinds (a name not listed is
+/// its own kind), `[materials]` Source game material letters to kinds,
+/// for names whose kind the gameplay doesn't know. As the gameplay:
+/// `[kinds]` kinds to its own surface names, `default` for the rest.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SurfaceRows {
+pub struct SurfaceWords {
     #[serde(default)]
     pub default: Option<String>,
     #[serde(default)]
     pub names: HashMap<String, String>,
     #[serde(default)]
     pub materials: HashMap<char, String>,
+    #[serde(default)]
+    pub kinds: HashMap<String, String>,
 }
 
-impl SurfaceTable {
-    /// The table's rows (names lower-cased).
-    pub fn rows(&self) -> Result<SurfaceRows, String> {
-        let mut rows: SurfaceRows =
-            toml::from_str(self.text.text()).map_err(|e| format!("{} to {} surfaces: {e}", self.map, self.gameplay))?;
-        rows.names = rows.names.into_iter().map(|(k, v)| (k.to_lowercase(), v)).collect();
-        rows.materials = rows.materials.into_iter().map(|(k, v)| (k.to_ascii_uppercase(), v)).collect();
-        Ok(rows)
+impl SurfaceWords {
+    /// `game`'s words read from `text` (names and kinds lower-cased,
+    /// letters upper-cased).
+    pub fn read(game: &str, text: &str) -> Result<SurfaceWords, String> {
+        let mut w: SurfaceWords = toml::from_str(text).map_err(|e| format!("{game}'s surface words: {e}"))?;
+        w.names = w.names.into_iter().map(|(k, v)| (k.to_lowercase(), v.to_lowercase())).collect();
+        w.materials = w.materials.into_iter().map(|(k, v)| (k.to_ascii_uppercase(), v.to_lowercase())).collect();
+        w.kinds = w.kinds.into_iter().map(|(k, v)| (k.to_lowercase(), v)).collect();
+        Ok(w)
     }
+}
+
+/// A map's game's surface words and its gameplay's, together: the
+/// gameplay's name for each of the map's.
+#[derive(Clone, Debug, Default)]
+pub struct SurfaceRows {
+    pub map: SurfaceWords,
+    pub gameplay: SurfaceWords,
 }
 
 impl SurfaceRows {
     /// The gameplay's name for the map's surface `name` (lower-case),
     /// whose game material letter is `material` (None: the map doesn't
-    /// say).
+    /// say): by its kind, else by its letter's kind, else the gameplay's
+    /// default.
     pub fn get(&self, name: &str, material: Option<char>) -> Option<&str> {
-        self.names
-            .get(name)
-            .or_else(|| self.materials.get(&material?.to_ascii_uppercase()))
-            .or(self.default.as_ref())
-            .map(String::as_str)
+        let kind = self.map.names.get(name).map_or(name, String::as_str);
+        let by_letter = || self.map.materials.get(&material?.to_ascii_uppercase()).and_then(|k| self.gameplay.kinds.get(k));
+        self.gameplay.kinds.get(kind).or_else(by_letter).or(self.gameplay.default.as_ref()).map(String::as_str)
     }
 
     /// Every surface name `map` uses (its sound surfaces, its world's and
@@ -495,9 +531,9 @@ impl SurfaceNames {
     }
 }
 
-/// An app's maps: the loaders it chose, its gameplay's dressing, the
-/// team mapping of other games' spawns, the surface tables and the map
-/// game's parts it keeps.
+/// An app's maps: the loaders it chose (each with its game's words,
+/// `MapLoader::words`), its gameplay's dressing and the map game's parts
+/// it keeps.
 #[derive(Debug)]
 pub struct MapSources {
     /// The loaders; a bare map name (no `game:`) is the first's.
@@ -505,9 +541,6 @@ pub struct MapSources {
     /// The game whose gameplay runs on every map (None: maps load as
     /// their loaders make them).
     pub gameplay: Option<&'static MapDressing>,
-    pub teams: &'static [SpawnTeams],
-    /// Other games' surface names as the gameplay's, one table per pair.
-    pub surfaces: &'static [SurfaceTable],
     /// Key prefixes of the map game's held and view models that stay on
     /// its maps (`cs_source:weapon_`: CS:S's guns an app offers).
     pub kept: &'static [&'static str],
@@ -529,6 +562,11 @@ pub struct MapSources {
 pub const LOADER_SHARE: f32 = 0.6;
 
 impl MapSources {
+    /// The words of `game` (its loader's), if the app has its loader.
+    pub fn words(&self, game: &str) -> Option<&'static MapWords> {
+        self.loader(game)?.words
+    }
+
     /// The loader of `game`, if the app has one.
     pub fn loader(&self, game: &str) -> Option<&'static MapLoader> {
         self.loaders.iter().copied().find(|l| l.game.eq_ignore_ascii_case(game))
@@ -610,23 +648,20 @@ impl MapSources {
         // The map game's bodies go after the gameplay's (whose first is
         // the one everything without an identity is measured against).
         let kept_bodies = std::mem::take(&mut map.kit.characters);
-        if let Some(table) = self
-            .surfaces
-            .iter()
-            .find(|t| t.map.eq_ignore_ascii_case(game) && t.gameplay.eq_ignore_ascii_case(gameplay.game))
-        {
-            match table.rows() {
-                Ok(rows) => map.surface_names = rows.translate(map),
-                Err(e) => map.warnings.push(e),
+        let (words, theirs) = (self.words(game), self.words(gameplay.game));
+        if let (Some(words), Some(theirs)) = (words, theirs) {
+            match (words.surfaces, theirs.surfaces) {
+                (Some(own), Some(other)) => match (SurfaceWords::read(game, own.text()), SurfaceWords::read(gameplay.game, other.text())) {
+                    (Ok(map_side), Ok(gameplay_side)) => {
+                        map.surface_names = SurfaceRows { map: map_side, gameplay: gameplay_side }.translate(map)
+                    }
+                    (Err(e), _) | (_, Err(e)) => map.warnings.push(e),
+                },
+                _ => {}
             }
         }
         for (_, team) in &mut map.spawns {
-            *team = team.and_then(|t| {
-                self.teams
-                    .iter()
-                    .find(|s| s.game.eq_ignore_ascii_case(game) && s.from == t.0)
-                    .map(|s| Team(s.to))
-            });
+            *team = team.and_then(|t| Some(Team(words?.team_as(theirs?, t.0)?)));
         }
         if let Err(e) = (gameplay.dress)(map, options) {
             map.warnings.push(format!("{}'s parts: {e}", gameplay.game));
@@ -755,20 +790,24 @@ mod tests {
         Ok(())
     }
 
-    static A: MapLoader = MapLoader { game: "a", load: a_map };
-    static B: MapLoader = MapLoader { game: "b", load: b_map };
+    // a's teams are b's the other way round; a's surfaces go to b's by
+    // their kinds, by a's material letters, else b's default.
+    static A_WORDS: MapWords = MapWords {
+        teams: &[(1, SIDE_FIRST), (2, SIDE_SECOND)],
+        surfaces: Some(chimera_core::game_data::GameData::from_text("[materials]\nN = \"beach\"\n")),
+    };
+    static B_WORDS: MapWords = MapWords {
+        teams: &[(2, SIDE_FIRST), (1, SIDE_SECOND)],
+        surfaces: Some(chimera_core::game_data::GameData::from_text(
+            "default = \"Stone\"\n[kinds]\nWood_Crate = \"Wood\"\nbeach = \"Sand\"\n",
+        )),
+    };
+    static A: MapLoader = MapLoader { game: "a", load: a_map, words: Some(&A_WORDS) };
+    static B: MapLoader = MapLoader { game: "b", load: b_map, words: Some(&B_WORDS) };
     static B_PARTS: MapDressing = MapDressing { game: "b", dress: b_parts };
     static SOURCES: MapSources = MapSources {
         loaders: &[&A, &B],
         gameplay: Some(&B_PARTS),
-        teams: &[SpawnTeams { game: "a", from: 1, to: 2 }, SpawnTeams { game: "a", from: 2, to: 1 }],
-        surfaces: &[SurfaceTable {
-            map: "a",
-            gameplay: "b",
-            text: chimera_core::game_data::GameData::from_text(
-                "default = \"Stone\"\n[names]\nWood_Crate = \"Wood\"\n[materials]\nN = \"Sand\"\n",
-            ),
-        }],
         kept: &["a:gun"],
         players: false,
         guests: &[],
@@ -808,9 +847,9 @@ mod tests {
             assert!(!o.textures && o.hdr_level == Some(0), "{o:?}");
             Ok(MapData { name: name.into(), ..default() })
         }
-        static L: MapLoader = MapLoader { game: "l", load: lean_only };
+        static L: MapLoader = MapLoader { game: "l", load: lean_only, words: None };
         static S: MapSources =
-            MapSources { loaders: &[&L], gameplay: None, teams: &[], surfaces: &[], kept: &[], players: false, guests: &[] };
+            MapSources { loaders: &[&L], gameplay: None, kept: &[], players: false, guests: &[] };
         S.load_with("l:x", &MapLoadOptions::lean()).unwrap();
         assert!(MapLoadOptions::default().textures, "everything by default");
     }
@@ -823,10 +862,10 @@ mod tests {
         fn level_seen(name: &str, o: &MapLoadOptions) -> Result<MapData, String> {
             Ok(MapData { name: format!("{name}/{}", o.hdr_level_or(if name == "tf" { 2 } else { 0 })), ..default() })
         }
-        static T: MapLoader = MapLoader { game: "t", load: level_seen };
-        static C: MapLoader = MapLoader { game: "c", load: level_seen };
+        static T: MapLoader = MapLoader { game: "t", load: level_seen, words: None };
+        static C: MapLoader = MapLoader { game: "c", load: level_seen, words: None };
         static S: MapSources =
-            MapSources { loaders: &[&T, &C], gameplay: None, teams: &[], surfaces: &[], kept: &[], players: false, guests: &[] };
+            MapSources { loaders: &[&T, &C], gameplay: None, kept: &[], players: false, guests: &[] };
         let none = MapLoadOptions { hdr_level: None, ..default() };
         assert_eq!(S.load_with("t:tf", &none).unwrap().name, "tf/2");
         assert_eq!(S.load_with("c:cs", &none).unwrap().name, "cs/0");
@@ -842,13 +881,11 @@ mod tests {
             // The loader reports the kit it was asked for in the name.
             Ok(MapData { name: format!("{name}/{:?}", o.kit), ..default() })
         }
-        static A2: MapLoader = MapLoader { game: "a", load: kit_seen };
-        static B2: MapLoader = MapLoader { game: "b", load: kit_seen };
+        static A2: MapLoader = MapLoader { game: "a", load: kit_seen, words: None };
+        static B2: MapLoader = MapLoader { game: "b", load: kit_seen, words: None };
         static S2: MapSources = MapSources {
             loaders: &[&A2, &B2],
             gameplay: Some(&B_PARTS),
-            teams: &[],
-            surfaces: &[],
             kept: &["a:gun"],
             players: false,
             guests: &[],
@@ -894,13 +931,11 @@ mod tests {
             map.kit.characters.push(body("b", Some("b_soldier")));
             Ok(())
         }
-        static A3: MapLoader = MapLoader { game: "a", load: with_players };
+        static A3: MapLoader = MapLoader { game: "a", load: with_players, words: None };
         static B_BODIES: MapDressing = MapDressing { game: "b", dress: b_bodies };
         static S3: MapSources = MapSources {
             loaders: &[&A3, &B],
             gameplay: Some(&B_BODIES),
-            teams: &[],
-            surfaces: &[],
             kept: &["a:gun"],
             players: true,
             guests: &[],
@@ -969,8 +1004,6 @@ mod tests {
         static S: MapSources = MapSources {
             loaders: &[&A, &B],
             gameplay: Some(&B_PARTS),
-            teams: &[],
-            surfaces: &[],
             kept: &[],
             players: false,
             // The slow one first: dressed in turn, the fast one waited for it.
@@ -1027,8 +1060,6 @@ mod tests {
         static S4: MapSources = MapSources {
             loaders: &[&A, &B],
             gameplay: Some(&B_PARTS),
-            teams: &[],
-            surfaces: &[],
             kept: &[],
             players: false,
             guests: &[&A_GUEST, &C_GUEST],
@@ -1059,10 +1090,10 @@ mod tests {
             map.warnings.push(format!("dressed for {}", o.context.get::<Who>().map_or(0, |a| a.0)));
             Ok(())
         }
-        static L: MapLoader = MapLoader { game: "a", load: loader };
+        static L: MapLoader = MapLoader { game: "a", load: loader, words: None };
         static D: MapDressing = MapDressing { game: "b", dress: dressing };
         static S: MapSources =
-            MapSources { loaders: &[&L], gameplay: Some(&D), teams: &[], surfaces: &[], kept: &[], players: false, guests: &[] };
+            MapSources { loaders: &[&L], gameplay: Some(&D), kept: &[], players: false, guests: &[] };
         let (one, two) = (LoadContext::default(), LoadContext::default());
         one.insert(Who(1));
         two.insert(Who(2));
@@ -1078,7 +1109,7 @@ mod tests {
     fn surfaces_get_the_gameplays_names() {
         let map = SOURCES.load("a:x", 0).unwrap();
         let names = SurfaceNames(Arc::new(map.surface_names.clone()));
-        assert_eq!(names.get("WOOD_CRATE"), Some("Wood"), "by name");
+        assert_eq!(names.get("WOOD_CRATE"), Some("Wood"), "by its kind");
         assert_eq!(names.get("sand"), Some("Sand"), "by game material letter");
         assert_eq!(names.get("weird"), Some("Stone"), "else the default");
         assert_eq!(names.resolve("unseen"), "unseen");

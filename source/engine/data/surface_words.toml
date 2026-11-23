@@ -1,0 +1,26 @@
+# The Source games' surfaces in Chimera's neutral surface kinds
+# (`chimera_world::map::sources::SurfaceWords`; CS:S's, HL2:DM's and
+# TF2's maps, `source_engine::maps::SURFACE_WORDS`). The kinds are
+# Source's surface property names, so a map's `$surfaceprop` names are
+# their own kinds and need no `[names]`; `[materials]`: the kind of a
+# surface by its game material letter (C concrete, D dirt, G grate, M
+# metal, N sand, O foliage, P computer, S slosh, T tile, V vent, W wood,
+# Y glass, ...), for a name whose kind the gameplay doesn't know. Ours:
+# the nearest kind for each letter.
+
+[materials]
+C = "concrete"
+D = "dirt"
+G = "metalgrate"
+M = "metal"
+V = "metalvent"
+P = "computer"
+N = "sand"
+O = "foliage"
+L = "plastic"
+S = "water"
+T = "tile"
+W = "wood"
+Y = "glass"
+F = "flesh"
+B = "bloodyflesh"

@@ -52,19 +52,20 @@ fn the_disc_images_maps_join_by_halos_pool_rules() {
 }
 
 /// Every surface name Halo's maps use (its material types' generic names,
-/// games/halo_ce/data/surfaces.toml) is named in the composed table, as a
-/// surface type Combat Arms' impact table knows.
+/// games/halo_ce/data/surfaces.toml) is a neutral surface kind Combat
+/// Arms names (its surface words), as a surface type its impact table
+/// knows.
 #[test]
-fn halos_surfaces_are_combat_arms_through_the_table() {
-    let table = party_roster::SURFACES
-        .iter()
-        .find(|t| t.map == halo_ce::game::GAME && t.gameplay == combat_arms::game::GAME)
-        .expect("a table for Halo's maps");
-    let rows = table.rows().unwrap();
+fn halos_surfaces_are_combat_arms_through_the_kinds() {
+    use chimera_world::map::sources::SurfaceWords;
+    let words = |g: &str| party_roster::MAP_SOURCES.words(g).and_then(|w| w.surfaces).expect("surface words");
+    let halo = SurfaceWords::read("halo_ce", words(halo_ce::game::GAME).text()).unwrap();
+    let rows = SurfaceWords::read("combat_arms", words(combat_arms::game::GAME).text()).unwrap();
     let ca = CaFxTables::built_in();
     for row in halo_ce::game::maps::surfaces::table().values() {
         let name = row.surface.as_str();
-        let to = rows.names.get(name).unwrap_or_else(|| panic!("`{name}` (Halo's {}) isn't named", row.name));
+        let kind = halo.names.get(name).map_or(name, String::as_str);
+        let to = rows.kinds.get(kind).unwrap_or_else(|| panic!("`{name}` (Halo's {}) isn't named", row.name));
         assert!(ca.surface_id(to).is_some(), "`{name}` as `{to}`: not one of Combat Arms' surface types");
     }
 }

@@ -248,6 +248,8 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     kept: &["halo_ce:"],
     binds: BUNDLE_BINDS,
     view_model_fov: Some(view::fov),
+    view_model_fov_cvar: None,
+    base: None,
     sim: |app| {
         use crate::game_registry::GameAppExt;
         app.register_game(&INFO);

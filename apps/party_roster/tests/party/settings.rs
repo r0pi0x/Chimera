@@ -278,7 +278,7 @@ fn a_rebind_applies_at_once_and_is_saved() {
     open_settings(&mut sim.app);
     send(&mut sim.app, SettingsAction::Tab(3));
     let row = rows(&sim.app).iter().position(|r| matches!(r, Row::Bind { command: "+use", .. })).unwrap();
-    let keys = |app: &App| party_roster::controls::keys_on(party_roster::client::CONTROLS, app.world().resource::<Console>(), 0, "+use");
+    let keys = |app: &App| party_roster::controls::keys_on(party_roster::client::controls(), app.world().resource::<Console>(), 0, "+use");
     assert_ne!(keys(&sim.app), ["g"]);
     let saves0 = saves(&sim.app);
     send(&mut sim.app, SettingsAction::Bind(row));
@@ -359,7 +359,7 @@ fn a_bind_row_takes_the_next_key() {
     assert_eq!(set(&mut sim.app).capture, Some(row));
     tap(&mut sim.app, KeyCode::KeyG);
     assert_eq!(set(&mut sim.app).capture, None);
-    let keys = party_roster::controls::keys_on(party_roster::client::CONTROLS, sim.app.world().resource::<Console>(), 0, "+use");
+    let keys = party_roster::controls::keys_on(party_roster::client::controls(), sim.app.world().resource::<Console>(), 0, "+use");
     assert_eq!(keys, ["g"]);
     // Esc while listening cancels and leaves the page open.
     send(&mut sim.app, SettingsAction::Bind(row));

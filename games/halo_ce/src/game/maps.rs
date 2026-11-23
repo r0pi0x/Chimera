@@ -83,7 +83,17 @@ use super::{GAME, INFO, MULTIPLAYER_MAPS};
 
 /// Halo's maps from the install (`map::MapLoader`), for an app's
 /// `map::MapSources`.
-pub static MAP_LOADER: MapLoader = MapLoader { game: GAME, load };
+pub static MAP_LOADER: MapLoader = MapLoader { game: GAME, load, words: Some(&WORDS) };
+
+/// Halo's words for what maps of different games share (`map::MapWords`):
+/// its capture the flag starts' red (1) the first side, blue (2) the
+/// second (`maps::spawns`); its maps' surfaces are already named by the
+/// neutral kinds (data/surfaces.toml: concrete, metal, dirt, ...), so its
+/// surface words list nothing.
+pub static WORDS: crate::map::MapWords = crate::map::MapWords {
+    teams: &[(1, crate::map::SIDE_FIRST), (2, crate::map::SIDE_SECOND)],
+    surfaces: Some(chimera_core::game_data::GameData::from_text("")),
+};
 
 /// The converter's version for the converted-map cache, the kept guest
 /// dressing and the served converted entries: `v<number>-<hash>`, a

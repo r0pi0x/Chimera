@@ -120,3 +120,9 @@ mod tests {
         assert_eq!(super::parse_map_cycle(text), ["cs_italy", "de_dust", "de_aztec"]);
     }
 }
+
+/// The Source games' surfaces in Chimera's neutral surface kinds
+/// (`chimera_world::map::sources::SurfaceWords`: their surface property
+/// names are the kinds; data/surface_words.toml, the kind of each game
+/// material letter): each Source game's `MapWords::surfaces`.
+pub const SURFACE_WORDS: chimera_core::game_data::GameData = chimera_core::game_data!("data/surface_words.toml");

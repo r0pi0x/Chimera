@@ -15,11 +15,13 @@
 //!
 //! - `Party`: the base game's bundle (whose gameplay, bots and HUD
 //!   everything plays on: Combat Arms), the guests' (CS:S, HL2:DM, Halo,
-//!   TF2), the map sources, the built-in minigames, and hooks for what
-//!   names a game (`base_plugins`, `sim_parts`, `sim_rules`, `finish`,
-//!   `requirements`). `Roster` holds it in the app.
+//!   TF2), the map sources, the built-in minigames, and hooks for the
+//!   party's own parts (`sim_parts`, `sim_rules`, `requirements`). What a
+//!   game brings is its bundle's: the base game's simulation, rules and
+//!   bots as a base (`GameBundle::base`), each game's view-model cvar.
+//!   `Roster` holds it in the app.
 //! - `PartyPlugins(&Party)`: the simulation: the base game's
-//!   (`Party::base_plugins`), then `PartyPartsPlugin(&Party)`: each game's
+//!   (`BaseGame::plugins`), then `PartyPartsPlugin(&Party)`: each game's
 //!   parts registered, each guest's own simulation (its bundle's `sim`:
 //!   its guns and their impacts, movement, view-model rules), the view
 //!   models' fields of view, the cross-game balance, the minigame runtime
@@ -121,22 +123,23 @@ pub struct Party {
     /// without `+minigame`.
     pub minigames: &'static [(&'static str, GameData)],
     pub default_minigame: &'static str,
-    /// The base game's simulation: its engine base, then its parts.
-    pub base_plugins: fn() -> PluginGroupBuilder,
-    /// The composition's parts that name games, after the guests' own
-    /// (`GameBundle::sim`) and the balance: each game's view-model field
-    /// of view cvar, the practice targets' bodies.
+    /// The party's own parts, after the guests' (`GameBundle::sim`) and
+    /// the balance: the practice targets' bodies.
     pub sim_parts: fn(&mut App),
-    /// After the minigame runtime: the built-in minigames' plugin, the
-    /// host's surprises, the base game's rules and bots set for the party.
+    /// After the minigame runtime, before the base game's own setting
+    /// for the party (`BaseGame::compose`): the built-in minigames'
+    /// plugin, the host's surprises.
     pub sim_rules: fn(&mut App),
-    /// At `Plugin::finish`, after the host's.
-    pub finish: fn(&mut App),
     /// What this machine lacks to play (`Missing`), read from it.
     pub requirements: fn() -> Vec<Missing>,
 }
 
 impl Party {
+    /// The base game as a base (`GameBundle::base`).
+    pub fn base_game(&self) -> &'static chimera_world::game_bundle::BaseGame {
+        self.base.base.unwrap_or_else(|| panic!("{} can't be a party's base game (its bundle's `base`)", self.base.info.id))
+    }
+
     /// What each composed game lends (`chimera_core::game_parts`).
     pub fn parts(&self) -> impl Iterator<Item = &'static chimera_core::game_parts::GameParts> + '_ {
         self.bundles.iter().map(|b| b.parts)
@@ -187,23 +190,27 @@ impl Party {
 #[derive(Resource, Clone, Copy)]
 pub struct Roster(pub &'static Party);
 
-/// The simulation: the base game's (`Party::base_plugins`), then
+/// The simulation: the base game's (`BaseGame::plugins`), then
 /// `PartyPartsPlugin`.
 pub struct PartyPlugins(pub &'static Party);
 
 impl PluginGroup for PartyPlugins {
     fn build(self) -> PluginGroupBuilder {
-        (self.0.base_plugins)().add(PartyPartsPlugin(self.0))
+        (self.0.base_game().plugins)().add(PartyPartsPlugin(self.0))
     }
 }
 
 /// Each game's guns at the game's own view-model field of view, for a
 /// player of that game (each bundle's `view_model_fov`), and
-/// `r_drawviewmodel` for all; each game's own cvar is the party's
-/// (`Party::sim_parts`).
+/// `r_drawviewmodel` for all, and each game's own cvar for it (its
+/// bundle's `view_model_fov_cvar`; all saved in the config). After the
+/// base game's view model settings are in.
 pub fn add_view_model_fovs(party: &Party, app: &mut App) {
     let fovs = [party.base].iter().chain(party.guests.iter()).filter_map(|b| b.view_model_fov.map(|f| f())).collect();
     app.insert_resource(chimera_world::map::GameViewModelFovs(fovs));
+    for cvar in [party.base].iter().chain(party.guests.iter()).filter_map(|b| b.view_model_fov_cvar) {
+        cvar(app);
+    }
     // Every game's view model hidden or shown (screenshots of a map
     // without a gun in hand), as CS:S's own console has it.
     chimera_core::console::resource_cvar::<chimera_world::map::ViewModelSettings, u8>(
@@ -220,8 +227,9 @@ pub fn add_view_model_fovs(party: &Party, app: &mut App) {
 /// movement, view-model rules and motion, on Chimera's generic driver
 /// with its game's rules), the cross-game balance, the minigame runtime
 /// and its part of the network, a slice of a big map, each game's binds,
-/// the party's options, and what the party names (`Party::sim_parts`,
-/// `sim_rules`, `finish`).
+/// the party's options, the party's own parts (`Party::sim_parts`,
+/// `sim_rules`) and the base game set for the party (`BaseGame::compose`,
+/// `finish`).
 pub struct PartyPartsPlugin(pub &'static Party);
 
 impl Plugin for PartyPartsPlugin {
@@ -241,6 +249,7 @@ impl Plugin for PartyPartsPlugin {
         (party.sim_parts)(app);
         app.add_plugins(MinigamePlugin);
         (party.sim_rules)(app);
+        (party.base_game().compose)(app);
         app.add_plugins((
             // The match and the ladder over the network (a part: nothing
             // runs without a `NetPlugin`).
@@ -265,7 +274,7 @@ impl Plugin for PartyPartsPlugin {
 
     fn finish(&self, app: &mut App) {
         host::finish(app);
-        (self.0.finish)(app);
+        (self.0.base_game().finish)(app);
     }
 }
 

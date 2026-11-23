@@ -1460,7 +1460,7 @@ pub struct MapData {
     /// Sound entries, clips and surfaces the map uses.
     pub sounds: Arc<MapSounds>,
     /// The gameplay's surface names for the map's own (a map of another
-    /// game in a mashup, `sources::SurfaceTable`): the map's lower-case
+    /// game in a mashup, `sources::SurfaceWords`): the map's lower-case
     /// surface property name to the gameplay's; empty when the map's
     /// names are the gameplay's. Spawned as `sources::SurfaceNames`.
     #[serde(serialize_with = "crate::map::pod_serde::sorted")]

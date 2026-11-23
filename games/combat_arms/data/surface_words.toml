@@ -1,21 +1,18 @@
-# Counter-Strike: Source's surfaces as Combat Arms' surface types, for
-# Combat Arms' gameplay on CS:S maps (`mashup_demo::MAP_SOURCES`, read by
-# Chimera's `map::sources::SurfaceTable`). Ours: a judgement of which
-# Combat Arms type looks and sounds most like each CS:S surface, made by
-# eye and ear, not from either game's files.
+# Chimera's neutral surface kinds as Combat Arms' surface types, for
+# Combat Arms' gameplay on another game's map (`chimera_world::map::
+# sources::SurfaceWords`, `world::WORDS`; the map's game says which kind
+# each of its surfaces is). The kinds are Source's surface property names.
+# Ours: a judgement of which Combat Arms type looks and sounds most like
+# each kind, made by eye and ear, not from either game's files.
 #
 # The values are Combat Arms' surface type names (its effects table,
-# games/combat_arms/data/effects.toml, `[[surface]] name`; its
-# shoot-through table, data/surfaces.toml, matches the same names without
-# case). `[names]`: CS:S surface property names (a material's
-# `$surfaceprop`, a model's); `[materials]`: CS:S's game material letter
-# of a surface not listed (C concrete, D dirt, G grate, M metal, N sand,
-# O foliage, P computer, S slosh, T tile, V vent, W wood, Y glass, ...);
-# `default`: anything else.
+# data/effects.toml, `[[surface]] name`; its shoot-through table,
+# data/surfaces.toml, matches the same names without case). `[kinds]`:
+# a kind to its type; `default`: any other kind.
 
 default = "Cement"
 
-[names]
+[kinds]
 # Stone.
 default = "Cement"
 concrete = "Cement"
@@ -86,20 +83,3 @@ flesh = "ImpactAdultBody"
 bloodyflesh = "ImpactAdultBody"
 alienflesh = "ImpactAdultBody"
 watermelon = "ImpactAdultBody"
-
-[materials]
-C = "Cement"
-D = "Dirt"
-G = "Metal"
-M = "Metal"
-V = "Metal"
-P = "Metal"
-N = "Desert_Sand"
-O = "Grass"
-L = "Linoleum"
-S = "Water"
-T = "Ceramic tile"
-W = "Wood"
-Y = "Glass"
-F = "ImpactAdultBody"
-B = "ImpactAdultBody"

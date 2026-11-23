@@ -291,13 +291,13 @@ fn the_report_key_is_a_shared_controls_row_that_rebinds() {
     let s = sim.app.world().resource::<Settings>().clone();
     let rows = settings::rows(ctx, &tabs, s.tab, s.view());
     let row = rows.iter().position(|r| matches!(r, Row::Bind { command: "feedback", .. })).expect("a Report a bug row");
-    assert_eq!(party_roster::controls::keys_on(party_roster::client::CONTROLS, sim.app.world().resource::<Console>(), 0, "feedback"), ["f10"]);
+    assert_eq!(party_roster::controls::keys_on(party_roster::client::controls(), sim.app.world().resource::<Console>(), 0, "feedback"), ["f10"]);
     sim.app.world_mut().write_message(SettingsAction::Bind(row));
     sim.app.update();
     sim.app.update();
     assert!(fb(&sim.app).key_blocked, "the key is held off while a bind listens");
     tap(&mut sim.app, KeyCode::F7);
-    assert_eq!(party_roster::controls::keys_on(party_roster::client::CONTROLS, sim.app.world().resource::<Console>(), 0, "feedback"), ["f7"]);
+    assert_eq!(party_roster::controls::keys_on(party_roster::client::controls(), sim.app.world().resource::<Console>(), 0, "feedback"), ["f7"]);
     assert_eq!(fb(&sim.app).phase, Phase::Closed, "binding a key opens no report");
 }
 

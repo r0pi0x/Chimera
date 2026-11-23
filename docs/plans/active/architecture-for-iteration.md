@@ -609,13 +609,15 @@ roster's crate, split by game where they compose one game.
       (data/theme.toml) are read again when `game_data::generation()`
       moves (`data_reload`); the Options and host settings pages already
       parse their data on each draw.
-- [ ] Not done (per game, step 9 proper): the base game's hooks are the
-      roster's functions, not `GameBundle`/`GameClient` fields every game
-      fills; the pairs' spawn teams and surfaces are the roster's tables,
-      not a neutral vocabulary; the Controls rows are the roster's, not
-      each game's `player_options`. A game edit still selects
-      `ultimate_gun_game` (it builds on the roster); of the roster's
-      tests, since the follow-up below, only those naming the game.
+- [x] Step 9 proper (2026-11-22; "Stage 3, step 9 proper" below): the
+      base game's hooks are its bundle's and its front end's
+      (`GameBundle::base`, `BaseGame`; `GameClient::base`,
+      `BaseClient`), the view-model cvars each bundle's; the pairs'
+      spawn teams and surfaces a neutral vocabulary each game's map
+      loader carries (`MapWords`); the Controls tabs made of each game's
+      `player_options`. A game edit still selects `ultimate_gun_game`
+      (it builds on the roster); of the roster's tests, since the
+      follow-up below, only those naming the game.
 
 The moves were one commit, not one per game: the composition was one
 set of tables (`GUESTS` names all five bundles at once) and the client's
@@ -650,6 +652,59 @@ Checked: the fast tiers of `party_kit` (11), `party_roster` (11 unit,
 23 `it`) and the four apps, all passing; `repo_checks` (51);
 `cargo check` of `party_kit` and both servers without `present`.
 
+
+#### Stage 3, step 9 proper (2026-11-22)
+
+architecture-pass.md step 9. Behaviour kept; the roster is a list.
+
+- **Base game by descriptor.** `GameBundle::base: Option<&BaseGame>`
+  (`plugins`, `compose`, `finish`): Combat Arms fills it
+  (`combat_arms::game::bundle::BASE`: its plugins, `ca_mode none`, its
+  bots' AI rows for other games' guns, data/party_bot_gun_types.toml
+  moved from the roster, and by class; the widest hull). `Party` lost
+  `base_plugins` and `finish`; its `sim_parts`/`sim_rules` are the
+  party's own (practice targets' bodies; the originals and surprises).
+  `GameBundle::view_model_fov_cvar` replaces the roster's list of
+  cvars. On the client, `GameClient::base: Option<&BaseClient>`
+  (`menu`: its answers to `MenuMusic`/`SetBaseLoading`, which moved to
+  `chimera_world::game_bundle`; `app`: its looks and mouse defaults,
+  `combat_arms_ui::BaseMousePlugin`; `loading`): Combat Arms' ui fills
+  it, `PartyClient` lost `base_loading`.
+- **Neutral vocabulary.** `MapLoader::words: Option<&MapWords>`:
+  `teams` as `(own team, SIDE_FIRST|SIDE_SECOND)`, `surfaces` as
+  `SurfaceWords` (TOML: a map game's `[names]`/`[materials]` to kinds,
+  the gameplay's `[kinds]` to its names, `default`). The kinds are
+  Source's surface property names (finer than `impact::SurfaceClass`,
+  which would have merged Combat Arms' "Ladder", "Dirt Road", "carpet"
+  and "Cloth"). `SpawnTeams`, `SurfaceTable`, `MapSources::{teams,
+  surfaces}`, the roster's and the mashup demo's `TEAMS`/`SURFACES`
+  and apps/mashup_demo/data/surfaces_cs_source_combat_arms.toml are
+  gone; source/engine/data/surface_words.toml (the Source games'
+  material letters) and games/combat_arms/data/surface_words.toml
+  (kinds to Combat Arms' types) replace them. Each material letter was
+  mapped to a kind whose Combat Arms type is the old table's, and a
+  roster test checks the old rows (`guests_teams_and_surfaces_reach_
+  combat_arms`). Adding a game: its words once, no row per other game.
+- **Controls from `player_options`.** `game_options::install` also
+  makes the Controls tabs (`game_options::controls`): the base game's
+  first, then the guests'; each game's actions not `planned` (one row
+  per command), its own cvars with a range. The roster's `CONTROLS` is
+  gone (`client::controls()` for tests). Differences: Halo's tab and
+  row read as its data says ("Halo: Combat Evolved", "Throw grenade"),
+  and TF2 has a tab (its alt fire, one `+attack2` row; its gun view
+  FOV).
+- **The roster's arrays from one list.** `BUNDLES`, `KEPT`,
+  `GUEST_DRESSING`, `LOADERS` and `GAME_PARTS` are made from `GUESTS`
+  in const blocks; a new guest is its line in `GUESTS` and its
+  `CLIENT` in `client::CLIENTS`.
+
+Left: the requirements text (`missing`: CS:S's install, Combat Arms'
+and its keys) is still the roster's, not each bundle's; the main menu's
+look (CS:S's GameUI) is the roster's choice (its type is a Source
+loader's, below `chimera_world`'s reach); `GAME_BINDS` still lists four
+games by index for the Ultimate Gun Game's tests; Combat Arms' party
+bot rows name other games' gun ids (a per-pair table inside one game;
+by class otherwise).
 
 #### Stage 3 follow-up: the roster's tests by game (2026-11-22)
 
