@@ -161,7 +161,7 @@ fn avatar_looks_round_trip_and_draw_from_the_palette() {
     // Idle greys both.
     let g = avatar::grey(AvatarLook::new(0, 4).tint()).to_srgba();
     assert!((g.red - g.green).abs() < 1e-6 && (g.green - g.blue).abs() < 1e-6);
-    for key in ["gear", "friends", "bug", "plus", "listchev", "mouse_right", "eye_off", "profile"] {
+    for key in ["gear", "friends", "bug", "plus", "listchev", "mouse_right", "eye_off", "profile", "voice", "voice_off"] {
         assert!(chimera_ui::Icons::shipped().get(key).is_some(), "{key} ships");
     }
 }

@@ -749,10 +749,17 @@ The one Signal chat is in on `ugg-chat` (plan ugg-ui.md, M10: one feed,
 Y/U and Combat Arms' keys, docked in the lobby and the match end,
 `ignore`, `cl_chat`, the `chat_in` cue). Left:
 
-- A mute button on the Tab board (the board is held open with the cursor
-  captured); today a click on a name in the open chat, or `ignore`.
-- Who is talking (voice) in the feed or by the names; Combat Arms' talk
-  icon is the only indicator.
+- ~~A mute button on the Tab board~~ (done 2026-11-23, `ugg-tab-mute`):
+  a right click while Tab is held frees the cursor (`race_chip::BoardPick`,
+  one of `input::FreeCursorOwners`) and each other player's row ends in the
+  kit's Mute (Unmute); it is the chat's `ignore` (`ChatMutes`, bots by
+  name) and the row shows the struck meter. Letting go of Tab grabs the
+  cursor again. It does not mute their voice (`VoiceMutes`, CS:S's player
+  list): left, one switch for both once blocking is added.
+- ~~Who is talking (voice)~~ (done 2026-11-23): a level-meter mark by the
+  name on the Tab board and the lobby's lanes (`client::talk`: `Talking`,
+  `TalkMark`), from `net::voice::VoiceActivity`. Left: the same mark in the
+  chat feed and the party panel's friends (no voice there).
 - Time stamps are the session's clock (no local time zone without a date
   crate).
 - Lucker Party keeps the games' chat until its theme turns the Signal

@@ -159,6 +159,9 @@ impl CountdownBar {
 
 /// The lobby panel's systems (added by `PreMatchLobbyPlugin`).
 pub fn add(app: &mut App) {
+    if !app.is_plugin_added::<super::talk::TalkPlugin>() {
+        app.add_plugins(super::talk::TalkPlugin);
+    }
     app.add_systems(Update, (draw, step_bar, kick_swap).chain().after(super::prematch_lobby::LobbyFollow).run_if(themed))
         .add_systems(Update, press.before(super::prematch_lobby::LobbyFollow));
 }
@@ -258,7 +261,7 @@ impl Panel<'_> {
     }
 
     /// The kit's icon `key`, `h` cq tall, in `tone`.
-    fn icon(&self, c: &mut Commands, parent: Entity, icons: &mut IconImages, images: &mut Assets<Image>, key: &str, h: f32, tone: Tone) {
+    fn icon(&self, c: &mut Commands, parent: Entity, icons: &mut IconImages, images: &mut Assets<Image>, key: &str, h: f32, tone: Tone) -> Entity {
         let u = self.units;
         let px = u.phys(u.cq(h)).round().max(1.0) as u32;
         let aspect = icons.icons().get(key).map_or(1.0, |i| i.aspect());
@@ -272,7 +275,8 @@ impl Panel<'_> {
                 ..default()
             },
             ChildOf(parent),
-        ));
+        ))
+        .id()
     }
 }
 
@@ -463,6 +467,12 @@ fn draw(
             let t = p.boxed(c, who, style!(row, pad: [0.2, 0.32, 0.16, 0.32]).outline(Tone::Fg3, 1.0).shrink(0.0));
             c.entity(t).insert(LobbyMark::Host);
             p.text(c, t, Role::Mono, 0.46, Tone::Fg2, "Host");
+        }
+        // Talking: the voice meter, shown while this player's voice comes
+        // in (`talk`); a bot never.
+        if !row.bot {
+            let m = p.icon(c, who, icons, images, "voice", p.lay("tag"), Tone::AccText);
+            c.entity(m).insert((super::talk::TalkMark { owner: row.id, local: row.local }, Visibility::Hidden));
         }
         if row.wins > 0 {
             let leader = row.wins == top_wins;

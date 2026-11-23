@@ -574,3 +574,157 @@ fn holding_tab_opens_the_board_on_every_rung() {
         assert!(!visible::<BoardContent>(&mut sim), "rung {rung}: not while typing");
     }
 }
+
+/// The scene for the board's Mute and talk marks: you and Ann (user 3) in
+/// the minigame, the chat's feed, a captured cursor kept by the app's own
+/// rule (`keep_cursor_free`), Tab bound as in play.
+fn mute_sim() -> (Sim, Entity, Entity, Entity) {
+    use chimera_client::client::{input, signal_chat::SignalChatPlugin};
+    let mut sim = sim_with(true, |app| {
+        app.add_plugins(SignalChatPlugin);
+        app.add_systems(PostUpdate, input::keep_cursor_free);
+    });
+    sim.app.init_resource::<ButtonInput<KeyCode>>().init_resource::<ButtonInput<MouseButton>>();
+    sim.app.add_systems(PreUpdate, poll_showscores);
+    sim.app.world_mut().resource_mut::<chimera_core::console::Console>().binds.insert("tab".into(), "+showscores".into());
+    player(&mut sim, "Me", 1, 4, true, false);
+    let ann = sim
+        .app
+        .world_mut()
+        .spawn((InMinigame, Name::new("Ann"), Rung(2), Score { kills: 2, deaths: 1 }, chimera_net::net::NetCharacter { owner: Some(3), name: "Ann".into() }))
+        .id();
+    let mut cursor = bevy::window::CursorOptions::default();
+    chimera_client::client::input::capture_cursor(&mut cursor);
+    let window = sim.app.world_mut().spawn(cursor).id();
+    for _ in 0..3 {
+        frame(&mut sim, 1.0 / 60.0);
+    }
+    (sim, ann, window, Entity::PLACEHOLDER)
+}
+
+fn hold_tab(sim: &mut Sim, down: bool) {
+    let mut keys = sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+    if down {
+        keys.press(KeyCode::Tab);
+    } else {
+        keys.release(KeyCode::Tab);
+    }
+    for _ in 0..4 {
+        frame(sim, 0.05);
+    }
+}
+
+fn grabbed(sim: &Sim, window: Entity) -> bool {
+    chimera_client::client::input::cursor_grabbed(sim.app.world().get::<bevy::window::CursorOptions>(window).unwrap())
+}
+
+fn say(sim: &mut Sim, from: Entity, text: &str) {
+    use chimera_client::client::chat::{ChatEntry, ChatLine, LineKind};
+    sim.app.world_mut().write_message(ChatEntry { kind: LineKind::All, sender: Some(from), name: Some("Ann".into()), team: None, text: text.into(), classic: Some(ChatLine::plain(text)), sound: None });
+    frame(sim, 0.1);
+}
+
+fn shown_lines(sim: &Sim) -> Vec<String> {
+    use chimera_client::client::{chat::{ChatFilter, ChatMutes}, signal_chat::SignalChatLog};
+    let w = sim.app.world();
+    w.resource::<SignalChatLog>().shown(w.resource::<ChatMutes>(), *w.resource::<ChatFilter>()).map(|l| l.text.clone()).collect()
+}
+
+/// Backlog "Chat (UGG UI M10)": the Tab board is held open with the cursor
+/// captured; a right click frees it (`BoardPick`) and each other player's
+/// row has a Mute, the chat's `ignore`: their lines go (past ones too), the
+/// row shows it, a second press shows them again, and letting go of Tab
+/// grabs the cursor again.
+#[test]
+fn a_right_click_on_the_board_frees_the_cursor_for_mute() {
+    use chimera_client::client::{
+        chat::ChatMutes,
+        race_chip::{BoardMute, BoardMuted, BoardPick},
+        widgets::Interaction,
+    };
+    let (mut sim, ann, window, _) = mute_sim();
+    say(&mut sim, ann, "gg ez");
+    assert_eq!(shown_lines(&sim), ["gg ez"]);
+    hold_tab(&mut sim, true);
+    assert!(visible::<BoardContent>(&mut sim) && grabbed(&sim, window), "Tab: the board opens, the cursor stays captured");
+    assert_eq!(count::<BoardMute>(&mut sim), 0, "no buttons while it is captured");
+    // The right click.
+    sim.app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Right);
+    frame(&mut sim, 0.05);
+    sim.app.world_mut().resource_mut::<ButtonInput<MouseButton>>().release(MouseButton::Right);
+    for _ in 0..3 {
+        frame(&mut sim, 0.05);
+    }
+    assert!(sim.app.world().resource::<BoardPick>().0 && !grabbed(&sim, window), "the right click frees the cursor");
+    let buttons: Vec<(Entity, BoardMute)> = {
+        let w = sim.app.world_mut();
+        w.query::<(Entity, &BoardMute)>().iter(w).map(|(e, m)| (e, m.clone())).collect()
+    };
+    assert_eq!(buttons.iter().map(|(_, m)| (m.owner, m.name.as_str())).collect::<Vec<_>>(), [(Some(3), "Ann")], "Mute on Ann's row, none on yours");
+    let press = |sim: &mut Sim, b: Entity| {
+        *sim.app.world_mut().get_mut::<Interaction>(b).unwrap() = Interaction::Pressed;
+        frame(sim, 0.05);
+        for _ in 0..2 {
+            frame(sim, 0.05);
+        }
+    };
+    press(&mut sim, buttons[0].0);
+    assert!(sim.app.world().resource::<ChatMutes>().muted(Some(3), "Ann"), "the same ignore the chat uses");
+    assert_eq!(count::<BoardMuted>(&mut sim), 1, "the row shows it");
+    assert!(shown_lines(&sim).is_empty(), "her earlier line is gone");
+    say(&mut sim, ann, "still here?");
+    assert!(shown_lines(&sim).is_empty(), "and her new ones don't show");
+    // The button toggles.
+    let again = {
+        let w = sim.app.world_mut();
+        w.query::<(Entity, &BoardMute)>().iter(w).next().unwrap().0
+    };
+    press(&mut sim, again);
+    assert!(!sim.app.world().resource::<ChatMutes>().muted(Some(3), "Ann"));
+    assert_eq!(count::<BoardMuted>(&mut sim), 0);
+    assert_eq!(shown_lines(&sim), ["gg ez", "still here?"], "unmuted: her lines show again");
+    // Tab let go: the board folds, the buttons go, the cursor is grabbed.
+    hold_tab(&mut sim, false);
+    assert!(!sim.app.world().resource::<BoardPick>().0 && grabbed(&sim, window), "the cursor is captured again");
+    assert_eq!(count::<BoardMute>(&mut sim), 0);
+}
+
+/// The talk indicator (backlog "Who is talking"): a meter by a player's
+/// name on the Tab board while their voice comes in (`net::voice::
+/// VoiceActivity`, the transport's own state), yours while you send; it
+/// clears when they stop. A bot has none.
+#[test]
+fn the_board_marks_who_is_talking_and_clears_it() {
+    use chimera_client::client::talk::{TalkMark, Talking};
+    use chimera_net::net::voice::VoiceActivity;
+    let (mut sim, ann, _, _) = mute_sim();
+    player(&mut sim, "Rook", 0, 0, false, true);
+    hold_tab(&mut sim, true);
+    let lit = |sim: &mut Sim| -> Vec<Option<u64>> {
+        let w = sim.app.world_mut();
+        w.query::<(&TalkMark, &Visibility)>().iter(w).filter(|(_, v)| **v != Visibility::Hidden).map(|(m, _)| m.owner).collect()
+    };
+    assert_eq!(count::<TalkMark>(&mut sim), 2, "a mark for each player, none for the bot");
+    assert!(lit(&mut sim).is_empty(), "nobody talks");
+    // Ann's voice arrives.
+    let now = sim.app.world().resource::<Time<Real>>().elapsed_secs_f64();
+    let mut activity = VoiceActivity::default();
+    activity.heard.insert(ann, now);
+    sim.app.insert_resource(activity);
+    frame(&mut sim, 0.0);
+    assert_eq!(lit(&mut sim), [Some(3)], "Ann's meter shows");
+    // Silence: her last frame is old.
+    sim.app.world_mut().resource_mut::<VoiceActivity>().heard.insert(ann, now - 5.0);
+    frame(&mut sim, 0.0);
+    assert!(lit(&mut sim).is_empty(), "it clears");
+    // You talk.
+    sim.app.world_mut().resource_mut::<VoiceActivity>().local = true;
+    frame(&mut sim, 0.0);
+    assert_eq!(lit(&mut sim), [None], "yours (the local player has no user id here)");
+    assert_eq!(*sim.app.world().resource::<Talking>(), Talking { users: Default::default(), local: true });
+    // The hook alone: with no voice transport a system sets `Talking`.
+    sim.app.world_mut().remove_resource::<VoiceActivity>();
+    *sim.app.world_mut().resource_mut::<Talking>() = Talking { users: [3].into(), local: false };
+    frame(&mut sim, 0.0);
+    assert_eq!(lit(&mut sim), [Some(3)]);
+}

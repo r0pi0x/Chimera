@@ -374,11 +374,15 @@ impl Plugin for UiScenePlugin {
                             return Ok(None);
                         }
                         "chip" | "lead" | "board" | "board_lead" => {
-                            // `board spectators`: two watching too.
-                            let spectators = a.get(1).is_some_and(|x| x == "spectators");
-                            super::race_chip::stage(w, Some(&if spectators { format!("{name}_spectators") } else { name.to_string() }));
+                            // `board spectators`: two watching too; `board pick`:
+                            // the cursor free, Mute on each row.
+                            let word = a.get(1).filter(|x| matches!(x.as_str(), "spectators" | "pick"));
+                            super::race_chip::stage(w, Some(&match word {
+                                Some(x) => format!("{name}_{x}"),
+                                None => name.to_string(),
+                            }));
                             rename_staged(w);
-                            if let Some(path) = a.get(1).filter(|_| !spectators) {
+                            if let Some(path) = a.get(1).filter(|_| word.is_none()) {
                                 super::ui_parity::apply_fixture(w, name, path)?;
                             }
                             return Ok(None);

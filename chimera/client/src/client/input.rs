@@ -266,6 +266,7 @@ pub struct FreeCursorOwners<'w> {
     console: Option<Res<'w, super::console::ConsoleUi>>,
     debug_ui: Option<Res<'w, super::debug_ui::DebugUi>>,
     scene: Option<Res<'w, super::ui_scene::UiScene>>,
+    board: Option<Res<'w, super::race_chip::BoardPick>>,
 }
 
 impl FreeCursorOwners<'_> {
@@ -278,6 +279,7 @@ impl FreeCursorOwners<'_> {
             || self.console.as_ref().is_some_and(|c| c.open)
             || self.debug_ui.as_ref().is_some_and(|d| d.open || d.is_changed())
             || self.scene.as_ref().is_some_and(|s| s.gallery_open())
+            || self.board.as_ref().is_some_and(|b| b.0 || b.is_changed())
     }
 
     /// A panel is open now (no frame of grace).
@@ -288,6 +290,7 @@ impl FreeCursorOwners<'_> {
             || self.console.as_ref().is_some_and(|c| c.open)
             || self.debug_ui.as_ref().is_some_and(|d| d.open)
             || self.scene.as_ref().is_some_and(|s| s.gallery_open())
+            || self.board.as_ref().is_some_and(|b| b.0)
     }
 }
 

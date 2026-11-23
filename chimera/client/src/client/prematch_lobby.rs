@@ -297,6 +297,9 @@ pub struct LobbyFollow;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LobbyViewRow {
     pub name: String,
+    /// The player's user id (`LobbyRow::id`; None: a bot): who talks
+    /// (`talk::Talking`).
+    pub id: Option<u64>,
     pub bot: bool,
     /// A listen server's host (`HOST_ID`).
     pub host: bool,
@@ -481,6 +484,7 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
     let fraction = fraction.or(stage.map(|(_, f)| f));
     LobbyViewRow {
         name: r.name.clone(),
+        id: r.id,
         bot: r.bot(),
         host: r.id == Some(HOST_ID),
         status: r.status,

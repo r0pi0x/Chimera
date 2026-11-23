@@ -39,6 +39,17 @@
 //!   "SPECTATING • n" and their names (`BoardSpectators`), never ranked
 //!   (`ui_scene board spectators` stages two).
 //!
+//! **Mute and talking**: Tab is held with the cursor captured, so a right
+//! click while it is held frees the cursor (`BoardPick`, one of
+//! `input::FreeCursorOwners`; let go of Tab and it is grabbed again). Free,
+//! the board gains a column at its right (`RaceView::pick`, the gun's room)
+//! with the kit's small Mute (Unmute once muted) on each row but yours
+//! (`BoardMute`): the chat's `ignore` (`chat::ChatMutes`), with a struck
+//! meter by the name of a muted row (`BoardMuted`). Not bots' voice (they
+//! have none) and not `VoiceMutes`. A meter by the name of a player who
+//! talks (`talk::TalkMark`, shown while `VoiceActivity` says so) needs no
+//! rebuild. `ui_scene board pick` stages the free-cursor board.
+//!
 //! While the board is open it covers the games' HUDs (`hud::HudCover`,
 //! `BOARD_COVER`: every game's roots and parts, weapon selection and death
 //! panel, and the shared crosshair); the chip and feed (`SignalHud`) stay.
@@ -94,8 +105,14 @@ impl Plugin for RaceChipPlugin {
         app.init_resource::<HeldActions>()
             .init_resource::<GunNames>()
             .init_resource::<RaceView>()
+            .init_resource::<BoardPick>()
+            .init_resource::<super::chat::ChatMutes>()
             .add_systems(Startup, spawn)
-            .add_systems(Update, (gather, (build_chip, build_board), open_close).chain().in_set(RaceChipSystems));
+            .add_systems(Update, (pick_board, gather, (build_chip, build_board), open_close).chain().in_set(RaceChipSystems))
+            .add_systems(Update, mute_clicks.after(RaceChipSystems));
+        if !app.is_plugin_added::<super::talk::TalkPlugin>() {
+            app.add_plugins(super::talk::TalkPlugin);
+        }
         if !app.is_plugin_added::<super::rank_toast::RankToastPlugin>() {
             app.add_plugins(super::rank_toast::RankToastPlugin);
         }
@@ -151,6 +168,11 @@ pub struct RaceRow {
     pub ping: u16,
     /// Its connection loses packets (`score_flags::LOSS`).
     pub loss: bool,
+    /// The player's user id (None: a bot, or not known): whose chat is
+    /// muted by the row's button, who talks (`talk`).
+    pub owner: Option<u64>,
+    /// This client hides the player's chat (`chat::ChatMutes`).
+    pub muted: bool,
 }
 
 /// Whether a player is the host's: a client sees the listen host's
@@ -223,6 +245,9 @@ pub struct RaceView {
     /// Who watches (`core::Spectating`), by name: a line under the rows,
     /// never ranked.
     pub spectators: Vec<String>,
+    /// The cursor is free over the open board (`BoardPick`): a Mute button
+    /// ends each row.
+    pub pick: bool,
 }
 
 impl RaceView {
@@ -273,6 +298,8 @@ pub fn staged_race(lead: bool) -> RaceView {
             wins,
             ping,
             loss: ping > 200,
+            owner: None,
+            muted: false,
         }
     };
     let rows = if lead {
@@ -298,14 +325,15 @@ pub fn staged_race(lead: bool) -> RaceView {
             row("pixelpirate", 1, 3, 19, false, false, false, 0, 231),
         ]
     };
-    RaceView { active: true, sandbox: false, rows, rungs: 14, map: "de_dust2".into(), map_game: "CS:S".into(), size: (0, 0), spectators: Vec::new() }
+    RaceView { active: true, sandbox: false, rows, rungs: 14, map: "de_dust2".into(), map_game: "CS:S".into(), size: (0, 0), spectators: Vec::new(), pick: false }
 }
 
 /// The staged board's spectators (`ui_scene board spectators`).
 pub const STAGED_SPECTATORS: [&str; 2] = ["owl_watch", "Grandma Jo"];
 
 /// Stages scene `name` (`chip`, `lead`, `board`, `board_lead`; with
-/// `spectators`, two watching), or clears it (`None`).
+/// `spectators`, two watching; with `pick`, the cursor free, Mute on each
+/// row), or clears it (`None`).
 pub fn stage(world: &mut World, name: Option<&str>) {
     match name {
         Some(n) => {
@@ -313,6 +341,14 @@ pub fn stage(world: &mut World, name: Option<&str>) {
             let mut view = staged_race(lead);
             if n.contains("spectators") {
                 view.spectators = STAGED_SPECTATORS.map(String::from).to_vec();
+            }
+            // The cursor free: Mute on each other player, one muted.
+            if n.contains("pick") {
+                view.pick = true;
+                for (i, r) in view.rows.iter_mut().enumerate() {
+                    r.owner = (!r.bot).then_some(10 + i as u64);
+                    r.muted = i == 1;
+                }
             }
             world.insert_resource(RaceStaged { view, open: n.starts_with("board") });
         }
@@ -359,6 +395,24 @@ const CHIP_PAD: f32 = 1.0;
 #[derive(Component)]
 pub struct LeaderChip;
 
+/// The cursor is free over the open board (module doc): set by a right
+/// click while Tab is held, cleared when the board closes. It owns the
+/// mouse (`input::FreeCursorOwners`), so the cursor is released and grabbed
+/// again after.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BoardPick(pub bool);
+
+/// A muted row's struck meter beside its name.
+#[derive(Component)]
+pub struct BoardMuted;
+
+/// A row's Mute button: the player's user id (None: a bot) and name.
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct BoardMute {
+    pub owner: Option<u64>,
+    pub name: String,
+}
+
 /// The board is open (Tab held): the plate opens toward it.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BoardOpen(pub bool);
@@ -395,6 +449,9 @@ const BOARD_BASE: f32 = 5.5;
 /// ping, ladder; the gap between them; the row's side padding.
 const COLS: [f32; 9] = [1.6, 11.4, 2.6, 3.8, 0.0, 1.7, 1.7, 3.6, 11.4];
 const COL_GAP: f32 = 0.8;
+/// The Mute column's width, cq: it takes the gun's room while the cursor is
+/// free (`RaceView::pick`).
+const MUTE_W: f32 = 7.0;
 /// The look book's tracking in cq (its `letter-spacing` em times the size
 /// it was set at): a row's numbers and game (.08 em of .54), the column
 /// titles (.12 em of .46), the head's race (.12 em of .52) and map's game
@@ -469,6 +526,7 @@ fn gather(
     hud: Option<Res<MinigameHud>>,
     ladder: Option<Res<Ladder>>,
     settings: Option<Res<NetSettings>>,
+    (pick, mutes): (Option<Res<BoardPick>>, Option<Res<super::chat::ChatMutes>>),
     (gun_names, catalog, map_name, games, role): (
         Res<GunNames>,
         Option<Res<WeaponCatalog>>,
@@ -497,6 +555,7 @@ fn gather(
     if let Some(st) = staged {
         let mut next = st.view.clone();
         next.active = true;
+        next.pick = st.view.pick || pick.as_deref().is_some_and(|p| p.0);
         next.size = (look.units.height as u32, (look.units.scale_factor * 100.0) as u32);
         if *view != next {
             *view = next;
@@ -508,7 +567,7 @@ fn gather(
         && ladder.is_some()
         && hud.as_deref().is_some_and(|h| h.playing() && !h.results_shown)
         && !sandbox.as_ref().is_some_and(|s| s.on);
-    let mut next = RaceView { active, sandbox: look.on() && sandbox.as_ref().is_some_and(|s| s.on), size: (look.units.height as u32, (look.units.scale_factor * 100.0) as u32), ..default() };
+    let mut next = RaceView { active, pick: active && pick.as_deref().is_some_and(|p| p.0), sandbox: look.on() && sandbox.as_ref().is_some_and(|s| s.on), size: (look.units.height as u32, (look.units.scale_factor * 100.0) as u32), ..default() };
     if let (true, Some(ladder)) = (active, ladder.as_deref()) {
         let game_of = |id: &str| -> String {
             let g = id.split_once(':').map_or("", |(g, _)| g);
@@ -520,8 +579,13 @@ fn gather(
                 let rung = rung.map_or(0, |r| r.0);
                 let s = score.copied().unwrap_or_default();
                 let gun = ladder.shown_weapon(rung, catalog.as_deref());
+                let name = super::shown_name(e, local, ch, name, settings.as_deref());
+                let owner = ch.and_then(|c| c.owner);
+                let is_bot = is_bot || net.is_some_and(|n| n.flags & score_flags::BOT != 0);
                 RaceRow {
-                    name: super::shown_name(e, local, ch, name, settings.as_deref()),
+                    owner,
+                    muted: !local && mutes.as_deref().is_some_and(|m| m.muted(if is_bot { None } else { owner }, &name)),
+                    name,
                     rung,
                     kills: s.kills,
                     deaths: s.deaths,
@@ -529,7 +593,7 @@ fn gather(
                     gun_name: gun.map(|id| gun_short_name(id, Some(&gun_names), catalog.as_deref())).unwrap_or_default(),
                     game: gun.map(game_of).unwrap_or_default(),
                     class: gun.and_then(|id| catalog.as_deref()?.get(id)).and_then(signal::icon_class),
-                    bot: is_bot || net.is_some_and(|n| n.flags & score_flags::BOT != 0),
+                    bot: is_bot,
                     host: is_host(ch, local, role.as_deref()),
                     local,
                     wins: won.map_or(0, |w| w.0),
@@ -907,6 +971,9 @@ fn build_board(
             h.spawn((Node { padding: UiRect::left(look.val(0.8)), align_self: AlignSelf::Stretch, ..cell(8) }, UiParityId::new("board.th.ladder"), Pickable::IGNORE)).with_children(|c| {
                 c.spawn((look.tracked(Role::Mono, 0.46, TRACK_TITLES, look.tone(Tone::Fg3), "LADDER"), Pickable::IGNORE));
             });
+            if view.pick {
+                h.spawn((Node { width: look.val(MUTE_W), flex_shrink: 0.0, ..default() }, Pickable::IGNORE));
+            }
         });
         let n = view.rungs.max(1) as u32;
         let top_wins = view.rows.iter().map(|r| r.wins).max().unwrap_or(0);
@@ -948,6 +1015,18 @@ fn build_board(
                     ));
                     let e = signal::host_tag(c, &look, slants.as_deref_mut(), row.host, row.local, 0.42);
                     parity::name(c, e, format!("{p}.host"));
+                    // Muted here: the struck meter and a word. Talking: the
+                    // meter, shown while their voice comes in (`talk`).
+                    if row.muted
+                        && let Some(m) = signal::icons::spawn(c, &look, "voice_off", look.px(0.6), look.tone(Tone::Fg3))
+                    {
+                        c.commands_mut().entity(m).insert(BoardMuted);
+                    }
+                    if !row.bot
+                        && let Some(m) = signal::icons::spawn(c, &look, "voice", look.px(0.6), look.tone(Tone::AccText))
+                    {
+                        c.commands_mut().entity(m).insert((super::talk::TalkMark { owner: row.owner, local: row.local }, Visibility::Hidden));
+                    }
                     if row.wins > 0 {
                         // The session's leader in the accent.
                         let tone = if row.wins == top_wins { Tone::AccText } else { Tone::Fg2 };
@@ -1043,6 +1122,23 @@ fn build_board(
                         strip.insert(MaterialNode(ticks.add(mat)));
                     }
                 });
+                // The cursor free: Mute (Unmute) ends the row, for everyone
+                // but you. The kit's small button.
+                if view.pick {
+                    let holder = r
+                        .spawn((
+                            Node { width: look.val(MUTE_W), flex_shrink: 0.0, justify_content: JustifyContent::FlexEnd, align_items: AlignItems::Center, ..default() },
+                            Pickable::IGNORE,
+                        ))
+                        .id();
+                    if !row.local {
+                        use chimera_ui::controls::{Kind, Size, State};
+                        let ui = chimera_ui::controls::Ui { theme: &look.theme, kit: look.fonts.as_deref(), units: *look.units };
+                        let (kind, label) = if row.muted { (Kind::Secondary, "Unmute") } else { (Kind::Tertiary, "Mute") };
+                        let button = ui.button_icon(r.commands_mut(), holder, kind, Some("voice_off"), label, None, Size::Small, State::NONE);
+                        r.commands_mut().entity(button).insert((BoardMute { owner: row.owner, name: row.name.clone() }, UiParityId(format!("{p}.mute"))));
+                    }
+                }
             });
         }
         // Who watches: one line under the rows, never ranked.
@@ -1066,6 +1162,27 @@ fn build_board(
             });
         }
     });
+}
+
+/// A right click while the board is open frees the cursor (`BoardPick`) so
+/// a row's Mute can be clicked; it ends with the board (Tab let go).
+fn pick_board(view: Res<RaceView>, held: Res<HeldActions>, staged: Option<Res<RaceStaged>>, mouse: Option<Res<ButtonInput<MouseButton>>>, mut pick: ResMut<BoardPick>) {
+    let open = view.active && (held.scores() || staged.is_some_and(|s| s.open));
+    let next = open && (pick.0 || mouse.is_some_and(|m| m.just_pressed(MouseButton::Right)));
+    if pick.0 != next {
+        pick.0 = next;
+    }
+}
+
+/// A row's Mute is the chat's `ignore`: it hides the player's lines here
+/// (past ones too), and pressed again shows them (`chat::ChatMutes`).
+fn mute_clicks(pressed: Query<(&super::widgets::Interaction, &BoardMute), Changed<super::widgets::Interaction>>, mut mutes: ResMut<super::chat::ChatMutes>) {
+    for (i, m) in &pressed {
+        if *i == super::widgets::Interaction::Pressed {
+            let on = !mutes.muted(m.owner, &m.name);
+            mutes.set(m.owner, &m.name, on);
+        }
+    }
 }
 
 /// Tab opens the plate toward the board and folds it back, from wherever

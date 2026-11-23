@@ -1340,7 +1340,7 @@ three looks, none of them Signal:
 | HL2:DM | no chat of its own: its team colours in `client::chat::run_color` | the CS:S box |
 | "X is on the last level!" | the minigame's callout (`last_rung_other`) | `client::callouts`, centre screen (not chat) |
 | Votes | `net::vote::VoteView` | the Esc menu's vote box (no line) |
-| Voice | `net::voice` (`VoiceActivity`) | Combat Arms' talk icon; no Signal indicator |
+| Voice | `net::voice` (`VoiceActivity`) | Combat Arms' talk icon; the Signal look's meter by the name on the Tab board and the lobby's lanes (`client::talk`) |
 | The console | every `ChatLine` printed by `client::chat::collect` | the console |
 | The lobby | no chat | - |
 
@@ -1399,9 +1399,30 @@ lobby's chat and joins as notices). Scenes: `ui_scene chat [open|notice]`,
 `ui_scene chat_lobby`.
 
 Lines and the field are set in the text face (`Role::Text`, with lower
-case, at `controls::TYPED`) since `fonts-wire` merged. Left: a mute button on the Tab board (held open with the
-cursor captured today); a talking indicator in the feed (voice); wall
-clock stamps; bot chat for network clients (a host's only today).
+case, at `controls::TYPED`) since `fonts-wire` merged.
+
+**Mute on the Tab board and who is talking** (2026-11-23, `ugg-tab-mute`):
+the board is held open with the cursor captured, so a **right click**
+while Tab is held frees it (`race_chip::BoardPick`; it joins
+`input::FreeCursorOwners`, so the cursor is released and grabbed again by
+the one rule, when Tab is let go). Free, the board rebuilds with a column
+for the kit's small button (`Ui::button_icon`, `Size::Small`): **Mute**
+(tertiary) on every row but yours, **Unmute** (secondary) once muted; a
+press toggles the chat's `ignore` (`ChatMutes`: people by user id, bots by
+name), so their lines vanish from the feed, past ones too. A muted row
+shows the struck meter (`voice_off`) by the name. The column takes the
+gun's room only while the cursor is free (`ui_scene board pick` stages it).
+Voice is not muted by it (`VoiceMutes` stays the player list's). **Talking**:
+`client::talk` turns `net::voice::VoiceActivity` into `Talking` (user ids
+heard within `TALK_SECONDS`, and whether you send) and shows each
+`TalkMark` (the kit's `voice` meter, in the accent) while its player talks,
+no list rebuild: on the board (not bots) and the lobby's lanes
+(`LobbyViewRow::id`). Anything else may set `Talking` when there is no
+transport. Tests: `chimera_client` `race_chip::a_right_click_on_the_board_
+frees_the_cursor_for_mute`, `the_board_marks_who_is_talking_and_clears_it`,
+`lobby_panel::a_lane_shows_who_is_talking`. Left: wall clock stamps; bot
+chat for network clients (a host's only today); the meter in the chat
+feed.
 
 ### M11: the sandbox's screens (2026-11-15)
 

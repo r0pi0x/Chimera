@@ -129,28 +129,28 @@ module list is `docs/modules.md`.
 - 530: UGG playtest 8 prep, Windows check (2026-11-15) | An agent's check of TF2 in UGG on the Windows PC (the playtest build of main at 2db4047c, offscreen, muted, timeboxed; screenshots kept...
 - 608: UGG playtest 7, 2026-11-14 (user and testers, Windows, live) | Fixed ones are on branch `release-7.1` (tag v0.1.0-playtest7.1, not yet published): confirm each in a playtest, then delete it
 - 746: Chat (UGG UI M10, 2026-11-15) | The one Signal chat is in on `ugg-chat` (plan ugg-ui.md, M10: one feed, Y/U and Combat Arms' keys, docked in the lobby and the match end,
-- 763: Spectators (user, 2026-11-14) | (docs/plans/active/ugg-ui.md, "Spectators": joining as one, switching in the lobby and the Escape menu, the board, lobby and match end...
-- 771: UGG playtest rehearsal, 2026-11-13 (agent, this box, the playtest6 build) | What the second rehearsal found and didn't fix (fixed ones: the commits of branch `rehearsal2`; numbers: playtest-hosting.md, "Rehearsal")
-- 808: UGG playtest rehearsal, 2026-11-11 (agent, this box, no-install clients) | What the rehearsal found and didn't fix (fixed ones: the commits of branch `playtest-rehearsal`; numbers: playtest-hosting.md, "Rehearsal")
-- 832: HL2:DM playtest, 2026-11-09 (user, Windows, dm_lockdown) | Delete each when fixed
-- 1801: Gun game playtest, 2026-10-25 (user; start after the usage reset) | (promo capture 2026-10-28, cs_office, Ultimate Gun Game)
-- 1914: Gaps vs the originals (audit 2026-10-27) | specs/ compared with the code, spec by spec: plain CS:S and Combat Arms matched their specs wherever the docs don't already say...
-- 1924: Gaps vs the originals, second pass (2026-10-28) | What a player of the gun game (Ultimate Gun Game, Lucker Party) or of plain CS:S and Combat Arms would notice, where no spec covers the...
-- 2184: Decisions 2026-10-13 (user) | steps 1-2 (tools package; move code to its future home in the one crate), then crates
-- 2211: Playtest with friends, 2026-10-10 (Discord; build v0.1.0-playtest2 or 1) | mg_jacks_multigames_v1, `setpos -12146.96 15343.41 -927.97; setang
-- 2512: 1. Playtest essentials | A (settings, health bars, third person), B (penetration and collaterals, docs/plans/active/weapons.md slice 5) and C (view models) are done
-- 2535: 2. Custom maps and minigames | Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md)
-- 2593: 2b. HUD and debug views | the value, `+`) reads as three loose parts
-- 2711: 2c. Multiplayer | Plan: [plans/active/multiplayer.md](plans/active/multiplayer.md) (bevy_replicon + renet; Source-style prediction, interpolation and lag...
-- 2794: 2d. CS:S demos as a parity check (user idea, 2026-10-14) | Built: `demodump` reads CS:S `.dem` files (`source_formats::dem`; SourceTV and, untested, client demos; OBSERVABILITY.md "CS:S demos")
-- 2824: 3. Weapons, remaining | In progress: [plans/active/weapons.md](plans/active/weapons.md)
-- 2916: 4. Bots | Parked (user, 2026-10-13): bots are fine for now; focus on what players see
-- 2944: 5. Console, remaining | The console and overlays are in (chimera/core/src/console.rs, chimera/client/src/client/console.rs)
-- 2957: 6. Sound, remaining | docs/plans/active/sound.md
-- 2992: 7. Physics props, remaining | follow-ups (docs/tech-debt.md "Physics shadow"): the push speed limit (spec Q7), the shadow's weight on a prop stood on, the...
-- 3022: 8. Visual fidelity | planar reflection, the cheap cubemap pass, under-water fog (world, props, ropes, decals, particles; also in water of other shaders...
-- 3096: 9. Performance | sounds, dressings) in our own versioned format, and serve them from the asset service too, so even a session's first load skips conversion
-- 3477: 10. Long tail | decided).** Hub accounts marked developer or admin could get admin rights on every server they join, with all commands available from...
+- 770: Spectators (user, 2026-11-14) | (docs/plans/active/ugg-ui.md, "Spectators": joining as one, switching in the lobby and the Escape menu, the board, lobby and match end...
+- 778: UGG playtest rehearsal, 2026-11-13 (agent, this box, the playtest6 build) | What the second rehearsal found and didn't fix (fixed ones: the commits of branch `rehearsal2`; numbers: playtest-hosting.md, "Rehearsal")
+- 815: UGG playtest rehearsal, 2026-11-11 (agent, this box, no-install clients) | What the rehearsal found and didn't fix (fixed ones: the commits of branch `playtest-rehearsal`; numbers: playtest-hosting.md, "Rehearsal")
+- 839: HL2:DM playtest, 2026-11-09 (user, Windows, dm_lockdown) | Delete each when fixed
+- 1808: Gun game playtest, 2026-10-25 (user; start after the usage reset) | (promo capture 2026-10-28, cs_office, Ultimate Gun Game)
+- 1921: Gaps vs the originals (audit 2026-10-27) | specs/ compared with the code, spec by spec: plain CS:S and Combat Arms matched their specs wherever the docs don't already say...
+- 1931: Gaps vs the originals, second pass (2026-10-28) | What a player of the gun game (Ultimate Gun Game, Lucker Party) or of plain CS:S and Combat Arms would notice, where no spec covers the...
+- 2191: Decisions 2026-10-13 (user) | steps 1-2 (tools package; move code to its future home in the one crate), then crates
+- 2218: Playtest with friends, 2026-10-10 (Discord; build v0.1.0-playtest2 or 1) | mg_jacks_multigames_v1, `setpos -12146.96 15343.41 -927.97; setang
+- 2519: 1. Playtest essentials | A (settings, health bars, third person), B (penetration and collaterals, docs/plans/active/weapons.md slice 5) and C (view models) are done
+- 2542: 2. Custom maps and minigames | Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md)
+- 2600: 2b. HUD and debug views | the value, `+`) reads as three loose parts
+- 2718: 2c. Multiplayer | Plan: [plans/active/multiplayer.md](plans/active/multiplayer.md) (bevy_replicon + renet; Source-style prediction, interpolation and lag...
+- 2801: 2d. CS:S demos as a parity check (user idea, 2026-10-14) | Built: `demodump` reads CS:S `.dem` files (`source_formats::dem`; SourceTV and, untested, client demos; OBSERVABILITY.md "CS:S demos")
+- 2831: 3. Weapons, remaining | In progress: [plans/active/weapons.md](plans/active/weapons.md)
+- 2923: 4. Bots | Parked (user, 2026-10-13): bots are fine for now; focus on what players see
+- 2951: 5. Console, remaining | The console and overlays are in (chimera/core/src/console.rs, chimera/client/src/client/console.rs)
+- 2964: 6. Sound, remaining | docs/plans/active/sound.md
+- 2999: 7. Physics props, remaining | follow-ups (docs/tech-debt.md "Physics shadow"): the push speed limit (spec Q7), the shadow's weight on a prop stood on, the...
+- 3029: 8. Visual fidelity | planar reflection, the cheap cubemap pass, under-water fog (world, props, ropes, decals, particles; also in water of other shaders...
+- 3103: 9. Performance | sounds, dressings) in our own versioned format, and serve them from the asset service too, so even a session's first load skips conversion
+- 3484: 10. Long tail | decided).** Hub accounts marked developer or admin could get admin rights on every server they join, with all commands available from...
 
 ## docs/economy-data.md
 

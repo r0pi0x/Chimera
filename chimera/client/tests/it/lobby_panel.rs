@@ -420,3 +420,29 @@ fn parties_are_grouped_and_edged() {
     edges.sort();
     assert_eq!(edges, [1, 1, 2, 2]);
 }
+
+/// The talk indicator on the lobby's lanes (backlog "Who is talking"): a
+/// meter by the name of a player whose voice is coming in (`talk::
+/// Talking`, set by the voice transport), none for a bot; it clears.
+#[test]
+fn a_lane_shows_who_is_talking() {
+    use chimera_client::client::talk::{TalkMark, Talking};
+    let mut s = sim(Some(THEME));
+    let lit = |s: &mut Sim| -> Vec<Option<u64>> {
+        let w = s.app.world_mut();
+        w.query::<(&TalkMark, &Visibility)>().iter(w).filter(|(_, v)| **v != Visibility::Hidden).map(|(m, _)| m.owner).collect()
+    };
+    let marks = {
+        let w = s.app.world_mut();
+        w.query::<&TalkMark>().iter(w).count()
+    };
+    assert_eq!(marks, 2, "the host and the joiner; not the bot");
+    s.ticks(2);
+    assert!(lit(&mut s).is_empty());
+    s.app.insert_resource(Talking { users: [JOINER].into(), local: false });
+    s.ticks(2);
+    assert_eq!(lit(&mut s), [Some(JOINER)]);
+    s.app.insert_resource(Talking::default());
+    s.ticks(2);
+    assert!(lit(&mut s).is_empty(), "cleared");
+}

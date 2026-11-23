@@ -156,6 +156,8 @@ impl Fixture {
                     wins: r.wins,
                     ping: r.ping,
                     loss: r.loss,
+                    owner: None,
+                    muted: false,
                 })
                 .collect(),
             rungs: self.rungs,
@@ -163,6 +165,7 @@ impl Fixture {
             map_game: self.map_game.clone(),
             size: (0, 0),
             spectators: Vec::new(),
+            pick: false,
         }
     }
 

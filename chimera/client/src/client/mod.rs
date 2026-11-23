@@ -89,6 +89,7 @@ pub mod vgui;
 pub mod video;
 pub mod third_person;
 pub mod view;
+pub mod talk;
 pub mod voice;
 pub mod weapon_icons;
 pub mod weapon_menu;
