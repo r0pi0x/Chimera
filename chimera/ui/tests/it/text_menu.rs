@@ -287,3 +287,23 @@ fn in_a_dialog_a_right_click_on_a_field_opens_the_menu_and_elsewhere_closes() {
     assert!(menu(&mut app).is_none(), "the right click was the menu's Esc");
     assert!(app.world().get_entity(dialog).is_ok(), "and the dialog stays");
 }
+
+/// Another popover opening closes the menu; a message that names the
+/// menu's own owner (or its own layer) leaves it.
+#[test]
+fn another_popover_opening_closes_the_menu() {
+    let mut app = app();
+    let f = field(&mut app, None, "hello", Some((1, 4)), false);
+    over(&mut app, f);
+    right_click(&mut app);
+    frame(&mut app);
+    assert!(menu(&mut app).is_some(), "the menu is open");
+    app.world_mut().write_message(chimera_ui::ClosePopovers::except("text_menu"));
+    frame(&mut app);
+    frame(&mut app);
+    assert!(menu(&mut app).is_some(), "its own opening spares it");
+    app.world_mut().write_message(chimera_ui::ClosePopovers::except("settings"));
+    frame(&mut app);
+    frame(&mut app);
+    assert!(menu(&mut app).is_none(), "a dropdown opened: the menu closes");
+}

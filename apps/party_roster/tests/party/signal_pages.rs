@@ -1498,3 +1498,22 @@ fn a_hovered_start_stays_hovered_through_a_redraw() {
     assert_ne!(s1, s0, "the page was drawn again");
     assert_eq!((i, lift), (Interaction::Hovered, 1.0), "the new Start as the old one was");
 }
+
+/// The Guns dialog's own dropdown closes when a modal opens over it or
+/// another popover opens; its own opening spares it (`ClosePopovers`).
+#[test]
+fn guns_dialog_dropdown_closes_for_modals_and_other_popovers() {
+    use party_roster::guns_picker::GunsAct as G;
+    let dir = scratch("popovers");
+    let mut sim = guns_sim(&dir);
+    guns_act(&mut sim, G::Menu);
+    assert!(working(&sim).unwrap().menu.is_some(), "the menu opens");
+    assert!(working(&sim).unwrap().menu.is_some(), "opening it did not close it");
+    sim.app.world_mut().write_message(chimera_ui::ClosePopovers::except("host"));
+    sim.ticks(2);
+    assert!(working(&sim).unwrap().menu.is_none(), "another popover opened: it closes");
+    guns_act(&mut sim, G::Menu);
+    sim.app.world_mut().spawn((Node::default(), chimera_ui::Modal));
+    sim.ticks(3);
+    assert!(working(&sim).unwrap().menu.is_none(), "a modal opened over the dialog: it closes");
+}

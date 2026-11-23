@@ -280,9 +280,15 @@ pub fn menu_input(
     theme: Res<Theme>,
     units: Res<UiUnits>,
     kit: Option<Res<KitFonts>>,
+    mut closes: MessageReader<crate::modal::ClosePopovers>,
     mut commands: Commands,
 ) {
-    let Ok((root, menu, backdrop)) = menus.single() else { return };
+    let Ok((root, menu, backdrop)) = menus.single() else {
+        closes.clear();
+        return;
+    };
+    // Another popover opened, or a modal other than this menu.
+    let told = closes.read().any(|m| m.closes("text_menu") && m.closes_layer(root));
     let k = keys.as_deref();
     let just = |c: KeyCode| k.is_some_and(|k| k.just_pressed(c));
     let on = |i: usize| menu.items[i].1;
@@ -298,7 +304,7 @@ pub fn menu_input(
         from
     };
     let mut choose = None;
-    let mut close = just(KeyCode::Escape);
+    let mut close = just(KeyCode::Escape) || told;
     let mut active = menu.active;
     if just(KeyCode::ArrowDown) {
         active = step(active, 1);

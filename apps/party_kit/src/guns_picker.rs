@@ -714,6 +714,9 @@ fn act_one(world: &mut World, a: GunsAct) {
             load_saved(world);
             let mut p = world.resource_mut::<GunsPicker>();
             p.page_menu = if p.page_menu.is_some() { None } else { Some(0) };
+            if p.page_menu.is_some() {
+                chimera_ui::modal::opening(world, "guns_page");
+            }
             cue(world, "ui_select");
             return;
         }
@@ -745,6 +748,7 @@ fn act_one(world: &mut World, a: GunsAct) {
     let Some(mut w) = world.resource::<GunsPicker>().open.clone() else { return };
     let picker = world.resource::<GunsPicker>().clone();
     let mut sound = "ui_select";
+    let mut opens = false;
     match a {
         GunsAct::Done => {
             if pool(&listing, &w.rules, w.rungs).empty() {
@@ -840,7 +844,13 @@ fn act_one(world: &mut World, a: GunsAct) {
                 w.area = Area::Browser;
             }
         }
-        GunsAct::Menu => w.menu = if w.menu.is_some() { None } else { Some(0) },
+        GunsAct::Menu => {
+            w.menu = if w.menu.is_some() { None } else { Some(0) };
+            if w.menu.is_some() {
+                // One popover open: the others close (after `w`'s borrow).
+                opens = true;
+            }
+        }
         GunsAct::MenuPick(i) => {
             w.menu = None;
             match menu_items(&picker, &w).get(i).cloned() {
@@ -898,6 +908,9 @@ fn act_one(world: &mut World, a: GunsAct) {
         GunsAct::PageMenu | GunsAct::PagePick(_) | GunsAct::Open => {}
     }
     world.resource_mut::<GunsPicker>().open = Some(w);
+    if opens {
+        chimera_ui::modal::opening(world, "guns_dialog");
+    }
     cue(world, sound);
 }
 

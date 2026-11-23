@@ -301,3 +301,14 @@ fn opening_a_modal_closes_every_popover_once() {
     frame(&mut app);
     assert_eq!(app.world().resource::<Closed>().0, 2, "a confirm over it closes them again");
 }
+
+/// A popover that is opening spares itself and closes every other owner.
+#[test]
+fn an_opening_popover_spares_itself() {
+    let m = chimera_ui::ClosePopovers::except("settings");
+    assert!(!m.closes("settings") && m.closes("host") && m.closes("guns_dialog"));
+    assert!(chimera_ui::ClosePopovers::default().closes("settings"), "a modal opening closes all");
+    let layer = Entity::from_raw_u32(7).unwrap();
+    let m = chimera_ui::ClosePopovers { except: None, layer: Some(layer) };
+    assert!(!m.closes_layer(layer) && m.closes_layer(Entity::from_raw_u32(8).unwrap()));
+}

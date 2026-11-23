@@ -736,7 +736,7 @@ fn cue(world: &mut World, c: UiCue) {
 
 /// A modal opened: an open dropdown's list closes (`chimera_ui::ClosePopovers`).
 fn close_popovers(mut closes: MessageReader<chimera_ui::ClosePopovers>, mut s: ResMut<Settings>) {
-    if closes.read().count() > 0 && s.open_list.is_some() {
+    if chimera_ui::modal::closing(&mut closes, "settings") && s.open_list.is_some() {
         s.open_list = None;
     }
 }
@@ -1522,6 +1522,7 @@ fn act_one(world: &mut World, a: SettingsAction) {
                     _ => 0,
                 };
                 world.resource_mut::<Settings>().open_list = Some((row, at));
+                chimera_ui::modal::opening(world, "settings");
                 cue(world, UiCue::new("ui_select"));
             }
         }

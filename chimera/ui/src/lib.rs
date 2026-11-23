@@ -112,7 +112,7 @@ pub use materials::{
     AmbientMaterial, EdgeMaterial, KitMaterialsPlugin, LinesMaterial, PassMaterial, RingMaterial, ShadeMaterial, SlantMaterial,
     TickBarMaterial,
 };
-pub use modal::{Blocking, ClosePopovers, Modal, Modals};
+pub use modal::{Blocking, ClosePopovers, Modal, Modals, PopoverId};
 pub use motion::{Ease, Prop, Timeline, Track, UiClock, Warmth};
 pub use parity::UiParityId;
 pub use pointer_lead::PointerLead;

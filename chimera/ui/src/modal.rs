@@ -33,7 +33,11 @@
 //!   drawn (the user's rule, 2026-11-22: a dropdown stayed open under a
 //!   dialog). A screen that keeps such a list's open state clears it on
 //!   the message (`MessageReader<ClosePopovers>`); nothing per dialog.
-//!   A popover that is about to open may write it too, to close the others.
+//!   A popover that is opening says so (`popover opening(world, id)`:
+//!   `ClosePopovers::except`) and the others close: one open at a time.
+//!   Owners read it with `modal::closing(&mut reader, id)`; the text
+//!   fields' context menu (a modal layer itself) closes too, except the
+//!   layer that caused the message (`closes_layer`).
 //!
 //! Known shortcuts: the stack is the last layout's (a modal spawned this
 //! frame counts from the next `PreUpdate`), so a screen that opens a
@@ -62,10 +66,52 @@ pub struct Modal;
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Blocking;
 
+/// Who owns a popover's open state (a screen's or a layer's name):
+/// `ClosePopovers::except` spares it.
+pub type PopoverId = &'static str;
+
 /// Every open dropdown, popover and context menu closes (module doc):
-/// written when a modal opens, or by a popover that is about to open.
+/// written when a modal opens, or by a popover that is opening (it names
+/// itself, `except`, so the others close and it stays).
 #[derive(Message, Clone, Copy, Debug, Default)]
-pub struct ClosePopovers;
+pub struct ClosePopovers {
+    /// The popover that is opening: it stays.
+    pub except: Option<PopoverId>,
+    /// The modal layer that just opened: it stays.
+    pub layer: Option<Entity>,
+}
+
+impl ClosePopovers {
+    /// Everything but the popover `id` closes.
+    pub fn except(id: PopoverId) -> Self {
+        Self { except: Some(id), layer: None }
+    }
+
+    /// The popover `id` (state it owns) closes on this message.
+    pub fn closes(&self, id: PopoverId) -> bool {
+        self.except != Some(id)
+    }
+
+    /// The modal layer `e` closes on this message.
+    pub fn closes_layer(&self, e: Entity) -> bool {
+        self.layer != Some(e)
+    }
+}
+
+/// A screen's popover (`id`, the owner of an "open" state) is told to
+/// close: some message this frame spared another. Read it in a system
+/// and clear the state; every kit dropdown owner does.
+pub fn closing(messages: &mut MessageReader<ClosePopovers>, id: PopoverId) -> bool {
+    messages.read().filter(|m| m.closes(id)).count() > 0
+}
+
+/// A popover `id` is opening (an action in a `World`): every other one
+/// closes (one open at a time).
+pub fn opening(world: &mut World, id: PopoverId) {
+    if let Some(mut m) = world.get_resource_mut::<Messages<ClosePopovers>>() {
+        m.write(ClosePopovers::except(id));
+    }
+}
 
 /// The open modals, back to front (module doc).
 #[derive(Resource, Clone, Debug, Default)]
@@ -173,8 +219,8 @@ pub fn track_modals(
     });
     let stack: Vec<Entity> = open.iter().map(|(e, _)| *e).collect();
     let top_index = open.last().map_or(0, |t| t.1);
-    if stack.iter().any(|e| !modals.stack.contains(e)) {
-        close.write(ClosePopovers);
+    for e in stack.iter().filter(|e| !modals.stack.contains(e)) {
+        close.write(ClosePopovers { except: None, layer: Some(*e) });
     }
     if modals.stack != stack || modals.top_index != top_index {
         modals.stack = stack;

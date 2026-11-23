@@ -1687,6 +1687,7 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                 }),
                 _ => None,
             };
+            let mut opened = false;
             if let Some(mut p) = world.get_resource_mut::<crate::signal_pages::SignalPages>() {
                 p.open_list = match (p.open_list, options) {
                     (Some((l, _)), _) if l == line => None,
@@ -1694,6 +1695,10 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                     _ => None,
                 };
                 p.focus = line;
+                opened = p.open_list.is_some();
+            }
+            if opened {
+                chimera_ui::modal::opening(world, "host");
             }
         }
         A::CloseList => {

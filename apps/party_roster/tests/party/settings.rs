@@ -847,7 +847,22 @@ fn opening_a_dialog_closes_settings_open_dropdown() {
     sim.ticks(2);
     assert!(set(&mut sim.app).open_list.is_some(), "no dialog: the list stays");
     // What the kit's modal layer writes when a dialog opens (its own test).
-    sim.app.world_mut().write_message(chimera_ui::ClosePopovers);
+    sim.app.world_mut().write_message(chimera_ui::ClosePopovers::default());
     sim.ticks(2);
     assert!(set(&mut sim.app).open_list.is_none(), "the dialog closed the dropdown");
+}
+
+/// One popover at a time: another one opening (`ClosePopovers::except`)
+/// closes Settings' open dropdown; its own opening leaves it.
+#[test]
+fn another_popover_opening_closes_settings_open_dropdown() {
+    let mut sim = party(true);
+    open_settings(&mut sim.app);
+    sim.app.world_mut().resource_mut::<Settings>().open_list = Some((1, 0));
+    sim.app.world_mut().write_message(chimera_ui::ClosePopovers::except("settings"));
+    sim.ticks(2);
+    assert!(set(&mut sim.app).open_list.is_some(), "its own opening spares it");
+    sim.app.world_mut().write_message(chimera_ui::ClosePopovers::except("host"));
+    sim.ticks(2);
+    assert!(set(&mut sim.app).open_list.is_none(), "another popover opened: it closes");
 }

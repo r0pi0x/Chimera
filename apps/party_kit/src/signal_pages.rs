@@ -377,14 +377,18 @@ impl Plugin for SignalPagesPlugin {
 /// A modal opened: the Host page's dropdowns (a row's list, the Guns
 /// preset list) close (`chimera_ui::ClosePopovers`).
 fn close_popovers(mut closes: MessageReader<chimera_ui::ClosePopovers>, mut pages: ResMut<SignalPages>, mut guns: ResMut<crate::guns_picker::GunsPicker>) {
-    if closes.read().count() == 0 {
-        return;
-    }
-    if pages.open_list.is_some() {
+    let told: Vec<chimera_ui::ClosePopovers> = closes.read().copied().collect();
+    if told.iter().any(|m| m.closes("host")) && pages.open_list.is_some() {
         pages.open_list = None;
     }
-    if guns.page_menu.is_some() {
+    if told.iter().any(|m| m.closes("guns_page")) && guns.page_menu.is_some() {
         guns.page_menu = None;
+    }
+    if told.iter().any(|m| m.closes("guns_dialog"))
+        && let Some(w) = guns.open.as_mut()
+        && w.menu.is_some()
+    {
+        w.menu = None;
     }
 }
 

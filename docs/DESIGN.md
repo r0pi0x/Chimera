@@ -1252,8 +1252,11 @@ Settings had the new ones, and the match end's Leave had no hover.
   `chimera_ui::ClosePopovers` once and every open dropdown, popover or
   context menu closes before the dialog draws. A screen that keeps such a
   list's open state clears it on the message (Settings' and the Host
-  page's lists do); a new popover does the same, nothing per dialog.
-  Test: `chimera/ui/tests/it/modal.rs`.
+  page's lists, the Guns dialog's and page's do, the text menu closes
+  itself); one popover at a time: a popover that opens calls
+  `modal::opening(world, id)` (`ClosePopovers::except(id)`) and every
+  other owner clears its state with `modal::closing(&mut reader, id)`.
+  Tests: `chimera/ui/tests/it/modal.rs`, `text_menu.rs`.
 - **The party strip is the profile** (the user's report, 2026-11-22): no
   account card in a corner. Your avatar is the Profile tile (a click opens
   the Account page; P on the main menu too), and hovering any member's
