@@ -400,10 +400,13 @@ pub struct MatchStarting {
     pub id: String,
 }
 
-/// Trigger `MatchStarting` for `id` (not on a client).
+/// Trigger `MatchStarting` for `id` (not on a client), and apply the
+/// commands its observers queued, so what they change (a definition made
+/// again) is in before the definition is read.
 pub fn announce_start(world: &mut World, id: &str) {
     if !client(world) {
         world.trigger(MatchStarting { id: id.to_string() });
+        world.flush();
     }
 }
 

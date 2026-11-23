@@ -106,3 +106,39 @@ fn a_game_off_on_the_command_line_shapes_the_first_ladder() {
         assert_eq!(r.len() + melee, 12, "ugg_rungs from the command line too");
     }
 }
+
+/// The sandbox's ladder (`rung` reads it) leaves out a game turned off on
+/// the command line, before the `+rung` there and before its match starts:
+/// the launch's sandbox definition was made with every game, so it is made
+/// again as the match starts (`sandbox::regenerate_on_start`).
+#[test]
+fn a_game_off_on_the_command_line_shapes_the_sandbox_ladder_rung_reads() {
+    use bevy::prelude::*;
+    use chimera_core::core::LocalPlayer;
+    use chimera_sim::{minigame, minigame::ladder::Ladder, testkit};
+    use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
+    use ultimate_gun_game::sandbox::SANDBOX;
+    let off: &'static str = Box::leak(all_off_but(&ugg(), "combat_arms").into_boxed_str());
+    let mut sim = Sim::new(
+        combat_arms::harness::CaSim,
+        (
+            GreyboxMapPlugin,
+            party_roster::PartyPartsPlugin,
+            CommandLine(vec![off, "rung 1"]),
+            ultimate_gun_game::UltimateGunGamePlugin::default(),
+        ),
+    );
+    sim.ticks(3);
+    // Made at launch, before the `+` lines ran: every game's guns.
+    let launch = sim.app.world().resource::<minigame::Minigames>().get(SANDBOX).expect("the sandbox is made at launch");
+    let ladder: Vec<&str> = launch.rules.params["ladder"].as_array().unwrap().iter().filter_map(|v| v.as_str()).collect();
+    assert!(ladder.iter().any(|id| !id.starts_with("combat_arms:")), "the launch's sandbox ladder: {ladder:?}");
+    minigame::start(sim.app.world_mut(), SANDBOX).expect("the sandbox starts");
+    let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
+    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
+    sim.seconds(1.5);
+    let ladder = sim.app.world().resource::<Ladder>().clone();
+    assert!(ladder.rungs.iter().all(|id| id.starts_with("combat_arms:")), "the playing ladder: {:?}", ladder.rungs);
+    let held = testkit::active_id(sim.app.world(), me);
+    assert_eq!(held, Some(ladder.rungs[0]), "`+rung 1` put the player on the first rung");
+}

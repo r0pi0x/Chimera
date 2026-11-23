@@ -407,7 +407,10 @@ impl Plugin for UltimateGunGamePlugin {
         app.world_mut().get_resource_or_init::<NextMatchHooks>().0.push(next_ladder);
         app.add_observer(|e: On<chimera_sim::minigame::MatchStarting>, mut commands: Commands| {
             let id = e.id.clone();
-            commands.queue(move |w: &mut World| redraw_if_rules_changed(w, &id));
+            commands.queue(move |w: &mut World| {
+                redraw_if_rules_changed(w, &id);
+                sandbox::regenerate_on_start(w, &id, BASE);
+            });
         });
     }
 

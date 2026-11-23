@@ -271,8 +271,10 @@ event's presents.
   spade and explosives too). Tests: UGG's `dods::rungs` (body, movement,
   HUD; a shared gun's drawn class; the ladder's draws), `heavy::served`
   (an MG42 rung's kit from the asset service alone). The sweep's tool ran
-  one map per process: a second map in one process found no install (the
-  local config read once; not looked into).
+  one map per process: a second map in one process found no install
+  (fixed after: the first map's `harness::Sim` turned the process's
+  installs off, `mount::offline`, which now leaves a tool's main thread
+  alone; party's `heavy::sweep_installs`).
   Published into the host's store (manifests snapshotted first): the
   dedicated server's build 25338204 (`publish dods --build`, 40,279
   files, 2.2 GB stored), its sets (`sets dods --build`, new: every

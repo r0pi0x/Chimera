@@ -87,4 +87,5 @@ mod heavy {
     mod nav_bounds;
     mod range_kit;
     mod spawn_spots;
+    mod sweep_installs;
 }

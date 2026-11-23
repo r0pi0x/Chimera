@@ -31,6 +31,14 @@
 //! ladder's last rung is a sentinel (a copy of the one before) that the
 //! ladder's win lands on instead of ending the match.
 //!
+//! The host's games off (`mp_guns_games_off`, `gun_rules::GunRules`) leave
+//! the ladder too (all games back when they would leave no gun), and the
+//! definition is made again as each sandbox match starts
+//! (`minigame::MatchStarting`, `regenerate_on_start`), so a games-off on
+//! the command line (`+mp_guns_games_off hl2dm +sandbox +rung 1`, in any
+//! order: the match starts once its map is in) shapes the ladder `rung`
+//! reads.
+//!
 //! Known shortcuts: rung extras (a game's per-rung draws: attachments,
 //! characters) are the ladder's own draw, so a rung character (Combat Arms'
 //! infected, its turret hands) is there only when the draw gives one; the
@@ -85,9 +93,18 @@ fn list(v: &[String]) -> String {
 /// The sandbox's definition text: every playable game's guns, grenades and
 /// melee weapons (`melee`: ids, `melee_weapons`; each game's knife too) as
 /// the ladder (`caps`, `installed`: as `auto::definition`), the base game's
-/// slots, and the sentinel rung last.
-pub fn definition(caps: &[Capabilities], base: &str, installed: &dyn Fn(&str) -> bool, melee: &[&str]) -> Result<String, String> {
-    let games: Vec<&Capabilities> = caps.iter().filter(|c| c.playable() && installed(c.game)).collect();
+/// slots, and the sentinel rung last. A game `game_on` refuses lends no
+/// rung, unless that would leave none (then every game does).
+pub fn definition(
+    caps: &[Capabilities],
+    base: &str,
+    installed: &dyn Fn(&str) -> bool,
+    melee: &[&str],
+    game_on: &dyn Fn(&str) -> bool,
+) -> Result<String, String> {
+    let playable: Vec<&Capabilities> = caps.iter().filter(|c| c.playable() && installed(c.game)).collect();
+    let on: Vec<&Capabilities> = playable.iter().copied().filter(|c| game_on(c.game)).collect();
+    let games = if on.iter().any(|c| !c.guns.is_empty()) { on } else { playable };
     let mut ladder: Vec<String> = Vec::new();
     for c in &games {
         let prefix = format!("{}:", c.game);
@@ -163,8 +180,26 @@ pub fn generate(world: &mut World, base: &str) -> Result<&'static MinigameDef, S
     let games: Vec<&'static str> = caps.iter().map(|c| c.game).collect();
     let installed = chimera_net::minigame_net::installed_by_all(world, &games);
     let melee = melee_weapons(world);
-    let text = definition(&caps, base, &|g| installed.contains(&g), &melee)?;
+    let rules = world.get_resource::<minigame::gun_rules::GunRules>().cloned().unwrap_or_default();
+    let text = definition(&caps, base, &|g| installed.contains(&g), &melee, &|g| rules.game_on(g))?;
+    // The same text again (each start makes it): the one there stays.
+    let made = world.get_resource::<minigame::Minigames>().filter(|m| m.text(SANDBOX) == Some(text.as_str()));
+    if let Some(def) = made.and_then(|m| m.get(SANDBOX)) {
+        return Ok(def);
+    }
     minigame::add(world, SANDBOX, &text)
+}
+
+/// A sandbox match about to start (`minigame::MatchStarting`, before its
+/// definition is read): the definition made again with the host's Guns
+/// rules as they are now (module doc).
+pub fn regenerate_on_start(world: &mut World, id: &str, base: &str) {
+    if id != SANDBOX {
+        return;
+    }
+    if let Err(e) = generate(world, base) {
+        world.resource_mut::<Console>().print(Level::Error, format!("sandbox: {e}"));
+    }
 }
 
 /// Every melee weapon of the catalogue (a `[melee]` swing, no class, no
