@@ -185,6 +185,24 @@ fn the_huntsmans_draw_sets_its_speed_and_gravity_and_tires_after_5_s() {
     assert!(off <= 8.0, "{off}");
 }
 
+/// An app's input sets the button once a frame, so several ticks read
+/// the same: the draw holds while it stays down.
+#[test]
+fn the_huntsman_holds_its_draw_on_input_set_once() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], "tf2:huntsman");
+    let ahead = sim.position(p) + Vec3::new(0.0, 0.5, -20.0);
+    testkit::aim_at(&mut sim, p, ahead);
+    let ev = run(&mut sim, p, 42, |s, k| match k {
+        0 => s.intent(p).fire = true,
+        40 => s.intent(p).fire = false,
+        _ => {}
+    });
+    assert_eq!(fired(&ev), [40], "fired on the release only");
+    let v = flyers(&mut sim, p)[0].2 / U;
+    assert!((v.length() - 2280.0).abs() < 2.0, "0.6 s drawn: {}", v.length());
+}
+
 #[test]
 fn the_huntsman_draws_again_2_s_after_a_release() {
     let mut sim = sim();

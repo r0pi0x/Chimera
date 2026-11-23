@@ -5,8 +5,9 @@
 //!
 //! - **The charge** (`charge`, predicted, before selection, as the
 //!   Stickybomb Launcher's): a press of attack with a round in and the
-//!   interval passed starts it; the frame sees no attack while it
-//!   charges; letting go lets one attack through, which fires a round.
+//!   interval passed starts it; the frame is held back while it charges
+//!   (its next attack time a step ahead, the button left alone); letting
+//!   go lets one attack through, which fires a round.
 //!   The charge c rises from 0 to 1 over `time` (1 s) and stays there.
 //!   With `fuse` the round is fired when the fuse would run out in the
 //!   barrel too (`fuse` s held), and the button must then be let go.
@@ -21,7 +22,9 @@
 //!   each shot, from the tick), at a full charge's speed.
 //!
 //! Known shortcuts: the Stickybomb Launcher keeps its own charge
-//! (`sticky::charge`, same shape); a Loose Cannon held to its fuse's end
+//! (`sticky::charge`, same shape, but it holds the frame back by the
+//! button, which an app's once-a-frame input may read as a release on a
+//! frame's second tick); a Loose Cannon held to its fuse's end
 //! fires a ball that goes off at once (the game's goes off in the
 //! barrel, its own blast on its holder); the wobble's random draw is
 //! ours (the game's stream is unmeasured).
@@ -124,18 +127,22 @@ pub fn wobble_random(tick: u64) -> [f32; 2] {
     })
 }
 
-/// Each charging weapon this tick (module doc).
+/// Each charging weapon this tick (module doc). The frame is held back
+/// by its next attack time (one step ahead each tick it charges), not by
+/// the attack button: the button stays the player's, so a tick that reads
+/// the same input as the last (several ticks to a frame) sees it held.
 #[allow(clippy::type_complexity)]
 pub fn charge(
     mut owners: Query<(&mut Intent, &Inventory, Option<&Health>)>,
-    mut guns: Query<(&mut Tf2Charge, &WeaponState, Option<&Magazine>, Option<&mut Launcher>)>,
+    mut guns: Query<(&mut Tf2Charge, &mut WeaponState, Option<&Magazine>, Option<&mut Launcher>)>,
     clock: Res<SimClock>,
 ) {
+    const HOLD: f64 = 1e-3;
     let now = clock.now;
     for (mut intent, inv, health) in &mut owners {
         let alive = health.is_none_or(|h| h.current > 0.0);
         for &w in &inv.weapons {
-            let Ok((mut gun, st, mag, launcher)) = guns.get_mut(w) else { continue };
+            let Ok((mut gun, mut st, mag, launcher)) = guns.get_mut(w) else { continue };
             if inv.active != Some(w) || !alive {
                 if gun.charging.is_some() || gun.wait_release {
                     gun.charging = None;
@@ -145,20 +152,18 @@ pub fn charge(
             }
             let held = intent.fire;
             if gun.wait_release {
-                if !held {
-                    gun.wait_release = false;
+                if held {
+                    st.next_primary = st.next_primary.max(now + HOLD);
+                    continue;
                 }
-                intent.fire = false;
-                continue;
+                gun.wait_release = false;
             }
             match gun.charging {
                 None => {
                     let ready = st.next_primary <= now + 1e-6 && mag.is_none_or(|m| m.clip > 0);
                     if held && ready {
                         gun.charging = Some(now);
-                    }
-                    if held && mag.is_none_or(|m| m.clip > 0) {
-                        intent.fire = false;
+                        st.next_primary = now + HOLD;
                     }
                 }
                 Some(start) => {
@@ -171,9 +176,10 @@ pub fn charge(
                         gun.charging = None;
                         gun.wait_release = held;
                         // One attack through: the frame fires the round.
+                        st.next_primary = now;
                         intent.fire = true;
                     } else {
-                        intent.fire = false;
+                        st.next_primary = now + HOLD;
                     }
                 }
             }
