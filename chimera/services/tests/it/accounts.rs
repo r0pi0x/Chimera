@@ -293,24 +293,25 @@ fn username_rules() {
     let code = hub.invite_named("Ivy Smith");
     assert_eq!(status(&hub.redeem(&code, None).unwrap_err()), 400);
     assert!(hub.redeem(&code, Some("ivy")).is_ok());
-    // Display names: at most 20 characters, set with a ticket.
+    // Display names: at most 20 characters, set with a ticket; no hidden
+    // characters, look-alikes or another's username; the next ticket says it.
     let t = first.ticket.clone().unwrap();
-    let set = |name: &str| -> Result<serde_json::Value, String> {
-        let agent = chimera_assets::remote::agent(None).unwrap();
-        let mut r = agent
-            .post(&format!("{}/accounts/display-name", hub.running.url()))
-            .header("Authorization", &format!("Bearer {t}"))
-            .header("Content-Type", "application/json")
-            .send(serde_json::json!({ "display_name": name }).to_string().as_bytes())
-            .map_err(|e| e.to_string())?;
-        let code = r.status().as_u16();
-        let body = r.body_mut().read_to_string().unwrap_or_default();
-        if code == 200 { Ok(serde_json::from_str(&body).unwrap()) } else { Err(format!("{code} {body}")) }
-    };
-    assert!(set(&"z".repeat(21)).unwrap_err().starts_with("400"));
-    assert_eq!(set("  The Mixed One  ").unwrap()["display_name"], "The Mixed One");
+    let set = |name: &str| account::set_display_name(&first, &t, name).and_then(account::view);
+    assert_eq!(status(&set(&"z".repeat(21)).unwrap_err()), 400);
+    for trick in ["Ivy\u{200b}", "\u{202e}ESAC", "@ivy", "Мixed", "IVY", " i v y"] {
+        let e = set(trick).unwrap_err();
+        assert_eq!(status(&e), 400, "{trick:?}: {e}");
+    }
+    let me = set("  The   Mixed One  ").unwrap();
+    assert_eq!((me.username.as_str(), me.display_name.as_str()), ("mixed_case", "The Mixed One"));
+    assert_eq!(set("Ivy and me").unwrap().display_name, "Ivy and me", "not unique, only not a username");
+    assert_eq!(set("Mixed Case").unwrap().display_name, "Mixed Case", "its own username reads fine");
+    set("The Mixed One").unwrap();
     let mine = hub.accounts().into_iter().find(|a| a.username == "mixed_case").unwrap();
     assert_eq!(mine.display_name, "The Mixed One");
+    assert_eq!(chimera_assets::ticket::peek(&t).unwrap().display_name, "mixed_case", "the old ticket: as it was issued");
+    let fresh = account::request_ticket(&first).unwrap();
+    assert_eq!(chimera_assets::ticket::peek(&fresh).unwrap().display_name, "The Mixed One");
 }
 
 /// Recovery: a wrong key counts toward the limit; the right key adds a

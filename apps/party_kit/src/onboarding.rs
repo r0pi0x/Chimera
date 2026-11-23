@@ -77,7 +77,8 @@
 //!   username (the rules lit as typed,
 //!   `chimera_assets::codes::UsernameRules`; availability asked of the
 //!   hub 0.45 s after the last key, with free suggestions when taken), the
-//!   display name (optional), the avatar beside them (`cl_avatar`'s 32
+//!   display name (optional; `codes::display_name`'s rules as typed: an
+//!   error holds Continue), the avatar beside them (`cl_avatar`'s 32
 //!   looks in tiles as big as the room allows; arrows move it while it has
 //!   the focus); at the right only the preview of how others see you.
 //!   Continue redeems: the device key is made here.
@@ -156,6 +157,18 @@ pub const RETRY_SECS: f64 = 30.0;
 pub const ONBOARDING_TOML: chimera_core::game_data::GameData = chimera_core::game_data!("data/onboarding.toml");
 /// Seconds after the last key before a username is asked of the hub.
 pub const NAME_PAUSE: f64 = 0.45;
+
+/// Why a typed display name can't be had (`codes::display_name`), in a
+/// player's words; none when empty (the username then) or fine.
+pub fn display_problem(display: &str) -> Option<String> {
+    if display.trim().is_empty() {
+        return None;
+    }
+    codes::display_name(display).err().map(|e| {
+        let mut c = e.chars();
+        c.next().map_or_else(String::new, |f| f.to_uppercase().chain(c).collect::<String>() + ".")
+    })
+}
 /// Seconds the welcome toast stays on the main menu.
 pub const TOAST_SECS: f64 = 6.0;
 /// Seconds after the last key before the invite field is checked with
@@ -1276,6 +1289,10 @@ fn act(
                 if !o.name_ok() {
                     continue;
                 }
+                if display_problem(&o.display).is_some() {
+                    o.field = NameField::Display;
+                    continue;
+                }
                 let (Some(link), Some(code)) = (o.link.clone(), o.link.as_ref().and_then(|l| l.code.clone())) else { continue };
                 let display = o.display.trim().to_string();
                 let request = RedeemRequest {
@@ -2173,6 +2190,7 @@ impl Draw<'_, '_> {
         }
         let (dlabel, dhelp, opt) = (w.t("name.display"), w.t("name.display_help"), w.t("name.optional"));
         let dcount = format!("{opt} · {count}");
+        let dproblem = display_problem(&o.display);
         let df = ui.form_field(
             c,
             fields,
@@ -2184,6 +2202,7 @@ impl Draw<'_, '_> {
                 placeholder: if folded.is_empty() { "" } else { &folded },
                 caret: (o.field == NameField::Display).then(|| o.dcaret.cursor(&o.display)),
                 focus: o.field == NameField::Display,
+                status: dproblem.as_deref().map_or(FieldStatus::None, |e| FieldStatus::Error { text: e, fixes: &[] }),
                 w: fw,
                 ..default()
             },
@@ -2203,7 +2222,7 @@ impl Draw<'_, '_> {
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t("name.note"));
         self.problem(c, col);
         let row = self.btns(c, col, 1.2);
-        let ready = o.name_ok() && o.pending.is_none();
+        let ready = o.name_ok() && display_problem(&o.display).is_none() && o.pending.is_none();
         self.button(c, row, Kind::Primary, &w.t("name.continue"), Some("Enter"), ObAction::Continue, State { focus: ready, disabled: !ready, ..State::NONE });
         self.button(c, row, Kind::Tertiary, &w.t("name.back"), None, ObAction::Back, State::NONE);
         // The preview: how others see you (nothing to change here).

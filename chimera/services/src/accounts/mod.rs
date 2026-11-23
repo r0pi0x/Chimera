@@ -534,7 +534,7 @@ impl Accounts {
         let now = self.now();
         let row = conn
             .query_row(
-                "SELECT username, role, content, games, list_slots, report, muted, state FROM accounts WHERE id = ?1",
+                "SELECT username, role, content, games, list_slots, report, muted, state, display_name FROM accounts WHERE id = ?1",
                 params![blob(account)],
                 |r| {
                     Ok((
@@ -546,13 +546,14 @@ impl Accounts {
                         r.get::<_, i64>(5)?,
                         r.get::<_, i64>(6)?,
                         r.get::<_, String>(7)?,
+                        r.get::<_, String>(8)?,
                     ))
                 },
             )
             .optional()
             .map_err(internal)?
             .ok_or_else(|| refuse(401, "no such account"))?;
-        let (username, role, content, games, list, report, muted, state) = row;
+        let (username, role, content, games, list, report, muted, state, display_name) = row;
         if state != "active" {
             return Err(refuse(401, "this account was revoked"));
         }
@@ -602,6 +603,7 @@ impl Accounts {
             audience: ticket::SERVICES.into(),
             issued,
             expires: issued + ticket::LIFETIME_SECS,
+            display_name,
         };
         Ok(ticket::issue(&self.key, &claims))
     }
@@ -817,7 +819,11 @@ impl Accounts {
                     None => i.clone(),
                 });
                 let shown = match request.display_name.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
-                    Some(d) => codes::display_name(d).map_err(|e| refuse(400, e))?,
+                    Some(d) => {
+                        let d = codes::display_name(d).map_err(|e| refuse(400, e))?;
+                        Self::display_name_free(tx, &d, None)?;
+                        d
+                    }
                     None => username.clone(),
                 };
                 tx.execute(
@@ -1152,15 +1158,32 @@ impl Accounts {
         })
     }
 
-    /// `POST /accounts/display-name`: at most 20 characters.
-    pub fn set_display_name(&self, ticket_text: &str, name: &str) -> R<String> {
+    /// `POST /accounts/display-name` (`codes::display_name`; not another
+    /// account's username: `display_name_free`): the account as `me`
+    /// shows it. Games see it at the account's next ticket.
+    pub fn set_display_name(&self, ticket_text: &str, name: &str) -> R<AccountView> {
         let claims = self.check_ticket(ticket_text)?;
         let name = codes::display_name(name).map_err(|e| refuse(400, e))?;
         let conn = self.db();
+        Self::display_name_free(&conn, &name, Some(&claims.account))?;
         conn.execute("UPDATE accounts SET display_name = ?1 WHERE id = ?2", params![name, blob(&claims.account)])
             .map_err(internal)?;
         Self::audit(&conn, self.now(), &id_hex(&claims.device), "display_name", &id_hex(&claims.account), "")?;
-        Ok(name)
+        drop(conn);
+        self.me(ticket_text)
+    }
+
+    /// Refused (400) when `name` reads as another account's username
+    /// (case and spaces aside: "Sam Rocket" is `sam_rocket`'s), so nobody
+    /// is shown as someone else's handle.
+    fn display_name_free(conn: &Connection, name: &str, except: Option<&Id>) -> R<()> {
+        let lower = name.to_lowercase();
+        for folded in [lower.clone(), lower.replace(' ', "_"), lower.replace(' ', "")] {
+            if Self::username_taken(conn, &folded, except)? {
+                return Err(refuse(400, format!("{name:?} is another player's username: pick another display name")));
+            }
+        }
+        Ok(())
     }
 
     /// `GET /accounts/me`: the ticket's account.

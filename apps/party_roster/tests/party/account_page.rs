@@ -4,7 +4,9 @@
 //! staged hub answering in the same frame: a click on your own avatar in the
 //! party strip (or P on the main menu) opens the profile;
 //! a rename to a taken name offers the sign-up's free names and one of
-//! them renames (the preview of you follows); the avatar changes at once and the
+//! them renames (the preview of you follows); the display name is
+//! checked as typed, refused by the hub as another's username, saved and
+//! followed by the preview of you, empty is the username; the avatar changes at once and the
 //! hub hears after a pause; a link code shows; sign out asks in its row
 //! (Esc stays), then deletes this PC's account file and shows the first
 //! run; an owner makes an invite (intent, recipient, role), copies its
@@ -366,7 +368,7 @@ fn discard_restores_and_a_saving_footer_disables_every_action() {
     assert!(p(&sim).changes().is_empty() && p(&sim).avatar.is_none());
     sim.app.world_mut().resource_mut::<Console>().submit("ui_scene account saving");
     sim.ticks(3);
-    assert!(p(&sim).saving && p(&sim).changes().len() == 2);
+    assert!(p(&sim).saving && p(&sim).changes() == ["username", "display name", "avatar"]);
     let w = sim.app.world_mut();
     let footer: Vec<(AccountAction, bool)> = w
         .query::<(&AccountAction, Option<&Interaction>)>()
@@ -422,4 +424,57 @@ fn opening_a_dialog_closes_the_open_host_dropdown() {
     sim.app.world_mut().spawn((Node::default(), chimera_ui::Modal));
     sim.ticks(3);
     assert!(sim.app.world().resource::<party_roster::signal_pages::SignalPages>().open_list.is_none(), "Host's dropdown closed");
+}
+
+/// The display name: a field under the username, checked as typed
+/// (`codes::display_name`: no hidden characters), refused by the hub as
+/// another player's username, saved with Save changes (the preview of you
+/// follows); left empty it is the username.
+#[test]
+fn the_profile_sets_the_display_name() {
+    let mut sim = sim(false);
+    open(&mut sim);
+    assert_eq!(p(&sim).display, "Sam Rocket", "the account's");
+    assert!(words(&mut sim).to_lowercase().contains("display name"));
+    focus(&mut sim, Row::Display);
+    enter(&mut sim);
+    assert_eq!(p(&sim).editing, Some(Editing::Display));
+    let clear = |sim: &mut Sim| {
+        for _ in 0..p(sim).display.chars().count() {
+            key(sim, Key::Backspace, KeyCode::Backspace);
+        }
+    };
+    clear(&mut sim);
+    typed(&mut sim, "Sam\u{200b}");
+    assert!(p(&sim).display_problem().is_some_and(|e| e.contains("invisible")), "{:?}", p(&sim).display_problem());
+    assert!(words(&mut sim).to_lowercase().contains("invisible"), "the field says why");
+    act(&mut sim, AccountAction::Save);
+    assert!(p(&sim).said.as_ref().is_some_and(|s| s.error) && !p(&sim).saving, "held here");
+    assert_eq!(p(&sim).me.as_ref().unwrap().display_name, "Sam Rocket");
+    // Another player's username: the hub refuses.
+    clear(&mut sim);
+    typed(&mut sim, "Rocket");
+    assert_eq!(p(&sim).changes(), ["display name"]);
+    enter(&mut sim);
+    assert!(p(&sim).said.as_ref().is_some_and(|s| s.error && s.text.contains("another player's username")), "{:?}", p(&sim).said);
+    // A good one saves, and the preview of you follows.
+    act(&mut sim, AccountAction::Edit(Editing::Display));
+    clear(&mut sim);
+    typed(&mut sim, "Rocket  Sam");
+    enter(&mut sim);
+    sim.ticks(2);
+    assert_eq!(p(&sim).me.as_ref().unwrap().display_name, "Rocket Sam", "white space folded");
+    assert!(p(&sim).changes().is_empty() && p(&sim).editing.is_none());
+    assert_eq!(sim.app.world().resource::<AccountShown>().0.as_ref().unwrap().display, "Rocket Sam");
+    // Empty: the username.
+    act(&mut sim, AccountAction::Edit(Editing::Display));
+    clear(&mut sim);
+    act(&mut sim, AccountAction::Save);
+    sim.ticks(2);
+    assert_eq!(p(&sim).me.as_ref().unwrap().display_name, "sam_rocket");
+    // Discard puts the account's back.
+    act(&mut sim, AccountAction::Edit(Editing::Display));
+    typed(&mut sim, "x");
+    act(&mut sim, AccountAction::Discard);
+    assert_eq!(p(&sim).display, "sam_rocket");
 }

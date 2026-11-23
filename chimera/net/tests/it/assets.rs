@@ -746,6 +746,7 @@ fn a_hub_account_joins_with_its_ticket_and_no_token() {
         audience: ticket::SERVICES.into(),
         issued: now,
         expires: now + ticket::LIFETIME_SECS,
+        display_name: "ann".into(),
     };
     let file = AccountFile {
         url: svc.front.url(),
@@ -1310,6 +1311,7 @@ fn hub_account(svc: &Fixture, name: &str) -> PathBuf {
         audience: ticket::SERVICES.into(),
         issued: now,
         expires: now + ticket::LIFETIME_SECS,
+        display_name: name.into(),
     };
     let file = AccountFile {
         url: svc.front.url(),

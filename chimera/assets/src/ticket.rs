@@ -6,8 +6,8 @@
 //!   without padding; the payload is `Claims` in postcard (version, key id,
 //!   account and device ids, username, role, rights: `content` the asset
 //!   service may serve, `games` it may play, `list`, `report`, `muted`;
-//!   the audience, issued and expiry times), the signature Ed25519 over
-//!   the payload's bytes.
+//!   the audience, issued and expiry times, then the display name), the
+//!   signature Ed25519 over the payload's bytes.
 //! - **Keys** (`TicketKeys`): by key id (the first 16 hex digits of the
 //!   public key's SHA-256), so a new key can be added and the old one kept
 //!   until its tickets expire. A services box reads them from
@@ -95,6 +95,54 @@ pub struct Claims {
     /// Unix seconds.
     pub issued: u64,
     pub expires: u64,
+    /// What games show (`codes::display_name`), as when the ticket was
+    /// issued. Last, so older readers ignore it (postcard leaves trailing
+    /// bytes) and a ticket without it still reads (`decode`: the username).
+    pub display_name: String,
+}
+
+/// `Claims` before `display_name` (tickets issued before 2026-11-23).
+#[derive(Deserialize)]
+struct ClaimsNoDisplay {
+    version: u8,
+    key_id: String,
+    account: Id,
+    device: Id,
+    username: String,
+    role: String,
+    content: Vec<String>,
+    games: Vec<String>,
+    list: u32,
+    report: bool,
+    muted: bool,
+    audience: String,
+    issued: u64,
+    expires: u64,
+}
+
+/// A payload's claims, with or without the display name.
+fn decode(payload: &[u8]) -> Result<Claims, TicketError> {
+    if let Ok(c) = postcard::from_bytes::<Claims>(payload) {
+        return Ok(c);
+    }
+    let c: ClaimsNoDisplay = postcard::from_bytes(payload).map_err(|_| TicketError::Malformed)?;
+    Ok(Claims {
+        version: c.version,
+        key_id: c.key_id,
+        account: c.account,
+        device: c.device,
+        display_name: c.username.clone(),
+        username: c.username,
+        role: c.role,
+        content: c.content,
+        games: c.games,
+        list: c.list,
+        report: c.report,
+        muted: c.muted,
+        audience: c.audience,
+        issued: c.issued,
+        expires: c.expires,
+    })
 }
 
 impl Claims {
@@ -148,7 +196,7 @@ pub fn issue(key: &SigningKey, claims: &Claims) -> String {
 /// own ticket's expiry).
 pub fn peek(ticket: &str) -> Result<Claims, TicketError> {
     let (payload, _) = split(ticket)?;
-    postcard::from_bytes(&payload).map_err(|_| TicketError::Malformed)
+    decode(&payload)
 }
 
 fn split(ticket: &str) -> Result<(Vec<u8>, Vec<u8>), TicketError> {
@@ -197,7 +245,7 @@ impl TicketKeys {
     /// is the caller's: `Revocations::refuses`).
     pub fn check(&self, ticket: &str, audience: &str, now: u64) -> Result<Claims, TicketError> {
         let (payload, signature) = split(ticket)?;
-        let claims: Claims = postcard::from_bytes(&payload).map_err(|_| TicketError::Malformed)?;
+        let claims = decode(&payload)?;
         if claims.version != VERSION {
             return Err(TicketError::Malformed);
         }
@@ -322,7 +370,26 @@ mod tests {
             audience: SERVICES.into(),
             issued: now,
             expires: now + LIFETIME_SECS,
+            display_name: "Tester".into(),
         }
+    }
+
+    #[test]
+    fn a_ticket_without_a_display_name_still_reads_and_older_readers_skip_it() {
+        let key = SigningKey::from_bytes(&[7; 32]);
+        let keys = TicketKeys::single(key.verifying_key());
+        // A ticket as issued before the display name: its payload ends at `expires`.
+        let mut c = claims(1000);
+        c.key_id = key_id(&key.verifying_key());
+        let full = postcard::to_allocvec(&c).unwrap();
+        let old = &full[..full.len() - 1 - c.display_name.len()];
+        let signed = |payload: &[u8]| format!("{PREFIX}{}.{}", b64::encode(payload), b64::encode(&key.sign(payload).to_bytes()));
+        let read = keys.check(&signed(old), SERVICES, 1000).unwrap();
+        assert_eq!((read.username.as_str(), read.display_name.as_str()), ("tester", "tester"));
+        // A new ticket as an older reader sees it: the same claims, the name left over.
+        let older: ClaimsNoDisplay = postcard::from_bytes(&full).unwrap();
+        assert_eq!((older.username.as_str(), older.expires), ("tester", c.expires));
+        assert_eq!(keys.check(&signed(&full), SERVICES, 1000).unwrap().display_name, "Tester");
     }
 
     #[test]

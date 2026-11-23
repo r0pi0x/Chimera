@@ -13,8 +13,10 @@
 //! - **Profile** (the Form Kit mockup, `chimera_ui::form_page`): at the
 //!   left what can be changed, the username (a form field: title, help,
 //!   status slot; its availability asked of the hub `NAME_PAUSE` after the
-//!   last key, a taken name's free names offered as fixes) and the 32
-//!   avatars (`avatar_grid`); the changes collect in the action bar ("1
+//!   last key, a taken name's free names offered as fixes), the display
+//!   name (optional: empty is the username; `codes::display_name`'s rules
+//!   checked as typed, the hub's answer too: never another's username)
+//!   and the 32 avatars (`avatar_grid`); the changes collect in the action bar ("1
 //!   change · avatar", from two on "N changes" with the list unfolding)
 //!   and go out together with **Save changes** (Ctrl+S, Enter in the
 //!   name; a name known taken stops on the field), Discard puts them
@@ -39,11 +41,13 @@
 //!   animates in a way that holds a key back.
 //! - **Calls** go through `AccountBackend` (`NetworkAccount`: the live
 //!   session's ticket, on a thread; `StagedAccount` answers in the same
-//!   frame for tests and `ui_scene account <profile|rename|rename-taken|
+//!   frame for tests and `ui_scene account <profile|rename|rename-taken|display|
 //!   avatar|saving|link|sign-out|invites|invite-made|player>`).
 //!
-//! Known shortcuts: no display name field (the hub has no call to change
-//! it yet: docs/backlog.md), device list or new recovery key here yet
+//! A saved display name asks a new ticket at once (`Session::refresh`), so
+//! the party's hub shows it to the others at the next heartbeat.
+//!
+//! Known shortcuts: no device list or new recovery key here yet
 //! (hub.md 8); the link code's "valid for" is drawn once, not counted
 //! down; the screen rebuilds whole on any change.
 
@@ -101,6 +105,7 @@ pub enum Tab {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Row {
     Username,
+    Display,
     Avatar,
     Link,
     SignOut,
@@ -116,6 +121,7 @@ pub enum Row {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Editing {
     Name,
+    Display,
     Intent,
     Recipient,
 }
@@ -142,6 +148,9 @@ pub struct AccountPage {
     pub name_check: Option<NameCheck>,
     pub typed_at: f64,
     pub asked_name: Option<String>,
+    /// The display name as typed (the account's until changed).
+    pub display: String,
+    pub dcaret: Caret,
     /// The avatar picked here, not saved yet (Save changes sends it).
     pub avatar: Option<u8>,
     /// A save under way (Save changes): every action waits.
@@ -176,7 +185,7 @@ impl AccountPage {
     /// The tab's rows.
     pub fn rows(&self) -> Vec<Row> {
         match self.tab {
-            Tab::Profile => vec![Row::Username, Row::Avatar, Row::Link, Row::SignOut],
+            Tab::Profile => vec![Row::Username, Row::Display, Row::Avatar, Row::Link, Row::SignOut],
             Tab::Invites => {
                 let mut v = vec![Row::Intent, Row::Recipient, Row::Role, Row::Make];
                 v.extend(self.invites.iter().flatten().map(|i| Row::Open(i.id)));
@@ -200,6 +209,26 @@ impl AccountPage {
         !n.is_empty() && self.me.as_ref().is_some_and(|m| !n.eq_ignore_ascii_case(&m.username))
     }
 
+    /// The display name to send: as typed with white space folded, the
+    /// username when left empty.
+    pub fn display_wanted(&self) -> String {
+        let d = self.display.split_whitespace().collect::<Vec<_>>().join(" ");
+        if d.is_empty() { self.me.as_ref().map(|m| m.username.clone()).unwrap_or_default() } else { d }
+    }
+
+    /// The typed display name differs from the account's.
+    pub fn display_changed(&self) -> bool {
+        self.me.as_ref().is_some_and(|m| self.display_wanted() != m.display_name)
+    }
+
+    /// Why the typed display name can't be had (`codes::display_name`).
+    pub fn display_problem(&self) -> Option<String> {
+        if !self.display_changed() {
+            return None;
+        }
+        crate::onboarding::display_problem(&self.display_wanted())
+    }
+
     /// The picked avatar differs from the account's.
     pub fn avatar_changed(&self) -> bool {
         self.avatar.is_some() && self.avatar != self.me.as_ref().and_then(|m| m.avatar)
@@ -210,6 +239,9 @@ impl AccountPage {
         let mut v = Vec::new();
         if self.name_changed() {
             v.push("username".to_string());
+        }
+        if self.display_changed() {
+            v.push("display name".to_string());
         }
         if self.avatar_changed() {
             v.push("avatar".to_string());
@@ -250,6 +282,7 @@ pub trait AccountHub: Send + Sync {
     fn check_rename(&self, name: &str) -> Result<NameCheck, String>;
     fn rename(&self, name: &str) -> Result<Me, String>;
     fn set_avatar(&self, avatar: u8) -> Result<Me, String>;
+    fn set_display_name(&self, name: &str) -> Result<Me, String>;
     /// A link code and its minutes.
     fn link_code(&self) -> Result<(String, u64), String>;
     fn sign_out(&self) -> Result<(), String>;
@@ -284,6 +317,15 @@ impl AccountHub for NetworkAccount {
     fn set_avatar(&self, avatar: u8) -> Result<Me, String> {
         let (f, t) = session()?;
         account::view(account::set_avatar(&f, &t, avatar)?)
+    }
+    fn set_display_name(&self, name: &str) -> Result<Me, String> {
+        let (f, t) = session()?;
+        let me = account::view(account::set_display_name(&f, &t, name)?)?;
+        // The party's hub reads names from tickets: a new one says it.
+        if let Some(s) = account::live() {
+            let _ = s.refresh();
+        }
+        Ok(me)
     }
     fn link_code(&self) -> Result<(String, u64), String> {
         let (f, t) = session()?;
@@ -387,6 +429,16 @@ impl AccountHub for StagedAccount {
         s.0.avatar = Some(avatar);
         Ok(s.0.clone())
     }
+    fn set_display_name(&self, name: &str) -> Result<Me, String> {
+        let d = codes::display_name(name).map_err(|e| format!("the hub refused: {e} (400)"))?;
+        let folded = d.to_lowercase().replace(' ', "_");
+        if self.taken.iter().any(|t| *t == folded) {
+            return Err(format!("the hub refused: {d:?} is another player's username: pick another display name (400)"));
+        }
+        let mut s = self.lock();
+        s.0.display_name = d;
+        Ok(s.0.clone())
+    }
     fn link_code(&self) -> Result<(String, u64), String> {
         Ok((STAGED_LINK.into(), 10))
     }
@@ -457,8 +509,8 @@ impl AccountBackend {
 enum Ask {
     Me,
     Check(String),
-    /// Save changes: the new name, then the avatar.
-    Save { name: Option<String>, avatar: Option<u8> },
+    /// Save changes: the new name, the display name, then the avatar.
+    Save { name: Option<String>, display: Option<String>, avatar: Option<u8> },
     Link,
     SignOut,
     Make(InviteRequest),
@@ -497,11 +549,14 @@ fn ask(p: &mut AccountPage, backend: &AccountBackend, answers: &Answers, what: A
                 let r = hub.check_rename(&name);
                 Reply::Checked(name, r)
             }
-            Ask::Save { name, avatar } => {
+            Ask::Save { name, display, avatar } => {
                 let mut r = match &name {
                     Some(n) => hub.rename(n),
                     None => hub.me(),
                 };
+                if let (Ok(_), Some(d)) = (&r, &display) {
+                    r = hub.set_display_name(d);
+                }
                 if let (Ok(_), Some(a)) = (&r, avatar) {
                     r = hub.set_avatar(a);
                 }
@@ -704,8 +759,8 @@ fn keys(
             }
             Key::Enter => {
                 match p.editing {
-                    // Enter in the name saves the Profile's changes.
-                    Some(Editing::Name) => {
+                    // Enter in a name saves the Profile's changes.
+                    Some(Editing::Name | Editing::Display) => {
                         out.write(AccountAction::Save);
                     }
                     // A form's field: on to the next row.
@@ -773,6 +828,13 @@ fn keys(
                 }
                 p.caret = caret;
             }
+            Editing::Display => {
+                let mut caret = p.dcaret;
+                if caret.key(&mut p.display, tk, clipboard, codes::NAME_MAX, false) {
+                    p.said = None;
+                }
+                p.dcaret = caret;
+            }
             Editing::Intent => {
                 let mut caret = p.icaret;
                 caret.key(&mut p.intent, tk, clipboard, 200, false);
@@ -817,6 +879,9 @@ fn poll(answers: Res<Answers>, mut p: ResMut<AccountPage>, backend: Res<AccountB
                 if p.editing.is_none() && !p.name_changed() {
                     p.name = me.username.clone();
                 }
+                if p.editing != Some(Editing::Display) && (p.me.is_none() || !p.display_changed()) {
+                    p.display = me.display_name.clone();
+                }
                 p.me = Some(me);
                 if owner {
                     ask(&mut p, &backend, &answers, Ask::Invites);
@@ -841,6 +906,7 @@ fn poll(answers: Res<Answers>, mut p: ResMut<AccountPage>, backend: Res<AccountB
                 }
                 p.said = Some(Said { error: false, text: words.f("account.saved", &[("user", &me.username)]) });
                 p.name = me.username.clone();
+                p.display = me.display_name.clone();
                 p.me = Some(me);
                 p.avatar = None;
                 p.saving = false;
@@ -924,7 +990,7 @@ fn keep_names(commands: &mut Commands, me: &Me, staged: bool) {
             return;
         }
         if let Some(s) = account::live()
-            && s.file().username != me.username
+            && (s.file().username != me.username || (!me.display_name.is_empty() && s.file().display_name != me.display_name))
         {
             let mut f = s.file();
             f.username = me.username.clone();
@@ -998,6 +1064,10 @@ fn act(
                         Some(Editing::Name) => save(&mut p, &backend, &answers, &words),
                         _ => start_name(&mut p, now),
                     },
+                    Some(Row::Display) => match p.editing {
+                        Some(Editing::Display) => save(&mut p, &backend, &answers, &words),
+                        _ => start_display(&mut p),
+                    },
                     Some(Row::Intent) => edit(&mut p, Editing::Intent),
                     Some(Row::Recipient) => edit(&mut p, Editing::Recipient),
                     Some(Row::Link) if p.pending.is_none() => ask(&mut p, &backend, &answers, Ask::Link),
@@ -1020,6 +1090,10 @@ fn act(
             AccountAction::Edit(Editing::Name) => {
                 p.focus = 0;
                 start_name(&mut p, now);
+            }
+            AccountAction::Edit(Editing::Display) => {
+                p.focus = rows.iter().position(|r| *r == Row::Display).unwrap_or(p.focus);
+                start_display(&mut p);
             }
             AccountAction::Edit(e) => {
                 p.focus = rows.iter().position(|r| matches!((r, e), (Row::Intent, Editing::Intent) | (Row::Recipient, Editing::Recipient))).unwrap_or(p.focus);
@@ -1077,6 +1151,7 @@ fn act(
             AccountAction::Discard => {
                 if !p.saving {
                     p.name = p.me.as_ref().map(|m| m.username.clone()).unwrap_or_default();
+                    p.display = p.me.as_ref().map(|m| m.display_name.clone()).unwrap_or_default();
                     p.avatar = None;
                     p.editing = None;
                     p.name_check = None;
@@ -1105,8 +1180,19 @@ fn start_name(p: &mut AccountPage, now: f64) {
     p.confirm_sign_out = false;
 }
 
+/// The display name's field takes the keys.
+fn start_display(p: &mut AccountPage) {
+    if p.saving {
+        return;
+    }
+    p.dcaret = Caret::end_of(&p.display);
+    p.editing = Some(Editing::Display);
+    p.confirm_sign_out = false;
+}
+
 /// Save changes: the new name (refused here when it is known taken or
-/// breaks the rules: "pick a free username"), then the avatar, in one
+/// breaks the rules: "pick a free username"), the display name (refused
+/// here when it breaks `codes::display_name`), then the avatar, in one
 /// call; every action waits meanwhile (`saving`).
 fn save(p: &mut AccountPage, backend: &AccountBackend, answers: &Answers, words: &Words) {
     if p.pending.is_some() || p.saving {
@@ -1126,11 +1212,19 @@ fn save(p: &mut AccountPage, backend: &AccountBackend, answers: &Answers, words:
             return;
         }
     }
+    if p.display_problem().is_some() {
+        p.said = Some(Said { error: true, text: words.t("account.display_blocked") });
+        p.focus = p.rows().iter().position(|r| *r == Row::Display).unwrap_or(p.focus);
+        p.editing = Some(Editing::Display);
+        p.dcaret = Caret::end_of(&p.display);
+        return;
+    }
+    let display = p.display_changed().then(|| p.display_wanted());
     let avatar = p.avatar.filter(|_| p.avatar_changed());
     p.editing = None;
     p.saving = true;
     p.said = None;
-    ask(p, backend, answers, Ask::Save { name, avatar });
+    ask(p, backend, answers, Ask::Save { name, display, avatar });
 }
 
 /// Copy link: the made invite's link on the clipboard, the card's Copy
@@ -1154,7 +1248,7 @@ fn edit(p: &mut AccountPage, e: Editing) {
     match e {
         Editing::Intent => p.icaret = Caret::end_of(&p.intent),
         Editing::Recipient => p.rcaret = Caret::end_of(&p.recipient),
-        Editing::Name => {}
+        Editing::Name | Editing::Display => {}
     }
 }
 
@@ -1479,8 +1573,34 @@ impl Draw<'_, '_> {
         for (e, s) in ff.fixes.iter().zip(&fixes) {
             c.entity(*e).insert(AccountAction::Suggest(s.clone()));
         }
-        let note = ui.boxed(c, left, UiStyle { w: Some(fw), ..UiStyle::column() });
-        ui.paragraph(c, note, Role::Text, 0.7, Tone::Fg3, &self.t("display_note"));
+        // The display name: what games show; empty is the username.
+        let editing = p.editing == Some(Editing::Display);
+        let problem = p.display_problem();
+        let dhint = self.t("display_hint");
+        let dstatus = match &problem {
+            Some(e) => FieldStatus::Error { text: e, fixes: &[] },
+            None => FieldStatus::Hint(&dhint),
+        };
+        let (dlabel, dtag) = (self.t("display"), self.t("optional"));
+        let dhelp = self.t("display_help");
+        let user = self.username();
+        let df = ui.form_field(
+            c,
+            left,
+            &FieldSpec {
+                label: &dlabel,
+                tag: Some(&dtag),
+                help: &dhelp,
+                value: &p.display,
+                placeholder: &user,
+                caret: editing.then(|| p.dcaret.cursor(&p.display)),
+                focus: self.focused(Row::Display),
+                status: dstatus,
+                w: fw,
+                ..default()
+            },
+        );
+        c.entity(df.input).insert(AccountAction::Edit(Editing::Display));
         // The avatar: the 32 looks, as large as the room beside allows.
         let aw = (list_w - fw - 3.0).max(16.0);
         let right = ui.boxed(c, two, UiStyle { w: Some(aw), gap: Some(0.6), shrink: Some(0.0), ..UiStyle::column() });
@@ -1747,23 +1867,31 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
             p.asked_name = Some(name.into());
             p.name_check = staged.check_rename(name).ok();
         }
-        "avatar" => {
+        "display" => {
+            p.me = staged.me().ok();
             p.focus = 1;
+            p.editing = Some(Editing::Display);
+            p.display = "Rocket \u{200b}Sam".into();
+            p.dcaret = Caret::end_of(&p.display);
+        }
+        "avatar" => {
+            p.focus = 2;
             p.avatar = Some(21);
         }
         "saving" => {
             p.me = staged.me().ok();
+            p.display = "Night Owl".into();
             p.name = "night_owl".into();
             p.avatar = Some(21);
             p.saving = true;
             p.changes_open = false;
         }
         "link" => {
-            p.focus = 2;
+            p.focus = 3;
             p.link = Some((STAGED_LINK.into(), 10));
         }
         "sign-out" => {
-            p.focus = 3;
+            p.focus = 4;
             p.confirm_sign_out = true;
         }
         "invites" | "invite-made" => {
@@ -1785,7 +1913,7 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
         }
         other => {
             return Err(format!(
-                "ui_scene account {other}: profile, rename, rename-taken, avatar, saving, link, sign-out, invites, invite-made, player or off"
+                "ui_scene account {other}: profile, rename, rename-taken, display, avatar, saving, link, sign-out, invites, invite-made, player or off"
             ));
         }
     }

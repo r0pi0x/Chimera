@@ -453,6 +453,30 @@ mod parties {
         party_doc::state(&s.hub_url(), None, ticket, &State { token: token.into(), me: me("x"), at: at.map(str::to_string) })
     }
 
+    /// A member shows its account's username and display name (its
+    /// ticket's); a new display name shows at its next ticket.
+    #[test]
+    fn members_show_their_accounts_display_names() {
+        let s = Services::new("party_names");
+        let origin = s.hub_url();
+        let invited: Invited = s.admin.post("/admin/invite", &InviteSpec { name: "cleo".into(), role: Some("tester".into()), ..Default::default() }).unwrap();
+        let link = HubLink { host: s.accounts_run.addr.to_string(), fingerprint: None, code: None };
+        let (file, _) = account::redeem(&link, &invited.code, Some("cleo"), "test").unwrap();
+        let c = file.ticket.clone().unwrap();
+        let d = s.ticket("dana", "tester", Some(0));
+        let made = party_doc::create(&origin, None, &c, &Create { me: me("Cleo") }).unwrap();
+        let joined = party_doc::join(&origin, None, &d, &Join { code: made.party.code.clone(), me: me("Dana") }).unwrap();
+        let cleo = joined.party.members.iter().find(|m| m.id != joined.party.you).unwrap();
+        assert_eq!((cleo.username.as_str(), cleo.display_name.as_str()), ("cleo", "cleo"));
+        account::set_display_name(&file, &c, "Cleo Nova").unwrap();
+        // The old ticket still says the old name; the next one the new.
+        let fresh = account::request_ticket(&file).unwrap();
+        party_doc::state(&origin, None, &fresh, &State { token: made.token.clone(), me: me("Cleo"), at: None }).unwrap();
+        let seen = party_doc::state(&origin, None, &d, &State { token: joined.token.clone(), me: me("Dana"), at: None }).unwrap();
+        let cleo = seen.members.iter().find(|m| m.id != seen.you).unwrap();
+        assert_eq!((cleo.username.as_str(), cleo.display_name.as_str(), cleo.name.as_str()), ("cleo", "Cleo Nova", "Cleo"));
+    }
+
     #[test]
     fn a_party_is_made_joined_by_its_code_led_and_left() {
         let s = Services::new("party_flow");

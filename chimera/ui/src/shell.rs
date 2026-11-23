@@ -52,7 +52,7 @@
 //!
 //! Known shortcuts: the "+" opens the party panel only with a hub account
 //! (`Party::invite`; parties: docs/plans/active/parties.md), Friends is
-//! disabled; a hub party's others have no ping or display name yet.
+//! disabled; a hub party's others have no ping yet.
 
 use bevy::{
     input::{ButtonState, keyboard::{Key, KeyboardInput}},

@@ -5,7 +5,8 @@
 //! read as `0` and `I`/`L` as `1`; stored only as the SHA-256 of their
 //! normalized form. Usernames (3-20 of `[a-z0-9_]` after case folding, a
 //! few reserved words refused) and display names (1-20 characters, no
-//! control characters; the default is the username).
+//! control or invisible characters nor look-alike tricks: `display_name`;
+//! the default is the username).
 //!
 //! A username a player **chooses** (sign-up, a rename;
 //! docs/plans/active/onboarding.md) also starts with a letter
@@ -167,17 +168,60 @@ pub fn suggestions(wanted: &str, n: usize, taken: impl Fn(&str) -> bool) -> Vec<
     out
 }
 
-/// `text` trimmed, if it is a valid display name.
+/// `text` as a display name, or why not: trimmed, any run of white space
+/// one plain space; 1 to `NAME_MAX` characters with at least one letter or
+/// digit. Refused, as ways to pass for someone else or to hide: control
+/// and invisible characters (zero-width, joiners, direction marks and
+/// overrides, fillers, tags: `invisible`), more than two combining marks
+/// on one letter, a leading `@` (the username's mark), and Latin letters
+/// mixed with Greek or Cyrillic ones (look-alikes). Not unique.
 pub fn display_name(text: &str) -> Result<String, String> {
-    let t = text.trim();
+    if text.chars().any(char::is_control) {
+        return Err("a display name has no control characters".into());
+    }
+    if text.chars().any(invisible) {
+        return Err("a display name has no invisible characters".into());
+    }
+    let t = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let n = t.chars().count();
     if n == 0 || n > NAME_MAX {
         return Err(format!("a display name is 1 to {NAME_MAX} characters"));
     }
-    if t.chars().any(char::is_control) {
-        return Err("a display name has no control characters".into());
+    if !t.chars().any(char::is_alphanumeric) {
+        return Err("a display name has a letter or a digit".into());
     }
-    Ok(t.to_string())
+    if t.starts_with('@') {
+        return Err("a display name doesn't start with @ (that marks a username)".into());
+    }
+    let mut marks = 0;
+    for c in t.chars() {
+        marks = if combining(c) { marks + 1 } else { 0 };
+        if marks > 2 {
+            return Err("a display name has at most two accents on a letter".into());
+        }
+    }
+    let latin = t.chars().any(|c| c.is_ascii_alphabetic() || matches!(c, '\u{c0}'..='\u{24f}' if c.is_alphabetic()));
+    let other = t.chars().any(|c| matches!(c, '\u{370}'..='\u{3ff}' | '\u{1f00}'..='\u{1fff}' | '\u{400}'..='\u{52f}') && c.is_alphabetic());
+    if latin && other {
+        return Err("a display name doesn't mix Latin letters with Greek or Cyrillic ones".into());
+    }
+    Ok(t)
+}
+
+/// A character that shows nothing or changes how others show (module doc).
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{ad}' | '\u{34f}' | '\u{61c}' | '\u{115f}' | '\u{1160}' | '\u{17b4}' | '\u{17b5}' | '\u{180b}'..='\u{180f}'
+            | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{2800}' | '\u{3164}'
+            | '\u{fe00}'..='\u{fe0f}' | '\u{feff}' | '\u{ffa0}' | '\u{fff0}'..='\u{fffb}' | '\u{1d173}'..='\u{1d17a}'
+            | '\u{e0000}'..='\u{e0fff}' | '\u{f0000}'..='\u{10ffff}' | '\u{e000}'..='\u{f8ff}'
+    )
+}
+
+/// A combining mark (it sits on the letter before it).
+fn combining(c: char) -> bool {
+    matches!(c, '\u{300}'..='\u{36f}' | '\u{1ab0}'..='\u{1aff}' | '\u{1dc0}'..='\u{1dff}' | '\u{20d0}'..='\u{20ff}' | '\u{fe20}'..='\u{fe2f}')
 }
 
 /// A free-form name made into a username candidate:
@@ -225,6 +269,17 @@ mod tests {
         assert_eq!(display_name("  Alice the Great  ").unwrap(), "Alice the Great");
         assert!(display_name(&"x".repeat(21)).is_err() && display_name("").is_err() && display_name("a\nb").is_err());
         assert_eq!(display_name(&"é".repeat(20)).unwrap().chars().count(), 20, "characters, not bytes");
+        assert_eq!(display_name(" Sam \u{a0}  Rocket\u{3000}").unwrap(), "Sam Rocket", "white space folds to one space");
+        for hidden in ["Sam\u{200b}", "S\u{200d}am", "\u{202e}maS", "Sam\u{2066}", "\u{feff}Sam", "Sam\u{3164}", "Sam\u{e0041}", "Sam\u{ad}"] {
+            assert!(display_name(hidden).is_err(), "{hidden:?}");
+        }
+        assert!(display_name("\u{3164}").is_err() && display_name("...").is_err(), "something to see");
+        assert!(display_name("@sam_rocket").is_err(), "an @ name passes for a username");
+        assert!(display_name("Ѕam").is_err(), "a Cyrillic S among Latin letters");
+        assert!(display_name("e\u{301}\u{301}\u{301}").is_err() && display_name("e\u{301}\u{302}").is_ok(), "at most two marks");
+        for ok in ["Zoë", "Ünal ★", "Иван", "Σοφία", "王小明", "Sam #2", "x@y"] {
+            assert!(display_name(ok).is_ok(), "{ok}");
+        }
         assert_eq!(username_from("Bob.Smith-PC-with-a-long-name"), "bob_smith_pc_with_a_");
         assert_eq!(username_from("x"), "x__");
     }

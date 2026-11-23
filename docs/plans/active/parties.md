@@ -36,9 +36,10 @@ the hub service ([hub.md](hub.md), S2) and the Signal r8 shell
   server's address and name, or none) with a **move** counter that goes
   up each time the leader takes the party somewhere (a server) or out
   of one ("Leave with my party").
-- **Member**: a member id (8 hex digits, the party's own), a display
-  name and avatar byte (the player's `name` and `cl_avatar`, sent with
-  each call), when it joined, when it was last seen, where it is (`at`:
+- **Member**: a member id (8 hex digits, the party's own), a name and
+  avatar byte (the player's `name` and `cl_avatar`, sent with each
+  call), its account's username and display name (from the call's
+  ticket: a new display name shows at the member's next ticket), when it joined, when it was last seen, where it is (`at`:
   the game server it is connected to, or none: the menu), and the hash of
   its **member token**.
 - **Member token**: `chimera_party_` and 32 hex digits, made by the hub

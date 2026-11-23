@@ -128,7 +128,14 @@ pub enum MoveKind {
 pub struct MemberView {
     /// The party's own id for it (8 hex digits).
     pub id: String,
+    /// The player's name as its client says (`Me::name`).
     pub name: String,
+    /// The account's username and display name, as its ticket says (the
+    /// preview card's; empty from an older hub).
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub display_name: String,
     pub avatar: u8,
     pub online: bool,
     pub leader: bool,

@@ -416,6 +416,8 @@ pub fn staged_view(you: &str) -> PartyView {
     let m = |id: &str, name: &str, avatar: u8, online: bool, leader: bool, at: bool| MemberView {
         id: id.into(),
         name: name.into(),
+        username: name.to_lowercase(),
+        display_name: name.into(),
         avatar,
         online,
         leader,

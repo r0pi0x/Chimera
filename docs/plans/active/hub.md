@@ -969,7 +969,12 @@ Taken (user, 2026-11-14), second round:
     (stored case-folded); permanent handles shown only in account and
     admin places. **Display names** (what the HUD shows) are at most 20
     characters, enforced by the accounts service when set or changed;
-    the default is the username (5.1).
+    the default is the username (5.1). Not unique, but never another
+    account's username (case and spaces aside), no control or invisible
+    characters (zero-width, joiners, direction overrides, fillers, tags),
+    no leading `@`, at most two combining marks on a letter, no Latin
+    letters mixed with Greek or Cyrillic ones (`codes::display_name`).
+    Tickets carry it (the last claim), so the hub shows it in parties.
 12. **The recovery key** is saved at sign-up (the check box). A lost key
     is handled case by case: the owner re-invites into the same account
     (`chimera_accounts invite <name> --for <username>`, 5.3).

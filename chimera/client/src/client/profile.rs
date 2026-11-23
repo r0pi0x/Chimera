@@ -19,6 +19,8 @@
 //!   hub (`PartyMe`).
 //!
 //! A member's preview card on hover (`chimera_ui::shell::Tip::card`) shows
+//! the display name and `@username` (yours from `AccountNames`, the
+//! others' as the hub has them from their tickets: `others_names`) and
 //! the role (Host, Party leader); no ping (it would rebuild every screen).
 //!
 //! `Party` is written only when it changes, so screens rebuild on it.
@@ -211,13 +213,16 @@ fn update_party(
     // The party's others, in join order (the hub's), offline marked away.
     for m in view.map(|v| v.members.iter().filter(|m| m.id != v.you).collect::<Vec<_>>()).unwrap_or_default() {
         let look = AvatarLook::from_byte(m.avatar).unwrap_or_else(|| AvatarLook::for_name(&m.name));
+        // Its account's names (its ticket's), as yours: `@username` and
+        // the display name; an older hub's, the name its client gave.
+        let (name, display) = others_names(m);
         members.push(Member {
-            name: m.name.clone(),
+            name,
             face: Face::Look(look),
             marks: AvatarMarks { you: false, away: !m.online, idle: false },
             state: if m.at.is_some() { EdgeState::InMatch } else { EdgeState::Idle },
             lead: m.leader,
-            display: None,
+            display,
             role: m.leader.then(|| "Party leader".to_string()),
             ping: None,
         });
@@ -226,6 +231,16 @@ fn update_party(
     if *party != want {
         *party = want;
     }
+}
+
+/// A party member's card names: its username and, when it differs, its
+/// display name (the hub's from its ticket); from an older hub, the name
+/// its client gave and none.
+pub fn others_names(m: &chimera_net::net::party::MemberView) -> (String, Option<String>) {
+    if m.username.is_empty() {
+        return (m.name.clone(), None);
+    }
+    (m.username.clone(), Some(m.display_name.clone()).filter(|d| !d.is_empty() && *d != m.username))
 }
 
 /// The shell bar's Report a bug tile, on any screen: the report dialog
@@ -243,5 +258,20 @@ fn report_tile(
                 }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chimera_net::net::party::MemberView;
+
+    use super::others_names;
+
+    #[test]
+    fn a_party_members_card_shows_its_accounts_names() {
+        let m = |name: &str, user: &str, display: &str| MemberView { name: name.into(), username: user.into(), display_name: display.into(), ..Default::default() };
+        assert_eq!(others_names(&m("Cleo", "cleo", "Cleo Nova")), ("cleo".into(), Some("Cleo Nova".into())));
+        assert_eq!(others_names(&m("Cleo", "cleo", "cleo")), ("cleo".into(), None), "the same: once");
+        assert_eq!(others_names(&m("Cleo", "", "")), ("Cleo".into(), None), "an older hub's: the client's name");
     }
 }

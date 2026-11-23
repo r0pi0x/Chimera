@@ -10,7 +10,8 @@
 //!   /accounts/ticket` (a device's signed request), `POST /accounts/check` (a code's kind and
 //!   the hub's name and MOTD, a username's availability with
 //!   suggestions; nothing used up): no ticket needed, rate limited.
-//! - `POST /accounts/link`, `POST /accounts/display-name`, `POST
+//! - `POST /accounts/link`, `POST /accounts/display-name` (answers the
+//!   account as `me` does), `POST
 //!   /accounts/username` (a rename, one a minute), `POST
 //!   /accounts/username/check` (a rename's availability, free names when
 //!   taken), `POST /accounts/avatar`, `POST /accounts/sign-out` (this
@@ -160,10 +161,6 @@ struct Ban {
     days: Option<u64>,
     reason: String,
 }
-#[derive(Deserialize)]
-struct DisplayName {
-    display_name: String,
-}
 
 impl Http {
     pub fn new(accounts: Arc<Accounts>, peers: Option<Peers>) -> Self {
@@ -312,9 +309,8 @@ impl Http {
             (Method::Post, ["accounts", "display-name"]) => answer(
                 200,
                 self.with_ticket(request)
-                    .and_then(|t| Ok((t, body::<DisplayName>(request)?)))
-                    .and_then(|(t, d)| a.set_display_name(&t, &d.display_name))
-                    .map(|display_name| serde_json::json!({ "display_name": display_name })),
+                    .and_then(|t| Ok((t, body::<chimera_assets::account::DisplayNameRequest>(request)?)))
+                    .and_then(|(t, d)| a.set_display_name(&t, &d.display_name)),
             ),
             (Method::Get, ["accounts", "me"]) => answer(200, self.with_ticket(request).and_then(|t| a.me(&t))),
             (_, ["accounts", ..]) => (404, text(404, "no such endpoint\n")),

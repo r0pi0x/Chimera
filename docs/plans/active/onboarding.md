@@ -304,8 +304,16 @@ on the main menu. Decisions made building it:
   (its bind remounts them) or start; a join meanwhile takes the fetch
   over on its loading screen.
 
-Not yet here: display name, the device list with Revoke, a new recovery
-key (hub.md 8).
+The Profile's display name (2026-11-23): a field under the username
+("Optional": empty is the username), checked as typed with the hub's
+rules (`codes::display_name`), saved with Save changes
+(`POST /accounts/display-name`, which also refuses another account's
+username); a new ticket is asked at once so the party's others see it
+(their cards show the display name and `@username` from each member's
+ticket). The first run's display name field shows the same rules' error
+and holds Continue.
+
+Not yet here: the device list with Revoke, a new recovery key (hub.md 8).
 
 ## Form components (proposal 2026-11-21; built 2026-11-22)
 

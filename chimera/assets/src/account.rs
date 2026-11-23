@@ -323,6 +323,13 @@ pub struct RenameRequest {
     pub username: String,
 }
 
+/// `POST /accounts/display-name` (with a ticket): the answer is the
+/// account as `/accounts/me` shows it.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct DisplayNameRequest {
+    pub display_name: String,
+}
+
 /// `POST /accounts/avatar` (with a ticket).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AvatarRequest {
@@ -691,6 +698,13 @@ pub fn rename(file: &AccountFile, ticket: &str, username: &str) -> Result<serde_
 /// Set `file`'s account's avatar.
 pub fn set_avatar(file: &AccountFile, ticket: &str, avatar: u8) -> Result<serde_json::Value, String> {
     post(&file.url, file.fingerprint.as_deref(), "/accounts/avatar", Some(ticket), &AvatarRequest { avatar })
+}
+
+/// Set `file`'s account's display name (`codes::display_name`, not
+/// another account's username); the account as the hub has it. Games
+/// see it at the next ticket (`Session::refresh`).
+pub fn set_display_name(file: &AccountFile, ticket: &str, name: &str) -> Result<serde_json::Value, String> {
+    post(&file.url, file.fingerprint.as_deref(), "/accounts/display-name", Some(ticket), &DisplayNameRequest { display_name: name.into() })
 }
 
 /// Whether `file`'s account could be renamed to `username`, with free

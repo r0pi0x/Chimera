@@ -7,7 +7,9 @@
 //!   among live parties), a leader, at most `party_doc::MAX_MEMBERS`
 //!   members in join order, the leader's target and its move counter.
 //! - **A member**: its id (8 hex digits), name (20 characters, no control
-//!   characters) and avatar as its last call said, the SHA-256 of its
+//!   characters) and avatar as its last call said, its account's username
+//!   and display name as that call's ticket says (a new display name
+//!   shows at the member's next ticket), the SHA-256 of its
 //!   member token (the token itself is answered once, at `create` or
 //!   `join`), its account (for the later step that ties parties to
 //!   accounts), when it was last seen (any call; in memory only: a
@@ -65,6 +67,12 @@ struct Member {
     token: String,
     account: String,
     name: String,
+    /// The account's username and display name, from its last call's
+    /// ticket (rows saved before them: empty).
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    display_name: String,
     avatar: u8,
     joined: u64,
     #[serde(default)]
@@ -105,6 +113,8 @@ impl Party {
                 .map(|m| MemberView {
                     id: m.id.clone(),
                     name: m.name.clone(),
+                    username: m.username.clone(),
+                    display_name: m.display_name.clone(),
                     avatar: m.avatar,
                     online: now < m.seen + ONLINE_SECS,
                     leader: m.id == self.leader,
@@ -268,7 +278,18 @@ impl Hub {
         let now = self.now();
         Ok((
             token.clone(),
-            Member { id, token: hash(&token), account: hex(&claims.account), name: clean_name(name)?, avatar, joined: now, at: None, seen: now },
+            Member {
+                id,
+                token: hash(&token),
+                account: hex(&claims.account),
+                name: clean_name(name)?,
+                username: claims.username.clone(),
+                display_name: claims.display_name.clone(),
+                avatar,
+                joined: now,
+                at: None,
+                seen: now,
+            },
         ))
     }
 
@@ -354,8 +375,13 @@ impl Hub {
         let mut book = self.book();
         let (party, me) = self.member(&mut book, claims, &body.token)?;
         let m = party.members.iter_mut().find(|m| m.id == me).expect("a member");
-        let changed = m.at != at || m.name != name || m.avatar != body.me.avatar;
+        let changed = m.at != at
+            || m.name != name
+            || m.avatar != body.me.avatar
+            || m.username != claims.username
+            || m.display_name != claims.display_name;
         (m.at, m.name, m.avatar) = (at, name, body.me.avatar);
+        (m.username, m.display_name) = (claims.username.clone(), claims.display_name.clone());
         let p = party.clone();
         if changed {
             self.save_party(&p)?;
