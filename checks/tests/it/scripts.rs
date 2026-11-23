@@ -149,43 +149,80 @@ fn a_slots_trim_takes_old_incremental_sessions_and_keeps_the_built_crates() {
 }
 
 /// The tokens in `fifo` (taken out and put back; an `x` written after them
-/// marks the end, so the read never blocks).
-fn tokens(fifo: &mut File) -> usize {
+/// marks the end, so the read never blocks). The FIFO is open in this
+/// process only for the count: the heal script counts any other process
+/// with it open as a running build.
+fn tokens(fifo: &Path) -> usize {
     use std::io::{Read, Write};
-    fifo.write_all(b"x").unwrap();
+    let mut f = fs::OpenOptions::new().read(true).write(true).open(fifo).unwrap();
+    f.write_all(b"x").unwrap();
     let mut n = 0;
     let mut b = [0u8; 1];
     loop {
-        fifo.read_exact(&mut b).unwrap();
+        f.read_exact(&mut b).unwrap();
         if b[0] == b'x' {
             break;
         }
         n += 1;
     }
-    fifo.write_all(&vec![b'+'; n]).unwrap();
+    f.write_all(&vec![b'+'; n]).unwrap();
     n
+}
+
+/// Puts `n` more tokens into `fifo` (open in this process only meanwhile).
+fn add_tokens(fifo: &Path, n: usize) {
+    use std::io::Write;
+    let mut f = fs::OpenOptions::new().read(true).write(true).open(fifo).unwrap();
+    f.write_all(&vec![b'+'; n]).unwrap();
+}
+
+/// A process keeping `fifo` open read-write (as agent-env.sh's holder),
+/// returned once it holds it, so the tokens survive between the test's
+/// looks. Killing and waiting for it ends it.
+fn hold_fifo(fifo: &Path) -> std::process::Child {
+    use std::io::BufRead;
+    let mut holder = Command::new("bash")
+        .arg("-c")
+        .arg("exec 9<>\"$1\" && echo held && exec sleep 120 >/dev/null")
+        .arg("holder")
+        .arg(fifo)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(holder.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    assert_eq!(line, "held\n", "the holder never opened the FIFO");
+    holder
 }
 
 /// The agents' jobserver gets back the tokens killed builds took with
 /// them, and loses extra ones, when no build is attached to it
 /// (tools/jobserver-heal.sh; docs/performance.md, "Iteration speed").
+/// Hermetic: its own FIFO in its own folder, held by a process of its own
+/// (a FIFO open in the test process was inherited by a sibling test's
+/// spawn until its exec, and the heal script took that child for a build
+/// holding tokens, so the extra ones stayed: 16 of 12), and none of the
+/// shell's jobserver or heal settings.
 #[test]
 fn a_drained_jobserver_is_refilled() {
-    use std::io::Write;
     if Command::new("python3").arg("--version").output().is_err() {
         return;
     }
     let root = temp("jobserver");
     let fifo = root.join("jobserver.fifo");
     assert!(Command::new("mkfifo").arg(&fifo).status().unwrap().success());
-    // This process is the holder (as agent-env.sh's `sleep infinity`).
-    let mut held = fs::OpenOptions::new().read(true).write(true).open(&fifo).unwrap();
+    let mut holder = hold_fifo(&fifo);
     let heal = |every: &str| {
         let out = Command::new("bash")
             .arg(repo().join("tools/jobserver-heal.sh"))
             .arg(&fifo)
             .arg("12")
-            .arg(std::process::id().to_string())
+            .arg(holder.id().to_string())
+            .env_remove("MAKEFLAGS")
+            .env_remove("CARGO_MAKEFLAGS")
+            .env_remove("MFLAGS")
+            .env_remove("AGENT_JS_DIR")
             .env("AGENT_JS_HEAL_EVERY", every)
             .output()
             .expect("run jobserver-heal.sh");
@@ -193,20 +230,22 @@ fn a_drained_jobserver_is_refilled() {
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
     // 3 of 12 left, nothing building: 9 come back.
-    held.write_all(b"+++").unwrap();
+    add_tokens(&fifo, 3);
     let said = heal("0");
-    assert_eq!(tokens(&mut held), 12, "{said}");
+    assert_eq!(tokens(&fifo), 12, "{said}");
     assert!(said.contains("9 were lost"), "{said}");
     // Full: nothing to do, nothing said.
     assert_eq!(heal("0"), "");
     // Too many (an estimate was short once): back to the full set.
-    held.write_all(b"++++").unwrap();
-    heal("0");
-    assert_eq!(tokens(&mut held), 12);
+    add_tokens(&fifo, 4);
+    let said = heal("0");
+    assert_eq!(tokens(&fifo), 12, "{said}");
     // Checked a moment ago: not looked at again within the interval.
-    held.write_all(b"+").unwrap();
+    add_tokens(&fifo, 1);
     heal("3600");
-    assert_eq!(tokens(&mut held), 13);
+    assert_eq!(tokens(&fifo), 13);
+    holder.kill().ok();
+    holder.wait().ok();
     fs::remove_dir_all(&root).ok();
 }
 
@@ -289,6 +328,9 @@ fn with_stamps(dir: &Path, script: &str) -> String {
         .env_remove("GIT_INDEX_FILE")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
+        .env_remove("MAKEFLAGS")
+        .env_remove("CARGO_MAKEFLAGS")
+        .env_remove("MFLAGS")
         .output()
         .expect("run bash");
     let err = String::from_utf8_lossy(&out.stderr);
@@ -516,6 +558,10 @@ fn sourcing_agent_env_leaves_a_running_sccache_server_alone() {
             .env("XDG_RUNTIME_DIR", &root)
             .env("AGENT_JOBS", "2")
             .env("AGENT_NO_SLICE", "1")
+            .env_remove("MAKEFLAGS")
+            .env_remove("CARGO_MAKEFLAGS")
+            .env_remove("MFLAGS")
+            .env_remove("AGENT_JS_HEAL_EVERY")
             .stderr(Stdio::piped())
             .spawn()
             .unwrap()
