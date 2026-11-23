@@ -3,7 +3,7 @@
 Source basis: reference material the user pointed the spec session to: the server's projectile object and its subclasses (impact projectiles, land traps, the hornet, claymores and remote grenades, caltrops, the nerve confuse mine, the auto turret and its targeting on the owner's client, the first-aid kit, the air strike marker, the crossbow bolt and the explosive bolt), the server's explosion object (instant blast, cone blast, lasting sphere), the server weapon's fire path and its projectile creation, the server player object's fire message and death handling, the damage receiver's over-time damage slots, the client weapon's fire-key handling and per-ammo-type fire path, and the shared weapon and effect attribute managers. Data was read from the Steam install (build 25595979): the attribute archive's `WEAPONS.TXT` and `FX.TXT`, the first-person weapon models in the `GUNS_M_PV_LAUNCHER`, `GUNS_M_PV_MELEE`, `GUNS_M_PV_THROWING` and `GUNS_M_PV_ETC` archives (animation lengths and key times) and the world models of the projectiles and devices (animation lengths and boxes), all with throwaway readers that are not in the repo. Nothing was checked against a running game; see Open questions. Section 5.1 (swing sounds) was added on 2026-10-30 from the client weapon's fire step, the shared weapon-sound player, the client's ray and impact-effect path and the server weapon's fire handling.
 Status: draft
 
-Sections: Summary; Units and conventions; Constants; The classes earlier specs skipped; Where the numbers live; Behavior (1 rules every projectile shares, 2 rocket launchers, 3 grenade launchers, 4 the flamethrower, 5 melee weapons beyond the M9 (5.1 swing sounds), 6 mines and devices, 7 crossbows, 8 the snowball gun, 9 classes left to other specs); Stock values; Per-tick order; Edge cases; Quirks; Follow-up (2026-10-30): projectile looks and sounds in flight; Corrections (2026-10-30): the flame weapons' data; Corrections (2026-10-31): launcher muzzle looks, smoke puffs, projectile sounds; Follow-up (2026-11-21): the auto turret's deploy, models and animations; Test cases; Open questions.
+Sections: Summary; Units and conventions; Constants; The classes earlier specs skipped; Where the numbers live; Behavior (1 rules every projectile shares, 2 rocket launchers, 3 grenade launchers, 4 the flamethrower, 5 melee weapons beyond the M9 (5.1 swing sounds), 6 mines and devices, 7 crossbows, 8 the snowball gun, 9 classes left to other specs); Stock values; Per-tick order; Edge cases; Quirks; Follow-up (2026-10-30): projectile looks and sounds in flight; Corrections (2026-10-30): the flame weapons' data; Corrections (2026-10-31): launcher muzzle looks, smoke puffs, projectile sounds; Follow-up (2026-11-21): the auto turret's deploy, models and animations; Follow-up (2026-11-22): the fist; Test cases; Open questions.
 
 This spec continues `weapon_firing.md` (fire cycle, spread cone, recoil, hitscan, armour), `weapon_classes.md` (class flags, shell-by-shell reload, server reload bookkeeping), `grenades.md` (projectile flight, collision, blast falloff, cover, friendly fire, over-time damage), `attribute_data.md` (file format and field types), `inventory.md` (slots, switching, the knife), `view_models.md` (animation selection, keys) and `effects_sounds.md` (impact effects). Terms used without definition here are theirs.
 
@@ -233,7 +233,7 @@ The `XM_25` has no airburst or range-setting behaviour in this build; it is a fo
 | `DomPedroSword` | 160 | 85 | 750 / 322 | 85 | 1500 / 445, 820 | 500 | 0.03 |
 | `Chainsaw` | 150 | 75 | 600 / 257 | 15 | 900 / 334, 386, 437, 489, 540, 591, 643 | 1000 | 0.05 |
 
-The model column names the first-person model where it differs from the weapon name. A secondary with two hit keys hits twice for the listed damage each: a `Machete` secondary is 140 before the roll, the `Chainsaw` secondary 7 × 15 = 105.
+The fist (`fist`, Hunted's start weapon) shares the `Knuckle` row's reach and swings but not its damage or damage type: Follow-up (2026-11-22). The model column names the first-person model where it differs from the weapon name. A secondary with two hit keys hits twice for the listed damage each: a `Machete` secondary is 140 before the roll, the `Chainsaw` secondary 7 × 15 = 105.
 
 #### 5.1 What a swing sounds like (added 2026-10-30)
 
@@ -642,6 +642,78 @@ Both use the same view model, base, head and gun models and the same `fire_0` ke
 | `OnceActivate` | true | **not set**: a new HG2 turret does not remove the old one (only one is carried per life anyway, but one left from a previous life stays) |
 | Fire delay, perturb, rounds, angles, sensor | 0.13 s, 50 u, 100, (−45, 60), (0, 10, 0) | same |
 
+## Follow-up (2026-11-22): the fist (`fist`, Hunted's start weapon)
+
+Answers the plan's "The fist: open questions" (`docs/plans/active/combat-arms.md`). Written from the shared damage-type table, the damage receiver's damage step (gear, hit zones, the types that can head-shot, the AI cap, the over-time flags), the server projectile's hitscan walk and its rear-sector test, the server player's hurt sounds and death-animation choice, the shared surface impact-sound choice, the client weapon, the Hunted mode's start loadout, and the Steam install's data: `WEAPONS.TXT` (`Weapon934` `fist`, `Weapon480` `Brass_Knuckles`, `Ammo894` `Fist`, `Ammo448` `Knuckle`, the `[WeaponOrder]` melee list) and the models `PV_Melee_Fist_SH`, `PV_Melee_Brass_Knuckles_SH`, their shared animation child `Ani_Melee_Brass_Knuckles_SH`, `HH_Melee_Fist_KE` and `HH_Melee_Brass_Knuckles_SH` (pieces, animation lengths, key strings and finger rotations read with a throwaway reader, nothing kept). Nothing was checked against a running game (Open questions 21–23).
+
+**In short.** The fist is the brass knuckles without the knuckle in first person and with weaker punches of their own damage type. Same class, reach, swings, hit keys, draw and move penalty as `Knuckle` (5's table); 2 or 6 points a hit before the roll, zones and rear bonus, no armour reduction, no side effect; but unlike every type-13 melee weapon its ray is walked like a bullet's on the server, its kills use the ordinary death animations, its hits play the fist impact sounds and no damage-kind hurt sound. Hunted does not scale it.
+
+### F1. The record
+
+| Field | `fist` (934) | `Brass_Knuckles` (480), for comparison |
+|---|---|---|
+| `Guntype`, `ClientWeaponType`, `AniType` | 0, 1, 50 | 0, 1, 50 (the only two weapons with `AniType` 50) |
+| `Range`, `Effectrange0..2`, `Alt_Effectrange0..2` | 130, 130 ×3, 130 ×3 | the same |
+| `MovePenalty`, `FireDelay`, `DamageRFacter`, `InfiniteAmmo`, `ShotsPerClip` | 0.01, 0, 0.1, 1, 1000 | the same |
+| `FireSnd` = `Alt_FireSnd`, `FireSndRadius` | `GUNS_SND_MELEE\Knuckle\fire.wav`, 300 | the same |
+| `SelectSnd` | **none** | `GUNS_SND_MELEE\Knuckle\select.wav` |
+| `PVModelNormal` | `PV_Melee_Fist_SH` (no pieces) | `PV_Melee_Brass_Knuckles_SH` (piece `PV_Knuckle`) |
+| `HHModel`, `HHSkin0` | `HH_Melee_Fist_KE` (piece `HH_Knuckle`), `HH_ML_Knuckle_SD` | `HH_Melee_Brass_Knuckles_SH` (piece `HH_Knuckle`), the same skin |
+| `PVSkin0..11` | as the knuckles' (unused: no pieces) | |
+| `Weaponkillimage` | `kill_message_Infected_Hunted_punch.dtx` | `kill_message_Knuckle.dtx` |
+| HUD images | the `Sickle` ones | the `Sickle` ones |
+| `AmmoName0` | `fist` (matches `Fist`, case ignored) | `Knuckle` |
+| ammo `InstDamage` / `Alt_InstDamage` | **2 / 6** | 55 / 72 |
+| ammo `InstDamageType` | **49** | 13 |
+| ammo `Type`, `ImpactFXName`, `FireFXName`, `Rangedamage*` | 0 (vector), `Melee`, `FireSoundOnly`, 1.0 | the same |
+| ammo `DamageMovePenalty` / `…Duration` | 2.0 / 0 | the same |
+
+The fist is entry 88 of the `[WeaponOrder]` melee list, so it is a melee-class (key 3) weapon like the others.
+
+### F2. Damage type 49
+
+Type 49 is the last entry of the damage-type table, the fist type. It has **no rule of its own anywhere in the damage path**; the only place that looks for it is the impact-sound choice. So it behaves as an ordinary "other" type, and differs from melee (13) exactly where melee has a rule of its own:
+
+| Step | Melee (13), every other melee weapon | Fist (49) |
+|---|---|---|
+| Damage formula (`inventory.md` 8.4) | D = B · u · g · (1 + v) · b · k_range · k_zone | **the same**: B = 2 (primary) or 6 (secondary), r = 0.1, k_range 1.0 |
+| Hit zones (`weapon_firing.md` Hit zones) | used: head ×6, arms and thighs ×0.9, shins ×0.75, feet ×0.5 | **used, the same factors**: 49 is not among the types that can't head-shot, and `Guntype` 0 is not the thrown class. The usual exceptions hold (AI attackers, non-human victims, infected victims and the final bounty ignore the head factor). |
+| Rear sector ×1.3 (`inventory.md` 8.4) | yes | **yes**: the test belongs to every client-reported hitscan hit, whatever the type |
+| Armour (`weapon_firing.md` Armour) | gear step runs; no stock gear lists 13, so nothing blocked, no AP used | **the same**: the gear step runs, no stock gear lists 49 (stock gear lists 2, 3 and 9 only), so a punch is never reduced and uses no armour points |
+| Server walk after the hit (`weapon_firing.md` Hitscan) | ends after its first intersection: a knife never passes a surface and never reaches a second character | **walked like a bullet**: up to 4 intersections over the full `Range` (130 u from the fire position), shoot-through surfaces pass (Penetration), and a second character behind the first on the line can be damaged (`weapon_firing.md` Edge cases, "Server-side second victim") |
+| Death animation of a kill (`characters.md`) | the stab death `D_S` | **the ordinary choice** by front/back, crouch and head, as for a bullet kill |
+| Victim's damage-kind hurt sound (`effects_sounds.md` 11) | the gun kind (`DeathbyGuns`), as bullets | **none**; the hit-location sound (`HitHead`, `HitTorso`, …) still plays |
+| Impact sound (`effects_sounds.md`, impact sound choice) | the surface's `MeleeImpactSnd` list | the surface's **`FistImpactSnd`** list (slot uniform among 4, as for every list); impact effect otherwise the `Melee` record's (no decal, no surface effect, sky on a miss) |
+| AI attacker cap (`weapon_firing.md` Damage) | exempt | **capped** like a bullet: an AI's punch on a player is at most 50 (990 at ≥ 1000) |
+| Kill message (`death_killcam.md` 11) | head kept | head kept (type 49 can head-shot); icon `kill_message_Infected_Hunted_punch.dtx` |
+
+**No side effects.** Type 49 starts no over-time damage, sets none of the over-time state flags, does not stun, freeze, blind or slow, and never makes the victim drop anything. The ammo's knock-back fields (`DamageMovePenalty` 2.0, duration 0) do nothing: both must be > 0, and they act only on infected victims (`attribute_data.md`). The attacker's damage physics push applies to non-player objects only, as for any type.
+
+**Hunted does not scale it.** The mode replaces the loadout with weapon 934 and its ammo (`game_modes.md` M15) and does nothing else to damage: no mode factor, no fist rule, attacker factor g = 1. A punch takes 2 (primary) or 6 (secondary) before the roll, the zone factor and the rear bonus, exactly as anywhere else. With 100 health and roll 1.0: secondary to the torso from the front 6 (17 punches to kill), to the head 36 (3), to the head from behind 46.8 (3); primary to the head 12 (9).
+
+### F3. What the original draws
+
+- **First person: only the character's bare hands and sleeves.** `PV_Melee_Fist_SH` has the arm skeleton, one socket (`MotionTrail`) and **no pieces**; its animation child is `Ani_Melee_Brass_Knuckles_SH`, the brass knuckles' own child, whose pieces (`arm_SH`, `Object01`, `PV_Knuckle`) are never drawn (`view_models.md` 1). The hand model chosen by the character (`view_models.md` 1) is attached and skinned to the animated skeleton as for every weapon. Nothing else is attached. So the fist shows exactly what a brass-knuckles player sees **minus the knuckle**.
+- **Hand pose: the knuckles' grip.** Every animation is the brass knuckles'. Read from the child's finger nodes (mean local rotation of the finger joints, thumb and finger roots left out): the **right hand is a closed fist** throughout `idle_0`, `idle_1`, `fire_0` and `alt_fire_0` (about 70° per joint, constant; it closes from about 20° during the last third of `select`); the **left hand is relaxed, half open** (about 28–31° in `idle_0`, opening to about 15° mid-swing and closing to 35–37° near each swing's end). So at idle the player sees a clenched right fist (shaped to hold the knuckle, which is not there) and a loosely open left hand, if it is in view (Open question 21).
+- **Third person: a brass knuckle in the hand.** `HH_Melee_Fist_KE` has one piece, `HH_Knuckle`, skinned `HH_ML_Knuckle_SD` (the knuckles' world texture), and animations `Hand` and `World` only, like the knuckles' world model. Nothing in the weapon, mode or character code hides that piece for this weapon (the held weapon's pieces are hidden only by the Hunted emotes, `characters.md`, and the general piece-hiding commands maps can send), so other players, and the player himself in a third-person view, see a brass knuckle on a fist-only player. The third-person body class is `AniType` 50, the knuckles' (Open question 22 for its class code).
+
+### F4. Swing timing
+
+The fist's `fire_0` / `alt_fire_0` come from the shared child, so they are the `Knuckle` row of 5's table exactly. At rate 1:
+
+| Animation | Length (ms) | Keys |
+|---|---|---|
+| `select` | 800 | `sound_key 4` at 233 (the select sound: **silent for the fist**, which names none; the knuckles play `select.wav`) |
+| `idle_0`, `idle_1` | 1866 each | none |
+| `fire_0` (left button) | 800 | `FIRE_KEY` at 412 |
+| `alt_fire_0` (right button) | 1000 | `FIRE_KEY` at 424 |
+| `prefire`, `postfire` | 0 | none |
+| `PreRush`, `rush`, `PostRush` | 333, 667, 266 | none |
+
+- Reach 130 u from the camera, one ray per key, held buttons repeat with no gap, button latched per swing: the rules of 5 and `inventory.md` 8.
+- **No lunge, no combo, no charge.** There is one hit per swing; the child also holds `alt_fire_1` (1000 ms, key at 424), `dryfire` (800, 412) and `alt_dryfire` (1800, 633 and 1100), none of which the weapon code looks up (`animation.md` Open question 9).
+- Fire sound: `Knuckle\fire.wav` once per hit key on both buttons, others hear `FireSnd` (5.1); identical to the knuckles'.
+
 ## Test cases
 
 Common setup unless stated: server dt = 0.05 s; flat floor y = 0 (hardness irrelevant for impact projectiles); stock Steam data; shooter's camera at (0, 60, 0) looking along +Z; spread draws 0 (direction exactly the aim); victims standing players with 100 HP whose centre is the stated distance from the blast point, in the open, armour points 0, no gear; friendly fire off; step 1 is the physics step of the frame the projectile is created in.
@@ -734,6 +806,22 @@ Auto turret deploy, models and animations (Follow-up (2026-11-21)).
 72. **HG2 variant (data/logic).** `HG2_Auto_Turret`: base, head and gun models as the stock turret, HG2 skins, `SET_HG2.wav`; 200 HP; 7 damage per ray at ≤ 800 u; throwing a second HG2 turret (e.g. a pickup refill) leaves the first one standing; a second `Auto-Turret` removes the first with its disappear effect.
 73. **Tracer counter (logic).** Two ready turrets each firing → tracers on every third ray counted across both (shots 3, 6, 9 … of the server's combined sequence), not every third per turret.
 
+The fist (Follow-up (2026-11-22)). Common setup: stock Steam data, attacker holding `fist` at rate 1, victim a standing human player with 100 HP, AP 0 unless stated, no gear beyond the default, friendly fire off, roll u = 1.0 unless stated, attacker in front of the victim unless stated.
+
+74. **Fist record (data).** `Weapon934` `fist`: `Guntype` 0, `AniType` 50, `Range` 130, `MovePenalty` 0.01, `DamageRFacter` 0.1, no `SelectSnd`, `PVModelNormal` `PV_Melee_Fist_SH`, `HHModel` `HH_Melee_Fist_KE`; ammo `Fist`: `InstDamage` 2, `Alt_InstDamage` 6, `InstDamageType` 49, `ImpactFXName` `Melee`; `[WeaponOrder]` `Melee88` = `fist`.
+75. **Punch damage (logic).** Secondary to the chest → 6; to the head → 36; to a shin → 4.5; to a foot → 3. Primary to the chest → 2; to the head → 12. With u drawn at its ends, secondary to the chest → 5.4 or 6.6.
+76. **From behind (logic).** Attacker in the rear sector: secondary to the chest → 7.8; to the head → 46.8; primary to the head → 15.6.
+77. **Armour (logic).** Victim AP 100 with the default body and head gear: secondary to the chest → 6, AP stays 100; to the head → 36, AP 100.
+78. **Hunted (logic).** The same punches in a Hunted round → the same numbers as 75 and 76. Secondary to the head from the front → dead after the 3rd hit (36, 72, 108); to the chest → after the 17th (96 after 16).
+79. **No side effects (logic).** A victim punched 10 times (not killed) → keeps his weapon, his speed, his view and his controls; no damage over time follows; an infected victim is not knocked back either (duration 0).
+80. **Second victim (logic).** Victims A at 60 u and B at 100 u on the fist's ray, both in the open; the attacker's client reports A → A takes the hit, and B can take one too by the server-walk rule of `weapon_firing.md` (Edge cases). The same with the `Knuckle` → A only. B at 140 u → never (beyond `Range`).
+81. **Death animation (logic).** A fist kill from the front, standing, head hit → the body plays a front head death (as a bullet's), not `D_S`; a `Knuckle` kill → `D_S`.
+82. **Hit sounds (logic).** A fist hit on the head → the victim's `HitHead` sound plays, no damage-kind (gun) sound; a fist hit on Wood → one of Wood's `FistImpactSnd` slots (silent when the drawn slot is empty), not `MeleeImpactSnd`.
+83. **First person (logic).** Fist drawn by a default male character → drawn: the hand model's sleeves and hands only (two pieces); nothing from `PV_Melee_Fist_SH` or its child. Brass knuckles drawn → the same plus `PV_Knuckle`.
+84. **Grip (data).** In `Ani_Melee_Brass_Knuckles_SH`'s `idle_0`, the right hand's finger joints hold one closed pose for the whole 1866 ms (mean about 70°), the left hand's are about 28–31° (relaxed, half open).
+85. **Third person (logic).** Another player holding the fist → his hand shows the `HH_Knuckle` piece with the `HH_ML_Knuckle_SD` texture.
+86. **Swings (logic).** Left button held from t = 0 after the draw → hits at about 412, 1212, 2012 ms (each restart is on the update after `fire_0` is done, so ± a frame per cycle); right button held → about 424, 1424, 2424 ms. Draw from the switch → fire accepted after 800 ms; no select sound at 233 ms (the knuckles play `select.wav` there).
+
 ## Open questions
 
 1. **Contradiction with `grenades.md` section 15.** It says nothing in the round logic touches lasting explosions, so fire and gas spheres carry over into the next round. The lasting explosion object removes itself on its next update once the mode's mission state is "object pre-end", which the round-based modes enter when a round is decided; land traps, claymores, caltrops, nerve mines, first-aid kits and air strikes do the same. So spheres (and devices) do **not** carry over. Bouncing grenades and impact projectiles have no such check and do carry over. Check: throw an M-23F just before a round ends and watch whether the fire survives the respawn.
@@ -756,3 +844,6 @@ Auto turret deploy, models and animations (Follow-up (2026-11-21)).
 18. **Third-person body animation for `AniType` 45** (the auto turrets, `PerkAmmoSupply`, `Defence_Dummy_01..03`). `characters.md` lists animation classes up to 29 only. The stock player body has a class `PA` (fire `UPARFIS` / `UPACFIS` 3000 ms, select 833 ms) that may be this one; the mapping from 45 to a class code was not found in the material read. Also whether the held case disappears from the third-person hand at the release or only at the auto-switch.
 19. **Shooting the head or gun.** They are plain models with the base's flags and the metal surface but no hit points; whether a bullet that hits them is stopped there (and does nothing to the turret) or passes to the base's box was not traced. Test by shooting the gun of a deployed turret from the side.
 20. **`Exp_AutoTurret_SH` group contents.** The effect group of that name in the client effect file was not read; the debris model of the same name (nine pieces, 2000 ms) is presumably one of its keys. Read the group (`effects_sounds.md` "The effect file").
+21. **The fist's look in game.** The finger rotations say the right hand is clenched and the left half open at idle (F3); our renderer showed "open hands" at `idle_0` cycle 0.24, which may be the left hand or a binding fault on our side. Check: draw the fist in the Steam client, screenshot the idle and compare which hands are on screen and how they look. Also which hand throws each punch (not worked out from the node motion).
+22. **Third-person class 50.** `characters.md` lists body animation classes up to 29; the class code (body animation names) for `AniType` 50, shared by the fist and the brass knuckles, was not traced.
+23. **Fist through things.** F2's bullet-like server walk lets a punch pass a shoot-through surface and reach a second character within 130 u, which no knife does. Confirm in game: two players lined up close behind each other, punch the front one, and see whether the rear one is hurt.
