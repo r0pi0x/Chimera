@@ -21,9 +21,11 @@
 //! animations put in the hands (`player_anim`); at the model's rest they
 //! sit at its feet.
 //!
-//! Known shortcuts (M0):
-//! - No class follows the gun in hand yet (M3: a DoD:S gun makes its
-//!   holder the class that carries it); players wear the default body.
+//! A DoD:S player wears the body of the class its weapon in hand makes it
+//! (`wear_classes`: `classes::Classes::held`, with its rung's drawn class),
+//! by name; the practice targets keep the body they were added with.
+//!
+//! Known shortcuts:
 //! - Bodies have no team skin or helmet/hair body groups chosen
 //!   (`helmetgroup`, `hairgroup` in the class scripts).
 
@@ -35,6 +37,9 @@ use crate::{
     map::{BodyModel, BodyName, CharacterModels, GameKit, Held, KitLoad, MapCharacterModel, anim::Animator},
     slots::GameIdentity,
 };
+use super::classes::{Classes, RungClass};
+use chimera_core::games_in_play::GameCharacters;
+use chimera_sim::minigame::targets::Target;
 use chimera_sim::weapon::{Inventory, Weapon};
 
 /// One class's body: its id (`dods:us_rifleman`), display name and
@@ -150,6 +155,29 @@ pub fn add_targets(app: &mut App) {
     }
 }
 
+/// Players whose identity is DoD:S's (not practice targets) wear the body
+/// of their weapon's class (`classes::Classes::held`, their rung's drawn
+/// class first) by name, the default class's too (the name falls back to
+/// the unnamed default body), so `BodyName` stays on while the class
+/// changes. Only DoD:S's own players are looked at (`GameCharacters`).
+#[allow(clippy::type_complexity)]
+pub fn wear_classes(
+    players: Query<(Entity, Option<&Inventory>, Option<&BodyName>, Option<&RungClass>), Without<Target>>,
+    dods_players: Res<GameCharacters>,
+    weapons: Query<&Weapon>,
+    table: Res<Classes>,
+    mut commands: Commands,
+) {
+    for (e, inv, name, drawn) in players.iter_many(dods_players.of(GAME)).flatten() {
+        let Some(held) = inv.and_then(|i| i.active).and_then(|w| weapons.get(w).ok()) else { continue };
+        let Some(class) = table.held(&held.id, drawn.map(|d| d.0.as_str())) else { continue };
+        let want = class.model();
+        if name.is_none_or(|n| n.0 != want) {
+            commands.entity(e).insert(BodyName(want.to_string()));
+        }
+    }
+}
+
 /// Characters on DoD:S's bodies hold their active weapon's world model
 /// (its key: the weapon's id).
 #[allow(clippy::type_complexity)]
@@ -170,12 +198,14 @@ pub fn hold_weapons(
     }
 }
 
-/// DoD:S's bodies worn and taken off, and what they hold.
+/// DoD:S's bodies worn (by class) and taken off, and what they hold.
 pub struct DodsBodiesPlugin;
 
 impl Plugin for DodsBodiesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (unwear, hold_weapons.in_set(crate::map::DriveAnimation)));
+        chimera_core::games_in_play::track_game_characters(app);
+        super::classes::add_rung_classes(app);
+        app.add_systems(Update, (unwear, wear_classes.before(unwear), hold_weapons.in_set(crate::map::DriveAnimation)));
     }
 }
 

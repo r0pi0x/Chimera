@@ -1,0 +1,24 @@
+# DoD:S maps an automatic gun game's pool takes (the Ultimate Gun Game:
+# chimera_sim::minigame::map_fit; docs/plans/active/map-pool-fitness.md,
+# docs/plans/active/dods.md M3b). Every map is denied but those allowed
+# below, each chosen by the 2026-11-23 sweep of the nine stock maps
+# (data/map_fitness.toml): no spot off the map and none stuck on any of
+# them, but on most the spawn spots cover only a part of the walkable
+# area, the rest behind what the round logic holds shut for a party
+# (spawn-room doors, capture-gated passages), so half the players would
+# never meet the others there:
+# - dod_argentan (spots on 745 of 5790 m2), dod_avalanche (700 of 2927),
+#   dod_colmar (432 of 5020), dod_donner (1416 of 5558), dod_kalt (609 of
+#   5019), dod_palermo (850 of 4518), dod_anzio (2491 of 6567).
+# The players present still decide a draw (the wander time: dod_jagd from
+# 4 players, dod_flash, the larger, from about 8). Each entry: map names
+# (`*` matches any run of letters) and why; `[[allow]]` entries win over
+# `[[deny]]` and over the measurements' flags.
+
+[[deny]]
+reason = "DoD:S's maps join the pool only when chosen for a free-for-all (the allow list)"
+maps = ["*"]
+
+[[allow]]
+reason = "the spawn spots cover the whole walkable area (no part held shut by the round logic); measured fit"
+maps = ["dod_jagd", "dod_flash"]

@@ -164,6 +164,12 @@ cargo run --release --features tools --bin chimera_pack -- sets combat_arms --st
 cargo run --release --features tools --bin chimera_pack -- sets hl2dm --store <server store> --sign
 ```
 
+DoD:S from the dedicated server's layout (no app 300 manifest: name the
+build, its `steamapps/appmanifest_232290.acf`'s `buildid`):
+`publish dods --build <id> --install <folder>`, then `sets dods --store
+<server store> --sign --build <id>` and `convert dods --store <server
+store> --sign`.
+
 `sets <game> --only <prefix>` records only the sets whose names start
 with it and leaves the others as they are (`sets combat_arms --only
 character/ --sign`: the bodies' sets alone, in under a minute; `--only

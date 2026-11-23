@@ -51,5 +51,10 @@ radius = 200.0
 shoulder_time = 0.79
 unshoulder_time = 0.99
 
+[hooks."dods:body_anim"]
+# The body's animations (`player_anim`): the set the shared player model has for it
+# (ACT_DOD_STAND_IDLE_BAZOOKA).
+suffix = "BAZOOKA"
+
 [hud]
 name = "Bazooka"

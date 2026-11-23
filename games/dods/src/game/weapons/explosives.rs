@@ -58,11 +58,13 @@
 //!   server's and the predicting client's own); the rockets' and rifle
 //!   grenades' reloads are stand-ins (weapons.md, open question 9: the
 //!   next rocket 1.5 s on, the next rifle grenade 1.0 s).
-//! - Their holders' bodies play the Thompson's set (`player_anim::
-//!   FALLBACK`): no `dods:body_anim` yet (the scripts' anim prefixes for
-//!   them are unspecified), so no throw or shoulder gesture.
+//! - Their holders' bodies play the shared model's own sets for them (their
+//!   data's `dods:body_anim`: `GREN_FRAG`, `GREN_STICK`, `BAZOOKA`,
+//!   `PSCHRECK`, the rifle's with the `RIFLEGRENADE` reload), but the
+//!   shouldered launcher plays no zoom set and the throw no gesture of its
+//!   own beyond the set's attack.
 //! - The explosion's sound is Source's shared entry (no spec names
-//!   DoD:S's); no scorch decal.
+//!   DoD:S's); no scorch decal (unspecified).
 
 use std::sync::Arc;
 

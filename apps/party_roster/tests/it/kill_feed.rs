@@ -306,7 +306,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
             // What its drawing writes to (no renderer here).
             .init_asset::<chimera_client::client::hud_text::HudGlyphMaterial>()
             .init_asset::<Image>()
-            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm_ui::Hl2dmHudPlugin, halo_ce_ui::hud::HaloHudPlugin, tf2_ui::Tf2HudPlugin))
+            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm_ui::Hl2dmHudPlugin, halo_ce_ui::hud::HaloHudPlugin, tf2_ui::Tf2HudPlugin, dods_ui::hud::DodsHudPlugin))
             .insert_resource(HudLookOwner(cs_source::game::GAME))
             .insert_resource(crate::huds::cs_look())
             .insert_resource(chimera_world::map::hud::GuestLooks(vec![hl2_look()]));
@@ -346,14 +346,16 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
 }
 
 /// `halo_maps::mixed_with_halo`'s ladder with a TF2 rung after Halo's (the
-/// Scattergun, rung 6), so every game's HUD has a rung of its own.
+/// Scattergun, rung 6) and a DoD:S one after it (the Thompson, rung 7), so
+/// every game's HUD has a rung of its own.
 fn mixed_with_halo_and_tf2() -> String {
     let mut ladder = crate::mixed::LADDER.to_vec();
     ladder.push(halo_ce::game::weapons::ASSAULT_RIFLE);
     ladder.push(tf2::game::weapons::SCATTERGUN);
+    ladder.push(dods::game::weapons::THOMPSON);
     crate::play::ladder_text(&ladder, false).replace(
         "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
-        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"tf2\", \"combat_arms\"]",
+        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"tf2\", \"dods\", \"combat_arms\"]",
     )
 }
 

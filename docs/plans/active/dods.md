@@ -21,7 +21,7 @@ and the game's own data.
 | M0 install, mount, maps, bodies in the sandbox | done (2026-11-23) | §4; the log |
 | M1 weapons | M1a done (2026-11-23, its gaps fixed the same day); M1b done (2026-11-23): frags and stick grenades, rifle grenades, bazooka and Panzerschreck, the blast | §4; the log |
 | M2 movement specifics | M2a done (2026-11-23): prone, deployed MGs, stamina pool, MGs in the ladders; M2b done (2026-11-23): sprint and stamina caps, jump, unduck, getting up, the hit slow, draw/reload times, FOVs, fire select, MG undeploy/reload/yaw (§4, "Specified since M2a") | §4; the log |
-| M3 party rungs | M3a done (2026-11-23): the bodies animate (stances, movement, each gun's set, sights, deploy, fire and reload gestures, jump; death a ragdoll); the rungs themselves not started | §4; the log |
+| M3 party rungs | M3a done (2026-11-23): the bodies animate (stances, movement, each gun's set, sights, deploy, fire and reload gestures, jump; death a ragdoll); M3b done (2026-11-23): each rung's class (body, melee; shared guns drawn with the ladder), DoD:S's HUD, dod_jagd and dod_flash in the pool, the explosives' body sets, the asset service's sets | §4; the log |
 
 ## 1. Rules for this port
 
@@ -197,13 +197,22 @@ where the install is needed, `heavy::` tests that skip without it.
      flinches; the MG42's deployed and reloading world models; how the
      game maps `anim_prefix` to the model's suffixes (`stg44` -> `MP44`,
      the Garand's and MG42's reload prefixes with no sequences).
-   - Each DoD:S gun a rung of the Ultimate Gun Game,
-   the holder its class (a gun carried by one class only: no draw
-   needed; the pistols and melee are shared: the rung's class drawn
-   before the match from the ladder's seed, as TF2's), DoD:S's HUD while
-   its gun is in hand (health, stamina, ammo, crosshair), its kill
-   icons, `GameParts::knife`. Cross-game balance stays the host's
-   opt-in (party_damage.toml gets a `dods` row only if asked).
+   - **M3b, the rungs** (done): each DoD:S gun a rung of the Ultimate
+     Gun Game, the holder its class (`classes`, data/classes.toml: a gun
+     carried by one class only needs no draw; the pistols, frags, knife
+     and spade are shared: the rung's class drawn before the match from
+     the ladder's seed, as TF2's), the class's melee on its rungs (knife
+     or spade; the Assault classes the kit's), DoD:S's HUD while its gun
+     is in hand (`dods_ui::hud`: health, stamina, the gun and its rounds;
+     the shell's crosshair), its maps in the pool (data/map_pool.toml:
+     dod_jagd and dod_flash, the two whose spawn spots cover the whole
+     map; data/map_fitness.toml), the explosives' own body sets, and the
+     asset service's sets (`weapon/<id>` for every weapon, `players`,
+     `map/<name>`; published 2026-11-23). Not done: kill icons (no spec of the scripts' death
+     notices: the feed names the gun), a HUD laid out from the install's
+     `hudlayout.res` and scheme (no spec), the explosion's scorch decal and
+     view shake (unspecified). Cross-game balance stays the host's opt-in
+     (party_damage.toml gets a `dods` row only if asked).
 
 Not planned: DoD:S's own rules (flags, bombs, waves, class menus) in its
 app beyond free-for-all deathmatch for testing; Source TV; the winter
@@ -243,6 +252,35 @@ event's presents.
    options, or never?
 
 ## Log
+
+- 2026-11-23, M3b, the rungs: `classes` (data/classes.toml, classes.md's
+  loadouts: each class's body, melee and weapons, primary first; a
+  weapon's own class the first carrying it; `HOOK` draws a shared
+  weapon's class per rung from the ladder's seed, `RungClass` follows the
+  rung on every machine, the class's knife or spade replaces the kit's
+  melee); `bodies::wear_classes` (a DoD:S player wears its weapon's class
+  body by name; the targets keep theirs); `PARTS.hud` DoD:S's own
+  (`dods_ui::hud`: health number and bar, stamina bar, the gun's name and
+  clip | reserve; the shell's crosshair; layout ours, no spec); the map
+  pool (the 2026-11-23 sweep of the nine maps: none stuck or off, but on
+  seven the spawn spots cover a part of the map, the rest behind the round
+  logic's doors: dod_jagd and dod_flash allowed); the explosives'
+  `dods:body_anim` (`GREN_FRAG`, `GREN_STICK`, `BAZOOKA`, `PSCHRECK`, the
+  rifle's with the `RIFLEGRENADE` reload, as the shared model names them);
+  `chimera_pack sets dods` records every weapon's `weapon/<id>` (the knife,
+  spade and explosives too). Tests: UGG's `dods::rungs` (body, movement,
+  HUD; a shared gun's drawn class; the ladder's draws), `heavy::served`
+  (an MG42 rung's kit from the asset service alone). The sweep's tool ran
+  one map per process: a second map in one process found no install (the
+  local config read once; not looked into).
+  Published into the host's store (manifests snapshotted first): the
+  dedicated server's build 25338204 (`publish dods --build`, 40,279
+  files, 2.2 GB stored), its sets (`sets dods --build`, new: every
+  weapon's `weapon/<id>` about 5 MB each, `players` 8 MB, the nine maps
+  100-132 MB each) and its converted guest dressing (`convert dods`).
+  `chimera_pack sets` took `--build` for it. DoD:S's HUD declares its kill
+  feed the app's (`register_game_kill_feed`), and party_roster's every-HUD
+  tests have a DoD:S rung.
 
 - 2026-11-23, M2b and M1b (§4, "Specified since M2a", from the specs):
   `stamina` (sprint on `+speed` forward, standing, from 80 u/s, 15 to

@@ -11,7 +11,10 @@
 //!   from `info_player_allies` and `info_player_axis`, gravity 800;
 //!   `MAP_LOADER` for `dods:<map>`);
 //! - `bodies`: the twelve classes' player models as bodies (MDL 44, their
-//!   animations from the shared MDL 48), worn by name;
+//!   animations from the shared MDL 48), worn by name, the class the weapon
+//!   in hand makes its holder;
+//! - `classes`: the classes and what they carry (data/classes.toml), each
+//!   DoD:S rung's class drawn with the ladder, its melee weapon;
 //! - `movement`: `dods:movement`, Source's movement with DoD:S's run
 //!   speed, friction and stances (stand 72 / eye 58, duck 45 / eye 34),
 //!   with `stance` (prone, deployed machine guns) and `stamina`;
@@ -32,6 +35,7 @@
 //!   facts"); no `-tickrate`.
 
 pub mod bodies;
+pub mod classes;
 pub mod maps;
 pub mod mount;
 pub mod movement;
@@ -173,7 +177,7 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 };
 
 /// What DoD:S adds to a game of several games: the game registered, map
-/// logic for its maps, its movement (not the match's), its view-model
+/// logic for its maps, their pool rules and measurements, its movement (not the match's), its view-model
 /// rules, its guns, its
 /// bodies and their animation, and its class bodies as practice targets (`targets`).
 pub fn party_sim(app: &mut bevy::app::App) {
@@ -184,6 +188,7 @@ pub fn party_sim(app: &mut bevy::app::App) {
     }
     movement::add_movement(app);
     view::add_rules(app);
+    parts::add_map_pool(app);
     if !app.is_plugin_added::<weapons::DodsGunsPlugin>() {
         app.add_plugins((weapons::DodsGunsPlugin, bodies::DodsBodiesPlugin, player_anim::DodsAnimPlugin));
         bodies::add_targets(app);

@@ -38,5 +38,10 @@ throw_delay = 0.1
 throw_time = 0.5
 redraw_time = 0.5
 
+[hooks."dods:body_anim"]
+# The body's animations (`player_anim`): the set the shared player model has for it
+# (ACT_DOD_STAND_AIM_GREN_STICK).
+suffix = "GREN_STICK"
+
 [hud]
 name = "Stick grenade"

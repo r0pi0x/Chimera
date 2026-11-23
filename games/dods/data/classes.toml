@@ -1,0 +1,71 @@
+# DoD:S's twelve classes and what each carries (specs/dods/classes.md,
+# "Loadouts"): what a player holding one of a class's weapons is in a party
+# app (`game::classes`): its body (`body`, a class body id of
+# `game::bodies::CLASSES`) and, on a DoD:S rung, its melee weapon in place
+# of the kit's (`melee`; the Assault classes carry none: the kit's stays).
+#
+# `guns`: the class's weapons, primary first (primary, secondary or rifle
+# grenade, grenades). A weapon carried by several classes (the Colt, the
+# P38, the frags, the knife and spade) makes its holder one of them, drawn
+# with the ladder (`classes::HOOK`); its own class, where nothing was
+# drawn, is the first class listing it, in this file's order (Allies then
+# Axis, classes.md's order). Every class is 100 health and 220 u/s
+# (classes.md, "Health and speed"): no numbers here.
+
+[[classes]]
+id = "dods:us_rifleman"
+melee = "dods:weapon_amerknife"
+guns = ["dods:weapon_garand", "dods:weapon_riflegren_us", "dods:weapon_amerknife"]
+
+[[classes]]
+id = "dods:us_assault"
+guns = ["dods:weapon_thompson", "dods:weapon_colt", "dods:weapon_frag_us"]
+
+[[classes]]
+id = "dods:us_support"
+melee = "dods:weapon_amerknife"
+guns = ["dods:weapon_bar", "dods:weapon_frag_us", "dods:weapon_amerknife"]
+
+[[classes]]
+id = "dods:us_sniper"
+melee = "dods:weapon_amerknife"
+guns = ["dods:weapon_spring", "dods:weapon_colt", "dods:weapon_amerknife"]
+
+[[classes]]
+id = "dods:us_mg"
+melee = "dods:weapon_amerknife"
+guns = ["dods:weapon_30cal", "dods:weapon_colt", "dods:weapon_amerknife"]
+
+[[classes]]
+id = "dods:us_rocket"
+melee = "dods:weapon_amerknife"
+guns = ["dods:weapon_bazooka", "dods:weapon_m1carbine", "dods:weapon_amerknife"]
+
+[[classes]]
+id = "dods:axis_rifleman"
+melee = "dods:weapon_spade"
+guns = ["dods:weapon_k98", "dods:weapon_riflegren_ger", "dods:weapon_spade"]
+
+[[classes]]
+id = "dods:axis_assault"
+guns = ["dods:weapon_mp40", "dods:weapon_p38", "dods:weapon_frag_ger"]
+
+[[classes]]
+id = "dods:axis_support"
+melee = "dods:weapon_spade"
+guns = ["dods:weapon_mp44", "dods:weapon_frag_ger", "dods:weapon_spade"]
+
+[[classes]]
+id = "dods:axis_sniper"
+melee = "dods:weapon_spade"
+guns = ["dods:weapon_k98_scoped", "dods:weapon_p38", "dods:weapon_spade"]
+
+[[classes]]
+id = "dods:axis_mg"
+melee = "dods:weapon_spade"
+guns = ["dods:weapon_mg42", "dods:weapon_p38", "dods:weapon_spade"]
+
+[[classes]]
+id = "dods:axis_rocket"
+melee = "dods:weapon_spade"
+guns = ["dods:weapon_pschreck", "dods:weapon_c96", "dods:weapon_spade"]

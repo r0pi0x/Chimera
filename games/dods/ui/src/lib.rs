@@ -1,24 +1,27 @@
 //! Day of Defeat: Source's front end on the client shell, its own crate
 //! above the game's simulation (`dods`) so that the simulation and its
 //! tests never build the shell (docs/plans/active/architecture-for-iteration.md,
-//! stage 1; docs/plans/active/dods.md). No HUD of its own yet (a DoD:S
-//! gun in hand shows the shell's minimal HUD: `GameParts::hud` None); its
-//! HUD (health, stamina, ammo, crosshair) is M3's. Its prone key, `+alt1`
-//! (`party_app`), is bound to Z in the party (`game::BUNDLE`'s binds).
+//! stage 1; docs/plans/active/dods.md): its HUD while a DoD:S weapon is in
+//! hand (`hud`: health, stamina, the weapon and its rounds; the shell's
+//! crosshair). Its prone key, `+alt1` (`party_app`), is bound to Z in the
+//! party (`game::BUNDLE`'s binds).
+
+pub mod hud;
 
 use bevy::app::PluginGroupBuilder;
 use chimera_world::game_bundle::GameClient;
 
 use dods::game::GAME;
 
-/// The shell's plugins as they are: DoD:S draws no HUD of its own yet.
+/// The shell's plugins with DoD:S's HUD after the shell's own.
 pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
-    shell
+    shell.add_after::<chimera_client::client::hud::HudPlugin>(hud::DodsHudPlugin)
 }
 
 /// DoD:S's front end in an app made of several games (beside its
-/// `game::BUNDLE`): its prone key (`party_app`).
-pub static CLIENT: GameClient = GameClient { game: GAME, ui_crate: env!("CARGO_CRATE_NAME"), hud: None, app: Some(party_app), base: None };
+/// `game::BUNDLE`): its HUD while a DoD:S weapon is in hand, its prone key
+/// (`party_app`).
+pub static CLIENT: GameClient = GameClient { game: GAME, ui_crate: env!("CARGO_CRATE_NAME"), hud: Some(with_hud), app: Some(party_app), base: None };
 
 /// The party apps' front end: `+alt1` (prone, `dods::game::stance`) read
 /// from the keys bound to it.

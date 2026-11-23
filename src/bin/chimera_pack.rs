@@ -169,7 +169,7 @@ use chimera_core::{
 const USAGE: &str = "\
 usage: chimera_pack pack <game> [options]       into a store (default the user's)
        chimera_pack publish <game> [options]    into the asset server's store, signed
-       chimera_pack sets <game> [--store <dir>] [--sign] [--only <prefix>] [--pack]
+       chimera_pack sets <game> [--store <dir>] [--sign] [--only <prefix>] [--pack] [--build <id>]
                                                 record weapon/<id>, players, map/<name>,
                                                 character/<record> and parts/<id> sets
                                                 (--pack: pack the files they read that
@@ -951,11 +951,12 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
             });
         }
         "dods" => {
-            // Its guns (view and held models) and the class bodies (with
-            // the shared animation model they include).
+            // Its weapons (view and held models: the guns, the knife and
+            // spade, the explosives) and the class bodies (with the shared
+            // animation model they include).
             use dods::game::{bodies, weapons};
             use source_engine::content::{material::MaterialLoader, surfaceprops::SurfaceProps};
-            for w in weapons::GUNS {
+            for w in weapons::GUNS.iter().chain(weapons::MELEE).chain(weapons::EXPLOSIVES) {
                 take();
                 let mut materials = MaterialLoader::guest(&tapped, 0, 0);
                 let surfaces = SurfaceProps::load(&mut materials);
@@ -1099,9 +1100,11 @@ fn sets(args: &[String]) -> Result<(), String> {
     let mut it = args.iter();
     let game_id = it.next().ok_or(USAGE)?;
     let (mut store, mut sign_it, mut only, mut pack_missing) = (None, false, String::new(), false);
+    let mut build: Option<String> = None;
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--store" => store = Some(Store::new(it.next().ok_or("--store needs a value")?)),
+            "--build" => build = Some(it.next().ok_or("--build needs a value")?.clone()),
             "--sign" => sign_it = true,
             "--pack" => pack_missing = true,
             "--only" => only = it.next().ok_or("--only needs a value")?.clone(),
@@ -1116,7 +1119,10 @@ fn sets(args: &[String]) -> Result<(), String> {
         .install
         .map(|i| i.path)
         .ok_or_else(|| format!("no {} install found", game.info.id))?;
-    let build = game.build_of(&install)?;
+    let build = match build {
+        Some(b) => b,
+        None => game.build_of(&install)?,
+    };
     let path = store.manifest_path(game.info.id, &build);
     let generated_only = GENERATED_PREFIXES.iter().any(|p| only.starts_with(p));
     let mut manifest = match Manifest::load(&path) {

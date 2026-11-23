@@ -250,10 +250,13 @@ served either: those tests skip as they do for us without them.
 
 ## Day of Defeat: Source: an install of your own
 
-DoD:S (docs/plans/active/dods.md) is not served yet (its sets are
-packed by `chimera_pack pack dods`: `weapon/colt`, `players`,
-`map/<name>`; published after M1). Its tests and the party's `dods:`
-maps read an install, found as the other games' are:
+DoD:S (docs/plans/active/dods.md) is served from 2026-11-23 (the
+dedicated server's build 25338204, published with `--build`: the
+SteamCMD layout has no app 300 manifest): every weapon's
+`weapon/<id>` (the guns, knife, spade and explosives), `players` (the
+twelve class bodies with the shared animation model) and `map/<name>`
+for the nine stock maps, its guest dressing converted. Its tests and the
+party's `dods:` maps read an install, found as the other games' are:
 `$CHIMERA_DODS_ROOT` for one run, else `[games.dods] path` in
 `chimera.local.toml`, else Steam's libraries (app 300, "Day of Defeat
 Source"). The dedicated server (app 232290, anonymous) has everything

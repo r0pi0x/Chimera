@@ -13,7 +13,7 @@
 //! rockets, the blast), and, in
 //! `heavy`, the user's install (its mount, the nine stock maps converted
 //! with their spawns, the class bodies, its guns' sounds under its own
-//! names: `sounds`), found through Steam, `[games.dods] path` or
+//! names: `sounds`; a rung's kit from the asset service alone: `served`), found through Steam, `[games.dods] path` or
 //! `$CHIMERA_DODS_ROOT`, each test passing with a note without one.
 //! `cargo test -p dods --features dev --test it`; where tests go:
 //! docs/OBSERVABILITY.md, section 1.
@@ -32,4 +32,5 @@ mod heavy {
     mod scripts;
     mod sounds;
     mod player_anim;
+    mod served;
 }

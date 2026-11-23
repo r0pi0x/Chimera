@@ -44,5 +44,11 @@ speed = 2000.0
 gravity = 448.0
 fuse = 3.63
 
+[hooks."dods:body_anim"]
+# The body's animations (`player_anim`): the set the shared player model has for it
+# (ACT_DOD_STAND_IDLE_RIFLE, its reload ACT_DOD_RELOAD_RIFLEGRENADE).
+suffix = "RIFLE"
+reload = "RIFLEGRENADE"
+
 [hud]
 name = "M1 Garand rifle grenade"
