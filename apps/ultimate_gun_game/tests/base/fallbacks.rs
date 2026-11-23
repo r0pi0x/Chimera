@@ -85,7 +85,7 @@ fn a_guns_only_game_is_reported_and_falls_back() {
     let def = sim.app.world().resource::<minigame::Minigames>().get(MINIGAME).unwrap();
     assert!(def.maps.iter().all(|m| !m.starts_with("kit:")) && !def.maps.is_empty(), "other games' maps: {:?}", def.maps);
     assert!(def.slots.weapons.iter().any(|w| w == "kit"));
-    assert_eq!(def.spawn.kit.for_game(Some("kit")), ["combat_arms:m9_knife"], "no knife of its own: the base game's");
+    assert!(def.spawn.kit.for_game(Some("kit")).is_empty(), "no knife of its own: none (never another game's)");
 }
 
 #[test]

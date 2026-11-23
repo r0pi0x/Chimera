@@ -20,6 +20,7 @@ mod halo_balance;
 mod halo_grenade_rung;
 mod halo_grenades;
 mod halo_ladder;
+mod halo_melee_demotes;
 mod halo_vehicle_looks;
 mod persist;
 

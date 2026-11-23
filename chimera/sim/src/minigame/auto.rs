@@ -54,7 +54,9 @@
 //!   `installed` (the games every player has: L3's mount reports, which
 //!   the app reads; `chimera_net::minigame_net::installed_by_all`). Its
 //!   kit is by game (`def::Kit::ByGame`): each gun's game's own knife,
-//!   the base game's for a game that lends none; its rotation random but
+//!   none for a game that lends none (Halo's melee is the held gun's
+//!   bash: a slot key never hands its player another game's knife, or
+//!   that game's body with it); its rotation random but
 //!   the last maps played when `AutoOptions::avoid_recent` says
 //!   (`minigame::rotation`).
 
@@ -172,7 +174,7 @@ impl Capabilities {
             self.game,
             self.guns.len(),
             self.grenades.len(),
-            or(self.knife, "the base game's"),
+            or(self.knife, "no melee slot"),
             or(self.movement, "not in a ladder"),
             or(self.characters, "the stand-in body"),
             or(self.hud, "the fallback HUD"),
@@ -1085,17 +1087,13 @@ pub fn definition_with(
             sets.push(game);
         }
     }
-    // The kit by game: each ladder game's own knife, else the base game's.
-    let fallback = base.and_then(|b| b.knife);
+    // The kit by game: each ladder game's own knife, none for a game
+    // without one (never another game's: its slot key would make the
+    // player that game's).
     let mut kit: Vec<String> = Vec::new();
-    for game in sets.clone() {
-        let own = caps.iter().find(|c| c.game == game).and_then(|c| c.knife);
-        if let Some(knife) = own.or(fallback) {
-            kit.push(format!("{} = {}", q(&game), list(&[knife.to_string()])));
-            let of = knife.split_once(':').map_or(knife, |(g, _)| g);
-            if !sets.iter().any(|s| s == of) {
-                sets.push(of.to_string());
-            }
+    for game in &sets {
+        if let Some(knife) = caps.iter().find(|c| c.game == game).and_then(|c| c.knife) {
+            kit.push(format!("{} = {}", q(game), list(&[knife.to_string()])));
         }
     }
     let kit = format!("{{ {} }}", kit.join(", "));

@@ -11,6 +11,7 @@ mod parts;
 mod props;
 mod sandbox_mechanics;
 mod sandbox_screens;
+mod slot_keys;
 mod targets;
 
 // Slow ones (the user's installs): the fast tier skips `heavy::`.

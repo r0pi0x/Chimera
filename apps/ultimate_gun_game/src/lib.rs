@@ -37,8 +37,8 @@
 //! weighted), the players voting for the next one on the end screen
 //! (`map_vote`, `minigame::vote`: the rotation's pick and three others,
 //! 20 s, ties to the pool's pick);
-//! its kit each gun's game's knife (the base game's, `BASE`, for a
-//! game without one); no gun off the ground, any game's, placed or dropped
+//! its kit each gun's game's knife (none for a game without one, Halo's
+//! melee the held gun's bash: never another game's); no gun off the ground, any game's, placed or dropped
 //! (`[pickups] weapons = false`: the ladder alone arms a player; a map's
 //! guns aren't placed, since a gun lying there that can't be taken would only
 //! mislead). `parts` (console) prints each game's capability report. A body

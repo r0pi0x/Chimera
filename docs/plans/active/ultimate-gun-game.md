@@ -22,7 +22,7 @@ console) and builds from what's there.
 |---|---|---|---|
 | Guns (weapon set, held/view models, fire/reload sounds, their rendering) | yes | the game's weapon set in `WeaponCatalog` (`CsGunsPlugin`, Combat Arms' data, `CsSourceGuns`/`CombatArmsGuns` for the weapons-only build), models via `MapSources::kept` and `guests` (X7), view models by the game's driver or Chimera's with `ViewAnimRules` | none: no guns, not in a ladder |
 | Gun classes | yes (with the guns) | `GameParts::guns` (`GunClass`, the game's claim) | - |
-| Knife | no | `GameParts::knife` (in the catalogue), given by game (`def::Kit::ByGame`, `runtime::refit_kit` on a rung's swap) | the base game's knife |
+| Knife | no | `GameParts::knife` (in the catalogue), given by game (`def::Kit::ByGame`, `runtime::refit_kit` on a rung's swap) | none (no melee slot; never another game's knife: its slot key would make the player that game's) |
 | Movement | yes | `slots::MovementRegistry` (`register_movement`; `of_game` for identity) | none: not in a ladder |
 | Characters (bodies) | no | `map::CharacterModels` with `game` set: the map game's own, `MapSources::players`, `MapSources::guests` (`MapDressing`) | none of its game: what it wears stays, else any body here (`render::bodies::attach_bodies` with `game_parts::PreferRealModels`); before any is in, the loading stand-in body (`render::stand_in`) |
 | HUD | no | the gameplay's `hud` slot (X1, `hud_is`), switched by `identity::hud_follows_identity`, kept up alone by the shell's `HudSwitchPlugin` | `PartsRegistry::fallback_hud` (the app's base game's; else `MINIMAL_HUD`, the shell's own) |
@@ -63,7 +63,7 @@ part too.
 - The definition is text (`MinigameDef`), so the network carries it as it
   carries any minigame's (L3's manifest: id, hash, text); `identity =
   "weapon"`, `chimera:ladder`, the base game's binds/tick/bots, the kit
-  by game (each gun's game's knife, the base's for a game without one).
+  by game (each gun's game's knife, none for a game without one).
 - The app: `apps/ultimate_gun_game` (`UltimateGunGamePlugin` on
   `party_kit::client_app`) and `apps/ultimate_gun_game_server`
   (`party_kit::server::PARTY` with its minigame and launch, on

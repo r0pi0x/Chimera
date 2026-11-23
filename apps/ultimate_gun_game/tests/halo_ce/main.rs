@@ -7,4 +7,5 @@
 #[path = "../common/parts.rs"]
 mod parts;
 
+mod melee_bash;
 mod sandbox;

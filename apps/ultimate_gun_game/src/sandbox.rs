@@ -104,7 +104,6 @@ pub fn definition(caps: &[Capabilities], base: &str, installed: &dyn Fn(&str) ->
     // The sentinel: the win of the last rung lands on it (module doc).
     ladder.push(last);
     let base_caps = caps.iter().find(|c| c.game == base);
-    let fallback = base_caps.and_then(|b| b.knife);
     let mut sets: Vec<String> = Vec::new();
     let mut kit: Vec<String> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
@@ -117,13 +116,9 @@ pub fn definition(caps: &[Capabilities], base: &str, installed: &dyn Fn(&str) ->
         if !sets.contains(&game) {
             sets.push(game.clone());
         }
-        let own = caps.iter().find(|c| c.game == game).and_then(|c| c.knife);
-        if let Some(knife) = own.or(fallback) {
+        // Its own knife only (none: no melee slot; never another game's).
+        if let Some(knife) = caps.iter().find(|c| c.game == game).and_then(|c| c.knife) {
             kit.push(format!("{} = {}", q(&game), list(&[knife.to_string()])));
-            let of = knife.split_once(':').map_or(knife, |(g, _)| g).to_string();
-            if !sets.contains(&of) {
-                sets.push(of);
-            }
         }
     }
     let mut pool = vec!["chimera:range".to_string(), "chimera:greybox".to_string()];
