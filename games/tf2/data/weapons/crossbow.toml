@@ -1,0 +1,71 @@
+# The Crusader's Crossbow's class (`tf_weapon_crossbow`,
+# specs/tf2/batch2b_mechanics.md 2): an abstract base (data/items.toml
+# `[bases]`). A bolt at 2400 units/s under 0.2 of gravity from where the
+# arrow starts; on an enemy 38 x (1 + f), on a teammate a heal of
+# 75 x (1 + f) up to his max, f = min(1, t / 0.6) by its flight time t
+# (`tf2:shot`; the damage's flight 0.03 s behind, fitted to the tables);
+# no headshots. The reload starts on its own after the shot (1.74 s
+# from shot to shot).
+id = "tf2:tf_weapon_crossbow"
+base = "tf2:base"
+abstract = true
+class = "rifle"
+slot = 0
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 0.24
+timing = "set"
+
+[magazine]
+clip = 1
+ammo = "tf2:bolts"
+reload = 1.5
+auto_reload = true
+reload_when_idle = true
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 1.0
+spread = { template = 0.0 }
+
+[sounds]
+fire = "tf2:Weapon_CrusadersCrossbow.Single"
+
+[models]
+world = "models/workshop/weapons/c_models/c_crusaders_crossbow/c_crusaders_crossbow.mdl"
+view = "models/workshop/weapons/c_models/c_crusaders_crossbow/c_crusaders_crossbow.mdl"
+view_right_handed = true
+
+[hud]
+name = "Crusader's Crossbow"
+icon = "crusaders_crossbow"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+flat = true
+arms = "medic"
+script = "tf_weapon_crossbow"
+
+[hooks."chimera:projectile"]
+interp = true
+whole_units = true
+speed = 2400.0
+gravity = 160.0
+touch = "report"
+shown = "tf2:tf_weapon_crossbow/bolt"
+offset = [23.5, 8.0, 4.0]
+hull_boxes = true
+aim_trace = 56754.0
+start_trace = true
+sky_probe = 16.0
+life = 30.0
+
+[hooks."tf2:shot"]
+damage = 38.0
+ramp_time = 0.6
+ramp_lag = 0.03
+ramp_cap = 75.0
+heal = 75.0

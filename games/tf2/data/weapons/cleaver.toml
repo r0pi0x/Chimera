@@ -1,0 +1,60 @@
+# The Flying Guillotine's class (`tf_weapon_cleaver`,
+# specs/tf2/batch2b_mechanics.md 5): an abstract base (data/items.toml
+# `[bases]`). Attack throws it at about 1840 units/s and 250 up of the
+# aim under full gravity; 50 on a player at any range and a 5 s bleed
+# (`tf2:shot`); the next throw 5.1 s later (its meter, as the trigger's
+# interval).
+id = "tf2:tf_weapon_cleaver"
+base = "tf2:base"
+abstract = true
+class = "launcher"
+slot = 1
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 5.1
+timing = "set"
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 1.0
+spread = { template = 0.0 }
+
+[sounds]
+fire = "tf2:Cleaver.Single"
+
+[models]
+world = "models/workshop_partner/weapons/c_models/c_sd_cleaver/c_sd_cleaver.mdl"
+view = "models/workshop_partner/weapons/c_models/c_sd_cleaver/c_sd_cleaver.mdl"
+view_right_handed = true
+
+[hud]
+name = "Flying Guillotine"
+icon = "guillotine"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+flat = true
+arms = "scout"
+script = "tf_weapon_cleaver"
+
+[hooks."chimera:projectile"]
+interp = true
+speed = 1840.0
+up_speed = 250.0
+gravity = 800.0
+half = [2.0, 2.0, 2.0]
+touch = "report"
+shown = "tf2:tf_weapon_cleaver/cleaver"
+offset = [16.0, 8.0, -6.0]
+pass_teammates = true
+hull_boxes = true
+sky_probe = 16.0
+life = 10.0
+spin = { base = [0.0, 0.0, 1200.0], random = [0.0, 0.0, 0.0], times = 1 }
+
+[hooks."tf2:shot"]
+damage = 50.0
+bleed = 5.0

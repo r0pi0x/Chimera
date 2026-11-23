@@ -38,6 +38,16 @@ tf_weapon_syringegun_medic = "tf2:tf_weapon_syringegun_medic"
 tf_weapon_scattergun = "tf2:tf_weapon_scattergun"
 tf_weapon_flaregun = "tf2:tf_weapon_flaregun"
 tf_weapon_bat = "tf2:tf_weapon_bat"
+# Batch 2b's classes with no stock weapon (abstract bases, data/weapons/).
+tf_weapon_compound_bow = "tf2:tf_weapon_compound_bow"
+tf_weapon_crossbow = "tf2:tf_weapon_crossbow"
+tf_weapon_raygun = "tf2:tf_weapon_raygun"
+tf_weapon_cannon = "tf2:tf_weapon_cannon"
+tf_weapon_cleaver = "tf2:tf_weapon_cleaver"
+tf_weapon_handgun_scout_primary = "tf2:tf_weapon_handgun_scout_primary"
+tf_weapon_bat_wood = "tf2:tf_weapon_bat_wood"
+tf_weapon_bat_giftwrap = "tf2:tf_weapon_bat_giftwrap"
+tf_weapon_stickbomb = "tf2:tf_weapon_stickbomb"
 
 # Batch 1 (33 items, 31 entries).
 [items.winger]
@@ -306,3 +316,53 @@ note = "healing from Medics x0.1 (no Medi Gun yet); the mark's icon"
 [items.back_scatter]
 index = 1103
 batch = 2
+
+# Batch 2b's projectiles and pushes (specs/tf2/batch2b_mechanics.md;
+# `weapons::charge`, `weapons::shot`, `weapons::knock`, the grenade's
+# impact).
+[items.sandman]
+index = 44
+batch = 2
+note = "the ball is no pickup; the moonshot's sound"
+
+[items.force_a_nature]
+index = 45
+batch = 2
+note = "its reload time is its base's"
+
+[items.huntsman]
+index = 56
+batch = 2
+note = "its draw and fire sounds; arrows set alight"
+
+[items.shortstop]
+index = 220
+batch = 2
+
+[items.crusaders_crossbow]
+index = 305
+batch = 2
+
+[items.ullapool_caber]
+index = 307
+batch = 2
+note = "refilled at death only (no resupply in a party match)"
+
+[items.righteous_bison]
+index = 442
+batch = 2
+note = "the ring's look"
+
+[items.wrap_assassin]
+index = 648
+batch = 2
+
+[items.flying_guillotine]
+index = 812
+batch = 2
+note = "switching back after a throw"
+
+[items.loose_cannon]
+index = 996
+batch = 2
+note = "the impact's push; a held ball going off in the barrel"

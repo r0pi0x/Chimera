@@ -37,11 +37,11 @@ look here; if it's missing, see "Generalize on the second user" below.
 |---|---|---|
 | Weapons as data | `chimera_sim::weapon::data`, [weapon-data.md](weapon-data.md) | one TOML document per gun in `data/weapons/`; `app.add_weapon_data(..)`; the `add-weapon-from-data` skill |
 | Hitscan, hit zones, armour | `chimera_sim::weapon::{hits, deliver}`, `Hitgroup` | `[hitscan]` and `[damage] hitgroups` in the data |
-| Projectiles | `chimera_sim::weapon::{projectile, flight}` | `[hooks."chimera:projectile"]` in the data (weapon-data.md, "Chimera's flyers"): speed, gravity, what a touch does |
+| Projectiles | `chimera_sim::weapon::{projectile, flight}` | `[hooks."chimera:projectile"]` in the data (weapon-data.md, "Chimera's flyers"): speed, gravity, what a touch does; a charged shot sets `Launcher::next` (`LaunchNext`: speed, gravity, life, turn, a number carried on `Flyer::charge`); `FlyerHit::hitgroup` says where a character was hit |
 | Blasts and grenades | `chimera_sim::weapon::grenade` (`Blast`, `Throwable`) | a `Blast` with radius and falloff; a thrown weapon as data |
 | Lag compensation | `chimera_sim::weapon::lagcomp` | a network server traces remote players' shots where they saw them; nothing to add for hitscan |
 | Behaviour hooks | `chimera_sim::weapon::data` (registered hooks by name) | `[hooks."<id>:<hook>"]` in the data, the hook registered in Rust |
-| Bleeding and speed boosts | `chimera_sim::status` (`Bleeding`, `SpeedBoost`) | `status::add(app)`; insert `Bleeding::start(..)` (refresh with `Bleeding::refresh`) on a hit: ticks of `DamageKind::Bleed`; a `SpeedBoost` your movement multiplies by `factor(base)` |
+| Bleeding, speed boosts and slows | `chimera_sim::status` (`Bleeding`, `SpeedBoost`, `Slowed`) | `status::add(app)`; insert `Bleeding::start(..)` (refresh with `Bleeding::refresh`) on a hit: ticks of `DamageKind::Bleed`; a `SpeedBoost` your movement multiplies by `factor(base)`, a `Slowed` (merge with `Slowed::with`) by its `factor` (0: a full stop) |
 
 ## Effects, sound, HUD
 

@@ -1,0 +1,71 @@
+# The Righteous Bison's class (`tf_weapon_raygun`,
+# specs/tf2/batch2b_mechanics.md 6): an abstract base (data/items.toml
+# `[bases]`). A ring at 1200 units/s, no gravity, from 23.5 forward and 8
+# right of the eye; 20 with the distance modifier from the shooter where it
+# hits (its near ramp fitted, `weapons::shot`), passing through players and
+# hitting each twice two ticks apart (`tf2:shot`). No ammo: an energy cell
+# of 20, 5 a shot (4 shots, the clip), a shot every 0.8 s, refilled 5 at a
+# time once empty (the first after 0.93 s, then every 0.345 s).
+id = "tf2:tf_weapon_raygun"
+base = "tf2:base"
+abstract = true
+class = "launcher"
+slot = 1
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 0.8
+timing = "set"
+
+[magazine]
+clip = 4
+ammo = "tf2:energy"
+reload = 0.345
+auto_reload = true
+shells = { start = 0.585, insert = 0.345, back_to_back = true, from_tick = true, start_interruptible = true }
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 1.0
+spread = { template = 0.0 }
+
+[sounds]
+fire = "tf2:Weapon_Bison.Single"
+
+[models]
+world = "models/workshop/weapons/c_models/c_drg_righteousbison/c_drg_righteousbison.mdl"
+view = "models/workshop/weapons/c_models/c_drg_righteousbison/c_drg_righteousbison.mdl"
+view_right_handed = true
+
+[hud]
+name = "Righteous Bison"
+icon = "righteous_bison"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+flat = true
+arms = "soldier"
+script = "tf_weapon_raygun"
+
+[hooks."chimera:projectile"]
+interp = true
+speed = 1200.0
+touch = "report"
+shown = "tf2:tf_weapon_raygun/ring"
+offset = [23.5, 8.0, 0.0]
+pass_teammates = true
+hull_boxes = true
+aim_trace = 56754.0
+start_trace = true
+sky_probe = 16.0
+life = 10.0
+
+[hooks."tf2:shot"]
+damage = 20.0
+by_distance = true
+ramp = 0.37
+pierce = true
+hits = 2
+rehit = 0.03

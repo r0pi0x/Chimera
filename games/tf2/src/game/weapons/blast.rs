@@ -174,6 +174,21 @@ pub struct BlastParams {
     /// without a blast (an item's shatter, 4.5).
     #[serde(default)]
     pub shatter: bool,
+    /// A grenade that hits players without exploding (the Loose Cannon's
+    /// ball, batch2b_mechanics.md 7: `grenade::touch`).
+    #[serde(default)]
+    pub impact: Option<Impact>,
+}
+
+/// A cannonball's impact on a player (batch2b_mechanics.md 7): `damage`
+/// points, a full stop of `stop` s, and its own explosion within `donk` s
+/// after mini-crits him (`items::effects::Donks`).
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Impact {
+    pub damage: f32,
+    pub stop: f32,
+    pub donk: f32,
 }
 
 fn yes() -> bool {
@@ -642,6 +657,27 @@ impl BlastWorld<'_, '_> {
         self.shove(target, dv * U, false);
     }
 
+    /// `target`'s velocity set to `v` (units/s) by another's push (the
+    /// Force-a-Nature's knockback, the Shortstop's shove:
+    /// batch2b_mechanics.md 9, 10), as a push of the difference.
+    pub fn set_push(&mut self, target: Entity, v: Vec3) {
+        let Ok((.., velocity, _)) = self.chars.get(target) else { return };
+        let dv = v * U - velocity.0;
+        self.shove(target, dv, false);
+    }
+
+    /// An explosion's look (and its sound) of `weapon` at `at` on a
+    /// surface of `normal` with no blast: a flare ending on the world
+    /// (batch2b_mechanics.md 18, `flaregun_destroyed`).
+    pub fn look(&mut self, at: Vec3, normal: Vec3, weapon: &'static str) {
+        self.looks.write(Tf2Explosion { at, normal, on_player: false, weapon });
+    }
+
+    /// `e`'s velocity (m/s).
+    pub fn velocity(&self, e: Entity) -> Option<Vec3> {
+        self.chars.get(e).ok().map(|c| c.6.0)
+    }
+
     /// Whether `e` stands on the ground.
     pub fn grounded(&self, e: Entity) -> bool {
         self.chars.get(e).ok().and_then(|c| c.5.map(|s| s.on_ground)).unwrap_or(false)
@@ -685,6 +721,12 @@ impl BlastWorld<'_, '_> {
     pub fn hurt(&mut self, d: Damage, from: Vec3) {
         self.inflicted.write(Inflicted { target: d.target, amount: d.amount, from });
         self.damage.write(d);
+    }
+
+    /// A sound at `at` from `source`, heard by every client (a crit's hit
+    /// sound at its victim).
+    pub fn sound_from(&mut self, entry: &str, at: Vec3, source: Entity) {
+        self.sounds.write(GameSound(PlaySound { source: Some(source), ..PlaySound::at(entry.to_string(), at) }));
     }
 
     /// A sound at `at`, heard by every client.

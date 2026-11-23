@@ -187,6 +187,7 @@ impl StickyParams {
             self_harm: self.self_harm,
             first_touch_keep: None,
             shatter: false,
+            impact: None,
         }
     }
 

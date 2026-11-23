@@ -327,13 +327,18 @@ pub fn select_class(
         &mut SourceTraits,
         Option<&RungClass>,
         Option<&MaxSpeed>,
-        (Option<&Health>, Option<&super::items::effects::Heads>, Option<&chimera_sim::status::SpeedBoost>),
+        (
+            Option<&Health>,
+            Option<&super::items::effects::Heads>,
+            Option<&chimera_sim::status::SpeedBoost>,
+            Option<&chimera_sim::status::Slowed>,
+        ),
     )>,
     mut weapons: Query<(&Weapon, Option<&Tf2Gun>, Option<&mut ShellReload>, Option<&mut Magazine>)>,
     items: Query<&super::items::mods::Tf2Item>,
     table: Res<Classes>,
 ) {
-    for (slot, inv, mut class, mut traits, drawn, zoomed, (health, heads, boost)) in &mut q {
+    for (slot, inv, mut class, mut traits, drawn, zoomed, (health, heads, boost, slowed)) in &mut q {
         if slot.0 != ID {
             continue;
         }
@@ -362,6 +367,9 @@ pub fn select_class(
         // Plan's tiers, the speed boost; the Atomizer's air jump.
         let share = health.filter(|h| h.max > 0.0).map_or(1.0, |h| h.current / h.max);
         let p = super::items::effects::speed_with(p, c.speed, boost, f.speed_by_health, share, heads.map_or(0, |h| h.0));
+        // A slow (batch2b_mechanics.md 3, 7: the ball's half, the Loose
+        // Cannon's stop; Chimera's `status::Slowed`, ended before this).
+        let p = p * slowed.map_or(1.0, |s| s.factor);
         let want = SourceTraits {
             max_speed: Some(p),
             eye_stand: Some(c.eye),

@@ -1,6 +1,6 @@
 # TF2 weapons: every player weapon, what is in, what is left
 
-Status: batches 0 and 1 built, batch 2's first five families built (2026-11-23; section 4); the rest of batch 2 and batch 3 planned.
+Status: batches 0 and 1 built, batch 2's first five families and part 2's projectiles and pushes built (2026-11-23; section 4); the rest of batch 2 and batch 3 planned.
 Inventory by class and slot, then a phased build order.
 
 Sources: the installed game's `scripts/items/items_game.txt` (read locally
@@ -423,14 +423,44 @@ hook, each weapon data/items.toml's entry plus those.
   reach, the head excess's drain, heads lost at death, the Axtinguisher's
   law beyond flare burns.
 
+**Built 2026-11-23, part 2's projectiles and pushes**
+(specs/tf2/batch2b_mechanics.md 1-10, 18; scenario tests:
+games/tf2/tests/it/batch2b.rs): the classes with no stock weapon are
+abstract bases (data/weapons/compound_bow, crossbow, raygun, cannon,
+cleaver, handgun_scout_primary, bat_wood, bat_giftwrap, stickbomb:
+`weapons::ABSTRACT_BASES`), each mechanic one hook:
+
+- *Charged launch* (`tf2:charge`, `weapons::charge`, through Chimera's
+  `Launcher::next`/`LaunchNext`): the Huntsman's draw (speed, gravity,
+  the 5 s tiring wobble), the Loose Cannon's fuse from the press.
+- *Projectile hits* (`tf2:shot`, `weapons::shot`; Chimera's
+  `FlyerHit::hitgroup` and `Flyer::charge`): the arrow (50 + 70 c, the
+  headshot crit, stuck in the world), the crossbow's flight-time damage
+  and teammate heal, the Bison's ring (distance modifier, through
+  players, two hits each), the Flying Guillotine (50 and bleed), the
+  bats' thrown balls (`tf2:throw`: the Sandman's slow by flight and
+  moonshot, the Wrap Assassin's ornament with its burst and bleed, each
+  meter's recharge; Chimera's `status::Slowed`).
+- *Cannonball* (`tf2:grenade` `impact`): 50 and a 0.5 s stop, no blast
+  on contact, the double donk (`items::effects::Donks`).
+- *Pushes* (`weapons::knock`): the Force-a-Nature's knockback within 390
+  and air push (`set_scattergun_has_knockback`), the Shortstop's shove
+  (`tf2:shove`), the Ullapool Caber's first-hit blast (`tf2:caber`).
+- *Attributes* (`items::docs`): pellets from the class script ×
+  `mult_bullets_per_shot`, reload time, whole-clip reload, an energy
+  weapon's clip, a bat's meter rate.
+- *Flare looks* (18): `flaregun_trail_<team>` and a crit-boosted owner's
+  `flaregun_crit_<team>`; `flaregun_destroyed` where a flare ends on the
+  world.
+- Items: Sandman, Force-a-Nature, Huntsman, Shortstop, Crusader's
+  Crossbow, Ullapool Caber, Righteous Bison, Wrap Assassin, Flying
+  Guillotine, Loose Cannon. Provisional numbers are each module's Known
+  shortcuts (the Bison's ramp, the knockback's lift and range, the
+  shove's reach, the Caber's blast, the ornament's burst, the drags).
+
 Still to build in batch 2:
 
 - *Mini-crit conditions*: wet (Neon Annihilator's crit).
-- *Bleed*: Wrap Assassin, Flying Guillotine (their projectiles first).
-- *Knockback on hit* (Force-a-Nature), *shove* (Shortstop).
-- *New projectile types*: arrow (Huntsman, Crossbow), ball (Sandman),
-  cleaver/ornament, energy bolt (Bison), cannonball (Loose Cannon),
-  explosive melee (Caber).
 - *Consumables*: lunchbox (Sandvich family), drinks (Bonk, Crit-a-Cola),
   jars (Jarate, Mad Milk): one "use and cooldown" slot plus a status.
 - *Meters*: head counter (Bazaar; the Eyelander's is built), Hype (Soda Popper), Boost

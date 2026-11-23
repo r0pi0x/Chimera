@@ -30,12 +30,15 @@
 //! own explosion damage law (45 × (1 - r / 206), 32 from 56 to 61 units:
 //! 34 at 49 units, where 35 was measured) and push (5.6 per point); a flare touching
 //! the world goes at once (the game's stays 0.1 s); its life is 60 s;
-//! the flare shows no trail and a crit no glow (no spec or script names
-//! them: the plan's spec list), its model only; the Flare Gun's flare
-//! ending on the world shows nothing (the script's `ExplosionEffect` is
-//! drawn for the Detonator's and the Scorch Shot's explosions only); the
-//! view model plays the `item1` activities by activity (their
-//! `anim_slot`).
+//! the view model plays the `item1` activities by activity (their
+//! `anim_slot`); a flare ending on the world shows `flaregun_destroyed`
+//! (the spec's "likely": from the data's name, not seen on screen) with
+//! the explosion's sound (`Default.FlareImpact`, unmeasured there).
+//!
+//! Its trail (batch2b_mechanics.md 18): `flaregun_trail_<team>` (with its
+//! child `flaregun_sparkles_<team>`) on its origin (the model has no
+//! attachment), and a crit-boosted owner's `flaregun_crit_<team>` there
+//! (`looks::FlyerTrail`).
 //!
 //! Looks and sounds (data/weapons/flaregun.toml, the class script's
 //! names): the muzzle flash `muzzle_shotgun`; the explosion
@@ -129,6 +132,7 @@ impl FlareParams {
             self_harm: true,
             first_touch_keep: None,
             shatter: false,
+            impact: None,
         }
     }
 }
@@ -236,6 +240,10 @@ pub fn touch(
         } else if p.mode == Mode::Scorch {
             let at = world.touched(hit.point, hit.normal, None);
             explode(&mut world, p, &at, hit.owner, hit.weapon, scorched.map(|s| s.0));
+        } else if hit.world {
+            // Its end on the world (batch2b_mechanics.md 18: the data's
+            // `flaregun_destroyed`, the explosion's look, no blast).
+            world.look(hit.point + hit.normal * U, hit.normal, hit.weapon);
         }
         if end {
             gone.write(FlyerGone { flyer: hit.flyer, weapon: hit.weapon, owner: hit.owner, at: hit.point, expired: false });

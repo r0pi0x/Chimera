@@ -94,8 +94,11 @@ sound = "tf2:Default.FlareImpact"
 # names: the muzzle flash (`MuzzleFlashParticleEffect`) and the Detonator's
 # and the Scorch Shot's explosions (`ExplosionEffect`,
 # `ExplosionPlayerEffect`, `ExplosionWaterEffect`: one system for all
-# three). The flare's trail and a crit's glow are named by no script or
-# spec (the plan's spec list).
+# three); the same where a flare ends on the world (batch2b_mechanics.md
+# 18). The flare's trail `flaregun_trail_<team>` (its child the sparkles)
+# and a crit-boosted owner's glow `flaregun_crit_<team>` on its origin
+# (particles/rockettrail.pcf; the model has no attachment).
 [hooks."tf2:looks"]
 muzzle = "muzzle_shotgun"
+trail = { shown = "tf2:tf_weapon_flaregun/flare", system = "flaregun_trail", team = true, crit = "flaregun_crit" }
 explosion = { wall = "flaregun_destroyed", player = "flaregun_destroyed", water = "flaregun_destroyed" }

@@ -1,0 +1,25 @@
+# The Ullapool Caber's class (`tf_weapon_stickbomb`,
+# specs/tf2/batch2b_mechanics.md 8): the Bottle's swing, and its first hit
+# explodes there (`tf2:caber`, `weapons::knock`: the shared blast, the
+# Demoman in it as in his own; 75 at the centre to half at 146, fitted to
+# the measured 69 and 52); later hits the swing alone until he dies.
+id = "tf2:tf_weapon_stickbomb"
+base = "tf2:tf_weapon_bottle"
+abstract = true
+
+[hooks."tf2:caber"]
+damage = 75.0
+radius = 146.0
+edge = 0.5
+self_radius = 146.0
+self_damage = 75.0
+self_air_scale = 0.75
+self_ground_scale = 0.75
+push_other = 6.0
+push_self_air = 9.0
+push_self_ground = 9.0
+by_distance = false
+sound = "tf2:Weapon_Grenade_Pipebomb.Explode"
+
+[hooks."tf2:looks"]
+explosion_of = "tf2:tf_weapon_pipebomblauncher"

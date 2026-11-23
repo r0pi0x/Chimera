@@ -40,6 +40,13 @@
 //! - `tf2:flare` (`flare`): the flare guns' flare (no stock weapon: the
 //!   unlocks' base, `FLAREGUN`), its hit, the Detonator's and Scorch
 //!   Shot's explosion and the Scorch Shot's bounce and push;
+//! - batch 2b's unlocks (specs/tf2/batch2b_mechanics.md; their classes
+//!   have no stock weapon: abstract bases, `ABSTRACT_BASES`): `tf2:charge`
+//!   (`charge`: the Huntsman's draw, the Loose Cannon's fuse), `tf2:shot`
+//!   and `tf2:throw` (`shot`: the arrow, bolt, Bison ring, cleaver and
+//!   the bats' balls on touch), `tf2:shove` and `tf2:caber` (`knock`, with
+//!   the Force-a-Nature's knockback), the cannonball's impact
+//!   (`grenade`);
 //! - crit boosts' loop and glow on the held weapon (`crit_boost`,
 //!   effects.md 14);
 //! - `tf2:melee` (`melee`): the nine stock melee weapons
@@ -68,12 +75,14 @@
 pub mod airblast;
 pub mod blast;
 pub mod blood;
+pub mod charge;
 pub mod crit_boost;
 pub mod damage;
 pub mod dot;
 pub mod flame;
 pub mod flare;
 pub mod grenade;
+pub mod knock;
 pub mod looks;
 pub mod melee;
 pub mod minigun;
@@ -81,6 +90,7 @@ pub mod needle;
 pub mod recoil;
 pub mod rocket;
 pub mod script_numbers;
+pub mod shot;
 pub mod sniper;
 pub mod sticky;
 
@@ -119,6 +129,12 @@ pub const DATA: &[(&str, GameData)] = &[
     data_file!("flamethrower.toml"),
     data_file!("syringegun_medic.toml"),
     data_file!("flaregun.toml"),
+    data_file!("compound_bow.toml"),
+    data_file!("crossbow.toml"),
+    data_file!("raygun.toml"),
+    data_file!("cannon.toml"),
+    data_file!("cleaver.toml"),
+    data_file!("handgun_scout_primary.toml"),
     data_file!("_melee.toml"),
     data_file!("bat.toml"),
     data_file!("shovel.toml"),
@@ -129,6 +145,9 @@ pub const DATA: &[(&str, GameData)] = &[
     data_file!("bonesaw.toml"),
     data_file!("club.toml"),
     data_file!("knife.toml"),
+    data_file!("bat_wood.toml"),
+    data_file!("bat_giftwrap.toml"),
+    data_file!("stickbomb.toml"),
 ];
 
 pub const SCATTERGUN: &str = "tf2:tf_weapon_scattergun";
@@ -146,6 +165,21 @@ pub const SYRINGE_GUN: &str = "tf2:tf_weapon_syringegun_medic";
 /// The flare gun class: no stock weapon, the base of the Flare Gun, the
 /// Detonator and the Scorch Shot (data/weapons/flaregun.toml, abstract).
 pub const FLAREGUN: &str = "tf2:tf_weapon_flaregun";
+/// The batch-2b unlocks' classes with no stock weapon: abstract bases
+/// (specs/tf2/batch2b_mechanics.md; data/weapons/<class>.toml).
+pub const COMPOUND_BOW: &str = "tf2:tf_weapon_compound_bow";
+pub const CROSSBOW: &str = "tf2:tf_weapon_crossbow";
+pub const RAYGUN: &str = "tf2:tf_weapon_raygun";
+pub const CANNON: &str = "tf2:tf_weapon_cannon";
+pub const CLEAVER: &str = "tf2:tf_weapon_cleaver";
+pub const HANDGUN_SCOUT_PRIMARY: &str = "tf2:tf_weapon_handgun_scout_primary";
+pub const BAT_WOOD: &str = "tf2:tf_weapon_bat_wood";
+pub const BAT_GIFTWRAP: &str = "tf2:tf_weapon_bat_giftwrap";
+pub const STICKBOMB: &str = "tf2:tf_weapon_stickbomb";
+/// The abstract bases (no weapon of their own; data/items.toml's
+/// `[bases]` name them).
+pub const ABSTRACT_BASES: [&str; 10] =
+    [FLAREGUN, COMPOUND_BOW, CROSSBOW, RAYGUN, CANNON, CLEAVER, HANDGUN_SCOUT_PRIMARY, BAT_WOOD, BAT_GIFTWRAP, STICKBOMB];
 
 /// The guns, in the ladder's order (M2b's four, then weapons_more.md's
 /// eight).
@@ -191,6 +225,7 @@ pub const AIR_DENSITY: f32 = 2.0;
 pub const FLAME_HOOK: &str = "tf2:flame";
 pub const NEEDLE_HOOK: &str = "tf2:needle";
 pub const FLARE_HOOK: &str = "tf2:flare";
+pub const CHARGE_HOOK: &str = "tf2:charge";
 pub const MELEE_HOOK: &str = "tf2:melee";
 /// Chimera's flyers' hook (a projectile's launch and flight).
 pub const PROJECTILE_HOOK: &str = "chimera:projectile";
@@ -209,6 +244,13 @@ pub const PROJECTILES: &[(&str, &str, &str)] = &[
     (STICKY_LAUNCHER, sticky::SHOWN, sticky::MODEL),
     (SYRINGE_GUN, "tf2:tf_weapon_syringegun_medic/syringe", "models/weapons/w_models/w_syringe_proj.mdl"),
     (FLAREGUN, "tf2:tf_weapon_flaregun/flare", "models/weapons/w_models/w_flaregun_shell.mdl"),
+    // Batch 2b's (`shot`, `charge`): their classes' abstract bases'.
+    (COMPOUND_BOW, "tf2:tf_weapon_compound_bow/arrow", "models/weapons/w_models/w_arrow.mdl"),
+    (CROSSBOW, "tf2:tf_weapon_crossbow/bolt", "models/weapons/w_models/w_syringe_proj.mdl"),
+    (CANNON, "tf2:tf_weapon_cannon/ball", "models/weapons/w_models/w_cannonball.mdl"),
+    (CLEAVER, "tf2:tf_weapon_cleaver/cleaver", "models/workshop_partner/weapons/c_models/c_sd_cleaver/c_sd_cleaver.mdl"),
+    (BAT_WOOD, "tf2:tf_weapon_bat_wood/ball", "models/weapons/w_models/w_baseball.mdl"),
+    (BAT_GIFTWRAP, "tf2:tf_weapon_bat_giftwrap/ornament", "models/weapons/c_models/c_xms_festive_ornament.mdl"),
     // The Candy Cane's dropped kit (`items::effects`), with the unlock.
     (super::items::effects::KIT, super::items::effects::KIT_SHOWN, super::items::effects::KIT_MODEL),
 ];
@@ -274,6 +316,11 @@ pub fn register_hooks(app: &mut App) {
         .register_weapon_hook::<flame::FlameParams>(FLAME_HOOK, |e, _, p| flame::attach(e, p))
         .register_weapon_hook::<needle::NeedleParams>(NEEDLE_HOOK, |_, _, _| {})
         .register_weapon_hook::<flare::FlareParams>(FLARE_HOOK, |_, _, _| {})
+        .register_weapon_hook::<charge::ChargeParams>(CHARGE_HOOK, |e, _, p| charge::attach(e, p))
+        .register_weapon_hook::<shot::ShotParams>(shot::SHOT_HOOK, |_, _, _| {})
+        .register_weapon_hook::<shot::ThrowParams>(shot::THROW_HOOK, |e, _, p| shot::attach(e, p))
+        .register_weapon_hook::<knock::ShoveParams>(knock::SHOVE_HOOK, |e, _, p| knock::attach_shove(e, p))
+        .register_weapon_hook::<blast::BlastParams>(knock::CABER_HOOK, |e, _, p| knock::attach_caber(e, p))
         .register_weapon_hook::<melee::MeleeParams>(MELEE_HOOK, |e, _, p| melee::attach(e, p))
         .register_weapon_hook::<looks::LooksParams>(looks::LOOKS_HOOK, |_, _, _| {})
         .register_weapon_hook::<std::collections::BTreeMap<String, f32>>(super::player_anim::POSEPARAM_HOOK, |e, _, p| {
@@ -286,7 +333,7 @@ pub fn register_hooks(app: &mut App) {
     // that do): the blasts, the flames, the needles; the guns' damage is
     // their `[damage]`.
     let hurts = |p: &chimera_sim::weapon::harm::HookParams| chimera_sim::weapon::harm::num(p, "damage").is_some_and(|d| d > 0.0);
-    for hook in [ROCKET_HOOK, GRENADE_HOOK, STICKY_HOOK, FLAME_HOOK, NEEDLE_HOOK, FLARE_HOOK] {
+    for hook in [ROCKET_HOOK, GRENADE_HOOK, STICKY_HOOK, FLAME_HOOK, NEEDLE_HOOK, FLARE_HOOK, shot::SHOT_HOOK] {
         app.add_harm_reader(hook, hurts);
     }
     // What a drawn ladder's power curve reads of them: the distance
@@ -300,7 +347,8 @@ pub fn register_hooks(app: &mut App) {
         .add_power_reader(STICKY_HOOK, power_rocket)
         .add_power_reader(FLAME_HOOK, power_flame)
         .add_power_reader(NEEDLE_HOOK, power_rocket)
-        .add_power_reader(FLARE_HOOK, power_grenade);
+        .add_power_reader(FLARE_HOOK, power_grenade)
+        .add_power_reader(shot::SHOT_HOOK, power_grenade);
 }
 
 use chimera_sim::{
@@ -365,6 +413,7 @@ fn insert_rules(world: &mut World, set: &WeaponSet) {
     world.insert_resource(stickies);
     world.insert_resource(needle::NeedleRules::from_set(set));
     world.insert_resource(flare::FlareRules::from_set(set));
+    world.insert_resource(shot::ShotRules::from_set(set));
     world.insert_resource(super::items::effects::ItemRules::from_set(set));
 }
 
@@ -385,6 +434,7 @@ fn refresh_rules(catalog: Res<chimera_sim::weapon::data::WeaponCatalog>, mut com
     commands.insert_resource(stickies);
     commands.insert_resource(needle::NeedleRules::from_set(set));
     commands.insert_resource(flare::FlareRules::from_set(set));
+    commands.insert_resource(shot::ShotRules::from_set(set));
     commands.insert_resource(super::items::effects::ItemRules::from_set(set));
 }
 
@@ -440,7 +490,7 @@ impl Plugin for Tf2GunsPlugin {
                     (damage::note_shots, flame::ammo, flame::sounds, recoil::kick, melee::after).chain().after(WeaponFrame),
                 ),
             )
-            .add_systems(Predict::Select, (minigun::spin, sticky::charge, sniper::scope).before(SelectWeapons))
+            .add_systems(Predict::Select, (minigun::spin, sticky::charge, charge::charge, sniper::scope).before(SelectWeapons))
             // An unlock's switch times (`items::mods::holster`, 4.9).
             .add_systems(Predict::Select, super::items::mods::holster.after(SelectWeapons))
             // Every Minigun's barrel before the state step and its sound
@@ -459,6 +509,7 @@ impl Plugin for Tf2GunsPlugin {
                 FixedUpdate,
                 (
                     sticky::launch.in_set(FlyerSet::Launch),
+                    shot::throw.in_set(crate::core::SimSet::Weapons).after(chimera_sim::weapon::WeaponFrame).before(FlyerSet::Launch),
                     airblast::deflect.in_set(FlyerSet::Think),
                     (
                         blast::blast_jump_lands,
@@ -469,10 +520,14 @@ impl Plugin for Tf2GunsPlugin {
                         needle::touch,
                         flare::touch,
                         flare::detonate,
+                        shot::touch,
                         sticky::detonate,
                         flame::flames,
                         flame::afterburn,
                         blast::bullet_push,
+                        knock::knockback,
+                        knock::shove,
+                        knock::caber,
                     )
                         .chain()
                         .in_set(FlyerSet::Touch),
@@ -485,6 +540,9 @@ impl Plugin for Tf2GunsPlugin {
             .predicted_part::<sticky::Tf2Sticky>()
             .predicted_part::<flame::Tf2Flame>()
             .predicted_part::<melee::Tf2Melee>()
+            .predicted_part::<charge::Tf2Charge>()
+            .init_resource::<shot::Rehits>()
+            .init_resource::<shot::Spent>()
             .init_resource::<melee::MeleeCrits>()
             .add_systems(Update, melee::backstab_ready);
         looks::add(app);

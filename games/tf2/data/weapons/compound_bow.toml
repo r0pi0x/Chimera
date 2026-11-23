@@ -1,0 +1,80 @@
+# The Huntsman's class (`tf_weapon_compound_bow`, specs/tf2/batch2b_mechanics.md
+# 1): no stock weapon of its own, the base the Huntsman is built over
+# (data/items.toml `[bases]`; its numbers the class script's and its
+# attributes, `items::docs`). Holding attack draws it (`tf2:charge`: the
+# charge c from 0 to 1 over 1 s; held 5 s or more the arrow wobbles up to 6
+# degrees in yaw and 5 in pitch); letting go fires an arrow at 1800 + 800 c
+# units/s under 0.5 - 0.4 c of gravity, from 23.5 forward, 8 right and 4 up
+# of the eye toward what the crosshair is on. Its hit (`tf2:shot`): 50 + 70 c,
+# a headshot a crit (x 3), no distance modifier; it stays stuck in the world.
+# The next draw 2 s after the release (the script's interval).
+id = "tf2:tf_weapon_compound_bow"
+base = "tf2:base"
+abstract = true
+class = "sniper"
+slot = 0
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 2.0
+timing = "set"
+
+[magazine]
+clip = 1
+ammo = "tf2:arrows"
+reload = 0.0
+auto_reload = true
+
+# Without [damage] the frame traces nothing: the round is an arrow.
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 1.0
+spread = { template = 0.0 }
+
+[sounds]
+
+[models]
+world = "models/weapons/c_models/c_bow/c_bow.mdl"
+view = "models/weapons/c_models/c_bow/c_bow.mdl"
+view_right_handed = true
+
+[hud]
+name = "Huntsman"
+icon = "huntsman"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+flat = true
+arms = "sniper"
+script = "tf_weapon_compound_bow"
+
+[hooks."chimera:projectile"]
+interp = true
+whole_units = true
+speed = 1800.0
+gravity = 400.0
+touch = "report"
+shown = "tf2:tf_weapon_compound_bow/arrow"
+offset = [23.5, 8.0, 4.0]
+pass_teammates = true
+hull_boxes = true
+hitboxes = true
+aim_trace = 56754.0
+start_trace = true
+sky_probe = 16.0
+life = 30.0
+
+[hooks."tf2:charge"]
+time = 1.0
+speed = [1800.0, 2600.0]
+gravity = [0.5, 0.1]
+tire = 5.0
+wobble = [6.0, 5.0]
+
+[hooks."tf2:shot"]
+damage = 50.0
+charge_damage = 70.0
+head_crit = true
+stick = 10.0

@@ -1,5 +1,5 @@
 //! Timed conditions on a character that more than one game has: a
-//! bleeding wound (damage over time) and a speed boost. A game gives them
+//! bleeding wound (damage over time), a speed boost and a slow. A game gives them
 //! (its weapon's hit, its rule) and reads them (its movement's max speed);
 //! the ticks are the engine's (`add`, the server's).
 //!
@@ -23,6 +23,11 @@
 //!   client's prediction moves at the boosted speed and ends it on the
 //!   server's tick; its start (a hit, the server's) is taken as a
 //!   correction once.
+//! - **Slow** (`Slowed`): until `until`, a max speed × `factor` (0: no
+//!   movement of his own at all: TF2's Loose Cannon's stop; 0.5: the
+//!   Sandman's ball); a new slow keeps the later end and the stronger
+//!   factor (`Slowed::with`). Applied, ended and predicted as the boost
+//!   (`boost_ends`, `predicted_net`).
 //!
 //! Known shortcuts: a bleeding wound is the server's part (not
 //! replicated). A wound given by a hit's after-effects (after the tick's
@@ -95,6 +100,28 @@ impl SpeedBoost {
     }
 }
 
+/// A slow (module doc).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Slowed {
+    pub until: f64,
+    pub factor: f32,
+}
+
+impl Slowed {
+    /// `new` on top of `old`: the later end, the stronger slow.
+    pub fn with(old: Option<&Slowed>, new: Slowed) -> Slowed {
+        match old {
+            Some(o) => Slowed { until: o.until.max(new.until), factor: o.factor.min(new.factor) },
+            None => new,
+        }
+    }
+
+    /// The factor on a max speed now (1 once it ended).
+    pub fn factor_at(s: Option<&Slowed>, now: f64) -> f32 {
+        s.filter(|s| s.until > now + EPS).map_or(1.0, |s| s.factor)
+    }
+}
+
 /// Every wound's ticks due (the server's).
 pub fn bleed(mut q: Query<(Entity, &mut Bleeding, &Health)>, clock: Res<SimClock>, mut damage: MessageWriter<Damage>, mut commands: Commands) {
     let now = clock.now;
@@ -129,13 +156,21 @@ pub fn bleed(mut q: Query<(Entity, &mut Bleeding, &Health)>, clock: Res<SimClock
     }
 }
 
-/// Boosts that ended, or whose character died, are taken off (every
-/// machine, in the predicted tick: a client ends its own player's on the
-/// server's tick).
-pub fn boost_ends(q: Query<(Entity, &SpeedBoost, Option<&Health>)>, clock: Res<SimClock>, mut commands: Commands) {
-    for (e, b, h) in &q {
-        if b.until <= clock.now + EPS || h.is_some_and(|h| h.current <= 0.0) {
+/// Boosts and slows that ended, or whose character died, are taken off
+/// (every machine, in the predicted tick: a client ends its own player's
+/// on the server's tick).
+pub fn boost_ends(
+    q: Query<(Entity, Option<&SpeedBoost>, Option<&Slowed>, Option<&Health>), Or<(With<SpeedBoost>, With<Slowed>)>>,
+    clock: Res<SimClock>,
+    mut commands: Commands,
+) {
+    for (e, b, s, h) in &q {
+        let dead = h.is_some_and(|h| h.current <= 0.0);
+        if b.is_some_and(|b| dead || b.until <= clock.now + EPS) {
             commands.entity(e).remove::<SpeedBoost>();
+        }
+        if s.is_some_and(|s| dead || s.until <= clock.now + EPS) {
+            commands.entity(e).remove::<Slowed>();
         }
     }
 }
@@ -157,7 +192,8 @@ pub fn add(app: &mut App) {
                 .run_if(crate::core::authoritative),
         )
         .add_systems(crate::core::Predict::Select, boost_ends)
-        .predicted_net::<SpeedBoost>();
+        .predicted_net::<SpeedBoost>()
+        .predicted_net::<Slowed>();
 }
 
 #[cfg(test)]

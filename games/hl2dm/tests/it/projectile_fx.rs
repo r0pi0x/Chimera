@@ -217,6 +217,7 @@ fn the_ball_glows_bounces_and_ends_in_rings() {
         character: false,
         world: true,
         gone: false,
+        hitgroup: chimera_core::core::Hitgroup::Generic,
     };
     sim.app.world_mut().write_message(hit);
     sim.ticks(1);
@@ -274,6 +275,7 @@ fn a_bolt_blurs_and_a_stuck_one_glows() {
         character: false,
         world: true,
         gone: true,
+        hitgroup: chimera_core::core::Hitgroup::Generic,
     });
     sim.ticks(1);
     let glow = drawn(&sim, "sprites/light_glow02_noz");
@@ -522,6 +524,7 @@ fn a_bolt_through_a_body_sends_its_impact_from_the_wall_behind() {
             character: true,
             world: false,
             gone: true,
+            hitgroup: chimera_core::core::Hitgroup::Generic,
         });
         sim.ticks(1);
         cursor

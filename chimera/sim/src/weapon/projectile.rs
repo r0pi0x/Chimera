@@ -33,7 +33,11 @@
 //! `water_speed` when its owner is marked `LaunchUnderWater`; optionally
 //! toward the point its aim line meets (`aim_trace`, `aim_min`), from a
 //! start the world pulls back (`start_trace`), turned by a random
-//! `jitter` (TF2's rocket and needle).
+//! `jitter` (TF2's rocket and needle). A game's charge sets one launch's
+//! own speed, gravity, life, turn and carried number (`Launcher::next`,
+//! `LaunchNext`: TF2's bow and cannon), taken by that launch. Each touch
+//! says where on a character it landed (`FlyerHit::hitgroup`: TF2's
+//! arrow headshots).
 //!
 //! Also here, shared with Combat Arms' special weapons (whose objects run
 //! on their own 20 Hz frames): the ray tests `ray_box` and `ray_sphere`,
@@ -234,6 +238,9 @@ pub struct Flyer {
     /// Its model stays where it marked the world until its life from the
     /// launch runs out (`FlyerMark::stay`: TF2's needle, effects.md 12).
     pub marks_stay: bool,
+    /// A game's number carried from its launch to its touches
+    /// (`LaunchNext::charge`: TF2's bow's draw, 0 to 1); 0 by default.
+    pub charge: f32,
 }
 
 /// How a flyer ends on the sky: the line ahead that finds it (m), and
@@ -280,6 +287,7 @@ impl Flyer {
             pass_teammates: false,
             marks: false,
             marks_stay: false,
+            charge: 0.0,
         }
     }
 }
@@ -302,6 +310,9 @@ pub struct FlyerHit {
     /// What it touched doesn't move (the world, static brushes).
     pub world: bool,
     pub gone: bool,
+    /// Where on a character it touched (the hitbox its line met first,
+    /// else by height); `Generic` off characters.
+    pub hitgroup: Hitgroup,
 }
 
 /// A flyer is gone: its lifetime ran out (`expired`), or it touched
@@ -672,6 +683,22 @@ pub struct Launcher {
     pub jitter: f32,
     /// `LauncherParams::spin`.
     pub spin: Option<super::flight::LaunchSpin>,
+    /// The next launch's numbers, set by a game before the round is fired
+    /// (a charged launch: TF2's bow and cannon) and taken by it.
+    pub next: Option<LaunchNext>,
+}
+
+/// One launch's own numbers in place of its `Launcher`'s (meters,
+/// seconds; each none: the launcher's): its speed along the aim, its
+/// gravity, its life, a turn of its flight (radians: pitch up, yaw left),
+/// and the game's number its flyer carries (`Flyer::charge`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LaunchNext {
+    pub speed: Option<f32>,
+    pub gravity: Option<f32>,
+    pub life: Option<f32>,
+    pub turn: Vec2,
+    pub charge: f32,
 }
 
 impl LauncherParams {
@@ -732,6 +759,7 @@ impl LauncherParams {
             start_trace: self.start_trace,
             jitter: self.jitter.to_radians(),
             spin: self.spin,
+            next: None,
         }
     }
 }
@@ -920,7 +948,7 @@ pub fn spawn_flyer(commands: &mut Commands, mut flyer: Flyer, start: Vec3, shown
 #[allow(clippy::too_many_arguments)]
 fn launch_from_fired(
     mut events: MessageReader<WeaponEvent>,
-    launchers: Query<&Launcher>,
+    mut launchers: Query<&mut Launcher>,
     under: Query<(), With<LaunchUnderWater>>,
     stances: Query<&crate::core::MovementState>,
     spatial: SpatialQuery,
@@ -937,10 +965,12 @@ fn launch_from_fired(
         if e.replay {
             continue;
         }
-        let Ok(l) = launchers.get(e.weapon) else { continue };
+        let Ok(mut l) = launchers.get_mut(e.weapon) else { continue };
+        let next = l.next.take().unwrap_or_default();
+        let l = &*l;
         let speed = match l.water_speed {
             Some(s) if under.contains(e.owner) => s,
-            _ => l.speed,
+            _ => next.speed.unwrap_or(l.speed),
         };
         let aim = super::aim_of(yaw, pitch);
         let mut dir = aim * Vec3::NEG_Z;
@@ -979,8 +1009,19 @@ fn launch_from_fired(
             let (up, right) = (aim * Vec3::Y, aim * Vec3::X);
             dir = Quat::from_axis_angle(up, -dy) * (Quat::from_axis_angle(right, dp) * dir);
         }
+        if next.turn != Vec2::ZERO {
+            let (up, right) = (aim * Vec3::Y, aim * Vec3::X);
+            dir = Quat::from_axis_angle(up, next.turn.y) * (Quat::from_axis_angle(right, next.turn.x) * dir);
+        }
         let mut f = l.template.clone();
         f.owner = Some(e.owner);
+        f.charge = next.charge;
+        if let Some(g) = next.gravity {
+            f.gravity = g;
+        }
+        if let Some(life) = next.life {
+            f.expires = Some(life as f64);
+        }
         f.velocity = dir * speed + aim * Vec3::Y * l.up_speed;
         if let Some(spin) = &l.spin {
             f.spin = spin.draw(seed);
@@ -1490,6 +1531,7 @@ fn fly(
             character,
             world: still && !through,
             gone,
+            hitgroup: group,
         });
         if gone {
             world.gone.write(FlyerGone {

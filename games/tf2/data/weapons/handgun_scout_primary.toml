@@ -1,0 +1,32 @@
+# The Shortstop's class (`tf_weapon_handgun_scout_primary`,
+# specs/tf2/batch2b_mechanics.md 10): the Scout's pistol as a primary (its
+# numbers the class script's: 4 pellets of 12, a clip of 4), and attack2's
+# shove (`tf2:shove`, `weapons::knock`): 0.25 s after the press, every
+# 1.5 s, 1 damage to the enemy in front and his velocity 400 along the aim
+# (at least 25 degrees up; a grounded one 400 level and 262 up).
+id = "tf2:tf_weapon_handgun_scout_primary"
+base = "tf2:tf_weapon_pistol_scout"
+abstract = true
+class = "shotgun"
+slot = 0
+
+[models]
+world = "models/workshop/weapons/c_models/c_shortstop/c_shortstop.mdl"
+view = "models/workshop/weapons/c_models/c_shortstop/c_shortstop.mdl"
+view_right_handed = true
+
+[hud]
+name = "Shortstop"
+icon = "shortstop"
+
+[hooks."tf2:gun"]
+script = "tf_weapon_handgun_scout_primary"
+
+[hooks."tf2:shove"]
+delay = 0.25
+cooldown = 1.5
+reach = 75.0
+damage = 1.0
+speed = 400.0
+min_up = 25.0
+ground_up = 262.0

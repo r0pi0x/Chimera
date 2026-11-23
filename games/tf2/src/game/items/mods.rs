@@ -139,6 +139,10 @@ pub struct ItemParams {
     pub mark_self: bool,
     /// Air jumps added while it is out (`air_dash_count`, §5.7).
     pub air_dash: f32,
+    /// Its shots knock back near enemies and push its holder in the air
+    /// (`set_scattergun_has_knockback`; batch2b_mechanics.md 9,
+    /// `weapons::knock`).
+    pub knockback: bool,
 }
 
 impl Default for ItemParams {
@@ -187,6 +191,7 @@ impl Default for ItemParams {
             speed_by_health: false,
             mark_self: false,
             air_dash: 0.0,
+            knockback: false,
         }
     }
 }
@@ -240,6 +245,7 @@ impl ItemParams {
             speed_by_health: r.class == "tf_weapon_shovel" && add("set_weapon_mode") == 2.0,
             mark_self: r.flag("self_mark_for_death"),
             air_dash: add("air_dash_count"),
+            knockback: r.flag("set_scattergun_has_knockback"),
         }
     }
 }

@@ -42,3 +42,16 @@ max = 0
 
 [ammo."tf2:syringes"]
 max = 150
+
+# Batch 2b's unlocks (specs/tf2/batch2b_mechanics.md): the Huntsman's
+# arrows and the crossbow's bolts (the Sniper's and Medic's primary
+# reserves, × the items' `mult_maxammo_primary`), the Bison's energy (no
+# ammo: a reserve that doesn't run out in a match).
+[ammo."tf2:arrows"]
+max = 25
+
+[ammo."tf2:bolts"]
+max = 150
+
+[ammo."tf2:energy"]
+max = 9999

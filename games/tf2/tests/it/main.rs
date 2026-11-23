@@ -38,6 +38,7 @@
 
 mod airblast;
 mod batch2;
+mod batch2b;
 mod crit_boost;
 mod ice;
 mod items;

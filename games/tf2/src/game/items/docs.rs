@@ -35,6 +35,13 @@
 //!   (the owner's base kept), `blast_dmg_to_self` as `self_scale`,
 //!   `mult_dmgself_push_force` on its own push, `set_weapon_mode` 1 the
 //!   Detonator's, 3 the Scorch Shot's;
+//! - batch 2b (batch2b_mechanics.md): a bullet gun's pellets (the class
+//!   script's × `mult_bullets_per_shot`), reload time
+//!   (`mult_reload_time`, `_hidden`), a whole-clip reload
+//!   (`set_scattergun_no_reload_single`), an energy weapon's own clip
+//!   (`energy_weapon_no_ammo`), a bat's meter (`effectbar_recharge_rate`
+//!   on `tf2:throw`); the projectiles' own hits (`tf2:shot`) are their
+//!   class's, untouched;
 //! - the rest that modifies the player (speed, jump, damage taken, heals,
 //!   max-health drain, ignite) goes to the item's `tf2:item` hook
 //!   (`super::mods::ItemParams`).
@@ -159,7 +166,9 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
         {
             t.insert("cycle".into(), Value::Float(i));
         }
-        if let Some(c) = base("clip")
+        // An energy weapon's cell is its clip (batch2b_mechanics.md 6: 4
+        // shots of 5), not the script's.
+        if let Some(c) = base("clip").filter(|_| !r.flag("energy_weapon_no_ammo"))
             && let Some(t) = doc.get_mut("magazine").and_then(Value::as_table_mut)
             && t.contains_key("clip")
         {
@@ -266,8 +275,37 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
     if let Some(t) = doc.get_mut("trigger").and_then(Value::as_table_mut) {
         scale(t, "cycle", a("mult_postfiredelay"));
     }
+    // A bullet gun's pellets: the class script's × `mult_bullets_per_shot`
+    // (the Shortstop's 4, the Force-a-Nature's 12; a projectile's rounds
+    // stay one).
+    if doc.get("damage").is_some_and(Value::is_table)
+        && let Some(h) = doc.get_mut("hitscan").and_then(Value::as_table_mut)
+    {
+        let pellets = base("bullets").or_else(|| h.get("pellets").and_then(num));
+        if let Some(n) = pellets {
+            let n = (n * a("mult_bullets_per_shot")).round().max(1.0);
+            h.insert("pellets".into(), Value::Integer(n as i64));
+        }
+    }
     if let Some(s) = doc.get_mut("hitscan").and_then(|h| h.get_mut("spread")).and_then(Value::as_table_mut) {
         scale(s, "template", a("mult_spread_scale"));
+    }
+    // Reloads: their time (`mult_reload_time`, `mult_reload_time_hidden`),
+    // the whole clip at once (`set_scattergun_no_reload_single`).
+    if let Some(m) = doc.get_mut("magazine").and_then(Value::as_table_mut) {
+        let f = a("mult_reload_time") * a("mult_reload_time_hidden");
+        scale(m, "reload", f);
+        if let Some(sh) = m.get_mut("shells").and_then(Value::as_table_mut) {
+            scale(sh, "start", f);
+            scale(sh, "insert", f);
+        }
+        if r.flag("set_scattergun_no_reload_single") {
+            m.remove("shells");
+        }
+    }
+    // A bat's meter (`effectbar_recharge_rate`, batch2b_mechanics.md 4).
+    if let Some(t) = hook(&mut doc, crate::game::weapons::shot::THROW_HOOK) {
+        scale(t, "recharge", a("effectbar_recharge_rate"));
     }
 
     // Projectiles.

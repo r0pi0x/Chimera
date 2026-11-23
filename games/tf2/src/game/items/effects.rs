@@ -166,6 +166,8 @@ pub struct Conditions<'w, 's> {
     >,
     items: Query<'w, 's, &'static Tf2Item>,
     rules: Option<Res<'w, ItemRules>>,
+    donks: Option<Res<'w, Donks>>,
+    clock: Res<'w, SimClock>,
 }
 
 impl Conditions<'_, '_> {
@@ -178,6 +180,11 @@ impl Conditions<'_, '_> {
     pub fn marked(&self, e: Entity) -> bool {
         let Ok((.., Some(inv), _, _)) = self.chars.get(e) else { return false };
         inv.active.and_then(|w| self.items.get(w).ok()).is_some_and(|i| i.0.mark_self)
+    }
+
+    /// Cannonball `flyer` has hit `victim` already (`Donks`).
+    pub fn donked(&self, flyer: Entity, victim: Entity) -> bool {
+        self.donks.as_deref().is_some_and(|d| d.0.iter().any(|d| d.flyer == flyer && d.victim == victim))
     }
 
     /// `e` is in the air after another's blast (or his own).
@@ -215,10 +222,29 @@ impl Conditions<'_, '_> {
         if self.marked(victim) {
             return true;
         }
+        let now = self.clock.now;
+        if self.donks.as_deref().is_some_and(|d| d.0.iter().any(|d| d.victim == victim && d.owner == owner && d.weapon == weapon && now <= d.until + 1e-6)) {
+            return true;
+        }
         let Some(p) = self.item(weapon) else { return false };
         (p.mini_crit_airborne && self.launched(victim)) || ((p.minicrit_burning || p.crit_burning) && self.burn(victim).is_some())
     }
 }
+
+/// A cannonball's impact on a player (batch2b_mechanics.md 7: the double
+/// donk): its ball's explosion within the window mini-crits him.
+#[derive(Clone, Copy, Debug)]
+pub struct Donk {
+    pub flyer: Entity,
+    pub owner: Option<Entity>,
+    pub weapon: &'static str,
+    pub victim: Entity,
+    pub until: f64,
+}
+
+/// The impacts still in their windows (`weapons::grenade::touch`).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct Donks(pub Vec<Donk>);
 
 /// Each victim's health before a backstab this tick (the Kunai's heal).
 #[derive(Resource, Clone, Debug, Default)]
@@ -685,7 +711,7 @@ pub fn overheal(mut q: Query<(Entity, &mut Health, &Overhealed)>, time: Res<Time
 pub fn add(app: &mut App) {
     chimera_sim::status::add(app);
     crate::core::PredictedAppExt::predicted_net::<Heads>(app);
-    app.init_resource::<HitHealth>().init_resource::<Regens>().add_systems(
+    app.init_resource::<HitHealth>().init_resource::<Regens>().init_resource::<Donks>().add_systems(
         FixedUpdate,
         (
             crits.after(crate::core::SimSet::Weapons).before(super::mods::taken).before(crate::core::apply_damage),

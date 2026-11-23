@@ -1,0 +1,27 @@
+# The Wrap Assassin's class (`tf_weapon_bat_giftwrap`,
+# specs/tf2/batch2b_mechanics.md 4): the Sandman's throw with the ornament
+# (more drag: 4.3e-4 x speed squared; the meter's 10 s x the item's
+# `effectbar_recharge_rate`). On a player 15 (a crit from the moonshot's
+# 0.8 s of flight) and a 5 s bleed; wherever it breaks, a glass burst of
+# 6 to 9 by flight hurting everyone near, its thrower too.
+id = "tf2:tf_weapon_bat_giftwrap"
+base = "tf2:tf_weapon_bat"
+abstract = true
+
+[hooks."tf2:throw"]
+speed = 1985.0
+up_angle = 5.3
+offset = [32.0, 0.0, -15.0]
+gravity = 800.0
+drag = { lin = [2.15e-4, 2.15e-4, 2.15e-4], per = 1.0 }
+half = 3.0
+shown = "tf2:tf_weapon_bat_giftwrap/ornament"
+recharge = 10.0
+life = 5.0
+
+[hooks."tf2:shot"]
+damage = 15.0
+moonshot = 0.8
+moonshot_crit = true
+bleed = 5.0
+burst = { radius = 128.0, edge = 0.5, damage = [6.0, 9.0], from = 0.09, to = 0.57 }

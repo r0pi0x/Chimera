@@ -26,7 +26,17 @@
 //! (weapons_more.md 6 and its corrections from the SDK). A pipe an
 //! airblast turned (`airblast::Deflected`) mini-crits (7.4).
 //!
-//! Known shortcuts: the restitution and friction are ours (the physics
+//! The Loose Cannon's ball (`BlastParams::impact`, batch2b_mechanics.md
+//! 7) explodes only on its fuse: a player it touches takes its impact
+//! (50, a 0.5 s full stop: Chimera's `status::Slowed` at 0) once, it
+//! bounces off him, and its explosion within `donk` (0.5 s) of that
+//! impact mini-crits him (`items::effects::Donks`). Its fuse runs from
+//! the charge's start (`charge`).
+//!
+//! Known shortcuts: the cannonball's push on the player it hits (none
+//! measured) is none; the donk is told by its owner and weapon, so
+//! another of his balls' explosion in the window also counts; the
+//! restitution and friction are ours (the physics
 //! engine's in the game: open question 7), as is the grenade's 2-unit box
 //! (the game's 4-unit cube); the fuse is the flyer's life, not a check
 //! every 0.2 s; no random launch jitter (+-10 right and up); its angular
@@ -89,13 +99,52 @@ pub fn touch(
     rules: Res<GrenadeRules>,
     mut flyers: Query<(&mut Flyer, &Transform, Has<Rolled>, Has<super::airblast::Deflected>)>,
     mut world: BlastWorld,
+    (slows, clock): (Query<&chimera_sim::status::Slowed>, Res<crate::core::SimClock>),
     mut gone: MessageWriter<FlyerGone>,
     mut commands: Commands,
 ) {
+    let now = clock.now;
     for hit in hits.read() {
         let Some((p, _)) = rules.0.get(hit.weapon) else { continue };
         let Ok((mut f, t, rolled, deflected)) = flyers.get_mut(hit.flyer) else { continue };
         let enemy = hit.character && hit.other.is_some_and(|o| hit.owner.is_none_or(|w| !world.mates(w, o)));
+        // A cannonball's impact (batch2b_mechanics.md 7): no blast, its
+        // damage once per player, a full stop, the donk's window.
+        if let Some(i) = p.impact
+            && enemy
+            && let Some(o) = hit.other
+        {
+            if !world.conditions.donked(hit.flyer, o) {
+                let dir = hit.velocity.normalize_or(Vec3::NEG_Z);
+                world.hurt(
+                    crate::core::Damage {
+                        target: o,
+                        attacker: hit.owner,
+                        amount: super::damage::round_points(i.damage * super::damage::HP),
+                        point: hit.point,
+                        dir,
+                        hitgroup: crate::core::Hitgroup::Generic,
+                        kind: crate::core::DamageKind::Bullet,
+                        weapon: Some(hit.weapon),
+                        force: Vec3::ZERO,
+                    },
+                    hit.point - dir,
+                );
+                let stop = chimera_sim::status::Slowed { until: now + i.stop as f64, factor: 0.0 };
+                commands.entity(o).insert(chimera_sim::status::Slowed::with(slows.get(o).ok(), stop));
+                let d = crate::game::items::effects::Donk { flyer: hit.flyer, owner: hit.owner, weapon: hit.weapon, victim: o, until: now + i.donk as f64 };
+                commands.queue(move |w: &mut World| {
+                    let mut donks = w.resource_mut::<crate::game::items::effects::Donks>();
+                    donks.0.retain(|x| x.until > now - 1.0);
+                    donks.0.push(d);
+                });
+            }
+            f.velocity = bounce(hit.velocity, hit.normal);
+            if !rolled {
+                commands.entity(hit.flyer).insert(Rolled);
+            }
+            continue;
+        }
         if enemy && !rolled {
             // Its 64-unit line through its centre (effects.md 13).
             let at = world.pipe_hit(t.translation, hit.velocity);

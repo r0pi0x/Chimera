@@ -1,0 +1,36 @@
+# The Loose Cannon's class (`tf_weapon_cannon`, specs/tf2/batch2b_mechanics.md
+# 7): the Grenade Launcher's grenade as a cannonball (its numbers the class
+# script's and the item's: x 1.2 forward speed). Holding attack keeps the
+# ball in the barrel while its 1 s fuse runs from the press (`tf2:charge`);
+# it never explodes on contact: a player it touches takes 50 and a 0.5 s
+# full stop, and its explosion (the grenade's, at its fuse's 60 %) within
+# 0.5 s after mini-crits him (`tf2:grenade` `impact`).
+id = "tf2:tf_weapon_cannon"
+base = "tf2:tf_weapon_grenadelauncher"
+abstract = true
+class = "launcher"
+
+[models]
+world = "models/workshop/weapons/c_models/c_demo_cannon/c_demo_cannon.mdl"
+view = "models/workshop/weapons/c_models/c_demo_cannon/c_demo_cannon.mdl"
+view_right_handed = true
+
+[hud]
+name = "Loose Cannon"
+icon = "loose_cannon"
+
+[hooks."tf2:gun"]
+script = "tf_weapon_cannon"
+
+[hooks."chimera:projectile"]
+shown = "tf2:tf_weapon_cannon/ball"
+
+[hooks."tf2:charge"]
+time = 1.0
+fuse = 1.0
+
+[hooks."tf2:grenade"]
+impact = { damage = 50.0, stop = 0.5, donk = 0.5 }
+
+[hooks."tf2:looks"]
+trail = { shown = "tf2:tf_weapon_cannon/ball", system = "pipebombtrail", team = true, crit = "critical_pipe" }

@@ -1,0 +1,29 @@
+# The Sandman's class (`tf_weapon_bat_wood`, specs/tf2/batch2b_mechanics.md
+# 3): the Bat, and attack2 with its meter full throws the ball
+# (`tf2:throw`): about 1985 units/s, 5.3 degrees above the aim, from 32
+# forward and 15 below the eye, full gravity and air drag (2.6e-4 x speed
+# squared: 1.3e-4 a second x the air density 2), refilled 10 s after the
+# throw. Its hit (`tf2:shot`): 15, a slow to half speed for
+# clamp(7.5 t, 2, 7) s after t s of flight (none under 0.08 s); from 0.8 s
+# a moonshot (7 s, x 1.5). It bounces off the world, spent.
+id = "tf2:tf_weapon_bat_wood"
+base = "tf2:tf_weapon_bat"
+abstract = true
+
+[hooks."tf2:throw"]
+speed = 1985.0
+up_angle = 5.3
+offset = [32.0, 0.0, -15.0]
+gravity = 800.0
+drag = { lin = [1.3e-4, 1.3e-4, 1.3e-4], per = 1.0 }
+half = 3.0
+shown = "tf2:tf_weapon_bat_wood/ball"
+recharge = 10.0
+life = 5.0
+
+[hooks."tf2:shot"]
+damage = 15.0
+moonshot = 0.8
+moonshot_damage = 1.5
+slow = { per_s = 7.5, min = 2.0, max = 7.0, min_flight = 0.08, factor = 0.5 }
+bounce = true
