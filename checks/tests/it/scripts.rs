@@ -966,7 +966,7 @@ fn new_game_scaffolds_a_game_of_the_shared_shape() {
             assert!(!text.contains(p), "{}: {p}", f.display());
         }
     }
-    // The workspace, the roster, the pickers, the install's config key.
+    // The workspace, the roster, the game's names, the install's config key.
     let root: toml::Table = read("Cargo.toml").parse().unwrap();
     for list in ["members", "default-members"] {
         let members: Vec<&str> = root["workspace"][list].as_array().unwrap().iter().filter_map(|m| m.as_str()).collect();
@@ -984,8 +984,10 @@ fn new_game_scaffolds_a_game_of_the_shared_shape() {
     assert!(guests.contains("&zz_game::game::BUNDLE,"));
     let clients = read("apps/party_roster/src/client.rs");
     assert!(clients.contains("&zz_game_ui::party::CLIENT,"));
-    assert!(read("apps/party_kit/src/maps_picker.rs").contains("\"zz_game\" => \"Zed Game\".into(),"));
-    assert!(read("apps/party_kit/src/guns_picker.rs").contains("\"zz_game\" => \"ZG\".into(),"));
+    // No name tables: the game's INFO names it (`game_registry::known`).
+    let info = read(&format!("{g}/src/game/mod.rs"));
+    assert!(info.contains("short_name: \"ZG\",") && info.contains("name: \"Zed Game\","));
+    assert!(!read("apps/party_kit/src/maps_picker.rs").contains("zz_game"));
     assert!(read("chimera.local.example.toml").contains("# [games.zz_game]\n"));
     assert!(read("chimera.local.example.toml").contains("CHIMERA_ZZ_GAME_ROOT"));
 
