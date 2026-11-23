@@ -90,6 +90,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // What each game lends a game made of several (plain data), its
     // announcer pack and minigame cue pack among them.
     ("game_parts", &["announcer", "cues", "game_data"]),
+    // Which of a party's games are in play, and their systems gated by it
+    // (chimera/core): an identity puts its game in play.
+    ("games_in_play", &["slots"]),
     // Announcers' packs, the server's choice and kill facts (plain data).
     ("announcer", &[]),
     // Minigame cue packs: sounds by cue key (plain data).
@@ -151,6 +154,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // movement switched in the predicted tick, its identity, the local
     // player's HUD slot.
     ("identity", &["core", "map", "movement", "slots", "weapon", "gameplay", "game_registry"]),
+    // What puts a party's gated games in play from the simulation
+    // (chimera/sim): its weapons, the ladder.
+    ("in_play", &["games_in_play", "minigame", "weapon"]),
     // Every game's respawn (chimera/sim): the dead held, a character
     // revived at a place (out of a toggled noclip).
     ("spawning", &["core", "movement"]),

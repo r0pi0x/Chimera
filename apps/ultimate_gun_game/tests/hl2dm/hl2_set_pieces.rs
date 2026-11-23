@@ -31,6 +31,9 @@ fn a_headcrab_canister_lands_in_ultimate_gun_game() {
     let mut sim = Sim::new(CaSim, (GreyboxMapPlugin, PartyPartsPlugin, UltimateGunGamePlugin { seed: 3, rungs: 8, ..Default::default() }));
     assert!(sim.app.is_plugin_added::<SetPiecesPlugin>(), "the party composes the set pieces");
     sim.app.init_resource::<Fired>().add_systems(FixedLast, listen);
+    // HL2:DM in play, as dm_runoff's spawn puts it (the party's guests'
+    // systems run only while their game plays: chimera_core::games_in_play).
+    chimera_core::games_in_play::enter(sim.app.world_mut(), "hl2dm", "its map");
     sim.ticks(3);
     // dm_runoff's canister, fired by an input (a short flight, as the map's
     // one is 4 s).

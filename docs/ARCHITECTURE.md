@@ -54,12 +54,12 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    |
 chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs as asset sources)
   |    chimera_ui (chimera/ui/)   the UI kit: Theme (tokens as data), KitFonts and roles, cq units, motion (Ease, Timeline), UI materials; Bevy and chimera_core only, under the shell and the apps
-  |    chimera_sim (chimera/sim/)   weapon, movement, rule_module, mode, minigame, identity, spawning, announce, dominations, kill_voice, server_docs, data_format; SimBasePlugins; testkit (feature)
+  |    chimera_sim (chimera/sim/)   weapon, movement, rule_module, mode, minigame, identity, in_play, spawning, announce, dominations, kill_voice, server_docs, data_format; SimBasePlugins; testkit (feature)
   |    |
 chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, range, harness::Sim
   |                \
 chimera_core          source_formats (source/formats/)   formats as plain data: no Bevy
- (chimera/core/)       core, console, console_names, console_scope, slots, envelope, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, pending_work, later, shutdown
+ (chimera/core/)       core, console, console_names, console_scope, slots, envelope, character, metrics, mount, game_registry, gameplay, game_parts, games_in_play, announcer, cues, diagnostics, query_cache, memo, tasks, pending_work, later, shutdown
                       chimera_vfs (chimera/vfs/)   the neutral VFS (`FileSource`, `Mount`) under both format crates and `mount`
                       chimera_assets (chimera/assets/)   the asset store over the VFS: records, manifests and sets, `CachedFiles`, the vfs log, the asset service (server, HTTPS client), account tickets and the player's account file; `mount::served` layers it
                       chimera_services (chimera/services/)   the hub's services, a binary each (`chimera_accounts`, `chimera_front`, `chimera_hub`): accounts on SQLite, the front, the hub (discovery document, server list); on chimera_assets and chimera_formats, host tools only
@@ -215,7 +215,10 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   on the mode runtime by Chimera's own flow, with the `chimera:ladder`
   rules; D2, L2), `identity` (a character's game identity following the
   weapon it holds: its movement in the predicted tick, its body and its
-  player's HUD; a minigame's `identity = "weapon"`),
+  player's HUD; a minigame's `identity = "weapon"`), `in_play` (a
+  weapon made or a ladder set puts its games in play:
+  `chimera_core::games_in_play`, a party's guests' systems gated while
+  their game is not in play),
   `server_docs` (a game's derived data as named documents a network
   client whose own differ takes from the server: weapon sets rebuilt in
   place, multiplayer.md "Server data documents"), `data_format` (a

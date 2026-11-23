@@ -71,6 +71,10 @@ static LABELS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// by index: `distinct_label`'s.
 static QUALIFIED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// The crate each row's system comes from (its type path's first
+/// segment: `hl2dm` of `hl2dm::game::think`), by index.
+static CRATES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
 /// (world, schedule, system key) already wrapped.
 static WRAPPED: Mutex<BTreeSet<(String, SystemKey)>> = Mutex::new(BTreeSet::new());
 
@@ -471,6 +475,10 @@ pub fn count_systems(world: &mut World) -> usize {
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .push(format!("{label} {}", with_module(&name.as_string(), &short)));
+                CRATES
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(crate_of(&name.as_string()).to_string());
                 labels.push(format!("{label} {short}"));
                 labels.len() - 1
             };
@@ -483,6 +491,12 @@ pub fn count_systems(world: &mut World) -> usize {
 
 fn noop() {}
 
+/// The crate a system's type path starts in (`hl2dm` of
+/// `<hl2dm::game::Foo as Bar>::run`).
+fn crate_of(path: &str) -> &str {
+    path.trim_start_matches(['<', '&']).split("::").next().unwrap_or("")
+}
+
 /// Instructions and runs per system (label: schedule and system name).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WorkCounts(pub BTreeMap<String, (u64, u64)>);
@@ -490,9 +504,18 @@ pub struct WorkCounts(pub BTreeMap<String, (u64, u64)>);
 impl WorkCounts {
     /// The systems this thread ran since the last take, and zero them.
     pub fn take() -> Self {
+        Self::take_with_crates().0
+    }
+
+    /// `take`, and the same rows summed by the crate each system comes
+    /// from (labels name systems apart only by schedule and short name:
+    /// two crates' `think`s share a row).
+    pub fn take_with_crates() -> (Self, BTreeMap<String, (u64, u64)>) {
         let mut out = BTreeMap::new();
+        let mut by_crate = BTreeMap::new();
         let rows = ROWS.with(|r| std::mem::take(&mut *r.borrow_mut()));
         let labels = LABELS.lock().unwrap_or_else(|e| e.into_inner());
+        let crates = CRATES.lock().unwrap_or_else(|e| e.into_inner());
         for (i, (ins, runs)) in rows.into_iter().enumerate() {
             if runs > 0
                 && let Some(label) = labels.get(i)
@@ -500,9 +523,12 @@ impl WorkCounts {
                 let e: &mut (u64, u64) = out.entry(label.clone()).or_default();
                 e.0 += ins;
                 e.1 += runs;
+                let c: &mut (u64, u64) = by_crate.entry(crates.get(i).cloned().unwrap_or_default()).or_default();
+                c.0 += ins;
+                c.1 += runs;
             }
         }
-        Self(out)
+        (Self(out), by_crate)
     }
 
     /// Add `other`'s rows to these.

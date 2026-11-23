@@ -8,7 +8,9 @@
 //! their new and old names (`env`), game events and the server log (`game_log`), the games an app plays
 //! (`game_registry`: what a game tells the shell about itself) and the
 //! gameplay (`gameplay`: which game fills each match-wide slot), the parts
-//! each game lends a game made of several (`game_parts`), announcers'
+//! each game lends a game made of several (`game_parts`), which of a
+//! party's games are in play and their systems gated by it
+//! (`games_in_play`), announcers'
 //! packs and kill facts (`announcer`), minigame cue packs (`cues`), queries
 //! kept between calls of exclusive code (`query_cache`), values worked out
 //! once and kept by their owner (`memo`), a crate's data documents read
@@ -34,6 +36,7 @@ pub mod env;
 pub mod envelope;
 pub mod game_log;
 pub mod game_parts;
+pub mod games_in_play;
 pub mod gameplay;
 pub mod game_data;
 pub mod game_registry;

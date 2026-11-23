@@ -28,6 +28,7 @@
 pub mod announce;
 pub mod data_format;
 pub mod dominations;
+pub mod in_play;
 pub mod identity;
 pub mod kill_voice;
 pub mod minigame;

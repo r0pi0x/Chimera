@@ -286,12 +286,58 @@ are; do not split the party.
 
 - [x] Measure size, memory, start and absent-game ticks (this plan;
       `apps/ultimate_gun_game/tests/it/heavy/idle_games.rs`)
-- [ ] `GamesInPlay` and a per-game system set with its run condition in
-      Chimera; HL2:DM, TF2, Halo, CS:S, Combat Arms gated; marker-filtered
-      character queries in `think`, `wear_bodies` and the like
-- [ ] `heavy::idle_games` as a bound (absent games under 1% of a tick)
+- [x] `GamesInPlay` and each guest game's run condition in Chimera
+      (`chimera_core::games_in_play`: `gate_game` around a bundle's `sim`
+      in `party_kit`; Bevy 0.20 can't put systems already added into a
+      set, so the condition, an atomic flag, goes on each of the game's
+      own systems). HL2:DM, TF2, Halo and CS:S gated as guests; the base
+      game (Combat Arms in the party) never is. A game enters play on its
+      identity, weapon, ladder rung, map or any entity with its crate's
+      components, and stays in play (section 6)
+- [ ] Marker-filtered character queries in `think`, `wear_bodies` and the
+      like, for matches where several games are in play (section 6)
+- [x] `heavy::idle_games` as a bound (absent games under 1% of a tick) and
+      a game entering play mid-match running that tick
 - [ ] The same for the front ends' per-frame systems, counted in a client
       frame
 - [ ] Per-game install scans and parsed data loaded when the game enters
-      play
-- [ ] new-game.md: a new game is gated from its first commit
+      play (`GameEntersPlay` (an observer) is the hook; the guests' simulations
+      load no install data at build: their weapon data feed the catalogue
+      every ladder draws from, their bodies already load by the match's
+      offer. What remains is the front ends' installs, with the step above)
+- [x] new-game.md: a new game is gated from its first commit
+
+## 6. Gating done (2026-11-23)
+
+`chimera_core::games_in_play` (module doc): `party_kit` composes each
+guest's `GameBundle::sim` inside `gate_game`, which gives every per-tick
+system whose type path starts in the game's crate the game's switch as a
+run condition (an atomic flag, no world access). A game enters play when
+a character takes its `GameIdentity`, a weapon of its `game:` ids is made
+(both observers: the same tick), the ladder names its guns, its map
+spawns, or an entity holds a component of its crate that no other
+crate's component requires (every game's parts on every character are
+no sign). It stays in play for the app's lifetime, so whatever it put on
+characters (TF2's bodies' names and skins, a burn, a projectile in
+flight) keeps being handled as before; games leaving play is left for
+later (it needs each game to say what it leaves behind).
+
+`heavy::idle_games` (now attributed by crate from each system's full
+type path, `metrics::work::WorkCounts::take_with_crates`: section 1.3's
+rows by short name gave Combat Arms' `think` and `wear_bodies` to HL2:DM
+and TF2), the same Combat Arms match:
+
+| | instructions a tick | absent games' systems |
+|---|---|---|
+| every game in play (as before) | 4,463k | 817k (18.3%): TF2 317k, HL2:DM 244k, Halo 231k, CS:S 24k |
+| gated | 3,383k | 0 |
+
+24.2% of the tick saved (the schedule runner's own share fell by 221k
+too: fewer systems to start). The test bounds the absent games under 1%
+and checks a game entering play mid-match (a rung's gun of a game not in
+the ladder) runs its systems that same tick.
+
+Still open: the front ends' frame systems (`GameClient`), per-game
+character lists for matches with several games in play (each in-play
+game's loops still visit every character), games leaving play, and data
+loaded on first entry where a game has any worth deferring.

@@ -94,6 +94,10 @@ pub struct GrenadeLooksPlugin;
 
 impl Plugin for GrenadeLooksPlugin {
     fn build(&self, app: &mut App) {
+        // A map's explosions (of no game) too, whether CS:S is in play or
+        // not (a party's gating: chimera_core::games_in_play).
+        chimera_core::games_in_play::serves_every_game(app, explosions);
+        chimera_core::games_in_play::serves_every_game(app, draw_clouds);
         app.add_message::<Detonated>()
             .init_resource::<Particles>()
             .init_resource::<FxRng>()

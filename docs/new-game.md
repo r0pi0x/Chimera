@@ -117,6 +117,20 @@ five games have it so.
 - In `<id>_ui`: `party::CLIENT` (`GameClient`: its HUD and the rest of
   its front end for a party app) and `with_hud` for its own app.
 
+**Gated from the first commit.** In a party app the game's `BUNDLE.sim`
+runs inside `chimera_core::games_in_play::gate_game`: every per-tick
+system whose type path starts in the game's crate runs only while the
+game is in play (a character has its `GameIdentity`, a weapon of its
+`game:` ids exists, the ladder names its guns, its map spawned, or any
+entity holds one of its crate's components). So: keep the crate's name
+equal to the game's id; add systems in plugins' `build` (not `finish`);
+don't make a system that must run for other games' characters part of
+the game crate (it belongs in Chimera or the family crate); and leave
+data the game needs only once it plays to `GameEntersPlay` (an observer). A
+match without the game must cost no instructions of its systems
+(`apps/ultimate_gun_game/tests/it/heavy/idle_games.rs`, under 1% for all
+absent games together).
+
 ## Order of work
 
 Get a character walking on the greybox with stand-in parts first (M0:
@@ -182,6 +196,8 @@ section 4): an absent game should cost nothing a tick.
 
 - Being the first registered game, or the only one: the gameplay is a
   run-time choice (`chimera_core::gameplay`).
+- Your systems running in every match: a party runs them only while the
+  game is in play (above, "Gated from the first commit").
 - Chimera's defaults being in your unit: several are still Source's
   inch (architecture-pass.md, step 10). Pass your numbers as data.
 - One local player forever (architecture-pass.md, step 12).

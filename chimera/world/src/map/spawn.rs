@@ -570,6 +570,10 @@ fn spawn_roots(commands: &mut Commands, data: &MapData, world_material: bool) ->
         name: data.name.clone(),
         hash: data.file_hash,
     });
+    // The map's game enters play (a party's gated games:
+    // `chimera_core::games_in_play`).
+    let name = data.name.clone();
+    commands.queue(move |w: &mut World| chimera_core::games_in_play::enter_map(w, &name));
     info!(
         "spawning map: world material {}, lightmap {}",
         if world_material { "available" } else { "missing" },

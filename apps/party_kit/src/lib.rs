@@ -90,7 +90,11 @@
 //! cache.
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
-use chimera_core::{game_data::GameData, game_parts::GamePartsAppExt};
+use chimera_core::{
+    game_data::GameData,
+    game_parts::GamePartsAppExt,
+    games_in_play::{GateGameExt as _, GamesInPlay},
+};
 use chimera_sim::minigame::{MinigameDef, MinigamePlugin};
 use chimera_world::{
     game_bundle::GameBundle,
@@ -240,9 +244,16 @@ impl Plugin for PartyPartsPlugin {
         for parts in party.parts() {
             app.register_parts(parts);
         }
+        // Each guest's systems run only while its game is in play
+        // (`chimera_core::games_in_play`): a match plays a few of the
+        // games composed. The base game is always in play.
         for bundle in party.guests {
-            (bundle.sim)(app);
+            app.gate_game(bundle.game(), bundle.sim);
         }
+        if let Some(mut games) = app.world_mut().get_resource_mut::<GamesInPlay>() {
+            games.bare_maps = party.map_sources.loaders.first().map(|l| l.game);
+        }
+        chimera_sim::in_play::watch(app);
         add_view_model_fovs(party, app);
         // The cross-game balance and its switch (data/party_balance.toml).
         balance::add(app);

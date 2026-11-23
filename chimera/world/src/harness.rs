@@ -146,6 +146,9 @@ pub struct Work {
     /// (`steady_ticks` leaves those out).
     pub archetypes: Vec<usize>,
     pub systems: chimera_core::metrics::work::WorkCounts,
+    /// The systems' instructions and runs by the crate each comes from
+    /// (`WorkCounts::take_with_crates`).
+    pub crates: std::collections::BTreeMap<String, (u64, u64)>,
 }
 
 impl Work {
@@ -441,7 +444,7 @@ impl Sim {
             archetypes.push(self.app.world().archetypes().len());
             last = work::now();
         }
-        let systems = work::WorkCounts::take();
+        let (systems, crates) = work::WorkCounts::take_with_crates();
         work::set_enabled(false);
         if work::multiplexed() {
             eprintln!(
@@ -449,7 +452,7 @@ impl Sim {
                  thread than the PMU has counters): the counts are estimates and won't repeat"
             );
         }
-        (ticks.len() as u64 == n).then_some(Work { ticks, archetypes, systems })
+        (ticks.len() as u64 == n).then_some(Work { ticks, archetypes, systems, crates })
     }
 
     /// A hash of the simulation's state: every entity's place, turn,

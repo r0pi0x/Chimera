@@ -11,10 +11,10 @@ module list is `docs/modules.md`.
 
 - 1: Architecture | A map of the code
 - 6: Crates | A Cargo workspace (docs/plans/active/engine-split.md, "Crates and compile time"); every member is a default member, so `cargo test` and...
-- 756: Layers | Exact edges: console_scope uses core, console, game_registry and slots (the console's scope from the game played, the games'...
-- 882: Modules | The module list is `docs/modules.md`: one line per source file, grouped by crate folder, generated from the first sentence of each...
-- 893: Data flow per tick | Intent buttons are levels, not edges
-- 967: Slots | An implementation registers under a namespaced ID (`chimera:noclip`,
+- 759: Layers | Exact edges: console_scope uses core, console, game_registry and slots (the console's scope from the game played, the games'...
+- 885: Modules | The module list is `docs/modules.md`: one line per source file, grouped by crate folder, generated from the first sentence of each...
+- 896: Data flow per tick | Intent buttons are levels, not edges
+- 970: Slots | An implementation registers under a namespaced ID (`chimera:noclip`,
 
 ## docs/CONTRIBUTING-GAMES.md
 
@@ -182,8 +182,8 @@ module list is `docs/modules.md`.
 - 26: Before any code | before writing a loader): the install (where it comes from, how it is found), the formats, the milestones below, what is out of scope
 - 40: The crates | A new family's folder is a loader layer the day a crate lives in it; its formats crate may use `chimera_vfs` (archives as mount layers) and
 - 64: The game crate's shape | party mode finds the same seams in every game:
-- 120: Order of work | Get a character walking on the greybox with stand-in parts first (M0: tools/new-game), then replace one part at a time, each behind its...
-- 181: Don't rely on | run-time choice (`chimera_core::gameplay`)
+- 134: Order of work | Get a character walking on the greybox with stand-in parts first (M0: tools/new-game), then replace one part at a time, each behind its...
+- 195: Don't rely on | run-time choice (`chimera_core::gameplay`)
 
 ## docs/performance.md
 
