@@ -190,6 +190,16 @@ pub enum MapAlpha {
 }
 
 impl MapAlpha {
+    /// Whether a texture's alpha is a mask for something else (the
+    /// reflection's, `envmap`'s `BaseAlphaInverted`; self-illumination's,
+    /// `selfillum`): such a texture is never cut out at its alpha (a
+    /// material's own `$alphatest` with `$selfillum` draws opaque, and so
+    /// does a brush entity's render mode 4 cut-out, `RenderLook::surface_blend`,
+    /// on either: Source's alpha holds one meaning at a time).
+    pub fn alpha_is_a_mask(envmap: Option<EnvmapMask>, selfillum: bool) -> bool {
+        selfillum || envmap == Some(EnvmapMask::BaseAlphaInverted)
+    }
+
     /// The material shaders' `translucent` parameter: 0 opaque, 1 blend,
     /// 2 additive.
     pub fn shader_mode(self) -> f32 {

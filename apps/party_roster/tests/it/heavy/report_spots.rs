@@ -115,3 +115,66 @@ fn a_tf2_player_walks_through_coldseeds_doorway() {
     assert!(own > 2.0, "the soldier walked through");
     assert!(tf2 > own - 0.75, "the TF2 player did too: {tf2} m against {own}");
 }
+
+/// Where a ray from `origin` along `dir` meets triangle `a b c`: its
+/// distance and whether it meets the front.
+fn ray_tri(origin: Vec3, dir: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<(f32, bool)> {
+    let (e1, e2) = (b - a, c - a);
+    let p = dir.cross(e2);
+    let det = e1.dot(p);
+    if det.abs() < 1e-9 {
+        return None;
+    }
+    let inv = 1.0 / det;
+    let s = origin - a;
+    let u = s.dot(p) * inv;
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = s.cross(e1);
+    let v = dir.dot(q) * inv;
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let t = e2.dot(q) * inv;
+    (t > 1e-4).then_some((t, e1.cross(e2).dot(dir) < 0.0))
+}
+
+/// Report d5674f6d (2026-11-22): holes along dm_underpass' tracks at
+/// (-305, -1244, 6) looking down: its gravel is a brush entity in render
+/// mode 4 whose texture's alpha is the reflection's mask, and the mode's
+/// cut-out made that alpha holes. The gravel under the spot is opaque, and
+/// no surface of the map cuts out an alpha that masks something else.
+#[test]
+fn dm_underpass_gravel_has_no_holes() {
+    use chimera_world::map::{EnvmapMask, MapAlpha};
+    let Ok(map) = party_roster::load_map("hl2dm:dm_underpass", 0) else {
+        eprintln!("skipping: no dm_underpass");
+        return;
+    };
+    let masked: Vec<&str> = map
+        .meshes
+        .iter()
+        .filter(|m| matches!(m.alpha, MapAlpha::Mask(_)))
+        .filter(|m| MapAlpha::alpha_is_a_mask(m.envmap.as_ref().map(|e| e.mask), m.selfillum.is_some()))
+        .map(|m| m.material.as_str())
+        .collect();
+    assert!(masked.is_empty(), "cut out at a mask's alpha: {masked:?}");
+    let mut first = None;
+    for (i, m) in map.meshes.iter().enumerate() {
+        for t in m.indices.chunks(3) {
+            let p = [0, 1, 2].map(|k| Vec3::from(m.positions[t[k] as usize]));
+            if let Some((d, _)) = ray_tri(source(-306.0, -1250.0, 40.0), Vec3::NEG_Y, p[0], p[1], p[2])
+                && first.is_none_or(|(b, _)| d < b)
+            {
+                first = Some((d, i));
+            }
+        }
+    }
+    let (_, i) = first.expect("a floor under the spot");
+    let m = &map.meshes[i];
+    eprintln!("under the spot: {} {:?}", m.material, m.alpha);
+    assert!(m.material.contains("gravelfloor002b"), "the gravel: {}", m.material);
+    assert_eq!(m.alpha, MapAlpha::Opaque);
+    assert_eq!(m.envmap.as_ref().map(|e| e.mask), Some(EnvmapMask::BaseAlphaInverted));
+}

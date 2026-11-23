@@ -338,8 +338,13 @@ fn convert_level_bytes(
             mesh.blend_weights.clear();
         }
         mesh.alpha = r.alpha;
-        // An entity's translucent render mode replaces the material's.
-        if let Some((blend, _)) = mesh.render {
+        // An entity's translucent render mode replaces the material's,
+        // except mode 4's cut-out on a texture whose alpha is a mask for
+        // something else (`MapAlpha::alpha_is_a_mask`: dm_underpass' gravel
+        // brushes, whose envmap mask had cut holes in the tracks).
+        if let Some((blend, _)) = mesh.render
+            && !(matches!(blend, MapAlpha::Mask(_)) && MapAlpha::alpha_is_a_mask(r.envmap.as_ref().map(|e| e.mask), r.selfillum.is_some()))
+        {
             mesh.alpha = blend;
         }
         mesh.double_sided = r.double_sided;

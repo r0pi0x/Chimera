@@ -22,7 +22,9 @@
 //! (`MapMesh::render`, `render_color`, `flat_color`). On brush entities
 //! (`RenderLook::surface_blend`, `surface_factor`) mode 1 draws the flat
 //! rendercolor, not the texture, and mode 4 cuts out at the texture's alpha
-//! (`ALPHA_TEST_REFERENCE`, renderamt ignored) instead of blending; characters
+//! (`ALPHA_TEST_REFERENCE`, renderamt ignored; not where that alpha masks
+//! the reflection or self-illumination, `MapAlpha::alpha_is_a_mask`)
+//! instead of blending; characters
 //! still blend in both.
 //!
 //! Known shortcuts (docs/tech-debt.md): a see-through (spawn-protected) body's
@@ -55,7 +57,10 @@ fn looked_world(mut m: WorldMaterial, look: &RenderLook) -> WorldMaterial {
     if look.flat_color() {
         m.base = None;
     }
-    if let Some((blend, _)) = look.surface_blend() {
+    // Mode 4's cut-out skips a texture whose alpha masks the reflection
+    // or the self-illumination (`MapAlpha::alpha_is_a_mask`).
+    let alpha_is_a_mask = (m.params.envmap > 0.0 && m.params.envmap_mask == 2.0) || m.params.selfillum > 0.0;
+    if let Some((blend, _)) = look.surface_blend().filter(|(b, _)| !(matches!(b, MapAlpha::Mask(_)) && alpha_is_a_mask)) {
         m.params.translucent = blend.shader_mode();
         m.alpha_mode = blend.shader_alpha_mode();
         // Render mode 4: cut out at the texture's alpha.
@@ -349,17 +354,23 @@ mod tests {
         );
         assert!(flat.base.is_none());
         assert_eq!(flat.params.base_color.y, 0.0);
-        let cut = looked_world(
-            textured,
-            &RenderLook {
-                color: [255; 3],
-                alpha: 128,
-                mode: 4,
-            },
-        );
+        let mode4 = RenderLook {
+            color: [255; 3],
+            alpha: 128,
+            mode: 4,
+        };
+        let cut = looked_world(textured.clone(), &mode4);
         assert!(cut.base.is_some());
         assert_eq!(cut.params.alpha_cutoff, ALPHA_TEST_REFERENCE);
         assert_eq!(cut.params.translucent, 0.0);
         assert_eq!(cut.params.base_color.w, 1.0);
+        // A texture whose alpha masks its reflection (dm_underpass' gravel)
+        // is not cut out.
+        let mut masked = textured;
+        masked.params.envmap = 1.0;
+        masked.params.envmap_mask = 2.0;
+        let kept = looked_world(masked, &mode4);
+        assert_eq!(kept.alpha_mode, AlphaMode::Opaque);
+        assert_ne!(kept.params.alpha_cutoff, ALPHA_TEST_REFERENCE);
     }
 }
