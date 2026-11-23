@@ -486,6 +486,11 @@ fn campaign_units_come_with_the_matchs_ladder_not_the_apps_start() {
     // (seen once the test binary stopped linking the client shell).
     app.add_message::<halo_ce::game::damage::HaloHurt>().add_message::<chimera_core::core::Died>();
     app.add_plugins(MinimalPlugins).add_plugins(campaign::CampaignPlugin);
+    // No time passes between updates: only Update's systems run. With the
+    // wall clock, an update slow enough under load (a fixed step's worth)
+    // ran FixedUpdate too, whose voice systems need the game's simulation
+    // (`SimClock`, `DamageEffects`), absent here, and panicked.
+    app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::ZERO));
     app.update();
     assert!(app.world().resource::<UnitsOnDemand>().wanted.is_empty(), "nothing wanted at the start");
     assert!(asset_names(app.world()).sets.is_empty(), "no ladder, nothing offered");
