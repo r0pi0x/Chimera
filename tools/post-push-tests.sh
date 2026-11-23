@@ -144,9 +144,11 @@ mine() { # this run or one of its subshells (they have fd 8 too)
     return 1
 }
 lock_holders() { # the pids (and commands) other than this run's with the lock file open
-    local f p
-    for f in /proc/[0-9]*/fd/*; do
-        [ "$(readlink "$f" 2>/dev/null)" = "$out/.lock" ] || continue
+    # One find over every process's fds: a readlink per fd forked once per
+    # open file on the box, which took minutes under a busy test run.
+    local f p pat
+    pat=$(printf '%s' "$out/.lock" | sed 's/[][*?\\]/\\&/g')
+    find /proc/[0-9]*/fd -mindepth 1 -maxdepth 1 -lname "$pat" 2>/dev/null | while IFS= read -r f; do
         p=${f#/proc/}; p=${p%%/*}
         mine "$p" && continue
         printf '%s (%s) ' "$p" "$(tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null | cut -c1-60)"

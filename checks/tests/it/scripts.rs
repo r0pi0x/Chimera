@@ -20,7 +20,7 @@ use std::{
 };
 
 fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("repo root").to_path_buf()
+    crate::architecture::root()
 }
 
 fn temp(name: &str) -> PathBuf {
@@ -80,17 +80,41 @@ fn incremental_is_trimmed_oldest_first_past_the_limit() {
     fs::remove_dir_all(&root).ok();
 }
 
+/// A process holding an flock on `file` (a shell that takes it and becomes
+/// `sleep`), returned once the lock is held. Killing and waiting for it
+/// frees the lock.
+fn hold_lock(file: &Path) -> std::process::Child {
+    use std::io::BufRead;
+    let mut holder = Command::new("bash")
+        .arg("-c")
+        .arg("exec 9>\"$1\" && flock 9 && echo held && exec sleep 120 >/dev/null")
+        .arg("holder")
+        .arg(file)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(holder.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    assert_eq!(line, "held\n", "the holder never took the lock");
+    holder
+}
+
 #[test]
 fn a_target_a_cargo_holds_is_left_alone() {
     let root = temp("locked");
     let target = root.join("target");
     let a = session(&target, "a-1", "s-a", 1500, 300);
-    let lock = File::create(target.join("debug/.cargo-lock")).unwrap();
-    lock.lock().unwrap(); // what a running cargo holds
+    // What a running cargo holds, taken by a process of its own: a lock this
+    // test took itself would also be held by whatever child another test's
+    // thread was forking at that moment (until its exec), so dropping it
+    // did not always free it.
+    let mut cargo = hold_lock(&target.join("debug/.cargo-lock"));
     let said = trim("0.001", &[&target]);
     assert!(a.exists(), "not touched while locked");
     assert!(said.contains("left alone"), "{said}");
-    drop(lock);
+    cargo.kill().unwrap();
+    cargo.wait().unwrap();
     trim("0.001", &[&target]);
     assert!(!a.exists(), "trimmed once cargo is gone");
     fs::remove_dir_all(&root).ok();
@@ -700,10 +724,10 @@ fn post_push_under_frequent_pushes_records_a_verdict_for_the_latest_main() {
     fs::remove_dir_all(&pp.root).ok();
 }
 
-/// A lock no live run holds (here an outside `flock`, as a process that
-/// inherited it): the waiting run moves it aside after two polls and
-/// tests, and the inbox gets STALE lines, for the lock and for the hours
-/// without a verdict.
+/// A lock no live run holds (here an outside process, as one that
+/// inherited it): the waiting run moves it aside after two polls and tests,
+/// and the inbox gets STALE lines, for the lock and for the hours without a
+/// verdict.
 #[test]
 fn post_push_takes_a_stale_lock_over_and_reports_starvation() {
     let ok = |c: &str| Command::new(c).arg("--version").output().is_ok();
@@ -713,12 +737,8 @@ fn post_push_takes_a_stale_lock_over_and_reports_starvation() {
     let mut pp = PostPush::new("post_push_stale", "0");
     fs::write(pp.out.join("history.txt"), "PASS 0000000 2020-01-01T00:00Z 1m tests: x\n").unwrap();
     fs::write(pp.out.join("pushes.txt"), "1111111 2020-01-02T00:00Z main x -\n").unwrap();
-    let mut holder = Command::new("flock").arg(pp.out.join(".lock")).args(["sleep", "120"]).spawn().unwrap();
-    let up = Instant::now();
-    while Command::new("flock").arg("-n").arg(pp.out.join(".lock")).arg("true").status().unwrap().success() {
-        assert!(up.elapsed() < Duration::from_secs(10), "the outside lock was never taken");
-        pause(20);
-    }
+    // A process of its own holds it, so killing it leaves nothing behind.
+    let mut holder = hold_lock(&pp.out.join(".lock"));
     let sha = pp.push();
     let errs = pp.finish(vec![pp.run(0)]);
     let holder_pid = holder.id();
@@ -727,7 +747,7 @@ fn post_push_takes_a_stale_lock_over_and_reports_starvation() {
     let (history, inbox) = (pp.file("history.txt"), pp.file("inbox"));
     assert!(history.contains(&format!("PASS {sha}")), "{history}\n{errs}");
     assert!(inbox.contains("no post-push verdict for over"), "{inbox}");
-    assert!(inbox.contains(&format!("held by no live run but by: {holder_pid} (flock")), "{inbox}");
+    assert!(inbox.contains(&format!("held by no live run but by: {holder_pid} (sleep 120")), "{inbox}");
     fs::remove_dir_all(&pp.root).ok();
 }
 

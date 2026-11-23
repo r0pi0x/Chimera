@@ -53,6 +53,19 @@ worktree=0
 [ "${1:-}" = --worktree ] && worktree=1
 [ "$mode" = 0 ] && [ "$worktree" = 0 ] && exit 0
 cd "$(git rev-parse --show-toplevel)" || exit 1
+# This checkout's own target/ (the hook's logs and stamps live there too).
+# Another checkout's: cargo's fingerprints are relative to the workspace
+# root, so its binaries count as fresh there and keep this checkout's
+# paths, and a later run of that checkout's tests checked this one (a
+# removed worktree: twenty architecture tests failed).
+for v in CARGO_TARGET_DIR CARGO_BUILD_TARGET_DIR; do
+    t=${!v:-}
+    [ -n "$t" ] || continue
+    case "$(cd "$t" 2>/dev/null && pwd -P)" in
+        "$(pwd -P)"/*) ;;
+        *) echo "pre-commit: ignoring $v=$t (not this checkout's); building in target/" >&2; unset "$v" ;;
+    esac
+done
 if [ "$worktree" = 1 ]; then
     # Every change against HEAD: tracked (staged or not), deleted and
     # untracked files.

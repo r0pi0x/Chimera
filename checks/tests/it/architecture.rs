@@ -394,12 +394,46 @@ fn declared_any(manifest: &toml::Table, key: &str) -> bool {
 /// chimera_net's and cs_source's `harness`.)
 const APP_SRC: &str = "apps/cs_source/src";
 
-/// The repository's root (this crate is checks/).
+/// The repository's root (this crate is checks/): the checkout the tests
+/// run for, by the CARGO_MANIFEST_DIR that `cargo test`, nextest and
+/// `.githooks/pre-commit` set at run time, else the one the binary was
+/// built in. Cargo's fingerprints are relative to the workspace root, so a
+/// test binary another checkout built into this one's target folder (a
+/// pre-commit run with CARGO_TARGET_DIR pointing here) counts as fresh:
+/// with the build-time path alone it checked that other, since removed,
+/// checkout, and twenty tests failed with "No such file or directory".
 pub(crate) fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .filter(|d| d.join("Cargo.toml").is_file())
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
         .parent()
         .unwrap()
         .to_path_buf()
+}
+
+/// Prints `root()`, for `root_is_the_checkout_the_tests_run_for`.
+#[test]
+#[ignore = "run by root_is_the_checkout_the_tests_run_for"]
+fn root_probe() {
+    println!("ROOT={}", root().display());
+}
+
+/// A test binary started for another checkout (its CARGO_MANIFEST_DIR)
+/// checks that checkout, not the one it was built in.
+#[test]
+fn root_is_the_checkout_the_tests_run_for() {
+    let other = std::env::temp_dir().join(format!("chimera_root_probe_{}", std::process::id()));
+    fs::create_dir_all(other.join("checks")).unwrap();
+    fs::write(other.join("checks/Cargo.toml"), "").unwrap();
+    let out = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "architecture::root_probe", "--ignored", "--nocapture"])
+        .env("CARGO_MANIFEST_DIR", other.join("checks"))
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&out.stdout).into_owned();
+    fs::remove_dir_all(&other).ok();
+    assert!(said.contains(&format!("ROOT={}\n", other.display())), "{said}");
 }
 
 pub(crate) fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
