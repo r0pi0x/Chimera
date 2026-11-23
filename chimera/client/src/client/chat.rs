@@ -308,10 +308,10 @@ impl Plugin for GameMessagesPlugin {
                 Ok(None)
             });
         }
-        app.console_command("ignore", "ignore <name>: hide that player's chat lines (this session).", |w, a| {
+        app.console_command("ignore", "ignore <name>: hide that player's chat lines (this session); chat only, voice_mute silences their voice (the Tab board's Mute does both).", |w, a| {
             ignore(w, &a.join(" "), true)
         })
-        .console_command("unignore", "unignore <name>: show that player's chat lines again.", |w, a| ignore(w, &a.join(" "), false))
+        .console_command("unignore", "unignore <name>: show that player's chat lines again (voice_unmute for their voice).", |w, a| ignore(w, &a.join(" "), false))
         .console_command("ignorelist", "The players whose chat lines are hidden.", |w, _| {
             let mutes = w.get_resource::<ChatMutes>().cloned().unwrap_or_default();
             let users: Vec<String> = w

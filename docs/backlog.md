@@ -753,9 +753,9 @@ Y/U and Combat Arms' keys, docked in the lobby and the match end,
   a right click while Tab is held frees the cursor (`race_chip::BoardPick`,
   one of `input::FreeCursorOwners`) and each other player's row ends in the
   kit's Mute (Unmute); it is the chat's `ignore` (`ChatMutes`, bots by
-  name) and the row shows the struck meter. Letting go of Tab grabs the
-  cursor again. It does not mute their voice (`VoiceMutes`, CS:S's player
-  list): left, one switch for both once blocking is added.
+  name) and the voice mute (`VoiceMutes`) together, and the row shows the
+  struck meter if either is on. Letting go of Tab grabs the cursor again.
+  The `ignore` command stays chat-only (its help says so).
 - ~~Who is talking (voice)~~ (done 2026-11-23): a level-meter mark by the
   name on the Tab board and the lobby's lanes (`client::talk`: `Talking`,
   `TalkMark`), from `net::voice::VoiceActivity`. Left: the same mark in the

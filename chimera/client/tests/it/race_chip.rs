@@ -642,6 +642,7 @@ fn a_right_click_on_the_board_frees_the_cursor_for_mute() {
         race_chip::{BoardMute, BoardMuted, BoardPick},
         widgets::Interaction,
     };
+    use chimera_net::net::voice::VoiceMutes;
     let (mut sim, ann, window, _) = mute_sim();
     say(&mut sim, ann, "gg ez");
     assert_eq!(shown_lines(&sim), ["gg ez"]);
@@ -670,6 +671,7 @@ fn a_right_click_on_the_board_frees_the_cursor_for_mute() {
     };
     press(&mut sim, buttons[0].0);
     assert!(sim.app.world().resource::<ChatMutes>().muted(Some(3), "Ann"), "the same ignore the chat uses");
+    assert!(sim.app.world().resource::<VoiceMutes>().0.contains(&3), "and her voice is muted");
     assert_eq!(count::<BoardMuted>(&mut sim), 1, "the row shows it");
     assert!(shown_lines(&sim).is_empty(), "her earlier line is gone");
     say(&mut sim, ann, "still here?");
@@ -681,6 +683,7 @@ fn a_right_click_on_the_board_frees_the_cursor_for_mute() {
     };
     press(&mut sim, again);
     assert!(!sim.app.world().resource::<ChatMutes>().muted(Some(3), "Ann"));
+    assert!(!sim.app.world().resource::<VoiceMutes>().0.contains(&3), "Unmute frees her voice too");
     assert_eq!(count::<BoardMuted>(&mut sim), 0);
     assert_eq!(shown_lines(&sim), ["gg ez", "still here?"], "unmuted: her lines show again");
     // Tab let go: the board folds, the buttons go, the cursor is grabbed.

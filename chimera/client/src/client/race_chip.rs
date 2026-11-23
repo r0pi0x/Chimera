@@ -44,9 +44,10 @@
 //! `input::FreeCursorOwners`; let go of Tab and it is grabbed again). Free,
 //! the board gains a column at its right (`RaceView::pick`, the gun's room)
 //! with the kit's small Mute (Unmute once muted) on each row but yours
-//! (`BoardMute`): the chat's `ignore` (`chat::ChatMutes`), with a struck
-//! meter by the name of a muted row (`BoardMuted`). Not bots' voice (they
-//! have none) and not `VoiceMutes`. A meter by the name of a player who
+//! (`BoardMute`): the chat's `ignore` (`chat::ChatMutes`) and the voice
+//! mute (`net::voice::VoiceMutes`, a person by user id; bots have no voice)
+//! together, with a struck meter by the name of a row muted either way
+//! (`BoardMuted`). A meter by the name of a player who
 //! talks (`talk::TalkMark`, shown while `VoiceActivity` says so) needs no
 //! rebuild. `ui_scene board pick` stages the free-cursor board.
 //!
@@ -107,6 +108,7 @@ impl Plugin for RaceChipPlugin {
             .init_resource::<RaceView>()
             .init_resource::<BoardPick>()
             .init_resource::<super::chat::ChatMutes>()
+            .init_resource::<crate::net::voice::VoiceMutes>()
             .add_systems(Startup, spawn)
             .add_systems(Update, (pick_board, gather, (build_chip, build_board), open_close).chain().in_set(RaceChipSystems))
             .add_systems(Update, mute_clicks.after(RaceChipSystems));
@@ -526,7 +528,7 @@ fn gather(
     hud: Option<Res<MinigameHud>>,
     ladder: Option<Res<Ladder>>,
     settings: Option<Res<NetSettings>>,
-    (pick, mutes): (Option<Res<BoardPick>>, Option<Res<super::chat::ChatMutes>>),
+    (pick, mutes, voice_mutes): (Option<Res<BoardPick>>, Option<Res<super::chat::ChatMutes>>, Option<Res<crate::net::voice::VoiceMutes>>),
     (gun_names, catalog, map_name, games, role): (
         Res<GunNames>,
         Option<Res<WeaponCatalog>>,
@@ -584,7 +586,9 @@ fn gather(
                 let is_bot = is_bot || net.is_some_and(|n| n.flags & score_flags::BOT != 0);
                 RaceRow {
                     owner,
-                    muted: !local && mutes.as_deref().is_some_and(|m| m.muted(if is_bot { None } else { owner }, &name)),
+                    muted: !local
+                        && (mutes.as_deref().is_some_and(|m| m.muted(if is_bot { None } else { owner }, &name))
+                            || (!is_bot && owner.is_some_and(|id| voice_mutes.as_deref().is_some_and(|m| m.0.contains(&id))))),
                     name,
                     rung,
                     kills: s.kills,
@@ -1174,13 +1178,22 @@ fn pick_board(view: Res<RaceView>, held: Res<HeldActions>, staged: Option<Res<Ra
     }
 }
 
-/// A row's Mute is the chat's `ignore`: it hides the player's lines here
-/// (past ones too), and pressed again shows them (`chat::ChatMutes`).
-fn mute_clicks(pressed: Query<(&super::widgets::Interaction, &BoardMute), Changed<super::widgets::Interaction>>, mut mutes: ResMut<super::chat::ChatMutes>) {
+/// A row's Mute is the chat's `ignore` and the voice mute together: it
+/// hides the player's lines here (past ones too) and silences their voice
+/// (`chat::ChatMutes`, `net::voice::VoiceMutes`); pressed again, both end.
+/// A row counts as muted if either is on. Bots have no voice.
+fn mute_clicks(
+    pressed: Query<(&super::widgets::Interaction, &BoardMute), Changed<super::widgets::Interaction>>,
+    mut mutes: ResMut<super::chat::ChatMutes>,
+    mut voice: ResMut<crate::net::voice::VoiceMutes>,
+) {
     for (i, m) in &pressed {
         if *i == super::widgets::Interaction::Pressed {
-            let on = !mutes.muted(m.owner, &m.name);
-            mutes.set(m.owner, &m.name, on);
+            let now = mutes.muted(m.owner, &m.name) || m.owner.is_some_and(|id| voice.0.contains(&id));
+            mutes.set(m.owner, &m.name, !now);
+            if let Some(id) = m.owner {
+                voice.set(id, !now);
+            }
         }
     }
 }
