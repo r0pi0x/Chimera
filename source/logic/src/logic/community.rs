@@ -320,21 +320,7 @@ impl LogicWorld {
     /// map's. Distances in entity units.
     pub fn monitor_fog(&self) -> Option<crate::map::MonitorFog> {
         let c = self.get(self.active_monitor_camera()?)?;
-        let num = |k: &str, d: f32| c.kv(k).map_or(d, super::value::atof);
-        let mut color = [0.0f32; 3];
-        for (slot, v) in color
-            .iter_mut()
-            .zip(c.kv("fogColor").unwrap_or("0 0 0").split_whitespace())
-        {
-            *slot = (super::value::atof(v) / 255.0).clamp(0.0, 1.0);
-        }
-        Some(crate::map::MonitorFog {
-            enabled: c.kv("fogEnable").is_some_and(|v| super::value::atoi(v) != 0),
-            color,
-            start: num("fogStart", 2048.0),
-            end: num("fogEnd", 4096.0),
-            max_density: num("fogMaxDensity", 1.0),
-        })
+        Some(point_camera_fog(|k| c.kv(k)))
     }
 
     /// The point_camera monitors show: the first one that is on and named
@@ -363,6 +349,59 @@ impl LogicWorld {
         }
         None
     }
+}
+
+/// A point_camera's own fog from its keys (public point_camera docs:
+/// fogEnable, fogColor, fogStart, fogEnd, fogMaxDensity; defaults off,
+/// black, 2048, 4096, 1). Distances in entity units.
+pub fn point_camera_fog<'a>(kv: impl Fn(&str) -> Option<&'a str>) -> crate::map::MonitorFog {
+    let num = |k: &str, d: f32| kv(k).map_or(d, super::value::atof);
+    let mut color = [0.0f32; 3];
+    for (slot, v) in color.iter_mut().zip(kv("fogColor").unwrap_or("0 0 0").split_whitespace()) {
+        *slot = (super::value::atof(v) / 255.0).clamp(0.0, 1.0);
+    }
+    crate::map::MonitorFog {
+        enabled: kv("fogEnable").is_some_and(|v| super::value::atoi(v) != 0),
+        color,
+        start: num("fogStart", 2048.0),
+        end: num("fogEnd", 4096.0),
+        max_density: num("fogMaxDensity", 1.0),
+    }
+}
+
+/// Every point_camera a func_monitor names (`target`), on or off, as the
+/// views monitors may show (`map::TargetViews`, warmed while the map
+/// settles): from the map's entities, as it spawns (the logic loads only
+/// with the first tick, after the settle), in engine space.
+pub fn monitor_target_views(entities: &[crate::map::MapEntity], scale: f32) -> Vec<crate::map::TargetView> {
+    use crate::map::entities::{entity_rotation, entity_to_engine, rotation_to_engine};
+    let targets: Vec<&str> = entities
+        .iter()
+        .filter(|e| e.classname().eq_ignore_ascii_case("func_monitor"))
+        .filter_map(|e| e.get("target").map(str::trim).filter(|t| !t.is_empty()))
+        .collect();
+    entities
+        .iter()
+        .filter(|c| c.classname().eq_ignore_ascii_case("point_camera"))
+        .filter(|c| {
+            c.get("targetname")
+                .is_some_and(|n| !n.is_empty() && targets.iter().any(|t| super::world::name_matches(t, n)))
+        })
+        .map(|c| {
+            let fog = point_camera_fog(|k| c.get(k));
+            crate::map::TargetView {
+                at: entity_to_engine(c.origin(), scale),
+                rotation: rotation_to_engine(entity_rotation(c.angles()))
+                    * Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
+                fov: c.get("FOV").map_or(90.0, super::value::atof),
+                fog: Some(crate::map::MonitorFog {
+                    start: fog.start * scale,
+                    end: fog.end * scale,
+                    ..fog
+                }),
+            }
+        })
+        .collect()
 }
 
 /// env_screenoverlay's overlay `n` (1-10): its material, when named.

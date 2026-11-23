@@ -1103,3 +1103,30 @@ fn view_punch_muzzle_flash_color_correction_and_noted_classes() {
     assert_eq!(notes, 1, "noted once: {:?}", w.log);
     assert!(!w.log.iter().any(|l| l.contains("unhandled")), "{:?}", w.log);
 }
+
+/// The views monitors may show, from the map's entities as it spawns
+/// (`map::TargetViews`, warmed behind the loading screen): every
+/// point_camera a func_monitor names, off ones too, with its field of
+/// view and fog in engine units; none a monitor doesn't name.
+#[test]
+fn monitor_target_views_are_every_named_camera() {
+    let ent = |kv: &[(&str, &str)]| crate::map::MapEntity {
+        keyvalues: kv.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+        ..default()
+    };
+    let ents = [
+        ent(&[("classname", "point_camera"), ("targetname", "cam_a"), ("origin", "100 0 50"), ("FOV", "60"), ("fogEnable", "1"), ("fogEnd", "1000")]),
+        ent(&[("classname", "point_camera"), ("targetname", "cam_b"), ("spawnflags", "1")]),
+        ent(&[("classname", "point_camera"), ("targetname", "unnamed_by_any")]),
+        ent(&[("classname", "func_monitor"), ("target", "cam_a")]),
+        ent(&[("classname", "func_monitor"), ("target", "cam_b")]),
+    ];
+    let scale = 0.0254;
+    let views = super::community::monitor_target_views(&ents, scale);
+    assert_eq!(views.len(), 2, "{views:?}");
+    assert_eq!(views[0].fov, 60.0);
+    assert_eq!(views[1].fov, 90.0);
+    assert!(views[0].at.distance(crate::map::entities::entity_to_engine(Vec3::new(100.0, 0.0, 50.0), scale)) < 1e-5);
+    let fog = views[0].fog.expect("its fog");
+    assert!(fog.enabled && (fog.end - 1000.0 * scale).abs() < 1e-5);
+}

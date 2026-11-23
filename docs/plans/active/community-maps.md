@@ -366,7 +366,7 @@ Fixed, by maps affected (tests in `source/logic/src/logic/community_tests.rs`,
 | phys_motor, constraints (ballsocket, constraint; hinge, slide, length too) | 4 (wipeout2, surreal, bk_warehouse, churches) | `logic::physics` motors and joints -> `map::controllers` (motor spin, avian joints, Break/TurnOff) |
 | point_push | 1 (28) | Physics bodies and players pushed while enabled |
 | Players parented to things (SetParent/SetParentAttachment/ClearParent on players and entities at run time) | 3 (crazykart's 64+64 connections, creative's trails and spinners, crazykart's particles) | `anchors`: run-time parents, players ride their parent (`MapControls::parented`: no own movement, no physics shadow or push-away, so the kart isn't broken by its rider), model attachments from the loader (`$attachment` keys); moving physics props move their children whatever their classname |
-| func_monitor/point_camera | 2 (lt_galaxy's 24 screens, kommando) | `render::monitor`: a render target of the active camera's view |
+| func_monitor/point_camera | 2 (lt_galaxy's 24 screens, kommando) | `render::monitor`: a render target of the active camera's view; every camera a monitor names is warmed while the map settles, so its view is in before the first view opens (`map::TargetViews`, 2026-11-23) |
 | point_tesla | 2 | Arcs to surfaces (or into the air) through the particle pool |
 | env_shooter | 2 | Its model as gibs |
 | func_tanktrain | 2 | A func_tracktrain |

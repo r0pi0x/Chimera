@@ -326,6 +326,29 @@ impl BrushTint {
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
 pub struct MonitorCamera(pub Option<(Vec3, Quat, f32)>, pub Option<MonitorFog>);
 
+/// Every view a camera drawing into an image may show on this map, for
+/// any game: Source's point_cameras that a func_monitor names, on or off
+/// (one turned on later shows too); a portal's view when a game has them.
+/// A map settling behind its loading screen draws each once
+/// (`render::monitor`'s `warm_target_views`, counted by the settle through
+/// `map::loading::LoadPending`), so what it shows is loaded, prepared and
+/// its pipelines compiled before the first view opens
+/// (`client::first_view`), not when the camera first turns on. The
+/// game's layer fills it as the map spawns; the unload empties it.
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct TargetViews(pub Vec<TargetView>);
+
+/// One of `TargetViews`: where it is seen from (engine space, looking
+/// down -Z), its vertical field of view (degrees) and its own fog (None:
+/// none).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TargetView {
+    pub at: Vec3,
+    pub rotation: Quat,
+    pub fov: f32,
+    pub fog: Option<MonitorFog>,
+}
+
 /// A point_camera's own fog (public entity docs): on or off, colour (sRGB
 /// 0-1), start and end (meters here; the logic gives entity units) and max
 /// density.

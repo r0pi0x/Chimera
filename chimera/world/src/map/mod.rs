@@ -335,6 +335,7 @@ pub fn unload_map(world: &mut World) {
     // A stepped spawn under way went with them (`PendingMap`).
     world.remove_resource::<MapComingIn>();
     world.insert_resource(MonitorCamera::default());
+    world.insert_resource(TargetViews::default());
     if let Some(mut p) = world.get_resource_mut::<particles::Particles>() {
         p.groups.clear();
     }

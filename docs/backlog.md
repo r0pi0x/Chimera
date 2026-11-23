@@ -3102,6 +3102,17 @@ docs/plans/active/sound.md.
 
 ## 9. Performance
 
+- **Monitors in a map's first view (done 2026-11-23).** The first-view
+  gate (`client::first_view`) warmed only what the world's cameras saw;
+  a monitor's camera (Source's func_monitor showing a point_camera) only
+  drew once the logic ran, after the settle, so what it showed came in
+  live. Now every view a monitor may show (`map::TargetViews`, from the
+  map's entities as it spawns) is drawn into the screen while the map
+  settles (`render::monitor::warm_target_views`) and the settle waits
+  for it ("monitor views warming", within its usual time limit).
+  Left: a portal game's own image targets (the views draw into the one
+  monitor screen), parented cameras warmed where they start.
+
 - **Converted assets on disk and on the asset service (user,
   2026-11-17).** Save every game's converted parts (models, textures,
   sounds, dressings) in our own versioned format, and serve them from

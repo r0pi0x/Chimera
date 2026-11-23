@@ -11,7 +11,8 @@
 //! fog-only water's fog and the sky under water, the scene's fog on
 //! ropes, decals and particles (`scene_fog`); the sound recorded
 //! into a WAV file a frame at a time (`audio_record`); a sound looping only by
-//! its own loop point (`sound_looping`). `cargo test -p chimera_present --features dev
+//! its own loop point (`sound_looping`); a monitor's views warmed while a
+//! map settles (`monitor_warm`). `cargo test -p chimera_present --features dev
 //! --test it`; where tests go: docs/OBSERVABILITY.md, section 1.
 
 mod audio_record;
@@ -29,6 +30,7 @@ mod particle_depth;
 mod phong_spec;
 mod map_unload;
 mod mix_limit;
+mod monitor_warm;
 mod prop_fade;
 mod prop_relight;
 mod prop_lods;

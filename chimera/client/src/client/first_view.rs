@@ -21,13 +21,23 @@
 //! the player's first view needs, wherever it spawns, is counted here.
 //! A network client's ladder models load behind its loading screen too
 //! (the server's manifest carries the ladder: `chimera_net::
-//! minigame_net::server_ladder`).
+//! minigame_net::server_ladder`). Cameras drawing into images are
+//! warmed too, with or without a cover: each view a monitor may show
+//! (`map::TargetViews`: Source's point_cameras a func_monitor names, on
+//! or off) is drawn into its screen by a camera of its own while the map
+//! settles (`chimera_present`'s `render::monitor::warm_target_views`),
+//! and `LoadPending`'s "monitor views warming" holds the settle until
+//! each has drawn a few frames, so these counts see what it shows.
 //!
 //! Known shortcuts (docs/tech-debt.md): the render counts see only what a
 //! camera draws while the map settles; where no cover hides an overview
 //! (a game's own shell entering a map) the first view's pipelines are
-//! only those its camera sees from where it waits. Other secondary cameras
-//! (monitors, portals: they draw to images) are not warmed.
+//! only those its camera sees from where it waits. A monitor's views are
+//! warmed as the player's culling leaves them (`render::vis`: what only
+//! the camera's own place sees isn't drawn there either), from the
+//! cameras' keyed places (a parented camera's where it starts), into the
+//! map's one monitor screen (a game with other image targets, portals,
+//! adds its own `TargetViews`' target then).
 //!
 //! The map's `Settling` waits for it (`first_view_ready`, a
 //! `MapHooks::settle` hook): nothing pending in two render frames in a row.

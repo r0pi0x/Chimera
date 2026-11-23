@@ -174,6 +174,7 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
         app.add_plugins(super::held::HeldPlugin);
     }
     app.init_resource::<MonitorCamera>();
+    app.init_resource::<TargetViews>();
     layers.screens_and_sound(app);
     // What the simulation writes for the audio (registered by it first
     // when there is one: then these change nothing).

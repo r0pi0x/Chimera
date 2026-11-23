@@ -1902,6 +1902,16 @@ the client plans the server's ladder behind its loading screen, nothing
 pending in the four frames after either's cover goes) and `first_view`'s
 unit tests.
 
+Monitors (2026-11-23): a monitor's camera (func_monitor showing a
+point_camera) only drew once the map's logic ran, after the settle, so
+what it showed came in live. Now every view a monitor may show
+(`map::TargetViews`, from the map's entities as it spawns) draws into the
+screen while the map settles and the settle waits for each
+("monitor views warming"). test_hardware from CS:S's `map` (dev build,
+320x200 offscreen): the monitor views pending in the settle's first
+frames, 23 frames with meshes still coming in "in Monitor camera", then
+0 pending at `in+0`. Guard: chimera_present's `monitor_warm`.
+
 ### A map's colliders after its swap frame (2026-11-12)
 
 The frame the whole map goes into the world was a swap's worst. Measured as "A map's swap in

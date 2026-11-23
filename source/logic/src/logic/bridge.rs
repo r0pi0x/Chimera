@@ -217,6 +217,12 @@ impl Plugin for LogicPlugin {
             .init_resource::<LogicRecord>()
             .add_systems(FixedUpdate, (load, apply_record, pre).chain().in_set(LogicSet::Pre))
             .add_systems(FixedUpdate, post.in_set(LogicSet::Post))
+            // What monitors may show, as the map spawns (its settle warms
+            // them: `map::TargetViews`).
+            .add_systems(
+                Update,
+                target_views.run_if(resource_exists_and_changed::<crate::map::MapEntities>),
+            )
             // One after another: each takes the logic (`fire_outputs` after
             // `damage` as before; the set pieces' three after it).
             .add_systems(
@@ -2361,6 +2367,17 @@ fn sync_controls(world: &mut World, logic: &Logic) {
 /// force limit (forcelimit / 2.2 kg): CS:S's sockets broke below about 6.3
 /// (measured on 15, 30 and 60 kg crates, physics_constraints.md question 1).
 const HANGING_LOAD: f32 = 6.3;
+
+/// The views the map's monitors may show (`community::monitor_target_views`).
+fn target_views(entities: Res<crate::map::MapEntities>, views: Option<ResMut<crate::map::TargetViews>>, mut commands: Commands) {
+    let want = crate::map::TargetViews(super::community::monitor_target_views(&entities.entities, entities.scale));
+    match views {
+        Some(mut v) => {
+            v.set_if_neq(want);
+        }
+        None => commands.insert_resource(want),
+    }
+}
 
 /// Players viewing through a point_viewcontrol see from it
 /// (`core::MapView`: a camera's pose, looking down -Z).
