@@ -7,8 +7,10 @@ the shooter aimed at chosen heights on a stationary target 40, 150 and
 1,600 units away and fired single shots; the plugin logged each hit's
 hitgroup and pre-scaling damage (the trace-attack hook) and the damage
 taken and the target's "slowed until" time (the damage-taken hook).
-The target had its health raised so it never died. Measured unless a
-line says otherwise.
+The target had its health raised so it never died. The slow's speed and
+the explosions were measured on 2026-11-23 with `tools/dods_probe`
+(the slowed-until time set on a running bot; grenades and rockets set
+off beside a second bot). Measured unless a line says otherwise.
 Status: draft (measured 2026-11-23)
 
 ## Summary
@@ -97,8 +99,65 @@ time (measured on the target right after the hit):
 | leg (6, 7) | 2.0 s |
 | any other (head, chest, arms) | 0.5 s |
 
-How much the victim is slowed (a speed cap or scale while the time
-runs) was not measured: open question 5.
+While the time runs the victim's horizontal speed is held to **120 u/s**
+(measured, `tools/dods_probe/measure.py slow`):
+
+- running at 220: the speed drops to 120.00 on the next tick (a cap on
+  the speed itself, not on the acceleration: no friction ramp), holds
+  there, and when the time is up the normal acceleration takes it back
+  to 220 (138.6 four ticks after, 193.2 eight after, 220 by twelve);
+- sprinting: the same cap of 120, and the sprint still drains stamina
+  (0.3 a tick) while the cap holds;
+- below 120 nothing changes: ducked (73.3) and slow walking (100) keep
+  their speed;
+- a slow doesn't change the stamina.
+
+## Explosions (measured)
+
+Grenades and rockets do blast damage around the point where they go off.
+Each victim gets two damage events on the same tick:
+
+1. the **blast** (damage type 64): health damage, falling off linearly
+   with distance, `damage × (1 − r / radius)`;
+2. a **stun** event (damage type 32768) of two thirds of that amount that
+   takes **no health** (health unchanged after it, measured); it feeds
+   the view shake of the `dod_stun_*` cvars (how is unmeasured).
+
+| Explosive | Damage | Radius | Source |
+|---|---|---|---|
+| frag and stick grenade | 150 | 375 | the grenade entity's damage and radius fields, and the falloff below |
+| rifle grenade (US and German) | 150 | 375 | the entity's fields (falloff not measured separately) |
+| bazooka, Panzerschreck | 150 | 200 | `mp_rocketdamage` / `mp_rocketradius` |
+
+The scripts' `Damage` (frags 180, rifle grenades 100, launchers 100) is
+not what the blast does: a frag going off in the thrower's hand took
+143.6-149.7 of its health (four throws), a direct rocket hit 129.5.
+
+Measured frag stun amounts with the grenade lying on the ground and the
+victim standing at a distance d (feet level with it); the row below is
+the blast they stand for (the stun × 1.5):
+
+| d | 0 | 50 | 100 | 150 | 200 | 250 | 300 | 350 | 400 |
+|---|---|---|---|---|---|---|---|---|---|
+| stun | 87.2 | 79.9 | 70.0 | 57.4 | 45.0 | 31.6 | 19.2 | 5.7 | 0 |
+| ×1.5 | 131 | 120 | 105 | 86 | 68 | 47 | 29 | 8.5 | 0 |
+
+From 100 units out this is 150 × (1 − r / 375) with r the distance to a
+point about 40 units above the victim's feet (its body's middle); the
+near values fit that point too (r ≈ 47 at d = 0).
+
+- **The blast needs a clear line** from the explosion to the victim:
+  a grenade resting on the ground did no health damage to victims 50 and
+  100 units away (stun only), and a grenade going off in the thrower's
+  hand hurt only the thrower and victims within about 25 units (the
+  thrower's own body in the way). The stun has no such check. What the
+  line is traced to (the victim's middle, its eyes) is open question 8.
+- The thrower is hurt by its own grenade (measured: 85-150 to a thrower
+  next to it).
+- Repeats of one placement gave the same ratio (blast / stun = 1.50)
+  but not always the same amount (87.6-136.7 at r ≈ 80): the victim was
+  placed in the same tick as the blast, so part of the spread is our
+  placement; use the ground table above.
 
 ## Friendly fire
 
@@ -117,6 +176,12 @@ on (the cvar's own description; not measured).
 | knife, target facing away | one swing at 40 u | 300 |
 | spade, target facing the attacker, leg | one swing | 45 |
 | hit on the pelvis | one shot | chest (×1) |
+| running 220, hit in the chest | next tick | speed 120 for 0.5 s, then back to 220 by Source's acceleration |
+| running 220, hit in a leg | next tick | speed 120 for 2.0 s |
+| ducked 73.3, hit | | speed unchanged |
+| frag on the ground, victim 200 away, clear line | goes off | 67.5 health (stun event 45) |
+| frag, victim 400 away | goes off | nothing |
+| rocket, victim 210 away | goes off | nothing (radius 200) |
 
 ## Open questions
 
@@ -127,9 +192,12 @@ on (the cvar's own description; not measured).
    with a raised pool; re-run reading the health delta.
 3. The bullets' maximum range.
 4. The backstab cone; whether a crouched or prone victim changes it.
-5. The slow's effect on speed (cap, factor, ramp).
+5. Answered (2026-11-23): a 120 u/s cap on the horizontal speed while
+   the slowed time runs (above).
 6. Penetration: every script has `Penetration` 1; walls were not tested.
-7. Explosives (grenades 180, rifle grenades, rockets `mp_rocketdamage`
-   150 / `mp_rocketradius` 200): radius falloff and self-damage not
-   measured. Fall damage: `mp_falldamage` 0 (the classic Source fall
+7. Explosives: answered for damage, radius, falloff and self-damage
+   (above). Fall damage: `mp_falldamage` 0 (the classic Source fall
    damage of CS:S's spec applies unless measured otherwise).
+8. The blast's line check: traced to which point of the victim, and
+   what blocks it (other players, the ground under a resting grenade);
+   whether the stun's view shake scales with its amount.

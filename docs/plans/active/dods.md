@@ -20,7 +20,7 @@ and the game's own data.
 | Plan and first specs | done (2026-11-23) | this plan; specs/dods/: install, weapons, movement, classes, damage (measured on the dedicated server where marked) |
 | M0 install, mount, maps, bodies in the sandbox | done (2026-11-23) | §4; the log |
 | M1 weapons | M1a done (2026-11-23, its gaps fixed the same day); M1b not started | §4; the log |
-| M2 movement specifics | M2a done (2026-11-23): prone, deployed MGs, stamina pool, MGs in the ladders; sprint, jump and the rest wait for measurements (§4, "Needs measuring") | §4; the log |
+| M2 movement specifics | M2a done (2026-11-23): prone, deployed MGs, stamina pool, MGs in the ladders; sprint, jump, getting up, the slow, draw/reload times, FOVs and the explosives measured and specified since (§4, "Specified since M2a") | §4; the log |
 | M3 party rungs | M3a done (2026-11-23): the bodies animate (stances, movement, each gun's set, sights, deploy, fire and reload gestures, jump; death a ragdoll); the rungs themselves not started | §4; the log |
 
 ## 1. Rules for this port
@@ -147,18 +147,36 @@ where the install is needed, `heavy::` tests that skip without it.
      spread, no movement), the stamina pool and the undeployed MGs' cost,
      the MGs as the ladders' `heavy` rungs; Source movement's generic
      `SourceStance` (a game's own box, eye, speed and no jump).
-   - **Needs measuring** (a `tools/dods_probe` pass, §5; each a Known
-     shortcut in its file, nothing invented): sprint (speed, stamina
-     drain, regeneration and its delay, the minimum to start, which
-     directions sprint); the jump (impulse, stamina cost, the weaker jump
-     at low stamina, crouch-jump); getting up from prone (its time,
-     movement during it, a low ceiling, what jump or duck do while prone;
-     ours: the going-down time mirrored); undeploying (ours: the alt fire
-     again, at once); deploying on a ledge standing or crouched
-     (`dod_bodyheightoffset`); the deployed yaw limits; the stamina's
-     regeneration after an undeployed MG shot (ours: the spec's fit, 0.9 a
-     tick, no delay); the slow's speed when hit (stand-in from M1a);
-     unducking time.
+   - **Specified since M2a** (2026-11-23, `tools/dods_probe`; implement
+     from the specs, replacing the Known shortcuts): sprint and stamina
+     (movement.md: forward-only, starts at 80 u/s for 15 stamina, drains
+     0.3 a tick above 100 u/s, regenerates 0.9 / 0.75 / 0.15 a tick still /
+     ducked moving / moving, no delay; **the stamina caps the speed**:
+     running 120 + stamina, sprinting 230 + stamina, 120 when empty);
+     the jump (262.33 u/s, 268.33 ducked, apex 43 / 45; **no** stamina
+     cost or scaling); unducking (0.21 s, the eye curve); getting up from
+     prone (1.2 s, standing hull at once, movement allowed with a rising
+     cap; duck goes to a crouch; jump does nothing); the slow when hit (a
+     120 u/s cap; damage.md); the MGs' undeploy (alt fire, at once, then
+     1.36 / 1.17 s before firing), deploy blocks (1.2163 / 1.1667 s), yaw
+     limit fields (45 each side), reloads only deployed (4.6 / 4.71 s);
+     draw and empty-reload times of every gun (weapons.md table); sights'
+     FOV 55, scopes' 20 (0.315 s in, over 0.1 s); **the BAR's and StG44's
+     alt fire is fire select (semi-auto, 0.3 s), not sights** (bar.toml
+     and mp44.toml's sighted FOV is wrong); M1b's explosives (weapons.md,
+     damage.md: frags pinned on the press, a 5.0-5.2 s fuse from the
+     press, thrown from the eye at 500 u/s and 10° above the aim with the
+     aim squeezed, about 420 u/s² gravity; rifle grenades 2000 u/s along
+     the aim, a 3.63 s fuse; rockets 1300 u/s with 0.1 gravity; blasts
+     150 × (1 − r / radius), radius 375 grenades / 200 rockets, a clear
+     line needed, a no-health stun event of two thirds, the thrower hurt).
+   - **Still unmeasured** (each an open question in its spec): the
+     recoil kick (client-side: the server's punch angle stays 0, so it
+     needs the retail client, app 300, on a listen server); deploying on
+     a ledge (no ledge measured); what narrows the deployed yaw limit;
+     the grenade throw speed's law above 15° up; rockets hitting the world
+     (they didn't explode on the dedicated server); the rockets' and rifle
+     grenades' reloads; a ceiling too low to get up; spread by stance.
 4. **M3, party rungs**:
    - **M3a, body animation** (done): `player_anim` on Source's shared
      half (`source_engine::player_anim`; the move grid and the feet lifted
@@ -172,7 +190,7 @@ where the install is needed, `heavy::` tests that skip without it.
      model's names and lengths don't answer is ours, a Known shortcut in
      `player_anim`): when the idle and when the aim set plays (ours: aim
      only with the sights up); walk against run (ours: the midpoint of the
-     grids' ground speeds) and the sprint set (sprint unmeasured); the
+     grids' ground speeds) and the sprint set (sprint now specified: movement.md); the
      feet's and the torso's rules (ours: TF2's) and the deployed yaw
      limits; `body_height`; the jump's sequence and landing; hand signals,
      the SMGs' stock strike, the bazooka's shouldering and zoomed reload,
@@ -198,14 +216,11 @@ event's presents.
   movement has stand/duck only. A generic "stance" extension in
   `chimera_sim::movement` (not DoD:S code) is the likely shape; it costs
   more than the rest of M2.
-- **No DoD:S probe yet**: the measurement plugin of 2026-11-23 (a
-  scratch SourceMod plugin, not kept) made its puppet bot move, duck,
-  go prone, fire, deploy and shoulder, but the game refused it jumps,
-  sprint and standing back up (specs/dods/movement.md, "Probe
-  limits"). Sprint, stamina, jump and leaving prone stay unmeasured
-  until a `tools/dods_probe` (as `tools/hl2dm_probe`) finds why; that
-  tool is M2's first task. SourceMod and Metamod are installed in the
-  dedicated server on this box (`~/games/dods_ds/dod/addons`).
+- **The probe** (`tools/dods_probe`, kept since 2026-11-23; HL2:DM's
+  plugin with watched properties): the first plugin's "refused jumps,
+  sprint and standing up" was its bot placed 2 units above the ground
+  and a spot with something overhead (tools/dods_probe/README.md).
+  What the dedicated server can't show: the recoil (client-side).
 - **Model versions**: player models are MDL v44 (CS:S's are v44/48;
   check `source_formats` accepts v44 with DoD:S's extra animation
   layers in `dod_player_shared.mdl`).
@@ -229,6 +244,12 @@ event's presents.
 
 ## Log
 
+- 2026-11-23, spec measurements (`tools/dods_probe`, port 27050):
+  movement.md (sprint, stamina, jump, unduck, getting up, the slow),
+  weapons.md (draw and reload times, FOVs, fire select, MG deploy and
+  reload, grenades, rifle grenades, rockets), damage.md (the slow's
+  120 cap, explosions); §4, "Specified since M2a" and "Still
+  unmeasured".
 - 2026-11-23, M3a, body animation: DoD:S's bodies play the shared model's
   sequences (`player_anim`): going prone and getting up over the stance's
   time (the files' 37 frames at 30 fps are the measured 1.2 s), prone,
@@ -304,7 +325,8 @@ event's presents.
   and Panzerschreck (shoulder ≈0.79 s with alt fire, unshoulder ≈0.99 s,
   no fire unshouldered, ≤50 u/s shouldered; `mp_rocketdamage` 150 /
   `mp_rocketradius` 200; flight unmeasured). Each needs its unmeasured
-  numbers measured first (a `tools/dods_probe`, §5).
+  numbers measured first (a `tools/dods_probe`, §5). Measured since (the
+  spec-measurement entry above): ready to implement.
 - 2026-11-23, M0: `games/dods` and `games/dods/ui` (crates `dods`,
   `dods_ui`), a guest in the party roster (`GUESTS`, `CLIENTS`); no
   apps of its own yet (as TF2). The install found by `$CHIMERA_DODS_ROOT`

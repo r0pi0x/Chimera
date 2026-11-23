@@ -4,20 +4,25 @@ Source basis: measurements on the dedicated server (2026-11-23; build
 11003710) with a puppet bot whose per-tick inputs a SourceMod plugin
 replaced, logging position, velocity, flags, eye height, hull, stamina
 and the prone/sprint state after every tick on flat open ground of
-dod_avalanche; the server's cvar list. Where a line says "unmeasured"
-it rests on public descriptions of the game only. CS:S's movement spec
+dod_avalanche; the server's cvar list; sprint, stamina, jumps, getting up and the slow
+measured again the same day with `tools/dods_probe` (the same kind of
+plugin, kept: tools/dods_probe/README.md; `measure.py` reruns every
+case). Where a line says "unmeasured" it rests on public descriptions of
+the game only. CS:S's movement spec
 (specs/cs_source/movement.md) is the base; this spec gives what differs
 or what was checked to be the same.
-Status: draft (partly measured 2026-11-23; jump, sprint, stamina and
-leaving prone/duck unmeasured, see "Probe limits")
+Status: draft (measured 2026-11-23; ladders, water and low ceilings
+unmeasured)
 
 ## Summary
 
 DoD:S moves like Source's shared ground/air movement at 220 u/s, with a
 stronger ground friction than the cvars suggest, a lower eye (58), a
 1/3-speed crouch, and a third stance, prone (eye 10, hull 24 high,
-50 u/s crawl), entered over 1.2 s. Its sprint (`+speed`) runs on a
-stamina pool that jumping also drains (unmeasured here).
+50 u/s crawl), entered and left over 1.2 s. Its sprint (`+speed`, forward
+only) runs on a stamina pool of 100, and **the stamina caps the speed**:
+running tops out at 120 + stamina, sprinting at 230 + stamina. Jumps
+cost no stamina in this build.
 
 ## Units and conventions
 
@@ -48,7 +53,17 @@ Source units, z up, degrees. Tick 0.015 s (the server sets 66.7 Hz).
 | eye_prone | 10 | u | yes | |
 | prone_speed | 50 | u/s | yes | crawl; `+speed` while prone does not change it |
 | go_prone_time | 1.2 s (80 ticks) | s | yes | eye eased 58 → 10; no movement during it; the hull and prone flag switch at the end |
-| unprone_time | unmeasured | s | no | the game's own timer field exists (open question 1) |
+| unprone_time | 1.2 s (80 ticks) | s | yes | getting up from prone, to standing or to crouched |
+| unduck_time | 0.21 s (14 ticks) | s | yes | eye 34 → 58 over 13 ticks, the standing hull on the 14th |
+| jump_speed | 262.33 standing, 268.33 ducked | u/s | yes | apex 43.0 standing, 45.0 ducked (Jumping) |
+| stamina_max | 100 | — | yes | |
+| sprint_cost | 15 | — | yes | taken on the tick the sprint starts |
+| sprint_drain | 0.3 a tick (20/s) | — | yes | while sprinting above 100 u/s |
+| regen_still / ducked moving / moving | 0.9 / 0.75 / 0.15 a tick (60 / 50 / 10 per s) | — | yes | below |
+| run_cap | 120 + stamina (≤ 220) | u/s | yes | |
+| sprint_cap | 230 + stamina; 120 at stamina 0 | u/s | yes | |
+| sprint_min_speed | 80 | u/s | yes | the speed the sprint needs to start |
+| slowed_cap | 120 | u/s | yes | while hit-slowed (damage.md) |
 | fall damage | `mp_falldamage` 0 | | cvar | the classic Source fall rule (as CS:S) unless measured otherwise |
 
 ## Behavior
@@ -94,20 +109,93 @@ law above is what to implement. Open question 2.
   −6 per tick). Sprint does not speed it up.
 - Prone is the stance the MGs deploy in anywhere (weapons.md).
 
-### Sprint and stamina (unmeasured)
+### Stamina and sprint (measured)
 
-From public descriptions: holding `+speed` while moving forward sprints
-faster than the run speed, draining a stamina pool of 100 (the player's
-stamina field reads 100 at spawn, measured); stamina regenerates when
-not sprinting; jumping costs stamina and low stamina weakens jumps.
-The probe could not make the bot sprint (its sprint flag never set);
-every number here is open (question 3).
+The player has a stamina pool of 100 (full at spawn). Each tick on the
+ground:
 
-### Jumping (unmeasured)
+1. **Sprinting** needs `+speed` held with forward input (forward alone
+   or forward with a side key; back or side alone never sprints, measured
+   at 220 with the flag clear), standing (holding duck: no sprint) and a
+   speed of at least **80 u/s** on the previous tick (wish 79: never
+   sprints; wish 80: sprints once at 80). Stamina is **not** needed: at 0
+   the sprint flag still sets.
+2. **Starting** a sprint costs **15** stamina at once (never below 0).
+3. While sprinting faster than **100 u/s** stamina drains **0.3 a tick**
+   (20 per second, from 85: empty after about 4.3 s). Sprinting at 100
+   or slower (a short forward input) it regenerates at the moving rate
+   instead.
+4. Not sprinting, it **regenerates**: **0.9 a tick** (60/s) standing
+   still (standing, ducked, prone or in the air), **0.75 a tick** (50/s)
+   moving ducked, **0.15 a tick** (10/s) moving standing or crawling
+   prone. No delay: the first tick after a sprint ends already gains.
+   Capped at 100.
+5. **The speed cap follows the stamina** (the speed is clamped to it the
+   same tick, not slowed by friction):
+   - running (not sprinting): 120 + stamina, so 220 only at full
+     stamina (measured: stamina 90 → 210, 50 → 170, 10 → 130);
+   - sprinting: 230 + stamina while stamina is above 0 (90 → 320,
+     50 → 280, 10 → 240; from a full pool the cost leaves 85, so the top
+     sprint speed is 315 and falls 0.3 a tick with the drain:
+     312.3 → 230 over about 4.3 s); at stamina 0 the cap is 120;
+   - ducked (73.33) and prone (50) speeds don't depend on it;
+   - hit-slowed: 120 (damage.md) whatever the stamina.
 
-The probe's bot never left the ground on the jump key (see "Probe
-limits"). Public descriptions: a jump is lower than CS:S's and costs
-stamina; no jumping while prone. Open question 4.
+Measured from rest with forward and `+speed` held, stamina 100: speeds
+0, 48.00, 90.00, 127.20 (sprint starts: stamina 85.0), 159.19, 187.29,
+211.97, 233.65, 252.68, 269.39, 284.04, 296.89, 308.15, 312.30 (cap
+82.3 + 230), then −0.3 a tick with the stamina; stamina 0 at about 4.3 s,
+then 120. Releasing `+speed` at stamina 67.9 while running: speed 187.90
+the next tick (120 + stamina), then +0.15 a tick with the regeneration.
+
+Firing an undeployed MG costs stamina too (weapons.md): that fits these
+rates (15 on the first shot, then the shots' cost against 0.9 a tick
+standing).
+
+### Jumping (measured)
+
+- Jumping costs **no stamina** and its height does not depend on it
+  (stamina 0 and 100 give the same jump; sprinting, the drain simply
+  continues in the air at 0.3 a tick).
+- Standing: the vertical speed after the jump tick reads 250.33 and the
+  first tick rises 3.845 units, as Source's jump of √(2 × 800 × 43.01)
+  = 262.33 u/s with gravity 800 (apex 43.01 units, 43 ticks in the air
+  on flat ground).
+- Ducked (fully crouched, duck held): 256.33 after the tick and 3.935
+  units the first tick: √(2 × 800 × 45) = 268.33 u/s, apex 44.99, 44
+  ticks in the air.
+- Duck pressed on the jump tick from standing: the same 256.33, and the
+  feet rise 13.6 units extra on the next tick as the box shrinks in the
+  air (as Source's air duck); apex 58.0 measured to the feet.
+- Running at 220 or sprinting: the same vertical numbers; the
+  horizontal speed is kept.
+- Prone: the jump key does nothing (no jump, no getting up).
+- Something above the head stops the rise (one spot on dod_avalanche
+  with a hidden obstacle about 30 units above the head cut a jump at
+  30.35 and refused jumps after a placement: that was the old probe's
+  "can't jump").
+
+### Getting up (measured)
+
+- **From a crouch**: releasing duck eases the eye 34 → 58 over 13 ticks
+  (34.000, 34.385, 35.458, 37.098, 39.184, 41.594, 44.206, 46.899,
+  49.552, 52.043, 54.250, 56.052, 57.328, 57.956), then on the 14th tick
+  (0.21 s) the hull becomes 72 and the ducked flag clears (eye 58).
+- **From prone, `+alt1` again**: on the press the prone flag clears and
+  the hull is the **standing** one at once; the eye eases 10 → 58 over
+  1.2 s (80 ticks; in two of the first runs it eased to 34 and jumped to
+  58 at the end; not reproduced since). The player **can move** while
+  getting up: with forward held the speed climbs from 7.5 on the first
+  tick to 220 at the end (7.51, 9.06, 10.66, 12.35 ... 46.04 at tick 16,
+  95.09 at 28, 135.01 at 40, 172.11 at 52, 202.32 at 64, 218.77 at 76,
+  220.00 at 80): the cap rises with the getting up.
+- **From prone, duck pressed**: the player goes to a crouch: on the
+  press the prone flag clears and the hull is the ducked one (45); the
+  eye eases 10 → 34 over 1.2 s (80 ticks); movement is allowed, the speed
+  creeping from 7.5 towards the ducked 73.3 (57.95 at tick 32, 69.07 at
+  60, 72.60 at 80). With duck released the player then stands up as from
+  a crouch (0.21 s more).
+- A ceiling too low to stand: unmeasured (open question 1).
 
 ### View
 
@@ -122,31 +210,24 @@ stamina; no jumping while prone. Open question 4.
 ### Being slowed when hit
 
 A hit sets the victim's "slowed until" time 0.5 s ahead (2.0 s for a
-leg hit; damage.md). The slow's effect on speed is unmeasured
-(question 5).
+leg hit; damage.md). While it runs the horizontal speed is capped at
+**120 u/s** at once (measured; damage.md, "Being slowed when hit").
 
 ## Per-tick order
 
 As CS:S's spec, with the stance transitions (duck, prone) advanced in
-the duck step. Unmeasured beyond that.
+the duck step. The stamina caps a tick's speed with the stamina as it
+was before that tick's drain or regeneration (sprinting: speed = 230 +
+the previous tick's stamina), and the sprint's start looks at the
+previous tick's speed. Unmeasured beyond that.
 
-## Probe limits (2026-11-23)
+## Probe notes (2026-11-23)
 
-In three runs the puppet bot (the game's own `bot` command, inputs
-replaced each tick) moved, ducked and went prone as commanded, but:
-
-- never jumped (one-tick and held jump, standing and running, on flat
-  ground, ducked flag clear, stamina 100),
-- never sprinted (the sprint flag stayed 0 with `+speed` held while
-  moving forward),
-- never came back up from a full duck or from prone (releasing duck;
-  pressing `+alt1` again, with jump, with duck).
-
-The buttons reached the player (its button field showed them), so the
-game itself refuses these actions for this bot. A likely cause is a
-game state the bot is in (the round or warm-up state, or something the
-real client sends that a puppet bot doesn't); finding it is the first
-task of a proper DoD:S probe (as `tools/hl2dm_probe`).
+The first probe's bot "could not" jump, sprint or get up. The cause was
+ours: it was placed 2 units above the ground (z 130 on ground at
+128.03), and at a spot with something low overhead. Placed on the
+ground at an open spot, the bot sprints, jumps and gets up as a player
+does (`tools/dods_probe/README.md`).
 
 ## Test cases
 
@@ -163,18 +244,37 @@ task of a proper DoD:S probe (as `tools/hl2dm_probe`).
 | prone, still | hold forward | 1 tick / 2 ticks | 7.5 / 9.0 u/s |
 | prone, still | hold forward | long | 50 u/s |
 | backward input | hold back | long | 220 u/s |
+| standing, stamina 100 | hold forward + `+speed` from rest | 3 ticks | 127.20 u/s, sprinting, stamina 85.0 |
+| sprinting, stamina 82.3 | hold | 1 tick | speed 312.30, stamina 82.0 |
+| sprinting, stamina 0.1 | hold | 2 ticks | stamina 0, speed 120 |
+| running 298 (sprint), stamina 67.9 | release `+speed`, keep forward | 1 tick | 187.90 u/s, stamina 68.05 |
+| stamina 50, running | hold forward | long | 170 u/s (stamina rising 0.15 a tick) |
+| stamina 20, still | nothing | 1 tick | 20.9 |
+| stamina 20, ducked and moving | | 1 tick | 20.75 |
+| wish 79, `+speed` + forward | | long | 79 u/s, no sprint |
+| `+speed` + back | | long | 220 u/s, no sprint, stamina unchanged |
+| standing | jump | 1 tick | vz 250.33, z +3.845 |
+| standing | jump | | apex 43.01, lands after 43 ticks, stamina unchanged |
+| ducked | jump | 1 tick | vz 256.33; apex 44.99 |
+| stamina 0 | jump | | apex 43.01 |
+| prone | jump | | nothing |
+| ducked, eye 34 | release duck | 13 ticks / 14 ticks | eye 57.956, hull 45 / eye 58, hull 72 |
+| prone | press `+alt1`, hold forward | 1 / 80 ticks | standing hull, 7.5 u/s / 220 u/s, eye 58 |
+| prone | press duck | 80 ticks | ducked, eye 34 |
+| running 220 | slowed (hit) | 1 tick | 120 u/s |
 
 ## Open questions
 
-1. Leaving prone: its time, whether movement is blocked, what blocks it
-   (low ceiling), and what `+alt1` / jump / duck do while prone.
+1. Leaving prone: answered (time, movement, keys) except a ceiling too
+   low to stand or crouch, and the exact law of the speed cap while
+   getting up (the measured speeds above are the reference).
 2. The friction law: does it hold on every surface; is it a doubled
    friction or a scaled stop speed (they differ only in naming)?
-3. Sprint: speed, stamina drain per second, regeneration rate and
-   delay, the minimum stamina to start, whether sideways or backward
-   input sprints.
-4. Jump: impulse, stamina cost, the stamina-scaled jump, crouch-jump.
-5. The slow when hit: speed factor or cap, and its interaction with
-   sprint.
-6. Unducking time (CS:S: 0.2 s).
+3. Sprint: answered. Open: the regeneration's speed threshold between
+   "still" (0.9) and "moving" (0.15) (decelerating ticks gave values in
+   between, never measured one by one).
+4. Jump: answered (no stamina cost or scaling in this build; public
+   descriptions of a stamina cost are of older versions or wrong).
+5. The slow: answered (120 cap; the sprint keeps draining).
+6. Unducking: answered (0.21 s).
 7. Ladders and water: assumed as CS:S's (unmeasured).

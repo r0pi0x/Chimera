@@ -522,6 +522,7 @@ fn is_docs(path: &str) -> bool {
             "tools/arch_survey/",
             "tools/css_probe/",
             "tools/hl2dm_probe/",
+            "tools/dods_probe/",
             // Real TF2 as a headless reference (its scripts and scenes; no crate reads them).
             "tools/tf2ref/",
             "tools/renderdoc/",

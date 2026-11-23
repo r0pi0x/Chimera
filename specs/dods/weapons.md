@@ -5,12 +5,17 @@ Source basis: the dedicated server's per-weapon scripts
 fields compared), the server's cvar list, the view-model list, and
 measurements on the dedicated server (2026-11-23) with puppet bots
 driven by a SourceMod plugin (fire intervals, magazines, deploy and
-shoulder timings, stamina while firing; damage in damage.md). The
+shoulder timings, stamina while firing; damage in damage.md), and
+again with `tools/dods_probe` (draw and reload times, sights' fields of
+view, fire select, the MGs' deploy and reload, grenades, rifle grenades
+and rockets: `measure.py guns fov fireselect mg frag fragspeed rocket
+riflegren`). The
 scripts' values are data the game exposes; they are given to check
 against, and the game supplies them at run time. What the scripts do
-not hold (spread by stance, the recoil curve, rifle-grenade flight) is
-marked unmeasured where no measurement exists.
-Status: draft (scripts read, partly measured 2026-11-23)
+not hold (spread by stance, the recoil curve) is marked unmeasured
+where no measurement exists.
+Status: draft (scripts read, measured 2026-11-23; recoil and spread
+unmeasured)
 
 ## Summary
 
@@ -114,19 +119,40 @@ question 2.
 
 ## Alt fire (measured where stated)
 
-- **Iron sights** (Garand, K98, BAR, StG44, sniper rifles' scope): the
-  alt fire toggles the sights; the gun's zoom flag sets on the next
-  tick and the next primary attack is blocked ≈0.49 s (Garand,
+- **Iron sights and scopes** (Garand, K98: sights; Springfield, K98
+  scoped: scope): the alt fire toggles them; the gun's zoom flag sets on
+  the next tick and the next primary attack is blocked ≈0.49 s (Garand,
   measured). Holding alt fire toggles again when that time is up (the
   flag cleared after 35 ticks of holding). While sighted the spread is
   `SecondaryAccuracy` (0.0 for the rifles: a perfect shot; unmeasured).
+  **Field of view** (measured, the player's FOV field; the default is
+  90): Garand and K98 sights **55**, Springfield and K98 scoped scopes
+  **20**. Zooming in: the FOV changes 21 ticks (0.315 s) after the press,
+  over 0.1 s (the FOV's change rate field 0.1); zooming out: back to 90
+  on the press tick, over 0.1 s.
+- **Fire select** (BAR, StG44): the alt fire is **not** a sight: it
+  toggles **semi-automatic** fire (the weapon's semi-auto flag; FOV
+  unchanged, measured). In semi-auto one shot per press, the next 0.3 s
+  later (`SecondaryFireDelay`), with `SecondaryAccuracy` (0.02) as the
+  spread (the spread unmeasured); the alt fire again returns to full
+  auto.
 - **Deploying an MG** (.30 cal, MG42): alt fire while prone deploys
-  (measured: the deployed flag sets at once, firing blocked ≈1.2 s
-  after). Deploying on a ledge while standing or crouched (the
-  `dod_bodyheightoffset` 4 cvar, "deploy height offset") is
-  unmeasured. While deployed the yaw is limited (the player's left and
-  right deployed yaw limits; values unmeasured) and the spread is
-  `SecondaryAccuracy`.
+  (measured: the deployed flag sets at once; firing blocked 1.2163 s
+  for the .30 cal, 1.1667 s for the MG42). The deployed height reads 10
+  (the prone eye). While deployed the spread is `SecondaryAccuracy` and
+  the yaw is limited: the player's deployed yaw limit fields read **45**
+  to the left and **45** to the right of the deploy direction (one deploy
+  read 5 on the left: something nearby narrows it; open question 11);
+  turning past the limit undeploys the gun (seen once, at about +58°).
+  Deploying on a ledge while standing or crouched (the
+  `dod_bodyheightoffset` 4 cvar, "deploy height offset") is unmeasured
+  (no ledge measured yet).
+- **Undeploying**: the alt fire again undeploys at once (the player stays
+  prone); firing is then blocked 1.3635 s (.30 cal) / 1.1667 s (MG42).
+  Undeployed, prone, the MG fires (undeployed spread and stamina cost).
+- **MG reloads only deployed**: the reload key does nothing undeployed
+  (standing or prone, measured for both); deployed, an empty .30 cal
+  reloads in 4.6 s (307 ticks), an MG42 in 4.71 s (314 ticks).
 - **Firing an MG undeployed drains stamina**: .30 cal held fire,
   standing: stamina 100 → 85 on the first shot, then −8.7 net per shot
   (7 ticks apart) to 0; deployed: no stamina change (measured). The
@@ -136,22 +162,122 @@ question 2.
   shoulders it (flag sets next tick; firing blocked ≈0.79 s); holding
   alt fire past that unshoulders it (blocked ≈0.99 s). Unshouldered the
   launcher does not fire. Shouldered, the player moves at most
-  ≈50 u/s; unshouldered at 220 (measured with forward held).
+  ≈50 u/s; unshouldered at 220 (measured with forward held). The next
+  rocket can't follow for 1.5 s.
 - **SMG melee** (Thompson, MP40; the assault classes carry no knife):
   public descriptions say the alt fire strikes with the stock;
   unmeasured. DoD:S has **no bayonets**: the K98's and Garand's alt
   fire is the iron sight (measured for the Garand; a K98 alt-fire
   swing at 30-70 units hit nothing).
 - **Rifle grenades**: a separate weapon (the rifleman's secondary):
-  switching to it fits the launcher; 2 grenades; 100 damage (script);
-  flight, fuse, radius and fitting time unmeasured.
+  switching to it fits the launcher; 2 grenades. The next shot 1.0 s
+  after one. After its last grenade the German one switches back to the
+  K98 (the US one stayed on the launcher in the one run). Flight below.
 
-## Grenades and explosions (unmeasured beyond cvars)
+## Draw and reload times (measured)
+
+Draw: switching to the gun blocks every attack (the player's next-attack
+time) for this long; the first shot with fire held came that many ticks
+later (Thompson: 63 ticks, 0.945 s). Reload: an empty magazine, the
+reload key pressed; the gun can't fire for this long and the magazine
+fills at its end (the whole magazine at once, also for the bolt rifles).
+
+| Gun | Draw (s) | Empty reload (s) |
+|---|---|---|
+| garand | 0.9375 | 1.6286 |
+| k98 | 1.1000 | 2.8125 |
+| spring | 1.3334 | 4.5000 |
+| k98_scoped | 1.1000 | 4.2122 |
+| thompson | 0.9376 | 3.0000 |
+| mp40 | 1.4001 | 3.3636 |
+| bar | 1.3637 | 2.9767 |
+| mp44 | 1.1291 | 3.2354 |
+| 30cal | 1.3334 | 4.6 (deployed only) |
+| mg42 | 1.5151 | 4.71 (deployed only) |
+| colt | 1.2500 | 2.0589 |
+| p38 | 1.0286 | 2.4688 |
+| c96 | 1.2501 | 2.6471 |
+| m1carbine | 0.7813 | 2.8126 |
+| bazooka, pschreck | 1.0000 | unmeasured (open question 9) |
+| amerknife | 1.0000 | — |
+| spade | 0.9091 | — |
+
+A partial reload was not measured (the Garand refuses one).
+
+## Recoil (unmeasured)
+
+Firing does not move the server's view punch (the player's punch angle
+stayed 0 through a Thompson shot): DoD:S's kick is applied by the
+client to its own view, and the server only sees the angles the client
+sends. Measuring it needs the retail client (app 300) on a listen
+server with the plugin logging the player's eye angles; the dedicated
+server can't (open question 8).
+
+## Grenades (measured)
+
+Frag (US) and stick grenade (German) behave the same:
+
+- **The pin is pulled on the press**: holding the attack keeps the
+  grenade in the hand, releasing throws it. The fuse runs from the
+  press, thrown or not: the blast comes 335-347 ticks (5.0-5.2 s) after
+  the press (held 1, 60, 150 ticks: 347, 341, 340 ticks; held past the
+  fuse it goes off in the hand at 342).
+- **Thrown from the eye** (the grenade starts at the eye point), with a
+  speed and angle from the aim's pitch (measured from the first steps):
+
+| Aim (+ down) | −80 | −60 | −45 | −30 | −15 | 0 | 15 | 30 |
+|---|---|---|---|---|---|---|---|---|
+| speed (u/s) | 716 | 641 | 592 | 527-532 | 499 | 499-500 | 497 | 497 |
+| elevation (° up) | 81.3 | 63.5 | 50.5 | 36.7 | 23.7 | 10.0-10.9 | −6.0 | −22.8 |
+
+  The elevation is the aim raised by 10° and squeezed so straight up
+  and straight down stay so: aiming A° up throws at 10 + A × 80/90; aiming
+  D° down at 10 − D × 100/90. The speed is 500 (`dod_grenademinspeed`)
+  from aiming 30° down to about 15° up, then grows with the elevation
+  (the law, and where `dod_grenademaxspeed` 1400 applies, are open
+  question 6). The thrower's own velocity: unmeasured (thrown standing).
+  One stick grenade's own initial-velocity field read (348.18, −348.18,
+  86.82): 500 u/s at 10.0° exactly.
+- **Flight**: a tumbling physics object under about 420 u/s² of gravity
+  (`dod_grenadegravity` −420; fits over the first 0.2-0.4 s gave 410-460,
+  the origin wobbling a few units as it spins), bouncing and rolling on
+  the ground until it goes off.
+- **Blast**: 150 damage, radius 375, linear falloff, a separate stun
+  event, the thrower hurt too (damage.md, "Explosions").
+- Smoke grenades and the live-grenade pick-up: unmeasured.
+
+## Rifle grenades (measured)
+
+- Fired from the eye along the aim (no extra lift: aiming 10° up flew at
+  10.0°) at **2000 u/s** (29.98 units the first tick); a tumbling physics
+  object, gravity and drag together fitting 440-456 u/s² over the first
+  15-30 ticks with the horizontal speed falling (1943 → 1916 average).
+- **Timed fuse**: it goes off 242 ticks (3.63 s) after firing, whatever
+  it hits first (it bounced off a player, doing 4.9 crush damage, and
+  went off later on the ground). Both nations' the same.
+- **Blast**: 150 damage, radius 375 (the grenade entity's fields; the
+  script's `Damage` 100 is not it), as the frags (damage.md).
+
+## Rockets (measured)
+
+- Bazooka and Panzerschreck: fired from the eye along the aim at
+  **1300 u/s**, a flying object with **0.1 gravity** (80 u/s², the
+  vertical speed dropping 1.2 a tick), not a physics object.
+- **Hitting a player** it explodes (a direct hit did 129.5 to the
+  victim; blast 150, radius 200: `mp_rocketdamage` / `mp_rocketradius`,
+  damage.md).
+- **Hitting the world** it did not explode on the dedicated server: it
+  slid along the ground or stopped against a wall and stayed (not
+  removed in 60-150 ticks). Whether that is the game's rule (an arming
+  time?) or this server's (open question 12): the party should explode
+  rockets on world hits until measured otherwise, as everyone expects.
+
+## Grenade and explosion cvars
 
 | Cvar | Value | Meaning (its description or name) |
 |---|---|---|
-| `dod_grenadegravity` | −420 | gravity on grenades (u/s²) |
-| `dod_grenademinspeed` / `maxspeed` | 500 / 1400 | throw speed range (u/s) |
+| `dod_grenadegravity` | −420 | gravity on grenades (u/s²; matches the measured flight) |
+| `dod_grenademinspeed` / `maxspeed` | 500 / 1400 | throw speed range (u/s; 500 measured for level throws) |
 | `dod_grenadespeed` | 4 | (unclear; open question 7) |
 | `mp_rocketdamage` / `mp_rocketradius` | 150 / 200 | rocket blast damage and radius |
 | `dod_explosionforcescale`, `dod_bulletforcescale` | 1 | ragdoll force scales |
@@ -174,22 +300,41 @@ A thrown grenade lying on the ground can be picked up and thrown back
 | bazooka unshouldered | fire | no rocket |
 | bazooka | alt fire | shouldered; can fire ≈0.79 s later; move ≤50 u/s |
 | any gun, chest hit at 1,600 u | fire | `Damage` dealt |
+| Thompson in hand, knife drawn | switch to the Thompson, hold fire | first shot 63 ticks later |
+| Thompson, empty | reload | fires again 3.0 s later, 30 rounds |
+| Garand | alt fire | FOV 90 → 55, 21 ticks after the press, over 0.1 s |
+| Springfield | alt fire | FOV 20 |
+| BAR | alt fire, then hold fire | one shot, next ≥0.3 s later; FOV unchanged |
+| .30 cal deployed, empty | reload | 150 rounds after 4.6 s |
+| .30 cal undeployed, empty | reload | nothing |
+| .30 cal deployed | alt fire | undeployed at once, fires again 1.36 s later |
+| frag | press and hold 150 ticks, release | thrown on release, goes off about 5.1 s after the press |
+| frag | press, release at once, aim level | 500 u/s at 10° up from the eye |
+| frag | aim 30° down | 500 u/s at 23.3° down |
+| rifle grenade | fire, aim level | 2000 u/s along the aim; goes off 3.63 s later |
+| bazooka shouldered | fire, aim level | 1300 u/s, falling 80 u/s²; next rocket 1.5 s later |
 
 ## Open questions
 
 1. Spread: how `Accuracy`, the move penalty, crouch and prone combine,
    and the spread pattern (CS:S's seeded spread assumed).
 2. The MG42's two bullets per shot: both traced, both damaging?
-3. The BAR's and StG44's `SecondaryFireDelay` 0.3: semi-automatic
-   while sighted?
-4. Stamina cost of undeployed MG fire (15 per shot?) and its
-   regeneration.
+3. Answered: the BAR's and StG44's alt fire is fire select; semi-auto
+   fires at most every 0.3 s.
+4. Stamina cost of undeployed MG fire: 15 on the first shot; the
+   regeneration is movement.md's (0.9 a tick standing still); the
+   per-shot cost after the first unmeasured (8.7 net per shot fits a
+   cost of 15 a shot against 7 ticks × 0.9).
 5. `Tracer` 2: every other bullet?
-6. Grenade priming, fuse (frag and rifle grenade), radius and falloff;
-   the live-grenade pick-up.
+6. Grenades: answered (priming, fuses, radius, falloff) except the
+   throw speed's law above 15° up, the thrower's velocity, and the
+   live-grenade pick-up.
 7. `dod_grenadespeed` 4.
 8. Recoil: the view kick's shape and recovery; `Recoil` 20 on the MGs
-   undeployed.
-9. Reload times (the view models' sequence lengths are the likely
-   source, as CS:S's).
-10. Deploy (draw) times when switching weapons.
+   undeployed. Client-side: needs the retail client (above).
+9. Reload times: answered (table) except the rockets' and rifle
+   grenades', and partial reloads.
+10. Draw times: answered (table).
+11. What narrows a deployed MG's yaw limit below 45, and the limits'
+    behaviour at the edge (clamp or undeploy).
+12. Rockets hitting the world: explode or not (above).
