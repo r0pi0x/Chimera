@@ -13,8 +13,11 @@ test-threads = 8
 # one decides anything from a passing test's line (measured 2026-10-30).
 # `logsum` (`cargo run -q -p repo_checks --bin logsum`) sums up a log that
 # was saved anyway.
-status-level = "fail"
-final-status-level = "fail"
+# SLOW lines (a test past its slow-timeout period) are kept too: each is
+# listed with its time. The period is 60 s, so for the fast tier's ranking
+# by time see the JUnit file below (`tools/slowest-tests`).
+status-level = "slow"
+final-status-level = "slow"
 success-output = "never"
 failure-output = "immediate-final"
 # Say which tests run long, and kill a hung one. Outside `heavy::` the
@@ -22,6 +25,11 @@ failure-output = "immediate-final"
 # killed after 5 minutes. Heavy tests get 12 and the soak 30 (overrides
 # below).
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+# Per-test times of the last run (target/nextest/default/junit.xml, no
+# output of passing tests): tools/slowest-tests lists the slowest.
+[profile.default.junit]
+path = "junit.xml"
 
 [test-groups]
 # Five heavy tests at once (~6 GB typical); the big ones take more slots.

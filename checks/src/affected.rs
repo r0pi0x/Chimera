@@ -551,6 +551,7 @@ fn is_docs(path: &str) -> bool {
             "tools/run-built",
             // Where agents' time goes, from Claude Code's transcripts.
             "tools/agent-timing",
+            "tools/slowest-tests",
             // A profiling script (runs built binaries; no crate reads it).
             "tools/perf-profile.sh",
             // Cuts a frame log's worst frames out of a profile (no crate reads it).

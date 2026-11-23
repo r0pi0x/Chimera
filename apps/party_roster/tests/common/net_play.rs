@@ -32,6 +32,12 @@ pub(crate) fn setup(app: &mut App) {
 /// A server playing the gun game and two clients that came in with no
 /// minigame of their own.
 pub(crate) fn joined() -> NetSim {
+    joined_with(&[])
+}
+
+/// `joined`, with the host's settings `overrides` (a minigame definition's
+/// dotted keys and TOML values) set before the match starts.
+pub(crate) fn joined_with(overrides: &[(&str, &str)]) -> NetSim {
     let mut sim = NetSim::new(
         CaSim,
         LinkConditions {
@@ -45,6 +51,9 @@ pub(crate) fn joined() -> NetSim {
     );
     sim.set_frame(TICK_INTERVAL);
     crate::play::no_finale(sim.server.app.world_mut());
+    for (k, v) in overrides {
+        sim.server.app.world_mut().resource_mut::<minigame::overrides::MinigameOverrides>().set(k, v);
+    }
     minigame::start(sim.server.app.world_mut(), DEFAULT_MINIGAME).expect("the gun game starts");
     sim.until_joined(900);
     sim.until(300, |s| (0..2).all(|i| held(s, i).is_some() && clip(s, i).is_some()));
@@ -87,6 +96,13 @@ pub(crate) fn face_off(sim: &mut NetSim, a: Entity, b: Entity) {
 /// Client 0 (character `a`) shoots client 1 (`b`) dead with rung `kill`'s
 /// gun, which each client sees in its owner's hand with rounds in it.
 pub(crate) fn kill_once(sim: &mut NetSim, kill: usize, a: Entity, b: Entity, ladder: &[&'static str]) {
+    kill_paced(sim, kill, a, b, ladder, [20, 30, 25]);
+}
+
+/// `kill_once` with its three pauses in ticks: after the victim is back
+/// (its gun reaches its client), after the face-off (positions reach the
+/// clients) and after the kill.
+pub(crate) fn kill_paced(sim: &mut NetSim, kill: usize, a: Entity, b: Entity, ladder: &[&'static str], pauses: [u64; 3]) {
     assert_eq!(held(sim, 0), Some(ladder[kill]), "rung {kill}'s gun in client 0's hand");
     assert!(clip(sim, 0).is_some_and(|c| c > 0), "rung {kill}: {} has rounds on its client", ladder[kill]);
     // The victim back in play and unprotected, 4 m in front of the shooter.
@@ -94,10 +110,10 @@ pub(crate) fn kill_once(sim: &mut NetSim, kill: usize, a: Entity, b: Entity, lad
         sim.until(600, |s| server_alive(s, b) && s.server.app.world().get::<God>(b).is_none()),
         "the victim is back"
     );
-    sim.ticks(20);
+    sim.ticks(pauses[0]);
     assert_eq!(held(sim, 1), Some(ladder[0]), "the victim, back, has the first rung's gun on its client");
     face_off(sim, a, b);
-    sim.ticks(30);
+    sim.ticks(pauses[1]);
     let me = sim.local_player(0).unwrap();
     let mut dead = false;
     for t in 0..(10.0 / TICK_INTERVAL) as u64 {
@@ -112,5 +128,5 @@ pub(crate) fn kill_once(sim: &mut NetSim, kill: usize, a: Entity, b: Entity, lad
     }
     sim.clients[0].intent(me).fire = false;
     assert!(dead, "kill {kill}: {} killed in 10 s", ladder[kill]);
-    sim.ticks(25);
+    sim.ticks(pauses[2]);
 }

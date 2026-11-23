@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""The slowest tests of the last nextest run, from its JUnit file
+(.config/nextest.toml writes target/nextest/default/junit.xml).
+
+    tools/slowest-tests [-n 15] [--fast] [JUNIT_XML]
+
+One line per test: seconds, `<package>::<binary>`, test name. --fast leaves
+out `heavy::` tests (the fast tier's list). A time is the test's own wall
+time while it ran beside up to 8 others, so on a loaded box read it as an
+upper bound; the CPU cost is `/usr/bin/time -v` around the single test.
+tools/post-push-tests.sh calls this and keeps the list in its log and in
+.claude/post-push/slow.txt (docs/OBSERVABILITY.md, "Slow tests").
+"""
+import argparse
+import sys
+import xml.etree.ElementTree as ET
+
+ap = argparse.ArgumentParser()
+ap.add_argument("-n", type=int, default=15)
+ap.add_argument("--fast", action="store_true")
+ap.add_argument("junit", nargs="?", default="target/nextest/default/junit.xml")
+a = ap.parse_args()
+try:
+    root = ET.parse(a.junit).getroot()
+except (OSError, ET.ParseError) as e:
+    print(f"slowest-tests: no usable {a.junit}: {e}", file=sys.stderr)
+    sys.exit(0)
+rows = []
+for t in root.iter("testcase"):
+    name = t.get("name", "")
+    if a.fast and name.startswith("heavy::"):
+        continue
+    rows.append((float(t.get("time", "0") or 0), t.get("classname", ""), name))
+rows.sort(reverse=True)
+for s, c, n in rows[: max(a.n, 0)]:
+    print(f"{s:7.1f}s  {c}  {n}")

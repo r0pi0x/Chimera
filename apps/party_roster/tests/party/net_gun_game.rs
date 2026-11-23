@@ -150,14 +150,22 @@ fn each_clients_minigame_panel_follows_the_servers_state_and_the_held_gun() {
 /// Client 0 shoots client 1 with every rung's gun to the win. Each client
 /// draws the rung's gun with rounds in it, the HUD follows (rung, next
 /// gun, leader), and the match ends with the shooter the winner on both.
+///
+/// Here the respawn takes 0.1 s and the victim is not protected (the
+/// definition's 2 s and 2 s are what `heavy::net_gun_ladder` plays through):
+/// the same ten kills and checks, with shorter pauses between them.
 #[test]
 fn a_ladder_climbed_by_a_client_shows_on_both_clients() {
-    let mut sim = joined();
+    let quick = joined_with(&[("spawn.respawn.delay", "\"0.1s\""), ("spawn.respawn.protection", "\"0s\"")]);
+    climbed_by_a_client(quick, [5, 15, 5]);
+}
+
+pub(crate) fn climbed_by_a_client(mut sim: NetSim, pauses: [u64; 3]) {
     let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
     let ladder = sim.server.app.world().resource::<minigame::ladder::Ladder>().rungs.clone();
     assert_eq!(ladder.len(), 10);
     for kill in 0..10usize {
-        kill_once(&mut sim, kill, a, b, &ladder);
+        kill_paced(&mut sim, kill, a, b, &ladder, pauses);
         if kill < 9 {
             let rung = |sim: &mut NetSim, i: usize| {
                 let me = sim.local_player(i).unwrap();

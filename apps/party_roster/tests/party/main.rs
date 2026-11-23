@@ -77,6 +77,7 @@ mod window_icons;
 
 // Slow ones (the user's installs): the fast tier skips `heavy::`.
 mod heavy {
+    mod net_gun_ladder;
     mod bot_cost;
     mod ca_mode_objects;
     mod cross_hits;

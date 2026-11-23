@@ -332,6 +332,16 @@ if [ "$mode" != 0 ]; then
     mapfile -t sel <<<"$args"
     tests="${sel[*]}"
     step "the tests ($(git -C "$repo" rev-parse --short "$base" 2>/dev/null || echo none)..$short)" "${runner[@]}" "${sel[@]}"
+    # The slowest fast-tier tests (nextest's JUnit times), into the log and
+    # slow.txt (this run's, replaced each run): the summary alone only says "N slow".
+    if [ "$format" = nextest ]; then
+        {
+            echo "slowest 15 fast-tier tests at $short (wall seconds beside other tests; tools/slowest-tests):"
+            python3 -I "$here/slowest-tests" -n 15 --fast target/nextest/default/junit.xml 2>&1
+        } >"$out/slow.txt.$$" 2>&1
+        { echo "=== slowest tests"; cat "$out/slow.txt.$$"; } >>"$log"
+        mv -f "$out/slow.txt.$$" "$out/slow.txt"
+    fi
 fi
 
 # Keep this checkout's build folder in bounds (the oldest artifacts go).

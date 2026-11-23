@@ -2225,6 +2225,20 @@ Named waits come from tools/wait-for's labels; the hook's own log
 reused pass) and wait-for's log are summed below. The baseline and what
 to try next: [plans/active/iteration-speed.md](plans/active/iteration-speed.md).
 
+### Slow tests
+
+Which tests cost the time: nextest writes every run's per-test times to
+`target/nextest/default/junit.xml` (`.config/nextest.toml`), and
+`tools/slowest-tests [-n 15] [--fast] [junit.xml]` lists the slowest (wall
+seconds beside up to 7 other tests, so an upper bound on a loaded box; for
+the CPU cost run the one test under `/usr/bin/time -v`). A test past its
+60 s slow-timeout period also gets its own `SLOW` line in the log (status
+level `slow`). `tools/post-push-tests.sh` appends the 15 slowest fast-tier
+tests to its log (after `=== slowest tests`) and keeps the latest list in
+`.claude/post-push/slow.txt`. A test that tops it, and a heavy variant for
+the full-length play: `party_roster` `party::net_gun_game` (fast, shortened respawn)
+and `heavy::net_gun_ladder` (the definition's own).
+
 ## 4. Logs
 
 `RUST_LOG=mashup=debug cargo run --features dev`. Log state changes that matter
