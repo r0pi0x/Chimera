@@ -58,7 +58,12 @@
 //! bleed, heals on hit and kill, heads, the dropped kit, regeneration,
 //! overheal, speed buffs; `weapons::flare`: the flare guns, whose class
 //! has no stock weapon: an abstract base document, data/weapons/
-//! flaregun.toml).
+//! flaregun.toml). Part 2 (specs/tf2/batch2b_mechanics.md): the
+//! consumables (`consumables`: lunches, drinks, jars on three abstract
+//! bases), the meters (`meters`: hype, boost, crikey, heads), the sniper
+//! rifles' variants (`weapons::sniper`) and the revolvers' (`effects`).
+//! A jar's thrown projectile shows the item's own model
+//! (`ItemLooks::thrown`, `docs::thrown_key`).
 //!
 //! Known shortcuts:
 //! - An item's `anim_slot` and `animation_replacement` (none in batch 1
@@ -69,9 +74,11 @@
 //!   bone-merged; of its sounds the shot, crit shot (Minigun), empty and
 //!   melee hit/miss entries are used, the reload and deploy entries not.
 
+pub mod consumables;
 pub mod convert;
 pub mod docs;
 pub mod effects;
+pub mod meters;
 pub mod mods;
 
 use std::collections::BTreeMap;
@@ -171,6 +178,9 @@ pub struct ItemLooks {
     pub icon: Option<String>,
     /// The sound entries its `visuals` name (script names, no prefix).
     pub sounds: Vec<String>,
+    /// The model key its thrown projectile shows its own held model by
+    /// (a jar's, `docs::thrown_key`; None: its base's projectile).
+    pub thrown: Option<String>,
 }
 
 impl ItemLooks {
@@ -199,6 +209,7 @@ impl ItemLooks {
             skin: hooks.and_then(|h| h.get(ITEM_HOOK)?.get("skin")?.as_integer()).and_then(|i| i32::try_from(i).ok()),
             icon: s(doc.get("hud").and_then(|h| h.get("icon"))),
             sounds,
+            thrown: s(hooks.and_then(|h| h.get(crate::game::weapons::PROJECTILE_HOOK)?.get("shown"))).filter(|k| k.ends_with("/thrown")),
         }
     }
 }
@@ -364,7 +375,7 @@ mod tests {
     fn the_data_reads_and_names_batch_one() {
         let d = ItemsData::builtin();
         assert_eq!(d.items.values().filter(|i| i.batch == 1).count(), 33);
-        assert_eq!(d.items.values().filter(|i| i.batch == 2).count(), 36);
+        assert_eq!(d.items.values().filter(|i| i.batch == 2).count(), 54);
         let mut idx: Vec<u32> = d.items.values().map(|i| i.index).collect();
         idx.sort();
         idx.dedup();

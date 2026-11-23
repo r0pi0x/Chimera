@@ -336,7 +336,9 @@ pub fn select_class(
     )>,
     mut weapons: Query<(&Weapon, Option<&Tf2Gun>, Option<&mut ShellReload>, Option<&mut Magazine>)>,
     items: Query<&super::items::mods::Tf2Item>,
+    meters: Query<&super::items::meters::Tf2Meter>,
     table: Res<Classes>,
+    clock: Res<crate::core::SimClock>,
 ) {
     for (slot, inv, mut class, mut traits, drawn, zoomed, (health, heads, boost, slowed)) in &mut q {
         if slot.0 != ID {
@@ -370,10 +372,14 @@ pub fn select_class(
         // A slow (batch2b_mechanics.md 3, 7: the ball's half, the Loose
         // Cannon's stop; Chimera's `status::Slowed`, ended before this).
         let p = p * slowed.map_or(1.0, |s| s.factor);
+        // Batch 2b (`items::meters::movement`): Baby Face's boost, the
+        // Soda Popper's hype air jumps.
+        let (extra, hype_jumps) = super::items::meters::movement(inv, &meters, clock.now);
+        let p = p + extra;
         let want = SourceTraits {
             max_speed: Some(p),
             eye_stand: Some(c.eye),
-            air_jumps: Some(c.air_jumps.saturating_add(f.air_dash)),
+            air_jumps: Some(hype_jumps.unwrap_or(c.air_jumps).saturating_add(f.air_dash)),
             loud_landings_only: Some(c.loud_landings_only),
             jump_scale: (f.jump != 1.0).then_some(f.jump),
         };
@@ -390,6 +396,7 @@ pub fn select_class(
 pub fn class_health(
     mut q: Query<(Entity, &Tf2Class, &mut Health, Option<&HealthBefore>, Option<&Inventory>, Option<&super::items::effects::Heads>)>,
     items: Query<&super::items::mods::Tf2Item>,
+    eaten: Option<Res<super::items::consumables::Eaten>>,
     table: Res<Classes>,
     drains: Option<Res<super::items::mods::ItemDrains>>,
     mut commands: Commands,
@@ -401,7 +408,10 @@ pub fn class_health(
         // Less what an item drains (item_attributes.md 4.10); plus what
         // the items add and the heads (batch2_mechanics.md 1.4, 1.6).
         let drained = drains.as_ref().map_or(0.0, |d| d.of(e));
-        let added = inv.map_or(0.0, |inv| super::items::mods::Factors::of(inv, &|w| items.get(w).ok().map(|i| i.0.clone())).max_health);
+        let added = inv.map_or(0.0, |inv| {
+            super::items::mods::Factors::of(inv, &|w| items.get(w).ok().map(|i| i.0.clone())).max_health
+                + super::items::consumables::max_health_of(inv, eaten.as_deref())
+        });
         let heads = heads.map_or(0, |h| h.0.min(super::items::effects::HEAD_CAP)) as f32 * super::items::effects::HEAD_HEALTH;
         let max = (class.class(&table).health + added + heads - drained) / 100.0;
         if (h.max - max).abs() > 1e-6 {

@@ -569,6 +569,7 @@ pub fn particle_systems() -> &'static [&'static str] {
         .into_iter()
         .chain(super::blood::BloodLooks::default().systems())
         .chain([super::crit_boost::glow_name(None), super::crit_boost::glow_name(Some(Team(2)))])
+        .chain([super::crit_hits::CRIT_TEXT.to_string(), super::crit_hits::MINICRIT_TEXT.to_string()])
         .map(|n| &*Box::leak(n.into_boxed_str()))
         .collect();
     Box::leak(names.into_boxed_slice())
@@ -590,6 +591,8 @@ pub const PARTICLE_FILES: &[&str] = &[
     "particles/firstperson_weapon_fx.pcf",
     // A deflected projectile's `deflect_fx` (weapons_more.md 7.4).
     "particles/rocketjumptrail.pcf",
+    // The crit and mini-crit texts (batch2b_mechanics.md 18).
+    super::crit_hits::FILE,
 ];
 
 /// An explosion on the wire (the server's `Tf2Explosion`, to clients).

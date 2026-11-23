@@ -198,6 +198,7 @@ pub fn after(
     weapons: Query<&Tf2Melee>,
     places: Query<&Transform>,
     mut sounds: MessageWriter<GameSound>,
+    mut crits: MessageWriter<super::crit_hits::CritHit>,
 ) {
     let mut out = Vec::new();
     for e in events.p0().read() {
@@ -218,6 +219,8 @@ pub fn after(
             WeaponEventKind::Hit { target, .. } if m.crit && !e.replay => {
                 let at = places.get(target).map_or(Vec3::ZERO, |t| t.translation);
                 sounds.write(GameSound(PlaySound { source: Some(target), ..PlaySound::at(CRIT_HIT, at) }));
+                // Its text (batch2b 18; the sound is this one).
+                crits.write(super::crit_hits::CritHit { attacker: e.owner, victim: target, at, mini: false, sound: false });
             }
             _ => {}
         }
@@ -228,6 +231,9 @@ pub fn after(
     }
     for d in damage.read().filter(|d| d.weapon == Some(BACKSTAB)) {
         sounds.write(GameSound(PlaySound::at(CRIT_HIT, d.point)));
+        if let Some(a) = d.attacker {
+            crits.write(super::crit_hits::CritHit { attacker: a, victim: d.target, at: d.point, mini: false, sound: false });
+        }
     }
 }
 

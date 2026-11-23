@@ -1,0 +1,38 @@
+# TF2's Cleaner's Carbine (specs/tf2/batch2b_mechanics.md 14, 18): its hits
+# fill the crikey meter (the HUD's item meter), attack2 when full gives
+# 8 s of mini-crits, and each mini-crit shows its yellow `minicrit_text`
+# over the target. Needs the item pack (an asset store with `items`).
+#   CHIMERA_ASSET_STORE=<store> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/tf2_crikey.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+setpos 0 -1181 0
+setang 2 90
+god
+sandbox ammo on
+rung tf2:cleaners_carbine
+target add tf2:tf_weapon_minigun 6 protect
+wait 2
+wait_for idle 3000
+wait 120
+target look 1
++attack
+wait 90
+-attack
+wait 10
+shot crikey_meter
++attack
+wait 300
+-attack
+wait 10
++attack2
+wait 5
+-attack2
+wait 20
+target look 1
+shot_after hit 12 minicrit_text
++attack
+wait 40
+-attack
+wait 60

@@ -77,6 +77,7 @@ pub mod blast;
 pub mod blood;
 pub mod charge;
 pub mod crit_boost;
+pub mod crit_hits;
 pub mod damage;
 pub mod dot;
 pub mod flame;
@@ -135,6 +136,9 @@ pub const DATA: &[(&str, GameData)] = &[
     data_file!("cannon.toml"),
     data_file!("cleaver.toml"),
     data_file!("handgun_scout_primary.toml"),
+    data_file!("lunchbox.toml"),
+    data_file!("lunchbox_drink.toml"),
+    data_file!("jar.toml"),
     data_file!("_melee.toml"),
     data_file!("bat.toml"),
     data_file!("shovel.toml"),
@@ -178,8 +182,27 @@ pub const BAT_GIFTWRAP: &str = "tf2:tf_weapon_bat_giftwrap";
 pub const STICKBOMB: &str = "tf2:tf_weapon_stickbomb";
 /// The abstract bases (no weapon of their own; data/items.toml's
 /// `[bases]` name them).
-pub const ABSTRACT_BASES: [&str; 10] =
-    [FLAREGUN, COMPOUND_BOW, CROSSBOW, RAYGUN, CANNON, CLEAVER, HANDGUN_SCOUT_PRIMARY, BAT_WOOD, BAT_GIFTWRAP, STICKBOMB];
+pub const ABSTRACT_BASES: [&str; 13] = [
+    FLAREGUN,
+    COMPOUND_BOW,
+    CROSSBOW,
+    RAYGUN,
+    CANNON,
+    CLEAVER,
+    HANDGUN_SCOUT_PRIMARY,
+    BAT_WOOD,
+    BAT_GIFTWRAP,
+    STICKBOMB,
+    LUNCHBOX,
+    DRINK,
+    JAR,
+];
+
+/// The consumables' classes (specs/tf2/batch2b_mechanics.md 11-13; no
+/// stock weapon: abstract bases, `items::consumables`).
+pub const LUNCHBOX: &str = "tf2:tf_weapon_lunchbox";
+pub const DRINK: &str = "tf2:tf_weapon_lunchbox_drink";
+pub const JAR: &str = "tf2:tf_weapon_jar";
 
 /// The guns, in the ladder's order (M2b's four, then weapons_more.md's
 /// eight).
@@ -415,6 +438,7 @@ fn insert_rules(world: &mut World, set: &WeaponSet) {
     world.insert_resource(flare::FlareRules::from_set(set));
     world.insert_resource(shot::ShotRules::from_set(set));
     world.insert_resource(super::items::effects::ItemRules::from_set(set));
+    world.insert_resource(super::items::consumables::ConsumableRules::from_set(set));
 }
 
 /// The rules read again when TF2's set changed (a server's documents put
@@ -436,6 +460,7 @@ fn refresh_rules(catalog: Res<chimera_sim::weapon::data::WeaponCatalog>, mut com
     commands.insert_resource(flare::FlareRules::from_set(set));
     commands.insert_resource(shot::ShotRules::from_set(set));
     commands.insert_resource(super::items::effects::ItemRules::from_set(set));
+    commands.insert_resource(super::items::consumables::ConsumableRules::from_set(set));
 }
 
 /// TF2's guns: their data, hooks and systems.
@@ -547,6 +572,14 @@ impl Plugin for Tf2GunsPlugin {
             .add_systems(Update, melee::backstab_ready);
         looks::add(app);
         crit_boost::add(app);
+        crit_hits::add(app);
+        app.add_systems(
+            FixedUpdate,
+            sniper::pierce
+                .after(crate::core::SimSet::Weapons)
+                .before(super::items::effects::crits)
+                .run_if(crate::core::authoritative),
+        );
     }
 }
 

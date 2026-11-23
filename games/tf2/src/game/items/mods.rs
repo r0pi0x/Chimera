@@ -31,7 +31,8 @@
 //! - **Batch 2** (specs/tf2/batch2_mechanics.md): the attributes of the
 //!   batch-2 mechanics ride on the same hook (`max_health`, `taken_blast`
 //!   here; crits, bleed, flares' burns, heals on kill, heads, kits, speed
-//!   buffs and regeneration in `super::effects`).
+//!   buffs and regeneration in `super::effects`); batch 2b's revolvers
+//!   (`head_crit_range`, `collect_crits`).
 //! - **Switching** (4.9, `holster`, predicted with the switch): the
 //!   weapon switched to deploys in its `draw` × the one switched from's
 //!   `holster` (`mult_switch_from_wep_deploy_time`, only when that one had
@@ -143,6 +144,12 @@ pub struct ItemParams {
     /// (`set_scattergun_has_knockback`; batch2b_mechanics.md 9,
     /// `weapons::knock`).
     pub knockback: bool,
+    /// The Ambassador's headshot crit within this range (units; a
+    /// revolver's `set_weapon_mode` 1, batch2b 16; 0: none).
+    pub head_crit_range: f32,
+    /// A backstab kill stores a crit for its next shot
+    /// (`sapper_kills_collect_crits`: the Diamondback).
+    pub collect_crits: bool,
 }
 
 impl Default for ItemParams {
@@ -192,6 +199,8 @@ impl Default for ItemParams {
             mark_self: false,
             air_dash: 0.0,
             knockback: false,
+            head_crit_range: 0.0,
+            collect_crits: false,
         }
     }
 }
@@ -246,6 +255,12 @@ impl ItemParams {
             mark_self: r.flag("self_mark_for_death"),
             air_dash: add("air_dash_count"),
             knockback: r.flag("set_scattergun_has_knockback"),
+            head_crit_range: if r.class == "tf_weapon_revolver" && add("set_weapon_mode") == 1.0 {
+                super::effects::AMBASSADOR_RANGE
+            } else {
+                0.0
+            },
+            collect_crits: r.flag("sapper_kills_collect_crits"),
         }
     }
 }
@@ -548,6 +563,8 @@ pub fn holster(
 pub fn add(app: &mut App) {
     use chimera_sim::weapon::data::WeaponDataAppExt;
     super::effects::add(app);
+    super::consumables::add(app);
+    super::meters::add(app);
     app.register_weapon_hook::<ItemParams>(super::ITEM_HOOK, |e, _, p| {
         e.insert(Tf2Item(p.clone()));
     })

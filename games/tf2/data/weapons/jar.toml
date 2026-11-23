@@ -1,0 +1,59 @@
+# The thrown jars (`tf_weapon_jar`, `tf_weapon_jar_milk`,
+# specs/tf2/batch2b_mechanics.md 13): no stock weapon of their own, the
+# base of Jarate and Mad Milk (data/items.toml `[bases]`). Attack throws
+# it about 1000 forward and 200 up of the aim under full gravity (the
+# item's own model, `items::docs`), then the weapon before is drawn; it
+# breaks on a player or the world, and every enemy whose centre is within
+# 230 units gets its condition for 10 s (Jarate: hits on him mini-crit;
+# Mad Milk, by class: an attacker's damage on him heals him 60 %), burning
+# teammates in reach are put out; recharge 20 s (`items::consumables`).
+id = "tf2:tf_weapon_jar"
+base = "tf2:base"
+abstract = true
+slot = 1
+draw = 0.5
+
+[trigger]
+automatic = false
+cycle = 0.8
+timing = "set"
+
+# Without [damage] the frame traces nothing: the round is the jar.
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 1.0
+spread = { template = 0.0 }
+
+[hud]
+name = "Jar"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+flat = true
+arms = "sniper"
+script = "tf_weapon_jar"
+
+[hooks."chimera:projectile"]
+interp = true
+whole_units = true
+speed = 1000.0
+up_speed = 200.0
+gravity = 800.0
+half = [2.0, 2.0, 2.0]
+touch = "report"
+offset = [16.0, 8.0, -6.0]
+hull_boxes = true
+life = 10.0
+
+[hooks."tf2:consumable"]
+kind = "jar"
+label = "JARATE"
+recharge = 20.0
+radius = 230.0
+duration = 10.0
+condition = "tf2:jarate"
+
+[hooks."tf2:consumable".by_class.tf_weapon_jar_milk]
+label = "MILK"
+condition = "tf2:milk"

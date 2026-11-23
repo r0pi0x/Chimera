@@ -1,6 +1,6 @@
 # TF2 weapons: every player weapon, what is in, what is left
 
-Status: batches 0 and 1 built, batch 2's first five families and part 2's projectiles and pushes built (2026-11-23; section 4); the rest of batch 2 and batch 3 planned.
+Status: batches 0 and 1 built, batch 2's first five families and part 2 (projectiles and pushes; consumables, meters, sniper and revolver variants) built (2026-11-23; section 4); the rest of batch 2 and batch 3 planned.
 Inventory by class and slot, then a phased build order.
 
 Sources: the installed game's `scripts/items/items_game.txt` (read locally
@@ -458,15 +458,46 @@ cleaver, handgun_scout_primary, bat_wood, bat_giftwrap, stickbomb:
   shortcuts (the Bison's ramp, the knockback's lift and range, the
   shove's reach, the Caber's blast, the ornament's burst, the drags).
 
+**Built 2026-11-23, part 2: items** (specs/tf2/batch2b_mechanics.md
+11-16, 18; `game::items::consumables`, `game::items::meters`,
+`weapons::sniper`'s variants, `items::effects`' revolvers,
+`weapons::crit_hits`; Chimera's `status::Conditions`: marked for death,
+a mini-crit buff, phase and a game's own, kept in a resource; scenario
+tests: games/tf2/tests/it/batch2b_items.rs):
+
+- *Consumables* (`tf2:consumable` on three abstract bases,
+  data/weapons/lunchbox.toml, lunchbox_drink.toml, jar.toml; a mode's and
+  a class's table merged by `items::docs`): Sandvich (75 at 1, 2, 3, 4 s;
+  attack2 throws a medium kit: half a teammate's max), Dalokohs Bar (25 a
+  step, +50 max), Second Banana (x0.67), Buffalo Steak Sandvich (mini-crit
+  buff, x1.3 speed, melee only for 19 s from 1 s; taken x1.2), the meter
+  refilling over `item_meter_charge_rate`; Bonk (phase 8 s from 0.9 s),
+  Crit-a-Cola (buff, marked for death 5 s from each attack), 30 s; Jarate
+  and Mad Milk (230 units, 10 s; mini-crits on him, the attacker healed
+  60 %), 20 s, the weapon before drawn. Utility items: `gun_game = false`.
+- *Meters* (`tf2:meter` from the item's attributes, a predicted part, a
+  simple HUD meter in `HudItemEffectMeter`'s box, tf2_ui `item_meter`):
+  Soda Popper hype (air jumps while it drains), Baby Face's boost (+1.62
+  units/s a point, -4 a point taken), Cleaner's Carbine crikey (8 s of
+  mini-crits), Bazaar Bargain heads (charge x 0.5 + 0.25 h).
+- *Sniper rifles*: Machina (full charge x1.15, through players, scoped
+  only), Sydney Sleeper (charge x1.25, head mini-crit, jarate by charge),
+  Classic (charge while held, fire on release, body x0.9, head crit at full).
+- *Revolvers*: Ambassador (headshot crit after 1 s, to 1200 units, the far
+  half of the fall-off), Diamondback (backstab kills store crits),
+  Enforcer (stats; no disguise yet).
+- *Crit feedback* (18): `TFPlayer.CritHitMini` on mini-crits; the
+  attacker's `crit_text` / `minicrit_text` (`particles/crit.pcf`) over the
+  victim, sent to his client.
+- Provisional numbers are each module's Known shortcuts. The `players` set
+  (the mini-crit's sound) and the base sets (`particles/crit.pcf`) need
+  republishing for a player served by the store alone.
+
 Still to build in batch 2:
 
-- *Mini-crit conditions*: wet (Neon Annihilator's crit).
-- *Consumables*: lunchbox (Sandvich family), drinks (Bonk, Crit-a-Cola),
-  jars (Jarate, Mad Milk): one "use and cooldown" slot plus a status.
-- *Meters*: head counter (Bazaar; the Eyelander's is built), Hype (Soda Popper), Boost
-  (Baby Face's), crikey (Cleaner's Carbine), kill-based refills.
-- *Sniper variants*: pierce, Classic's charge, Sydney's jarate shot.
-- *Revolver variants*: Ambassador, Diamondback, Enforcer.
+- *Mini-crit conditions*: wet from Jarate and Mad Milk for the Neon
+  Annihilator (the conditions exist now).
+- *Meters*: kill-based refills (not measured).
 
 Effort: ~1-2 days per mechanic family, then weapons are batch-1 cheap.
 Needs a spec for every named number the attribute list does not give

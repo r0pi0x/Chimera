@@ -1,0 +1,35 @@
+# The Scout's drink class (`tf_weapon_lunchbox_drink`,
+# specs/tf2/batch2b_mechanics.md 12): no stock weapon of its own, the base
+# of Bonk! Atomic Punch and Crit-a-Cola (data/items.toml `[bases]`). Attack
+# drinks: a 1.2 s taunt; the effect begins 0.9 s in and lasts 8 s, the
+# meter draining over it, then refilling over about 30 s
+# (`items::consumables`). By `set_weapon_mode`: 0 (Bonk) phase: no damage
+# reaches him, no attacks; 2 (Crit-a-Cola) the mini-crit buff, each attack
+# marking him for death (`mod_mark_attacker_for_death`).
+id = "tf2:tf_weapon_lunchbox_drink"
+base = "tf2:base"
+abstract = true
+slot = 1
+draw = 0.5
+
+[hud]
+name = "Drink"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+flat = true
+arms = "scout"
+script = "tf_weapon_lunchbox_drink"
+
+[hooks."tf2:consumable"]
+kind = "drink"
+label = "DRINK"
+recharge = 30.0
+taunt = 1.2
+effect_from = 0.9
+effect = 8.0
+
+[hooks."tf2:consumable".modes.0]
+phase = true
+[hooks."tf2:consumable".modes.2]
+buff = true

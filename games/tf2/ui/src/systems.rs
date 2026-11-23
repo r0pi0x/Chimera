@@ -86,6 +86,7 @@ pub fn collect(
     player: Option<Single<(&Health, Option<&Inventory>, Option<&Team>, Has<Dead>, Option<&Tf2Class>), With<LocalPlayer>>>,
     mut classes: Local<Option<Classes>>,
     weapons: Query<(&Weapon, Option<&Magazine>, Option<&HeldGauge>)>,
+    meters: Query<(Option<&tf2::game::items::meters::Tf2Meter>, Option<&tf2::game::items::consumables::Tf2Consumable>)>,
     scope: Option<Res<ScopeUp>>,
     shoulder: Option<Res<chimera_client::client::third_person::Shoulder>>,
 ) {
@@ -115,6 +116,21 @@ pub fn collect(
         time: time.elapsed_secs_f64(),
         scope: scope.is_some_and(|s| s.0).then(|| gun.and_then(|(.., g)| g).map_or(0.0, |g| g.0)),
         crosshair_dim: shoulder.map_or(0.0, |s| s.dim),
+        // The first item meter carried (batch2b_mechanics.md 14).
+        meter: inv.and_then(|i| {
+            i.weapons.iter().find_map(|w| match meters.get(*w).ok()? {
+                (Some(m), _) => {
+                    let (l, f) = m.meter();
+                    let label = if m.params.kind == tf2::game::items::meters::MeterKind::Heads { format!("{l}: {}", m.heads()) } else { l.to_string() };
+                    Some((label, f))
+                }
+                (_, Some(c)) => {
+                    let (l, f) = c.meter();
+                    Some((l.to_string(), f))
+                }
+                _ => None,
+            })
+        }),
     };
     let look = Look { hud: &active.0, screen: Screen::new(w.width(), w.height()) };
     let st = &mut *state;

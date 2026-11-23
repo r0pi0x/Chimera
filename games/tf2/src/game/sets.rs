@@ -53,9 +53,9 @@ use crate::mount::{Access, Mount};
 /// Sound entries any TF2 gun can play, in `players`: the crit boost's
 /// loop (effects.md 14), the bullets' and RED needles' ricochet (7, 12),
 /// a crit hit's (weapons_stock.md 8.3: any gun's crit, the Flare Gun's on
-/// a burning player) and the flare guns' (`FLARE_GUN_SOUNDS`: their
+/// a burning player), a mini-crit's (batch2b_mechanics.md 18) and the flare guns' (`FLARE_GUN_SOUNDS`: their
 /// class has no stock gun, so no set of its own).
-pub const GENERAL_SOUNDS: &[&str] = &["Weapon_General.CritPower", "Bounce.Shrapnel", "TFPlayer.CritHit"];
+pub const GENERAL_SOUNDS: &[&str] = &["Weapon_General.CritPower", "Bounce.Shrapnel", "TFPlayer.CritHit", "TFPlayer.CritHitMini"];
 
 /// The flare gun class's sound entries (data/weapons/flaregun.toml, the
 /// base of the Flare Gun, the Detonator and the Scorch Shot): its script's

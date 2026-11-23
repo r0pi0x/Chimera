@@ -42,6 +42,15 @@
 //!   (`energy_weapon_no_ammo`), a bat's meter (`effectbar_recharge_rate`
 //!   on `tf2:throw`); the projectiles' own hits (`tf2:shot`) are their
 //!   class's, untouched;
+//! - batch 2b (batch2b_mechanics.md): the sniper rifles' variants on
+//!   `tf2:sniper` (`mult_sniper_charge_per_sec`, `sniper_full_charge_
+//!   damage_bonus`, `sniper_penetrate_players_when_charged`,
+//!   `sniper_only_fire_zoomed`, `bodyshot_damage_modify`, `jarate_duration`,
+//!   the Classic's class); a consumable's base table for its mode and
+//!   class merged, `item_meter_charge_rate`, `lunchbox_healing_scale`,
+//!   `energy_buff_dmg_taken_multiplier`, `mod_mark_attacker_for_death`,
+//!   its label its name, a jar's projectile its own model, its arms its
+//!   class's; a meter (`super::meters::MeterParams::of`) as `tf2:meter`;
 //! - the rest that modifies the player (speed, jump, damage taken, heals,
 //!   max-health drain, ignite) goes to the item's `tf2:item` hook
 //!   (`super::mods::ItemParams`).
@@ -365,6 +374,81 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
         doc.insert("draw".into(), Value::Float(d * a("mult_single_wep_deploy_time")));
     }
 
+    // The sniper rifle variants (batch2b_mechanics.md 15).
+    if let Some(t) = hook(&mut doc, crate::game::weapons::SNIPER_HOOK) {
+        let set = |t: &mut Table, k: &str, v: Value| {
+            t.insert(k.into(), v);
+        };
+        if a("mult_sniper_charge_per_sec") != 1.0 {
+            set(t, "charge_scale", Value::Float(a("mult_sniper_charge_per_sec")));
+        }
+        if a("sniper_full_charge_damage_bonus") != 1.0 {
+            set(t, "full_bonus", Value::Float(a("sniper_full_charge_damage_bonus")));
+        }
+        if r.flag("sniper_penetrate_players_when_charged") {
+            set(t, "pierce_full", Value::Boolean(true));
+        }
+        if r.flag("sniper_only_fire_zoomed") {
+            set(t, "only_scoped", Value::Boolean(true));
+        }
+        if r.class == "tf_weapon_sniperrifle_classic" {
+            set(t, "classic", Value::Boolean(true));
+        }
+        if a("bodyshot_damage_modify") != 1.0 {
+            set(t, "body_scale", Value::Float(a("bodyshot_damage_modify")));
+        }
+        if add("jarate_duration") > 0.0 {
+            set(t, "head_mini", Value::Boolean(true));
+            set(t, "jarate", Value::Float(add("jarate_duration")));
+        }
+    }
+    // The consumables (batch2b_mechanics.md 11-13, `super::consumables`):
+    // the base's table for the item's mode and class merged, then its
+    // attributes; a thrown jar shows the item's own model; the arms are
+    // its class's.
+    if let Some(t) = hook(&mut doc, super::consumables::HOOK) {
+        let merge = |t: &mut Table, from: &str, key: &str| {
+            let picked = t.get(from).and_then(|m| m.get(key)).and_then(Value::as_table).cloned();
+            for (k, v) in picked.into_iter().flatten() {
+                t.insert(k, v);
+            }
+        };
+        merge(t, "modes", &format!("{}", add("set_weapon_mode") as i64));
+        merge(t, "by_class", &r.class);
+        t.remove("modes");
+        t.remove("by_class");
+        if add("item_meter_charge_rate") > 0.0 {
+            t.insert("recharge".into(), Value::Float(add("item_meter_charge_rate")));
+        }
+        if a("lunchbox_healing_scale") != 1.0 {
+            let h = t.get("heal").and_then(num).unwrap_or(0.0);
+            t.insert("heal".into(), Value::Float((h * a("lunchbox_healing_scale")).round()));
+        }
+        if a("energy_buff_dmg_taken_multiplier") != 1.0 {
+            t.insert("taken_buffed".into(), Value::Float(a("energy_buff_dmg_taken_multiplier")));
+        }
+        if add("mod_mark_attacker_for_death") > 0.0 {
+            t.insert("mark_attacker".into(), Value::Float(add("mod_mark_attacker_for_death")));
+        }
+        t.insert("label".into(), Value::String(name.to_uppercase()));
+    }
+    if hook(&mut doc, super::consumables::HOOK).is_some() {
+        if let Some(p) = hook(&mut doc, crate::game::weapons::PROJECTILE_HOOK) {
+            p.insert("shown".into(), Value::String(thrown_key(id)));
+        }
+        if let [class] = r.classes.as_slice()
+            && let Some(g) = hook(&mut doc, crate::game::weapons::GUN_HOOK)
+        {
+            g.insert("arms".into(), Value::String(if class == "demoman" { "demo".into() } else { class.clone() }));
+        }
+    }
+    // The item meters (batch2b_mechanics.md 14, `super::meters`).
+    if let Some(m) = super::meters::MeterParams::of(r)
+        && let Ok(Value::Table(t)) = Value::try_from(&m)
+    {
+        table(&mut doc, "hooks").insert(super::meters::HOOK.into(), Value::Table(t));
+    }
+
     looks(&mut doc, r);
 
     // The player's numbers, its base and skin.
@@ -384,6 +468,12 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
         doc.remove("class");
     }
     doc
+}
+
+/// The model key of item `id`'s thrown projectile (a jar: its own model,
+/// `maps::add_guns_with`).
+pub fn thrown_key(id: &str) -> String {
+    format!("{id}/thrown")
 }
 
 /// Where each `visuals` sound kind goes: (kind, place). A place is

@@ -48,6 +48,16 @@ tf_weapon_handgun_scout_primary = "tf2:tf_weapon_handgun_scout_primary"
 tf_weapon_bat_wood = "tf2:tf_weapon_bat_wood"
 tf_weapon_bat_giftwrap = "tf2:tf_weapon_bat_giftwrap"
 tf_weapon_stickbomb = "tf2:tf_weapon_stickbomb"
+tf_weapon_lunchbox = "tf2:tf_weapon_lunchbox"
+tf_weapon_lunchbox_drink = "tf2:tf_weapon_lunchbox_drink"
+tf_weapon_jar = "tf2:tf_weapon_jar"
+tf_weapon_jar_milk = "tf2:tf_weapon_jar"
+tf_weapon_soda_popper = "tf2:tf_weapon_scattergun"
+tf_weapon_pep_brawler_blaster = "tf2:tf_weapon_scattergun"
+tf_weapon_charged_smg = "tf2:tf_weapon_smg"
+tf_weapon_sniperrifle_decap = "tf2:tf_weapon_sniperrifle"
+tf_weapon_sniperrifle_classic = "tf2:tf_weapon_sniperrifle"
+tf_weapon_revolver = "tf2:tf_weapon_revolver"
 
 # Batch 1 (33 items, 31 entries).
 [items.winger]
@@ -366,3 +376,93 @@ note = "switching back after a throw"
 index = 996
 batch = 2
 note = "the impact's push; a held ball going off in the barrel"
+# Batch 2, part 2 (specs/tf2/batch2b_mechanics.md; `items::consumables`,
+# `items::meters`, `weapons::sniper`, `items::effects`). The consumables
+# are utility items: no ladder draws them (`gun_game = false`).
+[items.sandvich]
+index = 42
+batch = 2
+gun_game = false
+
+[items.dalokohs_bar]
+index = 159
+batch = 2
+gun_game = false
+
+[items.buffalo_steak_sandvich]
+index = 311
+batch = 2
+gun_game = false
+
+[items.second_banana]
+index = 1190
+batch = 2
+gun_game = false
+
+[items.bonk_atomic_punch]
+index = 46
+batch = 2
+gun_game = false
+note = "Bonk's after-effect (none measured)"
+
+[items.crit_a_cola]
+index = 163
+batch = 2
+gun_game = false
+
+[items.jarate]
+index = 58
+batch = 2
+gun_game = false
+note = "a teammate put out cutting the recharge (extinguish reduces cooldown)"
+
+[items.mad_milk]
+index = 222
+batch = 2
+gun_game = false
+note = "a teammate put out cutting the recharge (extinguish reduces cooldown)"
+
+[items.soda_popper]
+index = 448
+batch = 2
+note = "the hype's air jumps are unmeasured (the description's 5)"
+
+[items.baby_faces_blaster]
+index = 772
+batch = 2
+
+[items.cleaners_carbine]
+index = 751
+batch = 2
+
+[items.bazaar_bargain]
+index = 402
+batch = 2
+note = "heads lost on a body-shot kill (not specified)"
+
+[items.machina]
+index = 526
+batch = 2
+note = "its tracer"
+
+[items.sydney_sleeper]
+index = 230
+batch = 2
+
+[items.classic]
+index = 1098
+batch = 2
+
+[items.ambassador]
+index = 61
+batch = 2
+
+[items.diamondback]
+index = 525
+batch = 2
+note = "crits from sapper kills (no buildings yet)"
+
+[items.enforcer]
+index = 460
+batch = 2
+note = "x1.2 while disguised (no disguise yet); piercing resists"

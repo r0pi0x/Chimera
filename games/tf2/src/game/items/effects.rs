@@ -20,8 +20,20 @@
 //!   burn's seconds left, and puts the burn out; the Equalizer's
 //!   (`damage_by_health`) is `base_damage` × (1.65 - 1.15 health / max).
 //!   A blast asks `Conditions::blast_mini_crit` per victim (`blast`).
-//!   A crit plays `TFPlayer.CritHit` at its victim (weapons_stock.md
-//!   8.3; a melee weapon's own crit swing plays it itself).
+//!   Batch 2b (specs/tf2/batch2b_mechanics.md): a victim marked for death
+//!   or covered in Jarate (Chimera's `status::Conditions`), or an attacker
+//!   with the mini-crit buff, mini-crits; a phased victim takes nothing
+//!   (`consumables::taken`); the Sydney Sleeper's headshot mini-crits and
+//!   every hit jarates for max(`SYDNEY_MIN`, 5 × its damage / 150) s; the
+//!   Ambassador's headshot crits within `AMBASSADOR_RANGE` when its last
+//!   shot was over `AMBASSADOR_RECOVER` s before (`Revolvers`,
+//!   `note_shots`), its damage the far half of the distance modifier;
+//!   the Diamondback's backstab kill stores a crit its next shot spends.
+//!   Each crit or mini-crit is a `weapons::crit_hits::CritHit`: its sound
+//!   (`TFPlayer.CritHit`, `TFPlayer.CritHitMini`; a melee weapon's own crit
+//!   swing plays its sound itself) and its attacker's floating text.
+//! - **Mad Milk** (`after`): a hit on a milked enemy heals its attacker
+//!   60 %, rounded down (`consumables::milk_heal`).
 //! - **After a hit** (`after`, once the damage landed): a bleeding hit
 //!   (`bleed` s; §3) wounds its victim (Chimera's `status::Bleeding`,
 //!   `BLEED_TICK` every `DOT_PERIOD`); a swing at nothing with
@@ -60,9 +72,10 @@
 //!   was measured); it shows the small kit's model;
 //! - a mini-crit scales the hit as dealt, after the distance modifier (a
 //!   bullet's past 512 units keeps its fall-off; the Back Scatter's reach
-//!   ends at 512, where the modifier is 1); a mini-crit makes no sound
-//!   and neither shows a text (no spec names them: the plan's spec
-//!   list); the Escape Plan's mark has no icon;
+//!   ends at 512, where the modifier is 1); the Escape Plan's mark has no
+//!   icon; the Diamondback's stored crits have no cap and come only from
+//!   backstab kills (no sappers yet); the Ambassador's range is from
+//!   centre to centre;
 //!   healing from Medics (×0.1) waits on a Medi Gun;
 //! - an enemy Pyro hit by a flare burns `pyro_burn` (0.25 s) in look
 //!   only, as from the Flame Thrower (weapons_more.md 7.3; that look
@@ -78,11 +91,10 @@ use crate::game::weapons::{
     blast::{BlastJumping, BlastLaunched, MINI_CRIT},
     damage::round_points,
     flame::Burning,
-    melee::{BACKSTAB, CRIT_HIT, CRIT_MULT, Tf2Melee},
+    melee::{BACKSTAB, CRIT_MULT, Tf2Melee},
 };
-use crate::map::{GameSound, PlaySound};
 use chimera_sim::{
-    status::{Bleeding, SpeedBoost},
+    status::{Bleeding, Condition, SpeedBoost},
     weapon::{Inventory, Weapon, WeaponEvent, WeaponEventKind},
 };
 
@@ -119,6 +131,8 @@ pub const KUNAI_CAP: f32 = 3.0;
 pub const KIT_SHARE: f32 = 0.2;
 pub const KIT_LIFE: f32 = 32.0;
 pub const KIT_REACH: f32 = 24.0;
+/// A thrown lunch's medium kit: its share of max health (batch2b 11).
+pub const LUNCH_SHARE: f32 = 0.5;
 /// The dropped kit's flyer id and its model key and model.
 pub const KIT: &str = "tf2:candy_cane";
 pub const KIT_SHOWN: &str = "tf2:candy_cane/kit";
@@ -167,6 +181,9 @@ pub struct Conditions<'w, 's> {
     items: Query<'w, 's, &'static Tf2Item>,
     rules: Option<Res<'w, ItemRules>>,
     donks: Option<Res<'w, Donks>>,
+    /// Chimera's conditions (marked for death, the mini-crit buff, phase,
+    /// Jarate) and the time they are asked at.
+    status: Option<Res<'w, chimera_sim::status::Conditions>>,
     clock: Res<'w, SimClock>,
 }
 
@@ -176,8 +193,18 @@ impl Conditions<'_, '_> {
         self.rules.as_deref()?.get(weapon)
     }
 
-    /// `e`'s active weapon marks him (every hit on him mini-crits).
+    /// Whether `e` has Chimera's condition `c` now.
+    pub fn has(&self, e: Entity, c: Condition) -> bool {
+        self.status.as_deref().is_some_and(|s| s.has(e, c, self.clock.now))
+    }
+
+    /// Every hit on `e` mini-crits: his active weapon marks him (the
+    /// Escape Plan), he is marked for death (Crit-a-Cola) or covered in
+    /// Jarate (batch2b 13).
     pub fn marked(&self, e: Entity) -> bool {
+        if self.has(e, Condition::MarkedForDeath) || self.has(e, Condition::Game(super::consumables::JARATE)) {
+            return true;
+        }
         let Ok((.., Some(inv), _, _)) = self.chars.get(e) else { return false };
         inv.active.and_then(|w| self.items.get(w).ok()).is_some_and(|i| i.0.mark_self)
     }
@@ -185,6 +212,18 @@ impl Conditions<'_, '_> {
     /// Cannonball `flyer` has hit `victim` already (`Donks`).
     pub fn donked(&self, flyer: Entity, victim: Entity) -> bool {
         self.donks.as_deref().is_some_and(|d| d.0.iter().any(|d| d.flyer == flyer && d.victim == victim))
+    }
+
+    /// Every hit `e` deals mini-crits (the mini-crit buff: the Steak,
+    /// Crit-a-Cola, the Cleaner's Carbine).
+    pub fn buffed(&self, e: Entity) -> bool {
+        self.has(e, Condition::MiniCritBuff)
+    }
+
+    /// Units between `a`'s and `b`'s centres.
+    pub fn distance(&self, a: Entity, b: Entity) -> Option<f32> {
+        let (Ok(x), Ok(y)) = (self.chars.get(a), self.chars.get(b)) else { return None };
+        Some(x.5.translation.distance(y.5.translation) / crate::game::weapons::damage::U)
     }
 
     /// `e` is in the air after another's blast (or his own).
@@ -219,7 +258,7 @@ impl Conditions<'_, '_> {
         if Some(victim) == owner {
             return false;
         }
-        if self.marked(victim) {
+        if self.marked(victim) || owner.is_some_and(|o| self.buffed(o)) {
             return true;
         }
         let now = self.clock.now;
@@ -283,6 +322,56 @@ fn item_of(d: &Damage, holders: &Query<&Inventory>, weapons: &Query<(&Weapon, &T
     d.weapon.and_then(|n| cond.item(n)).cloned()
 }
 
+/// The Ambassador (batch2b 16): a headshot crits within this range
+/// (units) when the last shot was more than `AMBASSADOR_RECOVER` s before.
+pub const AMBASSADOR_RANGE: f32 = 1200.0;
+pub const AMBASSADOR_RECOVER: f64 = 1.0;
+/// The Sydney Sleeper's least jarate (s; batch2b 15).
+pub const SYDNEY_MIN: f32 = 2.0;
+
+/// The revolvers' shots (batch2b 16): each weapon's last two shot times
+/// (the Ambassador's recovery), the Diamondback's stored crits, and the
+/// weapons whose shot this tick spent one. A resource, not a part.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct Revolvers {
+    pub shots: HashMap<Entity, (f64, f64)>,
+    pub stored: HashMap<Entity, u32>,
+    pub crit_now: Vec<Entity>,
+}
+
+impl Revolvers {
+    /// The seconds between weapon `w`'s last shot and the one before.
+    pub fn since_last(&self, w: Entity) -> f64 {
+        self.shots.get(&w).map_or(f64::MAX, |(last, prev)| last - prev)
+    }
+}
+
+/// Each shot of this tick: its weapon's times, a stored crit spent
+/// (after the frame, before `crits`).
+pub fn note_shots(mut events: MessageReader<WeaponEvent>, items: Query<&Tf2Item>, clock: Res<SimClock>, mut revolvers: ResMut<Revolvers>, weapons: Query<(), With<Weapon>>) {
+    revolvers.crit_now.clear();
+    revolvers.shots.retain(|w, _| weapons.contains(*w));
+    revolvers.stored.retain(|w, _| weapons.contains(*w));
+    for e in events.read() {
+        if e.replay || !matches!(e.kind, WeaponEventKind::Fired { .. }) {
+            continue;
+        }
+        let Ok(item) = items.get(e.weapon) else { continue };
+        let p = &item.0;
+        if p.head_crit_range > 0.0 {
+            let last = revolvers.shots.get(&e.weapon).map_or(f64::MIN / 2.0, |s| s.0);
+            revolvers.shots.insert(e.weapon, (clock.now, last));
+        }
+        if p.collect_crits
+            && let Some(n) = revolvers.stored.get_mut(&e.weapon)
+            && *n > 0
+        {
+            *n -= 1;
+            revolvers.crit_now.push(e.weapon);
+        }
+    }
+}
+
 /// The hit's crit or mini-crit (module doc), before the damage-taken
 /// factors (`mods::taken`).
 #[allow(clippy::too_many_arguments)]
@@ -294,7 +383,8 @@ pub fn crits(
     weapons: Query<(&Weapon, &Tf2Item)>,
     clock: Res<SimClock>,
     mut before: ResMut<HitHealth>,
-    (melees, mut sounds): (Query<&Tf2Melee>, MessageWriter<GameSound>),
+    (melees, snipers, revolvers): (Query<&Tf2Melee>, Query<&crate::game::weapons::sniper::Tf2Sniper>, Res<Revolvers>),
+    mut feedback: MessageWriter<crate::game::weapons::crit_hits::CritHit>,
     mut commands: Commands,
 ) {
     before.0.clear();
@@ -310,8 +400,32 @@ pub fn crits(
             continue;
         }
         let v = d.target;
-        let mut mini = cond.marked(v);
+        if cond.has(v, Condition::Phased) {
+            continue;
+        }
+        let mut mini = cond.marked(v) || cond.buffed(a);
         let mut crit = false;
+        let active = holders.get(a).ok().and_then(|i| i.active);
+        // The Sydney Sleeper (batch2b 15): a headshot mini-crits; every
+        // hit jarates by its charge (the body hit's damage, max(50, c)).
+        if let Some(w) = active
+            && let Ok(sn) = snipers.get(w)
+            && d.weapon.is_none_or(|n| weapons.get(w).is_ok_and(|(x, _)| x.id == n))
+        {
+            let sp = &sn.params;
+            if sp.head_mini && d.hitgroup == Hitgroup::Head && sn.headshot_ready(clock.now) {
+                mini = true;
+            }
+            if sp.jarate > 0.0 {
+                let secs = (sp.jarate * d.amount * 100.0 / sp.charge_max.max(1.0)).max(SYDNEY_MIN);
+                let until = clock.now + secs as f64;
+                commands.queue(move |w: &mut World| {
+                    if let Some(mut c) = w.get_resource_mut::<chimera_sim::status::Conditions>() {
+                        c.give(v, Condition::Game(super::consumables::JARATE), until, Some(a));
+                    }
+                });
+            }
+        }
         if let Some(p) = item_of(d, &holders, &weapons, &cond) {
             if p.consume_burning
                 && let Some(b) = cond.burn(v)
@@ -319,6 +433,7 @@ pub fn crits(
                 let r = b.left.max(0.0);
                 d.amount = round_points(p.base_damage * (AXT_A + AXT_B * r) * MINI_CRIT / 100.0);
                 commands.entity(v).remove::<Burning>().insert(BurnConsumed { by: a, at: clock.now });
+                feedback.write(crate::game::weapons::crit_hits::CritHit { attacker: a, victim: v, at: d.point, mini: true, sound: true });
                 continue;
             }
             if p.damage_by_health
@@ -332,15 +447,35 @@ pub fn crits(
             mini |= p.mini_crit_airborne && cond.launched(v);
             mini |= p.back_attack && cond.behind(a, v);
             mini |= p.minicrit_burning && cond.burn(v).is_some();
+            // The Ambassador (batch2b 16): a headshot within range after
+            // the spread's recovery crits, with the far half of the
+            // distance modifier (no ramp-up).
+            if p.head_crit_range > 0.0
+                && d.hitgroup == Hitgroup::Head
+                && let Some(w) = active
+                && revolvers.since_last(w) > AMBASSADOR_RECOVER + 1e-6
+                && let Some(dist) = cond.distance(a, v)
+                && dist <= p.head_crit_range + 1e-3
+            {
+                let m = crate::game::weapons::damage::modifier(dist, 1.0).min(1.0);
+                d.amount = p.base_damage / 100.0 * m;
+                crit = true;
+            }
+            // The Diamondback's stored crit, spent by this shot.
+            if p.collect_crits && active.is_some_and(|w| revolvers.crit_now.contains(&w)) {
+                d.amount = p.base_damage / 100.0;
+                crit = true;
+            }
             if p.minicrits_crit && mini {
                 crit = true;
             }
         }
-        // A crit's hit sound at the victim (weapons_stock.md 8.3), unless
-        // a melee weapon's own crit swing plays it (`melee::after`).
-        let melee_crit = holders.get(a).ok().and_then(|i| i.active).and_then(|w| melees.get(w).ok()).is_some_and(|m| m.crit);
-        if crit && !melee_crit {
-            sounds.write(GameSound(PlaySound { source: Some(v), ..PlaySound::at(CRIT_HIT, d.point) }));
+        // A crit's or mini-crit's hit sound at the victim (weapons_stock.md
+        // 8.3, batch2b 18) and its text, unless a melee weapon's own crit
+        // swing plays the sound (`melee::after`).
+        let melee_crit = active.and_then(|w| melees.get(w).ok()).is_some_and(|m| m.crit);
+        if crit || mini {
+            feedback.write(crate::game::weapons::crit_hits::CritHit { attacker: a, victim: v, at: d.point, mini: !crit, sound: !(crit && melee_crit) });
         }
         // Whole points, halves up, after the factor (an item's hit, which
         // may come unrounded: a flare's 22.5).
@@ -416,7 +551,7 @@ pub fn after(
         Res<HitHealth>,
         Res<SimClock>,
     ),
-    (mut out, mut launch): (MessageWriter<Damage>, MessageWriter<chimera_sim::weapon::projectile::LaunchRequest>),
+    (mut out, mut launch, mut revolvers): (MessageWriter<Damage>, MessageWriter<chimera_sim::weapon::projectile::LaunchRequest>, ResMut<Revolvers>),
     mut commands: Commands,
 ) {
     let now = clock.now;
@@ -458,6 +593,16 @@ pub fn after(
             });
         }
         let Some(a) = d.attacker.filter(|a| *a != d.target) else { continue };
+        // Mad Milk (batch2b 13): the attacker heals 60 % of his damage on
+        // a milked enemy, rounded down.
+        if cond.has(d.target, Condition::Game(super::consumables::MILK))
+            && !mates(a, d.target, &health)
+            && let Ok((mut h, ..)) = health.get_mut(a)
+            && h.current > 0.0
+            && h.current < h.max
+        {
+            h.current = (h.current + super::consumables::milk_heal(d.amount * 100.0) / 100.0).min(h.max);
+        }
         let Some(p) = item_of(d, &holders, &weapons, &cond) else { continue };
         if p.bleed > 0.0 && alive(d.target, &health) {
             let new = Bleeding::start(now, p.bleed, BLEED_TICK / 100.0, DOT_PERIOD, Some(a), d.weapon.or_else(|| weapon_id(a, &holders, &weapons)));
@@ -525,6 +670,16 @@ pub fn after(
         }
         let d = &k.damage;
         let Some(a) = d.attacker.filter(|a| *a != k.entity) else { continue };
+        // The Diamondback (batch2b 16): a backstab kill stores a crit.
+        if d.weapon == Some(BACKSTAB)
+            && let Ok(inv) = holders.get(a)
+        {
+            for &w in &inv.weapons {
+                if weapons.get(w).is_ok_and(|(_, i)| i.0.collect_crits) {
+                    *revolvers.stored.entry(w).or_default() += 1;
+                }
+            }
+        }
         // The Kunai's backstab (credited to the backstab, not the knife).
         let p = if d.weapon == Some(BACKSTAB) {
             holders.get(a).ok().and_then(|i| i.active).and_then(|w| weapons.get(w).ok()).map(|(_, i)| i.0.clone())
@@ -583,28 +738,47 @@ fn weapon_id(a: Entity, holders: &Query<&Inventory>, weapons: &Query<(&Weapon, &
     holders.get(a).ok()?.active.and_then(|w| weapons.get(w).ok()).map(|(w, _)| w.id)
 }
 
-/// The Candy Cane's kits: taken by the first living body that reaches
-/// one (module doc), gone at their life's end (the flyer's).
+/// The dropped kits: the Candy Cane's, taken by the first living body
+/// that reaches one (module doc), and a thrown lunch's
+/// (`consumables::LUNCH_KIT`: its thrower's team only, its thrower after
+/// `consumables::KIT_OWNER_WAIT`; half the max health), gone at their
+/// life's end (the flyer's).
 #[allow(clippy::type_complexity)]
 pub fn kits(
     kits: Query<(Entity, &chimera_sim::weapon::projectile::Flyer, &Transform)>,
-    mut bodies: Query<(Entity, &Transform, Option<&avian3d::prelude::ColliderAabb>, Option<&MovementState>, &mut Health, Has<Burning>, Has<Bleeding>), With<Intent>>,
+    mut bodies: Query<
+        (Entity, &Transform, Option<&avian3d::prelude::ColliderAabb>, Option<&MovementState>, &mut Health, Has<Burning>, Has<Bleeding>, Option<&Team>),
+        With<Intent>,
+    >,
+    clock: Res<SimClock>,
     mut commands: Commands,
 ) {
     let reach = KIT_REACH * crate::game::weapons::damage::U;
     for (k, f, at) in &kits {
-        if f.weapon != KIT {
-            continue;
-        }
-        for (e, t, aabb, state, mut h, burning, bleeding) in &mut bodies {
+        let (share, lunch) = match f.weapon {
+            KIT => (KIT_SHARE, false),
+            super::consumables::LUNCH_KIT => (LUNCH_SHARE, true),
+            _ => continue,
+        };
+        let owner_team = f.owner.and_then(|o| bodies.get(o).ok().and_then(|b| b.7.copied()));
+        for (e, t, aabb, state, mut h, burning, bleeding, team) in &mut bodies {
             if h.current <= 0.0 {
                 continue;
+            }
+            if lunch {
+                let own = Some(e) == f.owner;
+                if own && clock.now < f.born + super::consumables::KIT_OWNER_WAIT {
+                    continue;
+                }
+                if !own && (owner_team.is_none_or(|t| t.0 == 0) || team.copied() != owner_team) {
+                    continue;
+                }
             }
             let (min, max) = crate::game::weapons::blast::boxed(t, aabb, state);
             if at.translation.clamp(min, max).distance(at.translation) > reach {
                 continue;
             }
-            let gain = ((h.max * 100.0 * KIT_SHARE) - 1e-4).ceil() / 100.0;
+            let gain = ((h.max * 100.0 * share) - 1e-4).ceil() / 100.0;
             let heals = h.current < h.max;
             if !heals && !burning && !bleeding {
                 continue;
@@ -711,9 +885,10 @@ pub fn overheal(mut q: Query<(Entity, &mut Health, &Overhealed)>, time: Res<Time
 pub fn add(app: &mut App) {
     chimera_sim::status::add(app);
     crate::core::PredictedAppExt::predicted_net::<Heads>(app);
-    app.init_resource::<HitHealth>().init_resource::<Regens>().init_resource::<Donks>().add_systems(
+    app.init_resource::<HitHealth>().init_resource::<Regens>().init_resource::<Donks>().init_resource::<Revolvers>().add_systems(
         FixedUpdate,
         (
+            note_shots.after(crate::core::SimSet::Weapons).before(crits),
             crits.after(crate::core::SimSet::Weapons).before(super::mods::taken).before(crate::core::apply_damage),
             (after, kits).after(crate::core::apply_damage),
             (regen, overheal).after(crate::core::apply_damage).after(crate::game::movement::class_health),

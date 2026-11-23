@@ -3,7 +3,8 @@
 //! harness (`skeleton`: `harness::Tf2Sim` and the greybox), the spawn
 //! rule on made-up entities (`spawns`), TF2's movement and classes
 //! (`movement`: movement.md's test cases), ICE against its spec (`ice`),
-//! the unlocks from a made-up item schema through the converter (`items`),
+//! the unlocks from a made-up item schema through the converter (`items`;
+//! batch 2's mechanics: `batch2`, `batch2b`, `batch2b_items`),
 //! the script reader on fixtures encrypted with throwaway keys
 //! (`scripts`), the guns (`weapons`: M2b's four; `weapons_more`: the
 //! next eight; `melee`: the nine stock melee weapons and the backstab;
@@ -39,6 +40,7 @@
 mod airblast;
 mod batch2;
 mod batch2b;
+mod batch2b_items;
 mod crit_boost;
 mod ice;
 mod items;

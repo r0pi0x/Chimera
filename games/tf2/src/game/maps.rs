@@ -320,6 +320,12 @@ fn gun_sounds(mount: Option<&crate::mount::Mount>) -> Vec<String> {
     let mut out: Vec<String> = super::sets::M2_WEAPONS.iter().flat_map(|w| w.sounds.iter().map(|s| s.to_string())).collect();
     // The flare guns' (their class has no stock gun's set).
     out.extend(super::sets::FLARE_GUN_SOUNDS.iter().map(|s| s.to_string()));
+    // Any gun's (the crit and mini-crit hits: batch2b_mechanics.md 18).
+    for s in super::sets::GENERAL_SOUNDS {
+        if !out.iter().any(|o| o == s) {
+            out.push(s.to_string());
+        }
+    }
     for item in mount.map(super::items::on_mount_here).unwrap_or_default() {
         for s in item.looks.sounds {
             if !out.contains(&s) {
@@ -406,15 +412,15 @@ pub fn add_guns_with(
     let set = w::tf2_weapons();
     // The stock guns, then the unlocks on the mount (`items::on_mount`:
     // their own models; their projectiles their base's).
-    let mut guns: Vec<(String, String, Option<String>, String)> = w::arms_by_gun()
+    let mut guns: Vec<(String, String, Option<String>, String, Option<String>)> = w::arms_by_gun()
         .into_iter()
-        .map(|(g, arms)| (g.to_string(), arms, set.weapons.iter().find(|d| d.id == g).and_then(|d| d.models.world.clone()), g.to_string()))
+        .map(|(g, arms)| (g.to_string(), arms, set.weapons.iter().find(|d| d.id == g).and_then(|d| d.models.world.clone()), g.to_string(), None))
         .collect();
     for item in items {
-        guns.push((item.id.clone(), item.looks.arms.clone(), item.looks.world.clone(), item.base.clone()));
+        guns.push((item.id.clone(), item.looks.arms.clone(), item.looks.world.clone(), item.base.clone(), item.looks.thrown.clone()));
     }
     let mut projectiles: Vec<&str> = Vec::new();
-    for (gun, arms, path, base) in guns {
+    for (gun, arms, path, base, thrown) in guns {
         let gun = gun.as_str();
         if !wants(gun) {
             continue;
@@ -446,6 +452,21 @@ pub fn add_guns_with(
                 into.held.push(h)
             }
             Err(e) => warnings.push(e),
+        }
+        // A thrown item (a jar) shows its own model (`items::docs::thrown_key`);
+        // a lunch thrown the medium kit's (`items::consumables::kit_key`).
+        if let Some(key) = thrown {
+            match props::load_held(materials, &path, &key, &skeleton) {
+                Ok(h) => into.held.push(h),
+                Err(e) => warnings.push(e),
+            }
+        }
+        if base == w::LUNCHBOX {
+            let key = super::items::consumables::kit_key(gun);
+            match props::load_held(materials, super::items::consumables::LUNCH_KIT_MODEL, &key, &skeleton) {
+                Ok(h) => into.held.push(h),
+                Err(e) => warnings.push(e),
+            }
         }
         for (_, key, model) in PROJECTILES.iter().filter(|(g, ..)| *g == base || *g == gun) {
             // Once (an unlock and its base share it).

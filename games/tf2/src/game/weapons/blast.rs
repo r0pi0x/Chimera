@@ -382,6 +382,8 @@ pub struct BlastWorld<'w, 's> {
     dealt_out: MessageWriter<'w, chimera_sim::weapon::grenade::BlastDealt>,
     /// Who a blast mini-crits (`crate::game::items::effects::Conditions`).
     pub conditions: crate::game::items::effects::Conditions<'w, 's>,
+    /// Its mini-crits' feedback (`crit_hits`).
+    crit_hits: MessageWriter<'w, super::crit_hits::CritHit>,
     commands: Commands<'w, 's>,
 }
 
@@ -389,6 +391,7 @@ pub struct BlastWorld<'w, 's> {
 /// scale and the box it is pushed by (units).
 struct Dealt {
     e: Entity,
+    mini: bool,
     points: f32,
     centre: Vec3,
     scale: f32,
@@ -556,6 +559,7 @@ impl BlastWorld<'_, '_> {
                 };
                 own = Some(Dealt {
                     e,
+                    mini: false,
                     points: p.self_damage.unwrap_or(p.damage) * f * scale,
                     centre: c,
                     scale: if airborne { p.push_self_air } else { p.push_self_ground },
@@ -570,7 +574,7 @@ impl BlastWorld<'_, '_> {
                 };
                 let mini = blast.mini_crit || self.conditions.blast_mini_crit(weapon, owner, e);
                 let m = if mini { m.max(1.0) * MINI_CRIT } else { m };
-                dealt.push(Dealt { e, points: p.damage * blast.scale * m * f, centre: c, scale: p.push_other, size: tf2_hull(ducked, false), own: false });
+                dealt.push(Dealt { e, mini, points: p.damage * blast.scale * m * f, centre: c, scale: p.push_other, size: tf2_hull(ducked, false), own: false });
             }
         }
         // The owner after everyone else: his own push is the damage's
@@ -603,6 +607,11 @@ impl BlastWorld<'_, '_> {
                 force: Vec3::ZERO,
             });
             self.inflicted.write(Inflicted { target: d.e, amount, from: centre });
+            if d.mini
+                && let Some(a) = owner
+            {
+                self.crit_hits.write(super::crit_hits::CritHit { attacker: a, victim: d.e, at: d.centre, mini: true, sound: true });
+            }
             let half = if !d.own && self.heavy(d.e) { HEAVY_KNOCKBACK } else { 1.0 };
             let dv = push(d.points, d.scale, d.size, dir) * half * U;
             self.shove_by(d.e, dv, d.own, true);

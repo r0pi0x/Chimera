@@ -121,7 +121,7 @@ impl Kind {
         let name = id.rsplit(':').next().unwrap_or(id).trim_start_matches("tf_weapon_");
         match name {
             "pistol" | "pistol_scout" | "smg" | "revolver" | "grenadelauncher" | "medigun" | "shotgun_soldier" | "shotgun_hwg"
-            | "shotgun_pyro" | "flaregun" => Kind::Secondary,
+            | "shotgun_pyro" | "flaregun" | "lunchbox" | "lunchbox_drink" | "jar" => Kind::Secondary,
             "bat" | "shovel" | "fireaxe" | "bottle" | "fists" | "wrench" | "bonesaw" | "club" | "knife" => Kind::Melee,
             _ => Kind::Primary,
         }

@@ -33,7 +33,11 @@
 //!   (`class_<class><red|blue>`, 25, r88, 75 x 75), after the health
 //!   panel.
 //!
-//! Known shortcuts: the max-health label, the low-ammo pulse (no
+//! - **Item meter** (batch2b_mechanics.md 14): an item's meter (hype,
+//!   boost, crikey, heads, a consumable's recharge) in
+//!   `HudItemEffectMeter`'s box: its label over a bar (`item_meter`).
+//!
+//! Known shortcuts: the item meter's inner layout is ours; the max-health label, the low-ammo pulse (no
 //! threshold in the data), damage numbers and the health-gain number
 //! and the hit sound aren't drawn (open questions 6, 9, 3, 12); the
 //! portrait is the 2D picture, not the 3D model; each gun's own crosshair is unknown (open question 2: the
@@ -157,6 +161,10 @@ pub struct Inputs {
     /// How much the crosshair dims (0 .. 1): the over-the-shoulder camera's
     /// blocked-shot marker shows (`client::third_person::Shoulder::dim`).
     pub crosshair_dim: f32,
+    /// An item's meter (specs/tf2/batch2b_mechanics.md 14, 11-13: hype,
+    /// boost, crikey, heads, a consumable's recharge): its label and fill
+    /// 0-1 (`tf2::game::items::meters`, `consumables`).
+    pub meter: Option<(String, f32)>,
 }
 
 /// The pictures of this HUD that are the crosshair: they dim with the
@@ -326,6 +334,10 @@ impl Tf2Hud {
                 None => big(&mut out, screen.child(p, 0.0, 2.0, 84.0, 40.0), ammo.clip.to_string()),
             }
         }
+        // An item's meter.
+        if let (true, Some((label, fill))) = (i.alive, &i.meter) {
+            out.extend(item_meter(label, *fill, screen, scheme));
+        }
         // The charge meter beside the scope's middle.
         if let (true, Some(charge)) = (i.alive, i.scope) {
             out.extend(charge_meter(charge, screen, scheme));
@@ -344,6 +356,37 @@ impl Tf2Hud {
         }
         out
     }
+}
+
+/// An item's meter (batch2b_mechanics.md 14) in `HudItemEffectMeter`'s
+/// box (hud.md 1: r162, r52, 100 x 50): a faint backing, its label
+/// (`HudFontSmall`, `TanLight`) and a bar (10, 30, 80 x 8) filled by
+/// `fill` in `HudProgressBarActive` over `HudProgressBarInActive`, the
+/// fill `HudProgressBarActiveLow` below a quarter. Its inner layout is
+/// ours (the meter's own `.res` isn't specified).
+pub fn item_meter(label: &str, fill: f32, screen: Screen, scheme: &dyn Scheme) -> Vec<Draw> {
+    let mut out = Vec::new();
+    let p = screen.rect(HudCoord::End(162.0), HudCoord::End(52.0), 100.0, 50.0);
+    let radius = screen.scaled(4.0);
+    out.push(Draw::Box { rect: screen.child(p, 4.0, 4.0, 92.0, 42.0), color: [0, 0, 0, 115], radius });
+    if let Some(tall) = scheme.tall("HudFontSmall") {
+        let tan = scheme.colour("TanLight").unwrap_or([235, 226, 202, 255]);
+        let b = screen.child(p, 10.0, 10.0, 80.0, 16.0);
+        out.push(Draw::Text { font: "HudFontSmall", tall, text: label.to_string(), color: tan, at: Vec2::new(b.min.x, b.min.y), align: Align::Left });
+    }
+    let bar = screen.child(p, 10.0, 30.0, 80.0, 8.0);
+    let back = scheme.colour("HudProgressBarInActive").unwrap_or([140, 120, 73, 255]);
+    let f = fill.clamp(0.0, 1.0);
+    let front = if f < 0.25 {
+        scheme.colour("HudProgressBarActiveLow").unwrap_or([240, 30, 30, 255])
+    } else {
+        scheme.colour("HudProgressBarActive").unwrap_or([240, 207, 78, 255])
+    };
+    out.push(Draw::Box { rect: bar, color: back, radius: 0.0 });
+    if f > 0.0 {
+        out.push(Draw::Box { rect: Rect::new(bar.min.x, bar.min.y, bar.min.x + bar.width() * f, bar.max.y), color: front, radius: 0.0 });
+    }
+    out
 }
 
 /// The Sniper's charge meter (measured on real TF2, hud.md "Measured":
@@ -585,5 +628,21 @@ mod tests {
         let full = hud.frame(&Inputs { scope: Some(1.0), ..open }, s, &Sheets);
         let n = full.iter().filter(|d| matches!(d, Draw::Sprite { sprite: "sniperscope_numbers2", .. })).count();
         assert_eq!(n, 2, "the whole wedge and the bolt");
+    }
+
+    /// An item meter: in `HudItemEffectMeter`'s box (r162, r52), its label
+    /// and a bar filled by its share, red below a quarter.
+    #[test]
+    fn an_item_meter_shows_its_label_and_fill() {
+        let s = Screen::new(1920.0, 1080.0);
+        let i = Inputs { alive: true, health: 125.0, max: 125.0, meter: Some(("HYPE".into(), 0.5)), ..default() };
+        let d = Tf2Hud::default().frame(&i, s, &Plain);
+        assert!(d.iter().any(|x| x.as_text() == Some("HYPE")));
+        let boxes: Vec<Rect> = d.iter().filter_map(|x| match x { Draw::Box { rect, color, .. } if *color == [240, 207, 78, 255] => Some(*rect), _ => None }).collect();
+        assert_eq!(boxes.len(), 1, "the fill");
+        let bar = s.child(s.rect(HudCoord::End(162.0), HudCoord::End(52.0), 100.0, 50.0), 10.0, 30.0, 80.0, 8.0);
+        assert!((boxes[0].width() - bar.width() / 2.0).abs() < 0.01);
+        let low = item_meter("BOOST", 0.1, s, &Plain);
+        assert!(low.iter().any(|x| matches!(x, Draw::Box { color, .. } if *color == [240, 30, 30, 255])));
     }
 }
