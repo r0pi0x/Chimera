@@ -45,7 +45,8 @@
 //! held model with its textures, its own sounds,
 //! `CaWeaponFx::sound_paths`, and what it throws or fires,
 //! `special::object_files`), `players`
-//! (CS:S: the eight class models; HL2:DM: its 19 player models; TF2: what
+//! (CS:S: the eight class models; HL2:DM: its 19 player models; DoD:S:
+//! its twelve class bodies with their shared animations; TF2: what
 //! every class's body reads and its HUD's look, with a set per class,
 //! `players/<class>`: its body, animations, textures, first-person
 //! arms and voice, `tf2::game::sets::player_pieces`), TF2's `weapon/<id>` for M2's guns
@@ -186,7 +187,7 @@ usage: chimera_pack pack <game> [options]       into a store (default the user's
                                                 (from the store's own records; --check: compare only)
        chimera_pack convert <game|all> [--store <dir>] --list | --drop <converter> [--sign]
                                                 the served entries by converter version; drop one
-  games: cs_source, combat_arms, hl2dm, halo_ce, tf2
+  games: cs_source, combat_arms, hl2dm, halo_ce, tf2, dods
   --set <name>      enter the packed files as set <name> (needs --from)
   --from <log>      only the game's files in a CHIMERA_VFS_LOG log
   --store <dir>     the store (default: [assets] store, CHIMERA_ASSET_STORE, ~/.cache/chimera/assets)
@@ -229,7 +230,7 @@ impl Game {
     }
 }
 
-fn games() -> [Game; 5] {
+fn games() -> [Game; 6] {
     [
         Game {
             info: &cs_source::game::INFO,
@@ -278,6 +279,19 @@ fn games() -> [Game; 5] {
             info: &tf2::game::INFO,
             open_install: tf2_open_install,
             app: Some(440),
+            build: None,
+            extra: None,
+            left_out: &[],
+        },
+        // Day of Defeat: Source: its search path from `dod/gameinfo.txt`
+        // (plain scripts, no key); its sets: `weapon/<id>`, `players` (the
+        // class bodies) and `map/<name>` (`record_pieces`). The retail
+        // client's app, 300 (the dedicated server's, 232290, when packed
+        // from it: pass --build).
+        Game {
+            info: &dods::game::INFO,
+            open_install: dods::game::mount::open_install,
+            app: Some(300),
             build: None,
             extra: None,
             left_out: &[],
@@ -933,6 +947,34 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                     .map(|_| ())
             });
         }
+        "dods" => {
+            // Its guns (view and held models) and the class bodies (with
+            // the shared animation model they include).
+            use dods::game::{bodies, weapons};
+            use source_engine::content::{material::MaterialLoader, surfaceprops::SurfaceProps};
+            for w in weapons::GUNS {
+                take();
+                let mut materials = MaterialLoader::guest(&tapped, 0, 0);
+                let surfaces = SurfaceProps::load(&mut materials);
+                let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
+                weapons::add_guns(&mut materials, &surfaces, &|g| g == *w, &mut kit, &mut warnings);
+                let id = w.rsplit(':').next().unwrap_or(w).trim_start_matches("weapon_");
+                out.push((format!("weapon/{id}"), take()));
+            }
+            take();
+            let mut materials = MaterialLoader::guest(&tapped, 0, 0);
+            let surfaces = SurfaceProps::load(&mut materials);
+            for c in &bodies::CLASSES {
+                let _ = bodies::load(&mut materials, &surfaces, c.model);
+            }
+            out.push(("players".into(), take()));
+            let options = map_options(false);
+            record_maps(source_engine::maps::map_names(mount), only, &take, &mut out, |name| {
+                let bytes = tapped.read(&format!("maps/{name}.bsp")).map_err(|e| e.to_string())?;
+                source_engine::content::bsp::load_level_bytes_in(&dods::game::maps::DODS, &tapped, name, bytes, &options, None)
+                    .map(|_| ())
+            });
+        }
         "halo_ce" => {
             use halo_ce::game::{parts::PARTS, sets};
             // `base`, `players` and each gun's `weapon/<id>`: the donor
@@ -1375,7 +1417,7 @@ fn sign_command(args: &[String]) -> Result<(), String> {
 
 /// The guests `convert` serves (`all`): those whose dressing is Chimera's
 /// `map::kept` (Halo's donors aren't yet).
-const CONVERTED_GUESTS: &[&str] = &["cs_source", "hl2dm", "tf2", "combat_arms"];
+const CONVERTED_GUESTS: &[&str] = &["cs_source", "hl2dm", "tf2", "dods", "combat_arms"];
 
 /// A guest's dressing, as its bundle registers it.
 fn guest_dressing(game: &str) -> Option<&'static chimera_world::map::MapDressing> {
@@ -1383,6 +1425,7 @@ fn guest_dressing(game: &str) -> Option<&'static chimera_world::map::MapDressing
         "cs_source" => &cs_source::game::bundle::GUEST,
         "hl2dm" => &hl2dm::game::GUEST,
         "tf2" => &tf2::game::GUEST,
+        "dods" => &dods::game::GUEST,
         "combat_arms" => &combat_arms::game::world::DRESSING,
         _ => return None,
     })

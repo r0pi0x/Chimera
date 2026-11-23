@@ -32,6 +32,14 @@
 # load and play with stand-in textures and no sound
 # (docs/assets-for-developers.md).
 # path = "~/games/tf2"
+
+# [games.dods]
+# Folder containing dod/, hl2/ and platform/: the retail client, Steam app
+# 300, found in Steam's libraries without this line; or CHIMERA_DODS_ROOT
+# for one run. The dedicated server's folder (SteamCMD app 232290,
+# anonymous) has everything the party reads (maps, models, textures,
+# sounds) and needs this line or the variable.
+# path = "~/games/dods_ds"
 #
 # TF2's encrypted weapon and class scripts (scripts/*.ctx): the
 # 8-character key you supply yourself; never commit it. The environment's

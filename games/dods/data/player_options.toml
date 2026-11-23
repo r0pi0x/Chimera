@@ -1,0 +1,8 @@
+# This game's own keys and options on the party apps' Options screen
+# (Games tab: party_kit::game_options; docs/plans/active/settings-games.md;
+# the format: games/tf2/data/player_options.toml's header). M0: none of
+# its own yet (prone, sprint and the deploy key come with M1-M2).
+
+[game]
+name = "Day of Defeat: Source"
+short = "DoD:S"

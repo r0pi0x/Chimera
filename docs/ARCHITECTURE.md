@@ -37,6 +37,8 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    halo_ce_ui (games/halo_ce/ui/)   Halo's front end as its own crate (its HUD, buttons, kill icons, party view): on halo_ce, blam_formats and the shell
   |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its twelve guns and nine melee weapons and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim
   |    tf2_ui (games/tf2/ui/)   TF2's front end as its own crate (its HUD, its guns' kill icons): on tf2 and the shell; tf2 and its tests build no client
+  |    dods (games/dods/)   Day of Defeat: Source (M0): GameInfo, mount from gameinfo.txt, maps (Allies/Axis spawns), the twelve class bodies, Source movement with its stances, a stand-in Colt, harness::DodsSim
+  |    dods_ui (games/dods/ui/)   DoD:S's front end as its own crate (empty until its HUD)
   |
   |    cs_source_ui (games/cs_source/ui/)   CS:S's front end as its own crate (menus, panels, HUD, scoreboard): on cs_source, Source's shared crates, source_gameui and the shell
   |   /         \
@@ -470,6 +472,21 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   from its collision as on any map without its own.
   Layered as `hl2dm`: the engine crates and `blam_formats`, never another
   game, `mashup` or an app (checked); `ui` draws nothing of its own yet.
+- `dods` (games/dods/) is Day of Defeat: Source, M0 of
+  docs/plans/active/dods.md: its `GameInfo` (`game::INFO`: Steam app 300,
+  folder `dod`, tick 0.015 s, console namespaces `dods` and `dod`), its
+  install mounted from `dod/gameinfo.txt` (`game::mount`, through
+  `mount::served`; the dedicated server's layout as it is), its maps
+  (`game::maps`, `game::MAP_LOADER`: `source_engine`'s conversion with
+  spawns from `info_player_allies` and `info_player_axis`), the twelve
+  class bodies (`game::bodies`: MDL 44 with the shared MDL 48's
+  sequences; worn by name, the sandbox's practice targets), `dods:movement`
+  (`game::movement`: Source's with DoD:S's run speed, friction and its
+  stand and duck boxes and eyes, the envelope its maps carry), one
+  stand-in gun as data (`game::weapons`: the Colt), `SimPlugins`,
+  `game::DodsPlugins`, `harness::DodsSim`, `BUNDLE` (a party guest:
+  `GUEST` dresses other games' maps with its bodies and gun). Layered as
+  `tf2`; `dods_ui` draws nothing of its own yet.
 - `tf2` (games/tf2/) is Team Fortress 2, M1 of docs/plans/active/tf2.md:
   its `GameInfo` (`game::INFO`: Steam app 440, folder `tf`, tick 0.015 s,
   console namespaces `tf2` and `tf`), its install mounted from

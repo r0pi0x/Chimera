@@ -66,7 +66,7 @@ required-features = ["present"]
 # Its integration tests: the automatic gun game on the composed simulation,
 # headless; `it` (tests/it/) the tests naming several guest games, the
 # default party's in tests/base/, one binary per guest game (tests/hl2dm/,
-# tests/tf2/, tests/halo_ce/), helpers in tests/common/.
+# tests/tf2/, tests/halo_ce/, tests/dods/), helpers in tests/common/.
 [[test]]
 name = "it"
 path = "tests/it/main.rs"
@@ -86,6 +86,10 @@ path = "tests/tf2/main.rs"
 [[test]]
 name = "halo_ce"
 path = "tests/halo_ce/main.rs"
+
+[[test]]
+name = "dods"
+path = "tests/dods/main.rs"
 
 # The Windows executable's icon (build.rs: a no-op elsewhere).
 [target.'cfg(windows)'.build-dependencies]

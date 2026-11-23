@@ -248,6 +248,25 @@ archive listings, the `heavy::served` tests (they pack from an install),
 `dump`. Local demo and probe files (`target/demos`, probe logs) aren't
 served either: those tests skip as they do for us without them.
 
+## Day of Defeat: Source: an install of your own
+
+DoD:S (docs/plans/active/dods.md) is not served yet (its sets are
+packed by `chimera_pack pack dods`: `weapon/colt`, `players`,
+`map/<name>`; published after M1). Its tests and the party's `dods:`
+maps read an install, found as the other games' are:
+`$CHIMERA_DODS_ROOT` for one run, else `[games.dods] path` in
+`chimera.local.toml`, else Steam's libraries (app 300, "Day of Defeat
+Source"). The dedicated server (app 232290, anonymous) has everything
+the party reads, about 1.8 GB:
+
+```
+steamcmd +force_install_dir <folder> +login anonymous +app_update 232290 validate +quit
+```
+
+A SteamCMD install outside Steam's libraries needs the config line or
+the variable (a folder holding `dod/`, `hl2/` and `platform/`). The
+scripts are plain text: no key.
+
 ## Team Fortress 2: an install of your own, or the service
 
 TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'

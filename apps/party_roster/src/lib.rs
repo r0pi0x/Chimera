@@ -58,11 +58,13 @@ pub const DEFAULT_MINIGAME: &str = originals::GUN_GAME_DUST2;
 /// whose gameplay, bots and HUD everything plays on), each one bundle
 /// (`chimera_world::game_bundle`, lift C4): CS:S, HL2:DM, Halo (its maps
 /// from its disc image, its guns) and TF2 (its maps by id, its four guns:
-/// docs/plans/active/tf2.md, M2b), in the order an automatic ladder takes
-/// them.
+/// docs/plans/active/tf2.md, M2b) and DoD:S (its maps by id, its class
+/// bodies, M0's stand-in Colt: docs/plans/active/dods.md), in the order
+/// an automatic ladder takes them.
 ///
 /// The one list a new guest joins: everything below is made from it.
-pub static GUESTS: [&GameBundle; 4] = [&cs_source::game::BUNDLE, &hl2dm::game::BUNDLE, &halo_ce::game::BUNDLE, &tf2::game::BUNDLE];
+pub static GUESTS: [&GameBundle; 5] =
+    [&cs_source::game::BUNDLE, &hl2dm::game::BUNDLE, &halo_ce::game::BUNDLE, &tf2::game::BUNDLE, &dods::game::BUNDLE];
 
 /// How many guests (`GUESTS`).
 const N: usize = GUESTS.len();

@@ -18,7 +18,7 @@ and the game's own data.
 | Milestone | State | Summary |
 |---|---|---|
 | Plan and first specs | done (2026-11-23) | this plan; specs/dods/: install, weapons, movement, classes, damage (measured on the dedicated server where marked) |
-| M0 install, mount, maps, bodies in the sandbox | not started | §4 |
+| M0 install, mount, maps, bodies in the sandbox | done (2026-11-23) | §4; the log |
 | M1 weapons | not started | §4 |
 | M2 movement specifics | not started | §4 |
 | M3 party rungs | not started | §4 |
@@ -50,7 +50,7 @@ and the game's own data.
 | The retail client (`Day of Defeat: Source`) | 300 (paid; Linux build) | everything | play, refcmp captures, the packing source for `chimera_pack dods` |
 | The dedicated server | 232290 (SteamCMD, anonymous) | **everything the party needs**: the nine stock maps (BSP 20), `dod/dod_pak_dir.vpk` with 1,699 textures, 800 sounds, 819 models and the plain-text weapon and class scripts, `hl2/` shared VPKs (specs/dods/install.md) | development, tests and measurements on this box (`~/games/dods_ds`, installed 2026-11-23) |
 
-- **Found** as the other games are (`chimera_core::mount::install`):
+- **Found** (M0, done) as the other games are (`chimera_core::mount::install`):
   `$CHIMERA_DODS_ROOT`, then `[games.dods] path` in
   `chimera.local.toml`, then the first-run dialog's path, then Steam's
   libraries (app 300). The server layout from SteamCMD needs the config
@@ -192,6 +192,28 @@ event's presents.
 
 ## Log
 
+- 2026-11-23, M0: `games/dods` and `games/dods/ui` (crates `dods`,
+  `dods_ui`), a guest in the party roster (`GUESTS`, `CLIENTS`); no
+  apps of its own yet (as TF2). The install found by `$CHIMERA_DODS_ROOT`
+  / `[games.dods] path` / Steam app 300 and mounted from
+  `dod/gameinfo.txt`; all nine stock maps convert (BSP 20, no LZMA seen)
+  with 20 + 20 spawns (dod_palermo 16 + 16); the twelve class bodies
+  (MDL 44, their sequences from the shared MDL 48) load with our reader
+  unchanged, a head box each; worn by name, and the sandbox's practice
+  targets (`dods:us_rifleman` ... `dods:axis_rocket`). `dods:movement`:
+  Source's with the measured run speed (220, no back-pedal penalty),
+  friction law (8 over 50), duck third, stand 72 / eye 58, duck 45 / eye
+  34 (the envelope its maps carry for other games' characters); jump a
+  CS:S stand-in. One stand-in gun so a body can be worn (a body follows
+  the gun in hand's game): the Colt as data (data/weapons/colt.toml, the
+  script's numbers, no sounds or recoil yet); as a pistol it can be a
+  rung of the automatic gun games until M1. `chimera_pack` knows `dods`
+  (`weapon/colt`, `players`, `map/<name>`, the converted guest
+  dressing); not published. Found: the dedicated server's layout lacks
+  `hl2/hl2_textures_*.vpk`'s archives (only the `_dir` file): the
+  textures DoD:S's maps borrow from HL2 (concrete, brick, detail
+  textures) are stand-ins there, as on TF2's server layout; install.md's
+  "everything the party needs" holds for DoD:S's own files only.
 - 2026-11-23: plan written; dedicated server installed on this box;
   first spec pass (weapon and class scripts read, cvars listed, models'
   hitboxes read, movement and damage measured with puppet bots).

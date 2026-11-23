@@ -27,13 +27,14 @@ use crate::PARTY as THE_PARTY;
 /// Each game's front end (its `ui`'s `GameClient`, beside its bundle):
 /// the base game's first, then the guests' (HL2:DM's: M9; Halo's: its
 /// HUD while a Halo gun is in hand; TF2's: its HUD while a TF2 gun is in
-/// hand).
-pub static CLIENTS: [&GameClient; 5] = [
+/// hand; DoD:S's: none yet).
+pub static CLIENTS: [&GameClient; 6] = [
     &combat_arms_ui::PARTY_CLIENT,
     &cs_source_ui::party::CLIENT,
     &hl2dm_ui::party::CLIENT,
     &halo_ce_ui::party::CLIENT,
     &tf2_ui::party::CLIENT,
+    &dods_ui::party::CLIENT,
 ];
 
 /// Each game's own tab on the Controls page, in tab order (after

@@ -17,6 +17,7 @@ use bevy::math::{Quat, Vec3};
 use halo_ce::game as halo;
 use hl2dm::game as hl2dm;
 use tf2::game as tf2;
+use dods::game as dods;
 use lithtech_formats::rez;
 use mashup::{
     games::cs_source,
@@ -28,8 +29,8 @@ use mashup::{
 
 const USAGE: &str = "\
 usage: dump <game> [options]
-  games: cs_source, combat_arms, hl2dm, tf2, halo_ce
-  (no option)          summary: file counts and sizes by extension (hl2dm, tf2: the
+  games: cs_source, combat_arms, hl2dm, tf2, dods, halo_ce
+  (no option)          summary: file counts and sizes by extension (hl2dm, tf2, dods: the
                        search path from gameinfo.txt first, each entry and whether it's there)
   --list               list every file with its size
   --archives           combat_arms: per-archive title, entropy and file count
@@ -143,6 +144,7 @@ fn install_path(args: &Args) -> Result<PathBuf, String> {
         cs_source::GAME => cs_source::INFO.steam,
         hl2dm::GAME => hl2dm::INFO.steam,
         tf2::GAME => tf2::INFO.steam,
+        dods::GAME => dods::INFO.steam,
         _ => None,
     };
     LocalConfig::load()?.game_path_in(&args.game, steam.as_ref()).ok_or_else(|| {
@@ -161,9 +163,26 @@ fn run(args: &Args) -> Result<(), String> {
         COMBAT_ARMS => dump_combat_arms(args, &install),
         hl2dm::GAME => dump_hl2dm(args, &install),
         tf2::GAME => dump_tf2(args, &install),
+        dods::GAME => dump_dods(args, &install),
         halo::GAME => dump_halo(args, &install),
-        other => Err(format!("unknown game `{other}`; expected cs_source, combat_arms, hl2dm, tf2 or halo_ce")),
+        other => Err(format!("unknown game `{other}`; expected cs_source, combat_arms, hl2dm, tf2, dods or halo_ce")),
     }
+}
+
+/// DoD:S: the search path its `gameinfo.txt` gives, then the mount's
+/// summary (or a model's sequences).
+fn dump_dods(args: &Args, install: &Path) -> Result<(), String> {
+    if let Ok(path) = dods::mount::search_path(install) {
+        println!("gameinfo.txt search path (first wins):");
+        for layer in &path.layers {
+            println!("  {layer}");
+        }
+    }
+    let mount = dods::mount::open(install).map_err(|e| e.to_string())?;
+    if let Some(path) = &args.sequences {
+        return sequences(&mount, path);
+    }
+    report(args, &mount, &[])
 }
 
 /// HL2:DM: the search path its `gameinfo.txt` gives (when the install's

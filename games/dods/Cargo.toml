@@ -1,0 +1,63 @@
+[package]
+name = "dods"
+version = "0.1.0"
+description = "Day of Defeat: Source as a game crate: its install, registration, maps, class bodies and movement so far (docs/plans/active/dods.md)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# The layers this crate builds on, beside Chimera (checks/tests/it/architecture.rs,
+# `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path").
+[package.metadata.chimera]
+loaders = ["source"]
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# The engine's simulation crates and Source's shared crates; never `mashup`,
+# another game (`cs_source`, `hl2dm`, `tf2`), an app, the presentation
+# (`chimera_present`) or the shell: the front end is its own crate above
+# this one, `dods_ui` (games/dods/ui; checks/tests/it/architecture.rs checks
+# it). Same versions and features as the other members' (workspace
+# dependencies), so `cargo test -p dods` reuses the workspace's builds.
+[dependencies]
+chimera_core.workspace = true
+chimera_world.workspace = true
+chimera_sim.workspace = true
+# Source engine behaviour shared with CS:S, HL2:DM and TF2 (the search
+# path, map lists, the maps' conversion, the movement).
+source_engine.workspace = true
+# Source's map logic (entity I/O, triggers, movers): part of the game's
+# simulation (`SimPlugins`).
+source_logic.workspace = true
+bevy.workspace = true
+vbsp.workspace = true
+workspace-hack.workspace = true
+
+# The tests' own: the presentation's Bevy and Avian features, for this
+# crate's own tests only (the dedicated servers build without them), so
+# `cargo test -p dods` shares the clients' builds of Bevy (hakari.toml).
+# No client shell: its tests build none of it (`dods_ui` has the front end's).
+[dev-dependencies]
+# The map's `render` feature, as every build with the presentation has it:
+# this crate's own tests then share the workspace's build of `chimera_world`
+# and of everything above it.
+chimera_world = { workspace = true, features = ["render"] }
+bevy = { workspace = true, features = ["default", "wav"] }
+avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+# bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it.
+bevy_winit.workspace = true
+# The maps' headers (tests/it/heavy/maps.rs).
+source_formats.workspace = true
+
+# The integration tests (tests/it/; the install's in tests/it/heavy/).
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[features]
+# Bevy as a dynamic library, as an app's `dev` (which turns this on):
+# `cargo test -p dods --features dev` shares the apps' Bevy build.
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "source_engine/dev", "source_logic/dev"]

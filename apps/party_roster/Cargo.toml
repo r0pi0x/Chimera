@@ -38,6 +38,7 @@ chimera_client = { workspace = true, optional = true }
 cs_source.workspace = true
 hl2dm.workspace = true
 tf2.workspace = true
+dods.workspace = true
 halo_ce.workspace = true
 combat_arms.workspace = true
 originals.workspace = true
@@ -46,6 +47,7 @@ cs_source_ui = { workspace = true, optional = true }
 combat_arms_ui = { workspace = true, optional = true }
 hl2dm_ui = { workspace = true, optional = true }
 tf2_ui = { workspace = true, optional = true }
+dods_ui = { workspace = true, optional = true }
 halo_ce_ui = { workspace = true, optional = true }
 avian3d.workspace = true
 bevy.workspace = true
@@ -133,6 +135,7 @@ present = [
     "dep:cs_source_ui",
     "dep:hl2dm_ui",
     "dep:tf2_ui",
+    "dep:dods_ui",
     "dep:halo_ce_ui",
 ]
 
@@ -150,12 +153,14 @@ dev = [
     "cs_source/dev",
     "hl2dm/dev",
     "tf2/dev",
+    "dods/dev",
     "halo_ce/dev",
     "combat_arms/dev",
     "originals/dev",
     "cs_source_ui?/dev",
     "hl2dm_ui?/dev",
     "tf2_ui?/dev",
+    "dods_ui?/dev",
     "halo_ce_ui?/dev",
     "combat_arms_ui?/dev",
 ]

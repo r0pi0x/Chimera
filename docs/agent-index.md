@@ -11,10 +11,10 @@ module list is `docs/modules.md`.
 
 - 1: Architecture | A map of the code
 - 6: Crates | A Cargo workspace (docs/plans/active/engine-split.md, "Crates and compile time"); every member is a default member, so `cargo test` and...
-- 739: Layers | Exact edges: console_scope uses core, console, game_registry and slots (the console's scope from the game played, the games'...
-- 865: Modules | The module list is `docs/modules.md`: one line per source file, grouped by crate folder, generated from the first sentence of each...
-- 876: Data flow per tick | Intent buttons are levels, not edges
-- 950: Slots | An implementation registers under a namespaced ID (`chimera:noclip`,
+- 756: Layers | Exact edges: console_scope uses core, console, game_registry and slots (the console's scope from the game played, the games'...
+- 882: Modules | The module list is `docs/modules.md`: one line per source file, grouped by crate folder, generated from the first sentence of each...
+- 893: Data flow per tick | Intent buttons are levels, not edges
+- 967: Slots | An implementation registers under a namespaced ID (`chimera:noclip`,
 
 ## docs/DESIGN.md
 
@@ -102,8 +102,9 @@ module list is `docs/modules.md`.
 - 197: Converted maps | Beside it, `~/.cache/chimera/maps` (`%LOCALAPPDATA%\chimera\maps`) keeps maps as converted (CS:S maps whole; Combat Arms' worlds only with
 - 225: How updates arrive | The repository's `assets.lock` (when there is one) pins each game's build and manifest id
 - 238: What still needs an install | Everything that reads the game through its mount runs from the service, the community maps the heavy tests load included (they are in...
-- 251: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
-- 295: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
+- 251: Day of Defeat: Source: an install of your own | DoD:S (docs/plans/active/dods.md) is not served yet (its sets are packed by `chimera_pack pack dods`: `weapon/colt`, `players`,
+- 270: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
+- 314: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
 
 ## docs/backlog.md
 

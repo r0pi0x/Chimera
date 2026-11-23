@@ -561,6 +561,7 @@ pub fn game_short(id: &str) -> String {
         "cs_source" => "CS:S".into(),
         "combat_arms" => "CA".into(),
         "tf2" => "TF2".into(),
+        "dods" => "DoD:S".into(),
         "halo_ce" => "Halo".into(),
         "hl2dm" => "HL2:DM".into(),
         o => o.to_ascii_uppercase(),

@@ -3720,6 +3720,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "dods"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "chimera_core",
+ "chimera_sim",
+ "chimera_world",
+ "source_engine",
+ "source_formats",
+ "source_logic",
+ "vbsp",
+ "workspace-hack",
+]
+
+[[package]]
+name = "dods_ui"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "chimera_world",
+ "dods",
+ "workspace-hack",
+]
+
+[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5552,6 +5581,7 @@ dependencies = [
  "cs_source",
  "cs_source_app",
  "dirs",
+ "dods",
  "half",
  "halo_ce",
  "hl2dm",
@@ -6638,6 +6668,8 @@ dependencies = [
  "combat_arms_ui",
  "cs_source",
  "cs_source_ui",
+ "dods",
+ "dods_ui",
  "halo_ce",
  "halo_ce_ui",
  "hl2dm",

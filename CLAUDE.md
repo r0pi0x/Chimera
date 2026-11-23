@@ -71,7 +71,7 @@ cargo test -p cs_source --features dev --test it weapons::   # one test
 cargo test -p chimera_world --features dev   # one crate's own tests (also
                                    # chimera_core, chimera_present, chimera_sim, chimera_net,
                                    # chimera_client, source_logic, cs_source, cs_source_app,
-                                   # ultimate_gun_game, hl2dm, tf2)
+                                   # ultimate_gun_game, hl2dm, tf2, dods)
 cargo test -p cs_source_ui --features dev   # CS:S's front end (menus, HUD)
 cargo test -p source_formats   # one workspace crate's tests (seconds)
 cargo test -p repo_checks      # architecture and docs checks (seconds)
