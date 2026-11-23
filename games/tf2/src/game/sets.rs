@@ -21,7 +21,8 @@
 //! sheets) and the guns' looks on any map (`maps::add_guest_looks`: the
 //! particle files and their materials, the impact decals and effect
 //! materials) with the surfaces' bullet-impact sounds and the voice lines
-//! any class plays (`voices::SHARED`) and any gun's (`GENERAL_SOUNDS`). The match's offer names the class sets
+//! any class plays (`voices::SHARED`) and any gun's (`GENERAL_SOUNDS`,
+//! the flare guns' `FLARE_GUN_SOUNDS`). The match's offer names the class sets
 //! its TF2 guns can make (`bodies::asset_names`, with the classes they
 //! need: data/classes.toml's `needs`).
 //!
@@ -50,8 +51,31 @@ use super::{
 use crate::mount::{Access, Mount};
 
 /// Sound entries any TF2 gun can play, in `players`: the crit boost's
-/// loop (effects.md 14) and the bullets' and RED needles' ricochet (7, 12).
-pub const GENERAL_SOUNDS: &[&str] = &["Weapon_General.CritPower", "Bounce.Shrapnel"];
+/// loop (effects.md 14), the bullets' and RED needles' ricochet (7, 12),
+/// a crit hit's (weapons_stock.md 8.3: any gun's crit, the Flare Gun's on
+/// a burning player) and the flare guns' (`FLARE_GUN_SOUNDS`: their
+/// class has no stock gun, so no set of its own).
+pub const GENERAL_SOUNDS: &[&str] = &["Weapon_General.CritPower", "Bounce.Shrapnel", "TFPlayer.CritHit"];
+
+/// The flare gun class's sound entries (data/weapons/flaregun.toml, the
+/// base of the Flare Gun, the Detonator and the Scorch Shot): its script's
+/// `SoundData` and `ExplosionSound` and the sound events of the Pyro
+/// arms' `fg_` sequences it plays (`fg_draw`: draw and grab; `fg_fire`:
+/// the tube's reload; specs/tf2/viewmodel_sounds.md). Loaded with the
+/// guns' (`maps::weapon_sounds`), held by `players`.
+pub const FLARE_GUN_SOUNDS: &[&str] = &[
+    "Weapon_FlareGun.Single",
+    "Weapon_FlareGun.SingleCrit",
+    "Weapon_FlareGun.ClipEmpty",
+    "Weapon_FlareGun.WorldReload",
+    "Weapon_FlareGun.Draw",
+    "Weapon_FlareGun.Grab",
+    "Weapon_FlareGun.TubeOpen",
+    "Weapon_FlareGun.Reload",
+    "Weapon_FlareGun.TubeCloseStart",
+    "Weapon_FlareGun.TubeCloseFinish",
+    "Default.FlareImpact",
+];
 
 /// One weapon (a gun or a melee weapon) and what its set holds.
 #[derive(Clone, Copy, Debug)]
@@ -456,8 +480,9 @@ pub fn player_pieces(mount: &Mount) -> Vec<(String, Vec<String>)> {
         for wave in super::voices::SHARED.iter().flat_map(|e| scripts.waves(e)) {
             let _ = mount.read(&wave);
         }
-        // Sounds of any gun: the crit boost's loop, the ricochet.
-        for wave in GENERAL_SOUNDS.iter().flat_map(|e| scripts.waves(e)) {
+        // Sounds of any gun: the crit boost's loop, the ricochet, the crit
+        // hit; the flare guns'.
+        for wave in GENERAL_SOUNDS.iter().chain(FLARE_GUN_SOUNDS).flat_map(|e| scripts.waves(e)) {
             let _ = mount.read(&wave);
         }
     });

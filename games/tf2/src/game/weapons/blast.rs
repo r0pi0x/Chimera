@@ -216,13 +216,14 @@ pub struct Tf2Explosion {
     pub weapon: &'static str,
 }
 
-/// A blast weapon's explosion sound (its rocket's, grenade's or sticky's
-/// `sound`), on every machine (the rules are each machine's).
+/// A blast weapon's explosion sound (its rocket's, grenade's, sticky's or
+/// flare's `sound`), on every machine (the rules are each machine's).
 #[derive(SystemParam)]
 pub struct BlastSounds<'w> {
     rockets: Option<Res<'w, super::rocket::RocketRules>>,
     grenades: Option<Res<'w, super::grenade::GrenadeRules>>,
     stickies: Option<Res<'w, super::sticky::StickyRules>>,
+    flares: Option<Res<'w, super::flare::FlareRules>>,
 }
 
 impl BlastSounds<'_> {
@@ -235,6 +236,7 @@ impl BlastSounds<'_> {
             .and_then(|r| rocket(r, weapon))
             .or_else(|| self.grenades.as_deref().and_then(|g| rocket(&g.0, weapon)))
             .or_else(|| self.stickies.as_deref().and_then(|s| s.get(weapon)).and_then(|(_, b, _)| b.sound.as_deref()))
+            .or_else(|| self.flares.as_deref().and_then(|f| f.get(weapon)).and_then(|p| p.sound.as_deref()))
     }
 }
 

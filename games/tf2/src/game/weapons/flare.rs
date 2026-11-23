@@ -30,10 +30,19 @@
 //! own explosion damage law (45 × (1 - r / 206), 32 from 56 to 61 units:
 //! 34 at 49 units, where 35 was measured) and push (5.6 per point); a flare touching
 //! the world goes at once (the game's stays 0.1 s); its life is 60 s;
-//! the explosion and the flare show no particles of their own (its
-//! model only); the flare guns' view-model animation sounds (the class
-//! script's draw and grab entries) aren't loaded, and their view model
-//! plays the `item1` activities by activity (their `anim_slot`).
+//! the flare shows no trail and a crit no glow (no spec or script names
+//! them: the plan's spec list), its model only; the Flare Gun's flare
+//! ending on the world shows nothing (the script's `ExplosionEffect` is
+//! drawn for the Detonator's and the Scorch Shot's explosions only); the
+//! view model plays the `item1` activities by activity (their
+//! `anim_slot`).
+//!
+//! Looks and sounds (data/weapons/flaregun.toml, the class script's
+//! names): the muzzle flash `muzzle_shotgun`; the explosion
+//! `flaregun_destroyed` wherever it goes off, with `Default.FlareImpact`
+//! (`sound`, `blast::BlastSounds`); the arms' `fg_` sequences' sound
+//! events (draw, grab, the tube's reload) and the script's entries are
+//! loaded with the guns' (`sets::FLARE_GUN_SOUNDS`).
 
 use std::sync::Arc;
 
@@ -81,10 +90,21 @@ pub struct FlareParams {
     pub scorch_push_burning: f32,
     pub ground_lift: f32,
     pub bounce: [f32; 2],
+    /// The explosion's sound entry (the script's `ExplosionSound`),
+    /// played with its look (`blast::BlastSounds`).
+    #[serde(default)]
+    pub sound: Option<String>,
+    /// An enemy Pyro's burn, in look only (weapons_more.md 7.3).
+    #[serde(default = "pyro_burn")]
+    pub pyro_burn: f32,
 }
 
 fn one() -> f32 {
     1.0
+}
+
+fn pyro_burn() -> f32 {
+    0.25
 }
 
 impl FlareParams {

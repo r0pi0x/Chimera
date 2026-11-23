@@ -318,6 +318,8 @@ pub fn weapon_sounds_on(mount: Option<&crate::mount::Mount>) -> impl Iterator<It
 /// entry's waves: an item's set is never fetched by it).
 fn gun_sounds(mount: Option<&crate::mount::Mount>) -> Vec<String> {
     let mut out: Vec<String> = super::sets::M2_WEAPONS.iter().flat_map(|w| w.sounds.iter().map(|s| s.to_string())).collect();
+    // The flare guns' (their class has no stock gun's set).
+    out.extend(super::sets::FLARE_GUN_SOUNDS.iter().map(|s| s.to_string()));
     for item in mount.map(super::items::on_mount_here).unwrap_or_default() {
         for s in item.looks.sounds {
             if !out.contains(&s) {

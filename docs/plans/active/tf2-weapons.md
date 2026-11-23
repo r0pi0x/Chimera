@@ -406,6 +406,18 @@ hook, each weapon data/items.toml's entry plus those.
 - *Speed buffs*: the speed boost (x1.4, +105 at most), Escape Plan,
   Equalizer, Disciplinary Action, Eviction Notice, Gloves of Running
   Urgently, Atomizer (an air jump while out).
+- Polish (2026-11-23): a crit plays `TFPlayer.CritHit` at its victim
+  (any weapon's, weapons_stock.md 8.3); the flare guns' muzzle flash
+  (`muzzle_shotgun`), the Detonator's and Scorch Shot's explosion
+  (`flaregun_destroyed`, `Default.FlareImpact`: the class script's names)
+  and the view-model sounds of the Pyro arms' `fg_` sequences (draw, grab,
+  the tube's reload) with the script's entries (`sets::FLARE_GUN_SOUNDS`);
+  the speed boost and the Eyelander's heads predicted (`predicted_net`:
+  the client runs at the server's speed, its start taken once); an enemy
+  Pyro hit by a flare burns 0.25 s in look only, a Pyro in his own
+  Detonator blast takes one afterburn tick. The asset service's `players`
+  set needs republishing for the new sound entries (`TFPlayer.CritHit`,
+  the flare guns').
 - Provisional numbers (the spec's open questions) are each module's Known
   shortcuts: the Detonator's own blast law and push, the kit's life and
   reach, the head excess's drain, heads lost at death, the Axtinguisher's
@@ -468,7 +480,12 @@ code. Order by what batch 1/2 needs:
    buffs. Still to spec: knockback on hit of the Force-a-Nature and the
    Shortstop's shove, the arrow, ball, cleaver/ornament, bolt and
    cannonball projectiles, lunchbox/drink timings, meters, sniper and
-   revolver variants.
+   revolver variants. Looks no spec names yet (batch 2's polish): the
+   mini-crit's hit sound, the "MINI CRIT!" and "CRITICAL HIT!!!" texts
+   over a victim, the flare's trail and its crit glow (which system, on
+   what, by team), what a Flare Gun flare ending on the world shows, and
+   whether a Pyro's 0.25-s burn look counts as burning for the flares'
+   crits.
 3. Airblast, shield charge, cloak/disguise, medigun, banners, building
    rules (batch 3): each its own spec file, the large ones in parts.
 

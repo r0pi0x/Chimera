@@ -86,3 +86,16 @@ scorch_push_burning = 400.0
 ground_lift = 268.3
 bounce = [139.0, 100.0]
 
+# The explosion's sound (the script's `ExplosionSound`, weapon_scripts.md;
+# played with its look, effects.md 5 step 5).
+sound = "tf2:Default.FlareImpact"
+
+# Its looks (specs/tf2/effects.md 1, 2, 5; looks.rs), the class script's
+# names: the muzzle flash (`MuzzleFlashParticleEffect`) and the Detonator's
+# and the Scorch Shot's explosions (`ExplosionEffect`,
+# `ExplosionPlayerEffect`, `ExplosionWaterEffect`: one system for all
+# three). The flare's trail and a crit's glow are named by no script or
+# spec (the plan's spec list).
+[hooks."tf2:looks"]
+muzzle = "muzzle_shotgun"
+explosion = { wall = "flaregun_destroyed", player = "flaregun_destroyed", water = "flaregun_destroyed" }

@@ -76,8 +76,10 @@
 //!   but the shooter (the held model's: never on this machine's own
 //!   player).
 //! - **Explosions** (effects.md 5; `blast::Tf2Explosion`, sent by the
-//!   server to every client): by the gun's `explosion` (the Stickybomb
-//!   Launcher's for pipes and stickies), held for `LateDelay` (as the
+//!   server to every client, an unlock's by its registered id): by the
+//!   gun's `explosion` (the Stickybomb Launcher's for pipes and stickies,
+//!   the flare gun class's `flaregun_destroyed` for the Detonator's and
+//!   the Scorch Shot's), held for `LateDelay` (as the
 //!   flyer drawn late reaches it, effects.md 11): `water` when the centre is in
 //!   water, `player` in the air or on a player, else `wall`, oriented to
 //!   the surface's normal (zero angles in the air); an unnamed one is
@@ -1379,9 +1381,14 @@ fn forward(
 
 /// A client: the server's explosions as its own (a gun it doesn't know
 /// shows the fallback explosion).
-fn receive(mut fx: MessageReader<ExplosionMsg>, mut out: MessageWriter<Tf2Explosion>) {
+fn receive(mut fx: MessageReader<ExplosionMsg>, registry: Option<Res<chimera_sim::weapon::WeaponRegistry>>, mut out: MessageWriter<Tf2Explosion>) {
     for f in fx.read() {
-        let weapon = super::GUNS.into_iter().find(|g| *g == f.weapon).unwrap_or("");
+        // A stock gun, else a registered unlock (the Detonator's).
+        let weapon = super::GUNS
+            .into_iter()
+            .find(|g| *g == f.weapon)
+            .or_else(|| registry.as_deref().and_then(|r| r.0.iter().find(|d| d.id == f.weapon)).map(|d| d.id))
+            .unwrap_or("");
         out.write(Tf2Explosion { at: f.at, normal: f.normal, on_player: f.on_player, weapon });
     }
 }

@@ -20,6 +20,8 @@
 //!   burn's seconds left, and puts the burn out; the Equalizer's
 //!   (`damage_by_health`) is `base_damage` × (1.65 - 1.15 health / max).
 //!   A blast asks `Conditions::blast_mini_crit` per victim (`blast`).
+//!   A crit plays `TFPlayer.CritHit` at its victim (weapons_stock.md
+//!   8.3; a melee weapon's own crit swing plays it itself).
 //! - **After a hit** (`after`, once the damage landed): a bleeding hit
 //!   (`bleed` s; §3) wounds its victim (Chimera's `status::Bleeding`,
 //!   `BLEED_TICK` every `DOT_PERIOD`); a swing at nothing with
@@ -58,10 +60,15 @@
 //!   was measured); it shows the small kit's model;
 //! - a mini-crit scales the hit as dealt, after the distance modifier (a
 //!   bullet's past 512 units keeps its fall-off; the Back Scatter's reach
-//!   ends at 512, where the modifier is 1); crits and mini-crits make no
-//!   sound or effect of their own; the Escape Plan's mark has no icon;
+//!   ends at 512, where the modifier is 1); a mini-crit makes no sound
+//!   and neither shows a text (no spec names them: the plan's spec
+//!   list); the Escape Plan's mark has no icon;
 //!   healing from Medics (×0.1) waits on a Medi Gun;
-//! - a Pyro takes a flare's hit but no burn (as the Flame Thrower's).
+//! - an enemy Pyro hit by a flare burns `pyro_burn` (0.25 s) in look
+//!   only, as from the Flame Thrower (weapons_more.md 7.3; that look
+//!   isn't burning for the flares' crits: unspecified), and a Pyro in his
+//!   own explosion takes one afterburn tick (the measured one; §4.3 says
+//!   no more).
 
 use bevy::{ecs::system::SystemParam, platform::collections::HashMap, prelude::*};
 
@@ -71,8 +78,9 @@ use crate::game::weapons::{
     blast::{BlastJumping, BlastLaunched, MINI_CRIT},
     damage::round_points,
     flame::Burning,
-    melee::{BACKSTAB, CRIT_MULT},
+    melee::{BACKSTAB, CRIT_HIT, CRIT_MULT, Tf2Melee},
 };
+use crate::map::{GameSound, PlaySound};
 use chimera_sim::{
     status::{Bleeding, SpeedBoost},
     weapon::{Inventory, Weapon, WeaponEvent, WeaponEventKind},
@@ -223,8 +231,10 @@ pub struct BurnConsumed {
     pub at: f64,
 }
 
-/// A head holder's count (§1.6).
-#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// A head holder's count (§1.6): predicted state the server sends its
+/// holder's client (`predicted_net`), whose movement then runs at the
+/// heads' speed.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Heads(pub u32);
 
 /// Health an item put above max (the Kunai's, a head's): it falls at
@@ -258,6 +268,7 @@ pub fn crits(
     weapons: Query<(&Weapon, &Tf2Item)>,
     clock: Res<SimClock>,
     mut before: ResMut<HitHealth>,
+    (melees, mut sounds): (Query<&Tf2Melee>, MessageWriter<GameSound>),
     mut commands: Commands,
 ) {
     before.0.clear();
@@ -298,6 +309,12 @@ pub fn crits(
             if p.minicrits_crit && mini {
                 crit = true;
             }
+        }
+        // A crit's hit sound at the victim (weapons_stock.md 8.3), unless
+        // a melee weapon's own crit swing plays it (`melee::after`).
+        let melee_crit = holders.get(a).ok().and_then(|i| i.active).and_then(|w| melees.get(w).ok()).is_some_and(|m| m.crit);
+        if crit && !melee_crit {
+            sounds.write(GameSound(PlaySound { source: Some(v), ..PlaySound::at(CRIT_HIT, d.point) }));
         }
         // Whole points, halves up, after the factor (an item's hit, which
         // may come unrounded: a flare's 22.5).
@@ -389,23 +406,30 @@ pub fn after(
         if matches!(d.kind, DamageKind::Burn | DamageKind::Bleed) || d.amount <= 0.0 {
             continue;
         }
-        // A flare's hit or explosion sets alight (its owner too).
+        // A flare's hit or explosion sets alight (its owner too): an
+        // enemy Pyro only looks it (`pyro_burn`, weapons_more.md 7.3), a
+        // Pyro in his own explosion takes one tick (batch2_mechanics.md
+        // 4.3).
         if let Some(f) = flares.as_deref().and_then(|r| d.weapon.and_then(|w| r.get(w)))
             && alive(d.target, &health)
         {
             let pyro = classes.as_deref().zip(pyros.get(d.target).ok()).is_some_and(|(t, c)| c.class(t).name == crate::game::weapons::flame::PYRO);
-            if !pyro {
-                commands.entity(d.target).insert(Burning {
-                    left: f.burn,
-                    next: now + f.burn_interval as f64,
-                    attacker: d.attacker,
-                    weapon: d.weapon.expect("a flare's weapon"),
-                    damage: f.burn_damage,
-                    interval: f.burn_interval,
-                    harmless: false,
-                    from_tick: true,
-                });
-            }
+            let own = d.attacker == Some(d.target);
+            let (left, next, damage, harmless) = match (pyro, own) {
+                (true, false) => (0.0, now + f.pyro_burn as f64, 0.0, true),
+                (true, true) => (f.burn_interval, now + f.burn_interval as f64, f.burn_damage, false),
+                _ => (f.burn, now + f.burn_interval as f64, f.burn_damage, false),
+            };
+            commands.entity(d.target).insert(Burning {
+                left,
+                next,
+                attacker: d.attacker,
+                weapon: d.weapon.expect("a flare's weapon"),
+                damage,
+                interval: f.burn_interval,
+                harmless,
+                from_tick: true,
+            });
         }
         let Some(a) = d.attacker.filter(|a| *a != d.target) else { continue };
         let Some(p) = item_of(d, &holders, &weapons, &cond) else { continue };
@@ -660,6 +684,7 @@ pub fn overheal(mut q: Query<(Entity, &mut Health, &Overhealed)>, time: Res<Time
 /// The rules' schedule (`mods::add` calls it).
 pub fn add(app: &mut App) {
     chimera_sim::status::add(app);
+    crate::core::PredictedAppExt::predicted_net::<Heads>(app);
     app.init_resource::<HitHealth>().init_resource::<Regens>().add_systems(
         FixedUpdate,
         (

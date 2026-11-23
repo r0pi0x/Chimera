@@ -17,16 +17,21 @@
 //!   × `mult`, the gain at most `cap` (in the units of the base the game
 //!   asks with, `SpeedBoost::factor`); a later boost keeps the later end.
 //!   The game's movement applies it; it is removed when it ends
-//!   (`boost_ends`) or the character dies.
+//!   (`boost_ends`, first in each predicted tick, `Predict::Select`) or
+//!   the character dies. It is predicted state (`predicted_net`): the
+//!   server sends a client's own player's with its movement, so the
+//!   client's prediction moves at the boosted speed and ends it on the
+//!   server's tick; its start (a hit, the server's) is taken as a
+//!   correction once.
 //!
-//! Known shortcuts: both are the server's parts (not replicated): a
-//! network client's own movement predicts without the boost and is
-//! corrected by the server. A wound given by a hit's after-effects (after
-//! the tick's damage) deals its first tick one server tick after the hit.
+//! Known shortcuts: a bleeding wound is the server's part (not
+//! replicated). A wound given by a hit's after-effects (after the tick's
+//! damage) deals its first tick one server tick after the hit.
 
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
-use crate::core::{Damage, DamageKind, Health, Hitgroup, SimClock};
+use crate::core::{Damage, DamageKind, Health, Hitgroup, PredictedAppExt, SimClock};
 
 /// Slack for "at or after" on sim times (s).
 const EPS: f64 = 1e-6;
@@ -64,7 +69,7 @@ impl Bleeding {
 }
 
 /// A speed boost (module doc).
-#[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SpeedBoost {
     pub until: f64,
     pub mult: f32,
@@ -124,7 +129,9 @@ pub fn bleed(mut q: Query<(Entity, &mut Bleeding, &Health)>, clock: Res<SimClock
     }
 }
 
-/// Boosts that ended, or whose character died, are taken off.
+/// Boosts that ended, or whose character died, are taken off (every
+/// machine, in the predicted tick: a client ends its own player's on the
+/// server's tick).
 pub fn boost_ends(q: Query<(Entity, &SpeedBoost, Option<&Health>)>, clock: Res<SimClock>, mut commands: Commands) {
     for (e, b, h) in &q {
         if b.until <= clock.now + EPS || h.is_some_and(|h| h.current <= 0.0) {
@@ -141,13 +148,16 @@ pub fn add(app: &mut App) {
     if app.world().contains_resource::<Added>() {
         return;
     }
-    app.insert_resource(Added).add_systems(
-        FixedUpdate,
-        (bleed, boost_ends)
-            .after(crate::core::SimSet::Weapons)
-            .before(crate::core::apply_damage)
-            .run_if(crate::core::authoritative),
-    );
+    app.insert_resource(Added)
+        .add_systems(
+            FixedUpdate,
+            bleed
+                .after(crate::core::SimSet::Weapons)
+                .before(crate::core::apply_damage)
+                .run_if(crate::core::authoritative),
+        )
+        .add_systems(crate::core::Predict::Select, boost_ends)
+        .predicted_net::<SpeedBoost>();
 }
 
 #[cfg(test)]

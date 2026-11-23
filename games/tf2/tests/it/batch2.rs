@@ -8,7 +8,9 @@
 //! Gardener, the Back Scatter, burning victims, the Axtinguisher), bleed
 //! (Boston Basher, Shiv), the flares (Flare Gun, Detonator, Scorch Shot)
 //! and the speed buffs (the boost, Escape Plan, Equalizer, Disciplinary
-//! Action, Eviction Notice, GRU, Atomizer).
+//! Action, Eviction Notice, GRU, Atomizer); a crit's hit sound, Pyros
+//! and flares' burns, and a network client predicting its own speed
+//! boost and heads with no correction after their start (`NetSim`).
 
 use bevy::prelude::*;
 use chimera_core::core::{DamageKind, DamageTaken, Health, Team, Velocity};
@@ -140,6 +142,7 @@ fn pack() -> ItemPack {
     ItemPack::parse(&p.to_text()).unwrap()
 }
 
+#[derive(Clone)]
 struct WithItems;
 
 impl Plugin for WithItems {
@@ -783,4 +786,146 @@ fn every_batch_two_weapon_that_deals_damage_is_a_ladder_gun() {
     for id in ["tf2:flare_gun", "tf2:detonator", "tf2:scorch_shot", "tf2:black_box", "tf2:back_scatter", "tf2:reserve_shooter", "tf2:blutsauger"] {
         assert!(c.get(id).unwrap_or_else(|| panic!("{id}")).class.is_some(), "{id}");
     }
+}
+
+// ---- Polish: the crit's sound, Pyros and flares, predicted boosts ----
+
+/// `id`'s flare from a player at a `victim_gun` holder 300 units ahead
+/// (`lit` burning): the points he took and every TF2 sound entry played
+/// meanwhile.
+fn flare_heard(id: &str, victim_gun: &str, lit: bool) -> (f32, Vec<String>) {
+    use chimera_world::map::GameSound;
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, id);
+    let t = victim(&mut sim, from, 300.0, victim_gun, 1000.0);
+    if lit {
+        burn(&mut sim, t, 0);
+    }
+    let at = sim.position(t);
+    testkit::aim_at(&mut sim, p, at);
+    let before = health_points(&sim, t);
+    let mut cursor = sim.app.world().resource::<Messages<GameSound>>().get_cursor_current();
+    let mut heard = Vec::new();
+    for k in 0..12 {
+        sim.intent(p).fire = k == 0;
+        sim.ticks(1);
+        heard.extend(cursor.read(sim.app.world().resource::<Messages<GameSound>>()).map(|s| s.0.entry.clone()));
+    }
+    ((before - health_points(&sim, t)).round(), heard)
+}
+
+#[test]
+fn a_crit_plays_the_crit_hit_sound_and_a_plain_hit_does_not() {
+    let crit_hit = tf2::game::weapons::melee::CRIT_HIT;
+    let (d, heard) = flare_heard("tf2:flare_gun", "tf2:tf_weapon_minigun", true);
+    assert_eq!(d, 90.0);
+    assert_eq!(heard.iter().filter(|e| *e == crit_hit).count(), 1, "{heard:?}");
+    let (d, heard) = flare_heard("tf2:flare_gun", "tf2:tf_weapon_minigun", false);
+    assert_eq!(d, 30.0);
+    assert!(!heard.iter().any(|e| e == crit_hit), "{heard:?}");
+    // A mini-crit has no sound of its own (none specified).
+    let (d, heard) = flare_heard("tf2:detonator", "tf2:tf_weapon_minigun", true);
+    assert_eq!(d, 30.0);
+    assert!(!heard.iter().any(|e| e == crit_hit), "{heard:?}");
+}
+
+#[test]
+fn an_enemy_pyro_hit_by_a_flare_burns_in_look_only() {
+    let (mut sim, _, t, _) = {
+        let mut sim = sim();
+        let from = greybox::SPAWNS[0];
+        let (p, _) = holding(&mut sim, from, "tf2:flare_gun");
+        let t = victim(&mut sim, from, 300.0, "tf2:tf_weapon_flamethrower", 1000.0);
+        let at = sim.position(t);
+        testkit::aim_at(&mut sim, p, at);
+        run(&mut sim, p, 12, |s, k| s.intent(p).fire = k == 0);
+        (sim, p, t, ())
+    };
+    let b = *sim.app.world().get::<Burning>(t).expect("lit");
+    assert!(b.harmless && b.left <= 0.0, "{b:?}");
+    let ticks = taken_while(&mut sim, t, DamageKind::Burn, 120, |s, _| hold_still(s, t));
+    assert!(ticks.is_empty(), "{ticks:?}");
+    assert!(sim.app.world().get::<Burning>(t).is_none(), "out after 0.25 s");
+}
+
+#[test]
+fn a_pyro_in_his_own_detonator_blast_takes_one_afterburn_tick() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, w) = holding(&mut sim, from, "tf2:detonator");
+    set_health(&mut sim, p, 1000.0);
+    let id = sim.app.world().get::<Weapon>(w).unwrap().id;
+    let clock = sim.app.world().resource::<chimera_core::core::SimClock>().clone();
+    let f = Flyer::new(id, Some(p), Vec3::ZERO, &clock);
+    let start = sim.position(p) + Vec3::Z * 50.0 * tf2::game::weapons::damage::U;
+    sim.app.world_mut().write_message(LaunchRequest { flyer: f, start, shown: None, tag: None });
+    sim.ticks(1);
+    run(&mut sim, p, 3, |s, k| s.intent(p).secondary = k == 0);
+    let ticks = taken_while(&mut sim, p, DamageKind::Burn, 200, |s, _| hold_still(s, p));
+    assert_eq!(ticks.iter().map(|t| t.1).collect::<Vec<_>>(), [4.0], "{ticks:?}");
+}
+
+/// A server and one client on TF2's movement holding the Scattergun
+/// (400 units/s), the client running forward: the server's and the
+/// client's player.
+fn running_client() -> (chimera_net::harness::NetSim, Entity, Entity) {
+    use chimera_net::{harness::NetSim, net::memory::LinkConditions};
+    let conditions = LinkConditions { latency: std::time::Duration::from_millis(30), jitter: std::time::Duration::ZERO, loss: 0.0 };
+    let mut sim = NetSim::new(WithItems, conditions, 5, 0, |app| {
+        app.add_plugins(GreyboxMapPlugin).insert_resource(chimera_core::slots::Loadout { movement: tf2::game::movement::ID });
+    });
+    sim.add_client(|_| {});
+    sim.set_frame(TICK_INTERVAL);
+    sim.until_joined(900);
+    let theirs = sim.character_of(0).unwrap();
+    let w = give(sim.server.app.world_mut(), theirs, "tf2:tf_weapon_scattergun").unwrap();
+    sim.server.app.world_mut().get_mut::<Inventory>(theirs).unwrap().wanted = Some(w);
+    sim.ticks(150);
+    let me = sim.local_player(0).unwrap();
+    (sim, theirs, me)
+}
+
+/// Both machines' top speed for the player and the client's prediction
+/// errors, `n` ticks of running forward.
+fn run_both(sim: &mut chimera_net::harness::NetSim, theirs: Entity, me: Entity, n: usize) -> Vec<(f32, f32)> {
+    let top = |w: &World, e: Entity| w.get::<SourceTraits>(e).and_then(|t| t.max_speed).unwrap_or(0.0);
+    let mut out = Vec::new();
+    for _ in 0..n {
+        sim.clients[0].app.world_mut().get_mut::<chimera_core::core::Intent>(me).unwrap().move_axis = Vec2::Y;
+        sim.step();
+        out.push((top(sim.server.app.world(), theirs), top(sim.clients[0].app.world(), me)));
+    }
+    out
+}
+
+fn errors(sim: &chimera_net::harness::NetSim) -> u64 {
+    sim.clients[0].app.world().resource::<chimera_net::net::predict::NetGraph>().errors
+}
+
+#[test]
+fn a_clients_own_speed_boost_and_heads_are_predicted_without_corrections() {
+    let (mut sim, theirs, me) = running_client();
+    run_both(&mut sim, theirs, me, 60);
+    let quiet = errors(&sim);
+    // A 2-s boost from the server (as a hit gives it): the client takes
+    // it once, then runs at 505 as the server does, and ends it on the
+    // same tick.
+    let now = sim.server.app.world().resource::<chimera_core::core::SimClock>().now;
+    sim.server.app.world_mut().entity_mut(theirs).insert(SpeedBoost { until: now + 2.0, mult: effects::BOOST_MULT, cap: effects::BOOST_CAP });
+    let speeds = run_both(&mut sim, theirs, me, 60);
+    assert!(speeds.iter().any(|s| (s.1 - 505.0).abs() < 0.01), "the client runs boosted: {speeds:?}");
+    let taken = errors(&sim);
+    assert!(taken - quiet <= 1, "the boost's start, once: {}", taken - quiet);
+    let speeds = run_both(&mut sim, theirs, me, 180);
+    assert_eq!(errors(&sim), taken, "no correction while boosted or at its end");
+    assert!(speeds.iter().any(|s| (s.1 - 505.0).abs() < 0.01) && speeds.last().is_some_and(|s| (s.1 - 400.0).abs() < 0.01), "{speeds:?}");
+    assert!(sim.clients[0].app.world().get::<SpeedBoost>(me).is_none(), "ended here too");
+    // Two heads (§1.6): 400 + 2 x 8 % of 400 on both.
+    sim.server.app.world_mut().entity_mut(theirs).insert(effects::Heads(2));
+    let speeds = run_both(&mut sim, theirs, me, 60);
+    let taken = errors(&sim);
+    let speeds = [speeds, run_both(&mut sim, theirs, me, 120)].concat();
+    assert_eq!(errors(&sim), taken, "no correction after the heads came");
+    assert!(speeds.last().is_some_and(|s| (s.0 - 464.0).abs() < 0.01 && (s.1 - 464.0).abs() < 0.01), "{:?}", speeds.last());
 }
