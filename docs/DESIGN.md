@@ -842,8 +842,10 @@ that):
   burns 0, its M136_AT4 blasts 0). A game's data may leave out more, each
   with its reason (`auto::DrawExclusions`; Combat Arms'
   data/ladder_exclusions.toml: the infection stun launchers, the skins
-  drawn wrong). `ladder_skipped` lists them; a hand-written ladder may
-  still name any of them.
+  drawn wrong, the Hunted fist's 2-point punches). The knife finale's
+  melee rungs keep to the same exclusions (`ladder::melee_pool`).
+  `ladder_skipped` lists them; a hand-written ladder may still name any
+  of them.
 - **A turret rung: the turret kills for you** (user, 2026-11-13): a
   rung whose weapon places Combat Arms' auto turret (`Auto-Turret` and
   every install copy of it, special_weapons.md 6.7) plays as the spec's

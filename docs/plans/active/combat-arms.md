@@ -832,6 +832,41 @@ Corrections 2); (5) special_weapons.md 5.1; (6) effect lights are world
 lights, particles follow `MoveParticlesWithSystem` (default Yes: with the
 emitter) (view_models.md Corrections 3, Open question 18).
 
+## The fist: open questions for a spec session (2026-11-22)
+
+Feedback 045da13b (an Ultimate Gun Game knife finale dealt the install's
+`fist`, Hunted's start weapon, game_modes.md M15 and case 84): "too little
+damage, doesn't look like you're holding anything". What our data and
+code do now (`heavy::fist_install`): record `fist` (index 934, `Guntype`
+0, `AniType` 50, `Range` 130, `DamageRFacter` 0.1) fires ammo `Fist` with
+`InstDamage` 2, `Alt_InstDamage` 6 and `InstDamageType` 49; we merge it
+as a copy of the knife class (special_weapons.md 5's rules, damage type
+melee 13, head x6, rear x1.3), so 2 or 6 points a hit. Its first-person
+model `PV_Melee_Fist_SH.ltb` has the 44-node arm skeleton (with
+`knife_bone`) and no pieces; its one own animation is
+`CM_HND_NM_DF_Knuckle_CH`, the brass knuckles' too; we draw only the
+character's hand model on it. Its world model `HH_Melee_Fist_KE.ltb`
+has one piece, `HH_Knuckle`. The draw now leaves the fist (and
+`Snow_Shovel`, 1 and 1) out of every drawn ladder and knife finale
+(data/ladder_exclusions.toml). Open:
+
+1. **Damage type 49.** What the game does with an ammo whose
+   `InstDamageType` is 49 (the fist's): its damage class, whether the
+   melee zone factors (head x6, ...) and the rear x1.3 apply, whether
+   any gear or armour step treats it, and whether it carries a side
+   effect (a stun, a knock-back, a drop of the victim's weapon). Is
+   2 / 6 the health a punch takes in Hunted, or does Hunted (or the
+   type) scale it?
+2. **The fist's look.** Is the bare hand model all the original draws
+   for the fist in first person (no piece of `PV_Melee_Fist_SH` and
+   nothing attached)? Does its idle show closed fists or open hands
+   (we play the shared knuckle animations: `idle_0` shows open hands
+   at its cycle 0.24)? Is the third-person `HH_Knuckle` piece drawn in
+   the hand (a brass knuckle on a fist-only player)?
+3. **Swing timing.** The fist's `fire_0` / `alt_fire_0` lengths and hit
+   keys (special_weapons.md 5's table has the `Knuckle` row only:
+   800 / 412 and 1000 / 424 ms): the same as the brass knuckles'?
+
 ## Steam build 26236938 (2026-10-30)
 
 The dev box's install went from build 25595979 to 26236938, matching the

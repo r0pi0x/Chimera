@@ -92,3 +92,15 @@ weapons = [
     "combat_arms:test_gun_mg42",
     "combat_arms:m4a1-nsm",   # N.S.M Testers M4A1
 ]
+
+# Melee weapons of a mode that hardly hurt (feedback 045da13b, 2026-11-22: "the
+# fist does too little damage"): Hunted's start weapon, the install's `fist`
+# record (game_modes.md M15, case 84), does 2 (left) and 6 (right) a punch by
+# its ammo's `InstDamage` and `Alt_InstDamage`, and the `Snow_Shovel` record 1
+# and 1: about 50 punches a kill, a dead rung in a knife finale. The finale's
+# melee pool honours these exclusions (chimera_sim::minigame::ladder::
+# melee_pool). The fist's look is the install's: its first-person model has
+# no pieces of its own, so the bare hands are all it draws.
+[[exclude]]
+reason = "a mode's melee that hardly hurts (1 to 6 a hit: a dead finale rung)"
+weapons = ["combat_arms:fist", "combat_arms:snow_shovel"]

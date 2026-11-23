@@ -715,7 +715,7 @@ fn check(def: &MinigameDef, catalog: &WeaponCatalog) -> Result<(), String> {
     // The games' hooks name more melee weapons than the catalogue's data
     // does (Combat Arms' knives), so an empty pool is no error here: the
     // match starts without a finale (and says so).
-    match finale(def, catalog, &[], &p, auto_melee_rungs(guns, p.melee_share.clamp(0.0, 1.0)), &mut Rng::new(0)) {
+    match finale(def, catalog, &[], None, &p, auto_melee_rungs(guns, p.melee_share.clamp(0.0, 1.0)), &mut Rng::new(0)) {
         Err(e) if e == NO_MELEE => Ok(()),
         r => r.map(|_| ()),
     }
@@ -724,9 +724,16 @@ fn check(def: &MinigameDef, catalog: &WeaponCatalog) -> Result<(), String> {
 /// The melee weapons a finale may draw: every melee weapon of the
 /// catalogue the definition allows (CS:S's knife, Combat Arms' knife-class
 /// weapons, ...), but a hook's rung characters' (`characters`: the
-/// infected's hands come only as a character, at their odds), in the
+/// infected's hands come only as a character, at their odds) and those a
+/// game's data keeps out of a drawn ladder (`excluded`: the games' draw
+/// exclusions, `auto::DrawExclusions`; Combat Arms' fist), in the
 /// catalogue's order.
-fn melee_pool(def: &MinigameDef, catalog: &WeaponCatalog, hooks: &[RungExtrasHook]) -> Vec<&'static str> {
+fn melee_pool(
+    def: &MinigameDef,
+    catalog: &WeaponCatalog,
+    hooks: &[RungExtrasHook],
+    excluded: Option<&super::auto::DrawExclusions>,
+) -> Vec<&'static str> {
     let hands: Vec<&'static str> = hooks.iter().flat_map(|h| (h.characters)(catalog)).collect();
     let knives: Vec<&'static str> = hooks.iter().flat_map(|h| (h.melee)(catalog)).collect();
     let hands: bevy::platform::collections::HashSet<&'static str> = hands.into_iter().collect();
@@ -734,7 +741,11 @@ fn melee_pool(def: &MinigameDef, catalog: &WeaponCatalog, hooks: &[RungExtrasHoo
     let mut pool: Vec<&'static str> = Vec::new();
     for data in catalog.weapons().iter() {
         let id: &'static str = &data.id;
-        if (data.melee.is_some() || knives.contains(id)) && def.allows_weapon(id) && !hands.contains(id) {
+        if (data.melee.is_some() || knives.contains(id))
+            && def.allows_weapon(id)
+            && !hands.contains(id)
+            && excluded.is_none_or(|x| x.reason(id).is_none())
+        {
             pool.push(id);
         }
     }
@@ -762,11 +773,12 @@ fn curve(p: &Params) -> Result<super::power::PowerCurve, String> {
 /// count: `auto_melee_rungs` of a written ladder's guns, a drawn ladder's
 /// own), each drawn on `rng` from the melee pool, none twice while the
 /// pool has enough; a named weapon (`knife_finale = "<id>"`) is the last
-/// rung's.
+/// rung's (an excluded one too: `melee_pool`'s `excluded` is the draw's).
 fn finale(
     def: &MinigameDef,
     catalog: &WeaponCatalog,
     hooks: &[RungExtrasHook],
+    excluded: Option<&super::auto::DrawExclusions>,
     p: &Params,
     auto: usize,
     rng: &mut Rng,
@@ -788,7 +800,7 @@ fn finale(
         MeleeRungs::Auto(a) if a == "auto" => auto.max(1),
         MeleeRungs::Auto(a) => return Err(format!("[rules] melee_rungs: `{a}` is not a number or \"auto\"")),
     };
-    let mut pool = melee_pool(def, catalog, hooks);
+    let mut pool = melee_pool(def, catalog, hooks, excluded);
     pool.retain(|id| Some(*id) != named);
     if pool.is_empty() && named.is_none() {
         return Err(NO_MELEE.into());
@@ -864,7 +876,8 @@ fn make(world: &World, def: &MinigameDef, say: bool) -> Option<Ladder> {
     if client {
         rng = Rng::new(0);
     }
-    let melee = finale(def, &catalog, &hooks.0, &p, auto, &mut rng).unwrap_or_else(|e| {
+    let excluded = world.get_resource::<super::power::PowerReaders>().map(|r| &r.exclusions);
+    let melee = finale(def, &catalog, &hooks.0, excluded, &p, auto, &mut rng).unwrap_or_else(|e| {
         if say {
             warn!("{}: {e}; no finale", def.id);
         }

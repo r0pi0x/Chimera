@@ -394,6 +394,41 @@ fn a_combat_arms_knife_hits_a_cs_source_body_by_its_boxes() {
     assert_eq!(regions.first(), Some(&R::Head), "{regions:?}");
 }
 
+/// Combat Arms' knife's damage per hit on a CS:S body is its own:
+/// the M9's left swing, `InstDamage` 45 within the roll's +-10%
+/// (special_weapons.md 5: `DamageRFacter` 0.1), on the chest (zone 1),
+/// from the front (no rear x1.3), with no game's scale between them
+/// (party_balance.toml lists neither game). Feedback 045da13b asked why
+/// a Combat Arms melee hit did 1 or 2 points: that was the Hunted fist's
+/// own data (2 a punch), never a cross-game cut.
+#[test]
+fn a_combat_arms_knife_hit_on_a_cs_source_body_is_its_own_damage() {
+    use chimera_core::core::BodyRegion as R;
+    let (mut sim, a, b) = duel(7, 6, Some(short_cs_body));
+    let (pa, pb) = (sim.position(a), sim.position(b));
+    place(&mut sim, b, Vec3::new(pa.x, pb.y, pa.z - 0.9));
+    // Facing the knife (+Z), so the hit is not from behind.
+    sim.intent(b).yaw = std::f32::consts::PI;
+    sim.intent(a).select = Some(2);
+    sim.ticks(1);
+    sim.intent(a).select = None;
+    sim.seconds(1.0);
+    assert_eq!(held(&sim, a), Some(combat_arms::game::inventory::KNIFE));
+    let chest = shape_at(&sim, b, R::Chest);
+    testkit::aim_at(&mut sim, a, chest);
+    sim.ticks(1);
+    let (h0, a0) = health_and_armour(&sim, b);
+    sim.intent(a).fire = true;
+    sim.ticks(1);
+    sim.intent(a).fire = false;
+    // The M9's left swing hits at 155 and 402 ms: one hit's worth first.
+    sim.seconds(0.3);
+    let (h1, a1) = health_and_armour(&sim, b);
+    let taken = h0 - h1;
+    assert!((40.4..=49.6).contains(&taken), "one M9 hit: {taken} (armour {a0} -> {a1})");
+    assert_eq!(a0, a1, "melee passes armour");
+}
+
 /// A swap back and forth leaves exactly the current identity's hitboxes:
 /// CS:S's boxes, Combat Arms' spheres, CS:S's boxes again.
 #[test]

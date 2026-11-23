@@ -854,6 +854,35 @@ fn a_knife_finale_is_a_knife_alone_and_its_kill_wins() {
     minigame::start(sim.app.world_mut(), "kit:named").expect("a named knife, no kit");
 }
 
+/// A knife finale draws its melee rungs only from what the games' draw
+/// exclusions leave (`auto::DrawExclusions`, a game's
+/// ladder_exclusions.toml): Combat Arms' Hunted fists (2 a punch) never
+/// make a finale rung (feedback 045da13b); a named finale weapon still
+/// may.
+#[test]
+fn a_knife_finale_skips_the_draw_exclusions() {
+    use chimera_sim::{minigame::auto::DrawExclusionsAppExt, weapon::data::WeaponDataAppExt};
+    let fist = KNIFE.replace("id = \"kit:knife\"", "id = \"kit:fist\"");
+    let def = DEF.replace("demote_on =", "knife_finale = true\nmelee_rungs = 2\ndemote_on =");
+    let finale = |excluded: bool| {
+        let mut sim = Sim::with(chimera_sim::SimBasePlugins, |app| {
+            app.add_plugins((greybox::GreyboxMapPlugin, MinigamePlugin));
+            testkit::add_weapons(app);
+            app.add_weapon_data(&[("knife.toml", KNIFE), ("fist.toml", &fist)]).expect("the knives load");
+            if excluded {
+                app.add_draw_exclusions("test", "[[exclude]]\nreason = \"bare fists\"\nweapons = [\"kit:fist\"]\n");
+            }
+            app.add_minigames(&[("kit_gun_game.toml", &def)]).expect("the definition reads");
+        });
+        minigame::start(sim.app.world_mut(), "kit:gun_game").expect("it starts");
+        let mut melee = sim.app.world().resource::<minigame::ladder::Ladder>().rungs[3..].to_vec();
+        melee.sort();
+        melee
+    };
+    assert_eq!(finale(false), ["kit:fist", "kit:knife"], "both knives, none twice");
+    assert_eq!(finale(true), ["kit:knife", "kit:knife"], "the fists left out");
+}
+
 /// Spawn protection's two windows (`protection = { damage, bullets }`,
 /// Combat Arms' S6 in shape): `core::SpawnProtected` with both, `God`
 /// for the damage window; after the bullets window the damage is still
