@@ -788,6 +788,7 @@ fn stage_lobby_scene(w: &mut World, args: &[String]) -> Result<(), String> {
         wins: 0,
         avatar: if id.is_some() { (name.len() as u8 * 5) % 32 } else { chimera_net::prematch::NO_AVATAR },
         party: 0,
+        spectator: false,
     };
     w.spawn((
         StagedLobby,

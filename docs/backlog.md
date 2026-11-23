@@ -762,11 +762,11 @@ Y/U and Combat Arms' keys, docked in the lobby and the match end,
 
 ### Spectators (user, 2026-11-14)
 
-- **Spectators on the Tab board.** Check whether the party apps support
-  spectating at all (a joining player who doesn't play, or a dead one
-  following others beyond the death cam); if not, add it, then list
-  spectators on the board (at least their names) under the players.
-  Later, after the new UI (docs/plans/active/ugg-ui.md).
+- **Spectators on the Tab board.** Done 2026-11-22
+  (docs/plans/active/ugg-ui.md, "Spectators": joining as one, switching
+  in the lobby and the Escape menu, the board, lobby and match end
+  listing them, the spectator's plate, `mp_spectators_max`). Left: a
+  "Join as spectator" toggle on the Join page.
 
 ### UGG playtest rehearsal, 2026-11-13 (agent, this box, the playtest6 build)
 

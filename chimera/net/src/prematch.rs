@@ -75,6 +75,11 @@
 //!   match made there takes it over as its own lobby (`begin`), its
 //!   longest wait counted from then. A change called off (the match no
 //!   longer held) ends it.
+//! - **Spectators** (`crate::spectators`, `LobbyRow::spectator`): listed
+//!   with everyone, flagged, never staged or waited for: not in `waiting`,
+//!   not ready or not, not a player for `mp_lobby_min_players`; one
+//!   connected starts the longest wait as a player would (someone is
+//!   here: a bots' match may start for it).
 //! - **Avatars**: each row carries its player's `cl_avatar` userinfo
 //!   (`LobbyRow::avatar`, `NO_AVATAR` for a bot or none).
 //! - **The countdown** (`mp_lobby_countdown` s, default 3): once every
@@ -271,6 +276,9 @@ pub struct LobbyRow {
     /// the server's number for its `cl_party` (`PartyNumbers`), given
     /// to parties with two or more players here.
     pub party: u8,
+    /// Watching, not playing (`core::Spectating`, `crate::spectators`):
+    /// listed apart, never waited for.
+    pub spectator: bool,
 }
 
 /// `LobbyRow::avatar` for none.
@@ -298,6 +306,7 @@ impl Default for LobbyRow {
             wins: 0,
             avatar: NO_AVATAR,
             party: 0,
+            spectator: false,
         }
     }
 }
@@ -315,6 +324,18 @@ impl LobbyRow {
 
     pub fn bot(&self) -> bool {
         self.id.is_none()
+    }
+
+    /// A player the lobby waits for and counts (not a bot or a
+    /// spectator): `serve`'s players.
+    pub fn plays(&self) -> bool {
+        !self.bot() && !self.spectator
+    }
+
+    /// Counted as ready or not (a bot or a player; a spectator never
+    /// holds the lobby up).
+    pub fn counts(&self) -> bool {
+        !self.spectator
     }
 }
 
@@ -961,9 +982,16 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
         world.insert_resource(numbers.clone());
     }
     let party_of = |id: u64| numbers.of(parties.get(&id).map(String::as_str));
+    // Who watches (`crate::spectators`), by owner.
+    let watching: Vec<u64> = world
+        .query_filtered::<&NetCharacter, With<crate::core::Spectating>>()
+        .iter(world)
+        .filter_map(|c| c.owner)
+        .collect();
     for (c, info) in world.query::<(&NetCharacter, Option<&crate::core::UserInfo>)>().iter(world) {
         match c.owner {
             Some(HOST_ID) => out.push(LobbyRow {
+                spectator: watching.contains(&HOST_ID),
                 id: Some(HOST_ID),
                 name: c.name.clone(),
                 status: host,
@@ -1029,6 +1057,7 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
                     wins: 0,
                     avatar: avatars.get(&id.get()).copied().unwrap_or(NO_AVATAR),
                     party: party_of(id.get()),
+                    spectator: watching.contains(&id.get()),
                 },
             )
         })
@@ -1060,11 +1089,11 @@ pub(crate) fn serve(world: &mut World) {
         let now = world.resource::<SimClock>().now;
         let rows = rows(world);
         let between = world.resource::<BetweenMaps>().clone();
-        let to_come = world.resource::<LobbySettings>().min_players.saturating_sub(rows.iter().filter(|r| !r.bot()).count() as u32);
+        let to_come = world.resource::<LobbySettings>().min_players.saturating_sub(rows.iter().filter(|r| r.plays()).count() as u32);
         let want = NetLobby {
             map: between.map,
             mode: between.mode,
-            waiting: rows.iter().filter(|r| !r.ready()).count() as u32 + to_come,
+            waiting: rows.iter().filter(|r| r.counts() && !r.ready()).count() as u32 + to_come,
             rows,
             wait_left: None,
             countdown: lobby.countdown_ends.map(|t| (t - now).max(0.0).ceil() as u32),
@@ -1084,11 +1113,14 @@ pub(crate) fn serve(world: &mut World) {
     let now = world.resource::<SimClock>().now;
     let s = *world.resource::<LobbySettings>();
     let rows = rows(world);
-    let humans = rows.iter().filter(|r| !r.bot()).count() as u32;
-    if humans > 0 && lobby.humans_since.is_none() {
+    // Spectators are someone here (the longest wait runs, a bots' match
+    // may start for them) but never waited for or counted as players.
+    let here = rows.iter().filter(|r| !r.bot()).count() as u32;
+    let humans = rows.iter().filter(|r| r.plays()).count() as u32;
+    if here > 0 && lobby.humans_since.is_none() {
         lobby.humans_since = Some(now);
     }
-    let not_ready = rows.iter().filter(|r| !r.ready()).count() as u32;
+    let not_ready = rows.iter().filter(|r| r.counts() && !r.ready()).count() as u32;
     let to_come = s.min_players.saturating_sub(humans);
     let wait_ends = lobby.humans_since.map(|h| h.max(lobby.began) + s.max_wait as f64);
     // The server's own game files for the match first (`server_assets`).
@@ -1101,12 +1133,12 @@ pub(crate) fn serve(world: &mut World) {
         lobby.on_ready = false;
     }
     if lobby.countdown_ends.is_none() && !lobby.host_start && !files_coming {
-        if humans > 0 && not_ready == 0 && to_come == 0 {
+        if here > 0 && not_ready == 0 && to_come == 0 {
             info!("pre-match lobby: everyone is ready; the match starts in {} s", s.countdown);
             lobby.countdown_ends = Some(now + s.countdown.max(0.0) as f64);
             lobby.on_ready = true;
         } else if wait_ends.is_some_and(|w| now >= w) {
-            let late: Vec<&str> = rows.iter().filter(|r| !r.ready()).map(|r| r.name.as_str()).collect();
+            let late: Vec<&str> = rows.iter().filter(|r| r.counts() && !r.ready()).map(|r| r.name.as_str()).collect();
             info!(
                 "pre-match lobby: waited {} s; the match starts in {} s{}",
                 s.max_wait,

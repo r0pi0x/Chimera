@@ -47,6 +47,7 @@ pub mod minigame_scoreboard;
 pub mod race_chip;
 pub mod rank_toast;
 pub mod rung_hint;
+pub mod spectator_plate;
 pub mod sandbox;
 pub mod signal;
 pub mod signal_chat;
@@ -664,6 +665,7 @@ impl PluginGroup for ClientPlugins {
             .add(ui_parity::UiParityPlugin)
             .add(callouts::CalloutsPlugin)
             .add(rung_hint::RungHintPlugin)
+            .add(spectator_plate::SpectatorPlatePlugin)
             .add(match_effects::MatchEffectsPlugin)
             .add(hit_marker::HitMarkerPlugin)
             .add(hdr::HdrPlugin)

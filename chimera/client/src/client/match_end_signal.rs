@@ -19,7 +19,9 @@
 //!   chat; GG with its burst). It is the winner moment's card, moved into
 //!   place (`winner_moment`: one element that transforms).
 //! - **Details** (`DetailsLine`) above it: map (and its game), players,
-//!   rungs and the match's time, each after an icon.
+//!   rungs and the match's time, each after an icon; who watched after
+//!   an eye ("Spectating: a, b", `spectators_line`: spectators are
+//!   never in the standings; `ui_scene matchend spectators`).
 //! - **The climb** (`RungBars`): a bar per rung for the selected player
 //!   (you by default, else the winner; a click on a standings row picks
 //!   another): its height the time spent on that rung, the time over it,
@@ -541,6 +543,18 @@ pub(super) fn units_key(look: &Look) -> (u32, u32) {
     ((look.units.height * 8.0) as u32, (look.units.scale_factor * 1000.0) as u32)
 }
 
+/// The details line's spectators: "Spectating: a, b" (three names at
+/// most, then "+N").
+pub fn spectators_line(names: &[String]) -> String {
+    let shown: Vec<&str> = names.iter().take(3).map(String::as_str).collect();
+    let more = names.len().saturating_sub(3);
+    let mut line = format!("Spectating: {}", shown.join(", "));
+    if more > 0 {
+        line.push_str(&format!(" +{more}"));
+    }
+    line
+}
+
 /// `mm:ss` (`9:58`).
 pub fn mmss(s: f32) -> String {
     let s = s.max(0.0).round() as u32;
@@ -855,6 +869,10 @@ fn build_static(
                 items.push(("ladder", view.rungs.to_string()));
             }
             items.push(("clock", mmss(view.length)));
+            // Who watched, apart from the standings.
+            if !view.spectators.is_empty() {
+                items.push(("eye", spectators_line(&view.spectators)));
+            }
             for (icon, text) in items.into_iter().filter(|(_, t)| !t.is_empty()) {
                 d.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.5), min_width: px(0.0), ..default() }, Pickable::IGNORE)).with_children(|i| {
                     signal::icons::spawn(i, &look, icon, look.px(0.75), look.tone(Tone::Fg3));
@@ -1475,6 +1493,12 @@ pub fn stage(world: &mut World, fixture: Option<&str>) -> Result<(), String> {
 
 /// `stage`, the winner moment first when `moment`.
 pub fn stage_with(world: &mut World, fixture: Option<&str>, moment: bool) -> Result<(), String> {
+    stage_full(world, fixture, moment, false)
+}
+
+/// `stage_with`, with two made-up spectators (`ui_scene matchend
+/// spectators`).
+pub fn stage_full(world: &mut World, fixture: Option<&str>, moment: bool, spectators: bool) -> Result<(), String> {
     let f = match fixture {
         Some(path) => {
             let text = std::fs::read_to_string(path).map_err(|e| format!("ui_scene: {path}: {e}"))?;
@@ -1482,7 +1506,10 @@ pub fn stage_with(world: &mut World, fixture: Option<&str>, moment: bool) -> Res
         }
         None => staged_fixture(),
     };
-    let view = f.view();
+    let mut view = f.view();
+    if spectators {
+        view.spectators = super::race_chip::STAGED_SPECTATORS.map(String::from).to_vec();
+    }
     if moment {
         winner_moment::stage(world, &view);
     }

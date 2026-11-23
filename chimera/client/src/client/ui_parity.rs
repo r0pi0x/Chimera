@@ -162,6 +162,7 @@ impl Fixture {
             map: self.map.clone(),
             map_game: self.map_game.clone(),
             size: (0, 0),
+            spectators: Vec::new(),
         }
     }
 

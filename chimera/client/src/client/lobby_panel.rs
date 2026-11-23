@@ -34,6 +34,12 @@
 //!   lane under the pointer (`LobbyKickSwap`; `ui_lobby_kick 0` hides it).
 //!   A long list scrolls with the kit's bar and its "more below" mark;
 //!   lanes never shrink.
+//! - **Spectators** (`SpectatorGroup`): one compact group under the
+//!   lanes, "Spectating · n" after an eye, each with a small avatar and
+//!   name (HOST outlined); not in "n of m loaded" or the waiting mark.
+//!   Where the host allows switching (`LobbyView::spectate`), the bar
+//!   has this player's Spectate (watching: Play), `LobbyAction::
+//!   Spectate`.
 //! - **The map and mode**, the right column: the map's card (a gradient
 //!   tinted by the map's name stands in) with its name, the mode named big
 //!   with the ladder's rungs drawn small (`LobbyView::rungs`), the match's
@@ -386,10 +392,13 @@ fn draw(
         win,
         style!(column).abs([Some(sh.rows_in + mode_w + 2.8), Some(1.6), Some(sh.rows_in + map_w + 1.8), Some(body_bottom)]),
     );
-    let loaded = view.rows.iter().filter(|r| r.bot || matches!(r.status, status::READY | status::NOT_READY)).count();
+    // Spectators stand apart (`SpectatorGroup`): not counted, never
+    // waited for.
+    let players = view.rows.iter().filter(|r| !r.spectator).count();
+    let loaded = view.rows.iter().filter(|r| !r.spectator && (r.bot || matches!(r.status, status::READY | status::NOT_READY))).count();
     let count = match view.slots {
-        Some(s) => format!("{loaded} of {} loaded \u{b7} {s} slots", view.rows.len()),
-        None => format!("{loaded} of {} loaded", view.rows.len()),
+        Some(s) => format!("{loaded} of {players} loaded \u{b7} {s} slots"),
+        None => format!("{loaded} of {players} loaded"),
     };
     let head = p.head(c, list, "Players", Some(&count));
     // Invite to game: the party panel (its "+"), live with a hub.
@@ -404,7 +413,7 @@ fn draw(
         n.flex_basis = Val::Px(0.0);
     });
     let lanes = scroll.content;
-    let order = list_order(&view.rows);
+    let order: Vec<usize> = list_order(&view.rows).into_iter().filter(|&i| !view.rows[i].spectator).collect();
     let mine = view.rows.iter().find(|r| r.local).map(|r| r.party).filter(|p| *p != 0);
     let top_wins = view.rows.iter().map(|r| r.wins).max().unwrap_or(0);
     let row_h = p.lay("row_h");
@@ -484,6 +493,32 @@ fn draw(
             c.entity(k).insert((LobbyAction::Kick(i.min(255) as u8), LobbyKickSwap { lane: r, kick: true }));
         }
     }
+    // Who watches: one compact group under the lanes (an eye, the
+    // count, each spectator's small avatar and name).
+    let watching: Vec<usize> = list_order(&view.rows).into_iter().filter(|&i| view.rows[i].spectator).collect();
+    if !watching.is_empty() {
+        let g = p.boxed(c, lanes, style!(row, gap: 0.9, pad: [0.0, 0.7, 0.0, 0.7], h: p.lay_or("spec_h", 2.2), margin: [0.6, 0.0, 0.0, 0.0]).shrink(0.0));
+        c.entity(g).insert((SpectatorGroup(watching.len()), Node { border: UiRect::top(px(units.hairline())), ..default() }, BorderColor::all(theme.tone(Tone::Fg5))));
+        let label = p.boxed(c, g, style!(row, gap: 0.35).shrink(0.0));
+        p.icon(c, label, icons, images, "eye", p.lay("tag"), Tone::Fg3);
+        p.text(c, label, Role::Mono, 0.54, Tone::Fg3, &format!("Spectating \u{b7} {}", watching.len()));
+        let names = p.boxed(c, g, UiStyle { min_w: Some(0.0), ..style!(row, gap: 0.9).grow(1.0).shrink(1.0) });
+        c.entity(names).insert(Node { overflow: Overflow::clip(), ..default() });
+        for &i in &watching {
+            let row = &view.rows[i];
+            let who = p.boxed(c, names, style!(row, gap: 0.35).shrink(0.0));
+            let face = match chimera_ui::avatar::AvatarLook::from_byte(row.avatar) {
+                Some(l) => chimera_ui::avatar::Face::Look(l),
+                None => chimera_ui::avatar::Face::Look(chimera_ui::avatar::AvatarLook::for_name(&row.name)),
+            };
+            chimera_ui::avatar::spawn(&ui, c, who, images, icons, face, chimera_ui::avatar::AvatarMarks { you: row.local, ..default() }, p.lay_or("spec_avatar", 1.3));
+            p.cased(c, who, Role::DisplayBold, 0.62, if row.local { Tone::Fg } else { Tone::Fg2 }, &row.name);
+            if row.host {
+                let t = p.boxed(c, who, style!(row, pad: [0.12, 0.26, 0.1, 0.26]).outline(Tone::Fg3, 1.0).shrink(0.0));
+                p.text(c, t, Role::Mono, 0.42, Tone::Fg2, "Host");
+            }
+        }
+    }
     ui.scroll_more(c, &scroll, "More players below", 2.4);
 
     // The map, the mode, the waiting mark.
@@ -551,7 +586,7 @@ fn draw(
 
     // The waiting mark.
     let wait = p.boxed(c, right, style!(column, gap: 0.4));
-    let not_in: Vec<&LobbyViewRow> = view.rows.iter().filter(|r| !r.bot && !matches!(r.status, status::READY | status::NOT_READY)).collect();
+    let not_in: Vec<&LobbyViewRow> = view.rows.iter().filter(|r| !r.bot && !r.spectator && !matches!(r.status, status::READY | status::NOT_READY)).collect();
     if let Some(left) = view.countdown {
         c.entity(wait).insert(LobbyWait::Counting);
         let k = if not_in.is_empty() { "Everyone loaded \u{b7} starts in" } else { "Starts in" };
@@ -624,6 +659,7 @@ fn draw(
         }
         let bot = ui.button_icon(c, bar, Kind::Secondary, Some("bot"), "Add bot", None, Size::Regular, State::NONE);
         c.entity(bot).insert(LobbyAction::AddBot);
+        spectate_button(&ui, c, bar, &view);
         let note = match view.start_waits_for() {
             Some(w) => format!("{w}."),
             None if kick_ok => "Point at a player to kick.".into(),
@@ -636,6 +672,7 @@ fn draw(
     } else {
         let st = p.boxed(c, bar, style!(row).grow(1.0));
         ui.sentence(c, st, chimera_ui::controls::SENTENCE, Tone::Fg2, &action_line(&view, loaded));
+        spectate_button(&ui, c, bar, &view);
         // A player may leave before the match it didn't want starts.
         let leave = ui.button(c, bar, Kind::Secondary, "Leave", None, Size::Regular, State::NONE);
         c.entity(leave).insert(LobbyAction::Leave);
@@ -653,6 +690,19 @@ fn draw(
     keys.push(("Tab", "Players"));
     chimera_ui::shell::keys(&ui, c, frame, &keys);
 }
+
+/// This player's Spectate (or, watching, Play) in the bar, when the host
+/// allows switching (`LobbyView::spectate`).
+fn spectate_button(ui: &chimera_ui::controls::Ui, c: &mut Commands, bar: Entity, view: &LobbyView) {
+    let Some(me) = view.rows.iter().find(|r| r.local).filter(|_| view.spectate) else { return };
+    let (label, icon, to) = if me.spectator { ("Play", "plus", false) } else { ("Spectate", "eye", true) };
+    let b = ui.button_icon(c, bar, Kind::Secondary, Some(icon), label, None, Size::Regular, State::NONE);
+    c.entity(b).insert(LobbyAction::Spectate(to));
+}
+
+/// The lobby's "Spectating" group under the lanes (how many watch).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpectatorGroup(pub usize);
 
 /// The host's name ("The host" when not listed).
 fn host_name(v: &LobbyView) -> String {
@@ -707,7 +757,7 @@ pub fn row_load(r: &LobbyViewRow) -> (Load, String) {
 
 /// A player's sentence in the bar: who hosts and how the match starts.
 pub fn action_line(v: &LobbyView, loaded: usize) -> String {
-    let n = v.rows.len();
+    let n = v.rows.iter().filter(|r| !r.spectator).count();
     let host = host_name(v);
     if let Some(left) = v.countdown {
         return format!("{loaded} of {n} loaded. The match starts in {left} s.");

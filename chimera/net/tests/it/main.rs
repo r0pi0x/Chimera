@@ -31,4 +31,5 @@ mod reconnect;
 mod rejoin;
 mod session_wins;
 mod spawn_protection;
+mod spectators;
 mod units;

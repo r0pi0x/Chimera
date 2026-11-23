@@ -27,7 +27,8 @@
 //! segmented-or-dropdown rule, the tabs' grey to white). An app adds
 //! its own screens' scenes (`UiSceneHooks`: the party's `menu`, `esc`,
 //! `settings <tab>`, `play [game]` and `join`), staged by the app's code and cleared at `off`. The screens' milestones add theirs
-//! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
+//! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`,
+//! `spectate`: the spectator's plate, `spectator_plate`)
 //! to `SCENES`. An app's own screens register theirs in `UiSceneHooks`
 //! (`menu`: the party menu's first page, `party_kit::signal_menu::stage`).
 //! The shell's chat registers `chat [open|notice]` and `chat_lobby` the
@@ -63,7 +64,7 @@ pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
 pub const SCENES: &[&str] =
-    &["proof", "controls", "fields", "picker", "form", "formkit", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint"];
+    &["proof", "controls", "fields", "picker", "form", "formkit", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint", "spectate"];
 
 /// `ui_scene lobby`'s made-up lobby (despawned at `off`).
 #[derive(Component)]
@@ -79,7 +80,8 @@ pub struct StagedLobby;
 /// (its own row second, downloading; no Start, a Leave button) of a lobby
 /// with the match's settings; `count`: everyone loaded, counting down;
 /// `held`: the host holding the start (Hold); `crowd`: fifteen players,
-/// the list scrolling.
+/// the list scrolling; `spectators`: the host's lobby with two watching
+/// (the "Spectating" group, Spectate in the host's bar).
 fn stage_lobby(w: &mut World, how: Option<&str>) {
     use chimera_net::prematch::{LobbyRow, NetLobby, status};
     let row = |id: Option<u64>, name: &str, st: u8, ping: Option<u16>, wins: u32| LobbyRow {
@@ -94,8 +96,9 @@ fn stage_lobby(w: &mut World, how: Option<&str>) {
         wins,
         avatar: if id.is_some() { (name.len() as u8 * 7) % 32 } else { chimera_net::prematch::NO_AVATAR },
         party: 0,
+        spectator: false,
     };
-    if matches!(how, Some("host" | "between" | "join" | "count" | "held" | "crowd")) {
+    if matches!(how, Some("host" | "between" | "join" | "count" | "held" | "crowd" | "spectators")) {
         use chimera_net::net::HOST_ID;
         let between = how == Some("between");
         let join = how == Some("join");
@@ -131,6 +134,14 @@ fn stage_lobby(w: &mut World, how: Option<&str>) {
             for (k, n) in ["Vexa", "Brickhouse", "Lowkey", "nullpointer", "Mossy", "K4ttegat", "Orbit", "Tumbleweed"].iter().enumerate() {
                 let mut r = row(Some(10 + k as u64), n, if k % 3 == 0 { status::LOADING } else { status::READY }, Some(20 + 9 * k as u16), 0);
                 (r.step, r.permille) = (1, 150 + 90 * k as u16);
+                rows.push(r);
+            }
+        }
+        if how == Some("spectators") {
+            // Two watching: one still loading (never waited for).
+            for (k, (n, st)) in [("owl_watch", status::READY), ("Grandma Jo", status::LOADING)].into_iter().enumerate() {
+                let mut r = row(Some(20 + k as u64), n, st, Some(60 + 20 * k as u16), 0);
+                r.spectator = true;
                 rows.push(r);
             }
         }
@@ -228,6 +239,7 @@ fn clear_staged(w: &mut World) {
     if let Some(mut h) = w.get_resource_mut::<super::rung_hint::RungHintView>() {
         h.staged = None;
     }
+    super::spectator_plate::stage(w, false);
     if std::mem::take(&mut w.resource_mut::<UiScene>().froze)
         && let Some(mut c) = w.get_resource_mut::<chimera_ui::UiClock>()
     {
@@ -311,9 +323,9 @@ impl Plugin for UiScenePlugin {
             )
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|controls|fields|form|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|lobby|runghint|off> [fixture.json | t]: stage a screen of the UI \
+                "ui_scene <proof|controls|fields|form|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|lobby|runghint|spectate|off> [fixture.json | t]: stage a screen of the UI \
                  kit with made-up data (screenshots), or a fixture's (the UI parity check); an animated scene (rankup, airstrike) \
-                 with `t` frozen `t` s into its loop.",
+                 with `t` frozen `t` s into its loop; `board spectators` and `lobby spectators` with two watching.",
                 |w, a| {
                     let name = a.first().map(String::as_str).unwrap_or("proof");
                     // An animated scene's frozen time.
@@ -362,19 +374,22 @@ impl Plugin for UiScenePlugin {
                             return Ok(None);
                         }
                         "chip" | "lead" | "board" | "board_lead" => {
-                            super::race_chip::stage(w, Some(name));
+                            // `board spectators`: two watching too.
+                            let spectators = a.get(1).is_some_and(|x| x == "spectators");
+                            super::race_chip::stage(w, Some(&if spectators { format!("{name}_spectators") } else { name.to_string() }));
                             rename_staged(w);
-                            if let Some(path) = a.get(1) {
+                            if let Some(path) = a.get(1).filter(|_| !spectators) {
                                 super::ui_parity::apply_fixture(w, name, path)?;
                             }
                             return Ok(None);
                         }
                         "matchend" => {
-                            // `matchend [fixture.json] [chat|busy] [moment]`
+                            // `matchend [fixture.json] [chat|busy] [moment] [spectators]`
                             let chat = a.iter().skip(1).find(|x| matches!(x.as_str(), "chat" | "busy")).cloned();
                             let moment = a.iter().skip(1).any(|x| x == "moment");
-                            let fixture = a.get(1).filter(|x| !matches!(x.as_str(), "chat" | "busy" | "moment"));
-                            super::match_end_signal::stage_with(w, fixture.map(String::as_str), moment)?;
+                            let spectators = a.iter().skip(1).any(|x| x == "spectators");
+                            let fixture = a.get(1).filter(|x| !matches!(x.as_str(), "chat" | "busy" | "moment" | "spectators"));
+                            super::match_end_signal::stage_full(w, fixture.map(String::as_str), moment, spectators)?;
                             rename_staged(w);
                             if let Some(c) = chat {
                                 super::signal_chat::stage_end_chat(w, c == "busy");
@@ -383,6 +398,10 @@ impl Plugin for UiScenePlugin {
                         }
                         "lobby" => {
                             stage_lobby(w, a.get(1).map(String::as_str));
+                            return Ok(None);
+                        }
+                        "spectate" => {
+                            super::spectator_plate::stage(w, true);
                             return Ok(None);
                         }
                         "runghint" => {

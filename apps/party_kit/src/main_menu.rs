@@ -226,6 +226,9 @@ pub enum EscDoes {
     Developer,
     /// The frame inspector (`debugui frames`).
     FrameInspector,
+    /// Watch the match, or play again (`spectator`; shown only where the
+    /// host allows switching: `esc_menu::EscSpectate`).
+    Spectate,
     Quit,
 }
 
@@ -371,6 +374,7 @@ impl MenuData {
                 Some("feedback") => EscDoes::Feedback,
                 Some("developer") => EscDoes::Developer,
                 Some("frame_inspector") => EscDoes::FrameInspector,
+                Some("spectate") => EscDoes::Spectate,
                 Some("sandbox_gun") => EscDoes::SandboxGun,
                 Some("sandbox_map") => EscDoes::SandboxMap,
                 Some("sandbox_bench") => EscDoes::SandboxBench,

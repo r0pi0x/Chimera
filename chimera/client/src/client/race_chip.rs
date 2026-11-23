@@ -34,7 +34,10 @@
 //!   worst the packet-loss mark when the connection loses packets
 //!   (`score_flags::LOSS`), else LAG; LOCAL for the listen host, on its
 //!   own screen too: `is_host`; a faint dash for a bot), and the ladder strip. The leader's row
-//!   has the accent bar; yours is tinted and outlined.
+//!   has the accent bar; yours is tinted and outlined. Under the rows,
+//!   when anyone watches (`core::Spectating`), one line: the eye,
+//!   "SPECTATING • n" and their names (`BoardSpectators`), never ranked
+//!   (`ui_scene board spectators` stages two).
 //!
 //! While the board is open it covers the games' HUDs (`hud::HudCover`,
 //! `BOARD_COVER`: every game's roots and parts, weapon selection and death
@@ -217,6 +220,9 @@ pub struct RaceView {
     pub map_game: String,
     /// Window height and scale factor the content was laid out for.
     pub size: (u32, u32),
+    /// Who watches (`core::Spectating`), by name: a line under the rows,
+    /// never ranked.
+    pub spectators: Vec<String>,
 }
 
 impl RaceView {
@@ -292,16 +298,23 @@ pub fn staged_race(lead: bool) -> RaceView {
             row("pixelpirate", 1, 3, 19, false, false, false, 0, 231),
         ]
     };
-    RaceView { active: true, sandbox: false, rows, rungs: 14, map: "de_dust2".into(), map_game: "CS:S".into(), size: (0, 0) }
+    RaceView { active: true, sandbox: false, rows, rungs: 14, map: "de_dust2".into(), map_game: "CS:S".into(), size: (0, 0), spectators: Vec::new() }
 }
 
-/// Stages scene `name` (`chip`, `lead`, `board`, `board_lead`), or clears
-/// it (`None`).
+/// The staged board's spectators (`ui_scene board spectators`).
+pub const STAGED_SPECTATORS: [&str; 2] = ["owl_watch", "Grandma Jo"];
+
+/// Stages scene `name` (`chip`, `lead`, `board`, `board_lead`; with
+/// `spectators`, two watching), or clears it (`None`).
 pub fn stage(world: &mut World, name: Option<&str>) {
     match name {
         Some(n) => {
             let lead = n.contains("lead");
-            world.insert_resource(RaceStaged { view: staged_race(lead), open: n.starts_with("board") });
+            let mut view = staged_race(lead);
+            if n.contains("spectators") {
+                view.spectators = STAGED_SPECTATORS.map(String::from).to_vec();
+            }
+            world.insert_resource(RaceStaged { view, open: n.starts_with("board") });
         }
         None => {
             world.remove_resource::<RaceStaged>();
@@ -399,6 +412,19 @@ pub fn board_h(rows: usize) -> f32 {
     BOARD_BASE + rows.min(MAX_ROWS) as f32 * ROW_H
 }
 
+/// The spectators' line's height in cq (under the rows, when any watch).
+pub const SPECTATORS_H: f32 = 2.2;
+
+/// The board's height in cq for `view`: its rows and the spectators'
+/// line.
+pub fn board_h_of(view: &RaceView) -> f32 {
+    board_h(view.rows.len()) + if view.spectators.is_empty() { 0.0 } else { SPECTATORS_H }
+}
+
+/// The board's spectators' line (`RaceView::spectators`).
+#[derive(Component)]
+pub struct BoardSpectators;
+
 fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
     commands.init_resource::<BoardOpen>();
     commands.init_resource::<ChipFit>();
@@ -466,6 +492,7 @@ fn gather(
     >,
     mut view: ResMut<RaceView>,
     (staged, sandbox): (Option<Res<RaceStaged>>, Option<Res<super::sandbox::SandboxUi>>),
+    watching: Query<(Entity, Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>), With<crate::core::Spectating>>,
 ) {
     if let Some(st) = staged {
         let mut next = st.view.clone();
@@ -520,6 +547,9 @@ fn gather(
         });
         next.rows = rows;
         next.rungs = ladder.rungs.len();
+        let mut spectators: Vec<String> = watching.iter().map(|(e, ch, name, local)| super::shown_name(e, local, ch, name, settings.as_deref())).collect();
+        spectators.sort();
+        next.spectators = spectators;
         if let Some(m) = map_name.as_deref() {
             let (g, n) = m.0.split_once(':').unwrap_or(("", m.0.as_str()));
             next.map = n.to_string();
@@ -1015,6 +1045,26 @@ fn build_board(
                 });
             });
         }
+        // Who watches: one line under the rows, never ranked.
+        if !view.spectators.is_empty() {
+            b.spawn((
+                BoardSpectators,
+                Node { align_items: AlignItems::Center, column_gap: look.val(0.6), height: look.val(SPECTATORS_H), padding: UiRect::horizontal(look.val(ROW_PAD)), flex_shrink: 0.0, min_width: px(0.0), overflow: Overflow::clip(), ..default() },
+                UiParityId::new("board.spectators"),
+                Pickable::IGNORE,
+            ))
+            .with_children(|l| {
+                signal::icons::spawn(l, &look, "eye", look.px(0.7), look.tone(Tone::Fg3));
+                l.spawn((look.tracked(Role::Mono, 0.46, TRACK_TITLES, look.tone(Tone::Fg3), &format!("SPECTATING \u{2022} {}", view.spectators.len())), Pickable::IGNORE));
+                let names = view.spectators.iter().map(|n| n.to_uppercase()).collect::<Vec<_>>().join("  \u{b7}  ");
+                l.spawn((
+                    Node { flex_shrink: 1.0, min_width: px(0.0), overflow: Overflow::clip(), ..default() },
+                    look.tracked(Role::DisplayBold, 0.56, 0.56 * 0.03, look.tone(Tone::Fg2), &names),
+                    Ellipsize::in_parent(names.clone()),
+                    Pickable::IGNORE,
+                ));
+            });
+        }
     });
 }
 
@@ -1051,7 +1101,7 @@ fn open_close(
     let want = view.active && (held.scores() || staged.is_some_and(|s| s.open));
     super::hud::HudCover::put(&mut cover, super::hud::BOARD_COVER, want);
     let (tl, node, bg) = &mut *plate;
-    let target_h = board_h(view.rows.len());
+    let target_h = board_h_of(&view);
     let plate_bg = look.tone(Tone::Plate);
     if bg.0 != plate_bg {
         bg.0 = plate_bg;

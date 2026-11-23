@@ -171,6 +171,9 @@ pub struct MatchEndView {
     pub sound: Vec<(String, String)>,
     /// How many times a winner sound was asked for.
     pub sounds_asked: u32,
+    /// Who watched (`core::Spectating`), by name: told apart, never in
+    /// the standings.
+    pub spectators: Vec<String>,
 }
 
 /// The map vote as the screen shows it.
@@ -260,7 +263,11 @@ fn follow(
     settings: Option<Res<NetSettings>>,
     parts: Option<Res<PartsRegistry>>,
     gameplay: Option<Res<Gameplay>>,
-    (chars, role): (Query<(Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>)>, Option<Res<crate::core::NetRole>>),
+    (chars, role, watching): (
+        Query<(Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>)>,
+        Option<Res<crate::core::NetRole>>,
+        Query<(Entity, Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>), With<crate::core::Spectating>>,
+    ),
     mut view: ResMut<MatchEndView>,
     (map_vote, mut choice): (Option<Res<MapVote>>, ResMut<MapVoteChoice>),
     (mut passes, mut gate, moment): (super::logo_pass::Passes, ResMut<MatchEndGate>, Option<Res<super::winner_moment::WinnerMoment>>),
@@ -399,6 +406,11 @@ fn follow(
         next_at: next.at,
         sound: view.sound.clone(),
         sounds_asked: view.sounds_asked,
+        spectators: {
+            let mut s: Vec<String> = watching.iter().map(|(e, net, name, l)| super::shown_name(e, l, net, name, settings.as_deref())).collect();
+            s.sort();
+            s
+        },
     };
     if came_up && v.winner.is_some() {
         v.sound = parts.map_or_else(Vec::new, |p| p.match_end_sounds(gameplay.as_ref().map(|g| g.hud), v.you_won));

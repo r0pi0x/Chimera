@@ -1285,7 +1285,8 @@ fn smooth_view(
     }
 }
 
-/// New commands, with the last few again, to the server.
+/// New commands, with the last few again, to the server (none while
+/// spectating: the acknowledgements only).
 /// Without new commands (not predicting yet: joining, after a map
 /// change), the acknowledgement alone when it changed or a delta's base
 /// is missing, so the server never keeps sending deltas we can't read.
@@ -1295,8 +1296,14 @@ fn send_commands(
     mut bases: ResMut<OwnStateBases>,
     mut out: MessageWriter<UserCmds>,
     (time, mut traffic): (Res<Time<Real>>, ResMut<super::stats::Traffic>),
+    watching: Query<(), (With<LocalPlayer>, With<crate::core::Spectating>)>,
 ) {
     let ack = bases.newest();
+    // A spectator plays nothing: no inputs go, only the acknowledgement
+    // (`crate::spectators`).
+    if !watching.is_empty() {
+        outgoing.fresh = 0;
+    }
     if outgoing.fresh == 0 {
         if bases.missing || bases.sent != Some(ack) || clock.tick.is_none() {
             bases.sent = Some(ack);

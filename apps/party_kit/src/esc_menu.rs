@@ -28,6 +28,10 @@
 //! - **Vote to skip the map** (`party_skipmap`, `host::SKIP_ISSUE`): on
 //!   everyone's menu; while a vote runs the menu shows it with Yes and No.
 //!   A refused call says why (a vote running, the caller's wait).
+//! - **Spectate** (`EscSpectate`, `with_spectate`): watch the match
+//!   (`spectator`; "Join the match" while watching), shown only while a
+//!   minigame plays and the host allows switching (`mp_spectate_switch`,
+//!   `mp_spectators_max`; not in a sandbox).
 //! - **Report a bug**: the menu closes, then the screenshot and the
 //!   report dialog (`client::feedback::request`; `feedback_signal`).
 //! - **Disconnect** (only in an app with the main menu, `main_menu`):
@@ -312,6 +316,7 @@ pub fn shown_entries_with(host: bool, main_menu: bool, voting: bool, sandbox: bo
                 EscDoes::Feedback => Some(Action::Feedback),
                 EscDoes::Developer => Some(Action::Developer),
                 EscDoes::FrameInspector => Some(Action::FrameInspector),
+                EscDoes::Spectate => Some(Action::Spectate),
                 EscDoes::Vote => (!voting).then_some(Action::SkipMap),
                 EscDoes::SandboxGun => Some(Action::SandboxGun),
                 EscDoes::SandboxMap => Some(Action::SandboxMap),
@@ -331,6 +336,44 @@ pub fn shown_entries_with(host: bool, main_menu: bool, voting: bool, sandbox: bo
             }
         })
         .collect()
+}
+
+/// Whether this player may switch between playing and watching here
+/// (`Some(watching now)`), or not (None: the host doesn't allow it, no
+/// match): the Escape menu's Spectate entry, kept each frame.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EscSpectate(pub Option<bool>);
+
+/// `entries` with the Spectate entry as `spectate` says: gone when
+/// switching isn't allowed, "Join the match" while watching.
+pub fn with_spectate(mut entries: Vec<ShownEntry>, spectate: Option<bool>) -> Vec<ShownEntry> {
+    match spectate {
+        None => entries.retain(|e| e.action != Some(Action::Spectate)),
+        Some(true) => {
+            for e in entries.iter_mut().filter(|e| e.action == Some(Action::Spectate)) {
+                e.label = "Join the match".into();
+            }
+        }
+        Some(false) => {}
+    }
+    entries
+}
+
+/// Keeps `EscSpectate`: a minigame plays, the server's spectator
+/// settings allow switching (replicated `mp_spectate_switch`,
+/// `mp_spectators_max`), and whether the local player watches.
+fn follow_spectate(
+    hud: Option<Res<chimera_sim::minigame::hud::MinigameHud>>,
+    settings: Option<Res<chimera_net::spectators::SpectatorSettings>>,
+    sandbox: Option<Res<chimera_client::client::sandbox::SandboxUi>>,
+    me: Query<Has<chimera_core::core::Spectating>, With<chimera_core::core::LocalPlayer>>,
+    mut out: ResMut<EscSpectate>,
+) {
+    let allowed = hud.as_deref().is_some_and(|h| h.playing())
+        && settings.is_some_and(|s| s.switch != 0 && s.max > 0)
+        && !sandbox.is_some_and(|s| s.on);
+    let next = EscSpectate(me.iter().next().filter(|_| allowed));
+    out.set_if_neq(next);
 }
 
 /// The themed pre-match lobby owns the screen (`main_menu::owned_by_lobby`
@@ -364,6 +407,7 @@ fn navigate(
     mut menu: ResMut<EscMenu>,
     mut out: MessageWriter<Action>,
     mut cues: MessageWriter<chimera_client::client::ui_sound::UiCue>,
+    spectate: Res<EscSpectate>,
 ) {
     use chimera_client::client::ui_sound::UiCue;
     if !menu.open || !signal(theme.as_deref()) {
@@ -377,7 +421,7 @@ fn navigate(
         Page::Main => {
             let host = host::may_change(role.0.as_deref(), role.1.as_deref());
             let voting = vote.as_ref().is_some_and(|v| v.active.is_some());
-            let entries = shown_entries_with(host, main_menu.is_some(), voting, sandbox.is_some_and(|s| s.on), developer.is_some_and(|d| d.is_on()));
+            let entries = with_spectate(shown_entries_with(host, main_menu.is_some(), voting, sandbox.is_some_and(|s| s.on), developer.is_some_and(|d| d.is_on())), spectate.0);
             let live: Vec<usize> = (0..entries.len()).filter(|i| entries[*i].action.is_some()).collect();
             if live.is_empty() {
                 return;
@@ -484,6 +528,8 @@ pub enum Action {
     Developer,
     /// Developer mode's frame inspector (`debugui frames`).
     FrameInspector,
+    /// Watch the match or play again (`spectator`, flipped).
+    Spectate,
 }
 
 /// An action as a message (tests, `escmenu`).
@@ -529,6 +575,8 @@ impl Plugin for EscMenuPlugin {
             .init_resource::<CapturedKeys>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<VotePanel>()
+            .init_resource::<EscSpectate>()
+            .add_systems(Update, follow_spectate.before(EscMenuSystems))
             .init_resource::<chimera_client::client::prematch_lobby::LobbyOverlay>()
             .add_message::<Action>()
             .add_systems(Update, crate::ui_cues::hover::<Action>.in_set(EscMenuSystems))
@@ -563,6 +611,7 @@ impl Plugin for EscMenuPlugin {
                         Some("feedback") => Action::Feedback,
                         Some("developer") => Action::Developer,
                         Some("frame_inspector") => Action::FrameInspector,
+                        Some("spectate") => Action::Spectate,
                         other => return Err(format!("no entry {other:?}")),
                     };
                     w.write_message(action);
@@ -926,6 +975,11 @@ fn act_one(world: &mut World, action: Action) {
             world.resource_mut::<EscMenu>().set_open(false);
             submit(world, "debugui frames");
         }
+        Action::Spectate => {
+            leave(world);
+            world.resource_mut::<EscMenu>().set_open(false);
+            submit(world, "spectator");
+        }
         Action::Quit => submit(world, "quit"),
     }
 }
@@ -1035,6 +1089,8 @@ struct Shown {
     sandbox: bool,
     /// Options' Developer mode is on.
     developer: bool,
+    /// The Spectate entry (`EscSpectate`).
+    spectate: Option<bool>,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -1065,6 +1121,7 @@ fn show(
     ),
     mut shown: Local<Option<Shown>>,
     mut commands: Commands,
+    spectate: Res<EscSpectate>,
 ) {
     if !menu.open {
         if shown.take().is_some() {
@@ -1086,6 +1143,7 @@ fn show(
         lobby: menu.lobby,
         sandbox: sandbox.is_some_and(|s| s.on),
         developer: developer.is_some_and(|d| d.is_on()),
+        spectate: spectate.0,
         signal: (signal(theme.as_deref()) && units.is_some()).then(|| {
             let u = units.as_deref().copied().unwrap_or_default();
             // A running vote's seconds left redraw it each second.
@@ -1112,7 +1170,7 @@ fn show(
                 mine: v.mine,
                 may_vote: v.may_vote,
             });
-            let entries = shown_entries_with(now.host, now.main_menu, active.is_some(), now.sandbox, now.developer);
+            let entries = with_spectate(shown_entries_with(now.host, now.main_menu, active.is_some(), now.sandbox, now.developer), now.spectate);
             let at = crate::esc_signal::Drawn {
                 lobby: now.lobby,
                 page: menu.page,
@@ -1244,6 +1302,14 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             EscDoes::Feedback => Action::Feedback,
             EscDoes::Developer => Action::Developer,
             EscDoes::FrameInspector => Action::FrameInspector,
+            EscDoes::Spectate => match shown.spectate {
+                None => continue,
+                Some(true) => {
+                    panel.spawn(button("Join the match".to_string(), Action::Spectate, BUTTON, WIDE));
+                    continue;
+                }
+                Some(false) => Action::Spectate,
+            },
             EscDoes::SandboxGun => Action::SandboxGun,
             EscDoes::SandboxMap => Action::SandboxMap,
             EscDoes::SandboxBench => Action::SandboxBench,

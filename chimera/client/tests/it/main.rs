@@ -18,6 +18,7 @@ mod map_load_steps;
 mod swap_effect;
 mod third_person;
 mod third_person_net;
+mod spectators_net;
 mod text_warm;
 mod metrics;
 mod frame_inspector;

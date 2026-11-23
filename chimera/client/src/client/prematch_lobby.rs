@@ -113,7 +113,7 @@ impl Plugin for PreMatchLobbyPlugin {
         use crate::console::ConsoleAppExt;
         app.console_command(
             "chimera:lobby_press",
-            "lobby_press <ready|settings|report|leave|hold|auto|add_bot|kick <row>>: press that button of the pre-match lobby (tests, screenshots).",
+            "lobby_press <ready|settings|report|leave|hold|auto|add_bot|kick <row>|spectate|play>: press that button of the pre-match lobby (tests, screenshots).",
             |w, a| {
                 let action = match a.first().map(String::as_str) {
                     Some("ready") => LobbyAction::Ready,
@@ -124,6 +124,8 @@ impl Plugin for PreMatchLobbyPlugin {
                     Some("auto") => LobbyAction::Hold(false),
                     Some("add_bot") => LobbyAction::AddBot,
                     Some("kick") => LobbyAction::Kick(a.get(1).and_then(|i| i.parse().ok()).ok_or("lobby_press kick <row>")?),
+                    Some("spectate") => LobbyAction::Spectate(true),
+                    Some("play") => LobbyAction::Spectate(false),
                     other => return Err(format!("no button {other:?}")),
                 };
                 w.write_message(action);
@@ -170,6 +172,9 @@ pub enum LobbyAction {
     /// The report dialog (`feedback::request`).
     Report,
     Leave,
+    /// This player watches (true) or plays again (`spectator`; when the
+    /// host allows switching: `LobbyView::spectate`).
+    Spectate(bool),
 }
 
 /// What a player asked of this lobby while not on its map yet (still
@@ -246,6 +251,7 @@ fn act(
                 Some(r) => Some(format!("kick {}", r.name)),
                 None => None,
             },
+            LobbyAction::Spectate(on) => Some(format!("spectator {}", u8::from(*on))),
             LobbyAction::Report => {
                 commands.queue(|w: &mut World| {
                     if w.contains_resource::<super::feedback::Feedback>() {
@@ -315,6 +321,9 @@ pub struct LobbyViewRow {
     pub avatar: u8,
     /// The party (`LobbyRow::party`; 0 alone).
     pub party: u8,
+    /// Watching, not playing (`LobbyRow::spectator`): in the
+    /// "Spectating" group, never waited for.
+    pub spectator: bool,
 }
 
 /// What the screen shows (headless too).
@@ -353,6 +362,10 @@ pub struct LobbyView {
     pub rungs: u32,
     /// The host shows Kick on a hovered row (`ui_lobby_kick`).
     pub kick: bool,
+    /// The host lets players switch between playing and watching
+    /// (`mp_spectate_switch`, room under `mp_spectators_max`): this
+    /// player's Spectate or Play button shows.
+    pub spectate: bool,
 }
 
 /// The host's Kick on a hovered lobby row shown (`ui_lobby_kick`, 1).
@@ -492,6 +505,7 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
         wins: r.wins,
         avatar: r.avatar,
         party: r.party,
+        spectator: r.spectator,
     }
 }
 
@@ -548,6 +562,7 @@ fn follow(
         Option<Res<chimera_net::net::query::Hosting>>,
         Option<Res<LobbyKick>>,
     ),
+    spectate: Option<Res<chimera_net::spectators::SpectatorSettings>>,
 ) {
     // A listen host's lobby shown from its Start (`prematch::show_first`):
     // seen as its host, as the staged one.
@@ -621,6 +636,7 @@ fn follow(
         },
         rungs: 0,
         kick: kick.is_none_or(|k| k.0 != 0),
+        spectate: spectate.is_some_and(|s| s.switch != 0 && s.max > 0),
     };
     v.hint = hint(&v);
     let short = |id: &str| games.as_ref().and_then(|g| g.get(id)).map(|g| g.short_name.to_string());
@@ -979,6 +995,7 @@ mod tests {
             wins: 0,
             avatar: 0,
             party: 0,
+            spectator: false,
         };
         let mut l = NetLobby {
             map: "cs_source:de_dust2".into(),

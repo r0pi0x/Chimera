@@ -68,6 +68,11 @@ pub const ENGINE_NAMES: &[&str] = &[
     "lobby_hold",
     "lobby_ready",
     "lobby",
+    // Spectators (`chimera_net::spectators`).
+    "mp_spectators_max",
+    "mp_spectate_switch",
+    "spectator",
+    "cl_spectator",
     // The network: rates, interpolation, lag compensation, downloads.
     "rate",
     "sv_maxrate",

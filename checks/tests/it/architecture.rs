@@ -207,11 +207,14 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // console command, as `net`'s). Above `net`, `minigame` and `mode`,
     // which `net` itself may not use; an app that plays minigames over the
     // network adds its plugin.
-    ("minigame_net", &["core", "console", "net", "minigame", "mode", "prematch"]),
+    ("minigame_net", &["core", "console", "net", "minigame", "mode", "prematch", "spectators"]),
     // A server's pre-match lobby (chimera/net, beside `minigame_net`,
     // which registers it): the players' join status and the hold of each
     // new match.
     ("prematch", &["core", "console", "net", "minigame"]),
+    // Spectators over the network (chimera/net, beside `minigame_net`,
+    // which registers it): joining as one, the switch, the cap.
+    ("spectators", &["core", "console", "minigame"]),
     // A game's dedicated server, once for every game (chimera_net's own
     // module, above `net`): the game is data (`GameServer`).
     (

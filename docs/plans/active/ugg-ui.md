@@ -1530,7 +1530,60 @@ binding), built in `chimera_client::client::lobby_panel` on the kit:
   host's Auto/Hold; no warm-up room (players stay staged); a long list
   scrolls with the kit's bar and a "more players below" mark
   (`Ui::scroll_more`); lanes don't shrink.
-- Stagings: `ui_scene lobby <host|between|join|count|held|crowd>`.
+- Stagings: `ui_scene lobby <host|between|join|count|held|crowd|spectators>`.
+
+### Spectators (2026-11-22; built)
+
+The backlog's "Spectators" (user, 2026-11-14), for the party apps.
+Decisions (agent's, for the user's review):
+
+- **Who**: a player who watches instead of playing
+  (`core::Spectating`: no team, dead with no weapons, not solid, out of
+  the minigame; `chimera_sim::minigame::spectators`). Joining as one:
+  `cl_spectator 1` (userinfo; `+cl_spectator 1` on the command line).
+  Switching: `spectator [0|1]` (a player command, flips with no
+  argument), from the lobby's bar (Spectate, watching: Play) and the
+  Escape menu (Spectate, watching: "Join the match"). Back to playing,
+  the minigame takes the player in as a joiner (in the lobby: staged
+  with everyone). Its score is kept; the switch counts no death.
+- **The host's say**: `mp_spectators_max` (default 8; 0: no
+  spectators) caps how many watch at once; `mp_spectate_switch`
+  (default 1) allows switching both ways mid-lobby and mid-match (0:
+  only joining as one). Both `mp_*`, so replicated: the menus offer the
+  switch by them (`chimera_net::spectators`).
+- **The lobby's rules**: a spectator is listed (flagged,
+  `LobbyRow::spectator`) but never staged, waited for or counted: not in
+  "n of m loaded", not in the waiting mark, not a player for
+  `mp_lobby_min_players`. One connected does start the longest wait (a
+  bots' match may start for a spectator alone after it).
+- **Votes**: spectators don't vote (the end screen's map vote and
+  `callvote`) unless the host sets `sv_vote_allow_spectators 1`; the
+  map vote's "everyone voted" counts players only.
+- **Networking**: the same snapshots as everyone (no per-role filtering);
+  a spectating client sends no movement commands, only its
+  acknowledgements (`net::predict::send_commands`). Its client loading
+  the map takes it into the game as a watcher, never into play.
+- **The camera**: the shell's (`client::spectate`): a spectator starts
+  flying free (no death cam), jump cycles first person (through the
+  player's eyes, its view model), chase (third person, orbited with the
+  mouse) and free; attack and attack2 the next and previous player.
+  **The spectator's plate** (`client::spectator_plate`, kit plate and
+  key caps, bottom centre, while a minigame plays): WATCHING, the
+  player's name, the mode, and the bound keys for Mode, Next, Prev
+  (`ui_scene spectate`).
+- **Where they are listed**: the Tab board, one line under the rows (an
+  eye, "SPECTATING • n", the names; never ranked; `ui_scene board
+  spectators`); the lobby, a compact "Spectating · n" group under the
+  lanes with small avatars (`ui_scene lobby spectators`); the match end,
+  "Spectating: a, b" after an eye in the details line, never in the
+  standings (`ui_scene matchend spectators`).
+- Tests: `chimera_net` `spectators` (joins watching, sees the players,
+  never spawns, sends no commands; switching and the cap; the lobby
+  never waits for one; the map vote), `chimera_client`
+  `spectators_net` (the camera cycles the players).
+- Left: a refused join-as-spectator (no room) is told on the server's
+  log only; the Join page has no "Join as spectator" toggle yet
+  (`cl_spectator` on the console or command line).
 
 ## 6. Decisions (user, 2026-11-14)
 
@@ -1546,7 +1599,7 @@ binding), built in `chimera_client::client::lobby_panel` on the kit:
    K/D, ladder strip, tags, session wins). Its open and close are fast
    enough to spam Tab (well under the prototype's 240/200 ms; aim for
    about 120 ms open, 90 ms close, no row stagger that delays reading).
-   Spectators on the board: later (backlog).
+   Spectators on the board: built 2026-11-22 ("Spectators" above).
 3. The font build scripts are committed under `tools/fonts/` as the OFL
    source, with the TTFs.
 4. Session wins: per server run.

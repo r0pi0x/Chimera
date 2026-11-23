@@ -877,6 +877,13 @@ fn receive_loaded(mut loaded: MessageReader<FromClient<super::Loaded>>, players:
             if let Ok(mut c) = world.get_entity_mut(client) {
                 c.insert(ClientMap(serving));
             }
+            // A spectator comes into the game as a watcher, not into
+            // play (`spectators`).
+            if world.get::<crate::core::Spectating>(character).is_some() {
+                world.entity_mut(character).remove::<crate::core::Connecting>();
+                super::decals::send(world, client);
+                return;
+            }
             // Held (the pre-match lobby's: everyone out of play until
             // it ends, which lets this player in: `prematch`).
             if world.contains_resource::<EntryHeld>() {

@@ -123,6 +123,7 @@ pub mod power;
 pub mod runtime;
 pub mod spawn_score;
 pub mod spawns;
+pub mod spectators;
 pub mod targets;
 pub mod props;
 pub mod range_place;

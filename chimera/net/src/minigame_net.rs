@@ -116,7 +116,8 @@
 //!   the hold is set by it (`NextMatch::at` its close plus the reveal: one
 //!   deadline); each player votes (`vote_map`, console `vote_map <n>`: a
 //!   client sends `MapVoteCast`, the server counts it for that client's
-//!   character; a host casts for its own player), and at the close the
+//!   character; a host casts for its own player; a spectator only with
+//!   `sv_vote_allow_spectators 1`), and at the close the
 //!   most votes win (a tie: the pool's pick, the tied map earliest on the
 //!   ballot; none: the rotation's pick), which
 //!   becomes the hold's next map.
@@ -287,6 +288,8 @@ fn register(app: &mut App) {
     // The pre-match lobby (`prematch`), after the tick's minigame (a
     // match started by a map change is held at once).
     crate::prematch::register(app);
+    // Spectators (`spectators`): the cap, the switch, joining as one.
+    crate::spectators::register(app);
     app.add_systems(
         FixedLast,
         (crate::prematch::begin, crate::prematch::serve)
@@ -1488,7 +1491,11 @@ fn cast_local(world: &mut World, choice: usize) -> Result<(), String> {
 
 /// `voter` (a character in the match) votes for `choice` (the host's).
 pub fn cast_vote(world: &mut World, voter: Entity, choice: usize) -> Result<(), String> {
-    if world.get::<InMinigame>(voter).is_none() {
+    // A spectator votes only where the host lets spectators vote
+    // (`sv_vote_allow_spectators`, `crate::spectators`).
+    let watcher_may = world.get::<chimera_core::core::Spectating>(voter).is_some()
+        && world.get_resource::<crate::net::vote::VoteSettings>().is_some_and(|s| s.allow_spectators != 0);
+    if world.get::<InMinigame>(voter).is_none() && !watcher_may {
         return Err("only players in the match vote".into());
     }
     let mut vote = world.get_resource_mut::<MapVote>().ok_or("no map vote now")?;
