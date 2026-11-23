@@ -433,7 +433,14 @@ code. Order by what batch 1/2 needs:
    attribute in a controlled map). Covers batch 1 entirely.
 2. Health-on-hit, mini-crit conditions, bleed, speed buffs, knockback
    numbers, flare/arrow/ball/cleaver/bolt/cannonball projectile numbers,
-   lunchbox/drink timings, meters (batch 2).
+   lunchbox/drink timings, meters (batch 2). **Specified 2026-11-23** in
+   [specs/tf2/batch2_mechanics.md](../../../specs/tf2/batch2_mechanics.md)
+   (measured): health on hit/kill, mini-crit conditions, bleed, the flare
+   projectile (Flare Gun, Detonator, Scorch Shot) and the melee speed
+   buffs. Still to spec: knockback on hit of the Force-a-Nature and the
+   Shortstop's shove, the arrow, ball, cleaver/ornament, bolt and
+   cannonball projectiles, lunchbox/drink timings, meters, sniper and
+   revolver variants.
 3. Airblast, shield charge, cloak/disguise, medigun, banners, building
    rules (batch 3): each its own spec file, the large ones in parts.
 
