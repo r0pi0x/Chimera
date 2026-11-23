@@ -227,3 +227,37 @@ fn dm_underpass_gravel_has_no_holes() {
     assert_eq!(m.alpha, MapAlpha::Opaque);
     assert_eq!(m.envmap.as_ref().map(|e| e.mask), Some(EnvmapMask::BaseAlphaInverted));
 }
+
+/// A Halo pill on Chill Out (no report: seen while setting up the test
+/// above): one put down with its body's centre 0.3 m above a source flag
+/// has its feet 0.76 m under the floor there, outside the 0.5 WU sphere,
+/// and falls out of the level; that was the setup, not the rule. Feet put
+/// down 0.3 m above each source, and feet dropping onto it from 2 m (outside the sphere), are
+/// taken at once (multiplayer_rules.md 6.8: the origin within 0.5 WU).
+#[test]
+fn a_halo_pill_on_or_dropping_onto_chill_outs_pads_is_teleported() {
+    use chimera_world::map::teleport::MapTeleporters;
+    let Some(mut sim) = party_on("halo_ce:chillout") else { return };
+    let t = sim.app.world().resource::<MapTeleporters>().clone();
+    let movement = halo_ce::game::movement::ID;
+    for (i, pad) in t.pads.iter().enumerate() {
+        for above in [2.0, 0.3] {
+            let p = sim.spawn_character(pad.source, movement);
+            // The body's centre over its feet, as its footing says.
+            let lift = sim.position(p) - feet(&sim, movement, p);
+            sim.app.world_mut().get_mut::<Transform>(p).unwrap().translation = pad.source + Vec3::Y * above + lift;
+            let mut arrived = None;
+            for k in 0..200 {
+                sim.ticks(1);
+                if (feet(&sim, movement, p) - pad.dest).xz().length() < 0.6 {
+                    arrived = Some(k);
+                    break;
+                }
+            }
+            eprintln!("pad {i}, feet {above} m above: arrived at tick {arrived:?}");
+            assert!(arrived.is_some(), "pad {i}, feet {above} m above its source: teleported");
+            sim.app.world_mut().despawn(p);
+            sim.ticks(1);
+        }
+    }
+}
