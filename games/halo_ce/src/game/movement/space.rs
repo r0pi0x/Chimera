@@ -159,7 +159,20 @@ impl Space for EngineSpace<'_, '_, '_> {
     fn support(&self, p: Vec3, n: Vec3) -> Option<Support> {
         ladder_support(self.ladders, self.scale, self.radius, p, n)
     }
+
+    fn ledge(&self, point: Vec3, n: Vec3, max_slope_cos: f32) -> Option<Vec3> {
+        // A short ray down just past the contact, away from the pill: a
+        // walkable face right there is the top whose edge it touches.
+        let away = Vec3::new(-n.x, 0.0, -n.z).try_normalize()?;
+        let from = point + away * LEDGE_PROBE + Vec3::Y * LEDGE_PROBE;
+        let (at, top) = self.ray(from, Vec3::NEG_Y, 2.0 * LEDGE_PROBE)?;
+        (top.y >= max_slope_cos && (at.y - point.y).abs() <= LEDGE_PROBE).then_some(top)
+    }
 }
+
+/// How far past a contact (WU, either way) `Space::ledge` looks for the
+/// top whose edge it is.
+const LEDGE_PROBE: f32 = 0.01;
 
 /// A ladder brush's sheet (`maps::collision::ladder_brush`'s shape: the
 /// slab's two planes, then one plane per edge in the polygon's order):

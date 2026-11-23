@@ -76,6 +76,26 @@ fn compare(id: &str, own: &'static str, theirs: &'static str, at: Vec3, deg: f32
     Some(((along(s0, e0, deg), e0.y - s0.y), (along(s1, e1, deg), e1.y - s1.y)))
 }
 
+/// Report 0957b0c2 (2026-11-22): a Halo player could not walk up
+/// dm_underpass' stairs at (384, -1025, -328), facing 179 degrees; an
+/// HL2:DM player walks up them, and so does the Halo player.
+#[test]
+fn a_halo_player_walks_up_dm_underpass_stairs() {
+    let Some(((own, own_up), (halo, halo_up))) = compare(
+        "hl2dm:dm_underpass",
+        hl2dm::game::movement::ID,
+        halo_ce::game::movement::ID,
+        source(384.0, -1025.2, -328.0),
+        179.0,
+        3.0,
+    ) else {
+        return;
+    };
+    eprintln!("HL2:DM {own} m along, {own_up} m up; Halo {halo} m along, {halo_up} m up");
+    assert!(own_up > 1.0, "the HL2:DM player climbed the stairs");
+    assert!(halo_up > own_up - 0.5, "the Halo player climbed them too: {halo_up} m against {own_up}");
+}
+
 /// Report dd2a7814 (2026-11-22): something unseen blocked a TF2 player in
 /// coldseed's doorway at (-2696, -2043, 37), facing 96 degrees; it walks
 /// through as far as a Combat Arms soldier does.

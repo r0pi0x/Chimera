@@ -74,6 +74,20 @@ its own body. Tests: `character_fit`
 its own eyes on CS:S's maps; `bigger_source_players_on_a_cs_source_map_see_from_its_own_eye`:
 TF2 and HL2:DM at CS:S's 64 u), `chimera_core` `envelope` unit tests.
 
+## Fixed from reports (2026-11-22)
+
+- A Source box on another game's map collided with Combat Arms'
+  traces-only surfaces (non-solid detail): a ramp of it filled a
+  coldseed doorway. Source's movement now meets what every body meets
+  (`core::CHARACTER_FILTER`), as Combat Arms' and Halo's do.
+- A fitted Halo pill could not walk up Source stairs (dm_underpass, 12-16 u
+  risers): its step-up landed the rounded bottom on the stair's nosing, a
+  contact too steep to stand on, and it slid back. A landing on the edge of
+  a walkable top now stands on that top (`mover::step_up`,
+  `Space::ledge`).
+
+Tests: `apps/party_roster/tests/it/heavy/report_spots.rs`.
+
 ## Later (not built)
 
 - Host option "Fit characters to the map": collision only (today's

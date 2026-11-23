@@ -71,6 +71,14 @@ pub trait Space {
         let _ = (p, n);
         None
     }
+    /// The step-up's ledge (ours, `step_up`): when a contact at `point`
+    /// with normal `n` is on the edge of a walkable top beyond it (a
+    /// stair's nosing), that top's normal (`max_slope_cos` or flatter).
+    /// None by default: no ledges known.
+    fn ledge(&self, point: Vec3, n: Vec3, max_slope_cos: f32) -> Option<Vec3> {
+        let _ = (point, n, max_slope_cos);
+        None
+    }
 }
 
 /// A climbable surface beyond an edge of the support (`Support`): its
@@ -322,7 +330,9 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
 /// that is under it (a floor, or a step's edge the pill then rides up as
 /// it rides lower ones), above where it started, and the pill got further
 /// along the motion than `plain`: the contacts are the raised move's and
-/// the landing's, the clip set the landing's plane.
+/// the landing's, the clip set the landing's plane. A landing on the edge
+/// of a walkable top (`Space::ledge`: a stair's nosing) counts as on that
+/// top, so the pill walks up stairs whose risers are too steep to ride.
 pub fn step_up(space: &dyn Space, d: &MovementData, p: Vec3, h: f32, motion: Vec3, plain: &Moved) -> Option<Moved> {
     let eps = d.epsilon;
     let flat = Vec3::new(motion.x, 0.0, motion.z);
@@ -356,6 +366,21 @@ pub fn step_up(space: &dyn Space, d: &MovementData, p: Vec3, h: f32, motion: Vec
     if !further || at.y <= p.y + eps {
         return None;
     }
+    // Landed on a stair's nosing (the rounded bottom meets the edge, not
+    // the top, until its centre is over the top): it stands on the top,
+    // so the next tick steps on again instead of sliding back off a steep
+    // contact (a stair's riser higher than the pill's ride, Source's 12 u
+    // under a fitted pill: report 0957b0c2).
+    let (n, plane) = match (n.y < d.max_slope_cos).then(|| space.ledge(hit.point, n, d.max_slope_cos)).flatten() {
+        Some(top) => (
+            top,
+            Plane {
+                normal: top,
+                offset: offset(hit.point, top, d.radius, h),
+            },
+        ),
+        None => (n, plane),
+    };
     let mut contacts = across.contacts;
     let mut climbable = across.climbable;
     contacts.push(n);

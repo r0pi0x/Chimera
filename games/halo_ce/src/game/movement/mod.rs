@@ -56,7 +56,8 @@
 //! `EYE_MARGIN` under its top or at the map's character's eye (whichever
 //! is higher, never above Halo's own), and a step-up (`mover::step_up`) to the
 //! map's character's step where that is higher than the 0.375 m Halo rides
-//! up. The model, hit boxes, jump and gravity stay Halo's. On Halo's maps
+//! up (a landing on a stair's nosing stands on its top, `Space::ledge`, so
+//! stairs too steep to ride are walked up). The model, hit boxes, jump and gravity stay Halo's. On Halo's maps
 //! and without a map envelope the numbers are the table's, to the bit.
 //!
 //! Keyboard and mouse: `Intent::move_axis` is the throttle (forward, left)
