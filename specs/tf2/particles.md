@@ -1001,6 +1001,42 @@ has them all 0.
    whether the rate is sequence loops per second or a scale on the
    sheet's own frame times. Matters only for sheeted materials (the flame
    core uses fit-to-lifetime; the muzzle materials have no sheet).
+   **Still open after an attempt (2026-11-23, tf2-spec-effects):**
+   - Every sheet read in the materials of the stock weapons' systems
+     and of the candidates below gives each frame a duration of 1
+     (total time = frame count), so "a scale on the frame times" and
+     "frames a second" coincide for them: per-frame durations cannot
+     change TF2's stock look. Clamp/loop does differ:
+     `effects/smoke/smokelit` (the rocket trail's smoke, also
+     `muzzle_grenadelauncher`'s) has 4 looping 5-frame sequences;
+     `effects/smokelit2/smoke2lit` (the airblast's smoke) 5 clamped
+     one-frame sequences; `effects/debris/debris_chunk` and
+     `nutsnbolts` 6 clamped one-frame sequences;
+     `effects/explosion/topsprite256_cg0` one clamped 62-frame sequence;
+     `effects/workshop/gargoyle_spin` one looping 64-frame sequence,
+     `effects/animatedcow/animated_cow` one looping 16-frame,
+     `effects/animatedspirit01/animated_spirit01` one looping 8-frame.
+   - Evidence for "sequence loops a second": `rocket_explosion_classic_b`
+     (`particles/classic_rocket_trail.pcf`) is one stationary particle
+     of life 0.5 s on the 62-frame clamped explosion sheet with rate 2
+     and neither flag: as loops a second it plays its 62 frames exactly
+     once over its life (an explosion flipbook); as frames a second it
+     would show one frame. Likewise the 64-frame gargoyle at rate 0.5 (a
+     full turn every 2 s, against 3 frames over its 6.5 s life). This
+     is the effects' design intent, not a measurement.
+   - Stock impact: among the stock weapons' non-fitted, non-FPS
+     sprites, the only multi-frame sheet is `muzzle_grenadelauncher`'s
+     smoke (`smokelit`, rate 0.1, life 0.6–1.3 s): at most 0.65 frames
+     over a life as loops a second, 0.13 as frames a second, a slight
+     blend toward the second frame either way.
+   - The capture failed: `classic_rocket_trail.pcf` is not in the
+     particle manifest, so its sprite cannot be started on 2fort; the
+     preloaded `unusual_invasion_abduction_cow` (one particle, rate 0.7,
+     16 looping frames), started through VScript at the camera, drew
+     large red X shapes over the whole view instead, unexplained. A next
+     try: a preloaded single-particle system on a multi-frame sheet seen
+     at a narrow `fov`, frame-stepped, checking whether its period is
+     1 / rate seconds (loops a second) or frames / rate.
 2. The depth-feather normaliser (the constant computed from
    `$depthblendscale` by the shader API) and the depth range stored in
    destination alpha.

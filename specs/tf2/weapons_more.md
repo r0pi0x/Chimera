@@ -25,7 +25,10 @@ numbers remain the wiki's (and weapon_scripts.md's run-time values).
 The 2026-11-20 recheck (spin, air drag, arm time) read the same game
 code again and measured the running game (the projectiles' physics
 velocity per tick through VScript); the projectile models' collision
-data was read from the install in place.
+data was read from the install in place. §7.4 (the airblast, 2026-11-23)
+read the flame thrower's airblast, the shared deflection, the rocket's,
+pipe's and sticky's deflection responses and the TF2 movement's
+air-current and lost-footing rules, and measured the running game.
 Status: checked against the SDK's game code (2026-11-15)
 
 ## Summary
@@ -854,13 +857,121 @@ D = \max\!\big(1,\ 13 \times g_{age} \times g_{heat}\big),\qquad g_{age} = \max\
 - Extinguished also by picking up a health kit, being healed by a Medic
   long enough, and a friendly Pyro's airblast (reference).
 
-#### 7.4 Airblast (reference only)
+#### 7.4 Airblast
 
-attack2: costs 20 ammo, refires after 0.75 s and blocks flames for 1.0 s,
-a cone ahead of the Pyro that pushes enemies and reflects projectiles
-(stickies are pushed, not reflected) and puts out burning teammates;
-sound `Weapon_FlameThrower.AirBurstAttack`, arms sequence `ft_alt_fire`
-(1.0 s). Not specified further here.
+(2026-11-23, tf2-spec-effects: the SDK's flame thrower, base weapon
+deflection, projectile deflection and TF2 movement code read in place;
+the running game's cvars read and the push measured with tools/tf2ref,
+below. Our words; nothing copied.)
+
+**Firing.** attack2 (held or pressed) with the stock Flame Thrower:
+
+- Refused (nothing happens, no ammo taken) while the next-airblast time
+  has not come, while the Pyro's eyes are under water, or with fewer than
+  20 ammo (`tf_flamethrower_burstammo` 20).
+- Otherwise, the same tick: the flame stream stops (§7.1's emitter
+  stops; a held attack does not restart it until the primary refire
+  below), the arms play `ft_alt_fire` (§9.2), the third-person body its
+  secondary-attack gesture, the deflection below runs on the server, 20
+  ammo are taken, the next airblast is allowed **0.75 s** later and the
+  next flame **1.0 s** later. Held attack2 therefore blasts every 0.75 s
+  (measured: in-eye on a bot holding attack2, flashes 45 frames apart at
+  60 frames a second).
+- Holding attack and attack2 together: the airblast wins that tick, and
+  attack is ignored for the tick after (so a held attack does not fire
+  flame on the tick the airblast happened).
+
+**What it reaches.** From the Pyro's eye E along his aim a (unit,
+pitch included):
+
+- A **sphere** of radius 128 centred at E + 128 a (so it reaches 256
+  units ahead and nothing behind the eye) collects players and
+  projectiles (rockets, pipes, stickies, arrows, flares; not needles:
+  §8). Each must be visible from the Pyro's eye (a line from the eye to
+  it not blocked by world solids); spectators and the Pyro himself are
+  skipped. Lag compensation applies (players are tested where the Pyro
+  saw them).
+- **Enemy players** must also touch a **cone**: apex at the eye, axis a,
+  half-angle 35°, length 256 units (twice the sphere's radius); the test
+  is box against cone with the player's bounding box. Projectiles need
+  only the sphere.
+- **Teammates**: a burning teammate in the sphere is extinguished (no
+  cone test; burn removed, `TFPlayer.FlameOut` on him); teammates are
+  never pushed. Own-team projectiles are never touched.
+
+**Push on an enemy player.** Push direction d: the aim's pitch with the
+yaw of the line from the Pyro's centre to the target's centre
+(`tf_airblast_cray_pitch_control` 0: only yaw follows the target). With
+v the target's velocity before the push, P = 600
+(`tf_airblast_cray_power`):
+
+```math
+m = v\cdot d,\quad R = \begin{cases}-2m\,d & m<0\\ 0 & m\ge 0\end{cases},\qquad R \mathrel{+}= \max\!\big(0,\ P - 0.5\,|R|\big)\,d
+```
+
+(a target moving at the Pyro has that speed mirrored, `_reflect_coeff`
+2, and only the power left after half the mirror's cost, `_cost_coeff`
+0.5, is added). Then, **only if the target is on the ground**:
+
+1. Ground bounce: with n the normal of the ground under him (a 5-unit
+   downward sweep of his box), h = (v + R)·n; if h < 0, R += −2h n
+   (aiming down bounces him up instead of into the floor).
+2. Minimum lift: z_need = 100 − (v + R)_z (`_ground_minz` 100). If
+   z_need > 0: let x = |R_xy|; z_need = min(z_need, x); if |R| < z_need,
+   R = (0, 0, |R|); else R keeps its length and gains z_need upward:
+
+```math
+R \leftarrow \left(s R_x,\ s R_y,\ R_z + z_{need}\right),\quad s = \frac{\sqrt{\max(0,\ x^2 - z_{need}^2 - 2 z_{need} R_z)}}{x}
+```
+
+The target's velocity becomes v + R (an added impulse, not a
+replacement), he is taken off the ground, gets a view punch of a random
+whole 10–15° (pitch), loses footing for 0.5 s and is "in an air
+current" until he lands. No damage, no stun (`_stun_duration` 0).
+
+- Lost footing (0.5 s): he may exceed his class speed on the ground,
+  any velocity away from the ground keeps him airborne, and while he
+  slides at 50 units/s or more his ground friction is 0.1 x normal;
+  below 50 he regains footing.
+- Air current (until landing): his air acceleration is 0.25 x
+  `sv_airaccelerate` (`tf_movement_aircurrent_aircontrol_mult`), his
+  surface friction in the air is x 0.75 and his moves against walls
+  keep part of the blocked speed (a slide coefficient 1 − 0.75 = 0.25;
+  `tf_movement_aircurrent_friction_mult` 0.75; Open questions 25).
+- Example (measured 2026-11-23, tools/tf2ref on 2fort's bridge, a BLU
+  bot Pyro at level aim blasting our standing RED Soldier 130 units
+  ahead; our position every 0.015 s tick): R = (591.6 along d, 100 up),
+  matching the formula (600 horizontal, lifted 100 at constant length:
+  √(600² − 100²) = 591.6). His position then rose with exactly 800
+  units/s² gravity; view punch 13.8°. Our own client's position ran
+  ahead of that by ≈ 88 units/s for the first 6–7 ticks (its prediction-
+  error smoothing, 0.1 s), then moved at 591.6 exactly.
+
+**Projectiles** (enemy ones in the sphere), each:
+
+- New direction u: from the projectile's centre toward the point where a
+  line from the Pyro's eye along his aim first hits the world (players,
+  buildings and pickups ignored; up to the full trace length). Its speed
+  is kept: velocity = |v| u, and its angles turn to u. A projectile that
+  is not moving under physics (a stuck sticky) instead takes the
+  direction from the Pyro's centre to it.
+- Rockets and pipes (not stickies) change team and owner to the Pyro
+  (damage credit, trail colour), become critical if the Pyro is crit-
+  boosted, and their deflect count goes up: a deflected rocket, and a
+  deflected Grenade Launcher pipe, always **mini-crits** what it hits.
+- Stickies are not reflected: they keep their owner and team; a stuck
+  one is knocked loose by a push of 2000 (the shared deflection force
+  min(1000, 90 x 48·48·82 / V x 12) with V its box volume, capped at
+  1000, then x 2) along u, above the 1500 needed, and re-sticks no
+  sooner than 1 s later.
+- Each deflected projectile plays `Weapon_FlameThrower.AirBurstAttackDeflect`
+  at itself and gets the `deflect_fx` particle system following it.
+- If any player was pushed, `TFPlayer.AirBlastImpact` plays at the
+  Pyro's weapon.
+
+**Sound and look**: the airblast's sound is the script's double-shot
+entry (`Weapon_FlameThrower.AirBurstAttack`), played by the Pyro's own
+client and by observers'; the look is `pyro_blast`, flames.md 3.1.1.
 
 ### 8. Syringe Gun
 
@@ -1402,3 +1513,8 @@ Probe checks (live dedicated server, bots; never ports 27015/27030):
     (read from pictures of a kicking view model) and whether a shot
     inside a running turn adds to it (impossible with the stock gun's
     0.6 s refire).
+25. **The airblast's air current against walls** (§7.4): the slide
+   coefficient 0.25 is handed to the shared move-and-slide step; how that
+   step uses it (how much of the speed into a wall is kept) is not in the
+   game code read and was not measured. Deflected projectiles (§7.4) were
+   specified from the game code only; no reflect was measured.

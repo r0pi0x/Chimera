@@ -35,10 +35,13 @@ entity and view-model weapon split; from the install
 `materials/effects/electric1.vmt`, `sc_softglow.vmt` and the hitbox sets
 of `c_soldier_arms.mdl` and `c_rocketlauncher.mdl`; and the particle
 library's timing rules (particles.md §9).
-**The per-weapon `.ctx` scripts were not read in
-this session** (no decryption key was available to the dumper; see Open
-questions 1), so every per-gun value that only the scripts hold is marked
-*unconfirmed* with the evidence for it.
+The per-weapon `.ctx` scripts were not read in the first sessions; on
+2026-11-23 (tf2-spec-effects) the stock guns' scripts were decrypted in
+memory with the local key by our dumper and only their effect fields'
+values (particle system and model names, data the game exposes) were
+taken into §1 and §5. The same session measured the crit-boosted rocket
+(§1 notes) and read the rocket's trail attachment and the trail's
+initializers (§1 notes).
 Status: draft
 
 ## Summary
@@ -92,25 +95,25 @@ scripts' names.
 Columns: **Muzzle** is the per-shot muzzle system; **Tracer base** the
 script's tracer name before the team and crit suffixes; **Trail** the
 projectile's own system; **Explosion** wall / player-or-air / water.
-"Code" means the name is fixed in the game code (confirmed); "pcf" means
-inferred from the particle files only (a system of exactly that purpose
-and name exists, no other candidate), unconfirmed until the script is
-read.
+"Code" means the name is fixed in the game code (confirmed); "script"
+means read from the weapon's own script (2026-11-23, the stock scripts
+decrypted in memory with the local key by our dumper, field values only;
+Open questions 1).
 
 | Weapon (our TOML) | Muzzle | Tracer base | Trail, other | Explosion |
 |---|---|---|---|---|
-| Scattergun | `muzzle_scattergun` (pcf; = our TOML) | `bullet_scattergun_tracer01` (pcf) | – | – |
-| Shotgun (all classes) | `muzzle_shotgun` (pcf; = TOML) | `bullet_shotgun_tracer01` (pcf) | – | – |
-| Pistol (Scout, Engineer) | `muzzle_pistol` (pcf; = TOML) | `bullet_pistol_tracer01` (pcf) | – | – |
-| Revolver | `muzzle_revolver` (pcf; = TOML) | `bullet_pistol_tracer01` (pcf, unconfirmed) | – | – |
-| SMG | `muzzle_smg` (pcf; = TOML) | `bullet_tracer01` (pcf, unconfirmed) | – | – |
-| Minigun | **none per shot** (code: the Minigun never makes the per-shot flash); `muzzle_minigun_constant` while firing (code) | `bullet_tracer01` (pcf, unconfirmed), every 4th bullet | `eject_minigunbrass` at `eject_brass` while firing (code) | – |
-| Sniper Rifle | `muzzle_sniperrifle` (pcf; = TOML) | none (unconfirmed: no `bullet_sniper…` system exists; the stock rifle's rail/trail effects are attribute-only) | – | – |
-| Rocket Launcher | unconfirmed (no rocket-launcher muzzle system exists in any preloaded `.pcf`; likely none) | – | `rockettrail` at the rocket's `trail` attachment (code); crit: + `critical_rocket_red`/`_blue` at its origin (code); under water or teamless: `rockettrail_underwater` (code); third person only: `rocketbackblast` at the launcher's `backblast` attachment on each shot (code, §4) | `ExplosionCore_Wall` / `ExplosionCore_MidAir` / `ExplosionCore_MidAir_underwater` (pcf names; which field holds which is unconfirmed, §5) |
-| Grenade Launcher | `muzzle_grenadelauncher` (pcf; = TOML) | – | `pipebombtrail_red`/`_blue` (code); crit: + `critical_pipe_red`/`_blue` (code) | as the Rocket Launcher (§5; the code reads the Stickybomb Launcher's script for both) |
-| Stickybomb Launcher | `muzzle_pipelauncher` (pcf; = TOML) | – | `stickybombtrail_red`/`_blue` (code); crit: + `critical_grenade_red`/`_blue` (code); armed pulse `stickybomb_pulse_red`/`_blue` (code) | as above |
-| Syringe Gun | `muzzle_syringe` (pcf; = TOML) | – | `nailtrails_medic_red`/`_blue`, crit `…_crit` (code) | – |
-| Flame Thrower | none (its stream is the muzzle effect) | – | stream `new_flame`; crit `new_flame_crit_red`/`_blue`; eyes under water `flamethrower_underwater`; airblast `pyro_blast` (all code; flames.md) | – |
+| Scattergun | `muzzle_scattergun` (script) | `bullet_scattergun_tracer01` (script) | brass `models/weapons/shells/shell_shotgun.mdl` (script) | – |
+| Shotgun (all classes) | `muzzle_shotgun` (script, all four class shotguns) | `bullet_shotgun_tracer01` (script) | brass `shell_shotgun.mdl` | – |
+| Pistol (Scout, Engineer) | `muzzle_pistol` (script) | `bullet_pistol_tracer01` (script) | brass `shell_pistol.mdl` | – |
+| Revolver | `muzzle_revolver` (script) | `bullet_pistol_tracer01` (script) | no brass model | – |
+| SMG | `muzzle_smg` (script) | **`bullet_pistol_tracer01`** (script; not `bullet_tracer01`) | brass `shell_pistol.mdl` | – |
+| Minigun | **none per shot** (code: the Minigun never makes the per-shot flash, although its script names `muzzle_minigun`); `muzzle_minigun_constant` while firing (code) | `bullet_tracer01` (script), every 4th bullet | `eject_minigunbrass` at `eject_brass` while firing (code); brass `shell_minigun.mdl` (script) | – |
+| Sniper Rifle | `muzzle_sniperrifle` (script) | **none** (script: no tracer field) | brass `shell_sniperrifle.mdl` | – |
+| Rocket Launcher | **none** (script: no muzzle flash field and no muzzle flash model) | – | `rockettrail` at the rocket's `trail` attachment (code); crit: + `critical_rocket_red`/`_blue` at its origin (code); under water or teamless: `rockettrail_underwater` (code); third person only: `rocketbackblast` at the launcher's `backblast` attachment on each shot (code, §4) | wall `ExplosionCore_wall` / player and air `ExplosionCore_MidAir` / water `ExplosionCore_MidAir_underwater` (script, §5) |
+| Grenade Launcher | `muzzle_grenadelauncher` (script) | – | `pipebombtrail_red`/`_blue` (code); crit: + `critical_pipe_red`/`_blue` (code) | as the Rocket Launcher (script; the code reads the Stickybomb Launcher's script for both, which holds the same three) |
+| Stickybomb Launcher | `muzzle_pipelauncher` (script) | – | `stickybombtrail_red`/`_blue` (code); crit: + `critical_grenade_red`/`_blue` (code); armed pulse `stickybomb_pulse_red`/`_blue` (code) | as above (script) |
+| Syringe Gun | `muzzle_syringe` (script) | – | `nailtrails_medic_red`/`_blue`, crit `…_crit` (code) | – |
+| Flame Thrower | none (its stream is the muzzle effect; its script names no effect, model or tracer) | – | stream `new_flame`; crit `new_flame_crit_red`/`_blue`; eyes under water `flamethrower_underwater`; airblast `pyro_blast` (all code; flames.md) | – |
 
 Notes:
 
@@ -119,7 +122,37 @@ Notes:
   a sticky keeps its owner's).
 - Crit projectile glows are separate systems started on the projectile's
   origin and following it; the trail itself does not change.
-- Our TOMLs' `muzzle` names agree with the particle files for every gun
+  Measured (2026-11-23, tools/tf2ref: a BLU bot Soldier crit-boosted by
+  `addcond 11`, its stock rockets seen from the side 80 units off at 60
+  frames a second, against the same bot's normal rockets): the normal
+  rocket shows the orange-yellow fire glow behind its tail and a row of
+  fading orange-brown puffs; the crit rocket shows its small orange tail
+  flame still, but the glow around and behind it is blue-violet with a
+  white-pink core on the rocket body, larger than the normal glow,
+  and the puffs it leaves are blue-violet. So
+  `critical_rocket_blue` dominates the look; `rockettrail` is still
+  drawn under it.
+- **The trail's control point** (2026-11-23): the rocket's trail is
+  created on the `trail` attachment and follows it, so CP 0 takes the
+  attachment's world position **and orientation**, not the rocket's.
+  The `trail` attachment of `w_rocket.mdl` (its one bone posed by its
+  only sequence) sits 9.64 units behind the model's centre with its x
+  axis pointing **backward** out of the tail (the rocket's −x), its y
+  axis along the rocket's up (+z) and its z axis along the rocket's
+  left (+y). The trail's initializers read those axes: the smoke's and
+  the fire's start velocity, local (0, 0, −10), is 10 units/s toward the
+  rocket's right; `rockettrail_burst` starts 10 units further along
+  local x (≈ 19.6 behind the centre) with local speed (10..30, ±110,
+  ±110), i.e. its sparks move backward from the rocket. Taking the
+  rocket's own axes instead would put the burst 0.4 units ahead of the
+  centre with forward sparks and drift the smoke downward.
+- No stock gun's script has a `MuzzleFlashModel` (no model flashes) and
+  none has an `ExplosionEffect` other than the three launchers'. Brass
+  models are named by every bullet gun's script but the Revolver's; the
+  scripts that set `DoInstantEjectBrass` set it to 0 (Scattergun, the
+  class shotguns, Sniper Rifle, Revolver); how TF2 ejects them is not
+  specified here.
+- Our TOMLs' `muzzle` names agree with the scripts for every gun
   except the Minigun (TOML `muzzle_minigun`, a per-shot system TF2 never
   uses for the stock Minigun: §3).
 
@@ -195,8 +228,13 @@ For pipes and stickies the script consulted is the Stickybomb Launcher's
 (both projectiles); for rockets, the Rocket Launcher's. The particle files
 hold `ExplosionCore_Wall`, `ExplosionCore_MidAir` and
 `ExplosionCore_MidAir_underwater` (plus `_Jumper` variants for the
-rocket-jumper weapon); which name each stock script puts in each field is
-unconfirmed (Open questions 1). Content of the cores: particles.md §8.5.
+rocket-jumper weapon). All three stock launchers' scripts (Rocket,
+Grenade and Stickybomb Launcher) hold the same three: wall
+`ExplosionCore_wall` (spelled with a lower-case w, unlike the file's
+system), player `ExplosionCore_MidAir`, water
+`ExplosionCore_MidAir_underwater` (2026-11-23). Since the stock wall
+blast does draw in the game, the name lookup ignores case (Open
+questions 3). Content of the cores: particles.md §8.5.
 
 ### 6. Tracers
 
@@ -1209,11 +1247,19 @@ bridge; facts of the picture, not of the code.
    flash (a model flash? none?), the SMG's, Revolver's and Minigun's
    tracer bases, the Sniper Rifle's tracer, and which explosion name sits
    in which field.
+   **Answered (2026-11-23, §1):** read from the stock scripts; the
+   Rocket Launcher has no muzzle flash at all, the SMG's tracer is
+   `bullet_pistol_tracer01`, the Revolver's too, the Minigun's
+   `bullet_tracer01`, the Sniper Rifle has none, and the launchers'
+   three explosion fields are wall `ExplosionCore_wall`, player
+   `ExplosionCore_MidAir`, water `ExplosionCore_MidAir_underwater`.
 2. Whether any stock gun has a `MuzzleFlashModel` (a model flash in
-   addition to or instead of the particle one).
+   addition to or instead of the particle one). **Answered:** none does.
 3. The fallback name's case (`ExplosionCore_wall` vs the file's
    `ExplosionCore_Wall`): particle names are looked up case-insensitively
-   in Source as far as we know; unconfirmed.
+   in Source as far as we know; unconfirmed. The stock scripts' own wall
+   field is the lower-case spelling too (§5), and wall blasts are drawn,
+   so the lookup must ignore case (inferred, not tested in isolation).
 4. The trail tracer's lifetime and the length of its streak are set by
    the particle library (start-to-end mover and trail renderer;
    particles.md Open questions).

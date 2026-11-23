@@ -131,6 +131,52 @@ Restating weapons_more.md §7.1 with the details the visuals need:
 - Airblast: `pyro_blast` on the effect model's `muzzle` (first person:
   the view model's, re-projected; particles.md §6).
 
+#### 3.1.1 The airblast's look (`pyro_blast`)
+
+(2026-11-23, tf2-spec-effects: the client's airblast start read in the
+SDK; `particles/flamethrower.pcf` decoded; captured with tools/tf2ref at
+`host_framerate 0.016667`, 1024x768, on 2fort's bridge: our own Pyro
+with the stock Flame Thrower, and a bot Pyro holding attack2 watched
+in-eye and in third person.)
+
+- **When**: once per airblast (weapons_more.md §7.4), never per tick. The
+  shooter's client starts it in the same predicted tick as the blast;
+  every other client starts it when it learns the Pyro's weapon entered
+  its airblast state. Measured: one start per blast, 0.75 s apart on a
+  held attack2, in-eye and third person alike; on a listen server the
+  first frame showing it is the frame after the press, for the shooter
+  and an observer alike.
+- **Where**: created on the effect model's `muzzle` attachment and
+  following it (position and orientation, CP 0), like the per-shot
+  muzzle flash (effects.md §2): in first person the view model's muzzle,
+  re-projected (particles.md §6), drawn as a world effect; otherwise the
+  third-person weapon's. Nothing else sets its control points; its
+  "local" velocities are along the muzzle's axes (x out of the nozzle).
+  Any flame stream stops first.
+- **Content** (all children start at 0 s; all lock their particles to CP
+  0's motion, the lock fading from 0.3–0.6 to 0.6–0.8 of each particle's
+  life, so they ride the muzzle at first and are left behind later):
+
+| System | Material | Emission | Life (s) | Radius | Motion | Colour, alpha |
+|---|---|---|---|---|---|---|
+| `pyro_blast` (smoke) | `effects/smokelit2/smoke2lit` (5 one-frame sequences, random 0–4; fit to life) | 48/s for 0.2 s (≈ 10) | 0.4–0.8 | 2–4, x 1 → 15 over life | local (400..600, −45..45, −45..45) from within 2 of CP 0; gravity (0, 0, +250); drag 0.115 | (103,103,103)..(255,244,229) fading to (136,136,136) by 0.6 s; alpha 12–24, fade in to 0.1 of life, out from 0.1; random roll, half flipped |
+| `pyro_blast_lines` | `effects/softglow_translucent`, sprite trail | 100/s for 0.2 s (≈ 20), max 140 | 0.1–0.2 | 0.2–2, x 1 → 0.5 | local (400..800, −180..180, −180..180) from within 5; gravity +21; oscillating velocity (rate 0.1–1, frequency ±50); collide with the world (debris group) | (191..212 grey) to (107,107,107); alpha 128–200; trail length 0.1–0.2 s, max 14, length fades in over 0.1 s |
+| `pyro_blast_warp` | `effects/conc_warp` (refraction) | 1 at once | 0.4 | 3, x 12 → 15 | 20 units ahead (local x) of CP 0, then local (170, 0, 0); its lock to CP 0 also carries the point's turning | alpha 166, fade in to 0.3 of life, out from 0.3 |
+| `pyro_blast_warp2` (child of the warp and of the flash: two of them) | `effects/conc_warp` | 1 at once | 0.4 | 2, x 12 → 15 | local (120, 0, 0) from within 2; lock carries turning; collide (bounce 0.2, slide 0.8) | alpha 64, as above |
+| `pyro_blast_flash` | `effects/sc_softglow` | 1 at once | 0.05 | 4, x 2 → 21 | none (within 2 of CP 0); lock carries turning | white, alpha 166 |
+
+- **First frames** (own view, 60 frames a second, frame 0 = the first
+  frame showing it): frame 0, a white soft glow about 150 pixels across
+  centred on the nozzle's tip (just above and left of it on screen, at
+  ≈ (620, 355) of 1024x768), lighting nothing; frame 1, the glow is gone
+  and only a faint haze is left; frames 2–3, the refraction starts: a
+  ring-shaped distortion ahead of the nozzle; frames 3–10, the distortion
+  grows to about 400 pixels across in the middle of the screen with
+  faint grey-brown smoke puffs and short grey streaks inside it, moving
+  away; frames 10–18, it fades; by frame 22 (≈ 0.37 s) nothing is left.
+  An observer in-eye sees the same; in third person the distortion
+  appears ahead of the Pyro's weapon over the same frames.
+
 #### 3.2 Control points (set every client frame)
 
 - **CP 0** = the **weapon's own (third-person) model's** `muzzle`
