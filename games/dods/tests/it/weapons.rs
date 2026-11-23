@@ -224,7 +224,8 @@ fn a_slowed_player_moves_slower() {
     // Held at the slow's speed before each move (the move's own recovery
     // adds a tick's worth).
     assert!(m <= weapons::hit_slow::SLOWED_SPEED + 0.01, "{m}");
-    sim.seconds(2.5);
+    // The slow's 2 s, then Source's climb back from 0.5 (a third a second).
+    sim.seconds(4.0);
     let now = sim.app.world().resource::<SimClock>().now;
     assert!(!sim.app.world().get::<DodsSlowed>(p).unwrap().at(now), "the slow ends");
     let m = sim.app.world().get::<SourceMovement>(p).unwrap().velocity_modifier;
