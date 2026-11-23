@@ -25,7 +25,7 @@ use crate::parts::{rungs, ugg};
 
 /// The games that are not in the match: every gated one (the guests;
 /// Combat Arms is the base).
-fn absent(world: &World) -> Vec<&'static str> {
+fn absent_games(world: &World) -> Vec<&'static str> {
     world.resource::<GamesInPlay>().games().map(|(g, _)| g).collect()
 }
 
@@ -77,7 +77,7 @@ fn combat_arms_match(all_in_play: bool) -> Sim {
     }
     let w = sim.app.world_mut();
     if all_in_play {
-        for game in absent(w) {
+        for game in absent_games(w) {
             chimera_core::games_in_play::enter(w, game, "the test");
         }
     }
@@ -133,8 +133,16 @@ fn absent_games_cost_under_a_percent_of_a_tick() {
             );
         }
         let absent: u64 =
-            absent(sim.app.world()).iter().map(|g| work.crates.get(*g).map_or(0, |v| v.0)).sum::<u64>() / TICKS;
+            absent_games(sim.app.world()).iter().map(|g| work.crates.get(*g).map_or(0, |v| v.0)).sum::<u64>() / TICKS;
         eprintln!("absent games' systems: {absent} instructions a tick ({:.2}%)", 100.0 * absent as f64 / tick as f64);
+        for game in absent_games(sim.app.world()) {
+            let mut top: Vec<_> = work.crate_systems.iter().filter(|(k, _)| k.split(' ').next() == Some(game)).collect();
+            top.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+            let top: Vec<_> = top.iter().take(6).map(|(k, v)| (k.as_str(), v.0 / TICKS, v.1 / TICKS)).collect();
+            if !top.is_empty() {
+                eprintln!("{game}'s costliest (instructions, runs a tick): {top:?}");
+            }
+        }
         rows.push((tick, absent));
     }
     let ((gated, absent), (ungated, _)) = (rows[0], rows[1]);
