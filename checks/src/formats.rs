@@ -70,12 +70,13 @@ pub fn generate(root: &Path) -> Result<String, String> {
          ## Numbered by hand\n\n\
          | Format | Version | Where |\n|---|---|---|\n",
     );
-    let numbered: [(&str, &str, &str); 5] = [
+    let numbered: [(&str, &str, &str); 6] = [
         ("Asset manifest (`chimera-manifest`)", "chimera/assets/src/manifest.rs", "FORMAT"),
         ("Converted-map cache entry (`CHIMAP`, also a served entry)", "chimera/assets/src/map_cache.rs", "MAGIC"),
         ("Served entry's recipe (`chimera-recipe`)", "chimera/assets/src/map_cache/served.rs", "RECIPE_FORMAT"),
         ("Map format's bump (with the hash of its sources, below)", "chimera/world/src/map/cache.rs", "FORMAT_BUMP"),
         ("Halo's campaign character units (`halo_ce:character_unit`)", "games/halo_ce/src/game/campaign/unit.rs", "VERSION"),
+        ("TF2's item pack (`tf2:item_stats`)", "games/tf2/src/game/items/mod.rs", "VERSION"),
     ];
     for (what, path, name) in numbered {
         let c = code(root, path)?;

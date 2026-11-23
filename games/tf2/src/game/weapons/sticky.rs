@@ -123,6 +123,16 @@ pub struct StickyParams {
     /// none on the stock launcher, −0.2 on the Quickiebomb).
     #[serde(default)]
     pub sticky_arm_time: f32,
+    /// A full charge's damage factor f (an item's
+    /// `stickybomb_charge_damage_increase`, item_attributes.md 4.6): the
+    /// damage × (1 + (f − 1) c), c the charge 0…1.
+    #[serde(default = "one")]
+    pub charge_damage: f32,
+    /// The owner's own blast (`blast::BlastParams`'s).
+    #[serde(default = "one")]
+    pub self_scale: f32,
+    #[serde(default = "yes")]
+    pub self_harm: bool,
     #[serde(default)]
     pub sound: Option<String>,
     #[serde(default)]
@@ -150,6 +160,10 @@ fn one() -> f32 {
     1.0
 }
 
+fn yes() -> bool {
+    true
+}
+
 impl StickyParams {
     /// Its explosion's numbers.
     pub fn blast(&self) -> BlastParams {
@@ -168,6 +182,10 @@ impl StickyParams {
             by_distance: true,
             sound: self.sound.clone(),
             bounce_sound: None,
+            self_scale: self.self_scale,
+            self_harm: self.self_harm,
+            first_touch_keep: None,
+            shatter: false,
         }
     }
 
@@ -186,7 +204,8 @@ impl StickyParams {
         if stuck {
             return self.radius;
         }
-        let t = ((age - self.arm_time()) / self.air_radius_time).clamp(0.0, 1.0);
+        // From the stock arm time, whatever the item's (4.6's quirk).
+        let t = ((age - self.arm) / self.air_radius_time).clamp(0.0, 1.0);
         self.radius * (self.air_radius_start + (1.0 - self.air_radius_start) * t)
     }
 }
@@ -366,7 +385,12 @@ pub fn launch(
         f.pass_teammates = true;
         let o = Vec3::from(p.offset) * U;
         let start = origin + dir * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z;
-        spawn_flyer(&mut commands, f, start, SHOWN.to_string(), &clock);
+        let flyer = spawn_flyer(&mut commands, f, start, SHOWN.to_string(), &clock);
+        if p.charge_damage != 1.0 {
+            // Its damage by its charge (item_attributes.md 4.6).
+            let c = ((gun.speed - p.speed_min) / (p.speed_max - p.speed_min).max(1e-6)).clamp(0.0, 1.0);
+            commands.entity(flyer).insert(ChargeScale(1.0 + (p.charge_damage - 1.0) * c));
+        }
     }
 }
 
@@ -381,6 +405,11 @@ pub fn launch_random(seed: u32) -> [f32; 3] {
         (x % 2001) as f32 / 1000.0 - 1.0
     })
 }
+
+/// On a sticky of a launcher whose damage grows with the charge: its
+/// damage factor (others only; the owner's own blast is the base).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct ChargeScale(pub f32);
 
 /// When a stuck sticky is gone: never (it goes by detonation).
 const FOREVER: f64 = 1.0e12;
@@ -414,6 +443,7 @@ pub fn detonate(
     launchers: Query<&Tf2Sticky>,
     weapons: Query<&Weapon>,
     stickies: Query<(Entity, &Flyer, &Transform, Option<&StuckNormal>)>,
+    charged: Query<&ChargeScale>,
     rules: Res<StickyRules>,
     clock: Res<SimClock>,
     mut world: BlastWorld,
@@ -483,7 +513,7 @@ pub fn detonate(
             params: b,
             radius: p.radius_at(age, stuck),
             ramp: (age <= p.flat_after).then_some(ramp),
-            scale: 1.0,
+            scale: charged.get(e).map_or(1.0, |c| c.0),
         };
         // Snapped onto a floor within 24 units below, with the normal of
         // the surface it stuck to (effects.md 13).

@@ -182,6 +182,8 @@ pub const AIR_DENSITY: f32 = 2.0;
 pub const FLAME_HOOK: &str = "tf2:flame";
 pub const NEEDLE_HOOK: &str = "tf2:needle";
 pub const MELEE_HOOK: &str = "tf2:melee";
+/// Chimera's flyers' hook (a projectile's launch and flight).
+pub const PROJECTILE_HOOK: &str = "chimera:projectile";
 
 /// The rocket's model key (`ShownItem`) and model.
 pub const ROCKET_SHOWN: &str = "tf2:tf_weapon_rocketlauncher/rocket";
@@ -228,12 +230,22 @@ pub fn all_weapons() -> impl Iterator<Item = &'static str> {
 }
 
 /// The guns' display names (the HUD's, the ladder's), by id.
-pub fn display_names(_: &crate::mount::Mount) -> Vec<(String, String)> {
-    tf2_weapons()
+pub fn display_names(mount: &crate::mount::Mount) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = tf2_weapons()
         .weapons
         .into_iter()
         .filter_map(|w| Some((w.id, w.hud.name?)))
-        .collect()
+        .collect();
+    // The unlocks the pack on `mount` gives (`items`).
+    if let Some(pack) = super::items::read_pack(mount) {
+        let data = super::items::ItemsData::builtin();
+        for (name, def) in &data.items {
+            if let Some(r) = pack.get(def.index).filter(|_| !def.wearable) {
+                out.push((format!("tf2:{name}"), super::items::display_name(r)));
+            }
+        }
+    }
+    out
 }
 
 /// Register the behaviour TF2's weapon data names.
@@ -362,6 +374,8 @@ impl Plugin for Tf2GunsPlugin {
         use chimera_sim::weapon::{CarriedAppExt, SelectWeapons, projectile::FlyerSet};
         use chimera_sim::server_docs::DocsAppExt;
         register_hooks(app);
+        // The unlocks' hook (`tf2:item`) and their holders' rules.
+        super::items::mods::add(app);
         // The numbers: the harness's built-in ones, else the scripts'
         // over the data (`script_numbers`), each gun's source logged.
         let numbers = app
@@ -378,6 +392,13 @@ impl Plugin for Tf2GunsPlugin {
         // A client whose own differ (no scripts, the fallback) plays with
         // the server's.
         app.server_weapon_docs(SERVER_DOCS, set, numbers.docs.clone());
+        // The unlocks' classes (`items`), and their holders' rules.
+        {
+            let mut classes = app.world_mut().get_resource_or_init::<super::classes::Classes>();
+            for item in &numbers.items {
+                classes.add_gun(&item.id, &item.classes, &item.base);
+            }
+        }
         app.insert_resource(numbers);
         insert_rules(app.world_mut(), set);
         app.add_systems(

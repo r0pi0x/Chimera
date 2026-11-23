@@ -378,6 +378,9 @@ pub struct SourceTraits {
     pub eye_stand: Option<f32>,
     pub air_jumps: Option<u8>,
     pub loud_landings_only: Option<bool>,
+    /// The jump's and the air jump's speed × this (TF2's items: the
+    /// Winger's 1.25 while out).
+    pub jump_scale: Option<f32>,
 }
 
 impl SourceTraits {
@@ -392,6 +395,10 @@ impl SourceTraits {
         }
         if let Some(q) = self.loud_landings_only {
             c.loud_landings_only = q;
+        }
+        if let Some(s) = self.jump_scale {
+            c.jump_impulse *= s;
+            c.air_jump_speed *= s;
         }
         c
     }

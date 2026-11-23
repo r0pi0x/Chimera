@@ -151,7 +151,7 @@ module list is `docs/modules.md`.
 
 - 1: Converted formats and their versions | Generated from the sources by `cargo run -q -p repo_checks --bin docs_index` (`repo_checks::formats`): do not edit
 - 11: Numbered by hand
-- 21: Made by build scripts | A converter's version is `v<number>-<hash>`: the number bumped by hand and the hash of the paths it lists and of the parsing crates'...
+- 22: Made by build scripts | A converter's version is `v<number>-<hash>`: the number bumped by hand and the hash of the paths it lists and of the parsing crates'...
 
 ## docs/new-game.md
 

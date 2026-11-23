@@ -1,0 +1,195 @@
+# TF2's unlocks we play (docs/plans/active/tf2-weapons.md, batches;
+# specs/tf2/item_attributes.md 5). Ours: which items of the converted pack
+# (`chimera_pack sets tf2 --only items`, `game::items`) become weapons,
+# under which id, on which of our weapons. The items' numbers, names and
+# models are the pack's (from the user's install, never committed); an
+# item the pack lacks is simply not offered.
+#
+# [bases]: an item class (`item_class`) -> the weapon of ours its numbers
+# start from (the class's own script, where the pack has it, then the
+# attributes: `items::docs`).
+#
+# [items.<name>]: `index` the item's definition index; `batch` the plan's
+# batch; `gun_game` overrides whether a ladder may draw it (default: it
+# deals damage, its base being a ladder gun); `wearable`: no weapon, its
+# attributes only modify its wearer; `note` what its attributes don't
+# cover (still to build).
+
+[bases]
+tf_weapon_handgun_scout_secondary = "tf2:tf_weapon_pistol_scout"
+tf_weapon_bat_fish = "tf2:tf_weapon_bat"
+tf_weapon_rocketlauncher = "tf2:tf_weapon_rocketlauncher"
+tf_weapon_rocketlauncher_directhit = "tf2:tf_weapon_rocketlauncher"
+tf_weapon_shovel = "tf2:tf_weapon_shovel"
+tf_weapon_flamethrower = "tf2:tf_weapon_flamethrower"
+tf_weapon_fireaxe = "tf2:tf_weapon_fireaxe"
+tf_weapon_breakable_sign = "tf2:tf_weapon_fireaxe"
+tf_weapon_grenadelauncher = "tf2:tf_weapon_grenadelauncher"
+tf_weapon_pipebomblauncher = "tf2:tf_weapon_pipebomblauncher"
+tf_weapon_sword = "tf2:tf_weapon_bottle"
+tf_weapon_minigun = "tf2:tf_weapon_minigun"
+tf_weapon_shotgun = "tf2:tf_weapon_shotgun_primary"
+tf_weapon_fists = "tf2:tf_weapon_fists"
+tf_weapon_wrench = "tf2:tf_weapon_wrench"
+tf_weapon_sniperrifle = "tf2:tf_weapon_sniperrifle"
+tf_weapon_club = "tf2:tf_weapon_club"
+tf_weapon_knife = "tf2:tf_weapon_knife"
+
+# Batch 1 (33 items, 31 entries).
+[items.winger]
+index = 449
+batch = 1
+
+[items.pretty_boys_pocket_pistol]
+index = 773
+batch = 1
+
+[items.holy_mackerel]
+index = 221
+batch = 1
+note = "the class's hit announcements in the kill feed (a look)"
+
+[items.liberty_launcher]
+index = 414
+batch = 1
+
+[items.the_original]
+index = 513
+batch = 1
+note = "its own models"
+
+[items.rocket_jumper]
+index = 237
+batch = 1
+note = "cannot carry the intelligence (no flags in a party match)"
+
+[items.direct_hit]
+index = 127
+batch = 1
+note = "mini-crit vs blast-airborne targets (batch 2: mini-crit conditions)"
+
+[items.pain_train]
+index = 154
+batch = 1
+note = "capture value (no points in a party match)"
+
+[items.rainblower]
+index = 741
+batch = 1
+note = "rainbow flame look and hit sound, Pyroland display"
+
+[items.homewrecker]
+index = 153
+batch = 1
+note = "damage vs buildings, hits sappers (no buildings yet)"
+
+[items.maul]
+index = 466
+batch = 1
+note = "damage vs buildings, hits sappers (no buildings yet)"
+
+[items.neon_annihilator]
+index = 813
+batch = 1
+note = "full crit vs wet targets (batch 2); hits sappers; plasma ragdoll"
+
+[items.back_scratcher]
+index = 326
+batch = 1
+note = "health from packs and healers (no packs or Medics in a party match)"
+
+[items.sharpened_volcano_fragment]
+index = 348
+batch = 1
+
+[items.loch_n_load]
+index = 308
+batch = 1
+note = "damage vs buildings"
+
+[items.iron_bomber]
+index = 1151
+batch = 1
+note = "its pill model"
+
+[items.sticky_jumper]
+index = 265
+batch = 1
+note = "the practice sticky's model; cannot carry the intelligence"
+
+[items.quickiebomb_launcher]
+index = 1150
+batch = 1
+note = "destroying enemy stickies in its blast (batch 2)"
+
+[items.scotsmans_skullcutter]
+index = 172
+batch = 1
+note = "decapitation death look"
+
+[items.claidheamohmor]
+index = 327
+batch = 1
+note = "shield charge and its refill on kill (batch 3); decapitation look"
+
+[items.brass_beast]
+index = 312
+batch = 1
+
+[items.tomislav]
+index = 424
+batch = 1
+note = "no wind/spin loop sounds"
+
+[items.family_business]
+index = 425
+batch = 1
+
+[items.warriors_spirit]
+index = 310
+batch = 1
+
+[items.fists_of_steel]
+index = 331
+batch = 1
+
+[items.apoco_fists]
+index = 587
+batch = 1
+note = "crit kills gib (crits off in a party match); its taunt"
+
+[items.bread_bite]
+index = 1100
+batch = 1
+
+[items.jag]
+index = 329
+batch = 1
+note = "build and repair rates, damage vs buildings (no buildings yet)"
+
+[items.awper_hand]
+index = 851
+batch = 1
+note = "its own models and sounds"
+
+[items.bushwacka]
+index = 232
+batch = 1
+note = "mini-crits become crits (no mini-crits yet: batch 2)"
+
+[items.darwins_danger_shield]
+index = 231
+batch = 1
+wearable = true
+note = "worn: nothing gives a wearable in a party match yet"
+
+[items.cozy_camper]
+index = 642
+batch = 1
+wearable = true
+note = "worn: nothing gives a wearable yet; regen, scoped knockback and flinch"
+
+[items.black_rose]
+index = 727
+batch = 1
+note = "its own models; its taunt"

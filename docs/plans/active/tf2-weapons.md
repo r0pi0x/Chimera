@@ -1,7 +1,7 @@
 # TF2 weapons: every player weapon, what is in, what is left
 
-Status: plan (2026-11-22). Inventory by class and slot, then a phased build
-order. No gameplay code changed by this plan.
+Status: batches 0 and 1 built (2026-11-23; section 4); batches 2-3 planned.
+Inventory by class and slot, then a phased build order.
 
 Sources: the installed game's `scripts/items/items_game.txt` (read locally
 to build the inventory; **never copied into the repo**), `games/tf2/data/weapons/`
@@ -50,8 +50,8 @@ backstab (`melee`), crits and crit boost (`crit_boost`), recoil, looks.
 Per-gun numbers come from the game's own `tf_weapon_*.ctx` scripts at run
 time (`script_numbers`) over the spec's numbers as fallback.
 
-**There is no item-attribute layer.** Nothing reads items_game today;
-unlocks are mostly "stock + attributes", so that layer is batch 0 (below).
+The item-attribute layer is batch 0 (below, built): a host-side
+converter into the asset pack, the game reading the pack.
 Not every behaviour is in attributes: e.g. the Backburner, Phlogistinator
 and Manmelter carry no or few attributes and are coded by item class/id in
 the game; those need a spec (clean-room measurement), not just a data
@@ -285,32 +285,73 @@ Spellbooks (Halloween), Grappling Hook, Passtime Jack gun, Saxxy melee
 
 ## 4. Phases
 
-### Batch 0: the attribute layer (prerequisite)
+### Batch 0: the attribute layer (prerequisite) -- built 2026-11-23
 
-Read `items_game.txt` **at run time** from the install or the asset
-service (as the weapon `.ctx` scripts are; same trust path), never
-committed or copied: a loader maps an item's `prefab`/`attributes` and
-`item_class` onto a data weapon (clip, fire rate, damage mult, projectile
-speed, blast radius, max ammo, reload time, spin-up, move speed, health
-mods) and onto hook parameters. `item_name`s and class lists decide who
-gets it. Needs: an attribute-name table (ours, in words) and a spec-style
-measurement for any attribute whose in-game effect we cannot infer from
-the number. Effort M-L (1 attribute layer + tests). Without the item
-files the layer yields nothing (stock still works).
+User decision: items_game is **not** read at game run time. The
+converter `tf2:item_stats` (`games/tf2/src/game/items/convert.rs`,
+version `items::VERSION`) runs host-side in `chimera_pack sets tf2
+--only items` (also in a whole `sets tf2`): it reads the install's
+`scripts/items/items_game.txt` and each item class's `.ctx` script
+(decrypted with the host's key, never printed), resolves prefabs and
+folds each item's attributes by their `description_format` (multiply,
+add, OR; integers rounded once at the end), and writes one record per
+weapon item (class, slot, classes, models, folded attributes, the
+script's base numbers, effective numbers) into
+`chimera/gen/tf2.items/v1/items.toml`, set `items` of the TF2 build's
+manifest. Nothing of the schema is committed.
 
-### Batch 1: existing mechanics, stats only (31 entries)
+In the game (`games/tf2/src/game/items/`): data/items.toml (ours) names
+the items we play by definition index and maps each item class to one
+of our weapons (`[bases]`); `GunNumbers::with_pack` builds each item's
+weapon document over its base (`items::docs`: damage, clip, reserve as
+its own ammo type, interval, spread, projectile speed, blast radius vs
+others with the owner's own radius and damage kept, fuse on 14-tick
+checks, no-bounce and shatter, sticky arm/charge/charge damage/limit,
+spin-up and spun speed, sword range and deploy, own-blast reduction and
+jumpers' no self damage) and registers it with the stock ones (server
+documents, so clients get them). The holder's numbers ride on the
+`tf2:item` hook (`items::mods`): speed provided or while active, jump
+while active (`SourceTraits::jump_scale`), damage taken by kind (and
+the spun Heavy's resist), heal on hit and kill, ignite on hit, the
+Bread Bite's max-health drain. Ladder eligibility: a weapon that deals
+damage keeps its base's `class` (ladders draw it); data/items.toml's
+`gun_game` overrides (utility items such as Jarate will set it false).
+
+### Batch 1: existing mechanics, stats only (31 entries) -- built 2026-11-23
 
 Liberty Launcher, The Original, Rocket Jumper, Direct Hit (stats part),
 Loch-n-Load, Iron Bomber, Sticky Jumper, Quickiebomb, Brass Beast,
 Tomislav, Family Business, Winger, Pretty Boy's Pocket Pistol, AWPer Hand,
-Rainblower (skin look), Holy Mackerel, Pain Train, Homewrecker, Back
-Scratcher, Volcano Fragment, Scotsman's Skullcutter, Claidheamohmor, Warrior's
-Spirit, Fists of Steel, Apoco-Fists, Bread Bite, Jag, Bushwacka, Black Rose
-(one stock-stats knife), Darwin's, Cozy Camper. Each is a data file with a
-`base`, an attribute pass, models/sounds, and one test that the numbers
-land. Needs no new spec if the attribute value is the whole effect; a
-sentence-level check in real TF2 (one measurement per weapon: refire,
-clip, damage at 0/512) is still the rule for anything we ship as parity.
+Rainblower (skin look), Holy Mackerel, Pain Train, Homewrecker/Maul, Neon
+Annihilator, Back Scratcher, Volcano Fragment, Scotsman's Skullcutter,
+Claidheamohmor, Warrior's Spirit, Fists of Steel, Apoco-Fists, Bread Bite,
+Jag, Bushwacka, Black Rose, Darwin's, Cozy Camper.
+
+Status (scenario tests: games/tf2/tests/it/items.rs; the converted
+install: tests/it/heavy/items.rs):
+
+- **Complete in numbers** (every attribute that has an effect in a party
+  match applied): Winger, Pretty Boy's, Liberty Launcher, Rocket Jumper,
+  Family Business, Brass Beast, Warrior's Spirit, Bread Bite, Iron Bomber,
+  Sticky Jumper (bar its model), Scotsman's Skullcutter, Volcano Fragment,
+  Back Scratcher (packs/healers recorded, none in a party match),
+  Homewrecker, Maul, Fists of Steel (ranged/melee taken; the next
+  deploy's ×2 not applied), Holy Mackerel, AWPer Hand, Black Rose.
+- **Partial**: Direct Hit (mini-crit vs airborne: batch 2), Neon
+  Annihilator (crit vs wet: batch 2), Bushwacka (mini-crit promotion:
+  batch 2; its damage taken applied), Quickiebomb (destroying enemy
+  stickies), Loch-n-Load (shatter and stats done; vs buildings), Tomislav
+  (silent spin sounds), The Original (centre fire done; its models),
+  Claidheamohmor (stats, sword and damage taken; the shield charge is
+  batch 3), Pain Train (bullet vulnerability; capture value n/a), Jag
+  (building numbers n/a), Apoco-Fists (gib on crit kill: crits off),
+  Rainblower (the rainbow look), Darwin's and Cozy Camper (converted and
+  mapped, but nothing wears a wearable yet; regen, afterburn immunity,
+  scoped rules not applied).
+- **For every item**: its own models, sounds, kill icon and view-model
+  animations are not read yet (`items` module doc: they key by the stock
+  ids, so an item shows the stand-in gun); the holster multiplier
+  (`mult_switch_from_wep_deploy_time`) is recorded, not applied.
 
 ### Batch 2: small new mechanics (68 entries)
 

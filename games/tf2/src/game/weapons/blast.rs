@@ -152,6 +152,22 @@ pub struct BlastParams {
     /// A grenade's bounce off the world.
     #[serde(default)]
     pub bounce_sound: Option<String>,
+    /// The owner's own blast × this when it hurt no enemy player (an
+    /// item's `rocket_jump_dmg_reduction`, item_attributes.md 3.3).
+    #[serde(default = "one")]
+    pub self_scale: f32,
+    /// The owner's own blast hurts him (false: a jumper's, still pushed
+    /// by the damage it would have done).
+    #[serde(default = "yes")]
+    pub self_harm: bool,
+    /// A grenade's first world touch keeps this share of its velocity (an
+    /// item's no-bounce, 4.5); None: it bounces.
+    #[serde(default)]
+    pub first_touch_keep: Option<f32>,
+    /// A grenade that touches anything but an enemy first vanishes
+    /// without a blast (an item's shatter, 4.5).
+    #[serde(default)]
+    pub shatter: bool,
 }
 
 fn yes() -> bool {
@@ -511,13 +527,20 @@ impl BlastWorld<'_, '_> {
                 dealt.push(Dealt { e, points: p.damage * blast.scale * m * f, centre: c, scale: p.push_other, size: tf2_hull(ducked, false), own: false });
             }
         }
-        // The owner after everyone else.
+        // The owner after everyone else: his own push is the damage's
+        // before an item's reduction or a jumper's zero (3.3).
+        let enemy_hurt = dealt.iter().any(|d| round_points(d.points * HP) > 0.0);
+        let own_harm = if !p.self_harm { 0.0 } else if enemy_hurt { 1.0 } else { p.self_scale };
         dealt.extend(own);
         let from = centre - Vec3::Y * FORCE_LOWER * U;
         let mut victims = Vec::new();
         for d in dealt {
-            let amount = round_points(d.points * HP);
+            let amount = round_points(d.points * if d.own { own_harm } else { 1.0 } * HP);
             if amount <= 0.0 {
+                if d.own && d.points > 0.0 {
+                    let dir = (d.centre - from).normalize_or(Vec3::Y);
+                    self.shove(d.e, push(d.points, d.scale, d.size, dir) * U, true);
+                }
                 continue;
             }
             victims.push(chimera_sim::weapon::grenade::BlastVictim { victim: d.e, at: d.centre, distance_m: d.centre.distance(centre), damage: amount });

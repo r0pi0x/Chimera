@@ -59,6 +59,7 @@ pub mod bodies;
 pub mod classes;
 pub mod faces;
 pub mod hud;
+pub mod items;
 pub mod ice;
 pub mod late_bodies;
 pub mod maps;

@@ -153,6 +153,20 @@ impl Classes {
         Ok(Classes { classes, guns, arms })
     }
 
+    /// An unlock (`items`): gun `id` makes its holder one of `classes`
+    /// (the item's `used_by_classes`, those the table knows), else what
+    /// its base weapon `base` makes him; its arms are its base's.
+    pub fn add_gun(&mut self, id: &str, classes: &[String], base: &str) {
+        let known: Vec<String> = classes.iter().filter(|c| self.get(c).is_some()).cloned().collect();
+        let list = if known.is_empty() { self.of_gun_all(base).into_iter().map(|c| c.name.clone()).collect() } else { known };
+        if !list.is_empty() {
+            self.guns.insert(id.to_string(), list);
+        }
+        if let Some(a) = self.arms.get(base).cloned() {
+            self.arms.insert(id.to_string(), a);
+        }
+    }
+
     /// The class named `name` (`scout`).
     pub fn get(&self, name: &str) -> Option<&Class> {
         self.classes.iter().find(|c| c.name == name)

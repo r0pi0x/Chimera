@@ -1026,17 +1026,23 @@ fn merged_set(name: &str) -> bool {
 
 /// The set name prefixes whose sets are generated (a converter's output,
 /// `generated_sets`), not recorded from reads.
-const GENERATED_PREFIXES: &[&str] = &["character/", "voice/"];
+const GENERATED_PREFIXES: &[&str] = &["character/", "voice/", "items"];
 
 /// A game's generated sets whose names start with `only` (or that `only`
 /// starts with): each set's files, made by the game's converter from the
 /// install's files. Halo's: each campaign character's body and voice
 /// (`halo_ce::game::campaign::unit::generated`, converter
-/// `halo_ce:character_unit`).
+/// `halo_ce:character_unit`); TF2's item pack, set `items`
+/// (`tf2::game::items::generated`, converter `tf2:item_stats`: the item
+/// schema and the item classes' scripts, decrypted here with this host's
+/// key).
 fn generated_sets(game: &str, mount: &Mount, only: &str) -> Vec<(String, Vec<(String, Vec<u8>)>)> {
     match game {
         "halo_ce" if only.is_empty() || GENERATED_PREFIXES.iter().any(|p| only.starts_with(p) || p.starts_with(only)) => {
             halo_ce::game::campaign::unit::generated(mount, only)
+        }
+        "tf2" if only.is_empty() || only.starts_with(tf2::game::items::SET) || tf2::game::items::SET.starts_with(only) => {
+            tf2::game::items::generated(mount, only)
         }
         _ => Vec::new(),
     }

@@ -104,7 +104,17 @@ pub fn touch(
             commands.entity(hit.flyer).despawn();
             continue;
         }
-        f.velocity = bounce(hit.velocity, hit.normal);
+        if p.shatter {
+            // Gone in a puff, no blast (item_attributes.md 4.5).
+            gone.write(FlyerGone { flyer: hit.flyer, weapon: hit.weapon, owner: hit.owner, at: t.translation, expired: false });
+            commands.entity(hit.flyer).despawn();
+            continue;
+        }
+        f.velocity = match p.first_touch_keep {
+            // No bounce: its first world touch keeps a share (4.5).
+            Some(k) if !rolled && hit.world => hit.velocity * k,
+            _ => bounce(hit.velocity, hit.normal),
+        };
         if !rolled {
             commands.entity(hit.flyer).insert(Rolled);
         }

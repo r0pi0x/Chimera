@@ -472,6 +472,27 @@ pub struct Burning {
     pub harmless: bool,
 }
 
+/// The stock Flame Thrower's numbers (its data's).
+pub fn stock_params() -> FlameParams {
+    super::hook_params(super::FLAMETHROWER, super::FLAME_HOOK)
+}
+
+/// A fresh burn by `attacker` with `weapon` at `now`: the Flame
+/// Thrower's afterburn as a flame hit lights it (an item's ignite on hit,
+/// item_attributes.md 4.11).
+/// `p` the Flame Thrower's numbers (`stock_params`).
+pub fn ignited(now: f64, attacker: Entity, weapon: &'static str, p: &FlameParams) -> Burning {
+    Burning {
+        left: p.burn_after(None),
+        next: now + p.burn_interval as f64,
+        attacker: Some(attacker),
+        weapon,
+        damage: p.burn_damage,
+        interval: p.burn_interval,
+        harmless: false,
+    }
+}
+
 /// Before the frame (predicted; weapons_more.md 7.1 "Blocked at a wall"):
 /// a drawn Flame Thrower whose emission is due with attack held tests the
 /// line from the eye to the fixed point `origin` (40 forward, 5 right, 0

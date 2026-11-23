@@ -452,6 +452,9 @@ pub fn gun_doc(gun: &str, text: &str, script: &Script) -> (String, GunSource) {
 pub struct GunNumbers {
     pub docs: Vec<(String, String)>,
     pub sources: Vec<GunSource>,
+    /// The unlocks made from the item pack (`items`), their documents
+    /// after the stock ones in `docs`.
+    pub items: Vec<crate::game::items::ItemWeapon>,
 }
 
 impl GunNumbers {
@@ -460,12 +463,42 @@ impl GunNumbers {
         Self {
             docs: super::DATA.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect(),
             sources: Vec::new(),
+            items: Vec::new(),
         }
+    }
+
+    /// These numbers with the unlocks of `pack` (`items::weapons`: those
+    /// data/items.toml names), their documents appended; what was left
+    /// out is noted in `sources`' log.
+    pub fn with_pack(mut self, pack: &crate::game::items::ItemPack) -> Self {
+        let data = crate::game::items::ItemsData::builtin();
+        let (items, notes) = crate::game::items::weapons(pack, &data, &self.docs);
+        for n in notes {
+            self.sources.push(GunSource { gun: "items".into(), from_script: false, source: n });
+        }
+        for i in &items {
+            self.docs.push((format!("items/{}.toml", i.id.trim_start_matches("tf2:")), i.doc.clone()));
+            self.sources.push(GunSource {
+                gun: i.id.clone(),
+                from_script: true,
+                source: format!("item {} on {} from {}", i.index, i.base, crate::game::items::PACK_PATH),
+            });
+        }
+        self.items.extend(items);
+        self
     }
 
     /// The documents with each gun's script read through `mount` (None:
     /// every gun's the spec fallback) and applied.
     pub fn from_mount(mount: Option<&Mount>, key: Option<&CtxKey>) -> Self {
+        let numbers = Self::with_scripts_of(mount, key);
+        match mount.and_then(crate::game::items::read_pack) {
+            Some(pack) => numbers.with_pack(&pack),
+            None => numbers,
+        }
+    }
+
+    fn with_scripts_of(mount: Option<&Mount>, key: Option<&CtxKey>) -> Self {
         Self::with_scripts(|name| match mount {
             Some(m) => scripts::read(m, name, key),
             None => Script {
@@ -506,7 +539,7 @@ impl GunNumbers {
                 _ => docs.push((name.to_string(), text.to_string())),
             }
         }
-        Self { docs, sources }
+        Self { docs, sources, items: Vec::new() }
     }
 
     /// The documents parsed as weapon data (as `Tf2GunsPlugin` loads them).

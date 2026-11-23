@@ -322,6 +322,7 @@ fn set_max(h: &mut Health, max: f32) {
 pub fn select_class(
     mut q: Query<(&MovementSlot, &Inventory, &mut Tf2Class, &mut SourceTraits, Option<&RungClass>, Option<&MaxSpeed>)>,
     mut weapons: Query<(&Weapon, Option<&Tf2Gun>, Option<&mut ShellReload>, Option<&mut Magazine>)>,
+    items: Query<&super::items::mods::Tf2Item>,
     table: Res<Classes>,
 ) {
     for (slot, inv, mut class, mut traits, drawn, zoomed) in &mut q {
@@ -345,11 +346,16 @@ pub fn select_class(
         let weapon_speed = held.as_ref().and_then(|(w, ..)| w.max_speed).map(|s| s / super::METERS_PER_UNIT);
         let scope_speed = zoomed.and_then(|m| m.0).map(|s| s / super::METERS_PER_UNIT);
         let p = [weapon_speed, scope_speed].into_iter().flatten().fold(c.speed, f32::min);
+        // The items' (item_attributes.md 4.4): their speed factors after
+        // the class rules, the active one's jump.
+        let f = super::items::mods::Factors::of(inv, &|w| items.get(w).ok().map(|i| i.0.clone()));
+        let p = p * f.speed;
         let want = SourceTraits {
             max_speed: Some(p),
             eye_stand: Some(c.eye),
             air_jumps: Some(c.air_jumps),
             loud_landings_only: Some(c.loud_landings_only),
+            jump_scale: (f.jump != 1.0).then_some(f.jump),
         };
         if *traits != want {
             *traits = want;
@@ -363,13 +369,16 @@ pub fn select_class(
 pub fn class_health(
     mut q: Query<(Entity, &Tf2Class, &mut Health, Option<&HealthBefore>)>,
     table: Res<Classes>,
+    drains: Option<Res<super::items::mods::ItemDrains>>,
     mut commands: Commands,
 ) {
     for (e, class, mut h, before) in &mut q {
         if before.is_none() {
             commands.entity(e).insert(HealthBefore(h.max));
         }
-        let max = class.class(&table).health / 100.0;
+        // Less what an item drains (item_attributes.md 4.10).
+        let drained = drains.as_ref().map_or(0.0, |d| d.of(e));
+        let max = (class.class(&table).health - drained) / 100.0;
         if (h.max - max).abs() > 1e-6 {
             set_max(&mut h, max);
         }
