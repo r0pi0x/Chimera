@@ -18,8 +18,13 @@
 //! Mono 0.56 cq as the kit's key lockups (Fg on Fg2), on the look's plate
 //! tone, faded in and out by the look's feed timings (`motion.dur.feed`
 //! `enter`, `leave`); without it, the plain text "Press G to throw" in the
-//! overlay's face at the callouts' second-line size. `RungHintView` is
-//! the state, headless too. `ui_scene runghint` stages it.
+//! overlay's face at the callouts' second-line size. A hint whose data
+//! has a title, names the fire button and counts (Halo's grenade rung:
+//! shown the whole time there) reads "GRENADE RUNG THROW [LMB] OR [G]
+//! x4" (plain: "Grenade rung - throw with [LMB] or [G]   x4"), the
+//! mouse buttons named LMB, RMB, MMB (`key_name`), the count big.
+//! `RungHintView` is the state, headless too. `ui_scene runghint` stages
+//! it (the grenade rung's).
 //!
 //! Known shortcuts: a first cut of its look (docs/backlog.md).
 
@@ -40,6 +45,12 @@ pub struct RungHintView {
     /// The key bound to the action ("G"; "unbound").
     pub key: String,
     pub verb: String,
+    /// The fire button's key when it does the same ("LMB").
+    pub fire_key: Option<String>,
+    /// The data's title ("Grenade rung").
+    pub title: Option<String>,
+    /// What is left to throw.
+    pub count: Option<u32>,
     /// Shown now.
     pub shown: bool,
     /// Its opacity (the fade).
@@ -51,7 +62,26 @@ pub struct RungHintView {
 impl RungHintView {
     /// The plain text ("Press G to throw").
     pub fn text(&self) -> String {
-        format!("Press {} to {}", self.key, self.verb)
+        let mut out = match (&self.title, &self.fire_key) {
+            (Some(t), Some(f)) => format!("{t} - {} with [{f}] or [{}]", self.verb, self.key),
+            (Some(t), None) => format!("{t} - {} with [{}]", self.verb, self.key),
+            (None, Some(f)) => format!("Press {f} or {} to {}", self.key, self.verb),
+            (None, None) => format!("Press {} to {}", self.key, self.verb),
+        };
+        if let Some(n) = self.count {
+            out.push_str(&format!("   x{n}"));
+        }
+        out
+    }
+}
+
+/// A key's name on the hint (the mouse buttons as LMB, RMB, MMB).
+pub fn key_name(key: String) -> String {
+    match key.as_str() {
+        "MOUSE1" => "LMB".into(),
+        "MOUSE2" => "RMB".into(),
+        "MOUSE3" => "MMB".into(),
+        _ => key,
     }
 }
 
@@ -97,7 +127,7 @@ fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
 pub fn bound_key(console: Option<&chimera_core::console::Console>, game: Option<&str>, action: &str) -> String {
     let Some(console) = console else { return "unbound".into() };
     let binds = console.effective_binds(game);
-    super::binds::keys_for(&binds, &format!("+{action}")).first().map_or_else(|| "unbound".into(), |k| super::binds::display(k))
+    super::binds::keys_for(&binds, &format!("+{action}")).first().map_or_else(|| "unbound".into(), |k| key_name(super::binds::display(k)))
 }
 
 fn gather(
@@ -127,7 +157,13 @@ fn gather(
     let (enter, leave) = (t.and_then(|t| t.dur_opt("feed", "enter")).unwrap_or(0.22), t.and_then(|t| t.dur_opt("feed", "leave")).unwrap_or(0.25));
     let dt = time.delta_secs();
     let alpha = if on { (view.alpha + dt / enter.max(1e-3)).min(1.0) } else { (view.alpha - dt / leave.max(1e-3)).max(0.0) };
-    let next = RungHintView { key, verb, shown: on, alpha, staged: view.staged.clone() };
+    // The fire key, title and count (a staged hint: the grenade rung's).
+    let (fire_key, title, count) = match (&view.staged, hint) {
+        (Some(_), _) => (Some("LMB".to_string()), Some("Grenade rung".to_string()), Some(4)),
+        (None, Some(h)) if on => (h.fire.then(|| bound_key(console.as_deref(), game, "attack")), h.title.clone(), h.count),
+        _ => (view.fire_key.clone(), view.title.clone(), view.count),
+    };
+    let next = RungHintView { key, verb, fire_key, title, count, shown: on, alpha, staged: view.staged.clone() };
     view.set_if_neq(next);
 }
 
@@ -141,7 +177,7 @@ fn draw(
     window: Query<&Window, With<bevy::window::PrimaryWindow>>,
     mut root: Query<(Entity, &mut Node, &mut Visibility), With<HintRoot>>,
     mut commands: Commands,
-    mut built: Local<Option<(String, String, bool, u32)>>,
+    mut built: Local<Option<(String, bool, u32)>>,
 ) {
     let Ok((root, mut node, mut vis)) = root.single_mut() else { return };
     let visible = view.alpha > 0.0;
@@ -156,7 +192,7 @@ fn draw(
         node.bottom = bottom;
     }
     let signal = super::signal::signal_on(theme.as_deref());
-    let key = (view.key.clone(), view.verb.clone(), signal, height as u32);
+    let key = (view.text(), signal, height as u32);
     if built.as_ref() != Some(&key) {
         *built = Some(key);
         commands.entity(root).despawn_related::<Children>();
@@ -175,10 +211,31 @@ fn draw(
                         BackgroundColor(theme.tone(Tone::Plate)),
                     ))
                     .id();
-                let cap = chimera_ui::widgets::spawn_pair(&mut commands, chimera_ui::widgets::kbd(theme, kit.as_deref(), &units, &view.key, SIZE_CQ));
-                commands.entity(cap).insert((ChildOf(plate), Pickable::IGNORE));
                 let s = chimera_ui::fonts::text(theme, kit.as_deref(), Role::Mono, units.text_px(SIZE_CQ));
-                commands.spawn((ChildOf(plate), Pickable::IGNORE, Text::new(view.verb.to_uppercase()), s.bundle(), TextColor(theme.tone(Tone::Fg2))));
+                let label = |commands: &mut Commands, text: String, tone: Tone| {
+                    commands.spawn((ChildOf(plate), Pickable::IGNORE, Text::new(text), s.bundle(), TextColor(theme.tone(tone))));
+                };
+                if let Some(t) = &view.title {
+                    label(&mut commands, t.to_uppercase(), Tone::Fg);
+                }
+                if view.title.is_some() || view.fire_key.is_some() {
+                    label(&mut commands, view.verb.to_uppercase(), Tone::Fg2);
+                }
+                for (i, k) in view.fire_key.iter().chain([&view.key]).enumerate() {
+                    if i > 0 {
+                        label(&mut commands, "OR".into(), Tone::Fg2);
+                    }
+                    let cap = chimera_ui::widgets::spawn_pair(&mut commands, chimera_ui::widgets::kbd(theme, kit.as_deref(), &units, k, SIZE_CQ));
+                    commands.entity(cap).insert((ChildOf(plate), Pickable::IGNORE));
+                }
+                if view.title.is_none() && view.fire_key.is_none() {
+                    label(&mut commands, view.verb.to_uppercase(), Tone::Fg2);
+                }
+                if let Some(n) = view.count {
+                    // The count, big: what is left to throw.
+                    let big = chimera_ui::fonts::text(theme, kit.as_deref(), Role::Mono, units.text_px(SIZE_CQ * 2.2));
+                    commands.spawn((ChildOf(plate), Pickable::IGNORE, Node { margin: UiRect::left(units.val(0.5)), ..default() }, Text::new(format!("x{n}")), big.bundle(), TextColor(theme.tone(Tone::Fg))));
+                }
             }
             _ => {
                 let size = super::callouts::LINE_SIZES[1] * super::overlay::scale(height);

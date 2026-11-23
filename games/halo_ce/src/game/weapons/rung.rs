@@ -22,15 +22,23 @@
 //! throw spends one as any throw does; while the count is below `max` the
 //! server counts Halo ticks (`ticks`, from the 30 Hz tick counting, so the
 //! same seconds at any engine tick rate) and gives one frag back every
-//! `refill_seconds` (5.0, the hook's data), one per interval from the
+//! grenade-supply seconds of the ladder (`power::GrenadeSupply`, its
+//! power curve's `[grenade_supply]` for `halo_ce`: 3.0, was 5.0, levelled
+//! with the other games' rungs, 2026-11-22), one per interval from the
 //! moment the count dropped below `max` (not from each throw), never above
 //! `max`. The timer is the server's alone: the count (`HaloHands`) is
 //! what replicates, so a client's HUD follows it. Without `refill_ammo` a
 //! new life, or the arrival on the rung, gives the frag's start count once.
 //! No plasma
 //! grenades; the rotate-grenades button does nothing. The throw is
-//! Halo's own on the grenade button (`grenades::Throw`), with the throw
-//! animation the pistol's view model plays.
+//! Halo's own on the grenade button (`grenades::Throw`), and on the fire
+//! button too while the rung's weapon is in hand (`fire_throws`, the
+//! user's wish, 2026-11-22: a grenade-only rung has no gun to fire, so the
+//! pistol never fires or dry-fires), with the throw animation the
+//! pistol's arms play. **In hand** (`IN_HAND`, `view::load`): the
+//! pistol's first-person arms and animations with the frag grenade's
+//! model on the gun's root node instead of the pistol, and in third
+//! person the frag in the Spartan's hand where the pistol would be.
 //!
 //! What it states to the engine (as `systems::battery_rounds` does for the
 //! battery guns): its `Magazine`'s rounds loaded are the frags it carries
@@ -39,7 +47,8 @@
 //! action (`weapon::AttackAction`: a bot presses it where it would press
 //! fire). Halo's HUD reads the gun's
 //! own rounds (0 and 0: the empty pistol's ammunition block) and the
-//! grenade counts (the frag plate with its count).
+//! grenade counts (the frag plate with its count); the party's rung hint
+//! names both keys and the frags left the whole time on the rung.
 //!
 //! **The Hunter's rung** (`HUNTER_RUNG`, the owner's wish, 2026-11-16):
 //! the Hunter's arm cannon (data/weapons/hunter_fuel_rod.toml, every
@@ -73,6 +82,12 @@ use serde::Deserialize;
 
 use super::{PISTOL, grenades, systems::FRAG_GRENADE};
 
+/// Halo ticks (30 Hz) between two frags coming back for `seconds` of the
+/// ladder's grenade supply (at least 1).
+pub fn refill_ticks(seconds: f32) -> u32 {
+    ((seconds as f64 / crate::game::TICK_INTERVAL).round() as u32).max(1)
+}
+
 /// The hook its weapon document names.
 pub const HOOK: &str = "halo_ce:grenade_rung";
 
@@ -82,9 +97,14 @@ pub const FRAG_RUNG: &str = FRAG_GRENADE;
 /// The Hunter's rung: its arm cannon (module doc).
 pub const HUNTER_RUNG: &str = "halo_ce:hunter_fuel_rod";
 
-/// The rung weapons whose looks are another gun's (view and held models):
-/// (rung weapon, gun).
-pub const LOOKS: [(&str, &str); 1] = [(FRAG_RUNG, PISTOL)];
+/// The rung weapons drawn as an object held in a gun's hands, the gun
+/// itself not drawn (`view::load`): (rung weapon, the gun whose arms and
+/// animations it takes, the object's equipment tag, its place on the
+/// gun's root node in Halo's axes and world units, and its turn there in
+/// degrees: yaw, pitch, roll). The grenade rung: the frag in the pistol's
+/// hand, so there is no gun to try to fire.
+pub type InHand = (&'static str, &'static str, &'static str, ([f32; 3], [f32; 3]));
+pub const IN_HAND: [InHand; 1] = [(FRAG_RUNG, PISTOL, r"weapons\frag grenade\frag grenade", ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]))];
 
 /// The hook's parameters.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -97,9 +117,10 @@ pub struct RungParams {
     /// The most frags the rung's holder has (the frag's own maximum caps
     /// it).
     pub max: u8,
-    /// Seconds of simulation time between one frag coming back and the
-    /// next, while the count is below `max` (the party ladder's refill).
-    pub refill_seconds: f32,
+    /// The fire button throws too (the rung has no gun to fire; the
+    /// grenade button still throws).
+    #[serde(default)]
+    pub fire_throws: bool,
 }
 
 /// On a grenade rung's weapon: the kind it throws, and whether the start
@@ -110,11 +131,11 @@ pub struct GrenadeRung {
     pub given: bool,
     /// The most frags carried.
     pub max: u8,
-    /// Halo ticks (30 Hz) between two frags coming back (at least 1).
-    pub refill_ticks: u32,
     /// Halo ticks counted toward the next frag: the server's alone (the
     /// count is what replicates); 0 while the count is full.
     pub ticks: u32,
+    /// The fire button throws while it is in hand (`RungParams::fire_throws`).
+    pub fire_throws: bool,
 }
 
 /// The hook: the rung's part and the engine's fact.
@@ -126,8 +147,8 @@ pub fn register(app: &mut App) {
                 kind,
                 given: false,
                 max: p.max,
-                refill_ticks: ((p.refill_seconds as f64 / crate::game::TICK_INTERVAL).round() as u32).max(1),
                 ticks: 0,
+                fire_throws: p.fire_throws,
             },
             chimera_sim::weapon::AttackAction { action: p.action.clone() },
         ));

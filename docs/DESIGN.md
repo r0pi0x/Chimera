@@ -871,25 +871,36 @@ that):
   `Turret-TopGun`, the infected ship turrets' grenade guns) names no
   class, so no draw deals it as a hand-held gun (the "Infected '02 Top
   Gun" that fired grenades on a rung, 2026-11-13).
-- **A grenade rung: Halo's frags with an empty pistol** (user,
-  2026-11-15): Halo's grenades are a count thrown beside the gun in
+- **A grenade rung: Halo's frags in hand** (user, 2026-11-15;
+  2026-11-22): Halo's grenades are a count thrown beside the gun in
   hand, not a weapon, so Halo lends a part of class `grenade` of its own
   (`halo_ce:frag_grenade`, `weapons::rung`) that the ladder's grenade
-  band deals as it deals the others' grenades. Its holder has the pistol
-  with no round loaded and none to be had (left click is an empty
-  pistol's click), throws frags with the grenade button with a timed
-  supply (user, 2026-11-15: with `refill_ammo` a throw is not given back
-  at once: the rung starts, and every life starts, with 4 and the server
-  gives one back every `refill_seconds` (5.0, in its weapon data) while
-  below the maximum, counted in Halo's 30 Hz ticks so it is the same at
-  any tick rate; the count replicates, the timer does not; whatever
+  band deals as it deals the others' grenades. Its holder holds a frag
+  (the pistol's first-person arms and animations with the frag's own
+  model in the hand instead of the pistol, composed at run time from
+  Halo's map; in third person the frag in the Spartan's hand), throws
+  frags with the fire button or the grenade button (no gun fires or
+  dry-fires), with a timed supply (a throw is not given back at once:
+  the rung starts, and every life starts, with 4 and the server gives
+  one back every grenade-supply seconds of the ladder while below the
+  maximum, counted in Halo's 30 Hz ticks so it is the same at any tick
+  rate; the count replicates, the timer does not; whatever
   `halo_party_grenades` says for the other Halo rungs), and melees as on
   any Halo rung; its kills (the frag's, a melee's) climb as any kill.
   Bots press its attack action (`weapon::AttackAction`). The rung
-  declares a hint (opt-in in its weapon data, `rung_hint`: the action and
-  "throw"), which the party shows at the bottom centre while it is new
-  and after a dry fire: the key bound now to the grenade action and the
-  verb (`chimera_client::client::rung_hint`).
+  declares a hint (opt-in in its weapon data, `rung_hint`), shown the
+  whole time on the rung at the bottom centre: "Grenade rung - throw
+  with [LMB] or [G]" (the keys bound now to fire and to Halo's grenade
+  action) and the frags left, big (`chimera_client::client::rung_hint`).
+- **Grenade rungs pace alike** (user, 2026-11-22): on a ladder with
+  `refill_ammo` (the party's), a grenade rung's next grenade waits the
+  grenade band's supply seconds from the throw, by game
+  (chimera/sim/data/power_curve.toml `[grenade_supply]`,
+  `power::GrenadeSupply`): an engine grenade (CS:S, HL2:DM, Combat Arms)
+  comes back at once but its next pin waits (`ladder::NextThrow`), and
+  Halo's rung gives a frag back every that many seconds. A throw's own
+  cycle is the floor where it is longer. The games' own modes keep their
+  rules.
 - **No HL2:DM pickups or chargers** (user, 2026-11-12): a party's
   HL2:DM map has none of its walk-over items (kits, vials, batteries,
   ammo boxes) and wall chargers, not even drawn: only the HL2:DM app,

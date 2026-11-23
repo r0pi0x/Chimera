@@ -328,6 +328,14 @@ pub type ViewBuilt = (Built<MapViewModel>, Weapon, Vec<displays::Part>);
 /// A gun's view model without its meshes' looks: the model and its
 /// pending meshes.
 pub fn view_model(file: &MapFile, gun: &GunModels, arms: &Model) -> Result<ViewBuilt, String> {
+    view_model_with(file, gun, arms, None)
+}
+
+/// `view_model`, with `in_hand` (an object's model and its place on the
+/// gun's root node, Halo's axes and units) drawn instead of the gun: the
+/// arms posed by the gun's graph holding that object (the grenade rung's
+/// frag in the pistol's hand, `weapons::rung::IN_HAND`).
+pub fn view_model_with(file: &MapFile, gun: &GunModels, arms: &Model, in_hand: Option<(&Model, Transform)>) -> Result<ViewBuilt, String> {
     let wt = file
         .find(class::WEAPON, &gun.tag)
         .ok_or_else(|| format!("no weapon `{}`", gun.tag))?;
@@ -357,11 +365,17 @@ pub fn view_model(file: &MapFile, gun: &GunModels, arms: &Model) -> Result<ViewB
     warnings.extend(left_out);
     let mut meshes = skinned_on_graph(file, arms, &on_arms.graph_nodes);
     let arms_meshes = meshes.len();
-    meshes.extend(skinned_on_graph(file, &model, &on_gun.graph_nodes));
+    match in_hand {
+        None => meshes.extend(skinned_on_graph(file, &model, &on_gun.graph_nodes)),
+        Some((object, at)) => {
+            let bone = on_gun.graph_nodes.first().copied().flatten().unwrap_or(0);
+            meshes.extend(held_on_bone(file, object, &bones, bone, at));
+        }
+    }
     let parts = meshes
         .iter()
         .enumerate()
-        .skip(arms_meshes)
+        .skip(if in_hand.is_some() { meshes.len() } else { arms_meshes })
         .map(|(i, (_, s, p))| (i, *s, *p))
         .collect();
     let meshes = meshes.into_iter().map(|(m, s, _)| (m, s)).collect();
@@ -381,6 +395,29 @@ pub fn view_model(file: &MapFile, gun: &GunModels, arms: &Model) -> Result<ViewB
         meshes,
         warnings,
     ), weapon, parts))
+}
+
+/// A rigid object's meshes skinned wholly to view-model bone `bone`,
+/// placed at `at` in that bone's frame (Halo's axes and units), in the
+/// eye's space as the skinned meshes are (`skinned_on_graph`).
+fn held_on_bone(file: &MapFile, object: &Model, bones: &[MapBone], bone: usize, at: Transform) -> Vec<(MapMesh, TagRef, i16)> {
+    let (gq, gp) = globals(bones, &bind_locals(bones)).get(bone).copied().unwrap_or((Quat::IDENTITY, Vec3::ZERO));
+    let place = |p: Vec3| gq * at.transform_point(p) + gp;
+    let turn = gq * at.rotation;
+    let from_game = Quat::from_mat3(&bevy::math::Mat3::from_cols(
+        space::direction([1.0, 0.0, 0.0]),
+        space::direction([0.0, 1.0, 0.0]),
+        space::direction([0.0, 0.0, 1.0]),
+    ));
+    let mut out = objects::model_meshes(file, object, &|p| space::point(place(Vec3::from(p)).to_array()));
+    for (m, _) in &mut out {
+        for n in &mut m.normals {
+            *n = (from_game * (turn * (from_game.inverse() * Vec3::from(*n)))).to_array();
+        }
+        m.joints = vec![[bone as u16, 0, 0, 0]; m.positions.len()];
+        m.joint_weights = vec![[1.0, 0.0, 0.0, 0.0]; m.positions.len()];
+    }
+    out.into_iter().map(|(m, s)| (m, s, 0)).collect()
 }
 
 /// The Spartan's model and graph (the hand marker's).
@@ -412,9 +449,20 @@ fn held_model(
     body: &(Model, AnimationGraph),
     label: &str,
 ) -> Result<(MapHeldModel, Vec<(MapMesh, TagRef)>), String> {
-    let model = model_at(file, &gun.world)?;
+    held_model_of(file, gun.id, &model_at(file, &gun.world)?, body, label)
+}
+
+/// A model held in the Spartan's hand as `label`'s weapon is, keyed `key`
+/// (a gun's world model; the grenade rung's frag).
+fn held_model_of(
+    file: &MapFile,
+    key: &str,
+    model: &Model,
+    body: &(Model, AnimationGraph),
+    label: &str,
+) -> Result<(MapHeldModel, Vec<(MapMesh, TagRef)>), String> {
     let (bone, grip) =
-        hand(&body.0, &body.1, label).ok_or_else(|| format!("{}: no hand marker for `{label}`", gun.id))?;
+        hand(&body.0, &body.1, label).ok_or_else(|| format!("{key}: no hand marker for `{label}`"))?;
     let from_game = Quat::from_mat3(&bevy::math::Mat3::from_cols(
         space::direction([1.0, 0.0, 0.0]),
         space::direction([0.0, 1.0, 0.0]),
@@ -422,13 +470,13 @@ fn held_model(
     ))
     .inverse();
     let (_, grip_q, _) = grip.to_scale_rotation_translation();
-    let mut meshes = objects::model_meshes(file, &model, &|p| grip.transform_point3(Vec3::from(p)));
+    let mut meshes = objects::model_meshes(file, model, &|p| grip.transform_point3(Vec3::from(p)));
     for (m, _) in &mut meshes {
         for n in &mut m.normals {
             *n = (grip_q * (from_game * Vec3::from(*n))).to_array();
         }
     }
-    let posed = model_globals(&model);
+    let posed = model_globals(model);
     let marker = |name: &str, i: &blam_formats::model::MarkerInstance| {
         let (q, p) = posed.get(i.node).copied()?;
         let local = Mat4::from_rotation_translation(q, p)
@@ -443,7 +491,7 @@ fn held_model(
         .collect();
     Ok((
         MapHeldModel {
-            key: gun.id.to_string(),
+            key: key.to_string(),
             model: MapModel::default(),
             bone,
             muzzle: all
@@ -612,6 +660,46 @@ pub fn looks(file: &MapFile, decode: bool) -> Looks {
             }
         }
     }
+    // A rung weapon drawn as an object in a gun's hands
+    // (`weapons::rung::IN_HAND`: the grenade rung's frag in the pistol's
+    // arms, no pistol), first and third person.
+    for (id, of, object, at) in super::super::weapons::rung::IN_HAND {
+        let Some(gun) = gun_models().into_iter().find(|g| g.id == of) else { continue };
+        let object = match file.find(class::EQUIPMENT, object).ok_or_else(|| format!("no `{object}`")).and_then(|t| {
+            let o = blam_formats::object::ObjectBase::read(file, t).map_err(|e| e.to_string())?;
+            read_model(file, o.model, object)
+        }) {
+            Ok(m) => m,
+            Err(e) => {
+                out.warnings.push(format!("{id}: {e}"));
+                continue;
+            }
+        };
+        let at = Transform { translation: Vec3::from(at.0), rotation: Quat::from_euler(bevy::math::EulerRot::ZYX, at.1[0].to_radians(), at.1[1].to_radians(), at.1[2].to_radians()), scale: Vec3::ONE };
+        if let Some(arms) = &arms {
+            match view_model_with(file, &gun, arms, Some((&object, at))) {
+                Ok(((mut v, meshes, w), ..)) => {
+                    v.key = id.to_string();
+                    out.warnings.extend(w.into_iter().map(|w| format!("{id}: {w}")));
+                    out.view_models.push(v);
+                    let i = out.view_models.len() - 1;
+                    pending.extend(meshes.into_iter().map(|(mesh, shader)| Pending { mesh, shader, lit: true, dest: Dest::Model(i) }));
+                }
+                Err(e) => out.warnings.push(e),
+            }
+        }
+        let label = labels.iter().find(|(g, _)| *g == of).map_or("", |(_, l)| l.as_str());
+        if let Some(body) = &body {
+            match held_model_of(file, id, &object, body, label) {
+                Ok((h, meshes)) => {
+                    out.held.push(h);
+                    let i = 1000 + out.held.len() - 1;
+                    pending.extend(meshes.into_iter().map(|(mesh, shader)| Pending { mesh, shader, lit: true, dest: Dest::Model(i) }));
+                }
+                Err(e) => out.warnings.push(e),
+            }
+        }
+    }
     // The objects drawn as shown items (projectiles, items).
     for (key, tag) in object_tags(file) {
         if let Some((h, meshes)) = object_model(file, key, &tag) {
@@ -643,16 +731,6 @@ pub fn looks(file: &MapFile, decode: bool) -> Looks {
     }
     for h in &mut out.held {
         h.model.bounds = bounds(&h.model.meshes);
-    }
-    // A rung weapon that looks like a gun (`weapons::rung::LOOKS`: the
-    // grenade rung's pistol): that gun's models under its id.
-    for (id, of) in super::super::weapons::rung::LOOKS {
-        if let Some(v) = out.view_models.iter().find(|v| v.key == of).cloned() {
-            out.view_models.push(MapViewModel { key: id.to_string(), ..v });
-        }
-        if let Some(h) = out.held.iter().find(|h| h.key == of).cloned() {
-            out.held.push(MapHeldModel { key: id.to_string(), ..h });
-        }
     }
     out
 }

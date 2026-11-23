@@ -190,6 +190,35 @@ pub struct PowerCurve {
     pub draw: DrawParams,
     /// A drawn ladder's length, the host's bounds (`[rungs]`).
     pub rungs: RungBounds,
+    /// The grenade band's supply on a ladder with `refill_ammo`
+    /// (`[grenade_supply]`).
+    pub grenade_supply: GrenadeSupply,
+}
+
+/// How soon a grenade rung's holder may throw again (`[grenade_supply]`,
+/// the party's ladders with `refill_ammo` only; a game's own modes keep
+/// its rules): seconds from one throw until the next grenade can be
+/// thrown, by game (the weapon id's prefix) over a default. An engine
+/// grenade (`weapon::grenade::Throwable`) is given back at once and its
+/// next pin waits this long from the throw (`ladder::refill`); a game
+/// with its own supply reads it (Halo's rung: one frag back every this
+/// many seconds, up to the four it carries).
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GrenadeSupply {
+    /// Any game's (s).
+    pub seconds: f32,
+    /// By game, over `seconds` (s).
+    #[serde(default)]
+    pub games: BTreeMap<String, f32>,
+}
+
+impl GrenadeSupply {
+    /// The seconds for weapon `id` (its game's, else the default).
+    pub fn seconds_for(&self, id: &str) -> f32 {
+        let game = id.split_once(':').map_or("", |(g, _)| g);
+        self.games.get(game).copied().unwrap_or(self.seconds)
+    }
 }
 
 /// A drawn ladder's rungs in all, melee too (`[rungs]`): the default and

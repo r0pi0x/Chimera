@@ -91,3 +91,17 @@ recovery = 0.6
 default = 13
 min = 5
 max = 40
+
+# The grenade band's supply on a ladder with `refill_ammo` (the party's
+# ladders; a game's own modes keep its rules): seconds from one throw
+# until its holder can throw the next grenade, any game's, and by game
+# (the weapon id's prefix) over it. A throw's own cycle (pin, throw,
+# redraw) is the floor where it is longer. Levelled 2026-11-22 (the
+# user: Halo's 5 s was long, Combat Arms' throw-as-fast-as-the-animation
+# too quick): measured steady gaps before, holding fire: CS:S HE 1.6 s,
+# Combat Arms M67 1.6 s, Halo's frag rung 5 s per frag (4 carried); the
+# band now about 2.5-3 s.
+[grenade_supply]
+seconds = 2.5
+# Halo's rung carries 4 and gets one back every this many seconds.
+games = { halo_ce = 3.0 }

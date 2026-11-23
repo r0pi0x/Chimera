@@ -437,10 +437,9 @@ backlog.
   default off, places no vehicle on a Halo map there. Halo's own app
   and server have them.
 - **Grenades over time on the grenade rung** (the user, 2026-11-15;
-  high): a thrown grenade comes back at once under the ladder's
-  `refill_ammo` (Halo's rung keeps 4), so it can be spammed. Wanted: one
-  grenade every N seconds up to the maximum (N a data value), as a rule
-  of the grenade band so every game's grenade rung paces the same.
+  done 2026-11-22): the grenade band's supply in the ladder
+  (power_curve.toml `[grenade_supply]`, by game), Halo's rung reading
+  it; the frag held in hand, thrown on fire too.
 - **The envelope for the other games' characters**: only Halo's
   movement takes the map's movement envelope; a CS:S character on
   Combat Arms' warehouse reaches 92% of what the soldier does. Source's

@@ -30,9 +30,12 @@
 //! on the rung (a rung change or a respawn onto it) and again
 //! `RUNG_HINT_DRY_FIRE` seconds from each dry fire of the viewer's own
 //! (its predicted `WeaponEventKind::DryFire`: on a network client too,
-//! from its own input; nothing new crosses the network). The HUD resolves
-//! the action's bound key when it draws (`chimera_client::client::
-//! rung_hint`).
+//! from its own input; nothing new crosses the network), or the whole
+//! time on the rung while alive when its data says `always` (Halo's
+//! grenade rung), with its title, whether the fire button does it too
+//! and, with `count`, what is left to throw (the held weapon's rounds).
+//! The HUD resolves the keys bound when it draws (`chimera_client::
+//! client::rung_hint`).
 //!
 //! Known shortcuts: the notices (`RulesModule::notice`) are still made
 //! though no HUD draws them any more (only tests read them); drop them,
@@ -69,12 +72,20 @@ pub struct RungHint {
     pub until: f64,
     /// The rung and whether alive when last seen (an arrival changes it).
     pub seen: (usize, bool),
+    /// The data's title ("Grenade rung").
+    pub title: Option<String>,
+    /// The fire button does it too (named beside the action's key).
+    pub fire: bool,
+    /// Shown the whole time on the rung while alive (`RungHintData::always`).
+    pub always: bool,
+    /// What is left to throw (the held weapon's rounds), when the data asks.
+    pub count: Option<u32>,
 }
 
 impl RungHint {
     /// Whether it shows at `now`.
     pub fn shown(&self, now: f64) -> bool {
-        now < self.until
+        (self.always && self.seen.1) || now < self.until
     }
 }
 
@@ -375,7 +386,12 @@ fn rung_hint(world: &World, v: Entity, last: Option<RungHint>, dry: bool, now: f
         verb: hint.verb.clone(),
         until: f64::MIN,
         seen: (usize::MAX, false),
+        title: hint.title.clone(),
+        fire: hint.fire,
+        always: hint.always,
+        count: None,
     });
+    out.count = hint.count.then(|| held_rounds(world, v)).flatten();
     if alive && out.seen != seen {
         out.until = out.until.max(now + RUNG_HINT_ARRIVAL);
     }
@@ -384,6 +400,12 @@ fn rung_hint(world: &World, v: Entity, last: Option<RungHint>, dry: bool, now: f
     }
     out.seen = seen;
     Some(out)
+}
+
+/// The rounds of `v`'s weapon in hand (`Magazine::clip`).
+fn held_rounds(world: &World, v: Entity) -> Option<u32> {
+    let w = world.get::<crate::weapon::Inventory>(v)?.active?;
+    world.get::<crate::weapon::Magazine>(w).map(|m| m.clip)
 }
 
 #[cfg(test)]

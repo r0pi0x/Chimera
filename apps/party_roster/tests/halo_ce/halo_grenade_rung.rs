@@ -5,12 +5,14 @@
 //! weapon of any game declares a rung hint); its holder has the pistol
 //! with no round loaded and none in reserve that nothing refills, and
 //! Halo's four frags (the rung's own supply with the ladder's
-//! `refill_ammo`: timed, one back every `refill_seconds`), no plasma grenade, with `halo_party_grenades` off; the fire
-//! button dry-fires and throws nothing, the grenade button throws a frag
-//! (spent, coming back over time); a frag kill is in the kill feed as the frag
+//! `refill_ammo`: timed, one back every grenade-supply seconds of the
+//! ladder's power curve), no plasma grenade, with `halo_party_grenades`
+//! off; the fire button and the grenade button each throw a frag (spent,
+//! coming back over time; no dry fire); a frag kill is in the kill feed as the frag
 //! grenade (name and id) and advances the thrower; the next Halo rung has
 //! no grenades again. The rung hint: set on arriving (Halo's grenade
-//! action, "throw"), gone after its seconds, back on a dry fire; the key it
+//! action, "throw", the fire button too, the title and the frags left),
+//! shown the whole time on the rung; the key it
 //! names is the one bound now (a rebind follows); a rung without one shows
 //! none.
 
@@ -122,25 +124,29 @@ fn the_holder_has_an_empty_pistol_and_frags_and_throws_with_the_grenade_button()
     sim.seconds(2.0);
     assert_eq!(gun(&sim, a).0, 0);
     assert_eq!(gun(&sim, a).1, 0);
-    // The hint goes after its seconds.
-    sim.seconds(4.0);
+    // The hint stays on the rung, with the frags left.
+    sim.seconds(6.0);
     let now = sim.app.world().resource::<Time>().elapsed_secs_f64();
-    assert!(!sim.app.world().resource::<MinigameHud>().rung_hint.as_ref().unwrap().shown(now), "gone");
-    // The fire button: a dry fire, nothing thrown; the hint again.
+    let h = sim.app.world().resource::<MinigameHud>().rung_hint.clone().unwrap();
+    assert!(h.shown(now), "still shown");
+    assert_eq!((h.title.as_deref(), h.fire, h.count), (Some("Grenade rung"), true, Some(4)));
+    // The fire button: a frag thrown (no gun to fire, no dry fire).
     let mut cursor = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();
-    let mut dry = 0;
-    for i in 0..(1.0 * sim.tick_hz()) as u32 {
-        sim.intent(a).fire = i % 10 < 5;
+    let (mut dry, mut thrown) = (0, false);
+    for i in 0..(0.8 * sim.tick_hz()) as u32 {
+        sim.intent(a).fire = i < 5;
         sim.ticks(1);
         dry += dry_fires(&sim, &mut cursor, a);
+        thrown |= frags_flying(&mut sim) > 0;
     }
     sim.intent(a).fire = false;
-    assert!(dry > 0, "the empty pistol's click");
-    assert_eq!(frags_flying(&mut sim), 0, "no throw on the fire button");
-    assert_eq!(hands(&sim, a).throw.counts, [4, 0]);
-    let now = sim.app.world().resource::<Time>().elapsed_secs_f64();
-    assert!(sim.app.world().resource::<MinigameHud>().rung_hint.as_ref().unwrap().shown(now), "the hint again on the dry fire");
-    // The grenade button: a frag thrown, given back.
+    assert_eq!(dry, 0, "no pistol to dry-fire");
+    assert!(thrown, "a frag in flight on the fire button");
+    assert_eq!(gun(&sim, a).0, 0, "the pistol's rounds stay 0");
+    sim.seconds(1.0);
+    assert_eq!(hands(&sim, a).throw.counts, [3, 0], "one spent");
+    assert_eq!(sim.app.world().resource::<MinigameHud>().rung_hint.as_ref().unwrap().count, Some(3), "the hint's count follows");
+    // The grenade button: a frag thrown too.
     let bit = grenade_bit(&sim);
     sim.intent(a).actions |= bit;
     let mut thrown = false;
@@ -210,6 +216,12 @@ fn the_hints_key_is_the_one_bound_now() {
     assert_eq!(rung_hint::bound_key(Some(&c), Some("halo_ce"), GRENADE_ACTION), "F");
     let v = rung_hint::RungHintView { key: "G".into(), verb: "throw".into(), ..default() };
     assert_eq!(v.text(), "Press G to throw");
+    // The grenade rung's: its title, the fire button's key, the count.
+    c.binds.insert("mouse1".into(), "+attack".into());
+    let fire = rung_hint::bound_key(Some(&c), Some("halo_ce"), "attack");
+    assert_eq!(fire, "LMB");
+    let v = rung_hint::RungHintView { key: "G".into(), verb: "throw".into(), fire_key: Some(fire), title: Some("Grenade rung".into()), count: Some(3), ..default() };
+    assert_eq!(v.text(), "Grenade rung - throw with [LMB] or [G]   x3");
 }
 
 /// The hint's place (`rung_hint::rect`, a generous 16 x 2.4 cq box)
@@ -276,30 +288,38 @@ fn rises(sim: &mut Sim, e: Entity, secs: f64) -> Vec<f64> {
 }
 
 #[test]
-fn four_throws_in_quick_succession_empty_the_hand_and_nothing_gives_one_back_at_once() {
+fn four_throws_in_quick_succession_and_nothing_gives_one_back_at_once() {
     let (mut sim, a) = holder(1.0 / 30.0);
     assert_eq!(frags(&sim, a), 4);
     let bit = grenade_bit(&sim);
-    let mut most = 4;
-    let mut at = None;
+    let every = refill();
+    let (mut thrown, mut last, mut first) = (0, 4, None::<f64>);
     for i in 0..(8.0 * sim.tick_hz()) as u32 {
         let down = (i / 8) % 2 == 0;
         let mut intent = sim.intent(a);
         intent.actions = if down { intent.actions | bit } else { intent.actions & !bit };
         drop(intent);
         sim.ticks(1);
-        most = most.min(frags(&sim, a));
-        if frags(&sim, a) == 0 && at.is_none() {
-            at = Some(i);
+        let t = i as f64 / sim.tick_hz();
+        let n = frags(&sim, a);
+        if n < last {
+            thrown += 1;
+            first.get_or_insert(t);
+        } else if n > last {
+            // A frag back: not before the supply's seconds from the first
+            // drop below the maximum.
+            let since = t - first.expect("a throw before");
+            assert!(since > every - 0.1, "one back {since} s after the first throw, wanted {every}");
         }
-        if at.is_some() {
+        last = n;
+        if thrown == 4 {
             break;
         }
     }
     sim.intent(a).actions &= !bit;
-    assert_eq!((most, frags(&sim, a)), (0, 0), "four thrown, none left");
-    let t = at.expect("emptied") as f64 / sim.tick_hz();
-    assert!(t < 5.0, "four thrown before the first returns: {t} s");
+    assert_eq!(thrown, 4, "four thrown");
+    let t = first.unwrap();
+    assert!(t < 1.0, "the first at once: {t} s");
 }
 
 #[test]
@@ -309,18 +329,27 @@ fn a_frag_returns_every_refill_seconds_up_to_the_maximum_and_no_further() {
     let r = rises(&mut sim, a, 24.0);
     assert_eq!(frags(&sim, a), 4);
     assert_eq!(r.len(), 4, "four returns and no more: {r:?}");
+    let every = refill();
     for (k, t) in r.iter().enumerate() {
-        let want = 5.0 * (k + 1) as f64;
+        let want = every * (k + 1) as f64;
         assert!((t - want).abs() < 0.1, "return {k} at {t}, wanted {want}");
         // None before the interval.
     }
     // From 3 (one thrown): one interval, not from the last throw.
     set_frags(&mut sim, a, 3);
-    sim.seconds(3.0);
+    sim.seconds(1.0);
     set_frags(&mut sim, a, 2);
-    let r = rises(&mut sim, a, 11.0);
+    let r = rises(&mut sim, a, 2.0 * every - 0.5);
     assert_eq!(r.len(), 2, "{r:?}");
-    assert!((r[0] - 2.0).abs() < 0.2 && (r[1] - 7.0).abs() < 0.2, "the interval runs from the drop below the maximum, not each throw: {r:?}");
+    assert!(
+        (r[0] - (every - 1.0)).abs() < 0.2 && (r[1] - (2.0 * every - 1.0)).abs() < 0.2,
+        "the interval runs from the drop below the maximum, not each throw: {r:?}"
+    );
+}
+
+/// The ladder's grenade supply for Halo's rung (s).
+fn refill() -> f64 {
+    chimera_sim::minigame::power::PowerCurve::shipped().grenade_supply.seconds_for(FRAG_RUNG) as f64
 }
 
 #[test]
@@ -328,7 +357,7 @@ fn the_refill_times_are_the_same_at_two_tick_rates() {
     let times = |dt: f64| {
         let (mut sim, a) = holder(dt);
         set_frags(&mut sim, a, 1);
-        rises(&mut sim, a, 16.0)
+        rises(&mut sim, a, 3.0 * refill() + 1.0)
     };
     let (slow, fast) = (times(1.0 / 30.0), times(0.015));
     assert_eq!((slow.len(), fast.len()), (3, 3), "{slow:?} {fast:?}");
@@ -358,4 +387,48 @@ fn arriving_on_the_rung_and_respawning_give_four() {
     sim.app.world_mut().get_mut::<chimera_core::core::Health>(a).unwrap().current = 100.0;
     sim.seconds(0.5);
     assert_eq!(frags(&sim, a), 4, "on respawning");
+}
+
+/// Another game's grenade rung paces by the same band rule
+/// (`ladder::NextThrow`): CS:S's HE comes back at once, but its next throw
+/// waits the supply's seconds from the last (heavy::grenade_rung_pace
+/// measures every game's).
+#[test]
+fn a_cs_grenade_rungs_next_throw_waits_the_bands_supply() {
+    const HE: &str = "cs_source:weapon_hegrenade";
+    let text = crate::play::ladder_text(&["cs_source:weapon_glock", HE, weapons::ASSAULT_RIFLE], false).replace(
+        "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
+        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"combat_arms\"]",
+    );
+    let mut sim = party_with(&text);
+    let a = soldier(&mut sim);
+    let _b = soldier(&mut sim);
+    sim.seconds(1.5);
+    set_rung(&mut sim, a, 1);
+    sim.app.world_mut().entity_mut(a).insert(chimera_core::core::God);
+    sim.seconds(1.5);
+    assert_eq!(held(&sim, a), Some(HE));
+    let supply = chimera_sim::minigame::power::PowerCurve::shipped().grenade_supply.seconds_for(HE) as f64;
+    let mut cursor = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();
+    let hz = sim.tick_hz();
+    let mut times = Vec::new();
+    for i in 0..(7.0 * hz) as u32 {
+        let t = i as f64 / hz;
+        {
+            let mut it = sim.intent(a);
+            it.pitch = -0.3;
+            it.fire = t % 0.2 < 0.15;
+        }
+        sim.ticks(1);
+        for m in cursor.read(sim.app.world().resource::<Messages<WeaponEvent>>()) {
+            if m.owner == a && !m.replay && matches!(m.kind, WeaponEventKind::Thrown) {
+                times.push(t);
+            }
+        }
+    }
+    sim.intent(a).fire = false;
+    assert!(times.len() >= 2, "thrown again: {times:?}");
+    for w in times.windows(2) {
+        assert!(w[1] - w[0] >= supply - 0.05, "the next throw waited the supply ({supply} s): {times:?}");
+    }
 }

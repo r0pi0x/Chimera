@@ -93,8 +93,18 @@
 //! fire there too (`OnRung` itself isn't replicated). Combat Arms' are the
 //! infection's moments.
 //! **A rung's hint** (`rung_hint`): a rung whose weapon's data declares one
-//! (opt-in, `rung_hint = { action, verb }`: Halo's grenade rung) shows its
-//! player "Press <key> to <verb>" (`minigame::hud::RungHint`).
+//! (opt-in, `rung_hint = { action, verb }`, with `title`, `fire`, `always`,
+//! `count`: Halo's grenade rung) shows its player "Press <key> to <verb>"
+//! ("Grenade rung - throw with [LMB] or [G]" and the count left:
+//! `minigame::hud::RungHint`).
+//! **The grenade band's supply** (with `refill_ammo`; the user, 2026-11-22:
+//! every game's grenade rung paces alike): a rung's engine grenade
+//! (`weapon::grenade::Throwable`) comes back at once (kept in the hand:
+//! `KeepSpent`), but its next pin waits the power curve's
+//! `[grenade_supply]` seconds for its game from the throw (`NextThrow`,
+//! `power::GrenadeSupply`); a game with its own supply reads the same
+//! seconds (Halo's rung). The server's: a client's prediction may start a
+//! pin the server holds back.
 //! The ladder gives the weapons, so nobody drops one at death
 //! (`weapon::drop::NoDeathDrops`). A rung's weapon is a `LoadoutWeapon`
 //! (given at each life and each swap), so a game gives it what its data
@@ -121,7 +131,8 @@
 //! melee_share = 0.07               # the share of the ladder "auto" takes (default: the
 //!                                  # power curve's melee share, 0.07; at least 1 rung)
 //! refill_ammo = true               # a rung's gun never runs dry, its grenade comes
-//!                                  # back once thrown (default: false)
+//!                                  # back once thrown, the next throw waiting the
+//!                                  # grenade band's supply seconds (default: false)
 //! rung_extras = true               # the games' per-rung draws (default: on); or by
 //!                                  # option: { attachments = false, character = true },
 //!                                  # or tuned: { attachments = { sight = 0.4 } }
@@ -159,7 +170,7 @@ use crate::{
     core::{DamageKind, Died, Score, Team},
     mode::{Death, DeathKind, Hooks, Match, Mode, NO_HOOKS, Teams, mode_is},
     weapon::{
-        Inventory, Magazine, Weapon,
+        Inventory, Magazine, Weapon, WeaponState,
         data::WeaponCatalog,
         give,
         grenade::{KeepSpent, Throwable},
@@ -598,6 +609,9 @@ pub struct Ladder {
     pub extras: Vec<Option<RungExtras>>,
     /// The definition's `rung_extras`.
     pub options: RungOptions,
+    /// The grenade band's supply with `refill_ammo` (its power curve's
+    /// `[grenade_supply]`).
+    pub grenade_supply: super::power::GrenadeSupply,
 }
 
 impl Ladder {
@@ -897,6 +911,7 @@ fn make(world: &World, def: &MinigameDef, say: bool) -> Option<Ladder> {
         melee_rungs,
         extras,
         options,
+        grenade_supply: curve(&p).unwrap_or_else(|_| super::power::PowerCurve::shipped()).grenade_supply,
     })
 }
 
@@ -1282,6 +1297,11 @@ fn follow_lead(
     }
 }
 
+/// On a grenade rung's grenade: no pin before this time (`SimClock`
+/// seconds), the band's supply from the last throw (`refill`).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct NextThrow(pub f64);
+
 /// With `refill_ammo`, a held rung gun's reserve is topped up every tick:
 /// the ladder gives each gun once, and a 200-round machine gun used up
 /// (misses count) would otherwise end the climb; a rung's grenade is
@@ -1290,7 +1310,8 @@ fn refill(
     ladder: Option<Res<Ladder>>,
     conditions: Option<Res<super::conditions::SandboxConditions>>,
     mut guns: Query<(&Weapon, &mut Magazine)>,
-    mut grenades: Query<(Entity, &Weapon, &mut Throwable, Has<KeepSpent>)>,
+    mut grenades: Query<(Entity, &Weapon, &mut Throwable, &mut WeaponState, Has<KeepSpent>, Option<&NextThrow>)>,
+    clock: Res<crate::core::SimClock>,
     mut commands: Commands,
 ) {
     let Some(ladder) = ladder else { return };
@@ -1306,7 +1327,10 @@ fn refill(
     }
     // A grenade rung's grenade comes back once thrown (kept in the hand
     // meanwhile: `KeepSpent`), so a player throws until a kill.
-    for (e, w, mut t, kept) in &mut grenades {
+    // The next one waits the band's supply seconds from the throw
+    // (`power::GrenadeSupply`): its pin no sooner (`NextThrow`).
+    let now = clock.now;
+    for (e, w, mut t, mut st, kept, next) in &mut grenades {
         if w.owner.is_none() || !rungs.contains(&w.id) {
             continue;
         }
@@ -1316,6 +1340,17 @@ fn refill(
         let full = t.max.max(1);
         if t.count < full {
             t.count = full;
+            let wait = ladder.grenade_supply.seconds_for(w.id) as f64;
+            if wait > 0.0 {
+                commands.entity(e).insert(NextThrow(now + wait));
+            }
+        }
+        if let Some(n) = next
+            && !t.pin
+            && t.throw_at.is_none()
+            && st.next_primary < n.0
+        {
+            st.next_primary = n.0;
         }
     }
 }

@@ -27,6 +27,7 @@ mod persist;
 // Slow ones (the user's installs): the fast tier skips `heavy::`.
 mod heavy {
     mod arena_bots;
+    mod grenade_rung_pace;
     mod halo_bots;
     mod halo_envelope;
     mod halo_gun_bots;

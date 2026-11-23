@@ -757,8 +757,8 @@ Y/U and Combat Arms' keys, docked in the lobby and the match end,
   crate).
 - Lucker Party keeps the games' chat until its theme turns the Signal
   HUD on.
-- The rung hint (key cap + verb, bottom centre, opt-in per rung) is a
-  first cut: review with the rest of the Signal look.
+- The rung hint (title, key caps, verb, count, bottom centre, opt-in per
+  rung) is a first cut: review with the rest of the Signal look.
 
 ### Spectators (user, 2026-11-14)
 
@@ -917,7 +917,6 @@ the original's own behaviour isn't a bug (say so instead).
   at most; the last rung is melee either way and its kill wins. The
   draw is the host's and replicated (`NetMinigame::rungs`). Docs/DESIGN.md
   "Gun game rules".
-- Grenade rungs' supply over time for every game (Halo's rung has its own timer: `refill_seconds`); make it the grenade band's rule in the ladder.
 - **The All-Star chainsaw's attached effects (user, 2026-10-29): done
   except what the spec doesn't say.** The attached groups and their
   looping sounds are made with the view model (`view_model::attached`,

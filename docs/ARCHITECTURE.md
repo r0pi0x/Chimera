@@ -423,10 +423,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   engine frame's hitscan command), and the plasma pistol's trigger as
   one that fires when released (`weapon::FiresOnRelease`), so the
   party's bots fire, pace, hear and tap every Halo rung gun.
-  Halo lends a grenade rung (`weapons::rung`): an empty pistol in hand
-  and frags on the grenade button by the grenade band's rule, shown as
-  the frag grenade; bots attack through `weapon::AttackAction`, and its
-  opt-in rung hint is the party overlay's (`client::rung_hint`).
+  Halo lends a grenade rung (`weapons::rung`): a frag in the pistol's
+  arms (`weapons::rung::IN_HAND`, composed by `view::load`) thrown on the
+  fire or grenade button by the grenade band's supply (the ladder's
+  `power::GrenadeSupply`), shown as the frag grenade; bots attack
+  through `weapon::AttackAction`, and its opt-in rung hint is the party
+  overlay's (`client::rung_hint`).
   Halo's movement takes the loaded map's movement envelope
   (`chimera_core::envelope`): on another game's map its pill is no
   wider or taller than that game's character and steps as high

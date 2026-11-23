@@ -2,7 +2,7 @@
 # user's choice of presentation): the pistol in hand with an empty
 # magazine and no reserve that nothing refills (its numbers, models and
 # animations are the pistol's: `base`), the frag grenades thrown with the
-# grenade button by a supply that comes back over time (refill_seconds). Its id is the
+# grenade button by a supply that comes back over time (the ladder's grenade supply). Its id is the
 # frag grenade's own (the kill feed's name and icon, the ladder's rung).
 # Halo's own app has no ladder and never hands it out.
 id = "halo_ce:frag_grenade"
@@ -17,21 +17,26 @@ name = "Frag Grenade"
 rounds_total_initial = 0
 rounds_total_maximum = 0
 
-# The party ladder's hint on its rung (opt-in, this rung only): the key of
-# Halo's grenade action and what it does.
+# The party ladder's hint on its rung (opt-in, this rung only), shown the
+# whole time there: "Grenade rung - throw with [LMB] or [G]" (the keys
+# bound to fire and to Halo's grenade action) and the frags left.
 [rung_hint]
+title = "Grenade rung"
 action = "grenade"
 verb = "throw"
+fire = true
+always = true
+count = true
 
 # Its attack: Halo's grenade action (the engine's `weapon::AttackAction`,
 # for the bots), the frag kind.
 [hooks."halo_ce:grenade_rung"]
 kind = "frag"
 action = "grenade"
+# The fire button throws too (there is no gun to fire).
+fire_throws = true
 # The most frags the holder has (arriving, and every new life, gives this
-# many).
+# many). One thrown comes back after the party ladder's grenade supply
+# seconds (chimera/sim/data/power_curve.toml, [grenade_supply]), one at a
+# time while the count is below `max`, so the rung cannot be spammed.
 max = 4
-# Seconds of simulation time for one thrown frag to come back, one at a
-# time while the count is below `max` (the party ladder's refill), so the
-# rung cannot be spammed.
-refill_seconds = 5.0

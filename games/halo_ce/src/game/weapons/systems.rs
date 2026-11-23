@@ -1029,6 +1029,10 @@ pub fn run(
             counts[grenades::PLASMA - k] = 0;
             if refill {
                 let max = r.max.min(grenades.throw.maximum[k]);
+                // The ladder's grenade supply for this game (`rung`).
+                let every = super::rung::refill_ticks(
+                    ladder.as_deref().zip(guns.get(w).ok()).map_or(0.0, |(l, (weapon, ..))| l.grenade_supply.seconds_for(weapon.id)),
+                );
                 if new_life || !r.given {
                     counts[k] = max;
                     r.ticks = 0;
@@ -1037,8 +1041,8 @@ pub fn run(
                         r.ticks = 0;
                     } else {
                         r.ticks += n;
-                        while r.ticks >= r.refill_ticks && counts[k] < max {
-                            r.ticks -= r.refill_ticks;
+                        while r.ticks >= every && counts[k] < max {
+                            r.ticks -= every;
                             counts[k] += 1;
                         }
                         if counts[k] >= max {
@@ -1057,12 +1061,15 @@ pub fn run(
                 hands.throw.counts = counts;
             }
         }
+        // The grenade rung's fire button throws while its weapon is in
+        // hand (`rung::GrenadeRung::fire_throws`): nothing to fire.
+        let fire_throws = rung.filter(|w| inv.active == Some(*w)).and_then(|w| rungs.get(w).ok()).is_some_and(|r| r.fire_throws);
         // The inputs seen since the last Halo tick.
-        latch_fire(inv, &mut guns, &mut hands, intent.fire);
+        latch_fire(inv, &mut guns, &mut hands, intent.fire && !fire_throws);
         hands.zoom |= intent.secondary || intent.actions & zoom_bit != 0;
         hands.melee_button |= intent.actions & melee_bit != 0;
         hands.reload |= intent.reload;
-        hands.grenade_button |= !no_grenades && grenade_bit != 0 && intent.actions & grenade_bit != 0;
+        hands.grenade_button |= !no_grenades && ((grenade_bit != 0 && intent.actions & grenade_bit != 0) || (fire_throws && intent.fire));
         hands.switch_button |= !no_grenades && rung.is_none() && switch_bit != 0 && intent.actions & switch_bit != 0;
         if n == 0 {
             continue;

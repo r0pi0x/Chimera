@@ -183,12 +183,24 @@ pub struct WeaponData {
     pub ammo: Option<AmmoData>,
 }
 
-/// `rung_hint`: the action (`core::ActionRegistry` name) and the verb.
+/// `rung_hint`: the action (`core::ActionRegistry` name) and the verb;
+/// optionally a title, the fire button named too (it does the same:
+/// Halo's grenade rung throws on it), shown the whole time on the rung
+/// rather than on arriving and on a dry fire, and the count of what is
+/// thrown (the held weapon's `Magazine::clip`).
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RungHintData {
     pub action: String,
     pub verb: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub fire: bool,
+    #[serde(default)]
+    pub always: bool,
+    #[serde(default)]
+    pub count: bool,
 }
 
 /// Buying it (`economy::Prices`).
