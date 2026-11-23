@@ -59,7 +59,7 @@ setting = [
   { label = "Mouse filter", cvar = "m_filter", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Acceleration", cvar = "m_customaccel", choices = [["0", "Off"], ["3", "On"]] },
   { section = "Third-person camera", label = "Shoulder", cvar = "chimera:cam_shoulder", choices = [["1", "Right"], ["-1", "Left"]], origin = "chimera", help = "The side the over-the-shoulder camera sits on (swap it in play with the Swap shoulder key). Servers decide whether third person is allowed." },
-  { label = "Camera distance", cvar = "chimera:cam_dist", range = [1.0, 4.0, 0.1], hard_min = 0.5, hard_max = 6, origin = "chimera", help = "How far behind your shoulder the camera sits, in metres for an average-sized character (taller or shorter bodies scale it). The keys for third person and the shoulder swap are under Keys, every game." },
+  { label = "Camera distance", cvar = "chimera:cam_dist", range = [1.0, 4.0, 0.1], hard_min = 0.5, hard_max = 6, origin = "chimera", help = "How far behind your shoulder the camera sits, in metres for an average-sized character (taller or shorter bodies scale it). The keys for third person, the shoulder swap and free look (hold to orbit the camera) are under Keys, every game." },
   { label = "Camera lag", cvar = "chimera:cam_smooth", range = [0.0, 0.3, 0.01], hard_min = 0, hard_max = 0.5, origin = "chimera", help = "How much the over-the-shoulder camera trails your character, in seconds (0: none). Aiming is never delayed." },
   { label = "Camera field of view", cvar = "chimera:cam_fov", range = [0, 120, 5], hard_min = 0, hard_max = 140, origin = "chimera", help = "The over-the-shoulder camera's field of view, in degrees (0: yours)." },
 ]

@@ -32,6 +32,9 @@ swap_secs = 0.15
 zoom_secs = 0.15
 ease_out_secs = 0.3
 transition_secs = 0.25
+# Free look (`+freelook`, Left Alt, held) orbits the camera about the
+# character; let go, it eases back behind the shoulder over these seconds.
+free_return_secs = 0.25
 # The body fades as the camera nears the eye: hidden at this distance from
 # it and whole again at the second, metres.
 fade_hidden = 0.45

@@ -72,11 +72,14 @@ pub const SHARED: &[Row] = &[
     // game leaves the key free (TF2's `+attack3` has it: unbound there).
     row("Third person (switch)", "chimera_toggle_thirdperson"),
     row("Swap shoulder", "chimera_shoulder"),
+    // Held: looks around without turning (Left Alt where the game leaves
+    // it free); in third person it orbits the camera about the character.
+    row("Free look (hold)", "+freelook"),
 ];
 
 /// Binds that are Chimera's additions (the original games have nothing
 /// like them): the Chimera mark and a line in the help pane.
-pub const OURS: &[&str] = &["chimera_toggle_thirdperson", "chimera_shoulder"];
+pub const OURS: &[&str] = &["chimera_toggle_thirdperson", "chimera_shoulder", "+freelook"];
 
 /// A number the page sets (a saved cvar): `-` and `+` buttons move it by
 /// `step` within `min..=max`.

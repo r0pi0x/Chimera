@@ -1050,7 +1050,10 @@ fn stage_bench(w: &mut World, what: &str) {
     // Each body may hold its game's staged guns (the Holds list).
     let mut chars = bench::staged_characters();
     for ch in &mut chars.0 {
-        ch.guns = STAGED.iter().filter(|g| game_name(g.2) == ch.game).map(|g| g.0.to_string()).collect();
+        // By the body's game id (its id's prefix): the names come from the
+        // registry, which a staging without the games lacks.
+        let game = ch.id.split(':').next().unwrap_or_default();
+        ch.guns = STAGED.iter().filter(|g| g.2 == game).map(|g| g.0.to_string()).collect();
     }
     w.insert_resource(chars);
     w.insert_resource(link::FakeBench::default());

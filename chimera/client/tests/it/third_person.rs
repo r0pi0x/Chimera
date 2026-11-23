@@ -7,7 +7,9 @@
 //! M2: the plugin on the kit: the glide to and from the eye, the dimmed
 //! crosshair and the target-ID ray while the marker shows, the recoil in
 //! the camera's look, the distances scaled with the eye height, the host's
-//! switch.
+//! switch. M5: held free look orbits the camera and leaves the aim, eases
+//! back when let go, and never leaves the eye where third person is
+//! forbidden.
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::RunSystemOnce, prelude::*};
@@ -431,4 +433,119 @@ fn the_data_file_gives_the_defaults_and_each_game_its_factors() {
     assert_eq!(s.game.dist, 2.0);
     let base = ShoulderSettings::default();
     assert!((s.tuned(&base).dist - base.dist * s.scale() * 2.0).abs() < 1e-5);
+}
+
+/// `client_scene` read from the mouse as the client reads it
+/// (`write_local_intent`), the cursor grabbed; `+freelook` held through
+/// the console's `HeldActions`.
+fn mouse_scene() -> (Sim, Entity) {
+    use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
+    use chimera_client::client::{
+        console::HeldActions,
+        input::{LocalInputSystems, MouseSettings, WheelJump, write_local_intent},
+        view::FreeCam,
+    };
+    let (mut sim, shooter, _) = client_scene(10.0);
+    sim.app
+        .init_resource::<ButtonInput<KeyCode>>()
+        .init_resource::<ButtonInput<MouseButton>>()
+        .init_resource::<AccumulatedMouseMotion>()
+        .init_resource::<AccumulatedMouseScroll>()
+        .init_resource::<MouseSettings>()
+        .init_resource::<WheelJump>()
+        .init_resource::<FreeCam>()
+        .init_resource::<HeldActions>()
+        .add_systems(RunFixedMainLoop, write_local_intent.in_set(LocalInputSystems::Write));
+    sim.app.world_mut().spawn(bevy::window::CursorOptions {
+        grab_mode: bevy::window::CursorGrabMode::Locked,
+        ..default()
+    });
+    (sim, shooter)
+}
+
+/// Hold or let go of `+freelook`, and move the mouse `counts` this tick.
+fn free_look(sim: &mut Sim, held: bool, counts: Vec2) {
+    sim.app.world_mut().resource_mut::<chimera_client::client::console::HeldActions>().freelook = held;
+    sim.app.world_mut().resource_mut::<bevy::input::mouse::AccumulatedMouseMotion>().delta = counts;
+    sim.ticks(1);
+    sim.app.world_mut().resource_mut::<bevy::input::mouse::AccumulatedMouseMotion>().delta = Vec2::ZERO;
+}
+
+/// The camera placed as `follow_eye` places it (with the free look's
+/// offset), relative to the shooter's origin, if drawn.
+fn placed(sim: &mut Sim, shooter: Entity) -> Option<(Vec3, Quat)> {
+    let origin = sim.position(shooter);
+    let eye_off = sim.state(shooter).eye_offset;
+    let free = *sim.app.world().resource::<FreeLook>();
+    sim.app
+        .world_mut()
+        .run_system_once(move |mut view: ShoulderView, spatial: SpatialQuery| {
+            let filter = SpatialQueryFilter::from_excluded_entities([shooter]).with_mask(CHARACTER_FILTER);
+            view.place(origin, eye_off, Quat::IDENTITY, Quat::IDENTITY, Vec3::ZERO, Vec2::new(free.yaw, free.pitch), &spatial, &filter)
+        })
+        .unwrap()
+}
+
+#[test]
+fn free_look_orbits_the_camera_leaves_the_aim_and_eases_back() {
+    let (mut sim, shooter) = mouse_scene();
+    third_person(&mut sim, true);
+    for _ in 0..40 {
+        sim.ticks(1);
+        placed(&mut sim, shooter);
+    }
+    let (rest, rest_look) = placed(&mut sim, shooter).expect("on the shoulder");
+    let aim = sim.intent(shooter).clone();
+    let look = sim.app.world().resource::<Shoulder>().look;
+    // Held: the mouse swings the camera a long way round.
+    free_look(&mut sim, true, Vec2::new(-4000.0, 0.0));
+    for _ in 0..10 {
+        free_look(&mut sim, true, Vec2::ZERO);
+        placed(&mut sim, shooter);
+    }
+    let free = *sim.app.world().resource::<FreeLook>();
+    assert!(free.yaw.abs() > 1.0, "the mouse turned the free look: {free:?}");
+    let i = sim.intent(shooter).clone();
+    assert_eq!((i.yaw, i.pitch), (aim.yaw, aim.pitch), "the aim doesn't turn");
+    let s = sim.app.world().resource::<Shoulder>().clone();
+    assert_eq!(s.look, look, "the shoulder camera's own look doesn't turn");
+    assert!(s.orbiting() && s.blocked.is_none() && s.dim > 0.5, "the crosshair dims: {}", s.dim);
+    assert!(s.side.abs() < 1e-3, "centred over the character: {}", s.side);
+    let (orbit, orbit_look) = placed(&mut sim, shooter).unwrap();
+    assert!(orbit_look.angle_between(rest_look) > 1.0, "the camera looks another way");
+    let eye = sim.state(shooter).eye_offset;
+    assert!(orbit.distance(rest) > 1.0, "orbited round the character: {orbit} from {rest}");
+    assert!(orbit.distance(eye) > 1.0, "still off the body: {orbit}");
+    // Let go: no snap; it eases back behind the shoulder.
+    free_look(&mut sim, false, Vec2::ZERO);
+    let (mid, _) = placed(&mut sim, shooter).unwrap();
+    assert!(mid.distance(rest) > 0.1 && sim.app.world().resource::<Shoulder>().orbiting(), "easing back: {mid}");
+    for _ in 0..40 {
+        sim.ticks(1);
+        placed(&mut sim, shooter);
+    }
+    let (back, back_look) = placed(&mut sim, shooter).unwrap();
+    let s = sim.app.world().resource::<Shoulder>().clone();
+    assert!(!s.orbiting() && s.free_back.is_none());
+    assert!(back.distance(rest) < 0.02 && back_look.angle_between(rest_look) < 1e-3, "behind the shoulder again: {back} vs {rest}");
+    let i = sim.intent(shooter).clone();
+    assert!((i.yaw - aim.yaw).abs() < 1e-4 && (i.pitch - aim.pitch).abs() < 1e-4, "aiming where it did");
+}
+
+#[test]
+fn free_look_never_leaves_the_eye_where_third_person_is_forbidden() {
+    let (mut sim, shooter) = mouse_scene();
+    sim.app.insert_resource(NetRole::Client);
+    third_person(&mut sim, true);
+    sim.seconds(0.5);
+    let aim = sim.intent(shooter).clone();
+    free_look(&mut sim, true, Vec2::new(-4000.0, 0.0));
+    for _ in 0..10 {
+        free_look(&mut sim, true, Vec2::ZERO);
+    }
+    assert!(sim.app.world().resource::<FreeLook>().yaw.abs() > 1.0, "first person's free look about the eye");
+    assert!(placed(&mut sim, shooter).is_none(), "no orbiting camera");
+    let s = sim.app.world().resource::<Shoulder>();
+    assert!(!s.drawn() && !s.orbiting());
+    assert_eq!(sim.intent(shooter).yaw, aim.yaw, "the aim doesn't turn");
 }

@@ -770,7 +770,11 @@ pub fn end_local_frame(mut latch: ResMut<KeyLatch>, mut keys: ResMut<MoveKeys>) 
 
 /// Free look: while Left Alt (or `+freelook`) is held, the mouse turns
 /// only the camera, by these offsets (radians) from the aim; movement and
-/// aim keep their direction. Released, the view snaps back to the aim.
+/// aim keep their direction (W walks where the character faces). Released,
+/// the first-person view snaps back to the aim; the third-person camera,
+/// which orbits the character meanwhile (centred over it), eases back
+/// behind the shoulder (`third_person::Shoulder::ease_free`). Only where
+/// third person is allowed: elsewhere it stays the eye's free look.
 #[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
 pub struct FreeLook {
     pub yaw: f32,
@@ -914,7 +918,9 @@ pub fn write_local_intent(
     let zoom = mouse_settings.zoomed_scale(zoomed.iter().next()) * shoulder.zoom_scale(&mouse_settings);
     let turn = mouse_settings.look_delta(motion_counts) * zoom;
     if freelook {
-        free.turn(turn, intent.pitch);
+        // About the shoulder camera's look when it's on, else the aim's.
+        let base = shoulder.turning().map_or(intent.pitch, |l| l.y);
+        free.turn(turn, base);
     } else if let Some(look) = shoulder.turning() {
         // The shoulder camera: the mouse turns the camera; the aim follows
         // the crosshair (`third_person::aim_through_crosshair`).

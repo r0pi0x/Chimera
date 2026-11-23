@@ -54,6 +54,14 @@
 //!   never smoothed, so the aim stays one-to-one. A gun's scope
 //!   (`Zoomed::scope`) takes the view to first person at once, for its
 //!   overlay, and the camera glides back when it ends.
+//! - **Free look** (`+freelook`, Left Alt, held; rebindable in Controls).
+//!   The mouse orbits the camera about the character (centred over it, the
+//!   spring arm's sweeps as ever) and turns nothing else: the aim and the
+//!   character's facing stay put, and the move keys walk along that facing.
+//!   The crosshair dims and the marker hides (the camera isn't aiming).
+//!   Let go, the camera eases back behind the shoulder
+//!   (`Shoulder::ease_free`, `free_return_secs`). Where third person isn't
+//!   allowed it is first person's free look about the eye.
 //! - **Data** (M4). `data/third_person_camera.toml` holds the defaults
 //!   (`ShoulderSettings::default`), the marker's look and each game's
 //!   factors on the distances (`CameraData::games`); the archived cvars
@@ -123,6 +131,9 @@ pub struct ShoulderSettings {
     pub ease_out_secs: f32,
     /// First to third person and back: the camera's glide, seconds.
     pub transition_secs: f32,
+    /// Free look let go: seconds the camera takes to ease back behind the
+    /// shoulder.
+    pub free_return_secs: f32,
     /// The body fades as the camera nears the eye: hidden at this distance
     /// from it and whole again at `fade_whole`, metres for a character of
     /// `REF_EYE` (scaled with the eye height).
@@ -296,6 +307,11 @@ pub struct Shoulder {
     pub follow: Option<(Vec3, Vec3)>,
     /// The game's factors on the distances (`CameraData::games`).
     pub game: GameCamera,
+    /// Free look (`+freelook` held): the camera's orbit about the
+    /// character as drawn (yaw, pitch offsets from `look`, radians), and,
+    /// once let go, the offset it eases back from and the seconds since.
+    pub free: Vec2,
+    pub free_back: Option<(Vec2, f32)>,
 }
 
 impl Shoulder {
@@ -319,6 +335,39 @@ impl Shoulder {
             up: s.up * self.game.up,
             ..s
         }
+    }
+
+    /// Free look orbits the camera (held, or easing back): the crosshair
+    /// isn't the aim then.
+    pub fn orbiting(&self) -> bool {
+        self.free != Vec2::ZERO
+    }
+
+    /// The free look's orbit drawn this frame, given the held offset
+    /// (`input::FreeLook`; zero when let go): it follows the held one at
+    /// once; let go, it eases back to zero over `secs` (smoothstep).
+    pub fn ease_free(&mut self, held: Vec2, secs: f32, dt: f32) -> Vec2 {
+        if held != Vec2::ZERO {
+            self.free = held;
+            self.free_back = None;
+            return held;
+        }
+        if self.free == Vec2::ZERO {
+            self.free_back = None;
+            return Vec2::ZERO;
+        }
+        let (from, t) = self.free_back.unwrap_or((self.free, 0.0));
+        let t = t + dt;
+        if secs <= 0.0 || t >= secs {
+            self.free = Vec2::ZERO;
+            self.free_back = None;
+            return Vec2::ZERO;
+        }
+        let k = t / secs;
+        let k = k * k * (3.0 - 2.0 * k);
+        self.free = from * (1.0 - k);
+        self.free_back = Some((from, t));
+        self.free
     }
 
     /// The look as a rotation.
@@ -513,6 +562,18 @@ impl Plugin for ThirdPersonPlugin {
 }
 
 fn console(app: &mut App) {
+    // Scenes and scripts have no mouse: turn the held free look by degrees.
+    app.console_command(
+        "chimera:freelook_turn",
+        "chimera:freelook_turn <yaw> <pitch>: turn the free look by degrees (while +freelook is held; for scenes).",
+        |w, a| {
+            let deg = |i: usize| a.get(i).and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0).to_radians();
+            let mut f = w.resource_mut::<super::input::FreeLook>();
+            f.yaw = (f.yaw + deg(0) + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+            f.pitch = (f.pitch + deg(1)).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+            Ok(None)
+        },
+    );
     app.console_command("chimera:shoulder", "Swap the third-person camera's shoulder.", |w, _| {
         let mut s = w.resource_mut::<ShoulderSettings>();
         s.shoulder = if s.shoulder < 0 { 1 } else { -1 };
@@ -665,6 +726,8 @@ fn update_shoulder(
             s.aim_point = None;
             s.ray = None;
             s.dim = 0.0;
+            s.free = Vec2::ZERO;
+            s.free_back = None;
         }
         return;
     }
@@ -699,7 +762,14 @@ fn update_shoulder(
         }
     }
     s.on = true;
-    let to_side = if settings.shoulder < 0 { -1.0 } else { 1.0 };
+    // Free look orbits about the character: the camera centres over it.
+    let to_side = if s.orbiting() {
+        0.0
+    } else if settings.shoulder < 0 {
+        -1.0
+    } else {
+        1.0
+    };
     s.side = step(s.side, to_side, settings.swap_secs, 2.0);
 }
 
@@ -769,6 +839,8 @@ impl ShoulderView<'_> {
             s.follow = None;
             return None;
         }
+        // Free look: the held orbit, or easing back once let go.
+        let free = s.ease_free(free, settings.free_return_secs, dt);
         let look = if s.orbit {
             orbit_look
         } else {
@@ -890,7 +962,11 @@ fn draw_marker(
     let mut shown = None;
     let mut aim = None;
     let mut ray = None;
+    // Free look: the camera isn't aiming, so no marker or crosshair ray
+    // (the crosshair dims instead).
+    let orbiting = state.orbiting();
     if state.on
+        && !orbiting
         && let Some((me, at, intent, ms, inv)) = player.as_deref().copied()
         && let Some((cam, t)) = camera.iter().next()
     {
@@ -919,7 +995,7 @@ fn draw_marker(
         state.ray = ray;
     }
     // The crosshair dims while the marker shows.
-    let dim = shown.is_some() as u8 as f32;
+    let dim = (shown.is_some() || (state.on && orbiting)) as u8 as f32;
     let rate = time.delta_secs() * 8.0;
     let eased = state.dim + (dim - state.dim).clamp(-rate, rate);
     if eased != state.dim {

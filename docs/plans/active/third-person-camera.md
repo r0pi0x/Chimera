@@ -205,6 +205,18 @@ camera's ray through the crosshair first hits.
       such setting).
 - [ ] The sandbox's `ThirdPerson` condition turns on the new style.
 
+### M5. Free look (2026-11-23)
+
+- [x] Held `+freelook` (Left Alt, Chimera's bind where the game leaves
+      the key free; "Free look (hold)" under Controls, Keys, every game):
+      the mouse orbits the camera about the character, centred over it,
+      with the spring arm's sweeps. The aim and the character's facing
+      don't turn; the move keys walk along that facing (as PUBG's free
+      look). The crosshair dims and the marker hides. Let go, the camera
+      eases back behind the shoulder (`free_return_secs`, 0.25 s). Where
+      third person isn't allowed it stays first person's free look about
+      the eye. Scenario tests in `chimera/client/tests/it/third_person.rs`.
+
 ## 4. Tests and checks
 
 Unit tests (pure functions, in `client/view.rs` or a new
@@ -315,7 +327,15 @@ crate. Left: a playtest, the sandbox's `ThirdPerson` condition (it sets
 the same mode flag, so it already shows the shoulder camera; not
 separately tested).
 
+2026-11-23 (M5): free look in third person (`Shoulder::ease_free`).
+
 ## Decision log
+
+2026-11-23: free look's key is the existing `+freelook` (Left Alt):
+section 5 already reserved Left Alt for it, and PUBG, the genre's
+precedent, free-looks on Alt. Movement keeps going along the character's
+facing rather than stopping (PUBG's; and first person's `+freelook`
+already worked so). Section 5.6's look at any player's model stays later.
 
 2026-11-21: the user's answers (section 5): middle mouse swaps, right
 mouse taps to the gun's zoom and holds for the camera's, off on servers
