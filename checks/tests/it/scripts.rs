@@ -747,3 +747,103 @@ fn post_push_idle_period_then_one_push_is_not_stale() {
     assert!(!inbox.contains("STALE"), "{inbox}");
     fs::remove_dir_all(&pp.root).ok();
 }
+
+fn git(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_COMMON_DIR")
+        .env_remove("GIT_PREFIX")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .output()
+        .expect("run git");
+    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+fn acquire(repo_dir: &Path, slots: &Path, args: &[&str]) -> (bool, String, String) {
+    let out = Command::new("bash")
+        .arg(repo_dir.join("tools/agent-slot.sh"))
+        .arg("acquire")
+        .args(args)
+        .env("AGENT_SLOTS", "1")
+        .env("AGENT_SLOTS_DIR", slots)
+        .output()
+        .expect("run agent-slot.sh");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).trim().to_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// `acquire` fetches origin and puts the slot at origin/main (not the
+/// stale local main), leaves a branch with unpushed commits alone, and
+/// refuses a slot with uncommitted changes instead of discarding them.
+#[test]
+fn acquire_puts_the_slot_at_origin_main_and_never_discards_work() {
+    let root = temp("acquire");
+    let origin = root.join("origin.git");
+    let work = root.join("work");
+    let clone = root.join("clone");
+    let slots = root.join("slots");
+    fs::create_dir_all(&origin).unwrap();
+    git(&origin, &["init", "-q", "--bare", "-b", "main"]);
+    fs::create_dir_all(&work).unwrap();
+    git(&work, &["init", "-q", "-b", "main"]);
+    git(&work, &["remote", "add", "origin", origin.to_str().unwrap()]);
+    fs::create_dir_all(work.join("tools")).unwrap();
+    fs::copy(repo().join("tools/agent-slot.sh"), work.join("tools/agent-slot.sh")).unwrap();
+    fs::write(work.join("f"), "1").unwrap();
+    git(&work, &["add", "."]);
+    git(&work, &["commit", "-qm", "one"]);
+    git(&work, &["push", "-q", "origin", "main"]);
+    git(root.as_path(), &["clone", "-q", origin.to_str().unwrap(), clone.to_str().unwrap()]);
+    // origin moves ahead; the clone's main stays stale.
+    fs::write(work.join("f"), "2").unwrap();
+    git(&work, &["commit", "-qam", "two"]);
+    git(&work, &["push", "-q", "origin", "main"]);
+    let ahead = git(&work, &["rev-parse", "--short", "HEAD"]);
+
+    let (ok, path, said) = acquire(&clone, &slots, &["b1"]);
+    assert!(ok, "{said}");
+    assert_eq!(git(Path::new(&path), &["rev-parse", "--short", "HEAD"]), ahead, "{said}");
+    assert!(said.contains(&ahead), "prints the HEAD: {said}");
+    let slot = PathBuf::from(path);
+    let release = |slot: &Path| {
+        let out = Command::new("bash")
+            .arg(clone.join("tools/agent-slot.sh"))
+            .args(["release", slot.to_str().unwrap()])
+            .env("AGENT_SLOTS_DIR", &slots)
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+    };
+
+    // Unpushed work on the branch: left as it is.
+    fs::write(slot.join("g"), "x").unwrap();
+    git(&slot, &["add", "g"]);
+    git(&slot, &["commit", "-qm", "local"]);
+    let mine = git(&slot, &["rev-parse", "--short", "HEAD"]);
+    release(&slot);
+    let (ok, _, said) = acquire(&clone, &slots, &["b1"]);
+    assert!(ok, "{said}");
+    assert_eq!(git(&slot, &["rev-parse", "--short", "HEAD"]), mine, "{said}");
+    assert!(said.contains("unpushed"), "{said}");
+
+    // Uncommitted changes of a previous holder: refused, files untouched.
+    fs::write(slot.join("f"), "dirty").unwrap();
+    release(&slot);
+    let (ok, _, said) = acquire(&clone, &slots, &["b2"]);
+    assert!(!ok, "refused: {said}");
+    assert!(said.contains("uncommitted"), "{said}");
+    assert_eq!(fs::read_to_string(slot.join("f")).unwrap(), "dirty");
+    fs::remove_dir_all(&root).ok();
+}

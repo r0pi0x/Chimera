@@ -16,14 +16,17 @@
 #
 # acquire takes a free slot (flock): the one that last held <branch>,
 # else the one whose build is warmest for it (the fewest Rust files and
-# manifests differing from [base], the branch or origin/main; a lockfile
+# manifests differing from where the branch will start; a lockfile
 # or workspace-settings difference counts as nearly cold; then the most
-# recent build), and says how warm it is; it creates its worktree the first time,
-# and checks out <branch>: reset to [base] when given (`git checkout -B`),
-# else the existing branch, else a new branch from main. What a previous
-# holder left uncommitted is saved as a patch next to the slots
-# (<slots>/slotN-discarded-<time>.patch), then the slot is reset and
-# cleaned (untracked files go; ignored ones, target/, stay). release
+# recent build), and says how warm it is; it creates its worktree the first time.
+# It fetches origin first, so the branch is never at a stale main: it
+# starts at [base] (origin/<base> if that exists), else origin/<branch> if
+# it exists, else origin/main (`git checkout -B`). A local <branch> holding
+# commits no origin ref has (unpushed work) is left as it is, with a
+# message. A slot with uncommitted changes (from a previous holder) is
+# never taken: acquire skips it for a clean free one, and refuses when
+# none is left (commit or clean it). Untracked files of a clean slot go;
+# ignored ones, target/, stay. The resulting HEAD is printed. release
 # detaches HEAD (the branch can then be checked out or deleted elsewhere)
 # and frees the slot. A slot is held until released: `status` shows who
 # holds which, `release slotN` frees one whose agent is gone.
@@ -41,6 +44,9 @@
 # when they are past it. A target a running cargo holds (a flock on its
 # .cargo-lock files) is left alone. `trim` does it too.
 set -euo pipefail
+# Run from a git hook (pre-push), git leaves GIT_DIR and friends set: they
+# would point every `git -C` below at the hook's repository.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 common=$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)
 repo=$(dirname "$common")
@@ -171,14 +177,25 @@ warmth() {
 }
 
 acquire() {
-  local branch=${1:-} base=${2:-} slot="" name i rev w ws wb best_s=0 best_b=0 warm="" size=0
+  local branch=${1:-} base=${2:-} slot="" name i rev w ws wb best_s=0 best_b=0 warm="" size=0 start unpushed=""
+  local -a dirty=()
   [ -n "$branch" ] || { say "usage: agent-slot.sh acquire <branch> [base]"; exit 2; }
-  # What the branch will build: the base, the branch, else main (the
-  # remote's, which agents merge first, when this clone has it).
-  if [ -n "$base" ]; then rev=$base
-  elif git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then rev=$branch
-  elif git -C "$repo" rev-parse --verify --quiet origin/main >/dev/null; then rev=origin/main
-  else rev=main; fi
+  # Fetch origin so nothing starts at a stale main, then the ref the
+  # branch starts from (origin's, when there is one): what it will build.
+  if ! git -C "$repo" fetch --quiet origin 2>/dev/null; then
+    say "could not fetch origin: using the refs as they are"
+  fi
+  ref_of() {
+    if git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/$1"; then echo "origin/$1"; else echo "$1"; fi
+  }
+  if [ -n "$base" ]; then
+    start=$(ref_of "$base")
+  elif git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+    start="origin/$branch"
+  else
+    start=$(ref_of main)
+  fi
+  rev=$start
   # Pick and mark a free slot under the lock: the one that last held
   # this branch, else the warmest for it (fewest differing files, then
   # the most recent build).
@@ -186,6 +203,10 @@ acquire() {
     flock 9
     for i in $(seq 1 "$count"); do
       [ -e "$slots_dir/slot$i.lock" ] && continue
+      if [ -e "$slots_dir/slot$i/.git" ] && [ -n "$(git -C "$slots_dir/slot$i" status --porcelain 2>/dev/null)" ]; then
+        dirty+=("slot$i")
+        continue
+      fi
       w=$(warmth "$slots_dir/slot$i" "$rev")
       ws=${w%% *} wb=$(cut -d' ' -f2 <<<"$w")
       if [ "$(cat "$slots_dir/slot$i.last" 2>/dev/null)" = "$branch" ]; then
@@ -194,6 +215,11 @@ acquire() {
         slot="$slots_dir/slot$i" warm=$w best_s=$ws best_b=$wb
       fi
     done
+    if [ -z "$slot" ] && [ ${#dirty[@]} -gt 0 ]; then
+      say "free slots with uncommitted changes (${dirty[*]}): refusing to discard them."
+      say "commit or move the work in $slots_dir/${dirty[0]} (git -C there status), then retry"
+      exit 1
+    fi
     if [ -z "$slot" ]; then
       say "all $count slots are held (AGENT_SLOTS raises the count):"
       status >&2
@@ -206,28 +232,24 @@ acquire() {
   trap 'rm -f "$slot.lock"; say "could not prepare $name; freed it"' ERR
   if [ ! -e "$slot/.git" ]; then
     say "creating $name (its first build is a cold one)"
-    git -C "$repo" worktree add --quiet --detach "$slot" "${base:-main}"
+    git -C "$repo" worktree add --quiet --detach "$slot" "$start"
   fi
-  if [ -n "$(git -C "$slot" status --porcelain 2>/dev/null)" ]; then
-    local patch
-    patch="$slots_dir/$name-discarded-$(date -u +%Y%m%dT%H%M%SZ).patch"
-    { git -C "$slot" status --short; git -C "$slot" diff HEAD; } >"$patch" || true
-    say "$name had uncommitted changes: saved to $patch, discarding them"
+  if [ -z "$base" ] && git -C "$slot" show-ref --verify --quiet "refs/heads/$branch"; then
+    unpushed=$(git -C "$slot" rev-list --count "refs/heads/$branch" --not --remotes=origin)
   fi
   git -C "$slot" reset --quiet --hard
   git -C "$slot" clean -fdq
-  if [ -n "$base" ]; then
-    git -C "$slot" checkout --quiet -B "$branch" "$base"
-  elif git -C "$slot" show-ref --verify --quiet "refs/heads/$branch"; then
+  if [ "${unpushed:-0}" -gt 0 ]; then
     git -C "$slot" checkout --quiet "$branch"
+    say "$branch has $unpushed unpushed commit(s): left as it is (not moved to $start)"
   else
-    git -C "$slot" checkout --quiet -B "$branch" main
+    git -C "$slot" checkout --quiet -B "$branch" "$start"
   fi
   trap - ERR
   echo "$branch" >"$slot.last"
   trim_slot "$slot"
   size=$(target_gb "$slot")
-  say "$name holds $branch at $(git -C "$slot" log -1 --format='%h %s' | cut -c1-70)"
+  say "$name holds $branch HEAD $(git -C "$slot" log -1 --format='%h %s' | cut -c1-70)"
   # How warm it was for the branch (before the checkout), and what to do
   # when it's cold: a long build runs in the background.
   case "${warm%% *}" in
@@ -248,7 +270,7 @@ release() {
   name=$(basename "$slot")
   if [ -e "$slot/.git" ]; then
     if [ -n "$(git -C "$slot" status --porcelain 2>/dev/null)" ]; then
-      say "$name has uncommitted changes; the next acquire saves them as a patch and discards them"
+      say "$name has uncommitted changes; the next acquire skips this slot (and refuses when no clean one is free) until they are committed or removed"
     else
       git -C "$slot" checkout --quiet --detach
     fi

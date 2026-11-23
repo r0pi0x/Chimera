@@ -2069,11 +2069,14 @@ files and manifests differing between the slot's last commit and the
 base, the branch or `origin/main`; a lockfile or workspace-settings
 difference counts as nearly cold; then the most recent build of
 `target/debug/deps`), and prints how warm it is ("warm, built at abc123,
-2 h ago; 14 Rust files or manifests differ", "lukewarm" or "cold"). It creates its worktree the first time, saves whatever a
-previous holder left uncommitted as `.claude/slots/slotN-discarded-*.patch`,
-resets and cleans it (ignored files, `target/`, stay) and checks out the
-branch: reset to `base` when given (`git checkout -B`), else the existing
-branch, else a new one from main. Only the files that differ from the
+2 h ago; 14 Rust files or manifests differ", "lukewarm" or "cold"). It fetches origin and creates its worktree the first time. It skips
+a slot a previous holder left with uncommitted changes (and refuses,
+naming the slot, when no clean one is free: nothing is discarded),
+cleans the slot (ignored files, `target/`, stay) and puts the branch at
+`origin/<base>` when `base` is given, else at `origin/<branch>` if that
+exists, else a new branch at `origin/main`; a local branch with
+unpushed commits is left as it is, with a message. It prints the
+resulting HEAD. Only the files that differ from the
 previous holder's get new mtimes, so cargo rebuilds just the crates they
 touch. `release` detaches HEAD (the branch can be merged or deleted
 elsewhere) and frees the slot; a slot stays held until then (`release
