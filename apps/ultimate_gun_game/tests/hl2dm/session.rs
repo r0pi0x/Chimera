@@ -132,8 +132,10 @@ fn steady(w: &Work) -> f64 {
 /// main test's history).
 const ARCHETYPES_PINNED: usize = 950;
 const LATER_PINNED: usize = 40;
-/// The same with every game's ladders (943 and 34).
-const ARCHETYPES_EVERY_GAME: usize = 1_000;
+/// The same with every game's ladders (943 and 34 with five games; 1026
+/// and 16 with DoD:S the sixth, 2026-11-23: a game's guns and bodies
+/// add their own, made in the first matches).
+const ARCHETYPES_EVERY_GAME: usize = 1_100;
 const LATER_EVERY_GAME: usize = 60;
 /// Characters' archetypes made after the fourth match (none now): a
 /// character's parts, kept on or moved together, visit a set that stops

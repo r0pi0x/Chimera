@@ -127,6 +127,11 @@ fn since(sim: &NetSim, i: usize, from: usize) -> Vec<String> {
 /// Client `a`'s character kills client `b`'s on the server, once `b` is
 /// back and unprotected.
 fn kill(sim: &mut NetSim, a: usize, b: usize) {
+    kill_with(sim, a, b, DamageKind::Bullet);
+}
+
+/// `kill` by damage of `kind` (a melee one wins on a knife-only last rung).
+fn kill_with(sim: &mut NetSim, a: usize, b: usize, kind: DamageKind) {
     let (ea, eb) = (sim.character_of(a).unwrap(), sim.character_of(b).unwrap());
     assert!(
         step_until(sim, 900, |s| {
@@ -143,7 +148,7 @@ fn kill(sim: &mut NetSim, a: usize, b: usize) {
         point: at,
         dir: Vec3::NEG_Z,
         hitgroup: Hitgroup::Head,
-        kind: DamageKind::Bullet,
+        kind,
         weapon: None,
         force: Vec3::ZERO,
     });
@@ -220,12 +225,13 @@ fn the_lobby_and_countdown_cues_reach_each_client_once() {
     // (through the pass); the plain tick is the vote's below.
     step_until(&mut sim, 700, |s| (0..2).all(|i| count(s, i, "count_go") == 1));
     step(&mut sim, 20);
+    // The map vote's last seconds may tick (a plain `count_tick`) while
+    // the players ready, by how long their loading took; only the
+    // countdown's own cues are compared here.
     for i in 0..2 {
-        assert_eq!(
-            played(&sim, i)[3..],
-            ["count_tick_3", "count_tick_2", "count_tick_1", "pass_sweep", "count_go"],
-            "client {i}"
-        );
+        let all = played(&sim, i);
+        let cues: Vec<&String> = all[3..].iter().filter(|c| *c != "count_tick").collect();
+        assert_eq!(cues, ["count_tick_3", "count_tick_2", "count_tick_1", "pass_sweep", "count_go"], "client {i}");
     }
 }
 
@@ -252,7 +258,9 @@ fn the_match_end_and_vote_cues_reach_each_client_once() {
     ladder::set_rung(sim.server.app.world_mut(), a, l.rungs.len() - 1, &l);
     step(&mut sim, 60);
     let from = (played(&sim, 0).len(), played(&sim, 1).len());
-    kill(&mut sim, 0, 1);
+    // The last rung may be a knife-only one (the ladder's draw): its win
+    // needs a melee kill.
+    kill_with(&mut sim, 0, 1, DamageKind::Melee);
     // The match end comes up with its vote on both clients (through the
     // logo pass); then both vote (so it closes early), client 1 for the second map.
     let shown = |s: &mut NetSim| {
