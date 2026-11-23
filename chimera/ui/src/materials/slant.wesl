@@ -18,6 +18,10 @@ import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 // leans with the slant (0/1) even where the fill's own edges are upright:
 // only while that side clips.
 @group(1) @binding(4) var<uniform> stroke: vec4<f32>;
+// x: a hatch's period in physical px along the row (0: no hatch), y: the
+// share of a period that is lit (0-1), z: the pattern's offset to the right
+// (physical px), w: unused. Stripes lean with the slant.
+@group(1) @binding(5) var<uniform> hatch: vec4<f32>;
 
 @fragment
 fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
@@ -46,6 +50,13 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
         let inner = clamp((p.x - a) * c - k + 0.5, 0.0, 1.0) * clamp((b - p.x) * c - k + 0.5, 0.0, 1.0)
             * clamp(p.y - k + 0.5, 0.0, 1.0) * clamp(h - p.y - k + 0.5, 0.0, 1.0);
         cov_out = cov * (1.0 - inner);
+    }
+    if (hatch.x > 0.0) {
+        let s = p.x - (h - p.y) * tan - hatch.z;
+        let q = s - floor(s / hatch.x) * hatch.x;
+        let lit = hatch.y * hatch.x;
+        // One physical pixel of ramp on both stripe edges.
+        cov_out = cov_out * clamp(q + 0.5, 0.0, 1.0) * clamp(lit - q + 0.5, 0.0, 1.0);
     }
     if (cov_out <= 0.0) {
         discard;

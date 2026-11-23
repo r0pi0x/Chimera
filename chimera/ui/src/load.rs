@@ -5,18 +5,22 @@
 //! - `Ui::load_line`: one player's or one job's load as a sheared bar
 //!   filling the width it is given, its words at the right. Four looks
 //!   (`Load`): **joining** (nothing to measure yet) an indeterminate bar,
-//!   a short slab sweeping along the track (`LoadSweep`); **downloading**
-//!   a striped, half-translucent fill to its share; **loading** a white
-//!   fill advancing; **ready** no bar at all, only "Ready", so the eye
-//!   goes to whoever is still loading. The share is in the words
-//!   ("Models 62%").
+//!   the whole track filled with dim blue slanted stripes sliding sideways
+//!   (`LoadHatch`; the stripes are the track's own shader, drawn in the
+//!   bar and nowhere else), with three blinking sheared squares
+//!   (`LoadBlink`) before its word; **downloading** a static, white,
+//!   finely striped half-translucent fill to its share over an empty
+//!   track (not blue, not moving, not full width: told from joining at a
+//!   glance); **loading** a white fill advancing; **ready** no bar at all,
+//!   only "Ready", so the eye goes to whoever is still loading. The share
+//!   is in the words ("Models 62%").
 //! - `Ui::busy`: the waiting mark, a row of sheared squares with a lit
 //!   head running along them and a fading trail (`BusyTick`), for
 //!   anything that waits on something else (the lobby's start, a scan).
 //!
-//! Both animate from `UiClock` with no rebuild (`step_loads`); with
-//! `ReducedMotion` the sweep rests in the middle and the squares stay lit
-//! evenly.
+//! All animate from `UiClock` with no rebuild (`step_loads` writes one
+//! number a node: the stripes' offset, a square's alpha); with
+//! `ReducedMotion` the stripes rest and the squares stay lit evenly.
 
 use bevy::prelude::*;
 
@@ -61,9 +65,18 @@ pub struct LoadTrack;
 #[derive(Component, Clone, Copy, Debug)]
 pub struct LoadStripes;
 
-/// The indeterminate bar's moving slab; `since` when it began.
+/// The indeterminate bar's stripes (a hatched `UiSlant` over the whole
+/// track); `since` when they began.
 #[derive(Component, Clone, Copy, Debug)]
-pub struct LoadSweep {
+pub struct LoadHatch {
+    pub since: f64,
+}
+
+/// One of the joining mark's blinking squares (`i` of three); `since`
+/// when it began.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct LoadBlink {
+    pub i: u32,
     pub since: f64,
 }
 
@@ -74,19 +87,33 @@ pub struct BusyTick {
     pub n: u32,
 }
 
-/// The sweep's length, s.
-pub const SWEEP_SECS: f64 = 1.4;
-/// The sweep's slab, a share of the track.
-pub const SWEEP_SHARE: f32 = 0.28;
+/// The stripes' time to slide one period, s.
+pub const HATCH_SECS: f64 = 1.1;
+/// The stripes' period, cq (the bar is about .6 tall).
+pub const HATCH_PERIOD: f32 = 1.2;
+/// The stripes' lit share of a period.
+pub const HATCH_LIT: f32 = 0.5;
+/// The stripes' strength over the track.
+pub const HATCH_ALPHA: f32 = 0.5;
+/// A blink's length, s; each square starts `BLINK_STEP` after the last.
+pub const BLINK_SECS: f64 = 1.0;
+pub const BLINK_STEP: f64 = 0.2;
 /// A busy mark's step from one square to the next, s.
 pub const BUSY_STEP: f64 = 0.09;
 
-/// The sweep's clip (from the left, from the right) at `t` s after it began.
-pub fn sweep_clip(t: f64, reduced: bool) -> (f32, f32) {
-    let phase = if reduced { 0.5 } else { (t / SWEEP_SECS).rem_euclid(1.0) as f32 };
-    // From just off the left end to just off the right one.
-    let x = phase * (1.0 + SWEEP_SHARE) - SWEEP_SHARE;
-    (x.max(0.0), (1.0 - x - SWEEP_SHARE).max(0.0))
+/// The stripes' offset (a share of the period) `t` s after they began.
+pub fn hatch_phase(t: f64, reduced: bool) -> f32 {
+    if reduced { 0.0 } else { (t / HATCH_SECS).rem_euclid(1.0) as f32 }
+}
+
+/// Blinking square `i`'s alpha `t` s after it began: lit, then dim half
+/// of each second, the squares a step apart.
+pub fn blink_alpha(i: u32, t: f64, reduced: bool) -> f32 {
+    if reduced {
+        return 0.8;
+    }
+    let phase = ((t - i as f64 * BLINK_STEP) / BLINK_SECS).rem_euclid(1.0);
+    if phase < 0.5 { 1.0 } else { 0.2 }
 }
 
 /// Square `i` of `n`'s alpha at `t`: the head full, a trail of three fading.
@@ -132,8 +159,7 @@ impl Ui<'_> {
                 .id();
             match load {
                 Load::Joining => {
-                    let (l, r) = sweep_clip(0.0, false);
-                    c.spawn((full(), UiSlant::new(Tone::Fg, 0.5).clipped(l, r), LoadSweep { since: now }, Pickable::IGNORE, ChildOf(track)));
+                    c.spawn((full(), UiSlant::new(Tone::AccText, HATCH_ALPHA).hatched(HATCH_PERIOD, HATCH_LIT, 0.0), LoadHatch { since: now }, Pickable::IGNORE, ChildOf(track)));
                 }
                 Load::Downloading(f) => {
                     let f = f.clamp(0.0, 1.0);
@@ -147,11 +173,11 @@ impl Ui<'_> {
                             ChildOf(track),
                         ))
                         .id();
-                    // Stripes on the slant every .7 cq, over the widest bar.
+                    // Fine stripes on the slant every .5 cq (the joining bar's are 1.2 apart), over the widest bar.
                     let lean = bar_h * self.theme.tan();
-                    for k in 0..90 {
+                    for k in 0..126 {
                         c.spawn((
-                            Node { position_type: PositionType::Absolute, left: self.units.val(k as f32 * 0.7), top: Val::ZERO, bottom: Val::ZERO, width: self.units.val(0.3 + lean), ..default() },
+                            Node { position_type: PositionType::Absolute, left: self.units.val(k as f32 * 0.5), top: Val::ZERO, bottom: Val::ZERO, width: self.units.val(0.2 + lean), ..default() },
                             UiSlant::new(Tone::Fg, 0.4),
                             Pickable::IGNORE,
                             ChildOf(clip),
@@ -176,6 +202,22 @@ impl Ui<'_> {
         };
         let w = self.boxed(c, line, UiStyle { w: Some(words_w), shrink: Some(0.0), justify: Some(JustifyContent::FlexEnd), ..UiStyle::row() });
         let (role, tone) = if load == Load::Ready { (Role::DisplayBold, Tone::Fg) } else { (Role::Mono, Tone::Fg2) };
+        if load == Load::Joining {
+            // The waiting mark: three sheared squares blinking in turn.
+            let sq = self.boxed(c, w, UiStyle { gap: Some(0.18), shrink: Some(0.0), ..UiStyle::row() }.margin([0.0, 0.5, 0.0, 0.0]));
+            let h = size * 0.7;
+            let lean = h * self.theme.tan();
+            for i in 0..3 {
+                c.spawn((
+                    UiStyle { w: Some(h + lean), h: Some(h), shrink: Some(0.0), ..UiStyle::row() },
+                    Node::default(),
+                    UiSlant::new(Tone::AccText, blink_alpha(i, 0.0, false)),
+                    LoadBlink { i, since: now },
+                    Pickable::IGNORE,
+                    ChildOf(sq),
+                ));
+            }
+        }
         self.text(c, w, role, size, tone, &text);
         line
     }
@@ -200,13 +242,27 @@ impl Ui<'_> {
     }
 }
 
-/// Moves the sweeps and the busy marks from the clock (no rebuild).
-pub fn step_loads(clock: Res<UiClock>, reduced: Option<Res<ReducedMotion>>, mut sweeps: Query<(&LoadSweep, &mut UiSlant), Without<BusyTick>>, mut ticks: Query<(&BusyTick, &mut UiSlant), Without<LoadSweep>>) {
+/// Moves the joining stripes, the blinking squares and the busy marks from
+/// the clock (no rebuild).
+#[allow(clippy::type_complexity)]
+pub fn step_loads(
+    clock: Res<UiClock>,
+    reduced: Option<Res<ReducedMotion>>,
+    mut hatches: Query<(&LoadHatch, &mut UiSlant), (Without<BusyTick>, Without<LoadBlink>)>,
+    mut blinks: Query<(&LoadBlink, &mut UiSlant), (Without<BusyTick>, Without<LoadHatch>)>,
+    mut ticks: Query<(&BusyTick, &mut UiSlant), (Without<LoadHatch>, Without<LoadBlink>)>,
+) {
     let reduced = reduced.is_some_and(|r| r.0);
-    for (s, mut slant) in &mut sweeps {
-        let clip = sweep_clip(clock.now - s.since, reduced);
-        if slant.clip != clip {
-            slant.clip = clip;
+    for (h, mut slant) in &mut hatches {
+        let phase = hatch_phase(clock.now - h.since, reduced);
+        if slant.hatch.is_some_and(|(_, _, p)| p != phase) {
+            slant.hatch = Some((HATCH_PERIOD, HATCH_LIT, phase));
+        }
+    }
+    for (b, mut slant) in &mut blinks {
+        let a = blink_alpha(b.i, clock.now - b.since, reduced);
+        if slant.alpha != a {
+            slant.alpha = a;
         }
     }
     for (t, mut slant) in &mut ticks {

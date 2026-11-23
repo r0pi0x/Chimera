@@ -414,11 +414,14 @@ pub struct UiSlant {
     /// Clipped this share (0-1 of the row) from the left and from the
     /// right, the cuts leaning with the slant (a progress bar's fill).
     pub clip: (f32, f32),
+    /// Only slanted stripes of the fill: (period in cq, lit share 0-1,
+    /// offset along as a share of the period); `UiSlant::hatched`.
+    pub hatch: Option<(f32, f32, f32)>,
 }
 
 impl Default for UiSlant {
     fn default() -> Self {
-        UiSlant { fill: Tone::Fg, alpha: 1.0, edges: (true, true), accent: None, outline: 0.0, clip: (0.0, 0.0) }
+        UiSlant { fill: Tone::Fg, alpha: 1.0, edges: (true, true), accent: None, outline: 0.0, clip: (0.0, 0.0), hatch: None }
     }
 }
 
@@ -437,6 +440,13 @@ impl UiSlant {
     /// Only its outline, `px` physical pixels wide.
     pub fn outline(mut self, px: f32) -> Self {
         self.outline = px;
+        self
+    }
+
+    /// Only slanted stripes `period` cq apart, `lit` of each drawn, the
+    /// pattern `phase` (a share of the period) along to the right.
+    pub fn hatched(mut self, period: f32, lit: f32, phase: f32) -> Self {
+        self.hatch = Some((period, lit, phase));
         self
     }
 
@@ -539,6 +549,10 @@ pub fn resolve_styles(
             }
             if s.outline > 0.0 {
                 m = m.outline(s.outline);
+            }
+            if let Some((period, lit, phase)) = s.hatch {
+                let px = units.phys(units.cq(period)).max(1.0);
+                m = m.hatch(px, lit, phase.rem_euclid(1.0) * px);
             }
             if s.clip != (0.0, 0.0) {
                 m = m.clip(s.clip.0, s.clip.1).slanted_cut();

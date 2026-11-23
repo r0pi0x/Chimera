@@ -1501,8 +1501,12 @@ binding), built in `chimera_client::client::lobby_panel` on the kit:
   (no BOT tag); parties grouped with their edges (your party first);
   no "load to start line" flavour.
 - **Load states**, mapped from ours (`row_load`): Joining (connected,
-  nothing measured) an indeterminate sweep; Downloading a striped,
-  half-translucent bar (not yellow); Loading (the map, the models, the
+  nothing measured) an indeterminate bar: the whole track filled with dim
+  blue slanted stripes sliding sideways, three blinking sheared squares
+  before the word (the user chose option A of the Joining bar mockup,
+  2026-11-22; the stripes are the track's own shader, one uniform a
+  frame); Downloading a static white striped, half-translucent fill to its
+  share over an empty track (not yellow, not blue, not moving); Loading (the map, the models, the
   physics: `load_stages`) a white bar advancing, its stage's word; the
   share in words on both; **Ready**: the bar disappears, "Ready" only, so
   the eye goes to who is still loading. Kit: `chimera_ui::load`

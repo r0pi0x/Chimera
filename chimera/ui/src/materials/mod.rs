@@ -108,6 +108,10 @@ pub struct SlantMaterial {
     /// own edges are upright (the toast's wipe).
     #[uniform(4)]
     pub line: Vec4,
+    /// x: a hatch's period in physical px (0: none), y: its lit share of
+    /// a period, z: its offset to the right (px).
+    #[uniform(5)]
+    pub hatch: Vec4,
 }
 
 impl SlantMaterial {
@@ -120,7 +124,16 @@ impl SlantMaterial {
             shape: Vec4::new(theme.tan(), 1.0, 1.0, 0.0),
             wipe: Vec4::new(0.0, 0.0, 1.0, 1.0),
             line: Vec4::ZERO,
+            hatch: Vec4::ZERO,
         }
+    }
+
+    /// Only slanted stripes of the fill: one every `period` physical px,
+    /// `lit` (0-1) of it drawn, the pattern `offset` px along (a moving
+    /// one is this uniform changing: no node is rebuilt).
+    pub fn hatch(mut self, period: f32, lit: f32, offset: f32) -> Self {
+        self.hatch = Vec4::new(period, lit, offset, 0.0);
+        self
     }
 
     /// Only its outline, `px` physical pixels wide (an unlit block).

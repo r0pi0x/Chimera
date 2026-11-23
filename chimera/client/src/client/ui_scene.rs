@@ -764,7 +764,7 @@ fn picker_page(
 /// The kit's form controls in their states (`chimera_ui::controls`), over
 /// the frozen ambient.
 fn controls(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<chimera_ui::AmbientMaterial>, c: &mut Commands) {
-    use chimera_ui::controls::{Kind, State, StepperRange, Ui};
+    use chimera_ui::{controls::{Kind, State, StepperRange, Ui}, load::Load};
     let ui = Ui::new(t, kit, u);
     let root = c
         .spawn((
@@ -823,6 +823,12 @@ fn controls(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets
     ui.stepper(c, v, "8", StepperRange::new().range(2.0, 16.0).step(1.0).reached(false, false), State::NONE);
     let (_, v) = ui.row(c, right, "Music", None, 2.9, State::NONE);
     ui.dropdown(c, v, &["Party playlist", "The game's loop", "None"], 0, Some(1), 12.0, State::NONE);
+    // The load lines, one of each look (a lobby row's bar).
+    ui.section(c, right, "Load lines", Some("joining • downloading • loading • ready"));
+    for (load, words) in [(Load::Joining, "Joining"), (Load::Downloading(0.42), "Downloading"), (Load::Loading(0.62), "Models"), (Load::Ready, "Ready")] {
+        let r = ui.boxed(c, right, chimera_ui::UiStyle { gap: Some(0.5), ..chimera_ui::UiStyle::row() });
+        ui.load_line(c, r, load, words, 0.0, 0.6, 8.0, 0.54);
+    }
 }
 
 /// The kit's text inputs and value controls in every state, labelled: rest,

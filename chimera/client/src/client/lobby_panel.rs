@@ -27,7 +27,7 @@
 //!   robot, `LobbyMark::Bot`; YOU its white frame), the name, HOST as an
 //!   outlined tag (`LobbyMark::Host`), the session wins (`LobbyWins`),
 //!   then the load bar across the rest (`Ui::load_line`, `row_load`:
-//!   joining an indeterminate sweep, downloading a striped half-
+//!   joining dim blue stripes sliding over the whole track, downloading a static striped half-
 //!   translucent fill, loading a white fill, each with its share in
 //!   words; ready no bar, only "Ready") and the ping (the kit's meter and
 //!   ms; a bot none). For the host, Kick takes the ping's place on the

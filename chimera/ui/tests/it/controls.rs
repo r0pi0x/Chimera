@@ -1325,12 +1325,13 @@ fn one_size_is_one_height_for_every_control_and_kind() {
 }
 
 /// The load line's four looks (the lobby's starting grid): joining the
-/// indeterminate sweep, moving with the clock; downloading a striped
-/// half-translucent fill to its share; loading a white fill; ready no bar,
+/// indeterminate bar, dim blue stripes over the whole track sliding with the
+/// clock and three blinking squares; downloading a static white striped
+/// half-translucent fill to its share, never blue or moving; loading a white fill; ready no bar,
 /// only its word.
 #[test]
 fn load_lines_show_joining_downloading_loading_and_ready() {
-    use chimera_ui::load::{BusyTick, Load, LoadLine, LoadStripes, LoadSweep, LoadTrack};
+    use chimera_ui::load::{BusyTick, Load, LoadLine, LoadBlink, LoadHatch, LoadStripes, LoadTrack};
     let mut app = app();
     let lines = build(&mut app, |ui, c, root| {
         [
@@ -1342,18 +1343,24 @@ fn load_lines_show_joining_downloading_loading_and_ready() {
     });
     let [join, dl, ld, ready] = lines;
     assert_eq!(app.world().get::<LoadLine>(join).unwrap().0, Load::Joining);
-    // Joining: a sweep that moves.
-    let sweep = descendants_with_entity::<LoadSweep>(&mut app, join);
-    assert_eq!(sweep.len(), 1);
-    let at0 = app.world().get::<UiSlant>(sweep[0]).unwrap().clip;
-    app.world_mut().resource_mut::<UiClock>().step(0.5);
+    // Joining: the track filled with blue stripes that slide, three blinking squares.
+    let hatch = descendants_with_entity::<LoadHatch>(&mut app, join);
+    assert_eq!(hatch.len(), 1);
+    let h0 = app.world().get::<UiSlant>(hatch[0]).unwrap().clone();
+    assert_eq!((h0.fill, h0.clip), (Tone::AccText, (0.0, 0.0)), "blue, the whole track");
+    app.world_mut().resource_mut::<UiClock>().step(0.3);
     app.update();
-    let at1 = app.world().get::<UiSlant>(sweep[0]).unwrap().clip;
-    assert_ne!(at0, at1, "the sweep moves");
+    let h1 = app.world().get::<UiSlant>(hatch[0]).unwrap().clone();
+    assert_ne!(h0.hatch, h1.hatch, "the stripes slide");
+    assert_eq!(descendants_with_entity::<LoadBlink>(&mut app, join).len(), 3);
+    assert!(descendants_with_entity::<LoadBlink>(&mut app, dl).is_empty());
+    // The stripes live in the track only: nothing hatched beside it.
+    assert!(descendants_with_entity::<LoadHatch>(&mut app, dl).is_empty());
     // Downloading: stripes over a half-translucent fill, with its share.
     assert_eq!(descendants_with_entity::<LoadStripes>(&mut app, dl).len(), 1);
     let fills = descendants_with::<UiSlant>(&mut app, dl);
     assert!(fills.iter().any(|s| s.alpha > 0.1 && s.alpha < 0.6 && (s.clip.1 - 0.69).abs() < 0.01), "{fills:?}");
+    assert!(fills.iter().all(|s| s.fill == Tone::Fg && s.hatch.is_none()), "white, not blue, no sliding stripes: {fills:?}");
     assert_eq!(texts_under(&mut app, dl), ["DOWNLOADING 31%"]);
     // Loading: the white fill to 62%.
     let fills = descendants_with::<UiSlant>(&mut app, ld);
