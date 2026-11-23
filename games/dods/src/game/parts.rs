@@ -1,6 +1,6 @@
 //! What DoD:S lends other games' apps (`chimera_core::game_parts`): its
-//! M1a guns by their ladder class (`weapons`; the machine guns wait for
-//! their deploy, M2), its knife beside them (`weapons::KNIFE`; the spade
+//! guns by their ladder class (`weapons`; the machine guns `Heavy`, fired
+//! deployed while prone: `stance`), its knife beside them (`weapons::KNIFE`; the spade
 //! is the Axis classes', M3 picks by class), and its movement
 //! (`movement::ID`), which makes it `playable` in a gun game's ladder: a
 //! player holding a DoD:S gun is DoD:S's, wears its body and moves on its
@@ -32,6 +32,8 @@ pub static PARTS: GameParts = GameParts {
         GunPart { id: w::P38, class: GunClass::Pistol },
         GunPart { id: w::C96, class: GunClass::Pistol },
         GunPart { id: w::M1CARBINE, class: GunClass::Carbine },
+        GunPart { id: w::CAL30, class: GunClass::Heavy },
+        GunPart { id: w::MG42, class: GunClass::Heavy },
     ],
     knife: Some(w::KNIFE),
     movement: Some(super::movement::ID),

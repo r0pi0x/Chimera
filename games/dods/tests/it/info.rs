@@ -32,8 +32,8 @@ fn it_lends_its_guns_knife_and_movement() {
         let w = set.weapons.iter().find(|w| w.id == g.id).unwrap_or_else(|| panic!("{} in the data", g.id));
         assert_eq!(w.class, Some(g.class), "{}'s class", g.id);
     }
-    // The machine guns wait for their deploy (M2): in no ladder.
+    // The machine guns deploy prone (`stance`): the ladders' heavy class.
     for mg in [weapons::CAL30, weapons::MG42] {
-        assert!(PARTS.guns.iter().all(|g| g.id != mg) && set.get(mg).unwrap().class.is_none(), "{mg}");
+        assert!(PARTS.guns.iter().any(|g| g.id == mg), "{mg}");
     }
 }

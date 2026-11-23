@@ -3,8 +3,9 @@
 //! guns (`weapon::view_anim`), which pick the Source shared weapon base's
 //! activities its view models carry (`source_engine::view_anim`: the draw,
 //! idle, each shot, a dry fire, a reload, a swing's hit or miss), with the
-//! models' own sound events (the reload's clip out and in, the bolt) heard
-//! by the holder and their muzzle flashes and brass; the view models'
+//! models' own sound events (the draw, the reload's clip out and in, the
+//! bolt; under DoD:S's name, `maps::own_sound`) heard by the holder and
+//! their muzzle flashes and brass; the view models'
 //! field of view in an app of several games (`fov`).
 //!
 //! Known shortcuts (unmeasured, weapons.md): no view-model bob or sway
@@ -45,13 +46,19 @@ fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
     }
 }
 
+/// A view model's event: its sound entries under DoD:S's name in a map's
+/// table (`maps::own_sound`), its muzzle flashes and brass.
+fn effect(e: &crate::map::anim::AnimEvent) -> Option<crate::map::ViewModelEventKind> {
+    source::sound_event(e, super::maps::SOUND_PREFIX).or_else(|| source::event_effect(e))
+}
+
 /// DoD:S's view-model rules.
 pub fn rules() -> ViewAnimRules {
     ViewAnimRules {
         draw: |_| acts(&[DRAW, IDLE]),
         idle: |_| acts(&[IDLE]),
         event,
-        effect: source::event_effect_with_sounds,
+        effect,
         draw_rate: 1.0,
         others_reload: None,
     }

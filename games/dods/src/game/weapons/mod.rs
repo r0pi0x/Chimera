@@ -12,8 +12,8 @@
 //! are the scripts' (`v_*.mdl`, arms and gun in one model), their held
 //! models (`w_*.mdl`) on the default body's skeleton (`add_guns`).
 //!
-//! The machine guns are data but in no ladder (no `class`) until they
-//! can deploy (M2: prone); the explosives (grenades, rifle grenades,
+//! The machine guns (`dods:mg`, `mg`: deployed while prone, `stance`) are
+//! the ladders' `heavy` class; the explosives (grenades, rifle grenades,
 //! bazooka and Panzerschreck) are M1b (docs/plans/active/dods.md).
 //!
 //! Known shortcuts (beside `gun`'s and `hit_slow`'s): reload and draw
@@ -31,6 +31,7 @@ use crate::map::GameKit;
 
 pub mod gun;
 pub mod hit_slow;
+pub mod mg;
 pub mod script_numbers;
 
 macro_rules! data_file {
@@ -65,6 +66,7 @@ pub const DATA: &[(&str, chimera_core::game_data::GameData)] = &[
 pub const GUN_HOOK: &str = "dods:gun";
 pub const MELEE_HOOK: &str = "dods:melee";
 pub const HIT_SLOW_HOOK: &str = "dods:hit_slow";
+pub const MG_HOOK: &str = "dods:mg";
 
 pub const GARAND: &str = "dods:weapon_garand";
 pub const K98: &str = "dods:weapon_k98";
@@ -151,6 +153,9 @@ pub fn register_hooks(app: &mut App) {
         .register_weapon_hook::<MeleeParams>(MELEE_HOOK, |_, _, _| {})
         .register_weapon_hook::<hit_slow::HitSlow>(HIT_SLOW_HOOK, |e, _, p| {
             e.insert(*p);
+        })
+        .register_weapon_hook::<mg::DodsMg>(MG_HOOK, |e, _, p| {
+            e.insert(*p);
         });
 }
 
@@ -191,6 +196,7 @@ impl Plugin for DodsGunsPlugin {
             (
                 hit_slow::on_hit.after(SimSet::Weapons).after(crate::core::apply_damage),
                 hit_slow::hold.before(SimSet::Movement),
+                super::stamina::tick.after(SimSet::Weapons),
             )
                 .run_if(crate::core::authoritative),
         );

@@ -13,11 +13,27 @@
 //! per class); a player who leaves DoD:S has the name it set emptied
 //! (`unwear`).
 //!
+//! Held guns: a DoD:S character on a DoD:S body holds its active weapon's
+//! world model (`hold_weapons`: `map::Held`, as CS:S's and TF2's
+//! `player_anim` set it; nothing did, so no one's gun was drawn). The model
+//! is held by one of the body's two weapon
+//! bones (`ValveBiped.weapon_bone`, the SMGs', pistols' and MGs';
+//! `ValveBiped.weapon_bone_left`, the rifles'), which the game's own
+//! animations put in the hands: at the model's rest they sit at its feet
+//! (their rest places are 47 units off the hands), so a body standing at
+//! rest dropped its gun out of sight. Until the bodies animate (M3), each
+//! weapon bone rests (its rest and its animations' default pose) where
+//! the body's own standing idle puts it
+//! (`HOLDS`: the first frame of `StandIdle_tommy` and `StandIdle_RIFLE`),
+//! so the gun is in the hand.
+//!
 //! Known shortcuts (M0):
 //! - No class follows the gun in hand yet (M3: a DoD:S gun makes its
 //!   holder the class that carries it); players wear the default body.
 //! - No player animation: bodies stand in their bind pose (Source's
-//!   shared animation driver per game, as TF2's `player_anim`, is M3's).
+//!   shared animation driver per game, as TF2's `player_anim`, is M3's);
+//!   the held gun sits in the resting hand at its idle's grip (`HOLDS`), so
+//!   it points as the resting hand does, not ahead.
 //! - Bodies have no team skin or helmet/hair body groups chosen
 //!   (`helmetgroup`, `hairgroup` in the class scripts).
 
@@ -26,9 +42,10 @@ use source_engine::content::{material::MaterialLoader, props, surfaceprops::Surf
 
 use super::GAME;
 use crate::{
-    map::{BodyName, GameKit, KitLoad, MapCharacterModel},
+    map::{BodyModel, BodyName, CharacterModels, GameKit, Held, KitLoad, MapCharacterModel, anim::Animator},
     slots::GameIdentity,
 };
+use chimera_sim::weapon::{Inventory, Weapon};
 
 /// One class's body: its id (`dods:us_rifleman`), display name and
 /// player model.
@@ -77,7 +94,41 @@ pub fn load(materials: &mut MaterialLoader, surfaces: &SurfaceProps, path: &str)
     if !path.eq_ignore_ascii_case(DEFAULT_MODEL) {
         m.name = Some(path.to_string());
     }
+    hold_in_hands(&mut m);
     Ok(m)
+}
+
+/// Each weapon bone and the standing idle whose first frame puts it in the
+/// hand (module doc, "Held guns").
+pub const HOLDS: [(&str, &str); 2] = [("ValveBiped.weapon_bone", "StandIdle_tommy"), ("ValveBiped.weapon_bone_left", "StandIdle_RIFLE")];
+
+/// `m`'s weapon bones rested where its own idles put them (`HOLDS`); a
+/// body without the bone, its animations or the sequence keeps its rest.
+pub fn hold_in_hands(m: &mut MapCharacterModel) {
+    let Some(set) = m.animations.clone() else { return };
+    let mut rests = Vec::new();
+    for (bone, sequence) in HOLDS {
+        let (Some(i), Some(s)) = (m.bones.iter().position(|b| b.name.eq_ignore_ascii_case(bone)), set.sequence(sequence)) else {
+            continue;
+        };
+        let mut pose: Vec<_> = m.bones.iter().map(|b| (b.rotation, b.position)).collect();
+        set.sequence_pose(s, 0.0, &set.default_params(), &mut pose);
+        if let Some(&p) = pose.get(i) {
+            rests.push((i, p));
+        }
+    }
+    drop(set);
+    for (i, (rotation, position)) in rests {
+        m.bones[i].rotation = rotation;
+        m.bones[i].position = position;
+        // The pose a body with no sequence playing shows (the animator's
+        // starting pose); the set is this body's alone while it loads.
+        if let Some(set) = m.animations.as_mut().and_then(std::sync::Arc::get_mut)
+            && let Some(d) = set.defaults.get_mut(i)
+        {
+            *d = (rotation, position);
+        }
+    }
 }
 
 /// The bodies `kit` asks for whose model is here (`Mount::held`) into
@@ -143,12 +194,32 @@ pub fn add_targets(app: &mut App) {
     }
 }
 
-/// DoD:S's bodies worn and taken off.
+/// Characters on DoD:S's bodies hold their active weapon's world model
+/// (its key: the weapon's id).
+#[allow(clippy::type_complexity)]
+pub fn hold_weapons(
+    characters: Query<(Entity, Option<&Inventory>, Option<&Held>, Option<&BodyModel>), With<Animator>>,
+    weapons: Query<&Weapon>,
+    models: Option<Res<CharacterModels>>,
+    mut commands: Commands,
+) {
+    for (e, inventory, held, body) in &characters {
+        if body.is_none() || !models.as_deref().is_none_or(|m| m.is_of(body, GAME)) {
+            continue;
+        }
+        let id = inventory.and_then(|i| i.active).and_then(|w| weapons.get(w).ok()).map(|w| w.id.to_string());
+        if held.is_none_or(|h| h.0 != id) {
+            commands.entity(e).insert(Held(id));
+        }
+    }
+}
+
+/// DoD:S's bodies worn and taken off, and what they hold.
 pub struct DodsBodiesPlugin;
 
 impl Plugin for DodsBodiesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, unwear);
+        app.add_systems(Update, (unwear, hold_weapons.in_set(crate::map::DriveAnimation)));
     }
 }
 

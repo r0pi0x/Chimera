@@ -28,7 +28,10 @@
 //! tick's max speed before the step (`SourceSpeed`, ordered before
 //! `SourceMovementStep`: HL2:DM's walk, run and sprint), and a
 //! character's own kind its speed, eyes and air jumps (`SourceTraits`:
-//! TF2's classes). A game's push (`core::ExternalPush`, TF2's knockback)
+//! TF2's classes), and a game's own stance beyond standing and ducking
+//! its box, eye, speed and jump (`SourceStance`: DoD:S's prone, held as a
+//! lower ducked box; leaving it stands up where there is room, else stays
+//! ducked until there is). A game's push (`core::ExternalPush`, TF2's knockback)
 //! is honoured as every movement does: a lift takes the body off the
 //! ground as logic does (`BaseVelocity::unground`); its ground limit cuts
 //! the horizontal speed, after the first grounded tick's friction, to
@@ -716,6 +719,38 @@ pub fn config_of(world: &World, e: Entity) -> SourceMovementConfig {
 #[component(storage = "SparseSet")]
 pub struct SourceSpeed(pub f32);
 
+/// A game's own stance over standing and ducking (DoD:S's prone and its
+/// transitions), set by the game before the step (`SourceMovementStep`)
+/// each tick; the default changes nothing.
+///
+/// - `height`: the box is this high (units) while set: held as the ducked
+///   box at that height (`SourceMovement::ducked`; the duck key does
+///   nothing). When it goes, the character stands up at once where the
+///   standing box fits, else stays ducked (the usual duck box) until it
+///   does.
+/// - `eye`: the eye over the feet this tick (units), over the stand or
+///   duck eye (a game's own eased transition).
+/// - `max_speed`: this tick's max speed (units/s), over the game's
+///   (`SourceSpeed`), the traits' and the held weapon's; a hit's velocity
+///   modifier still scales it.
+/// - `no_jump`: the jump key does nothing.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SourceStance {
+    pub height: Option<f32>,
+    pub eye: Option<f32>,
+    pub max_speed: Option<f32>,
+    pub no_jump: bool,
+}
+
+impl SourceStance {
+    /// `cfg` with this stance's box as its ducked box.
+    fn apply(&self, cfg: &mut SourceMovementConfig) {
+        if let Some(h) = self.height {
+            cfg.duck_height = h;
+        }
+    }
+}
+
 /// A character's own footstep entries (left, right), for a movement with
 /// `model_footsteps` (HL2:DM: its model's run steps).
 #[derive(Component, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -959,6 +994,9 @@ pub struct SourceMovement {
     pub duck_key: bool,
     #[serde(default)]
     pub reduck_timer: f32,
+    /// Held in a game's low stance last tick (`SourceStance::height`).
+    #[serde(default)]
+    pub stance_low: bool,
 }
 
 impl Default for SourceMovement {
@@ -1002,6 +1040,7 @@ impl Default for SourceMovement {
             air_ducks: 0,
             duck_key: false,
             reduck_timer: 0.0,
+            stance_low: false,
         }
     }
 }
@@ -1670,6 +1709,8 @@ struct Mover<'a, 'b, 'w, 's> {
     outputs: Vec<(usize, &'static str)>,
     /// The character's max health in points (`fall_by_max_health`).
     max_health: f32,
+    /// A game's own stance this tick (`SourceStance`).
+    stance: SourceStance,
 }
 
 impl Mover<'_, '_, '_, '_> {
@@ -2584,6 +2625,30 @@ impl Mover<'_, '_, '_, '_> {
     /// Whether the standing box fits: on the ground, where it stands; in the
     /// air, swept from here down by the hull difference (room is needed
     /// above the ducked head and below the feet).
+    /// A game's low stance (`SourceStance::height`): the ducked box, at
+    /// that height (the config's), held whatever the duck key says.
+    fn hold_stance(&mut self) {
+        self.me.ducked = true;
+        self.me.ducking = false;
+        self.me.duck_held = false;
+        self.me.duck_timer = 0.0;
+        self.me.stance_low = true;
+    }
+
+    /// Out of a game's low stance: up at once where the standing box fits,
+    /// else the usual ducked box, which stands up once there is room.
+    fn leave_stance(&mut self) {
+        if !self.me.stance_low {
+            return;
+        }
+        self.me.stance_low = false;
+        if self.can_stand() {
+            self.me.ducked = false;
+            self.me.ducking = false;
+            self.me.eye = self.cfg.eye_stand;
+        }
+    }
+
     fn can_stand(&self) -> bool {
         if self.me.on_ground {
             return !self.trace.solid(false, self.feet);
@@ -2854,11 +2919,21 @@ impl Mover<'_, '_, '_, '_> {
         let water_before = self.me.water_level;
         self.footsteps();
         let was_ducking = self.me.ducked || self.me.ducking;
-        let crouch = self.air_duck_allowed(intent.crouch);
-        let mut scale = self.duck(crouch);
+        let low = self.stance.height.is_some();
+        let mut scale = if low {
+            self.hold_stance();
+            1.0
+        } else {
+            self.leave_stance();
+            let crouch = self.air_duck_allowed(intent.crouch);
+            self.duck(crouch)
+        };
+        if let Some(eye) = self.stance.eye {
+            self.me.eye = eye;
+        }
         // CS:S (measured): input is slowed while duck is held, or when the
         // tick started ducked or mid-duck (on the ground or off it).
-        if self.cfg.duck_slows_everywhere {
+        if self.cfg.duck_slows_everywhere && !low {
             scale = if intent.crouch || was_ducking {
                 self.cfg.duck_speed
             } else {
@@ -2956,7 +3031,9 @@ impl Mover<'_, '_, '_, '_> {
             return;
         }
 
-        if intent.jump {
+        if self.stance.no_jump {
+            self.me.jump_held = intent.jump;
+        } else if intent.jump {
             let fresh = !self.me.jump_held || self.cfg.auto_bunnyhopping;
             let fully_ducked = self.me.ducked && !self.me.ducking;
             let air_jump = !self.me.on_ground && !self.me.jump_held && self.me.air_jumps_used < self.cfg.air_jumps;
@@ -3154,6 +3231,7 @@ fn step(
             Option<&mut crate::core::IgnoreFallDamage>,
             Option<&SourceTraits>,
             Option<&mut ExternalPush>,
+            Option<&SourceStance>,
         ),
     ), Without<crate::core::Carried>>,
     query: SpatialQuery,
@@ -3248,9 +3326,13 @@ fn step(
     let mut boxes: Vec<(Entity, MapBrush)> = q
         .iter()
         .filter(|(e, ..)| alive(*e))
-        .map(|(e, _, me, t, .., (slot, ..))| {
+        .map(|(e, _, me, t, .., (slot, .., stance))| {
             let feet = me.forced.map_or(to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET, |f| f.goal);
-            (e, hull_box(&configs.of(slot), feet, me.ducked))
+            let mut cfg = configs.of(slot).into_owned();
+            if let Some(s) = stance {
+                s.apply(&mut cfg);
+            }
+            (e, hull_box(&cfg, feet, me.ducked))
         })
         .collect();
     boxes.extend(
@@ -3344,13 +3426,22 @@ fn step(
         touch,
         controls,
         settle,
-        (slot, speed, step_sounds, mut ignore_fall, traits, mut pushed),
+        (slot, speed, step_sounds, mut ignore_fall, traits, mut pushed, stance),
     ) in &mut q
     {
         // The character's own traits over its movement's config (TF2's
-        // classes), the body then fitted to the map (`fitted`).
+        // classes) and its game's stance's box, the body then fitted to
+        // the map (`fitted`).
         let own = configs.own(slot);
-        let patched = traits.map(|t| t.apply(own));
+        let stance = stance.copied().unwrap_or_default();
+        let patched = match (traits, stance.height) {
+            (None, None) => None,
+            _ => {
+                let mut c = traits.map_or_else(|| own.clone(), |t| t.apply(own));
+                stance.apply(&mut c);
+                Some(c)
+            }
+        };
         let fitted = patched.as_ref().unwrap_or(own).fitted(map_envelope.as_ref());
         let cfg: &SourceMovementConfig = &fitted;
         // A character without a movement slot is the app's own game's.
@@ -3451,12 +3542,13 @@ fn step(
             ground_collider: None,
             wish: Vec3::ZERO,
             settle,
-            speed: traits.and_then(|t| t.max_speed).or(speed.map(|s| s.0)),
+            speed: stance.max_speed.or(traits.and_then(|t| t.max_speed)).or(speed.map(|s| s.0)),
             step_sounds,
             ladders,
             foreign_map: foreign,
             outputs: Vec::new(),
             max_health: health.get(entity).map_or(100.0, |h| h.max * 100.0),
+            stance,
         };
         if let Some(on_ground) = mover.me.seat.take() {
             mover.reseat(on_ground);

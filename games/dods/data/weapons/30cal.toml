@@ -1,8 +1,9 @@
 # The .30 Cal (specs/dods/weapons.md, "The guns": the script's values):
 # 85 a bullet, 1 bullet a shot, 0.1 s between shots (rounded up to ticks),
-# 150 rounds and 3 spare clips; automatic; useful only deployed (M2: prone and the deploy), so in no ladder yet (class none).
+# 150 rounds and 3 spare clips; automatic; useful only deployed (prone, then the alt fire: `stance`), the ladders' heavy class.
 id = "dods:weapon_30cal"
 base = "dods:gun"
+class = "heavy"
 slot = 0
 # Unmeasured (weapons.md, open question 10): a stand-in draw time.
 draw = 1.0
@@ -37,6 +38,12 @@ accuracy = 0.2
 alt_accuracy = 0.01
 move_penalty = 0.1
 recoil = 20.0
+
+[hooks."dods:mg"]
+# weapons.md, "Alt fire" (measured): the first shot about 1.2 s after
+# deploying; 15 stamina a shot fired undeployed (100 to 85; open question 4).
+deploy_time = 1.2
+stamina_per_shot = 15.0
 
 [hud]
 name = ".30 Cal"

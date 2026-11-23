@@ -12,8 +12,10 @@
 //!   (`dods:gun`), `FireDelay` (`[trigger] cycle`, rounded up to whole
 //!   ticks: `fire_cycle`), `clip_size` (`[magazine] clip`),
 //!   `DefaultAmmoClips` (its ammo's `max`: that many spare clips), the
-//!   `SoundData` block's `single_shot`, `empty` and `deploy` entries
-//!   (`[sounds]`) and the view and world models. A melee script
+//!   `SoundData` block's `single_shot`, `empty`, `deploy` and `reload`
+//!   entries (`[sounds]`: `fire`, `empty`, `deploy`, `world_reload`, the
+//!   reload others hear; each under DoD:S's name in a map's table,
+//!   `maps::own_sound`) and the view and world models. A melee script
 //!   (`dods:melee`): `Damage` as the swing's, five times it from behind
 //!   (damage.md, "Melee"), `FireDelay` as its refires, `melee_hit`,
 //!   `melee_hit_world` and `melee_miss` (or `single_shot`) as its sounds.
@@ -29,9 +31,6 @@
 //!   without the scripts plays with the server's numbers.
 //!
 //! Known shortcuts:
-//! - The scripts' `reload` sound and the view models' own sound events
-//!   are not mapped: a reload is silent (the model events' entries are not
-//!   preloaded; weapons.md, open question 9).
 //! - A client with no scripts at its start reads them again only by
 //!   taking a server's documents at the join.
 
@@ -39,6 +38,8 @@ use chimera_core::mount::keyvalues::{self, Escapes, Kv};
 use toml::{Table, Value};
 
 use crate::mount::Mount;
+
+use super::super::maps::own_sound;
 
 /// DoD:S's tick, seconds (weapons.md, "Units and conventions").
 const TICK: f64 = super::super::TICK_INTERVAL;
@@ -117,7 +118,7 @@ pub fn apply_script(data: &Kv, doc: &mut Table) -> Applied {
             out.set.push("[melee.primary] refires");
         }
         let sounds = data.get("SoundData");
-        let sound = |k: &str| sounds.and_then(|s| s.str(k)).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        let sound = |k: &str| sounds.and_then(|s| s.str(k)).map(str::trim).filter(|s| !s.is_empty()).map(own_sound);
         let swing = table(table(doc, "melee"), "primary");
         for (from, to) in [("melee_hit", "sound_hit"), ("melee_hit_world", "sound_hit_world")] {
             if let Some(s) = sound(from) {
@@ -172,9 +173,9 @@ pub fn apply_script(data: &Kv, doc: &mut Table) -> Applied {
             out.set.push("ammo max");
         }
         let sounds = data.get("SoundData");
-        let sound = |k: &str| sounds.and_then(|s| s.str(k)).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        let sound = |k: &str| sounds.and_then(|s| s.str(k)).map(str::trim).filter(|s| !s.is_empty()).map(own_sound);
         let mut any = false;
-        for (from, to) in [("single_shot", "fire"), ("empty", "empty"), ("deploy", "deploy")] {
+        for (from, to) in [("single_shot", "fire"), ("empty", "empty"), ("deploy", "deploy"), ("reload", "world_reload")] {
             if let Some(s) = sound(from) {
                 table(doc, "sounds").insert(to.into(), Value::String(s));
                 any = true;
@@ -359,7 +360,7 @@ mod tests {
         assert_eq!(doc["magazine"]["clip"].as_integer(), Some(8));
         assert_eq!(doc["ammo"]["dods:x"]["max"].as_integer(), Some(88));
         assert_eq!(doc["hooks"]["dods:gun"]["alt_accuracy"].as_float(), Some(0.0));
-        assert_eq!(doc["sounds"]["fire"].as_str(), Some("Weapon_X.Shoot"));
+        assert_eq!(doc["sounds"]["fire"].as_str(), Some("dods:Weapon_X.Shoot"));
         assert_eq!(doc["models"]["view"].as_str(), Some("models/v.mdl"));
         assert_eq!(a.notes.len(), 1, "the malformed bullets: {:?}", a.notes);
     }

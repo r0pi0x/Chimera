@@ -2,7 +2,8 @@
 //! `DodsGun`; specs/dods/weapons.md):
 //!
 //! - **Spread**: the script's `Accuracy` as the cone, `SecondaryAccuracy`
-//!   while the sights or scope are up (`AltModes` past its first mode),
+//!   while the sights or scope are up (`AltModes` past its first mode) or
+//!   a machine gun is deployed (`stance::DodsStance::deployed`),
 //!   plus `AccuracyMovePenalty` while its holder moves (`before_frame`).
 //! - **Sights block the trigger**: raising or lowering the sights or
 //!   scope (the data's `[alt]` scope, `step` 0.49 s) blocks the next shot
@@ -83,13 +84,13 @@ pub fn insert(e: &mut EntityWorldMut, p: &DodsGun) {
 /// Garand's reload hold.
 #[allow(clippy::type_complexity)]
 pub fn before_frame(
-    owners: Query<(&Inventory, Option<&Velocity>), Without<crate::map::interp::NetDrawn>>,
+    owners: Query<(&Inventory, Option<&Velocity>, Option<&crate::game::stance::DodsStance>), Without<crate::map::interp::NetDrawn>>,
     mut guns: Query<(&DodsGun, &mut Hitscan, &mut WeaponState, Option<&AltModes>, Option<&Magazine>)>,
 ) {
-    for (inv, velocity) in &owners {
+    for (inv, velocity, stance) in &owners {
         let Some(Ok((gun, mut scan, mut st, alt, mag))) = inv.active.map(|a| guns.get_mut(a)) else { continue };
         let moving = velocity.is_some_and(|v| v.0.with_y(0.0).length() > MOVING);
-        let sighted = alt.is_some_and(|a| a.current > 0);
+        let sighted = alt.is_some_and(|a| a.current > 0) || stance.is_some_and(|s| s.deployed);
         let cone = SpreadShape::Cone(gun.cone(sighted, moving));
         if scan.spread != cone {
             scan.spread = cone;

@@ -13,9 +13,17 @@
 //! and held models (`weapons::add_guns`); on another game's map the same
 //! (`dress_guest_in`), so a DoD:S player wears its body there.
 //!
+//! Its sounds: Source's sound scripts (the map's own entries and its
+//! surfaces') and its guns' (`weapon_sounds`: every entry of the game's
+//! weapon sound script, `scripts/game_sounds_weapons.txt`, so the scripts'
+//! shots, reloads and swings and the view models' own sound events, the
+//! draw, clip and bolt, are all there), the guns' kept in a map's table
+//! under `SOUND_PREFIX` (Source games' script names collide, and a table
+//! keeps the first of a name; on another game's map only under it); then
+//! the map's soundscapes.
+//!
 //! Known shortcuts (M0):
-//! - No HUD look, impact decals or effects of its own; sounds are the
-//!   map's and its surfaces' (Source's sound scripts), none for its guns.
+//! - No HUD look, impact decals or effects of its own.
 //! - Its objectives (`dod_control_point`, `dod_capture_area`, bomb
 //!   targets) and team-only walls (`func_teamblocker`) are not read.
 
@@ -112,12 +120,57 @@ fn no_extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'stat
     (&[], &[])
 }
 
-/// Its sounds: Source's sound scripts (the map's own entries and its
-/// surfaces'), then the map's soundscapes.
+/// Its sounds: Source's sound scripts (the map's own entries, its
+/// surfaces' and its guns', `weapon_sounds`), then the map's soundscapes.
 fn sounds(materials: &mut MaterialLoader, bsp: &vbsp::Bsp, name: &str, surfaces: &SurfaceProps, entities: &[MapEntity]) -> MapSounds {
-    let mut out = source_engine::content::sound::load_with(materials, name, surfaces, entities, std::iter::empty(), true);
+    let guns = weapon_sounds(materials.mount());
+    let mut out = source_engine::content::sound::load_with(materials, name, surfaces, entities, guns.clone(), true);
+    own_weapon_sounds(&mut out, false, &guns);
     source_engine::content::soundscape::load(materials, bsp, name, &mut out);
     out
+}
+
+/// The game's weapon sound script (its guns' shots, reloads, swings and
+/// the view models' own events: `Weapon_Thompson.Draw`).
+pub const WEAPON_SOUNDS: &str = "scripts/game_sounds_weapons.txt";
+
+/// What names DoD:S's own weapon entries in a map's table (TF2's rule:
+/// `tf2::game::maps::SOUND_PREFIX`): a Source game's script names collide
+/// across games (`Weapon_Knife.Swing`, `Bullets.DefaultNearmiss`), and a
+/// map's table keeps the first entry of a name. The guns' data
+/// (`weapons::script_numbers`) and the view models' sound events
+/// (`view::rules`) name them so.
+pub const SOUND_PREFIX: &str = "dods:";
+
+/// `script_name` (an entry of DoD:S's sound scripts) as DoD:S's table
+/// holds it.
+pub fn own_sound(script_name: &str) -> String {
+    format!("{SOUND_PREFIX}{script_name}")
+}
+
+/// Every entry of the weapon sound script on `mount` (`WEAPON_SOUNDS`), in
+/// the file's order; none without it.
+pub fn weapon_sounds(mount: &crate::mount::Mount) -> Vec<String> {
+    use chimera_core::mount::keyvalues::{self, Escapes};
+    let Ok(bytes) = mount.read(WEAPON_SOUNDS) else { return Vec::new() };
+    keyvalues::parse(&String::from_utf8_lossy(&bytes), Escapes::Off)
+        .items()
+        .iter()
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+/// DoD:S's weapon entries in `sounds` copied under `SOUND_PREFIX`
+/// (`own_sound`); the bare names stay too unless `guest` (on another
+/// game's map they would shadow or be shadowed by that game's).
+fn own_weapon_sounds(sounds: &mut MapSounds, guest: bool, guns: &[String]) {
+    for name in guns {
+        let key = name.to_lowercase();
+        let entry = if guest { sounds.entries.remove(&key) } else { sounds.entries.get(&key).cloned() };
+        if let Some(entry) = entry {
+            sounds.entries.insert(own_sound(name).to_lowercase(), entry);
+        }
+    }
 }
 
 /// The game's files for its guest dressing (`map::kept::Dressing::mount`):
@@ -128,7 +181,8 @@ pub fn guest_mount() -> Result<std::sync::Arc<crate::mount::Mount>, String> {
 
 /// DoD:S's players and guns on another game's map (the party apps'):
 /// the guns `kept` names (view and held models) and the class bodies,
-/// read from `mount`, their textures appended to the map's. `lean`: the
+/// read from `mount`, their textures appended to the map's, and their
+/// guns' sounds (`weapon_sounds`, under `SOUND_PREFIX` only). `lean`: the
 /// textures' sizes only.
 pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
@@ -140,6 +194,10 @@ pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'st
     let mut warnings = Vec::new();
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     super::weapons::add_guns(&mut materials, &surfaces, &|g| kit.wants(g), &mut guest, &mut warnings);
+    let guns = weapon_sounds(mount);
+    let mut sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], guns.clone(), true);
+    own_weapon_sounds(&mut sounds, true, &guns);
+    bsp::add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);
     materials.finish_textures();
     warnings.extend(materials.missing);
     map.textures.extend(materials.textures.split_off(textures));

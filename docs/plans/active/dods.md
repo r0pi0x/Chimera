@@ -19,8 +19,8 @@ and the game's own data.
 |---|---|---|
 | Plan and first specs | done (2026-11-23) | this plan; specs/dods/: install, weapons, movement, classes, damage (measured on the dedicated server where marked) |
 | M0 install, mount, maps, bodies in the sandbox | done (2026-11-23) | §4; the log |
-| M1 weapons | M1a done (2026-11-23); M1b not started | §4; the log |
-| M2 movement specifics | not started | §4 |
+| M1 weapons | M1a done (2026-11-23, its gaps fixed the same day); M1b not started | §4; the log |
+| M2 movement specifics | M2a done (2026-11-23): prone, deployed MGs, stamina pool, MGs in the ladders; sprint, jump and the rest wait for measurements (§4, "Needs measuring") | §4; the log |
 | M3 party rungs | not started | §4 |
 
 ## 1. Rules for this port
@@ -142,6 +142,23 @@ where the install is needed, `heavy::` tests that skip without it.
    its jump cost, prone (hull, eyes, transition times, crawl speed),
    being slowed when hit, the deployed-MG state (yaw limits, no
    movement); then the MGs as rungs.
+   - **M2a** (done): prone (measured going down; getting up a stand-in),
+     the MGs deployed prone by the alt fire (the 1.2 s wait, the sights'
+     spread, no movement), the stamina pool and the undeployed MGs' cost,
+     the MGs as the ladders' `heavy` rungs; Source movement's generic
+     `SourceStance` (a game's own box, eye, speed and no jump).
+   - **Needs measuring** (a `tools/dods_probe` pass, §5; each a Known
+     shortcut in its file, nothing invented): sprint (speed, stamina
+     drain, regeneration and its delay, the minimum to start, which
+     directions sprint); the jump (impulse, stamina cost, the weaker jump
+     at low stamina, crouch-jump); getting up from prone (its time,
+     movement during it, a low ceiling, what jump or duck do while prone;
+     ours: the going-down time mirrored); undeploying (ours: the alt fire
+     again, at once); deploying on a ledge standing or crouched
+     (`dod_bodyheightoffset`); the deployed yaw limits; the stamina's
+     regeneration after an undeployed MG shot (ours: the spec's fit, 0.9 a
+     tick, no delay); the slow's speed when hit (stand-in from M1a);
+     unducking time.
 4. **M3, party rungs**: each DoD:S gun a rung of the Ultimate Gun Game,
    the holder its class (a gun carried by one class only: no draw
    needed; the pistols and melee are shared: the rung's class drawn
@@ -191,6 +208,29 @@ event's presents.
    options, or never?
 
 ## Log
+
+- 2026-11-23, M1 gaps and M2a: (a) targets and other players held no gun:
+  nothing gave a DoD:S body its held model (`map::Held`, which each game's
+  player animation sets: `bodies::hold_weapons` now), and the DoD:S `w_`
+  models hang on the body's `ValveBiped.weapon_bone` (SMGs, pistols, MGs)
+  or `weapon_bone_left` (rifles), which the bodies have but only the
+  game's animations put in the hands (at rest they sit at the feet);
+  until the bodies animate (M3) each weapon bone rests where the body's
+  own `StandIdle_tommy` / `StandIdle_RIFLE` puts it (`bodies::HOLDS`). (b) The guns' sounds:
+  every entry of `scripts/game_sounds_weapons.txt` loads with a DoD:S map
+  and with its guest dressing, under `dods:` (`maps::own_sound`, TF2's
+  rule), the scripts' shots, swings and world reloads and the view
+  models' events (`Weapon_Thompson.Draw`) named so. (c) `dods:axis_rifleman`
+  wore the US body: on a map loaded for another game's gameplay only
+  unnamed bodies stayed (`GameKit::stay`); named ones stay now (hostages
+  never load with a players' kit). M2a: `stance` (prone: `+alt1`, Z in the
+  party; the eye eased to 10 over 80 ticks by a power ease fitted to the
+  measured heights, then the 24-high box, 50 u/s crawl, no jump; getting
+  up a stand-in), the MGs' `dods:mg` (deploy prone with the alt fire,
+  first shot 1.2 s later, the sights' spread, no movement; undeployed 15
+  stamina a shot), `stamina` (100, 60 a second back), the MGs as `heavy`
+  rungs; Chimera's Source movement gained `SourceStance`. Not done (no
+  measurement): §4, "Needs measuring".
 
 - 2026-11-23, M0 fixes and M1a: (a) the dedicated server's
   `hl2/hl2_textures_dir.vpk` lacks its archives: an archive whose parts

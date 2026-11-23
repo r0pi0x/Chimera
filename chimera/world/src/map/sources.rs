@@ -914,16 +914,17 @@ mod tests {
         }
     }
 
-    /// With `players`, the map game's player bodies and HUD look stay
-    /// (asked of the loader as `KitLoad::Players`), after the gameplay's
-    /// own bodies; its other parts still go.
+    /// With `players`, the map game's player bodies (those worn by name
+    /// too: a class's body, DoD:S's) and HUD look stay (asked of the loader
+    /// as `KitLoad::Players`, which loads no hostages), after the
+    /// gameplay's own bodies; its other parts still go.
     #[test]
     fn a_map_for_players_of_its_game_keeps_their_bodies_and_hud() {
         fn with_players(name: &str, o: &MapLoadOptions) -> Result<MapData, String> {
             assert!(matches!(o.kit, KitLoad::Players(_)) && o.kit.bodies() && o.kit.hud() && !o.kit.parts());
             let mut map = a_map(name, o)?;
             map.kit.characters.push(body("a", None));
-            map.kit.characters.push(body("a", Some("a_hostage")));
+            map.kit.characters.push(body("a", Some("a_class")));
             map.kit.hud = Some(default());
             Ok(map)
         }
@@ -942,7 +943,11 @@ mod tests {
         };
         let map = S3.load("a:x", 0).unwrap();
         let bodies: Vec<_> = map.kit.characters.iter().map(|c| (c.game, c.name.as_deref())).collect();
-        assert_eq!(bodies, [(Some("b"), Some("b_soldier")), (Some("a"), None)], "the gameplay's first; no hostage");
+        assert_eq!(
+            bodies,
+            [(Some("b"), Some("b_soldier")), (Some("a"), None), (Some("a"), Some("a_class"))],
+            "the gameplay's first; the named class body kept"
+        );
         assert!(map.kit.hud.is_some(), "the HUD look stays");
         assert!(map.kit.nav.is_none(), "the rest goes");
         assert_eq!(map.kit.held.len(), 1);

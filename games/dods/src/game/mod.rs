@@ -13,7 +13,8 @@
 //! - `bodies`: the twelve classes' player models as bodies (MDL 44, their
 //!   animations from the shared MDL 48), worn by name;
 //! - `movement`: `dods:movement`, Source's movement with DoD:S's run
-//!   speed, friction and stances (stand 72 / eye 58, duck 45 / eye 34);
+//!   speed, friction and stances (stand 72 / eye 58, duck 45 / eye 34),
+//!   with `stance` (prone, deployed machine guns) and `stamina`;
 //! - `weapons`: M0's stand-in gun, the Colt, as data;
 //! - `parts`: what the game lends other games' apps (`PARTS`).
 //!
@@ -32,6 +33,8 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod stamina;
+pub mod stance;
 pub mod view;
 pub mod weapons;
 
@@ -133,7 +136,8 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     loader: &MAP_LOADER,
     guest: Some(&GUEST),
     kept: &["dods:weapon_"],
-    binds: &[],
+    // DoD:S's prone key (its `+alt1`; `stance`).
+    binds: &[("z", "+alt1")],
     view_model_fov: Some(view::fov),
     view_model_fov_cvar: None,
     base: None,

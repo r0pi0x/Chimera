@@ -10,18 +10,24 @@
 //! `source_movement`), so other games' characters fit on its maps and its
 //! own on theirs.
 //!
-//! Known shortcuts (M0; M2 is DoD:S's own movement):
-//! - No prone (hull 24, eye 10, 50 u/s crawl, 1.2 s to go down), stamina
-//!   sprint or deployed MGs: Chimera's movement has stand and duck only
-//!   (docs/plans/active/dods.md, "Risks").
+//! With it go a DoD:S player's own parts, on and off in one move with the
+//! movement (`put_on`, `leave`, `take_off`): its stance (`stance`: prone
+//! and the deployed machine guns, handed to Source's movement as its
+//! `SourceStance` each tick, before the step) and its stamina (`stamina`).
+//! `+alt1` (`stance::PRONE_ACTION`) is a named action.
+//!
+//! Known shortcuts:
 //! - The jump is CS:S's stand-in (unmeasured: movement.md, open question
-//!   4), with no stamina cost; ladders, water and fall damage are the
-//!   shared code's.
+//!   4), with no stamina cost; no sprint (unmeasured: `stamina`); ladders,
+//!   water and fall damage are the shared code's.
 
 use bevy::prelude::*;
-use source_engine::source_movement::{SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs};
+use source_engine::source_movement::{
+    SourceMovement, SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceStance,
+};
 
-use crate::slots::Loadout;
+use super::{stamina::DodsStamina, stance::DodsStance};
+use crate::slots::{Loadout, MovementSlot};
 
 /// The movement's id.
 pub const ID: &str = "dods:movement";
@@ -87,5 +93,37 @@ pub fn add_movement(app: &mut App) {
     if app.world().get_resource::<SourceMovementConfigs>().is_some_and(|c| c.get(ID).is_some()) {
         return;
     }
-    app.source_movement(ID, Some(config()), Some(super::GAME));
+    use crate::core::{ActionAppExt, PredictedAppExt};
+    app.source_movement(ID, Some(config()), Some(super::GAME))
+        .intent_action(super::stance::PRONE_ACTION)
+        .predicted_net::<DodsStance>()
+        .predicted_net::<SourceStance>()
+        .add_systems(crate::core::Predict::Movement, super::stance::step.before(SourceMovementStep));
+    if let Some(mut registry) = app.world_mut().get_resource_mut::<crate::slots::MovementRegistry>()
+        && let Some(m) = registry.0.iter_mut().find(|m| m.id == ID)
+    {
+        m.insert = put_on;
+        m.remove = leave;
+        m.leave = Some(take_off);
+    }
+}
+
+/// The player's own parts beside Source's marker.
+type Parts = (DodsStance, SourceStance, DodsStamina);
+
+/// `dods:movement`'s insert: the marker, the stance and the stamina, in
+/// one move.
+fn put_on(e: &mut EntityWorldMut, slot: MovementSlot) {
+    e.insert((SourceMovement::default(), slot, DodsStance::default(), SourceStance::default(), DodsStamina::default()));
+}
+
+/// `dods:movement`'s remove: the marker with the parts, in one move.
+fn leave(e: &mut EntityWorldMut) {
+    e.remove::<(SourceMovement, Parts)>();
+}
+
+/// `dods:movement`'s leave for another movement on Source's marker: the
+/// parts off (a prone player's stance with them), in one move.
+fn take_off(e: &mut EntityWorldMut) {
+    e.remove::<Parts>();
 }

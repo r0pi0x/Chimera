@@ -1565,8 +1565,11 @@ impl GameKit {
     /// and view models whose keys start with one of `kept` (another game's
     /// weapons an app offers in the gameplay's slots), and with `players`
     /// what a player of the map's game wears and sees (its character
-    /// bodies, hostages' aside, and its HUD look: an app whose players may
-    /// be that game's, `slots::GameIdentity`), and its impact decals: they
+    /// bodies, those worn by name too: DoD:S's and TF2's class bodies,
+    /// `BodyName`; a map loaded for another game's gameplay is read with a
+    /// players' kit, `KitLoad::Players`, which loads no hostages; and its
+    /// HUD look: an app whose players may be that game's,
+    /// `slots::GameIdentity`), and its impact decals: they
     /// are part of the map game's impact looks, which stay with the map
     /// (`MapData::impacts`; `weapon::impact` routes that game's guns' and
     /// the map's impacts to them); with any kept models, its muzzle
@@ -1591,7 +1594,7 @@ impl GameKit {
         GameKit {
             held: held.into_iter().filter(|h| keep(&h.key)).collect(),
             view_models: view_models.into_iter().filter(|v| keep(&v.key)).collect(),
-            characters: characters.into_iter().filter(|c| players && c.name.is_none()).collect(),
+            characters: if players { characters } else { Vec::new() },
             hud: hud.filter(|_| players),
             decals,
             muzzle_flash: muzzle_flash.filter(|_| guns),
