@@ -7,7 +7,8 @@
 //! the feet, the Iron Bomber's fuse, the Quickiebomb's charge, the Sticky
 //! Jumper's limit, spin-ups and the Brass Beast's spun speed, the
 //! Skullcutter's speeds, the Bread Bite's drain, the Winger's jump, the
-//! melee damages and the Warrior's Spirit's damage taken.
+//! melee damages, the Warrior's Spirit's damage taken and the switch
+//! times after a holster (4.9).
 
 use bevy::prelude::*;
 use chimera_core::core::{Damage, DamageKind, Health, Hitgroup};
@@ -65,6 +66,7 @@ const DEFS: &[(&str, &str, &str)] = &[
     ("Set DamageType Ignite", "set_dmgtype_ignite", "value_is_additive"),
     ("mod_maxhealth_drain_rate", "mod_maxhealth_drain_rate", "value_is_additive"),
     ("heal on hit for rapidfire", "add_onhit_addhealth", "value_is_additive"),
+    ("single wep holster time increased", "mult_switch_from_wep_deploy_time", "value_is_percentage"),
 ];
 
 /// The made-up items: (index, name, item class, slot, class, attributes).
@@ -111,6 +113,7 @@ const ITEMS: &[(u32, &str, &str, &str, &str, &[(&str, &str)])] = &[
     (310, "Warrior's Spirit", "tf_weapon_fists", "melee", "heavy", &[
         ("provide on active", "1"), ("dmg taken increased", "1.3"), ("damage bonus", "1.3"), ("heal on kill", "50"),
     ]),
+    (331, "Fists of Steel", "tf_weapon_fists", "melee", "heavy", &[("single wep holster time increased", "2.0")]),
     (1100, "Bread Bite", "tf_weapon_fists", "melee", "heavy", &[
         ("mult_player_movespeed_active", "1.3"), ("mod_maxhealth_drain_rate", "10"),
     ]),
@@ -327,6 +330,42 @@ fn the_skullcutter_slows_only_while_out_238_280() {
     sim.seconds(2.0);
     let held = traits(&sim, p).max_speed.unwrap();
     assert!((held - 280.0).abs() < 0.01, "{held}");
+}
+
+/// Switch `p` to a fresh `to` and the deploy it got: from the tick of the
+/// switch to its next allowed attack, s.
+fn deploy_to(sim: &mut Sim, p: Entity, to: &str) -> f64 {
+    let other = give(sim.app.world_mut(), p, to).unwrap();
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(other);
+    sim.ticks(1);
+    let now = sim.app.world().resource::<chimera_core::core::SimClock>().now;
+    sim.app.world().get::<Inventory>(p).unwrap().next_attack - now
+}
+
+#[test]
+fn switching_from_the_fists_of_steel_takes_1_0_and_from_a_sword_0_875() {
+    let dt = TICK_INTERVAL as f64;
+    // Out 1 s (`holding`): x2.0 on the next weapon's 0.5 s.
+    let mut s = sim();
+    let (p, fists) = holding(&mut s, greybox::SPAWNS[0], "tf2:fists_of_steel");
+    let d = deploy_to(&mut s, p, "tf2:tf_weapon_minigun");
+    assert!((d - 1.0).abs() <= dt + 1e-6, "{d}");
+    // Out only 0.3 s: not counted.
+    s.seconds(1.2);
+    s.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(fists);
+    s.seconds(0.3);
+    let d = deploy_to(&mut s, p, "tf2:tf_weapon_shotgun_primary");
+    assert!((d - 0.5).abs() <= dt + 1e-6, "{d}");
+    // A sword either side: x1.75.
+    let mut s = sim();
+    let (p, _) = holding(&mut s, greybox::SPAWNS[0], "tf2:scotsmans_skullcutter");
+    let d = deploy_to(&mut s, p, "tf2:tf_weapon_grenadelauncher");
+    assert!((d - 0.875).abs() <= dt + 1e-6, "{d}");
+    // The stock Fists: the plain 0.5.
+    let mut s = sim();
+    let (p, _) = holding(&mut s, greybox::SPAWNS[0], "tf2:tf_weapon_fists");
+    let d = deploy_to(&mut s, p, "tf2:tf_weapon_minigun");
+    assert!((d - 0.5).abs() <= dt + 1e-6, "{d}");
 }
 
 #[test]

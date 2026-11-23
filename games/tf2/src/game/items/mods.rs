@@ -28,12 +28,17 @@
 //!   (20 at once on a deploy after a refill), never below 100; holstered,
 //!   it comes back as fast; his health keeps its share
 //!   (`movement::class_health` takes `ItemDrains::of`).
+//! - **Switching** (4.9, `holster`, predicted with the switch): the
+//!   weapon switched to deploys in its `draw` × the one switched from's
+//!   `holster` (`mult_switch_from_wep_deploy_time`, only when that one had
+//!   been out longer than `HOLSTER_AFTER`) × 1.75 when the one switched
+//!   from is a sword and the new one isn't (a sword's own `draw` has it).
 //!
 //! Known shortcuts:
 //! - Wearables (Darwin's Danger Shield, the Cozy Camper) convert and map,
 //!   but nothing puts one on a player yet (no loadouts), and regen, the
-//!   scoped knockback and flinch rules, afterburn immunity and the switch
-//!   times after a holster (`holster`) aren't applied.
+//!   scoped knockback and flinch rules and afterburn immunity aren't
+//!   applied; the draw animation keeps its rate on a longer deploy.
 //! - Crits are off (the party's choice), so a damage-taken factor acts on
 //!   the whole hit (the spec's base part is the whole).
 
@@ -67,6 +72,14 @@ pub struct ItemParams {
     pub holster: f32,
     pub ignite: bool,
     pub afterburn_immune: bool,
+    /// A sword (`is_a_sword`): switching from it takes ×1.75 (4.9; to it,
+    /// its own `draw` has it).
+    pub sword: bool,
+    /// The stock weapon of ours it is built over (`super::base_in`: its
+    /// view-model sequences, effects and stance are that weapon's).
+    pub base: String,
+    /// Its model's skin (`visuals` `skin`; none: the team's).
+    pub skin: Option<i32>,
 }
 
 impl Default for ItemParams {
@@ -90,6 +103,9 @@ impl Default for ItemParams {
             holster: 1.0,
             ignite: false,
             afterburn_immune: false,
+            sword: false,
+            base: String::new(),
+            skin: None,
         }
     }
 }
@@ -118,6 +134,9 @@ impl ItemParams {
             holster: a("mult_switch_from_wep_deploy_time"),
             ignite: r.flag("set_dmgtype_ignite"),
             afterburn_immune: r.flag("afterburn_immunity"),
+            sword: r.flag("is_a_sword"),
+            base: String::new(),
+            skin: r.visuals.skin.and_then(|s| i32::try_from(s).ok()),
         }
     }
 }
@@ -327,6 +346,66 @@ fn drains_back(_: Option<(f32, bool)>) -> f32 {
     10.0
 }
 
+/// How long a weapon must have been out for its holster multiplier to
+/// count (4.9).
+pub const HOLSTER_AFTER: f64 = 0.5;
+
+/// The sword's switch factor, either side (4.9).
+pub const SWORD_SWITCH: f32 = 1.75;
+
+/// When a holder's weapon in hand was deployed (sim time).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct DeployedAt(pub f64);
+
+/// The deploy's factor for switching from `from` (out for `out` s) to
+/// `to` (module doc, "Switching").
+pub fn switch_factor(from: Option<&ItemParams>, out: f64, to: Option<&ItemParams>) -> f32 {
+    let Some(from) = from else { return 1.0 };
+    let mut f = 1.0;
+    if out > HOLSTER_AFTER {
+        f *= from.holster;
+    }
+    if from.sword && !to.is_some_and(|t| t.sword) {
+        f *= SWORD_SWITCH;
+    }
+    f
+}
+
+/// Each deploy longer by the weapon switched from (module doc,
+/// "Switching"), after the switch.
+pub fn holster(
+    mut events: MessageReader<chimera_sim::weapon::WeaponEvent>,
+    mut holders: Query<(&mut Inventory, Option<&mut DeployedAt>)>,
+    mut weapons: Query<(&Weapon, &mut chimera_sim::weapon::WeaponState, Option<&Tf2Item>)>,
+    clock: Res<SimClock>,
+    mut commands: Commands,
+) {
+    let now = clock.now;
+    for e in events.read() {
+        if !matches!(e.kind, chimera_sim::weapon::WeaponEventKind::Deployed) {
+            continue;
+        }
+        let Ok((mut inv, at)) = holders.get_mut(e.owner) else { continue };
+        let out = at.as_ref().map_or(0.0, |a| now - a.0);
+        match at {
+            Some(mut a) => a.0 = now,
+            None => {
+                commands.entity(e.owner).insert(DeployedAt(now));
+            }
+        }
+        let from = inv.last.and_then(|w| weapons.get(w).ok()).and_then(|(_, _, i)| i.map(|i| i.0.clone()));
+        let Ok((w, mut st, to)) = weapons.get_mut(e.weapon) else { continue };
+        let f = switch_factor(from.as_ref(), out, to.map(|t| &t.0));
+        if f == 1.0 {
+            continue;
+        }
+        let ready = now + (w.draw_time * f) as f64;
+        inv.next_attack = inv.next_attack.max(ready);
+        st.next_primary = st.next_primary.max(ready);
+        st.next_secondary = st.next_secondary.max(ready);
+    }
+}
+
 /// `tf2:item`'s hook and rules.
 pub fn add(app: &mut App) {
     use chimera_sim::weapon::data::WeaponDataAppExt;
@@ -348,6 +427,17 @@ pub fn add(app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_switch_factor_follows_4_9() {
+        let fists = ItemParams { holster: 2.0, ..default() };
+        let sword = ItemParams { sword: true, ..default() };
+        assert_eq!(switch_factor(Some(&fists), 0.6, None), 2.0, "Fists of Steel: 1.0 s");
+        assert_eq!(switch_factor(Some(&fists), 0.4, None), 1.0, "out 0.5 s or less: not counted");
+        assert_eq!(switch_factor(Some(&sword), 0.1, None), 1.75, "from a sword, always");
+        assert_eq!(switch_factor(Some(&sword), 0.1, Some(&sword)), 1.0, "sword to sword: its own draw has it");
+        assert_eq!(switch_factor(None, 9.0, Some(&fists)), 1.0);
+    }
 
     #[test]
     fn damage_taken_folds_in_the_spec_order() {

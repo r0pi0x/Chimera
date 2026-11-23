@@ -32,6 +32,14 @@
 //!   max-health drain, ignite) goes to the item's `tf2:item` hook
 //!   (`super::mods::ItemParams`).
 //!
+//! Its looks (`looks`, the record's `model` and `visuals`): its own
+//! model (`model_player`, or its class's of `model_player_per_class`) as
+//! `[models] view` and `world`, its kill icon (`item_iconname`) as
+//! `[hud] icon`, the sound entries `visuals` names in place of its
+//! base's (`SOUNDS`: the shot, the Minigun's shot and crit shot, empty,
+//! the swings' hit, world hit and miss, the crit swing), and on its
+//! `tf2:item` hook its base (`super::base_in`) and skin.
+//!
 //! The ladder may draw it (`class` kept) when it deals damage, unless
 //! data/items.toml's `gun_game` says otherwise.
 
@@ -90,7 +98,7 @@ fn ammo_max(ammo: &str) -> Option<i64> {
 
 /// The item's document: `base` (its base weapon's, parsed) with `r`'s
 /// numbers, named `id`, called `name`; `gun_game` the data's override.
-pub fn item_doc(mut doc: Table, id: &str, name: &str, r: &ItemRecord, gun_game: Option<bool>) -> Table {
+pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRecord, gun_game: Option<bool>) -> Table {
     let a = |c: &str| r.attr(c, 1.0);
     let add = |c: &str| r.attr(c, 0.0);
     doc.insert("id".into(), Value::String(id.into()));
@@ -277,8 +285,11 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, r: &ItemRecord, gun_game: 
         doc.insert("draw".into(), Value::Float(d * constants::SWORD_SWITCH));
     }
 
-    // The player's numbers.
-    let params = ItemParams::of(r);
+    looks(&mut doc, r);
+
+    // The player's numbers, its base and skin.
+    let mut params = ItemParams::of(r);
+    params.base = base_id.to_string();
     let t: Table = Value::try_from(&params).ok().and_then(|v| v.as_table().cloned()).unwrap_or_default();
     table(&mut doc, "hooks").insert(super::ITEM_HOOK.into(), Value::Table(t));
 
@@ -288,6 +299,72 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, r: &ItemRecord, gun_game: 
         doc.remove("class");
     }
     doc
+}
+
+/// Where each `visuals` sound kind goes: (kind, place). A place is
+/// `sounds.<key>` (the document's `[sounds]`, where it has the key),
+/// `hook.<hook>.<key>` (a hook it has), or `swings.<key>` (every swing
+/// of `[melee]`).
+pub const SOUNDS: &[(&str, &str)] = &[
+    ("single_shot", "sounds.fire"),
+    ("empty", "sounds.empty"),
+    ("single_shot", "hook.tf2:minigun.fire_sound"),
+    ("burst", "hook.tf2:minigun.fire_crit_sound"),
+    ("empty", "hook.tf2:minigun.empty_sound"),
+    ("melee_miss", "swings.sound_swing"),
+    ("melee_hit", "swings.sound_hit"),
+    ("melee_hit_world", "swings.sound_hit_world"),
+    ("burst", "hook.tf2:melee.crit_swing"),
+];
+
+/// The record's looks onto `doc` (module doc).
+fn looks(doc: &mut Table, r: &ItemRecord) {
+    let v = &r.visuals;
+    let arms = [crate::game::weapons::GUN_HOOK, crate::game::weapons::MELEE_HOOK]
+        .iter()
+        .find_map(|h| hook(doc, h)?.get("arms")?.as_str().map(str::to_string));
+    let model = arms
+        .as_ref()
+        .and_then(|a| v.per_class.get(a))
+        .or(r.model.as_ref())
+        .or_else(|| v.per_class.values().next())
+        .cloned();
+    if let Some(m) = model {
+        let t = table(doc, "models");
+        t.insert("view".into(), Value::String(m.clone()));
+        t.insert("world".into(), Value::String(m));
+    }
+    if let Some(icon) = &v.icon {
+        table(doc, "hud").insert("icon".into(), Value::String(icon.clone()));
+    }
+    let own = |n: &str| Value::String(crate::game::maps::own_sound(n));
+    for (kind, place) in SOUNDS {
+        let Some(name) = v.sounds.get(*kind) else { continue };
+        if let Some(key) = place.strip_prefix("sounds.") {
+            if let Some(t) = doc.get_mut("sounds").and_then(Value::as_table_mut)
+                && t.contains_key(key)
+            {
+                t.insert(key.into(), own(name));
+            }
+        } else if let Some(rest) = place.strip_prefix("hook.") {
+            let (h, key) = rest.rsplit_once('.').expect("hook.<hook>.<key>");
+            if let Some(t) = hook(doc, h)
+                && t.contains_key(key)
+            {
+                t.insert(key.into(), own(name));
+            }
+        } else if let Some(key) = place.strip_prefix("swings.")
+            && let Some(m) = doc.get_mut("melee").and_then(Value::as_table_mut)
+        {
+            for (_, swing) in m.iter_mut() {
+                if let Some(t) = swing.as_table_mut()
+                    && t.contains_key(key)
+                {
+                    t.insert(key.into(), own(name));
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -296,8 +296,8 @@ version `items::VERSION`) runs host-side in `chimera_pack sets tf2
 folds each item's attributes by their `description_format` (multiply,
 add, OR; integers rounded once at the end), and writes one record per
 weapon item (class, slot, classes, models, folded attributes, the
-script's base numbers, effective numbers) into
-`chimera/gen/tf2.items/v1/items.toml`, set `items` of the TF2 build's
+script's base numbers, effective numbers, and from version 2 its looks:
+`visuals`) into `chimera/gen/tf2.items/v<VERSION>/items.toml`, set `items` of the TF2 build's
 manifest. Nothing of the schema is committed.
 
 In the game (`games/tf2/src/game/items/`): data/items.toml (ours) names
@@ -335,8 +335,8 @@ install: tests/it/heavy/items.rs):
   Family Business, Brass Beast, Warrior's Spirit, Bread Bite, Iron Bomber,
   Sticky Jumper (bar its model), Scotsman's Skullcutter, Volcano Fragment,
   Back Scratcher (packs/healers recorded, none in a party match),
-  Homewrecker, Maul, Fists of Steel (ranged/melee taken; the next
-  deploy's ×2 not applied), Holy Mackerel, AWPer Hand, Black Rose.
+  Homewrecker, Maul, Fists of Steel (ranged/melee taken, the next
+  deploy's ×2), Holy Mackerel, AWPer Hand, Black Rose.
 - **Partial**: Direct Hit (mini-crit vs airborne: batch 2), Neon
   Annihilator (crit vs wet: batch 2), Bushwacka (mini-crit promotion:
   batch 2; its damage taken applied), Quickiebomb (destroying enemy
@@ -348,10 +348,16 @@ install: tests/it/heavy/items.rs):
   Rainblower (the rainbow look), Darwin's and Cozy Camper (converted and
   mapped, but nothing wears a wearable yet; regen, afterburn immunity,
   scoped rules not applied).
-- **For every item**: its own models, sounds, kill icon and view-model
-  animations are not read yet (`items` module doc: they key by the stock
-  ids, so an item shows the stand-in gun); the holster multiplier
-  (`mult_switch_from_wep_deploy_time`) is recorded, not applied.
+- **For every item** (2026-11-23, converter version 2: the record's
+  `visuals`): its own `c_` model on its class's arms (view and held), its
+  skin, kill icon (`item_iconname`, else its base's) and the sound
+  entries its `visuals` name (shot, Minigun crit shot, empty, melee
+  hit/miss); its view-model sequences, stance and effects are its base's
+  (`items::stock_of`); the holster multiplier and the sword's ×1.75 from
+  the switched-from side apply (`items::mods::holster`). Left: `anim_slot`
+  and `animation_replacement`, its own muzzle/tracer/attached particles
+  (recorded only), and per-item asset sets (the asset service serves no
+  item model yet: the stand-in shows there).
 
 ### Batch 2: small new mechanics (68 entries)
 

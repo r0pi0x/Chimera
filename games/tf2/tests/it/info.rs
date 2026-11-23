@@ -33,7 +33,7 @@ fn the_bundle_lends_its_guns() {
     let guns: Vec<&str> = b.parts.guns.iter().map(|g| g.id).collect();
     assert_eq!(guns, GUNS);
     assert!(b.parts.playable() && b.parts.maps.is_empty(), "rungs, no pool maps yet");
-    assert!(b.guest.is_some() && b.kept == ["tf2:tf_weapon_"]);
+    assert!(b.guest.is_some() && b.kept == ["tf2:"]);
     assert!(GUNS.iter().all(|g| g.starts_with(b.kept[0])));
     assert_eq!((b.view_model_fov.unwrap())().fov, 54.0);
     let names = tf2::game::weapons::tf2_weapons();

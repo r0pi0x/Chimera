@@ -274,6 +274,9 @@ pub struct Tf2PlayerAnim {
     kind: Option<Kind>,
     /// The holder's class (`follow_class`; None: the gun's own).
     pub class: Option<String>,
+    /// The active weapon's base when it is an unlock (`follow_items`:
+    /// it stands as that weapon).
+    pub base: Option<String>,
     pub gestures: Vec<Gesture>,
     /// The last `move_x`, `move_y`, `body_yaw`, `body_pitch` set.
     pub pose: [f32; 4],
@@ -305,6 +308,7 @@ impl Default for Tf2PlayerAnim {
             weapon: None,
             kind: None,
             class: None,
+            base: None,
             gestures: Vec::new(),
             pose: [0.0; 4],
             spun: false,
@@ -492,7 +496,8 @@ impl Tf2PlayerAnim {
         let set = a.set.clone();
         a.ik_locks = true;
         a.ik_rules = true;
-        let kind = weapon.map_or(Kind::Primary, |w| Kind::of_class(w, self.class.as_deref()));
+        // An unlock stands as its base (`follow_items`).
+        let kind = weapon.map_or(Kind::Primary, |w| Kind::of_class(self.base.as_deref().unwrap_or(w), self.class.as_deref()));
         // Every pose parameter at 0 in its own units when the model is set
         // and on each spawn (4b): left to the engine's default, one whose
         // range starts at 0 sat at its middle, a special item's pose (the
@@ -680,18 +685,27 @@ fn follow_items(
         Or<(With<Tf2PlayerAnim>, With<source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>)>,
     >,
     items: Query<&PlayerPoseParams>,
+    unlocks: Query<&super::items::mods::Tf2Item>,
 ) {
     for (drawn, sim, inv) in &mut bodies {
-        let list = inv.and_then(|i| i.active).and_then(|w| items.get(w).ok()).map_or(&[][..], |p| p.0.as_slice());
-        if let Some(mut a) = drawn
-            && a.item_params != list
-        {
-            a.item_params = list.to_vec();
+        let active = inv.and_then(|i| i.active);
+        let list = active.and_then(|w| items.get(w).ok()).map_or(&[][..], |p| p.0.as_slice());
+        let base = active.and_then(|w| unlocks.get(w).ok()).map(|i| i.0.base.as_str()).filter(|b| !b.is_empty());
+        if let Some(mut a) = drawn {
+            if a.item_params != list {
+                a.item_params = list.to_vec();
+            }
+            if a.base.as_deref() != base {
+                a.base = base.map(str::to_string);
+            }
         }
-        if let Some(mut s) = sim
-            && s.0.item_params != list
-        {
-            s.0.item_params = list.to_vec();
+        if let Some(mut s) = sim {
+            if s.0.item_params != list {
+                s.0.item_params = list.to_vec();
+            }
+            if s.0.base.as_deref() != base {
+                s.0.base = base.map(str::to_string);
+            }
         }
     }
 }

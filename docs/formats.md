@@ -17,7 +17,7 @@ converter hashes, how long the asset service keeps a version):
 | Served entry's recipe (`chimera-recipe`) | 1 | `chimera/assets/src/map_cache/served.rs` `RECIPE_FORMAT` |
 | Map format's bump (with the hash of its sources, below) | 1 | `chimera/world/src/map/cache.rs` `FORMAT_BUMP` |
 | Halo's campaign character units (`halo_ce:character_unit`) | 1 | `games/halo_ce/src/game/campaign/unit.rs` `VERSION` |
-| TF2's item pack (`tf2:item_stats`) | 1 | `games/tf2/src/game/items/mod.rs` `VERSION` |
+| TF2's item pack (`tf2:item_stats`) | 2 | `games/tf2/src/game/items/mod.rs` `VERSION` |
 
 ## Made by build scripts
 

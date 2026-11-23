@@ -383,8 +383,12 @@ pub fn draws_tracer(n: u32, every: u32) -> bool {
 
 /// Each gun's looks, read from the data: (gun, looks).
 fn looks_table() -> Vec<(String, LooksParams)> {
-    super::tf2_weapons()
-        .weapons
+    looks_of(super::tf2_weapons().weapons)
+}
+
+/// The looks of `weapons` that name some (`LOOKS_HOOK`).
+fn looks_of(weapons: impl IntoIterator<Item = chimera_sim::weapon::data::WeaponData>) -> Vec<(String, LooksParams)> {
+    weapons
         .into_iter()
         .filter_map(|w| {
             let mut p: LooksParams = w.hooks.get(LOOKS_HOOK)?.clone().try_into().unwrap_or_else(|e| panic!("{} {LOOKS_HOOK}: {e}", w.id));
@@ -414,6 +418,12 @@ impl Default for GunLooks {
 }
 
 impl GunLooks {
+    /// The looks of `set`'s guns (the registered set: an unlock's are its
+    /// base's hooks, `items::docs`).
+    pub fn from_set(set: &chimera_sim::weapon::data::WeaponSet) -> Self {
+        Self(looks_of(set.weapons.iter().cloned()))
+    }
+
     /// A gun's looks.
     pub fn of(&self, gun: &str) -> Option<&LooksParams> {
         self.0.iter().find(|(g, _)| g == gun).map(|(_, p)| p)

@@ -34,6 +34,15 @@
 //!    numbers from `attrs` over its weapon data (`super::docs`);
 //!    `effective` is for reading and for the converted-install test.
 //!
+//! 5. **Looks** (install.md 5.1, viewmodel.md 1): the item's `visuals`
+//!    block (its prefabs' merged under it) and its own presentation keys
+//!    go into `visuals` (`Visuals`): the sound entries it plays in place
+//!    of its item class's (`sound_single_shot` -> `sounds.single_shot`
+//!    ...), `item_iconname` (its kill icon), `skin`, `anim_slot`,
+//!    `animation_replacement`, `muzzle_flash`, `tracer_effect`,
+//!    `particle_effect`, `model_player_per_class` and `attach_to_hands`.
+//!    Version 2 added them.
+//!
 //! The output is deterministic (sorted maps, no time, no paths): the same
 //! inputs give the same bytes (`super::VERSION` names the rules).
 
@@ -136,6 +145,87 @@ pub struct ItemRecord {
     /// The numbers with the attributes applied (module doc, step 4).
     #[serde(default)]
     pub effective: BTreeMap<String, f64>,
+    /// Its looks (module doc, step 5).
+    #[serde(default, skip_serializing_if = "Visuals::is_empty")]
+    pub visuals: Visuals,
+}
+
+/// An item's looks (module doc, step 5): what it shows and plays in place
+/// of its item class's; empty for an item that looks like its class.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct Visuals {
+    /// `visuals`' `sound_<kind>` entries by kind (`single_shot`, `burst`,
+    /// `double_shot`, `empty`, `reload`, `deploy`, `melee_hit`,
+    /// `melee_hit_world`, `melee_miss`, `special1`...): sound script names.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub sounds: BTreeMap<String, String>,
+    /// `item_iconname`: its kill icon (a `scripts/mod_textures.txt` name).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// `visuals`' `skin`: its model's skin.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skin: Option<i64>,
+    /// `anim_slot`: the slot its activities animate as.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anim_slot: Option<String>,
+    /// `visuals`' `animation_replacement`: activity -> activity.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub anim_replace: BTreeMap<String, String>,
+    /// `visuals`' `muzzle_flash` and `tracer_effect` (particle systems).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub muzzle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tracer: Option<String>,
+    /// `visuals`' `particle_effect`: a system attached to the model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub particle: Option<String>,
+    /// `model_player_per_class`: class (lower case) -> model.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub per_class: BTreeMap<String, String>,
+    /// `attach_to_hands`: bone-merged onto the class's arms (1) or a
+    /// one-piece view model (0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_to_hands: Option<bool>,
+}
+
+impl Visuals {
+    pub fn is_empty(&self) -> bool {
+        *self == Visuals::default()
+    }
+
+    /// The looks of resolved item entries `e` (module doc, step 5).
+    pub fn of(e: &Kv) -> Visuals {
+        let text = |kv: Option<&Kv>| kv.and_then(Kv::str_value).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+        let v = e.get("visuals");
+        let mut out = Visuals::default();
+        for (k, x) in v.map(Kv::items).unwrap_or_default() {
+            let key = k.trim().to_ascii_lowercase();
+            if let Some(kind) = key.strip_prefix("sound_")
+                && let Some(t) = text(Some(x))
+            {
+                out.sounds.insert(kind.to_string(), t);
+            }
+        }
+        out.icon = text(e.get("item_iconname"));
+        out.skin = text(v.and_then(|v| v.get("skin"))).and_then(|t| t.parse().ok());
+        out.anim_slot = text(e.get("anim_slot")).map(|t| t.to_ascii_lowercase());
+        for (k, x) in v.and_then(|v| v.get("animation_replacement")).map(Kv::items).unwrap_or_default() {
+            if let Some(t) = text(Some(x)) {
+                out.anim_replace.insert(k.trim().to_string(), t);
+            }
+        }
+        out.muzzle = text(v.and_then(|v| v.get("muzzle_flash")));
+        out.tracer = text(v.and_then(|v| v.get("tracer_effect")));
+        out.particle = text(v.and_then(|v| v.get("particle_effect")));
+        for (k, x) in e.get("model_player_per_class").map(Kv::items).unwrap_or_default() {
+            if let Some(t) = text(Some(x)) {
+                out.per_class.insert(k.trim().to_ascii_lowercase(), t);
+            }
+        }
+        out.attach_to_hands = text(e.get("attach_to_hands")).map(|t| t != "0");
+        out
+    }
 }
 
 impl ItemRecord {
@@ -436,6 +526,7 @@ pub fn convert(schema: &str, script: &dyn Fn(&str) -> Option<Kv>) -> Converted {
             unknown,
             base,
             effective: BTreeMap::new(),
+            visuals: Visuals::of(&e),
         };
         r.effective = effective(&r);
         out.push(r);
@@ -463,7 +554,7 @@ mod tests {
     {
         "weapon_base" { "item_quality" "unique" "attributes" { "made up flag" { "attribute_class" "made_up_flag" "value" "1" } } }
         "pistol_kind" { "prefab" "weapon_base" "item_class" "tf_weapon_handgun_scout_secondary" "item_slot" "secondary" }
-        "looks" { "model_player" "models/made/up.mdl" }
+        "looks" { "model_player" "models/made/up.mdl" "visuals" { "sound_single_shot" "Made_Up.Single" "skin" "1" } }
     }
     "items"
     {
@@ -484,6 +575,9 @@ mod tests {
         }
         "11" { "name" "A Hat" "item_class" "tf_wearable" "item_slot" "head" }
         "12" { "name" "A Shield" "item_class" "tf_wearable" "item_slot" "secondary" "static_attrs" { "no such attribute" "2" } }
+                "14" { "name" "Loud Club" "prefab" "weapon_base" "item_class" "tf_weapon_club" "item_slot" "melee" "item_iconname" "loud_club" "anim_slot" "MELEE_ALLCLASS" "attach_to_hands" "1"
+               "model_player_per_class" { "Sniper" "models/made/club_sniper.mdl" }
+               "visuals" { "sound_melee_hit" "Made_Up.Hit" "sound_melee_miss" "Made_Up.Miss" "muzzle_flash" "made_flash" "animation_replacement" { "ACT_MELEE_VM_DRAW" "ACT_ITEM2_VM_DRAW" } } }
         "13" { "name" "Plain Club" "prefab" "weapon_base" "item_class" "tf_weapon_club" "item_slot" "melee" }
     }
     "attributes"
@@ -511,7 +605,7 @@ mod tests {
         let p = &c.pack;
         assert_eq!((p.converter.as_str(), p.version), (super::super::CONVERTER, super::super::VERSION));
         // The hat is no weapon; the shield is (a weapon slot's wearable).
-        assert_eq!(p.items.iter().map(|i| i.index).collect::<Vec<_>>(), [10, 12, 13]);
+        assert_eq!(p.items.iter().map(|i| i.index).collect::<Vec<_>>(), [10, 12, 13, 14]);
         let r = p.get(10).unwrap();
         assert_eq!(r.class, "tf_weapon_handgun_scout_secondary", "from the prefab chain");
         assert_eq!(r.slot.as_deref(), Some("secondary"), "the prefab's over the default item's");
@@ -530,6 +624,18 @@ mod tests {
         assert!((r.effective["damage"] - 15.0 * 0.575).abs() < 1e-9);
         assert_eq!(p.get(12).unwrap().unknown, ["no such attribute"]);
         assert!(p.get(13).unwrap().base.is_empty(), "no script for the club");
+        // Looks: a prefab's visuals reach the item; an item's own keys.
+        assert_eq!(r.visuals.sounds.get("single_shot").map(String::as_str), Some("Made_Up.Single"));
+        assert_eq!(r.visuals.skin, Some(1));
+        assert!(p.get(13).unwrap().visuals.is_empty(), "no looks of its own");
+        let v = &p.get(14).unwrap().visuals;
+        assert_eq!((v.sounds["melee_hit"].as_str(), v.sounds["melee_miss"].as_str()), ("Made_Up.Hit", "Made_Up.Miss"));
+        assert_eq!(v.icon.as_deref(), Some("loud_club"));
+        assert_eq!(v.anim_slot.as_deref(), Some("melee_allclass"));
+        assert_eq!(v.anim_replace["ACT_MELEE_VM_DRAW"], "ACT_ITEM2_VM_DRAW");
+        assert_eq!(v.muzzle.as_deref(), Some("made_flash"));
+        assert_eq!(v.per_class["sniper"], "models/made/club_sniper.mdl");
+        assert_eq!(v.attach_to_hands, Some(true));
         assert_eq!(c.notes.len(), 1, "{:?}", c.notes);
         assert_eq!(p.scripts, ["tf_weapon_handgun_scout_secondary"]);
     }

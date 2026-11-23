@@ -303,12 +303,27 @@ pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
 /// The guns' sound entries (weapons.md 8.3; `sets::M2_WEAPONS`) and the
 /// players' voices (`voices`: pain, death and kill lines).
 pub fn weapon_sounds() -> impl Iterator<Item = String> {
-    gun_sounds().chain(super::voices::Tf2Voices::built_in().entries())
+    weapon_sounds_on(None)
 }
 
-/// The guns' sound entries alone (kept under `SOUND_PREFIX`).
-fn gun_sounds() -> impl Iterator<Item = String> {
-    super::sets::M2_WEAPONS.iter().flat_map(|w| w.sounds.iter().map(|s| s.to_string()))
+/// `weapon_sounds` with the entries of the unlocks on `mount`
+/// (`items::on_mount`: those their `visuals` name).
+pub fn weapon_sounds_on(mount: Option<&crate::mount::Mount>) -> impl Iterator<Item = String> {
+    gun_sounds(mount).into_iter().chain(super::voices::Tf2Voices::built_in().entries())
+}
+
+/// The guns' sound entries alone (kept under `SOUND_PREFIX`), the
+/// unlocks' on `mount` too.
+fn gun_sounds(mount: Option<&crate::mount::Mount>) -> Vec<String> {
+    let mut out: Vec<String> = super::sets::M2_WEAPONS.iter().flat_map(|w| w.sounds.iter().map(|s| s.to_string())).collect();
+    for item in mount.map(super::items::on_mount).unwrap_or_default() {
+        for s in item.looks.sounds {
+            if !out.contains(&s) {
+                out.push(s);
+            }
+        }
+    }
+    out
 }
 
 /// What names TF2's own sound entries in a map's table: a Source game's
@@ -327,8 +342,8 @@ pub fn own_sound(script_name: &str) -> String {
 /// TF2's weapon entries in `sounds` moved under `SOUND_PREFIX` (`own_sound`);
 /// the bare names stay too unless `guest` (on another game's map they would
 /// shadow or be shadowed by that game's).
-fn own_weapon_sounds(sounds: &mut MapSounds, guest: bool) {
-    for name in gun_sounds() {
+fn own_weapon_sounds(sounds: &mut MapSounds, guest: bool, guns: &[String]) {
+    for name in guns {
         let key = name.to_lowercase();
         let entry = if guest { sounds.entries.remove(&key) } else { sounds.entries.get(&key).cloned() };
         if let Some(entry) = entry {
@@ -357,7 +372,8 @@ fn held_kit(kit: &mut Kit) {
 /// the other bones bodies have too: not the arms' own `vm_` bones,
 /// `is_view_bone`) and their
 /// projectiles' models (`weapons::PROJECTILES`: the rocket, the grenade,
-/// the sticky, the needle). What a gun's
+/// the sticky, the needle), and the unlocks on the mount the same way
+/// (`items::on_mount`: their own models, their base's projectile). What a gun's
 /// `weapon/<id>` set holds is what this reads for it (`sets`).
 pub fn add_guns(
     materials: &mut MaterialLoader,
@@ -367,13 +383,25 @@ pub fn add_guns(
     warnings: &mut Vec<String>,
 ) {
     use super::weapons::{self as w, PROJECTILES};
-    super::view::load(materials, wants, every_class, &mut into.view_models, warnings);
+    let items = super::items::on_mount(materials.mount());
+    super::view::load_with(materials, wants, every_class, &items, &mut into.view_models, warnings);
     let set = w::tf2_weapons();
-    for (gun, arms) in w::arms_by_gun() {
+    // The stock guns, then the unlocks on the mount (`items::on_mount`:
+    // their own models; their projectiles their base's).
+    let mut guns: Vec<(String, String, Option<String>, String)> = w::arms_by_gun()
+        .into_iter()
+        .map(|(g, arms)| (g.to_string(), arms, set.weapons.iter().find(|d| d.id == g).and_then(|d| d.models.world.clone()), g.to_string()))
+        .collect();
+    for item in items {
+        guns.push((item.id, item.looks.arms, item.looks.world, item.base));
+    }
+    let mut projectiles: Vec<&str> = Vec::new();
+    for (gun, arms, path, base) in guns {
+        let gun = gun.as_str();
         if !wants(gun) {
             continue;
         }
-        let Some(path) = set.weapons.iter().find(|d| d.id == gun).and_then(|d| d.models.world.clone()) else { continue };
+        let Some(path) = path else { continue };
         // The arms' bones as the bodies have them: the `vm_weapon_bone…`
         // bones are the arms' alone (a player model's weapon bones are
         // `weapon_bone`, `weapon_bone_1`…, `weapon_bone_L`: install.md
@@ -401,7 +429,12 @@ pub fn add_guns(
             }
             Err(e) => warnings.push(e),
         }
-        for (_, key, model) in PROJECTILES.iter().filter(|(g, ..)| *g == gun) {
+        for (_, key, model) in PROJECTILES.iter().filter(|(g, ..)| *g == base) {
+            // Once (an unlock and its base share it).
+            if projectiles.contains(key) {
+                continue;
+            }
+            projectiles.push(key);
             // In its bone's frame, as a held model (its nose, the model's
             // +X, wherever that frame puts it: `MapHeldModel::nose`; flyers
             // fly nose first by it).
@@ -454,8 +487,10 @@ pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'st
     }
     add_guns(&mut materials, &wants, true, &mut guest, &mut warnings);
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
-    let mut sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], weapon_sounds(), true);
-    own_weapon_sounds(&mut sounds, true);
+    let guns = gun_sounds(Some(mount));
+    let names = guns.clone().into_iter().chain(super::voices::Tf2Voices::built_in().entries());
+    let mut sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], names, true);
+    own_weapon_sounds(&mut sounds, true, &guns);
     bsp::add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);
     let look = kit.hud().then(|| super::hud::load(&mut materials).map(std::sync::Arc::new)).flatten();
     add_guest_looks(&mut materials, map);
@@ -480,8 +515,10 @@ fn extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static 
 /// TF2's sounds: Source's sound scripts (the map's own entries and its
 /// surfaces'), then the map's soundscapes.
 fn sounds(materials: &mut MaterialLoader, bsp: &vbsp::Bsp, name: &str, surfaces: &SurfaceProps, entities: &[MapEntity]) -> MapSounds {
-    let mut out = source_engine::content::sound::load_with(materials, name, surfaces, entities, weapon_sounds(), true);
-    own_weapon_sounds(&mut out, false);
+    let guns = gun_sounds(Some(materials.mount()));
+    let names = guns.clone().into_iter().chain(super::voices::Tf2Voices::built_in().entries());
+    let mut out = source_engine::content::sound::load_with(materials, name, surfaces, entities, names, true);
+    own_weapon_sounds(&mut out, false, &guns);
     source_engine::content::soundscape::load(materials, bsp, name, &mut out);
     out
 }

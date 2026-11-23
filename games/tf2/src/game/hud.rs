@@ -169,11 +169,18 @@ pub fn kill_icon_pictures(mount: &Mount) -> Option<BTreeMap<String, UiImage>> {
     let mut out = BTreeMap::new();
     // Each weapon's icon by its id, and the backstab's (weapons_stock.md
     // 8.4: a backstab kill's weapon, `weapons::melee::BACKSTAB`).
-    let mut icons: Vec<(String, String)> =
+    let stock: Vec<(String, String)> =
         super::weapons::tf2_weapons().weapons.into_iter().filter_map(|w| Some((w.id, w.hud.icon?))).collect();
-    icons.push((super::weapons::melee::BACKSTAB.into(), super::weapons::melee::BACKSTAB_ICON.into()));
-    for (id, icon) in icons {
-        let Some((file, [x, y, cw, ch])) = cells.get(&icon.to_lowercase()) else { continue };
+    let mut icons: Vec<(String, Vec<String>)> = stock.iter().map(|(id, icon)| (id.clone(), vec![icon.clone()])).collect();
+    icons.push((super::weapons::melee::BACKSTAB.into(), vec![super::weapons::melee::BACKSTAB_ICON.into()]));
+    // The unlocks on the mount (`items`): their own icon, else their
+    // base's where the sheets lack it.
+    for item in super::items::on_mount(mount) {
+        let base = stock.iter().find(|(id, _)| *id == item.base).map(|(_, i)| i.clone());
+        icons.push((item.id, item.looks.icon.into_iter().chain(base).collect()));
+    }
+    for (id, names) in icons {
+        let Some((file, [x, y, cw, ch])) = names.iter().find_map(|n| cells.get(&n.to_lowercase())) else { continue };
         let file = file.to_lowercase();
         if !sheets.contains_key(&file) {
             let vtf = match here(mount, &format!("materials/{file}.vtf"))? {

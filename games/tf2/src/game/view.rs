@@ -19,6 +19,10 @@
 //! `VIEWMODEL_FOV` (`tf2_viewmodel_fov` in an app of several games),
 //! never mirrored.
 //!
+//! An unlock (`items`, `load_with`) is one more such gun: its own `c_`
+//! model (in its own skin) on its base's class's arms, keyed by its id,
+//! playing its base's sequences (`items::base_in`).
+//!
 //! The sequences are picked by name (the Pyro's `ft_idle` shares its
 //! activity with another gun's): the include's real sequences, which
 //! Source's loader puts in place of the arms' same-named 1-frame stubs
@@ -331,6 +335,12 @@ pub fn sequences(key: &str) -> Option<&'static Sequences> {
     }
 }
 
+/// The stock weapon whose sequences the held weapon plays: an unlock's
+/// base (`items::base_in`: it has none of its own), else itself.
+fn stock(s: &ViewState) -> &'static str {
+    s.data.and_then(super::items::base_in).unwrap_or(s.weapon)
+}
+
 /// `weapon`'s sequences in `class`'s hands (its own class's without one,
 /// or for a class with none of its own here).
 pub fn for_class(weapon: &str, class: Option<&str>) -> Option<&'static Sequences> {
@@ -342,7 +352,7 @@ pub fn for_class(weapon: &str, class: Option<&str>) -> Option<&'static Sequences
 /// The sequences the driver's state picks (`ViewState::variant`: the
 /// holder's class).
 fn of_state(s: &ViewState) -> Option<&'static Sequences> {
-    for_class(s.weapon, s.variant)
+    for_class(stock(s), s.variant)
 }
 
 /// The pick of a table entry: its sequence by name (none: nothing).
@@ -373,7 +383,7 @@ pub fn viewmodel_fov_cvar(app: &mut App) {
 }
 
 fn draw(s: &ViewState) -> Pick {
-    if let Some(m) = melee_sequences(s.weapon) {
+    if let Some(m) = melee_sequences(stock(s)) {
         return names(&[m.draw]);
     }
     named(of_state(s).map(|q| q.draw))
@@ -381,7 +391,7 @@ fn draw(s: &ViewState) -> Pick {
 
 fn idle(s: &ViewState) -> Pick {
     // The raised knife idles raised (`ViewPose` 1, `weapons::melee`).
-    if let Some(m) = melee_sequences(s.weapon) {
+    if let Some(m) = melee_sequences(stock(s)) {
         return names(&[match m.backstab {
             Some([_, raised, ..]) if s.pose == 1 => raised,
             _ => m.idle,
@@ -417,7 +427,7 @@ fn melee_event(f: &mut ViewFrame, m: &MeleeSequences, kind: &WeaponEventKind) {
 }
 
 fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
-    if let Some(m) = melee_sequences(f.state.weapon) {
+    if let Some(m) = melee_sequences(stock(&f.state)) {
         return melee_event(f, m, kind);
     }
     let Some(q) = of_state(&f.state) else { return };
@@ -581,17 +591,66 @@ pub fn load(
     into: &mut Vec<crate::map::MapViewModel>,
     warnings: &mut Vec<String>,
 ) {
+    let items = super::items::on_mount(materials.mount());
+    load_with(materials, wants, every_class, &items, into, warnings);
+}
+
+/// `load` with the unlocks `items` (`items::on_mount`'s, or a test's).
+pub fn load_with(
+    materials: &mut source_engine::content::material::MaterialLoader,
+    wants: &dyn Fn(&str) -> bool,
+    every_class: bool,
+    items: &[super::items::ItemWeapon],
+    into: &mut Vec<crate::map::MapViewModel>,
+    warnings: &mut Vec<String>,
+) {
     use source_engine::content::props;
     let set = super::weapons::tf2_weapons();
     let table = super::classes::classes();
+    // The stock weapons, then the unlocks on the mount (`items::on_mount`:
+    // their own `c_` model on their base's class's arms, in their skin).
+    struct Gun {
+        id: String,
+        own: String,
+        base: String,
+        view: Option<String>,
+        offset: Option<[f32; 3]>,
+        skin: Option<i32>,
+        classes: Option<Vec<String>>,
+    }
+    let mut guns: Vec<Gun> = Vec::new();
     for (gun, own) in super::weapons::arms_by_gun() {
+        let Some(data) = set.weapons.iter().find(|w| w.id == gun) else { continue };
+        guns.push(Gun {
+            id: gun.to_string(),
+            own,
+            base: gun.to_string(),
+            view: data.models.view.clone(),
+            offset: data.models.view_offset,
+            skin: None,
+            classes: None,
+        });
+    }
+    for item in items.iter().cloned() {
+        guns.push(Gun {
+            id: item.id,
+            own: item.looks.arms,
+            base: item.base,
+            view: item.looks.view,
+            offset: item.looks.view_offset,
+            skin: item.looks.skin,
+            classes: Some(item.classes),
+        });
+    }
+    for g in guns {
+        let gun = g.id.as_str();
         if !wants(gun) {
             continue;
         }
-        let Some(data) = set.weapons.iter().find(|w| w.id == gun) else { continue };
+        let own = g.own.clone();
         // The Fists: the arms alone, in their fists' skin (weapons_stock.md
-        // 5.3).
-        if gun == FISTS {
+        // 5.3); an unlock over them with no model of its own too.
+        if g.base == FISTS && (gun == FISTS || g.view.is_none()) {
             match props::load_view_model_skinned(materials, &super::sets::arms_model(&own), gun, true, FISTS_SKIN) {
                 Ok(mut v) => {
                     v.allow_flipping = false;
@@ -604,12 +663,14 @@ pub fn load(
             }
             continue;
         }
-        let Some(path) = data.models.view.clone() else { continue };
-        let offset = data.models.view_offset;
-        // Its own class's arms (keyed by the gun), then the others'.
+        let Some(path) = g.view.clone() else { continue };
+        let offset = g.offset;
+        // Its own class's arms (keyed by the gun), then the others'
+        // (an unlock's: its base's that it names).
         let mut hands: Vec<(String, String)> = vec![(gun.to_string(), own.clone())];
         if every_class {
-            for c in table.of_gun_all(gun).into_iter().filter(|c| c.arms != own) {
+            let named = |c: &super::classes::Class| g.classes.as_ref().is_none_or(|n| n.contains(&c.name));
+            for c in table.of_gun_all(&g.base).into_iter().filter(|c| c.arms != own && named(c)) {
                 let arms = super::sets::arms_model(&c.arms);
                 if materials.mount().held(&arms) {
                     hands.push((view_anim::variant_key(gun, &c.name), c.arms.clone()));
@@ -619,10 +680,18 @@ pub fn load(
             }
         }
         for (key, arms) in hands {
-        let idle = sequences(&key).map(|q| q.idle.1);
+        // Its base's sequences (an unlock has none of its own).
+        let idle = match key.split_once('#') {
+            Some((_, class)) => for_class(&g.base, Some(class)),
+            None => for_class(&g.base, None),
+        }
+        .map(|q| q.idle.1);
         let variant = key.contains('#');
         let merged = props::load_view_model(materials, &super::sets::arms_model(&arms), gun, true).and_then(|arms| {
-            let mut weapon = props::load_view_model(materials, &path, gun, true)?;
+            let mut weapon = match g.skin {
+                Some(skin) => props::load_view_model_skinned(materials, &path, gun, true, skin)?,
+                None => props::load_view_model(materials, &path, gun, true)?,
+            };
             if variant && let Some(idle) = idle {
                 unmerge_undriven(&arms, &mut weapon, idle);
             }

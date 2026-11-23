@@ -342,6 +342,8 @@ pub const SERVER_DOCS: &str = "tf2:weapons";
 
 /// The projectile rules read from `set` (the hooks' parameters).
 fn insert_rules(world: &mut World, set: &WeaponSet) {
+    // The guns' looks, the unlocks' (their base's hooks) too.
+    world.insert_resource(looks::GunLooks::from_set(set));
     world.insert_resource(rocket::RocketRules::from_set(set));
     world.insert_resource(grenade::GrenadeRules(rocket::RocketRules::of_hook(set, GRENADE_HOOK)));
     let stickies = sticky::StickyRules::from_set(set);
@@ -356,6 +358,7 @@ fn refresh_rules(catalog: Res<chimera_sim::weapon::data::WeaponCatalog>, mut com
     let Some(set) = catalog.sets.iter().rev().find(|s| s.get(SCATTERGUN).is_some()).copied() else {
         return;
     };
+    commands.insert_resource(looks::GunLooks::from_set(set));
     commands.insert_resource(rocket::RocketRules::from_set(set));
     commands.insert_resource(grenade::GrenadeRules(rocket::RocketRules::of_hook(set, GRENADE_HOOK)));
     let stickies = sticky::StickyRules::from_set(set);
@@ -420,6 +423,8 @@ impl Plugin for Tf2GunsPlugin {
                 ),
             )
             .add_systems(Predict::Select, (minigun::spin, sticky::charge, sniper::scope).before(SelectWeapons))
+            // An unlock's switch times (`items::mods::holster`, 4.9).
+            .add_systems(Predict::Select, super::items::mods::holster.after(SelectWeapons))
             // Every Minigun's barrel before the state step and its sound
             // after the tick, once per tick (not in replays).
             .add_message::<crate::map::PlaySound>()

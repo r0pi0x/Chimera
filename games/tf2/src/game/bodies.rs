@@ -114,8 +114,11 @@ pub fn add_bodies(
     }
     let table = Classes::default();
     let default = table.get(DEFAULT).map(|c| c.model.clone()).unwrap_or_default();
-    let (paths, away): (Vec<String>, Vec<String>) =
-        wanted_models(&table, &|g| kit.wants(g)).into_iter().partition(|p| materials.mount().held(p));
+    // A stock gun counts when an unlock over it is wanted (`items`: its
+    // class's body).
+    let items = super::items::on_mount(materials.mount());
+    let wants = |g: &str| kit.wants(g) || items.iter().any(|i| i.base == g && kit.wants(&i.id));
+    let (paths, away): (Vec<String>, Vec<String>) = wanted_models(&table, &wants).into_iter().partition(|p| materials.mount().held(p));
     debug!("TF2 bodies: {} ({kit:?})", paths.join(", "));
     if !away.is_empty() {
         info!("TF2 bodies not here (their class sets weren't offered): {}", away.join(", "));

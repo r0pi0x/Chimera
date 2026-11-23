@@ -170,7 +170,9 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
     guest: Some(&GUEST),
-    kept: &["tf2:tf_weapon_"],
+    // Every TF2 weapon: the stock ones (`tf2:tf_weapon_*`) and the unlocks
+    // (`items`: `tf2:<name>`).
+    kept: &["tf2:"],
     binds: &[],
     view_model_fov: Some(view::fov),
     view_model_fov_cvar: Some(view::viewmodel_fov_cvar),

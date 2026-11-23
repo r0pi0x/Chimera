@@ -82,3 +82,42 @@ fn the_install_converts_into_an_item_pack_with_the_spec_numbers() {
     assert_eq!(numbers.items.len(), weapons, "{:?}", numbers.sources.iter().filter(|s| s.gun == "items").collect::<Vec<_>>());
     numbers.parse().unwrap();
 }
+
+/// Each batch-1 item's looks on the install: its own `c_` model there,
+/// its view model built on its class's arms (the arms' bones and the
+/// model's merged), its sounds in the install's scripts.
+#[test]
+fn every_batch_one_item_shows_its_own_model_on_its_class_arms() {
+    use source_engine::content::material::MaterialLoader;
+    let Some(m) = super::maps::install_mount() else { return };
+    let pack = ItemPack::parse(std::str::from_utf8(&items::generated(&m, items::SET)[0].1[0].1).unwrap()).unwrap();
+    let data = ItemsData::builtin();
+    let (all, notes) = items::weapons(&pack, &data, &GunNumbers::builtin().docs);
+    assert!(notes.is_empty(), "{notes:?}");
+    let batch: Vec<&items::ItemWeapon> =
+        all.iter().filter(|i| data.items.values().any(|d| d.index == i.index && d.batch == 1)).collect();
+    assert!(batch.len() >= 30, "{} batch-1 weapons", batch.len());
+    let mut materials = MaterialLoader::guest(&m, 0, 0);
+    let (mut views, mut warnings) = (Vec::new(), Vec::new());
+    tf2::game::view::load_with(&mut materials, &|g| batch.iter().any(|i| i.id == g), false, &all, &mut views, &mut warnings);
+    let sounds = tf2::game::sets::sound_scripts(&m);
+    let mut own = 0;
+    for item in &batch {
+        let view = item.looks.view.as_deref().unwrap_or_else(|| panic!("{}: no model", item.id));
+        assert!(m.contains(view), "{}: {view} not in the install", item.id);
+        assert!(item.looks.world.as_deref().is_some_and(|w| m.contains(w)), "{}: {:?}", item.id, item.looks.world);
+        let base = tf2::game::weapons::tf2_weapons().get(&item.base).and_then(|b| b.models.view.clone());
+        own += usize::from(base.as_deref() != Some(view));
+        let v = views.iter().find(|v| v.key == item.id).unwrap_or_else(|| panic!("{}: no view model ({warnings:?})", item.id));
+        let arms = source_engine::content::props::load_view_model(&mut materials, &tf2::game::sets::arms_model(&item.looks.arms), "arms", true).unwrap();
+        assert!(v.bones.len() >= arms.bones.len(), "{}: {} bones, the arms {}", item.id, v.bones.len(), arms.bones.len());
+        assert!(v.bones.iter().any(|b| b.name.eq_ignore_ascii_case("weapon_bone")), "{}", item.id);
+        assert!(v.model.meshes.len() > arms.model.meshes.len(), "{}: the weapon's meshes merged", item.id);
+        assert!(v.animations.is_some(), "{}: the arms' sequences", item.id);
+        assert!(tf2::game::view::sequences(&item.base).is_some() || tf2::game::view::melee_sequences(&item.base).is_some(), "{}", item.id);
+        for s in &item.looks.sounds {
+            assert!(!sounds.waves(s).is_empty(), "{}: {s} has no waves", item.id);
+        }
+    }
+    assert!(own >= 25, "{own} of {} items have a model of their own", batch.len());
+}
