@@ -4,6 +4,7 @@
 
 mod controls;
 mod fonts;
+mod form_page;
 mod glyphs;
 mod icons;
 mod modal;

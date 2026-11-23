@@ -1208,8 +1208,11 @@ Settings had the new ones, and the match end's Leave had no hover.
   buttons, a setting row's controls; `Large` 2.8 for a screen's lone
   hero, the first run's rows), and every kind of control takes one:
   buttons (`Kind`: `Primary` the hero slab, bold, no border;
-  `Secondary` the line border; `Tertiary` text only; `Destructive` the
-  threat border and mark), the toggle, the segmented choice, the
+  `Secondary` the line border; `Tertiary` text only, grey to white;
+  `Destructive` the threat border and threat text, filled threat only
+  as `DestructiveConfirm` in its confirm step (the Form Kit mockup); busy,
+  `State::busy`, is disabled: not pressable, no hover, dimmed, its light
+  pulsing), the toggle, the segmented choice, the
   stepper, the dropdown. Borders are `controls::Border` only (none, the
   `fg_3` line, `fg_5` disabled, threat), one hairline weight. **The
   controls in one row share one size**: a dialog's hero is no taller
@@ -1250,8 +1253,7 @@ Settings had the new ones, and the match end's Leave had no hover.
   (`controls::catch_pointer` for a panel that only blocks the pointer)
   outside the kit but on its exact-count allowlist with reasons: the
   games' own looks, the VGUI widgets and the plain look of apps without a
-  Signal theme, the developer console, the onboarding screens until their
-  form components land; `text_inputs_are_the_kits` for text inputs), and
+  Signal theme, the developer console; `text_inputs_are_the_kits` for text inputs), and
   party_kit's `kit_conformance` test, which stages every `ui_scene` under
   the Ultimate Gun Game's theme and fails on a pressable node without the
   kit's `KitControl` or a form control in a plain row.

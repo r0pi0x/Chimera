@@ -21,10 +21,7 @@
 //!   steady under reduced motion), "Press a key", Esc's cap: "cancel".
 //!   Nothing here holds input back (no blocking animation).
 //!
-//! - `form_field`: a form's field (a sign-up's username, a rename): its
-//!   label as a title, a one-line help under it, the input (the kit's
-//!   `text_field`, its text smaller than the label). Kept minimal and in
-//!   this one place for the forms design pass to restyle.
+//! A form page's fields, keys, cards and footer are `form_page`'s.
 //!
 //! `ui_gallery form` (`chimera_client::client::ui_scene`) shows each in
 //! its states.
@@ -32,22 +29,12 @@
 use bevy::prelude::*;
 
 use crate::{
-    controls::{self, Hover, KitIcon, State, TextCursor, ToggleSlide, Ui, pressable},
+    controls::{self, Hover, KitIcon, State, ToggleSlide, Ui, pressable},
     fonts::Role,
     motion::UiClock,
-    style::{UiSlant, UiStyle},
+    style::UiStyle,
     theme::{Theme, Tone},
 };
-
-/// A form field's nodes (`Ui::form_field`).
-#[derive(Clone, Copy, Debug)]
-pub struct FormField {
-    pub root: Entity,
-    /// The label's line (an eye key or a count may go after the label).
-    pub head: Entity,
-    /// The text field (give it its focusing action).
-    pub input: Entity,
-}
 
 /// The theme's layout table.
 const L: &str = "form";
@@ -89,6 +76,10 @@ pub enum BadgeKind {
     Quiet,
     /// Ink with white: on a white (selected) item.
     Ink,
+    /// An outline in `fg_3`, `fg_2` text: a role.
+    Outline,
+    /// A warning's outline ("Expires today").
+    Warn,
 }
 
 /// A badge (`Ui::badge`).
@@ -188,27 +179,11 @@ impl Ui<'_> {
         FormSizes::of(self.theme)
     }
 
-    /// A badge: `text` (a count) in Mono on a slanted chip `badge_h` tall.
+    /// A badge: `text` (a count) in Mono on a slanted chip `badge_h` tall,
+    /// in one of the kit's looks (`form_page::BadgeLook` for a look given
+    /// as data).
     pub fn badge(&self, c: &mut Commands, parent: Entity, text: &str, kind: BadgeKind) -> Entity {
-        let h = self.form().badge_h;
-        let (fill, a, ink) = match kind {
-            BadgeKind::Hero => (Tone::Hero, 1.0, Tone::OnHero),
-            BadgeKind::Quiet => (Tone::Fg, 0.1, Tone::Fg2),
-            BadgeKind::Ink => (Tone::Ink, 1.0, Tone::Fg),
-        };
-        let lean = h * self.theme.tan();
-        let b = c
-            .spawn((
-                UiStyle { h: Some(h), min_w: Some(h + lean), pad: Some([0.0, 0.35 + lean / 2.0].into()), justify: Some(JustifyContent::Center), shrink: Some(0.0), ..UiStyle::row() },
-                Node::default(),
-                UiSlant::new(fill, a),
-                Badge(text.to_string()),
-                Pickable::IGNORE,
-                ChildOf(parent),
-            ))
-            .id();
-        self.text(c, b, Role::Mono, h * 0.5, ink, text);
-        b
+        self.badge_look(c, parent, text, crate::form_page::BadgeLook::of(kind))
     }
 
     /// An icon from the kit's set, `h` cq tall in `tone`, drawn by
@@ -294,39 +269,5 @@ impl Ui<'_> {
             let (field, options) = self.dropdown(c, parent, options, selected.unwrap_or(0), open, f.control_w, st);
             Choice::Dropdown { field, options }
         }
-    }
-
-    /// A form's field (module doc): `label` as a title (`aside` at the
-    /// line's right: a count, "optional"), `help` in one line under it,
-    /// then the input `w` cq wide. The caller adds its status line after.
-    #[allow(clippy::too_many_arguments)]
-    pub fn form_field(
-        &self,
-        c: &mut Commands,
-        parent: Entity,
-        label: &str,
-        help: &str,
-        aside: Option<&str>,
-        value: &str,
-        placeholder: &str,
-        caret: Option<TextCursor>,
-        masked: bool,
-        w: f32,
-        st: State,
-    ) -> FormField {
-        let root = self.boxed(c, parent, UiStyle { w: Some(w), gap: Some(0.35), ..UiStyle::column() });
-        let head = self.boxed(c, root, UiStyle { gap: Some(0.8), align: Some(AlignItems::Baseline), ..UiStyle::row() });
-        self.text(c, head, Role::DisplayBold, 1.0, if st.error { Tone::Threat } else { Tone::Fg }, label);
-        if let Some(a) = aside {
-            self.boxed(c, head, UiStyle::row().grow(1.0));
-            self.text(c, head, Role::Mono, 0.56, Tone::Fg3, a);
-        }
-        if !help.is_empty() {
-            let line = self.boxed(c, root, UiStyle { w: Some(w), ..UiStyle::column() });
-            self.paragraph(c, line, Role::Text, 0.78, Tone::Fg3, help);
-        }
-        self.boxed(c, root, UiStyle { h: Some(0.25), ..UiStyle::row() });
-        let input = self.text_field(c, root, value, placeholder, caret, masked, w, st);
-        FormField { root, head, input }
     }
 }

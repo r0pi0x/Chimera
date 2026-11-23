@@ -114,12 +114,14 @@ fn buttons_carry_their_kind_and_focus() {
     // A disabled hero stays a slab.
     let off = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Apply", None, Size::Regular, State { disabled: true, ..State::NONE }));
     assert!(descendants_with::<UiSlant>(&mut app, off).iter().any(|s| s.fill == Tone::Fg && s.alpha < 0.1));
-    // Danger: the threat mark, never a threat fill.
+    // Destructive (the Form Kit mockup): threat text in a threat outline,
+    // never a threat fill; filled only in its confirm step.
     let d = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Destructive, "End the game", None, Size::Regular, State::NONE));
-    let slants = descendants_with::<UiSlant>(&mut app, d);
-    assert!(slants.iter().any(|s| s.fill == Tone::Threat), "the threat mark");
+    assert!(descendants_with::<UiText>(&mut app, d).iter().any(|t| t.tone == Tone::Threat), "threat text");
     let bg = app.world().get::<BackgroundColor>(d).unwrap().0;
     assert_ne!(bg, app.world().resource::<Theme>().tone(Tone::Threat));
+    let f = build(&mut app, |ui, c, root| ui.button(c, root, Kind::DestructiveConfirm, "Revoke invite", None, Size::Regular, State::NONE));
+    assert_eq!(app.world().get::<BackgroundColor>(f).unwrap().0, app.world().resource::<Theme>().tone(Tone::Threat), "its confirm step is filled");
 }
 
 /// Hover is the row's own fill lifting, live from the pointer, back off
@@ -905,9 +907,8 @@ fn a_disabled_hero_ignores_hover() {
     let slab_of = |app: &mut App, b| descendants_entities::<controls::HeroSlab>(app, b)[0];
     let (soff, son) = (slab_of(&mut app, off), slab_of(&mut app, on));
     assert!(app.world().get::<controls::Hover>(off).is_none(), "a disabled hero has no hover tint");
-    for b in [off, on] {
-        *app.world_mut().get_mut::<Interaction>(b).unwrap() = Interaction::Hovered;
-    }
+    assert!(app.world().get::<Interaction>(off).is_none(), "nor any press: the pointer never hovers it");
+    *app.world_mut().get_mut::<Interaction>(on).unwrap() = Interaction::Hovered;
     for _ in 0..3 {
         app.world_mut().resource_mut::<UiClock>().step(0.1);
         app.update();

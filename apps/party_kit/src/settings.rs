@@ -2329,7 +2329,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                 (None, false) => None,
             };
             let look = RowLook { note: note.as_deref(), ours: game.is_none() && crate::controls::OURS.contains(command), changed: resettable, min_h: t.layout(L, "bind_h"), ..RowLook::default() };
-            let sr = ui.setting_row(c, list, label, look, State { focus, changed: changed || resettable, disabled: false, error: false });
+            let sr = ui.setting_row(c, list, label, look, State { focus, changed: changed || resettable, ..State::NONE });
             c.entity(sr.row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
             let keys = d.keys.get(i).cloned().unwrap_or_default();
             let f = ui.key_field(c, sr.control, &keys, listening, fw, vst);

@@ -41,7 +41,7 @@
 //! `ui_scene_name <name>` calls every made-up player of the HUD scenes
 //! `name` (`StagedName`: a 20-character name's fit, screenshots).
 //!
-//! `ui_gallery [fields|controls|picker|form|off]` opens the kit's gallery in the
+//! `ui_gallery [fields|controls|picker|form|formkit|off]` opens the kit's gallery in the
 //! real apps (Esc closes it; `picker`: the shared picker in both modes and
 //! both frames, made-up maps and guns); the Escape menu's Developer entry runs it while
 //! Options' Developer mode (`DeveloperMode`, `developer_mode`) is on.
@@ -63,7 +63,7 @@ pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
 pub const SCENES: &[&str] =
-    &["proof", "controls", "fields", "picker", "form", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint"];
+    &["proof", "controls", "fields", "picker", "form", "formkit", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint"];
 
 /// `ui_scene lobby`'s made-up lobby (despawned at `off`).
 #[derive(Component)]
@@ -194,7 +194,7 @@ impl UiScene {
     /// The kit's gallery is open (`ui_gallery`): it owns the mouse
     /// (`input::FreeCursorOwners`); the staged scenes don't.
     pub fn gallery_open(&self) -> bool {
-        self.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls" | "form"))
+        self.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls" | "form" | "formkit"))
     }
 }
 
@@ -406,7 +406,7 @@ impl Plugin for UiScenePlugin {
             )
             .console_command(
                 "ui_gallery",
-                "ui_gallery [fields|controls|picker|form|off]: open the UI kit's gallery (every control in every state; `fields` by default; \
+                "ui_gallery [fields|controls|picker|form|formkit|off]: open the UI kit's gallery (every control in every state; `fields` by default; \
                  Esc closes it).",
                 |w, a| {
                     let name = a.first().map(String::as_str).unwrap_or("fields");
@@ -415,7 +415,7 @@ impl Plugin for UiScenePlugin {
                         clear_staged(w);
                         return Ok(None);
                     }
-                    if !["fields", "controls", "picker", "form"].contains(&name) {
+                    if !["fields", "controls", "picker", "form", "formkit"].contains(&name) {
                         return Err(format!("ui_gallery: no page `{name}` (fields, controls, picker, off)"));
                     }
                     clear_staged(w);
@@ -458,7 +458,7 @@ impl DeveloperMode {
 
 /// Esc closes the gallery (`ui_gallery`).
 fn close_gallery(keys: Option<Res<ButtonInput<KeyCode>>>, mut scene: ResMut<UiScene>) {
-    if scene.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls" | "picker" | "form")) && keys.is_some_and(|k| k.just_pressed(KeyCode::Escape)) {
+    if scene.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls" | "picker" | "form" | "formkit")) && keys.is_some_and(|k| k.just_pressed(KeyCode::Escape)) {
         scene.want = None;
     }
 }
@@ -510,8 +510,109 @@ fn stage(
     if scene.want.as_deref() == Some("form") {
         form(&theme, kit.as_deref(), *units, &mut ambients, &mut commands);
     }
+    if scene.want.as_deref() == Some("formkit") {
+        formkit(&theme, kit.as_deref(), *units, &mut ambients, &mut commands);
+    }
     if scene.want.as_deref() == Some("picker") {
         picker_page(&theme, kit.as_deref(), *units, &mut ambients, &mut lists, &mut commands);
+    }
+}
+
+/// The form page's components (`chimera_ui::form_page`) in their states:
+/// fields (rest, checking, success, an error with fixes, locked), the
+/// masked field, the buttons (busy too), the result card, the avatar
+/// grid, read-only rows with their icon column, a path row, the badges
+/// and the footer (folded and saving).
+fn formkit(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<chimera_ui::AmbientMaterial>, c: &mut Commands) {
+    use chimera_ui::{
+        UiStyle,
+        controls::{Kind, Size, State, Ui},
+        form_page::{BadgeLook, FieldSpec, FieldStatus, FooterAction, FooterSpec, ResultSpec, RowValue, SecretSpec},
+    };
+    let ui = Ui::new(t, kit, u);
+    let root = c
+        .spawn((
+            UiSceneRoot,
+            Name::new("ui_scene formkit"),
+            GlobalZIndex(UI_SCENE_Z),
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                padding: UiRect::axes(u.val(3.0), u.val(2.4)),
+                flex_direction: FlexDirection::Row,
+                column_gap: u.val(3.0),
+                ..default()
+            },
+            BackgroundColor(t.tone(Tone::Ink)),
+        ))
+        .id();
+    c.spawn((
+        MaterialNode(ambients.add(chimera_ui::AmbientMaterial::new(t).freeze(Some(6.0)))),
+        Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, width: percent(100.0), height: percent(100.0), ..default() },
+        ChildOf(root),
+    ));
+    let col = |c: &mut Commands, w: f32| ui.boxed(c, root, UiStyle { w: Some(w), gap: Some(0.5), ..UiStyle::column() });
+    let w = 26.0;
+    let a = col(c, w);
+    let fixes = vec!["rook_77".to_string(), "rook_fn".into()];
+    for (value, status) in [
+        ("", FieldStatus::Hint("3 to 16 letters, digits or _")),
+        ("night_owl", FieldStatus::Checking("Checking...")),
+        ("night_owl", FieldStatus::Ok("Available")),
+        ("rook", FieldStatus::Error { text: "Taken · try", fixes: &fixes }),
+        ("night_owl", FieldStatus::Locked("Renamed a moment ago · again in 0:42")),
+    ] {
+        ui.form_field(c, a, &FieldSpec { label: "Username", tag: Some("Required"), help: "Your sign-in name.", value, placeholder: "night_owl", status, w, ..default() });
+    }
+    let b = col(c, w);
+    ui.secret_field(c, b, &SecretSpec { label: "Recovery key", tag: Some("Shown once"), help: "Hidden until you show it. Copy works hidden too.", key: "g.key", value: "K7QX-M2PA-9TRD-4HJW", fixed: true, w, ..default() });
+    ui.secret_field(c, b, &SecretSpec { label: "Hub address", help: "Masked: nothing of its shape.", key: "g.addr", value: "203.0.113.24:27015", copied: true, w, ..default() });
+    let btns = ui.boxed(c, b, UiStyle { gap: Some(0.8), ..UiStyle::row() });
+    ui.button(c, btns, Kind::Primary, "Make invite", Some("Enter"), Size::Regular, State::NONE);
+    ui.button(c, btns, Kind::Primary, "Making...", None, Size::Regular, State::busy(true));
+    let btns = ui.boxed(c, b, UiStyle { gap: Some(0.8), ..UiStyle::row() });
+    ui.button(c, btns, Kind::Secondary, "Save as file...", None, Size::Regular, State::NONE);
+    ui.button(c, btns, Kind::Tertiary, "Discard", None, Size::Regular, State::NONE);
+    ui.button(c, btns, Kind::Destructive, "Revoke", None, Size::Regular, State::NONE);
+    ui.button(c, btns, Kind::DestructiveConfirm, "Revoke invite", None, Size::Regular, State::NONE);
+    let facts = [("Role", "Tester".to_string()), ("Expires", "in 7 days".to_string())];
+    ui.result_card(
+        c,
+        b,
+        &ResultSpec {
+            head: "Invite made",
+            tag: "Shown once",
+            title: "Send this link to Sam",
+            value: "chimera-hub://hub.example.net:27080/3f9a0b71c2d45e6f?code=K7Q-M2P-9TR",
+            copy: "Copy link",
+            copied: "Copied",
+            another: "Make another",
+            facts: &facts,
+            ..default()
+        },
+        w,
+    );
+    let d = col(c, 30.0);
+    ui.form_section(c, d, "Avatar", Some("32 looks"), Some("Shown on your chip and in lobbies."));
+    ui.avatar_grid(c, d, None, None, 9, false, 30.0);
+    ui.form_section(c, d, "Your hub", Some("3 facts"), None);
+    ui.value_row(c, d, "Hub", RowValue::Text("Friday Night Hub"), 7.0, true);
+    ui.value_row(c, d, "Address", RowValue::Secret { key: "g.row", value: "203.0.113.24:27015", revealed: false, copied: false }, 7.0, true);
+    ui.value_row(c, d, "Role", RowValue::Badge("Tester", BadgeLook::OUTLINE), 7.0, true);
+    ui.path_row(c, d, "Saved", "E:\\keys\\recovery-key-friday-night-hub.txt", "Show in folder", 30.0);
+    let badges = ui.boxed(c, d, UiStyle { gap: Some(0.6), ..UiStyle::row() });
+    for (text, look) in [("Tester", BadgeLook::OUTLINE), ("Host", BadgeLook::HERO), ("Expires today", BadgeLook::WARN)] {
+        ui.badge_look(c, badges, text, look);
+    }
+    let changes: Vec<String> = ["username", "avatar", "display name"].map(String::from).to_vec();
+    let actions = [
+        FooterAction { kind: Kind::Tertiary, label: "Discard", busy_label: None, key: None, disabled: false },
+        FooterAction { kind: Kind::Primary, label: "Save changes", busy_label: Some("Saving..."), key: Some("Ctrl+S"), disabled: false },
+    ];
+    for busy in [None, Some("Saving... the hub is renaming you")] {
+        let bar = ui.boxed(c, d, UiStyle { gap: Some(0.8), h: Some(3.4), ..UiStyle::row() });
+        ui.form_footer(c, bar, &FooterSpec { changes: &changes, busy, actions: &actions, ..default() });
     }
 }
 

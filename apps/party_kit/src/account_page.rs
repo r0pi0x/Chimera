@@ -8,25 +8,28 @@
 //! [account]`.
 //!
 //! - **Ground**: the main menu's (`chimera_ui::shell::menu_ground`).
-//! - **Profile**: the username as a form's field (the kit's `form_field`:
-//!   its title, what it is for, the input; Enter or a click edits it; its
-//!   availability asked of the hub `NAME_PAUSE` after the last key, with
-//!   the sign-up's free names when taken, `account::check_rename`; Enter
-//!   renames, one a minute, the chip and `account.toml` follow); the
-//!   avatar (←→ or a click in the 32 looks drawn under its row, across
-//!   the list: `cl_avatar` at once, the hub told `AVATAR_PAUSE` after the
-//!   last change); the hub (its name and whether it answers; its address
-//!   in the help tile masked with an eye key, `chimera_ui::secret`,
-//!   `REVEAL_HOST`); **Link another device** (a
-//!   10-minute code for "I already have an account" on the other PC,
-//!   `account::link_code`); **Sign out** (asks in the row itself: Stay or
-//!   Sign out; then this device is revoked at the hub when it answers,
+//! - **Profile** (the Form Kit mockup, `chimera_ui::form_page`): at the
+//!   left what can be changed, the username (a form field: title, help,
+//!   status slot; its availability asked of the hub `NAME_PAUSE` after the
+//!   last key, a taken name's free names offered as fixes) and the 32
+//!   avatars (`avatar_grid`); the changes collect in the action bar ("1
+//!   change · avatar", from two on "N changes" with the list unfolding)
+//!   and go out together with **Save changes** (Ctrl+S, Enter in the
+//!   name; a name known taken stops on the field), Discard puts them
+//!   back; while it saves every action waits. At the right only what
+//!   can't be changed here: the hub, its address masked (eye and Copy,
+//!   `REVEAL_HOST`), the role, then **Link another device** (a 10-minute
+//!   code for "I already have an account" on the other PC,
+//!   `account::link_code`) and **Sign out** (asks in place: Stay or Sign
+//!   out; then this device is revoked at the hub when it answers,
 //!   `account.toml` deleted either way, and the first run's Welcome
 //!   shows).
 //! - **Invites** (an owner's account only, by `/accounts/me`'s role): the
-//!   form (intent, recipient, role: Tester or Host), Make invite (the
-//!   link shown once with Copy), the open invites (newest first, each
-//!   with Revoke), `account::make_invite`, `open_invites`,
+//!   form (why, for, role: Tester or Host) with Make invite (busy
+//!   "Making invite…"), which becomes the result card (the link shown
+//!   once, Copy link, Make another) once made; beside it the open invites
+//!   (newest first, each with Revoke, which asks in its row: Keep or
+//!   Revoke invite), `account::make_invite`, `open_invites`,
 //!   `revoke_invite`. The tab's badge counts the open ones.
 //! - **Keys**: ↑↓ rows, Enter acts (edits a field, commits it), Esc
 //!   leaves a field or the confirm, else closes (the crumb and a right
@@ -35,10 +38,11 @@
 //! - **Calls** go through `AccountBackend` (`NetworkAccount`: the live
 //!   session's ticket, on a thread; `StagedAccount` answers in the same
 //!   frame for tests and `ui_scene account <profile|rename|rename-taken|
-//!   link|sign-out|invites|invite-made|player>`).
+//!   avatar|saving|link|sign-out|invites|invite-made|player>`).
 //!
-//! Known shortcuts: no display name, device list or new recovery key here
-//! yet (hub.md 8); the link code's "valid for" is drawn once, not counted
+//! Known shortcuts: no display name field (the hub has no call to change
+//! it yet: docs/backlog.md), device list or new recovery key here yet
+//! (hub.md 8); the link code's "valid for" is drawn once, not counted
 //! down; the screen rebuilds whole on any change.
 
 use std::sync::{Arc, Mutex};
@@ -55,8 +59,9 @@ use chimera_assets::{
 use chimera_ui::{
     Role, Tone, UiStyle,
     avatar::{AvatarLook, AvatarMarks, Face},
-    controls::{Kind, SENTENCE, State, Ui, clickable},
-    form::{BadgeKind, Choice, RowLook},
+    controls::{self, Kind, Size, State, Ui},
+    form::Choice,
+    form_page::{BadgeLook, FieldSpec, FieldStatus, FooterAction, FooterSpec, ResultSpec, RowValue},
     motion::UiClock,
     text_edit::{Caret, text_key},
 };
@@ -72,10 +77,10 @@ pub const ACCOUNT_Z: i32 = 92;
 pub const REVEAL_HOST: &str = "account.host";
 /// Seconds after the last key before a new username is asked of the hub.
 pub const NAME_PAUSE: f64 = crate::onboarding::NAME_PAUSE;
-/// Seconds after the last avatar change before the hub is told.
-pub const AVATAR_PAUSE: f64 = 0.6;
 /// The roles an invite made here may carry (an owner's: the command line).
 pub const ROLES: [&str; 2] = ["tester", "host"];
+/// The made invite's Copy key (`form_page::Copies`).
+pub const COPY_INVITE: &str = "account.invite";
 /// The scroll view's key.
 const SCROLL_KEY: &str = "account";
 
@@ -95,7 +100,6 @@ pub enum Tab {
 pub enum Row {
     Username,
     Avatar,
-    Hub,
     Link,
     SignOut,
     Intent,
@@ -136,9 +140,14 @@ pub struct AccountPage {
     pub name_check: Option<NameCheck>,
     pub typed_at: f64,
     pub asked_name: Option<String>,
-    /// The avatar chosen here, and when (the hub told after a pause).
+    /// The avatar picked here, not saved yet (Save changes sends it).
     pub avatar: Option<u8>,
-    pub avatar_at: Option<f64>,
+    /// A save under way (Save changes): every action waits.
+    pub saving: bool,
+    /// The footer's list of changes unfolded.
+    pub changes_open: bool,
+    /// The open invite whose Revoke asks (its row asks in place).
+    pub confirm_revoke: Option<i64>,
     /// The link code and its minutes.
     pub link: Option<(String, u64)>,
     pub confirm_sign_out: bool,
@@ -165,7 +174,7 @@ impl AccountPage {
     /// The tab's rows.
     pub fn rows(&self) -> Vec<Row> {
         match self.tab {
-            Tab::Profile => vec![Row::Username, Row::Avatar, Row::Hub, Row::Link, Row::SignOut],
+            Tab::Profile => vec![Row::Username, Row::Avatar, Row::Link, Row::SignOut],
             Tab::Invites => {
                 let mut v = vec![Row::Intent, Row::Recipient, Row::Role, Row::Make];
                 v.extend(self.invites.iter().flatten().map(|i| Row::Open(i.id)));
@@ -183,6 +192,29 @@ impl AccountPage {
         self.avatar.or(self.me.as_ref().and_then(|m| m.avatar)).unwrap_or(fallback)
     }
 
+    /// The typed username differs from the account's.
+    pub fn name_changed(&self) -> bool {
+        let n = self.name.trim();
+        !n.is_empty() && self.me.as_ref().is_some_and(|m| !n.eq_ignore_ascii_case(&m.username))
+    }
+
+    /// The picked avatar differs from the account's.
+    pub fn avatar_changed(&self) -> bool {
+        self.avatar.is_some() && self.avatar != self.me.as_ref().and_then(|m| m.avatar)
+    }
+
+    /// The Profile's changes not saved yet, one short name each.
+    pub fn changes(&self) -> Vec<String> {
+        let mut v = Vec::new();
+        if self.name_changed() {
+            v.push("username".to_string());
+        }
+        if self.avatar_changed() {
+            v.push("avatar".to_string());
+        }
+        v
+    }
+
     /// Whether the typed name can be had (the hub said so for it, or it
     /// is the account's own).
     pub fn name_ok(&self) -> bool {
@@ -197,6 +229,7 @@ impl AccountPage {
             self.since = now;
             self.editing = None;
             self.confirm_sign_out = false;
+            self.confirm_revoke = None;
         }
     }
 }
@@ -422,8 +455,8 @@ impl AccountBackend {
 enum Ask {
     Me,
     Check(String),
-    Rename(String),
-    Avatar(u8),
+    /// Save changes: the new name, then the avatar.
+    Save { name: Option<String>, avatar: Option<u8> },
     Link,
     SignOut,
     Make(InviteRequest),
@@ -435,8 +468,8 @@ enum Ask {
 enum Reply {
     Me(Result<Me, String>),
     Checked(String, Result<NameCheck, String>),
-    Renamed(Result<Me, String>),
-    Avatar(Result<Me, String>),
+    /// Saved, with the avatar sent (if any).
+    Saved(Result<Me, String>, Option<u8>),
     Link(Result<(String, u64), String>),
     SignedOut(Result<(), String>),
     Made(Result<InviteMade, String>),
@@ -450,7 +483,7 @@ struct Answers(Arc<Mutex<Vec<(u32, Reply)>>>);
 fn ask(p: &mut AccountPage, backend: &AccountBackend, answers: &Answers, what: Ask) {
     p.asked += 1;
     let n = p.asked;
-    if !matches!(what, Ask::Me | Ask::Check(_) | Ask::Avatar(_) | Ask::Invites) {
+    if !matches!(what, Ask::Me | Ask::Check(_) | Ask::Invites) {
         p.pending = Some(n);
     }
     let hub = backend.hub.clone();
@@ -462,8 +495,16 @@ fn ask(p: &mut AccountPage, backend: &AccountBackend, answers: &Answers, what: A
                 let r = hub.check_rename(&name);
                 Reply::Checked(name, r)
             }
-            Ask::Rename(name) => Reply::Renamed(hub.rename(&name)),
-            Ask::Avatar(a) => Reply::Avatar(hub.set_avatar(a)),
+            Ask::Save { name, avatar } => {
+                let mut r = match &name {
+                    Some(n) => hub.rename(n),
+                    None => hub.me(),
+                };
+                if let (Ok(_), Some(a)) = (&r, avatar) {
+                    r = hub.set_avatar(a);
+                }
+                Reply::Saved(r, avatar)
+            }
             Ask::Link => Reply::Link(hub.link_code()),
             Ask::SignOut => Reply::SignedOut(hub.sign_out()),
             Ask::Make(r) => Reply::Made(hub.make_invite(&r)),
@@ -500,7 +541,17 @@ pub enum AccountAction {
     Role(usize),
     Make,
     CopyLink,
+    /// The result card's Make another: back to the form.
+    Another,
+    /// Revoke asks in its row; Confirm revokes, Keep backs off.
     Revoke(i64),
+    RevokeConfirm(i64),
+    RevokeKeep,
+    /// The Profile's Save changes (Ctrl+S, Enter in the name) and Discard.
+    Save,
+    Discard,
+    /// The footer's list of changes, unfolded or folded.
+    ToggleChanges,
     Close,
 }
 
@@ -609,8 +660,7 @@ fn keys(
         let rows = p.rows();
         match &k.logical_key {
             Key::Escape => {
-                if p.editing.take().is_some() {
-                    p.name_check = None;
+                if p.confirm_revoke.take().is_some() || p.editing.take().is_some() {
                 } else if p.confirm_sign_out {
                     p.confirm_sign_out = false;
                 } else {
@@ -620,12 +670,9 @@ fn keys(
             }
             Key::Enter => {
                 match p.editing {
+                    // Enter in the name saves the Profile's changes.
                     Some(Editing::Name) => {
-                        if p.name.trim().eq_ignore_ascii_case(p.me.as_ref().map_or("", |m| m.username.as_str())) {
-                            p.editing = None;
-                        } else {
-                            out.write(AccountAction::Activate);
-                        }
+                        out.write(AccountAction::Save);
                     }
                     // A form's field: on to the next row.
                     Some(_) => {
@@ -656,7 +703,7 @@ fn keys(
                         let now_a = p.avatar_now(0) as i16;
                         out.write(AccountAction::Avatar((now_a + d).rem_euclid(32) as u8));
                     }
-                    Some(Row::Role) => {
+                    Some(Row::Role) if p.made.is_none() => {
                         out.write(AccountAction::Role(if d < 0 { 0 } else { 1 }));
                     }
                     _ => {}
@@ -668,6 +715,10 @@ fn keys(
                 let at = tabs.iter().position(|t| *t == p.tab).unwrap_or(0);
                 let to = if c.eq_ignore_ascii_case("q") { at.saturating_sub(1) } else { (at + 1).min(tabs.len() - 1) };
                 out.write(AccountAction::Tab(tabs[to]));
+                continue;
+            }
+            Key::Character(c) if ctrl && c.eq_ignore_ascii_case("s") && p.tab == Tab::Profile => {
+                out.write(AccountAction::Save);
                 continue;
             }
             Key::Character(c) if p.editing.is_none() && ctrl && c.eq_ignore_ascii_case("c") && p.made.is_some() => {
@@ -702,7 +753,7 @@ fn keys(
     }
 }
 
-/// The name asked of the hub after a pause; the avatar told after one.
+/// The name asked of the hub after a pause.
 fn pauses(mut p: ResMut<AccountPage>, backend: Res<AccountBackend>, answers: Res<Answers>, clock: Res<UiClock>) {
     if !p.open {
         return;
@@ -714,12 +765,6 @@ fn pauses(mut p: ResMut<AccountPage>, backend: Res<AccountBackend>, answers: Res
             p.asked_name = Some(folded.clone());
             ask(&mut p, &backend, &answers, Ask::Check(folded));
         }
-    }
-    if let (Some(at), Some(a)) = (p.avatar_at, p.avatar)
-        && now - at >= AVATAR_PAUSE
-    {
-        p.avatar_at = None;
-        ask(&mut p, &backend, &answers, Ask::Avatar(a));
     }
 }
 
@@ -735,6 +780,9 @@ fn poll(answers: Res<Answers>, mut p: ResMut<AccountPage>, backend: Res<AccountB
             Reply::Me(Ok(me)) => {
                 let owner = me.owner() && p.invites.is_none();
                 keep_names(&mut commands, &me, backend.inline);
+                if p.editing.is_none() && !p.name_changed() {
+                    p.name = me.username.clone();
+                }
                 p.me = Some(me);
                 if owner {
                     ask(&mut p, &backend, &answers, Ask::Invites);
@@ -747,15 +795,30 @@ fn poll(answers: Res<Answers>, mut p: ResMut<AccountPage>, backend: Res<AccountB
                 }
             }
             Reply::Checked(_, Err(e)) => p.said = Some(err(&e)),
-            Reply::Renamed(Ok(me)) => {
+            Reply::Saved(Ok(me), avatar) => {
                 keep_names(&mut commands, &me, backend.inline);
-                p.said = Some(Said { error: false, text: words.f("account.renamed", &[("user", &me.username)]) });
+                if let Some(a) = avatar {
+                    // The look in games follows the saved one.
+                    commands.queue(move |w: &mut World| {
+                        if let Some(mut c) = w.get_resource_mut::<chimera_core::console::Console>() {
+                            c.submit(format!("cl_avatar {a}"));
+                        }
+                    });
+                }
+                p.said = Some(Said { error: false, text: words.f("account.saved", &[("user", &me.username)]) });
+                p.name = me.username.clone();
                 p.me = Some(me);
+                p.avatar = None;
+                p.saving = false;
+                p.changes_open = false;
                 p.editing = None;
                 p.name_check = None;
             }
-            Reply::Avatar(Ok(me)) => p.me = Some(me),
-            Reply::Renamed(Err(e)) | Reply::Avatar(Err(e)) | Reply::Link(Err(e)) | Reply::Made(Err(e)) | Reply::Invites(Err(e)) => p.said = Some(err(&e)),
+            Reply::Saved(Err(e), _) => {
+                p.saving = false;
+                p.said = Some(err(&e));
+            }
+            Reply::Link(Err(e)) | Reply::Made(Err(e)) | Reply::Invites(Err(e)) => p.said = Some(err(&e)),
             Reply::Link(Ok(l)) => p.link = Some(l),
             Reply::SignedOut(r) => {
                 // Signed out here either way: a hub that can't be reached
@@ -787,6 +850,7 @@ fn poll(answers: Res<Answers>, mut p: ResMut<AccountPage>, backend: Res<AccountB
                     if let Some(l) = p.invites.as_mut() {
                         l.retain(|i| i.id != id);
                     }
+                    p.confirm_revoke = None;
                     let n = p.rows().len();
                     p.focus = p.focus.min(n.saturating_sub(1));
                 }
@@ -870,7 +934,7 @@ fn act(
     answers: Res<Answers>,
     clock: Res<UiClock>,
     words: Res<Words>,
-    mut console: Option<ResMut<chimera_core::console::Console>>,
+    mut copies: Option<ResMut<chimera_ui::form_page::Copies>>,
     mut clipboard: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
     let now = clock.now;
@@ -897,11 +961,7 @@ fn act(
             AccountAction::Activate => {
                 match rows.get(p.focus) {
                     Some(Row::Username) => match p.editing {
-                        Some(Editing::Name) if p.name_ok() && p.pending.is_none() => {
-                            let name = p.name.trim().to_ascii_lowercase();
-                            ask(&mut p, &backend, &answers, Ask::Rename(name));
-                        }
-                        Some(Editing::Name) => {}
+                        Some(Editing::Name) => save(&mut p, &backend, &answers, &words),
                         _ => start_name(&mut p, now),
                     },
                     Some(Row::Intent) => edit(&mut p, Editing::Intent),
@@ -910,10 +970,15 @@ fn act(
                     Some(Row::SignOut) if p.confirm_sign_out && p.pending.is_none() => ask(&mut p, &backend, &answers, Ask::SignOut),
                     Some(Row::SignOut) => p.confirm_sign_out = true,
                     Some(Row::Role) => p.role = (p.role + 1) % ROLES.len(),
+                    Some(Row::Make) if p.made.is_some() => copy_link(&mut p, &words, copies.as_deref_mut(), clipboard.as_deref_mut(), now),
                     Some(Row::Make) => make(&mut p, &backend, &answers, &words),
                     Some(Row::Open(id)) if p.pending.is_none() => {
                         let id = *id;
-                        ask(&mut p, &backend, &answers, Ask::Revoke(id));
+                        if p.confirm_revoke == Some(id) {
+                            ask(&mut p, &backend, &answers, Ask::Revoke(id));
+                        } else {
+                            p.confirm_revoke = Some(id);
+                        }
                     }
                     _ => {}
                 }
@@ -933,12 +998,13 @@ fn act(
                 p.typed_at = now - NAME_PAUSE;
             }
             AccountAction::Avatar(b) => {
-                p.avatar = Some(b);
-                p.avatar_at = Some(now);
-                p.focus = rows.iter().position(|r| *r == Row::Avatar).unwrap_or(p.focus);
-                if let Some(c) = console.as_deref_mut() {
-                    c.submit(format!("cl_avatar {b}"));
+                if p.saving {
+                    continue;
                 }
+                // Picked here; Save changes sends it.
+                p.avatar = (p.me.as_ref().and_then(|m| m.avatar) != Some(b)).then_some(b);
+                p.focus = rows.iter().position(|r| *r == Row::Avatar).unwrap_or(p.focus);
+                p.said = None;
             }
             AccountAction::Link => {
                 if p.pending.is_none() {
@@ -957,30 +1023,92 @@ fn act(
             }
             AccountAction::Role(i) => p.role = i.min(ROLES.len() - 1),
             AccountAction::Make => make(&mut p, &backend, &answers, &words),
-            AccountAction::CopyLink => {
-                if let (Some(m), Some(c)) = (p.made.as_ref(), clipboard.as_deref_mut()) {
-                    c.set(m.link.as_deref().unwrap_or(&m.code));
-                    p.said = Some(Said { error: false, text: words.t("account.copied") });
-                }
+            AccountAction::CopyLink => copy_link(&mut p, &words, copies.as_deref_mut(), clipboard.as_deref_mut(), now),
+            AccountAction::Another => {
+                p.made = None;
+                p.focus = 0;
+                p.said = None;
             }
             AccountAction::Revoke(id) => {
-                if p.pending.is_none() {
+                p.confirm_revoke = Some(id);
+                p.focus = rows.iter().position(|r| *r == Row::Open(id)).unwrap_or(p.focus);
+            }
+            AccountAction::RevokeConfirm(id) => {
+                if p.pending.is_none() && p.confirm_revoke == Some(id) {
                     ask(&mut p, &backend, &answers, Ask::Revoke(id));
                 }
             }
+            AccountAction::RevokeKeep => p.confirm_revoke = None,
+            AccountAction::Save => save(&mut p, &backend, &answers, &words),
+            AccountAction::Discard => {
+                if !p.saving {
+                    p.name = p.me.as_ref().map(|m| m.username.clone()).unwrap_or_default();
+                    p.avatar = None;
+                    p.editing = None;
+                    p.name_check = None;
+                    p.changes_open = false;
+                    p.said = None;
+                }
+            }
+            AccountAction::ToggleChanges => p.changes_open = !p.changes_open,
         }
     }
 }
 
 fn start_name(p: &mut AccountPage, now: f64) {
+    if p.saving {
+        return;
+    }
     let current = p.me.as_ref().map(|m| m.username.clone()).unwrap_or_default();
-    p.name = current.clone();
-    p.caret = Caret::end_of(&current);
+    if !p.name_changed() {
+        p.name = current.clone();
+        p.name_check = Some(NameCheck { username: current.clone(), available: true, problem: None, suggestions: vec![] });
+        p.asked_name = Some(current);
+        p.typed_at = now;
+    }
+    p.caret = Caret::end_of(&p.name);
     p.editing = Some(Editing::Name);
-    p.name_check = Some(NameCheck { username: current.clone(), available: true, problem: None, suggestions: vec![] });
-    p.asked_name = Some(current);
-    p.typed_at = now;
     p.confirm_sign_out = false;
+}
+
+/// Save changes: the new name (refused here when it is known taken or
+/// breaks the rules: "pick a free username"), then the avatar, in one
+/// call; every action waits meanwhile (`saving`).
+fn save(p: &mut AccountPage, backend: &AccountBackend, answers: &Answers, words: &Words) {
+    if p.pending.is_some() || p.saving {
+        return;
+    }
+    if p.changes().is_empty() {
+        p.editing = None;
+        return;
+    }
+    let name = p.name_changed().then(|| p.name.trim().to_ascii_lowercase());
+    if let Some(n) = &name {
+        let taken = p.name_check.as_ref().is_some_and(|c| c.username == *n && !c.available);
+        if taken || !UsernameRules::of(n).all() {
+            p.said = Some(Said { error: true, text: words.t("account.save_blocked") });
+            p.focus = 0;
+            p.editing = Some(Editing::Name);
+            return;
+        }
+    }
+    let avatar = p.avatar.filter(|_| p.avatar_changed());
+    p.editing = None;
+    p.saving = true;
+    p.said = None;
+    ask(p, backend, answers, Ask::Save { name, avatar });
+}
+
+/// Copy link: the made invite's link on the clipboard, the card's Copy
+/// reading "Copied" (`form_page::Copies`).
+fn copy_link(p: &mut AccountPage, words: &Words, copies: Option<&mut chimera_ui::form_page::Copies>, clipboard: Option<&mut chimera_ui::clipboard::Clipboard>, now: f64) {
+    if let (Some(m), Some(c)) = (p.made.as_ref(), clipboard) {
+        c.set(m.link.as_deref().unwrap_or(&m.code));
+        p.said = Some(Said { error: false, text: words.t("account.copied") });
+        if let Some(k) = copies {
+            k.mark(COPY_INVITE, now);
+        }
+    }
 }
 
 fn edit(p: &mut AccountPage, e: Editing) {
@@ -1044,7 +1172,7 @@ pub fn short_link(link: &str) -> String {
     format!("{}{host}/{fp}{q}", account::SCHEME)
 }
 
-type DrawKey = (AccountPage, Option<Shown>, (String, bool), i32, (u32, u32), Option<Entity>, chimera_ui::shell::Party, chimera_ui::secret::Reveals);
+type DrawKey = (AccountPage, Option<Shown>, (String, bool), i32, (u32, u32), Option<Entity>, chimera_ui::shell::Party, (chimera_ui::secret::Reveals, chimera_ui::form_page::Copies));
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn show(
@@ -1056,7 +1184,13 @@ fn show(
     party: Option<Res<chimera_ui::shell::Party>>,
     camera: Query<Entity, With<MenuUiCamera>>,
     root: Query<Entity, With<AccountRoot>>,
-    (theme, kit, units, reveals): (Option<Res<chimera_ui::Theme>>, Option<Res<chimera_ui::KitFonts>>, Option<Res<chimera_ui::UiUnits>>, Option<Res<chimera_ui::secret::Reveals>>),
+    (theme, kit, units, reveals, copies): (
+        Option<Res<chimera_ui::Theme>>,
+        Option<Res<chimera_ui::KitFonts>>,
+        Option<Res<chimera_ui::UiUnits>>,
+        Option<Res<chimera_ui::secret::Reveals>>,
+        Option<Res<chimera_ui::form_page::Copies>>,
+    ),
     (mut images, mut icons, mut ambients): (Option<ResMut<Assets<Image>>>, Option<ResMut<chimera_ui::icons::IconImages>>, Option<ResMut<Assets<chimera_ui::AmbientMaterial>>>),
     mut drawn: Local<Option<DrawKey>>,
     mut commands: Commands,
@@ -1067,7 +1201,6 @@ fn show(
         let mut snap = p.clone();
         snap.typed_at = 0.0;
         snap.asked_name = None;
-        snap.avatar_at = None;
         let hub_state = match hub.as_deref() {
             Some(h) => (if h.doc.is_some() { h.name() } else { String::new() }, h.offline()),
             None => (String::new(), false),
@@ -1080,7 +1213,7 @@ fn show(
             ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32),
             cam,
             party.as_deref().cloned().unwrap_or_default(),
-            reveals.as_deref().cloned().unwrap_or_default(),
+            (reveals.as_deref().cloned().unwrap_or_default(), copies.as_deref().cloned().unwrap_or_default()),
         )
     });
     if *drawn == key {
@@ -1089,7 +1222,7 @@ fn show(
     for e in &root {
         commands.entity(e).despawn();
     }
-    if let Some((_, shown, (hub_name, offline), look, _, cam, party, reveals)) = key.clone() {
+    if let Some((_, shown, (hub_name, offline), look, _, cam, party, (reveals, copies))) = key.clone() {
         let ui = Ui::new(theme, kit.as_deref(), *units);
         let hub_name = if hub_name.is_empty() { shown.as_ref().map(|s| s.hub.clone()).unwrap_or_default() } else { hub_name };
         let host = account::live().map(|s| account::hub_link_of(&s.file()).host).unwrap_or_else(|| "hub.example.net:27080".into());
@@ -1104,6 +1237,7 @@ fn show(
             offline,
             fallback,
             reveals: &reveals,
+            copies: &copies,
             images: images.as_deref_mut(),
             icons: icons.as_deref_mut(),
         };
@@ -1125,6 +1259,7 @@ struct Draw<'a, 'b> {
     offline: bool,
     fallback: u8,
     reveals: &'a chimera_ui::secret::Reveals,
+    copies: &'a chimera_ui::form_page::Copies,
     images: Option<&'b mut Assets<Image>>,
     icons: Option<&'b mut chimera_ui::icons::IconImages>,
 }
@@ -1146,6 +1281,12 @@ impl Draw<'_, '_> {
             .filter(|d| !d.is_empty())
             .or(self.shown.map(|s| s.display.clone()))
             .unwrap_or_else(|| self.username())
+    }
+
+    fn role(&self) -> String {
+        let r = self.p.me.as_ref().map(|m| m.role.clone()).unwrap_or_default();
+        let mut c = r.chars();
+        c.next().map_or_else(|| "-".to_string(), |f| f.to_uppercase().chain(c).collect())
     }
 
     fn avatar(&mut self, c: &mut Commands, parent: Entity, byte: u8, size: f32) -> Entity {
@@ -1211,45 +1352,23 @@ impl Draw<'_, '_> {
         for (i, e) in ui.tabs_badged(c, tabbar, &refs, &badges, at, false, (refs.len() > 1).then_some(("Q", "E"))).into_iter().enumerate() {
             c.entity(e).insert(AccountAction::Tab(tabs[i]));
         }
-        let cols = ui.boxed(c, win, UiStyle { gap: Some(2.0 * sh.rows_in), align: Some(AlignItems::Stretch), ..UiStyle::row() }.abs([Some(sh.rows_in), Some(4.6), Some(sh.rows_in), Some(sh.act_h + 1.4)]));
-        let sc = ui.scroll(c, cols, SCROLL_KEY, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() }, UiStyle::column());
+        let cols = ui.boxed(c, win, UiStyle { gap: Some(2.0 * sh.rows_in), align: Some(AlignItems::Stretch), ..UiStyle::row() }.abs([Some(sh.rows_in), Some(4.6), Some(sh.rows_in), Some(sh.act_h + 1.0)]));
+        let sc = ui.scroll(c, cols, SCROLL_KEY, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() }, UiStyle { gap: Some(1.2), ..UiStyle::column() });
         let list = sc.content;
-        let rows = p.rows();
-        let mut open_drawn = false;
-        for (i, r) in rows.iter().enumerate() {
-            if matches!(r, Row::Open(_)) && !open_drawn {
-                open_drawn = true;
-                let n = p.invites.as_ref().map_or(0, |l| l.len()).to_string();
-                ui.section(c, list, &self.t("open_section"), Some(&n));
-            }
-            self.row(c, list, i, *r);
-        }
-        if p.tab == Tab::Invites && p.invites.as_ref().is_some_and(|l| l.is_empty()) {
-            ui.section(c, list, &self.t("open_section"), Some("0"));
-            ui.sentence(c, list, SENTENCE, Tone::Fg3, &self.t("open_none"));
-        }
-        self.help(c, cols, sh.side_w);
-        // The action bar: what the last call did, else the page's line.
+        // The list's width: the window's less the tile (Profile) and the insets.
+        let win_w = 100.0 - 2.0 * sh.margin - 2.0 * sh.rows_in - 1.0;
         let bar = chimera_ui::shell::action_bar(ui, c, win);
-        let st = ui.boxed(c, bar, UiStyle { gap: Some(0.6), grow: Some(1.0), align: Some(AlignItems::Center), ..UiStyle::row() });
-        match &p.said {
-            Some(s) => {
-                ui.mark(c, st, if s.error { Tone::Threat } else { Tone::Good }, 0.42, 0.42);
-                ui.sentence(c, st, SENTENCE, if s.error { Tone::Threat } else { Tone::Fg }, &s.text);
+        match p.tab {
+            Tab::Profile => {
+                let list_w = win_w - sh.side_w - 2.0 * sh.rows_in;
+                self.profile(c, list, list_w);
+                self.tile(c, cols, sh.side_w);
+                self.profile_footer(c, bar);
             }
-            None if p.pending.is_some() => {
-                ui.mark(c, st, Tone::Acc, 0.42, 0.42);
-                ui.sentence(c, st, SENTENCE, Tone::Fg2, &self.t("asking"));
+            Tab::Invites => {
+                self.invites(c, list, win_w);
+                self.invites_footer(c, bar);
             }
-            None => {
-                let line = self.w.f("account.line", &[("user", &self.username()), ("hub", self.hub)]);
-                ui.sentence(c, st, SENTENCE, Tone::Fg2, &line);
-            }
-        }
-        if p.tab == Tab::Invites {
-            let ready = !p.intent.trim().is_empty() && p.pending.is_none();
-            let b = ui.button(c, bar, Kind::Primary, &self.t("make"), Some("Enter"), chimera_ui::controls::Size::Regular, State { disabled: !ready, ..State::NONE });
-            c.entity(b).insert(AccountAction::Make);
         }
         let mut foot = vec![("↑↓", "Row"), ("Enter", "Change")];
         if tabs.len() > 1 {
@@ -1258,298 +1377,307 @@ impl Draw<'_, '_> {
         if p.row() == Some(Row::Avatar) {
             foot.push(("←→", "Avatar"));
         }
+        if p.tab == Tab::Profile {
+            foot.push(("Ctrl+S", "Save"));
+        }
+        foot.push(("Esc", "Main menu"));
         chimera_ui::shell::keys(ui, c, frame, &foot);
         root
     }
 
-    /// One row: its label, the control in the one column, and below it
-    /// what the row says now (a name's check, the code, the confirm).
-    fn row(&mut self, c: &mut Commands, list: Entity, i: usize, r: Row) {
+    fn focused(&self, r: Row) -> bool {
+        self.p.row() == Some(r)
+    }
+
+    /// Profile at the left: the name, then the avatar beside it (what you
+    /// can change).
+    fn profile(&mut self, c: &mut Commands, list: Entity, list_w: f32) {
         let ui = self.ui;
         let p = self.p;
-        let focus = p.focus == i;
-        let st = State::focused(focus);
-        let f = ui.form();
-        let (label, note): (String, Option<String>) = match r {
-            Row::Username => (self.t("username"), None),
-            Row::Avatar => (self.t("avatar"), Some(format!("{} / 32", p.avatar_now(self.fallback) + 1))),
-            Row::Hub => (self.t("hub"), None),
-            Row::Link => (self.t("link"), None),
-            Row::SignOut => (self.t("sign_out"), None),
-            Row::Intent => (self.t("intent"), None),
-            Row::Recipient => (self.t("recipient"), Some(self.t("optional"))),
-            Row::Role => (self.t("role"), None),
-            Row::Make => (self.t("invite_link"), None),
-            Row::Open(id) => {
-                let inv = p.invites.iter().flatten().find(|x| x.id == id);
-                (
-                    inv.map(|x| x.name.clone()).unwrap_or_default(),
-                    inv.map(|x| format!("{} · until {}", x.intent.clone().unwrap_or_default(), day_month(x.expires))),
-                )
-            }
+        let two = ui.boxed(c, list, UiStyle { gap: Some(2.4), align: Some(AlignItems::FlexStart), pad: Some([0.6, 0.0, 0.0, 0.4].into()), ..UiStyle::row() });
+        let fw = ui.theme.layout_opt("account", "field_w").unwrap_or(24.0);
+        let left = ui.boxed(c, two, UiStyle { w: Some(fw), gap: Some(0.8), shrink: Some(0.0), ..UiStyle::column() });
+        ui.form_section(c, left, &self.t("section_name"), None, None);
+        let editing = p.editing == Some(Editing::Name);
+        let folded = p.name.trim().to_ascii_lowercase();
+        let changed = p.name_changed();
+        let value = if editing || changed { p.name.clone() } else { self.username() };
+        let taken = changed && p.name_check.as_ref().is_some_and(|n| n.username == folded && !n.available);
+        let bad = (editing || changed) && !folded.is_empty() && !UsernameRules::of(&folded).all();
+        let fixes = if taken { p.name_check.as_ref().map(|n| n.suggestions.clone()).unwrap_or_default() } else { Vec::new() };
+        let fix_text = self.w.t("name.fix");
+        let taken_text = format!("{} · {}", self.w.f("name.taken", &[("hub", self.hub), ("name", &folded)]), self.w.t("name.free"));
+        let free_text = self.w.f("account.name_free", &[("was", &self.username())]);
+        let checking_text = self.w.f("name.checking", &[("hub", self.hub)]);
+        let hint = self.t("username_hint");
+        let status = if p.saving && changed {
+            FieldStatus::Checking(&checking_text)
+        } else if bad {
+            FieldStatus::Error { text: &fix_text, fixes: &[] }
+        } else if taken {
+            FieldStatus::Error { text: &taken_text, fixes: &fixes }
+        } else if changed && p.name_ok() {
+            FieldStatus::Ok(&free_text)
+        } else if changed {
+            FieldStatus::Checking(&checking_text)
+        } else {
+            FieldStatus::Hint(&hint)
         };
-        if r == Row::Username {
-            self.username_form(c, list, i, focus);
-            return;
+        let help = self.w.f("account.username_help", &[("hub", self.hub)]);
+        let label = self.t("username");
+        let tag = self.t("required");
+        let ff = ui.form_field(
+            c,
+            left,
+            &FieldSpec {
+                label: &label,
+                tag: Some(&tag),
+                help: &help,
+                value: &value,
+                caret: editing.then(|| p.caret.cursor(&p.name)),
+                focus: self.focused(Row::Username),
+                status,
+                w: fw,
+                ..default()
+            },
+        );
+        c.entity(ff.input).insert(AccountAction::Edit(Editing::Name));
+        for (e, s) in ff.fixes.iter().zip(&fixes) {
+            c.entity(*e).insert(AccountAction::Suggest(s.clone()));
         }
-        let sr = ui.setting_row(c, list, &label, RowLook { note: note.as_deref(), ..default() }, st);
-        c.entity(sr.row).insert((clickable(), AccountAction::Row(i)));
-        let ctl = sr.control;
-        let w = f.control_w;
-        match r {
-            Row::Username => {}
-            Row::Avatar => {
-                let a = p.avatar_now(self.fallback);
-                let line = ui.boxed(c, ctl, UiStyle { w: Some(w), gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
-                let av = self.avatar(c, line, a, 2.0);
-                c.entity(av).insert(Pickable::IGNORE);
-                ui.text_plain(c, line, Role::DisplayBold, 0.86, Tone::Fg, &self.display());
-                self.avatar_grid(c, list, a);
-            }
-            Row::Hub => {
-                let line = ui.boxed(c, ctl, UiStyle { w: Some(w), gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() });
-                ui.mark(c, line, if self.offline { Tone::Warn } else { Tone::Good }, 0.6, 0.6);
-                ui.text_plain(c, line, Role::DisplayBold, 0.86, Tone::Fg, self.hub);
-            }
-            Row::Link => {
-                let b = ui.button(c, ctl, Kind::Secondary, &self.t(if p.link.is_some() { "link_again" } else { "link_show" }), None, chimera_ui::controls::Size::Regular, State { focus, ..State::NONE });
-                c.entity(b).insert(AccountAction::Link);
-                if let Some((code, minutes)) = &p.link {
-                    let under = self.under(c, list);
-                    let cells = ui.boxed(c, under, UiStyle { gap: Some(0.35), align: Some(AlignItems::Center), ..UiStyle::row() });
-                    for (k, ch) in code.chars().enumerate() {
-                        if ch == '-' {
-                            ui.text_plain(c, cells, Role::Mono, 1.2, Tone::Fg3, "–");
-                            continue;
-                        }
-                        let cell = ui.boxed(c, cells, UiStyle { w: Some(2.1), h: Some(2.6), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), ..UiStyle::row() }.bg_a(Tone::Fg, 0.05).outline(if k == 0 { Tone::Acc } else { Tone::Fg4 }, 1.0));
-                        ui.text_plain(c, cell, Role::Mono, 1.3, Tone::Fg, &ch.to_string());
-                    }
-                    let words = ui.boxed(c, under, UiStyle { gap: Some(0.3), margin: Some([0.0, 0.0, 0.0, 1.0].into()), ..UiStyle::column() });
-                    ui.text_plain(c, words, Role::Mono, 0.56, Tone::AccText, &self.w.f("account.link_valid", &[("n", &minutes.to_string())]).to_uppercase());
-                    ui.sentence(c, words, 0.8, Tone::Fg3, &self.t("link_where"));
+        let note = ui.boxed(c, left, UiStyle { w: Some(fw), ..UiStyle::column() });
+        ui.paragraph(c, note, Role::Text, 0.7, Tone::Fg3, &self.t("display_note"));
+        // The avatar: the 32 looks, as large as the room beside allows.
+        let aw = (list_w - fw - 3.0).max(16.0);
+        let right = ui.boxed(c, two, UiStyle { w: Some(aw), gap: Some(0.6), shrink: Some(0.0), ..UiStyle::column() });
+        ui.form_section(c, right, &self.t("avatar"), Some("32 looks"), Some(&self.t("avatar_help")));
+        let a = p.avatar_now(self.fallback);
+        let on = self.focused(Row::Avatar);
+        let (images, icons) = (self.images.as_deref_mut(), self.icons.as_deref_mut());
+        for (b, t) in ui.avatar_grid(c, right, images, icons, a, on, aw).into_iter().enumerate() {
+            c.entity(t).insert(AccountAction::Avatar(b as u8));
+        }
+    }
+
+    /// The right-hand tile: only what the player can't change here (the
+    /// hub, its address masked, the role), then Link another device and
+    /// Sign out.
+    fn tile(&mut self, c: &mut Commands, cols: Entity, side_w: f32) {
+        let ui = self.ui;
+        let p = self.p;
+        let tile = ui.boxed(c, cols, UiStyle { w: Some(side_w), gap: Some(0.6), pad: Some([1.2, 1.4].into()), shrink: Some(0.0), ..UiStyle::column() }.bg_a(Tone::Ink2, 0.75).outline(Tone::AccText, 0.22));
+        ui.corners(c, tile, Tone::AccText, 1.0);
+        let head = ui.boxed(c, tile, UiStyle { justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() });
+        ui.text(c, head, Role::Mono, 0.54, Tone::AccText, &self.t("tile_title"));
+        ui.text(c, head, Role::Mono, 0.5, Tone::Fg3, &self.t("read_only"));
+        let who = ui.boxed(c, tile, UiStyle { gap: Some(1.0), align: Some(AlignItems::Center), pad: Some([0.4, 0.0].into()), ..UiStyle::row() });
+        let a = p.avatar_now(self.fallback);
+        let av = self.avatar(c, who, a, 3.0);
+        c.entity(av).insert(Pickable::IGNORE);
+        let names = ui.boxed(c, who, UiStyle { gap: Some(0.3), ..UiStyle::column() });
+        ui.text_plain(c, names, Role::DisplayBold, 1.0, Tone::Fg, &self.display());
+        ui.text_plain(c, names, Role::Mono, 0.56, Tone::Fg3, &format!("@{} · {}", self.username(), self.role()));
+        let kw = 7.0;
+        ui.value_row(c, tile, "Hub", RowValue::Text(self.hub), kw, true);
+        let revealed = self.reveals.shown(REVEAL_HOST);
+        ui.value_row(c, tile, "Address", RowValue::Secret { key: REVEAL_HOST, value: self.host, revealed, copied: self.copies.copied(REVEAL_HOST) }, kw, true);
+        let role = self.role();
+        ui.value_row(c, tile, "Role", RowValue::Badge(&role, BadgeLook::OUTLINE), kw, true);
+        let status = if self.offline { "Offline" } else { "Online" };
+        ui.value_row(c, tile, "Status", RowValue::Text(status), kw, true);
+        if let Some(me) = p.me.as_ref().filter(|m| !m.previous_usernames.is_empty()) {
+            let was = me.previous_usernames.iter().take(2).map(|u| format!("@{u}")).collect::<Vec<_>>().join(" ");
+            ui.value_row(c, tile, "Was", RowValue::Mono(&was), kw, true);
+        }
+        // Link another device, Sign out.
+        let btns = ui.boxed(c, tile, UiStyle { gap: Some(0.7), margin: Some([0.8, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
+        let lk = ui.button(c, btns, Kind::Secondary, &self.t(if p.link.is_some() { "link_again" } else { "link" }), None, Size::Regular, State { focus: self.focused(Row::Link), disabled: p.saving, ..State::NONE });
+        c.entity(lk).insert(AccountAction::Link);
+        if p.confirm_sign_out {
+            let stay = ui.button(c, btns, Kind::Secondary, &self.t("stay"), Some("Esc"), Size::Regular, State::NONE);
+            c.entity(stay).insert(AccountAction::SignOutStay);
+            let go = ui.button(c, btns, Kind::DestructiveConfirm, &self.t("sign_out_confirm"), None, Size::Regular, State { focus: true, ..State::NONE });
+            c.entity(go).insert(AccountAction::SignOutConfirm);
+            let ask = ui.boxed(c, tile, UiStyle { w: Some(side_w - 2.8), gap: Some(0.6), pad: Some([0.6, 0.8].into()), ..UiStyle::row() }.bg_a(Tone::Threat, 0.07));
+            ui.mark(c, ask, Tone::Threat, 0.45, 0.45);
+            let words = ui.boxed(c, ask, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() });
+            let line = self.w.f("account.sign_out_ask", &[("user", &self.username()), ("hub", self.hub)]);
+            ui.paragraph(c, words, Role::Text, 0.74, Tone::Fg, &line);
+        } else {
+            let b = ui.button(c, btns, Kind::Destructive, &self.t("sign_out_button"), None, Size::Regular, State { focus: self.focused(Row::SignOut), disabled: p.saving, ..State::NONE });
+            c.entity(b).insert(AccountAction::SignOut);
+        }
+        if let Some((code, minutes)) = &p.link {
+            let cells = ui.boxed(c, tile, UiStyle { gap: Some(0.3), align: Some(AlignItems::Center), margin: Some([0.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
+            for (k, ch) in code.chars().enumerate() {
+                if ch == '-' {
+                    ui.text_plain(c, cells, Role::Mono, 1.0, Tone::Fg3, "–");
+                    continue;
                 }
+                let cell = ui.boxed(c, cells, UiStyle { w: Some(1.9), h: Some(2.4), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), ..UiStyle::row() }.bg_a(Tone::Fg, 0.05).outline(if k == 0 { Tone::Acc } else { Tone::Fg4 }, 1.0));
+                ui.text_plain(c, cell, Role::Mono, 1.2, Tone::Fg, &ch.to_string());
             }
-            Row::SignOut => {
-                if p.confirm_sign_out {
-                    let two = ui.boxed(c, ctl, UiStyle { w: Some(w), gap: Some(0.5), ..UiStyle::row() });
-                    let stay = ui.button(c, two, Kind::Secondary, &self.t("stay"), Some("Esc"), chimera_ui::controls::Size::Regular, State::NONE);
-                    c.entity(stay).insert(AccountAction::SignOutStay);
-                    let go = ui.button(c, two, Kind::Destructive, &self.t("sign_out_confirm"), None, chimera_ui::controls::Size::Regular, State { focus: true, ..State::NONE });
-                    c.entity(go).insert(AccountAction::SignOutConfirm);
-                    let under = self.under(c, list);
-                    ui.mark(c, under, Tone::Warn, 0.5, 0.5);
-                    let line = self.w.f("account.sign_out_ask", &[("user", &self.username()), ("hub", self.hub)]);
-                    let words = ui.boxed(c, under, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() });
-                    ui.paragraph(c, words, Role::Text, 0.84, Tone::Fg, &line);
-                } else {
-                    let b = ui.button(c, ctl, Kind::Destructive, &self.t("sign_out_button"), None, chimera_ui::controls::Size::Regular, State { focus, ..State::NONE });
-                    c.entity(b).insert(AccountAction::SignOut);
+            ui.text_plain(c, tile, Role::Mono, 0.52, Tone::AccText, &self.w.f("account.link_valid", &[("n", &minutes.to_string())]).to_uppercase());
+            let w = ui.boxed(c, tile, UiStyle { w: Some(side_w - 2.8), ..UiStyle::column() });
+            ui.paragraph(c, w, Role::Text, 0.72, Tone::Fg3, &self.t("link_where"));
+        }
+    }
+
+    /// The Profile's action bar: its changes (one line however many),
+    /// Discard and Save changes; all waiting while it saves.
+    fn profile_footer(&mut self, c: &mut Commands, bar: Entity) {
+        let ui = self.ui;
+        let p = self.p;
+        let changes = p.changes();
+        let line = self.w.f("account.line", &[("user", &self.username()), ("hub", self.hub)]);
+        let said = match &p.said {
+            Some(s) => Some((if s.error { Tone::Threat } else { Tone::Good }, s.text.as_str())),
+            None => Some((Tone::Fg4, line.as_str())),
+        };
+        let busy = self.t("saving_line");
+        let (discard, save, saving) = (self.t("discard"), self.t("save"), self.t("saving"));
+        let none = changes.is_empty();
+        let actions = [
+            FooterAction { kind: Kind::Tertiary, label: &discard, busy_label: None, key: None, disabled: none },
+            FooterAction { kind: Kind::Primary, label: &save, busy_label: Some(&saving), key: Some("Ctrl+S"), disabled: none },
+        ];
+        let parts = ui.form_footer(c, bar, &FooterSpec { changes: &changes, open: p.changes_open, said, busy: p.saving.then_some(busy.as_str()), actions: &actions });
+        if let Some(t) = parts.toggle {
+            c.entity(t).insert(AccountAction::ToggleChanges);
+        }
+        c.entity(parts.actions[0]).insert(AccountAction::Discard);
+        c.entity(parts.actions[1]).insert(AccountAction::Save);
+    }
+
+    /// Invites: the form (or, once made, the result card) at the left, the
+    /// open invites beside it.
+    fn invites(&mut self, c: &mut Commands, list: Entity, win_w: f32) {
+        let ui = self.ui;
+        let p = self.p;
+        let fw = ui.theme.layout_opt("account", "invite_w").unwrap_or(30.0);
+        let two = ui.boxed(c, list, UiStyle { gap: Some(2.6), align: Some(AlignItems::FlexStart), pad: Some([0.6, 0.0, 0.0, 0.4].into()), ..UiStyle::row() });
+        let left = ui.boxed(c, two, UiStyle { w: Some(fw), gap: Some(0.8), shrink: Some(0.0), ..UiStyle::column() });
+        match &p.made {
+            Some(m) => {
+                let link = m.link.clone().unwrap_or_else(|| m.code.clone());
+                let title = self.w.f("account.made_title", &[("name", &m.name)]);
+                let facts = [("Expires", day_month(m.expires)), ("Code", m.code.clone())];
+                let (head, tag, copy, copied, another) = (self.t("made_head"), self.t("shown_once"), self.t("copy"), self.t("copied_short"), self.t("another"));
+                let r = ui.result_card(
+                    c,
+                    left,
+                    &ResultSpec { head: &head, tag: &tag, title: &title, value: &link, copy: &copy, copied: &copied, is_copied: self.copies.copied(COPY_INVITE), another: &another, facts: &facts },
+                    fw,
+                );
+                c.entity(r.copy).insert(AccountAction::CopyLink);
+                c.entity(r.another).insert(AccountAction::Another);
+                let n = ui.boxed(c, left, UiStyle { w: Some(fw), ..UiStyle::column() });
+                ui.paragraph(c, n, Role::Text, 0.72, Tone::Fg3, &self.t("not_kept"));
+            }
+            None => {
+                ui.form_section(c, left, &self.t("make_section"), None, Some(&self.t("make_sentence")));
+                for (row, e, text, caret, label, help, tag, ph) in [
+                    (Row::Intent, Editing::Intent, &p.intent, p.icaret, "intent", "help.intent", "required", "intent_placeholder"),
+                    (Row::Recipient, Editing::Recipient, &p.recipient, p.rcaret, "recipient", "help.recipient", "optional", "recipient_placeholder"),
+                ] {
+                    let editing = p.editing == Some(e);
+                    let (label, help, tag, ph) = (self.t(label), self.t(help), self.t(tag), self.t(ph));
+                    let needed = self.t("intent_needed");
+                    let status = if row == Row::Intent && p.said.as_ref().is_some_and(|s| s.error) && text.trim().is_empty() {
+                        FieldStatus::Error { text: &needed, fixes: &[] }
+                    } else {
+                        FieldStatus::None
+                    };
+                    let ff = ui.form_field(
+                        c,
+                        left,
+                        &FieldSpec {
+                            label: &label,
+                            tag: Some(&tag),
+                            help: &help,
+                            value: text,
+                            placeholder: &ph,
+                            caret: editing.then(|| caret.cursor(text)),
+                            focus: self.focused(row),
+                            status,
+                            w: fw,
+                            ..default()
+                        },
+                    );
+                    c.entity(ff.input).insert(AccountAction::Edit(e));
                 }
-            }
-            Row::Intent | Row::Recipient => {
-                let (e, text, caret, ph) = if r == Row::Intent {
-                    (Editing::Intent, &p.intent, p.icaret, self.t("intent_placeholder"))
-                } else {
-                    (Editing::Recipient, &p.recipient, p.rcaret, self.t("recipient_placeholder"))
-                };
-                let editing = p.editing == Some(e);
-                let tf = ui.text_field(c, ctl, text, &ph, editing.then(|| caret.cursor(text)), false, w, State::focused(editing));
-                c.entity(tf).insert((clickable(), AccountAction::Edit(e)));
-            }
-            Row::Role => {
                 let options = [self.t("role_tester"), self.t("role_host")];
                 let refs: Vec<&str> = options.iter().map(String::as_str).collect();
-                if let Choice::Segmented(segs) = ui.choice(c, ctl, &refs, Some(p.role), None, st) {
+                let (label, help) = (self.t("role"), self.t("role_help"));
+                let (_, ch) = ui.choice_field(c, left, &label, &help, &refs, p.role, None, State::focused(self.focused(Row::Role)), fw);
+                if let Choice::Segmented(segs) = ch {
                     for (k, e) in segs.into_iter().enumerate() {
                         c.entity(e).insert(AccountAction::Role(k));
                     }
                 }
-            }
-            Row::Make => {
-                match &p.made {
-                    Some(m) => {
-                        let b = ui.button(c, ctl, Kind::Secondary, &self.t("copy"), Some("Ctrl C"), chimera_ui::controls::Size::Regular, State { focus, ..State::NONE });
-                        c.entity(b).insert(AccountAction::CopyLink);
-                        // The link, once, on a plate across the list.
-                        let plate = ui.boxed(c, list, UiStyle { gap: Some(0.5), pad: Some([1.0, 1.4].into()), margin: Some([0.2, 0.0, 0.6, 0.0].into()), shrink: Some(0.0), ..UiStyle::column() }.bg_a(Tone::Ink2, 0.8).outline(Tone::AccText, 0.4));
-                        ui.corners(c, plate, Tone::AccText, 0.9);
-                        let head = ui.boxed(c, plate, UiStyle { gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() });
-                        ui.badge(c, head, &m.name, BadgeKind::Hero);
-                        ui.text_plain(c, head, Role::Mono, 0.56, Tone::AccText, &self.w.f("account.made_note", &[("date", &day_month(m.expires))]).to_uppercase());
-                        let link = m.link.clone().unwrap_or_else(|| m.code.clone());
-                        ui.text_plain(c, plate, Role::Mono, 0.8, Tone::Fg, &short_link(&link));
-                    }
-                    None => {
-                        ui.text_plain(c, ctl, Role::Mono, 0.56, Tone::Fg3, &self.t("make_hint").to_uppercase());
-                    }
-                }
-            }
-            Row::Open(id) => {
-                let inv = p.invites.iter().flatten().find(|x| x.id == id);
-                let line = ui.boxed(c, ctl, UiStyle { w: Some(w), gap: Some(0.6), align: Some(AlignItems::Center), justify: Some(JustifyContent::FlexEnd), ..UiStyle::row() });
-                if let Some(x) = inv {
-                    ui.badge(c, line, &x.role, if x.role == "host" { BadgeKind::Hero } else { BadgeKind::Quiet });
-                }
-                let b = ui.button(c, line, Kind::Secondary, &self.t("revoke"), None, chimera_ui::controls::Size::Regular, State { focus, ..State::NONE });
-                c.entity(b).insert(AccountAction::Revoke(id));
+                let making = p.pending.is_some() && p.made.is_none();
+                let label = if making { self.t("making") } else { self.t("make") };
+                let b = ui.button(c, left, Kind::Primary, &label, (!making).then_some("Enter"), Size::Regular, State { focus: self.focused(Row::Make), busy: making, ..State::NONE });
+                c.entity(b).insert(AccountAction::Make);
             }
         }
-    }
-
-    /// The username as a form's field (`chimera_ui::form`'s `form_field`):
-    /// its title, what it is for, the input (Enter or a click edits), and
-    /// the check's line under it while editing.
-    fn username_form(&mut self, c: &mut Commands, list: Entity, i: usize, focus: bool) {
-        let ui = self.ui;
-        let p = self.p;
-        let block = ui.boxed(c, list, UiStyle { pad: Some([0.8, 1.4, 1.0, 1.4].into()), shrink: Some(0.0), w_pct: Some(100.0), ..UiStyle::column() });
-        c.entity(block).insert((clickable(), AccountAction::Row(i)));
-        if focus {
-            ui.focus_bar(c, block, 0.22);
+        // The open invites, newest first.
+        let iw = (win_w - fw - 4.0).max(30.0);
+        let right = ui.boxed(c, two, UiStyle { w: Some(iw), gap: Some(0.6), shrink: Some(0.0), ..UiStyle::column() });
+        let n = p.invites.as_ref().map_or(0, |l| l.len());
+        ui.form_section(c, right, &self.t("open_section"), Some(&n.to_string()), Some(&self.t("open_sentence")));
+        if n == 0 {
+            let none = ui.boxed(c, right, UiStyle { w: Some(iw), ..UiStyle::column() });
+            ui.paragraph(c, none, Role::Text, 0.78, Tone::Fg3, &self.t("open_none"));
         }
-        let editing = p.editing == Some(Editing::Name);
-        let value = if editing { p.name.clone() } else { format!("@{}", self.username()) };
-        let folded = p.name.trim().to_ascii_lowercase();
-        let taken = editing && p.name_check.as_ref().is_some_and(|n| n.username == folded && !n.available);
-        let bad = editing && !folded.is_empty() && !UsernameRules::of(&folded).all();
-        let fst = State { focus: editing, error: taken || bad, ..State::NONE };
-        let w = self.ui.form().control_w + 8.0;
-        let help = self.w.f("account.username_help", &[("hub", self.hub)]);
-        let ff = ui.form_field(c, block, &self.t("username"), &help, None, &value, "", editing.then(|| p.caret.cursor(&p.name)), false, w, fst);
-        c.entity(ff.input).insert((clickable(), AccountAction::Edit(Editing::Name)));
-        if editing {
-            let (tone, line) = if bad {
-                (Tone::Threat, self.w.t("name.fix"))
-            } else if taken {
-                (Tone::Threat, self.w.f("name.taken", &[("hub", self.hub), ("name", &folded)]))
-            } else if p.name_ok() {
-                (Tone::AccText, self.t("name_free"))
-            } else {
-                (Tone::Fg3, self.w.f("name.checking", &[("hub", self.hub)]))
+        let rows = p.rows();
+        for inv in p.invites.iter().flatten() {
+            let i = rows.iter().position(|r| *r == Row::Open(inv.id)).unwrap_or(0);
+            let focus = p.focus == i;
+            let asking = p.confirm_revoke == Some(inv.id);
+            let style = UiStyle { w: Some(iw), gap: Some(0.9), align: Some(AlignItems::Center), pad: Some([0.5, 0.6, 0.5, 1.1].into()), ..UiStyle::row() };
+            let style = if asking { style.bg_a(Tone::Threat, 0.07) } else { style };
+            let item = ui.item(c, right, style, State::focused(focus && !asking), false);
+            c.entity(item).insert((controls::MinHeight(3.4), AccountAction::Row(i)));
+            if asking {
+                ui.boxed(c, item, UiStyle { w: Some(0.24), ..UiStyle::row() }.abs([Some(0.0), Some(0.0), None, Some(0.0)]).bg(Tone::Threat));
+                let q = ui.boxed(c, item, UiStyle { grow: Some(1.0), shrink: Some(1.0), gap: Some(0.2), ..UiStyle::column() });
+                ui.text_plain(c, q, Role::DisplayBold, 0.78, Tone::Fg, &self.w.f("account.revoke_ask", &[("name", &inv.name)]).to_uppercase());
+                ui.paragraph(c, q, Role::Text, 0.7, Tone::Fg2, &self.t("revoke_why"));
+                let keep = ui.button(c, item, Kind::Secondary, &self.t("keep"), Some("Esc"), Size::Small, State::NONE);
+                c.entity(keep).insert(AccountAction::RevokeKeep);
+                let go = ui.button(c, item, Kind::DestructiveConfirm, &self.t("revoke_confirm"), None, Size::Small, State { focus: true, busy: p.pending.is_some(), ..State::NONE });
+                c.entity(go).insert(AccountAction::RevokeConfirm(inv.id));
+                continue;
+            }
+            let a = ui.boxed(c, item, UiStyle { grow: Some(1.0), shrink: Some(1.0), gap: Some(0.3), ..UiStyle::column() });
+            ui.text_plain(c, a, Role::Text, 0.82, Tone::Fg, inv.intent.as_deref().unwrap_or(&inv.name));
+            let sub = match inv.recipient.as_deref().filter(|r| !r.is_empty()) {
+                Some(r) => format!("For {r} · made {}", day_month(inv.created)),
+                None => format!("No recipient · made {}", day_month(inv.created)),
             };
-            let under = ui.boxed(c, ff.root, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), margin: Some([0.3, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
-            ui.mark(c, under, tone, 0.5, 0.5);
-            ui.text_plain(c, under, Role::Mono, 0.56, tone, &line.to_uppercase());
-            if taken {
-                ui.text(c, under, Role::Mono, 0.56, Tone::Fg3, &self.w.t("name.free"));
-                for s in p.name_check.as_ref().map(|n| n.suggestions.clone()).unwrap_or_default() {
-                    let b = ui.button(c, under, Kind::Secondary, &s, None, chimera_ui::controls::Size::Small, State::NONE);
-                    c.entity(b).insert(AccountAction::Suggest(s.clone()));
-                }
-            }
+            ui.text_plain(c, a, Role::Mono, 0.5, Tone::Fg3, &sub.to_uppercase());
+            let role = if inv.role == "host" { "Host" } else { "Tester" };
+            let look = if inv.role == "host" { BadgeLook::HERO } else { BadgeLook::OUTLINE };
+            ui.badge_look(c, item, role, look);
+            let e = ui.boxed(c, item, UiStyle { w: Some(6.4), shrink: Some(0.0), ..UiStyle::row() });
+            ui.text_plain(c, e, Role::Mono, 0.54, Tone::Fg2, &format!("Until {}", day_month(inv.expires)).to_uppercase());
+            let b = ui.button(c, item, Kind::Destructive, &self.t("revoke"), None, Size::Small, State { disabled: p.pending.is_some(), ..State::NONE });
+            c.entity(b).insert(AccountAction::Revoke(inv.id));
         }
     }
 
-    /// The 32 looks under the avatar's row, across the list (the user's
-    /// review, 2026-11-21: what you change at the left, in big tiles; the
-    /// help tile keeps only what you can't): one marker, the chosen one
-    /// outlined.
-    fn avatar_grid(&mut self, c: &mut Commands, list: Entity, chosen: u8) {
-        let ui = self.ui;
-        let sh = chimera_ui::shell::ShellLayout::of(ui.theme);
-        let gap = 0.4;
-        // The list's width: the window's less the help tile and the insets.
-        let list_w = 100.0 - 2.0 * sh.margin - 4.0 * sh.rows_in - sh.side_w - 2.8;
-        let tile = ((list_w - 7.0 * gap) / 8.0).min(ui.theme.layout_opt("account", "avatar_tile").unwrap_or(4.4));
-        let grid = ui.boxed(c, list, UiStyle { gap: Some(gap), pad: Some([0.2, 1.4, 1.0, 1.4].into()), shrink: Some(0.0), ..UiStyle::column() });
-        for row in 0..4u8 {
-            let line = ui.boxed(c, grid, UiStyle { gap: Some(gap), ..UiStyle::row() });
-            for col in 0..8u8 {
-                let b = row * 8 + col;
-                let sel = b == chosen;
-                let cell = ui.boxed(
-                    c,
-                    line,
-                    UiStyle { w: Some(tile), h: Some(tile), pad: Some([0.2, 0.2].into()), shrink: Some(0.0), ..UiStyle::row() }.outline(if sel { Tone::Acc } else { Tone::Fg5 }, if sel { 2.0 } else { 1.0 }),
-                );
-                c.entity(cell).insert((clickable(), AccountAction::Avatar(b)));
-                let a = self.avatar(c, cell, b, tile - 0.4);
-                c.entity(a).insert(Pickable::IGNORE);
-            }
-        }
-    }
-
-    /// A line under a row (its check, its code, its confirm), indented.
-    fn under(&self, c: &mut Commands, list: Entity) -> Entity {
-        self.ui.boxed(c, list, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), pad: Some([0.4, 1.4, 0.8, 1.4].into()), shrink: Some(0.0), w_pct: Some(100.0), ..UiStyle::row() })
-    }
-
-    /// The help tile at the right: the focused row's title, what it does
-    /// and its facts; the avatar's 32 looks on the avatar row.
-    fn help(&mut self, c: &mut Commands, cols: Entity, side_w: f32) {
-        let ui = self.ui;
+    /// The Invites' action bar: what the last call did, else the count.
+    fn invites_footer(&mut self, c: &mut Commands, bar: Entity) {
         let p = self.p;
-        let help = ui.boxed(c, cols, UiStyle { w: Some(side_w), gap: Some(1.0), shrink: Some(0.0), ..UiStyle::column() });
-        let Some(r) = p.row() else { return };
-        let key = match r {
-            Row::Username => "username",
-            Row::Avatar => "avatar",
-            Row::Hub => "hub",
-            Row::Link => "link",
-            Row::SignOut => "sign_out",
-            Row::Intent => "intent",
-            Row::Recipient => "recipient",
-            Row::Role => "role",
-            Row::Make => "invite_link",
-            Row::Open(_) => "open",
+        let n = p.invites.as_ref().map_or(0, |l| l.len());
+        let line = self.w.f("account.open_line", &[("n", &n.to_string())]);
+        let said = match &p.said {
+            Some(s) => (if s.error { Tone::Threat } else { Tone::Good }, s.text.as_str()),
+            None => (Tone::Fg4, line.as_str()),
         };
-        let tagrow = ui.boxed(c, help, UiStyle::row());
-        let (node, label) = chimera_ui::widgets::tag(ui.theme, ui.kit, &ui.units, chimera_ui::widgets::TagKind::Accent, "Selected", 0.5);
-        let tag = c.spawn((node, ChildOf(tagrow))).id();
-        c.spawn((label, ChildOf(tag)));
-        let title = match r {
-            Row::Open(id) => p.invites.iter().flatten().find(|x| x.id == id).map(|x| x.name.clone()).unwrap_or_default(),
-            _ => self.t(key),
-        };
-        ui.text(c, help, Role::DisplayBold, 1.3, Tone::Fg, &title);
-        let tx = ui.boxed(c, help, UiStyle { w_pct: Some(100.0), ..UiStyle::column() });
-        let text = self.w.f(&format!("account.help.{key}"), &[("hub", self.hub), ("user", &self.username())]);
-        ui.paragraph(c, tx, Role::Text, SENTENCE, Tone::Fg2, &text);
-        let me = p.me.clone().unwrap_or_default();
-        let kv: Vec<(&str, String)> = match r {
-            Row::Username => {
-                let mut v = vec![("Username", format!("@{}", self.username())), ("Shown as", self.display())];
-                if !me.previous_usernames.is_empty() {
-                    v.push(("Was", me.previous_usernames.iter().take(3).map(|u| format!("@{u}")).collect::<Vec<_>>().join(" ")));
-                }
-                v.push(("Renames", "One a minute".into()));
-                v
-            }
-            Row::Hub => vec![
-                ("Hub", self.hub.to_string()),
-                ("Status", if self.offline { "Offline".into() } else { "Online".into() }),
-                ("Role", if me.role.is_empty() { "-".into() } else { me.role.clone() }),
-            ],
-            Row::Open(id) => p
-                .invites
-                .iter()
-                .flatten()
-                .find(|x| x.id == id)
-                .map(|x| {
-                    vec![
-                        ("Intent", x.intent.clone().unwrap_or_default()),
-                        ("For", x.recipient.clone().unwrap_or_else(|| "-".into())),
-                        ("Role", x.role.clone()),
-                        ("Made", day_month(x.created)),
-                        ("Until", day_month(x.expires)),
-                    ]
-                })
-                .unwrap_or_default(),
-            _ => Vec::new(),
-        };
-        if !kv.is_empty() {
-            let kv: Vec<(&str, String)> = kv.into_iter().map(|(k, v)| (k, if k == "Username" || k == "Was" { v } else { v.to_uppercase() })).collect();
-            ui.kv(c, help, &kv, 7.0);
-        }
-        if r == Row::Hub {
-            // The address hidden until its eye key (streamers).
-            let line = ui.boxed(c, help, UiStyle { gap: Some(1.0), pad: Some([0.6, 0.0].into()), align: Some(AlignItems::Center), ..UiStyle::row() });
-            ui.hairline(c, line, Tone::Fg, 0.07);
-            let k = ui.boxed(c, line, UiStyle { w: Some(7.0), shrink: Some(0.0), ..UiStyle::row() });
-            ui.text(c, k, Role::Mono, 0.6, Tone::Fg3, "Address");
-            ui.secret(c, line, REVEAL_HOST, self.host, self.reveals.shown(REVEAL_HOST), false, Role::Mono, 0.6, Tone::Fg);
-        }
+        let busy = self.t("asking");
+        self.ui.form_footer(c, bar, &FooterSpec { said: Some(said), busy: (p.pending.is_some() && p.made.is_none()).then_some(busy.as_str()), ..default() });
     }
 }
 
@@ -1585,13 +1713,23 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
             p.asked_name = Some(name.into());
             p.name_check = staged.check_rename(name).ok();
         }
-        "avatar" => p.focus = 1,
+        "avatar" => {
+            p.focus = 1;
+            p.avatar = Some(21);
+        }
+        "saving" => {
+            p.me = staged.me().ok();
+            p.name = "night_owl".into();
+            p.avatar = Some(21);
+            p.saving = true;
+            p.changes_open = false;
+        }
         "link" => {
-            p.focus = 3;
+            p.focus = 2;
             p.link = Some((STAGED_LINK.into(), 10));
         }
         "sign-out" => {
-            p.focus = 4;
+            p.focus = 3;
             p.confirm_sign_out = true;
         }
         "invites" | "invite-made" => {
@@ -1613,7 +1751,7 @@ fn scene(w: &mut World, args: &[String]) -> Result<(), String> {
         }
         other => {
             return Err(format!(
-                "ui_scene account {other}: profile, rename, rename-taken, avatar, link, sign-out, invites, invite-made, player or off"
+                "ui_scene account {other}: profile, rename, rename-taken, avatar, saving, link, sign-out, invites, invite-made, player or off"
             ));
         }
     }

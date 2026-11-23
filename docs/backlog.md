@@ -2611,6 +2611,15 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
   dimmed; hover a slanted tint on the key. The gallery shows every
   state.
 
+- **Account > Profile: the display name field (Form Kit mockup, approved
+  2026-11-22).** The mockup's Profile edits the display name beside the
+  username, saved with Save changes; the hub has no call to change it
+  (only redeem sets it). Add `POST /accounts/display_name`
+  (chimera_services, one a minute like renames), `account::set_display_name`,
+  `AccountHub::set_display_name`, a `FieldSpec` field ("Optional", up to 24
+  characters) in `account_page::Draw::profile` and the change in
+  `AccountPage::changes`; the saved name goes to the chip and
+  `account.toml` (`keep_names`).
 - **One component library, used everywhere (user, 2026-11-17).** The
   kit (`chimera_ui::controls`: `text_field`, `search_field`, `text_area`,
   `chat_field`, `button`, `toggle`, `dropdown`, `slider`, ...) is the one

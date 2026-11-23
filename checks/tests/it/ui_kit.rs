@@ -175,16 +175,6 @@ fn the_text_input_scan_sees_what_it_should() {
 /// one in any other file does, and a count that fell must be lowered.
 const CONTROLS_ALLOWED: &[(&str, usize, &str)] = &[
     (
-        "apps/party_kit/src/account_page.rs",
-        5,
-        "the account page, being reworked onto the onboarding form components (docs/plans/active/onboarding.md, pending the user's review): moves to the kit with them",
-    ),
-    (
-        "apps/party_kit/src/onboarding.rs",
-        11,
-        "the first run's screens, being reworked onto the onboarding form components (pending the user's review): move to the kit with them",
-    ),
-    (
         "apps/party_kit/src/controls.rs",
         1,
         "the plain look's Controls page (apps without a Signal theme: Lucker Party), not the kit's look; tech-debt",

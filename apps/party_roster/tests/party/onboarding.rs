@@ -417,7 +417,8 @@ fn addresses_and_the_key_are_hidden_until_shown() {
     assert!(words(&mut sim).contains(group), "shown");
 }
 
-/// Save as file shows where the key went: its whole path, and Copy path.
+/// Save as file shows where the key went: its whole path, Copy path and
+/// Show in folder.
 #[test]
 fn saving_the_key_shows_its_whole_path() {
     let mut sim = sim();
@@ -434,6 +435,11 @@ fn saving_the_key_shows_its_whole_path() {
     act(&mut sim, ObAction::CopyPath);
     let got = sim.app.world_mut().resource_mut::<chimera_ui::clipboard::Clipboard>().get();
     assert_eq!(got.as_deref(), Some(path.as_str()));
+    // Show in folder opens the folder it went into (staged: recorded).
+    assert!(words(&mut sim).contains("SHOW IN FOLDER"));
+    act(&mut sim, ObAction::ShowFolder);
+    let shown = sim.app.world().get_resource::<party_roster::onboarding::FolderShown>().and_then(|f| f.0.clone());
+    assert_eq!(shown.as_deref(), std::path::Path::new(&path).parent());
     let _ = std::fs::remove_dir_all(&dir);
 }
 

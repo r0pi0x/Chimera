@@ -2999,7 +2999,7 @@ an account" on each tab, and the main menu's welcome toast (`done`). `ui_scene o
 intro (held still `t` seconds in when given: a contact strip is one run per time). Offscreen: `ultimate_gun_game --offscreen
 1920x1080 --frames 60 --screenshot <out>.png +mainmenu +ui_scene onboarding name-taken`; `onboarding 1` shows the
 real flow in a running game.
-`ui_scene account <profile|rename|rename-taken|avatar|link|sign-out|invites|invite-made|player|off>` stages Settings >
+`ui_scene account <profile|rename|rename-taken|avatar|saving|link|sign-out|invites|invite-made|player|off>` stages Settings >
 Account (`party_kit::account_page`) with a made-up owner account (`player`: a tester's, no Invites tab; nothing is sent,
 written or signed out), and `ui_scene downloads <planning|running|done|failed|off>` the main menu's base-files strip
 (`party_kit::base_download`): `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot <out>.png +mainmenu
@@ -3014,7 +3014,9 @@ arguments).
 field, text area, toggle, slider, stepper, buttons and dropdown in rest, hover, focus, typing (caret mid-text), selection,
 masked, error and disabled; `ui_scene controls` the older page of rows and buttons; `ui_scene form` (`ui_gallery form`)
 a settings form's pieces (`chimera_ui::form`: badges, the big toggle, the key-capture chip, setting rows with the reset
-key and the Chimera mark, the segmented-or-dropdown rule, the tabs' grey to white); `ui_scene picker` (`ui_gallery picker`)
+key and the Chimera mark, the segmented-or-dropdown rule, the tabs' grey to white); `ui_scene formkit` (`ui_gallery
+formkit`) a form page's pieces (`chimera_ui::form_page`: fields in each status, masked fields, the buttons with busy,
+the result card, the avatar grid, read-only rows, a path row, badges, the footer folded and saving); `ui_scene picker` (`ui_gallery picker`)
 the shared picker (`chimera_ui::picker`): multi-select rows and cards at a dialog's width, single pick in a wider frame
 with the search typed into, the chips, and the Sandbox's card parts (a badge, a family's count, a pinned mark, a
 download's bar). Check a change to

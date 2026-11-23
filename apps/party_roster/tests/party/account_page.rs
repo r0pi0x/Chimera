@@ -182,14 +182,22 @@ fn avatar_link_code_and_sign_out() {
     std::fs::write(&file, "# staged\n").unwrap();
     sim.app.insert_resource(OnboardingFiles { account: Some(file.clone()), ..Default::default() });
     open(&mut sim);
-    // The avatar: at once here, the hub told after a pause.
+    // The avatar: picked here, sent with Save changes (the mockup's
+    // Profile: changes go out together).
     focus(&mut sim, Row::Avatar);
     key(&mut sim, Key::ArrowRight, KeyCode::ArrowRight);
-    assert_eq!(sim.app.world().resource::<AvatarAsked>().0.as_deref(), Some("14"));
+    assert_eq!(p(&sim).avatar, Some(14));
+    assert_eq!(p(&sim).changes(), ["avatar"]);
+    assert!(words(&mut sim).contains("1 CHANGE · AVATAR"), "the footer says what is pending");
+    step(&mut sim, 1.0);
+    sim.ticks(2);
+    assert_eq!(sim.app.world().resource::<AvatarAsked>().0, None, "nothing applies on its own");
     assert_eq!(p(&sim).me.as_ref().unwrap().avatar, Some(13), "not yet told");
-    step(&mut sim, 0.7);
+    act(&mut sim, AccountAction::Save);
     sim.ticks(2);
     assert_eq!(p(&sim).me.as_ref().unwrap().avatar, Some(14));
+    assert_eq!(sim.app.world().resource::<AvatarAsked>().0.as_deref(), Some("14"), "the look follows the save");
+    assert!(p(&sim).changes().is_empty() && !p(&sim).saving);
     // Link another device: the code in cells.
     focus(&mut sim, Row::Link);
     enter(&mut sim);
@@ -246,8 +254,12 @@ fn an_owner_makes_copies_lists_and_revokes_invites() {
     act(&mut sim, AccountAction::CopyLink);
     let copied = sim.app.world_mut().resource_mut::<chimera_ui::clipboard::Clipboard>().get().unwrap_or_default();
     assert_eq!(Some(copied), made.link);
-    // Revoke the new one.
+    // Revoke the new one: it asks in its row first.
     act(&mut sim, AccountAction::Revoke(list[0].id));
+    sim.ticks(2);
+    assert_eq!(p(&sim).invites.as_ref().map(Vec::len), Some(4), "asked, not yet revoked");
+    assert!(words(&mut sim).contains("REVOKE \"ALEX\"?"), "the row asks");
+    act(&mut sim, AccountAction::RevokeConfirm(list[0].id));
     sim.ticks(2);
     let list = p(&sim).invites.clone().unwrap();
     assert!(list.len() == 3 && list.iter().all(|i| i.name != "Alex"));
@@ -330,7 +342,6 @@ fn the_hub_address_is_hidden_and_the_avatar_grid_is_in_the_list() {
         w.query::<&AccountAction>().iter(w).filter(|a| matches!(a, AccountAction::Avatar(_))).count()
     };
     assert_eq!(avatars, 32, "the looks are in the list");
-    focus(&mut sim, Row::Hub);
     assert!(!words(&mut sim).contains(host), "masked");
     sim.app.world_mut().resource_mut::<Reveals>().toggle(party_roster::account_page::REVEAL_HOST);
     sim.ticks(2);
@@ -338,6 +349,31 @@ fn the_hub_address_is_hidden_and_the_avatar_grid_is_in_the_list() {
     sim.app.world_mut().resource_mut::<Console>().submit("account_page 0");
     sim.ticks(3);
     open(&mut sim);
-    focus(&mut sim, Row::Hub);
     assert!(!words(&mut sim).contains(host), "hidden again");
+}
+
+/// Save changes: Discard puts the account's values back; while a save is
+/// under way every action of the footer waits (Discard too).
+#[test]
+fn discard_restores_and_a_saving_footer_disables_every_action() {
+    use bevy::ui::DeprecatedInteraction as Interaction;
+    let mut sim = sim(false);
+    open(&mut sim);
+    act(&mut sim, AccountAction::Avatar(3));
+    assert_eq!(p(&sim).changes(), ["avatar"]);
+    act(&mut sim, AccountAction::Discard);
+    assert!(p(&sim).changes().is_empty() && p(&sim).avatar.is_none());
+    sim.app.world_mut().resource_mut::<Console>().submit("ui_scene account saving");
+    sim.ticks(3);
+    assert!(p(&sim).saving && p(&sim).changes().len() == 2);
+    let w = sim.app.world_mut();
+    let footer: Vec<(AccountAction, bool)> = w
+        .query::<(&AccountAction, Option<&Interaction>)>()
+        .iter(w)
+        .filter(|(a, _)| matches!(a, AccountAction::Save | AccountAction::Discard))
+        .map(|(a, i)| (a.clone(), i.is_some()))
+        .collect();
+    assert_eq!(footer.len(), 2, "{footer:?}");
+    assert!(footer.iter().all(|(_, pressable)| !pressable), "busy: {footer:?}");
+    assert!(words(&mut sim).contains("SAVING"), "the primary and the line say so");
 }

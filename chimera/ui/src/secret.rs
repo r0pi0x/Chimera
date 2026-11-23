@@ -10,9 +10,13 @@
 //! - `Ui::secret`: the value (masked or not) and its eye key, in a row.
 //! - `Ui::reveal_key`: the eye key alone (beside a text field the caller
 //!   draws masked: `text_field`'s `masked`).
-//! - `mask`: a fixed run of dots (an address: nothing of its shape shown);
-//!   `mask_chars`: one dot a letter or digit, its separators kept (a key's
-//!   groups).
+//! - The masks (the user's review, 2026-11-22: a masked value reveals
+//!   nothing but a fixed format's own separators): `mask`, a fixed run of
+//!   dots (nothing of the value's shape); `mask_address`, an address as
+//!   that run and, when it has a port, `:` and a fixed 5 dots (never a
+//!   dot an octet's digit); `mask_chars`, one dot a letter or digit with
+//!   its separators kept, only for a fixed-format secret (the recovery
+//!   key's groups, the same for every key); `masked` picks.
 //! - `looks_like_address`: an IP address, with or without a port, or a
 //!   `host:port` (for names that fall back to an address);
 //!   `name_or_masked`, `mask_addresses` (a sentence's addresses).
@@ -28,7 +32,7 @@ use bevy::{
 };
 
 use crate::{
-    controls::{Hover, Ui},
+    controls::Ui,
     fonts::Role,
     style::UiStyle,
     theme::Tone,
@@ -73,6 +77,36 @@ pub fn mask_chars(value: &str) -> String {
     value.chars().map(|c| if c.is_alphanumeric() { DOT } else { c }).collect()
 }
 
+/// How many dots a masked port shows (whatever its digits).
+pub const PORT_DOTS: usize = 5;
+
+/// An address masked: `mask`'s fixed run, then `:` and `PORT_DOTS` dots
+/// when it names a port; nothing of its octets or digits.
+pub fn mask_address(value: &str) -> String {
+    let v = value.trim();
+    let has_port = v.parse::<std::net::SocketAddr>().is_ok()
+        || (v.parse::<std::net::IpAddr>().is_err() && v.rsplit_once(':').is_some_and(|(h, p)| !h.is_empty() && p.parse::<u16>().is_ok()));
+    let mut out = mask(v);
+    if has_port {
+        out.push(':');
+        out.extend(std::iter::repeat_n(DOT, PORT_DOTS));
+    }
+    out
+}
+
+/// `value` masked: a fixed-format secret (`fixed`: the recovery key) keeps
+/// its separators (`mask_chars`); an address shows `mask_address`; any
+/// other value `mask`.
+pub fn masked(value: &str, fixed: bool) -> String {
+    if fixed {
+        mask_chars(value)
+    } else if looks_like_address(value) {
+        mask_address(value)
+    } else {
+        mask(value)
+    }
+}
+
 /// `value` as shown: itself when revealed, else `mask`.
 pub fn shown(value: &str, revealed: bool) -> String {
     if revealed { value.to_string() } else { mask(value) }
@@ -113,20 +147,8 @@ impl Ui<'_> {
     /// The eye key for `key`, `h` cq square: the eye while hidden, the
     /// struck eye while shown. Clickable (`reveal_clicks`).
     pub fn reveal_key(&self, c: &mut Commands, parent: Entity, key: &str, revealed: bool, h: f32) -> Entity {
-        let (base, over) = (Color::NONE, self.color(Tone::Fg, 0.08));
-        let k = c
-            .spawn((
-                UiStyle { w: Some(h), h: Some(h), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::row() },
-                Node::default(),
-                BackgroundColor(base),
-                Hover { base, over },
-                crate::controls::pressable(),
-                RevealKey(key.to_string()),
-                Secret(key.to_string()),
-                ChildOf(parent),
-            ))
-            .id();
-        self.kit_icon(c, k, if revealed { "eye_off" } else { "eye" }, h * 0.6, 1.0, if revealed { Tone::AccText } else { Tone::Fg2 });
+        let k = self.icon_key(c, parent, if revealed { "eye_off" } else { "eye" }, h, revealed);
+        c.entity(k).insert((RevealKey(key.to_string()), Secret(key.to_string())));
         k
     }
 
@@ -137,13 +159,7 @@ impl Ui<'_> {
     pub fn secret(&self, c: &mut Commands, parent: Entity, key: &str, value: &str, revealed: bool, keep: bool, role: Role, size: f32, tone: Tone) -> Entity {
         let row = self.boxed(c, parent, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
         c.entity(row).insert(Secret(key.to_string()));
-        let text = if revealed {
-            value.to_string()
-        } else if keep {
-            mask_chars(value)
-        } else {
-            mask(value)
-        };
+        let text = if revealed { value.to_string() } else { masked(value, keep) };
         self.text_plain(c, row, role, size, tone, &text);
         self.reveal_key(c, row, key, revealed, (size * 1.6).max(1.3));
         row

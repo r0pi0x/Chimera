@@ -80,6 +80,7 @@ pub mod clipboard;
 pub mod controls;
 pub mod fonts;
 pub mod form;
+pub mod form_page;
 pub mod icon_ink;
 pub mod icons;
 pub mod load;
@@ -148,6 +149,7 @@ impl Plugin for ChimeraUiPlugin {
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare));
         pointer_lead::add(app);
         secret::add(app);
+        form_page::add(app);
         text_menu::add(app);
         app
             .add_systems(

@@ -118,10 +118,23 @@ pub struct State {
     /// Wrong (threat underline or bar, as a mark).
     pub error: bool,
     pub disabled: bool,
+    /// A call under way (a button's "Saving…"): drawn and taken as
+    /// disabled (not pressable, no hover, dimmed), its light pulsing.
+    pub busy: bool,
 }
 
 impl State {
-    pub const NONE: State = State { focus: false, changed: false, error: false, disabled: false };
+    pub const NONE: State = State { focus: false, changed: false, error: false, disabled: false, busy: false };
+
+    /// Busy: disabled with the busy light (`busy`).
+    pub fn busy(busy: bool) -> State {
+        State { busy, ..State::NONE }
+    }
+
+    /// Whether it takes no press (disabled or busy).
+    pub fn off(&self) -> bool {
+        self.disabled || self.busy
+    }
 
     pub fn focused(focus: bool) -> State {
         State { focus, ..State::NONE }
@@ -139,9 +152,13 @@ pub enum Kind {
     Secondary,
     /// Text only, no border (`Border::None`): a minor choice.
     Tertiary,
-    /// Ink with the threat border and the warning mark (`Border::Threat`):
-    /// it ends or removes something.
+    /// Ink with the threat border and threat text (`Border::Threat`), a
+    /// threat tint on hover: it ends or removes something (the Form Kit
+    /// mockup: Revoke, Sign out).
     Destructive,
+    /// Destructive in its confirm step: filled threat, ink text, no border
+    /// ("Revoke invite" after "Revoke?").
+    DestructiveConfirm,
 }
 
 /// A control's size: buttons, toggles, segmented choices, steppers and
@@ -318,6 +335,14 @@ pub struct SettingRowMark;
 /// A row of the kit's (`Ui::row`, `Ui::setting_row`).
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct KitRow;
+
+/// A button that takes no press now (disabled or busy: `State::off`).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct OffButton;
+
+/// A busy button's pulsing light (`State::busy`).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct BusyLight;
 
 /// What makes a kit node pressable: an `Interaction` that blocks the
 /// pointer and `KitControl`. Kit-internal: a screen presses only what a
@@ -634,8 +659,8 @@ impl<'a> Ui<'a> {
     /// The border a button of `kind` draws in state `st`.
     pub fn button_border(kind: Kind, st: State) -> Border {
         match kind {
-            Kind::Primary | Kind::Tertiary => Border::None,
-            _ if st.disabled => Border::Dim,
+            Kind::Primary | Kind::Tertiary | Kind::DestructiveConfirm => Border::None,
+            _ if st.off() => Border::Dim,
             Kind::Secondary => Border::Line,
             Kind::Destructive => Border::Threat,
         }
@@ -658,11 +683,15 @@ impl<'a> Ui<'a> {
             Kind::Primary => 1.4,
             _ => 1.05,
         };
+        // Disabled and busy are one state: dimmed, no hover, not pressable.
+        let off = st.off();
         let (base, over, text_tone) = match kind {
-            Kind::Primary if st.disabled => (Color::NONE, Color::NONE, Tone::Fg3),
-            _ if st.disabled => (self.color(Tone::Fg, 0.05), self.color(Tone::Fg, 0.05), Tone::Fg3),
+            Kind::Primary if off => (Color::NONE, Color::NONE, Tone::Fg3),
+            _ if off => (self.color(Tone::Fg, 0.05), self.color(Tone::Fg, 0.05), Tone::Fg3),
             Kind::Primary => (Color::NONE, Color::NONE, Tone::OnHero),
-            Kind::Secondary | Kind::Destructive => (self.color(Tone::Ink, 0.85), self.color(Tone::Fg, 0.06), Tone::Fg),
+            Kind::Secondary => (self.color(Tone::Ink, 0.85), self.color(Tone::Fg, 0.06), Tone::Fg),
+            Kind::Destructive => (self.color(Tone::Ink, 0.85), self.color(Tone::Threat, 0.12), Tone::Threat),
+            Kind::DestructiveConfirm => (self.color(Tone::Threat, 1.0), self.color(Tone::Threat, 0.82), Tone::Ink),
             Kind::Tertiary => (Color::NONE, self.color(Tone::Fg, 0.06), Tone::Fg2),
         };
         let border = Self::button_border(kind, st);
@@ -671,14 +700,15 @@ impl<'a> Ui<'a> {
             s = s.outline(t, a);
         }
         let b = c.spawn((s, Node::default(), BackgroundColor(base), ControlBox { size, border }, ChildOf(parent))).id();
-        if !st.disabled {
-            c.entity(b).insert((Hover { base, over }, pressable()));
+        if off {
+            // Takes the pointer (nothing under it fires) but no press.
+            c.entity(b).insert((FocusPolicy::Block, OffButton));
         } else {
-            c.entity(b).insert(pressable());
+            c.entity(b).insert((Hover { base, over }, pressable()));
         }
         if kind == Kind::Primary {
             // The slab behind, its right edge on the slant.
-            let (fill, a) = if st.disabled { (Tone::Fg, 0.07) } else { (Tone::Hero, 1.0) };
+            let (fill, a) = if off { (Tone::Fg, 0.07) } else { (Tone::Hero, 1.0) };
             let slab = c
                 .spawn((
                     HeroSlab::default(),
@@ -688,7 +718,7 @@ impl<'a> Ui<'a> {
                     ChildOf(b),
                 ))
                 .id();
-            if !st.disabled {
+            if !off {
                 // The hover's accent, faded in over the cobalt (`animate_heroes`).
                 c.spawn((
                     HeroGlow,
@@ -699,23 +729,30 @@ impl<'a> Ui<'a> {
                 ));
             }
         }
-        if kind == Kind::Destructive {
-            self.mark(c, b, Tone::Threat, 0.5, 0.7);
+        if st.busy {
+            // The busy light: pulsing (`form::Blink`), before the label.
+            let l = self.mark(c, b, Tone::Acc, 0.42, 0.42);
+            c.entity(l).insert((crate::form::Blink, BusyLight));
         }
         let role = if kind == Kind::Primary { Role::DisplayBold } else { Role::DisplayRegular };
         if let Some(icon) = icon {
             self.kit_icon(c, b, icon, text_size * 1.15, 1.0, text_tone);
         }
-        self.text(c, b, role, text_size, text_tone, label);
+        let tx = self.text(c, b, role, text_size, text_tone, label);
+        if kind == Kind::Tertiary && !off {
+            // Tertiary: grey to white on hover, no underline.
+            c.entity(tx).insert(HoverText { base: Tone::Fg2, over: Tone::Fg });
+        }
         if let Some(k) = key {
             let cap_tone = match kind {
-                _ if st.disabled => Tone::Fg4,
+                _ if off => Tone::Fg4,
                 Kind::Primary => Tone::OnHero,
+                Kind::DestructiveConfirm => Tone::Ink,
                 _ => Tone::Fg2,
             };
             self.kbd(c, b, k, text_size, cap_tone);
         }
-        if st.focus && !st.disabled {
+        if st.focus && !off {
             // On the hero's own cobalt the bar is white.
             if kind == Kind::Primary {
                 let e = self.focus_bar(c, b, 0.24);
@@ -1654,7 +1691,7 @@ impl<'a> Ui<'a> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn field(
+    pub(crate) fn field(
         &self,
         c: &mut Commands,
         parent: Entity,

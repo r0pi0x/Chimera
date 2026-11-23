@@ -306,7 +306,20 @@ main menu's account chip. Decisions made building it:
 Not yet here: display name, the device list with Revoke, a new recovery
 key (hub.md 8).
 
-## Form components (proposal 2026-11-21, for the user's review)
+## Form components (proposal 2026-11-21; built 2026-11-22)
+
+Built as `chimera_ui::form_page` (`ui_gallery formkit`) with the user's
+review of 2026-11-22 over the mockup: masks reveal nothing but a fixed
+format's dashes (an address a fixed run, its port a fixed 5 dots);
+clickable icons on a plate with a hairline frame, decorative ones bare;
+busy is disabled (not pressable, no hover, dimmed; while a form saves
+every footer action waits); the avatar pick an outline outside its tile
+with no bar under it; read-only rows' icons in one right-aligned column;
+badges in looks given as data (`BadgeSpec`); a saved path on its own line;
+the footer's summary "N changes" with an unfolding list. The account page
+(Profile with Save changes, Invites) and the first run's screens use them
+and are off the kit checks' allowlists. Not built: the Profile's display
+name field (the hub has no call to change it: docs/backlog.md).
 
 The user: the Account page's invite link should be an obvious button in a
 form, not a settings row; make form components for the account and

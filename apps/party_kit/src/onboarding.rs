@@ -135,7 +135,8 @@ use chimera_assets::{
 use chimera_ui::{
     Role, Tone, UiStyle, secret,
     avatar::{AvatarLook, AvatarMarks, Face},
-    controls::{Kind, NOTE, SENTENCE, State, Ui, clickable},
+    controls::{Kind, NOTE, SENTENCE, Size, State, Ui},
+    form_page::{FieldSpec, FieldStatus, SecretSpec},
     motion::{Ease, Motion, Prop, Timeline, Track, UiClock},
     text_edit::{Caret, TextKey, text_key},
 };
@@ -638,10 +639,33 @@ pub enum ObAction {
     Clear,
     /// Copies where "Save as file" put the key.
     CopyPath,
+    /// Opens the folder "Save as file" wrote into (`FolderShown` when
+    /// staged: nothing is opened).
+    ShowFolder,
 }
 
 #[derive(Component)]
 pub struct OnboardingRoot;
+
+/// The folder Show in folder opened last (a staged run records it and
+/// opens nothing).
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct FolderShown(pub Option<std::path::PathBuf>);
+
+/// Opens the system's file manager at `file`, selected where the system
+/// can (Windows' Explorer, macOS's Finder), else its folder.
+pub fn show_in_folder(file: &std::path::Path) {
+    let r = if cfg!(windows) {
+        std::process::Command::new("explorer").arg(format!("/select,{}", file.display())).spawn()
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg("-R").arg(file).spawn()
+    } else {
+        std::process::Command::new("xdg-open").arg(file.parent().unwrap_or(file)).spawn()
+    };
+    if let Err(e) = r {
+        warn!("show in folder: {e}");
+    }
+}
 
 /// The recovery key file's path on the key screen (after Save as file).
 #[derive(Component)]
@@ -900,6 +924,10 @@ fn keys(
             }
             (Key::Character(c), Step::Key) if ctrl && c.eq_ignore_ascii_case("c") => {
                 out.write(ObAction::Copy);
+                continue;
+            }
+            (Key::Character(c), Step::Key) if ctrl && c.eq_ignore_ascii_case("s") => {
+                out.write(ObAction::Save);
                 continue;
             }
             (Key::Character(c), Step::Have) if !ctrl && (c == "q" || c == "Q" || c == "e" || c == "E") && o.have_code.is_empty() => {
@@ -1282,6 +1310,16 @@ fn act(
                     Err(e) => o.said = Some(format!("{}: {e}", path.display())),
                 }
             }
+            (ObAction::ShowFolder, Step::Key) => {
+                if let Some(p) = o.saved_path.clone() {
+                    let dir = std::path::Path::new(&p).parent().map(std::path::Path::to_path_buf).unwrap_or_default();
+                    if backend.inline {
+                        commands.insert_resource(FolderShown(Some(dir)));
+                    } else {
+                        show_in_folder(std::path::Path::new(&p));
+                    }
+                }
+            }
             (ObAction::CopyPath, Step::Key) => {
                 if let Some(p) = o.saved_path.clone() {
                     clipboard.set(&p);
@@ -1537,9 +1575,16 @@ fn show_chip(
             .spawn((ChipRoot, GlobalZIndex(ONBOARDING_Z - 1), UiStyle::column().abs([Some(0.0), Some(0.0), None, None]).w_pct(100.0).h_pct(100.0), Node::default(), Pickable::IGNORE))
             .id();
         // The chip, under the rack at the right.
-        let chip = ui.boxed(c, r, UiStyle { gap: Some(1.2), h: Some(4.2), pad: Some([0.0, 1.2, 0.0, 0.4].into()), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([None, Some(8.2), Some(4.6), None]).bg_a(Tone::Ink2, 0.8).outline(if offline { Tone::Fg4 } else { Tone::AccText }, 1.0));
-        // A click opens Settings > Account (`account_page`).
-        c.entity(chip).insert((clickable(), crate::account_page::OpenAccount, chimera_ui::controls::Hover { base: theme.tone_a(Tone::Ink2, 0.8), over: theme.tone_a(Tone::Fg, 0.1) }));
+        // A click opens Settings > Account (`account_page`): the kit's
+        // pressable surface (its hover lifts the plate).
+        let chip = ui.item(
+            c,
+            r,
+            UiStyle { gap: Some(1.2), h: Some(4.2), pad: Some([0.0, 1.2, 0.0, 0.4].into()), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([None, Some(8.2), Some(4.6), None]).bg_a(Tone::Ink2, 0.8).outline(if offline { Tone::Fg4 } else { Tone::AccText }, 1.0),
+            State::NONE,
+            false,
+        );
+        c.entity(chip).insert(crate::account_page::OpenAccount);
         let byte = u8::try_from(look).ok().and_then(AvatarLook::from_byte).unwrap_or_else(|| AvatarLook::for_name(&a.username));
         match (images.as_deref_mut(), icons.as_deref_mut()) {
             (Some(images), Some(icons)) => {
@@ -1669,11 +1714,8 @@ impl Draw<'_, '_> {
                 ui.text(c, s, Role::Mono, 0.6, if i <= now { Tone::Fg } else { Tone::Fg3 }, name);
             }
         } else {
-            let back = ui.boxed(c, bar, UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), ..UiStyle::row() });
-            c.entity(back).insert((clickable(), ObAction::Back));
-            ui.kit_icon(c, back, "back", 0.62, 8.0 / 12.0, Tone::Fg2);
-            ui.text(c, back, Role::Mono, 0.62, Tone::Fg2, &self.w.t("have.back"));
-            ui.kbd(c, back, "Esc", 0.62, Tone::Fg3);
+            let back = ui.button_icon(c, bar, Kind::Tertiary, Some("back"), &self.w.t("have.back"), Some("Esc"), Size::Regular, State::NONE);
+            c.entity(back).insert(ObAction::Back);
         }
         let rule = ui.boxed(c, root, UiStyle { h: Some(0.06), ..UiStyle::row() }.abs([Some(m), Some(self.lay("rule_y", 7.2)), Some(m), None]).bg(Tone::Fg5));
         ui.mark(c, rule, Tone::Acc, 6.0, 0.18);
@@ -1705,50 +1747,52 @@ impl Draw<'_, '_> {
         self.ui.paragraph(c, b, Role::Text, 1.02, Tone::Fg2, text);
     }
 
-    /// A field: its label line, the kit's text field, a status line.
+    /// A field: the kit's form field at a screen's hero size (its title,
+    /// help line, the input with its eye key when masked, the status slot).
     #[allow(clippy::too_many_arguments)]
     fn field(
         &mut self,
         c: &mut Commands,
         col: Entity,
-        label: &str,
-        label_tone: Tone,
-        right: Option<&str>,
+        title: &str,
+        help: &str,
+        key: Option<&str>,
         value: &str,
         placeholder: &str,
         caret: Option<Caret>,
         w: f32,
         st: State,
         status: Option<(Tone, &str)>,
-        prefix: Option<&str>,
         eye: Option<(&str, bool)>,
     ) -> Entity {
-        let ui = self.ui;
-        let f = ui.boxed(c, col, UiStyle { gap: Some(0.6), w: Some(w), ..UiStyle::column() });
-        let head = ui.boxed(c, f, UiStyle { justify: Some(JustifyContent::SpaceBetween), ..UiStyle::row() });
-        ui.text(c, head, Role::Mono, 0.56, label_tone, label);
-        if let Some(r) = right {
-            ui.text(c, head, Role::Mono, 0.56, Tone::Fg3, r);
-        }
-        let line = ui.boxed(c, f, UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), ..UiStyle::row() });
-        let mut fw = w;
-        if let Some(p) = prefix {
-            ui.text_plain(c, line, Role::Text, 1.1, Tone::Fg3, p);
-            fw -= 1.7;
-        }
-        if eye.is_some() {
-            fw -= 2.8;
-        }
-        let tf = ui.text_field_hero(c, line, value, placeholder, caret.map(|k| k.cursor(value)), fw, st);
-        if let Some((key, on)) = eye {
-            ui.reveal_key(c, line, key, on, 2.2);
-        }
-        if let Some((tone, s)) = status {
-            let row = ui.boxed(c, f, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
-            ui.mark(c, row, tone, 0.6, 0.6);
-            ui.text_plain(c, row, Role::Mono, 0.62, if tone == Tone::Fg4 { Tone::Fg3 } else { tone }, &s.to_uppercase());
-        }
-        tf
+        let status = match status {
+            None => FieldStatus::None,
+            Some((Tone::Threat, t)) => FieldStatus::Error { text: t, fixes: &[] },
+            Some((Tone::Warn, t)) => FieldStatus::Warn(t),
+            Some((Tone::AccText | Tone::Acc, t)) => FieldStatus::Ok(t),
+            Some((Tone::Fg3, t)) => FieldStatus::Checking(t),
+            Some((_, t)) => FieldStatus::Hint(t),
+        };
+        let status = if st.disabled { FieldStatus::None } else { status };
+        let ff = self.ui.form_field(
+            c,
+            col,
+            &FieldSpec {
+                label: title,
+                help,
+                key,
+                value,
+                placeholder,
+                caret: caret.map(|k| k.cursor(value)),
+                focus: st.focus,
+                status,
+                w,
+                hero: true,
+                reveal: eye,
+                ..default()
+            },
+        );
+        ff.input
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1832,10 +1876,10 @@ impl Draw<'_, '_> {
             self.lead(c, col, &w.t("welcome.lead"));
             ui.boxed(c, col, UiStyle { h: Some(0.8), ..UiStyle::column() });
         }
-        let (label, label_tone) = match o.source {
-            Source::Clipboard => (w.t("welcome.label_clipboard"), Tone::AccText),
-            Source::Opened => (w.t("welcome.label_opened"), Tone::AccText),
-            Source::Typed => (w.t("welcome.label"), Tone::Fg3),
+        let help = match o.source {
+            Source::Clipboard => w.t("welcome.label_clipboard"),
+            Source::Opened => w.t("welcome.label_opened"),
+            Source::Typed => w.t("welcome.label"),
         };
         let bad = matches!(o.problem, Some(Problem::NotInvite | Problem::NeedsHub));
         let status_text;
@@ -1862,8 +1906,7 @@ impl Draw<'_, '_> {
             let shown = self.reveals.shown(REVEAL_HOST);
             let (value, caret) = masked_view(field_view(&o.input, o.caret, o.parsed.as_ref()), o.parsed.as_ref(), shown);
             let has_host = o.parsed.as_ref().is_some_and(|p| p.host.is_some());
-            let tf = self.field(c, col, &label, label_tone, Some("Ctrl+V"), &value, &w.t("welcome.placeholder"), caret, self.lay("col_w", 42.0), st, Some((status.0, &status_text)), None, has_host.then_some((REVEAL_HOST, shown)));
-            c.entity(tf).insert(clickable());
+            self.field(c, col, &w.t("welcome.field"), &help, Some("Ctrl+V"), &value, &w.t("welcome.placeholder"), caret, self.lay("col_w", 42.0), st, Some((status.0, &status_text)), has_host.then_some((REVEAL_HOST, shown)));
         }
         self.problem(c, col);
         let row = self.btns(c, col, 2.2);
@@ -1983,7 +2026,7 @@ impl Draw<'_, '_> {
         let parsed = InviteInput::parse(&o.input);
         let shown = self.reveals.shown(REVEAL_HOST);
         let (value, _) = masked_view(field_view(&o.input, o.caret, parsed.as_ref()), parsed.as_ref(), shown);
-        self.field(c, col, &w.t("welcome.label"), Tone::Fg3, None, &value, "", None, self.lay("col_w", 42.0), State { disabled: true, ..State::NONE }, None, None, Some((REVEAL_HOST, shown)));
+        self.field(c, col, &w.t("welcome.field"), &w.t("welcome.label"), None, &value, "", None, self.lay("col_w", 42.0), State { disabled: true, ..State::NONE }, None, Some((REVEAL_HOST, shown)));
         let bar = ui.boxed(c, col, UiStyle { margin: Some([2.2, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
         ui.progress(c, bar, chimera_ui::controls::Progress::Connecting, &w.t("checking.connecting"), 30.0, 1.7, 0.62, true);
         let host = secret::shown(&o.host(), shown);
@@ -2089,26 +2132,42 @@ impl Draw<'_, '_> {
             (Tone::Fg4, w.f("name.checking", &[("hub", &hub)]))
         };
         let count = format!("{} / {}", folded.chars().count(), codes::NAME_MAX);
-        let st = State { focus: o.field == NameField::Username, error: !folded.is_empty() && (!rules.all() || taken), ..State::NONE };
+        let free = o.name.as_ref().map(|n| n.suggestions.clone()).unwrap_or_default();
+        let taken_line = format!("{status} · {}", w.t("name.free"));
+        let status = if folded.is_empty() {
+            FieldStatus::Hint(&status)
+        } else if !rules.all() {
+            FieldStatus::Error { text: &status, fixes: &[] }
+        } else if taken {
+            FieldStatus::Error { text: &taken_line, fixes: &free }
+        } else if o.name_ok() {
+            FieldStatus::Ok(&status)
+        } else {
+            FieldStatus::Checking(&status)
+        };
+        let _ = tone;
+        let (ulabel, uhelp, req) = (w.t("name.username"), w.f("name.username_help", &[("hub", &hub)]), w.t("name.required"));
         let uf = ui.form_field(
             c,
             fields,
-            &w.t("name.username"),
-            &w.f("name.username_help", &[("hub", &hub)]),
-            Some(&count),
-            &o.username,
-            "",
-            (o.field == NameField::Username).then(|| o.ucaret.cursor(&o.username)),
-            false,
-            fw,
-            st,
+            &FieldSpec {
+                label: &ulabel,
+                tag: Some(&req),
+                help: &uhelp,
+                value: &o.username,
+                caret: (o.field == NameField::Username).then(|| o.ucaret.cursor(&o.username)),
+                focus: o.field == NameField::Username,
+                status,
+                w: fw,
+                ..default()
+            },
         );
-        c.entity(uf.input).insert((clickable(), ObAction::Focus(NameField::Username)));
-        let line = ui.boxed(c, uf.root, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), margin: Some([0.2, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
-        ui.mark(c, line, tone, 0.6, 0.6);
-        ui.text_plain(c, line, Role::Mono, 0.58, if tone == Tone::Fg4 { Tone::Fg3 } else { tone }, &status.to_uppercase());
+        c.entity(uf.input).insert(ObAction::Focus(NameField::Username));
+        for (e, s) in uf.fixes.iter().zip(&free) {
+            c.entity(*e).insert(ObAction::Suggest(s.clone()));
+        }
         // The rules, lit as typed.
-        let grid = ui.boxed(c, uf.root, UiStyle { gap: Some(0.45), margin: Some([0.4, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
+        let grid = ui.boxed(c, uf.root, UiStyle { gap: Some(0.4), margin: Some([0.2, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
         let met = [rules.length, rules.characters, rules.starts_with_letter, rules.all() && o.name_ok()];
         for i in 0..4 {
             let cell = ui.boxed(c, grid, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
@@ -2119,61 +2178,36 @@ impl Draw<'_, '_> {
             } else {
                 Tone::Threat
             };
-            ui.mark(c, cell, lit, 0.5, 0.5);
-            ui.text_plain(c, cell, Role::Mono, 0.54, if lit == Tone::Fg4 { Tone::Fg3 } else if lit == Tone::Acc { Tone::AccText } else { Tone::Threat }, &w.at("name.rules", i));
+            ui.mark(c, cell, lit, 0.45, 0.45);
+            ui.text_plain(c, cell, Role::Mono, 0.52, if lit == Tone::Fg4 { Tone::Fg3 } else if lit == Tone::Acc { Tone::AccText } else { Tone::Threat }, &w.at("name.rules", i));
         }
-        if taken {
-            let free = ui.boxed(c, uf.root, UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), margin: Some([0.4, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
-            ui.text(c, free, Role::Mono, 0.56, Tone::Fg3, &w.t("name.free"));
-            // The free names: the kit's small secondary buttons.
-            for s in o.name.as_ref().map(|n| n.suggestions.clone()).unwrap_or_default() {
-                let b = ui.button(c, free, Kind::Secondary, &s, None, chimera_ui::controls::Size::Small, State::NONE);
-                c.entity(b).insert(ObAction::Suggest(s.clone()));
-            }
-        }
+        let (dlabel, dhelp, opt) = (w.t("name.display"), w.t("name.display_help"), w.t("name.optional"));
+        let dcount = format!("{opt} · {count}");
         let df = ui.form_field(
             c,
             fields,
-            &w.t("name.display"),
-            &w.t("name.display_help"),
-            Some(&w.t("name.optional")),
-            &o.display,
-            if folded.is_empty() { "" } else { &folded },
-            (o.field == NameField::Display).then(|| o.dcaret.cursor(&o.display)),
-            false,
-            fw,
-            State::focused(o.field == NameField::Display),
+            &FieldSpec {
+                label: &dlabel,
+                tag: Some(&dcount),
+                help: &dhelp,
+                value: &o.display,
+                placeholder: if folded.is_empty() { "" } else { &folded },
+                caret: (o.field == NameField::Display).then(|| o.dcaret.cursor(&o.display)),
+                focus: o.field == NameField::Display,
+                w: fw,
+                ..default()
+            },
         );
-        c.entity(df.input).insert((clickable(), ObAction::Focus(NameField::Display)));
+        c.entity(df.input).insert(ObAction::Focus(NameField::Display));
         // The avatar: the 32 looks (decision 10), as large as the room
         // beside the fields allows.
         let aw = self.lay("name_w", 56.0) - fw - 2.6;
-        let av = ui.boxed(c, two, UiStyle { w: Some(aw), gap: Some(0.35), shrink: Some(0.0), ..UiStyle::column() });
+        let av = ui.boxed(c, two, UiStyle { w: Some(aw), gap: Some(0.5), shrink: Some(0.0), ..UiStyle::column() });
         let on = o.field == NameField::Avatar;
-        let head = ui.boxed(c, av, UiStyle { gap: Some(0.8), align: Some(AlignItems::Baseline), ..UiStyle::row() });
-        ui.text(c, head, Role::DisplayBold, 1.0, Tone::Fg, &w.t("name.avatar"));
-        ui.boxed(c, head, UiStyle::row().grow(1.0));
-        ui.text(c, head, Role::Mono, 0.56, if on { Tone::AccText } else { Tone::Fg3 }, &format!("{} / 32", o.avatar as u32 + 1));
-        let help = ui.boxed(c, av, UiStyle { w: Some(aw), ..UiStyle::column() });
-        ui.paragraph(c, help, Role::Text, 0.78, Tone::Fg3, &w.t("name.avatar_help"));
-        let gap = 0.4;
-        let tile = ((aw - 7.0 * gap) / 8.0).max(1.6);
-        let tiles = ui.boxed(c, av, UiStyle { gap: Some(gap), margin: Some([0.6, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
-        for row in 0..4u8 {
-            let r = ui.boxed(c, tiles, UiStyle { gap: Some(gap), ..UiStyle::row() });
-            for col_i in 0..8u8 {
-                let b = row * 8 + col_i;
-                let sel = b == o.avatar;
-                let cell = ui.boxed(
-                    c,
-                    r,
-                    UiStyle { w: Some(tile), h: Some(tile), pad: Some([0.2, 0.2].into()), shrink: Some(0.0), ..UiStyle::row() }
-                        .outline(if sel { if on { Tone::Acc } else { Tone::Fg } } else { Tone::Fg5 }, if sel { 2.0 } else { 1.0 }),
-                );
-                c.entity(cell).insert((clickable(), ObAction::Avatar(b)));
-                let a = self.avatar(c, cell, b, tile - 0.4);
-                c.entity(a).insert(Pickable::IGNORE);
-            }
+        ui.form_section(c, av, &w.t("name.avatar"), Some(&format!("{} / 32", o.avatar as u32 + 1)), Some(&w.t("name.avatar_help")));
+        let (images, icons) = (self.images.as_deref_mut(), self.icons.as_deref_mut());
+        for (b, t) in ui.avatar_grid(c, av, images, icons, o.avatar, on, aw).into_iter().enumerate() {
+            c.entity(t).insert(ObAction::Avatar(b as u8));
         }
         let note = ui.boxed(c, col, UiStyle { margin: Some([1.4, 0.0, 0.0, 0.0].into()), max_w: Some(50.0), ..UiStyle::column() });
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t("name.note"));
@@ -2217,44 +2251,34 @@ impl Draw<'_, '_> {
         self.eyebrow(c, col, &w.t("key.eyebrow"));
         self.h1(c, col, &w.t("key.title"), 2.7);
         self.lead(c, col, &w.t("key.lead"));
-        let label = w.f("key.label", &[("user", &user), ("hub", &hub)]);
-        let kb = ui.boxed(c, col, UiStyle { gap: Some(0.8), pad: Some([1.6, 1.6, 1.5, 1.6].into()), margin: Some([2.4, 0.0, 0.0, 0.0].into()), ..UiStyle::column() }.bg_a(Tone::Fg, 0.04).outline(Tone::Fg4, 1.0));
-        // Its label sits on the box's top edge (a legend), on the ground.
-        let legend = ui.boxed(c, kb, UiStyle { pad: Some([0.0, 0.6].into()), ..UiStyle::row() }.abs([Some(1.2), Some(-0.4), None, None]).bg(Tone::Ink));
-        ui.text(c, legend, Role::Mono, 0.56, Tone::Fg3, &label);
-        // Hidden until its eye key is pressed (streamers); Copy and Save
-        // never need it shown.
-        let groups = ui.boxed(c, kb, UiStyle { gap: Some(1.0), align: Some(AlignItems::Center), ..UiStyle::row() });
-        c.entity(groups).insert(secret::Secret(REVEAL_KEY.into()));
+        let label = w.t("key.field");
+        let help = w.f("key.label", &[("user", &user), ("hub", &hub)]);
+        let tag = w.t("key.tag");
         let key = o.recovery.clone().unwrap_or_default();
-        let shown = self.reveals.shown(REVEAL_KEY);
-        for (i, g) in key.split('-').enumerate() {
-            if i > 0 {
-                ui.text_plain(c, groups, Role::Mono, 1.7, Tone::Fg3, "–");
-            }
-            let g = if shown { g.to_string() } else { secret::mask_chars(g) };
-            ui.text_plain(c, groups, Role::Mono, 1.7, if shown { Tone::Fg } else { Tone::Fg2 }, &g);
-        }
-        ui.boxed(c, groups, UiStyle::row().grow(1.0));
-        ui.reveal_key(c, groups, REVEAL_KEY, shown, 2.6);
-        let row = self.btns(c, col, 1.6);
-        self.button(c, row, Kind::Secondary, &w.t("key.copy"), Some("Ctrl+C"), ObAction::Copy, State::NONE);
-        self.button(c, row, Kind::Secondary, &w.t("key.save"), None, ObAction::Save, State::NONE);
-        if let Some(s) = &o.said {
+        // Hidden until its eye key is pressed (streamers); its dashes show
+        // (a fixed format), nothing else. Copy and Save never need it shown.
+        let copied = o.said.as_deref() == Some(w.t("key.copied").as_str());
+        ui.boxed(c, col, UiStyle { h: Some(1.6), ..UiStyle::column() });
+        let sf = ui.secret_field(
+            c,
+            col,
+            &SecretSpec { label: &label, tag: Some(&tag), help: &help, key: REVEAL_KEY, value: &key, revealed: self.reveals.shown(REVEAL_KEY), fixed: true, copied, w: 46.0 },
+        );
+        c.entity(sf.copy).insert(ObAction::Copy);
+        let row = self.btns(c, col, 0.4);
+        self.button(c, row, Kind::Secondary, &w.t("key.save"), Some("Ctrl+S"), ObAction::Save, State::NONE);
+        if let Some(s) = o.said.as_ref().filter(|s| o.saved_path.is_none() && !copied && s.as_str() != w.t("key.saved")) {
             let r = ui.boxed(c, row, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), ..UiStyle::row() });
-            ui.mark(c, r, Tone::Acc, 0.6, 0.6);
-            ui.text_plain(c, r, Role::Mono, 0.6, Tone::AccText, &s.to_uppercase());
+            ui.mark(c, r, Tone::Acc, 0.5, 0.5);
+            ui.text_plain(c, r, Role::Mono, 0.56, Tone::AccText, &s.to_uppercase());
         }
-        // Where the file went: its whole path, with Copy path.
+        // Where the file went: its whole path on its own line, Show in folder.
         if let Some(path) = &o.saved_path {
-            let r = ui.boxed(c, col, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), margin: Some([0.8, 0.0, 0.0, 0.0].into()), w: Some(46.0), ..UiStyle::row() });
-            ui.text(c, r, Role::Mono, 0.56, Tone::Fg3, &w.t("key.saved_to"));
-            let plate = ui.boxed(c, r, UiStyle { pad: Some([0.4, 0.8].into()), grow: Some(1.0), shrink: Some(1.0), ..UiStyle::row() }.bg_a(Tone::Fg, 0.05).outline(Tone::Fg5, 1.0));
-            let t = ui.text_plain(c, plate, Role::Mono, 0.62, Tone::Fg, path);
-            c.entity(t).insert(SavedPath);
-            self.button(c, r, Kind::Secondary, &w.t("key.copy_path"), None, ObAction::CopyPath, State::NONE);
+            ui.boxed(c, col, UiStyle { h: Some(0.4), ..UiStyle::column() });
+            let (_, show) = ui.path_row(c, col, &w.t("key.saved_to"), path, &w.t("key.show_folder"), 46.0);
+            c.entity(show).insert(ObAction::ShowFolder);
         }
-        let row = self.btns(c, col, 2.6);
+        let row = self.btns(c, col, 1.8);
         let check = ui.check(c, row, o.saved, &w.t("key.saved_it"), 1.5);
         c.entity(check).insert(ObAction::Saved);
         ui.boxed(c, row, UiStyle { w: Some(2.0), ..UiStyle::row() });
@@ -2276,7 +2300,7 @@ impl Draw<'_, '_> {
         }
         let note = ui.boxed(c, pane, UiStyle { margin: Some([1.4, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
         ui.paragraph(c, note, Role::Text, NOTE, Tone::Fg3, &w.t("key.pane_note"));
-        self.keys(c, root, &[("Space", w.t("key.saved_it")), ("Enter", "Continue".into())]);
+        self.keys(c, root, &[("Ctrl+C", "Copy key".into()), ("Ctrl+S", "Save as file".into()), ("Space", w.t("key.saved_it")), ("Enter", "Continue".into())]);
     }
 
     fn have(&mut self, c: &mut Commands, root: Entity) {
@@ -2288,7 +2312,7 @@ impl Draw<'_, '_> {
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         let sel = if o.tab == HaveTab::Link { 0 } else { 1 };
         for (i, t) in ui.tabs_ex(c, tabs_row, &names, sel, true, Some(("Q", "E"))).into_iter().enumerate() {
-            c.entity(t).insert((clickable(), ObAction::Tab(if i == 0 { HaveTab::Link } else { HaveTab::Recover })));
+            c.entity(t).insert(ObAction::Tab(if i == 0 { HaveTab::Link } else { HaveTab::Recover }));
         }
         let link = o.tab == HaveTab::Link;
         self.lead(c, col, &w.t(if link { "have.link_lead" } else { "have.recover_lead" }));
@@ -2298,8 +2322,8 @@ impl Draw<'_, '_> {
             let parsed = InviteInput::parse(&o.have_hub).filter(|p| p.host.is_some());
             let shown = self.reveals.shown(REVEAL_HOST);
             let (value, caret) = masked_view((o.have_hub.clone(), o.have_on_hub.then(|| Caret::end_of(&o.have_hub))), parsed.as_ref(), shown);
-            let hf = self.field(c, col, &w.t("have.hub_label"), Tone::Fg3, None, &value, "chimera-hub://...", caret, self.lay("col_w", 42.0), st, None, None, parsed.is_some().then_some((REVEAL_HOST, shown)));
-            c.entity(hf).insert((clickable(), ObAction::HaveField(true)));
+            let hf = self.field(c, col, &w.t("have.hub_label"), &w.t("have.hub_help"), Some("Ctrl+V"), &value, "chimera-hub://...", caret, self.lay("col_w", 42.0), st, None, parsed.is_some().then_some((REVEAL_HOST, shown)));
+            c.entity(hf).insert(ObAction::HaveField(true));
             ui.boxed(c, col, UiStyle { h: Some(1.0), ..UiStyle::column() });
         }
         let st = State { focus: !o.have_on_hub, error: o.problem.is_some(), ..State::NONE };
@@ -2315,8 +2339,8 @@ impl Draw<'_, '_> {
                 (w.t("have.recover_label"), "XXXX-XXXX-XXXX-XXXX", None)
             };
             let status_ref = status.as_ref().map(|(t, s)| (*t, s.as_str()));
-            let cf = self.field(c, col, &label, Tone::Fg3, None, &o.have_code, ph, (!o.have_on_hub).then(|| Caret::end_of(&o.have_code)), self.lay("col_w", 42.0), st, status_ref, None, None);
-            c.entity(cf).insert((clickable(), ObAction::HaveField(false)));
+            let cf = self.field(c, col, &label, "", None, &o.have_code, ph, (!o.have_on_hub).then(|| Caret::end_of(&o.have_code)), self.lay("col_w", 42.0), st, status_ref, None);
+            c.entity(cf).insert(ObAction::HaveField(false));
         }
         if let Some(Problem::NeedsHub) = o.problem {
             let r = ui.boxed(c, col, UiStyle { gap: Some(0.8), margin: Some([0.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
@@ -2344,8 +2368,8 @@ impl Draw<'_, '_> {
         let (ui, w) = (self.ui, self.w);
         let f = ui.boxed(c, col, UiStyle { gap: Some(0.8), ..UiStyle::column() });
         ui.text(c, f, Role::Mono, 0.56, Tone::Fg3, &w.t("have.link_label"));
-        let row = ui.boxed(c, f, UiStyle { gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() });
-        c.entity(row).insert((clickable(), ObAction::HaveField(false)));
+        let row = ui.item(c, f, UiStyle { gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() }, State::NONE, false);
+        c.entity(row).insert(ObAction::HaveField(false));
         for i in 0..LINK_CELLS {
             if i == LINK_CELLS / 2 {
                 ui.boxed(c, row, UiStyle { w: Some(1.2), h: Some(0.2), ..UiStyle::row() }.bg(Tone::Fg3));
