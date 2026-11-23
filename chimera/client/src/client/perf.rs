@@ -153,6 +153,62 @@ impl Plugin for PerfPlugin {
     }
 }
 
+/// `chimera:decal <group>`: a decal of the loaded map's group `group`
+/// (`MapDecals::groups`, every game's on the map: `tf2:material:c`,
+/// `scorch`, ...) where the main view looks; alone, the group names.
+fn place_decal_command(w: &mut World, args: &[String]) -> Result<Option<String>, String> {
+    use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
+    use bevy::ecs::system::SystemState;
+    use chimera_core::core::SOLID_LAYERS;
+    use chimera_world::map::{DecalGroup, PlaceDecal};
+    let groups: Vec<String> = w
+        .get_resource::<crate::render::decal::DecalAssets>()
+        .map(|a| a.data.groups.keys().cloned().collect())
+        .ok_or("no impact decals on this map")?;
+    let Some(name) = args.first().map(|a| a.to_lowercase()) else {
+        return Ok(Some(groups.join(" ")));
+    };
+    if !groups.contains(&name) {
+        return Err(format!("no decal group \"{name}\" (`chimera:decal` lists them)"));
+    }
+    // The first drawn 3D view (the world's, not the view model's).
+    let mut cams = w.query_filtered::<(&Camera, &GlobalTransform), With<Camera3d>>();
+    let eye = cams
+        .iter(w)
+        .filter(|(c, _)| c.is_active)
+        .min_by_key(|(c, _)| c.order)
+        .map(|(_, t)| *t)
+        .ok_or("no view")?;
+    // Not the viewer's own body (the eye is inside its colliders).
+    let mut own = w.query_filtered::<Entity, With<chimera_core::core::LocalPlayer>>();
+    let own: Vec<Entity> = own.iter(w).collect();
+    let mut skip = own.clone();
+    for e in own {
+        if let Some(children) = w.get::<Children>(e) {
+            skip.extend(children.iter());
+        }
+    }
+    let filter = SpatialQueryFilter::from_mask(SOLID_LAYERS).with_excluded_entities(skip);
+    let mut state = SystemState::<SpatialQuery>::new(w);
+    let hit = {
+        let q = state.get(w).map_err(|e| e.to_string())?;
+        q.cast_ray(eye.translation(), eye.forward(), 200.0, true, &filter)
+            .map(|h| (h.entity, eye.translation() + *eye.forward() * h.distance, h.normal))
+    };
+    let (target, point, normal) = hit.ok_or("nothing in view within 200 m")?;
+    let said = format!("{name} on {target} at {point}, normal {normal}");
+    w.write_message(PlaceDecal {
+        target: Some(target),
+        group: DecalGroup::Named(name),
+        point,
+        normal,
+        dir: *eye.forward(),
+        spin: false,
+        round: false,
+    });
+    Ok(Some(said))
+}
+
 /// `r_cleardecals`, `chimera_round_cleardecals` and `mp_decals`
 /// (`render::decal`).
 pub fn decal_cvars(app: &mut App) {
@@ -165,6 +221,12 @@ pub fn decal_cvars(app: &mut App) {
         w.write_message(ClearDecals);
         Ok(None)
     });
+    app.console_command(
+        "chimera:decal",
+        "chimera:decal <group>: put the loaded map's decal group (any game's: `chimera:decal` alone lists them) \
+         where the view looks, as an impact would (checking each game's decals on any map).",
+        place_decal_command,
+    );
     resource_cvar::<DecalSettings, u8>(
         app,
         "chimera:round_cleardecals",

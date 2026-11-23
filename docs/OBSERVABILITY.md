@@ -449,7 +449,9 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume
   `backspace`, ...: `scene::KEYS`), e.g. the console's suggestions and
   Tab completion photographed. Anything else is a console line
   (`setpos`/`setang`, `thirdperson`, `cam_idealdist`, `cam_idealyaw`,
-  `rung`, `target add`, `target look <n>`, `+attack`, ...).
+  `rung`, `target add`, `target look <n>`, `+attack`, `chimera:decal
+  <group>`: any game's decal group where the view looks, `chimera:decal`
+  alone lists the map's groups, ...).
 - `gwait <seconds>` goes on after that much game time (`host_timescale`
   slows it): a moment after a fact that holds on any machine's frame
   rate (`host_timescale 0.01`, `+attack`, `wait_for shot`, `gwait 0.03`,
