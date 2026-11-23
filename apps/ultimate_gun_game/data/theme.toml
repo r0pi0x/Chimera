@@ -150,14 +150,21 @@ flash_decay = 0.12
 ready_pop = 0.32
 
 [motion.dur.matchend]
-slab_at = 0.55
+slab_at = 0.55         # without a winner moment: the band's slab sweeps from here
 slab = 0.9
-name_at = 0.9
-climb_draw = 0.7
-climb_ticks = 0.52
 vote = 20.0
 vote_hot_from = 17.0
 lines_loop = 96.0      # the planes: one spacing per loop
+# The winner moment (client::winner_moment): the card scales in over the
+# frozen world under the scrim, holds, then moves into the band's place
+# (at moment_in + moment_hold, or when the results come if later) while
+# the world fades to the ink and the rest of the screen comes in.
+moment_in = 0.45
+moment_hold = 2.0
+moment_move = 0.8
+world_fade = 0.6
+moment_scrim = 0.6     # the ink's opacity over the world while the card holds
+slab_loop = 1.6        # the slab across the card's name, every this often
 
 [motion.dur.menu]
 bar_at = 0.62
@@ -300,24 +307,24 @@ chip_pitch = 3.05
 # in the middle the details line, the climb and its stat tiles, and the
 # footer (map cards, countdown) along the bottom.
 [layout.matchend]
-pad = 3.0            # the left and right margins; Leave's top, the standings' top
+pad = 2.5            # the left and right margins; Leave's top, the standings' top
 gap = 1.6            # between the columns
-bottom = 3.2         # the frame's bottom margin: the chat's and the footer's end
-chat_w = 21.5        # the chat down the left, from chat_top to the bottom
-chat_top = 7.4       # under Leave
-std_w = 30.0         # the standings down the right, above the footer
-foot_gap = 1.4       # the standings end this far above the footer
-details_top = 3.3    # the details line, centre
-graph_top = 6.4      # the climb's head line; its chart follows
-graph_h = 11.0       # the chart's height
-graph_w = 28.0       # and width: small, centred in the middle column
-stats_gap = 1.2      # the stat tiles under the chart
-stats_h = 5.4
-vote_top = 27.0      # the map cards, two to a row (2x2), under the stat tiles
-foot_top = 46.4      # the countdown (right) and where the standings end
-row_h = 2.4          # the most a standings row gets; they shrink to fit
-win_h = 5.8          # the winner's row
-
+bottom = 2.5         # the frame's bottom margin: the chat's, the vote's and the countdown's end
+chat_w = 21.0        # the chat down the left, from chat_top to the bottom
+chat_top = 6.6       # under Leave
+std_w = 26.0         # the standings down the right, above the countdown
+foot_gap = 1.4       # the standings end this far above the countdown
+foot_top = 40.0      # the countdown, bottom right (its number and bar fill the area)
+details_top = 2.8    # the details line, centre
+band_top = 5.0       # the winner band (the winner moment's card, in place)
+band_h = 7.0
+climb_gap = 1.2      # the climb's bars under the band
+climb_h = 10.6
+stats_gap = 0.9      # the stat tiles under the climb
+stats_h = 4.4
+vote_gap = 1.2       # the map cards (2x2) under the tiles, to the bottom
+row_h = 2.4          # a standings row (fixed: a longer list scrolls)
+moment_scale = 2.0   # the winner moment's card: the band this much larger
 
 # The Escape menu over play (party_kit esc_signal; the components page's
 # frame 05): a left panel over a gradient shade, so the race chip and the

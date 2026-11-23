@@ -1,15 +1,15 @@
 //! The match end in the Signal look (`client::match_end_signal`), staged
 //! with its made-up players (`stage`): the standings with their marks
-//! (your row, the selected winner's pointer, session wins), the winner's
-//! slab sweeping on the kit's clock, and the climb chart following the
-//! hovered row (drawn along its length), back to the selected one; the
-//! shell's theme keeps the old screen. The clock is stepped by hand
-//! (`UiClock::manual`).
+//! (your row selected, session wins), the winner band's slab sweeping on
+//! the kit's clock, the climb's bars and tiles following the selected row;
+//! the winner moment's timeline (`winner_moment`); the shell's theme keeps
+//! the old screen. The clock is stepped by hand (`UiClock::manual`).
 
 use bevy::prelude::*;
 use chimera_client::client::{
     match_end::{MatchEndPlugin, MatchEndRoot, MatchEndStaged, MatchEndView},
-    match_end_signal::{self, EndGround, LeaveButton, ClimbChart, ClimbSeg, EndSelection, EndState, SignalEndRoot, StandingsRow, VoteCard, VoteCountdown, VoteTicks, WinnerSlab},
+    match_end_signal::{self, BarKind, EndGround, EndSelection, LeaveButton, RungBar, RungBars, SignalEndRoot, StandingsRow, StatTile, VoteCard, VoteCountdown, VoteTicks},
+    winner_moment::{MomentTimes, WinnerBand, WinnerMoment, WinnerSlab},
 };
 use chimera_sim::SimBasePlugins;
 use chimera_ui::{Theme, UiClock};
@@ -48,37 +48,30 @@ fn visible(sim: &mut Sim, root: bool) -> bool {
     v != Visibility::Hidden
 }
 
-fn chart(sim: &mut Sim) -> usize {
+fn bars(sim: &mut Sim) -> (usize, Vec<RungBar>) {
     let w = sim.app.world_mut();
-    w.query::<&ClimbChart>().single(w).unwrap().index
-}
-
-/// The chosen climb's line: how much of it shows (px of its segments).
-fn drawn(sim: &mut Sim) -> f32 {
-    let w = sim.app.world_mut();
-    w.query_filtered::<&Node, With<ClimbSeg>>()
-        .iter(w)
-        .map(|n| match (n.width, n.height) {
-            (Val::Px(a), Val::Px(b)) => a.max(b),
-            _ => 0.0,
-        })
-        .sum()
+    let i = w.query::<&RungBars>().single(w).unwrap().index;
+    let mut b: Vec<RungBar> = w.query::<&RungBar>().iter(w).copied().collect();
+    b.sort_by_key(|b| b.rung);
+    (i, b)
 }
 
 #[test]
-fn standings_carry_the_marks_and_the_winner_sweeps_in() {
+fn standings_carry_the_marks_and_the_band_sweeps_in() {
     let mut sim = sim(true);
     assert!(visible(&mut sim, true) && !visible(&mut sim, false), "the Signal screen, not the shell's");
     let w = sim.app.world_mut();
     let rows: Vec<StandingsRow> = w.query::<&StandingsRow>().iter(w).copied().collect();
     assert_eq!(rows.len(), 8);
     assert_eq!(rows.iter().filter(|r| r.you).map(|r| r.index).collect::<Vec<_>>(), [2], "your row");
-    assert_eq!(sim.app.world().resource::<EndSelection>().pinned, 0, "the winner's row selected");
+    assert_eq!(sim.app.world().resource::<EndSelection>().pinned, 2, "your row selected");
     let wins: Vec<u32> = {
         let w = sim.app.world_mut();
         w.query::<&chimera_client::client::race_chip::SessionWins>().iter(w).map(|s| s.0).collect()
     };
-    assert_eq!(wins.len(), 4, "only players with wins show the trophy: {wins:?}");
+    assert_eq!(wins.len(), 5, "players with wins show the trophy, and the band its winner's: {wins:?}");
+    let w = sim.app.world_mut();
+    assert_eq!(w.query::<&WinnerBand>().iter(w).map(|b| b.big).collect::<Vec<_>>(), [false], "one band, in place (no moment)");
     // The slab: hidden before .55 s, across the name mid-way, gone after.
     let slab = |sim: &mut Sim| {
         let w = sim.app.world_mut();
@@ -93,30 +86,47 @@ fn standings_carry_the_marks_and_the_winner_sweeps_in() {
     assert!(!slab(&mut sim).0, "gone after the sweep");
 }
 
+/// The bars and tiles are the selected row's: yours first, another's on a
+/// click; a bar a rung, the fastest and the longest stall marked, the rung
+/// reached but not finished outlined, rungs never reached empty.
 #[test]
-fn climb_chart_follows_hover() {
+fn the_climb_follows_the_selected_row() {
     let mut sim = sim(true);
-    assert_eq!(chart(&mut sim), 0, "the winner's climb first");
-    let full = drawn(&mut sim);
-    assert!(full > 0.0, "drawn at once the first time");
-    // Hover the third row: its climb, drawn from nothing along the line.
-    sim.app.world_mut().resource_mut::<EndSelection>().hovered = Some(3);
+    let (i, b) = bars(&mut sim);
+    assert_eq!(i, 2, "your climb first");
+    assert_eq!(b.len(), 14, "a bar a rung");
+    let kind = |k: BarKind| b.iter().filter(|x| x.kind == k).map(|x| x.rung).collect::<Vec<_>>();
+    assert_eq!(kind(BarKind::Open), [11], "you reached 11: open");
+    assert_eq!(kind(BarKind::Unreached), [12, 13, 14]);
+    assert_eq!((kind(BarKind::Fastest).len(), kind(BarKind::Stall).len()), (1, 1));
+    sim.app.world_mut().resource_mut::<EndSelection>().pinned = 0;
     sim.ticks(2);
-    assert_eq!(chart(&mut sim), 3);
-    assert!(sim.app.world().resource::<EndState>().drawing.is_some());
-    let start = drawn(&mut sim);
-    step(&mut sim, 0.15);
-    let mid = drawn(&mut sim);
-    step(&mut sim, 1.2);
-    let end = drawn(&mut sim);
-    assert!(start < mid && mid < end, "drawn along its length: {start} {mid} {end}");
-    // Off the row: the selected one again; a click pins another.
-    sim.app.world_mut().resource_mut::<EndSelection>().hovered = None;
-    sim.ticks(2);
-    assert_eq!(chart(&mut sim), 0);
-    sim.app.world_mut().resource_mut::<EndSelection>().pinned = 5;
-    sim.ticks(2);
-    assert_eq!(chart(&mut sim), 5);
+    let (i, b) = bars(&mut sim);
+    assert_eq!(i, 0);
+    assert!(b.iter().all(|x| !matches!(x.kind, BarKind::Open | BarKind::Unreached)), "the winner finished every rung: {b:?}");
+    let w = sim.app.world_mut();
+    let labels: Vec<&str> = w.query::<&StatTile>().iter(w).map(|t| t.label).collect();
+    assert_eq!(labels.len(), 7, "{labels:?}");
+    for want in ["Place", "Rung", "Kills", "K/D", "Streak", "Fastest", "Stall"] {
+        assert!(labels.contains(&want), "{want} in {labels:?}");
+    }
+}
+
+#[test]
+fn rung_times_sum_up_each_rungs_stays() {
+    use chimera_client::client::{match_end::MatchEndRow, match_end_signal::rung_times};
+    use chimera_sim::minigame::climb::Climb;
+    // Up at 10 and 30, down to 2 at 40 (a knife death), up at 70; at 3 when it ends at 100.
+    let row = MatchEndRow { rung: Some(3), climb: Climb { steps: vec![(10.0, 2), (30.0, 3), (40.0, 2), (70.0, 3)], ..default() }, ..default() };
+    let t = rung_times(&row, 100.0, 5);
+    assert_eq!(t.secs, vec![Some(10.0), Some(50.0), Some(40.0), None, None]);
+    assert_eq!(t.open, Some(2), "rung 3 not finished");
+    assert_eq!((t.fastest, t.stall), (Some(0), Some(1)));
+    // The winner's last rung ends at the winning kill and counts.
+    let win = MatchEndRow { winner: true, rung: Some(2), climb: Climb { steps: vec![(10.0, 2)], kills: vec![10.0, 25.0], ..default() }, ..default() };
+    let t = rung_times(&win, 30.0, 2);
+    assert_eq!(t.secs, vec![Some(10.0), Some(15.0)]);
+    assert_eq!((t.open, t.fastest, t.stall), (None, Some(0), Some(1)));
 }
 
 #[test]
@@ -128,7 +138,7 @@ fn the_shells_theme_keeps_the_old_screen() {
 
 /// One countdown (the vote's close and the next match's start) with its
 /// tick bar lit as it runs; four cards, yours marked; at the lock the
-/// others dim, the winner is named under the countdown, which reads 0.
+/// others dim and the countdown reads 0.
 #[test]
 fn match_end_has_one_countdown() {
     let mut sim = sim(true);
@@ -154,19 +164,12 @@ fn match_end_has_one_countdown() {
     assert_eq!(c.len(), 4);
     assert_eq!(c.iter().filter(|c| c.mine).map(|c| c.index).collect::<Vec<_>>(), [2], "your vote");
     assert!(c.iter().all(|c| !c.locked));
-    // The close: the winner (most votes), locked, named, 0 left.
     sim.app.world_mut().resource_mut::<MatchEndStaged>().view.vote.as_mut().unwrap().winner = Some(0);
     sim.ticks(3);
     let c = cards(&mut sim);
     assert!(c.iter().all(|c| c.locked) && c[0].won && !c[1].won, "{c:?}");
     assert_eq!(count(&mut sim), ["0:00"]);
     assert_eq!(lit(&mut sim).0, 40);
-    let hint = {
-        let w = sim.app.world_mut();
-        let view = w.resource::<MatchEndView>().clone();
-        match_end_signal::vote_hint(&view)
-    };
-    assert_eq!(hint, "Next: de_dust2 \u{2022} starting");
 }
 
 /// The ground (the ambient and the planes over it) under every part, and
@@ -175,7 +178,7 @@ fn match_end_has_one_countdown() {
 fn the_ground_and_leave() {
     let mut sim = sim(true);
     let w = sim.app.world_mut();
-    assert_eq!(w.query::<&EndGround>().iter(w).count(), 2, "the ambient and the planes");
+    assert_eq!(w.query::<(&EndGround, &Visibility)>().iter(w).filter(|(_, v)| **v != Visibility::Hidden).count(), 2, "the ambient and the planes");
     assert_eq!(w.query::<&LeaveButton>().iter(w).count(), 1);
 }
 
@@ -207,9 +210,9 @@ fn the_standings_read_the_servers_session_wins() {
     sim.ticks(3);
     assert!(visible(&mut sim, true), "the Signal screen");
     let w = sim.app.world_mut();
-    let mut wins: Vec<u32> = w.query::<&SessionWins>().iter(w).map(|s| s.0).collect();
+    let mut wins: Vec<u32> = w.query_filtered::<&SessionWins, Without<Text>>().iter(w).map(|s| s.0).collect();
     wins.sort();
-    assert_eq!(wins, [2, 3], "Ann's (this match counted) and the bot's; none for Bob");
+    assert_eq!(wins, [2, 3], "Ann's (this match counted) and the bot's in the standings; none for Bob");
     // "+1" once, under the winner's row (the first).
     let plus: Vec<Entity> = w.query::<(Entity, &Text)>().iter(w).filter(|(_, t)| t.0 == "+1").map(|(e, _)| e).collect();
     assert_eq!(plus.len(), 1, "one +1");
@@ -241,7 +244,6 @@ fn the_games_huds_are_covered_while_it_is_up() {
     let vis = |sim: &Sim, e: Entity| *sim.app.world().get::<Visibility>(e).unwrap();
     assert!(sim.app.world().resource::<HudCover>().covered());
     assert_eq!(vis(&sim, root), Visibility::Hidden);
-    // Its game shows the part under the screen: hidden still.
     *sim.app.world_mut().get_mut::<Visibility>(part).unwrap() = Visibility::Visible;
     sim.ticks(1);
     assert_eq!(vis(&sim, part), Visibility::Hidden);
@@ -253,81 +255,54 @@ fn the_games_huds_are_covered_while_it_is_up() {
     assert_eq!(vis(&sim, off), Visibility::Hidden, "a part its game hid stays hidden");
 }
 
-/// The longest stall's label clears the chosen climb (above the box,
-/// ending at its right end, where the line climbs on; under it for a
-/// stall to the match's end) and the box; its outline is dashed.
+/// The moment's clock: the card holds `moment_in + moment_hold`, waits
+/// for the results if they come later, moves over `moment_move`; the
+/// scrim fades to opaque from the move; a skip puts everything in place.
 #[test]
-fn the_stall_label_clears_the_line() {
-    use chimera_client::client::match_end_signal::{ChartAxes, StallLabel, stall_dashes};
-    let sim = sim(true);
-    let view = sim.app.world().resource::<MatchEndView>().clone();
-    let end = view.length;
-    let mut checked = 0;
-    for row in &view.rows {
-        let axes = ChartAxes::new(view.length, view.rungs.max(row.rung.unwrap_or(1)));
-        let Some((a, b, r)) = row.climb.longest_stall(end) else { continue };
-        let at = StallLabel::place(&axes, a, b, r as u32, end);
-        // "STALL 1:08 • R08": 16 characters of the 6.4-unit mono type,
-        // tracked, with the plate's padding (generous).
-        let plate = at.plate(16.0 * 6.4 * 0.72 + 2.0 * StallLabel::PAD_X);
-        let pts = axes.points(&row.climb, end);
-        for s in pts.windows(2) {
-            let seg = Rect::from_corners(s[0], s[1]).inflate(1.6 / 2.0);
-            assert!(plate.intersect(seg).is_empty(), "{}: the label {plate:?} crosses the line at {seg:?}", row.name);
-        }
-        let (x0, x1, y) = (axes.x(a), axes.x(b), axes.y(r as f32));
-        let stall = Rect::new(x0, y - 5.0, x1, y + 5.0);
-        assert!(plate.intersect(stall).is_empty(), "{}: the label over its box", row.name);
-        let dashes = stall_dashes(x0, x1, y - 5.0, y + 5.0, 0.5);
-        assert!(dashes.len() > 8 && dashes.iter().all(|d| stall.contains(d.min) && stall.contains(d.max)), "dashes along the box");
-        checked += 1;
-    }
-    assert!(checked >= 4, "the staged rows have stalls");
-    // A stall to the end: the label under the box.
-    let axes = ChartAxes::new(600.0, 14);
-    let at = StallLabel::place(&axes, 500.0, 600.0, 14, 600.0);
-    assert!(!at.anchor_end && at.top > axes.y(14.0) + 5.0);
+fn the_winner_moments_timeline() {
+    let t = MomentTimes { intro: 0.5, hold: 2.0, moves: 0.8, fade: 0.6, scrim: 0.6, slab_loop: 1.6 };
+    let mut m = WinnerMoment { started: Some(10.0), ..default() };
+    assert_eq!(m.move_at(&t), None, "no move before the results");
+    assert_eq!(m.progress(12.0, &t), 0.0);
+    assert!((m.scrim(10.25, &t) - 0.3).abs() < 1e-4, "the scrim comes in with the card");
+    m.shown_at = Some(11.0);
+    assert_eq!(m.move_at(&t), Some(12.5), "results early: the hold stands");
+    assert!((m.progress(12.9, &t) - 0.5).abs() < 1e-4);
+    assert!((m.scrim(12.8, &t) - 0.8).abs() < 1e-4);
+    assert_eq!(m.scrim(13.2, &t), 1.0);
+    assert!(m.settled(13.3, &t));
+    m.shown_at = Some(14.0);
+    assert_eq!(m.move_at(&t), Some(14.0), "results late: the card waits for them");
+    m.skipped = true;
+    assert_eq!((m.progress(14.0, &t), m.scrim(14.0, &t)), (1.0, 1.0), "skipped: in place at once");
 }
 
-/// The climb's time axis ends at the match's length rounded up to a time
-/// mark (6:03 to 7:00 by minutes), not at a fixed ten minutes.
+/// Nothing blocks input during the winner moment: Leave, pressed while the
+/// card is still moving, leaves.
 #[test]
-fn the_climb_axis_ends_at_the_match_length_rounded_up() {
-    use chimera_client::client::match_end_signal::{ChartAxes, mmss};
-    let check = |len: f32, span: f32, step: f32| {
-        let a = ChartAxes::new(len, 14);
-        assert_eq!((a.span, a.step), (span, step), "{len} s");
-        assert!(a.span / a.step <= ChartAxes::MAX_MARKS);
-    };
-    check(363.0, 420.0, 60.0);
-    check(70.0, 90.0, 30.0);
-    check(240.0, 240.0, 30.0);
-    check(480.0, 480.0, 60.0);
-    check(481.0, 600.0, 120.0);
-    check(1501.0, 1800.0, 300.0);
-    check(0.0, 30.0, 30.0);
-
-    // The staged match, ended at 6:03.
+fn leave_works_during_the_winner_moment() {
+    #[derive(Resource)]
+    struct Left;
     let mut sim = sim(true);
-    sim.app.world_mut().resource_mut::<MatchEndStaged>().view.length = 363.0;
-    step(&mut sim, 0.1);
-    step(&mut sim, 0.1);
-    let axes = ChartAxes::new(363.0, 14);
+    match_end_signal::unstage(sim.app.world_mut());
+    sim.ticks(2);
     let w = sim.app.world_mut();
-    let root = w.query_filtered::<Entity, With<ClimbChart>>().single(w).unwrap();
-    let mut texts = Vec::new();
-    let mut stack = vec![root];
-    while let Some(e) = stack.pop() {
-        if let Some(t) = w.get::<Text>(e) {
-            texts.push(t.0.clone());
-        }
-        if let Some(c) = w.get::<Children>(e) {
-            stack.extend(c.iter());
-        }
-    }
-    let last = mmss(axes.span);
-    assert!(texts.contains(&last), "the axis ends at {last}: {texts:?}");
-    assert!(!texts.iter().any(|t| t == "10:00"), "no fixed ten minutes: {texts:?}");
-    let marks = texts.iter().filter(|t| t.contains(':') && t.len() <= 5).count();
-    assert_eq!(marks as f32, axes.span / axes.step + 1.0, "{texts:?}");
+    w.resource_mut::<chimera_core::console::Console>().add_command(chimera_core::console::Command {
+        name: "disconnect".into(),
+        help: String::new(),
+        run: std::sync::Arc::new(|w: &mut World, _: &[String]| {
+            w.insert_resource(Left);
+            Ok(None)
+        }),
+        complete: None,
+    });
+    match_end_signal::stage_with(w, None, true).unwrap();
+    sim.ticks(2);
+    step(&mut sim, 2.85);
+    let w = sim.app.world_mut();
+    assert!(w.query::<&WinnerBand>().single(w).unwrap().big, "still the card, moving");
+    let leave = w.query_filtered::<Entity, With<LeaveButton>>().single(w).expect("Leave is there during the move");
+    w.entity_mut(leave).insert(chimera_client::client::widgets::Interaction::Pressed);
+    sim.ticks(2);
+    assert!(sim.app.world().contains_resource::<Left>(), "Leave during the moment");
 }

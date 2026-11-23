@@ -395,31 +395,25 @@ from the theme (`min_text_px = 9`, as the prototype's `max(9px, ...)`)
   down"); chips stack at 3.05 cq slots (`cubic_in_out` .24 s); the
   impact flash `.2 exp(-t/.12)`. Moon gravity is the second chip (ring
   countdown).
-- **Match end** (layout pass 2026-11-19; our layout, not the look book's
-  frame, so parity `matchend` positions are intentionally off): Leave
-  (arrow and word) small at the top left, the chat in a fixed box down the
-  left column under it (lines stacked at the bottom, the field below, whole
-  messages only); the standings down the right column (30 cq,
-  top-aligned, above the footer): the winner's taller first row (trophy,
-  accent frame, the name large with the slab sweeping across it in .9 s
-  from .55 s, the sub-line "Winner . 14/14 . Knife"), then position,
-  name, rung/total and kills, rows shrinking from 2.4 cq to fit (hover or
-  click a row to pick the chart's line); in the middle one details line
-  (map, players, rungs, time, each after an icon), the climb (stepped
-  rung line drawn in .7 s, kill and death ticks fading in over .52 s, the
-  longest stall marked) and under it six stat tiles (kills, deaths, K/D,
-  best streak, fastest rung, longest stall: yours, else the winner's);
-  the footer: the four map cards (pips, the leader's count in accent,
-  yours outlined) in the middle, "Next match 0:14 >" with the one 20 s
-  tick bar (hot at 17/20; then locked, the others dimmed) bottom right;
-  the logo pass into the next match. All positions are `[layout.matchend]`
-  (`match_end_signal::EndLayout`), and the chat docks with the same
-  numbers. Test: `ultimate_gun_game` `match_end_layout` (each block where
-  it belongs and none overlapping at 1280x720 and 1920x1080 with 2 and 16
-  players, a spectator, and no, a few and a busy chat). Shortcuts: over
-  about 18 players the standings clip (rows floor at 1.5 cq); no headshot
-  tile (not tracked). `ui_scene matchend [fixture.json] [chat|busy]`
-  stages chat lines.
+- **Match end** (v2, 2026-11-22: the "Lobby and Match End Directions"
+  mockup's direction A as the user reviewed it; see "Match end v2"
+  below): Leave top left and the chat down the full left column; in the
+  middle the details line, the winner band (the winner moment's card in
+  place: trophy, avatar, WINNER, the name with the slab, the line, the
+  session wins and the GG / WP / Rematch? quick chat), the climb as a bar
+  per rung for the selected player (you by default; a standings row's
+  click picks another; fastest rung accent, longest stall amber, the rung
+  reached but not finished outlined; no gun names), seven stat tiles
+  (place, rung, kills, K/D, best streak, fastest rung, longest stall:
+  times only, no "new best") and the 2x2 vote (fixed cards, the map's
+  name and game once over the picture's foot, the number key's cap, keys
+  1-4); the standings down the right (rows of one size, a longer list
+  scrolls in the kit's scroll view with "+N more" over its foot); the
+  countdown bottom right, its number and tick bar filling the area, no
+  text under it. All positions are `[layout.matchend]`
+  (`match_end_signal::EndLayout`), the moment's lengths
+  `[motion.dur.matchend]`. Test: `ultimate_gun_game` `match_end_layout`
+  (1280x720 and 1920x1080, 2/16 players, a spectator, chat; the moment).
 - **Main menu**: lockup at (4.6, 5.6) cq, 3.3 cq; four items from 23.4
   cq down, 24 cq wide, 3.5 cq tall (index, label 1.36 cq, triangle);
   the highlight bar (slanted right edge .74 cq, accent bar .32 cq)
@@ -634,6 +628,40 @@ had. `ui_scene airstrike [t]`. Tests: `rank_toast_rolls_and_holds_1_15_s`,
 - Tests: `rank_toast_rolls_and_holds_1_15_s`, `rank_toast_chains_within_the_hold`,
   `air_strike_banner_folds_into_its_chip`, `effects_chips_stack_and_leave`;
   `match_effects_replicate` (`chimera_net` NetSim).
+
+### Match end v2 and the winner moment (2026-11-22, done)
+
+The user's review of the directions mockup (binding): keep the winner
+band, the standings on the right and the time-per-rung bars of the
+selected player; drop the ladder wall's gun columns with players' tiles
+(several players a rung don't fit); tiles without "deaths to knives",
+"new best" or gun names; the vote 2x2 and fixed, its name once; the
+countdown alone and bigger; chat full height on the left; GG with an
+effect and a celebration on the band. Answers: the vote opens as soon as
+the screen appears; GG / WP / Rematch? are quick chat buttons; many
+players scroll (rows keep their size, "+N more").
+
+The **winner moment** (`client::winner_moment`): the win freezes everyone
+(the server's end freeze) and a card (avatar, WINNER, name, rung and gun)
+scales in near full screen over the frozen world under a scrim, holds
+(`moment_hold`), then moves and scales into the band's exact place (the
+same entity: `WinnerBand`, its `UiTransform`; built at the card's size and
+again at the band's so text is sharp at both ends) while the world fades
+to the ink and is covered (`staging::WorldCover`: cameras off, sounds
+held; a client whose server changes level unloads the map at once under
+it), and the rest of the screen enters around it. No logo pass for the
+entrance after a moment. The vote opens with the screen: the Ultimate Gun
+Game's definition has a 2 s round over and no intermission
+(`MinigameDef::end`, `AutoOptions::end`), so the results and the vote come
+while the card holds; a late result keeps the card up until it comes.
+Input is never blocked; any key or click skips the moment.
+
+Ideas for seamless UI-to-UI transforms later (not built): the lobby's map
+card growing into the loading screen's map title; the match end's chosen
+vote card moving into the next loading screen's header; the race chip's
+leader row lifting into the winner card at the win; the Tab board's rows
+morphing into the match end's standings; the Esc menu's panel sliding into
+Settings' rail; a lobby row's avatar flying to the winner card.
 
 ### M4: match end and the vote
 

@@ -263,7 +263,7 @@ fn follow(
     (chars, role): (Query<(Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>)>, Option<Res<crate::core::NetRole>>),
     mut view: ResMut<MatchEndView>,
     (map_vote, mut choice): (Option<Res<MapVote>>, ResMut<MapVoteChoice>),
-    (mut passes, mut gate): (super::logo_pass::Passes, ResMut<MatchEndGate>),
+    (mut passes, mut gate, moment): (super::logo_pass::Passes, ResMut<MatchEndGate>, Option<Res<super::winner_moment::WinnerMoment>>),
 ) {
     let (map_name, games, net_scores, slices) = extra;
     if let Some(st) = staged {
@@ -298,7 +298,12 @@ fn follow(
         }
         return;
     };
-    // Under a theme with a logo pass the screen comes up at its swap.
+    // Under a theme with a logo pass the screen comes up at its swap;
+    // after a winner moment it comes up as the moment's card moves into
+    // place instead (`winner_moment`: no pass).
+    if moment.as_ref().is_some_and(|m| m.running()) && *gate == MatchEndGate::Off {
+        *gate = MatchEndGate::In;
+    }
     if passes.on() && !view.shown {
         match *gate {
             MatchEndGate::Off => {

@@ -98,6 +98,7 @@ pub mod ui_write;
 pub mod upload_pace;
 pub mod first_view;
 pub mod widgets;
+pub mod winner_moment;
 
 
 use std::path::PathBuf;

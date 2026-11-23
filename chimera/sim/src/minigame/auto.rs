@@ -1022,6 +1022,9 @@ pub struct AutoOptions {
     /// The end screen's map vote (`def::MinigameDef::map_vote`, `vote`):
     /// its TOML value (`"true"`, `"{ candidates = 4 }"`); None: none.
     pub map_vote: Option<String>,
+    /// The match end's spans (`def::MinigameDef::end`): its TOML value
+    /// (`"{ round_over = 2, intermission = 0 }"`); None: the defaults.
+    pub end: Option<String>,
     /// Whether guns can be taken off the ground (`def::PickupsDef::weapons`).
     pub weapon_pickups: bool,
     /// The power curve the ladder follows (`PowerCurve::shipped`).
@@ -1107,6 +1110,10 @@ pub fn definition_with(
         .unwrap_or_default();
     let rotation = match &opts.map_vote {
         Some(v) => format!("{rotation}map_vote = {v}\n"),
+        None => rotation,
+    };
+    let rotation = match &opts.end {
+        Some(e) => format!("{rotation}end = {e}\n"),
         None => rotation,
     };
     Ok(format!(
@@ -1558,6 +1565,7 @@ mod tests {
             time_limit: 600.0,
             avoid_recent: Some(10),
             map_vote: Some("true".into()),
+            end: None,
             weapon_pickups: true,
             curve: PowerCurve::shipped(),
         };

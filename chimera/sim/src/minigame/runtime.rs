@@ -15,7 +15,8 @@
 //! - The match waits (`Phase::Waiting`) until `players.min` are in; then
 //!   the runtime starts it (everyone respawned, the module's
 //!   `before_spawns` first), live at once (no setup), for `time_limit`;
-//!   a round over of `ROUND_OVER` s, an intermission of `INTERMISSION` s,
+//!   a round over of `ROUND_OVER` s, an intermission of `INTERMISSION` s
+//!   (a definition's `end` sets its own),
 //!   then the match over, its winner the round's (`Mode::match_end`).
 //! - Spawning (`respawn`): at a spawn point the definition's `points`
 //!   pick (`spawn_point`; `scored` places a whole mission start's
@@ -223,8 +224,8 @@ fn length(world: &mut World, span: Span) -> Option<f64> {
     match span {
         Span::Setup => Some(0.0),
         Span::Round => Some(def.time_limit as f64),
-        Span::RoundOver => Some(ROUND_OVER as f64),
-        Span::Intermission => Some(INTERMISSION as f64),
+        Span::RoundOver => Some(def.end.round_over as f64),
+        Span::Intermission => Some(def.end.intermission as f64),
         _ => None,
     }
 }

@@ -1,17 +1,23 @@
-//! The match end's blocks (plan ugg-ui, M4's layout pass), laid out by
+//! The match end's blocks (plan ugg-ui, "Match end v2"), laid out by
 //! Bevy's own UI with the Ultimate Gun Game's theme and faces at 1280x720
 //! and 1920x1080, with 2 and 16 players (and no entry for you), and no
 //! chat, a few lines, and a busy chat:
 //!
 //! - Leave top left; the chat down the left column from under it to the
-//!   bottom; the standings down the right (top-aligned, the winner their
-//!   first row and a taller one); the details line top centre; the climb
-//!   with the stat tiles directly under it; the vote cards two to a row (2x2) under
-//!   the tiles in the centre and the countdown bottom right; the climb small and centred;
-//! - none of them overlaps another, all inside the window, every
+//!   bottom; the standings down the right (top-aligned, rows of one size,
+//!   a longer list scrolling with "+N more" at its foot); in the middle the
+//!   details line, the winner band, the climb's bars, the stat tiles and
+//!   the vote cards (2x2, fixed); the countdown bottom right, its number
+//!   and bar filling the area;
+//! - none of them overlaps another, all inside the window, every shown
 //!   standings row inside its column, the chat box one size whatever it
 //!   holds and its newest line inside it;
-//! - the tiles show your stats, or the winner's when you have no entry.
+//! - the climb and tiles are yours, or the winner's when you have no entry.
+//!
+//! And the winner moment (`winner_moment`): its card big and centred over
+//! the world, then moving into the band's exact place while the world
+//! fades and is covered (a pending map unload done under the cover), Leave
+//! and the vote working during it, a key skipping it.
 
 use bevy::{
     camera::{ComputedCameraValues, RenderTargetInfo, Viewport},
@@ -21,7 +27,8 @@ use bevy::{
 };
 use chimera_client::client::{
     match_end::MatchEndPlugin,
-    match_end_signal::{ClimbChart, DetailsLine, LeaveButton, StandingsPanel, StandingsRow, StatTile, StatsRow, VoteCard, VoteCountdownColumn, WinnerRow},
+    match_end_signal::{DetailsLine, EndLayout, LeaveButton, MoreBelow, RungBars, StandingsPanel, StandingsRow, StatTile, StatsRow, VoteCard, VoteCountdown, VoteCountdownColumn, WinnerRow},
+    winner_moment::{WinnerBand, WinnerMoment},
     signal_chat::{ChatDockRoot, FeedLineId, SignalChatPlugin},
     ui_scene::UiScenePlugin,
 };
@@ -38,6 +45,7 @@ fn sim() -> Sim {
     let mut sim = Sim::with(SimBasePlugins, |app| {
         app.init_resource::<Assets<bevy::image::TextureAtlasLayout>>()
             .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<Touches>()
             .init_resource::<bevy::picking::hover::HoverMap>()
             .init_resource::<bevy::picking::pointer::PointerMap>()
@@ -52,7 +60,7 @@ fn sim() -> Sim {
         app.insert_resource(Theme::from_toml(&signal::THEME).unwrap());
         let kit = KitFonts::load(&mut app.world_mut().resource_mut::<Assets<Font>>(), signal::FONTS);
         app.insert_resource(kit);
-        app.add_plugins((ChimeraUiPlugin, UiScenePlugin, MatchEndPlugin, SignalChatPlugin));
+        app.add_plugins((ChimeraUiPlugin, UiScenePlugin, MatchEndPlugin, SignalChatPlugin, chimera_client::client::staging::StagingPlugin));
         app.insert_resource(UiClock::manual());
     });
     let w = sim.app.world_mut();
@@ -167,11 +175,13 @@ fn the_blocks_sit_where_the_layout_puts_them_and_never_overlap() {
                 let at = format!("{size:?}, {n} players{}, chat {chat:?}", if spectate { " (spectating)" } else { "" });
                 let leave = one::<LeaveButton>(&mut sim);
                 let details = one::<DetailsLine>(&mut sim);
-                let graph = one::<ClimbChart>(&mut sim);
+                let band = one::<WinnerBand>(&mut sim);
+                let graph = one::<RungBars>(&mut sim);
                 let stats = one::<StatsRow>(&mut sim);
                 let panel = one::<StandingsPanel>(&mut sim);
                 let winner = one::<WinnerRow>(&mut sim);
                 let countdown = one::<VoteCountdownColumn>(&mut sim);
+                let number = one::<VoteCountdown>(&mut sim);
                 let cards = all::<VoteCard>(&mut sim);
                 let rows = all::<StandingsRow>(&mut sim);
                 let tiles = all::<StatTile>(&mut sim);
@@ -182,19 +192,19 @@ fn the_blocks_sit_where_the_layout_puts_them_and_never_overlap() {
                 .unwrap_or_else(|| panic!("{at}: no chat box"));
                 assert_eq!(cards.len(), 4, "{at}");
                 assert_eq!(rows.len(), n, "{at}");
-                assert_eq!(tiles.len(), 6, "{at}");
+                assert_eq!(tiles.len(), 7, "{at}");
 
                 // Where each sits.
                 assert!(leave.min.x < w * 0.1 && leave.min.y < h * 0.1, "{at}: Leave is top left: {leave:?}");
                 assert!(leave.width() < w * 0.12 && leave.height() < h * 0.06, "{at}: Leave is small: {leave:?}");
                 assert!(dock.min.x < w * 0.1 && dock.min.y >= leave.max.y, "{at}: the chat is the left column under Leave: {dock:?}");
-                assert!(dock.max.y > h * 0.9, "{at}: the chat runs to the bottom: {dock:?}");
-                assert!(panel.min.y < h * 0.07 && panel.min.x > w * 0.6 && (panel.width() / w - 0.3).abs() < 0.03, "{at}: standings top right, 30 %: {panel:?}");
-                assert!(details.center().y < h * 0.1 && details.max.y <= graph.min.y, "{at}: the details line is above the climb: {details:?}");
-                assert!((details.center().x - graph.center().x).abs() < w * 0.02, "{at}: the details line is centred over the climb");
-                assert!(graph.width() > w * 0.25 && graph.width() < w * 0.3 && graph.height() > h * 0.15 && graph.height() < h * 0.4, "{at}: a small, readable climb: {graph:?}");
-                assert!(stats.min.y >= graph.max.y - 1.0 && stats.min.y < graph.max.y + h * 0.08, "{at}: the tiles directly under the climb: {stats:?} {graph:?}");
-                assert!(stats.min.x <= graph.min.x + 1.0 && stats.max.x >= graph.max.x - 1.0 && (stats.center().x - graph.center().x).abs() < 2.0, "{at}: the climb is centred over the tiles");
+                assert!(dock.max.y > h * 0.94 && dock.height() > h * 0.8, "{at}: the chat runs the full height: {dock:?}");
+                assert!(panel.min.y < h * 0.07 && panel.min.x > w * 0.65, "{at}: standings top right: {panel:?}");
+                assert!(details.center().y < h * 0.1 && details.max.y <= band.min.y, "{at}: the details line over the band: {details:?}");
+                assert!(band.min.y < h * 0.12 && band.width() > w * 0.4, "{at}: the winner band top centre: {band:?}");
+                assert!(graph.min.y >= band.max.y && stats.min.y >= graph.max.y - 1.0, "{at}: band, climb, tiles: {band:?} {graph:?} {stats:?}");
+                assert!(graph.height() > h * 0.1, "{at}: a readable climb: {graph:?}");
+                assert!((band.center().x - graph.center().x).abs() < 2.0 && (stats.center().x - graph.center().x).abs() < 2.0, "{at}: the middle column");
                 assert!(cards.iter().all(|c| c.min.y >= stats.max.y && c.center().x > dock.max.x && c.center().x < panel.min.x), "{at}: cards in the centre under the tiles: {cards:?}");
                 let (row_y, col_x) = (cards[0].min.y, cards[0].min.x);
                 assert!(
@@ -202,25 +212,32 @@ fn the_blocks_sit_where_the_layout_puts_them_and_never_overlap() {
                     "{at}: a 2x2 grid: {cards:?}"
                 );
                 assert!((cards[2].min.x - col_x).abs() < 1.0 && (cards[3].min.x - cards[1].min.x).abs() < 1.0 && cards[1].min.x > col_x + cards[0].width() - 1.0, "{at}: two columns: {cards:?}");
-                assert!(cards[0].width() > w * 0.17 && cards[0].height() > h * 0.18, "{at}: big cards: {:?}", cards[0]);
-                let (lo, hi) = cards.iter().fold((f32::MAX, f32::MIN), |(a, b), c| (a.min(c.min.x), b.max(c.max.x)));
-                assert!(lo < stats.min.x + 2.0 && hi > stats.max.x - w * 0.02, "{at}: the cards span the middle column");
+                assert!(cards[0].width() > w * 0.17 && cards[0].height() > h * 0.14, "{at}: big cards: {:?}", cards[0]);
+                assert!(cards.iter().all(|c| c.max.y < h * 0.97), "{at}: the cards end above the frame's foot: {cards:?}");
                 assert!(countdown.center().x > w * 0.7 && countdown.max.y > h * 0.9, "{at}: the countdown bottom right: {countdown:?}");
+                assert!(number.height() > countdown.height() * 0.3, "{at}: the number fills its area: {number:?} in {countdown:?}");
 
-                // The winner is the first row, taller than the rest, in the accent frame's place.
+                // Rows of one size; the shown ones inside the column; a longer list scrolls with "+N more".
                 let first = rows.iter().map(|r| r.min.y).fold(f32::MAX, f32::min);
                 assert!((winner.min.y - first).abs() < 1.0, "{at}: the winner is the first row");
-                for r in rows.iter().filter(|r| (r.min.y - winner.min.y).abs() > 1.0) {
-                    assert!(winner.height() > r.height() * 1.5, "{at}: the winner's row {winner:?} is taller than {r:?}");
-                    assert!(r.min.y >= winner.max.y - 1.0, "{at}: a row above the winner");
+                assert!(rows.iter().all(|r| (r.height() - rows[0].height()).abs() < 1.0), "{at}: rows of one size");
+                let shown: Vec<&Rect> = rows.iter().filter(|r| r.max.y <= panel.max.y + 1.0).collect();
+                for (i, r) in shown.iter().enumerate() {
+                    assert!(inside(**r, panel), "{at}: standings row {i} {r:?} is outside its column {panel:?}");
                 }
-                for (i, r) in rows.iter().enumerate() {
-                    assert!(inside(*r, panel), "{at}: standings row {i} {r:?} is outside its column {panel:?}");
+                let more = {
+                    let w = sim.app.world_mut();
+                    w.query::<(&MoreBelow, &Visibility)>().iter(w).map(|(m, v)| (m.n, *v != Visibility::Hidden)).next().expect("the +N more")
+                };
+                let hidden = n - shown.len();
+                assert_eq!(more, (hidden, hidden > 0), "{at}: '+N more' says how many are below");
+                if n == 16 {
+                    assert!(hidden > 0, "{at}: sixteen rows don't fit: they scroll");
                 }
-                                assert!(panel.max.y <= countdown.min.y + 1.0, "{at}: the standings reach the countdown");
+                assert!(panel.max.y <= countdown.min.y + 1.0, "{at}: the standings end above the countdown");
 
                 // Nothing covers anything, nothing leaves the window.
-                let mut blocks = vec![("Leave", leave), ("the chat", dock), ("the details", details), ("the climb", graph), ("the tiles", stats), ("the standings", panel), ("the countdown", countdown)];
+                let mut blocks = vec![("Leave", leave), ("the chat", dock), ("the details", details), ("the band", band), ("the climb", graph), ("the tiles", stats), ("the standings", panel), ("the countdown", countdown)];
                 blocks.extend(cards.iter().map(|c| ("a card", *c)));
                 for (i, (an, a)) in blocks.iter().enumerate() {
                     assert!(inside(*a, window), "{at}: {an} {a:?} is off the window");
@@ -232,16 +249,17 @@ fn the_blocks_sit_where_the_layout_puts_them_and_never_overlap() {
                     assert!(inside(*t, stats), "{at}: a tile {t:?} leaves its row {stats:?}");
                 }
 
-                // The tiles: yours, else the winner's.
-                let stats_e = {
+                // The climb: yours, else the winner's.
+                let climb_e = {
                     let w = sim.app.world_mut();
-                    w.query_filtered::<Entity, With<StatsRow>>().single(w).unwrap()
+                    let e = w.query_filtered::<Entity, With<RungBars>>().single(w).unwrap();
+                    w.get::<ChildOf>(e).unwrap().parent()
                 };
-                let texts = texts_under(&mut sim, stats_e);
+                let texts = texts_under(&mut sim, climb_e);
                 if spectate {
-                    assert!(texts.iter().any(|t| t == "NADIA.EXE'S STATS"), "{at}: the winner's stats: {texts:?}");
-                } else {
-                    assert!(texts.iter().any(|t| t == "YOUR STATS"), "{at}: your stats: {texts:?}");
+                    assert!(texts.iter().any(|t| t.contains("NADIA.EXE") && !t.contains("(YOU)")), "{at}: the winner's climb: {texts:?}");
+                } else if n > 2 {
+                    assert!(texts.iter().any(|t| t.contains("KESTREL (YOU)")), "{at}: your climb: {texts:?}");
                 }
 
                 // The chat box: one size, the newest line inside it, whole lines only.
@@ -296,13 +314,109 @@ fn voting_never_moves_or_resizes_the_map_cards() {
             settle(&mut sim);
             let now = all::<VoteCard>(&mut sim);
             assert_eq!(now.len(), 4, "{size:?} {counts:?}");
-            let (panel, countdown) = (one::<StandingsPanel>(&mut sim), one::<VoteCountdownColumn>(&mut sim));
+            let (panel, countdown, band) = (one::<StandingsPanel>(&mut sim), one::<VoteCountdownColumn>(&mut sim), one::<WinnerBand>(&mut sim));
             for (a, b) in base.iter().zip(&now) {
                 assert!((a.min - b.min).abs().max_element() < 0.5 && (a.size() - b.size()).abs().max_element() < 0.5, "{size:?}: a card moved or resized: {a:?} -> {b:?} ({mine:?}, {counts:?}, {winner:?})");
-                assert!(!overlap(*b, panel) && !overlap(*b, countdown), "{size:?}: a card covers the standings or countdown: {b:?}");
+                assert!(!overlap(*b, panel) && !overlap(*b, countdown) && !overlap(*b, band), "{size:?}: a card covers the standings, the countdown or the band: {b:?}");
             }
         }
         con(&mut sim, "ui_scene off");
         settle(&mut sim);
+    }
+}
+
+/// The band's rect in the frame's cq as the window shows it (the frame is
+/// 100 cq wide, centred; `h` lines tall).
+fn band_place(size: (u32, u32)) -> Rect {
+    let lay = EndLayout::from(|k: &str, or: f32| Theme::from_toml(&signal::THEME).unwrap().layout_opt("matchend", k).unwrap_or(or));
+    let cq = size.1 as f32 / EndLayout::FRAME_H;
+    let x0 = (size.0 as f32 - 100.0 * cq) / 2.0;
+    let r = lay.band();
+    Rect::new(x0 + r.min.x * cq, r.min.y * cq, x0 + r.max.x * cq, r.max.y * cq)
+}
+
+/// The band as drawn: its node's rect with its transform's scale and
+/// shift (the card's pose).
+fn drawn_band(sim: &mut Sim) -> (Rect, bool) {
+    let w = sim.app.world_mut();
+    let (e, b) = w.query::<(Entity, &WinnerBand)>().single(w).map(|(e, b)| (e, *b)).expect("the band");
+    let (t, n) = (w.get::<UiGlobalTransform>(e).unwrap(), w.get::<ComputedNode>(e).unwrap());
+    let (scale, _, centre) = t.to_scale_angle_translation();
+    (Rect::from_center_size(centre, n.size() * scale), b.big)
+}
+
+fn moment_step(sim: &mut Sim, dt: f32) {
+    sim.app.world_mut().resource_mut::<UiClock>().step(dt);
+    sim.app.update();
+}
+
+/// The winner moment's timeline (`ui_scene matchend moment`): the card big
+/// and centred over the world, then moved and scaled into the band's exact
+/// place, the world faded and covered at the end (a pending unload done
+/// under the cover, not before); a number key votes and skips the rest
+/// (Leave during the move: `chimera_client`'s `match_end_signal` test).
+#[test]
+fn the_winner_moment_lands_in_the_band_and_never_blocks_input() {
+    use chimera_client::client::staging::{UnloadAtCover, WorldCover};
+    use chimera_sim::minigame::vote::MapVote;
+    let mut sim = sim();
+    for size in SIZES {
+        resize(&mut sim, size);
+        let (w, h) = (size.0 as f32, size.1 as f32);
+        let w0 = sim.app.world_mut();
+        w0.insert_resource(UnloadAtCover("cs_source:de_dust2".into()));
+        // A vote to cast into, and a player of ours to cast it.
+        let closes = w0.resource::<chimera_core::core::SimClock>().now + 60.0;
+        w0.insert_resource(MapVote::new(vec!["a".into(), "b".into(), "c".into(), "d".into()], closes));
+        w0.spawn((chimera_core::core::LocalPlayer, chimera_sim::minigame::runtime::InMinigame, Name::new("kestrel")));
+        con(&mut sim, "ui_scene matchend moment");
+        moment_step(&mut sim, 0.0);
+        moment_step(&mut sim, 0.6);
+        let place = band_place(size);
+        // The card: big, centred, over the world (not covered yet).
+        let (card, big) = drawn_band(&mut sim);
+        assert!(big, "{size:?}: the card");
+        assert!(card.width() > place.width() * 1.6 && card.width() < w && (card.center() - Vec2::new(w / 2.0, h / 2.0)).length() < 4.0, "{size:?}: near full screen, centred: {card:?}");
+        assert!(!sim.app.world().resource::<WorldCover>().is("match end"), "{size:?}: the world shows under the card");
+        assert!(sim.app.world().contains_resource::<UnloadAtCover>(), "{size:?}: no unload before the cover");
+        // Mid-move: between the two.
+        moment_step(&mut sim, 1.85 + 0.4);
+        let (mid, big) = drawn_band(&mut sim);
+        assert!(big && mid.width() < card.width() - 1.0 && mid.width() > place.width() + 1.0, "{size:?}: moving: {mid:?}");
+        // Landed: the band's exact place, sharp (built at its own size).
+        moment_step(&mut sim, 0.5);
+        moment_step(&mut sim, 0.6);
+        moment_step(&mut sim, 0.0);
+        let (end, big) = drawn_band(&mut sim);
+        assert!(!big, "{size:?}: in place");
+        assert!((end.min - place.min).abs().max_element() < 1.5 && (end.max - place.max).abs().max_element() < 1.5, "{size:?}: the band's exact rect: {end:?} vs {place:?}");
+        assert!(sim.app.world().resource::<WorldCover>().is("match end"), "{size:?}: the world covered once faded");
+        assert!(!sim.app.world().contains_resource::<UnloadAtCover>(), "{size:?}: the pending unload ran under the cover");
+        con(&mut sim, "ui_scene off");
+        settle(&mut sim);
+        assert!(!sim.app.world().resource::<WorldCover>().is("match end"), "{size:?}: uncovered after");
+
+        // Again, skipped by a number key that also votes.
+        con(&mut sim, "ui_scene matchend moment");
+        moment_step(&mut sim, 0.0);
+        moment_step(&mut sim, 0.3);
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::Digit2);
+        moment_step(&mut sim, 0.0);
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(KeyCode::Digit2);
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
+        moment_step(&mut sim, 0.0);
+        moment_step(&mut sim, 0.0);
+        assert!(sim.app.world().resource::<WinnerMoment>().skipped, "{size:?}: a key skips the moment");
+        assert_eq!(sim.app.world().resource::<chimera_client::client::match_end::MapVoteChoice>().0, Some(1), "{size:?}: and votes");
+        let (end, big) = drawn_band(&mut sim);
+        assert!(!big && (end.min - place.min).abs().max_element() < 1.5, "{size:?}: skipped into place: {end:?}");
+        con(&mut sim, "ui_scene off");
+        settle(&mut sim);
+        let w = sim.app.world_mut();
+        let ours: Vec<Entity> = w.query_filtered::<Entity, With<chimera_core::core::LocalPlayer>>().iter(w).collect();
+        for e in ours {
+            w.despawn(e);
+        }
+        w.remove_resource::<MapVote>();
     }
 }

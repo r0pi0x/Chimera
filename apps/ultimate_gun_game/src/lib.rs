@@ -117,6 +117,12 @@ pub fn options(seed: u64, rungs: usize) -> AutoOptions {
         // (the winner named for 1.6 s: the logo pass begins 1 s after the
         // close and covers the change at its swap).
         map_vote: Some("{ candidates = 4, time = 20, reveal = 1.6 }".into()),
+        // The win freezes everyone for 2 s and goes straight to the
+        // results (no intermission): the winner moment's card holds over
+        // the frozen world meanwhile, and the match end with its vote
+        // comes as the card moves into place (chimera_client's
+        // winner_moment).
+        end: Some("{ round_over = 2, intermission = 0 }".into()),
         // The ladder alone arms a player (the user's decision): no gun of
         // any game off the ground; other pickups stay possible.
         weapon_pickups: false,

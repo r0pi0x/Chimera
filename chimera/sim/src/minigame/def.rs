@@ -94,6 +94,12 @@ pub struct MinigameDef {
     /// The match's length (seconds).
     #[serde(deserialize_with = "seconds")]
     pub time_limit: f32,
+    /// The match's end: how long the win holds everyone frozen before
+    /// the round ends (`round_over`), and the intermission from there to
+    /// the match over and its results (`EndTimes`; absent: 5 s and 3 s,
+    /// `runtime::ROUND_OVER`, `runtime::INTERMISSION`).
+    #[serde(default)]
+    pub end: EndTimes,
     /// After the match: the next map of the pool and a new match (a
     /// server; the default), else this map again.
     #[serde(default = "yes")]
@@ -143,6 +149,33 @@ pub struct MinigameDef {
 
 fn yes() -> bool {
     true
+}
+
+/// `MinigameDef::end`: the match end's spans (s). The Ultimate Gun Game
+/// sets a short round over (its winner moment, `chimera_client`'s
+/// `winner_moment`, stands in for the frozen world) and no intermission,
+/// so the results and the map vote come while the winner's card is up.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EndTimes {
+    #[serde(deserialize_with = "seconds", default = "round_over")]
+    pub round_over: f32,
+    #[serde(deserialize_with = "seconds", default = "intermission")]
+    pub intermission: f32,
+}
+
+impl Default for EndTimes {
+    fn default() -> Self {
+        EndTimes { round_over: round_over(), intermission: intermission() }
+    }
+}
+
+fn round_over() -> f32 {
+    super::runtime::ROUND_OVER
+}
+
+fn intermission() -> f32 {
+    super::runtime::INTERMISSION
 }
 
 fn two_seconds() -> f32 {
