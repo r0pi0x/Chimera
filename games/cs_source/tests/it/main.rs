@@ -102,6 +102,7 @@ mod heavy {
     mod map_brush_decals;
     mod map_brush_entities;
     mod map_cache;
+    mod map_decals_under_impacts;
     mod map_community;
     mod map_courses;
     mod map_de_dust2;

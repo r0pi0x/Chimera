@@ -92,9 +92,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let f = source_fog(fog.color, fog.range, fog.water_color, fog.water_range, in.world_position.xyz);
     let fade = select(0.4, params.fog_fade, params.fog_fade > 0.0);
     factor = mix(factor, vec3(1.0), pow(clamp(f.a, 0.0, 1.0), fade));
-    // Nothing to show: no depth either (each impact's depth-only copy
-    // writes depth where it shows, so overlays can't cover it; see
-    // DecalMaterial).
+    // Nothing to show: skip the blend.
     if all(abs(factor - vec3(1.0)) < vec3(0.02)) {
         discard;
     }

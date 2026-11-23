@@ -8,7 +8,7 @@
 //! on its own triangles, as its child: it moves with it, and goes when the
 //! entity is removed or broken (and at a round restart, which re-creates
 //! brush entities). A brush entity's translucent faces take them too
-//! (breakable glass), without the depth copy, and on a broken window only
+//! (breakable glass), and on a broken window only
 //! over its unbroken panes (`breakables::clip_panes` keeps them to the
 //! panes left). Characters take theirs on the body
 //! (`render::body_decals`). They stay until the
@@ -25,9 +25,10 @@
 //! doors; `drop_brush_decals` removes a brush entity's decals when the logic
 //! removes or breaks it and at a round restart; none on a removed one), clipped
 //! to its rectangle, drawn modulate 2× (`DecalMaterial`; fog fades them to
-//! neutral) above the map's decals and overlays (a depth-only copy just under
-//! each keeps overlays off it, while impacts never hide each other: they
-//! multiply in any order, the result of the game's creation order), oldest
+//! neutral) over the map's decals and overlays (blended phase, right after
+//! them: `IMPACT_ORDER`; no depth writes, so impacts never hide each other
+//! or the map's decals: they multiply in any order, the result of the
+//! game's creation order), oldest
 //! removed past `mp_decals` (`DecalSettings::limit`, Source's client setting,
 //! 200).
 //!
@@ -67,7 +68,7 @@ use bevy::{
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
     reflect::TypePath,
-    render::render_resource::{AsBindGroup, BlendComponent, BlendFactor, BlendOperation, BlendState, ColorWrites},
+    render::render_resource::{AsBindGroup, BlendComponent, BlendFactor, BlendOperation, BlendState},
     shader::ShaderRef,
 };
 
@@ -76,7 +77,7 @@ use crate::map::{
     DecalGroup, LogicHidden, MAX_DECALS, MapAlpha, MapBrushEntity, MapData, MapMesh, MapPart, PaneLook, PlaceDecal,
     PropIndex,
     breakables::BrushPanes,
-    decal::{DEPTH_DROP, DecalBlend, LIFT, MapDecal, MapDecals},
+    decal::{DecalBlend, LIFT, MapDecal, MapDecals},
 };
 
 /// Present while the loaded map has impact decals (games' placeholder hit
@@ -144,8 +145,7 @@ impl Default for DecalSettings {
     }
 }
 
-/// A placed runtime decal (its colour part; the depth-only copy is its
-/// child).
+/// A placed runtime decal.
 #[derive(Component)]
 pub struct RuntimeDecal;
 
@@ -359,8 +359,8 @@ pub struct DecalAssets {
     pub data: MapDecals,
     /// Every map texture, by `MapData::textures` index.
     pub textures: Vec<Handle<Image>>,
-    /// (decal index, depth only) -> material.
-    materials: HashMap<(usize, bool), Handle<DecalMaterial>>,
+    /// Decal index -> its shared material.
+    materials: HashMap<usize, Handle<DecalMaterial>>,
     placed: VecDeque<Entity>,
     rng: u64,
 }
@@ -422,7 +422,7 @@ impl DecalAssets {
         materials: &mut Assets<DecalMaterial>,
         fog: Option<&fog::SceneFog>,
     ) -> Option<Handle<DecalMaterial>> {
-        if let Some(m) = self.materials.get(&(index, false)) {
+        if let Some(m) = self.materials.get(&index) {
             return Some(m.clone());
         }
         let decal = self.data.decals.get(index)?;
@@ -432,9 +432,8 @@ impl DecalAssets {
             texture,
             fog: fog.map_or_else(Default::default, |f| f.0),
             light: Vec4::ZERO,
-            depth_only: false,
         });
-        self.materials.insert((index, false), m.clone());
+        self.materials.insert(index, m.clone());
         Some(m)
     }
 }
@@ -531,9 +530,6 @@ pub fn place_decals(
                 _ => continue,
             }
         }
-        // Translucent glass: no depth copy (it would hide what is seen
-        // through the glass, and through holes as panes go).
-        let translucent = set.translucent;
         let Some(texture) = assets.textures.get(decal.texture).cloned() else {
             continue;
         };
@@ -546,49 +542,35 @@ pub fn place_decals(
             probe.map_or(Vec3::ONE, |p| p.eval(ask.normal.normalize_or_zero()) * scale).extend(1.0)
         });
         let shared = light.is_none();
-        let mut material = |depth_only: bool| match assets.materials.get(&(index, depth_only)).filter(|_| shared) {
+        let colour = match assets.materials.get(&index).filter(|_| shared) {
             Some(m) => m.clone(),
             None => {
                 let m = materials.add(DecalMaterial {
                     params: params(&decal),
-                    texture: texture.clone(),
+                    texture,
                     fog: fog.as_ref().map_or_else(Default::default, |f| f.0),
                     light: light.unwrap_or(Vec4::ZERO),
-                    depth_only,
                 });
-                if light.is_none() {
-                    assets.materials.insert((index, depth_only), m.clone());
+                if shared {
+                    assets.materials.insert(index, m.clone());
                 }
                 m
             }
         };
-        let colour = material(false);
-        let depth = (!translucent).then(|| material(true));
         let mesh = meshes.add(mesh);
-        // The decal's surface normal where it lies (the prop's space for
-        // decals on props).
-        let drop = match to_local {
-            Some(to_local) => to_local.transform_vector3(ask.normal).normalize_or_zero(),
-            None => ask.normal.normalize_or_zero(),
-        } * -DEPTH_DROP;
         let mut decal_entity = commands.spawn((
             Name::new("Decal"),
             RuntimeDecal,
-            Mesh3d(mesh.clone()),
+            Mesh3d(mesh),
             MeshMaterial3d(colour),
             Transform::default(),
             Visibility::default(),
             MapPart,
         ));
-        if let Some(depth) = depth {
-            decal_entity.with_child((
-                Name::new("Decal depth"),
-                Mesh3d(mesh),
-                MeshMaterial3d(depth),
-                Transform::from_translation(drop),
-                Visibility::default(),
-                MapPart,
-            ));
+        // Over the map's decals and overlays, before every other blended
+        // item; a lit decal on glass sorts with the glass it lies on.
+        if !lit_on_glass {
+            decal_entity.insert(super::blend_order::DecalOrder(IMPACT_ORDER));
         }
         if let Some(source) = source {
             decal_entity.insert(super::breakables::PaneSource(source));
@@ -687,8 +669,8 @@ pub fn fog_fade(factor: Vec3, amount: f32, fade: f32) -> Vec3 {
     factor.lerp(Vec3::ONE, amount.clamp(0.0, 1.0).powf(fade))
 }
 
-/// Each decal is drawn twice (see `DecalMaterial::specialize`): its
-/// colour, and a depth-only copy just below it.
+/// A runtime decal's material: the framebuffer multiplied by it (see
+/// `DecalMaterial::specialize`), or a lit decal on glass blended over.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 #[bind_group_data(DecalMaterialKey)]
 pub struct DecalMaterial {
@@ -708,43 +690,44 @@ pub struct DecalMaterial {
     /// multiplying what shows through would not show), else 0.
     #[uniform(4)]
     pub light: Vec4,
-    /// Writes depth only (no colour): the copy that keeps overlays off.
-    pub depth_only: bool,
 }
 
-/// Pipeline key data: the depth-only copy has its own pipeline.
+/// Pipeline key data: a lit decal on glass blends over, the rest
+/// multiply.
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DecalMaterialKey {
-    depth_only: bool,
     alpha_blend: bool,
 }
 
 impl From<&DecalMaterial> for DecalMaterialKey {
     fn from(m: &DecalMaterial) -> Self {
         Self {
-            depth_only: m.depth_only,
             alpha_blend: m.light.w > 0.5,
         }
     }
 }
+
+/// Impacts' place among blended items (`blend_order::DecalOrder`): after
+/// every map decal and overlay, before everything else.
+pub const IMPACT_ORDER: u32 = u32::MAX;
 
 impl Material for DecalMaterial {
     fn fragment_shader() -> ShaderRef {
         "embedded://chimera_present/render/decal.wesl".into()
     }
 
-    /// Drawn right after the opaque world (alpha-mask phase), before
-    /// anything see-through, so particles, smoke, dust and muzzle flashes
-    /// draw over impacts rather than being sorted against them.
-    /// Lit decals on glass draw with the see-through things instead,
-    /// after the glass they lie on (they are nearer the eye).
+    /// Blended phase, where `blend_order` draws the map's decals and
+    /// overlays first, then impacts (`IMPACT_ORDER`, set at placement),
+    /// then everything else: impacts multiply over the map's decals (as
+    /// the game applies them to the surface after its map decals:
+    /// overlays_decals.md, "Decal blending"), and particles, smoke, dust
+    /// and muzzle flashes draw over impacts rather than being sorted
+    /// against them. Lit decals on glass (no `DecalOrder`) sort with the
+    /// see-through things, after the glass they lie on (they are nearer
+    /// the eye).
     fn alpha_mode(&self) -> AlphaMode {
-        if self.light.w > 0.5 {
-            AlphaMode::Blend
-        } else {
-            AlphaMode::Mask(0.001)
-        }
+        AlphaMode::Blend
     }
 
     /// Kept out of the depth prepass (main views get one on maps with
@@ -763,18 +746,16 @@ impl Material for DecalMaterial {
     /// writes: every impact's colour passes over every other's, and the
     /// product doesn't depend on the order they are drawn in, which is the
     /// game's result of applying them in creation order (they all
-    /// multiply). The depth-only copy (0.05 units lower, discarding the
-    /// same neutral texels) writes depth where the decal shows, so the
-    /// map's overlays and decals (lifted less) never draw over an impact,
-    /// whichever draws first. (Impacts writing depth themselves made
-    /// overlapping ones hide each other by draw order, which flickered.)
+    /// multiply). (Impacts writing depth made overlapping ones hide each
+    /// other by draw order, which flickered; a depth-only copy under each
+    /// kept the map's overlays and decals off impacts, and so cut holes
+    /// in them wherever an impact lay: feedback 04321aa6.)
     fn specialize(
         _pipeline: &bevy::pbr::MaterialPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
         _layout: &bevy::mesh::MeshVertexBufferLayoutRef,
         key: bevy::pbr::MaterialPipelineKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
-        let depth_only = key.bind_group_data.depth_only;
         // A lit decal on glass: over what is there by its alpha.
         let over = BlendComponent {
             src_factor: BlendFactor::SrcAlpha,
@@ -798,13 +779,10 @@ impl Material for DecalMaterial {
                     color: if key.bind_group_data.alpha_blend { over } else { multiply },
                     alpha: keep,
                 });
-                if depth_only {
-                    target.write_mask = ColorWrites::empty();
-                }
             }
         }
         if let Some(depth) = descriptor.depth_stencil.as_mut() {
-            depth.depth_write_enabled = Some(depth_only);
+            depth.depth_write_enabled = Some(false);
         }
         Ok(())
     }
@@ -867,6 +845,52 @@ mod tests {
             ..default()
         };
         TriSet::new(&[m])
+    }
+
+    /// Feedback 04321aa6 (runtime decals hid the map's decals under
+    /// them): an impact is one blended item, ordered after the map's
+    /// decals (`IMPACT_ORDER`), with no depth-writing copy to cut a hole
+    /// in a poster or blood splat it lands on.
+    #[test]
+    fn an_impact_multiplies_over_the_maps_decals_without_hiding_them() {
+        let mut app = App::new();
+        app.add_plugins(AssetPlugin::default())
+            .init_asset::<Mesh>()
+            .init_asset::<Image>()
+            .init_asset::<DecalMaterial>()
+            .add_message::<PlaceDecal>()
+            .add_systems(Update, place_decals);
+        let mut data = MapDecals::default();
+        data.decals.push(decal(0.1));
+        data.groups.insert("impact".into(), vec![(1.0, 0)]);
+        app.insert_resource(DecalSurfaces {
+            world: wall(),
+            ..default()
+        })
+        .insert_resource(DecalAssets::new(data, vec![Handle::default()]));
+        app.world_mut().write_message(PlaceDecal {
+            target: None,
+            group: DecalGroup::Named("impact".into()),
+            point: Vec3::new(0.3, 0.2, 0.0),
+            normal: Vec3::Z,
+            dir: Vec3::NEG_Z,
+            spin: false,
+            round: false,
+        });
+        app.update();
+        let w = app.world_mut();
+        let placed: Vec<_> = w
+            .query_filtered::<(Entity, &super::super::blend_order::DecalOrder, &MeshMaterial3d<DecalMaterial>), With<RuntimeDecal>>()
+            .iter(w)
+            .map(|(e, o, m)| (e, *o, m.0.clone()))
+            .collect();
+        assert_eq!(placed.len(), 1, "one impact");
+        let (e, order, material) = &placed[0];
+        assert_eq!(order.0, IMPACT_ORDER, "after every map decal");
+        assert!(w.get::<Children>(*e).is_none(), "no depth-only copy under it");
+        assert_eq!(w.query::<&Mesh3d>().iter(w).count(), 1, "nothing else drawn");
+        let m = w.resource::<Assets<DecalMaterial>>().get(material).unwrap().clone();
+        assert!(matches!(m.alpha_mode(), AlphaMode::Blend), "the blended phase, with the map's decals");
     }
 
     fn decal(size: f32) -> MapDecal {

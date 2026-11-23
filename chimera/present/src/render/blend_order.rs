@@ -24,7 +24,9 @@
 //! `settle_ties` runs after Bevy's sort: each item's centre taken again
 //! from where its mesh is now; then map decals first, in the map's
 //! order (`DecalOrder`, set at spawn: overlays and infodecals as the map
-//! lists them; their render order already lifts them apart), then the rest
+//! lists them; their render order already lifts them apart), then runtime
+//! impact decals (`decal::IMPACT_ORDER`: they multiply over the map's
+//! decals, never under them), then the rest
 //! in Bevy's order with items at the same depth ordered by their mesh
 //! centre's distance from the eye (farther first, as back-to-front drawing
 //! wants), then by main-world entity, so a view's order depends only on
@@ -242,5 +244,25 @@ mod tests {
         let later = key(-9.0, Vec3::new(0.0, 0.0, -9.0), 4, Some(7));
         assert_eq!(order(decal, later, eye), Ordering::Less);
         assert_eq!(order(later, decal, eye), Ordering::Greater);
+    }
+
+    /// Feedback 04321aa6: impacts multiply over the map's decals and
+    /// overlays (drawn after every one of them, nearer or farther), and
+    /// draw before every other blended item.
+    #[test]
+    fn impacts_after_map_decals_before_the_rest() {
+        let eye = Vec3::ZERO;
+        let impact = key(-9.0, Vec3::new(0.0, 0.0, -9.0), 1, Some(super::super::decal::IMPACT_ORDER));
+        let far_poster = key(-20.0, Vec3::new(0.0, 0.0, -20.0), 9, Some(u32::MAX - 1));
+        let near_poster = key(-1.0, Vec3::new(0.0, 0.0, -1.0), 8, Some(0));
+        let smoke = key(-30.0, Vec3::new(0.0, 0.0, -30.0), 2, None);
+        for poster in [far_poster, near_poster] {
+            assert_eq!(order(poster, impact, eye), Ordering::Less);
+            assert_eq!(order(impact, poster, eye), Ordering::Greater);
+        }
+        assert_eq!(order(impact, smoke, eye), Ordering::Less);
+        // Impacts among themselves: a fixed order (they multiply, so any).
+        let other = key(-2.0, Vec3::new(0.0, 0.0, -2.0), 3, Some(super::super::decal::IMPACT_ORDER));
+        assert_eq!(order(impact, other, eye), order(other, impact, eye).reverse());
     }
 }

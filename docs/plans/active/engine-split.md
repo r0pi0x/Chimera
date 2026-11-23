@@ -180,7 +180,7 @@ measurements):
       `ParticleAssets` inserted at its old place through
       `MapDrawer::insert_drawn`), `fog::apply_scene_fog` (names the
       particle material; never scheduled).
-    - [x] `decal` drawing (`MapDecals`, `LIFT`, `DEPTH_DROP` stay;
+    - [x] `decal` drawing (`MapDecals`, `LIFT` stays;
       `DecalSurfaces`, `DecalAssets` and `ImpactDecals` inserted at their
       places through `MapDrawer::insert_drawn`), `monitor` (the screen
       cameras' markers and `MonitorFog`'s view fog stay; `MonitorCamera`

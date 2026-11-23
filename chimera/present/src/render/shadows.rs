@@ -94,12 +94,11 @@ const ATLAS_WIDTH: u32 = 1024;
 /// Most a shadow is lightened at the far end of its reach.
 const FALLOFF_AMOUNT: f32 = 240.0 / 255.0;
 /// Shadow geometry sits this far off the surface it darkens (units):
-/// above the impacts' depth-only copies (`decal::LIFT - DEPTH_DROP`,
-/// 0.30 units), which would otherwise fail its depth test, leaving bullet
-/// holes unshadowed (lighter than the ground around them; playtest
-/// 2026-10-11). Source draws shadows after the surface's decals,
-/// multiplying them too (specs/cs_source/shadows_sky.md, per-frame
-/// order 4).
+/// above impacts (`decal::LIFT`, 0.35 units). Source draws shadows after
+/// the surface's decals, multiplying them too (specs/cs_source/
+/// shadows_sky.md, per-frame order 4): ours draw after impacts
+/// (`blend_order`), so bullet holes are shadowed as the ground around
+/// them (playtest 2026-10-11).
 pub const LIFT: f32 = 0.4;
 
 /// One caster's projection (engine space, meters).
@@ -1801,12 +1800,12 @@ mod tests {
 
     /// Shadows darken bullet holes as the ground around them (Source
     /// draws shadows after the surface's decals): the shadow lies above
-    /// the depth the impacts write, or it fails the depth test there.
+    /// impacts.
     #[test]
     fn shadows_draw_over_impact_decals() {
         let u = SOURCE_UNIT;
-        let depth_copy = crate::map::decal::LIFT - crate::map::decal::DEPTH_DROP;
-        assert!(LIFT * u > depth_copy + 0.02 * u, "shadow {LIFT} units, impacts' depth {} units", depth_copy / u);
+        let depth_copy = crate::map::decal::LIFT;
+        assert!(LIFT * u > depth_copy + 0.02 * u, "shadow {LIFT} units, impacts {} units", depth_copy / u);
         // And on a real floor: the shadow's vertices sit that high.
         let data = floor_map();
         let receivers = Receivers::new(&data);
