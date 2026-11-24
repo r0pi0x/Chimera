@@ -115,8 +115,9 @@ module list is `docs/modules.md`.
 - 225: How updates arrive | The repository's `assets.lock` (when there is one) pins each game's build and manifest id
 - 238: What still needs an install | Everything that reads the game through its mount runs from the service, the community maps the heavy tests load included (they are in...
 - 251: Day of Defeat: Source: an install of your own | DoD:S (docs/plans/active/dods.md) is served from 2026-11-23 (the dedicated server's build 25338204, published with `--build`: the...
-- 273: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
-- 318: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
+- 273: Counter-Strike 1.6: an install of your own, or the service | CS 1.6 (docs/plans/active/goldsrc.md) is served from 2026-11-24 (the Half-Life Dedicated Server's build 15961496, published with `--build`):
+- 296: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
+- 341: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
 
 ## docs/backlog.md
 

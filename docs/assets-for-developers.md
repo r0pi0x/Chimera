@@ -270,6 +270,29 @@ A SteamCMD install outside Steam's libraries needs the config line or
 the variable (a folder holding `dod/`, `hl2/` and `platform/`). The
 scripts are plain text: no key.
 
+## Counter-Strike 1.6: an install of your own, or the service
+
+CS 1.6 (docs/plans/active/goldsrc.md) is served from 2026-11-24 (the
+Half-Life Dedicated Server's build 15961496, published with `--build`):
+`players` (the eight class bodies) and `map/<name>` for the 25 stock
+maps, with its guest dressing converted; `weapon/<id>` comes with its
+guns (M1: the stand-in reads no files). Its install is loose files, so it
+is packed from what its pieces read (`chimera_pack sets cs16 --pack`
+starts the manifest), not whole: 175 files, 324 MB plain, 142 MB stored
+(the WADs maps share, such as `halflife.wad` and `cstrike.wad`, are one
+record each). Its tests and the party's `cs16:` maps read an install,
+found as the other games' are: `$CHIMERA_CS16_ROOT`, else `[games.cs16]
+path` in `chimera.local.toml`, else Steam's libraries (app 10, installed
+as `Half-Life`). The dedicated server (app 90, anonymous) has everything
+the party reads, about 930 MB:
+
+```
+steamcmd +force_install_dir <folder> +login anonymous +app_set_config 90 mod cstrike +app_update 90 validate +quit
+```
+
+A SteamCMD install outside Steam's libraries needs the config line or
+the variable (a folder holding `cstrike/` and `valve/`).
+
 ## Team Fortress 2: an install of your own, or the service
 
 TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'

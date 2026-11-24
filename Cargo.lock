@@ -5635,6 +5635,7 @@ dependencies = [
  "chimera_core",
  "chimera_world",
  "combat_arms",
+ "cs16",
  "cs_source",
  "cs_source_app",
  "dirs",

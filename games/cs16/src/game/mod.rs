@@ -10,7 +10,9 @@
 //! - `movement`: `cs16:movement`, Chimera's placeholder movement with
 //!   the numbers of data/movement.toml;
 //! - `weapons`: the stand-in gun as data (data/weapons/);
-//! - `parts`: what the game lends other games' apps (`PARTS`).
+//! - `parts`: what the game lends other games' apps (`PARTS`);
+//! - `sets`: what each piece reads, for the asset service's sets
+//!   (`chimera_pack sets cs16`).
 //!
 //! `Cs16Plugins` adds the game's parts after `crate::SimPlugins`;
 //! `BUNDLE` is the game for a party app.
@@ -25,6 +27,7 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod sets;
 pub mod weapons;
 
 pub use maps::MAP_LOADER;

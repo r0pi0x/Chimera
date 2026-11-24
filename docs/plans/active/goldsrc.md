@@ -23,7 +23,7 @@ Force) is a small port on the same loader.
 |---|---|---|
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount); `specs/cs16/` install, movement, weapons to come |
-| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. Left: `chimera_pack cs16`, the lightmap brightening against captures |
+| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Left: the lightmap brightening against captures |
 | M1 weapons | not started | §5 |
 | M2 movement | not started | §5; the lift of Source's movement into Chimera planned in [shared-movement.md](shared-movement.md) (2026-11-24) |
 | M3 party rungs | not started | §5 |
@@ -325,8 +325,8 @@ check learns the `goldsrc` loader family in M0
    - The eight player bodies (`models/player/<class>/<class>.mdl`) worn
      by name on placeholder movement; hitboxes from their hitgroups.
    - The roster: already scaffolded (`GUESTS`, `CLIENTS`).
-     `chimera_pack cs16` (`base`, `players`, `map/<name>`), not
-     published until the orchestrator says so.
+     `chimera_pack cs16` (`players`, `map/<name>`, `weapon/<id>` once
+     its guns have files): published 2026-11-24 (Log).
 2. **M1, weapons**: the rifles, SMGs, pistols, shotguns, snipers and
    the M249 as data (`data/weapons/`), numbers from the spec;
    CS 1.6's spread, accuracy and recoil as hooks; scopes and the
@@ -499,3 +499,15 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   stuck, the spots covering about the whole walkable area): all enter
   the pool (`games/cs16/data/map_pool.toml`). `+sandbox cs16:de_dust2`
   plays in the Ultimate Gun Game with the stand-in pistol among the rungs.
+- 2026-11-24: `chimera_pack cs16` (`cs16::game::sets`): `players` (the
+  eight class bodies), `map/<name>` for the 25 stock maps (each converted
+  with the players' kit, never from the cache: its BSP, the WADs its
+  `wad` key names, its sky, `sound/materials.txt`) and `weapon/<id>` per
+  gun once a gun names files. `sets --pack` may now start a manifest, so
+  the loose install is packed from its pieces' reads rather than whole
+  (`valve/` is mostly Half-Life's campaign). Published to the host's
+  store as HLDS build 15961496 (`sets cs16 --pack --build`, `convert
+  cs16`): 175 files, 324 MB plain, 142 MB stored, the shared WADs one
+  record each (two skies share one face). Test: cs16 `heavy::served`
+  (de_dust2 and the bodies from the asset service alone, the same as
+  from the install).

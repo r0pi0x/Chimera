@@ -38,6 +38,7 @@ mod domination_ui;
 mod drawn_ladder;
 mod esc_menu;
 mod feedback;
+mod fitness_write;
 mod footstep_levels;
 mod game_hooks;
 mod grenade_looks;

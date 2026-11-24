@@ -101,8 +101,10 @@
 //! an automatic gun game's pool draws by: `chimera_sim::minigame::
 //! map_fit`; per map its area, sight, spawn points and spots, and the
 //! wander times for reading); `--csv <file> --write <repo>` writes them
-//! from a sweep's CSV without loading anything. Write from a whole sweep:
-//! a map the file lacks is in the pool at a middle weight. Waits while the machine has less than
+//! from a sweep's CSV without loading anything (`party_roster::
+//! fitness_data`): only the games the CSV has rows of, the others' files
+//! left as they are. Write from a whole sweep of a game: a map the file
+//! lacks is in the pool at a middle weight. Waits while the machine has less than
 //! `--min-free-gb` (default 8) of memory available (Linux).
 //!
 //! Known shortcuts: no ladders or crouching (the generated flood's);
@@ -165,6 +167,7 @@ usage: map_fitness [options]
   --samples <n>      area samples for the path statistics (default 256)
   --min-free-gb <n>  wait while less memory than this is available (default 8)
   --write <repo>     then write games/<game>/data/map_fitness.toml under <repo> from the CSV
+                     (only the games with rows in it; the others' files stay as they are)
   --csv <file>       with --write: write from this sweep's CSV, measuring nothing
   --walker <r,h,s>   also flood with another walker (half width, height, highest step, m) and
                      print what it reaches against the bots' walker: area, spawn points off its
@@ -189,7 +192,7 @@ const N_PLAYERS: [usize; 5] = [2, 4, 8, 12, 16];
 const HEADER: &str = "game,map,loads,error,load_s,nav_s,spawns,spawns_in_region,own_nav,spots,spots_off,has_nav_file,off_region,off_nav_file,off_box,spots_off_at,stuck,stuck_at,spawn_min_m,spawn_median_m,\
 area_m2,mesh_m2,spot_area_m2,areas,capped,pair_p50_s,pair_p90_s,spawn_pair_p50_s,spawn_pair_p90_s,spawn_hub_p50_s,spawn_hub_p90_s,\
 meet_2_s,meet_4_s,meet_8_s,meet_12_s,meet_16_s,sight_m,wander_4_s,wander_8_s,wander_12_s";
-const WANDER_PLAYERS: [usize; 3] = [4, 8, 12];
+use party_roster::fitness_data::WANDER_PLAYERS;
 /// A standing CS:S player's box: 32 units wide, 72 tall (m).
 const PLAYER_W: f32 = 32.0 * 0.0254;
 const PLAYER_H: f32 = 72.0 * 0.0254;
@@ -486,7 +489,9 @@ fn main() -> ExitCode {
 }
 
 /// Each of `games`' `games/<game>/data/map_fitness.toml` under `repo`
-/// from the sweep's CSV `csv`.
+/// from the sweep's CSV `csv`: only the games with rows in it
+/// (`party_roster::fitness_data::write`); the others' files stay as they
+/// are.
 fn write_data(csv: &std::path::Path, repo: &std::path::Path, games: &[String], speed: f32) -> ExitCode {
     let text = match fs::read_to_string(csv) {
         Ok(t) => t,
@@ -495,74 +500,21 @@ fn write_data(csv: &std::path::Path, repo: &std::path::Path, games: &[String], s
             return ExitCode::FAILURE;
         }
     };
-    for game in games {
-        let doc = fitness_toml(&text, game, speed);
-        let path = repo.join("games").join(game).join("data").join("map_fitness.toml");
-        if let Err(e) = fs::write(&path, &doc.0) {
-            eprintln!("{}: {e}", path.display());
-            return ExitCode::FAILURE;
+    match party_roster::fitness_data::write(&text, repo, games, speed) {
+        Ok(written) => {
+            for w in written {
+                match w.maps {
+                    Some(n) => eprintln!("{}: {n} maps", w.path.display()),
+                    None => eprintln!("{}: left as it is (no {} rows in {})", w.path.display(), w.game, csv.display()),
+                }
+            }
+            ExitCode::SUCCESS
         }
-        eprintln!("{}: {} maps", path.display(), doc.1);
-    }
-    ExitCode::SUCCESS
-}
-
-/// `game`'s rows of a sweep's CSV as its data/map_fitness.toml, and how
-/// many maps.
-fn fitness_toml(csv: &str, game: &str, speed: f32) -> (String, usize) {
-    let mut lines = csv.lines();
-    let header: Vec<&str> = lines.next().unwrap_or_default().split(',').collect();
-    let col = |row: &[&str], name: &str| -> String {
-        header.iter().position(|h| *h == name).and_then(|i| row.get(i)).map_or(String::new(), |v| v.to_string())
-    };
-    let num = |v: String| -> f32 { v.parse().unwrap_or(0.0) };
-    let mut rows: Vec<(String, String)> = Vec::new();
-    for line in lines {
-        let row: Vec<&str> = line.split(',').collect();
-        if col(&row, "game") != game {
-            continue;
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
         }
-        let name = col(&row, "map").to_ascii_lowercase();
-        let area = num(col(&row, "area_m2")).max(0.0);
-        let loads = col(&row, "loads") == "true" && area > 0.0;
-        let wander: Vec<String> = WANDER_PLAYERS
-            .iter()
-            .map(|n| format!("{n} = {:.1}", num(col(&row, &format!("wander_{n}_s")))))
-            .collect();
-        let mut t = format!("[maps.{name}]\n");
-        if !loads {
-            t.push_str("loads = false\n");
-        }
-        t.push_str(&format!(
-            "area_m2 = {area:.0}\nsight_m = {:.1}\nspot_area_m2 = {:.0}\nspawns = {}\nspots = {}\nspots_off = {}\nstuck = {}\nwander_s = {{ {} }}\n",
-            num(col(&row, "sight_m")),
-            num(col(&row, "spot_area_m2")).max(0.0),
-            num(col(&row, "spawns")) as u32,
-            num(col(&row, "spots")) as u32,
-            num(col(&row, "spots_off")) as u32,
-            num(col(&row, "stuck")) as u32,
-            wander.join(", ")
-        ));
-        rows.push((name, t));
     }
-    rows.sort();
-    rows.dedup_by(|a, b| a.0 == b.0);
-    let mut out = format!(
-        "# {game}'s maps measured for an automatic gun game's pool, generated by the\n\
-         # map_fitness tool (`--write`; docs/plans/active/map-pool-fitness.md): edit\n\
-         # data/map_pool.toml instead. Per map: its walkable area (m2), mean sight (m),\n\
-         # the area its spawn spots cover, its spawn points, spawn spots, those off\n\
-         # the map and those a player is stuck in, and its wander times at 4/8/12\n\
-         # players (s; read by chimera_sim::minigame::map_fit, which works them out\n\
-         # again from area and sight at any count).\n\
-         speed_mps = {speed}\n"
-    );
-    let n = rows.len();
-    for (_, t) in rows {
-        out.push('\n');
-        out.push_str(&t);
-    }
-    (out, n)
 }
 
 #[derive(Default)]

@@ -46,7 +46,9 @@
 //! `CaWeaponFx::sound_paths`, and what it throws or fires,
 //! `special::object_files`), `players`
 //! (CS:S: the eight class models; HL2:DM: its 19 player models; DoD:S:
-//! its twelve class bodies with their shared animations; TF2: what
+//! its twelve class bodies with their shared animations; CS 1.6: its
+//! eight class bodies, `cs16::game::sets`, packed with `--pack` from the
+//! pieces' reads into a manifest it may start; TF2: what
 //! every class's body reads and its HUD's look, with a set per class,
 //! `players/<class>`: its body, animations, textures, first-person
 //! arms and voice, `tf2::game::sets::player_pieces`), TF2's `weapon/<id>` for M2's guns
@@ -190,7 +192,7 @@ usage: chimera_pack pack <game> [options]       into a store (default the user's
                                                 (from the store's own records; --check: compare only)
        chimera_pack convert <game|all> [--store <dir>] --list | --drop <converter> [--sign]
                                                 the served entries by converter version; drop one
-  games: cs_source, combat_arms, hl2dm, halo_ce, tf2, dods
+  games: cs_source, combat_arms, hl2dm, halo_ce, tf2, dods, cs16
   --set <name>      enter the packed files as set <name> (needs --from)
   --from <log>      only the game's files in a CHIMERA_VFS_LOG log
   --store <dir>     the store (default: [assets] store, CHIMERA_ASSET_STORE, ~/.cache/chimera/assets)
@@ -233,7 +235,7 @@ impl Game {
     }
 }
 
-fn games() -> [Game; 6] {
+fn games() -> [Game; 7] {
     [
         Game {
             info: &cs_source::game::INFO,
@@ -295,6 +297,21 @@ fn games() -> [Game; 6] {
             info: &dods::game::INFO,
             open_install: dods::game::mount::open_install,
             app: Some(300),
+            build: None,
+            extra: None,
+            left_out: &[],
+        },
+        // Counter-Strike 1.6: its loose folders (`cstrike`, then `valve`,
+        // liblist.gam's chain); its sets: `players` (the eight class
+        // bodies), `weapon/<id>` once its guns have files and `map/<name>`
+        // (`cs16::game::sets`). The client's app, 10 (the dedicated
+        // server's, HLDS app 90, when packed from it: pass --build). Packed
+        // from its pieces' reads (`sets cs16 --pack`), not whole: the
+        // install's `valve/` is mostly Half-Life's campaign.
+        Game {
+            info: &cs16::game::INFO,
+            open_install: cs16::game::mount::open_install,
+            app: Some(cs16::game::STEAM_APP),
             build: None,
             extra: None,
             left_out: &[],
@@ -884,7 +901,7 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                         }
                     }
                 }
-                let swings = w.melee.iter().flat_map(|m| [Some(&m.primary), m.secondary.as_ref()]).flatten();
+                let swings = w.melee.iter().flat_map(|m| [m.primary.as_ref(), m.secondary.as_ref()]).flatten();
                 let swung = swings.flat_map(|s| [&s.sound_hit, &s.sound_hit_world, &s.sound_miss]).flatten();
                 for name in w.sounds.iter().flat_map(|s| s.entries()).chain(swung.map(String::as_str)) {
                     for wave in scripts.waves(name) {
@@ -980,6 +997,21 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 let bytes = tapped.read(&format!("maps/{name}.bsp")).map_err(|e| e.to_string())?;
                 source_engine::content::bsp::load_level_bytes_in(&dods::game::maps::DODS, &tapped, name, bytes, &options, None)
                     .map(|_| ())
+            });
+        }
+        "cs16" => {
+            use cs16::game::{sets, weapons};
+            for id in weapons::GUNS {
+                take();
+                sets::load_weapon(&tapped, id);
+                let id = id.rsplit(':').next().unwrap_or(id).trim_start_matches("weapon_");
+                out.push((format!("weapon/{id}"), take()));
+            }
+            take();
+            sets::load_players(&tapped);
+            out.push(("players".into(), take()));
+            record_maps(cs16::game::maps::map_names(mount), only, &take, &mut out, |name| {
+                sets::load_map(&tapped, name).map(|_| ())
             });
         }
         "halo_ce" => {
@@ -1130,8 +1162,10 @@ fn sets(args: &[String]) -> Result<(), String> {
     let generated_only = GENERATED_PREFIXES.iter().any(|p| only.starts_with(p));
     let mut manifest = match Manifest::load(&path) {
         // Generated sets alone may start a manifest of their own (a local
-        // folder to try them in).
-        Err(_) if generated_only && !path.exists() => Manifest::new(game.info.id, &build, game.app),
+        // folder to try them in), and so may `--pack`: a store of the
+        // pieces' reads alone (CS 1.6's, whose loose install is mostly
+        // files nothing reads).
+        Err(_) if (generated_only || pack_missing) && !path.exists() => Manifest::new(game.info.id, &build, game.app),
         m => m?,
     };
     let mount = std::sync::Arc::new((game.open_install)(&install).map_err(|e| format!("{}: {e}", install.display()))?);
@@ -1430,7 +1464,7 @@ fn sign_command(args: &[String]) -> Result<(), String> {
 
 /// The guests `convert` serves (`all`): those whose dressing is Chimera's
 /// `map::kept` (Halo's donors aren't yet).
-const CONVERTED_GUESTS: &[&str] = &["cs_source", "hl2dm", "tf2", "dods", "combat_arms"];
+const CONVERTED_GUESTS: &[&str] = &["cs_source", "hl2dm", "tf2", "dods", "cs16", "combat_arms"];
 
 /// A guest's dressing, as its bundle registers it.
 fn guest_dressing(game: &str) -> Option<&'static chimera_world::map::MapDressing> {
@@ -1439,6 +1473,7 @@ fn guest_dressing(game: &str) -> Option<&'static chimera_world::map::MapDressing
         "hl2dm" => &hl2dm::game::GUEST,
         "tf2" => &tf2::game::GUEST,
         "dods" => &dods::game::GUEST,
+        "cs16" => &cs16::game::GUEST,
         "combat_arms" => &combat_arms::game::world::DRESSING,
         _ => return None,
     })

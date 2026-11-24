@@ -32,7 +32,8 @@
 //!   surprises (`surprise`: Combat Arms' air strike), the practice targets'
 //!   bodies (`target_bodies`: TF2's classes, Halo's Spartan), the map
 //!   tools' spot checks (`spot_checks`: Combat Arms' bots' walker) and
-//!   `map_fitness` (a host tool, `--features tools`).
+//!   `map_fitness` (a host tool, `--features tools`), whose fitness files
+//!   `fitness_data` writes.
 
 pub use party_kit::*;
 
@@ -42,6 +43,7 @@ use chimera_world::{
     map::{MapData, MapDressing, MapLoadOptions, MapLoader, MapSources},
 };
 
+pub mod fitness_data;
 pub mod server;
 pub mod spot_checks;
 pub mod surprise;
