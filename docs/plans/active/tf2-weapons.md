@@ -611,6 +611,21 @@ code. Order by what batch 1/2 needs:
    mini-crit after an impact, debuff removal), because VScript cannot
    equip a wearable on the local player; sappers (need a building);
    airblast, medigun and buildings are later parts.
+   **Part 2 specified 2026-11-24** in
+   [specs/tf2/batch3b_mechanics.md](../../../specs/tf2/batch3b_mechanics.md)
+   (measured): the shield entity itself, on a TF2 bot given a real
+   shield by the game's server-side item grant for bots (full meter to
+   start, forced forward drive, debuff removal, a swing ending the
+   charge, the crit tiers by meter at the swing, impact damage by meter
+   used with the Splendid Screen and heads); the fire family reusing the
+   specified airblast (Phlogistinator, Backburner, Degreaser, Dragon's
+   Fury, Manmelter, Gas Passer); the movement kit (B.A.S.E. Jumper,
+   Mantreads, Thermal Thruster); Cow Mangler, Hitman's Heatmaker and
+   Razorback (on a bot Sniper). Left open (its Open questions): the
+   Backburner's exact behind test, the chute with entry speed, the
+   thruster's two upward parts' boundary, the Heatmaker's charge rate
+   under focus (measured unchanged), the Razorback's return after 30 s,
+   the Mantreads' blast-jump air control; medigun and buildings remain.
 
 ## 7. Recommended order
 

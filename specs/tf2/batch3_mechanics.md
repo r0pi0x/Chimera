@@ -381,7 +381,8 @@ distance rules then change (Open questions).
 
 ## Open questions
 
-- **The shield entity's own behaviour** (see the method limit): attack2
+- **The shield entity's own behaviour** (answered by measurement on a bot
+  given a real shield in [batch3b_mechanics.md](batch3b_mechanics.md) §1): attack2
   starting the charge (a full meter needed?), the impact on bumping an
   enemy (damage, and its scaling with distance charged, heads and the
   Splendid Screen's × 1.7), the melee crit or mini-crit after the impact
