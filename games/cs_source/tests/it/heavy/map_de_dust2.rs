@@ -1261,8 +1261,11 @@ fn sounds_load() {
     let swim = s.entry("Player.Swim").expect("swim");
     assert_eq!(swim.waves.len(), 4);
     assert!(matches!(swim.level, crate::stack::map::SoundLevel::Attenuation(a) if a == 1.0));
-    // Weapon entries are precached with the map.
-    for name in crate::stack::games::cs_source::weapons::sounds() {
+    // Weapon entries are precached with the map: all but those a view
+    // model's event names that no sound script defines (the game plays
+    // nothing; data/weapons/tmp.toml).
+    const UNDEFINED: &[&str] = &["Weapon_TMP.Deploy"];
+    for name in crate::stack::games::cs_source::weapons::sounds().into_iter().filter(|n| !UNDEFINED.contains(n)) {
         let e = s.entry(name).unwrap_or_else(|| panic!("no {name}"));
         assert!(!e.waves.is_empty(), "{name} has no waves");
     }
