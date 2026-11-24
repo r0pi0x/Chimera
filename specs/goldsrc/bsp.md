@@ -517,7 +517,7 @@ when its render mode says so (invisible in practice).
 | `{name` | alpha-tested: index 255 is transparent (drawn as a hole with rendermode 4) |
 | `!name` | water/liquid: drawn with a sine warp, turbulent; the face is lit in the file (open question 4) |
 | `+0name`..`+9name` | animation frames 0-9, played in order at 10 frames a second |
-| `+aname`..`+jname` | the alternate animation, shown while a brush entity is toggled on (buttons) |
+| `+aname`..`+jname` | the alternate animation, shown while a brush entity's frame is not 0 (buttons pressed, used `func_wall`s; entities.md "Alternate textures") |
 | `-0name`..`-9name` | random tiling: each face (or tile) shows one of the variants, chosen at random |
 | `sky` | not drawn; the sky box is seen through it; unlit (texinfo flag 1) |
 | `aaatrigger` | trigger volumes; not drawn (their entities are invisible) |

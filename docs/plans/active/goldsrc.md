@@ -22,7 +22,7 @@ Force) is a small port on the same loader.
 | Milestone | State | Summary |
 |---|---|---|
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
-| First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount); `specs/cs16/` install, movement, weapons to come |
+| First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount; entities 2026-11-24); `specs/cs16/` install, movement, weapons to come |
 | M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Left: the lightmap brightening against captures |
 | M1 weapons | not started | §5 |
 | M2 movement | not started | §5; the lift of Source's movement into Chimera planned in [shared-movement.md](shared-movement.md) (2026-11-24) |
@@ -370,6 +370,7 @@ never leaked or decompiled code; write only `specs/goldsrc/` and
 | [`specs/goldsrc/mdl.md`](../../../specs/goldsrc/mdl.md) (draft) | MDL v10: header, bones, controllers, hitboxes, sequences and groups, the animation compression, blends, events, textures and flags, meshes, external texture and sequence files | public docs, the files, HL SDK (spec-only) |
 | [`specs/goldsrc/spr.md`](../../../specs/goldsrc/spr.md) (draft) | SPR v2: types, texture formats, frames and groups, palette | public docs, the files |
 | [`specs/goldsrc/mount.md`](../../../specs/goldsrc/mount.md) (draft) | the content folder chain (`liblist.gam`, fallback, language and the folders we skip), file name case, `materials.txt` | the install, public docs |
+| [`specs/goldsrc/entities.md`](../../../specs/goldsrc/entities.md) (draft) | the entities the 25 stock CS 1.6 maps use, with counts: firing (target, delay, killtarget, master, `multi_manager`, `multisource`), movers (doors, buttons, trains, rotators: movedir, lip, wait, return, blocking, sounds by index), breakables, triggers, the `+a` texture toggle (frame 1 on buttons and used `func_wall`s), light styles, sprites, sounds, the CS objective entities; round restarts and CS's `+use` left to measurement | the entity lumps, the shipped FGD, public level-design docs, HL SDK (spec-only) |
 | `specs/cs16/install.md` | the two layouts, required files, what the server layout lacks against the client's | the installs |
 | `specs/cs16/movement.md` | §4's list, with numbers and test cases | measurement (probe), the cvar list, HL SDK for the base |
 | `specs/cs16/weapons.md` | every gun's numbers and behaviour (fire modes, scopes, silencers, burst, shield later) | measurement, the view models' sequences, public pages |
@@ -389,7 +390,7 @@ an implementation session):
   face, and how the variant is picked (ours: per face, a fixed hash of
   the face's index); an animation set with a gap in its frame
   characters (ours: the present frames in order).
-- bsp.md: which entities toggle the `+a`..`+j` set and when (buttons
+- (answered in entities.md, "Alternate textures") bsp.md: which entities toggle the `+a`..`+j` set and when (buttons
   while pressed? doors? any brush entity's `frame`), and whether the
   alternate set animates at the same rate.
 - mdl.md: chrome's coordinate mapping (which vectors, the scale, whether
@@ -547,3 +548,11 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   de_dust2's variants all shown and the same each time, chrome on the
   bodies. What the specs leave open: §6, "Questions for the next spec
   session".
+- 2026-11-24: `specs/goldsrc/entities.md` written from the 25 stock maps'
+  entity lumps, the shipped FGD and (spec session only) the HL SDK:
+  every class with counts and worked examples (cs_office's door button,
+  de_nuke's glass doors, as_oilrig's elevator, de_survivor's `CLIC`
+  blinker that drives a `+a` wall). `de_dust2` itself has no doors or
+  triggers, only crates its bomb targets break. Left to measure: what a
+  CS round restart resets, CS's `+use` on doors, the objective volumes'
+  sizes, hostage and armoury placement details.
