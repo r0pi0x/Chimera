@@ -19,21 +19,21 @@ slot2
 wait_for idle 3000
 wait 120
 sandbox thirdperson on
-cam_idealdist 220
-cam_idealyaw 0
-setang -5 0
+cam_idealdist 260
+cam_idealyaw 30
+setang -15 180
 wait 30
 shot thruster_ready
 +attack
-wait 4
+gwait 0.1
 -attack
-wait 20
+gwait 0.3
 shot hop
-wait 30
+gwait 0.4
 shot launched
-wait 20
+gwait 0.3
 shot flying
-wait 40
+gwait 0.4
 shot flying_later
-wait 120
+gwait 2.0
 shot landed
