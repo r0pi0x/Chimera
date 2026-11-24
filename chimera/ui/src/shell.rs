@@ -33,7 +33,10 @@
 //!   still names them, "Coming soon" under it.
 //! - **Tooltips** (`Tip`, `show_tips`): after 350 ms of hover, an `ink_3`
 //!   plate with an outline under the node, right-aligned: the name, a
-//!   note in `fg_3`, the key's cap.
+//!   note in `fg_3`, the key's cap. An item's card (`Tip::item`,
+//!   `ItemCard`: a gun game rung's gear on the Tab board) is a column
+//!   with the accent bar: the icon, the name and a line under it, what it
+//!   does, its key and verb, a foot with the Chimera mark.
 //! - **The ground** (`menu_ground`): the main menu's ambient (the kit's
 //!   `AmbientMaterial::MENU`) under a menu screen (Settings, Account, the
 //!   first run), so every screen off the match stands on one ground.
@@ -153,16 +156,46 @@ pub struct Tip {
     pub key: Option<String>,
     /// A party member's preview card instead of the plain plate (module doc).
     pub card: Option<Box<Member>>,
+    /// An item's card instead of the plain plate (`Tip::item`).
+    pub item: Option<Box<ItemCard>>,
 }
+
+/// An item's card (module doc, "Tooltips"): the item's icon and name, a
+/// line under it, what it does, its key and verb, and a foot with the
+/// Chimera mark (a gun game rung's gear: `chimera_client`'s `rung_gear`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ItemCard {
+    pub title: String,
+    /// Under the title ("Team Fortress 2 • Soldier • worn").
+    pub sub: String,
+    /// What it does, one sentence.
+    pub text: Option<String>,
+    /// Its key (bound now) and the verb.
+    pub key: Option<(String, String)>,
+    /// The foot, before the Chimera mark ("Rung 07 extra • everyone on
+    /// this rung").
+    pub foot: String,
+    /// The kit's icon by name.
+    pub icon: Option<String>,
+}
+
+/// An item card's width, cq.
+pub const ITEM_CARD_W: f32 = 22.0;
 
 impl Tip {
     pub fn new(name: &str) -> Self {
-        Tip { name: name.to_string(), note: None, key: None, card: None }
+        Tip { name: name.to_string(), note: None, key: None, card: None, item: None }
     }
 
     /// The member's preview card (avatar, names, role, ping).
     pub fn card(mut self, m: &Member) -> Self {
         self.card = Some(Box::new(m.clone()));
+        self
+    }
+
+    /// An item's card (`ItemCard`: a rung's gear on the Tab board).
+    pub fn item(mut self, c: ItemCard) -> Self {
+        self.item = Some(Box::new(c));
         self
     }
 
@@ -673,6 +706,10 @@ pub fn show_tips(
             ChildOf(holder),
         ))
         .id();
+    if let Some(it) = tip.item.as_deref() {
+        item_card(&ui, &mut c, plate, it, images.as_deref_mut(), icons.as_deref_mut());
+        return;
+    }
     if let (Some(m), Some(images), Some(icons)) = (tip.card.as_deref(), images.as_deref_mut(), icons.as_deref_mut()) {
         // A party member's preview card: the avatar, the names, the tags.
         avatar::spawn(&ui, &mut c, plate, images, icons, m.face, m.marks, 3.4);
@@ -702,6 +739,43 @@ pub fn show_tips(
         let cap = ui.boxed(&mut c, plate, UiStyle { pad: Some([0.12, 0.26, 0.12, 0.26].into()), ..UiStyle::row() }.outline(Tone::Fg3, 1.0));
         ui.text(&mut c, cap, Role::Mono, 0.5, Tone::Fg2, k);
     }
+}
+
+/// Fills `plate` with item card `it` (`Tip::item`): a column `ITEM_CARD_W`
+/// wide with the accent bar at its left.
+fn item_card(ui: &Ui, c: &mut Commands, plate: Entity, it: &ItemCard, images: Option<&mut Assets<Image>>, icons: Option<&mut IconImages>) {
+    c.entity(plate).insert(
+        UiStyle { gap: Some(0.55), pad: Some([0.8, 0.9, 0.8, 1.1].into()), w: Some(ITEM_CARD_W), align: Some(AlignItems::Stretch), ..UiStyle::column() }
+            .bg(Tone::Ink3)
+            .outline(Tone::Fg4, 1.0),
+    );
+    c.spawn((
+        Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, width: ui.units.val(0.2), ..default() },
+        BackgroundColor(ui.color(Tone::Acc, 1.0)),
+        Pickable::IGNORE,
+        ChildOf(plate),
+    ));
+    let top = ui.boxed(c, plate, UiStyle { gap: Some(0.7), align: Some(AlignItems::Center), ..UiStyle::row() });
+    if let (Some(name), Some(images), Some(icons)) = (it.icon.as_deref(), images, icons) {
+        ui.icon(c, top, images, icons, name, 1.8, Tone::Fg);
+    }
+    let names = ui.boxed(c, top, UiStyle { gap: Some(0.25), ..UiStyle::column() });
+    ui.text(c, names, Role::DisplayBold, 1.1, Tone::Fg, &it.title);
+    ui.text(c, names, Role::Mono, 0.5, Tone::Fg3, &it.sub);
+    if let Some(t) = &it.text {
+        ui.paragraph(c, plate, Role::Text, 0.62, Tone::Fg2, t);
+    }
+    if let Some((key, verb)) = &it.key {
+        let row = ui.boxed(c, plate, UiStyle { gap: Some(0.45), align: Some(AlignItems::Center), ..UiStyle::row() });
+        ui.kbd(c, row, key, 0.62, Tone::Fg);
+        ui.text(c, row, Role::Mono, 0.56, Tone::Fg2, verb);
+    }
+    // The foot under a hairline: where it comes from, the Chimera mark.
+    c.spawn((Node { height: Val::Px(ui.units.hairline()), ..default() }, BackgroundColor(ui.color(Tone::Fg, 0.07)), Pickable::IGNORE, ChildOf(plate)));
+    let foot = ui.boxed(c, plate, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
+    ui.text(c, foot, Role::Mono, 0.46, Tone::Fg3, &it.foot);
+    ui.origin_mark(c, foot, 0.6);
+    ui.text(c, foot, Role::Mono, 0.46, Tone::AccText, "Chimera option");
 }
 
 /// The shell's systems.

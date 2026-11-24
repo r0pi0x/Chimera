@@ -55,7 +55,9 @@
 //!   (`cubic_in_out`, `feed.close_gap`). Killer, the gun's icon
 //!   (`signal::gun_icon`: its game's own, fitted by its ink, `ink_icon`,
 //!   1.25 cq tall, `FEED_ICON_H`; else the kit's by class, else its
-//!   name), the headshot mark (1 cq, by its ink), victim; a bot's name has the robot mark.
+//!   name; a gun game rung passive's kill, a stomp or a bash: the item's
+//!   icon, else its glyph, in the accent text tone: `rung_gear`), the
+//!   headshot mark (1 cq, by its ink), victim; a bot's name has the robot mark.
 //!   Your kill: accent border, bar and name; your death: a quiet white
 //!   outline and your name bright. Its rows carry the look book's names
 //!   (`chimera_ui::UiParityId`: `feed.row.<n>` from the top, from 1, and
@@ -658,7 +660,7 @@ pub mod signal_feed {
         layer: Res<crate::client::overlay::OverlayLayer>,
         root: Query<Entity, With<SignalFeedRoot>>,
         mut rows: Query<(Entity, &KillFeedRow, &mut SignalRow, &mut Timeline)>,
-        (staged, mut commands): (Option<Res<FeedStaged>>, Commands),
+        (staged, tables, mut commands): (Option<Res<FeedStaged>>, Option<Res<chimera_sim::minigame::passives::PassiveTables>>, Commands),
     ) {
         let on = shared.is_some() && look.on();
         // Laid out in cq for one window size: on a resize (or the first
@@ -717,7 +719,7 @@ pub mod signal_feed {
             if have.contains(&e.id) {
                 continue;
             }
-            spawn_row(&look, root, e, i, (names.as_deref(), catalog.as_deref(), fonts.as_deref(), rules.as_deref()), &clock, &mut commands);
+            spawn_row(&look, root, e, i, (names.as_deref(), catalog.as_deref(), fonts.as_deref(), rules.as_deref()), tables.as_deref(), &clock, &mut commands);
         }
     }
 
@@ -732,6 +734,7 @@ pub mod signal_feed {
             Option<&UiFonts>,
             Option<&chimera_sim::weapon::names::GunNameRules>,
         ),
+        tables: Option<&chimera_sim::minigame::passives::PassiveTables>,
         clock: &UiClock,
         commands: &mut Commands,
     ) {
@@ -800,13 +803,21 @@ pub mod signal_feed {
                 if let Some(k) = &e.killer {
                     name(r, k, killer_c, ".killer");
                 }
-                let class = e
-                    .weapon
-                    .and_then(|w| catalog.and_then(|c| c.get(w)).and_then(signal::icon_class).or_else(|| crate::client::ui_parity::made_up_class(w)));
+                // A rung passive's kill (a stomp, a bash): the item's icon
+                // (its game's, else its glyph) in the gun's place, in the
+                // accent text tone, so it reads as not the gun.
+                let passive = e.weapon.and_then(|w| tables?.get(w));
+                let class = match passive {
+                    Some(p) => Some(p.glyph.as_deref().filter(|g| signal::icons::has(g)).unwrap_or("pack")),
+                    None => e
+                        .weapon
+                        .and_then(|w| catalog.and_then(|c| c.get(w)).and_then(signal::icon_class).or_else(|| crate::client::ui_parity::made_up_class(w))),
+                };
+                let tone = if passive.is_some() { Tone::AccText } else { Tone::Fg };
                 let drawn = e.weapon.is_some_and(|w| {
                     r.spawn((Node { margin: UiRect::horizontal(look.val(0.15)), align_items: AlignItems::Center, ..default() }, Pickable::IGNORE))
                         .with_children(|g| {
-                            if let Some(icon) = signal::gun_icon(g, look, w, class, look.px(FEED_ICON_H), look.tone(Tone::Fg)) {
+                            if let Some(icon) = signal::gun_icon(g, look, w, class, look.px(FEED_ICON_H), look.tone(tone)) {
                                 g.commands().entity(icon).insert(id(".icon"));
                             }
                         });

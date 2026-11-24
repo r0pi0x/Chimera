@@ -1,9 +1,14 @@
 # The gun game's rung passives (docs/plans/active/rung-passives.md;
-# Chimera's `minigame::passives`): the worn items a TF2 rung may carry
-# beside its gun when the host has passives on (off by default), drawn
-# per rung with the ladder for the rung's class (`game::classes::HOOK`).
+# Chimera's `minigame::passives`): the worn and carried items a TF2 rung
+# may carry beside its gun (on by default; the host turns them off),
+# and the utility items (jars, food, drinks, banners: `kind = "active"`,
+# their own option), drawn per rung with the ladder for the rung's class
+# (`game::classes::HOOK`). Only TF2's characters draw them (Chimera's
+# own-game rule).
 #
-# odds: a rung's chance of one; max: at most this many on a rung.
+# odds: a rung's chance of one; max: at most this many on a rung; next:
+# each next one's odds as a share of the one before (a second passive
+# at 0.2 x 0.25 = 5 %). [utility]: the utility items' odds, max, next.
 # slot_names: our weapon data's slots (0, 1, 2) by TF2's loadout names.
 # [slots]: a gun's slot for a class where it isn't its data's (the
 # Shotgun is the Engineer's primary, the others' secondary).
@@ -13,14 +18,18 @@
 # [[passive]]: `item` a weapon id (data/items.toml; an item the pack lacks
 # is never drawn), `classes`, `slot` the loadout slot it takes (never the
 # rung gun's), `group` (one per group on a rung), `weight`, `kind` (worn
-# or carried), `keys`, `summary` (one line for the HUD's hover card).
+# or carried; active: a utility item), `keys`, `summary` (one line for
+# the HUD's hover card), `key` and `verb` (the action whose live bind
+# the HUD's chip tail and card show, and what it does), `glyph` (the
+# kit's fallback icon when the install has no item icon).
 # P1: the worn items that take no key; P3: the keyed ones (shields and
 # watches on attack2 with any weapon out, the chute on jump in the air:
 # no gun uses jump) and the carried Thermal Thruster (switched to in its
 # slot and fired: its slot is its key). `items::bots` uses them for bots.
 
-odds = 0.25
-max = 1
+odds = 0.2
+max = 2
+next = 0.25
 slot_names = ["primary", "secondary", "melee"]
 
 [slots."tf2:tf_weapon_shotgun_primary"]
@@ -36,6 +45,10 @@ engineer = "primary"
 "tf2:tf_weapon_particle_cannon" = ["attack2"]
 "tf2:tf_weapon_compound_bow" = ["attack2"]
 
+[utility]
+odds = 0.2
+max = 1
+
 [[passive]]
 item = "tf2:mantreads"
 classes = ["soldier"]
@@ -43,6 +56,7 @@ slot = "secondary"
 group = "feet"
 weight = 2
 summary = "Stomp an enemy by landing on his head; less push from blasts and airblast"
+glyph = "boots"
 
 [[passive]]
 item = "tf2:ali_babas_wee_booties"
@@ -50,6 +64,7 @@ classes = ["demoman"]
 slot = "secondary"
 group = "feet"
 summary = "More health; faster with a shield"
+glyph = "boots"
 
 [[passive]]
 item = "tf2:bootlegger"
@@ -57,6 +72,7 @@ classes = ["demoman"]
 slot = "secondary"
 group = "feet"
 summary = "More health; faster with a shield"
+glyph = "boots"
 
 [[passive]]
 item = "tf2:darwins_danger_shield"
@@ -64,6 +80,7 @@ classes = ["sniper"]
 slot = "secondary"
 group = "back"
 summary = "Resists fire and afterburn"
+glyph = "pack"
 
 [[passive]]
 item = "tf2:cozy_camper"
@@ -71,6 +88,7 @@ classes = ["sniper"]
 slot = "secondary"
 group = "back"
 summary = "Regenerates health; steadier while scoped"
+glyph = "pack"
 
 [[passive]]
 item = "tf2:razorback"
@@ -78,6 +96,7 @@ classes = ["sniper"]
 slot = "secondary"
 group = "back"
 summary = "Blocks one backstab"
+glyph = "pack"
 
 # ---- P3: keyed and carried ----
 
@@ -88,6 +107,9 @@ slot = "secondary"
 group = "arm"
 keys = ["attack2"]
 summary = "Attack2 charges forward; resists fire and blasts"
+glyph = "shield"
+key = "attack2"
+verb = "Charge"
 
 [[passive]]
 item = "tf2:splendid_screen"
@@ -96,6 +118,9 @@ slot = "secondary"
 group = "arm"
 keys = ["attack2"]
 summary = "Attack2 charges forward, recharging faster and hitting harder on impact"
+glyph = "shield"
+key = "attack2"
+verb = "Charge"
 
 [[passive]]
 item = "tf2:tide_turner"
@@ -104,6 +129,9 @@ slot = "secondary"
 group = "arm"
 keys = ["attack2"]
 summary = "Attack2 charges forward with free turning"
+glyph = "shield"
+key = "attack2"
+verb = "Charge"
 
 [[passive]]
 item = "tf2:invis_watch"
@@ -112,6 +140,9 @@ slot = "pda2"
 group = "watch"
 keys = ["attack2"]
 summary = "Attack2 cloaks: invisible while the meter lasts"
+glyph = "clock"
+key = "attack2"
+verb = "Cloak"
 
 [[passive]]
 item = "tf2:cloak_and_dagger"
@@ -120,6 +151,9 @@ slot = "pda2"
 group = "watch"
 keys = ["attack2"]
 summary = "Attack2 cloaks; the meter refills standing still"
+glyph = "clock"
+key = "attack2"
+verb = "Cloak"
 
 [[passive]]
 item = "tf2:dead_ringer"
@@ -128,6 +162,9 @@ slot = "pda2"
 group = "watch"
 keys = ["attack2"]
 summary = "Attack2 arms it: the next hit fakes your death and cloaks you"
+glyph = "clock"
+key = "attack2"
+verb = "Arm"
 
 [[passive]]
 item = "tf2:base_jumper"
@@ -136,6 +173,9 @@ slot = "secondary"
 group = "back"
 keys = ["jump"]
 summary = "Jump in the air opens a parachute"
+glyph = "chute"
+key = "jump"
+verb = "Glide"
 
 [[passive]]
 item = "tf2:thermal_thruster"
@@ -144,3 +184,114 @@ slot = "secondary"
 group = "back"
 kind = "carried"
 summary = "Switch to it and fire to launch through the air; stomps on landing"
+glyph = "jetpack"
+key = "slot2"
+verb = "Launch"
+
+# ---- P5: utility items (kind = "active", their own option) ----
+# Carried in their loadout slot and used with fire (`items::consumables`,
+# `items::meters`); never in a slot or on a key the gun or a passive
+# takes. A kill they set up is the gun's (they deal no damage). Bots use
+# them (`items::bots`). Not the Buffalo Steak Sandvich (its melee-only
+# buff would hold the rung's gun away for 19 s) nor the Gas Passer.
+
+[[passive]]
+item = "tf2:jarate"
+classes = ["sniper"]
+slot = "secondary"
+kind = "active"
+glyph = "jar"
+key = "slot2"
+verb = "Throw"
+summary = "Throw it: enemies it splashes take mini-crits for 10 s"
+
+[[passive]]
+item = "tf2:mad_milk"
+classes = ["scout"]
+slot = "secondary"
+kind = "active"
+glyph = "jar"
+key = "slot2"
+verb = "Throw"
+summary = "Throw it: hitting an enemy it splashes heals you for 10 s"
+
+[[passive]]
+item = "tf2:sandvich"
+classes = ["heavy"]
+slot = "secondary"
+kind = "active"
+weight = 2
+glyph = "food"
+key = "slot2"
+verb = "Eat"
+summary = "Eat it to heal over four seconds; recharges in 30 s"
+
+[[passive]]
+item = "tf2:dalokohs_bar"
+classes = ["heavy"]
+slot = "secondary"
+kind = "active"
+glyph = "food"
+key = "slot2"
+verb = "Eat"
+summary = "Eat it to heal and gain 50 max health for 30 s"
+
+[[passive]]
+item = "tf2:second_banana"
+classes = ["heavy"]
+slot = "secondary"
+kind = "active"
+glyph = "food"
+key = "slot2"
+verb = "Eat"
+summary = "Eat it to heal a little; recharges in 10 s"
+
+[[passive]]
+item = "tf2:bonk_atomic_punch"
+classes = ["scout"]
+slot = "secondary"
+kind = "active"
+glyph = "can"
+key = "slot2"
+verb = "Drink"
+summary = "Drink it: no damage reaches you for 8 s, but you can't attack"
+
+[[passive]]
+item = "tf2:crit_a_cola"
+classes = ["scout"]
+slot = "secondary"
+kind = "active"
+glyph = "can"
+key = "slot2"
+verb = "Drink"
+summary = "Drink it: mini-crits for 8 s, but each attack marks you for death"
+
+[[passive]]
+item = "tf2:buff_banner"
+classes = ["soldier"]
+slot = "secondary"
+kind = "active"
+glyph = "banner"
+key = "slot2"
+verb = "Rally"
+summary = "Deal damage to fill its rage, then blow the horn: mini-crits for 10 s"
+
+[[passive]]
+item = "tf2:battalions_backup"
+classes = ["soldier"]
+slot = "secondary"
+kind = "active"
+glyph = "banner"
+key = "slot2"
+verb = "Rally"
+summary = "Take damage to fill its rage, then blow the horn: less damage taken for 10 s"
+
+[[passive]]
+item = "tf2:concheror"
+classes = ["soldier"]
+slot = "secondary"
+kind = "active"
+glyph = "banner"
+key = "slot2"
+verb = "Rally"
+summary = "Deal damage to fill its rage, then blow the horn: faster, healing on hits for 10 s"

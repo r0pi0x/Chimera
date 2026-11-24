@@ -1,23 +1,30 @@
-//! TF2's rung passives (docs/plans/active/rung-passives.md, P1 and P3;
-//! Chimera's `minigame::passives`): the items a TF2 rung may carry beside
-//! its gun when the host has passives on (off by default), from
-//! data/rung_passives.toml (`TABLE`): the Soldier's Mantreads, the
-//! Demoman's boots, the Sniper's Darwin's Danger Shield, Cozy Camper and
-//! Razorback (worn, no key); the Demoman's shields and the Spy's watches
-//! (attack2), the B.A.S.E. Jumper (jump in the air) and the Pyro's
-//! carried Thermal Thruster (switched to in its slot). Drawn with the
+//! TF2's rung passives (docs/plans/active/rung-passives.md, P1, P3 and
+//! P5; Chimera's `minigame::passives`): the items a TF2 rung may carry
+//! beside its gun (on by default: a rung's odds 0.2, a second at a quarter
+//! of that), from data/rung_passives.toml (`TABLE`): the Soldier's
+//! Mantreads, the Demoman's boots, the Sniper's Darwin's Danger Shield,
+//! Cozy Camper and Razorback (worn, no key); the Demoman's shields and the
+//! Spy's watches (attack2), the B.A.S.E. Jumper (jump in the air) and the
+//! Pyro's carried Thermal Thruster (switched to in its slot); and, under
+//! their own option (`utility`), the utility items: Jarate and Mad Milk,
+//! the Sandvich, Dalokohs Bar and Second Banana, Bonk and Crit-a-Cola, the
+//! three banners (carried and used with fire). Only TF2's: a TF2 gun
+//! makes its holder a TF2 class (`RungGun::game`). Drawn with the
 //! rung's class (`classes::HOOK`'s draw: the drawn class, else the gun's
 //! own) under Chimera's conflict rule (the item's loadout slot never the
 //! gun's for that class: a Soldier on the Shotgun gets no boots; a keyed
 //! item never on a gun using its key: no shield or watch with attack2's
 //! guns, an unlock by its base's row, the Degreaser's airblast the Flame
-//! Thrower's); given by the hook's `apply` (`apply`: `passives::wear`),
-//! worn through `tf2:worn` (`Unselectable`), taken when the player leaves
-//! the rung. An item the item pack lacks is never drawn.
+//! Thrower's; a utility item never in a passive's slot); given by the
+//! hook's `apply` (`apply`: `passives::wear`), worn through `tf2:worn`
+//! (`Unselectable`), taken when the player leaves the rung. An item the
+//! item pack lacks is never drawn. The table is the HUD's too
+//! (`passives::PassiveTables`: its glyphs, keys, verbs and summaries).
 //!
 //! The keyed items work carried, whatever is out (their parts read the
 //! keys from the holder's intent: `items::shields`, `items::spy`,
-//! `items::kit`); bots use them through `items::bots`.
+//! `items::kit`); bots use them and the utility items through
+//! `items::bots`.
 //!
 //! Known shortcuts: the Gunboats aren't an item of
 //! ours yet (their own-blast reduction while worn isn't built); worn
@@ -56,6 +63,8 @@ pub fn draw(world: &World, d: &RungDraw, class: &str, rng: &mut Rng) -> Vec<Stri
         own => own,
     };
     let gun = RungGun {
+        // Only TF2's items: a TF2 gun makes its holder a TF2 class.
+        game: super::GAME,
         class,
         slot: table.gun_slot(d.weapon, class, data_slot),
         keys,

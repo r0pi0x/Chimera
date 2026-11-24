@@ -46,6 +46,7 @@ pub mod overlay;
 pub mod minigame_scoreboard;
 pub mod race_chip;
 pub mod rank_toast;
+pub mod rung_gear;
 pub mod rung_hint;
 pub mod spectator_plate;
 pub mod sandbox;

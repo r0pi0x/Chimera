@@ -10,8 +10,10 @@
 //!
 //! Under the Signal look (`signal::signal_on`) the kit's plate tone with
 //! its key caps (`chimera_ui::widgets::kbd`) as the rung hint's; without
-//! it one plain line in the overlay's face. `SpectatorPlateView` is the
-//! state (headless too); `ui_scene spectate` stages it.
+//! it one plain line in the overlay's face. On a gun game rung with gear
+//! (`rung_gear`: its passives and utility items) the watched player's
+//! items' icons follow the mode (`SpectatorGear`). `SpectatorPlateView`
+//! is the state (headless too); `ui_scene spectate` stages it.
 
 use bevy::prelude::*;
 use chimera_sim::minigame::hud::MinigameHud;
@@ -36,6 +38,9 @@ pub struct SpectatorPlateView {
     pub mode: String,
     /// The keys bound now: mode, next, previous.
     pub keys: [String; 3],
+    /// The watched player's gear (its rung's passives: id and glyph,
+    /// `rung_gear`).
+    pub gear: Vec<(String, String)>,
     /// A staged plate (`ui_scene spectate`).
     pub staged: bool,
 }
@@ -54,12 +59,17 @@ impl SpectatorPlateView {
 #[derive(Component)]
 struct PlateRoot;
 
+/// The plate's gear icons (the watched player's rung's passives).
+#[derive(Component)]
+pub struct SpectatorGear;
+
 /// The plate.
 pub struct SpectatorPlatePlugin;
 
 impl Plugin for SpectatorPlatePlugin {
     fn build(&self, app: &mut App) {
         super::overlay::layer(app);
+        super::signal::setup(app);
         app.init_resource::<SpectatorPlateView>().add_systems(Startup, spawn).add_systems(Update, (gather, draw).chain());
     }
 }
@@ -86,6 +96,7 @@ fn gather(
     spec: Option<Res<Spectator>>,
     me: Query<(), (With<LocalPlayer>, With<Spectating>)>,
     names: Query<(Entity, Option<&crate::net::NetCharacter>, Option<&Name>, Has<LocalPlayer>)>,
+    (rungs, tables): (Query<&chimera_sim::minigame::ladder::OnRung>, Option<Res<chimera_sim::minigame::passives::PassiveTables>>),
     settings: Option<Res<crate::net::NetSettings>>,
     console: Option<Res<chimera_core::console::Console>>,
     identity: Query<&crate::slots::GameIdentity, With<LocalPlayer>>,
@@ -94,7 +105,8 @@ fn gather(
     let game = identity.iter().next().map(|i| i.0.as_str());
     let keys = ["jump", "attack", "attack2"].map(|a| super::rung_hint::bound_key(console.as_deref(), game, a));
     let next = if view.staged {
-        SpectatorPlateView { shown: true, target: "nadia.exe".into(), mode: SpecMode::InEye.name().into(), keys, staged: true }
+        let gear = super::rung_gear::staged_tiles().into_iter().map(|t| (t.item.id, t.item.glyph)).collect();
+        SpectatorPlateView { shown: true, target: "nadia.exe".into(), mode: SpecMode::InEye.name().into(), keys, gear, staged: true }
     } else {
         let on = !me.is_empty() && hud.as_deref().is_some_and(|h| h.playing());
         let (target, mode) = match spec.as_deref() {
@@ -109,13 +121,30 @@ fn gather(
             }
             None => (String::new(), String::new()),
         };
-        SpectatorPlateView { shown: on, target, mode, keys, staged: false }
+        // The watched player's rung's gear (none flying free).
+        let gear = spec
+            .as_deref()
+            .filter(|s| s.mode != SpecMode::Roaming)
+            .and_then(|s| rungs.get(s.target?).ok())
+            .and_then(|o| o.extras.as_ref())
+            .map(|x| {
+                x.passives
+                    .iter()
+                    .map(|id| {
+                        let glyph = tables.as_deref().and_then(|t| t.get(id)).and_then(|p| p.glyph.clone()).filter(|g| super::signal::icons::has(g));
+                        (id.clone(), glyph.unwrap_or_else(|| "pack".into()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        SpectatorPlateView { shown: on, target, mode, keys, gear, staged: false }
     };
     view.set_if_neq(next);
 }
 
 #[allow(clippy::too_many_arguments)]
 fn draw(
+    look: super::signal::Look,
     view: Res<SpectatorPlateView>,
     theme: Option<Res<Theme>>,
     kit: Option<Res<KitFonts>>,
@@ -163,6 +192,16 @@ fn draw(
                 text(&mut commands, Role::DisplayBold, 0.9, Tone::Fg, &view.target.to_uppercase());
             }
             text(&mut commands, Role::Mono, SIZE_CQ, Tone::Fg3, &view.mode.to_uppercase());
+            // The watched player's gear: the board's icons.
+            if !view.gear.is_empty() {
+                commands.entity(plate).with_children(|g| {
+                    g.spawn((Node { column_gap: units.val(0.3), align_items: AlignItems::Center, ..default() }, SpectatorGear, Pickable::IGNORE)).with_children(|g| {
+                        for (id, glyph) in &view.gear {
+                            super::rung_gear::gear_icon(g, &look, id, glyph, look.px(0.9), theme.tone(Tone::Fg));
+                        }
+                    });
+                });
+            }
             for (k, verb) in view.keys.iter().zip(["Mode", "Next", "Prev"]) {
                 let pair = commands.spawn((ChildOf(plate), Pickable::IGNORE, Node { column_gap: units.val(0.35), align_items: AlignItems::Center, ..default() })).id();
                 let cap = chimera_ui::widgets::spawn_pair(&mut commands, chimera_ui::widgets::kbd(theme, kit.as_deref(), &units, k, SIZE_CQ));

@@ -1,8 +1,9 @@
 # Rung passives: worn and carried items on a gun game rung
 
-Status: P0, P1 and P3 built (2026-11-24); P2 waits for the user's pick of
-the HUD mockup. The open questions' defaults hold until answered (off by
-default, 25 % odds when on, one passive a rung, no utility). Parent plans:
+Status: P0, P1, P2, P3 and P5 built (2026-11-24). The user's decisions
+of 2026-11-24 (section 9) are in: HUD option A, on by default at 20 %,
+up to two (the second at a quarter of the odds), only the character's own
+game's items, utility items in. Parent plans:
 [ultimate-gun-game.md](ultimate-gun-game.md) (the gun game),
 [tf2-weapons.md](tf2-weapons.md) (the items), [ugg-ui.md](ugg-ui.md)
 (the HUD). The idea is the user's (2026-11-24): "passive items on some of
@@ -18,10 +19,10 @@ your character". UI mockup (private artifact, for the user's review):
 |---|---|---|
 | P0 the extra in Chimera | done | `RungExtras::passives`, `minigame::passives` (`PassiveTable`, `draw`, `wear`, `RungPassive`), `Ladder::is_passive` (the kill rule), the option (`passives = true` or a table; `on = false`), two host settings (`rules.rung_extras.passives.on`, `.odds`), carried in `NetMinigame::rung_extras` (`net73`); tests: chimera_sim `rung_passives` |
 | P1 TF2's worn passives | done | data/rung_passives.toml (Mantreads, Ali Baba's Wee Booties, Bootlegger, Darwin's Danger Shield, Cozy Camper, Razorback; the gun slots per class and the guns' keys), `game::passives` (draw with the rung's class, `apply` through `tf2:worn`); Darwin's and the Cozy Camper made worn items (no longer `wearable`); Gunboats left out (their worn own-blast reduction isn't built); tests: tf2 `rung_passives` |
-| P2 the HUD | not started | the chosen mockup option, the Tab board's Gear column and hover card, the toast's "+ item", the kill feed's item icon |
+| P2 the HUD | done | option A, the chip tail (`chimera_client::rung_gear`: slanted tiles under the race chip, icon, name, the live key and verb, folding to icons after 5 s, hidden while the rank-up toast or the board is up); the Tab board's Gear column (`race_chip`, only on a ladder with gear; with the cursor free each icon is a kit item carrying the kit's item card, `chimera_ui::shell::Tip::item`); the kill feed's item icon in the accent text tone; the spectator plate's gear; icons: the game's own (TF2's kill icons from the item pack), else the kit's new glyphs (boots, shield, jetpack, chute, pack, jar, can, food, banner; watches the clock); `ui_scene passives [folded]`, `board passives [pick]`; tests: chimera_client `rung_gear`. The toast's "+ item" line not built |
 | P3 keyed passives | done | data/rung_passives.toml: the shields and watches (`keys = ["attack2"]`), the B.A.S.E. Jumper (`["jump"]`, Soldier and Demoman), the carried Thermal Thruster (its slot its key); `[gun_keys]` adds the Dragon's Fury, Cow Mangler and Huntsman bases and an unlock reads its base's row (`items::base_in`); the items already worked carried (their parts read the holder's keys whatever is out); bots: Chimera's `core::BotFocus` (the brain's target, on every `Bot`) and `core::BotItems` (a set after the brains, before the rules and the switch), Combat Arms' brain writes the focus and leaves `RungPassive` and `Unselectable` weapons out of its guns, TF2's `items::bots` charges at a target within 600 units ahead, cloaks hurt and backs away (decloaks after 3 s with nobody in sight; the Dead Ringer arms on sight), opens the chute past a 550 units/s fall, and draws the thruster at a target past 900 units, launches and draws its gun back; tests: tf2 `rung_passives` (draw per rung, each item with the gun out, bots with a stand-in brain, leaving mid-charge and mid-cloak on `NetSim`), combat_arms `bots::the_brain_shares_its_target_and_leaves_passives_alone` |
 | P4 worn on the body | not started | the items drawn on the third-person body (TF2's notes: "drawn on the legs" ...) |
-| P5 active utility | waits for the user | jars, food, drinks, banners, Gas Passer: a separate extra with its own toggle |
+| P5 active utility | done | `kind = "active"` rows under their own option (`utility`, on, the table's `[utility]` odds 0.2, one a rung): Jarate, Mad Milk, the Sandvich, Dalokohs Bar, Second Banana, Bonk, Crit-a-Cola, the three banners (not the Buffalo Steak Sandvich, melee-only for 19 s, nor the Gas Passer); never in a slot or on a key the gun or a drawn passive takes; their kills: the gun's, as any kill; bots: `items::bots` (`use_once`: a jar at a target in sight within 800 units, food hurt with nobody in sight, Bonk hurt and Crit-a-Cola on sight, a banner at full rage on sight); tests: chimera_sim and tf2 `rung_passives` (drawn per class and slot, used by a player and a bot, the client's eat predicted with no correction on `NetSim`) |
 | P6 other games | not started | Combat Arms' gear perks first; others as they have something |
 
 ## 1. What it is
@@ -41,10 +42,17 @@ extras, the same for everyone on a rung"), and follows their rules:
   odds and options, the HUD and the board. Each game owns its table
   (which items, for which class, at what weight) and its `apply` (giving
   the item).
-- **Optional, off by default.** The gun game is ours, so passives are our
-  enhancement (memory: parity first, enhancements opt-in). The host turns
-  them on; then a rung gets one at the data's odds. The setting carries
-  the "Chimera" origin mark (ui-kit preferences).
+- **On by default** (the user's call, 2026-11-24, over the plan's first
+  "off": parity first, but this is the gun game's own flair). The host
+  turns them off; a rung gets one at the data's odds (TF2's 0.2), a
+  second at a quarter of that (`next`). The setting carries the
+  "Chimera" origin mark (ui-kit preferences).
+- **Only the character's own game** (the user, 2026-11-24): a passive is
+  drawn only from the game whose character the rung's players are (the
+  gun's game: characters follow the gun; `RungGun::game`, and the ladder
+  drops any other game's id). No Mantreads on a Combat Arms soldier.
+  Cross-game passives (the user floated a "goomba stomp" for every game's
+  characters) are a later idea, not built.
 - **No new mode** (memory): this only adds to the existing gun game's
   rungs.
 
@@ -112,8 +120,10 @@ keys = ["attack2"]         # the keys it takes from any weapon
 
 | Label | cvar | key | choices |
 |---|---|---|---|
-| Rung extras: passives | `mp_rung_extras_passives` | `rules.rung_extras.passives` | Default (off), On, Off |
-| Rung extras: passive odds | `mp_rung_extras_passives_odds` | `rules.rung_extras.passives.odds` | Default, 10 %, 25 %, 50 %, Always |
+| Rung extras: passives | `mp_rung_extras_passives` | `rules.rung_extras.passives.on` | Default (on), On, Off |
+| Rung extras: passive odds | `mp_rung_extras_passives_odds` | `rules.rung_extras.passives.odds` | Default, 10 %, 20 %, 50 %, Always |
+| Rung extras: passives a rung | `mp_rung_extras_passives_max` | `rules.rung_extras.passives.max` | Default, 1, 2 |
+| Rung extras: utility items | `mp_rung_extras_utility` | `rules.rung_extras.utility.on` | Default (on), On, Off |
 
 Both `lobby = true`, with the Chimera origin mark and a help line saying
 it is ours, not the game's. In the Options screen the odds row shows
@@ -145,11 +155,13 @@ From data/items.toml (`gun_game = false` or `wearable = true` today).
 | Sandvich family, Bonk, Crit-a-Cola | Heavy, Scout | carried, active | P5 | consumables |
 | Medigun family, PDAs, Sapper, Disguise Kit, Wrangler | | | never | team or building items (tf2-weapons.md 5) |
 
-**Jars, food, drinks, banners and the Gas Passer are active**: a use
-with a cooldown, more like a second weapon than something you wear. They
-get their own extra, `rung_extras = { utility = ... }`, with its own
-toggle and odds, only after the user decides (P5): whether a kill they
-set up counts, and whether a consumable's heal suits the gun game.
+**Jars, food, drinks and banners are active**: a use with a cooldown,
+more like a second weapon than something you wear. They are their own
+extra, `rung_extras = { utility = ... }`, with its own toggle and odds
+(P5, built: "special flair additions to a TF2 kit", the user). A kill
+they set up is the rung's gun's and counts as any kill; the jar's or
+banner's effect just helps. The Gas Passer (it deals damage of its own)
+and the Buffalo Steak Sandvich (melee only for 19 s) stay out.
 
 ## 4. Other games
 
@@ -278,10 +290,26 @@ is data in the game's table (`summary = "..."`), never generated.
   before; with them on, the later rungs' other draws (a Shotgun's class)
   follow a different sequence.
 
-## 9. Open questions for the user
+- 2026-11-24, P2 and P5 and the user's decisions: defaults on, 0.2,
+  `max = 2`, `next = 0.25` (Chimera's and TF2's table); the draw rolls on
+  a fork of the ladder's generator (salted, never advancing it), so
+  turning passives on or off changes no other draw; the own-game rule in
+  the helper and the ladder; the HUD (P2 row); utility items (P5 row).
+  The chip tail waits for the rank-up toast (which shows under the chip
+  on arrival) and its 5 s fold counts from its first showing on the rung.
+  The kill feed's passive icon uses the accent text tone, not the
+  mockup's amber (the kit keeps amber for network warnings only).
 
-1. Which HUD option (A recommended).
-2. Off by default with 25 % odds when on, or on by default?
-3. One passive a rung, or up to two (a shield and boots)?
-4. P5: should jars, food and banners appear at all, and do kills they
-   set up count?
+## 9. The user's answers (2026-11-24)
+
+1. HUD option A, with the shared pieces (Gear column, hover card, kill
+   feed icon, spectator plate), the source game's own icons where there
+   are any: built.
+2. On by default, 20 %: built.
+3. Up to two, the second rarer (a quarter of the odds, data): built.
+4. Only the character's own game's items; cross-game ("goomba stomp")
+   later. P5 in: jars, food, drinks, banners; a kill they set up is the
+   gun's. Built.
+
+Open: cross-game passives; the toast's "+ item" line; P4 (worn on the
+body); P6 (other games).

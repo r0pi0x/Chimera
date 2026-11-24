@@ -23,6 +23,15 @@
 //!   ground: it draws the thruster (its slot) and fires once drawn, then
 //!   draws its gun back as soon as the launch is under way.
 //!
+//! - **Utility items** (P5, carried, used with fire: `consumables::
+//!   Tf2Consumable`, a banner's `meters::Tf2Meter`): each is drawn, fired
+//!   once and put away for the gun again (`use_once`) when its rule says
+//!   so, and only with a full meter: a jar at a target in sight within
+//!   `JAR_REACH` units; a lunch hurt with nobody in sight; Bonk hurt with a
+//!   target in sight, Crit-a-Cola with a target in sight; a banner with a
+//!   full rage and a target in sight. Eating and drinking draw the gun back
+//!   themselves after the taunt.
+//!
 //! Known shortcuts: the rules are ours (TF2's bots never use these items);
 //! no look at the ground before a chute or a launch (a launch may fly off
 //! a ledge); a cloaked bot backs away blind (the brain's own path isn't
@@ -34,7 +43,9 @@ use bevy::prelude::*;
 use chimera_sim::weapon::{Inventory, Unselectable};
 
 use super::{
+    consumables::{Kind as UseKind, Tf2Consumable},
     kit::{Tf2Chute, Tf2Thruster},
+    meters::{MeterKind, Tf2Meter},
     shields::{self, Tf2Shield},
     spy::{CLOAK_LOCK, CloakKind, Tf2Cloak},
 };
@@ -55,6 +66,12 @@ pub const HIDE_FOR: f64 = 3.0;
 pub const CHUTE_FALL: f32 = 550.0;
 /// The thruster closes on a target farther than this (units).
 pub const THRUST_FROM: f32 = 900.0;
+/// A jar is thrown at a target this close (units; it flies about 1000
+/// forward) ...
+pub const JAR_REACH: f32 = 800.0;
+/// ... and no closer than this (its splash would reach the thrower's
+/// own place).
+pub const JAR_FROM: f32 = 150.0;
 
 /// The bots' keyed items (module doc).
 #[allow(clippy::type_complexity)]
@@ -77,6 +94,7 @@ pub fn use_items(
     cloaks: Query<&Tf2Cloak>,
     chutes: Query<&Tf2Chute>,
     packs: Query<&Tf2Thruster>,
+    (uses, rages): (Query<&Tf2Consumable>, Query<&Tf2Meter>),
     unselectable: Query<(), With<Unselectable>>,
     clock: Res<SimClock>,
 ) {
@@ -155,8 +173,51 @@ pub fn use_items(
                 {
                     inv.wanted = Some(w);
                 }
+            } else if let Ok(u) = uses.get(w) {
+                let st = u.state;
+                if st.started.is_some() {
+                    // Eating or drinking: the taunt draws the gun back.
+                    continue;
+                }
+                let full = st.meter >= 1.0 - 1e-3;
+                let want = full
+                    && match u.params.kind {
+                        UseKind::Jar => focus.sees && target.is_some_and(|to| (JAR_FROM..=JAR_REACH).contains(&to.length())),
+                        UseKind::Lunch => hurt && !focus.sees,
+                        UseKind::Drink => focus.sees && (hurt || !u.params.phase),
+                    };
+                use_once(&mut inv, &mut intent, w, want, full, st.prev_fire, now, &unselectable);
+            } else if let Ok(m) = rages.get(w)
+                && m.params.kind == MeterKind::Rage
+                && m.params.banner > 0
+            {
+                let full = m.state.value >= m.params.max - 1e-3 && !m.active(now);
+                use_once(&mut inv, &mut intent, w, full && focus.sees, full, m.state.prev_fire, now, &unselectable);
             }
         }
+    }
+}
+
+/// A utility item `w` used once (module doc): drawn when `want`, fired
+/// once drawn while `ready` (its meter full), then the gun drawn back.
+#[allow(clippy::too_many_arguments)]
+fn use_once(inv: &mut Inventory, intent: &mut Intent, w: Entity, want: bool, ready: bool, prev_fire: bool, now: f64, unselectable: &Query<(), With<Unselectable>>) {
+    if inv.active == Some(w) {
+        if ready {
+            intent.fire = !prev_fire && inv.ready(now);
+        } else {
+            // Used (or empty): the gun back.
+            intent.fire = false;
+            let back = inv
+                .last
+                .filter(|l| *l != w && inv.weapons.contains(l))
+                .or_else(|| inv.weapons.iter().copied().find(|x| *x != w && !unselectable.contains(*x)));
+            if back.is_some() && inv.wanted != back {
+                inv.wanted = back;
+            }
+        }
+    } else if want && inv.wanted != Some(w) {
+        inv.wanted = Some(w);
     }
 }
 

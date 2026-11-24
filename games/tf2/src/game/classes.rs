@@ -23,7 +23,7 @@
 //! Each TF2 rung's players carry its class's stock melee weapon
 //! (`Class::melee`, data/classes.toml) in place of the kit's melee, as
 //! Combat Arms' rungs carry theirs (`ladder::RungExtras::melee`), and,
-//! with the host's passives on, a worn item for the class
+//! at the passives' odds (on by default), an item for the class
 //! (`super::passives`).
 //! A player holding a TF2 gun is that class (`Tf2Class`): its speed, eyes
 //! and air jumps (`super::movement`), its health (`super::movement::
@@ -371,7 +371,10 @@ pub fn add_rung_classes(app: &mut App) {
         return;
     }
     use chimera_core::character::CharacterPartsExt;
+    use chimera_sim::minigame::passives::PassiveTablesAppExt;
     app.add_rung_extras(HOOK).add_observer(follow_rung).on_every_character::<RungClass>();
+    // The HUD's view of the items (their glyphs, keys and summaries).
+    app.add_passive_table(super::GAME, super::passives::Tf2Passives::default().0);
 }
 
 /// The asset set of class `name`'s body (`chimera_pack sets tf2`,

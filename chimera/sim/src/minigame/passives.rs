@@ -8,23 +8,41 @@
 //! owns its table (`PassiveTable`, its `rung_passives.toml`) and calls
 //! `draw` from its hook's draw and `wear` from its hook's `apply`.
 //!
-//! - **Off by default** (ours, not any game's: parity first). On with
-//!   `rung_extras = { passives = true }` or a table (`passives = { odds =
-//!   0.5, max = 2 }`; `on = false` in it turns them off again), so the host
-//!   settings' rows (`rules.rung_extras.passives.on`,
-//!   `rules.rung_extras.passives.odds`) set one key each. `rung_extras =
-//!   false` turns them off with the rest.
+//! - **On by default** (the user's call, 2026-11-24; ours, not any
+//!   game's, so the host settings carry the Chimera mark). Off with
+//!   `rung_extras = { passives = false }` or `passives = { on = false }`;
+//!   tuned with a table (`passives = { odds = 0.5, max = 1, next = 0.5
+//!   }`), so the host settings' rows (`rules.rung_extras.passives.on`,
+//!   `.odds`, `.max`) set one key each. `rung_extras = false` turns them
+//!   off with the rest.
 //! - **The draw** (`draw`): a melee band rung (the knife finale's) gets
-//!   none. Else the rung's odds are rolled (the table's `odds`, the
-//!   definition's over them); a miss: none. The candidates are the
-//!   table's items for the rung's class (`"*"`: any; a game without
-//!   classes uses `"*"`) that the definition's sets can give, minus those
-//!   in conflict with the rung's gun: an item whose `slot` is the gun's
-//!   for that class (`PassiveTable::gun_slot`) or that takes a key the
-//!   gun uses (`PassiveTable::gun_keys`). One is picked by weight; with
-//!   `max` above 1 the odds are rolled again for each next one, from a
-//!   different `group` (one pair of boots). Nothing is rolled while off,
-//!   so a ladder without passives draws as before.
+//!   none. Else the rung's odds are rolled (the table's `odds`, 0.2 by
+//!   default, the definition's over them); a miss: none. The candidates
+//!   are the table's items **of the rung character's own game**
+//!   (`RungGun::game`: no Mantreads on another game's character) for the
+//!   rung's class (`"*"`: any; a game without classes uses `"*"`) that
+//!   the definition's sets can give, minus those in conflict with the
+//!   rung's gun: an item whose `slot` is the gun's for that class
+//!   (`PassiveTable::gun_slot`) or that takes a key the gun uses
+//!   (`PassiveTable::gun_keys`). One is picked by weight; with `max`
+//!   above 1 (2 by default) the next is rolled at the odds times `next`
+//!   (a quarter by default: a second passive is rarer), from a different
+//!   `group` (one pair of boots).
+//! - **Utility items** (`kind = "active"`: jars, food, drinks, banners;
+//!   P5) are a second extra on the same field, with their own option
+//!   (`rung_extras = { utility = false }`, `utility = { odds, max, next
+//!   }`; on by default) and the table's `[utility]` odds (0.2, one a
+//!   rung): rolled after the passives, never in a slot or on a key the
+//!   gun or a drawn passive takes. A kill they set up is the gun's: it
+//!   counts as any kill (they deal no damage of their own).
+//! - **Its own stream**: the draw rolls on a generator forked from the
+//!   ladder's (`fork`, salted), never advancing it, so turning passives
+//!   on or off leaves every other draw of the ladder (a Shotgun's class,
+//!   a part) as it was.
+//! - **For the HUD** (`PassiveTables`): each game registers its table, so
+//!   the shell's chip tail, the Tab board's Gear column and its hover
+//!   card, the kill feed and the spectator plate read an item's kind,
+//!   key, verb, glyph and summary (`PassiveTables::get`).
 //! - **Giving** (`wear`, a game's `apply`, the host's): the rung's items
 //!   of that game given (`RungPassive` on each; a worn item's own hook
 //!   makes it unselectable), the others of that game it gave taken; what
@@ -38,9 +56,8 @@
 //!   `core::BotItems` (reading `core::BotFocus`, the brain's target); a
 //!   brain leaves `RungPassive` weapons out of its guns.
 //!
-//! Known shortcuts: no HUD yet (P2: the user's pick of the mockup); the odds row of the host
-//! settings shows whether passives are on or not (no progressive
-//! disclosure yet), and setting it alone turns them on.
+//! Known shortcuts: the odds rows of the host settings show whether
+//! passives are on or not (no progressive disclosure yet).
 
 use std::collections::BTreeMap;
 
@@ -55,6 +72,11 @@ use crate::weapon::{Inventory, Weapon, WeaponRegistry, give};
 
 /// The option key (`rung_extras = { passives = ... }`).
 pub const OPTION: &str = "passives";
+/// The utility items' option key (`rung_extras = { utility = ... }`).
+pub const UTILITY_OPTION: &str = "utility";
+/// Salts of the draw's own streams (`fork`).
+const PASSIVES_SALT: u64 = 0x7061_7373_6976_6573;
+const UTILITY_SALT: u64 = 0x7574_696c_6974_7921;
 
 /// A game's rung passives table (its `rung_passives.toml`).
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -64,8 +86,15 @@ pub struct PassiveTable {
     #[serde(default = "default_odds")]
     pub odds: f64,
     /// At most this many on a rung.
-    #[serde(default = "one")]
+    #[serde(default = "two")]
     pub max: usize,
+    /// Each next passive's odds as a share of the one before (a second is
+    /// rolled at `odds * next`).
+    #[serde(default = "quarter")]
+    pub next: f64,
+    /// The utility items' odds (`kind = "active"`).
+    #[serde(default)]
+    pub utility: UtilityOdds,
     /// A weapon's data slot (0, 1, ...) by name (`["primary", "secondary",
     /// "melee"]`), the names `slot` and `slots` use.
     #[serde(default)]
@@ -83,11 +112,37 @@ pub struct PassiveTable {
 }
 
 fn default_odds() -> f64 {
-    0.25
+    0.2
 }
 
 fn one() -> usize {
     1
+}
+
+fn two() -> usize {
+    2
+}
+
+fn quarter() -> f64 {
+    0.25
+}
+
+/// The utility items' odds (a table's `[utility]`).
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UtilityOdds {
+    #[serde(default = "default_odds")]
+    pub odds: f64,
+    #[serde(default = "one")]
+    pub max: usize,
+    #[serde(default = "quarter")]
+    pub next: f64,
+}
+
+impl Default for UtilityOdds {
+    fn default() -> Self {
+        UtilityOdds { odds: default_odds(), max: one(), next: quarter() }
+    }
 }
 
 fn any_class() -> Vec<String> {
@@ -107,6 +162,20 @@ pub enum PassiveKind {
     Worn,
     /// Carried: switched to as a weapon in its slot.
     Carried,
+    /// A utility item (a jar, food, a drink, a banner): carried and used,
+    /// drawn under its own option (`UTILITY_OPTION`).
+    Active,
+}
+
+impl PassiveKind {
+    /// Its word on the hover card.
+    pub fn word(self) -> &'static str {
+        match self {
+            PassiveKind::Worn => "worn",
+            PassiveKind::Carried => "carried",
+            PassiveKind::Active => "utility",
+        }
+    }
 }
 
 /// One item of a table.
@@ -134,6 +203,30 @@ pub struct Passive {
     /// One line of what it does (the HUD's hover card).
     #[serde(default)]
     pub summary: Option<String>,
+    /// The action whose key the HUD shows (`attack2`, `jump`, `slot2`;
+    /// none: a worn item with no key).
+    #[serde(default)]
+    pub key: Option<String>,
+    /// What the key does, one word ("Charge", "Launch").
+    #[serde(default)]
+    pub verb: Option<String>,
+    /// The kit's fallback icon (`boots`, `shield`, `jetpack`, `chute`,
+    /// `pack`, `clock`, `jar`, `can`, `food`, `banner`) when the game has
+    /// none of its own.
+    #[serde(default)]
+    pub glyph: Option<String>,
+}
+
+impl Passive {
+    /// Its game (the id's prefix).
+    pub fn game(&self) -> &str {
+        game_of(&self.item)
+    }
+}
+
+/// Item id `id`'s game (its prefix).
+pub fn game_of(id: &str) -> &str {
+    id.split_once(':').map_or("", |(g, _)| g)
 }
 
 impl PassiveTable {
@@ -163,34 +256,51 @@ impl PassiveTable {
     }
 
     /// The items a rung of `class` on a gun in slot `slot` using `keys`
-    /// may draw (the conflict rule), of those `available`.
+    /// may draw (the conflict rule), of those `available`: the worn and
+    /// carried ones (`utility`: the active ones).
     pub fn candidates(&self, class: &str, slot: &str, keys: &[String], available: &dyn Fn(&str) -> bool) -> Vec<&Passive> {
+        self.pool(false, class, &[slot], keys, available)
+    }
+
+    fn pool(&self, utility: bool, class: &str, slots: &[&str], keys: &[String], available: &dyn Fn(&str) -> bool) -> Vec<&Passive> {
         self.passives
             .iter()
+            .filter(|p| (p.kind == PassiveKind::Active) == utility)
             .filter(|p| p.weight > 0.0)
             .filter(|p| p.classes.iter().any(|c| c == "*" || c == class))
-            .filter(|p| p.slot.is_empty() || p.slot != slot)
+            .filter(|p| p.slot.is_empty() || !slots.contains(&p.slot.as_str()))
             .filter(|p| !p.keys.iter().any(|k| keys.contains(k)))
             .filter(|p| available(&p.item))
             .collect()
     }
 }
 
-/// What a definition wants of the passives: on, at these odds, at most
-/// `max`.
+/// What a definition wants of the passives (or the utility items): on,
+/// at these odds, at most `max`, each next at `next` of the one before.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PassiveSettings {
     pub odds: f64,
     pub max: usize,
+    pub next: f64,
 }
 
-/// The passives' settings for `options` over `table`'s, or none (off: the
-/// default).
+/// The passives' settings for `options` over `table`'s, or none (off).
 pub fn settings(options: &RungOptions, table: &PassiveTable) -> Option<PassiveSettings> {
-    if options.off || options.keys.get(OPTION) != Some(&true) {
+    settings_of(options, OPTION, PassiveSettings { odds: table.odds, max: table.max, next: table.next })
+}
+
+/// The utility items' settings for `options` over `table`'s, or none.
+pub fn utility_settings(options: &RungOptions, table: &PassiveTable) -> Option<PassiveSettings> {
+    let u = table.utility;
+    settings_of(options, UTILITY_OPTION, PassiveSettings { odds: u.odds, max: u.max, next: u.next })
+}
+
+/// Option `key`'s settings over `base` (on unless turned off).
+fn settings_of(options: &RungOptions, key: &str, base: PassiveSettings) -> Option<PassiveSettings> {
+    if !options.on(key) {
         return None;
     }
-    let tuned = options.table(OPTION);
+    let tuned = options.table(key);
     let num = |k: &str| {
         let v = tuned?.get(k)?;
         v.as_float().or_else(|| v.as_integer().map(|i| i as f64))
@@ -199,14 +309,18 @@ pub fn settings(options: &RungOptions, table: &PassiveTable) -> Option<PassiveSe
         return None;
     }
     Some(PassiveSettings {
-        odds: num("odds").unwrap_or(table.odds).clamp(0.0, 1.0),
-        max: num("max").map_or(table.max, |m| m.max(0.0) as usize),
+        odds: num("odds").unwrap_or(base.odds).clamp(0.0, 1.0),
+        max: num("max").map_or(base.max, |m| m.max(0.0) as usize),
+        next: num("next").unwrap_or(base.next).clamp(0.0, 1.0),
     })
 }
 
 /// The rung's gun as the conflict rule sees it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RungGun<'a> {
+    /// The game of the character the rung's players are (the gun's game:
+    /// characters follow the gun): only its items are drawn.
+    pub game: &'a str,
     /// The rung's class (`"*"`: a game without classes).
     pub class: &'a str,
     /// The gun's slot for that class (`PassiveTable::gun_slot`).
@@ -215,20 +329,50 @@ pub struct RungGun<'a> {
     pub keys: &'a [String],
 }
 
-/// Rung `d`'s passives from `table` (module doc), drawn on `rng`; none
-/// while off (nothing rolled), on the melee band or at a missed roll.
-/// `available`: an item the game can give now (its weapon is registered).
-pub fn draw(table: &PassiveTable, d: &RungDraw, gun: &RungGun, rng: &mut Rng, available: &dyn Fn(&str) -> bool) -> Vec<String> {
-    let Some(s) = settings(d.options, table) else { return Vec::new() };
+/// Rung `d`'s passives and utility items from `table` (module doc),
+/// drawn on a fork of `rng` (it isn't advanced); none while off, on the
+/// melee band or at a missed roll. `available`: an item the game can give
+/// now (its weapon is registered).
+pub fn draw(table: &PassiveTable, d: &RungDraw, gun: &RungGun, rng: &Rng, available: &dyn Fn(&str) -> bool) -> Vec<String> {
     if d.melee {
         return Vec::new();
     }
-    let mut pool = table.candidates(gun.class, &gun.slot, gun.keys, available);
+    let own = |id: &str| game_of(id) == gun.game && available(id);
     let mut out = Vec::new();
+    if let Some(s) = settings(d.options, table) {
+        let pool = table.pool(false, gun.class, &[gun.slot.as_str()], gun.keys, &own);
+        out = pick(pool, s, &mut fork(rng, PASSIVES_SALT));
+    }
+    if let Some(s) = utility_settings(d.options, table) {
+        // Never in a slot or on a key the gun or a passive takes.
+        let taken: Vec<&Passive> = out.iter().filter_map(|id| table.get(id)).collect();
+        let mut slots = vec![gun.slot.as_str()];
+        slots.extend(taken.iter().map(|p| p.slot.as_str()).filter(|s| !s.is_empty()));
+        let mut keys = gun.keys.to_vec();
+        keys.extend(taken.iter().flat_map(|p| p.keys.iter().cloned()));
+        let pool = table.pool(true, gun.class, &slots, &keys, &own);
+        out.extend(pick(pool, s, &mut fork(rng, UTILITY_SALT)));
+    }
+    out
+}
+
+/// A generator of its own from `rng`'s state and `salt`, leaving `rng`
+/// as it was.
+fn fork(rng: &Rng, salt: u64) -> Rng {
+    let mut copy = *rng;
+    Rng::new(copy.next() ^ salt)
+}
+
+/// Up to `s.max` of `pool` by weight: the first at `s.odds`, each next at
+/// `next` of the one before, one per group.
+fn pick(mut pool: Vec<&Passive>, s: PassiveSettings, rng: &mut Rng) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut odds = s.odds;
     while out.len() < s.max && !pool.is_empty() {
-        if rng.unit() >= s.odds {
+        if rng.unit() >= odds {
             break;
         }
+        odds *= s.next;
         let total: f64 = pool.iter().map(|p| p.weight).sum();
         let mut at = rng.unit() * total;
         let i = pool
@@ -243,6 +387,31 @@ pub fn draw(table: &PassiveTable, d: &RungDraw, gun: &RungGun, rng: &mut Rng, av
         out.push(picked.item.clone());
     }
     out
+}
+
+/// Every game's table (each registers its own, `PassiveTablesAppExt`),
+/// for the HUD: an item's kind, key, verb, glyph and summary.
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct PassiveTables(pub BTreeMap<String, PassiveTable>);
+
+impl PassiveTables {
+    /// Item `id`'s row in its game's table.
+    pub fn get(&self, id: &str) -> Option<&Passive> {
+        self.0.get(game_of(id))?.get(id)
+    }
+}
+
+/// Registering a game's table for the HUD.
+pub trait PassiveTablesAppExt {
+    /// `game`'s `table` (a second replaces the first).
+    fn add_passive_table(&mut self, game: &str, table: PassiveTable) -> &mut Self;
+}
+
+impl PassiveTablesAppExt for App {
+    fn add_passive_table(&mut self, game: &str, table: PassiveTable) -> &mut Self {
+        self.world_mut().get_resource_or_init::<PassiveTables>().0.insert(game.to_string(), table);
+        self
+    }
 }
 
 /// Whether the registry can make weapon `id` (an item a pack lacks: no).

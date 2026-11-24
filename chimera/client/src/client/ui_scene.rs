@@ -11,7 +11,10 @@
 //! the HUD's own screens with made-up players (`race_chip::stage`,
 //! `kill_feed::signal_feed::stage`), and `matchend [fixture.json] [chat|busy] [moment]` (the match end, with chat lines, with
 //! eight players, the climb and the vote: `match_end_signal::stage`),
-//! `runghint` (the rung hint: G, THROW; `rung_hint`),
+//! `runghint` (the rung hint: G, THROW; `rung_hint`), `passives
+//! [folded]` (the chip's tail of a rung's gear, two TF2 items, open or
+//! folded to icons: `rung_gear`; `board passives [pick]` the board's Gear
+//! column, with the cursor free its cards),
 //! `lobby` (the pre-match lobby with made-up players, names as typed:
 //! a `NetLobby` of its own, `StagedLobby`), under the Signal theme; given a
 //! fixture (`ui_scene board <fixture.json>`), its data over a flat ground
@@ -64,7 +67,7 @@ pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
 pub const SCENES: &[&str] =
-    &["proof", "controls", "fields", "picker", "form", "formkit", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint", "spectate"];
+    &["proof", "controls", "fields", "picker", "form", "formkit", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint", "spectate", "passives"];
 
 /// `ui_scene lobby`'s made-up lobby (despawned at `off`).
 #[derive(Component)]
@@ -240,6 +243,7 @@ fn clear_staged(w: &mut World) {
         h.staged = None;
     }
     super::spectator_plate::stage(w, false);
+    super::rung_gear::stage(w, None);
     if std::mem::take(&mut w.resource_mut::<UiScene>().froze)
         && let Some(mut c) = w.get_resource_mut::<chimera_ui::UiClock>()
     {
@@ -375,9 +379,12 @@ impl Plugin for UiScenePlugin {
                         }
                         "chip" | "lead" | "board" | "board_lead" => {
                             // `board spectators`: two watching too; `board pick`:
-                            // the cursor free, Mute on each row.
-                            let word = a.get(1).filter(|x| matches!(x.as_str(), "spectators" | "pick"));
-                            super::race_chip::stage(w, Some(&match word {
+                            // the cursor free, Mute on each row; `board passives`:
+                            // the rungs' gear (`rung_gear`; with `pick`, its cards).
+                            let words: Vec<&str> =
+                                a.iter().skip(1).map(String::as_str).filter(|x| matches!(*x, "spectators" | "pick" | "passives")).collect();
+                            let word = (!words.is_empty()).then(|| words.join("_"));
+                            super::race_chip::stage(w, Some(&match &word {
                                 Some(x) => format!("{name}_{x}"),
                                 None => name.to_string(),
                             }));
@@ -406,6 +413,13 @@ impl Plugin for UiScenePlugin {
                         }
                         "spectate" => {
                             super::spectator_plate::stage(w, true);
+                            return Ok(None);
+                        }
+                        "passives" => {
+                            // The chip with its tail of two items (`rung_gear`);
+                            // `passives folded`: after the fold.
+                            super::race_chip::stage(w, Some("chip_passives"));
+                            super::rung_gear::stage(w, Some(a.get(1).is_some_and(|x| x == "folded")));
                             return Ok(None);
                         }
                         "runghint" => {

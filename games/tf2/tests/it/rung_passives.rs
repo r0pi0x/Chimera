@@ -15,6 +15,14 @@
 //! The item reaches a network client through the inventory, worn
 //! (`Unselectable`), and leaves with the rung. A Mantreads stomp kill
 //! climbs and costs the victim no rung (`demote_on = "melee_death"`).
+//! On by default (the user's call): an undrawn ladder's rungs carry some.
+//! Only TF2's items, never another game's in the table. P5's utility
+//! items (their own option): the Heavy's food with the Minigun, the
+//! Sniper's Jarate with the Sniper Rifle, the Soldier's banners with the
+//! Rocket Launcher, the Scout's jar and drinks with the Scattergun, never
+//! with a gun in their slot; eaten, thrown and blown with fire after
+//! their slot's key, by a player and by a bot (`items::bots`); the client
+//! predicts eating with no correction (`NetSim`).
 
 use bevy::prelude::*;
 use chimera_core::{
@@ -39,7 +47,10 @@ use tf2::{
         INFO, TICK_INTERVAL,
         items::{ItemPack, convert, kit::{Tf2Chute, Tf2Thruster}, shields::Tf2Shield, spy::Tf2Cloak},
         movement,
-        weapons::{FLAMETHROWER, GRENADE_LAUNCHER, REVOLVER, ROCKET_LAUNCHER, SHOTGUN, SNIPER_RIFLE, STICKY_LAUNCHER, script_numbers::GunNumbers},
+        weapons::{
+            FLAMETHROWER, GRENADE_LAUNCHER, MINIGUN, REVOLVER, ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN, SMG, SNIPER_RIFLE, STICKY_LAUNCHER,
+            script_numbers::GunNumbers,
+        },
     },
     harness::Tf2Sim,
 };
@@ -58,6 +69,12 @@ const DEFS: &[(&str, &str)] = &[
     ("charge_turn_control", "value_is_percentage"),
     ("parachute_attribute", "value_is_additive"),
     ("thermal_thruster", "value_is_additive"),
+    ("set_weapon_mode", "value_is_additive"),
+    ("mod_mark_attacker_for_death", "value_is_additive"),
+    ("extinguish_reduces_cooldown", "value_is_percentage"),
+    ("lunchbox_healing_scale", "value_is_percentage"),
+    ("set_buff_type", "value_is_additive"),
+    ("add_health_regen", "value_is_additive"),
 ];
 
 /// (index, name, class, slot, used by, attributes).
@@ -78,6 +95,19 @@ const ITEMS: &[(u32, &str, &str, &str, &str, &[(&str, &str)])] = &[
     (59, "The Dead Ringer", "tf_weapon_invis", "pda2", "spy", &[]),
     (1101, "The B.A.S.E. Jumper", "tf_weapon_parachute", "secondary", "soldier", &[("parachute_attribute", "1")]),
     (1179, "The Thermal Thruster", "tf_weapon_rocketpack", "secondary", "pyro", &[("thermal_thruster", "1"), ("item_meter_charge_rate", "30")]),
+    // P5's utility items.
+    (42, "The Sandvich", "tf_weapon_lunchbox", "secondary", "heavy", &[("item_meter_charge_rate", "30")]),
+    (159, "The Dalokohs Bar", "tf_weapon_lunchbox", "secondary", "heavy", &[("item_meter_charge_rate", "10"), ("set_weapon_mode", "1")]),
+    (1190, "The Second Banana", "tf_weapon_lunchbox", "secondary", "heavy", &[
+        ("item_meter_charge_rate", "10"), ("set_weapon_mode", "6"), ("lunchbox_healing_scale", "0.67"),
+    ]),
+    (46, "Bonk! Atomic Punch", "tf_weapon_lunchbox_drink", "secondary", "scout", &[]),
+    (163, "Crit-a-Cola", "tf_weapon_lunchbox_drink", "secondary", "scout", &[("set_weapon_mode", "2"), ("mod_mark_attacker_for_death", "5")]),
+    (58, "Jarate", "tf_weapon_jar", "secondary", "sniper", &[("extinguish_reduces_cooldown", "0.8")]),
+    (222, "Mad Milk", "tf_weapon_jar_milk", "secondary", "scout", &[("extinguish_reduces_cooldown", "0.8")]),
+    (129, "The Buff Banner", "tf_weapon_buff_item", "secondary", "soldier", &[("set_buff_type", "1")]),
+    (226, "The Battalion's Backup", "tf_weapon_buff_item", "secondary", "soldier", &[("set_buff_type", "2")]),
+    (354, "The Concheror", "tf_weapon_buff_item", "secondary", "soldier", &[("set_buff_type", "3"), ("add_health_regen", "4")]),
 ];
 
 fn schema() -> String {
@@ -141,7 +171,10 @@ ladder = [{ladder}]
     )
 }
 
-const ON: &str = "demote_on = \"melee_death\"\nrung_extras = { passives = { odds = 1 } }";
+const ON: &str = "demote_on = \"melee_death\"\nrung_extras = { passives = { odds = 1, max = 1 }, utility = false }";
+const OFF: &str = "rung_extras = { passives = false, utility = false }";
+/// The utility items alone, always.
+const UTILITY: &str = "rung_extras = { passives = false, utility = { odds = 1 } }";
 
 fn sim_with(rules: &str, seed: u64) -> Sim {
     sim_on(def(rules), seed)
@@ -174,9 +207,162 @@ fn a_rocket_rung_draws_the_mantreads_a_shotgun_rung_never_and_off_draws_none() {
         assert!(passives(&l, 1).is_empty(), "seed {seed}: the Shotgun ({:?}) takes the secondary slot", l.extras(1));
         let back = passives(&l, 2);
         assert!(back.len() == 1 && ["tf2:razorback", "tf2:darwins_danger_shield"].contains(&back[0].as_str()), "seed {seed}: {back:?}");
-        let off = sim_with("", seed).app.world().resource::<Ladder>().clone();
-        assert!((0..3).all(|r| passives(&off, r).is_empty()), "seed {seed}: off by default");
+        let off = sim_with(OFF, seed).app.world().resource::<Ladder>().clone();
+        assert!((0..3).all(|r| passives(&off, r).is_empty()), "seed {seed}: turned off");
     }
+    // On by default: some rungs of an untuned ladder carry one.
+    let drawn = (0..24).filter(|s| (0..3).any(|r| !passives(sim_with("", *s).app.world().resource::<Ladder>(), r).is_empty())).count();
+    assert!(drawn > 0, "on by default");
+}
+
+#[test]
+fn only_tf2s_own_items_are_drawn_on_a_tf2_rung() {
+    // Another game's boots in TF2's table for the Soldier, weighted far
+    // over the Mantreads and registered: never drawn on a TF2 character.
+    let mut table = tf2::game::passives::Tf2Passives::default().0;
+    let mut boots = table.get("tf2:mantreads").unwrap().clone();
+    boots.item = "other:boots".into();
+    boots.weight = 100.0;
+    table.passives.push(boots);
+    for seed in 0..24 {
+        let table = table.clone();
+        let mut sim = Sim::with(WithItems, move |app| {
+            app.add_plugins((GreyboxMapPlugin, MinigamePlugin)).insert_resource(Loadout { movement: movement::ID });
+            chimera_sim::weapon::data::WeaponDataAppExt::add_weapon_data(app, &[("other_boots.toml", "id = \"other:boots\"\nslot = 1\ndraw = 0.5\n")])
+                .expect("the weapon reads");
+            app.insert_resource(tf2::game::passives::Tf2Passives(table));
+            app.add_minigames(&[("kit_tf2_passives.toml", Box::leak(def(ON).into_boxed_str()) as &str)]).expect("the definition reads");
+            app.insert_resource(RungSeed(seed));
+        });
+        sim.set_tick_interval(TICK_INTERVAL);
+        minigame::start(sim.app.world_mut(), ID).expect("it starts");
+        let l = sim.app.world().resource::<Ladder>().clone();
+        assert!(chimera_sim::minigame::passives::registered(sim.app.world(), "other:boots"));
+        for r in 0..3 {
+            assert!(passives(&l, r).iter().all(|i| i.starts_with("tf2:")), "seed {seed}, rung {r}: {:?}", passives(&l, r));
+        }
+        assert!(!passives(&l, 0).is_empty(), "seed {seed}: the Soldier still draws his own");
+    }
+}
+
+// ---- P5: utility items ----
+
+const FOOD: [&str; 3] = ["tf2:sandvich", "tf2:dalokohs_bar", "tf2:second_banana"];
+const BANNERS: [&str; 3] = ["tf2:buff_banner", "tf2:battalions_backup", "tf2:concheror"];
+const SCOUT: [&str; 3] = ["tf2:mad_milk", "tf2:bonk_atomic_punch", "tf2:crit_a_cola"];
+
+#[test]
+fn utility_items_go_with_their_class_in_a_free_slot() {
+    let guns = [MINIGUN, SNIPER_RIFLE, ROCKET_LAUNCHER, SCATTERGUN, SMG];
+    let mut seen = std::collections::BTreeSet::new();
+    for seed in 0..32 {
+        let l = sim_on(def_on(&guns, UTILITY), seed).app.world().resource::<Ladder>().clone();
+        let p: Vec<Vec<String>> = (0..guns.len()).map(|r| passives(&l, r)).collect();
+        assert!(p[0].len() == 1 && FOOD.contains(&p[0][0].as_str()), "seed {seed}: the Heavy's food: {p:?}");
+        assert_eq!(p[1], ["tf2:jarate"], "seed {seed}");
+        assert!(p[2].len() == 1 && BANNERS.contains(&p[2][0].as_str()), "seed {seed}: {p:?}");
+        assert!(p[3].len() == 1 && SCOUT.contains(&p[3][0].as_str()), "seed {seed}: {p:?}");
+        assert!(p[4].is_empty(), "seed {seed}: the SMG takes the Sniper's secondary slot: {p:?}");
+        seen.extend(p.into_iter().flatten());
+    }
+    assert!(seen.len() >= 8, "most items drawn somewhere: {seen:?}");
+    // Never in a passive's slot: the Soldier's boots or chute take the
+    // secondary slot, so no banner with them.
+    let both = "rung_extras = { passives = { odds = 1, max = 1 }, utility = { odds = 1 } }";
+    for seed in 0..16 {
+        let l = sim_on(def_on(&[ROCKET_LAUNCHER], both), seed).app.world().resource::<Ladder>().clone();
+        let p = passives(&l, 0);
+        assert_eq!(p.len(), 1, "seed {seed}: one secondary item: {p:?}");
+    }
+}
+
+#[test]
+fn utility_items_are_used_from_their_slot_and_the_gun_comes_back() {
+    // The Sandvich: drawn by its slot's key, eaten with fire: it heals.
+    let (mut sim, p, _) = on_rung_with_rules(&[MINIGUN], "tf2:sandvich", UTILITY);
+    assert_eq!(active_id(&sim, p), Some(MINIGUN), "the gun out on arrival");
+    sim.app.world_mut().get_mut::<Health>(p).unwrap().current = 0.5;
+    press(&mut sim, p, 2, |i, t| i.select = (t == 0).then_some(1));
+    sim.seconds(1.0);
+    assert_eq!(active_id(&sim, p), Some("tf2:sandvich"));
+    press(&mut sim, p, 2, |i, t| i.fire = t == 0);
+    sim.seconds(4.5);
+    assert!(sim.app.world().get::<Health>(p).unwrap().current > 2.0, "eaten: healed (health in hundreds)");
+    sim.seconds(1.0);
+    assert_eq!(active_id(&sim, p), Some(MINIGUN), "the gun drawn after");
+
+    // Jarate: thrown at a player ahead, it splashes him.
+    let (mut sim, p, t) = on_rung_with_rules(&[SNIPER_RIFLE], "tf2:jarate", UTILITY);
+    let jar = item_of(&sim, p, "tf2:jarate").unwrap();
+    bot_facing(&mut sim, p, t, 400.0);
+    sim.app.world_mut().entity_mut(p).remove::<Bot>();
+    press(&mut sim, p, 2, |i, t| i.select = (t == 0).then_some(1));
+    sim.seconds(1.0);
+    // Facing him again (the bot test's place: he may have moved).
+    bot_facing(&mut sim, p, t, 400.0);
+    sim.app.world_mut().entity_mut(p).remove::<Bot>();
+    press(&mut sim, p, 2, |i, t| i.fire = t == 0);
+    sim.seconds(2.0);
+    assert!(use_meter(&sim, jar) < 0.5, "thrown");
+    assert!(soaked(&sim, t), "the jar's condition on the target");
+}
+
+fn use_meter(sim: &Sim, w: Entity) -> f32 {
+    sim.app.world().get::<tf2::game::items::consumables::Tf2Consumable>(w).unwrap().state.meter
+}
+
+fn soaked(sim: &Sim, p: Entity) -> bool {
+    sim.app.world().get_resource::<chimera_sim::status::Conditions>().and_then(|c| c.0.get(&p)).is_some_and(|v| !v.is_empty())
+}
+
+#[test]
+fn bots_eat_throw_and_rally() {
+    // Hurt with nobody in sight: the bot eats.
+    let (mut sim, p, _) = on_rung_with_rules(&[MINIGUN], "tf2:sandvich", UTILITY);
+    sim.app.world_mut().entity_mut(p).insert(Bot);
+    sim.app.world_mut().get_mut::<Health>(p).unwrap().current = 0.6;
+    as_bot(&mut sim, p, (6.0 / TICK_INTERVAL) as u64, |_| {});
+    assert!(sim.app.world().get::<Health>(p).unwrap().current > 2.0, "it ate");
+    as_bot(&mut sim, p, (1.0 / TICK_INTERVAL) as u64, |_| {});
+    assert_eq!(active_id(&sim, p), Some(MINIGUN), "and holds its gun again");
+
+    // A target in sight 400 units ahead: it throws its jar at him.
+    let (mut sim, p, t) = on_rung_with_rules(&[SNIPER_RIFLE], "tf2:jarate", UTILITY);
+    let jar = item_of(&sim, p, "tf2:jarate").unwrap();
+    bot_facing(&mut sim, p, t, 400.0);
+    as_bot(&mut sim, p, (3.0 / TICK_INTERVAL) as u64, |_| {});
+    assert!(use_meter(&sim, jar) < 0.9, "thrown");
+    assert!(soaked(&sim, t), "the target splashed");
+    assert_eq!(active_id(&sim, p), Some(SNIPER_RIFLE), "the gun back");
+
+    // A full banner and a target in sight: the horn.
+    let (mut sim, p, t) = on_rung_with_rules(&[ROCKET_LAUNCHER], "tf2:buff_banner", UTILITY);
+    let banner = item_of(&sim, p, "tf2:buff_banner").unwrap();
+    bot_facing(&mut sim, p, t, 600.0);
+    {
+        let mut m = sim.app.world_mut().get_mut::<tf2::game::items::meters::Tf2Meter>(banner).unwrap();
+        m.state.value = m.params.max;
+    }
+    let mut buffing = false;
+    as_bot(&mut sim, p, (4.0 / TICK_INTERVAL) as u64, |s| {
+        let now = s.app.world().resource::<chimera_core::core::SimClock>().now;
+        buffing |= s.app.world().get::<tf2::game::items::meters::Tf2Meter>(banner).unwrap().buffing(now);
+    });
+    assert!(buffing, "the horn blown");
+    assert_eq!(active_id(&sim, p), Some(ROCKET_LAUNCHER), "the gun back");
+}
+
+/// `on_rung_with` with the definition's `rules`.
+fn on_rung_with_rules(guns: &[&str], item: &str, rules: &str) -> (Sim, Entity, Entity) {
+    let seed = (0..64)
+        .find(|s| passives(sim_on(def_on(guns, rules), *s).app.world().resource::<Ladder>(), 0) == [item])
+        .unwrap_or_else(|| panic!("no seed draws {item}"));
+    let mut sim = sim_on(def_on(guns, rules), seed);
+    let a = sim.spawn_character(greybox::SPAWNS[0], movement::ID);
+    let b = sim.spawn_character(greybox::SPAWNS[1], movement::ID);
+    sim.seconds(1.7);
+    assert!(holds(&sim, a, item), "{item} given on the rung");
+    (sim, a, b)
 }
 
 fn worn(w: &World, p: Entity) -> Vec<(&'static str, bool)> {
@@ -537,4 +723,57 @@ fn leaving_the_rung_mid_charge_or_mid_cloak_ends_it_on_server_and_client() {
     sim.ticks(20);
     assert!(!cloaked(sim.clients[0].app.world(), me), "ended on the client");
     assert_eq!(hidden(sim.clients[0].app.world(), me), 0, "the client's copy shows him");
+}
+
+fn eating(w: &World, p: Entity) -> bool {
+    w.get::<Inventory>(p).is_some_and(|i| {
+        i.weapons.iter().any(|e| w.get::<tf2::game::items::consumables::Tf2Consumable>(*e).is_some_and(|c| c.state.started.is_some()))
+    })
+}
+
+#[test]
+fn a_client_eats_its_rungs_sandvich_predicted_with_no_correction() {
+    let guns = [MINIGUN, ROCKET_LAUNCHER];
+    let seed = (0..64)
+        .find(|s| passives(sim_on(def_on(&guns, UTILITY), *s).app.world().resource::<Ladder>(), 0) == ["tf2:sandvich"])
+        .expect("a seed with the Sandvich on the first rung");
+    let text: &'static str = Box::leak(def_on(&guns, UTILITY).into_boxed_str());
+    let mut sim = NetSim::new(
+        WithItems,
+        LinkConditions { latency: std::time::Duration::from_millis(20), jitter: std::time::Duration::ZERO, loss: 0.0 },
+        5,
+        1,
+        move |app| {
+            app.add_plugins((GreyboxMapPlugin, MinigamePlugin, MinigameNetPlugin)).insert_resource(Loadout { movement: movement::ID });
+            app.world_mut().get_resource_or_init::<Games>().register(&INFO);
+            app.add_minigames(&[("kit_tf2_passives.toml", text)]).expect("the definition reads");
+        },
+    );
+    sim.set_frame(TICK_INTERVAL);
+    sim.server.app.insert_resource(RungSeed(seed));
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts");
+    let _bot = sim.server.spawn_character(greybox::SPAWNS[1], movement::ID);
+    sim.until_joined(900);
+    sim.ticks(200);
+    let l = sim.server.app.world().resource::<Ladder>().clone();
+    let theirs = sim.character_of(0).expect("the client plays");
+    sim.server.app.world_mut().entity_mut(theirs).insert(GameIdentity(tf2::game::GAME.into()));
+    ladder::set_rung(sim.server.app.world_mut(), theirs, 0, &l);
+    sim.ticks(120);
+    let me = sim.local_player(0).expect("the client's own player");
+    let errors = |sim: &NetSim| sim.clients[0].app.world().resource::<chimera_net::net::predict::NetGraph>().errors;
+    // Its slot's key, then fire: eating on both.
+    for t in 0..60 {
+        sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().select = (t == 0).then_some(1);
+        sim.step();
+    }
+    let before = errors(&sim);
+    for t in 0..10 {
+        sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = t == 0;
+        sim.step();
+    }
+    assert!(eating(sim.server.app.world(), theirs), "eating on the server");
+    assert!(eating(sim.clients[0].app.world(), me), "eating on the client, predicted");
+    sim.ticks(60);
+    assert_eq!(errors(&sim), before, "no correction for the eat");
 }

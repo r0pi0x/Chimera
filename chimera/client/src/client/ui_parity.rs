@@ -158,6 +158,7 @@ impl Fixture {
                     loss: r.loss,
                     owner: None,
                     muted: false,
+                    gear: Vec::new(),
                 })
                 .collect(),
             rungs: self.rungs,

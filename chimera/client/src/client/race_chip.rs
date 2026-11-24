@@ -28,7 +28,10 @@
 //!   YOU+HOST chip) and the matches won this server run (a trophy and the
 //!   count, the session's leader in the accent, only when there are any:
 //!   the replicated `MatchesWon`, `minigame::wins`), the rung big, the gun's icon (`signal::gun_icon`) and its
-//!   short name with its game, kills and deaths as two columns with their
+//!   short name with its game, on a ladder whose rungs carry gear a Gear
+//!   column (`rung_gear`: each row its rung's items' icons, a dash for none;
+//!   with the cursor free each a kit item with the item's card,
+//!   `BoardGear`; `ui_scene board passives [pick]`), kills and deaths as two columns with their
 //!   marks right-aligned over them, the ping (a 4-bar meter and the
 //!   number, by the theme's `[network]` thresholds: `ping_level`; at the
 //!   worst the packet-loss mark when the connection loses packets
@@ -118,6 +121,9 @@ impl Plugin for RaceChipPlugin {
         if !app.is_plugin_added::<super::rank_toast::RankToastPlugin>() {
             app.add_plugins(super::rank_toast::RankToastPlugin);
         }
+        if !app.is_plugin_added::<super::rung_gear::GearTailPlugin>() {
+            app.add_plugins(super::rung_gear::GearTailPlugin);
+        }
     }
 }
 
@@ -175,6 +181,9 @@ pub struct RaceRow {
     pub owner: Option<u64>,
     /// This client hides the player's chat (`chat::ChatMutes`).
     pub muted: bool,
+    /// The rung's gear (`rung_gear`: its passives and utility items, the
+    /// same for everyone on the rung), with the keys bound now.
+    pub gear: Vec<super::rung_gear::TailTile>,
 }
 
 /// Whether a player is the host's: a client sees the listen host's
@@ -302,6 +311,7 @@ pub fn staged_race(lead: bool) -> RaceView {
             loss: ping > 200,
             owner: None,
             muted: false,
+            gear: Vec::new(),
         }
     };
     let rows = if lead {
@@ -345,6 +355,12 @@ pub fn stage(world: &mut World, name: Option<&str>) {
                 view.spectators = STAGED_SPECTATORS.map(String::from).to_vec();
             }
             // The cursor free: Mute on each other player, one muted.
+            // A ladder whose rungs carry gear: the board's Gear column.
+            if n.contains("passives") {
+                for r in view.rows.iter_mut() {
+                    r.gear = super::rung_gear::staged_gear(r.rung);
+                }
+            }
             if n.contains("pick") {
                 view.pick = true;
                 for (i, r) in view.rows.iter_mut().enumerate() {
@@ -454,6 +470,10 @@ const COL_GAP: f32 = 0.8;
 /// The Mute column's width, cq: it takes the gun's room while the cursor is
 /// free (`RaceView::pick`).
 const MUTE_W: f32 = 7.0;
+/// The Gear column's width, cq (two icons; from the gun's room).
+const GEAR_W: f32 = 3.6;
+/// A gear icon's height on the board, cq.
+const GEAR_ICON_H: f32 = 0.84;
 /// The look book's tracking in cq (its `letter-spacing` em times the size
 /// it was set at): a row's numbers and game (.08 em of .54), the column
 /// titles (.12 em of .46), the head's race (.12 em of .52) and map's game
@@ -536,6 +556,11 @@ fn gather(
         Option<Res<chimera_core::game_registry::Games>>,
         Option<Res<crate::core::NetRole>>,
     ),
+    (tables, console, identity): (
+        Option<Res<chimera_sim::minigame::passives::PassiveTables>>,
+        Option<Res<chimera_core::console::Console>>,
+        Query<&crate::slots::GameIdentity, With<LocalPlayer>>,
+    ),
     players: Query<
         (
             Entity,
@@ -575,6 +600,17 @@ fn gather(
             let g = id.split_once(':').map_or("", |(g, _)| g);
             games.as_deref().and_then(|r| r.get(g)).map_or_else(|| g.to_uppercase(), |i| i.short_name.to_string())
         };
+        let me_game = identity.iter().next().map(|i| i.0.as_str());
+        let gear_of = |rung: usize| -> Vec<super::rung_gear::TailTile> {
+            let ids = ladder.extras(rung).map(|x| x.passives.as_slice()).unwrap_or_default();
+            ids.iter()
+                .map(|id| {
+                    let item = super::rung_gear::gear_item(id, tables.as_deref(), Some(&gun_names), catalog.as_deref());
+                    let key = item.action.as_deref().map(|a| super::rung_gear::action_key(console.as_deref(), me_game, a));
+                    super::rung_gear::TailTile { item, key }
+                })
+                .collect()
+        };
         let mut rows: Vec<RaceRow> = players
             .iter()
             .map(|(e, rung, score, won, net, ch, name, local, is_bot)| {
@@ -603,6 +639,7 @@ fn gather(
                     wins: won.map_or(0, |w| w.0),
                     ping: net.map_or(0, |n| n.ping),
                     loss: net.is_some_and(|n| n.flags & score_flags::LOSS != 0),
+                    gear: gear_of(rung),
                 }
             })
             .collect();
@@ -879,6 +916,9 @@ fn build_board(
     }
     let col = |i: usize| look.val(COLS[i]);
     let hair = look.hair();
+    // The Gear column, only on a ladder whose rungs carry gear.
+    let gear_col = view.rows.iter().any(|r| !r.gear.is_empty());
+    let ui = chimera_ui::controls::Ui { theme: &look.theme, kit: look.fonts.as_deref(), units: *look.units };
     board.with_children(|b| {
         // The head: the minigame's tag, the map and its game, the race.
         b.spawn((
@@ -965,6 +1005,11 @@ fn build_board(
             th(h, 2, "RUNG", true, "rung");
             th(h, 3, "", false, "");
             th(h, 4, "GUN • GAME", false, "gun");
+            if gear_col {
+                h.spawn((Node { width: look.val(GEAR_W), flex_shrink: 0.0, ..default() }, Pickable::IGNORE)).with_children(|c| {
+                    c.spawn((look.tracked(Role::Mono, 0.46, TRACK_TITLES, look.tone(Tone::Fg3), "GEAR"), UiParityId::new("board.th.gear"), Pickable::IGNORE));
+                });
+            }
             for (i, m, id) in [(5, Mark::Kill, "board.th.k"), (6, Mark::Death, "board.th.d")] {
                 h.spawn((right(i), Pickable::IGNORE)).with_children(|c| {
                     let e = signal::mark(c, &look, m, look.px(0.6), look.tone(Tone::Fg3));
@@ -1055,6 +1100,9 @@ fn build_board(
                     c.spawn((look.tracked(Role::DisplayBold, 0.6, 0.6 * 0.03, look.tone(Tone::Fg), &row.gun_name.to_uppercase()), UiParityId(format!("{p}.gun")), Pickable::IGNORE));
                     c.spawn((look.tracked(Role::Mono, 0.54, TRACK_ROW, look.tone(Tone::Fg3), &row.game.to_uppercase()), UiParityId(format!("{p}.game")), Pickable::IGNORE));
                 });
+                if gear_col {
+                    gear_cell(r, &look, &ui, row, view.pick, &p);
+                }
                 r.spawn((right(5), Pickable::IGNORE)).with_children(|c| {
                     c.spawn((look.tracked(Role::Mono, 0.6, TRACK_ROW, look.tone(Tone::Fg), &row.kills.to_string()), UiParityId(format!("{p}.k")), Pickable::IGNORE));
                 });
@@ -1167,6 +1215,46 @@ fn build_board(
         }
     });
 }
+
+/// A board row's gear: each item's icon, the rung's for everyone on it;
+/// with the cursor free each is a kit item whose hover shows the item's
+/// card (`rung_gear::item_card`, the kit's `Tip::item`). A dash for none.
+fn gear_cell(r: &mut ChildSpawnerCommands, look: &Look, ui: &chimera_ui::controls::Ui, row: &RaceRow, pick: bool, p: &str) {
+    let cell = r
+        .spawn((
+            Node { width: look.val(GEAR_W), flex_shrink: 0.0, column_gap: look.val(0.25), align_items: AlignItems::Center, ..default() },
+            UiParityId(format!("{p}.gear")),
+            Pickable::IGNORE,
+        ))
+        .id();
+    if row.gear.is_empty() {
+        r.commands_mut().spawn((ChildOf(cell), look.text(Role::Mono, 0.5, look.tone(Tone::Fg4), "\u{2014}"), Pickable::IGNORE));
+        return;
+    }
+    for (i, t) in row.gear.iter().enumerate() {
+        let game = row.game.clone();
+        let cmd = r.commands_mut();
+        let holder = if pick {
+            let style = chimera_ui::UiStyle { pad: Some([0.12, 0.12, 0.12, 0.12].into()), align: Some(AlignItems::Center), ..chimera_ui::UiStyle::row() };
+            let e = ui.item(cmd, cell, style, chimera_ui::controls::State::NONE, false);
+            cmd.entity(e).insert((
+                BoardGear(t.item.id.clone()),
+                chimera_ui::shell::Tip::new(&t.item.name).item(super::rung_gear::item_card(&t.item, &game, row.rung, t.key.as_deref())),
+            ));
+            e
+        } else {
+            cmd.spawn((ChildOf(cell), BoardGear(t.item.id.clone()), Node { align_items: AlignItems::Center, ..default() }, Pickable::IGNORE)).id()
+        };
+        cmd.entity(holder).insert(UiParityId(format!("{p}.gear.{}", i + 1)));
+        cmd.entity(holder).with_children(|c| {
+            super::rung_gear::gear_icon(c, look, &t.item.id, &t.item.glyph, look.px(GEAR_ICON_H), look.tone(Tone::Fg));
+        });
+    }
+}
+
+/// A gear icon on the board (its item's id).
+#[derive(Component, Clone, Debug)]
+pub struct BoardGear(pub String);
 
 /// A right click while the board is open frees the cursor (`BoardPick`) so
 /// a row's Mute can be clicked; it ends with the board (Tab let go).

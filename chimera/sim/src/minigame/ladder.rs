@@ -58,9 +58,10 @@
 //! Chimera does itself: a melee weapon in place of the kit's
 //! (`RungExtras::melee`, `runtime::KitMelee`) and a label after the
 //! rung's weapon in the HUD's rung line. A rung may also carry
-//! **passives** (`RungExtras::passives`: worn or carried items, off by
-//! default, none on the melee band; a passive's kill never demotes:
-//! `passives`, `Ladder::is_passive`). A game's character for a rung
+//! **passives** (`RungExtras::passives`: worn or carried items and the
+//! utility items, on by default, only the rung character's own game's,
+//! none on the melee band; a passive's kill never demotes: `passives`,
+//! `Ladder::is_passive`). A game's character for a rung
 //! comes from those allowed to hold its weapon (`holders::Holders`, the
 //! game's data; characters follow the gun). A player is armed for its rung
 //! (`arm`: the melee, then every hook's `apply`, with its own extras or
@@ -1004,8 +1005,9 @@ fn draw_extras(
         return vec![None; rungs.len()];
     }
     for key in options.keys.keys().filter(|_| say) {
-        // Chimera's own (`passives`) is read for every game.
-        if key != super::passives::OPTION && !hooks.0.iter().any(|h| h.options.contains(&key.as_str())) {
+        // Chimera's own (`passives`, `utility`) are read for every game.
+        let own = [super::passives::OPTION, super::passives::UTILITY_OPTION].contains(&key.as_str());
+        if !own && !hooks.0.iter().any(|h| h.options.contains(&key.as_str())) {
             warn!("{}: [rules] rung_extras: no game reads `{key}`", def.id);
         }
     }
@@ -1049,10 +1051,14 @@ fn draw_extras(
             x.melee = x.melee.as_deref().and_then(melee).map(str::to_string);
             // A character whose weapon the definition doesn't allow: none.
             x.character = x.character.take().filter(|c| melee(&c.weapon).is_some());
-            // No passive on the melee band (the knife finale's).
+            // No passive on the melee band (the knife finale's), and only
+            // the rung character's own game's (the hook's game: characters
+            // follow the gun; a rung character's game when it has one).
             if in_band {
                 x.passives.clear();
             }
+            let body = x.character.as_ref().map_or(x.game.clone(), |c| c.game().to_string());
+            x.passives.retain(|p| super::passives::game_of(p) == body);
         }
         // A melee rung without its character keeps its own weapon alone.
         if in_band && x.as_ref().is_some_and(|x| x.character.is_none()) {

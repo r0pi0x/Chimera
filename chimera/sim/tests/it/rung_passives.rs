@@ -1,12 +1,16 @@
 //! Rung passives (`minigame::passives`, `ladder::RungExtras::passives`;
 //! docs/plans/active/rung-passives.md) on the test kit, with a stand-in
-//! hook and table for the kit's game: off by default (nothing drawn, the
-//! ladder's other draws unchanged); on, drawn from the seed the same on
-//! every run, at the odds (0 never, 1 always), at most `max`, one per
-//! `group`; the conflict rule (the gun's slot, its keys); none on the
-//! melee band; the definition's table over the game's; the item given
-//! on arriving (kept over a respawn), taken on leaving the rung; a
-//! passive's melee kill climbs and never demotes.
+//! hook and table for the kit's game: on by default (turned off by the
+//! definition), the ladder's other draws the same on or off (the draw's
+//! own stream); drawn from the seed the same on every run, at the odds
+//! (0 never, 1 always), at most `max`, one per `group`, a second rarer
+//! (`next`: the defaults 0.2, 2 and a quarter, over many seeds); only the
+//! rung character's own game's items; the conflict rule (the gun's slot,
+//! its keys); the utility items under their own option, never in a slot
+//! a passive or the gun takes; none on the melee band; the definition's
+//! table over the game's; the item given on arriving (kept over a
+//! respawn), taken on leaving the rung; a passive's melee kill climbs
+//! and never demotes.
 
 use bevy::prelude::*;
 use chimera_core::core::{Damage, DamageKind, Hitgroup};
@@ -44,11 +48,15 @@ PASSIVES
 
 /// The kit game's table: boots take the secondary slot (never with the
 /// Pistol), the shield attack2 (never with the Rifle), the pack and the
-/// boots share no group, the spurs are the boots' group.
+/// boots share no group, the spurs are the boots' group; another game's
+/// cape (never drawn on the kit's rungs); the jar a utility item in the
+/// secondary slot (its odds 0 unless a definition tunes them).
 const TABLE: &str = r#"
 odds = 0.25
 max = 1
 slot_names = ["primary", "secondary", "melee"]
+[utility]
+odds = 0
 [gun_keys]
 "kit:rifle" = ["attack2"]
 [[passive]]
@@ -66,9 +74,22 @@ keys = ["attack2"]
 [[passive]]
 item = "kit:pack"
 group = "back"
+[[passive]]
+item = "other:cape"
+group = "back"
+weight = 50
+[[passive]]
+item = "kit:jar"
+slot = "secondary"
+kind = "active"
 "#;
 
 const ITEMS: [&str; 4] = ["kit:boots", "kit:spurs", "kit:shield", "kit:pack"];
+/// Registered too: another game's item, a utility item.
+const MORE: [&str; 2] = ["other:cape", "kit:jar"];
+/// The value the stand-in hook rolls on the ladder's generator (the
+/// passives' draw mustn't move it).
+const ROLL: &str = "roll";
 
 fn def(passives: &str) -> String {
     DEF.replace("PASSIVES", passives)
@@ -78,12 +99,15 @@ fn draw(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
     let table = PassiveTable::parse(TABLE).unwrap();
     let slot = world.resource::<WeaponCatalog>().get(d.weapon).map_or(0, |w| w.slot);
     let gun = RungGun {
+        game: "kit",
         class: "*",
         slot: table.gun_slot(d.weapon, "*", slot),
         keys: table.gun_keys(d.weapon),
     };
     let passives = passives::draw(&table, d, &gun, rng, &|id| passives::registered(world, id));
-    (!passives.is_empty()).then(|| RungExtras { passives, ..default() })
+    // Another draw on the ladder's generator after the passives'.
+    let roll = rng.below(1_000_000).to_string();
+    Some(RungExtras { passives, values: vec![(ROLL.into(), roll)], ..default() })
 }
 
 const HOOK: RungExtrasHook = RungExtrasHook {
@@ -111,7 +135,7 @@ fn sim_with(def: &str, seed: u64) -> Sim {
         app.add_plugins((greybox::GreyboxMapPlugin, MinigamePlugin));
         testkit::add_weapons(app);
         let mut docs = vec![("kit:knife.toml".to_string(), knife("kit:knife"))];
-        docs.extend(ITEMS.iter().map(|id| (format!("{id}.toml"), item(id))));
+        docs.extend(ITEMS.iter().chain(&MORE).map(|id| (format!("{id}.toml"), item(id))));
         let docs: Vec<(&str, &str)> = docs.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
         app.add_weapon_data(&docs).expect("the weapons load");
         app.add_rung_extras(HOOK);
@@ -164,16 +188,94 @@ fn rung(sim: &Sim, p: Entity) -> usize {
     sim.app.world().get::<Rung>(p).map_or(0, |r| r.0)
 }
 
+fn rolls(l: &Ladder) -> Vec<Option<String>> {
+    l.extras.iter().map(|x| x.as_ref().and_then(|x| x.value(ROLL)).map(str::to_string)).collect()
+}
+
 #[test]
-fn passives_are_off_by_default_and_change_no_other_draw() {
+fn passives_are_on_by_default_and_change_no_other_draw() {
+    let on: usize = (0..48).map(|s| passives_of(&ladder(&sim_with(&def(""), s))).iter().filter(|r| !r.is_empty()).count()).sum();
+    assert!(on > 0, "on by default");
     for seed in 0..16 {
-        let l = ladder(&sim_with(&def(""), seed));
-        assert!(l.extras.iter().all(|x| x.is_none()), "seed {seed}: {:?}", l.extras);
+        let with = ladder(&sim_with(&def("rung_extras = { passives = { odds = 1 } }"), seed));
+        for off in ["rung_extras = { passives = false }", "rung_extras = { passives = { on = false, odds = 1 } }"] {
+            let l = ladder(&sim_with(&def(off), seed));
+            assert!(passives_of(&l).iter().all(Vec::is_empty), "seed {seed}, {off}: {:?}", l.extras);
+            assert_eq!(rolls(&l), rolls(&with), "seed {seed}: the ladder's other draws are the same with passives on or off");
+        }
     }
-    let l = ladder(&sim_with(&def("rung_extras = { passives = { on = false, odds = 1 } }"), 1));
-    assert!(l.extras.iter().all(|x| x.is_none()), "`on = false` wins over the odds");
     let l = ladder(&sim_with(&def("rung_extras = false"), 1));
     assert!(l.extras.iter().all(|x| x.is_none()));
+}
+
+#[test]
+fn the_defaults_are_a_fifth_two_at_most_the_second_at_a_quarter() {
+    let t = PassiveTable::parse("").unwrap();
+    assert_eq!((t.odds, t.max, t.next), (0.2, 2, 0.25));
+    assert_eq!((t.utility.odds, t.utility.max), (0.2, 1));
+    // Over many seeds: about a fifth of the rungs draw one, and a second
+    // comes at a quarter of that (5 % of those with one), never more often
+    // than a fifth of the firsts.
+    let d = def("rung_extras = { passives = { odds = 0.2, max = 2, next = 0.25 } }");
+    let (mut rungs, mut one, mut two) = (0, 0, 0);
+    for seed in 0..400 {
+        // The Shotgun's rung may draw any two (no slot or key taken).
+        let p = passives_of(&ladder(&sim_with(&d, seed)));
+        rungs += 1;
+        one += (!p[2].is_empty()) as usize;
+        two += (p[2].len() == 2) as usize;
+    }
+    assert!((55..=110).contains(&one), "{one} of {rungs} drew one at 0.2");
+    assert!((1..=12).contains(&two) && two * 5 <= one, "{two} of {one} drew a second at 0.2 x 0.25");
+}
+
+#[test]
+fn only_the_rung_characters_own_games_items_are_drawn() {
+    // The cape (another game's, weight 50) is never drawn on the kit's
+    // rungs, whatever the odds.
+    let always = def("rung_extras = { passives = { odds = 1, max = 2 } }");
+    for seed in 0..32 {
+        let p = passives_of(&ladder(&sim_with(&always, seed)));
+        assert!(p.iter().flatten().all(|i| i.starts_with("kit:")), "seed {seed}: {p:?}");
+        assert!(p.iter().any(|r| !r.is_empty()));
+    }
+    // The helper keeps to the game it's given.
+    let table = PassiveTable::parse(TABLE).unwrap();
+    let opts = chimera_sim::minigame::ladder::RungOptions { keys: [("passives".to_string(), true)].into(), tables: [("passives".to_string(), toml::from_str("odds = 1").unwrap())].into(), ..default() };
+    let defn = minigame::def::MinigameDef::parse("kit_gun_game.toml", &def("")).unwrap();
+    let rungs = ["kit:shotgun"];
+    let d = RungDraw { def: &defn, rung: 0, weapon: "kit:shotgun", options: &opts, rungs: &rungs, drawn: &[], melee: false };
+    for game in ["kit", "other"] {
+        let gun = RungGun { game, class: "*", slot: "primary".into(), keys: &[] };
+        for s in 0..16 {
+            let got = passives::draw(&table, &d, &gun, &Rng::new(s), &|_| true);
+            assert!(!got.is_empty() && got.iter().all(|i| passives::game_of(i) == game), "{game}: {got:?}");
+        }
+    }
+}
+
+#[test]
+fn utility_items_have_their_own_option_and_never_share_a_slot() {
+    // Off at the table's odds 0; at 1, the jar on every rung whose gun and
+    // passive leave the secondary slot free.
+    let d = def("rung_extras = { passives = false, utility = { odds = 1 } }");
+    for seed in 0..16 {
+        let p = passives_of(&ladder(&sim_with(&d, seed)));
+        assert_eq!(p[0], ["kit:jar"], "seed {seed}: the Rifle's rung: {p:?}");
+        assert!(p[1].is_empty(), "seed {seed}: the Pistol takes the secondary slot: {p:?}");
+        assert_eq!(p[2], ["kit:jar"], "seed {seed}: {p:?}");
+    }
+    let both = def("rung_extras = { passives = { odds = 1 }, utility = { odds = 1 } }");
+    for seed in 0..32 {
+        let p = passives_of(&ladder(&sim_with(&both, seed)));
+        for r in &p {
+            let boots = r.iter().any(|i| ["kit:boots", "kit:spurs"].contains(&i.as_str()));
+            assert!(!(boots && r.contains(&"kit:jar".to_string())), "seed {seed}: the boots took the secondary slot: {p:?}");
+        }
+    }
+    let off = def("rung_extras = { passives = false, utility = false }");
+    assert!(passives_of(&ladder(&sim_with(&off, 3))).iter().all(Vec::is_empty));
+    assert!(passives_of(&ladder(&sim_with(&def("rung_extras = { passives = false }"), 3))).iter().all(Vec::is_empty), "the table's utility odds 0");
 }
 
 #[test]
@@ -195,13 +297,14 @@ fn on_the_draw_follows_the_seed_the_odds_and_the_conflict_rule() {
     assert!(passives_of(&ladder(&sim_with(&never, 3))).iter().all(Vec::is_empty), "odds 0: never");
     // A quarter of the rungs over many seeds at the table's odds.
     let on = def("rung_extras = { passives = true }");
+    assert_eq!(passives_of(&ladder(&sim_with(&on, 7))), passives_of(&ladder(&sim_with(&def(""), 7))), "on by default");
     let drawn: usize = (0..80).map(|s| passives_of(&ladder(&sim_with(&on, s))).iter().filter(|r| !r.is_empty()).count()).sum();
     assert!((30..=90).contains(&drawn), "{drawn} of 240 at 0.25");
 }
 
 #[test]
 fn max_two_takes_two_of_different_groups() {
-    let two = def("rung_extras = { passives = { odds = 1, max = 2 } }");
+    let two = def("rung_extras = { passives = { odds = 1, max = 2, next = 1 } }");
     for seed in 0..32 {
         let p = passives_of(&ladder(&sim_with(&two, seed)));
         // The Shotgun's rung (primary, no keys): two, never both feet.

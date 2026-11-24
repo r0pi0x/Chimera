@@ -948,13 +948,25 @@ that):
   false, infected = false }`), all with `rung_extras = false`. The apps
   seed them anew at each launch (Ultimate Gun Game with its launch seed).
   **Rung passives** (user, 2026-11-24; `chimera_sim::minigame::passives`,
-  docs/plans/active/rung-passives.md) are ours, so off by default
-  (`rung_extras = { passives = true }` or `{ passives = { odds, max } }`,
-  two host settings): a worn item drawn per rung for its class from the
-  game's table (TF2's data/rung_passives.toml: the Mantreads, the
-  Demoman's boots, the Sniper's back items), never in the slot the rung's
-  gun takes for that class nor on a key it uses, never on the melee band;
-  a passive's kill climbs and never costs the victim a rung.
+  docs/plans/active/rung-passives.md) are ours but on by default (the
+  user's call: odds 0.2 a rung, up to two, a second at a quarter of the
+  odds; `rung_extras = { passives = false }` or `{ passives = { odds,
+  max, next } }`, host settings with the Chimera mark): a worn or carried
+  item drawn per rung for its class from the game's table (TF2's
+  data/rung_passives.toml: the Mantreads, the Demoman's boots and
+  shields, the Sniper's back items, the Spy's watches, the chute, the
+  Thermal Thruster), **only from the rung character's own game** (no
+  Mantreads on another game's character; cross-game passives are a later
+  idea), never in the slot the rung's gun takes for that class nor on a
+  key it uses, never on the melee band; a passive's kill climbs and never
+  costs the victim a rung. **Utility items** (jars, food, drinks,
+  banners) are their own extra (`rung_extras = { utility = ... }`, on by
+  default, 0.2), never in a slot a passive or the gun takes; a kill they
+  set up is the gun's. Its draw rolls on a fork of the ladder's generator,
+  so the other draws don't change with it. On the Signal HUD
+  (`chimera_client::rung_gear`): the chip's tail (the user's pick of the
+  mockup, option A), a Gear column on the Tab board with each item's kit
+  card, the item's icon in the kill feed and on the spectator plate.
 - **A rung's character changes looks, not the odds** (user,
   2026-10-29): a drawn Combat Arms body keeps only what is intrinsic to
   it, its body type (`FigureType`: sprint, stamina, the variable terms);
