@@ -1,0 +1,9 @@
+# CS 1.6 maps an automatic gun game's pool takes (the Ultimate Gun Game:
+# chimera_sim::minigame::map_fit; docs/plans/active/map-pool-fitness.md,
+# docs/plans/active/goldsrc.md M0). The 2026-11-24 sweep of the 25 stock
+# maps (data/map_fitness.toml) found every one fit: no spawn spot off the
+# map, no player stuck at one, the spots covering about the whole
+# walkable area (cs_747 3427 of 3921 m2 the least share), so none is
+# denied; the players present still decide a draw (the wander time). Each
+# entry: map names (`*` matches any run of letters) and why; `[[allow]]`
+# entries win over `[[deny]]` and over the measurements' flags.

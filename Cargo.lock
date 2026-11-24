@@ -3442,6 +3442,7 @@ dependencies = [
  "chimera_core",
  "chimera_sim",
  "chimera_world",
+ "goldsrc_engine",
  "goldsrc_formats",
  "serde",
  "toml",
@@ -4507,6 +4508,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c4ee00b289aba7a9e5306d57c2d05499b2e5dc427f84ac708bd2c090212cf3e"
 dependencies = [
  "gl_generator",
+]
+
+[[package]]
+name = "goldsrc_engine"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "chimera_core",
+ "chimera_world",
+ "goldsrc_formats",
+ "image",
+ "sha2",
+ "workspace-hack",
 ]
 
 [[package]]

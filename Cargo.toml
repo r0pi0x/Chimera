@@ -31,6 +31,7 @@ members = [
     "lithtech/formats",
     "blam/formats",
     "goldsrc/formats",
+    "goldsrc/engine",
     "games/cs_source",
     "games/cs_source/tools",
     "games/combat_arms",
@@ -88,6 +89,7 @@ default-members = [
     "lithtech/formats",
     "blam/formats",
     "goldsrc/formats",
+    "goldsrc/engine",
     "games/cs_source",
     "games/cs_source/tools",
     "games/combat_arms",
@@ -166,6 +168,9 @@ lithtech_formats = { path = "lithtech/formats" }
 blam_formats = { path = "blam/formats" }
 # GoldSrc's formats as plain data (BSP 30, WAD3, MDL v10, SPR v2).
 goldsrc_formats = { path = "goldsrc/formats" }
+# GoldSrc's content converted into Chimera's types (maps, studio models),
+# every GoldSrc game's (docs/plans/active/goldsrc.md, section 5).
+goldsrc_engine = { path = "goldsrc/engine" }
 cs_source = { path = "games/cs_source" }
 # Combat Arms as a game crate (games/combat_arms): its skeleton, filled
 # from specs/combat_arms/ (docs/plans/active/combat-arms.md).

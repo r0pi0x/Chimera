@@ -23,7 +23,7 @@ Force) is a small port on the same loader.
 |---|---|---|
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount); `specs/cs16/` install, movement, weapons to come |
-| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half: maps to `MapData`, bodies, `chimera_pack cs16` |
+| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. Left: `chimera_pack cs16`, the lightmap brightening against captures |
 | M1 weapons | not started | §5 |
 | M2 movement | not started | §5 |
 | M3 party rungs | not started | §5 |
@@ -288,14 +288,19 @@ The shape is new-game.md's, plus a family crate:
 | Crate | Folder | Holds |
 |---|---|---|
 | `goldsrc_formats` | `goldsrc/formats` | BSP 30 (adapted from `qbsp`), WAD3, MDL v10, SPR, `liblist.gam`, `materials.txt`, the hull trace: plain data, no Bevy; may use `chimera_vfs` and `chimera_formats` only; fixtures written by its tests, `heavy::` tests on the install |
+| `goldsrc_engine` | `goldsrc/engine` | GoldSrc's content in Chimera's types (from M0): maps (`content::maps`, textures, lightmap, brushes, collision, entities, sky) and studio models as bodies (`content::studio`); its sources are hashed by each game's converter version |
 | `cs16` | `games/cs16` | the game (scaffolded 2026-11-24): `INFO`, mount, maps, bodies, movement, guns, `BUNDLE`; `loaders = ["goldsrc"]` from M0 |
 | `cs16_ui` | `games/cs16/ui` | its HUD (sprites from `640hud*.spr`), kill icons; `party::CLIENT` |
 | `cs16_app`, `cs16_server` | `apps/cs16`, `apps/cs16_server` | optional, as for TF2 and DoD:S (a guest first); for testing its own rules later |
 
-What every GoldSrc game shares (the map conversion to `MapData`, the
-model kit, the mount's folder chain) stays in `cs16` until the second
-GoldSrc game needs it, then moves to `goldsrc/engine` (new-game.md: "a
-lift, as `source/engine` came out of `cs_source`"). The architecture
+What every GoldSrc game shares lives in `goldsrc/engine`
+(`goldsrc_engine`, on Chimera and `goldsrc_formats`): its `content`
+converts a BSP 30 map into `MapData` and a studio model into a
+character body for any GoldSrc game (`content::maps::GoldSrcGame`: the
+game's id, converter version, spawns, gravity and kit), as
+`source_engine::content` does for Source. It was started in M0 rather
+than lifted later (the orchestrator's call, 2026-11-24); the mount's
+folder chain stays in `cs16` until a second game needs it. The architecture
 check learns the `goldsrc` loader family in M0
 (`layers_follow_paths`, `[package.metadata.chimera] loaders`).
 
@@ -463,3 +468,34 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   deathmatch maps (`disposal`, `pool_party`, `rocket_frenzy`) carry
   800-odd bytes after the last lightmap (bsp.md says every map tiles
   exactly); both for the next spec session.
+- 2026-11-24: M0, second half. `goldsrc/engine` (`goldsrc_engine`, a
+  new crate of the `goldsrc` layer) converts a map: faces meshed per
+  texture (embedded or from the `wad` key's WADs, found ignoring case;
+  all 40 of de_dust2's found), lightmaps (style 0 in one atlas, bytes as
+  linear light: the brightening is still bsp.md's open question 1), the
+  `gfx/env` sky, the entity list with spawns put on hull 1's floor,
+  brush entities by class (movers on their own node, `angles` handed
+  over as `movedir`; static solids; drawn-only; ladders; hidden
+  triggers) and render mode, surfaces from `materials.txt`, and the §3
+  collision: hull 0's regions as solids (1 566 on de_dust2) and hull 1's
+  shrunk regions as player clip, those whose probe points all lie in
+  hull 0's solid dropped (829 shrunk pieces, 176 kept). A studio model
+  becomes a body: bind pose from the bone defaults (the CS models'
+  already stand on the origin), every sequence of group 0 as animations
+  with root bones raised 36 units (their frames are about the box's
+  centre), 9-blend aims on a `body_pitch` grid, aim/shoot/reload
+  sequences weighted on the upper body (from `Bip01 Spine`). `cs16`:
+  `MAP_LOADER` (`cs16:<map>`, the converted-map cache, build.rs
+  converter version), the eight classes' bodies numbered as CS:S's
+  (`game::bodies`) with a stand-in driver (gait by speed and stance, the
+  one-handed aim layered), the guest dressing (its bodies on other
+  games' maps), its map pool rules and fitness measurements. Heavy tests:
+  de_dust2 converts with no missing texture and the same each time, its
+  spawns stand on hull 1's floor and hold a player, 80 walks from its
+  spawns never end inside hull 1's solid, shots pass player clip that
+  stops characters; the eight bodies read with their sequences and stand
+  on their feet facing -Z. The map fitness sweep (`map_fitness --game
+  cs16`) measured all 25 stock maps fit (no spawn spot off a map or
+  stuck, the spots covering about the whole walkable area): all enter
+  the pool (`games/cs16/data/map_pool.toml`). `+sandbox cs16:de_dust2`
+  plays in the Ultimate Gun Game with the stand-in pistol among the rungs.

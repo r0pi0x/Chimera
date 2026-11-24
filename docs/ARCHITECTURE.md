@@ -69,6 +69,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
                       lithtech_formats (lithtech/formats/)   LithTech's formats as plain data (`.rez`, attribute files, worlds, textures, models, animation, effect files)
                       blam_formats (blam/formats/)   Halo: Combat Evolved's formats as plain data (the Xbox disc image so far)
                       goldsrc_formats (goldsrc/formats/)   GoldSrc's formats as plain data (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, liblist.gam, materials.txt)
+                      goldsrc_engine (goldsrc/engine/)   GoldSrc's content in Chimera's types: a BSP 30 map as MapData (WAD textures, lightmaps, sky, entities, hull 0 solids and shrunk hull 1 player clip), a studio model as a character body
 ```
 
 - **Layers by path** (checked: `layers_follow_paths`): a crate's folder
@@ -93,7 +94,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   Combat Evolved; `blam_formats` reads the Xbox disc image so far, as a
   mount layer over the image file or a folder of its files) and `goldsrc/`
   (GoldSrc's, for Counter-Strike 1.6: `goldsrc_formats`, with BSP 30 code
-  adapted from `qbsp`, THIRD_PARTY.md), each beside the
+  adapted from `qbsp`, THIRD_PARTY.md; `goldsrc_engine`, its `content`
+  converting maps and studio models into Chimera's map types for every
+  GoldSrc game, as `source_engine`'s does for Source's), each beside the
   other under
   the games, by the same rules (checked: `workspace_crates`). Their
   format crates never depend on Bevy, avian, Chimera or a game; a
@@ -496,11 +499,15 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `GUEST` dresses other games' maps with its bodies and gun). Layered as
   `tf2`; `dods_ui` draws nothing of its own yet.
 - `cs16` (games/cs16/) is Counter-Strike 1.6, the first GoldSrc game
-  (docs/plans/active/goldsrc.md): as `tools/new-game` made it, a
-  `GameInfo`, the install as loose files, the placeholder movement and a
-  stand-in gun as data, `harness::Cs16Sim`, `BUNDLE` (a party guest with
-  nothing to dress yet). No loader family yet: `goldsrc/formats` comes
-  with M0's maps. `cs16_ui` draws nothing of its own.
+  (docs/plans/active/goldsrc.md): a `GameInfo`, the install as loose
+  files, its maps (`game::maps`, `MAP_LOADER`: `goldsrc_engine`'s
+  conversion with its spawns and kit, through the converted-map cache;
+  its pool rules and measurements), the eight player bodies
+  (`game::bodies`, a gait and the pistol's aim played on them), the
+  placeholder movement and a stand-in gun as data, `harness::Cs16Sim`,
+  `BUNDLE` (a party guest: `GUEST` dresses other games' maps with its
+  bodies). On the `goldsrc` loader layer. `cs16_ui` draws nothing of its
+  own.
 - `tf2` (games/tf2/) is Team Fortress 2, M1 of docs/plans/active/tf2.md:
   its `GameInfo` (`game::INFO`: Steam app 440, folder `tf`, tick 0.015 s,
   console namespaces `tf2` and `tf`), its install mounted from

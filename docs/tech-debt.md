@@ -442,8 +442,9 @@ fails when this file is stale; never edit the generated lines).
 - `games/combat_arms/ui/src/scoreboard.rs`: without the install the columns' places are ours (name, kills, deaths, assists, ping across the 766 px row), the panel and rows flat placeholder...
 - `games/combat_arms/ui/src/talk.rs`: the panel, the input bar and the radio window are drawn in code at places of ours (the HUD layouts' chat controls were not available, Open...
 - `games/combat_arms/ui/src/textures.rs`: no `DetailLevel` (the map loader's level skipping): the loaded level is the file's first
-- `games/cs16/src/game/maps.rs`: - No map loads (tools/new-game's stand-in)
-- `games/cs16/src/game/mod.rs`: - Everything is a stand-in made by tools/new-game: no maps, the placeholder movement, one gun without models
+- `games/cs16/src/game/bodies.rs`: - The gait and aim choice is a stand-in until specs/cs16 has the player animation (M1/M2): no shooting or reloading sequences, the aim blend at...
+- `games/cs16/src/game/maps.rs`: - `sv_gravity` is 800 (`GRAVITY`), Half-Life's default, until specs/cs16/movement.md lists the server's
+- `games/cs16/src/game/mod.rs`: - Movement and the gun are tools/new-game's stand-ins: the placeholder movement, one gun without models
 - `games/cs16/src/game/mount.rs`: - The client's language folder (`cstrike_<language>`) is not mounted yet: no client install has been checked (goldsrc.md, open question 2)
 - `games/cs16/src/game/movement.rs`: - A stand-in made by tools/new-game: replace it with the game's own movement from specs/cs16/movement.md (a marker component and...
 - `games/cs16/src/game/weapons.rs`: - A stand-in gun with no models or sounds: replace it with the game's guns from specs/cs16/weapons.md
@@ -654,6 +655,13 @@ fails when this file is stale; never edit the generated lines).
 - `games/tf2/src/game/weapons/sticky.rs`: a ninth sticky blows the oldest at once (the game: at its next 0.2 s fuse check); bullets don't destroy stickies; the launch's jitter and spin...
 - `games/tf2/ui/src/hud.rs`: the item meter's inner layout is ours; the max-health label, the low-ammo pulse (no threshold in the data), damage numbers and the health-gain...
 - `games/tf2/ui/src/systems.rs`: the node pool and its sync repeat HL2:DM's HUD's own (a shared one in `source_engine::hud` would serve both); the kill feed's row look is the...
+- `goldsrc/engine/src/content/brushes.rs`: - `{` textures are cut out at index 255 whatever the render mode (the original shows the hole only in render mode 4)
+- `goldsrc/engine/src/content/collision.rs`: - Brush entities add no clip pieces of their own (their hull 1 is not read)
+- `goldsrc/engine/src/content/entities.rs`: - Mover logic (doors opening, trains, breaking) is a logic layer's: none runs for a GoldSrc map yet, so movers stay where they spawn
+- `goldsrc/engine/src/content/lightmap.rs`: - Only style 0 is read: the stock maps have no other (bsp.md)
+- `goldsrc/engine/src/content/sky.rs`: - A sky with a face missing is not drawn at all (the original draws that face black; none is missing in the install)
+- `goldsrc/engine/src/content/studio.rs`: - Sequences in groups 1 and up (sequence files) are left out: no CS 1.6 player model has any
+- `goldsrc/engine/src/content/textures.rs`: - Animated (`+0`..`+9`, `+a`..`+j`) and random-tiling (`-0`..`-9`) textures show their first frame
 - `goldsrc/formats/src/bsp/mod.rs`: - Blue Shift's swapped entities/planes header is not read (out of scope until that game is ported; the spec's "Header and lumps")
 - `goldsrc/formats/src/bsp/solids.rs`: - Regions are cut from the model's bounds grown by 64 units: solid space beyond them (the void around the world) ends at that box
 - `lithtech/formats/src/anim.rs`: - `AniRateInterpolation` is always 1 (the carry is kept)

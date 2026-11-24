@@ -1,0 +1,40 @@
+[package]
+name = "goldsrc_engine"
+version = "0.1.0"
+description = "GoldSrc's content converted into Chimera's types, every GoldSrc game's: maps (BSP 30 with WAD3 textures, lightmaps, sky, entities, collision) and studio models (MDL v10 bodies)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# The engine's crates and GoldSrc's formats; never the presentation
+# (`chimera_present`), a game or an app (checks/tests/it/architecture.rs
+# checks it). Same versions and features as the games' (workspace
+# dependencies), so `cargo test -p goldsrc_engine` reuses their builds.
+[dependencies]
+chimera_core.workspace = true
+# The map's types (`map::MapData` and its parts) the content converts into.
+chimera_world.workspace = true
+goldsrc_formats.workspace = true
+bevy.workspace = true
+# The sky's TGA faces.
+image.workspace = true
+# The map file's hash (the network handshake, the cache key).
+sha2.workspace = true
+workspace-hack.workspace = true
+
+[features]
+# Bevy as a dynamic library, as the games' `dev` (which turns this on).
+dev = ["chimera_core/dev", "chimera_world/dev", "goldsrc_formats/dev"]
+
+[dev-dependencies]
+# The map's `render` feature, as every build with the presentation has it:
+# this crate's own tests then share the workspace's build of `chimera_world`.
+chimera_world = { workspace = true, features = ["render"] }
+bevy = { workspace = true, features = ["default", "wav"] }
+avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+bevy_winit.workspace = true
