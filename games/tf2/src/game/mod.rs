@@ -117,6 +117,8 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
         app_id: 440,
         name: "Team Fortress 2",
         required: &["tf/tf2_misc_dir.vpk", "hl2/hl2_misc_dir.vpk"],
+        server_apps: &[232250],
+        folders: &["tf2", "team-fortress-2"],
     }),
     map_file: |name| Some(format!("maps/{name}.bsp")),
     import_map: mount::import_map,

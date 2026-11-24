@@ -100,8 +100,9 @@ impl GameInfo {
         }
     }
 
-    /// Where the game is installed (chimera.local.toml, saved, or found:
-    /// `mount::install`).
+    /// Where the game is installed (`$CHIMERA_<GAME>_ROOT`,
+    /// chimera.local.toml, saved, or found: Steam, the games folder
+    /// convention, SteamCMD's places; `mount::install`).
     pub fn install(&self) -> Option<PathBuf> {
         config::LocalConfig::load().ok()?.game_path_in(self.id, self.steam.as_ref())
     }

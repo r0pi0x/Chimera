@@ -554,7 +554,7 @@ mod tests {
         map_cycle: |_| Vec::new(),
         map_names: |_| Vec::new(),
         map_file: |n| Some(format!("maps/{n}.bsp")),
-        steam: Some(install::SteamGame { app_id: 1, name: "Counter-Strike Source", required: &["cstrike/a_dir.vpk", "hl2/b_dir.vpk"] }),
+        steam: Some(install::SteamGame { app_id: 1, name: "Counter-Strike Source", required: &["cstrike/a_dir.vpk", "hl2/b_dir.vpk"], server_apps: &[], folders: &[] }),
         import_map: |_| Err("no".into()),
         default_binds_cfg: "cfg/default.cfg",
         default_binds: &[],

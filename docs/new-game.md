@@ -105,8 +105,13 @@ five games have it so.
 - `INFO` (`chimera_core::game_registry::GameInfo`): id, short name,
   full name (every menu, picker and card names the game by these, through
   `chimera_core::game_registry::known`: no table of names elsewhere), content folder, tick, how its install mounts, its map names and
-  cycle, its Steam app if it has one, its world unit in metres, its
-  console namespaces.
+  cycle, its Steam app if it has one (`steam: SteamGame`: app id, the
+  files that show a folder is the game, `server_apps` its dedicated
+  server apps for SteamCMD's default places, and `folders` the names it
+  goes by in a games folder, `~/games/<name>`, `<name>_ds`, `<name>-ds`:
+  `["cs16"]`, `["counter-strike-source", "css"]`; case and `_`/`-` don't
+  matter; docs/assets-for-developers.md, "Where an install is found"),
+  its world unit in metres, its console namespaces.
 - `BUNDLE` (`chimera_world::game_bundle::GameBundle`): what a party app
   takes of the game: its info, parts, map loader, its players and guns
   on other games' maps, its binds, its view-model FOV and its cvar,

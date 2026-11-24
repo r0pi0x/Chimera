@@ -102,6 +102,8 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
         app_id: 300,
         name: "Day of Defeat Source",
         required: &["dod/gameinfo.txt", "dod/dod_pak_dir.vpk", "hl2/hl2_misc_dir.vpk"],
+        server_apps: &[232290],
+        folders: &["dods", "dod-source", "day-of-defeat-source"],
     }),
     map_file: |name| Some(format!("maps/{name}.bsp")),
     import_map: mount::import_map,

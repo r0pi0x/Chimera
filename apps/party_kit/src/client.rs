@@ -264,7 +264,23 @@ fn examine_mounts(party: &Party, games: &Games, commands: &mut Commands) {
         let state = if g.installed { "installed" } else { "not installed" };
         info!("mount doctor: {} {state}{build}", g.game);
     }
+    log_install_rules(games);
     commands.insert_resource(chimera_net::net::manifest::LocalMounts(report));
+}
+
+/// Which rule found each game's install (`install::Found`: the variable,
+/// the config, Steam's library, SteamCMD's default place, the games
+/// folder convention), one line per game, in the log only (paths stay on
+/// this machine). A scenario test's process reads no install (`offline`).
+fn log_install_rules(games: &Games) {
+    use chimera_core::mount::{config::LocalConfig, install, offline};
+    if offline::installs_forbidden() {
+        return;
+    }
+    let config = LocalConfig::load().unwrap_or_default();
+    for g in games.all() {
+        info!("mount doctor: {}", install::resolve(&config, g.id, g.steam.as_ref()).describe(g.id));
+    }
 }
 
 /// The window's icon, one at random per start: the logo's three

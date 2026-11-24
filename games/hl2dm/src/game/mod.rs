@@ -90,6 +90,8 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
         app_id: 320,
         name: "Half-Life 2: Deathmatch",
         required: &["hl2mp/hl2mp_pak_dir.vpk", "hl2/hl2_misc_dir.vpk"],
+        server_apps: &[232370],
+        folders: &["hl2dm", "half-life-2-deathmatch"],
     }),
     map_file: |name| Some(format!("maps/{name}.bsp")),
     import_map: mount::import_map,

@@ -13,7 +13,9 @@
 //! `$CHIMERA_STEAM_ROOT` replaces them), each `libraryfolders.vdf` library
 //! (old and new formats), the app's `appmanifest_<id>.acf` (fully
 //! installed; its build id for the mount doctor) and the files the game
-//! needs; `GameInfo::steam` names the games it looks for;
+//! needs; `GameInfo::steam` names the games it looks for, their dedicated
+//! server apps and their folder names; then the games folder convention
+//! (`~/games/<name>`) and SteamCMD's default places for a server;
 //! `LocalConfig::game_path` goes through it); a game's mount with the asset
 //! store under or instead of its install, and the vfs access log
 //! (`served.rs`); the switch that keeps fast-tier tests off installs

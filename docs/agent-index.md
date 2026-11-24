@@ -114,10 +114,11 @@ module list is `docs/modules.md`.
 - 197: Converted maps | Beside it, `~/.cache/chimera/maps` (`%LOCALAPPDATA%\chimera\maps`) keeps maps as converted (CS:S maps whole; Combat Arms' worlds only with
 - 225: How updates arrive | The repository's `assets.lock` (when there is one) pins each game's build and manifest id
 - 238: What still needs an install | Everything that reads the game through its mount runs from the service, the community maps the heavy tests load included (they are in...
-- 251: Day of Defeat: Source: an install of your own | DoD:S (docs/plans/active/dods.md) is served from 2026-11-23 (the dedicated server's build 25338204, published with `--build`: the...
-- 273: Counter-Strike 1.6: an install of your own, or the service | CS 1.6 (docs/plans/active/goldsrc.md) is served from 2026-11-24 (the Half-Life Dedicated Server's build 15961496, published with `--build`):
-- 296: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
-- 341: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
+- 251: Where an install is found (no config needed) | A game's install (what its tests and `GameInfo::install()` read) is the first of these that holds the files the game needs...
+- 281: Day of Defeat: Source: an install of your own | DoD:S (docs/plans/active/dods.md) is served from 2026-11-23 (the dedicated server's build 25338204, published with `--build`: the...
+- 304: Counter-Strike 1.6: an install of your own, or the service | CS 1.6 (docs/plans/active/goldsrc.md) is served from 2026-11-24 (the Half-Life Dedicated Server's build 15961496, published with `--build`):
+- 328: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
+- 373: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
 
 ## docs/backlog.md
 
@@ -183,8 +184,8 @@ module list is `docs/modules.md`.
 - 26: Before any code | before writing a loader): the install (where it comes from, how it is found), the formats, the milestones below, what is out of scope
 - 40: The crates | A new family's folder is a loader layer the day a crate lives in it; its formats crate may use `chimera_vfs` (archives as mount layers) and
 - 64: The game crate's shape | party mode finds the same seams in every game:
-- 144: Order of work | Get a character walking on the greybox with stand-in parts first (M0: tools/new-game), then replace one part at a time, each behind its...
-- 212: Don't rely on | run-time choice (`chimera_core::gameplay`)
+- 149: Order of work | Get a character walking on the greybox with stand-in parts first (M0: tools/new-game), then replace one part at a time, each behind its...
+- 217: Don't rely on | run-time choice (`chimera_core::gameplay`)
 
 ## docs/performance.md
 

@@ -248,6 +248,36 @@ archive listings, the `heavy::served` tests (they pack from an install),
 `dump`. Local demo and probe files (`target/demos`, probe logs) aren't
 served either: those tests skip as they do for us without them.
 
+## Where an install is found (no config needed)
+
+A game's install (what its tests and `GameInfo::install()` read) is the
+first of these that holds the files the game needs
+(`chimera_core::mount::install`); the mount doctor's log line says which
+rule found each one (`mount doctor: cs16 install: ... (from games folder
+convention, client ...)`):
+
+1. `$CHIMERA_<GAME>_ROOT` (`CHIMERA_CS16_ROOT`), for one run;
+2. `[games.<id>] path` in `chimera.local.toml`, then the path the game's
+   first-run screen saved;
+3. Steam's libraries (`libraryfolders.vdf`; the client app);
+4. the games folder convention: a folder of the game's name in
+   `~/games` (Windows `%USERPROFILE%\games`; `$CHIMERA_GAMES_DIR`
+   replaces it): `~/games/cs16`, `~/games/counter-strike-source`. Case,
+   `_`, `-` and spaces don't matter, and the names are the game's own
+   (`SteamGame::folders`, docs/new-game.md), not a list in the code;
+5. only if none of those found a client: a dedicated server. SteamCMD's
+   default places (`~/steamcmd`, `~/Steam`, `~/.steam/steamcmd`; Windows
+   `C:\steamcmd`, `%USERPROFILE%\steamcmd`: read as Steam roots, for the
+   game's `SteamGame::server_apps`), then the games folder's server
+   folders: the name and `_ds`, `-ds`, `_server`, `-server`, `_dedicated`
+   (`~/games/cs16_ds`, `~/games/dods_ds`).
+
+The client comes before a dedicated server everywhere, since it has more
+content. So an install made with `steamcmd +force_install_dir ~/games/dods_ds
+...` needs no config. Setting `$CHIMERA_STEAM_ROOT` (even empty) also turns
+the SteamCMD places and the games folder off (a test's "nothing
+installed"), unless `$CHIMERA_GAMES_DIR` names folders.
+
 ## Day of Defeat: Source: an install of your own
 
 DoD:S (docs/plans/active/dods.md) is served from 2026-11-23 (the
@@ -266,8 +296,9 @@ the party reads, about 1.8 GB:
 steamcmd +force_install_dir <folder> +login anonymous +app_update 232290 validate +quit
 ```
 
-A SteamCMD install outside Steam's libraries needs the config line or
-the variable (a folder holding `dod/`, `hl2/` and `platform/`). The
+A SteamCMD install outside Steam's libraries and the places above (a
+folder holding `dod/`, `hl2/` and `platform/`) needs the config line or
+the variable; `~/games/dods_ds` is found as it is. The
 scripts are plain text: no key.
 
 ## Counter-Strike 1.6: an install of your own, or the service
@@ -290,8 +321,9 @@ the party reads, about 930 MB:
 steamcmd +force_install_dir <folder> +login anonymous +app_set_config 90 mod cstrike +app_update 90 validate +quit
 ```
 
-A SteamCMD install outside Steam's libraries needs the config line or
-the variable (a folder holding `cstrike/` and `valve/`).
+A SteamCMD install outside Steam's libraries and the places above (a
+folder holding `cstrike/` and `valve/`) needs the config line or the
+variable; `~/games/cs16` and `~/games/cs16_ds` are found as they are.
 
 ## Team Fortress 2: an install of your own, or the service
 

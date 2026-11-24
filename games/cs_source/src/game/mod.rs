@@ -236,6 +236,8 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
         app_id: 240,
         name: "Counter-Strike: Source",
         required: &["cstrike/cstrike_pak_dir.vpk", "hl2/hl2_misc_dir.vpk"],
+        server_apps: &[232330],
+        folders: &["cs_source", "css", "counter-strike-source"],
     }),
     map_file: |name| Some(format!("maps/{name}.bsp")),
     import_map: mount::import_map,

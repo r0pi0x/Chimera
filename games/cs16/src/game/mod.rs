@@ -77,6 +77,8 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
         app_id: STEAM_APP,
         name: "Half-Life",
         required: &["cstrike/liblist.gam", "cstrike/maps/de_dust2.bsp", "valve/halflife.wad"],
+        server_apps: &[90],
+        folders: &["cs16", "counter-strike-1.6"],
     }),
     map_file: |name| Some(maps_path(name)),
     import_map: |_| Err("Counter-Strike 1.6 maps load from the install by id (cs16:<map>)".into()),
