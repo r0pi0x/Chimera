@@ -417,20 +417,58 @@ pub struct PowerReaders {
     pub game_damage: crate::weapon::GameDamage,
     /// The powers worked out so far (`Powers::of`), shared by the copies.
     memo: std::sync::Arc<std::sync::Mutex<PowerMemo>>,
+    /// `harm::harmless` of the weapons asked so far (`harmless_each`),
+    /// shared by the copies.
+    harm_memo: std::sync::Arc<std::sync::Mutex<HarmMemo>>,
+}
+
+/// What `PowerReaders::harmless_each` worked out with one list of harm
+/// readers: a weapon's data (`&'static`, by its address) is harmless or
+/// not the same each time, and every new ladder asked it of thousands
+/// (21 M instructions a definition with 2,459 weapons; docs/performance.md,
+/// "What the unlocks cost"). Emptied when the harm readers differ.
+#[derive(Default)]
+struct HarmMemo {
+    /// The harm readers' hooks and addresses the answers are of.
+    of: Option<Vec<(&'static str, usize)>>,
+    harmless: bevy::platform::collections::HashMap<usize, bool>,
+}
+
+impl PowerReaders {
+    /// `harm::harmless` with these harm readers, each weapon's data
+    /// worked out once (`HarmMemo`); the memo held while the closure lives.
+    pub fn harmless_each(&self) -> impl FnMut(&'static WeaponData) -> bool + '_ {
+        let mut memo = self.harm_memo.lock().unwrap_or_else(|e| e.into_inner());
+        let key: Vec<(&'static str, usize)> = self.harm.0.iter().map(|(hook, read)| (*hook, *read as usize)).collect();
+        if memo.of.as_ref() != Some(&key) {
+            memo.of = Some(key);
+            memo.harmless.clear();
+        }
+        move |data| {
+            *memo
+                .harmless
+                .entry(std::ptr::from_ref::<WeaponData>(data) as usize)
+                .or_insert_with(|| crate::weapon::harm::harmless(data, &self.harm))
+        }
+    }
 }
 
 /// The powers `Powers::of` worked out with one list of readers and one
 /// curve: a weapon's data (`&'static`, by its address) and class give the
 /// same power each time, and every new ladder asked for thousands again
 /// (52 M instructions a definition; docs/performance.md, "A new ladder's
-/// frame"). Emptied when the readers or the curve differ.
+/// frame"). One map per readers and curve asked lately (`MEMOS`: the
+/// draw's pool and its powers ask with the same, a definition's tuned
+/// curve with another), the oldest dropped.
 #[derive(Default)]
 struct PowerMemo {
-    /// The readers' hooks and addresses, the games' damage scales and the
-    /// curve the powers are of.
-    of: Option<MemoKey>,
-    powers: BTreeMap<(usize, GunClass), Power>,
+    /// (the readers' hooks and addresses, the games' damage scales and the
+    /// curve the powers are of; the powers), the latest last.
+    memos: Vec<(MemoKey, bevy::platform::collections::HashMap<(usize, GunClass), Power>)>,
 }
+
+/// The readers and curves `PowerMemo` keeps powers for.
+const MEMOS: usize = 4;
 
 /// What a memo's powers are of: the readers' hooks and addresses, the
 /// games' damage scales, the curve.
@@ -588,7 +626,7 @@ pub fn band_of(class: GunClass, data: Option<&WeaponData>, readers: &PowerReader
 
 /// Each gun's power, by id.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Powers(pub BTreeMap<&'static str, Power>);
+pub struct Powers(pub bevy::platform::collections::HashMap<&'static str, Power>);
 
 impl Powers {
     /// The powers of `guns` (id and class) from the catalogue's data
@@ -599,13 +637,20 @@ impl Powers {
         readers: &PowerReaders,
         curve: &PowerCurve,
     ) -> Self {
-        let mut out = BTreeMap::new();
+        let mut out = bevy::platform::collections::HashMap::default();
         let mut memo = readers.memo.lock().unwrap_or_else(|e| e.into_inner());
         let key: Vec<(&'static str, usize)> = readers.stats.iter().map(|(hook, read)| (*hook, *read as usize)).collect();
-        if !memo.of.as_ref().is_some_and(|(k, g, c)| *k == key && *g == readers.game_damage && c == curve) {
-            memo.of = Some((key, readers.game_damage.clone(), curve.clone()));
-            memo.powers.clear();
-        }
+        let at = match memo.memos.iter().position(|((k, g, c), _)| *k == key && *g == readers.game_damage && c == curve) {
+            Some(at) => at,
+            None => {
+                if memo.memos.len() >= MEMOS {
+                    memo.memos.remove(0);
+                }
+                memo.memos.push(((key, readers.game_damage.clone(), curve.clone()), Default::default()));
+                memo.memos.len() - 1
+            }
+        };
+        let memo = &mut memo.memos[at].1;
         for (id, class) in guns {
             let data = catalog.get(id);
             let power = |data: Option<&'static WeaponData>| {
@@ -617,7 +662,7 @@ impl Powers {
                 }
             };
             let power = match data {
-                Some(d) => *memo.powers.entry((std::ptr::from_ref::<WeaponData>(d) as usize, class)).or_insert_with(|| power(data)),
+                Some(d) => *memo.entry((std::ptr::from_ref::<WeaponData>(d) as usize, class)).or_insert_with(|| power(data)),
                 None => power(None),
             };
             out.insert(id, power);

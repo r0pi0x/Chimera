@@ -670,7 +670,7 @@ fn build_character_assets(
     });
     // Loose (dropped) forms (`map::loose`), drawn with the held models'
     // whole meshes (`super::loose`).
-    if let Some(loose) = loose::assets(data) {
+    if let Some(loose) = s.loose_assets() {
         commands.insert_resource(loose);
     }
     commands.insert_resource(HeldAssets(held));
@@ -696,7 +696,7 @@ fn build_character_assets(
         commands.insert_resource(shells);
     }
     // The gibs' simulation (`map::breakables`), drawn by `super::breakables`.
-    if let Some(gibs) = breakables::build_assets(data) {
+    if let Some(gibs) = s.gib_assets() {
         commands.insert_resource(gibs);
     }
     Phase::LightmapsSkyWater

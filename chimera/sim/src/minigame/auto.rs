@@ -352,18 +352,24 @@ pub fn drawable_all(world: &World, caps: &mut [Capabilities]) -> Vec<Skipped> {
     let catalog = world.get_resource::<WeaponCatalog>().unwrap_or(&empty);
     let none = PowerReaders::default();
     let registered = world.get_resource::<PowerReaders>().unwrap_or(&none);
-    let (readers, excluded) = (&registered.harm, &registered.exclusions);
+    let excluded = &registered.exclusions;
     let mut skipped = Vec::new();
     // The exclusions by id (lower case), the first of an id as `reason`
     // finds it: thousands of guns are asked.
-    let mut reasons: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
+    let mut reasons: bevy::platform::collections::HashMap<String, &str> = Default::default();
     for (id, r) in &excluded.0 {
         reasons.entry(id.to_ascii_lowercase()).or_insert(r.as_str());
     }
+    let reason = |id: &str| {
+        if id.bytes().any(|b| b.is_ascii_uppercase()) { reasons.get(&id.to_ascii_lowercase()) } else { reasons.get(id) }
+    };
+    // Whether a weapon can hurt, worked out once per weapon's data
+    // (`PowerReaders::harmless_each`).
+    let mut harmless = registered.harmless_each();
     let mut why = |id: &'static str| -> Option<String> {
-        let r = if let Some(r) = (!reasons.is_empty()).then(|| reasons.get(&id.to_ascii_lowercase())).flatten() {
+        let r = if let Some(r) = (!reasons.is_empty()).then(|| reason(id)).flatten() {
             Some(r.to_string())
-        } else if catalog.get(id).is_some_and(|d| crate::weapon::harm::harmless(d, readers)) {
+        } else if catalog.get(id).is_some_and(&mut harmless) {
             Some("no damage".to_string())
         } else {
             None
@@ -414,7 +420,20 @@ pub fn draw_pool(world: &World, mut caps: Vec<Capabilities>, installed: &dyn Fn(
     let curve = PowerCurve::shipped();
     let rules = world.get_resource::<GunRules>().cloned().unwrap_or_default();
     let family = |id: &str| family_of(catalog, id);
-    let class = |id: &str, c: GunClass| effective_class(id, c, catalog, readers, &curve);
+    // The pistols' bands at once (`effective_class` of each: a hard-hitting
+    // pistol a heavy pistol's), from the powers' memo (`Powers::of`): a
+    // pistol's damage at the curve's distances was worked out again for
+    // every ladder (22 M instructions of 211 pistols).
+    let pistols = power::Powers::of(
+        caps.iter().flat_map(|c| c.guns.iter()).filter(|g| g.class == GunClass::Pistol).map(|g| (g.id, g.class)),
+        catalog,
+        readers,
+        &curve,
+    );
+    let heavy = curve.class_band(GunClass::HeavyPistol);
+    let class = |id: &str, c: GunClass| {
+        if c == GunClass::Pistol && pistols.get(id).is_some_and(|p| p.band == heavy) { GunClass::HeavyPistol } else { c }
+    };
     let legacy = world.get_resource::<GunsOff>().filter(|o| !o.0.trim().is_empty());
     let mut pool = gun_rules::apply(&rules, legacy, caps, &family, &class);
     skipped.append(&mut pool.skipped);
@@ -1259,7 +1278,7 @@ mod tests {
     /// guns' order.
     fn powers_of(caps: &[&Capabilities]) -> Powers {
         let curve = &PowerCurve::shipped();
-        let mut out = std::collections::BTreeMap::new();
+        let mut out = bevy::platform::collections::HashMap::default();
         for (k, g) in caps.iter().flat_map(|c| &c.guns).enumerate() {
             let score = ((k * 37) % 23) as f32 + 1.0;
             out.insert(g.id, Power { band: curve.class_band(g.class), score, ttk: 1.0 / score });

@@ -307,13 +307,16 @@ pub fn apply(
 ) -> Pool {
     let mut pool = Pool::default();
     let mut group = allowed_group();
+    // A family is asked only by the ban and allow lists (thousands of
+    // guns: each family a lookup and a string).
+    let by_family = !entries(&rules.ban).is_empty() || !entries(&rules.allow).is_empty();
     for c in &caps {
         let on = rules.game_on(c.game);
         let mut kept = shell(c);
         let mut reserve = shell(c);
         let weapons = c.guns.iter().map(|g| (g.id, Some(*g))).chain(c.grenades.iter().map(|g| (*g, None)));
         for (id, gun) in weapons {
-            let fam = family(id);
+            let fam = if by_family { family(id) } else { String::new() };
             let cls = gun.map_or(GunClass::Grenade, |g| class(id, g.class));
             let mut skip = |why: &str| pool.skipped.push(Skipped { id, why: why.to_string() });
             let into = if rules.banned(id, &fam) || legacy.is_some_and(|o| o.has(id)) {

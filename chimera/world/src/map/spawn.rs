@@ -155,7 +155,28 @@ pub struct MapSpawn<'a> {
     pub prepared: &'a prepare::Prepared,
 }
 
+/// Each held model's loose form (`loose::assets`), made on the load's
+/// task (`prepare_world`): every vertex of every held model, hundreds
+/// with TF2's unlocks in the kit (67 M instructions of a spawn step on
+/// cs_office; docs/performance.md, "What the unlocks cost (2026-11-24)").
+struct LooseAhead(Option<loose::LooseAssets>);
+
+/// The gibs' bodies (`breakables::build_assets`: each piece's contact
+/// hulls), made on the load's task (`prepare_world`; 51 M instructions of
+/// a spawn step on cs_office).
+struct GibsAhead(Option<breakables::GibAssets>);
+
 impl MapSpawn<'_> {
+    /// The held models' loose forms: made ahead (`prepare_world`), else now.
+    pub fn loose_assets(&self) -> Option<loose::LooseAssets> {
+        self.prepared.take::<LooseAhead>().map_or_else(|| loose::assets(self.data), |a| a.0)
+    }
+
+    /// The gibs' bodies: made ahead (`prepare_world`), else now.
+    pub fn gib_assets(&self) -> Option<breakables::GibAssets> {
+        self.prepared.take::<GibsAhead>().map_or_else(|| breakables::build_assets(self.data), |a| a.0)
+    }
+
     /// Map entity `i`'s node, when it has one.
     pub fn node(&self, i: usize) -> Option<Entity> {
         self.entity_nodes.get(i).copied().flatten()
@@ -615,13 +636,16 @@ pub(super) struct WorldParts {
 /// The world's job for `MapHooks::prepare`: its parts, the surfaces'
 /// colours (`SurfaceColors`), the surfaces under a point
 /// (`sound::SurfaceGrid`: every tagged triangle of the map onto its grid
-/// was 43 M instructions of a step on Combat Arms' warehouse) and the
-/// light field's first use.
+/// was 43 M instructions of a step on Combat Arms' warehouse), the held
+/// models' loose forms and the gibs' bodies (`LooseAhead`, `GibsAhead`)
+/// and the light field's first use.
 pub(super) fn prepare_world(_: &World) -> prepare::PrepareJob {
     Box::new(|data, prepared| {
         prepared.insert(world_parts(data));
         prepared.insert(surface_color::SurfaceColors::new(data));
         prepared.insert(sound::SurfaceGrid::new(data));
+        prepared.insert(LooseAhead(loose::assets(data)));
+        prepared.insert(GibsAhead(breakables::build_assets(data)));
         // A light field may build what it needs on its first use (Source's:
         // the occluding brushes' hulls): here, not in the first tick.
         if let Some(field) = &data.light_field {
@@ -903,14 +927,13 @@ fn insert_entities(commands: &mut Commands, s: &MapSpawn) {
 
 /// Headless: dropped weapons and gibs still have their bodies, undrawn.
 fn insert_headless_assets(commands: &mut Commands, s: &MapSpawn, draws: Draws) {
-    let data = s.data;
     if !draws.loose
-        && let Some(loose) = loose::assets(data)
+        && let Some(loose) = s.loose_assets()
     {
         commands.insert_resource(loose);
     }
     if !draws.gibs
-        && let Some(gibs) = breakables::build_assets(data)
+        && let Some(gibs) = s.gib_assets()
     {
         commands.insert_resource(gibs);
     }

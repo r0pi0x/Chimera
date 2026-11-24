@@ -97,15 +97,28 @@ pub fn load(files: &Tf2Files, id: &str, lean: bool) -> Result<Outcome, String> {
 }
 
 /// The unlock a view model key is of (`tf2:winger`, `tf2:winger#soldier`),
-/// if it names one.
-fn unlock_of(key: &str) -> Option<&str> {
+/// if it names one in `items`.
+fn unlock_of<'a>(items: &super::items::ItemsData, key: &'a str) -> Option<&'a str> {
     let id = key.split_once('#').map_or(key, |(g, _)| g);
     let name = id.strip_prefix("tf2:")?;
-    super::items::ItemsData::builtin()
-        .items
-        .get(name)
-        .filter(|d| !d.wearable)
-        .map(|_| id)
+    items.items.get(name).filter(|d| !d.wearable).map(|_| id)
+}
+
+/// data/items.toml as `late_items` read it, and the data generation then
+/// (`game_data::generation`: a dev build's reload reads it again). Parsed
+/// for each view whose model the map lacked, every frame, it was 6.9 M
+/// instructions a tick (docs/performance.md, "What the unlocks cost").
+#[derive(Default)]
+pub struct ItemsRead(Option<(u64, super::items::ItemsData)>);
+
+impl ItemsRead {
+    fn get(&mut self) -> &super::items::ItemsData {
+        let now = chimera_core::game_data::generation();
+        if !self.0.as_ref().is_some_and(|(at, _)| *at == now) {
+            self.0 = Some((now, super::items::ItemsData::builtin()));
+        }
+        &self.0.as_ref().expect("read above").1
+    }
 }
 
 /// Each frame: finished loads put in; on a TF2 unit's arrival the waiting
@@ -121,6 +134,7 @@ pub fn late_items(
     images: Option<Res<Assets<Image>>>,
     wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut state: ResMut<LateItems>,
+    mut items: Local<ItemsRead>,
     mut commands: Commands,
 ) {
     let mut waiting = Vec::new();
@@ -172,11 +186,13 @@ pub fn late_items(
         state.tried.retain(|i| !again.contains(i));
     }
     let Some(models) = models else { return };
-    let wanted: BTreeSet<String> = views
-        .iter()
-        .filter_map(|v| v.key.as_deref())
-        .filter(|k| models.get(k).is_none())
-        .filter_map(unlock_of)
+    let mut missing = views.iter().filter_map(|v| v.key.as_deref()).filter(|k| models.get(k).is_none()).peekable();
+    if missing.peek().is_none() {
+        return;
+    }
+    let items = items.get();
+    let wanted: BTreeSet<String> = missing
+        .filter_map(|k| unlock_of(items, k))
         .map(str::to_string)
         .collect();
     let lean = images.is_none();

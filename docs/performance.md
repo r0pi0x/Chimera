@@ -4365,6 +4365,34 @@ worked out once per install; at the first match's start); `auto::drawable` (9.7 
 Guard: `heavy::ladder_build` (after the session's first: `generate` under 45 M, `draw` and
 `start` under 50 M each).
 
+### What the unlocks cost (2026-11-24)
+
+TF2's unlocks took the catalogue to 2,459 weapons and the kit's held models to over 430, and
+three guards failed on main (dev build, work counts):
+
+| What | Before | After | The cause |
+|---|---|---|---|
+| `generate` (`heavy::ladder_build`) | 79.9-80.9 M | 28.9-29.9 M | below |
+| a spawn step on cs_office (`heavy::map_swap_frames`; the four maps' worst now dm_lockdown's 60 M) | 118-123 M | 59 M | the characters' last step: every held model's loose form and the gibs' bodies |
+| a tick on de_inferno, lap 2 (`heavy::session_maps`) | 20.6 M (`late_items` 6.9 M; lap 1 13.7 M) | 13.8 M | TF2's data/items.toml parsed every frame |
+
+- `generate`: `auto::drawable_all` asked `harm::harmless` of every weapon each ladder (21 M:
+  now `PowerReaders::harmless_each`, kept by the data's address per harm readers); `draw_pool`'s
+  class rule worked out each pistol's body damage at the curve's five distances again (22 M of
+  211 pistols: now their bands from `Powers::of`'s memo, which keeps up to four readers and
+  curves instead of one); the pools and powers in `BTreeMap`s by id (`Powers` is a hash map
+  now; 10 M to 7 M); each gun's family made as a string though no ban or allow list named
+  one; an exclusion lookup allocated each id's lower case. Same ladders: `draw` and `start`
+  counted the same to 0.1 M on every seed.
+- The spawn step: `loose::assets` walks every vertex of every held model (67 M) and
+  `breakables::build_assets` cuts every gib's contact hulls (51 M); both are made from the data
+  alone and now come with the load's task (`spawn::prepare_world`: `LooseAhead`, `GibsAhead`;
+  `MapSpawn::loose_assets`, `gib_assets`), headless too.
+- `late_items` asked `unlock_of` for each view whose TF2 key the map's kit lacks, every frame,
+  and each answer parsed the whole items file (`ItemsData::builtin`): now read once per data
+  generation into the system's own `Local` (`late_items::ItemsRead`; a process-wide static
+  is refused by `repo_checks`' determinism ratchet).
+
 ### A death (a ragdoll's first frame)
 
 **The repro.** `heavy::death_frames` in ultimate_gun_game: the gun game on de_dust2 with
