@@ -19,8 +19,9 @@
 //! - Liquids keep the lightmap the file gives them (bsp.md open question
 //!   4) and are not handed over as water volumes or Chimera's water
 //!   material (refraction, fog): the warp is all of their look.
-//! - Nothing toggles a mover's alternate set yet: GoldSrc maps run no
-//!   entity logic (`entities`' shortcut), so it shows its first set.
+//! - Only movers carry both sets: an unnamed `func_wall` or
+//!   `func_illusionary` (never used) shows its own set for good, as the
+//!   game does; the logic (`crate::logic`) picks a node's set by its frame.
 //! - Render effects (`renderfx`) are ignored.
 
 use std::collections::BTreeMap;

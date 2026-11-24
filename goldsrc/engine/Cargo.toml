@@ -21,6 +21,9 @@ chimera_core.workspace = true
 chimera_world.workspace = true
 goldsrc_formats.workspace = true
 bevy.workspace = true
+# The logic's mover nodes: their colliders turned off, characters' boxes
+# (`logic::bridge`).
+avian3d.workspace = true
 # The sky's TGA faces.
 image.workspace = true
 # The map file's hash (the network handshake, the cache key).

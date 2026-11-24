@@ -20,6 +20,9 @@
 //! are written every phase as before (`MoverCache`; docs/performance.md,
 //! "A change stamp for the movers").
 //!
+//! A map whose entities name another family's logic
+//! (`map::entities::LOGIC_FAMILY_KEY`: GoldSrc's maps) gets none of this.
+//!
 //! Covers: `carry_player`: a network client's own player pushed by its movers'
 //! steps as `LogicSet::Pre` does; `LogicPlugin`: built from `map::MapEntities`,
 //! runs `LogicSet::Pre` before movement, `LogicSet::Post` after, and
@@ -335,7 +338,12 @@ fn load(world: &mut World) {
     // logic: with one, every conversion into its space divided by zero,
     // and a player's velocity came back NaN (the sandbox crashed a few
     // frames in, in the view bob's clamp).
-    let current = world.get_resource::<MapEntities>().filter(|m| m.scale > 0.0).cloned();
+    // A map of another family's logic (`map::entities::LOGIC_FAMILY_KEY`:
+    // GoldSrc's) is not this layer's.
+    let current = world
+        .get_resource::<MapEntities>()
+        .filter(|m| m.scale > 0.0 && crate::map::entities::logic_family(&m.entities).is_none())
+        .cloned();
     let built = world.get_resource::<Logic>().map(|l| l.source.clone());
     let restarts = world.get_resource::<RoundRestarts>().map_or(0, |r| r.0);
     match (current, built) {

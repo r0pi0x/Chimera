@@ -14,7 +14,8 @@
 //! Known shortcuts:
 //! - `sv_gravity` is 800 (`GRAVITY`), Half-Life's default, until
 //!   specs/cs16/movement.md lists the server's.
-//! - Its objectives (bomb targets, buy zones, hostages) are entities only.
+//! - Its objectives (bomb targets, buy zones, hostages) are entities only
+//!   (`goldsrc_engine::logic` keeps them as data; no rule reads them).
 
 use goldsrc_engine::content::maps::{self as gmaps, GoldSrcGame};
 

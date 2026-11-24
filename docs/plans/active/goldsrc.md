@@ -23,7 +23,7 @@ Force) is a small port on the same loader.
 |---|---|---|
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount; entities 2026-11-24); `specs/cs16/` install, movement, weapons to come |
-| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Left: the lightmap brightening against captures |
+| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Left: the lightmap brightening against captures; the logic's network part, its sounds and debris |
 | M1 weapons | not started | §5 |
 | M2 movement | not started | §5; the lift of Source's movement into Chimera planned in [shared-movement.md](shared-movement.md) (2026-11-24) |
 | M3 party rungs | not started | §5 |
@@ -288,7 +288,7 @@ The shape is new-game.md's, plus a family crate:
 | Crate | Folder | Holds |
 |---|---|---|
 | `goldsrc_formats` | `goldsrc/formats` | BSP 30 (adapted from `qbsp`), WAD3, MDL v10, SPR, `liblist.gam`, `materials.txt`, the hull trace: plain data, no Bevy; may use `chimera_vfs` and `chimera_formats` only; fixtures written by its tests, `heavy::` tests on the install |
-| `goldsrc_engine` | `goldsrc/engine` | GoldSrc's content in Chimera's types (from M0): maps (`content::maps`, textures, lightmap, brushes, collision, entities, sky) and studio models as bodies (`content::studio`); its sources are hashed by each game's converter version |
+| `goldsrc_engine` | `goldsrc/engine` | GoldSrc's content in Chimera's types (from M0): maps (`content::maps`, textures, lightmap, brushes, collision, entities, sky) and studio models as bodies (`content::studio`); its sources are hashed by each game's converter version; the maps' entity logic (`logic`: `GoldSrcLogicPlugin`, which `cs16` adds) |
 | `cs16` | `games/cs16` | the game (scaffolded 2026-11-24): `INFO`, mount, maps, bodies, movement, guns, `BUNDLE`; `loaders = ["goldsrc"]` from M0 |
 | `cs16_ui` | `games/cs16/ui` | its HUD (sprites from `640hud*.spr`), kill icons; `party::CLIENT` |
 | `cs16_app`, `cs16_server` | `apps/cs16`, `apps/cs16_server` | optional, as for TF2 and DoD:S (a guest first); for testing its own rules later |
@@ -393,6 +393,12 @@ an implementation session):
 - (answered in entities.md, "Alternate textures") bsp.md: which entities toggle the `+a`..`+j` set and when (buttons
   while pressed? doors? any brush entity's `frame`), and whether the
   alternate set animates at the same rate.
+- entities.md (from `goldsrc_engine::logic`): the brush size the
+  movers' travel uses is the models lump's bounds; is it the same as the
+  hull 0 regions' bounds on every stock mover (ours: the regions')?
+  Whether a `multi_manager`'s target may be named like a common key
+  (`target`, `speed`: ours skips the common keys); a `func_wall_toggle`
+  fired with *set*; what plays a `func_rotating` without `sounds`.
 - mdl.md: chrome's coordinate mapping (which vectors, the scale, whether
   it turns with the view or the light, the flat-shade flag beside it);
   ours is Chimera's camera-space sphere map.
@@ -556,3 +562,31 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   triggers, only crates its bomb targets break. Left to measure: what a
   CS round restart resets, CS's `+use` on doors, the objective volumes'
   sizes, hostage and armoury placement details.
+- 2026-11-24: GoldSrc map logic (`goldsrc_engine::logic`, from
+  [entities.md](../../../specs/goldsrc/entities.md)): the firing model
+  (target, delay, killtarget, use types, master), `multi_manager`,
+  `multisource`, `trigger_relay`, `trigger_auto`; the movers' shared rules
+  (movedir, lip, the mover's clock, pushing and carrying players, blocking)
+  and `func_door`, `func_door_rotating`, `func_water`, `func_button`,
+  `func_rot_button`, `func_train`/`path_corner`, `func_rotating`,
+  `func_pendulum`, `func_conveyor`; `func_wall` (the `+a` set through its
+  frame: `map::BrushTint` on its node, whose meshes carry
+  `MapMesh::frames`), `func_wall_toggle`, `func_illusionary`,
+  `func_breakable` (`func_pushable` as one); `trigger_multiple`, `once`,
+  `hurt`, `push`, `teleport`; switchable light styles, `env_sprite`,
+  `env_render`, `ambient_generic`; `+use` by Half-Life's search; the CS
+  objective entities kept as data (a bomb target fires its `target` on
+  `FireEntityOutput`). The conversion gives a named `func_wall`/
+  `func_water` and every `func_wall_toggle` a node, and marks the map's
+  logic family (`map::entities::LOGIC_FAMILY_KEY`), so Source's logic
+  leaves GoldSrc maps alone in a party app. Unit tests of the worked
+  examples; heavy tests on the install: cs_office's button opens `door1`
+  (108 units after 1 s + 2.7 s), de_nuke's four `GlassDoor2` doors slide
+  62 units together, cs_militia's rotating door swings away from the
+  player walking into it, de_survivor's `CLIC` wall flips every 0.5 s,
+  de_dust2's `tgt_a` crates break when `*42` fires them and not when
+  shot. The spec's open questions are taken at its stated assumptions,
+  each a Known shortcut in the module docs (round restarts reset
+  everything, Half-Life's `+use`, players only, box overlap for
+  triggers). Not yet: network replication, sounds (no GoldSrc sound
+  bank), debris, sprite drawing, light style rendering.

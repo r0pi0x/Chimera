@@ -30,9 +30,13 @@
 //! yaw comes from `angles` (or `angle`) as Source's maps': engine yaw =
 //! GoldSrc yaw − 90°.
 //!
+//! The first entity (`worldspawn`) carries `map::entities::
+//! LOGIC_FAMILY_KEY` = `goldsrc`: the map's logic is `crate::logic`'s,
+//! never Source's. A named `func_wall` or `func_water` and every
+//! `func_wall_toggle` get a node too (`brush_kind_of`: their logic flips
+//! their frame, moves them or turns them off).
+//!
 //! Known shortcuts:
-//! - Mover logic (doors opening, trains, breaking) is a logic layer's:
-//!   none runs for a GoldSrc map yet, so movers stay where they spawn.
 //! - Water volumes (`func_water`, `!` leaves) are drawn but not handed
 //!   over as water.
 
@@ -42,7 +46,10 @@ use goldsrc_formats::bsp::{Bsp, Entity, solids::convex_regions};
 use super::{METERS_PER_UNIT, brushes::Drawn, collision, parse_vector, to_engine};
 use crate::{
     core::Team,
-    map::{MapAlpha, MapData, MapEntity, entities::MapHull},
+    map::{
+        MapAlpha, MapData, MapEntity,
+        entities::{LOGIC_FAMILY_KEY, MapHull},
+    },
 };
 
 /// Half the standing box's height: a spawn's origin above its feet
@@ -68,6 +75,20 @@ pub fn brush_kind(classname: &str) -> Brush {
         "func_illusionary" | "func_water" => Brush::DrawnOnly,
         "func_ladder" => Brush::Ladder,
         _ => Brush::Hidden,
+    }
+}
+
+/// What the brush entity `e` is: as its class (`brush_kind`), except that
+/// a named `func_wall` (its frame flips when fired: the `+a` set) and a
+/// named `func_water` (it moves like a door when fired) get a node of
+/// their own, and so does every `func_wall_toggle` (it turns off and on).
+pub fn brush_kind_of(e: &Entity) -> Brush {
+    let class = e.classname().to_ascii_lowercase();
+    let named = e.get("targetname").is_some_and(|n| !n.is_empty());
+    match class.as_str() {
+        "func_wall" | "func_water" if named => Brush::Mover,
+        "func_wall_toggle" => Brush::Mover,
+        _ => brush_kind(&class),
     }
 }
 
@@ -138,9 +159,13 @@ pub fn add(bsp: &Bsp, spawns: &[(&str, Option<Team>)], data: &mut MapData) -> Pa
             data.spawn_yaws.push(yaw(&e));
         }
         let mut keyvalues = e.pairs.clone();
+        // The map's logic is GoldSrc's (`logic`), not Source's.
+        if data.entities.is_empty() {
+            keyvalues.push((LOGIC_FAMILY_KEY.into(), crate::logic::FAMILY.into()));
+        }
         let mut entity = MapEntity::default();
         if let Some(model) = model_of(&e) {
-            let kind = brush_kind(&class);
+            let kind = brush_kind_of(&e);
             let index = data.entities.len();
             let (render, color, flat) = render_look(&e);
             if kind == Brush::Mover {

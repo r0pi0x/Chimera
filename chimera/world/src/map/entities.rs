@@ -113,6 +113,17 @@ pub const DOOR_CLOSE_KEY: &str = "chimera_door_close";
 /// `door_options` "hardwareN"): used while locked, and unlocked.
 pub const DOOR_LOCKED_KEY: &str = "chimera_door_locked";
 pub const DOOR_UNLOCKED_KEY: &str = "chimera_door_unlocked";
+/// On a map's first entity (its `worldspawn`): which family's map logic
+/// runs its entities (`goldsrc`: `goldsrc_engine::logic`); absent, Source's
+/// (`source_logic`), as before the key. A logic layer runs only the maps
+/// of its own family (`logic_family`), so a party app with both a Source
+/// game and a GoldSrc game runs one logic per map.
+pub const LOGIC_FAMILY_KEY: &str = "chimera_logic";
+
+/// The logic family of a map's entities (`LOGIC_FAMILY_KEY`; None: Source's).
+pub fn logic_family(entities: &[MapEntity]) -> Option<&str> {
+    entities.first().and_then(|e| e.get(LOGIC_FAMILY_KEY))
+}
 
 /// "x y z" (or "[x y z]") as a vector; missing or bad parts are 0.
 pub fn parse_vector(s: &str) -> Vec3 {

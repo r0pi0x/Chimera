@@ -14,7 +14,8 @@
 //! - `sets`: what each piece reads, for the asset service's sets
 //!   (`chimera_pack sets cs16`).
 //!
-//! `Cs16Plugins` adds the game's parts after `crate::SimPlugins`;
+//! `Cs16Plugins` adds the game's parts after `crate::SimPlugins`, its
+//! maps' logic among them (`goldsrc_engine::logic`, also in `party_sim`);
 //! `BUNDLE` is the game for a party app.
 //!
 //! Known shortcuts:
@@ -119,6 +120,7 @@ impl PluginGroup for Cs16Plugins {
             .add(movement::Cs16MovementPlugin)
             .add(weapons::Cs16GunsPlugin)
             .add(bodies::Cs16BodiesPlugin)
+            .add(goldsrc_engine::logic::GoldSrcLogicPlugin)
     }
 }
 
@@ -174,4 +176,8 @@ pub fn party_sim(app: &mut bevy::app::App) {
         app.add_plugins((weapons::Cs16GunsPlugin, bodies::Cs16BodiesPlugin));
     }
     parts::add_map_pool(app);
+    // Its maps' logic (doors, buttons, triggers, breakables).
+    if !app.is_plugin_added::<goldsrc_engine::logic::GoldSrcLogicPlugin>() {
+        app.add_plugins(goldsrc_engine::logic::GoldSrcLogicPlugin);
+    }
 }

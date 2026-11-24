@@ -387,6 +387,7 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("games/cs_source/src/game/net.rs", "network apply and capture"),
     ("games/cs_source/src/harness.rs", "map loading"),
     ("source/logic/src/logic/bridge.rs", "the map-logic interpreter's I/O"),
+    ("goldsrc/engine/src/logic/bridge.rs", "GoldSrc's map-logic interpreter's I/O (as Source's: the logic world reads characters and writes movers, sounds and damage)"),
     ("source/logic/src/logic/net.rs", "network apply and capture"),
 ];
 
