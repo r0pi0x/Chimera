@@ -42,7 +42,8 @@ Class limits: `mp_limit_<team>_<suffix>` (`allies` / `axis`), default
 Fields per class: `primaryweapon`, `secondaryweapon`, `meleeweapon`,
 `grenadetype` + `numgrens`, `grenadetype2` + `numgrens2`, `playermodel`,
 `helmetgroup` 0, `hairgroup` 1, `drophelmet`, `limitcvar`, the MG42
-class's `mergemgclass` 1.
+class's `mergemgclass` 1 (the helmet groups, skins and the helmet
+knocked off by a head shot: bodygroups.md).
 
 | Class | Primary | Secondary | Melee | Grenades | Body model |
 |---|---|---|---|---|---|

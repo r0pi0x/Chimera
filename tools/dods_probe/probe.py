@@ -64,7 +64,9 @@ def run_full(r, start, ticks, name="probe", cmds=()):
     """`run`, returning every line kind by name: rows, sounds, hurts,
     weapon (W), ents (E), damage (D), traced (A), te (T), created (C), removed (X),
     events (V), ent_sounds (s), commands run (K), watched properties (P:
-    tick, name, value...; `watch`). `cmds`: (row, client,
+    tick, name, value...; `watch`), each user command's number, tick
+    count and seed (R: commands_in), damage positions and forces (B:
+    bullets: tick victim attacker damage type pos xyz force xyz). `cmds`: (row, client,
     command) run on that input row by the client (0: the server)."""
     folder = os.path.join(SERVER, "dod")
     inp, out = f"{name}_in.txt", f"{name}_out.txt"
@@ -95,7 +97,8 @@ def run_full(r, start, ticks, name="probe", cmds=()):
     cols = ("tick x y z vx vy vz ground ducked top eye buttons water movetype aux health armor maxspeed life obs gt server_tick tickbase"
             .split())
     kinds = {"S": "sounds", "H": "hurts", "W": "weapon", "E": "ents", "D": "damage", "T": "te", "C": "created",
-             "X": "removed", "V": "events", "s": "ent_sounds", "A": "traced", "K": "commands", "P": "props"}
+             "X": "removed", "V": "events", "s": "ent_sounds", "A": "traced", "K": "commands", "P": "props",
+             "R": "commands_in", "B": "bullets"}
     out = {k: [] for k in kinds.values()}
     out["rows"] = []
     with open(path) as f:

@@ -23,9 +23,20 @@ DoD:S-specific in the plugin:
   spread player`, the spread being the server's own number for that
   shot (stance, movement and alt mode included). Armour and aux power
   read −1.
+- Bullets' directions (specs/dods/spread.md): every damage to a player or
+  tracked entity is also logged as "B tick victim attacker damage type
+  pos_xyz force_xyz"; a bullet's position is where its trace hit and its
+  force points along it, so a victim placed in front (`measure.VICTIM`,
+  100000 health) gives each server-side bullet's direction.
+- `probe_seed <n | -1>`: the driven bot's commands carry this random
+  seed (a bot's own look random: its command number is 0); every
+  command's number, tick count and seed is logged ("R").
+- `probe_model` prints each player's body group value, skin and class
+  too (`m_nBody`, `m_nSkin`; specs/dods/bodygroups.md).
 
 `probe.py` drives it over RCON (as HL2:DM's), `measure.py` runs the
-cases the specs quote (specs/dods/movement.md, weapons.md, damage.md):
+cases the specs quote (specs/dods/movement.md, weapons.md, damage.md,
+spread.md, bodygroups.md):
 
 ```
 python3 tools/dods_probe/measure.py              # every case

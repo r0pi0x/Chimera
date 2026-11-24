@@ -20,10 +20,10 @@ bounce mgyaw mgside ledge`; what narrows the yaw limits later that
 day, `mgsweep`). The
 scripts' values are data the game exposes; they are given to check
 against, and the game supplies them at run time. What the scripts do
-not hold (the recoil curve, the spread pattern) is marked unmeasured
-where no measurement exists.
+not hold (the recoil curve) is marked unmeasured where no measurement
+exists; the spread pattern is spread.md's.
 Status: draft (scripts read, measured 2026-11-23 and 2026-11-24; recoil
-and the spread pattern unmeasured)
+unmeasured; the spread pattern in spread.md)
 
 ## Summary
 
@@ -167,10 +167,11 @@ every gun, standing, ducked, prone, moving and in each alt mode.
 | c96 | 0.065 | 0.165 | — |
 | m1carbine | 0.019 | 0.119 | — |
 
-The shot carries a random seed (0-255, a new one each shot) with the
-spread; how the seed spreads the bullet inside the cone (the pattern)
-is not visible on the server: no impact message is sent (open question
-1).
+The shot carries a random seed (0-255: its command's seed & 255) with
+the spread; how the seed spreads the bullet inside the cone (the
+pattern) is in spread.md (measured from each bullet's damage position
+and force on a victim). At a steady 45.0 u/s the penalty applies
+(spread.md): the threshold is 45 itself.
 
 ## When a gun can't fire (measured)
 
@@ -552,10 +553,7 @@ A thrown grenade lying on the ground can be picked up and thrown back
 
 ## Open questions
 
-1. Spread: answered (above) except the pattern inside the cone: the
-   seed travels with the shot, but no impact is sent from the server to
-   read it from. CS:S's seeded spread is assumed; the retail client on
-   a listen server (bullet holes) would show it.
+1. Spread: answered (above); the pattern inside the cone in spread.md.
 2. Answered: one bullet a shot (one hit, one round).
 3. Answered: the BAR's and StG44's alt fire is fire select; semi-auto
    fires at most every 0.3 s.

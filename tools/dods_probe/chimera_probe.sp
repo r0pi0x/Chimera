@@ -77,7 +77,16 @@
 //     each team's score.
 //   probe_clientcvar <client> <cvar> <value>: set a fake client's
 //     client cvar (its userinfo, e.g. cl_playermodel).
-//   probe_model: every player's model.
+//   probe_model: every player's model, body group value (m_nBody), skin
+//     (m_nSkin) and class.
+//   probe_seed <n | -1>: the driven bot's user commands carry this random
+//     seed (-1: their own). During a run every command's number, tick
+//     count and seed are logged as "R tick cmdnum tickcount seed".
+//   Bullets: "B tick victim attacker damage type pos_x y z force_x y z"
+//     for every damage taken by players and tracked entities: the damage's
+//     position (a bullet's: where its trace hit) and force (a bullet's:
+//     along its direction), so a victim in front gives each server-side
+//     bullet's end point and direction (specs/dods/spread.md).
 
 #include <sourcemod>
 #include <sdktools>
@@ -87,7 +96,7 @@ public Plugin myinfo = {
     name = "chimera probe (DoD:S)",
     author = "chimera",
     description = "Replays per-tick inputs on a bot and logs its movement, suit, weapon and nearby entities",
-    version = "4",
+    version = "5",
 };
 
 #define MAX_TICKS 16384
@@ -100,6 +109,7 @@ char g_watchProp[MAX_WATCH][64];
 char g_watchType[MAX_WATCH][8];
 int g_watchElem[MAX_WATCH];
 int g_watchCount;
+int g_seed = -1;
 
 int g_buttons[MAX_TICKS];
 float g_forward[MAX_TICKS];
@@ -162,7 +172,8 @@ public void OnPluginStart()
     RegServerCmd("probe_settime", Command_SetTime, "probe_settime <index> <data|send> <prop> <seconds>");
     RegServerCmd("probe_tprel", Command_TpRel, "probe_tprel <client> <dx dy dz>");
     RegServerCmd("probe_hull", Command_Hull, "probe_hull <x0 y0 z0> <x1 y1 z1>");
-    RegServerCmd("probe_model", Command_Model, "probe_model: every player's model");
+    RegServerCmd("probe_model", Command_Model, "probe_model: every player's model, body and skin");
+    RegServerCmd("probe_seed", Command_Seed, "probe_seed <n | -1>: the bot's user command seed");
     for (int i = 1; i <= MaxClients; i++) {
         if (IsClientInGame(i)) {
             OnClientPutInServer(i);
@@ -175,8 +186,10 @@ public void OnClientPutInServer(int client)
     // A bot kept across a map change is put in the server again: hook once.
     SDKUnhook(client, SDKHook_OnTakeDamagePost, DamagePost);
     SDKUnhook(client, SDKHook_TraceAttack, TraceAttack);
+    SDKUnhook(client, SDKHook_OnTakeDamage, DamageWhere);
     SDKHook(client, SDKHook_OnTakeDamagePost, DamagePost);
     SDKHook(client, SDKHook_TraceAttack, TraceAttack);
+    SDKHook(client, SDKHook_OnTakeDamage, DamageWhere);
 }
 
 public Action TraceAttack(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &ammotype,
@@ -370,7 +383,9 @@ void Track(int entity)
         // Once per entity: tracking it again after a clear (a player is
         // hooked already) must not log its hits twice.
         SDKUnhook(entity, SDKHook_OnTakeDamagePost, DamagePost);
+        SDKUnhook(entity, SDKHook_OnTakeDamage, DamageWhere);
         SDKHook(entity, SDKHook_OnTakeDamagePost, DamagePost);
+        SDKHook(entity, SDKHook_OnTakeDamage, DamageWhere);
     }
 }
 
@@ -851,6 +866,10 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
         }
     }
     buttons = g_buttons[g_cursor];
+    if (g_seed >= 0) {
+        seed = g_seed;
+    }
+    g_out.WriteLine("R %d %d %d %d", g_cursor, cmdnum, tickcount, seed);
     impulse = g_impulse[g_cursor];
     if (g_select[g_cursor][0] != '\0') {
         weapon = WeaponOf(client, g_select[g_cursor]);
@@ -1077,8 +1096,29 @@ public Action Command_Model(int args)
     for (int i = 1; i <= MaxClients; i++) {
         if (IsClientInGame(i)) {
             GetClientModel(i, model, sizeof(model));
-            PrintToServer("player %d team %d model %s", i, GetClientTeam(i), model);
+            PrintToServer("player %d team %d model %s body %d skin %d class %d", i, GetClientTeam(i), model,
+                GetEntProp(i, Prop_Send, "m_nBody"), GetEntProp(i, Prop_Send, "m_nSkin"),
+                HasEntProp(i, Prop_Send, "m_iPlayerClass") ? GetEntProp(i, Prop_Send, "m_iPlayerClass") : -1);
         }
     }
     return Plugin_Handled;
+}
+
+public Action Command_Seed(int args)
+{
+    g_seed = GetCmdArgInt(1);
+    PrintToServer("probe: seed %d", g_seed);
+    return Plugin_Handled;
+}
+
+// "B" lines: where a damage landed and its force (a bullet's: along it).
+public Action DamageWhere(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon,
+    float damageForce[3], float damagePosition[3])
+{
+    if (g_out != null) {
+        g_out.WriteLine("B %d %d %d %.4f %d %.4f %.4f %.4f %.5f %.5f %.5f", g_cursor, victim, attacker, damage,
+            damagetype, damagePosition[0], damagePosition[1], damagePosition[2], damageForce[0], damageForce[1],
+            damageForce[2]);
+    }
+    return Plugin_Continue;
 }

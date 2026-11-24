@@ -11,7 +11,8 @@ stock reach backstab partial launchers rocketworld throw nadetiming
 bounce shield mgyaw mgside ledge proneedge ceiling stillregen; added
 later that day (physics props, the stance-change cap, the sighted start,
 backstabs on low victims, the MG's yaw limit): mpprops propmass propsurvey
-pronecap sightstart backstab2 mgsweep.
+pronecap sightstart backstab2 mgsweep; and the spread pattern and the
+helmet (specs/dods/spread.md, bodygroups.md): pattern helmet.
 """
 
 import math
@@ -778,11 +779,89 @@ def backstab2():
     R.exec("probe_bot 1")
 
 
+# --- 2026-11-24: the spread pattern and the helmet (spread.md, bodygroups.md) ---
+# The second bot stands 80 units ahead of START facing the first with
+# 100000 health; aimed at its chest (`VICTIM_PITCH`) every bullet hits it,
+# and its "B" line's force gives the bullet's direction.
+VICTIM = (START[0] + 80 * math.cos(math.radians(YAW)), START[1] + 80 * math.sin(math.radians(YAW)), START[2])
+VICTIM_PITCH = math.degrees(math.atan2(18.0, 80.0))
+PLACE_VICTIM = [(0, 0, "probe_tp 2 {:.3f} {:.3f} {:.3f} 0 {}".format(*VICTIM, YAW - 180)),
+                (0, 0, "probe_setprop 2 send m_iHealth int 100000")]
+
+
+def aim_frame(pitch, yaw):
+    """Forward, right and up of view angles (degrees, pitch down)."""
+    p, y = math.radians(pitch), math.radians(yaw)
+    f = (math.cos(p) * math.cos(y), math.cos(p) * math.sin(y), -math.sin(p))
+    r = (math.sin(y), -math.cos(y), 0.0)
+    u = (math.sin(p) * math.cos(y), math.sin(p) * math.sin(y), math.cos(p))
+    return f, r, u
+
+
+def offsets(out, pitch):
+    """[(tick, seed, spread, [(x, y) of each bullet hitting the victim])]:
+    x, y the bullet's tangent offsets right and up of the aim."""
+    f, r, u = aim_frame(pitch, YAW)
+    hits = {}
+    for b in out["bullets"]:
+        d = [float(v) for v in b[8:11]]
+        n = math.sqrt(sum(c * c for c in d))
+        if b[1] != "2" or n == 0:
+            continue
+        df = sum(a * c for a, c in zip(d, f)) / n
+        hits.setdefault(int(b[0]), []).append((sum(a * c for a, c in zip(d, r)) / n / df,
+                                               sum(a * c for a, c in zip(d, u)) / n / df))
+    return [(int(t[0]), int(t[9]), float(t[10]), hits.get(int(t[0]), [])) for t in out["te"] if t[1] == "firebullets"]
+
+
+def seeded(w, seeds, every, pitch=VICTIM_PITCH):
+    """One shot of weapon_<w> at the victim every `every` ticks, each command's seed forced."""
+    gun(w)
+    probe.watch(R, [])
+    ticks = hold(5, select=f"weapon_{w}") + hold(80)
+    cmds = list(PLACE_VICTIM)
+    for s in seeds:
+        cmds.append((len(ticks), 0, f"probe_seed {s}"))
+        ticks += hold(1, ATTACK, 0, 0, pitch, YAW) + hold(every - 1, 0, 0, 0, pitch, YAW)
+    out = go(ticks, cmds=cmds)
+    R.exec("probe_seed -1")
+    return offsets(out, pitch)
+
+
+def pattern():
+    """Each forced seed's bullet in units of the spread (spread.md's test cases)."""
+    for w, seeds, every in (("thompson", range(30), 7), ("garand", range(30, 38), 26), ("c96", range(100, 110), 6),
+                            ("mg42", range(1, 12), 8)):
+        for k, seed, spread, bs in seeded(w, seeds, every):
+            print(w, "seed", seed, "spread", spread, [f"{x / spread:.4f} {y / spread:.4f}" for x, y in bs])
+    same = {(s, tuple(round(v, 5) for v in b[0])) for _, s, _, b in seeded("thompson", [12345] * 7, 7) if b}
+    print("seed 12345 seven times:", same)
+
+
+def helmet():
+    """Body and skin of every player (probe_model), then the victim's body
+    group around Garand hits on its chest and head, set back to 0 before
+    each (bodygroups.md)."""
+    print(R.exec("probe_model"))
+    gun("garand")
+    probe.watch(R, [("2", "send", "m_nBody", "int"), ("2", "send", "m_nSkin", "int")])
+    ticks = hold(5, select="weapon_garand") + hold(1, ATTACK2) + hold(40)
+    cmds = list(PLACE_VICTIM)
+    for z in (165, 188, 189, 190, 191):
+        pitch = math.degrees(math.atan2(START[2] + 58 - z, 80.0))
+        cmds.append((len(ticks), 0, "probe_setprop 2 send m_nBody int 0"))
+        ticks += hold(2, 0, 0, 0, pitch, YAW) + hold(1, ATTACK, 0, 0, pitch, YAW) + hold(28, 0, 0, 0, pitch, YAW)
+    out = go(ticks, cmds=cmds)
+    body = {int(p[0]): p[2] for p in out["props"] if p[1].startswith("m_nBody")}
+    for a in out["traced"]:
+        print("hit, hitgroup", a[6], "body before", body.get(int(a[0])), "after", body.get(int(a[0]) + 1))
+
+
 CASES = {f.__name__: f for f in (sprint, caps, regen, threshold, jump, crouch, getup, slow, guns, fov, fireselect, mg,
                                  frag, fragspeed, rocket, riflegren, spread, nofire, stock, reach, backstab, partial,
                                  launchers, rocketworld, throw, nadetiming, bounce, shield, mgyaw, mgside, ledge,
                                  proneedge, ceiling, stillregen, mpprops, propmass, propsurvey, pronecap,
-                                 sightstart, backstab2, mgsweep)}
+                                 sightstart, backstab2, mgsweep, pattern, helmet)}
 
 if __name__ == "__main__":
     R = probe.connect()
