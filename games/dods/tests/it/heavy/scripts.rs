@@ -33,7 +33,7 @@ fn every_weapon_reads_its_script_and_matches_the_spec() {
             w.hitscan.as_ref().map(|h| (h.pellets, format!("{:?}", h.spread))),
             w.trigger.as_ref().map(|t| t.cycle),
             w.magazine.as_ref().map(|m| m.clip),
-            w.melee.as_ref().map(|m| (m.primary.damage, m.primary.hit_refire)),
+            w.melee.as_ref().and_then(|m| m.primary.as_ref()).map(|p| (p.damage, p.hit_refire)),
             format!("{:?}", w.hooks.get(weapons::GUN_HOOK)),
         )
     };

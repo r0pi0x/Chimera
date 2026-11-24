@@ -81,7 +81,7 @@ fn hook_sounds<'a>(table: &'a toml::Table, out: &mut Vec<&'a str>) {
 pub fn entries() -> Vec<String> {
     let mut out: Vec<String> = SOUNDS.iter().map(|s| s.to_string()).collect();
     for w in &super::weapons::hl2_weapons().weapons {
-        let swings = w.melee.iter().flat_map(|m| [Some(&m.primary), m.secondary.as_ref()]).flatten();
+        let swings = w.melee.iter().flat_map(|m| [m.primary.as_ref(), m.secondary.as_ref()]).flatten();
         let swung = swings.flat_map(|s| [&s.sound_hit, &s.sound_hit_world, &s.sound_miss]).flatten();
         let mut hooked = Vec::new();
         hook_sounds(&w.hooks, &mut hooked);

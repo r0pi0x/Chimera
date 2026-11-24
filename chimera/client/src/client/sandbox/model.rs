@@ -364,7 +364,7 @@ pub fn derive_tags(id: &str, d: Option<&WeaponData>, class: Option<GunClass>) ->
     if let Some(d) = d {
         let projectile = hook(d, ":projectile").is_some() || hook(d, "halo_ce:weapon").is_some_and(|h| h.contains_key("projectile"));
         let device = hook(d, ":device").is_some();
-        let melee_only = d.melee.is_some() && d.hitscan.is_none() && !projectile;
+        let melee_only = d.is_melee() && d.hitscan.is_none() && !projectile;
         if device {
             t.insert((TagGroup::Type, "placeable"));
             t.insert((TagGroup::Delivery, "placed"));
@@ -409,8 +409,8 @@ pub fn derive_tags(id: &str, d: Option<&WeaponData>, class: Option<GunClass>) ->
             if dmg.hitgroups.head > 1.0 {
                 t.insert((TagGroup::Behaviour, "headshot"));
             }
-        } else if let Some(m) = &d.melee {
-            stats.damage = Some(m.primary.damage);
+        } else if let Some(m) = d.melee.as_ref().and_then(|m| m.primary.as_ref()) {
+            stats.damage = Some(m.damage);
         } else if let Some((dmg, radius)) = hook_damage(d) {
             stats.damage = Some(dmg);
             stats.blast_radius = radius;

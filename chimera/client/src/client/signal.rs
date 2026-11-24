@@ -280,7 +280,7 @@ pub fn you_row(look: &Look) -> impl Bundle + use<> {
 /// launcher).
 pub fn icon_class(data: &chimera_sim::weapon::data::WeaponData) -> Option<&'static str> {
     use chimera_ui::icons::IconFor;
-    if data.melee.is_some() {
+    if data.is_melee() {
         return Some(IconFor::for_melee(true));
     }
     data.class.map(IconFor::gun_class)

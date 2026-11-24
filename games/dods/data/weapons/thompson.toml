@@ -32,6 +32,31 @@ spread = { cone = 0.055 }
 [damage]
 amount = 40.0
 
+# The alt fire: the stock strike (weapons.md, "Alt fire"; damage.md,
+# "Melee"; measured): the knife's timing and reach, 60 before the hit
+# zones, no backstab; the attack fires the gun (no [melee.primary]).
+[melee.secondary]
+range = 77.0
+# The box the swing sweeps when the line misses (damage.md, open question
+# 4: its shape is ours): 52 units across, swept 51 so it reaches no
+# further than the line, wide enough to hit a player 45 degrees off the aim
+# at 56 units (measured).
+hull = 26.0
+hull_reach = 51.0
+facing_cos = 0.5
+damage = 60.0
+hitgroup_scale = { head = 2.5, chest = 1.0, stomach = 1.0, arm = 0.75, leg = 0.75 }
+# Measured: the hit 14 ticks (0.21 s) after the press; every attack
+# blocked 0.4 s from the press (not the script's FireDelay 0.1).
+delay = 0.21
+hit_refire = 0.4
+miss_refire = 0.4
+miss_refire_other = 0.4
+force = 0.0
+kind = "melee"
+armor_ratio = 1.0
+quantum = 0.0
+
 [hooks."dods:gun"]
 script = "weapon_thompson"
 accuracy = 0.055

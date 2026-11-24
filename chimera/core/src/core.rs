@@ -5,6 +5,7 @@
 //! `Intent` (with its command number, stamped each tick in `SimSet::Commands`:
 //! the tick offset by the character's `Seed`; `Intent::actions` carries a
 //! game's named actions, `ActionRegistry`/`ActionAppExt::intent_action`),
+//! `ViewYawLimit` (a turn limit the local client holds its view inside),
 //! `Velocity`, `MovementState`
 //! (with the hull, the moving solid stood on and whether it is on a ladder),
 //! `BaseVelocity`, `EntityGravity`, `MovingSolid`, `Health`, `Damage`/`Died`
@@ -93,6 +94,29 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 /// `VERSION` is stamped where the app is built (`mashup::core::VERSION`),
 /// so a commit doesn't recompile this crate.
 pub mod version;
+
+/// A limit the local player's client holds its own view inside (the
+/// server doesn't clamp: DoD:S's deployed machine guns, specs/dods/
+/// weapons.md "Alt fire"): the yaw within `half` of `centre` (radians,
+/// `Intent::yaw`'s), set and cleared by the game's predicted rules.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ViewYawLimit {
+    pub centre: f32,
+    pub half: f32,
+}
+
+impl ViewYawLimit {
+    /// `yaw` held inside the limit (the nearer edge when outside).
+    pub fn clamp(&self, yaw: f32) -> f32 {
+        use std::f32::consts::{PI, TAU};
+        let off = (yaw - self.centre + PI).rem_euclid(TAU) - PI;
+        if off.abs() <= self.half {
+            yaw
+        } else {
+            (self.centre + off.clamp(-self.half, self.half)).rem_euclid(TAU)
+        }
+    }
+}
 
 /// What a character wants to do this tick. Written by exactly one intent
 /// source (local input, a bot brain, later the network) and read by the
@@ -2846,6 +2870,21 @@ impl DamageRemainder {
             self.0 = (self.0 - 1.0).max(0.0);
         }
         (whole > 0.0).then_some(whole)
+    }
+}
+
+#[cfg(test)]
+mod view_limit_tests {
+    use super::ViewYawLimit;
+
+    /// A view turned past the limit stops at its edge, across the wrap.
+    #[test]
+    fn the_yaw_stops_at_the_nearer_edge() {
+        let l = ViewYawLimit { centre: 0.1, half: 45f32.to_radians() };
+        assert_eq!(l.clamp(0.3), 0.3);
+        assert!((l.clamp(1.5) - (0.1 + 45f32.to_radians())).abs() < 1e-5);
+        let right = (0.1 - 45f32.to_radians()).rem_euclid(std::f32::consts::TAU);
+        assert!((l.clamp(5.0) - right).abs() < 1e-5, "{}", l.clamp(5.0));
     }
 }
 

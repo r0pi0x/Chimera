@@ -12,7 +12,9 @@
 //! never reaches the game: a mouse button pressed while the cursor is
 //! free or a panel owns the mouse is taken (`binds::CapturedKeys`) until
 //! let go, so a menu, dialog or picker that closes on a press (the sandbox
-//! gun picker's double-click, Resume) fires nothing (`grab_cursor`).
+//! gun picker's double-click, Resume) fires nothing (`grab_cursor`). The
+//! view's turn stays inside the local player's `core::ViewYawLimit`
+//! when it has one (DoD:S's deployed machine guns).
 //!
 //! Known shortcuts: the binds that run console commands (`console::
 //! run_binds`: `invnext`, `buymenu`, a `slotN` with `hud_fastswitch 0`)
@@ -816,12 +818,13 @@ pub fn write_local_intent(
     zoomed: Query<&crate::weapon::Zoomed, With<LocalPlayer>>,
     spectator: Option<Res<super::spectate::Spectator>>,
     weapon_menu: Option<Res<super::weapon_menu::WeaponMenu>>,
-    (actions, identity, captured, mut latch, mut move_keys): (
+    (actions, identity, captured, mut latch, mut move_keys, yaw_limit): (
         Option<Res<crate::core::ActionRegistry>>,
         Query<&crate::slots::GameIdentity, With<LocalPlayer>>,
         Option<Res<super::binds::CapturedKeys>>,
         Option<ResMut<KeyLatch>>,
         Option<ResMut<MoveKeys>>,
+        Query<&crate::core::ViewYawLimit, With<LocalPlayer>>,
     ),
     mut last_motion: Local<Vec2>,
 ) {
@@ -931,6 +934,11 @@ pub fn write_local_intent(
     } else {
         intent.yaw = (intent.yaw + turn.x).rem_euclid(std::f32::consts::TAU);
         intent.pitch = (intent.pitch + turn.y).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        // A game's limit on the turn (DoD:S's deployed gun): the client
+        // holds its own view inside it.
+        if let Ok(limit) = yaw_limit.single() {
+            intent.yaw = limit.clamp(intent.yaw);
+        }
     }
 
     intent.jump = bound("+jump");

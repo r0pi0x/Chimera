@@ -13,9 +13,15 @@
 //!   (`DRAIN`, 20 a second), slower it regains the moving rate. In the air
 //!   the sprint (and its drain) goes on as it was.
 //! - **Regeneration** otherwise (no delay): 0.9 a tick still (standing,
-//!   ducked, prone or in the air), 0.75 moving ducked, 0.15 moving
-//!   standing or crawling (`REGEN_STILL`, `REGEN_DUCKED`, `REGEN_MOVING`;
-//!   per second here, 60, 50 and 10), to 100.
+//!   ducked, prone or in the air; still is a previous-tick ground speed of
+//!   exactly 0: sliding to a stop regenerates at the moving rate), 0.75
+//!   moving ducked, 0.15 moving standing or crawling (`REGEN_STILL`,
+//!   `REGEN_DUCKED`, `REGEN_MOVING`; per second here, 60, 50 and 10), to
+//!   100.
+//! - **Going prone while sprinting** (movement.md, "Prone"): the sprint
+//!   flag stays while the speed, decaying by friction, is still 80 units/s
+//!   or more (`SPRINT_MIN_SPEED`), and drains as a sprint does; then it
+//!   ends and the regeneration runs.
 //! - **The speed cap** (`cap`, read by `stance::step` with the stamina as
 //!   it was before the tick): running 120 + stamina (at most 220),
 //!   sprinting 230 + stamina, 120 at stamina 0. Sprinting from a full
@@ -29,9 +35,6 @@
 //!   7 ticks apart); deployed, nothing (measured).
 //!
 //! Known shortcuts (docs/tech-debt.md):
-//! - "Still" is a previous-tick ground speed under 1 unit/s (`STILL`): the
-//!   threshold between the still and moving rates is unmeasured
-//!   (movement.md, open question 3).
 //! - `SPRINT_TOP` (320) is read off the measured first sprint ticks; the
 //!   wish while the sprint keys are held below 80 units/s is ours.
 //! - The machine gun's cost is the server's (the predicted pool learns it
@@ -76,9 +79,6 @@ pub const RUN_CAP: f32 = 120.0;
 pub const SPRINT_CAP: f32 = 230.0;
 pub const SPRINT_TOP: f32 = 320.0;
 pub const EMPTY_CAP: f32 = 120.0;
-
-/// A ground speed under this counts as still, units/s (module doc).
-pub const STILL: f32 = 1.0;
 
 const U: f32 = 0.0254;
 
@@ -134,7 +134,11 @@ pub fn step(
             let keys = sprint_keys(intent, me, stance);
             let mut n = *s;
             let mut started = false;
-            if me.on_ground {
+            let going_down = stance.is_some_and(|s| s.stance == Stance::GoingDown);
+            if going_down {
+                // The flag stays while the speed is a sprint's.
+                n.sprinting &= prev >= SPRINT_MIN_SPEED;
+            } else if me.on_ground {
                 if keys && (n.sprinting || prev >= SPRINT_MIN_SPEED) {
                     if !n.sprinting {
                         n.sprinting = true;
@@ -147,8 +151,8 @@ pub fn step(
             }
             if !started {
                 let rate = if n.sprinting {
-                    if prev > DRAIN_ABOVE { -DRAIN } else { REGEN_MOVING }
-                } else if !me.on_ground || prev < STILL {
+                    if prev > DRAIN_ABOVE || going_down { -DRAIN } else { REGEN_MOVING }
+                } else if !me.on_ground || prev == 0.0 {
                     REGEN_STILL
                 } else if stance.is_some_and(|s| s.stance != Stance::Up) {
                     REGEN_MOVING

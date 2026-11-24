@@ -1,6 +1,7 @@
 # The MG 42 (specs/dods/weapons.md, "The guns": the script's values):
-# 85 a bullet, 2 bullets a shot, 0.05 s between shots (rounded up to ticks),
-# 250 rounds and 2 spare clips; automatic, two bullets a shot (weapons.md, open question 2: both traced here); useful only deployed (prone, then the alt fire: `stance`), the ladders' heavy class.
+# 85 a bullet, 0.05 s between shots (rounded up to ticks), 250 rounds and
+# 2 spare clips; automatic, one bullet a shot (measured: the script's
+# BulletsPerShot 2 isn't what the game does, weapons.md "The guns"); useful only deployed (prone, then the alt fire: `stance`), the ladders' heavy class.
 id = "dods:weapon_mg42"
 base = "dods:gun"
 class = "heavy"
@@ -24,7 +25,7 @@ ammo = "dods:mg42"
 reload = 4.71
 
 [hitscan]
-pellets = 2
+pellets = 1
 # `Accuracy` as a cone's half-angle sine (weapons.md, open question 1:
 # CS:S's seeded spread assumed); `dods:gun` sets it each shot.
 spread = { cone = 0.2 }

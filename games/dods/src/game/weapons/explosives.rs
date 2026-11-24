@@ -10,11 +10,17 @@
 //!   off `fuse` (5.1 s) after the pin was pulled, and held that long it
 //!   goes off in the hand (at the eye). **The throw**: from the eye, the
 //!   aim raised 10° and squeezed so straight up and down stay so (aiming A°
-//!   up: 10 + A × 80/90; D° down: 10 − D × 100/90), at 500 units/s up to
-//!   the speed `speed_per_deg` × (90 + the elevation) gives above it
-//!   (4.18: the measured 527-716 aiming 30-80° up), at most 1400
-//!   (`dod_grenademaxspeed`), plus the thrower's velocity; a bouncing box
-//!   under 420 units/s² of gravity.
+//!   up: 10 + A × 80/90; D° down: 10 − D × 100/90), at 500 units/s, and
+//!   aiming more than 22.5° up (`speed_knee`) faster by 250 units/s over
+//!   the last 67.5° (`speed_per_deg` 3.7037: about 750 straight up), at
+//!   most 1400 (`dod_grenademaxspeed`), plus half the thrower's velocity
+//!   along the aim (`carry`; none across it). **Timing** (`pins`): the
+//!   press pulls the pin and blocks the weapon 0.667 s (`pin_time`); the
+//!   release throws on its own tick, however soon; the next grenade is
+//!   drawn once the 0.667 s are over and the grenade has left, and is
+//!   ready 0.667 s later (`redraw_time`); after the last the player
+//!   switches on the next tick. A box under 420 units/s² of gravity, its
+//!   bounce low and scattered (`BOUNCE`: the spec's suggestion).
 //! - **Rifle grenades** (`dods:rifle_grenade`, `RifleGrenadeParams`): a
 //!   gun whose rounds (`Fired`, no bullet) become grenades (`rifle_shots`):
 //!   from the eye along the aim at 2000 units/s, gravity 448 (the measured
@@ -22,17 +28,21 @@
 //!   the shot whatever they meet.
 //! - **Rockets** (`dods:rocket`, `RocketParams`, on Chimera's flyers:
 //!   `chimera:projectile`, 1300 units/s, 80 units/s² of gravity): they
-//!   explode on touching a player and, by the spec's party rule, the world
-//!   too. **Shouldering** (`Shoulder`, `shoulders`): the alt fire shoulders
+//!   explode on touching a player or the world (measured). **Shouldering** (`Shoulder`, `shoulders`): the alt fire shoulders
 //!   the launcher (the next shot `shoulder_time`, 0.79 s, later), and again
 //!   (or held past that) lowers it (`unshoulder_time`, 0.99 s); lowered it
 //!   doesn't fire; shouldered its holder moves at most 50 units/s
-//!   (`Shoulder::MAX_SPEED`, `stance::step`).
+//!   (`Shoulder::MAX_SPEED`, `stance::step`). After a shot the launcher
+//!   takes nothing, the reload key neither, for 0.84 s (bazooka) or 2.33 s
+//!   (Panzerschreck: the data's cycle).
+//! - **Reloads by the key only** (`key_reloads`): the launchers (3.0 s)
+//!   and rifle grenades (2.91 s, 2.505 s) stay empty until the reload key
+//!   (measured).
 //! - **The blast** (`blast`): `damage` × (1 − r / `radius`) (150 in 375 for
 //!   grenades and rifle grenades, 150 in 200 for rockets), r to a point 40
 //!   units above the victim's feet standing (its body's middle: the share
-//!   40/58 of its eye height), only along a clear line through the world,
-//!   the thrower hurt too.
+//!   40/58 of its eye height), only along a clear line through the world
+//!   (players don't shield it: measured), the thrower hurt too.
 //! - **In the ladders**: the frags are the grenade band's, the rifle
 //!   grenades and launchers the launcher band's (their data's `class`),
 //!   each hurting by its blast (the harm and power readers: the blast's
@@ -49,20 +59,18 @@
 //!
 //! Known shortcuts (docs/tech-debt.md):
 //! - The blast's stun event (two thirds of it, no health: the view shake
-//!   of `dod_stun_*`) isn't made (how it shakes is unmeasured); a character
-//!   on the line doesn't shield (measured: the thrower's own body shields a
-//!   grenade going off in his hand; damage.md, open question 8).
-//! - The throw's speed above 15° up is a fit of the spec's table (its law
-//!   is weapons.md's open question 6); the thrower's velocity is added
-//!   (unmeasured). The pin, throw and redraw times are ours (unmeasured);
-//!   dying with the pin out drops nothing.
-//! - The grenades bounce as CS:S's (the elasticity and stop speed); DoD:S's
-//!   tumbling physics object, the rifle grenade's drag as part of its
-//!   gravity; no live-grenade pick-up, no smoke grenades.
+//!   of `dod_stun_*`) isn't made (how it shakes is unmeasured); why a
+//!   grenade resting on the ground hurt nobody 50-100 away is open
+//!   (damage.md, open question 8): ours hurts along a clear line.
+//! - The thrower's velocity's share is "about half" (three throws:
+//!   weapons.md, open question 6); dying with the pin out drops nothing.
+//! - The bounce is the spec's suggested low, scattered one (`BOUNCE`), not
+//!   DoD:S's tumbling physics object (no law found); the rifle grenade's
+//!   drag is part of its gravity; no live-grenade pick-up, no smoke
+//!   grenades.
 //! - Shouldering isn't predicted with the weapon (`Shoulder` is the
-//!   server's and the predicting client's own); the rockets' and rifle
-//!   grenades' reloads are stand-ins (weapons.md, open question 9: the
-//!   next rocket 1.5 s on, the next rifle grenade 1.0 s).
+//!   server's and the predicting client's own); the rifle grenades' lock
+//!   after a shot is ours (0.5 s, unmeasured).
 //! - Their holders' bodies play the shared model's own sets for them (their
 //!   data's `dods:body_anim`: `GREN_FRAG`, `GREN_STICK`, `BAZOOKA`,
 //!   `PSCHRECK`, the rifle's with the `RIFLEGRENADE` reload), but the
@@ -78,7 +86,9 @@ use serde::Deserialize;
 
 use chimera_sim::weapon::{
     Inventory, Weapon, WeaponEvent, WeaponEventKind, WeaponState,
-    grenade::{Blast, Detonated, Flight, GrenadeEffect, GrenadeKind, Launch, Projectile, RagdollBlast, ThrowOptions, ThrowRule, Throwable},
+    grenade::{
+        Blast, BounceRule, Detonated, Flight, GrenadeEffect, GrenadeKind, Launch, Projectile, RagdollBlast, ThrowOptions, ThrowRule, Throwable,
+    },
     projectile::Launcher,
 };
 
@@ -147,8 +157,16 @@ pub fn blast(damage: f32, radius: f32) -> Blast {
     }
 }
 
-/// A grenade's flight: a 4-unit box under `gravity` (units/s²), bouncing
-/// as CS:S's, its fuse checked every tick.
+/// The grenades' bounce (weapons.md, "Bounce": the spec's suggestion for
+/// the party, no law having been found): about 0.2 of the speed into the
+/// surface comes back, half of the speed along it is kept, turned up to
+/// 30° either way (the tumble's scatter); slow enough on a floor it rests
+/// (`Flight::stop_speed`: strong rolling friction).
+pub const BOUNCE: BounceRule = BounceRule { normal: 0.2, tangent: 0.5, scatter: 30.0 * std::f32::consts::PI / 180.0 };
+
+/// A grenade's flight: a 4-unit box under `gravity` (units/s²), its fuse
+/// checked every tick (its bounce `BOUNCE`; the elasticity here is CS:S's,
+/// for what `BOUNCE` doesn't cover: other characters).
 pub fn flight(gravity: f32) -> Flight {
     Flight {
         half: 2.0 * U,
@@ -185,39 +203,54 @@ pub struct GrenadeParams {
     pub fuse: f32,
     pub gravity: f32,
     /// The throw: the aim raised `lift` degrees, squeezed by `scale_up`
-    /// aiming up and `scale_down` aiming down; speed `speed_per_deg` ×
-    /// (90 + the elevation) within `speed_min`..`speed_max`.
+    /// aiming up and `scale_down` aiming down; speed `speed_min`, plus
+    /// `speed_per_deg` for each degree the aim is above `speed_knee` (up),
+    /// at most `speed_max`; plus `carry` of the thrower's velocity along
+    /// the aim.
     pub lift: f32,
     pub scale_up: f32,
     pub scale_down: f32,
+    pub speed_knee: f32,
     pub speed_per_deg: f32,
     pub speed_min: f32,
     pub speed_max: f32,
-    /// The pin's least time, release to the throw, the throw, the redraw.
+    pub carry: f32,
+    /// The pin's block (the windup), and the next grenade's redraw.
     pub pin_time: f32,
-    pub throw_delay: f32,
-    pub throw_time: f32,
     pub redraw_time: f32,
 }
 
 impl GrenadeParams {
-    /// The throw as Chimera's rule (its speed floor applied in `velocity`).
+    /// The throw's direction as Chimera's rule (the speed is `velocity`'s).
     pub fn rule(&self) -> ThrowRule {
         ThrowRule {
             pitch_lift: -self.lift,
             pitch_scale: self.scale_down,
             pitch_scale_up: self.scale_up,
-            speed_per_deg: self.speed_per_deg * U,
+            speed_per_deg: self.speed_min * U / 90.0,
             speed_max: self.speed_max * U,
             forward: 0.0,
         }
     }
 
+    /// The throw's speed (units/s) aiming `up` degrees up (negative down).
+    pub fn speed(&self, up: f32) -> f32 {
+        (self.speed_min + (up - self.speed_knee).max(0.0) * self.speed_per_deg).min(self.speed_max)
+    }
+
     /// The throw's velocity (m/s) looking at `yaw` and `pitch` (radians,
     /// `Intent`'s), before the thrower's own.
     pub fn velocity(&self, yaw: f32, pitch: f32) -> Vec3 {
-        let (_, v) = self.rule().throw(Vec3::ZERO, yaw, pitch, Vec3::ZERO);
-        v.normalize_or_zero() * v.length().max(self.speed_min * U)
+        let bent = self.rule().pitch(-pitch.to_degrees());
+        let dir = Quat::from_euler(EulerRot::YXZ, yaw, -bent.to_radians(), 0.0) * Vec3::NEG_Z;
+        dir * self.speed(pitch.to_degrees()) * U
+    }
+
+    /// What of the thrower's `velocity` (m/s) the grenade takes, looking at
+    /// `yaw` and `pitch`: `carry` of its part along the aim.
+    pub fn carried(&self, yaw: f32, pitch: f32, velocity: Vec3) -> Vec3 {
+        let aim = Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0) * Vec3::NEG_Z;
+        aim * velocity.dot(aim) * self.carry
     }
 }
 
@@ -284,8 +317,11 @@ pub fn register_hooks(app: &mut App) {
             count: 1,
             max: 1,
             pin_time: p.pin_time,
-            throw_delay: p.throw_delay,
-            throw_time: p.throw_time,
+            // The release throws on its own tick (the frame's "strictly
+            // after" made a hair early), the redraw waits the windup out
+            // (`pins`).
+            throw_delay: -1e-3,
+            throw_time: super::super::TICK_INTERVAL as f32,
             redraw_time: p.redraw_time,
             fuse: p.fuse,
             throw: p.rule(),
@@ -343,11 +379,13 @@ fn spawn_grenade(commands: &mut Commands, weapon: &'static str, thrower: Entity,
         Transform::from_translation(start),
         Projectile::new(weapon, Some(thrower), velocity, flight, fuse.max(0.0), effect, spin),
         ShownItem(projectile_key(weapon)),
+        BOUNCE,
     ));
 }
 
-/// After the throw frame: when each grenade's pin was pulled, and a
-/// grenade held past its fuse going off in the hand (at the eye).
+/// After the throw frame: when each grenade's pin was pulled, the next
+/// one's redraw held until the windup (`pin_time` from the press) is over,
+/// and a grenade held past its fuse going off in the hand (at the eye).
 #[allow(clippy::type_complexity)]
 pub fn pins(
     mut grenades: Query<(&Weapon, &mut DodsGrenade, &mut Throwable, &mut WeaponState)>,
@@ -363,6 +401,13 @@ pub fn pins(
         }
         g.was_pin = t.pin;
         let Some(at) = g.pinned_at else { continue };
+        // Thrown: the next is drawn once the windup is over too (the last
+        // one's switch isn't held).
+        let windup = at + g.params.pin_time as f64;
+        if !t.pin && t.count > 0 && t.redraw_at.is_some_and(|r| r < windup) {
+            t.redraw_at = Some(windup);
+            st.next_primary = st.next_primary.max(windup);
+        }
         if !t.pin || now + 1e-6 < at + g.params.fuse as f64 {
             continue;
         }
@@ -387,7 +432,7 @@ fn on_launch(l: On<Launch>, grenades: Query<(&Weapon, &DodsGrenade, &Throwable)>
     let Ok((w, g, t)) = grenades.get(l.weapon) else { return };
     let p = &g.params;
     let left = p.fuse - g.pinned_at.map_or(0.0, |at| (clock.now - at) as f32);
-    let velocity = p.velocity(l.yaw, l.pitch) + l.velocity;
+    let velocity = p.velocity(l.yaw, l.pitch) + p.carried(l.yaw, l.pitch, l.velocity);
     spawn_grenade(&mut commands, w.id, l.thrower, l.eye, velocity, t.flight, left, t.effect.clone());
 }
 
@@ -444,6 +489,22 @@ pub fn shoulders(
     }
 }
 
+/// Before the weapon frame: a launcher or rifle grenade reloads only by
+/// the reload key (measured: the clip stays empty until it), never by
+/// itself (`WeaponState::reload_held` unless the key is held).
+#[allow(clippy::type_complexity)]
+pub fn key_reloads(
+    owners: Query<&Intent, Without<crate::map::interp::NetDrawn>>,
+    mut weapons: Query<(&Weapon, &mut WeaponState), Or<(With<Shoulder>, With<RifleGrenadeParams>)>>,
+) {
+    for (w, mut st) in &mut weapons {
+        let held = !w.owner.and_then(|o| owners.get(o).ok()).is_some_and(|i| i.reload);
+        if st.reload_held != held {
+            st.reload_held = held;
+        }
+    }
+}
+
 /// Source's explosion where a DoD:S blast went off (every machine that
 /// draws), and its sound.
 #[allow(clippy::too_many_arguments)]
@@ -491,13 +552,13 @@ mod tests {
             lift: 10.0,
             scale_up: 80.0 / 90.0,
             scale_down: 100.0 / 90.0,
-            speed_per_deg: 4.18,
+            speed_knee: 22.5,
+            speed_per_deg: 250.0 / 67.5,
             speed_min: 500.0,
             speed_max: 1400.0,
-            pin_time: 0.1,
-            throw_delay: 0.1,
-            throw_time: 0.5,
-            redraw_time: 0.5,
+            carry: 0.5,
+            pin_time: 0.667,
+            redraw_time: 0.667,
         }
     }
 
@@ -506,10 +567,25 @@ mod tests {
     fn the_throw_follows_the_measured_table() {
         let p = frag();
         // (aim, + down; speed; elevation, + up)
-        for (aim, speed, elev) in [(-80.0f32, 716.0, 81.1), (-60.0, 641.0, 63.3), (-45.0, 592.0, 50.0), (-30.0, 530.0, 36.7), (-15.0, 500.0, 23.3), (0.0, 500.0, 10.0), (15.0, 500.0, -6.7), (30.0, 500.0, -23.3)] {
+        for (aim, speed, elev) in [
+            (-89.0f32, 750.0, 89.1),
+            (-80.0, 716.0, 81.1),
+            (-70.0, 677.0, 72.2),
+            (-60.0, 640.0, 63.3),
+            (-50.0, 600.0, 54.4),
+            (-45.0, 592.0, 50.0),
+            (-40.0, 566.0, 45.6),
+            (-30.0, 530.0, 36.7),
+            (-25.0, 509.0, 32.2),
+            (-15.0, 500.0, 23.3),
+            (0.0, 500.0, 10.0),
+            (15.0, 500.0, -6.7),
+            (30.0, 500.0, -23.3),
+            (89.0, 500.0, -88.9),
+        ] {
             let v = p.velocity(0.0, (-aim).to_radians()) / U;
             let e = (v.y / v.length()).asin().to_degrees();
-            assert!((v.length() - speed).abs() < 12.0, "aim {aim}: {} against {speed}", v.length());
+            assert!((v.length() - speed).abs() < 10.0, "aim {aim}: {} against {speed}", v.length());
             assert!((e - elev).abs() < 1.0, "aim {aim}: {e} against {elev}");
         }
     }
@@ -521,5 +597,17 @@ mod tests {
         let at = |r: f32| chimera_sim::weapon::grenade::blast_damage(b.damage, b.radius, r * U) / HP;
         assert!((at(200.0) - 70.0).abs() < 0.01);
         assert_eq!(at(400.0), 0.0);
+    }
+
+    /// weapons.md, "Grenades": half the thrower's velocity along the aim,
+    /// none across it (running at 220: ≈608 forward, ≈367 backward, ≈492
+    /// sideways, along the aim).
+    #[test]
+    fn the_thrower_carries_half_along_the_aim() {
+        let p = frag();
+        let along = |run: Vec3| ((p.velocity(0.0, 0.0) + p.carried(0.0, 0.0, run * 220.0 * U)) / U).with_y(0.0);
+        assert!((along(Vec3::NEG_Z).length() - 602.4).abs() < 1.0, "{}", along(Vec3::NEG_Z).length());
+        assert!((along(Vec3::Z).length() - 382.4).abs() < 1.0, "{}", along(Vec3::Z).length());
+        assert!(along(Vec3::X).x.abs() < 1e-3, "nothing across");
     }
 }

@@ -122,7 +122,7 @@ pub fn add_movement(app: &mut App) {
         .predicted_net::<DodsStamina>()
         .add_systems(
             crate::core::Predict::Movement,
-            (super::stance::step, super::stamina::step).chain().before(SourceMovementStep),
+            ((super::stance::step, super::stamina::step).chain().before(SourceMovementStep), super::stance::yaw_limits.after(super::stance::step)),
         );
     if let Some(mut registry) = app.world_mut().get_resource_mut::<crate::slots::MovementRegistry>()
         && let Some(m) = registry.0.iter_mut().find(|m| m.id == ID)

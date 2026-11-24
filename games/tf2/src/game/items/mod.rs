@@ -507,10 +507,10 @@ mod tests {
         assert_eq!(get(beast).models.world.as_deref(), Some("models/made/c_beast.mdl"));
         // The sword: every swing's hit, world hit and miss; its class's model.
         let cutter = get("tf2:scotsmans_skullcutter");
-        let m = cutter.melee.as_ref().expect("a melee weapon");
-        assert_eq!(m.primary.sound_hit.as_deref(), Some("tf2:Made_Sword.HitFlesh"));
-        assert_eq!(m.primary.sound_hit_world.as_deref(), Some("tf2:Made_Sword.HitWorld"));
-        assert_eq!(m.primary.sound_swing.as_deref(), Some("tf2:Made_Sword.Swing"));
+        let m = cutter.melee.as_ref().and_then(|m| m.primary.as_ref()).expect("a melee weapon");
+        assert_eq!(m.sound_hit.as_deref(), Some("tf2:Made_Sword.HitFlesh"));
+        assert_eq!(m.sound_hit_world.as_deref(), Some("tf2:Made_Sword.HitWorld"));
+        assert_eq!(m.sound_swing.as_deref(), Some("tf2:Made_Sword.Swing"));
         assert_eq!(cutter.models.view.as_deref(), Some("models/made/c_cutter.mdl"), "model_player_per_class");
         // The launcher: its shot, icon and skin; the plain one its base's.
         let hit = get("tf2:direct_hit");

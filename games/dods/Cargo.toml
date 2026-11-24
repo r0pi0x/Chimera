@@ -32,6 +32,8 @@ source_engine.workspace = true
 # Source's map logic (entity I/O, triggers, movers): part of the game's
 # simulation (`SimPlugins`).
 source_logic.workspace = true
+# Spatial queries (a ceiling over a prone player, a ledge to deploy on).
+avian3d.workspace = true
 bevy.workspace = true
 serde.workspace = true
 toml.workspace = true

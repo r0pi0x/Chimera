@@ -404,7 +404,11 @@ pub struct LagChoiceData {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MeleeData {
-    pub primary: SwingData,
+    /// None: the primary attack is the weapon's other delivery (its gun)
+    /// and only the secondary swings (DoD:S's SMGs' stock strike;
+    /// `Melee::gun_primary`).
+    #[serde(default)]
+    pub primary: Option<SwingData>,
     #[serde(default)]
     pub secondary: Option<SwingData>,
 }
@@ -471,12 +475,24 @@ pub struct SwingData {
 }
 
 /// A swing's backstab (`Swing::backstab`): a number (CS:S's damage from
-/// behind) or a table (`BehindData`, TF2's).
+/// behind) or a table (`BehindData`, TF2's; `AimData`, DoD:S's).
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum BackstabData {
     Damage(f32),
     Behind(BehindData),
+    Aim(AimData),
+}
+
+/// `Backstab::Aim`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AimData {
+    /// The least dot product of the attacker's aim and the victim's
+    /// level facing.
+    pub aim_dot: f32,
+    /// What the swing then deals (before the hit zones).
+    pub damage: f32,
 }
 
 /// `Backstab::Behind`.
@@ -699,6 +715,12 @@ pub struct ProceduralBoneData {
 }
 
 impl WeaponData {
+    /// A melee weapon: its attack swings (`[melee.primary]`). A gun with a
+    /// swing on its alt fire only (DoD:S's SMGs' stock strike) isn't one.
+    pub fn is_melee(&self) -> bool {
+        self.melee.as_ref().is_some_and(|m| m.primary.is_some())
+    }
+
     /// Whether the data names this hook.
     pub fn has_hook(&self, name: &str) -> bool {
         self.hooks.contains_key(name)
@@ -1360,6 +1382,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                     health: b.health,
                     credit: b.credit.as_deref(),
                 },
+                BackstabData::Aim(a) => super::Backstab::Aim { dot: a.aim_dot, damage: a.damage * dmg },
             }),
             delay: s.delay,
             hitgroups: s.hitgroups || s.hitgroup_scale.is_some(),
@@ -1384,10 +1407,15 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             sound_miss: s.sound_miss.clone(),
             sound_swing: s.sound_swing.clone(),
         };
-        e.insert(Melee {
-            primary: swing(&m.primary),
-            secondary: m.secondary.as_ref().map(swing),
-        });
+        // No primary swing: the gun fires, the secondary swings
+        // (`Melee::gun_primary`; the swing kept in `primary` is unused).
+        if let Some(any) = m.primary.as_ref().or(m.secondary.as_ref()) {
+            e.insert(Melee {
+                primary: swing(any),
+                secondary: m.secondary.as_ref().map(swing),
+                gun_primary: m.primary.is_none(),
+            });
+        }
     }
     if let Some(s) = &d.sounds {
         e.insert(WeaponSounds {

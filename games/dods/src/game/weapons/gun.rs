@@ -1,10 +1,13 @@
 //! A DoD:S gun's own rules over the shared weapon frame (`dods:gun`,
 //! `DodsGun`; specs/dods/weapons.md):
 //!
-//! - **Spread**: the script's `Accuracy` as the cone, `SecondaryAccuracy`
-//!   while the sights or scope are up (`AltModes` past its first mode) or
-//!   a machine gun is deployed (`stance::DodsStance::deployed`),
-//!   plus `AccuracyMovePenalty` while its holder moves (`before_frame`).
+//! - **Spread** (weapons.md, "Spread"): the script's `Accuracy` as the
+//!   cone, `SecondaryAccuracy` while an alt mode is on (`AltModes` past its
+//!   first mode: the sights, the scope, the BAR's and StG44's semi-auto)
+//!   or a machine gun is deployed (`stance::DodsStance::deployed`), plus
+//!   the whole `AccuracyMovePenalty` while its holder's horizontal speed
+//!   after the tick's movement is over 45 units/s (`MOVING`); no stance
+//!   bonus, no growth over a burst (`before_frame`).
 //! - **Sights block the trigger**: raising or lowering the sights or
 //!   scope (the data's `[alt]` scope, `step` 0.49 s) blocks the next shot
 //!   for that time (measured on the Garand, weapons.md "Alt fire"): the
@@ -13,25 +16,30 @@
 //!   weapons.md "Fire modes"): the reload key does nothing while rounds
 //!   are left (`WeaponState::reload_held`); a machine gun (`dods:mg`)
 //!   reloads only deployed (measured).
+//! - **Partial reloads** (weapons.md, "Draw and reload times"): the empty
+//!   reload's time, but `partial_reload` (the Colt's 1.56 s, the C96's
+//!   2.22 s) with rounds left; only the missing rounds leave the reserve
+//!   (the shared frame's).
 //! - **The sights' and scopes' field of view** (the data's `[alt]` FOV:
 //!   55 the sights, 20 the scopes, measured): the view narrows
 //!   `ZOOM_DELAY` (0.315 s, 21 ticks) after the press and widens at once
-//!   (`sights`, the gun's own zoom: `OwnZoom`).
+//!   (`sights`, the gun's own zoom: `OwnZoom`); with it on, its holder
+//!   moves at most 42 units/s (`stance::SIGHTED_CAP`).
 //! - **Fire select** (the BAR's and StG44's alt fire, the data's burst of
 //!   one): semi-automatic, the next shot 0.3 s on, `SecondaryAccuracy` the
-//!   spread (sighted counts any alt mode past the first).
+//!   spread (0.02, 0.12 moving: measured).
+//! - **The SMGs' stock strike** (the Thompson's and MP40's alt fire): a
+//!   melee swing of the data's (`[melee.secondary]`, the gun firing on the
+//!   attack: `Melee::gun_primary`), the knife's timing and reach, 60, no
+//!   backstab (damage.md, "Melee").
 //!
 //! Known shortcuts (docs/tech-debt.md):
-//! - Spread is a plain cone of the script's number; how it combines with
-//!   crouch and prone, and the spread pattern, are unmeasured
-//!   (weapons.md, open question 1). "Moving" is any ground speed over
-//!   `MOVING` (unmeasured).
+//! - The spread pattern inside the cone is CS:S's seeded spread (weapons.md,
+//!   open question 1: not visible on the server).
 //! - `Recoil` is kept in the parameters but gives no view kick: its shape
 //!   and recovery are unmeasured (weapons.md, open question 8).
 //! - The field of view changes in one step (measured: over 0.1 s); the
-//!   view model doesn't move to its iron-sight offset; the semi-automatic
-//!   mode's spread is unmeasured (the script's alt accuracy).
-//! - The SMGs' stock strike (their alt fire) is not there (unmeasured).
+//!   view model doesn't move to its iron-sight offset.
 
 use bevy::prelude::*;
 use serde::Deserialize;
@@ -40,9 +48,15 @@ use chimera_sim::weapon::{AltModes, Hitscan, Inventory, Magazine, OwnZoom, Sprea
 
 use crate::core::Velocity;
 
-/// Ground speed over which a holder counts as moving, m/s (unmeasured:
-/// one unit a second).
-pub const MOVING: f32 = 0.0254;
+/// Horizontal speed over which a holder's shot takes the move penalty,
+/// m/s (weapons.md, "Spread": 45 units/s, measured).
+pub const MOVING: f32 = 45.0 * 0.0254;
+
+/// Whether a holder moving at `velocity` (m/s) takes the move penalty:
+/// its horizontal speed over `MOVING`.
+pub fn moving(velocity: Vec3) -> bool {
+    velocity.with_y(0.0).length() > MOVING
+}
 
 /// From the sights' or scope's press to the narrower view, seconds
 /// (measured: 21 ticks).
@@ -76,6 +90,17 @@ pub struct DodsGun {
     /// The reload key does nothing while the clip holds rounds.
     #[serde(default)]
     pub reload_when_empty: bool,
+    /// A reload with rounds left takes this long, seconds (none: as an
+    /// empty one, the data's `[magazine] reload`).
+    #[serde(default)]
+    pub partial_reload: Option<f32>,
+}
+
+/// A gun's reload times, empty and with rounds left (`partial_reload`).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct ReloadTimes {
+    pub empty: f32,
+    pub partial: f32,
 }
 
 impl DodsGun {
@@ -98,6 +123,9 @@ pub fn insert(e: &mut EntityWorldMut, p: &DodsGun) {
     if e.contains::<Zoom>() {
         e.insert((OwnZoom, DodsSights::default()));
     }
+    if let (Some(partial), Some(empty)) = (p.partial_reload, e.get::<Magazine>().map(|m| m.reload_time)) {
+        e.insert(ReloadTimes { empty, partial });
+    }
     e.insert(p.clone());
 }
 
@@ -106,11 +134,18 @@ pub fn insert(e: &mut EntityWorldMut, p: &DodsGun) {
 #[allow(clippy::type_complexity)]
 pub fn before_frame(
     owners: Query<(&Inventory, Option<&Velocity>, Option<&crate::game::stance::DodsStance>), Without<crate::map::interp::NetDrawn>>,
-    mut guns: Query<(&DodsGun, &mut Hitscan, &mut WeaponState, Option<&AltModes>, Option<&Magazine>, Has<super::mg::DodsMg>)>,
+    mut guns: Query<(&DodsGun, &mut Hitscan, &mut WeaponState, Option<&AltModes>, Option<&mut Magazine>, Option<&ReloadTimes>, Has<super::mg::DodsMg>)>,
 ) {
     for (inv, velocity, stance) in &owners {
-        let Some(Ok((gun, mut scan, mut st, alt, mag, mg))) = inv.active.map(|a| guns.get_mut(a)) else { continue };
-        let moving = velocity.is_some_and(|v| v.0.with_y(0.0).length() > MOVING);
+        let Some(Ok((gun, mut scan, mut st, alt, mut mag, times, mg))) = inv.active.map(|a| guns.get_mut(a)) else { continue };
+        if let (Some(t), Some(m)) = (times, mag.as_mut()) {
+            let want = if m.clip > 0 { t.partial } else { t.empty };
+            if m.reload_time != want {
+                m.reload_time = want;
+            }
+        }
+        let mag = mag.as_deref();
+        let moving = velocity.is_some_and(|v| moving(v.0));
         let sighted = alt.is_some_and(|a| a.current > 0) || stance.is_some_and(|s| s.deployed);
         let cone = SpreadShape::Cone(gun.cone(sighted, moving));
         if scan.spread != cone {
@@ -164,6 +199,7 @@ mod tests {
             move_penalty: 0.1,
             recoil: 4.0,
             reload_when_empty: true,
+            partial_reload: None,
         };
         assert_eq!(g.cone(false, false), 0.014);
         assert_eq!(g.cone(true, false), 0.0);

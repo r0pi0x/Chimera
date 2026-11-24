@@ -22,7 +22,8 @@
 //! pin on press, throw on release after a delay, redraw or the spent weapon
 //! goes; predicted with the weapon frame, the projectile launched only where
 //! `core::authoritative`), `ThrowRule` (pitch bend and speed), the `Projectile`
-//! (box sweep, gravity, mirror bounce with elasticity, stop speed, breakables,
+//! (box sweep, gravity, mirror bounce with elasticity or a game's own
+//! `BounceRule` (normal and tangent parts, a random scatter), stop speed, breakables,
 //! water, fuse checked every few ticks), `GrenadeEffect` blast (radius damage
 //! traced against the world only, armour, push on loose bodies, a `RagdollShot`
 //! blast line for each ragdoll in reach (`RagdollBlast`), scorch decal), flash
@@ -275,6 +276,35 @@ pub fn bounce(v: Vec3, n: Vec3, player: bool, f: &Flight, snap: f32) -> (Vec3, b
         }
     }
     r *= e;
+    let slow = r.length() < f.stop_speed;
+    if n.y > f.floor_normal {
+        if slow { (Vec3::ZERO, true) } else { (r, false) }
+    } else if slow {
+        (Vec3::ZERO, false)
+    } else {
+        (r, false)
+    }
+}
+
+/// On a `Projectile`: its own bounce instead of `Flight`'s one elasticity
+/// (DoD:S's tumbling grenades, specs/dods/weapons.md "Bounce"): the part
+/// of its velocity along the surface's normal comes back at `normal`, the
+/// part along the surface at `tangent`, turned about the normal by up to
+/// `scatter` radians either way (random; the tumble). A floor contact
+/// leaving it slower than `Flight::stop_speed` rests it, as `bounce`.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct BounceRule {
+    pub normal: f32,
+    pub tangent: f32,
+    pub scatter: f32,
+}
+
+/// `bounce` by a `BounceRule`, `turn` the scatter's share (−1..1).
+pub fn bounce_by(v: Vec3, n: Vec3, rule: &BounceRule, f: &Flight, turn: f32) -> (Vec3, bool) {
+    let into = v.dot(n);
+    let along = v - into * n;
+    let along = Quat::from_axis_angle(n, rule.scatter * turn.clamp(-1.0, 1.0)) * along;
+    let r = along * rule.tangent - into * rule.normal * n;
     let slow = r.length() < f.stop_speed;
     if n.y > f.floor_normal {
         if slow { (Vec3::ZERO, true) } else { (r, false) }
@@ -1433,7 +1463,7 @@ impl GrenadeWorld<'_, '_> {
 
 #[allow(clippy::too_many_arguments)]
 fn fly(
-    mut projectiles: Query<(Entity, &mut Projectile, &mut Transform), Without<GameFlown>>,
+    mut projectiles: Query<(Entity, &mut Projectile, &mut Transform, Option<&BounceRule>), Without<GameFlown>>,
     mut world: GrenadeWorld,
     mut rng: ResMut<GrenadeRng>,
     mut commands: Commands,
@@ -1448,7 +1478,7 @@ fn fly(
     // The dead and the spawn-protected (`passing`) aren't in its way.
     let mut dead = world.dead();
     dead.extend(world.all_passing());
-    for (entity, mut p, mut transform) in &mut projectiles {
+    for (entity, mut p, mut transform, rule) in &mut projectiles {
         let f = p.flight;
         // 1. The periodic check: fuse, water.
         let check = ((f.check_interval / dt).round() as u32).max(1);
@@ -1543,7 +1573,10 @@ fn fly(
                 break;
             }
             let player = world.is_character(body);
-            let (v, rest) = bounce(p.velocity, n, player, &f, 0.1 * 0.0254);
+            let (v, rest) = match rule {
+                Some(r) if !player => bounce_by(p.velocity, n, r, &f, rng.0.float(-1.0, 1.0)),
+                _ => bounce(p.velocity, n, player, &f, 0.1 * 0.0254),
+            };
             p.velocity = v;
             if rest {
                 p.resting = true;

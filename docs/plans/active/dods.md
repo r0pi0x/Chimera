@@ -23,8 +23,8 @@ and the game's own data.
 | M2 movement specifics | M2a done (2026-11-23): prone, deployed MGs, stamina pool, MGs in the ladders; M2b done (2026-11-23): sprint and stamina caps, jump, unduck, getting up, the hit slow, draw/reload times, FOVs, fire select, MG undeploy/reload/yaw (§4, "Specified since M2a") | §4; the log |
 | M3 party rungs | M3a done (2026-11-23): the bodies animate (stances, movement, each gun's set, sights, deploy, fire and reload gestures, jump; death a ragdoll); M3b done (2026-11-23): each rung's class (body, melee; shared guns drawn with the ladder), DoD:S's HUD, dod_jagd and dod_flash in the pool, the explosives' body sets, the asset service's sets | §4; the log |
 | M3c HUD and kill icons | done (2026-11-24): specs/dods/hud.md (from the data files); the player status strip from it, the install's pictures, DoD:S's kill icons in every app's feed | §4; the log |
-| Spec measurements 2 | done (2026-11-24): spread, no-fire states, stock strike, partial and launcher reloads, rockets on the world, throws, grenade timings, backstab cone and reach, blast shielding, MG limits and ledges, prone edges (specs only; implementation next) | §7 |
-| Remaining | listed in §7: specified and waiting for implementation, blocked on the retail client, unmeasured, or the map pool's walker | §7 |
+| Spec measurements 2 | done (2026-11-24): spread, no-fire states, stock strike, partial and launcher reloads, rockets on the world, throws, grenade timings, backstab cone and reach, blast shielding, MG limits and ledges, prone edges; implemented the same day | §7; the log |
+| Remaining | listed in §7: blocked on the retail client, unmeasured, or the map pool's walker | §7 |
 
 ## 1. Rules for this port
 
@@ -282,30 +282,23 @@ binaries); 216 GB free on 2026-11-24. Then a listen server measures it as
   hand signals, the SMGs' stock strike, the bazooka's shouldering and
   zoomed reload, flinches, the MG42's deployed and reloading models).
 
-**Specified 2026-11-24, not yet implemented** (spec commit "DoD:S spec
-measurements 2"; `tools/dods_probe/measure.py` reruns each; an
-implementation session builds them from the specs):
-- weapons.md: spread = base (alt mode: `SecondaryAccuracy`) + the whole
-  `AccuracyMovePenalty` above 45 u/s, no stance bonus, no growth; no
-  firing or throwing while sprinting, none in the air (fires on
-  landing), none crawling; the SMGs' stock strike (60, knife timing and
-  reach, no backstab); the MG42 fires one bullet; partial reloads (same
-  time except the Colt 1.56 s and C96 2.22 s; only the missing rounds
-  taken); the launchers' 3.0 s and rifle grenades' 2.91 / 2.505 s
-  reloads, the launchers' 0.84 / 2.33 s lockout after a shot; rockets
-  explode on the world; the throw speed above 22.5° up (500 + 250 ×
-  (A − 22.5)/67.5), about half the thrower's velocity along the aim,
-  the grenade timings (0.667 s windup, the next drawn once that is over
-  and the grenade has left), bounces (variable: a low, scattered
-  physics bounce); the deployed MG's yaw limit held by the client (the
-  server doesn't), pitch undeploys past ≈47° down / ≈63° up, ledge deploys standing and crouched (height = top + 16, the eye
-  to it).
-- damage.md: backstab when the attacker's aim · the victim's facing >
-  0.3; reach 92 (origins, level); the hit 0.21 s after the press, 0.4 s
-  between swings; players don't shield blasts.
-- movement.md: the prone eye curve, going prone in the air / sprinting
-  / ducked, low ceilings refuse the key, the still regeneration only at
-  speed 0, the sighted speed cap 42.
+**Specified 2026-11-24, implemented the same day** (spec commit "DoD:S
+spec measurements 2", then the implementation; the log): the spread
+(base or alt + the whole move penalty over 45 u/s), no firing sprinting,
+in the air or crawling, the SMGs' stock strike, the MG42's one bullet,
+partial and launcher/rifle-grenade reloads by the key with the launchers'
+locks, rockets on the world, the throw's speed, the thrower's half
+velocity, the grenade windup and redraw, a low scattered bounce (the
+spec's suggestion), the backstab by aim and the knife's reach and timing,
+blasts not shielded by players, the deployed MG's client-held yaw limit
+(`ViewYawLimit`), the pitch undeploy, ledge deploys, prone in the air /
+sprinting / ducked, low ceilings, the eye curve, the still regeneration
+at speed 0, the sighted cap 42. Left as shortcuts: the swing's shape
+beyond the measured points, the ledge found by four downward traces,
+what narrows the yaw limit (below), the speed while the sights rise.
+Measured and not matched: going prone from a sprint, the spec's 305 →
+199 u/s over 36 ticks is slower than its own friction law (8 × max(v,
+50) a second), which ours follows; the decay's law needs a re-measure.
 
 **Still unmeasured on the dedicated server** (specs' open questions):
 the spread pattern inside the cone (no impact message on the server:
@@ -342,6 +335,25 @@ a Chimera change for every game (map-pool-fitness.md), or per-map checks
 of the confined links. Until then the pool stays dod_jagd and dod_flash.
 
 ## Log
+
+- 2026-11-24, spec measurements 2 implemented (an implementation session
+  from specs/dods only): `gun` (the 45 u/s move threshold, partial reload
+  times), `blocks` (no attack sprinting, in the air, crawling), the knife,
+  spade and the SMGs' stock strike as data (a 77-unit line and a box
+  swept as deep, the hit 0.21 s on, 0.4 s refires; Chimera's
+  `Backstab::Aim` and `Melee::gun_primary`, a gun swinging on its alt
+  fire only; `WeaponData::is_melee` keeps it out of the ladders' melee),
+  `script_numbers` (no `BulletsPerShot`, no melee `FireDelay`),
+  `explosives` (the throw's speed above 22.5°, half the thrower's velocity
+  along the aim, the windup and redraw, `key_reloads`, the launchers'
+  locks as their cycles, Chimera's `BounceRule` for the low scattered
+  bounce), `stance` (prone in the air, from a sprint with
+  `SourceStance::no_input`, from a crouch holding the ducked box, low
+  ceilings, the 7/3 eye curve both ways, the pitch undeploy, the client's
+  `ViewYawLimit` instead of the undeploy at the yaw limit, ledge deploys,
+  the sighted cap) and `stamina` (still only at speed 0, the sprint flag
+  going prone). Scenario tests from the specs' test cases in
+  tests/it/{weapons,stance,explosives}.rs.
 
 - 2026-11-24, spec measurements 2 (a spec commit: specs/dods/ and
   tools/dods_probe only, from measurements on the dedicated server and

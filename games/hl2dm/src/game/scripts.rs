@@ -107,7 +107,7 @@ pub fn differences(data: &WeaponData, script: &WeaponScript) -> Vec<String> {
     }
     if let Some(m) = &data.melee {
         // A swing's sound, hit or miss: the miss's.
-        let swing = m.primary.sound_miss.as_deref();
+        let swing = m.primary.as_ref().and_then(|p| p.sound_miss.as_deref());
         check("single_shot", format!("{swing:?}"), format!("{:?}", script.sound("single_shot")));
     }
     out

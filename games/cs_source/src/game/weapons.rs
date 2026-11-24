@@ -391,7 +391,7 @@ pub fn sounds() -> Vec<&'static str> {
         let swings = w
             .melee
             .iter()
-            .flat_map(|m| [Some(&m.primary), m.secondary.as_ref()])
+            .flat_map(|m| [m.primary.as_ref(), m.secondary.as_ref()])
             .flatten();
         let swung = swings
             .flat_map(|s| [&s.sound_hit, &s.sound_hit_world, &s.sound_miss])

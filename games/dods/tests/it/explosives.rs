@@ -184,9 +184,9 @@ fn the_bazooka_fires_only_shouldered() {
     let first = *fired.first().expect("a rocket once shouldered");
     let wait = (first - 60) as f64 * TICK_INTERVAL;
     assert!((0.78..0.83).contains(&wait), "first rocket {wait} s after shouldering");
-    // The next 1.5 s on (one in the launcher, then its reload).
-    let next = fired.get(1).map(|n| (n - first) as f64 * TICK_INTERVAL);
-    assert!(next.is_some_and(|n| (1.49..1.56).contains(&n)), "{fired:?}");
+    // One in the launcher, reloaded only by the key: no second rocket.
+    assert_eq!(fired.len(), 1, "{fired:?}");
+    assert_eq!(sim.app.world().get::<chimera_sim::weapon::Magazine>(w).unwrap().clip, 0, "stays empty");
     // Shouldered, at most 50 units/s.
     sim.intent(p).fire = false;
     sim.intent(p).move_axis = Vec2::Y;
@@ -288,4 +288,222 @@ fn every_explosive_flies_as_its_projectile_not_its_weapon() {
         let data = dods::game::weapons::dods_weapons();
         assert!(explosives::projectile_model(data.get(id).unwrap()).is_some(), "{id}'s data names its projectile's model");
     }
+}
+
+/// `p`'s launcher `w` fired once shouldered: the tick it fired on (from
+/// `sim`'s next tick).
+fn shoulder_and_fire(sim: &mut Sim, p: Entity) {
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    sim.seconds(1.0);
+    sim.intent(p).fire = true;
+    sim.ticks(1);
+    sim.intent(p).fire = false;
+}
+
+/// The ticks from now until `w`'s clip is full again, the reload key
+/// pressed on the ticks `press` says (None: not within `n`).
+fn loaded_after(sim: &mut Sim, p: Entity, w: Entity, n: u64, press: impl Fn(u64) -> bool) -> Option<u64> {
+    for t in 0..n {
+        sim.intent(p).reload = press(t);
+        sim.ticks(1);
+        if sim.app.world().get::<chimera_sim::weapon::Magazine>(w).unwrap().clip > 0 {
+            sim.intent(p).reload = false;
+            return Some(t);
+        }
+    }
+    sim.intent(p).reload = false;
+    None
+}
+
+/// weapons.md, "Draw and reload times", "Alt fire": the launchers reload
+/// only by the key, in 3.0 s; after a shot the bazooka takes nothing for
+/// 0.84 s and the Panzerschreck for 2.33 s (a reload pressed 1.8 s after
+/// the shot is ignored, not queued); the rifle grenades 2.91 s and 2.505 s.
+#[test]
+fn launchers_and_rifle_grenades_reload_by_the_key() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], BAZOOKA);
+    shoulder_and_fire(&mut sim, p);
+    assert_eq!(loaded_after(&mut sim, p, w, 300, |_| false), None, "not by itself");
+    let t = loaded_after(&mut sim, p, w, 300, |t| t < 2).expect("reloaded by the key");
+    assert!(((t + 1) as f64 * TICK_INTERVAL - 3.0).abs() < 0.02, "bazooka {} s", (t + 1) as f64 * TICK_INTERVAL);
+    // The Panzerschreck: pressed 1.8 s after the shot, ignored.
+    let mut sim = self::sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], PSCHRECK);
+    shoulder_and_fire(&mut sim, p);
+    sim.seconds(1.785);
+    assert_eq!(loaded_after(&mut sim, p, w, 400, |t| t < 2), None, "ignored 1.8 s after the shot");
+    // The bazooka's lock: a press 0.9 s after the shot reloads.
+    let mut sim = self::sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], BAZOOKA);
+    shoulder_and_fire(&mut sim, p);
+    sim.seconds(0.885);
+    assert!(loaded_after(&mut sim, p, w, 300, |t| t < 2).is_some(), "0.9 s after the shot");
+    for (id, secs) in [(RIFLEGREN_US, 2.91), (dods::game::weapons::RIFLEGREN_GER, 2.505)] {
+        let mut sim = self::sim();
+        let (p, w) = holding(&mut sim, greybox::SPAWNS[0], id);
+        sim.intent(p).pitch = 0.5;
+        sim.intent(p).fire = true;
+        sim.ticks(1);
+        sim.intent(p).fire = false;
+        sim.seconds(1.0);
+        assert_eq!(loaded_after(&mut sim, p, w, 300, |_| false), None, "{id}: not by itself");
+        let t = loaded_after(&mut sim, p, w, 300, |t| t < 2).expect("reloaded");
+        assert!(((t + 1) as f64 * TICK_INTERVAL - secs).abs() < 0.02, "{id}: {} s", (t + 1) as f64 * TICK_INTERVAL);
+    }
+}
+
+/// weapons.md, "Rockets": a rocket fired at the ground 45° down explodes
+/// where it meets it, about 55 units ahead, hurting the thrower.
+#[test]
+fn a_rocket_explodes_on_the_world() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], BAZOOKA);
+    sim.app.world_mut().get_mut::<Health>(p).unwrap().current = 10.0;
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    sim.seconds(1.0);
+    sim.intent(p).pitch = -45f32.to_radians();
+    let from = sim.position(p);
+    let before = health_points(&sim, p);
+    let mut cursor = sim.app.world().resource::<Messages<Detonated>>().get_cursor_current();
+    let mut at = None;
+    for t in 0..30 {
+        sim.intent(p).fire = t == 0;
+        sim.ticks(1);
+        let m = sim.app.world().resource::<Messages<Detonated>>();
+        if let Some(d) = cursor.read(m).next() {
+            at = Some(d.at);
+            break;
+        }
+    }
+    let at = at.expect("it went off on the ground");
+    let ahead = (at - from).with_y(0.0).length() / U;
+    assert!((40.0..70.0).contains(&ahead), "{ahead} units ahead");
+    sim.ticks(2);
+    assert!(before - health_points(&sim, p) > 50.0, "the thrower hurt");
+}
+
+/// weapons.md, "Grenades": aiming 60° up ≈639 u/s at 63.3°.
+#[test]
+fn a_frag_thrown_60_up_leaves_at_639() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], FRAG_US);
+    sim.intent(p).pitch = 60f32.to_radians();
+    let mut found = None;
+    for t in 0..10 {
+        sim.intent(p).fire = t == 0;
+        sim.ticks(1);
+        if let Some(g) = projectile(&mut sim) {
+            found = Some(g);
+            break;
+        }
+    }
+    let (_, g, _) = found.expect("thrown");
+    let v = (g.velocity + Vec3::Y * g.flight.gravity * g.ticks as f32 * TICK_INTERVAL as f32) / U;
+    assert!((v.length() - 639.0).abs() < 3.0, "{} u/s", v.length());
+    assert!(((v.y / v.length()).asin().to_degrees() - 63.3).abs() < 0.3);
+}
+
+/// Two frags in hand: `press` ticks of fire from tick 0; the ticks a
+/// grenade left the hand, and whether the weapon is still in hand.
+fn throws(hold_ticks: u64, n: u64, two: bool) -> (Vec<u64>, Sim, Entity) {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], FRAG_US);
+    if two {
+        let mut t = sim.app.world_mut().get_mut::<chimera_sim::weapon::grenade::Throwable>(w).unwrap();
+        t.count = 2;
+        t.max = 2;
+    }
+    sim.intent(p).pitch = 0.3;
+    let mut cursor = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();
+    let mut out = Vec::new();
+    for t in 0..n {
+        // Held for `hold_ticks`, then pressed again every tick after.
+        sim.intent(p).fire = t < hold_ticks || (t > hold_ticks && t % 2 == 0);
+        sim.ticks(1);
+        let m = sim.app.world().resource::<Messages<WeaponEvent>>();
+        out.extend(cursor.read(m).filter(|e| e.owner == p && e.shown() && matches!(e.kind, WeaponEventKind::Thrown)).map(|_| t));
+    }
+    (out, sim, p)
+}
+
+/// weapons.md, "Grenades", timing: thrown on the release's own tick; a
+/// tap's next press works 1.33 s after the first; held 100 ticks, the next
+/// 0.667 s after the release (+ the tick it leaves); the last one gone, the
+/// player holds another weapon the next tick.
+#[test]
+fn grenade_windup_and_redraw() {
+    let (t, ..) = throws(1, 200, true);
+    assert_eq!(t[0], 1, "the release's tick");
+    let gap = (t[1] - 0) as f64 * TICK_INTERVAL;
+    assert!((1.33..1.39).contains(&gap), "next press works {gap} s after the first: {t:?}");
+    let (t, ..) = throws(100, 250, true);
+    assert_eq!(t[0], 100, "{t:?}");
+    let gap = (t[1] - t[0]) as f64 * TICK_INTERVAL;
+    assert!((0.67..0.72).contains(&gap), "next {gap} s after the release: {t:?}");
+    let (t, sim, p) = throws(1, 4, false);
+    assert_eq!(t, vec![1]);
+    assert_ne!(testkit::active_id(sim.app.world(), p), Some(FRAG_US), "another weapon after the last");
+}
+
+/// damage.md, "Explosions": players don't shield a blast: a frag going off
+/// in the air 150 units from a victim does the same with a player between.
+#[test]
+fn players_dont_shield_blasts() {
+    let hurt = |between: bool| {
+        let mut sim = sim();
+        let (p, w) = holding(&mut sim, greybox::SPAWNS[0], FRAG_US);
+        let t = sim.spawn_character(greybox::SPAWNS[1], movement::ID);
+        sim.seconds(1.0);
+        sim.app.world_mut().get_mut::<Health>(t).unwrap().current = 10.0;
+        let feet = sim.position(t) - Vec3::Y * 36.0 * U;
+        if between {
+            let o = sim.spawn_character(feet + Vec3::new(0.0, 36.0, 75.0) * U, movement::ID);
+            sim.app.world_mut().get_mut::<Health>(o).unwrap().current = 10.0;
+            sim.ticks(2);
+        }
+        let at = feet + Vec3::new(0.0, 43.0, 150.0) * U;
+        let g = spawn_projectile(sim.app.world_mut(), w, at, Vec3::ZERO).unwrap();
+        sim.app.world_mut().get_mut::<Projectile>(g).unwrap().fuse = 0.0;
+        let _ = p;
+        let before = health_points(&sim, t);
+        sim.ticks(3);
+        before - health_points(&sim, t)
+    };
+    let (open, shielded) = (hurt(false), hurt(true));
+    assert!(open > 80.0 && (open - shielded).abs() < 0.5, "open {open}, a player between {shielded}");
+}
+
+/// weapons.md, "Bounce": thrown 89° down onto flat ground, a frag comes
+/// back up at no more than about 0.3 of its impact speed.
+#[test]
+fn a_frag_bounces_low() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], FRAG_US);
+    sim.intent(p).pitch = -89f32.to_radians();
+    sim.intent(p).fire = true;
+    sim.ticks(1);
+    sim.intent(p).fire = false;
+    let mut impact = 0.0f32;
+    let mut rebound = 0.0f32;
+    let mut last: Option<f32> = None;
+    for _ in 0..60 {
+        sim.ticks(1);
+        let Some((_, g, _)) = projectile(&mut sim) else { continue };
+        if let Some(v) = last
+            && v < 0.0
+            && g.velocity.y >= 0.0
+            && impact == 0.0
+        {
+            impact = -v;
+            rebound = g.velocity.y;
+        }
+        last = Some(g.velocity.y);
+    }
+    assert!(impact > 0.0, "it landed");
+    assert!(rebound <= impact * 0.3, "rebound {} of {}", rebound / U, impact / U);
 }

@@ -3,11 +3,10 @@
 # 0.79 s later; again, or held past that, lowered: 0.99 s), it fires only
 # shouldered, its holder then at most 50 units/s. The rocket leaves the
 # eye along the aim at 1300 units/s with 0.1 of the gravity (80 units/s²)
-# and explodes on a player, and on the world by the spec's party rule
-# (the dedicated server's rockets didn't; open question 12): 150 x (1 - r
-# / 200) (mp_rocketdamage, mp_rocketradius). One in the launcher, five
-# spare (the script's); the next rocket 1.5 s after one (measured; the
-# reload a stand-in that gives it: open question 9).
+# and explodes on a player or the world (measured): 150 x (1 - r / 200)
+# (mp_rocketdamage, mp_rocketradius). One in the launcher, five spare (the
+# script's); after a shot it takes nothing, not even the reload key, for
+# 2.33 s (the cycle); reloaded only by the key, in 3.0 s (measured).
 id = "dods:weapon_pschreck"
 base = "dods:base"
 class = "launcher"
@@ -21,14 +20,14 @@ max = 5
 
 [trigger]
 automatic = false
-cycle = 1.0
+cycle = 2.33
 timing = "set"
 
 [magazine]
 clip = 1
 ammo = "dods:pschreck"
-reload = 0.5
-auto_reload = true
+# Measured; only by the key (`explosives::key_reloads`).
+reload = 3.0
 
 # Without [damage] the frame traces nothing: the round is a rocket.
 [hitscan]

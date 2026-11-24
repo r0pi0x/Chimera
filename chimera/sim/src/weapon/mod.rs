@@ -1453,6 +1453,10 @@ pub struct OwnZoom;
 pub struct Melee {
     pub primary: Swing,
     pub secondary: Option<Swing>,
+    /// The primary attack is the weapon's gun (its hitscan or launcher),
+    /// only the secondary swings (DoD:S's SMGs' stock strike): `primary`
+    /// is then unused (a copy of the secondary).
+    pub gun_primary: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1539,6 +1543,10 @@ pub enum Backstab {
         health: f32,
         credit: Option<&'static str>,
     },
+    /// DoD:S's (specs/dods/damage.md, "Melee"): `damage` when the
+    /// attacker's aim (with its pitch) · the target's level facing is
+    /// above `dot`: the aim counts, not the line between them.
+    Aim { dot: f32, damage: f32 },
 }
 
 impl Backstab {
@@ -2958,7 +2966,7 @@ fn weapon_frame(
                 w.state.postfire_end = None;
                 // A shot stops a one-at-a-time reload.
                 w.state.shells = ShellStage::Idle;
-                if let Some(swing) = w.melee.map(|m| m.primary.clone()) {
+                if let Some(swing) = w.melee.filter(|m| !m.gun_primary).map(|m| m.primary.clone()) {
                     let swing = follow_up(&swing, w.state.last_swing[0], now);
                     let (own, other) = if swing.delay > 0.0 {
                         start_swing(&mut w.state, &swing, false, now, &mut ctx)

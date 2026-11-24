@@ -174,7 +174,8 @@ fn the_30cal_deploys_prone_waits_1_2_s_and_fires_on_its_sights_without_stamina()
     let mut sim = sim();
     let p = prone_player(&mut sim);
     let w = hold(&mut sim, p, CAL30);
-    sim.intent(p).pitch = 1.2;
+    // At the sky, inside the deployed pitch limits (63 up).
+    sim.intent(p).pitch = 1.0;
     assert!(!stance_of(&sim, p).deployed);
     // The alt fire's press deploys; fire held from that tick.
     let shots = fire_ticks(&mut sim, p, 120, |s, t| {
@@ -245,7 +246,7 @@ fn the_30cal_reloads_only_deployed_and_waits_after_undeploying() {
     let mut sim = sim();
     let p = prone_player(&mut sim);
     let w = hold(&mut sim, p, CAL30);
-    sim.intent(p).pitch = 1.2;
+    sim.intent(p).pitch = 1.0;
     let mag = |s: &Sim| s.app.world().get::<chimera_sim::weapon::Magazine>(w).unwrap().clip;
     // Undeployed: the reload key does nothing.
     sim.app.world_mut().get_mut::<chimera_sim::weapon::Magazine>(w).unwrap().clip = 0;
@@ -285,19 +286,267 @@ fn the_30cal_reloads_only_deployed_and_waits_after_undeploying() {
 }
 
 #[test]
-fn turning_past_45_degrees_undeploys() {
+fn turning_past_45_degrees_is_held_by_the_client_and_never_undeploys() {
+    use chimera_core::core::ViewYawLimit;
     let mut sim = sim();
     let p = prone_player(&mut sim);
     hold(&mut sim, p, CAL30);
     sim.intent(p).secondary = true;
     sim.ticks(1);
     sim.intent(p).secondary = false;
+    sim.ticks(1);
     assert!(stance_of(&sim, p).deployed);
     let yaw = sim.intent(p).yaw;
-    sim.intent(p).yaw = yaw + 40f32.to_radians();
+    let limit = *sim.app.world().get::<ViewYawLimit>(p).expect("the client's limit while deployed");
+    assert!((limit.half - 45f32.to_radians()).abs() < 1e-5 && (limit.centre - yaw).abs() < 1e-5, "{limit:?}");
+    // The server doesn't clamp or undeploy (weapons.md: turned to 60).
+    sim.intent(p).yaw = yaw + 60f32.to_radians();
     sim.ticks(2);
-    assert!(stance_of(&sim, p).deployed, "40 degrees");
-    sim.intent(p).yaw = yaw + 50f32.to_radians();
+    assert!(stance_of(&sim, p).deployed, "60 degrees: still deployed");
+    // What the client holds the view at.
+    assert!((limit.clamp(yaw + 60f32.to_radians()) - (yaw + 45f32.to_radians())).abs() < 1e-4);
+    // Undeployed, the limit goes.
+    sim.intent(p).yaw = yaw;
+    sim.intent(p).secondary = true;
     sim.ticks(1);
-    assert!(!stance_of(&sim, p).deployed, "50 degrees");
+    sim.intent(p).secondary = false;
+    sim.ticks(1);
+    assert!(sim.app.world().get::<ViewYawLimit>(p).is_none());
+}
+
+#[test]
+fn looking_down_past_47_or_up_past_63_undeploys_staying_prone() {
+    for (pitch, deployed) in [(-46.0f32, true), (-48.0, false), (62.0, true), (64.0, false)] {
+        let mut sim = sim();
+        let p = prone_player(&mut sim);
+        hold(&mut sim, p, CAL30);
+        sim.intent(p).secondary = true;
+        sim.ticks(1);
+        sim.intent(p).secondary = false;
+        assert!(stance_of(&sim, p).deployed);
+        sim.intent(p).pitch = pitch.to_radians();
+        sim.ticks(2);
+        assert_eq!(stance_of(&sim, p).deployed, deployed, "pitch {pitch}");
+        assert!(stance_of(&sim, p).prone(), "still prone at {pitch}");
+    }
+}
+
+/// A static box from `min` to `max` (m).
+fn solid(sim: &mut Sim, min: Vec3, max: Vec3) {
+    use avian3d::prelude::{Collider, RigidBody};
+    let size = max - min;
+    sim.app.world_mut().spawn((RigidBody::Static, Collider::cuboid(size.x, size.y, size.z), Transform::from_translation((min + max) / 2.0)));
+    sim.ticks(1);
+}
+
+fn feet(sim: &Sim, p: Entity) -> Vec3 {
+    sim.position(p) + Vec3::Y * sim.state(p).hull_min.y
+}
+
+/// A crate whose top is `top` units over `p`'s feet, `gap` units ahead
+/// of its box (along -Z), 64 wide and deep.
+fn crate_ahead(sim: &mut Sim, p: Entity, top: f32, gap: f32) {
+    let f = feet(sim, p);
+    let near = f.z - (16.0 + gap) * U;
+    solid(sim, Vec3::new(f.x - 32.0 * U, f.y - 10.0 * U, near - 64.0 * U), Vec3::new(f.x + 32.0 * U, f.y + top * U, near));
+}
+
+/// weapons.md, "Alt fire", deploying on a ledge: the MG42 standing, a
+/// 30-high ledge 2 units ahead: deployed, height 46, the eye to it;
+/// crouched, a 38-high one: 54; a 56-high one standing: nothing.
+#[test]
+fn the_mg_deploys_on_a_ledge_standing_and_crouched() {
+    for (top, crouched, want) in [(30.0f32, false, Some(46.0f32)), (38.0, true, Some(54.0)), (56.0, false, None), (40.0, false, Some(56.0))] {
+        let mut sim = sim();
+        let p = player(&mut sim);
+        hold(&mut sim, p, weapons::MG42);
+        sim.intent(p).yaw = 0.0;
+        sim.intent(p).pitch = 0.0;
+        if crouched {
+            sim.intent(p).crouch = true;
+            sim.seconds(0.6);
+        }
+        crate_ahead(&mut sim, p, top, 2.0);
+        sim.intent(p).secondary = true;
+        sim.ticks(1);
+        sim.intent(p).secondary = false;
+        sim.seconds(0.5);
+        let s = stance_of(&sim, p);
+        assert!(s.ledge.zip(want).map_or(s.ledge == want, |(a, b)| (a - b).abs() < 0.01), "top {top}: {:?}", s.ledge);
+        assert_eq!(s.deployed, want.is_some(), "top {top}");
+        if let Some(h) = want {
+            assert!((eye(&sim, p) - h).abs() < 0.1, "top {top}: eye {}", eye(&sim, p));
+            sim.intent(p).move_axis = Vec2::Y;
+            sim.seconds(0.3);
+            assert!(speed(&sim, p) < 0.01, "deployed on a ledge: no movement");
+        }
+    }
+    // Too far: a 40-high ledge 22 units ahead of the box.
+    let mut sim = sim();
+    let p = player(&mut sim);
+    hold(&mut sim, p, weapons::MG42);
+    sim.intent(p).yaw = 0.0;
+    crate_ahead(&mut sim, p, 40.0, 22.0);
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    assert!(!stance_of(&sim, p).deployed, "22 units ahead");
+}
+
+/// movement.md, "Prone": pressed 5 ticks into a jump, going prone starts
+/// at once, the jump flies on with the standing box and lands; prone 80
+/// ticks after the press.
+#[test]
+fn going_prone_in_the_air_finishes_the_jump() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    let y0 = sim.position(p).y;
+    sim.intent(p).jump = true;
+    sim.ticks(5);
+    sim.intent(p).jump = false;
+    assert!(!sim.state(p).on_ground);
+    press_prone(&mut sim, p);
+    assert_eq!(stance_of(&sim, p).stance, Stance::GoingDown, "starts in the air");
+    let mut top = 0.0f32;
+    for _ in 0..30 {
+        sim.ticks(1);
+        top = top.max((sim.position(p).y - y0) / U);
+    }
+    assert!(top > 35.0, "the jump isn't cut: apex {top}");
+    assert!((hull_top(&sim, p) - 72.0).abs() < 0.01, "the standing box in the air");
+    sim.ticks(49);
+    assert!(stance_of(&sim, p).prone(), "prone 80 ticks after the press");
+    assert!(sim.state(p).on_ground);
+}
+
+/// movement.md, "Prone": pressed while sprinting the input stops counting
+/// but the speed isn't cut (it decays by friction) and the sprint flag
+/// stays while it is over 80.
+#[test]
+fn going_prone_sprinting_keeps_the_speed_and_the_flag() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    sim.intent(p).move_axis = Vec2::Y;
+    sim.intent(p).sprint = true;
+    sim.seconds(1.0);
+    let before = speed(&sim, p);
+    assert!(before > 290.0, "sprinting {before}");
+    press_prone(&mut sim, p);
+    let after = speed(&sim, p);
+    assert!(after > 250.0 && after < before, "not cut on the press: {before} then {after}");
+    assert!(sim.app.world().get::<DodsStamina>(p).unwrap().sprinting, "the flag stays");
+    let s0 = stamina(&sim, p);
+    sim.ticks(1);
+    assert!(stamina(&sim, p) < s0, "it drains");
+    sim.ticks(78);
+    assert!(stance_of(&sim, p).prone());
+    assert!(!sim.app.world().get::<DodsStamina>(p).unwrap().sprinting, "ended below 80");
+}
+
+/// movement.md, "Prone": pressed ducked, the eye eases 34 → 10 with the
+/// ducked box held until prone.
+#[test]
+fn going_prone_ducked_holds_the_ducked_box() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    sim.intent(p).crouch = true;
+    sim.seconds(0.6);
+    sim.intent(p).crouch = false;
+    let bit = sim.app.world().resource::<ActionRegistry>().bit(stance::PRONE_ACTION);
+    sim.intent(p).actions |= bit;
+    sim.intent(p).crouch = true;
+    sim.ticks(1);
+    sim.intent(p).actions &= !bit;
+    sim.intent(p).crouch = false;
+    sim.ticks(39);
+    assert!((hull_top(&sim, p) - 45.0).abs() < 0.01, "ducked box at 40: {}", hull_top(&sim, p));
+    let want = 34.0 - 24.0 * stance::prone_ease(40.0 / 80.0);
+    assert!((eye(&sim, p) - want).abs() < 0.2, "eye {} against {want}", eye(&sim, p));
+    sim.ticks(40);
+    assert!(stance_of(&sim, p).prone());
+}
+
+/// movement.md, "Getting up": under a ceiling 50 up, `+alt1` is refused
+/// and duck works; under 40, duck is refused too.
+#[test]
+fn a_low_ceiling_refuses_getting_up() {
+    for (ceiling, stands, ducks) in [(50.0f32, false, true), (40.0, false, false), (80.0, true, true)] {
+        for duck in [false, true] {
+            let mut sim = sim();
+            let p = prone_player(&mut sim);
+            let f = feet(&sim, p);
+            solid(&mut sim, f + Vec3::new(-100.0, ceiling, -100.0) * U, f + Vec3::new(100.0, ceiling + 10.0, 100.0) * U);
+            if duck {
+                sim.intent(p).crouch = true;
+                sim.ticks(1);
+                sim.intent(p).crouch = false;
+            } else {
+                press_prone(&mut sim, p);
+            }
+            let up = stance_of(&sim, p).stance == Stance::GettingUp;
+            assert_eq!(up, if duck { ducks } else { stands }, "ceiling {ceiling}, duck {duck}");
+            if !up {
+                assert!(stance_of(&sim, p).prone() && (hull_top(&sim, p) - 24.0).abs() < 0.01, "nothing changes");
+            }
+        }
+    }
+}
+
+/// weapons.md, "When a gun can't fire": crawling, held fire does nothing
+/// until the crawl has stopped.
+#[test]
+fn no_shot_while_crawling() {
+    let mut sim = sim();
+    let p = prone_player(&mut sim);
+    hold(&mut sim, p, weapons::THOMPSON);
+    sim.intent(p).pitch = 0.6;
+    sim.intent(p).move_axis = Vec2::Y;
+    sim.seconds(0.5);
+    let mut stopped = None;
+    let shots = fire_ticks(&mut sim, p, 60, |s, t| {
+        s.intent(p).fire = true;
+        s.intent(p).move_axis = if t < 20 { Vec2::Y } else { Vec2::ZERO };
+        if t >= 20 && stopped.is_none() && speed(s, p) == 0.0 {
+            stopped = Some(t);
+        }
+    });
+    let first = *shots.first().expect("fires once stopped");
+    assert!(first >= 20 && stopped.is_some_and(|s| first <= s + 1), "first {first}, stopped {stopped:?}");
+}
+
+/// movement.md, "View": with the Garand's sights up, at most 42 units/s.
+#[test]
+fn the_sights_cap_the_speed_at_42() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    hold(&mut sim, p, weapons::GARAND);
+    sim.intent(p).move_axis = Vec2::Y;
+    sim.seconds(1.0);
+    assert!(speed(&sim, p) > 200.0);
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    sim.seconds(0.5);
+    assert!((speed(&sim, p) - 42.0).abs() < 0.5, "sighted: {}", speed(&sim, p));
+}
+
+/// movement.md, "Stamina and sprint": sliding to a stop with no input it
+/// regenerates at the moving rate (0.15 a tick) until the speed is 0, then
+/// at the still rate (0.9).
+#[test]
+fn the_still_rate_only_at_speed_0() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    sim.intent(p).move_axis = Vec2::Y;
+    sim.seconds(1.0);
+    *sim.app.world_mut().get_mut::<DodsStamina>(p).unwrap() = DodsStamina { value: 20.0, sprinting: false };
+    sim.intent(p).move_axis = Vec2::ZERO;
+    sim.ticks(1);
+    let a = stamina(&sim, p);
+    sim.ticks(1);
+    assert!((stamina(&sim, p) - a - 0.15).abs() < 1e-3, "sliding: {}", stamina(&sim, p) - a);
+    sim.seconds(0.5);
+    assert_eq!(speed(&sim, p), 0.0);
+    let b = stamina(&sim, p);
+    sim.ticks(1);
+    assert!((stamina(&sim, p) - b - 0.9).abs() < 1e-3, "still: {}", stamina(&sim, p) - b);
 }

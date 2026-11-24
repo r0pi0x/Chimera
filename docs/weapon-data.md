@@ -187,13 +187,17 @@ distance and its corners: HL2:DM's), damage, follow_up = [window, damage], backs
 (a number: CS:S's damage from behind; or a table `{ behind, facing,
 same_way, health, credit }`: TF2's three flattened dot tests, the damage
 `health` times the target's current health, the kill credited to the id
-`credit`), delay (seconds from the swing's start to its hit, traced along
+`credit`; or `{ aim_dot, damage }`: DoD:S's, the damage when the
+attacker's aim · the target's level facing is over `aim_dot`), delay (seconds from the swing's start to its hit, traced along
 the view then: TF2's smack delay; 0 hits at once), hitgroups, hitgroup_scale (`{ head, chest,
 stomach, arm, leg }`: the hit zone's multiplier on the swing's damage and
 its backstab, implying hitgroups: DoD:S's knife and spade), hit/miss
 refires, force per damage point, armor_ratio, quantum, sounds:
 sound_hit, sound_hit_world, sound_miss, and sound_swing, every swing's at
-its start); `undroppable = true` and `pickup_team = 1` are flags; `death_drop
+its start). A gun with `[melee.secondary]` and no `[melee.primary]`
+fires on the attack and swings on the alt fire (`Melee::gun_primary`:
+DoD:S's SMGs' stock strike; it isn't a melee weapon to the ladders,
+`WeaponData::is_melee`); `undroppable = true` and `pickup_team = 1` are flags; `death_drop
 = 3` marks a weapon the dead drop beside their best gun (`DeathDrop`: of
 those carried, the highest goes; CS:S's grenades); `kept_on_drop = true`
 one the drop key leaves in hand (`KeptOnDrop`; CS:S's grenades);

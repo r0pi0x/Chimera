@@ -559,7 +559,7 @@ impl GunNumbers {
         let clip = |d: &WeaponData| d.magazine.as_ref().map(|m| (m.clip, m.reload, m.shells.as_ref().map(|s| s.insert)));
         let cycle = |d: &WeaponData| d.trigger.as_ref().map(|t| t.cycle);
         let melee = |d: &WeaponData| {
-            d.melee.as_ref().map(|m| format!("{} {} {} {}", m.primary.damage, m.primary.hit_refire, m.primary.miss_refire, m.primary.delay))
+            d.melee.as_ref().and_then(|m| m.primary.as_ref()).map(|p| format!("{} {} {} {}", p.damage, p.hit_refire, p.miss_refire, p.delay))
         };
         let punch = |d: &WeaponData| d.hooks.get(super::GUN_HOOK).and_then(|g| chimera_sim::weapon::harm::num(g, "punch"));
         // The hooks but the view kick (its own row).

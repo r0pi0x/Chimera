@@ -4,8 +4,9 @@
 # or not: it goes off 5.1 s after the press (335-347 ticks measured), in
 # the hand when held that long. Thrown from the eye at 500 units/s, 10
 # degrees above the aim squeezed (aiming A up: 10 + A x 80/90; D down:
-# 10 - D x 100/90), faster aiming higher (4.18 x (90 + the elevation), at
-# most dod_grenademaxspeed 1400), under dod_grenadegravity 420. The blast
+# 10 - D x 100/90), faster aiming more than 22.5 degrees up (500 + 250 x
+# (A - 22.5) / 67.5, at most dod_grenademaxspeed 1400), with half the
+# thrower's velocity along the aim, under dod_grenadegravity 420. The blast
 # 150 x (1 - r / 375), a clear line needed, the thrower hurt too (the
 # script's Damage 180 isn't it). Both nations' alike (measured).
 id = "dods:weapon_frag_us"
@@ -30,16 +31,18 @@ gravity = 420.0
 lift = 10.0
 scale_up = 0.888889
 scale_down = 1.111111
-# Fitted to the measured speeds aiming up (527-716 at 30-80 degrees up).
-speed_per_deg = 4.18
+# Measured (weapons.md, "Grenades"): 500 + 250 x (A - 22.5) / 67.5 aiming
+# A degrees up above 22.5; about half the thrower's velocity along the aim.
+speed_knee = 22.5
+speed_per_deg = 3.7037
 speed_min = 500.0
 speed_max = 1400.0
-# Unmeasured (ours): the pin's least time, release to throw, the throw,
-# the redraw.
-pin_time = 0.1
-throw_delay = 0.1
-throw_time = 0.5
-redraw_time = 0.5
+carry = 0.5
+# Measured: the press blocks the weapon 0.667 s (the windup); the next
+# grenade is drawn once that is over and the grenade has left, ready
+# 0.667 s later.
+pin_time = 0.667
+redraw_time = 0.667
 
 [hooks."dods:body_anim"]
 # The body's animations (`player_anim`): the set the shared player model has for it

@@ -898,6 +898,14 @@ impl Shot<'_, '_, '_> {
                     amount = back;
                 }
             }
+            (Some(Backstab::Aim { dot, damage }), Some(yaw), Some(_)) => {
+                // The attacker's aim (pitch and all) against the target's
+                // level facing (DoD:S's, measured).
+                let facing = (yaw * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
+                if forward.dot(facing) > dot {
+                    amount = damage;
+                }
+            }
             (Some(b @ Backstab::Behind { health, credit: c, .. }), Some(yaw), Some(_)) => {
                 // Centre to centre (the boxes', a rewound target's where
                 // the swinger saw it), yaw only.

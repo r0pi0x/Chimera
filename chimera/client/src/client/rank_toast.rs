@@ -280,7 +280,7 @@ pub fn pose(events: Vec<&RankEvent>, now: f64, d: &ToastTimes) -> Option<ToastPo
 /// A gun class's name on line 2 (`GunClass`; melee by its slot).
 pub fn class_label(data: &WeaponData) -> &'static str {
     use chimera_core::game_parts::GunClass;
-    if data.melee.is_some() {
+    if data.is_melee() {
         return "Melee";
     }
     match data.class {

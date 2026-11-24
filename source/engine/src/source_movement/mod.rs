@@ -753,6 +753,9 @@ pub struct SourceSpeed(pub f32);
 ///   had been held all along: still held, the character stays ducked;
 ///   let go, it stands up by the usual unduck (DoD:S's prone to a crouch:
 ///   specs/dods/movement.md "Getting up").
+/// - `no_input`: the move keys do nothing; the speed the character has
+///   goes on, slowed by friction on the ground (DoD:S going prone,
+///   movement.md "Prone": pressed while sprinting, the speed decays).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SourceStance {
     pub height: Option<f32>,
@@ -761,6 +764,8 @@ pub struct SourceStance {
     pub no_jump: bool,
     #[serde(default)]
     pub crouch: bool,
+    #[serde(default)]
+    pub no_input: bool,
 }
 
 impl SourceStance {
@@ -2889,9 +2894,10 @@ impl Mover<'_, '_, '_, '_> {
             Some(p) => p.min(self.cfg.maxspeed) * self.me.velocity_modifier,
             None => self.player_maxspeed.min(self.cfg.maxspeed) * walk * self.me.velocity_modifier,
         } * self.ground_factors().0;
+        let keys = if self.stance.no_input { Vec2::ZERO } else { intent.move_axis };
         let (mut f, mut s) = (
-            intent.move_axis.y * self.cfg.key_speed + self.push_input.x,
-            intent.move_axis.x * self.cfg.key_speed + self.push_input.y,
+            keys.y * self.cfg.key_speed + self.push_input.x,
+            keys.x * self.cfg.key_speed + self.push_input.y,
         );
         let len = (f * f + s * s).sqrt();
         if len > max_speed {

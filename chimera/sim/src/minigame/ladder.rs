@@ -769,7 +769,7 @@ fn melee_pool(
     let mut pool: Vec<&'static str> = Vec::new();
     for data in catalog.weapons().iter() {
         let id: &'static str = &data.id;
-        if (data.melee.is_some() || knives.contains(id))
+        if (data.is_melee() || knives.contains(id))
             && def.allows_weapon(id)
             && !hands.contains(id)
             && excluded.is_none_or(|x| x.reason(id).is_none())
@@ -783,7 +783,7 @@ fn melee_pool(
 /// Whether weapon `id` is a melee weapon: it has `melee` data, or a hook
 /// names it (`RungExtrasHook::melee`).
 pub fn is_melee(catalog: &WeaponCatalog, hooks: &[RungExtrasHook], id: &str) -> bool {
-    catalog.get(id).is_some_and(|w| w.melee.is_some()) || hooks.iter().any(|h| (h.melee)(catalog).contains(&id))
+    catalog.get(id).is_some_and(|w| w.is_melee()) || hooks.iter().any(|h| (h.melee)(catalog).contains(&id))
 }
 
 const NO_MELEE: &str = "[rules] knife_finale: the games have no melee weapon for it";
@@ -1499,14 +1499,14 @@ fn melee_kill(d: &Died, held: &Query<&Inventory>, weapons: &Query<&Weapon>, cata
         weapons.get(inv.active?).ok().map(|w| w.id)
     });
     let Some(id) = id else { return false };
-    catalog.and_then(|c| c.get(id)).is_some_and(|w| w.melee.is_some())
+    catalog.and_then(|c| c.get(id)).is_some_and(|w| w.is_melee())
 }
 
 /// Whether the killing damage of `d` was a melee weapon's (its weapon, as
 /// `Death::weapon` names it, or melee damage).
 fn melee_death(world: &World, d: &Death) -> bool {
     d.damage_kind == DamageKind::Melee
-        || d.weapon.is_some_and(|id| world.get_resource::<WeaponCatalog>().and_then(|c| c.get(id)).is_some_and(|w| w.melee.is_some()))
+        || d.weapon.is_some_and(|id| world.get_resource::<WeaponCatalog>().and_then(|c| c.get(id)).is_some_and(|w| w.is_melee()))
 }
 
 /// `e` on `rung`, holding its weapon in place of the ladder's others (on

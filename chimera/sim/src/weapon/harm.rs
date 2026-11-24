@@ -63,7 +63,7 @@ pub fn can_damage_player(data: &WeaponData, readers: &HarmReaders) -> Option<boo
     }
     if let Some(m) = &data.melee {
         known = true;
-        hurts |= m.primary.damage > 0.0 || m.secondary.as_ref().is_some_and(|s| s.damage > 0.0);
+        hurts |= m.primary.as_ref().is_some_and(|p| p.damage > 0.0) || m.secondary.as_ref().is_some_and(|s| s.damage > 0.0);
     }
     if let Some(p) = data.hooks.get(super::projectile::LAUNCHER) {
         known = true;

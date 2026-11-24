@@ -6,8 +6,7 @@
 //! script is served).
 //!
 //! - `apply_script` is weapons.md's mapping of one script onto one gun's
-//!   document: `Damage` (`[damage] amount`), `BulletsPerShot`
-//!   (`[hitscan] pellets`), `Accuracy` (the cone and `dods:gun`'s
+//!   document: `Damage` (`[damage] amount`), `Accuracy` (the cone and `dods:gun`'s
 //!   `accuracy`), `SecondaryAccuracy`, `AccuracyMovePenalty` and `Recoil`
 //!   (`dods:gun`), `FireDelay` (`[trigger] cycle`, rounded up to whole
 //!   ticks: `fire_cycle`), `clip_size` (`[magazine] clip`),
@@ -17,8 +16,11 @@
 //!   reload others hear; each under DoD:S's name in a map's table,
 //!   `maps::own_sound`) and the view and world models. A melee script
 //!   (`dods:melee`): `Damage` as the swing's, five times it from behind
-//!   (damage.md, "Melee"), `FireDelay` as its refires, `melee_hit`,
+//!   (damage.md, "Melee"; the backstab's `damage`), `melee_hit`,
 //!   `melee_hit_world` and `melee_miss` (or `single_shot`) as its sounds.
+//!   Not mapped, as measured: `BulletsPerShot` (the MG42's 2 fires one
+//!   bullet a shot; every gun fires one) and a melee script's `FireDelay`
+//!   (0.1; a swing blocks 0.4 s, the document's).
 //!   A field missing or malformed leaves the document's number; a script
 //!   whose `WeaponType` doesn't fit the document (a melee script on a gun)
 //!   is refused.
@@ -106,16 +108,12 @@ pub fn apply_script(data: &Kv, doc: &mut Table) -> Applied {
         if let Some(d) = num("Damage", &mut out.notes) {
             let swing = table(table(doc, "melee"), "primary");
             swing.insert("damage".into(), Value::Float(d));
-            // damage.md, "Melee": from behind five times as much.
-            swing.insert("backstab".into(), Value::Float(d * 5.0));
-            out.set.push("[melee.primary] damage, backstab");
-        }
-        if let Some(d) = num("FireDelay", &mut out.notes).filter(|d| *d > 0.0) {
-            let swing = table(table(doc, "melee"), "primary");
-            for k in ["hit_refire", "miss_refire", "miss_refire_other"] {
-                swing.insert(k.into(), Value::Float(d));
+            // damage.md, "Melee": from behind five times as much (the
+            // document's rule of what is behind).
+            if let Some(b) = swing.get_mut("backstab").and_then(Value::as_table_mut) {
+                b.insert("damage".into(), Value::Float(d * 5.0));
             }
-            out.set.push("[melee.primary] refires");
+            out.set.push("[melee.primary] damage, backstab");
         }
         let sounds = data.get("SoundData");
         let sound = |k: &str| sounds.and_then(|s| s.str(k)).map(str::trim).filter(|s| !s.is_empty()).map(own_sound);
@@ -139,10 +137,6 @@ pub fn apply_script(data: &Kv, doc: &mut Table) -> Applied {
         if let Some(d) = num("Damage", &mut out.notes) {
             table(doc, "damage").insert("amount".into(), Value::Float(d));
             out.set.push("[damage] amount");
-        }
-        if let Some(n) = num("BulletsPerShot", &mut out.notes).filter(|n| *n >= 1.0) {
-            table(doc, "hitscan").insert("pellets".into(), Value::Integer(n as i64));
-            out.set.push("[hitscan] pellets");
         }
         if let Some(a) = num("Accuracy", &mut out.notes) {
             let mut cone = Table::new();
@@ -391,7 +385,7 @@ mod tests {
         assert_eq!(doc["hooks"]["dods:gun"]["alt_accuracy"].as_float(), Some(0.0));
         assert_eq!(doc["sounds"]["fire"].as_str(), Some("dods:Weapon_X.Shoot"));
         assert_eq!(doc["models"]["view"].as_str(), Some("models/v.mdl"));
-        assert_eq!(a.notes.len(), 1, "the malformed bullets: {:?}", a.notes);
+        assert!(a.notes.is_empty(), "BulletsPerShot isn't read: {:?}", a.notes);
     }
 
     #[test]

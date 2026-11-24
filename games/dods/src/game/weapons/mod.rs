@@ -20,9 +20,20 @@
 //! are weapons.md's measured table (the data's `draw` and `[magazine]
 //! reload`).
 //!
-//! Known shortcuts (beside `gun`'s, `hit_slow`'s and `explosives`'): a
-//! partial reload takes the empty one's time (unmeasured); the melee swing's reach and box and the backstab's cone
-//! are CS:S's knife's (damage.md, open question 4).
+//! **When nothing fires** (`blocks`): sprinting, in the air or crawling.
+//! **Melee** (damage.md, "Melee"; the knife's and spade's data, the SMGs'
+//! stock strike): the hit lands 0.21 s after the press, every attack
+//! blocked 0.4 s from it; the reach is a line of 77 units from the eye
+//! then a box swept to the same depth, so a level swing hits a standing
+//! player whose origin is up to 92 units away (94 not) and one 45° off
+//! the aim at 56; from behind (the knife and spade only) when the
+//! attacker's aim · the victim's level facing is over 0.3 (`Backstab::Aim`).
+//! The MG42 fires one bullet a shot (its script's `BulletsPerShot` 2 is
+//! not what the game does: `script_numbers`).
+//!
+//! Known shortcuts (beside `gun`'s, `hit_slow`'s and `explosives`'): the
+//! swing's shape beyond the measured reach and the 45° hit is ours
+//! (damage.md, open question 4).
 
 use bevy::prelude::*;
 use chimera_sim::weapon::data::{WeaponDataAppExt, WeaponSet};
@@ -32,6 +43,7 @@ use source_engine::content::{material::MaterialLoader, props, surfaceprops::Surf
 
 use crate::map::GameKit;
 
+pub mod blocks;
 pub mod explosives;
 pub mod gun;
 pub mod hit_slow;
@@ -227,7 +239,9 @@ impl Plugin for DodsGunsPlugin {
         app.add_systems(
             Predict::Weapons,
             (
-                (gun::before_frame, explosives::shoulders).before(WeaponFrame),
+                (gun::before_frame, explosives::shoulders, explosives::key_reloads).before(WeaponFrame),
+                // The throw frame runs after the weapon frame.
+                blocks::no_fire.after(gun::before_frame).after(explosives::shoulders).before(WeaponFrame),
                 explosives::pins.after(chimera_sim::weapon::grenade::ThrowFrame),
                 gun::sights.after(WeaponFrame),
             ),

@@ -4,9 +4,9 @@
 # fired from the eye along the aim at 2000 units/s, falling under gravity
 # and drag together (440-456 units/s², 448 here), bouncing, going off 3.63 s
 # after the shot whatever it meets: 150 x (1 - r / 375) (the grenade
-# entity's numbers; the script's Damage 100 isn't it). Unmeasured: its
-# draw and reload (weapons.md, open question 9; stand-ins giving the
-# measured next shot 1.0 s after one).
+# entity's numbers; the script's Damage 100 isn't it). Reloaded only by the
+# key, in 2.505 s (measured); its draw and the lock after a shot (0.5 s)
+# are ours (unmeasured).
 id = "dods:weapon_riflegren_ger"
 base = "dods:base"
 class = "launcher"
@@ -25,8 +25,8 @@ timing = "set"
 [magazine]
 clip = 1
 ammo = "dods:riflegren_ger"
-reload = 0.5
-auto_reload = true
+# Measured; only by the key (`explosives::key_reloads`).
+reload = 2.505
 
 # Without [damage] the frame traces nothing: the round is a grenade
 # (`dods:rifle_grenade`).
