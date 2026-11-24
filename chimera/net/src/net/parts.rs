@@ -11,8 +11,10 @@
 //!   and `interp::hold_heard` for buffered ones), its systems on both
 //!   sides, and fills the hooks below. CS:S's is `cs_source::game::net`
 //!   (the round, bomb and hostages, team and class requests, round ends
-//!   and objective news); Source's logic's is `logic::net` (movers, HUD
-//!   messages).
+//!   and objective news); Source's logic's is `logic::net` (HUD
+//!   messages, its movers' writing and carrying); `map_movers` is the
+//!   map logics' shared one (`net::movers`), which Source's and GoldSrc's
+//!   logic both add.
 //! - **Own-state parts** (`OwnParts`, `NetAppExt::own_part`): what the
 //!   server tells a client about its own player that isn't predicted (CS:S's
 //!   money, armour, defusal kit and night vision), registered by name with

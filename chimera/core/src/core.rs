@@ -2142,8 +2142,9 @@ impl Default for FirstTimePredicted {
 /// network client's own copies of its moving parts at the tick it
 /// predicts (what the player moves against) and, after movement, steps
 /// them as the server's logic does that tick and carries the player
-/// riding them (Source's movers: `source_logic`; Combat Arms' active world
-/// models). They hold only systems that act on a client.
+/// riding them (Source's and GoldSrc's movers: `chimera_net`'s
+/// `net::movers`, from `source_logic` and `goldsrc_engine`; Combat Arms'
+/// active world models). They hold only systems that act on a client.
 #[derive(bevy::ecs::schedule::ScheduleLabel, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Predict {
     Select,

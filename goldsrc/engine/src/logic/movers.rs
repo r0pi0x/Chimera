@@ -543,35 +543,26 @@ impl World {
         self.ents[id].origin = o1;
         self.ents[id].angles = a1;
         let after = self.brushes(id);
-        let turn = entity_rotation(a1) * entity_rotation(a0).inverse();
         let mut moved: Vec<(usize, Vec3)> = Vec::new();
         for k in 0..self.players.len() {
-            let p = &self.players[k];
-            if !p.alive {
-                continue;
-            }
-            let (c, h) = (p.origin + (p.mins + p.maxs) / 2.0, (p.maxs - p.mins) / 2.0);
-            let rider = p.on_ground && before.iter().any(|b| b.overlaps_box(c - Vec3::Z * 2.0, h, 0.01));
-            let hit = after.iter().any(|b| b.overlaps_box(c, h, 0.01));
-            if !rider && !hit {
-                continue;
-            }
-            let to = o1 + turn * (p.origin - o0);
-            let c2 = to + (p.mins + p.maxs) / 2.0;
-            let stuck = after.iter().any(|b| b.overlaps_box(c2, h, 0.01))
-                || solid.blocked(c2, h - Vec3::splat(1.0));
-            if stuck {
-                for (j, was) in moved {
-                    self.players[j].origin = was;
+            let r = push_player(&self.players[k], &before, &after, (o0, a0), (o1, a1), solid);
+            match r {
+                Ok(None) => {}
+                Ok(Some(to)) => {
+                    moved.push((k, self.players[k].origin));
+                    let p = &mut self.players[k];
+                    p.origin = to;
+                    p.moved = true;
                 }
-                self.ents[id].origin = o0;
-                self.ents[id].angles = a0;
-                return Err(k);
+                Err(()) => {
+                    for (j, was) in moved {
+                        self.players[j].origin = was;
+                    }
+                    self.ents[id].origin = o0;
+                    self.ents[id].angles = a0;
+                    return Err(k);
+                }
             }
-            moved.push((k, p.origin));
-            let p = &mut self.players[k];
-            p.origin = to;
-            p.moved = true;
         }
         Ok(())
     }
@@ -1274,4 +1265,38 @@ mod tests {
         assert_eq!(axis(64, 64, 128, 2), Vec3::Z);
         assert_eq!(axis(128 | 2, 64, 128, 2), Vec3::NEG_X);
     }
+}
+
+/// One player and a mover's step from `from` to `to` (origin, angles),
+/// its brushes `before` and `after` the step (`World::push`; a network
+/// client carrying its own player, `net`): Ok(Some(origin)) where it is
+/// carried (it stood on the mover: on the ground, its box 2 units lower
+/// overlapping it) or shoved (the mover's new place overlaps it), Ok(None)
+/// untouched, Err when it would end inside the mover or the static world
+/// (it blocks the step).
+pub fn push_player(
+    p: &super::world::Player,
+    before: &[crate::core::MapBrush],
+    after: &[crate::core::MapBrush],
+    from: (Vec3, Vec3),
+    to: (Vec3, Vec3),
+    solid: &dyn Solid,
+) -> Result<Option<Vec3>, ()> {
+    let ((o0, a0), (o1, a1)) = (from, to);
+    if !p.alive {
+        return Ok(None);
+    }
+    let (c, h) = (p.origin + (p.mins + p.maxs) / 2.0, (p.maxs - p.mins) / 2.0);
+    let rider = p.on_ground && before.iter().any(|b| b.overlaps_box(c - Vec3::Z * 2.0, h, 0.01));
+    let hit = after.iter().any(|b| b.overlaps_box(c, h, 0.01));
+    if !rider && !hit {
+        return Ok(None);
+    }
+    let turn = entity_rotation(a1) * entity_rotation(a0).inverse();
+    let at = o1 + turn * (p.origin - o0);
+    let c2 = at + (p.mins + p.maxs) / 2.0;
+    if after.iter().any(|b| b.overlaps_box(c2, h, 0.01)) || solid.blocked(c2, h - Vec3::splat(1.0)) {
+        return Err(());
+    }
+    Ok(Some(at))
 }

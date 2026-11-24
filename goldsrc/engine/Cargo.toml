@@ -11,7 +11,7 @@ license.workspace = true
 [lib]
 doctest = false
 
-# The engine's crates and GoldSrc's formats; never the presentation
+# The engine's crates (the network too, as Source's logic) and GoldSrc's formats; never the presentation
 # (`chimera_present`), a game or an app (checks/tests/it/architecture.rs
 # checks it). Same versions and features as the games' (workspace
 # dependencies), so `cargo test -p goldsrc_engine` reuses their builds.
@@ -20,6 +20,9 @@ chimera_core.workspace = true
 # The map's types (`map::MapData` and its parts) the content converts into.
 chimera_world.workspace = true
 goldsrc_formats.workspace = true
+# The network: the logic's movers and sprites replicated, a client's
+# movers stepped (`logic::net`, on `net::movers`).
+chimera_net.workspace = true
 bevy.workspace = true
 # The logic's mover nodes: their colliders turned off, characters' boxes
 # (`logic::bridge`).
@@ -32,7 +35,7 @@ workspace-hack.workspace = true
 
 [features]
 # Bevy as a dynamic library, as the games' `dev` (which turns this on).
-dev = ["chimera_core/dev", "chimera_world/dev", "goldsrc_formats/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_net/dev", "goldsrc_formats/dev"]
 
 [dev-dependencies]
 # The map's `render` feature, as every build with the presentation has it:

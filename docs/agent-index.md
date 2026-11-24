@@ -169,7 +169,7 @@ module list is `docs/modules.md`.
 - 34: Weapons and damage
 - 47: Effects, sound, HUD
 - 60: Rules, network, assets
-- 73: Generalize on the second user | A game may build anything it needs inside its own crate first
+- 74: Generalize on the second user | A game may build anything it needs inside its own crate first
 
 ## docs/formats.md
 

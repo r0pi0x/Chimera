@@ -10,10 +10,12 @@
 pub mod content;
 pub mod logic;
 
-// `crate::map`, `crate::core` and `crate::mount` inside, as in the game
+// `crate::map`, `crate::core`, `crate::mount` and `crate::net` inside, as in the game
 // crates (the architecture check reads `crate::<module>` against its
 // layering table).
 #[allow(unused_imports)]
 use chimera_core::{console, core, mount};
 #[allow(unused_imports)]
 use chimera_world::map;
+// The logic's network part (`logic::net`).
+use chimera_net::net;

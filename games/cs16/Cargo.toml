@@ -39,6 +39,8 @@ workspace-hack.workspace = true
 # `cargo test -p cs16` shares the clients' builds of Bevy (hakari.toml).
 [dev-dependencies]
 chimera_world = { workspace = true, features = ["render"] }
+# `NetSim`: the maps' logic on a network client (tests/it/heavy/net_logic.rs).
+chimera_net.workspace = true
 bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
 bevy_winit.workspace = true

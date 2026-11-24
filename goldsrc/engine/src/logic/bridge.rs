@@ -22,16 +22,16 @@
 //!   weapons); `map::entities::FireEntityOutput` (the rules: a bomb
 //!   target's when the bomb explodes) and `LogicFire` (a name fired, the
 //!   console's `goldsrc_fire`, tests) before the step;
+//! - a character as a logic player by `player_of` (its box the
+//!   movement's hull), shared with a network client's carry (`net`);
 //! - its effects: sounds (`map::PlaySound`, `map::SoundControl`), damage
 //!   (`core::MapDamage`; negative heals), explosions (`core::Explosion`,
 //!   magnitude × 2.5 units), switchable light styles (`map::LightStyles`
 //!   under the writer `goldsrc`).
 //!
 //! Known shortcuts:
-//! - Clients run no GoldSrc logic and nothing of it is replicated yet:
-//!   a network client sees movers where the map put them (a listen
-//!   server's own player sees them move); a passable door or named
-//!   `func_water` stays solid there.
+//! - Clients run no GoldSrc logic: its nodes and sprites reach them
+//!   through `net` (the node placing here, `place_node`, shared).
 //! - Sounds are named by their path under `sound/`, and GoldSrc maps
 //!   carry no sound bank yet, so they are silent; a trigger's `message`
 //!   is logged, not shown; broken breakables throw no debris.
@@ -69,6 +69,13 @@ pub struct GoldSrcLogic {
     seen: Vec<Option<Seen>>,
     source: Arc<Vec<MapEntity>>,
     restarts: u32,
+}
+
+impl GoldSrcLogic {
+    /// The map entities it was built from.
+    pub fn source(&self) -> Arc<Vec<MapEntity>> {
+        self.source.clone()
+    }
 }
 
 /// A node's state as last written.
@@ -111,6 +118,7 @@ impl Plugin for GoldSrcLogicPlugin {
             )
             .add_systems(FixedUpdate, (load, step).chain().in_set(GoldSrcLogicSet))
             .add_systems(FixedUpdate, damage.after(SimSet::Weapons).run_if(crate::core::authoritative));
+        super::net::plugin(app);
         app.console_command(
             "goldsrc_fire",
             "goldsrc_fire <name>: fire a name in the GoldSrc map's logic (no activator).",
@@ -166,9 +174,9 @@ fn load(world: &mut World) {
 }
 
 /// The static world as the logic's `Solid` (engine-space brushes).
-struct WorldSolid<'a> {
-    brushes: &'a [MapBrush],
-    scale: f32,
+pub(super) struct WorldSolid<'a> {
+    pub brushes: &'a [MapBrush],
+    pub scale: f32,
 }
 
 impl Solid for WorldSolid<'_> {
@@ -179,50 +187,63 @@ impl Solid for WorldSolid<'_> {
     }
 }
 
+/// What a character is to the logic (`Player`).
+pub(super) type CharacterQuery<'a> = (
+    Entity,
+    &'a Transform,
+    &'a Intent,
+    Option<&'a Health>,
+    Option<&'a ColliderAabb>,
+    Option<&'a Velocity>,
+    Option<&'a MovementState>,
+);
+
+/// A character as a logic player: its box the movement's hull when it
+/// has one, else its collider's size about its position (the same on a
+/// network client's carry, `net`, whose replays run no physics).
+pub(super) fn player_of(
+    (e, t, intent, health, aabb, v, state): bevy::ecs::query::QueryItem<'_, '_, CharacterQuery<'static>>,
+    scale: f32,
+) -> Player {
+    let (lo, hi) = match (state.filter(|s| s.hull_min != s.hull_max), aabb) {
+        (Some(s), _) => (s.hull_min, s.hull_max),
+        // Its size about its position: the box itself is the physics'
+        // as of its last step (a client's replays run none).
+        (None, Some(a)) => ((a.min - a.max) / 2.0, (a.max - a.min) / 2.0),
+        (None, None) => (Vec3::ZERO, Vec3::ZERO),
+    };
+    let (mins, maxs) = if lo == hi {
+        (Vec3::new(-16.0, -16.0, -36.0), Vec3::new(16.0, 16.0, 36.0))
+    } else {
+        let (a, b) = (engine_to_entity(lo, scale), engine_to_entity(hi, scale));
+        (a.min(b), a.max(b))
+    };
+    let eye = state.map_or(Vec3::ZERO, |s| engine_to_entity(s.eye_offset, scale));
+    Player {
+        id: e.to_bits(),
+        origin: engine_to_entity(t.translation, scale),
+        mins,
+        maxs,
+        velocity: v.map_or(Vec3::ZERO, |v| engine_to_entity(v.0, scale)),
+        view: Vec3::new(-intent.pitch.to_degrees(), intent.yaw.to_degrees() + 90.0, 0.0),
+        eye: if eye == Vec3::ZERO { Vec3::new(0.0, 0.0, 28.0) } else { eye },
+        use_key: intent.use_key,
+        alive: health.is_none_or(|h| h.current > 0.0),
+        on_ground: state.is_some_and(|s| s.on_ground),
+        ..Default::default()
+    }
+}
+
 /// The characters as logic players.
 fn snapshot(world: &mut World, scale: f32) -> Vec<Player> {
-    let mut q = world.query::<(
-        Entity,
-        &Transform,
-        &Intent,
-        Option<&Health>,
-        Option<&ColliderAabb>,
-        Option<&Velocity>,
-        Option<&MovementState>,
-    )>();
-    let mut out: Vec<Player> = q
-        .iter(world)
-        .map(|(e, t, intent, health, aabb, v, state)| {
-            let (mins, maxs) = match aabb {
-                Some(a) => {
-                    let (a, b) =
-                        (engine_to_entity(a.min - t.translation, scale), engine_to_entity(a.max - t.translation, scale));
-                    (a.min(b), a.max(b))
-                }
-                None => (Vec3::new(-16.0, -16.0, -36.0), Vec3::new(16.0, 16.0, 36.0)),
-            };
-            let eye = state.map_or(Vec3::ZERO, |s| engine_to_entity(s.eye_offset, scale));
-            Player {
-                id: e.to_bits(),
-                origin: engine_to_entity(t.translation, scale),
-                mins,
-                maxs,
-                velocity: v.map_or(Vec3::ZERO, |v| engine_to_entity(v.0, scale)),
-                view: Vec3::new(-intent.pitch.to_degrees(), intent.yaw.to_degrees() + 90.0, 0.0),
-                eye: if eye == Vec3::ZERO { Vec3::new(0.0, 0.0, 28.0) } else { eye },
-                use_key: intent.use_key,
-                alive: health.is_none_or(|h| h.current > 0.0),
-                on_ground: state.is_some_and(|s| s.on_ground),
-                ..Default::default()
-            }
-        })
-        .collect();
+    let mut q = world.query::<CharacterQuery>();
+    let mut out: Vec<Player> = q.iter(world).map(|row| player_of(row, scale)).collect();
     out.sort_by_key(|p| p.id);
     out
 }
 
 /// What the logic changed on players, onto the characters.
-fn write_back(world: &mut World, scale: f32, players: &[Player]) {
+pub(super) fn write_back(world: &mut World, scale: f32, players: &[Player]) {
     for p in players {
         let Ok(mut e) = world.get_entity_mut(Entity::from_bits(p.id)) else { continue };
         if p.moved
@@ -283,7 +304,11 @@ fn step(
     }
     let scale = l.scale;
     let mut players = snapshot(world, scale);
-    let dt = world.resource::<Time<Fixed>>().timestep().as_secs_f64();
+    // The tick's length as a network client steps the movers (`net`).
+    let dt = world
+        .get_resource::<crate::core::SimClock>()
+        .map_or_else(|| world.resource::<Time<Fixed>>().timestep(), |c| c.delta)
+        .as_secs_f64();
     {
         let empty = Vec::new();
         let brushes = world.get_resource::<MapBrushes>().map_or(&empty, |b| &b.0);
@@ -335,29 +360,10 @@ fn sync_nodes(world: &mut World, l: &mut GoldSrcLogic) {
                 super::world::Kind::Button(b) => b.shootable,
                 _ => false,
             };
-        let rot = entity_rotation(e.angles);
-        let brushes: Vec<MapBrush> = if now.solid {
-            e.volumes.iter().map(|v| to_engine(&super::world::place(v, rot, e.origin), scale)).collect()
-        } else {
-            Vec::new()
-        };
         let velocity = entity_to_engine(e.motion.velocity, scale);
+        let moved = before.is_none_or(|b| b.origin != now.origin || b.angles != now.angles);
+        place_node(world, node, (now.origin, now.angles), now.shown, now.solid, &e.volumes, velocity, scale, moved);
         let Ok(mut n) = world.get_entity_mut(node) else { continue };
-        if before.is_none_or(|b| b.origin != now.origin || b.angles != now.angles)
-            && let Some(mut t) = n.get_mut::<Transform>()
-        {
-            t.translation = entity_to_engine(now.origin, scale);
-            t.rotation = rotation_to_engine(rot);
-        }
-        set_shown(&mut n, now.shown);
-        if now.solid {
-            if n.contains::<ColliderDisabled>() {
-                n.remove::<ColliderDisabled>();
-            }
-        } else if !n.contains::<ColliderDisabled>() {
-            n.insert(ColliderDisabled);
-        }
-        n.insert(MovingSolid { brushes, velocity, solid: now.solid });
         if before.is_none_or(|b| b.tint != now.tint) && (before.is_some() || !now.tint.is_white()) {
             n.insert(now.tint);
         }
@@ -366,6 +372,61 @@ fn sync_nodes(world: &mut World, l: &mut GoldSrcLogic) {
         } else {
             n.remove::<Damageable>();
         }
+    }
+}
+
+/// Place mover node `node` at `pose` (entity-space origin and angles;
+/// its transform written only when `moved`), shown or hidden, solid or
+/// not (its collider and `core::MovingSolid`: `volumes` placed there,
+/// moving at `velocity`, engine space). The server's logic and a network
+/// client's copy (`net`) both.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn place_node(
+    world: &mut World,
+    node: Entity,
+    pose: (Vec3, Vec3),
+    shown: bool,
+    solid: bool,
+    volumes: &[super::world::Volume],
+    velocity: Vec3,
+    scale: f32,
+    moved: bool,
+) {
+    let (origin, angles) = pose;
+    let rot = entity_rotation(angles);
+    let brushes: Vec<MapBrush> = if solid {
+        volumes.iter().map(|v| to_engine(&super::world::place(v, rot, origin), scale)).collect()
+    } else {
+        Vec::new()
+    };
+    let Ok(mut n) = world.get_entity_mut(node) else { return };
+    if moved {
+        let (at, turn) = (entity_to_engine(origin, scale), rotation_to_engine(rot));
+        if let Some(mut t) = n.get_mut::<Transform>() {
+            t.translation = at;
+            t.rotation = turn;
+        }
+        // The physics' copy too: what spatial queries (the movement's
+        // ground) see before the next physics step, which a network
+        // client's replays don't run.
+        if let Some(mut p) = n.get_mut::<avian3d::prelude::Position>() {
+            p.0 = at;
+        }
+        if let Some(mut r) = n.get_mut::<avian3d::prelude::Rotation>() {
+            r.0 = turn;
+        }
+    }
+    set_shown(&mut n, shown);
+    if solid {
+        if n.contains::<ColliderDisabled>() {
+            n.remove::<ColliderDisabled>();
+        }
+    } else if !n.contains::<ColliderDisabled>() {
+        n.insert(ColliderDisabled);
+    }
+    let same = !moved && n.get::<MovingSolid>().is_some_and(|m| m.solid == solid && m.velocity == velocity);
+    if !same {
+        n.insert(MovingSolid { brushes, velocity, solid });
     }
 }
 

@@ -389,6 +389,7 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("source/logic/src/logic/bridge.rs", "the map-logic interpreter's I/O"),
     ("goldsrc/engine/src/logic/bridge.rs", "GoldSrc's map-logic interpreter's I/O (as Source's: the logic world reads characters and writes movers, sounds and damage)"),
     ("source/logic/src/logic/net.rs", "network apply and capture"),
+    ("goldsrc/engine/src/logic/net.rs", "network apply and capture (as Source's logic's: its movers written for clients, a client's stepped, placed and carrying its player)"),
 ];
 
 /// Per crate (`<group>/<crate>`): exclusive systems in per-tick or

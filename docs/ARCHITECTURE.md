@@ -270,8 +270,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   cs_source_ui --features dev` the front end.
 - `source_logic` is Source's map logic (`logic`: entity I/O, logic
   classes, triggers, movers, breakables, props, fire, the bridge to the
-  map's entities) with its part of the network (`logic::net`: movers,
-  HUD messages). It uses `chimera_net`, `chimera_world` and `chimera_core`,
+  map's entities) with its part of the network (`logic::net`: its movers'
+  writing and carrying on Chimera's shared `net::movers`, HUD messages). It uses `chimera_net`, `chimera_world` and `chimera_core`,
   never the presentation, `mashup` or a game (checked); `mashup::logic`
   re-exports it. `cargo test -p source_logic --features dev` tests it
   alone.

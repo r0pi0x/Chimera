@@ -65,6 +65,7 @@ look here; if it's missing, see "Generalize on the second user" below.
 | Minigames | `chimera_sim::minigame` | a definition file; put your guns into existing modes, don't add new ones unasked |
 | Net prediction | `chimera_core::core::PredictedAppExt` | `app.predicted_net::<YourMovementState>()` |
 | Replicating your own state | `chimera_net::net::parts` | `app.net_part("<id>", register)`; tests on `chimera_net::harness::NetSim` |
+| Map logic's moving brushes and switched parts on clients | `chimera_net::net::movers` | `app.net_part("map_movers", movers::register)`; the server `write_mover`s each node, a client `stepped`s them per predicted tick and places and carries (Source's `logic::net`, GoldSrc's `goldsrc_engine::logic::net`) |
 | Dedicated server and app | `chimera_net::dedicated`, `chimera_client::client::app` | a `GameServer` / `GameApp` static and one call (new-game.md, M1) |
 | Map loading | `chimera_world::map::sources` (`MapLoader`), `map::kept` | `MAP_LOADER.load` returns `MapData` in metres; guest dressings through `kept::dress_cached` |
 | Asset packs and converters | `chimera_assets::{pack, sets}`, `src/bin/chimera_pack.rs` | your game's row in `chimera_pack` (owner reviewed); clients fetch sets on demand |

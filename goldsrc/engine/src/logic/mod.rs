@@ -15,10 +15,15 @@
 //!   movers' nodes placed, shown, hidden, made solid or not and their
 //!   frames written (the `+a` set through `map::BrushTint` and
 //!   `MapMesh::frames`), weapons' damage to breakables, sounds, damage,
-//!   explosions and pushes applied.
+//!   explosions and pushes applied;
+//! - `net`: the logic in a network game, on Chimera's shared mover
+//!   replication (`net::movers`): nodes and sprites replicated, a
+//!   client's movers stepped and its own player carried as the logic
+//!   does.
 
 pub mod bridge;
 pub mod movers;
+pub mod net;
 pub mod tables;
 pub mod world;
 

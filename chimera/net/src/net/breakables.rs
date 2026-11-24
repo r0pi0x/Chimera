@@ -22,7 +22,7 @@
 //!   `piece`) isn't sent: each client makes its own.
 //!
 //! Break sounds are the logic's one-shots (`mapfx`); a breakable's removal
-//! is its mover's state (Source's logic's `NetMover`).
+//! is its mover's state (`movers::NetMover`).
 
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;

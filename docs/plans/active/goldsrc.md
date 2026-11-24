@@ -23,7 +23,7 @@ Force) is a small port on the same loader.
 |---|---|---|
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount; entities 2026-11-24); `specs/cs16/` install, movement, weapons to come |
-| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Left: the lightmap brightening against captures; the logic's network part, its sounds and debris |
+| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Logic on network clients (2026-11-24): Chimera's shared `net::movers` (lifted from Source's logic), `logic::net`. Left: the lightmap brightening against captures; the logic's sounds and debris |
 | M1 weapons | not started | §5 |
 | M2 movement | not started | §5; the lift of Source's movement into Chimera planned in [shared-movement.md](shared-movement.md) (2026-11-24) |
 | M3 party rungs | not started | §5 |
@@ -590,3 +590,24 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   everything, Half-Life's `+use`, players only, box overlap for
   triggers). Not yet: network replication, sounds (no GoldSrc sound
   bank), debris, sprite drawing, light style rendering.
+- 2026-11-24: GoldSrc logic on network clients (`goldsrc_engine::logic::net`).
+  Source's mover replication moved into Chimera as `chimera_net::net::movers`
+  (the network part `map_movers`: `NetMover`, `Stepper`, the client's
+  stepping from snapshots, `BrushTint` onto the client's nodes, and a new
+  `NetEntityPart` for switched parts), used by Source's logic and
+  GoldSrc's alike. The server writes every GoldSrc node's state (origin,
+  angles, velocities, the mover's clock, its move's end and goal; shown,
+  solid, shootable, gone); `BrushTint` (render changes, the `+a` frame)
+  replicates beside it; `env_sprite` on/off goes as `NetEntityPart`. A
+  client places the nodes before movement where the server's movement met
+  them and, after movement, steps them and carries or shoves its own
+  player with the logic's own `movers::push_player` (GoldSrc moves
+  players first, movers after: `core::Predict::CarryRiders`), so walls
+  toggle, breakables broken on the server are hidden and passable and
+  passable doors and named `func_water` are not solid on clients. Heavy
+  `NetSim` tests (`games/cs16/tests/it/heavy/net_logic.rs`): cs_office's
+  `door1` matches the server tick for tick after the start's round trip,
+  riding as_oilrig's elevator has no prediction errors after it,
+  de_dust2's broken crates are passable on the client. Not done: light
+  styles (the converted lightmaps carry style 0 only), debris (needs
+  GoldSrc gib models as gib sets), sprite drawing.

@@ -14,7 +14,9 @@
 //! snapshots keyed by server tick (`cl_interp`): `interp`. Moving brushes
 //! replicate their motion state (`NetMover`) and a client steps them to
 //! the tick it predicts, carrying its own player as the server does:
-//! Source's logic's part (`logic::net`). Physics props are drawn from
+//! `movers` (the part `map_movers`, which Source's logic, `logic::net`,
+//! and GoldSrc's, `goldsrc_engine::logic::net`, both add; also the
+//! logic's switched parts, `NetEntityPart`). Physics props are drawn from
 //! snapshots like others: `props`.
 //! Weapons: the client predicts its own with its movement (what it
 //! carries goes in `OwnState`), the server hits with lag compensation,
@@ -68,7 +70,8 @@
 //! over the connection: `rcon`); then the parts' (`parts`, in name order: `minigame_net`'s
 //! `NetMinigame`, `MinigameNews`, `InMinigame` and `Rung`; CS:S's
 //! `NetRound`, `NetBomb`, `NetHostage`, `TeamRequest`, `ClassRequest`,
-//! `ObjectiveNews`, `RoundOver`; Source's logic's `NetMover`, `MapHud`); `OwnState` also carries
+//! `ObjectiveNews`, `RoundOver`; `map_movers`' `NetMover`, `NetEntityPart`;
+//! Source's logic's `MapHud`); `OwnState` also carries
 //! money, armour, kit and the freeze's end tick (arming and defusing the bomb
 //! are in its predicted state; `epoch`: the client clock epoch its `lead` is
 //! from)), `canonical_position` (a predicted player's zeros as +0.0 at the end
@@ -222,6 +225,7 @@ pub mod manifest;
 pub mod maps;
 pub mod memory;
 pub mod motd;
+pub mod movers;
 pub mod on_demand;
 pub mod ordered;
 pub mod own_items;
@@ -1412,7 +1416,7 @@ impl Plugin for NetPlugin {
             .ordered::<crate::slots::GameIdentity>()
             // Map render looks: players' (invisibility, team colours) and
             // movers' (colour, alpha, texture frame; the movers themselves
-            // are Source's logic's part, `NetParts`), only when they change.
+            // are the `map_movers` part, `movers`), only when they change.
             .replicate::<crate::map::RenderLook>()
             .ordered::<crate::map::RenderLook>()
             .replicate::<crate::map::BrushTint>()

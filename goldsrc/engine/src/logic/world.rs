@@ -491,6 +491,18 @@ pub fn direction_angles(e: &MapEntity) -> Vec3 {
     key(e, "angle").and_then(|a| a.trim().parse::<f32>().ok()).map_or(Vec3::ZERO, |y| Vec3::new(0.0, y, 0.0))
 }
 
+/// A brush entity's volumes (entity space, local to its origin).
+pub fn volumes_of(e: &MapEntity) -> Vec<Volume> {
+    e.hulls
+        .iter()
+        .filter(|h| h.planes.len() >= 4)
+        .map(|h| Volume {
+            brush: MapBrush::from_planes(h.planes.iter().map(|(n, d)| (n.normalize_or_zero(), *d)).collect()),
+            corners: h.points.clone(),
+        })
+        .collect()
+}
+
 /// A brush's planes rotated by `rot` about the origin, then moved to
 /// `origin`.
 pub fn place(v: &Volume, rot: Quat, origin: Vec3) -> MapBrush {
@@ -555,15 +567,7 @@ impl World {
     /// One entity from its keys.
     fn spawn(&mut self, e: &MapEntity) -> Ent {
         let class = e.classname().to_ascii_lowercase();
-        let volumes: Vec<Volume> = e
-            .hulls
-            .iter()
-            .filter(|h| h.planes.len() >= 4)
-            .map(|h| Volume {
-                brush: MapBrush::from_planes(h.planes.iter().map(|(n, d)| (n.normalize_or_zero(), *d)).collect()),
-                corners: h.points.clone(),
-            })
-            .collect();
+        let volumes = volumes_of(e);
         let (lo, hi) = volumes
             .iter()
             .flat_map(|v| &v.corners)

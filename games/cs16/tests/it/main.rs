@@ -4,7 +4,8 @@
 //! the greybox), and, in `heavy`, the user's install (`served`: CS 1.6
 //! from the asset service alone, packed from it; `textures`: what texture
 //! names' prefixes and chrome draw as; `entities`: its maps' logic, from
-//! the entity spec's worked examples) (found through
+//! the entity spec's worked examples; `net_logic`: that logic on a
+//! network client) (found through
 //! `[games.cs16] path` or `$CHIMERA_CS16_ROOT`), each test passing
 //! with a note without one. `cargo test -p cs16 --features dev --test it`;
 //! where tests go: docs/OBSERVABILITY.md, section 1.
@@ -19,6 +20,7 @@ mod heavy {
     mod entities;
     mod install;
     mod maps;
+    mod net_logic;
     mod served;
     mod textures;
 }
