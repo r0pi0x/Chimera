@@ -29,10 +29,11 @@ const BAND: (f64, f64) = (2.0, 4.0);
 
 fn party(grenade: &str) -> Sim {
     let ladder = ["cs_source:weapon_glock", grenade, weapons::ASSAULT_RIFLE, "combat_arms:mp5a4"];
-    let text = crate::play::ladder_text(&ladder, false).replace(
-        "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
-        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"combat_arms\"]",
-    );
+    // Every game's weapons: the grenade is any game's (DoD:S's too).
+    let mut games: Vec<String> = party_roster::GUESTS.iter().map(|b| format!("{:?}", b.info.id)).collect();
+    games.push("\"combat_arms\"".to_string());
+    let text = crate::play::ladder_text(&ladder, false)
+        .replace("weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]", &format!("weapons = [{}]", games.join(", ")));
     party_with(&text)
 }
 
@@ -47,7 +48,7 @@ fn grenades() -> Vec<&'static str> {
 fn throws(grenade: &str, action: bool, secs: f64) -> Vec<f64> {
     let mut sim = party(grenade);
     let a = soldier(&mut sim);
-    let _b = soldier(&mut sim);
+    let b = soldier(&mut sim);
     sim.seconds(1.5);
     set_rung(&mut sim, a, 1);
     sim.app.world_mut().entity_mut(a).insert(God);
@@ -69,6 +70,12 @@ fn throws(grenade: &str, action: bool, secs: f64) -> Vec<f64> {
             } else {
                 it.fire = down;
             }
+        }
+        // Nobody dies: spawn protection's end takes `God` off, and a death
+        // would move the thrower off the rung (its own blast: DoD:S's frags,
+        // 150 in 375 units; a kill: up to a gun).
+        for e in [a, b] {
+            sim.app.world_mut().entity_mut(e).insert(God);
         }
         sim.ticks(1);
         let t = i as f64 / hz;
