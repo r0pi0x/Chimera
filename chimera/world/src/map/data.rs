@@ -1265,6 +1265,11 @@ pub struct MapPhysics {
     /// Starts asleep (Source spawnflag 1): it doesn't move until woken
     /// (`prop_physics::PropAwakened` then tells).
     pub asleep: bool,
+    /// Debris (Source spawnflag 4): in the debris collision group, which
+    /// players don't collide with (`prop_physics::DebrisProp`; read by
+    /// the spots' walker under turbo physics, `PlayerProps::Turbo`).
+    #[serde(default)]
+    pub debris: bool,
 }
 
 /// How a physics prop and players interact.

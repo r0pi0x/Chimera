@@ -91,6 +91,7 @@ fn crate_map() -> MapData {
             push: PushAway::Collide,
             frozen: false,
             asleep: false,
+            debris: false,
         }),
         fade: None,
         parent: None,

@@ -1259,6 +1259,7 @@ fn body(
     surfaces: &super::surfaceprops::SurfaceProps,
 ) -> Option<MapPhysics> {
     const START_ASLEEP: u32 = 0x1;
+    const DEBRIS: u32 = 0x4;
     const MOTION_DISABLED: u32 = 0x8;
     const FORCE_SERVER_SIDE: u32 = 0x2000;
     let class = prop.class.as_deref()?;
@@ -1278,6 +1279,7 @@ fn body(
             push: PushAway::Ignore,
             frozen: prop.spawnflags & 1 != 0,
             asleep: false,
+            debris: false,
         });
     }
     if !class.starts_with("prop_physics") {
@@ -1326,6 +1328,7 @@ fn body(
         push,
         frozen,
         asleep: prop.spawnflags & START_ASLEEP != 0,
+        debris: prop.spawnflags & DEBRIS != 0,
     })
 }
 

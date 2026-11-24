@@ -74,6 +74,7 @@ fn map() -> MapData {
             push: PushAway::Collide,
             frozen: true,
             asleep: true,
+            debris: false,
         }),
         fade: Some((10.0, 20.0)),
         parent: None,

@@ -25,9 +25,10 @@
 //!   (`SpawnClimbs`: Combat Arms', CS:S's and DoD:S's jump-ups, 0.8 m; then bounded
 //!   to the clusters the walk reaches where the map has visibility data),
 //!   going through the physics props a player gets past
-//!   (`map::prop_physics::walked_through`: multiplayer props players walk
-//!   through, light ones their shadow shoves; DoD:S's crates and sandbags
-//!   closed off most of its maps' rooms; a spot is still never inside
+//!   (`map::prop_physics::walked_through`, by the map's game's rule,
+//!   `PlayerProps`: multiplayer props players walk through, light ones
+//!   their shadow shoves; under DoD:S's turbo physics only debris and the
+//!   multiplayer props still asleep since load; a spot is still never inside
 //!   one, `stuck_at` meets them), and meeting the map's player clips (their players-only collider,
 //!   `core::MapPlayerClips`, which `CHARACTER_FILTER` meets; cs_havana's
 //!   clipped yard once held a player). A mesh made for another walker,
@@ -823,7 +824,18 @@ pub fn prepare_spots(
     floors: Option<Res<MapFloors>>,
     vis: Option<Res<ActiveVisibility>>,
     characters: Query<Entity, With<Intent>>,
-    props: Query<(Entity, &PhysicsProp), With<MapPropCollider>>,
+    props: Query<
+        (
+            Entity,
+            Option<&PhysicsProp>,
+            Option<&prop_physics::FrozenBody>,
+            Has<prop_physics::StartAsleep>,
+            Has<prop_physics::DebrisProp>,
+        ),
+        With<MapPropCollider>,
+    >,
+    game: Option<Res<MapGame>>,
+    rules: Option<Res<prop_physics::PlayerPropRules>>,
     q: SpatialQuery,
     wait_tasks: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut wait: Local<u8>,
@@ -845,7 +857,13 @@ pub fn prepare_spots(
         return;
     };
     let characters: Vec<Entity> = characters.iter().collect();
-    let props: HashSet<Entity> = props.iter().filter(|(_, p)| prop_physics::player_passes(p)).map(|(e, _)| e).collect();
+    // The map's game's rule, as `prop_physics::walked_through`.
+    let rule = game.zip(rules).map_or(prop_physics::PlayerProps::Shadow, |(g, r)| r.of(&g.0));
+    let props: HashSet<Entity> = props
+        .iter()
+        .filter(|(_, p, f, asleep, debris)| prop_physics::prop_passes(*p, *f, prop_physics::PropGroup { asleep: *asleep, debris: *debris }, rule))
+        .map(|(e, ..)| e)
+        .collect();
     let mesh = map_mesh(nav.as_deref(), floors.as_deref());
     if job.slice(&q, &characters, &props, mesh, vis.as_ref().map(|v| &*v.0), nav_gen::CELLS_PER_TICK, wait_tasks.is_some()) {
         let tries = spots.as_ref().map_or(0, |s| s.tries);

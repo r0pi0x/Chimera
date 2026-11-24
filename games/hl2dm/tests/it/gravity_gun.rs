@@ -152,6 +152,7 @@ pub(super) fn add_crate(data: &mut MapData, c: Crate) {
             push: if c.multiplayer { PushAway::Solid } else { PushAway::Collide },
             frozen: c.flags & 8 != 0,
             asleep: false,
+            debris: false,
         }),
         fade: None,
         parent: None,

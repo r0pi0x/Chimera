@@ -2317,6 +2317,7 @@ fn brush_bodies(bytes: &[u8], surfaces: &super::surfaceprops::SurfaceProps, data
             },
             frozen: flags & MOTION_DISABLED != 0 || num("damagetoenablemotion") > 0.0 || num("forcetoenablemotion") > 0.0,
             asleep: flags & START_ASLEEP != 0,
+            debris: false,
         });
         e.keyvalues.push((crate::map::entities::PROP_MASS_KEY.into(), mass.to_string()));
     }

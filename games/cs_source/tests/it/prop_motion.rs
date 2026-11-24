@@ -92,6 +92,7 @@ fn sim(at: Vec3, friction: f32, elasticity: f32, inertia: Option<Vec3>) -> Sim {
             push: PushAway::Collide,
             frozen: false,
             asleep: false,
+            debris: false,
         }),
         fade: None,
         parent: None,

@@ -305,6 +305,7 @@ fn vehicles_of(
                 push: PushAway::Collide,
                 frozen: false,
                 asleep: false,
+                debris: false,
             }),
             fade: None,
             parent: None,

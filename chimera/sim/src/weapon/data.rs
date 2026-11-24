@@ -493,6 +493,13 @@ pub struct AimData {
     pub aim_dot: f32,
     /// What the swing then deals (before the hit zones).
     pub damage: f32,
+    /// `Backstab::Aim::slow`: a backstab is a slower swing, settled on
+    /// the press: seconds from the press to its hit, and until the next
+    /// attack (both or neither).
+    #[serde(default)]
+    pub delay: Option<f32>,
+    #[serde(default)]
+    pub refire: Option<f32>,
 }
 
 /// `Backstab::Behind`.
@@ -1382,7 +1389,11 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                     health: b.health,
                     credit: b.credit.as_deref(),
                 },
-                BackstabData::Aim(a) => super::Backstab::Aim { dot: a.aim_dot, damage: a.damage * dmg },
+                BackstabData::Aim(a) => super::Backstab::Aim {
+                    dot: a.aim_dot,
+                    damage: a.damage * dmg,
+                    slow: a.delay.zip(a.refire),
+                },
             }),
             delay: s.delay,
             hitgroups: s.hitgroups || s.hitgroup_scale.is_some(),

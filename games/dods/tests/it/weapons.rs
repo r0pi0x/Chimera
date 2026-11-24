@@ -223,8 +223,8 @@ fn one_swing(id: &str, away: bool, aim: f32) -> f32 {
     let feet = sim.position(t) - Vec3::Y * 36.0 * U;
     testkit::aim_at(&mut sim, p, feet + Vec3::Y * aim * U);
     let before = health_points(&sim, t);
-    // The hit lands 14 ticks after the press.
-    run(&mut sim, p, 20, |s, k| {
+    // The hit lands 14 ticks after the press, a backstab's 27.
+    run(&mut sim, p, 30, |s, k| {
         s.intent(p).fire = k == 0;
         hold_still(s, t);
     });
@@ -366,6 +366,131 @@ fn the_backstab_is_the_aim_against_the_victims_facing() {
     let (side, _) = swing_at(KNIFE, false, 40.0, 40.0, 105.0);
     let (side_back, _) = swing_at(KNIFE, false, 40.0, 40.0, 60.0);
     assert!(side > 0.0 && (side_back / side - 5.0).abs() < 1e-3, "105: {side}, 60: {side_back}");
+}
+
+/// How a swing's victim stands (`swing_on`).
+#[derive(Clone, Copy, PartialEq)]
+enum Victim {
+    Standing,
+    Crouched,
+    Prone,
+}
+
+/// A swing of `id` held for `ticks` (a press each tick it may swing) at a
+/// `victim` `ahead` units in front facing `facing` degrees off the
+/// swinger's view (0: its back to the swinger), the aim `down` degrees
+/// below level: the damage, the ticks it landed on and the ticks each
+/// swing started on.
+fn swing_on(id: &str, victim: Victim, ahead: f32, facing: f32, down: f32, ticks: u64) -> (f32, Vec<u64>, Vec<u64>) {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, id);
+    let t = sim.spawn_character(from - Vec3::Z * ahead * U, movement::ID);
+    sim.seconds(1.0);
+    sim.app.world_mut().get_mut::<Health>(t).unwrap().current = 100.0;
+    sim.intent(p).yaw = 0.0;
+    sim.intent(p).pitch = -down.to_radians();
+    sim.intent(t).yaw = facing.to_radians();
+    match victim {
+        Victim::Standing => {}
+        Victim::Crouched => {
+            sim.intent(t).crouch = true;
+            sim.seconds(0.6);
+        }
+        Victim::Prone => {
+            let bit = sim.app.world().resource::<chimera_core::core::ActionRegistry>().bit(dods::game::stance::PRONE_ACTION);
+            sim.intent(t).actions |= bit;
+            sim.ticks(1);
+            sim.intent(t).actions &= !bit;
+            sim.seconds(1.5);
+            assert!(sim.app.world().get::<dods::game::stance::DodsStance>(t).unwrap().prone(), "the victim is prone");
+        }
+    }
+    let before = health_points(&sim, t);
+    let ev = run(&mut sim, p, ticks, |s, _| {
+        s.intent(p).fire = !s.intent(p).fire;
+        hold_still(s, t);
+    });
+    let at = |hit: bool| {
+        ev.iter()
+            .filter(|(_, k)| if hit { matches!(k, WeaponEventKind::Hit { .. }) } else { matches!(k, WeaponEventKind::SwingStarted { .. }) })
+            .map(|(t, _)| *t)
+            .collect::<Vec<_>>()
+    };
+    (before - health_points(&sim, t), at(true), at(false))
+}
+
+/// damage.md, "Melee": a backstab is a slower swing, settled on the
+/// press: the 300 lands 27 ticks (0.405 s) after it and the next attack
+/// waits 0.9 s (60 ticks), knife and spade alike; a swing from the front
+/// keeps 14 ticks and 0.4 s (27 ticks).
+#[test]
+fn a_backstab_lands_0_405_s_after_the_press_and_blocks_0_9_s() {
+    for id in [KNIFE, SPADE] {
+        let (back, hits, starts) = swing_on(id, Victim::Standing, 40.0, 0.0, 0.0, 70);
+        assert_eq!(hits.first().copied(), Some(27), "{id}: the backstab's hit {hits:?}");
+        assert_eq!(&starts[..2], &[0, 60], "{id}: the next swing 0.9 s on: {starts:?}");
+        let (front, hits, starts) = swing_on(id, Victim::Standing, 40.0, 180.0, 0.0, 70);
+        assert_eq!(hits.first().copied(), Some(14), "{id}: from the front {hits:?}");
+        assert_eq!(&starts[..2], &[0, 28], "{id}: the next swing 0.4 s on: {starts:?}");
+        // The first of each: 300 and 60 (the same zone).
+        let (one_back, _, _) = swing_on(id, Victim::Standing, 40.0, 0.0, 0.0, 30);
+        let (one_front, _, _) = swing_on(id, Victim::Standing, 40.0, 180.0, 0.0, 20);
+        assert!(one_front > 0.0 && (one_back / one_front - 5.0).abs() < 1e-3, "{id}: {one_back} / {one_front}");
+        assert!(back > 0.0 && front > 0.0);
+    }
+}
+
+/// damage.md's test cases: the same cone for crouched and prone victims:
+/// crouched 40 ahead, aim 20° down, facing 71° off: 300, 71.5°: 60;
+/// prone 50 ahead, aim 45° down, facing 60° off: 300, 66°: 60. A
+/// backstab on either is the slower swing.
+#[test]
+fn crouched_and_prone_victims_take_the_same_backstab() {
+    let one = |victim, ahead, facing, down| {
+        let (d, hits, _) = swing_on(KNIFE, victim, ahead, facing, down, 30);
+        (d, hits.first().copied())
+    };
+    let (back, at) = one(Victim::Crouched, 40.0, 71.0, 20.0);
+    let (front, front_at) = one(Victim::Crouched, 40.0, 71.5, 20.0);
+    assert!(front > 0.0 && (back / front - 5.0).abs() < 1e-3, "crouched 71: {back}, 71.5: {front}");
+    assert_eq!((at, front_at), (Some(27), Some(14)), "crouched");
+    let (back, at) = one(Victim::Prone, 50.0, 60.0, 45.0);
+    let (front, front_at) = one(Victim::Prone, 50.0, 66.0, 45.0);
+    assert!(front > 0.0 && (back / front - 5.0).abs() < 1e-3, "prone 60: {back}, 66: {front}");
+    assert_eq!((at, front_at), (Some(27), Some(14)), "prone");
+}
+
+/// The kind of swing is settled on the press (damage.md, "Melee"): a
+/// victim turning its back after a press from the front takes 60 at 14
+/// ticks; one turning round after a press from behind still takes the
+/// backstab at 27.
+#[test]
+fn the_backstab_is_settled_on_the_press() {
+    for (first, then, want_tick, ratio) in [(180.0f32, 0.0f32, 14u64, 1.0f32), (0.0, 180.0, 27, 5.0)] {
+        let mut sim = sim();
+        let from = greybox::SPAWNS[0];
+        let (p, _) = holding(&mut sim, from, KNIFE);
+        let t = sim.spawn_character(from - Vec3::Z * 40.0 * U, movement::ID);
+        sim.seconds(1.0);
+        sim.app.world_mut().get_mut::<Health>(t).unwrap().current = 100.0;
+        sim.intent(p).yaw = 0.0;
+        sim.intent(p).pitch = 0.0;
+        sim.intent(t).yaw = first.to_radians();
+        let before = health_points(&sim, t);
+        let ev = run(&mut sim, p, 30, |s, k| {
+            s.intent(p).fire = k == 0;
+            if k == 1 {
+                s.intent(t).yaw = then.to_radians();
+            }
+            hold_still(s, t);
+        });
+        let hit = ev.iter().find(|(_, k)| matches!(k, WeaponEventKind::Hit { .. })).map(|(t, _)| *t);
+        assert_eq!(hit, Some(want_tick), "pressed facing {first}");
+        let (front, _, _) = swing_on(KNIFE, Victim::Standing, 40.0, 180.0, 0.0, 20);
+        let got = before - health_points(&sim, t);
+        assert!((got / front - ratio).abs() < 1e-3, "pressed facing {first}: {got} against {front}");
+    }
 }
 
 /// weapons.md, "Alt fire": the Thompson's stock strike: the knife's hit

@@ -856,6 +856,9 @@ fn spawn_entity_nodes(
                         ));
                     } else {
                         node.insert(prop_physics::dynamic_body(p, bounds));
+                        if p.debris {
+                            node.insert(prop_physics::DebrisProp);
+                        }
                         if p.asleep {
                             node.insert((prop_physics::StartAsleep, RigidBody::Static));
                         } else {
@@ -1219,6 +1222,9 @@ fn insert_prop_collider(
         (PropSolid::Mesh, Some(collider)) if dynamic.is_some() => {
             let p = dynamic.unwrap();
             e.insert(prop_physics::dynamic_body(p, data.models[prop.model].bounds));
+            if p.debris {
+                e.insert(prop_physics::DebrisProp);
+            }
             colliders.put(e, collider.clone());
             if p.asleep && prop.entity.is_some() {
                 e.insert((prop_physics::StartAsleep, RigidBody::Static));

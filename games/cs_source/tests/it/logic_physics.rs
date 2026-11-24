@@ -129,6 +129,7 @@ fn add_box_prop(data: &mut MapData, index: usize, at: Vec3, push: PushAway, asle
             push,
             frozen: false,
             asleep,
+            debris: false,
         }),
         fade: None,
         parent: None,

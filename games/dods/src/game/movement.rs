@@ -10,7 +10,8 @@
 //! counting its release tick: the measured eye curve), the jump 262.33
 //! units/s standing and 268.33 ducked (apex 43 and 45; no stamina cost;
 //! one impulse, `config`; the spawn spots' walk climbs 0.8 m as CS:S's,
-//! `SpawnClimbs`),
+//! `SpawnClimbs`, and meets the physics props by turbo physics' rule,
+//! `prop_physics::PlayerProps::Turbo`: specs/dods/physics_props.md),
 //! and the ground speed clamped to the tick's cap (`ground_clamp`: the
 //! stamina's caps and the slow cap the speed itself, not the wish:
 //! movement.md, "Stamina and sprint"). Its box is the
@@ -30,6 +31,12 @@
 //! - Ladders, water and fall damage are the shared code's (movement.md,
 //!   open question 7); the caps clamp the ground speed only (in the air
 //!   the air move's own limits).
+//! - Players meet physics props as CS:S's (Source's movement's push-away
+//!   and shadow: soft multiplayer props, light `prop_physics` shoved),
+//!   while DoD:S's turbo physics makes every `prop_physics` and every
+//!   settled multiplayer prop a wall (specs/dods/physics_props.md; only the
+//!   spots' walker follows it, `PlayerProps::Turbo`). Waits on the shared
+//!   movement's move (docs/plans/active/shared-movement.md, S4).
 
 use bevy::prelude::*;
 use source_engine::source_movement::{
@@ -130,6 +137,13 @@ pub fn add_movement(app: &mut App) {
     {
         use crate::map::SpawnClimbAppExt;
         app.add_spawn_climb(super::GAME, 0.8);
+    }
+    // Its shipped config's turbo physics (specs/dods/physics_props.md):
+    // the spots' walk goes through only debris and the multiplayer props
+    // still asleep since load; every other physics prop is a wall.
+    {
+        use crate::map::prop_physics::{PlayerProps, PlayerPropsAppExt};
+        app.add_player_props(super::GAME, PlayerProps::Turbo);
     }
     if let Some(mut registry) = app.world_mut().get_resource_mut::<crate::slots::MovementRegistry>()
         && let Some(m) = registry.0.iter_mut().find(|m| m.id == ID)

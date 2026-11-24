@@ -25,7 +25,8 @@
 //! share a shot's inaccuracy offset; without a `DamageEffect` only its `Fired`
 //! event, for a game that delivers rounds itself)/`Melee` (delivery; a swing may
 //! hit `Swing::delay` after it starts, TF2's smack, and judge a hit from
-//! behind by `Backstab`), `Penetration` with
+//! behind by `Backstab`; DoD:S's backstab is a slower swing settled on the
+//! press, `Backstab::Aim::slow`), `Penetration` with
 //! `PassMaterials` (bullets through walls and characters), `DamageEffect`,
 //! `WeaponSounds`, attack2 modes (`AltModes`, with `Zoom` (owner gets `Zoomed`,
 //! max speed; a game zooming its own way marks the weapon `OwnZoom` and sets
@@ -1545,8 +1546,25 @@ pub enum Backstab {
     },
     /// DoD:S's (specs/dods/damage.md, "Melee"): `damage` when the
     /// attacker's aim (with its pitch) · the target's level facing is
-    /// above `dot`: the aim counts, not the line between them.
-    Aim { dot: f32, damage: f32 },
+    /// above `dot`: the aim counts, not the line between them. With
+    /// `slow` (seconds to the hit, seconds to the next attack) a delayed
+    /// swing settles its kind on the press: a target in its reach then
+    /// passing the test makes it a backstab landing `slow.0` after the
+    /// press, every attack blocked `slow.1`; otherwise it is the normal
+    /// swing, no backstab whatever the target does meanwhile (DoD:S's 0.405
+    /// and 0.9 s against 0.21 and 0.4). Without it the test is made when the
+    /// swing lands.
+    Aim { dot: f32, damage: f32, slow: Option<(f32, f32)> },
+}
+
+impl Backstab {
+    /// `Aim`'s press-time timing (`Aim::slow`), if any.
+    pub fn slow(&self) -> Option<(f32, f32)> {
+        match *self {
+            Backstab::Aim { slow, .. } => slow,
+            _ => None,
+        }
+    }
 }
 
 impl Backstab {
@@ -1562,13 +1580,17 @@ impl Backstab {
 }
 
 /// A delayed swing under way (`Swing::delay`): when it started, when it
-/// hits, which button's and the damage it was started with.
+/// hits, which button's and the damage it was started with; `backstab`:
+/// settled on the press as a backstab (`Backstab::Aim::slow`; for a swing
+/// with that timing, false is settled as a normal swing).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PendingSwing {
     pub start: f64,
     pub at: f64,
     pub secondary: bool,
     pub damage: f32,
+    #[serde(default)]
+    pub backstab: bool,
 }
 
 /// Effect: damage on hit, for hitscan deliveries.
@@ -2645,7 +2667,7 @@ fn weapon_frame(
             w.state.pending_swing = None;
             let swing = w.melee.and_then(|m| if p.secondary { m.secondary.clone() } else { Some(m.primary.clone()) });
             if let Some(swing) = swing {
-                let swing = Swing { damage: p.damage, ..swing };
+                let swing = settled(Swing { damage: p.damage, ..swing }, p.backstab);
                 if ctx.swing(&swing, p.secondary) {
                     let t = p.start + swing.hit_refire as f64;
                     w.state.next_primary = t;
@@ -3086,20 +3108,45 @@ fn follow_up(swing: &Swing, last_swing: Option<f64>, now: f64) -> Swing {
 
 /// A delayed swing's start (`Swing::delay`): told, its swing sound,
 /// its hit due `delay` on; the timers (this swing, the other) as after a
-/// miss until it hits.
+/// miss until it hits. A backstab with a timing of its own
+/// (`Backstab::Aim::slow`) is settled now: a target in reach passing the
+/// test makes the slower swing, both timers its interval.
 fn start_swing(state: &mut WeaponState, swing: &Swing, secondary: bool, now: f64, ctx: &mut deliver::Shot) -> (f64, f64) {
     state.last_swing[usize::from(secondary)] = Some(now);
+    let slow = swing.backstab.and_then(|b| b.slow()).filter(|_| ctx.backstab_ahead(swing));
     state.pending_swing = Some(PendingSwing {
         start: now,
-        at: now + swing.delay as f64,
+        at: now + slow.map_or(swing.delay, |s| s.0) as f64,
         secondary,
         damage: swing.damage,
+        backstab: slow.is_some(),
     });
     ctx.w.event(ctx.owner, ctx.weapon, WeaponEventKind::SwingStarted { secondary });
     if let Some(s) = &swing.sound_swing {
         ctx.w.sound(owner_sound(s.clone(), ctx.owner, ctx.eye, CHAN_WEAPON));
     }
-    (now + swing.miss_refire as f64, now + swing.miss_refire_other as f64)
+    match slow {
+        Some((_, refire)) => (now + refire as f64, now + refire as f64),
+        None => (now + swing.miss_refire as f64, now + swing.miss_refire_other as f64),
+    }
+}
+
+/// A delayed swing as its press settled it (`PendingSwing::backstab`):
+/// for a backstab with its own timing (`Backstab::Aim::slow`), one
+/// settled as a backstab deals it to whatever character it lands on, its
+/// refire the slower swing's; one settled as normal has none. Other swings
+/// unchanged.
+fn settled(swing: Swing, backstab: bool) -> Swing {
+    match swing.backstab {
+        Some(Backstab::Aim { damage, slow: Some((_, refire)), .. }) if backstab => Swing {
+            // Every facing passes (a dot product is at least -1).
+            backstab: Some(Backstab::Aim { dot: -2.0, damage, slow: None }),
+            hit_refire: refire,
+            ..swing
+        },
+        Some(Backstab::Aim { slow: Some(_), .. }) => Swing { backstab: None, ..swing },
+        _ => swing,
+    }
 }
 
 /// Next times for (this swing, the other) after a swing, recording it.

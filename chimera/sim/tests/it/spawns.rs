@@ -690,8 +690,29 @@ fn spawning_at_the_map_s_points_still_uses_the_rooms() {
 /// one 2 m doorway, filled by a 1 m tall crate `prop` (none: open). Whether
 /// the spots reach inside.
 fn room_reached(prop: Option<chimera_world::map::PhysicsProp>) -> bool {
-    use chimera_world::map::MapPropCollider;
-    let mut sim = started(DEF, |_| {});
+    room_reached_as(prop, None, Default::default())
+}
+
+/// `room_reached` on a map of a game registering `rule` (the map's game
+/// `test_turbo`; none: no rule, CS:S's), the crate in `group` (started
+/// asleep, placed as debris).
+fn room_reached_as(
+    prop: Option<chimera_world::map::PhysicsProp>,
+    rule: Option<chimera_world::map::prop_physics::PlayerProps>,
+    group: chimera_world::map::prop_physics::PropGroup,
+) -> bool {
+    use chimera_world::map::{
+        MapPropCollider,
+        prop_physics::{DebrisProp, PlayerPropsAppExt, StartAsleep},
+    };
+    let mut sim = started(DEF, |app| {
+        if let Some(rule) = rule {
+            app.add_player_props("test_turbo", rule);
+        }
+    });
+    if rule.is_some() {
+        sim.app.insert_resource(chimera_core::core::MapGame("test_turbo".into()));
+    }
     boxes(
         &mut sim,
         &[
@@ -713,6 +734,13 @@ fn room_reached(prop: Option<chimera_world::map::PhysicsProp>) -> bool {
             p,
             MapPropCollider,
         ));
+        let e = w.query_filtered::<Entity, With<MapPropCollider>>().iter(w).last().unwrap();
+        if group.asleep {
+            w.entity_mut(e).insert(StartAsleep);
+        }
+        if group.debris {
+            w.entity_mut(e).insert(DebrisProp);
+        }
         sim.ticks(2);
     }
     let inside = |p: &Vec3| (26.5..35.5).contains(&p.x) && (10.5..19.5).contains(&p.z);
@@ -737,4 +765,26 @@ fn a_room_closed_by_a_crate_a_player_pushes_is_reached() {
     assert!(room_reached(Some(crate_of(PushAway::Solid, 30.0))), "a solid-mode one too");
     assert!(room_reached(Some(crate_of(PushAway::Collide, 20.0))), "a light prop_physics is shoved aside");
     assert!(!room_reached(Some(crate_of(PushAway::Collide, 400.0))), "a 400 kg one is a wall");
+}
+
+/// Under turbo physics (DoD:S's rule, specs/dods/physics_props.md 5: a
+/// game registering `PlayerProps::Turbo` for its maps) a `prop_physics`
+/// of any mass is a wall and a multiplayer crate one only once settled:
+/// one still asleep since it spawned (the push-away group) or debris is
+/// passed; a non-solid one is passed.
+#[test]
+fn under_turbo_physics_only_asleep_and_debris_props_open_the_room() {
+    use chimera_world::map::{
+        PhysicsProp, PushAway,
+        prop_physics::{PlayerProps, PropGroup},
+    };
+    let crate_of = |push, mass| PhysicsProp { push, mass, bounds: (Vec3::new(-0.4, -0.5, -1.0), Vec3::new(0.4, 0.5, 1.0)) };
+    let turbo = |push, mass, asleep, debris| room_reached_as(Some(crate_of(push, mass)), Some(PlayerProps::Turbo), PropGroup { asleep, debris });
+    assert!(!turbo(PushAway::Collide, 20.0, false, false), "a light prop_physics is a wall");
+    assert!(!turbo(PushAway::Solid, 30.0, false, false), "a settled multiplayer crate is a wall");
+    assert!(turbo(PushAway::Solid, 30.0, true, false), "one asleep since it spawned is soft");
+    assert!(turbo(PushAway::Solid, 30.0, false, true), "debris is passed");
+    assert!(turbo(PushAway::NonSolid, 30.0, false, false), "a non-solid one is passed");
+    // A game registering the shadow rule keeps CS:S's.
+    assert!(room_reached_as(Some(crate_of(PushAway::Collide, 20.0)), Some(PlayerProps::Shadow), PropGroup::default()));
 }

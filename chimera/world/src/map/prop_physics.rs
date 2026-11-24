@@ -15,9 +15,12 @@
 //! `prop_physics` bodies it can push (up to 350 kg) and keeps a shadowed
 //! character's own pairs only to `prop_physics` bodies too heavy to push; the
 //! shadow is on `core::SHADOW_LAYER`, which no spatial query sees);
-//! `walked_through`: the props a player gets past (`player_passes`: a
-//! multiplayer prop, or one a shadow pushes), which walkers standing in for
-//! players (the spawn spots', the map sweep's) go through;
+//! `walked_through`: the props a player gets past (`player_passes`, by the
+//! map's game's rule, `PlayerProps`, registered in `PlayerPropRules`:
+//! `Shadow`, CS:S's, HL2:DM's and TF2's, a multiplayer prop or one a shadow
+//! pushes; `Turbo`, DoD:S's, only debris and multiplayer props still in the
+//! push-away group), which walkers standing in for players (the spawn
+//! spots', the map sweep's) go through;
 //! `settle_props`: a moving prop that keeps within 1 in and 5 degrees of
 //! one pose for 0.5 s is stopped and put to sleep (`Settling`), as Source's
 //! physics sleeps nearly still bodies; one sunk more than 1 in into the
@@ -586,24 +589,134 @@ pub fn pushable(p: &PhysicsProp) -> bool {
     p.push == super::PushAway::Collide && p.mass <= SHADOW_PUSH_MASS
 }
 
-/// Whether a player gets past this prop: walks through it (a multiplayer
-/// prop, spec 4.2.1) or shoves it aside (`pushable`). Only a prop over
-/// `SHADOW_PUSH_MASS` of the normal group is a wall (spec 4.1).
-pub fn player_passes(p: &PhysicsProp) -> bool {
-    p.push != super::PushAway::Collide || pushable(p)
+/// A physics prop placed as debris (Source spawnflag 4,
+/// `MapPhysics::debris`): in the debris collision group, which players
+/// don't collide with.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct DebrisProp;
+
+/// How a game's players meet physics props, for the walkers standing in
+/// for them (`player_passes`): per game, the map's (`core::MapGame`), in
+/// `PlayerPropRules`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PlayerProps {
+    /// Players' physics shadows (specs/cs_source/physics_props.md 4.1-4.2:
+    /// CS:S, and HL2:DM and TF2, which register nothing): a multiplayer
+    /// prop is walked through, a `prop_physics` up to `SHADOW_PUSH_MASS`
+    /// shoved aside; only a heavier one is a wall.
+    #[default]
+    Shadow,
+    /// Turbo physics (`sv_turbophysics 1`, DoD:S's shipped config:
+    /// specs/dods/physics_props.md): no shadow, so every `prop_physics` of
+    /// any mass is a wall; a multiplayer prop is soft only while in the
+    /// push-away group (one that started asleep, spawnflag 1, until
+    /// something wakes it), a wall once settled into the normal group (the
+    /// rest, at load); debris (the debris flag, or the non-solid modes) is
+    /// passed.
+    Turbo,
 }
 
-/// The loaded map's physics props a player gets past (`player_passes`):
-/// what a walker standing in for players (`nav_gen`'s `ignore`: the spawn
-/// spots' walk, the map sweep's) goes through, so a room the map's crates
-/// and sandbags close off counts as reached. A frozen prop (motion
-/// disabled, `FrozenBody`) is no `PhysicsProp` until it is set moving: a
-/// wall, as the movement meets it.
+/// Each game's `PlayerProps` (by the map's game id, `core::MapGame`); a
+/// game not listed: `PlayerProps::Shadow`.
+#[derive(Resource, Default)]
+pub struct PlayerPropRules(pub Vec<(&'static str, PlayerProps)>);
+
+impl PlayerPropRules {
+    /// The rule registered for `game`'s maps.
+    pub fn of(&self, game: &str) -> PlayerProps {
+        self.0.iter().find(|(g, _)| g.eq_ignore_ascii_case(game)).map_or(PlayerProps::Shadow, |(_, r)| *r)
+    }
+
+    /// The rule for the loaded map (its `core::MapGame`).
+    pub fn current(world: &World) -> PlayerProps {
+        match (world.get_resource::<crate::core::MapGame>(), world.get_resource::<PlayerPropRules>()) {
+            (Some(game), Some(rules)) => rules.of(&game.0),
+            _ => PlayerProps::Shadow,
+        }
+    }
+}
+
+/// Registering a game's rule.
+pub trait PlayerPropsAppExt {
+    fn add_player_props(&mut self, game: &'static str, rule: PlayerProps) -> &mut Self;
+}
+
+impl PlayerPropsAppExt for App {
+    fn add_player_props(&mut self, game: &'static str, rule: PlayerProps) -> &mut Self {
+        let mut rules = self.world_mut().get_resource_or_init::<PlayerPropRules>();
+        rules.0.retain(|(g, _)| *g != game);
+        rules.0.push((game, rule));
+        self
+    }
+}
+
+/// A physics prop's state for `player_passes`: still asleep since it
+/// spawned (`StartAsleep`) and placed as debris (`DebrisProp`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PropGroup {
+    pub asleep: bool,
+    pub debris: bool,
+}
+
+/// Whether a player gets past this prop under `rule`. `Shadow`: walks
+/// through it (a multiplayer prop, spec 4.2.1) or shoves it aside
+/// (`pushable`); only a prop over `SHADOW_PUSH_MASS` of the normal group is
+/// a wall (spec 4.1). `Turbo`: debris and the non-solid modes, and a solid
+/// multiplayer prop still asleep since it spawned (the push-away group);
+/// every other is a wall.
+pub fn player_passes(p: &PhysicsProp, rule: PlayerProps, group: PropGroup) -> bool {
+    use super::PushAway;
+    match rule {
+        PlayerProps::Shadow => p.push != PushAway::Collide || pushable(p),
+        PlayerProps::Turbo => match p.push {
+            PushAway::Collide => group.debris,
+            PushAway::Solid => group.debris || group.asleep,
+            PushAway::NonSolid | PushAway::Ignore => true,
+        },
+    }
+}
+
+/// Whether a player gets past a map prop under `rule` (`player_passes`):
+/// a physics prop (`physics`) by its state (`group`: `StartAsleep`,
+/// `DebrisProp`). A frozen prop (motion disabled, `frozen`) is no
+/// `PhysicsProp` until it is set moving: a wall to a shadow, as the
+/// movement meets it; under turbo physics one placed asleep is in the
+/// push-away group like any other (specs/dods/physics_props.md 2: the
+/// spawnflags 9, 265 and 1545 counted there).
+pub fn prop_passes(physics: Option<&PhysicsProp>, frozen: Option<&FrozenBody>, group: PropGroup, rule: PlayerProps) -> bool {
+    match (physics, frozen) {
+        (Some(p), _) => player_passes(p, rule, group),
+        (None, Some(f)) if rule == PlayerProps::Turbo => {
+            let p = PhysicsProp {
+                push: f.physics.push,
+                mass: f.physics.mass,
+                bounds: f.bounds,
+            };
+            player_passes(&p, rule, PropGroup { asleep: f.physics.asleep, debris: f.physics.debris })
+        }
+        _ => false,
+    }
+}
+
+/// `prop_passes` of one entity.
+pub fn entity_passes(e: &EntityRef, rule: PlayerProps) -> bool {
+    let group = PropGroup {
+        asleep: e.contains::<StartAsleep>(),
+        debris: e.contains::<DebrisProp>(),
+    };
+    prop_passes(e.get::<PhysicsProp>(), e.get::<FrozenBody>(), group, rule)
+}
+
+/// The loaded map's physics props a player gets past (`prop_passes`, by
+/// its game's rule, `PlayerPropRules::current`): what a walker standing in
+/// for players (`nav_gen`'s `ignore`: the spawn spots' walk, the map
+/// sweep's) goes through, so a room the map's crates and sandbags close
+/// off counts as reached.
 pub fn walked_through(world: &World) -> bevy::platform::collections::HashSet<Entity> {
+    let rule = PlayerPropRules::current(world);
     world
         .iter_entities()
-        .filter(|r| r.contains::<MapPropCollider>())
-        .filter(|r| r.get::<PhysicsProp>().is_some_and(player_passes))
+        .filter(|r| r.contains::<MapPropCollider>() && entity_passes(r, rule))
         .map(|r| r.id())
         .collect()
 }

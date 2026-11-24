@@ -112,3 +112,39 @@ fn every_weapon_s_models_load_on_the_body() {
         assert!(kit.held.iter().any(|h| h.key == *g), "{g} held");
     }
 }
+
+/// specs/dods/physics_props.md 2 and 5 on the install: dod_avalanche's
+/// 138 server-side multiplayer props (the client-side ones, which players
+/// walk through, left out) as the spots' walker meets them under DoD:S's
+/// turbo rule (`prop_physics::PlayerProps::Turbo`): the 83 that settle at
+/// load into the normal group are walls; the 41 that start asleep (the
+/// push-away group, frozen ones too) and the 14 debris (the debris flag,
+/// or the non-solid mode) are passed.
+#[test]
+fn dod_avalanche_s_settled_props_are_walls_to_the_spots_walker() {
+    use chimera_world::map::{
+        PhysicsProp, PushAway,
+        prop_physics::{PlayerProps, PropGroup, player_passes},
+    };
+    let Some(mount) = install_mount() else { return };
+    let name = "dod_avalanche";
+    let bytes = mount.read(&format!("maps/{name}.bsp")).expect("the map's file");
+    let map = bsp::load_level_bytes_in(&maps::DODS, &mount, name, bytes, &MapLoadOptions::lean(), None).expect("it converts").0;
+    let (mut walls, mut passed) = (0, 0);
+    for p in &map.props {
+        let Some(ph) = &p.physics else { continue };
+        let class = p
+            .entity
+            .and_then(|i| map.entities[i].keyvalues.iter().find(|(k, _)| k == "classname"))
+            .map_or("", |(_, v)| v.as_str());
+        if class != "prop_physics_multiplayer" || ph.push == PushAway::Ignore {
+            continue;
+        }
+        let prop = PhysicsProp { push: ph.push, mass: ph.mass, bounds: (bevy::math::Vec3::ZERO, bevy::math::Vec3::ZERO) };
+        match player_passes(&prop, PlayerProps::Turbo, PropGroup { asleep: ph.asleep, debris: ph.debris }) {
+            true => passed += 1,
+            false => walls += 1,
+        }
+    }
+    assert_eq!((walls, passed), (83, 55), "{name}: the measured split of 138");
+}

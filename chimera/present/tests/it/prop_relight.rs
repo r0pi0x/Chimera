@@ -64,6 +64,7 @@ fn map(physics: bool) -> MapData {
             push: PushAway::Collide,
             frozen: true,
             asleep: true,
+            debris: false,
         }),
         fade: None,
         parent: None,

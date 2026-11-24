@@ -2,8 +2,8 @@
 # a hit from the front, five times that from behind (300) when the
 # attacker's aim . the victim's level facing is over 0.3, the hit zones'
 # multipliers on both (a leg 45, or 225 from behind). Measured: the hit
-# 0.21 s after the press, 0.4 s between swings, reach 92 between the two
-# players' origins (aim level).
+# 0.21 s after the press, 0.4 s between swings (a backstab: 0.405 s and
+# 0.9 s), reach 92 between the two players' origins (aim level).
 id = "dods:weapon_spade"
 base = "dods:base"
 slot = 2
@@ -23,8 +23,11 @@ hull_reach = 51.0
 facing_cos = 0.5
 damage = 60.0
 # From behind when the attacker's aim . the victim's level facing > 0.3
-# (measured): five times the hit.
-backstab = { aim_dot = 0.3, damage = 300.0 }
+# (measured, standing, crouched and prone victims alike): five times the
+# hit. A backstab is a slower swing, settled on the press (a victim facing
+# away in reach then): it lands 27 ticks (0.405 s) after the press and
+# blocks every attack 0.9 s (measured, damage.md "Melee").
+backstab = { aim_dot = 0.3, damage = 300.0, delay = 0.405, refire = 0.9 }
 hitgroup_scale = { head = 2.5, chest = 1.0, stomach = 1.0, arm = 0.75, leg = 0.75 }
 # Measured: the hit 14 ticks (0.21 s) after the press; every attack
 # blocked 0.4 s from the press (not the script's FireDelay 0.1).

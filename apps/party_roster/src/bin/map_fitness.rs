@@ -10,7 +10,8 @@
 //! spots' walking player, `spawns::walker`, reaches where the map has
 //! visibility data, `nav_gen::Bounds`; both walks go through the physics
 //! props a player gets past, `prop_physics::walked_through`: multiplayer
-//! props and light ones a player shoves, DoD:S's crates and sandbags) and
+//! props and light ones a player shoves; on DoD:S's maps, by its turbo
+//! physics, only debris and the multiplayer props asleep since load) and
 //! measures it:
 //!
 //! - `area_m2`: the walkable area of the mesh's main region (areas walked
@@ -1508,15 +1509,21 @@ fn probe_report(sim: &mut Sim, probes: &[Vec3], at: &dyn Fn(Vec3) -> String) {
     let name = |e: Entity| {
         let n = |e: Entity| w.get::<Name>(e).map(|n| n.to_string());
         // A physics prop: how players meet it, its mass and whether they
-        // get past it (`prop_physics::player_passes`); else static.
+        // get past it (`prop_physics::prop_passes`); else static.
+        let passes = |e: Entity| {
+            use chimera_world::map::prop_physics::{PlayerPropRules, entity_passes};
+            w.get_entity(e).is_ok_and(|r| entity_passes(&r, PlayerPropRules::current(w)))
+        };
         let physics = match w.get::<chimera_world::map::PhysicsProp>(e) {
             Some(p) => format!(
                 " [{:?} {} kg{}]",
                 p.push,
                 p.mass,
-                if chimera_world::map::prop_physics::player_passes(p) { ", passed" } else { "" }
+                if passes(e) { ", passed" } else { "" }
             ),
-            None if w.get::<chimera_world::map::prop_physics::FrozenBody>(e).is_some() => " [frozen]".into(),
+            None if w.get::<chimera_world::map::prop_physics::FrozenBody>(e).is_some() => {
+                format!(" [frozen{}]", if passes(e) { ", passed" } else { "" })
+            }
             None => String::new(),
         };
         format!(

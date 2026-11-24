@@ -27,7 +27,11 @@
 //! then a box swept to the same depth, so a level swing hits a standing
 //! player whose origin is up to 92 units away (94 not) and one 45° off
 //! the aim at 56; from behind (the knife and spade only) when the
-//! attacker's aim · the victim's level facing is over 0.3 (`Backstab::Aim`).
+//! attacker's aim · the victim's level facing is over 0.3 (`Backstab::Aim`,
+//! crouched and prone victims alike), a slower swing settled on the press
+//! (a victim facing away in reach then): the 300 lands 0.405 s after it and
+//! every attack waits 0.9 s (`Backstab::Aim::slow`; the knife's and
+//! spade's data).
 //! The MG42 fires one bullet a shot (its script's `BulletsPerShot` 2 is
 //! not what the game does: `script_numbers`).
 //!

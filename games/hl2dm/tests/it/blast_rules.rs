@@ -336,6 +336,7 @@ fn drum(data: &mut MapData, at: Vec3) {
             push: PushAway::Collide,
             frozen: false,
             asleep: false,
+            debris: false,
         }),
         fade: None,
         parent: None,

@@ -797,6 +797,104 @@ impl Shot<'_, '_, '_> {
     pub fn swing(&mut self, swing: &Swing, secondary: bool) -> bool {
         self.traced = true;
         let forward = self.aim * Vec3::NEG_Z;
+        let (hit, line) = self.swing_hit(swing);
+        let ray = hit.as_ref().and_then(|h| self.impact_ray(h.point));
+        self.w.event(self.owner, self.weapon, WeaponEventKind::Swing {
+                hit: hit.is_some(),
+                secondary,
+                at: hit.as_ref().map(|h| (h.point, h.normal, h.entity)),
+                line,
+                ray,
+            });
+        let Some(hit) = hit else {
+            if let Some(s) = &swing.sound_miss {
+                self.w.sound(PlaySound::at(s.clone(), self.eye));
+            }
+            return false;
+        };
+        let (alive, object, yaw, aabb, origin) = match self.w.targets.get(hit.entity) {
+            Ok(t) => (
+                t.health.is_some(),
+                t.damageable.is_some(),
+                t.intent.map(|i| i.yaw_rotation()),
+                t.aabb.copied(),
+                Some(t.transform.translation),
+            ),
+            Err(_) => (false, false, None, None, None),
+        };
+        let mut amount = swing.damage;
+        let mut credit = None;
+        match (swing.backstab, yaw, origin) {
+            (Some(Backstab::Facing(back)), Some(yaw), Some(origin)) => {
+                // Backstab: the target faces along the bearing from the
+                // attacker to it (not the attacker's view; measured M11).
+                let facing = (yaw * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
+                let bearing = (origin - self.eye).with_y(0.0).normalize_or_zero();
+                if facing.dot(bearing) >= BACKSTAB_COS {
+                    amount = back;
+                }
+            }
+            (Some(Backstab::Aim { dot, damage, .. }), Some(yaw), Some(_)) => {
+                // The attacker's aim (pitch and all) against the target's
+                // level facing (DoD:S's, measured).
+                let facing = (yaw * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
+                if forward.dot(facing) > dot {
+                    amount = damage;
+                }
+            }
+            (Some(b @ Backstab::Behind { health, credit: c, .. }), Some(yaw), Some(_)) => {
+                // Centre to centre (the boxes', a rewound target's where
+                // the swinger saw it), yaw only.
+                let to = self.centre(hit.entity).unwrap_or(hit.point) - self.centre(self.owner).unwrap_or(self.eye);
+                if b.behind(forward, yaw * Vec3::NEG_Z, to) {
+                    let current = self.w.targets.get(hit.entity).ok().and_then(|t| t.health).map_or(0.0, |h| h.current);
+                    amount = health * current;
+                    credit = c;
+                }
+            }
+            _ => {}
+        }
+        self.push(hit.entity, hit.point, hit.dir * swing.force);
+        let sound = if alive {
+            &swing.sound_hit
+        } else {
+            &swing.sound_hit_world
+        };
+        if let Some(s) = sound {
+            self.w.sound(PlaySound::at(s.clone(), hit.point));
+        }
+        if alive || object {
+            let group = match aabb.filter(|_| swing.hitgroups && alive) {
+                Some(b) => BodyRegion::from_hitgroup(hitgroup_at(&b, hit.point)),
+                None => BodyRegion::Generic,
+            };
+            let amount = amount * swing.scales.as_ref().map_or(1.0, |s| s.get(group));
+            self.apply(
+                hit.entity,
+                amount,
+                swing.armor_ratio,
+                swing.quantum,
+                group,
+                hit.point,
+                hit.dir,
+                swing.kind,
+                false,
+                // A character's death carries the swing's push (HL2:DM's
+                // dropped weapon and ragdoll, weapons.md 9, 11); props
+                // take theirs by `push` alone.
+                if alive { hit.dir * swing.force } else { Vec3::ZERO },
+                credit,
+            );
+        }
+        true
+    }
+
+    /// What a swing meets (spec 6.1): a line along the view, then a box
+    /// when the line misses, counting only targets roughly in front; a
+    /// spawn-protected character in its damage window counts as a miss.
+    /// Also the line's span (to its end on a miss). Nothing is dealt.
+    fn swing_hit(&self, swing: &Swing) -> (Option<Hit>, (Vec3, Vec3)) {
+        let forward = self.aim * Vec3::NEG_Z;
         let dir = Dir3::new(forward).unwrap_or(Dir3::NEG_Z);
         let mut hit = self.trace(dir, 0.0, swing.range, &[], 0.0);
         // The line's span (its end on a miss: the range's end).
@@ -861,96 +959,21 @@ impl Shot<'_, '_, '_> {
         // (`trace` and `filter` leave it out: the swing goes on to what is
         // behind); in its damage window alone it takes the swing as a miss:
         // nothing shows, nothing lands (`core::SpawnProtected`).
-        let hit = hit.filter(|h| !self.hides(h.entity));
-        let ray = hit.as_ref().and_then(|h| self.impact_ray(h.point));
-        self.w.event(self.owner, self.weapon, WeaponEventKind::Swing {
-                hit: hit.is_some(),
-                secondary,
-                at: hit.as_ref().map(|h| (h.point, h.normal, h.entity)),
-                line,
-                ray,
-            });
-        let Some(hit) = hit else {
-            if let Some(s) = &swing.sound_miss {
-                self.w.sound(PlaySound::at(s.clone(), self.eye));
-            }
-            return false;
-        };
-        let (alive, object, yaw, aabb, origin) = match self.w.targets.get(hit.entity) {
-            Ok(t) => (
-                t.health.is_some(),
-                t.damageable.is_some(),
-                t.intent.map(|i| i.yaw_rotation()),
-                t.aabb.copied(),
-                Some(t.transform.translation),
-            ),
-            Err(_) => (false, false, None, None, None),
-        };
-        let mut amount = swing.damage;
-        let mut credit = None;
-        match (swing.backstab, yaw, origin) {
-            (Some(Backstab::Facing(back)), Some(yaw), Some(origin)) => {
-                // Backstab: the target faces along the bearing from the
-                // attacker to it (not the attacker's view; measured M11).
-                let facing = (yaw * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
-                let bearing = (origin - self.eye).with_y(0.0).normalize_or_zero();
-                if facing.dot(bearing) >= BACKSTAB_COS {
-                    amount = back;
-                }
-            }
-            (Some(Backstab::Aim { dot, damage }), Some(yaw), Some(_)) => {
-                // The attacker's aim (pitch and all) against the target's
-                // level facing (DoD:S's, measured).
-                let facing = (yaw * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
-                if forward.dot(facing) > dot {
-                    amount = damage;
-                }
-            }
-            (Some(b @ Backstab::Behind { health, credit: c, .. }), Some(yaw), Some(_)) => {
-                // Centre to centre (the boxes', a rewound target's where
-                // the swinger saw it), yaw only.
-                let to = self.centre(hit.entity).unwrap_or(hit.point) - self.centre(self.owner).unwrap_or(self.eye);
-                if b.behind(forward, yaw * Vec3::NEG_Z, to) {
-                    let current = self.w.targets.get(hit.entity).ok().and_then(|t| t.health).map_or(0.0, |h| h.current);
-                    amount = health * current;
-                    credit = c;
-                }
-            }
-            _ => {}
-        }
-        self.push(hit.entity, hit.point, hit.dir * swing.force);
-        let sound = if alive {
-            &swing.sound_hit
-        } else {
-            &swing.sound_hit_world
-        };
-        if let Some(s) = sound {
-            self.w.sound(PlaySound::at(s.clone(), hit.point));
-        }
-        if alive || object {
-            let group = match aabb.filter(|_| swing.hitgroups && alive) {
-                Some(b) => BodyRegion::from_hitgroup(hitgroup_at(&b, hit.point)),
-                None => BodyRegion::Generic,
-            };
-            let amount = amount * swing.scales.as_ref().map_or(1.0, |s| s.get(group));
-            self.apply(
-                hit.entity,
-                amount,
-                swing.armor_ratio,
-                swing.quantum,
-                group,
-                hit.point,
-                hit.dir,
-                swing.kind,
-                false,
-                // A character's death carries the swing's push (HL2:DM's
-                // dropped weapon and ragdoll, weapons.md 9, 11); props
-                // take theirs by `push` alone.
-                if alive { hit.dir * swing.force } else { Vec3::ZERO },
-                credit,
-            );
-        }
-        true
+        (hit.filter(|h| !self.hides(h.entity)), line)
+    }
+
+    /// Whether a swing started now would land as a backstab
+    /// (`Backstab::Aim`, its kind settled on the press when it has its own
+    /// timing): what the swing meets now is a character whose level
+    /// facing the aim passes the rule's test.
+    pub fn backstab_ahead(&self, swing: &Swing) -> bool {
+        let Some(Backstab::Aim { dot, .. }) = swing.backstab else { return false };
+        let forward = self.aim * Vec3::NEG_Z;
+        let Some(hit) = self.swing_hit(swing).0 else { return false };
+        self.w.targets.get(hit.entity).ok().filter(|t| t.health.is_some()).and_then(|t| t.intent).is_some_and(|i| {
+            let facing = (i.yaw_rotation() * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
+            forward.dot(facing) > dot
+        })
     }
 
     /// The impact ray of a swing whose contact is `contact`

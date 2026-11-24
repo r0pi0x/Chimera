@@ -549,6 +549,7 @@ fn restored_prop_contacts_join_islands_once() {
             push: PushAway::Collide,
             frozen: false,
             asleep: false,
+            debris: false,
         }),
         fade: None,
         parent: None,

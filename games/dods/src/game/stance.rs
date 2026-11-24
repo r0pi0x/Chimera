@@ -35,8 +35,14 @@
 //!   (`PITCH_DOWN_LIMIT`, `PITCH_UP_LIMIT`), the player staying prone.
 //!   The yaw limit (`yaw_limit`, 45° either way of the deploy) is the
 //!   client's: the player wears a `ViewYawLimit` while deployed
-//!   (`yaw_limits`), which the local client holds its view inside; turning
-//!   past it never undeploys. **On a ledge**: the alt fire standing or
+//!   (`yaw_limits`, each side's limit as one span), which the local client
+//!   holds its view inside; turning past it never undeploys. **Solids
+//!   beside the gun narrow it** (`Room::yaw_sides`, on the deploy): from
+//!   0° outwards in 5° steps, a box along that yaw from a point just
+//!   behind the player at the deployed height; the first step meeting a
+//!   solid ends that side, its limit the step before; a solid straight
+//!   ahead refuses the deploy; a solid overlapping the player's own box
+//!   doesn't count. **On a ledge**: the alt fire standing or
 //!   crouched on the ground deploys on a surface within 12 units ahead of
 //!   the box (`ledge_top`) whose top is 10 to 54 units over the feet
 //!   standing, 10 to 38 crouched; the eye eases over 0.3 s (`LEDGE_EASE`)
@@ -48,7 +54,8 @@
 //!   stamina running, 230 + stamina sprinting), 120 while slowed by a hit
 //!   (`hit_slow::DodsSlowed`, `SLOWED_CAP`), 50 with a rocket shouldered
 //!   (`weapons::explosives::Shoulder`), 42 sighted (`SIGHTED_CAP`: the
-//!   sights' or scope's narrower view on, `gun::DodsSights`); ducked or
+//!   sights' or scope's narrower view on, `gun::DodsSights`; from rest the
+//!   wish speed too, so +0.3 a tick against the friction to 42); ducked or
 //!   ducking the run's 220, which Source's movement scales by a third,
 //!   whatever the stamina or the slow. The movement clamps the ground
 //!   speed to it the same tick (`movement::config`'s `ground_clamp`).
@@ -60,14 +67,27 @@
 //! - The speed cap getting up is a smoothstep of the time (the measured
 //!   speeds fit it; movement.md, open question 1). Going prone on a ladder
 //!   or in water is refused (our choice; unmeasured).
-//! - Nothing narrows the deployed yaw limit below 45 (obstacles beside the
-//!   gun do in DoD:S, by a rule not found: weapons.md, open question 11);
-//!   on a ledge the pitch limits are the prone ones (unmeasured), and the
+//! - The yaw check's numbers are a fit to the measured crate placements
+//!   (weapons.md, open question 11: bounded, not pinned): 3 units behind
+//!   the origin (`YAW_CHECK_BEHIND`; the spec bounds 3-10), 1.15 either
+//!   side (`YAW_CHECK_HALF`; "about 1.5": the spec's placements allow
+//!   about 1.05-1.4), 32 long (`YAW_CHECK_REACH`; 30-32). Whether it is
+//!   the same on a ledge deploy is unmeasured (the same check, at the
+//!   ledge's deployed height); a player whose box overlaps the world's
+//!   own collider (lying on a slope into it) leaves the whole world out of
+//!   the check.
+//! - Going prone keeps the move keys off with friction alone (above); the
+//!   game keeps the input with the speed capped at A + (B − A) ×
+//!   smoothstep(k/80) between the stances' caps both ways (movement.md,
+//!   measured 2026-11-24). Waits on the shared movement's move
+//!   (docs/plans/active/shared-movement.md, S4).
+//! - On a ledge the pitch limits are the prone ones (unmeasured), and the
 //!   ledge's surface is the highest of four downward traces 1 to 12 units
 //!   ahead of the box.
-//! - The speed while the sights rise (168 to about 190 in the 0.3 s) and
-//!   the sighted acceleration from rest are unmeasured laws (movement.md,
-//!   open question 8): the cap applies once the view is narrow.
+//! - The speed while the sights rise (168 to about 190 in the 0.3 s) is an
+//!   unmeasured law: the cap applies once the view is narrow. From rest
+//!   sighted the cap is the wish speed (Source's movement clamps the wish
+//!   to it: +0.3 u/s a tick from 6.3 to 42, as measured).
 //! - The slow's state is the server's (`hit_slow`): a predicting victim
 //!   learns its cap from the next correction.
 
@@ -129,6 +149,16 @@ pub const LEDGE_REACH: f32 = 12.0;
 pub const LEDGE_STANDING: (f32, f32) = (10.0, 55.0);
 pub const LEDGE_CROUCHED: (f32, f32) = (10.0, 41.0);
 
+/// What narrows a deployed machine gun's yaw limit (weapons.md, "Alt
+/// fire": a fit to the measured crate placements, bounded, not pinned):
+/// from a point `YAW_CHECK_BEHIND` units behind the origin at the
+/// deployed height, a box `YAW_CHECK_HALF` units either side of a line
+/// `YAW_CHECK_REACH` long along each yaw step of `YAW_STEP` degrees.
+pub const YAW_CHECK_BEHIND: f32 = 3.0;
+pub const YAW_CHECK_HALF: f32 = 1.15;
+pub const YAW_CHECK_REACH: f32 = 32.0;
+pub const YAW_STEP: f32 = 5.0;
+
 /// Source's unit, m.
 const U: f32 = 0.0254;
 
@@ -182,6 +212,10 @@ pub struct DodsStance {
     pub deployed: bool,
     #[serde(default)]
     pub deploy_yaw: f32,
+    /// The deployed yaw limit on each side, degrees (left, right: `Room::
+    /// yaw_sides`); none: the gun's own both ways.
+    #[serde(default)]
+    pub yaw_sides: Option<(f32, f32)>,
     /// Deployed on a ledge standing or crouched: the deployed eye height
     /// over the feet, units.
     #[serde(default)]
@@ -290,6 +324,46 @@ impl Room<'_, '_> {
     }
 }
 
+impl Room<'_, '_> {
+    /// The deployed yaw limit on each side (degrees: left, right) of a
+    /// gun deployed looking along `yaw` with its eye `height` units over
+    /// `feet` by a player whose box is `box_height` high, at most `limit`
+    /// (weapons.md, "Alt fire"): from 0° outwards in `YAW_STEP`s, a box
+    /// along that yaw (`YAW_CHECK_*`); the first step meeting a solid ends
+    /// the side, its limit the step before; a solid at 0° refuses the
+    /// deploy (None). A solid overlapping the player's own box doesn't
+    /// count (the crates inside it measured), nor do characters.
+    pub fn yaw_sides(&self, me: Entity, feet: Vec3, height: f32, box_height: f32, yaw: f32, limit: f32) -> Option<(f32, f32)> {
+        let filter = SpatialQueryFilter::from_mask(CHARACTER_FILTER).with_excluded_entities([me]);
+        // The player's box, a hair inside (the floor and walls it touches
+        // still count).
+        let h = box_height - 1.0;
+        let own = Collider::cuboid((HALF_WIDTH * 2.0 - 1.0) * U, h * U, (HALF_WIDTH * 2.0 - 1.0) * U);
+        let inside = self.spatial.shape_intersections(&own, feet + Vec3::Y * (0.5 + h / 2.0) * U, Quat::IDENTITY, &filter);
+        let from = feet + Vec3::Y * height * U + Quat::from_rotation_y(yaw) * Vec3::Z * YAW_CHECK_BEHIND * U;
+        let check = Collider::cuboid(YAW_CHECK_HALF * 2.0 * U, YAW_CHECK_HALF * 2.0 * U, YAW_CHECK_REACH * U);
+        let blocked = |off: f32| {
+            let turn = Quat::from_rotation_y(yaw + off.to_radians());
+            let centre = from + turn * Vec3::NEG_Z * (YAW_CHECK_REACH / 2.0) * U;
+            let mut hit = false;
+            self.spatial.shape_intersections_callback(&check, centre, turn, &filter, |e| {
+                hit = !inside.contains(&e) && !self.characters.contains(e);
+                !hit
+            });
+            hit
+        };
+        if blocked(0.0) {
+            return None;
+        }
+        let steps = (limit / YAW_STEP).floor() as i32;
+        // Left is a larger yaw (`Intent::yaw` turns left).
+        let side = |sign: f32| {
+            (1..=steps).find(|k| blocked(sign * *k as f32 * YAW_STEP)).map_or(limit, |k| (k - 1) as f32 * YAW_STEP)
+        };
+        Some((side(1.0), side(-1.0)))
+    }
+}
+
 /// Each DoD:S player's stance this tick, before Source's movement: the
 /// presses of `+alt1` (prone, up), duck while prone (up to a crouch) and
 /// the alt fire with a machine gun (deploy, undeploy), the transitions'
@@ -384,24 +458,31 @@ pub fn step(
                     if alt_pressed || past_pitch {
                         s.deployed = false;
                         s.ledge = None;
+                        s.yaw_sides = None;
                         true
                     } else {
                         false
                     }
                 } else if alt_pressed && s.prone() {
-                    s.deployed = true;
-                    true
+                    // A solid straight ahead refuses it (`Room::yaw_sides`).
+                    s.yaw_sides = room.yaw_sides(me_e, feet, EYE_PRONE, PRONE_HEIGHT, intent.yaw, mg.yaw_limit);
+                    s.deployed = s.yaw_sides.is_some();
+                    s.deployed
                 } else if alt_pressed {
                     let (low, high) = if me.ducked || me.ducking { LEDGE_CROUCHED } else { LEDGE_STANDING };
-                    match room.ledge_top(me_e, feet, intent.yaw).filter(|t| (low..=high).contains(t)) {
-                        Some(top) => {
+                    let height = if me.ducked { DUCK_HEIGHT } else { STAND_HEIGHT };
+                    let top = room.ledge_top(me_e, feet, intent.yaw).filter(|t| (low..=high).contains(t));
+                    let deployed = top.map(|t| (t + LEDGE_ABOVE).min(EYE_STAND));
+                    match deployed.map(|eye| (eye, room.yaw_sides(me_e, feet, eye, height, intent.yaw, mg.yaw_limit))) {
+                        Some((eye, Some(sides))) => {
                             s.deployed = true;
-                            s.ledge = Some((top + LEDGE_ABOVE).min(EYE_STAND));
+                            s.ledge = Some(eye);
+                            s.yaw_sides = Some(sides);
                             s.from_eye = me.eye;
                             s.elapsed = dt;
                             true
                         }
-                        None => false,
+                        _ => false,
                     }
                 } else {
                     false
@@ -418,6 +499,7 @@ pub fn step(
             _ => {
                 s.deployed = false;
                 s.ledge = None;
+                s.yaw_sides = None;
             }
         }
         if *st != s {
@@ -464,7 +546,15 @@ pub fn yaw_limits(
             .deployed
             .then(|| inv.and_then(|i| i.active).and_then(|g| guns.get(g).ok()))
             .flatten()
-            .map(|mg| ViewYawLimit { centre: s.deploy_yaw, half: mg.yaw_limit.to_radians() });
+            .map(|mg| {
+                // Each side's limit (`DodsStance::yaw_sides`) as one span:
+                // its middle and half.
+                let (left, right) = s.yaw_sides.unwrap_or((mg.yaw_limit, mg.yaw_limit));
+                ViewYawLimit {
+                    centre: s.deploy_yaw + ((left - right) / 2.0).to_radians(),
+                    half: ((left + right) / 2.0).to_radians(),
+                }
+            });
         if had != want.as_ref() {
             match want {
                 Some(l) => commands.entity(e).insert(l),

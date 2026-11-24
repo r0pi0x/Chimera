@@ -165,6 +165,7 @@ fn add_crate(data: &mut MapData, index: usize) {
             push: PushAway::Collide,
             frozen: false,
             asleep: false,
+            debris: false,
         }),
         fade: None,
         parent: None,

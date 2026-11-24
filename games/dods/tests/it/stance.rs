@@ -392,6 +392,66 @@ fn the_mg_deploys_on_a_ledge_standing_and_crouched() {
     assert!(!stance_of(&sim, p).deployed, "22 units ahead");
 }
 
+/// A crate 64 wide and deep standing 24 over `p`'s feet (the view along
+/// -Z): its right face `right_edge` units left of the origin, its near
+/// face `near` units ahead of it (negative: behind), 64 further on.
+fn crate_at(sim: &mut Sim, p: Entity, right_edge: f32, near: f32) {
+    let f = feet(sim, p);
+    let o = sim.position(p);
+    // The view is -Z; left is -X.
+    solid(
+        sim,
+        Vec3::new(o.x - (right_edge + 64.0) * U, f.y - 10.0 * U, o.z - (near + 64.0) * U),
+        Vec3::new(o.x - right_edge * U, f.y + 24.0 * U, o.z - near * U),
+    );
+}
+
+/// The MG42 deployed prone looking along -Z after `place` puts a crate:
+/// None when refused, else the (left, right) limits in degrees.
+fn deployed_limits(place: impl FnOnce(&mut Sim, Entity)) -> Option<(f32, f32)> {
+    use chimera_core::core::ViewYawLimit;
+    let mut sim = sim();
+    let p = player(&mut sim);
+    sim.intent(p).yaw = 0.0;
+    sim.intent(p).pitch = 0.0;
+    press_prone(&mut sim, p);
+    sim.ticks(79);
+    sim.seconds(0.5);
+    hold(&mut sim, p, weapons::MG42);
+    place(&mut sim, p);
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    sim.ticks(1);
+    let s = stance_of(&sim, p);
+    if !s.deployed {
+        assert!(sim.app.world().get::<ViewYawLimit>(p).is_none());
+        return None;
+    }
+    let l = *sim.app.world().get::<ViewYawLimit>(p).expect("the client's limit while deployed");
+    let (left, right) = ((l.centre + l.half).to_degrees(), (l.half - l.centre).to_degrees());
+    Some(((left * 100.0).round() / 100.0, (right * 100.0).round() / 100.0))
+}
+
+/// weapons.md's test cases, what narrows a deployed MG's yaw limit: a
+/// crate beside (its centre level with the player) whose near face is 18 /
+/// 20 / 22 / 24 units to the left: the left limit 30 / 35 / 40 / 45, the
+/// right 45; a crate whose near face is 20 ahead, its edge 1 / 3 / 5 / 10
+/// left of the aim line: refused / 0 / 5 / 15; a crate overlapping the
+/// player's own box: 45 both ways.
+#[test]
+fn obstacles_beside_a_deployed_mg_narrow_its_yaw_limit_in_5_degree_steps() {
+    assert_eq!(deployed_limits(|_, _| {}), Some((45.0, 45.0)), "in the open");
+    for (s, want) in [(18.0f32, 30.0f32), (20.0, 35.0), (22.0, 40.0), (24.0, 45.0)] {
+        assert_eq!(deployed_limits(|sim, p| crate_at(sim, p, s, -32.0)), Some((want, 45.0)), "near face {s} to the left");
+    }
+    for (e, want) in [(1.0f32, None), (3.0, Some(0.0f32)), (5.0, Some(5.0)), (10.0, Some(15.0))] {
+        assert_eq!(deployed_limits(|sim, p| crate_at(sim, p, e, 20.0)), want.map(|w| (w, 45.0)), "edge {e} left of the aim, 20 ahead");
+    }
+    // 90 degrees left at 42 (its near face 10 to the left: inside the box).
+    assert_eq!(deployed_limits(|sim, p| crate_at(sim, p, 10.0, -32.0)), Some((45.0, 45.0)), "inside the player's box");
+}
+
 /// movement.md, "Prone": pressed 5 ticks into a jump, going prone starts
 /// at once, the jump flies on with the standing box and lands; prone 80
 /// ticks after the press.
@@ -527,6 +587,33 @@ fn the_sights_cap_the_speed_at_42() {
     sim.intent(p).secondary = false;
     sim.seconds(0.5);
     assert!((speed(&sim, p) - 42.0).abs() < 0.5, "sighted: {}", speed(&sim, p));
+}
+
+/// movement.md's test case "Garand sighted, still, hold forward": 42 is
+/// the wish speed, so from rest 10 x 42 x 0.015 = 6.3 a tick against the
+/// 6 friction takes below 50: 6.3, then +0.3 a tick (7.8 on the 6th), 42.0
+/// on the 120th (Garand and K98 alike).
+#[test]
+fn sighted_from_rest_accelerates_0_3_a_tick_to_42() {
+    for id in [weapons::GARAND, weapons::K98] {
+        let mut sim = sim();
+        let p = player(&mut sim);
+        hold(&mut sim, p, id);
+        sim.intent(p).secondary = true;
+        sim.ticks(1);
+        sim.intent(p).secondary = false;
+        sim.seconds(1.0);
+        assert!(speed(&sim, p) < 0.01, "still");
+        sim.intent(p).move_axis = Vec2::Y;
+        let mut got = Vec::new();
+        for _ in 0..120 {
+            sim.ticks(1);
+            got.push(speed(&sim, p));
+        }
+        for (tick, want) in [(1, 6.3f32), (2, 6.6), (6, 7.8), (60, 24.0), (119, 41.7), (120, 42.0)] {
+            assert!((got[tick - 1] - want).abs() < 0.02, "{id}: tick {tick}: {} against {want}", got[tick - 1]);
+        }
+    }
 }
 
 /// movement.md, "Stamina and sprint": sliding to a stop with no input it

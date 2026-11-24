@@ -313,6 +313,7 @@ fn thruster_pushes_a_physbox() {
             push: PushAway::Collide,
             frozen: false,
             asleep: false,
+            debris: false,
         }),
         ..entity(&[
             ("classname", "func_physbox"),
@@ -371,6 +372,7 @@ fn an_offset_thruster_turns_about_the_centre_of_mass() {
             push: PushAway::Collide,
             frozen: false,
             asleep: false,
+            debris: false,
         }),
         ..entity(&[
             ("classname", "func_physbox"),
