@@ -94,9 +94,10 @@
 //! jar.toml, the Razorback the worn item's).
 //!
 //! Known shortcuts:
-//! - An item's `anim_slot` and `animation_replacement` (none in batch 1
-//!   change a sequence on its own class's arms) are recorded, not
-//!   applied: it plays its base's sequences; its `muzzle_flash`,
+//! - An item's `anim_slot` and `animation_replacement` (on `tf2:item`)
+//!   pick its sequences only for a melee unlock (`view::item_activity`:
+//!   one that remaps its draw, idle or swings, names a slot, or is over
+//!   the Fists, the Heavy's gloves); a gun plays its base's sequences; its `muzzle_flash`,
 //!   `tracer_effect` and `particle_effect` are recorded, the base's
 //!   effects play; a one-piece view model (`attach_to_hands` 0) is still
 //!   bone-merged; of its sounds the shot, crit shot (Minigun), empty and

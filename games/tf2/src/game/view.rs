@@ -21,7 +21,13 @@
 //!
 //! An unlock (`items`, `load_with`) is one more such gun: its own `c_`
 //! model (in its own skin) on its base's class's arms, keyed by its id,
-//! playing its base's sequences (`items::base_in`).
+//! playing its base's sequences (`items::base_in`), but a melee unlock
+//! that remaps them or is over the Fists: its own by activity
+//! (`item_activity`, viewmodel.md 2: the Heavy's gloves on the `bg_*` or
+//! `breadglove_*` sets, which rig their `vm_weapon_bone…` on the hands
+//! where the gloves have them; on the Fists' `f_*` those bones stay at
+//! the weapons' place in the hand and the gloves showed turned and off
+//! the fists).
 //!
 //! The sequences are picked by name (the Pyro's `ft_idle` shares its
 //! activity with another gun's): the include's real sequences, which
@@ -388,7 +394,70 @@ pub fn viewmodel_fov_cvar(app: &mut App) {
     );
 }
 
+/// The activity remaps of the unlock in hand when it plays its melee
+/// sequences by activity (`item_melee`): its `tf2:item` hook's
+/// `anim_slot` and `anim_replace` (`items::mods::ItemParams`).
+struct ItemActs<'a> {
+    slot: String,
+    replace: Option<&'a toml::Table>,
+}
+
+/// The generic view-model activities a melee weapon plays (draw, idle,
+/// the swings and the crit swing; viewmodel.md 2).
+const MELEE_ACTS: [&str; 6] = ["ACT_VM_DRAW", "ACT_VM_IDLE", "ACT_VM_HITCENTER", "ACT_VM_HITLEFT", "ACT_VM_HITRIGHT", "ACT_VM_SWINGHARD"];
+
+/// An unlock over a melee weapon that plays by activity (viewmodel.md 2:
+/// the generic activity, the item's `animation_replacement`, then its
+/// slot's, `anim_slot` or melee, picked on its class's arms): one that
+/// remaps what it plays or names a slot, or one over the Fists, whose
+/// stock `f_*` come from the stock item's own replacement
+/// (weapons_stock.md 5.3; the Heavy's `bg_*` set on the generic melee
+/// activities is the unlocks': the Gloves of Running Urgently, the Fists
+/// of Steel, the Apoco-Fists; the Bread Bite's `breadglove_*` by its
+/// replacement). Others, and the Knife's (its backstab by name), play
+/// their base's by name: a stock weapon's own remaps aren't known here,
+/// and another class's arms share activities between sets.
+fn item_melee(s: &ViewState) -> Option<ItemActs<'static>> {
+    acts_of(&s.data?.hooks)
+}
+
+/// `item_melee` of a weapon's `hooks` (its data's).
+fn acts_of(hooks: &toml::Table) -> Option<ItemActs<'_>> {
+    let hook = hooks.get(super::items::ITEM_HOOK)?.as_table()?;
+    let base = hook.get("base").and_then(toml::Value::as_str).filter(|b| !b.is_empty())?;
+    let m = melee_sequences(base)?;
+    let replace = hook.get("anim_replace").and_then(toml::Value::as_table);
+    let slot = hook.get("anim_slot").and_then(toml::Value::as_str).filter(|t| !t.is_empty());
+    let remaps = replace.is_some_and(|r| MELEE_ACTS.iter().any(|a| r.contains_key(*a)));
+    if m.backstab.is_some() || !(remaps || slot.is_some() || base == FISTS) {
+        return None;
+    }
+    Some(ItemActs { slot: slot.unwrap_or("melee").to_ascii_uppercase(), replace })
+}
+
+/// What the unlock whose data has `hooks` plays for the generic activity
+/// `generic` (`ACT_VM_IDLE`, ...) when it plays by activity
+/// (`item_melee`); None: its base's sequences by name.
+pub fn item_activity(hooks: &toml::Table, generic: &str) -> Option<Pick> {
+    acts_of(hooks).map(|a| a.pick(generic))
+}
+
+impl ItemActs<'_> {
+    /// What `generic` plays: its remap, then the slot's activity
+    /// (`ACT_VM_X` as `ACT_<SLOT>_VM_X`), else the remap itself.
+    fn pick(&self, generic: &str) -> Pick {
+        let to = self.replace.and_then(|r| r.get(generic)).and_then(toml::Value::as_str).unwrap_or(generic);
+        match to.strip_prefix("ACT_VM_") {
+            Some(rest) => Pick::Activities(vec![format!("ACT_{}_VM_{rest}", self.slot), to.to_string()]),
+            None => Pick::Activities(vec![to.to_string()]),
+        }
+    }
+}
+
 fn draw(s: &ViewState) -> Pick {
+    if let Some(acts) = item_melee(s) {
+        return acts.pick("ACT_VM_DRAW");
+    }
     if let Some(m) = melee_sequences(stock(s)) {
         return names(&[m.draw]);
     }
@@ -396,6 +465,9 @@ fn draw(s: &ViewState) -> Pick {
 }
 
 fn idle(s: &ViewState) -> Pick {
+    if let Some(acts) = item_melee(s) {
+        return acts.pick("ACT_VM_IDLE");
+    }
     // The raised knife idles raised (`ViewPose` 1, `weapons::melee`).
     if let Some(m) = melee_sequences(stock(s)) {
         return names(&[match m.backstab {
@@ -432,7 +504,34 @@ fn melee_event(f: &mut ViewFrame, m: &MeleeSequences, kind: &WeaponEventKind) {
     f.attack(&pick);
 }
 
+/// An unlock's swing by activity (`item_melee`): the Fists' left and
+/// right (attack, attack2), another's centre, the crit's own; one its
+/// arms lack plays the swing, then its base's by name.
+fn item_melee_event(f: &mut ViewFrame, acts: &ItemActs, m: &MeleeSequences, kind: &WeaponEventKind) {
+    let fists = !m.swing_alt.is_empty();
+    let swing = |alt: bool| match (fists, alt) {
+        (true, false) => "ACT_VM_HITLEFT",
+        (true, true) => "ACT_VM_HITRIGHT",
+        _ => "ACT_VM_HITCENTER",
+    };
+    let generic = match kind {
+        WeaponEventKind::Action(melee::SWING_CRIT) => "ACT_VM_SWINGHARD",
+        WeaponEventKind::Action(melee::SWING) => swing(false),
+        WeaponEventKind::Action(melee::SWING_ALT) => swing(true),
+        _ => return,
+    };
+    if f.attack(&acts.pick(generic)) || (generic == "ACT_VM_SWINGHARD" && f.attack(&acts.pick(swing(false)))) {
+        return;
+    }
+    melee_event(f, m, kind);
+}
+
 fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
+    if let Some(acts) = item_melee(&f.state)
+        && let Some(m) = melee_sequences(stock(&f.state))
+    {
+        return item_melee_event(f, &acts, m, kind);
+    }
     if let Some(m) = melee_sequences(stock(&f.state)) {
         return melee_event(f, m, kind);
     }

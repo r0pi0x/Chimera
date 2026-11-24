@@ -243,3 +243,81 @@ fn an_items_set_serves_its_own_view_model_from_the_store_alone() {
     assert!(matches!(load(&files, "tf2:winger", true).unwrap(), Outcome::NotHere), "the Winger's set isn't here");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// The Heavy's glove unlocks in first person (the playtest's "gloves
+/// rotated"): each plays its own sequences on the Heavy's arms (by
+/// activity, `view::item_activity`: the Gloves of Running Urgently, the
+/// Fists of Steel and the Apoco-Fists the `bg_*` set, the Bread Bite its
+/// `breadglove_*`, the Warrior's Spirit and the Eviction Notice the Fists'
+/// `f_*` by their replacement), and at frame 0 of its idle every bone of
+/// its model (a joint of the merged view model, `map::merge_keeping`)
+/// sits on the arms' bone it follows, and every bone the glove rigs on a
+/// hand (`vm_weapon_bone…` under `bip_hand_R`/`_L`) is where the glove's
+/// own model puts it from that hand, within 3 units and 25 degrees (the
+/// idles move them a little; the stock Fists' `f_idle` leaves them 11
+/// units off, under the weapons' place in the hand): the
+/// glove on the hand, not off it or turned.
+#[test]
+fn the_heavy_gloves_sit_on_the_hands_at_their_idle() {
+    use bevy::prelude::*;
+    use chimera_world::map::{anim::Animator, posed_world, reference_world};
+    use source_engine::content::material::MaterialLoader;
+    let Some(m) = super::maps::install_mount() else { return };
+    let pack = ItemPack::parse(std::str::from_utf8(&items::generated(&m, items::SET)[0].1[0].1).unwrap()).unwrap();
+    let (all, _) = items::weapons(&pack, &ItemsData::builtin(), &GunNumbers::builtin().docs);
+    let gloves = [
+        ("warriors_spirit", "f_idle"),
+        ("fists_of_steel", "bg_idle"),
+        ("apoco_fists", "bg_idle"),
+        ("bread_bite", "breadglove_idle"),
+        ("gloves_of_running_urgently", "bg_idle"),
+        ("eviction_notice", "f_idle"),
+    ];
+    let ids: Vec<String> = gloves.iter().map(|(g, _)| format!("tf2:{g}")).collect();
+    let mut materials = MaterialLoader::guest(&m, 0, 0);
+    let (mut views, mut warnings) = (Vec::new(), Vec::new());
+    tf2::game::view::load_with(&mut materials, &|g| ids.iter().any(|i| i == g), false, &all, &mut views, &mut warnings);
+    for ((glove, idle), id) in gloves.iter().zip(&ids) {
+        let item = all.iter().find(|i| &i.id == id).unwrap_or_else(|| panic!("{id}: not in the pack"));
+        let v = views.iter().find(|v| &v.key == id).unwrap_or_else(|| panic!("{id}: no view model ({warnings:?})"));
+        let doc: toml::Table = item.doc.parse().unwrap();
+        let hooks = doc.get("hooks").and_then(toml::Value::as_table).unwrap();
+        let pick = tf2::game::view::item_activity(hooks, "ACT_VM_IDLE").unwrap_or_else(|| panic!("{id}: plays by activity"));
+        let set = v.animations.clone().unwrap();
+        let s = set.sequences.iter().position(|q| pick.matches(q)).unwrap_or_else(|| panic!("{id}: no sequence for {pick:?}"));
+        assert!(set.sequences[s].name.starts_with(idle), "{id}: idles in {}", set.sequences[s].name);
+        let mut a = Animator::new(set.clone());
+        a.play(s, 0.0);
+        let pose = a.pose(0.0);
+        assert_eq!(pose.len(), v.bones.len(), "{id}: every joint posed");
+        let posed = posed_world(&v.bones, &pose);
+        // The glove's own model, as its reference pose has it.
+        let model = item.looks.view.as_deref().unwrap();
+        let own = source_engine::content::props::load_view_model(&mut materials, model, glove, true).unwrap();
+        let own_ref = reference_world(&own.bones);
+        let named = |n: &str| v.bones.iter().position(|b| b.name.eq_ignore_ascii_case(n));
+        let mut checked = 0;
+        for (k, b) in own.bones.iter().enumerate() {
+            let Some(arms_bone) = named(&b.name) else { continue };
+            // Its joint, on the arms' bone.
+            let j = named(&format!("{}#merged", b.name)).unwrap_or_else(|| panic!("{id}: {} not merged", b.name));
+            assert_eq!(v.bones[j].parent, Some(arms_bone), "{id}: {}", b.name);
+            let d = posed[j].w_axis.truncate().distance(posed[arms_bone].w_axis.truncate());
+            let (_, rj, _) = posed[j].to_scale_rotation_translation();
+            let (_, ra, _) = posed[arms_bone].to_scale_rotation_translation();
+            assert!(d < 1e-3 && rj.angle_between(ra) < 1e-3, "{id}: {}'s joint {d} units, {} rad off its arms bone", b.name, rj.angle_between(ra));
+            // A bone rigged on a hand: where the glove puts it from the hand.
+            let Some(p) = b.parent.filter(|p| own.bones[*p].name.to_ascii_lowercase().starts_with("bip_hand")) else { continue };
+            let hand = named(&own.bones[p].name).unwrap();
+            let want = own_ref[p].inverse() * own_ref[k];
+            let got = posed[hand].inverse() * posed[arms_bone];
+            let (_, wr, wt) = want.to_scale_rotation_translation();
+            let (_, gr, gt) = got.to_scale_rotation_translation();
+            let (off, turn) = (wt.distance(gt), wr.angle_between(gr).to_degrees());
+            eprintln!("{id}: {} from {}: {off:.2} units, {turn:.1} degrees", b.name, own.bones[p].name);
+            assert!(off < 3.0 && turn < 25.0, "{id}: {} is {off} units and {turn} degrees from where the glove rigs it on {}", b.name, own.bones[p].name);
+            checked += 1;
+        }
+        eprintln!("{id}: {} bones, {checked} on a hand", own.bones.len());
+    }
+}

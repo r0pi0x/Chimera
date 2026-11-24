@@ -354,9 +354,15 @@ install: tests/it/heavy/items.rs):
   entries its `visuals` name (shot, Minigun crit shot, empty, melee
   hit/miss); its view-model sequences, stance and effects are its base's
   (`items::stock_of`); the holster multiplier and the sword's ×1.75 from
-  the switched-from side apply (`items::mods::holster`). Left: `anim_slot`
-  and `animation_replacement`, its own muzzle/tracer/attached particles
-  (recorded only).
+  the switched-from side apply (`items::mods::holster`). A melee unlock
+  that remaps its activities, names an `anim_slot` or is over the Fists
+  plays its own sequences by activity (2026-11-24, `view::item_activity`:
+  the Heavy's gloves on `bg_*`/`breadglove_*`; on `f_*` they showed
+  turned). The view-model bone merge makes each weapon bone a joint of
+  its own bound in the weapon's reference pose (`map::merge_keeping`),
+  so a vertex on several bones deforms as in the game. Left: `anim_slot`
+  and `animation_replacement` for guns, its own muzzle/tracer/attached
+  particles (recorded only).
 - **Per-item asset sets** (2026-11-23): each item weapon's
   `weapon/<name>` (`weapon/direct_hit`; `tf2::game::sets::item_pieces`,
   `chimera_pack sets tf2 --only weapon/ --pack`): its own model, skin's

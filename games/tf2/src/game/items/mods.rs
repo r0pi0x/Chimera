@@ -88,6 +88,12 @@ pub struct ItemParams {
     pub base: String,
     /// Its model's skin (`visuals` `skin`; none: the team's).
     pub skin: Option<i32>,
+    /// The slot its view-model activities animate as (`anim_slot`, lower
+    /// case; none: its own) and its activity remaps
+    /// (`animation_replacement`), specs/tf2/viewmodel.md 2: what its
+    /// melee sequences are on its class's arms (`view::item_melee`).
+    pub anim_slot: Option<String>,
+    pub anim_replace: std::collections::BTreeMap<String, String>,
     /// Batch 2 (specs/tf2/batch2_mechanics.md; `super::effects`): max
     /// health added (`add_maxhealth`, provided), blast damage taken
     /// (`mult_dmgtaken_from_explosions`).
@@ -234,6 +240,8 @@ impl Default for ItemParams {
             sword: false,
             base: String::new(),
             skin: None,
+            anim_slot: None,
+            anim_replace: Default::default(),
             max_health: 0.0,
             taken_blast: 1.0,
             base_damage: 0.0,
@@ -315,6 +323,8 @@ impl ItemParams {
             sword: r.flag("is_a_sword"),
             base: String::new(),
             skin: r.visuals.skin.and_then(|s| i32::try_from(s).ok()),
+            anim_slot: r.visuals.anim_slot.clone(),
+            anim_replace: r.visuals.anim_replace.clone(),
             max_health: add("add_maxhealth"),
             taken_blast: a("mult_dmgtaken_from_explosions"),
             base_damage: (r.base.get("damage").copied().unwrap_or(0.0) * r.attr("mult_dmg", 1.0) * r.attr("mult_dmg_vs_players", 1.0)) as f32,

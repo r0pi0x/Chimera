@@ -138,7 +138,7 @@ pub use spawn::{TERRAIN_THICKNESS, merged_world, spawn_map};
 pub use view_model::{
     DynamicLight, EffectSettings, GameFov, GameViewModelFovs, LateViewModelTextures, MapAttachment, MapViewModel, ViewAnimator, ViewModelAnchor,
     ViewModelCamera, ViewModelEvent, ViewModelEventKind, ViewModelOffset, ViewModelScreen, ViewModelSettings,
-    ViewModelShake, ViewModelSource, ViewModels, SettingsFollowPlayerFov, add_view_model, merge_by_bone_name, merge_keeping, reference_world,
+    ViewModelShake, ViewModelSource, ViewModels, SettingsFollowPlayerFov, add_view_model, merge_by_bone_name, merge_keeping, posed_world, reference_world,
 };
 
 /// The loaded map's light field, when the game provides one.
