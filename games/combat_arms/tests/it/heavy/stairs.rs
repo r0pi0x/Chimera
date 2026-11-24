@@ -31,7 +31,17 @@ fn mount() -> Option<Mount> {
     Some((INFO.open)(&install).unwrap())
 }
 
-/// A straight flight: its bottom and top treads' centres (engine m).
+/// The scale the flights' positions were measured at (0.018 m a unit,
+/// before movement.md's World scale measured 0.0185).
+const MEASURED_AT: f32 = 0.018;
+
+/// A position measured at `MEASURED_AT`, in metres at the game's scale.
+fn at_scale(v: Vec3) -> Vec3 {
+    v / MEASURED_AT * INFO.meters_per_unit
+}
+
+/// A straight flight: its bottom and top treads' centres (engine m, as
+/// measured at `MEASURED_AT`).
 struct Flight {
     what: &'static str,
     bottom: Vec3,
@@ -50,6 +60,7 @@ fn climbs(map: &str, flights: &[Flight]) {
     sim.ticks(3);
     let mut failed = Vec::new();
     for f in flights {
+        let f = &Flight { what: f.what, bottom: at_scale(f.bottom), top: at_scale(f.top) };
         let dir = (f.top - f.bottom).with_y(0.0).normalize();
         let p = sim.spawn_character(f.bottom + Vec3::Y * 1.0, movement::ID);
         sim.seconds(0.5);
