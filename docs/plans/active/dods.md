@@ -296,19 +296,53 @@ sprinting / ducked, low ceilings, the eye curve, the still regeneration
 at speed 0, the sighted cap 42. Left as shortcuts: the swing's shape
 beyond the measured points, the ledge found by four downward traces,
 what narrows the yaw limit (below), the speed while the sights rise.
-Measured and not matched: going prone from a sprint, the spec's 305 →
-199 u/s over 36 ticks is slower than its own friction law (8 × max(v,
-50) a second), which ours follows; the decay's law needs a re-measure.
+Measured and not matched: going prone from a sprint (re-measured the
+same day, below: it was the stance-change cap, not friction).
+
+**Specified 2026-11-24 (measurements 3), not implemented yet** (spec
+commit "DoD:S spec measurements 3"; `measure.py mpprops propmass
+propsurvey pronecap sightstart backstab2 mgsweep`):
+- **Physics props** (new specs/dods/physics_props.md): the shipped
+  `cfg/game.cfg` turns turbo physics on, so players have no shadow and
+  shove nothing: every `prop_physics` is a wall (1-400 kg tried; no
+  mass limit), and a multiplayer prop is CS:S's soft push-away prop
+  only while in the push-away group: props that start asleep (spawn
+  flag 1) stay there until woken; the others settle at load into the
+  normal group and are walls (dod_avalanche: 83 of 138 walls, 41 soft,
+  14 debris). Ours follow CS:S everywhere (`source_movement::pushaway`
+  and `shadow`, and `map::prop_physics::walked_through` lets the spawn
+  walker through every multiplayer prop and `prop_physics` up to 350
+  kg): both need DoD:S's turbo rule, and the spot area of dod_avalanche
+  (in the pool since the walker change) should be swept again with it.
+- **The speed cap while changing stance** (movement.md): going prone
+  and getting up don't stop the input; the speed is capped at A + (B −
+  A) × smoothstep(k/80) between the stances' caps (prone 50, standing
+  the run or sprint cap with the stamina), exact to 0.01 u/s. Ours
+  (`SourceStance::no_input`, friction decay) needs it; getting up into
+  a crouch sits within 0.7 u/s of the same law.
+- The friction cvars are the shipped `sv_friction 8` / `sv_stopspeed
+  50` (movement OQ 2 answered; the law ours uses is unchanged).
+- Sighted from rest: 42 is the wish speed (+0.3 u/s a tick from 6.3,
+  42 after 120 ticks; ours caps at 42: check the acceleration uses it).
+- The backstab (damage.md): the same cone for crouched and prone
+  victims; a backstab is a slower swing, 300 landing 0.405 s after the
+  press and 0.9 s before the next attack (ours: 0.21 / 0.4 s for all).
+- What narrows the deployed MG's yaw limit (weapons.md): a check in 5°
+  steps outwards within about 30 units of a point just behind the
+  player; a crate inside the player's box doesn't count (the old
+  placements that "didn't fit" were inside it); a solid straight ahead
+  refuses the deploy. Ours: a shortcut (no narrowing); the check's exact
+  point, width and reach are bounded, not pinned.
 
 **Still unmeasured on the dedicated server** (specs' open questions):
 the spread pattern inside the cone (no impact message on the server:
-needs the retail client); what narrows the MG's yaw limit (crate
-placements don't fit a simple rule, weapons.md OQ 11); the thrower's
-velocity law beyond three throws; what `dod_grenademaxspeed` caps; the
-swing's shape and stances other than standing for the backstab; why a
-resting grenade's blast hurt nobody; the rocket's stun amount; the
-sighted acceleration from rest; smoke grenades and the live-grenade
-pick-up (ours by design, below).
+needs the retail client); the MG yaw check's exact point, width and
+reach (weapons.md OQ 11); the thrower's velocity law beyond three
+throws; what `dod_grenademaxspeed` caps; the swing's shape and what the
+backstab's press-time check looks at; why a resting grenade's blast hurt
+nobody; the rocket's stun amount; whether a shot or blast makes a
+settled prop soft again (physics_props.md OQ 3); smoke grenades and the
+live-grenade pick-up (ours by design, below).
 
 **Ours by design** (not parity gaps for the party): ladders, water and
 fall damage are Source's shared ones; the slow and the MG's stamina cost
@@ -352,17 +386,25 @@ Admitting them needs a rule change (the region as the largest part a
 player can walk round in that the spawns drop into, the ledges left out)
 or spots only below the drops; a decision, not a measurement.
 
-Not covered by a spec (open): whether DoD:S's multiplayer props are
-CS:S's push-away group (walked through) or HL2:DM's (solid to players,
-specs/hl2dm/gravity_gun.md, Corrections 1): ours follow CS:S's, the
-shared Source code's; a probe session would walk a bot into a
-`prop_physics_multiplayer` crate on dod_avalanche. And how a player of a
+DoD:S's multiplayer props: answered 2026-11-24 (above, "measurements
+3"): neither CS:S's soft props everywhere nor HL2:DM's solid shoved
+ones; with turbo physics most are walls at load. Still open: how a player of a
 game without Source's physics (Combat Arms', Halo's movement) meets a
 Source map's props: both movements meet every prop as a wall, so on a
 DoD:S map such a player can't pass a crate the spots' walk went through;
 no spec says what a mashup should do (a design question for the user).
 
 ## Log
+
+- 2026-11-24, spec measurements 3 (a spec commit: specs/dods/ and
+  tools/dods_probe only): multiplayer props and the push limit (new
+  physics_props.md), the stance-change speed cap (the "prone from a
+  sprint" mismatch), the shipped friction cvars, the sighted start,
+  backstabs on crouched and prone victims and the backstab's timing,
+  what narrows the MG's yaw limit. `probe_prop` takes `key=value`
+  keyvalues and mass `-`; `measure.py` gained mpprops, propmass,
+  propsurvey, pronecap, sightstart, backstab2, mgsweep. What they
+  settled is in §7 ("measurements 3").
 
 - 2026-11-24, the map pool again: the spawn spots' walker and
   `map_fitness`' walks go through the physics props a player gets past

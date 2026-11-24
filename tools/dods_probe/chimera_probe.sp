@@ -61,9 +61,10 @@
 //   probe_hurt <damage> <type> [attacker client]: damage the bot.
 //   probe_tp <client> <x y z pitch yaw>: place any player.
 //   probe_find <class substring>: entities' index, class, name, origin.
-//   probe_prop <class> <model> <x y z> [mass [spawnflags]]: spawn a
-//     physics prop, tracked; prints its index (spawnflags 72: motion
-//     disabled until the gravity gun touches it, so it hangs in the air).
+//   probe_prop <class> <model> <x y z> [mass [spawnflags [key=value ...]]]:
+//     spawn a physics prop, tracked; prints its index (spawnflags 72: motion
+//     disabled until the gravity gun touches it, so it hangs in the air;
+//     mass "-": the model's own; key=value: any other keyvalue).
 //   probe_track <index> | clear | <class prefix>: track an entity, or
 //     every new entity whose class starts with the prefix.
 //   probe_get <index> <data|send> <prop> [int|float|vec|ent]: read a prop.
@@ -149,7 +150,7 @@ public void OnPluginStart()
     RegServerCmd("probe_hurt", Command_Hurt, "probe_hurt <damage> <type> [attacker]");
     RegServerCmd("probe_tp", Command_Tp, "probe_tp <client> <x y z pitch yaw>");
     RegServerCmd("probe_find", Command_Find, "probe_find <class substring>");
-    RegServerCmd("probe_prop", Command_Prop, "probe_prop <class> <model> <x y z> [mass [spawnflags]]");
+    RegServerCmd("probe_prop", Command_Prop, "probe_prop <class> <model> <x y z> [mass [spawnflags [key=value ...]]]");
     RegServerCmd("probe_track", Command_Track, "probe_track <index> | clear | <class prefix>");
     RegServerCmd("probe_get", Command_Get, "probe_get <index> <data|send> <prop> [int|float|vec|ent]");
     RegServerCmd("probe_setprop", Command_SetProp, "probe_setprop <index> <data|send> <prop> <int|float> <value>");
@@ -601,10 +602,12 @@ public Action Command_Prop(int args)
     }
     PrecacheModel(model);
     DispatchKeyValue(e, "model", model);
+    char mass[16];
     if (args >= 6) {
-        char script[64];
-        char mass[16];
         GetCmdArg(6, mass, sizeof(mass));
+    }
+    if (args >= 6 && !StrEqual(mass, "-")) {
+        char script[64];
         Format(script, sizeof(script), "mass,%s", mass);
         DispatchKeyValue(e, "overridescript", script);
     }
@@ -612,6 +615,16 @@ public Action Command_Prop(int args)
         char flags[16];
         GetCmdArg(7, flags, sizeof(flags));
         DispatchKeyValue(e, "spawnflags", flags);
+    }
+    // Any further arguments: key=value pairs (physicsmode=1, angles=0 45 0).
+    for (int k = 8; k <= args; k++) {
+        char kv[128];
+        GetCmdArg(k, kv, sizeof(kv));
+        int eq = FindCharInString(kv, '=');
+        if (eq > 0) {
+            kv[eq] = '\0';
+            DispatchKeyValue(e, kv, kv[eq + 1]);
+        }
     }
     DispatchKeyValueVector(e, "origin", o);
     DispatchSpawn(e);

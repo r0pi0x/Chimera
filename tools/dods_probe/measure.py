@@ -8,7 +8,10 @@ Cases: sprint caps regen threshold jump crouch getup slow guns fov
 fireselect mg frag fragspeed rocket riflegren; added 2026-11-24 (the
 bullets message's spread, melee, prone and MG edges): spread nofire
 stock reach backstab partial launchers rocketworld throw nadetiming
-bounce shield mgyaw mgside ledge proneedge ceiling stillregen.
+bounce shield mgyaw mgside ledge proneedge ceiling stillregen; added
+later that day (physics props, the stance-change cap, the sighted start,
+backstabs on low victims, the MG's yaw limit): mpprops propmass propsurvey
+pronecap sightstart backstab2 mgsweep.
 """
 
 import math
@@ -618,10 +621,168 @@ def stillregen():
               [(int(r["tick"]), round(r["hs"], 1), round(by[int(r["tick"])]["m_flStamina"] - by[int(r["tick"]) - 1]["m_flStamina"], 3)) for r in out["rows"][2:20]])
 
 
+# --- 2026-11-24 (3): physics props, prone from a sprint, sighted start ---
+DRUM = "models/props_fortifications/fueldrum.mdl"  # a stock multiplayer prop of dod_avalanche; upright it rests with its origin 17.9 up
+
+
+def walk_into(cls, mass="-", flags=0, kv="", d=120.0, ticks=150, b=FORWARD, fm=400.0, settle=60, every=None):
+    """The bot runs from START along YAW into a prop placed d units ahead
+    on the ground; prints (tick, player's distance along, speed, height, prop's
+    distance along, prop z) and the prop's collision group before and after."""
+    standing()
+    R.exec("probe_track clear")
+    c, s_ = math.cos(math.radians(YAW)), math.sin(math.radians(YAW))
+    e = int(R.exec(f"probe_prop {cls} {DRUM} {START[0] + d * c:.2f} {START[1] + d * s_:.2f} {START[2] + 17.9} {mass} {flags} {kv}").split()[-1])
+    go(hold(settle))
+    g0 = R.exec(f"probe_get {e} send m_CollisionGroup int").split()[-1]
+    out = go(hold(3) + hold(ticks, b, fm, 0, 0, YAW))
+    g1 = R.exec(f"probe_get {e} send m_CollisionGroup int").split()[-1]
+    R.exec(f"probe_fire {e} Kill")
+    along = lambda x, y: (x - START[0]) * c + (y - START[1]) * s_
+    ents = {int(x[0]): x for x in out["ents"] if int(x[1]) == e}
+    res = []
+    for r in out["rows"]:
+        t = int(r["tick"])
+        en = ents.get(t)
+        res.append((t, round(along(r["x"], r["y"]), 1), round(r["hs"], 1), round(r["z"] - START[2], 1),
+                    round(along(float(en[3]), float(en[4])), 1) if en else None, round(float(en[5]), 1) if en else None))
+    print(f"{cls} mass {mass} spawnflags {flags} {kv}: collision group {g0} -> {g1}")
+    for x in res[::every or 1]:
+        print("  ", x)
+    return res
+
+
+def mglimit(fwd, left):
+    """The MG42 deployed prone at START facing ALT_YAW with a 64-unit crate
+    (top 24 above the ground) centred `fwd` ahead and `left` to the left;
+    returns the yaw limit fields (left, right)."""
+    gun("mg42")
+    probe.watch(R, MG)
+    ang = math.radians(ALT_YAW)
+    x = START[0] + fwd * math.cos(ang) - left * math.sin(ang)
+    y = START[1] + fwd * math.sin(ang) + left * math.cos(ang)
+    c = crate(x, y, START[2] - 40)
+    by = probe.props(go(deploy_prone()))
+    R.exec(f"probe_fire {c} Kill")
+    p = by.get(240, {})
+    return p.get("m_bDeployed"), p.get("m_flDeployedYawLimitLeft"), p.get("m_flDeployedYawLimitRight")
+
+
+def mgsweep():
+    """What narrows the deployed yaw limit: the crate's near face moved in
+    2-unit steps beside the player (its centre 90 deg left) and ahead."""
+    R.exec("probe_tp 2 0 0 -5000 0 0")
+    for d in range(40, 74, 2):
+        print("crate beside, near face", d - 32, "left of the eye:", mglimit(0, d))
+    for f in (-20, 20, 40):
+        for d in range(40, 74, 4):
+            print("crate beside, near face", d - 32, "left, centre", f, "ahead:", mglimit(f, d))
+
+
+def mpprops():
+    """Multiplayer props (physics_props.md): settled, spawned asleep (mode
+    1 and 2) and a slow walk; the collision group before and after."""
+    R.exec("probe_tp 2 0 0 -5000 0 0")
+    walk_into("prop_physics_multiplayer", "-", 0, "physicsmode=1", every=10)
+    for m in ("10", "50", "150", "400", "1000"):
+        walk_into("prop_physics_multiplayer", m, 1, "physicsmode=1", settle=5, every=10 if m != "1000" else 1)
+    walk_into("prop_physics_multiplayer", "1000", 1, "physicsmode=2", settle=5, every=10)
+    walk_into("prop_physics_multiplayer", "10", 1, "physicsmode=1", settle=5, fm=60, ticks=250, every=10)
+
+
+def propmass():
+    """prop_physics of each mass: a wall (no shadow with turbo physics)."""
+    R.exec("probe_tp 2 0 0 -5000 0 0")
+    print("sv_turbophysics", R.exec("sv_turbophysics").split('"')[3], "sv_friction", R.exec("sv_friction").split('"')[3],
+          "sv_stopspeed", R.exec("sv_stopspeed").split('"')[3])
+    for m in ("1", "5", "10", "30", "50", "100", "150", "300", "340", "360", "400"):
+        r = walk_into("prop_physics", m, 0, "", every=1000)
+        print("  ", [x for x in r if x[0] in (33, 40, 80, 150)])
+
+
+def propsurvey():
+    """The map's multiplayer props: (collision group, physics mode, spawn flags) counts."""
+    import collections
+    n = collections.Counter()
+    for line in R.exec("probe_find prop_physics_multiplayer").splitlines():
+        if line[:1].isdigit():
+            i = line.split()[0]
+            n[tuple(R.exec(f"probe_get {i} {k} {f} int").split()[-1] for k, f in
+                    (("send", "m_CollisionGroup"), ("data", "m_iPhysicsMode"), ("data", "m_spawnflags")))] += 1
+    for k, v in sorted(n.items()):
+        print("group, mode, spawnflags", k, v)
+
+
+def pronecap():
+    """The speed cap while going prone or getting up: A + (B - A) x smoothstep(k/80)."""
+    ss = lambda t: 3 * t * t - 2 * t ** 3
+    for name, pre, b0, after in (("sprinting, held", hold(60, FORWARD | SPEED, 400, 0, 0, YAW), FORWARD | SPEED, FORWARD | SPEED),
+                                 ("running, held", hold(60, FORWARD, 400, 0, 0, YAW), FORWARD, FORWARD),
+                                 ("sprinting, +speed released", hold(60, FORWARD | SPEED, 400, 0, 0, YAW), FORWARD | SPEED, FORWARD),
+                                 ("sprinting, all released", hold(60, FORWARD | SPEED, 400, 0, 0, YAW), FORWARD | SPEED, 0),
+                                 ("still, forward from the press", hold(60), 0, FORWARD),
+                                 ("ducked, held", hold(60, DUCK | FORWARD, 400, 0, 0, YAW), DUCK | FORWARD, DUCK | FORWARD)):
+        standing()
+        probe.watch(R, probe.DODS)
+        out = go(hold(5) + pre + hold(1, b0 | ALT1, 400 if b0 else 0, 0, 0, YAW) + hold(100, after, 400 if after else 0, 0, 0, YAW))
+        by = probe.props(out)
+        res = []
+        for x in out["rows"][66:150]:
+            k = int(x["tick"]) - 66
+            p = by.get(int(x["tick"]) - 1, {})
+            a = (230 if p.get("m_bIsSprinting") == 1.0 else 120) + p.get("m_flStamina", 0)
+            a = a if p.get("m_bIsSprinting") == 1.0 else min(220, a)
+            res.append((k, round(x["hs"], 2), round(a + (50 - a) * ss(min(k / 80, 1)), 2)))
+        print(name, "(k, speed, smoothstep cap):", res[::3])
+    for name, b, key in (("getting up, forward", FORWARD, ALT1), ("getting up, sprint", FORWARD | SPEED, ALT1),
+                         ("to a crouch, forward", DUCK | FORWARD, DUCK)):
+        standing()
+        probe.watch(R, probe.DODS)
+        out = go(hold(2) + hold(1, ALT1) + hold(90) + hold(1, key | b, 400, 0, 0, YAW) + hold(100, b, 400, 0, 0, YAW))
+        print(name, "(k, speed, eye):", [(int(x["tick"]) - 94, round(x["hs"], 2), round(x["eye"], 1)) for x in out["rows"][93:190:3]])
+
+
+def sightstart():
+    """Sighted acceleration from rest (Garand, K98)."""
+    for w in ("garand", "k98"):
+        for settle in (60, 100):
+            gun(w)
+            probe.watch(R, probe.DODS)
+            p = 152 + settle
+            out = go(hold(1, select=f"weapon_{w}") + hold(150) + hold(1, ATTACK2) + hold(settle) + hold(140, FORWARD, 400, 0, 0, YAW))
+            by = probe.props(out)
+            print(w, settle, "ticks after the sights, FOV", by.get(p, {}).get("m_iFOV"),
+                  [(int(x["tick"]) - p, round(x["hs"], 2)) for x in out["rows"][p:p + 140] if (int(x["tick"]) - p) % 10 in (1, 2)])
+
+
+def backstab2():
+    """The backstab on crouched (bot_crouch) and prone victims, and its timing."""
+    st = lambda: (R.exec("probe_get 2 send m_bDucked int").split()[-1], R.exec("probe_get 2 send m_bProne int").split()[-1])
+    for off in (0, 180):
+        d = melee("amerknife", 40, YAW + off, ATTACK, 0, 20)
+        print("standing victim facing", off, "off: (tick, damage)", d[0], "next attack", d[2][:1])
+    R.exec("bot_crouch 1")
+    for pitch, offs in ((20, (0, 71, 71.5)), (40, (66, 68))):
+        for off in offs:
+            print("crouched victim, pitch", pitch, "facing", off, "off:", melee("amerknife", 40, YAW + off, ATTACK, 0, pitch)[0], "victim (ducked, prone)", st())
+    R.exec("bot_crouch 0")
+    for d_, pitch, off in ((40, 45, 0), (40, 55, 0), (50, 45, 0), (50, 45, 60), (50, 45, 66), (50, 45, 70), (50, 45, 180)):
+        if st()[1] != "1":
+            R.exec("probe_bot 2")
+            go(hold(5) + hold(1, ALT1) + hold(95))
+            R.exec("probe_bot 1")
+        r = melee("amerknife", d_, YAW + off, ATTACK, 0, pitch)
+        print("prone victim", d_, "ahead, pitch", pitch, "facing", off, "off:", r[0], "next attack", r[2][:1], "victim", st())
+    R.exec("probe_bot 2")
+    go(hold(5) + hold(1, ALT1) + hold(95))
+    R.exec("probe_bot 1")
+
+
 CASES = {f.__name__: f for f in (sprint, caps, regen, threshold, jump, crouch, getup, slow, guns, fov, fireselect, mg,
                                  frag, fragspeed, rocket, riflegren, spread, nofire, stock, reach, backstab, partial,
                                  launchers, rocketworld, throw, nadetiming, bounce, shield, mgyaw, mgside, ledge,
-                                 proneedge, ceiling, stillregen)}
+                                 proneedge, ceiling, stillregen, mpprops, propmass, propsurvey, pronecap,
+                                 sightstart, backstab2, mgsweep)}
 
 if __name__ == "__main__":
     R = probe.connect()

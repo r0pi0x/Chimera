@@ -16,7 +16,8 @@ partial reloads, the launchers' and rifle grenades' reloads, rockets on
 the world, the throw's speed and the thrower's velocity, grenade timings
 and bounces, deploying on ledges and the MGs' limits (`measure.py
 spread nofire stock partial launchers rocketworld throw nadetiming
-bounce mgyaw mgside ledge`). The
+bounce mgyaw mgside ledge`; what narrows the yaw limits later that
+day, `mgsweep`). The
 scripts' values are data the game exposes; they are given to check
 against, and the game supplies them at run time. What the scripts do
 not hold (the recoil curve, the spread pattern) is marked unmeasured
@@ -230,9 +231,35 @@ is not visible on the server: no impact message is sent (open question
 | 30°, 70 | 0 |
 | 90° at 42, 70, 90 or 110; 45°, 60; 120°, 60; 50 ahead and 60 left; 60 behind and 60 left | 45 (unchanged) |
 
-  The limits move in 5° steps (0, 5, 30, 35 seen); how the game finds
-  them (which traces, how far) is not settled by these placements: open
-  question 11.
+  The limits move in 5° steps (0, 5, 30, 35 seen).
+- **What narrows them** (measured 2026-11-24, `measure.py mgsweep`, the
+  same crate moved in 2-unit steps; MG42 deployed prone on flat ground):
+  - The two placements above that left the limit at 45 (90° at 42; 45°
+    at 60) put the crate **into the player's own box** (the prone box is
+    ±16 around the origin): every placement whose crate overlapped that
+    box left both limits at 45, whatever the overlap. A crate overlapping
+    the box is not an obstacle to the check.
+  - Crate beside (its centre 90° left), its near face s units to the
+    side of the player's origin:
+
+| s | 16 (touching the box) | 18 | 20 | 22 | 24 to 40 |
+|---|---|---|---|---|---|
+| limit on that side | 25 | 30 | 35 | 40 | 45 |
+
+    The same with the crate's centre 20 or 40 units ahead: s = 20 gave
+    35, s = 24 and more 45; with the centre 20 behind, every s gave 45.
+  - Crate ahead (its near face 20 ahead of the origin), its edge e units
+    to the left of the aim line: e = 1 **refused the deploy** (the alt
+    fire did nothing); e = 2, 3 gave 0; e = 4, 5, 6 gave 5; e = 8 gave
+    10; e = 10 gave 15 (the other side 45 throughout).
+  - A rule that fits every valid placement (ours, a fit, not the
+    game's): from 0° outwards in 5° steps to 45°, a check along that
+    yaw from a point about 3-10 units behind the player's origin, about
+    1.5 units wide on each side, reaching about 30-32 units from that
+    point, at the deployed height; the first step whose check meets a
+    solid ends the search and the limit is the step before it; a solid
+    met at 0° refuses the deploy. The placements bound the numbers only
+    to those ranges.
 - **Deploying on a ledge** (measured with the crate 2 units ahead of
   the player's box, the MG42): alt fire standing or crouched deploys on
   a surface ahead and the deployed height reads **the surface's top +
@@ -518,6 +545,9 @@ A thrown grenade lying on the ground can be picked up and thrown back
 | MG42 deployed prone | look 46° / 48° down | deployed / undeployed, still prone |
 | MG42 standing, a 30-high ledge 2 u ahead | alt fire | deployed, height 46, eye 46 |
 | MG42 crouched, a 38-high ledge | alt fire | deployed, height 54, eye 54, not ducked |
+| MG42 prone, a crate's near face 18 / 20 / 22 / 24 to the left (centre beside) | deploy | left limit 30 / 35 / 40 / 45, right 45 |
+| MG42 prone, a crate's near face 20 ahead, its edge 1 / 3 / 5 / 10 left of the aim line | deploy | refused / left limit 0 / 5 / 15 |
+| MG42 prone, a crate overlapping the player's box | deploy | both limits 45 |
 | MG42 standing, a 56-high ledge | alt fire | nothing |
 
 ## Open questions
@@ -544,12 +574,13 @@ A thrown grenade lying on the ground can be picked up and thrown back
 9. Reload times: answered (tables), including partial reloads and the
    launchers'.
 10. Draw times: answered (table).
-11. What narrows a deployed MG's yaw limit below 45: obstacles beside
-    the gun do (table above) but the placements don't fit a simple rule
-    (a crate 50 units to the side narrowed it, the same crate at 42 or
-    70 did not). At the edge the server neither clamps nor undeploys
-    (the client holds its view). Also open: the pitch limits on a
-    ledge, and whether moving off the ledge undeploys.
+11. What narrows a deployed MG's yaw limit below 45: mostly answered
+    (2026-11-24: solids within about 30 units of a point just behind the
+    player, checked in 5° steps outwards; a crate inside the player's
+    box doesn't count; tables above). Open: the check's exact start
+    point, width and reach (bounded, not pinned), whether it is the
+    same on a ledge deploy, the pitch limits on a ledge, and whether
+    moving off the ledge undeploys.
 12. Answered: rockets explode on the world.
 13. The sighted speed (movement.md): from rest the sighted player
     accelerates very slowly; the numbers were not steady between runs.

@@ -12,7 +12,9 @@ the explosions were measured on 2026-11-23 with `tools/dods_probe`
 (the slowed-until time set on a running bot; grenades and rockets set
 off beside a second bot); melee reach, the backstab cone, the SMGs'
 stock strike and bodies in a blast's way on 2026-11-24 (`measure.py
-stock reach backstab shield rocketworld`). Measured unless a line says
+stock reach backstab shield rocketworld`), the backstab on crouched and
+prone victims and its timing later the same day (`measure.py
+backstab2`). Measured unless a line says
 otherwise.
 Status: draft (measured 2026-11-23 and 2026-11-24)
 
@@ -99,10 +101,20 @@ have no range field; the trace length is an open question 3.)
 | 20° down | 71° | 71.5° | 0.306 / 0.298 |
 | 40° down | 66° | 68° | 0.312 / 0.287 |
 
+- **Crouched and prone victims** (measured 2026-11-24): the same rule.
+  A crouched victim 40 ahead: backstab up to 71° (pitch 20° down) and
+  66° (40° down), not from 71.5° / 68°, as standing. A prone victim 50
+  ahead, the attacker's aim 45° down: backstab facing 0° and 60° off,
+  not 66°, 70° or 180° (cos 45° × cos 64.9° = 0.3); 40 ahead with the
+  aim 45° or 55° down, facing away: backstab.
 - **The hit lands 14 ticks (0.21 s) after the press**, and a swing
   blocks every attack for 0.4 s from the press (knife, spade and the
   SMGs' stock strike alike; the knife script's `FireDelay` 0.1 is not
-  the swing's interval).
+  the swing's interval). **A backstab is a slower swing** (measured
+  2026-11-24, knife and spade, standing, crouched and prone victims):
+  its 300 lands **27 ticks (0.405 s)** after the press and it blocks
+  attacks for **0.9 s**; the kind of swing is settled on the press (a
+  victim facing away in reach then), not when it lands.
 - **Reach** (horizontal distance between the two players' origins, both
   standing, the attacker's aim level): hits up to **92**, misses from
   **94** (knife, spade and Thompson stock alike); with the aim 15° down
@@ -226,6 +238,9 @@ on (the cvar's own description; not measured).
 | knife, victim 40 left and 40 ahead facing 105° off the attacker's yaw | swing | 60 |
 | knife, victim standing 92 / 94 away, aim level | swing | hit / miss |
 | knife | press | hit 0.21 s later; next attack 0.4 s after the press |
+| knife or spade, victim 40 ahead facing away | press | 300 lands 0.405 s (27 ticks) later; next attack 0.9 s after the press |
+| knife, crouched victim 40 ahead, aim 20° down, facing 71° / 71.5° off | swing | 300 / 60 |
+| knife, prone victim 50 ahead, aim 45° down, facing 60° / 66° off | swing | 300 / 60 |
 | Thompson stock, victim facing away | alt fire | 60 |
 | frag in the air, victim 150 away, a player between | goes off | ≈90 to the victim (not shielded) |
 
@@ -237,10 +252,11 @@ on (the cvar's own description; not measured).
    dropped by 37 or 38?). The plugin logged health after the hit only
    with a raised pool; re-run reading the health delta.
 3. The bullets' maximum range.
-4. Answered: the backstab cone (above). Open: whether a crouched or
-   prone victim, or a victim looking up or down, changes it (the victim
-   bots stood level), and the swing's exact shape (it reaches 45° off
-   the aim at 56 units).
+4. Answered: the backstab cone (above), for crouched and prone victims
+   too. Open: a victim looking up or down (the victim bots looked
+   level), what the press-time check of the backstab swing looks at
+   (the victim's place then, or a trace), and the swing's exact shape
+   (it reaches 45° off the aim at 56 units).
 5. Answered (2026-11-23): a 120 u/s cap on the horizontal speed while
    the slowed time runs (above).
 6. Penetration: every script has `Penetration` 1; walls were not tested.

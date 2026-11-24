@@ -15,6 +15,9 @@ DoD:S-specific in the plugin:
   first tracked entity (a blast's victim beside a grenade).
 - `probe_hull <from> <to>`: a standing player's box swept through the
   world (finding open, flat ground).
+- `probe_prop <class> <model> <x y z> [mass [spawnflags [key=value ...]]]`:
+  mass `-` keeps the model's own; further `key=value` arguments are
+  keyvalues (`physicsmode=1`).
 - DoD:S's bullets temp entity is "FireBullets" (no "Shotgun Shot"):
   each shot logs `T tick firebullets x y z pitch yaw weapon mode seed
   spread player`, the spread being the server's own number for that
@@ -101,3 +104,18 @@ Notes (build 11003710, 2026-11-23):
   comes with it doesn't (specs/dods/damage.md, "Explosions").
 - `dod_debugmgdeploy` prints nothing on a dedicated server (it wants a
   listen server's host).
+
+Notes (2026-11-24, measurements 3):
+
+- The shipped `cfg/game.cfg` sets `sv_turbophysics 1`, `sv_friction 8`
+  and `sv_stopspeed 50`: physics props behave by specs/dods/physics_props.md,
+  not CS:S's defaults. Run `propsurvey` first on a freshly loaded map:
+  the other prop cases are far from the map's props, but anything that
+  wakes one re-sorts it.
+- `fueldrum.mdl` (`measure.DRUM`) rests upright with its origin 17.9
+  above the floor; spawned lower it is pushed out, wakes and re-sorts.
+- `bot_crouch 1` keeps the victim bot crouched (the driven bot's input
+  is the plugin's); a prone victim: drive bot 2 (`probe_bot 2`), press
+  `+alt1`, drive bot 1 again (`measure.backstab2`).
+- A crate placed into the player's own box doesn't narrow the MG's yaw
+  limit: keep obstacles outside the ±16 box (`measure.mglimit`).

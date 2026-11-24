@@ -10,7 +10,9 @@ plugin, kept: tools/dods_probe/README.md; `measure.py` reruns every
 case); prone edge cases (in the air, sprinting, ducked, under a low
 ceiling), the eye curves and the regeneration's still threshold on
 2026-11-24 (`measure.py proneedge ceiling stillregen`, a frozen crate
-spawned as the ceiling). Where a line says "unmeasured" it rests on public descriptions of
+spawned as the ceiling); the speed cap while changing stance, the
+sighted start and the shipped friction cvars later on 2026-11-24
+(`measure.py pronecap sightstart`; `cfg/game.cfg`). Where a line says "unmeasured" it rests on public descriptions of
 the game only. CS:S's movement spec
 (specs/cs_source/movement.md) is the base; this spec gives what differs
 or what was checked to be the same.
@@ -41,7 +43,7 @@ Source units, z up, degrees. Tick 0.015 s (the server sets 66.7 Hz).
 | air_accelerate | 10 | — | cvar only | `sv_airaccelerate` (CS:S 10) |
 | ground_friction_effective | 8 | 1/s | yes | drop per tick = max(speed, 50) × 8 × 0.015 (below) |
 | stop_speed_effective | 50 | u/s | yes | the control speed floor in that drop |
-| sv_friction / sv_stopspeed (cvars) | 4 / 100 | | cvar | listed values; their product (400) equals the measured 8 × 50 |
+| sv_friction / sv_stopspeed (cvars) | 8 / 50 | | cvar | set by the game's shipped `cfg/game.cfg` (engine defaults 4 / 100, which the first cvar listing showed); the measured law is these cvars in Source's friction rule |
 | gravity | 800 | u/s² | cvar | `sv_gravity` |
 | step_size | 18 | u | cvar | `sv_stepsize` |
 | max_velocity | 3500 | u/s | cvar | `sv_maxvelocity` |
@@ -55,7 +57,7 @@ Source units, z up, degrees. Tick 0.015 s (the server sets 66.7 Hz).
 | hull_prone top | 24 | u | yes | prone hull (−16,−16,0)–(16,16,24) (width not read) |
 | eye_prone | 10 | u | yes | |
 | prone_speed | 50 | u/s | yes | crawl; `+speed` while prone does not change it |
-| go_prone_time | 1.2 s (80 ticks) | s | yes | eye eased 58 → 10; no movement during it; the hull and prone flag switch at the end |
+| go_prone_time | 1.2 s (80 ticks) | s | yes | eye eased 58 → 10; movement allowed under a falling cap (Behavior); the hull and prone flag switch at the end |
 | unprone_time | 1.2 s (80 ticks) | s | yes | getting up from prone, to standing or to crouched |
 | unduck_time | 0.21 s (14 ticks) | s | yes | eye 34 → 58 over 13 ticks, the standing hull on the 14th |
 | jump_speed | 262.33 standing, 268.33 ducked | u/s | yes | apex 43.0 standing, 45.0 ducked (Jumping) |
@@ -87,9 +89,10 @@ Measured: standing start 0, 33.00, 60.00, 85.80, 108.50, 128.48,
 53.92, 47.45, 41.45 (then −6 per tick).
 
 CS:S's spec uses friction 4 and stop speed 100; the two laws agree
-below 50 u/s and differ above it. Whether DoD:S doubles the friction
-(and halves the stop speed) or something else scales it, the measured
-law above is what to implement. Open question 2.
+below 50 u/s and differ above it. DoD:S doubles the friction and halves
+the stop speed: its shipped `cfg/game.cfg` sets `sv_friction 8` and
+`sv_stopspeed 50`, and the running server reads them (2026-11-24); the
+same file turns turbo physics on (physics_props.md).
 
 ### Ducking (measured)
 
@@ -106,8 +109,10 @@ law above is what to implement. Open question 2.
 - `+alt1` (one press) starts going prone: the eye eases from 58 to 10
   over 1.2 s (80 ticks: 56.61, 55.25 ... 46.38 at tick 9, 35.57 at 19,
   26.87 at 29, 20.16 at 39, 15.31 at 49, 12.15 at 59, 10.47 at 69,
-  10.00 at 79); the player cannot move meanwhile; at the end the hull
-  becomes 24 high and the prone flag sets.
+  10.00 at 79); at the end the hull becomes 24 high and the prone flag
+  sets. **The player can move meanwhile** (corrected 2026-11-24: the
+  first runs held no input): see "The speed cap while changing stance"
+  below.
 - Crawling: wish speed 50 (start 7.5, then +1.5 per tick to 50; stop
   −6 per tick). Sprint does not speed it up.
 - Prone is the stance the MGs deploy in anywhere (weapons.md).
@@ -122,15 +127,52 @@ law above is what to implement. Open question 2.
   once; the eye eases down while the player flies the rest of the jump
   with the standing hull (the jump is not cut) and lands; prone 80
   ticks after the press as on the ground.
-- **Pressed while sprinting** (≈305 u/s): the input stops counting but
-  the speed is not cut: it decays by ground friction (305 → 199 after
-  36 ticks, 80 after 64), the sprint flag stays and drains stamina
-  (0.3 a tick) until the speed falls below about 80, then the
-  regeneration runs; prone at the end of the 80 ticks, crawling at 50
-  if forward is held.
+- **Pressed while sprinting** (≈298 u/s, forward and `+speed` held):
+  the speed is not cut; it follows the falling cap below (297.49,
+  294.91, 290.49, 284.38 on ticks 1, 4, 7, 10; 195.41 at 34, 103.68 at
+  55, 74.12 at 64, 50.11 at 79, 50 from 80). The sprint flag stays and
+  drains stamina (0.3 a tick) until the speed falls below 80, then the
+  regeneration runs. (Corrected 2026-11-24: the earlier "the input stops
+  counting, the speed decays by friction, 305 → 199 over 36 ticks" was
+  this cap: ground friction alone takes 298 to 3 in 36 ticks.) Keys
+  released on the press tick: the run cap (120 + stamina, 187.5) at
+  once, then ordinary friction to 0 (187.54, 165.03, 145.23 ... 3.96,
+  0 on tick 20).
 - **Pressed while ducked**: the eye eases 34 → 10 over the 80 ticks
   (the same curve over 24 units), the hull staying the ducked one (45)
-  until prone.
+  until prone. The cap starts from the standing run cap, not the ducked
+  73.33 (ducked at 73.33 with duck and forward held, the speed rose to
+  214.03 by tick 9).
+
+### The speed cap while changing stance (measured 2026-11-24)
+
+While going prone or getting up (the 80 ticks after the press, k = 1 on
+the first tick after it, t = k / 80) the ground movement runs as usual
+(friction, acceleration, steering with the view: a 90° turn on the
+press tick swung the velocity round) with the speed capped at
+
+  cap = A + (B − A) × s(t),  s(t) = 3t² − 2t³ (a smoothstep)
+
+with A the cap of the stance left and B that of the stance entered:
+prone 50, standing the run cap (min(220, 120 + stamina)) or, while the
+sprint flag is set, the sprint cap (230 + stamina, the stamina as it
+is that tick). Measured to 0.01 u/s on every tick of three runs going
+down (sprinting with `+speed` held: A = 230 + stamina falling 0.3 a
+tick; running: A = 220; sprint released on the press: A = 120 +
+stamina = 187.5) and on getting up with forward held (A = 50, B = 220:
+109.84 at k = 32, 166.21 at 50, 214.03 at 71, 220 at 80; below k ≈ 30
+the speed is under the cap, held back by the acceleration, which scales
+with the cap as Source's does: 10.56 at k = 2). Getting up with `+speed`
+held, the sprint starts once the speed passes 80 (k ≈ 21) and B becomes
+230 + stamina (226.53 at k = 50 with stamina 78.2). From rest with
+forward held from the press the player accelerates as usual (33.0,
+60.0 ... 108.18 at k = 4) to the falling cap (206.21 at k = 14, 153.99
+at 34, 50.08 at 79).
+
+Getting up into a crouch (duck pressed while prone, forward held) ends
+at the ducked 73.33; the measured speeds (10.52 at k = 3, 46.36 at 23,
+62.57 at 43, 72.59 at 79, 73.33 at 83) sit within 0.7 u/s under the
+same law with B = 73.33 (the exact law there: open question 1).
 
 ### Stamina and sprint (measured)
 
@@ -214,7 +256,8 @@ standing).
   getting up: with forward held the speed climbs from 7.5 on the first
   tick to 220 at the end (7.51, 9.06, 10.66, 12.35 ... 46.04 at tick 16,
   95.09 at 28, 135.01 at 40, 172.11 at 52, 202.32 at 64, 218.77 at 76,
-  220.00 at 80): the cap rises with the getting up.
+  220.00 at 80): the cap rises with the getting up, by the smoothstep
+  law in "The speed cap while changing stance".
 - **From prone, duck pressed**: the player goes to a crouch: on the
   press the prone flag clears and the hull is the ducked one (45); the
   eye eases 10 → 34 over 1.2 s (80 ticks); movement is allowed, the speed
@@ -241,10 +284,13 @@ standing).
   is capped at **42 u/s** while sighted (running at 220 into the sights:
   168 on the press, about 190 during the 0.3 s raise, then 42.0 from
   the moment the FOV reaches 55; back to 220 by normal acceleration after
-  leaving them). From rest a sighted player accelerates very slowly
-  (the cap barely exceeds what friction takes: 2.4 u/s a tick in one
-  run, creeping at 4.5 in another; open question 8). A sighted player
-  never passes the spread's 45 u/s move threshold (weapons.md).
+  leaving them). From rest, sights fully up, forward held, a sighted
+  player accelerates with 42 as the wish speed: 10 × 42 × 0.015 = 6.3
+  added a tick against the 6 friction takes below 50, so 6.3, 6.6, 6.9
+  ... (+0.3 a tick), 42.0 on the 120th tick (measured 2026-11-24, Garand
+  and K98 alike, 60 or 100 ticks after the sights went up; four runs
+  identical). A sighted player never passes the spread's 45 u/s move
+  threshold (weapons.md).
 
 ### Being slowed when hit
 
@@ -303,7 +349,12 @@ does (`tools/dods_probe/README.md`).
 | running 220 | slowed (hit) | 1 tick | 120 u/s |
 | prone | press `+alt1` | 1 / 20 / 40 / 79 ticks | eye 11.38 / 33.38 / 48.40 / 58.00 |
 | standing | jump, press `+alt1` 5 ticks later | | lands normally; prone 80 ticks after the press |
-| sprinting ≈305 | press `+alt1` | 36 ticks | ≈199 u/s, still sprinting, no input effect |
+| sprinting 297.9, stamina 67.6, forward + `+speed` held | press `+alt1` | 1 / 34 / 64 / 80 ticks | 297.49 / 195.41 / 74.12 (sprint flag cleared) / 50 u/s |
+| running 220, forward held | press `+alt1` | 10 / 40 / 79 ticks | 212.69 / 135.01 / 50.08 u/s |
+| sprinting, keys released on the press | press `+alt1` | 1 / 2 ticks | 187.54 / 165.03 u/s |
+| still, forward held from the press | press `+alt1` | 4 / 14 / 79 ticks | 108.18 / 206.21 / 50.08 u/s |
+| prone, forward held | press `+alt1` | 32 / 50 / 80 ticks | 109.84 / 166.21 / 220 u/s |
+| Garand sighted, still | hold forward | 1 / 6 / 120 ticks | 6.3 / 7.8 / 42.0 u/s |
 | ducked | press `+alt1` | 80 ticks | prone; hull 45 until then |
 | prone under a ceiling 50 up | press `+alt1` | | nothing |
 | prone under a ceiling 50 up | press duck | 80 ticks | ducked, eye 34 |
@@ -314,10 +365,11 @@ does (`tools/dods_probe/README.md`).
 ## Open questions
 
 1. Leaving prone: answered (time, movement, keys, low ceilings, the eye
-   curve) except the exact law of the speed cap while getting up (the
-   measured speeds above are the reference).
-2. The friction law: does it hold on every surface; is it a doubled
-   friction or a scaled stop speed (they differ only in naming)?
+   curve, the smoothstep cap) except getting up into a crouch, whose
+   speeds sit up to 0.7 u/s under the smoothstep law.
+2. The friction law: answered (the shipped `sv_friction 8`,
+   `sv_stopspeed 50`); surfaces other than dod_avalanche's ground
+   untested.
 3. Sprint: answered, and the regeneration's still threshold: speed 0
    exactly (every tick with any speed regenerates at the moving rate).
 4. Jump: answered (no stamina cost or scaling in this build; public
@@ -325,6 +377,6 @@ does (`tools/dods_probe/README.md`).
 5. The slow: answered (120 cap; the sprint keeps draining).
 6. Unducking: answered (0.21 s).
 7. Ladders and water: assumed as CS:S's (unmeasured).
-8. The sighted speed from rest: accelerating from rest while sighted
-   gave different curves in two runs (2.4 u/s a tick to 36.6 then a drop
-   to 4.45; creeping at 4.5 throughout). The 42 cap is steady.
+8. The sighted speed from rest: answered (42 is the wish speed: +0.3 a
+   tick from 6.3, 42 after 120 ticks). The earlier two runs that
+   disagreed were likely taken with the sights still rising.
