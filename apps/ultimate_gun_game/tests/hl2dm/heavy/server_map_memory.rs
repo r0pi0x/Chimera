@@ -143,7 +143,15 @@ fn play_until_released(sim: &mut Sim) {
     let before = releases.count();
     let ticks = ((memory::RELEASE_AFTER_SECONDS as f64 + 2.0) * sim.tick_hz()).round() as u64;
     for _ in 0..ticks {
-        sim.ticks(1);
+        // One tick, through the frames of a map settling meanwhile
+        // (`map::MapSettling`: no tick runs then, so not `Sim::ticks`).
+        let target = sim.tick() + 1;
+        let mut frames = 0;
+        while sim.tick() < target {
+            sim.app.update();
+            frames += 1;
+            assert!(frames < 100_000, "no tick in {frames} frames");
+        }
         sim.app.world_mut().remove_resource::<NextMatch>();
     }
     // The release's thread: waited for, not timed.
