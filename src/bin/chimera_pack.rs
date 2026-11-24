@@ -86,7 +86,9 @@
 //! `bsp::add_guest_looks`, with its shells' bounce sounds) and HL2:DM's
 //! `base` (what its guns draw on any map: `maps::add_guest_looks`, its
 //! effect materials, muzzle flashes, impact decals and spent shells, with
-//! their bounce sounds) are merged into what the manifest has (sets recorded from
+//! their bounce sounds) and DoD:S's `base` (its explosions' and impacts'
+//! particle materials, drawn on any map: `maps::add_guest_looks`) are
+//! merged into what the manifest has (sets recorded from
 //! logs too; once `lean` has made a `common`, what a game's `base` piece
 //! adds goes to `common` instead, fetched with each match); the other
 //! sets are replaced. `--only <prefix>` records only
@@ -992,6 +994,18 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
             // scripts, mod_textures.txt and their sheets).
             let _ = dods::game::hud::pictures(&tapped);
             out.push(("players".into(), take()));
+            // What its guns draw on any map, into `base` (merged): its
+            // explosions' and impacts' particle materials with their
+            // textures (`maps::add_guest_looks`; on its own maps the
+            // map's kit reads the same). They were in its maps' sets
+            // alone: a client without the install fetched
+            // `particle_smokegrenade.vtf` on demand mid-match.
+            if "base".starts_with(only) {
+                take();
+                let mut materials = MaterialLoader::guest(&tapped, 0, 0);
+                dods::game::maps::add_guest_looks(&mut materials, &mut chimera_world::map::MapData::default());
+                out.push(("base".into(), take()));
+            }
             let options = map_options(false);
             record_maps(source_engine::maps::map_names(mount), only, &take, &mut out, |name| {
                 let bytes = tapped.read(&format!("maps/{name}.bsp")).map_err(|e| e.to_string())?;

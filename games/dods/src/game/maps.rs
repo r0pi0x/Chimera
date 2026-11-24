@@ -121,6 +121,20 @@ fn effect_materials(materials: &mut MaterialLoader) -> crate::map::particles::Ma
     source_engine::effects::impact_effects::load_materials(materials, &[source_engine::effects::explosions::MATERIALS])
 }
 
+/// What DoD:S's guns draw on another game's map (`dress_guest_in`): its
+/// explosions' and impacts' particle materials (`effect_materials`), each
+/// the map lacks by name. `chimera_pack sets dods --only base` records
+/// what this reads into DoD:S's `base` set, so a player without the
+/// install has them before a match (they were in its maps' sets alone:
+/// `particle_smokegrenade.vtf` was fetched on demand mid-match).
+pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
+    for m in effect_materials(materials).materials {
+        if map.particles.find(&m.name).is_none() {
+            map.particles.materials.push(m);
+        }
+    }
+}
+
 /// What players hold on its maps: its guns' view and held models.
 fn held_kit(k: &mut Kit) {
     let kit = k.kit;
@@ -206,12 +220,7 @@ pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'st
     let mut warnings = Vec::new();
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     super::weapons::add_guns(&mut materials, &surfaces, &|g| kit.wants(g), &mut guest, &mut warnings);
-    // Its explosions' materials, each the map lacks by name.
-    for m in effect_materials(&mut materials).materials {
-        if map.particles.find(&m.name).is_none() {
-            map.particles.materials.push(m);
-        }
-    }
+    add_guest_looks(&mut materials, map);
     let guns = weapon_sounds(mount);
     let mut sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], guns.clone(), true);
     own_weapon_sounds(&mut sounds, true, &guns);
