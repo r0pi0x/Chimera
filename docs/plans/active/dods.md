@@ -23,7 +23,8 @@ and the game's own data.
 | M2 movement specifics | M2a done (2026-11-23): prone, deployed MGs, stamina pool, MGs in the ladders; M2b done (2026-11-23): sprint and stamina caps, jump, unduck, getting up, the hit slow, draw/reload times, FOVs, fire select, MG undeploy/reload/yaw (§4, "Specified since M2a") | §4; the log |
 | M3 party rungs | M3a done (2026-11-23): the bodies animate (stances, movement, each gun's set, sights, deploy, fire and reload gestures, jump; death a ragdoll); M3b done (2026-11-23): each rung's class (body, melee; shared guns drawn with the ladder), DoD:S's HUD, dod_jagd and dod_flash in the pool, the explosives' body sets, the asset service's sets | §4; the log |
 | M3c HUD and kill icons | done (2026-11-24): specs/dods/hud.md (from the data files); the player status strip from it, the install's pictures, DoD:S's kill icons in every app's feed | §4; the log |
-| Remaining | listed in §7: blocked on the retail client, unspecified, or the map pool's walker | §7 |
+| Spec measurements 2 | done (2026-11-24): spread, no-fire states, stock strike, partial and launcher reloads, rockets on the world, throws, grenade timings, backstab cone and reach, blast shielding, MG limits and ledges, prone edges (specs only; implementation next) | §7 |
+| Remaining | listed in §7: specified and waiting for implementation, blocked on the retail client, unmeasured, or the map pool's walker | §7 |
 
 ## 1. Rules for this port
 
@@ -281,17 +282,40 @@ binaries); 216 GB free on 2026-11-24. Then a listen server measures it as
   hand signals, the SMGs' stock strike, the bazooka's shouldering and
   zoomed reload, flinches, the MG42's deployed and reloading models).
 
-**Unmeasured, the dedicated server could measure** (a `tools/dods_probe`
-session each; specs' open questions): spread by stance and its pattern
-(weapons.md OQ 1), the semi-automatic mode's spread, the SMGs' stock
-strike, the throw speed above 15° up (OQ 6), the rockets' and rifle
-grenades' reloads (OQ 9), rockets hitting the world (they didn't explode
-on the server), a partial reload's time, the melee reach and backstab cone
-(damage.md OQ 4), a character shielding a blast (OQ 8), the regeneration's
-still threshold (movement.md OQ 3), a ceiling too low to get up, going
-prone off the ground, deploying on a ledge and what narrows the yaw limit
-(weapons.md OQ 11), the pin, throw and redraw times, the grenades'
-bounce, the getting-up eye curve.
+**Specified 2026-11-24, not yet implemented** (spec commit "DoD:S spec
+measurements 2"; `tools/dods_probe/measure.py` reruns each; an
+implementation session builds them from the specs):
+- weapons.md: spread = base (alt mode: `SecondaryAccuracy`) + the whole
+  `AccuracyMovePenalty` above 45 u/s, no stance bonus, no growth; no
+  firing or throwing while sprinting, none in the air (fires on
+  landing), none crawling; the SMGs' stock strike (60, knife timing and
+  reach, no backstab); the MG42 fires one bullet; partial reloads (same
+  time except the Colt 1.56 s and C96 2.22 s; only the missing rounds
+  taken); the launchers' 3.0 s and rifle grenades' 2.91 / 2.505 s
+  reloads, the launchers' 0.84 / 2.33 s lockout after a shot; rockets
+  explode on the world; the throw speed above 22.5° up (500 + 250 ×
+  (A − 22.5)/67.5), about half the thrower's velocity along the aim,
+  the grenade timings (0.667 s windup, the next drawn once that is over
+  and the grenade has left), bounces (variable: a low, scattered
+  physics bounce); the deployed MG's yaw limit held by the client (the
+  server doesn't), pitch undeploys past ≈47° down / ≈63° up, ledge deploys standing and crouched (height = top + 16, the eye
+  to it).
+- damage.md: backstab when the attacker's aim · the victim's facing >
+  0.3; reach 92 (origins, level); the hit 0.21 s after the press, 0.4 s
+  between swings; players don't shield blasts.
+- movement.md: the prone eye curve, going prone in the air / sprinting
+  / ducked, low ceilings refuse the key, the still regeneration only at
+  speed 0, the sighted speed cap 42.
+
+**Still unmeasured on the dedicated server** (specs' open questions):
+the spread pattern inside the cone (no impact message on the server:
+needs the retail client); what narrows the MG's yaw limit (crate
+placements don't fit a simple rule, weapons.md OQ 11); the thrower's
+velocity law beyond three throws; what `dod_grenademaxspeed` caps; the
+swing's shape and stances other than standing for the backstab; why a
+resting grenade's blast hurt nobody; the rocket's stun amount; the
+sighted acceleration from rest; smoke grenades and the live-grenade
+pick-up (ours by design, below).
 
 **Ours by design** (not parity gaps for the party): ladders, water and
 fall damage are Source's shared ones; the slow and the MG's stamina cost
@@ -318,6 +342,19 @@ a Chimera change for every game (map-pool-fitness.md), or per-map checks
 of the confined links. Until then the pool stays dod_jagd and dod_flash.
 
 ## Log
+
+- 2026-11-24, spec measurements 2 (a spec commit: specs/dods/ and
+  tools/dods_probe only, from measurements on the dedicated server and
+  the game's data files): the probe plugin logs DoD:S's "FireBullets"
+  message (each shot's spread, seed, mode); `measure.py` gained the
+  cases spread, nofire, stock, reach, backstab, partial, launchers,
+  rocketworld, throw, nadetiming, bounce, shield, mgyaw, mgside, ledge,
+  proneedge, ceiling, stillregen. What they settled is in §7
+  ("Specified 2026-11-24"). The same day the store's `players` set was
+  republished with the HUD pictures and kill icons (`sets dods --build
+  25338204 --only players`, manifests snapshotted first) and the guest
+  dressing converted again for the new converter version (`convert
+  dods`).
 
 - 2026-11-24, M3c, the HUD and the kill icons: specs/dods/hud.md written
   from the server's data files alone (a spec commit), then implemented

@@ -15,8 +15,11 @@ DoD:S-specific in the plugin:
   first tracked entity (a blast's victim beside a grenade).
 - `probe_hull <from> <to>`: a standing player's box swept through the
   world (finding open, flat ground).
-- No "Shotgun Shot" temp-entity hook (DoD:S has none); armour and aux
-  power read −1.
+- DoD:S's bullets temp entity is "FireBullets" (no "Shotgun Shot"):
+  each shot logs `T tick firebullets x y z pitch yaw weapon mode seed
+  spread player`, the spread being the server's own number for that
+  shot (stance, movement and alt mode included). Armour and aux power
+  read −1.
 
 `probe.py` drives it over RCON (as HL2:DM's), `measure.py` runs the
 cases the specs quote (specs/dods/movement.md, weapons.md, damage.md):
@@ -75,13 +78,25 @@ Notes (build 11003710, 2026-11-23):
   the server's clock; time fields of entities (a grenade's detonate
   time) are in another base: compare ticks, not times, across them.
 - Recoil is client-side: the server's punch angle stays 0 when firing.
-  Measuring it needs the retail client on a listen server.
+  Measuring it needs the retail client on a listen server. So is the
+  deployed MG's yaw limit (the server doesn't clamp the bot's view) and
+  the spread pattern (no impact is sent).
 - `probe_give` gives guns without spare ammunition: `measure.gun` sets
   200 rounds of the gun's type.
 - A grenade's or rocket's entity index changes from run to run: watch
   `tracked` properties, not an index.
-- Rockets explode on players but not on the world on this server (they
-  slide or stop and stay): put the victim in the rocket's path.
+- Events logged during an input row (bullets, damage, created entities)
+  carry that row's number; the state that row produced is in the logged
+  row one higher (the magazine drops in the row after the shot's
+  message).
+- A victim bot left in front of the driven one blocks it: the melee
+  cases move it away afterwards (`probe_tp 2 0 0 -5000 0 0`).
+- Obstacles: `measure.crate` spawns a frozen 64-unit crate
+  (`static_crate_64`, origin at its base centre) for ceilings, ledges
+  and the MG's side limits; `probe_fire <index> Kill` removes it.
+- `measure.ALT_YAW` (270) is the open direction for cases that need a
+  clear area in front: towards +x +y from `START` a wall stands 4 units
+  away.
 - Blast damage needs a clear line to the victim; the stun event that
   comes with it doesn't (specs/dods/damage.md, "Explosions").
 - `dod_debugmgdeploy` prints nothing on a dedicated server (it wants a

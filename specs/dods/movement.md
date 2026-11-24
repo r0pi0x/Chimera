@@ -7,11 +7,14 @@ and the prone/sprint state after every tick on flat open ground of
 dod_avalanche; the server's cvar list; sprint, stamina, jumps, getting up and the slow
 measured again the same day with `tools/dods_probe` (the same kind of
 plugin, kept: tools/dods_probe/README.md; `measure.py` reruns every
-case). Where a line says "unmeasured" it rests on public descriptions of
+case); prone edge cases (in the air, sprinting, ducked, under a low
+ceiling), the eye curves and the regeneration's still threshold on
+2026-11-24 (`measure.py proneedge ceiling stillregen`, a frozen crate
+spawned as the ceiling). Where a line says "unmeasured" it rests on public descriptions of
 the game only. CS:S's movement spec
 (specs/cs_source/movement.md) is the base; this spec gives what differs
 or what was checked to be the same.
-Status: draft (measured 2026-11-23; ladders, water and low ceilings
+Status: draft (measured 2026-11-23 and 2026-11-24; ladders and water
 unmeasured)
 
 ## Summary
@@ -108,6 +111,26 @@ law above is what to implement. Open question 2.
 - Crawling: wish speed 50 (start 7.5, then +1.5 per tick to 50; stop
   −6 per tick). Sprint does not speed it up.
 - Prone is the stance the MGs deploy in anywhere (weapons.md).
+- **The eye curve** (going down and getting up alike, measured tick by
+  tick): over the 80 ticks the eye moves by 48 × f(t) with t the
+  fraction of the 1.2 s gone and f(t) = 1 − (1 − t)^(7/3) (a fit: at
+  t = 1/80, 1/4, 1/2, 3/4 it gives 0.029, 0.488, 0.801, 0.961 against
+  the measured 0.029, 0.487, 0.800, 0.960; the getting-up values, eye
+  10 → 58: 11.38, 12.75, 14.07 ... 33.38 at tick 20, 48.40 at 40, 55.07
+  at 56, 57.70 at 71, 58.00 at 79).
+- **Pressed in the air** (5 ticks after a jump): going prone starts at
+  once; the eye eases down while the player flies the rest of the jump
+  with the standing hull (the jump is not cut) and lands; prone 80
+  ticks after the press as on the ground.
+- **Pressed while sprinting** (≈305 u/s): the input stops counting but
+  the speed is not cut: it decays by ground friction (305 → 199 after
+  36 ticks, 80 after 64), the sprint flag stays and drains stamina
+  (0.3 a tick) until the speed falls below about 80, then the
+  regeneration runs; prone at the end of the 80 ticks, crawling at 50
+  if forward is held.
+- **Pressed while ducked**: the eye eases 34 → 10 over the 80 ticks
+  (the same curve over 24 units), the hull staying the ducked one (45)
+  until prone.
 
 ### Stamina and sprint (measured)
 
@@ -126,7 +149,10 @@ ground:
    or slower (a short forward input) it regenerates at the moving rate
    instead.
 4. Not sprinting, it **regenerates**: **0.9 a tick** (60/s) standing
-   still (standing, ducked, prone or in the air), **0.75 a tick** (50/s)
+   still (standing, ducked, prone or in the air; "still" is a
+   horizontal speed of exactly 0: a player sliding to a stop with no
+   input, or creeping at 4.5 u/s, regenerates at the moving rate until
+   the speed is 0), **0.75 a tick** (50/s)
    moving ducked, **0.15 a tick** (10/s) moving standing or crawling
    prone. No delay: the first tick after a sprint ends already gains.
    Capped at 100.
@@ -195,7 +221,12 @@ standing).
   creeping from 7.5 towards the ducked 73.3 (57.95 at tick 32, 69.07 at
   60, 72.60 at 80). With duck released the player then stands up as from
   a crouch (0.21 s more).
-- A ceiling too low to stand: unmeasured (open question 1).
+- **A ceiling too low** (measured: prone under a frozen crate): the
+  key is refused and nothing changes (no partial rise, the prone flag
+  and hull stay; pressing again later is refused again):
+  - ceiling 50 above the ground: `+alt1` (stand, needs 72) refused;
+    duck (needs 45) works, eye 10 → 34;
+  - ceiling 40: duck refused; ceiling 30: both refused.
 
 ### View
 
@@ -206,6 +237,14 @@ standing).
   `_yaw` 120/150, `_roll` 15/30 (degrees, cvars; how they are applied
   is unmeasured).
 - `sv_rollangle` 0: no strafe roll.
+- **Sighted** (the Garand's and K98's iron sights, measured): the speed
+  is capped at **42 u/s** while sighted (running at 220 into the sights:
+  168 on the press, about 190 during the 0.3 s raise, then 42.0 from
+  the moment the FOV reaches 55; back to 220 by normal acceleration after
+  leaving them). From rest a sighted player accelerates very slowly
+  (the cap barely exceeds what friction takes: 2.4 u/s a tick in one
+  run, creeping at 4.5 in another; open question 8). A sighted player
+  never passes the spread's 45 u/s move threshold (weapons.md).
 
 ### Being slowed when hit
 
@@ -262,19 +301,30 @@ does (`tools/dods_probe/README.md`).
 | prone | press `+alt1`, hold forward | 1 / 80 ticks | standing hull, 7.5 u/s / 220 u/s, eye 58 |
 | prone | press duck | 80 ticks | ducked, eye 34 |
 | running 220 | slowed (hit) | 1 tick | 120 u/s |
+| prone | press `+alt1` | 1 / 20 / 40 / 79 ticks | eye 11.38 / 33.38 / 48.40 / 58.00 |
+| standing | jump, press `+alt1` 5 ticks later | | lands normally; prone 80 ticks after the press |
+| sprinting ≈305 | press `+alt1` | 36 ticks | ≈199 u/s, still sprinting, no input effect |
+| ducked | press `+alt1` | 80 ticks | prone; hull 45 until then |
+| prone under a ceiling 50 up | press `+alt1` | | nothing |
+| prone under a ceiling 50 up | press duck | 80 ticks | ducked, eye 34 |
+| prone under a ceiling 40 up | press duck | | nothing |
+| sliding from 150 with no input, stamina 20 | | each tick until stopped / after | +0.15 / +0.9 |
+| running 220, Garand | alt fire (sights) | after the raise | 42 u/s |
 
 ## Open questions
 
-1. Leaving prone: answered (time, movement, keys) except a ceiling too
-   low to stand or crouch, and the exact law of the speed cap while
-   getting up (the measured speeds above are the reference).
+1. Leaving prone: answered (time, movement, keys, low ceilings, the eye
+   curve) except the exact law of the speed cap while getting up (the
+   measured speeds above are the reference).
 2. The friction law: does it hold on every surface; is it a doubled
    friction or a scaled stop speed (they differ only in naming)?
-3. Sprint: answered. Open: the regeneration's speed threshold between
-   "still" (0.9) and "moving" (0.15) (decelerating ticks gave values in
-   between, never measured one by one).
+3. Sprint: answered, and the regeneration's still threshold: speed 0
+   exactly (every tick with any speed regenerates at the moving rate).
 4. Jump: answered (no stamina cost or scaling in this build; public
    descriptions of a stamina cost are of older versions or wrong).
 5. The slow: answered (120 cap; the sprint keeps draining).
 6. Unducking: answered (0.21 s).
 7. Ladders and water: assumed as CS:S's (unmeasured).
+8. The sighted speed from rest: accelerating from rest while sighted
+   gave different curves in two runs (2.4 u/s a tick to 36.6 then a drop
+   to 4.45; creeping at 4.5 throughout). The 42 cap is steady.

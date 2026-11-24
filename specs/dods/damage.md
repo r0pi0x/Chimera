@@ -10,8 +10,11 @@ taken and the target's "slowed until" time (the damage-taken hook).
 The target had its health raised so it never died. The slow's speed and
 the explosions were measured on 2026-11-23 with `tools/dods_probe`
 (the slowed-until time set on a running bot; grenades and rockets set
-off beside a second bot). Measured unless a line says otherwise.
-Status: draft (measured 2026-11-23)
+off beside a second bot); melee reach, the backstab cone, the SMGs'
+stock strike and bodies in a blast's way on 2026-11-24 (`measure.py
+stock reach backstab shield rocketworld`). Measured unless a line says
+otherwise.
+Status: draft (measured 2026-11-23 and 2026-11-24)
 
 ## Summary
 
@@ -81,10 +84,35 @@ have no range field; the trace length is an open question 3.)
 
 - Knife and spade: 60 from the front (chest), 45 to the legs.
 - **From behind: 300** (5×), to the chest or the legs (the leg hit
-  then scales: 300 → 225). "Behind" was the target facing straight
-  away; the angle that counts as behind is open question 4.
-- Reach: hits at 40 units; at a 60-unit aim height above the target's
-  feet the swing missed (the head was out of the swing's path or reach).
+  then scales: 300 → 225).
+- **What counts as behind** (measured with standing victims, pitch 0
+  on their side): the dot product of the attacker's aim direction (with
+  its pitch) and the victim's horizontal facing is **above 0.3**. It is
+  the attacker's aim that counts, not the line between them: a victim
+  40 to the left and 40 ahead facing 105° off the attacker's yaw (60°
+  off the line) took 60, facing 60° off the yaw (105° off the line)
+  took 300.
+
+| Attacker's pitch | Backstab up to (victim facing off the attacker's yaw) | Not from | cos(pitch) × cos(limit) |
+|---|---|---|---|
+| 0 | 72.5° | 73° | 0.300 |
+| 20° down | 71° | 71.5° | 0.306 / 0.298 |
+| 40° down | 66° | 68° | 0.312 / 0.287 |
+
+- **The hit lands 14 ticks (0.21 s) after the press**, and a swing
+  blocks every attack for 0.4 s from the press (knife, spade and the
+  SMGs' stock strike alike; the knife script's `FireDelay` 0.1 is not
+  the swing's interval).
+- **Reach** (horizontal distance between the two players' origins, both
+  standing, the attacker's aim level): hits up to **92**, misses from
+  **94** (knife, spade and Thompson stock alike); with the aim 15° down
+  90 hits, 92 misses. Aim level at 80 units hits the head (150 from the
+  front), 15° down the chest. The swing also hit a victim 45° off the
+  aim at 56 units (40 ahead, 40 to the side): it is not a thin line
+  along the aim (its shape is open question 4).
+- **The SMGs' stock strike** (Thompson, MP40 alt fire) is a melee hit
+  of 60 before zones with the knife's timing and reach, and **no
+  backstab** (60 from behind, measured).
 - Damage type: club + never-gib bits (4224 as the server reports it);
   bullets are 2 (bullet), the MG42's bullets carry an extra high bit
   (1073741826).
@@ -149,9 +177,19 @@ near values fit that point too (r ≈ 47 at d = 0).
 - **The blast needs a clear line** from the explosion to the victim:
   a grenade resting on the ground did no health damage to victims 50 and
   100 units away (stun only), and a grenade going off in the thrower's
-  hand hurt only the thrower and victims within about 25 units (the
-  thrower's own body in the way). The stun has no such check. What the
-  line is traced to (the victim's middle, its eyes) is open question 8.
+  hand hurt only the thrower and victims within about 25 units. The stun
+  has no such check.
+- **Players don't shield**: a frag going off in the air 150 units from
+  a victim did the same 89.5-89.9 with the thrower standing aside or
+  between them at 40, 75 or 110 units from the grenade (two runs each);
+  only the world blocks the line. The victim's point the distance and
+  line go to is about 40-43 units above its feet (the blast at 150
+  units and the raised and lowered placements fit 43 within the
+  placement noise).
+- **Rockets on the world**: a rocket explodes where it meets the world
+  (weapons.md); its stun event is not two thirds of the blast there
+  (92.5-98.7 blast with a 35.9-41.1 stun to a thrower about 66 units
+  away: open question 8).
 - The thrower is hurt by its own grenade (measured: 85-150 to a thrower
   next to it).
 - Repeats of one placement gave the same ratio (blast / stun = 1.50)
@@ -182,6 +220,14 @@ on (the cvar's own description; not measured).
 | frag on the ground, victim 200 away, clear line | goes off | 67.5 health (stun event 45) |
 | frag, victim 400 away | goes off | nothing |
 | rocket, victim 210 away | goes off | nothing (radius 200) |
+| knife, victim 40 ahead facing 72° off the attacker's yaw, aim level | swing | 300 (backstab) |
+| knife, the same at 73° | swing | 60 |
+| knife, aim 40° down, victim facing 66° / 68° off | swing | backstab / not |
+| knife, victim 40 left and 40 ahead facing 105° off the attacker's yaw | swing | 60 |
+| knife, victim standing 92 / 94 away, aim level | swing | hit / miss |
+| knife | press | hit 0.21 s later; next attack 0.4 s after the press |
+| Thompson stock, victim facing away | alt fire | 60 |
+| frag in the air, victim 150 away, a player between | goes off | ≈90 to the victim (not shielded) |
 
 ## Open questions
 
@@ -191,13 +237,19 @@ on (the cvar's own description; not measured).
    dropped by 37 or 38?). The plugin logged health after the hit only
    with a raised pool; re-run reading the health delta.
 3. The bullets' maximum range.
-4. The backstab cone; whether a crouched or prone victim changes it.
+4. Answered: the backstab cone (above). Open: whether a crouched or
+   prone victim, or a victim looking up or down, changes it (the victim
+   bots stood level), and the swing's exact shape (it reaches 45° off
+   the aim at 56 units).
 5. Answered (2026-11-23): a 120 u/s cap on the horizontal speed while
    the slowed time runs (above).
 6. Penetration: every script has `Penetration` 1; walls were not tested.
 7. Explosives: answered for damage, radius, falloff and self-damage
    (above). Fall damage: `mp_falldamage` 0 (the classic Source fall
    damage of CS:S's spec applies unless measured otherwise).
-8. The blast's line check: traced to which point of the victim, and
-   what blocks it (other players, the ground under a resting grenade);
-   whether the stun's view shake scales with its amount.
+8. The blast's line check: players don't block it (answered); the
+   point is about 40-43 above the feet. Open: why a grenade resting on
+   the ground hurt nobody 50-100 away (the ground under it?) while one
+   in the hand hurt only within about 25 units; the rocket's stun
+   amount (not two thirds of its blast); whether the stun's view shake
+   scales with its amount (client).

@@ -45,9 +45,9 @@
 //     inflictor damage type health" (damage taken by players and tracked
 //     entities), "A tick victim attacker damage type hitbox hitgroup"
 //     (a player's traced hit, before the hitgroup scale), "C tick index class" / "X tick index class" (tracked
-//     entities created / removed), "T tick name ..." (bullets: "Shotgun
-//     Shot" origin, direction, ammo, seed, shots, spread; EffectDispatch:
-//     effect name, origin), "V tick event client [attacker | team
+//     entities created / removed), "T tick name ..." (bullets:
+//     "firebullets" origin, pitch, yaw, weapon id, mode, seed, spread,
+//     player; EffectDispatch: effect name, origin), "V tick event client [attacker | team
 //     oldteam]" (player_death with the attacker's client, player_spawn,
 //     player_team with the new and old team).
 //   probe_bot <client>: drive this client (0: the first living bot).
@@ -133,7 +133,8 @@ public void OnPluginStart()
     HookEvent("player_death", Event_Life);
     HookEvent("player_spawn", Event_Life);
     HookEvent("player_team", Event_Team);
-    // No "Shotgun Shot" temp entity in DoD:S: bullets are read from "T" lines of EffectDispatch only.
+    // DoD:S's bullets temp entity is "FireBullets" (no "Shotgun Shot"): origin, aim, weapon, mode, seed, spread.
+    AddTempEntHook("FireBullets", TE_FireBullets);
     AddTempEntHook("EffectDispatch", TE_Effect);
     RegServerCmd("probe_run", Command_Run, "probe_run <input> <output>");
     RegServerCmd("probe_bot", Command_Bot, "probe_bot <client>");
@@ -972,16 +973,14 @@ public Action SoundHook(int clients[MAXPLAYERS], int &numClients, char sample[PL
     return Plugin_Continue;
 }
 
-public Action TE_Bullets(const char[] te_name, const int[] Players, int numClients, float delay)
+public Action TE_FireBullets(const char[] te_name, const int[] Players, int numClients, float delay)
 {
     if (g_out != null) {
         float o[3];
-        float d[3];
         TE_ReadVector("m_vecOrigin", o);
-        TE_ReadVector("m_vecDir", d);
-        g_out.WriteLine("T %d bullets %.3f %.3f %.3f %.5f %.5f %.5f %d %d %d %.5f %d", g_cursor, o[0], o[1], o[2], d[0],
-            d[1], d[2], TE_ReadNum("m_iAmmoID"), TE_ReadNum("m_iSeed"), TE_ReadNum("m_iShots"),
-            TE_ReadFloat("m_flSpread"), TE_ReadNum("m_iPlayer"));
+        g_out.WriteLine("T %d firebullets %.3f %.3f %.3f %.5f %.5f %d %d %d %.6f %d", g_cursor, o[0], o[1], o[2],
+            TE_ReadFloat("m_vecAngles[0]"), TE_ReadFloat("m_vecAngles[1]"), TE_ReadNum("m_iWeaponID"),
+            TE_ReadNum("m_iMode"), TE_ReadNum("m_iSeed"), TE_ReadFloat("m_flSpread"), TE_ReadNum("m_iPlayer"));
     }
     return Plugin_Continue;
 }
