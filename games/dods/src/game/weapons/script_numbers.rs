@@ -23,7 +23,9 @@
 //!   (0.1; a swing blocks 0.4 s, the document's).
 //!   A field missing or malformed leaves the document's number; a script
 //!   whose `WeaponType` doesn't fit the document (a melee script on a gun)
-//!   is refused.
+//!   is refused; a melee document is one with a primary swing
+//!   (`[melee.primary]`), so a gun with a strike on its alt fire (the
+//!   Thompson's and MP40's `[melee.secondary]`) reads its gun script.
 //! - `GunNumbers` is the documents DoD:S's weapons register from: the
 //!   committed ones (`builtin`: tests, the harness; their fire delays
 //!   rounded too) or the scripts' (`from_scripts`: the apps, through
@@ -86,7 +88,9 @@ fn hook<'a>(doc: &'a mut Table, name: &str) -> &'a mut Table {
 /// `data` (a script's `WeaponData`) applied to the weapon document `doc`.
 pub fn apply_script(data: &Kv, doc: &mut Table) -> Applied {
     let mut out = Applied::default();
-    let melee = doc.get("melee").is_some_and(Value::is_table);
+    // A melee weapon swings on the attack; a gun's alt-fire strike
+    // (`[melee.secondary]` alone) keeps it a gun.
+    let melee = doc.get("melee").and_then(|m| m.get("primary")).is_some_and(Value::is_table);
     let kind = data.str("WeaponType").map(|t| t.trim().to_ascii_lowercase());
     if let Some(k) = &kind
         && (k == "melee") != melee
@@ -394,6 +398,18 @@ mod tests {
         let a = apply_script(&weapon_data("WeaponData { \"WeaponType\" \"Melee\" \"Damage\" \"60\" }").unwrap(), &mut doc);
         assert!(a.refused.is_some());
         assert_eq!(doc["damage"]["amount"].as_float(), Some(1.0));
+    }
+
+    #[test]
+    fn a_gun_with_an_alt_fire_strike_reads_its_gun_script() {
+        // The Thompson's and MP40's stock strike: `[melee.secondary]`, no primary.
+        let mut doc: Table = "[damage]\namount = 1.0\n[melee.secondary]\ndamage = 60.0\n".parse().unwrap();
+        let text = "WeaponData { \"WeaponType\" \"SubMG\" \"Damage\" \"40\" \"viewmodel\" \"models/v.mdl\" }";
+        let a = apply_script(&weapon_data(text).unwrap(), &mut doc);
+        assert!(a.refused.is_none(), "{:?}", a.refused);
+        assert_eq!(doc["damage"]["amount"].as_float(), Some(40.0));
+        assert_eq!(doc["models"]["view"].as_str(), Some("models/v.mdl"));
+        assert_eq!(doc["melee"]["secondary"]["damage"].as_float(), Some(60.0), "the strike untouched");
     }
 
     #[test]
