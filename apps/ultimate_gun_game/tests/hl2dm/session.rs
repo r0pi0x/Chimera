@@ -136,8 +136,10 @@ const ARCHETYPES_PINNED: usize = 970;
 const LATER_PINNED: usize = 40;
 /// The same with every game's ladders (943 and 34 with five games; 1026
 /// and 16 with DoD:S the sixth, 2026-11-23: a game's guns and bodies
-/// add their own, made in the first matches).
-const ARCHETYPES_EVERY_GAME: usize = 1_100;
+/// add their own, made in the first matches; 1100 and 13 with the rung
+/// passives and utility items, 2026-11-24: their weapons' parts, none of
+/// them characters', flat from the sixth match).
+const ARCHETYPES_EVERY_GAME: usize = 1_150;
 const LATER_EVERY_GAME: usize = 60;
 /// Characters' archetypes made after the fourth match (none now): a
 /// character's parts, kept on or moved together, visit a set that stops
