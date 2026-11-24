@@ -110,6 +110,10 @@ const NO_FLOOR: &[&str] = &["hgoilrig"];
 
 /// Every map whose archive folder is `folder`, two at a time; how many.
 fn check_maps_in(folder: &str) -> Option<usize> {
+    // The maps' `Sim`s are made on worker threads, whose names aren't a
+    // heavy test's: without this the first would turn installs off for
+    // the process (`mount::offline`) and the next folder find none.
+    chimera_core::mount::offline::allow_installs();
     let mount = mount()?;
     let names: Vec<String> = world::map_names(&mount)
         .into_iter()
