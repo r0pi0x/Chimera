@@ -149,11 +149,13 @@ fn lightmapped_color_is_raw() {
 
 /// Sprite cards' screen-size limits read from the install's materials
 /// (specs/cs_source/impact_effects.md 14): the blood mist's `$maxsize`,
-/// the blood smoke's and the fire smoke's fades; commented-out keys
-/// (the goop's fades) and UnlitGeneric materials (the smoke grenade's)
-/// set none.
+/// the blood smoke's and the fire smoke's fades; a key a sprite card
+/// leaves out or comments out (the goop's fades) is the SpriteCard
+/// shader's default (`ScreenSize::DEFAULT_*`, specs/tf2/particles.md 4),
+/// and UnlitGeneric materials (the smoke grenade's) set none.
 #[test]
 fn sprite_cards_read_their_screen_size_limits() {
+    use chimera_world::map::particles::ScreenSize;
     let Some(data) = load("de_dust2") else { return };
     let screen = |name: &str| {
         data.particles
@@ -164,11 +166,12 @@ fn sprite_cards_read_their_screen_size_limits() {
             .screen
     };
     let core = screen("particle/blood_core");
-    assert_eq!((core.max, core.fade_start, core.fade_end), (0.25, 0.0, 0.0));
+    let (fade_start, fade_end) = (ScreenSize::DEFAULT_FADE_START, ScreenSize::DEFAULT_FADE_END);
+    assert_eq!((core.max, core.fade_start, core.fade_end), (0.25, fade_start, fade_end));
     let goop = screen("particle/antlion_goop3/antlion_goop3");
-    assert_eq!((goop.max, goop.fade_start, goop.fade_end), (0.35, 0.0, 0.0));
+    assert_eq!((goop.max, goop.fade_start, goop.fade_end), (0.35, fade_start, fade_end));
     let smoke = screen("particle/smoke1/smoke1_nearcull2");
-    assert_eq!((smoke.max, smoke.fade_start, smoke.fade_end), (0.0, 0.075, 0.1));
+    assert_eq!((smoke.max, smoke.fade_start, smoke.fade_end), (ScreenSize::DEFAULT_MAX, 0.075, 0.1));
     let fire = screen("particle/vistasmokev1/vistasmokev1");
     assert_eq!((fire.fade_start, fire.fade_end), (1.0, 1.4));
     assert!(screen("particle/particle_smokegrenade").is_none());
