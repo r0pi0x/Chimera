@@ -242,7 +242,7 @@ note = "healing from Medics x0.1 (no Medi Gun yet)"
 [items.eyelander]
 index = 132
 batch = 2
-note = "decapitation look; heads' effect on a charge's impact (open)"
+note = "decapitation look"
 
 [items.southern_hospitality]
 index = 155
@@ -471,8 +471,8 @@ batch = 2
 note = "x1.2 while disguised (no disguise yet); piercing resists"
 
 # Batch 3 (specs/tf2/batch3_mechanics.md 1, 2; `items::shields`,
-# `items::meters`' rage). Utility items: no ladder draws them. The
-# shields' crits after an impact are their texts' (`hooks`: unmeasured).
+# `items::meters`' rage). Utility items: no ladder draws them. The Tide
+# Turner's swing never more than a mini-crit (batch3b_mechanics.md 1).
 [items.chargin_targe]
 index = 131
 batch = 3
@@ -483,14 +483,13 @@ note = "drawn on the arm; the charge's look and sound"
 index = 406
 batch = 3
 gun_game = false
-hooks."tf2:shield" = { impact_crit = "crit" }
-note = "drawn on the arm; the charge's look and sound"
+note = "drawn on the arm; the charge's look and sound; its knock on the victim"
 
 [items.tide_turner]
 index = 1099
 batch = 3
 gun_game = false
-hooks."tf2:shield" = { charge_crit = "mini", impact_crit = "mini" }
+hooks."tf2:shield" = { boost_max = "mini" }
 note = "drawn on the arm; the charge's look and sound"
 
 [items.ali_babas_wee_booties]

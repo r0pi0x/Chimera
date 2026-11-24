@@ -70,8 +70,8 @@
 //! demoshield.toml; the boots on data/weapons/wearable.toml: worn items,
 //! carried, never drawn) and the Soldier's banners (`meters`' rage, on
 //! data/weapons/buff_item.toml). An item's data may set hook values its
-//! attributes don't give (`ItemDef::hooks`: the shields' crits after an
-//! impact, from their texts).
+//! attributes don't give (`ItemDef::hooks`: the Tide Turner's mini-crit
+//! cap).
 //!
 //! Known shortcuts:
 //! - An item's `anim_slot` and `animation_replacement` (none in batch 1
@@ -134,8 +134,8 @@ pub struct ItemDef {
     pub wearable: bool,
     #[serde(default)]
     pub note: Option<String>,
-    /// Hook values no attribute of the item gives (an item text's stand-in:
-    /// the Tide Turner's mini-crits), merged over its document's `hooks`.
+    /// Hook values no attribute of the item gives (the Tide Turner's
+    /// mini-crit cap, measured), merged over its document's `hooks`.
     #[serde(default)]
     pub hooks: Option<toml::Table>,
 }

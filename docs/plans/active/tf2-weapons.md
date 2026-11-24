@@ -518,15 +518,18 @@ games/tf2/tests/it/batch3.rs, the leftovers in batch2b_items.rs):
   750 units/s × the melee's move-speed attributes (Skullcutter 637.5,
   heads ignored), the meter over 1.5 s + `mod_charge_time` (Claidheamh
   Mòr 2.0 s), the 12 s recharge × `charge_recharge_rate`, the turn cap
-  48 × `charge_turn_control` (free from 10: the Tide Turner), the crit
-  boost under 75 % lingering 0.3 s (the Tide Turner's a mini-crit), the
+  48 × `charge_turn_control` (free from 10: the Tide Turner), the
   Tide Turner's meter loss and kill refills, the resistances on others'
   damage only (now every item's fire and blast factors), the boots' + 25
-  and × 1.1 with a shield. The shield entity's own behaviour (attack2,
-  the impact's 50 × `charge_impact_damage`, the crit after it, a swing
-  ending the charge, debuffs off) stands in from the item texts
-  (`shields`' Known shortcuts). An item's data may set hook values
-  (`ItemDef::hooks`: the Screen's and Tide Turner's texts).
+  and × 1.1 with a shield. The shield itself as measured in
+  specs/tf2/batch3b_mechanics.md 1: attack2 only from a full meter, the
+  forward drive with no key, debuffs off at the start (the mark stays),
+  a swing ending the charge, the swing's crit by meter (mini-crit at 75,
+  crit at 40, the Tide Turner capped at mini-crit; 0.3 s linger) and the
+  impact's min(50, 8 + 0.7 u) × `charge_impact_damage` × (1 + 0.1 heads,
+  5 at most). An item's data may set hook values (`ItemDef::hooks`: the
+  Tide Turner's cap). Left: the drive's quicker ramp and friction decay,
+  the Screen's knock.
 - *Banners* (rage on `tf2:meter`, data/weapons/buff_item.toml): Buff
   Banner, Battalion's Backup, Concheror: rage 1/6 a point (the
   Concheror 1/4.8) from any of the holder's damage, the horn's 2.7 s,

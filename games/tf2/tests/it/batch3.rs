@@ -210,20 +210,80 @@ fn a_full_charge_runs_1_5_s_at_750_and_covers_about_1104_units() {
 }
 
 #[test]
-fn the_crit_boost_comes_under_75_and_lingers_0_3_s() {
+fn the_boost_is_a_mini_crit_at_75_a_crit_at_40_and_lingers_0_3_s() {
     let mut sim = new_sim();
     let (p, m, w) = demo(&mut sim, BOTTLE, "tf2:chargin_targe");
-    charge(&mut sim, p, 25);
-    assert_eq!(sim.app.world().get::<Tf2Melee>(m).unwrap().boost, 0, "meter 75");
+    let boost = |sim: &Sim| sim.app.world().get::<Tf2Melee>(m).unwrap().boost;
+    charge(&mut sim, p, 24);
+    assert_eq!(boost(&sim), 0, "meter 76");
     charge(&mut sim, p, 1);
-    assert!(shield(&sim, w).meter < 75.0);
-    assert_eq!(sim.app.world().get::<Tf2Melee>(m).unwrap().boost, 2, "a crit");
-    charge(&mut sim, p, 74);
+    assert!((shield(&sim, w).meter - 75.0).abs() < 0.01);
+    assert_eq!(boost(&sim), 1, "75: a mini-crit");
+    charge(&mut sim, p, 35);
+    assert!((shield(&sim, w).meter - 40.0).abs() < 0.01);
+    assert_eq!(boost(&sim), 2, "40: a crit");
+    charge(&mut sim, p, 40);
     assert!(!shield(&sim, w).charging);
     run(&mut sim, p, 15, |_, _| {});
-    assert_eq!(sim.app.world().get::<Tf2Melee>(m).unwrap().boost, 2, "0.22 s after");
+    assert_eq!(boost(&sim), 2, "0.22 s after");
     run(&mut sim, p, 6, |_, _| {});
-    assert_eq!(sim.app.world().get::<Tf2Melee>(m).unwrap().boost, 0, "gone 0.3 s after");
+    assert_eq!(boost(&sim), 0, "gone 0.3 s after");
+}
+
+/// The swing pressed `after` ticks into a charge with `shield_id`: the
+/// charge's state then and the swing's (crit, mini-crit).
+fn swing_at(shield_id: &str, after: u64) -> (bool, bool, bool) {
+    let mut sim = new_sim();
+    let (p, m, w) = demo(&mut sim, BOTTLE, shield_id);
+    charge(&mut sim, p, after);
+    run(&mut sim, p, 1, |s, _| s.intent(p).fire = true);
+    let charging = shield(&sim, w).charging;
+    run(&mut sim, p, 5, |s, _| s.intent(p).fire = false);
+    let melee = sim.app.world().get::<Tf2Melee>(m).unwrap();
+    (charging, melee.crit, melee.mini)
+}
+
+#[test]
+fn a_swing_ends_the_charge_and_takes_its_crit_by_the_meter() {
+    assert_eq!(swing_at("tf2:chargin_targe", 14), (false, false, false), "85: normal, ended at the swing");
+    assert_eq!(swing_at("tf2:chargin_targe", 25), (false, false, true), "74 at the swing: mini-crit");
+    assert_eq!(swing_at("tf2:chargin_targe", 69), (false, true, false), "30: crit");
+    assert_eq!(swing_at("tf2:tide_turner", 89), (false, false, true), "the Tide Turner at 10: mini-crit");
+}
+
+#[test]
+fn a_charge_starts_only_from_a_full_meter_and_drives_forward_with_no_key() {
+    let mut sim = new_sim();
+    let (p, _, w) = demo(&mut sim, BOTTLE, "tf2:chargin_targe");
+    set_meter(&mut sim, w, 99.0);
+    run(&mut sim, p, 1, |s, _| s.intent(p).secondary = true);
+    assert!(!shield(&sim, w).charging, "99: no charge");
+    set_meter(&mut sim, w, 100.0);
+    run(&mut sim, p, 2, |s, k| s.intent(p).secondary = k == 0);
+    run(&mut sim, p, 2, |s, k| s.intent(p).secondary = k == 0);
+    assert!(shield(&sim, w).charging);
+    run(&mut sim, p, 10, |_, _| {});
+    let v = sim.app.world().get::<Velocity>(p).unwrap().0.with_y(0.0).length() / U;
+    assert!((v - 750.0).abs() < 1.0, "forward at 750 with no key: {v}");
+}
+
+#[test]
+fn the_start_removes_burning_bleeding_and_jarate_but_not_the_mark() {
+    use chimera_sim::status::Bleeding;
+    let mut sim = new_sim();
+    let (p, _, w) = demo(&mut sim, BOTTLE, "tf2:chargin_targe");
+    let t = now(&sim);
+    sim.app.world_mut().entity_mut(p).insert(Bleeding::start(t, 5.0, 0.04, 0.5, None, None));
+    {
+        let mut c = sim.app.world_mut().resource_mut::<Conditions>();
+        c.give(p, Condition::Game(tf2::game::items::consumables::JARATE), t + 10.0, None);
+        c.give(p, Condition::MarkedForDeath, t + 10.0, None);
+    }
+    charge(&mut sim, p, 2);
+    assert!(shield(&sim, w).charging);
+    assert!(sim.app.world().get::<Bleeding>(p).is_none(), "bleeding gone");
+    assert!(!has(&sim, p, Condition::Game(tf2::game::items::consumables::JARATE)), "Jarate gone");
+    assert!(has(&sim, p, Condition::MarkedForDeath), "the mark stays");
 }
 
 #[test]
@@ -356,11 +416,24 @@ fn a_charge_into_an_enemy_hits_him_and_ends() {
     sim.seconds(1.0);
     hold_still(&mut sim, p);
     set_health(&mut sim, t, 300.0);
-    charge(&mut sim, p, 80);
+    // The meter just before the impact: the meter used, u.
+    let mut last = 100.0;
+    for k in 0..80 {
+        run(&mut sim, p, 1, |s, _| {
+            s.intent(p).secondary = k == 0;
+            s.intent(p).move_axis = Vec2::new(0.0, 1.0);
+        });
+        if !shield(&sim, w).charging {
+            break;
+        }
+        last = shield(&sim, w).meter;
+    }
     assert!(!shield(&sim, w).charging, "the impact ended it");
     let taken = 300.0 - points(&sim, t).0;
-    assert_eq!(taken, (tf2::game::items::shields::IMPACT_DAMAGE * 1.7).round(), "the Screen's × 1.7");
-    assert_eq!(shield(&sim, w).boost, tf2::game::items::shields::Boost::Crit, "its crit after an impact");
+    let law = |u: f32| ((8.0 + 0.7 * u).min(50.0) * 1.7).round();
+    let u = 100.0 - last;
+    assert!(taken == law(u) || taken == law(u + 1.0), "min(50, 8 + 0.7 u) x 1.7, u {u}: {taken}");
+    assert!(u > 20.0, "{u}");
 }
 
 // ---- 2. Banners ----

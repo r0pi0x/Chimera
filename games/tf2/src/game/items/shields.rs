@@ -1,45 +1,51 @@
 //! The Demoman's shields and their charge (specs/tf2/batch3_mechanics.md
-//! 1): the hook `tf2:shield` (`ShieldParams`, on the abstract base
+//! 1, the condition; batch3b_mechanics.md 1, the shield itself): the hook
+//! `tf2:shield` (`ShieldParams`, on the abstract base
 //! data/weapons/demoshield.toml) and the weapon part `Tf2Shield`
 //! (predicted: the charge moves its holder, so a client runs it and the
 //! server's meter is a correction), and the hook `tf2:worn` (`Unselectable`:
 //! a worn item, a shield or the boots, is carried, never drawn).
 //!
 //! - **The charge** (`think`, predicted, before the weapon switch): attack2
-//!   with a full meter starts it. While it lasts the meter drains from 100
-//!   over `time` s plus the items' `mod_charge_time` (the Claidheamh Mòr's
-//!   + 0.5 while out: 2.0 s), one point a tick at 1.5 s; the max speed is
-//!   `speed` (750) × the melee weapon's move-speed attributes (the
-//!   Skullcutter's × 0.85: 637.5; heads and boosts don't count), reached
-//!   with the ground's acceleration (`movement::select_class`, the
-//!   ceiling raised past TF2's 520: `SourceTraits::ceiling`). It ends when
-//!   the meter is empty, when he is stopped (from `STOP_AFTER` s on, his
-//!   speed under `STOP_SPEED`), on a melee swing or on an impact; the
-//!   meter is then 0 and his speed falls to his walking max at once (the
-//!   ground clamp). It refills from 0 to 100 in `recharge` s (12) × the
-//!   items' `charge_recharge_rate` (the Splendid Screen's 1.5: 8 s).
+//!   with any weapon out starts it, only from a full meter (99: nothing).
+//!   It drives him forward along his view with no key held (`Intent`'s
+//!   forward set). While it lasts the meter drains from 100 over `time` s
+//!   plus the items' `mod_charge_time` (the Claidheamh Mòr's + 0.5 while
+//!   out: 2.0 s), one point a tick at 1.5 s; the max speed is `speed`
+//!   (750) × the melee weapon's move-speed attributes (the Skullcutter's
+//!   × 0.85: 637.5; heads and boosts don't count), past TF2's 520
+//!   (`movement::select_class`, `SourceTraits::ceiling`). It ends when the
+//!   meter is empty, when he is stopped (from `STOP_AFTER` s on, his speed
+//!   under `STOP_SPEED`: a wall), on a melee swing (that tick) or on an
+//!   impact; the meter is then 0. It refills from 0 to 100 in `recharge` s
+//!   (12) × the items' `charge_recharge_rate` (the Splendid Screen's 1.5:
+//!   8 s).
 //! - **Turning** while charging is capped at `turn_cap` degrees/s (48) ×
 //!   the items' `charge_turn_control` (the boots' 3: 144); from
 //!   `FREE_TURN` up (the Tide Turner's 50) it is free. The cap holds the
 //!   charge's heading, which the tick's view yaw is set to (`Intent::yaw`:
 //!   his movement and his swing follow it).
-//! - **Crit boost by meter**: while charging with the meter under
-//!   `crit_below` (75), and `linger` s (0.3) after, his melee swing gets
-//!   the shield's `charge_crit` (a crit; the Tide Turner's a mini-crit:
-//!   data/items.toml), through `weapons::melee::Tf2Melee::boost`.
+//! - **The swing's crit by meter** (`Boost::at`): the meter when he swings
+//!   (or meets an enemy) decides: above `mini_below` (75) a normal hit, from
+//!   75 down to `crit_below` + 1 a mini-crit, `crit_below` (40) and below a
+//!   crit, never past the shield's `boost_max` (the Tide Turner's
+//!   mini-crit: data/items.toml); the boost lasts `linger` s (0.3) after
+//!   the charge ends, covering the smack, through
+//!   `weapons::melee::Tf2Melee::boost`.
 //! - **Impact** (`impacts`, the server's): a charge reaching an enemy (his
-//!   origin within `IMPACT_REACH` across, ahead of the heading) hits him
-//!   for `impact` × the items' `charge_impact_damage` (the Splendid
-//!   Screen's 1.7), credited to the shield, and ends; the next swing within
-//!   `impact_window` s gets the shield's `impact_crit` (the Screen's crit,
-//!   the Tide Turner's mini-crit).
+//!   origin within `IMPACT_REACH` across, ahead of the heading) ends and
+//!   hits him, never a crit, for min(`impact_cap`, `impact_base` +
+//!   `impact_slope` × u) × the items' `charge_impact_damage` (the
+//!   Splendid Screen's 1.7) × (1 + `head_bonus` × his heads, at most
+//!   `head_cap`), u the meter used (`impact_damage`), credited to the
+//!   shield.
 //! - **On the server** (`effects`): starting a charge removes the debuffs
-//!   (burning, bleeding, a slow, marked for death, Jarate, Mad Milk);
+//!   (burning, bleeding, Jarate, Mad Milk; marked for death stays);
 //!   damage taken while charging with `lose_demo_charge_on_damage_when_
 //!   charging` (the Tide Turner) takes that many points off the meter
-//!   (55 → − 55); a melee kill refills the items' `kill_refills_meter` ×
-//!   100 at once (the Tide Turner's 75, the boots' and the Claidheamh
-//!   Mòr's 25). A death fills the meter.
+//!   (55 → − 55); a melee or impact kill refills the items'
+//!   `kill_refills_meter` × 100 at once (the Tide Turner's 75, the boots'
+//!   and the Claidheamh Mòr's 25). A death fills the meter.
 //! - **The rest** are the items' player numbers (`super::mods`): the
 //!   shields' fire and blast resistances (others' damage only), the boots'
 //!   + 25 max health and × 1.1 walking speed with a shield carried.
@@ -48,28 +54,27 @@
 //! boots are utility items: no ladder draws them (data/items.toml), and no
 //! rung carries one (a TF2 melee rung draws nothing of its own).
 //!
-//! Known shortcuts (the shield entity's own behaviour is unmeasured,
-//! batch3_mechanics.md "Open questions"; the item texts stand in):
-//! attack2 starts a charge only with a full meter; the impact's damage
-//! is `IMPACT_DAMAGE` whatever the distance charged or the heads, its
-//! reach `IMPACT_REACH` and the crit window after it `IMPACT_WINDOW`
-//! (provisional), "at distance" not asked; a melee swing ends the charge;
-//! the debuffs go on starting; the stop rule (`STOP_AFTER`,
-//! `STOP_SPEED`) is fitted on the one no-input run; no forward motion is
-//! forced; the turn cap holds the heading, not the camera (a client's
-//! view turns freely, his movement and swing don't), and is the base
-//! rate at the measuring client's frame rate (no frame-time law); the
-//! "full" turn control's curve is `FREE_TURN`'s step; the impact is the
-//! server's (a client's prediction is corrected); the Persian
-//! Persuader's meter from hits and ammo isn't built; the charge has no
-//! look or sound of its own (no crit glow on the boost) and the shield
-//! isn't drawn on his arm.
+//! Known shortcuts: the drive reaches 750 with the ground's acceleration
+//! (five ticks; the shield's 0 → 218 → 732 → 750 is quicker) and, ended,
+//! his speed is clamped to walking at once (the shield's decays by
+//! friction); the impact's law is fitted (batch3b's open question), its
+//! reach `IMPACT_REACH` covers the measured 48 to 60, and the Splendid
+//! Screen's knock on the victim isn't built; the stop rule (`STOP_AFTER`,
+//! `STOP_SPEED`) is fitted on the one no-input run of the condition; the
+//! turn cap holds the heading, not the camera (a client's view turns
+//! freely, his movement and swing don't), and is the base rate at the
+//! measuring client's frame rate (no frame-time law); the "full" turn
+//! control's curve is `FREE_TURN`'s step; the impact is the server's (a
+//! client's prediction is corrected); the Persian Persuader's meter from
+//! hits and ammo isn't built; the charge has no look or sound of its own
+//! (no crit glow on the boost) and the shield isn't drawn on his arm (its
+//! model has no asset set).
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use chimera_sim::{
-    status::{Bleeding, Condition, Conditions, Slowed},
+    status::{Bleeding, Condition, Conditions},
     weapon::{Inventory, NetPart, Unselectable, Weapon},
 };
 
@@ -88,11 +93,8 @@ pub const FREE_TURN: f32 = 10.0;
 /// The stop rule (fitted: with no input the charge ended 12 ticks in).
 pub const STOP_AFTER: f64 = 0.17;
 pub const STOP_SPEED: f32 = 100.0;
-/// The impact (provisional: the shield entity's, unmeasured): its damage,
-/// its reach (origin to origin across, units) and the swing window after.
-pub const IMPACT_DAMAGE: f32 = 50.0;
+/// The impact's reach (origin to origin across, units; measured 48 to 60).
 pub const IMPACT_REACH: f32 = 60.0;
-pub const IMPACT_WINDOW: f32 = 0.5;
 /// How far ahead of the heading an impact is (cosine of the angle).
 pub const IMPACT_AHEAD: f32 = 0.5;
 
@@ -107,6 +109,18 @@ pub enum Boost {
 }
 
 impl Boost {
+    /// The swing's boost at `meter` (module doc), at most `max`.
+    pub fn at(meter: f32, p: &ShieldParams) -> Boost {
+        let b = if meter <= p.crit_below + 1e-3 {
+            Boost::Crit
+        } else if meter <= p.mini_below + 1e-3 {
+            Boost::Mini
+        } else {
+            Boost::None
+        };
+        if b.code() > p.boost_max.code() { p.boost_max } else { b }
+    }
+
     /// `weapons::melee::Tf2Melee::boost`'s number.
     pub fn code(self) -> u8 {
         match self {
@@ -124,13 +138,16 @@ pub struct ShieldParams {
     pub speed: f32,
     pub time: f32,
     pub recharge: f32,
+    pub mini_below: f32,
     pub crit_below: f32,
+    pub boost_max: Boost,
     pub linger: f32,
     pub turn_cap: f32,
-    pub impact: f32,
-    pub impact_window: f32,
-    pub charge_crit: Boost,
-    pub impact_crit: Boost,
+    pub impact_base: f32,
+    pub impact_slope: f32,
+    pub impact_cap: f32,
+    pub head_bonus: f32,
+    pub head_cap: u32,
 }
 
 impl Default for ShieldParams {
@@ -139,13 +156,16 @@ impl Default for ShieldParams {
             speed: 750.0,
             time: 1.5,
             recharge: 12.0,
-            crit_below: 75.0,
+            mini_below: 75.0,
+            crit_below: 40.0,
+            boost_max: Boost::Crit,
             linger: 0.3,
             turn_cap: 48.0,
-            impact: IMPACT_DAMAGE,
-            impact_window: IMPACT_WINDOW,
-            charge_crit: Boost::Crit,
-            impact_crit: Boost::None,
+            impact_base: 8.0,
+            impact_slope: 0.7,
+            impact_cap: 50.0,
+            head_bonus: 0.1,
+            head_cap: 5,
         }
     }
 }
@@ -257,6 +277,12 @@ pub fn charge_speed(inv: &Inventory, shields: &Query<&Tf2Shield>, items: &Query<
     Some(s.params.speed * Charge::of(inv, &reader(items)).melee_speed)
 }
 
+/// The impact's damage (points, before rounding) with `used` meter points
+/// used, the items' factor `mult` and `heads` (module doc).
+pub fn impact_damage(p: &ShieldParams, used: f32, mult: f32, heads: u32) -> f32 {
+    (p.impact_base + p.impact_slope * used.max(0.0)).min(p.impact_cap) * mult * (1.0 + p.head_bonus * heads.min(p.head_cap) as f32)
+}
+
 /// `tf2:shield` on a weapon: full.
 pub fn attach(e: &mut EntityWorldMut, p: &ShieldParams) {
     e.insert(Tf2Shield { params: p.clone(), state: ChargeState::default() });
@@ -310,11 +336,12 @@ pub fn think(
                 if intent.yaw != s.heading {
                     intent.yaw = s.heading;
                 }
+                // The drive: forward, no key needed.
+                intent.move_axis = Vec2::new(0.0, 1.0);
                 s.meter -= FULL / (p.time + c.time).max(1e-3) * dt;
-                if s.meter < p.crit_below - 1e-3 {
-                    s.boost = p.charge_crit;
-                    s.boost_until = now + p.linger as f64;
-                }
+                // The boost a swing now would get (and for `linger` after).
+                s.boost = Boost::at(s.meter, &p);
+                s.boost_until = now + p.linger as f64;
                 let speed = velocity.map_or(0.0, |v| v.0.with_y(0.0).length() / U);
                 let stopped = now - s.since >= STOP_AFTER - 1e-6 && speed < STOP_SPEED;
                 let swing = press_fire && melee_out && now > s.since + 1e-6;
@@ -345,6 +372,7 @@ pub fn think(
 pub fn impacts(
     mut shields: Query<(&mut Tf2Shield, &Weapon)>,
     chars: Query<(Entity, &Transform, &Health, Option<&Team>), With<Intent>>,
+    heads: Query<&super::effects::Heads>,
     holders: Query<&Inventory>,
     items: Query<(&Tf2Item, &Weapon)>,
     friendly: Option<Res<crate::core::FriendlyFire>>,
@@ -371,25 +399,26 @@ pub fn impacts(
         });
         let Some((victim, ..)) = hit else { continue };
         let c = holders.get(owner).map_or(1.0, |inv| Charge::of(inv, &reader(&items)).impact);
+        let n = heads.get(owner).map_or(0, |h| h.0);
+        let points = impact_damage(&shield.params, FULL - shield.state.meter, c, n);
         out.write(Damage {
             target: victim,
             attacker: Some(owner),
-            amount: crate::game::weapons::damage::round_points(shield.params.impact * c / 100.0),
+            amount: crate::game::weapons::damage::round_points(points / 100.0),
             point: at.translation,
             dir: ahead,
             hitgroup: Hitgroup::Generic,
-            kind: DamageKind::Melee,
+            kind: DamageKind::Generic,
             weapon: Some(weapon.id),
             force: Vec3::ZERO,
         });
         let p = shield.params.clone();
         let s = &mut shield.state;
+        // The swing after it: the meter's boost then (module doc).
+        s.boost = Boost::at(s.meter, &p);
+        s.boost_until = clock.now + p.linger as f64;
         s.charging = false;
         s.meter = 0.0;
-        if p.impact_crit != Boost::None {
-            s.boost = p.impact_crit;
-            s.boost_until = clock.now + p.impact_window as f64;
-        }
     }
 }
 
@@ -402,7 +431,7 @@ pub fn effects(
     mut shields: Query<(&mut Tf2Shield, &Weapon)>,
     holders: Query<&Inventory>,
     items: Query<(&Tf2Item, &Weapon)>,
-    debuffed: Query<(Has<Burning>, Has<Bleeding>, Has<Slowed>)>,
+    debuffed: Query<(Has<Burning>, Has<Bleeding>)>,
     mut conditions: ResMut<Conditions>,
     clock: Res<SimClock>,
     mut commands: Commands,
@@ -418,18 +447,16 @@ pub fn effects(
             continue;
         }
         let Some(owner) = weapon.owner else { continue };
-        if let Ok((burning, bleeding, slowed)) = debuffed.get(owner) {
+        if let Ok((burning, bleeding)) = debuffed.get(owner) {
             if burning {
                 commands.entity(owner).remove::<Burning>();
             }
             if bleeding {
                 commands.entity(owner).remove::<Bleeding>();
             }
-            if slowed {
-                commands.entity(owner).remove::<Slowed>();
-            }
         }
-        for c in [Condition::MarkedForDeath, Condition::Game(super::consumables::JARATE), Condition::Game(super::consumables::MILK)] {
+        // Marked for death stays (batch3b 1).
+        for c in [Condition::Game(super::consumables::JARATE), Condition::Game(super::consumables::MILK)] {
             conditions.remove(owner, c);
         }
     }
@@ -452,10 +479,11 @@ pub fn effects(
     for k in died.read() {
         let d = &k.damage;
         let Some(a) = d.attacker.filter(|a| *a != k.entity) else { continue };
-        if d.kind != DamageKind::Melee {
+        let Some(w) = shield_of(a, &shields) else { continue };
+        let impact = d.weapon.is_some_and(|n| shields.get(w).is_ok_and(|(_, x)| x.id == n));
+        if d.kind != DamageKind::Melee && !impact {
             continue;
         }
-        let Some(w) = shield_of(a, &shields) else { continue };
         let refill = charge_of(a).map_or(0.0, |c| c.refill);
         if refill > 0.0
             && let Ok((mut s, _)) = shields.get_mut(w)
@@ -495,5 +523,22 @@ mod tests {
         assert_eq!(c(3.0).turn_cap(48.0), Some(144.0));
         assert_eq!(c(50.0).turn_cap(48.0), None);
         assert!((wrap(3.5 * std::f32::consts::PI) + 0.5 * std::f32::consts::PI).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_impact_and_the_swing_follow_batch3b_1() {
+        let p = ShieldParams::default();
+        let d = |u: f32, m: f32, h: u32| impact_damage(&p, u, m, h).round();
+        assert_eq!(d(53.0, 1.0, 0), 45.0, "meter 47");
+        assert_eq!(d(71.0, 1.0, 0), 50.0, "capped");
+        assert_eq!(d(71.0, 1.7, 0), 85.0, "the Splendid Screen");
+        assert_eq!(d(71.0, 1.0, 4), 70.0, "4 heads");
+        assert_eq!(d(26.0, 1.0, 6), 39.0, "heads at most 5");
+        assert_eq!(Boost::at(76.0, &p), Boost::None);
+        assert_eq!(Boost::at(75.0, &p), Boost::Mini);
+        assert_eq!(Boost::at(41.0, &p), Boost::Mini);
+        assert_eq!(Boost::at(40.0, &p), Boost::Crit);
+        let tide = ShieldParams { boost_max: Boost::Mini, ..p };
+        assert_eq!(Boost::at(10.0, &tide), Boost::Mini);
     }
 }
