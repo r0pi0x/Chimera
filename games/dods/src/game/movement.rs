@@ -9,7 +9,8 @@
 //! ducked a third of the speed, up again in 0.21 s (the unduck's timer
 //! counting its release tick: the measured eye curve), the jump 262.33
 //! units/s standing and 268.33 ducked (apex 43 and 45; no stamina cost;
-//! one impulse, `config`),
+//! one impulse, `config`; the spawn spots' walk climbs 0.8 m as CS:S's,
+//! `SpawnClimbs`),
 //! and the ground speed clamped to the tick's cap (`ground_clamp`: the
 //! stamina's caps and the slow cap the speed itself, not the wish:
 //! movement.md, "Stamina and sprint"). Its box is the
@@ -124,6 +125,12 @@ pub fn add_movement(app: &mut App) {
             crate::core::Predict::Movement,
             ((super::stance::step, super::stamina::step).chain().before(SourceMovementStep), super::stance::yaw_limits.after(super::stance::step)),
         );
+    // Spawn spots where players get to: up ledges a jump takes (apex 43
+    // units standing, 45 ducked: movement.md "Jumping"), CS:S's 0.8 m.
+    {
+        use crate::map::SpawnClimbAppExt;
+        app.add_spawn_climb(super::GAME, 0.8);
+    }
     if let Some(mut registry) = app.world_mut().get_resource_mut::<crate::slots::MovementRegistry>()
         && let Some(m) = registry.0.iter_mut().find(|m| m.id == ID)
     {

@@ -8,7 +8,9 @@
 //! mesh from the spawn points (Combat Arms' walker, `bots::brain::
 //! nav_params`, jump-ups included, meeting the player clips; bounded to the clusters the spawn
 //! spots' walking player, `spawns::walker`, reaches where the map has
-//! visibility data, `nav_gen::Bounds`) and
+//! visibility data, `nav_gen::Bounds`; both walks go through the physics
+//! props a player gets past, `prop_physics::walked_through`: multiplayer
+//! props and light ones a player shoves, DoD:S's crates and sandbags) and
 //! measures it:
 //!
 //! - `area_m2`: the walkable area of the mesh's main region (areas walked
@@ -51,11 +53,14 @@
 //!   ceiling, a player clip: not a slope or a stair under its corners),
 //!   and `stuck_at` a few, with what.
 //! - `--probe x,y,z` (a bug report's `setpos`): what the box there meets
-//!   (the player-solid brushes too), the spots and spawn points near it,
+//!   (the player-solid brushes too; a physics prop with how players meet
+//!   it, its mass and whether they get past it), the spots and spawn points near it,
 //!   and after five seconds of the map the floor, the ceiling and
 //!   everything within 4 m. `--leaks`: where the spots' walk leaves the
 //!   navigation file, and where the file or the bots' walk goes on and
-//!   it doesn't. `--dump`: the spots, the file's and the bots' floors, a
+//!   it doesn't, and where the bots' walk leaves its main region one way
+//!   (a drop with no way back to the spawns; `one-way`, largest first, with
+//!   the area beyond). `--dump`: the spots, the file's and the bots' floors, a
 //!   top-down height map and the map's entities as files. `--bare`:
 //!   without the map logic; `--client`: loaded as a client loads it.
 //!
@@ -834,6 +839,10 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     // Held to where the map is played where it says (`nav_gen::NavWithin`).
     nav_gen::hold(&mut p, w);
     let vis = w.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
+    // Both walk through the props a player gets past (multiplayer props,
+    // light ones shoved: `prop_physics::walked_through`).
+    let passes = chimera_world::map::prop_physics::walked_through(w);
+    let passes = |e: Entity| passes.contains(&e);
     let (nav, spots, other) = {
         let mut state = SystemState::<SpatialQuery>::new(w);
         let q = state.get(w).expect("the spatial query");
@@ -841,15 +850,15 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
             vis,
             walker: chimera_sim::minigame::spawns::walker(),
         });
-        let nav = nav_gen::generate_within(&q, &|_| false, &feet, &p, bounds);
+        let nav = nav_gen::generate_within(&q, &passes, &feet, &p, bounds);
         // The spawn spots' walker (`spawns::walker`).
         let spot_bounds = spot_bound.zip(vis.as_deref()).map(|(walker, vis)| nav_gen::Bounds { vis, walker });
-        let spots = nav_gen::generate_within(&q, &|_| false, &feet, &spot_walker, spot_bounds);
+        let spots = nav_gen::generate_within(&q, &passes, &feet, &spot_walker, spot_bounds);
         // `--walker`: the same flood with another body.
         let other = o.walker.map(|[radius, height, step]| {
             let p = nav_gen::NavGenParams { radius, height, step, ..p };
             let bounds = vis.as_deref().map(|vis| nav_gen::Bounds { vis, walker: chimera_sim::minigame::spawns::walker() });
-            nav_gen::generate_within(&q, &|_| false, &feet, &p, bounds)
+            nav_gen::generate_within(&q, &passes, &feet, &p, bounds)
         });
         (nav, spots, other)
     };
@@ -971,10 +980,11 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     if o.leaks {
         // Where the bots' walk goes on and the spots' doesn't (a confined
         // map): a bots' link from an area the spots' main region covers
-        // to one it doesn't.
-        let (inside, _) = region(&spots, &feet, &spot_links);
+        // to one it doesn't (`inside`: the bots' main region; the spots'
+        // own is `walked_in`, over the spots' mesh's areas).
+        let (walked_in, _) = region(&spots, &feet, &spot_links);
         let walked: Vec<&chimera_world::map::nav::NavArea> =
-            spots.areas.iter().enumerate().filter(|(i, _)| inside[*i]).map(|(_, a)| a).collect();
+            spots.areas.iter().enumerate().filter(|(i, _)| walked_in[*i]).map(|(_, a)| a).collect();
         let covered: Vec<bool> = nav
             .areas
             .iter()
@@ -999,6 +1009,29 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
                     eprintln!("    confined: {} -> {}", at(a.center), at(b.center));
                 }
             }
+        }
+        // Where the bots' walk leaves its main region one way (a drop off
+        // a ledge with no way back to the spawns): what the region, walked
+        // to and back, leaves out of the flood (`mesh_m2` past `area_m2`),
+        // with the area beyond it reached that way (m2).
+        let mut seen = BTreeSet::new();
+        let mut drops: Vec<(f32, String)> = Vec::new();
+        for i in &ids {
+            let a = &nav.areas[*i];
+            for (j, _) in &a.links {
+                if inside[*j] {
+                    continue;
+                }
+                let b = &nav.areas[*j];
+                if seen.insert((b.center / 2.0).round().as_ivec3().to_array()) {
+                    let beyond = one_way_beyond(&nav, *j, &inside);
+                    drops.push((beyond, format!("    one-way: {} -> {} ({beyond:.0} m2 beyond)", at(a.center), at(b.center))));
+                }
+            }
+        }
+        drops.sort_by(|x, y| y.0.total_cmp(&x.0));
+        for (_, line) in drops.iter().take(12) {
+            eprintln!("{line}");
         }
     }
     row.has_nav_file = file_nav.is_some();
@@ -1328,6 +1361,27 @@ fn compare_walker(
     }
 }
 
+/// The area of `nav` reached from area `from` without entering the
+/// region `inside` (m2): what a one-way link out of it leads to.
+fn one_way_beyond(nav: &NavMesh, from: usize, inside: &[bool]) -> f32 {
+    let mut seen = vec![false; nav.areas.len()];
+    let mut stack = vec![from];
+    seen[from] = true;
+    let mut m2 = 0.0;
+    while let Some(i) = stack.pop() {
+        let a = &nav.areas[i];
+        let s = a.max - a.min;
+        m2 += s.x * s.y;
+        for (j, _) in &a.links {
+            if !seen[*j] && !inside[*j] {
+                seen[*j] = true;
+                stack.push(*j);
+            }
+        }
+    }
+    m2
+}
+
 fn region(nav: &NavMesh, feet: &[Vec3], links: &[(usize, usize)]) -> (Vec<bool>, Vec<Option<usize>>) {
     party_roster::spot_checks::region_linked(nav, feet, links)
 }
@@ -1501,8 +1555,20 @@ fn probe_report(sim: &mut Sim, probes: &[Vec3], at: &dyn Fn(Vec3) -> String) {
     }
     let name = |e: Entity| {
         let n = |e: Entity| w.get::<Name>(e).map(|n| n.to_string());
+        // A physics prop: how players meet it, its mass and whether they
+        // get past it (`prop_physics::player_passes`); else static.
+        let physics = match w.get::<chimera_world::map::PhysicsProp>(e) {
+            Some(p) => format!(
+                " [{:?} {} kg{}]",
+                p.push,
+                p.mass,
+                if chimera_world::map::prop_physics::player_passes(p) { ", passed" } else { "" }
+            ),
+            None if w.get::<chimera_world::map::prop_physics::FrozenBody>(e).is_some() => " [frozen]".into(),
+            None => String::new(),
+        };
         format!(
-            "{} ({})",
+            "{}{physics} ({})",
             n(e).unwrap_or_else(|| e.to_string()),
             w.get::<ChildOf>(e).and_then(|c| n(c.parent())).unwrap_or_default()
         )

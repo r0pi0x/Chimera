@@ -117,7 +117,8 @@ pub fn teleport_links(world: &World, nav: &NavMesh) -> Vec<(usize, usize)> {
 /// box sliding to fit a doorway, bounded where the map has visibility
 /// data or says where it is played, `nav_gen::NavWithin`, with its
 /// teleporters as links as the bots' own), from the `feet`, meeting the player clips (the played space:
-/// the bots' own walk passes them).
+/// the bots' own walk passes them) and going through the physics props a
+/// player gets past (`prop_physics::walked_through`).
 pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
     // Fitting doorways as the spots' walker does (`NavGenParams::slide`,
     // half its radius): else a gap the spots' walk takes and the grid's
@@ -126,6 +127,7 @@ pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
     p.slide = p.radius / 2.0;
     nav_gen::hold(&mut p, world);
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
+    let passes = chimera_world::map::prop_physics::walked_through(world);
     let mut mesh = {
         let mut state = SystemState::<SpatialQuery>::new(world);
         let q = state.get(world).expect("the spatial query");
@@ -133,7 +135,7 @@ pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
             vis,
             walker: spawns::walker(),
         });
-        nav_gen::generate_within(&q, &|_| false, feet, &p, bounds)
+        nav_gen::generate_within(&q, &|e| passes.contains(&e), feet, &p, bounds)
     };
     // The map's teleporters as the bots' links (`nav_gen::link_map`).
     nav_gen::link_map(&mut mesh, world);

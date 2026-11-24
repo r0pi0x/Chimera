@@ -8,7 +8,8 @@
 //! forceclosed. Props and players (specs/source/prop_damage.md 6): a
 //! prop_physics crate or a 500 kg cupboard landing on a player hurts it as
 //! two contacts and is hurt by it; a multiplayer one passes through; a
-//! player running into a resting prop hurts neither. Water
+//! player running into a resting prop hurts neither; a player pushes a
+//! light crate out of his way but not a heavy one. Water
 //! (`map::buoyancy`): a crate floats; de_aztec's oil drum floats at the
 //! depth its mass and hull volume give and stops bobbing.
 
@@ -418,6 +419,43 @@ fn running_into_a_prop_hurts_nobody() {
         // units, tipping).
         if prop.mass < 100.0 {
             assert!(crate_at(&mut sim).x > at.x + 10.0, "{} kg: shoved on", prop.mass);
+        }
+    }
+}
+
+/// A player walking into a crate on open floor gets past where it stood
+/// when the player can push it (specs/cs_source/physics_props.md 4.1, 4.3):
+/// a 20 kg `prop_physics` is shoved ahead by the player's shadow and the
+/// player follows it; a multiplayer one is walked through and kicked
+/// aside (4.2); a 400 kg one (over the 350 kg a shadow pushes) stops him
+/// at its face. What the spawn spots' walk counts on
+/// (`prop_physics::walked_through`).
+#[test]
+fn a_player_pushes_a_light_crate_but_not_a_heavy_one() {
+    for (push, mass, passes) in [(PushAway::Collide, 20.0, true), (PushAway::NonSolid, 20.0, true), (PushAway::Collide, 400.0, false)] {
+        let class = if push == PushAway::Collide { "prop_physics" } else { "prop_physics_multiplayer" };
+        let e = entity(&[("classname", class), ("origin", "100 0 16.1")], Vec::new(), false);
+        let mut data = map(vec![e]);
+        add_prop(&mut data, 0, Vec3::new(100.0, 0.0, 16.1), push, false, mass);
+        data.gravity = Some(800.0 * SCALE);
+        let mut sim = sim(data);
+        let p = sim.spawn_character(to_engine(Vec3::new(0.0, 0.0, 37.0)), movement::ID);
+        sim.intent(p).yaw = -std::f32::consts::FRAC_PI_2;
+        sim.ticks(30);
+        sim.intent(p).move_axis = Vec2::Y;
+        sim.seconds(3.0);
+        let x = to_source(sim.position(p)).x;
+        let label = format!("{class} of {mass} kg");
+        if passes {
+            assert!(x > 120.0, "{label}: the player got past where it stood (x {x})");
+            // Shoved ahead the whole way, or kicked aside as he went through.
+            let moved = crate_at(&mut sim).distance(Vec3::new(100.0, 0.0, 16.1));
+            let least = if push == PushAway::Collide { 100.0 } else { 1.0 };
+            assert!(moved > least, "{label}: pushed {moved} units");
+        } else {
+            // The crate's face is at x 84, the player's half width 16.
+            assert!(x < 70.0, "{label}: stopped at it (x {x})");
+            assert!(crate_at(&mut sim).x < 101.0, "{label}: not pushed ({})", crate_at(&mut sim).x);
         }
     }
 }

@@ -8,91 +8,91 @@
 speed_mps = 6.35
 
 [maps.dod_anzio]
-area_m2 = 2482
-sight_m = 12.8
-spot_area_m2 = 2491
+area_m2 = 2494
+sight_m = 12.3
+spot_area_m2 = 2574
 spawns = 40
-spots = 1600
+spots = 1375
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 4.0, 8 = 1.7, 12 = 1.1 }
+wander_s = { 4 = 4.2, 8 = 1.8, 12 = 1.1 }
 
 [maps.dod_argentan]
-area_m2 = 741
-sight_m = 6.1
-spot_area_m2 = 745
+area_m2 = 779
+sight_m = 5.8
+spot_area_m2 = 810
 spawns = 40
-spots = 508
+spots = 469
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 2.5, 8 = 1.1, 12 = 0.7 }
+wander_s = { 4 = 2.8, 8 = 1.2, 12 = 0.8 }
 
 [maps.dod_avalanche]
-area_m2 = 2926
-sight_m = 7.0
-spot_area_m2 = 700
+area_m2 = 2984
+sight_m = 6.8
+spot_area_m2 = 3134
 spawns = 40
-spots = 660
+spots = 2380
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 8.7, 8 = 3.7, 12 = 2.4 }
+wander_s = { 4 = 9.1, 8 = 3.9, 12 = 2.5 }
 
 [maps.dod_colmar]
-area_m2 = 447
+area_m2 = 454
 sight_m = 7.0
-spot_area_m2 = 432
+spot_area_m2 = 469
 spawns = 40
-spots = 286
+spots = 267
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 1.3, 8 = 0.6, 12 = 0.4 }
 
 [maps.dod_donner]
-area_m2 = 1402
-sight_m = 7.8
-spot_area_m2 = 1416
+area_m2 = 1406
+sight_m = 7.9
+spot_area_m2 = 1447
 spawns = 40
-spots = 962
+spots = 874
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 3.7, 8 = 1.6, 12 = 1.0 }
 
 [maps.dod_flash]
-area_m2 = 4701
+area_m2 = 4735
 sight_m = 9.2
-spot_area_m2 = 4801
+spot_area_m2 = 4912
 spawns = 40
-spots = 3925
+spots = 3692
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 10.6, 8 = 4.5, 12 = 2.9 }
+wander_s = { 4 = 10.6, 8 = 4.6, 12 = 2.9 }
 
 [maps.dod_jagd]
-area_m2 = 1714
-sight_m = 12.1
-spot_area_m2 = 1734
+area_m2 = 1717
+sight_m = 12.0
+spot_area_m2 = 1762
 spawns = 40
-spots = 1175
+spots = 1235
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.9, 8 = 1.3, 12 = 0.8 }
 
 [maps.dod_kalt]
-area_m2 = 612
+area_m2 = 613
 sight_m = 7.4
-spot_area_m2 = 609
+spot_area_m2 = 644
 spawns = 40
-spots = 420
+spots = 407
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 1.7, 8 = 0.7, 12 = 0.5 }
 
 [maps.dod_palermo]
-area_m2 = 980
+area_m2 = 989
 sight_m = 6.9
-spot_area_m2 = 850
+spot_area_m2 = 1036
 spawns = 32
-spots = 720
+spots = 763
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 2.9, 8 = 1.2, 12 = 0.8 }
+wander_s = { 4 = 3.0, 8 = 1.3, 12 = 0.8 }

@@ -12,8 +12,8 @@
 //! No map is claimed (`PARTS.maps` is empty): its maps enter an app's
 //! automatic pool from the install or the asset store the machine has
 //! (`auto::InstalledMaps`), as its pool rules allow (data/map_pool.toml:
-//! every map denied but dod_jagd and dod_flash, whose spawn spots cover
-//! the whole map, with why), drawn by its measurements
+//! every map denied but dod_jagd, dod_flash and dod_avalanche, whose
+//! spawn spots cover the whole map, with why), drawn by its measurements
 //! (data/map_fitness.toml, the `map_fitness` tool's) for the players
 //! present (`add_map_pool`, from the bundle's `party_sim`); any map plays
 //! when asked by id (`dods:dod_avalanche`).

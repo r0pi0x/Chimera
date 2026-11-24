@@ -22,9 +22,13 @@
 //!   collision (`map::nav_gen`) with a walking player about as wide as the
 //!   widest (`walker`, its box sliding up to 0.2 m off a cell's centre to
 //!   fit a doorway), climbing what the map's game's players climb
-//!   (`SpawnClimbs`: Combat Arms' and CS:S's jump-ups, 0.8 m; then bounded
+//!   (`SpawnClimbs`: Combat Arms', CS:S's and DoD:S's jump-ups, 0.8 m; then bounded
 //!   to the clusters the walk reaches where the map has visibility data),
-//!   and meeting the map's player clips (their players-only collider,
+//!   going through the physics props a player gets past
+//!   (`map::prop_physics::walked_through`: multiplayer props players walk
+//!   through, light ones their shadow shoves; DoD:S's crates and sandbags
+//!   closed off most of its maps' rooms; a spot is still never inside
+//!   one, `stuck_at` meets them), and meeting the map's player clips (their players-only collider,
 //!   `core::MapPlayerClips`, which `CHARACTER_FILTER` meets; cs_havana's
 //!   clipped yard once held a player). A mesh made for another walker,
 //!   `NavMesh::generated`, is not used (Combat Arms' AI volumes link
@@ -99,7 +103,7 @@
 //! relies on the walk alone.
 
 use avian3d::prelude::*;
-use bevy::{ecs::system::SystemState, prelude::*};
+use bevy::{ecs::system::SystemState, platform::collections::HashSet, prelude::*};
 
 use crate::{
     core::{
@@ -107,11 +111,12 @@ use crate::{
         Spectating, Team,
     },
     map::{
-        MapFloors, SPAWN_LIFT,
+        MapFloors, MapPropCollider, PhysicsProp, SPAWN_LIFT,
         code_maps::SpawnOnPoints,
         nav::{NavMesh, flags},
         nav_gen::{self, NavGenParams},
         play_area::{self, PlanPolygon},
+        prop_physics,
         vis::{ActiveVisibility, MapVisibility},
     },
     weapon::random::{Rng, crc32},
@@ -552,7 +557,7 @@ pub struct SpotsJob {
 /// The version of the spots' code for their key on disk
 /// (`map::spot_cache`): bumped when `spot_ok`, `raw_spots` or what they
 /// call change what they find. The constants they read are in the key.
-const SPOT_CACHE_VERSION: &str = "1";
+const SPOT_CACHE_VERSION: &str = "2";
 
 /// A digest of a mesh for the key: its areas' ids, flags and boxes.
 fn mesh_digest(mesh: Option<&NavMesh>) -> Vec<u8> {
@@ -676,6 +681,7 @@ impl SpotsJob {
         &mut self,
         q: &SpatialQuery,
         characters: &[Entity],
+        props: &HashSet<Entity>,
         nav: Option<&NavMesh>,
         vis: Option<&MapVisibility>,
         cells: usize,
@@ -698,7 +704,7 @@ impl SpotsJob {
             }
         }
         if let Some(mut flood) = self.flood.take() {
-            match flood.step(q, &|e| characters.contains(&e), vis, cells) {
+            match flood.step(q, &|e| characters.contains(&e) || props.contains(&e), vis, cells) {
                 Some(walk) => {
                     // The file's floors where the walk reaches them, else
                     // the walk.
@@ -817,6 +823,7 @@ pub fn prepare_spots(
     floors: Option<Res<MapFloors>>,
     vis: Option<Res<ActiveVisibility>>,
     characters: Query<Entity, With<Intent>>,
+    props: Query<(Entity, &PhysicsProp), With<MapPropCollider>>,
     q: SpatialQuery,
     wait_tasks: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut wait: Local<u8>,
@@ -838,8 +845,9 @@ pub fn prepare_spots(
         return;
     };
     let characters: Vec<Entity> = characters.iter().collect();
+    let props: HashSet<Entity> = props.iter().filter(|(_, p)| prop_physics::player_passes(p)).map(|(e, _)| e).collect();
     let mesh = map_mesh(nav.as_deref(), floors.as_deref());
-    if job.slice(&q, &characters, mesh, vis.as_ref().map(|v| &*v.0), nav_gen::CELLS_PER_TICK, wait_tasks.is_some()) {
+    if job.slice(&q, &characters, &props, mesh, vis.as_ref().map(|v| &*v.0), nav_gen::CELLS_PER_TICK, wait_tasks.is_some()) {
         let tries = spots.as_ref().map_or(0, |s| s.tries);
         commands.queue(move |w: &mut World| {
             if let Some(job) = w.remove_resource::<SpotsJob>() {
@@ -868,13 +876,14 @@ pub fn settle_spots(world: &mut World) -> bool {
     }
     let Some(mut job) = world.remove_resource::<SpotsJob>().or_else(|| SpotsJob::new(world)) else { return true };
     let characters: Vec<Entity> = world.iter_entities().filter(|r| r.contains::<Intent>()).map(|r| r.id()).collect();
+    let props = prop_physics::walked_through(world);
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let wait = chimera_core::tasks::waits(world);
     let done = {
         let mut state = SystemState::<SpatialQuery>::new(world);
         let Ok(q) = state.get(world) else { return true };
         let mesh = map_mesh(world.get_resource::<NavMesh>(), world.get_resource::<MapFloors>());
-        job.slice(&q, &characters, mesh, vis.as_deref(), nav_gen::CELLS_PER_LOAD_FRAME, wait)
+        job.slice(&q, &characters, &props, mesh, vis.as_deref(), nav_gen::CELLS_PER_LOAD_FRAME, wait)
     };
     if !done {
         world.insert_resource(job);
@@ -936,9 +945,11 @@ fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let (walker, bound) = walker_for(world);
     let characters: Vec<Entity> = world.iter_entities().filter(|r| r.contains::<Intent>()).map(|r| r.id()).collect();
+    let mut passes = prop_physics::walked_through(world);
+    passes.extend(characters.iter().copied());
     let mut state = SystemState::<SpatialQuery>::new(world);
     let Ok(q) = state.get(world) else { return SpawnSpots::default() };
-    let ignore = |e: Entity| characters.contains(&e);
+    let ignore = |e: Entity| passes.contains(&e);
     // The map's own mesh; one generated for another walker (bots') may
     // climb where a player can't: ours instead, which also keeps the
     // file's spots where it reaches.

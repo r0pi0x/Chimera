@@ -8,7 +8,8 @@
 //! (de_dust2's "seam": a row of eyes in the plane where two faces meet);
 //! in open space only, never in a duct or a crawlspace (ctf_turbine's
 //! vents); in a free for all never in the map's team spawn rooms
-//! (`map::SpawnRooms`, TF2's `func_respawnroom`).
+//! (`map::SpawnRooms`, TF2's `func_respawnroom`); through the physics
+//! props a player pushes or walks through, never a heavy one.
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
@@ -682,4 +683,58 @@ fn spawning_at_the_map_s_points_still_uses_the_rooms() {
         let (_, _, at) = respawns(&mut sim, 3);
         assert!(at.iter().all(|p| greybox::SPAWNS.iter().any(|s| s.xz().distance(p.xz()) < 0.3)), "{points}: {at:?}");
     }
+}
+
+/// A room closed off by a crate (DoD:S's maps, whose crates and sandbags
+/// kept the spots' walk out of most rooms): a 10 m room of 3 m walls with
+/// one 2 m doorway, filled by a 1 m tall crate `prop` (none: open). Whether
+/// the spots reach inside.
+fn room_reached(prop: Option<chimera_world::map::PhysicsProp>) -> bool {
+    use chimera_world::map::MapPropCollider;
+    let mut sim = started(DEF, |_| {});
+    boxes(
+        &mut sim,
+        &[
+            // x 26 to 36, z 10 to 20; the west wall's doorway z 14 to 16.
+            (Vec3::new(10.4, 3.0, 0.4), Vec3::new(31.0, 1.5, 9.8)),
+            (Vec3::new(10.4, 3.0, 0.4), Vec3::new(31.0, 1.5, 20.2)),
+            (Vec3::new(0.4, 3.0, 10.4), Vec3::new(36.2, 1.5, 15.0)),
+            (Vec3::new(0.4, 3.0, 4.2), Vec3::new(25.8, 1.5, 11.9)),
+            (Vec3::new(0.4, 3.0, 4.2), Vec3::new(25.8, 1.5, 18.1)),
+        ],
+    );
+    let plugged = prop.is_some();
+    if let Some(p) = prop {
+        let w = sim.app.world_mut();
+        w.spawn((
+            RigidBody::Static,
+            Collider::cuboid(0.8, 1.0, 2.0),
+            Transform::from_translation(Vec3::new(25.8, 0.5, 15.0)),
+            p,
+            MapPropCollider,
+        ));
+        sim.ticks(2);
+    }
+    let inside = |p: &Vec3| (26.5..35.5).contains(&p.x) && (10.5..19.5).contains(&p.z);
+    let spots = spawns::candidates(sim.app.world_mut());
+    assert!(spots.len() > 500, "{} spots", spots.len());
+    // Never inside the crate itself.
+    assert!(!plugged || !spots.iter().any(|p| (25.4..26.2).contains(&p.x) && (14.0..16.0).contains(&p.z)), "a spot in the crate");
+    spots.iter().filter(|p| inside(p)).count() > 10
+}
+
+/// The spots' walk goes through the physics props a player gets past
+/// (`prop_physics::walked_through`, specs/cs_source/physics_props.md 4.1,
+/// 4.2): a multiplayer crate (walked through) and a light `prop_physics`
+/// (shoved by the player's shadow) open the room; a 400 kg one (over the
+/// 350 kg a shadow pushes) is a wall.
+#[test]
+fn a_room_closed_by_a_crate_a_player_pushes_is_reached() {
+    use chimera_world::map::{PhysicsProp, PushAway};
+    let crate_of = |push, mass| PhysicsProp { push, mass, bounds: (Vec3::new(-0.4, -0.5, -1.0), Vec3::new(0.4, 0.5, 1.0)) };
+    assert!(room_reached(None), "the open room is reached");
+    assert!(room_reached(Some(crate_of(PushAway::NonSolid, 30.0))), "a multiplayer crate is walked through");
+    assert!(room_reached(Some(crate_of(PushAway::Solid, 30.0))), "a solid-mode one too");
+    assert!(room_reached(Some(crate_of(PushAway::Collide, 20.0))), "a light prop_physics is shoved aside");
+    assert!(!room_reached(Some(crate_of(PushAway::Collide, 400.0))), "a 400 kg one is a wall");
 }

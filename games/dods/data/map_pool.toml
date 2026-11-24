@@ -1,24 +1,26 @@
 # DoD:S maps an automatic gun game's pool takes (the Ultimate Gun Game:
 # chimera_sim::minigame::map_fit; docs/plans/active/map-pool-fitness.md,
-# docs/plans/active/dods.md M3b). Every map is denied but those allowed
-# below, each chosen by the 2026-11-23 sweep of the nine stock maps
-# (data/map_fitness.toml): no spot off the map and none stuck on any of
-# them, but on most the spawn spots cover only a part of the walkable
-# area, the rest behind what the round logic holds shut for a party
-# (spawn-room doors, capture-gated passages), so half the players would
-# never meet the others there:
-# - dod_argentan (spots on 745 of 5790 m2), dod_avalanche (700 of 2927),
-#   dod_colmar (432 of 5020), dod_donner (1416 of 5558), dod_kalt (609 of
-#   5019), dod_palermo (850 of 4518), dod_anzio (2491 of 6567).
-# The players present still decide a draw (the wander time: dod_jagd from
-# 4 players, dod_flash, the larger, from about 8). Each entry: map names
-# (`*` matches any run of letters) and why; `[[allow]]` entries win over
-# `[[deny]]` and over the measurements' flags.
+# docs/plans/active/dods.md M3b and section 7). Every map is denied but
+# those allowed below, each chosen by the 2026-11-24 sweep of the nine
+# stock maps (data/map_fitness.toml; the spawn spots' walk goes through the
+# physics props a player pushes or walks through and climbs DoD:S's
+# jump-ups): no spot off the map and none stuck on any of them, but on six
+# the main region (walked to from the spawn points and back) is a part of
+# the map: the spawn points stand on ledges the rest of the map is reached
+# from by drops of 0.9-1.8 m with no way back (`map_fitness --leaks`,
+# "one-way"), so the spots would keep everyone up there:
+# - dod_anzio (main region 2494 of 6648 m2), dod_argentan (779 of 5872),
+#   dod_colmar (454 of 5040), dod_donner (1406 of 5604), dod_kalt (613 of
+#   5036), dod_palermo (989 of 4534).
+# The players present still decide a draw (the wander time: dod_jagd and
+# dod_avalanche from 4 players, dod_flash, the largest, from about 8). Each
+# entry: map names (`*` matches any run of letters) and why; `[[allow]]`
+# entries win over `[[deny]]` and over the measurements' flags.
 
 [[deny]]
 reason = "DoD:S's maps join the pool only when chosen for a free-for-all (the allow list)"
 maps = ["*"]
 
 [[allow]]
-reason = "the spawn spots cover the whole walkable area (no part held shut by the round logic); measured fit"
-maps = ["dod_jagd", "dod_flash"]
+reason = "the spawn spots cover the whole walkable area (no part reached only by a drop from the spawns); measured fit"
+maps = ["dod_jagd", "dod_flash", "dod_avalanche"]

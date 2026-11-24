@@ -15,6 +15,9 @@
 //! `prop_physics` bodies it can push (up to 350 kg) and keeps a shadowed
 //! character's own pairs only to `prop_physics` bodies too heavy to push; the
 //! shadow is on `core::SHADOW_LAYER`, which no spatial query sees);
+//! `walked_through`: the props a player gets past (`player_passes`: a
+//! multiplayer prop, or one a shadow pushes), which walkers standing in for
+//! players (the spawn spots', the map sweep's) go through;
 //! `settle_props`: a moving prop that keeps within 1 in and 5 degrees of
 //! one pose for 0.5 s is stopped and put to sleep (`Settling`), as Source's
 //! physics sleeps nearly still bodies; one sunk more than 1 in into the
@@ -581,6 +584,28 @@ impl ShadowContacts<'_, '_> {
 /// multiplayer one) up to `SHADOW_PUSH_MASS`.
 pub fn pushable(p: &PhysicsProp) -> bool {
     p.push == super::PushAway::Collide && p.mass <= SHADOW_PUSH_MASS
+}
+
+/// Whether a player gets past this prop: walks through it (a multiplayer
+/// prop, spec 4.2.1) or shoves it aside (`pushable`). Only a prop over
+/// `SHADOW_PUSH_MASS` of the normal group is a wall (spec 4.1).
+pub fn player_passes(p: &PhysicsProp) -> bool {
+    p.push != super::PushAway::Collide || pushable(p)
+}
+
+/// The loaded map's physics props a player gets past (`player_passes`):
+/// what a walker standing in for players (`nav_gen`'s `ignore`: the spawn
+/// spots' walk, the map sweep's) goes through, so a room the map's crates
+/// and sandbags close off counts as reached. A frozen prop (motion
+/// disabled, `FrozenBody`) is no `PhysicsProp` until it is set moving: a
+/// wall, as the movement meets it.
+pub fn walked_through(world: &World) -> bevy::platform::collections::HashSet<Entity> {
+    world
+        .iter_entities()
+        .filter(|r| r.contains::<MapPropCollider>())
+        .filter(|r| r.get::<PhysicsProp>().is_some_and(player_passes))
+        .map(|r| r.id())
+        .collect()
 }
 
 /// How many simulated bodies there are and how many of them are awake

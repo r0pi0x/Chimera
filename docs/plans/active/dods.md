@@ -317,24 +317,64 @@ teams in a free-for-all (a gun's class is its nation's); smoke grenades
 and the live-grenade throw-back (open question 2); objectives and team
 walls not read; `INFO`'s binds and tick.
 
-**The map pool** (checked 2026-11-24): the seven maps out of the pool are
-not kept shut by doors or round logic. No DoD:S stock map has a door
-entity; `func_teamblocker` / `func_team_wall` (solid to one team, read as
-solid to all) made no difference worth a converter change (dod_avalanche
-spot area 700 -> 731 m2 with them left out, so they stay). What confines
-the spawn spots' walker (`map_fitness --leaks`, 116 links): the maps'
-physics props (`prop_physics_multiplayer`, 105-348 a map: crates and
-sandbags a DoD:S player pushes aside; our walker and the spawn spots treat
-them as walls) on dod_avalanche (the probe at -20 2077 290 meets prop
-1108), and on the other six a main region much smaller than the bots'
-flood (dod_argentan 741 of 5790 m2, colmar 447 of 5020, kalt 612 of 5019,
-donner 1402 of 5558, palermo 980 of 4518, anzio 2482 of 6567): the
-bots' jump-ups and drops the walker doesn't take back. Not simple: it
-needs the walker (and the players' movement) to push light physics props,
-a Chimera change for every game (map-pool-fitness.md), or per-map checks
-of the confined links. Until then the pool stays dod_jagd and dod_flash.
+**The map pool** (checked 2026-11-24, then swept again the same day):
+the seven maps out of the pool were not kept shut by doors or round
+logic. No DoD:S stock map has a door entity; `func_teamblocker` /
+`func_team_wall` (solid to one team, read as solid to all) made no
+difference worth a converter change (dod_avalanche spot area 700 -> 731
+m2 with them left out, so they stay). Two things confined the spawn
+spots' walker, and the walker now takes both:
+- the physics props (`prop_physics_multiplayer`, 105-348 a map: crates
+  and sandbags): the movement already lets a player through them
+  (specs/cs_source/physics_props.md 4.1-4.3, `source_movement::pushaway`
+  and `shadow`), but the walker met them as walls; it now goes through
+  every prop a player gets past (`map::prop_physics::walked_through`:
+  multiplayer props, and `prop_physics` up to the 350 kg a shadow pushes),
+  as does `map_fitness`'s bots' walk;
+- DoD:S's jump-ups: the walker climbed a step only; it now climbs 0.8 m
+  as CS:S's (`SpawnClimbs`; the jump's apex is 43 units, movement.md).
+
+dod_avalanche's spot area went 700 -> 734 m2 with the props alone and
+-> 3134 m2 (its bots' region 2984) with the climb: it joined the pool
+(dod_jagd, dod_flash, dod_avalanche). On the six others the bots' own
+main region is the part: their spawn points stand on ledges the rest of
+the map is reached from by drops (0.9-1.8 m) with no way back
+(`map_fitness --leaks`, "one-way", the area beyond each):
+dod_anzio 2494 of 6648 m2 (drops at 197 -758 -316, -1270 -817 -333,
+-541 -797 -303), dod_argentan 779 of 5872 (-2894 -1024 76, -2362 -1033
+80, -2244 -1033 80), dod_colmar 454 of 5040 (226 2618 46, -128 2598 51,
+-20 -2037 42, 246 -2028 50; 0.9 m), dod_donner 1406 of 5604 (-2372 -2490
+-46), dod_kalt 613 of 5036 (689 5118 126, 1378 4744 120, 4803 4291 131,
+5561 4281 121), dod_palermo 989 of 4534 (1909 3238 -300, 2904 1801 -234,
+1545 -797 -315). The pool's rule counts only areas walked to from a spawn
+and back (map-pool-fitness.md), so a drop isn't counted: these stay out.
+Admitting them needs a rule change (the region as the largest part a
+player can walk round in that the spawns drop into, the ledges left out)
+or spots only below the drops; a decision, not a measurement.
+
+Not covered by a spec (open): whether DoD:S's multiplayer props are
+CS:S's push-away group (walked through) or HL2:DM's (solid to players,
+specs/hl2dm/gravity_gun.md, Corrections 1): ours follow CS:S's, the
+shared Source code's; a probe session would walk a bot into a
+`prop_physics_multiplayer` crate on dod_avalanche. And how a player of a
+game without Source's physics (Combat Arms', Halo's movement) meets a
+Source map's props: both movements meet every prop as a wall, so on a
+DoD:S map such a player can't pass a crate the spots' walk went through;
+no spec says what a mashup should do (a design question for the user).
 
 ## Log
+
+- 2026-11-24, the map pool again: the spawn spots' walker and
+  `map_fitness`' walks go through the physics props a player gets past
+  (`prop_physics::walked_through`), DoD:S's walker climbs 0.8 m
+  (`SpawnClimbs`), `map_fitness --leaks` lists one-way drops and its
+  probe says how players meet a physics prop; dod_avalanche joined the
+  pool (§7). CS:S's 109 maps and HL2:DM's 8 swept again: no map newly
+  fit, no spot area moved by more than 10% (cs_militia's wander at 4
+  players 8.9 -> 10.6 s, its area the same: the sight samples; its pool
+  and data left as they were); TF2's pool is its allow list, which the
+  measurements can't change (not swept). Tests: chimera_sim `spawns::a_room_closed_by_a_crate_a_player_pushes_is_reached`,
+  cs_source `logic_physics::a_player_pushes_a_light_crate_but_not_a_heavy_one`.
 
 - 2026-11-24, spec measurements 2 implemented (an implementation session
   from specs/dods only): `gun` (the 45 u/s move threshold, partial reload
