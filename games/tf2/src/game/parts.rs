@@ -59,6 +59,7 @@ pub static PARTS: GameParts = GameParts {
     match_lost_sound: None,
     music: false,
     cues: None,
+    scaffold: false,
 };
 
 /// Its map pool's rules (data/map_pool.toml: every installed map denied

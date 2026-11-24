@@ -1664,6 +1664,7 @@ mod warm_tests {
             match_lost_sound: None,
             music: false,
             cues: None,
+            scaffold: false,
         }
     }
     static A: GameParts = parts("a", Some("a"));

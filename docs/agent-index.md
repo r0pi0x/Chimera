@@ -183,7 +183,7 @@ module list is `docs/modules.md`.
 - 40: The crates | A new family's folder is a loader layer the day a crate lives in it; its formats crate may use `chimera_vfs` (archives as mount layers) and
 - 64: The game crate's shape | party mode finds the same seams in every game:
 - 144: Order of work | Get a character walking on the greybox with stand-in parts first (M0: tools/new-game), then replace one part at a time, each behind its...
-- 208: Don't rely on | run-time choice (`chimera_core::gameplay`)
+- 212: Don't rely on | run-time choice (`chimera_core::gameplay`)
 
 ## docs/performance.md
 

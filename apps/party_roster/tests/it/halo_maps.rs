@@ -28,8 +28,8 @@ fn halo_lends_its_guns_and_no_map_without_the_disc() {
     assert_eq!(halo.grenades.len(), 1, "{}", halo.line());
     assert!(halo.missing.is_empty() && halo.movement.is_some() && halo.playable(), "{}", halo.line());
     assert!(halo.maps.is_empty(), "no map claimed without the disc: {}", halo.line());
-    // The other games still lend what they did.
-    for c in report.iter().filter(|c| c.game != halo_ce::game::GAME) {
+    // The other games still lend what they did (a scaffold is in no ladder).
+    for c in report.iter().filter(|c| c.game != halo_ce::game::GAME && !c.scaffold) {
         assert!(c.playable(), "{}", c.line());
     }
 }

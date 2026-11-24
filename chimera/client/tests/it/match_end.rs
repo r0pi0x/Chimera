@@ -40,6 +40,7 @@ static LOUD: GameParts = GameParts {
     match_lost_sound: None,
     music: false,
     cues: None,
+    scaffold: false,
 };
 static QUIET: GameParts = GameParts {
     game: "quiet",

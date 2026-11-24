@@ -48,10 +48,17 @@ fn each_game_reports_what_it_lends() {
     assert!(dods.playable() && dods.missing.is_empty() && dods.maps.is_empty() && dods.knife.is_some(), "{}", dods.line());
     let lent = party_roster::GAME_PARTS.iter().find(|p| p.game == "dods").unwrap().guns.iter().filter(|g| g.class != GunClass::Grenade).count();
     assert!(lent >= 12 && dods.guns.len() == lent, "{}", dods.line());
+    // A scaffold (tools/new-game; CS 1.6 until its first real gun) is
+    // reported with its stand-in gun and movement but is in no ladder.
+    let scaffolds: Vec<&str> = party_roster::GAME_PARTS.iter().filter(|p| p.scaffold).map(|p| p.game).collect();
+    for game in &scaffolds {
+        let c = report.remove(report.iter().position(|c| c.game == *game).unwrap());
+        assert!(c.scaffold && !c.playable() && c.missing.is_empty() && !c.guns.is_empty(), "{}", c.line());
+    }
     let halo = report.remove(2);
     assert!(halo.playable() && halo.missing.is_empty() && halo.maps.is_empty(), "{}", halo.line());
     assert_eq!(halo.guns.len(), 9, "{}", halo.line());
-    let parts: Vec<_> = party_roster::GAME_PARTS.iter().filter(|p| !["halo_ce", "tf2", "dods"].contains(&p.game)).collect();
+    let parts: Vec<_> = party_roster::GAME_PARTS.iter().filter(|p| !["halo_ce", "tf2", "dods"].contains(&p.game) && !p.scaffold).collect();
     let claimed_guns = |i: usize| parts[i].guns.iter().filter(|g| g.class != GunClass::Grenade).count();
     for c in &report {
         assert!(c.missing.is_empty(), "every claimed part is in the app: {}", c.line());

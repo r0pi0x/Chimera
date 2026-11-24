@@ -151,7 +151,11 @@ doc and [engine-capabilities.md](engine-capabilities.md).
 1. **M0, the skeleton**: `INFO`, the mount (`game::mount::open` through
    `chimera_core::mount::served::open`, so the asset store works),
    `SimPlugins`, the harness, a test that the game registers and (heavy)
-   that the install mounts. Scaffolded.
+   that the install mounts. Scaffolded. Its `PARTS` say `scaffold: true`:
+   the party reports the game but deals its stand-in gun into no ladder
+   and lists it nowhere in the sandbox, so the cross-game tests (rung
+   shares, every movement climbing every ladder) don't hold a stand-in to
+   them. Set `scaffold: false` when its first real gun and movement land.
 2. **M1, the apps** (optional for a guest game): the server is a
    `GameServer` static and `chimera_net::dedicated::run(&SERVER)`, the
    app a `GameApp` static and `chimera_client::client::app::run(&APP)`

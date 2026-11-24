@@ -52,6 +52,7 @@ pub static PARTS: GameParts = GameParts {
     match_lost_sound: Some(RESULT_LOSE_SOUND),
     music: true,
     cues: Some(CUES),
+    scaffold: false,
 };
 
 /// `ResultWinSound`'s file (music_ambience.md 7, inferred).

@@ -78,7 +78,8 @@ pub fn games_of(caps: &[chimera_sim::minigame::auto::Capabilities]) -> Vec<Picke
 /// Lists the maps again and marks the one in play (the view opens).
 pub fn refresh(world: &mut World) {
     let mut caps = chimera_sim::minigame::auto::report(world);
-    caps.retain(|c| c.playable());
+    // A scaffold's maps are real ones (its guns aren't dealt yet).
+    caps.retain(|c| c.playable() || c.scaffold);
     let games = games_of(&caps);
     let here = chimera_net::net::current_map(world);
     world.insert_resource(MapCards(games));
@@ -322,6 +323,7 @@ pub fn staged_maps() -> Vec<PickerGame> {
         hud: None,
         maps: maps.iter().map(|m| format!("{game}:{m}")).collect(),
         missing: Vec::new(),
+        scaffold: false,
     };
     games_of(&[
         caps("cs_source", &["de_dust2", "de_inferno", "de_nuke", "cs_office", "cs_italy"]),

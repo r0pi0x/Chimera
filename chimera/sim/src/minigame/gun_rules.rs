@@ -290,6 +290,7 @@ pub fn allowed_group() -> Capabilities {
         hud: None,
         maps: Vec::new(),
         missing: Vec::new(),
+        scaffold: false,
     }
 }
 
@@ -611,6 +612,7 @@ mod tests {
             hud: None,
             maps: Vec::new(),
             missing: Vec::new(),
+            scaffold: false,
         }
     }
 

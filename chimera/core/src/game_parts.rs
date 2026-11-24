@@ -133,11 +133,25 @@ pub struct GameParts {
     /// sounds of a gun game's rung ups, last rung, lead and win),
     /// registered with its parts.
     pub cues: Option<crate::game_data::GameData>,
+    /// A scaffold (tools/new-game): its parts are stand-ins (a gun without
+    /// models, a placeholder movement), so it is registered and reported
+    /// but in no ladder and not in the sandbox's lists
+    /// (`chimera_sim::minigame::auto::Capabilities::playable`) until its
+    /// first real gun lands and the game sets this `false`. Keeps a new
+    /// game from changing what the party deals (rung shares, every
+    /// movement climbing every ladder) before it has anything to deal.
+    pub scaffold: bool,
 }
 
 impl GameParts {
-    /// Guns and movement: what a game needs to be in a ladder.
+    /// Guns and movement, and not a scaffold: what a game needs to be in
+    /// a ladder.
     pub fn playable(&self) -> bool {
+        self.lends_guns_and_movement() && !self.scaffold
+    }
+
+    /// Guns and movement claimed (a scaffold's stand-ins too).
+    pub fn lends_guns_and_movement(&self) -> bool {
         !self.guns.is_empty() && self.movement.is_some()
     }
 }
@@ -256,6 +270,7 @@ mod tests {
         match_lost_sound: None,
         music: false,
         cues: None,
+        scaffold: false,
     };
 
     #[test]

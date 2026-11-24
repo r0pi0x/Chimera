@@ -59,6 +59,7 @@ pub static PARTS: GameParts = GameParts {
     // No music director (CS:S plays no music in a match).
     music: false,
     cues: Some(CUES),
+    scaffold: false,
 };
 
 /// The party match-end screen's winner sound (`GameParts::

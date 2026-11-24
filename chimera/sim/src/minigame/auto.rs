@@ -13,8 +13,8 @@
 //!   maps (claimed, and the installed ones its pool rules don't deny:
 //!   `map_fit::MapPool::listed`, a game's data/map_pool.toml;
 //!   `InstalledMaps`, found once by `find_installed_maps` in an app that
-//!   wants them, for the games with rules). A game is in a ladder with guns and movement
-//!   (`Capabilities::playable`); the rest falls back (`fallbacks`): no
+//!   wants them, for the games with rules). A game is in a ladder with guns and movement, unless a scaffold
+//!   (`GameParts::scaffold`; `Capabilities::playable`); the rest falls back (`fallbacks`): no
 //!   HUD, `PartsRegistry::fallback_hud`; no characters, the shell's
 //!   capsule (`map::CharacterModels::for_identity` finds none of its
 //!   game); no maps, the other games'.
@@ -91,12 +91,15 @@ pub struct Capabilities {
     /// Claimed parts the app doesn't have (a gun not in the catalogue, an
     /// unregistered movement), in words.
     pub missing: Vec<String>,
+    /// Its parts are a scaffold's stand-ins (`GameParts::scaffold`): not
+    /// playable whatever it lends.
+    pub scaffold: bool,
 }
 
 impl Capabilities {
-    /// Guns and movement: in a ladder.
+    /// Guns and movement, and not a scaffold: in a ladder.
     pub fn playable(&self) -> bool {
-        !self.guns.is_empty() && self.movement.is_some()
+        !self.guns.is_empty() && self.movement.is_some() && !self.scaffold
     }
 
     /// `parts` checked against `catalog` and `movements`.
@@ -163,6 +166,7 @@ impl Capabilities {
             hud: parts.hud,
             maps,
             missing,
+            scaffold: parts.scaffold,
         }
     }
 
@@ -179,7 +183,13 @@ impl Capabilities {
             or(self.characters, "the stand-in body"),
             or(self.hud, "the fallback HUD"),
             if self.maps.is_empty() { "none (other games')".to_string() } else { self.maps.join(", ") },
-            if self.playable() { "" } else { "; not playable" },
+            if self.playable() {
+                ""
+            } else if self.scaffold {
+                "; not playable (a scaffold)"
+            } else {
+                "; not playable"
+            },
             if self.missing.is_empty() { String::new() } else { format!("; missing: {}", self.missing.join("; ")) },
         )
     }
@@ -1163,6 +1173,7 @@ mod tests {
                 hud: None,
                 maps: Vec::new(),
                 missing: Vec::new(),
+                scaffold: false,
             }]
         };
         let mut world = World::new();
@@ -1196,6 +1207,7 @@ mod tests {
                 hud: None,
                 maps: Vec::new(),
                 missing: Vec::new(),
+                scaffold: false,
             }]
         };
         // The draw and the Guns picker (`drawable_all`): neither is left.
@@ -1230,6 +1242,7 @@ mod tests {
             hud: None,
             maps: vec![],
             missing: vec![],
+            scaffold: false,
         }
     }
 
@@ -1598,6 +1611,7 @@ mod tests {
         match_lost_sound: None,
         music: false,
         cues: None,
+        scaffold: false,
     };
 
     #[test]

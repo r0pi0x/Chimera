@@ -1,8 +1,9 @@
 //! What Counter-Strike 1.6 lends other games' apps (`chimera_core::game_parts`):
-//! its stand-in gun and its movement, which make it `playable` in a gun
-//! game's ladder and the sandbox: a player holding its gun is this game's,
-//! wears its body and moves on its movement. Its HUD is the shell's
-//! minimal one until it has its own.
+//! its stand-in gun and its movement. A scaffold (`scaffold: true`): reported,
+//! but its gun is in no gun game ladder nor the sandbox until its first real
+//! gun lands; then `scaffold: false` makes it `playable`, and a player
+//! holding its gun is this game's, wears its body and moves on its movement. Its HUD is
+//! the shell's minimal one until it has its own.
 //!
 //! No map is claimed (`PARTS.maps` is empty): its maps enter an app's
 //! automatic pool from the install or the asset store the machine has, as
@@ -28,6 +29,9 @@ pub static PARTS: GameParts = GameParts {
     match_lost_sound: None,
     music: false,
     cues: None,
+    // Made by tools/new-game: out of ladders and the sandbox until its
+    // first real gun lands (then `false`).
+    scaffold: true,
 };
 
 /// Its map pool's rules (data/map_pool.toml; `chimera_sim::minigame::map_fit`).

@@ -29,7 +29,8 @@ fn ladders_draw_on_every_gun_and_differ_by_seed() {
     let curve = &PowerCurve::shipped();
     let drawn: Vec<auto::Drawn> = (0..500).map(|s| auto::ladder(&refs, &powers, curve, RUNGS, s)).collect();
     let ladders: Vec<Vec<&str>> = drawn.iter().map(|d| d.rungs.clone()).collect();
-    for c in &caps {
+    // Every gun of a playable game (a scaffold's stand-in is dealt none).
+    for c in caps.iter().filter(|c| c.playable()) {
         for g in c.guns.iter().map(|g| g.id).chain(c.grenades.iter().copied()) {
             assert!(ladders.iter().any(|l| l.contains(&g)), "{g} never in 500 ladders");
         }
