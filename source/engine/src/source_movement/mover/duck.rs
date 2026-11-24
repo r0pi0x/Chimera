@@ -1,6 +1,6 @@
 //! Ducking: the duck and unduck with their timers and eye blend, the air
 //! duck's lift and its limit, what blocks standing up, and a game's own low
-//! stance held as the ducked box (`SourceStance`).
+//! stance held as the ducked box (`MoveStance`).
 
 use bevy::prelude::*;
 
@@ -46,7 +46,7 @@ impl Mover<'_, '_, '_, '_> {
     /// Whether the standing box fits: on the ground, where it stands; in the
     /// air, swept from here down by the hull difference (room is needed
     /// above the ducked head and below the feet).
-    /// A game's low stance (`SourceStance::height`): the ducked box, at
+    /// A game's low stance (`MoveStance::height`): the ducked box, at
     /// that height (the config's), held whatever the duck key says.
     pub(crate) fn hold_stance(&mut self) {
         self.me.ducked = true;
@@ -65,7 +65,7 @@ impl Mover<'_, '_, '_, '_> {
         }
         self.me.stance_low = false;
         if std::mem::take(&mut self.me.stance_crouch) {
-            // A crouch: ducked, duck as if held (`SourceStance::crouch`).
+            // A crouch: ducked, duck as if held (`MoveStance::crouch`).
             self.me.ducked = true;
             self.me.ducking = false;
             self.me.duck_held = true;

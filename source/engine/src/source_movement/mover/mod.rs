@@ -21,7 +21,7 @@ use crate::{
     core::{ExternalPush, Intent},
     source_movement::{
         config::SourceMovementConfig,
-        hooks::{SourceStance, StepSounds},
+        hooks::{MoveStance, StepSounds},
         state::SourceMovement,
         trace::Tracer,
         useable_ladders::{self, UseableLadder},
@@ -35,10 +35,6 @@ pub(crate) const LAND_PUNCH_SCALE: f32 = 0.013;
 pub(crate) const PUNCH_DAMPING: f32 = 9.0;
 
 pub(crate) const PUNCH_SPRING: f32 = 65.0;
-
-/// How fast the velocity modifier climbs back to 1, per second (M18:
-/// +0.005 a 0.015 s tick).
-pub(crate) const VELOCITY_MODIFIER_RECOVERY: f32 = 1.0 / 3.0;
 
 pub(crate) const AIR_WISH_CAP: f32 = 30.0;
 
@@ -108,9 +104,6 @@ pub(crate) const WATER_JUMP_MIN_VZ: f32 = -180.0;
 
 pub(crate) const WATER_JUMP_TIME: f32 = 2000.0;
 
-/// Source's body channel (footsteps, swim): a new one replaces the last.
-pub(crate) const CHAN_BODY: u8 = 4;
-
 /// Smallest gap between two stuck nudges, seconds.
 pub(crate) const STUCK_NUDGE_GAP: f32 = 0.05;
 
@@ -155,7 +148,7 @@ pub(crate) struct Mover<'a, 'b, 'w, 's> {
     pub(crate) wish: Vec3,
     /// Down onto the floor found (`SettleOnGround`).
     pub(crate) settle: bool,
-    /// This tick's max speed from the game (`SourceSpeed`), units/s.
+    /// This tick's max speed from the game (`MoveSpeed`), units/s.
     pub(crate) speed: Option<f32>,
     /// The character's own footsteps (`StepSounds`).
     pub(crate) step_sounds: Option<&'a StepSounds>,
@@ -168,8 +161,8 @@ pub(crate) struct Mover<'a, 'b, 'w, 's> {
     pub(crate) outputs: Vec<(usize, &'static str)>,
     /// The character's max health in points (`fall_by_max_health`).
     pub(crate) max_health: f32,
-    /// A game's own stance this tick (`SourceStance`).
-    pub(crate) stance: SourceStance,
+    /// A game's own stance this tick (`MoveStance`).
+    pub(crate) stance: MoveStance,
 }
 
 impl Mover<'_, '_, '_, '_> {
@@ -291,7 +284,7 @@ impl Mover<'_, '_, '_, '_> {
         let water_before = self.me.water_level;
         self.footsteps();
         // A game's low stance held last tick is no duck (its own speed:
-        // `SourceStance::max_speed`), so leaving it isn't slowed.
+        // `MoveStance::max_speed`), so leaving it isn't slowed.
         let was_ducking = (self.me.ducked || self.me.ducking) && !self.me.stance_low;
         let low = self.stance.height.is_some();
         let mut scale = if low {
@@ -379,7 +372,7 @@ impl Mover<'_, '_, '_, '_> {
             if intent.jump && self.me.swim_timer <= 0.0 {
                 // A swim stroke at most once a second while holding jump.
                 self.me.swim_timer = 1000.0;
-                self.sounds.push(("Player.Swim".into(), self.feet, None));
+                self.sounds.push((self.cfg.swim_sound.into(), self.feet, None));
             }
             if intent.jump {
                 // Jump does nothing while water-jumping: a water jump that

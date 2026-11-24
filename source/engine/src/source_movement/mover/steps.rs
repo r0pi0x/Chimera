@@ -149,12 +149,12 @@ impl Mover<'_, '_, '_, '_> {
         };
         let knee = self.trace.point_water(self.feet + Vec3::Z * (0.2 * height)).is_some();
         let (surface, mut volume, mut period) = if ladder {
-            ("ladder".to_string(), 0.5, 350.0)
+            (self.cfg.ladder_surface.to_string(), 0.5, 350.0)
         } else if knee {
-            ("wade".to_string(), 0.65, 600.0)
+            (self.cfg.wade_surface.to_string(), 0.65, 600.0)
         } else if self.me.water_level == 1 {
             (
-                "water".to_string(),
+                self.cfg.water_surface.to_string(),
                 if walking { 0.2 } else { 0.5 },
                 if walking { 400.0 } else { 300.0 },
             )

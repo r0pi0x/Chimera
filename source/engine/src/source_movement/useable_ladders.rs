@@ -462,7 +462,7 @@ impl Mover<'_, '_, '_, '_> {
     /// Leave the ladder (walking, velocity as it is), with its output.
     fn leave_ladder(&mut self) {
         if let Some(l) = self.me.useable.take().and_then(|i| self.ladder_at(i).map(|l| l.map_index)) {
-            self.fire(l, "OnPlayerGotOffLadder");
+            self.fire(l, self.cfg.ladder_off_output);
         }
     }
 
@@ -592,8 +592,8 @@ impl Mover<'_, '_, '_, '_> {
         if !mounts {
             return false;
         }
-        self.fire(l.map_index, "OnPlayerGotOnLadder");
-        self.sounds.push(("Ladder.StepRight".into(), self.feet, None));
+        self.fire(l.map_index, self.cfg.ladder_on_output);
+        self.sounds.push((self.cfg.ladder_mount_sound.into(), self.feet, None));
         if l.dont_get_on {
             return false;
         }

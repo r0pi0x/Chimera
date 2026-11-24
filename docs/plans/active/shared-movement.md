@@ -21,7 +21,7 @@ names the seams, the specs give the numbers and rules.
 |---|---|---|
 | Plan | done (2026-11-24) | this file |
 | S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
-| S1-S4 carve inside `source_engine` | S1 done (2026-11-24) | file split (done), neutral hooks, CS:S's numbers to `cs_source`, cvars as data |
+| S1-S4 carve inside `source_engine` | S1, S2 done (2026-11-24) | file split (done), neutral hooks (done), CS:S's numbers to `cs_source`, cvars as data |
 | S5-S6 the crate | not started | `chimera_movement`, then neutral names with Source aliases |
 | S7-S9 GoldSrc seams | not started | clip hulls, command milliseconds, edge friction |
 | Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
@@ -392,3 +392,20 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   71 395 (-0.01 %), HL2:DM 67 192 (+0.03 %), TF2 71 576 (-0.18 %), DoD:S
   71 336 (-0.02 %). The types' paths changed, which reorders the
   predicted blob for DoD:S (section 6): `NET_VERSION` net74.
+- 2026-11-24, S2: the hooks are `MoveSpeed`, `MoveTraits` and
+  `MoveStance` in `hooks.rs`; `SourceSpeed`, `SourceTraits` and
+  `SourceStance` are re-exports of them under the old names (`pub use ..
+  as ..`, not `type`: a tuple struct's alias can't construct it), so no
+  caller changed. Source's names and numbers the tick held are config
+  fields with the values they had: `swim_sound` (`Player.Swim`),
+  `ladder_mount_sound` (`Ladder.StepRight`), the step surfaces
+  `ladder_surface`, `wade_surface` and `water_surface`, `sound_channel`
+  (4), the ladder outputs `ladder_on_output` and `ladder_off_output`
+  (`OnPlayerGotOnLadder`, `OnPlayerGotOffLadder`) and
+  `velocity_modifier_recovery` (1/3, CS:S's). `&'static str`, not
+  `String`: the config is cloned per character each tick. The shared
+  code's numbers (ladder and swim speeds, water jump, punch spring) stay
+  constants until a GoldSrc spec says one differs. Hashes equal; the step
+  CS:S 71 413 (+0.02 %), HL2:DM 67 190 (+0.03 %), TF2 71 644 (-0.09 %),
+  DoD:S 71 370 (+0.03 %). `hooks::MoveStance` sorts where
+  `hooks::SourceStance` did: no new wire order.

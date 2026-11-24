@@ -121,7 +121,7 @@ pub struct SourceMovementConfig {
     /// shared 580 while its damage starts at 650); None: `fall_safe`.
     pub fall_loud: Option<f32>,
     /// Landing sound and view punch only at full volume (TF2's Scout:
-    /// above 580; usually per character, `SourceTraits`).
+    /// above 580; usually per character, `MoveTraits`).
     pub loud_landings_only: bool,
     /// Taken off the fall speed of a landing out of water on a floating
     /// body (`map::buoyancy::Floating`; CS:S 200, HL2 173: movement.md
@@ -208,7 +208,7 @@ pub struct SourceMovementConfig {
     /// under water (TF2).
     pub no_water_duck: bool,
     /// Jumps a player may make in the air before landing again (TF2's
-    /// Scout: 1; usually set per character, `SourceTraits`), each setting
+    /// Scout: 1; usually set per character, `MoveTraits`), each setting
     /// the vertical speed to `air_jump_speed` and the horizontal velocity
     /// to the keys' wish velocity.
     pub air_jumps: u8,
@@ -227,6 +227,28 @@ pub struct SourceMovementConfig {
     /// in 1 +- this (TF2's 0.2; `tf_fall_damage_disablespread` 1 sets 0).
     pub fall_by_max_health: f32,
     pub fall_spread: f32,
+    /// The sound entries the movement plays itself: a swim stroke and a
+    /// splash into or out of water, and getting on a ladder line (Source's
+    /// `Player.Swim` and `Ladder.StepRight`).
+    pub swim_sound: &'static str,
+    pub ladder_mount_sound: &'static str,
+    /// The surfaces whose step sounds stand for a ladder's rungs, wading
+    /// knee-deep and feet in water (Source's surface properties `ladder`,
+    /// `wade` and `water`).
+    pub ladder_surface: &'static str,
+    pub wade_surface: &'static str,
+    pub water_surface: &'static str,
+    /// The channel the movement's sounds play on (footsteps, swim: a new
+    /// one replaces the last; Source's body channel, 4).
+    pub sound_channel: u8,
+    /// The map outputs a ladder line's entity fires when a player gets on
+    /// and off it (Source's `func_useableladder`).
+    pub ladder_on_output: &'static str,
+    pub ladder_off_output: &'static str,
+    /// How fast a hit's velocity modifier (`SourceMovement::
+    /// velocity_modifier`) climbs back to 1, per second (CS:S, weapons.md
+    /// M18: +0.005 a 0.015 s tick).
+    pub velocity_modifier_recovery: f32,
 }
 
 /// Console variables players and server configs know, mapped onto the
@@ -472,6 +494,15 @@ impl SourceMovementConfig {
             air_ducks_max: 0,
             fall_by_max_health: 0.0,
             fall_spread: 0.0,
+            swim_sound: "Player.Swim",
+            ladder_mount_sound: "Ladder.StepRight",
+            ladder_surface: "ladder",
+            wade_surface: "wade",
+            water_surface: "water",
+            sound_channel: 4,
+            ladder_on_output: "OnPlayerGotOnLadder",
+            ladder_off_output: "OnPlayerGotOffLadder",
+            velocity_modifier_recovery: 1.0 / 3.0,
         }
     }
 }

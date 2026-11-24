@@ -9,8 +9,9 @@
 //! The files (docs/plans/active/shared-movement.md, the layout the lift
 //! into Chimera keeps): `config` (the config, its cvars by name, the
 //! configs by movement id), `state` (`SourceMovement`), `hooks` (what a
-//! game sets before the step: `SourceSpeed`, `SourceTraits`,
-//! `SourceStance`, `StepSounds`), `units`, `trace` (the box sweep),
+//! game sets before the step: `MoveSpeed`, `MoveTraits`, `MoveStance`,
+//! `StepSounds`; `SourceSpeed`, `SourceTraits` and `SourceStance` are
+//! their names here), `units`, `trace` (the box sweep),
 //! `mover` (one character's tick, in parts: ground, air, duck, jump,
 //! water, ladders, falls, steps, stuck), `step` (the system),
 //! `useable_ladders` (ladder lines), `shadow`, `pushaway`, `drown`; this
@@ -159,7 +160,9 @@ mod units;
 pub mod useable_ladders;
 
 pub use config::{CVARS, MovementConfigs, SourceMovementConfig, SourceMovementConfigs, config_of};
-pub use hooks::{SourceSpeed, SourceStance, SourceTraits, StepSounds};
+pub use hooks::{MoveSpeed, MoveStance, MoveTraits, StepSounds};
+/// The hooks under Source's names (the Source games' code).
+pub use hooks::{MoveSpeed as SourceSpeed, MoveStance as SourceStance, MoveTraits as SourceTraits};
 pub use mover::falls::punch_spring;
 pub use state::{SettleOnGround, SourceMovement};
 pub use units::{to_engine, to_source};

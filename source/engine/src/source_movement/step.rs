@@ -21,8 +21,8 @@ use crate::{
     slots::MovementSlot,
     source_movement::{
         config::{HALF_WIDTH, MovementConfigs, SourceMovementConfig},
-        hooks::{SourceSpeed, SourceStance, SourceTraits, StepSounds},
-        mover::{CHAN_BODY, Mover, POST_HALF, VELOCITY_MODIFIER_RECOVERY},
+        hooks::{MoveSpeed, MoveStance, MoveTraits, StepSounds},
+        mover::{Mover, POST_HALF},
         pushaway, shadow,
         state::{SettleOnGround, SourceMovement},
         trace::Tracer,
@@ -52,12 +52,12 @@ pub(crate) fn step(
         Has<SettleOnGround>,
         (
             Option<&MovementSlot>,
-            Option<&SourceSpeed>,
+            Option<&MoveSpeed>,
             Option<&StepSounds>,
             Option<&mut crate::core::IgnoreFallDamage>,
-            Option<&SourceTraits>,
+            Option<&MoveTraits>,
             Option<&mut ExternalPush>,
-            Option<&SourceStance>,
+            Option<&MoveStance>,
         ),
     ), Without<crate::core::Carried>>,
     query: SpatialQuery,
@@ -384,7 +384,7 @@ pub(crate) fn step(
         mover.me.use_held = intent.use_key;
         // The velocity modifier recovers after the move, whichever way it
         // went (M18: the first tick after a hit moves at the value set).
-        mover.me.velocity_modifier = (mover.me.velocity_modifier + VELOCITY_MODIFIER_RECOVERY * dt).min(1.0);
+        mover.me.velocity_modifier = (mover.me.velocity_modifier + cfg.velocity_modifier_recovery * dt).min(1.0);
         let (feet, v) = (mover.feet, mover.v);
         if let Some(mut touch) = touch {
             *touch = shadow_props.touch(&mover.touched, mover.ground_collider, start, feet, mover.wish, dt);
@@ -467,7 +467,7 @@ pub(crate) fn step(
                 at: Some(to_engine(at)),
                 volume,
                 source: Some(entity),
-                channel: Some(CHAN_BODY),
+                channel: Some(cfg.sound_channel),
             });
         }
         transform.translation = to_engine(feet + Vec3::Z * ORIGIN_ABOVE_FEET);

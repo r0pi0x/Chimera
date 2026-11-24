@@ -1,6 +1,9 @@
 //! What a game sets on a character before the step (`SourceMovementStep`): the
-//! tick's max speed (`SourceSpeed`), its kind's traits (`SourceTraits`), its
-//! own stance (`SourceStance`) and its footstep entries (`StepSounds`).
+//! tick's max speed (`MoveSpeed`), its kind's traits (`MoveTraits`), its
+//! own stance (`MoveStance`) and its footstep entries (`StepSounds`). The
+//! names are the movement's own, whatever the game's engine; the Source
+//! games' code says `SourceSpeed`, `SourceTraits` and `SourceStance`, the
+//! same types under Source's names (`source_movement`'s re-exports).
 
 use bevy::prelude::*;
 
@@ -9,11 +12,11 @@ use crate::source_movement::config::SourceMovementConfig;
 /// What a character's own kind changes in its movement (TF2's classes:
 /// top speed, eye height, air jumps), set by its game before the step
 /// (`SourceMovementStep`); none: the config as registered. `max_speed`
-/// (units/s) is the tick's max speed as `SourceSpeed` is, before it: the
+/// (units/s) is the tick's max speed as `MoveSpeed` is, before it: the
 /// two are different games' (a game's own leaves the other's alone when a
 /// player moves from one game's movement to the other's).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
-pub struct SourceTraits {
+pub struct MoveTraits {
     pub max_speed: Option<f32>,
     pub eye_stand: Option<f32>,
     pub air_jumps: Option<u8>,
@@ -26,7 +29,7 @@ pub struct SourceTraits {
     pub ceiling: Option<f32>,
 }
 
-impl SourceTraits {
+impl MoveTraits {
     /// `cfg` with these traits.
     pub fn apply(&self, cfg: &SourceMovementConfig) -> SourceMovementConfig {
         let mut c = cfg.clone();
@@ -57,7 +60,7 @@ impl SourceTraits {
 /// key's scale; `sv_maxspeed` still caps it.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[component(storage = "SparseSet")]
-pub struct SourceSpeed(pub f32);
+pub struct MoveSpeed(pub f32);
 
 /// A game's own stance over standing and ducking (DoD:S's prone and its
 /// transitions), set by the game before the step (`SourceMovementStep`)
@@ -71,7 +74,7 @@ pub struct SourceSpeed(pub f32);
 /// - `eye`: the eye over the feet this tick (units), over the stand or
 ///   duck eye (a game's own eased transition).
 /// - `max_speed`: this tick's max speed (units/s), over the game's
-///   (`SourceSpeed`), the traits' and the held weapon's; a hit's velocity
+///   (`MoveSpeed`), the traits' and the held weapon's; a hit's velocity
 ///   modifier still scales it.
 /// - `no_jump`: the jump key does nothing.
 /// - `crouch`: with `height`, leaving the stance lands ducked, as if duck
@@ -82,7 +85,7 @@ pub struct SourceSpeed(pub f32);
 ///   goes on, slowed by friction on the ground (DoD:S going prone,
 ///   movement.md "Prone": pressed while sprinting, the speed decays).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct SourceStance {
+pub struct MoveStance {
     pub height: Option<f32>,
     pub eye: Option<f32>,
     pub max_speed: Option<f32>,
@@ -93,7 +96,7 @@ pub struct SourceStance {
     pub no_input: bool,
 }
 
-impl SourceStance {
+impl MoveStance {
     /// `cfg` with this stance's box as its ducked box.
     pub(crate) fn apply(&self, cfg: &mut SourceMovementConfig) {
         if let Some(h) = self.height {

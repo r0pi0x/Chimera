@@ -95,8 +95,8 @@ pub struct SourceMovement {
     pub duck_key: bool,
     #[serde(default)]
     pub reduck_timer: f32,
-    /// Held in a game's low stance last tick (`SourceStance::height`),
-    /// and whether it was a crouch (`SourceStance::crouch`).
+    /// Held in a game's low stance last tick (`MoveStance::height`),
+    /// and whether it was a crouch (`MoveStance::crouch`).
     #[serde(default)]
     pub stance_low: bool,
     #[serde(default)]

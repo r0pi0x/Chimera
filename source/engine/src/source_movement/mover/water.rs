@@ -143,7 +143,7 @@ impl Mover<'_, '_, '_, '_> {
     #[inline]
     pub(crate) fn water_sound(&mut self, before: u8) {
         if (before == 0) != (self.me.water_level == 0) {
-            self.sounds.push(("Player.Swim".into(), self.feet, None));
+            self.sounds.push((self.cfg.swim_sound.into(), self.feet, None));
         }
     }
 }
