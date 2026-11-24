@@ -56,6 +56,13 @@ pushed to main, one file per session; the plan and the spec
 briefs are in
 [docs/plans/active/combat-arms.md](../docs/plans/active/combat-arms.md).
 
+Engine families shared by several games keep their specs in a folder of
+their own: `specs/source/` (Source engine entities and systems) and
+`specs/goldsrc/` (GoldSrc file formats and the mount, for CS 1.6 and the
+other games on Valve's first engine; index and rules in
+[goldsrc/README.md](goldsrc/README.md), plan in
+[docs/plans/active/goldsrc.md](../docs/plans/active/goldsrc.md)).
+
 ## Template
 
 ```markdown

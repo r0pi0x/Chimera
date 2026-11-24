@@ -22,7 +22,7 @@ Force) is a small port on the same loader.
 | Milestone | State | Summary |
 |---|---|---|
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
-| First specs | not started | §6: `specs/goldsrc/` formats, `specs/cs16/` install, movement, weapons |
+| First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount); `specs/cs16/` install, movement, weapons to come |
 | M0 loader, mount, maps, bodies | not started | §5 |
 | M1 weapons | not started | §5 |
 | M2 movement | not started | §5 |
@@ -305,11 +305,11 @@ never leaked or decompiled code; write only `specs/goldsrc/` and
 
 | Spec | Covers | From |
 |---|---|---|
-| `specs/goldsrc/bsp.md` | what `qbsp` does not: hull/clip node traces (what a hull trace returns, start-solid, all-solid, fractions), contents values, the render modes of brush entities, texture name prefixes, lightmap brightening, the sky, `worldspawn` keys | public docs, the files, HL SDK (spec-only), measurement for the brightening |
-| `specs/goldsrc/wad3.md` | the WAD3 directory and lump types, mip textures, `qpic`, fonts, decals' palette ramp, transparency | public docs, the files |
-| `specs/goldsrc/mdl.md` | MDL v10: header, bones, controllers, hitboxes, sequences and groups, the animation compression, blends, events, textures and flags, meshes, external texture and sequence files | public docs, the files, HL SDK (spec-only) |
-| `specs/goldsrc/spr.md` | SPR v2: types, texture formats, frames and groups, palette | public docs, the files |
-| `specs/goldsrc/mount.md` | the content folder chain (`liblist.gam`, fallback, language and the folders we skip), file name case | the install, public docs |
+| [`specs/goldsrc/bsp.md`](../../../specs/goldsrc/bsp.md) (draft) | every lump and record with de_dust2's numbers, lightmap sizing, and what `qbsp` does not: hull/clip node traces (what a hull trace returns, start-solid, all-solid, fractions), contents values, the render modes of brush entities, texture name prefixes, lightmap brightening, the sky, `worldspawn` keys | public docs, the files, HL SDK (spec-only), measurement for the brightening |
+| [`specs/goldsrc/wad3.md`](../../../specs/goldsrc/wad3.md) (draft) | the WAD3 directory and lump types, mip textures, `qpic`, fonts, decals' palette ramp, transparency | public docs, the files |
+| [`specs/goldsrc/mdl.md`](../../../specs/goldsrc/mdl.md) (draft) | MDL v10: header, bones, controllers, hitboxes, sequences and groups, the animation compression, blends, events, textures and flags, meshes, external texture and sequence files | public docs, the files, HL SDK (spec-only) |
+| [`specs/goldsrc/spr.md`](../../../specs/goldsrc/spr.md) (draft) | SPR v2: types, texture formats, frames and groups, palette | public docs, the files |
+| [`specs/goldsrc/mount.md`](../../../specs/goldsrc/mount.md) (draft) | the content folder chain (`liblist.gam`, fallback, language and the folders we skip), file name case, `materials.txt` | the install, public docs |
 | `specs/cs16/install.md` | the two layouts, required files, what the server layout lacks against the client's | the installs |
 | `specs/cs16/movement.md` | §4's list, with numbers and test cases | measurement (probe), the cvar list, HL SDK for the base |
 | `specs/cs16/weapons.md` | every gun's numbers and behaviour (fire modes, scopes, silencers, burst, shield later) | measurement, the view models' sequences, public pages |
@@ -376,3 +376,15 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   [cs16.md](cs16.md); the scaffold fits (GoldSrc's install is loose
   files, which the template's mount already reads); its content folder,
   Steam app, tick and unit are M0's.
+- 2026-11-24: the M0 format specs written in `specs/goldsrc/` (index
+  [README.md](../../../specs/goldsrc/README.md)): BSP 30, WAD3, MDL v10,
+  SPR v2 and the mount, each checked against every matching file of the
+  HLDS install. Findings for M0: the clip hull sizes are confirmed from
+  the files (hull 1 ±16/±16/±36, hull 2 ±32, hull 3 ±16/±16/±18;
+  spawns stand 36 + 4 units above hull 0's floor); non-axial faces are
+  grown by less than the box's support distance (vertical ones by the
+  half-width), so shrinking hull 1 back needs the hull 0 planes, not a
+  formula; lightmap sizes need the texel extents computed in double and
+  rounded to single precision (then all 150 maps tile exactly); CS 1.6
+  player models aim with 9 pitch blends; file lookups must ignore case
+  (de_dust2's sky files are `Des*.tga`).
