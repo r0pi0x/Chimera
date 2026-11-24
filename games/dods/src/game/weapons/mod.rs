@@ -21,8 +21,7 @@
 //! reload`).
 //!
 //! Known shortcuts (beside `gun`'s, `hit_slow`'s and `explosives`'): a
-//! partial reload takes the empty one's time (unmeasured); no kill icons
-//! or HUD (M3); the melee swing's reach and box and the backstab's cone
+//! partial reload takes the empty one's time (unmeasured); the melee swing's reach and box and the backstab's cone
 //! are CS:S's knife's (damage.md, open question 4).
 
 use bevy::prelude::*;

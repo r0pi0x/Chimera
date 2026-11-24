@@ -953,7 +953,7 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
         "dods" => {
             // Its weapons (view and held models: the guns, the knife and
             // spade, the explosives) and the class bodies (with the shared
-            // animation model they include).
+            // animation model they include) with the HUD's pictures.
             use dods::game::{bodies, weapons};
             use source_engine::content::{material::MaterialLoader, surfaceprops::SurfaceProps};
             for w in weapons::GUNS.iter().chain(weapons::MELEE).chain(weapons::EXPLOSIVES) {
@@ -971,6 +971,9 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
             for c in &bodies::CLASSES {
                 let _ = bodies::load(&mut materials, &surfaces, c.model);
             }
+            // The HUD's and the kill feed's pictures (`hud::pictures`: the
+            // scripts, mod_textures.txt and their sheets).
+            let _ = dods::game::hud::pictures(&tapped);
             out.push(("players".into(), take()));
             let options = map_options(false);
             record_maps(source_engine::maps::map_names(mount), only, &take, &mut out, |name| {

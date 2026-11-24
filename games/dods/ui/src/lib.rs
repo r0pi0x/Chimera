@@ -2,8 +2,9 @@
 //! above the game's simulation (`dods`) so that the simulation and its
 //! tests never build the shell (docs/plans/active/architecture-for-iteration.md,
 //! stage 1; docs/plans/active/dods.md): its HUD while a DoD:S weapon is in
-//! hand (`hud`: health, stamina, the weapon and its rounds; the shell's
-//! crosshair). Its prone key, `+alt1` (`party_app`), is bound to Z in the
+//! hand (`hud`: specs/dods/hud.md's player status strip, the install's
+//! pictures; the shell's crosshair) and DoD:S's kill icons in every app's
+//! kill feed (`hud::load_pictures`). Its prone key, `+alt1` (`party_app`), is bound to Z in the
 //! party (`game::BUNDLE`'s binds).
 
 pub mod hud;

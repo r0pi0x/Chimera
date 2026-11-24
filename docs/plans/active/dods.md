@@ -22,6 +22,8 @@ and the game's own data.
 | M1 weapons | M1a done (2026-11-23, its gaps fixed the same day); M1b done (2026-11-23): frags and stick grenades, rifle grenades, bazooka and Panzerschreck, the blast | §4; the log |
 | M2 movement specifics | M2a done (2026-11-23): prone, deployed MGs, stamina pool, MGs in the ladders; M2b done (2026-11-23): sprint and stamina caps, jump, unduck, getting up, the hit slow, draw/reload times, FOVs, fire select, MG undeploy/reload/yaw (§4, "Specified since M2a") | §4; the log |
 | M3 party rungs | M3a done (2026-11-23): the bodies animate (stances, movement, each gun's set, sights, deploy, fire and reload gestures, jump; death a ragdoll); M3b done (2026-11-23): each rung's class (body, melee; shared guns drawn with the ladder), DoD:S's HUD, dod_jagd and dod_flash in the pool, the explosives' body sets, the asset service's sets | §4; the log |
+| M3c HUD and kill icons | done (2026-11-24): specs/dods/hud.md (from the data files); the player status strip from it, the install's pictures, DoD:S's kill icons in every app's feed | §4; the log |
+| Remaining | listed in §7: blocked on the retail client, unspecified, or the map pool's walker | §7 |
 
 ## 1. Rules for this port
 
@@ -208,10 +210,9 @@ where the install is needed, `heavy::` tests that skip without it.
      dod_jagd and dod_flash, the two whose spawn spots cover the whole
      map; data/map_fitness.toml), the explosives' own body sets, and the
      asset service's sets (`weapon/<id>` for every weapon, `players`,
-     `map/<name>`; published 2026-11-23). Not done: kill icons (no spec of the scripts' death
-     notices: the feed names the gun), a HUD laid out from the install's
-     `hudlayout.res` and scheme (no spec), the explosion's scorch decal and
-     view shake (unspecified). Cross-game balance stays the host's opt-in
+     `map/<name>`; published 2026-11-23). Since done (M3c): the kill
+     icons and the HUD from specs/dods/hud.md. Not done: the explosion's
+     scorch decal and view shake (§7). Cross-game balance stays the host's opt-in
      (party_damage.toml gets a `dods` row only if asked).
 
 Not planned: DoD:S's own rules (flags, bombs, waves, class menus) in its
@@ -251,7 +252,92 @@ event's presents.
 2. Smoke grenades and the live-grenade throw-back in the party: later
    options, or never?
 
+## 7. What remains (2026-11-24)
+
+Every item left in this plan and in `games/dods`' Known shortcuts, by
+what it waits on.
+
+**Blocked on the retail client (app 300).** What the dedicated server's
+files and its puppet bots can't show: the client draws or predicts it.
+Installing it: SteamCMD with the cached login (dev-box-setup), `app_update
+300` into `~/games/dods`, only if the account owns DoD:S (open question
+1; not checked: a licence listing would print the account); about 4-5 GB
+more on disk (an estimate: the server layout is 1.8 GB without the
+client's `dod_english.vpk`, HL2's texture archives and the client
+binaries); 216 GB free on 2026-11-24. Then a listen server measures it as
+`tools/dods_probe` does (refcmp captures for the looks).
+- The recoil kick (`gun`: `Recoil` read, no view kick; weapons.md OQ 8).
+- The blast's stun and view shake (`explosives`: `dod_stun_*`; damage.md).
+- The explosion's scorch decal (no data file names it; the client draws it).
+- The view model: bob and sway, the iron-sight and prone offsets
+  (`view`: `vm_ironsight_offset`, `vm_prone_offset` read, not applied; how
+  they move needs seeing).
+- The HUD's open questions (hud.md 1-7: the silhouette's red direction,
+  the health bar's colour, the magazine box, the icon font, fades).
+- Body groups: `helmetgroup` / `hairgroup` in the class scripts (which
+  submodel each picks), team skins (`bodies`).
+- The player animation choices (`player_anim`: idle against aim, walk
+  against run and the sprint set, feet and torso rules, the jump's landing,
+  hand signals, the SMGs' stock strike, the bazooka's shouldering and
+  zoomed reload, flinches, the MG42's deployed and reloading models).
+
+**Unmeasured, the dedicated server could measure** (a `tools/dods_probe`
+session each; specs' open questions): spread by stance and its pattern
+(weapons.md OQ 1), the semi-automatic mode's spread, the SMGs' stock
+strike, the throw speed above 15° up (OQ 6), the rockets' and rifle
+grenades' reloads (OQ 9), rockets hitting the world (they didn't explode
+on the server), a partial reload's time, the melee reach and backstab cone
+(damage.md OQ 4), a character shielding a blast (OQ 8), the regeneration's
+still threshold (movement.md OQ 3), a ceiling too low to get up, going
+prone off the ground, deploying on a ledge and what narrows the yaw limit
+(weapons.md OQ 11), the pin, throw and redraw times, the grenades'
+bounce, the getting-up eye curve.
+
+**Ours by design** (not parity gaps for the party): ladders, water and
+fall damage are Source's shared ones; the slow and the MG's stamina cost
+are the server's (prediction learns them at the next correction); no
+teams in a free-for-all (a gun's class is its nation's); smoke grenades
+and the live-grenade throw-back (open question 2); objectives and team
+walls not read; `INFO`'s binds and tick.
+
+**The map pool** (checked 2026-11-24): the seven maps out of the pool are
+not kept shut by doors or round logic. No DoD:S stock map has a door
+entity; `func_teamblocker` / `func_team_wall` (solid to one team, read as
+solid to all) made no difference worth a converter change (dod_avalanche
+spot area 700 -> 731 m2 with them left out, so they stay). What confines
+the spawn spots' walker (`map_fitness --leaks`, 116 links): the maps'
+physics props (`prop_physics_multiplayer`, 105-348 a map: crates and
+sandbags a DoD:S player pushes aside; our walker and the spawn spots treat
+them as walls) on dod_avalanche (the probe at -20 2077 290 meets prop
+1108), and on the other six a main region much smaller than the bots'
+flood (dod_argentan 741 of 5790 m2, colmar 447 of 5020, kalt 612 of 5019,
+donner 1402 of 5558, palermo 980 of 4518, anzio 2482 of 6567): the
+bots' jump-ups and drops the walker doesn't take back. Not simple: it
+needs the walker (and the players' movement) to push light physics props,
+a Chimera change for every game (map-pool-fitness.md), or per-map checks
+of the confined links. Until then the pool stays dod_jagd and dod_flash.
+
 ## Log
+
+- 2026-11-24, M3c, the HUD and the kill icons: specs/dods/hud.md written
+  from the server's data files alone (a spec commit), then implemented
+  from it: `game::hud` reads the kill icons (`mod_textures.txt`'s
+  `d_<weapon>` cells of `sprites/hud/death_icons`), each weapon's
+  `weapon_s` / `weapon_g` / `ammo` / `ammo2` cells and clip fields and the
+  classes' `healthimage` silhouettes through Source's new shared sheet
+  reader (`source_engine::hud::sheets`); `dods_ui::hud` is hud.md's status
+  strip on the 640 x 480 layout scaled to the window (background, the
+  silhouette red from the top as health goes, the warning-coloured health
+  bar, the weapon's picture, the magazine emptying from its clip fields,
+  "x N" spare magazines, 53 stamina slices with the low colours below
+  0.35), writing the weapon and rounds until the pictures are here;
+  `load_pictures` registers the kill icons for every app's kill feed.
+  `chimera_pack sets dods` records the pictures in `players` (the store's
+  sets need `sets dods --build` again to serve them). Tests: `heavy::hud`
+  (every weapon's icon and pictures, the twelve silhouettes, the layout
+  equal to the install's), dods_ui's `hud_nodes`, the units' spec cases.
+  Capture: apps/ultimate_gun_game/scenes/dods_hud.scene. The map pool
+  checked (§7).
 
 - 2026-11-23, M3b, the rungs: `classes` (data/classes.toml, classes.md's
   loadouts: each class's body, melee and weapons, primary first; a

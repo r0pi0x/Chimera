@@ -1,0 +1,19 @@
+# DoD:S's HUD (specs/dods/hud.md; dods_ui::hud): a Thompson in hand on
+# its own map, a few rounds fired and a little health lost, so the
+# magazine, the silhouette's red part, the health bar and the spare count
+# all show; the kill icons load with the pictures.
+#   CHIMERA_DODS_ROOT=<install> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 \
+#       +sandbox dods:dod_jagd --scene apps/ultimate_gun_game/scenes/dods_hud.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 2
+wait_for idle
+wait 120
+rung dods:weapon_thompson
+wait 120
+hurtme chest 35
++attack
+wait 40
+-attack
+wait 60
+shot dods_hud

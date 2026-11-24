@@ -19,6 +19,9 @@
 //!   speed, friction and stances (stand 72 / eye 58, duck 45 / eye 34),
 //!   with `stance` (prone, deployed machine guns) and `stamina`;
 //! - `weapons`: M0's stand-in gun, the Colt, as data;
+//! - `hud`: the HUD's and the kill feed's pictures from the install
+//!   (specs/dods/hud.md: kill icons, weapon and magazine pictures, the
+//!   classes' silhouettes);
 //! - `player_anim`: the bodies' animation from the shared model's
 //!   activities (stance, movement, the gun's set, sights, deploy, fire and
 //!   reload gestures);
@@ -36,6 +39,7 @@
 
 pub mod bodies;
 pub mod classes;
+pub mod hud;
 pub mod maps;
 pub mod mount;
 pub mod movement;

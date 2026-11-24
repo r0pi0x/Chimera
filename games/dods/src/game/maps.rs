@@ -25,8 +25,8 @@
 //! the map's soundscapes.
 //!
 //! Known shortcuts (M0):
-//! - No HUD look or impact decals of its own; its effects are Source's
-//!   shared explosion only.
+//! - No impact decals of its own; its effects are Source's shared
+//!   explosion only (the HUD is `dods_ui::hud`'s, its pictures `hud`'s).
 //! - Its objectives (`dod_control_point`, `dod_capture_area`, bomb
 //!   targets) and team-only walls (`func_teamblocker`) are not read.
 
