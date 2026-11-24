@@ -16,6 +16,13 @@ use tf2::game::{maps, sets, view, weapons};
 
 use super::maps::install_mount;
 
+/// Whether view model `key` is a stock weapon's (the unlocks of the asset
+/// store's item pack, when it is here, load beside them: `items`' tests).
+fn stock(key: &str) -> bool {
+    let gun = key.split_once('#').map_or(key, |(g, _)| g);
+    weapons::GUNS.contains(&gun) || weapons::MELEE.contains(&gun)
+}
+
 #[test]
 fn each_gun_shows_on_its_class_arms_with_the_specs_sequences() {
     let Some(mount) = install_mount() else { return };
@@ -26,7 +33,10 @@ fn each_gun_shows_on_its_class_arms_with_the_specs_sequences() {
     // Each gun on its own class's arms, and on each other class's that
     // can hold it (the Shotgun's three, the Pistol's Engineer); each melee
     // weapon on its class's arms (the Fists the arms alone).
-    assert_eq!(kit.view_models.len(), weapons::GUNS.len() + view::CLASS_SEQUENCES.len() + weapons::MELEE.len());
+    assert_eq!(
+        kit.view_models.iter().filter(|v| stock(&v.key)).count(),
+        weapons::GUNS.len() + view::CLASS_SEQUENCES.len() + weapons::MELEE.len()
+    );
     for melee in weapons::MELEE {
         let v = kit.view_models.iter().find(|v| v.key == melee).unwrap_or_else(|| panic!("{melee}'s view model"));
         let set = v.animations.as_ref().expect("the arms' animations");
@@ -43,7 +53,7 @@ fn each_gun_shows_on_its_class_arms_with_the_specs_sequences() {
         let key = chimera_sim::weapon::view_anim::variant_key(g, c);
         assert!(kit.view_models.iter().any(|v| v.key == key), "{key}'s view model");
     }
-    for v in kit.view_models.iter().filter(|v| !weapons::MELEE.contains(&v.key.as_str())) {
+    for v in kit.view_models.iter().filter(|v| stock(&v.key) && !weapons::MELEE.contains(&v.key.as_str())) {
         let gun = v.key.split_once('#').map_or(v.key.as_str(), |(g, _)| g);
         let set = v.animations.as_ref().expect("the arms' animations");
         assert!(v.attachments.iter().any(|a| a.name.eq_ignore_ascii_case("muzzle")), "{gun}: a muzzle");
@@ -112,7 +122,7 @@ fn the_posed_gun_is_in_front_of_the_eye() {
     let mut materials = MaterialLoader::guest(&mount, 0, 0);
     let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
     maps::add_guns(&mut materials, &|_| true, true, &mut kit, &mut warnings);
-    for v in kit.view_models.iter().filter(|v| !weapons::MELEE.contains(&v.key.as_str())) {
+    for v in kit.view_models.iter().filter(|v| stock(&v.key) && !weapons::MELEE.contains(&v.key.as_str())) {
         let set = v.animations.clone().unwrap();
         let mut a = chimera_world::map::anim::Animator::new(set.clone());
         let q = view::sequences(&v.key).unwrap();

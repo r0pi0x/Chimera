@@ -86,7 +86,15 @@ fn every_guns_numbers_come_from_its_script_and_agree_with_the_data() {
     use tf2::game::weapons::{self as w, script_numbers::GunNumbers};
     let Some((key, mount)) = key_and_mount() else { return };
     let numbers = GunNumbers::from_mount(Some(&mount), Some(&key));
-    let not: Vec<&str> = numbers.sources.iter().filter(|s| !s.from_script).map(|s| s.gun.as_str()).collect();
+    // The Flame Thrower's script sets nothing: the game ignores its Damage
+    // and TimeFireDelay, and it has no clip or PunchAngle (weapon_scripts.md:
+    // `tf2:flame`, all of it, is ours), so it stays the spec's.
+    let not: Vec<String> = numbers
+        .sources
+        .iter()
+        .filter(|s| !s.from_script && s.gun != w::FLAMETHROWER)
+        .map(|s| format!("{}: {}", s.gun, s.source))
+        .collect();
     assert!(not.is_empty(), "spec fallback for {not:?}");
     let differ = numbers.differences().unwrap_or_else(|e| panic!("the mapped documents: {e}"));
     let known = [

@@ -749,7 +749,9 @@ pub fn load_with(
     }
     for g in guns {
         let gun = g.id.as_str();
-        if !wants(gun) {
+        // An item no class's arms hold (a watch, a shield, boots: worn or
+        // carried, `tf2:worn` and the like) has no view model on arms.
+        if !wants(gun) || g.own.is_empty() {
             continue;
         }
         let own = g.own.clone();

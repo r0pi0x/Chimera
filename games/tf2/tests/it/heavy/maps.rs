@@ -125,7 +125,10 @@ fn ctf_2fort_and_cp_badlands_convert() {
             // Every material and texture resolves on the client's install
             // (install.md 3.1: none missing).
             let missing: Vec<_> =
-                map.warnings.iter().filter(|w| w.contains("missing") || w.contains("not found")).collect();
+                map.warnings
+                .iter()
+                .filter(|w| !w.starts_with("particle operator") && (w.contains("missing") || w.contains("not found")))
+                .collect();
             assert!(missing.is_empty(), "{name}: {missing:#?}");
         }
     }

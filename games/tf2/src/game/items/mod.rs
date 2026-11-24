@@ -423,9 +423,16 @@ pub fn generated(mount: &Mount, only: &str) -> Vec<(String, Vec<(String, Vec<u8>
         }
     };
     let text = String::from_utf8_lossy(&schema);
+    // A class with no script of its own (the Shotgun's `tf_weapon_shotgun`:
+    // the install has the `_primary`, `_soldier`, `_hwg` and `_pyro` ones)
+    // reads its base weapon's (data/items.toml `[bases]`).
+    let bases = ItemsData::builtin().bases;
     let script = |class: &str| {
-        let s = super::scripts::read(mount, class, None);
-        (s.source != super::scripts::ScriptSource::Missing).then_some(s.root)
+        let read = |name: &str| {
+            let s = super::scripts::read(mount, name, None);
+            (s.source != super::scripts::ScriptSource::Missing).then_some(s.root)
+        };
+        read(class).or_else(|| bases.get(class).and_then(|b| read(b.strip_prefix("tf2:").unwrap_or(b))))
     };
     let c = convert::convert(&text, &script);
     for n in &c.notes {

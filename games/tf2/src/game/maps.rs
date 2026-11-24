@@ -422,7 +422,9 @@ pub fn add_guns_with(
     let mut projectiles: Vec<&str> = Vec::new();
     for (gun, arms, path, base, thrown) in guns {
         let gun = gun.as_str();
-        if !wants(gun) {
+        // No class's arms hold it (a worn or carried item): no held model
+        // on the arms' bones either.
+        if !wants(gun) || arms.is_empty() {
             continue;
         }
         let Some(path) = path else { continue };
