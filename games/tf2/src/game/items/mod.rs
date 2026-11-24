@@ -73,6 +73,13 @@
 //! attributes don't give (`ItemDef::hooks`: the Tide Turner's mini-crit
 //! cap).
 //!
+//! **Batch 3, the Spy** (specs/tf2/batch3_mechanics.md 3-5; `spy`): the
+//! watches (cloak, the Cloak and Dagger, the Dead Ringer's fake death) on
+//! an abstract base (data/weapons/invis.toml), the disguise, and the
+//! knives' rules (Your Eternal Reward, Big Earner, Spy-cicle) and the
+//! Enforcer's disguise bonus on `tf2:item`, each item's numbers in its
+//! data/items.toml `hooks` (no attribute of the spec names them).
+//!
 //! Known shortcuts:
 //! - An item's `anim_slot` and `animation_replacement` (none in batch 1
 //!   change a sequence on its own class's arms) are recorded, not
@@ -89,6 +96,7 @@ pub mod effects;
 pub mod meters;
 pub mod mods;
 pub mod shields;
+pub mod spy;
 
 use std::collections::BTreeMap;
 
@@ -331,17 +339,19 @@ pub fn weapons(pack: &ItemPack, data: &ItemsData, docs: &[(String, String)]) -> 
 /// Document `id` with its bases merged in (as the weapon data merges
 /// them: tables key by key, `class` and `abstract` not inherited), its
 /// `base` gone: an item's document stands alone.
-fn flat(id: &str, docs: &BTreeMap<String, toml::Table>, depth: usize) -> Option<toml::Table> {
-    fn merge(a: &mut toml::Table, b: &toml::Table) {
-        for (k, v) in b {
-            match (a.get_mut(k), v) {
-                (Some(toml::Value::Table(x)), toml::Value::Table(y)) => merge(x, y),
-                _ => {
-                    a.insert(k.clone(), v.clone());
-                }
+/// `b` merged over `a`: tables key by key, other values replaced.
+fn merge(a: &mut toml::Table, b: &toml::Table) {
+    for (k, v) in b {
+        match (a.get_mut(k), v) {
+            (Some(toml::Value::Table(x)), toml::Value::Table(y)) => merge(x, y),
+            _ => {
+                a.insert(k.clone(), v.clone());
             }
         }
     }
+}
+
+fn flat(id: &str, docs: &BTreeMap<String, toml::Table>, depth: usize) -> Option<toml::Table> {
     let own = docs.get(id)?;
     let mut t = match own.get("base").and_then(toml::Value::as_str) {
         Some(b) if depth < 8 => {

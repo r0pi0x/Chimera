@@ -533,6 +533,12 @@ fn send<R: PlayerAnimRules>(
     }
 }
 
+/// A body its client poses itself, not from the server's pose (another
+/// body shown in its place: TF2's disguised Spy, whose server pose is
+/// the Spy's own skeleton's).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct PosedHere;
+
 type Followed<'w, 's, R> = Query<
     'w,
     's,
@@ -542,7 +548,7 @@ type Followed<'w, 's, R> = Query<
         (Option<&'static NetAim<R>>, Option<&'static Snapshots<NetAim<R>>>),
         Option<&'static Health>,
     ),
-    Without<LocalPlayer>,
+    (Without<LocalPlayer>, Without<PosedHere>),
 >;
 
 /// Another player's body of game `R` on a client, drawn: posed as the

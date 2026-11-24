@@ -1,0 +1,23 @@
+# The Spy's watches (`tf_weapon_invis`, specs/tf2/batch3_mechanics.md 3):
+# no stock weapon of ours, the base of the Invis Watch, the Cloak and
+# Dagger and the Dead Ringer (data/items.toml `[bases]`; each item's own
+# numbers in its `[items.<name>.hooks."tf2:cloak"]`). Carried, not drawn:
+# attack2 with any weapon cloaks (1.0 s to invisible) and decloaks (2.0 s
+# back, no attacks until then, not before 0.5 s cloaked); the meter (0 to
+# 100) drains while cloaked and refills while visible; damage taken while
+# cloaked x 0.8 (`items::spy`).
+id = "tf2:tf_weapon_invis"
+base = "tf2:base"
+abstract = true
+slot = 4
+draw = 0.5
+
+[hud]
+name = "Watch"
+
+[hooks."tf2:cloak"]
+kind = "plain"
+drain = 10.0
+regen = 3.33
+
+[hooks."tf2:worn"]

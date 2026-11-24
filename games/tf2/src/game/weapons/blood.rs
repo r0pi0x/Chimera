@@ -29,9 +29,9 @@
 //!   their TF2 rules: healed to full removes them (`body_decal_rules`), the
 //!   ragdoll doesn't keep them (`movement::ClassParts`).
 //!
-//! Known shortcuts: no Über, cloak or disguise yet (when they come they
-//! insert `map::NoBodyDecals`, and a disguise change writes
-//! `ClearBodyDecals`); needles' body decal (12) not made; no birthday or Pyro vision; low
+//! Known shortcuts: no Über yet; the Spy's cloak and disguise
+//! (`items::spy`) don't yet insert `map::NoBodyDecals` nor write
+//! `ClearBodyDecals` on a disguise change; needles' body decal (12) not made; no birthday or Pyro vision; low
 //! violence is `violence_hblood` alone (8: four cvars); the stains aren't
 //! held for the delay; the victim's and attacker's centres are their
 //! origins.

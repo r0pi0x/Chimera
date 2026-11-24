@@ -16,6 +16,8 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("core", &["later"]),
     // Values made on first use (`Later`): std only.
     ("later", &[]),
+    // What others see of a character hiding or posing (`Guise`): its team.
+    ("guise", &["core"]),
     // Environment variables and per-user folders under their new and old
     // names (`CHIMERA_*`/`MASHUP_*`): std only.
     ("env", &[]),

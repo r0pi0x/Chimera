@@ -17,7 +17,9 @@
 //! (`apply_character_looks`, on their `probe_lit` materials), faded further by
 //! `BodyOpacity`: a spawn-protected character (`core::SpawnProtected`) draws
 //! half see-through on every machine and fades back over 0.2 s when its
-//! protection ends (`fade_protected`). Baked brush
+//! protection ends (`fade_protected`), and a hidden one
+//! (`chimera_core::guise`: TF2's cloak) as hidden as its `Guise` says (its
+//! own client keeps `guise::SELF_OPACITY`). Baked brush
 //! entities' render modes and rendercolor are drawn from load
 //! (`MapMesh::render`, `render_color`, `flat_color`). On brush entities
 //! (`RenderLook::surface_blend`, `surface_factor`) mode 1 draws the flat
@@ -166,8 +168,14 @@ pub const UNPROTECT_FADE_SECONDS: f32 = 0.2;
 #[allow(clippy::type_complexity)]
 pub fn fade_protected(
     characters: Query<
-        (Entity, Option<&crate::core::SpawnProtected>, Option<&mut BodyOpacity>),
-        Or<(With<crate::core::SpawnProtected>, With<BodyOpacity>)>,
+        (
+            Entity,
+            Option<&crate::core::SpawnProtected>,
+            Option<&mut BodyOpacity>,
+            Option<&chimera_core::guise::Guise>,
+            Has<crate::core::LocalPlayer>,
+        ),
+        Or<(With<crate::core::SpawnProtected>, With<BodyOpacity>, With<chimera_core::guise::Guise>)>,
     >,
     clock: Option<Res<crate::core::SimClock>>,
     time: Res<Time>,
@@ -175,8 +183,10 @@ pub fn fade_protected(
 ) {
     let now = clock.map_or(0.0, |c| c.now);
     let step = time.delta_secs() * (1.0 - PROTECTED_OPACITY) / UNPROTECT_FADE_SECONDS;
-    for (e, protected, opacity) in characters {
+    for (e, protected, opacity, guise, local) in characters {
         let target = if protected.is_some_and(|p| !p.over(now)) { PROTECTED_OPACITY } else { 1.0 };
+        // Hidden (`chimera_core::guise`): faded as its game says.
+        let target = target * chimera_core::guise::drawn_opacity(guise, local);
         match opacity {
             Some(mut o) => {
                 let next = if target < o.0 { target } else { (o.0 + step).min(target) };

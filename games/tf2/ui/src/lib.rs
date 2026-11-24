@@ -5,7 +5,8 @@
 //! in hand, drawn under its own root (`HudRoot(GAME)`) by its own unit
 //! (H / 480): the health cross with its number, the overheal and low-health
 //! pulses, the ammo panel in the team's colour (clip and reserve, or one
-//! number), the crosshair; in TF2's fonts and colours from the install's
+//! number), the crosshair, an item's meter (a watch's cloak), the player
+//! under the crosshair (a disguised Spy as his disguise); in TF2's fonts and colours from the install's
 //! scheme (its look comes with the map: `tf2::game::hud`). Its guns' kill icons
 //! join every app's kill feed (`systems::register_kill_icons`); the feed's
 //! rows are the app's.
@@ -35,12 +36,13 @@ impl Plugin for Tf2HudPlugin {
         // Its kill feed is the app's: it shows none of its own.
         chimera_client::client::kill_feed::GameKillFeedAppExt::register_game_kill_feed(app, GAME, |_| 0);
         app.init_resource::<systems::Tf2HudState>()
+            .init_resource::<systems::Tf2Target>()
             .init_resource::<chimera_client::client::weapon_icons::WeaponIcons>()
             .add_systems(Startup, systems::spawn_root)
             .add_systems(
                 Update,
                 (
-                    (systems::collect, systems::sync).chain().run_if(chimera_core::gameplay::hud_is(GAME)),
+                    (systems::target, systems::collect, systems::sync).chain().run_if(chimera_core::gameplay::hud_is(GAME)),
                     systems::register_kill_icons,
                 ),
             );

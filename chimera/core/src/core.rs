@@ -1483,6 +1483,13 @@ pub struct Died {
     pub damage: Damage,
 }
 
+/// A death that isn't one (`guise`, "A fake death"): the kill feed shows
+/// it and a ragdoll of the body is drawn, but nothing counts it and the
+/// character lives on (TF2's Dead Ringer). A network server sends it to
+/// its clients as a death marked feigned.
+#[derive(Message, Clone, Debug)]
+pub struct Feigned(pub Died);
+
 /// A thing that is no character was destroyed by an attack (a game's
 /// placed device: Combat Arms' auto turret): what it was (its weapon id:
 /// its name and icon), whose it was, who broke it and with what. Only
@@ -3019,6 +3026,7 @@ impl Plugin for CorePlugin {
             .add_message::<Explosion>()
             .add_message::<Deafened>()
             .add_message::<Died>()
+            .add_message::<Feigned>()
             .add_message::<Destroyed>()
             .add_message::<RegionHit>()
             .add_message::<DamageTaken>()

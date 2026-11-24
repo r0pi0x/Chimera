@@ -15,7 +15,8 @@
 //! kept between calls of exclusive code (`query_cache`), values worked out
 //! once and kept by their owner (`memo`), a crate's data documents read
 //! from the checkout in a dev build (`game_data`), values made on first use
-//! (`later`), a session's diagnostics (`diagnostics`: the rolling log,
+//! (`later`), what others see of a character that hides or poses as
+//! someone else (`guise`), a session's diagnostics (`diagnostics`: the rolling log,
 //! health lines, crash capture), quitting quickly (`shutdown`: what must
 //! persist, then the process ends without dropping the app). Code
 //! everything else uses and that changes rarely, in its own crate so an
@@ -38,6 +39,7 @@ pub mod game_log;
 pub mod game_parts;
 pub mod games_in_play;
 pub mod gameplay;
+pub mod guise;
 pub mod game_data;
 pub mod game_registry;
 pub mod later;

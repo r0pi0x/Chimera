@@ -13,7 +13,9 @@
 # batch; `gun_game` overrides whether a ladder may draw it (default: it
 # deals damage, its base being a ladder gun); `wearable`: no weapon, its
 # attributes only modify its wearer; `note` what its attributes don't
-# cover (still to build).
+# cover (still to build); `[items.<name>.hooks]` the item's own hook
+# numbers, merged over its document's (batch 3's Spy items, whose
+# behaviour no attribute of the spec names).
 
 [bases]
 tf_weapon_handgun_scout_secondary = "tf2:tf_weapon_pistol_scout"
@@ -63,6 +65,8 @@ tf_weapon_revolver = "tf2:tf_weapon_revolver"
 tf_weapon_buff_item = "tf2:tf_weapon_buff_item"
 tf_wearable_demoshield = "tf2:tf_wearable_demoshield"
 tf_wearable = "tf2:tf_wearable"
+# Batch 3's watches (specs/tf2/batch3_mechanics.md 3; an abstract base).
+tf_weapon_invis = "tf2:tf_weapon_invis"
 
 # Batch 1 (33 items, 31 entries).
 [items.winger]
@@ -468,7 +472,9 @@ note = "crits from sapper kills (no buildings yet)"
 [items.enforcer]
 index = 460
 batch = 2
-note = "x1.2 while disguised (no disguise yet); piercing resists"
+note = "piercing resists"
+# A shot fired while disguised x 1.2 (batch2b_mechanics.md 16).
+hooks = { "tf2:item" = { disguise_bonus = 1.2 } }
 
 # Batch 3 (specs/tf2/batch3_mechanics.md 1, 2; `items::shields`,
 # `items::meters`' rage). Utility items: no ladder draws them. The Tide
@@ -521,3 +527,50 @@ index = 354
 batch = 3
 gun_game = false
 note = "the horn's sequence, sound and banner"
+
+# ---- Batch 3: the Spy (specs/tf2/batch3_mechanics.md 3, 4; `items::spy`) ----
+# Watches: carried, attack2 cloaks; never on a ladder.
+
+[items.invis_watch]
+index = 30
+batch = 3
+gun_game = false
+
+[items.cloak_and_dagger]
+index = 60
+batch = 3
+gun_game = false
+# Cloaked: standing still +6.6 a second, moving -15 (v / v_max)^2.
+hooks = { "tf2:cloak" = { kind = "still", drain = 15.0, regen = 6.6 } }
+
+[items.dead_ringer]
+index = 59
+batch = 3
+gun_game = false
+# Arms with a full meter; the next hit feigns a death (50 of meter).
+hooks = { "tf2:cloak" = { kind = "feign", drain = 7.1, regen = 5.0 } }
+
+# Knives (damaging: ladder melee as any knife).
+
+[items.your_eternal_reward]
+index = 225
+batch = 3
+note = "silent backstabs"
+hooks = { "tf2:item" = { disguise_on_backstab = true, disguise_needs_cloak = true, cloak_drain = 1.33 } }
+
+[items.wanga_prick]
+index = 574
+batch = 3
+note = "silent backstabs"
+hooks = { "tf2:item" = { disguise_on_backstab = true, disguise_needs_cloak = true, cloak_drain = 1.33 } }
+
+[items.big_earner]
+index = 461
+batch = 3
+hooks = { "tf2:item" = { cloak_on_kill = 30.0, boost_on_kill = 3.0 } }
+
+[items.spy_cicle]
+index = 649
+batch = 3
+note = "the frozen statue on a backstab"
+hooks = { "tf2:item" = { melts = 15.0, melt_fire_immune = 1.0, melt_afterburn_immune = 10.0 } }

@@ -1095,6 +1095,9 @@ pub struct Killed {
     /// kill voice's (`kill_voice::KillVoiceOutcome`): `kill_marks` bits, 0
     /// for none.
     pub marks: u8,
+    /// A fake death (`core::Feigned`): the kill feed and a ragdoll, the
+    /// character alive.
+    pub feigned: bool,
 }
 
 /// `Killed::marks` bits.
@@ -1398,6 +1401,9 @@ impl Plugin for NetPlugin {
             .ordered::<crate::core::ChoosingClass>()
             .replicate::<crate::core::PlayerClass>()
             .ordered::<crate::core::PlayerClass>()
+            // What others see of a character hiding or posing
+            // (`chimera_core::guise`).
+            .replicate::<chimera_core::guise::Guise>()
             .replicate::<Health>()
             .ordered::<Health>()
             // Whose game a character is (its body, its player's HUD) where

@@ -3,7 +3,8 @@
 //! top speed, standing eye height, air jumps, player model and arms, the
 //! classes whose bodies it may also show (`needs`: their asset sets,
 //! `players/<class>` by `set_of`, come with its own in a match's offer,
-//! `Classes::sets_for`; none yet, the Spy's disguise will need all), and
+//! `Classes::sets_for`; none: the Spy's disguise loads its body when
+//! worn), its stock primary (`primary`: what a disguise shows), and
 //! which classes each gun can make its holder (`Classes::of_gun_all`: the
 //! file's `[guns]` table, one class or a list, else the gun's `tf2:gun`
 //! hook's `arms`; the first is the gun's own, `of_gun`).
@@ -67,9 +68,14 @@ pub struct Class {
     /// class carries it in place of the kit's melee (`HOOK`).
     #[serde(default)]
     pub melee: Option<String>,
-    /// The classes whose bodies a player of this one may also show (the
-    /// Spy's disguise, once built): their sets come with this class's
-    /// (`Classes::sets_for`).
+    /// Its stock primary (classes.md, "Stock loadout"; the Spy's revolver):
+    /// what a Spy disguised as it shows in his hands
+    /// (specs/tf2/batch3_mechanics.md 5, `items::spy`).
+    #[serde(default)]
+    pub primary: Option<String>,
+    /// The classes whose bodies a player of this one may also show: their
+    /// sets come with this class's (`Classes::sets_for`). The Spy's
+    /// disguise loads its class's body when worn (`late_bodies`).
     #[serde(default)]
     pub needs: Vec<String>,
     /// Its name (the table's key), filled in after reading.

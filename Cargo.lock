@@ -8131,6 +8131,7 @@ dependencies = [
  "bevy_winit",
  "chimera_client",
  "chimera_core",
+ "chimera_net",
  "chimera_present",
  "chimera_sim",
  "chimera_world",

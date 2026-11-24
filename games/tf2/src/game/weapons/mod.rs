@@ -155,6 +155,7 @@ pub const DATA: &[(&str, GameData)] = &[
     data_file!("buff_item.toml"),
     data_file!("demoshield.toml"),
     data_file!("wearable.toml"),
+    data_file!("invis.toml"),
 ];
 
 pub const SCATTERGUN: &str = "tf2:tf_weapon_scattergun";
@@ -185,7 +186,7 @@ pub const BAT_GIFTWRAP: &str = "tf2:tf_weapon_bat_giftwrap";
 pub const STICKBOMB: &str = "tf2:tf_weapon_stickbomb";
 /// The abstract bases (no weapon of their own; data/items.toml's
 /// `[bases]` name them).
-pub const ABSTRACT_BASES: [&str; 16] = [
+pub const ABSTRACT_BASES: [&str; 17] = [
     FLAREGUN,
     COMPOUND_BOW,
     CROSSBOW,
@@ -202,6 +203,7 @@ pub const ABSTRACT_BASES: [&str; 16] = [
     BUFF_ITEM,
     DEMOSHIELD,
     WEARABLE,
+    WATCH,
 ];
 
 /// The consumables' classes (specs/tf2/batch2b_mechanics.md 11-13; no
@@ -215,6 +217,9 @@ pub const JAR: &str = "tf2:tf_weapon_jar";
 pub const BUFF_ITEM: &str = "tf2:tf_weapon_buff_item";
 pub const DEMOSHIELD: &str = "tf2:tf_wearable_demoshield";
 pub const WEARABLE: &str = "tf2:tf_wearable";
+/// The Spy's watches' class (specs/tf2/batch3_mechanics.md 3; no stock
+/// weapon of ours: an abstract base, `items::spy`).
+pub const WATCH: &str = "tf2:tf_weapon_invis";
 
 /// The guns, in the ladder's order (M2b's four, then weapons_more.md's
 /// eight).

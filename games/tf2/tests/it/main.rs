@@ -5,7 +5,8 @@
 //! (`movement`: movement.md's test cases), ICE against its spec (`ice`),
 //! the unlocks from a made-up item schema through the converter (`items`;
 //! batch 2's mechanics: `batch2`, `batch2b`, `batch2b_items`; batch 3's
-//! shields and banners: `batch3`),
+//! shields and banners: `batch3`; the
+//! Spy: `batch3_spy`),
 //! the script reader on fixtures encrypted with throwaway keys
 //! (`scripts`), the guns (`weapons`: M2b's four; `weapons_more`: the
 //! next eight; `melee`: the nine stock melee weapons and the backstab;
@@ -43,6 +44,7 @@ mod batch2;
 mod batch2b;
 mod batch2b_items;
 mod batch3;
+mod batch3_spy;
 mod crit_boost;
 mod ice;
 mod items;

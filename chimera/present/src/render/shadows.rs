@@ -1362,6 +1362,7 @@ pub fn update_character_blobs(
             Option<&crate::core::MovementState>,
             Option<&crate::core::Health>,
             Option<&Children>,
+            Option<&crate::render::tint::BodyOpacity>,
         ),
         (With<crate::core::Intent>, Without<crate::core::Spectating>, Without<crate::map::ragdoll::Ragdolled>),
     >,
@@ -1383,8 +1384,9 @@ pub fn update_character_blobs(
         return;
     };
     let mut have: std::collections::HashMap<Entity, Entity> = blobs.iter().map(|(e, b, ..)| (b.owner, e)).collect();
-    for (owner, at, movement, health, children) in &characters {
-        let alive = health.is_none_or(|h| h.current > 0.0);
+    for (owner, at, movement, health, children, opacity) in &characters {
+        // A body mostly hidden (a cloak, `chimera_core::guise`) casts none.
+        let alive = health.is_none_or(|h| h.current > 0.0) && opacity.is_none_or(|o| o.0 >= 0.5);
         let drawn = children
             .into_iter()
             .flatten()

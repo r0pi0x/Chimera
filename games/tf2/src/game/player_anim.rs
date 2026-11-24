@@ -64,8 +64,8 @@
 //! class data's `DontDoAirwalk` / `DontDoNewJump` and the Scout's air-dash
 //! crouch aren't read (3); no
 //! flinch on damage (open question 7) and no air-jump sequence (open
-//! question 4: `jump_double_primary` has no activity); no Spy disguise,
-//! cloak, stun or ghost mode, so 7a's reasons to hide the active weapon
+//! question 4: `jump_double_primary` has no activity); no stun or ghost
+//! mode, and the Spy's cloak fades the body (Chimera's `guise`), so 7a's reasons to hide the active weapon
 //! are only the owner's first-person view (the body hidden); other
 //! clients don't keep an item's pose parameters past a switch (4b's
 //! quirk: they write the new weapon's list over a reset).
@@ -684,18 +684,44 @@ fn follow_items(
 }
 
 /// TF2's bodies hold their active weapon's `c_` model.
+/// A disguised Spy shows his enemies the disguise's weapon (its class's
+/// stock primary) and is posed on their machine by its own animation of
+/// the disguise's body (`PosedHere`: the server's pose is the Spy's).
+#[allow(clippy::type_complexity)]
 fn hold_weapons(
-    characters: Query<(Entity, Option<&Inventory>, Option<&crate::map::Held>), With<Tf2PlayerAnim>>,
+    characters: Query<
+        (
+            Entity,
+            Option<&Inventory>,
+            Option<&crate::map::Held>,
+            Option<&chimera_core::guise::Guise>,
+            Option<&crate::core::Team>,
+            Has<source_engine::anim_net::PosedHere>,
+        ),
+        With<Tf2PlayerAnim>,
+    >,
+    viewer: Query<(Entity, Option<&crate::core::Team>), With<crate::core::LocalPlayer>>,
     weapons: Query<&crate::weapon::Weapon>,
     mut commands: Commands,
 ) {
-    for (e, inventory, held) in &characters {
-        let id = inventory
-            .and_then(|i| i.active)
-            .and_then(|w| weapons.get(w).ok())
-            .map(|w| w.id.to_string());
+    let viewer = viewer.single().ok();
+    for (e, inventory, held, guise, team, posed_here) in &characters {
+        let pose = super::items::spy::shown_pose(guise, team, e, viewer);
+        let id = match pose {
+            Some(p) => p.weapon.clone(),
+            None => inventory.and_then(|i| i.active).and_then(|w| weapons.get(w).ok()).map(|w| w.id.to_string()),
+        };
         if held.is_none_or(|h| h.0 != id) {
             commands.entity(e).insert(crate::map::Held(id));
+        }
+        match (pose.is_some(), posed_here) {
+            (true, false) => {
+                commands.entity(e).insert(source_engine::anim_net::PosedHere);
+            }
+            (false, true) => {
+                commands.entity(e).remove::<source_engine::anim_net::PosedHere>();
+            }
+            _ => {}
         }
     }
 }
@@ -712,23 +738,28 @@ fn follow_class(
         Option<&mut source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>,
         Option<&Inventory>,
         Option<&super::classes::RungClass>,
+        (Entity, Option<&chimera_core::guise::Guise>, Option<&crate::core::Team>),
     ), Or<(With<Tf2PlayerAnim>, With<source_engine::player_anim::SimAnimState<Tf2PlayerAnim>>)>>,
+    viewer: Query<(Entity, Option<&crate::core::Team>), With<crate::core::LocalPlayer>>,
     weapons: Query<&crate::weapon::Weapon>,
     table: Option<Res<super::classes::Classes>>,
 ) {
     let Some(table) = table else { return };
-    for (anim, sim, inv, drawn) in &mut bodies {
+    let viewer = viewer.single().ok();
+    for (anim, sim, inv, drawn, (e, guise, team)) in &mut bodies {
         if anim.is_none() && sim.is_none() {
             continue;
         }
         let held = inv.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
         let class = held.and_then(|w| table.held(&w.id, drawn.map(|d| d.0.as_str()))).map(|c| c.name.as_str());
-        // The drawn state, and a server's own, whose pose clients draw
+        // The drawn state (a disguise's class on an enemy's machine:
+        // `items::spy`), and a server's own, whose pose clients draw
         // others with (`anim_net`).
+        let shown = super::items::spy::shown_pose(guise, team, e, viewer).map(|p| p.class.as_str()).or(class);
         if let Some(mut a) = anim
-            && a.class.as_deref() != class
+            && a.class.as_deref() != shown
         {
-            a.class = class.map(str::to_string);
+            a.class = shown.map(str::to_string);
         }
         if let Some(mut s) = sim
             && s.0.class.as_deref() != class

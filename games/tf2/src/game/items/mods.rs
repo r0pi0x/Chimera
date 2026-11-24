@@ -170,6 +170,24 @@ pub struct ItemParams {
     pub kill_refill: f32,
     pub lose_charge_on_hurt: bool,
     pub speed_shield: f32,
+    /// Batch 3, the Spy (specs/tf2/batch3_mechanics.md 4, 5; `super::spy`;
+    /// the item's data/items.toml `hooks`): a backstab kill disguises as
+    /// the victim and a disguise needs (and empties) a full cloak meter
+    /// (Your Eternal Reward); the cloak drains × `cloak_drain` while it
+    /// is carried; a kill gives `cloak_on_kill` meter and `boost_on_kill`
+    /// s of the speed boost (Big Earner); the first fire hit melts it,
+    /// back after `melts` s, its holder fire-immune `melt_fire_immune` s
+    /// and afterburn-immune `melt_afterburn_immune` s (Spy-cicle); a shot
+    /// while disguised × `disguise_bonus` (the Enforcer).
+    pub disguise_on_backstab: bool,
+    pub disguise_needs_cloak: bool,
+    pub cloak_drain: f32,
+    pub cloak_on_kill: f32,
+    pub boost_on_kill: f32,
+    pub melts: f32,
+    pub melt_fire_immune: f32,
+    pub melt_afterburn_immune: f32,
+    pub disguise_bonus: f32,
 }
 
 impl Default for ItemParams {
@@ -229,6 +247,15 @@ impl Default for ItemParams {
             kill_refill: 0.0,
             lose_charge_on_hurt: false,
             speed_shield: 1.0,
+            disguise_on_backstab: false,
+            disguise_needs_cloak: false,
+            cloak_drain: 1.0,
+            cloak_on_kill: 0.0,
+            boost_on_kill: 0.0,
+            melts: 0.0,
+            melt_fire_immune: 0.0,
+            melt_afterburn_immune: 0.0,
+            disguise_bonus: 1.0,
         }
     }
 }
@@ -297,6 +324,7 @@ impl ItemParams {
             kill_refill: add("kill_refills_meter"),
             lose_charge_on_hurt: r.flag("lose_demo_charge_on_damage_when_charging"),
             speed_shield: a("mult_player_movespeed_shieldrequired"),
+            ..Self::default()
         }
     }
 }
@@ -612,6 +640,7 @@ pub fn add(app: &mut App) {
     super::consumables::add(app);
     super::meters::add(app);
     super::shields::add(app);
+    super::spy::add(app);
     app.register_weapon_hook::<ItemParams>(super::ITEM_HOOK, |e, _, p| {
         e.insert(Tf2Item(p.clone()));
     })

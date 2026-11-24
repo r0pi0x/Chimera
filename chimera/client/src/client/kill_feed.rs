@@ -284,6 +284,7 @@ pub const FEED_NAME_CQ: f32 = 8.0 - (FEED_ICON_H - 0.78) * super::signal::ICON_W
 #[allow(clippy::type_complexity)]
 fn record(
     mut died: MessageReader<Died>,
+    mut feigned: MessageReader<chimera_core::core::Feigned>,
     mut destroyed: MessageReader<Destroyed>,
     names: (Option<Res<GunNames>>, Option<Res<chimera_sim::weapon::data::WeaponCatalog>>),
     who: Query<(
@@ -328,7 +329,9 @@ fn record(
             bot: false,
         },
     };
-    for d in died.read() {
+    // A fake death shows as a death (`core::Feigned`).
+    let fake: Vec<Died> = feigned.read().map(|f| f.0.clone()).collect();
+    for d in died.read().chain(fake.iter()) {
         // A sandbox's practice target's death or kill is measured, not
         // fed (`targets::is_target`; the last-kill card reads it).
         if targets.contains(d.entity) || d.attacker.is_some_and(|a| targets.contains(a)) {

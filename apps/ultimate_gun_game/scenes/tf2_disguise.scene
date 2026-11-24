@@ -1,0 +1,25 @@
+# TF2's Spy disguise (specs/tf2/batch3_mechanics.md 5): a Spy target (his
+# revolver) 6 m away, then the same target disguised as a Heavy: his
+# enemies see the Heavy's body and minigun (`tf2:disguise ... targets`).
+#   CHIMERA_ASSET_STORE=<store> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/tf2_disguise.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+rung tf2:tf_weapon_scattergun
+target add tf2:tf_weapon_revolver 6
+wait 2
+wait_for idle 3000
+wait 120
+target look 1
+wait 10
+shot spy_plain
+tf2:disguise heavy 2 targets
+wait 200
+wait 2
+wait_for idle 3000
+wait 60
+target look 1
+wait 10
+shot spy_disguised

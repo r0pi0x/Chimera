@@ -41,9 +41,9 @@
 //! (`core::StairSmoothing`, `smoothstairs` 1).
 //!
 //! Known shortcuts:
-//! - The teammates' push-away is Source's shared one; the Spy's disguise
-//!   and the Medic's patient speed aren't modelled (no such classes' kits
-//!   yet).
+//! - The teammates' push-away is Source's shared one; the Medic's
+//!   patient speed isn't modelled (no Medi Gun yet). The Spy's disguise
+//!   speed is `items::spy::speed_factor`.
 //! - A player holding another game's gun on TF2's movement (none
 //!   in the party: its movement follows the gun) keeps its last class.
 
@@ -332,16 +332,18 @@ pub fn select_class(
             Option<&super::items::effects::Heads>,
             Option<&chimera_sim::status::SpeedBoost>,
             Option<&chimera_sim::status::Slowed>,
+            Option<&super::items::spy::Tf2Spy>,
         ),
     )>,
     mut weapons: Query<(&Weapon, Option<&Tf2Gun>, Option<&mut ShellReload>, Option<&mut Magazine>)>,
     items: Query<&super::items::mods::Tf2Item>,
     meters: Query<&super::items::meters::Tf2Meter>,
     (shields, item_weapons): (Query<&super::items::shields::Tf2Shield>, Query<(&super::items::mods::Tf2Item, &Weapon)>),
+    cloaks: Query<&super::items::spy::Tf2Cloak>,
     table: Res<Classes>,
     clock: Res<crate::core::SimClock>,
 ) {
-    for (slot, inv, mut class, mut traits, drawn, zoomed, (health, heads, boost, slowed)) in &mut q {
+    for (slot, inv, mut class, mut traits, drawn, zoomed, (health, heads, boost, slowed, spy)) in &mut q {
         if slot.0 != ID {
             continue;
         }
@@ -373,6 +375,9 @@ pub fn select_class(
         // A slow (batch2b_mechanics.md 3, 7: the ball's half, the Loose
         // Cannon's stop; Chimera's `status::Slowed`, ended before this).
         let p = p * slowed.map_or(1.0, |s| s.factor);
+        // A Spy's disguise (batch3_mechanics.md 5; `items::spy`): the
+        // slower of his and the disguise's class's speed, cloaked his own.
+        let p = p * super::items::spy::speed_factor(inv, spy, &cloaks, &table, c.speed);
         // Batch 2b (`items::meters::movement`): Baby Face's boost, the
         // Soda Popper's hype air jumps.
         let (extra, hype_jumps) = super::items::meters::movement(inv, &meters, clock.now);

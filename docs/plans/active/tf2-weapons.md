@@ -1,6 +1,6 @@
 # TF2 weapons: every player weapon, what is in, what is left
 
-Status: batches 0 and 1 built, batch 2's first five families and part 2 (projectiles and pushes; consumables, meters, sniper and revolver variants) built, batch 3's shields and banners built (2026-11-23; section 4); the rest of batch 2 and batch 3 planned.
+Status: batches 0 and 1 built, batch 2's first five families and part 2 (projectiles and pushes; consumables, meters, sniper and revolver variants) built, batch 3's shields and banners and its Spy (watches, disguise, knives) built (2026-11-23; section 4); the rest of batch 2 and batch 3 planned.
 Inventory by class and slot, then a phased build order.
 
 Sources: the installed game's `scripts/items/items_game.txt` (read locally
@@ -485,7 +485,7 @@ tests: games/tf2/tests/it/batch2b_items.rs):
   Classic (charge while held, fire on release, body x0.9, head crit at full).
 - *Revolvers*: Ambassador (headshot crit after 1 s, to 1200 units, the far
   half of the fall-off), Diamondback (backstab kills store crits),
-  Enforcer (stats; no disguise yet).
+  Enforcer (× 1.2 on a shot while disguised, since batch 3's disguise).
 - *Crit feedback* (18): `TFPlayer.CritHitMini` on mini-crits; the
   attacker's `crit_text` / `minicrit_text` (`particles/crit.pcf`) over the
   victim, sent to his client.
@@ -546,6 +546,36 @@ games/tf2/tests/it/batch3.rs, the leftovers in batch2b_items.rs):
   and a TF2 melee rung draws nothing of its own (`classes::draw_rung`);
   a rung rule for worn items would be new.
 - Their asset sets: the 8 new `weapon/<name>` sets (see the commit).
+
+**Built 2026-11-23, the Spy** (specs/tf2/batch3_mechanics.md 3-5;
+`game::items::spy`; Chimera's `guise`: what others see of a character
+hiding or posing as someone else, and a fake death, `core::Feigned`, on
+the kill feed and as a ragdoll; scenario tests:
+games/tf2/tests/it/batch3_spy.rs, one on the network: an enemy's client
+sees the disguise's name, health and body and not a cloaked Spy):
+
+- *Watches* (`tf2:cloak` on an abstract base, data/weapons/invis.toml;
+  carried, attack2 with any weapon): 1.0 s in, 2.0 s out, 0.5 s before a
+  decloak, no attacks until visible, damage × 0.8 cloaked; Invis Watch
+  (−10, +3.33), Cloak and Dagger (+6.6 still, −15 (v/v_max)² moving),
+  Dead Ringer (armed full; the next hit × 0.25, a fake death, −50, 3 s
+  of speed boost and afterburn immunity, then 0.65 − t/16 cuts; −7.1,
+  +5). The cloak fades the body (no look specified), shadow included;
+  the meter on the HUD's item meter.
+- *Disguise* (`tf2:disguise <class> [team]`, a client's request): 2.0 s,
+  0.5 s again; enemies see the class's body, team skin and stock primary
+  (classes.toml `primary`), a real player of that team's name and
+  health (a TF2 target ID, tf2_ui); the slower class speed, predicted;
+  firing ends it (0.5 s wear-off).
+- *Knives* (data/items.toml `hooks`): Your Eternal Reward and Wanga Prick
+  (backstab kill disguises as the victim; a disguise needs a full cloak;
+  drain × 1.33), Big Earner (+30 cloak, 3 s boost on a kill), Spy-cicle
+  (melts on the first fire hit for 15 s: fire-immune 1 s,
+  afterburn-immune 10 s). Watches have gun-game off; knives stay
+  ladder melee.
+- Left: sappers, the disguise kit's view model and weapon switch, the
+  cloak's own looks and sounds, cloak from ammo, silent backstabs, the
+  Spy-cicle's statue.
 
 | Group | Weapons | Fit in a party gun game | Spec needed |
 |---|---|---|---|

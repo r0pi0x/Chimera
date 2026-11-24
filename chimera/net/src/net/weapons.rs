@@ -658,9 +658,11 @@ fn receive_hurts(
 
 /// Deaths, to every client (kill feed, ragdolls), with the gun that
 /// killed (`weapon::DamageWeapons`), the announcer's facts of each
-/// enemy kill and the kill voice's outcome (`kill_voice`, in `marks`).
+/// enemy kill and the kill voice's outcome (`kill_voice`, in `marks`);
+/// fake deaths (`core::Feigned`) too, marked.
 fn send_deaths(
     mut died: MessageReader<Died>,
+    mut feigned: MessageReader<chimera_core::core::Feigned>,
     replicated: Query<(), With<Replicated>>,
     registry: Res<WeaponRegistry>,
     held: Option<Res<crate::weapon::DamageWeapons>>,
@@ -672,7 +674,8 @@ fn send_deaths(
     let announced: Vec<_> = announced.read().collect();
     let marked: Vec<_> = marked.read().copied().collect();
     let voices: Vec<_> = voices.read().copied().collect();
-    for d in died.read() {
+    let fake: Vec<Died> = feigned.read().map(|f| f.0.clone()).collect();
+    for (d, feigned) in died.read().map(|d| (d, false)).chain(fake.iter().map(|d| (d, true))) {
         if !replicated.contains(d.entity) {
             continue;
         }
@@ -710,6 +713,7 @@ fn send_deaths(
                 force: damage.force.to_array(),
                 facts,
                 marks,
+                feigned,
             },
         });
     }
@@ -797,7 +801,7 @@ fn receive_deaths(mut killed: MessageReader<Killed>, mut commands: Commands) {
                 return;
             }
             let weapon = k.weapon.and_then(|i| weapon_id(w, i)).or_else(|| class_id(w, k.class.as_deref()?));
-            w.write_message(Died {
+            let died = Died {
                 entity: k.victim,
                 attacker: k.attacker,
                 damage: Damage {
@@ -811,7 +815,13 @@ fn receive_deaths(mut killed: MessageReader<Killed>, mut commands: Commands) {
                     weapon,
                     force: Vec3::from_array(k.force),
                 },
-            });
+            };
+            // A fake death: the feed and a ragdoll only.
+            if k.feigned {
+                w.write_message(chimera_core::core::Feigned(died));
+                return;
+            }
+            w.write_message(died);
             // The kill voice's outcome (`kill_voice::KillVoiceOutcome`).
             if let Some(killer) = k.attacker.filter(|_| k.marks & super::kill_marks::ASKED != 0) {
                 w.write_message(chimera_sim::kill_voice::KillVoiceOutcome {

@@ -23,6 +23,8 @@ chimera_core.workspace = true
 chimera_world.workspace = true
 chimera_sim.workspace = true
 chimera_client.workspace = true
+chimera_net.workspace = true
+avian3d.workspace = true
 bevy.workspace = true
 workspace-hack.workspace = true
 
@@ -45,4 +47,4 @@ path = "tests/it/main.rs"
 
 [features]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on).
-dev = ["tf2/dev", "chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_client/dev", "chimera_present/dev", "source_engine/dev"]
+dev = ["tf2/dev", "chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_client/dev", "chimera_net/dev", "chimera_present/dev", "source_engine/dev"]

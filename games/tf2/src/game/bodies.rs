@@ -43,6 +43,9 @@
 //! files of its look were late is built again when they arrive
 //! (`late_bodies`).
 //!
+//! A disguised Spy (`items::spy::shown_pose`) wears, on the machine of
+//! an enemy, his disguise's class's body in its team's skin.
+//!
 //! Its ragdolls (`ragdoll_rules`, data/ragdolls.toml; specs/tf2/ragdolls.md)
 //! stay past the respawn until the owner dies again, and each machine
 //! removes one on a timer its view resets (`map::ragdoll::RagdollLifetime::
@@ -51,9 +54,12 @@
 //! Known shortcuts: body groups stay at their first choice (the Soldier's
 //! `rocket` group is never shown in his hand during a reload, 5's
 //! event); no death animations or gibs (9); of the ragdolls' rules
-//! (ragdolls.md) no Dead Ringer feign bodies, special bodies (ice, ash,
+//! (ragdolls.md) no special bodies (ice, ash,
 //! dissolve...) or late-arrival check (Edge cases), and with no death
-//! animation the timer is never reset at one's end (3).
+//! animation the timer is never reset at one's end (3); on a listen
+//! server whose host is a disguised Spy's enemy the server wears the
+//! disguise's body too, so its hitboxes are the disguise's there (a
+//! disguised Spy keeps his own, classes.md "Hitboxes").
 
 use chimera_core::{game_data::GameData, games_in_play::GameCharacters};
 use bevy::prelude::*;
@@ -198,7 +204,9 @@ pub fn wear_bodies(
         Option<&BodyModel>,
         Has<Tf2Skin>,
         Option<&RungClass>,
+        Option<&chimera_core::guise::Guise>,
     )>,
+    viewer: Query<(Entity, Option<&Team>), With<crate::core::LocalPlayer>>,
     leaving: Query<Entity, Or<(With<Tf2Skin>, (With<BodyName>, Or<(Changed<GameIdentity>, Without<GameIdentity>)>))>>,
     tf2_players: Res<GameCharacters>,
     weapons: Query<&Weapon>,
@@ -210,7 +218,8 @@ pub fn wear_bodies(
     let ours = |name: &str| table.classes.iter().any(|c| c.model.eq_ignore_ascii_case(name));
     let tf2_list = tf2_players.of(GAME);
     let leaving = leaving.iter().filter(|e| tf2_list.binary_search(e).is_err());
-    for (e, identity, inv, team, name, skin, body, skinned, drawn) in
+    let viewer = viewer.single().ok();
+    for (e, identity, inv, team, name, skin, body, skinned, drawn, guise) in
         players.iter_many(leaving.chain(tf2_list.iter().copied())).flatten()
     {
         let tf2 = identity.is_some_and(|i| i.0 == GAME);
@@ -239,16 +248,21 @@ pub fn wear_bodies(
         // default body): a TF2 player keeps `BodyName` while switching
         // classes, which would otherwise come and go and make archetypes
         // of its own.
-        let want_name = held
-            .and_then(|w| table.held(&w.id, drawn.map(|d| d.0.as_str())))
-            .map(|class| class.model.as_str())
-            .filter(|want| name.is_none_or(|n| n.0 != *want));
+        // A disguised Spy (`items::spy`) shows his enemies the disguise's
+        // class in its team's colours.
+        let pose = super::items::spy::shown_pose(guise, team, e, viewer);
+        let want_name = match pose {
+            Some(p) => table.get(&p.class),
+            None => held.and_then(|w| table.held(&w.id, drawn.map(|d| d.0.as_str()))),
+        }
+        .map(|class| class.model.as_str())
+        .filter(|want| name.is_none_or(|n| n.0 != *want));
         // The team's skin on a TF2 body (one with several skins), put on
         // with the name when the name changes and the map has such bodies
         // (the body the name picks is one: becoming TF2 puts both on in
         // one move, each alone an archetype for every combination of the
         // player's other parts).
-        let want_skin = BodySkin(skin_of(team.copied()));
+        let want_skin = BodySkin(skin_of(pose.map_or(team.copied(), |p| Some(Team(p.team)))));
         let skin_wrong = skin != Some(&want_skin) || !skinned;
         let skinned_body = |m: &MapCharacterModel| m.game == Some(GAME) && !m.model.skins.is_empty();
         let on_tf2_body = body.and_then(|b| models.as_ref()?.0.get(b.0)).is_some_and(skinned_body);

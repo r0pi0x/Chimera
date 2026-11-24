@@ -8,11 +8,12 @@
 # punch only above 580 units/s (the Scout's); model: the player model; arms: the first-
 # person arms' class (`c_<arms>_arms.mdl`); melee: its stock melee weapon
 # (specs/tf2/weapons_stock.md 1), what a TF2 rung of its class carries as
-# its kit melee (`classes::HOOK`); needs: the classes whose bodies
+# its kit melee (`classes::HOOK`); primary: its stock primary, what a Spy
+# disguised as it shows (`items::spy`); needs: the classes whose bodies
 # a player of this class may also show, so a match whose ladder drew
 # this class downloads their asset sets (`players/<class>`) too
 # (`Classes::sets_of`, the match's offer: `bodies::asset_names`). None by
-# default; the Spy's disguise, once built, makes the Spy need every class.
+# default; the Spy's disguise loads the body it shows when worn.
 
 [classes.scout]
 index = 1
@@ -24,6 +25,7 @@ loud_landings_only = true
 model = "models/player/scout.mdl"
 arms = "scout"
 melee = "tf2:tf_weapon_bat"
+primary = "tf2:tf_weapon_scattergun"
 
 [classes.sniper]
 index = 2
@@ -33,6 +35,7 @@ eye = 75
 model = "models/player/sniper.mdl"
 arms = "sniper"
 melee = "tf2:tf_weapon_club"
+primary = "tf2:tf_weapon_sniperrifle"
 
 [classes.soldier]
 index = 3
@@ -42,6 +45,7 @@ eye = 68
 model = "models/player/soldier.mdl"
 arms = "soldier"
 melee = "tf2:tf_weapon_shovel"
+primary = "tf2:tf_weapon_rocketlauncher"
 
 [classes.demoman]
 index = 4
@@ -51,6 +55,7 @@ eye = 68
 model = "models/player/demo.mdl"
 arms = "demo"
 melee = "tf2:tf_weapon_bottle"
+primary = "tf2:tf_weapon_grenadelauncher"
 
 [classes.medic]
 index = 5
@@ -60,6 +65,7 @@ eye = 75
 model = "models/player/medic.mdl"
 arms = "medic"
 melee = "tf2:tf_weapon_bonesaw"
+primary = "tf2:tf_weapon_syringegun_medic"
 
 [classes.heavy]
 index = 6
@@ -69,6 +75,7 @@ eye = 75
 model = "models/player/heavy.mdl"
 arms = "heavy"
 melee = "tf2:tf_weapon_fists"
+primary = "tf2:tf_weapon_minigun"
 
 [classes.pyro]
 index = 7
@@ -78,6 +85,7 @@ eye = 68
 model = "models/player/pyro.mdl"
 arms = "pyro"
 melee = "tf2:tf_weapon_fireaxe"
+primary = "tf2:tf_weapon_flamethrower"
 
 [classes.spy]
 index = 8
@@ -87,8 +95,9 @@ eye = 75
 model = "models/player/spy.mdl"
 arms = "spy"
 melee = "tf2:tf_weapon_knife"
-# With the disguise (not built yet): every other class's body, as
-# needs = ["scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper"]
+primary = "tf2:tf_weapon_revolver"
+# The disguise (items::spy) loads the body it shows when worn
+# (late_bodies), so a Spy's match needs no other class's set.
 needs = []
 
 [classes.engineer]
@@ -99,6 +108,7 @@ eye = 68
 model = "models/player/engineer.mdl"
 arms = "engineer"
 melee = "tf2:tf_weapon_wrench"
+primary = "tf2:tf_weapon_shotgun_primary"
 
 # The classes a gun can make its holder (weapons.md 1, weapons_more.md 1,
 # classes.md "Stock loadout": every class that carries it in stock TF2;

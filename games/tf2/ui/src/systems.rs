@@ -90,7 +90,9 @@ pub fn collect(
         Option<&tf2::game::items::meters::Tf2Meter>,
         Option<&tf2::game::items::consumables::Tf2Consumable>,
         Option<&tf2::game::items::shields::Tf2Shield>,
+        Option<&tf2::game::items::spy::Tf2Cloak>,
     )>,
+    target: Res<Tf2Target>,
     scope: Option<Res<ScopeUp>>,
     shoulder: Option<Res<chimera_client::client::third_person::Shoulder>>,
 ) {
@@ -128,22 +130,76 @@ pub fn collect(
                     let label = if m.params.kind == tf2::game::items::meters::MeterKind::Heads { format!("{l}: {}", m.heads()) } else { l.to_string() };
                     Some((label, f))
                 }
-                (_, Some(c), _) => {
+                (_, Some(c), ..) => {
                     let (l, f) = c.meter();
                     Some((l.to_string(), f))
                 }
-                (_, _, Some(s)) => {
+                (_, _, Some(s), _) => {
                     let (l, f) = s.meter();
+                    Some((l.to_string(), f))
+                }
+                // A watch's cloak (batch3_mechanics.md 3).
+                (.., Some(c)) => {
+                    let (l, f) = c.meter();
                     Some((l.to_string(), f))
                 }
                 _ => None,
             })
         }),
+        target: target.0.clone(),
     };
     let look = Look { hud: &active.0, screen: Screen::new(w.width(), w.height()) };
     let st = &mut *state;
     st.frame = st.hud.frame(&inputs, look.screen, &look);
     st.inputs = inputs;
+}
+
+/// The player under the local player's crosshair, as this machine shows
+/// him (`target`): name and health points.
+#[derive(Resource, Default, Clone, Debug, PartialEq)]
+pub struct Tf2Target(pub Option<(String, f32)>);
+
+/// How far the target ID reaches (units).
+pub const TARGET_RANGE: f32 = 2000.0;
+
+/// The player under the crosshair (`Tf2Target`): a living one within
+/// `TARGET_RANGE`, not hidden; a disguised enemy Spy by his disguise's
+/// name and health (`items::spy::shown_pose`).
+#[allow(clippy::type_complexity)]
+pub fn target(
+    mut out: ResMut<Tf2Target>,
+    me: Option<Single<(Entity, &Transform, &chimera_core::core::Intent, &chimera_core::core::MovementState, Option<&Team>), With<LocalPlayer>>>,
+    who: Query<(
+        Option<&chimera_net::net::NetCharacter>,
+        Option<&Name>,
+        Option<&Health>,
+        Option<&Team>,
+        Option<&chimera_core::guise::Guise>,
+    )>,
+    spatial: avian3d::prelude::SpatialQuery,
+    parents: Query<&ChildOf>,
+    shoulder: Option<Res<chimera_client::client::third_person::Shoulder>>,
+) {
+    use chimera_client::client::aim;
+    let found = me.and_then(|me| {
+        let (e, at, intent, state, team) = *me;
+        let ray = aim::crosshair_ray(shoulder.as_deref(), aim::view_ray(at, intent, state, None));
+        let (t, _) = aim::character_under(&spatial, ray, TARGET_RANGE * 0.0254, e, |x| who.contains(x) && x != e, &parents)?;
+        let (net, name, health, theirs, guise) = who.get(t).ok()?;
+        if health.is_none_or(|h| h.current <= 0.0) || guise.is_some_and(|g| g.hidden > 127) {
+            return None;
+        }
+        match tf2::game::items::spy::shown_pose(guise, theirs, t, Some((e, team))) {
+            Some(p) => Some((p.name.clone(), p.health * 100.0)),
+            None => {
+                let n = net.map(|n| n.name.clone()).or_else(|| name.map(|n| n.to_string())).unwrap_or_default();
+                Some((n, health.map_or(0.0, |h| h.current * 100.0)))
+            }
+        }
+    });
+    if out.0 != found {
+        out.0 = found;
+    }
 }
 
 /// The HUD's root node.

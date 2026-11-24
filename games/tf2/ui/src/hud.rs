@@ -37,6 +37,10 @@
 //!   boost, crikey, heads, a consumable's recharge) in
 //!   `HudItemEffectMeter`'s box: its label over a bar (`item_meter`).
 //!
+//! - **Target ID** (ours; hud.md has none): the player under the
+//!   crosshair, his name and health under it (`target_id`); a disguised
+//!   enemy Spy's disguise's (batch3_mechanics.md 5).
+//!
 //! Known shortcuts: the item meter's inner layout is ours; the max-health label, the low-ammo pulse (no
 //! threshold in the data), damage numbers and the health-gain number
 //! and the hit sound aren't drawn (open questions 6, 9, 3, 12); the
@@ -165,6 +169,9 @@ pub struct Inputs {
     /// boost, crikey, heads, a consumable's recharge): its label and fill
     /// 0-1 (`tf2::game::items::meters`, `consumables`).
     pub meter: Option<(String, f32)>,
+    /// The player under the crosshair: the name and health shown (a
+    /// disguised Spy's disguise's to his enemies, batch3_mechanics.md 5).
+    pub target: Option<(String, f32)>,
 }
 
 /// The pictures of this HUD that are the crosshair: they dim with the
@@ -338,6 +345,10 @@ impl Tf2Hud {
         if let (true, Some((label, fill))) = (i.alive, &i.meter) {
             out.extend(item_meter(label, *fill, screen, scheme));
         }
+        // The player under the crosshair.
+        if let (true, Some((name, hp))) = (i.alive, &i.target) {
+            out.extend(target_id(name, *hp, screen, scheme));
+        }
         // The charge meter beside the scope's middle.
         if let (true, Some(charge)) = (i.alive, i.scope) {
             out.extend(charge_meter(charge, screen, scheme));
@@ -388,6 +399,21 @@ pub fn item_meter(label: &str, fill: f32, screen: Screen, scheme: &dyn Scheme) -
         out.push(Draw::Box { rect: Rect::new(bar.min.x, bar.min.y, bar.min.x + bar.width() * f, bar.max.y), color: front, radius: 0.0 });
     }
     out
+}
+
+/// The player under the crosshair (ours: hud.md specifies no target ID):
+/// his name and health centred under the crosshair in `HudFontSmall`,
+/// `TanLight`, over a one-unit shadow.
+pub fn target_id(name: &str, health: f32, screen: Screen, scheme: &dyn Scheme) -> Vec<Draw> {
+    let Some(tall) = scheme.tall("HudFontSmall") else { return Vec::new() };
+    let tan = scheme.colour("TanLight").unwrap_or([235, 226, 202, 255]);
+    let one = screen.scaled(1.0);
+    let text = if name.is_empty() { format!("{}", health.max(0.0).round() as i32) } else { format!("{name}  {}", health.max(0.0).round() as i32) };
+    let at = Vec2::new(screen.w / 2.0, screen.h / 2.0 + screen.scaled(30.0));
+    vec![
+        Draw::Text { font: "HudFontSmall", tall, text: text.clone(), color: [0, 0, 0, 200], at: at + Vec2::splat(one), align: Align::Centre },
+        Draw::Text { font: "HudFontSmall", tall, text, color: tan, at, align: Align::Centre },
+    ]
 }
 
 /// The Sniper's charge meter (measured on real TF2, hud.md "Measured":

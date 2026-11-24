@@ -10,7 +10,9 @@
 //!   `RagdollJoint`s (ball and socket plus X-then-Y-then-Z Euler limits,
 //!   spec Open question 5's proposal, solved in avian's contact passes as
 //!   soft velocity constraints, so joints and contacts settle together); the
-//!   owner gets `Ragdolled` and loses its drawn body to the ragdoll.
+//!   owner gets `Ragdolled` and loses its drawn body to the ragdoll. A
+//!   fake death (`core::Feigned`) spawns one too, its living owner keeping
+//!   his body.
 //! - Bone velocities aim at a death pose (spec 2.3) when the game's
 //!   animations have one for the hit: the side from the killing push and
 //!   the facing, the frame from the hit group.
@@ -862,6 +864,7 @@ fn rotation_between(from: Quat, to: Quat) -> Vec3 {
 /// (Public so a game's ragdoll logic can run after it.)
 pub fn spawn_ragdolls(
     mut died: MessageReader<Died>,
+    mut feigned: MessageReader<chimera_core::core::Feigned>,
     settings: Res<RagdollSettings>,
     rules: Res<RagdollGameRules>,
     models: Option<Res<CharacterModels>>,
@@ -873,12 +876,16 @@ pub fn spawn_ragdolls(
 ) {
     let Some(models) = models else {
         died.clear();
+        feigned.clear();
         return;
     };
     if settings.enabled != 0 {
         warm_shapes(&models, models.is_changed(), wait.is_some(), shapes.bypass_change_detection());
     }
-    for d in died.read() {
+    // A fake death (`core::Feigned`) leaves a ragdoll too; its owner,
+    // alive, keeps his body (no `Ragdolled`).
+    let fake: Vec<Died> = feigned.read().map(|f| f.0.clone()).collect();
+    for (d, feign) in died.read().map(|d| (d, false)).chain(fake.iter().map(|d| (d, true))) {
         if settings.enabled == 0 {
             continue;
         }
@@ -945,7 +952,9 @@ pub fn spawn_ragdolls(
             time.elapsed_secs_f64(),
             rule,
         );
-        commands.entity(d.entity).insert(Ragdolled);
+        if !feign {
+            commands.entity(d.entity).insert(Ragdolled);
+        }
         info!("ragdoll {entity} for {} (death pose {:?})", d.entity, seed.death_pose);
     }
 }

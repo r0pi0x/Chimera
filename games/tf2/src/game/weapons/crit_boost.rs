@@ -27,7 +27,7 @@
 //!
 //! Known shortcuts: nothing in ours grants a boost yet (no Kritzkrieg,
 //! first blood or round-win crits: a mode or a test sets `CritBoosted`);
-//! there is no cloak or disguise, so those rules don't apply; the glow
+//! the cloak's and disguise's rules (`items::spy`) don't hide it; the glow
 //! is on the held weapon's boxes at their reference pose relative to the
 //! bone that holds it (its own bones' motion not followed); control
 //! point 0 for others is the player's origin (the weapon entity's in
