@@ -8,7 +8,11 @@
 //! player's own kinematic collider touches only the heavy ones, so it
 //! can't launch light ones). After the physics step the
 //! player is moved to where the shadow got to while pushing or standing
-//! on a prop (reconciliation). Multiplayer props are pushaway.rs's.
+//! on a prop (reconciliation). Multiplayer props are pushaway.rs's. A
+//! movement with turbo physics (`QuakeConfig::turbo_physics`: DoD:S's,
+//! specs/dods/physics_props.md 1) has no shadow: its players wear
+//! `prop_physics::NoShadow`, shove no `prop_physics` and meet every one as
+//! a wall.
 //! A game that wants it (`ShadowKnockPlugin`, HL2:DM's; CS:S's keeps its
 //! measured contacts) has a prop running into a player from the side knock
 //! him on that tick and go on forward, rather than stop on the shadow and
@@ -51,7 +55,7 @@ use crate::{
     core::{Health, Intent, PropSurface, SHADOW_LAYER, Velocity},
     map::{
         PhysicsProp, PushAway,
-        prop_physics::{PhysicsShadow, SHADOW_MASS, SHADOW_PUSH_MASS, Shadowed, StartAsleep},
+        prop_physics::{NoShadow, PhysicsShadow, SHADOW_MASS, SHADOW_PUSH_MASS, Shadowed, StartAsleep},
     },
 };
 
@@ -337,11 +341,20 @@ struct ShadowAim(Option<Vec3>);
 /// or no longer moving the Source way. `Shadowed` and `PhysicsTouch` are on
 /// every character from the spawn (`ShadowPlugin`), a shadow or none: they
 /// came and went with the movement, each a new archetype for every
-/// combination of the character's other parts.
+/// combination of the character's other parts. A movement with turbo
+/// physics (`QuakeConfig::turbo_physics`) has none: its players wear
+/// `NoShadow` instead.
 #[allow(clippy::type_complexity)]
 fn attach(
     mut commands: Commands,
-    characters: Query<(Entity, &Transform, Option<&crate::slots::MovementSlot>, &Shadowed, Has<QuakeMovement>)>,
+    characters: Query<(
+        Entity,
+        &Transform,
+        Option<&crate::slots::MovementSlot>,
+        &Shadowed,
+        Has<QuakeMovement>,
+        Has<NoShadow>,
+    )>,
     shadows: Query<(Entity, &PhysicsShadow)>,
     owners: Query<&Shadowed>,
     cfg: MovementConfigs,
@@ -352,7 +365,16 @@ fn attach(
         }
         commands.entity(shadow).try_despawn();
     }
-    for (owner, t, slot, shadowed, source) in &characters {
+    for (owner, t, slot, shadowed, quake, unshadowed) in &characters {
+        let turbo = quake && cfg.own(slot).turbo_physics;
+        if turbo != unshadowed {
+            if turbo {
+                commands.entity(owner).insert(NoShadow);
+            } else {
+                commands.entity(owner).remove::<NoShadow>();
+            }
+        }
+        let source = quake && !turbo;
         match (shadowed.0, source) {
             (Some(shadow), false) => {
                 commands.entity(shadow).try_despawn();

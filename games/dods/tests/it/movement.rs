@@ -334,7 +334,10 @@ fn golden_run() {
     use chimera_core::core::{Health, MapBrush};
     use chimera_world::{harness::own_process, map::MapBrushes};
     use source_engine::source_movement::QuakeMovement;
-    const GOLDEN: u64 = 0xcc08703f58eba75e;
+        // Re-taken 2026-11-24: going prone now moves under the stance-change
+    // cap (the course holds its keys from tick 1080); S0's was
+    // 0xcc08703f58eba75e.
+    const GOLDEN: u64 = 0x7396bb2d05258af7;
     const TICKS: u64 = 1300;
     if !own_process("movement::golden_run") {
         return;

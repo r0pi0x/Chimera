@@ -9,7 +9,9 @@
 //! and the held gun in the hands),
 //! its prone, deployed machine guns and stamina (`stance`), its movement
 //! (`movement`: the run, sprint and stamina, jump, duck, getting up, the
-//! hit slow), its explosives (`explosives`: grenades, rifle grenades,
+//! hit slow), its players meeting physics props under turbo physics
+//! (`props`), its movement and stance predicted over the network
+//! (`net_prediction`), its explosives (`explosives`: grenades, rifle grenades,
 //! rockets, the blast), and, in
 //! `heavy`, the user's install (its mount, the nine stock maps converted
 //! with their spawns, the class bodies, its guns' sounds under its own
@@ -21,7 +23,9 @@
 mod explosives;
 mod info;
 mod movement;
+mod net_prediction;
 mod player_anim;
+mod props;
 mod skeleton;
 mod stance;
 mod weapons;

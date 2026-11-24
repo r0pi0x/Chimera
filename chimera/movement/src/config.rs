@@ -191,6 +191,16 @@ pub struct QuakeConfig {
     /// On every grounded walking tick the horizontal speed is clamped to
     /// the max speed after acceleration (TF2; the shared code has none).
     pub ground_clamp: bool,
+    /// Turbo physics (`sv_turbophysics 1`, DoD:S's shipped config:
+    /// specs/dods/physics_props.md): no physics shadow (`shadow`), so a
+    /// `prop_physics` of any mass is a wall; a multiplayer prop is the
+    /// push-away's soft prop (`pushaway`) only while in the push-away
+    /// group (asleep since it spawned, or moving), a wall once settled in
+    /// "solid" mode; debris and settled non-solid ones are walked through
+    /// (`chimera_world::map::prop_physics::PropGroup::live`). Off (the
+    /// shared code, CS:S, HL2:DM, TF2): the shadow, every multiplayer prop
+    /// soft.
+    pub turbo_physics: bool,
     /// A wish speed under 100 x friction x surface friction / accelerate
     /// gets a raised acceleration that beats friction (TF2: a ducked spun
     /// Heavy still moves).
@@ -475,6 +485,7 @@ impl QuakeConfig {
             back_speed: 1.0,
             back_min_speed: 100.0,
             ground_clamp: false,
+            turbo_physics: false,
             low_wish_accel: false,
             leave_ground_vz: LEAVE_GROUND_VZ,
             reduck_delay: 0.0,

@@ -75,15 +75,14 @@ pub struct MoveSpeed(pub f32);
 ///   duck eye (a game's own eased transition).
 /// - `max_speed`: this tick's max speed (units/s), over the game's
 ///   (`MoveSpeed`), the traits' and the held weapon's; a hit's velocity
-///   modifier still scales it.
+///   modifier still scales it. A game's cap while changing stance is this
+///   (DoD:S's going prone and getting up: the keys still count, the wish
+///   and, with `ground_clamp`, the ground speed held to it).
 /// - `no_jump`: the jump key does nothing.
 /// - `crouch`: with `height`, leaving the stance lands ducked, as if duck
 ///   had been held all along: still held, the character stays ducked;
 ///   let go, it stands up by the usual unduck (DoD:S's prone to a crouch:
 ///   specs/dods/movement.md "Getting up").
-/// - `no_input`: the move keys do nothing; the speed the character has
-///   goes on, slowed by friction on the ground (DoD:S going prone,
-///   movement.md "Prone": pressed while sprinting, the speed decays).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MoveStance {
     pub height: Option<f32>,
@@ -92,8 +91,6 @@ pub struct MoveStance {
     pub no_jump: bool,
     #[serde(default)]
     pub crouch: bool,
-    #[serde(default)]
-    pub no_input: bool,
 }
 
 impl MoveStance {

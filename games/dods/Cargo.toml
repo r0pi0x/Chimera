@@ -55,6 +55,8 @@ avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_
 bevy_winit.workspace = true
 # The maps' headers (tests/it/heavy/maps.rs).
 source_formats.workspace = true
+# Prediction over the network (tests/it/net_prediction.rs: `NetSim`).
+chimera_net.workspace = true
 
 # The integration tests (tests/it/; the install's in tests/it/heavy/).
 [[test]]
@@ -64,4 +66,4 @@ path = "tests/it/main.rs"
 [features]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on):
 # `cargo test -p dods --features dev` shares the apps' Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "source_engine/dev", "source_logic/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_engine/dev", "source_logic/dev"]

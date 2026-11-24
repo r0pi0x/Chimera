@@ -214,7 +214,7 @@ impl Mover<'_, '_, '_, '_> {
             Some(p) => p.min(self.cfg.maxspeed) * self.me.velocity_modifier,
             None => self.player_maxspeed.min(self.cfg.maxspeed) * walk * self.me.velocity_modifier,
         } * self.ground_factors().0;
-        let keys = if self.stance.no_input { Vec2::ZERO } else { intent.move_axis };
+        let keys = intent.move_axis;
         let (mut f, mut s) = (
             keys.y * self.cfg.key_speed + self.push_input.x,
             keys.x * self.cfg.key_speed + self.push_input.y,

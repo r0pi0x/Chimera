@@ -10,11 +10,17 @@
 //! counting its release tick: the measured eye curve), the jump 262.33
 //! units/s standing and 268.33 ducked (apex 43 and 45; no stamina cost;
 //! one impulse, `config`; the spawn spots' walk climbs 0.8 m as CS:S's,
-//! `SpawnClimbs`, and meets the physics props by turbo physics' rule,
-//! `prop_physics::PlayerProps::Turbo`: specs/dods/physics_props.md),
-//! and the ground speed clamped to the tick's cap (`ground_clamp`: the
-//! stamina's caps and the slow cap the speed itself, not the wish:
-//! movement.md, "Stamina and sprint"). Its box is the
+//! `SpawnClimbs`), the ground speed clamped to the tick's cap
+//! (`ground_clamp`: the stamina's caps, the slow cap and the cap while
+//! changing stance the speed itself, not the wish: movement.md, "Stamina
+//! and sprint"), and turbo physics (`turbo_physics`, the shipped
+//! `sv_turbophysics 1`: specs/dods/physics_props.md): no physics shadow,
+//! so a `prop_physics` of any mass is a wall; a multiplayer prop is soft
+//! (walked into, pushing the player back, shoved the less the heavier it
+//! is) only while in the push-away group (asleep since it spawned, or
+//! moving), a wall once settled; debris and non-solid ones are walked
+//! through. The spawn spots' walk meets the props by the same rule
+//! (`prop_physics::PlayerProps::Turbo`). Its box is the
 //! envelope its maps carry (`chimera_core::envelope`, registered by
 //! `source_movement`), so other games' characters fit on its maps and its
 //! own on theirs.
@@ -31,12 +37,11 @@
 //! - Ladders, water and fall damage are the shared code's (movement.md,
 //!   open question 7); the caps clamp the ground speed only (in the air
 //!   the air move's own limits).
-//! - Players meet physics props as CS:S's (Source's movement's push-away
-//!   and shadow: soft multiplayer props, light `prop_physics` shoved),
-//!   while DoD:S's turbo physics makes every `prop_physics` and every
-//!   settled multiplayer prop a wall (specs/dods/physics_props.md; only the
-//!   spots' walker follows it, `PlayerProps::Turbo`). Waits on the shared
-//!   movement's move (docs/plans/active/shared-movement.md, S4).
+//! - The push-away's numbers are CS:S's (physics_props.md, open question
+//!   1: not readable on DoD:S's server; the measured push-back, 0.88 v −
+//!   33 a tick, is theirs). A frozen multiplayer prop placed asleep is a
+//!   wall (swept as the map's brushes; in the game it is in the push-away
+//!   group), to the spots' walker too.
 
 use bevy::prelude::*;
 use source_engine::source_movement::{
@@ -97,6 +102,10 @@ pub fn config() -> QuakeConfig {
         duck_time: 0.4,
         unduck_counts_first_tick: true,
         ground_clamp: true,
+        // `sv_turbophysics 1` (the shipped `cfg/game.cfg`,
+        // specs/dods/physics_props.md): no shadow, every `prop_physics` a
+        // wall, a multiplayer prop soft only in the push-away group.
+        turbo_physics: true,
         jump_stamina: 0.0,
         enable_bunnyhopping: false,
         bunnyhop_cap: 0.0,

@@ -13,14 +13,18 @@
 //! restart; players' physics shadows (`PhysicsShadow` on the shadow body,
 //! `Shadowed` on its character; `ShadowContacts` keeps a shadow's pairs to
 //! `prop_physics` bodies it can push (up to 350 kg) and keeps a shadowed
-//! character's own pairs only to `prop_physics` bodies too heavy to push; the
+//! character's own pairs only to `prop_physics` bodies too heavy to push, as
+//! a character without a shadow under turbo physics, `NoShadow`, does; the
 //! shadow is on `core::SHADOW_LAYER`, which no spatial query sees);
 //! `walked_through`: the props a player gets past (`player_passes`, by the
 //! map's game's rule, `PlayerProps`, registered in `PlayerPropRules`:
 //! `Shadow`, CS:S's, HL2:DM's and TF2's, a multiplayer prop or one a shadow
 //! pushes; `Turbo`, DoD:S's, only debris and multiplayer props still in the
-//! push-away group), which walkers standing in for players (the spawn
-//! spots', the map sweep's) go through;
+//! push-away group, `PropGroup`: at load those asleep since they spawned,
+//! as the game runs also the moving ones, `PropGroup::live`, which the
+//! movement under turbo physics meets; a frozen prop a wall under both, as
+//! the movement sweeps it), which walkers standing in for players (the
+//! spawn spots', the map sweep's) go through;
 //! `settle_props`: a moving prop that keeps within 1 in and 5 degrees of
 //! one pose for 0.5 s is stopped and put to sleep (`Settling`), as Source's
 //! physics sleeps nearly still bodies; one sunk more than 1 in into the
@@ -541,6 +545,14 @@ pub struct PhysicsShadow {
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Shadowed(pub Option<Entity>);
 
+/// A character moving under turbo physics (specs/dods/physics_props.md:
+/// no shadow, `chimera_movement`'s `turbo_physics`): its movement meets
+/// every `prop_physics` as a wall, and its own collider touches the
+/// physics props a shadowed character's does (the heavy `prop_physics`
+/// ones), so walking never shoves one.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct NoShadow;
+
 /// The shadow's mass, kg (spec 4.1 step 3).
 pub const SHADOW_MASS: f32 = 85.0;
 /// The heaviest prop a shadow pushes, kg (spec: the player push mass
@@ -554,6 +566,7 @@ pub const SHADOW_PUSH_MASS: f32 = 350.0;
 pub struct ShadowContacts<'w, 's> {
     shadows: Query<'w, 's, &'static PhysicsShadow>,
     shadowed: Query<'w, 's, &'static Shadowed>,
+    unshadowed: Query<'w, 's, (), With<NoShadow>>,
     of: Query<'w, 's, &'static ColliderOf>,
     props: Query<'w, 's, &'static PhysicsProp>,
 }
@@ -562,8 +575,8 @@ impl ShadowContacts<'_, '_> {
     /// Some(keep) when collider `a` or `b` is a shadow or a shadowed
     /// character: an active shadow touches only the `prop_physics` bodies
     /// it can push (multiplayer props are in a group players never touch,
-    /// spec 4.2.1); a shadowed character touches only the heavier ones.
-    /// None: neither is one.
+    /// spec 4.2.1); a shadowed character (or one with `NoShadow`) touches
+    /// only the heavier ones. None: neither is one.
     pub fn filter(&self, a: Entity, b: Entity) -> Option<bool> {
         let body = |e: Entity| self.of.get(e).map_or(e, |o| o.body);
         let (a, b) = (body(a), body(b));
@@ -573,7 +586,7 @@ impl ShadowContacts<'_, '_> {
             }
         }
         for (me, other) in [(a, b), (b, a)] {
-            if self.shadowed.get(me).is_ok_and(|s| s.0.is_some())
+            if (self.shadowed.get(me).is_ok_and(|s| s.0.is_some()) || self.unshadowed.contains(me))
                 && let Ok(p) = self.props.get(other)
             {
                 return Some(p.push == super::PushAway::Collide && !pushable(p));
@@ -650,12 +663,34 @@ impl PlayerPropsAppExt for App {
     }
 }
 
-/// A physics prop's state for `player_passes`: still asleep since it
-/// spawned (`StartAsleep`) and placed as debris (`DebrisProp`).
+/// A physics prop's state for `player_passes`: in the push-away group
+/// (`asleep`: at load, still asleep since it spawned, `StartAsleep`; while
+/// the game runs, also moving: `live`) and placed as debris (`DebrisProp`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PropGroup {
     pub asleep: bool,
     pub debris: bool,
+}
+
+impl PropGroup {
+    /// A prop's group as the game runs under turbo physics
+    /// (specs/dods/physics_props.md 2): in the push-away group while asleep
+    /// since it spawned (`start_asleep`) or moving (`moving`: a simulated
+    /// body awake; one that wakes, moves and settles again leaves it), so a
+    /// "solid" multiplayer prop is a wall once it settles. What the
+    /// movement meets (`chimera_movement`'s `turbo_physics`); the spots'
+    /// walker takes the map at load, where the moving ones are those that
+    /// will settle (`asleep`: `StartAsleep` alone).
+    pub fn live(start_asleep: bool, moving: bool, debris: bool) -> Self {
+        Self { asleep: start_asleep || moving, debris }
+    }
+
+    /// One of the push-away's soft props under turbo physics: in the
+    /// push-away group and not debris (shoved by players; a "solid" one
+    /// pushes them back).
+    pub fn soft(&self) -> bool {
+        self.asleep && !self.debris
+    }
 }
 
 /// Whether a player gets past this prop under `rule`. `Shadow`: walks
@@ -678,24 +713,14 @@ pub fn player_passes(p: &PhysicsProp, rule: PlayerProps, group: PropGroup) -> bo
 
 /// Whether a player gets past a map prop under `rule` (`player_passes`):
 /// a physics prop (`physics`) by its state (`group`: `StartAsleep`,
-/// `DebrisProp`). A frozen prop (motion disabled, `frozen`) is no
-/// `PhysicsProp` until it is set moving: a wall to a shadow, as the
-/// movement meets it; under turbo physics one placed asleep is in the
-/// push-away group like any other (specs/dods/physics_props.md 2: the
-/// spawnflags 9, 265 and 1545 counted there).
-pub fn prop_passes(physics: Option<&PhysicsProp>, frozen: Option<&FrozenBody>, group: PropGroup, rule: PlayerProps) -> bool {
-    match (physics, frozen) {
-        (Some(p), _) => player_passes(p, rule, group),
-        (None, Some(f)) if rule == PlayerProps::Turbo => {
-            let p = PhysicsProp {
-                push: f.physics.push,
-                mass: f.physics.mass,
-                bounds: f.bounds,
-            };
-            player_passes(&p, rule, PropGroup { asleep: f.physics.asleep, debris: f.physics.debris })
-        }
-        _ => false,
-    }
+/// `DebrisProp`). A frozen prop (motion disabled) is no `PhysicsProp`
+/// until it is set moving, and the movement sweeps it as the map's
+/// brushes: a wall under either rule (Known shortcut: under turbo physics
+/// one placed asleep is in the push-away group, specs/dods/physics_props.md
+/// 2, the spawnflags 9, 265 and 1545; the walker meets it as the movement
+/// does, so a spot past it is one a player gets to).
+pub fn prop_passes(physics: Option<&PhysicsProp>, group: PropGroup, rule: PlayerProps) -> bool {
+    physics.is_some_and(|p| player_passes(p, rule, group))
 }
 
 /// `prop_passes` of one entity.
@@ -704,7 +729,7 @@ pub fn entity_passes(e: &EntityRef, rule: PlayerProps) -> bool {
         asleep: e.contains::<StartAsleep>(),
         debris: e.contains::<DebrisProp>(),
     };
-    prop_passes(e.get::<PhysicsProp>(), e.get::<FrozenBody>(), group, rule)
+    prop_passes(e.get::<PhysicsProp>(), group, rule)
 }
 
 /// The loaded map's physics props a player gets past (`prop_passes`, by

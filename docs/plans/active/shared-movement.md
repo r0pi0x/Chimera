@@ -494,3 +494,16 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   step CS:S 71 229 (-0.24 %), HL2:DM 66 952 (-0.32 %), TF2 71 416
   (-0.40 %), DoD:S 71 158 (-0.27 %). Next: S7-S9 wait
   for specs/cs16/movement.md.
+- 2026-11-24, after S6 (DoD:S's two deferred items, dods.md §7): a
+  per-game choice `QuakeConfig::turbo_physics` (no shadow, `prop_physics::
+  NoShadow`; a `prop_physics` a wall at any mass; a multiplayer prop soft
+  only in the push-away group, `PropGroup::live`; the props' filter made
+  on the first such player's tick, so a movement without it pays a bool),
+  on for DoD:S alone; `MoveStance::no_input` removed (DoD:S's stance
+  changes cap the speed instead, its `max_speed`). CS:S, HL2:DM and TF2
+  hashes equal; the step CS:S 71 360 (-0.06 % of S0, +0.18 % of S6),
+  HL2:DM 67 052 (-0.18 %, +0.15 %), TF2 71 534 (-0.24 %, +0.17 %). DoD:S's
+  run re-taken (`0x7396bb2d05258af7`: the course now moves while going
+  prone), its step 73 770 (+3.4 % of S0): the moving prone transition's
+  ground moves; with `turbo_physics` off the same run counts 73 746, so
+  the props' rule costs 24 instructions a tick. `NET_VERSION` net76.

@@ -3,7 +3,11 @@
 //! (an impulse at the player's centre, so they spin too; one asleep since
 //! it spawned wakes, with OnAwakened) at most every 0.1 s (`PUSH_INTERVAL`,
 //! measured), and "solid"-mode props push the player back through the move
-//! input.
+//! input. Under turbo physics (`QuakeConfig::turbo_physics`, DoD:S's:
+//! specs/dods/physics_props.md 3) only props in the push-away group
+//! (`prop_physics::PropGroup::live`: asleep since they spawned, or
+//! moving) are soft; a settled one is a wall (`step`) and debris is
+//! neither shoved nor pushes back.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -17,7 +21,7 @@ use crate::{
     core::{SimSet, Velocity},
     map::{
         PhysicsProp, PushAway,
-        prop_physics::{PropAwakened, StartAsleep},
+        prop_physics::{DebrisProp, PropAwakened, PropGroup, StartAsleep},
     },
 };
 
@@ -111,7 +115,7 @@ fn push_props(
     )>,
     clock: Res<crate::core::SimClock>,
     mut props: Query<
-        (Entity, &Transform, &PhysicsProp, Forces, Has<StartAsleep>),
+        (Entity, &Transform, &PhysicsProp, Forces, Has<StartAsleep>, (&RigidBody, Has<Sleeping>, Has<DebrisProp>)),
         (Without<QuakeMovement>, Without<RigidBodyDisabled>, Without<ColliderDisabled>),
     >,
     cfg: MovementConfigs,
@@ -127,13 +131,21 @@ fn push_props(
             continue;
         }
         let mut pushed = false;
-        let mut player = player_box(pt, me, &cfg.of(slot));
+        let cfg = cfg.of(slot);
+        let turbo = cfg.turbo_physics;
+        let mut player = player_box(pt, me, &cfg);
         let centre = (player.0 + player.1) / 2.0;
         player.0 -= Vec3::splat(QUERY_EXPAND);
         player.1 += Vec3::splat(QUERY_EXPAND);
         let speed = to_units(pv.0).truncate().length();
-        for (e, t, p, mut forces, asleep) in &mut props {
+        for (e, t, p, mut forces, asleep, (rb, sleeping, debris)) in &mut props {
             if matches!(p.push, PushAway::Collide | PushAway::Ignore) {
+                continue;
+            }
+            // Under turbo physics only the push-away group is shoved
+            // (asleep since it spawned, or moving; `PropGroup::live`): a
+            // settled prop is a wall or debris.
+            if turbo && !PropGroup::live(asleep, rb.is_dynamic() && !sleeping, debris).soft() {
                 continue;
             }
             if p.push == PushAway::Solid && speed < MIN_PLAYER_SPEED {

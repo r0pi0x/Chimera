@@ -828,7 +828,6 @@ pub fn prepare_spots(
         (
             Entity,
             Option<&PhysicsProp>,
-            Option<&prop_physics::FrozenBody>,
             Has<prop_physics::StartAsleep>,
             Has<prop_physics::DebrisProp>,
         ),
@@ -861,7 +860,7 @@ pub fn prepare_spots(
     let rule = game.zip(rules).map_or(prop_physics::PlayerProps::Shadow, |(g, r)| r.of(&g.0));
     let props: HashSet<Entity> = props
         .iter()
-        .filter(|(_, p, f, asleep, debris)| prop_physics::prop_passes(*p, *f, prop_physics::PropGroup { asleep: *asleep, debris: *debris }, rule))
+        .filter(|(_, p, asleep, debris)| prop_physics::prop_passes(*p, prop_physics::PropGroup { asleep: *asleep, debris: *debris }, rule))
         .map(|(e, ..)| e)
         .collect();
     let mesh = map_mesh(nav.as_deref(), floors.as_deref());

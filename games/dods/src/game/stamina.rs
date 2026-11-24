@@ -19,9 +19,14 @@
 //!   `REGEN_DUCKED`, `REGEN_MOVING`; per second here, 60, 50 and 10), to
 //!   100.
 //! - **Going prone while sprinting** (movement.md, "Prone"): the sprint
-//!   flag stays while the speed, decaying by friction, is still 80 units/s
-//!   or more (`SPRINT_MIN_SPEED`), and drains as a sprint does; then it
-//!   ends and the regeneration runs.
+//!   flag stays while the speed, held under the falling stance-change cap
+//!   (`stance::stance_cap`), is still 80 units/s or more
+//!   (`SPRINT_MIN_SPEED`) and the sprint keys are held, draining as a
+//!   sprint does (above 100 units/s; the moving rate below: the measured
+//!   cap's 74.12 on the 64th tick); then it ends and the regeneration
+//!   runs. **Getting up**
+//!   to stand, the sprint starts as standing (`sprint_keys`), and the cap
+//!   rises to the sprint's.
 //! - **The speed cap** (`cap`, read by `stance::step` with the stamina as
 //!   it was before the tick): running 120 + stamina (at most 220),
 //!   sprinting 230 + stamina, 120 at stamina 0. Sprinting from a full
@@ -107,14 +112,16 @@ pub fn cap(stamina: f32, sprint_keys: bool) -> f32 {
 }
 
 /// Whether the keys and the stance ask for a sprint: `+speed` with forward
-/// input, standing up, duck neither held nor in effect.
+/// input, standing up or getting up to stand (movement.md, "The speed cap
+/// while changing stance": the sprint starts there past 80 units/s), duck
+/// neither held nor in effect.
 pub fn sprint_keys(intent: &Intent, me: &QuakeMovement, stance: Option<&DodsStance>) -> bool {
     intent.sprint
         && intent.move_axis.y > 0.0
         && !intent.crouch
         && !me.ducked
         && !me.ducking
-        && stance.is_none_or(|s| s.stance == Stance::Up)
+        && stance.is_none_or(|s| s.stance == Stance::Up || (s.stance == Stance::GettingUp && !s.to_crouch))
 }
 
 /// Each tick, before Source's movement: the sprint's start and end, the
@@ -136,8 +143,9 @@ pub fn step(
             let mut started = false;
             let going_down = stance.is_some_and(|s| s.stance == Stance::GoingDown);
             if going_down {
-                // The flag stays while the speed is a sprint's.
-                n.sprinting &= prev >= SPRINT_MIN_SPEED;
+                // The flag stays while the speed is a sprint's and its keys
+                // are held (let go on the press: the run's cap at once).
+                n.sprinting &= prev >= SPRINT_MIN_SPEED && intent.sprint && intent.move_axis.y > 0.0;
             } else if me.on_ground {
                 if keys && (n.sprinting || prev >= SPRINT_MIN_SPEED) {
                     if !n.sprinting {
@@ -151,7 +159,7 @@ pub fn step(
             }
             if !started {
                 let rate = if n.sprinting {
-                    if prev > DRAIN_ABOVE || going_down { -DRAIN } else { REGEN_MOVING }
+                    if prev > DRAIN_ABOVE { -DRAIN } else { REGEN_MOVING }
                 } else if !me.on_ground || prev == 0.0 {
                     REGEN_STILL
                 } else if stance.is_some_and(|s| s.stance != Stance::Up) {

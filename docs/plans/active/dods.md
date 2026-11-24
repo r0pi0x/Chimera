@@ -24,7 +24,7 @@ and the game's own data.
 | M3 party rungs | M3a done (2026-11-23): the bodies animate (stances, movement, each gun's set, sights, deploy, fire and reload gestures, jump; death a ragdoll); M3b done (2026-11-23): each rung's class (body, melee; shared guns drawn with the ladder), DoD:S's HUD, dod_jagd and dod_flash in the pool, the explosives' body sets, the asset service's sets | §4; the log |
 | M3c HUD and kill icons | done (2026-11-24): specs/dods/hud.md (from the data files); the player status strip from it, the install's pictures, DoD:S's kill icons in every app's feed | §4; the log |
 | Spec measurements 2 | done (2026-11-24): spread, no-fire states, stock strike, partial and launcher reloads, rockets on the world, throws, grenade timings, backstab cone and reach, blast shielding, MG limits and ledges, prone edges; implemented the same day | §7; the log |
-| Spec measurements 3 | done (2026-11-24): physics props under turbo physics, the stance-change cap, the sighted start, the backstab's timing and stances, what narrows the MG's yaw limit; implemented the same day but the movement's two (waiting on shared-movement S4) | §7; the log |
+| Spec measurements 3 | done (2026-11-24): physics props under turbo physics, the stance-change cap, the sighted start, the backstab's timing and stances, what narrows the MG's yaw limit; implemented the same day, the movement's two after shared-movement S6 | §7; the log |
 | Remaining | listed in §7: blocked on the retail client, unmeasured, or the map pool's walker | §7 |
 
 ## 1. Rules for this port
@@ -333,23 +333,41 @@ propsurvey pronecap sightstart backstab2 mgsweep`; the log):
 - The friction cvars are the shipped `sv_friction 8` / `sv_stopspeed
   50` (movement OQ 2 answered; the law ours uses is unchanged).
 
-**Waiting on shared-movement S4** (docs/plans/active/shared-movement.md:
-`source_engine::source_movement` moves into its own crate with golden
-per-tick hashes; these change it, so they wait for the move):
-- **Players and physics props under turbo physics**: no shadow, so a
-  walking player shoves no `prop_physics` (a wall at any mass), and a
-  multiplayer prop is CS:S's soft push-away prop only while in the
-  push-away group, a wall once settled. Ours follow CS:S everywhere
-  (`source_movement::pushaway` and `shadow`). The walker already
-  follows DoD:S (above); meanwhile our movement is the more permissive
-  (settled crates walked through, light props shoved), so every spot
-  stays reachable.
-- **The speed cap while changing stance** (movement.md): going prone
-  and getting up don't stop the input; the speed is capped at A + (B −
-  A) × smoothstep(k/80) between the stances' caps (prone 50, standing
-  the run or sprint cap with the stamina), exact to 0.01 u/s. Ours
-  (`SourceStance::no_input`, friction decay) needs it; getting up into
-  a crouch sits within 0.7 u/s of the same law.
+**Implemented after shared-movement S6** (the movement in
+`chimera_movement`; was "waiting on shared-movement S4"):
+- **Players and physics props under turbo physics**: a per-game choice in
+  the shared movement, `QuakeConfig::turbo_physics` (off for CS:S, HL2:DM
+  and TF2, whose golden runs are unchanged), on in DoD:S's config: no
+  physics shadow (`prop_physics::NoShadow` on its players), so a
+  `prop_physics` of any mass is a wall; a multiplayer prop is the
+  push-away's soft prop (pushes the player back, 0.88 v − 33 a tick, and
+  is shoved the less the heavier it is) only while in the push-away group
+  (`PropGroup::live`: asleep since it spawned, or moving), a wall once
+  settled; non-solid ones and debris are walked through. The shipped
+  `sv_friction 8` / `sv_stopspeed 50` were already DoD:S's config.
+  The spawn spots' walker and the movement now agree: a frozen prop
+  (swept as the map's brushes) is a wall to both (the walker passed the
+  frozen ones placed asleep before; in the game they are in the
+  push-away group: a Known shortcut; the map pool not swept again).
+  A push-away prop that can't be shoved (wedged in a doorway, very heavy)
+  holds a player back, as in the game, where the walker (spec 5's rule)
+  passes it. Tests: dods `props` (each spec test case, and a room the
+  walker reaches past an asleep crate is one a player walks into, a
+  settled crate shutting both out), `net_prediction`.
+- **The speed cap while changing stance**: `stance::stance_cap`, A + (B −
+  A) × smoothstep(k/80) both ways, the keys moving and steering as usual
+  (`MoveStance::no_input` is gone); A or B the standing cap: the run's
+  min(220, 120 + stamina), or the sprint's 230 + stamina with the sprint
+  flag set and its keys held; the sprint starts getting up past 80 and
+  drains only above 100 going down. Matches the spec's test cases to
+  0.05 u/s but one: pressed sprinting, the flag ends a tick sooner than
+  measured (62.67 on the 64th tick, the game's 74.12; Known shortcut in
+  `stance`). Tests: dods `stance` (running, sprinting, keys let go, from
+  rest and steering, getting up running and sprinting), `net_prediction`
+  (going prone and getting up sprinting into the props, predicted with no
+  errors). DoD:S's golden run re-taken (`0x7396bb2d05258af7`: the course
+  moves while going prone); `NET_VERSION` net76 (`MoveStance` lost a
+  field).
 
 **Still unmeasured on the dedicated server** (specs' open questions):
 the spread pattern inside the cone (no impact message on the server:
@@ -410,8 +428,8 @@ or spots only below the drops; a decision, not a measurement.
 
 DoD:S's multiplayer props: answered 2026-11-24 (above, "measurements
 3"): neither CS:S's soft props everywhere nor HL2:DM's solid shoved
-ones; with turbo physics most are walls at load (the walker follows it;
-the movement waits on shared-movement S4). Still open: how a player of a
+ones; with turbo physics most are walls at load (the walker and, since
+shared-movement S6, the movement follow it). Still open: how a player of a
 game without Source's physics (Combat Arms', Halo's movement) meets a
 Source map's props: both movements meet every prop as a wall, so on a
 DoD:S map such a player can't pass a crate the spots' walk went through;
@@ -419,6 +437,12 @@ no spec says what a mashup should do (a design question for the user).
 
 ## Log
 
+- 2026-11-24: the movement's two from measurements 3 implemented on
+  `chimera_movement` (§7, "Implemented after shared-movement S6"): turbo
+  physics as a per-game movement config (`turbo_physics`, DoD:S's), the
+  stance-change speed cap (`stance::stance_cap`, `MoveStance::no_input`
+  gone); frozen props walls to the spots' walker too; DoD:S's golden run
+  re-taken, the other three unchanged; `NET_VERSION` net76.
 - 2026-11-24, measurements 3 implemented: the backstab a slower swing
   settled on the press (`Backstab::Aim::slow`: 0.405 s to the hit, 0.9 s
   to the next attack; `deliver::Shot::backstab_ahead` traces the swing on

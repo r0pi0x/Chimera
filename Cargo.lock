@@ -3769,6 +3769,7 @@ dependencies = [
  "bevy",
  "bevy_winit",
  "chimera_core",
+ "chimera_net",
  "chimera_sim",
  "chimera_world",
  "serde",

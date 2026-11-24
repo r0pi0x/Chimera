@@ -2,7 +2,9 @@
 //! headless harness (`harness::DodsSim`, the greybox), from
 //! specs/dods/movement.md's and weapons.md's test cases: `+alt1` eases the
 //! eye to 10 over 80 ticks with the standing box kept to the 79th and the
-//! 24-high box on the 80th, no movement meanwhile; a crawl of 7.5, 9.0,
+//! 24-high box on the 80th, the speed capped meanwhile by the smoothstep
+//! between the stances' caps (running, sprinting, the keys let go, from
+//! rest, steering; getting up running and sprinting); a crawl of 7.5, 9.0,
 //! then 50 units/s, the sprint key changing nothing; getting up; the .30 cal deployed by the alt fire while prone, its
 //! first shot no sooner than 1.2 s later, a shot every 7 ticks, its sights'
 //! spread, no movement and no stamina spent; fired standing, 100 to 85 on
@@ -88,10 +90,11 @@ fn going_prone_eases_the_eye_for_80_ticks_then_lowers_the_box() {
     assert!((eye(&sim, p) - 56.61).abs() < 0.05, "after the press's tick: {}", eye(&sim, p));
     sim.ticks(8);
     assert!((eye(&sim, p) - 46.38).abs() < 0.05, "tick 9: {}", eye(&sim, p));
-    // Held forward meanwhile: no movement.
+    // Held forward meanwhile: moving, under the falling cap (50.08 on the
+    // 79th tick).
     sim.intent(p).move_axis = Vec2::Y;
     sim.ticks(70);
-    assert!(speed(&sim, p) < 0.01, "moving while going prone: {}", speed(&sim, p));
+    assert!((speed(&sim, p) - 50.08).abs() < 0.05, "moving while going prone: {}", speed(&sim, p));
     assert!((eye(&sim, p) - 10.0).abs() < 0.05, "tick 79: {}", eye(&sim, p));
     assert!((hull_top(&sim, p) - 72.0).abs() < 0.01, "still the standing box at 79");
     assert_eq!(stance_of(&sim, p).stance, Stance::GoingDown);
@@ -478,28 +481,153 @@ fn going_prone_in_the_air_finishes_the_jump() {
     assert!(sim.state(p).on_ground);
 }
 
-/// movement.md, "Prone": pressed while sprinting the input stops counting
-/// but the speed isn't cut (it decays by friction) and the sprint flag
-/// stays while it is over 80.
+fn set_stamina(sim: &mut Sim, p: Entity, value: f32, sprinting: bool) {
+    *sim.app.world_mut().get_mut::<DodsStamina>(p).unwrap() = DodsStamina { value, sprinting };
+}
+
+/// Moving forward (-Z) at `v` units/s.
+fn set_speed(sim: &mut Sim, p: Entity, v: f32) {
+    sim.app.world_mut().get_mut::<Velocity>(p).unwrap().0 = Vec3::NEG_Z * v * U;
+}
+
+/// `+alt1` pressed on the next tick, then the speed (units/s) after each
+/// of the `n` ticks from it (k = 1 first).
+fn speeds_from_the_press(sim: &mut Sim, p: Entity, n: usize) -> Vec<f32> {
+    press_prone(sim, p);
+    let mut v = vec![speed(sim, p)];
+    for _ in 1..n {
+        sim.ticks(1);
+        v.push(speed(sim, p));
+    }
+    v
+}
+
+fn near(a: f32, b: f32, tol: f32, what: &str) {
+    assert!((a - b).abs() <= tol, "{what}: {a} against {b}");
+}
+
+/// movement.md, "The speed cap while changing stance": running at 220
+/// with forward held, going prone caps the speed at 220 + (50 − 220) ×
+/// smoothstep(k/80): 212.69 on the 10th tick, 135.01 on the 40th, 50.08 on
+/// the 79th, then the crawl's 50.
 #[test]
-fn going_prone_sprinting_keeps_the_speed_and_the_flag() {
+fn going_prone_running_caps_the_speed_by_a_smoothstep() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    sim.intent(p).move_axis = Vec2::Y;
+    sim.seconds(1.0);
+    near(speed(&sim, p), 220.0, 0.01, "running");
+    let v = speeds_from_the_press(&mut sim, p, 90);
+    near(v[9], 212.69, 0.05, "10 ticks");
+    near(v[39], 135.01, 0.05, "40 ticks");
+    near(v[78], 50.08, 0.05, "79 ticks");
+    near(v[79], 50.0, 0.01, "80 ticks");
+    near(v[89], 50.0, 0.01, "crawling");
+    for k in 1..80 {
+        let cap = stance::stance_cap(220.0, 50.0, k as f32 / 80.0);
+        assert!(v[k - 1] <= cap + 0.01, "tick {k}: {} over the cap {cap}", v[k - 1]);
+    }
+}
+
+/// The same pressed sprinting at 297.9 with 67.6 stamina, forward and
+/// `+speed` held: the cap falls from the sprint's 230 + stamina (297.49
+/// on the first tick, 195.41 on the 34th, 50 on the 80th); the sprint flag
+/// stays while the speed is a sprint's and is gone by the end.
+#[test]
+fn going_prone_sprinting_falls_from_the_sprint_cap() {
     let mut sim = sim();
     let p = player(&mut sim);
     sim.intent(p).move_axis = Vec2::Y;
     sim.intent(p).sprint = true;
-    sim.seconds(1.0);
-    let before = speed(&sim, p);
-    assert!(before > 290.0, "sprinting {before}");
+    set_speed(&mut sim, p, 297.9);
+    set_stamina(&mut sim, p, 67.6, true);
     press_prone(&mut sim, p);
-    let after = speed(&sim, p);
-    assert!(after > 250.0 && after < before, "not cut on the press: {before} then {after}");
     assert!(sim.app.world().get::<DodsStamina>(p).unwrap().sprinting, "the flag stays");
-    let s0 = stamina(&sim, p);
-    sim.ticks(1);
-    assert!(stamina(&sim, p) < s0, "it drains");
-    sim.ticks(78);
+    let mut v = vec![speed(&sim, p)];
+    for _ in 1..80 {
+        sim.ticks(1);
+        v.push(speed(&sim, p));
+    }
+    near(v[0], 297.49, 0.05, "1 tick");
+    near(v[33], 195.41, 0.3, "34 ticks");
+    // The flag ends once the speed is under 80 (on the 63rd tick here,
+    // after 79.89 on the 62nd): the cap from then on falls from the run's
+    // (the game's 74.12 on the 64th is the sprint's: its flag ended a tick
+    // later, Known shortcut in `stance`).
+    assert!(v[62] < 80.0 && v[61] >= 79.0, "the speed passes 80 about the 62nd tick: {:?}", &v[58..64]);
+    near(v[79], 50.0, 0.01, "80 ticks");
     assert!(stance_of(&sim, p).prone());
-    assert!(!sim.app.world().get::<DodsStamina>(p).unwrap().sprinting, "ended below 80");
+    assert!(!sim.app.world().get::<DodsStamina>(p).unwrap().sprinting, "the flag ended below 80");
+}
+
+/// Sprinting with the keys let go on the press: the run's cap, 120 +
+/// stamina (187.5), at once, then ordinary friction (187.54, 165.03).
+#[test]
+fn going_prone_with_the_keys_let_go_drops_to_the_run_cap() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    set_speed(&mut sim, p, 298.0);
+    set_stamina(&mut sim, p, 67.6, true);
+    let v = speeds_from_the_press(&mut sim, p, 2);
+    near(v[0], 187.54, 0.15, "1 tick");
+    near(v[1], 165.03, 0.15, "2 ticks");
+}
+
+/// From rest with forward held from the press the player accelerates as
+/// usual to the falling cap (108.18 on the 4th tick, 206.21 on the 14th,
+/// 50.08 on the 79th), and a 90° turn on the press swings the velocity
+/// round with the view (the keys steer as usual).
+#[test]
+fn going_prone_from_rest_moves_and_steers_under_the_cap() {
+    let mut still = sim();
+    let p = player(&mut still);
+    still.intent(p).move_axis = Vec2::Y;
+    let v = speeds_from_the_press(&mut still, p, 79);
+    near(v[3], 108.18, 0.25, "4 ticks");
+    near(v[13], 206.21, 0.05, "14 ticks");
+    near(v[78], 50.08, 0.05, "79 ticks");
+
+    let mut turned = sim();
+    let p = player(&mut turned);
+    turned.intent(p).move_axis = Vec2::Y;
+    turned.seconds(1.0);
+    turned.intent(p).yaw += std::f32::consts::FRAC_PI_2;
+    speeds_from_the_press(&mut turned, p, 30);
+    // Yaw 0 looks down -Z; a quarter turn left looks down -X.
+    let dir = turned.velocity(p).xz().normalize();
+    assert!(dir.dot(Vec2::NEG_X) > 0.98, "the velocity swung round: {dir}");
+}
+
+/// Getting up from prone with forward held: the cap rises from the
+/// crawl's 50 to the run's 220 (109.84 on the 32nd tick, 166.21 on the
+/// 50th, 220 on the 80th).
+#[test]
+fn getting_up_raises_the_cap_to_the_run() {
+    let mut sim = sim();
+    let p = prone_player(&mut sim);
+    sim.intent(p).move_axis = Vec2::Y;
+    let v = speeds_from_the_press(&mut sim, p, 80);
+    near(v[31], 109.84, 0.05, "32 ticks");
+    near(v[49], 166.21, 0.05, "50 ticks");
+    near(v[79], 220.0, 0.01, "80 ticks");
+    assert_eq!(stance_of(&sim, p).stance, Stance::Up);
+}
+
+/// Getting up with `+speed` held: the sprint starts once the speed passes
+/// 80 and the cap rises to the sprint's 230 + stamina instead (226.53 on
+/// the 50th tick with stamina 78.2: about that).
+#[test]
+fn getting_up_sprinting_rises_to_the_sprint_cap() {
+    let mut sim = sim();
+    let p = prone_player(&mut sim);
+    sim.intent(p).move_axis = Vec2::Y;
+    sim.intent(p).sprint = true;
+    let v = speeds_from_the_press(&mut sim, p, 50);
+    let st = *sim.app.world().get::<DodsStamina>(p).unwrap();
+    assert!(st.sprinting, "the sprint started getting up");
+    let cap = stance::stance_cap(50.0, 230.0 + st.value, 50.0 / 80.0);
+    near(v[49], cap, 1.0, "50 ticks, under the sprint's cap");
+    assert!(v[49] > 220.0, "past the run's: {}", v[49]);
 }
 
 /// movement.md, "Prone": pressed ducked, the eye eases 34 → 10 with the

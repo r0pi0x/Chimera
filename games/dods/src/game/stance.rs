@@ -3,24 +3,30 @@
 //! "View"; damage.md, "Being slowed when hit"; weapons.md, "Alt fire"), a
 //! DoD:S player's `DodsStance`, stepped each tick before Source's movement
 //! (`step`, predicted) and handed to it as a `MoveStance` (the box, the
-//! eye, the speed, no jump, no input):
+//! eye, the speed, no jump):
 //!
 //! - **Going prone** (`+alt1`, `PRONE_ACTION`, one press, on the ground or
 //!   in the air): the eye eases from where it is to 10 over 1.2 s (80
 //!   ticks, `GO_PRONE`) by `prone_ease` (1 − (1 − t)^(7/3), the spec's fit
-//!   of the measured heights), the move keys doing nothing meanwhile
-//!   (`MoveStance::no_input`): the speed the player had goes on, slowed
-//!   by friction (pressed sprinting at 305: 199 after 36 ticks), a jump
-//!   flies on with the standing box and lands. Begun ducked, the ducked box
-//!   (45) is held and the eye eases 34 to 10. On the 80th tick the box
-//!   becomes 24 high (`PRONE_HEIGHT`) and the player is prone.
+//!   of the measured heights); the player moves and steers as usual
+//!   meanwhile, the speed capped by `stance_cap` (A + (B − A) × smoothstep
+//!   of the time, from the standing cap A to the crawl's 50: movement.md,
+//!   "The speed cap while changing stance"; A the run's 120 + stamina, at
+//!   most 220, or with the sprint flag set and its keys held the sprint's
+//!   230 + stamina, the stamina as it is that tick). Pressed sprinting at
+//!   297.9 the speed follows the cap (297.49, 195.41 at 34, 50 at 80); a
+//!   jump flies on with the standing box and lands. Begun ducked, the
+//!   ducked box (45) is held, the eye eases 34 to 10 and the cap starts
+//!   from the standing run's. On the 80th tick the box becomes 24 high
+//!   (`PRONE_HEIGHT`) and the player is prone.
 //! - **Prone**: eye 10, crawling at 50 units/s (`PRONE_SPEED`; the sprint
 //!   key doesn't change it), the jump key does nothing (measured).
 //! - **Getting up** (`+alt1` again): the standing box at once, the eye
 //!   eased 10 to 58 over 1.2 s (`GET_UP`) by the same curve, movement
-//!   allowed with a cap rising from the crawl's 50 to the run's 220 by a
-//!   smoothstep of the time (`rise`: the measured speeds, 7.51 on the press
-//!   tick, 95.09 at 28, 172.11 at 52, 218.77 at 76, 220 at 80). **Duck
+//!   allowed with the cap rising from the crawl's 50 to the standing one
+//!   by the same `stance_cap` (the run's with the stamina, the sprint's
+//!   once the sprint starts past 80 units/s: 109.84 at 32, 166.21 at 50,
+//!   220 at 80 running). **Duck
 //!   pressed while prone** gets up to a crouch the same way: the ducked box
 //!   at once, the eye to 34, the cap rising to the ducked 73.33; at the end
 //!   the player is ducked as if duck were held (`MoveStance::crouch`),
@@ -64,9 +70,17 @@
 //! `leave`), as its stamina does; a death drops it.
 //!
 //! Known shortcuts (docs/tech-debt.md):
-//! - The speed cap getting up is a smoothstep of the time (the measured
-//!   speeds fit it; movement.md, open question 1). Going prone on a ladder
-//!   or in water is refused (our choice; unmeasured).
+//! - Getting up into a crouch takes the stance-change cap to the ducked
+//!   73.33 (the measured speeds sit up to 0.7 u/s under it; movement.md,
+//!   open question 1). Going prone on a ladder or in water is refused (our
+//!   choice; unmeasured). While changing stance a hit's slow caps the
+//!   standing cap the law moves from or to and the sights' 42 doesn't
+//!   (both unmeasured).
+//! - Going prone sprinting, the sprint flag ends a tick sooner than
+//!   measured (the speed under 80 on the 62nd tick: 79.89; the game's
+//!   stamina there about 0.3 higher, a drain tick's worth), so the cap
+//!   falls from the run's from the 63rd: 62.67 on the 64th tick where the
+//!   game measured 74.12 (the sprint's), the two meeting at 50 by the 80th.
 //! - The yaw check's numbers are a fit to the measured crate placements
 //!   (weapons.md, open question 11: bounded, not pinned): 3 units behind
 //!   the origin (`YAW_CHECK_BEHIND`; the spec bounds 3-10), 1.15 either
@@ -76,11 +90,6 @@
 //!   ledge's deployed height); a player whose box overlaps the world's
 //!   own collider (lying on a slope into it) leaves the whole world out of
 //!   the check.
-//! - Going prone keeps the move keys off with friction alone (above); the
-//!   game keeps the input with the speed capped at A + (B − A) ×
-//!   smoothstep(k/80) between the stances' caps both ways (movement.md,
-//!   measured 2026-11-24). Waits on the shared movement's move
-//!   (docs/plans/active/shared-movement.md, S4).
 //! - On a ledge the pitch limits are the prone ones (unmeasured), and the
 //!   ledge's surface is the highest of four downward traces 1 to 12 units
 //!   ahead of the box.
@@ -173,12 +182,20 @@ pub fn prone_ease(t: f32) -> f32 {
     1.0 - (1.0 - t.clamp(0.0, 1.0)).powf(EASE_POWER)
 }
 
-/// How far the speed cap getting up has risen at a fraction `t` of its
-/// time: a smoothstep, 3t² − 2t³ (the measured speeds while getting up:
-/// the cap 50 + 170 × it, module doc).
+/// How far the speed cap changing stance has gone at a fraction `t` of its
+/// time: a smoothstep, 3t² − 2t³ (`stance_cap`; measured to 0.01 u/s both
+/// ways).
 pub fn rise(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
+}
+
+/// The speed cap while changing stance (movement.md, "The speed cap while
+/// changing stance"): from `from`, the cap of the stance left, to `to`,
+/// that of the stance entered, by a smoothstep of the fraction `t` of the
+/// 1.2 s gone (`rise`): A + (B − A) × s(t).
+pub fn stance_cap(from: f32, to: f32, t: f32) -> f32 {
+    from + (to - from) * rise(t)
 }
 
 /// Where a DoD:S player is between standing and prone.
@@ -233,29 +250,31 @@ impl DodsStance {
         self.stance == Stance::Prone
     }
 
-    /// What Source's movement does with it this tick, `cap` the speed cap
-    /// standing up (units/s; `step`).
+    /// What Source's movement does with it this tick (`step`), `cap` the
+    /// speed cap standing (units/s): up, the tick's; going prone or getting
+    /// up, the standing stance's (`transition_cap`: the run's or the
+    /// sprint's with the stamina), which the cap moves from or to.
     pub fn source(&self, cap: f32) -> MoveStance {
         match self.stance {
             Stance::Up => match self.ledge {
+                // Deployed on a ledge: no move (a cap of 0 holds the keys'
+                // wish and the ground speed at 0).
                 Some(eye) => MoveStance {
                     height: Some(STAND_HEIGHT),
                     eye: Some(self.from_eye + (eye - self.from_eye) * prone_ease(self.elapsed / LEDGE_EASE)),
                     max_speed: Some(0.0),
                     no_jump: true,
                     crouch: false,
-                    no_input: true,
                 },
                 None => MoveStance { max_speed: Some(cap), ..default() },
             },
             Stance::GoingDown => MoveStance {
                 height: self.from_ducked.then_some(DUCK_HEIGHT),
                 eye: Some(self.from_eye + (EYE_PRONE - self.from_eye) * prone_ease(self.elapsed / GO_PRONE)),
-                // The keys do nothing; the speed it had decays (never cut).
-                max_speed: Some(stamina::SPRINT_TOP),
+                // From the standing cap down to the crawl's.
+                max_speed: Some(stance_cap(cap, PRONE_SPEED, self.elapsed / GO_PRONE)),
                 no_jump: true,
                 crouch: false,
-                no_input: true,
             },
             Stance::Prone => MoveStance {
                 height: Some(PRONE_HEIGHT),
@@ -263,22 +282,20 @@ impl DodsStance {
                 max_speed: Some(if self.deployed { 0.0 } else { PRONE_SPEED }),
                 no_jump: true,
                 crouch: false,
-                no_input: false,
             },
             Stance::GettingUp => {
                 let t = self.elapsed / GET_UP;
                 let (eye, top, height) = if self.to_crouch {
                     (EYE_DUCK, RUN_SPEED * DUCK_FACTOR, Some(DUCK_HEIGHT))
                 } else {
-                    (EYE_STAND, RUN_SPEED, None)
+                    (EYE_STAND, cap, None)
                 };
                 MoveStance {
                     height,
                     eye: Some(EYE_PRONE + (eye - EYE_PRONE) * prone_ease(t)),
-                    max_speed: Some(PRONE_SPEED + (top - PRONE_SPEED) * rise(t)),
+                    max_speed: Some(stance_cap(PRONE_SPEED, top, t)),
                     no_jump: true,
                     crouch: self.to_crouch,
-                    no_input: false,
                 }
             }
         }
@@ -510,12 +527,22 @@ pub fn step(
         let ducked = me.ducked || me.ducking || intent.crouch;
         let shouldered = active.and_then(|a| shoulders.get(a).ok()).is_some_and(|sh| sh.shouldered);
         let sighted = zoomed && active.is_some_and(|a| sights.contains(a));
-        let mut cap = if ducked {
+        let slow = slowed.is_some_and(|sl| sl.at(clock.now));
+        let changing = matches!(last_rise.unwrap_or(s).stance, Stance::GoingDown | Stance::GettingUp);
+        let mut cap = if changing {
+            // Going prone or getting up: the standing stance's cap, the
+            // run's or (the sprint flag set and its keys still held) the
+            // sprint's, with the stamina (movement.md, "The speed cap while
+            // changing stance").
+            let sprinting = stamina.is_some_and(|s| s.sprinting) && intent.sprint && intent.move_axis.y > 0.0;
+            let c = stamina::cap(stamina.map_or(stamina::MAX, |s| s.value), sprinting);
+            if slow { c.min(SLOWED_CAP) } else { c }
+        } else if ducked {
             if shouldered { (Shoulder::MAX_SPEED / DUCK_FACTOR).min(RUN_SPEED) } else { RUN_SPEED }
         } else {
             let keys = stamina::sprint_keys(intent, me, Some(&s));
             let mut c = stamina::cap(stamina.map_or(stamina::MAX, |s| s.value), keys);
-            if slowed.is_some_and(|sl| sl.at(clock.now)) {
+            if slow {
                 c = c.min(SLOWED_CAP);
             }
             if shouldered {
@@ -523,7 +550,7 @@ pub fn step(
             }
             c
         };
-        if sighted {
+        if sighted && !changing {
             cap = cap.min(if ducked { SIGHTED_CAP / DUCK_FACTOR } else { SIGHTED_CAP });
         }
         let new = last_rise.unwrap_or(s).source(cap);
