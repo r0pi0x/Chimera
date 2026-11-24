@@ -68,8 +68,8 @@ pub const KEY_SIZE: f32 = 0.56;
 pub const FOLD_AFTER: f64 = 5.0;
 /// ... over this long (s, `expo_out`).
 pub const FOLD_TIME: f32 = 0.24;
-/// A name's widest, cq (folding shrinks it to none).
-pub const NAME_MAX: f32 = 12.0;
+/// The name, key and verb's widest, cq (folding shrinks it to none).
+pub const NAME_MAX: f32 = 26.0;
 
 /// One item as the HUD shows it.
 #[derive(Clone, Debug, Default, PartialEq)]
