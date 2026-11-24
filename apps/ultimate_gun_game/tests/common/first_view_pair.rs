@@ -49,11 +49,20 @@ pub fn read(log: &Path) -> String {
     std::fs::read(log).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default()
 }
 
+/// Whether `line` is first_view's own counts line (logged by its module;
+/// the log may be coloured): a frame-time hitch line (`frame_metrics`)
+/// quotes the frame's log events, a first_view line among them, cut short
+/// (on a loaded box the hitch came after the counts and was taken for
+/// them, its `main=[]` cut off).
+fn counts(line: &str) -> bool {
+    line.contains("client::first_view") && !line.contains("frame_metrics") && line.contains("first_view shown+")
+}
+
 /// The last `FRAMES` lines logged after a cover went (`shown+<n>`), after
-/// the last map's settle.
+/// the last map's settle: first_view's own lines alone (`counts`).
 pub fn last_shown(log: &str) -> Vec<&str> {
     let after = log.rfind("settled behind the loading screen").map_or(log, |at| &log[at..]);
-    let lines: Vec<&str> = after.lines().filter(|l| l.contains("first_view") && l.contains(" shown+")).collect();
+    let lines: Vec<&str> = after.lines().filter(|l| counts(l)).collect();
     lines[lines.len().saturating_sub(FRAMES)..].to_vec()
 }
 
@@ -100,7 +109,8 @@ pub fn run_pair(map: &str) -> Option<(String, String)> {
         let (h, c) = (read(&host_log), read(&client_log));
         let gone = [&mut host, &mut client].into_iter().any(|g| g.0.try_wait().ok().flatten().is_some());
         let in_play = |log: &str| {
-            let shown = log.rfind(&format!("first_view shown+{} ", FRAMES - 1));
+            let last = format!("first_view shown+{} ", FRAMES - 1);
+            let shown = log.lines().rev().find(|l| counts(l) && l.contains(&last)).map(|l| l.as_ptr() as usize - log.as_ptr() as usize);
             let settled = log.rfind("settled behind the loading screen");
             shown.zip(settled).is_some_and(|(s, l)| s > l)
         };
