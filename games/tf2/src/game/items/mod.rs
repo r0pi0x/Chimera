@@ -143,13 +143,18 @@ use crate::mount::Mount;
 pub const CONVERTER: &str = "tf2:item_stats";
 
 /// Its version: bumped by hand whenever any output byte could change.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// Where its output lives in TF2's manifest.
 pub const GEN_ROOT: &str = "chimera/gen/tf2.items";
 
 /// The pack's file.
-pub const PACK_PATH: &str = "chimera/gen/tf2.items/v2/items.toml";
+pub const PACK_PATH: &str = "chimera/gen/tf2.items/v3/items.toml";
+
+/// The pack of converter version 2, read when the mount has no newer (an
+/// older store): the same records, but a class with no script of its own
+/// (the Shotgun items) has no base numbers.
+pub const PACK_PATH_V2: &str = "chimera/gen/tf2.items/v2/items.toml";
 
 /// The generated set holding it.
 pub const SET: &str = "items";
@@ -279,7 +284,7 @@ pub fn base_in(data: &chimera_sim::weapon::data::WeaponData) -> Option<&str> {
 /// documents: their looks don't depend on the scripts). Reads the pack
 /// only when it is here (`Mount::held`): never fetches.
 pub fn on_mount(mount: &Mount) -> Vec<ItemWeapon> {
-    let Some(bytes) = [PACK_PATH, PACK_PATH_V1].iter().filter(|p| mount.held(p)).find_map(|p| mount.read(p).ok()) else {
+    let Some(bytes) = [PACK_PATH, PACK_PATH_V2, PACK_PATH_V1].iter().filter(|p| mount.held(p)).find_map(|p| mount.read(p).ok()) else {
         return Vec::new();
     };
     let Ok(pack) = ItemPack::parse(&String::from_utf8_lossy(&bytes)) else { return Vec::new() };
@@ -403,7 +408,7 @@ fn flat(id: &str, docs: &BTreeMap<String, toml::Table>, depth: usize) -> Option<
 /// The pack on `mount`, if it has one (a malformed one said); an older
 /// store's version-1 pack when it has no newer.
 pub fn read_pack(mount: &Mount) -> Option<ItemPack> {
-    let bytes = [PACK_PATH, PACK_PATH_V1].iter().find_map(|p| mount.read(p).ok())?;
+    let bytes = [PACK_PATH, PACK_PATH_V2, PACK_PATH_V1].iter().find_map(|p| mount.read(p).ok())?;
     let text = String::from_utf8_lossy(&bytes);
     ItemPack::parse(&text).map_err(|e| bevy::log::warn!("tf2: {PACK_PATH}: {e}")).ok()
 }
