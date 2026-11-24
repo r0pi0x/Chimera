@@ -469,7 +469,9 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume
   (`Died`), `ragdoll` (`Ragdolled` added), `blast` (any game's blast,
   `weapon::grenade::BlastDealt`, or a `core::Explosion`), `idle` (no
   counted background work pending, `chimera_core::tasks::pending`; holds
-  while it is so).
+  while it is so), `still` (no logo pass between screens under way: after
+  a screen change, `wait 2` then `wait_for still` instead of a frame count
+  that a loaded box's slow frames end mid-pass).
 - `<dir>/scene.log`: every line, fact and picture with its frame, and
   every `HitMeasured`/`KillMeasured`/`BlastMeasured`/`PropHit`: a scene is
   also a measurement, and the console's output (lines starting `| `).

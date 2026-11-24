@@ -40,10 +40,13 @@
 //! `idle` (no background work pending: loads, model builds, downloads,
 //! navigation meshes: `chimera_core::tasks::pending`; like `map_loaded`, it
 //! also holds in the first frames before anything started, so put it after
-//! the console line that starts the work and a `wait 2`). `shot`, `hit`,
+//! the console line that starts the work and a `wait 2`). `still` (no
+//! logo pass between screens under way, `logo_pass::LogoPass`: a screen
+//! change done, its slab gone, whatever the frame rate; also put it after
+//! the console line that changes the screen and a `wait 2`). `shot`, `hit`,
 //! `kill`, `death`, `ragdoll` and
-//! `blast` hold on the frame they happen; `map_loaded`, `match`, `spawned` and `idle`
-//! while they are so.
+//! `blast` hold on the frame they happen; `map_loaded`, `match`, `spawned`, `idle`
+//! and `still` while they are so.
 //!
 //! The log, `<out>/scene.log`: every console line, directive, fact and
 //! picture with its frame number, and every `HitMeasured`,
@@ -99,10 +102,11 @@ pub enum Fact {
     Ragdoll,
     Blast,
     Idle,
+    Still,
 }
 
 impl Fact {
-    pub const ALL: [Fact; 10] = [
+    pub const ALL: [Fact; 11] = [
         Fact::MapLoaded,
         Fact::Match,
         Fact::Spawned,
@@ -113,6 +117,7 @@ impl Fact {
         Fact::Ragdoll,
         Fact::Blast,
         Fact::Idle,
+        Fact::Still,
     ];
 
     pub fn name(self) -> &'static str {
@@ -127,6 +132,7 @@ impl Fact {
             Fact::Ragdoll => "ragdoll",
             Fact::Blast => "blast",
             Fact::Idle => "idle",
+            Fact::Still => "still",
         }
     }
 
@@ -336,6 +342,9 @@ fn facts_now(world: &mut World, cursors: &mut FactCursors) -> u16 {
     if chimera_core::tasks::pending() == 0 {
         bits |= Fact::Idle.bit();
     }
+    if world.get_resource::<super::logo_pass::LogoPass>().is_none_or(|p| p.elapsed(0.0).is_none()) {
+        bits |= Fact::Still.bit();
+    }
     if world.get_resource::<chimera_sim::mode::Match>().is_some_and(|m| m.phase == chimera_sim::mode::Phase::Live) {
         bits |= Fact::Match.bit();
     }
@@ -507,7 +516,7 @@ fn play(world: &mut World, mut cursors: Local<FactCursors>) {
         let frame = scene.frame;
         for f in Fact::ALL {
             // Level facts are noted when they begin only.
-            if bits & f.bit() != 0 && !matches!(f, Fact::Match | Fact::Spawned | Fact::MapLoaded | Fact::Idle) {
+            if bits & f.bit() != 0 && !matches!(f, Fact::Match | Fact::Spawned | Fact::MapLoaded | Fact::Idle | Fact::Still) {
                 scene.note(format!("fact {}", f.name()));
             }
         }
@@ -711,6 +720,7 @@ mod tests {
             Step::WaitForCvar("sv_x".into(), "1".into(), 30)
         );
         assert_eq!(parse("wait_for idle").unwrap()[0].1, Step::WaitFor(Fact::Idle, DEFAULT_TIMEOUT));
+        assert_eq!(parse("wait_for still 60").unwrap()[0].1, Step::WaitFor(Fact::Still, 60));
         assert!(parse("wait_for cvar sv_x").is_err());
         assert_eq!(parse("wait_for spawned").unwrap()[0].1, Step::WaitFor(Fact::Spawned, DEFAULT_TIMEOUT));
         assert_eq!(parse("type map de_").unwrap()[0].1, Step::Type("map de_".into()));
