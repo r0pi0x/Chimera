@@ -33,20 +33,30 @@ use bevy::app::{PluginGroup, PluginGroupBuilder};
 /// and its content cache.
 pub const GAME: &str = "cs16";
 
-/// The game's folder inside its install ("" when the install is the
-/// game's folder itself).
-pub const CONTENT_DIR: &str = "";
+/// The game's folder inside its install (the install root holds
+/// `cstrike/` and Half-Life's `valve/`, the fallback;
+/// specs/goldsrc/mount.md).
+pub const CONTENT_DIR: &str = "cstrike";
 
-/// The server tick, seconds (a stand-in: put the spec's here).
-pub const TICK_INTERVAL: f64 = 1.0 / 60.0;
+/// The server tick, seconds: 100 Hz, GoldSrc's common case of 100
+/// commands a second of 10 ms each (docs/plans/active/goldsrc.md §4.3; to
+/// confirm against the server's `sys_ticrate` in specs/cs16/movement.md).
+pub const TICK_INTERVAL: f64 = 0.01;
 
-/// The game's world unit in metres (a stand-in: the spec's unit).
-pub const METERS_PER_UNIT: f32 = 1.0;
+/// GoldSrc's unit, the inch, in metres (specs/goldsrc/bsp.md, "Units and
+/// conventions").
+pub const METERS_PER_UNIT: f32 = 0.0254;
+
+/// Counter-Strike's Steam app (the client; the dedicated server, app 90
+/// with `mod cstrike`, has the same layout).
+pub const STEAM_APP: u32 = 10;
 
 /// What the client shell knows of the game (`game_registry`): its install
-/// (`[games.cs16] path` in chimera.local.toml or `$CHIMERA_CS16_ROOT`;
-/// add `steam` when it is a Steam game), folder, maps, tick and console
-/// namespace (its id).
+/// (Steam app 10, installed as `Half-Life`, or `[games.cs16] path` in
+/// chimera.local.toml, or `$CHIMERA_CS16_ROOT`: the folder holding
+/// `cstrike/` and `valve/`, the client's or the dedicated server's),
+/// folder, maps, tick and console namespaces (`cs16`, with the game
+/// folder's name `cstrike` as an alias).
 pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo {
     id: GAME,
     short_name: "CS 1.6",
@@ -56,7 +66,11 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
     open: mount::open,
     map_cycle: maps::map_names,
     map_names: maps::map_names,
-    steam: None,
+    steam: Some(crate::mount::install::SteamGame {
+        app_id: STEAM_APP,
+        name: "Half-Life",
+        required: &["cstrike/liblist.gam", "cstrike/maps/de_dust2.bsp", "valve/halflife.wad"],
+    }),
     map_file: |_| None,
     import_map: |_| Err("Counter-Strike 1.6 has no map files yet".into()),
     // No such file in an install: the built-in table is used.
@@ -65,7 +79,7 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
     old_default_binds: &[],
     movement_cvars: &[],
     meters_per_unit: METERS_PER_UNIT,
-    console_namespaces: &[],
+    console_namespaces: &["cs16", "cstrike"],
 };
 
 /// The default binds: the shell's usual ones until a spec lists the game's.

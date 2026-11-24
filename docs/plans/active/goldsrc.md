@@ -23,7 +23,7 @@ Force) is a small port on the same loader.
 |---|---|---|
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount); `specs/cs16/` install, movement, weapons to come |
-| M0 loader, mount, maps, bodies | not started | §5 |
+| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half: maps to `MapData`, bodies, `chimera_pack cs16` |
 | M1 weapons | not started | §5 |
 | M2 movement | not started | §5 |
 | M3 party rungs | not started | §5 |
@@ -155,6 +155,61 @@ maps, so M0 builds both:
 - **Hull traces for CS 1.6's own movement** (M2): its player traces
   hull 1/3 as the original does, for parity on GoldSrc maps; on other
   games' maps it uses Chimera's shapes like any character.
+
+**The M0 spike's result (2026-11-24): close enough; build it.** Measured
+by `goldsrc_formats`' `heavy::collision_spike` (its doc says how to run
+it) on de_dust2, cs_office, de_aztec, de_nuke and de_inferno, 20 000
+points each where hull 0 is open, and a third as many traces of 32-256
+units from free points, mostly horizontal. Ground truth is hull 1: a
+standing box at p is blocked exactly when hull 1 calls p solid, and its
+first contact is hull 1's trace. The shapes are `bsp::solids`: hull 0's
+solid regions plus hull 1's solid regions shrunk back by the standing
+box (`Shrink::Measured`, the spec's measured growth; moving every face
+by the box's full support, `Shrink::Support`, measures the same within
+0.1 %).
+
+| Map | Point mismatch (> 1 u, > 4 u) | Worst point | Traces off > 1 u (> 4 u) | Trace p99 | Shapes (hull 0 + shrunk hull 1) |
+|---|---|---|---|---|---|
+| de_dust2 | 0.85 % (0.68 %, 0.28 %) | 31.5 u | 6.8 % (6.1 %) | 21.7 u | 1 566 + 829 |
+| cs_office | 1.11 % (0.94 %, 0.61 %) | 30.6 u | 4.0 % (3.9 %) | 19.4 u | 2 047 + 1 448 |
+| de_aztec | 0.27 % (0.20 %, 0.13 %) | 32.5 u | 4.7 % (4.2 %) | 18.4 u | 1 275 + 527 |
+| de_nuke | 1.26 % (1.07 %, 0.56 %) | 27.8 u | 8.2 % (7.5 %) | 23.8 u | 1 482 + 1 100 |
+| de_inferno | 0.38 % (0.25 %, 0.12 %) | 26.1 u | 3.6 % (3.3 %) | 15.2 u | 1 688 + 1 045 |
+
+What the numbers say:
+
+- **Nearly every mismatch is on the safe side**: the shapes block a box
+  that hull 1 lets through (152 of de_dust2's 171 point mismatches,
+  237 of de_nuke's 253). That is the compiler's growth being smaller
+  than the box at slanted faces (bsp.md: diagonal walls grown by 16, not
+  22.6; ramps by about 36 × normal z): hull 1 lets a box's corners into
+  a 45° wall by up to 6.6 units, which true shapes cannot reproduce.
+  Along a grazing move that small offset becomes a long distance, which
+  is where the traces' tail (p99 15-24 u, worst ~200 u) comes from: in
+  the sampled cases the shapes stop the box 6-11 u earlier against a
+  diagonal wall or ride a ramp's face a few units higher.
+- **Clip brushes are recovered**: hull 0 alone misses 4-69 % of the
+  points (de_aztec and de_inferno are mostly player clip above the
+  roofs); with the shrunk hull 1 regions, points that hull 1 calls
+  solid but the shapes leave free are 0.03-0.12 % (7-23 of 20 000).
+- **One fix was needed and is in**: hull 1's regions are pieces of one
+  solid cut by the tree's planes; shrinking every face of every piece
+  lost a box's width at each cut (the first run left 62 % of hull 1's
+  regions empty and let boxes into clip). Now a face is moved back only
+  where it borders hull 1's open space (`solids::exposed_in`, probed
+  every 8 units); faces between two solid pieces stay.
+- Hull 3 is not needed for the clip volumes; hull 1's shrunk pieces
+  alone are worse (0.6-2.2 % mismatches: their shrinking is
+  approximate), so both sets are kept.
+
+Recommendation: build Chimera's collision for GoldSrc maps as hull 0's
+solid regions (bullets and every character) plus hull 1's shrunk regions
+as player clip (characters only), as convex shapes; CS 1.6's own player
+keeps tracing hulls 1 and 3 (M2) for parity. Characters of other games
+stop a few units short of slanted walls and ramps compared with CS 1.6's
+players; nothing lets them through a wall or into player clip. Left for
+the map loader: dropping hull 1 pieces that only repeat hull 0 (the
+shapes count is 2 400-3 500 a map) and the brush entities' own hulls.
 
 ## 4. What carries over from Source, and what is new
 
@@ -365,6 +420,8 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
    the server layout lacks nothing.
 3. `qbsp`: adapt its BSP 30 files with credit (recommended, keeps
    Quake's palette out of our binaries) or depend on the crate?
+   Adapted (2026-11-24, M0): its record shapes, leaf lookup and
+   visibility decoding, credited in each file and THIRD_PARTY.md.
 
 ## Log
 
@@ -388,3 +445,21 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   rounded to single precision (then all 150 maps tile exactly); CS 1.6
   player models aim with 9 pitch blends; file lookups must ignore case
   (de_dust2's sky files are `Des*.tga`).
+- 2026-11-24: M0, first half. `goldsrc/formats` (`goldsrc_formats`, the
+  `goldsrc` loader layer in the architecture checks): BSP 30 (every lump,
+  lightmap sizing, visibility, entities, point contents and hull traces
+  on hulls 0-3, solid regions as convex polytopes; record shapes, leaf
+  lookup and visibility decoding adapted from `qbsp` 0.17.0, its palette
+  left out), WAD3 (mip textures, pictures, fonts, decals), MDL v10
+  (every array, animation streams, triangle commands, external textures
+  and sequence groups), SPR v2 and the HUD sprite lists, `liblist.gam`
+  and `materials.txt`; fixture tests from the specs and `heavy::` tests on
+  the install (all 150 maps, every WAD, every version 10 model and
+  sequence file, every sprite). The collision spike (§3): close enough. `games/cs16`:
+  `cstrike` with `liblist.gam`'s fallback (`valve`), Steam app 10, tick
+  0.01 s, 0.0254 m a unit, `loaders = ["goldsrc"]`. Found against the
+  specs: MDL's attachment count and offset are at header bytes 212 and
+  216 (mdl.md's table says 216 for the count); three of Half-Life's
+  deathmatch maps (`disposal`, `pool_party`, `rocket_frenzy`) carry
+  800-odd bytes after the last lightmap (bsp.md says every map tiles
+  exactly); both for the next spec session.

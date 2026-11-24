@@ -1,0 +1,35 @@
+[package]
+name = "goldsrc_formats"
+version = "0.1.0"
+description = "GoldSrc's file formats as plain data (BSP 30, WAD3, MDL v10, SPR v2, liblist.gam): no Bevy, no game code"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# Pure data, like `blam_formats`: what a format needs to be read and
+# nothing else. No Bevy, avian, Chimera's crates (but the VFS), a game or
+# `mashup` (checks/tests/it/architecture.rs checks it). `chimera_vfs` for
+# its byte reader (`bytes::Le`) and the mount the heavy tests read from.
+[dependencies]
+chimera_vfs.workspace = true
+
+# The heavy tests find the install in chimera.local.toml themselves (no
+# Chimera crate here).
+[dev-dependencies]
+toml.workspace = true
+
+# Integration tests as one binary (tests/it/): spec fixtures built in
+# code, and `heavy::` against the user's GoldSrc install.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[features]
+# Nothing: lets `--features dev` name this package alongside the others
+# (cargo test -p ... -p <crate> --features dev; .githooks/pre-commit).
+dev = ["chimera_vfs/dev"]

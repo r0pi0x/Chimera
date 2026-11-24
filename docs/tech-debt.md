@@ -444,7 +444,7 @@ fails when this file is stale; never edit the generated lines).
 - `games/combat_arms/ui/src/textures.rs`: no `DetailLevel` (the map loader's level skipping): the loaded level is the file's first
 - `games/cs16/src/game/maps.rs`: - No map loads (tools/new-game's stand-in)
 - `games/cs16/src/game/mod.rs`: - Everything is a stand-in made by tools/new-game: no maps, the placeholder movement, one gun without models
-- `games/cs16/src/game/mount.rs`: - Loose files only (tools/new-game's stand-in)
+- `games/cs16/src/game/mount.rs`: - The client's language folder (`cstrike_<language>`) is not mounted yet: no client install has been checked (goldsrc.md, open question 2)
 - `games/cs16/src/game/movement.rs`: - A stand-in made by tools/new-game: replace it with the game's own movement from specs/cs16/movement.md (a marker component and...
 - `games/cs16/src/game/weapons.rs`: - A stand-in gun with no models or sounds: replace it with the game's guns from specs/cs16/weapons.md
 - `games/cs_source/src/bot/aside.rs`: Bots on maps without a navigation mesh (`bot::aside`, our design: CS:S generates one): they step off spawns and teleport destinations to a clear...
@@ -654,6 +654,8 @@ fails when this file is stale; never edit the generated lines).
 - `games/tf2/src/game/weapons/sticky.rs`: a ninth sticky blows the oldest at once (the game: at its next 0.2 s fuse check); bullets don't destroy stickies; the launch's jitter and spin...
 - `games/tf2/ui/src/hud.rs`: the item meter's inner layout is ours; the max-health label, the low-ammo pulse (no threshold in the data), damage numbers and the health-gain...
 - `games/tf2/ui/src/systems.rs`: the node pool and its sync repeat HL2:DM's HUD's own (a shared one in `source_engine::hud` would serve both); the kill feed's row look is the...
+- `goldsrc/formats/src/bsp/mod.rs`: - Blue Shift's swapped entities/planes header is not read (out of scope until that game is ported; the spec's "Header and lumps")
+- `goldsrc/formats/src/bsp/solids.rs`: - Regions are cut from the model's bounds grown by 64 units: solid space beyond them (the void around the world) ends at that box
 - `lithtech/formats/src/anim.rs`: - `AniRateInterpolation` is always 1 (the carry is kept)
 - `lithtech/formats/src/attributes.rs`: - The event "text-change overwrite" layer ("Defaults and overrides", item 3) isn't implemented: it is optional and no shipped file has it
 - `lithtech/formats/src/dtx.rs`: only what drawing a world needs

@@ -37,7 +37,7 @@ fn strings_after(code: &str, start: &str) -> Vec<String> {
 
 fn build_scripts(root: &Path) -> Vec<String> {
     let mut out = Vec::new();
-    for top in ["chimera", "games", "source", "lithtech", "blam", "apps"] {
+    for top in ["chimera", "games", "source", "lithtech", "blam", "goldsrc", "apps"] {
         let Ok(rd) = fs::read_dir(root.join(top)) else { continue };
         for e in rd.flatten() {
             let b = e.path().join("build.rs");

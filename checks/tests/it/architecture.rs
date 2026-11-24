@@ -1700,6 +1700,7 @@ fn workspace_crates() {
         "source/formats",
         "lithtech/formats",
         "blam/formats",
+        "goldsrc/formats",
         "source/tools",
         "checks",
     ];
@@ -1824,7 +1825,7 @@ fn workspace_crates() {
         // The neutral VFS under both format crates: no dependency at all.
         (
             "chimera/vfs",
-            &["bevy", "avian", "mashup", "source_", "lithtech_", "blam_", "chimera_", "<games>", "games", "lucker_party", "party_kit", "workspace-hack"],
+            &["bevy", "avian", "mashup", "source_", "lithtech_", "blam_", "goldsrc_", "chimera_", "<games>", "games", "lucker_party", "party_kit", "workspace-hack"],
             PURE_DATA,
         ),
         // The formats no engine owns (sound files, KeyValues text): no
@@ -1832,14 +1833,14 @@ fn workspace_crates() {
         // base may use them.
         (
             "chimera/formats",
-            &["bevy", "avian", "mashup", "source_", "lithtech_", "blam_", "chimera_", "<games>", "games", "lucker_party", "party_kit", "workspace-hack"],
+            &["bevy", "avian", "mashup", "source_", "lithtech_", "blam_", "goldsrc_", "chimera_", "<games>", "games", "lucker_party", "party_kit", "workspace-hack"],
             PURE_DATA,
         ),
         // The asset store: plain data over the VFS (`chimera_vfs` only),
         // under Chimera's `mount`.
         (
             "chimera/assets",
-            &["bevy", "avian", "mashup", "source_", "lithtech_", "blam_", "chimera_core", "chimera_world", "chimera_present", "chimera_sim", "chimera_net", "chimera_client", "chimera_tools", "<games>", "games", "lucker_party", "party_kit", "workspace-hack"],
+            &["bevy", "avian", "mashup", "source_", "lithtech_", "blam_", "goldsrc_", "chimera_core", "chimera_world", "chimera_present", "chimera_sim", "chimera_net", "chimera_client", "chimera_tools", "<games>", "games", "lucker_party", "party_kit", "workspace-hack"],
             PURE_DATA,
         ),
         // The hub's services (docs/plans/active/hub.md, 2.7): host tools on
@@ -1847,12 +1848,12 @@ fn workspace_crates() {
         // lives only here.
         (
             "chimera/services",
-            &["bevy", "avian", "mashup", "source_", "lithtech_", "blam_", "chimera_core", "chimera_world", "chimera_present", "chimera_sim", "chimera_net", "chimera_client", "chimera_tools", "chimera_ui", "<games>", "games", "lucker_party", "party_kit", "workspace-hack"],
+            &["bevy", "avian", "mashup", "source_", "lithtech_", "blam_", "goldsrc_", "chimera_core", "chimera_world", "chimera_present", "chimera_sim", "chimera_net", "chimera_client", "chimera_tools", "chimera_ui", "<games>", "games", "lucker_party", "party_kit", "workspace-hack"],
             SERVICES,
         ),
         // Source's formats may use the VFS (`chimera_vfs`) and no other
         // Chimera crate.
-        ("source/formats", &["bevy", "avian", "mashup", "lithtech_", "blam_", "chimera_"], PURE_DATA),
+        ("source/formats", &["bevy", "avian", "mashup", "lithtech_", "blam_", "goldsrc_", "chimera_"], PURE_DATA),
         // LithTech's loader layer, like Source's: plain data (the VFS from
         // `chimera_vfs` only).
         (
@@ -1867,6 +1868,13 @@ fn workspace_crates() {
             &["bevy", "avian", "mashup", "chimera_", "source_logic", "source_engine", "source_tools", "<games>", "games", "lucker_party", "party_kit", "workspace-hack"],
             PURE_DATA,
         ),
+        // GoldSrc's loader layer, the same: plain data (the VFS from
+        // `chimera_vfs` only).
+        (
+            "goldsrc/formats",
+            &["bevy", "avian", "mashup", "chimera_", "source_logic", "source_engine", "source_tools", "<games>", "games", "lucker_party", "party_kit", "workspace-hack"],
+            PURE_DATA,
+        ),
         (
             "chimera/core",
             &["mashup", "<games>", "games", "lucker_party", "party_kit"],
@@ -1876,7 +1884,7 @@ fn workspace_crates() {
         // app build their screens on it (docs/plans/active/ugg-ui.md, 2.1).
         (
             "chimera/ui",
-            &["chimera_world", "chimera_present", "chimera_sim", "chimera_net", "chimera_client", "source_", "lithtech_", "blam_", "mashup", "<games>", "games", "lucker_party", "party_kit"],
+            &["chimera_world", "chimera_present", "chimera_sim", "chimera_net", "chimera_client", "source_", "lithtech_", "blam_", "goldsrc_", "mashup", "<games>", "games", "lucker_party", "party_kit"],
             UI_KIT,
         ),
         (
@@ -2023,12 +2031,12 @@ fn workspace_crates() {
         ),
         (
             "games/originals",
-            &["chimera_present", "chimera_client", "source_", "lithtech_", "blam_", "<games>", "mashup", "lucker_party", "party_kit"],
+            &["chimera_present", "chimera_client", "source_", "lithtech_", "blam_", "goldsrc_", "<games>", "mashup", "lucker_party", "party_kit"],
             ORIGINALS,
         ),
         (
             "apps/party_kit",
-            &["mashup", "<games>", "source_", "lithtech_", "blam_", "party_roster", "ultimate_gun_game", "lucker_party"],
+            &["mashup", "<games>", "source_", "lithtech_", "blam_", "goldsrc_", "party_roster", "ultimate_gun_game", "lucker_party"],
             PARTY_KIT,
         ),
         (
@@ -2642,6 +2650,7 @@ fn layers_by_path() {
     assert_eq!(layer_of("source/formats"), Layer::Loader("source".into()));
     assert_eq!(layer_of("lithtech/formats"), Layer::Loader("lithtech".into()));
     assert_eq!(layer_of("blam/formats"), Layer::Loader("blam".into()));
+    assert_eq!(layer_of("goldsrc/formats"), Layer::Loader("goldsrc".into()));
     assert_eq!(layer_of("games/hl2dm"), Layer::Game);
     assert_eq!(layer_of("games/cs_source/tools"), Layer::App);
     assert_eq!(layer_of("games/tf2/ui"), Layer::FrontEnd("tf2".into()));

@@ -9,9 +9,10 @@ license.workspace = true
 
 # The layers this crate builds on, beside Chimera (checks/tests/it/architecture.rs,
 # `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path"). Add the
-# loader family when the game reads one (`["source"]`, `["lithtech"]`, ...).
+# loader family when the game reads one (`["source"]`, `["lithtech"]`, ...):
+# GoldSrc's formats (`goldsrc_formats`).
 [package.metadata.chimera]
-loaders = []
+loaders = ["goldsrc"]
 
 # No doc tests (none written): skips a rustdoc pass on every test run.
 [lib]
@@ -24,6 +25,8 @@ doctest = false
 chimera_core.workspace = true
 chimera_world.workspace = true
 chimera_sim.workspace = true
+# GoldSrc's formats: `liblist.gam` for the folder chain so far.
+goldsrc_formats.workspace = true
 bevy.workspace = true
 # The data documents (data/*.toml).
 serde.workspace = true
@@ -45,4 +48,4 @@ path = "tests/it/main.rs"
 
 [features]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on).
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "goldsrc_formats/dev"]

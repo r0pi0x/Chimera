@@ -1,5 +1,5 @@
 # A Cargo workspace (docs/ARCHITECTURE.md, "Crates"): Chimera (chimera/),
-# Source's, LithTech's and Halo's loaders (source/, lithtech/, blam/), the games as
+# Source's, LithTech's, Halo's and GoldSrc's loaders (source/, lithtech/, blam/, goldsrc/), the games as
 # libraries (games/), the apps (apps/), the tools of each layer and the repository's checks (checks/:
 # the architecture tests and the affected-test selection). Each crate
 # keeps its own tests (docs/OBSERVABILITY.md, section 1). Commands run at the repository root act on every
@@ -30,6 +30,7 @@ members = [
     "source/tools",
     "lithtech/formats",
     "blam/formats",
+    "goldsrc/formats",
     "games/cs_source",
     "games/cs_source/tools",
     "games/combat_arms",
@@ -86,6 +87,7 @@ default-members = [
     "source/tools",
     "lithtech/formats",
     "blam/formats",
+    "goldsrc/formats",
     "games/cs_source",
     "games/cs_source/tools",
     "games/combat_arms",
@@ -162,6 +164,8 @@ source_gameui = { path = "source/gameui" }
 lithtech_formats = { path = "lithtech/formats" }
 # Halo: Combat Evolved's formats as plain data (the Xbox disc image).
 blam_formats = { path = "blam/formats" }
+# GoldSrc's formats as plain data (BSP 30, WAD3, MDL v10, SPR v2).
+goldsrc_formats = { path = "goldsrc/formats" }
 cs_source = { path = "games/cs_source" }
 # Combat Arms as a game crate (games/combat_arms): its skeleton, filled
 # from specs/combat_arms/ (docs/plans/active/combat-arms.md).
