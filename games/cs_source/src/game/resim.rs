@@ -60,7 +60,7 @@ use source_formats::dem::usercmd::buttons;
 
 use super::{
     demo::{CsDemo, FL_DUCKING, FL_ONGROUND, Happening, Thing, weapon_name},
-    movement::{self, SourceMovement, SourceMovementConfig, to_engine, to_source},
+    movement::{self, SourceMovement, to_engine, to_source},
     weapons::Inaccuracy,
 };
 use crate::{
@@ -830,7 +830,7 @@ fn run(sim: &mut Sim, rec: &Recording, offset: i64, opts: Options) -> Result<Rep
 
     // The server's settings, the recording's tick and move keys.
     sim.set_tick_interval(rec.tick_interval as f64);
-    let mut config = SourceMovementConfig::default();
+    let mut config = movement::config();
     let mut applied = Vec::new();
     for (k, v) in &rec.cvars {
         if config.set_cvar(k, v).is_ok() {
@@ -839,7 +839,7 @@ fn run(sim: &mut Sim, rec: &Recording, offset: i64, opts: Options) -> Result<Rep
         }
     }
     config.key_speed = rec.key_speed();
-    sim.app.insert_resource(config);
+    movement::set_config(sim.app.world_mut(), config);
 
     // The player with its weapons, drawn, then placed as recorded.
     let p = sim.spawn_character(

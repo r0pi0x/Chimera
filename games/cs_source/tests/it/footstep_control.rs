@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 use crate::stack::{
-    games::cs_source::movement::{self, SourceMovement, SourceMovementConfig, SourceMovementPlugin, to_engine, to_source},
+    games::cs_source::movement::{self, SourceMovement, SourceMovementPlugin, to_engine, to_source},
     harness::{CsSim, Sim},
     map::{MapBrush, MapBrushes, MapSounds, MapSurface, PlaySound, StepRemap, sound::SoundBank},
 };
@@ -96,7 +96,7 @@ fn hear(mut sounds: MessageReader<PlaySound>, mut heard: ResMut<Heard>) {
 fn sim_at(feet: Vec3) -> (Sim, Entity) {
     let mut sim = Sim::new(CsSim, (TestMap, SourceMovementPlugin));
     sim.set_tick_interval(crate::stack::games::cs_source::TICK_INTERVAL);
-    sim.app.insert_resource(SourceMovementConfig::default());
+    movement::set_config(sim.app.world_mut(), movement::config());
     sim.app.init_resource::<Heard>().add_systems(Last, hear);
     let p = sim.spawn_character(to_engine(feet + Vec3::Z * 36.0), movement::ID);
     (sim, p)
@@ -161,9 +161,7 @@ fn sv_footsteps_zero_silences_steps() {
     let run = |value: Option<&str>| {
         let (mut sim, p) = sim_at(Vec3::new(-400.0, 0.0, 0.5));
         if let Some(v) = value {
-            sim.app
-                .world_mut()
-                .resource_mut::<SourceMovementConfig>()
+            movement::config_mut(sim.app.world_mut())
                 .set_cvar("sv_footsteps", v)
                 .unwrap();
         }
@@ -176,7 +174,7 @@ fn sv_footsteps_zero_silences_steps() {
     assert!(run(None) >= 2, "steps by default");
     assert_eq!(run(Some("0")), 0, "none with sv_footsteps 0");
     assert!(run(Some("1")) >= 2);
-    let mut c = SourceMovementConfig::default();
+    let mut c = movement::config();
     assert_eq!(c.get_cvar("sv_footsteps").as_deref(), Some("1"));
     c.set_cvar("sv_footsteps", "0").unwrap();
     assert_eq!(c.get_cvar("sv_footsteps").as_deref(), Some("0"));

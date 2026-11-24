@@ -995,7 +995,6 @@ fn its_cvars_are_its_own() {
     let w = pl.sim.app.world();
     let cfg = w.resource::<source_engine::source_movement::SourceMovementConfigs>().get(ID).unwrap().gravity;
     assert_eq!(cfg, 300.0);
-    assert_eq!(w.resource::<source_engine::source_movement::SourceMovementConfig>().gravity, 800.0, "CS:S's untouched");
 }
 
 /// Speed selection 4 (movement.md): ALT (`+walk`) and SHIFT (`+speed`)

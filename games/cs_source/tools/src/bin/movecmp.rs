@@ -35,7 +35,7 @@ use cs_source_app::{
         self,
         cs_source::{
             TICK_INTERVAL,
-            movement::{self, SourceMovement, SourceMovementConfig, SourceMovementPlugin, to_engine, to_source},
+            movement::{self, SourceMovement, SourceMovementPlugin, to_engine, to_source},
         },
     },
     harness::{CsSim, Sim},
@@ -954,7 +954,7 @@ fn run_ours(map: &Arc<MapData>, s: &Scenario, theirs: &[State]) -> Vec<State> {
         SourceMovementPlugin,
     ));
     sim.set_tick_interval(TICK_INTERVAL);
-    sim.app.insert_resource(SourceMovementConfig::default());
+    movement::set_config(sim.app.world_mut(), movement::config());
     let p = sim.spawn_character(to_engine(start.pos + Vec3::Z * ORIGIN_ABOVE_FEET), movement::ID);
     {
         let world = sim.app.world_mut();
@@ -975,7 +975,7 @@ fn run_ours(map: &Arc<MapData>, s: &Scenario, theirs: &[State]) -> Vec<State> {
             buttons: None,
         }
     };
-    let duck_speed = SourceMovementConfig::default().duck_speed;
+    let duck_speed = movement::config().duck_speed;
     let mut out = vec![state(&sim)];
     for (t, i) in s.inputs.iter().enumerate() {
         let buttons = theirs.get(t + 1).and_then(|x| x.buttons).unwrap_or(i.buttons);
@@ -1002,7 +1002,7 @@ fn run_ours(map: &Arc<MapData>, s: &Scenario, theirs: &[State]) -> Vec<State> {
             let bot_jump_duck = bot_ducked
                 && buttons & IN_DUCK == 0
                 && theirs.get(t).is_some_and(|x| x.ground && !x.ducked);
-            sim.app.world_mut().resource_mut::<SourceMovementConfig>().duck_speed =
+            movement::config_mut(sim.app.world_mut()).duck_speed =
                 if bot_jump_duck { 1.0 } else { duck_speed };
         }
         sim.ticks(1);

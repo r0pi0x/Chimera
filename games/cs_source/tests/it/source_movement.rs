@@ -80,7 +80,7 @@ impl Player {
     fn at(feet: Vec3) -> Self {
         let mut sim = Sim::new(CsSim, (TestMap, SourceMovementPlugin));
         // The spec's test cases use the shared code's values.
-        sim.app.insert_resource(SourceMovementConfig::shared_code());
+        movement::set_config(sim.app.world_mut(), SourceMovementConfig::reference());
         let p = sim.spawn_character(to_engine(feet + Vec3::Z * 36.0), movement::ID);
         let mut me = Self { sim, p };
         me.look_yaw(0.0);
@@ -442,7 +442,7 @@ fn css_jump_reaches_its_measured_height() {
     // CS:S's own jump (measured apex 54.75 at 66.67 tick); at 64 tick the
     // same impulse peaks at 54.65.
     let mut pl = Player::on_floor();
-    pl.sim.app.insert_resource(SourceMovementConfig::default());
+    movement::set_config(pl.sim.app.world_mut(), movement::config());
     let z0 = pl.feet().z;
     pl.sim.intent(pl.p).jump = true;
     let mut apex = 0.0f32;

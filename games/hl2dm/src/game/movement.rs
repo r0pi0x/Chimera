@@ -109,7 +109,7 @@ pub fn config() -> SourceMovementConfig {
         drowning: false,
         floating_bonus: 173.0,
         waist_step_skip: true,
-        ..SourceMovementConfig::shared_code()
+        ..SourceMovementConfig::reference()
     }
 }
 

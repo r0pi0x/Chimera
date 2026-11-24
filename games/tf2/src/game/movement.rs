@@ -120,7 +120,7 @@ pub fn config() -> SourceMovementConfig {
         // games' maps' ladders are climbed by the shared code's rule
         // (`SourceMovementConfig::climbs_contents`).
         contents_ladders: false,
-        ..SourceMovementConfig::shared_code()
+        ..SourceMovementConfig::reference()
     }
 }
 

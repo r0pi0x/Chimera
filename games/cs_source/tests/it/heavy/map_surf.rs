@@ -9,7 +9,7 @@ use crate::stack::{
     core::{MapBrush, MapBrushes, MapTerrain, Velocity},
     games::{
         self, cs_source,
-        cs_source::movement::{self, SourceMovementConfig, SourceMovementPlugin, to_engine, to_source},
+        cs_source::movement::{self, SourceMovementPlugin, to_engine, to_source},
     },
     harness::{CsSim, Sim},
     map::{MapData, MapPlugin},
@@ -321,12 +321,10 @@ fn rides(maps: &[&str], min_ramps: usize) {
         let name = name.as_str();
         let Some(map) = cached(name) else { continue };
         let mut sim = Sim::new(CsSim, (MapPlugin::new(map), SourceMovementPlugin));
-        sim.app.insert_resource(SourceMovementConfig::default());
+        movement::set_config(sim.app.world_mut(), movement::config());
         sim.ticks(2);
         // A surf server's air acceleration.
-        sim.app
-            .world_mut()
-            .resource_mut::<SourceMovementConfig>()
+        movement::config_mut(sim.app.world_mut())
             .set_cvar("sv_airaccelerate", "150")
             .unwrap();
         let brushes = sim.app.world().resource::<MapBrushes>().0.clone();

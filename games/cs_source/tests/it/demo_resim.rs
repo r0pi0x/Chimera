@@ -24,7 +24,7 @@ use crate::stack::{
     games::cs_source::{
         TICK_INTERVAL,
         demo::{self, CsDemo, FL_DUCKING, FL_ONGROUND, Happening, LocalSnap, PlayerSnap, Thing},
-        movement::{self as source, SourceMovement, SourceMovementConfig, SourceMovementPlugin, to_source},
+        movement::{self as source, SourceMovement, SourceMovementPlugin, to_source},
         resim::{self, Options, Recording},
         weapons::{CsWeaponsPlugin, Inaccuracy},
     },
@@ -91,9 +91,9 @@ type Shot = (usize, u32, f32, f32);
 /// state before the first command, after each, and the shots.
 fn reference(cmds: &[UserCmd], maxspeed: f32) -> (Vec<PlayerSnap>, Vec<Shot>) {
     let mut sim = make();
-    let mut config = SourceMovementConfig::default();
+    let mut config = source::config();
     config.maxspeed = maxspeed;
-    sim.app.insert_resource(config);
+    source::set_config(sim.app.world_mut(), config);
     let p = sim.spawn_character(greybox::SPAWNS[0], source::ID);
     sim.ticks(1);
     give(sim.app.world_mut(), p, "weapon_ak47").unwrap();

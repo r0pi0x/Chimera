@@ -18,10 +18,11 @@
 //! file registers them (`SourceMovementPlugin`, `SourceMovementAppExt`).
 //!
 //! Each Source game registers it under its own id with its own config
-//! (`SourceMovementAppExt::source_movement`: `cs_source:movement` with the
-//! `SourceMovementConfig` resource, CS:S's measured values;
-//! `hl2dm:movement` with its own in `SourceMovementConfigs`), and its
-//! cvars under its namespace; a character's config follows its
+//! (`SourceMovementAppExt::source_movement`: `cs_source:movement` with
+//! CS:S's measured values, `hl2dm:movement` with HL2:DM's, each in
+//! `SourceMovementConfigs` by its id; the movement itself has no game's
+//! defaults, only the shared code's `SourceMovementConfig::reference`),
+//! and its cvars under its namespace; a character's config follows its
 //! `MovementSlot` (`MovementConfigs`). What differs between the games is
 //! config: CS:S's stamina, bunny-hop cap, walk scale, ladder dampening and
 //! measured hulls; HL2's fall thresholds and fixed or fractional fall
@@ -181,14 +182,13 @@ use crate::{
 
 /// Source movement's systems, once per app (`SourceMovementAppExt::
 /// source_movement` adds it): the step, the physics shadow, the push-away,
-/// the drowning, the map's useable ladders, and the default config
-/// (`SourceMovementConfig`, CS:S's values).
+/// the drowning, the map's useable ladders, and the configs by movement
+/// id (`SourceMovementConfigs`).
 pub struct SourceMovementPlugin;
 
 impl Plugin for SourceMovementPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<SourceMovementConfig>()
-            .init_resource::<SourceMovementConfigs>()
+        app.init_resource::<SourceMovementConfigs>()
             .init_resource::<UseableLadders>()
             .add_message::<crate::map::PlaySound>()
             .add_message::<crate::map::entities::FireEntityOutput>()
@@ -208,10 +208,11 @@ pub struct SourceMovementStep;
 /// Register a Source movement.
 pub trait SourceMovementAppExt {
     /// Movement `id` on Source's movement (`SourceMovementPlugin`, added
-    /// once), with its own `config` (None: the `SourceMovementConfig`
-    /// resource, CS:S's) and its console variables (`CVARS`), under
-    /// `namespace` (`hl2dm:sv_gravity`; None: bare names, a Source game's
-    /// own by the console's rule: CS:S's).
+    /// once), with its `config` (None: the reference values,
+    /// `SourceMovementConfig::reference`; one set for `id` before, by
+    /// `SourceMovementConfigs::set`, stays) and its console variables
+    /// (`CVARS`), under `namespace` (`hl2dm:sv_gravity`; None: bare names,
+    /// a Source game's own by the console's rule: CS:S's).
     fn source_movement(
         &mut self,
         id: &'static str,
@@ -233,21 +234,13 @@ impl SourceMovementAppExt for App {
         // Its move keys count half on their first command (Source's key
         // impulse, measured on real CS:S, HL2:DM and TF2).
         self.world_mut().get_resource_or_init::<crate::core::HalfFirstPress>().0.push(id);
-        let own = config.is_some();
-        let defaults = match config {
-            Some(c) => {
-                self.world_mut().resource_mut::<SourceMovementConfigs>().0.push((id, c.clone()));
-                c
+        let defaults = config.unwrap_or_else(SourceMovementConfig::reference);
+        {
+            let mut all = self.world_mut().get_resource_or_init::<SourceMovementConfigs>();
+            if all.get(id).is_none() {
+                all.0.push((id, defaults.clone()));
             }
-            None => SourceMovementConfig::default(),
-        };
-        let get = move |w: &World| -> Option<SourceMovementConfig> {
-            if own {
-                w.get_resource::<SourceMovementConfigs>().and_then(|c| c.get(id)).cloned()
-            } else {
-                w.get_resource::<SourceMovementConfig>().cloned()
-            }
-        };
+        }
         for (name, help) in CVARS {
             let name = *name;
             let full = match namespace {
@@ -259,17 +252,11 @@ impl SourceMovementAppExt for App {
                 &full,
                 help,
                 &defaults.get_cvar(name).unwrap_or_default(),
-                move |w| get(w).and_then(|c| c.get_cvar(name)),
+                move |w| w.get_resource::<SourceMovementConfigs>().and_then(|c| c.get(id)).and_then(|c| c.get_cvar(name)),
                 move |w, v| {
-                    if own {
-                        w.get_resource_mut::<SourceMovementConfigs>()
-                            .and_then(|c| c.into_inner().get_mut(id).map(|c| c.set_cvar(name, v)))
-                            .ok_or("no Source movement")?
-                    } else {
-                        w.get_resource_mut::<SourceMovementConfig>()
-                            .ok_or("no Source movement")?
-                            .set_cvar(name, v)
-                    }
+                    w.get_resource_mut::<SourceMovementConfigs>()
+                        .and_then(|c| c.into_inner().get_mut(id).map(|c| c.set_cvar(name, v)))
+                        .ok_or("no Source movement")?
                 },
             );
         }

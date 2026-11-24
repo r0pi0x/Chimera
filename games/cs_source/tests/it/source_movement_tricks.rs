@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use crate::stack::{
     core::Velocity,
     games::cs_source::movement::{
-        self, SourceMovement, SourceMovementConfig, SourceMovementPlugin, to_engine, to_source,
+        self, SourceMovement, SourceMovementPlugin, to_engine, to_source,
     },
     harness::{CsSim, Sim},
     map::{MapBrush, MapBrushes},
@@ -162,7 +162,7 @@ struct Player {
 impl Player {
     fn at(feet: Vec3) -> Self {
         let mut sim = Sim::new(CsSim, (TestMap, SourceMovementPlugin));
-        sim.app.insert_resource(SourceMovementConfig::default());
+        movement::set_config(sim.app.world_mut(), movement::config());
         let p = sim.spawn_character(to_engine(feet + Vec3::Z * 36.0), movement::ID);
         Self { sim, p }
     }
@@ -198,10 +198,7 @@ impl Player {
 fn bunny_hopping_gains_speed() {
     let mut pl = Player::at(Vec3::new(-6000.0, -9000.0, 0.5));
     // As bhop and surf servers run it: no jump speed cap.
-    pl.sim
-        .app
-        .world_mut()
-        .resource_mut::<SourceMovementConfig>()
+    movement::config_mut(pl.sim.app.world_mut())
         .set_cvar("sv_enablebunnyhopping", "1")
         .unwrap();
     pl.sim.ticks(4);

@@ -128,7 +128,8 @@ pub static APP: client::app::GameApp = client::app::GameApp {
         if !args.game_map().is_some_and(|id| id.starts_with("cs_source:")) {
             app.insert_resource(Time::<Fixed>::from_hz(DEFAULT_TICK_HZ));
         }
-        app.insert_resource(client::movement_config(args)).insert_resource(slots::Loadout {
+        games::cs_source::movement::set_config(app.world_mut(), client::movement_config(args));
+        app.insert_resource(slots::Loadout {
             movement: games::cs_source::movement::ID,
         });
     },

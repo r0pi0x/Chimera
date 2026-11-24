@@ -20,7 +20,7 @@ pub mod spectate {
 /// Source movement settings: CS:S's, then `--exec` files, then `--cvar`s
 /// (a bad file or cvar ends the process, 2).
 pub fn movement_config(args: &Args) -> crate::games::cs_source::movement::SourceMovementConfig {
-    let mut config = crate::games::cs_source::movement::SourceMovementConfig::default();
+    let mut config = crate::games::cs_source::movement::config();
     for file in &args.exec {
         match std::fs::read_to_string(file) {
             Ok(text) => {

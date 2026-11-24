@@ -102,7 +102,7 @@ pub fn config() -> SourceMovementConfig {
         bunnyhop_cap: 0.0,
         // `sv_backspeed` 0: no back-pedal penalty.
         back_speed: 1.0,
-        ..SourceMovementConfig::shared_code()
+        ..SourceMovementConfig::reference()
     }
 }
 

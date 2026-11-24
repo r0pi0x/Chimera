@@ -16,7 +16,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 use crate::stack::{
     core::{Intent, PredictedComponents},
-    games::cs_source::movement::{self as source, SourceMovement, SourceMovementConfig, SourceMovementPlugin},
+    games::cs_source::movement::{self as source, SourceMovement, SourceMovementPlugin},
     greybox::{self, GreyboxMapPlugin},
     harness::{CsSim, NetSim, Sim},
     net::{
@@ -351,7 +351,7 @@ fn the_server_moves_a_player_as_single_player_does() {
 fn commands_cant_speed_a_player_up() {
     let mut sim = joined(link(50, 0, 0.0), 61, 1);
     let theirs = sim.character_of(0).unwrap();
-    let max = SourceMovementConfig::default().player_maxspeed * 0.0254;
+    let max = source::config().player_maxspeed * 0.0254;
     let mut fastest = 0.0f32;
     let start = sim.server.app.world().get::<Transform>(theirs).unwrap().translation;
     let ticks = 64;

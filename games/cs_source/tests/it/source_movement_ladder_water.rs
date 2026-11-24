@@ -102,7 +102,7 @@ struct Player {
 impl Player {
     fn at(feet: Vec3, cfg: SourceMovementConfig) -> Self {
         let mut sim = Sim::new(CsSim, (TestMap, SourceMovementPlugin));
-        sim.app.insert_resource(cfg);
+        movement::set_config(sim.app.world_mut(), cfg);
         let p = sim.spawn_character(to_engine(feet + Vec3::Z * 36.0), movement::ID);
         let mut me = Self { sim, p };
         me.look(0.0, 0.0);
@@ -159,7 +159,7 @@ fn close3(actual: Vec3, expected: Vec3, tol: f32, what: &str) {
 }
 
 fn shared() -> SourceMovementConfig {
-    SourceMovementConfig::shared_code()
+    SourceMovementConfig::reference()
 }
 
 #[test]
@@ -278,7 +278,7 @@ fn attaching_needs_input_and_reach() {
 /// speed that very tick (272.8 up there, not 92.7).
 #[test]
 fn css_releasing_duck_on_a_ladder_climbs_at_full_speed_at_once() {
-    let mut pl = Player::on_ladder(SourceMovementConfig::default());
+    let mut pl = Player::on_ladder(movement::config());
     pl.keys(1.0, 0.0);
     pl.sim.intent(pl.p).crouch = true;
     pl.sim.ticks(3);
@@ -464,7 +464,7 @@ fn standing_on_a_prop_uses_its_surface() {
 fn a_ladder_top_is_a_floor() {
     for pitch in [-20.0, 0.0, 20.0, 60.0] {
         // On the slab's top (x 100..108, z 400), facing +y along it.
-        let mut pl = Player::at(Vec3::new(LADDER_X + 4.0, -40.0, 400.0), SourceMovementConfig::default());
+        let mut pl = Player::at(Vec3::new(LADDER_X + 4.0, -40.0, 400.0), movement::config());
         pl.look(90.0, pitch);
         pl.sim.ticks(4);
         assert!(pl.state().on_ground, "pitch {pitch}: stands on the top");
@@ -500,7 +500,7 @@ impl Diver {
     fn new() -> Self {
         let mut sim = Sim::new(CsSim, (TestMap, SourceMovementPlugin));
         sim.set_tick_interval(crate::stack::games::cs_source::TICK_INTERVAL);
-        sim.app.insert_resource(SourceMovementConfig::default());
+        movement::set_config(sim.app.world_mut(), movement::config());
         let p = sim.spawn_character(to_engine(DRY + Vec3::Z * 36.0), movement::ID);
         let mut me = Self { sim, p };
         me.sim.ticks(10);

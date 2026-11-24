@@ -21,7 +21,7 @@ names the seams, the specs give the numbers and rules.
 |---|---|---|
 | Plan | done (2026-11-24) | this file |
 | S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
-| S1-S4 carve inside `source_engine` | S1, S2 done (2026-11-24) | file split (done), neutral hooks (done), CS:S's numbers to `cs_source`, cvars as data |
+| S1-S4 carve inside `source_engine` | S1-S3 done (2026-11-24) | file split (done), neutral hooks (done), CS:S's numbers to `cs_source` (done), cvars as data |
 | S5-S6 the crate | not started | `chimera_movement`, then neutral names with Source aliases |
 | S7-S9 GoldSrc seams | not started | clip hulls, command milliseconds, edge friction |
 | Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
@@ -409,3 +409,19 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   CS:S 71 413 (+0.02 %), HL2:DM 67 190 (+0.03 %), TF2 71 644 (-0.09 %),
   DoD:S 71 370 (+0.03 %). `hooks::MoveStance` sorts where
   `hooks::SourceStance` did: no new wire order.
+- 2026-11-24, S3: `SourceMovementConfig` has no `Default` and is no
+  resource; `reference()` is the shared code's values (`shared_code()`
+  renamed) and CS:S's numbers are `cs_source::movement::config()`,
+  registered under `cs_source:movement` like the other three's. A
+  registration without a config gets the reference values.
+  `cs_source::movement::set_config` and `config_mut` replace the
+  resource for the app's `--exec`/`--cvar` settings, resim, movecmp and
+  the tests (39 call sites); a config set for an id before its movement
+  registers stays (`SourceMovementConfigs::set`: the app sets it before
+  its plugins build, as it inserted the resource before). A character on
+  no registered Source movement (no slot, or another movement's) takes
+  the first registered config, where it took the resource (CS:S's
+  whatever the app): the same in CS:S's apps and the step's "the app's
+  own game's" elsewhere; no test depends on it. Hashes
+  equal; the step CS:S 71 296 (-0.15 %), HL2:DM 67 003 (-0.25 %), TF2
+  71 460 (-0.34 %), DoD:S 71 111 (-0.33 %): one resource less to fetch.

@@ -8,7 +8,7 @@ use crate::stack::{
     core::Velocity,
     games::cs_source::{
         TICK_INTERVAL,
-        movement::{self, SourceMovement, SourceMovementConfig, SourceMovementPlugin, to_engine, to_source},
+        movement::{self, SourceMovement, SourceMovementPlugin, to_engine, to_source},
     },
     harness::{CsSim, Sim},
     map::{MapBrush, MapBrushes},
@@ -38,11 +38,11 @@ impl Player {
     fn new(cvars: &[(&str, &str)]) -> Self {
         let mut sim = Sim::new(CsSim, (TestMap, SourceMovementPlugin));
         sim.set_tick_interval(TICK_INTERVAL);
-        let mut cfg = SourceMovementConfig::default();
+        let mut cfg = movement::config();
         for (n, v) in cvars {
             cfg.set_cvar(n, v).unwrap();
         }
-        sim.app.insert_resource(cfg);
+        movement::set_config(sim.app.world_mut(), cfg);
         let p = sim.spawn_character(to_engine(Vec3::new(0.0, 0.0, 36.5)), movement::ID);
         sim.ticks(10);
         // Face Source yaw 0 (+X).
@@ -109,11 +109,7 @@ fn quick_stop_after_landing() {
     assert!((14..=24).contains(&stop), "stopped after {stop} ticks ({speeds:?})");
 
     let mut plain = Player::new(&[]);
-    plain
-        .sim
-        .app
-        .world_mut()
-        .resource_mut::<SourceMovementConfig>()
+    movement::config_mut(plain.sim.app.world_mut())
         .jump_stamina = 0.0;
     let speeds = plain.run_jump_land(false, 80);
     let stop_plain = speeds.iter().position(|s| *s < 0.5).unwrap();
@@ -192,7 +188,7 @@ fn auto_bunnyhopping() {
 /// Console variables, as `--cvar` and `--exec` set them.
 #[test]
 fn console_variables() {
-    let mut cfg = SourceMovementConfig::default();
+    let mut cfg = movement::config();
     cfg.set_cvar("sv_airaccelerate", "150").unwrap();
     assert_eq!(cfg.airaccelerate, 150.0);
     let problems = cfg.exec(
@@ -346,7 +342,7 @@ impl Plugin for WallMap {
 fn a_stopped_move_keeps_a_32nd_of_a_unit_away_from_the_wall() {
     let mut sim = Sim::new(CsSim, (WallMap, SourceMovementPlugin));
     sim.set_tick_interval(TICK_INTERVAL);
-    sim.app.insert_resource(SourceMovementConfig::default());
+    movement::set_config(sim.app.world_mut(), movement::config());
     let p = sim.spawn_character(to_engine(Vec3::new(0.0, 60.0, 36.5)), movement::ID);
     sim.ticks(10);
     // Source yaw 70: mostly into the wall (+y), partly along it (+x).
@@ -398,7 +394,7 @@ impl Plugin for PorchMap {
 fn a_floor_just_beyond_the_ground_probe_is_not_ground() {
     let mut sim = Sim::new(CsSim, (PorchMap, SourceMovementPlugin));
     sim.set_tick_interval(TICK_INTERVAL);
-    sim.app.insert_resource(SourceMovementConfig::default());
+    movement::set_config(sim.app.world_mut(), movement::config());
     let p = sim.spawn_character(to_engine(Vec3::new(-69.83, 256.39, -15.97 + 36.0)), movement::ID);
     sim.app.world_mut().get_mut::<SourceMovement>(p).unwrap().on_ground = true;
     sim.intent(p).yaw = 245.27f32.to_radians() - std::f32::consts::FRAC_PI_2;
@@ -457,7 +453,7 @@ fn a_prop_top_within_the_back_off_past_the_ground_probe_is_ground() {
     for (prop, gap, ground) in [(true, 2.025, true), (true, 2.04, false), (false, 2.01, false), (false, 1.99, true)] {
         let mut sim = Sim::new(CsSim, (TopMap(prop), SourceMovementPlugin));
         sim.set_tick_interval(TICK_INTERVAL);
-        sim.app.insert_resource(SourceMovementConfig::default());
+        movement::set_config(sim.app.world_mut(), movement::config());
         let p = sim.spawn_character(to_engine(Vec3::new(0.0, 0.0, gap + 36.0)), movement::ID);
         sim.ticks(3);
         let feet = to_source(sim.position(p)).z - 36.0;
