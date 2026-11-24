@@ -38,6 +38,7 @@ punch_scale = 0.0
 spread = { cone = 0.0 }
 
 [hooks."chimera:projectile"]
+shown = "dods:weapon_bazooka/projectile"
 speed = 1300.0
 gravity = 80.0
 touch = "explode"
@@ -46,6 +47,9 @@ life = 10.0
 
 [hooks."dods:rocket"]
 script = "weapon_bazooka"
+# The projectile's own model (the pak's; the script names only the
+# weapon's view and world models), drawn by the key `<id>/projectile`.
+model = "models/weapons/w_bazooka_rocket.mdl"
 damage = 150.0
 radius = 200.0
 shoulder_time = 0.79

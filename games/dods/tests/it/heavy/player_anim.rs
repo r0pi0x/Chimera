@@ -43,7 +43,8 @@ fn setup() -> Option<(Arc<AnimSet>, Vec<(String, String, BodyAnim)>)> {
     weapons::add_guns(&mut materials, &surfaces, &|g| wants.wants(g), &mut kit, &mut warnings);
     let set = weapons::dods_weapons();
     let mut guns = Vec::new();
-    for h in &kit.held {
+    // The guns' (an explosive's projectile has a key of its own).
+    for h in kit.held.iter().filter(|h| !h.key.ends_with("/projectile")) {
         let data = set
             .weapons
             .iter()

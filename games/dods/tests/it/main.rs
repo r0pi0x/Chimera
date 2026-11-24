@@ -33,4 +33,5 @@ mod heavy {
     mod sounds;
     mod player_anim;
     mod served;
+    mod projectiles;
 }

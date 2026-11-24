@@ -37,6 +37,11 @@
 //!   grenades and launchers the launcher band's (their data's `class`),
 //!   each hurting by its blast (the harm and power readers: the blast's
 //!   damage at its centre).
+//! - **In flight** each is drawn as its projectile's own model (its data's
+//!   `model`: `w_frag`, `w_stick`, `w_garand_rg_grenade`,
+//!   `w_k98_rg_grenade`, `w_bazooka_rocket`, `w_panzerschreck_rocket`;
+//!   the scripts name only the weapon's), by `projectile_key`, never the
+//!   weapon's world model.
 //! - **Their look** (`looks`): Source's explosion (`source_engine::effects::
 //!   explosions`) where a DoD:S blast went off, and `BaseExplosionEffect.Sound`
 //!   when the map's sounds have it; the particle materials load with DoD:S's
@@ -92,6 +97,23 @@ pub const ROCKET_HOOK: &str = "dods:rocket";
 /// Where a blast aims at a character, units above its feet standing
 /// (damage.md: the body's middle), and the standing eye.
 pub const BODY_MIDDLE: f32 = 40.0;
+
+/// The model key (`ShownItem`) of `weapon`'s projectile: its data's
+/// `model` loads under it (`super::add_guns`), the rockets' `shown` names
+/// it, and a grenade or rifle grenade is drawn by it, never by the
+/// weapon's own world model. Starting with the weapon's id, it stays with
+/// its weapon in a map's kit (`GameKit::stay`).
+pub fn projectile_key(weapon: &str) -> String {
+    format!("{weapon}/projectile")
+}
+
+/// The projectile's model `weapon`'s data names (its `dods:grenade`,
+/// `dods:rifle_grenade` or `dods:rocket` hook's `model`).
+pub fn projectile_model(weapon: &chimera_sim::weapon::data::WeaponData) -> Option<&str> {
+    [GRENADE_HOOK, RIFLE_GRENADE_HOOK, ROCKET_HOOK]
+        .iter()
+        .find_map(|h| weapon.hooks.get(*h)?.get("model")?.as_str())
+}
 
 /// A DoD:S blast of `damage` points falling linearly to nothing at
 /// `radius` units (damage.md, "Explosions").
@@ -153,6 +175,10 @@ pub fn flight(gravity: f32) -> Flight {
 pub struct GrenadeParams {
     /// The script it reads (`script_numbers`: its models and sounds).
     pub script: String,
+    /// The projectile's model (a file of the pak; the scripts name only
+    /// the weapon's), drawn by `projectile_key` (`super::add_guns`).
+    #[serde(default)]
+    pub model: Option<String>,
     pub damage: f32,
     pub radius: f32,
     /// From the pin's pull.
@@ -209,6 +235,10 @@ pub struct DodsGrenade {
 #[serde(deny_unknown_fields)]
 pub struct RifleGrenadeParams {
     pub script: String,
+    /// The projectile's model (a file of the pak; the scripts name only
+    /// the weapon's), drawn by `projectile_key` (`super::add_guns`).
+    #[serde(default)]
+    pub model: Option<String>,
     pub damage: f32,
     pub radius: f32,
     pub speed: f32,
@@ -221,6 +251,10 @@ pub struct RifleGrenadeParams {
 #[serde(deny_unknown_fields)]
 pub struct RocketParams {
     pub script: String,
+    /// The projectile's model (a file of the pak; the scripts name only
+    /// the weapon's), drawn by `projectile_key` (`super::add_guns`).
+    #[serde(default)]
+    pub model: Option<String>,
     pub damage: f32,
     pub radius: f32,
     pub shoulder_time: f32,
@@ -308,7 +342,7 @@ fn spawn_grenade(commands: &mut Commands, weapon: &'static str, thrower: Entity,
         Name::new(format!("Grenade {weapon}")),
         Transform::from_translation(start),
         Projectile::new(weapon, Some(thrower), velocity, flight, fuse.max(0.0), effect, spin),
-        ShownItem(weapon.to_string()),
+        ShownItem(projectile_key(weapon)),
     ));
 }
 
@@ -449,6 +483,7 @@ mod tests {
     fn frag() -> GrenadeParams {
         GrenadeParams {
             script: "weapon_frag_us".into(),
+            model: None,
             damage: 150.0,
             radius: 375.0,
             fuse: 5.1,

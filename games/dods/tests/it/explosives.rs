@@ -7,7 +7,9 @@
 //! (no rocket lowered, the shot 0.79 s after shouldering, 50 units/s
 //! shouldered), its rocket (1300 units/s, 80 units/s² of gravity, the next
 //! 1.5 s on; 200 units of reach) and the rifle grenade (2000 units/s along
-//! the aim, off 3.63 s after the shot).
+//! the aim, off 3.63 s after the shot); and every explosive's projectile
+//! is drawn as its own model (`explosives::projectile_key`), not as the
+//! weapon's (the playtest's rifle grenade flying as the gun).
 
 use bevy::prelude::*;
 use chimera_core::core::{Health, SimClock, Velocity};
@@ -22,11 +24,12 @@ use chimera_sim::{
 use chimera_world::{
     greybox::{self, GreyboxMapPlugin},
     harness::Sim,
+    map::loose::ShownItem,
 };
 use dods::{
     game::{
         TICK_INTERVAL, movement,
-        weapons::{BAZOOKA, FRAG_GER, FRAG_US, RIFLEGREN_US, explosives::Shoulder},
+        weapons::{BAZOOKA, EXPLOSIVES, FRAG_GER, FRAG_US, PSCHRECK, RIFLEGREN_US, explosives::{self, Shoulder}},
     },
     harness::DodsSim,
 };
@@ -254,5 +257,35 @@ fn the_explosives_are_the_ladders_grenade_and_launcher_rungs() {
         let w = set.get(id).unwrap();
         assert_eq!(w.class, Some(class), "{id}");
         assert!(!chimera_sim::weapon::harm::harmless(w, &readers.harm), "{id} hurts");
+    }
+}
+
+/// Every explosive flies as its projectile's model, never its weapon's
+/// (a playtest's rifle grenade flew as the rifle): the frags thrown, the
+/// rifle grenades and rockets fired.
+#[test]
+fn every_explosive_flies_as_its_projectile_not_its_weapon() {
+    for id in EXPLOSIVES {
+        let mut sim = sim();
+        let (p, _) = holding(&mut sim, greybox::SPAWNS[0], id);
+        if [BAZOOKA, PSCHRECK].contains(id) {
+            sim.intent(p).secondary = true;
+            sim.ticks(1);
+            sim.intent(p).secondary = false;
+            sim.seconds(1.0);
+        }
+        let mut shown = None;
+        for t in 0..60 {
+            sim.intent(p).fire = t == 0 || [BAZOOKA, PSCHRECK].contains(id);
+            sim.ticks(1);
+            let mut q = sim.app.world_mut().query_filtered::<&ShownItem, Or<(With<Projectile>, With<Flyer>)>>();
+            if let Some(s) = q.iter(sim.app.world()).next() {
+                shown = Some(s.0.clone());
+                break;
+            }
+        }
+        assert_eq!(shown.as_deref(), Some(explosives::projectile_key(id).as_str()), "{id}'s projectile");
+        let data = dods::game::weapons::dods_weapons();
+        assert!(explosives::projectile_model(data.get(id).unwrap()).is_some(), "{id}'s data names its projectile's model");
     }
 }

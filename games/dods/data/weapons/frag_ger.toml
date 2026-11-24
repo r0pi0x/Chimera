@@ -20,6 +20,9 @@ undroppable = true
 
 [hooks."dods:grenade"]
 script = "weapon_frag_ger"
+# The projectile's own model (the pak's; the script names only the
+# weapon's view and world models), drawn by the key `<id>/projectile`.
+model = "models/weapons/w_stick.mdl"
 damage = 150.0
 radius = 375.0
 fuse = 5.1

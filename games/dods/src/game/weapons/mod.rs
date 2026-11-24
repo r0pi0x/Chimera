@@ -10,7 +10,8 @@
 //! `dods:melee` (the script a knife or spade reads) and `dods:hit_slow`
 //! (`hit_slow`: the victim slowed 0.5 s, a leg 2 s). Their view models
 //! are the scripts' (`v_*.mdl`, arms and gun in one model), their held
-//! models (`w_*.mdl`) on the default body's skeleton (`add_guns`).
+//! models (`w_*.mdl`) on the default body's skeleton, and the explosives'
+//! projectile models their data names (`add_guns`).
 //!
 //! The machine guns (`dods:mg`, `mg`: deployed while prone, `stance`) are
 //! the ladders' `heavy` class; the explosives (`explosives`: frag and
@@ -126,8 +127,9 @@ pub fn display_names(_: &crate::mount::Mount) -> Vec<(String, String)> {
 }
 
 /// DoD:S's guns that `wants`, into `into`: their view models (right-handed,
-/// never mirrored) and their world models held on the default body's
-/// skeleton.
+/// never mirrored), their world models held on the default body's
+/// skeleton, and the explosives' projectile models (their data's `model`,
+/// under `explosives::projectile_key`).
 pub fn add_guns(
     materials: &mut MaterialLoader,
     surfaces: &SurfaceProps,
@@ -159,6 +161,15 @@ pub fn add_guns(
         }
         if let (Some(world), Some(skeleton)) = (&w.models.world, &skeleton) {
             match props::load_held(materials, world, &w.id, skeleton) {
+                Ok(h) => into.held.push(h),
+                Err(e) => warnings.push(e),
+            }
+        }
+        // An explosive's projectile, by its own key (never the weapon's
+        // world model): in its bone's frame, as a held model (flyers fly
+        // nose first by its nose, `MapHeldModel::nose`).
+        if let (Some(model), Some(skeleton)) = (explosives::projectile_model(w), &skeleton) {
+            match props::load_held(materials, model, &explosives::projectile_key(&w.id), skeleton) {
                 Ok(h) => into.held.push(h),
                 Err(e) => warnings.push(e),
             }

@@ -38,6 +38,9 @@ spread = { cone = 0.0 }
 
 [hooks."dods:rifle_grenade"]
 script = "weapon_riflegren_us"
+# The projectile's own model (the pak's; the script names only the
+# weapon's view and world models), drawn by the key `<id>/projectile`.
+model = "models/weapons/w_garand_rg_grenade.mdl"
 damage = 150.0
 radius = 375.0
 speed = 2000.0
