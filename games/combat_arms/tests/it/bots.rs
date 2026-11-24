@@ -1322,6 +1322,52 @@ fn case_43_path_cost() {
     assert_eq!(bot_nav::points(&m, &path, start, goal), vec![pad, exit, goal]);
 }
 
+/// Ours: the generated patrol graph is one piece where the mesh is: two
+/// rooms joined by a corridor area whose centre is past `NODE_REACH` of
+/// both rooms' (Combat Arms' warehouse at 1 u = 0.0185 m split so, each
+/// team's bots patrolling their spawn room alone and never meeting) are
+/// linked at their nearest nodes.
+#[test]
+fn a_generated_patrol_graph_links_what_the_mesh_links() {
+    let area = |id: u32, x0: f32, x1: f32, z0: f32, z1: f32| NavArea {
+        id,
+        flags: 0,
+        min: Vec2::new(x0, z0),
+        max: Vec2::new(x1, z1),
+        heights: [0.0; 4],
+        center: Vec3::new((x0 + x1) / 2.0, 0.0, (z0 + z1) / 2.0),
+        links: Vec::new(),
+        place: None,
+        hiding: Vec::new(),
+        visible: Vec::new(),
+        encounters: Vec::new(),
+    };
+    let mut m = NavMesh {
+        areas: vec![area(0, 0.0, 10.0, 0.0, 10.0), area(1, 10.0, 40.0, 4.0, 6.0), area(2, 40.0, 50.0, 0.0, 10.0)],
+        ..Default::default()
+    };
+    m.areas[0].links.push((1, Via::Walk(Side::MaxX)));
+    m.areas[1].links.push((0, Via::Walk(Side::MinX)));
+    m.areas[1].links.push((2, Via::Walk(Side::MaxX)));
+    m.areas[2].links.push((1, Via::Walk(Side::MinX)));
+    assert!(m.areas[0].center.distance(m.areas[1].center) > bot_nav::NODE_REACH);
+    let g = bot_nav::PatrolGraph::build(&m);
+    assert_eq!(g.nodes.len(), 3, "each area a node");
+    // Every node reaches every other through the links.
+    let mut seen = vec![false; 3];
+    let mut open = vec![0];
+    seen[0] = true;
+    while let Some(k) = open.pop() {
+        for &j in &g.links[k] {
+            if !seen[j] {
+                seen[j] = true;
+                open.push(j);
+            }
+        }
+    }
+    assert!(seen.iter().all(|s| *s), "one graph: {:?}", g.links);
+}
+
 /// Case 44: the round reaches the kill goal: every bot stops moving and
 /// firing on the next update.
 #[test]

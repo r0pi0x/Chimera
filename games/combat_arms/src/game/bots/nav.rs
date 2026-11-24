@@ -207,7 +207,8 @@ pub fn straight(mesh: &NavMesh, a: Vec3, b: Vec3, step: f32) -> bool {
 /// The patrol graph (4): the map's patrol nodes (`map_ai`), or where a
 /// map has none ours (`build`): nodes are area centres at least
 /// `NODE_SPACING` m apart (the biggest areas first), linked to the nodes
-/// reachable within `NODE_REACH` m of path.
+/// reachable within `NODE_REACH` m of path, and parts the mesh connects
+/// further apart linked at their nearest nodes (`join`).
 #[derive(Clone, Debug, Default)]
 pub struct PatrolGraph {
     /// Each node's area.
@@ -261,7 +262,70 @@ impl PatrolGraph {
             })
             .collect();
         let points = nodes.iter().map(|&n| mesh.areas[n].center).collect();
-        Self { nodes, points, links, names: Vec::new() }
+        let mut graph = Self { nodes, points, links, names: Vec::new() };
+        graph.join(mesh, &node_of);
+        graph
+    }
+
+    /// The graph's parts (each node's part) and how many there are.
+    fn parts(&self) -> (Vec<usize>, usize) {
+        let mut part = vec![usize::MAX; self.nodes.len()];
+        let mut count = 0;
+        for start in 0..self.nodes.len() {
+            if part[start] != usize::MAX {
+                continue;
+            }
+            part[start] = count;
+            let mut open = vec![start];
+            while let Some(k) = open.pop() {
+                for &j in &self.links[k] {
+                    if part[j] == usize::MAX {
+                        part[j] = count;
+                        open.push(j);
+                    }
+                }
+            }
+            count += 1;
+        }
+        (part, count)
+    }
+
+    /// Links the graph's parts the mesh connects: while a part's nodes
+    /// reach no other part's within `NODE_REACH`, its node nearest (by
+    /// path) to another part's is linked to that one both ways. A
+    /// corridor longer than the reach between two node-less ends split
+    /// the graph, and a bot patrolled its own part alone (Combat Arms'
+    /// warehouse at 1 u = 0.0185 m: each team's bots kept to their spawn
+    /// room's part and never met).
+    fn join(&mut self, mesh: &NavMesh, node_of: &[Option<usize>]) {
+        'again: loop {
+            let (part, count) = self.parts();
+            for p in 0..count {
+                // This part's shortest path out to another part.
+                let mut best: Option<(f32, usize, usize)> = None;
+                for k in (0..self.nodes.len()).filter(|&k| part[k] == p) {
+                    for (area, d) in mesh.within(self.nodes[k], f32::INFINITY) {
+                        if let Some(j) = node_of[area]
+                            && part[j] != p
+                        {
+                            if best.is_none_or(|b| d < b.0) {
+                                best = Some((d, k, j));
+                            }
+                            break;
+                        }
+                    }
+                }
+                // A part the mesh doesn't connect to another stays apart.
+                if let Some((_, k, j)) = best {
+                    self.links[k].push(j);
+                    self.links[j].push(k);
+                    self.links[k].sort_unstable();
+                    self.links[j].sort_unstable();
+                    continue 'again;
+                }
+            }
+            return;
+        }
     }
 
     /// The node the map names `name` (any case).
