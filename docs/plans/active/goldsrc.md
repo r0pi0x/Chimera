@@ -25,7 +25,7 @@ Force) is a small port on the same loader.
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount); `specs/cs16/` install, movement, weapons to come |
 | M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. Left: `chimera_pack cs16`, the lightmap brightening against captures |
 | M1 weapons | not started | §5 |
-| M2 movement | not started | §5 |
+| M2 movement | not started | §5; the lift of Source's movement into Chimera planned in [shared-movement.md](shared-movement.md) (2026-11-24) |
 | M3 party rungs | not started | §5 |
 
 ## 1. Rules for this port
@@ -232,7 +232,7 @@ movement, the same style of entity key/values (`classname`, `origin`,
   already parameterised (DoD:S runs it with its own config), but it is
   in the `source` loader layer, which a GoldSrc game may not use. The
   movement both families share is lifted into Chimera
-  (`chimera_sim::movement`, a "Quake-lineage ground and air movement")
+  (a new crate, `chimera_movement`: a "Quake-lineage ground and air movement")
   when cs16 needs it (M2); until then cs16 runs the placeholder. The
   lift is the main shared-code work of M2.
 
@@ -398,7 +398,7 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   target; other rates' quirks (e.g. jump height at odd rates) are out
   of scope unless asked.
 - **Lifting Source's movement into Chimera** touches CS:S, HL2:DM, TF2
-  and DoD:S; it needs its own short plan and their movement tests green
+  and DoD:S; its own short plan is [shared-movement.md](shared-movement.md), with their movement tests green
   throughout (M2).
 - **Palette textures and lightmaps** in our renderer: converted to RGBA
   at load, so no renderer change, but the game's lightmap brightening
