@@ -22,6 +22,7 @@
 //! only where they are, walls), the class sets a match offers (`player_sets`), the ragdolls' lifetime
 //! (`ragdolls`: ragdolls.md's cases on a made-up skeleton), the class a
 //! rung of several classes draws with the ladder (`rung_classes`), the
+//! worn items a rung may carry (`rung_passives`), the
 //! players' pain, death and kill lines (`voices`), the kill icons from
 //! the asset store once their files are here (`kill_icons`), and, in `heavy`, the user's install (its mount, ctf_2fort
 //! and cp_badlands converted with their spawns, the converted-map cache's
@@ -56,6 +57,7 @@ mod movement;
 mod player_sets;
 mod ragdolls;
 mod rung_classes;
+mod rung_passives;
 mod scripts;
 mod skeleton;
 mod spawns;

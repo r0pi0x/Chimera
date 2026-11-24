@@ -218,17 +218,19 @@ note = "its own models and sounds"
 index = 232
 batch = 1
 
+# Worn (on data/weapons/wearable.toml, as the boots): a rung passive
+# (data/rung_passives.toml), no ladder gun.
 [items.darwins_danger_shield]
 index = 231
 batch = 1
-wearable = true
-note = "worn: nothing gives a wearable in a party match yet"
+gun_game = false
+note = "afterburn immunity; drawn on the back"
 
 [items.cozy_camper]
 index = 642
 batch = 1
-wearable = true
-note = "worn: nothing gives a wearable yet; regen, scoped knockback and flinch"
+gun_game = false
+note = "regen, scoped knockback and flinch; drawn on the back"
 
 [items.black_rose]
 index = 727

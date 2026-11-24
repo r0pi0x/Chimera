@@ -1,6 +1,8 @@
 # Rung passives: worn and carried items on a gun game rung
 
-Status: plan only (2026-11-24); nothing built. Parent plans:
+Status: P0 and P1 built (2026-11-24); P2 waits for the user's pick of
+the HUD mockup. The open questions' defaults hold until answered (off by
+default, 25 % odds when on, one passive a rung, no utility). Parent plans:
 [ultimate-gun-game.md](ultimate-gun-game.md) (the gun game),
 [tf2-weapons.md](tf2-weapons.md) (the items), [ugg-ui.md](ugg-ui.md)
 (the HUD). The idea is the user's (2026-11-24): "passive items on some of
@@ -14,8 +16,8 @@ your character". UI mockup (private artifact, for the user's review):
 
 | Milestone | State | Summary |
 |---|---|---|
-| P0 the extra in Chimera | not started | `RungExtras::passives`, a draw helper, the option keys, the host settings, the net field |
-| P1 TF2's worn passives | not started | boots, Darwin's, Cozy Camper, Razorback, Gunboats as data; given worn on the rung |
+| P0 the extra in Chimera | done | `RungExtras::passives`, `minigame::passives` (`PassiveTable`, `draw`, `wear`, `RungPassive`), `Ladder::is_passive` (the kill rule), the option (`passives = true` or a table; `on = false`), two host settings (`rules.rung_extras.passives.on`, `.odds`), carried in `NetMinigame::rung_extras` (`net73`); tests: chimera_sim `rung_passives` |
+| P1 TF2's worn passives | done | data/rung_passives.toml (Mantreads, Ali Baba's Wee Booties, Bootlegger, Darwin's Danger Shield, Cozy Camper, Razorback; the gun slots per class and the guns' keys), `game::passives` (draw with the rung's class, `apply` through `tf2:worn`); Darwin's and the Cozy Camper made worn items (no longer `wearable`); Gunboats left out (their worn own-blast reduction isn't built); tests: tf2 `rung_passives` |
 | P2 the HUD | not started | the chosen mockup option, the Tab board's Gear column and hover card, the toast's "+ item", the kill feed's item icon |
 | P3 keyed passives | not started | shields, Spy watches, B.A.S.E. Jumper, Thermal Thruster, with the key-conflict rule; bots use them |
 | P4 worn on the body | not started | the items drawn on the third-person body (TF2's notes: "drawn on the legs" ...) |
@@ -251,6 +253,23 @@ is data in the game's table (`summary = "..."`), never generated.
 6. **P5, active utility** (after the user's call): jars, food, drinks,
    banners, Gas Passer as `rung_extras.utility`.
 7. **P6, other games**: Combat Arms' perks first.
+
+## Progress
+
+- 2026-11-24, P0 and P1: as the status table says. Choices made on the
+  way: the on/off key is a table's `on` (`passives = { on = true }`) so
+  the two host settings each set one key (`overrides` would replace a
+  `true` by the odds' table); a tuned table is on, so the odds row set
+  alone turns passives on (no progressive disclosure yet). The conflict
+  rule's data is the game's table: `slot_names` (a weapon's data slot by
+  name), `[slots]` (the Shotgun: the Engineer's primary, the others'
+  secondary) and `[gun_keys]` (the Flame Thrower, Minigun, Sniper Rifle
+  and Stickybomb Launcher use attack2). A passive's kill: `Ladder::
+  is_passive` exempts it from `demote_on = "melee_death"` (a stomp is
+  generic damage and never demoted anyway; a shield bash will be melee).
+  Drawing rolls only while on, so the ladders without passives draw as
+  before; with them on, the later rungs' other draws (a Shotgun's class)
+  follow a different sequence.
 
 ## 9. Open questions for the user
 

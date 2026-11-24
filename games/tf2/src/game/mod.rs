@@ -67,6 +67,7 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod passives;
 pub mod player_anim;
 pub mod scripts;
 pub mod sets;

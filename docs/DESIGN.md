@@ -947,6 +947,14 @@ that):
   (`rung_extras = { attachments = false, character = false, melee =
   false, infected = false }`), all with `rung_extras = false`. The apps
   seed them anew at each launch (Ultimate Gun Game with its launch seed).
+  **Rung passives** (user, 2026-11-24; `chimera_sim::minigame::passives`,
+  docs/plans/active/rung-passives.md) are ours, so off by default
+  (`rung_extras = { passives = true }` or `{ passives = { odds, max } }`,
+  two host settings): a worn item drawn per rung for its class from the
+  game's table (TF2's data/rung_passives.toml: the Mantreads, the
+  Demoman's boots, the Sniper's back items), never in the slot the rung's
+  gun takes for that class nor on a key it uses, never on the melee band;
+  a passive's kill climbs and never costs the victim a rung.
 - **A rung's character changes looks, not the odds** (user,
   2026-10-29): a drawn Combat Arms body keeps only what is intrinsic to
   it, its body type (`FigureType`: sprint, stamina, the variable terms);

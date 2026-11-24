@@ -41,10 +41,10 @@
 //!   from is a sword and the new one isn't (a sword's own `draw` has it).
 //!
 //! Known shortcuts:
-//! - The Sniper's wearables (Darwin's Danger Shield, the Cozy Camper)
-//!   convert and map, but stay `wearable` in data/items.toml (the
-//!   Demoman's shields and boots are worn items: `super::shields`), and
-//!   nothing puts one on a player in a party match (no loadouts); regen, the
+//! - The Sniper's wearables (Darwin's Danger Shield, the Cozy Camper) are
+//!   worn items as the Demoman's shields and boots (`super::shields`'
+//!   `tf2:worn`), put on a player only as a rung passive (data/
+//!   rung_passives.toml; no loadouts); regen, the
 //!   scoped knockback and flinch rules and afterburn immunity aren't
 //!   applied; the draw animation keeps its rate on a longer deploy.
 //! - Crits are off (the party's choice), so a damage-taken factor acts on

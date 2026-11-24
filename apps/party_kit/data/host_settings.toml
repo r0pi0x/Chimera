@@ -70,6 +70,24 @@ help = "How often a melee rung (the knife finale's; at most one a ladder) makes 
 choices = [["", "Default"], ["0", "Never"], ["0.1", "10%"], ["0.25", "25%"], ["0.5", "50%"], ["1", "Always"]]
 
 [[setting]]
+label = "Rung extras: passives"
+cvar = "mp_rung_extras_passives"
+lobby = true
+origin = "chimera"
+key = "rules.rung_extras.passives.on"
+help = "Ours, not the games': a gun game's rungs may carry a worn item beside the gun, the same for everyone on the rung (TF2's boots, backpacks, shields; true or false; off by default)."
+choices = [["", "Default (off)"], ["true", "On"], ["false", "Off"]]
+
+[[setting]]
+label = "Rung extras: passive odds"
+cvar = "mp_rung_extras_passives_odds"
+lobby = true
+origin = "chimera"
+key = "rules.rung_extras.passives.odds"
+help = "Ours: how often a rung carries a passive when they are on (0 to 1; each game's data, TF2's 0.25). Set alone, it turns them on."
+choices = [["", "Default"], ["0.1", "10%"], ["0.25", "25%"], ["0.5", "50%"], ["1", "Always"]]
+
+[[setting]]
 label = "Demote on suicide"
 cvar = "mp_demote_on_suicide"
 lobby = true

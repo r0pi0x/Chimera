@@ -18,6 +18,7 @@ mod noclip_damage;
 mod offline;
 mod range_map;
 mod rung_extras;
+mod rung_passives;
 mod sim_waits;
 mod spawn_score;
 mod spawns;

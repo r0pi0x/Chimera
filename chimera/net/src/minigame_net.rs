@@ -18,7 +18,8 @@
 //!   plays and who leads; kills and deaths are `NetScore`'s. The ladder's
 //!   rung extras (`ladder::RungExtras`, drawn by the server) go with the
 //!   match (`NetMinigame::rung_extras`) into the client's ladder (its HUD's
-//!   rung label), as do its rungs and melee count (`rungs`,
+//!   rung label, the rung passives' ids: `minigame::passives`; the items
+//!   themselves come with the inventory), as do its rungs and melee count (`rungs`,
 //!   `melee_rungs`: the host's draw of the melee finale, and of the guns
 //!   of a ladder drawn when the match starts, `ladder = "auto"`); what they put on a player (a game's look, fitted parts,
 //!   the melee weapon) replicates as that game's state does. The client

@@ -22,7 +22,9 @@
 //! that one when the gun can be it, else the gun's own (`Classes::held`).
 //! Each TF2 rung's players carry its class's stock melee weapon
 //! (`Class::melee`, data/classes.toml) in place of the kit's melee, as
-//! Combat Arms' rungs carry theirs (`ladder::RungExtras::melee`).
+//! Combat Arms' rungs carry theirs (`ladder::RungExtras::melee`), and,
+//! with the host's passives on, a worn item for the class
+//! (`super::passives`).
 //! A player holding a TF2 gun is that class (`Tf2Class`): its speed, eyes
 //! and air jumps (`super::movement`), its health (`super::movement::
 //! class_health`), its body (`super::bodies`), its first-person arms
@@ -266,14 +268,15 @@ pub const CLASS_VALUE: &str = "class";
 pub const MELEE_OPTION: &str = "melee";
 
 /// TF2's rung extras (module doc): each TF2 rung's class, drawn with the
-/// ladder, and its melee weapon.
+/// ladder, its melee weapon and its passives (`super::passives`: off by
+/// default).
 pub const HOOK: RungExtrasHook = RungExtrasHook {
     game: super::GAME,
     options: &[CLASS_VALUE, MELEE_OPTION],
     melee: |_| Vec::new(),
     characters: |_| Vec::new(),
     draw: draw_rung,
-    apply: |_, _, _| {},
+    apply: super::passives::apply,
 };
 
 /// A TF2 rung's draw: one of its gun's classes (`Classes::draw`), named
@@ -292,7 +295,9 @@ fn draw_rung(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
     let drawn = d.options.on(CLASS_VALUE);
     let class = if drawn { table.draw(d.weapon, rng)? } else { table.of_gun(d.weapon)? };
     let melee = class.melee.clone().filter(|_| d.options.on(MELEE_OPTION));
-    if !drawn && melee.is_none() {
+    // The rung's passives (off by default: nothing drawn, nothing rolled).
+    let passives = super::passives::draw(world, d, &class.name, rng);
+    if !drawn && melee.is_none() && passives.is_empty() {
         return None;
     }
     let several = drawn && table.of_gun_all(d.weapon).len() > 1;
@@ -301,6 +306,7 @@ fn draw_rung(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
         values: if drawn { vec![(CLASS_VALUE.into(), class.name.clone())] } else { Vec::new() },
         label: several.then(|| title(&class.name)),
         melee,
+        passives,
         ..default()
     })
 }

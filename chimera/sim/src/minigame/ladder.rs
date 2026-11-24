@@ -57,7 +57,10 @@
 //! key/value pairs, which only its hook reads), but for two things
 //! Chimera does itself: a melee weapon in place of the kit's
 //! (`RungExtras::melee`, `runtime::KitMelee`) and a label after the
-//! rung's weapon in the HUD's rung line. A game's character for a rung
+//! rung's weapon in the HUD's rung line. A rung may also carry
+//! **passives** (`RungExtras::passives`: worn or carried items, off by
+//! default, none on the melee band; a passive's kill never demotes:
+//! `passives`, `Ladder::is_passive`). A game's character for a rung
 //! comes from those allowed to hold its weapon (`holders::Holders`, the
 //! game's data; characters follow the gun). A player is armed for its rung
 //! (`arm`: the melee, then every hook's `apply`, with its own extras or
@@ -399,6 +402,11 @@ pub struct RungExtras {
     /// they hold its weapon alone, in place of the rung's gun.
     #[serde(default)]
     pub character: Option<RungCharacter>,
+    /// The rung's passives (`passives`: item weapon ids, worn or carried
+    /// with the rung's weapon; off by default), given by its game's
+    /// `apply` (`passives::wear`).
+    #[serde(default)]
+    pub passives: Vec<String>,
 }
 
 /// A special character a rung makes its players (a game's: Combat Arms'
@@ -630,6 +638,12 @@ impl Ladder {
     /// Rung `rung`'s extras.
     pub fn extras(&self, rung: usize) -> Option<&RungExtras> {
         self.extras.get(rung).and_then(Option::as_ref)
+    }
+
+    /// Whether weapon `id` is a rung passive of this ladder
+    /// (`RungExtras::passives`): its kills never demote.
+    pub fn is_passive(&self, id: &str) -> bool {
+        self.extras.iter().flatten().any(|x| x.passives.iter().any(|p| p == id))
     }
 
     /// Rung `rung`'s character (`RungExtras::character`).
@@ -990,7 +1004,8 @@ fn draw_extras(
         return vec![None; rungs.len()];
     }
     for key in options.keys.keys().filter(|_| say) {
-        if !hooks.0.iter().any(|h| h.options.contains(&key.as_str())) {
+        // Chimera's own (`passives`) is read for every game.
+        if key != super::passives::OPTION && !hooks.0.iter().any(|h| h.options.contains(&key.as_str())) {
             warn!("{}: [rules] rung_extras: no game reads `{key}`", def.id);
         }
     }
@@ -1034,6 +1049,10 @@ fn draw_extras(
             x.melee = x.melee.as_deref().and_then(melee).map(str::to_string);
             // A character whose weapon the definition doesn't allow: none.
             x.character = x.character.take().filter(|c| melee(&c.weapon).is_some());
+            // No passive on the melee band (the knife finale's).
+            if in_band {
+                x.passives.clear();
+            }
         }
         // A melee rung without its character keeps its own weapon alone.
         if in_band && x.as_ref().is_some_and(|x| x.character.is_none()) {
@@ -1439,10 +1458,15 @@ pub(super) fn died(
     mut commands: Commands,
 ) {
     let d = &death.died;
-    if death.mode != MODE.id || !ladder.is_some_and(|l| l.demote_on_melee) || !game.is_some_and(|m| m.counting()) {
+    let Some(ladder) = ladder.filter(|l| l.demote_on_melee) else { return };
+    if death.mode != MODE.id || !game.is_some_and(|m| m.counting()) {
         return;
     }
     if !melee_kill(d, &held, &weapons, catalog.as_deref()) {
+        return;
+    }
+    // A rung passive's kill (a stomp, a bash) climbs, never demotes.
+    if d.damage.weapon.is_some_and(|id| ladder.is_passive(id)) {
         return;
     }
     let team = |e: Entity| teams.get(e).ok().map(|t| t.0);
@@ -1564,6 +1588,8 @@ fn carried_slots(world: &World, e: Entity, ladder: &Ladder) -> Vec<(Entity, u8, 
     let Some(inv) = world.get::<Inventory>(e) else { return Vec::new() };
     inv.weapons
         .iter()
+        // A rung passive keeps no place in the gun/knife order.
+        .filter(|w| world.get::<super::passives::RungPassive>(**w).is_none())
         .filter_map(|w| {
             let weapon = world.get::<Weapon>(*w)?;
             Some((*w, weapon.slot, ladder.is_gun(weapon.id)))

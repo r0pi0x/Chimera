@@ -115,6 +115,7 @@ pub mod ladder;
 pub mod layout;
 pub mod moments;
 pub mod overrides;
+pub mod passives;
 pub mod results;
 pub mod rotation;
 pub mod rung_command;
