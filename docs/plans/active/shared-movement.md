@@ -20,7 +20,7 @@ names the seams, the specs give the numbers and rules.
 | Step | State | Summary |
 |---|---|---|
 | Plan | done (2026-11-24) | this file |
-| S0 baselines | not started | golden trajectories and work counts for the four games |
+| S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
 | S1-S4 carve inside `source_engine` | not started | file split, neutral hooks, CS:S's numbers to `cs_source`, cvars as data |
 | S5-S6 the crate | not started | `chimera_movement`, then neutral names with Source aliases |
 | S7-S9 GoldSrc seams | not started | clip hulls, command milliseconds, edge friction |
@@ -348,3 +348,24 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
 ## Log
 
 - 2026-11-24: plan written from origin/main at 2eb65c01a.
+- 2026-11-24, S0: the golden runs are in (`golden_run` in cs_source's,
+  hl2dm's, tf2's and dods' `tests/it/movement.rs`: one course, the same
+  in the four files but for the game's sim, TF2's Scout and DoD:S's prone
+  at the end). The greybox's solids are physics colliders, so the course
+  adds a brush staircase for the exact sweep. Each tick is run by
+  `sim.work(1)` in the test's own process (`own_process`), so the hash
+  and the counts come from one run. Hashes are asserted on Linux x86-64
+  only (the maths library's last bits elsewhere are not known to match).
+  TF2 climbs no ladder on the greybox (no ladders of its own, and the map
+  is no other game's): its run expects none. Baselines (instructions a
+  tick, dev profile in an agent slot; the step is `source_engine Movement
+  step` in `Work::crate_systems`; three runs each: the step repeats to
+  within 20 instructions, the tick's total to 0.15 %, so the step's count
+  is the one to judge by):
+
+  | Game | Ticks | Hash | Step | Tick |
+  |---|---|---|---|---|
+  | CS:S | 1 080 | `0x2c28df5ccf0d4a27` | 71 400 | 1 272 000 |
+  | HL2:DM | 1 080 | `0x8b3d5be3e6970d7c` | 67 170 | 1 636 000 |
+  | TF2 | 1 080 | `0xf46ef5454d21f47c` | 71 705 | 1 648 000 |
+  | DoD:S | 1 300 | `0xcc08703f58eba75e` | 71 350 | 1 161 000 |
