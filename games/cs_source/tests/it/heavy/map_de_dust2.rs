@@ -2217,7 +2217,7 @@ fn riding_players_never_sticks() {
 fn walking_on_terrain_never_stubs() {
     use crate::stack::{
         core::{MapBrushes, Velocity},
-        games::cs_source::movement::{self, SourceMovement, SourceMovementPlugin},
+        games::cs_source::movement::{self, QuakeMovement, SourceMovementPlugin},
     };
     let Some(map) = dust2() else { return };
     let (lo, hi) = map.playable.expect("playable area");
@@ -2291,12 +2291,12 @@ fn walking_on_terrain_never_stubs() {
                 sim.intent(p).yaw += (rand() - 0.5) * 0.1;
             }
             let before: Vec<Vec3> = players.iter().map(|&p| feet(&sim, p)).collect();
-            let states: Vec<(SourceMovement, Vec3, crate::stack::core::Intent)> = players
+            let states: Vec<(QuakeMovement, Vec3, crate::stack::core::Intent)> = players
                 .iter()
                 .map(|&p| {
                     let w = sim.app.world();
                     (
-                        w.get::<SourceMovement>(p).unwrap().clone(),
+                        w.get::<QuakeMovement>(p).unwrap().clone(),
                         sim.velocity(p),
                         w.get::<crate::stack::core::Intent>(p).unwrap().clone(),
                     )
@@ -2304,7 +2304,7 @@ fn walking_on_terrain_never_stubs() {
                 .collect();
             sim.ticks(1);
             for (k, &p) in players.iter().enumerate() {
-                let me = sim.app.world().get::<SourceMovement>(p).unwrap().clone();
+                let me = sim.app.world().get::<QuakeMovement>(p).unwrap().clone();
                 let speed = sim.velocity(p).xz().length() / 0.0254;
                 let (was_ground, was_speed) = prev[k];
                 prev[k] = (me.on_ground, speed);

@@ -10,7 +10,7 @@ use chimera_core::core::{MapBrush, MapWater, MapWaterVolume};
 use chimera_sim::testkit;
 use chimera_world::harness::Sim;
 use combat_arms::game::volumes::CaVolume;
-use cs_source::game::movement::SourceMovement;
+use cs_source::game::movement::QuakeMovement;
 
 use crate::aim::holding;
 use crate::play::{party, place};
@@ -30,7 +30,7 @@ fn ca_water(sim: &mut Sim, lo: Vec3, hi: Vec3) {
 }
 
 fn level(sim: &Sim, e: Entity) -> u8 {
-    sim.app.world().get::<SourceMovement>(e).expect("CS:S movement").water_level
+    sim.app.world().get::<QuakeMovement>(e).expect("CS:S movement").water_level
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn cs_source_movement_climbs_a_combat_arms_ladder_volume() {
     let mut climbing = false;
     for _ in 0..(3.0 * sim.tick_hz()) as u32 {
         sim.ticks(1);
-        climbing |= sim.app.world().get::<SourceMovement>(a).unwrap().ladder.is_some();
+        climbing |= sim.app.world().get::<QuakeMovement>(a).unwrap().ladder.is_some();
     }
     assert!(climbing, "grabbed the ladder");
     assert!(sim.position(a).y > before + 1.5, "climbed from {before} to {}", sim.position(a).y);

@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 use crate::stack::{
-    games::cs_source::movement::{self, SourceMovement, SourceMovementPlugin, to_engine, to_source},
+    games::cs_source::movement::{self, QuakeMovement, SourceMovementPlugin, to_engine, to_source},
     harness::{CsSim, Sim},
     map::{MapBrush, MapBrushes, MapSounds, MapSurface, PlaySound, StepRemap, sound::SoundBank},
 };
@@ -137,7 +137,7 @@ fn walking_through_a_footstep_volume() {
 #[test]
 fn climbing_into_a_ladder_remap() {
     let (mut sim, p) = sim_at(Vec3::new(LADDER_X - 17.0, 0.0, 100.0));
-    sim.app.world_mut().get_mut::<SourceMovement>(p).unwrap().ladder = Some(Vec3::NEG_X);
+    sim.app.world_mut().get_mut::<QuakeMovement>(p).unwrap().ladder = Some(Vec3::NEG_X);
     sim.intent(p).yaw = -std::f32::consts::FRAC_PI_2;
     sim.intent(p).move_axis = Vec2::Y;
     sim.seconds(1.4);

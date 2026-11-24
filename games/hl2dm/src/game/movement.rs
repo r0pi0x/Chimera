@@ -33,7 +33,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use source_engine::source_movement::{
-    SourceMovement, SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceSpeed,
+    QuakeMovement, SourceMovementAppExt, QuakeConfig, QuakeConfigs, MovementStep, MoveSpeed,
 };
 
 use crate::{
@@ -71,8 +71,8 @@ pub const SPRINT_STOP: f32 = 0.01;
 
 /// HL2:DM's movement config (movement.md "Constants"; source_deltas.md
 /// 1.1): the shared code's values with HL2:DM's.
-pub fn config() -> SourceMovementConfig {
-    SourceMovementConfig {
+pub fn config() -> QuakeConfig {
+    QuakeConfig {
         accelerate: 10.0,
         airaccelerate: 10.0,
         friction: 4.0,
@@ -109,7 +109,7 @@ pub fn config() -> SourceMovementConfig {
         drowning: false,
         floating_bonus: 173.0,
         waist_step_skip: true,
-        ..SourceMovementConfig::reference()
+        ..QuakeConfig::reference()
     }
 }
 
@@ -183,7 +183,7 @@ pub fn add_movement(app: &mut App) {
                 (toggled_duck, select_speed)
                     .chain()
                     .after(super::suit::breath_devices)
-                    .before(SourceMovementStep),
+                    .before(MovementStep),
             );
         // The suit goes on and off with the movement, in one move each
         // (docs/DESIGN.md, "ECS style"); `suit::wear` is left for a slot
@@ -232,7 +232,7 @@ pub fn add_movement(app: &mut App) {
 
 fn get_cvar(w: &World, name: &str) -> Option<String> {
     let speeds = w.get_resource::<Speeds>().copied().unwrap_or_default();
-    let cfg = w.get_resource::<SourceMovementConfigs>().and_then(|c| c.get(ID)).cloned()?;
+    let cfg = w.get_resource::<QuakeConfigs>().and_then(|c| c.get(ID)).cloned()?;
     let b = |v: bool| if v { "1" } else { "0" }.to_string();
     Some(match name {
         "hl2_walkspeed" => speeds.walk.to_string(),
@@ -260,7 +260,7 @@ fn set_cvar(w: &mut World, name: &str, value: &str) -> Result<(), String> {
         }
         return Ok(());
     }
-    let mut configs = w.get_resource_mut::<SourceMovementConfigs>().ok_or("no HL2:DM movement")?;
+    let mut configs = w.get_resource_mut::<QuakeConfigs>().ok_or("no HL2:DM movement")?;
     let cfg = configs.get_mut(ID).ok_or("no HL2:DM movement")?;
     match name {
         "mp_falldamage" => cfg.fall_fixed = (num != 1.0).then_some(FALL_FIXED),
@@ -271,9 +271,9 @@ fn set_cvar(w: &mut World, name: &str, value: &str) -> Result<(), String> {
 }
 
 /// HL2:DM's movement config as registered (tests change it here).
-pub fn config_mut(world: &mut World) -> Mut<'_, SourceMovementConfig> {
+pub fn config_mut(world: &mut World) -> Mut<'_, QuakeConfig> {
     world
-        .resource_mut::<SourceMovementConfigs>()
+        .resource_mut::<QuakeConfigs>()
         .map_unchanged(|c| c.get_mut(ID).expect("hl2dm:movement registered"))
 }
 
@@ -296,10 +296,10 @@ pub fn select_speed(
         (
             Entity,
             &Intent,
-            &SourceMovement,
+            &QuakeMovement,
             &Velocity,
             &mut super::suit::Suit,
-            &mut SourceSpeed,
+            &mut MoveSpeed,
             &Transform,
             &MovementSlot,
             Has<super::carry::Carried>,

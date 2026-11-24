@@ -2,7 +2,7 @@
 //! M18): the victim slows down and its view flinches.
 //!
 //! - **Slowdown.** Every hit sets the victim's velocity modifier
-//!   (`SourceMovement::velocity_modifier`) to the gun's value
+//!   (`QuakeMovement::velocity_modifier`) to the gun's value
 //!   (`HitSlowdown`, from the gun's data, `cs_source:hit_slowdown`: 0.65 rifles,
 //!   snipers and shotguns, 0.5 the rest; 0.5 for a leg hit from any gun).
 //!   The movement multiplies its max speed by it and lets it climb back
@@ -24,7 +24,7 @@
 //! with friendly fire off does neither (measured 2026-10-17,
 //! specs/cs_source/weapons.md "Refused hits"). The server decides hits: the slowdown
 //! and punch reach the victim's predicting client with its own state
-//! (`SourceMovement` and `ViewPunch` are predicted and sent to the owner),
+//! (`QuakeMovement` and `ViewPunch` are predicted and sent to the owner),
 //! where the first state after the hit corrects the prediction once and
 //! the commands after it re-run with the new values. Bots move by the
 //! same movement, so they slow down too.
@@ -42,7 +42,7 @@
 
 use bevy::prelude::*;
 
-use super::movement::SourceMovement;
+use super::movement::QuakeMovement;
 use crate::{
     slots::GameIdentity,
     core::{DamageRules, Died, God, Health, Hitgroup, Intent, Refusal, SimSet},
@@ -122,7 +122,7 @@ fn react(
         &Health,
         Has<God>,
         Option<&Intent>,
-        Option<&mut SourceMovement>,
+        Option<&mut QuakeMovement>,
         Option<&mut ViewPunch>,
         Option<&GameIdentity>,
     )>,

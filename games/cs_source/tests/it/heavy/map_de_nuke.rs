@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use crate::stack::{
     games::{
         self, cs_source,
-        cs_source::movement::{self, SourceMovement, SourceMovementPlugin},
+        cs_source::movement::{self, QuakeMovement, SourceMovementPlugin},
     },
     harness::{CsSim, Sim},
     map::{MapData, MapPlugin},
@@ -80,7 +80,7 @@ fn ladder_climbs(map: &MapData, b: &crate::stack::map::MapBrush) -> bool {
         sim.intent(p).move_axis = Vec2::Y;
         let y0 = sim.position(p).y;
         sim.ticks(48);
-        let on = sim.app.world().get::<SourceMovement>(p).unwrap().ladder.is_some();
+        let on = sim.app.world().get::<QuakeMovement>(p).unwrap().ladder.is_some();
         let dy = (sim.position(p).y - y0) / M;
         on && dy > 40.0
     })
@@ -108,7 +108,7 @@ fn climb(map: &MapData, feet: Vec3, yaw_source: f32, ticks: u64) -> (f32, bool) 
     let (mut rise, mut on) = (0.0f32, false);
     for _ in 0..ticks {
         sim.ticks(1);
-        on |= sim.app.world().get::<SourceMovement>(p).unwrap().ladder.is_some();
+        on |= sim.app.world().get::<QuakeMovement>(p).unwrap().ladder.is_some();
         rise = rise.max((sim.position(p).y - y0) / M);
     }
     (rise, on)

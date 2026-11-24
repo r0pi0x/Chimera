@@ -19,11 +19,11 @@ mod water;
 use bevy::prelude::*;
 
 use crate::{
-    config::SourceMovementConfig,
+    config::QuakeConfig,
     core::{ExternalPush, Intent},
     hooks::{MoveStance, StepSounds},
     mover::lines::UseableLadder,
-    state::SourceMovement,
+    state::QuakeMovement,
     trace::Tracer,
 };
 
@@ -108,9 +108,9 @@ pub(crate) const STUCK_NUDGE_GAP: f32 = 0.05;
 
 /// One tick for one character, in Source units.
 pub(crate) struct Mover<'a, 'b, 'w, 's> {
-    pub(crate) cfg: &'a SourceMovementConfig,
+    pub(crate) cfg: &'a QuakeConfig,
     pub(crate) trace: &'a Tracer<'b, 'w, 's>,
-    pub(crate) me: &'a mut SourceMovement,
+    pub(crate) me: &'a mut QuakeMovement,
     pub(crate) feet: Vec3,
     pub(crate) v: Vec3,
     pub(crate) dt: f32,

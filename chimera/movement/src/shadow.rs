@@ -43,9 +43,9 @@ use avian3d::prelude::*;
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use super::{
-    config::{MovementConfigs, SourceMovementConfig},
-    state::SourceMovement,
-    units::{to_engine, to_source},
+    config::{MovementConfigs, QuakeConfig},
+    state::QuakeMovement,
+    units::{to_engine, to_units},
 };
 use crate::{
     core::{Health, Intent, PropSurface, SHADOW_LAYER, Velocity},
@@ -315,7 +315,7 @@ pub fn reconciled(
     (out, Some(shadow_feet))
 }
 
-fn hull_height(cfg: &SourceMovementConfig, ducked: bool) -> f32 {
+fn hull_height(cfg: &QuakeConfig, ducked: bool) -> f32 {
     if ducked { cfg.duck_height } else { cfg.stand_height }
 }
 
@@ -341,7 +341,7 @@ struct ShadowAim(Option<Vec3>);
 #[allow(clippy::type_complexity)]
 fn attach(
     mut commands: Commands,
-    characters: Query<(Entity, &Transform, Option<&crate::slots::MovementSlot>, &Shadowed, Has<SourceMovement>)>,
+    characters: Query<(Entity, &Transform, Option<&crate::slots::MovementSlot>, &Shadowed, Has<QuakeMovement>)>,
     shadows: Query<(Entity, &PhysicsShadow)>,
     owners: Query<&Shadowed>,
     cfg: MovementConfigs,
@@ -401,7 +401,7 @@ fn attach(
 fn drive(
     owners: Query<(
         &Transform,
-        &SourceMovement,
+        &QuakeMovement,
         &PhysicsTouch,
         &Shadowed,
         Option<&Health>,
@@ -434,7 +434,7 @@ fn drive(
         if s.active != alive {
             s.active = alive;
         }
-        let feet = to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
+        let feet = to_units(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
         // Moved since the movement (a teleport): no push this step.
         let moved_here = touch.feet.distance_squared(feet) < 1.0;
         let target_feet = if moved_here { target(touch, me.on_ground) } else { feet };
@@ -490,7 +490,7 @@ fn reconcile(
         Entity,
         &mut Transform,
         &mut Velocity,
-        &SourceMovement,
+        &QuakeMovement,
         &PhysicsTouch,
         &Shadowed,
         Option<&crate::slots::MovementSlot>,
@@ -513,13 +513,13 @@ fn reconcile(
         if size.0 != height {
             continue;
         }
-        let feet = to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
-        let shadow_feet = to_source(pos.0) - Vec3::Z * height / 2.0;
+        let feet = to_units(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
+        let shadow_feet = to_units(pos.0) - Vec3::Z * height / 2.0;
         let (v, to) = reconciled(
             feet,
-            to_source(vel.0),
+            to_units(vel.0),
             shadow_feet,
-            to_source(sv.0),
+            to_units(sv.0),
             touch,
             !me.on_ground,
         );

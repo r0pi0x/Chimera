@@ -8,7 +8,7 @@ use crate::stack::{
     core::Velocity,
     games::cs_source::{
         TICK_INTERVAL,
-        movement::{self, SourceMovement, SourceMovementPlugin, to_engine, to_source},
+        movement::{self, QuakeMovement, SourceMovementPlugin, to_engine, to_source},
     },
     harness::{CsSim, Sim},
     map::{MapBrush, MapBrushes},
@@ -59,7 +59,7 @@ impl Player {
         self.sim.app.world_mut().get_mut::<Velocity>(self.p).unwrap().0 = to_engine(v);
     }
     fn on_ground(&self) -> bool {
-        self.sim.app.world().get::<SourceMovement>(self.p).unwrap().on_ground
+        self.sim.app.world().get::<QuakeMovement>(self.p).unwrap().on_ground
     }
     fn tick(&mut self) {
         self.sim.ticks(1);
@@ -250,8 +250,8 @@ fn a_strafe_on_the_jump_tick_gets_the_full_air_acceleration() {
 }
 
 impl Player {
-    fn me(&self) -> SourceMovement {
-        self.sim.app.world().get::<SourceMovement>(self.p).unwrap().clone()
+    fn me(&self) -> QuakeMovement {
+        self.sim.app.world().get::<QuakeMovement>(self.p).unwrap().clone()
     }
 }
 
@@ -396,12 +396,12 @@ fn a_floor_just_beyond_the_ground_probe_is_not_ground() {
     sim.set_tick_interval(TICK_INTERVAL);
     movement::set_config(sim.app.world_mut(), movement::config());
     let p = sim.spawn_character(to_engine(Vec3::new(-69.83, 256.39, -15.97 + 36.0)), movement::ID);
-    sim.app.world_mut().get_mut::<SourceMovement>(p).unwrap().on_ground = true;
+    sim.app.world_mut().get_mut::<QuakeMovement>(p).unwrap().on_ground = true;
     sim.intent(p).yaw = 245.27f32.to_radians() - std::f32::consts::FRAC_PI_2;
     sim.ticks(20);
     sim.intent(p).move_axis = Vec2::Y;
     let state = |sim: &Sim| {
-        let me = sim.app.world().get::<SourceMovement>(p).unwrap();
+        let me = sim.app.world().get::<QuakeMovement>(p).unwrap();
         (to_source(sim.position(p)) - Vec3::Z * 36.0, to_source(sim.velocity(p)), me.on_ground)
     };
     // CS:S's ticks 50-52: feet, velocity, on the ground.

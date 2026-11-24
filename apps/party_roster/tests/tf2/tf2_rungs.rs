@@ -63,7 +63,7 @@ fn a_tf2_rung_gives_its_gun_and_a_kill_climbs_to_the_next_games() {
     // The Scout's: 125 health, 400 units/s.
     let h = *w.get::<Health>(a).unwrap();
     assert!((h.max - 1.25).abs() < 1e-6 && (h.current - 1.25).abs() < 1e-6, "{h:?}");
-    let traits = w.get::<source_engine::source_movement::SourceTraits>(a).unwrap();
+    let traits = w.get::<source_engine::source_movement::MoveTraits>(a).unwrap();
     assert_eq!(traits.max_speed, Some(400.0));
     // A kill with it: the next rung, another game's gun, its identity.
     line_up(&mut sim, a, b, 3.0);

@@ -12,7 +12,7 @@
 //!   every provided `move_speed`, then × the active weapon's
 //!   `move_speed_active` (`movement::select_class`); the jump's (and the
 //!   Scout's air jump's) speed × the active weapon's `jump`
-//!   (`SourceTraits::jump_scale`).
+//!   (`MoveTraits::jump_scale`).
 //! - **Damage taken** (§3.2, `taken`, before the engine applies damage,
 //!   the server's): bullet and fire hits × `taken_bullets` / `taken_fire`,
 //!   a spun-up Heavy's hit that leaves him at half health or less ×

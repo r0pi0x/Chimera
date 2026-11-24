@@ -13,7 +13,7 @@ pub(crate) const ORIGIN_ABOVE_FEET: f32 = 36.0;
 
 /// Engine (meters, Y up) to Source (units, Z up), positions and directions.
 #[inline]
-pub fn to_source(v: Vec3) -> Vec3 {
+pub fn to_units(v: Vec3) -> Vec3 {
     Vec3::new(v.x, -v.z, v.y) / METERS_PER_UNIT
 }
 

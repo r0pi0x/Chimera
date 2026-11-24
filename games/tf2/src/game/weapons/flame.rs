@@ -101,7 +101,7 @@ use chimera_sim::weapon::{
     CHAN_WEAPON, Inventory, held_sounds::HeldSounds, Magazine, NetPart, Trigger, Weapon, WeaponEvent, WeaponEventKind, aim_of,
     random::shared_random, remote::RemoteShot,
 };
-use source_engine::source_movement::SourceMovement;
+use source_engine::source_movement::QuakeMovement;
 
 use super::{
     super::classes::{Classes, Tf2Class},
@@ -1020,7 +1020,7 @@ pub fn shown_flames(
 
 /// Afterburn (the server's).
 pub fn afterburn(
-    mut burning: Query<(Entity, &mut Burning, &Health, &Transform, Option<&SourceMovement>)>,
+    mut burning: Query<(Entity, &mut Burning, &Health, &Transform, Option<&QuakeMovement>)>,
     clock: Res<SimClock>,
     mut damage: MessageWriter<Damage>,
     mut commands: Commands,

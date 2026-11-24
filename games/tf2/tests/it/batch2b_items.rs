@@ -16,7 +16,7 @@ use chimera_sim::{
     weapon::{Inventory, Weapon, give, projectile::{Flyer, FlyerHit}},
 };
 use chimera_world::{greybox::{self, GreyboxMapPlugin}, harness::Sim};
-use source_engine::source_movement::SourceTraits;
+use source_engine::source_movement::MoveTraits;
 use tf2::{
     game::{
         TICK_INTERVAL,
@@ -146,7 +146,7 @@ fn set_health(sim: &mut Sim, e: Entity, points: f32) {
 }
 
 fn speed(sim: &Sim, p: Entity) -> f32 {
-    sim.app.world().get::<SourceTraits>(p).unwrap().max_speed.unwrap()
+    sim.app.world().get::<MoveTraits>(p).unwrap().max_speed.unwrap()
 }
 
 fn now(sim: &Sim) -> f64 {
@@ -492,7 +492,7 @@ fn the_soda_poppers_damage_fills_hype_and_attack2_drains_it() {
     assert!((meter(&sim, w) - 15.4).abs() < 0.05, "{}", meter(&sim, w));
     sim.app.world_mut().get_mut::<Tf2Meter>(w).unwrap().state.value = 100.0;
     press(&mut sim, p, true);
-    assert!(sim.app.world().get::<SourceTraits>(p).unwrap().air_jumps == Some(5), "hype's air jumps");
+    assert!(sim.app.world().get::<MoveTraits>(p).unwrap().air_jumps == Some(5), "hype's air jumps");
     sim.seconds(10.4);
     assert!(meter(&sim, w) > 0.0);
     sim.seconds(0.6);
@@ -722,7 +722,7 @@ fn client_holding(id: &str) -> (chimera_net::harness::NetSim, Entity, Entity) {
 /// `n` ticks of the client running forward (`fire` on its first tick):
 /// both machines' top speed.
 fn steps(sim: &mut chimera_net::harness::NetSim, theirs: Entity, me: Entity, n: usize, fire: bool) -> Vec<(f32, f32)> {
-    let top = |w: &World, e: Entity| w.get::<SourceTraits>(e).and_then(|t| t.max_speed).unwrap_or(0.0);
+    let top = |w: &World, e: Entity| w.get::<MoveTraits>(e).and_then(|t| t.max_speed).unwrap_or(0.0);
     let mut out = Vec::new();
     for k in 0..n {
         {

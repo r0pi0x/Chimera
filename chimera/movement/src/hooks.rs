@@ -1,4 +1,4 @@
-//! What a game sets on a character before the step (`SourceMovementStep`): the
+//! What a game sets on a character before the step (`MovementStep`): the
 //! tick's max speed (`MoveSpeed`), its kind's traits (`MoveTraits`), its
 //! own stance (`MoveStance`) and its footstep entries (`StepSounds`). The
 //! names are the movement's own, whatever the game's engine; the Source
@@ -7,11 +7,11 @@
 
 use bevy::prelude::*;
 
-use crate::config::SourceMovementConfig;
+use crate::config::QuakeConfig;
 
 /// What a character's own kind changes in its movement (TF2's classes:
 /// top speed, eye height, air jumps), set by its game before the step
-/// (`SourceMovementStep`); none: the config as registered. `max_speed`
+/// (`MovementStep`); none: the config as registered. `max_speed`
 /// (units/s) is the tick's max speed as `MoveSpeed` is, before it: the
 /// two are different games' (a game's own leaves the other's alone when a
 /// player moves from one game's movement to the other's).
@@ -31,7 +31,7 @@ pub struct MoveTraits {
 
 impl MoveTraits {
     /// `cfg` with these traits.
-    pub fn apply(&self, cfg: &SourceMovementConfig) -> SourceMovementConfig {
+    pub fn apply(&self, cfg: &QuakeConfig) -> QuakeConfig {
         let mut c = cfg.clone();
         if let Some(e) = self.eye_stand {
             c.eye_stand = e;
@@ -63,11 +63,11 @@ impl MoveTraits {
 pub struct MoveSpeed(pub f32);
 
 /// A game's own stance over standing and ducking (DoD:S's prone and its
-/// transitions), set by the game before the step (`SourceMovementStep`)
+/// transitions), set by the game before the step (`MovementStep`)
 /// each tick; the default changes nothing.
 ///
 /// - `height`: the box is this high (units) while set: held as the ducked
-///   box at that height (`SourceMovement::ducked`; the duck key does
+///   box at that height (`QuakeMovement::ducked`; the duck key does
 ///   nothing). When it goes, the character stands up at once where the
 ///   standing box fits, else stays ducked (the usual duck box) until it
 ///   does.
@@ -98,7 +98,7 @@ pub struct MoveStance {
 
 impl MoveStance {
     /// `cfg` with this stance's box as its ducked box.
-    pub(crate) fn apply(&self, cfg: &mut SourceMovementConfig) {
+    pub(crate) fn apply(&self, cfg: &mut QuakeConfig) {
         if let Some(h) = self.height {
             cfg.duck_height = h;
         }

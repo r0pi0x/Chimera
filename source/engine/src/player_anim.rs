@@ -340,7 +340,7 @@ fn drive<R: PlayerAnimRules, F: QueryFilter + 'static>(
             (
                 Option<&crate::map::interp::RenderedView>,
                 Option<&crate::map::BodyModel>,
-                Option<&crate::source_movement::SourceMovement>,
+                Option<&crate::source_movement::QuakeMovement>,
                 Option<&crate::map::anim::SnapFeet>,
             ),
         ),
@@ -429,7 +429,7 @@ fn drive_sim<R: PlayerAnimRules, F: QueryFilter + 'static>(
             (
                 Option<&Inventory>,
                 Option<&crate::map::BodyModel>,
-                Option<&crate::source_movement::SourceMovement>,
+                Option<&crate::source_movement::QuakeMovement>,
                 Option<&crate::map::anim::SnapFeet>,
                 Has<R>,
             ),

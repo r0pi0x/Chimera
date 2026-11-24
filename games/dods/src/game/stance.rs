@@ -2,14 +2,14 @@
 //! (specs/dods/movement.md, "Prone", "Getting up", "Stamina and sprint",
 //! "View"; damage.md, "Being slowed when hit"; weapons.md, "Alt fire"), a
 //! DoD:S player's `DodsStance`, stepped each tick before Source's movement
-//! (`step`, predicted) and handed to it as a `SourceStance` (the box, the
+//! (`step`, predicted) and handed to it as a `MoveStance` (the box, the
 //! eye, the speed, no jump, no input):
 //!
 //! - **Going prone** (`+alt1`, `PRONE_ACTION`, one press, on the ground or
 //!   in the air): the eye eases from where it is to 10 over 1.2 s (80
 //!   ticks, `GO_PRONE`) by `prone_ease` (1 − (1 − t)^(7/3), the spec's fit
 //!   of the measured heights), the move keys doing nothing meanwhile
-//!   (`SourceStance::no_input`): the speed the player had goes on, slowed
+//!   (`MoveStance::no_input`): the speed the player had goes on, slowed
 //!   by friction (pressed sprinting at 305: 199 after 36 ticks), a jump
 //!   flies on with the standing box and lands. Begun ducked, the ducked box
 //!   (45) is held and the eye eases 34 to 10. On the 80th tick the box
@@ -23,7 +23,7 @@
 //!   tick, 95.09 at 28, 172.11 at 52, 218.77 at 76, 220 at 80). **Duck
 //!   pressed while prone** gets up to a crouch the same way: the ducked box
 //!   at once, the eye to 34, the cap rising to the ducked 73.33; at the end
-//!   the player is ducked as if duck were held (`SourceStance::crouch`),
+//!   the player is ducked as if duck were held (`MoveStance::crouch`),
 //!   and stands by the usual unduck once it isn't. No jump meanwhile.
 //!   **Under a ceiling too low** for the box (72 standing, 45 ducked:
 //!   `room`) the key is refused and nothing changes.
@@ -96,7 +96,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use chimera_sim::weapon::{Inventory, WeaponState, Zoomed};
-use source_engine::source_movement::{SourceMovement, SourceStance};
+use source_engine::source_movement::{QuakeMovement, MoveStance};
 
 use super::{
     movement::{DUCK_HEIGHT, EYE_DUCK, EYE_STAND, RUN_SPEED, STAND_HEIGHT},
@@ -235,10 +235,10 @@ impl DodsStance {
 
     /// What Source's movement does with it this tick, `cap` the speed cap
     /// standing up (units/s; `step`).
-    pub fn source(&self, cap: f32) -> SourceStance {
+    pub fn source(&self, cap: f32) -> MoveStance {
         match self.stance {
             Stance::Up => match self.ledge {
-                Some(eye) => SourceStance {
+                Some(eye) => MoveStance {
                     height: Some(STAND_HEIGHT),
                     eye: Some(self.from_eye + (eye - self.from_eye) * prone_ease(self.elapsed / LEDGE_EASE)),
                     max_speed: Some(0.0),
@@ -246,9 +246,9 @@ impl DodsStance {
                     crouch: false,
                     no_input: true,
                 },
-                None => SourceStance { max_speed: Some(cap), ..default() },
+                None => MoveStance { max_speed: Some(cap), ..default() },
             },
-            Stance::GoingDown => SourceStance {
+            Stance::GoingDown => MoveStance {
                 height: self.from_ducked.then_some(DUCK_HEIGHT),
                 eye: Some(self.from_eye + (EYE_PRONE - self.from_eye) * prone_ease(self.elapsed / GO_PRONE)),
                 // The keys do nothing; the speed it had decays (never cut).
@@ -257,7 +257,7 @@ impl DodsStance {
                 crouch: false,
                 no_input: true,
             },
-            Stance::Prone => SourceStance {
+            Stance::Prone => MoveStance {
                 height: Some(PRONE_HEIGHT),
                 eye: Some(EYE_PRONE),
                 max_speed: Some(if self.deployed { 0.0 } else { PRONE_SPEED }),
@@ -272,7 +272,7 @@ impl DodsStance {
                 } else {
                     (EYE_STAND, RUN_SPEED, None)
                 };
-                SourceStance {
+                MoveStance {
                     height,
                     eye: Some(EYE_PRONE + (eye - EYE_PRONE) * prone_ease(t)),
                     max_speed: Some(PRONE_SPEED + (top - PRONE_SPEED) * rise(t)),
@@ -368,14 +368,14 @@ impl Room<'_, '_> {
 /// presses of `+alt1` (prone, up), duck while prone (up to a crouch) and
 /// the alt fire with a machine gun (deploy, undeploy), the transitions'
 /// time, the tick's speed cap, and what the movement does with it
-/// (`SourceStance`).
+/// (`MoveStance`).
 #[allow(clippy::type_complexity)]
 pub fn step(
     mut players: Query<(
         (Entity, &Intent, &Transform, &MovementState),
         &mut DodsStance,
-        &mut SourceStance,
-        &SourceMovement,
+        &mut MoveStance,
+        &QuakeMovement,
         Option<&Inventory>,
         Option<&DodsStamina>,
         Option<&DodsSlowed>,
@@ -603,6 +603,6 @@ mod tests {
         assert_eq!((src.height, src.eye, src.max_speed, src.no_jump), (Some(24.0), Some(10.0), Some(50.0), true));
         let deployed = DodsStance { deployed: true, ..s };
         assert_eq!(deployed.source(220.0).max_speed, Some(0.0));
-        assert_eq!(DodsStance::default().source(170.0), SourceStance { max_speed: Some(170.0), ..default() });
+        assert_eq!(DodsStance::default().source(170.0), MoveStance { max_speed: Some(170.0), ..default() });
     }
 }

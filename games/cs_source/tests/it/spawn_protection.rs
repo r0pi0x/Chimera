@@ -13,7 +13,7 @@ use crate::stack::{
     games::cs_source::{
         grenades::HEGRENADE,
         impact_effects::MATERIALS,
-        movement::SourceMovement,
+        movement::QuakeMovement,
     },
     greybox,
     harness::Sim,
@@ -129,7 +129,7 @@ fn a_round_passes_through_a_protected_player_to_the_wall_and_the_player_behind()
     }
     let w = sim.app.world();
     assert_eq!(w.get::<ViewPunch>(target).map_or(Vec3::ZERO, |p| p.0), Vec3::ZERO, "no flinch");
-    assert!(w.get::<SourceMovement>(target).is_none_or(|m| m.velocity_modifier == 1.0), "no slowdown");
+    assert!(w.get::<QuakeMovement>(target).is_none_or(|m| m.velocity_modifier == 1.0), "no slowdown");
     // A player between it and the wall takes the round.
     let behind = sim.spawn_character(Vec3::new(0.0, 1.0, greybox::NORTH_WALL_Z + 3.0), placeholder::ID);
     sim.seconds(0.5);

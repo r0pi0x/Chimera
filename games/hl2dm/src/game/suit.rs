@@ -38,7 +38,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use source_engine::source_movement::{SourceMovement, SourceSpeed, StepSounds};
+use source_engine::source_movement::{QuakeMovement, MoveSpeed, StepSounds};
 
 use crate::{
     core::{
@@ -302,7 +302,7 @@ impl Plugin for SuitPlugin {
                 (breath_devices, zoom)
                     .chain()
                     .before(super::movement::select_speed)
-                    .before(source_engine::source_movement::SourceMovementStep),
+                    .before(source_engine::source_movement::MovementStep),
             )
             .add_systems(
                 FixedUpdate,
@@ -381,7 +381,7 @@ fn wear(
                 Suit::default(),
                 Breath::default(),
                 suit_armour(),
-                SourceSpeed(190.0),
+                MoveSpeed(190.0),
                 citizen_steps(),
                 Armor::default(),
                 DamageRemainder::default(),
@@ -393,17 +393,17 @@ fn wear(
 }
 
 /// The suit's parts a character leaving HL2:DM's movement takes off.
-type SuitParts = (Suit, Breath, ArmorPieces, SourceSpeed, StepSounds, ViewZoom, FlashlightOn);
+type SuitParts = (Suit, Breath, ArmorPieces, MoveSpeed, StepSounds, ViewZoom, FlashlightOn);
 
 /// `hl2dm:movement`'s insert (`slots::MovementImpl::insert`): the marker
 /// and slot with the suit (as `wear` puts it on), in one move; a suit it
 /// wears already (a network client's, from the server) is kept.
 pub(crate) fn put_on(e: &mut EntityWorldMut, slot: MovementSlot) {
-    let marker = (SourceMovement::default(), slot);
+    let marker = (QuakeMovement::default(), slot);
     if e.contains::<Suit>() {
         e.insert(marker);
     } else {
-        e.insert((marker, Suit::default(), Breath::default(), suit_armour(), SourceSpeed(190.0), citizen_steps()));
+        e.insert((marker, Suit::default(), Breath::default(), suit_armour(), MoveSpeed(190.0), citizen_steps()));
         // Every character has these (a no-op then).
         e.insert_if_new((Armor::default(), DamageRemainder::default()));
     }
@@ -411,7 +411,7 @@ pub(crate) fn put_on(e: &mut EntityWorldMut, slot: MovementSlot) {
 
 /// `hl2dm:movement`'s remove: the marker with the suit, in one move.
 pub(crate) fn leave(e: &mut EntityWorldMut) {
-    e.remove::<(SourceMovement, SuitParts)>();
+    e.remove::<(QuakeMovement, SuitParts)>();
 }
 
 /// `hl2dm:movement`'s leave for another movement on Source's marker: the
@@ -453,7 +453,7 @@ fn spawned(
 /// under water (the last movement's water level 3), off (costing 0.67)
 /// when they come out; predicted.
 pub fn breath_devices(
-    mut q: Query<(&SourceMovement, &mut Suit, &Health)>,
+    mut q: Query<(&QuakeMovement, &mut Suit, &Health)>,
     clock: Res<SimClock>,
     infinite: Option<Res<InfiniteAux>>,
 ) {
@@ -475,7 +475,7 @@ pub fn breath_devices(
 /// Breathing, drowning hits and giving them back (suit.md "Breath under
 /// water"), before this tick's movement drains the aux power.
 fn drowning(
-    mut q: Query<(Entity, &SourceMovement, &Suit, &mut Breath, &mut Health, &Transform)>,
+    mut q: Query<(Entity, &QuakeMovement, &Suit, &mut Breath, &mut Health, &Transform)>,
     clock: Res<SimClock>,
     mut damage: MessageWriter<Damage>,
     mut play: MessageWriter<PlaySound>,

@@ -632,7 +632,7 @@ fn chargers(
             &Transform,
             &Intent,
             &crate::core::MovementState,
-            &source_engine::source_movement::SourceMovement,
+            &source_engine::source_movement::QuakeMovement,
             &mut Health,
             &mut Armor,
             &Suit,

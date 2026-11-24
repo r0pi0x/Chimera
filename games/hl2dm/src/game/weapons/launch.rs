@@ -40,7 +40,7 @@ use chimera_sim::weapon::{
     grenade::{Blast, BlastHearing, EAR_RING_DISTANCE, EXPLOSION_RING, SHOCK_DAMAGE, SHOCK_MUFFLE, Shake, SourceRadius},
     projectile::LaunchUnderWater,
 };
-use source_engine::source_movement::SourceMovement;
+use source_engine::source_movement::QuakeMovement;
 
 use crate::core::{Intent, MovementState};
 
@@ -238,7 +238,7 @@ pub fn aim(
 }
 
 /// `LaunchUnderWater` follows the eyes (the movement's water level 3).
-pub fn mark_under_water(q: Query<(Entity, &SourceMovement, Has<LaunchUnderWater>)>, mut commands: Commands) {
+pub fn mark_under_water(q: Query<(Entity, &QuakeMovement, Has<LaunchUnderWater>)>, mut commands: Commands) {
     for (e, m, marked) in &q {
         let under = m.water_level >= 3;
         if under && !marked {

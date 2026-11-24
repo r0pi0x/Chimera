@@ -35,7 +35,7 @@ use cs_source_app::{
         self,
         cs_source::{
             TICK_INTERVAL,
-            movement::{self, SourceMovement, SourceMovementPlugin, to_engine, to_source},
+            movement::{self, QuakeMovement, SourceMovementPlugin, to_engine, to_source},
         },
     },
     harness::{CsSim, Sim},
@@ -959,12 +959,12 @@ fn run_ours(map: &Arc<MapData>, s: &Scenario, theirs: &[State]) -> Vec<State> {
     {
         let world = sim.app.world_mut();
         world.get_mut::<Velocity>(p).unwrap().0 = to_engine(start.vel);
-        let mut me = world.get_mut::<SourceMovement>(p).unwrap();
+        let mut me = world.get_mut::<QuakeMovement>(p).unwrap();
         me.on_ground = start.ground;
         me.ducked = start.ducked;
     }
     let state = |sim: &Sim| {
-        let me = sim.app.world().get::<SourceMovement>(p).unwrap();
+        let me = sim.app.world().get::<QuakeMovement>(p).unwrap();
         State {
             pos: to_source(sim.position(p)) - Vec3::Z * ORIGIN_ABOVE_FEET,
             vel: to_source(sim.velocity(p)),

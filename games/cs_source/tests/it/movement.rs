@@ -13,8 +13,8 @@ use crate::stack::{
 /// can be tried by hand (`--movement cs_source:movement`).
 #[test]
 fn greybox_ladder_and_tank_with_source_movement() {
-    use crate::stack::games::cs_source::movement::{self as source, SourceMovement, SourceMovementPlugin};
-    let state = |sim: &Sim, p: Entity| sim.app.world().get::<SourceMovement>(p).unwrap().clone();
+    use crate::stack::games::cs_source::movement::{self as source, QuakeMovement, SourceMovementPlugin};
+    let state = |sim: &Sim, p: Entity| sim.app.world().get::<QuakeMovement>(p).unwrap().clone();
 
     // In front of the north-wall ladder, facing it (-Z is intent yaw 0).
     let mut sim = Sim::new(CsSim, (GreyboxMapPlugin, SourceMovementPlugin));
@@ -101,7 +101,7 @@ fn a_bot_added_while_the_player_flies_falls_onto_the_floor() {
 fn golden_run() {
     use crate::stack::{
         core::{Health, MapBrush, Velocity},
-        games::cs_source::movement::{self as source, SourceMovement, SourceMovementPlugin},
+        games::cs_source::movement::{self as source, QuakeMovement, SourceMovementPlugin},
         harness::own_process,
         map::MapBrushes,
     };
@@ -227,7 +227,7 @@ fn golden_run() {
             None => counted = false,
         }
         let (at, v, s) = (sim.position(p), sim.velocity(p), sim.state(p));
-        let me = sim.app.world().get::<SourceMovement>(p).unwrap().clone();
+        let me = sim.app.world().get::<QuakeMovement>(p).unwrap().clone();
         let health = sim.app.world().get::<Health>(p).map_or(0.0, |h| h.current);
         for f in [at.x, at.y, at.z, v.x, v.y, v.z, s.eye_offset.y, s.view_roll, health, me.stamina] {
             add(f.to_bits());

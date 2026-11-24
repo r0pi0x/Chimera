@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use crate::stack::{
     core::Velocity,
     games::cs_source::movement::{
-        self, SourceMovement, SourceMovementConfig, SourceMovementPlugin, to_engine, to_source,
+        self, QuakeMovement, QuakeConfig, SourceMovementPlugin, to_engine, to_source,
     },
     harness::{CsSim, Sim},
     map::{MapBrush, MapBrushes},
@@ -80,7 +80,7 @@ impl Player {
     fn at(feet: Vec3) -> Self {
         let mut sim = Sim::new(CsSim, (TestMap, SourceMovementPlugin));
         // The spec's test cases use the shared code's values.
-        movement::set_config(sim.app.world_mut(), SourceMovementConfig::reference());
+        movement::set_config(sim.app.world_mut(), QuakeConfig::reference());
         let p = sim.spawn_character(to_engine(feet + Vec3::Z * 36.0), movement::ID);
         let mut me = Self { sim, p };
         me.look_yaw(0.0);
@@ -115,8 +115,8 @@ impl Player {
         self.vel().truncate().length()
     }
 
-    fn state(&self) -> SourceMovement {
-        self.sim.app.world().get::<SourceMovement>(self.p).unwrap().clone()
+    fn state(&self) -> QuakeMovement {
+        self.sim.app.world().get::<QuakeMovement>(self.p).unwrap().clone()
     }
 
     fn tick(&mut self) {
@@ -578,7 +578,7 @@ fn fall_damage_as_measured() {
         let p = sim.spawn_character(to_engine(Vec3::new(0.0, -3000.0, 40.0 + 36.0)), movement::ID);
         sim.app.world_mut().get_mut::<Velocity>(p).unwrap().0 = to_engine(Vec3::Z * -start);
         sim.seconds(0.3);
-        let me = sim.app.world().get::<SourceMovement>(p).unwrap().clone();
+        let me = sim.app.world().get::<QuakeMovement>(p).unwrap().clone();
         assert!(me.on_ground, "start {start}: not landed");
         close(me.last_landing_speed, fall, 0.01, &format!("start {start}: fall speed"));
         let health = sim.app.world().get::<Health>(p).unwrap().current;
@@ -610,7 +610,7 @@ fn no_fall_damage_into_water() {
     let p = sim.spawn_character(to_engine(Vec3::new(0.0, -3000.0, 40.0 + 36.0)), movement::ID);
     sim.app.world_mut().get_mut::<Velocity>(p).unwrap().0 = to_engine(Vec3::Z * -800.0);
     sim.seconds(0.3);
-    let me = sim.app.world().get::<SourceMovement>(p).unwrap().clone();
+    let me = sim.app.world().get::<QuakeMovement>(p).unwrap().clone();
     assert!(
         me.on_ground && me.water_level == 1,
         "ground {} water {}",
@@ -763,7 +763,7 @@ fn terrain_creases_hold_the_box_where_they_are() {
     // Running -x over the crease at 250 (CS:S: tspawn_run_jump_hold ticks
     // 230-239, flat at z 132.0458 from x -1104.3 to -1134.3).
     let (mut sim, p) = sim_at(Vec3::new(-1100.517, -784.0, 131.9728), Vec3::new(-250.0, 0.0, 0.0));
-    sim.app.world_mut().get_mut::<SourceMovement>(p).unwrap().on_ground = true;
+    sim.app.world_mut().get_mut::<QuakeMovement>(p).unwrap().on_ground = true;
     sim.intent(p).yaw = std::f32::consts::PI - std::f32::consts::FRAC_PI_2;
     sim.intent(p).move_axis = Vec2::Y;
     for k in 1..=9 {
@@ -775,7 +775,7 @@ fn terrain_creases_hold_the_box_where_they_are() {
 
     // Landing on the crease along x (CS:S: tick 251 of tspawn_repeat_jumps).
     let (mut sim, p) = sim_at(Vec3::new(-1024.0, -784.0, 132.495), Vec3::new(0.0, 0.0, -298.0066));
-    sim.app.world_mut().get_mut::<SourceMovement>(p).unwrap().on_ground = false;
+    sim.app.world_mut().get_mut::<QuakeMovement>(p).unwrap().on_ground = false;
     sim.ticks(1);
     let vel = to_source(sim.velocity(p));
     assert!(sim.state(p).on_ground);

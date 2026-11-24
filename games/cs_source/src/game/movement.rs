@@ -37,11 +37,11 @@ pub fn match_movement(world: &mut World) -> Option<&'static str> {
 
 /// CS:S's movement config, as measured on the reference install (cvars
 /// read over RCON, 2026-10-05; the spec's "CS:S values") over the shared
-/// code's (`SourceMovementConfig::reference`): jump speed sqrt(2 * 800 *
+/// code's (`QuakeConfig::reference`): jump speed sqrt(2 * 800 *
 /// 57), which reproduces the measured standing-jump apex (54.75 units at
 /// the server's 66.67 tick).
-pub fn config() -> SourceMovementConfig {
-    SourceMovementConfig {
+pub fn config() -> QuakeConfig {
+    QuakeConfig {
         stopspeed: 75.0,
         jump_impulse: (2.0f32 * 800.0 * 57.0).sqrt(),
         key_speed: 400.0,
@@ -79,22 +79,22 @@ pub fn config() -> SourceMovementConfig {
         clip_push_out: 1.0 / 32.0,
         // Measured on the probe server: 100 damage at 996, not 1024.
         fall_damage_per_speed: 100.0 / 416.0,
-        ..SourceMovementConfig::reference()
+        ..QuakeConfig::reference()
     }
 }
 
 /// CS:S's movement config as registered (tests, tools and cvars change it
 /// here).
-pub fn config_mut(world: &mut World) -> Mut<'_, SourceMovementConfig> {
+pub fn config_mut(world: &mut World) -> Mut<'_, QuakeConfig> {
     world
-        .resource_mut::<SourceMovementConfigs>()
+        .resource_mut::<QuakeConfigs>()
         .map_unchanged(|c| c.get_mut(ID).expect("cs_source:movement registered"))
 }
 
 /// CS:S's movement config set to `config`, before or after the movement
 /// is registered (the app's `--exec` and `--cvar` settings, a test's).
-pub fn set_config(world: &mut World, config: SourceMovementConfig) {
-    world.get_resource_or_init::<SourceMovementConfigs>().set(ID, config);
+pub fn set_config(world: &mut World, config: QuakeConfig) {
+    world.get_resource_or_init::<QuakeConfigs>().set(ID, config);
 }
 
 /// Source's movement as CS:S's (`ID`): its config is CS:S's (`config`,

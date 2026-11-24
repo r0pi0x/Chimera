@@ -17,7 +17,7 @@ use chimera_sim::{
     weapon::{Inventory, Magazine, data::WeaponCatalog, give, projectile::{Flyer, FlyerGone}},
 };
 use chimera_world::{greybox::{self, GreyboxMapPlugin}, harness::Sim};
-use source_engine::source_movement::SourceTraits;
+use source_engine::source_movement::MoveTraits;
 use tf2::{
     game::{
         TICK_INTERVAL,
@@ -306,8 +306,8 @@ fn the_sticky_jumper_keeps_two() {
     assert_eq!(live, 2);
 }
 
-fn traits(sim: &Sim, p: Entity) -> SourceTraits {
-    *sim.app.world().get::<SourceTraits>(p).unwrap()
+fn traits(sim: &Sim, p: Entity) -> MoveTraits {
+    *sim.app.world().get::<MoveTraits>(p).unwrap()
 }
 
 #[test]

@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use crate::stack::{
     core::Velocity,
     games::cs_source::movement::{
-        self, SourceMovement, SourceMovementConfig, SourceMovementPlugin, to_engine, to_source,
+        self, QuakeMovement, QuakeConfig, SourceMovementPlugin, to_engine, to_source,
     },
     harness::{CsSim, Sim},
     map::{MapBrush, MapBrushes, MapWater, MapWaterVolume},
@@ -100,7 +100,7 @@ struct Player {
 }
 
 impl Player {
-    fn at(feet: Vec3, cfg: SourceMovementConfig) -> Self {
+    fn at(feet: Vec3, cfg: QuakeConfig) -> Self {
         let mut sim = Sim::new(CsSim, (TestMap, SourceMovementPlugin));
         movement::set_config(sim.app.world_mut(), cfg);
         let p = sim.spawn_character(to_engine(feet + Vec3::Z * 36.0), movement::ID);
@@ -110,9 +110,9 @@ impl Player {
     }
 
     /// In the air, the box 1 unit from the ladder face, already climbing.
-    fn on_ladder(cfg: SourceMovementConfig) -> Self {
+    fn on_ladder(cfg: QuakeConfig) -> Self {
         let mut me = Self::at(Vec3::new(LADDER_X - 17.0, 0.0, 100.0), cfg);
-        me.sim.app.world_mut().get_mut::<SourceMovement>(me.p).unwrap().ladder = Some(Vec3::NEG_X);
+        me.sim.app.world_mut().get_mut::<QuakeMovement>(me.p).unwrap().ladder = Some(Vec3::NEG_X);
         me
     }
 
@@ -135,8 +135,8 @@ impl Player {
         to_source(self.sim.velocity(self.p))
     }
 
-    fn state(&self) -> SourceMovement {
-        self.sim.app.world().get::<SourceMovement>(self.p).unwrap().clone()
+    fn state(&self) -> QuakeMovement {
+        self.sim.app.world().get::<QuakeMovement>(self.p).unwrap().clone()
     }
 
     fn tick(&mut self) {
@@ -158,8 +158,8 @@ fn close3(actual: Vec3, expected: Vec3, tol: f32, what: &str) {
     );
 }
 
-fn shared() -> SourceMovementConfig {
-    SourceMovementConfig::reference()
+fn shared() -> QuakeConfig {
+    QuakeConfig::reference()
 }
 
 #[test]
@@ -519,7 +519,7 @@ impl Diver {
     }
 
     fn water(&self) -> u8 {
-        self.sim.app.world().get::<SourceMovement>(self.p).unwrap().water_level
+        self.sim.app.world().get::<QuakeMovement>(self.p).unwrap().water_level
     }
 
     /// Ticks until health changes (at most `max`): how many ticks and the

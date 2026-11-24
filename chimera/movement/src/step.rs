@@ -1,5 +1,5 @@
 //! The movement step, one system in `core::Predict::Movement`
-//! (`SourceMovementStep`): what every character's tick needs gathered once
+//! (`MovementStep`): what every character's tick needs gathered once
 //! (other characters' boxes, moving solids, ladder and water volumes, the
 //! physics filter, the brush grid), then each character's `Mover` built, run
 //! and written back (transform, velocity, `MovementState`, sounds, fall
@@ -9,7 +9,7 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 
 use crate::{
-    config::{HALF_WIDTH, MovementConfigs, SourceMovementConfig},
+    config::{HALF_WIDTH, MovementConfigs, QuakeConfig},
     core::{
         BaseVelocity, Damage, EntityGravity, ExternalPush, Health, Hitgroup, Intent, LadderZone, MapBrush, MaxSpeed,
         MovementState, MovingSolid, Velocity, WaterZone,
@@ -24,13 +24,13 @@ use crate::{
     mover::{Mover, POST_HALF},
     pushaway, shadow,
     slots::MovementSlot,
-    state::{SettleOnGround, SourceMovement},
+    state::{SettleOnGround, QuakeMovement},
     trace::Tracer,
-    units::{METERS_PER_UNIT, ORIGIN_ABOVE_FEET, to_engine, to_source},
+    units::{METERS_PER_UNIT, ORIGIN_ABOVE_FEET, to_engine, to_units},
 };
 
 #[inline]
-pub(crate) fn hull_height(cfg: &SourceMovementConfig, ducked: bool) -> f32 {
+pub(crate) fn hull_height(cfg: &QuakeConfig, ducked: bool) -> f32 {
     if ducked { cfg.duck_height } else { cfg.stand_height }
 }
 
@@ -38,7 +38,7 @@ pub(crate) fn step(
     mut q: Query<(
         Entity,
         &Intent,
-        &mut SourceMovement,
+        &mut QuakeMovement,
         &mut Transform,
         &mut Velocity,
         &mut MovementState,
@@ -78,7 +78,7 @@ pub(crate) fn step(
     // disabled until a round restart) neither blocks nor pushes back.
     props: Query<
         (Entity, &Transform, &PhysicsProp),
-        (Without<SourceMovement>, Without<RigidBodyDisabled>, Without<ColliderDisabled>),
+        (Without<QuakeMovement>, Without<RigidBodyDisabled>, Without<ColliderDisabled>),
     >,
     surfaces: Option<Res<SurfaceGrid>>,
     prop_surfaces: Query<&PropSurface>,
@@ -97,7 +97,7 @@ pub(crate) fn step(
         Local<Option<crate::core::BrushGrid>>,
         Local<u32>,
     ),
-    other_characters: Query<(Entity, &ColliderAabb, Option<&Health>), (With<Intent>, Without<SourceMovement>)>,
+    other_characters: Query<(Entity, &ColliderAabb, Option<&Health>), (With<Intent>, Without<QuakeMovement>)>,
     (health, dead, noblock, teams, (collider_of, afloat)): (
         Query<&Health>,
         Query<(), With<ColliderDisabled>>,
@@ -136,7 +136,7 @@ pub(crate) fn step(
     // the collider's bounds. Those whose collider is off (the dead, also
     // those waiting to respawn with their health, unseen) block nobody.
     let alive = |e: Entity| (health.get(e).is_ok_and(|h| h.current > 0.0) || health.get(e).is_err()) && !dead.contains(e);
-    let hull_box = |cfg: &SourceMovementConfig, feet: Vec3, ducked: bool| {
+    let hull_box = |cfg: &QuakeConfig, feet: Vec3, ducked: bool| {
         let height = if ducked { cfg.duck_height } else { cfg.stand_height };
         let (a, b) = (
             to_engine(feet + Vec3::new(-cfg.half_width, -cfg.half_width, 0.0)),
@@ -151,7 +151,7 @@ pub(crate) fn step(
         .iter()
         .filter(|(e, ..)| alive(*e))
         .map(|(e, _, me, t, .., (slot, .., stance))| {
-            let feet = me.forced.map_or(to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET, |f| f.goal);
+            let feet = me.forced.map_or(to_units(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET, |f| f.goal);
             let mut cfg = configs.of(slot).into_owned();
             if let Some(s) = stance {
                 s.apply(&mut cfg);
@@ -178,7 +178,7 @@ pub(crate) fn step(
         .filter(|(_, m)| m.solid)
         .flat_map(|(e, m)| m.brushes.iter().map(move |b| (e, b)))
         .collect();
-    let mover_velocity = |e: Entity| movers.get(e).map_or(Vec3::ZERO, |(_, m)| to_source(m.velocity));
+    let mover_velocity = |e: Entity| movers.get(e).map_or(Vec3::ZERO, |(_, m)| to_units(m.velocity));
     let floating = |c: Entity| afloat.contains(collider_of.get(c).map_or(c, |o| o.body));
     // With brushes swept exactly, physics queries skip the same brushes.
     // Players pass through multiplayer physics props (their own
@@ -267,7 +267,7 @@ pub(crate) fn step(
             }
         };
         let fitted = patched.as_ref().unwrap_or(own).fitted(map_envelope.as_ref());
-        let cfg: &SourceMovementConfig = &fitted;
+        let cfg: &QuakeConfig = &fitted;
         // A character without a movement slot is the app's own game's.
         let foreign = slot.is_some_and(|s| crate::core::foreign_map(map_game.as_deref(), crate::core::movement_game(s.0)));
         // player_speedmod: the movement runs as if this many ticks passed
@@ -343,8 +343,8 @@ pub(crate) fn step(
         let mut mover = Mover {
             cfg,
             trace: &tracer,
-            feet: to_source(transform.translation) - Vec3::Z * ORIGIN_ABOVE_FEET,
-            v: to_source(vel.0),
+            feet: to_units(transform.translation) - Vec3::Z * ORIGIN_ABOVE_FEET,
+            v: to_units(vel.0),
             me: &mut me,
             dt,
             water_cache: [None; 3],
@@ -353,7 +353,7 @@ pub(crate) fn step(
             // The held weapon's speed (spec: MaxPlayerSpeed), else the default.
             player_maxspeed: weapon_speed.and_then(|s| s.0).map_or(cfg.player_maxspeed, |s| s / METERS_PER_UNIT),
             fall_damage: 0.0,
-            base: base.as_ref().map_or(Vec3::ZERO, |b| to_source(b.velocity)),
+            base: base.as_ref().map_or(Vec3::ZERO, |b| to_units(b.velocity)),
             base_touched: base.as_ref().is_some_and(|b| b.touched),
             // A lifting push (`core::ExternalPush`) takes it off as logic does.
             unground: base.as_ref().is_some_and(|b| b.unground) || pushed.as_ref().is_some_and(|p| p.lift),

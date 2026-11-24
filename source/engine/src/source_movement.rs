@@ -5,8 +5,11 @@
 //! Source's console variables, `SOURCE_CVARS`, beside the shared ones, and
 //! Source's key impulse: a move key counts half on its first command,
 //! `core::HalfFirstPress`), the Source names of the shared types
-//! (`SourceSpeed`, `SourceTraits`, `SourceStance`; `useable_ladders` is
-//! `chimera_movement::lines`), and the map's ladder entities read into the
+//! (`to_source` is `to_units`, `useable_ladders` is
+//! `chimera_movement::lines`; `SourceMovement`, `SourceMovementConfig`,
+//! `SourceMovementConfigs`, `SourceMovementStep`, `SourceSpeed`,
+//! `SourceTraits` and `SourceStance` for older code), and the map's ladder
+//! entities read into the
 //! movement's ladder lines (specs/hl2dm/movement.md "The ladder entity":
 //! `func_useableladder`s with their `info_ladder_dismount` nodes,
 //! `ladders_of`, kept in `EntityLadders` as the map's entities change by
@@ -17,8 +20,15 @@
 use bevy::prelude::*;
 
 pub use chimera_movement::*;
-/// The shared types under Source's names (the Source games' code).
-pub use chimera_movement::{MoveSpeed as SourceSpeed, MoveStance as SourceStance, MoveTraits as SourceTraits, lines as useable_ladders};
+/// The shared types under Source's names: `to_source` and
+/// `useable_ladders` are what Source's games call the units and the ladder
+/// lines; the rest are kept for code written before the movement was
+/// Chimera's (new code uses the shared names).
+pub use chimera_movement::{
+    MoveSpeed as SourceSpeed, MoveStance as SourceStance, MoveTraits as SourceTraits, MovementStep as SourceMovementStep,
+    QuakeConfig as SourceMovementConfig, QuakeConfigs as SourceMovementConfigs, QuakeMovement as SourceMovement,
+    QuakeMovementPlugin as SourceMovementPlugin, lines as useable_ladders, to_units as to_source,
+};
 
 use crate::map::{MapEntities, MapEntity};
 
@@ -54,8 +64,8 @@ pub const CVARS: &[(&str, &str)] = &{
 pub trait SourceMovementAppExt {
     /// Movement `id` on the shared movement (`QuakeMovementAppExt::
     /// quake_movement`) as a Source game's: with its `config` (None: the
-    /// reference values, `SourceMovementConfig::reference`; one set for
-    /// `id` before, by `SourceMovementConfigs::set`, stays), its console
+    /// reference values, `QuakeConfig::reference`; one set for
+    /// `id` before, by `QuakeConfigs::set`, stays), its console
     /// variables (`CVARS`: the shared ones and Source's) under `namespace`
     /// (`hl2dm:sv_gravity`; None: bare names, a Source game's own by the
     /// console's rule: CS:S's), Source's key impulse and the map's
@@ -63,7 +73,7 @@ pub trait SourceMovementAppExt {
     fn source_movement(
         &mut self,
         id: &'static str,
-        config: Option<SourceMovementConfig>,
+        config: Option<QuakeConfig>,
         namespace: Option<&'static str>,
     ) -> &mut Self;
 }
@@ -72,7 +82,7 @@ impl SourceMovementAppExt for App {
     fn source_movement(
         &mut self,
         id: &'static str,
-        config: Option<SourceMovementConfig>,
+        config: Option<QuakeConfig>,
         namespace: Option<&'static str>,
     ) -> &mut Self {
         // Its move keys count half on their first command (Source's key
@@ -83,7 +93,7 @@ impl SourceMovementAppExt for App {
         }
         self.quake_movement(
             id,
-            config.unwrap_or_else(SourceMovementConfig::reference),
+            config.unwrap_or_else(QuakeConfig::reference),
             &[QUAKE_CVARS, SOURCE_CVARS],
             namespace,
         )
@@ -181,7 +191,7 @@ mod tests {
         assert_eq!(CVARS.len(), 15);
         assert!(CVARS.iter().eq(QUAKE_CVARS.iter().chain(SOURCE_CVARS)));
         assert_eq!((CVARS[0].0, CVARS[8].0, CVARS[9].0, CVARS[14].0), ("sv_accelerate", "sv_bounce", "sv_enablebunnyhopping", "sv_ladder_angle"));
-        let c = SourceMovementConfig::reference();
+        let c = QuakeConfig::reference();
         assert!(CVARS.iter().all(|(name, _)| c.get_cvar(name).is_some()));
     }
 

@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use crate::stack::{
     core::Velocity,
     games::cs_source::movement::{
-        self, SourceMovement, SourceMovementPlugin, to_engine, to_source,
+        self, QuakeMovement, SourceMovementPlugin, to_engine, to_source,
     },
     harness::{CsSim, Sim},
     map::{MapBrush, MapBrushes},
@@ -175,8 +175,8 @@ impl Player {
     fn set_vel(&mut self, v: Vec3) {
         self.sim.app.world_mut().get_mut::<Velocity>(self.p).unwrap().0 = to_engine(v);
     }
-    fn state(&self) -> SourceMovement {
-        self.sim.app.world().get::<SourceMovement>(self.p).unwrap().clone()
+    fn state(&self) -> QuakeMovement {
+        self.sim.app.world().get::<QuakeMovement>(self.p).unwrap().clone()
     }
     /// Face Source yaw `deg`.
     fn look_yaw(&mut self, deg: f32) {

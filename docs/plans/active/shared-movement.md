@@ -22,7 +22,7 @@ names the seams, the specs give the numbers and rules.
 | Plan | done (2026-11-24) | this file |
 | S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
 | S1-S4 carve inside `source_engine` | done (2026-11-24) | file split, neutral hooks, CS:S's numbers to `cs_source`, cvars as data: each in the log |
-| S5-S6 the crate | S5 done (2026-11-24) | `chimera_movement` (done), then neutral names with Source aliases |
+| S5-S6 the crate | done (2026-11-24) | `chimera_movement`, then neutral names with Source aliases: each in the log |
 | S7-S9 GoldSrc seams | not started | clip hulls, command milliseconds, edge friction |
 | Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
 
@@ -477,3 +477,20 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   across it only for configs and hooks), so no inlining was lost: CS:S
   71 237 (-0.23 % of S0, -0.01 % of S4), HL2:DM 66 939 (-0.34 %, -0.04
   %), TF2 71 394 (-0.43 %, 0.00 %), DoD:S 71 140 (-0.29 %, -0.02 %).
+- 2026-11-24, S6: the crate's names are `QuakeMovement`, `QuakeConfig`,
+  `QuakeConfigs`, `QuakeMovementPlugin`, `MovementStep` and `to_units`.
+  The callers moved with them in the same commit (74 files: the four
+  games, their tests, the party roster, CS:S's tools and app), by whole
+  words: `SourceMovement`, `SourceMovementConfig(s)`,
+  `SourceMovementStep`, `SourceSpeed`, `SourceTraits` and `SourceStance`
+  are no longer written outside the wrapper, which keeps them as
+  re-exports for branches in flight. Kept in callers on purpose:
+  `to_source` (Source's games converting to Source units is what they
+  mean; HL2:DM and the PHY reader have functions of that name of their
+  own, so a rename by word would have hit them), `useable_ladders`,
+  `SourceMovementAppExt::source_movement` (Source's registration) and
+  `cs_source::movement::SourceMovementPlugin` (CS:S's own plugin). No
+  wire change: the renamed types sort where they did. Hashes equal; the
+  step CS:S 71 229 (-0.24 %), HL2:DM 66 952 (-0.32 %), TF2 71 416
+  (-0.40 %), DoD:S 71 158 (-0.27 %). Next: S7-S9 wait
+  for specs/cs16/movement.md.

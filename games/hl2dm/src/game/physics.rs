@@ -140,7 +140,7 @@ pub fn solid_multiplayer(mut props: Query<&mut PhysicsProp, Added<PhysicsProp>>)
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn use_props(
     players: Query<
-        (Entity, &Intent, &Transform, &MovementState, &source_engine::source_movement::SourceMovement),
+        (Entity, &Intent, &Transform, &MovementState, &source_engine::source_movement::QuakeMovement),
         Without<super::carry::Carrying>,
     >,
     props: Query<(Option<&PhysicsProp>, Option<&FrozenBody>, Option<&RigidBody>, Option<&PropEntity>), Without<Held>>,

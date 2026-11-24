@@ -22,7 +22,7 @@ use crate::stack::{
     core::{FriendlyFire, Health, Intent, MovementState, PredictedComponents, SimTick},
     games::cs_source::{
         TICK_INTERVAL,
-        movement::{self, SourceMovement, SourceMovementPlugin, to_engine, to_source},
+        movement::{self, QuakeMovement, SourceMovementPlugin, to_engine, to_source},
         weapons::{AK47, CsWeaponsPlugin, DEAGLE, KNIFE, USP},
     },
     greybox::GreyboxMapPlugin,
@@ -64,7 +64,7 @@ fn speed(sim: &Sim, p: Entity) -> f32 {
 }
 
 fn modifier(sim: &Sim, p: Entity) -> f32 {
-    sim.app.world().get::<SourceMovement>(p).unwrap().velocity_modifier
+    sim.app.world().get::<QuakeMovement>(p).unwrap().velocity_modifier
 }
 
 /// The view punch in Source angles (pitch, yaw, roll; degrees).
@@ -302,7 +302,7 @@ fn the_victims_client_predicts_its_slowdown_after_the_hit() {
         sim.step();
         let world = sim.server.app.world();
         let tick = world.resource::<SimTick>().0;
-        let m = world.get::<SourceMovement>(victim).unwrap().velocity_modifier;
+        let m = world.get::<QuakeMovement>(victim).unwrap().velocity_modifier;
         if m < 1.0 && hit_tick.is_none() {
             hit_tick = Some(tick);
         }

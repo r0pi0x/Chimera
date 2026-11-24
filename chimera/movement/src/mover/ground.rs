@@ -303,7 +303,7 @@ impl Mover<'_, '_, '_, '_> {
         }
     }
 
-    /// TF2's backpedal clamp (`SourceMovementConfig::back_speed`): on the
+    /// TF2's backpedal clamp (`QuakeConfig::back_speed`): on the
     /// ground, a velocity faster than `back_min_speed` pointing behind the
     /// view has its backward part capped at `back_speed` x `max`, then the
     /// whole clamped to `max`.

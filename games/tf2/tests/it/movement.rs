@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use chimera_core::core::{Health, Intent, MovementState, Velocity};
 use chimera_sim::weapon::{Inventory, give};
 use chimera_world::{harness::Sim, map::{MapBrush, MapBrushes}};
-use source_engine::source_movement::{SourceMovement, SourceTraits, to_engine, to_source};
+use source_engine::source_movement::{QuakeMovement, MoveTraits, to_engine, to_source};
 use tf2::{
     game::{
         TICK_INTERVAL,
@@ -89,8 +89,8 @@ impl Player {
         self.vel().truncate().length()
     }
 
-    fn me(&self) -> SourceMovement {
-        self.sim.app.world().get::<SourceMovement>(self.p).unwrap().clone()
+    fn me(&self) -> QuakeMovement {
+        self.sim.app.world().get::<QuakeMovement>(self.p).unwrap().clone()
     }
 
     fn ms(&self) -> MovementState {
@@ -98,7 +98,7 @@ impl Player {
     }
 
     fn max(&self) -> f32 {
-        self.sim.app.world().get::<SourceTraits>(self.p).unwrap().max_speed.unwrap()
+        self.sim.app.world().get::<MoveTraits>(self.p).unwrap().max_speed.unwrap()
     }
 
     fn class(&self) -> String {
@@ -626,7 +626,7 @@ fn the_class_parts_go_on_and_off_with_the_movement_in_one_move() {
         let w = sim.app.world();
         [
             w.get::<Tf2Class>(p).is_some(),
-            w.get::<SourceTraits>(p).is_some(),
+            w.get::<MoveTraits>(p).is_some(),
             w.get::<movement::HealthBefore>(p).is_some(),
             w.get::<Tf2Punch>(p).is_some(),
             w.get::<ViewVariant>(p).is_some(),
@@ -794,7 +794,7 @@ fn golden_run() {
             None => counted = false,
         }
         let (at, v, s) = (sim.position(p), sim.velocity(p), sim.state(p));
-        let me = sim.app.world().get::<SourceMovement>(p).unwrap().clone();
+        let me = sim.app.world().get::<QuakeMovement>(p).unwrap().clone();
         let health = sim.app.world().get::<Health>(p).map_or(0.0, |h| h.current);
         for f in [at.x, at.y, at.z, v.x, v.y, v.z, s.eye_offset.y, s.view_roll, health, me.stamina] {
             add(f.to_bits());

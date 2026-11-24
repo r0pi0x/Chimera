@@ -1,4 +1,4 @@
-//! The movement's per-character state (`SourceMovement`, predicted and sent
+//! The movement's per-character state (`QuakeMovement`, predicted and sent
 //! as it is: its field order is its wire form) and `SettleOnGround`.
 
 use bevy::prelude::*;
@@ -16,7 +16,7 @@ pub struct SettleOnGround;
 /// Per-character movement state. Units and seconds as in the spec.
 #[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[component(storage = "SparseSet")]
-pub struct SourceMovement {
+pub struct QuakeMovement {
     pub on_ground: bool,
     pub ground_normal: Vec3,
     pub jump_held: bool,
@@ -84,13 +84,13 @@ pub struct SourceMovement {
     #[serde(default)]
     pub use_held: bool,
     /// Air jumps made and duck releases in the air since leaving the
-    /// ground (`SourceMovementConfig::air_jumps`, `air_ducks_max`).
+    /// ground (`QuakeConfig::air_jumps`, `air_ducks_max`).
     #[serde(default)]
     pub air_jumps_used: u8,
     #[serde(default)]
     pub air_ducks: u8,
     /// The duck key as last pressed (before any filter), and the re-duck
-    /// delay left (s, `SourceMovementConfig::reduck_delay`).
+    /// delay left (s, `QuakeConfig::reduck_delay`).
     #[serde(default)]
     pub duck_key: bool,
     #[serde(default)]
@@ -103,7 +103,7 @@ pub struct SourceMovement {
     pub stance_crouch: bool,
 }
 
-impl Default for SourceMovement {
+impl Default for QuakeMovement {
     fn default() -> Self {
         Self {
             on_ground: false,

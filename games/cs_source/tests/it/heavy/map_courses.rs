@@ -781,7 +781,7 @@ fn teleports(f: &mut Flow, p: Entity, home: Vec3, names: &[String], classes: &[S
                 }
                 eprintln!(
                     "  movement {:?}",
-                    f.sim.app.world().get::<cs_source::movement::SourceMovement>(p)
+                    f.sim.app.world().get::<cs_source::movement::QuakeMovement>(p)
                 );
             }
             if now.distance(last) > 64.0 && jumped.is_none() {

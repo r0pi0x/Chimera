@@ -15,7 +15,7 @@ use crate::stack::{
     core::{SimSet, Velocity},
     games::{
         self, cs_source,
-        cs_source::movement::{self, SourceMovement, SourceMovementPlugin},
+        cs_source::movement::{self, QuakeMovement, SourceMovementPlugin},
     },
     harness::{CsSim, Sim},
     map::{MapBrush, MapData, MapPlugin, PlaySound, entities::entity_to_engine},
@@ -136,7 +136,7 @@ impl Tester {
             pos.0 = at;
         }
         e.get_mut::<Velocity>().unwrap().0 = Vec3::ZERO;
-        *e.get_mut::<SourceMovement>().unwrap() = SourceMovement::default();
+        *e.get_mut::<QuakeMovement>().unwrap() = QuakeMovement::default();
         let mut i = self.sim.intent(self.p);
         *i = default();
         // Intent yaw 0 looks down engine -Z.
@@ -144,8 +144,8 @@ impl Tester {
         i.pitch = -pitch.to_radians();
     }
 
-    fn state(&self) -> SourceMovement {
-        self.sim.app.world().get::<SourceMovement>(self.p).unwrap().clone()
+    fn state(&self) -> QuakeMovement {
+        self.sim.app.world().get::<QuakeMovement>(self.p).unwrap().clone()
     }
 
     fn heard(&mut self) -> Vec<PlaySound> {

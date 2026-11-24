@@ -12,7 +12,7 @@
 use bevy::prelude::*;
 
 use chimera_sim::weapon::{Inventory, Melee, WeaponState};
-use source_engine::source_movement::SourceMovement;
+use source_engine::source_movement::QuakeMovement;
 
 use crate::core::{SimClock, Velocity};
 use crate::game::{stamina::DodsStamina, stance::DodsStance};
@@ -27,7 +27,7 @@ pub fn blocked(sprinting: bool, on_ground: bool, crawling: bool) -> bool {
 /// tick on while its holder can't attack.
 #[allow(clippy::type_complexity)]
 pub fn no_fire(
-    owners: Query<(&Inventory, &DodsStamina, &DodsStance, &SourceMovement, Option<&Velocity>), Without<crate::map::interp::NetDrawn>>,
+    owners: Query<(&Inventory, &DodsStamina, &DodsStance, &QuakeMovement, Option<&Velocity>), Without<crate::map::interp::NetDrawn>>,
     mut weapons: Query<(&mut WeaponState, Option<&Melee>)>,
     clock: Res<SimClock>,
 ) {

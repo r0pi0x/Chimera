@@ -27,7 +27,7 @@ impl Mover<'_, '_, '_, '_> {
         self.v -= base;
     }
 
-    /// An air jump (`SourceMovementConfig::air_jumps`; TF2's Scout,
+    /// An air jump (`QuakeConfig::air_jumps`; TF2's Scout,
     /// specs/tf2/movement.md "The Scout's air jump"): the vertical speed
     /// replaced by `air_jump_speed` (after this tick's first gravity
     /// half-step, with no second), the horizontal velocity by the keys'

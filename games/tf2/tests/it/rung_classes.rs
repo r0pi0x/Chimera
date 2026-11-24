@@ -26,7 +26,7 @@ use chimera_sim::minigame::{
     ladder::{self, Ladder, RungSeed},
 };
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim, map::BodyName};
-use source_engine::source_movement::SourceTraits;
+use source_engine::source_movement::MoveTraits;
 use tf2::{
     game::{
         INFO,
@@ -131,7 +131,7 @@ fn worn(w: &World, p: Entity) -> (Option<String>, Option<String>, Option<f32>, O
     (
         w.get::<Tf2Class>(p).map(|c| c.class(table).name.clone()),
         BodyName::named(w.get::<BodyName>(p)).map(|b| b.0.clone()),
-        w.get::<SourceTraits>(p).and_then(|t| t.max_speed),
+        w.get::<MoveTraits>(p).and_then(|t| t.max_speed),
         w.get::<Health>(p).map(|h| (h.max * 100.0).round()),
     )
 }

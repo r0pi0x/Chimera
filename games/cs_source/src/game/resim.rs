@@ -60,7 +60,7 @@ use source_formats::dem::usercmd::buttons;
 
 use super::{
     demo::{CsDemo, FL_DUCKING, FL_ONGROUND, Happening, Thing, weapon_name},
-    movement::{self, SourceMovement, to_engine, to_source},
+    movement::{self, QuakeMovement, to_engine, to_source},
     weapons::Inaccuracy,
 };
 use crate::{
@@ -751,7 +751,7 @@ pub fn align(make: &dyn Fn() -> Sim, rec: &Recording) -> Result<i64, String> {
 /// Our state now.
 fn ours(sim: &Sim, p: Entity) -> Ours {
     let w = sim.app.world();
-    let me = w.get::<SourceMovement>(p);
+    let me = w.get::<QuakeMovement>(p);
     let active = w.get::<Inventory>(p).and_then(|i| i.active);
     let magazine = active.and_then(|a| w.get::<Magazine>(a));
     Ours {
@@ -889,7 +889,7 @@ fn run(sim: &mut Sim, rec: &Recording, offset: i64, opts: Options) -> Result<Rep
         world.get_mut::<Velocity>(p).expect("a character").0 =
             to_engine(Vec3::from_array(start.velocity.unwrap_or_default()));
         let mut me = world
-            .get_mut::<SourceMovement>(p)
+            .get_mut::<QuakeMovement>(p)
             .ok_or("no Source movement (add its plugin)")?;
         me.on_ground = start.on_ground;
         me.ducked = start.ducked;

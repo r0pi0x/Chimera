@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use crate::{
     config::config_of,
     mover::{GROUND_PROBE, Mover, STUCK_NUDGE_GAP, WALKABLE_NORMAL_Z},
-    state::SourceMovement,
+    state::QuakeMovement,
     units::{METERS_PER_UNIT, ORIGIN_ABOVE_FEET},
 };
 
@@ -43,7 +43,7 @@ pub(crate) fn nudge_table() -> Vec<Vec3> {
 /// Where a Source character stands (`slots::Footing`): its feet are the
 /// origin's fixed 36 units down whatever its box.
 pub(crate) fn footing(world: &World, e: Entity) -> Option<crate::slots::Footing> {
-    let me = world.get::<SourceMovement>(e)?;
+    let me = world.get::<QuakeMovement>(e)?;
     let t = world.get::<Transform>(e)?;
     Some(crate::slots::Footing {
         feet: t.translation - Vec3::Y * ORIGIN_ABOVE_FEET * METERS_PER_UNIT,
@@ -60,7 +60,7 @@ pub(crate) fn seat(world: &mut World, e: Entity, f: crate::slots::Footing) {
     let cfg = config_of(world, e);
     let at = f.feet + Vec3::Y * ORIGIN_ABOVE_FEET * METERS_PER_UNIT;
     let Ok(mut ent) = world.get_entity_mut(e) else { return };
-    if let Some(mut me) = ent.get_mut::<SourceMovement>() {
+    if let Some(mut me) = ent.get_mut::<QuakeMovement>() {
         me.ducked = f.crouched;
         me.duck_held = f.crouched;
         me.ducking = false;

@@ -490,11 +490,11 @@ impl Plugin for Hl2WeaponsPlugin {
     }
 }
 
-/// Each HL2:DM character's current max speed (`SourceSpeed`, its speed
+/// Each HL2:DM character's current max speed (`MoveSpeed`, its speed
 /// selection's) for lag compensation's choice (weapons.md 12,
 /// `weapon::lagcomp::RewindSpeed`); the server's.
 fn rewind_speeds(
-    q: Query<(Entity, &source_engine::source_movement::SourceSpeed, Option<&chimera_sim::weapon::lagcomp::RewindSpeed>)>,
+    q: Query<(Entity, &source_engine::source_movement::MoveSpeed, Option<&chimera_sim::weapon::lagcomp::RewindSpeed>)>,
     mut commands: Commands,
 ) {
     use chimera_sim::weapon::lagcomp::RewindSpeed;

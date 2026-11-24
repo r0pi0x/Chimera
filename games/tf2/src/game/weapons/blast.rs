@@ -84,7 +84,7 @@ use chimera_sim::weapon::{
     BulletHit, Inflicted,
     projectile::{box_face, ray_box},
 };
-use source_engine::source_movement::SourceMovement;
+use source_engine::source_movement::QuakeMovement;
 
 use super::{
     super::classes::{Classes, Tf2Class},
@@ -370,7 +370,7 @@ pub struct BlastWorld<'w, 's> {
     spatial: SpatialQuery<'w, 's>,
     colliders: Query<'w, 's, &'static ColliderOf>,
     /// Source movements' duck state (the hull, not the key: `ducked`).
-    ducks: Query<'w, 's, &'static SourceMovement>,
+    ducks: Query<'w, 's, &'static QuakeMovement>,
     friendly_fire: Option<Res<'w, FriendlyFire>>,
     classes: Option<Res<'w, Classes>>,
     damage: MessageWriter<'w, Damage>,
@@ -721,7 +721,7 @@ impl BlastWorld<'_, '_> {
                 w.insert(BlastLaunched);
             }
             if own {
-                if let Some(mut m) = w.get_mut::<SourceMovement>() {
+                if let Some(mut m) = w.get_mut::<QuakeMovement>() {
                     m.air_ducks = 0;
                 }
                 w.insert(BlastJumping);

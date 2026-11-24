@@ -333,7 +333,7 @@ fn a_hit_caps_the_speed_at_120() {
 fn golden_run() {
     use chimera_core::core::{Health, MapBrush};
     use chimera_world::{harness::own_process, map::MapBrushes};
-    use source_engine::source_movement::SourceMovement;
+    use source_engine::source_movement::QuakeMovement;
     const GOLDEN: u64 = 0xcc08703f58eba75e;
     const TICKS: u64 = 1300;
     if !own_process("movement::golden_run") {
@@ -463,7 +463,7 @@ fn golden_run() {
             None => counted = false,
         }
         let (at, v, s) = (sim.position(p), sim.velocity(p), sim.state(p));
-        let me = sim.app.world().get::<SourceMovement>(p).unwrap().clone();
+        let me = sim.app.world().get::<QuakeMovement>(p).unwrap().clone();
         let health = sim.app.world().get::<Health>(p).map_or(0.0, |h| h.current);
         for f in [at.x, at.y, at.z, v.x, v.y, v.z, s.eye_offset.y, s.view_roll, health, me.stamina] {
             add(f.to_bits());

@@ -15,7 +15,7 @@ use chimera_sim::{
     weapon::{Inventory, give},
 };
 use chimera_world::{greybox::{self, GreyboxMapPlugin}, harness::Sim};
-use source_engine::source_movement::SourceTraits;
+use source_engine::source_movement::MoveTraits;
 use tf2::{
     game::{
         TICK_INTERVAL,
@@ -130,7 +130,7 @@ fn set_health(sim: &mut Sim, e: Entity, p: f32) {
 }
 
 fn speed(sim: &Sim, p: Entity) -> f32 {
-    sim.app.world().get::<SourceTraits>(p).unwrap().max_speed.unwrap()
+    sim.app.world().get::<MoveTraits>(p).unwrap().max_speed.unwrap()
 }
 
 fn has(sim: &Sim, e: Entity, c: Condition) -> bool {

@@ -21,7 +21,7 @@ use chimera_world::{
     map::{MapEntities, MapEntity},
 };
 use combat_arms::{game::volumes::CaVolume, harness::CaSim};
-use cs_source::game::movement::SourceMovement;
+use cs_source::game::movement::QuakeMovement;
 use party_roster::PartyPartsPlugin;
 
 const CSS: &str = cs_source::game::movement::ID;
@@ -55,7 +55,7 @@ fn climb(sim: &mut Sim, p: Entity, yaw: f32, pitch: f32, secs: f64) -> (bool, f3
         i.pitch = pitch.to_radians();
         i.move_axis = Vec2::Y;
         sim.ticks(1);
-        if let Some(m) = sim.app.world().get::<SourceMovement>(p) {
+        if let Some(m) = sim.app.world().get::<QuakeMovement>(p) {
             on |= m.ladder.is_some() || m.useable.is_some();
         }
         rose = rose.max(sim.position(p).y - start);

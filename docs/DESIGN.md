@@ -514,7 +514,7 @@ rules (ours: the specs are silent on mixing):
 - **A game without ladders (TF2's)**: nothing on its own maps (their
   ladder brushes are walls), and every other game's ladders by the
   shared Source code's contents rule at its 200 units/s
-  (`SourceMovementConfig::climbs_contents`): a TF2 character climbs a
+  (`QuakeConfig::climbs_contents`): a TF2 character climbs a
   Combat Arms map's ladders too (playtest 2026-11-18: it couldn't). One
   test holds every registered movement to it: each climbs a Source
   ladder brush, a Combat Arms ladder volume, an HL2 ladder line and a

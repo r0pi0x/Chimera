@@ -447,7 +447,7 @@ fn bots_charge_cloak_open_the_chute_and_thrust() {
 
 /// The server's and the client's top speed for the client's player.
 fn tops(sim: &NetSim, theirs: Entity, me: Entity) -> (f32, f32) {
-    let top = |w: &World, e: Entity| w.get::<source_engine::source_movement::SourceTraits>(e).and_then(|t| t.max_speed).unwrap_or(0.0);
+    let top = |w: &World, e: Entity| w.get::<source_engine::source_movement::MoveTraits>(e).and_then(|t| t.max_speed).unwrap_or(0.0);
     (top(sim.server.app.world(), theirs), top(sim.clients[0].app.world(), me))
 }
 

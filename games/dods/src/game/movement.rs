@@ -22,7 +22,7 @@
 //! With it go a DoD:S player's own parts, on and off in one move with the
 //! movement (`put_on`, `leave`, `take_off`): its stance (`stance`: prone
 //! and the deployed machine guns, handed to Source's movement as its
-//! `SourceStance` each tick, before the step, with the tick's speed cap)
+//! `MoveStance` each tick, before the step, with the tick's speed cap)
 //! and its stamina and sprint (`stamina`, after the stance: the cap reads
 //! the stamina the tick started with).
 //! `+alt1` (`stance::PRONE_ACTION`) is a named action.
@@ -40,7 +40,7 @@
 
 use bevy::prelude::*;
 use source_engine::source_movement::{
-    SourceMovement, SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceStance,
+    QuakeMovement, SourceMovementAppExt, QuakeConfig, QuakeConfigs, MovementStep, MoveStance,
 };
 
 use super::{stamina::DodsStamina, stance::DodsStance};
@@ -60,8 +60,8 @@ pub const DUCK_HEIGHT: f32 = 45.0;
 pub const EYE_DUCK: f32 = 34.0;
 
 /// DoD:S's movement config (movement.md, "Constants").
-pub fn config() -> SourceMovementConfig {
-    SourceMovementConfig {
+pub fn config() -> QuakeConfig {
+    QuakeConfig {
         accelerate: 10.0,
         airaccelerate: 10.0,
         // The measured law (movement.md, "Ground speed, acceleration and
@@ -102,7 +102,7 @@ pub fn config() -> SourceMovementConfig {
         bunnyhop_cap: 0.0,
         // `sv_backspeed` 0: no back-pedal penalty.
         back_speed: 1.0,
-        ..SourceMovementConfig::reference()
+        ..QuakeConfig::reference()
     }
 }
 
@@ -119,18 +119,18 @@ impl Plugin for DodsMovementPlugin {
 /// `dods:movement` on a composed game's simulation (a party's) without
 /// making it the match's; once.
 pub fn add_movement(app: &mut App) {
-    if app.world().get_resource::<SourceMovementConfigs>().is_some_and(|c| c.get(ID).is_some()) {
+    if app.world().get_resource::<QuakeConfigs>().is_some_and(|c| c.get(ID).is_some()) {
         return;
     }
     use crate::core::{ActionAppExt, PredictedAppExt};
     app.source_movement(ID, Some(config()), Some(super::GAME))
         .intent_action(super::stance::PRONE_ACTION)
         .predicted_net::<DodsStance>()
-        .predicted_net::<SourceStance>()
+        .predicted_net::<MoveStance>()
         .predicted_net::<DodsStamina>()
         .add_systems(
             crate::core::Predict::Movement,
-            ((super::stance::step, super::stamina::step).chain().before(SourceMovementStep), super::stance::yaw_limits.after(super::stance::step)),
+            ((super::stance::step, super::stamina::step).chain().before(MovementStep), super::stance::yaw_limits.after(super::stance::step)),
         );
     // Spawn spots where players get to: up ledges a jump takes (apex 43
     // units standing, 45 ducked: movement.md "Jumping"), CS:S's 0.8 m.
@@ -155,17 +155,17 @@ pub fn add_movement(app: &mut App) {
 }
 
 /// The player's own parts beside Source's marker.
-type Parts = (DodsStance, SourceStance, DodsStamina);
+type Parts = (DodsStance, MoveStance, DodsStamina);
 
 /// `dods:movement`'s insert: the marker, the stance and the stamina, in
 /// one move.
 fn put_on(e: &mut EntityWorldMut, slot: MovementSlot) {
-    e.insert((SourceMovement::default(), slot, DodsStance::default(), SourceStance::default(), DodsStamina::default()));
+    e.insert((QuakeMovement::default(), slot, DodsStance::default(), MoveStance::default(), DodsStamina::default()));
 }
 
 /// `dods:movement`'s remove: the marker with the parts, in one move.
 fn leave(e: &mut EntityWorldMut) {
-    e.remove::<(SourceMovement, Parts)>();
+    e.remove::<(QuakeMovement, Parts)>();
 }
 
 /// `dods:movement`'s leave for another movement on Source's marker: the

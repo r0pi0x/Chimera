@@ -26,7 +26,7 @@ use crate::stack::{
     games::cs_source::{
         TICK_INTERVAL,
         grenades::HEGRENADE,
-        movement::{self, SourceMovement, SourceMovementPlugin, to_engine},
+        movement::{self, QuakeMovement, SourceMovementPlugin, to_engine},
         weapons::{AK47, CsWeaponsPlugin, KNIFE},
     },
     greybox::GreyboxMapPlugin,
@@ -171,7 +171,7 @@ fn outcome(sim: &Sim, target: Entity, armor: Option<Armor>) -> Outcome {
         health: (5.0 - w.get::<Health>(target).unwrap().current) * 100.0,
         armour: armor.map_or(0.0, |a| (a.amount - w.get::<Armor>(target).unwrap().amount) * 100.0),
         heard: w.resource::<Heard>().0.clone(),
-        modifier: w.get::<SourceMovement>(target).map_or(1.0, |m| m.velocity_modifier),
+        modifier: w.get::<QuakeMovement>(target).map_or(1.0, |m| m.velocity_modifier),
         punch: Vec3::new(-v.x, v.y, v.z).map(f32::to_degrees),
         deafened: w.resource::<Deaf>().0.contains(&target),
     }

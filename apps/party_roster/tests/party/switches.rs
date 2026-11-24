@@ -23,7 +23,7 @@ use combat_arms::game::{
     movement::CaMovement,
 };
 use cs_source::game::{
-    movement::{self as cs_movement, SourceMovement},
+    movement::{self as cs_movement, QuakeMovement},
     weapons::{self as cs_weapons, KNIFE as CS_KNIFE},
 };
 
@@ -40,7 +40,7 @@ fn footing(sim: &Sim, e: Entity) -> Footing {
 
 fn crouched(sim: &Sim, e: Entity) -> bool {
     let w = sim.app.world();
-    w.get::<SourceMovement>(e).map(|m| m.ducked).or(w.get::<CaMovement>(e).map(|m| m.crouch_rate >= 1.0)).unwrap()
+    w.get::<QuakeMovement>(e).map(|m| m.ducked).or(w.get::<CaMovement>(e).map(|m| m.crouch_rate >= 1.0)).unwrap()
 }
 
 fn game_of(sim: &Sim, e: Entity) -> &'static str {

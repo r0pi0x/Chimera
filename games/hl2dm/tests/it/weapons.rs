@@ -455,7 +455,7 @@ fn dunk(sim: &mut Sim, p: Entity) {
     }
     sim.app.world_mut().get_mut::<Velocity>(p).unwrap().0 = Vec3::ZERO;
     sim.ticks(4);
-    let level = sim.app.world().get::<source_engine::source_movement::SourceMovement>(p).unwrap().water_level;
+    let level = sim.app.world().get::<source_engine::source_movement::QuakeMovement>(p).unwrap().water_level;
     assert_eq!(level, 3, "eyes under water");
 }
 

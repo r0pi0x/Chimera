@@ -24,7 +24,7 @@ use crate::stack::{
     games::cs_source::{
         TICK_INTERVAL,
         demo::{self, CsDemo, FL_DUCKING, FL_ONGROUND, Happening, LocalSnap, PlayerSnap, Thing},
-        movement::{self as source, SourceMovement, SourceMovementPlugin, to_source},
+        movement::{self as source, QuakeMovement, SourceMovementPlugin, to_source},
         resim::{self, Options, Recording},
         weapons::{CsWeaponsPlugin, Inaccuracy},
     },
@@ -100,7 +100,7 @@ fn reference(cmds: &[UserCmd], maxspeed: f32) -> (Vec<PlayerSnap>, Vec<Shot>) {
     sim.seconds(1.5);
     let snap = |sim: &Sim| -> PlayerSnap {
         let w = sim.app.world();
-        let me = w.get::<SourceMovement>(p).unwrap();
+        let me = w.get::<QuakeMovement>(p).unwrap();
         let a = w.get::<Inventory>(p).unwrap().active.unwrap();
         let m = w.get::<Magazine>(a).unwrap();
         let origin = (to_source(sim.position(p)) - Vec3::Z * 36.0).to_array();
@@ -350,7 +350,7 @@ fn gun_run(weapon: &str, mode: u8, cmds: &[UserCmd]) -> (Vec<resim::Observed>, V
     }
     let snap = |sim: &Sim, key: i64| -> resim::Observed {
         let world = sim.app.world();
-        let me = world.get::<SourceMovement>(p).unwrap();
+        let me = world.get::<QuakeMovement>(p).unwrap();
         let st = world.get::<WeaponState>(w).unwrap();
         let m = world.get::<Magazine>(w).unwrap();
         // The next command runs at the next tick's time.

@@ -45,7 +45,7 @@ pub struct MovementImpl {
     /// style").
     pub leave: Option<fn(&mut EntityWorldMut)>,
     /// The marker component's type: two movements on the same marker (CS:S's
-    /// and HL2:DM's, both `SourceMovement`) switch by a new value in place,
+    /// and HL2:DM's, both `QuakeMovement`) switch by a new value in place,
     /// not a removal and an insert (each a new archetype for every
     /// combination of the character's other parts).
     pub marker: std::any::TypeId,

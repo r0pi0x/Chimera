@@ -479,7 +479,7 @@ pub fn landing_push(
 /// The hooks, the parts and the systems (`mods::add` calls it).
 pub fn add(app: &mut App) {
     use chimera_sim::weapon::{CarriedAppExt, data::WeaponDataAppExt};
-    use source_engine::source_movement::SourceMovementStep;
+    use source_engine::source_movement::MovementStep;
     app.register_weapon_hook::<ChuteParams>(CHUTE_HOOK, |e, _, p| {
             e.insert(Tf2Chute { params: p.clone(), state: ChuteState::default() });
         })
@@ -491,8 +491,8 @@ pub fn add(app: &mut App) {
         .add_systems(
             crate::core::Predict::Movement,
             (
-                (chute, thruster).after(crate::game::movement::select_class).before(SourceMovementStep),
-                landed.after(SourceMovementStep),
+                (chute, thruster).after(crate::game::movement::select_class).before(MovementStep),
+                landed.after(MovementStep),
             ),
         )
         .add_systems(

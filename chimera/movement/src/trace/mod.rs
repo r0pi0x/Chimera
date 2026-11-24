@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use crate::{
     core::MapBrush,
     map::{MapBrushTree, MapBrushes, MapTerrain, MapWater, sound::SurfaceGrid},
-    units::{METERS_PER_UNIT, to_engine, to_source},
+    units::{METERS_PER_UNIT, to_engine, to_units},
 };
 
 /// How far sweeps stop short of what they hit, along the move. Our stand-in
@@ -84,7 +84,7 @@ pub(crate) struct Tracer<'a, 'w, 's> {
     pub(crate) sounds: Option<&'a crate::map::MapSounds>,
     /// Standing and ducked box heights.
     pub(crate) heights: (f32, f32),
-    /// Half the box's width (`SourceMovementConfig::half_width`).
+    /// Half the box's width (`QuakeConfig::half_width`).
     pub(crate) half_width: f32,
     /// Other characters' boxes (engine space), swept exactly like brushes:
     /// players are axis-aligned boxes to each other, as in Source.
@@ -139,7 +139,7 @@ impl<'a> Tracer<'a, '_, '_> {
             ladder: brush.ladder,
             fraction: brush.fraction,
             end: from + delta * brush.fraction,
-            normal: to_source(brush.normal).normalize_or_zero(),
+            normal: to_units(brush.normal).normalize_or_zero(),
             start_solid,
             surface: brush.surface.map(HitSurface::Brush),
         };
@@ -172,7 +172,7 @@ impl<'a> Tracer<'a, '_, '_> {
                     ladder: false,
                     fraction,
                     end: from + delta * fraction,
-                    normal: to_source(hit.normal1).normalize_or_zero(),
+                    normal: to_units(hit.normal1).normalize_or_zero(),
                     start_solid,
                     surface: Some(HitSurface::Collider(hit.entity)),
                 };

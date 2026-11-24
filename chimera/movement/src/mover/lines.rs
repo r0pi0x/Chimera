@@ -1,6 +1,6 @@
 //! Half-Life 2's ladders (`func_useableladder` with `info_ladder_dismount`,
 //! specs/hl2dm/movement.md "Ladders"), for a Source movement whose config
-//! turns them on (`SourceMovementConfig::useable_ladders`; HL2:DM's): the
+//! turns them on (`QuakeConfig::useable_ladders`; HL2:DM's): the
 //! map's ladders as lines between two points (`UseableLadders`: the map's
 //! own as `source_ladders` reads them from its entities into
 //! `EntityLadders`), finding and mounting one (by `+use`, or
@@ -43,11 +43,11 @@
 use bevy::prelude::*;
 
 use crate::{
-    config::{HALF_WIDTH, SourceMovementConfigs},
+    config::{HALF_WIDTH, QuakeConfigs},
     core::{LadderLine, LadderZone, MapBrush, MapGame, MapLadders, foreign_map, movement_game},
     mover::{LADDER_REACH, Mover},
     trace::Tracer,
-    units::{METERS_PER_UNIT, to_engine, to_source},
+    units::{METERS_PER_UNIT, to_engine, to_units},
 };
 
 /// Search radius for a ladder, units.
@@ -233,13 +233,13 @@ pub fn lines_of_volume(b: &MapBrush, from: LadderFrom) -> Vec<UseableLadder> {
         // Over the top: beyond the volume, else on it or at its edge (a
         // ledge with a wall behind), farthest first; `to_floors` keeps
         // those standing on a floor.
-        let over = |back: f32| to_source(high - flat * back);
+        let over = |back: f32| to_units(high - flat * back);
         let foot = bottom + flat * 8.0 * u;
-        let (top, bottom) = (to_source(top), to_source(bottom));
+        let (top, bottom) = (to_units(top), to_units(bottom));
         let mut dismounts: Vec<Vec3> = OVER_BACK.iter().map(|b| over(thin + b * u)).collect();
         dismounts.push(over(thin / 2.0));
         dismounts.extend(OVER_EDGE.iter().map(|b| over(b * u)));
-        dismounts.push(to_source(foot));
+        dismounts.push(to_units(foot));
         out.push(UseableLadder {
             map_index: NO_ENTITY,
             top,
@@ -674,7 +674,7 @@ pub fn build_ladders(
     zones: Query<Ref<LadderZone>>,
     mut gone: RemovedComponents<LadderZone>,
     game: Option<Res<MapGame>>,
-    configs: Option<Res<SourceMovementConfigs>>,
+    configs: Option<Res<QuakeConfigs>>,
     mut last_game: Local<Option<String>>,
 ) {
     let mut published = published;

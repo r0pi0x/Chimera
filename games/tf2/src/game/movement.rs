@@ -16,20 +16,20 @@
 //! above 650 with a +-20 % spread: movement.md and its corrections from
 //! the SDK; TF2 has no ladders, so its own maps' ladder brushes are walls,
 //! while another game's map's ladders are climbed by the shared code's
-//! rule at its 200 units/s, `SourceMovementConfig::climbs_contents`)
+//! rule at its 200 units/s, `QuakeConfig::climbs_contents`)
 //! and a class layer: each player is the class of the TF2 gun in hand
 //! (`super::classes`, `select_class`, predicted: its rung's drawn class
 //! when the gun can be it, `classes::RungClass`, else the gun's own),
 //! whose reload times follow it (the Shotgun's start, the Pistol's
 //! clip: `weapons::damage::Tf2Gun::for_class`), whose top speed is the
-//! tick's speed (`SourceTraits::max_speed`; the Heavy's spun Minigun lowers it to 110,
+//! tick's speed (`MoveTraits::max_speed`; the Heavy's spun Minigun lowers it to 110,
 //! its weapon's `max_speed`, the zoomed rifle to 80, the weapon layer's
 //! `MaxSpeed`), whose eyes stand at 65, 68 or 75 and whose
 //! air jumps (the Scout's one: the vertical speed set to 268.33, the
 //! horizontal velocity to the keys' wish) and landings (a full-volume
 //! landing above 580 units/s; the Scout's sound and view roll only then)
 //! are the class's
-//! (`SourceTraits`). On the server a class's max health is the player's
+//! (`MoveTraits`). On the server a class's max health is the player's
 //! (`class_health`: the health's share kept across a change of class; a
 //! player that leaves TF2's movement gets back the max it had). TF2's
 //! per-class parts (`ClassParts`: the class, its traits, the max health
@@ -49,7 +49,7 @@
 
 use bevy::prelude::*;
 use source_engine::source_movement::{
-    SourceMovement, SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceTraits,
+    QuakeMovement, SourceMovementAppExt, QuakeConfig, QuakeConfigs, MovementStep, MoveTraits,
 };
 
 use super::{
@@ -73,8 +73,8 @@ pub const AIR_JUMP_SPEED: f32 = 268.328_16;
 pub const SPEED_CEILING: f32 = 520.0;
 
 /// TF2's movement config (movement.md "Constants").
-pub fn config() -> SourceMovementConfig {
-    SourceMovementConfig {
+pub fn config() -> QuakeConfig {
+    QuakeConfig {
         accelerate: 10.0,
         airaccelerate: 10.0,
         friction: 4.0,
@@ -118,9 +118,9 @@ pub fn config() -> SourceMovementConfig {
         fall_loud: Some(580.0),
         // No ladders in TF2: its maps' ladder brushes are walls. Other
         // games' maps' ladders are climbed by the shared code's rule
-        // (`SourceMovementConfig::climbs_contents`).
+        // (`QuakeConfig::climbs_contents`).
         contents_ladders: false,
-        ..SourceMovementConfig::reference()
+        ..QuakeConfig::reference()
     }
 }
 
@@ -148,7 +148,7 @@ pub const SMOOTH_STAIRS: f32 = 150.0;
 pub fn add_movement(app: &mut App) {
     let registered = app
         .world()
-        .get_resource::<SourceMovementConfigs>()
+        .get_resource::<QuakeConfigs>()
         .is_some_and(|c| c.get(ID).is_some());
     if registered {
         return;
@@ -157,7 +157,7 @@ pub fn add_movement(app: &mut App) {
     app.init_resource::<Classes>()
         .source_movement(ID, Some(config()), Some(super::GAME))
         .add_systems(FixedUpdate, wear.before(crate::core::SimSet::Movement))
-        .add_systems(crate::core::Predict::Movement, select_class.before(SourceMovementStep))
+        .add_systems(crate::core::Predict::Movement, select_class.before(MovementStep))
         .add_systems(
             FixedUpdate,
             class_health.after(crate::core::SimSet::Movement).run_if(crate::core::authoritative),
@@ -185,7 +185,7 @@ pub fn add_movement(app: &mut App) {
             help,
             "0",
             move |w| {
-                let cfg = w.get_resource::<SourceMovementConfigs>()?.get(ID)?;
+                let cfg = w.get_resource::<QuakeConfigs>()?.get(ID)?;
                 Some(if cfg.fall_spread > 0.0 { "0" } else { "1" }.to_string())
             },
             move |w, v| {
@@ -198,9 +198,9 @@ pub fn add_movement(app: &mut App) {
 }
 
 /// TF2's movement config as registered (tests and cvars change it here).
-pub fn config_mut(world: &mut World) -> Mut<'_, SourceMovementConfig> {
+pub fn config_mut(world: &mut World) -> Mut<'_, QuakeConfig> {
     world
-        .resource_mut::<SourceMovementConfigs>()
+        .resource_mut::<QuakeConfigs>()
         .map_unchanged(|c| c.get_mut(ID).expect("tf2:movement registered"))
 }
 
@@ -221,7 +221,7 @@ fn wear(
         if slot.0 == ID {
             commands.entity(e).insert_if_new((
                 Tf2Class::default(),
-                SourceTraits::default(),
+                MoveTraits::default(),
                 Tf2Punch::default(),
                 ViewVariant::default(),
                 BodyDecalsOffRagdoll,
@@ -236,7 +236,7 @@ fn wear(
 }
 
 /// TF2's per-class parts on a character, besides the marker: the class
-/// layer (`Tf2Class`, `SourceTraits`), the max health it had before
+/// layer (`Tf2Class`, `MoveTraits`), the max health it had before
 /// (`HealthBefore`), the view kick's spring (`weapons::recoil::Tf2Punch`)
 /// and the view model's class (`ViewVariant`: none, empty, until
 /// `super::view::view_variants` sets it), and that its ragdoll keeps no body
@@ -245,14 +245,14 @@ fn wear(
 /// style"): one at a time, each was an archetype for every combination of
 /// the character's other parts. What sets them later only changes their
 /// values.
-pub type ClassParts = (Tf2Class, SourceTraits, HealthBefore, Tf2Punch, ViewVariant, BodyDecalsOffRagdoll);
+pub type ClassParts = (Tf2Class, MoveTraits, HealthBefore, Tf2Punch, ViewVariant, BodyDecalsOffRagdoll);
 
 /// The class parts (`ClassParts`) a character becoming TF2's takes on:
 /// all but `HealthBefore` without a `Health`.
-fn class_parts(e: &EntityWorldMut) -> (Tf2Class, SourceTraits, Tf2Punch, ViewVariant, Option<HealthBefore>) {
+fn class_parts(e: &EntityWorldMut) -> (Tf2Class, MoveTraits, Tf2Punch, ViewVariant, Option<HealthBefore>) {
     (
         Tf2Class::default(),
-        SourceTraits::default(),
+        MoveTraits::default(),
         Tf2Punch::default(),
         ViewVariant::default(),
         e.get::<Health>().map(|h| HealthBefore(h.max)),
@@ -263,7 +263,7 @@ fn class_parts(e: &EntityWorldMut) -> (Tf2Class, SourceTraits, Tf2Punch, ViewVar
 /// and slot with TF2's class parts (`ClassParts`), in one move (the parts
 /// kept where they are).
 fn put_on(e: &mut EntityWorldMut, slot: MovementSlot) {
-    let marker = (SourceMovement::default(), slot);
+    let marker = (QuakeMovement::default(), slot);
     if e.contains::<Tf2Class>() {
         e.insert(marker);
         return;
@@ -279,7 +279,7 @@ fn put_on(e: &mut EntityWorldMut, slot: MovementSlot) {
 /// `tf2:movement`'s remove: the marker with the class parts, in one move.
 fn leave(e: &mut EntityWorldMut) {
     give_back(e);
-    e.remove::<(SourceMovement, ClassParts)>();
+    e.remove::<(QuakeMovement, ClassParts)>();
 }
 
 /// `tf2:movement`'s leave for another movement on Source's marker: the
@@ -324,7 +324,7 @@ pub fn select_class(
         &MovementSlot,
         &Inventory,
         &mut Tf2Class,
-        &mut SourceTraits,
+        &mut MoveTraits,
         Option<&RungClass>,
         Option<&MaxSpeed>,
         (
@@ -392,7 +392,7 @@ pub fn select_class(
         // own speed, past the ceiling.
         let charge = super::items::shields::charge_speed(inv, &shields, &item_weapons);
         let p = charge.unwrap_or(p);
-        let want = SourceTraits {
+        let want = MoveTraits {
             max_speed: Some(p),
             eye_stand: Some(c.eye),
             air_jumps: Some(hype_jumps.unwrap_or(c.air_jumps).saturating_add(f.air_dash)),

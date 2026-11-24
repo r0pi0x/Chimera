@@ -7,7 +7,7 @@ use crate::stack::{
     core::Velocity,
     games::{
         self, cs_source,
-        cs_source::movement::{self, SourceMovement, SourceMovementPlugin},
+        cs_source::movement::{self, QuakeMovement, SourceMovementPlugin},
     },
     harness::{CsSim, Sim},
     map::{MapData, MapPlugin},
@@ -46,7 +46,7 @@ fn walk(map: &MapData, feet: Vec3, dir: Vec2, seconds: f64) -> Vec3 {
             pos.0 = at;
         }
         e.get_mut::<Velocity>().unwrap().0 = Vec3::ZERO;
-        *e.get_mut::<SourceMovement>().unwrap() = SourceMovement::default();
+        *e.get_mut::<QuakeMovement>().unwrap() = QuakeMovement::default();
     }
     sim.ticks(16);
     let facing = src(dir.extend(0.0));

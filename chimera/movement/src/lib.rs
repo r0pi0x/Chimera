@@ -13,22 +13,22 @@
 //! impulse, its `func_useableladder` reader, and the Source names of the
 //! types here) and a GoldSrc game will run with its own config. The
 //! files: `config` (the config, its cvars by name, the configs by
-//! movement id), `state` (`SourceMovement`), `hooks` (what a game sets
+//! movement id), `state` (`QuakeMovement`), `hooks` (what a game sets
 //! before the step: `MoveSpeed`, `MoveTraits`, `MoveStance`,
 //! `StepSounds`), `units`, `trace` (the box sweep), `mover` (one
 //! character's tick, in parts: ground, air, duck, jump, water, ladders,
 //! `lines` (ladder lines), falls, steps, stuck), `step` (the system),
 //! `shadow`, `pushaway`, `drown`; this file is the root: the systems as
-//! one plugin (`SourceMovementPlugin`), the set games order their own
-//! per-tick choices against (`SourceMovementStep`), and a movement's
+//! one plugin (`QuakeMovementPlugin`), the set games order their own
+//! per-tick choices against (`MovementStep`), and a movement's
 //! registration (`QuakeMovementAppExt::quake_movement`: its id, config,
 //! console variables by list and namespace, its envelope and its seat).
 //!
 //! Each Source game registers it under its own id with its own config
 //! (`SourceMovementAppExt::source_movement`: `cs_source:movement` with
 //! CS:S's measured values, `hl2dm:movement` with HL2:DM's, each in
-//! `SourceMovementConfigs` by its id; the movement itself has no game's
-//! defaults, only the shared code's `SourceMovementConfig::reference`),
+//! `QuakeConfigs` by its id; the movement itself has no game's
+//! defaults, only the shared code's `QuakeConfig::reference`),
 //! and its cvars under its namespace; a character's config follows its
 //! `MovementSlot` (`MovementConfigs`). What differs between the games is
 //! config: CS:S's stamina, bunny-hop cap, walk scale, ladder dampening and
@@ -44,11 +44,11 @@
 //! fully ducked, the air-duck limit by releases, the re-duck delay, no
 //! duck in water and fall damage as a share of max health with its
 //! spread. A game may choose the
-//! tick's max speed before the step (`SourceSpeed`, ordered before
-//! `SourceMovementStep`: HL2:DM's walk, run and sprint), and a
-//! character's own kind its speed, eyes and air jumps (`SourceTraits`:
+//! tick's max speed before the step (`MoveSpeed`, ordered before
+//! `MovementStep`: HL2:DM's walk, run and sprint), and a
+//! character's own kind its speed, eyes and air jumps (`MoveTraits`:
 //! TF2's classes), and a game's own stance beyond standing and ducking
-//! its box, eye, speed and jump (`SourceStance`: DoD:S's prone, held as a
+//! its box, eye, speed and jump (`MoveStance`: DoD:S's prone, held as a
 //! lower ducked box; leaving it stands up where there is room, else stays
 //! ducked until there is, or lands ducked as if duck were held: a crouch;
 //! a stance held is no duck for the input's scale), and an unduck that
@@ -166,12 +166,12 @@ mod step;
 mod trace;
 mod units;
 
-pub use config::{MovementConfigs, QUAKE_CVARS, SourceMovementConfig, SourceMovementConfigs, config_of};
+pub use config::{MovementConfigs, QUAKE_CVARS, QuakeConfig, QuakeConfigs, config_of};
 pub use hooks::{MoveSpeed, MoveStance, MoveTraits, StepSounds};
 pub use mover::falls::punch_spring;
 pub use mover::lines::{self, EntityLadders, ForcedMove, LadderFrom, UseableLadder, UseableLadders};
-pub use state::{SettleOnGround, SourceMovement};
-pub use units::{to_engine, to_source};
+pub use state::{SettleOnGround, QuakeMovement};
+pub use units::{to_engine, to_units};
 
 // `crate::core`, `crate::map`, `crate::slots` and `crate::console` inside,
 // as in the crates the files came from.
@@ -190,19 +190,19 @@ use crate::{
 /// The movement's systems, once per app (`QuakeMovementAppExt::
 /// quake_movement` adds it): the step, the physics shadow, the push-away,
 /// the drowning, the map's ladder lines, and the configs by movement id
-/// (`SourceMovementConfigs`).
-pub struct SourceMovementPlugin;
+/// (`QuakeConfigs`).
+pub struct QuakeMovementPlugin;
 
-impl Plugin for SourceMovementPlugin {
+impl Plugin for QuakeMovementPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<SourceMovementConfigs>()
+        app.init_resource::<QuakeConfigs>()
             .init_resource::<UseableLadders>()
             .init_resource::<EntityLadders>()
             .add_message::<crate::map::PlaySound>()
             .add_message::<crate::map::entities::FireEntityOutput>()
             .add_systems(First, lines::build_ladders)
-            .add_systems(crate::core::Predict::Movement, step.in_set(SourceMovementStep))
-            .predicted_net::<SourceMovement>()
+            .add_systems(crate::core::Predict::Movement, step.in_set(MovementStep))
+            .predicted_net::<QuakeMovement>()
             .add_plugins((pushaway::PushAwayPlugin, shadow::ShadowPlugin));
         app.add_plugins(drown::DrowningPlugin);
     }
@@ -211,20 +211,20 @@ impl Plugin for SourceMovementPlugin {
 /// The movement step: a game's own per-tick choices (HL2:DM's speed
 /// selection, `MoveSpeed`) go before it.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SourceMovementStep;
+pub struct MovementStep;
 
 /// Register a movement on the shared movement.
 pub trait QuakeMovementAppExt {
-    /// Movement `id` on the shared movement (`SourceMovementPlugin`, added
+    /// Movement `id` on the shared movement (`QuakeMovementPlugin`, added
     /// once), with its `config` (one set for `id` before, by
-    /// `SourceMovementConfigs::set`, stays) and the console variables of
+    /// `QuakeConfigs::set`, stays) and the console variables of
     /// `cvars` (lists of (name, help): `config::QUAKE_CVARS` and the
-    /// engine's own; each name one `SourceMovementConfig::set_cvar`
+    /// engine's own; each name one `QuakeConfig::set_cvar`
     /// knows), under `namespace` (`hl2dm:sv_gravity`; None: bare names).
     fn quake_movement(
         &mut self,
         id: &'static str,
-        config: SourceMovementConfig,
+        config: QuakeConfig,
         cvars: &[&'static [(&'static str, &'static str)]],
         namespace: Option<&'static str>,
     ) -> &mut Self;
@@ -234,16 +234,16 @@ impl QuakeMovementAppExt for App {
     fn quake_movement(
         &mut self,
         id: &'static str,
-        config: SourceMovementConfig,
+        config: QuakeConfig,
         cvars: &[&'static [(&'static str, &'static str)]],
         namespace: Option<&'static str>,
     ) -> &mut Self {
-        if !self.is_plugin_added::<SourceMovementPlugin>() {
-            self.add_plugins(SourceMovementPlugin);
+        if !self.is_plugin_added::<QuakeMovementPlugin>() {
+            self.add_plugins(QuakeMovementPlugin);
         }
         let defaults = config;
         {
-            let mut all = self.world_mut().get_resource_or_init::<SourceMovementConfigs>();
+            let mut all = self.world_mut().get_resource_or_init::<QuakeConfigs>();
             if all.get(id).is_none() {
                 all.0.push((id, defaults.clone()));
             }
@@ -259,9 +259,9 @@ impl QuakeMovementAppExt for App {
                 &full,
                 help,
                 &defaults.get_cvar(name).unwrap_or_default(),
-                move |w| w.get_resource::<SourceMovementConfigs>().and_then(|c| c.get(id)).and_then(|c| c.get_cvar(name)),
+                move |w| w.get_resource::<QuakeConfigs>().and_then(|c| c.get(id)).and_then(|c| c.get_cvar(name)),
                 move |w, v| {
-                    w.get_resource_mut::<SourceMovementConfigs>()
+                    w.get_resource_mut::<QuakeConfigs>()
                         .and_then(|c| c.into_inner().get_mut(id).map(|c| c.set_cvar(name, v)))
                         .ok_or("no Source movement")?
                 },
@@ -273,6 +273,6 @@ impl QuakeMovementAppExt for App {
             use chimera_core::envelope::MovementEnvelopeAppExt;
             self.add_movement_envelope(game, defaults.envelope());
         }
-        self.register_movement::<SourceMovement>(id).seat_movement(id, footing, seat)
+        self.register_movement::<QuakeMovement>(id).seat_movement(id, footing, seat)
     }
 }

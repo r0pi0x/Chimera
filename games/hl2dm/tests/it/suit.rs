@@ -21,7 +21,7 @@ use hl2dm::{
     },
     harness::Hl2Sim,
 };
-use source_engine::source_movement::{SourceMovement, to_engine, to_source};
+use source_engine::source_movement::{QuakeMovement, to_engine, to_source};
 
 const UNIT: f32 = 0.0254;
 
@@ -647,7 +647,7 @@ fn damage_lands_in_whole_points() {
         pl.tick();
     }
     assert_eq!(pl.health(), 99.0, "five 0.2 hits take one point");
-    let _ = (to_source(at), pl.sim.app.world().get::<MovementState>(p).is_some(), pl.sim.app.world().get::<SourceMovement>(p).is_some());
+    let _ = (to_source(at), pl.sim.app.world().get::<MovementState>(p).is_some(), pl.sim.app.world().get::<QuakeMovement>(p).is_some());
 }
 
 /// Edge cases (suit.md): a generic trigger_hurt is absorbed by armour,

@@ -16,7 +16,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 use crate::stack::{
     core::{Intent, PredictedComponents},
-    games::cs_source::movement::{self as source, SourceMovement, SourceMovementPlugin},
+    games::cs_source::movement::{self as source, QuakeMovement, SourceMovementPlugin},
     greybox::{self, GreyboxMapPlugin},
     harness::{CsSim, NetSim, Sim},
     net::{
@@ -222,7 +222,7 @@ fn climbing_a_ladder_is_predicted() {
             .server
             .app
             .world()
-            .get::<SourceMovement>(theirs)
+            .get::<QuakeMovement>(theirs)
             .unwrap()
             .ladder
             .is_some();

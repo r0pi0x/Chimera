@@ -23,7 +23,7 @@ use chimera_core::{
 };
 use chimera_world::{harness::Sim, map::MapSimPlugin};
 use combat_arms::harness::CaSim;
-use cs_source::game::movement::{SourceMovement, UseableLadders};
+use cs_source::game::movement::{QuakeMovement, UseableLadders};
 use party_roster::PartyPartsPlugin;
 
 const CSS: &str = cs_source::game::movement::ID;
@@ -146,7 +146,7 @@ fn climb_to_top(sim: &mut Sim, p: Entity, to: Vec3, aim: Option<Vec3>, top: f32,
         } else if now > 0.5 && !s.on_ground {
             still += 1;
         }
-        if tracing() && let Some(m) = sim.app.world().get::<SourceMovement>(p) {
+        if tracing() && let Some(m) = sim.app.world().get::<QuakeMovement>(p) {
             let f = m.forced.map(|f| f.goal);
             eprintln!("  feet {now:.3} useable {:?} forced {f:?} ladder {:?} ground {}", m.useable, m.ladder, s.on_ground);
         }

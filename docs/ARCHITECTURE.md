@@ -224,7 +224,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   push-away and drowning; a movement registers with
   `QuakeMovementAppExt::quake_movement(id, config, cvars, namespace)`.
   It uses `chimera_core`, `chimera_world`, Bevy and avian only, and has
-  no game's defaults (`SourceMovementConfig::reference`). Source's games
+  no game's defaults (`QuakeConfig::reference`). Source's games
   reach it through `source_engine::source_movement`.
 - `chimera_sim` is the simulation's frameworks: `weapon` (the weapon
   system), `movement` (the movement slot's placeholder and noclip) and
@@ -459,7 +459,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   (`chimera_core::envelope`): on another game's map its pill is no
   wider or taller than that game's character and steps as high
   (`movement::body`, `mover::step_up`); its own maps are unchanged.
-  Every Source game's movement (`SourceMovementConfig::fitted`, after
+  Every Source game's movement (`QuakeConfig::fitted`, after
   TF2's class traits) and Combat Arms' (`movement::body`) fit their box
   the same way, per axis, with the eye kept 0.1 m under a lowered top;
   the model and hit boxes stay full size (docs/plans/active/character-fit.md).
@@ -556,7 +556,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   models; each gun's class): the class of the TF2 gun in hand sets
   `tf2:movement` (`game::movement`: `source_engine::source_movement` with
   TF2's config and the class's speed, eyes and air jumps through the
-  per-character `SourceTraits`), the max health (the server's), the body
+  per-character `MoveTraits`), the max health (the server's), the body
   (`game::bodies`: the class's player model by name, the team's skin;
   `game::player_anim`: Source's shared player animation with TF2's
   activities by state and the gun's kind, the move grid, aim and

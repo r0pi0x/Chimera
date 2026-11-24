@@ -1,5 +1,5 @@
 //! Characters fit the map's game (`chimera_core::envelope`; Source's
-//! `SourceMovementConfig::fitted`, Combat Arms' `movement::body`): on the
+//! `QuakeConfig::fitted`, Combat Arms' `movement::body`): on the
 //! party's simulation with every game's movement, a TF2-sized player (48 u
 //! wide, 82 tall) on a Combat Arms map walks through greyboxes of the
 //! narrowest doorways measured on Combat Arms' maps (specs/combat_arms/

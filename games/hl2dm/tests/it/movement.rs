@@ -23,7 +23,7 @@ use hl2dm::{
     },
     harness::Hl2Sim,
 };
-use source_engine::source_movement::{SourceMovement, SourceSpeed, to_engine, to_source};
+use source_engine::source_movement::{QuakeMovement, MoveSpeed, to_engine, to_source};
 
 const UNIT: f32 = 0.0254;
 const TOL: f32 = 0.01;
@@ -222,12 +222,12 @@ impl Player {
         self.vel().truncate().length()
     }
 
-    fn me(&self) -> SourceMovement {
-        self.sim.app.world().get::<SourceMovement>(self.p).unwrap().clone()
+    fn me(&self) -> QuakeMovement {
+        self.sim.app.world().get::<QuakeMovement>(self.p).unwrap().clone()
     }
 
-    fn me_mut(&mut self) -> Mut<'_, SourceMovement> {
-        self.sim.app.world_mut().get_mut::<SourceMovement>(self.p).unwrap()
+    fn me_mut(&mut self) -> Mut<'_, QuakeMovement> {
+        self.sim.app.world_mut().get_mut::<QuakeMovement>(self.p).unwrap()
     }
 
     fn ms(&self) -> MovementState {
@@ -244,7 +244,7 @@ impl Player {
 
     /// This tick's max speed (P).
     fn max(&self) -> f32 {
-        self.sim.app.world().get::<SourceSpeed>(self.p).unwrap().0
+        self.sim.app.world().get::<MoveSpeed>(self.p).unwrap().0
     }
 
     fn tick(&mut self) {
@@ -993,7 +993,7 @@ fn its_cvars_are_its_own() {
     let mut pl = Player::on_floor();
     chimera_core::console::execute(pl.sim.app.world_mut(), &["hl2dm:sv_gravity".into(), "300".into()], 0);
     let w = pl.sim.app.world();
-    let cfg = w.resource::<source_engine::source_movement::SourceMovementConfigs>().get(ID).unwrap().gravity;
+    let cfg = w.resource::<source_engine::source_movement::QuakeConfigs>().get(ID).unwrap().gravity;
     assert_eq!(cfg, 300.0);
 }
 
@@ -1320,7 +1320,7 @@ fn golden_run() {
             None => counted = false,
         }
         let (at, v, s) = (sim.position(p), sim.velocity(p), sim.state(p));
-        let me = sim.app.world().get::<SourceMovement>(p).unwrap().clone();
+        let me = sim.app.world().get::<QuakeMovement>(p).unwrap().clone();
         let health = sim.app.world().get::<Health>(p).map_or(0.0, |h| h.current);
         for f in [at.x, at.y, at.z, v.x, v.y, v.z, s.eye_offset.y, s.view_roll, health, me.stamina] {
             add(f.to_bits());

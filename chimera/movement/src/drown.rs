@@ -33,7 +33,7 @@
 
 use bevy::prelude::*;
 
-use super::{config::MovementConfigs, state::SourceMovement};
+use super::{config::MovementConfigs, state::QuakeMovement};
 use crate::core::{Damage, DamageKind, DamageTaken, Health, Hitgroup, SimClock, SimSet};
 
 /// Seconds the head can stay under water before the first hit.
@@ -90,7 +90,7 @@ fn drown(
     mut commands: Commands,
     mut players: Query<(
         Entity,
-        &SourceMovement,
+        &QuakeMovement,
         &mut Health,
         &Transform,
         Option<&mut Drowning>,

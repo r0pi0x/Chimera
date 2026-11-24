@@ -14,7 +14,7 @@
 //!   out: 2.0 s), one point a tick at 1.5 s; the max speed is `speed`
 //!   (750) × the melee weapon's move-speed attributes (the Skullcutter's
 //!   × 0.85: 637.5; heads and boosts don't count), past TF2's 520
-//!   (`movement::select_class`, `SourceTraits::ceiling`). It ends when the
+//!   (`movement::select_class`, `MoveTraits::ceiling`). It ends when the
 //!   meter is empty, when he is stopped (from `STOP_AFTER` s on, his speed
 //!   under `STOP_SPEED`: a wall), on a melee swing (that tick) or on an
 //!   impact; the meter is then 0. It refills from 0 to 100 in `recharge` s

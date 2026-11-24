@@ -20,7 +20,7 @@ use chimera_sim::{
     weapon::{Inventory, Weapon, give, projectile::{Flyer, LaunchRequest}},
 };
 use chimera_world::{greybox::{self, GreyboxMapPlugin}, harness::Sim};
-use source_engine::source_movement::SourceTraits;
+use source_engine::source_movement::MoveTraits;
 use tf2::{
     game::{
         TICK_INTERVAL,
@@ -168,7 +168,7 @@ fn set_health(sim: &mut Sim, e: Entity, points: f32) {
 }
 
 fn speed(sim: &Sim, p: Entity) -> f32 {
-    sim.app.world().get::<SourceTraits>(p).unwrap().max_speed.unwrap()
+    sim.app.world().get::<MoveTraits>(p).unwrap().max_speed.unwrap()
 }
 
 /// A target `units` ahead (-Z) of `from` holding `gun` (so of its class),
@@ -772,11 +772,11 @@ fn the_gru_moves_at_299_and_drains_10() {
 fn the_atomizer_adds_an_air_jump_while_out() {
     let mut sim = sim();
     let (p, _) = holding(&mut sim, greybox::SPAWNS[0], "tf2:atomizer");
-    assert_eq!(sim.app.world().get::<SourceTraits>(p).unwrap().air_jumps, Some(2));
+    assert_eq!(sim.app.world().get::<MoveTraits>(p).unwrap().air_jumps, Some(2));
     let other = give(sim.app.world_mut(), p, "tf2:tf_weapon_scattergun").unwrap();
     sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(other);
     sim.seconds(1.5);
-    assert_eq!(sim.app.world().get::<SourceTraits>(p).unwrap().air_jumps, Some(1));
+    assert_eq!(sim.app.world().get::<MoveTraits>(p).unwrap().air_jumps, Some(1));
 }
 
 #[test]
@@ -889,7 +889,7 @@ fn running_client() -> (chimera_net::harness::NetSim, Entity, Entity) {
 /// Both machines' top speed for the player and the client's prediction
 /// errors, `n` ticks of running forward.
 fn run_both(sim: &mut chimera_net::harness::NetSim, theirs: Entity, me: Entity, n: usize) -> Vec<(f32, f32)> {
-    let top = |w: &World, e: Entity| w.get::<SourceTraits>(e).and_then(|t| t.max_speed).unwrap_or(0.0);
+    let top = |w: &World, e: Entity| w.get::<MoveTraits>(e).and_then(|t| t.max_speed).unwrap_or(0.0);
     let mut out = Vec::new();
     for _ in 0..n {
         sim.clients[0].app.world_mut().get_mut::<chimera_core::core::Intent>(me).unwrap().move_axis = Vec2::Y;

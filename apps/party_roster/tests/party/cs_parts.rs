@@ -17,7 +17,7 @@ use chimera_world::{
         hud::{ActiveOverview, MapOverview}, sound::{Interval, SoundBank, SoundLevel},
     },
 };
-use cs_source::game::movement::SourceMovement;
+use cs_source::game::movement::QuakeMovement;
 use cs_source_ui::{radar::RadarFrame, target_id::TargetIdText};
 
 use crate::play::{held, line_up, party, place, soldier};
@@ -50,7 +50,7 @@ fn fight(victim_rung: usize) -> (f32, f32) {
         testkit::aim_at(&mut sim, a, at);
         sim.intent(a).fire = t % 2 == 0;
         sim.ticks(1);
-        if let Some(m) = sim.app.world().get::<SourceMovement>(b) {
+        if let Some(m) = sim.app.world().get::<QuakeMovement>(b) {
             low = low.min(m.velocity_modifier);
         }
         punch = punch.max(sim.app.world().get::<ViewPunch>(b).map_or(0.0, |p| p.0.length()));

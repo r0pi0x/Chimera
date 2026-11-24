@@ -9,9 +9,9 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 
 use super::{
-    config::{MovementConfigs, SourceMovementConfig},
-    state::SourceMovement,
-    units::{METERS_PER_UNIT, to_engine, to_source},
+    config::{MovementConfigs, QuakeConfig},
+    state::QuakeMovement,
+    units::{METERS_PER_UNIT, to_engine, to_units},
 };
 use crate::{
     core::{SimSet, Velocity},
@@ -60,7 +60,7 @@ pub fn prop_box(transform: &Transform, bounds: (Vec3, Vec3)) -> (Vec3, Vec3) {
             if i & 2 == 0 { lo.y } else { hi.y },
             if i & 4 == 0 { lo.z } else { hi.z },
         );
-        to_source(transform.transform_point(c))
+        to_units(transform.transform_point(c))
     });
     corners.fold((Vec3::MAX, Vec3::MIN), |(a, b), c| (a.min(c), b.max(c)))
 }
@@ -73,7 +73,7 @@ pub fn prop_box(transform: &Transform, bounds: (Vec3, Vec3)) -> (Vec3, Vec3) {
 /// is eight transformed corners (docs/performance.md, "Performance pass").
 pub fn surely_apart(transform: &Transform, bounds: (Vec3, Vec3), query: (Vec3, Vec3)) -> bool {
     let (lo, hi) = bounds;
-    let centre = to_source(transform.transform_point((lo + hi) * 0.5));
+    let centre = to_units(transform.transform_point((lo + hi) * 0.5));
     let radius = (hi - lo).length() * 0.5 * transform.scale.abs().max_element() / METERS_PER_UNIT;
     let reach = Vec3::splat(radius * 1.01 + 1.0);
     // Written so a NaN anywhere says "not surely apart".
@@ -81,8 +81,8 @@ pub fn surely_apart(transform: &Transform, bounds: (Vec3, Vec3), query: (Vec3, V
 }
 
 /// The player's box (Source units) from the movement transform.
-pub fn player_box(transform: &Transform, me: &SourceMovement, cfg: &SourceMovementConfig) -> (Vec3, Vec3) {
-    let feet = to_source(transform.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
+pub fn player_box(transform: &Transform, me: &QuakeMovement, cfg: &QuakeConfig) -> (Vec3, Vec3) {
+    let feet = to_units(transform.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
     let height = if me.ducked { cfg.duck_height } else { cfg.stand_height };
     (
         feet + Vec3::new(-cfg.half_width, -cfg.half_width, 0.0),
@@ -104,7 +104,7 @@ fn push_props(
         Entity,
         &Transform,
         &Velocity,
-        &SourceMovement,
+        &QuakeMovement,
         Option<&crate::core::MapControls>,
         Option<&NextPush>,
         Option<&crate::slots::MovementSlot>,
@@ -112,7 +112,7 @@ fn push_props(
     clock: Res<crate::core::SimClock>,
     mut props: Query<
         (Entity, &Transform, &PhysicsProp, Forces, Has<StartAsleep>),
-        (Without<SourceMovement>, Without<RigidBodyDisabled>, Without<ColliderDisabled>),
+        (Without<QuakeMovement>, Without<RigidBodyDisabled>, Without<ColliderDisabled>),
     >,
     cfg: MovementConfigs,
     mut commands: Commands,
@@ -131,7 +131,7 @@ fn push_props(
         let centre = (player.0 + player.1) / 2.0;
         player.0 -= Vec3::splat(QUERY_EXPAND);
         player.1 += Vec3::splat(QUERY_EXPAND);
-        let speed = to_source(pv.0).truncate().length();
+        let speed = to_units(pv.0).truncate().length();
         for (e, t, p, mut forces, asleep) in &mut props {
             if matches!(p.push, PushAway::Collide | PushAway::Ignore) {
                 continue;

@@ -45,7 +45,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use chimera_sim::weapon::{WeaponEvent, WeaponEventKind};
-use source_engine::source_movement::SourceMovement;
+use source_engine::source_movement::QuakeMovement;
 
 use super::{
     movement::RUN_SPEED,
@@ -108,7 +108,7 @@ pub fn cap(stamina: f32, sprint_keys: bool) -> f32 {
 
 /// Whether the keys and the stance ask for a sprint: `+speed` with forward
 /// input, standing up, duck neither held nor in effect.
-pub fn sprint_keys(intent: &Intent, me: &SourceMovement, stance: Option<&DodsStance>) -> bool {
+pub fn sprint_keys(intent: &Intent, me: &QuakeMovement, stance: Option<&DodsStance>) -> bool {
     intent.sprint
         && intent.move_axis.y > 0.0
         && !intent.crouch
@@ -122,7 +122,7 @@ pub fn sprint_keys(intent: &Intent, me: &SourceMovement, stance: Option<&DodsSta
 /// are full again.
 #[allow(clippy::type_complexity)]
 pub fn step(
-    mut players: Query<(&Intent, &mut DodsStamina, &SourceMovement, Option<&DodsStance>, Option<&Velocity>, Has<Dead>)>,
+    mut players: Query<(&Intent, &mut DodsStamina, &QuakeMovement, Option<&DodsStance>, Option<&Velocity>, Has<Dead>)>,
     clock: Res<SimClock>,
 ) {
     let dt = clock.dt();

@@ -11,7 +11,7 @@ use crate::stack::{
     },
     games::cs_source::{
         TICK_INTERVAL,
-        movement::{self as source, SourceMovement, SourceMovementPlugin},
+        movement::{self as source, QuakeMovement, SourceMovementPlugin},
         weapons::{AK47, CsWeaponsPlugin, Inaccuracy, Recoil},
     },
     greybox::{self, GreyboxMapPlugin},
@@ -34,7 +34,7 @@ fn outcome(world: &World, p: Entity) -> String {
         world.get::<Transform>(p).unwrap(),
         world.get::<Velocity>(p).unwrap(),
         world.get::<MovementState>(p).unwrap(),
-        world.get::<SourceMovement>(p).unwrap(),
+        world.get::<QuakeMovement>(p).unwrap(),
         world.get::<ViewPunch>(p),
         inv,
         world.get::<WeaponState>(w).unwrap(),

@@ -1,8 +1,8 @@
-//! The movement's config (`SourceMovementConfig`: the cvars' values, the box, the
+//! The movement's config (`QuakeConfig`: the cvars' values, the box, the
 //! duck, the falls, each game's switches), the shared code's values every
 //! game's starts from (`reference`; no game's are the defaults), the console
 //! variables by name (`QUAKE_CVARS`, `set_cvar`, `get_cvar`), the configs by
-//! movement id (`SourceMovementConfigs`), each character's fitted to the
+//! movement id (`QuakeConfigs`), each character's fitted to the
 //! loaded map's envelope (`MovementConfigs`, `config_of`).
 
 use bevy::prelude::*;
@@ -14,9 +14,9 @@ use crate::{mover::LEAVE_GROUND_VZ, slots::MovementSlot, units::METERS_PER_UNIT}
 /// (the SDK's, which the spec's test cases use), and each game states its
 /// own over them (`cs_source::movement::config`, CS:S as measured;
 /// HL2:DM's, TF2's, DoD:S's), registered by its movement's id
-/// (`SourceMovementConfigs`).
+/// (`QuakeConfigs`).
 #[derive(Clone, Debug)]
-pub struct SourceMovementConfig {
+pub struct QuakeConfig {
     pub accelerate: f32,
     pub airaccelerate: f32,
     pub friction: f32,
@@ -138,7 +138,7 @@ pub struct SourceMovementConfig {
     /// `func_useableladder`s instead (`useable_ladders`) and contents
     /// ladders are solid like any brush; a game with no ladders (TF2)
     /// climbs none on its own maps. On another game's map every movement
-    /// climbs (`SourceMovementConfig::climbs_contents`).
+    /// climbs (`QuakeConfig::climbs_contents`).
     pub contents_ladders: bool,
     /// `func_useableladder`s are climbed (`useable_ladders`; HL2:DM), with
     /// `sv_ladder_useonly` (only `+use` mounts) and
@@ -244,7 +244,7 @@ pub struct SourceMovementConfig {
     /// and off it (Source's `func_useableladder`).
     pub ladder_on_output: &'static str,
     pub ladder_off_output: &'static str,
-    /// How fast a hit's velocity modifier (`SourceMovement::
+    /// How fast a hit's velocity modifier (`QuakeMovement::
     /// velocity_modifier`) climbs back to 1, per second (CS:S, weapons.md
     /// M18: +0.005 a 0.015 s tick).
     pub velocity_modifier_recovery: f32,
@@ -267,7 +267,7 @@ pub const QUAKE_CVARS: &[(&str, &str)] = &[
     ("sv_bounce", "wall bounce (0 in CS:S)"),
 ];
 
-impl SourceMovementConfig {
+impl QuakeConfig {
     /// Whether ladder contents (and ladder zones, and other games'
     /// ladder lines as posts) are climbed on this map: the game's own
     /// rule on its own maps; on another game's map (`foreign`) any
@@ -408,7 +408,7 @@ impl SourceMovementConfig {
     }
 }
 
-impl SourceMovementConfig {
+impl QuakeConfig {
     /// The SDK 2013 shared movement code's values: the reference every
     /// game's config starts from.
     pub fn reference() -> Self {
@@ -503,33 +503,33 @@ impl SourceMovementConfig {
 /// reference values, for a character where none is registered
 /// (`fallback`).
 #[derive(Resource, Clone, Debug)]
-pub struct SourceMovementConfigs(pub Vec<(&'static str, SourceMovementConfig)>, SourceMovementConfig);
+pub struct QuakeConfigs(pub Vec<(&'static str, QuakeConfig)>, QuakeConfig);
 
-impl Default for SourceMovementConfigs {
+impl Default for QuakeConfigs {
     fn default() -> Self {
-        Self(Vec::new(), SourceMovementConfig::reference())
+        Self(Vec::new(), QuakeConfig::reference())
     }
 }
 
-impl SourceMovementConfigs {
-    pub fn get(&self, id: &str) -> Option<&SourceMovementConfig> {
+impl QuakeConfigs {
+    pub fn get(&self, id: &str) -> Option<&QuakeConfig> {
         self.0.iter().find(|(i, _)| *i == id).map(|(_, c)| c)
     }
 
-    pub fn get_mut(&mut self, id: &str) -> Option<&mut SourceMovementConfig> {
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut QuakeConfig> {
         self.0.iter_mut().find(|(i, _)| *i == id).map(|(_, c)| c)
     }
 
     /// The config of a character on no registered movement: the first
     /// registered one's (the app's own game's), else the reference values.
-    pub fn fallback(&self) -> &SourceMovementConfig {
+    pub fn fallback(&self) -> &QuakeConfig {
         self.0.first().map_or(&self.1, |(_, c)| c)
     }
 
     /// Movement `id`'s config set to `config`, registered or not yet (a
     /// registration after it keeps it: an app's settings read before its
     /// plugins are built).
-    pub fn set(&mut self, id: &'static str, config: SourceMovementConfig) {
+    pub fn set(&mut self, id: &'static str, config: QuakeConfig) {
         match self.get_mut(id) {
             Some(c) => *c = config,
             None => self.0.push((id, config)),
@@ -538,13 +538,13 @@ impl SourceMovementConfigs {
 }
 
 /// Each Source character's config: its movement's
-/// (`SourceMovementConfigs`, by its `MovementSlot`); for a character on no
+/// (`QuakeConfigs`, by its `MovementSlot`); for a character on no
 /// registered Source movement the first registered one's (the app's own
 /// game's), else the reference values.
-/// Fitted to the loaded map's movement envelope (`SourceMovementConfig::fitted`).
+/// Fitted to the loaded map's movement envelope (`QuakeConfig::fitted`).
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MovementConfigs<'w> {
-    own: Res<'w, SourceMovementConfigs>,
+    own: Res<'w, QuakeConfigs>,
     envelopes: Option<Res<'w, chimera_core::envelope::MovementEnvelopes>>,
     map_game: Option<Res<'w, crate::core::MapGame>>,
 }
@@ -552,12 +552,12 @@ pub struct MovementConfigs<'w> {
 impl MovementConfigs<'_> {
     /// The config of a character on movement `slot`, its body fitted to
     /// the loaded map (`map`).
-    pub fn of(&self, slot: Option<&MovementSlot>) -> std::borrow::Cow<'_, SourceMovementConfig> {
+    pub fn of(&self, slot: Option<&MovementSlot>) -> std::borrow::Cow<'_, QuakeConfig> {
         self.own(slot).fitted(self.map().as_ref())
     }
 
     /// The config of movement `slot` as its game states it (not fitted).
-    pub fn own(&self, slot: Option<&MovementSlot>) -> &SourceMovementConfig {
+    pub fn own(&self, slot: Option<&MovementSlot>) -> &QuakeConfig {
         slot.and_then(|s| self.own.get(s.0)).unwrap_or_else(|| self.own.fallback())
     }
 
@@ -568,13 +568,13 @@ impl MovementConfigs<'_> {
 }
 
 /// `MovementConfigs::of` from the world (fitted to the loaded map).
-pub fn config_of(world: &World, e: Entity) -> SourceMovementConfig {
+pub fn config_of(world: &World, e: Entity) -> QuakeConfig {
     let slot = world.get::<MovementSlot>(e);
     let reference;
-    let own = match world.get_resource::<SourceMovementConfigs>() {
+    let own = match world.get_resource::<QuakeConfigs>() {
         Some(all) => slot.and_then(|s| all.get(s.0)).unwrap_or_else(|| all.fallback()),
         None => {
-            reference = SourceMovementConfig::reference();
+            reference = QuakeConfig::reference();
             &reference
         }
     };
