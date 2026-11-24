@@ -8,64 +8,64 @@
 speed_mps = 6.35
 
 [maps.dod_anzio]
-area_m2 = 2483
-sight_m = 12.8
-spot_area_m2 = 2564
+area_m2 = 6576
+sight_m = 9.3
+spot_area_m2 = 6864
 spawns = 40
-spots = 1376
+spots = 3852
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 4.0, 8 = 1.7, 12 = 1.1 }
+wander_s = { 4 = 14.6, 8 = 6.3, 12 = 4.0 }
 
 [maps.dod_argentan]
-area_m2 = 742
-sight_m = 6.1
-spot_area_m2 = 772
+area_m2 = 5794
+sight_m = 10.1
+spot_area_m2 = 6017
 spawns = 40
-spots = 500
+spots = 4341
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 2.5, 8 = 1.1, 12 = 0.7 }
+wander_s = { 4 = 11.8, 8 = 5.1, 12 = 3.2 }
 
 [maps.dod_avalanche]
 area_m2 = 2942
-sight_m = 7.1
-spot_area_m2 = 3092
+sight_m = 7.2
+spot_area_m2 = 3110
 spawns = 40
-spots = 2393
+spots = 2428
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 8.5, 8 = 3.7, 12 = 2.3 }
+wander_s = { 4 = 8.5, 8 = 3.6, 12 = 2.3 }
 
 [maps.dod_colmar]
-area_m2 = 448
-sight_m = 7.0
-spot_area_m2 = 464
+area_m2 = 5018
+sight_m = 8.2
+spot_area_m2 = 5220
 spawns = 40
-spots = 274
+spots = 3431
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 1.3, 8 = 0.6, 12 = 0.4 }
+wander_s = { 4 = 12.5, 8 = 5.4, 12 = 3.4 }
 
 [maps.dod_donner]
-area_m2 = 1402
-sight_m = 7.7
-spot_area_m2 = 1444
+area_m2 = 5567
+sight_m = 8.3
+spot_area_m2 = 5785
 spawns = 40
-spots = 879
+spots = 3610
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 3.7, 8 = 1.6, 12 = 1.0 }
+wander_s = { 4 = 13.8, 8 = 5.9, 12 = 3.8 }
 
 [maps.dod_flash]
-area_m2 = 4704
-sight_m = 9.2
-spot_area_m2 = 4881
+area_m2 = 4703
+sight_m = 9.1
+spot_area_m2 = 4883
 spawns = 40
 spots = 3701
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 10.6, 8 = 4.5, 12 = 2.9 }
+wander_s = { 4 = 10.6, 8 = 4.6, 12 = 2.9 }
 
 [maps.dod_jagd]
 area_m2 = 1714
@@ -78,21 +78,21 @@ stuck = 0
 wander_s = { 4 = 2.9, 8 = 1.3, 12 = 0.8 }
 
 [maps.dod_kalt]
-area_m2 = 612
-sight_m = 7.4
-spot_area_m2 = 642
+area_m2 = 5018
+sight_m = 8.0
+spot_area_m2 = 5271
 spawns = 40
-spots = 412
+spots = 3370
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 1.7, 8 = 0.7, 12 = 0.5 }
+wander_s = { 4 = 12.9, 8 = 5.5, 12 = 3.5 }
 
 [maps.dod_palermo]
-area_m2 = 980
-sight_m = 6.9
-spot_area_m2 = 1028
+area_m2 = 4519
+sight_m = 7.3
+spot_area_m2 = 4722
 spawns = 32
-spots = 778
+spots = 3297
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 2.9, 8 = 1.2, 12 = 0.8 }
+wander_s = { 4 = 12.7, 8 = 5.4, 12 = 3.5 }

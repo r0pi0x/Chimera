@@ -1126,10 +1126,24 @@ pub fn inside_map(vis: Option<&MapVisibility>, feet: Vec3) -> bool {
     vis.is_none_or(|v| v.nodes.is_empty() || v.cluster_at(feet + Vec3::Y * 1.0).is_some())
 }
 
-/// The areas of `nav` a player can walk to from the spawn `points` and
-/// back (all that can be walked to, if none can walk back): the mesh's
-/// main connected region.
+/// Whether the spots' region counts what is reached by a one-way drop (a
+/// ledge's fall of 0.9-1.8 m with no way back): on (2026-11-24, the user:
+/// "we can try it, revert later if not good"), the region is every area
+/// walked to from the spawn points; off, only those walked to and back
+/// (`region_with`). Flip it to revert; `map_fitness` and
+/// `spot_checks::region_linked` follow it.
+pub const DROPS_REACHABLE: bool = true;
+
+/// The areas of `nav` a player can walk to from the spawn `points`
+/// (`DROPS_REACHABLE`), or and back.
 fn region(nav: &NavMesh, points: &[Vec3]) -> Vec<bool> {
+    region_with(nav, points, DROPS_REACHABLE)
+}
+
+/// The areas of `nav` a player can walk to from the spawn `points`; with
+/// `drops` off, and back too (all that can be walked to, if none can walk
+/// back): the mesh's main connected region.
+pub fn region_with(nav: &NavMesh, points: &[Vec3], drops: bool) -> Vec<bool> {
     let n = nav.areas.len();
     if n == 0 {
         return Vec::new();
@@ -1166,5 +1180,5 @@ fn region(nav: &NavMesh, points: &[Vec3]) -> Vec<bool> {
     };
     let (f, b) = (reach(&forward), reach(&back));
     let both: Vec<bool> = f.iter().zip(&b).map(|(a, b)| *a && *b).collect();
-    if both.iter().any(|x| *x) { both } else { f }
+    if !drops && both.iter().any(|x| *x) { both } else { f }
 }

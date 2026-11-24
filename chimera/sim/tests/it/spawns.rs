@@ -26,7 +26,7 @@ use chimera_world::{
     greybox,
     harness::Sim,
     map::{
-        nav::{NavArea, NavMesh},
+        nav::{NavArea, NavMesh, Side, Via},
         vis::{ActiveVisibility, MapVisibility},
     },
 };
@@ -267,6 +267,29 @@ fn wall_top() -> NavMesh {
         areas: vec![area(1, -20.0, 40.0, 20.0, 41.0, 6.0)],
         ..default()
     }
+}
+
+#[test]
+fn an_area_reached_by_a_one_way_drop_is_in_the_region_while_drops_count() {
+    // A ledge (spawn) with a drop to a floor and no way back, and a third
+    // area the floor walks to and from.
+    let mut mesh = NavMesh {
+        areas: vec![
+            area(1, 0.0, 0.0, 4.0, 4.0, 2.0),
+            area(2, 4.0, 0.0, 8.0, 4.0, 0.0),
+            area(3, 8.0, 0.0, 12.0, 4.0, 0.0),
+        ],
+        ..default()
+    };
+    mesh.areas[0].links.push((1, Via::Walk(Side::MaxX)));
+    mesh.areas[1].links.push((2, Via::Walk(Side::MaxX)));
+    mesh.areas[2].links.push((1, Via::Walk(Side::MaxX)));
+    let ledge = [Vec3::new(2.0, 2.0, 2.0)];
+    assert_eq!(spawns::region_with(&mesh, &ledge, true), [true, true, true], "drops count");
+    // The old rule (walked to and back): only the ledge itself.
+    assert_eq!(spawns::region_with(&mesh, &ledge, false), [true, false, false]);
+    // The setting the spots follow.
+    assert!(spawns::DROPS_REACHABLE);
 }
 
 #[test]

@@ -426,6 +426,15 @@ Admitting them needs a rule change (the region as the largest part a
 player can walk round in that the spawns drop into, the ledges left out)
 or spots only below the drops; a decision, not a measurement.
 
+2026-11-24, one-way drops count (the user: "we can try it, revert later
+if not good"): the spots' region is every area walked to from the spawn
+points, not only those walked to and back (`spawns::DROPS_REACHABLE`, one
+constant; `spot_checks::region_linked` and `map_fitness` follow it; test
+`an_area_reached_by_a_one_way_drop_is_in_the_region_while_drops_count`).
+All nine maps now cover their whole mesh (spots cover 1760-6864 m2 against
+mesh 1714-6576, none off the map or stuck) and all nine are in the pool;
+to revert, flip the constant and deny the six again.
+
 DoD:S's multiplayer props: answered 2026-11-24 (above, "measurements
 3"): neither CS:S's soft props everywhere nor HL2:DM's solid shoved
 ones; with turbo physics most are walls at load (the walker and, since

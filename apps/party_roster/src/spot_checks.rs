@@ -96,6 +96,9 @@ pub fn region_linked(nav: &NavMesh, feet: &[Vec3], links: &[(usize, usize)]) -> 
         seen
     };
     let (f, b) = (reach(&forward), reach(&back));
+    if spawns::DROPS_REACHABLE {
+        return (f, starts);
+    }
     (f.iter().zip(&b).map(|(a, b)| *a && *b).collect(), starts)
 }
 

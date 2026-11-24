@@ -25,8 +25,9 @@ entities) and the gun game started, then:
   Arms' walker, jump-ups included, meeting the map's player clips),
   flooded from the map's spawn points, bounded to the clusters the spawn
   spots' walking player reaches where the map has visibility data; its
-  main region (areas walked to from a spawn and
-  back; a map's teleporters, `map::teleport`, count as links of no
+  main region (areas walked to from a spawn, since 2026-11-24 with
+  one-way drops counted, `spawns::DROPS_REACHABLE`; before, and back too;
+  a map's teleporters, `map::teleport`, count as links of no
   length, 2026-11-15) is `area_m2`. Disconnected scenery is left out.
 - **Walking times** at one run speed for every game, CS:S's 250 units/s
   (6.35 m/s), Dijkstra over the areas: between two random points of the

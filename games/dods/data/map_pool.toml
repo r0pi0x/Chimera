@@ -1,28 +1,28 @@
 # DoD:S maps an automatic gun game's pool takes (the Ultimate Gun Game:
 # chimera_sim::minigame::map_fit; docs/plans/active/map-pool-fitness.md,
-# docs/plans/active/dods.md M3b and section 7). Every map is denied but
-# those allowed below, each chosen by the 2026-11-24 sweep of the nine
-# stock maps (data/map_fitness.toml; the spawn spots' walk goes through the
-# physics props a DoD:S player gets past, by its turbo physics only debris
-# and the multiplayer props asleep since load, and climbs DoD:S's
-# jump-ups; swept again under that rule the same day: the same three fit):
-# no spot off the map and none stuck on any of them, but on six
-# the main region (walked to from the spawn points and back) is a part of
-# the map: the spawn points stand on ledges the rest of the map is reached
-# from by drops of 0.9-1.8 m with no way back (`map_fitness --leaks`,
-# "one-way"), so the spots would keep everyone up there:
-# - dod_anzio (main region 2483 of 6576 m2), dod_argentan (742 of 5794),
-#   dod_colmar (448 of 5019), dod_donner (1402 of 5569), dod_kalt (612 of
-#   5018), dod_palermo (980 of 4520).
+# docs/plans/active/dods.md M3b and section 7). All nine stock maps
+# (data/map_fitness.toml, the 2026-11-24 sweep). The spawn spots' walk goes
+# through the physics props a DoD:S player gets past (by its turbo physics
+# only debris and the multiplayer props asleep since load) and climbs
+# DoD:S's jump-ups, and counts what a one-way drop reaches
+# (`spawns::DROPS_REACHABLE`, the user's call "we can try it, revert later
+# if not good"): six maps had their spawn points on ledges above drops of
+# 0.9-1.8 m with no way back (dod_anzio, argentan, colmar, donner, kalt,
+# palermo; main regions of 448-2483 of 4519-6576 m2 when only walks to and
+# back counted), so their spots covered a part of the map. Now the spots
+# cover the whole walkable area of every map (area = the whole flood), no
+# spot is off the map and none stuck. To go back to the six's denial,
+# flip the constant and list them under [[deny]] again.
 # The players present still decide a draw (the wander time: dod_jagd and
-# dod_avalanche from 4 players, dod_flash, the largest, from about 8). Each
-# entry: map names (`*` matches any run of letters) and why; `[[allow]]`
-# entries win over `[[deny]]` and over the measurements' flags.
+# dod_avalanche from 4 players, dod_flash from about 8; the six large ones
+# wander 11-15 s at 4 players). Each entry: map names (`*` matches any
+# run of letters) and why; `[[allow]]` entries win over `[[deny]]` and over
+# the measurements' flags.
 
 [[deny]]
 reason = "DoD:S's maps join the pool only when chosen for a free-for-all (the allow list)"
 maps = ["*"]
 
 [[allow]]
-reason = "the spawn spots cover the whole walkable area (no part reached only by a drop from the spawns); measured fit"
-maps = ["dod_jagd", "dod_flash", "dod_avalanche"]
+reason = "the spawn spots cover the whole walkable area (drops count as reached); measured fit"
+maps = ["dod_anzio", "dod_argentan", "dod_avalanche", "dod_colmar", "dod_donner", "dod_flash", "dod_jagd", "dod_kalt", "dod_palermo"]
