@@ -37,6 +37,11 @@
 //! (`targets::TargetBots`, registered here); the target rule (its home,
 //! motion and trigger) overrides the brain's keys after `brain::think`.
 //!
+//! The brain shares its target with other games' items (`core::BotFocus`,
+//! read by their bot hooks in `core::BotItems`, which run after it: TF2's
+//! shields, watches, chute and thruster on a gun game's rung) and leaves a
+//! rung's passive and any unselectable weapon out of its guns.
+//!
 //! Bots run on the server only, their senses and goals on the server's
 //! 20 Hz frames (`grenades::SERVER_FRAME`, the dedicated server's rate:
 //! Open question 1), their aim, movement keys and trigger every tick.
@@ -474,6 +479,7 @@ impl Plugin for CaBotsPlugin {
                     (roster::keep_quota, brain::ensure_nav, roster::arm, brain::think)
                         .chain()
                         .before(SimSet::Rules)
+                        .before(crate::core::BotItems)
                         .before(crate::weapon::SelectWeapons),
                     (brain::post_stimuli, brain::camping, chat::chat)
                         .chain()

@@ -693,6 +693,7 @@ pub fn add(app: &mut App) {
     super::fire::add(app);
     super::kit::add(app);
     super::misc::add(app);
+    super::bots::add(app);
     app.register_weapon_hook::<ItemParams>(super::ITEM_HOOK, |e, _, p| {
         e.insert(Tf2Item(p.clone()));
     })

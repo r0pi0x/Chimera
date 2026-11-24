@@ -8,12 +8,16 @@
 # [slots]: a gun's slot for a class where it isn't its data's (the
 # Shotgun is the Engineer's primary, the others' secondary).
 # [gun_keys]: the keys a gun uses beyond fire, which an item's `keys` may
-# not take (P3's shields and watches).
+# not take (the shields' and watches' attack2); an unlock reads its base
+# weapon's row (`items::base_in`: the Degreaser the Flame Thrower's).
 # [[passive]]: `item` a weapon id (data/items.toml; an item the pack lacks
 # is never drawn), `classes`, `slot` the loadout slot it takes (never the
 # rung gun's), `group` (one per group on a rung), `weight`, `kind` (worn
 # or carried), `keys`, `summary` (one line for the HUD's hover card).
-# P1: the worn items that take no key.
+# P1: the worn items that take no key; P3: the keyed ones (shields and
+# watches on attack2 with any weapon out, the chute on jump in the air:
+# no gun uses jump) and the carried Thermal Thruster (switched to in its
+# slot and fired: its slot is its key). `items::bots` uses them for bots.
 
 odds = 0.25
 max = 1
@@ -28,6 +32,9 @@ engineer = "primary"
 "tf2:tf_weapon_minigun" = ["attack2"]
 "tf2:tf_weapon_sniperrifle" = ["attack2"]
 "tf2:tf_weapon_pipebomblauncher" = ["attack2"]
+"tf2:tf_weapon_rocketlauncher_fireball" = ["attack2"]
+"tf2:tf_weapon_particle_cannon" = ["attack2"]
+"tf2:tf_weapon_compound_bow" = ["attack2"]
 
 [[passive]]
 item = "tf2:mantreads"
@@ -71,3 +78,69 @@ classes = ["sniper"]
 slot = "secondary"
 group = "back"
 summary = "Blocks one backstab"
+
+# ---- P3: keyed and carried ----
+
+[[passive]]
+item = "tf2:chargin_targe"
+classes = ["demoman"]
+slot = "secondary"
+group = "arm"
+keys = ["attack2"]
+summary = "Attack2 charges forward; resists fire and blasts"
+
+[[passive]]
+item = "tf2:splendid_screen"
+classes = ["demoman"]
+slot = "secondary"
+group = "arm"
+keys = ["attack2"]
+summary = "Attack2 charges forward, recharging faster and hitting harder on impact"
+
+[[passive]]
+item = "tf2:tide_turner"
+classes = ["demoman"]
+slot = "secondary"
+group = "arm"
+keys = ["attack2"]
+summary = "Attack2 charges forward with free turning"
+
+[[passive]]
+item = "tf2:invis_watch"
+classes = ["spy"]
+slot = "pda2"
+group = "watch"
+keys = ["attack2"]
+summary = "Attack2 cloaks: invisible while the meter lasts"
+
+[[passive]]
+item = "tf2:cloak_and_dagger"
+classes = ["spy"]
+slot = "pda2"
+group = "watch"
+keys = ["attack2"]
+summary = "Attack2 cloaks; the meter refills standing still"
+
+[[passive]]
+item = "tf2:dead_ringer"
+classes = ["spy"]
+slot = "pda2"
+group = "watch"
+keys = ["attack2"]
+summary = "Attack2 arms it: the next hit fakes your death and cloaks you"
+
+[[passive]]
+item = "tf2:base_jumper"
+classes = ["soldier", "demoman"]
+slot = "secondary"
+group = "back"
+keys = ["jump"]
+summary = "Jump in the air opens a parachute"
+
+[[passive]]
+item = "tf2:thermal_thruster"
+classes = ["pyro"]
+slot = "secondary"
+group = "back"
+kind = "carried"
+summary = "Switch to it and fire to launch through the air; stomps on landing"

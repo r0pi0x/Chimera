@@ -1003,6 +1003,13 @@ pub fn think(world: &mut World, mut queries: Local<Option<SnapQueries>>, mut spa
         if out.chase_step {
             world.resource_mut::<PatrolClock>().chase_cycle += 1;
         }
+        // Its target for the items' bot hooks (`core::BotItems`).
+        let focus = crate::core::BotFocus { target: bot.target, sees: bot.target.is_some() && bot.visible };
+        if let Some(mut f) = world.get_mut::<crate::core::BotFocus>(e)
+            && *f != focus
+        {
+            *f = focus;
+        }
         *world.get_mut::<CaBot>(e).unwrap() = bot;
     }
     world.resource_mut::<PatrolClock>().starts = starts;
@@ -1208,6 +1215,10 @@ fn guns_of(world: &World, e: Entity) -> Vec<Gun> {
     let Some(inv) = world.get::<Inventory>(e) else { return Vec::new() };
     inv.weapons
         .iter()
+        // A rung's passive (worn boots, a shield, a jetpack) and anything
+        // never drawn are no gun of the bot's: the items' bot hooks use
+        // them (`core::BotItems`).
+        .filter(|&&w| world.get::<chimera_sim::minigame::passives::RungPassive>(w).is_none() && world.get::<crate::weapon::Unselectable>(w).is_none())
         .filter_map(|&w| {
             let weapon = world.get::<Weapon>(w)?;
             let m = world.get::<Magazine>(w);

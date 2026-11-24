@@ -75,7 +75,9 @@
 //! entity, a vehicle's seat: every movement skips it, it makes no steps:
 //! `Afoot`), `buttons` (Source's command button bits),
 //! `ScoreChange` (game_score, applied by the rules); the players' standing
-//! every game has: `Score`, `Dead`, `MapLoads`, `Bot` (a computer player),
+//! every game has: `Score`, `Dead`, `MapLoads`, `Bot` (a computer player;
+//! `BotFocus`, its brain's target, and `BotItems`, the set where a game's
+//! items' bot hooks change its keys after its brain),
 //! `Npc` (a character that isn't a player: hostages), `ScoreMark` (what a
 //! carried item marks on the scoreboard); `BuildVersion` (the app's stamp);
 //! `DEFAULT_TICK_HZ`; what the client shell reads of a game's rules without
@@ -1776,7 +1778,30 @@ pub struct RemotePlayer;
 /// kicks bots by it (`net`'s `BotHooks`) without naming a game.
 #[derive(Component, Reflect, Default, Clone, Copy, Debug)]
 #[reflect(Component)]
+#[require(BotFocus)]
 pub struct Bot;
+
+/// What a bot's brain has in mind this tick, for the bots' item hooks
+/// (`BotItems`): its target and whether it sees it. The game's brain
+/// writes it (Combat Arms'); a game's items read it without naming the
+/// brain. On every bot from its start (`Bot` requires it), so it makes
+/// no archetype of its own.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct BotFocus {
+    pub target: Option<Entity>,
+    pub sees: bool,
+}
+
+/// The bots' item hooks (the server's, `FixedUpdate`): a game's systems
+/// that use the items a bot carries beside its weapon (a shield's charge,
+/// a watch's cloak, a chute, a jetpack) by changing its `Intent` and its
+/// wanted weapon after its brain wrote them (brains run before this set).
+/// Each hook orders itself before the rules (`SimSet::Rules`: freeze time
+/// and death still hold the keys) and the weapon switch
+/// (`weapon::SelectWeapons`); the set carries no edges of its own, so an
+/// app without hooks schedules as before.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BotItems;
 
 /// A character that isn't a player (CS:S's hostages): on no team's count,
 /// not among a server's players, and replicated by its game rather than

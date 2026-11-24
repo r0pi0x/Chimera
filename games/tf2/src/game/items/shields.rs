@@ -52,8 +52,9 @@
 //!
 //! The meter shows as TF2's item meter (`meter`: CHARGE). Shields and
 //! boots are utility items: no ladder draws them as a gun (data/items.toml);
-//! the boots may ride with a rung as its passive (`super::super::passives`,
-//! off by default; the shields wait for P3's key rule).
+//! the boots and the shields may ride with a rung as its passive
+//! (`super::super::passives`, off by default; a shield only on a rung
+//! whose gun leaves attack2 free); bots charge with one (`super::bots`).
 //!
 //! Known shortcuts: the drive reaches 750 with the ground's acceleration
 //! (five ticks; the shield's 0 → 218 → 732 → 750 is quicker) and, ended,

@@ -34,8 +34,11 @@
 //!   cost the victim a rung with `demote_on = "melee_death"`
 //!   (`ladder::Ladder::is_passive`).
 //!
-//! Known shortcuts: no HUD yet (P2: the user's pick of the mockup); keyed
-//! items and their bot hooks wait for P3; the odds row of the host
+//! - **Bots** use a keyed item through the game's hook in
+//!   `core::BotItems` (reading `core::BotFocus`, the brain's target); a
+//!   brain leaves `RungPassive` weapons out of its guns.
+//!
+//! Known shortcuts: no HUD yet (P2: the user's pick of the mockup); the odds row of the host
 //! settings shows whether passives are on or not (no progressive
 //! disclosure yet), and setting it alone turns them on.
 

@@ -611,6 +611,30 @@ fn case_21_notice_roll_near() {
     assert!(b(&sim, bt).target.is_none());
 }
 
+/// Ours (docs/plans/active/rung-passives.md, P3): the brain tells the
+/// items' bot hooks its target (`core::BotFocus`), and a rung's passive
+/// it carries (a worn or carried item, `RungPassive`) is never one of its
+/// guns: it stays out of its hand while it fights.
+#[test]
+fn the_brain_shares_its_target_and_leaves_passives_alone() {
+    let (mut sim, p, bt) = duel(Level::Easy, 0, 650.0, RIFLE_KIT);
+    let passive = chimera_sim::weapon::give(sim.app.world_mut(), bt, SNIPER).unwrap();
+    sim.app.world_mut().entity_mut(passive).insert(chimera_sim::minigame::passives::RungPassive);
+    // As a rung gives it (`passives::wear`): what was wanted stays.
+    sim.app.world_mut().get_mut::<Inventory>(bt).unwrap().wanted = None;
+    let mut drawn = false;
+    until(&mut sim, 3.0, |s| {
+        let inv = s.app.world().get::<Inventory>(bt).unwrap();
+        drawn |= inv.active == Some(passive) || inv.wanted == Some(passive);
+        false
+    });
+    assert_eq!(b(&sim, bt).target, Some(p));
+    let focus = *sim.app.world().get::<chimera_core::core::BotFocus>(bt).unwrap();
+    assert_eq!(focus.target, Some(p), "the target shared");
+    assert_eq!(focus.sees, b(&sim, bt).visible);
+    assert!(!drawn, "the passive never drawn");
+}
+
 /// Case 22: a relaxed bot facing +Z: 75° off at 1000 u not seen, at 200 u
 /// seen; alert: 100° not, 89° seen.
 #[test]

@@ -93,6 +93,10 @@
 //! rocketpack, particle_cannon.toml; the gas jar a class table of
 //! jar.toml, the Razorback the worn item's).
 //!
+//! **Bots** (`bots`, docs/plans/active/rung-passives.md P3): the keyed
+//! items a rung may carry (shields, watches, the chute, the thruster)
+//! used by any bot through Chimera's `core::BotItems` and `BotFocus`.
+//!
 //! Known shortcuts:
 //! - An item's `anim_slot` and `animation_replacement` (on `tf2:item`)
 //!   pick its sequences only for a melee unlock (`view::item_activity`:
@@ -103,6 +107,7 @@
 //!   bone-merged; of its sounds the shot, crit shot (Minigun), empty and
 //!   melee hit/miss entries are used, the reload and deploy entries not.
 
+pub mod bots;
 pub mod consumables;
 pub mod convert;
 pub mod docs;

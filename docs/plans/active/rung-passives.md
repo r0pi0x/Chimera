@@ -1,6 +1,6 @@
 # Rung passives: worn and carried items on a gun game rung
 
-Status: P0 and P1 built (2026-11-24); P2 waits for the user's pick of
+Status: P0, P1 and P3 built (2026-11-24); P2 waits for the user's pick of
 the HUD mockup. The open questions' defaults hold until answered (off by
 default, 25 % odds when on, one passive a rung, no utility). Parent plans:
 [ultimate-gun-game.md](ultimate-gun-game.md) (the gun game),
@@ -19,7 +19,7 @@ your character". UI mockup (private artifact, for the user's review):
 | P0 the extra in Chimera | done | `RungExtras::passives`, `minigame::passives` (`PassiveTable`, `draw`, `wear`, `RungPassive`), `Ladder::is_passive` (the kill rule), the option (`passives = true` or a table; `on = false`), two host settings (`rules.rung_extras.passives.on`, `.odds`), carried in `NetMinigame::rung_extras` (`net73`); tests: chimera_sim `rung_passives` |
 | P1 TF2's worn passives | done | data/rung_passives.toml (Mantreads, Ali Baba's Wee Booties, Bootlegger, Darwin's Danger Shield, Cozy Camper, Razorback; the gun slots per class and the guns' keys), `game::passives` (draw with the rung's class, `apply` through `tf2:worn`); Darwin's and the Cozy Camper made worn items (no longer `wearable`); Gunboats left out (their worn own-blast reduction isn't built); tests: tf2 `rung_passives` |
 | P2 the HUD | not started | the chosen mockup option, the Tab board's Gear column and hover card, the toast's "+ item", the kill feed's item icon |
-| P3 keyed passives | not started | shields, Spy watches, B.A.S.E. Jumper, Thermal Thruster, with the key-conflict rule; bots use them |
+| P3 keyed passives | done | data/rung_passives.toml: the shields and watches (`keys = ["attack2"]`), the B.A.S.E. Jumper (`["jump"]`, Soldier and Demoman), the carried Thermal Thruster (its slot its key); `[gun_keys]` adds the Dragon's Fury, Cow Mangler and Huntsman bases and an unlock reads its base's row (`items::base_in`); the items already worked carried (their parts read the holder's keys whatever is out); bots: Chimera's `core::BotFocus` (the brain's target, on every `Bot`) and `core::BotItems` (a set after the brains, before the rules and the switch), Combat Arms' brain writes the focus and leaves `RungPassive` and `Unselectable` weapons out of its guns, TF2's `items::bots` charges at a target within 600 units ahead, cloaks hurt and backs away (decloaks after 3 s with nobody in sight; the Dead Ringer arms on sight), opens the chute past a 550 units/s fall, and draws the thruster at a target past 900 units, launches and draws its gun back; tests: tf2 `rung_passives` (draw per rung, each item with the gun out, bots with a stand-in brain, leaving mid-charge and mid-cloak on `NetSim`), combat_arms `bots::the_brain_shares_its_target_and_leaves_passives_alone` |
 | P4 worn on the body | not started | the items drawn on the third-person body (TF2's notes: "drawn on the legs" ...) |
 | P5 active utility | waits for the user | jars, food, drinks, banners, Gas Passer: a separate extra with its own toggle |
 | P6 other games | not started | Combat Arms' gear perks first; others as they have something |
@@ -186,9 +186,16 @@ something worth wearing.
   item's state the same tick on both sides (the item's part is removed
   with the item; its `Discard` observer ends the charge); a test covers
   it.
-- **Bots** (P3): keyed items need a bot hook each (charge on a straight
-  line to a target, thruster to close distance, chute on a long fall);
-  worn items need nothing.
+- **Bots** (P3, built): a keyed item's bot hook (the game's, in
+  Chimera's `core::BotItems`, the server's) presses its key after the
+  brain wrote its own, from the brain's `core::BotFocus` (its target and
+  whether it sees it): TF2's `items::bots` (charge at a target close
+  ahead, cloak when hurt and back away, chute on a long fall, thruster to
+  close distance). Worn items need nothing; a brain never draws a
+  passive. Leaving a rung mid-charge or mid-cloak: the item is taken
+  with the rung, so the server's state ends that tick; the client's
+  prediction has it until the change arrives, then its history from
+  that tick has none (one correction at most, then the same speeds).
 
 ## 6. The HUD (mockup)
 
