@@ -1191,6 +1191,8 @@ fn lit_world_material(
             },
             flat_envmap_scale: m.flat_envmap.map_or(1.0, |e| e.scale),
             modulate_fog_fade: m.modulate_fog_fade,
+            uv_warp: crate::map::MapUvWarp::shader_params(m.warp.as_ref()).0,
+            uv_warp_speed: crate::map::MapUvWarp::shader_params(m.warp.as_ref()).1,
             envmap_light: m
                 .envmap
                 .and_then(|e| e.light_mask)

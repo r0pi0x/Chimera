@@ -32,11 +32,18 @@
 //!   over a gait sequence, as CS 1.6's players blend gait and weapon
 //!   sequences; the others weigh every bone.
 //!
+//! - Chrome (texture flag 2, mdl.md "Textures and skins": coordinates
+//!   from the view direction and the normal, not s/t): the mesh draws its
+//!   texture as a `MapLayer` on sphere-map coordinates (the camera-space
+//!   reflection), lit, in place of the base (`chrome_layer`).
+//!
 //! Known shortcuts:
 //! - Sequences in groups 1 and up (sequence files) are left out: no CS
 //!   1.6 player model has any.
-//! - Chrome (texture flag 2) is drawn with its own coordinates; no bone
-//!   controllers; body parts other than choice 0 are not drawn.
+//! - Chrome's exact mapping (which vectors, scale, whether it follows the
+//!   view or the light) is not in mdl.md: Chimera's sphere map stands in,
+//!   to match against captures (mdl.md open question 1).
+//! - No bone controllers; body parts other than choice 0 are not drawn.
 //! - Which way the aim blends run against the view's pitch is not
 //!   measured (mdl.md, open question 2): drivers leave the parameter at 0.
 
@@ -52,11 +59,31 @@ use super::{METERS_PER_UNIT, entities::STAND_HALF_HEIGHT};
 use crate::{
     core::{BodyRegion, Hitbox, Hitgroup},
     map::{
-        BoneBox, MapAlpha, MapBone, MapCharacterModel, MapData, MapMesh, MapModel, MapTexture,
+        BoneBox, LayerAddress, LayerCombine, LayerCoords, MapAlpha, MapBone, MapCharacterModel, MapData, MapLayer,
+        MapMesh, MapModel, MapTexture,
         anim::{AnimSet, Animation, Axis, BonePose, PoseParam, Sequence, Track},
     },
     mount::Mount,
 };
+
+/// A studio texture's chrome flag (mdl.md, "Textures and skins").
+pub const CHROME: i32 = 2;
+
+/// Chrome's look for texture `index` (named `name`): the texture itself
+/// on sphere-map coordinates, lit, in place of the base (the layer's
+/// AlphaLerp with the opaque base's alpha 1: factor × light × layer).
+pub fn chrome_layer(name: &str, index: usize) -> MapLayer {
+    MapLayer {
+        material: name.to_ascii_lowercase(),
+        texture: Some(index),
+        coords: LayerCoords::SphereMap,
+        address: LayerAddress::Wrap,
+        combine: LayerCombine::AlphaLerp,
+        factor: 1.0,
+        light: 1.0,
+        lighting: None,
+    }
+}
 
 /// The pose parameter an aiming sequence's blends lie on (degrees).
 pub const PITCH_PARAM: &str = "body_pitch";
@@ -323,6 +350,7 @@ pub fn character(mount: &Mount, game: &'static str, path: &str, decode: bool) ->
                     MapAlpha::Opaque
                 },
                 unlit: tex.flags & 4 != 0,
+                layer: (tex.flags & CHROME != 0).then(|| chrome_layer(&tex.name, ti)),
                 ..Default::default()
             });
             for tri in mesh.triangles() {
@@ -437,7 +465,7 @@ pub fn add_to(map: &mut MapData, body: Body) {
     let offset = map.textures.len();
     let mut c = body.character;
     for m in &mut c.model.meshes {
-        if let Some(t) = &mut m.texture {
+        for t in [m.texture.as_mut(), m.layer.as_mut().and_then(|l| l.texture.as_mut())].into_iter().flatten() {
             *t += offset;
         }
     }
@@ -473,5 +501,44 @@ mod tests {
         assert!(upper_body("gut_flinch"));
         assert!(!upper_body("run"));
         assert!(!upper_body("crouch_idle"));
+    }
+
+    /// A chrome texture draws itself on sphere-map coordinates; joined to
+    /// a map, its layer's texture moves with the mesh's.
+    #[test]
+    fn chrome_draws_its_texture_on_generated_coordinates() {
+        let tex = || MapTexture {
+            name: String::new(),
+            srgb: true,
+            mips: Vec::new(),
+            width: 1,
+            height: 1,
+            rgba8: Vec::new(),
+            bc: None,
+        };
+        let l = chrome_layer("Chrome1.bmp", 2);
+        assert_eq!((l.texture, l.coords, l.combine), (Some(2), LayerCoords::SphereMap, LayerCombine::AlphaLerp));
+        let mut map = MapData { textures: (0..5).map(|_| tex()).collect(), ..Default::default() };
+        let mesh = MapMesh { texture: Some(2), layer: Some(l), ..Default::default() };
+        let body = Body {
+            character: MapCharacterModel {
+                game: None,
+                team: None,
+                name: None,
+                class: None,
+                model: MapModel { meshes: vec![mesh], ..Default::default() },
+                hitboxes: Vec::new(),
+                bones: Vec::new(),
+                root: Transform::IDENTITY,
+                animations: None,
+                boxes: Vec::new(),
+                ragdoll: None,
+            },
+            textures: (0..3).map(|_| tex()).collect(),
+            warnings: Vec::new(),
+        };
+        add_to(&mut map, body);
+        let m = &map.kit.characters[0].model.meshes[0];
+        assert_eq!((m.texture, m.layer.as_ref().and_then(|l| l.texture)), (Some(7), Some(7)));
     }
 }

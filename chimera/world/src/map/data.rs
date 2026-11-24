@@ -283,6 +283,9 @@ pub struct MapMesh {
     /// `$basetexturetransform` (or a TextureScroll proxy driving it): the
     /// base texture's coordinates, and the detail's before `$detailscale`.
     pub base_transform: MapUvTransform,
+    /// A turbulent warp of the base texture's coordinates, after
+    /// `base_transform` (GoldSrc's liquids, `MapUvWarp`); world meshes only.
+    pub warp: Option<super::material_fx::MapUvWarp>,
     /// `$selfillum`: glows with its own colour where the mask says.
     pub selfillum: Option<MapSelfIllum>,
     /// Drawn at the texture's own brightness, ignoring lighting (Source's

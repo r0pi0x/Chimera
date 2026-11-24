@@ -127,6 +127,10 @@ struct WorldParams {
     // A modulate decal's fog fade power (MapMesh::modulate_fog_fade; 0:
     // Source's 0.4).
     modulate_fog_fade: f32,
+    // A turbulent warp of the base coordinates (map::MapUvWarp): amplitudes
+    // u, v and frequencies u, v (repeats, radians per repeat); its speed.
+    uv_warp: vec4<f32>,
+    uv_warp_speed: f32,
 }
 
 // Gamma space for the fixed-function blends of LithTech's second layers
@@ -277,7 +281,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     // $basetexturetransform (shaders.md 2): the base texture's
     // coordinates, and the detail's before $detailscale.
-    let uv = transform_uv(in.uv, params.base_uv_u, params.base_uv_v);
+    var uv = transform_uv(in.uv, params.base_uv_u, params.base_uv_v);
+    // A liquid's warp (map::MapUvWarp::warp): each axis waves along the other.
+    if any(params.uv_warp.xy != vec2<f32>(0.0)) {
+        let phase = params.uv_warp_speed * globals.time;
+        uv = uv + params.uv_warp.xy * sin(vec2<f32>(params.uv_warp.w * uv.y, params.uv_warp.z * uv.x) + phase);
+    }
     var albedo = textureSample(base_texture, base_sampler, uv) * params.base_color;
     // DecalModulate (shaders.md, DecalModulate): the surface times 2 x the
     // texel in gamma space, unlit; transparent texels (alpha 0) leave it,

@@ -9,9 +9,12 @@
 //!
 //! 1. the entities (`entities::add`): the entity list, spawns, static
 //!    brush entities' solids, ladders, and which brush models to draw;
-//! 2. the textures the drawn faces use (`textures`): embedded or from the
-//!    WADs `worldspawn`'s `wad` key names; one found nowhere is a
-//!    placeholder and a warning `missing texture <name>`;
+//! 2. the textures the drawn faces use and their families (`textures`:
+//!    an animation's frames, its alternate set, tiling variants), embedded
+//!    or from the WADs `worldspawn`'s `wad` key names; one found nowhere
+//!    is a placeholder and a warning `missing texture <name>`; each
+//!    animation set of two or more frames a `MapTextureAnim` at
+//!    `textures::FRAME_RATE`;
 //! 3. the faces as meshes with the lightmap atlas (`brushes`), surfaces
 //!    named from `sound/materials.txt`;
 //! 4. the collision (`collision::add_world`);
@@ -142,6 +145,16 @@ pub fn convert(
             }
         }
     }
+    // A used texture's family (frames, alternate set, tiling variants).
+    let names: Vec<Option<&str>> = bsp.textures.iter().map(|t| t.as_ref().map(|t| t.name.as_str())).collect();
+    let families = textures::Families::of(&names);
+    for i in 0..used.len() {
+        if used[i] {
+            for m in families.members(i) {
+                used[m] = true;
+            }
+        }
+    }
     let mut slots = vec![None; bsp.textures.len()];
     for (i, tex) in bsp.textures.iter().enumerate() {
         let Some(tex) = tex else { continue };
@@ -160,12 +173,25 @@ pub fn convert(
         slots[i] = Some(data.textures.len() - 1);
     }
 
+    // Each animation set's frames shown in turn (`render::texture_anim`).
+    let mut animated = vec![false; bsp.textures.len()];
+    for (main, alternate) in &families.frames {
+        for set in [main, alternate] {
+            if set.len() < 2 || set.iter().any(|&i| animated[i]) {
+                continue;
+            }
+            let Some(frames) = set.iter().map(|&i| slots[i]).collect::<Option<Vec<usize>>>() else { continue };
+            set.iter().for_each(|&i| animated[i] = true);
+            data.texture_anims.push(crate::map::MapTextureAnim { frames, rate: textures::FRAME_RATE });
+        }
+    }
+
     report(0.4, "Geometry");
     let materials = mount
         .read("sound/materials.txt")
         .map(|b| Materials::parse(&String::from_utf8_lossy(&b)))
         .unwrap_or_default();
-    brushes::add_meshes(&bsp, &parts.drawn, &slots, &materials, &mut data);
+    brushes::add_meshes(&bsp, &parts.drawn, &slots, &families, &materials, &mut data);
 
     report(0.6, "Collision");
     let counts = collision::add_world(&bsp, &mut data);

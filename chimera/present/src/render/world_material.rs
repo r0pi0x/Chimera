@@ -144,6 +144,11 @@ pub struct WorldParams {
     /// A modulate decal's fog fade power (`MapMesh::modulate_fog_fade`;
     /// 0: Source's 0.4).
     pub modulate_fog_fade: f32,
+    /// A turbulent warp of the base coordinates (`MapUvWarp::shader_params`):
+    /// amplitudes u, v and frequencies u, v; zero: none.
+    pub uv_warp: Vec4,
+    /// The warp's radians per second.
+    pub uv_warp_speed: f32,
 }
 
 impl WorldParams {

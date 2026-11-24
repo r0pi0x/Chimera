@@ -23,7 +23,7 @@ Force) is a small port on the same loader.
 |---|---|---|
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount); `specs/cs16/` install, movement, weapons to come |
-| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Left: the lightmap brightening against captures |
+| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Left: the lightmap brightening against captures |
 | M1 weapons | not started | §5 |
 | M2 movement | not started | §5; the lift of Source's movement into Chimera planned in [shared-movement.md](shared-movement.md) (2026-11-24) |
 | M3 party rungs | not started | §5 |
@@ -376,6 +376,26 @@ never leaked or decompiled code; write only `specs/goldsrc/` and
 | `specs/cs16/damage.md` | hitgroups and multipliers, armour and helmet, range falloff, wall penetration, fall and blast damage | measurement |
 | `specs/cs16/view_and_hud.md` | view kick and decay, the dynamic crosshair, the HUD's sprites and layout | measurement, `hud.txt`, captures |
 
+**Questions for the next spec session** (found by implementation
+sessions; to add to the specs' open questions there, not edited in by
+an implementation session):
+
+- bsp.md: the `!` liquid warp's form, size, wavelength and speed ("a
+  sine warp, turbulent" only; `goldsrc_engine::content::textures` uses
+  our own 8 texels, 64 texels, 4 s); whether liquids are lit (already
+  open question 4) and whether a `!` face makes its leaf or brush entity
+  water for drawing (fog, the view under water).
+- bsp.md: random tiling (`-0`..`-9`): per face or per texture tile of a
+  face, and how the variant is picked (ours: per face, a fixed hash of
+  the face's index); an animation set with a gap in its frame
+  characters (ours: the present frames in order).
+- bsp.md: which entities toggle the `+a`..`+j` set and when (buttons
+  while pressed? doors? any brush entity's `frame`), and whether the
+  alternate set animates at the same rate.
+- mdl.md: chrome's coordinate mapping (which vectors, the scale, whether
+  it turns with the view or the light, the flat-shade flag beside it);
+  ours is Chimera's camera-space sphere map.
+
 A **measurement tool** comes first: `tools/cs16_probe`, as
 `tools/hl2dm_probe` and DoD:S's probe. HLDS is a 32-bit Linux binary
 (32-bit libraries are on this box); a server-side plugin (Metamod and
@@ -511,3 +531,19 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   record each (two skies share one face). Test: cs16 `heavy::served`
   (de_dust2 and the bodies from the asset service alone, the same as
   from the install).
+- 2026-11-24: texture names and chrome (`goldsrc_engine::content::
+  textures`, `brushes`, `studio`). `+0`..`+9` frames play as Chimera's
+  animated textures (`MapTextureAnim`, ten a second, bsp.md), the `+a`..
+  `+j` set as a second animation; a mover's faces with both carry their
+  first frames as `MapMesh::frames` (the toggle, which no GoldSrc logic
+  drives yet). A family's frames and variants come from the map's own
+  texture lump (the compiler stores them all; checked on the stock maps).
+  `-0`..`-9` variants: one per face by a fixed hash of its index, so the
+  conversion stays deterministic. `!` liquids warp: a new Chimera
+  `MapUvWarp` on world meshes (world.wesl), with our own size and speed.
+  Chrome (MDL flag 2) draws its texture as a `MapLayer` on sphere-map
+  coordinates. Heavy tests: cs_office's `+0~lab_crt2` four frames in
+  order and its buttons' alternate sets, de_aztec's `!watergreen` warped,
+  de_dust2's variants all shown and the same each time, chrome on the
+  bodies. What the specs leave open: §6, "Questions for the next spec
+  session".

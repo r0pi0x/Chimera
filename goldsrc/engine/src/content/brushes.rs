@@ -7,12 +7,20 @@
 //! grouped into one mesh per texture, part (the world, a static brush
 //! entity placed by its `origin`, a mover in its own frame) and render
 //! look. `sky` faces are not drawn but kept as the map's sky surfaces;
-//! tool textures are not drawn (`textures::Kind`).
+//! tool textures are not drawn (`textures::Kind`). A random-tiling
+//! texture's face shows the variant `textures::Families::variant` picks;
+//! liquids (`!`) warp (`textures::warp`); a mover's face whose texture
+//! has an alternate animation set carries both sets' first frames
+//! (`MapMesh::frames`: frame 1 is the toggled-on look).
 //!
 //! Known shortcuts:
 //! - `{` textures are cut out at index 255 whatever the render mode (the
 //!   original shows the hole only in render mode 4).
-//! - Liquids (`!`) are drawn as plain lit surfaces, without the warp.
+//! - Liquids keep the lightmap the file gives them (bsp.md open question
+//!   4) and are not handed over as water volumes or Chimera's water
+//!   material (refraction, fog): the warp is all of their look.
+//! - Nothing toggles a mover's alternate set yet: GoldSrc maps run no
+//!   entity logic (`entities`' shortcut), so it shows its first set.
 //! - Render effects (`renderfx`) are ignored.
 
 use std::collections::BTreeMap;
@@ -22,7 +30,7 @@ use goldsrc_formats::{bsp::Bsp, materials::Materials};
 
 use super::{
     lightmap::{Atlas, Packed},
-    textures::{Kind, kind},
+    textures::{Families, Kind, kind, warp},
     to_engine, to_engine_dir,
 };
 use crate::map::{MapAlpha, MapData, MapMesh};
@@ -67,8 +75,16 @@ pub fn surface_kind(letter: char) -> &'static str {
 
 /// The meshes of `models` into `data.meshes` and the lightmap atlas into
 /// `data.lightmap`; `slots[t]` is BSP texture t's index into
-/// `data.textures` (None: drawn flat).
-pub fn add_meshes(bsp: &Bsp, models: &[Drawn], slots: &[Option<usize>], materials: &Materials, data: &mut MapData) {
+/// `data.textures` (None: drawn flat); `families` the lump's texture
+/// families.
+pub fn add_meshes(
+    bsp: &Bsp,
+    models: &[Drawn],
+    slots: &[Option<usize>],
+    families: &Families,
+    materials: &Materials,
+    data: &mut MapData,
+) {
     struct Pending {
         mesh: MapMesh,
         luxels: Vec<(usize, Vec2)>,
@@ -82,7 +98,8 @@ pub fn add_meshes(bsp: &Bsp, models: &[Drawn], slots: &[Option<usize>], material
         for fi in first..first + m.face_count.max(0) as usize {
             let Some(face) = bsp.faces.get(fi) else { continue };
             let Some(ti) = bsp.texinfo.get(face.texinfo as usize) else { continue };
-            let Some(tex) = bsp.textures.get(ti.texture as usize).and_then(|t| t.as_ref()) else { continue };
+            let texture = families.variant(ti.texture as usize, fi);
+            let Some(tex) = bsp.textures.get(texture).and_then(|t| t.as_ref()) else { continue };
             let k = kind(&tex.name);
             let corners: Vec<[f32; 3]> = bsp
                 .face_vertices(face)
@@ -114,9 +131,17 @@ pub fn add_meshes(bsp: &Bsp, models: &[Drawn], slots: &[Option<usize>], material
                 }
                 _ => None,
             };
-            let slot = slots.get(ti.texture as usize).copied().flatten();
+            let slot = slots.get(texture).copied().flatten();
             let render_key = format!("{:?}{:?}{}", d.render, d.color, d.flat);
-            let key = (ti.texture as usize, d.mover.map_or(-1, |i| i as i64), render_key);
+            let key = (texture, d.mover.map_or(-1, |i| i as i64), render_key);
+            // A mover's two animation sets (off, toggled on).
+            let frames: Vec<usize> = match (d.mover, families.toggle(texture)) {
+                (Some(_), Some((a, b))) if !d.flat => match (slots.get(a).copied().flatten(), slots.get(b).copied().flatten()) {
+                    (Some(a), Some(b)) => vec![a, b],
+                    _ => Vec::new(),
+                },
+                _ => Vec::new(),
+            };
             let pending = by_key.entry(key).or_insert_with(|| Pending {
                 mesh: MapMesh {
                     material: tex.name.to_ascii_lowercase(),
@@ -128,6 +153,8 @@ pub fn add_meshes(bsp: &Bsp, models: &[Drawn], slots: &[Option<usize>], material
                     render: d.render,
                     render_color: d.color,
                     flat_color: d.flat,
+                    warp: (k == Kind::Water).then(|| warp(tex.width, tex.height)),
+                    frames,
                     ..Default::default()
                 },
                 luxels: Vec::new(),

@@ -1,7 +1,8 @@
 //! Material effects shared by the world and prop shaders
 //! (specs/cs_source/shaders.md): texture coordinate transforms
 //! (`$basetexturetransform` and a TextureScroll proxy on it), the detail
-//! combine modes and self-illumination. The combine and self-illum
+//! combine modes and self-illumination, and a turbulent coordinate warp
+//! (`MapUvWarp`, GoldSrc's liquids). The combine and self-illum
 //! functions here mirror world.wesl and prop.wesl on the CPU, so the
 //! spec's test cases check the maths the shaders run.
 //!
@@ -287,6 +288,42 @@ pub fn parameter_gamma_to_linear(v: f32) -> f32 {
 }
 
 
+/// A turbulent warp of a surface's texture coordinates (GoldSrc's `!`
+/// liquids, specs/goldsrc/bsp.md "Texture name prefixes": a sine warp),
+/// after `MapUvTransform`: with (u, v) in texture repeats and t the map's
+/// clock in seconds, u' = u + amplitude.x · sin(frequency.y · v + speed ·
+/// t) and v' = v + amplitude.y · sin(frequency.x · u + speed · t), each
+/// axis waving along the other. world.wesl runs it; `warp` mirrors it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MapUvWarp {
+    /// How far each coordinate moves, in repeats.
+    pub amplitude: [f32; 2],
+    /// Radians of the wave per repeat along u and v.
+    pub frequency: [f32; 2],
+    /// Radians per second.
+    pub speed: f32,
+}
+
+impl MapUvWarp {
+    /// The coordinates `uv` warped at time `t` (seconds).
+    pub fn warp(&self, uv: Vec2, t: f32) -> Vec2 {
+        let phase = self.speed * t;
+        Vec2::new(
+            uv.x + self.amplitude[0] * (self.frequency[1] * uv.y + phase).sin(),
+            uv.y + self.amplitude[1] * (self.frequency[0] * uv.x + phase).sin(),
+        )
+    }
+
+    /// The shader's parameters: (amplitude u, amplitude v, frequency u,
+    /// frequency v) and the speed.
+    pub fn shader_params(warp: Option<&Self>) -> (Vec4, f32) {
+        match warp {
+            Some(w) => (Vec4::new(w.amplitude[0], w.amplitude[1], w.frequency[0], w.frequency[1]), w.speed),
+            None => (Vec4::ZERO, 0.0),
+        }
+    }
+}
+
 /// A texture whose frames show in turn (Source's AnimatedTexture proxy
 /// on a material's `$basetexture` or `$bumpmap`): its frames (indices into
 /// `MapData::textures`; a material drawing it binds `frames[0]` and
@@ -330,6 +367,24 @@ mod tests {
         assert!((half - ((1.0 - lambda) * 0.25 + lambda)).abs() < 1e-5);
         // No mask: weights 0 and floor 1.
         assert_eq!(envmap_light_mask(Vec3::splat(0.3), Vec3::ZERO, 1.0), 1.0);
+    }
+
+    /// Each axis waves along the other; no warp at t = 0 where the
+    /// other coordinate's phase is 0.
+    #[test]
+    fn uv_warp_waves_each_axis_along_the_other() {
+        let w = MapUvWarp { amplitude: [0.1, 0.2], frequency: [std::f32::consts::PI, std::f32::consts::FRAC_PI_2], speed: 1.0 };
+        assert_eq!(w.warp(Vec2::ZERO, 0.0), Vec2::ZERO);
+        // v = 1: u moves by 0.1 · sin(π/2).
+        let p = w.warp(Vec2::new(0.0, 1.0), 0.0);
+        assert!((p.x - 0.1).abs() < 1e-6 && (p.y - 1.0).abs() < 1e-6, "{p}");
+        // u = 0.5: v moves by 0.2 · sin(π/2).
+        let q = w.warp(Vec2::new(0.5, 0.0), 0.0);
+        assert!((q.y - 0.2).abs() < 1e-6 && (q.x - 0.5).abs() < 1e-6, "{q}");
+        // Time shifts the phase.
+        let r = w.warp(Vec2::ZERO, std::f32::consts::FRAC_PI_2);
+        assert!((r - Vec2::new(0.1, 0.2)).length() < 1e-6, "{r}");
+        assert_eq!(MapUvWarp::shader_params(None), (Vec4::ZERO, 0.0));
     }
 
     /// floor(rate · t) mod count, a hard switch; no rate holds frame 0.

@@ -669,7 +669,7 @@ fails when this file is stale; never edit the generated lines).
 - `goldsrc/engine/src/content/lightmap.rs`: - Only style 0 is read: the stock maps have no other (bsp.md)
 - `goldsrc/engine/src/content/sky.rs`: - A sky with a face missing is not drawn at all (the original draws that face black; none is missing in the install)
 - `goldsrc/engine/src/content/studio.rs`: - Sequences in groups 1 and up (sequence files) are left out: no CS 1.6 player model has any
-- `goldsrc/engine/src/content/textures.rs`: - Animated (`+0`..`+9`, `+a`..`+j`) and random-tiling (`-0`..`-9`) textures show their first frame
+- `goldsrc/engine/src/content/textures.rs`: - The warp's size, wavelength and speed are our own numbers (`WARP_AMPLITUDE`, `WARP_WAVELENGTH`, `WARP_PERIOD`): bsp.md says only "a sine warp...
 - `goldsrc/formats/src/bsp/mod.rs`: - Blue Shift's swapped entities/planes header is not read (out of scope until that game is ported; the spec's "Header and lumps")
 - `goldsrc/formats/src/bsp/solids.rs`: - Regions are cut from the model's bounds grown by 64 units: solid space beyond them (the void around the world) ends at that box
 - `lithtech/formats/src/anim.rs`: - `AniRateInterpolation` is always 1 (the carry is kept)
