@@ -160,6 +160,11 @@ fn bullet_holes_still_come_after_the_map_changes() {
     let Some(mut sim) = party() else { return };
     let (p, at) = shooter(&mut sim, cs_source::game::movement::ID, "cs_source:weapon_mp5navy");
     assert!(new_decals(&mut sim, p, at) > 0, "before the change");
+    // Each shooter goes before the next stands on the same spawn point: a
+    // player left there had the next one's eye inside its body, every ray
+    // hitting it at 0 m (a Combat Arms eye, 1 u = 0.0185 m since
+    // e67029bfb, is inside a CS:S player's box standing there).
+    sim.app.world_mut().despawn(p);
     for id in ["combat_arms:warehouse", "cs_source:de_dust2"] {
         let data = party_roster::load_map(id, 0).unwrap();
         map::change_map(sim.app.world_mut(), data, map::MapDebugView::Normal);
@@ -167,6 +172,7 @@ fn bullet_holes_still_come_after_the_map_changes() {
     }
     let (p, at) = shooter(&mut sim, cs_source::game::movement::ID, "cs_source:weapon_mp5navy");
     assert!(new_decals(&mut sim, p, at) > 0, "a bullet hole after warehouse and back to de_dust2");
+    sim.app.world_mut().despawn(p);
     // The same map again (a restart by changelevel).
     let data = party_roster::load_map("cs_source:de_dust2", 0).unwrap();
     map::change_map(sim.app.world_mut(), data, map::MapDebugView::Normal);
