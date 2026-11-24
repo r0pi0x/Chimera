@@ -12,8 +12,9 @@
 //!
 //! Three moments: everyone joining in the first `JOIN` s (a server
 //! starting), the match's start (`minigame::restart`, everyone placed in
-//! one tick; `STARTS` times), and the respawns of `PLAY` s of bot play
-//! (one bot also dies of the world each second, so there are enough).
+//! one tick, measured once the phase is past `Starting`; `STARTS` times),
+//! and the respawns of `PLAY` s of bot play (one bot also dies of the
+//! world each second, so there are enough).
 //! Prints the rates per map and count (`--nocapture`) and fails when a
 //! start's or a respawn's rate passes its bound (`bounds`).
 //! `CHIMERA_SPAWN_BEFORE=1` also measures `random_hidden` (the gun game's
@@ -230,9 +231,15 @@ fn run(map: &str, bots: u32, points: Points) -> Option<[Rates; 3]> {
     let mut starts = Rates::default();
     for _ in 0..STARTS {
         minigame::restart(sim.app.world_mut());
+        // The restart's players rejoin first (each spawned as it is taken
+        // in, against the others where they stood before the restart), the
+        // phase goes on to `Starting`, and only its next step is the
+        // match's start that places everyone as a batch: measured once the
+        // phase is past both (measuring at `Starting` counted the rejoins'
+        // spawns, a tick before they are moved: 25% near at 4 and 8).
         for _ in 0..20 {
             sim.ticks(1);
-            if sim.app.world().resource::<Match>().phase != Phase::Waiting {
+            if !matches!(sim.app.world().resource::<Match>().phase, Phase::Waiting | Phase::Starting) {
                 break;
             }
         }
@@ -300,19 +307,16 @@ fn run(map: &str, bots: u32, points: Points) -> Option<[Rates; 3]> {
 }
 
 /// The bounds (percent) on the scored spawns' rates at the start and on
-/// respawns, (in view, near), per map and count. Measured (2026-11-13):
-/// no start in view on any map at any count, none near but Combat Arms'
-/// warehouse at 12 (16.7%: a small map, everyone placed at once); on
-/// respawns at most 2.2% in view (de_dust2 at 12) and 2.3% near
-/// (warehouse at 8 and 12). `random_hidden` before: starts in view on
-/// warehouse 20.8% (8) and 51.4% (12), dm_lockdown 6.9% (12); respawns
-/// in view on warehouse 24.4% (12).
-fn bounds(map: &str, bots: u32) -> ((f32, f32), (f32, f32)) {
-    let small = map == "combat_arms:warehouse";
-    match bots {
-        0..=8 => ((0.0, 0.0), (5.0, 5.0)),
-        _ => ((0.0, if small { 20.0 } else { 5.0 }), (5.0, 5.0)),
-    }
+/// respawns, (in view, near), per map and count. Measured (2026-11-24,
+/// the start measured after `Starting`): no start in view or near on
+/// any of the four maps at any count; on respawns at most 2.2%
+/// in view (warehouse at 12) and none near. (2026-11-13's 16.7% near on
+/// the warehouse at 12 was the rejoins' spawns, measured a tick too
+/// early.) `random_hidden` before: starts in view on warehouse 20.8% (8)
+/// and 51.4% (12), dm_lockdown 6.9% (12); respawns in view on warehouse
+/// 24.4% (12).
+fn bounds(_map: &str, _bots: u32) -> ((f32, f32), (f32, f32)) {
+    ((0.0, 0.0), (5.0, 5.0))
 }
 
 #[test]
