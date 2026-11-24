@@ -21,7 +21,7 @@ names the seams, the specs give the numbers and rules.
 |---|---|---|
 | Plan | done (2026-11-24) | this file |
 | S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
-| S1-S4 carve inside `source_engine` | not started | file split, neutral hooks, CS:S's numbers to `cs_source`, cvars as data |
+| S1-S4 carve inside `source_engine` | S1 done (2026-11-24) | file split (done), neutral hooks, CS:S's numbers to `cs_source`, cvars as data |
 | S5-S6 the crate | not started | `chimera_movement`, then neutral names with Source aliases |
 | S7-S9 GoldSrc seams | not started | clip hulls, command milliseconds, edge friction |
 | Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
@@ -265,7 +265,10 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   peers of different builds would misread the blob, so S5 bumps the net
   `PROTOCOL_ID` (and S6 if it lands in another release). Field order
   stays as it is (postcard is positional); new fields (S8's remainder)
-  go at the end.
+  go at the end. S1 already moved the order: DoD:S sends `SourceStance`
+  beside `SourceMovement`, and `hooks::SourceStance` sorts before
+  `state::SourceMovement` where `SourceMovement` came before
+  `SourceStance`, so S1 bumped `NET_VERSION` (net74); S5 bumps again.
 - **State lives in the component**: new state (the msec remainder) is in
   `QuakeMovement`, so prediction saves and restores it. No new `Local`s;
   the existing `waist_steps` counter (HL2:DM's shared one-in-four) is a
@@ -369,3 +372,23 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   | HL2:DM | 1 080 | `0x8b3d5be3e6970d7c` | 67 170 | 1 636 000 |
   | TF2 | 1 080 | `0xf46ef5454d21f47c` | 71 705 | 1 648 000 |
   | DoD:S | 1 300 | `0xcc08703f58eba75e` | 71 350 | 1 161 000 |
+- 2026-11-24, S1: `mod.rs` split into `config`, `state`, `hooks`,
+  `units`, `trace/{mod,boxes}`, `mover/{mod,ground,air,duck,jump,water,
+  ladders,falls,steps,stuck}` and `step` by a script that moves whole
+  items and methods (the old file's lines and the new files' are the same
+  set but for imports, `pub(crate)`, the files' docs and `#[inline]`).
+  Ladder lines stay in `useable_ladders.rs` until S4. The tick's
+  constants stay together in `mover/mod.rs`. Hashes equal. The first
+  build cost 1.35 % more in the step (CS:S 72 364, HL2:DM 68 077): with
+  incremental builds and no LTO each module is its own codegen unit, so
+  the small helpers were no longer inlined into their callers;
+  `#[inline]` on 26 of them (`to_source`, `to_engine`, `Trace::hit`,
+  `Tracer::hull`, `sweep`, `sweep_by`, `sweep_box`, `solid`,
+  `point_solid`, `clip_velocity`, `hull_height`, the config's
+  `air_duck_lift` and `climbs_contents`, and the mover's `clamp_velocity`,
+  `half_gravity`, `start_gravity`, `view`, `accelerate`,
+  `air_accelerate`, `wish`, `clamp_flat`, `eye_blend`, `smooth`,
+  `can_stand`, `duck_timer_start`, `water_sound`) brought it back: CS:S
+  71 395 (-0.01 %), HL2:DM 67 192 (+0.03 %), TF2 71 576 (-0.18 %), DoD:S
+  71 336 (-0.02 %). The types' paths changed, which reorders the
+  predicted blob for DoD:S (section 6): `NET_VERSION` net74.

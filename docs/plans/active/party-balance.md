@@ -20,7 +20,7 @@ How each number is marked:
 Unit conversions:
 
 - Halo: 1 WU = 3.048 m, 1 tick = 1/30 s.
-- Source (CS:S, HL2:DM, TF2): 1 u = 0.0254 m (`source/engine/src/source_movement/mod.rs:140`).
+- Source (CS:S, HL2:DM, TF2): 1 u = 0.0254 m (`METERS_PER_UNIT`, `source/engine/src/source_movement/units.rs`).
 - Combat Arms: 1 u = 0.0185 m (`games/combat_arms/data/movement.toml:17`).
 
 Victim names used throughout:
@@ -80,7 +80,7 @@ How UGG chooses the movement:
 
 | | **Halo** | CS:S | HL2:DM | TF2 (stand-in) | Combat Arms |
 |---|---|---|---|---|---|
-| Gravity, m/s^2 | **9.78** [C] (0.0035652 WU/t^2, `games/halo_ce/data/movement.toml:9`) | 20.32 (`source_movement/mod.rs:404`) | 15.24 (`games/hl2dm/src/game/movement.rs:80`) | 20.32 (`games/tf2/src/game/movement.rs:30`) | 19.8 (`games/combat_arms/data/movement.toml:45`) |
+| Gravity, m/s^2 | **9.78** [C] (0.0035652 WU/t^2, `games/halo_ce/data/movement.toml:9`) | 20.32 (`source_movement/config.rs`, `shared_code`) | 15.24 (`games/hl2dm/src/game/movement.rs:80`) | 20.32 (`games/tf2/src/game/movement.rs:30`) | 19.8 (`games/combat_arms/data/movement.toml:45`) |
 | Jump launch speed, m/s | **6.40** [C] (0.07 WU/t, `movement.toml:40`) | 7.67 (`mod.rs:522`) | 4.06 (`movement.rs:82`) | 7.34 (`movement.rs:31`) | 5.94 (`movement.toml:42`) |
 | Standing-jump apex (feet) | **1.99 m** [D] (0.6526 WU, `specs/halo_ce/movement.md` section 3) | 1.45 m [C] (measured 1.39) | 0.54 m [C] | 1.33 m [C] | 0.89 m [C] |
 | Crouch-jump apex | **2.60 m** [D] (movement.md section 3: 0.8526 WU) | 1.67 m [C] (+0.216) | 1.45 m [C] (+0.914) | none | not found |

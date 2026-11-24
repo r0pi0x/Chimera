@@ -70,7 +70,7 @@ pub fn prop_box(transform: &Transform, bounds: (Vec3, Vec3)) -> (Vec3, Vec3) {
 pub fn surely_apart(transform: &Transform, bounds: (Vec3, Vec3), query: (Vec3, Vec3)) -> bool {
     let (lo, hi) = bounds;
     let centre = to_source(transform.transform_point((lo + hi) * 0.5));
-    let radius = (hi - lo).length() * 0.5 * transform.scale.abs().max_element() / super::METERS_PER_UNIT;
+    let radius = (hi - lo).length() * 0.5 * transform.scale.abs().max_element() / super::units::METERS_PER_UNIT;
     let reach = Vec3::splat(radius * 1.01 + 1.0);
     // Written so a NaN anywhere says "not surely apart".
     (centre - reach).cmpgt(query.1).any() || (centre + reach).cmplt(query.0).any()

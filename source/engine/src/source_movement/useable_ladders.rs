@@ -41,7 +41,12 @@
 
 use bevy::prelude::*;
 
-use super::Mover;
+use super::{
+    config::HALF_WIDTH,
+    mover::{LADDER_REACH, Mover},
+    trace::Tracer,
+    units::METERS_PER_UNIT,
+};
 use crate::{
     core::{LadderLine, LadderZone, MapBrush, MapGame, MapLadders, foreign_map, movement_game},
     map::MapEntity,
@@ -253,7 +258,7 @@ pub fn lines_of_volume(b: &MapBrush, from: LadderFrom) -> Vec<UseableLadder> {
     };
     let sides: Vec<(Vec3, f32)> = b.planes.iter().copied().filter(|(n, _)| n.y.abs() < 0.7).collect();
     let thin = sides.iter().map(|(n, _)| across(*n)).fold(f32::MAX, f32::min);
-    let u = super::METERS_PER_UNIT;
+    let u = METERS_PER_UNIT;
     let mut out = Vec::new();
     for (n, d) in sides {
         if across(n) > thin + 0.01 {
@@ -275,8 +280,8 @@ pub fn lines_of_volume(b: &MapBrush, from: LadderFrom) -> Vec<UseableLadder> {
         let (low, high) = (edge(lo), edge(hi));
         // The box's reach toward a face at an angle is more than its half
         // width (23 units at 45 degrees).
-        let reach = super::HALF_WIDTH * (flat.x.abs() + flat.z.abs());
-        let out_by = flat * (reach + super::LADDER_REACH) * u;
+        let reach = HALF_WIDTH * (flat.x.abs() + flat.z.abs());
+        let out_by = flat * (reach + LADDER_REACH) * u;
         let bottom = low + out_by;
         let top = high + out_by;
         // Over the top: beyond the volume, else on it or at its edge (a
@@ -341,7 +346,7 @@ pub(super) enum LadderStep {
 /// swept down from 4 units above), once per map; a ladder made from a
 /// volume with no room for a standing player halfway up its line (the
 /// face against a wall) is off.
-pub(super) fn fix_ends(trace: &super::Tracer, ladders: &mut [UseableLadder]) {
+pub(super) fn fix_ends(trace: &Tracer, ladders: &mut [UseableLadder]) {
     for l in ladders.iter_mut().filter(|l| !l.fixed) {
         if l.from != LadderFrom::Map {
             if trace.solid(false, (l.top + l.bottom) / 2.0) {
@@ -411,7 +416,7 @@ const OVER_EDGE: [f32; 4] = [0.0, -4.0, -8.0, -12.0];
 /// `SETTLE` under, moved onto it (if none, the farthest as
 /// it was), and the top raised to the highest, so the climber's feet
 /// reach that floor (ours).
-fn to_floors(trace: &super::Tracer, l: &mut UseableLadder) {
+fn to_floors(trace: &Tracer, l: &mut UseableLadder) {
     let top = l.top.z;
     let (over, foot): (Vec<Vec3>, Vec<Vec3>) = l.dismounts.iter().partition(|d| d.z >= top - 1.0);
     let mut floors = Vec::new();
@@ -464,7 +469,7 @@ impl Mover<'_, '_, '_, '_> {
     /// The ladder part of the tick (movement.md "Per-tick order" 7).
     /// `f`/`s` the move input after the rescale and the duck scale, `cap`
     /// the movement cap M.
-    pub(super) fn ladder_step(&mut self, intent: &crate::core::Intent, f: f32, s: f32, cap: f32) -> LadderStep {
+    pub(crate) fn ladder_step(&mut self, intent: &crate::core::Intent, f: f32, s: f32, cap: f32) -> LadderStep {
         let fresh_use = intent.use_key && !self.me.use_held;
         // a. A forced move runs on.
         if let Some(mut m) = self.me.forced {
@@ -611,7 +616,7 @@ impl Mover<'_, '_, '_, '_> {
     }
 
     /// The ladder move (movement.md "The ladder move").
-    pub(super) fn ladder_move(&mut self, intent: &crate::core::Intent, f: f32, s: f32, cap: f32) {
+    pub(crate) fn ladder_move(&mut self, intent: &crate::core::Intent, f: f32, s: f32, cap: f32) {
         let fresh_use = intent.use_key && !self.me.use_held;
         self.water_check();
         self.me.jump_held = false;
