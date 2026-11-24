@@ -8,7 +8,11 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
-use super::{MovementConfigs, SourceMovement, SourceMovementConfig, to_source};
+use super::{
+    config::{MovementConfigs, SourceMovementConfig},
+    state::SourceMovement,
+    units::{METERS_PER_UNIT, to_engine, to_source},
+};
 use crate::{
     core::{SimSet, Velocity},
     map::{
@@ -70,7 +74,7 @@ pub fn prop_box(transform: &Transform, bounds: (Vec3, Vec3)) -> (Vec3, Vec3) {
 pub fn surely_apart(transform: &Transform, bounds: (Vec3, Vec3), query: (Vec3, Vec3)) -> bool {
     let (lo, hi) = bounds;
     let centre = to_source(transform.transform_point((lo + hi) * 0.5));
-    let radius = (hi - lo).length() * 0.5 * transform.scale.abs().max_element() / super::units::METERS_PER_UNIT;
+    let radius = (hi - lo).length() * 0.5 * transform.scale.abs().max_element() / METERS_PER_UNIT;
     let reach = Vec3::splat(radius * 1.01 + 1.0);
     // Written so a NaN anywhere says "not surely apart".
     (centre - reach).cmpgt(query.1).any() || (centre + reach).cmplt(query.0).any()
@@ -149,8 +153,8 @@ fn push_props(
             }
             // kg.in/s to kg.m/s (to_engine scales units to meters), at the
             // player's centre, so the prop spins too.
-            let impulse = super::to_engine(push_impulse(centre, (b.0 + b.1) / 2.0));
-            let at = super::to_engine(centre);
+            let impulse = to_engine(push_impulse(centre, (b.0 + b.1) / 2.0));
+            let at = to_engine(centre);
             forces.apply_linear_impulse_at_point(impulse, at);
             pushed = true;
         }

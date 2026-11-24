@@ -84,7 +84,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("effects", &["core", "map", "weapon", "console", "content"]),
     // Source's player movement (source_engine's `source_movement`, lifted
     // from CS:S's): each Source game's config and cvars, the map's
-    // brushes, water and props it moves through.
+    // brushes, water and props it moves through. Its shared part (all
+    // but `mod.rs` and `source_ladders.rs`) moves to Chimera
+    // (docs/plans/active/shared-movement.md):
+    // `source_movement_core_names_no_wrapper` below.
     ("source_movement", &["core", "map", "slots", "console", "envelope"]),
     // Which game fills each match-wide slot (rules, HUD, binds, tick) and
     // the sets that gate a game's systems by it.
@@ -426,6 +429,86 @@ pub(crate) fn root() -> PathBuf {
 #[ignore = "run by root_is_the_checkout_the_tests_run_for"]
 fn root_probe() {
     println!("ROOT={}", root().display());
+}
+
+/// Temporary, until the movement's shared part moves to its own crate
+/// (docs/plans/active/shared-movement.md, step S5, which removes this):
+/// the files of `source_engine::source_movement` Chimera gets (all but
+/// `mod.rs`, the Source wrapper, and `source_ladders.rs`, its ladder
+/// reader) name the module only by its shared files, so they move
+/// without the wrapper. (Their other `crate::` paths are `ALLOWED`'s.)
+#[test]
+fn source_movement_core_names_no_wrapper() {
+    const CORE: &[&str] = &[
+        "config", "drown", "hooks", "mover", "plugin", "pushaway", "shadow", "state", "step", "trace", "units",
+        "useable_ladders",
+    ];
+    let dir = root().join("source/engine/src/source_movement");
+    let mut files = Vec::new();
+    rust_files(&dir, &mut files);
+    assert!(files.len() > 20, "the movement's files are in {}", dir.display());
+    let mut errors = Vec::new();
+    for file in files {
+        let rel = file.strip_prefix(&dir).unwrap().to_string_lossy().replace('\\', "/");
+        if rel == "mod.rs" || rel == "source_ladders.rs" {
+            continue;
+        }
+        // Without line comments or the file's own tests (their `super` is
+        // the file), joined so a grouped import spans lines.
+        let text = fs::read_to_string(&file).unwrap();
+        let code = text
+            .lines()
+            .take_while(|l| !l.starts_with("#[cfg(test)]"))
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join(" ");
+        // The module by its path, and by `super` from a file right in it
+        // (`super::super` from one a folder down).
+        let up = if rel.contains('/') { "super::super::" } else { "super::" };
+        for prefix in ["source_movement::", up] {
+            let mut rest = code.as_str();
+            while let Some(i) = rest.find(prefix) {
+                let before = rest[..i].chars().next_back();
+                rest = &rest[i + prefix.len()..];
+                if before.is_some_and(|c| c.is_alphanumeric() || c == '_') || (prefix == up && before == Some(':')) {
+                    continue;
+                }
+                let mut names = Vec::new();
+                if let Some(group) = rest.strip_prefix('{') {
+                    let (mut depth, mut start) = (0usize, 0usize);
+                    for (j, c) in group.char_indices() {
+                        match c {
+                            '{' => depth += 1,
+                            '}' if depth == 0 => {
+                                names.push(ident(&group[start..j]));
+                                break;
+                            }
+                            '}' => depth -= 1,
+                            ',' if depth == 0 => {
+                                names.push(ident(&group[start..j]));
+                                start = j + 1;
+                            }
+                            _ => {}
+                        }
+                    }
+                } else {
+                    names.push(ident(rest));
+                }
+                for name in names {
+                    if !name.is_empty() && !CORE.contains(&name.as_str()) {
+                        errors.push(format!(
+                            "source/engine/src/source_movement/{rel}: names `{prefix}{name}`, which is not one of the \
+                             movement's shared files ({}). The shared part names nothing of the Source wrapper \
+                             (`mod.rs`, `source_ladders.rs`): import the item from the file that defines it, or \
+                             hand the wrapper's part in as data (a config field, a resource the wrapper fills).",
+                            CORE.join(", ")
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(errors.is_empty(), "{}", errors.join("\n"));
 }
 
 /// A test binary started for another checkout (its CARGO_MANIFEST_DIR)

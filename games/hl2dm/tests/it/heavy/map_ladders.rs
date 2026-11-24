@@ -1,13 +1,13 @@
 //! The stock maps' `func_useableladder`s (specs/hl2dm/movement.md "The
 //! ladder entity"; H0's census: 26 ladders and 131 dismount points on six
-//! maps) as Source movement reads them (`useable_ladders::ladders_of`):
+//! maps) as Source movement reads them (`source_movement::ladders_of`):
 //! every ladder found with its ends, and dm_resistance's `ladder` (the
 //! probe's, movement.md P10: bottom (-450, 299, -1215), top (-450, 299,
 //! -947)) with its four dismount points. Skips without an install.
 
 use chimera_world::map::MapLoadOptions;
 use hl2dm::game::STOCK_MAPS;
-use source_engine::source_movement::useable_ladders::ladders_of;
+use source_engine::source_movement::ladders_of;
 
 use super::map_stock::{convert, install_mount};
 

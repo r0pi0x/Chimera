@@ -21,7 +21,7 @@ names the seams, the specs give the numbers and rules.
 |---|---|---|
 | Plan | done (2026-11-24) | this file |
 | S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
-| S1-S4 carve inside `source_engine` | S1-S3 done (2026-11-24) | file split (done), neutral hooks (done), CS:S's numbers to `cs_source` (done), cvars as data |
+| S1-S4 carve inside `source_engine` | done (2026-11-24) | file split, neutral hooks, CS:S's numbers to `cs_source`, cvars as data: each in the log |
 | S5-S6 the crate | not started | `chimera_movement`, then neutral names with Source aliases |
 | S7-S9 GoldSrc seams | not started | clip hulls, command milliseconds, edge friction |
 | Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
@@ -422,6 +422,32 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   no registered Source movement (no slot, or another movement's) takes
   the first registered config, where it took the resource (CS:S's
   whatever the app): the same in CS:S's apps and the step's "the app's
-  own game's" elsewhere; no test depends on it. Hashes
-  equal; the step CS:S 71 296 (-0.15 %), HL2:DM 67 003 (-0.25 %), TF2
-  71 460 (-0.34 %), DoD:S 71 111 (-0.33 %): one resource less to fetch.
+  own game's" elsewhere; no test depends on it. The reference values for
+  an app with none registered are kept in `SourceMovementConfigs` (a
+  `static` is refused by `determinism::simulation_is_deterministic`).
+  Hashes equal; the step CS:S 71 245 (-0.22 %), HL2:DM 67 012 (-0.24 %),
+  TF2 71 420 (-0.40 %), DoD:S 71 117 (-0.33 %): one resource less to
+  fetch.
+- 2026-11-24, S4: the module is in two parts. Chimera's (everything but
+  `mod.rs` and `source_ladders.rs`): `plugin.rs` is its root (what
+  `lib.rs` will hold: `SourceMovementPlugin`, `SourceMovementStep`, and
+  `QuakeMovementAppExt::quake_movement(id, config, cvars, namespace)`,
+  whose `cvars` is a list of (name, help) lists), `config.rs` has
+  `QUAKE_CVARS` (the nine shared names; `set_cvar`/`get_cvar` still know
+  every name). Source's: `mod.rs` (`SOURCE_CVARS`, the six extras;
+  `CVARS`, both lists in the old order, which the games hand the shell;
+  `SourceMovementAppExt::source_movement`, same signature, which adds
+  `HalfFirstPress` and calls `quake_movement`; the hooks' Source names)
+  and `source_ladders.rs` (`ladders_of` and its test). The reader
+  reaches the shared part as data, not a callback: `read_ladders` keeps
+  `EntityLadders` the map's entities' (when `MapEntities` changes),
+  ordered before `build_ladders`, which takes them on the same change it
+  read the entities on before, so the lines change on the same frames.
+  `ladders_of` is `source_movement::ladders_of` now (one heavy test's
+  import). The check is a test of its own, not an `ALLOWED` entry (that
+  table is per top-level module, and the two parts share one until S5):
+  `architecture::source_movement_core_names_no_wrapper` fails when a
+  shared file names the module by anything but a shared file; S5 removes
+  it. Left for S5: `useable_ladders.rs` to `mover/lines.rs`, and the
+  `git mv`s. Hashes equal; the step CS:S 71 247 (-0.21 %), HL2:DM
+  66 969 (-0.30 %), TF2 71 392 (-0.44 %), DoD:S 71 155 (-0.27 %).

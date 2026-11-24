@@ -1,7 +1,7 @@
 //! The movement's config (`SourceMovementConfig`: the cvars' values, the box, the
 //! duck, the falls, each game's switches), the shared code's values every
 //! game's starts from (`reference`; no game's are the defaults), the console
-//! variables by name (`CVARS`, `set_cvar`, `get_cvar`), the configs by
+//! variables by name (`QUAKE_CVARS`, `set_cvar`, `get_cvar`), the configs by
 //! movement id (`SourceMovementConfigs`), each character's fitted to the
 //! loaded map's envelope (`MovementConfigs`, `config_of`).
 
@@ -253,9 +253,12 @@ pub struct SourceMovementConfig {
     pub velocity_modifier_recovery: f32,
 }
 
-/// Console variables players and server configs know, mapped onto the
-/// config: (name, what it sets).
-pub const CVARS: &[(&str, &str)] = &[
+/// The console variables every game of the Quake lineage knows, mapped
+/// onto the config: (name, what it sets). A registration binds these and
+/// its engine's own (`QuakeMovementAppExt::quake_movement`'s lists:
+/// Source's are `source_movement::SOURCE_CVARS`); `set_cvar` and
+/// `get_cvar` know every list's names.
+pub const QUAKE_CVARS: &[(&str, &str)] = &[
     ("sv_accelerate", "ground acceleration"),
     ("sv_airaccelerate", "air acceleration (surf servers raise it, e.g. 150)"),
     ("sv_friction", "ground friction"),
@@ -265,18 +268,6 @@ pub const CVARS: &[(&str, &str)] = &[
     ("sv_stepsize", "highest step climbed without jumping"),
     ("sv_maxvelocity", "per-axis velocity limit"),
     ("sv_bounce", "wall bounce (0 in CS:S)"),
-    ("sv_enablebunnyhopping", "1 removes the jump speed cap"),
-    ("sv_autobunnyhopping", "1: holding jump keeps jumping"),
-    ("sv_footsteps", "0 silences footsteps, jump and landing sounds"),
-    ("cl_forwardspeed", "what a held move key sends"),
-    (
-        "sv_ladder_dampen",
-        "sideways ladder input kept when climbing (CS:S 0.2)",
-    ),
-    (
-        "sv_ladder_angle",
-        "how squarely into a ladder the dampening starts (CS:S -0.707)",
-    ),
 ];
 
 impl SourceMovementConfig {
@@ -511,7 +502,7 @@ impl SourceMovementConfig {
 }
 
 /// The configs of the registered Source movements
-/// (`SourceMovementAppExt::source_movement`), by movement id; and the
+/// (`QuakeMovementAppExt::quake_movement`), by movement id; and the
 /// reference values, for a character where none is registered
 /// (`fallback`).
 #[derive(Resource, Clone, Debug)]

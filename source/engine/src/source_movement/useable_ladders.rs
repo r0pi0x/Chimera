@@ -1,8 +1,9 @@
 //! Half-Life 2's ladders (`func_useableladder` with `info_ladder_dismount`,
 //! specs/hl2dm/movement.md "Ladders"), for a Source movement whose config
 //! turns them on (`SourceMovementConfig::useable_ladders`; HL2:DM's): the
-//! map's ladders as lines between two points (`UseableLadders`, built from
-//! the map's entities), finding and mounting one (by `+use`, or
+//! map's ladders as lines between two points (`UseableLadders`: the map's
+//! own as `source_ladders` reads them from its entities into
+//! `EntityLadders`), finding and mounting one (by `+use`, or
 //! automatically when walking into it), the forced moves that pull a
 //! player onto a ladder or off it onto a dismount point, climbing at 200
 //! units/s along the line in the direction the view picks, jumping off,
@@ -42,15 +43,12 @@
 use bevy::prelude::*;
 
 use super::{
-    config::HALF_WIDTH,
+    config::{HALF_WIDTH, SourceMovementConfigs},
     mover::{LADDER_REACH, Mover},
     trace::Tracer,
-    units::METERS_PER_UNIT,
+    units::{METERS_PER_UNIT, to_engine, to_source},
 };
-use crate::{
-    core::{LadderLine, LadderZone, MapBrush, MapGame, MapLadders, foreign_map, movement_game},
-    map::MapEntity,
-};
+use crate::core::{LadderLine, LadderZone, MapBrush, MapGame, MapLadders, foreign_map, movement_game};
 
 /// Search radius for a ladder, units.
 const FIND: f32 = 64.0;
@@ -71,10 +69,6 @@ const JUMP_OFF_UP: f32 = 50.0;
 /// Leaving by `+use` with no dismount point.
 const USE_LEAVE: f32 = 100.0;
 const USE_LEAVE_VZ: f32 = 50.0;
-/// The dismount list: nodes this near the ends or the points sampled along
-/// the ladder, at this spacing.
-const DISMOUNT_LIST: f32 = 100.0;
-const DISMOUNT_SAMPLE: f32 = 40.0;
 const DISMOUNT_PICK: f32 = 100.0;
 const DISMOUNT_DOT: f32 = 0.5;
 const STRICT_DOT: f32 = 0.7;
@@ -141,14 +135,14 @@ impl UseableLadder {
     }
 
     /// Distance from `p` to the infinite line.
-    fn line_distance(&self, p: Vec3) -> f32 {
+    pub(crate) fn line_distance(&self, p: Vec3) -> f32 {
         let up = self.up();
         let v = p - self.bottom;
         (v - up * v.dot(up)).length()
     }
 
     /// The position along the line: 0 at the top, 1 at the bottom.
-    fn param(&self, p: Vec3) -> f32 {
+    pub(crate) fn param(&self, p: Vec3) -> f32 {
         let d = self.bottom - self.top;
         let l2 = d.length_squared();
         if l2 <= 0.0 { 0.0 } else { (p - self.top).dot(d) / l2 }
@@ -159,60 +153,12 @@ impl UseableLadder {
 #[derive(Resource, Clone, Debug, Default)]
 pub struct UseableLadders(pub Vec<UseableLadder>);
 
-/// The ladders among `entities` (Source units), with their dismount lists
-/// (movement.md "The ladder entity").
-pub fn ladders_of(entities: &[MapEntity]) -> Vec<UseableLadder> {
-    let nodes: Vec<(Vec3, Option<String>)> = entities
-        .iter()
-        .filter(|e| e.classname().eq_ignore_ascii_case("info_ladder_dismount"))
-        .map(|e| (e.origin(), e.get("target").map(str::trim).filter(|t| !t.is_empty()).map(str::to_lowercase)))
-        .collect();
-    let named = |name: &str| {
-        entities
-            .iter()
-            .position(|e| e.get("targetname").is_some_and(|t| t.eq_ignore_ascii_case(name)))
-    };
-    entities
-        .iter()
-        .enumerate()
-        .filter(|(_, e)| e.classname().eq_ignore_ascii_case("func_useableladder"))
-        .map(|(i, e)| {
-            let (a, b) = (e.vector("point0"), e.vector("point1"));
-            let (top, bottom) = if a.z >= b.z { (a, b) } else { (b, a) };
-            let mut samples = vec![top, bottom];
-            let up = (top - bottom).normalize_or_zero();
-            let len = (top - bottom).length();
-            let mut s = DISMOUNT_SAMPLE;
-            while s < len {
-                samples.push(bottom + up * s);
-                s += DISMOUNT_SAMPLE;
-            }
-            let dismounts = nodes
-                .iter()
-                .filter(|(p, target)| {
-                    // A node naming another entity (the first of that name)
-                    // belongs to that one.
-                    target.as_deref().is_none_or(|t| named(t) == Some(i))
-                        && samples.iter().any(|s| s.distance(*p) <= DISMOUNT_LIST)
-                })
-                .map(|(p, _)| *p)
-                .collect();
-            let flags: i64 = e.get("spawnflags").and_then(|v| v.trim().parse().ok()).unwrap_or(0);
-            let disabled = e.get("StartDisabled").and_then(|v| v.trim().parse::<i64>().ok()).unwrap_or(0) != 0;
-            UseableLadder {
-                map_index: i,
-                top,
-                bottom,
-                enabled: !disabled,
-                dont_get_on: flags & 1 != 0,
-                dismounts,
-                fixed: false,
-                from: LadderFrom::Map,
-                made: Vec::new(),
-            }
-        })
-        .collect()
-}
+/// The map's own ladder lines as its engine's reader found them among the
+/// map's entities (Source's `func_useableladder`s: `source_movement::
+/// source_ladders`, which keeps this the entities'): what `build_ladders`
+/// takes for the map's own. Empty without a reader.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct EntityLadders(pub Vec<UseableLadder>);
 
 /// A convex brush's corners (engine space): where three of its planes meet
 /// inside all the others.
@@ -287,13 +233,13 @@ pub fn lines_of_volume(b: &MapBrush, from: LadderFrom) -> Vec<UseableLadder> {
         // Over the top: beyond the volume, else on it or at its edge (a
         // ledge with a wall behind), farthest first; `to_floors` keeps
         // those standing on a floor.
-        let over = |back: f32| super::to_source(high - flat * back);
+        let over = |back: f32| to_source(high - flat * back);
         let foot = bottom + flat * 8.0 * u;
-        let (top, bottom) = (super::to_source(top), super::to_source(bottom));
+        let (top, bottom) = (to_source(top), to_source(bottom));
         let mut dismounts: Vec<Vec3> = OVER_BACK.iter().map(|b| over(thin + b * u)).collect();
         dismounts.push(over(thin / 2.0));
         dismounts.extend(OVER_EDGE.iter().map(|b| over(b * u)));
-        dismounts.push(super::to_source(foot));
+        dismounts.push(to_source(foot));
         out.push(UseableLadder {
             map_index: NO_ENTITY,
             top,
@@ -313,9 +259,9 @@ pub fn lines_of_volume(b: &MapBrush, from: LadderFrom) -> Vec<UseableLadder> {
 /// useable ladder (Source units).
 pub fn engine_line(l: &UseableLadder) -> LadderLine {
     LadderLine {
-        bottom: super::to_engine(l.bottom),
-        top: super::to_engine(l.top),
-        dismounts: l.dismounts.iter().map(|d| super::to_engine(*d)).collect(),
+        bottom: to_engine(l.bottom),
+        top: to_engine(l.top),
+        dismounts: l.dismounts.iter().map(|d| to_engine(*d)).collect(),
     }
 }
 
@@ -712,7 +658,9 @@ impl Mover<'_, '_, '_, '_> {
     }
 }
 
-/// Keep `UseableLadders` the map's (`map::MapEntities`), published as
+/// Keep `UseableLadders` the map's (its entities' lines as their reader
+/// left them in `EntityLadders`, taken when `map::MapEntities` changes: the
+/// reader runs before this), published as
 /// `MapLadders::lines`, followed by the other ladders as lines: every
 /// game's ladder volume (`LadderZone`), and the map's ladder brushes when
 /// a movement climbing useable ladders isn't the map's game's (sorted by
@@ -720,12 +668,13 @@ impl Mover<'_, '_, '_, '_> {
 #[allow(clippy::too_many_arguments)]
 pub fn build_ladders(
     entities: Option<Res<crate::map::MapEntities>>,
+    read: Option<Res<EntityLadders>>,
     mut ladders: ResMut<UseableLadders>,
     published: Option<ResMut<MapLadders>>,
     zones: Query<Ref<LadderZone>>,
     mut gone: RemovedComponents<LadderZone>,
     game: Option<Res<MapGame>>,
-    configs: Option<Res<super::SourceMovementConfigs>>,
+    configs: Option<Res<SourceMovementConfigs>>,
     mut last_game: Local<Option<String>>,
 ) {
     let mut published = published;
@@ -734,7 +683,7 @@ pub fn build_ladders(
         None => ladders.0.iter().any(|l| l.from == LadderFrom::Map),
     };
     if own_changed {
-        let own = entities.as_ref().map(|e| ladders_of(&e.entities)).unwrap_or_default();
+        let own = entities.as_ref().and(read.as_ref()).map(|r| r.0.clone()).unwrap_or_default();
         if let Some(p) = published.as_mut() {
             p.lines = own.iter().map(engine_line).collect();
         }
@@ -777,42 +726,6 @@ pub fn build_ladders(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn entity(pairs: &[(&str, &str)]) -> MapEntity {
-        MapEntity {
-            keyvalues: pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
-            ..Default::default()
-        }
-    }
-
-    /// The ladder's ends (the higher point is the top), flags, and its
-    /// dismount list: nodes within 100 of the ends or of the points every
-    /// 40 up, not those naming another entity.
-    #[test]
-    fn ladders_and_their_dismount_points() {
-        let ents = vec![
-            entity(&[("classname", "func_useableladder"), ("targetname", "a"), ("point0", "0 0 8"), ("point1", "0 0 264")]),
-            entity(&[("classname", "func_useableladder"), ("targetname", "b"), ("point0", "1000 0 0"), ("point1", "1000 0 100"), ("spawnflags", "1"), ("StartDisabled", "1")]),
-            entity(&[("classname", "info_ladder_dismount"), ("origin", "48 0 264")]),
-            // Beside the middle of a: within 100 of the point 120 up.
-            entity(&[("classname", "info_ladder_dismount"), ("origin", "90 0 130")]),
-            // Too far from anything of a.
-            entity(&[("classname", "info_ladder_dismount"), ("origin", "300 0 130")]),
-            // Near a, but naming b.
-            entity(&[("classname", "info_ladder_dismount"), ("origin", "40 0 8"), ("target", "b")]),
-        ];
-        let l = ladders_of(&ents);
-        assert_eq!(l.len(), 2);
-        assert_eq!((l[0].top, l[0].bottom), (Vec3::new(0.0, 0.0, 264.0), Vec3::new(0.0, 0.0, 8.0)));
-        assert_eq!(l[0].dismounts, [Vec3::new(48.0, 0.0, 264.0), Vec3::new(90.0, 0.0, 130.0)]);
-        assert!(l[0].enabled && !l[0].dont_get_on);
-        assert!(!l[1].enabled && l[1].dont_get_on);
-        assert!(l[1].dismounts.is_empty());
-        // The line: closest points and the parameter from the top.
-        assert_eq!(l[0].closest(Vec3::new(-20.0, 0.0, 0.0)), Vec3::new(0.0, 0.0, 8.0));
-        assert!((l[0].param(Vec3::new(5.0, 0.0, 136.0)) - 0.5).abs() < 1e-6);
-        assert!((l[0].line_distance(Vec3::new(3.0, 4.0, 50.0)) - 5.0).abs() < 1e-6);
-    }
 
     /// A ladder brush (engine metres, Y up) of two stacked boxes: each
     /// face's line 18 units out, the stacked ones joined into one from the

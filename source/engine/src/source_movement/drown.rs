@@ -33,7 +33,7 @@
 
 use bevy::prelude::*;
 
-use super::{MovementConfigs, SourceMovement};
+use super::{config::MovementConfigs, state::SourceMovement};
 use crate::core::{Damage, DamageKind, DamageTaken, Health, Hitgroup, SimClock, SimSet};
 
 /// Seconds the head can stay under water before the first hit.
