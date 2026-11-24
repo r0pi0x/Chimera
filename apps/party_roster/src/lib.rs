@@ -63,8 +63,14 @@ pub const DEFAULT_MINIGAME: &str = originals::GUN_GAME_DUST2;
 /// an automatic ladder takes them.
 ///
 /// The one list a new guest joins: everything below is made from it.
-pub static GUESTS: [&GameBundle; 5] =
-    [&cs_source::game::BUNDLE, &hl2dm::game::BUNDLE, &halo_ce::game::BUNDLE, &tf2::game::BUNDLE, &dods::game::BUNDLE];
+pub static GUESTS: [&GameBundle; 6] = [
+    &cs_source::game::BUNDLE,
+    &hl2dm::game::BUNDLE,
+    &halo_ce::game::BUNDLE,
+    &tf2::game::BUNDLE,
+    &dods::game::BUNDLE,
+    &cs16::game::BUNDLE,
+];
 
 /// How many guests (`GUESTS`).
 const N: usize = GUESTS.len();

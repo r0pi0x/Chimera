@@ -1,0 +1,24 @@
+//! Counter-Strike 1.6's front end on the client shell, its own crate above the
+//! game's simulation (`cs16`) so that the simulation and its tests never
+//! build the shell. No HUD of its own yet (its gun in hand shows the
+//! shell's minimal HUD: `GameParts::hud` None); docs/new-game.md, step 8.
+
+use bevy::app::PluginGroupBuilder;
+use chimera_world::game_bundle::GameClient;
+
+use cs16::game::GAME;
+
+/// The shell's plugins as they are: no HUD of its own yet.
+pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
+    shell
+}
+
+/// The game's front end in an app made of several games (beside its
+/// `game::BUNDLE`): nothing of its own yet.
+pub static CLIENT: GameClient = GameClient { game: GAME, ui_crate: env!("CARGO_CRATE_NAME"), hud: None, app: None, base: None };
+
+/// The front end under the name every game's has it (`party::CLIENT`;
+/// docs/new-game.md).
+pub mod party {
+    pub use super::{CLIENT, with_hud};
+}

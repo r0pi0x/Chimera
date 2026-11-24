@@ -1,0 +1,16 @@
+# Counter-Strike 1.6: specs
+
+What Counter-Strike 1.6 does, in our own words, for the implementation sessions
+that build `games/cs16` (docs/CONTRIBUTING-GAMES.md). Written by spec
+sessions only, by the rules of [specs/README.md](../README.md): no code,
+no pseudocode that mirrors it, no names, comments or strings copied from
+the game's code, no keys, no assets or extracted files.
+
+| Spec | Covers | Status |
+|---|---|---|
+| [install.md](install.md) | where the install comes from, its layout, how files are found, the file formats by role | draft |
+| [movement.md](movement.md) | the player's movement: constants, per-tick order, test cases | draft |
+| [weapons.md](weapons.md) | the guns: numbers per gun, firing, reloading, damage | draft |
+
+Add one file per topic (damage, hit zones, HUD, sounds, a format) as the
+work needs it, from the template in [specs/README.md](../README.md).

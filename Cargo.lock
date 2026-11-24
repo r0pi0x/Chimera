@@ -3433,6 +3433,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "cs16"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "chimera_core",
+ "chimera_sim",
+ "chimera_world",
+ "serde",
+ "toml",
+ "workspace-hack",
+]
+
+[[package]]
+name = "cs16_ui"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "chimera_world",
+ "cs16",
+ "workspace-hack",
+]
+
+[[package]]
 name = "cs_source"
 version = "0.1.0"
 dependencies = [
@@ -6671,6 +6698,8 @@ dependencies = [
  "chimera_world",
  "combat_arms",
  "combat_arms_ui",
+ "cs16",
+ "cs16_ui",
  "cs_source",
  "cs_source_ui",
  "dods",

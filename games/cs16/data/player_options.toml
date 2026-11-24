@@ -1,0 +1,8 @@
+# This game's own keys and options on the party apps' Options screen
+# (Games tab: party_kit::game_options; docs/plans/active/settings-games.md;
+# the format: games/tf2/data/player_options.toml's header). None of its
+# own yet.
+
+[game]
+name = "Counter-Strike 1.6"
+short = "CS 1.6"

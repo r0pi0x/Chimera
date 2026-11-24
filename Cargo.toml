@@ -44,6 +44,8 @@ members = [
     "games/tf2/ui",
     "games/dods",
     "games/dods/ui",
+    "games/cs16",
+    "games/cs16/ui",
     "apps/cs_source",
     "apps/cs_source_server",
     "apps/combat_arms",
@@ -98,6 +100,8 @@ default-members = [
     "games/tf2/ui",
     "games/dods",
     "games/dods/ui",
+    "games/cs16",
+    "games/cs16/ui",
     "apps/cs_source",
     "apps/cs_source_server",
     "apps/combat_arms",
@@ -183,6 +187,10 @@ tf2_ui = { path = "games/tf2/ui" }
 dods = { path = "games/dods" }
 # Its front end on the client shell (games/dods/ui), above the simulation.
 dods_ui = { path = "games/dods/ui" }
+# Counter-Strike 1.6 as a game crate (games/cs16; docs/plans/active/cs16.md).
+cs16 = { path = "games/cs16" }
+# Its front end on the client shell (games/cs16/ui), above the simulation.
+cs16_ui = { path = "games/cs16/ui" }
 # Lucker Party's original minigames (games/originals): their definitions
 # (minigames/) and rules hooks, on Chimera only.
 originals = { path = "games/originals" }

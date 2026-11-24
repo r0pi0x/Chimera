@@ -112,3 +112,7 @@ engine, since one loader yields six games.
 Started 2026-11-23 (user's go): the plan is [dods.md](dods.md), the
 first specs are in `specs/dods/`; `qbsp` (MIT OR Apache-2.0) is
 approved in THIRD_PARTY.md for the GoldSrc plan, not yet a dependency.
+
+GoldSrc started 2026-11-24 (user's direction, CS 1.6 first): the plan is
+[goldsrc.md](goldsrc.md); `games/cs16` scaffolded, the dedicated server
+installed on the dev box.

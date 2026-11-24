@@ -94,3 +94,8 @@ path = "~/games/combat-arms-classic"
 # list = true
 # List with this account file, not the user's (a host account's):
 # account = "/path/to/account.toml"
+
+# [games.cs16]
+# The folder of Counter-Strike 1.6's install, or CHIMERA_CS16_ROOT for one run
+# (docs/plans/active/cs16.md, "The install").
+# path = "~/games/cs16"   # the folder holding cstrike/ and valve/ (docs/plans/active/goldsrc.md)

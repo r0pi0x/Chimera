@@ -39,6 +39,8 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    tf2_ui (games/tf2/ui/)   TF2's front end as its own crate (its HUD, its guns' kill icons): on tf2 and the shell; tf2 and its tests build no client
   |    dods (games/dods/)   Day of Defeat: Source (M0): GameInfo, mount from gameinfo.txt, maps (Allies/Axis spawns), the twelve class bodies, Source movement with its stances, a stand-in Colt, harness::DodsSim
   |    dods_ui (games/dods/ui/)   DoD:S's front end as its own crate (empty until its HUD)
+  |    cs16 (games/cs16/)   Counter-Strike 1.6 (scaffold): GameInfo, a loose-file mount, stand-in movement and gun, harness::Cs16Sim
+  |    cs16_ui (games/cs16/ui/)   CS 1.6's front end as its own crate (empty)
   |
   |    cs_source_ui (games/cs_source/ui/)   CS:S's front end as its own crate (menus, panels, HUD, scoreboard): on cs_source, Source's shared crates, source_gameui and the shell
   |   /         \
@@ -490,6 +492,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `game::DodsPlugins`, `harness::DodsSim`, `BUNDLE` (a party guest:
   `GUEST` dresses other games' maps with its bodies and gun). Layered as
   `tf2`; `dods_ui` draws nothing of its own yet.
+- `cs16` (games/cs16/) is Counter-Strike 1.6, the first GoldSrc game
+  (docs/plans/active/goldsrc.md): as `tools/new-game` made it, a
+  `GameInfo`, the install as loose files, the placeholder movement and a
+  stand-in gun as data, `harness::Cs16Sim`, `BUNDLE` (a party guest with
+  nothing to dress yet). No loader family yet: `goldsrc/formats` comes
+  with M0's maps. `cs16_ui` draws nothing of its own.
 - `tf2` (games/tf2/) is Team Fortress 2, M1 of docs/plans/active/tf2.md:
   its `GameInfo` (`game::INFO`: Steam app 440, folder `tf`, tick 0.015 s,
   console namespaces `tf2` and `tf`), its install mounted from

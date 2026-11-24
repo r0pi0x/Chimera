@@ -1,0 +1,23 @@
+//! What Counter-Strike 1.6 lends other games' apps (`chimera_core::game_parts`):
+//! its stand-in gun and its movement, which make it `playable` in a gun
+//! game's ladder and the sandbox: a player holding its gun is this game's
+//! and moves on its movement. Its HUD is the shell's minimal one until it
+//! has its own.
+
+use chimera_core::game_parts::{GameParts, GunClass, GunPart};
+
+/// The game's parts.
+pub static PARTS: GameParts = GameParts {
+    game: super::GAME,
+    guns: &[GunPart { id: super::weapons::STANDIN, class: GunClass::Pistol }],
+    knife: None,
+    movement: Some(super::movement::ID),
+    characters: None,
+    hud: None,
+    maps: &[],
+    announcer: None,
+    match_won_sound: None,
+    match_lost_sound: None,
+    music: false,
+    cues: None,
+};

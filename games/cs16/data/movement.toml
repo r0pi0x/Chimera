@@ -1,0 +1,13 @@
+# Counter-Strike 1.6's movement numbers (game::movement; Chimera's placeholder
+# movement under `cs16:movement`), in metres and seconds. Stand-ins made
+# by tools/new-game: put the numbers of specs/cs16/movement.md here (and
+# name the spec's constant on each line) until the game has its own movement.
+
+# Ground speeds, m/s.
+walk = 5.0
+sprint = 7.5
+crouch = 2.5
+# m/s^2, down.
+gravity = 20.0
+# The jump's upward speed, m/s.
+jump = 6.5
