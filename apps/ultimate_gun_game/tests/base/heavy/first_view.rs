@@ -40,8 +40,12 @@ fn a_hosts_and_a_joined_clients_first_frames_have_nothing_pending() {
     let Some((h, c)) = pair::run_pair("combat_arms:warehouse") else { return };
     pair::check("the host", &h);
     assert!(
+        !pair::join_timed_out(&c),
+        "the client's join timed out twice (it never got the server's welcome)\n{c}\n--- the host's log ---\n{h}"
+    );
+    assert!(
         c.contains("the coming ladder loads") && c.contains("behind the loading screen"),
-        "the client didn't load the server's ladder behind its loading screen\n{c}"
+        "the client didn't load the server's ladder behind its loading screen\n{c}\n--- the host's log ---\n{h}"
     );
     pair::check("the client", &c);
 }

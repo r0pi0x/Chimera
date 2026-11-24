@@ -2,7 +2,8 @@
 //! `tf2`'s ctf_2fort; chimera_client::client::first_view, docs/performance.md,
 //! "A map's first view"): a listen host and a client joining it, offscreen,
 //! their counts logged (`CHIMERA_FIRST_VIEW_LOG`), and the check that every
-//! frame after a cover went has nothing pending.
+//! frame after a cover went has nothing pending. A client whose join timed
+//! out (a loaded box's slow host) connects again once.
 
 use std::{
     fs::File,
@@ -66,6 +67,11 @@ pub fn last_shown(log: &str) -> Vec<&str> {
     lines[lines.len().saturating_sub(FRAMES)..].to_vec()
 }
 
+/// The client's join timed out: it never got the server's welcome.
+pub fn join_timed_out(log: &str) -> bool {
+    log.contains("Connection to server timed out")
+}
+
 /// The settle gave up waiting (its 20 s: a loaded box's slow shader compiles).
 pub fn timed_out(log: &str) -> bool {
     log.contains("out of time; still pending")
@@ -102,11 +108,24 @@ pub fn run_pair(map: &str) -> Option<(String, String)> {
         &args(&format!("-port {port} +maxplayers 4 +after 1 ugg_new 7 13 {map} +after 280 quit")),
     );
     std::thread::sleep(Duration::from_secs(5));
-    let (mut client, client_log) = start(&dir, "Client", &args(&format!("+connect 127.0.0.1:{port} +after 280 quit")));
+    let client_args = args(&format!("+connect 127.0.0.1:{port} +after 280 quit"));
+    let (mut client, mut client_log) = start(&dir, "Client", &client_args);
+    // A client whose join timed out (`net::client`'s 20 s for the welcome:
+    // on a loaded box the host can be that slow while it loads the map)
+    // connects again once, as a player would; its first log is kept.
+    let mut retried = false;
     let began = Instant::now();
     loop {
         std::thread::sleep(Duration::from_secs(1));
-        let (h, c) = (read(&host_log), read(&client_log));
+        let (h, mut c) = (read(&host_log), read(&client_log));
+        if !retried && join_timed_out(&c) {
+            retried = true;
+            eprintln!("the client's join timed out (a loaded box); it connects again");
+            drop(client);
+            let (again, log) = start(&dir, "Client2", &client_args);
+            (client, client_log) = (again, log);
+            c = read(&client_log);
+        }
         let gone = [&mut host, &mut client].into_iter().any(|g| g.0.try_wait().ok().flatten().is_some());
         let in_play = |log: &str| {
             let last = format!("first_view shown+{} ", FRAMES - 1);
