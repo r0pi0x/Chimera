@@ -69,17 +69,24 @@ impl RocketRules {
 pub fn explode(
     mut hits: MessageReader<FlyerHit>,
     rules: Res<RocketRules>,
-    flyers: Query<(&Flyer, Has<super::airblast::Deflected>)>,
+    flyers: Query<(&Flyer, Has<super::airblast::Deflected>, Has<crate::game::items::misc::Charged>)>,
     mut world: BlastWorld,
+    mut state: ResMut<crate::game::items::ItemState>,
+    clock: Res<crate::core::SimClock>,
     mut gone: MessageWriter<FlyerGone>,
     mut commands: Commands,
 ) {
     for hit in hits.read() {
         let Some((p, ramp)) = rules.get(hit.weapon) else { continue };
-        let Ok((_, deflected)) = flyers.get(hit.flyer) else { continue };
+        let Ok((_, deflected, charged)) = flyers.get(hit.flyer) else { continue };
+        // The Cow Mangler's charged shot (batch3b_mechanics.md 11):
+        // mini-crits, its victims burn (`items::misc::charged_burns`).
+        if charged && let Some(o) = hit.owner {
+            state.charged.blasts.push((o, hit.weapon, clock.now));
+        }
         // 1 unit off the surface it touched (effects.md 13).
         let at = world.touched(hit.point, hit.normal, hit.other);
-        let blast = Blast { params: p, radius: p.radius, ramp: p.by_distance.then_some(ramp), scale: 1.0, mini_crit: deflected, self_law: None };
+        let blast = Blast { params: p, radius: p.radius, ramp: p.by_distance.then_some(ramp), scale: 1.0, mini_crit: deflected || charged, self_law: None };
         world.detonate(&blast, &at, hit.owner, hit.weapon, hit.other);
         gone.write(FlyerGone {
             flyer: hit.flyer,

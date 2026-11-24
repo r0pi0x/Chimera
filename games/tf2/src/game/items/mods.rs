@@ -188,6 +188,26 @@ pub struct ItemParams {
     pub melt_fire_immune: f32,
     pub melt_afterburn_immune: f32,
     pub disguise_bonus: f32,
+    /// Batch 3b (specs/tf2/batch3b_mechanics.md; `weapons::flame`,
+    /// `super::kit`, `super::misc`): flame hits from behind crit
+    /// (`set_flamethrower_back_crit`, §3); the airblast power its wearer
+    /// takes (`airblast_vulnerability_multiplier`, §9.2) and the push from
+    /// others' damage (`damage_force_reduction`, a worn item's: §9.2);
+    /// a landing on an enemy's head stomps (`boots_falling_stomp`, the
+    /// Thermal Thruster's `thermal_thruster`, §9.1); air control while
+    /// blast jumping (`mod_air_control_blast_jump`, recorded); the first
+    /// backstab is blocked (`set_blockbackstab_once`, §10); crits become
+    /// mini-crits (`crits_become_minicrits`, §11).
+    pub back_crit: bool,
+    pub airblast_taken: f32,
+    pub push_taken: f32,
+    pub stomp: bool,
+    pub air_control_blast: f32,
+    pub block_backstab: bool,
+    pub crits_mini: bool,
+    /// An airblast doesn't turn its shots (the Cow Mangler's,
+    /// `energy_weapon_charged_shot`, §11).
+    pub no_reflect: bool,
 }
 
 impl Default for ItemParams {
@@ -256,6 +276,14 @@ impl Default for ItemParams {
             melt_fire_immune: 0.0,
             melt_afterburn_immune: 0.0,
             disguise_bonus: 1.0,
+            back_crit: false,
+            airblast_taken: 1.0,
+            push_taken: 1.0,
+            stomp: false,
+            air_control_blast: 1.0,
+            block_backstab: false,
+            crits_mini: false,
+            no_reflect: false,
         }
     }
 }
@@ -324,6 +352,16 @@ impl ItemParams {
             kill_refill: add("kill_refills_meter"),
             lose_charge_on_hurt: r.flag("lose_demo_charge_on_damage_when_charging"),
             speed_shield: a("mult_player_movespeed_shieldrequired"),
+            back_crit: r.flag("set_flamethrower_back_crit"),
+            airblast_taken: a("airblast_vulnerability_multiplier"),
+            // A worn item's (the Mantreads'); the Thermal Thruster's 1.5 is
+            // unmeasured (`super::kit`'s Known shortcuts).
+            push_taken: if r.class == "tf_wearable" { a("damage_force_reduction") } else { 1.0 },
+            stomp: r.flag("boots_falling_stomp") || r.flag("thermal_thruster"),
+            air_control_blast: a("mod_air_control_blast_jump"),
+            block_backstab: r.flag("set_blockbackstab_once"),
+            crits_mini: r.flag("crits_become_minicrits"),
+            no_reflect: r.flag("energy_weapon_charged_shot"),
             ..Self::default()
         }
     }
@@ -641,6 +679,10 @@ pub fn add(app: &mut App) {
     super::meters::add(app);
     super::shields::add(app);
     super::spy::add(app);
+    app.init_resource::<super::ItemState>();
+    super::fire::add(app);
+    super::kit::add(app);
+    super::misc::add(app);
     app.register_weapon_hook::<ItemParams>(super::ITEM_HOOK, |e, _, p| {
         e.insert(Tf2Item(p.clone()));
     })

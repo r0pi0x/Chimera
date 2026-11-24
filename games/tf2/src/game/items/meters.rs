@@ -100,6 +100,15 @@ pub const CONCH_SPEED: f32 = 1.4;
 pub const CONCH_HEAL: f32 = 0.35;
 /// The Concheror's condition (heal on hit).
 pub const CONCH: &str = "tf2:conch";
+/// The Phlogistinator (batch3b_mechanics.md 2): rage a point of fire
+/// damage (300 fills it), the taunt's lock and invulnerability from its
+/// start, the crit boost's linger after the rage (s).
+pub const MMMPH_PER_DAMAGE: f32 = 1.0 / 3.0;
+pub const MMMPH_TAUNT: f32 = 2.76;
+pub const MMMPH_INVULNERABLE: f32 = 2.61;
+pub const MMMPH_LINGER: f32 = 1.2;
+/// The Heatmaker's focus lingers this long after its meter is empty (s).
+pub const FOCUS_LINGER: f32 = 0.33;
 
 /// Which meter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,6 +119,10 @@ pub enum MeterKind {
     Crikey,
     Heads,
     Rage,
+    /// The Phlogistinator's (batch3b_mechanics.md 2).
+    Mmmph,
+    /// The Hitman's Heatmaker's (batch3b_mechanics.md 12).
+    Focus,
 }
 
 /// `tf2:meter`'s parameters (%, s, units; module doc).
@@ -140,6 +153,20 @@ pub struct MeterParams {
     pub banner: u8,
     #[serde(default)]
     pub delay: f32,
+    /// Batch 3b: only fire damage fills it (the Phlogistinator's `burn
+    /// damage earns rage`); a kill with it fills this (the Heatmaker's
+    /// `rage_on_kill`); its condition lingers this long after the meter
+    /// is empty (s); the taunt's lock and its invulnerability (s).
+    #[serde(default)]
+    pub fire_only: bool,
+    #[serde(default)]
+    pub per_kill: f32,
+    #[serde(default)]
+    pub linger: f32,
+    #[serde(default)]
+    pub taunt: f32,
+    #[serde(default)]
+    pub invulnerable: f32,
 }
 
 fn full() -> f32 {
@@ -163,6 +190,11 @@ impl MeterParams {
             air_jumps: 0,
             banner: 0,
             delay: 0.0,
+            fire_only: false,
+            per_kill: 0.0,
+            linger: 0.0,
+            taunt: 0.0,
+            invulnerable: 0.0,
         };
         if r.flag("hype_on_damage") {
             return Some(MeterParams { per_damage: HYPE_PER_DAMAGE, drain: HYPE_DRAIN, air_jumps: HYPE_AIR_JUMPS, ..base(MeterKind::Hype, "HYPE") });
@@ -189,6 +221,20 @@ impl MeterParams {
             let per = if banner == 3 { RAGE_PER_DAMAGE_CONCH } else { RAGE_PER_DAMAGE };
             return Some(MeterParams { per_damage: per, drain: RAGE_DRAIN, banner, delay: BANNER_DELAY, ..base(MeterKind::Rage, "RAGE") });
         }
+        if r.flag("burn_damage_earns_rage") {
+            return Some(MeterParams {
+                per_damage: MMMPH_PER_DAMAGE,
+                drain: RAGE_DRAIN,
+                fire_only: true,
+                linger: MMMPH_LINGER,
+                taunt: MMMPH_TAUNT,
+                invulnerable: MMMPH_INVULNERABLE,
+                ..base(MeterKind::Mmmph, "MMMPH")
+            });
+        }
+        if add("rage_on_kill") > 0.0 {
+            return Some(MeterParams { per_kill: add("rage_on_kill"), drain: RAGE_DRAIN, linger: FOCUS_LINGER, ..base(MeterKind::Focus, "FOCUS") });
+        }
         if r.class == "tf_weapon_sniperrifle_decap" {
             return Some(MeterParams { max: HEADS_CAP as f32, ..base(MeterKind::Heads, "HEADS") });
         }
@@ -210,6 +256,8 @@ pub struct MeterState {
     pub from: f64,
     #[serde(default)]
     pub prev_fire: bool,
+    #[serde(default)]
+    pub prev_reload: bool,
 }
 
 /// The weapon part.
@@ -243,6 +291,20 @@ impl Tf2Meter {
     /// A banner's buff in force at `now` (after the horn).
     pub fn buffing(&self, now: f64) -> bool {
         self.params.kind == MeterKind::Rage && now + 1e-6 >= self.state.from && now <= self.state.until + 1e-6 && self.state.until > 0.0
+    }
+
+    /// The Phlogistinator's taunt or the Heatmaker's focus in force at
+    /// `now` (the condition's linger included).
+    pub fn in_force(&self, now: f64) -> bool {
+        matches!(self.params.kind, MeterKind::Mmmph | MeterKind::Focus)
+            && self.state.until > 0.0
+            && now + 1e-6 >= self.state.from
+            && now <= self.state.until + self.params.linger as f64 + 1e-6
+    }
+
+    /// The Phlogistinator's taunt holds its holder at `now`.
+    pub fn taunting(&self, now: f64) -> bool {
+        self.params.kind == MeterKind::Mmmph && self.state.until > 0.0 && now + 1e-6 >= self.state.from && now < self.state.from + self.params.taunt as f64
     }
 
     /// The heads counted.
@@ -279,18 +341,19 @@ pub fn attach(e: &mut EntityWorldMut, p: &MeterParams) {
 /// jump's loss (predicted, before the weapon switch).
 #[allow(clippy::type_complexity)]
 pub fn think(
-    owners: Query<(&Intent, &Inventory, Option<&MovementState>), Without<crate::map::interp::NetDrawn>>,
+    mut owners: Query<(&mut Intent, &Inventory, Option<&MovementState>), Without<crate::map::interp::NetDrawn>>,
     mut meters: Query<&mut Tf2Meter>,
     clock: Res<SimClock>,
 ) {
     let now = clock.now;
-    for (intent, inv, state) in &owners {
+    for (mut intent, inv, state) in &mut owners {
         for &w in &inv.weapons {
             let Ok(mut m) = meters.get_mut(w) else { continue };
             let p = m.params.clone();
             let mut s = m.state;
             let press = intent.secondary && !s.prev_alt && inv.active == Some(w) && inv.ready(now);
             let fire = intent.fire && !s.prev_fire && inv.active == Some(w) && inv.ready(now);
+            let reload = intent.reload && !s.prev_reload && inv.active == Some(w) && inv.ready(now);
             match p.kind {
                 MeterKind::Hype => {
                     if s.until > now {
@@ -329,12 +392,36 @@ pub fn think(
                         s.until = s.from + (s.value / p.drain) as f64;
                     }
                 }
+                MeterKind::Mmmph | MeterKind::Focus => {
+                    // Attack2 (the taunt) or reload (focus) with it full;
+                    // the rage drains from the start, the condition
+                    // lingers `linger` after.
+                    let start = if p.kind == MeterKind::Mmmph { press } else { reload };
+                    if s.until > 0.0 && now <= s.until + p.linger as f64 + 1e-6 {
+                        s.value = ((s.until - now) as f32 * p.drain).max(0.0);
+                    } else if s.until > 0.0 {
+                        s.until = 0.0;
+                        s.from = 0.0;
+                        s.value = 0.0;
+                    } else if start && s.value >= p.max - 1e-4 && p.drain > 0.0 {
+                        s.from = now;
+                        s.until = now + (s.value / p.drain) as f64;
+                    }
+                }
             }
             s.prev_fire = intent.fire;
             s.prev_alt = intent.secondary;
             s.prev_jump = intent.jump;
+            s.prev_reload = intent.reload;
             if m.state != s {
                 m.state = s;
+            }
+            // The taunt: no moving, jumping or attacking.
+            if m.taunting(now) {
+                intent.fire = false;
+                intent.secondary = false;
+                intent.jump = false;
+                intent.move_axis = Vec2::ZERO;
             }
         }
     }
@@ -390,6 +477,9 @@ pub fn fill(
             if m.params.per_damage <= 0.0 || m.active(now) || m.params.kind == MeterKind::Rage {
                 continue;
             }
+            if m.params.fire_only && d.kind != crate::core::DamageKind::Burn {
+                continue;
+            }
             m.state.value = (m.state.value + m.params.per_damage * points).min(m.params.max);
         }
         // Rage: from any of his weapons' damage.
@@ -415,6 +505,15 @@ pub fn fill(
         }
         let d = &k.damage;
         let Some(a) = d.attacker.filter(|a| *a != k.entity) else { continue };
+        // A kill with it (the Heatmaker's focus).
+        for w in own(a, d.weapon) {
+            if let Ok(mut m) = meters.get_mut(w)
+                && m.params.per_kill > 0.0
+                && !m.in_force(now)
+            {
+                m.state.value = (m.state.value + m.params.per_kill).min(m.params.max);
+            }
+        }
         if d.hitgroup != Hitgroup::Head {
             continue;
         }
@@ -438,6 +537,16 @@ pub fn buffs(holders: Query<(Entity, &Inventory, &Health)>, meters: Query<&Tf2Me
         for m in inv.weapons.iter().filter_map(|w| meters.get(*w).ok()) {
             if m.params.kind == MeterKind::Crikey && m.active(now) {
                 conditions.give(e, Condition::MiniCritBuff, m.state.until, Some(e));
+            }
+            // The Phlogistinator's taunt: invulnerable from its start, then
+            // crits until the rage is gone and its linger.
+            if m.params.kind == MeterKind::Mmmph && m.in_force(now) {
+                let from = m.state.from;
+                if now < from + m.params.invulnerable as f64 {
+                    conditions.give(e, Condition::Phased, from + m.params.invulnerable as f64, Some(e));
+                }
+                let crit = Condition::Game(crate::game::weapons::flame::CRIT_BOOST);
+                conditions.give(e, crit, m.state.until + m.params.linger as f64, Some(e));
             }
         }
     }

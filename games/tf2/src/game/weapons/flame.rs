@@ -70,6 +70,13 @@
 //!
 //! Attack2's airblast is `airblast`'s (its `[hooks."tf2:flame".airblast]`).
 //!
+//! **Crits** (specs/tf2/batch3b_mechanics.md 2, 3): a flame hit by a Pyro
+//! with the crit boost (`CRIT_BOOST`: the Phlogistinator's taunt) or, with
+//! an item's `back_crit` (the Backburner), on a victim whose back is
+//! within `BACK_CRIT_ANGLE` (35°) of the Pyro, is × 3 with the crit's
+//! feedback; afterburn ticks never crit and are whole points (the
+//! Degreaser's 1.36 reads 1).
+//!
 //! The flames' look is `looks::flame_stream`'s (`new_flame` riding the
 //! drawn points).
 //!
@@ -111,6 +118,23 @@ use crate::{
 
 /// The Pyro's class name (classes.toml).
 pub const PYRO: &str = "pyro";
+
+/// A crit-boost condition (Chimera's `status::Condition::Game`): every
+/// hit its holder deals crits, an afterburn tick never (the
+/// Phlogistinator's taunt, specs/tf2/batch3b_mechanics.md 2;
+/// `crit_boost::CritBoosted` shows it).
+pub const CRIT_BOOST: &str = "tf2:crit_boost";
+
+/// The Backburner's behind test (batch3b_mechanics.md 3, fitted): the Pyro
+/// within this many degrees of the victim's back.
+pub const BACK_CRIT_ANGLE: f32 = 35.0;
+
+/// Whether `to` (from the victim to the attacker) is within `degrees` of
+/// the back of a victim facing `facing` (both flattened).
+pub fn behind_within(facing: Vec3, to: Vec3, degrees: f32) -> bool {
+    let (f, t) = (facing.with_y(0.0).normalize_or_zero(), to.with_y(0.0).normalize_or_zero());
+    f != Vec3::ZERO && t != Vec3::ZERO && (-f).angle_between(t).to_degrees() <= degrees + 1e-3
+}
 
 /// `tf2:flame`'s parameters (units, points, seconds, degrees).
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -207,26 +231,27 @@ pub struct Tf2Flame {
     /// It was its holder's drawn weapon last tick (the pilot light starts
     /// when it becomes so; this machine's own, not sent).
     pub drawn: bool,
-    /// When the next airblast may go (`airblast::fire`).
-    pub next_blast: f64,
 }
 
 impl NetPart for Tf2Flame {
-    type Net = (bool, f32, bool, f64);
+    type Net = (bool, f32, bool);
     fn net(&self) -> Self::Net {
-        (self.flaming, self.owed, self.crit, self.next_blast)
+        (self.flaming, self.owed, self.crit)
     }
-    fn set_net(&mut self, (flaming, owed, crit, next_blast): Self::Net) {
+    fn set_net(&mut self, (flaming, owed, crit): Self::Net) {
         self.flaming = flaming;
         self.owed = owed;
         self.crit = crit;
-        self.next_blast = next_blast;
     }
 }
 
-/// `tf2:flame` on a weapon.
+/// `tf2:flame` on a weapon (its airblast, if it has one, the part
+/// `airblast::Tf2Airblast`).
 pub fn attach(e: &mut EntityWorldMut, p: &FlameParams) {
-    e.insert((Tf2Flame { params: p.clone(), flaming: false, owed: 0.0, crit: false, drawn: false, next_blast: 0.0 }, FlameStream::default(), FlameShown::default()));
+    e.insert((Tf2Flame { params: p.clone(), flaming: false, owed: 0.0, crit: false, drawn: false }, FlameStream::default(), FlameShown::default()));
+    if let Some(a) = &p.airblast {
+        super::airblast::attach(e, a);
+    }
     // The start, the loops and the pilot light end when it leaves the
     // hand (`held_sounds`).
     let held: Vec<String> =
@@ -812,6 +837,12 @@ pub fn flames(
     classes: Option<Res<Classes>>,
     clock: Res<SimClock>,
     mut damage: MessageWriter<Damage>,
+    (items, intents, status, mut crit_hits): (
+        Query<&crate::game::items::mods::Tf2Item>,
+        Query<&Intent>,
+        Option<Res<chimera_sim::status::Conditions>>,
+        MessageWriter<super::crit_hits::CritHit>,
+    ),
     mut commands: Commands,
 ) {
     let now = clock.now;
@@ -876,8 +907,22 @@ pub fn flames(
                     }
                 };
                 let heat = stream.heat[i].heat;
-                let amount = round_points(p.hit_damage((now - oldest.born) as f32, oldest.life, heat) * HP);
                 let c = (min + max) / 2.0;
+                // A crit (batch3b_mechanics.md 2, 3): its Pyro crit-boosted
+                // (the Phlogistinator's taunt), or the Backburner's from
+                // behind (`back_crit`); × 3, the afterburn ticks never.
+                let pyro_at = victims.get(owner).map_or(c, |o| o.1.translation);
+                let back = items.get(w).is_ok_and(|i| i.0.back_crit) && {
+                    let facing = intents.get(v).map_or(vt.rotation, |i| i.yaw_rotation()) * Vec3::NEG_Z;
+                    behind_within(facing, pyro_at - vt.translation, BACK_CRIT_ANGLE)
+                };
+                let boosted = status.as_deref().is_some_and(|s| s.has(owner, chimera_sim::status::Condition::Game(CRIT_BOOST), now));
+                let crit = back || boosted;
+                let f = if crit { super::melee::CRIT_MULT } else { 1.0 };
+                let amount = round_points(p.hit_damage((now - oldest.born) as f32, oldest.life, heat) * f * HP);
+                if crit {
+                    crit_hits.write(super::crit_hits::CritHit { attacker: owner, victim: v, at: c, mini: false, sound: true });
+                }
                 damage.write(Damage {
                     target: v,
                     attacker: Some(owner),
@@ -995,7 +1040,9 @@ pub fn afterburn(
             damage.write(Damage {
                 target: e,
                 attacker: b.attacker,
-                amount: b.damage * HP,
+                // Whole points (the Degreaser's 1.36 a tick reads 1:
+                // batch3b_mechanics.md 4).
+                amount: round_points(b.damage * HP),
                 point: at.translation,
                 dir: Vec3::Y,
                 hitgroup: Hitgroup::Generic,

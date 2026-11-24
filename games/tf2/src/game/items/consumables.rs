@@ -159,6 +159,21 @@ pub struct ConsumableParams {
     pub duration: f32,
     #[serde(default)]
     pub condition: Option<String>,
+    /// Batch 3b (batch3b_mechanics.md 7, the Gas Passer; `super::fire`):
+    /// its cloud's life and height over the break (s, units), the burn a
+    /// coated enemy's next damage gives (s), the meter empty at the start
+    /// and kept through deaths, and filled by the damage its holder deals
+    /// (points to fill it; `item_meter_damage_for_full_charge`).
+    #[serde(default)]
+    pub cloud: f32,
+    #[serde(default)]
+    pub cloud_up: f32,
+    #[serde(default)]
+    pub ignite: f32,
+    #[serde(default)]
+    pub starts_empty: bool,
+    #[serde(default)]
+    pub damage_fill: f32,
     /// The tables `items::docs` merges by mode and class (none left on an
     /// item's own document).
     #[serde(default)]
@@ -177,6 +192,7 @@ impl ConsumableParams {
         match self.condition.as_deref()? {
             JARATE => Some(JARATE),
             MILK => Some(MILK),
+            super::fire::GAS => Some(super::fire::GAS),
             _ => None,
         }
     }
@@ -230,7 +246,8 @@ impl Tf2Consumable {
 
 /// `tf2:consumable` on a weapon: full.
 pub fn attach(e: &mut EntityWorldMut, p: &ConsumableParams) {
-    e.insert(Tf2Consumable { params: p.clone(), state: UseState { meter: 1.0, seen: f64::MIN, ..default() } });
+    let meter = if p.starts_empty { 0.0 } else { 1.0 };
+    e.insert(Tf2Consumable { params: p.clone(), state: UseState { meter, seen: f64::MIN, ..default() } });
 }
 
 /// Every consumable weapon's numbers by id (for a thrown jar).
@@ -309,8 +326,10 @@ pub fn use_items(
             let p = item.params.clone();
             let mut s = item.state;
             if dead {
-                // Death: full again, nothing in force.
-                s = UseState { meter: 1.0, seen: s.seen, thrown: s.thrown, ..default() };
+                // Death: full again (the Gas Passer's kept), nothing in
+                // force.
+                let meter = if p.starts_empty { s.meter } else { 1.0 };
+                s = UseState { meter, seen: s.seen, thrown: s.thrown, ..default() };
                 if locked.contains(w) {
                     commands.entity(w).remove::<HolsterLocked>();
                 }
@@ -568,6 +587,7 @@ pub fn jars(
     mut conditions: ResMut<Conditions>,
     mut gone: MessageWriter<FlyerGone>,
     clock: Res<SimClock>,
+    mut state: ResMut<super::ItemState>,
     mut commands: Commands,
 ) {
     let Some(rules) = rules else {
@@ -575,17 +595,21 @@ pub fn jars(
         return;
     };
     let now = clock.now;
+    let clouds = &mut state.gas;
     let ff = friendly.is_some_and(|f| f.0 != 0);
     let team = |e: Entity| chars.get(e).ok().and_then(|c| c.5.copied()).filter(|t| t.0 != 0);
     for hit in hits.read() {
         let Some(p) = rules.get(hit.weapon).filter(|p| p.kind == Kind::Jar) else { continue };
         let reach = p.radius * U;
+        // A cloud (the Gas Passer's) stands over the break a while.
+        let centre = hit.point + Vec3::Y * p.cloud_up * U;
+        let mut coated = Vec::new();
         for (e, t, aabb, state, h, _) in &chars {
             if h.current <= 0.0 {
                 continue;
             }
             let (min, max) = crate::game::weapons::blast::boxed(t, aabb, state);
-            if ((min + max) / 2.0).distance(hit.point) > reach {
+            if ((min + max) / 2.0).distance(centre) > reach {
                 continue;
             }
             let mate = Some(e) == hit.owner || (!ff && team(e).is_some() && hit.owner.and_then(team) == team(e));
@@ -595,7 +619,20 @@ pub fn jars(
                 }
             } else if let Some(c) = p.condition() {
                 conditions.give(e, Condition::Game(c), now + p.duration as f64, hit.owner);
+                coated.push(e);
+                if p.ignite > 0.0 {
+                    clouds.coated_by.insert(e, hit.weapon);
+                }
             }
+        }
+        if p.cloud > 0.0 {
+            clouds.live.push(super::fire::GasCloud {
+                centre,
+                until: now + p.cloud as f64,
+                owner: hit.owner,
+                weapon: hit.weapon,
+                coated,
+            });
         }
         gone.write(FlyerGone { flyer: hit.flyer, weapon: hit.weapon, owner: hit.owner, at: hit.point, expired: false });
         commands.entity(hit.flyer).despawn();

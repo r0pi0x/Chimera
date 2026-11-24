@@ -1,6 +1,6 @@
 # TF2 weapons: every player weapon, what is in, what is left
 
-Status: batches 0 and 1 built, batch 2's first five families and part 2 (projectiles and pushes; consumables, meters, sniper and revolver variants) built, batch 3's shields and banners and its Spy (watches, disguise, knives) built (2026-11-23; section 4); the rest of batch 2 and batch 3 planned.
+Status: batches 0 and 1 built, batch 2's first five families and part 2 (projectiles and pushes; consumables, meters, sniper and revolver variants) built, batch 3's shields and banners and its Spy (watches, disguise, knives) built (2026-11-23), batch 3 part 2's fire family, movement kit, Cow Mangler, Heatmaker and Razorback built (2026-11-24; section 4); the rest of batch 2 and batch 3 (medigun, buildings) planned.
 Inventory by class and slot, then a phased build order.
 
 Sources: the installed game's `scripts/items/items_game.txt` (read locally
@@ -576,6 +576,54 @@ sees the disguise's name, health and body and not a cloaked Spy):
 - Left: sappers, the disguise kit's view model and weapon switch, the
   cloak's own looks and sounds, cloak from ammo, silent backstabs, the
   Spy-cicle's statue.
+
+**Built 2026-11-24, part 2's fire family, movement kit and the rest**
+(specs/tf2/batch3b_mechanics.md 2-12; `game::items::fire`, `kit`,
+`misc`, `meters`' Mmmph and focus; scenario tests:
+games/tf2/tests/it/batch3b.rs), each mechanic a hook, the items data:
+
+- *Fire family*: the airblast is its own part (`weapons::airblast::
+  Tf2Airblast`, a Flame Thrower's or `tf2:airblast` on any weapon), its
+  cost × `mult_airblast_cost` (Backburner 50, Degreaser 25, Dragon's Fury
+  5), none with `airblast_disabled`, + 20 health per teammate put out.
+  Phlogistinator: rage 1/3 a point of fire damage, attack2 at 100 a 2.76 s
+  taunt (invulnerable 2.61 s), the crit boost (`flame::CRIT_BOOST`, a
+  condition: flame hits × 3, every other hit crits, `CritBoosted` shown)
+  until 1.2 s after the 10 s drain. Backburner: flame hits crit within 35°
+  of the back. Degreaser: deploy 0.2 s, holster × 0.7, afterburn × 0.34
+  (whole points: 1). Dragon's Fury (data/weapons/rocketlauncher_fireball
+  .toml): a 3000 units/s fireball through players, 500 units, damage by
+  the measured distance table, × 3 on burning, 2.5 s afterburn, the next
+  shot's wait × 1/1.5 from a hit, 1.6 s after an airblast. Manmelter
+  (flaregun_revenge.toml): attack2 puts out burning teammates in the
+  airblast's sphere, + 1 stored crit and + 20 each, the next flare a crit.
+  Gas Passer (jar.toml's class table): a 5 s cloud 30 over the break
+  coating within 220 for 10 s (entering too), the next damage ignites 6 s;
+  the meter starts empty, 60 s or 750 damage.
+- *Movement kit*: B.A.S.E. Jumper (parachute.toml, worn): jump in the air
+  opens it once an air time, fall held at 100 before the half-step (106
+  units/s), 75 across; Mantreads: the stomp (10 + 3 × H × v / 6000 on the
+  landing's speed, no fall damage), others' pushes and the airblast's
+  power × 0.25; Thermal Thruster (rocketpack.toml, predicted): the hop
+  350, the launch 0.65 s later 810 along the aim + 315 (within 15° of
+  level) or + 112.5, two charges of 15 s, 300 kept on landing, enemies
+  within 220 pushed, the stomp.
+- *Misc*: Cow Mangler (particle_cannon.toml): an energy cell of 4, 1100
+  units/s rockets, attack2 full charges 2 s at 80 units/s and fires the
+  cell as a mini-crit that burns 6 s, crits as mini-crits, not
+  reflected; Hitman's Heatmaker: focus + 35 a kill, reload at 100: 10 s
+  (+ 0.33 linger) with the scope kept up after shots; Razorback (worn):
+  one backstab blocked, the Spy held 2 s, back after 30 s.
+- Ladders: the damaging ones are offered (Phlogistinator, Backburner,
+  Degreaser, Dragon's Fury, Manmelter, Cow Mangler, Heatmaker); the Gas
+  Passer, the chute, the Mantreads, the Thermal Thruster and the Razorback
+  are utility items (`gun_game = false`).
+- Provisional numbers (the spec's open questions) are each module's Known
+  shortcuts: the Backburner's behind test, the chute's approach and entry
+  speed, the thruster's upward boundary and landing push law, the
+  Mantreads' blast-jump air control (not applied), the Razorback's return
+  at a full meter, the Manmelter's crit cap and window, the Dragon's
+  Fury's table between samples.
 
 | Group | Weapons | Fit in a party gun game | Spec needed |
 |---|---|---|---|

@@ -1,0 +1,39 @@
+# TF2's Thermal Thruster (specs/tf2/batch3b_mechanics.md 9.3): a Pyro with
+# the Flame Thrower draws the thruster (slot 2), aims a little up and
+# presses attack: a hop, 0.65 s later the launch (810 along the aim, 315
+# up near level), the HUD's item meter (THRUSTER) at half; seen from
+# behind in third person. Needs the item pack (an asset store with
+# `items`).
+#   CHIMERA_ASSET_STORE=<store> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/tf2_thruster.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+rung tf2:tf_weapon_flamethrower
+wait 2
+give tf2:thermal_thruster
+wait 2
+slot2
+wait_for idle 3000
+wait 120
+sandbox thirdperson on
+cam_idealdist 220
+cam_idealyaw 0
+setang -5 0
+wait 30
+shot thruster_ready
++attack
+wait 4
+-attack
+wait 20
+shot hop
+wait 30
+shot launched
+wait 20
+shot flying
+wait 40
+shot flying_later
+wait 120
+shot landed

@@ -1,0 +1,108 @@
+# The Cow Mangler 5000's class (`tf_weapon_particle_cannon`,
+# specs/tf2/batch3b_mechanics.md 11): an abstract base (data/items.toml
+# `[bases]`), the Rocket Launcher's rocket (1100 units/s, 90, its blast)
+# from 23.5 forward and 8 right of the eye, on an energy cell: 4 shots of
+# 5 of 20, one every 0.8 s, 5 back at a time (the first 1.67 s after the
+# last shot, then every 0.81 s); no ammo. Attack2 with the cell full
+# charges 2 s (80 units/s at most) then fires the whole cell as one
+# mini-crit that burns 6 s (`tf2:mangler`, `items::misc`).
+id = "tf2:tf_weapon_particle_cannon"
+base = "tf2:base"
+abstract = true
+class = "launcher"
+slot = 0
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 0.8
+timing = "set"
+
+[magazine]
+clip = 4
+ammo = "tf2:energy"
+reload = 0.81
+auto_reload = true
+shells = { start = 0.86, insert = 0.81, back_to_back = true, from_tick = true, start_interruptible = true }
+
+# Without [damage] the frame traces nothing: the round is a rocket.
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 1.0
+spread = { template = 0.0 }
+
+[sounds]
+# The owner's reload and draw sounds are his view model's animation
+# sound events (specs/tf2/viewmodel_sounds.md, view.rs); everyone else
+# hears the world reload at each reload's start (each round's insert for
+# a one-at-a-time reload).
+world_reload = "tf2:Weapon_RPG.WorldReload"
+fire = "tf2:Weapon_RPG.Single"
+
+[models]
+world = "models/weapons/c_models/c_rocketlauncher/c_rocketlauncher.mdl"
+view = "models/weapons/c_models/c_rocketlauncher/c_rocketlauncher.mdl"
+view_right_handed = true
+
+[hud]
+name = "Cow Mangler 5000"
+icon = "cow_mangler"
+
+[hooks."tf2:gun"]
+ramp = 0.5
+arms = "soldier"
+script = "tf_weapon_particle_cannon"
+
+[hooks."chimera:projectile"]
+# Drawn 0.12 s in the past on every client, the shooter's own too, its
+# blast held as long, starting on its launch line behind the launch point,
+# its model hidden its first 0.2 s (specs/tf2/effects.md 11, 11.1).
+interp = true
+whole_units = true
+model_hidden = 0.2
+speed = 1100.0
+touch = "report"
+shown = "tf2:tf_weapon_rocketlauncher/rocket"
+offset = [23.5, 8.0, 0.0]
+pass_teammates = true
+# Players are met as their collision boxes, not their colliders (weapons.md
+# Open questions 12, effects.md 13).
+hull_boxes = true
+# Toward what a 2000-unit line from the eye meets beyond 200 units, else
+# its end; the start pulled back by the world (weapons.md 5.1).
+aim_trace = 2000.0
+aim_min = 200.0
+start_trace = true
+sky_probe = 16.0
+life = 30.0
+
+[hooks."tf2:rocket"]
+damage = 90.0
+radius = 146.0
+edge = 0.5
+self_radius = 121.0
+self_damage = 90.0
+self_air_scale = 0.6
+push_other = 6.0
+push_self_air = 10.0
+push_self_ground = 5.0
+sound = "tf2:BaseExplosionEffect.Sound"
+
+# Its looks (specs/tf2/effects.md 1, 4, 5; looks.rs): no muzzle flash (no
+# rocket-launcher system exists); `rocketbackblast` at the launcher's
+# `backblast` attachment on each shot, for everyone but the shooter; its
+# blasts' effects (the script's names, effects.md 1 and 5: the wall one
+# spelled `ExplosionCore_wall`, names matched ignoring case); a crit-boosted
+# owner's rocket also shows `critical_rocket_<team>` on itself (`crit`).
+[hooks."tf2:looks"]
+# The trail: `rockettrail_underwater` instead when the rocket first shows in
+# water, chosen once (effects.md 9).
+trail = { shown = "tf2:tf_weapon_rocketlauncher/rocket", system = "rockettrail", crit = "critical_rocket", under_water = "rockettrail_underwater", at = "trail" }
+backblast = { system = "rocketbackblast", at = "backblast" }
+explosion = { wall = "ExplosionCore_wall", player = "ExplosionCore_MidAir", water = "ExplosionCore_MidAir_underwater" }
+
+[hooks."tf2:mangler"]
+charge = 2.0
+speed = 80.0
+burn = 6.0

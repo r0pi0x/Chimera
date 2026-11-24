@@ -80,6 +80,19 @@
 //! Enforcer's disguise bonus on `tf2:item`, each item's numbers in its
 //! data/items.toml `hooks` (no attribute of the spec names them).
 //!
+//! **Batch 3b** (specs/tf2/batch3b_mechanics.md 2-12): the fire family
+//! (`fire`: the crit boost, the Manmelter, the Gas Passer; the
+//! Phlogistinator's rage in `meters`, the Backburner's back crits in
+//! `weapons::flame`, the Dragon's Fury's fireball in `weapons::shot`,
+//! the airblast's costs and heals in `docs` and `weapons::airblast`), the
+//! movement kit (`kit`: the B.A.S.E. Jumper's chute, the stomp, the
+//! Mantreads' resistances, the Thermal Thruster) and `misc` (the Cow
+//! Mangler's charged shot, the Razorback); the Heatmaker's focus is
+//! `meters`'. Their classes with no stock weapon are abstract bases
+//! (data/weapons/rocketlauncher_fireball, flaregun_revenge, parachute,
+//! rocketpack, particle_cannon.toml; the gas jar a class table of
+//! jar.toml, the Razorback the worn item's).
+//!
 //! Known shortcuts:
 //! - An item's `anim_slot` and `animation_replacement` (none in batch 1
 //!   change a sequence on its own class's arms) are recorded, not
@@ -93,7 +106,10 @@ pub mod consumables;
 pub mod convert;
 pub mod docs;
 pub mod effects;
+pub mod fire;
+pub mod kit;
 pub mod meters;
+pub mod misc;
 pub mod mods;
 pub mod shields;
 pub mod spy;
@@ -103,6 +119,22 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 pub use convert::{ItemPack, ItemRecord};
+
+/// Batch 3b's server state in one resource (a resource is an entity of
+/// its own, an archetype each: the UGG sessions' archetype bounds): the
+/// Manmelter's crit shots, the gas clouds, the crit boost's looks put on,
+/// the stomps' falls, the thruster's landings, the Cow Mangler's charged
+/// shots and the Razorbacks' breaks.
+#[derive(bevy::prelude::Resource, Clone, Debug, Default)]
+pub struct ItemState {
+    pub crit_shots: fire::CritShots,
+    pub gas: fire::GasClouds,
+    pub boost_shown: fire::BoostShown,
+    pub falls: kit::Falls,
+    pub landings: Vec<kit::ThrusterLanded>,
+    pub charged: misc::ChargedShots,
+    pub razorbacks: misc::Razorbacks,
+}
 
 use crate::mount::Mount;
 

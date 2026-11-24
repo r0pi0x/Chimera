@@ -57,3 +57,18 @@ condition = "tf2:jarate"
 [hooks."tf2:consumable".by_class.tf_weapon_jar_milk]
 label = "MILK"
 condition = "tf2:milk"
+
+# The Gas Passer (batch3b_mechanics.md 7, `items::fire`): a cloud 30 over
+# the break for 5 s coating enemies within 220 for 10 s; a coated enemy's
+# next damage sets him burning 6 s; the meter starts empty, kept through
+# deaths, full in 60 s or by 750 damage dealt.
+[hooks."tf2:consumable".by_class.tf_weapon_jar_gas]
+label = "GAS"
+condition = "tf2:gas"
+radius = 220.0
+duration = 10.0
+cloud = 5.0
+cloud_up = 30.0
+ignite = 6.0
+starts_empty = true
+damage_fill = 750.0

@@ -1,5 +1,12 @@
 //! The Pyro's airblast (specs/tf2/weapons_more.md 7.4): attack2 with a
-//! Flame Thrower whose `tf2:flame` names an `airblast` (`AirblastParams`).
+//! Flame Thrower whose `tf2:flame` names an `airblast` (`AirblastParams`),
+//! or a weapon with its own `tf2:airblast` (the Dragon's Fury,
+//! batch3b_mechanics.md 5); either way the part `Tf2Airblast` (its numbers
+//! and the next airblast's time, predicted). An item's `mult_airblast_cost`
+//! scales its cost and `airblast_disabled` takes it away (`items::docs`);
+//! a teammate put out heals the Pyro `extinguish_heal` (20); a target's
+//! items' `airblast_taken` (the Mantreads' 0.25) scales the power he
+//! takes; the Cow Mangler's shots aren't turned (`no_reflect`).
 //!
 //! - **Firing** (`fire`, predicted, before the frame): refused while the
 //!   next airblast's time hasn't come, with the eye under water or fewer
@@ -60,7 +67,7 @@ use chimera_sim::weapon::{
 use super::{
     blast::{GROUND_PUSH_LIMIT, boxed},
     damage::U,
-    flame::{Burning, FlameWorld, Tf2Flame},
+    flame::{Burning, FlameWorld},
     grenade::GrenadeRules,
     rocket::RocketRules,
     sticky::{StickyRules, StuckNormal, Unstuck},
@@ -107,6 +114,38 @@ pub struct AirblastParams {
     pub impact_sound: Option<String>,
     #[serde(default)]
     pub flame_out_sound: Option<String>,
+    /// Health its Pyro gains for each burning teammate it puts out
+    /// (`extinguish_restores_health`, batch3b_mechanics.md 5).
+    #[serde(default)]
+    pub extinguish_heal: f32,
+}
+
+/// The hook of an airblast on a weapon that isn't a Flame Thrower (the
+/// Dragon's Fury, batch3b_mechanics.md 5; a Flame Thrower's is
+/// `[hooks."tf2:flame".airblast]`).
+pub const AIRBLAST_HOOK: &str = "tf2:airblast";
+
+/// A weapon's airblast (a predicted part): its numbers and when the next
+/// may go.
+#[derive(Component, Clone, Debug)]
+pub struct Tf2Airblast {
+    pub params: AirblastParams,
+    pub next_blast: f64,
+}
+
+impl chimera_sim::weapon::NetPart for Tf2Airblast {
+    type Net = f64;
+    fn net(&self) -> f64 {
+        self.next_blast
+    }
+    fn set_net(&mut self, net: f64) {
+        self.next_blast = net;
+    }
+}
+
+/// An airblast on a weapon (`tf2:flame`'s or `tf2:airblast`).
+pub fn attach(e: &mut EntityWorldMut, p: &AirblastParams) {
+    e.insert(Tf2Airblast { params: p.clone(), next_blast: 0.0 });
 }
 
 /// An airblast for the server to deflect with (`deflect`).
@@ -201,7 +240,7 @@ pub fn box_meets_cone(apex: Vec3, axis: Vec3, half_angle: f32, length: f32, min:
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn fire(
     mut owners: Query<(Entity, &Inventory, &mut Intent, &Transform, Option<&MovementState>, Option<&Health>)>,
-    mut guns: Query<(&mut Tf2Flame, &mut WeaponState, Option<&mut Magazine>)>,
+    mut guns: Query<(&mut Tf2Airblast, &mut WeaponState, Option<&mut Magazine>)>,
     world: FlameWorld,
     clock: Res<SimClock>,
     first: Res<FirstTimePredicted>,
@@ -217,7 +256,7 @@ pub fn fire(
         }
         let Some(w) = inv.active else { continue };
         let Ok((mut f, mut st, mag)) = guns.get_mut(w) else { continue };
-        let Some(p) = f.params.airblast.clone() else { continue };
+        let p = f.params.clone();
         if f.next_blast > now + 1e-5 {
             continue;
         }
@@ -280,8 +319,9 @@ enum Kind {
 #[allow(clippy::too_many_arguments)]
 pub fn deflect(
     mut blasts: MessageReader<Airblast>,
-    guns: Query<&Tf2Flame>,
+    guns: Query<&Tf2Airblast>,
     mut chars: Chars,
+    (holders, items, rules): (Query<&Inventory>, Query<&crate::game::items::mods::Tf2Item>, Option<Res<crate::game::items::effects::ItemRules>>),
     mut flyers: Query<(Entity, &mut Flyer, &Transform, Option<&mut Deflected>)>,
     (rockets, grenades, stickies): (Res<RocketRules>, Res<GrenadeRules>, Res<StickyRules>),
     world: FlameWorld,
@@ -292,7 +332,7 @@ pub fn deflect(
 ) {
     let blasts: Vec<Airblast> = blasts.read().copied().collect();
     for b in blasts {
-        let Some(p) = guns.get(b.weapon).ok().and_then(|f| f.params.airblast.clone()) else { continue };
+        let Some(p) = guns.get(b.weapon).ok().map(|f| f.params.clone()) else { continue };
         let Ok((_, at, aabb, _, team, state, ..)) = chars.get(b.pyro) else { continue };
         let (lo, hi) = boxed(at, aabb, state.as_deref());
         let pyro_centre = (lo + hi) / 2.0;
@@ -319,6 +359,9 @@ pub fn deflect(
                     if let Some(s) = &p.flame_out_sound {
                         sounds.write(GameSound(PlaySound { source: Some(e), ..PlaySound::at(s.clone(), c) }));
                     }
+                    if p.extinguish_heal > 0.0 {
+                        heal(&mut commands, b.pyro, p.extinguish_heal);
+                    }
                 }
                 continue;
             }
@@ -328,7 +371,17 @@ pub fn deflect(
             let d = push_dir(pyro_centre, c, b.aim);
             let on_ground = state.as_ref().is_some_and(|s| s.on_ground);
             let ground = on_ground.then(|| world.ground_under(min, max, p.ground_probe * U).unwrap_or(Vec3::Y));
-            let add = push_velocity(velocity.0 / U, d, &p, ground);
+            // His items' airblast factor (the Mantreads' 0.25 on the
+            // power, before the ground lift: batch3b_mechanics.md 9.2).
+            let taken = crate::game::items::kit::airblast_taken(holders.get(e).ok(), &items);
+            let scaled;
+            let p_used = if (taken - 1.0).abs() > 1e-6 {
+                scaled = AirblastParams { power: p.power * taken, ..p.clone() };
+                &scaled
+            } else {
+                &p
+            };
+            let add = push_velocity(velocity.0 / U, d, p_used, ground);
             velocity.0 += add * U;
             // Off his feet (every movement honours it: `ExternalPush`).
             if let Some(mut push) = push {
@@ -371,6 +424,10 @@ pub fn deflect(
             } else {
                 continue;
             };
+            // Not the Cow Mangler's (batch3b_mechanics.md 11).
+            if rules.as_deref().and_then(|r| r.get(f.weapon)).is_some_and(|p| p.no_reflect) {
+                continue;
+            }
             // Enemy projectiles only (no team: anyone's but his own).
             if f.owner == Some(b.pyro) {
                 continue;
@@ -412,6 +469,18 @@ pub fn deflect(
             looks.write(AirblastLook { entity: e, deflect: true });
         }
     }
+}
+
+/// `pyro` healed `points` up to his max (an extinguish's).
+pub fn heal(commands: &mut Commands, pyro: Entity, points: f32) {
+    commands.entity(pyro).queue(move |mut w: EntityWorldMut| {
+        if let Some(mut h) = w.get_mut::<Health>()
+            && h.current > 0.0
+            && h.current < h.max
+        {
+            h.current = (h.current + points / 100.0).min(h.max);
+        }
+    });
 }
 
 #[cfg(test)]

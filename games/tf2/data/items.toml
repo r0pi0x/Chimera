@@ -67,6 +67,16 @@ tf_wearable_demoshield = "tf2:tf_wearable_demoshield"
 tf_wearable = "tf2:tf_wearable"
 # Batch 3's watches (specs/tf2/batch3_mechanics.md 3; an abstract base).
 tf_weapon_invis = "tf2:tf_weapon_invis"
+# Batch 3b's (specs/tf2/batch3b_mechanics.md): the fire family, the
+# movement kit, the Cow Mangler, the Razorback (abstract bases,
+# data/weapons/).
+tf_weapon_rocketlauncher_fireball = "tf2:tf_weapon_rocketlauncher_fireball"
+tf_weapon_flaregun_revenge = "tf2:tf_weapon_flaregun_revenge"
+tf_weapon_jar_gas = "tf2:tf_weapon_jar"
+tf_weapon_parachute = "tf2:tf_weapon_parachute"
+tf_weapon_rocketpack = "tf2:tf_weapon_rocketpack"
+tf_weapon_particle_cannon = "tf2:tf_weapon_particle_cannon"
+tf_wearable_razorback = "tf2:tf_wearable"
 
 # Batch 1 (33 items, 31 entries).
 [items.winger]
@@ -574,3 +584,69 @@ index = 649
 batch = 3
 note = "the frozen statue on a backstab"
 hooks = { "tf2:item" = { melts = 15.0, melt_fire_immune = 1.0, melt_afterburn_immune = 10.0 } }
+
+# Batch 3b (specs/tf2/batch3b_mechanics.md 2-12; `items::fire`, `items::kit`,
+# `items::misc`, `items::meters`' Mmmph and focus). Utility items (the
+# chute, the gas, the thruster, the boots, the Razorback): no ladder draws
+# them.
+[items.phlogistinator]
+index = 594
+batch = 3
+note = "the taunt's sequence, sound and look"
+
+[items.backburner]
+index = 40
+batch = 3
+
+[items.degreaser]
+index = 215
+batch = 3
+
+[items.dragons_fury]
+index = 1178
+batch = 3
+note = "the fireball's look; the pressure gauge"
+
+[items.manmelter]
+index = 595
+batch = 3
+note = "the stored crits' count on the HUD"
+
+[items.gas_passer]
+index = 1180
+batch = 3
+gun_game = false
+note = "the cloud's look and sound"
+
+[items.base_jumper]
+index = 1101
+batch = 3
+gun_game = false
+note = "the chute's model, sound and look"
+
+[items.mantreads]
+index = 444
+batch = 3
+gun_game = false
+note = "the blast-jump air control (x3, unmeasured); drawn on the feet"
+
+[items.thermal_thruster]
+index = 1179
+batch = 3
+gun_game = false
+note = "the launch's sequence, sound and look"
+
+[items.cow_mangler]
+index = 441
+batch = 3
+note = "the charge's sound and look; buildings"
+
+[items.hitmans_heatmaker]
+index = 752
+batch = 3
+
+[items.razorback]
+index = 57
+batch = 3
+gun_game = false
+note = "drawn on the back; its break's sound"

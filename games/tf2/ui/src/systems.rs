@@ -91,6 +91,7 @@ pub fn collect(
         Option<&tf2::game::items::consumables::Tf2Consumable>,
         Option<&tf2::game::items::shields::Tf2Shield>,
         Option<&tf2::game::items::spy::Tf2Cloak>,
+        Option<&tf2::game::items::kit::Tf2Thruster>,
     )>,
     target: Res<Tf2Target>,
     scope: Option<Res<ScopeUp>>,
@@ -134,13 +135,17 @@ pub fn collect(
                     let (l, f) = c.meter();
                     Some((l.to_string(), f))
                 }
-                (_, _, Some(s), _) => {
+                (_, _, Some(s), ..) => {
                     let (l, f) = s.meter();
                     Some((l.to_string(), f))
                 }
                 // A watch's cloak (batch3_mechanics.md 3).
-                (.., Some(c)) => {
+                (_, _, _, Some(c), _) => {
                     let (l, f) = c.meter();
+                    Some((l.to_string(), f))
+                }
+                (.., Some(t)) => {
+                    let (l, f) = t.meter();
                     Some((l.to_string(), f))
                 }
                 _ => None,

@@ -338,7 +338,11 @@ pub fn select_class(
     mut weapons: Query<(&Weapon, Option<&Tf2Gun>, Option<&mut ShellReload>, Option<&mut Magazine>)>,
     items: Query<&super::items::mods::Tf2Item>,
     meters: Query<&super::items::meters::Tf2Meter>,
-    (shields, item_weapons): (Query<&super::items::shields::Tf2Shield>, Query<(&super::items::mods::Tf2Item, &Weapon)>),
+    (shields, item_weapons, manglers): (
+        Query<&super::items::shields::Tf2Shield>,
+        Query<(&super::items::mods::Tf2Item, &Weapon)>,
+        Query<&super::items::misc::Tf2Mangler>,
+    ),
     cloaks: Query<&super::items::spy::Tf2Cloak>,
     table: Res<Classes>,
     clock: Res<crate::core::SimClock>,
@@ -382,6 +386,8 @@ pub fn select_class(
         // Soda Popper's hype air jumps.
         let (extra, hype_jumps) = super::items::meters::movement(inv, &meters, clock.now);
         let p = p + extra;
+        // A charging Cow Mangler (batch3b_mechanics.md 11): 80 at most.
+        let p = super::items::misc::speed_cap(inv, &manglers).map_or(p, |c| p.min(c));
         // A shield charge (batch3_mechanics.md 1.1, `items::shields`): its
         // own speed, past the ceiling.
         let charge = super::items::shields::charge_speed(inv, &shields, &item_weapons);

@@ -1,0 +1,98 @@
+# The Dragon's Fury's class (`tf_weapon_rocketlauncher_fireball`,
+# specs/tf2/batch3b_mechanics.md 5): no stock weapon, an abstract base
+# (data/items.toml `[bases]`). One fireball a press, 1 of 40 (no reserve,
+# no reload), from 23.5 forward, 7 right, 9 down of the eye at 3000
+# units/s with no gravity, through players (one hit each), gone 500 units
+# out (`tf_fireball_distance`: its life). Its hit (`tf2:shot`): 30
+# point-blank, 28 at 200, 27 at 300, 24 at 450 (measured, linear
+# between), × 3 on a burning target, 5 afterburn ticks of 4. The pressure
+# meter is the next shot's time: 0.8 s to refill, × 1.5 from a hit on;
+# attack2 is the stock airblast (its cost × the item's 0.25: 5) after
+# which the refill takes 1.6 s (`flame_after`).
+id = "tf2:tf_weapon_rocketlauncher_fireball"
+base = "tf2:base"
+abstract = true
+class = "flamethrower"
+slot = 0
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 0.8
+timing = "set"
+
+[magazine]
+clip = 40
+ammo = "tf2:flame"
+reload = 1.0
+
+# Without [damage] the frame traces nothing: the round is a fireball.
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 1.0
+spread = { template = 0.0 }
+
+[models]
+world = "models/weapons/c_models/c_flameball/c_flameball.mdl"
+view = "models/weapons/c_models/c_flameball/c_flameball.mdl"
+view_right_handed = true
+
+[hud]
+name = "Dragon's Fury"
+icon = "dragons_fury"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+flat = true
+arms = "pyro"
+script = "tf_weapon_rocketlauncher_fireball"
+
+[hooks."chimera:projectile"]
+interp = true
+speed = 3000.0
+touch = "report"
+shown = "tf2:tf_weapon_rocketlauncher_fireball/ball"
+offset = [23.5, 7.0, -9.0]
+pass_teammates = true
+hull_boxes = true
+start_trace = true
+sky_probe = 16.0
+# 500 units at 3000 units/s.
+life = 0.1667
+
+[hooks."tf2:shot"]
+damage = 30.0
+pierce = true
+by_range = [[0.0, 30.0], [200.0, 28.0], [300.0, 27.0], [450.0, 24.0]]
+burning_mult = 3.0
+ignite = 2.5
+hit_refill = 1.5
+
+[hooks."tf2:airblast"]
+cost = 20
+refire = 0.75
+flame_after = 1.6
+reach = 128.0
+cone = 35.0
+power = 600.0
+reflect = 2.0
+cost_coeff = 0.5
+ground_min_z = 100.0
+ground_probe = 5.0
+punch = [10.0, 15.0]
+no_footing = 0.5
+slide_speed = 50.0
+slide_friction = 0.1
+air_control = 0.25
+air_friction = 0.75
+sticky_push = 2000.0
+no_restick = 1.0
+sound = "tf2:Weapon_FlameThrower.AirBurstAttack"
+deflect_sound = "tf2:Weapon_FlameThrower.AirBurstAttackDeflect"
+impact_sound = "tf2:TFPlayer.AirBlastImpact"
+flame_out_sound = "tf2:TFPlayer.FlameOut"
+
+[hooks."tf2:looks"]
+airblast = "pyro_blast"
+deflect = "deflect_fx"

@@ -271,7 +271,19 @@ impl Conditions<'_, '_> {
             return true;
         }
         let Some(p) = self.item(weapon) else { return false };
-        (p.mini_crit_airborne && self.launched(victim)) || ((p.minicrit_burning || p.crit_burning) && self.burn(victim).is_some())
+        // A crit-boosted owner's crits as mini-crits (the Cow Mangler,
+        // batch3b_mechanics.md 11; blasts have no crits of their own).
+        let boosted = owner.is_some_and(|o| self.has(o, Condition::Game(crate::game::weapons::flame::CRIT_BOOST)));
+        (p.mini_crit_airborne && self.launched(victim))
+            || ((p.minicrit_burning || p.crit_burning) && self.burn(victim).is_some())
+            || (p.crits_mini && boosted)
+    }
+
+    /// The push `e` takes from others' damage: his items' factors (the
+    /// Mantreads' 0.25, batch3b_mechanics.md 9.2).
+    pub fn push_taken(&self, e: Entity) -> f32 {
+        let Ok((.., Some(inv), _, _)) = self.chars.get(e) else { return 1.0 };
+        inv.weapons.iter().filter_map(|w| self.items.get(*w).ok()).map(|i| i.0.push_taken).product()
     }
 }
 
@@ -393,9 +405,12 @@ pub fn crits(
     mut before: ResMut<HitHealth>,
     (melees, snipers, revolvers): (Query<&Tf2Melee>, Query<&crate::game::weapons::sniper::Tf2Sniper>, Res<Revolvers>),
     mut feedback: MessageWriter<crate::game::weapons::crit_hits::CritHit>,
+    mut state: ResMut<super::ItemState>,
     mut commands: Commands,
 ) {
     before.0.clear();
+    let crit_shots = &mut state.crit_shots;
+    crit_shots.expire(clock.now);
     for d in damage.read() {
         if matches!(d.kind, DamageKind::Burn | DamageKind::Bleed) || d.kind.is_blast() {
             continue;
@@ -477,11 +492,27 @@ pub fn crits(
             if p.minicrits_crit && mini {
                 crit = true;
             }
+            // A stored crit spent on this shot (the Manmelter,
+            // batch3b_mechanics.md 6).
+            if let Some(w) = d.weapon
+                && crit_shots.take(a, w)
+            {
+                crit = true;
+            }
         }
+
         // A shield charge's mini-crit swing (batch3_mechanics.md 1,
         // `shields`).
         let swing = active.and_then(|w| melees.get(w).ok()).filter(|_| d.kind == DamageKind::Melee);
         mini |= swing.is_some_and(|m| m.mini);
+        // A crit boost (the Phlogistinator's taunt, batch3b_mechanics.md
+        // 2), unless the swing crits of itself (its × 3 is in its damage).
+        crit |= cond.has(a, Condition::Game(crate::game::weapons::flame::CRIT_BOOST)) && !swing.is_some_and(|m| m.crit);
+        // Crits as mini-crits (the Cow Mangler, §11).
+        if crit && item_of(d, &holders, &weapons, &cond).is_some_and(|p| p.crits_mini) {
+            crit = false;
+            mini = true;
+        }
         // The defense buff (batch3_mechanics.md 2.3): a crit on him is a
         // normal hit (a melee crit swing's × 3 taken back).
         if cond.has(v, Condition::DefenseBuff) {

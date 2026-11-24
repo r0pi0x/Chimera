@@ -700,6 +700,9 @@ impl BlastWorld<'_, '_> {
 
     /// `shove`, `blast`: another's blast (it sets `BlastLaunched`).
     fn shove_by(&mut self, e: Entity, dv: Vec3, own: bool, blast: bool) {
+        // Another's push × his items' factor (the Mantreads' 0.25,
+        // batch3b_mechanics.md 9.2).
+        let dv = if own { dv } else { dv * self.conditions.push_taken(e) };
         let Ok((.., mut velocity, _)) = self.chars.get_mut(e) else { return };
         velocity.0 += dv;
         let lift = dv.y > LIFT * U;

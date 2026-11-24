@@ -129,8 +129,10 @@ fn steady(w: &Work) -> f64 {
 
 /// The archetypes after eight matches of `PINNED`'s ladders, and made
 /// after the fourth (887 and 11, all the guns' and their shots': see the
-/// main test's history).
-const ARCHETYPES_PINNED: usize = 950;
+/// main test's history). Every resource is an entity, an archetype of its
+/// own, whichever game registers it: with TF2's Spy and batch 3b, 950
+/// after eight, 11 after the fourth.
+const ARCHETYPES_PINNED: usize = 970;
 const LATER_PINNED: usize = 40;
 /// The same with every game's ladders (943 and 34 with five games; 1026
 /// and 16 with DoD:S the sixth, 2026-11-23: a game's guns and bodies

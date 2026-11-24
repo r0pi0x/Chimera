@@ -1,0 +1,36 @@
+# The Thermal Thruster's class (`tf_weapon_rocketpack`,
+# specs/tf2/batch3b_mechanics.md 9.3): an abstract base (data/items.toml
+# `[bases]`). Slow to draw (`holster_anim_time` 0.8). Attack with a charge
+# hops 350 up and 0.65 s later launches 810 along the aim (+ 315 up near
+# level, + 112.5 steeper); two charges, 15 s each; the landing cuts to
+# 300 and pushes enemies within 220 (`tf2:thruster`, `items::kit`); it
+# stomps (the item's `thermal_thruster`).
+id = "tf2:tf_weapon_rocketpack"
+base = "tf2:base"
+abstract = true
+slot = 1
+draw = 0.8
+
+[hud]
+name = "Thermal Thruster"
+icon = "rocketpack"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+flat = true
+arms = "pyro"
+script = "tf_weapon_rocketpack"
+
+[hooks."tf2:thruster"]
+hop = 350.0
+delay = 0.65
+speed = 810.0
+up_level = 315.0
+up_steep = 112.5
+level_band = 15.0
+charge = 50.0
+refill = 30.0
+stun = 0.5
+land_speed = 300.0
+push_radius = 220.0
+push = [280.0, 278.0]

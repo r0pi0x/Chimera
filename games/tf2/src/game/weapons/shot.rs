@@ -183,6 +183,20 @@ pub struct ShotParams {
     pub stick: f32,
     #[serde(default)]
     pub bounce: bool,
+    /// Batch 3b (batch3b_mechanics.md 5, the Dragon's Fury's fireball):
+    /// its damage by the distance from the shooter (units, points; linear
+    /// between, the last beyond; none: `damage`), × `burning_mult` on a
+    /// burning victim, a hit sets him burning `ignite` s (4 every 0.5 s),
+    /// and its first hit on an enemy shortens the wait for the gun's next
+    /// shot by `hit_refill` (its refill × that from the hit on).
+    #[serde(default)]
+    pub by_range: Vec<[f32; 2]>,
+    #[serde(default = "one")]
+    pub burning_mult: f32,
+    #[serde(default)]
+    pub ignite: f32,
+    #[serde(default)]
+    pub hit_refill: f32,
 }
 
 fn one() -> f32 {
@@ -222,6 +236,22 @@ impl ShotParams {
             x *= modifier(d, self.ramp);
         }
         (x, crit)
+    }
+
+    /// The damage at `d` units by `by_range` (None: none given).
+    pub fn at_range(&self, d: f32) -> Option<f32> {
+        let t = &self.by_range;
+        let first = t.first()?;
+        if d <= first[0] {
+            return Some(first[1]);
+        }
+        for w in t.windows(2) {
+            let ([a, x], [b, y]) = (w[0], w[1]);
+            if d <= b {
+                return Some(x + (y - x) * (d - a) / (b - a).max(1e-6));
+            }
+        }
+        t.last().map(|l| l[1])
     }
 
     /// A teammate's heal (points) after `t` s.
@@ -332,6 +362,7 @@ pub fn touch(
     mut world: BlastWorld,
     (bleeds, slows): (Query<&Bleeding>, Query<&Slowed>),
     (clock, mut rehits, mut spent): (Res<SimClock>, ResMut<Rehits>, ResMut<Spent>),
+    (burns, mut guns, holders): (Query<&super::flame::Burning>, Query<(&Weapon, &mut chimera_sim::weapon::WeaponState)>, Query<&Inventory>),
     mut gone: MessageWriter<FlyerGone>,
     mut commands: Commands,
 ) {
@@ -377,7 +408,39 @@ pub fn touch(
             Some(o) => {
                 let from = hit.owner.and_then(|w| world.centre(w));
                 let d = from.zip(world.centre(o)).map_or(0.0, |(a, b)| a.distance(b) / U);
-                let (points, crit) = p.hit(t, f.charge, d, hit.hitgroup == Hitgroup::Head);
+                let (mut points, crit) = p.hit(t, f.charge, d, hit.hitgroup == Hitgroup::Head);
+                if let Some(x) = p.at_range(d) {
+                    points = x;
+                }
+                let lit = burns.get(o).ok().filter(|b| !b.harmless && b.left > 0.0);
+                if lit.is_some() {
+                    points *= p.burning_mult;
+                }
+                if p.ignite > 0.0
+                    && let Some(a) = hit.owner
+                {
+                    let fire = super::flame::stock_params();
+                    let burn = super::flame::Burning {
+                        left: p.ignite.max(lit.map_or(0.0, |b| b.left)),
+                        next: lit.map_or(now + fire.burn_interval as f64, |b| b.next),
+                        ..super::flame::ignited(now, a, hit.weapon, &fire)
+                    };
+                    commands.entity(o).insert(burn);
+                }
+                // The gun's refill quickened from its first hit on.
+                if p.hit_refill > 0.0
+                    && f.passed.is_empty()
+                    && let Some(inv) = hit.owner.and_then(|a| holders.get(a).ok())
+                {
+                    for &w in &inv.weapons {
+                        if let Ok((x, mut st)) = guns.get_mut(w)
+                            && x.id == hit.weapon
+                            && st.next_primary > now
+                        {
+                            st.next_primary = now + (st.next_primary - now) / p.hit_refill as f64;
+                        }
+                    }
+                }
                 let dir = hit.velocity.normalize_or(Vec3::NEG_Z);
                 let damage = Damage {
                     target: o,

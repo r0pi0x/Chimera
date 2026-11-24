@@ -1,0 +1,20 @@
+# The B.A.S.E. Jumper's class (`tf_weapon_parachute`,
+# specs/tf2/batch3b_mechanics.md 8): an abstract base (data/items.toml
+# `[bases]`). Worn (`tf2:worn`: carried, never drawn); jump in the air
+# opens the chute once an air time (`tf2:chute`, `items::kit`): a fall of
+# about 106 units/s, 75 across.
+id = "tf2:tf_weapon_parachute"
+base = "tf2:base"
+abstract = true
+slot = 1
+draw = 0.5
+
+[hud]
+name = "B.A.S.E. Jumper"
+
+[hooks."tf2:worn"]
+
+[hooks."tf2:chute"]
+fall = 100.0
+air_speed = 75.0
+approach = 0.45

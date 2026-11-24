@@ -1,0 +1,28 @@
+# The Manmelter's class (`tf_weapon_flaregun_revenge`,
+# specs/tf2/batch3b_mechanics.md 6): an abstract base over the flare gun's
+# (data/items.toml `[bases]`). Its flare is the flare gun's (its speed × the
+# item's 1.5: 3000; 30, every 2 s; no crit on burning targets, not being
+# the flare gun class); no ammo (an energy cell refilled while it waits).
+# Attack2 puts out burning teammates in the airblast's sphere, a stored
+# crit and 20 health each (`tf2:revenge`, `items::fire`).
+id = "tf2:tf_weapon_flaregun_revenge"
+base = "tf2:tf_weapon_flaregun"
+abstract = true
+
+[magazine]
+clip = 1
+ammo = "tf2:energy"
+reload = 0.5
+auto_reload = true
+reload_when_idle = true
+
+[hud]
+name = "Manmelter"
+icon = "manmelter"
+
+[hooks."tf2:gun"]
+script = "tf_weapon_flaregun_revenge"
+
+[hooks."tf2:revenge"]
+reach = 128.0
+heal = 20.0

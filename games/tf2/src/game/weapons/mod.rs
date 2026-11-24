@@ -156,6 +156,11 @@ pub const DATA: &[(&str, GameData)] = &[
     data_file!("demoshield.toml"),
     data_file!("wearable.toml"),
     data_file!("invis.toml"),
+    data_file!("rocketlauncher_fireball.toml"),
+    data_file!("flaregun_revenge.toml"),
+    data_file!("parachute.toml"),
+    data_file!("rocketpack.toml"),
+    data_file!("particle_cannon.toml"),
 ];
 
 pub const SCATTERGUN: &str = "tf2:tf_weapon_scattergun";
@@ -186,7 +191,7 @@ pub const BAT_GIFTWRAP: &str = "tf2:tf_weapon_bat_giftwrap";
 pub const STICKBOMB: &str = "tf2:tf_weapon_stickbomb";
 /// The abstract bases (no weapon of their own; data/items.toml's
 /// `[bases]` name them).
-pub const ABSTRACT_BASES: [&str; 17] = [
+pub const ABSTRACT_BASES: [&str; 22] = [
     FLAREGUN,
     COMPOUND_BOW,
     CROSSBOW,
@@ -204,6 +209,11 @@ pub const ABSTRACT_BASES: [&str; 17] = [
     DEMOSHIELD,
     WEARABLE,
     WATCH,
+    FIREBALL,
+    FLAREGUN_REVENGE,
+    PARACHUTE,
+    ROCKETPACK,
+    PARTICLE_CANNON,
 ];
 
 /// The consumables' classes (specs/tf2/batch2b_mechanics.md 11-13; no
@@ -220,6 +230,14 @@ pub const WEARABLE: &str = "tf2:tf_wearable";
 /// The Spy's watches' class (specs/tf2/batch3_mechanics.md 3; no stock
 /// weapon of ours: an abstract base, `items::spy`).
 pub const WATCH: &str = "tf2:tf_weapon_invis";
+/// Batch 3b's classes (specs/tf2/batch3b_mechanics.md; abstract bases):
+/// the Dragon's Fury, the Manmelter, the B.A.S.E. Jumper, the Thermal
+/// Thruster and the Cow Mangler.
+pub const FIREBALL: &str = "tf2:tf_weapon_rocketlauncher_fireball";
+pub const FLAREGUN_REVENGE: &str = "tf2:tf_weapon_flaregun_revenge";
+pub const PARACHUTE: &str = "tf2:tf_weapon_parachute";
+pub const ROCKETPACK: &str = "tf2:tf_weapon_rocketpack";
+pub const PARTICLE_CANNON: &str = "tf2:tf_weapon_particle_cannon";
 
 /// The guns, in the ladder's order (M2b's four, then weapons_more.md's
 /// eight).
@@ -354,6 +372,7 @@ pub fn register_hooks(app: &mut App) {
         .register_weapon_hook::<blast::BlastParams>(GRENADE_HOOK, |_, _, _| {})
         .register_weapon_hook::<sticky::StickyParams>(STICKY_HOOK, |e, _, p| sticky::attach(e, p))
         .register_weapon_hook::<flame::FlameParams>(FLAME_HOOK, |e, _, p| flame::attach(e, p))
+        .register_weapon_hook::<airblast::AirblastParams>(airblast::AIRBLAST_HOOK, |e, _, p| airblast::attach(e, p))
         .register_weapon_hook::<needle::NeedleParams>(NEEDLE_HOOK, |_, _, _| {})
         .register_weapon_hook::<flare::FlareParams>(FLARE_HOOK, |_, _, _| {})
         .register_weapon_hook::<charge::ChargeParams>(CHARGE_HOOK, |e, _, p| charge::attach(e, p))
@@ -581,6 +600,7 @@ impl Plugin for Tf2GunsPlugin {
             .predicted_part::<sniper::Tf2Sniper>()
             .predicted_part::<sticky::Tf2Sticky>()
             .predicted_part::<flame::Tf2Flame>()
+            .predicted_part::<airblast::Tf2Airblast>()
             .predicted_part::<melee::Tf2Melee>()
             .predicted_part::<charge::Tf2Charge>()
             .init_resource::<shot::Rehits>()

@@ -243,6 +243,32 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
             scale(t, "damage", dmg);
         }
     }
+    // The fire family (batch3b_mechanics.md 2-5): the afterburn
+    // (`mult_wpn_burndmg`), the airblast's cost (`mult_airblast_cost`),
+    // none (`airblast_disabled`), the heal for a teammate put out
+    // (`extinguish_restores_health`).
+    if let Some(t) = hook(&mut doc, crate::game::weapons::FLAME_HOOK) {
+        scale(t, "burn_damage", a("mult_wpn_burndmg"));
+        if r.flag("airblast_disabled") {
+            t.remove("airblast");
+        }
+    }
+    let flame_blast = hook(&mut doc, crate::game::weapons::FLAME_HOOK).and_then(|t| t.get_mut("airblast")).and_then(Value::as_table_mut).is_some();
+    let blast_tables: Vec<&mut Table> = if flame_blast {
+        hook(&mut doc, crate::game::weapons::FLAME_HOOK).and_then(|t| t.get_mut("airblast")).and_then(Value::as_table_mut).into_iter().collect()
+    } else {
+        hook(&mut doc, crate::game::weapons::airblast::AIRBLAST_HOOK).into_iter().collect()
+    };
+    for t in blast_tables {
+        if a("mult_airblast_cost") != 1.0
+            && let Some(c) = t.get("cost").and_then(num)
+        {
+            t.insert("cost".into(), Value::Integer((c * a("mult_airblast_cost")).round().max(1.0) as i64));
+        }
+        if add("extinguish_restores_health") > 0.0 {
+            t.insert("extinguish_heal".into(), Value::Float(add("extinguish_restores_health")));
+        }
+    }
     // The flare (batch2_mechanics.md 4): its damage (the owner's own base
     // kept), `blast dmg to self`, its own push, its mode.
     if let Some(t) = hook(&mut doc, crate::game::weapons::FLARE_HOOK) {
@@ -419,6 +445,9 @@ pub fn item_doc(mut doc: Table, id: &str, name: &str, base_id: &str, r: &ItemRec
         t.remove("by_class");
         if add("item_meter_charge_rate") > 0.0 {
             t.insert("recharge".into(), Value::Float(add("item_meter_charge_rate")));
+        }
+        if add("item_meter_damage_for_full_charge") > 0.0 {
+            t.insert("damage_fill".into(), Value::Float(add("item_meter_damage_for_full_charge")));
         }
         if a("lunchbox_healing_scale") != 1.0 {
             let h = t.get("heal").and_then(num).unwrap_or(0.0);

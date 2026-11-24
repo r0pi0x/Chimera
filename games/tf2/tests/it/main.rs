@@ -45,6 +45,7 @@ mod batch2b;
 mod batch2b_items;
 mod batch3;
 mod batch3_spy;
+mod batch3b;
 mod crit_boost;
 mod ice;
 mod items;

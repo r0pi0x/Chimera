@@ -293,9 +293,13 @@ pub fn scope(
                 s.jumping = false;
             }
         }
-        // The drop and the re-zoom after a scoped shot.
+        // The drop and the re-zoom after a scoped shot; focused (the
+        // Heatmaker's, batch3b_mechanics.md 12) the scope stays up.
+        let focused = meter.is_some_and(|m| m.params.kind == crate::game::items::meters::MeterKind::Focus && m.in_force(now));
         if let Some(t) = s.shot {
-            if !s.dropped && now > t + p.drop_after as f64 {
+            if focused && !s.dropped && now > t + p.drop_after as f64 {
+                s.shot = None;
+            } else if !s.dropped && now > t + p.drop_after as f64 {
                 set(&mut modes, &mut s, 0);
                 s.dropped = true;
                 if !p.autorezoom || !ammo {
