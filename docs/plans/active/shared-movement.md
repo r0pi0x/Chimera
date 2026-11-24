@@ -22,7 +22,7 @@ names the seams, the specs give the numbers and rules.
 | Plan | done (2026-11-24) | this file |
 | S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
 | S1-S4 carve inside `source_engine` | done (2026-11-24) | file split, neutral hooks, CS:S's numbers to `cs_source`, cvars as data: each in the log |
-| S5-S6 the crate | done (2026-11-24) | `chimera_movement`, then neutral names with Source aliases: each in the log |
+| S5-S6 the crate | done (2026-11-24) | `chimera_movement`, then neutral names with Source aliases (aliases dropped 2026-11-24, last log entry): each in the log |
 | S7-S9 GoldSrc seams | not started | clip hulls, command milliseconds, edge friction |
 | Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
 
@@ -207,14 +207,13 @@ chimera/movement/src/
 ```
 
 `source/engine/src/source_movement.rs` (one file, about 200 lines):
-`pub use chimera_movement::*` plus the aliases `SourceMovement =
-QuakeMovement`, `SourceMovementConfig = QuakeConfig`,
-`SourceMovementConfigs`, `SourceStance = MoveStance`, `SourceSpeed =
-MoveSpeed`, `SourceTraits = MoveTraits`, `SourceMovementStep =
-MovementStep`, `to_source = to_units`; `CVARS` (Source's extras),
-`SourceMovementAppExt`, and the `func_useableladder` reader. Callers keep
-compiling unchanged; moving them to the neutral names is optional and
-mechanical, one game a commit, later.
+`pub use chimera_movement::*` plus `to_source = to_units`, `useable_ladders`
+and `SourceMovementPlugin`; `CVARS` (Source's extras),
+`SourceMovementAppExt`, and the `func_useableladder` reader. The old
+`SourceMovement`, `SourceMovementConfig(s)`, `SourceMovementStep`,
+`SourceSpeed`, `SourceTraits` and `SourceStance` aliases were dropped
+(2026-11-24, after the in-flight branches landed): callers use the neutral
+names.
 
 Architecture checks: `chimera_movement` in the workspace, its crate
 group and Chimera layer; `ALLOWED` gains the crate's modules (each on
@@ -507,3 +506,10 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   prone), its step 73 770 (+3.4 % of S0): the moving prone transition's
   ground moves; with `turbo_physics` off the same run counts 73 746, so
   the props' rule costs 24 instructions a tick. `NET_VERSION` net76.
+- 2026-11-24, aliases dropped: `SourceMovement`, `SourceMovementConfig`,
+  `SourceMovementConfigs`, `SourceMovementStep`, `SourceSpeed`,
+  `SourceTraits` and `SourceStance` are gone from `source_movement.rs`
+  (no caller was left outside docs: the neutral names are used
+  everywhere); kept: `SourceMovementAppExt::source_movement`,
+  `cs_source::movement::SourceMovementPlugin`, `useable_ladders`,
+  `to_source`. A rename only: golden hashes unchanged.

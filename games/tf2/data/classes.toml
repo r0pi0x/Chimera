@@ -2,7 +2,7 @@
 # specs/tf2/movement.md, "Class top speed", "The Scout's air jump"): what a
 # player holding one of the class's guns is (`game::classes`).
 #
-# health: max health (points); speed: top speed (units/s, `SourceSpeed`);
+# health: max health (points); speed: top speed (units/s, `MoveSpeed`);
 # eye: standing eye height (units; ducked 45 for all); air_jumps: jumps in
 # the air (the Scout's one); loud_landings_only: landing sound and view
 # punch only above 580 units/s (the Scout's); model: the player model; arms: the first-

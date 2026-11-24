@@ -6,9 +6,8 @@
 //! Source's key impulse: a move key counts half on its first command,
 //! `core::HalfFirstPress`), the Source names of the shared types
 //! (`to_source` is `to_units`, `useable_ladders` is
-//! `chimera_movement::lines`; `SourceMovement`, `SourceMovementConfig`,
-//! `SourceMovementConfigs`, `SourceMovementStep`, `SourceSpeed`,
-//! `SourceTraits` and `SourceStance` for older code), and the map's ladder
+//! `chimera_movement::lines`; the other `Source*` aliases of the shared
+//! types are gone, 2026-11-24: use `chimera_movement`'s names), and the map's ladder
 //! entities read into the
 //! movement's ladder lines (specs/hl2dm/movement.md "The ladder entity":
 //! `func_useableladder`s with their `info_ladder_dismount` nodes,
@@ -22,13 +21,8 @@ use bevy::prelude::*;
 pub use chimera_movement::*;
 /// The shared types under Source's names: `to_source` and
 /// `useable_ladders` are what Source's games call the units and the ladder
-/// lines; the rest are kept for code written before the movement was
-/// Chimera's (new code uses the shared names).
-pub use chimera_movement::{
-    MoveSpeed as SourceSpeed, MoveStance as SourceStance, MoveTraits as SourceTraits, MovementStep as SourceMovementStep,
-    QuakeConfig as SourceMovementConfig, QuakeConfigs as SourceMovementConfigs, QuakeMovement as SourceMovement,
-    QuakeMovementPlugin as SourceMovementPlugin, lines as useable_ladders, to_units as to_source,
-};
+/// lines; `SourceMovementPlugin` is the shared plugin as Source's.
+pub use chimera_movement::{QuakeMovementPlugin as SourceMovementPlugin, lines as useable_ladders, to_units as to_source};
 
 use crate::map::{MapEntities, MapEntity};
 

@@ -1,9 +1,8 @@
 //! What a game sets on a character before the step (`MovementStep`): the
 //! tick's max speed (`MoveSpeed`), its kind's traits (`MoveTraits`), its
 //! own stance (`MoveStance`) and its footstep entries (`StepSounds`). The
-//! names are the movement's own, whatever the game's engine; the Source
-//! games' code says `SourceSpeed`, `SourceTraits` and `SourceStance`, the
-//! same types under Source's names (`source_movement`'s re-exports).
+//! names are the movement's own, whatever the game's engine (the Source
+//! games' old `Source*` aliases of them are gone).
 
 use bevy::prelude::*;
 
