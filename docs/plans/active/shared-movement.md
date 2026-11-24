@@ -22,7 +22,7 @@ names the seams, the specs give the numbers and rules.
 | Plan | done (2026-11-24) | this file |
 | S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
 | S1-S4 carve inside `source_engine` | done (2026-11-24) | file split, neutral hooks, CS:S's numbers to `cs_source`, cvars as data: each in the log |
-| S5-S6 the crate | not started | `chimera_movement`, then neutral names with Source aliases |
+| S5-S6 the crate | S5 done (2026-11-24) | `chimera_movement` (done), then neutral names with Source aliases |
 | S7-S9 GoldSrc seams | not started | clip hulls, command milliseconds, edge friction |
 | Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
 
@@ -268,7 +268,10 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   go at the end. S1 already moved the order: DoD:S sends `SourceStance`
   beside `SourceMovement`, and `hooks::SourceStance` sorts before
   `state::SourceMovement` where `SourceMovement` came before
-  `SourceStance`, so S1 bumped `NET_VERSION` (net74); S5 bumps again.
+  `SourceStance`, so S1 bumped `NET_VERSION` (net74); S5 bumped again
+  (net75: the types are `chimera_movement::`'s). S6's names sort where
+  the old ones did (`state::QuakeMovement` after `hooks::MoveStance`, no
+  other predicted type between), so it needs none.
 - **State lives in the component**: new state (the msec remainder) is in
   `QuakeMovement`, so prediction saves and restores it. No new `Local`s;
   the existing `waist_steps` counter (HL2:DM's shared one-in-four) is a
@@ -451,3 +454,26 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   it. Left for S5: `useable_ladders.rs` to `mover/lines.rs`, and the
   `git mv`s. Hashes equal; the step CS:S 71 247 (-0.21 %), HL2:DM
   66 969 (-0.30 %), TF2 71 392 (-0.44 %), DoD:S 71 155 (-0.27 %).
+- 2026-11-24, S5: the crate is `chimera/movement` (`chimera_movement`,
+  on `chimera_core`, `chimera_world`, Bevy, avian, serde). The shared
+  files were `git mv`ed (`plugin.rs` is `lib.rs`, `useable_ladders.rs`
+  is `mover/lines.rs`, public as `chimera_movement::lines`), their
+  `crate::source_movement::` paths cut to `crate::`; the module's long
+  doc and its known shortcuts went to `lib.rs` (tech-debt.md follows).
+  `source/engine/src/source_movement.rs` is the wrapper, one file:
+  `pub use chimera_movement::*`, the Source names (`SourceSpeed`,
+  `SourceTraits`, `SourceStance`, `useable_ladders`), `SOURCE_CVARS` and
+  `CVARS`, `SourceMovementAppExt`, and the ladder reader (`ladders_of`,
+  `read_ladders`). No caller changed but the golden runs' work-count key
+  (`chimera_movement Movement step`). Checks: the crate in the
+  workspace, `CRATE_SRC`, the crate table (no loader layer, game, sim,
+  net or presentation) and `ALLOWED` (its ten modules; `source_movement`
+  down to core and map); determinism's baseline moved the three debug
+  statics from `source/engine/src` to `chimera/movement/src`; the
+  temporary `source_movement_core_names_no_wrapper` is gone (the crate's
+  dependencies say it now). `cargo hakari generate`: no change.
+  `NET_VERSION` net75. Hashes equal. The crate boundary cost nothing:
+  the step and everything it calls are in the one crate (the games call
+  across it only for configs and hooks), so no inlining was lost: CS:S
+  71 237 (-0.23 % of S0, -0.01 % of S4), HL2:DM 66 939 (-0.34 %, -0.04
+  %), TF2 71 394 (-0.43 %, 0.00 %), DoD:S 71 140 (-0.29 %, -0.02 %).

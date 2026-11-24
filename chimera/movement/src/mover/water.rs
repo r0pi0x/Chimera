@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 use crate::{
     core::Intent,
-    source_movement::mover::{
+    mover::{
         Mover, SWIM_SINK, SWIM_WISH_SCALE, WALKABLE_NORMAL_Z, WATER_FEET_PROBE, WATER_JUMP_DROP, WATER_JUMP_EYE_EXTRA,
         WATER_JUMP_MIN_VZ, WATER_JUMP_PUSH, WATER_JUMP_REACH, WATER_JUMP_TIME, WATER_JUMP_UP,
     },

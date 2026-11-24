@@ -42,13 +42,13 @@
 
 use bevy::prelude::*;
 
-use super::{
+use crate::{
     config::{HALF_WIDTH, SourceMovementConfigs},
+    core::{LadderLine, LadderZone, MapBrush, MapGame, MapLadders, foreign_map, movement_game},
     mover::{LADDER_REACH, Mover},
     trace::Tracer,
     units::{METERS_PER_UNIT, to_engine, to_source},
 };
-use crate::core::{LadderLine, LadderZone, MapBrush, MapGame, MapLadders, foreign_map, movement_game};
 
 /// Search radius for a ladder, units.
 const FIND: f32 = 64.0;
@@ -135,14 +135,14 @@ impl UseableLadder {
     }
 
     /// Distance from `p` to the infinite line.
-    pub(crate) fn line_distance(&self, p: Vec3) -> f32 {
+    pub fn line_distance(&self, p: Vec3) -> f32 {
         let up = self.up();
         let v = p - self.bottom;
         (v - up * v.dot(up)).length()
     }
 
     /// The position along the line: 0 at the top, 1 at the bottom.
-    pub(crate) fn param(&self, p: Vec3) -> f32 {
+    pub fn param(&self, p: Vec3) -> f32 {
         let d = self.bottom - self.top;
         let l2 = d.length_squared();
         if l2 <= 0.0 { 0.0 } else { (p - self.top).dot(d) / l2 }
@@ -279,7 +279,7 @@ pub struct ForcedMove {
 }
 
 /// What the ladder step left for the rest of the tick.
-pub(super) enum LadderStep {
+pub(crate) enum LadderStep {
     /// Nothing more this tick (a forced move runs or started).
     Done,
     /// On a ladder: its move.
@@ -292,7 +292,7 @@ pub(super) enum LadderStep {
 /// swept down from 4 units above), once per map; a ladder made from a
 /// volume with no room for a standing player halfway up its line (the
 /// face against a wall) is off.
-pub(super) fn fix_ends(trace: &Tracer, ladders: &mut [UseableLadder]) {
+pub(crate) fn fix_ends(trace: &Tracer, ladders: &mut [UseableLadder]) {
     for l in ladders.iter_mut().filter(|l| !l.fixed) {
         if l.from != LadderFrom::Map {
             if trace.solid(false, (l.top + l.bottom) / 2.0) {

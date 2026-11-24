@@ -11,6 +11,7 @@ pub(crate) mod falls;
 mod ground;
 mod jump;
 mod ladders;
+pub mod lines;
 mod steps;
 pub(crate) mod stuck;
 mod water;
@@ -18,14 +19,12 @@ mod water;
 use bevy::prelude::*;
 
 use crate::{
+    config::SourceMovementConfig,
     core::{ExternalPush, Intent},
-    source_movement::{
-        config::SourceMovementConfig,
-        hooks::{MoveStance, StepSounds},
-        state::SourceMovement,
-        trace::Tracer,
-        useable_ladders::{self, UseableLadder},
-    },
+    hooks::{MoveStance, StepSounds},
+    mover::lines::UseableLadder,
+    state::SourceMovement,
+    trace::Tracer,
 };
 
 /// Landing view roll per unit/s of fall speed (degrees), and the punch
@@ -247,16 +246,16 @@ impl Mover<'_, '_, '_, '_> {
         let mut arrived_off = false;
         if self.me.forced.is_some() {
             match self.ladder_step(intent, f, s, max_speed) {
-                useable_ladders::LadderStep::Done => {
+                lines::LadderStep::Done => {
                     self.me.last_feet = Some(self.feet);
                     return;
                 }
-                useable_ladders::LadderStep::Climb => {
+                lines::LadderStep::Climb => {
                     self.ladder_move(intent, f, s, max_speed);
                     self.me.last_feet = Some(self.feet);
                     return;
                 }
-                useable_ladders::LadderStep::Walk => {
+                lines::LadderStep::Walk => {
                     // A dismount's arrival: the walking move without input.
                     f = 0.0;
                     s = 0.0;
@@ -321,16 +320,16 @@ impl Mover<'_, '_, '_, '_> {
         };
         if self.cfg.useable_ladders && !arrived_off {
             match self.ladder_step(intent, f, s, max_speed) {
-                useable_ladders::LadderStep::Done => {
+                lines::LadderStep::Done => {
                     self.me.last_feet = Some(self.feet);
                     return;
                 }
-                useable_ladders::LadderStep::Climb => {
+                lines::LadderStep::Climb => {
                     self.ladder_move(intent, f, s, max_speed);
                     self.me.last_feet = Some(self.feet);
                     return;
                 }
-                useable_ladders::LadderStep::Walk => {}
+                lines::LadderStep::Walk => {}
             }
         }
         if self.cfg.climbs_contents(self.foreign_map) {

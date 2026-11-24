@@ -15,6 +15,7 @@ members = [
     "chimera/world",
     "chimera/present",
     "chimera/sim",
+    "chimera/movement",
     "chimera/client",
     "chimera/net",
     "chimera/tools",
@@ -73,6 +74,7 @@ default-members = [
     "chimera/world",
     "chimera/present",
     "chimera/sim",
+    "chimera/movement",
     "chimera/client",
     "chimera/net",
     "chimera/tools",
@@ -141,6 +143,7 @@ workspace-hack = { path = "chimera/workspace-hack" }
 chimera_world = { path = "chimera/world" }
 chimera_present = { path = "chimera/present" }
 chimera_sim = { path = "chimera/sim" }
+chimera_movement = { path = "chimera/movement" }
 chimera_client = { path = "chimera/client" }
 chimera_net = { path = "chimera/net" }
 chimera_vfs = { path = "chimera/vfs" }

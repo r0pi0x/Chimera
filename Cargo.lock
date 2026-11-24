@@ -2779,6 +2779,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "chimera_movement"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "chimera_core",
+ "chimera_world",
+ "serde",
+ "workspace-hack",
+]
+
+[[package]]
 name = "chimera_net"
 version = "0.1.0"
 dependencies = [
@@ -7836,6 +7849,7 @@ dependencies = [
  "bevy_winit",
  "bzip2",
  "chimera_core",
+ "chimera_movement",
  "chimera_net",
  "chimera_sim",
  "chimera_world",

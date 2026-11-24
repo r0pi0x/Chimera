@@ -4,7 +4,7 @@
 
 use bevy::prelude::*;
 
-use crate::source_movement::{
+use crate::{
     mover::{
         BUMPS, GROUND_PROBE, MAX_CLIP_PLANES, Mover, SNAP_MIN, STAY_ON_GROUND_UP, STEP_EPSILON, UPWARD_AIR_FRICTION,
         WALKABLE_NORMAL_Z,

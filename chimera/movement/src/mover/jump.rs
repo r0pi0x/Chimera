@@ -1,7 +1,7 @@
 //! The jump: its impulse, the held-jump rule, stamina and the bunny-hop cap.
 
 
-use crate::source_movement::mover::Mover;
+use crate::mover::Mover;
 
 impl Mover<'_, '_, '_, '_> {
     pub(crate) fn jump(&mut self) {

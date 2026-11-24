@@ -94,9 +94,12 @@ const BASELINE: &[(&str, usize, usize)] = &[
     // Source's content converters, lifted from CS:S's loaders with their
     // maps (docs/plans/active/hl2dm.md, S2-S4) and sound scripts (S5),
     // counts moved with the files: what they read becomes the map both
-    // sides simulate. The statics: Source movement's debug switches (S6;
-    // `CHIMERA_SLIDE_DEBUG`, `CHIMERA_GROUND_DEBUG`, read once).
-    ("source/engine/src", 109, 3),
+    // sides simulate.
+    ("source/engine/src", 109, 0),
+    // The shared movement, lifted from `source_engine` with its three
+    // statics (docs/plans/active/shared-movement.md, S5): its debug
+    // switches (`CHIMERA_SLIDE_DEBUG`, `CHIMERA_GROUND_DEBUG`, read once).
+    ("chimera/movement/src", 0, 3),
     ("source/gameui/src", 1, 0),
     // 15: one more found when the scanner stopped cutting files at an inline test module.
     ("games/combat_arms/src", 103, 15),

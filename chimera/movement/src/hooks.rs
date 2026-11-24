@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 
-use crate::source_movement::config::SourceMovementConfig;
+use crate::config::SourceMovementConfig;
 
 /// What a character's own kind changes in its movement (TF2's classes:
 /// top speed, eye height, air jumps), set by its game before the step

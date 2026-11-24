@@ -3,7 +3,7 @@
 
 use bevy::prelude::*;
 
-use crate::source_movement::mover::{Mover, PUNCH_DAMPING, PUNCH_SPRING};
+use crate::mover::{Mover, PUNCH_DAMPING, PUNCH_SPRING};
 
 impl Mover<'_, '_, '_, '_> {
     /// The fall speed a landing counts (movement.md "Falling"; specs/

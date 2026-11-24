@@ -7,10 +7,8 @@ use bevy::prelude::*;
 
 use crate::{
     core::MapBrush,
-    source_movement::{
-        trace::{SOLID_SKIN, TRACE_BACKOFF, Tracer},
-        units::METERS_PER_UNIT,
-    },
+    trace::{SOLID_SKIN, TRACE_BACKOFF, Tracer},
+    units::METERS_PER_UNIT,
 };
 
 /// Float noise allowance (meters) when deciding whether a sweep runs

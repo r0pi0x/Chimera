@@ -9,26 +9,24 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 
 use crate::{
+    config::{HALF_WIDTH, MovementConfigs, SourceMovementConfig},
     core::{
         BaseVelocity, Damage, EntityGravity, ExternalPush, Health, Hitgroup, Intent, LadderZone, MapBrush, MaxSpeed,
         MovementState, MovingSolid, Velocity, WaterZone,
     },
+    hooks::{MoveSpeed, MoveStance, MoveTraits, StepSounds},
     map::{
         MapBrushCollider, MapBrushTree, MapBrushes, MapTerrain, MapTerrainCollider, MapWater, PhysicsProp, PlaySound,
         PropSurface, PushAway,
         sound::{SoundBank, SurfaceGrid},
     },
+    mover::lines::{self, UseableLadder, UseableLadders},
+    mover::{Mover, POST_HALF},
+    pushaway, shadow,
     slots::MovementSlot,
-    source_movement::{
-        config::{HALF_WIDTH, MovementConfigs, SourceMovementConfig},
-        hooks::{MoveSpeed, MoveStance, MoveTraits, StepSounds},
-        mover::{Mover, POST_HALF},
-        pushaway, shadow,
-        state::{SettleOnGround, SourceMovement},
-        trace::Tracer,
-        units::{METERS_PER_UNIT, ORIGIN_ABOVE_FEET, to_engine, to_source},
-        useable_ladders::{self, UseableLadder, UseableLadders},
-    },
+    state::{SettleOnGround, SourceMovement},
+    trace::Tracer,
+    units::{METERS_PER_UNIT, ORIGIN_ABOVE_FEET, to_engine, to_source},
 };
 
 #[inline]
@@ -234,7 +232,7 @@ pub(crate) fn step(
             terrain: terrain.as_deref(),
             owners: &[],
         };
-        useable_ladders::fix_ends(&tracer, &mut l.0);
+        lines::fix_ends(&tracer, &mut l.0);
     }
     let ladders: &[UseableLadder] = ladders.as_ref().map_or(&[], |l| &l.0);
     // The loaded map's envelope, each character's body fitted to it.

@@ -232,7 +232,6 @@ pub fn push_back<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source_movement::to_engine;
 
     #[test]
     fn server_push() {

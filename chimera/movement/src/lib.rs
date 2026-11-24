@@ -1,27 +1,28 @@
-//! Source player movement, from specs/cs_source/movement.md (lift S6 of
-//! docs/plans/active/hl2dm.md: CS:S's, now every Source game's): a
+//! Player movement of the Quake lineage, from specs/cs_source/movement.md
+//! (Source's, lifted from CS:S's and then from `source_engine`): a
 //! swept-box kinematic controller. Friction and acceleration toward a wish
 //! direction, air acceleration with the 30-unit cap that makes
 //! air-strafing work, split gravity, jumping, ground detection, slide
 //! moves with crease handling, stair stepping, sticking to slopes and
 //! stairs, and ducking.
 //!
-//! The files (docs/plans/active/shared-movement.md, the layout the lift
-//! into Chimera keeps): `config` (the config, its cvars by name, the
-//! configs by movement id), `state` (`SourceMovement`), `hooks` (what a
-//! game sets before the step: `MoveSpeed`, `MoveTraits`, `MoveStance`,
-//! `StepSounds`; `SourceSpeed`, `SourceTraits` and `SourceStance` are
-//! their names here), `units`, `trace` (the box sweep),
-//! `mover` (one character's tick, in parts: ground, air, duck, jump,
-//! water, ladders, falls, steps, stuck), `step` (the system),
-//! `useable_ladders` (ladder lines), `shadow`, `pushaway`, `drown`, and
-//! `plugin` (the systems and a movement's registration:
-//! `SourceMovementPlugin`, `QuakeMovementAppExt`): the part Chimera gets,
-//! which names nothing of this file's or `source_ladders`'
-//! (`architecture::source_movement_core_names_no_wrapper`). Source's own
-//! is here and in `source_ladders`: `SourceMovementAppExt::
-//! source_movement` (Source's cvars beside the shared ones, its key
-//! impulse), the hooks' Source names, and the `func_useableladder` reader.
+//! It is Chimera's (docs/plans/active/shared-movement.md): the movement of
+//! the Quake lineage, which Source's games run through their wrapper
+//! (`source_engine::source_movement`: `SourceMovementAppExt::
+//! source_movement`, Source's cvars beside the shared ones, its key
+//! impulse, its `func_useableladder` reader, and the Source names of the
+//! types here) and a GoldSrc game will run with its own config. The
+//! files: `config` (the config, its cvars by name, the configs by
+//! movement id), `state` (`SourceMovement`), `hooks` (what a game sets
+//! before the step: `MoveSpeed`, `MoveTraits`, `MoveStance`,
+//! `StepSounds`), `units`, `trace` (the box sweep), `mover` (one
+//! character's tick, in parts: ground, air, duck, jump, water, ladders,
+//! `lines` (ladder lines), falls, steps, stuck), `step` (the system),
+//! `shadow`, `pushaway`, `drown`; this file is the root: the systems as
+//! one plugin (`SourceMovementPlugin`), the set games order their own
+//! per-tick choices against (`SourceMovementStep`), and a movement's
+//! registration (`QuakeMovementAppExt::quake_movement`: its id, config,
+//! console variables by list and namespace, its envelope and its seat).
 //!
 //! Each Source game registers it under its own id with its own config
 //! (`SourceMovementAppExt::source_movement`: `cs_source:movement` with
@@ -158,108 +159,120 @@ mod config;
 pub mod drown;
 mod hooks;
 mod mover;
-mod plugin;
 pub mod pushaway;
 pub mod shadow;
-mod source_ladders;
 mod state;
 mod step;
 mod trace;
 mod units;
-pub mod useable_ladders;
 
 pub use config::{MovementConfigs, QUAKE_CVARS, SourceMovementConfig, SourceMovementConfigs, config_of};
 pub use hooks::{MoveSpeed, MoveStance, MoveTraits, StepSounds};
-/// The hooks under Source's names (the Source games' code).
-pub use hooks::{MoveSpeed as SourceSpeed, MoveStance as SourceStance, MoveTraits as SourceTraits};
 pub use mover::falls::punch_spring;
-pub use plugin::{QuakeMovementAppExt, SourceMovementPlugin, SourceMovementStep};
-pub use source_ladders::ladders_of;
+pub use mover::lines::{self, EntityLadders, ForcedMove, LadderFrom, UseableLadder, UseableLadders};
 pub use state::{SettleOnGround, SourceMovement};
 pub use units::{to_engine, to_source};
-pub use useable_ladders::{EntityLadders, ForcedMove, LadderFrom, UseableLadder, UseableLadders};
+
+// `crate::core`, `crate::map`, `crate::slots` and `crate::console` inside,
+// as in the crates the files came from.
+use chimera_core::{console, core, slots};
+use chimera_world::map;
 
 use bevy::prelude::*;
 
-/// Source's own console variables, beside the shared ones (`QUAKE_CVARS`).
-pub const SOURCE_CVARS: &[(&str, &str)] = &[
-    ("sv_enablebunnyhopping", "1 removes the jump speed cap"),
-    ("sv_autobunnyhopping", "1: holding jump keeps jumping"),
-    ("sv_footsteps", "0 silences footsteps, jump and landing sounds"),
-    ("cl_forwardspeed", "what a held move key sends"),
-    (
-        "sv_ladder_dampen",
-        "sideways ladder input kept when climbing (CS:S 0.2)",
-    ),
-    (
-        "sv_ladder_angle",
-        "how squarely into a ladder the dampening starts (CS:S -0.707)",
-    ),
-];
-
-/// Every console variable of a Source movement: the shared ones, then
-/// Source's (what a Source game tells the shell its movement's cvars are).
-pub const CVARS: &[(&str, &str)] = &{
-    let mut all = [("", ""); QUAKE_CVARS.len() + SOURCE_CVARS.len()];
-    let mut i = 0;
-    while i < all.len() {
-        all[i] = if i < QUAKE_CVARS.len() { QUAKE_CVARS[i] } else { SOURCE_CVARS[i - QUAKE_CVARS.len()] };
-        i += 1;
-    }
-    all
+use crate::{
+    core::PredictedAppExt,
+    mover::stuck::{footing, seat},
+    slots::RegisterSlots,
+    step::step,
 };
 
-/// Register a Source movement.
-pub trait SourceMovementAppExt {
-    /// Movement `id` on the shared movement (`QuakeMovementAppExt::
-    /// quake_movement`) as a Source game's: with its `config` (None: the
-    /// reference values, `SourceMovementConfig::reference`; one set for
-    /// `id` before, by `SourceMovementConfigs::set`, stays), its console
-    /// variables (`CVARS`: the shared ones and Source's) under `namespace`
-    /// (`hl2dm:sv_gravity`; None: bare names, a Source game's own by the
-    /// console's rule: CS:S's), Source's key impulse and the map's
-    /// `func_useableladder`s read (`source_ladders`).
-    fn source_movement(
+/// The movement's systems, once per app (`QuakeMovementAppExt::
+/// quake_movement` adds it): the step, the physics shadow, the push-away,
+/// the drowning, the map's ladder lines, and the configs by movement id
+/// (`SourceMovementConfigs`).
+pub struct SourceMovementPlugin;
+
+impl Plugin for SourceMovementPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<SourceMovementConfigs>()
+            .init_resource::<UseableLadders>()
+            .init_resource::<EntityLadders>()
+            .add_message::<crate::map::PlaySound>()
+            .add_message::<crate::map::entities::FireEntityOutput>()
+            .add_systems(First, lines::build_ladders)
+            .add_systems(crate::core::Predict::Movement, step.in_set(SourceMovementStep))
+            .predicted_net::<SourceMovement>()
+            .add_plugins((pushaway::PushAwayPlugin, shadow::ShadowPlugin));
+        app.add_plugins(drown::DrowningPlugin);
+    }
+}
+
+/// The movement step: a game's own per-tick choices (HL2:DM's speed
+/// selection, `MoveSpeed`) go before it.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SourceMovementStep;
+
+/// Register a movement on the shared movement.
+pub trait QuakeMovementAppExt {
+    /// Movement `id` on the shared movement (`SourceMovementPlugin`, added
+    /// once), with its `config` (one set for `id` before, by
+    /// `SourceMovementConfigs::set`, stays) and the console variables of
+    /// `cvars` (lists of (name, help): `config::QUAKE_CVARS` and the
+    /// engine's own; each name one `SourceMovementConfig::set_cvar`
+    /// knows), under `namespace` (`hl2dm:sv_gravity`; None: bare names).
+    fn quake_movement(
         &mut self,
         id: &'static str,
-        config: Option<SourceMovementConfig>,
+        config: SourceMovementConfig,
+        cvars: &[&'static [(&'static str, &'static str)]],
         namespace: Option<&'static str>,
     ) -> &mut Self;
 }
 
-impl SourceMovementAppExt for App {
-    fn source_movement(
+impl QuakeMovementAppExt for App {
+    fn quake_movement(
         &mut self,
         id: &'static str,
-        config: Option<SourceMovementConfig>,
+        config: SourceMovementConfig,
+        cvars: &[&'static [(&'static str, &'static str)]],
         namespace: Option<&'static str>,
     ) -> &mut Self {
-        // Its move keys count half on their first command (Source's key
-        // impulse, measured on real CS:S, HL2:DM and TF2).
-        self.world_mut().get_resource_or_init::<crate::core::HalfFirstPress>().0.push(id);
-        if !self.is_plugin_added::<source_ladders::SourceLaddersPlugin>() {
-            self.add_plugins(source_ladders::SourceLaddersPlugin);
+        if !self.is_plugin_added::<SourceMovementPlugin>() {
+            self.add_plugins(SourceMovementPlugin);
         }
-        self.quake_movement(
-            id,
-            config.unwrap_or_else(SourceMovementConfig::reference),
-            &[QUAKE_CVARS, SOURCE_CVARS],
-            namespace,
-        )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `CVARS` is the two lists in order, and the config knows each name.
-    #[test]
-    fn cvars_are_the_shared_ones_then_sources() {
-        assert_eq!(CVARS.len(), 15);
-        assert!(CVARS.iter().eq(QUAKE_CVARS.iter().chain(SOURCE_CVARS)));
-        assert_eq!((CVARS[0].0, CVARS[8].0, CVARS[9].0, CVARS[14].0), ("sv_accelerate", "sv_bounce", "sv_enablebunnyhopping", "sv_ladder_angle"));
-        let c = SourceMovementConfig::reference();
-        assert!(CVARS.iter().all(|(name, _)| c.get_cvar(name).is_some()));
+        let defaults = config;
+        {
+            let mut all = self.world_mut().get_resource_or_init::<SourceMovementConfigs>();
+            if all.get(id).is_none() {
+                all.0.push((id, defaults.clone()));
+            }
+        }
+        for (name, help) in cvars.iter().flat_map(|list| list.iter()) {
+            let name = *name;
+            let full = match namespace {
+                Some(ns) => format!("{ns}:{name}"),
+                None => name.to_string(),
+            };
+            crate::console::ConsoleAppExt::console_cvar(
+                self,
+                &full,
+                help,
+                &defaults.get_cvar(name).unwrap_or_default(),
+                move |w| w.get_resource::<SourceMovementConfigs>().and_then(|c| c.get(id)).and_then(|c| c.get_cvar(name)),
+                move |w, v| {
+                    w.get_resource_mut::<SourceMovementConfigs>()
+                        .and_then(|c| c.into_inner().get_mut(id).map(|c| c.set_cvar(name, v)))
+                        .ok_or("no Source movement")?
+                },
+            );
+        }
+        // The game's character's body, the envelope its maps carry
+        // (`chimera_core::envelope`): the box's half width, heights, step.
+        if let Some(game) = chimera_core::core::movement_game(id) {
+            use chimera_core::envelope::MovementEnvelopeAppExt;
+            self.add_movement_envelope(game, defaults.envelope());
+        }
+        self.register_movement::<SourceMovement>(id).seat_movement(id, footing, seat)
     }
 }

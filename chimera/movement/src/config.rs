@@ -7,10 +7,7 @@
 
 use bevy::prelude::*;
 
-use crate::{
-    slots::MovementSlot,
-    source_movement::{mover::LEAVE_GROUND_VZ, units::METERS_PER_UNIT},
-};
+use crate::{mover::LEAVE_GROUND_VZ, slots::MovementSlot, units::METERS_PER_UNIT};
 
 /// Console variables and per-player values the movement reads. No game's
 /// are its defaults: `reference` is the movement spec's shared-code values

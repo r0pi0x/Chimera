@@ -6,9 +6,7 @@ use bevy::prelude::*;
 
 use crate::{
     core::Intent,
-    source_movement::mover::{
-        LADDER_BACK_OFF, LADDER_JUMP_OFF, LADDER_MAX_NORMAL_Z, LADDER_REACH, LADDER_SPEED, Mover,
-    },
+    mover::{LADDER_BACK_OFF, LADDER_JUMP_OFF, LADDER_MAX_NORMAL_Z, LADDER_REACH, LADDER_SPEED, Mover},
 };
 
 impl Mover<'_, '_, '_, '_> {

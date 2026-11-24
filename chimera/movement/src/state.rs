@@ -3,7 +3,7 @@
 
 use bevy::prelude::*;
 
-use crate::source_movement::useable_ladders::ForcedMove;
+use crate::mover::lines::ForcedMove;
 
 /// A character that rests on the floor it stands on (hostages): when the
 /// ground test finds a floor within its reach (2 units), the feet go down
@@ -77,7 +77,7 @@ pub struct SourceMovement {
     /// `UseableLadders`.
     #[serde(default)]
     pub useable: Option<u32>,
-    /// Being pulled onto or off one (`useable_ladders::ForcedMove`).
+    /// Being pulled onto or off one (`lines::ForcedMove`).
     #[serde(default)]
     pub forced: Option<ForcedMove>,
     /// `+use` was held last tick (a fresh press mounts and dismounts).

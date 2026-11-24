@@ -1,17 +1,94 @@
-//! Source's ladder entities read into the movement's ladder lines
-//! (specs/hl2dm/movement.md "The ladder entity"): `func_useableladder`s
-//! with their `info_ladder_dismount` nodes (`ladders_of`, Source units),
-//! kept in `EntityLadders` as the map's entities change (`read_ladders`,
-//! before `useable_ladders::build_ladders`, which takes them as the map's
-//! own lines). Source's part of the ladder lines: climbing them is
-//! `useable_ladders`, any engine's.
+//! Source's player movement: Chimera's shared movement (`chimera_movement`,
+//! re-exported whole at its old paths here) as the Source games run it
+//! (docs/plans/active/shared-movement.md). What is Source's own:
+//! `SourceMovementAppExt::source_movement` (a movement registered with
+//! Source's console variables, `SOURCE_CVARS`, beside the shared ones, and
+//! Source's key impulse: a move key counts half on its first command,
+//! `core::HalfFirstPress`), the Source names of the shared types
+//! (`SourceSpeed`, `SourceTraits`, `SourceStance`; `useable_ladders` is
+//! `chimera_movement::lines`), and the map's ladder entities read into the
+//! movement's ladder lines (specs/hl2dm/movement.md "The ladder entity":
+//! `func_useableladder`s with their `info_ladder_dismount` nodes,
+//! `ladders_of`, kept in `EntityLadders` as the map's entities change by
+//! `read_ladders`, before `lines::build_ladders`, which takes them as the
+//! map's own lines). The movement itself, its config and its known
+//! shortcuts: `chimera_movement`'s docs.
 
 use bevy::prelude::*;
 
-use crate::{
-    map::{MapEntities, MapEntity},
-    source_movement::useable_ladders::{self, EntityLadders, LadderFrom, UseableLadder},
+pub use chimera_movement::*;
+/// The shared types under Source's names (the Source games' code).
+pub use chimera_movement::{MoveSpeed as SourceSpeed, MoveStance as SourceStance, MoveTraits as SourceTraits, lines as useable_ladders};
+
+use crate::map::{MapEntities, MapEntity};
+
+/// Source's own console variables, beside the shared ones (`QUAKE_CVARS`).
+pub const SOURCE_CVARS: &[(&str, &str)] = &[
+    ("sv_enablebunnyhopping", "1 removes the jump speed cap"),
+    ("sv_autobunnyhopping", "1: holding jump keeps jumping"),
+    ("sv_footsteps", "0 silences footsteps, jump and landing sounds"),
+    ("cl_forwardspeed", "what a held move key sends"),
+    (
+        "sv_ladder_dampen",
+        "sideways ladder input kept when climbing (CS:S 0.2)",
+    ),
+    (
+        "sv_ladder_angle",
+        "how squarely into a ladder the dampening starts (CS:S -0.707)",
+    ),
+];
+
+/// Every console variable of a Source movement: the shared ones, then
+/// Source's (what a Source game tells the shell its movement's cvars are).
+pub const CVARS: &[(&str, &str)] = &{
+    let mut all = [("", ""); QUAKE_CVARS.len() + SOURCE_CVARS.len()];
+    let mut i = 0;
+    while i < all.len() {
+        all[i] = if i < QUAKE_CVARS.len() { QUAKE_CVARS[i] } else { SOURCE_CVARS[i - QUAKE_CVARS.len()] };
+        i += 1;
+    }
+    all
 };
+
+/// Register a Source movement.
+pub trait SourceMovementAppExt {
+    /// Movement `id` on the shared movement (`QuakeMovementAppExt::
+    /// quake_movement`) as a Source game's: with its `config` (None: the
+    /// reference values, `SourceMovementConfig::reference`; one set for
+    /// `id` before, by `SourceMovementConfigs::set`, stays), its console
+    /// variables (`CVARS`: the shared ones and Source's) under `namespace`
+    /// (`hl2dm:sv_gravity`; None: bare names, a Source game's own by the
+    /// console's rule: CS:S's), Source's key impulse and the map's
+    /// `func_useableladder`s read (`read_ladders`).
+    fn source_movement(
+        &mut self,
+        id: &'static str,
+        config: Option<SourceMovementConfig>,
+        namespace: Option<&'static str>,
+    ) -> &mut Self;
+}
+
+impl SourceMovementAppExt for App {
+    fn source_movement(
+        &mut self,
+        id: &'static str,
+        config: Option<SourceMovementConfig>,
+        namespace: Option<&'static str>,
+    ) -> &mut Self {
+        // Its move keys count half on their first command (Source's key
+        // impulse, measured on real CS:S, HL2:DM and TF2).
+        self.world_mut().get_resource_or_init::<crate::core::HalfFirstPress>().0.push(id);
+        if !self.is_plugin_added::<SourceLaddersPlugin>() {
+            self.add_plugins(SourceLaddersPlugin);
+        }
+        self.quake_movement(
+            id,
+            config.unwrap_or_else(SourceMovementConfig::reference),
+            &[QUAKE_CVARS, SOURCE_CVARS],
+            namespace,
+        )
+    }
+}
 
 /// The dismount list: nodes this near the ends or the points sampled along
 /// the ladder, at this spacing.
@@ -25,7 +102,7 @@ pub struct SourceLaddersPlugin;
 impl Plugin for SourceLaddersPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EntityLadders>()
-            .add_systems(First, read_ladders.before(useable_ladders::build_ladders));
+            .add_systems(First, read_ladders.before(lines::build_ladders));
     }
 }
 
@@ -97,6 +174,16 @@ pub fn ladders_of(entities: &[MapEntity]) -> Vec<UseableLadder> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `CVARS` is the two lists in order, and the config knows each name.
+    #[test]
+    fn cvars_are_the_shared_ones_then_sources() {
+        assert_eq!(CVARS.len(), 15);
+        assert!(CVARS.iter().eq(QUAKE_CVARS.iter().chain(SOURCE_CVARS)));
+        assert_eq!((CVARS[0].0, CVARS[8].0, CVARS[9].0, CVARS[14].0), ("sv_accelerate", "sv_bounce", "sv_enablebunnyhopping", "sv_ladder_angle"));
+        let c = SourceMovementConfig::reference();
+        assert!(CVARS.iter().all(|(name, _)| c.get_cvar(name).is_some()));
+    }
 
     fn entity(pairs: &[(&str, &str)]) -> MapEntity {
         MapEntity {

@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use crate::{
     core::MapBrush,
     map::{MapBrushTree, MapBrushes, MapTerrain, MapWater, sound::SurfaceGrid},
-    source_movement::units::{METERS_PER_UNIT, to_engine, to_source},
+    units::{METERS_PER_UNIT, to_engine, to_source},
 };
 
 /// How far sweeps stop short of what they hit, along the move. Our stand-in

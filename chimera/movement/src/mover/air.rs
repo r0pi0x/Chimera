@@ -3,7 +3,7 @@
 
 use bevy::prelude::*;
 
-use crate::source_movement::mover::{AIR_WISH_CAP, Mover};
+use crate::mover::{AIR_WISH_CAP, Mover};
 
 impl Mover<'_, '_, '_, '_> {
     #[inline]

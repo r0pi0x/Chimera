@@ -5,7 +5,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
-use crate::source_movement::{
+use crate::{
     config::config_of,
     mover::{GROUND_PROBE, Mover, STUCK_NUDGE_GAP, WALKABLE_NORMAL_Z},
     state::SourceMovement,

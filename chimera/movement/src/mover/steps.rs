@@ -3,7 +3,7 @@
 
 use bevy::prelude::*;
 
-use crate::source_movement::{
+use crate::{
     mover::{LAND_PUNCH_SCALE, Mover},
     units::{METERS_PER_UNIT, to_engine},
 };

@@ -4,7 +4,7 @@
 
 use bevy::prelude::*;
 
-use crate::source_movement::mover::{DUCK_TIMER_START, Mover, TIME_TO_UNDUCK};
+use crate::mover::{DUCK_TIMER_START, Mover, TIME_TO_UNDUCK};
 
 impl Mover<'_, '_, '_, '_> {
     #[inline]

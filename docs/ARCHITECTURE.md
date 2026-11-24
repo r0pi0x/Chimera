@@ -57,6 +57,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
 chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs as asset sources)
   |    chimera_ui (chimera/ui/)   the UI kit: Theme (tokens as data), KitFonts and roles, cq units, motion (Ease, Timeline), UI materials; Bevy and chimera_core only, under the shell and the apps
   |    chimera_sim (chimera/sim/)   weapon, movement, rule_module, mode, minigame, identity, in_play, spawning, announce, dominations, status, kill_voice, server_docs, data_format; SimBasePlugins; testkit (feature)
+  |    chimera_movement (chimera/movement/)   the player movement Source's games share (and GoldSrc's will): config, state, hooks, trace, mover, step, shadow, pushaway, drown; QuakeMovementAppExt
   |    |
 chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, range, harness::Sim
   |                \
@@ -214,6 +215,17 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `run(&APP)`; the command line, the usage text (from the game's
   `GameInfo`), the start map and the plugins' order are there.
   `cargo test -p chimera_client --features dev` tests it alone.
+- `chimera_movement` is the player movement of the Quake lineage
+  (docs/plans/active/shared-movement.md), lifted from `source_engine` so
+  a GoldSrc game can run it too: the tick (`mover`), the box sweep over
+  the map's data (`trace`), the config and its cvars by name (`config`),
+  the predicted state (`state`), what a game sets before the step
+  (`hooks`), ladder lines (`mover::lines`), the physics shadow, the
+  push-away and drowning; a movement registers with
+  `QuakeMovementAppExt::quake_movement(id, config, cvars, namespace)`.
+  It uses `chimera_core`, `chimera_world`, Bevy and avian only, and has
+  no game's defaults (`SourceMovementConfig::reference`). Source's games
+  reach it through `source_engine::source_movement`.
 - `chimera_sim` is the simulation's frameworks: `weapon` (the weapon
   system), `movement` (the movement slot's placeholder and noclip) and
   `rule_module` (the rule-module interface, `mashup::rules::module`),
@@ -271,9 +283,10 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   import), `content` (Source's files converted into Chimera's types:
   maps, materials, models and sounds: lifts S2-S5; a game gives a map's
   conversion its id and hooks, `content::bsp::SourceGame`),
-  `source_movement` (Source's player movement, its drowning, physics
-  shadow and push-away: lift S6; each Source game registers it under its
-  own id with its own config), `player_anim` (the shared half of Source's
+  `source_movement` (Source's player movement: `chimera_movement` as
+  Source's games run it, with Source's cvars, key impulse and ladder
+  entities; each Source game registers it under its own id with its own
+  config), `player_anim` (the shared half of Source's
   player animation: lift S9; each game's state picks its sequences),
   `anim_net` (a server's tick pose of each body sent, and clients posing
   others' bodies from it at the tick they draw them) and
@@ -839,7 +852,7 @@ its rule modules), bot and net (its part of the network); its `ui/` uses
 those, client and the rest of the simulation. `source_engine`'s modules
 `search_path` and `maps` use no module of ours, only the engine's crates
 by name (`chimera_core::mount`); its `content` uses core, map and mount,
-its `source_movement` core, map, slots and console, its `weapon_script`
+its `source_movement` core and map (and the `chimera_movement` crate), its `weapon_script`
 mount, its `hud` map and content, its `player_anim` core, map, weapon and `source_movement`, its `anim_net` core, map and
 `player_anim` (and the network's snapshots, `chimera_net`), its `effects`
 core, map, weapon, console and content.

@@ -1315,7 +1315,7 @@ fn golden_run() {
         match sim.work(1) {
             Some(w) => {
                 tick_work += w.total();
-                step_work += w.crate_systems.get("source_engine Movement step").map_or(0, |v| v.0);
+                step_work += w.crate_systems.get("chimera_movement Movement step").map_or(0, |v| v.0);
             }
             None => counted = false,
         }
