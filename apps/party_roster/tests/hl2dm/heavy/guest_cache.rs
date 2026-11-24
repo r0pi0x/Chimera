@@ -1,7 +1,8 @@
 //! The Source guests' dressings kept for the session
 //! (`chimera_world::map::kept`): a second map load of the app copies
 //! them, converting nothing again, and every texture index the copied
-//! parts hold names the texture a fresh dressing of the same map gives;
+//! parts hold names the texture a fresh dressing of the same map gives
+//! (each guest converted now and appended as a load appends kept parts);
 //! a guest the match can't deal (`MapLoadOptions::dealt`) isn't dressed.
 //! Passes with a note without the CS:S, HL2:DM and Combat Arms installs.
 
@@ -59,10 +60,23 @@ fn a_second_load_copies_the_guests_and_their_indices_hold() {
     assert!(!bare.textures.is_empty(), "Combat Arms' parts first: the guests' indices move past them");
     assert!(bare.kit.characters.iter().all(|c| c.game == Some("combat_arms")), "no guest dressed");
 
-    // Fresh: each guest's own dressing on the map.
+    // Fresh: each guest's own dressing converted now, on an empty map as
+    // the cache converts it (`kept::kept_with`: blocks only), and appended
+    // to the map as a load appends kept parts (`kept::append`, which keeps
+    // a guest's impact looks whose names are taken under its own names
+    // too, `map::impact::own_name`; dressing the map directly skips them).
     let mut fresh = bare.clone();
-    cs_source::game::dress_guest_with(&mut fresh, cs_source::game::BUNDLE.kept, false).unwrap();
-    hl2dm::game::maps::dress_guest_with(&mut fresh, hl2dm::game::BUNDLE.kept, false).unwrap();
+    type Dress = fn(&mut MapData, &'static [&'static str], bool) -> Result<(), String>;
+    let guests: [(Dress, &'static [&'static str]); 2] = [
+        (cs_source::game::dress_guest_with, cs_source::game::BUNDLE.kept),
+        (hl2dm::game::maps::dress_guest_with, hl2dm::game::BUNDLE.kept),
+    ];
+    for (dress, kept) in guests {
+        let mut parts = MapData::default();
+        parts.memos.insert(chimera_world::map::BlocksOnly);
+        dress(&mut parts, kept, false).unwrap();
+        guest::append(&mut fresh, &parts);
+    }
 
     // Kept: converted on the first load, copied on the second.
     let mut kept = bare.clone();
