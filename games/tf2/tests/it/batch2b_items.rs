@@ -764,3 +764,94 @@ fn a_clients_own_boost_and_steak_are_predicted_without_corrections() {
     assert!(speeds.last().is_some_and(|s| (s.0 - 299.0).abs() < 0.01 && (s.1 - 299.0).abs() < 0.01), "{:?}", speeds.last());
     assert!(errors(&sim) - quiet <= 2, "eating predicted: {} corrections", errors(&sim) - quiet);
 }
+
+// ---- Batch 2's leftovers, measured (specs/tf2/batch3_mechanics.md 6) ----
+
+#[test]
+fn the_dalokohs_bonus_ends_34_1_s_after_the_eat() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], "tf2:dalokohs_bar");
+    run(&mut sim, p, 1, |s, _| s.intent(p).fire = true);
+    run(&mut sim, p, 1, |s, _| s.intent(p).fire = false);
+    sim.seconds(33.9);
+    assert_eq!(points(&sim, p).1, 350.0, "still on at 34 s");
+    sim.seconds(0.3);
+    assert_eq!(points(&sim, p).1, 300.0, "gone at 34.1 s");
+}
+
+#[test]
+fn bonk_takes_no_damage_his_own_blast_included() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], "tf2:bonk_atomic_punch");
+    run(&mut sim, p, 1, |s, _| s.intent(p).fire = true);
+    run(&mut sim, p, 70, |s, _| s.intent(p).fire = false);
+    assert!(has(&sim, p, Condition::Phased));
+    let before = points(&sim, p).0;
+    for (attacker, kind) in [(None, DamageKind::Blast), (Some(p), DamageKind::Blast), (None, DamageKind::Bullet)] {
+        sim.app.world_mut().resource_mut::<Messages<Damage>>().write(Damage {
+            target: p,
+            attacker,
+            amount: 0.5,
+            point: Vec3::ZERO,
+            dir: Vec3::NEG_Z,
+            hitgroup: Hitgroup::Generic,
+            kind,
+            weapon: None,
+            force: Vec3::ZERO,
+        });
+        sim.ticks(1);
+        assert_eq!(points(&sim, p).0, before, "{kind:?}");
+    }
+}
+
+#[test]
+fn the_diamondback_stores_35_crits_at_most() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, knife) = holding(&mut sim, from, tf2::game::weapons::KNIFE);
+    let gun = carry(&mut sim, p, "tf2:diamondback");
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(knife);
+    sim.seconds(1.0);
+    sim.app.world_mut().resource_mut::<tf2::game::items::effects::Revolvers>().stored.insert(gun, 35);
+    let t = victim(&mut sim, from, 40.0, tf2::game::weapons::MINIGUN, 90.0);
+    let at = sim.position(t);
+    testkit::aim_at(&mut sim, p, at);
+    let yaw = sim.intent(p).yaw;
+    run(&mut sim, p, 20, |s, k| {
+        s.intent(t).yaw = yaw;
+        s.intent(p).fire = k == 0
+    });
+    assert!(health_points(&sim, t) <= 0.0, "a backstab kill");
+    let stored = sim.app.world().resource::<tf2::game::items::effects::Revolvers>().stored.get(&gun).copied();
+    assert_eq!(stored, Some(35));
+}
+
+#[test]
+fn bazaar_heads_come_from_headshot_kills_only_and_count_past_6() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, w) = holding(&mut sim, from, "tf2:bazaar_bargain");
+    sim.app.world_mut().get_mut::<Tf2Meter>(w).unwrap().state.value = 6.0;
+    let kill = |sim: &mut Sim, hitgroup: Hitgroup, hp: f32| {
+        let t = victim(sim, from, 300.0, tf2::game::weapons::MINIGUN, hp);
+        sim.app.world_mut().resource_mut::<Messages<Damage>>().write(Damage {
+            target: t,
+            attacker: Some(p),
+            amount: 1.5,
+            point: Vec3::ZERO,
+            dir: Vec3::NEG_Z,
+            hitgroup,
+            kind: DamageKind::Bullet,
+            weapon: Some("tf2:bazaar_bargain"),
+            force: Vec3::ZERO,
+        });
+        sim.ticks(2);
+        sim.app.world_mut().despawn(t);
+    };
+    kill(&mut sim, Hitgroup::Head, 100.0);
+    assert_eq!(meter(&sim, w), 7.0, "6 -> 7");
+    kill(&mut sim, Hitgroup::Chest, 100.0);
+    assert_eq!(meter(&sim, w), 7.0, "a body-shot kill: none");
+    kill(&mut sim, Hitgroup::Chest, 1000.0);
+    assert_eq!(meter(&sim, w), 7.0, "a body hit: none");
+}

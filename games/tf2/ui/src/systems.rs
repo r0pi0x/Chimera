@@ -86,7 +86,11 @@ pub fn collect(
     player: Option<Single<(&Health, Option<&Inventory>, Option<&Team>, Has<Dead>, Option<&Tf2Class>), With<LocalPlayer>>>,
     mut classes: Local<Option<Classes>>,
     weapons: Query<(&Weapon, Option<&Magazine>, Option<&HeldGauge>)>,
-    meters: Query<(Option<&tf2::game::items::meters::Tf2Meter>, Option<&tf2::game::items::consumables::Tf2Consumable>)>,
+    meters: Query<(
+        Option<&tf2::game::items::meters::Tf2Meter>,
+        Option<&tf2::game::items::consumables::Tf2Consumable>,
+        Option<&tf2::game::items::shields::Tf2Shield>,
+    )>,
     scope: Option<Res<ScopeUp>>,
     shoulder: Option<Res<chimera_client::client::third_person::Shoulder>>,
 ) {
@@ -119,13 +123,17 @@ pub fn collect(
         // The first item meter carried (batch2b_mechanics.md 14).
         meter: inv.and_then(|i| {
             i.weapons.iter().find_map(|w| match meters.get(*w).ok()? {
-                (Some(m), _) => {
+                (Some(m), ..) => {
                     let (l, f) = m.meter();
                     let label = if m.params.kind == tf2::game::items::meters::MeterKind::Heads { format!("{l}: {}", m.heads()) } else { l.to_string() };
                     Some((label, f))
                 }
-                (_, Some(c)) => {
+                (_, Some(c), _) => {
                     let (l, f) = c.meter();
+                    Some((l.to_string(), f))
+                }
+                (_, _, Some(s)) => {
+                    let (l, f) = s.meter();
                     Some((l.to_string(), f))
                 }
                 _ => None,

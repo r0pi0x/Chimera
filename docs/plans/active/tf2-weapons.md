@@ -1,6 +1,6 @@
 # TF2 weapons: every player weapon, what is in, what is left
 
-Status: batches 0 and 1 built, batch 2's first five families and part 2 (projectiles and pushes; consumables, meters, sniper and revolver variants) built (2026-11-23; section 4); the rest of batch 2 and batch 3 planned.
+Status: batches 0 and 1 built, batch 2's first five families and part 2 (projectiles and pushes; consumables, meters, sniper and revolver variants) built, batch 3's shields and banners built (2026-11-23; section 4); the rest of batch 2 and batch 3 planned.
 Inventory by class and slot, then a phased build order.
 
 Sources: the installed game's `scripts/items/items_game.txt` (read locally
@@ -112,7 +112,7 @@ roughly half a day for). **B**: batch. **Fit**: party gun game, Y/N/?
 | Shotgun (all classes) | yes | S | HS | | | | Y |
 | Reserve Shooter (Soldier, Pyro) | no | N | HS | mini-crit airborne, fast switch | S | 2 | Y |
 | Panic Attack (4 classes) | no | N | HS | stats; fire-rate scale with clip-pump | M | 2 | Y |
-| Buff Banner / Battalion's Backup / Concheror | no | N | BUF | rage meter, buff cone/aura, mini-crit/resist/heal | XL | 3 | ? |
+| Buff Banner / Battalion's Backup / Concheror | yes | S | BUF | rage meter, buff cone/aura, mini-crit/resist/heal | XL | 3 | ? |
 | Righteous Bison | no | N | PRJ | piercing energy bolt, no ammo | M | 2 | Y |
 | B.A.S.E. Jumper (also Demo) | no | N | W | parachute, fall control | M | 3 | ? |
 | The Gunboats (W) | no | N | W | self blast damage reduction | S | 2 | ? |
@@ -163,7 +163,7 @@ roughly half a day for). **B**: batch. **Fit**: party gun game, Y/N/?
 | Scottish Resistance | no | N | STK | aim-detonate, more stickies | M | 2 | Y |
 | Sticky Jumper | no | N | STK | no damage, 8 stickies | S | 1 | ? |
 | Quickiebomb Launcher | no | N | STK | charge-scaled damage, faster arm | S | 1 | Y |
-| Chargin' Targe / Splendid Screen / Tide Turner | no | N | SHD | charge (alt) with turn control, resists, bash crit | XL | 3 | ? |
+| Chargin' Targe / Splendid Screen / Tide Turner | yes | S | SHD | charge (alt) with turn control, resists, bash crit | XL | 3 | ? |
 | Bottle (Scottish Handshake skin) | yes | S | MEL | | | | Y |
 | Eyelander / Horseless Headless Headtaker / Nessie's Nine Iron | no | N | MEL | head counter (speed, health), decap crits | M | 2 | Y |
 | Scotsman's Skullcutter | no | N | MEL | stats, slower, speed penalty | S | 1 | Y |
@@ -504,6 +504,45 @@ Needs a spec for every named number the attribute list does not give
 (durations, meters, drop of arrows, bleed ticks, knockback force).
 
 ### Batch 3: big mechanics (40 entries)
+
+**Built 2026-11-23, part 1's shields and banners**
+(specs/tf2/batch3_mechanics.md 1, 2, 6; `game::items::shields`,
+`game::items::meters`' rage; Chimera's `status::Condition::DefenseBuff`;
+the Source movement's `SourceTraits::ceiling`; scenario tests:
+games/tf2/tests/it/batch3.rs, the leftovers in batch2b_items.rs):
+
+- *Shields and charge* (`tf2:shield` on the abstract base
+  data/weapons/demoshield.toml, `tf2:worn`: carried, never drawn; the
+  charge predicted): Chargin' Targe, Splendid Screen, Tide Turner; the
+  boots (Ali Baba's Wee Booties, Bootlegger: data/weapons/wearable.toml).
+  750 units/s × the melee's move-speed attributes (Skullcutter 637.5,
+  heads ignored), the meter over 1.5 s + `mod_charge_time` (Claidheamh
+  Mòr 2.0 s), the 12 s recharge × `charge_recharge_rate`, the turn cap
+  48 × `charge_turn_control` (free from 10: the Tide Turner), the crit
+  boost under 75 % lingering 0.3 s (the Tide Turner's a mini-crit), the
+  Tide Turner's meter loss and kill refills, the resistances on others'
+  damage only (now every item's fire and blast factors), the boots' + 25
+  and × 1.1 with a shield. The shield entity's own behaviour (attack2,
+  the impact's 50 × `charge_impact_damage`, the crit after it, a swing
+  ending the charge, debuffs off) stands in from the item texts
+  (`shields`' Known shortcuts). An item's data may set hook values
+  (`ItemDef::hooks`: the Screen's and Tide Turner's texts).
+- *Banners* (rage on `tf2:meter`, data/weapons/buff_item.toml): Buff
+  Banner, Battalion's Backup, Concheror: rage 1/6 a point (the
+  Concheror 1/4.8) from any of the holder's damage, the horn's 2.7 s,
+  10 s of drain, a pulse every 0.5 s of 1.2 s to teammates within 450;
+  the mini-crit buff, the defense buff (× 0.65, crits normal), the
+  Concheror's × 1.4 speed (Chimera's `SpeedBoost`, predicted) and 35 %
+  heal on hit.
+- *Batch 2's leftovers measured*: the Dalokohs Bar's bonus ends 34.1 s
+  after the eat; Bonk's phase is total immunity (tested with his own
+  blast); the Soda Popper's 5 air jumps confirmed; the Diamondback's
+  stored crits capped at 35; Bazaar heads only from headshot kills,
+  past 6.
+- No rung carries a shield or boots: utility items (`gun_game = false`),
+  and a TF2 melee rung draws nothing of its own (`classes::draw_rung`);
+  a rung rule for worn items would be new.
+- Their asset sets: the 8 new `weapon/<name>` sets (see the commit).
 
 | Group | Weapons | Fit in a party gun game | Spec needed |
 |---|---|---|---|

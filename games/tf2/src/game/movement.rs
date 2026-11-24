@@ -337,6 +337,7 @@ pub fn select_class(
     mut weapons: Query<(&Weapon, Option<&Tf2Gun>, Option<&mut ShellReload>, Option<&mut Magazine>)>,
     items: Query<&super::items::mods::Tf2Item>,
     meters: Query<&super::items::meters::Tf2Meter>,
+    (shields, item_weapons): (Query<&super::items::shields::Tf2Shield>, Query<(&super::items::mods::Tf2Item, &Weapon)>),
     table: Res<Classes>,
     clock: Res<crate::core::SimClock>,
 ) {
@@ -376,12 +377,17 @@ pub fn select_class(
         // Soda Popper's hype air jumps.
         let (extra, hype_jumps) = super::items::meters::movement(inv, &meters, clock.now);
         let p = p + extra;
+        // A shield charge (batch3_mechanics.md 1.1, `items::shields`): its
+        // own speed, past the ceiling.
+        let charge = super::items::shields::charge_speed(inv, &shields, &item_weapons);
+        let p = charge.unwrap_or(p);
         let want = SourceTraits {
             max_speed: Some(p),
             eye_stand: Some(c.eye),
             air_jumps: Some(hype_jumps.unwrap_or(c.air_jumps).saturating_add(f.air_dash)),
             loud_landings_only: Some(c.loud_landings_only),
             jump_scale: (f.jump != 1.0).then_some(f.jump),
+            ceiling: charge,
         };
         if *traits != want {
             *traits = want;

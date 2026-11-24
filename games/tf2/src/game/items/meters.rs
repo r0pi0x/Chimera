@@ -22,16 +22,44 @@
 //!   0.25 h), h at most `HEADS_CAP` (`decap_factor`; the rifle's
 //!   `weapons::sniper::scope`).
 //!
+//! - **Rage** (the Soldier's banners, `tf_weapon_buff_item`, batch3_
+//!   mechanics.md 2): every point of damage its holder deals an enemy,
+//!   with any weapon, fills `per_damage` (1/6: 600 fills it; the
+//!   Concheror's 1/4.8: 480); none while it runs. Full, attack with the
+//!   banner out blows the horn: the buff starts `delay` s later (2.7) and
+//!   runs while the rage drains at `drain` (10 a second: 10 s). While it
+//!   runs, every `PULSE` s (`banner_pulses`, the server's) its holder and
+//!   each teammate whose origin is within `BANNER_RADIUS` (450) of his get
+//!   the banner's condition for `PULSE_LIFE` s (so it lingers about a
+//!   second after the rage is gone or a teammate leaves): by
+//!   `set_buff_type`, 1 the Buff Banner's mini-crit buff (Chimera's
+//!   `Condition::MiniCritBuff`), 2 the Battalion's Backup's defense buff
+//!   (`Condition::DefenseBuff`: damage taken × `BACKUP_CUT`, a crit
+//!   taken a normal hit: `banner_taken`, `effects::crits`), 3 the
+//!   Concheror's (`CONCH`: speed × `CONCH_SPEED` as Chimera's
+//!   `SpeedBoost`, heal on hit `CONCH_HEAL` of the damage, rounded down:
+//!   `fill`). The banners' own player numbers (the Backup's + 20 max
+//!   health, the Concheror's regeneration) are `super::mods`'.
+//!
 //! Each shows on TF2's HUD as a simple meter (`meter`: its label and fill;
 //! the ui crate's item meter at `HudItemEffectMeter`). A death empties
 //! them.
 //!
-//! Known shortcuts (provisional): hype's air jumps (5 by the item's
-//! description) are unmeasured; only the item's own hits fill its meter,
-//! from the damage as dealt (rounded: the Carbine's 10.2 counts 10); a
-//! jump's loss is a share of the boost; the boost cap 99; heads come only
-//! from headshot kills with the Bazaar (none lost on a body-shot kill) and
-//! have no cap of their own.
+//! Hype's 5 air jumps are measured (batch3_mechanics.md 6: each the normal
+//! air jump, landing resets them, no drain of their own); heads come only
+//! from headshot kills with the Bazaar, a body-shot kill or hit changing
+//! nothing, and count past 6 (the rate's cap; measured).
+//!
+//! Known shortcuts (provisional): only the item's own hits fill hype,
+//! boost and crikey, from the damage as dealt (rounded: the Carbine's
+//! 10.2 counts 10; rage too: 103 fills 17.17, the game's 17.196 is from
+//! the unrounded hit); a jump's loss is a share of the boost; the boost
+//! cap 99. The banners: the horn has no sequence, sound or look and the
+//! banner stays out after it; the pulse reaches through walls (line of
+//! sight was clear in every measured run); the Concheror's speed has no
+//! cap (only the Soldier's 336 measured); the Backup's sentry cut waits
+//! on buildings and its cut on blasts is the plain × 0.65 (the measured
+//! bot rocket's 0.69 is open).
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -42,7 +70,7 @@ use chimera_sim::{
 };
 
 use super::convert::ItemRecord;
-use crate::core::{DamageTaken, Died, Health, Hitgroup, Intent, MovementState, SimClock, Team};
+use crate::core::{Damage, DamageTaken, Died, Health, Hitgroup, Intent, MovementState, SimClock, Team};
 
 /// The hook.
 pub const HOOK: &str = "tf2:meter";
@@ -57,6 +85,21 @@ pub const BOOST_SPEED: f32 = 1.62;
 pub const HEADS_CAP: u32 = 6;
 /// A full meter.
 pub const FULL: f32 = 100.0;
+/// The banners (batch3_mechanics.md 2): rage a point of damage (the
+/// Concheror's), the horn, the drain, the pulse's reach (units), period
+/// and life (s, fitted), the Backup's cut, the Concheror's speed and heal.
+pub const RAGE_PER_DAMAGE: f32 = 1.0 / 6.0;
+pub const RAGE_PER_DAMAGE_CONCH: f32 = 1.0 / 4.8;
+pub const BANNER_DELAY: f32 = 2.7;
+pub const RAGE_DRAIN: f32 = 10.0;
+pub const BANNER_RADIUS: f32 = 450.0;
+pub const PULSE: f64 = 0.5;
+pub const PULSE_LIFE: f64 = 1.2;
+pub const BACKUP_CUT: f32 = 0.65;
+pub const CONCH_SPEED: f32 = 1.4;
+pub const CONCH_HEAL: f32 = 0.35;
+/// The Concheror's condition (heal on hit).
+pub const CONCH: &str = "tf2:conch";
 
 /// Which meter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,6 +109,7 @@ pub enum MeterKind {
     Boost,
     Crikey,
     Heads,
+    Rage,
 }
 
 /// `tf2:meter`'s parameters (%, s, units; module doc).
@@ -90,6 +134,12 @@ pub struct MeterParams {
     pub speed_per: f32,
     #[serde(default)]
     pub air_jumps: u8,
+    /// A banner's `set_buff_type` (1 Buff Banner, 2 Battalion's Backup,
+    /// 3 Concheror) and its horn's delay (s).
+    #[serde(default)]
+    pub banner: u8,
+    #[serde(default)]
+    pub delay: f32,
 }
 
 fn full() -> f32 {
@@ -111,6 +161,8 @@ impl MeterParams {
             buff: 0.0,
             speed_per: 0.0,
             air_jumps: 0,
+            banner: 0,
+            delay: 0.0,
         };
         if r.flag("hype_on_damage") {
             return Some(MeterParams { per_damage: HYPE_PER_DAMAGE, drain: HYPE_DRAIN, air_jumps: HYPE_AIR_JUMPS, ..base(MeterKind::Hype, "HYPE") });
@@ -132,6 +184,11 @@ impl MeterParams {
                 ..base(MeterKind::Crikey, "CRIKEY")
             });
         }
+        if r.class == "tf_weapon_buff_item" {
+            let banner = add("set_buff_type") as u8;
+            let per = if banner == 3 { RAGE_PER_DAMAGE_CONCH } else { RAGE_PER_DAMAGE };
+            return Some(MeterParams { per_damage: per, drain: RAGE_DRAIN, banner, delay: BANNER_DELAY, ..base(MeterKind::Rage, "RAGE") });
+        }
         if r.class == "tf_weapon_sniperrifle_decap" {
             return Some(MeterParams { max: HEADS_CAP as f32, ..base(MeterKind::Heads, "HEADS") });
         }
@@ -148,6 +205,11 @@ pub struct MeterState {
     pub until: f64,
     pub prev_alt: bool,
     pub prev_jump: bool,
+    /// The banner's buff's start (sim time; the horn before it).
+    #[serde(default)]
+    pub from: f64,
+    #[serde(default)]
+    pub prev_fire: bool,
 }
 
 /// The weapon part.
@@ -176,6 +238,11 @@ impl Tf2Meter {
     /// The HUD meter: its label and fill.
     pub fn meter(&self) -> (&str, f32) {
         (&self.params.label, (self.state.value / self.params.max.max(1e-6)).clamp(0.0, 1.0))
+    }
+
+    /// A banner's buff in force at `now` (after the horn).
+    pub fn buffing(&self, now: f64) -> bool {
+        self.params.kind == MeterKind::Rage && now + 1e-6 >= self.state.from && now <= self.state.until + 1e-6 && self.state.until > 0.0
     }
 
     /// The heads counted.
@@ -223,6 +290,7 @@ pub fn think(
             let p = m.params.clone();
             let mut s = m.state;
             let press = intent.secondary && !s.prev_alt && inv.active == Some(w) && inv.ready(now);
+            let fire = intent.fire && !s.prev_fire && inv.active == Some(w) && inv.ready(now);
             match p.kind {
                 MeterKind::Hype => {
                     if s.until > now {
@@ -247,7 +315,22 @@ pub fn think(
                     }
                 }
                 MeterKind::Heads => {}
+                MeterKind::Rage => {
+                    if s.until > now {
+                        if now >= s.from {
+                            s.value = ((s.until - now) as f32 * p.drain).max(0.0);
+                        }
+                    } else if s.until > 0.0 {
+                        s.until = 0.0;
+                        s.from = 0.0;
+                        s.value = 0.0;
+                    } else if fire && s.value >= p.max - 1e-4 && p.drain > 0.0 {
+                        s.from = now + p.delay as f64;
+                        s.until = s.from + (s.value / p.drain) as f64;
+                    }
+                }
             }
+            s.prev_fire = intent.fire;
             s.prev_alt = intent.secondary;
             s.prev_jump = intent.jump;
             if m.state != s {
@@ -304,10 +387,21 @@ pub fn fill(
         let Some(a) = d.attacker.filter(|a| *a != d.target && !mates(*a, d.target)) else { continue };
         for w in own(a, d.weapon) {
             let Ok(mut m) = meters.get_mut(w) else { continue };
-            if m.params.per_damage <= 0.0 || m.active(now) {
+            if m.params.per_damage <= 0.0 || m.active(now) || m.params.kind == MeterKind::Rage {
                 continue;
             }
             m.state.value = (m.state.value + m.params.per_damage * points).min(m.params.max);
+        }
+        // Rage: from any of his weapons' damage.
+        if let Ok((inv, ..)) = holders.get(a) {
+            for &w in &inv.weapons {
+                if let Ok(mut m) = meters.get_mut(w)
+                    && m.params.kind == MeterKind::Rage
+                    && !m.active(now)
+                {
+                    m.state.value = (m.state.value + m.params.per_damage * points).min(m.params.max);
+                }
+            }
         }
     }
     for k in died.read() {
@@ -349,15 +443,127 @@ pub fn buffs(holders: Query<(Entity, &Inventory, &Health)>, meters: Query<&Tf2Me
     }
 }
 
+/// Each banner's pulses (its holder's entity → the next pulse and the
+/// buff's end), the server's.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct Pulses(pub bevy::platform::collections::HashMap<Entity, (f64, f64)>);
+
+/// The banners' pulses (module doc, "Rage"; the server's).
+#[allow(clippy::type_complexity)]
+pub fn banner_pulses(
+    holders: Query<(Entity, &Inventory, &Health, &Transform, Option<&Team>)>,
+    meters: Query<&Tf2Meter>,
+    mut pulses: ResMut<Pulses>,
+    mut conditions: ResMut<Conditions>,
+    boosts: Query<&chimera_sim::status::SpeedBoost>,
+    clock: Res<SimClock>,
+    mut commands: Commands,
+) {
+    let now = clock.now;
+    pulses.0.retain(|e, (_, until)| holders.contains(*e) && now <= *until + 1e-6);
+    for (e, inv, h, ..) in &holders {
+        if h.current <= 0.0 {
+            pulses.0.remove(&e);
+            continue;
+        }
+        for m in inv.weapons.iter().filter_map(|w| meters.get(*w).ok()) {
+            if m.buffing(now) {
+                let p = pulses.0.entry(e).or_insert((m.state.from, m.state.until));
+                p.1 = m.state.until;
+            }
+        }
+    }
+    let due: Vec<(Entity, u8)> = pulses
+        .0
+        .iter()
+        .filter(|(_, (next, until))| now + 1e-6 >= *next && now <= *until + 1e-6)
+        .filter_map(|(e, _)| {
+            let (_, inv, ..) = holders.get(*e).ok()?;
+            let b = inv.weapons.iter().filter_map(|w| meters.get(*w).ok()).find(|m| m.params.kind == MeterKind::Rage)?.params.banner;
+            Some((*e, b))
+        })
+        .collect();
+    for (soldier, banner) in due {
+        if let Some(p) = pulses.0.get_mut(&soldier) {
+            p.0 += PULSE;
+        }
+        let Ok((_, _, _, at, team)) = holders.get(soldier) else { continue };
+        let team = team.copied().filter(|t| t.0 != 0);
+        let reach = BANNER_RADIUS * crate::game::weapons::damage::U;
+        let until = now + PULSE_LIFE;
+        for (e, _, h, t, their) in &holders {
+            let mate = e == soldier || (team.is_some() && their.copied() == team);
+            if !mate || h.current <= 0.0 || t.translation.distance(at.translation) > reach + 1e-4 {
+                continue;
+            }
+            match banner {
+                1 => conditions.give(e, Condition::MiniCritBuff, until, Some(soldier)),
+                2 => conditions.give(e, Condition::DefenseBuff, until, Some(soldier)),
+                3 => {
+                    conditions.give(e, Condition::Game(CONCH), until, Some(soldier));
+                    let b = chimera_sim::status::SpeedBoost { until, mult: CONCH_SPEED, cap: 1.0e4 };
+                    let b = chimera_sim::status::SpeedBoost::longer(boosts.get(e).ok(), b);
+                    if boosts.get(e).ok() != Some(&b) {
+                        commands.entity(e).insert(b);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Damage on a player with the defense buff × `BACKUP_CUT` (the Battalion's
+/// Backup's; his own too), before it lands.
+pub fn banner_taken(mut damage: MessageMutator<Damage>, conditions: Res<Conditions>, clock: Res<SimClock>) {
+    if conditions.0.is_empty() {
+        return;
+    }
+    for d in damage.read() {
+        if conditions.has(d.target, Condition::DefenseBuff, clock.now) {
+            d.amount = crate::game::weapons::damage::round_points(d.amount * BACKUP_CUT);
+        }
+    }
+}
+
+/// The Concheror's heal on hit (`CONCH_HEAL` of an enemy hit's damage,
+/// rounded down, up to max), after the damage.
+pub fn conch_heals(mut taken: MessageReader<DamageTaken>, conditions: Res<Conditions>, mut health: Query<(&mut Health, Option<&Team>)>, clock: Res<SimClock>) {
+    for t in taken.read() {
+        let d = &t.damage;
+        let Some(a) = d.attacker.filter(|a| *a != d.target) else { continue };
+        if d.amount <= 0.0 || !conditions.has(a, Condition::Game(CONCH), clock.now) {
+            continue;
+        }
+        let team = |e: Entity| health.get(e).ok().and_then(|h| h.1.copied()).filter(|t| t.0 != 0);
+        if team(a).is_some() && team(a) == team(d.target) {
+            continue;
+        }
+        if let Ok((mut h, _)) = health.get_mut(a)
+            && h.current > 0.0
+            && h.current < h.max
+        {
+            let gain = (d.amount * 100.0 * CONCH_HEAL + 1e-4).floor();
+            h.current = (h.current + gain / 100.0).min(h.max);
+        }
+    }
+}
+
 /// The hook, the part and the systems (`mods::add` calls it).
 pub fn add(app: &mut App) {
     use chimera_sim::weapon::{CarriedAppExt, SelectWeapons, data::WeaponDataAppExt};
-    app.register_weapon_hook::<MeterParams>(HOOK, |e, _, p| attach(e, p))
+    app.init_resource::<Pulses>()
+        .register_weapon_hook::<MeterParams>(HOOK, |e, _, p| attach(e, p))
         .predicted_part::<Tf2Meter>()
         .add_systems(crate::core::Predict::Select, think.before(SelectWeapons))
         .add_systems(
             FixedUpdate,
-            (fill.after(crate::core::apply_damage), buffs.after(crate::core::SimSet::Weapons).before(crate::core::apply_damage))
+            (
+                fill.after(crate::core::apply_damage),
+                conch_heals.after(crate::core::apply_damage),
+                (buffs, banner_pulses).after(crate::core::SimSet::Weapons).before(crate::core::apply_damage),
+                banner_taken.after(super::mods::taken).before(crate::core::apply_damage),
+            )
                 .run_if(crate::core::authoritative),
         );
 }

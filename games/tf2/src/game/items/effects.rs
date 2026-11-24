@@ -29,6 +29,10 @@
 //!   shot was over `AMBASSADOR_RECOVER` s before (`Revolvers`,
 //!   `note_shots`), its damage the far half of the distance modifier;
 //!   the Diamondback's backstab kill stores a crit its next shot spends.
+//!   Batch 3 (specs/tf2/batch3_mechanics.md): a shield charge's
+//!   mini-crit swing (`super::shields`, `Tf2Melee::mini`) mini-crits; on
+//!   a victim with the defense buff (the Battalion's Backup) a crit is a
+//!   normal hit (a melee crit swing's × 3 taken back).
 //!   Each crit or mini-crit is a `weapons::crit_hits::CritHit`: its sound
 //!   (`TFPlayer.CritHit`, `TFPlayer.CritHitMini`; a melee weapon's own crit
 //!   swing plays its sound itself) and its attacker's floating text.
@@ -73,8 +77,9 @@
 //! - a mini-crit scales the hit as dealt, after the distance modifier (a
 //!   bullet's past 512 units keeps its fall-off; the Back Scatter's reach
 //!   ends at 512, where the modifier is 1); the Escape Plan's mark has no
-//!   icon; the Diamondback's stored crits have no cap and come only from
-//!   backstab kills (no sappers yet); the Ambassador's range is from
+//!   icon; the Diamondback's stored crits (at most `DIAMONDBACK_CAP`,
+//!   measured) come only from backstab kills (no sappers yet); the
+//!   Ambassador's range is from
 //!   centre to centre;
 //!   healing from Medics (×0.1) waits on a Medi Gun;
 //! - an enemy Pyro hit by a flare burns `pyro_burn` (0.25 s) in look
@@ -328,6 +333,9 @@ pub const AMBASSADOR_RANGE: f32 = 1200.0;
 pub const AMBASSADOR_RECOVER: f64 = 1.0;
 /// The Sydney Sleeper's least jarate (s; batch2b 15).
 pub const SYDNEY_MIN: f32 = 2.0;
+/// The Diamondback's stored crits at most (batch3_mechanics.md 6,
+/// measured).
+pub const DIAMONDBACK_CAP: u32 = 35;
 
 /// The revolvers' shots (batch2b 16): each weapon's last two shot times
 /// (the Ambassador's recovery), the Diamondback's stored crits, and the
@@ -469,6 +477,18 @@ pub fn crits(
             if p.minicrits_crit && mini {
                 crit = true;
             }
+        }
+        // A shield charge's mini-crit swing (batch3_mechanics.md 1,
+        // `shields`).
+        let swing = active.and_then(|w| melees.get(w).ok()).filter(|_| d.kind == DamageKind::Melee);
+        mini |= swing.is_some_and(|m| m.mini);
+        // The defense buff (batch3_mechanics.md 2.3): a crit on him is a
+        // normal hit (a melee crit swing's × 3 taken back).
+        if cond.has(v, Condition::DefenseBuff) {
+            if swing.is_some_and(|m| m.crit) {
+                d.amount /= CRIT_MULT;
+            }
+            crit = false;
         }
         // A crit's or mini-crit's hit sound at the victim (weapons_stock.md
         // 8.3, batch2b 18) and its text, unless a melee weapon's own crit
@@ -676,7 +696,8 @@ pub fn after(
         {
             for &w in &inv.weapons {
                 if weapons.get(w).is_ok_and(|(_, i)| i.0.collect_crits) {
-                    *revolvers.stored.entry(w).or_default() += 1;
+                    let n = revolvers.stored.entry(w).or_default();
+                    *n = (*n + 1).min(DIAMONDBACK_CAP);
                 }
             }
         }

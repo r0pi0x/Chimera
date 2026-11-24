@@ -1,0 +1,27 @@
+# The Demoman's shield class (`tf_wearable_demoshield`,
+# specs/tf2/batch3_mechanics.md 1): no stock weapon of its own, the base of
+# the Chargin' Targe, the Splendid Screen and the Tide Turner
+# (data/items.toml `[bases]`). Worn (`tf2:worn`: carried, never drawn);
+# attack2 with a full meter charges (`tf2:shield`, `items::shields`): 750
+# units/s for 1.5 s, the turn capped at 48 degrees/s, 12 s to refill, its
+# holder's melee swing crit-boosted once the meter is under 75. Its
+# resistances are the item's attributes.
+id = "tf2:tf_wearable_demoshield"
+base = "tf2:base"
+abstract = true
+slot = 1
+draw = 0.5
+
+[hud]
+name = "Shield"
+
+[hooks."tf2:worn"]
+
+[hooks."tf2:shield"]
+speed = 750.0
+time = 1.5
+recharge = 12.0
+crit_below = 75.0
+linger = 0.3
+turn_cap = 48.0
+charge_crit = "crit"

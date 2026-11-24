@@ -20,7 +20,9 @@
 //!   20 s); random crits stay off (`MeleeCrits`, the party's choice, as
 //!   for the guns: weapons.md 2.6), so a melee swing crits only when a
 //!   test forces it (`Tf2Melee::force_crit`). The Knife never rolls
-//!   (`crits = false`); its backstab is always a crit (its sound).
+//!   (`crits = false`); its backstab is always a crit (its sound). A
+//!   shield charge's boost (`items::shields`, `Tf2Melee::boost`) makes
+//!   the next swing a crit or a mini-crit (`Tf2Melee::mini`).
 //! - **The view-model actions** (`after`, after the frame): each swing's
 //!   start as `SWING` (attack), `SWING_ALT` (attack2: the Fists' right
 //!   fist) or `SWING_CRIT`, for `game::view` to play the class's sequence.
@@ -118,16 +120,24 @@ pub struct Tf2Melee {
     pub force_crit: Option<bool>,
     /// The raised knife (4.4).
     pub ready: bool,
+    /// A boost on its holder's next swing (set each tick by
+    /// `items::shields`: the charge's crit or mini-crit; 0 none, 1 a
+    /// mini-crit, 2 a crit), taken when a swing starts.
+    pub boost: u8,
+    /// The swing under way mini-crits (its `boost` when it started;
+    /// `items::effects::crits` asks).
+    pub mini: bool,
 }
 
 impl NetPart for Tf2Melee {
-    type Net = (bool, bool);
+    type Net = (bool, bool, bool);
     fn net(&self) -> Self::Net {
-        (self.crit, self.ready)
+        (self.crit, self.ready, self.mini)
     }
-    fn set_net(&mut self, (crit, ready): Self::Net) {
+    fn set_net(&mut self, (crit, ready, mini): Self::Net) {
         self.crit = crit;
         self.ready = ready;
+        self.mini = mini;
     }
 }
 
@@ -140,6 +150,8 @@ pub fn attach(e: &mut EntityWorldMut, p: &MeleeParams) {
             crit: false,
             force_crit: None,
             ready: false,
+            boost: 0,
+            mini: false,
         },
         ViewPose(0),
     ));
@@ -170,9 +182,15 @@ pub fn prepare(
             let mut rng = random::Rng::new(random::shot_seed(intent.command) ^ 0x6d65_6c65);
             rng.next() < crit_chance(0.0)
         };
-        let crit = m.force_crit.unwrap_or_else(|| random_on && m.params.crits && roll());
+        // A shield charge's boost (`items::shields`): a crit, or a
+        // mini-crit the hit asks for (`items::effects::crits`).
+        let crit = m.force_crit.unwrap_or_else(|| m.boost == 2 || (random_on && m.params.crits && roll()));
         if m.crit != crit {
             m.crit = crit;
+        }
+        let mini = !crit && m.boost == 1;
+        if m.mini != mini {
+            m.mini = mini;
         }
         let mult = if crit { CRIT_MULT } else { 1.0 };
         let sound = |normal: &Option<String>| if crit { m.params.crit_swing.clone().or(normal.clone()) } else { normal.clone() };

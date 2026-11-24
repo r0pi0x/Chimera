@@ -36,8 +36,10 @@
 //!   on the character, so no archetype for each combination): marked for
 //!   death (every hit on him counts as a game's lesser critical: TF2's
 //!   mini-crit), a mini-crit buff (every hit he deals does), phased (no
-//!   damage reaches him) and a game's own by name (TF2's Jarate and Mad
-//!   Milk). A later grant keeps the later end; each remembers who gave
+//!   damage reaches him), a defense buff (the damage he takes cut by the
+//!   game's factor and its criticals taken as normal hits: TF2's
+//!   Battalion's Backup) and a game's own by name (TF2's Jarate and Mad
+//!   Milk, the Concheror's heal on hit). A later grant keeps the later end; each remembers who gave
 //!   it. They end at their time or when the character dies or is gone
 //!   (`conditions_end`, the server's). The game asks (`Conditions::has`)
 //!   in its damage rules.
@@ -144,6 +146,9 @@ pub enum Condition {
     MiniCritBuff,
     /// No damage reaches him.
     Phased,
+    /// The damage he takes is cut (by the game's factor) and a critical
+    /// hit on him is a normal one.
+    DefenseBuff,
     /// A game's own, by name (`tf2:jarate`).
     Game(&'static str),
 }

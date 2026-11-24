@@ -18,7 +18,8 @@
 //!   a spun-up Heavy's hit that leaves him at half health or less ×
 //!   `spun_resist`; then everything × `taken`; then the active weapon's
 //!   `taken_melee` (melee) or `taken_ranged` (blast, bullet, fire);
-//!   rounded to whole points, halves up.
+//!   rounded to whole points, halves up. The fire and blast factors
+//!   act on others' damage only (batch3_mechanics.md 1.3, measured).
 //! - **Health** (4.8, `heals`, after the damage): a damaging hit (not a
 //!   burn tick) with the item heals its holder max(3, `heal_on_hit`), a
 //!   kill `heal_on_kill`, both up to his max health; `ignite` sets the
@@ -40,8 +41,10 @@
 //!   from is a sword and the new one isn't (a sword's own `draw` has it).
 //!
 //! Known shortcuts:
-//! - Wearables (Darwin's Danger Shield, the Cozy Camper) convert and map,
-//!   but nothing puts one on a player yet (no loadouts), and regen, the
+//! - The Sniper's wearables (Darwin's Danger Shield, the Cozy Camper)
+//!   convert and map, but stay `wearable` in data/items.toml (the
+//!   Demoman's shields and boots are worn items: `super::shields`), and
+//!   nothing puts one on a player in a party match (no loadouts); regen, the
 //!   scoped knockback and flinch rules and afterburn immunity aren't
 //!   applied; the draw animation keeps its rate on a longer deploy.
 //! - Crits are off (the party's choice), so a damage-taken factor acts on
@@ -150,6 +153,23 @@ pub struct ItemParams {
     /// A backstab kill stores a crit for its next shot
     /// (`sapper_kills_collect_crits`: the Diamondback).
     pub collect_crits: bool,
+    /// Batch 3 (specs/tf2/batch3_mechanics.md 1; `super::shields`): a
+    /// Demoman's shield (its class, `tf_wearable_demoshield`); seconds
+    /// added to the charge (`mod_charge_time`), its recharge's rate
+    /// (`charge_recharge_rate`), its impact's damage
+    /// (`charge_impact_damage`), its turn control (`charge_turn_control`),
+    /// the meter a melee kill refills (`kill_refills_meter`, a share of
+    /// it), damage taken while charging taken off the meter
+    /// (`lose_demo_charge_on_damage_when_charging`), and walking speed
+    /// with a shield carried (`mult_player_movespeed_shieldrequired`).
+    pub shield: bool,
+    pub charge_time: f32,
+    pub charge_recharge: f32,
+    pub charge_impact: f32,
+    pub charge_turn: f32,
+    pub kill_refill: f32,
+    pub lose_charge_on_hurt: bool,
+    pub speed_shield: f32,
 }
 
 impl Default for ItemParams {
@@ -201,6 +221,14 @@ impl Default for ItemParams {
             knockback: false,
             head_crit_range: 0.0,
             collect_crits: false,
+            shield: false,
+            charge_time: 0.0,
+            charge_recharge: 1.0,
+            charge_impact: 1.0,
+            charge_turn: 1.0,
+            kill_refill: 0.0,
+            lose_charge_on_hurt: false,
+            speed_shield: 1.0,
         }
     }
 }
@@ -261,6 +289,14 @@ impl ItemParams {
                 0.0
             },
             collect_crits: r.flag("sapper_kills_collect_crits"),
+            shield: r.class == "tf_wearable_demoshield",
+            charge_time: add("mod_charge_time"),
+            charge_recharge: a("charge_recharge_rate"),
+            charge_impact: a("charge_impact_damage"),
+            charge_turn: a("charge_turn_control"),
+            kill_refill: add("kill_refills_meter"),
+            lose_charge_on_hurt: r.flag("lose_demo_charge_on_damage_when_charging"),
+            speed_shield: a("mult_player_movespeed_shieldrequired"),
         }
     }
 }
@@ -315,11 +351,15 @@ impl Factors {
     /// The numbers of `inv`'s items (`items` reads a weapon's).
     pub fn of(inv: &Inventory, items: &impl Fn(Entity) -> Option<ItemParams>) -> Factors {
         let mut f = Factors::default();
+        let shield = inv.weapons.iter().any(|w| items(*w).is_some_and(|p| p.shield));
         for &w in &inv.weapons {
             let Some(p) = items(w) else { continue };
             let active = inv.active == Some(w);
             if active || !p.provide_on_active {
                 f.speed *= p.move_speed;
+                if shield {
+                    f.speed *= p.speed_shield;
+                }
                 f.taken *= p.taken;
                 f.taken_bullets *= p.taken_bullets;
                 f.taken_fire *= p.taken_fire;
@@ -373,7 +413,13 @@ pub fn taken(
 ) {
     for d in damage.read() {
         let Ok((inv, h)) = holders.get(d.target) else { continue };
-        let f = Factors::of(inv, &|w| items.get(w).ok().map(|i| i.0.clone()));
+        let mut f = Factors::of(inv, &|w| items.get(w).ok().map(|i| i.0.clone()));
+        // Fire and blast resistances act on others' damage only
+        // (batch3_mechanics.md 1.3: the Targe's on his own blast, none).
+        if d.attacker == Some(d.target) {
+            f.taken_fire = 1.0;
+            f.taken_blast = 1.0;
+        }
         if f == Factors::default() {
             continue;
         }
@@ -565,6 +611,7 @@ pub fn add(app: &mut App) {
     super::effects::add(app);
     super::consumables::add(app);
     super::meters::add(app);
+    super::shields::add(app);
     app.register_weapon_hook::<ItemParams>(super::ITEM_HOOK, |e, _, p| {
         e.insert(Tf2Item(p.clone()));
     })

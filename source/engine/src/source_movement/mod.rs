@@ -393,6 +393,9 @@ pub struct SourceTraits {
     /// The jump's and the air jump's speed × this (TF2's items: the
     /// Winger's 1.25 while out).
     pub jump_scale: Option<f32>,
+    /// A speed ceiling above the config's (`maxspeed`), the keys' wish
+    /// raised to it as well (TF2's shield charge: 750 past its 520).
+    pub ceiling: Option<f32>,
 }
 
 impl SourceTraits {
@@ -411,6 +414,10 @@ impl SourceTraits {
         if let Some(s) = self.jump_scale {
             c.jump_impulse *= s;
             c.air_jump_speed *= s;
+        }
+        if let Some(m) = self.ceiling {
+            c.maxspeed = c.maxspeed.max(m);
+            c.key_speed = c.key_speed.max(m);
         }
         c
     }

@@ -1,0 +1,14 @@
+# A worn item that modifies its wearer (`tf_wearable` in a weapon slot:
+# the Demoman's boots, specs/tf2/batch3_mechanics.md 1.3): no weapon of its
+# own, carried and never drawn (`tf2:worn`); what it does is its item's
+# attributes (`items::mods`, `items::shields`).
+id = "tf2:tf_wearable"
+base = "tf2:base"
+abstract = true
+slot = 0
+draw = 0.5
+
+[hud]
+name = "Worn"
+
+[hooks."tf2:worn"]

@@ -58,6 +58,11 @@ tf_weapon_charged_smg = "tf2:tf_weapon_smg"
 tf_weapon_sniperrifle_decap = "tf2:tf_weapon_sniperrifle"
 tf_weapon_sniperrifle_classic = "tf2:tf_weapon_sniperrifle"
 tf_weapon_revolver = "tf2:tf_weapon_revolver"
+# Batch 3's (specs/tf2/batch3_mechanics.md 1, 2): banners, shields, worn
+# items (abstract bases, data/weapons/).
+tf_weapon_buff_item = "tf2:tf_weapon_buff_item"
+tf_wearable_demoshield = "tf2:tf_wearable_demoshield"
+tf_wearable = "tf2:tf_wearable"
 
 # Batch 1 (33 items, 31 entries).
 [items.winger]
@@ -153,7 +158,7 @@ note = "decapitation death look"
 [items.claidheamohmor]
 index = 327
 batch = 1
-note = "shield charge and its refill on kill (batch 3); decapitation look"
+note = "decapitation look"
 
 [items.brass_beast]
 index = 312
@@ -237,7 +242,7 @@ note = "healing from Medics x0.1 (no Medi Gun yet)"
 [items.eyelander]
 index = 132
 batch = 2
-note = "the shield charge (batch 3); decapitation look"
+note = "decapitation look; heads' effect on a charge's impact (open)"
 
 [items.southern_hospitality]
 index = 155
@@ -263,7 +268,7 @@ batch = 2
 [items.horseless_headless_horsemanns_headtaker]
 index = 266
 batch = 2
-note = "the shield charge (batch 3); decapitation look"
+note = "decapitation look"
 
 [items.candy_cane]
 index = 317
@@ -312,7 +317,7 @@ batch = 2
 [items.nessies_nine_iron]
 index = 482
 batch = 2
-note = "the shield charge (batch 3); decapitation look"
+note = "decapitation look"
 
 [items.scorch_shot]
 index = 740
@@ -403,7 +408,7 @@ gun_game = false
 index = 46
 batch = 2
 gun_game = false
-note = "Bonk's after-effect (none measured)"
+note = "a slow after the phase (not measured)"
 
 [items.crit_a_cola]
 index = 163
@@ -425,7 +430,6 @@ note = "a teammate put out cutting the recharge (extinguish reduces cooldown)"
 [items.soda_popper]
 index = 448
 batch = 2
-note = "the hype's air jumps are unmeasured (the description's 5)"
 
 [items.baby_faces_blaster]
 index = 772
@@ -438,7 +442,6 @@ batch = 2
 [items.bazaar_bargain]
 index = 402
 batch = 2
-note = "heads lost on a body-shot kill (not specified)"
 
 [items.machina]
 index = 526
@@ -466,3 +469,56 @@ note = "crits from sapper kills (no buildings yet)"
 index = 460
 batch = 2
 note = "x1.2 while disguised (no disguise yet); piercing resists"
+
+# Batch 3 (specs/tf2/batch3_mechanics.md 1, 2; `items::shields`,
+# `items::meters`' rage). Utility items: no ladder draws them. The
+# shields' crits after an impact are their texts' (`hooks`: unmeasured).
+[items.chargin_targe]
+index = 131
+batch = 3
+gun_game = false
+note = "drawn on the arm; the charge's look and sound"
+
+[items.splendid_screen]
+index = 406
+batch = 3
+gun_game = false
+hooks."tf2:shield" = { impact_crit = "crit" }
+note = "drawn on the arm; the charge's look and sound"
+
+[items.tide_turner]
+index = 1099
+batch = 3
+gun_game = false
+hooks."tf2:shield" = { charge_crit = "mini", impact_crit = "mini" }
+note = "drawn on the arm; the charge's look and sound"
+
+[items.ali_babas_wee_booties]
+index = 405
+batch = 3
+gun_game = false
+note = "drawn on the legs"
+
+[items.bootlegger]
+index = 608
+batch = 3
+gun_game = false
+note = "drawn on the leg"
+
+[items.buff_banner]
+index = 129
+batch = 3
+gun_game = false
+note = "the horn's sequence, sound and banner"
+
+[items.battalions_backup]
+index = 226
+batch = 3
+gun_game = false
+note = "the horn's sequence, sound and banner; sentry damage x0.5 (no buildings)"
+
+[items.concheror]
+index = 354
+batch = 3
+gun_game = false
+note = "the horn's sequence, sound and banner"

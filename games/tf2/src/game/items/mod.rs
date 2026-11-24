@@ -65,6 +65,14 @@
 //! A jar's thrown projectile shows the item's own model
 //! (`ItemLooks::thrown`, `docs::thrown_key`).
 //!
+//! **Batch 3** (specs/tf2/batch3_mechanics.md 1, 2): the Demoman's shields
+//! and their charge (`shields`, on the abstract base data/weapons/
+//! demoshield.toml; the boots on data/weapons/wearable.toml: worn items,
+//! carried, never drawn) and the Soldier's banners (`meters`' rage, on
+//! data/weapons/buff_item.toml). An item's data may set hook values its
+//! attributes don't give (`ItemDef::hooks`: the shields' crits after an
+//! impact, from their texts).
+//!
 //! Known shortcuts:
 //! - An item's `anim_slot` and `animation_replacement` (none in batch 1
 //!   change a sequence on its own class's arms) are recorded, not
@@ -80,6 +88,7 @@ pub mod docs;
 pub mod effects;
 pub mod meters;
 pub mod mods;
+pub mod shields;
 
 use std::collections::BTreeMap;
 
@@ -125,6 +134,10 @@ pub struct ItemDef {
     pub wearable: bool,
     #[serde(default)]
     pub note: Option<String>,
+    /// Hook values no attribute of the item gives (an item text's stand-in:
+    /// the Tide Turner's mini-crits), merged over its document's `hooks`.
+    #[serde(default)]
+    pub hooks: Option<toml::Table>,
 }
 
 /// data/items.toml.
@@ -289,7 +302,19 @@ pub fn weapons(pack: &ItemPack, data: &ItemsData, docs: &[(String, String)]) -> 
         };
         let id = format!("tf2:{name}");
         let shown = display_name(r);
-        let doc = docs::item_doc(text, &id, &shown, base, r, def.gun_game);
+        let mut doc = docs::item_doc(text, &id, &shown, base, r, def.gun_game);
+        if let Some(extra) = &def.hooks
+            && let Some(toml::Value::Table(hooks)) = doc.get_mut("hooks")
+        {
+            for (name, v) in extra {
+                match (hooks.get_mut(name), v) {
+                    (Some(toml::Value::Table(t)), toml::Value::Table(x)) => t.extend(x.clone()),
+                    _ => {
+                        hooks.insert(name.clone(), v.clone());
+                    }
+                }
+            }
+        }
         out.push(ItemWeapon {
             looks: ItemLooks::of(&doc, r),
             id,

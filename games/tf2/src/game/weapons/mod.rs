@@ -152,6 +152,9 @@ pub const DATA: &[(&str, GameData)] = &[
     data_file!("bat_wood.toml"),
     data_file!("bat_giftwrap.toml"),
     data_file!("stickbomb.toml"),
+    data_file!("buff_item.toml"),
+    data_file!("demoshield.toml"),
+    data_file!("wearable.toml"),
 ];
 
 pub const SCATTERGUN: &str = "tf2:tf_weapon_scattergun";
@@ -182,7 +185,7 @@ pub const BAT_GIFTWRAP: &str = "tf2:tf_weapon_bat_giftwrap";
 pub const STICKBOMB: &str = "tf2:tf_weapon_stickbomb";
 /// The abstract bases (no weapon of their own; data/items.toml's
 /// `[bases]` name them).
-pub const ABSTRACT_BASES: [&str; 13] = [
+pub const ABSTRACT_BASES: [&str; 16] = [
     FLAREGUN,
     COMPOUND_BOW,
     CROSSBOW,
@@ -196,6 +199,9 @@ pub const ABSTRACT_BASES: [&str; 13] = [
     LUNCHBOX,
     DRINK,
     JAR,
+    BUFF_ITEM,
+    DEMOSHIELD,
+    WEARABLE,
 ];
 
 /// The consumables' classes (specs/tf2/batch2b_mechanics.md 11-13; no
@@ -203,6 +209,12 @@ pub const ABSTRACT_BASES: [&str; 13] = [
 pub const LUNCHBOX: &str = "tf2:tf_weapon_lunchbox";
 pub const DRINK: &str = "tf2:tf_weapon_lunchbox_drink";
 pub const JAR: &str = "tf2:tf_weapon_jar";
+/// Batch 3's classes (specs/tf2/batch3_mechanics.md 1, 2; abstract bases):
+/// the banners (`items::meters`' rage), the shields (`items::shields`)
+/// and a worn item (the boots).
+pub const BUFF_ITEM: &str = "tf2:tf_weapon_buff_item";
+pub const DEMOSHIELD: &str = "tf2:tf_wearable_demoshield";
+pub const WEARABLE: &str = "tf2:tf_wearable";
 
 /// The guns, in the ladder's order (M2b's four, then weapons_more.md's
 /// eight).

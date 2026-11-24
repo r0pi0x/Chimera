@@ -42,8 +42,11 @@
 //! The utility items' gun-game flag is off (data/items.toml): they play
 //! in TF2's own modes, never on a ladder.
 //!
-//! Known shortcuts (the spec's open questions, provisional): the
-//! Dalokohs Bar's max-health bonus lasts until death; eating at full
+//! The Dalokohs Bar's bonus ends `BONUS_LIFE` (34.1 s) after the eat, or
+//! at death; Bonk's phase is total immunity, his own blast too (both
+//! measured, batch3_mechanics.md 6).
+//!
+//! Known shortcuts (the spec's open questions, provisional): eating at full
 //! health eats; after a drink the primary is drawn as after a lunch;
 //! the thrown kit is taken by its thrower only `KIT_OWNER_WAIT` after the
 //! throw and by no enemy, lasts `effects::KIT_LIFE`, stops where it
@@ -73,6 +76,9 @@ use crate::game::weapons::{damage::{Tf2Gun, U, round_points}, flame::Burning};
 
 /// The hook.
 pub const HOOK: &str = "tf2:consumable";
+/// The Dalokohs Bar's + 50 max health lasts this long from the eat (s;
+/// batch3_mechanics.md 6, measured).
+pub const BONUS_LIFE: f64 = 34.1;
 /// Jarate's and Mad Milk's conditions (`status::Condition::Game`).
 pub const JARATE: &str = "tf2:jarate";
 pub const MILK: &str = "tf2:milk";
@@ -264,6 +270,8 @@ pub struct Eating {
     pub started: f64,
     pub steps: u8,
     pub bonus: f32,
+    /// The bonus's end (sim time).
+    pub bonus_until: f64,
     pub thrown: f64,
 }
 
@@ -470,10 +478,18 @@ pub fn effects(
                         e.bonus = p.max_health;
                         h.max += p.max_health / 100.0;
                     }
+                    if p.max_health > 0.0 {
+                        e.bonus_until = t + BONUS_LIFE;
+                    }
                     if p.heal > 0.0 && h.current < h.max {
                         h.current = (h.current + p.heal / 100.0).min(h.max);
                     }
                 }
+            }
+            // The bonus ends `BONUS_LIFE` after the eat (the class layer
+            // then lowers the max: `max_health_of`).
+            if e.bonus > 0.0 && now + 1e-6 >= e.bonus_until {
+                e.bonus = 0.0;
             }
             // The effect's conditions.
             if let Some((from, until)) = s.effect

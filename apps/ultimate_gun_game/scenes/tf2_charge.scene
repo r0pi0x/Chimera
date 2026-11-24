@@ -1,0 +1,29 @@
+# TF2's shield charge (specs/tf2/batch3_mechanics.md 1): a Demoman with the
+# Eyelander and the Chargin' Targe; attack2 with forward held charges at
+# 750 units/s for 1.5 s, the HUD's item meter (CHARGE) draining, then
+# refilling over 12 s. Needs the item pack (an asset store with `items`).
+#   CHIMERA_ASSET_STORE=<store> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/tf2_charge.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+rung tf2:eyelander
+wait 2
+give tf2:chargin_targe
+wait 2
+wait_for idle 3000
+wait 120
+shot charge_full
++forward
+wait 10
++attack2
+wait 5
+-attack2
+wait 25
+shot charging
+wait 90
+-forward
+wait 30
+shot charge_refilling

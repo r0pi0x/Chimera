@@ -1,0 +1,21 @@
+# The Soldier's banner class (`tf_weapon_buff_item`,
+# specs/tf2/batch3_mechanics.md 2): no stock weapon of its own, the base of
+# the Buff Banner, the Battalion's Backup and the Concheror (data/items.toml
+# `[bases]`). Its rage meter (`tf2:meter`, made from the item's class and
+# `set_buff_type` by `items::meters`) fills from its holder's damage;
+# full, attack blows the horn and 2.7 s later the banner's buff reaches
+# every teammate within 450 units for 10 s.
+id = "tf2:tf_weapon_buff_item"
+base = "tf2:base"
+abstract = true
+slot = 1
+draw = 0.5
+
+[hud]
+name = "Banner"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+flat = true
+arms = "soldier"
+script = "tf_weapon_buff_item"

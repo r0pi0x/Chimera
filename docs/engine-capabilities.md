@@ -42,7 +42,7 @@ look here; if it's missing, see "Generalize on the second user" below.
 | Lag compensation | `chimera_sim::weapon::lagcomp` | a network server traces remote players' shots where they saw them; nothing to add for hitscan |
 | Behaviour hooks | `chimera_sim::weapon::data` (registered hooks by name) | `[hooks."<id>:<hook>"]` in the data, the hook registered in Rust |
 | Bleeding, speed boosts and slows | `chimera_sim::status` (`Bleeding`, `SpeedBoost`, `Slowed`) | `status::add(app)`; insert `Bleeding::start(..)` (refresh with `Bleeding::refresh`) on a hit: ticks of `DamageKind::Bleed`; a `SpeedBoost` your movement multiplies by `factor(base)`, a `Slowed` (merge with `Slowed::with`) by its `factor` (0: a full stop) |
-| Damage conditions (marked for death, a mini-crit buff, phase, a game's own) | `chimera_sim::status::Conditions` (a resource, `Condition`) | `status::add(app)`; `give(e, condition, until, by)`, ask `has(e, condition, now)` in your damage rules; they end at their time or the character's death |
+| Damage conditions (marked for death, a mini-crit buff, phase, a defense buff, a game's own) | `chimera_sim::status::Conditions` (a resource, `Condition`) | `status::add(app)`; `give(e, condition, until, by)`, ask `has(e, condition, now)` in your damage rules; they end at their time or the character's death |
 
 ## Effects, sound, HUD
 
