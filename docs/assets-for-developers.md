@@ -197,8 +197,8 @@ fetches a picked gun into its own store the same way
 ## Converted maps
 
 Beside it, `~/.cache/chimera/maps` (`%LOCALAPPDATA%\chimera\maps`) keeps
-maps as converted (CS:S maps whole; Combat Arms' worlds only with
-`CHIMERA_MAP_CACHE_CA=1`, they convert quickly), one file per
+maps as converted (CS:S maps whole; Combat Arms' worlds, unless
+`CHIMERA_MAP_CACHE_CA=0`), one file per
 map, options and converter version, in our own format
 (chimera_world's `map::cache`): the next load of the same map, by any
 test, tool or app in any checkout, reads it back instead of converting.

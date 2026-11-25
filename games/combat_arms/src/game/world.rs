@@ -543,14 +543,14 @@ pub fn load_world(mount: &Mount, name: &str) -> Result<MapData, String> {
     load_world_with(mount, name, &MapLoadOptions::default())
 }
 
-/// `load_world` with `options`. With `CACHE_ENV`, the world's conversion
-/// (`convert_with` and its surface tags) is read back from the
-/// converted-map cache (`map::cache`; `CONVERTER` is the version) when it
-/// was converted before from the same files; the effect library (per
-/// session, from the install's weapon data: `effects::library::add_looks`)
-/// is added to either.
+/// `load_world` with `options`. The world's conversion (`convert_with`
+/// and its surface tags) is read back from the converted-map cache
+/// (`map::cache`; `CONVERTER` is the version; `CACHE_ENV` set to 0 turns
+/// it off) when it was converted before from the same files; the effect
+/// library (per session, from the install's weapon data:
+/// `effects::library::add_looks`) is added to either.
 pub fn load_world_with(mount: &Mount, name: &str, options: &MapLoadOptions) -> Result<MapData, String> {
-    let wanted = std::env::var(CACHE_ENV).is_ok_and(|v| v.trim() == "1");
+    let wanted = !std::env::var(CACHE_ENV).is_ok_and(|v| v.trim() == "0");
     let cache = wanted.then(crate::map::cache::MapCache::from_env).flatten();
     load_world_in(mount, name, options, cache.as_ref()).map(|(map, _)| map)
 }
@@ -588,6 +588,9 @@ pub fn load_world_in(
         .part("scale", scale.to_le_bytes())
         .part("textures", [options.textures as u8]);
     let (mut map, outcome) = crate::map::cache::cached(cache, mount, key, convert)?;
+    // A world read back keeps its textures as blocks: the few the CPU
+    // reads are decoded here.
+    map.decode_read_textures();
     // Not in the cache: a hit's map has no memos.
     if !options.textures {
         map.memos.insert(SizesOnly);
@@ -599,10 +602,12 @@ pub fn load_world_in(
     Ok((map, outcome))
 }
 
-/// `1`: Combat Arms' worlds go through the converted-map cache too. Off
-/// by default: they convert quickly (WAREHOUSE 0.27 s converted, 0.13 s
-/// read back from its 222 MB entry; docs/performance.md, "The
-/// converted-map cache"), too little gained for the disk.
+/// `0`: Combat Arms' worlds don't go through the converted-map cache. On
+/// by default since 2026-11-25: a world's conversion is most of its load
+/// by instructions (WAREHOUSE: its loader 12.6 G converting, 3.5 G read
+/// back from its 222 MB entry, on every level change to it;
+/// docs/performance.md, "Combat Arms' worlds are cached"). It was off
+/// while the clock was the measure (0.27 s converted, 0.13 s read back).
 pub const CACHE_ENV: &str = "CHIMERA_MAP_CACHE_CA";
 
 /// The converter's version for the converted-map cache, the kept guest

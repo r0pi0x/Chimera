@@ -39,10 +39,19 @@ fn digest(map: &MapData) -> Vec<(&'static str, u64)> {
         ("meshes", h(&map.meshes)),
         ("textures", h(&map.textures)),
         // Serialized, a texture leaves out the texels its blocks decode
-        // to (chimera_world `map::texture_serde`): compared here.
+        // to (chimera_world `map::texture_serde`), and one read back is
+        // its blocks until someone reads it (`MapTexture::decoded`):
+        // compared here, decoded.
         (
             "texels",
-            h(&map.textures.iter().map(|t| (&t.rgba8, &t.mips)).collect::<Vec<_>>()),
+            h(&map
+                .textures
+                .iter()
+                .map(|t| {
+                    let t = t.decoded();
+                    (t.rgba8.clone(), t.mips.clone())
+                })
+                .collect::<Vec<_>>()),
         ),
         ("lightmap", h(&map.lightmap)),
         (
@@ -122,11 +131,15 @@ fn a_cached_warehouse_is_the_converted_one() {
         .map(|e| e.path())
         .find(|p| p.extension().is_some_and(|x| x == "map"))
         .expect("an entry");
-    let mut bytes = std::fs::read(&entry).unwrap();
+    let written = std::fs::read(&entry).unwrap();
+    let mut bytes = written.clone();
     bytes.truncate(bytes.len() - 1);
     std::fs::write(&entry, &bytes).unwrap();
     let (again, o, _) = load(&mount, Some(&cache));
     assert_eq!(o, Outcome::Miss);
     assert_eq!(digest(&again), digest(&cold));
+    // Converted again, the entry is the same bytes: the conversion is
+    // deterministic (the worlds are cached by default).
+    assert!(std::fs::read(&entry).unwrap() == written, "a second conversion writes another entry");
     let _ = std::fs::remove_dir_all(&dir);
 }
