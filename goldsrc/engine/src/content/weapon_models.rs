@@ -128,13 +128,19 @@ pub fn flash_codes(set: &crate::map::anim::AnimSet) -> Vec<String> {
     out
 }
 
+/// The sprite a muzzle flash code draws (`sprites/muzzleflash<units>.spr`).
+pub fn flash_sprite(code: &str) -> Option<String> {
+    let n: u32 = code.trim().parse().ok()?;
+    Some(format!("sprites/muzzleflash{}.spr", (n % 10).max(1)))
+}
+
 /// The muzzle flash of code `code` (module doc), with its texture (the
 /// flash's index 0: the caller moves it); None when the code or its
 /// sprite isn't there.
 pub fn muzzle_flash(mount: &Mount, code: &str, decode: bool) -> Option<(MapMuzzleFlash, MapTexture)> {
     let n: u32 = code.trim().parse().ok()?;
-    let (scale, sprite) = (n / 10, n % 10);
-    let path = format!("sprites/muzzleflash{}.spr", sprite.max(1));
+    let scale = n / 10;
+    let path = flash_sprite(code)?;
     let spr = goldsrc_formats::spr::Sprite::parse(&mount.read(&path).ok()?).ok()?;
     let frame = *spr.all_frames().first()?;
     let texture = MapTexture {

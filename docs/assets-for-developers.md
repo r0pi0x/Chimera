@@ -306,8 +306,12 @@ scripts are plain text: no key.
 CS 1.6 (docs/plans/active/goldsrc.md) is served from 2026-11-24 (the
 Half-Life Dedicated Server's build 15961496, published with `--build`):
 `players` (the eight class bodies) and `map/<name>` for the 25 stock
-maps, with its guest dressing converted; `weapon/<id>` comes with its
-guns (M1: the stand-in reads no files). Its install is loose files, so it
+maps, with its guest dressing converted; `weapon/<id>` for each of its 28
+weapons from 2026-11-25 (M1: the `v_`, `p_` and `w_` models, every wave
+the data and the view model's events name, the muzzle flash sprites;
+about 0.2-0.3 MB stored each), published under build 15961496 and the
+client's 12934623 (the newest, 15961496, is what clients take), the guest
+dressing converted again with the guns. Its install is loose files, so it
 is packed from what its pieces read (`chimera_pack sets cs16 --pack`
 starts the manifest), not whole: 175 files, 324 MB plain, 142 MB stored
 (the WADs maps share, such as `halflife.wad` and `cstrike.wad`, are one

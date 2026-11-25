@@ -207,14 +207,24 @@ fn halo_ladder(sim: &mut Sim) {
 /// line; and a Halo map's climbable sheet (a CS:S character couldn't
 /// climb Halo's ladders either). A game added later is held to it by being
 /// registered, once it is more than a scaffold (`GameParts::scaffold`: its
-/// placeholder movement is in no ladder, so no player moves on it).
+/// placeholder movement is in no ladder, so no player moves on it) and
+/// its own movement has landed: a movement still on the placeholder's
+/// code (`placeholder::Tunings`: CS 1.6's while its guns are dealt before
+/// its movement, M1 before M2) has no ladders at all and is held to it as
+/// soon as its game's own replaces it.
 #[test]
 fn every_movement_climbs_every_ladder() {
     let scaffolds: Vec<&str> = party_roster::GAME_PARTS.iter().filter(|p| p.scaffold).filter_map(|p| p.movement).collect();
     let ids: Vec<&'static str> = {
         let sim = self::sim();
         let reg = sim.app.world().resource::<chimera_core::slots::MovementRegistry>();
-        reg.0.iter().map(|m| m.id).filter(|id| !id.starts_with("chimera:") && !scaffolds.contains(id)).collect()
+        let placeholders = sim.app.world().get_resource::<chimera_sim::movement::placeholder::Tunings>();
+        let on_placeholder = |id: &str| placeholders.is_some_and(|t| t.0.iter().any(|(p, _)| *p == id));
+        reg.0
+            .iter()
+            .map(|m| m.id)
+            .filter(|id| !id.starts_with("chimera:") && !scaffolds.contains(id) && !on_placeholder(id))
+            .collect()
     };
     for game in ["cs_source", "combat_arms", "hl2dm", "tf2", "halo_ce"] {
         assert!(ids.iter().any(|id| id.starts_with(&format!("{game}:"))), "{game}'s movement is registered: {ids:?}");

@@ -10,7 +10,8 @@
 //!   them (view, held, and the dropped `w_` beside the held, with their
 //!   `<name>t.mdl` texture and `<name>NN.mdl` sequence-group files) and
 //!   its sounds (`weapons::data_sounds`: each entry's waves under
-//!   `sound/`, and the view model's sound events);
+//!   `sound/`, and the view model's sound events) and the muzzle flash
+//!   sprites its view model's events name;
 //! - `map/<name>` (`load_map`): the map converted as another game's
 //!   gameplay loads it (its world, the WADs its `wad` key names, its sky,
 //!   `sound/materials.txt`; the bodies it reads are `players`').
@@ -45,9 +46,14 @@ pub fn load_weapon(mount: &Mount, id: &str) -> bool {
     // reads them (`weapons::add_guns`).
     let mut entries = super::weapons::data_sounds(&w);
     if let Some(view) = &w.models.view
-        && let Ok((_, _, waves)) = goldsrc_engine::content::weapon_models::view_model(mount, view, id, false)
+        && let Ok((v, _, waves)) = goldsrc_engine::content::weapon_models::view_model(mount, view, id, false)
     {
         entries.extend(waves);
+        // The muzzle flashes its events name (`weapons::add_guns`).
+        let codes = v.animations.as_deref().map(goldsrc_engine::content::weapon_models::flash_codes).unwrap_or_default();
+        for sprite in codes.iter().filter_map(|c| goldsrc_engine::content::weapon_models::flash_sprite(c)) {
+            let _ = mount.read(&sprite);
+        }
     }
     let mut table = Default::default();
     for entry in entries {
