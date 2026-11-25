@@ -12,7 +12,8 @@
 //!
 //! Three moments: everyone joining in the first `JOIN` s (a server
 //! starting), the match's start (`minigame::restart`, everyone placed in
-//! one tick, measured once the phase is past `Starting`; `STARTS` times),
+//! one tick, measured once the phase is past `Starting`; `STARTS` times,
+//! each on a seed of its own),
 //! and the respawns of `PLAY` s of bot play (one bot also dies of the
 //! world each second, so there are enough).
 //! Prints the rates per map and count (`--nocapture`) and fails when a
@@ -53,6 +54,8 @@ const MAPS: [&str; 4] = [
 const COUNTS: [u32; 3] = [4, 8, 12];
 /// Match starts measured per map and count.
 const STARTS: usize = 6;
+/// The first start's spawn seed (`SpawnSeed`), the next ones' the following.
+const START_SEED: u32 = 100;
 /// Seconds after the minigame's start whose spawns (everyone joining) are
 /// measured.
 const JOIN: f64 = 5.0;
@@ -229,14 +232,18 @@ fn run(map: &str, bots: u32, points: Points) -> Option<[Rates; 3]> {
         assert!(ready_at.is_some(), "{map}: the spots are made at the first spawn");
     }
     let mut starts = Rates::default();
-    for _ in 0..STARTS {
+    for k in 0..STARTS {
+        // A seed of its own each start: a restart begins the draws again
+        // (`spawns::reset`), so on one seed every start drew the same and
+        // the starts were one sample, not `STARTS`.
+        sim.app
+            .world_mut()
+            .insert_resource(minigame::spawns::SpawnSeed(START_SEED + k as u32));
         minigame::restart(sim.app.world_mut());
-        // The restart's players rejoin first (each spawned as it is taken
-        // in, against the others where they stood before the restart), the
-        // phase goes on to `Starting`, and only its next step is the
-        // match's start that places everyone as a batch: measured once the
-        // phase is past both (measuring at `Starting` counted the rejoins'
-        // spawns, a tick before they are moved: 25% near at 4 and 8).
+        // The restart's players rejoin first (not spawned: the match is
+        // about to start), the phase goes on to `Starting`, and only its
+        // next step is the match's start that places everyone as a batch:
+        // measured once the phase is past both.
         for _ in 0..20 {
             sim.ticks(1);
             if !matches!(sim.app.world().resource::<Match>().phase, Phase::Waiting | Phase::Starting) {
@@ -312,11 +319,14 @@ fn run(map: &str, bots: u32, points: Points) -> Option<[Rates; 3]> {
 /// any of the four maps at any count; on respawns at most 2.2%
 /// in view (warehouse at 12) and none near. (2026-11-13's 16.7% near on
 /// the warehouse at 12 was the rejoins' spawns, measured a tick too
-/// early.) `random_hidden` before: starts in view on warehouse 20.8% (8)
-/// and 51.4% (12), dm_lockdown 6.9% (12); respawns in view on warehouse
-/// 24.4% (12).
+/// early.) Those starts all drew on one seed; a seed a start (2026-11-25,
+/// `START_SEED` 100): starts at most 1.4% in view (dm_lockdown at 12) and
+/// none near; on the warehouse at 12 seeds 200-205 put one pair near
+/// (2.8%), so the starts' bound is the respawns'. `random_hidden`
+/// before: starts in view on warehouse 20.8% (8) and 51.4% (12),
+/// dm_lockdown 6.9% (12); respawns in view on warehouse 24.4% (12).
 fn bounds(_map: &str, _bots: u32) -> ((f32, f32), (f32, f32)) {
-    ((0.0, 0.0), (5.0, 5.0))
+    ((5.0, 5.0), (5.0, 5.0))
 }
 
 #[test]

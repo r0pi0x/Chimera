@@ -1311,13 +1311,13 @@ fn a_second_observer_of_arming_runs_before_the_weapons_are_given() {
     settle(&mut sim);
     let seen = &sim.app.world().resource::<ArmingsSeen>().0;
     let ladder = "chimera:ladder";
-    // Each joiner's first life; both again at the match's start; b's
-    // after the kill.
+    // a's first life at its join (under `players.min`); b's join brings
+    // the match to its start, which arms both (b's join doesn't: the
+    // start places everyone); b's after the kill.
     assert_eq!(
         *seen,
         [
             (a, ladder, Some(0), 0, 0),
-            (b, ladder, Some(0), 0, 0),
             (a, ladder, Some(0), 0, 0),
             (b, ladder, Some(0), 0, 0),
             (b, ladder, Some(0), 0, 0),

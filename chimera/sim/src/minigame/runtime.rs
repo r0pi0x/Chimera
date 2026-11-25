@@ -7,7 +7,9 @@
 //!   (not connecting, spectating or an NPC), in the order they joined
 //!   (`JoinOrder`). A new one (`join`) goes on the team the mode makes
 //!   (one with no team first on the first side), comes in at once unless
-//!   the match is over, and is marked `InMinigame`; the rules module
+//!   the match is over or about to start (`Starting`, or `Waiting` with
+//!   `players.min` in: the start places everyone as one batch, so a join
+//!   then, a restart's too, isn't spawned twice), and is marked `InMinigame`; the rules module
 //!   hears of it first (`minigame::Joined`, an entity event triggered and
 //!   applied there: the ladder's join rung). A match's start
 //!   (`minigame::restart`) has its players join again the same way,
@@ -552,9 +554,23 @@ fn take_in(world: &mut World, new: &[(Entity, u8)]) {
             });
             world.flush();
         }
-        if !over {
+        if !over && !match_about_to_start(world) {
             respawn(world, e);
         }
+    }
+}
+
+/// The match is about to start (`Starting`, or `Waiting` with `players.min`
+/// in): its start places everyone as one planned batch (`mission_start`),
+/// so a join (a restart's players joining again too) doesn't spawn the
+/// player on its own: that would place it against the others' old
+/// positions and then move it again a tick later.
+fn match_about_to_start(world: &mut World) -> bool {
+    let Some(min) = world.get_resource::<ActiveMinigame>().map(|a| a.def.players.min) else { return false };
+    match world.resource::<Match>().phase {
+        Phase::Starting => true,
+        Phase::Waiting => players(world).len() as u32 >= min,
+        _ => false,
     }
 }
 
