@@ -13,7 +13,12 @@
 //! F10 bundle's `perf.txt` (`report`), headed by the systems the latest
 //! spikes share (`Inspector::recurring`: a stutter that comes back, which
 //! one-off loads would crowd out of the worst), and each logged hitch line
-//! ends with its record's summary (systems, events).
+//! ends with its record's summary (systems, events). Each second of the
+//! last 5 minutes is a row too (`SecondRow`: frames, mean and slowest
+//! frame, spikes, and for a slow second the systems that took most of it
+//! when they were timed), at the end of `perf.txt`: a tester's "it went
+//! from 180 to 60" shows when, for how long and in what (feedback
+//! afd90ba5 had only the last 4096 frames' distribution).
 //!
 //! A system is named by its schedule and short name, with its module too
 //! when another module's system has the same name (`Update
@@ -73,6 +78,10 @@ const WORST: usize = 8;
 const TOP_SYSTEMS: usize = 12;
 /// Systems named in the report's line of what the latest spikes share.
 const RECURRING: usize = 6;
+/// Seconds kept as rows (`SecondRow`): 5 minutes.
+const SECONDS: usize = 300;
+/// Systems named for a slow second.
+const SECOND_SYSTEMS: usize = 4;
 /// How long systems stay timed after a spike (`chimera_frame_inspect 1`).
 const ARMED: Duration = Duration::from_secs(30);
 
@@ -269,6 +278,77 @@ impl SpikeRecord {
     }
 }
 
+/// One second of frames (module doc).
+#[derive(Clone, Debug, Default)]
+pub struct SecondRow {
+    /// Whole seconds since the inspector began.
+    pub sec: u32,
+    pub frames: u32,
+    /// The frames' ms summed, and the slowest.
+    pub ms: f64,
+    pub max_ms: f64,
+    pub spikes: u32,
+    /// The median frame at the second's end.
+    pub median_ms: f64,
+    /// A slow second's costliest systems (own ms summed over it), when
+    /// they were timed.
+    pub top: Vec<(String, f64)>,
+    /// Systems' own ns while the second runs (row, ns).
+    systems: Vec<(usize, u64)>,
+}
+
+impl SecondRow {
+    /// Slow: a spike in it, or a mean frame over 1.5 times the median.
+    pub fn slow(&self) -> bool {
+        self.spikes > 0 || (self.frames > 0 && self.ms / self.frames as f64 > 1.5 * self.median_ms)
+    }
+
+    /// The second is over: a slow one names its systems.
+    fn finish(&mut self) {
+        let mut rows = std::mem::take(&mut self.systems);
+        if !self.slow() {
+            return;
+        }
+        rows.sort_by_key(|r| std::cmp::Reverse(r.1));
+        self.top = rows
+            .into_iter()
+            .filter_map(|(row, ns)| system_label(row).map(|l| (l, ns as f64 / 1e6)))
+            .take(SECOND_SYSTEMS)
+            .collect();
+    }
+
+    /// Its line in the report, `ago` seconds before it.
+    pub fn line(&self, ago: f32) -> String {
+        let mean = self.ms / self.frames.max(1) as f64;
+        let mut out = format!(
+            "t-{ago:5.0} {:4} frames, mean {mean:6.2} ms ({:4.0} fps), slowest {:7.2} ms",
+            self.frames,
+            1000.0 / mean.max(1e-6),
+            self.max_ms
+        );
+        if self.spikes > 0 {
+            out += &format!(", {} spikes", self.spikes);
+        }
+        if self.slow() {
+            out += " SLOW";
+            if !self.top.is_empty() {
+                let top: Vec<String> = self.top.iter().map(|(n, ms)| format!("{n} {ms:.2}")).collect();
+                out += &format!(": {}", top.join(", "));
+            }
+        }
+        out
+    }
+}
+
+/// A timed row's name, unless it is a schedule runner's own or the frame
+/// marks'.
+fn system_label(row: usize) -> Option<String> {
+    // Told apart from a same-named system of another module
+    // (`Update server_assets::watch`, not a bare `Update watch`).
+    let l = work::distinct_label(row).unwrap_or_else(|| format!("system {row}"));
+    (!l.starts_with("Main ") && !l.starts_with("FixedMain ") && !l.starts_with("FrameMark(")).then_some(l)
+}
+
 fn short_text(s: &str, n: usize) -> &str {
     if s.len() <= n {
         return s;
@@ -301,6 +381,9 @@ pub struct Inspector {
     /// Every frame's events over the last minutes, alike ones folded
     /// (`timeline_text`).
     pub timeline: VecDeque<TimelineRow>,
+    /// The last 5 minutes by second, oldest first, and the second running.
+    pub seconds: VecDeque<SecondRow>,
+    second: Option<SecondRow>,
     began: Option<Instant>,
     armed_until: Option<Instant>,
     /// The UI drew the inspector this recently.
@@ -317,6 +400,52 @@ impl Inspector {
         self.selected = None;
         self.picked = false;
         self.timeline.clear();
+        self.seconds.clear();
+        self.second = None;
+    }
+
+    /// A frame into its second's row (`at`: seconds since the start).
+    pub fn on_second(&mut self, at: f32, ms: f64, median_ms: f64, spike: bool, times: &[(usize, u64, u32)]) {
+        let sec = at.max(0.0) as u32;
+        if self.second.as_ref().is_some_and(|c| c.sec != sec)
+            && let Some(mut done) = self.second.take()
+        {
+            done.finish();
+            self.seconds.push_back(done);
+            while self.seconds.len() > SECONDS {
+                self.seconds.pop_front();
+            }
+        }
+        let c = self.second.get_or_insert_with(|| SecondRow { sec, ..default() });
+        c.frames += 1;
+        c.ms += ms;
+        c.max_ms = c.max_ms.max(ms);
+        c.spikes += spike as u32;
+        c.median_ms = median_ms;
+        for &(row, ns, _) in times {
+            match c.systems.iter_mut().find(|r| r.0 == row) {
+                Some(r) => r.1 += ns,
+                None => c.systems.push((row, ns)),
+            }
+        }
+    }
+
+    /// The seconds as text, `now` seconds since the start (`report`).
+    pub fn seconds_text(&self, now: f32) -> String {
+        if self.seconds.is_empty() {
+            return String::new();
+        }
+        let slow = self.seconds.iter().filter(|r| r.slow()).count();
+        let mut out = format!(
+            "\nper second (the last {} s, t = seconds before the report; {slow} slow: a spike or a mean frame over 1.5x the median, with \
+             the systems that took most of it when timed):\n",
+            self.seconds.len()
+        );
+        for r in &self.seconds {
+            out += &r.line(now - r.sec as f32);
+            out.push('\n');
+        }
+        out
     }
 
     /// A spike's record by frame.
@@ -326,8 +455,9 @@ impl Inspector {
 
     /// The worst spikes, for the bundle's `perf.txt`.
     pub fn report(&self) -> String {
+        let now = self.began.map_or(0.0, |b| b.elapsed().as_secs_f32());
         if self.worst.is_empty() {
-            return format!("frame inspector: no spikes ({} frames seen)\n", self.frames.len());
+            return format!("frame inspector: no spikes ({} frames seen)\n{}", self.frames.len(), self.seconds_text(now));
         }
         let mut out = format!("frame inspector: {} spikes", self.spikes);
         let recurring = self.recurring(RECURRING);
@@ -346,6 +476,7 @@ impl Inspector {
         for r in &self.worst {
             out += &r.text();
         }
+        out += &self.seconds_text(now);
         out
     }
 
@@ -495,6 +626,7 @@ pub(crate) fn frame_done(world: &World, f: FrameFacts) -> Option<String> {
     while s.frames.len() > FRAMES {
         s.frames.pop_front();
     }
+    s.on_second(at, f.ms, f.median_ms, f.spike, &times);
     let mut summary = None;
     if f.spike {
         let top = |rows: Vec<(usize, u64, u32)>| {
@@ -503,10 +635,7 @@ pub(crate) fn frame_done(world: &World, f: FrameFacts) -> Option<String> {
             // Not the schedule runners' own (the whole frame or tick
             // less what they ran) nor the frame marks'.
             rows.into_iter()
-                // Told apart from a same-named system of another module
-                // (`Update server_assets::watch`, not a bare `Update watch`).
-                .map(|(row, ns, n)| (work::distinct_label(row).unwrap_or_else(|| format!("system {row}")), ns as f64 / 1e6, n))
-                .filter(|(l, _, _)| !l.starts_with("Main ") && !l.starts_with("FixedMain ") && !l.starts_with("FrameMark("))
+                .filter_map(|(row, ns, n)| system_label(row).map(|l| (l, ns as f64 / 1e6, n)))
                 .take(TOP_SYSTEMS)
                 .collect::<Vec<_>>()
         };
@@ -843,5 +972,23 @@ mod tests {
         let report = i.report();
         let head = report.lines().next().unwrap();
         assert!(head.contains("Update relight 400.00 ms in 20"), "{report}");
+    }
+
+    /// Each second is a row; a slow one says so, an ordinary one doesn't;
+    /// 5 minutes are kept (feedback afd90ba5).
+    #[test]
+    fn the_seconds_keep_five_minutes_and_mark_the_slow_ones() {
+        let mut i = Inspector::default();
+        for k in 0..(400 * 60) {
+            let at = k as f32 / 60.0;
+            let slow = (100.0..103.0).contains(&at);
+            i.on_second(at, if slow { 16.7 } else { 5.0 }, 5.0, false, &[]);
+        }
+        i.on_second(400.0, 5.0, 5.0, false, &[]);
+        assert_eq!(i.seconds.len(), SECONDS);
+        let text = i.seconds_text(400.0);
+        assert_eq!(text.matches(" SLOW").count(), 3, "{text}");
+        assert!(text.contains("60 frames, mean  16.70 ms (  60 fps)"), "{text}");
+        assert!(text.contains("60 frames, mean   5.00 ms ( 200 fps)"), "{text}");
     }
 }

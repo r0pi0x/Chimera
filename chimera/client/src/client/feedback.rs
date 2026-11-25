@@ -671,6 +671,7 @@ pub fn collect_state(w: &mut World, snapshot: &str) -> ReportState {
             win.present_mode
         );
     }
+    system += &displays_text(w);
     let mut perf = w.get_resource::<super::perf::PerfReport>().map_or(String::new(), |p| p.lines.join("\n"));
     // The frame inspector's worst spikes, each with its breakdown.
     if let Some(i) = w.get_resource::<super::frame_inspector::FrameInspector>()
@@ -767,6 +768,35 @@ pub fn screen_text(w: &World) -> String {
         up.push("play".into());
     }
     format!("screen: {}\n", up.join(", "))
+}
+
+/// The displays and their refresh rates (`system.txt`): a frame rate held
+/// at a display's rate under vsync is the cap, not a slowdown (feedback
+/// afd90ba5: "from 180 fps to 60" under `AutoVsync`, no rate in the bundle).
+pub fn displays_text(w: &mut World) -> String {
+    use bevy::window::{Monitor, PrimaryMonitor};
+    let mut rows: Vec<(bool, String)> = w
+        .query::<(&Monitor, Has<PrimaryMonitor>)>()
+        .iter(w)
+        .map(|(m, primary)| {
+            let hz = m.refresh_rate_millihertz.map_or("refresh rate unknown".to_string(), |r| format!("{:.2} Hz", r as f64 / 1000.0));
+            (
+                primary,
+                format!(
+                    "display: {}x{} at {hz}, scale {}{}\n",
+                    m.physical_width,
+                    m.physical_height,
+                    m.scale_factor,
+                    if primary { " (primary)" } else { "" }
+                ),
+            )
+        })
+        .collect();
+    rows.sort_by_key(|r| !r.0);
+    if rows.is_empty() {
+        return "display: none known (offscreen, or the window system gave none)\n".into();
+    }
+    rows.into_iter().map(|r| r.1).collect()
 }
 
 /// How the frame is taken: the window's screenshot, or (tests, no window)
