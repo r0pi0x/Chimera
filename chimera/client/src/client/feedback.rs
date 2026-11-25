@@ -34,7 +34,8 @@
 //!   The UI cues sound (`ui_select` on opening and sending, `ui_hover` on
 //!   a switch, `ui_back` on cancel, `ui_denied` on an empty send).
 //! - **Send** hands a `Report` (the words, the frame, and `collect_state`'s
-//!   `ReportState` from the key press: build, app, the game, the PC, perf,
+//!   `ReportState` from the key press: build, app, the game and the
+//!   screens up (`screen_text`), the PC, perf,
 //!   net, changed cvars and binds, console lines) to the `FeedbackOutbox`
 //!   (`Outbox`). The app's is `AssetsOutbox`: the JPEG and the zip on a
 //!   thread (`chimera_assets::feedback`: its secret filter is the only
@@ -641,6 +642,7 @@ pub fn collect_state(w: &mut World, snapshot: &str) -> ReportState {
     if let Some(m) = w.get_resource::<chimera_sim::minigame::ActiveMinigame>() {
         game += &format!("minigame: {}\n", m.def.id);
     }
+    game += &screen_text(w);
     game += &super::world_report::setup_text(w);
     game += &super::world_report::hand_text(w);
     // What the last hits did (a listen host's or a local game's server).
@@ -734,6 +736,37 @@ pub fn collect_state(w: &mut World, snapshot: &str) -> ReportState {
     }
 }
 
+/// The screens up at the key press, one line (`screen: play` with none):
+/// a menu, the console, the chat (open, docked), the lobby, the match end
+/// and its vote, which take keys a report's typing must not reach.
+pub fn screen_text(w: &World) -> String {
+    let mut up: Vec<String> = Vec::new();
+    if w.get_resource::<super::front_end::AppMenu>().is_some_and(|m| m.open) {
+        up.push("app menu".into());
+    }
+    if w.get_resource::<super::front_end::MenuStatus>().is_some_and(|m| m.open) {
+        up.push("menu".into());
+    }
+    if w.get_resource::<super::console::ConsoleUi>().is_some_and(|c| c.open) {
+        up.push("console".into());
+    }
+    if w.get_resource::<super::prematch_lobby::LobbyView>().is_some_and(|l| l.shown) {
+        let over = w.get_resource::<super::prematch_lobby::LobbyOverlay>().is_some_and(|o| o.0);
+        up.push(format!("pre-match lobby{}", if over { " (an overlay over it)" } else { "" }));
+    }
+    if let Some(e) = w.get_resource::<super::match_end::MatchEndView>().filter(|e| e.shown) {
+        let vote = e.vote.as_ref().is_some_and(|v| v.open());
+        up.push(format!("match end{}", if vote { " (map vote open)" } else { "" }));
+    }
+    if let Some(c) = w.get_resource::<super::chat::ChatInput>().and_then(|c| c.open) {
+        up.push(format!("chat open ({})", if c { "team" } else { "all" }));
+    }
+    if up.is_empty() {
+        up.push("play".into());
+    }
+    format!("screen: {}\n", up.join(", "))
+}
+
 /// How the frame is taken: the window's screenshot, or (tests, no window)
 /// a made-up frame at once.
 #[derive(Resource, Clone, Copy)]
@@ -812,6 +845,11 @@ fn cue(w: &mut World, event: &'static str) {
 #[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FeedbackSystems;
 
+/// The dialog's keys (`typing`, which resets them): the chat's run after
+/// (`signal_chat`), so Y or Enter typed here never opens it.
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FeedbackKeys;
+
 pub struct FeedbackPlugin;
 
 impl Plugin for FeedbackPlugin {
@@ -856,7 +894,7 @@ impl Plugin for FeedbackPlugin {
             "chimera:feedback_url's certificate SHA-256 (hex), pinned.",
             |s| &mut s.fingerprint,
         );
-        app.add_systems(PreUpdate, typing.after(InputSystems))
+        app.add_systems(PreUpdate, typing.in_set(FeedbackKeys).after(InputSystems))
             .add_systems(Startup, start_if_waiting)
             .init_resource::<FeedbackService>()
             .add_systems(Update, (key, advance, act, deliveries, joined, named, signed_in).chain().in_set(FeedbackSystems))

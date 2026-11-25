@@ -38,7 +38,9 @@
 //!   (Y) and `messagemode2` (U) open the field to everyone or the team
 //!   while playing, and so do Combat Arms' Enter, F2 and F3 in an app
 //!   with both (its `chat_open`, `chat_all`, `chat_team` hand over); in the
-//!   lobby and on the match end Enter opens it too. The kit's field keys
+//!   lobby and on the match end Enter opens it too; none of them while
+//!   the report dialog shows (`feedback::Feedback::shown`; its keys run
+//!   first, `feedback::FeedbackKeys`). The kit's field keys
 //!   (`widgets::text_key`: the caret, selection, Ctrl+A, copy, cut,
 //!   paste one line from `chimera_ui::clipboard::Clipboard`), Tab switches
 //!   to the team and back, Enter sends (`chat::say`), Esc closes; at most
@@ -200,7 +202,7 @@ impl Plugin for SignalChatPlugin {
         }
         app.init_resource::<ButtonInput<KeyCode>>()
             .add_message::<KeyboardInput>()
-            .add_systems(PreUpdate, typing.after(InputSystems).run_if(active))
+            .add_systems(PreUpdate, typing.after(InputSystems).after(super::feedback::FeedbackKeys).run_if(active))
             .add_systems(Update, (draw, trim_boxed, fade_lines, mute_clicks).chain().after(collect));
         super::signal::setup(app);
         super::overlay::layer(app);
@@ -396,9 +398,12 @@ fn typing(
         Option<Res<super::match_end::MatchEndView>>,
     ),
     mut clipboard: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
+    report: Option<Res<super::feedback::Feedback>>,
     mut commands: Commands,
 ) {
-    if console.as_ref().is_some_and(|c| c.open) {
+    // The console and the report dialog have the keys (Y and Enter type
+    // into the report, never open the chat behind it).
+    if console.as_ref().is_some_and(|c| c.open) || report.is_some_and(|r| r.shown()) {
         return;
     }
     let docked = matches!(dock_now(lobby.as_deref(), overlay.as_deref(), end.as_deref(), Some(Entity::PLACEHOLDER), Some(Entity::PLACEHOLDER)), Some(d) if d.docked());

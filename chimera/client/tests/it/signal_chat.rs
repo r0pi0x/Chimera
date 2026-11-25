@@ -250,3 +250,45 @@ fn the_chat_is_above_every_games_hud_and_below_the_menus() {
     let layers: Vec<i32> = w.query_filtered::<&GlobalZIndex, With<ChatPlayRoot>>().iter(w).map(|z| z.0).collect();
     assert_eq!(layers, [CHAT_Z], "the chat's one layer");
 }
+
+/// Report 0cd30d86: on the match end (the chat docked) with the report
+/// dialog open, Y (`messagemode`) and Enter type into the report and never
+/// open the chat behind it (the dialog's keys run first and are reset;
+/// the chat waits while it shows).
+#[test]
+fn the_report_dialog_keeps_y_and_enter_from_the_docked_chat() {
+    use chimera_client::client::{
+        feedback::{AssetsOutbox, Feedback, FeedbackOutbox, FeedbackPlugin, Phase},
+        match_end::MatchEndView,
+    };
+    let folder = std::env::temp_dir().join(format!("chimera-chat-report-{}", std::process::id()));
+    let mut sim = Sim::with(SimBasePlugins, |app| {
+        app.insert_resource(FeedbackOutbox(std::sync::Arc::new(AssetsOutbox::at(
+            folder.clone(),
+            chimera_core::mount::assets::feedback::Targets::default(),
+        ))));
+        app.add_plugins((GreyboxMapPlugin, SignalChatPlugin, FeedbackPlugin));
+    });
+    sim.app.insert_resource(Theme::from_toml(SIGNAL).expect("theme"));
+    sim.app.insert_resource(UiClock::manual());
+    sim.app.world_mut().resource_mut::<chimera_core::console::Console>().binds.insert("y".into(), "messagemode".into());
+    sim.app.world_mut().insert_resource(MatchEndView { shown: true, ..default() });
+    frame(&mut sim, 0.0);
+    sim.app.world_mut().resource_mut::<Feedback>().phase = Phase::Open;
+    for (code, logical) in [(KeyCode::KeyY, Key::Character("y".into())), (KeyCode::Enter, Key::Enter)] {
+        key(&mut sim, code, logical);
+        frame(&mut sim, 0.0);
+        assert_eq!(sim.app.world().resource::<ChatInput>().open, None, "{code:?} doesn't open the chat");
+        assert!(!sim.app.world().resource::<ButtonInput<KeyCode>>().just_pressed(code), "{code:?} reset for the rest");
+        let mut keys = sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        keys.release(code);
+        keys.clear();
+    }
+    assert_eq!(sim.app.world().resource::<Feedback>().text, "y\n", "both typed into the report");
+    // Closed, Enter opens the docked chat again.
+    sim.app.world_mut().resource_mut::<Feedback>().phase = Phase::Closed;
+    key(&mut sim, KeyCode::Enter, Key::Enter);
+    frame(&mut sim, 0.0);
+    assert_eq!(sim.app.world().resource::<ChatInput>().open, Some(false), "Enter opens the docked chat");
+    let _ = std::fs::remove_dir_all(&folder);
+}

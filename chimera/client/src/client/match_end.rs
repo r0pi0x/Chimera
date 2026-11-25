@@ -27,7 +27,7 @@
 //!   its number, name and votes, the local player's choice marked, and
 //!   "Vote for the next map: 1-3 or click (12)" in place of the
 //!   countdown; a number key (1-9, the keypad's too, not while the
-//!   console or chat types) or a click on a map votes
+//!   console, the chat or the report dialog types) or a click on a map votes
 //!   (`chimera_net::minigame_net::vote_map`; the cursor is freed while
 //!   the vote is open and grabbed again after), again to change it. Once
 //!   closed the winner is marked and the countdown names it.
@@ -444,13 +444,15 @@ fn cast(world: &mut World, i: usize) {
 }
 
 /// The keys and clicks that vote: 1-9 (and the keypad's) while the
-/// screen shows an open vote and nothing else types; a click on a map.
+/// screen shows an open vote and nothing else types (the console, the
+/// chat, the report dialog); a click on a map.
 /// Runs while there is a vote; the cast is queued (`cast`).
 fn vote_input(
     view: Res<MatchEndView>,
     keys: Option<Res<ButtonInput<KeyCode>>>,
     console: Option<Res<super::console::ConsoleUi>>,
     chat: Option<Res<super::chat::ChatInput>>,
+    report: Option<Res<super::feedback::Feedback>>,
     clicked: Query<(&VoteButton, &super::widgets::Interaction), Changed<super::widgets::Interaction>>,
     mut commands: Commands,
 ) {
@@ -468,7 +470,7 @@ fn vote_input(
         (KeyCode::Digit8, KeyCode::Numpad8),
         (KeyCode::Digit9, KeyCode::Numpad9),
     ];
-    let typing = console.is_some_and(|c| c.open) || chat.is_some_and(|c| c.open.is_some());
+    let typing = console.is_some_and(|c| c.open) || chat.is_some_and(|c| c.open.is_some()) || report.is_some_and(|r| r.shown());
     let key = keys
         .filter(|_| !typing)
         .and_then(|k| DIGITS.iter().position(|(a, b)| k.just_pressed(*a) || k.just_pressed(*b)));
