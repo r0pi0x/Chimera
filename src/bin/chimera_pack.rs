@@ -677,6 +677,10 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
             };
             let read = |p: &str| tapped.read(p).ok();
             let ca = CaData::install();
+            let weapon_fx = mount
+                .read(combat_arms::game::effects::library::FX_FILE)
+                .ok()
+                .and_then(|b| lithtech_formats::fxf::FxFile::parse(&String::from_utf8_lossy(&b)).ok());
             for w in &ca.weapon_set().weapons {
                 // Only weapons whose set `only` may keep.
                 let wanted = "weapon/".starts_with(only) || only.starts_with("weapon/");
@@ -697,6 +701,16 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 // What it throws or fires: that object's sounds in flight
                 // and at rest, create sound, flare sprite, model and skins
                 // (played or drawn when used, else a request each).
+                // Its view model's effect groups' sounds: the chainsaws'
+                // idle loops start when the group shows (the draw), never
+                // through a fire key.
+                if let Some(fx) = &weapon_fx
+                    && let Some(p) = w.hook::<view_model::CaViewParams>(view_model::VIEW)
+                {
+                    for path in view_model::attached::view_sound_files(fx, &p) {
+                        let _ = tapped.read(&path);
+                    }
+                }
                 for path in combat_arms::game::special::object_files(w) {
                     let path = normalize(&path);
                     if path.ends_with(".ltb") {

@@ -143,6 +143,22 @@ pub fn group_sounds(lib: &crate::game::effects::library::FxLibrary, group: &str)
         .collect()
 }
 
+/// Every `PlaySound` file of the effect groups a weapon's view model
+/// attaches (`attach_fx`) or fires at its muzzle (`muzzle_fx`), looping or
+/// not, in the install's paths: what the weapon's set records, since the
+/// loops start when a group shows (`sounds`), not at a fire.
+pub fn view_sound_files(fx: &lithtech_formats::fxf::FxFile, params: &CaViewParams) -> Vec<String> {
+    std::iter::once(&params.muzzle_fx)
+        .chain(&params.attach_fx)
+        .filter_map(|name| fx.group(name))
+        .flat_map(|g| g.keys.iter())
+        .filter(|k| k.kind.eq_ignore_ascii_case("PlaySound"))
+        .filter_map(|k| k.path("Sound").or_else(|| k.string("Sound")))
+        .filter(|f| !f.is_empty())
+        .map(crate::game::effects::library::normalize)
+        .collect()
+}
+
 /// A looping sound to start (`Some`) or stop (`None`) under `key`.
 #[derive(Message, Clone, Debug, PartialEq)]
 pub struct CaLoopSound {
