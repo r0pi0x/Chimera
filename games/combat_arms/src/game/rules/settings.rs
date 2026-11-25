@@ -11,7 +11,9 @@
 //! `TrainingTimeLimit`, objective weapons and mode sections over the
 //! numbers here, which stay the fallback: the stock values of
 //! missions.md); with the install, the single-player host's server file
-//! (`ATTRIBUTES\SERVER.CFG`) sets the phase lengths at start-up.
+//! (`ATTRIBUTES\SERVER.CFG`) sets the phase lengths at start-up, and
+//! the mission index is read on a thread of its own from then
+//! (`read_missions_behind`), not in the first match's tick.
 //!
 //! Known shortcuts: `ca_goal` takes any value (the lobby's range and step
 //! aren't enforced: 0 is the mode's default); the respawn waits and the
@@ -296,17 +298,45 @@ impl CaRuleSettings {
     }
 }
 
+/// The thread reading the install's mission index behind the start
+/// (`read_missions_behind`), for a test to wait on; None when there was
+/// nothing to read or once it was taken.
+#[derive(Resource, Default)]
+pub struct MissionsRead(pub std::sync::Mutex<Option<std::thread::JoinHandle<()>>>);
+
+/// Start reading the install's mission index (`CaData::missions`: every
+/// mission file of every map, 0.65 G instructions) on a thread of its
+/// own. The start doesn't wait for it (the rules' settings need the
+/// server file alone), but left to the first match that looks a mission
+/// up it was read inside that match's first tick: a level change to a
+/// Combat Arms map cost a 650 M frame (ultimate_gun_game's
+/// `heavy::server_map_change`, limit 250 M). A tick that asks before the
+/// thread is done waits for it; the read is never made twice. Nothing
+/// with built-in data or without a mount.
+fn read_missions_behind(data: &super::super::data::CaData) -> MissionsRead {
+    if data.builtin_only() || data.mount().is_none() {
+        return MissionsRead::default();
+    }
+    let data = data.clone();
+    let thread = std::thread::Builder::new().name("ca missions".into()).spawn(move || {
+        data.missions();
+    });
+    MissionsRead(std::sync::Mutex::new(thread.ok()))
+}
+
 /// The settings and their cvars.
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<CaRuleSettings>();
     // The single-player host's server file (missions.md, The server file):
     // the phase lengths, over ours (the same values in the stock copy).
-    if let Some(server) = super::super::data::CaData::of(app).server_file() {
+    let data = super::super::data::CaData::of(app);
+    if let Some(server) = data.server_file() {
         let mut s = app.world_mut().resource_mut::<CaRuleSettings>();
         s.object_start = server.object_start as f32;
         s.object_end = server.object_end as f32;
         s.mission_end = server.mission_end as f32;
     }
+    app.insert_resource(read_missions_behind(&data));
     // The AI cap from the data; the factor is the console variable's.
     let cap = app.world().resource::<CaRuleSettings>().ai_damage.clone();
     let factor = app.world().get_resource::<CaAiDamage>().map_or(CaAiDamage::default().factor, |a| a.factor);

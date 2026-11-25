@@ -226,3 +226,35 @@ fn install_mission_plays() {
     until(&mut sim, 125.0, |p| matches!(p, Phase::RoundOver { .. }));
     assert_eq!(m(&sim).winner, Some(CREED));
 }
+
+/// The install's mission index is read behind the start, on a thread of
+/// its own (`rules::settings::MissionsRead`), not by the first match
+/// that looks a mission up: once that thread is done, asking for the
+/// missions costs the asking thread next to nothing (it was 0.65 G
+/// instructions inside a level change's first tick), and they are there.
+#[test]
+fn the_mission_index_is_read_behind_the_start() {
+    use chimera_core::metrics::InstructionCounter;
+    use combat_arms::game::{data::CaData, rules::settings::MissionsRead};
+    if chimera_core::mount::config::LocalConfig::load().ok().and_then(|c| c.game_path(combat_arms::game::GAME)).is_none() {
+        eprintln!("skipping: no Combat Arms install configured");
+        return;
+    }
+    let ca = CaData::install();
+    if ca.mount().is_none() {
+        eprintln!("skipping: the install doesn't mount");
+        return;
+    }
+    let sim = chimera_world::harness::Sim::with(combat_arms::harness::CaSimWith(ca.clone()), |_| {});
+    let thread = sim.app.world().resource::<MissionsRead>().0.lock().unwrap().take().expect("a thread reads the missions");
+    thread.join().unwrap();
+    let mut counter = InstructionCounter::current();
+    let before = counter.read();
+    let missions = ca.missions().expect("the install's missions");
+    let after = counter.read();
+    assert!(!missions.index.paths.is_empty(), "the index holds the install's missions");
+    match before.zip(after) {
+        Some((a, b)) => assert!(b - a < 5_000_000, "asking cost {} instructions: the index was read here", b - a),
+        None => eprintln!("note: no instruction counter here; the cost isn't checked"),
+    }
+}
