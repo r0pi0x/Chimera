@@ -73,8 +73,8 @@ start for animation in a sequence file). Field names are ours.
 | 180 | i32, i32, i32 | texture count, texture records offset, texture pixel data offset |
 | 192 | i32, i32, i32 | skin reference count (textures per skin), skin family count, skin table offset |
 | 204 | i32, i32 | body part count, offset |
-| 216 | i32, i32 | attachment count, offset |
-| 224 | 4 × i32 | sound tables (unused: all 0) |
+| 212 | i32, i32 | attachment count, offset (corrected 2026-11-24: v_ak47 has 2 attachments, count at 212, offset 4 948 at 216) |
+| 220 | 4 × i32 | sound tables (unused: all 0) |
 | 236 | i32, i32 | transition count, offset (0 in every file) |
 
 The CS player and view models have all five boxes zero.

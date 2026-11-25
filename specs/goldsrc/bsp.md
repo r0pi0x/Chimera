@@ -188,8 +188,12 @@ The rounding in step 1 matters: computed entirely in double, 303 of
 de_dust2's 4 002 lit faces get a size one row or column too large;
 entirely in single precision with a left-to-right sum, 21 still
 disagree; with step 1 as written, every lit face in all 150 maps sizes
-its block so that the blocks tile the lighting lump exactly. The lumps
-are packed in face order with no gaps.
+its block so that the blocks are packed from the lump's start in face
+order with no gaps. They tile the lump exactly in every map except three
+of Half-Life's deathmatch maps, whose lighting lump runs on past the
+last block: `disposal` by 837 bytes, `pool_party` by 855 and
+`rocket_frenzy` by 822 (whole RGB samples, unused; a reader must allow
+trailing bytes rather than require an exact fit).
 
 A lightmap sample (i, j) sits at texel (16 × (floor(s_min / 16) + i),
 16 × (floor(t_min / 16) + j)); a texel's light is the bilinear blend of
@@ -550,7 +554,7 @@ engine), 25 `sky`, 9 with `!`.
 | de_dust2.bsp | count records | 9 582 planes, 2 766 nodes, 8 321 clip nodes, 1 455 leaves, 5 383 faces, 638 texinfo |
 | de_dust2.bsp | textures | 44, 15 embedded; texture 8 `-0SandRock2` 128 × 256, mip offsets 40, 32 808, 41 000, 43 048 |
 | de_dust2.bsp | face 0 lightmap | 7 × 3 samples, style 0 only, offset 0 |
-| every stock map | size every lit face's lightmap | blocks tile the lighting lump exactly |
+| every stock map | size every lit face's lightmap | blocks packed from 0 with no gaps; they end at the lump's end except `disposal` (837 bytes after), `pool_party` (855), `rocket_frenzy` (822) |
 | de_dust2.bsp model 1 | hull heads | 2513, 7358, 7364, 7370 |
 | de_dust2.bsp model 1 | point contents hull 1 at (−1400, 2620, 99) / (−1400, 2620, 101) | solid / empty |
 | de_dust2.bsp model 1 | point contents hull 3 at (−1400, 2620, 81) / (−1400, 2620, 83) | solid / empty |
