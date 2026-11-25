@@ -3,6 +3,7 @@
 
 mod converted;
 mod feedback;
+mod offline;
 mod session;
 mod service;
 mod sign;

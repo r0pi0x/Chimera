@@ -60,7 +60,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    remote::{RemoteConfig, agent, secure_url},
+    remote::{RemoteConfig, agent, request_error, secure_url, unreachable},
     store::{hex, unhex, write_atomic},
     ticket,
 };
@@ -577,12 +577,14 @@ fn post<T: serde::de::DeserializeOwned>(
     }
     let agent = agent(fingerprint)?;
     let full = format!("{}{path}", url.trim_end_matches('/'));
+    unreachable(&full).map_err(|e| format!("the hub at {url}: {e}"))?;
     let mut request = agent.post(&full).header("Content-Type", "application/json");
     if let Some(b) = bearer {
         request = request.header("Authorization", &format!("Bearer {b}"));
     }
     let body = serde_json::to_vec(body).map_err(|e| e.to_string())?;
-    let response = request.send(&body[..]).map_err(|e| format!("the hub at {url} didn't answer ({e})"))?;
+    let response =
+        request.send(&body[..]).map_err(|e| format!("the hub at {url} didn't answer ({})", request_error(&full, e)))?;
     let status = response.status().as_u16();
     let mut text = String::new();
     let _ = response.into_body().into_reader().take(64 * 1024).read_to_string(&mut text);
@@ -598,11 +600,12 @@ fn get<T: serde::de::DeserializeOwned>(url: &str, fingerprint: Option<&str>, pat
     }
     let agent = agent(fingerprint)?;
     let full = format!("{}{path}", url.trim_end_matches('/'));
+    unreachable(&full).map_err(|e| format!("the hub at {url}: {e}"))?;
     let response = agent
         .get(&full)
         .header("Authorization", &format!("Bearer {bearer}"))
         .call()
-        .map_err(|e| format!("the hub at {url} didn't answer ({e})"))?;
+        .map_err(|e| format!("the hub at {url} didn't answer ({})", request_error(&full, e)))?;
     let status = response.status().as_u16();
     let mut text = String::new();
     let _ = response.into_body().into_reader().take(64 * 1024).read_to_string(&mut text);

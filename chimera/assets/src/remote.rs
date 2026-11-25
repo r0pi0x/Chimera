@@ -31,6 +31,17 @@
 //! along a redirect). With a certificate fingerprint (`fingerprint`, as a
 //! game server hands it out), HTTPS trusts exactly that certificate
 //! (`tls::PinnedTls`), not the usual authorities.
+//!
+//! A lookup never hangs: resolving the service's name and connecting to
+//! it (TCP and TLS) have `CONNECT_TIMEOUT` each, a lookup's answer
+//! (`Remote::call`: the builds, a manifest, the key, a record)
+//! `ANSWER_TIMEOUT` to start. A service that couldn't be reached (its
+//! name doesn't resolve, no route, no connection in time: offline, or a
+//! sandbox without network) is marked `unreachable` for
+//! `UNREACHABLE_FOR`, and every request to it in that time, from any
+//! `Remote` or the account calls, fails at once with a clear message
+//! (kind `NotConnected`, not `transient`: not retried), so a lookup
+//! across every game and record costs one wait, not one each.
 
 use std::{
     collections::HashMap,
@@ -39,7 +50,7 @@ use std::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use ureq::Agent;
@@ -130,13 +141,91 @@ impl RemoteConfig {
     }
 }
 
+/// How long resolving a service's name may take, and connecting to it
+/// (TCP and the TLS handshake) after that.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
+/// How long a lookup (`Remote::call`) waits for its answer to start.
+pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long a service that couldn't be reached isn't asked again.
+pub const UNREACHABLE_FOR: Duration = Duration::from_secs(30);
+
+/// Services (by `origin`) that couldn't be reached, and when.
+static UNREACHABLE: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
+
+/// `url`'s scheme, host and port (`https://host:port`): what reachability
+/// is kept by.
+fn origin(url: &str) -> String {
+    let (scheme, rest) = url.split_once("://").unwrap_or(("https", url));
+    format!("{scheme}://{}", rest.split('/').next().unwrap_or(""))
+}
+
+/// Err (kind `NotConnected`) when `url`'s service couldn't be reached in
+/// the last `UNREACHABLE_FOR`: what to say instead of asking it again.
+pub fn unreachable(url: &str) -> io::Result<()> {
+    let origin = origin(url);
+    let mut list = UNREACHABLE.lock().unwrap_or_else(|e| e.into_inner());
+    list.retain(|(_, at)| at.elapsed() < UNREACHABLE_FOR);
+    match list.iter().find(|(o, _)| *o == origin) {
+        Some((_, at)) => Err(io::Error::new(
+            io::ErrorKind::NotConnected,
+            format!(
+                "{origin}: unreachable {} s ago (offline, or the service is down); not asked again for {} s",
+                at.elapsed().as_secs(),
+                UNREACHABLE_FOR.as_secs()
+            ),
+        )),
+        None => Ok(()),
+    }
+}
+
+/// Whether `e` says the service couldn't be reached at all (its name
+/// didn't resolve, no route, no connection in time), not that it answered
+/// badly or closed a connection (a refused or reset one is `transient`).
+pub fn is_unreachable(e: &ureq::Error) -> bool {
+    use ureq::{Error, Timeout};
+    match e {
+        Error::Timeout(Timeout::Resolve | Timeout::Connect) | Error::HostNotFound | Error::ConnectionFailed => true,
+        Error::Io(e) => {
+            matches!(
+                e.kind(),
+                io::ErrorKind::NetworkUnreachable
+                    | io::ErrorKind::HostUnreachable
+                    | io::ErrorKind::NetworkDown
+                    | io::ErrorKind::AddrNotAvailable
+            ) || e.to_string().contains("lookup address")
+        }
+        _ => false,
+    }
+}
+
+/// `e` from a request to `url` as an io error; a service that couldn't be
+/// reached is marked `unreachable` and said so (kind `NotConnected`).
+pub fn request_error(url: &str, e: ureq::Error) -> io::Error {
+    if !is_unreachable(&e) {
+        return io::Error::other(format!("{url}: {e}"));
+    }
+    let origin = origin(url);
+    let mut list = UNREACHABLE.lock().unwrap_or_else(|e| e.into_inner());
+    list.retain(|(o, _)| *o != origin);
+    list.push((origin.clone(), Instant::now()));
+    io::Error::new(
+        io::ErrorKind::NotConnected,
+        format!(
+            "{origin}: unreachable ({e}; offline, or the service is down); not asked again for {} s",
+            UNREACHABLE_FOR.as_secs()
+        ),
+    )
+}
+
 /// An HTTPS agent for our services: no redirects, statuses as answers,
-/// and with `fingerprint` exactly that certificate trusted
-/// (`tls::PinnedTls`); without, the usual authorities.
+/// `CONNECT_TIMEOUT` to resolve and to connect, and with `fingerprint`
+/// exactly that certificate trusted (`tls::PinnedTls`); without, the
+/// usual authorities.
 pub fn agent(fingerprint: Option<&str>) -> Result<Agent, String> {
     let settings = Agent::config_builder()
         .http_status_as_error(false)
-        .timeout_connect(Some(Duration::from_secs(10)))
+        .timeout_resolve(Some(CONNECT_TIMEOUT))
+        .timeout_connect(Some(CONNECT_TIMEOUT))
         .timeout_recv_response(Some(Duration::from_secs(60)))
         .timeout_per_read(Some(Duration::from_secs(60)))
         .max_redirects(0)
@@ -226,14 +315,28 @@ impl Remote {
     /// GET (or POST `body`) `path`: status, headers wanted, body.
     fn call(&self, path: &str, body: Option<&[u8]>, want: &[&str]) -> io::Result<(u16, Vec<Option<String>>, Vec<u8>)> {
         let url = format!("{}{path}", self.base);
+        unreachable(&url)?;
         let auth = self.bearer();
         let result = match body {
-            None => self.agent.get(&url).header("Authorization", &auth).call(),
-            Some(b) => {
-                self.agent.post(&url).header("Authorization", &auth).header("Content-Type", "text/plain").send(b)
-            }
+            None => self
+                .agent
+                .get(&url)
+                .config()
+                .timeout_recv_response(Some(ANSWER_TIMEOUT))
+                .build()
+                .header("Authorization", &auth)
+                .call(),
+            Some(b) => self
+                .agent
+                .post(&url)
+                .config()
+                .timeout_recv_response(Some(ANSWER_TIMEOUT))
+                .build()
+                .header("Authorization", &auth)
+                .header("Content-Type", "text/plain")
+                .send(b),
         };
-        let mut response = result.map_err(|e| io::Error::other(format!("{url}: {e}")))?;
+        let mut response = result.map_err(|e| request_error(&url, e))?;
         let status = response.status().as_u16();
         let headers =
             want.iter().map(|h| response.headers().get(*h).and_then(|v| v.to_str().ok()).map(String::from)).collect();
@@ -246,6 +349,7 @@ impl Remote {
     /// else the error the status means.
     fn post_stream(&self, path: &str, body: &[u8]) -> io::Result<ureq::BodyReader<'static>> {
         let url = format!("{}{path}", self.base);
+        unreachable(&url)?;
         let auth = self.bearer();
         let response = self
             .agent
@@ -253,7 +357,7 @@ impl Remote {
             .header("Authorization", &auth)
             .header("Content-Type", "text/plain")
             .send(body)
-            .map_err(|e| io::Error::other(format!("{url}: {e}")))?;
+            .map_err(|e| request_error(&url, e))?;
         let status = response.status().as_u16();
         let reader = response.into_body().into_reader();
         if status != 200 {
@@ -275,12 +379,13 @@ impl Remote {
         body: &[u8],
     ) -> io::Result<(u16, Option<String>, String)> {
         let url = format!("{}{path}", self.base);
+        unreachable(&url)?;
         let auth = self.bearer();
         let mut request = self.agent.post(&url).header("Authorization", &auth).header("Content-Type", content_type);
         for (name, value) in headers {
             request = request.header(*name, *value);
         }
-        let response = request.send(body).map_err(|e| io::Error::other(format!("{url}: {e}")))?;
+        let response = request.send(body).map_err(|e| request_error(&url, e))?;
         let status = response.status().as_u16();
         let retry = response.headers().get("Retry-After").and_then(|v| v.to_str().ok()).map(String::from);
         let mut text = String::new();

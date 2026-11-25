@@ -17,7 +17,9 @@
 //! there when nothing pins one), checked and kept; `fetcher` gets the
 //! records a `CachedFiles` lacks. A service that can't be reached or
 //! refuses is reported once per game and process, and the game is then
-//! treated as not served.
+//! treated as not served; one that can't be reached at all (offline:
+//! `remote::unreachable`, after a short connect timeout) is said once and
+//! not asked for the other games, so a lookup never hangs.
 //!
 //! Whether an install is used (`use_install`, `service_first`): the
 //! environment's `CHIMERA_ASSET_USE_INSTALL` (0/1), else `[assets]
@@ -292,6 +294,12 @@ impl AssetSettings {
         let remote = self.remote()?;
         let key = (remote.url().to_string(), what.to_string());
         if FAILED.lock().unwrap_or_else(|e| e.into_inner()).contains(&key) {
+            return None;
+        }
+        // A service that couldn't be reached a moment ago (offline): said
+        // once for the service, not again per game.
+        if let Err(e) = remote::unreachable(remote.url()) {
+            warn_once(remote.url(), "", &e.to_string());
             return None;
         }
         f(&remote).inspect_err(|e| warn_once(remote.url(), what, e)).ok()

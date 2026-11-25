@@ -381,7 +381,11 @@ install's `.ctx` scripts decrypt (Thin-ICE, all of them, on 2026-11-15).
 - Can't connect / timeouts: the hub's front (or a service with no hub)
   isn't answering: check with its owner that it is up and its port open,
   and that the URL is `https://`. Plain `http://` is refused except to
-  this machine.
+  this machine. `<url>: unreachable (...; offline, or the service is
+  down)`: its name didn't resolve or no connection came within 4 s
+  (offline, a sandbox without network); the service isn't asked again
+  for 30 s, so the other games' lookups fail at once and the installs
+  found are used.
 - `the server's key isn't the one pinned`: the server was re-keyed or the
   URL points elsewhere; check with the admin before changing `key`.
 - `asset refused <game>: <path>: record ...: hash mismatch`: a record
