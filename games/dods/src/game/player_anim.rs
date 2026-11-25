@@ -150,6 +150,9 @@ pub struct Gesture {
 
 /// One DoD:S body's animation state.
 #[derive(Component, Debug, Clone)]
+// Comes and goes with the game's body on a character: a sparse set, or
+// each combination with the rest makes a table (docs/DESIGN.md, "ECS style").
+#[component(storage = "SparseSet")]
 pub struct DodsPlayerAnim {
     reset: bool,
     snap: bool,

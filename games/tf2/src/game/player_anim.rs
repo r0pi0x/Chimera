@@ -275,6 +275,9 @@ pub fn translate(asked: &str, k: Kind) -> String {
 
 /// One TF2 body's animation state.
 #[derive(Component, Debug, Clone)]
+// Comes and goes with the game's body on a character: a sparse set, or
+// each combination with the rest makes a table (docs/DESIGN.md, "ECS style").
+#[component(storage = "SparseSet")]
 pub struct Tf2PlayerAnim {
     reset: bool,
     /// The feet (and their goal) go to the eyes on the next update: only

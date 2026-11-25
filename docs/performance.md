@@ -3769,6 +3769,25 @@ then: de_dust2 - / 7.04M / 7.27M, cs_office 10.80M / 10.91M / 10.68M,
 dm_lockdown 10.07M / 10.51M / 10.35M, warehouse 5.71M / 6.14M / 5.76M,
 de_inferno 12.46M / 12.21M / 12.18M.
 
+### The new games' bodies on a session's tables (2026-11-25)
+
+`heavy::session_maps` failed on main at 13a112e95 with 759 tables after
+three laps (limit 700; 654 at fe463a726), though a lap after the first
+added 9: the tables had moved with the games, not with a toggle. Since
+fe463a726 TF2's, DoD:S's and CS 1.6's bodies come up in the session's
+ladders (at fe463a726 no character wore a TF2 body), and TF2's, DoD:S's
+and HL2:DM's animation states
+(`Tf2PlayerAnim`, `IdleScene`, `DodsPlayerAnim`, `Hl2PlayerAnim`) went on
+and off characters with their body's game as table components: the
+characters' tables went from 80 to 165. Those four are sparse sets now
+(DESIGN.md, "ECS style"): 120 characters' tables, 718 in all (weapons 194
+-> 206 and map parts 358 -> 367 with the guns and maps since). What still
+varies is TF2's class and movement parts (one move), its skin marker
+(`Tf2Skin`) and CS 1.6's gesture; the last two are in their games'
+converter sources (`bodies.rs`), so a change there is a new converter
+version and a republish. The test caps the characters' tables (160) apart
+from all of them (770).
+
 ### A ragdoll's cost (2026-11-12)
 
 `cs_source`'s `heavy::map_ragdoll_cost`: ten CS:S players killed by a head

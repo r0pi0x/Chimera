@@ -3,7 +3,8 @@
 //! server's map change (`party_roster::server::swap_map`), a new ladder and
 //! bots walking its rungs on each map, three laps over maps of every game,
 //! each map with the same ladder every lap. What a map holds must be what it
-//! held on the first lap, the characters' tables must stop growing, a lap
+//! held on the first lap, the characters' tables must stop growing (and
+//! stay under 160; every table under 770), a lap
 //! after the first must add few characters' archetypes (fewer than 100; a
 //! failure lists the moves that made them, `census::made_by`), and a tick
 //! must cost what it did on the lap before.
@@ -250,7 +251,26 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
             );
         }
     }
-    let tables = rows.last().unwrap().2.tables;
-    assert!(tables < 700, "{tables} tables after three laps: a component that comes and goes on characters isn't a sparse set");
+    // A component that comes and goes on characters as a table component
+    // makes a table for every combination of the rest: a session made about
+    // 200 a map before they were sparse sets (docs/performance.md, "A
+    // session's frame rate"). The characters' own: 80 when only CS:S,
+    // HL2:DM, Combat Arms and Halo bodies came up, 120 with TF2's, DoD:S's
+    // and CS 1.6's (their game parts: TF2's class and movement parts, its
+    // skin marker, CS 1.6's gesture; their animation states are sparse).
+    let last = &rows.last().unwrap().2;
+    let characters_tables = last.made_tables.iter().filter(|k| k.split('+').any(|n| n == "Health")).count();
+    assert!(
+        characters_tables < 160,
+        "{characters_tables} characters' tables after three laps: a component that comes and goes on characters isn't a \
+         sparse set (`chimera_census varies`)"
+    );
+    // Every table: the characters', the weapons' (a gun's game's parts:
+    // about 200) and the maps' parts (each map's props and brushes: about
+    // 360 over the five maps). 654 on 2026-11-24, 718 with the games and
+    // guns since (characters 80 -> 120, weapons 194 -> 206, map parts 358
+    // -> 367).
+    let tables = last.tables;
+    assert!(tables < 770, "{tables} tables after three laps: a component that comes and goes isn't a sparse set");
 }
 

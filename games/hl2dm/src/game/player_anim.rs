@@ -160,6 +160,9 @@ pub struct Gesture {
 
 /// One HL2:DM body's animation state.
 #[derive(Component, Debug, Clone)]
+// Comes and goes with the game's body on a character: a sparse set, or
+// each combination with the rest makes a table (docs/DESIGN.md, "ECS style").
+#[component(storage = "SparseSet")]
 pub struct Hl2PlayerAnim {
     /// The next update starts afresh (spawn, a new model).
     reset: bool,

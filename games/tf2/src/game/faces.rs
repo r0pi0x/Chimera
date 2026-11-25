@@ -147,6 +147,9 @@ impl IdleFace {
 /// A TF2 body's idle scene: when it started (s) and whether its player
 /// was alive last frame.
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
+// Comes and goes with the game's body on a character: a sparse set, or
+// each combination with the rest makes a table (docs/DESIGN.md, "ECS style").
+#[component(storage = "SparseSet")]
 pub struct IdleScene {
     pub start: f64,
     pub alive: bool,
