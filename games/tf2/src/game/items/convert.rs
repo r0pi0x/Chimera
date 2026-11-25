@@ -33,6 +33,9 @@
 //!    once at the end (§1: clip 12 × 0.4 → 5). The game derives its own
 //!    numbers from `attrs` over its weapon data (`super::docs`);
 //!    `effective` is for reading and for the converted-install test.
+//!    The script's `SoundData` goes into `script_sounds` (role ->
+//!    entry; version 4): what a class whose base document of ours names
+//!    no sound plays (the Huntsman's shot, report d1d9bdae).
 //!
 //! 5. **Looks** (install.md 5.1, viewmodel.md 1): the item's `visuals`
 //!    block (its prefabs' merged under it) and its own presentation keys
@@ -145,6 +148,12 @@ pub struct ItemRecord {
     /// The numbers with the attributes applied (module doc, step 4).
     #[serde(default)]
     pub effective: BTreeMap<String, f64>,
+    /// The item class's script's `SoundData` (role, lower case, ->
+    /// sound entry: `single_shot`, `empty`, `special1` ...), when it was
+    /// read: what its class plays where our base document names nothing
+    /// (module doc, step 4; version 4).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub script_sounds: BTreeMap<String, String>,
     /// Its looks (module doc, step 5).
     #[serde(default, skip_serializing_if = "Visuals::is_empty")]
     pub visuals: Visuals,
@@ -350,6 +359,19 @@ fn schema_root(kv: &Kv) -> &Kv {
 
 /// The numbers of an item class's script (its first block): `damage`,
 /// `interval`, `clip`, `bullets`, `spread`.
+/// The `SoundData` of a weapon script's root block (`script`): role
+/// (lower case) -> sound entry.
+pub fn script_sounds(script: &Kv) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let Some(data) = script.items().iter().find(|(_, v)| matches!(v, Kv::Block(_))).map(|(_, v)| v) else { return out };
+    for (k, v) in data.get("SoundData").map(Kv::items).unwrap_or_default() {
+        if let Some(t) = v.str_value().map(str::trim).filter(|t| !t.is_empty()) {
+            out.insert(k.trim().to_ascii_lowercase(), t.to_string());
+        }
+    }
+    out
+}
+
 pub fn script_base(script: &Kv) -> BTreeMap<String, f64> {
     let mut out = BTreeMap::new();
     let Some(data) = script.items().iter().find(|(_, v)| matches!(v, Kv::Block(_))).map(|(_, v)| v) else { return out };
@@ -445,7 +467,8 @@ pub fn convert(schema: &str, script: &dyn Fn(&str) -> Option<Kv>) -> Converted {
     let prefabs = root.get("prefabs").unwrap_or(&empty);
     let defs = definitions(root);
     let mut notes = Vec::new();
-    let mut scripts: BTreeMap<String, Option<BTreeMap<String, f64>>> = BTreeMap::new();
+    #[allow(clippy::type_complexity)]
+    let mut scripts: BTreeMap<String, Option<(BTreeMap<String, f64>, BTreeMap<String, String>)>> = BTreeMap::new();
     let mut out = Vec::new();
     for (key, item) in items.items() {
         let Ok(index) = key.trim().parse::<u32>() else { continue };
@@ -503,10 +526,10 @@ pub fn convert(schema: &str, script: &dyn Fn(&str) -> Option<Kv>) -> Converted {
         let attrs: BTreeMap<String, f64> = folded.into_iter().filter(|(_, (op, v))| *v != op.identity()).map(|(c, (_, v))| (c, v)).collect();
         unknown.sort();
         unknown.dedup();
-        let base = scripts
+        let (base, sounds) = scripts
             .entry(class.clone())
             .or_insert_with(|| {
-                let read = script(&class).map(|s| script_base(&s));
+                let read = script(&class).map(|s| (script_base(&s), script_sounds(&s)));
                 if read.is_none() && class.starts_with("tf_weapon_") {
                     notes.push(format!("{class}: no script read (no key, or not in the install)"));
                 }
@@ -526,6 +549,7 @@ pub fn convert(schema: &str, script: &dyn Fn(&str) -> Option<Kv>) -> Converted {
             unknown,
             base,
             effective: BTreeMap::new(),
+            script_sounds: sounds,
             visuals: Visuals::of(&e),
         };
         r.effective = effective(&r);

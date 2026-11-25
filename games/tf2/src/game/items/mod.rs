@@ -101,7 +101,9 @@
 //! - An item's `anim_slot` and `animation_replacement` (on `tf2:item`)
 //!   pick its sequences only for a melee unlock (`view::item_activity`:
 //!   one that remaps its draw, idle or swings, names a slot, or is over
-//!   the Fists, the Heavy's gloves); a gun plays its base's sequences; its `muzzle_flash`,
+//!   the Fists, the Heavy's gloves; the third-person stance takes any
+//!   item's slot, `player_anim::Kind::of_slot`); a gun plays its base's
+//!   view-model sequences; its `muzzle_flash`,
 //!   `tracer_effect` and `particle_effect` are recorded, the base's
 //!   effects play; a one-piece view model (`attach_to_hands` 0) is still
 //!   bone-merged; of its sounds the shot, crit shot (Minigun), empty and
@@ -148,13 +150,18 @@ use crate::mount::Mount;
 pub const CONVERTER: &str = "tf2:item_stats";
 
 /// Its version: bumped by hand whenever any output byte could change.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 
 /// Where its output lives in TF2's manifest.
 pub const GEN_ROOT: &str = "chimera/gen/tf2.items";
 
 /// The pack's file.
-pub const PACK_PATH: &str = "chimera/gen/tf2.items/v3/items.toml";
+pub const PACK_PATH: &str = "chimera/gen/tf2.items/v4/items.toml";
+
+/// The pack of converter version 3, read when the mount has no newer (an
+/// older store): the same records without their scripts' `SoundData`
+/// (`ItemRecord::script_sounds`: the Huntsman fires silently).
+pub const PACK_PATH_V3: &str = "chimera/gen/tf2.items/v3/items.toml";
 
 /// The pack of converter version 2, read when the mount has no newer (an
 /// older store): the same records, but a class with no script of its own
@@ -240,7 +247,8 @@ pub struct ItemLooks {
     pub skin: Option<i32>,
     /// Its kill icon (`[hud] icon`).
     pub icon: Option<String>,
-    /// The sound entries its `visuals` name (script names, no prefix).
+    /// The sound entries its `visuals` name and those of its class
+    /// script it plays (script names, no prefix).
     pub sounds: Vec<String>,
     /// The model key its thrown projectile shows its own held model by
     /// (a jar's, `docs::thrown_key`; None: its base's projectile).
@@ -263,6 +271,10 @@ impl ItemLooks {
             Some([n(0)?, n(1)?, n(2)?])
         });
         let mut sounds: Vec<String> = r.visuals.sounds.values().cloned().collect();
+        // Its class script's entries its document plays (`docs::looks`:
+        // where its base names none, the Huntsman's shot).
+        let played: Vec<&str> = doc.get("sounds").and_then(toml::Value::as_table).map_or(Vec::new(), |t| t.values().filter_map(toml::Value::as_str).collect());
+        sounds.extend(r.script_sounds.values().filter(|n| played.contains(&crate::game::maps::own_sound(n).as_str())).cloned());
         sounds.sort();
         sounds.dedup();
         Self {
@@ -289,7 +301,7 @@ pub fn base_in(data: &chimera_sim::weapon::data::WeaponData) -> Option<&str> {
 /// documents: their looks don't depend on the scripts). Reads the pack
 /// only when it is here (`Mount::held`): never fetches.
 pub fn on_mount(mount: &Mount) -> Vec<ItemWeapon> {
-    let Some(bytes) = [PACK_PATH, PACK_PATH_V2, PACK_PATH_V1].iter().filter(|p| mount.held(p)).find_map(|p| mount.read(p).ok()) else {
+    let Some(bytes) = [PACK_PATH, PACK_PATH_V3, PACK_PATH_V2, PACK_PATH_V1].iter().filter(|p| mount.held(p)).find_map(|p| mount.read(p).ok()) else {
         return Vec::new();
     };
     let Ok(pack) = ItemPack::parse(&String::from_utf8_lossy(&bytes)) else { return Vec::new() };
@@ -413,7 +425,7 @@ fn flat(id: &str, docs: &BTreeMap<String, toml::Table>, depth: usize) -> Option<
 /// The pack on `mount`, if it has one (a malformed one said); an older
 /// store's version-1 pack when it has no newer.
 pub fn read_pack(mount: &Mount) -> Option<ItemPack> {
-    let bytes = [PACK_PATH, PACK_PATH_V2, PACK_PATH_V1].iter().find_map(|p| mount.read(p).ok())?;
+    let bytes = [PACK_PATH, PACK_PATH_V3, PACK_PATH_V2, PACK_PATH_V1].iter().find_map(|p| mount.read(p).ok())?;
     let text = String::from_utf8_lossy(&bytes);
     ItemPack::parse(&text).map_err(|e| bevy::log::warn!("tf2: {PACK_PATH}: {e}")).ok()
 }
@@ -490,6 +502,35 @@ mod tests {
     "414" { "name" "Plain Launcher" "item_class" "tf_weapon_rocketlauncher" "item_slot" "primary" "used_by_classes" { "soldier" "1" } }
 } }
 "#;
+
+    /// Report d1d9bdae: the Huntsman's class has no stock weapon of ours,
+    /// so its abstract base names no shot; the converter keeps the class
+    /// script's `SoundData` (made-up entries here) and the item's
+    /// document plays its `single_shot` as its shot, loaded with the map.
+    #[test]
+    fn a_class_without_a_stock_weapon_shoots_with_its_scripts_sound() {
+        const BOW: &str = r#"
+"items_game" { "items" {
+    "56" { "name" "The Made Bow" "item_class" "tf_weapon_compound_bow" "item_slot" "primary" "used_by_classes" { "sniper" "1" } "anim_slot" "item2" }
+} }
+"#;
+        let script = |class: &str| {
+            (class == "tf_weapon_compound_bow").then(|| {
+                source_formats::keyvalues::parse_pc(r#"WeaponData { "Damage" "50" "SoundData" { "single_shot" "Made_Bow.Fire" "special1" "Made_Bow.Pull" } }"#)
+            })
+        };
+        let pack = convert::convert(BOW, &script).pack;
+        let r = pack.get(56).expect("the bow");
+        assert_eq!(r.script_sounds.get("single_shot").map(String::as_str), Some("Made_Bow.Fire"));
+        assert_eq!(r.visuals.anim_slot.as_deref(), Some("item2"));
+        let stock = crate::game::weapons::script_numbers::GunNumbers::builtin();
+        let (items, _) = weapons(&pack, &ItemsData::builtin(), &stock.docs);
+        let set = stock.clone().with_pack(&pack).parse().expect("the items parse");
+        let bow = set.get("tf2:huntsman").expect("the Huntsman");
+        assert_eq!(bow.sounds.as_ref().and_then(|s| s.fire.as_deref()), Some("tf2:Made_Bow.Fire"));
+        let looks = &items.iter().find(|i| i.id == "tf2:huntsman").expect("its item").looks;
+        assert_eq!(looks.sounds, ["Made_Bow.Fire"], "loaded with the map");
+    }
 
     #[test]
     fn items_play_their_own_sounds_and_show_their_own_looks_else_the_base_s() {

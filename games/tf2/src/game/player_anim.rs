@@ -12,7 +12,11 @@
 //! `PRIMARY`, `SECONDARY` or `MELEE`, the Shotgun the Engineer's primary
 //! and the Soldier's, Pyro's and Heavy's secondary, the Grenade Launcher
 //! a secondary and the Stickybomb Launcher a primary (their items'
-//! animation slots, weapons_more.md 1); the class
+//! animation slots, weapons_more.md 1), an unlock's own animation slot
+//! over that (`Kind::of_slot`, the item's `anim_slot` kept by
+//! `follow_items`: the Huntsman's `ITEM2`, which a Sniper holds the bow
+//! up in; a model without the slot's set plays the gun's own kind's,
+//! then its primary one; report d1d9bdae); the class
 //! `Tf2PlayerAnim::class`, kept by `follow_class` from the rung's drawn
 //! class); the sequence drawn among those of the activity by |weight|
 //! (a negative weight keeps the current one), changed only when the
@@ -60,7 +64,9 @@
 //! they carry is drawn (7a: no holstered weapon).
 //!
 //! Known shortcuts: the
-//! scoped Sniper's deployed set and its 2 s hold aren't played; the
+//! scoped Sniper's deployed set and its 2 s hold aren't played, nor the
+//! bow's drawn one (`ACT_MP_DEPLOYED_ITEM2` ...: 2's "aiming" while the
+//! Huntsman draws; it stands in the plain `ITEM2` set); the
 //! class data's `DontDoAirwalk` / `DontDoNewJump` and the Scout's air-dash
 //! crouch aren't read (3); no
 //! flinch on damage (open question 7) and no air-jump sequence (open
@@ -104,6 +110,12 @@ pub enum Kind {
     Primary,
     Secondary,
     Melee,
+    /// The kinds only an item's animation slot gives (2: `anim_slot`).
+    MeleeAllclass,
+    Item1,
+    Item2,
+    Pda,
+    Building,
 }
 
 impl Kind {
@@ -137,11 +149,34 @@ impl Kind {
         }
     }
 
+    /// The kind an item's animation slot names (2: the item schema's
+    /// `anim_slot`, lower case, replaces the script's type): the
+    /// Huntsman's `item2`, the flare guns' `item1`. None: a slot that
+    /// names no kind (`force_not_used`).
+    pub fn of_slot(slot: &str) -> Option<Kind> {
+        Some(match slot.trim().to_ascii_lowercase().as_str() {
+            "primary" => Kind::Primary,
+            "secondary" => Kind::Secondary,
+            "melee" => Kind::Melee,
+            "melee_allclass" => Kind::MeleeAllclass,
+            "item1" => Kind::Item1,
+            "item2" => Kind::Item2,
+            "pda" => Kind::Pda,
+            "building" => Kind::Building,
+            _ => return None,
+        })
+    }
+
     pub fn suffix(self) -> &'static str {
         match self {
             Kind::Primary => "PRIMARY",
             Kind::Secondary => "SECONDARY",
             Kind::Melee => "MELEE",
+            Kind::MeleeAllclass => "MELEE_ALLCLASS",
+            Kind::Item1 => "ITEM1",
+            Kind::Item2 => "ITEM2",
+            Kind::Pda => "PDA",
+            Kind::Building => "BUILDING",
         }
     }
 }
@@ -277,6 +312,12 @@ pub struct Tf2PlayerAnim {
     /// The active weapon's base when it is an unlock (`follow_items`:
     /// it stands as that weapon).
     pub base: Option<String>,
+    /// The active unlock's animation slot (`follow_items`: the item's
+    /// `anim_slot`, 2): the kind it animates as.
+    pub anim_slot: Option<String>,
+    /// The kind of the held gun without its slot (its base's by name,
+    /// `Kind::of_class`): what a model lacking the slot's kind plays.
+    own_kind: Kind,
     pub gestures: Vec<Gesture>,
     /// The last `move_x`, `move_y`, `body_yaw`, `body_pitch` set.
     pub pose: [f32; 4],
@@ -309,6 +350,8 @@ impl Default for Tf2PlayerAnim {
             kind: None,
             class: None,
             base: None,
+            anim_slot: None,
+            own_kind: Kind::Primary,
             gestures: Vec::new(),
             pose: [0.0; 4],
             spun: false,
@@ -444,12 +487,16 @@ impl Tf2PlayerAnim {
     /// The main sequence for `state` with kind `kind` (2, 1a): the
     /// translated activity; ours (open question 13) where the holder's
     /// model lacks it: spun, the kind's normal set; a kind the model
-    /// lacks, its primary one; else the reference pose.
+    /// lacks (an item's slot: a Soldier has no `ITEM2`), the gun's own
+    /// kind's, then its primary one; else the reference pose.
     fn main_sequence(&mut self, set: &AnimSet, state: State, kind: Kind, current: Option<usize>) -> (String, usize) {
         let spun = self.aiming();
         let mut asked = vec![translate(Self::main_activity(state, spun), kind)];
         if spun {
             asked.push(translate(state.activity(), kind));
+        }
+        if self.own_kind != kind {
+            asked.push(translate(state.activity(), self.own_kind));
         }
         asked.push(translate(state.activity(), Kind::Primary));
         for act in asked {
@@ -485,7 +532,10 @@ impl Tf2PlayerAnim {
         a.ik_locks = true;
         a.ik_rules = true;
         // An unlock stands as its base (`follow_items`).
-        let kind = weapon.map_or(Kind::Primary, |w| Kind::of_class(self.base.as_deref().unwrap_or(w), self.class.as_deref()));
+        // Its animation slot's kind, where the item names one (2).
+        let own = weapon.map_or(Kind::Primary, |w| Kind::of_class(self.base.as_deref().unwrap_or(w), self.class.as_deref()));
+        let kind = weapon.and(self.anim_slot.as_deref()).and_then(Kind::of_slot).unwrap_or(own);
+        self.own_kind = own;
         // Every pose parameter at 0 in its own units when the model is set
         // and on each spawn (4b): left to the engine's default, one whose
         // range starts at 0 sat at its middle, a special item's pose (the
@@ -663,13 +713,18 @@ fn follow_items(
     for (drawn, sim, inv) in &mut bodies {
         let active = inv.and_then(|i| i.active);
         let list = active.and_then(|w| items.get(w).ok()).map_or(&[][..], |p| p.0.as_slice());
-        let base = active.and_then(|w| unlocks.get(w).ok()).map(|i| i.0.base.as_str()).filter(|b| !b.is_empty());
+        let item = active.and_then(|w| unlocks.get(w).ok());
+        let base = item.map(|i| i.0.base.as_str()).filter(|b| !b.is_empty());
+        let slot = item.and_then(|i| i.0.anim_slot.as_deref()).filter(|t| !t.is_empty());
         if let Some(mut a) = drawn {
             if a.item_params != list {
                 a.item_params = list.to_vec();
             }
             if a.base.as_deref() != base {
                 a.base = base.map(str::to_string);
+            }
+            if a.anim_slot.as_deref() != slot {
+                a.anim_slot = slot.map(str::to_string);
             }
         }
         if let Some(mut s) = sim {
@@ -678,6 +733,9 @@ fn follow_items(
             }
             if s.0.base.as_deref() != base {
                 s.0.base = base.map(str::to_string);
+            }
+            if s.0.anim_slot.as_deref() != slot {
+                s.0.anim_slot = slot.map(str::to_string);
             }
         }
     }
@@ -1083,6 +1141,36 @@ mod tests {
         assert_eq!(a.main, Some(1), "the plain stand again");
         assert!(s.gestures.iter().any(|g| g.sequence == 4), "the wind-down's gesture");
         assert_eq!(s.gestures.len(), 1, "one gesture in the attack slot: {:?}", s.gestures);
+    }
+
+    /// 2: an item's animation slot picks its kind (report d1d9bdae: the
+    /// Huntsman, over the abstract bow, stood in the rifle's `PRIMARY`
+    /// set, the bow held sideways): its `ITEM2` stand and fire; a model
+    /// without the slot's set (a Soldier's) plays the gun's own kind's.
+    #[test]
+    fn an_items_anim_slot_picks_its_kind() {
+        assert_eq!(Kind::of_slot("item2"), Some(Kind::Item2));
+        assert_eq!(Kind::of_slot("MELEE_ALLCLASS"), Some(Kind::MeleeAllclass));
+        assert_eq!(Kind::of_slot("force_not_used"), None);
+        assert_eq!(translate("ACT_MP_ATTACK_STAND", Kind::Item2), "ACT_MP_ATTACK_STAND_ITEM2");
+        let bow = Some("tf2:huntsman");
+        let still = Inputs { on_ground: true, ..Default::default() };
+        let set = made_up(&["", "ACT_MP_STAND_PRIMARY", "ACT_MP_STAND_ITEM2", "ACT_MP_ATTACK_STAND_ITEM2"]);
+        let mut a = Animator::new(set);
+        let mut s = Tf2PlayerAnim { base: Some("tf2:tf_weapon_compound_bow".into()), ..Default::default() };
+        s.step(&mut a, &still, bow, 0.015, 0.0);
+        assert_eq!(a.main, Some(1), "no slot: the bow's own kind");
+        s.anim_slot = Some("item2".into());
+        s.step(&mut a, &still, bow, 0.015, 0.1);
+        assert_eq!(a.main, Some(2), "the slot's ITEM2 stand");
+        s.step(&mut a, &Inputs { fired: true, ..still }, bow, 0.015, 0.2);
+        assert!(s.gestures.iter().any(|g| g.sequence == 3), "the ITEM2 shot: {:?}", s.gestures);
+        // A model without ITEM2: the gun's own kind's set.
+        let set = made_up(&["", "ACT_MP_STAND_SECONDARY", "ACT_MP_STAND_MELEE"]);
+        let mut a = Animator::new(set);
+        let mut s = Tf2PlayerAnim { base: Some("tf2:tf_weapon_bat".into()), anim_slot: Some("item2".into()), ..Default::default() };
+        s.step(&mut a, &still, Some("tf2:sandman"), 0.015, 0.0);
+        assert_eq!(a.main, Some(2), "the base's MELEE, not PRIMARY or the reference pose");
     }
 
     /// Open question 13 (ours): a holder without deployed sequences (a

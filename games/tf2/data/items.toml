@@ -364,7 +364,7 @@ note = "its reload time is its base's"
 [items.huntsman]
 index = 56
 batch = 2
-note = "its draw and fire sounds; arrows set alight"
+note = "its draw sound (the fire sound is its class script's, items::docs); arrows set alight"
 
 [items.shortstop]
 index = 220

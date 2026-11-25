@@ -60,7 +60,10 @@
 //! `[models] view` and `world`, its kill icon (`item_iconname`) as
 //! `[hud] icon`, the sound entries `visuals` names in place of its
 //! base's (`SOUNDS`: the shot, the Minigun's shot and crit shot, empty,
-//! the swings' hit, world hit and miss, the crit swing), and on its
+//! the swings' hit, world hit and miss, the crit swing), its class
+//! script's (`ItemRecord::script_sounds`) for a `[sounds]` key the base
+//! document lacks (the Huntsman's class has no stock weapon of ours: its
+//! abstract base names no shot, report d1d9bdae), and on its
 //! `tf2:item` hook its base (`super::base_in`) and skin.
 //!
 //! The ladder may draw it (`class` kept) when it deals damage, unless
@@ -542,6 +545,15 @@ fn looks(doc: &mut Table, r: &ItemRecord) {
         table(doc, "hud").insert("icon".into(), Value::String(icon.clone()));
     }
     let own = |n: &str| Value::String(crate::game::maps::own_sound(n));
+    // The class script's sounds where the base document has none (its
+    // `[sounds]` key absent): an abstract base's (module doc).
+    for (kind, place) in SOUNDS {
+        let (Some(key), Some(name)) = (place.strip_prefix("sounds."), r.script_sounds.get(*kind)) else { continue };
+        let t = table(doc, "sounds");
+        if !t.contains_key(key) {
+            t.insert(key.into(), own(name));
+        }
+    }
     for (kind, place) in SOUNDS {
         let Some(name) = v.sounds.get(*kind) else { continue };
         if let Some(key) = place.strip_prefix("sounds.") {
