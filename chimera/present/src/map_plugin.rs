@@ -270,6 +270,7 @@ impl MapLayers for Present {
                     .run_if(resource_exists::<Assets<Mesh>>.and_then(resource_exists::<Assets<StandardMaterial>>)),
                 // A map's first view warmed behind a cover.
                 render::first_view_warm::warm_props,
+                render::first_view_warm::warm_models,
                 // View models added with no map spawned (the greybox) get
                 // drawing assets of their own first.
                 render::view_model::assets_without_map

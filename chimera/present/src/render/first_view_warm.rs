@@ -15,6 +15,14 @@
 //!   its material's pipeline key, its shadow flags, skin and morphs, its
 //!   fade band) a few meters in front of the camera, its range kept (the
 //!   range's dithered pipeline).
+//! - **Bodies and held models** (`warm_models`): a body nobody wears yet
+//!   and a gun nobody holds yet are built but not in the world, so
+//!   nothing drew them while the map settled: a match whose first rung
+//!   put on another game's body (TF2's classes, DoD:S's: skinned meshes
+//!   of another layout than the base game's soldiers) compiled that
+//!   pipeline on the first frames after the cover (a joined client's first
+//!   shown frame with one `PropMaterial` pipeline pending). One part of
+//!   each kind of built body part and held model part beside the props.
 //! - **View models**: `view_model::warm_view_models`, under each view
 //!   model camera.
 
@@ -144,6 +152,111 @@ pub fn warm_props(
     *made = Some((warm.0, count, root));
 }
 
+/// The root of the copies `warm_models` draws, and what was built when
+/// they were picked (bodies, held models).
+#[derive(Component)]
+pub struct WarmModels(usize, usize);
+
+/// A mesh's kind for a pipeline: its vertex layout where the mesh is
+/// still here (a mesh only on the GPU: the mesh itself).
+type Layout = (Option<AssetId<Mesh>>, Option<(Vec<bevy::mesh::MeshVertexAttributeId>, bevy::mesh::PrimitiveTopology, bool)>);
+
+fn layout_of(meshes: Option<&Assets<Mesh>>, mesh: &Handle<Mesh>) -> Layout {
+    let layout = meshes.and_then(|m| m.get(mesh)).and_then(|m| {
+        let ids: Vec<_> = m.try_attributes().ok()?.map(|(a, _)| a.id).collect();
+        Some((ids, m.primitive_topology(), m.has_morph_targets()))
+    });
+    (layout.is_none().then(|| mesh.id()), layout)
+}
+
+/// One part of each kind of built body part (skinned, its bones all one
+/// joint: never seen) and held model part, in front of the overview
+/// camera (module doc), made again when more are built; gone with the
+/// camera.
+pub fn warm_models(
+    warm: Option<Res<WarmFirstView>>,
+    play: Option<Res<super::bodies::PlayModels>>,
+    held: Option<Res<super::bodies::HeldAssets>>,
+    materials: Option<Res<Assets<PropMaterial>>>,
+    meshes: Option<Res<Assets<Mesh>>>,
+    dormant: Option<Res<DormantProps>>,
+    warmed: Query<(Entity, &WarmModels, &ChildOf)>,
+    mut commands: Commands,
+) {
+    use bevy::pbr::Material;
+    let (Some(warm), Some(materials)) = (warm, materials) else {
+        for (e, ..) in &warmed {
+            commands.entity(e).try_despawn();
+        }
+        return;
+    };
+    let bodies = play.as_ref().map_or(0, |p| p.built().count());
+    let guns = held.as_ref().map_or(0, |h| h.0.len());
+    if warmed.iter().any(|(_, w, at)| at.parent() == warm.0 && (w.0, w.1) == (bodies, guns)) {
+        return;
+    }
+    for (e, ..) in &warmed {
+        commands.entity(e).try_despawn();
+    }
+    let root = commands
+        .spawn((
+            Name::new("Bodies and held models warming"),
+            WarmCopy,
+            WarmModels(bodies, guns),
+            Transform::from_xyz(0.0, 0.0, -4.0),
+            Visibility::Visible,
+            ChildOf(warm.0),
+        ))
+        .id();
+    let mut kinds = HashSet::new();
+    let mut copies = 0;
+    let mut kind_of = |mesh: &Handle<Mesh>, material: &Handle<PropMaterial>, skinned: bool| {
+        let m = prop(&materials, dormant.as_deref(), material)?;
+        let kind = (layout_of(meshes.as_deref(), mesh), std::mem::discriminant(&m.alpha_mode()), m.double_sided, m.cull_front, skinned);
+        kinds.insert(kind).then_some(())
+    };
+    for body in play.iter().flat_map(|p| p.built()) {
+        let mut joint = None;
+        for (mesh, material) in &body.parts {
+            if kind_of(mesh, material, true).is_none() {
+                continue;
+            }
+            let joint = *joint.get_or_insert_with(|| commands.spawn((body.root, Visibility::Inherited, ChildOf(root))).id());
+            commands.spawn((
+                WarmCopy,
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material.clone()),
+                SkinnedMesh { inverse_bindposes: body.bindposes.clone(), joints: vec![joint; body.bones.len().max(1)] },
+                NoFrustumCulling,
+                ChildOf(joint),
+            ));
+            copies += 1;
+        }
+    }
+    // In key order: the same copies each time.
+    let mut keys: Vec<&String> = held.iter().flat_map(|h| h.0.keys()).collect();
+    keys.sort();
+    for key in keys {
+        let Some(parts) = held.as_ref().and_then(|h| h.0.get(key)) else { continue };
+        for (mesh, material) in &parts.whole {
+            if kind_of(mesh, material, false).is_none() {
+                continue;
+            }
+            commands.spawn((
+                WarmCopy,
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material.clone()),
+                NoFrustumCulling,
+                Transform::default(),
+                Visibility::Inherited,
+                ChildOf(root),
+            ));
+            copies += 1;
+        }
+    }
+    debug!("first view: {copies} kinds of body and held model part warming ({bodies} bodies, {guns} held models built)");
+}
+
 /// Above the bounds of the meshes on a render layer (the world's 0, the 3D
 /// sky's `SKYBOX_LAYER`), looking down, far enough that a 90-degree view
 /// holds them all, and the far plane past them; none without meshes. The
@@ -180,4 +293,71 @@ pub fn overview_pose<F: bevy::ecs::query::QueryFilter>(
     let eye = (centre + Vec3::Y * height).round();
     let far = (height + half.y + 10.0).ceil();
     Some((Transform::from_translation(eye).looking_at(eye - Vec3::Y, Vec3::NEG_Z), far))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use bevy::asset::RenderAssetUsages;
+
+    use super::*;
+    use crate::render::bodies::{HeldAssets, HeldParts};
+
+    fn held(mesh: &Handle<Mesh>, material: &Handle<PropMaterial>) -> HeldParts {
+        HeldParts {
+            bone: "hand".into(),
+            whole: vec![(mesh.clone(), material.clone())],
+            own: Vec::new(),
+            muzzle: None,
+            attachments: Vec::new(),
+            merged: Vec::new(),
+            turned: Vec::new(),
+        }
+    }
+
+    /// While a map warms behind a cover, one part of each kind of built
+    /// held model is drawn in front of the overview camera, though nobody
+    /// holds it yet; a model built later is added, and they go with the
+    /// warming.
+    #[test]
+    fn a_part_of_each_kind_of_built_model_is_drawn_while_warming() {
+        let mut app = App::new();
+        app.insert_resource(Assets::<Mesh>::default())
+            .insert_resource(Assets::<PropMaterial>::default())
+            .add_systems(Update, warm_models);
+        let mesh = app.world_mut().resource_mut::<Assets<Mesh>>().add(Mesh::new(
+            bevy::mesh::PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        ));
+        let mut store = app.world_mut().resource_mut::<Assets<PropMaterial>>();
+        let plain = store.add(PropMaterial::default());
+        let same = store.add(PropMaterial::default());
+        let two_sided = store.add(PropMaterial { double_sided: true, ..default() });
+        let guns: HashMap<String, HeldParts> =
+            [("a:one".to_string(), held(&mesh, &plain)), ("a:two".to_string(), held(&mesh, &same))].into();
+        app.insert_resource(HeldAssets(guns));
+        let copies = |app: &mut App| {
+            let w = app.world_mut();
+            w.query_filtered::<&MeshMaterial3d<PropMaterial>, With<WarmCopy>>().iter(w).map(|m| m.0.clone()).collect::<Vec<_>>()
+        };
+        // Not warming: nothing drawn.
+        app.update();
+        assert!(copies(&mut app).is_empty());
+        let camera = app.world_mut().spawn(Transform::default()).id();
+        app.insert_resource(WarmFirstView(camera));
+        app.update();
+        assert_eq!(copies(&mut app), [plain.clone()], "two guns of one kind: one copy");
+        // A model of another kind built meanwhile.
+        app.world_mut().resource_mut::<HeldAssets>().0.insert("b:three".into(), held(&mesh, &two_sided));
+        app.update();
+        app.update();
+        let now = copies(&mut app);
+        assert!(now.len() == 2 && now.contains(&plain) && now.contains(&two_sided), "{now:?}");
+        // The warming over: the copies go.
+        app.world_mut().remove_resource::<WarmFirstView>();
+        app.update();
+        app.update();
+        assert!(copies(&mut app).is_empty());
+    }
 }
