@@ -4114,7 +4114,9 @@ server's), and maps its blocks of 4 MB and more for good
 | free in arenas (MB) | 844-1,863 | given back |
 
 The test fails if the server has 2.5 GB in use on any map (2.9 GB with
-HL2:DM installed), holds 500 MB more than it has in use, or a map has 32 MB
+HL2:DM installed; since 2026-11-25 a base of 1.95 GB and an allowance for
+each guest installed: "Every game installed", "The server's memory, by
+game"), holds 500 MB more than it has in use, or a map has 32 MB
 more in use on its third visit than on its second.
 
 **With HL2:DM installed** (`CHIMERA_HL2DM_ROOT`, as the after-push run had
@@ -5271,6 +5273,257 @@ Disk: about 1.6 GB for the four guests per install set and converter
 version, inside the converted-map cache's cap (40 GB) and free-space
 floor; a developer's build of a game crate is a new converter version,
 so its entries are written again (the old ones age out).
+
+## Every game installed (2026-11-25)
+
+Since install discovery finds all six guest games on the dev box (CS:S,
+Combat Arms, HL2:DM, TF2, DoD:S, CS 1.6), Ultimate Gun Game's
+`heavy::first_view` host took about 46 s to its first frame and 52 s
+through a level change (21 s with three games), a client joining 5 s in
+timed out (20 s without an answer), and the server's memory test
+(`heavy::server_map_memory`) had 2.75-3.35 GB in use against its 2.45 GB
+bound. This pass measures where a start and a level change go with every
+game, per game and phase, by instructions, and the server's bytes per
+game; cuts what was waste; and sets the server's bound as a base plus an
+allowance per guest.
+
+**The tools** (all three print instructions of a thread and the threads
+it starts, the same to 0.1% run to run on a box at load 30-50, where the
+wall times beside them moved 3x):
+
+- `map::load_report`: every map load's phases, kept in the app's
+  `LoadContext`: the game's loader (`loader <game>`), each dressing ahead
+  on its own thread (`ahead <game>`) and onto the map (`dress <game>`),
+  each kept dressing's conversion or read (`kept <game>: read from
+  disk`), with instructions, ms and what the allocator had in use more.
+  The client's and the server's start map print them on stderr (`load:`),
+  every load logs its own (`load of <map>: ...`). `CHIMERA_LOAD_SERIAL=1`
+  dresses the games one after another, so the bytes are each game's own.
+- `CHIMERA_BOOT_LOG=1` (`chimera_core::metrics::boot`): a line per stage
+  of a process's start before its first frame: the start map, each part
+  the client app composes, each game's simulation in a party.
+- `CHIMERA_MAP_CACHE_LOG=1` now says a hit's instructions beside its
+  seconds (checksum, inputs, decode: `map_cache::with_work`), and after a kept
+  dressing's read how big each part of it is in the cache (textures,
+  bodies and their animations, held and view models, sounds).
+
+**Where a start went.** `ultimate_gun_game --offscreen 320x180 +after 1
+ugg_new 7 13 combat_arms:warehouse` (dev profile; the start map de_dust2
+with every guest dressed, then the level change), M instructions:
+
+| phase | converting, before | converting, after | read back, before | read back, after |
+|---|---|---|---|---|
+| the start map's loader (de_dust2 and CS:S's own kit) | 39,273 | 37,778 | 14,477 | 12,831 |
+| CS 1.6's dressing | 5,990 | 5,226 | 1,437 | 610 |
+| HL2:DM's | 6,307 | 5,688 | 2,649 | 1,973 |
+| DoD:S's | 9,149 | 7,480 | 4,078 | 2,267 |
+| TF2's | 35,623 | 30,883 | 11,442 | 6,180 |
+| Combat Arms' (23.1-27.9 G converting, run to run) | 23,140 | 23,129 | 3,182 | 3,173 |
+| each dressing copied onto the map (six) | 111 | 64 | 110 | 64 |
+| **the start map** | **119,593** | **110,248** | **37,375** | **27,098** |
+| the level change: Combat Arms' loader (warehouse) | | | 12,568 | 12,562 |
+| the level change: CS:S's dressing (a guest there) | 7,418 | | 3,495 | 1,847 |
+
+"Converting" is the first start of a converter version (a release, or a
+branch's build that touches a game's converter or the map types);
+"read back" every start after.
+
+After the start map the app is built (`CHIMERA_BOOT_LOG`, the same
+start, two runs; these stages move run to run with what other threads
+still do): physics and the base game's simulation 31.8-40.6 G, TF2's
+simulation 4.3-4.9 G, DoD:S's 1.5-1.6 G, CS:S's, HL2:DM's, Halo's and CS
+1.6's 0.1-0.5 G each, the shell and the HUDs 10.9-11.3 G, Bevy's plugins
+1.1 G, the rest about 1.5 G: 52-61 G, more than the start map read back.
+Then the first frames (2.7 and 4.2 G).
+
+What the counts say about the report: TF2, DoD:S and CS 1.6 added about
+23 G (their dressings' reads 17 G, their simulations 6 G) to a start of
+about 90 G read back, a quarter, not the doubling the clock showed. The
+doubling was the box: a start with every game peaks 2-3 GB higher (the
+dressings run side by side, each holding its entry and its parts), and at
+28 of 31 GB used that swapped (one start's spawn frame: 17 s of wall, 3 s
+of CPU); and a test build of a branch that touches a game's converter or
+the map types converts every dressing again (the first column).
+
+**What a read went on.** By `CHIMERA_MAP_CACHE_LOG`, a kept dressing's
+read was its decode, and the decode was the animation tracks: a
+`Track`'s rotations and positions (`Vec<Quat>`, `Vec<Vec3>`) were
+written element by element (9-12 instructions a byte; Combat Arms'
+dressing, whose arrays are byte strings, decodes at 0.2). M instructions
+(entry size; checksum; decode before, after):
+
+| | entry | checksum | decode before | after |
+|---|---|---|---|---|
+| CS 1.6 | 95 MB | 239 | 1,115 | 289 |
+| HL2:DM | 181 MB | 455 | 1,406 | 730 |
+| DoD:S | 243 MB | 608 | 2,867 | 1,055 |
+| TF2 | 854 MB | 2,137 | 7,833 | 2,578 |
+| CS:S (a guest on warehouse) | 229 MB | 574 | 2,534 | 889 |
+| de_dust2 (the map itself) | 401 MB | 1,005 | 12,945 | 11,298 |
+
+**The fixes.**
+
+- **Animation tracks as byte strings** (`pod_serde::pod_opt` on
+  `anim::Track`): the reads above, and 4-13% off each conversion's write
+  (TF2 35,623 to 30,886 M converting). The entries hold the same values;
+  a new map format version (the old entries age out).
+- **Texture blocks shared, not copied** (`MapBc::levels` behind an
+  `Arc`): a kept dressing's textures are their DXT blocks, and
+  `kept::append` cloned every block into each map, twice a load (once on
+  the dressing's own thread for the early view models, once onto the
+  map). A copy now holds the same blocks. The bytes in use each dressing
+  adds to a client's map, before and after: TF2 425 to 154 MB, Combat
+  Arms 156 to 62, CS:S 98 to 18, HL2:DM 95 to 66, DoD:S 92 to 58, CS 1.6
+  44 as before: 910 to about 400 MB a map with six games (what is left is
+  the meshes).
+- **A silent server loads no samples** (`map::sound::Silent` in the
+  dedicated server's load context): every load's clips keep their place,
+  rate and loop point without their samples (`map::sound::silence`: a
+  map's as `MapSources::load_with` returns it, a kept dressing's as it
+  is kept; the entries on disk are every app's and keep theirs). Below.
+- **The first view warms bodies and held models nobody has yet**
+  (`first_view_warm::warm_models`): below.
+
+**Left, measured.** The map's own read decodes every DXT texture to
+texels again (11.3 G of de_dust2's 12.8 G; the GPU takes the blocks, the
+CPU reads few of them: `MapTexture::keep_blocks_only` for a map's world
+textures, with the readers going through `decoded`); each entry's BLAKE3
+(2.5 instructions a byte: 5.8 G for a start's seven entries); Combat
+Arms' install data and UI install at every start (the base game's simulation 32-41 G, the shell and the HUDs 11 G); TF2's
+simulation's 4.3 G; Combat Arms' maps converted on every load (12.6 G
+for warehouse); a dressing is a whole game's kit (every body, gun and
+sound) though a ladder deals a dozen of its guns.
+
+### A many-sided prop's brushes (tf2:cp_granary)
+
+Found by the TF2 work: cp_granary's spawn preparation (`prop_parts`,
+`prop_brushes`) took 111-126 s in a development build. One prop model's
+single convex collision piece has 337 planes and is placed about 59
+times; each placement makes its movement brush in the world
+(`place_brush`, `MapBrush::from_planes`), whose corners
+(`plane_corners`) try every triple of planes (6.3 million) against
+every plane, and whose bevels asked every corner about every pair of
+planes. Measured on a 337-plane solid (chimera_core's
+`brush_reference_tests`, this crate's development optimization level,
+one brush): 4,855 M instructions, 4,500 M of them the corners.
+
+The brush had to stay the same bit for bit (movement sweeps it; the
+goldens hash what it gives), which rules out the two shortcuts at hand:
+corners taken from the piece's own points (`MapConvex::points`) are not
+the floats three planes' intersection gives, and a brush made once per
+model and rotation and moved is not the floats of planes moved first
+(the corners' rounding differs, and with it the bevels' distances). What
+changed is what a triple costs, not which are tried:
+
+- the two planes that cut a pair's line shortest are found once per pair
+  (`line_caps`) and a candidate is tested against those first: of 6.32
+  million candidates 134 went on to the full test (which is unchanged,
+  so the two can only refuse early what it would refuse);
+- the normals' cross products come from a table, not per triple;
+- each face plane's corners are listed once, and an edge's ends are two
+  lists' common entries (355 M of the bevels to under 10 M).
+
+After: 1,679 M for the same brush (2.9x fewer), the corners and the
+brush's planes the same bits in the same order as the old code kept as
+the tests' reference, on boxes and 4- to 90-plane solids, turned and
+placed (`plane_corners_are_the_reference`,
+`a_brush_from_planes_is_the_reference`; the 337-plane one compared the
+same way while measuring), and a 337-plane piece placed stays under 2.4
+G (chimera_world's `map::collision` test
+`a_many_sided_pieces_brush_stays_under_its_budget`). Not measured on
+cp_granary itself here. Left: the triples are still all tried (the
+cube of the plane count; what remains is the arithmetic of 6.3 million
+intersections); fewer triples need either a proof that a skipped one
+would be refused whatever its rounding (ill-conditioned triples give
+points far from where the planes meet, and some of those are inside the
+solid and kept as corners today), or new goldens.
+
+### A join while the host starts
+
+The host answers a join from its first frame: a map change loads on a
+task and the frames go on (the longest of a level change with every game:
+3.5 G instructions), and a client that joins during one is welcomed with
+the map being left and follows the change. What does not answer is a
+process before its app exists: a tool run's client (`--offscreen`, or
+`--map`) and the dedicated server load their start map before the app is
+built ("the start map is spawned whole before the server listens",
+`dedicated`'s known shortcuts), about 80 G of instructions here with every game
+read back, and the test's client joins 5 s into that. A player's own
+host starts from the menu and listens at once (the lobby first). The
+start is 10 G shorter after this pass; the join's 20 s
+(`client::JOIN_TIMEOUT`) and the test's one retry are as they were. To
+answer during a start: the start map loaded as a level change is (the
+app up on the greybox, listening, the map on a task), which moves the
+first match's start and the server's asset fetch behind the first frame;
+not done here.
+
+### The first view's bodies
+
+With only TF2 or only DoD:S added to the three games, a joined client's
+first shown frame had one `PropMaterial` pipeline pending. The gate
+(`client::first_view`) waits for what the cameras draw while the map
+settles: the map from above, a copy of each kind of prop in the world
+(`warm_props`) and of each kind of view model part. A body nobody wears
+yet and a gun nobody holds yet are built (`PlayModels`, `HeldAssets`) but
+not in the world, so a match whose first rung puts on another game's body
+(a TF2 class, a DoD:S soldier: a skinned mesh of another vertex layout
+than Combat Arms' soldiers and CS:S's players) compiled that body's
+pipeline as the cover went. `first_view_warm::warm_models` draws one part
+of each kind of built body part (skinned, all its bones one joint) and
+held model part in front of the overview camera while the map settles, so
+the settle waits for them as for the props. Guards: its unit test
+(`a_part_of_each_kind_of_built_model_is_drawn_while_warming`) and
+`heavy::first_view` (which passed two runs each with TF2 alone and DoD:S
+alone before the change too: the miss depended on the first rung drawn).
+
+### The server's memory, by game
+
+`heavy::server_map_memory` (twelve maps, the session the same every run,
+so the rows repeat to a few MB), the largest row's bytes in use, with
+installs chosen by `CHIMERA_STEAM_ROOT=`, an empty `CHIMERA_GAMES_DIR` and
+`CHIMERA_<GAME>_ROOT`:
+
+| installs | in use (first map to the largest row) |
+|---|---|
+| all six, before (converting) | 3,099-3,730 MB |
+| all six, silent (converting; two runs) | 2,806-3,357, 2,810-3,402 MB |
+| all six, silent (read back) | 2,451-3,003 MB |
+| CS:S and Combat Arms (converting) | 1,240-1,805 MB |
+| with HL2:DM (converting; read back) | 2,083; 1,415-1,967 MB |
+| with HL2:DM and TF2 | 2,226-2,785 MB (818 more) |
+| with HL2:DM and DoD:S | 1,745-2,291 MB (324 more) |
+| with HL2:DM and CS 1.6 | 1,486-2,035 MB (68 more) |
+
+What a guest holds on the server, from its kept dressing as the cache
+writes it (lean: textures as sizes), MB:
+
+| | whole | bodies (their animations) | view models | held | sounds (now 0) |
+|---|---|---|---|---|---|
+| TF2 | 520 | 277 (216) | 76 | 26 | 125 |
+| DoD:S | 197 | 123 (88) | 27 | 3 | 43 |
+| CS:S | 160 | 97 (80) | 21 | 3 | 35 |
+| HL2:DM | 142 | 89 (33) | 6 | 1 | 36 |
+| CS 1.6 | 54 | 41 (40) | 8 | 1 | 4 |
+| Combat Arms | 53 | 3 | 0 | 50 | 0 |
+
+A game costs the server about twice its dressing: the kept one, a copy
+of its meshes in each map (TF2 131 MB, HL2:DM 64, DoD:S 57, Combat Arms
+55, CS 1.6 8; the animation sets are shared) and what converting leaves
+(a dressing read back has 100-350 MB less in use than one converted in
+the process). The waste was the sounds: a server plays nothing, and every
+loader decoded every wave of every guest and map (243 MB of the
+guests', and each map's own). `Silent` in the load context (the binary's `run`, the
+test) keeps the clips without samples: 290-370 MB less on every row.
+Left: the bodies' and held models' meshes, which a server never draws
+(87 MB of TF2's dressing, and its copy per map), and the animation sets
+(457 MB for the five Source games: every sequence of every body, as
+floats).
+
+The test's bound is now `BASE_IN_USE` (1,950 MB: CS:S and Combat Arms)
+plus `GUEST_IN_USE` for each guest installed (HL2:DM 320, TF2 900, DoD:S
+370, CS 1.6 100 MB: each measured delta and about a tenth), 3,640 MB
+with all six against 3,402 measured; the numbers and how they were
+measured are in the test.
 
 ## First join download, 2026-11-14
 

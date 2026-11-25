@@ -3102,6 +3102,27 @@ docs/plans/active/sound.md.
 
 ## 9. Performance
 
+- **Every game installed, what's left (2026-11-25).** Measured in
+  performance.md, "Every game installed" (a start with six games read
+  back: 79 G instructions before the first frame; the server 2.8-3.4 GB).
+  By size: (1) a map read back from the converted cache decodes every DXT
+  texture to texels again (11.3 G of de_dust2's 12.8 G; keep the world's
+  textures as blocks and decode on demand, as kept dressings do); (2) the
+  base game's simulation and UI install at every start (31.8 G and 11.3
+  G), TF2's simulation 4.3 G; (3) Combat Arms' maps convert on every load
+  (12.6 G for warehouse); (4) each cache entry's BLAKE3 on every read
+  (5.8 G a start); (5) a guest dressing is the whole game's kit though a
+  ladder deals a dozen guns: dress by the ladder's models, not its games;
+  (6) on the server, bodies' and held models' render meshes (87 MB of
+  TF2's dressing and a copy per map) and what a conversion leaves in use
+  (100-350 MB more than a read); (7) a join during a process's start gets
+  no answer (the start map loads before the app exists: load it as a
+  level change, the app listening on the greybox); (8) the client's peak
+  while every dressing loads side by side (2-3 GB over the settled
+  bytes); (9) a many-sided collision piece's brush still tries every
+  triple of its planes (`plane_corners`: 1.7 G instructions for 337
+  planes, per placement; performance.md, "A many-sided prop's brushes").
+
 - **Monitors in a map's first view (done 2026-11-23).** The first-view
   gate (`client::first_view`) warmed only what the world's cameras saw;
   a monitor's camera (Source's func_monitor showing a point_camera) only
