@@ -600,3 +600,35 @@ fn a_tap_on_a_gun_with_no_zoom_stays_in_third_person() {
     sim.ticks(1);
     assert!(sim.app.world().resource::<CameraMode>().held_off, "first person for the gun's zoom");
 }
+
+/// Report 4effebf3 (TF2's AWPer Hand on halo_ce:carousel, after a
+/// deployed DoD:S machine gun): scoped in third person the view is first
+/// person's and the mouse turns the aim; a turn limit left from the last
+/// movement (`ViewYawLimit`) held it in its span. A change of movement
+/// takes the limit off, and a large turn then follows the mouse.
+#[test]
+fn scoped_from_the_shoulder_a_large_turn_follows_after_a_change_of_movement() {
+    use bevy::ecs::system::Command;
+    use chimera_core::core::ViewYawLimit;
+    let (mut sim, shooter) = mouse_scene();
+    third_person(&mut sim, true);
+    sim.seconds(0.6);
+    let yaw = sim.intent(shooter).yaw;
+    sim.app.world_mut().entity_mut(shooter).insert(ViewYawLimit { centre: yaw, half: 45f32.to_radians() });
+    chimera_core::slots::set_movement(shooter, chimera_sim::movement::noclip::ID).apply(sim.app.world_mut());
+    // A sniper rifle's scope, kept by its game (`OwnZoom`).
+    let gun = sim.app.world().get::<chimera_sim::weapon::Inventory>(shooter).unwrap().active.unwrap();
+    sim.app.world_mut().entity_mut(gun).insert(chimera_sim::weapon::OwnZoom);
+    sim.app.world_mut().entity_mut(shooter).insert(chimera_sim::weapon::Zoomed { fov: 20.0, scope: true, sensitivity: None });
+    sim.ticks(2);
+    assert!(!sim.app.world().resource::<Shoulder>().on, "scoped: first person");
+    // About 120 degrees at the default sensitivity and the scope's ratio.
+    let mut turned = 0.0f32;
+    for _ in 0..20 {
+        let before = sim.intent(shooter).yaw;
+        free_look(&mut sim, false, Vec2::new(-2000.0, 0.0));
+        let d = (sim.intent(shooter).yaw - before + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        turned += d.abs();
+    }
+    assert!(turned > 90f32.to_radians(), "the yaw follows the mouse past the old span: turned {} degrees", turned.to_degrees());
+}

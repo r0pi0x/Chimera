@@ -317,6 +317,27 @@ fn turning_past_45_degrees_is_held_by_the_client_and_never_undeploys() {
     assert!(sim.app.world().get::<ViewYawLimit>(p).is_none());
 }
 
+/// Report 4effebf3: a rung that changes the movement while the gun is
+/// deployed (DoD:S's stance goes with it) takes the turn limit off too;
+/// it was left on, and the next game's scope (first person, where the
+/// client clamps) stopped the turn at the old span.
+#[test]
+fn a_change_of_movement_while_deployed_takes_the_limit_off() {
+    use bevy::ecs::system::Command;
+    use chimera_core::core::ViewYawLimit;
+    let mut sim = sim();
+    let p = prone_player(&mut sim);
+    hold(&mut sim, p, CAL30);
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    sim.ticks(1);
+    assert!(sim.app.world().get::<ViewYawLimit>(p).is_some(), "deployed: limited");
+    chimera_core::slots::set_movement(p, chimera_sim::movement::placeholder::ID).apply(sim.app.world_mut());
+    sim.ticks(2);
+    assert!(sim.app.world().get::<ViewYawLimit>(p).is_none(), "the limit went with the stance");
+}
+
 #[test]
 fn looking_down_past_47_or_up_past_63_undeploys_staying_prone() {
     for (pitch, deployed) in [(-46.0f32, true), (-48.0, false), (62.0, true), (64.0, false)] {

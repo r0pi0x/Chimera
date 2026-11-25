@@ -100,7 +100,8 @@ pub mod version;
 /// A limit the local player's client holds its own view inside (the
 /// server doesn't clamp: DoD:S's deployed machine guns, specs/dods/
 /// weapons.md "Alt fire"): the yaw within `half` of `centre` (radians,
-/// `Intent::yaw`'s), set and cleared by the game's predicted rules.
+/// `Intent::yaw`'s), set and cleared by the game's predicted rules; a
+/// change of movement takes it off (`slots::set_movement`).
 #[derive(Component, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ViewYawLimit {
     pub centre: f32,

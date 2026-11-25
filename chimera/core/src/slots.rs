@@ -180,7 +180,7 @@ impl RegisterSlots for App {
 }
 
 /// Switch `entity` to the Movement implementation `id`. Velocity carries
-/// over; where both movements have a hull (`MovementImpl::footing`,
+/// over, a turn limit (`core::ViewYawLimit`) doesn't; where both movements have a hull (`MovementImpl::footing`,
 /// `seat`), the new one is seated on the old one's feet, crouched as it
 /// was; the new implementation takes it from there.
 pub fn set_movement(entity: Entity, id: &'static str) -> impl Command {
@@ -201,6 +201,7 @@ pub fn set_movement(entity: Entity, id: &'static str) -> impl Command {
         let mut removes: Vec<_> = leaving.filter(|o| o.marker != marker).map(|o| o.remove).into_iter().collect();
         removes.extend(registry.0.iter().filter(|m| m.marker != marker && leaving.is_none_or(|o| o.id != m.id)).map(|m| m.remove));
         let leave = leaving.filter(|o| o.marker == marker).and_then(|o| o.leave);
+        let moved = leaving.is_some();
         let footing = footing.and_then(|f| f(world, entity));
         let Ok(mut e) = world.get_entity_mut(entity) else {
             return;
@@ -210,6 +211,13 @@ pub fn set_movement(entity: Entity, id: &'static str) -> impl Command {
         }
         if let Some(leave) = leave {
             leave(&mut e);
+        }
+        // A turn limit is the old movement's (DoD:S's deployed gun keeps
+        // it from its stance, which just went): it goes with it, else it
+        // held the view in its span for good once scoped or in first
+        // person (report 4effebf3).
+        if moved {
+            e.remove::<crate::core::ViewYawLimit>();
         }
         insert(&mut e, MovementSlot(id));
         if let (Some(seat), Some(footing)) = (seat, footing) {
