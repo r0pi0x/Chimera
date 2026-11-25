@@ -83,6 +83,7 @@ pub mod form;
 pub mod form_page;
 pub mod icon_ink;
 pub mod icons;
+pub mod layout_gate;
 pub mod load;
 pub mod materials;
 pub mod modal;
@@ -151,6 +152,7 @@ impl Plugin for ChimeraUiPlugin {
         secret::add(app);
         form_page::add(app);
         text_menu::add(app);
+        layout_gate::add(app);
         app
             .add_systems(
                 PostUpdate,

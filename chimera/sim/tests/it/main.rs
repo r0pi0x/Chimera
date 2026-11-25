@@ -22,5 +22,6 @@ mod rung_passives;
 mod sim_waits;
 mod spawn_score;
 mod spawns;
+mod transform_marks;
 mod view_anim;
 mod weapon_frame;

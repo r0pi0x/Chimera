@@ -19,8 +19,14 @@
 //!
 //! ```text
 //! cargo build --profile profiling -p ultimate_gun_game --example frame_bench
-//! target/profiling/examples/frame_bench [<map>] [--bots <n>] [--frames <n>] [--size <w>x<h>]
+//! target/profiling/examples/frame_bench [<map>] [--bots <n>] [--frames <n>] [--size <w>x<h>] [--ui <n>] [--ui-always] [--systems <n>] [--grep <text>]
 //! ```
+//!
+//! `--ui <n>`: a still HUD-like tree of `n` nodes over the view (Bevy's UI
+//! layout's cost a frame with nothing changing); `--ui-always`: with
+//! `chimera_ui::layout_gate` off (the layout every frame, as before it);
+//! `--systems <n>`: that many costliest systems (30); `--grep <text>`: also
+//! every system whose name has it.
 //!
 //! (`cs_source:de_dust2`, 6 bots, 600 frames, 1280x720 without options;
 //! needs the installs. Linux: instructions need hardware counters,
@@ -193,15 +199,37 @@ fn place_eye(app: &mut App) {
     }
 }
 
+/// A still tree of `n` nodes: rows of boxes over the view, as a HUD.
+fn spawn_ui(app: &mut App, n: usize) {
+    let w = app.world_mut();
+    let root = w
+        .spawn(Node { width: percent(100.0), height: percent(100.0), flex_direction: FlexDirection::Column, ..default() })
+        .id();
+    let mut row = root;
+    for i in 0..n {
+        if i % 10 == 0 {
+            row = w.spawn((Node { flex_direction: FlexDirection::Row, column_gap: px(2.0), ..default() }, ChildOf(root))).id();
+        } else {
+            w.spawn((Node { width: px(20.0), height: px(8.0), ..default() }, BackgroundColor(Color::WHITE), ChildOf(row)));
+        }
+    }
+}
+
 fn main() {
     let mut map = "cs_source:de_dust2".to_string();
     let (mut bots, mut frames, mut size) = (6u32, 600usize, (1280u32, 720u32));
+    let (mut ui, mut ui_always) = (0usize, false);
+    let (mut shown, mut grep) = (30usize, Vec::<String>::new());
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         let mut value = || args.next().unwrap_or_else(|| panic!("{a}: missing value"));
         match a.as_str() {
             "--bots" => bots = value().parse().expect("--bots <n>"),
             "--frames" => frames = value().parse().expect("--frames <n>"),
+            "--ui" => ui = value().parse().expect("--ui <n>"),
+            "--ui-always" => ui_always = true,
+            "--systems" => shown = value().parse().expect("--systems <n>"),
+            "--grep" => grep.push(value()),
             "--size" => {
                 let v = value();
                 let (w, h) = v.split_once('x').expect("--size <w>x<h>");
@@ -215,6 +243,13 @@ fn main() {
         return;
     }
     let mut app = app(size);
+    if ui > 0 {
+        spawn_ui(&mut app, ui);
+    }
+    if !app.world().contains_resource::<chimera_ui::layout_gate::UiLayoutRuns>() {
+        chimera_ui::layout_gate::add(&mut app);
+    }
+    app.insert_resource(chimera_ui::layout_gate::UiLayoutAlways(ui_always));
     // Every frame is 1/60 s of the game, whatever the box does (the
     // loading frames too: a wall-clock frame there would run as many
     // ticks as the load took, and the match after would play otherwise).
@@ -277,6 +312,9 @@ fn main() {
     let characters = w.query::<&Health>().iter(w).count();
     let entities = w.entities().len();
     println!("{map}, {characters} characters, {entities} entities, {frames} frames at {}x{}", size.0, size.1);
+    if let Some(r) = w.get_resource::<chimera_ui::layout_gate::UiLayoutRuns>() {
+        println!("UI layout: {ui} nodes, ran {} frames, skipped {} (gate {})", r.ran(), r.skipped(), if ui_always { "off" } else { "on" });
+    }
     println!("changed a frame: {materials:.1} prop materials, {meshes:.1} meshes");
     let mean = |v: &[u64]| v.iter().sum::<u64>() as f64 / v.len().max(1) as f64;
     println!(
@@ -304,7 +342,13 @@ fn main() {
         );
     }
     println!("costliest systems, instructions a frame (main world, extraction, render world):");
-    for (label, ins, runs) in systems.top(30) {
+    for (label, ins, runs) in systems.top(shown) {
         println!("{:10.3}M {runs:4}  {label}", ins as f64 / 1e6);
+    }
+    if !grep.is_empty() {
+        println!("systems matching {grep:?}, instructions a frame:");
+        for (label, (ins, runs)) in systems.0.iter().filter(|(l, _)| grep.iter().any(|g| l.contains(g.as_str()))) {
+            println!("{:10.4}M {runs:4}  {label}", *ins as f64 / 1e6);
+        }
     }
 }

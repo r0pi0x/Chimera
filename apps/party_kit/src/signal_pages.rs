@@ -1671,6 +1671,12 @@ fn draw(
     mut commands: Commands,
 ) {
     let (Some(theme), Some(units)) = (theme, units) else { return };
+    // No page up and none drawn (in a match): nothing to compare. The key
+    // (clones of the pickers, the Guns line) was built every frame for
+    // nothing (feedback b33ceded, afd90ba5: in most of the spikes).
+    if p.up.is_none() && drawn.menu.is_none() && roots.is_empty() {
+        return;
+    }
     let def = minigames.as_ref().and_then(|m| m.get(&game_id.0));
     let pool = picker_pool(minigames.as_deref(), &game_id.0, slices.as_deref());
     let cam = camera.iter().next();

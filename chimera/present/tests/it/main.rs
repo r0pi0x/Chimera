@@ -42,6 +42,7 @@ mod shadow_spec;
 mod sound_looping;
 mod source_hearing;
 mod stand_ins;
+mod texture_anim_cost;
 mod underwater_fog_volume;
 mod underwater_overlay;
 mod underwater_sky;

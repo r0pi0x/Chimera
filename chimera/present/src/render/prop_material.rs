@@ -311,8 +311,9 @@ impl From<&PropMaterial> for PropMaterialKey {
 /// the store drops it).
 ///
 /// Readers of a material that may be one of these use `prop` (the store, then
-/// here); what changes every material (fog, animated textures) changes these
-/// too (`values_mut`). Without this resource (tests that build their own
+/// here); what changes every material (fog) changes these too
+/// (`values_mut`); animated textures give one its frame as it comes into the
+/// store (`texture_anim`). Without this resource (tests that build their own
 /// stores) materials go into the store as before.
 #[derive(Resource, Default)]
 pub struct DormantProps {
@@ -346,7 +347,7 @@ impl DormantProps {
         self.held.get(&id.into()).map(|(_, m)| m)
     }
 
-    /// Every material held, to change (fog, animated textures).
+    /// Every material held, to change (fog).
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut PropMaterial> {
         self.held.values_mut().map(|(_, m)| m)
     }

@@ -103,6 +103,7 @@ pub mod sound;
 pub mod hearing;
 pub mod steam;
 pub mod teleport;
+pub mod transform_marks;
 pub use sound::{
     FadeSound, GameSound, MapSoundClip, MapSoundEntry, MapSounds, MapSurface, OthersSound, PlaySound, PredictedSound, SoundControl, SoundKey,
     SoundLevel, StartSound, StepRemap, StopSound,

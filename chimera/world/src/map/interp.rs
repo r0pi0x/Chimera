@@ -54,7 +54,7 @@ use avian3d::prelude::RigidBody;
 use bevy::{
     app::RunFixedMainLoopSystems,
     prelude::*,
-    transform::systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms},
+    transform::systems::{propagate_parent_transforms, sync_simple_transforms},
 };
 
 use chimera_core::later::Later;
@@ -247,8 +247,9 @@ impl Plugin for InterpPlugin {
                 (
                     restore,
                     // The simulation reads globals too (this tick's, not
-                    // the drawn ones).
-                    mark_dirty_trees,
+                    // the drawn ones). Marked without Bevy's tasks
+                    // (`transform_marks`).
+                    super::transform_marks::mark_changed_trees,
                     propagate_parent_transforms,
                     sync_simple_transforms,
                 )

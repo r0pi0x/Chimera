@@ -46,6 +46,8 @@ pub fn physics_plugins() -> bevy::app::PluginGroupBuilder {
         .add(map::solver_bodies::DespawnedSolverBodies)
         // The physics gravity's server scale (props and ragdolls).
         .add(map::gravity::GravityScalePlugin)
+        // Transform trees marked without Bevy's tasks (`map::transform_marks`).
+        .add(map::transform_marks::TransformMarksPlugin)
 }
 
 /// Every body predicts its contacts as far ahead as its velocity reaches

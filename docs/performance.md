@@ -7052,3 +7052,56 @@ groups, the same way: 8.8 M (8.4 M; `CHIMERA_MAP_LIGHTS=combat_arms:warehouse`).
 heads its worst spikes with the systems the latest 32 timed spikes share
 (`Inspector::recurring`, own ms summed and in how many spikes): a stutter
 that comes back is named there even when one-off map loads fill the worst.
+
+## Per-frame work in a match when nothing changed (2026-11-25)
+
+Two F10 reports from a 4K display at scale 1.5 (RTX 5080, Windows):
+b33ceded (dod_flash, 4 bots, build 419562432: 102 fps, CPU-bound; the
+latest 32 timed spikes: Avian's `FixedPostUpdate mark_dirty_trees` 113.6
+ms in 29, `animate_textures` 24.7 ms in 31, `ui_layout_system` 12.2 ms in
+32, `signal_pages::draw` 7.0 ms in 30) and afd90ba5 (de_dust2, "180 fps to
+60": p50 5.3 ms, p99 16.1, `ui_layout_system` and `animate_textures`
+on top of the spikes, `AutoVsync`). Measured with `frame_bench` (playtest
+profile, one compute thread, dod_flash, 4 bots, 600 frames, a still
+400-node UI tree: `--ui 400`), instructions a frame:
+
+| system | before | after |
+|---|---|---|
+| `animate_textures` | 1.53M (indexed, dormant materials still walked) | 0.0017M |
+| `ui_layout_system` (400 nodes) | 0.852M every frame | ran 3 of 1268 frames |
+| transform marking, `PostUpdate` + `FixedPostUpdate` | 0.168M + 0.186M (Bevy's) | 0.126M + 0.140M (ours) |
+| main schedule, mean | 16.01M (`CHIMERA_TRANSFORM_MARKS=bevy --ui-always`) | 15.11M |
+
+- **Animated textures** (`render::texture_anim`): each frame change of
+  any animation, most frames on a map with several at their own rates,
+  walked every world and prop material and every dormant kit material
+  (`DormantProps`, thousands) with a hash lookup each. Now an index by
+  animation (built once, then kept by the stores' events) visits only the
+  changed animation's materials, and a material coming into the store (a
+  copy, a kit material drawn for the first time) takes its frame as it
+  comes. Test: `chimera_present` `texture_anim_cost` (4,000 plain and 12
+  animated materials, a test build: 197k to 9.4k a frame).
+- **UI layout** (`chimera_ui::layout_gate`): Bevy's `ui_layout_system`
+  walks every node of every root each frame; it now runs only when a
+  node, content size, transform, outline, scroll, font size, target or
+  the hierarchy changed (`UiSystems::Layout.run_if`). `UiLayoutAlways`
+  turns the gate off.
+- **Transform marking** (`chimera_world::map::transform_marks`): Bevy's
+  `mark_dirty_trees` starts a task per compute thread and a consumer and
+  waits for all of them, however little changed; on the client the render
+  world keeps the pool busy and the main thread runs its queued tasks
+  inside that wait, which is what the 3.9 ms a spike was (wall time; one
+  compute thread counts none of it). Ours walks up from each changed
+  transform on the schedule's thread and holds Bevy's for its run (its
+  setting), in `PostUpdate`, Avian's `FixedPostUpdate` and the
+  interpolation's `FixedFirst`. Test: `chimera_sim` `transform_marks`.
+- **The menu pages** (`party_kit::signal_pages::draw`) built their whole
+  key (pickers cloned, the Guns line) every frame of a match with no page
+  up; now they return at once when no page is up or drawn.
+
+**What the next report shows.** `perf.txt` ends with a row per second of
+the last 5 minutes (frames, mean and slowest frame, spikes, a slow
+second's costliest systems when timed: `frame_inspector::SecondRow`) and
+`system.txt` lists the displays with their refresh rates
+(`feedback::displays_text`), so a 60 held at a 60 Hz display's rate under
+vsync is told from a slowdown.
