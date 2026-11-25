@@ -824,16 +824,33 @@ impl WeaponSet {
             }
         }
         let mut tables = BTreeMap::new();
-        for (id, _) in &raw {
-            merge(id, &raw, &ids, known, &mut tables, &mut Vec::new())?;
+        let order: Vec<String> = raw.iter().map(|(id, _)| id.clone()).collect();
+        for id in &order {
+            merge(id, &mut raw, &ids, known, &mut tables, &mut Vec::new())?;
         }
+        drop(raw);
         let mut weapons = Vec::new();
-        for (id, _) in &raw {
-            let t = tables[id].clone();
+        for id in &order {
+            let mut t = tables[id].clone();
             if t.get("abstract").and_then(toml::Value::as_bool) == Some(true) {
                 continue;
             }
+            // The hooks' parameters are the tables they are: taken out
+            // and put in as read, where the deserializer would build
+            // every value of them again (most of a big set's documents:
+            // docs/performance.md, "Start cost, fourth pass"). Anything
+            // but a table is left for it to refuse.
+            let hooks = match t.get("hooks") {
+                Some(toml::Value::Table(_)) => match t.remove("hooks") {
+                    Some(toml::Value::Table(h)) => Some(h),
+                    _ => None,
+                },
+                _ => None,
+            };
             let mut w: WeaponData = toml::Value::Table(t).try_into().map_err(|e| format!("{id}: {e}"))?;
+            if let Some(hooks) = hooks {
+                w.hooks = hooks;
+            }
             if let Some(m) = &w.magazine {
                 let a = ammo
                     .get(&m.ammo)
@@ -875,10 +892,12 @@ impl WeaponSet {
 }
 
 /// `id`'s table merged over its bases' (`abstract` and `class` aren't
-/// inherited: a launcher's stun variant isn't a gun of a ladder).
+/// inherited: a launcher's stun variant isn't a gun of a ladder). A
+/// document's table is taken out of `raw` (left empty): each is merged
+/// once.
 fn merge(
     id: &str,
-    raw: &[(String, toml::Table)],
+    raw: &mut [(String, toml::Table)],
     ids: &BTreeMap<String, usize>,
     known: &[&WeaponSet],
     done: &mut BTreeMap<String, toml::Table>,
@@ -887,17 +906,17 @@ fn merge(
     if done.contains_key(id) {
         return Ok(());
     }
-    let Some(own) = ids.get(id).map(|i| &raw[*i].1) else {
+    let Some(at) = ids.get(id).copied() else {
         // A base from an earlier set: its table there.
         return Ok(());
     };
     if stack.iter().any(|s| s == id) {
         return Err(format!("{id}: its bases loop ({})", stack.join(" -> ")));
     }
-    let out = match own.get("base") {
+    let out = match raw[at].1.get("base").cloned() {
         Some(toml::Value::String(base)) => {
             stack.push(id.to_string());
-            merge(base, raw, ids, known, done, stack).map_err(|e| format!("{id}: {e}"))?;
+            merge(&base, raw, ids, known, done, stack).map_err(|e| format!("{id}: {e}"))?;
             stack.pop();
             let mut t = done
                 .get(base.as_str())
@@ -906,23 +925,24 @@ fn merge(
                 .ok_or_else(|| format!("{id}: unknown base {base}"))?;
             t.remove("abstract");
             t.remove("class");
-            deep_merge(&mut t, own);
+            deep_merge(&mut t, std::mem::take(&mut raw[at].1));
             t
         }
         Some(_) => return Err(format!("{id}: `base` is not a string")),
-        None => own.clone(),
+        // No base: the document's table as it is, not a copy of it.
+        None => std::mem::take(&mut raw[at].1),
     };
     done.insert(id.to_string(), out);
     Ok(())
 }
 
 /// `over`'s keys into `base`; tables merge, everything else replaces.
-fn deep_merge(base: &mut toml::Table, over: &toml::Table) {
+fn deep_merge(base: &mut toml::Table, over: toml::Table) {
     for (k, v) in over {
-        match (base.get_mut(k), v) {
+        match (base.get_mut(&k), v) {
             (Some(toml::Value::Table(b)), toml::Value::Table(o)) => deep_merge(b, o),
-            _ => {
-                base.insert(k.clone(), v.clone());
+            (_, v) => {
+                base.insert(k, v);
             }
         }
     }
@@ -933,7 +953,84 @@ fn deep_merge(base: &mut toml::Table, over: &toml::Table) {
 
 /// A hook's parts, ready to insert.
 pub type HookBuild = Arc<dyn Fn(&mut EntityWorldMut) + Send + Sync>;
-type Prepare = Arc<dyn Fn(&'static WeaponData, &toml::Value) -> Result<HookBuild, String> + Send + Sync>;
+type Prepare = Arc<dyn Fn(&'static WeaponData, &'static toml::Value, &mut ParamMemo) -> Result<HookBuild, String> + Send + Sync>;
+
+/// The hook parameters read so far while a set registers
+/// (`weapon_defs`), by hook and value: weapons whose hook has the same
+/// parameters share one reading of them. A big set's weapons are mostly
+/// variants of one another (Combat Arms' install: 24,335 hook tables on
+/// 2,363 weapons, 2,899 of them different; docs/performance.md, "Start
+/// cost, fourth pass"), and reading a table as a hook's parameters costs
+/// far more than comparing it.
+#[derive(Default)]
+struct ParamMemo(HashMap<u64, Vec<(&'static toml::Value, Arc<dyn std::any::Any + Send + Sync>)>>);
+
+impl ParamMemo {
+    fn key(hook: &str, params: &toml::Value) -> u64 {
+        use std::hash::{Hash, Hasher};
+        fn feed(v: &toml::Value, h: &mut impl Hasher) {
+            std::mem::discriminant(v).hash(h);
+            match v {
+                toml::Value::String(s) => s.hash(h),
+                toml::Value::Integer(i) => i.hash(h),
+                toml::Value::Float(f) => f.to_bits().hash(h),
+                toml::Value::Boolean(b) => b.hash(h),
+                toml::Value::Datetime(d) => d.to_string().hash(h),
+                toml::Value::Array(a) => {
+                    a.len().hash(h);
+                    a.iter().for_each(|v| feed(v, h));
+                }
+                toml::Value::Table(t) => {
+                    t.len().hash(h);
+                    for (k, v) in t {
+                        k.hash(h);
+                        feed(v, h);
+                    }
+                }
+            }
+        }
+        // Not the map's own keyed hasher: a table of some forty values
+        // is hashed for every use.
+        let mut h = std::hash::BuildHasher::build_hasher(&bevy::platform::hash::FixedHasher);
+        hook.hash(&mut h);
+        feed(params, &mut h);
+        h.finish()
+    }
+
+    /// Whether two values are the same to a reader: equal, the floats by
+    /// their bits (0.0 isn't -0.0, a NaN is itself).
+    fn same(a: &toml::Value, b: &toml::Value) -> bool {
+        use toml::Value::*;
+        match (a, b) {
+            (Float(a), Float(b)) => a.to_bits() == b.to_bits(),
+            (Array(a), Array(b)) => a.len() == b.len() && a.iter().zip(b).all(|(a, b)| Self::same(a, b)),
+            (Table(a), Table(b)) => a.len() == b.len() && a.iter().zip(b).all(|((ka, a), (kb, b))| ka == kb && Self::same(a, b)),
+            (Float(_) | Array(_) | Table(_), _) | (_, Float(_) | Array(_) | Table(_)) => false,
+            (a, b) => a == b,
+        }
+    }
+
+    /// `hook`'s parameters `params` as `P`: read before from the same
+    /// value, else `read` now and remembered.
+    fn get<P: Send + Sync + 'static>(
+        &mut self,
+        hook: &str,
+        params: &'static toml::Value,
+        read: impl FnOnce() -> Result<P, String>,
+    ) -> Result<Arc<P>, String> {
+        let read_before = self.0.entry(Self::key(hook, params)).or_default();
+        for (value, p) in read_before.iter() {
+            if Self::same(value, params)
+                && let Ok(p) = p.clone().downcast::<P>()
+            {
+                return Ok(p);
+            }
+        }
+        let p = Arc::new(read()?);
+        read_before.push((params, p.clone()));
+        Ok(p)
+    }
+}
 
 /// Behaviour weapon data names (`hooks."<name>"`), registered by games
 /// before their data loads.
@@ -1064,12 +1161,11 @@ impl WeaponDataAppExt for App {
     ) -> &mut Self {
         let hook = Arc::new(hook);
         let hook_name = name.to_string();
-        let prepare: Prepare = Arc::new(move |d, params| {
-            let p: P = params
-                .clone()
-                .try_into()
-                .map_err(|e| format!("{}: hook {hook_name}: {e}", d.id))?;
-            let (p, hook) = (Arc::new(p), hook.clone());
+        let prepare: Prepare = Arc::new(move |d, params, memo| {
+            let p: Arc<P> = memo.get(&hook_name, params, || {
+                params.clone().try_into().map_err(|e| format!("{}: hook {hook_name}: {e}", d.id))
+            })?;
+            let hook = hook.clone();
             Ok(Arc::new(move |e: &mut EntityWorldMut| hook(e, d, &p)) as HookBuild)
         });
         self.world_mut()
@@ -1142,8 +1238,9 @@ pub fn weapon_format() -> String {
 fn weapon_defs(world: &mut World, set: &'static WeaponSet) -> Result<Vec<(&'static WeaponData, WeaponDef)>, String> {
     let hooks = world.get_resource_or_init::<WeaponHooks>();
     let mut builds = Vec::new();
+    let mut memo = ParamMemo::default();
     for d in &set.weapons {
-        let mut parts: Vec<HookBuild> = Vec::new();
+        let mut parts: Vec<HookBuild> = Vec::with_capacity(d.hooks.len());
         for (name, params) in &d.hooks {
             let prepare = hooks.0.get(name).ok_or_else(|| {
                 format!(
@@ -1152,7 +1249,7 @@ fn weapon_defs(world: &mut World, set: &'static WeaponSet) -> Result<Vec<(&'stat
                     hooks.names().join(", ")
                 )
             })?;
-            parts.push(prepare(d, params)?);
+            parts.push(prepare(d, params, &mut memo)?);
         }
         builds.push((d, parts));
     }
@@ -1654,6 +1751,110 @@ mod tests {
         assert!(e.contains("hook t:hook"), "{e}");
         app.add_weapon_data(&[("a", &doc("t:hook"))]).unwrap();
         assert!(app.world().resource::<WeaponRegistry>().find("t:a").is_some());
+    }
+
+    /// Weapons whose hook has the same parameters share one reading of
+    /// them (`ParamMemo`): a set of variants reads each different table
+    /// once. Every weapon's hook still runs with its own data and the
+    /// parameters its document gives, and values that differ only in a
+    /// float's sign, or in being a float or an integer, are read apart.
+    #[test]
+    fn weapons_with_the_same_hook_parameters_share_one_reading() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static READS: AtomicUsize = AtomicUsize::new(0);
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Raw {
+            n: f64,
+            #[serde(default)]
+            names: Vec<String>,
+            #[serde(default)]
+            at: BTreeMap<String, i64>,
+        }
+        struct P(Raw);
+        impl<'de> Deserialize<'de> for P {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                READS.fetch_add(1, Ordering::Relaxed);
+                Raw::deserialize(d).map(P)
+            }
+        }
+        #[derive(Component, Debug, PartialEq)]
+        struct Got(String, u64, Vec<String>, Vec<(String, i64)>);
+        let mut app = App::new();
+        let got = |e: &mut EntityWorldMut, d: &'static WeaponData, p: &P| {
+            e.insert(Got(d.id.clone(), p.0.n.to_bits(), p.0.names.clone(), p.0.at.clone().into_iter().collect()));
+        };
+        app.register_weapon_hook::<P>("t:hook", got);
+        app.register_weapon_hook::<P>("t:other", |_, _, _| {});
+        // Registering a hook reads its parameters' format (`data_format`).
+        READS.store(0, Ordering::Relaxed);
+        let doc = |id: &str, params: &str| format!("id = \"t:{id}\"\nslot = 0\ndraw = 1.0\n[hooks]\n\"t:hook\" = {params}\n");
+        let same = "{ n = 1.5, names = [\"a\", \"b\"], at = { x = 1, y = 2 } }";
+        let docs = [
+            ("a", doc("a", same)),
+            ("b", doc("b", same)),
+            ("c", doc("c", "{ n = 1.5, names = [\"a\", \"c\"], at = { x = 1, y = 2 } }")),
+            ("d", doc("d", "{ n = 0.0 }")),
+            ("e", doc("e", "{ n = -0.0 }")),
+            ("f", doc("f", "{ n = 0 }")),
+            ("g", doc("g", same)),
+            // The same table under another hook is that hook's own.
+            ("h", format!("{}\"t:other\" = {same}\n", doc("h", same))),
+        ];
+        let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (*n, t.as_str())).collect();
+        app.add_weapon_data(&refs).unwrap();
+        assert_eq!(READS.load(Ordering::Relaxed), 6, "a, c, d, e, f and h's other hook; b, g and h's share a's");
+        let built = |app: &mut App, id: &str| {
+            let build = app.world().resource::<WeaponRegistry>().find(id).unwrap().build.clone();
+            let mut e = app.world_mut().spawn_empty();
+            build(&mut e);
+            e.take::<Got>().unwrap()
+        };
+        let shared = |id: &str| Got(id.into(), 1.5f64.to_bits(), vec!["a".into(), "b".into()], vec![("x".into(), 1), ("y".into(), 2)]);
+        for id in ["t:a", "t:b", "t:g", "t:h"] {
+            assert_eq!(built(&mut app, id), shared(id));
+        }
+        assert_eq!(built(&mut app, "t:c").2, ["a", "c"]);
+        assert_eq!(built(&mut app, "t:d").1, 0.0f64.to_bits());
+        assert_eq!(built(&mut app, "t:e").1, (-0.0f64).to_bits());
+        assert_eq!(built(&mut app, "t:f").1, 0.0f64.to_bits());
+        // Bad parameters are still a load error naming the weapon.
+        let e = app.add_weapon_data(&[("z", &doc("z", "{ n = 1.5, nope = 1 }"))]).unwrap_err();
+        assert!(e.contains("t:z: hook t:hook"), "{e}");
+    }
+
+    /// A weapon's hooks are its document's tables as merged over its
+    /// bases', put in as they are (`parse_kept` takes them out before
+    /// the rest is read): every kind of value, a base's hook the weapon
+    /// doesn't name, one it adds to; and `hooks` that isn't a table is
+    /// refused as before.
+    #[test]
+    fn hooks_are_the_documents_tables_as_merged() {
+        let base = "id = \"t:base\"\nabstract = true\nslot = 0\ndraw = 1.0\n\
+                    [hooks.\"t:kept\"]\nn = 1\nwhen = 1979-05-27T07:32:00Z\n\
+                    [hooks.\"t:grown\"]\nx = 0.5\nlist = [1, 2]\n";
+        let gun = "id = \"t:gun\"\nbase = \"t:base\"\n\
+                   [hooks.\"t:grown\"]\ny = -0.0\nrows = [{ a = true }, { a = false }]\n\
+                   [hooks.\"t:own\"]\n";
+        let set = WeaponSet::parse(&[("base", base), ("gun", gun)], &[]).unwrap();
+        assert_eq!(set.weapons.len(), 1, "the abstract base isn't a weapon");
+        let hooks = &set.get("t:gun").unwrap().hooks;
+        let expected: toml::Table = toml::from_str(
+            "[\"t:kept\"]\nn = 1\nwhen = 1979-05-27T07:32:00Z\n\
+             [\"t:grown\"]\nx = 0.5\nlist = [1, 2]\ny = -0.0\nrows = [{ a = true }, { a = false }]\n\
+             [\"t:own\"]\n",
+        )
+        .unwrap();
+        assert_eq!(hooks, &expected);
+        assert_eq!(toml::to_string(hooks).unwrap(), toml::to_string(&expected).unwrap(), "the floats' signs too");
+        // A weapon with no hooks has none; a later set's weapon gets its
+        // base's from the earlier set.
+        let set: &'static WeaponSet = Box::leak(Box::new(set));
+        let later = WeaponSet::parse(&[("more", "id = \"t:more\"\nbase = \"t:gun\"\n"), ("bare", "id = \"t:bare\"\nslot = 0\ndraw = 1.0\n")], &[set]).unwrap();
+        assert_eq!(&later.get("t:more").unwrap().hooks, &expected);
+        assert!(later.get("t:bare").unwrap().hooks.is_empty());
+        let e = WeaponSet::parse(&[("bad", "id = \"t:bad\"\nslot = 0\ndraw = 1.0\nhooks = 3\n")], &[]).unwrap_err();
+        assert!(e.contains("t:bad") && e.contains("hooks"), "{e}");
     }
 
     #[test]
