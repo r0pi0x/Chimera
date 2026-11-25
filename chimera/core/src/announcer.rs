@@ -131,7 +131,7 @@ pub struct Timing {
 /// `voices` in place of the callouts' (by `Callout::key`; a top image by
 /// `<key>_top`, a woman killer's voice by `<key>_female`). A key it lacks
 /// falls back to the pack's own (kill_streaks.md A8, Open question 7).
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Skin {
     pub name: String,

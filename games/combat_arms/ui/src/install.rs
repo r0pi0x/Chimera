@@ -523,6 +523,15 @@ fn layout(mount: &Mount, path: &str) -> Option<Layout> {
 /// Read the install's UI data through `mount`; None when its layouts
 /// can't be read (no install, or XML.rez locked without the V1 key).
 pub fn load(mount: &Mount, extra_art: &[String]) -> Option<InstallUi> {
+    load_with(mount, extra_art, None)
+}
+
+/// `load`, with the display names' string keys when the install's
+/// attribute files were parsed already (`InstallAttributes::item_names`:
+/// the weapons, item and modification files, 17 MB of text, aren't
+/// parsed a second time for the names; docs/performance.md, "Start cost,
+/// third pass"). A list it lacks is read from `mount` as `load` does.
+pub fn load_with(mount: &Mount, extra_art: &[String], names: Option<&crate::game::data::attributes::ItemNameKeys>) -> Option<InstallUi> {
     let hud = layout(mount, HUD_FILE);
     let menu = layout(mount, MENU_FILE);
     if hud.is_none() && menu.is_none() {
@@ -537,8 +546,20 @@ pub fn load(mount: &Mount, extra_art: &[String]) -> Option<InstallUi> {
     let options: Option<Vec<Layout>> = OPTION_FILES.iter().map(|f| layout(mount, f)).collect();
     let hud_layout = hud_layout(mount);
     let fonts = font_list(mount);
-    let weapon_names = strings.as_ref().map(|t| weapon_names(mount, t)).unwrap_or_default();
-    let part_names = strings.as_ref().map(|t| part_names(mount, t)).unwrap_or_default();
+    let weapon_names = strings
+        .as_ref()
+        .map(|t| match names.and_then(|n| n.weapons.as_ref()) {
+            Some(keys) => resolve_weapon_names(keys, t),
+            None => weapon_names(mount, t),
+        })
+        .unwrap_or_default();
+    let part_names = strings
+        .as_ref()
+        .map(|t| match names.and_then(|n| n.parts.as_ref()) {
+            Some(keys) => resolve_part_names(keys, t),
+            None => part_names(mount, t),
+        })
+        .unwrap_or_default();
     let mut names: Vec<String> = [&hud, &menu, &indicator, &result, &team_list, &no_team_list, &loading, &kill_cam]
         .into_iter()
         .flatten()
@@ -619,57 +640,51 @@ pub use crate::game::data::attributes::ITEMS_FILE;
 
 /// The display names of the weapons the item file names, by our weapon
 /// id: each `WeaponItem` record's `ItemID` is the weapon record's index
-/// (lobby.md), its `ItemName` a string id resolved through `strings`. A
-/// weapon whose id doesn't resolve to text has none here.
+/// (lobby.md), its `ItemName` a string id resolved through `strings`
+/// (`attributes::weapon_name_keys`, `resolve_weapon_names`). A weapon
+/// whose id doesn't resolve to text has none here.
 pub fn weapon_names_from(
     weapons: &lithtech_formats::attributes::Document,
     items: &lithtech_formats::attributes::Document,
     strings: &Strings,
 ) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for item in items.records("WeaponItem") {
-        let id = item.int("itemid", -1);
-        let key = item.fixed_string("itemname", "");
-        if id < 0 || key.is_empty() {
-            continue;
-        }
-        let Some(w) = weapons.section(&format!("Weapon{id}")) else { continue };
-        let name = w.fixed_string("Name", "");
-        let text = strings.resolve(&key);
-        if name.is_empty() || text.is_empty() || text.starts_with('$') {
-            continue;
-        }
-        out.push((format!("combat_arms:{}", crate::game::data::slug(&name)), text));
-    }
-    out
+    resolve_weapon_names(&crate::game::data::attributes::weapon_name_keys(weapons, items), strings)
+}
+
+/// The weapons' names from their keys in `strings` (an unresolved one
+/// skipped).
+pub fn resolve_weapon_names(keys: &[(String, String)], strings: &Strings) -> Vec<(String, String)> {
+    keys.iter()
+        .filter_map(|(id, key)| {
+            let text = strings.resolve(key);
+            (!text.is_empty() && !text.starts_with('$')).then(|| (id.clone(), text))
+        })
+        .collect()
 }
 
 /// Each attachment's display name by its record `Name` (the
 /// modification file's `Mod#`): the shop item file's `Option#` records
 /// whose `itemid` is that record's index, their `itemname` in `strings`
-/// (an unresolved one skipped).
+/// (`attributes::part_name_keys`, `resolve_part_names`; an unresolved
+/// one skipped).
 pub fn part_names_from(
     mods: &lithtech_formats::attributes::Document,
     items: &lithtech_formats::attributes::Document,
     strings: &Strings,
 ) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for item in items.records("Option") {
-        let id = item.int("itemid", -1);
-        let key = item.fixed_string("itemname", "");
-        if id < 0 || key.is_empty() {
-            continue;
-        }
-        let Some(m) = mods.section(&format!("Mod{id}")) else { continue };
-        let name = m.fixed_string("Name", "");
-        let text = strings.resolve(&key);
-        let text = text.trim();
-        if name.is_empty() || text.is_empty() || text.starts_with('$') {
-            continue;
-        }
-        out.push((name, text.to_string()));
-    }
-    out
+    resolve_part_names(&crate::game::data::attributes::part_name_keys(mods, items), strings)
+}
+
+/// The attachments' names from their keys in `strings`, trimmed (an
+/// unresolved one skipped).
+pub fn resolve_part_names(keys: &[(String, String)], strings: &Strings) -> Vec<(String, String)> {
+    keys.iter()
+        .filter_map(|(name, key)| {
+            let text = strings.resolve(key);
+            let text = text.trim();
+            (!text.is_empty() && !text.starts_with('$')).then(|| (name.clone(), text.to_string()))
+        })
+        .collect()
 }
 
 /// `part_names_from` the install's two files; none when either can't be
@@ -744,7 +759,7 @@ pub fn installed(data: &crate::game::data::CaDataInner) -> Option<Arc<InstallUi>
         icons.extend(dot_sight_names(data));
         icons.sort();
         icons.dedup();
-        let mut ui = load(&mount, &icons)?;
+        let mut ui = load_with(&mount, &icons, data.attributes().and_then(|a| a.item_names.as_ref()))?;
         ui.kill_icons = Arc::new(kills);
         Some(Arc::new(ui))
     })()))

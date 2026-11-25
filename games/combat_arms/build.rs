@@ -60,17 +60,34 @@ const CONVERTING: &[&str] = &[
     "../../chimera/formats/src",
 ];
 
+/// What shapes the install's attribute data as read (`game::data::
+/// ATTRIBUTES_READER`: `read_attributes` and the record types it fills):
+/// the version its entry in the converted cache is keyed by.
+const ATTRIBUTES: &[&str] = &[
+    "src/game/data.rs",
+    "src/game/data/attributes.rs",
+    "src/game/gear/records.rs",
+    "src/game/attachments.rs",
+    "../../chimera/core/src/announcer.rs",
+    "../../lithtech/formats/src",
+];
+
 /// The parsing crates whose versions count (`source_hash::lock_versions`).
 const PARSERS: &[&str] = &["aes", "glam", "symphonia*", "postcard"];
 
 fn main() {
     let lock = Path::new("../../Cargo.lock");
-    for p in CONVERTING.iter().chain(&["../../Cargo.lock"]) {
+    for p in CONVERTING.iter().chain(ATTRIBUTES).chain(&["../../Cargo.lock"]) {
         println!("cargo:rerun-if-changed={p}");
     }
     let dirs: Vec<&Path> = CONVERTING.iter().map(Path::new).collect();
     println!(
         "cargo:rustc-env=CHIMERA_CONVERTER_SOURCES={}",
         source_hash::converter(VERSION, &dirs, lock, PARSERS)
+    );
+    let dirs: Vec<&Path> = ATTRIBUTES.iter().map(Path::new).collect();
+    println!(
+        "cargo:rustc-env=CHIMERA_ATTRIBUTE_SOURCES={}",
+        source_hash::converter(VERSION, &dirs, lock, &["postcard"])
     );
 }

@@ -315,3 +315,62 @@ fn the_merged_weapon_documents_read_back_the_same() {
         reading as f64 / 1e6
     );
 }
+
+/// The install's attribute records and the merged weapon set's tables
+/// kept on disk (`data::attributes_kept`, `WeaponSet::parse_kept`): read
+/// back, the same records and the same weapons as read and parsed, for
+/// fewer instructions. Prints both for docs/performance.md.
+#[test]
+fn the_attribute_records_and_the_weapon_set_read_back_the_same() {
+    use chimera_sim::weapon::data::WeaponSet;
+    use chimera_world::map::cache::{MapCache, Outcome};
+    use combat_arms::game::data::attributes_kept;
+    if !install() {
+        return;
+    }
+    let Some(dir) = MapCache::default_dir().and_then(|d| d.parent().map(|p| p.join("kept-cache-ca-attributes-test"))) else {
+        eprintln!("skipping: no cache folder");
+        return;
+    };
+    let _ = std::fs::remove_dir_all(&dir);
+    let disk = MapCache::at(&dir, u64::MAX);
+    let mount = {
+        let keys = combat_arms::game::mount::keys().unwrap();
+        let install = LocalConfig::load().unwrap().game_path(GAME).unwrap();
+        let a = lithtech_formats::rez::RezArchive::open(&install.join("Game").join("ATTRIBUTES.rez"), &keys).unwrap();
+        let mut m = chimera_core::mount::Mount::default();
+        m.push(a);
+        m
+    };
+    let run = |disk: Option<&MapCache>| counted(|| attributes_kept(&mount, disk).unwrap());
+    let ((plain, how), reading_files) = run(None);
+    assert_eq!(how, Outcome::Off);
+    assert!(plain.weapons.is_some() && plain.item_names.is_some(), "the install's records");
+    let ((written, how), _) = run(Some(&disk));
+    assert_eq!(how, Outcome::Miss);
+    let ((read, how), reading_back) = run(Some(&disk));
+    assert_eq!(how, Outcome::Hit);
+    assert!(plain == written && written == read, "the same records");
+    eprintln!(
+        "combat_arms: the attribute records read {:.0} M instructions, read back {:.0} M",
+        reading_files as f64 / 1e6,
+        reading_back as f64 / 1e6
+    );
+
+    let data = CaData::with_attributes(read);
+    let docs = data.weapon_docs_merged(None).unwrap().expect("install weapons").0;
+    let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
+    let parse = |disk: Option<&MapCache>| counted(|| WeaponSet::parse_kept(&refs, &[], disk).unwrap());
+    let (plain, parsing) = parse(None);
+    let (written, _) = parse(Some(&disk));
+    let (read, reading_back) = parse(Some(&disk));
+    let _ = std::fs::remove_dir_all(&dir);
+    let said = |s: &WeaponSet| format!("{:?} {:?}", s.weapons, s.ammo);
+    assert!(said(&plain) == said(&written) && said(&written) == said(&read), "the same weapons");
+    eprintln!(
+        "combat_arms: {} weapons parsed {:.0} M instructions, their tables read back {:.0} M",
+        read.weapons.len(),
+        parsing as f64 / 1e6,
+        reading_back as f64 / 1e6
+    );
+}

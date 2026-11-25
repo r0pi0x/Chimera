@@ -243,7 +243,7 @@ struct File {
 }
 
 /// A gear piece (`Gear#`).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Piece {
     pub name: String,
     /// Repairs the armour pool by this much when added to a living player.
@@ -254,7 +254,7 @@ pub struct Piece {
 }
 
 /// A vest (`Model#`).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Vest {
     pub name: String,
     pub gear: i32,
@@ -271,7 +271,7 @@ pub struct Vest {
 }
 
 /// A head piece, goggles or a backpack (`Hair#`, `Goggle#`, `Backpack#`).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Worn {
     pub name: String,
     pub gear: i32,
@@ -281,7 +281,7 @@ pub struct Worn {
 }
 
 /// A gear mod (`Mod#`, `Kinds` 5 to 7).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GearMod {
     pub name: String,
     pub slot: ModSlot,
@@ -293,7 +293,7 @@ pub struct GearMod {
 
 /// A perk (`PerkSkill_N`, section 14): its items, slots and numbers by
 /// level (0 basic, 1 Expert).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PerkRecord {
     pub ty: i32,
     pub name: String,
@@ -628,7 +628,7 @@ impl GearData {
 /// A `PerkSkill_N` record's section, to read a perk's numbers by level
 /// (Open question 1: a key with the suffix `_0` or `_1` belongs to that
 /// level, an unsuffixed one to both).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PerkInstall {
     pub ty: i32,
     keys: HashMap<String, f64>,
@@ -665,7 +665,7 @@ impl PerkInstall {
 
 /// What the install's attribute files give the gear system, by record
 /// index (the ids of the game).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GearInstall {
     pub pieces: Vec<Piece>,
     pub vests: Vec<Vest>,

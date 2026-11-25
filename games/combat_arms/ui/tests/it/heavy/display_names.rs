@@ -74,3 +74,32 @@ fn every_drawable_guns_short_name_fits() {
         long.join("\n")
     );
 }
+
+/// The names the front end resolves from the attribute data's keys
+/// (`InstallAttributes::item_names`, read while the files are parsed, or
+/// read back from the converted cache) are those it read from the
+/// install's files itself: the weapons' and the attachments'.
+#[test]
+fn the_names_from_the_attribute_datas_keys_are_the_files() {
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
+        eprintln!("skipping: no Combat Arms install");
+        return;
+    };
+    use combat_arms_ui::install;
+    let Some(strings) = (INFO.open)(&install).ok().and_then(|m| Some((install::strings(&m, &install::language())?, m))) else {
+        eprintln!("skipping: no string table");
+        return;
+    };
+    let (strings, mount) = strings;
+    let ca = CaData::install();
+    let Some(keys) = ca.attributes().and_then(|a| a.item_names.as_ref()) else {
+        eprintln!("skipping: the install's attribute data isn't readable (the V1 key)");
+        return;
+    };
+    let weapons = install::resolve_weapon_names(keys.weapons.as_deref().expect("the weapons file"), &strings);
+    assert!(weapons.len() > 1000, "{}", weapons.len());
+    assert_eq!(weapons, install::weapon_names(&mount, &strings));
+    let parts = install::resolve_part_names(keys.parts.as_deref().expect("the modification file"), &strings);
+    assert!(!parts.is_empty());
+    assert_eq!(parts, install::part_names(&mount, &strings));
+}

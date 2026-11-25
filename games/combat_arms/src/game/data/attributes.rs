@@ -56,6 +56,61 @@ use crate::game::attachments::ModRecord;
 pub const WEAPONS_FILE: &str = "attributes/weapons.txt";
 /// The shop item file (display data, attribute_data.md).
 pub const ITEMS_FILE: &str = "attributes/items.txt";
+
+/// The display names the shop item file gives, each as the key of its
+/// text in the install's string table (`weapon_name_keys`,
+/// `part_name_keys`), read while the attribute files are parsed
+/// (`read_attributes`) so the front end needn't parse them again. A list
+/// is None when the file its records are in wasn't read.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ItemNameKeys {
+    /// Our weapon id and its name's key.
+    pub weapons: Option<Vec<(String, String)>>,
+    /// An attachment's record `Name` and its name's key.
+    pub parts: Option<Vec<(String, String)>>,
+}
+
+/// Each weapon's display name key by our weapon id: every `WeaponItem`
+/// record of the item file whose `ItemID` is a weapon record's index
+/// (lobby.md) and that has an `ItemName`, in the item file's order.
+pub fn weapon_name_keys(weapons: &Document, items: &Document) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for item in items.records("WeaponItem") {
+        let id = item.int("itemid", -1);
+        let key = item.fixed_string("itemname", "");
+        if id < 0 || key.is_empty() {
+            continue;
+        }
+        let Some(w) = weapons.section(&format!("Weapon{id}")) else { continue };
+        let name = w.fixed_string("Name", "");
+        if name.is_empty() {
+            continue;
+        }
+        out.push((format!("combat_arms:{}", super::slug(&name)), key));
+    }
+    out
+}
+
+/// Each attachment's display name key by its record `Name` (the
+/// modification file's `Mod#`): the item file's `Option#` records whose
+/// `itemid` is that record's index, in the item file's order.
+pub fn part_name_keys(mods: &Document, items: &Document) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for item in items.records("Option") {
+        let id = item.int("itemid", -1);
+        let key = item.fixed_string("itemname", "");
+        if id < 0 || key.is_empty() {
+            continue;
+        }
+        let Some(m) = mods.section(&format!("Mod{id}")) else { continue };
+        let name = m.fixed_string("Name", "");
+        if name.is_empty() {
+            continue;
+        }
+        out.push((name, key));
+    }
+    out
+}
 pub const SERVER_FILE: &str = "attributes/serverbutes.txt";
 pub const MODELS_FILE: &str = "attributes/modelbutes.txt";
 pub const MOD_FILE: &str = "attributes/mod.txt";
@@ -101,7 +156,7 @@ fn text(bytes: &[u8]) -> String {
 }
 
 /// `Gear<N>`: armour.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GearRecord {
     pub name: String,
     pub armor: f64,
@@ -135,7 +190,7 @@ impl GearRecord {
 }
 
 /// The ammo's spread values ("Field table: ammo"), plain or `Zoomed`.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AmmoPerturb {
     pub fire: f64,
     pub fire_move: f64,
@@ -164,7 +219,7 @@ impl AmmoPerturb {
 }
 
 /// `Ammo<N>`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AmmoRecord {
     pub name: String,
     pub kind: i32,
@@ -265,7 +320,7 @@ impl AmmoRecord {
 }
 
 /// A weapon's spread limits and rates (plain, zoomed or burst).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Cone {
     pub min: i32,
     pub max: i32,
@@ -274,7 +329,7 @@ pub struct Cone {
 }
 
 /// `Weapon<N>`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WeaponRecord {
     pub name: String,
     pub gun_type: i32,
@@ -640,7 +695,7 @@ pub fn range_multiplier(effect_range: &[i32], range_damage: &[f64], distance: f6
 }
 
 /// `[Perturb]`: global spread speeds, each read only if present.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PerturbGlobals {
     pub movement_increase: f64,
     pub movement_decrease: f64,
@@ -662,7 +717,7 @@ impl Default for PerturbGlobals {
 }
 
 /// The weapons file, built as the game builds it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WeaponsFile {
     pub gear: Vec<GearRecord>,
     pub ammo: Vec<AmmoRecord>,
@@ -814,7 +869,7 @@ impl WeaponsFile {
 /// `FireFX<N>` in the effect file (effects_sounds.md, "Effect tables in
 /// the attribute data"): the group the shooter alone sees at the muzzle
 /// and the casings.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FireRecord {
     pub name: String,
     pub fx_name: String,
@@ -848,7 +903,7 @@ impl FireRecord {
 /// the attribute data"): the tracer's sprite, how often one is drawn and
 /// its flight. A missing field is our tables' default (`TracerFx`: 6000
 /// u/s, 20 u wide, 300 long, white, opaque; the spec gives none).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TracerRecord {
     pub name: String,
     pub texture: String,
@@ -886,7 +941,7 @@ impl TracerRecord {
 
 /// `ImpactFX<N>` in the effect file (effects_sounds.md, "Effect tables in
 /// the attribute data"): what an impact or a blast plays.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ImpactRecord {
     pub name: String,
     /// `Sound`: a file, or `Surface` (by surface and ammo kind).
@@ -928,7 +983,7 @@ impl ImpactRecord {
 /// `ProjectileFX<N>` in the effect file (special_weapons.md, "Projectile
 /// record"; grenades.md "Data"): the fields a thrown grenade reads. A
 /// field the record lacks is `None` (the spec's data or ours stands).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectileRecord {
     pub name: String,
     pub class: String,
@@ -966,7 +1021,7 @@ pub struct ProjectileRecord {
 /// `Turret<N>` in the effect file (special_weapons.md "Turret record",
 /// 6.7): the auto turret's gun and aim. A field the record lacks is the
 /// spec's stock value's place: `None`.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TurretRecord {
     pub name: String,
     /// `TopWeaponID`: the weapon record index of the turret's gun.
@@ -1024,7 +1079,7 @@ impl TurretRecord {
 /// in its two screen axes, `FlareYOffset`) and the smoke trail
 /// (`SmokeTrail` 1, `SmokeTrailType`). `Light*` is never made, so not
 /// read.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectileLookRecord {
     pub fx: String,
     pub fx_loop: bool,
@@ -1097,7 +1152,7 @@ impl ProjectileRecord {
 
 /// `[Player]` in the server attributes file. A missing or wrongly typed
 /// speed reads as the smallest positive double, 0 as a float.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ServerPlayer {
     pub walk_speed: f32,
     pub run_speed: f32,
@@ -1128,7 +1183,7 @@ impl ServerPlayer {
 
 /// The server's `[TimeWeight]` settings used by firing (attribute_data.md
 /// Corrections 3).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ServerTimeWeight {
     /// `ReloadCheckTime` (built-in 0.8): the server's reload window is the
     /// third-person reload length / (rate x (2 - this)).
@@ -1152,7 +1207,7 @@ impl ServerTimeWeight {
 /// `Node<i>Location`, `Node<i>DamageFactor`, `Node<i>Priority`) from
 /// node 0 until the first index without a name (attribute_data.md
 /// Corrections 1: a missing priority reads as 0).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SkeletonNode {
     pub name: String,
     pub radius: f64,
@@ -1181,7 +1236,7 @@ impl SkeletonNode {
 
 /// `FigureType<N>`: a body type.
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FigureTypeRecord {
     pub name: String,
     pub female: bool,
@@ -1232,7 +1287,7 @@ impl FigureTypeRecord {
 
 /// The movement keys of a `Model<N>` (character) or `Hair<N>` (head
 /// piece).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WearRecord {
     pub name: String,
     /// `FigureType` (characters only; 0 for head pieces).
@@ -1259,7 +1314,7 @@ impl WearRecord {
 /// (`Face<N>`: `ModelFile`), its skins (`Skin0..`, by camouflage index for
 /// a head piece) and, for a face, the head piece it comes with
 /// (`HairIndex`).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PieceRecord {
     pub name: String,
     pub files: Vec<String>,
@@ -1306,7 +1361,7 @@ impl PieceRecord {
 /// backpack (`Backpack<N>`): its name, socket (`Socket`), file per figure
 /// type (`Model0`, `Model1`), skins (`Skin0..`) and render styles
 /// (`RenderStyle0..`).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WornRecord {
     pub name: String,
     pub socket: String,
@@ -1334,7 +1389,7 @@ impl WornRecord {
 
 /// The character attachments file's goggles and backpacks, by record
 /// index.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AttachmentsFile {
     pub goggles: Vec<WornRecord>,
     pub backpacks: Vec<WornRecord>,
@@ -1351,7 +1406,7 @@ impl AttachmentsFile {
 
 /// The team marks (characters.md 2, `[TeamMark]`): mark i's texture
 /// (`TeamName#`) and render style (`RenderStyle#`).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MarksFile {
     pub textures: Vec<String>,
     pub render_styles: Vec<String>,
@@ -1374,7 +1429,7 @@ impl MarksFile {
 /// slots 5 on), render styles (`RenderStyle0..`), face redirects
 /// (`FaceRelationModel0..`, -1 none), skeleton (`Skeleton`) and gear
 /// (`GearID`).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BodyLook {
     pub file: String,
     pub upper_skins: Vec<String>,
@@ -1409,7 +1464,7 @@ pub struct BodyLook {
 /// `Hand<N>`: a first-person hand model record (view_models.md 1, 2): its
 /// file (`ModelFile`), skins by texture index (`Skin0..`) and colour
 /// variants (`ColorSkin{c}_0..`, each replacing the whole list).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HandLook {
     pub file: String,
     pub skins: Vec<String>,
@@ -1428,7 +1483,7 @@ impl HandLook {
 }
 
 /// One model colour's skin lists (empty: the base list stays).
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ColourSkins {
     pub upper: Vec<String>,
@@ -1442,7 +1497,7 @@ pub const MODEL_COLOURS: usize = 5;
 
 /// `Overidable_Model<N>`: an infection override's look (characters.md 2:
 /// it replaces render styles, armour, hit points and hands; its face).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct InfectionLook {
     pub name: String,
     /// `FaceIndex` (-1: none).
@@ -1496,7 +1551,7 @@ impl BodyLook {
 /// its face, head piece, goggles and backpack named by record `Name`
 /// (`AIFace`, `AIHair`, `AIGoggle`, `AIBackpack`, each defaulting to a
 /// name no record has: none) and its own animation and death keys.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NpcLook {
     pub name: String,
     pub file: String,
@@ -1549,7 +1604,7 @@ impl NpcLook {
 }
 
 /// The models file's body types, characters, head pieces and faces.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelsFile {
     pub figure_types: Vec<FigureTypeRecord>,
     pub models: Vec<WearRecord>,
@@ -1731,7 +1786,7 @@ pub fn read_mod(s: &Section) -> ModRecord {
 
 /// `Weapon<N>` of the modification file: the accepted list of the weapon
 /// with the same N in the weapons file (Q13: by position).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModWeaponRecord {
     /// `Name` (informational).
     pub name: String,
@@ -1748,7 +1803,7 @@ pub const SLOT_OPTIONS: [&str; 5] = ["MuzzleOPtion", "SightOption", "MagazineOpt
 
 /// The modification file (`MOD.TXT`): attachment records and per-weapon
 /// accepted lists.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModFile {
     pub mods: Vec<ModRecord>,
     pub weapons: Vec<ModWeaponRecord>,

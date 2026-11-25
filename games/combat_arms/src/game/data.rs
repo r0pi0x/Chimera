@@ -336,7 +336,7 @@ pub fn with_install_movement(mut data: MovementData, attributes: Option<&Install
 
 /// What was read from the install's attribute files: each `None` when its
 /// file is missing, locked or fails to parse or load.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct InstallAttributes {
     pub weapons: Option<WeaponsFile>,
     pub server: Option<ServerPlayer>,
@@ -361,6 +361,11 @@ pub struct InstallAttributes {
     /// outside it is no player's (an NPC's, a boss's, a turret, a test
     /// record): `unshopped_weapons`.
     pub shop_weapons: Option<std::collections::BTreeSet<usize>>,
+    /// The weapons' and attachments' display names as the shop item file
+    /// gives them, by string key (`attributes::ItemNameKeys`: the front
+    /// end's string table resolves them). None without the item file, or
+    /// built by hand.
+    pub item_names: Option<attributes::ItemNameKeys>,
     /// A hash of every attribute file's bytes as read (`read_attributes`;
     /// None: built by hand, or no weapons file): what the merged weapon documents kept on
     /// disk are keyed by (`CaData::weapon_docs_merged`).
@@ -442,13 +447,20 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
         }
     };
     // Read apart: its bytes aren't in the digest (display data only).
-    let shop_weapons = read(attributes::ITEMS_FILE).ok().and_then(|b| parse_document(attributes::ITEMS_FILE, &b).ok()).map(|d| {
-        d.records("WeaponItem").iter().filter_map(|s| usize::try_from(s.int("ItemID", -1)).ok()).collect()
-    });
+    let items = read(attributes::ITEMS_FILE).ok().and_then(|b| parse_document(attributes::ITEMS_FILE, &b).ok());
+    let shop_weapons = items
+        .as_ref()
+        .map(|d| d.records("WeaponItem").iter().filter_map(|s| usize::try_from(s.int("ItemID", -1)).ok()).collect());
     let weapons = doc(WEAPONS_FILE);
     let server = doc(SERVER_FILE);
     let models = doc(MODELS_FILE);
     let mods = doc(MOD_FILE);
+    // The display names' string keys, while the item file and the two
+    // it names records of are parsed (the front end resolves them).
+    let item_names = items.map(|i| attributes::ItemNameKeys {
+        weapons: weapons.as_ref().map(|w| attributes::weapon_name_keys(w, &i)),
+        parts: mods.as_ref().map(|m| attributes::part_name_keys(m, &i)),
+    });
     let marks = doc(MARKS_FILE);
     let attachments = doc(ATTACHMENTS_FILE);
     let perks = doc(PERKS_FILE);
@@ -502,6 +514,7 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
         gear,
         announcer_skins,
         shop_weapons,
+        item_names,
         digest,
     };
     (attrs, problems)
@@ -528,18 +541,57 @@ pub fn open_attributes(path: &std::path::Path) -> Result<InstallAttributes, Stri
     attributes_from_mount(&mount)
 }
 
+/// The version of what `read_attributes` gives, for its entry in the
+/// converted cache (`attributes_from_mount`): the hash of its sources and
+/// the record types' (build.rs, `ATTRIBUTES`).
+pub const ATTRIBUTES_READER: &str = env!("CHIMERA_ATTRIBUTE_SOURCES");
+
 /// The attribute files read from `mount` (`ATTRIBUTES.rez` alone, or a
 /// game mount served from the asset store, which has its files at the
-/// same paths). `Err` when the weapons file isn't there.
+/// same paths). `Err` when the weapons file isn't there. Read back from
+/// the converted cache (`map::kept::disk_cache`) when the same files
+/// were read before by the same reader (`attributes_kept`); never while
+/// the reads are recorded (`CHIMERA_VFS_LOG`: a read back reads no file,
+/// and the record is what the asset store packs).
 pub fn attributes_from_mount(mount: &crate::mount::Mount) -> Result<InstallAttributes, String> {
+    let disk = if crate::mount::assets::Recorder::from_env().is_some() { None } else { crate::map::kept::disk_cache() };
+    attributes_kept(mount, disk.as_ref()).map(|(a, _)| a)
+}
+
+/// `attributes_from_mount` with `disk` as the cache, and how it went.
+/// The files are 21 MB of text, decrypted, parsed and read into records
+/// at every start (5.9 G instructions; docs/performance.md, "Start cost,
+/// third pass"); the entry is the records (`read_attributes`' result and
+/// its problems, said again on a hit), keyed by `ATTRIBUTES_READER` and
+/// checked against the files' fingerprints as every entry's inputs are.
+/// Records that don't come back from their encoding as they went in
+/// aren't kept (read each time, with a warning).
+pub fn attributes_kept(
+    mount: &crate::mount::Mount,
+    disk: Option<&crate::map::cache::MapCache>,
+) -> Result<(InstallAttributes, crate::map::cache::Outcome), String> {
+    use crate::map::cache::{Key, Outcome, cached};
     if !mount.contains(WEAPONS_FILE) {
         return Err(format!("no {WEAPONS_FILE} in the mount"));
     }
-    let (attrs, problems) = read_attributes(|name| mount.read(name));
+    let read = || read_attributes(|name| mount.read(name));
+    let key = Key::new("combat_arms:attributes", ATTRIBUTES_READER);
+    let ((attrs, problems), outcome) = match disk {
+        None => (read(), Outcome::Off),
+        Some(_) => cached(disk, mount, key, || {
+            let read = read();
+            let back = postcard::to_allocvec(&read).ok().and_then(|b| postcard::from_bytes::<(InstallAttributes, Vec<String>)>(&b).ok());
+            if back.as_ref() == Some(&read) { Ok(read) } else { Err("the records don't read back as written".to_string()) }
+        })
+        .unwrap_or_else(|e| {
+            warn!("Combat Arms: the install's attribute data isn't kept on disk: {e}");
+            (read(), Outcome::Off)
+        }),
+    };
     for p in problems {
         warn!("Combat Arms: the install's {p}; using the built-in data for it");
     }
-    Ok(attrs)
+    Ok((attrs, outcome))
 }
 
 /// Our ID for an install name: lower case, anything but letters, digits,

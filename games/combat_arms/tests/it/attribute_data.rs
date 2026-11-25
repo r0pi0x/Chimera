@@ -943,3 +943,61 @@ fn the_install_weapon_index_finds_what_the_search_finds() {
     // The first record of a name.
     assert_eq!(ca.install_weapon("combat_arms:m60").map(|r| r.gun_type), Some(5));
 }
+
+/// The attribute files read back from the converted cache are the
+/// records read (`attributes_kept`): the first read writes its entry,
+/// the second reads it (the same records, problems and display-name
+/// keys, no file parsed), and a file that changed is read again.
+#[test]
+fn the_attribute_records_read_back_from_the_cache_as_read() {
+    use combat_arms::game::data::attributes_kept;
+    use chimera_world::map::cache::{MapCache, Outcome};
+    let root = std::env::temp_dir().join(format!("chimera-ca-attributes-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let files = root.join("files");
+    std::fs::create_dir_all(files.join("attributes")).unwrap();
+    let write = |name: &str, text: &str| std::fs::write(files.join(name), text).unwrap();
+    write(
+        WEAPONS_FILE,
+        r#"[Ammo0] Name="556" Type=1 MaxAmount=120
+           [Weapon0] Name="Kept Rifle" Guntype=4 AmmoName0="556" ShotsPerClip=40
+           [Weapon1] Name="Kept Carbine" Guntype=4 AmmoName0="556" ShotsPerClip=25"#,
+    );
+    write(MOD_FILE, r#"[Mod0] Name="Kept_Hider" Kinds=0 Type=3 Integrated=1"#);
+    write(
+        ITEMS_FILE,
+        r#"[WeaponItem0] ItemID=1 ItemName="IDS_CARBINE"
+           [WeaponItem1] ItemID=7 ItemName="IDS_NONE"
+           [Option0] ItemID=0 ItemName="IDS_HIDER""#,
+    );
+    // A file that doesn't parse: its problem is said on a read back too.
+    write(SERVER_FILE, "[Player");
+    let mount = || {
+        let mut m = chimera_core::mount::Mount::default();
+        m.push(chimera_core::mount::LooseDir::new(files.clone()));
+        m
+    };
+    let cache = MapCache::at(root.join("cache"), 1 << 30);
+    let plain = read_attributes(|n| mount().read(n)).0;
+    assert_eq!(plain.weapons.as_ref().unwrap().weapons.len(), 2);
+    let names = plain.item_names.as_ref().expect("the item file read");
+    assert_eq!(names.weapons.as_deref(), Some(&[("combat_arms:kept_carbine".to_string(), "IDS_CARBINE".to_string())][..]));
+    assert_eq!(names.parts.as_deref(), Some(&[("Kept_Hider".to_string(), "IDS_HIDER".to_string())][..]));
+    assert_eq!(plain.shop_weapons, Some([1, 7].into_iter().collect()));
+
+    let (first, o) = attributes_kept(&mount(), Some(&cache)).unwrap();
+    assert_eq!(o, Outcome::Miss);
+    assert_eq!(first, plain, "a miss gives what was read");
+    let (second, o) = attributes_kept(&mount(), Some(&cache)).unwrap();
+    assert_eq!(o, Outcome::Hit);
+    assert_eq!(second, plain, "a read back gives the same records");
+    assert_eq!(attributes_kept(&mount(), None).unwrap(), (plain.clone(), Outcome::Off));
+
+    // Another weapons file: read again, not the kept records.
+    write(WEAPONS_FILE, r#"[Ammo0] Name="556" Type=1 MaxAmount=120 [Weapon0] Name="Only One" Guntype=4 AmmoName0="556" ShotsPerClip=40"#);
+    let (third, o) = attributes_kept(&mount(), Some(&cache)).unwrap();
+    assert_eq!(o, Outcome::Miss);
+    assert_eq!(third.weapons.as_ref().unwrap().weapons.len(), 1);
+    assert_ne!(third.digest, plain.digest);
+    let _ = std::fs::remove_dir_all(&root);
+}
