@@ -1065,6 +1065,8 @@ fn autoexec(
     gameplay: Option<Res<crate::gameplay::Gameplay>>,
     mut defaults: ResMut<super::binds::BindDefaults>,
     mut root: Query<&mut Visibility, With<ConsoleRoot>>,
+    later: Option<Res<super::app::StartMapLater>>,
+    mut commands: Commands,
 ) {
     // Every key is a bind: the defaults first, then the player's config.
     // A config written before that has only the player's own binds after
@@ -1112,8 +1114,31 @@ fn autoexec(
     console.submit("bindgamedefaults missing");
     console.submit("execifexists autoexec.cfg");
     console.log_output = true;
-    for line in &args.0.console {
-        console.submit(line.clone());
+    match later {
+        // A start map loaded as a level change (`app::StartMapLater`):
+        // the settings now, hosting on the greybox if they ask for it, the
+        // map, and the other lines once it has settled.
+        Some(later) => {
+            let mut held = Vec::new();
+            for line in &args.0.console {
+                let settings = crate::console::parse(line)
+                    .iter()
+                    .all(|words| words.len() > 1 && console.cvar(&words[0]).is_some());
+                if settings {
+                    console.submit(line.clone());
+                } else {
+                    held.push(line.clone());
+                }
+            }
+            console.submit("chimera_host_if_asked");
+            console.submit(format!("map {}", later.0));
+            commands.insert_resource(super::app::HeldCommandLine(held));
+        }
+        None => {
+            for line in &args.0.console {
+                console.submit(line.clone());
+            }
+        }
     }
     // A map loaded before the console ran (`--map`): hosting with the
     // command line's `+maxplayers` starts here, as `map` does after its load.
@@ -2460,6 +2485,9 @@ pub fn finish_map_load(w: &mut World) {
             w.resource_mut::<Console>()
                 .print(crate::console::Level::Error, format!("map {id}: {e}"));
             super::front_end::map_load_failed(w);
+            // A start map that doesn't load ends the run, as it did loading
+            // before the app.
+            super::app::start_map_settled(w, false);
             // Joining a server needs its map.
             match w.get_resource::<crate::core::NetRole>() {
                 Some(crate::core::NetRole::Client) => {
@@ -2600,6 +2628,8 @@ fn settle_map(w: &mut World) {
     if !done && started.elapsed().as_secs_f32() < SETTLE_MAX_SECS {
         return;
     }
+    // The boot log's (`CHIMERA_BOOT_LOG`): each map in, the start map's first.
+    chimera_core::metrics::boot::stage("a map settled");
     if done {
         info!("map settled behind the loading screen in {:.2} s", started.elapsed().as_secs_f32());
     } else {
@@ -2622,6 +2652,8 @@ fn settle_map(w: &mut World) {
     if w.remove_resource::<FreshGame>().is_some() {
         super::front_end::start_game(w);
     }
+    // A start map loaded as a level change: the command line's other lines.
+    super::app::start_map_settled(w, true);
 }
 
 /// The map loading is a game the `map` command starts (not a server's

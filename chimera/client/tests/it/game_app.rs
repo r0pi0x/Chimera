@@ -113,6 +113,7 @@ fn record(app: &mut App, part: Engine<'_>) {
         Engine::Map(StartMap::Greybox, _) => "map greybox".to_string(),
         Engine::Map(StartMap::Empty, _) => "map empty".to_string(),
         Engine::Map(StartMap::Loaded { id, .. }, view) => format!("map {id} {view:?}"),
+        Engine::Map(StartMap::Later { id, .. }, view) => format!("map {id} later {view:?}"),
         Engine::Installs(sources) => format!("installs {}", sources.iter().map(|s| s.id).collect::<Vec<_>>().join(",")),
         Engine::Window(_, title) => format!("window {title}"),
         Engine::Physics => "physics".into(),
@@ -183,6 +184,7 @@ fn the_start_map_is_the_command_lines_the_apps_default_or_the_greybox() {
         Ok(StartMap::Greybox) => "greybox".to_string(),
         Ok(StartMap::Empty) => "empty".to_string(),
         Ok(StartMap::Loaded { id, data, .. }) => format!("{id} ({}, {} spawns)", data.name, data.spawns.len()),
+        Ok(StartMap::Later { id, .. }) => format!("{id} later"),
         Err(e) => format!("error: {e}"),
     };
     assert_eq!(start(&BARE, ""), "greybox");
@@ -206,6 +208,15 @@ fn the_start_map_is_the_command_lines_the_apps_default_or_the_greybox() {
     assert_eq!(start(&BARE, "--map a_game:lit +mat_hdr_level 2"), "a_game:lit (lit, 2 spawns)");
     assert_eq!(start(&BARE, "--map a_game:lit +mat_hdr_level 0"), "a_game:lit (lit, 0 spawns)");
     assert_eq!(start(&BARE, "--map a_game:lit"), "a_game:lit (lit, 9 spawns)");
+
+    // A run that hosts loads it as a level change, after the app is up
+    // (`StartMapLater`: it answers joins meanwhile), unless it looks at it
+    // from its first frame (a capture, a placed player, a debug view).
+    assert_eq!(start(&BARE, "--map a_game:one +maxplayers 4"), "a_game:one later");
+    assert_eq!(start(&DEFAULT_MAP, "+maxplayers 4"), "a_game:home later");
+    assert_eq!(start(&BARE, "--map a_game:one +maxplayers 1"), "a_game:one (one, 9 spawns)");
+    assert_eq!(start(&BARE, "--map a_game:one +maxplayers 4 --screenshot x.png"), "a_game:one (one, 9 spawns)");
+    assert_eq!(start(&BARE, "--map greybox +maxplayers 4"), "greybox");
 
     // A start of the app's own (a main menu over a background map) when
     // the command line doesn't play; the usual one when it does.
@@ -281,4 +292,45 @@ fn an_app_built_on_another_keeps_what_it_doesnt_set() {
     assert!(calls.contains(&"window Other".to_string()) && calls.contains(&"sim added".to_string()), "{calls:?}");
     assert!(!calls.contains(&"launch".to_string()));
     assert_eq!(OTHER.requirements().0, "warning: no keys");
+}
+
+/// What a test's `mark` command was given, in order.
+#[derive(Resource, Default)]
+struct Marks(Vec<String>);
+
+#[test]
+fn a_start_map_loaded_later_runs_the_held_command_line_once_it_is_in() {
+    use chimera_client::client::app::{HeldCommandLine, StartMapLater, start_map_settled};
+    use chimera_core::console::{Console, ConsoleAppExt, ConsolePlugin};
+    let app = || {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, ConsolePlugin)).init_resource::<Marks>();
+        app.console_command("mark", "a test's", |w, a| {
+            w.resource_mut::<Marks>().0.push(a.join(" "));
+            Ok(None)
+        });
+        app.insert_resource(StartMapLater("a_game:one".into()))
+            .insert_resource(HeldCommandLine(vec!["mark a".into(), "mark b".into()]));
+        app
+    };
+    // Nothing runs while the map comes in; then the lines, in order, once.
+    let mut a = app();
+    a.update();
+    assert!(a.world().resource::<Marks>().0.is_empty());
+    start_map_settled(a.world_mut(), true);
+    a.update();
+    assert_eq!(a.world().resource::<Marks>().0, ["a", "b"]);
+    assert!(!a.world().contains_resource::<StartMapLater>());
+    start_map_settled(a.world_mut(), true);
+    a.update();
+    assert_eq!(a.world().resource::<Marks>().0, ["a", "b"], "a later map's settle runs nothing");
+    let _ = a.world().resource::<Console>();
+
+    // A start map that doesn't load ends the run with 1, as before the app.
+    let mut b = app();
+    start_map_settled(b.world_mut(), false);
+    let exits: Vec<AppExit> = b.world_mut().resource_mut::<Messages<AppExit>>().drain().collect();
+    assert_eq!(exits, [AppExit::from_code(1)]);
+    b.update();
+    assert!(b.world().resource::<Marks>().0.is_empty());
 }

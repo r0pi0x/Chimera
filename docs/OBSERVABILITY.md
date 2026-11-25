@@ -1647,10 +1647,13 @@ load; work counts don't (performance.md, "Work counts"):
   after another so each phase's bytes are its own);
   `CHIMERA_BOOT_LOG=1` prints a `boot:` line per stage of a process's
   start before its first frame (the start map, each part of the client
-  app, each game's simulation in a party: `chimera_core::metrics::boot`;
-  each line says the process's instructions and, in brackets, the
+  app, each game's simulation in a party: `chimera_core::metrics::boot`)
+  and after it when a host listens and each map settles (`listening`,
+  `a map settled`: a hosting run's start map loads after the first
+  frame, performance.md, "A join while the host starts";
+  `CHIMERA_START_MAP_AT_ONCE=1` the old start); each line says the process's instructions and, in brackets, the
   starting thread's own: read that one, since an offscreen run's sound
-  thread never rests, performance.md, "Start cost, third pass");
+  thread never rests, performance.md, "Start cost, third pass";
   `CHIMERA_MAP_CACHE_LOG=1` a line per converted-cache hit (checksum or
   "stamped, no checksum", inputs, decode: seconds and instructions) and
   each kept dressing's parts' sizes; `CHIMERA_MAP_CACHE_VERIFY=1` checks

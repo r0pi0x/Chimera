@@ -560,6 +560,33 @@ impl Args {
     pub fn tool_run(&self) -> bool {
         self.screenshot.is_some() || self.scene.is_some() || self.views.is_some() || self.frames.is_some() || self.bench || self.offscreen.is_some()
     }
+
+    /// Whether the command line hosts for other players: a `maxplayers`
+    /// line above 1 (`+maxplayers 4`; Source's listen server).
+    pub fn hosts(&self) -> bool {
+        self.console.iter().flat_map(|l| crate::console::parse(l)).any(|words| {
+            let name = words.first().map(|w| w.to_ascii_lowercase()).unwrap_or_default();
+            let name = name.strip_prefix("chimera:").unwrap_or(&name);
+            name == "maxplayers" && words.get(1).and_then(|n| n.parse::<u32>().ok()).is_some_and(|n| n > 1)
+        })
+    }
+
+    /// Whether the run looks at its start map from its first frames: a
+    /// capture (`--screenshot`, `--scene`, `--views`, `--frames`,
+    /// `--bench`), a placed player (`--spawn`, `--look`, `--movement`) or a
+    /// debug view (`--debug-view`, `--lightmap-only`).
+    pub fn looks_at_start_map(&self) -> bool {
+        self.screenshot.is_some()
+            || self.scene.is_some()
+            || self.views.is_some()
+            || self.frames.is_some()
+            || self.bench
+            || self.spawn.is_some()
+            || self.look.is_some()
+            || self.movement.is_some()
+            || self.debug_view.is_some()
+            || self.lightmap_only
+    }
 }
 
 #[derive(Resource, Clone)]
@@ -923,6 +950,11 @@ fn spawn_local_player(
 /// `rules::JoinChoice` says (CS:S's join menus, or on a team at once:
 /// `join_menus::start_game`).
 fn join_at_start(world: &mut World) {
+    // A start map loaded as a level change starts its game once it is in
+    // (`app::StartMapLater`: `map`'s own start).
+    if world.contains_resource::<app::StartMapLater>() {
+        return;
+    }
     if world.resource::<ClientArgs>().0.map.is_some() {
         front_end::start_game(world);
     }
