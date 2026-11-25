@@ -213,8 +213,9 @@ instead of converting, if one was made for this build's converter
 (`chimera_pack convert`; `CHIMERA_CONVERTED_SERVED=0` never takes one).
 
 - `CHIMERA_MAP_CACHE=0` turns it off; `CHIMERA_MAP_CACHE=<folder>` moves
-  it; `CHIMERA_MAP_CACHE_GB` caps it (40 by default; least recently used
-  entries go first; a whole CS:S map is about 400 MB, every crate's heavy
+  it; `CHIMERA_MAP_CACHE_GB` caps it (40 by default; other builds'
+  entries go first, then the least recently used: a file's name starts
+  with its build's map format, `<build>-<key>.map`; a whole CS:S map is about 400 MB, every crate's heavy
   tests' maps 24-28 GB). `mapsweep --no-map-cache` converts every map;
   in a game or server, `chimera:map_cache 0` (console, or
   `+chimera:map_cache 0` on the command line) does the same from the

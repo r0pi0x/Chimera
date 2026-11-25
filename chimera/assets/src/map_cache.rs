@@ -22,8 +22,15 @@
 //!   over the variable from the next load, and on the command line
 //!   (`+chimera:map_cache 0`) from the first, also a load made before
 //!   the console runs. `CHIMERA_MAP_CACHE_GB` caps its size
-//!   (`DEFAULT_CAP_GB`): after each write the least recently used entries
-//!   go first (a hit marks its entry used). Free space weighs in
+//!   (`DEFAULT_CAP_GB`): after each write entries go until the rest fit
+//!   (**Eviction**: other builds' entries first, least recently used
+//!   first, then this build's; a hit marks its entry used. A key names
+//!   its build by its `GENERATION_PART`, chimera_world's map format
+//!   version, and the entry's file name starts with a short hash of it,
+//!   `<build>-<key>.map`; the builds a process looked up are its own, so
+//!   one build's maps aren't pushed out by another's mid-run, the
+//!   alternating builds of agent slots and post-push runs thrashed the
+//!   40 GB with plain LRU). Free space weighs in
 //!   (`disk`): the effective cap is no more than what the cache holds plus
 //!   the disk's free space above the floor (`CHIMERA_DISK_FLOOR_GB`, 20 GB
 //!   or 5% of the disk, whichever is smaller), and a write that would leave
@@ -44,9 +51,15 @@
 //!   BLAKE3 of the bytes; held or away: `fingerprint`). A hit checks them all
 //!   again (on threads); one that differs (a patched install, a new loose
 //!   file in front of an archive's) converts again and replaces the entry.
-//! - **Writing:** a miss takes the key's lock file (`File::lock`, freed
-//!   when the process ends), so processes missing the same map at once
-//!   wait for the first one's entry instead of all converting; the entry
+//! - **Writing:** a miss takes the key's lock file (`KeyLock`:
+//!   `File::lock`, freed when the process ends), so processes missing the
+//!   same map at once wait for the first one's entry instead of all
+//!   converting. The lock file is removed as it is let go (still held, so
+//!   a waiter that then takes it finds its file gone and takes the one
+//!   now at the path); eviction sweeps lock files older than a minute
+//!   that no process holds (taken without waiting, removed while held:
+//!   left by builds from before 2026-11-25, about 25,000 of them, or by
+//!   a process that died). The entry
 //!   is encoded straight into a temporary file (`ChunkWriter`: the
 //!   payload a 16 MB chunk at a time, each hashed on a thread, then the
 //!   header; a whole de_dust2's miss peaks at 1.5 GB, not 2.9 with the
@@ -129,6 +142,19 @@ fn work_now() -> Option<u64> {
 pub const ENV: &str = "CHIMERA_MAP_CACHE";
 /// The cache's cap in GB (decimal).
 pub const CAP_ENV: &str = "CHIMERA_MAP_CACHE_GB";
+/// How many hex digits of a build's hash start its entries' names.
+const GENERATION_LEN: usize = 8;
+
+/// The builds (`Key`'s generation) this process looked up: eviction
+/// keeps their entries over other builds'.
+static CURRENT: std::sync::Mutex<BTreeSet<String>> = std::sync::Mutex::new(BTreeSet::new());
+
+/// The build an entry's file name names (`Key::stem`), if any.
+fn generation_of(path: &Path) -> Option<&str> {
+    let stem = path.file_stem()?.to_str()?;
+    let (g, rest) = stem.split_once('-')?;
+    (g.len() == GENERATION_LEN && rest.len() == 64).then_some(g)
+}
 /// The cap when `CAP_ENV` isn't set.
 pub const DEFAULT_CAP_GB: f64 = 40.0;
 
@@ -266,7 +292,7 @@ impl MapCache {
     }
 
     /// Every entry with its size and when it was last used.
-    fn entries(&self) -> Vec<(PathBuf, u64, SystemTime)> {
+    pub(crate) fn entries(&self) -> Vec<(PathBuf, u64, SystemTime)> {
         let Ok(rd) = fs::read_dir(&self.dir) else {
             return Vec::new();
         };
@@ -291,10 +317,18 @@ impl MapCache {
 
     /// `evict` with the free-space reader (`disk::limit_cap`).
     pub fn evict_with(&self, keep: Option<&Path>, read: disk::Reader) {
+        let current = CURRENT.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        self.evict_for(keep, read, &current);
+    }
+
+    /// `evict_with` for a process whose builds are `current`: other
+    /// builds' entries go first, least recently used first, then this
+    /// one's (module docs, "Eviction"); then the left-behind files.
+    fn evict_for(&self, keep: Option<&Path>, read: disk::Reader, current: &BTreeSet<String>) {
         let mut entries = self.entries();
         let mut total: u64 = entries.iter().map(|e| e.1).sum();
         let cap = disk::limit_cap(self.cap, total, &self.dir, read);
-        entries.sort_by_key(|e| e.2);
+        entries.sort_by_key(|e| (generation_of(&e.0).is_some_and(|g| current.contains(g)), e.2));
         for (path, size, _) in entries {
             if total <= cap {
                 break;
@@ -309,6 +343,7 @@ impl MapCache {
         }
         let Ok(rd) = fs::read_dir(&self.dir) else { return };
         let hour_ago = SystemTime::now() - Duration::from_secs(3600);
+        let minute_ago = SystemTime::now() - Duration::from_secs(60);
         for e in rd.flatten() {
             let old = e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t < hour_ago);
             let path = e.path();
@@ -318,20 +353,101 @@ impl MapCache {
                 || (path.extension().is_some_and(|x| x == Stamp::EXTENSION) && !path.with_extension("map").exists());
             if old && left {
                 let _ = fs::remove_file(path);
+            } else if path.extension().is_some_and(|x| x == KeyLock::EXTENSION)
+                && e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t < minute_ago)
+            {
+                // A lock no process holds (left by a build from before
+                // locks were removed, or by a process that died).
+                KeyLock::sweep(&path);
             }
         }
     }
 }
 
+/// A key's lock file (module docs, "Writing"): held while the key is
+/// converted and written, removed when let go, so the folder keeps no
+/// lock of a key nobody converts.
+struct KeyLock {
+    path: PathBuf,
+    _file: File,
+}
+
+impl KeyLock {
+    const EXTENSION: &'static str = "lock";
+
+    /// Wait for the lock at `path` and take it; None when the file can't
+    /// be made or locked (the caller converts without it). The file is
+    /// taken again when the one locked was removed meanwhile (its holder
+    /// let it go): a lock is only good while its file is the one at
+    /// `path`.
+    fn take(path: &Path) -> Option<Self> {
+        for _ in 0..16 {
+            let file = File::options().create(true).truncate(false).write(true).open(path).ok()?;
+            file.lock().ok()?;
+            if same_file(&file, path) {
+                return Some(Self { path: path.to_owned(), _file: file });
+            }
+        }
+        None
+    }
+
+    /// Remove the lock file at `path` if no process holds it: taken
+    /// without waiting, then removed while held (one taking it meanwhile
+    /// finds its file gone and makes another, `take`).
+    fn sweep(path: &Path) {
+        let Ok(file) = File::options().write(true).open(path) else { return };
+        if file.try_lock().is_ok() && same_file(&file, path) {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+impl Drop for KeyLock {
+    fn drop(&mut self) {
+        // Removed while still held (the file closes after this), so no
+        // other process holds a lock on a file that is still there.
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+/// Whether the open `file` is the one at `path` now.
+#[cfg(unix)]
+fn same_file(file: &File, path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (file.metadata(), fs::metadata(path)) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+        _ => false,
+    }
+}
+
+/// Whether the open `file` is the one at `path` now (Windows: whether a
+/// file is there; a file removed while open can't be opened again until
+/// it is closed, so a lock taken on one is seldom wrong, and then only
+/// two processes convert the same map).
+#[cfg(not(unix))]
+fn same_file(_file: &File, path: &Path) -> bool {
+    fs::metadata(path).is_ok()
+}
+
 /// A cache key under construction: every part is hashed in, named.
 #[derive(Clone)]
-pub struct Key(blake3::Hasher);
+pub struct Key {
+    hasher: blake3::Hasher,
+    /// The build its entry belongs to (`GENERATION_PART`), if named.
+    generation: Option<String>,
+}
+
+/// The part whose value names a build's entries (chimera_world's map
+/// format version, `map::cache::key`): an entry's file name starts with
+/// a short hash of it, and eviction keeps the entries of the builds this
+/// process used over other builds' (module docs, "Eviction").
+pub const GENERATION_PART: &str = "format";
 
 impl Key {
     /// A key of `loader` (`cs_source`), whose converter's version is
     /// `converter` (its sources' hash, from its `build.rs`).
     pub fn new(loader: &str, converter: &str) -> Self {
-        Self(blake3::Hasher::new())
+        Self { hasher: blake3::Hasher::new(), generation: None }
             .part("loader", loader)
             .part("converter", converter)
     }
@@ -339,11 +455,24 @@ impl Key {
     /// Add `name` = `value`.
     pub fn part(mut self, name: &str, value: impl AsRef<[u8]>) -> Self {
         let value = value.as_ref();
-        self.0.update(&(name.len() as u64).to_le_bytes());
-        self.0.update(name.as_bytes());
-        self.0.update(&(value.len() as u64).to_le_bytes());
-        self.0.update(value);
+        if name == GENERATION_PART {
+            self.generation = Some(blake3::hash(value).to_hex()[..GENERATION_LEN].to_string());
+        }
+        let h = &mut self.hasher;
+        h.update(&(name.len() as u64).to_le_bytes());
+        h.update(name.as_bytes());
+        h.update(&(value.len() as u64).to_le_bytes());
+        h.update(value);
         self
+    }
+
+    /// The entry's file name without its extension: `<generation>-<hex>`,
+    /// or `<hex>` for a key that names no build.
+    fn stem(&self) -> String {
+        match &self.generation {
+            Some(g) => format!("{g}-{}", self.hex()),
+            None => self.hex(),
+        }
     }
 
     /// Add `name` = the hash of `bytes` (a map file's content).
@@ -352,7 +481,7 @@ impl Key {
     }
 
     pub fn hex(&self) -> String {
-        self.0.finalize().to_hex().to_string()
+        self.hasher.finalize().to_hex().to_string()
     }
 }
 
@@ -944,8 +1073,13 @@ pub fn cached_served_with<T: Serialize + DeserializeOwned>(
     // one from the install are two entries, not one replacing the other
     // at each load (their inputs' fingerprints differ).
     let layers: Vec<String> = mount.layers().map(|l| l.name()).collect();
-    let key = key.part("layers", layers.join("\n")).hex();
-    let path = cache.dir.join(format!("{key}.map"));
+    let key = key.part("layers", layers.join("\n"));
+    if let Some(g) = &key.generation {
+        CURRENT.lock().unwrap_or_else(|e| e.into_inner()).insert(g.clone());
+    }
+    let stem = key.stem();
+    let key = key.hex();
+    let path = cache.dir.join(format!("{stem}.map"));
     let export = || -> Result<(), String> {
         if let (Some(s), Some(served_key)) = (served, &served_key)
             && let Some(sink) = s.export
@@ -984,15 +1118,9 @@ pub fn cached_served_with<T: Serialize + DeserializeOwned>(
     // Another process converting the same map: wait for its entry (read
     // again only if one was written meanwhile).
     let lock = fs::create_dir_all(&cache.dir)
-        .and_then(|_| {
-            File::options()
-                .create(true)
-                .truncate(false)
-                .write(true)
-                .open(cache.dir.join(format!("{key}.lock")))
-        })
-        .ok();
-    if lock.as_ref().is_some_and(|f| f.lock().is_ok())
+        .ok()
+        .and_then(|_| KeyLock::take(&cache.dir.join(format!("{stem}.{}", KeyLock::EXTENSION))));
+    if lock.is_some()
         && stamp().is_some_and(|t| Some(t) != before)
         && let Some(v) = try_read()
     {
@@ -1259,6 +1387,84 @@ mod tests {
         left.sort();
         // a is the oldest but kept (just written); b goes, the next oldest.
         assert_eq!(left, ["a.map", "c.map", "x.1.2.tmp"]);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn other_builds_entries_go_before_this_ones() {
+        let root = temp("generations");
+        let cache = MapCache::at(&root, 250);
+        let now = SystemTime::now();
+        let name = |g: &str, n: u8| format!("{g}-{}.map", format!("{n:02x}").repeat(32));
+        // Oldest first: this build's two, then another build's, then a
+        // key that names no build.
+        let files = [name("aaaaaaaa", 1), name("aaaaaaaa", 2), name("bbbbbbbb", 3), "c.map".into()];
+        for (i, f) in files.iter().enumerate() {
+            let p = root.join(f);
+            fs::write(&p, [0u8; 100]).unwrap();
+            File::options().append(true).open(&p).unwrap().set_modified(now - Duration::from_secs(100 - i as u64 * 10)).unwrap();
+        }
+        let current = BTreeSet::from(["aaaaaaaa".to_string()]);
+        cache.evict_for(None, &roomy, &current);
+        let mut left: Vec<String> = cache.entries().iter().map(|e| e.0.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        left.sort();
+        // Plain LRU would take this build's two; the others go instead.
+        assert_eq!(left, [files[0].clone(), files[1].clone()]);
+        // A key's file name carries its build.
+        let k = Key::new("t", "v1").part(GENERATION_PART, "f1");
+        assert_eq!(generation_of(Path::new(&format!("{}.map", k.stem()))), k.generation.as_deref());
+        assert!(k.generation.is_some() && Key::new("t", "v1").generation.is_none());
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_lock_is_removed_when_let_go_and_unheld_ones_are_swept() {
+        let root = temp("locks");
+        let files = root.join("files");
+        fs::create_dir_all(&files).unwrap();
+        fs::write(files.join("a.txt"), "one").unwrap();
+        let mut mount = Mount::default();
+        mount.push(LooseDir::new(&files));
+        let dir = root.join("cache");
+        let cache = MapCache::at(&dir, u64::MAX);
+        let locks = || -> Vec<String> {
+            let mut v: Vec<String> = fs::read_dir(&dir)
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.ends_with(".lock"))
+                .collect();
+            v.sort();
+            v
+        };
+        let mut runs = 0;
+        let (_, o) = cached(Some(&cache), &mount, Key::new("test", "v1"), || convert(&mount, &mut runs)).unwrap();
+        assert_eq!(o, Outcome::Miss);
+        assert!(locks().is_empty(), "a miss leaves no lock: {:?}", locks());
+        // Left by an older build or a dead process: one nobody holds and
+        // one a live process holds (another open file here), both old.
+        let stale = dir.join("stale.lock");
+        let held = dir.join("held.lock");
+        let old = SystemTime::now() - Duration::from_secs(120);
+        for p in [&stale, &held] {
+            File::create(p).unwrap().set_modified(old).unwrap();
+        }
+        let holder = File::options().write(true).open(&held).unwrap();
+        holder.lock().unwrap();
+        // A fresh one nobody holds yet (its taker may be about to lock it).
+        fs::write(dir.join("fresh.lock"), b"").unwrap();
+        cache.evict_with(None, &roomy);
+        assert_eq!(locks(), ["fresh.lock", "held.lock"]);
+        // A lock taken on a file removed meanwhile is taken again, on
+        // the file now at the path.
+        drop(holder);
+        let orphan = File::options().write(true).open(&held).unwrap();
+        fs::remove_file(&held).unwrap();
+        orphan.lock().unwrap();
+        assert!(!same_file(&orphan, &held));
+        let taken = KeyLock::take(&held).expect("free now");
+        drop(taken);
+        assert!(!held.exists(), "let go: removed");
         fs::remove_dir_all(&root).ok();
     }
 
