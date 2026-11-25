@@ -8,8 +8,8 @@
 //!
 //! - **What:** whatever a loader converts (`cached`'s `T`: CS:S keeps its
 //!   `MapData` with the lighting its light field closes over; Combat
-//!   Arms its world before the per-session effect library, only with
-//!   `CHIMERA_MAP_CACHE_CA=1`: its worlds convert quickly), serialized
+//!   Arms its world before the per-session effect library;
+//!   `CHIMERA_MAP_CACHE_CA=0` converts its worlds every time), serialized
 //!   with postcard (big arrays as byte strings, big lists element by
 //!   element on threads: chimera_world's `map::pod_serde`): our own
 //!   format, a local cache like the asset store, never the games' files.
@@ -52,10 +52,24 @@
 //!   header; a whole de_dust2's miss peaks at 1.5 GB, not 2.9 with the
 //!   encoded entry held beside the map) and renamed into place, so a
 //!   reader never sees half of one. Reading one maps it (processes reading the
-//!   same entry share its pages), checks it (a BLAKE3 per 16 MB, on
-//!   threads) and decodes it. An entry that doesn't read (truncated, its
-//!   checksum wrong, an older format) is a miss. `CHIMERA_MAP_CACHE_LOG=1`
-//!   prints where a hit's time and instructions go (`with_work`).
+//!   same entry share its pages), checks it and decodes it. An entry that
+//!   doesn't read (truncated, its checksum wrong, an older format) is a
+//!   miss. `CHIMERA_MAP_CACHE_LOG=1` prints where a hit's time and
+//!   instructions go (`with_work`).
+//! - **Checked once** (`Stamp`): an entry's payload is checksummed (a
+//!   BLAKE3 per 16 MB, on threads) when it is written (as it is encoded),
+//!   when it is taken from the asset service (before it is kept) and on
+//!   the first read of one that has no stamp; each then leaves a stamp
+//!   beside the entry (`<key>.ok`: the entry's size, its modification
+//!   time and the hash of its header, which holds the payload's hashes),
+//!   written once the entry's bytes are on the disk (synced). A read
+//!   whose entry matches its stamp skips the checksums (2.5 instructions
+//!   a byte: 5.8 G of a start with six games, docs/performance.md, "A
+//!   cache read checks once"); anything else (no stamp, another size or
+//!   time, another header) is checked whole as before and stamped again.
+//!   `CHIMERA_MAP_CACHE_VERIFY=1` checks every read whole. A hit marks
+//!   the stamp used, not the entry (whose time the stamp names), and
+//!   eviction goes by the later of the two.
 //! - **Served** (`cached_served`, module `served`): an entry the asset
 //!   service serves for the same key and versions (the same bytes, its
 //!   key without this machine's layers), taken on a miss before
@@ -66,7 +80,11 @@
 //!
 //! Known shortcuts: files a converter reads without the mount are the
 //! loader's to put in its key. An entry truncated by hand while a process
-//! reads it (mapped) crashes that process.
+//! reads it (mapped) crashes that process. A stamped entry whose payload
+//! bytes change in place with its size and modification time kept (no
+//! program of ours writes one in place; a failing disk) is read as it
+//! is: its decode fails or gives what the bytes say
+//! (`CHIMERA_MAP_CACHE_VERIFY=1` finds it).
 
 use std::{
     collections::BTreeSet,
@@ -122,6 +140,9 @@ const MAGIC: &[u8; 8] = b"CHIMAP\0\x03";
 /// The payload's checksums: one BLAKE3 per this many bytes, checked on
 /// threads.
 const CHUNK: usize = 16 << 20;
+
+/// `1`: every read checks its entry's payload whole, stamped or not.
+pub const VERIFY_ENV: &str = "CHIMERA_MAP_CACHE_VERIFY";
 
 /// The console's switch (`CVAR`): 0 not set, 1 on, 2 off.
 static SWITCH: AtomicU8 = AtomicU8::new(0);
@@ -253,7 +274,10 @@ impl MapCache {
             .filter(|e| e.path().extension().is_some_and(|x| x == "map"))
             .filter_map(|e| {
                 let m = e.metadata().ok()?;
-                Some((e.path(), m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)))
+                let used = m.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                // A hit marks the stamp (module docs, "Checked once").
+                let stamped = fs::metadata(Stamp::path(&e.path())).and_then(|m| m.modified()).ok();
+                Some((e.path(), m.len(), stamped.map_or(used, |s| s.max(used))))
             })
             .collect()
     }
@@ -280,14 +304,20 @@ impl MapCache {
             }
             if fs::remove_file(&path).is_ok() {
                 total -= size;
+                let _ = fs::remove_file(Stamp::path(&path));
             }
         }
         let Ok(rd) = fs::read_dir(&self.dir) else { return };
         let hour_ago = SystemTime::now() - Duration::from_secs(3600);
         for e in rd.flatten() {
             let old = e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t < hour_ago);
-            if old && e.path().extension().is_some_and(|x| x == "tmp") {
-                let _ = fs::remove_file(e.path());
+            let path = e.path();
+            // A dead writer's temporary file; a stamp whose entry is gone
+            // (evicted by a build from before stamps).
+            let left = path.extension().is_some_and(|x| x == "tmp")
+                || (path.extension().is_some_and(|x| x == Stamp::EXTENSION) && !path.with_extension("map").exists());
+            if old && left {
+                let _ = fs::remove_file(path);
             }
         }
     }
@@ -485,6 +515,86 @@ fn open_entry(path: &Path) -> io::Result<EntryBytes> {
     }
 }
 
+/// That an entry's payload was checked against its checksums and is on
+/// the disk as checked (module docs, "Checked once"): a small file beside
+/// the entry naming the entry's size, its modification time and the hash
+/// of its header (the key, the inputs and the payload's hashes).
+pub(crate) struct Stamp;
+
+impl Stamp {
+    const EXTENSION: &'static str = "ok";
+
+    /// An entry's stamp file.
+    pub(crate) fn path(entry: &Path) -> PathBuf {
+        entry.with_extension(Self::EXTENSION)
+    }
+
+    /// What the stamp of the entry at `path` says when it holds `bytes`
+    /// (the whole file): None when the file can't be asked or `bytes`
+    /// isn't an entry.
+    fn text(path: &Path, bytes: &[u8]) -> Option<String> {
+        let meta = fs::metadata(path).ok()?;
+        if meta.len() != bytes.len() as u64 {
+            return None;
+        }
+        let modified = meta.modified().ok()?.duration_since(SystemTime::UNIX_EPOCH).ok()?.as_nanos();
+        let head = Self::head(bytes)?;
+        Some(format!("chimap-ok 1\n{} {modified} {}\n", meta.len(), blake3::hash(head).to_hex()))
+    }
+
+    /// An entry's header bytes with their length (what follows the
+    /// payload).
+    fn head(bytes: &[u8]) -> Option<&[u8]> {
+        let len = bytes.len().checked_sub(8)?;
+        let head = u64::from_le_bytes(bytes[len..].try_into().ok()?) as usize;
+        bytes.get(len.checked_sub(head)?..)
+    }
+
+    /// Whether the entry at `path`, holding `bytes`, is the one its stamp
+    /// names.
+    fn holds(path: &Path, bytes: &[u8]) -> bool {
+        if std::env::var(VERIFY_ENV).is_ok_and(|v| v.trim() == "1") {
+            return false;
+        }
+        match (fs::read_to_string(Self::path(path)), Self::text(path, bytes)) {
+            (Ok(stamp), Some(now)) => stamp == now,
+            _ => false,
+        }
+    }
+
+    /// Stamp the entry at `path`, whose payload was just checked (or
+    /// written from checked bytes): its bytes synced to the disk first (a
+    /// crash must not leave a stamp naming bytes that never arrived),
+    /// then the stamp written whole. Errors leave no stamp (the next read
+    /// checks).
+    pub(crate) fn leave(path: &Path) {
+        let stamp = Self::path(path);
+        let written = (|| -> io::Result<()> {
+            // Opened for writing: Windows syncs no read-only handle.
+            File::options().append(true).open(path)?.sync_all()?;
+            let bytes = open_entry(path)?;
+            let text = Self::text(path, &bytes).ok_or_else(|| io::Error::other("not an entry"))?;
+            let tmp = stamp.with_extension(format!("{}.{}.tmp", std::process::id(), unique()));
+            fs::write(&tmp, text)?;
+            fs::rename(&tmp, &stamp).inspect_err(|_| {
+                let _ = fs::remove_file(&tmp);
+            })
+        })();
+        if written.is_err() {
+            let _ = fs::remove_file(&stamp);
+        }
+    }
+
+    /// Mark the entry at `path` used now (`MapCache::evict`): its stamp's
+    /// time, the entry's own when it has none.
+    fn used(path: &Path) {
+        let touch = |p: &Path| File::options().append(true).open(p).and_then(|f| f.set_modified(SystemTime::now()));
+        if touch(&Self::path(path)).is_err() {
+            let _ = touch(path);
+        }
+    }
+}
+
 /// Why an entry wasn't used.
 #[derive(Debug)]
 enum Unusable {
@@ -502,7 +612,12 @@ fn read_entry<T: DeserializeOwned>(path: &Path, key: &str, mount: &Mount) -> Res
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(Unusable::Missing),
         Err(e) => return Err(Unusable::Corrupt(e.to_string())),
     };
-    check_entry(&bytes, key, mount, &path.display().to_string(), start)
+    let stamped = Stamp::holds(path, &bytes);
+    let value = check_entry(&bytes, key, mount, &path.display().to_string(), start, !stamped)?;
+    if !stamped {
+        Stamp::leave(path);
+    }
+    Ok(value)
 }
 
 /// An entry's payload and header (the magic, the lengths and the header
@@ -536,14 +651,16 @@ fn check_inputs(mount: &Mount, inputs: &[(Input, String)]) -> Result<(), Unusabl
 }
 
 /// An entry's value, from its bytes (`what` names it in the log): the key
-/// it was written under, its payload's checksums and its inputs on
-/// `mount` checked, then decoded.
+/// it was written under, its payload's checksums (with `checksums`; not
+/// for a local entry its stamp names, `Stamp`) and its inputs on `mount`
+/// checked, then decoded.
 fn check_entry<T: DeserializeOwned>(
     bytes: &[u8],
     key: &str,
     mount: &Mount,
     what: &str,
     start: std::time::Instant,
+    checksums: bool,
 ) -> Result<T, Unusable> {
     let corrupt = |why: &str| Unusable::Corrupt(why.to_string());
     let work = work_now;
@@ -553,7 +670,7 @@ fn check_entry<T: DeserializeOwned>(
         return Err(corrupt("another key's entry"));
     }
     let read = start.elapsed().as_secs_f32();
-    if header.payload_len != payload.len() as u64 || chunk_hashes(payload) != header.payload_hashes {
+    if header.payload_len != payload.len() as u64 || (checksums && chunk_hashes(payload) != header.payload_hashes) {
         return Err(corrupt("checksum"));
     }
     let (checked, work1) = (start.elapsed().as_secs_f32(), work());
@@ -567,8 +684,9 @@ fn check_entry<T: DeserializeOwned>(
             a.zip(b).map_or(String::new(), |(a, b)| format!(", {} M instructions", b.saturating_sub(a) / 1_000_000))
         };
         eprintln!(
-            "map cache: hit {what} ({:.0} MB): read {read:.2} s, checksum {:.2} s{}, {inputs} inputs {:.2} s{}, decode {:.2} s{}",
+            "map cache: hit {what} ({:.0} MB): read {read:.2} s, {} {:.2} s{}, {inputs} inputs {:.2} s{}, decode {:.2} s{}",
             bytes.len() as f64 / 1e6,
+            if checksums { "checksum" } else { "stamped, no checksum" },
             checked - read,
             m(work0, work1),
             compared - checked,
@@ -746,7 +864,11 @@ fn write_entry<T: Serialize>(
         Ok(())
     })();
     match written {
-        Ok(()) => Ok(true),
+        Ok(()) => {
+            // Its chunks were hashed as they were encoded.
+            Stamp::leave(path);
+            Ok(true)
+        }
         Err(e) => {
             let _ = fs::remove_file(&tmp);
             match e {
@@ -837,9 +959,7 @@ pub fn cached_served_with<T: Serialize + DeserializeOwned>(
         match read_entry::<T>(&path, &key, mount) {
             Ok(v) => {
                 // Used now: the last to go (`evict`).
-                if let Ok(f) = File::options().append(true).open(&path) {
-                    let _ = f.set_modified(SystemTime::now());
-                }
+                Stamp::used(&path);
                 Some(v)
             }
             Err(Unusable::Missing) => None,
@@ -850,6 +970,7 @@ pub fn cached_served_with<T: Serialize + DeserializeOwned>(
             Err(Unusable::Corrupt(why)) => {
                 eprintln!("map cache: {}: {why}; converting again", path.display());
                 let _ = fs::remove_file(&path);
+                let _ = fs::remove_file(Stamp::path(&path));
                 None
             }
         }
@@ -1050,6 +1171,70 @@ mod tests {
             assert_eq!((v.as_str(), o, runs), ("onefalse", Outcome::Miss, before + 1));
             assert_eq!(fs::read(&path).unwrap(), good, "rewritten whole");
         }
+        fs::remove_dir_all(&root).ok();
+    }
+
+    /// The payload's checksums are checked when an entry is written and
+    /// on a read of one without its stamp, not on a read of a stamped
+    /// one: seen with a payload byte changed under the entry's size and
+    /// time (which nothing of ours does), read as the bytes say; any
+    /// other size, time or header is checked whole.
+    #[test]
+    fn a_stamped_entry_is_checked_once() {
+        let root = temp("stamp");
+        let files = root.join("files");
+        fs::create_dir_all(&files).unwrap();
+        fs::write(files.join("a.txt"), "one").unwrap();
+        let mut mount = Mount::default();
+        mount.push(LooseDir::new(&files));
+        let cache = MapCache::at(root.join("cache"), u64::MAX);
+        let key = || Key::new("test", "v1");
+        let mut runs = 0;
+        let mut load = |runs: &mut u32| cached(Some(&cache), &mount, key(), || convert(&mount, runs)).unwrap();
+        assert_eq!(load(&mut runs), ("onefalse".to_string(), Outcome::Miss));
+        let path = cache.entries().pop().expect("the entry").0;
+        let stamp = Stamp::path(&path);
+        let good = fs::read(&path).unwrap();
+        let written = fs::read_to_string(&stamp).expect("a written entry is stamped");
+        let time = fs::metadata(&path).unwrap().modified().unwrap();
+        // A hit marks the stamp used, not the entry.
+        assert_eq!(load(&mut runs), ("onefalse".to_string(), Outcome::Hit));
+        assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), time);
+        assert_eq!(fs::read_to_string(&stamp).unwrap(), written);
+        // The payload's first text byte changed, the size and time kept.
+        let at = good.windows(3).position(|w| w == b"one").unwrap();
+        let mut changed = good.clone();
+        changed[at] = b'O';
+        let put = |bytes: &[u8], time: Option<SystemTime>| {
+            fs::write(&path, bytes).unwrap();
+            if let Some(t) = time {
+                File::options().append(true).open(&path).unwrap().set_modified(t).unwrap();
+            }
+        };
+        put(&changed, Some(time));
+        assert_eq!(load(&mut runs), ("Onefalse".to_string(), Outcome::Hit), "no checksum on a stamped read");
+        // The same bytes at another time: checked whole, converted again,
+        // stamped again.
+        put(&changed, None);
+        assert_eq!((load(&mut runs), runs), (("onefalse".to_string(), Outcome::Miss), 2));
+        assert_eq!(fs::read(&path).unwrap(), good);
+        assert_eq!(load(&mut runs).1, Outcome::Hit);
+        // No stamp: checked whole (the changed one refused, a good one
+        // stamped by its first read).
+        let time = fs::metadata(&path).unwrap().modified().unwrap();
+        put(&changed, Some(time));
+        fs::remove_file(&stamp).unwrap();
+        assert_eq!((load(&mut runs), runs), (("onefalse".to_string(), Outcome::Miss), 3));
+        fs::remove_file(&stamp).unwrap();
+        assert_eq!((load(&mut runs), runs), (("onefalse".to_string(), Outcome::Hit), 3));
+        assert!(stamp.exists(), "a checked read leaves the stamp");
+        // A stamp goes with its entry, and one left without an entry
+        // once it is old.
+        let orphan = cache.dir.join("gone.ok");
+        fs::write(&orphan, "x").unwrap();
+        File::options().append(true).open(&orphan).unwrap().set_modified(SystemTime::now() - Duration::from_secs(7200)).unwrap();
+        MapCache::at(&cache.dir, 0).evict_with(None, &roomy);
+        assert!(!path.exists() && !stamp.exists() && !orphan.exists());
         fs::remove_dir_all(&root).ok();
     }
 

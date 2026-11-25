@@ -316,7 +316,8 @@ pub(super) fn take<T: DeserializeOwned>(
         }
         check_inputs(mount, &r.inputs).map_err(|e| format!("made from other files ({e:?})"))?;
         let bytes = mount.read(&entry).map_err(|e| e.to_string())?;
-        let value = check_entry::<T>(&bytes, served_key, mount, &entry, start).map_err(|e| format!("{e:?}"))?;
+        // Fetched bytes: always checked whole.
+        let value = check_entry::<T>(&bytes, served_key, mount, &entry, start, true).map_err(|e| format!("{e:?}"))?;
         let (payload, header) = split_entry(&bytes).map_err(|e| format!("{e:?}"))?;
         if let Err(e) = write_rekeyed(cache, path, payload, &header, key, read) {
             eprintln!("map cache: {}: {e}", path.display());
@@ -431,8 +432,12 @@ fn write_rekeyed(
         drop(file);
         fs::rename(&tmp, path)
     })();
-    if written.is_err() {
-        let _ = fs::remove_file(&tmp);
+    match &written {
+        // The payload was checked as it was taken (`take`).
+        Ok(()) => super::Stamp::leave(path),
+        Err(_) => {
+            let _ = fs::remove_file(&tmp);
+        }
     }
     written
 }
