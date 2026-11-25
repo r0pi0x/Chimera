@@ -630,13 +630,14 @@ pub fn default_plugins(args: &super::Args, title: &str) -> bevy::app::PluginGrou
             .add(bevy::app::ScheduleRunnerPlugin::run_loop(std::time::Duration::ZERO)),
         None => group,
     };
-    // A recording (`--offscreen` with `--dump`): the sound into
-    // `<dir>/audio.wav`, timed by the frames, instead of a device.
+    // `--offscreen`: no sound device (its output thread would spin on
+    // ALSA's null one); the sound is mixed by the frames instead, into
+    // `<dir>/audio.wav` with `--dump`, else thrown away.
     match (args.offscreen, &args.dump_dir) {
-        (Some(_), Some(dir)) => group
+        (Some(_), dir) => group
             .disable::<bevy::audio::AudioPlugin>()
             .add_after::<bevy::audio::AudioPlugin>(chimera_present::audio::record::RecordAudioPlugin {
-                path: dir.join("audio.wav"),
+                path: dir.as_ref().map(|d| d.join("audio.wav")),
             }),
         _ => group,
     }

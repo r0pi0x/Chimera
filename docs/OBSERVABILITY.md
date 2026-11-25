@@ -571,8 +571,11 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 \
   but runs until something ends it: `--frames`, `--screenshot`, `quit`
   over the remote console (section 3b), or its pid killed. `fps_max`
   still spaces frames (300); `+fps_max 0` for none. No vsync.
-- No sound device (when not recording): on Linux an offscreen run's ALSA default is the null
-  device (`ALSA_CONFIG_PATH` set to a temp file unless already set).
+- No sound device: an offscreen run opens none; its sound is mixed by the frames
+  (`audio::record::RecordAudioPlugin`, into `audio.wav` with `--dump`, else with
+  no file), so no output thread spins on a null device. Voice chat's cpal
+  output still opens when first needed: on Linux ALSA's default is the null
+  device for the run (`ALSA_CONFIG_PATH` set to a temp file unless already set).
   Opening the system's devices from a shell without `XDG_RUNTIME_DIR`
   froze 7 starts of 51, in PipeWire's ALSA or JACK plugin, right after
   the adapter's log line (`offscreen::silence_audio_device`).
