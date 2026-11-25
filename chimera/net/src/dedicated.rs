@@ -62,6 +62,9 @@
 //!   ragdolls.md 2.1: the server never simulates them), so the server
 //!   keeps no pose record for them either (`ragdoll::record_poses`).
 //!   Map-placed ragdolls are the server's still (`net::ragdolls`).
+//! - No sound samples (`map::sound::Silent` in the binary's load context,
+//!   `run`): the maps' and the guests' clips keep their place, rate and
+//!   loop point only.
 //! - What only some servers have, `ServerHooks` (all off in
 //!   `ServerHooks::NONE`): several games' maps (`maps`: a loader of whole
 //!   ids, the game a bare name is); the map cycle (`map_cycle`:
@@ -413,21 +416,28 @@ pub enum StartMap {
 impl StartMap {
     /// `options.map`, loaded as `server`'s game loads it.
     pub fn load(server: &GameServer, options: &Options) -> Result<Self, String> {
+        Self::load_in(server, options, map::LoadContext::default())
+    }
+
+    /// `load` in `context` (the binary's: `map::sound::Silent` in it).
+    pub fn load_in(server: &GameServer, options: &Options, context: map::LoadContext) -> Result<Self, String> {
         let id = server.map_id(&options.map);
         if net::is_code_map(&id) {
             // Its kit, when this server's maps dress code-built maps
             // (`map::sources::CODE_MAP_KIT`): loaded as the start map,
             // the code-built map spawned beside it (`ServerPlugin`).
-            let context = map::LoadContext::default();
             return Ok(match server.load_map_in(&greybox::kit_id(&id), &context) {
                 Ok(data) => Self::Loaded { id, data, context },
                 Err(_) => Self::Greybox,
             });
         }
-        let context = map::LoadContext::default();
         let data = server
             .load_map_in(&id, &context)
             .map_err(|e| format!("+map {id}: {e}"))?;
+        // Where the load went (the log isn't up yet): `map::load_report`.
+        for p in map::load_report::take(&context) {
+            eprintln!("load of {id}: {}", p.line());
+        }
         Ok(Self::Loaded { id, data, context })
     }
 }
@@ -1016,10 +1026,16 @@ pub fn run(server: &'static GameServer) {
     if fatal {
         std::process::exit(1);
     }
-    let start = StartMap::load(server, &options).unwrap_or_else(|e| {
+    // `CHIMERA_BOOT_LOG=1`: where the start goes.
+    chimera_core::metrics::boot::start();
+    // The server plays nothing: its loads keep no sound samples.
+    let context = map::LoadContext::default();
+    context.insert(map::sound::Silent);
+    let start = StartMap::load_in(server, &options, context).unwrap_or_else(|e| {
         eprintln!("error: {e}");
         std::process::exit(1);
     });
+    chimera_core::metrics::boot::stage("the start map");
     if let StartMap::Loaded { id, data, .. } = &start {
         eprintln!(
             "loaded {id}: {} spawns, {} warnings",
@@ -1045,6 +1061,7 @@ pub fn run(server: &'static GameServer) {
         })
     });
     let mut app = self::app(server, start, &options);
+    chimera_core::metrics::boot::stage("the app built");
     if let Some(files) = files {
         app.insert_resource(files);
     }

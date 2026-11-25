@@ -16,10 +16,12 @@
 //!
 //! What it holds: a map has in use on its third visit what it had on its
 //! second (`LAP_GROWTH`) and about the same entities; the server has less
-//! than `IN_USE_LIMIT` in use, `HL2DM_IN_USE` more with HL2:DM installed (its
-//! parts join the ladder; Combat Arms' models' textures, and the guests'
-//! dressing's, were decoded on the server, which draws nothing: 3.3 GB in
-//! use), and holds little more than that (`HELD_BEYOND_IN_USE`: glibc kept
+//! in use than a base (`BASE_IN_USE`: CS:S and Combat Arms) plus an
+//! allowance for each other game installed (`GUEST_IN_USE`: its parts join
+//! the ladder and dress every map; Combat Arms' models' textures, and the
+//! guests' dressing's, were decoded on the server, which draws nothing: 3.3
+//! GB in use with three games; the sound samples it never plays were
+//! loaded: 3.7 GB with six), and holds little more than that (`HELD_BEYOND_IN_USE`: glibc kept
 //! 1.3-1.8 GB free in its arenas, more each map, before the server gave them
 //! back). Prints a row per map (`--nocapture`). Passes with a note without
 //! the installs, or off Linux with glibc (no counts).
@@ -63,19 +65,56 @@ const MAPS: [&str; 4] = [
 const LAPS: usize = 3;
 
 /// The server's bytes in use at most, on any map, with CS:S and Combat Arms
-/// installed. Measured 2026-11-11: 3.20-3.40 GB before the server kept Combat
-/// Arms' textures' sizes only, 2.02-2.24 GB after (2.12-2.32 GB later that
-/// day), 1.70-1.85 GB once another game's map dressed for Combat Arms took no
-/// view models on the server (`world::dress_with`), 1.64-1.78 GB (2026-11-12)
-/// once a map without textures took no Combat Arms effect file
-/// (`effects::library::add_looks`).
-const IN_USE_LIMIT: u64 = 2048 << 20;
+/// alone (the base; each other game installed adds its own allowance,
+/// `GUEST_IN_USE`). Measured 2026-11-11: 3.20-3.40 GB before the server kept
+/// Combat Arms' textures' sizes only, 2.02-2.24 GB after (2.12-2.32 GB later
+/// that day), 1.70-1.85 GB once another game's map dressed for Combat Arms
+/// took no view models on the server (`world::dress_with`), 1.64-1.78 GB
+/// (2026-11-12) once a map without textures took no Combat Arms effect file
+/// (`effects::library::add_looks`). Measured 2026-11-25 (no other game
+/// found: `CHIMERA_STEAM_ROOT=`, an empty `CHIMERA_GAMES_DIR`, an absent
+/// `CHIMERA_HL2DM_ROOT`; converting, `CHIMERA_MAP_CACHE=0`): 1.24 GB on the
+/// first map, 1.71-1.81 GB after, without sound samples (below).
+const BASE_IN_USE: u64 = 1950 << 20;
 
-/// What HL2:DM's install adds to that (its parts in the ladder, its kit
-/// dressing every other game's map: bodies, held and view models with their
-/// animations, sounds): measured 2.35-2.56 GB in all, 0.33 GB more; 2.47-2.69
-/// GB while the guests' dressing decoded their textures on the server.
-const HL2DM_IN_USE: u64 = 400 << 20;
+/// What each other game's install adds to the base at most (its parts in
+/// the ladder, its kit dressing every other game's map: bodies, held and
+/// view models with their animations, its sound entries), measured
+/// 2026-11-25 as the largest row's bytes with that game's install added to
+/// CS:S, Combat Arms and HL2:DM (`CHIMERA_<GAME>_ROOT`), its dressing
+/// converted in the process (a dressing read back from disk leaves 60-350
+/// MB less in use than converting it does), plus about a tenth:
+///
+/// | game | adds | its kept dressing as the cache writes it (lean) |
+/// |---|---|---|
+/// | HL2:DM | 278 MB | 106 MB: bodies 89 (their animations 33), view models 6 |
+/// | TF2 | 818 MB | 395 MB: bodies 277 (their animations 216), view models 76, held 26 |
+/// | DoD:S | 324 MB | 154 MB: bodies 123 (their animations 88), view models 27 |
+/// | CS 1.6 | 68 MB | 54 MB: bodies 41 (their animations 40), view models 8 |
+///
+/// A game costs about twice its kept dressing: the dressing is kept for the
+/// session (`map::kept`) and each map gets a copy of what isn't shared (its
+/// meshes: 131 MB a map for TF2, 57 for DoD:S, 64 for HL2:DM, 8 for CS
+/// 1.6; the animation sets are shared). All six together: 2.81-3.40 GB
+/// converting (3.29 GB by the sum below the margins), 2.45-3.00 GB read
+/// back. Before the server dropped the sound samples it never plays
+/// (`map::sound::Silent`: the guests' clips were 125 MB for TF2, 43
+/// for DoD:S, 36 for HL2:DM, 35 for CS:S, 4 for CS 1.6, beside each map's
+/// own): 3.10-3.73 GB.
+const GUEST_IN_USE: [(&str, u64); 4] = [("hl2dm", 320 << 20), ("tf2", 900 << 20), ("dods", 370 << 20), ("cs16", 100 << 20)];
+
+/// The limit with the guests installed here: the base and each installed
+/// guest's allowance, and which those are.
+fn in_use_limit() -> (u64, Vec<&'static str>) {
+    let here: Vec<&'static str> = party_roster::GUESTS
+        .iter()
+        .filter(|b| b.info.install().is_some())
+        .map(|b| b.info.id)
+        .filter(|id| GUEST_IN_USE.iter().any(|(g, _)| g == id))
+        .collect();
+    let guests: u64 = GUEST_IN_USE.iter().filter(|(g, _)| here.contains(g)).map(|(_, bytes)| bytes).sum();
+    (BASE_IN_USE + guests, here)
+}
 
 /// What a map may have in use more on its third visit than on its second:
 /// measured 3-11 MB (the archetypes' tables, which Bevy keeps); over seven
@@ -100,7 +139,14 @@ fn installed() -> bool {
 fn server() -> Option<Sim> {
     let args = ["+map", "cs_source:de_dust2", "+MaxPlayer", "4", "+ip", "127.0.0.1", "-port", "0"];
     let Ok(Parsed::Run(options)) = SERVER.parse(args.map(String::from)) else { panic!("options") };
-    let start = match StartMap::load(&SERVER, &options) {
+    // As the binary (`dedicated::run`): the server plays nothing, so its
+    // loads keep no sound samples. `CHIMERA_SERVER_SOUNDS=1` keeps them
+    // (measuring what they hold).
+    let context = chimera_world::map::LoadContext::default();
+    if std::env::var("CHIMERA_SERVER_SOUNDS").as_deref() != Ok("1") {
+        context.insert(chimera_world::map::sound::Silent);
+    }
+    let start = match StartMap::load_in(&SERVER, &options, context) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("skipping: {e}");
@@ -202,18 +248,25 @@ fn map_changes_keep_no_memory() {
                 in_use >> 20,
                 held >> 20
             );
+            // Where the load went, by game (`map::load_report`; bytes told
+            // apart with `CHIMERA_LOAD_SERIAL=1`).
+            let context = chimera_world::map::LoadContext::of(sim.app.world_mut());
+            for p in chimera_world::map::load_report::take(&context) {
+                eprintln!("    {}", p.line());
+            }
             rows.push(Row { lap, map, in_use, held, entities });
         }
     }
-    // The ladder is made of the installed games' parts: HL2:DM's adds its kit.
-    let hl2dm = hl2dm::game::INFO.install().is_some();
-    let limit = IN_USE_LIMIT + if hl2dm { HL2DM_IN_USE } else { 0 };
+    // The ladder is made of the installed games' parts: each adds its kit.
+    let (limit, guests) = in_use_limit();
+    eprintln!("the limit: {} MB (the base {} MB, the guests installed: {guests:?})", limit >> 20, BASE_IN_USE >> 20);
     for r in &rows {
         assert!(
             r.in_use < limit,
-            "{} MB in use on {} (lap {}): more than {} MB (HL2:DM installed: {hl2dm}). Does the server keep textures' \
-             texels (`world::SizesOnly`, a guest's `MaterialLoader::lean`) or Combat Arms' view models \
-             (`world::dress_with`)?",
+            "{} MB in use on {} (lap {}): more than {} MB (the base and the guests installed: {guests:?}). Does the \
+             server keep textures' texels (`world::SizesOnly`, a guest's `MaterialLoader::lean`), sound samples \
+             (`map::sound::Silent`) or Combat Arms' view models (`world::dress_with`)? The rows above say what \
+             each game's dressing took (`CHIMERA_LOAD_SERIAL=1` for bytes per game).",
             r.in_use >> 20,
             r.map,
             r.lap,

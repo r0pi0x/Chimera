@@ -339,7 +339,12 @@ pub fn kept_with(
         scratch = Some(parts);
         break;
     }
-    let scratch = scratch.expect("converted without the disk");
+    let mut scratch = scratch.expect("converted without the disk");
+    // A silent app (a dedicated server) keeps no samples (the entry on
+    // disk keeps them: it is the same for every app).
+    if options.context.get::<super::sound::Silent>().is_some() {
+        super::sound::silence(&mut scratch.sounds);
+    }
     let how = if outcome == Outcome::Hit {
         entry.disk_reads.fetch_add(1, Ordering::Relaxed);
         "read from disk"

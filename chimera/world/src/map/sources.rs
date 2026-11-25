@@ -598,12 +598,20 @@ impl MapSources {
         // The load's progress in parts (`LoadReporter::within`): the
         // game's loader, then the dressings, each its own span.
         let whole = options.progress.clone();
+        let mark = super::load_report::mark(&options.context);
         options.progress = whole.within(0.0, LOADER_SHARE);
-        let mut map = (loader.load)(name, &options)?;
+        let mut map = super::load_report::phase(&options.context, format!("loader {}", loader.game), || {
+            super::cache::counted(|| (loader.load)(name, &options))
+        })?;
         options.progress = whole.within(LOADER_SHARE, 1.0);
         map.impacts.game = Some(loader.game.to_string());
         self.dress(loader.game, &mut map, &options);
         options.progress.report(1.0, "Adding every game's players and guns");
+        // A silent app (a dedicated server) keeps no samples.
+        if options.context.get::<super::sound::Silent>().is_some() {
+            super::sound::silence(&mut map.sounds);
+        }
+        super::load_report::log_since(&options.context, mark, id);
         Ok(map)
     }
 

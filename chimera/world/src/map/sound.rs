@@ -29,6 +29,27 @@ pub fn decode_clip(bytes: &[u8]) -> Result<MapSoundClip, String> {
     chimera_formats::wav::decode_any(bytes)
 }
 
+/// In an app's `LoadContext`: the app plays no sound (a dedicated
+/// server), so its loads keep each clip without its samples (`silence`:
+/// `MapSources::load_with` for a map, `map::kept` for a kept dressing).
+/// The sounds a server loaded and never played were 4-125 MB a guest game,
+/// beside each map's own (docs/performance.md, "Every game installed").
+/// Not for an app that may yet play (a listen host) or a test that reads
+/// samples.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Silent;
+
+/// `sounds` without its clips' samples: their place, rate, channels and
+/// loop point stay (entries name clips by index).
+pub fn silence(sounds: &mut Arc<MapSounds>) {
+    if sounds.clips.iter().all(|c| c.samples.is_empty()) {
+        return;
+    }
+    for clip in &mut Arc::make_mut(sounds).clips {
+        clip.samples = Vec::new().into();
+    }
+}
+
 /// How a sound falls off with distance.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SoundLevel {
@@ -855,6 +876,22 @@ pub struct StartSound {
 mod tests {
     use super::*;
     use crate::map::{MapData, MapMesh};
+
+    /// A silent app's sounds keep every clip's place, rate, channels and
+    /// loop point, not its samples; sounds shared with another holder (a
+    /// kept dressing) are left whole there.
+    #[test]
+    fn silenced_sounds_keep_their_clips_without_samples() {
+        let clip = |n: usize| MapSoundClip { rate: 22_050, channels: 2, samples: vec![1i16; n].into(), loop_start: Some(8) };
+        let mut sounds = Arc::new(MapSounds { clips: vec![clip(64), clip(8)], ..Default::default() });
+        let other = sounds.clone();
+        silence(&mut sounds);
+        assert_eq!(sounds.clips.len(), 2);
+        assert!(sounds.clips.iter().all(|c| c.samples.is_empty()));
+        let c = &sounds.clips[0];
+        assert_eq!((c.rate, c.channels, c.loop_start), (22_050, 2, Some(8)));
+        assert_eq!(other.clips[0].samples.len(), 64, "the other holder's are whole");
+    }
 
     /// A radius level: full within the inner radius, the squared falloff
     /// between, silent from the outer; the low-pass ramp between them.
