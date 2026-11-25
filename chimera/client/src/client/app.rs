@@ -247,6 +247,10 @@ impl StartMap {
         for w in &data.warnings {
             eprintln!("  warning: {w}");
         }
+        // Where the load went (the log isn't up yet): `map::load_report`.
+        for p in chimera_world::map::load_report::take(&context) {
+            eprintln!("  load: {}", p.line());
+        }
         Self::Loaded { id: id.to_string(), data, context }
     }
 }
@@ -307,6 +311,7 @@ impl GameApp {
 /// a start map that doesn't load (1).
 pub fn run(game: &'static GameApp) -> AppExit {
     let args = game.args(Args::parse_for(&game.usage()));
+    chimera_core::metrics::boot::start();
     // The service first unless the player chose "Use my installed games"
     // (`net::assets::INSTALL_CVAR`), before anything mounts a game.
     crate::net::assets::set_install_default_here(&args.console, true);
@@ -326,10 +331,12 @@ pub fn run(game: &'static GameApp) -> AppExit {
     if !lacks.is_empty() {
         eprintln!("{lacks}");
     }
+    chimera_core::metrics::boot::stage("before the start map");
     let start = StartMap::of(game, &args).unwrap_or_else(|e| {
         eprintln!("error: {e}");
         std::process::exit(1);
     });
+    chimera_core::metrics::boot::stage("the start map");
     let mut app = app(game, args, start);
     if let Some(fetch) = startup {
         app.insert_resource(crate::net::assets::StartupFiles(fetch));
@@ -479,28 +486,36 @@ pub fn compose(app: &mut App, game: &'static GameApp, args: Args, start: StartMa
         _ => MapDebugView::Normal,
     };
     engine(app, Engine::Map(start, view));
+    chimera_core::metrics::boot::stage("app: the map's plugins");
     let installs = (game.installs)();
     if !installs.is_empty() {
         engine(app, Engine::Installs(installs));
     }
+    chimera_core::metrics::boot::stage("app: the installs");
     engine(app, Engine::Window(&args, game.title));
     if args.offscreen.is_none() {
         super::window_icon::set_at_start(app, game.hooks.window_icons);
     }
+    chimera_core::metrics::boot::stage("app: the window and Bevy's plugins");
     engine(app, Engine::Physics);
     (game.sim)(app, &args);
+    chimera_core::metrics::boot::stage("app: physics and the game's simulation");
     engine(app, Engine::Presentation);
     app.insert_resource(chimera_core::core::BuildVersion(game.version));
     engine(app, Engine::Network);
+    chimera_core::metrics::boot::stage("app: presentation and network");
     let shell = ClientPlugins {
         args: args.clone(),
         hooks: game.app_hooks(),
     };
     engine(app, Engine::Shell((game.hud)(shell.build())));
+    chimera_core::metrics::boot::stage("app: the shell and the HUDs");
     (game.front_end)(app, &args);
+    chimera_core::metrics::boot::stage("app: the front end");
     if let Some(launch) = game.hooks.launch {
         launch(app, &args);
     }
+    chimera_core::metrics::boot::stage("app: the launch hook");
 }
 
 /// The start map's debug view: `--debug-view lighting|albedo`, else

@@ -11,6 +11,7 @@
 //! effects), and its user-space instruction count hardly at all: compare
 //! instructions across runs, times within one.
 
+pub mod boot;
 pub mod census;
 pub mod counters;
 pub mod dist;

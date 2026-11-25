@@ -24,6 +24,39 @@ use super::MapLoadOptions;
 /// (module docs, "Known shortcuts").
 pub const FORMAT_BUMP: u32 = 1;
 
+/// `f` run with this thread's instructions (and those of the threads it
+/// starts) as the cache's work probe (`with_work`), when
+/// `CHIMERA_MAP_CACHE_LOG` is set: a hit inside `f` says its instructions.
+pub fn counted<T>(f: impl FnOnce() -> T) -> T {
+    if std::env::var_os("CHIMERA_MAP_CACHE_LOG").is_none() {
+        return f();
+    }
+    let mut counter = chimera_core::metrics::InstructionCounter::current_with_children();
+    with_work(Box::new(move || counter.read()), f)
+}
+
+/// How big each part of `map` is in the cache (measuring;
+/// `CHIMERA_MAP_CACHE_LOG=1` prints it after a kept dressing's read):
+/// each part encoded alone, its bytes.
+pub fn encoded_sizes(map: &super::MapData) -> Vec<(&'static str, usize)> {
+    fn one<T: serde::Serialize>(v: &T) -> usize {
+        postcard::to_allocvec(v).map_or(0, |b| b.len())
+    }
+    let kit = &map.kit;
+    let animations: Vec<_> = kit.characters.iter().filter_map(|c| c.animations.clone()).collect();
+    vec![
+        ("textures", one(&map.textures)),
+        ("cubemaps", one(&map.cubemaps)),
+        ("bodies", one(&kit.characters)),
+        ("of them, the bodies' animations", one(&animations)),
+        ("held models", one(&kit.held)),
+        ("view models", one(&kit.view_models)),
+        ("sounds", one(&map.sounds)),
+        ("particles", one(&map.particles)),
+        ("the whole", one(map)),
+    ]
+}
+
 /// This crate's part of every key: the map types' sources (build.rs) and
 /// `FORMAT_BUMP`.
 pub fn format() -> String {

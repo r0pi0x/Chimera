@@ -1639,6 +1639,19 @@ load; work counts don't (performance.md, "Work counts"):
   current_with_children`; the spawn's ticks by `Sim::work`): `cargo test -p
   combat_arms --features dev --test it heavy::map_load -- --nocapture`
   (performance.md, "Combat Arms map loads").
+- Where a start and a map load go, by game (performance.md, "Every game
+  installed"): every load logs its phases (`load of <map>: loader
+  <game>: N M instructions, ...; kept <game>: read from disk: ...; dress
+  <game>: ...`: `chimera_world::map::load_report`; the start map's on
+  stderr as `load:` lines; `CHIMERA_LOAD_SERIAL=1` dresses the games one
+  after another so each phase's bytes are its own);
+  `CHIMERA_BOOT_LOG=1` prints a `boot:` line per stage of a process's
+  start before its first frame (the start map, each part of the client
+  app, each game's simulation in a party: `chimera_core::metrics::boot`);
+  `CHIMERA_MAP_CACHE_LOG=1` a line per converted-cache hit (checksum,
+  inputs, decode: seconds and instructions) and each kept dressing's
+  parts' sizes. Instructions are the thread's and the threads' it starts:
+  the same from run to run.
 - A map's first view (`client::first_view`): `CHIMERA_FIRST_VIEW_LOG=<n>`
   logs every frame while a map loads, `n` frames after the game is
   entered and `n` frames after the last cover (a party app's loading

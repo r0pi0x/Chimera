@@ -628,13 +628,18 @@ impl MapSources {
         };
         if let Some(gameplay) = gameplay {
             let began = std::time::Instant::now();
-            self.dress_with(gameplay, game, map, options);
+            super::load_report::phase(&options.context, format!("dress {}", gameplay.game), || {
+                self.dress_with(gameplay, game, map, options)
+            });
             dressed(gameplay.game, &map.name, began);
             step(&mut done);
         }
         for guest in guests {
             let began = std::time::Instant::now();
-            if let Err(e) = (guest.dress)(map, options) {
+            let dressed_ok = super::load_report::phase(&options.context, format!("dress {}", guest.game), || {
+                (guest.dress)(map, options)
+            });
+            if let Err(e) = dressed_ok {
                 map.warnings.push(format!("{}'s parts: {e}", guest.game));
             }
             dressed(guest.game, &map.name, began);
@@ -682,7 +687,7 @@ impl MapSources {
 /// runs twice; its second run reads what its first left in the app's
 /// context. One dressing alone: nothing ahead.
 fn dress_ahead(dressings: &[&MapDressing], map: &MapData, options: &MapLoadOptions) {
-    if dressings.len() < 2 {
+    if dressings.len() < 2 || super::load_report::serial() {
         return;
     }
     let began = std::time::Instant::now();
@@ -694,7 +699,10 @@ fn dress_ahead(dressings: &[&MapDressing], map: &MapData, options: &MapLoadOptio
             s.spawn(move || {
                 let mut own = MapData { name: map.name.clone(), entity_scale: map.entity_scale, ..Default::default() };
                 let started = std::time::Instant::now();
-                if (d.dress)(&mut own, options).is_ok() {
+                let ahead = super::load_report::phase(&options.context, format!("ahead {}", d.game), || {
+                    (d.dress)(&mut own, options)
+                });
+                if ahead.is_ok() {
                     if let Some(early) = &options.early {
                         early.publish(d.game, &own, began.elapsed());
                     }

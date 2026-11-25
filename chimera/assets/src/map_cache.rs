@@ -55,7 +55,7 @@
 //!   same entry share its pages), checks it (a BLAKE3 per 16 MB, on
 //!   threads) and decodes it. An entry that doesn't read (truncated, its
 //!   checksum wrong, an older format) is a miss. `CHIMERA_MAP_CACHE_LOG=1`
-//!   prints where a hit's time goes.
+//!   prints where a hit's time and instructions go (`with_work`).
 //! - **Served** (`cached_served`, module `served`): an entry the asset
 //!   service serves for the same key and versions (the same bytes, its
 //!   key without this machine's layers), taken on a miss before
@@ -85,6 +85,27 @@ pub use served::{RECIPE_FORMAT, Recipe, DEFAULT_SERVED_CAP_GB, SERVED_CAP_ENV, S
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub mod served;
+
+thread_local! {
+    /// The calling thread's work probe while `with_work` runs.
+    static WORK: std::cell::RefCell<Option<Box<dyn FnMut() -> Option<u64>>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// `f` run with `probe` as this thread's count of work done so far
+/// (instructions; None: no counter), for `CHIMERA_MAP_CACHE_LOG`'s line:
+/// a layer that can count gives one (chimera_world's `map::cache::counted`:
+/// chimera_core's instruction counter), since this crate is below it.
+pub fn with_work<T>(probe: Box<dyn FnMut() -> Option<u64>>, f: impl FnOnce() -> T) -> T {
+    let before = WORK.replace(Some(probe));
+    let out = f();
+    WORK.set(before);
+    out
+}
+
+/// This thread's work so far (`with_work`'s probe; None without one).
+fn work_now() -> Option<u64> {
+    WORK.with_borrow_mut(|w| w.as_mut().and_then(|probe| probe()))
+}
 
 /// Where the cache is, or `0` (also `off`, `false`) for none.
 pub const ENV: &str = "CHIMERA_MAP_CACHE";
@@ -525,6 +546,8 @@ fn check_entry<T: DeserializeOwned>(
     start: std::time::Instant,
 ) -> Result<T, Unusable> {
     let corrupt = |why: &str| Unusable::Corrupt(why.to_string());
+    let work = work_now;
+    let work0 = work();
     let (payload, header) = split_entry(bytes)?;
     if header.key != key {
         return Err(corrupt("another key's entry"));
@@ -533,18 +556,25 @@ fn check_entry<T: DeserializeOwned>(
     if header.payload_len != payload.len() as u64 || chunk_hashes(payload) != header.payload_hashes {
         return Err(corrupt("checksum"));
     }
-    let checked = start.elapsed().as_secs_f32();
+    let (checked, work1) = (start.elapsed().as_secs_f32(), work());
     let inputs = header.inputs.len();
     check_inputs(mount, &header.inputs)?;
-    let compared = start.elapsed().as_secs_f32();
+    let (compared, work2) = (start.elapsed().as_secs_f32(), work());
     let value = postcard::from_bytes(payload).map_err(|e| corrupt(&format!("payload: {e}")))?;
     if std::env::var_os("CHIMERA_MAP_CACHE_LOG").is_some() {
+        // Instructions (the same from run to run), when a counter is set.
+        let m = |a: Option<u64>, b: Option<u64>| {
+            a.zip(b).map_or(String::new(), |(a, b)| format!(", {} M instructions", b.saturating_sub(a) / 1_000_000))
+        };
         eprintln!(
-            "map cache: hit {what} ({:.0} MB): read {read:.2} s, checksum {:.2} s, {inputs} inputs {:.2} s, decode {:.2} s",
+            "map cache: hit {what} ({:.0} MB): read {read:.2} s, checksum {:.2} s{}, {inputs} inputs {:.2} s{}, decode {:.2} s{}",
             bytes.len() as f64 / 1e6,
             checked - read,
+            m(work0, work1),
             compared - checked,
-            start.elapsed().as_secs_f32() - compared
+            m(work1, work2),
+            start.elapsed().as_secs_f32() - compared,
+            m(work2, work())
         );
     }
     Ok(value)

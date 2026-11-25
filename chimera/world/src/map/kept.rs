@@ -32,7 +32,8 @@
 //!   so, dresses again, so a file that came after the first dressing
 //!   reaches the next map instead of waiting for a restart.
 //! - **Logs** each conversion's (or read's) time and instructions (this
-//!   thread and those it starts), and counts them (`conversions`).
+//!   thread and those it starts), counts them (`conversions`) and keeps
+//!   them as a phase of the load (`map::load_report`: `kept <game>: <how>`).
 //! - **On disk, on by default** (`CHIMERA_GUEST_CACHE=0` turns it off,
 //!   `DISK_ENV`; on since 2026-11-17, plan converted-cache step 6: a cold
 //!   first dressing read back takes 1.7x (CS:S) to 6.8x (HL2:DM) fewer
@@ -283,8 +284,7 @@ pub fn kept_with(
         );
     }
     let started = std::time::Instant::now();
-    let mut counter = chimera_core::metrics::InstructionCounter::current_with_children();
-    let counted_from = counter.read();
+    let mut running = super::load_report::Running::start();
     let mount = (dressing.mount)()?;
     let key = cache::key(&format!("guest:{game}"), dressing.converter)
         .part("textures", [options.textures as u8])
@@ -308,7 +308,7 @@ pub fn kept_with(
     let mut scratch = None;
     // A hit whose memos don't read back converts again (once).
     for disk in [disk, None] {
-        let (mut parts, how) = cache::cached_served(disk, &mount, key.clone(), disk.and(Some(&served)), || {
+        let (mut parts, how) = cache::counted(|| cache::cached_served(disk, &mount, key.clone(), disk.and(Some(&served)), || {
             let mut scratch = MapData::default();
             scratch.memos.insert(BlocksOnly);
             (dressing.convert)(&mount, &mut scratch);
@@ -321,7 +321,7 @@ pub fn kept_with(
                 scratch.extras.insert(KeptMemoBytes(bytes));
             }
             Ok(scratch)
-        })?;
+        }))?;
         let bytes = parts.extras.get_mut::<KeptMemoBytes>().map(|b| std::mem::take(&mut b.0));
         parts.extras.remove::<KeptMemoBytes>();
         if matches!(how, Outcome::Hit | Outcome::Served)
@@ -354,9 +354,10 @@ pub fn kept_with(
             "converted"
         }
     };
-    let instructions = counted_from
-        .zip(counter.read())
-        .map_or(String::new(), |(a, b)| format!(", {} M instructions", b.saturating_sub(a) / 1_000_000));
+    let instructions = running
+        .end(&options.context, format!("kept {game}: {how}"))
+        .instructions
+        .map_or(String::new(), |i| format!(", {} M instructions", i / 1_000_000));
     bevy::log::info!(
         "{game}: its guest parts {how} in {} ms{instructions} ({} textures, {} bodies, {} held, {} view models)",
         started.elapsed().as_millis(),
@@ -365,6 +366,11 @@ pub fn kept_with(
         scratch.kit.held.len(),
         scratch.kit.view_models.len()
     );
+    if std::env::var_os("CHIMERA_MAP_CACHE_LOG").is_some() {
+        for (part, bytes) in cache::encoded_sizes(&scratch) {
+            eprintln!("map cache: {game}'s guest parts ({}): {part}: {} MB", if options.textures { "textures" } else { "lean" }, bytes >> 20);
+        }
+    }
     let p = Arc::new(scratch);
     *parts = Some(p.clone());
     Ok(p)

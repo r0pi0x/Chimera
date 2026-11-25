@@ -54,6 +54,11 @@ const NOT_SIMULATION_FILES: &[(&str, &str)] = &[
          gates, never by the simulation (docs/performance.md, \"Work counts\")",
     ),
     (
+        "chimera/core/src/metrics/boot.rs",
+        "measurement: the process's boot log (`CHIMERA_BOOT_LOG`: its instruction counter and the last stage's \
+         count), printed on stderr, never read by the simulation",
+    ),
+    (
         "chimera/core/src/metrics/frame_events.rs",
         "measurement: engine events by frame for the frame inspector and the report, never read by the simulation",
     ),

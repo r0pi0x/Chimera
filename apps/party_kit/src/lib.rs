@@ -247,8 +247,10 @@ impl Plugin for PartyPartsPlugin {
         // Each guest's systems run only while its game is in play
         // (`chimera_core::games_in_play`): a match plays a few of the
         // games composed. The base game is always in play.
+        chimera_core::metrics::boot::stage("party: before the guests' simulations");
         for bundle in party.guests {
             app.gate_game(bundle.game(), bundle.sim);
+            chimera_core::metrics::boot::stage(&format!("party: {}'s simulation", bundle.game()));
         }
         if let Some(mut games) = app.world_mut().get_resource_mut::<GamesInPlay>() {
             games.bare_maps = party.map_sources.loaders.first().map(|l| l.game);
@@ -260,7 +262,9 @@ impl Plugin for PartyPartsPlugin {
         (party.sim_parts)(app);
         app.add_plugins(MinigamePlugin);
         (party.sim_rules)(app);
+        chimera_core::metrics::boot::stage("party: its own parts and rules");
         (party.base_game().compose)(app);
+        chimera_core::metrics::boot::stage("party: the base game composed");
         app.add_plugins((
             // The match and the ladder over the network (a part: nothing
             // runs without a `NetPlugin`).
