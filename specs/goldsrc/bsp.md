@@ -200,12 +200,119 @@ A lightmap sample (i, j) sits at texel (16 × (floor(s_min / 16) + i),
 the four nearest samples.
 
 Styles: 0 is the always-on light; 1-63 are switchable or animated light
-styles (lights with a name or a pattern); 255 ends the list. In the stock
-maps only (0, 255, 255, 255) and (255, 255, 255, 255) occur (de_dust2:
-4 002 and 1 381 faces). Stored values are the compiler's linear result;
-the original renderer brightens them with gamma settings before
-display. The brightening is a presentation matter, measured against
-captures (open question 1).
+styles (lights with a name or a pattern); 255 ends the list, and the
+slots after the first 255 are 255 too. Stored values are the compiler's
+linear result; the original renderer brightens them with gamma settings
+before display. The brightening is a presentation matter, measured
+against captures (open question 1).
+
+Most faces are (0, 255, 255, 255) or unlit (255, 255, 255, 255)
+(de_dust2: 4 002 and 1 381 faces), but 88 of the 150 stock maps have
+faces with more styles: 6 of cstrike's 25 and 82 of valve's 125. The
+values seen are 0, 1, 4, 5, 6, 10 and 32-55. Across those maps 42 030
+faces use two slots, 5 543 three and 1 632 all four. Style 0 comes first
+on every lit face except 24 faces of valve's `disposal`, which are
+(10, 255, 255, 255): a lit face need not have style 0. Both orders of a
+pair occur: (0, 33, 32) as well as (0, 32, 33).
+
+Counter-Strike's maps with other styles (lit faces: those with any style
+not 255):
+
+| Map | Other styles | Faces using them, by styles | Lit faces | Most slots on a face |
+|---|---|---|---|---|
+| cs_747 | 4, 10, 32 | 70: (0, 4) 53, (0, 10) 14, (0, 32) 3 | 7 365 | 2 |
+| cs_estate | 32, 33 | 1 424: (0, 32) 668, (0, 33) 600, (0, 33, 32) 98, (0, 32, 33) 58 | 4 504 | 3 |
+| cs_havana | 32, 33 | 5 447: (0, 32) 3 806, (0, 33) 1 613, (0, 33, 32) 22, (0, 32, 33) 6 | 12 803 | 3 |
+| cs_militia | 32, 33 | 1 187: (0, 32) 1 074, (0, 33) 113 | 6 528 | 2 |
+| de_survivor | 32 | 31: (0, 32) 31 | 7 099 | 2 |
+| de_torn | 1 | 15: (0, 1) 15 | 15 270 | 2 |
+
+Half-Life's (`valve/maps`):
+
+| Map | Other styles | Faces using them | Lit faces | Most slots on a face |
+|---|---|---|---|---|
+| c0a0a | 32 | 80 | 3 608 | 2 |
+| c0a0b | 32 | 292 | 4 383 | 2 |
+| c0a0c | 32–43 | 1 399 | 5 008 | 4 |
+| c0a0e | 32–33 | 21 | 1 945 | 3 |
+| c1a0 | 32–33 | 653 | 3 695 | 2 |
+| c1a0a | 32 | 64 | 3 718 | 2 |
+| c1a0b | 32–37 | 532 | 3 855 | 4 |
+| c1a0c | 10, 32 | 117 | 4 530 | 3 |
+| c1a0d | 32–33 | 31 | 4 169 | 3 |
+| c1a0e | 4, 32–36 | 601 | 3 282 | 4 |
+| c1a1 | 10, 32–34 | 129 | 4 465 | 2 |
+| c1a1b | 10, 32 | 399 | 6 120 | 3 |
+| c1a1f | 1, 10, 33–38 | 1 078 | 5 701 | 4 |
+| c1a2 | 32–37 | 1 122 | 7 525 | 3 |
+| c1a2a | 32–35 | 652 | 7 615 | 2 |
+| c1a2b | 32 | 43 | 7 917 | 2 |
+| c1a2c | 10 | 46 | 3 816 | 2 |
+| c1a3 | 32–41 | 952 | 4 961 | 3 |
+| c1a3a | 32–33 | 198 | 5 111 | 2 |
+| c1a3b | 32–33 | 83 | 1 756 | 3 |
+| c1a3c | 32–35 | 358 | 1 016 | 3 |
+| c1a3d | 32 | 118 | 2 220 | 2 |
+| c1a4 | 32 | 177 | 4 273 | 2 |
+| c1a4d | 32–33 | 121 | 6 459 | 3 |
+| c1a4f | 32–43 | 1 048 | 6 156 | 3 |
+| c1a4g | 32 | 398 | 6 443 | 2 |
+| c1a4i | 32–36 | 905 | 4 889 | 4 |
+| c2a1 | 10, 32 | 125 | 5 810 | 3 |
+| c2a1a | 1, 4, 10 | 90 | 7 486 | 3 |
+| c2a1b | 10 | 23 | 3 309 | 2 |
+| c2a2b2 | 32 | 101 | 4 464 | 2 |
+| c2a2d | 32–35 | 259 | 6 133 | 4 |
+| c2a2h | 32 | 476 | 3 808 | 2 |
+| c2a3 | 10, 32 | 70 | 5 004 | 2 |
+| c2a3b | 32–38 | 591 | 4 777 | 3 |
+| c2a3d | 32–33 | 404 | 4 507 | 2 |
+| c2a4a | 1, 6, 10 | 365 | 7 126 | 3 |
+| c2a4b | 10 | 6 | 6 423 | 2 |
+| c2a4c | 6 | 314 | 8 335 | 2 |
+| c2a4d | 32–33 | 323 | 2 932 | 2 |
+| c2a4e | 10, 32–34 | 343 | 8 456 | 2 |
+| c2a4f | 10, 32 | 228 | 5 629 | 2 |
+| c2a5 | 32–33 | 10 | 4 124 | 3 |
+| c2a5d | 1, 6 | 51 | 2 753 | 3 |
+| c2a5e | 1, 6, 32 | 106 | 6 843 | 3 |
+| c2a5f | 32–33, 35–37, 39–41, 43–46 | 169 | 7 796 | 4 |
+| c2a5g | 32–33 | 61 | 2 975 | 3 |
+| c3a1 | 10, 32–39 | 655 | 5 357 | 4 |
+| c3a1b | 32–39 | 682 | 3 864 | 4 |
+| c3a2 | 32–33 | 107 | 1 869 | 2 |
+| c3a2a | 32–41 | 853 | 6 468 | 4 |
+| c3a2b | 5, 10, 32–35 | 666 | 2 483 | 4 |
+| c3a2c | 10, 32–41 | 751 | 5 560 | 4 |
+| c3a2d | 1, 10, 32–38 | 1 224 | 2 897 | 4 |
+| c3a2f | 10, 32–36 | 56 | 1 519 | 4 |
+| c4a1 | 10, 32–53 | 1 335 | 3 471 | 4 |
+| c4a1a | 32–44 | 373 | 3 680 | 3 |
+| c4a1b | 10, 32–47 | 513 | 4 814 | 4 |
+| c4a1d | 32–45 | 95 | 4 058 | 3 |
+| c4a1e | 32–37 | 18 | 3 444 | 2 |
+| c4a2 | 32–43 | 594 | 1 283 | 4 |
+| c4a2a | 32–36 | 241 | 1 471 | 4 |
+| c4a2b | 32–38 | 460 | 725 | 4 |
+| c4a3 | 32–45 | 851 | 4 833 | 3 |
+| c5a1 | 1, 4, 32 | 214 | 7 228 | 2 |
+| contamination | 32 | 2 194 | 15 497 | 2 |
+| crossfire | 32–33 | 69 | 4 067 | 3 |
+| disposal | 5, 10, 32–33 | 2 783 | 15 273 | 2 |
+| hldemo1 | 32–39 | 387 | 4 412 | 4 |
+| hldemo3 | 32–36 | 948 | 4 473 | 4 |
+| lambda_bunker | 10 | 2 | 4 634 | 2 |
+| rocket_frenzy | 32–35 | 6 223 | 39 625 | 4 |
+| rustmill | 10 | 2 | 6 405 | 2 |
+| snark_pit | 32–35 | 13 | 2 794 | 3 |
+| subtransit | 32 | 76 | 5 639 | 2 |
+| t0a0 | 32–52 | 419 | 6 768 | 4 |
+| t0a0a | 10, 32–42 | 139 | 6 749 | 4 |
+| t0a0b | 32–55 | 1 170 | 8 183 | 4 |
+| t0a0b1 | 32–38 | 464 | 4 944 | 3 |
+| t0a0b2 | 32–49 | 679 | 3 470 | 4 |
+| t0a0c | 1, 32–33 | 50 | 4 112 | 3 |
+| undertow | 32–34 | 17 | 3 164 | 4 |
 
 Worked example: de_dust2 face 0: plane 1776, side 0, surfedges 0-3,
 texinfo 8, styles (0, 255, 255, 255), lightmap offset 0. Its s extents
