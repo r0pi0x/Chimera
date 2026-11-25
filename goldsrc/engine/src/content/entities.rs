@@ -56,6 +56,10 @@ use crate::{
 /// (bsp.md, hull 1 ±36).
 pub const STAND_HALF_HEIGHT: f32 = 36.0;
 
+/// Half the ducked box's height: a ducked player's origin above its feet
+/// (specs/cs16/movement.md, `hull_duck` ±18).
+pub const DUCK_HALF_HEIGHT: f32 = 18.0;
+
 /// What a brush entity is (module doc).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Brush {

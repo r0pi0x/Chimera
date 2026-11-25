@@ -156,3 +156,25 @@ fn a_body_plays_the_ak47s_shot() {
     sim.seconds(1.0);
     assert_eq!(playing(&sim, p).1, ["ref_aim_ak47"]);
 }
+
+/// Ducked, a body plays sequences authored about the ducked box's centre
+/// (feet 18 units below, specs/cs16/movement.md `hull_duck`), so their
+/// roots are raised by 18, not the standing box's 36 (report
+/// f77f1f74: crouched bodies floated 18 units up); the standing gaits
+/// keep 36. The real models' feet on `crouch_idle` and `crouchrun` are
+/// `heavy::bodies`'.
+#[test]
+fn ducked_gaits_are_raised_by_the_ducked_half_height() {
+    use goldsrc_engine::content::{
+        entities::{DUCK_HALF_HEIGHT, STAND_HALF_HEIGHT},
+        studio::sequence_lift,
+    };
+    use cs16::game::bodies::gait;
+    for speed in [0.0, 1.0, 5.0] {
+        assert_eq!(sequence_lift(gait(speed, true, true)), DUCK_HALF_HEIGHT, "ducked at {speed} m/s");
+        assert_eq!(sequence_lift(gait(speed, false, true)), STAND_HALF_HEIGHT, "standing at {speed} m/s");
+    }
+    assert_eq!(sequence_lift("crouch_aim_ak47"), DUCK_HALF_HEIGHT);
+    assert_eq!(sequence_lift("ref_aim_ak47"), STAND_HALF_HEIGHT);
+    assert_eq!(sequence_lift("jump"), STAND_HALF_HEIGHT);
+}

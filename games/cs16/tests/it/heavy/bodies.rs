@@ -3,7 +3,8 @@
 //! with meshes skinned to its 53 bones, its hitboxes (the shield's left
 //! out), the gait sequences the bodies play and the pistol's aim; posed in
 //! `idle1` it stands on its feet (lowest point near the origin) about a
-//! player's height tall with its toes toward -Z (forward), and its bind
+//! player's height tall, ducked on `crouch_idle` and `crouchrun` too
+//! (report f77f1f74), with its toes toward -Z (forward), and its bind
 //! pose's mesh stands on the origin too. Passes with a note without an
 //! install.
 
@@ -72,6 +73,19 @@ fn the_eight_player_models_are_bodies() {
         eprintln!("{path}: bones from {lo:.3} to {hi:.3} m, mesh {:?}, {} meshes, {} textures", c.model.bounds, c.model.meshes.len(), map.textures.len());
         assert!(lo > -0.1 && lo < 0.2, "{path}: lowest bone at {lo} m");
         assert!(hi > 1.2 && hi < 2.0, "{path}: highest bone at {hi} m");
+        // Ducked (report f77f1f74): the feet on the ground too, on the
+        // ducked gaits, frame 0 and halfway.
+        for s in ["crouch_idle", "crouchrun"] {
+            for cycle in [0.0, 0.5] {
+                let mut a = Animator::new(set.clone());
+                a.play(set.sequence(s).unwrap(), 0.0);
+                a.cycle = cycle;
+                let globals = chimera_world::map::anim::model_space(&a.pose(0.0), &set.parents);
+                let lo = globals.iter().map(|(_, p)| (c.root.rotation * *p * c.root.scale).y).fold(f32::MAX, f32::min);
+                eprintln!("{path}: {s} at cycle {cycle}: lowest bone at {lo:.3} m");
+                assert!(lo > -0.1 && lo < 0.2, "{path}: {s} at cycle {cycle}: lowest bone at {lo} m");
+            }
+        }
         let mesh_lo = c.model.bounds.0.y;
         assert!(mesh_lo > -0.15 && mesh_lo < 0.1, "{path}: the mesh's feet at {mesh_lo} m");
         // The run's authored speed: 250 units a second (mdl.md).

@@ -7,7 +7,12 @@
 //!   angles (mdl.md, "Bones"). A model's origin is the standing box's
 //!   centre (bsp.md, "Hull sizes"), Chimera's character origin its feet,
 //!   so every root bone is raised by the box's half height
-//!   (`entities::STAND_HALF_HEIGHT`) in every frame of every sequence. The
+//!   (`entities::STAND_HALF_HEIGHT`) in every frame of every sequence but
+//!   the ducked ones (`sequence_lift`): a ducked player's origin is the
+//!   ducked box's centre, its feet 18 below (specs/cs16/movement.md,
+//!   "hull_duck", and the model drawn at the origin, mdl.md), so a
+//!   `crouch*` sequence's roots are raised by `entities::DUCK_HALF_HEIGHT`
+//!   (raised by 36 its body stood 18 units above the ground). The
 //!   bind pose (the defaults) already stands on the origin (CS 1.6's
 //!   player models: `Bip01` 38 units up) and is kept as it is for the
 //!   skeleton and the meshes; the animation set's rest pose is raised too,
@@ -55,7 +60,10 @@ use bevy::{
 };
 use goldsrc_formats::mdl::Mdl;
 
-use super::{METERS_PER_UNIT, entities::STAND_HALF_HEIGHT};
+use super::{
+    METERS_PER_UNIT,
+    entities::{DUCK_HALF_HEIGHT, STAND_HALF_HEIGHT},
+};
 use crate::{
     core::{BodyRegion, Hitbox, Hitgroup},
     map::{
@@ -179,13 +187,27 @@ pub fn bind_locals(mdl: &Mdl) -> Vec<BonePose> {
 /// Model `mdl`'s sequences as an animation set (module doc), its roots
 /// raised to a character's feet.
 pub fn anim_set(mdl: &Mdl, warnings: &mut Vec<String>) -> AnimSet {
-    anim_set_lifted(mdl, warnings, STAND_HALF_HEIGHT)
+    anim_set_by(mdl, warnings, STAND_HALF_HEIGHT, &sequence_lift)
+}
+
+/// How far a character body's sequence `name` raises its roots (units,
+/// module doc): the ducked box's half height for a ducked sequence
+/// (`crouch_idle`, `crouchrun`, `crouch_aim_*` ...), the standing box's
+/// otherwise.
+pub fn sequence_lift(name: &str) -> f32 {
+    if name.to_ascii_lowercase().starts_with("crouch") { DUCK_HALF_HEIGHT } else { STAND_HALF_HEIGHT }
 }
 
 /// `anim_set` with the roots raised by `lift` units (0: as stored, a view
 /// model's: its origin is the eye). Each sequence's events
 /// (`AnimEvent`: its number and options) at the cycle of their frame.
 pub fn anim_set_lifted(mdl: &Mdl, warnings: &mut Vec<String>, lift: f32) -> AnimSet {
+    anim_set_by(mdl, warnings, lift, &|_| lift)
+}
+
+/// The animation set with the rest pose's roots raised by `lift` and each
+/// sequence's by `lift_of(its name)`.
+fn anim_set_by(mdl: &Mdl, warnings: &mut Vec<String>, lift: f32, lift_of: &dyn Fn(&str) -> f32) -> AnimSet {
     let defaults: Vec<BonePose> = mdl
         .bones
         .iter()
@@ -227,7 +249,7 @@ pub fn anim_set_lifted(mdl: &Mdl, warnings: &mut Vec<String>, lift: f32) -> Anim
         let motion = if speed > 0.0 { Vec2::new(lm.x, lm.y) / duration } else { Vec2::ZERO };
         let mut anims = Vec::with_capacity(blends);
         for blend in 0..blends {
-            let locals = match locals_of(mdl, &mdl.bytes, si, blend, lift) {
+            let locals = match locals_of(mdl, &mdl.bytes, si, blend, lift_of(&s.name)) {
                 Ok(l) => l,
                 Err(e) => {
                     warnings.push(format!("sequence {} blend {blend}: {e}", s.name));
