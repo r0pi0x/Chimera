@@ -20,7 +20,9 @@
 //!   into the command (`Intent::yaw`/`pitch`): the shot still leaves the
 //!   eye by each game's rules, and the server traces from its own eye along
 //!   those angles as always, so it takes nothing new from the client.
-//!   Movement keys are turned so W walks where the camera faces.
+//!   Movement keys are turned so W walks where the camera faces (within
+//!   `MOVE_SNAP`: a sliver of strafe from the shoulder's offset is
+//!   dropped, so W alone stays forward alone).
 //! - **The blocked-shot marker.** When something stands between the eye
 //!   and the aim point (`blocked_point`, the shot trace's layers), a dot
 //!   marks where the shot would land instead (`Shoulder::blocked`). Melee
@@ -468,13 +470,24 @@ pub fn blocked_point(spatial: &SpatialQuery, eye: Vec3, aim: Vec3, exclude: &[En
     (hit.distance < len - BLOCKED_TOLERANCE).then(|| eye + dir * hit.distance)
 }
 
+/// `turn_move` drops a turned component smaller than this (about 6
+/// degrees between the camera's yaw and the aim's): the shoulder's offset
+/// off a far aim point gave W alone a sliver of strafe, which games that
+/// read the keys from the axis's sign (Combat Arms' direction flags, the
+/// map entities' buttons, a ladder's) took as a strafe key (report
+/// e43b5a97).
+pub const MOVE_SNAP: f32 = 0.105;
+
 /// A move (right, forward) meant along the camera's yaw, as the same
-/// world direction along the aim's yaw.
+/// world direction along the aim's yaw; a component under `MOVE_SNAP` is
+/// none (the walk then off the camera's facing by that much, along the
+/// aim).
 pub fn turn_move(axis: Vec2, camera_yaw: f32, aim_yaw: f32) -> Vec2 {
     let fwd = |y: f32| Vec2::new(-y.sin(), -y.cos());
     let right = |y: f32| Vec2::new(y.cos(), -y.sin());
     let wish = right(camera_yaw) * axis.x + fwd(camera_yaw) * axis.y;
-    Vec2::new(wish.dot(right(aim_yaw)), wish.dot(fwd(aim_yaw))).clamp(Vec2::NEG_ONE, Vec2::ONE)
+    let snap = |c: f32| if c.abs() < MOVE_SNAP { 0.0 } else { c };
+    Vec2::new(snap(wish.dot(right(aim_yaw))), snap(wish.dot(fwd(aim_yaw)))).clamp(Vec2::NEG_ONE, Vec2::ONE)
 }
 
 /// What `input::write_local_intent` needs of the shoulder camera.
@@ -1122,6 +1135,21 @@ mod tests {
         let aim = 10f32.to_radians();
         let world = Vec2::new(aim.cos(), -aim.sin()) * m.x + Vec2::new(-aim.sin(), -aim.cos()) * m.y;
         assert!(world.distance(Vec2::new(0.0, -1.0)) < 1e-5, "{world}");
+    }
+
+    #[test]
+    fn a_few_degrees_off_the_aim_w_stays_forward_alone() {
+        // Report e43b5a97: the camera 5 degrees off the aim either way.
+        for off in [5f32, -5.0] {
+            let m = turn_move(Vec2::Y, 0.0, off.to_radians());
+            assert_eq!(m.x, 0.0, "no strafe at {off}: {m}");
+            assert!(m.y > 0.99, "{m}");
+            let d = turn_move(Vec2::X, 0.0, off.to_radians());
+            assert_eq!(d.y, 0.0, "D alone no forward at {off}: {d}");
+        }
+        // A diagonal keeps both.
+        let m = turn_move(Vec2::new(1.0, 1.0), 0.0, 5f32.to_radians());
+        assert!(m.x > 0.5 && m.y > 0.5, "{m}");
     }
 
     #[test]

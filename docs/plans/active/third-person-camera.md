@@ -79,7 +79,10 @@ camera's ray through the crosshair first hits.
   (M1) shows this before the player fires.
 - **Movement follows the camera.** `move_axis` is relative to
   `Intent.yaw`. The client turns it by (camera yaw - aim yaw), so W
-  still walks where the camera faces. Bodies face the aim, which is what
+  still walks where the camera faces; a turned component under
+  `third_person::MOVE_SNAP` (about 6 degrees) is dropped, so W alone
+  stays forward alone for games that read keys from the axis's sign
+  (Combat Arms also rounds to the nearest of eight directions). Bodies face the aim, which is what
   the genre does.
 - **Peeking** (the camera seeing round a corner the eye can't) is the
   genre's accepted trade. Servers limit it with two settings: a host

@@ -410,6 +410,27 @@ fn case_9_stop() {
     assert_eq!(t.pos(), at5, "no move on tick 6");
 }
 
+/// Report e43b5a97: W alone turned by the shoulder camera's offset (a
+/// sliver of strafe, here 15 degrees' worth) is forward alone: the flags
+/// take the nearest of the eight directions, so the body runs forward,
+/// not a strafe; past 22.5 degrees the strafe counts.
+#[test]
+fn a_turned_w_alone_runs_forward() {
+    use combat_arms::game::characters::driver::Direction;
+    let mut t = T::standing();
+    let off = 15f32.to_radians();
+    t.keys().move_axis = Vec2::new(off.sin(), off.cos());
+    t.ticks(2);
+    let m = t.mv();
+    assert!(m.forward && !m.right && !m.left && !m.back, "forward alone");
+    assert_eq!(Direction::of(m.forward, m.back, m.left, m.right), Direction::F);
+    let off = 30f32.to_radians();
+    t.keys().move_axis = Vec2::new(off.sin(), off.cos());
+    t.ticks(2);
+    let m = t.mv();
+    assert_eq!(Direction::of(m.forward, m.back, m.left, m.right), Direction::FR, "the diagonal's half");
+}
+
 /// Forward and back held together: an axis of 0 with `Intent::opposed`.
 #[test]
 fn case_10_opposing_keys() {

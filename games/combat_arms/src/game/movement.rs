@@ -173,6 +173,13 @@ pub const ID: &str = "combat_arms:movement";
 /// Ours: how far below a spawn point the floor is looked for (u).
 const SPAWN_DROP: f32 = 100_000.0;
 
+/// The keys are flags (forward, back, left, right): a move axis component
+/// counts as its key past this, sin 22.5 degrees, so a turned axis (third
+/// person's, the camera off the aim) is the nearest of the eight
+/// directions; a key's own 1 always counts. Below it the body ran a
+/// strafe for W alone (report e43b5a97).
+pub const KEY_DEAD_ZONE: f32 = 0.38;
+
 /// data/movement.toml, built in.
 pub const MOVEMENT_DATA: chimera_core::game_data::GameData = chimera_core::game_data!("data/movement.toml");
 
@@ -1543,11 +1550,13 @@ fn step(
             sprint_ok = false;
         }
         // 5. Forward and sprint. Opposing keys both set their flags.
+        // A turned axis (the shoulder camera's, `third_person::turn_move`)
+        // gives the nearest of the eight key directions (`KEY_DEAD_ZONE`).
         let axis = intent.move_axis;
-        me.forward = move_keys && (axis.y > 0.0 || intent.opposed.y);
-        me.back = move_keys && (axis.y < 0.0 || intent.opposed.y);
-        me.left = move_keys && (axis.x < 0.0 || intent.opposed.x);
-        me.right = move_keys && (axis.x > 0.0 || intent.opposed.x);
+        me.forward = move_keys && (axis.y > KEY_DEAD_ZONE || intent.opposed.y);
+        me.back = move_keys && (axis.y < -KEY_DEAD_ZONE || intent.opposed.y);
+        me.left = move_keys && (axis.x < -KEY_DEAD_ZONE || intent.opposed.x);
+        me.right = move_keys && (axis.x > KEY_DEAD_ZONE || intent.opposed.x);
         // The hit knock-back: no run or sprint while it runs.
         let knocked = knock.as_mut().and_then(|k| {
             if k.started.is_none() {
