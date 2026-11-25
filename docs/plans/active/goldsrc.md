@@ -22,7 +22,7 @@ Force) is a small port on the same loader.
 | Milestone | State | Summary |
 |---|---|---|
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
-| First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount; entities 2026-11-24); `specs/cs16/` install, movement, weapons to come |
+| First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount; entities 2026-11-24); `specs/cs16/` movement, weapons, damage, view_and_hud drafted 2026-11-24 (ReGameDLL as reference, cvars and model data checked); install to come |
 | M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Logic on network clients (2026-11-24): Chimera's shared `net::movers` (lifted from Source's logic), `logic::net`. Left: the lightmap brightening against captures; the logic's sounds and debris |
 | M1 weapons | not started | §5 |
 | M2 movement | not started | §5; the lift of Source's movement into Chimera planned in [shared-movement.md](shared-movement.md) (2026-11-24) |
@@ -372,10 +372,10 @@ never leaked or decompiled code; write only `specs/goldsrc/` and
 | [`specs/goldsrc/mount.md`](../../../specs/goldsrc/mount.md) (draft) | the content folder chain (`liblist.gam`, fallback, language and the folders we skip), file name case, `materials.txt` | the install, public docs |
 | [`specs/goldsrc/entities.md`](../../../specs/goldsrc/entities.md) (draft) | the entities the 25 stock CS 1.6 maps use, with counts: firing (target, delay, killtarget, master, `multi_manager`, `multisource`), movers (doors, buttons, trains, rotators: movedir, lip, wait, return, blocking, sounds by index), breakables, triggers, the `+a` texture toggle (frame 1 on buttons and used `func_wall`s), light styles, sprites, sounds, the CS objective entities; round restarts and CS's `+use` left to measurement | the entity lumps, the shipped FGD, public level-design docs, HL SDK (spec-only) |
 | `specs/cs16/install.md` | the two layouts, required files, what the server layout lacks against the client's | the installs |
-| `specs/cs16/movement.md` | §4's list, with numbers and test cases | measurement (probe), the cvar list, HL SDK for the base |
-| `specs/cs16/weapons.md` | every gun's numbers and behaviour (fire modes, scopes, silencers, burst, shield later) | measurement, the view models' sequences, public pages |
-| `specs/cs16/damage.md` | hitgroups and multipliers, armour and helmet, range falloff, wall penetration, fall and blast damage | measurement |
-| `specs/cs16/view_and_hud.md` | view kick and decay, the dynamic crosshair, the HUD's sprites and layout | measurement, `hud.txt`, captures |
+| [`specs/cs16/movement.md`](../../../specs/cs16/movement.md) (draft) | §4's list, with numbers and test cases: cvar defaults, speed by weapon, jump and the per-command jump penalty, duck, steps, edge friction, ladders, water, fall damage, hit slowdown, msec stepping | ReGameDLL (spec-only reference), the server's cvars; in-game measurement still open |
+| [`specs/cs16/weapons.md`](../../../specs/cs16/weapons.md) (draft) | every gun's numbers and behaviour: accuracy formulas and spread by state, kick tables, fire modes, scopes, silencers, bursts, reloads (checked against the view models' sequences), knife, grenades | ReGameDLL (spec-only reference), the view models |
+| [`specs/cs16/damage.md`](../../../specs/cs16/damage.md) (draft) | hitgroups and multipliers, armour and helmet, range falloff, wall penetration, fall and blast damage | ReGameDLL (spec-only reference), the player models' hit boxes |
+| [`specs/cs16/view_and_hud.md`](../../../specs/cs16/view_and_hud.md) (draft) | view heights, zoom, punch and decay, flash fade, the HUD's sprites; layout and the dynamic crosshair still to capture | ReGameDLL (spec-only reference), `hud.txt`; captures to come |
 
 **Questions for the next spec session** (found by implementation
 sessions; to add to the specs' open questions there, not edited in by
@@ -445,8 +445,12 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
 1. May spec sessions read the reverse-engineered CS 1.6 game library
    (ReGameDLL_CS, derived from decompilation) as reference, as spec
    agents read the Combat Arms source? It would make the weapon and
-   movement specs far quicker and more exact. Until answered: no, and
-   specs come from measurement and the HL SDK.
+   movement specs far quicker and more exact. **Answered 2026-11-24:
+   yes** ("do whatever is easiest for you to recreate the game
+   faithfully"): spec sessions may read ReGameDLL_CS (cloned outside the
+   repo, deleted after) and check behaviour against the game; specs stay
+   in our own words, nothing else from it enters the repository, and each
+   spec's header names the sources.
 2. Do you own Counter-Strike (app 10)? Not blocking (the server holds
    the content); the client is wanted for refcmp captures and to check
    the server layout lacks nothing.
@@ -494,7 +498,8 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   216 (mdl.md's table says 216 for the count); three of Half-Life's
   deathmatch maps (`disposal`, `pool_party`, `rocket_frenzy`) carry
   800-odd bytes after the last lightmap (bsp.md says every map tiles
-  exactly); both for the next spec session.
+  exactly); both for the next spec session (fixed in the specs
+  2026-11-24, below).
 - 2026-11-24: M0, second half. `goldsrc/engine` (`goldsrc_engine`, a
   new crate of the `goldsrc` layer) converts a map: faces meshed per
   texture (embedded or from the `wad` key's WADs, found ignoring case;
@@ -611,3 +616,16 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   de_dust2's broken crates are passable on the client. Not done: light
   styles (the converted lightmaps carry style 0 only), debris (needs
   GoldSrc gib models as gib sets), sprite drawing.
+- 2026-11-24: CS 1.6 game specs (`specs/cs16/`): movement.md, weapons.md,
+  damage.md, view_and_hud.md, from ReGameDLL_CS (spec session only, its
+  original-game behaviour; §8 question 1) and checked against the
+  install: HLDS build 10211's cvar defaults (accelerate 5, airaccelerate
+  10, friction 4, stopspeed 75, edgefriction 2, stepsize 18), the
+  shipped client config (400 move speeds, fps_max 100), every view
+  model's reload/draw lengths, the nine player models' hit-box groups.
+  Not yet measured in the running game: firing, recoil, penetration,
+  movement trajectories (the client needs a running Steam client and
+  32-bit libraries this box lacks; no bot nav or profile in the server
+  install). mdl.md: attachments at 212/216, sound tables at 220. bsp.md:
+  the lightmap blocks pack with no gaps; `disposal`, `pool_party`,
+  `rocket_frenzy` carry 837, 855, 822 trailing bytes.
