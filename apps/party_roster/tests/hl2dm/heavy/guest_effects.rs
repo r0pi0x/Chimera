@@ -31,6 +31,22 @@ fn materials(data: &MapData) -> std::collections::BTreeMap<String, bool> {
         .collect()
 }
 
+/// Whether `mats` has `name` with a real texture under any of the names a
+/// game's material takes: a guest's whose name the map's own games
+/// already use is kept under its game's (`cs_source:effects/spark` beside
+/// HL2:DM's own `effects/spark` on dm_lockdown: `map::kept::append`), so
+/// `g:rest` on one map is `rest` on a map of `g`'s, and the other way.
+fn has_real(mats: &std::collections::BTreeMap<String, bool>, name: &str) -> bool {
+    const GAMES: [&str; 7] = ["cs_source", "hl2dm", "combat_arms", "tf2", "dods", "cs16", "halo_ce"];
+    let bare = name.split_once(':').filter(|(g, _)| GAMES.contains(g)).map(|(_, rest)| rest);
+    let mut names = vec![name.to_string()];
+    match bare {
+        Some(rest) => names.push(rest.to_string()),
+        None => names.extend(GAMES.iter().map(|g| format!("{g}:{name}"))),
+    }
+    names.iter().any(|n| mats.get(n) == Some(&true))
+}
+
 fn flash_real(data: &MapData, f: &MapMuzzleFlash) -> bool {
     real(data, f.texture)
 }
@@ -79,7 +95,7 @@ fn every_games_effects_have_their_materials_on_every_map() {
     for (map, mats) in &all {
         for (other, theirs) in &all {
             for (name, ok) in theirs {
-                if *ok && mats.get(name) != Some(&true) {
+                if *ok && !has_real(mats, name) {
                     problems.push(format!(
                         "{map}: {name} (on {other}) {}",
                         if mats.contains_key(name) { "white" } else { "missing" }

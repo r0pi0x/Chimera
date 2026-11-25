@@ -1,5 +1,6 @@
 //! The party's maps carry every game's HUD look (the installs'): each map's
-//! own, with the other Source game's as a guest's beside it, so a gun's game
+//! own, with the other Source games' as guests' beside it (TF2's where it is
+//! installed), so a gun's game
 //! never draws its HUD in another game's look. Passes with a note without
 //! the installs.
 
@@ -24,7 +25,15 @@ fn every_map_carries_each_games_look() {
     ] {
         let data = party_roster::load_map(map, 0).unwrap();
         assert_eq!(data.kit.hud.as_ref().map(|h| h.game.as_str()), Some(own), "{map}");
-        let guests: Vec<&str> = data.kit.guest_huds.iter().map(|h| h.game.as_str()).collect();
-        assert_eq!(guests, [guest], "{map}");
+        let mut guests: Vec<&str> = data.kit.guest_huds.iter().map(|h| h.game.as_str()).collect();
+        guests.sort();
+        // TF2's look too where its install is found (a guest's dressing
+        // brings it: `tf2::game::maps::dress_guest_in`).
+        let mut want = vec![guest];
+        if tf2::game::INFO.install().is_some() {
+            want.push(tf2::game::GAME);
+        }
+        want.sort();
+        assert_eq!(guests, want, "{map}");
     }
 }
