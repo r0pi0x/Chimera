@@ -3103,25 +3103,32 @@ docs/plans/active/sound.md.
 ## 9. Performance
 
 - **Every game installed, what's left (2026-11-25).** Measured in
-  performance.md, "Every game installed" (a start with six games read
-  back: 79 G instructions before the first frame; the server 2.8-3.4 GB).
-  By size: (1) a map read back from the converted cache decodes every DXT
-  texture to texels again (11.3 G of de_dust2's 12.8 G; keep the world's
-  textures as blocks and decode on demand, as kept dressings do); (2) the
-  base game's simulation and UI install at every start (31.8 G and 11.3
-  G), TF2's simulation 4.3 G; (3) Combat Arms' maps convert on every load
-  (12.6 G for warehouse); (4) each cache entry's BLAKE3 on every read
-  (5.8 G a start); (5) a guest dressing is the whole game's kit though a
-  ladder deals a dozen guns: dress by the ladder's models, not its games;
-  (6) on the server, bodies' and held models' render meshes (87 MB of
-  TF2's dressing and a copy per map) and what a conversion leaves in use
-  (100-350 MB more than a read); (7) a join during a process's start gets
-  no answer (the start map loads before the app exists: load it as a
-  level change, the app listening on the greybox); (8) the client's peak
-  while every dressing loads side by side (2-3 GB over the settled
-  bytes); (9) a many-sided collision piece's brush still tries every
+  performance.md, "Every game installed" and "Load cost, second pass" (a
+  start with six games read back: the start map 39.6 to 24.2 G
+  instructions; the server 2.4-3.0 GB to 1.6-2.1 GB). **Done in the
+  second pass:** a map read back keeps its DXT textures as blocks
+  (de_dust2's loader 12.8 to 1.6 G); a cache entry's BLAKE3 is checked
+  when written, fetched or unstamped, not on every read (5.8 G a start
+  to nothing); Combat Arms' worlds go through the converted-map cache by
+  default (warehouse's loader 12.6 to 3.5 G); the server keeps no render
+  meshes of the kit (0.9 GB). **Left,** by size: (1) the base game's
+  simulation and UI install at every start (30.6 G and 13.0 G), TF2's
+  simulation 3.4 G; (2) a guest dressing is the whole game's kit though
+  a ladder deals a dozen guns: dress by the ladder's models, not its
+  games (TF2's kept dressing still decodes 2.6 G of arrays); (3) on the
+  server, the animation sets (457 MB for the five Source games) and what
+  a conversion leaves in use (100-350 MB more than a read); (4) a join
+  during a process's start gets no answer (the start map loads before
+  the app exists: load it as a level change, the app listening on the
+  greybox; it moves the first match's start, a `+minigame`'s first map
+  and the server's asset fetch behind the first frame, so the console
+  lines of the command line must wait for the map); (5) the client's
+  peak while every dressing loads side by side (2-3 GB over the settled
+  bytes); (6) a many-sided collision piece's brush still tries every
   triple of its planes (`plane_corners`: 1.7 G instructions for 337
-  planes, per placement; performance.md, "A many-sided prop's brushes").
+  planes, per placement; performance.md, "A many-sided prop's
+  brushes"); (7) Combat Arms' cached worlds are 222-641 MB each (their
+  textures keep texels: its DXT decoding isn't texpresso's).
 
 - **Monitors in a map's first view (done 2026-11-23).** The first-view
   gate (`client::first_view`) warmed only what the world's cameras saw;

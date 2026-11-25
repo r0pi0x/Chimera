@@ -5384,7 +5384,8 @@ dressing, whose arrays are byte strings, decodes at 0.2). M instructions
 - **The first view warms bodies and held models nobody has yet**
   (`first_view_warm::warm_models`): below.
 
-**Left, measured.** The map's own read decodes every DXT texture to
+**Left, measured** (the first, second and fourth, and the server's
+meshes, were taken next: "Load cost, second pass"). The map's own read decodes every DXT texture to
 texels again (11.3 G of de_dust2's 12.8 G; the GPU takes the blocks, the
 CPU reads few of them: `MapTexture::keep_blocks_only` for a map's world
 textures, with the readers going through `decoded`); each entry's BLAKE3
@@ -5524,6 +5525,163 @@ plus `GUEST_IN_USE` for each guest installed (HL2:DM 320, TF2 900, DoD:S
 370, CS 1.6 100 MB: each measured delta and about a tenth), 3,640 MB
 with all six against 3,402 measured; the numbers and how they were
 measured are in the test.
+
+## Load cost, second pass (2026-11-25)
+
+The four biggest costs "Every game installed" left measured, taken in
+its order. Same run, same tools (`ultimate_gun_game --offscreen 320x180
++after 1 ugg_new 7 13 combat_arms:warehouse`, dev profile, six games,
+`CHIMERA_MAP_CACHE_LOG=1 CHIMERA_BOOT_LOG=1`; instructions of a phase's
+thread and the threads it starts, the same to under 0.1% between runs on
+a box at load 20-65). Read back, M instructions:
+
+| phase | before | after |
+|---|---|---|
+| the start map's loader (de_dust2 and CS:S's own kit) | 12,830 | 1,648 |
+| CS 1.6's kept dressing | 610 | 372 |
+| HL2:DM's | 1,972 | 1,520 |
+| DoD:S's | 2,267 | 1,659 |
+| TF2's | 6,190 | 4,054 |
+| Combat Arms' | 3,174 | 2,360 |
+| **the start map** (`boot: the start map`) | **39,595** | **24,150** |
+| the level change: Combat Arms' loader (warehouse) | 12,566 | 3,535 |
+| the level change: CS:S's kept dressing | 1,848 | 1,275 |
+
+Converting (the first start of a converter version) is as it was (the
+start map 127.6 to 127.8 G; warehouse's first load 11.8 G: its world is
+now written to the cache). The server's memory, `heavy::server_map_memory`
+read back with all six games: 2,446-2,997 MB in use to 1,576-2,101 MB.
+
+### A read keeps the blocks
+
+A map read back from the converted cache decoded every DXT texture to
+texels again (`map::texture_serde`: the entry holds the blocks, the read
+ran texpresso over every level): 11,297 of de_dust2's 12,830 M. The GPU
+takes the blocks as they are (`render::to_image`), and the CPU reads
+few texels after a load. Now a read leaves such a texture as its blocks
+(`MapTexture::blocks_only`, as kept guest dressings already were), and
+whoever reads one gets what the conversion gave:
+
+- the drawing uploads the blocks (the same bytes as before); where the
+  GPU takes no BC (`CHIMERA_BC=0`, a device without it; water's
+  textures, always decoded) `MapTexture::decoded` gives level 0 and the
+  file's own mip levels decoded, the bytes a conversion's texture holds;
+- the shadows' silhouettes sample the alpha of the alpha-tested and
+  translucent casters' textures again and again
+  (`MapData::silhouette_textures`): the loader decodes those on its
+  thread on a hit (`MapData::decode_read_textures`: the alpha-tested
+  props' few);
+- a surface's colour (`surface_color::average_color`) reads the
+  smallest level (`MapTexture::smallest_level`: that one level decoded);
+- the sky's cube (`sky_image`) and refcmp's sky fit decode their faces.
+
+A texture the blocks can't stand for is decoded on the read as before:
+blocks no GPU takes whole (a size not a multiple of 4), or one with no
+mip levels though its blocks have them. One whose mip levels aren't the
+blocks' (Combat Arms' box-filtered ones) keeps those beside the blocks.
+A blocks-only texture is written as the texture it was read from, byte
+for byte (the flags say its texels are the blocks decoded), so an entry
+written from a read is the entry read.
+
+de_dust2's decode: 11,297 to 1,064 M; its loader 12,830 to 1,648 M; a
+client holds the map's texels no longer (they were shed after the
+spawn: the loader's bytes in use at its end 973 to 419 MB). Guards:
+`texture_serde`'s tests (the read keeps blocks, decodes to the same
+texture, writes the same bytes; the two cases decoded on the read),
+chimera_present's `a_texture_read_back_as_blocks_draws_as_the_one_converted`
+(the same image with BC and without), and cs_source's heavy `map_cache`
+(a read-back de_dust2 against the converted one: every texture decoded
+hashes the same, the silhouettes' texels, every texture's colour and the
+sky's cube are the same; 520 of its 599 textures read back as blocks).
+
+A blocks-only texture's colour was white before (no texels to read): a
+kept guest dressing's now reads its real colour, should a surface ever
+show one (none does: dressings add bodies and guns, not surfaces).
+
+### A cache read checks once
+
+Every read checksummed its entry's payload (a BLAKE3 per 16 MB, 2.5
+instructions a byte): 5,258 M for the start's six entries and 574 M for
+the change's. Now the checksums are checked when they can have changed:
+as an entry is written (each chunk hashed as it is encoded, as before),
+when one is taken from the asset service (the fetched bytes checked
+whole before they are kept: as strong as it was), and on the read of an
+entry with no stamp. Each then leaves a stamp beside the entry
+(`<key>.ok`, `map_cache::Stamp`: the entry's size, its modification time
+and the hash of its header, which holds the payload's hashes), written
+once the entry is synced to the disk, so a crash can't leave a stamp
+naming bytes that never arrived. A read whose entry matches its stamp
+skips the checksums; any other size, time or header is checked whole
+and stamped again. A hit marks the stamp used (the entry's time is what
+the stamp names), and eviction goes by the later of the two and takes
+the stamp with the entry. `CHIMERA_MAP_CACHE_VERIFY=1` checks every read
+whole. The inputs' fingerprints are checked on every read as before
+(6-100 M an entry).
+
+After: 0-4 M an entry (the log says `stamped, no checksum`). Guard:
+chimera_assets' `a_stamped_entry_is_checked_once` (a payload byte
+changed under the entry's size and time reads as the bytes say, which
+shows no checksum ran; the same bytes at another time, or without the
+stamp, are refused and converted again; a checked read leaves the
+stamp; eviction takes it). What a stamp doesn't see: payload bytes
+changed in place with the size and time kept, which no program of ours
+does (entries are renamed into place, never written in place).
+
+### Combat Arms' worlds are cached
+
+Combat Arms' world conversion went through the converted-map cache only
+with `CHIMERA_MAP_CACHE_CA=1`: off by default since the clock said a
+world converts quickly (0.27 s against 0.13 s). By instructions the
+conversion is most of the load, on every level change to a Combat Arms
+map: warehouse's loader 12,566 M converting, 3,535 M read back (its
+222 MB entry: 1,500 M to decode; the rest is the effect library and
+the kit, per session). On by default now (`CHIMERA_MAP_CACHE_CA=0` turns
+it off), keyed and versioned as it was (`world::CONVERTER`, the map
+format, the world file's hash, the scale, the texture option; its
+inputs' fingerprints in the entry), and deterministic: the heavy
+`map_cache` test converts warehouse twice and compares the entries byte
+for byte, beside the read-back world's hashes against the converted
+one's. The entries are big (a world's textures keep their texels: their
+RGBA8 isn't texpresso's decoding of the blocks; 222-641 MB a map,
+"The converted-map cache" above) under the cache's cap.
+
+### A server keeps no render meshes
+
+The dedicated server held the vertex data of every body, view model and
+held model three times: in each kept guest dressing, in its copy on the
+map, and in the world's `CharacterModels` and `ViewModels`. It draws
+none. `map::undrawn::Undrawn` in the load context (the server binary's
+`run` and the memory test, beside `Silent`) drops it from every load
+(`undrawn::strip`: a map's as `MapSources::load_with` returns it, a kept
+dressing's as it is kept): the bodies' and view models' positions,
+normals, coordinates, skinning, triangles and flexes, and the held
+models' but their positions (a dropped item's box is taken from them,
+`loose::asset`). The meshes stay by count, name and material, with the
+models' bounds, collision, hitboxes, bones, animations and attachments;
+the world's meshes and its props' models stay whole.
+
+`heavy::server_map_memory`, read back, all six games (the largest row
+is de_inferno's on the third lap):
+
+| | first map | the other rows |
+|---|---|---|
+| with the meshes (`CHIMERA_SERVER_MESHES=1`) | 2,446 MB | 2,910-2,997 MB |
+| without | 1,576 MB | 2,003-2,101 MB |
+
+The simulation is the same: the test's rows print the state's hash
+(`Sim::state_hash`), and a run with the meshes and one without ended
+each of the twelve maps in the same state. The test's bound is unchanged
+(3,640 MB with all six: it is the converting case's, 2.75-3.33 GB with
+the meshes as before). Guard: `undrawn`'s unit test (what stays; a held
+model's loose form is the same).
+
+**Left, measured.** The base game's simulation and the shell and HUDs
+at every start (30.6 G and 13.0 G here), TF2's and DoD:S's simulations
+(3.4 and 2.5 G); the kept dressings' decodes (TF2 2,580 M: 854 MB of
+arrays; a ladder deals a dozen guns of a whole kit); a join during a
+process's start (the start map still loads before the app exists; not
+done: the first match's start and the server's asset fetch move with
+it); the server's animation sets (457 MB for the five Source games).
 
 ## First join download, 2026-11-14
 

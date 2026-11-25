@@ -32,8 +32,9 @@ the converter's version (the game crate's build.rs hash), the load
 options and the mount's layers, then every file the conversion read
 with its fingerprint (VPK entry CRC and place, a `.rez` entry's place,
 a store record's id, else a BLAKE3), and the payload in postcard with
-BLAKE3 per 16 MB. A read checks every input again and the checksums,
-then decodes. No new format was needed: the map cache's already does
+BLAKE3 per 16 MB. A read checks every input again, the checksums when
+the entry has no stamp of an earlier check (`<key>.ok`: its size, time
+and header's hash; since 2026-11-25), then decodes. No new format was needed: the map cache's already does
 what the brief asks of one (versions, input hashes, migrations by
 miss).
 
@@ -405,8 +406,9 @@ copy.
 - **Known shortcuts:** the hashed sets are chosen by hand from what each
   converter calls; a file they miss relies on the bump and the guard,
   whose fixtures cover the dressings and one small map per Source game
-  (Combat Arms' worlds, cached only with `CHIMERA_MAP_CACHE_CA=1`, and
-  Halo, with no disc image here, aren't fixtures yet).
+  (Combat Arms' worlds, cached by default since 2026-11-25
+  (`CHIMERA_MAP_CACHE_CA=0` turns it off), and Halo, with no disc image
+  here, aren't fixtures yet).
 
 ## Served entries (step 7, 2026-11-18)
 

@@ -928,13 +928,15 @@ wall, 1,224 s to 972 s summed.
   clips) element by element, encoded on threads a batch at a time and
   decoded on threads biggest first (`map::pod_serde`); a texture whose
   RGBA8 image and mips are its BC blocks decoded keeps only the blocks
-  and a hit decodes them again (`map::texture_serde`, texpresso as the
-  converters; checked when written, so a hit gives the bytes converted);
+  and a hit keeps them as blocks, decoded by whoever reads one
+  (`map::texture_serde`, texpresso as the converters; checked when
+  written, so a reader gets the bytes converted);
   `MapExtras` by a list of known extension types
   (`extras::known`). Combat Arms: its world (`world::load_world_in`:
   `convert_with` and the surface tags; the per-session effect library is
-  added after, hit or not), **off by default** (`CHIMERA_MAP_CACHE_CA=1`):
-  WAREHOUSE 0.27 s converted, 0.13 s read back, 222 MB.
+  added after, hit or not), on by default since 2026-11-25
+  (`CHIMERA_MAP_CACHE_CA=0` turns it off): WAREHOUSE's loader 12.6 G
+  instructions converted, 3.5 G read back, 222 MB.
 - **Where:** `<cache dir>/chimera/maps/` (`~/.cache/chimera/maps`,
   `%LOCALAPPDATA%\chimera\maps`), one `<key>.map` per key, shared by
   every checkout and slot; `CHIMERA_MAP_CACHE=<folder>` moves it,
@@ -974,10 +976,13 @@ wall, 1,224 s to 972 s summed.
   length) is encoded straight into a temporary file, 16 MB at a time,
   each chunk hashed on a thread (a whole de_dust2's miss peaks at 1.5 GB,
   not 2.9 with the encoded entry held), and renamed into place; the
-  free-space floor is asked before and at each chunk. No fsync: an entry cut short
-  fails its checksum. A hit maps the file (`memmap2`: its pages are the
-  file cache, shared between processes), checks the pieces on threads
-  and decodes. A corrupt, truncated or foreign entry is deleted and
+  free-space floor is asked before and at each chunk. A written entry
+  is synced and stamped (`<key>.ok`: its size, modification time and
+  header's hash; `map_cache::Stamp`, 2026-11-25); one cut short has no
+  stamp and fails its checksum. A hit maps the file (`memmap2`: its
+  pages are the file cache, shared between processes), checks the pieces
+  on threads when its stamp doesn't name it (then stamps it), and
+  decodes. A corrupt, truncated or foreign entry is deleted and
   converted again.
 - **Who uses it:** every caller of `load_level_bytes_with` (the heavy
   tests of cs_source, party_kit, mashup_demo, mapsweep and the apps, the
@@ -989,8 +994,8 @@ wall, 1,224 s to 972 s summed.
   threads missing one key convert once, the key's parts),
   chimera_world `map::cache` (options and format in the key, every
   serialized type under the hashed `src/map`), `pod_serde`,
-  `texture_serde` (texels left out and decoded again, kept when they
-  aren't the blocks decoded), chimera_sim's `chimera:map_cache`, `extras`,
+  `texture_serde` (texels left out and the read kept as blocks, kept when
+  they aren't the blocks decoded), chimera_sim's `chimera:map_cache`, `extras`,
   `chimera_vfs` (tracking, the source hash). Heavy: cs_source
   `heavy::map_cache` (de_dust2 whole and lean: converted, miss and hit
   equal by hash per part and the light field the same; a nav file put in

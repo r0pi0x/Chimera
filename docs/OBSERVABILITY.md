@@ -1648,9 +1648,10 @@ load; work counts don't (performance.md, "Work counts"):
   `CHIMERA_BOOT_LOG=1` prints a `boot:` line per stage of a process's
   start before its first frame (the start map, each part of the client
   app, each game's simulation in a party: `chimera_core::metrics::boot`);
-  `CHIMERA_MAP_CACHE_LOG=1` a line per converted-cache hit (checksum,
-  inputs, decode: seconds and instructions) and each kept dressing's
-  parts' sizes. Instructions are the thread's and the threads' it starts:
+  `CHIMERA_MAP_CACHE_LOG=1` a line per converted-cache hit (checksum or
+  "stamped, no checksum", inputs, decode: seconds and instructions) and
+  each kept dressing's parts' sizes; `CHIMERA_MAP_CACHE_VERIFY=1` checks
+  every entry's checksums whatever its stamp says. Instructions are the thread's and the threads' it starts:
   the same from run to run.
 - A map's first view (`client::first_view`): `CHIMERA_FIRST_VIEW_LOG=<n>`
   logs every frame while a map loads, `n` frames after the game is
