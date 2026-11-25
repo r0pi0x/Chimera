@@ -2,7 +2,8 @@
 //! measurements, screenshots and clips on a machine with a GPU (or a
 //! software adapter) but no display or compositor. `app::default_plugins`
 //! leaves winit out (Bevy's schedule runner drives the frames), but the
-//! primary `Window` entity stays, pinned to that size at scale 1, so
+//! primary `Window` entity stays, pinned to that size at scale 1 (or
+//! `--scale`: a display scaled that much, as a 4K screen at 1.5), so
 //! everything that sizes or targets by it (cameras' `RenderTarget`s, the
 //! default UI camera, the HUD's layout, the console) works unchanged. Its
 //! surface is the one thing missing: the render world gets an
@@ -120,6 +121,8 @@ const DEFAULT_DUMP_EVERY: u32 = 60;
 pub struct Offscreen {
     pub image: Handle<Image>,
     pub size: UVec2,
+    /// The window's scale factor (`--scale`, else 1).
+    pub scale: f32,
 }
 
 /// The render world's copy of `Offscreen::image`.
@@ -154,6 +157,7 @@ impl Plugin for OffscreenPlugin {
         app.insert_resource(Offscreen {
             image: image.clone(),
             size,
+            scale: args.scale.unwrap_or(1.0),
         })
         .insert_resource(RunTimes {
             size,
@@ -191,15 +195,15 @@ fn no_ime(settings: Option<ResMut<bevy_egui::EguiGlobalSettings>>) {
     }
 }
 
-/// Keep the window at the image's size and scale 1: video settings
+/// Keep the window at the image's size and scale (1, or `--scale`): video settings
 /// (`mat_setvideomode`, the user's video config) resize it as they would
 /// a real one, and cameras sized for another size than the image's would
 /// draw past it.
 fn pin_window(offscreen: Res<Offscreen>, mut windows: Query<&mut Window, With<PrimaryWindow>>) {
     for mut window in &mut windows {
         let size = offscreen.size;
-        if window.resolution.physical_size() != size || window.resolution.scale_factor() != 1.0 {
-            window.resolution.set_scale_factor_override(Some(1.0));
+        if window.resolution.physical_size() != size || window.resolution.scale_factor() != offscreen.scale {
+            window.resolution.set_scale_factor_override(Some(offscreen.scale));
             window.resolution.set_physical_resolution(size.x, size.y);
         }
     }

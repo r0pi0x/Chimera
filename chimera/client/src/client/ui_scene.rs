@@ -251,6 +251,17 @@ fn clear_staged(w: &mut World) {
     }
 }
 
+/// `ui_clock_step`: the UI clock's seconds a frame, None: real time.
+#[derive(Resource, Default)]
+pub struct UiClockStep(pub Option<f32>);
+
+fn step_clock(step: Res<UiClockStep>, clock: Option<ResMut<chimera_ui::UiClock>>) {
+    if let (Some(dt), Some(mut clock)) = (step.0, clock) {
+        clock.manual = true;
+        clock.step(dt);
+    }
+}
+
 /// A staged scene's root.
 #[derive(Component)]
 pub struct UiSceneRoot;
@@ -315,6 +326,21 @@ impl Plugin for UiScenePlugin {
         app.init_resource::<UiScene>()
             .init_resource::<DeveloperMode>()
             .init_resource::<StagedName>()
+            .init_resource::<UiClockStep>()
+            .console_command(
+                "ui_clock_step",
+                "ui_clock_step [s]: the UI clock moves `s` seconds a frame, whatever the frame took (an animation's \
+                 frames captured evenly offscreen, `--dump`); alone or 0: real time again.",
+                |w, a| {
+                    let dt = a.first().map(|t| t.parse::<f32>().map_err(|_| format!("ui_clock_step: not a time: {t}"))).transpose()?;
+                    let dt = dt.filter(|d| *d > 0.0);
+                    w.resource_mut::<UiClockStep>().0 = dt;
+                    if dt.is_none() {
+                        w.resource_mut::<chimera_ui::UiClock>().manual = false;
+                    }
+                    Ok(None)
+                },
+            )
             .console_command(
                 "ui_scene_name",
                 "ui_scene_name [name]: the staged HUD scenes' made-up players all called `name` (a long name's fit), from the \
@@ -461,7 +487,8 @@ impl Plugin for UiScenePlugin {
                     Ok(None)
                 },
             )
-            .add_systems(Update, (stage, close_gallery));
+            .add_systems(Update, (stage, close_gallery))
+            .add_systems(PostUpdate, step_clock.before(chimera_ui::UiKitSystems));
         developer_mode_cvar(app);
     }
 }

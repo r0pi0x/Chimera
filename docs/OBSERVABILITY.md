@@ -501,7 +501,8 @@ ultimate_gun_game, lucker_party, combat_arms, mashup_demo: one
 implementation, `chimera_client::client::offscreen`, through
 `client::app::default_plugins`) with no window system: no winit, no
 surface, nothing needs `WAYLAND_DISPLAY`. The primary `Window` entity
-stays (pinned to that size, scale 1), so cameras, the HUD, menus, the
+stays (pinned to that size, scale 1, or `--scale`: `--offscreen 3840x2160
+--scale 1.5` is a 4K display at 150 %), so cameras, the HUD, menus, the
 console and the default UI camera behave as in a window; the render world
 gets the window with an image as its swap chain, so every camera that
 draws to the window, post effects and pipelined rendering included,
@@ -520,6 +521,10 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 \
   `--dump-every 1` and `ffmpeg` on the PATH the run ends by writing
   `clip.mp4` at the frames' real rate (without ffmpeg the PNGs stay,
   numbered for `ffmpeg -i frame_%06d.png`). Works with a window too.
+  A UI animation's frames evenly however slowly the frames render:
+  `+ui_clock_step 0.0166` moves the UI clock 1/60 s a frame (`ui_scene`'s
+  animated scenes, the match end's winner card: `+ui_clock_step 0.0166
+  +ui_scene matchend moment --dump-every 1`).
 - Sound: with `--offscreen` and `--dump` the game's sound is recorded
   instead of played (Bevy's audio into a mixer of ours,
   `chimera_present::audio::record`): `audio.wav` (16-bit stereo, 48 kHz)

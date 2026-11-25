@@ -40,6 +40,12 @@
 //!   GG, WP, Rematch? (`QuickChat`: posted to chat, `chat::say`), GG with
 //!   a pop and a "GG" rising off it (`GgFloat`).
 //!
+//! - **What a report shows** (`WinnerTrace`): the card's animated values
+//!   over its last second (the clock, big or in place, scale, shift,
+//!   opacity, the slab's sweep and edges), into the F10 bundle's
+//!   `game.txt` (`trace_text`), so a "janky" report has the motion itself
+//!   (feedback f47421fa had only a still).
+//!
 //! Known shortcuts: the card's avatar is the lobby's last one by name
 //! (none sent in play); the winning gun is the ladder's shown weapon for
 //! the winner's rung.
@@ -169,6 +175,7 @@ impl WinnerMoment {
 /// The moment's systems (from `match_end_signal::add`).
 pub fn add(app: &mut App) {
     app.init_resource::<WinnerMoment>()
+        .init_resource::<WinnerTrace>()
         .add_systems(Update, detect.before(MatchEndFollow).run_if(match_end_signal::themed))
         .add_systems(Update, (track, skip, cover, quick_chat, floats).chain().in_set(MomentSet).after(MatchEndFollow).run_if(match_end_signal::themed));
 }
@@ -284,6 +291,54 @@ fn cover(look: Look, view: Res<MatchEndView>, clock: Res<UiClock>, moment: Res<W
     super::staging::WorldCover::put(&mut cover, "match end", up);
 }
 
+/// The card's animated values a frame (module doc).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TraceRow {
+    pub now: f64,
+    pub big: bool,
+    pub scale: f32,
+    pub shift: Vec2,
+    pub alpha: f32,
+    /// The slab's sweep (0-1) and its edges (0-1 across the name).
+    pub sweep: Option<f32>,
+    pub edges: (f32, f32),
+}
+
+/// The card's last second of `TraceRow`s.
+#[derive(Resource, Default, Debug)]
+pub struct WinnerTrace(pub std::collections::VecDeque<TraceRow>);
+
+impl WinnerTrace {
+    const SPAN: f64 = 1.0;
+
+    fn push(&mut self, row: TraceRow) {
+        while self.0.front().is_some_and(|r| row.now - r.now > Self::SPAN || r.now > row.now) {
+            self.0.pop_front();
+        }
+        self.0.push_back(row);
+    }
+}
+
+/// The trace as text for `game.txt`; empty without a card.
+pub fn trace_text(w: &World) -> String {
+    let Some(t) = w.get_resource::<WinnerTrace>().filter(|t| !t.0.is_empty()) else { return String::new() };
+    let last = t.0.back().map_or(0.0, |r| r.now);
+    let mut out = format!("winner card, its last {} frames (t: s before the last; scale, shift in cq, opacity, the slab's sweep and edges):\n", t.0.len());
+    for r in &t.0 {
+        let sweep = r.sweep.map_or("-".to_string(), |p| format!("{p:.3} [{:.3}, {:.3}]", r.edges.0, r.edges.1));
+        out += &format!(
+            "  t-{:.3} {} scale {:.4} shift ({:.2}, {:.2}) alpha {:.3} slab {sweep}\n",
+            last - r.now,
+            if r.big { "card" } else { "band" },
+            r.scale,
+            r.shift.x,
+            r.shift.y,
+            r.alpha
+        );
+    }
+    out
+}
+
 /// The band's frame (over the screen's other parts).
 #[derive(Component)]
 pub struct BandPart;
@@ -331,10 +386,11 @@ pub fn band(
     parts: Query<Entity, With<BandPart>>,
     mut bands: Query<(Entity, &mut WinnerBand, &mut Node, &mut UiTransform, &mut UiOpacity), Without<WinnerSlab>>,
     name: Query<&ComputedNode, With<WinnerName>>,
-    mut slab: Query<(&mut Node, &mut Visibility), (With<WinnerSlab>, Without<WinnerBand>, Without<BandPulse>)>,
+    mut slab: Query<(&mut Node, &mut Visibility, &MaterialNode<SlantMaterial>), (With<WinnerSlab>, Without<WinnerBand>, Without<BandPulse>)>,
     mut pulse: Query<(&mut UiTransform, &mut Outline), (With<BandPulse>, Without<WinnerBand>)>,
     mut slants: Option<ResMut<Assets<SlantMaterial>>>,
     mut built: Local<Option<BandKey>>,
+    mut trace: ResMut<WinnerTrace>,
     mut commands: Commands,
 ) {
     let active = view.shown || moment.running();
@@ -416,35 +472,45 @@ pub fn band(
         op.0 = alpha;
     }
     // The slab: across the name every loop while it is the card, once as it lands.
+    let dur = look.dur("matchend", "slab", 0.9);
     let starts: Vec<f64> = match (moment.started, big) {
         (Some(s), true) => {
             let n = ((now - s - 0.35) / t.slab_loop as f64).floor().max(0.0);
-            vec![s + 0.35 + n * t.slab_loop as f64]
+            let at = s + 0.35 + n * t.slab_loop as f64;
+            // No loop still sweeping once the card moves (it ran on while
+            // the card scaled and was cut at the landing, where the card
+            // is rebuilt in place and the landing's own sweep follows).
+            if moment.move_at(&t).is_some_and(|m| at + dur as f64 > m) { vec![] } else { vec![at] }
         }
         (Some(_), false) => moment.move_at(&t).map(|m| vec![m + t.moves as f64 + 0.05]).unwrap_or_default(),
         (None, _) => state.came_up.map(|c| vec![c + look.dur("matchend", "slab_at", 0.55) as f64]).unwrap_or_default(),
     };
-    let dur = look.dur("matchend", "slab", 0.9);
     let sweep = starts.iter().rev().find(|s| now >= **s).map(|s| ((now - s) as f32 / dur).clamp(0.0, 1.0));
-    if let (Ok(name), Ok((mut node, mut vis))) = (name.single(), slab.single_mut()) {
-        let w = name.size().x * name.inverse_scale_factor();
-        let pr = sweep.unwrap_or(0.0);
-        let kk = io.sample(pr);
+    if let (Ok(name), Ok((mut node, mut vis, mat))) = (name.single(), slab.single_mut()) {
+        // A box that holds the whole slanted slab over the name and its
+        // padding, laid out once; the sweep is the material's clip, at
+        // any fraction of a pixel (feedback f47421fa: whole pixels moved
+        // the edges in 1.5 px steps at scale 1.5).
+        let inv = name.inverse_scale_factor();
+        let w = name.size().x * inv;
         let pad = look.units.cq(1.0);
-        let lean = name.size().y * name.inverse_scale_factor() * look.theme.tan();
-        let (left, width) = if kk < 0.4 {
-            (-pad, (w + 2.0 * pad) * kk / 0.4)
-        } else {
-            let q = (kk - 0.4) / 0.6;
-            let left = -pad + (w + 2.0 * pad) * q;
-            (left, (w + pad - left).max(0.0) * (1.0 - q))
-        };
-        let show = sweep.is_some_and(|p| p > 0.0 && p < 1.0) && width > 0.5;
-        vis.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
-        let (l, wd) = (px(left.round()), px((width + lean).round()));
+        let lean = name.size().y * inv * look.theme.tan();
+        let (l, wd) = (px(-pad), px(w + 2.0 * pad + lean));
         if node.left != l || node.width != wd {
             node.left = l;
             node.width = wd;
+        }
+        let (from, to) = slab_edges(io.sample(sweep.unwrap_or(0.0)));
+        trace.push(TraceRow { now, big, scale, shift, alpha, sweep, edges: (from, to) });
+        let show = sweep.is_some_and(|p| p > 0.0 && p < 1.0) && to - from > 1e-3;
+        vis.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
+        if show && let Some(slants) = slants.as_deref_mut() {
+            let clip = Vec2::new(from, 1.0 - to);
+            if slants.get(&mat.0).is_some_and(|m| m.wipe.xy() != clip)
+                && let Some(mut m) = slants.get_mut(&mat.0)
+            {
+                m.set_clip(clip.x, clip.y);
+            }
         }
     }
     // The ring: out from the band at the start and at the landing.
@@ -463,6 +529,17 @@ pub fn band(
             o.color = c;
         }
     }
+}
+
+/// The slab's left and right edges (0-1 across the name and its padding)
+/// at the sweep's eased progress `k`: the right edge wipes in to the end
+/// over the first 40%, then the left edge follows it out. Both only move
+/// right (feedback f47421fa: the right edge ran back while the left one
+/// caught up, and the slab shrank from both sides).
+pub fn slab_edges(k: f32) -> (f32, f32) {
+    const IN: f32 = 0.4;
+    let k = k.clamp(0.0, 1.0);
+    if k < IN { (0.0, k / IN) } else { ((k - IN) / (1.0 - IN), 1.0) }
 }
 
 /// The band's content at `s` times its size.
@@ -603,5 +680,28 @@ fn floats(clock: Res<UiClock>, floats: Query<(Entity, &GgFloat)>, mut commands: 
         if clock.now >= f.until {
             commands.entity(e).despawn();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Both edges of the slab only move right, the right one ahead, and the
+    /// sweep starts and ends empty (feedback f47421fa).
+    #[test]
+    fn the_slab_edges_move_one_way() {
+        let (mut l0, mut r0) = slab_edges(0.0);
+        assert_eq!((l0, r0), (0.0, 0.0));
+        for i in 1..=1000 {
+            let (l, r) = slab_edges(i as f32 / 1000.0);
+            assert!(l >= l0 && r >= r0, "an edge ran back at {i}: ({l0}, {r0}) to ({l}, {r})");
+            assert!(r >= l, "the edges crossed at {i}");
+            (l0, r0) = (l, r);
+        }
+        assert_eq!(slab_edges(1.0), (1.0, 1.0));
+        // Continuous where the right edge hands over to the left one.
+        let (a, b) = (slab_edges(0.3999), slab_edges(0.4001));
+        assert!((a.1 - b.1).abs() < 1e-3 && (a.0 - b.0).abs() < 1e-3);
     }
 }
